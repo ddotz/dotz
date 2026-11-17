@@ -37,7 +37,7 @@ export function installBgGuard(pi: Host, max = MAX_REPROMPTS): void {
 		else live.set(data.source, entries.length ? entries.map(e => `${kind}: ${String(e?.description || e?.id || "?").slice(0, 80)}`) : [kind]);
 	});
 	pi.on("agent_end", (event: any) => {
-		if (!live.size || event?.aborted === true || reprompts >= max || capReached()) return;
+		if (!live.size || event?.aborted === true || reprompts >= max || capReached(pi)) return;
 		reprompts++;
 		const what = [...live.values()].flat().join("; ");
 		pi.sendMessage({ customType: "dotz-bg-guard", content: liveReason(what), display: false }, { triggerTurn: true, deliverAs: "followUp" });

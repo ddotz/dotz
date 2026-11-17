@@ -1,7 +1,7 @@
 // The merge gate lands only the CLEAR-reviewed head: a commit after the review, a BLOCK verdict, or red/empty CI refuses.
 // Lanes use a real local repo and worktree; gh is injected, so nothing touches the network.
 import { afterEach, beforeEach, expect, test } from "bun:test";
-import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { mergeGate, recordReview, reviewedUniversal, type Run } from "./mergegate.ts";
@@ -43,6 +43,41 @@ test("lane: no review refuses, and a base that is not checked out still only fas
 	await recordReview({ cwd: lane, verdict: "CLEAR" }, { dir });
 	expect(await mergeGate({ cwd: lane, into: "release" }, { dir })).toContain("-> release");
 	expect(sh("git rev-parse release")).toBe(head);
+});
+
+function laneRecord(name: string, worktree: { branch: string; base: string }): void {
+	mkdirSync(join(dir, "lanes", name), { recursive: true });
+	writeFileSync(join(dir, "lanes", name, "lane.json"), JSON.stringify({ name, worktree }));
+}
+
+test("lane: with the owner's checkout moved to another branch, a lane's merge still lands on the base it was launched from", async () => {
+	sh("git checkout -q -b scratch");
+	const head = commit(lane, "a");
+	await recordReview({ cwd: lane, verdict: "CLEAR" }, { dir });
+	laneRecord("gw", { branch: "work", base: "main" });
+	process.env.DOTZ_LANE = "gw";
+	try {
+		expect(await mergeGate({ cwd: lane }, { dir })).toContain("-> main");
+	} finally {
+		delete process.env.DOTZ_LANE;
+	}
+	expect(sh("git rev-parse main")).toBe(head);
+	expect(sh("git rev-parse scratch")).not.toBe(head);
+});
+
+test("lane: a lane record of another branch, or no lane at all, leaves the target at the branch checked out", async () => {
+	sh("git checkout -q -b scratch");
+	const head = commit(lane, "a");
+	await recordReview({ cwd: lane, verdict: "CLEAR" }, { dir });
+	laneRecord("other", { branch: "elsewhere", base: "main" });
+	process.env.DOTZ_LANE = "other";
+	try {
+		await expect(mergeGate({ cwd: lane, dryRun: true }, { dir })).resolves.toContain("-> scratch");
+	} finally {
+		delete process.env.DOTZ_LANE;
+	}
+	expect(await mergeGate({ cwd: lane }, { dir })).toContain("-> scratch");
+	expect(sh("git rev-parse scratch")).toBe(head);
 });
 
 // A fake gh: the PR head and the check list are set per test; every call is recorded.

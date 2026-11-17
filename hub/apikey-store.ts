@@ -5,10 +5,12 @@
 // written anywhere else; views show only its prefix and last 4 characters.
 import { chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, renameSync } from "node:fs";
 import { dirname } from "node:path";
-import { writeAtomic } from "./config.ts";
+import { OMP, writeAtomic } from "./config.ts";
 import { authFile } from "./apikey-policy.ts";
 import { keyPath } from "./fallback.ts";
 import { ControlError } from "./providers.ts";
+import { runJson } from "./run-limited.ts";
+import { rolesOn } from "./runtime/runtime-id.ts";
 
 type Check = { url: string; headers: (key: string) => Record<string, string> };
 const bearer = (key: string) => ({ authorization: `Bearer ${key}` });
@@ -37,6 +39,35 @@ const omoKey = (): string => {
 		return "";
 	}
 };
+
+const OMP_AUTH_MS = 30_000;
+const OMP_KEY_TTL_MS = 60_000;
+type OmpRead = () => Promise<unknown>;
+type OmpExport = { credentials?: { provider?: string; credential?: { type?: string; key?: unknown } }[] };
+const readOmpStore: OmpRead = () => runJson([OMP, "auth", "export"], OMP_AUTH_MS);
+
+async function ompKey(read: OmpRead): Promise<string> {
+	const found = ((await read()) as OmpExport | undefined)?.credentials?.find(c => c.provider === "anthropic" && c.credential?.type === "api_key")?.credential?.key;
+	return typeof found === "string" ? found.trim() : "";
+}
+
+let ompHeld: { at: number; has: boolean } | undefined;
+
+/** Reads omp's store again for an Anthropic API key (`omp auth export`) and remembers whether one is there. Nothing but that answer is kept. */
+export async function refreshOmpKey(read: OmpRead = readOmpStore): Promise<boolean> {
+	const has = KEY_PROVIDERS.anthropic.format.test(await ompKey(read));
+	ompHeld = { at: Date.now(), has };
+	return has;
+}
+
+function ompKeyHeld(read?: OmpRead): boolean {
+	if (!rolesOn("omp")) return false;
+	if (!ompHeld || Date.now() - ompHeld.at > OMP_KEY_TTL_MS) {
+		ompHeld = { at: Date.now(), has: ompHeld?.has ?? false };
+		void refreshOmpKey(read);
+	}
+	return ompHeld.has;
+}
 
 // One cheap request with the key: 200 = good; 401/403 = a wrong key; anything else = could not tell (nothing is stored).
 async function check(provider: string, key: string, fetchImpl: typeof fetch): Promise<void> {
@@ -67,10 +98,10 @@ export async function saveKey(provider: string, raw: string, fetchImpl: typeof f
 	return { provider, file: keyFileFor(provider), masked: maskKey(key) };
 }
 
-// The Anthropic key OmO already has (<agent dir>/auth.json "anthropic"), stored for dotz after the same check.
-export async function importOmoKey(fetchImpl: typeof fetch = fetch) {
-	const key = omoKey();
-	if (!key) throw new ControlError("OmO에 저장된 Anthropic API 키가 없어요");
+/** The Anthropic key OmO already has (<agent dir>/auth.json "anthropic"), else the one omp's store holds when a role runs on omp; stored for dotz after the same check. */
+export async function importOmoKey(fetchImpl: typeof fetch = fetch, read: OmpRead = readOmpStore) {
+	const key = omoKey() || (rolesOn("omp") ? await ompKey(read) : "");
+	if (!key) throw new ControlError(`${rolesOn("omp") ? "OmO나 omp" : "OmO"}에 저장된 Anthropic API 키가 없어요`);
 	return saveKey("anthropic", key, fetchImpl);
 }
 
@@ -83,12 +114,12 @@ export function deleteKey(provider: string): { provider: string; deleted: boolea
 	return { provider, deleted: true };
 }
 
-export function keysView() {
+export function keysView(read?: OmpRead) {
 	return {
 		providers: Object.keys(KEY_PROVIDERS).map(provider => {
 			const key = stored(provider);
 			return { provider, file: keyFileFor(provider), present: Boolean(key), ...(key ? { masked: maskKey(key) } : {}) };
 		}),
-		omo_anthropic: KEY_PROVIDERS.anthropic.format.test(omoKey()),
+		omo_anthropic: KEY_PROVIDERS.anthropic.format.test(omoKey()) || ompKeyHeld(read),
 	};
 }

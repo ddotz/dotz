@@ -3,6 +3,7 @@ import { afterEach, beforeEach, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { OMP } from "./config.ts";
 import { describe, newer, runHarnessUpdate, type Run } from "./update.ts";
 
 let dir: string;
@@ -120,7 +121,7 @@ test("omp and omo both updating share one restart request", async () => {
 	const omo = fakeOmo("5.1.38", { installTo: "5.1.40" });
 	let ompVersion = "18.12.1";
 	const run: Run = async (cmd, ms) => {
-		if (cmd[0] !== "omp") return omo.run(cmd, ms);
+		if (cmd[0] !== OMP) return omo.run(cmd, ms);
 		if (cmd[1] === "update" && cmd[2] === "--check") return { code: 0, out: `Current version: ${ompVersion}\nNew version available: 18.13.0` };
 		if (cmd[1] === "update") return (ompVersion = "18.13.0"), { code: 0, out: "updated" };
 		return { code: 0, out: `omp/${ompVersion}` };

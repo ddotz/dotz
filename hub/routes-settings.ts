@@ -10,11 +10,13 @@ import { accountsRoute } from "./accounts-api.ts";
 import { cancelByOwner, orch, restart as restartOrchestrator, resumeNow } from "./orchestrator.ts";
 import { convs } from "./convsessions.ts";
 import { stopAnswer } from "./ownerstop.ts";
-import { cancelLogin, completeLogin, forgetAccountUsage, LoginBusy, loginStatus, logoutProvider, quota, refreshQuota, saveProviderKey, startLogin } from "./providers.ts";
+import { anthropicUsage, cancelLogin, completeLogin, forgetAccountUsage, LoginBusy, loginStatus, logoutProvider, quota, refreshQuota, saveProviderKey, startLogin } from "./providers.ts";
 import { featureCatalog } from "./features.ts";
 import { mailboxRoute } from "./routes-mailbox.ts";
 import { harnessGraph, readHarnessFile } from "./harness.ts";
-import { lastReport, RUNTIME_IDS, runtimesView, startVerify, UseRefused, useRuntime, verifyState, type UseRole } from "./runtime/verify.ts";
+import { lastReport, LOGIN_REFUSAL, loginView, RUNTIME_IDS, runtimesView, startVerify, UseRefused, useRuntime, verifyState, type UseRole } from "./runtime/verify.ts";
+import { runtimeIdOf } from "./runtime/runtime-id.ts";
+import { useOmpReset } from "./omp-reset.ts";
 import { json, body, terminals, BodyError } from "./routes-util.ts";
 import { useClaudeReset } from "./claude-reset.ts";
 import { checkUsageLimit, restartChecked } from "./limit-lift.ts";
@@ -97,10 +99,13 @@ export async function routeSettings(req: Request, url: URL, parts: string[]): Pr
 		const id = parts[2];
 		if (!RUNTIME_IDS.includes(id as never)) return json({ error: `알 수 없는 작업 프로그램이에요: ${id}` }, 404);
 		if (req.method === "GET" && parts.length === 3) return json({ id, report: lastReport(id) ?? null, state: verifyState(id) ?? null });
+		if (req.method === "GET" && parts[3] === "login" && parts.length === 4) return json(await loginView(id as never));
 		if (req.method === "POST" && parts[3] === "verify" && parts.length === 4) {
 			const b = await body(req);
 			// Each check starts ~14 paid OmO sessions: only on an explicit {real: true} (the web check button sends it).
 			if (b.real !== true) return json({ error: "a runtime check starts real paid sessions: send {\"real\": true} to run it", report: lastReport(id) ?? null }, 400);
+			const login = await loginView(id as never);
+			if (login.checked && !login.ready) return json({ error: LOGIN_REFUSAL, login_required: true, command: login.command, runtime: id }, 409);
 			return json({ ok: true, state: startVerify(id as never, { real: true, ...(b.model ? { model: String(b.model) } : {}) }) }, 202);
 		}
 		if (req.method === "POST" && parts[3] === "use" && parts.length === 4) {
@@ -109,7 +114,7 @@ export async function routeSettings(req: Request, url: URL, parts: string[]): Pr
 			try {
 				const done = await useRuntime(id, roles);
 				log(`runtime ${id} selected for ${done.join(", ")}`);
-				return json({ ok: true, runtime: id, roles: done, applies: "어시스턴트와 세션을 다시 시작하면 적용돼요. 실행 중인 프로세스는 그대로예요." });
+				return json({ ok: true, runtime: id, roles: done, applies: "게이트웨이를 다시 시작하면 적용돼요. 지금 실행 중인 어시스턴트와 세션은 그대로예요." });
 			} catch (error) {
 				if (error instanceof UseRefused) return json({ error: error.message, runtime: id }, 409);
 				throw error;
@@ -183,9 +188,11 @@ export async function routeSettings(req: Request, url: URL, parts: string[]): Pr
 	if (req.method === "POST" && url.pathname === "/api/quota/reset-credit") {
 		const b = await body(req);
 		const claude = b?.provider === "anthropic";
-		const r = await (claude ? useClaudeReset(b, undefined, account => liftAfterReset(account)) : useResetCredit(b));
+		const viaOmp = claude && runtimeIdOf("orchestrator") !== "omo";
+		const r = await (viaOmp ? useOmpReset(b, account => liftAfterReset(account)) : claude ? useClaudeReset(b, undefined, account => liftAfterReset(account)) : useResetCredit(b));
 		if (claude && typeof b.account === "string") forgetAccountUsage(b.account);
-		if (r.status === 200) void refreshQuota().catch(e => log(`usage refresh failed: ${(e as Error).message}`));
+		const reread = viaOmp && r.status === 200 ? anthropicUsage("orchestrator", true).then(() => undefined) : Promise.resolve();
+		if (r.status === 200) void reread.then(() => refreshQuota()).catch(e => log(`usage refresh failed: ${(e as Error).message}`));
 		return json(r.body, r.status);
 	}
 	// The monthly API limit and the admin key behind the usage screen's spend figure (hub/api-budget.ts): the key is never returned, only its mask.

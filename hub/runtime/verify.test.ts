@@ -4,7 +4,7 @@ import { existsSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { cfg, DATA_DIR } from "../config.ts";
 import { advance, flush } from "./test-clock.ts";
-import { adjustItems, CHECKLIST, checklistFor, type CheckItem, type Detected, lastReport, type Probe, refusalFor, UseRefused, useRuntime, verdictOf, verifyRuntime } from "./verify.ts";
+import { adjustItems, CHECKLIST, checklistFor, currentRuntimes, type CheckItem, type Detected, lastReport, LOGIN_REFUSAL, type Probe, refusalFor, UseRefused, useRuntime, verdictOf, verifyRuntime } from "./verify.ts";
 import type { RuntimeAdapter } from "./types.ts";
 
 // Stand-in adapter: verify.ts only needs its presence and the probes passed in the options.
@@ -88,6 +88,9 @@ test("use: an ok report writes the runtime keys and keeps the rest of config.jso
 	expect(disk.lanes.runtime).toBe("claude");
 	expect(disk.models).toEqual(before.models);
 	expect(disk.discord).toEqual(before.discord);
+	expect(cfg.orchestrator?.runtime).toBeUndefined();
+	expect(cfg.lanes?.runtime).toBeUndefined();
+	expect(currentRuntimes()).toEqual({ orchestrator: "omo", lanes: "omo" });
 	await verifyRuntime("omp", { adapter: stub, probes: allOk, version: "1.0.0" });
 	await useRuntime("omp", ["orchestrator", "lanes"], detected("omp"));
 	expect((await Bun.file(join(DATA_DIR, "config.json")).json()).orchestrator.runtime).toBe("omp");
@@ -102,6 +105,28 @@ test("refusalFor: omp needs a passing report like every opt-in runtime; uninstal
 	expect(refusalFor("omp", detected("omp")[0], lastReport("omp"))).toBeUndefined();
 	expect(refusalFor("omo", { id: "omo", label: "", installed: false, hasAdapter: false, usable: false }, undefined)).toBe("설치되어 있지 않아요");
 	expect(refusalFor("codex", { id: "codex", label: "", installed: true, hasAdapter: false, usable: false }, undefined)).toBe("dotz가 아직 지원하지 않아요");
+});
+
+test("refusalFor: a runtime whose login was checked and is not ready is refused, except the default one (OmO is switched back to whatever its login is); an unchecked login does not block", async () => {
+	const out = { checked: true, ready: false, accounts: 0 };
+	const signedIn = { checked: true, ready: true, accounts: 1 };
+	const omo = (): Detected => ({ ...detected("omo")[0]!, version: undefined });
+	expect(refusalFor("omo", omo(), undefined, out)).toBeUndefined();
+	expect(refusalFor("omo", omo(), undefined, signedIn)).toBeUndefined();
+	expect(refusalFor("omo", omo(), undefined, { checked: false, ready: false, accounts: 0 })).toBeUndefined();
+	expect(refusalFor("omo", omo(), undefined)).toBeUndefined();
+	await verifyRuntime("omp", { adapter: stub, probes: allOk, version: "1.0.0" });
+	expect(refusalFor("omp", detected("omp")[0], lastReport("omp"), out)).toBe(LOGIN_REFUSAL);
+	expect(refusalFor("omp", detected("omp")[0], undefined, out)).toBe(LOGIN_REFUSAL);
+	expect(refusalFor("omp", detected("omp")[0], lastReport("omp"), signedIn)).toBeUndefined();
+});
+
+test("use: a login that is not ready refuses the switch and writes nothing", async () => {
+	await verifyRuntime("omp", { adapter: stub, probes: allOk, version: "1.0.0" });
+	const before = await Bun.file(join(DATA_DIR, "config.json")).text();
+	await expect(useRuntime("omp", ["orchestrator"], detected("omp"), { checked: true, ready: false, accounts: 0 })).rejects.toThrow(LOGIN_REFUSAL);
+	expect(await Bun.file(join(DATA_DIR, "config.json")).text()).toBe(before);
+	expect(await useRuntime("omp", ["orchestrator"], detected("omp"), { checked: true, ready: true, accounts: 1 })).toEqual(["orchestrator"]);
 });
 
 test("an unknown item is never a pass: a core one blocks, a non-core one adjusts, and no item of omp's checklist is reported ok without a probe", async () => {

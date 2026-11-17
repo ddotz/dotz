@@ -1,4 +1,4 @@
-import { type Lane, persist } from "./lanestate.ts";
+import { type Lane, persist, setStatus } from "./lanestate.ts";
 import { settleRevert } from "./lanefailover.ts";
 import { msg, lang } from "./i18n.ts";
 import { languageName } from "./language.ts";
@@ -8,9 +8,19 @@ import { footer } from "./lanefooter.ts";
 
 const WATCHDOG_MS = 120_000;
 
+/** An extension command the owner approves in chat (the omp budget gate's /budget-ok): the process runs it itself and starts no turn. */
+export const isCommand = (text: string): boolean => /^\/[a-z][\w-]*$/i.test(text.trim());
+
+// why(protocol): omp hands a prompt that names a registered extension command to it before any turn starts, and a steer is no command (omp@18.22.0 docs/rpc.md "prompt payload")
+function command(lane: Lane, text: string): void {
+	lane.proc?.send(text, "prompt");
+	if (lane.status === "starting" && lane.startingOn !== lane.proc) setStatus(lane, "idle");
+}
+
 // A paused lane (rate limit) keeps owner messages on disk instead of starting turns that fail at once; they go in with
 // the resume note.
 export function prompt(lane: Lane, text: string): void {
+	if (isCommand(text)) return command(lane, text);
 	lane.silent = undefined;
 	// OmO refuses a prompt while a requested compaction runs, so a message sent then was lost (2026-10-21, the same hole
 	// as the orchestrator's): it is held and goes in when the compaction ends (or with the resume note if it failed).

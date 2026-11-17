@@ -49,6 +49,9 @@ export type Lane = Record_ & {
 	quiet?: boolean;
 	// Set to restart the process on the same session once it exits: text is the resume prompt (none = back to idle).
 	revive?: { text?: string };
+	closing?: { proc: AgentProcess; why?: "stop" | "shutdown" };
+	restarting?: Promise<void>;
+	restored?: string[];
 	lastFrameAt?: number;
 	/** Owner messages steered into the running turn since its turn_start: a stuck-turn recovery sends them again (lanerun.ts recover). */
 	steered?: string[];

@@ -34,9 +34,33 @@ export const DEEP_TURN = /^\[dotz deep turn\]/m;
 // here as text because the extension stays off hub imports (engineering rule 4); effort-bound.test.ts checks both leads.
 const LANE_REPORT = [/session report from (\S+?):/g, /세션 (\S+?)의 보고:/g];
 
+// why(protocol): omp wakes a session with a custom message `async-result` whose details.jobs names each job it delivers, and its background `task` result names the agents in details.progress and the first job in details.async (omp@18.22.0 docs/tools/task.md "Background response")
+const ASYNC_RESULT = "async-result";
+const JOBS_KEPT = 100;
+type Spawn = { progress?: { id?: unknown }[]; async?: { jobId?: unknown } };
+type Delivery = { jobId?: unknown; agentId?: unknown };
+type Message = { role?: unknown; customType?: unknown; details?: { jobs?: unknown } };
+
 const textOf = (content: unknown): string =>
 	Array.isArray(content) ? content.map(b => (typeof b?.text === "string" ? b.text : "")).join("\n") : typeof content === "string" ? content : "";
 
+const deliveredJobs = (messages: unknown): Delivery[] => {
+	const jobs: Delivery[] = [];
+	if (!Array.isArray(messages)) return jobs;
+	for (let i = messages.length - 1; i >= 0; i--) {
+		const m: Message | undefined = messages[i];
+		if (m?.role === "assistant") break;
+		if (m?.role === "custom" && m.customType === ASYNC_RESULT && Array.isArray(m.details?.jobs)) jobs.push(...m.details.jobs);
+	}
+	return jobs;
+};
+
+/**
+ * Records the thinking level of each piece of background work the session starts, and runs a turn that a result starts at that level (header above).
+ * On omp a `task` spawn is recorded in memory by agent id (omp's jobs end with their process) and an `async-result` wake is read from the `context`
+ * hook, the last one whose level change still reaches the run's first request: omp fires no before_agent_start for a wake and no thinking_level_select
+ * at all, so a level the owner chose during the turn is found by comparing levels at agent_end.
+ */
 export function installEffortBound(pi: any, file: string): void {
 	const load = (): Book => {
 		try {
@@ -53,6 +77,46 @@ export function installEffortBound(pi: any, file: string): void {
 	};
 	// While a result turn runs at its recorded level: the level to go back to, and the level set for the turn.
 	let back: string | undefined, set: string | undefined;
+	const spawnedAt = new Map<string, string>();
+	let runStarting = false;
+
+	const enter = (levels: string[]) => {
+		if (!levels.length) return;
+		const current = String(pi.getThinkingLevel?.() ?? "");
+		const target = levels.reduce((a, l) => (ORDER.indexOf(l) > ORDER.indexOf(a) ? l : a));
+		if (target === current) return;
+		const origin = back ?? current;
+		back = origin;
+		set = target;
+		pi.setThinkingLevel(target);
+		// A model without the level gets the nearest one it has (OmO's rule), and OmO's notice of that is not an outside switch: that
+		// level is the turn's, and when nothing changed there is nothing to go back to.
+		const got = String(pi.getThinkingLevel?.() ?? target);
+		back = got === origin ? undefined : origin;
+		set = back === undefined ? undefined : got;
+	};
+
+	const recordSpawn = (details: Spawn | undefined, level: string) => {
+		if (!details?.async) return;
+		const ids = [...(Array.isArray(details.progress) ? details.progress.map(p => p?.id) : []), details.async.jobId];
+		for (const id of ids) {
+			if (typeof id !== "string" || !id) continue;
+			spawnedAt.delete(id);
+			spawnedAt.set(id, level);
+		}
+		for (const old of [...spawnedAt.keys()].slice(0, Math.max(0, spawnedAt.size - JOBS_KEPT))) spawnedAt.delete(old);
+	};
+
+	const takeLevels = (jobs: Delivery[]): string[] => {
+		const levels: string[] = [];
+		for (const job of jobs) {
+			const ids = [job?.agentId, job?.jobId].filter((id): id is string => typeof id === "string" && id !== "");
+			const level = ids.map(id => spawnedAt.get(id)).find(l => l !== undefined);
+			for (const id of ids) spawnedAt.delete(id);
+			if (level !== undefined) levels.push(level);
+		}
+		return levels;
+	};
 
 	pi.on("tool_result", (event: any) => {
 		if (event.isError) return;
@@ -61,7 +125,7 @@ export function installEffortBound(pi: any, file: string): void {
 		const said = textOf(event.content);
 		if (event.toolName === "task") {
 			const ids = [...new Set(said.match(TASK_ID) ?? [])];
-			if (!ids.length) return;
+			if (!ids.length) return recordSpawn(event.details, level);
 			const b = load();
 			for (const id of ids) b.tasks[id] = level;
 			store(b);
@@ -98,18 +162,23 @@ export function installEffortBound(pi: any, file: string): void {
 			for (const id of ids) delete b.tasks[id];
 			store(b);
 		}
-		if (!levels.length) return;
-		const target = levels.reduce((a, l) => (ORDER.indexOf(l) > ORDER.indexOf(a) ? l : a));
-		if (target === current) return;
-		back = current;
-		set = target;
-		pi.setThinkingLevel(target);
-		// A model without the level gets the nearest one it has (OmO's rule), and OmO's notice of that is not an outside switch: that
-		// level is the turn's, and when nothing changed there is nothing to go back to.
-		const got = String(pi.getThinkingLevel?.() ?? target);
-		back = got === current ? undefined : current;
-		set = back === undefined ? undefined : got;
+		enter(levels);
 	});
+
+	pi.on("agent_start", () => {
+		runStarting = true;
+	});
+
+	pi.on(
+		"context",
+		(event: { messages?: unknown }) => {
+			const starting = runStarting;
+			runStarting = false;
+			const levels = takeLevels(deliveredJobs(event?.messages));
+			if (starting && levels.length) enter(set === undefined ? levels : [...levels, set]);
+		},
+		{ mutatesMessages: false },
+	);
 
 	// A level chosen from outside during the result turn (the owner's switch, applied by the gateway) is the one to go back to.
 	pi.on("thinking_level_select", (event: any) => {
@@ -119,7 +188,8 @@ export function installEffortBound(pi: any, file: string): void {
 	pi.on("agent_end", (event: any) => {
 		if (back === undefined || event?.willRetry) return;
 		const to = back;
+		const outside = String(pi.getThinkingLevel?.() ?? "") !== set;
 		back = set = undefined;
-		pi.setThinkingLevel(to);
+		if (!outside) pi.setThinkingLevel(to);
 	});
 }

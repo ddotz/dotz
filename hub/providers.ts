@@ -6,7 +6,7 @@ import { dirname, join } from "node:path";
 import { log, OMP, THINKING_LEVELS, writeAtomic } from "./config.ts";
 import { modelConnected } from "./web-i18n-gen.ts";
 import { label } from "./account-alias.ts";
-import { authFile } from "./apikey-policy.ts";
+import { authFile, PROVIDER_ENV } from "./apikey-policy.ts";
 import { OMO } from "./runtime/omo-hosts.ts";
 import { OmoRpc, omoLoginProviders, type RpcFrame } from "./runtime/omo-login.ts";
 import { mergeSameAccount } from "./accounts-providers.ts";
@@ -18,29 +18,8 @@ import { runLimited } from "./run-limited.ts";
 import { codexUsage, withCodex } from "./codex-usage.ts";
 import { heldLimits, readReports, readUsageJson } from "./usage-last.ts";
 import { useField } from "./usage-share.ts";
-import { type AccountReport, AccountUsage, type ClaudeResets, type QuotaLimit, cliTokensSettled, fromOmp, runtimeIdOf, subscriptionAccount, subscriptionAccounts } from "./usage-account.ts";
-
-// omp provider id -> the env var omp reads its API key from (omp docs: providers.md, "Environment variables").
-const PROVIDER_ENV: Record<string, string> = {
-	anthropic: "ANTHROPIC_API_KEY", openai: "OPENAI_API_KEY", google: "GEMINI_API_KEY", "google-vertex": "GOOGLE_CLOUD_API_KEY",
-	groq: "GROQ_API_KEY", openrouter: "OPENROUTER_API_KEY", mistral: "MISTRAL_API_KEY", xai: "XAI_API_KEY", azure: "AZURE_OPENAI_API_KEY",
-	abliteration: "ABLITERATION_API_KEY", aiand: "AIAND_API_KEY", cerebras: "CEREBRAS_API_KEY", "alibaba-token-plan": "ALIBABA_TOKEN_PLAN_API_KEY",
-	baseten: "BASETEN_API_KEY", commandcode: "COMMAND_CODE_API_KEY", coralbricks: "CORAL_API_KEY", deepinfra: "DEEPINFRA_API_KEY",
-	deepseek: "DEEPSEEK_API_KEY", siliconflow: "SILICONFLOW_API_KEY", "siliconflow-cn": "SILICONFLOW_CN_API_KEY", fireworks: "FIREWORKS_API_KEY",
-	together: "TOGETHER_API_KEY", typesafe: "TYPESAFE_API_KEY", coreweave: "COREWEAVE_API_KEY", nvidia: "NVIDIA_API_KEY", devin: "DEVIN_API_KEY",
-	"gmi-cloud": "GMI_API_KEY", huggingface: "HUGGINGFACE_HUB_TOKEN", moonshot: "MOONSHOT_API_KEY", stepfun: "STEPFUN_API_KEY",
-	helmcode: "HELMCODE_API_KEY", meta: "MODEL_API_KEY", nanogpt: "NANO_GPT_API_KEY", novita: "NOVITA_API_KEY", venice: "VENICE_API_KEY",
-	"vercel-ai-gateway": "AI_GATEWAY_API_KEY", litellm: "LITELLM_API_KEY", kilo: "KILO_API_KEY", zai: "ZAI_API_KEY", zenmux: "ZENMUX_API_KEY",
-	"zhipu-coding-plan": "ZHIPU_API_KEY", umans: "UMANS_AI_CODING_PLAN_API_KEY", qianfan: "QIANFAN_API_KEY", synthetic: "SYNTHETIC_API_KEY",
-	"minimax-code": "MINIMAX_CODE_API_KEY", "minimax-code-cn": "MINIMAX_CODE_CN_API_KEY", minimax: "MINIMAX_API_KEY",
-	"alibaba-coding-plan": "ALIBABA_CODING_PLAN_API_KEY", sakana: "SAKANA_API_KEY", sambanova: "SAMBANOVA_API_KEY", aimlapi: "AIMLAPI_API_KEY",
-	"opencode-zen": "OPENCODE_API_KEY", "opencode-go": "OPENCODE_API_KEY", "cline-pass": "CLINE_API_KEY", firepass: "FIREPASS_API_KEY",
-	"wafer-serverless": "WAFER_SERVERLESS_API_KEY", xiaomi: "XIAOMI_API_KEY", "xiaomi-token-plan-ams": "XIAOMI_TOKEN_PLAN_AMS_API_KEY",
-	"xiaomi-token-plan-cn": "XIAOMI_TOKEN_PLAN_CN_API_KEY", "xiaomi-token-plan-sgp": "XIAOMI_TOKEN_PLAN_SGP_API_KEY",
-	"ollama-cloud": "OLLAMA_CLOUD_API_KEY", ollama: "OLLAMA_API_KEY", "lm-studio": "LM_STUDIO_API_KEY", "llama.cpp": "LLAMA_CPP_API_KEY",
-	vllm: "VLLM_API_KEY", "yolo-auto": "YOLO_AUTO_API_KEY", "charm-hyper": "CHARM_HYPER_API_KEY", "singularityapi-dev": "SINGULARITYAPI_DEV_API_KEY",
-	"singularityapi-tech": "SINGULARITYAPI_TECH_API_KEY",
-};
+import { type AccountReport, AccountUsage, type ClaudeResets, type QuotaLimit, cliTokensSettled, ompAccounts, ompStanding, scopeOf, subscriptionAccount, subscriptionAccounts } from "./usage-account.ts";
+import { runtimeIdOf } from "./runtime/runtime-id.ts";
 
 export class ControlError extends Error {
 	constructor(message: string, readonly status = 400) {
@@ -83,7 +62,7 @@ export function secretValues(): string[] {
 
 type OmpModel = { kind?: string; selector: string; id?: string; name?: string; provider: string; reasoning?: boolean; thinking?: unknown };
 type OmpCredential = { provider: string; credential?: Record<string, unknown> };
-type OmpLimit = { id: string; label?: string; window?: { id?: string; label?: string; resetsAt?: number }; amount?: { used?: number; limit?: number; remaining?: number; unit?: string }; status?: string; scope?: string; active?: boolean };
+type OmpLimit = { id: string; label?: string; window?: { id?: string; label?: string; resetsAt?: number }; amount?: { used?: number; limit?: number; remaining?: number; unit?: string }; status?: string; scope?: unknown; active?: boolean };
 type OmpUsageReport = { provider: string; limits?: OmpLimit[]; metadata?: { email?: string }; account?: string; plan?: string; resets?: ClaudeResets; problem?: "failed"; fetchedAt?: number };
 
 // A local credential store write or read: seconds.
@@ -245,8 +224,7 @@ export async function anthropicUsage(role: "orchestrator" | "lane" = "orchestrat
 	const acct = runtimeIdOf(role) === "omo" ? subscriptionAccount(undefined, undefined, stickyAccount(), hardPinned()) : undefined;
 	if (acct) return accountUsage.report(acct, force);
 	if (force) invalidate();
-	const r = (await usageReports()).find(x => x.provider === "anthropic");
-	return r && fromOmp(r);
+	return ompStanding(ompAccounts(await usageReports()));
 }
 
 // The percent left in each OmO subscription account's 5-hour and 7-day windows, from the cached oauth/usage reads (not a model
@@ -693,7 +671,7 @@ const ompHasCredential = async (provider: string): Promise<boolean> => ((await o
 
 // Pure: maps the usage reports to the API shape; providers holding credentials but absent from the reports
 // (or reporting no limits) are listed as unavailable with a plain reason.
-export function buildQuota(reports: OmpUsageReport[], credentialed: string[], now = Date.now()): { providers: { provider: string; account?: string; account_label?: string; plan?: string; resets?: ClaudeResets; read_at?: number; stale?: boolean; limits: QuotaLimit[] }[]; unavailable: { provider: string; reason: string }[] } {
+export function buildQuota(reports: OmpUsageReport[], credentialed: string[], now = Date.now(), names: Record<string, string> = {}): { providers: { provider: string; name?: string; account?: string; account_label?: string; plan?: string; resets?: ClaudeResets; read_at?: number; stale?: boolean; limits: QuotaLimit[] }[]; unavailable: { provider: string; reason: string }[] } {
 	const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : null);
 	const providers = reports
 		.filter((r): r is OmpUsageReport & { limits: OmpLimit[] } => Array.isArray(r.limits) && r.limits.length > 0)
@@ -703,11 +681,12 @@ export function buildQuota(reports: OmpUsageReport[], credentialed: string[], no
 			const limits = r.limits.map((l): QuotaLimit => ({
 				id: String(l.id), label: String(l.label ?? l.id), window: String(l.window?.id ?? l.window?.label ?? ""),
 				used: num(l.amount?.used), limit: num(l.amount?.limit), remaining: num(l.amount?.remaining), unit: String(l.amount?.unit ?? ""),
-				resets_at: num(l.window?.resetsAt), status: String(l.status ?? "unknown"), ...(typeof l.scope === "string" ? { scope: l.scope } : {}), ...(typeof l.active === "boolean" ? { active: l.active } : {}),
+				resets_at: num(l.window?.resetsAt), status: String(l.status ?? "unknown"), ...(scopeOf(l.scope) ? { scope: scopeOf(l.scope) } : {}), ...(typeof l.active === "boolean" ? { active: l.active } : {}),
 			}));
+			const acct = r.account ?? r.metadata?.email;
 			return {
 				provider: r.provider,
-				...(r.account ?? r.metadata?.email ? { account: r.account ?? r.metadata?.email, account_label: label((r.account ?? r.metadata?.email)!) } : {}), ...(r.plan ? { plan: r.plan } : {}), ...(r.resets ? { resets: r.resets } : {}),
+				...(acct ? { account: acct, account_label: label(acct), ...(reports.filter(x => x.provider === r.provider).length > 1 ? { name: `${names[r.provider] ?? r.provider} · ${label(acct)}` } : {}) } : {}), ...(r.plan ? { plan: r.plan } : {}), ...(r.resets ? { resets: r.resets } : {}),
 				...(stale ? { read_at: r.fetchedAt, stale: true } : {}),
 				limits: stale ? heldLimits(limits, now) : limits,
 			};
@@ -727,10 +706,11 @@ async function readQuota() {
 	subscriptionAccounts();
 	await cliTokensSettled();
 	const rows = (await listProviders(new Set())).providers;
-	const anthropic = await anthropicUsage();
-	const reports = [...(anthropic ? [anthropic] : []), ...(await usageReports()).filter(r => r.provider !== "anthropic")];
+	const read = await usageReports();
+	const anthropic = runtimeIdOf("orchestrator") === "omo" ? [await anthropicUsage()].filter(r => r !== undefined) : ompAccounts(read);
+	const reports = [...anthropic, ...read.filter(r => r.provider !== "anthropic")];
 	const [budget, codex] = await Promise.all([apiBudget().catch(() => undefined), codexUsage()]);
-	return { fetched_at: Date.now(), ...withCodex(buildQuota(reports, rows.filter(r => r.auth !== "none").map(r => r.id)), codex), ...(budget ? { budget } : {}), ...useField(), ...(runtimeIdOf("orchestrator") === "omo" ? { account: labeledAccountView() } : {}) };
+	return { fetched_at: Date.now(), ...withCodex(buildQuota(reports, rows.filter(r => r.auth !== "none").map(r => r.id), Date.now(), Object.fromEntries(rows.map(r => [r.id, r.name]))), codex), ...(budget ? { budget } : {}), ...useField(), ...(runtimeIdOf("orchestrator") === "omo" ? { account: labeledAccountView() } : {}) };
 }
 
 // GET /api/quota answers from the last read, never waiting on a CLI, the keychain or the usage endpoint (only the very first

@@ -40,6 +40,8 @@ import { createSendLedger } from "./sendlog.ts";
 import { createInflight } from "./inflight.ts";
 import { inOrder, localize } from "./outlang.ts";
 import { answerReview } from "./answer-words.ts";
+import { runtimeFor } from "./runtime/index.ts";
+import { OMO_WORDS, ompWords, runName, type WorkerWords } from "./worker-words.ts";
 import { dropClaim, resolvesOf, splitTone, stripHandoff, stripLater, stripProjectInfo, stripResolves } from "./tone.ts";
 import { isLate, isSnowflake, lateQuote, lateRequestId, replyRef, snowflakeTime, withQuote } from "./threads.ts";
 import { keepBrief } from "./draft-approval.ts";
@@ -82,7 +84,10 @@ export const sends = createSendLedger({
 	send: (target, text, ref, opts) => discord.send(target, text, ref, opts),
 	retryable: discord.isRetryable,
 	onDelivered: item => convs.markAnsweredAll(item.answers),
-	onGiveUp: (item, reason) => log(`send to ${item.target} dropped unsent: ${reason} (${item.text.slice(0, 80)})`),
+	onGiveUp: (item, reason) => {
+		log(`send to ${item.target} dropped unsent: ${reason} (${item.text.slice(0, 80)})`);
+		if (item.target !== "alert") alert(`${item.target}로 보낸 답을 전하지 못했어요: ${reason}\n${item.text.slice(0, 80)}`);
+	},
 	persist: items => writeAtomic(UNSENT, `${JSON.stringify(items, null, 2)}\n`),
 	log,
 });
@@ -96,6 +101,8 @@ export const send = (target: string, text: string, ref?: string): Promise<{ deli
 // only go to a message of its own conversation (prompts.ts orphanTarget).
 // The name the owner reads for a conversation: its own name when set, else the target it was opened for.
 const convLabel = (target: string) => convs.forTarget(target)?.meta.name || convs.forTarget(target)?.primary || target;
+const workerName = (o: Orchestrator) => (id: string): string => o.ompWorkers().find(s => s.id === id)?.name ?? runName(id);
+const workerWords = (o: Orchestrator): WorkerWords => (runtimeFor("orchestrator").id === "omp" ? ompWords(workerName(o)) : OMO_WORDS);
 function makeQueue(key: string, o: Orchestrator, pendingFile: string, bg: () => ReturnType<typeof createBgWork> | undefined) {
 	// Which request each worker serves, beside pending.json: read here once, written only when a link changes.
 	const linksFile = pendingFile.replace(/\.json$/, "-links.json");
@@ -119,6 +126,9 @@ function makeQueue(key: string, o: Orchestrator, pendingFile: string, bg: () => 
 		review: answerReview(() => o.orch.status === "idle" || o.orch.status === "working"),
 		isNote: text => isNote(text, "newMessageLead") || isNote(text, "waitedLead") || isNote(text, "laneReportLead"),
 		regenerated: isOpenNudge,
+		answering: orchestratorAnswered,
+		inProcess: () => runtimeFor("orchestrator").id === "omp",
+		nameOf: workerName(o),
 		post: (target, text, replyTo, opts) => out(target, text, replyTo, { auto: true, session: key, ...opts }),
 		// A quiet check's plain answer: one gateway line in the worklog. Its text opens the line, so no tone marker in the answer can make it a result that pushes.
 		quietNote: (_target, text) => void out("worklog", msg().scheduleCheckLine(text.replace(/\s+/g, " ").slice(0, 300)), undefined, { source: "gateway", wk: "check" }).catch(e => log(`quiet check line failed: ${e}`)),
@@ -141,16 +151,16 @@ function makeQueue(key: string, o: Orchestrator, pendingFile: string, bg: () => 
 			const w = bg()?.list().find(w => w.status === "running" && w.target === target);
 			return w && { id: w.id, description: w.description };
 		},
-		joinNote: w => msg().joinWorker(w.id, w.description),
+		joinNote: w => msg().joinWorker(w.id, w.description, workerWords(o)),
 		noAnswerNote: () => msg().turnNoAnswer,
 		hasJoinNote: text => text.split("\n").some(line => isNote(line, "joinLead")),
 		// The session's workers as bgwork lists them (read only at delivery and turn end): another conversation's running worker must
 		// not answer through this conversation's turn, and one that finished elsewhere gets its own request asked again.
 		work: () => (bg()?.list() ?? []).map(w => ({ id: w.id, description: w.description, status: w.status, ...(w.target ? { target: w.target } : {}), ...(w.reply_to ? { replyTo: w.reply_to } : {}), startedAt: w.started_at, ...(w.ended_at !== undefined ? { endedAt: w.ended_at } : {}) })),
-		foreignNote: (w, target) => msg().otherWorker(w.id, convLabel(target), w.replyTo),
+		foreignNote: (w, target) => msg().otherWorker(w.id, convLabel(target), w.replyTo, workerWords(o)),
 		hasForeignNote: text => text.split("\n").some(line => isNote(line, "otherConvLead")),
-		readElsewhereNote: (w, readIn) => msg().workReadElsewhere(w.id, convLabel(w.target ?? readIn), convLabel(readIn)),
-		readHereNote: id => msg().workReadHere(id),
+		readElsewhereNote: (w, readIn) => msg().workReadElsewhere(w.id, convLabel(w.target ?? readIn), convLabel(readIn), workerWords(o)),
+		readHereNote: id => msg().workReadHere(id, workerWords(o)),
 		cardsNote: target => cardsNoteFor(target),
 		hasCardsNote: text => text.startsWith(CARDS_LEAD) || text.includes(`\n${CARDS_LEAD}`),
 		clearProgress: target => void discord.clearProgress(target),
@@ -170,7 +180,7 @@ function makeQueue(key: string, o: Orchestrator, pendingFile: string, bg: () => 
 // A failed worker no turn took up is handed back to its own session, answering in the conversation it served (bgwork.ts handover).
 // A stalled worker (still "running" in OmO's store, no longer working) wakes its session once the same way, and is named in
 // the session's usage-limit resume note when the limit held that wake back.
-const sessionBg = (o: Orchestrator, q: ReturnType<typeof createPrompts>) => {
+const sessionBg = (key: string, o: Orchestrator, q: ReturnType<typeof createPrompts>) => {
 	const to = (w: { target?: string; reply_to?: string }) => (w.target ? { target: w.target, ...(w.reply_to ? { replyTo: w.reply_to } : {}) } : undefined);
 	const bg = createBgWork({
 		sessionFile: () => o.orch.sessionFile, deferred: q.deferredOpen, turn: q.turnAt, answer: workAnswer, log,
@@ -179,8 +189,8 @@ const sessionBg = (o: Orchestrator, q: ReturnType<typeof createPrompts>) => {
 		turnEndedAt: () => o.lastTurnEndAt(),
 		busy: () => o.orch.status === "working" || o.orch.status === "starting",
 		paused: () => o.orch.status === "rate-limited",
-		handover: w => void q.deliver(msg().workFailed(w.description, w.id, w.reason || w.error || "이유가 기록되지 않았어요"), to(w)),
-		stalled: w => void q.deliver(msg().workStalled([w]), to(w)),
+		handover: w => void convs.deliverTo(key, msg().workFailed(w.description, w.id, w.reason || w.error || "이유가 기록되지 않았어요"), to(w)),
+		stalled: w => void convs.deliverTo(key, msg().workStalled([w], workerWords(o)), to(w)),
 		source: o.source,
 		ompWorkers: o.ompWorkers,
 		cancelOmpWorker: id => o.cancelWorker(id),
@@ -188,13 +198,13 @@ const sessionBg = (o: Orchestrator, q: ReturnType<typeof createPrompts>) => {
 	});
 	o.setResumeExtra(() => {
 		const stalled = bg.takeStalled();
-		return stalled.length ? msg().workStalled(stalled) : "";
+		return stalled.length ? msg().workStalled(stalled, workerWords(o)) : "";
 	});
 	return bg;
 };
 export const queue = makeQueue(MAIN, main, PENDING, () => bgWork);
 // The orchestrator's background task workers (what a `[later]` turn waits for), read from OmO's task store: /api/workers, /api/state `work`.
-export const bgWork = sessionBg(main, queue);
+export const bgWork = sessionBg(MAIN, main, queue);
 const mainConv = convs.setMain({ key: MAIN, o: main, queue, bg: bgWork });
 // The rows that name a job in every conversation (hub/workrows.ts): any session's job, read from the agent's task store.
 const taskProjects = () => [...new Set([join(process.env.OMO_CODING_AGENT_DIR ?? process.env.PI_AGENT_DIR ?? join(homedir(), ".omo", "agent"), "projects"), ...(main.orch.sessionFile ? [sessionProjects(main.orch.sessionFile)] : [])])].filter(p => existsSync(p));
@@ -671,8 +681,6 @@ function wireAnswers(c: Conv): void {
 			noteProjectInfo(c.queue.current()?.target ?? c.primary, answer);
 			settleResolves(answer, c.key);
 			const text = stripProjectInfo(answer) || stripResolves(answer);
-			// The request this answer is for: only a [done] / [fail] to the same request can close an earlier question about it (notices.ts).
-			orchestratorAnswered(text, c.queue.current()?.replyTo);
 			c.queue.onAnswer(text);
 		},
 		c.queue.onText,
@@ -697,7 +705,7 @@ export const onConvIdle = (fn: (key: string) => void): void => void (convIdle = 
 setWiring(c => {
 	let bg: ReturnType<typeof createBgWork> | undefined;
 	const q = makeQueue(c.key, c.o, join(c.dir!, "pending.json"), () => bg);
-	bg = sessionBg(c.o, q);
+	bg = sessionBg(c.key, c.o, q);
 	Object.assign(c, { queue: q, bg });
 	wireAnswers(c);
 	c.o.setRestartedHandler(lead => q.reopen(leadWith(replayWrap, lead)));

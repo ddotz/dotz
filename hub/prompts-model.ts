@@ -7,10 +7,16 @@ export type Pending = { text: string; at?: number; target?: string; replyTo?: st
 /** A worker and the request it was spawned for. `also`: follow-ups deferred to it; `receipted`: its line was posted; `delivered`: an answer from its result went out; `read`: its result was read in a run that did not answer it. */
 export type WorkLink = { id: string; target: string; replyTo?: string; at: number; description?: string; also?: string[]; receipted?: boolean; delivered?: boolean; read?: boolean; cancelled?: boolean };
 /** A request waiting on background work, for the gateway's silent-wait check (hub/waitcheck.ts). */
-export type OpenRequest = { target: string; replyTo?: string; from?: string; handback?: true; bookkeeping?: true; at: number; workers: { id: string; description?: string }[] };
+export type OpenRequest = { target: string; replyTo?: string; from?: string; handback?: true; bookkeeping?: true; omp?: true; at: number; workers: { id: string; name?: string; description?: string }[] };
 /** One of this session's background workers, as hub/bgwork.ts lists it (running oldest first, then recently finished newest first). */
 export type WorkRow = { id: string; description?: string; status: "running" | "stalled" | "done" | "failed"; target?: string; replyTo?: string; startedAt: number; endedAt?: number };
 export type Reply = { target: string; replyTo?: string; refs?: string[]; owner?: boolean; deep?: true; from?: string; handback?: true; quiet?: true; bookkeeping?: true; fallback?: string }; // deep: the owner's own words ask for deeper reasoning on this turn (hub/ultrathink.ts); fallback: the answer a rewrite turn replaces, posted as it was if that turn writes nothing; quiet: a system check, see deps.quietNote; refs: every message merged into this prompt
+/** A worker's result the session was just woken with: `in` is the prompted turn it landed in, `waited` that the run it woke said [later]. */
+export type Woke = { id: string; at: number; in?: Prompt; waited?: boolean };
+/** A turn that ran from a delivered prompt, oldest first: a worker belongs to the turn it was spawned in. */
+export type Turn = { prompt: Prompt; start: number; end?: number };
+/** The hand-over labels a prompt carries through pending.json. */
+export const labels = (p: { from?: string; handback?: true; quiet?: true; bookkeeping?: true; fallback?: string }) => ({ ...(p.bookkeeping ? { bookkeeping: true as const } : {}), ...(p.from ? { from: p.from } : {}), ...(p.handback ? { handback: true as const } : {}), ...(p.quiet ? { quiet: true as const } : {}), ...(p.fallback ? { fallback: p.fallback } : {}) });
 
 export type PromptDeps = {
 	/** Keeps the answer of a quiet check (a plain one that does not begin with [ask] or [fail]) as one worklog line; it is posted nowhere else and notifies no one. */
@@ -34,6 +40,10 @@ export type PromptDeps = {
 	/** Is this prompt text a gateway note steered into a turn (not a new request)? */
 	isNote: (text: string) => boolean;
 	regenerated?: (text: string) => boolean; // a gateway nudge the silent-wait check (hub/waitcheck.ts) sends again while due: never replayed
+	answering?: (text: string, replyTo: string | undefined) => void;
+	inProcess?: () => boolean;
+	/** The name the runtime calls a worker by (omp: what `agent://` takes), shown in notes in place of the hub's run key. */
+	nameOf?: (id: string) => string;
 	/** Posts a turn's final answer to the channel that asked. */
 	post: (target: string, text: string, replyTo?: string, opts?: { hushed?: true }) => Promise<{ delivered: boolean }>;
 	/** A gateway note in a conversation that answers nothing (the deferral acknowledgement must not settle the open prompt). */

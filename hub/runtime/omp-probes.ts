@@ -1,8 +1,9 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { withoutApiKeys } from "../apikey-policy.ts";
+import { ompAgentDir } from "../omp-dirs.ts";
 import { removeSessionsFor } from "../cleanup.ts";
-import { parseSelector } from "../config.ts";
+import { parseSelector, splitThinking, THINKING_LEVELS } from "../config.ts";
 import { runLimited } from "../run-limited.ts";
 import { type ProbeOutcome, type Probes, Run } from "./claude-probes.ts";
 import { EXTENSION, ompArgv } from "./omp.ts";
@@ -13,7 +14,6 @@ import type { ProbeCtx } from "./verify.ts";
 export type OmpProbeDeps = { argv: (o: SpawnOpts) => string[]; run: typeof runLimited; forget: (cwd: string) => string[] };
 const REAL_DEPS: OmpProbeDeps = { argv: ompArgv, run: runLimited, forget: removeSessionsFor };
 
-const CHEAP = "anthropic/claude-sonnet-5-5:low";
 const SNAPSHOT_MS = 60_000;
 const PONG = "Reply with exactly the single word PONG and nothing else.";
 const DOTZ_TOOLS = ["dotz_verify", "dotz_merge", "dotz_main", "dotz_recall", "dotz_escalate", "dotz_auth"];
@@ -35,11 +35,34 @@ const TASK_STATUS = /<task-result\b[^>]*\bstatus="([^"]*)"/;
 const fail = (note: string): ProbeOutcome => ({ result: "fail", note });
 const ok = (note: string): ProbeOutcome => ({ result: "ok", note });
 const secs = (ms: number) => `${Math.round(ms / 1000)}s`;
+
+const DEFAULT_EFFORTS = ["low", "high"];
+const MODELS_MS = 30_000;
+
+function effortsOf(stdout: string, model: string): string[] {
+	let models: { provider?: string; id?: string; selector?: string; thinking?: string[] | null }[];
+	try {
+		models = JSON.parse(stdout).models;
+	} catch {
+		return DEFAULT_EFFORTS;
+	}
+	const levels = (Array.isArray(models) ? models : [])
+		.find(m => m.selector === model || `${m.provider}/${m.id}` === model)
+		?.thinking?.filter(l => l !== "off" && (THINKING_LEVELS as readonly string[]).includes(l))
+		.sort((a, b) => (THINKING_LEVELS as readonly string[]).indexOf(a) - (THINKING_LEVELS as readonly string[]).indexOf(b));
+	return levels?.length ? [...new Set([levels[0]!, levels.at(-1)!])] : DEFAULT_EFFORTS;
+}
+
+async function effortLevels(ctx: ProbeCtx, deps: OmpProbeDeps): Promise<string[]> {
+	const bin = deps.argv(spawnOpts(ctx, "effort"))[0]!;
+	const r = await deps.run([bin, "models", "--json"], Math.min(ctx.timeoutMs, MODELS_MS), { cwd: ctx.cwd, env: withoutApiKeys({ ...process.env }) });
+	return r.code === 0 && !r.timedOut ? effortsOf(r.stdout, splitThinking(ctx.model).model) : DEFAULT_EFFORTS;
+}
 const answerOf = (events: AgentEvent[]): string => [...events].reverse().find(e => e.type === "assistant" && e.stop === "stop")?.text ?? "";
 const toolCalls = (events: AgentEvent[]) => events.flatMap(e => (e.type === "activity" && e.row.type === "tool_call" ? [e.row] : []));
 const toolResults = (events: AgentEvent[]) => events.flatMap(e => (e.type === "activity" && e.row.type === "tool_result" ? [e.row] : []));
 
-const ownerDir = (): string => process.env.PI_CODING_AGENT_DIR || join(homeDir(), ".omp", "agent");
+const ownerDir = (): string => ompAgentDir(process.env, homeDir());
 
 function probeData(cwd: string): string {
 	const dir = join(cwd, ".dotz-probe-data");
@@ -54,9 +77,9 @@ function spawnOpts(ctx: ProbeCtx, name: string, extra: Partial<SpawnOpts> = {}):
 	return {
 		role: "lane",
 		cwd: ctx.cwd,
-		model: CHEAP,
+		model: ctx.model,
 		env: probeEnv(ctx.cwd),
-		lane: { name: "probe", dir: join(ctx.cwd, `.dotz-probe-${name}`), workerModel: CHEAP, compactAt: 100_000, keepRecent: 10_000 },
+		lane: { name: "probe", dir: join(ctx.cwd, `.dotz-probe-${name}`), workerModel: ctx.model, compactAt: 100_000, keepRecent: 10_000 },
 		...extra,
 	};
 }
@@ -333,7 +356,7 @@ export function makeOmpProbes(adapter: RuntimeAdapter, deps: OmpProbeDeps = REAL
 		const cwds = new Set<string>();
 		const start: OmpStart = ({ cwd, lane, env, ...o } = {}) => {
 			const through: RuntimeAdapter = { ...adapter, start: s => adapter.start({ ...s, ...(cwd ? { cwd } : {}), ...(lane && s.lane ? { lane: { ...s.lane, ...lane } } : {}) }) };
-			const run = new Run(through, ctx, String(++n), { model: CHEAP, env: { ...probeEnv(ctx.cwd), ...env }, ...o });
+			const run = new Run(through, ctx, String(++n), { model: ctx.model, env: { ...probeEnv(ctx.cwd), ...env }, ...o });
 			runs.push(run);
 			cwds.add(cwd ?? ctx.cwd);
 			return run;
@@ -362,11 +385,13 @@ export function makeOmpProbes(adapter: RuntimeAdapter, deps: OmpProbeDeps = REAL
 			return ok(`prompt -> turn_start, user, assistant(stop) PONG, turn_end in ${((Date.now() - t0) / 1000).toFixed(1)}s`);
 		}),
 
-		model_effort: turns(async (_ctx, start, ms) => {
-			for (const level of ["low", "high"]) {
-				if (!/PONG/i.test(answerOf(await start({ model: `anthropic/claude-sonnet-5-5:${level}` }).turn(PONG, ms)))) return fail(`--model ...:${level} did not run a normal turn`);
+		model_effort: turns(async (ctx, start, ms) => {
+			const levels = await effortLevels(ctx, deps);
+			const base = splitThinking(ctx.model).model;
+			for (const level of levels) {
+				if (!/PONG/i.test(answerOf(await start({ model: `${base}:${level}` }).turn(PONG, ms)))) return fail(`--model ...:${level} did not run a normal turn`);
 			}
-			return ok("provider/model:thinking passes through --model; a low and a high run answered normally");
+			return ok(`provider/model:thinking passes through --model; runs at ${levels.join(" and ")} answered normally`);
 		}),
 
 		resume: turns(async (_ctx, start, ms) => {

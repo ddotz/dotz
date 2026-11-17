@@ -3,6 +3,7 @@
 import type { Dirent } from "node:fs";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
+import { ompSessionsDir } from "./omp-dirs.ts";
 
 export type Runtime = "omp" | "omo";
 // target: the model target the session runs on (orchestrator | lane:<name>), for a worker its parent's; parent: an OmO task worker's parent session id.
@@ -19,7 +20,7 @@ export const OMO_WAKE = new Set(["goal-continuation", "omo-senpi:wake", "senpi-m
 // OmO keeps task workers outside the session tree, in the task stores this file lists (<store>/children/<id>/sessions/<id>/).
 const defaultRoots = (home: string): { dir: string; runtime: Runtime }[] => [
 	{ dir: join(home, ".omo", "agent", "sessions"), runtime: "omo" },
-	{ dir: join(home, ".omp", "agent", "sessions"), runtime: "omp" },
+	{ dir: ompSessionsDir(process.env, home), runtime: "omp" },
 ];
 
 // A session folder is named after the cwd: omp "-<home-relative path with / as ->" (absolute outside home "--<path>--"),

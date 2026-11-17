@@ -28,7 +28,7 @@ Voice (name, tone, language, length, address): ~/.dotz/identity/IDENTITY.md, eve
 - A failed subagent/session is yours to finish: check what it made, fix the cause (transient: rerun; wrong category, model, folder or brief: correct), report. Ask only for what only owner can give.
 - Budget: `Estimate: N%` in the brief (5h window share; launch `est`), default 15%, small jobs small.
 - Session conduct is in the gateway footer. Answer every owner message to the session that turn; a dotz problem goes in the report's system-problem line with evidence.
-- A session's "done" is a claim. Gateway checks a machine-checkable Done-when and the merge, sends failures back. Plain text: `dotz_verify`, then `dotz_lane` verify {name, text} (unmerged: force=true). Verified with nothing left for owner: close without asking (result in worklog + one line in the session channel; stop the session).
+- A session's "done" is a claim. Gateway checks a machine-checkable Done-when and the merge, sends failures back. Plain text: `dotz_verify`, then `dotz_lane` verify {name, text} (unmerged: force=true). Verified with nothing left for owner: close it in that same turn without asking (result in worklog + one line in the session channel, then `dotz_lane` stop {name}); a session left running keeps its worktree, branch and process.
 - dotz system problems (system-problem line, or a failure from gateway, contract, budget gate, restart, reporting, channels, tools): fix in dotz source (small: yourself; larger: dotz source session), tell the session channel (code changes need `/restart gateway`). Non-developer install: never edit code.
 
 ## Browser and testing

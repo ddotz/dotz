@@ -40,6 +40,9 @@ import { BUDGET_MARKER, budgetLine as briefBudgetLine, checkOmoTaskInput as brie
 export { addProjectFooter, FOLDER_RULES_MARKER, livePin, LOOKUP_PIN, ownWorkerPin, pinOmoTaskModel, PROJECT_MARKER, projectFooter, relativizeRoots, shouldIsolate } from "./guard-brief.ts";
 import { applyDirsOf, GIT_APPLY, GIT_APPLY_NAMED, GIT_APPLY_RE, patchIsApplied, patchLanded } from "./guard-patches.ts";
 import { createRepeatGuard, type RepeatCtx, type RepeatEvent } from "./guard-repeat.ts";
+import { codeLockReason, scopeReaches, writeScopes, writtenPaths } from "../hub/codeguard.ts";
+import { evalSpawnBlock, evalSpawnProblem, reviveBrief } from "./guard-spawn.ts";
+export { codeLockReason };
 
 // Active configuration: the defaults until installGuard() loads <DOTZ_DIR>/config.json. The exported checks take their
 // limits as a parameter that defaults to it, so tests pass their own.
@@ -83,6 +86,7 @@ export function laneMergeBlock(command: string, lane = process.env.DOTZ_LANE): s
 
 // Per-job estimate in a brief: "Estimate: N%" = share of the 5h window the worker is expected to use (absent -> budget_default_estimate_percent).
 const ESTIMATE_RE = /^\s*Estimate:\s*(\d+(?:\.\d+)?)\s*%?/im;
+const ISOLATION_FAILED = /isolation_unavailable|Isolated subagent execution could not be prepared/;
 const USAGE_CACHE_MS = 120_000;
 const STATE_MAX_AGE_MS = 7 * 24 * 3600_000;
 const SETTLED_MAX_AGE_MS = 30 * 24 * 3600_000;
@@ -201,7 +205,6 @@ export function quickChatBlock(tool: string, input: any, conv = process.env.DOTZ
 // a conversation's session hands a change to them to main, and a lane (DOTZ_LANE) puts it in its report's "<bot> 몫:" line
 // (hub/forline.ts), so two sessions never write one at once (2026-11-10: a lane wrote memory/owner.md).
 const SHARED_FILES = ["state.json", "RULES.md", "LESSONS.md"];
-const WRITE_TOOLS = new Set(["write", "edit", "multiedit", "apply_patch", "ast_edit", "notebook_edit"]);
 // A shell or eval text writes a shared file only when a write's target is one: a JS/Python write call with it as its target
 // argument, Python open(<it>, "w"|"a"), a shell > / >> right before it, or tee/cp/mv/rm/sed -i/truncate with it as an argument.
 // A bare >, =>, >= or 2>&1 is no write (2026-11-13: 52 of 57 refusals were reads, most of them a lane's first rules read).
@@ -280,9 +283,13 @@ export function sharedWriteBlock(tool: string, input: any, data = dataDir(), con
 		return shared.some(s => (s.endsWith("/") ? abs.startsWith(s) : abs === s));
 	};
 	let writes = false;
-	if (WRITE_TOOLS.has(tool)) {
-		const paths = [input?.path, input?.file_path, ...(Array.isArray(input?.paths) ? input.paths : [])].filter((p): p is string => typeof p === "string");
-		writes = paths.some(hits) || (tool === "apply_patch" && typeof input?.input === "string" && shared.some(s => input.input.includes(s)));
+	const written = writtenPaths(tool, input);
+	const scopes = writeScopes(tool, input, cwd);
+	if (written.length || scopes.length || tool === "apply_patch") {
+		writes =
+			written.some(hits) ||
+			scopes.some(scope => shared.some(s => scopeReaches(scope, s.replace(/\/$/, "")))) ||
+			(tool === "apply_patch" && typeof input?.input === "string" && shared.some(s => input.input.includes(s)));
 	} else if (tool === "bash" || tool === "eval") {
 		const text = shellText(input);
 		const named = shared.some(s => text.includes(s)) || SHARED_FILES.some(f => text.includes(`.dotz/${f}`)) || text.includes(".dotz/memory/");
@@ -408,12 +415,15 @@ export function settleFromText(state: ProjectState, text: string): boolean {
 	return changed;
 }
 
-export function installGuard(pi: any, config: GuardConfig = loadGuardConfig()): void {
-	if (!config.enabled) return;
+export type WorkerRunning = (ctx: unknown, id: string) => boolean;
+
+/** Installs the worker guard and returns whether the guard knows a worker as running (a write to its agent:// steers it, not revives it). Off or deferred to an installed copy, it knows none. */
+export function installGuard(pi: any, config: GuardConfig = loadGuardConfig()): WorkerRunning {
+	if (!config.enabled) return () => false;
 	const installed = config.defer_to_installed ? installedOriginal(pi, "orchestrator-guard") : undefined;
 	if (installed) {
 		logOnce(pi, "guard-deferred", `dotz guard: ${installed} is installed, so dotz's copy of the worker guard stays off (every hook would run twice). Set guard.defer_to_installed to false in <DOTZ_DIR>/config.json to run it anyway.`);
-		return;
+		return () => false;
 	}
 	G = config;
 	host = pi; lookupPin = omoProviderName(loadLookupModel(dataDir(), m => logOnce(pi, "lookup-model", m)));
@@ -485,7 +495,7 @@ export function installGuard(pi: any, config: GuardConfig = loadGuardConfig()): 
 			}
 			if (marked) saveState(current);
 		}
-		if (event.toolName === "task" && /isolation_unavailable/.test(text)) isolationUnavailable.add(current.cwd);
+		if ((event.toolName === "task" || event.toolName === "wait") && ISOLATION_FAILED.test(text)) isolationUnavailable.add(current.cwd);
 		if (event?.isError) return;
 		if (event.toolName === "task") {
 			const fromDetails = (event.details?.progress ?? []).map((p: { id?: string; agentId?: string }) => p?.id ?? p?.agentId).filter(Boolean);
@@ -528,14 +538,14 @@ export function installGuard(pi: any, config: GuardConfig = loadGuardConfig()): 
 				ctx.ui.notify(`orchestrator-guard: expensive-model workers allowed for ${config.override_minutes} minutes.`, "info");
 			},
 		});
-
-		// Dispatch-time check: sees the model the child would really use, whether it came from modelRoles, agentModelOverrides or the call.
-		pi.on("before_subagent_spawn", (event: any) => {
-			const found = fableOk() ? undefined : expensiveModel(event?.patterns);
-			debug({ phase: "spawn-model", agent: event?.agent, patterns: event?.patterns, found });
-			if (found) return { block: true, reason: fableReason(`worker ${event?.agent ?? "task"}`, found) };
-		});
 	}
+	pi.on("before_subagent_spawn", (event: { agent?: unknown; patterns?: unknown }) => {
+		const evalBlock = evalSpawnBlock(event);
+		if (evalBlock) return evalBlock;
+		const found = fableOk() ? undefined : expensiveModel(event?.patterns);
+		debug({ phase: "spawn-model", agent: event?.agent, patterns: event?.patterns, found });
+		if (found) return { block: true, reason: fableReason(`worker ${event?.agent ?? "task"}`, found) };
+	});
 
 	pi.registerCommand("compact-switch", {
 		description: "Compact on the current model first (its cache is still warm), then switch: /compact-switch provider/model[:thinking]",
@@ -613,13 +623,16 @@ export function installGuard(pi: any, config: GuardConfig = loadGuardConfig()): 
 				return { block: true, reason: `orchestrator-guard: workers do not run external-impact commands (${kind}). Finish the rest of the task, and list the exact command under "External actions needed" in your final answer; the orchestrator decides whether to run it.` };
 			}
 		}
-		const shellBlock = (tool === "bash" ? laneMergeBlock(expandShellVars(String(event?.input?.command ?? ""))) : undefined) ?? (tool === "bash" || tool === "eval" ? pipedStatusBlock(shellText(event?.input)) : undefined);
+		const shell = tool === "bash" || tool === "eval" ? shellText(event?.input) : undefined;
+		const shellBlock = shell === undefined ? undefined : (laneMergeBlock(expandShellVars(shell)) ?? pipedStatusBlock(shell));
 		if (shellBlock) return { block: true, reason: shellBlock };
 		const shared = sharedWriteBlock(tool, event?.input, dataDir(), process.env.DOTZ_CONV, process.env.DOTZ_LANE, ctx?.cwd) ?? quickChatBlock(tool, event?.input);
 		if (shared) {
 			debug({ phase: "shared-write-block", tool });
 			return { block: true, reason: shared };
 		}
+		const spawnProblem = evalSpawnProblem(tool, event?.input);
+		if (spawnProblem) return { block: true, reason: spawnProblem };
 		const limitStop = limitStopProblem(tool, event?.input);
 		if (limitStop) return { block: true, reason: limitStop };
 		if (!isMain(ctx)) return;
@@ -630,6 +643,10 @@ export function installGuard(pi: any, config: GuardConfig = loadGuardConfig()): 
 			if (worker && worker.status !== "running") {
 				debug({ phase: "finished-worker-message-block", target, status: worker.status });
 				return { block: true, reason: `orchestrator-guard: worker ${target} already ${worker.status}; a message would revive it and it may redo its earlier work. Spawn a new worker for the follow-up (task) with only the new step.` };
+			}
+			if (worker?.status !== "running") {
+				const brief = reviveBrief(event.input, config);
+				return "reason" in brief ? { block: true, reason: brief.reason } : { input: brief.input };
 			}
 		}
 		if (tool === "task") {
@@ -701,6 +718,7 @@ export function installGuard(pi: any, config: GuardConfig = loadGuardConfig()): 
 		for (const m of event.messages) {
 			const text = typeof m?.content === "string" ? m.content : Array.isArray(m?.content) ? m.content.map((b: any) => b?.text ?? "").join("\n") : "";
 			if ((text.includes("<task-result") || text.includes("task completion")) && settleFromText(current, text)) settled = true;
+			if (text.includes("<task-result") && ISOLATION_FAILED.test(text)) isolationUnavailable.add(current.cwd);
 		}
 		if (settled) saveState(current);
 		let trimmed = 0;
@@ -722,6 +740,7 @@ export function installGuard(pi: any, config: GuardConfig = loadGuardConfig()): 
 		if (trimmed) debug({ phase: "context-trim", trimmed });
 		return trimmed ? { messages } : undefined;
 	});
+	return (ctx, id) => projectState(ctx).workers[id]?.status === "running";
 }
 
 /** The checks of installGuard that bind a task subagent, for a host that runs installGuard for the main agent alone (omp): a broad search, a quick chat's reach and a usage-limit stop line are refused, and a call repeated in a loop is blocked. The compaction wrap-up and stop stay out: the task cap owns a subagent's context. */
@@ -729,9 +748,10 @@ export function installSubagentGuard(pi: { on(name: string, handler: (event: Rep
 	if (!config.enabled || (config.defer_to_installed && installedOriginal(pi, "orchestrator-guard"))) return;
 	const repeat = createRepeatGuard(config);
 	pi.on("tool_result", repeat.record);
+	pi.on("before_subagent_spawn", evalSpawnBlock);
 	pi.on("tool_call", async (event, ctx) => {
 		const tool = String(event?.toolName ?? "");
-		const reason = broadSearchProblem(tool, event?.input) ?? quickChatBlock(tool, event?.input) ?? limitStopProblem(tool, event?.input);
+		const reason = broadSearchProblem(tool, event?.input) ?? quickChatBlock(tool, event?.input) ?? limitStopProblem(tool, event?.input) ?? evalSpawnProblem(tool, event?.input);
 		if (!reason) return repeat.check(event, ctx);
 		debug({ phase: "sub-check-block", agent: ctx?.agent?.id, tool });
 		return { block: true, reason };

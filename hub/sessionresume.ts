@@ -8,8 +8,10 @@
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { writeAtomic } from "./config.ts";
 import { msg } from "./i18n.ts";
-import { interruptedWork, RESTART_WAKE_MAX, saysClosed, takeWake, type Unfinished, wakeStepOf, type Wakes, withWorkers } from "./laneunfinished.ts";
-import { lastAnswerText, ownerAsked } from "./todo.ts";
+import { interruptedWork, RESTART_WAKE_MAX, saysClosed, staleSession, takeWake, type Unfinished, wakeStepOf, type Wakes, withWorkers } from "./laneunfinished.ts";
+import { ompTurnCut } from "./omp-turn.ts";
+import { openTodos } from "./runstate.ts";
+import { lastAnswerText, ownerAsked, readTodo } from "./todo.ts";
 
 export type DeadWorker = { id: string; description: string; target?: string; reply_to?: string };
 export type ResumeSession = {
@@ -83,6 +85,10 @@ export function createSessionResume(d: Deps) {
 		return s.dead().filter(w => (m?.told?.includes(w.id) ? !ran : !s.taken(w.id)));
 	}
 
+	function openPlan(file: string): Unfinished {
+		const todo = openTodos(readTodo(file));
+		return { plan: `${todo.open}:${todo.current ?? ""}`, open: todo.open, ...(todo.current ? { current: todo.current } : {}), workers: [] };
+	}
 	/** One pass; the keys of the sessions it woke. `gate` holds a wake for the budget (or a gateway going down). */
 	async function tick(gate: (name: string) => Promise<boolean> = async () => false, now = Date.now()): Promise<string[]> {
 		const woken: string[] = [];
@@ -90,13 +96,15 @@ export function createSessionResume(d: Deps) {
 			const file = s.file();
 			if (!file || !s.resting()) continue;
 			let dead: DeadWorker[] = [];
-			const work = interruptedWork(file, s.live(), () => (dead = owed(s, file)).map(w => w.description), now);
+			let work = interruptedWork(file, s.live(), () => (dead = owed(s, file)).map(w => w.description), now);
+			const cutTurn = !work && !s.live() && existsSync(file) && !staleSession(file, now) ? ompTurnCut(file) : undefined;
+			if (cutTurn) work = openPlan(file);
 			if (!work) {
 				settle(s.key);
 				continue;
 			}
 			if (wakeStepOf(memo[s.key], PLAN, now) !== "wake") continue;
-			if (onOwner(s, file)) {
+			if (cutTurn ? s.asked() : onOwner(s, file)) {
 				settle(s.key);
 				continue;
 			}

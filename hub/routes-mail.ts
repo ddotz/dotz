@@ -27,6 +27,7 @@ import { FileError, ownerFiles } from "./files.ts";
 import { liveLanes } from "./lanes.ts";
 import { settleHandledDrafts, readConversationNotices, reopenDraftNotices } from "./notices.ts";
 import { out } from "./outbound.ts";
+import { convs } from "./convsessions.ts";
 import { json, body, BodyError } from "./routes-util.ts";
 
 // The pending reply drafts of one mail are dropped (the same store step as 보내지 않기) and their approval cards settled at once.
@@ -42,6 +43,7 @@ const dropMailDrafts = async (key: string) => {
 const removeMailLocal = async (key: string): Promise<boolean> => {
 	if (!deleteMail(key)) return false;
 	await dropMailDrafts(key);
+	await convs.remove(mailTarget(key)).catch(e => log(`mail ${key}: conversation session not deleted: ${(e as Error).message}`));
 	readConversationNotices(mailTarget(key), new Date().toISOString());
 	broadcast({ kind: "mail_unreplied", target: mailTarget(key) });
 	return true;

@@ -2,11 +2,12 @@
 // uploads and the OmO sessions of deleted temp folders go, and open tasks waiting on an ended lane are closed with a
 // reason into a history file instead of lingering in state.json.
 import { expect, test } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { gunzipSync } from "node:zlib";
-import { closeDeadLaneTasks, LIMIT_WAIT_STALE_MS, waitsForOwner, pruneArchives, pruneTempSessions, pruneUploads, removeSessionsFor, rotateFile } from "./cleanup.ts";
+import { closeDeadLaneTasks, LIMIT_WAIT_STALE_MS, waitsForOwner, pruneArchives, pruneTempSessions, pruneUploads, removeSessionsFor, rotateFile, sessionFolders } from "./cleanup.ts";
+import { ompAgentDir, ompSessionsDir } from "./omp-dirs.ts";
 
 const NOW = Date.parse("2026-10-20T09:00:00Z");
 const DAY = 86_400_000;
@@ -70,7 +71,7 @@ test("idle sessions of mkdtemp folders and of deleted /tmp folders are pruned; l
 	mk("var-recent", varRoot, 60_000);
 	mk("tmp-gone-idle", "/tmp/dotz-cleanup-no-such-dir", 2 * DAY);
 	mk("tmp-exists", tmpLive, 2 * DAY);
-	mk("not-temp", "/Users/nobody-dotz-test/deleted", 2 * DAY);
+	mk("not-temp", "/srv/dotz-test/deleted", 2 * DAY);
 	mk("tmp-root", "/private/tmp", 2 * DAY);
 	const r = pruneTempSessions(sessions, DAY, NOW);
 	expect(r.removed).toEqual(["tmp-gone-idle", "var-idle"]);
@@ -86,6 +87,50 @@ test("a probe's own sessions go by cwd, in either /var or /private/var spelling"
 	}
 	expect(removeSessionsFor("/var/folders/x/T/dotz-verify-omo-AAA", [sessions, join(sessions, "missing")])).toEqual(["a"]);
 	expect(readdirSync(sessions).sort()).toEqual(["b", "c"]);
+});
+
+const ompFile = (cwd: string): string => `${JSON.stringify({ type: "title", title: "t", pad: " ".repeat(200) })}\n${JSON.stringify({ type: "session", cwd })}\n{"type":"message"}\n`;
+
+test("omp session files start with a title record: the cwd on the second line is found by pruning and by removal", () => {
+	const sessions = tmp();
+	const varRoot = tmp();
+	for (const [name, cwd] of [["idle", varRoot], ["real", "/srv/dotz-test/deleted"]]) {
+		const d = join(sessions, name!);
+		mkdirSync(d);
+		const f = join(d, "s.jsonl");
+		writeFileSync(f, ompFile(cwd!));
+		age(f, 2 * DAY);
+		age(d, 2 * DAY);
+	}
+	expect(pruneTempSessions(sessions, DAY, NOW).removed).toEqual(["idle"]);
+	expect(readdirSync(sessions)).toEqual(["real"]);
+	mkdirSync(join(sessions, "probe"));
+	writeFileSync(join(sessions, "probe", "s.jsonl"), ompFile("/private/var/folders/x/T/dotz-verify-omp-AAA"));
+	expect(removeSessionsFor("/var/folders/x/T/dotz-verify-omp-AAA", [sessions])).toEqual(["probe"]);
+});
+
+test("session folders are found by the cwd in the header, whatever the folder is called, and by its real path", () => {
+	const sessions = tmp();
+	const real = mkdtempSync(join(tmpdir(), "dotz-cleanup-real-"));
+	for (const [name, cwd] of [["one", real], ["two", "/srv/x/other"]]) {
+		mkdirSync(join(sessions, name!));
+		writeFileSync(join(sessions, name!, "s.jsonl"), ompFile(cwd!));
+	}
+	expect(sessionFolders(real, [sessions, join(sessions, "missing")])).toEqual([join(sessions, "one")]);
+	expect(sessionFolders(realpathSync(real), [sessions])).toEqual([join(sessions, "one")]);
+	expect(sessionFolders("/srv/x/none", [sessions])).toEqual([]);
+	rmSync(real, { recursive: true, force: true });
+});
+
+test("omp's agent folder follows its profile and directory variables", () => {
+	expect(ompAgentDir({}, "/h")).toBe("/h/.omp/agent");
+	expect(ompSessionsDir({}, "/h")).toBe("/h/.omp/agent/sessions");
+	expect(ompAgentDir({ PI_CODING_AGENT_DIR: "/x/agent" }, "/h")).toBe("/x/agent");
+	expect(ompAgentDir({ PI_CONFIG_DIR: ".pi" }, "/h")).toBe("/h/.pi/agent");
+	expect(ompAgentDir({ OMP_PROFILE: "work" }, "/h")).toBe("/h/.omp/profiles/work/agent");
+	expect(ompSessionsDir({ PI_PROFILE: "work", PI_CODING_AGENT_DIR: "/x/agent" }, "/h")).toBe("/h/.omp/profiles/work/agent/sessions");
+	expect(ompAgentDir({ OMP_PROFILE: "default", PI_CODING_AGENT_DIR: "/x/agent" }, "/h")).toBe("/x/agent");
+	expect(ompAgentDir({ OMP_PROFILE: "  " }, "/h")).toBe("/h/.omp/agent");
 });
 
 test("open tasks of an ended lane move to the history file with a reason; others and other keys stay", () => {

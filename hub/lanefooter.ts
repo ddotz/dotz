@@ -10,6 +10,7 @@ import { languageName } from "./language.ts";
 import { identityText } from "./recall-contract.ts";
 import { dir, type Lane, laneWorkerModel } from "./lanestate.ts";
 import { laneLimits } from "./lanelimits.ts";
+import { HARNESS_NAMES, runtimeFor } from "./runtime/index.ts";
 import { worktreeNote } from "./lanetree.ts";
 
 export function footer(lane: Lane): string {
@@ -17,7 +18,7 @@ export function footer(lane: Lane): string {
 	// The owner's verbatim don'ts (memory/boundaries.md) bind a lane too; the empty template adds nothing.
 	const boundaries = existsSync(paths.boundaries) ? readFileSync(paths.boundaries, "utf8").trim() : "";
 	const donts = boundaries.includes("\n- [") ? `\n\n${boundaries}` : "";
-	return withReplyLine(msg().footer({ lane: lane.name, language: languageName(lang()), mode: modeFile(), workerModel: laneWorkerModel(lane), slots: lane.workerSlots ?? laneLimits(lane).workers, worktree: worktreeNote(lane.worktree), identity: identityText(DATA_DIR).trim() })) + donts + (features ? `\n\n${features}` : "");
+	return withReplyLine(msg().footer({ lane: lane.name, language: languageName(lang()), mode: modeFile(), workerModel: laneWorkerModel(lane), slots: lane.workerSlots ?? laneLimits(lane).workers, worktree: worktreeNote(lane.worktree), identity: identityText(DATA_DIR).trim(), harness: HARNESS_NAMES[runtimeFor("lane").id] })) + donts + (features ? `\n\n${features}` : "");
 }
 
 /** Writes the footer into the lane's dir and returns the path (the extension gets it as DOTZ_LANE_CONTRACT). */

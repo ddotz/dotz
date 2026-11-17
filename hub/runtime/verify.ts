@@ -7,11 +7,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { removeSessionsFor } from "../cleanup.ts";
 import { withRealProbes } from "./claude-probes.ts";
-import { cfg, DATA_DIR, log, now, orchestratorModel, selectorOf, setRuntime, writeAtomic } from "../config.ts";
+import { DATA_DIR, log, now, orchestratorModel, pendingRuntimes, selectorOf, setRuntime, writeAtomic } from "../config.ts";
 import { broadcast } from "../events.ts";
 import { codex } from "./detect.ts";
-import { adapters, DEFAULT_RUNTIME } from "./index.ts";
+import { adapters } from "./index.ts";
+import { loginCommand, loginOf, type LoginState } from "./login.ts";
 import { makeOmpProbes } from "./omp-probes.ts";
+import { configuredRuntime, DEFAULT_RUNTIME } from "./runtime-id.ts";
 import type { DetectResult, RuntimeAdapter, RuntimeId } from "./types.ts";
 
 export type CheckResult = "ok" | "adapted" | "disabled" | "unsupported" | "fail" | "unknown";
@@ -123,6 +125,17 @@ const withTimeout = <T>(p: Promise<T>, ms: number): Promise<T> => {
 
 export type VerifyOpts = { adapter?: Probing; probes?: Record<string, Probe>; model?: string; timeoutMs?: number; version?: string; persist?: boolean; real?: boolean };
 
+const WORKER_ITEM_MS = 360_000;
+const itemMs = (): number => Number(process.env.DOTZ_VERIFY_TIMEOUT_MS ?? 90_000);
+const limitOf = (itemId: string, timeoutMs: number): number => (itemId.startsWith("workers_") ? Math.max(timeoutMs, WORKER_ITEM_MS) : timeoutMs);
+
+const limitsOf = (id: RuntimeId, timeoutMs = itemMs()) => ({
+	items: checklistFor(id).length,
+	item_s: Math.round(timeoutMs / 1000),
+	worker_s: Math.round(limitOf("workers_", timeoutMs) / 1000),
+	max_min: Math.ceil(checklistFor(id).reduce((t, c) => t + limitOf(c.id, timeoutMs), 0) / 60_000),
+});
+
 // Runs every checklist item, never throws. Without an adapter every item fails; without a probe it is unsupported.
 export async function verifyRuntime(id: RuntimeId, o: VerifyOpts = {}): Promise<VerifyReport> {
 	// The state is registered before the first await, so startVerify() hands out this same object.
@@ -143,7 +156,7 @@ export async function verifyRuntime(id: RuntimeId, o: VerifyOpts = {}): Promise<
 		} else {
 			const probes = o.probes ?? (adapter as Probing).probes ?? (id === "omp" ? makeOmpProbes(adapter) : {});
 			const model = o.model ?? selectorOf(orchestratorModel());
-			const timeoutMs = o.timeoutMs ?? Number(process.env.DOTZ_VERIFY_TIMEOUT_MS ?? 90_000);
+			const timeoutMs = o.timeoutMs ?? itemMs();
 			cwd = mkdtempSync(join(tmpdir(), `dotz-verify-${id}-`));
 			for (const c of checklistFor(id)) {
 				state.current = c.label;
@@ -154,7 +167,7 @@ export async function verifyRuntime(id: RuntimeId, o: VerifyOpts = {}): Promise<
 					note(`probe ${c.id} start`);
 					try {
 						// A worker item runs a real worker (and, isolated, snapshots the repo) and may need a second turn for its result.
-						const limit = c.id.startsWith("workers_") ? Math.max(timeoutMs, 360_000) : timeoutMs;
+						const limit = limitOf(c.id, timeoutMs);
 						r = await withTimeout(probe({ cwd, model, log: s => note(`${c.id}: ${s}`), timeoutMs: limit }), limit);
 					} catch (e) {
 						r = { result: "fail", note: String((e as Error)?.message ?? e).slice(0, 300) };
@@ -197,11 +210,30 @@ export function startVerify(id: RuntimeId, o: VerifyOpts = {}): VerifyState {
 
 export class UseRefused extends Error {}
 
-export function refusalFor(id: string, detected: Detected | undefined, report: VerifyReport | undefined): string | undefined {
+const NO_LOGIN: LoginState = { checked: false, ready: false, accounts: 0 };
+const LOGIN_CACHE_MS = 30_000;
+export const LOGIN_REFUSAL = "로그인이 안 돼 있어요. 먼저 로그인해 주세요";
+const loginCache = new Map<string, { at: number; state: LoginState }>();
+
+async function loginFor(d: Detected | undefined, fresh = false): Promise<LoginState> {
+	if (!d?.installed || !d.hasAdapter) return NO_LOGIN;
+	const hit = loginCache.get(d.id);
+	if (!fresh && hit && Date.now() - hit.at < LOGIN_CACHE_MS) return hit.state;
+	const state = await loginOf(d.id, d.path);
+	loginCache.set(d.id, { at: Date.now(), state });
+	return state;
+}
+
+export async function loginView(id: RuntimeId) {
+	return { id, ...(await loginFor((await detectAll()).find(d => d.id === id), true)), command: loginCommand(id) };
+}
+
+export function refusalFor(id: string, detected: Detected | undefined, report: VerifyReport | undefined, login?: LoginState): string | undefined {
 	if (!RUNTIME_IDS.includes(id as RuntimeId)) return `알 수 없는 작업 프로그램이에요: ${id}`;
-	if (id === DEFAULT_RUNTIME && detected?.installed && detected.hasAdapter) return undefined;
 	if (!detected?.installed) return "설치되어 있지 않아요";
 	if (!detected.hasAdapter) return "dotz가 아직 지원하지 않아요";
+	if (id === DEFAULT_RUNTIME) return undefined;
+	if (login?.checked && !login.ready) return LOGIN_REFUSAL;
 	if (states.get(id)?.running) return "작동 검사가 아직 끝나지 않았어요";
 	if (!report) return "작동 검사를 먼저 해야 해요";
 	// The stored verdict is not trusted: it is recomputed, and a report missing a core item counts as blocked.
@@ -211,9 +243,10 @@ export function refusalFor(id: string, detected: Detected | undefined, report: V
 	return undefined;
 }
 
-// Writes the choice to config.json for the chosen roles. Returns the roles written; nothing is restarted.
-export async function useRuntime(id: string, roles: UseRole[], detected?: Detected[]): Promise<UseRole[]> {
-	const reason = refusalFor(id, (detected ?? (await detectAll(true))).find(d => d.id === id), lastReport(id));
+/** Writes the choice to config.json for the chosen roles and returns the roles written; the running gateway applies it at its next start. */
+export async function useRuntime(id: string, roles: UseRole[], detected?: Detected[], login?: LoginState): Promise<UseRole[]> {
+	const d = (detected ?? (await detectAll(true))).find(x => x.id === id);
+	const reason = refusalFor(id, d, lastReport(id), login ?? (await loginFor(d, true)));
 	if (reason) throw new UseRefused(reason);
 	const chosen = roles.filter((r, i) => (r === "orchestrator" || r === "lanes") && roles.indexOf(r) === i);
 	if (!chosen.length) throw new UseRefused("적용할 대상이 없어요 (orchestrator, lanes)");
@@ -221,20 +254,34 @@ export async function useRuntime(id: string, roles: UseRole[], detected?: Detect
 	return chosen;
 }
 
-// What config.json currently selects per role (before the hub's default for a name without an adapter).
-export const currentRuntimes = () => ({ orchestrator: cfg.orchestrator?.runtime ?? cfg.runtime ?? DEFAULT_RUNTIME, lanes: cfg.lanes?.runtime ?? cfg.runtime ?? DEFAULT_RUNTIME });
+/** What the running gateway's processes use per role (the config as it was read at start). */
+export const currentRuntimes = () => ({ orchestrator: configuredRuntime("orchestrator"), lanes: configuredRuntime("lane") });
 
-export async function runtimesView(refresh = false) {
+const pendingOf = (): Record<UseRole, string> => {
+	const p = pendingRuntimes();
+	return { orchestrator: p.orchestrator ?? DEFAULT_RUNTIME, lanes: p.lanes ?? DEFAULT_RUNTIME };
+};
+
+export async function runtimesView(refresh = false, login: (d: Detected, fresh: boolean) => Promise<LoginState> = loginFor) {
 	const current = currentRuntimes();
+	const pending = pendingOf();
+	const roles = Object.keys(current) as UseRole[];
+	const list = await detectAll(refresh);
+	const logins = await Promise.all(list.map(d => login(d, refresh)));
 	return {
 		current,
+		pending,
+		restart_needed: roles.some(r => current[r] !== pending[r]),
 		checklist: CHECKLIST,
-		runtimes: (await detectAll(refresh)).map(d => {
+		runtimes: list.map((d, i) => {
 			const report = lastReport(d.id);
-			const refusal = refusalFor(d.id, d, report);
+			const refusal = refusalFor(d.id, d, report, logins[i]);
 			return {
 				...d,
-				roles: (Object.keys(current) as UseRole[]).filter(r => current[r] === d.id),
+				roles: roles.filter(r => current[r] === d.id),
+				pending_roles: roles.filter(r => pending[r] === d.id),
+				login: { ...logins[i]!, command: loginCommand(d.id) },
+				limits: limitsOf(d.id),
 				report: report ? { at: report.at, version: report.version, verdict: report.verdict, counts: countResults(report.items) } : null,
 				state: verifyState(d.id) ?? null,
 				switchable: !refusal,

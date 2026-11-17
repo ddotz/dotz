@@ -3,14 +3,13 @@
 // when. A lane that must wait keeps its place: it is looked at again on the next tick and never dropped. A resume also waits while a
 // gateway restart drains, since the restart brings it back anyway and a new turn would only hold the restart up.
 import { existsSync } from "node:fs";
-import { deadOmoWork } from "./bgwork.ts";
 import { log } from "./config.ts";
 import { msg } from "./i18n.ts";
 import { launchWait, waitingLanes } from "./lanelimits.ts";
 import { laneBusy, lanes, sendToLane } from "./lanes.ts";
 import { runtimeMismatch } from "./lanerun.ts";
 import type { Lane } from "./lanestate.ts";
-import { claimWake, unfinishedWork, wakeStep, withWorkers } from "./laneunfinished.ts";
+import { claimWake, deadWork, named, unfinishedWork, wakeStep, withWorkers } from "./laneunfinished.ts";
 import { trackTimer } from "./shutdown.ts";
 
 export const RESUME_SWEEP_MS = 60_000;
@@ -26,10 +25,7 @@ export type ResumeDeps = {
 
 let budgetHold = 0;
 let stopped = false;
-// Dead workers a live lane was already told about: its turn cannot close their records, so one is named once.
-const named = new Set<string>();
-
-const nameless = (lane: Lane) => deadOmoWork(lane.sessionFile).filter(w => !named.has(w.id));
+const nameless = (lane: Lane) => deadWork(lane).filter(w => !named.has(w.id));
 function candidate(lane: Lane): boolean {
 	if (!lane.sessionFile || lane.waiting || lane.revive || lane.status === "rate-limited" || lane.status === "working" || lane.status === "starting") return false;
 	// lanereconnect.ts owns an outage: a resume now would only fail on the same dead network. quiet without parked: a restart in place.
@@ -54,7 +50,7 @@ function wake(lane: Lane, work: NonNullable<ReturnType<typeof unfinishedWork>>, 
 		return false;
 	}
 	lane.resumeDue = undefined;
-	for (const w of deadOmoWork(lane.sessionFile)) named.add(w.id);
+	for (const w of deadWork(lane)) named.add(w.id);
 	const note = lane.refused?.text ?? withWorkers(msg().laneResumeContinue(work.open, work.current ?? ""), work.workers);
 	// Its retry timer may still be running: a crash does not end it, and the message must go once.
 	clearTimeout(lane.refusedTimer);

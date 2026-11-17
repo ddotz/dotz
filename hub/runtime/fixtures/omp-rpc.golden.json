@@ -1006,18 +1006,7 @@
   ],
   "sends": [],
   "compactionError": null,
-  "derived": {
-   "assistant": {
-    "text": "",
-    "answer": false,
-    "stop": "error",
-    "error": {
-     "text": "overloaded_error: please retry",
-     "kind": "transient",
-     "compaction": false
-    }
-   }
-  }
+  "derived": {}
  },
  {
   "line": 31,

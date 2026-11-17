@@ -516,3 +516,36 @@ test("verify for omp with its own probes and no omp binary reports nothing ok th
 	expect(report.items.find(i => i.id === "handover")!.result).toBe("adapted");
 	expect(report.verdict).toBe("blocked");
 });
+
+const answering = (): React => ({ kind, text }) => (kind === "prompt" ? exchange(text, "PONG", 0) : []);
+const modelsList = (thinking: string[] | null) => JSON.stringify({ models: [{ provider: "anthropic", id: "claude-opus-5-5", kind: "chat", selector: "anthropic/claude-opus-5-5", thinking }] });
+
+test("model_effort: the runs use the configured model at the lowest and highest level omp lists for it", async () => {
+	const starts: SpawnOpts[] = [];
+	const calls: Call[] = [];
+	const probes = makeOmpProbes(withOmp(answering, starts), fakeDeps({ stdout: modelsList(["off", "high", "minimal", "medium", "xhigh"]) }, calls));
+	const r = await live(() => probes.model_effort!({ ...ctx, model: "anthropic/claude-opus-5-5:medium" }));
+	expect(r.result).toBe("ok");
+	expect(calls.map(c => c.argv.slice(1))).toEqual([["models", "--json"]]);
+	expect(starts.map(s => s.model)).toEqual(["anthropic/claude-opus-5-5:minimal", "anthropic/claude-opus-5-5:xhigh"]);
+});
+
+test("model_effort: a model with no thinking list, an unknown model or a failed listing falls back to low and high", async () => {
+	for (const answer of [{ stdout: modelsList(null) }, { stdout: modelsList([]) }, { stdout: "not json" }, { code: 1, stdout: modelsList(["minimal", "xhigh"]) }]) {
+		const starts: SpawnOpts[] = [];
+		const probes = makeOmpProbes(withOmp(answering, starts), fakeDeps(answer));
+		expect((await live(() => probes.model_effort!({ ...ctx, model: "anthropic/claude-opus-5-5" }))).result).toBe("ok");
+		expect(starts.map(s => s.model)).toEqual(["anthropic/claude-opus-5-5:low", "anthropic/claude-opus-5-5:high"]);
+	}
+	const starts: SpawnOpts[] = [];
+	const probes = makeOmpProbes(withOmp(answering, starts), fakeDeps({ stdout: modelsList(["minimal", "xhigh"]) }));
+	await live(() => probes.model_effort!({ ...ctx, model: "someone/else" }));
+	expect(starts.map(s => s.model)).toEqual(["someone/else:low", "someone/else:high"]);
+});
+
+test("a probe's turn runs on the configured model, and so does its worker", async () => {
+	const starts: SpawnOpts[] = [];
+	const probes = makeOmpProbes(withOmp(answering, starts), fakeDeps({}));
+	await live(() => probes.turn!({ ...ctx, model: "anthropic/claude-opus-5-5:medium" }));
+	expect(starts.map(s => [s.model, s.lane?.workerModel])).toEqual([["anthropic/claude-opus-5-5:medium", "anthropic/claude-opus-5-5:medium"]]);
+});

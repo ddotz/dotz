@@ -1,12 +1,12 @@
 import { expect, test } from "bun:test";
 import { inboxText } from "../hub/intake.ts";
 import { MAIL_TURN_MARK, mailTurnDeny } from "../hub/systemdeny.ts";
-import { installMailTurn } from "./mail-turn.ts";
+import { createMailTurnState, installMailTurn, type MailTurnState } from "./mail-turn.ts";
 
 // A stand-in host: handlers by event name, fired in order the way the agent process does.
-const host = () => {
+const host = (state: MailTurnState = createMailTurnState()) => {
 	const on = new Map<string, (event: any) => any>();
-	installMailTurn({ on: (name: string, fn: (event: any) => any) => void on.set(name, fn) }, MAIL_TURN_MARK, mailTurnDeny);
+	installMailTurn({ on: (name: string, fn: (event: any) => any) => void on.set(name, fn) }, MAIL_TURN_MARK, mailTurnDeny, state);
 	return {
 		input: (text: string) => on.get("input")!({ text, source: "rpc" }),
 		end: () => on.get("agent_end")!({}),
@@ -61,4 +61,49 @@ test("the mark holds until the turn ends, then the next owner turn is free", () 
 	h.end();
 	h.input("owner asks");
 	expect(h.bash("bun hub/secrets-cli.ts get a")).toBeUndefined();
+});
+
+test("a subagent of a mail turn is bound by the mail turn though it never sees the input event; its own end does not free the parent's turn", () => {
+	const state = createMailTurnState();
+	const main = host(state);
+	const sub = host(state);
+	expect(sub.bash("cat ~/.dotz/secrets/hub-token")).toBeUndefined();
+	main.input(mail());
+	for (const command of exfil) expect(sub.bash(command)?.block, command).toBe(true);
+	expect(sub.cell("await Bun.$`bun hub/secrets-cli.ts get a`")?.block).toBe(true);
+	sub.end();
+	expect(main.bash("bun hub/secrets-cli.ts get a")?.block).toBe(true);
+	main.end();
+	expect(sub.bash("bun hub/secrets-cli.ts get a")).toBeUndefined();
+});
+
+test("F6-05: a background worker spawned during a mail turn stays bound after the parent's turn ends, until its own turn ends; one spawned in an owner turn is free", () => {
+	const state = createMailTurnState();
+	const main = host(state);
+	main.input(mail());
+	const late = host(state);
+	main.end();
+	for (const command of exfil) expect(late.bash(command)?.block, command).toBe(true);
+	expect(late.cell("await Bun.$`bun hub/secrets-cli.ts get a`")?.block).toBe(true);
+	expect(main.bash("bun hub/secrets-cli.ts get a")?.block).toBe(true);
+	late.end();
+	expect(main.bash("bun hub/secrets-cli.ts get a")).toBeUndefined();
+	main.input("owner asks");
+	const free = host(state);
+	main.end();
+	expect(free.bash("bun hub/secrets-cli.ts get a")).toBeUndefined();
+});
+
+test("without a state passed, runners of one process share the mail turn", () => {
+	const make = () => {
+		const on = new Map<string, (event: any) => any>();
+		installMailTurn({ on: (name: string, fn: (event: any) => any) => void on.set(name, fn) }, MAIL_TURN_MARK, mailTurnDeny);
+		return on;
+	};
+	const main = make();
+	const sub = make();
+	main.get("input")!({ text: mail(), source: "rpc" });
+	expect(sub.get("tool_call")!({ toolName: "bash", input: { command: "cat ~/.dotz/secrets/hub-token" } })?.block).toBe(true);
+	main.get("agent_end")!({});
+	expect(sub.get("tool_call")!({ toolName: "bash", input: { command: "cat ~/.dotz/secrets/hub-token" } })).toBeUndefined();
 });

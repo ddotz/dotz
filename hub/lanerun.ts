@@ -6,7 +6,8 @@ import { isExpensive } from "./lanegates.ts";
 import { markSteers, steerContract, steerToken } from "./steer-mark.ts";
 import { hubChain, Chain, keyedWorker, Reverter, workerKeyEnv } from "./fallback.ts";
 import { pauseExhausted } from "./lanefailover.ts";
-import { statusActivity, endSubagents, runningSubagents } from "./activity.ts";
+import { statusActivity, endSubagents } from "./activity.ts";
+import { laneLive } from "./lanehold.ts";
 import { createStuckWatch, stuckLine, takeSnapshot } from "./stuck.ts";
 import { readEvents } from "./laneevents.ts";
 import { abandonCompact } from "./context.ts";
@@ -21,10 +22,8 @@ import { unfinishedWork } from "./laneunfinished.ts";
 export const RECOVERY_MAX = 3;
 export const RECOVERY_WINDOW_MS = 60 * 60_000;
 
-// One stuck-turn watch per lane (hub/stuck.ts): fed by the lane's events (laneevents.ts), it aborts a turn that shows no progress for
-// stuckTurnMs() and recovers the lane on the same session when the abort does not end the turn. Waiting on a subagent, a compaction or
-// an owner question is not a stall. The line goes to the lane's own channel only; past the hourly cap the orchestrator is told once.
 const watches = new WeakMap<Lane, ReturnType<typeof createStuckWatch>>();
+/** One stuck-turn watch per lane (hub/stuck.ts), fed by the lane's events (laneevents.ts): it aborts a turn that shows no progress for stuckTurnMs() and recovers the lane on the same session when the abort does not end the turn. A running subagent excuses a silent turn only while it sits in wait or task; a compaction and an owner question excuse it too. The line goes to the lane's own channel only; past the hourly cap the orchestrator is told once. */
 export function laneStuck(lane: Lane): ReturnType<typeof createStuckWatch> {
 	let w = watches.get(lane);
 	if (!w) {
@@ -32,8 +31,8 @@ export function laneStuck(lane: Lane): ReturnType<typeof createStuckWatch> {
 			key: `lane:${lane.name}`,
 			pid: () => lane.proc?.pid,
 			sessionFile: () => lane.sessionFile,
-			exempt: () => lane.status !== "working" || !lane.proc || runningSubagents(`lane:${lane.name}`) > 0 || lane.ctx.compaction.state === "queued" || lane.ctx.compaction.state === "compacting" || Boolean(lane.pendingAsk),
-			abort: () => lane.proc?.abort(),
+			exempt: () => lane.status !== "working" || !lane.proc || (laneLive(lane) > 0 && w!.waiting()) || lane.ctx.compaction.state === "queued" || lane.ctx.compaction.state === "compacting" || Boolean(lane.pendingAsk),
+			abort: () => lane.proc?.abort(lane.runtime === "omp"),
 			restart: why => recover(lane, `${why} (턴이 끝나지 않았어요)`, true, true),
 			stuck: minutes => hooks.notice(lane, `작업이 ${minutes}분 동안 멈춰 있어서 끊고 다시 이어가요.`),
 			capped: minutes => hooks.report(lane, `[lane stuck] 턴이 ${minutes}분 동안 멈춰 있어요. 한 시간 안에 ${RECOVERY_MAX}번 자동 복구했는데 또 멈춰서 더는 건드리지 않아요. 직접 확인해 주세요.`),

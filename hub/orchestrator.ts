@@ -14,7 +14,7 @@ import { cfg, chainAfter, compactAtFor, DATA_DIR, DEFAULTS, fallbackChain, HUB_T
 import { isNote, msg } from "./i18n.ts";
 import { markSteers, steerContract, steerToken } from "./steer-mark.ts";
 import { compactInstructions } from "./compact-instructions.ts";
-import { abandonCompact, abortAhead, type CompactPort, type Compaction, flushCompact, newCtx, noteEvent, requestAhead, requestCompact, type RestFacts, restAhead } from "./context.ts";
+import { abandonCompact, abortAhead, type Compaction, flushCompact, newCtx, noteEvent, requestAhead, requestCompact, type RestFacts, restAhead } from "./context.ts";
 import { limitPauseState, limitWatchNow } from "./limit-watch.ts";
 import { stalePauseEnded } from "./pause-ended.ts";
 import { anthropicUsage, type ProviderErrorKind, rateLimitDelay, TRANSIENT_RETRIES, transientBackoff } from "./providers.ts";
@@ -28,10 +28,12 @@ import { atTime, Chain, ERROR_STREAK_STOP, ErrorStreak, failsOver, failureReason
 import type { AgentError, AgentProcess, RuntimeAdapter } from "./runtime/types.ts";
 import { orchestratorTurnStarted } from "./notices.ts";
 import { errorKo } from "./notice.ts";
-import { errorAskHold, noteErrorAsked, type OrchError, plainError } from "./orch-error.ts";
+import type { OrchError } from "./orch-error.ts";
+import { createCompaction } from "./orch-compaction.ts";
+import { createErrorEpisode } from "./orch-episode.ts";
 import { LATER_LINE, stripLater } from "./tone.ts";
 import { checkSoon as checkAccountSoon } from "./account-rules.ts";
-import { handover, lastAnswerAt, newOrchState, recallText } from "./orchestrator-parts.ts";
+import { handover, lastAnswerAt, newOrchState, recallText, startedIndex } from "./orchestrator-parts.ts";
 import { noteModelChange } from "./model-guard.ts";
 import { orchStuck, takeSnapshot } from "./stuck.ts";
 import { createOwnerCancel, stopFound, type StopFound } from "./ownerstop.ts";
@@ -95,6 +97,7 @@ export function createOrchestrator(opts: OrchOpts) {
 	// window answer out of someone else's context (owner 2026-11-03: "대화창 간에 서로 답변 꼬임").
 	const carriesAsks = opts.asks !== false;
 	const chosen = () => (opts.model?.() ? parseSelector(opts.model()!) : orchestratorModel());
+	const workersFor = (model: string): string => workersOf(opts.model?.() ? selectorOf(orchestratorModel()) : model);
 	// This session's compaction point, from the model it is running now (config context.models or orchestrator.rotate_tokens).
 	const compactAt = () => compactAtFor(orch.activeModel || selectorOf(chosen()), cfg.orchestrator?.rotate_tokens ?? DEFAULTS.rotate_tokens);
 	const orch = newOrchState();
@@ -106,11 +109,15 @@ export function createOrchestrator(opts: OrchOpts) {
 	let adapter: RuntimeAdapter | undefined;
 	const orchestratorPid = (): number | undefined => proc?.pid;
 	const feed = createOmpFeed({ source: opts.source, process: () => proc, omp: () => adapter?.id === "omp", free: () => !rotating && !restarting && !compacting() });
-	const { count: workerCount, live: liveWorkers, list: ompWorkers, tell } = feed;
+	const { count: workerCount, tasks: taskCount, live: liveWorkers, list: ompWorkers, tell } = feed;
 	const hold = createWorkerHold({ process: () => proc, live: liveWorkers, log: line => log(`${who} ${line}`) });
-	const restartWhenFree = (why: string): void => hold.run(why, () => restart(why));
+	function restartWhenFree(why: string): boolean {
+		let went = false;
+		hold.run(why, () => (orch.status === "working" ? (pendingRestart = why) : (restart(why), (went = true))));
+		return went;
+	}
 	// A turn with no progress for stuckTurnMs() is aborted (its request stays open), then restarted when the abort does not end it (hub/stuck.ts).
-	const stuck = orchStuck({ key: opts.key, pid: orchestratorPid, sessionFile: () => orch.sessionFile, working: () => orch.status === "working", busy: () => workerCount() > 0 || compacting(), abort: () => ((turnFailed = true), proc?.abort()), restart: why => restart(why, true), alert: text => onAlert(`${NAME}: ${text}`) });
+	const stuck = orchStuck({ key: opts.key, pid: orchestratorPid, sessionFile: () => orch.sessionFile, working: () => orch.status === "working", busy: () => workerCount() > 0, abort: () => ((turnFailed = true), proc?.abort()), restart: why => restart(why, true), alert: text => onAlert(`${NAME}: ${text}`) });
 	let stopping = false;
 	let rotating = false;
 	let restarting = false;
@@ -143,7 +150,7 @@ export function createOrchestrator(opts: OrchOpts) {
 	let usable: boolean | undefined;
 	// Going back to the configured model after the runtime moved the process to a fallback by itself (not when the hub drives a chain).
 	const reverter = new Reverter();
-	let startedModel = "";
+	let startedModel = "", spawnWorkers = "";
 	// Set when a compaction finished: the next owner message sent to the process carries the retain nudge once (no extra turn).
 	let retainNext = false;
 	// Set when a session was resumed (gateway or crash restart): the next owner message carries the lane questions still
@@ -195,37 +202,8 @@ export function createOrchestrator(opts: OrchOpts) {
 	let replayAfterStart = false;
 	let spawnedAt: { at: number; how: "fresh" | "resumed" } | undefined;
 	let probeAfterStart = false;
-	function markError(raw: string): void {
-		if (orch.error) return;
-		orch.error = { since: new Date().toISOString(), ...plainError(raw), raw: raw.replace(/\s+/g, " ").slice(0, 200) };
-		log(`${who} error episode begins: ${orch.error.kind} (${orch.error.raw.slice(0, 120)})`);
-		// asked once per stoppage, also across a gateway restart or after a manual resume that fails again (hub/limit-alert.ts),
-		// and only when it lasts past the hold (hub/orch-error.ts errorAskHold); the web banner shows it at once
-		const note = noteBlock("orchestrator", "", "error", Date.now(), true);
-		if (!note.alert) return;
-		const e = orch.error;
-		clearTimeout(askTimer);
-		askTimer = setTimeout(() => {
-			askTimer = undefined;
-			if (orch.error !== e) return;
-			markTold("orchestrator");
-			noteErrorAsked();
-			onError(e);
-		}, Math.max(0, note.since + errorAskHold() - Date.now()));
-	}
-	let askTimer: Timer | undefined;
-	function clearError(): void {
-		if (!orch.error) return;
-		if (askTimer) {
-			// over before the owner was asked: a worklog line instead of an alert, and no recovery alert (noteRecovered)
-			clearTimeout(askTimer);
-			askTimer = undefined;
-			const min = Math.max(1, Math.round((Date.now() - Date.parse(orch.error.since)) / 60_000));
-			onNotice(`모델 오류로 ${min}분 멈춘 뒤 스스로 다시 연결됐어요(${orch.error.text}). 알림은 보내지 않았어요.`);
-		}
-		log(`${who} error episode over: a turn succeeded`);
-		orch.error = undefined;
-	}
+	const episode = createErrorEpisode({ who, agent: "orchestrator", orch, ask: e => onError(e), notice: text => onNotice(text) });
+	const { markError, clearError } = episode;
 	// One automatic resume: restart, and with no open request to replay, one tiny probe turn.
 	function resumeAfterError(): void {
 		clearTimeout(transientTimer); // a retry still pending would be a second resume
@@ -284,7 +262,8 @@ export function createOrchestrator(opts: OrchOpts) {
 	let currentModel = "";
 	const save = (s: Saved) => writeAtomic(opts.stateFile, `${JSON.stringify({ ...saved(), ...s }, null, 2)}\n`);
 	// Compaction needs an idle process: a runtime may abort a running turn to compact, so a busy orchestrator queues it until turn_end.
-	const port: CompactPort = { idle: () => orch.status === "idle", compact: () => proc?.compact(compactInstructions()), refreshUsage: () => proc?.refreshUsage(), abort: () => proc?.abortCompaction?.() };
+	const compaction = createCompaction({ who, orch, proc: () => proc, adapter: () => adapter, compactAt, instructions: compactInstructions, rotate, rotateWhenFree: () => (orch.status === "idle" ? rotate() : void (rotateWhenIdle = true)), restart: restartWhenFree, compacted: () => void (retainNext = asksNext = true) });
+	const compacting = compaction.active;
 
 	// A failed request: a usage limit or a billing/auth problem pauses the orchestrator, a temporary provider error is retried with backoff.
 	// With a hub-driven chain the next entry takes over first (a temporary error is retried a few times before that).
@@ -338,7 +317,7 @@ export function createOrchestrator(opts: OrchOpts) {
 	}
 	// At an idle moment: act on a spend cap reached during the turn, or go back to an earlier entry whose limit has reset.
 	function settleChain(): boolean {
-		if (!chain || orch.status !== "idle" || workerCount() > 0) return false;
+		if (!chain || orch.status !== "idle" || taskCount() > 0) return false;
 		if (capped) {
 			const reached = capped;
 			capped = undefined;
@@ -378,13 +357,9 @@ export function createOrchestrator(opts: OrchOpts) {
 		for await (const ev of p.events) {
 			stuck.event(ev);
 			emitEventActivity(opts.source, ev);
-			noteEvent(orch.ctx, ev, port);
+			noteEvent(orch.ctx, ev, compaction.port);
 			// What a compaction left (summary, kept messages, contract): past half the compaction point the session compacts again within hours.
-			if (ev.type === "usage" && checkCompacted && ev.tokens !== undefined && ev.tokens < (orch.ctx.compaction.tokensBefore ?? Infinity)) {
-				checkCompacted = false;
-				log(`${who} compaction left ${ev.tokens} tokens (compaction point ${compactAt()})`);
-				if (ev.tokens * 2 > compactAt()) orch.status === "idle" ? rotate() : (rotateWhenIdle = true);
-			}
+			if (ev.type === "usage") compaction.onUsage(ev.tokens);
 			switch (ev.type) {
 				case "turn_start":
 					orch.resuming = false;
@@ -417,7 +392,7 @@ export function createOrchestrator(opts: OrchOpts) {
 						pauseAlerted = false;
 						releaseHeld();
 					} else if (orch.status === "idle") {
-						if (rotateWhenIdle || (++turnsSinceStart > 1 && orch.ctx.tokens > compactAt() && !compacting())) limitContext();
+						if (rotateWhenIdle || (++turnsSinceStart > 1 && orch.ctx.tokens > compactAt() && !compacting())) compaction.limit(rotateWhenIdle);
 						else if (pendingRestart) {
 							const why = pendingRestart;
 							pendingRestart = "";
@@ -427,7 +402,7 @@ export function createOrchestrator(opts: OrchOpts) {
 							if (!switchInPlace()) restartWhenFree("model or effort change");
 						} else {
 							proc?.refreshUsage();
-							flushCompact(orch.ctx, port);
+							flushCompact(orch.ctx, compaction.port);
 						}
 					}
 					if (orch.status === "idle") setTimeout(() => orch.status === "idle" && onIdle(), 200);
@@ -441,9 +416,12 @@ export function createOrchestrator(opts: OrchOpts) {
 				case "workers_steered":
 					onWorkersSteered(ev.ids);
 					break;
-				case "user":
+				case "user": {
+					const owed = startedIndex(unstarted, ev.text);
+					if (owed >= 0) unstarted.splice(owed, 1);
 					if (!isResumeNote(ev.text) && onPrompt(ev.text) === true) proc?.abort();
 					break;
+				}
 				case "assistant":
 					if (ev.text) {
 						orch.lastText = stripLater(ev.text) || LATER_LINE;
@@ -489,7 +467,7 @@ export function createOrchestrator(opts: OrchOpts) {
 					save({ sessionFile: orch.sessionFile, model: currentModel, runtime: adapter?.id, activeModel: orch.activeModel });
 					if (orch.status === "starting") {
 						orch.status = "idle";
-						flushCompact(orch.ctx, port);
+						flushCompact(orch.ctx, compaction.port);
 					}
 					break;
 				case "spend": {
@@ -498,25 +476,7 @@ export function createOrchestrator(opts: OrchOpts) {
 					break;
 				}
 				case "compaction":
-					if (ev.state === "done") {
-						compactRetried = false;
-						checkCompacted = true;
-						// The compacted session keeps going: the next owner message reminds it to retain, and carries the lane
-						// questions still waiting for the owner (the summary may have cut them); the dotz extension re-reads the
-						// contract and state.json (open_tasks) into it.
-						retainNext = true;
-						asksNext = true;
-					} else if (adapter?.caps.contextLimit === "compact" && orch.ctx.tokens > compactAt() && /retry compaction/i.test(ev.error) && !compactRetried) {
-						// OmO refuses a summary when the session changed while it was made; the next idle point tries once more.
-						compactRetried = true;
-						log(`${who} compaction raced a session write (${ev.error.slice(0, 120)}); retrying at the next idle point`);
-						orch.ctx.compaction = { state: "queued", at: now() };
-						if (orch.status === "idle") flushCompact(orch.ctx, port);
-					} else if (adapter?.caps.contextLimit === "compact" && orch.ctx.tokens > compactAt()) {
-						log(`${who} compaction failed (${ev.error.slice(0, 160)}); moving to a fresh session with a handover`);
-						if (orch.status === "idle") rotate();
-						else rotateWhenIdle = true;
-					}
+					compaction.onEnd(ev);
 					// A model/effort change that arrived during the compaction: a set_model mid-compaction cancels it.
 					if (pendingModel && !compacting() && !rotating && orch.status === "idle") {
 						pendingModel = false;
@@ -557,12 +517,14 @@ export function createOrchestrator(opts: OrchOpts) {
 		if (orch.status === "working" || orch.status === "rate-limited") return;
 		watchdog = setTimeout(() => {
 			log(`${who} did not start a turn after a delivery; restarting it`);
-			const hung = proc;
-			hung?.kill();
-			setTimeout(() => {
-				if (proc === hung) hung?.kill(true);
-			}, 10_000);
+			if (proc) killHard(proc);
 		}, WATCHDOG_MS);
+	}
+
+	function killHard(old: AgentProcess): void {
+		if (proc !== old) return;
+		old.kill();
+		setTimeout(() => proc === old && old.kill(true), 10_000);
 	}
 
 	// While paused by a rate limit (5h or a spent week), prompts are held instead of each starting a turn that fails at once;
@@ -671,20 +633,11 @@ export function createOrchestrator(opts: OrchOpts) {
 	}
 
 	let rotateWhenIdle = false;
-	let compactRetried = false;
-	let checkCompacted = false;
-	const compacting = () => orch.ctx.compaction.state === "queued" || orch.ctx.compaction.state === "compacting";
-	function limitContext(): void {
-		if (!rotateWhenIdle && adapter?.caps.contextLimit === "compact") {
-			log(`${who} context ${orch.ctx.tokens} tokens > ${compactAt()}; compacting in place`);
-			requestCompact(orch.ctx, port);
-		} else rotate();
-	}
 
 	// What the session is doing as far as being at rest goes: the compaction ahead of time and the nightly fresh start read the same facts.
-	const restFacts = (): RestFacts => ({ alive: Boolean(proc), canAbort: Boolean(adapter?.caps.abortCompact), idle: orch.status === "idle", switching: rotating || restarting || rotateWhenIdle || pendingRestart || pendingModel, failing: Boolean(orch.error) || errorStreak.stopped, held: held.length + unstarted.length, workers: workerCount(), limitHold: Boolean(resumeTimer), quietMs: Date.now() - lastTurnEnd });
+	const restFacts = (): RestFacts => ({ alive: Boolean(proc), canAbort: Boolean(adapter?.caps.abortCompact), idle: orch.status === "idle", switching: rotating || restarting || rotateWhenIdle || pendingRestart || pendingModel, failing: Boolean(orch.error) || errorStreak.stopped, held: held.length + unstarted.length, workers: taskCount(), limitHold: Boolean(resumeTimer), quietMs: Date.now() - lastTurnEnd });
 	// The nightly handover (hygiene.ts, hub/nightly-fresh.ts): the main session every night (orchestrator.nightly_fresh), any session past `limitBytes`.
-	const nightly = createNightly({ who, every: () => opts.key === "main" && cfg.orchestrator?.nightly_fresh !== false, bytes: () => (proc && orch.sessionFile && existsSync(orch.sessionFile) ? statSync(orch.sessionFile).size : undefined), facts: restFacts, stale: () => Boolean(orch.sessionFile && adapter?.summaryStale?.(orch.sessionFile)), compact: () => requestAhead(orch.ctx, port, who, "nightly fresh start"), ctx: () => orch.ctx, rotate: () => rotate(), open: () => loadLedger(ledgerIn(dirname(opts.stateFile))).length });
+	const nightly = createNightly({ who, every: () => opts.key === "main" && cfg.orchestrator?.nightly_fresh !== false, bytes: () => (proc && orch.sessionFile && existsSync(orch.sessionFile) ? statSync(orch.sessionFile).size : undefined), facts: restFacts, stale: () => Boolean(orch.sessionFile && adapter?.summaryStale?.(orch.sessionFile)), compact: () => requestAhead(orch.ctx, compaction.port, who, "nightly fresh start"), ctx: () => orch.ctx, rotate: () => rotate(), open: () => loadLedger(ledgerIn(dirname(opts.stateFile))).length });
 	const nightlyHandover = nightly.ask;
 
 	function rotate(): void {
@@ -692,11 +645,12 @@ export function createOrchestrator(opts: OrchOpts) {
 	}
 	function rotateNow(): void {
 		if (!proc || rotating) return;
+		if (orch.status === "working") return void (rotateWhenIdle = true);
 		log(`${who} context ${orch.ctx.tokens} tokens; rotating to a fresh session`);
 		rotateWhenIdle = false;
-		compactRetried = false;
+		compaction.reset();
 		rotating = true;
-		proc.kill();
+		killHard(proc);
 	}
 
 	function start(): void {
@@ -733,8 +687,9 @@ export function createOrchestrator(opts: OrchOpts) {
 		const rotate = prior && existsSync(prior) && (rotating || Boolean(freshSwitch) || keyMove || modelMove || statSync(prior).size > ROTATE_BYTES || (priorRuntime ?? "omp") !== runtime.id);
 		const switched = freshSwitch ?? (keyMove ? { again: false } : undefined);
 		freshSwitch = undefined;
-		rotating = false;
+		rotating = restarting = false;
 		pendingModel = false;
+		pendingRestart = "";
 		orch.ctx = newCtx();
 		turnsSinceStart = 0;
 		const resume = prior && existsSync(prior) && !rotate;
@@ -754,11 +709,12 @@ export function createOrchestrator(opts: OrchOpts) {
 		if (chain) Object.assign(env, chain.env(chain.active, chain.list[chain.active].model));
 		const switchNote = switched && chain ? msg().fallbackFresh(chain.label(chain.active), Boolean(chain.list[chain.active].key_file), switched.again, Boolean(chain.list[chain.active].workers)) : "";
 		startedModel = spawnModel;
+		spawnWorkers = workersFor(spawnModel);
 		reverter.reset();
 		orch.activeModel = spawnModel;
 		chained = !chain && entries.length > 0;
 		const steer = steerToken(HUB_TOKEN, `orchestrator:${opts.key}`);
-		proc = markSteers(runtime.start({ role: "orchestrator", cwd: DATA_DIR, model: spawnModel, ...(opts.model?.() ? { workers: workersOf(selectorOf(orchestratorModel())) } : {}), fallback: chain ? [] : entries.filter(e => !e.key_file).map(e => e.model), hubSwitches: Boolean(chain), resume: resume ? prior : undefined, env, systemNote: steerContract(steer) }), steer);
+		proc = markSteers(runtime.start({ role: "orchestrator", cwd: DATA_DIR, model: spawnModel, ...(opts.model?.() ? { workers: spawnWorkers } : {}), fallback: chain ? [] : entries.filter(e => !e.key_file).map(e => e.model), hubSwitches: Boolean(chain), resume: resume ? prior : undefined, env, systemNote: steerContract(steer) }), steer);
 		orch.status = "starting";
 		orch.stoppedBy = "";
 		orch.stoppedAt = "";
@@ -775,11 +731,14 @@ export function createOrchestrator(opts: OrchOpts) {
 			log(`${who} still paused on ${ownerPause ? "a billing/auth block" : "a usage limit"} until ${orch.rateLimitedUntil}; messages are held`);
 			if (!ownerPause) limitWatchNow(); // the limit may be over since the gateway last ran: one check now, not after LIMIT_WATCH_MS
 		}
+		clearInterval(ticker);
+		ticker = setInterval(tick, TICK_MS);
 		void readEvents(proc);
 		const self = proc;
 		void proc.exited.then(code => {
 			if (proc !== self) return;
 			proc = undefined;
+			clearInterval(ticker);
 			orch.status = "stopped";
 			stuck.reset();
 			if (adapter?.id === "omp") endSubagents(opts.source);
@@ -790,17 +749,13 @@ export function createOrchestrator(opts: OrchOpts) {
 			log(`${who} exited (${code})`);
 			if (code === 143 && !restarting && !rotating && !stopping) log(`${who} got SIGTERM with no restart asked: a kill from outside the gateway, or the hung-turn check above`);
 			statusActivity(opts.source, `orchestrator exited (code ${code})`);
-			if (stopping) return;
+			if (stopping) return void (restarting = rotating = false);
 			if (!rotating) replayAfterStart = true;
-			if (restarting) {
-				restarting = false;
-				return start();
-			}
-			if (rotating) return start();
+			if (restarting || rotating) return start();
 			orch.restarts = orch.restarts.filter(t => Date.now() - t < RESTART_WINDOW_MS);
 			if (orch.restarts.length >= MAX_RESTARTS) return markError(`the assistant process exited repeatedly (${MAX_RESTARTS} times in 10 minutes)`);
 			orch.restarts.push(Date.now());
-			setTimeout(start, 10_000);
+			setTimeout(() => stopping || start(), 10_000);
 		});
 		if (!resume) {
 			retainNext = false; // a fresh session's start prompt (and handover) already carries it
@@ -845,8 +800,8 @@ export function createOrchestrator(opts: OrchOpts) {
 
 	// Whether this runtime's prompt cache pays for an idle ping (the 구성 view shows the keep-alive only then).
 	const keepaliveSupported = (): boolean => Boolean(adapter?.caps.promptCacheKeepalive);
-	if (opts.keepalive) setInterval(() => {
-		restAhead(orch.ctx, port, who, restFacts(), compactAt());
+	function keepalive(): void {
+		restAhead(orch.ctx, compaction.port, who, restFacts(), compactAt());
 		const idle = Date.now() - lastTurnEnd;
 		if (!proc || !adapter?.caps.promptCacheKeepalive || rotating || orch.status !== "idle" || keepalives >= KEEPALIVE_MAX || errorStreak.stopped) return;
 		if (idle < KEEPALIVE_FROM_MS || idle > KEEPALIVE_TO_MS) return;
@@ -855,7 +810,7 @@ export function createOrchestrator(opts: OrchOpts) {
 		log(`keepalive ${keepalives}/${KEEPALIVE_MAX} after ${Math.round(idle / 60_000)} min idle`);
 		proc.send(msg().keepalive, "prompt");
 		armWatchdog();
-	}, Math.min(60_000, Math.max(5_000, (KEEPALIVE_TO_MS - KEEPALIVE_FROM_MS) / 2)));
+	}
 
 	// `owner` marks a prompt that carries an owner message (it gets the what-runs-now line); lane reports and gateway notes do not.
 	function deliver(text: string, owner = false, deep = false): void {
@@ -871,7 +826,7 @@ export function createOrchestrator(opts: OrchOpts) {
 		// A prompt sent while a requested compaction runs is refused by OmO and was lost; it waits for the compaction's end.
 		if (rotating || restarting || orch.status === "rate-limited" || orch.ctx.compaction.state === "compacting") {
 			held.push({ text, header: owner });
-			return void (owner && abortAhead(orch.ctx, port));
+			return void (owner && abortAhead(orch.ctx, compaction.port));
 		}
 		if (!proc) { joinNext = Boolean(opts.light) && owner; start(); }
 		sendOwner(text, owner, joinNext ? "steer" : "followUp"), (joinNext = false);
@@ -894,9 +849,8 @@ export function createOrchestrator(opts: OrchOpts) {
 		}
 		// A pause timer (usage limit, spent chain) must not start a stopped orchestrator again.
 		clearResume();
-		clearTimeout(askTimer);
-		askTimer = undefined;
-		proc?.kill();
+		episode.cancelAsk();
+		if (proc) killHard(proc);
 	}
 
 	// Restart the agent process; the session is resumed unless the configured model or thinking level changed since it was
@@ -912,9 +866,8 @@ export function createOrchestrator(opts: OrchOpts) {
 		restarting = true;
 		clearTimeout(watchdog);
 		const old = proc;
-		const kill = (): unknown => proc === old && (old.kill(), setTimeout(() => proc === old && old.kill(true), 10_000));
-		if (snapshot) void takeSnapshot(opts.key, old.pid, orch.sessionFile).then(kill);
-		else kill();
+		if (snapshot) void takeSnapshot(opts.key, old.pid, orch.sessionFile).then(() => killHard(old));
+		else killHard(old);
 	}
 
 	// The model/thinking in config just changed. The running process switches in place on its session (set_model /
@@ -928,8 +881,7 @@ export function createOrchestrator(opts: OrchOpts) {
 			return "next-start";
 		}
 		if (switchInPlace()) return "live";
-		restart("model or effort change");
-		return "restarted";
+		return restartWhenFree("model or effort change") ? "restarted" : "next-start";
 	}
 	// A model switched in place moves the orchestrator's task workers with it (the profile OmO reads); the guard pins subagent_type
 	// workers to the live model on each call (extension/guard.ts pinOmoTaskModel).
@@ -939,6 +891,7 @@ export function createOrchestrator(opts: OrchOpts) {
 	function switchInPlace(): boolean {
 		if (!proc?.setModel || !adapter || chained || orch.status !== "idle" || (chain && chain.active !== 0)) return false;
 		const model = selectorOf(chosen());
+		if (adapter.id === "omp" && parseSelector(workersFor(model)).model !== parseSelector(spawnWorkers).model) return false;
 		const driven = hubChain(adapter.id, chainAfter(model, fallbackChain("orchestrator")));
 		const next = driven ? new Chain(model, driven, chosen().thinking) : undefined;
 		if (next && next.initial() !== 0) return false;
@@ -977,8 +930,7 @@ export function createOrchestrator(opts: OrchOpts) {
 			pauseAlerted = false;
 			save({ pausedUntil: undefined });
 			continueAfterSwitch = Boolean(proc);
-			restart("model chain changed");
-			return "restarted";
+			return restartWhenFree("model chain changed") ? "restarted" : "after-turn";
 		}
 		if (adapter?.id === "omo" && (!chain || chain.active === 0)) {
 			chain = fresh();
@@ -989,8 +941,7 @@ export function createOrchestrator(opts: OrchOpts) {
 			pendingRestart = "model chain changed";
 			return "after-turn";
 		}
-		restart("model chain changed");
-		return "restarted";
+		return restartWhenFree("model chain changed") ? "restarted" : "after-turn";
 	}
 
 	function applyAccountChange(): void {
@@ -1034,11 +985,15 @@ export function createOrchestrator(opts: OrchOpts) {
 	// Compacts the orchestrator's context: now when idle, after the running turn otherwise. Rewrites the prompt cache once.
 	function compact(): Compaction {
 		if (!proc) throw new Error("the orchestrator is not running");
-		return requestCompact(orch.ctx, port);
+		return requestCompact(orch.ctx, compaction.port);
 	}
 
 	// A hub-driven chain may owe a return to an earlier entry (its limit reset) or a spend-cap decision; checked once a minute while idle.
-	setInterval(() => {
+	const TICK_MS = opts.keepalive ? Math.min(60_000, Math.max(5_000, (KEEPALIVE_TO_MS - KEEPALIVE_FROM_MS) / 2)) : 60_000;
+	let ticker: Timer | undefined;
+	function tick(): void {
+		if (opts.keepalive) keepalive();
+		compaction.tick();
 		settleRevert(true);
 		// On an API key the subscription's usage report decides the return: back as soon as it is usable, never while it is still
 		// out (unknown: the probe rule of Chain.revertTarget).
@@ -1048,15 +1003,15 @@ export function createOrchestrator(opts: OrchOpts) {
 				settleChain();
 			});
 		else void settleChain();
-	}, 60_000);
+	}
 
 	// A conversation session that sat idle is parked (hub/convsessions.ts): its process ends like a stop, but nobody stopped it, so
 	// the run state does not say the owner did, and the next message resumes the session (as a lane is parked, laneops.ts parkLane).
 	function park(): boolean {
-		if (!proc) return false;
+		if (!proc || restarting || rotating) return false;
 		stopping = true;
 		clearTimeout(watchdog);
-		proc.kill();
+		killHard(proc);
 		return true;
 	}
 

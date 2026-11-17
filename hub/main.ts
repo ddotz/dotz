@@ -39,7 +39,7 @@ import { migratePostSettings, postSettings, setWebLane } from "./discord-post.ts
 import { resolveAllowed, UPLOAD_MAX_BYTES } from "./files.ts";
 import { setDiskNotify } from "./diskguard.ts";
 import { budgetProblem, installEscalations } from "./routes-lanes.ts";
-import { approvesBudget, estimateOf, laneBusy, lanes, restoreLanes, sendToLane, setIdleHandler as setLaneIdleHandler, shutdownLanes, startLaneQueue } from "./lanes.ts";
+import { approvesBudget, estimateOf, laneBusy, laneWorkers, lanes, restoreLanes, sendToLane, setIdleHandler as setLaneIdleHandler, shutdownLanes, startLaneQueue } from "./lanes.ts";
 import { refreshMachine } from "./limits.ts";
 import { setUsageSource, tick as accountTick } from "./account-rules.ts";
 import { onSwitch as onAccountSwitch } from "./account-sticky.ts";
@@ -96,7 +96,6 @@ import { telemetryOff } from "./runtime/omo.ts";
 import { installDotzCommand } from "./dotz-command.ts";
 import { compressResponse } from "./compress.ts";
 import { sends, send, queue, deliver, deliverNow, lastOwner, receiptNote, laneFailed, out, alert, fileRoots, replayPending, replayOpen, installDelivery, clearLeftWebProgress, replies, bgWork, workRows, approvals, convOfTarget, setRefHandled, reconcileMailCards } from "./outbound.ts";
-import { runningOmoWorkers } from "./bgwork.ts";
 import { laneBusyLines, sessionBusyLines } from "./busy-lines.ts";
 import { convs } from "./convsessions.ts";
 import { primaryTarget } from "./session-key.ts";
@@ -722,7 +721,7 @@ function busyNow(): string[] {
 		...orchestrator,
 		...sessions,
 		replies.size() ? "reply" : "",
-		...[...lanes.values()].flatMap(l => laneBusyLines(l.name, laneBusy(l), runningOmoWorkers(l.sessionFile))),
+		...[...lanes.values()].flatMap(l => laneBusyLines(l.name, laneBusy(l), laneWorkers(l))),
 	].filter(Boolean);
 }
 // An open owner request with nothing running that could answer it: one bounded wake, no model call otherwise (hub/waitcheck.ts).

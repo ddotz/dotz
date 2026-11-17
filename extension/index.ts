@@ -23,7 +23,6 @@ import { blockedByFeatures } from "../hub/featuredirs.ts";
 import { runWithReceipt, summarize } from "../hub/receipts.ts";
 import { mergeGate, recordReview, Refusal, type Scope } from "../hub/mergegate.ts";
 import { MAIL_TURN_MARK, mailTurnDeny, prepareCommitIdentity, publicPostDeny, systemDeny } from "../hub/systemdeny.ts";
-import { codeLockReason } from "../hub/codeguard.ts";
 import { lockedCodeDir } from "../hub/selfupdate-local.ts";
 import { loadPlugins, pluginDeny } from "../hub/plugins.ts";
 import { createRefusals } from "./refusals.ts";
@@ -32,7 +31,8 @@ import { connectText, type ConnectView } from "./connect-view.ts";
 import { staysInTerminal } from "./terminal-input.ts";
 import { installCompactKept } from "./compact-kept.ts";
 import { defaultDataDir, dryRun, hubPid, liveDataDir, liveWrite, throwawayReason } from "../hub/live-guard.ts";
-import { dropLongTtl, externalAction, installGuard, installSubagentGuard, sharedWriteBlock } from "./guard.ts";
+import { codeLockReason, externalAction, installGuard, installSubagentGuard, sharedWriteBlock } from "./guard.ts";
+import { channelCommand } from "./guard-channels.ts";
 import { dataDir, loadGuardConfig } from "./guard-config.ts";
 import { pipedStatusBlock } from "./guard-pipe.ts";
 import { expandShellVars } from "./guard-shell.ts";
@@ -43,6 +43,8 @@ import { installOwnerValues } from "./owner-values.ts";
 import { installTaskCap } from "./task-cap.ts";
 import { installEffortBound } from "./effort-bound.ts";
 import { installBgGuard } from "./bg-guard.ts";
+import { shortCache } from "./short-cache.ts";
+import { installSubagentBrief } from "./subagent-brief.ts";
 import { jsonZod, params } from "./schema.ts";
 import { secretIn } from "./peer-secrets.ts";
 import { recallTool } from "./recall-tool.ts";
@@ -53,7 +55,7 @@ import { type Host, ompHosts, refuseInSubagents } from "./omp-host.ts";
 // its second request adds their 48 tools mid-conversation, and every such request lost the whole message cache: 126 of 126
 // over 60K against 6 of 4394 without, 9.5M tokens rewritten in 24h (2026-11-03). No session has ever called them. Children
 // read process.env at spawn; an owner-set value wins.
-process.env.ENABLE_CLAUDEAI_MCP_SERVERS ??= "false";
+const keepClaudeAiConnectorsOff = (): void => void (process.env.ENABLE_CLAUDEAI_MCP_SERVERS ??= "false");
 
 const DATA = process.env.DOTZ_DIR ?? join(homedir(), ".dotz");
 const PKG = join(import.meta.dir, "..");
@@ -76,7 +78,7 @@ export function shellText(event: any): string | undefined {
 	const tool = String(event?.toolName ?? "");
 	if (tool === "bash") return String(event?.input?.command ?? "");
 	if (tool === "eval") return String(event?.input?.code ?? "");
-	return undefined;
+	return channelCommand(tool, event?.input);
 }
 
 // A test, probe or hand-started copy (hub/live-guard.ts): read once per call, since hub.pid changes with the gateway.
@@ -506,15 +508,6 @@ function mainTool(pi: any): void {
 	});
 }
 
-// Lanes and their workers write the 5-minute prompt cache (they inherit PI_CACHE_RETENTION=long from the gateway).
-function shortCache(pi: any, kind: "main" | "sub" = "main"): void {
-	pi.on("before_provider_request", (event: any, ctx: any) => {
-		if (ctx?.agent?.kind !== kind || !event?.payload) return;
-		const payload = structuredClone(event.payload);
-		return dropLongTtl(payload) ? payload : undefined;
-	});
-}
-
 function laneSession(pi: any): void {
 	verifyTool(pi);
 	mergeTool(pi);
@@ -706,19 +699,20 @@ function followAccount(pi: any): void {
 
 function ompSession(pi: Host): void {
 	const lane = process.env.DOTZ_LANE;
-	const { main, workers, gateway } = ompHosts(pi);
+	const { main, workers, gateway } = ompHosts(pi, { topLevel: true });
+	keepClaudeAiConnectorsOff();
 	refuseInSubagents(pi, gateway);
 	keyProvider(pi, !process.env.DOTZ_KEY_VALUE);
 	installTaskCap(workers);
-	installBgGuard(workers);
-	installGuard(main);
+	const running = installGuard(main);
 	installHarnessTools(main);
 	installOwnerValues(main);
-	if (!lane) main.on("session_start", () => pi.setLabel?.("Dotz mode"));
-	holdOnRestart(main, DATA, lane);
+	if (!lane) main.on("session_start", () => pi.setSessionName?.("Dotz mode"));
+	holdOnRestart(pi, DATA, lane, running);
 	enforceRules(pi);
 	workerGuard(workers);
 	installSubagentGuard(workers);
+	installSubagentBrief(workers);
 	installOutputCap(lane ? pi : workers, process.env, true);
 	installCompactKept(pi);
 	if (lane) laneSession(main);
@@ -737,6 +731,7 @@ export default function dotz(host: any) {
 	// WORKER_TASK; OmO sets OMO_SENPI_TASK_DEPTH): the owner's rules, the output caps and the 5-minute cache, none of the
 	// parent's tools or commands except the deferred dotz_recall (no prompt growth: no schema until tool search finds it).
 	if ((process.env.DOTZ_LANE || process.env.DOTZ_ORCHESTRATOR === "1") && process.env.OMO_SENPI_TASK_DEPTH) {
+		keepClaudeAiConnectorsOff();
 		keyProvider(pi, true);
 		recallTool(pi, DATA);
 		installTaskCap(pi);
@@ -745,16 +740,19 @@ export default function dotz(host: any) {
 		workerGuard(pi);
 		installOutputCap(pi);
 		installCompactKept(pi);
-		return shortCache(pi);
+		return shortCache(pi, "sub");
 	}
 	keyProvider(pi);
 	// Worker guard and harness commands run in every session (interactive, orchestrator, lane), each skipping itself when the
 	// owner's original ~/.omp extension of the same name is installed (guard-config.ts installedOriginal).
-	installGuard(pi);
-	installHarnessTools(pi);
+	const running = installGuard(pi);
+	const terminal = process.env.DOTZ_LANE || process.env.DOTZ_ORCHESTRATOR === "1" ? undefined : ompHosts(pi);
+	if (terminal) refuseInSubagents(pi, terminal.gateway);
+	installHarnessTools(terminal?.main ?? pi);
 	installOwnerValues(pi);
 	if (process.env.DOTZ_LANE) {
-		holdOnRestart(pi, DATA, process.env.DOTZ_LANE);
+		keepClaudeAiConnectorsOff();
+		holdOnRestart(pi, DATA, process.env.DOTZ_LANE, running);
 		enforceRules(pi);
 		installOutputCap(pi);
 		installCompactKept(pi);
@@ -765,11 +763,12 @@ export default function dotz(host: any) {
 	// ("Entry Dotz mode not found" in the terminal view); OmO names the session with setSessionName instead.
 	pi.on("session_start", () => (process.env.DOTZ_RUNTIME === "omo" ? pi.setSessionName?.("Dotz mode") : pi.setLabel?.("Dotz mode")));
 	if (process.env.DOTZ_ORCHESTRATOR === "1") {
-		holdOnRestart(pi, DATA);
+		keepClaudeAiConnectorsOff();
+		holdOnRestart(pi, DATA, undefined, running);
 		enforceRules(pi);
 		installCompactKept(pi);
 		installEffortBound(pi, join(DATA, "effort-bound.json"));
 		orchestratorTools(pi);
 	}
-	else terminalClient(pi);
+	else if (terminal) terminalClient(terminal.main);
 }

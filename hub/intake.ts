@@ -370,7 +370,7 @@ export async function sendWeb(s: WebSend): Promise<void> {
 // Web messages queued while their target works (see queue.ts) go out when that target is idle again: oldest first, as
 // one message through the normal path (main: intake, which merges messages of one burst into one turn; lane: one prompt).
 export const QUEUE_SWEEP_MS = 5000;
-const queueFailed = new Set<string>();
+const queueFailed = new Map<string, string>();
 export function flushQueue(target: string): void {
 	const lane = target.startsWith("lane:") ? target.slice(5) : undefined;
 	const status = lane ? lanes.get(lane)?.status : orch.status;
@@ -379,7 +379,7 @@ export function flushQueue(target: string): void {
 		void out("web", `세션 ${lane}이(가) 없어서 대기 중이던 메시지 ${gone.length}개를 전달하지 못했어요:\n${gone.map(i => i.text).join("\n---\n")}`, undefined, { source: "gateway" }).catch(() => undefined);
 		return;
 	}
-	if (status !== "idle") return;
+	if (status !== "idle" && status !== (lane ? "exited" : "stopped")) return;
 	const items = drain(target);
 	if (!items.length) return;
 	try {
@@ -387,7 +387,6 @@ export function flushQueue(target: string): void {
 			for (const i of items) if (approvesBudget(lane, i.text)) sendToLane(lane, "/budget-ok");
 			const how = sendToLane(lane, `[owner via web] ${items.map(i => i.text).join("\n\n")}`, items[0].id, false, items.some(i => ownerWantsUltrathink(i.text)));
 			for (const i of items.slice(1)) ownerNotes.asked(lane, i.id);
-			queueFailed.delete(target);
 			// The messages waited for the session's turn to end and went in as one: "queued" unless the stopped session had to be resumed.
 			for (const i of items) {
 				emit("inbox", { ts: now(), kind: "lane_message", source: "web", author: i.author ?? "local", lane, text: i.text, mid: i.id });
@@ -401,12 +400,14 @@ export function flushQueue(target: string): void {
 				intake(event, "web", i.id);
 			}
 		}
+		queueFailed.delete(target);
 	} catch (error) {
-		log(`queued web messages for ${target} not sent: ${(error as Error).message}`);
+		const reason = (error as Error).message;
 		// Said once in the session's chat; the messages stay queued and are tried again.
-		if (lane && !queueFailed.has(target)) {
-			queueFailed.add(target);
-			laneFailed(target, lane, undefined, error);
+		if (queueFailed.get(target) !== reason) {
+			queueFailed.set(target, reason);
+			log(`queued web messages for ${target} not sent: ${reason}`);
+			if (lane) laneFailed(target, lane, undefined, error);
 		}
 		restore(items);
 	}

@@ -1,5 +1,7 @@
-import { type Answers, priorOf, validateAnswers } from "./answers.ts";
+import { type Answers, priorOf } from "./answers.ts";
+import { validateWithModels } from "./models.ts";
 import { linkOmp, serveTailnet, setupDiscord, type Env, writeConfig, writeSecrets } from "./apply.ts";
+import { harness } from "../onboard/harness.ts";
 import { requestPermissions } from "../onboard/permissions.ts";
 import { realHost, realUiBlocked } from "../onboard/selfserve.ts";
 import { readFirstRun } from "./first-run.ts";
@@ -8,7 +10,7 @@ import { fill, type JobIO } from "./setup-jobs.ts";
 // "저장하고 적용": everything setup.ts does after the answers, run from the draft. The secrets were written to secrets/ when they were entered,
 // so the draft never held them; what is left here is the shared firstrun/apply.ts code with its lines going to the scrubbed stream.
 
-export type ApplyDeps = { dir: string; home: string; pkg: string; permissionsDone: () => boolean };
+export type ApplyDeps = { dir: string; home: string; pkg: string; permissionsDone: () => boolean; installed: (runtime: string) => Promise<boolean> };
 export type ApplyOutcome = { ok: true; access: "local" | "tailscale"; url: string; why: string; owner: string } | { ok: false; error: string };
 
 const MAC = process.platform === "darwin";
@@ -32,12 +34,14 @@ export async function runApply(d: ApplyDeps, io: JobIO): Promise<ApplyOutcome> {
 	const { text } = io;
 	const env: Env = { dir: d.dir, home: d.home, pkg: d.pkg, say: io.line };
 	const prior = priorOf(d.dir);
-	const checked = validateAnswers(draftAnswers(readFirstRun(d.dir)?.draft ?? {}), prior, d.home);
+	const checked = await validateWithModels(draftAnswers(readFirstRun(d.dir)?.draft ?? {}), prior, d.home);
 	if (!checked.ok) return { ok: false, error: checked.errors.join(", ") };
 	const a = checked.answers;
+	if (!(await d.installed(a.runtime))) return { ok: false, error: fill(text.owner.missing, harness(a.runtime)?.label ?? a.runtime) };
 
 	io.line(text.steps.secrets);
 	writeSecrets(env, a);
+	if (a.runtime === "omp") io.line(`${a.orchestrator_model} / ${a.lane_model}`);
 	const wantServe = a.allow_logins.length > 0;
 	if (wantServe) io.line(text.steps.tailnet);
 	const serve = await serveTailnet(env, a, wantServe);

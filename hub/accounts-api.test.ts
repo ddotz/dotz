@@ -7,7 +7,7 @@ import { type AccountSwitch, FALLBACK_ENV, PIN_ENV, resetStickyForTest, stickyAc
 import { ownProviderPins, providerPinsFile } from "./accounts-providers.ts";
 import { accountAnswer, accountAsk, accountsBody, KIND_TEXT, accountsRoute, accountText, labeledAccountView, pinnedLimitAlert, pinnedLimitNotice, switchNotice, switchText } from "./accounts-api.ts";
 import { authFile } from "./apikey-policy.ts";
-import { DATA_DIR } from "./config.ts";
+import { cfg, DATA_DIR } from "./config.ts";
 import { parseChoices } from "./choices.ts";
 import { msg } from "./i18n.ts";
 import { limitsCard, runCommand } from "./control.ts";
@@ -101,13 +101,37 @@ test("accountsBody carries labels, states, decision, rules as text, manual pick,
 	expect(Object.keys(b.files).sort()).toEqual(["aliases", "decisions", "rules"]);
 	for (const f of Object.values(b.files)) expect(f.startsWith("/")).toBe(true);
 	expect(Array.isArray(b.switches)).toBe(true);
-	expect(Object.keys(b).sort()).toEqual(["accounts", "chosen", "decision", "files", "login_providers", "manual_text", "mode", "providers", "rules", "rules_text", "script", "switches", "used"]);
+	expect(Object.keys(b).sort()).toEqual(["accounts", "chosen", "decision", "files", "login_providers", "manual_text", "mode", "pin_unavailable", "providers", "rules", "rules_text", "script", "switches", "used"]);
+	expect(b.pin_unavailable).toBeNull();
 	// the Claude group mirrors the same accounts, shaped like the other providers' groups
 	expect(b.providers[0]).toMatchObject({ id: "anthropic", name: "Claude 구독", multi: true, can_pin: true, can_delete: true });
 	expect(b.providers[0]!.accounts.map(a => [a.name, a.current, a.pinned, a.label, a.windows.map(w => w.label)])).toEqual([["default", false, false, "개인 계정", ["5시간", "7일"]], ["work", true, false, "회사 계정", []]]);
 	expect(b.providers[0]!.accounts[1]!.blocked_tag).toContain("11:00");
 	expect(b.chosen).toMatchObject({ name: "work", source: "manual", blocked: "rate_limit", used_instead: null });
 	expect(b.chosen!.text).toContain("멈춰 있어요");
+});
+
+test("with no role on OmO the pins and rules say they are unavailable: the routes answer 409, /account and the chat answer why, nothing is written", async () => {
+	const was = cfg.runtime;
+	cfg.runtime = "omp";
+	try {
+		writeAuth(["default", "work"]);
+		const why = accountsBody().pin_unavailable;
+		expect(why).toContain("omp에서는");
+		for (const [method, path] of [["POST", "/api/accounts/use"], ["PUT", "/api/accounts/mode"], ["PUT", "/api/accounts/pin"], ["PUT", "/api/accounts/order"], ["PUT", "/api/accounts/rules"], ["PUT", "/api/accounts/on-limit"]] as const) {
+			const res = await call(method, path, {});
+			expect(res?.status).toBe(409);
+			const body: { error?: string } = await res!.json();
+			expect(body.error).toBe(why!);
+		}
+		expect(await cmdNote("/account")).toBe(why!);
+		expect(await cmdNote("/account work")).toBe(why!);
+		expect(await accountAnswer({ kind: "auto" })).toBe(why!);
+		expect(readRules().manual).toBeUndefined();
+		expect(existsSync(rulesFile())).toBe(false);
+	} finally {
+		cfg.runtime = was;
+	}
 });
 
 test("accountsBody switches carry from_label/to_label/kind_text and labeledAccountView mirrors them", () => {

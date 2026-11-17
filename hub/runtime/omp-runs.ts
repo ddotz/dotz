@@ -31,9 +31,8 @@ export class RunKeys {
 	spawned(name: string): string {
 		const run = this.run(name);
 		if (!run.spawned) {
-			run.n++;
+			if (!run.live) run.n++;
 			run.spawned = true;
-			run.live = false;
 		}
 		return this.key(name, run);
 	}
@@ -61,7 +60,7 @@ export class RunKeys {
 		return events.map(ev => {
 			if (ev.type === "subagent") return { ...ev, update: { ...ev.update, id: this.updated(ev.update.id, ev.update.status), name: ev.update.id } };
 			if (ev.type === "workers_spawned") return { ...ev, workers: ev.workers.map(w => ({ ...w, id: this.spawned(w.id) })) };
-			if (ev.type === "workers_done") return { ...ev, ids: ev.ids.map(id => this.finished(id)) };
+			if (ev.type === "workers_done" || ev.type === "workers_steered") return { ...ev, ids: ev.ids.map(id => this.finished(id)) };
 			return ev;
 		});
 	}

@@ -62,12 +62,25 @@ export function priorOf(dir: string): Prior {
 	};
 }
 
+export type RuntimeModels = { available: ReadonlySet<string>; fallback?: string };
+
+export function splitSelector(sel: string): { model: string; thinking: string } {
+	const i = sel.lastIndexOf(":");
+	return i > 0 && !sel.slice(i + 1).includes("/") ? { model: sel.slice(0, i), thinking: sel.slice(i + 1) } : { model: sel, thinking: "medium" };
+}
+
+/** The earlier run's model (or the Anthropic default) while the runtime offers it, else the runtime's own default when it has one. */
+export function selectorFor(prior: Prior, t: "orchestrator" | "lanes", models?: RuntimeModels): string {
+	const kept = prior.selector(t);
+	return models?.fallback && !models.available.has(splitSelector(kept).model) ? models.fallback : kept;
+}
+
 export const expandHome = (p: string, home: string): string => p.replace(/^~(?=\/|$)/, home);
 
 export type Checked = { ok: true; answers: Answers } | { ok: false; errors: string[] };
 
 /** Fills what an answers file may leave out from the earlier run and the defaults, and lists what is wrong. */
-export function validateAnswers(a: Partial<Answers>, prior: Prior, home: string): Checked {
+export function validateAnswers(a: Partial<Answers>, prior: Prior, home: string, models?: RuntimeModels): Checked {
 	const errors: string[] = [];
 	const identity: Identity = { ...prior.identity, ...a.identity };
 	identity.character ||= CHARACTERS[0];
@@ -100,8 +113,8 @@ export function validateAnswers(a: Partial<Answers>, prior: Prior, home: string)
 			...(typeof a.peer_token === "string" && a.peer_token.trim().length >= 16 ? { peer_token: a.peer_token.trim() } : {}),
 			web_port: Number(a.web_port ?? prior.raw.web?.port ?? 7420),
 			tailscale_https_port: Number(a.tailscale_https_port ?? prior.raw.web?.tailscale_https_port ?? 8443),
-			orchestrator_model: a.orchestrator_model ?? prior.selector("orchestrator"),
-			lane_model: a.lane_model ?? prior.selector("lanes"),
+			orchestrator_model: a.orchestrator_model ?? selectorFor(prior, "orchestrator", models),
+			lane_model: a.lane_model ?? selectorFor(prior, "lanes", models),
 			install_aside: a.install_aside === true,
 		},
 	};

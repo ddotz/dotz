@@ -194,7 +194,7 @@ function settingOf(path: string, disk: Disk, over: Partial<Setting> = {}): Setti
 		applies: d.applies,
 		source: d.source ?? `config.json:${path}`,
 		...(d.default !== undefined ? { default: d.default } : {}),
-		...(t.hint ? { hint: t.hint } : {}),
+		...(t.hint ? { hint: t.hint.replaceAll("{harness}", activeHarness().name) } : {}),
 		...(t.unit ? { unit: t.unit } : {}),
 		...(d.min !== undefined ? { min: d.min } : {}),
 		...(d.max !== undefined ? { max: d.max } : {}),

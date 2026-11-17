@@ -5,18 +5,21 @@ import { guardConfigFrom } from "./guard-config.ts";
 import { installTaskCap } from "./task-cap.ts";
 import { growthFor } from "./task-cap-grow.ts";
 
-function worker() {
+function worker(cap?: number) {
 	const handlers: Record<string, ((event: any, ctx: any) => any)[]> = {};
 	const bus: ((data: any) => void)[] = [];
 	const sent: { message: any; options: any }[] = [];
-	installBgGuard({
-		on: (name, fn) => (handlers[name] ??= []).push(fn),
-		events: { on: (name, fn) => name === WAKE_SOURCE_STATE_EVENT && bus.push(fn) },
-		sendMessage: (message, options) => sent.push({ message, options }),
-	});
+	const host = {
+		on: (name: string, fn: (event: any, ctx: any) => any) => (handlers[name] ??= []).push(fn),
+		events: { on: (name: string, fn: (data: any) => void) => name === WAKE_SOURCE_STATE_EVENT && bus.push(fn) },
+		sendMessage: (message: any, options: any) => sent.push({ message, options }),
+	};
+	if (cap) installTaskCap(host, cap, 0, growthFor(cap, guardConfigFrom({ task_cap_grow: false })));
+	installBgGuard(host);
 	const emit = (data: any) => bus.forEach(fn => fn(data));
 	const end = (event: any = {}) => handlers.agent_end?.forEach(fn => fn(event, {}));
-	return { emit, end, sent };
+	const spend = (cacheRead: number) => handlers.turn_end?.forEach(fn => fn({ message: { role: "assistant", usage: { input: 0, cacheRead, cacheWrite: 0, output: 0 } }, toolResults: [{}] }, {}));
+	return { emit, end, spend, get sent() { return sent.filter(s => s.message.customType === "dotz-bg-guard"); } };
 }
 
 test("nothing live: the run ends with no extra turn", () => {
@@ -47,22 +50,27 @@ test("a live background bash, monitor or eval cell re-prompts the worker, at mos
 	expect(w.sent).toHaveLength(MAX_REPROMPTS);
 });
 
-// A task cap installed in this process, its turn_end handler returned so the test can spend tokens.
-function taskCap(cap: number) {
-	let turnEnd: (event: any, ctx: any) => any = () => {};
-	installTaskCap({ on: (name, fn) => name === "turn_end" && (turnEnd = fn), sendMessage: () => {} }, cap, 0, growthFor(cap, guardConfigFrom({ task_cap_grow: false })));
-	return (cacheRead: number) => turnEnd({ message: { role: "assistant", usage: { input: 0, cacheRead, cacheWrite: 0, output: 0 } }, toolResults: [{}] }, {});
-}
+const live = { source: "terminal-background-sessions", activeCount: 1, items: [{ id: "b1", description: "bun test" }] };
 
 test("a worker past its token cap is not re-prompted for a live background run", () => {
-	const spend = taskCap(1_000_000);
-	const w = worker();
-	w.emit({ source: "terminal-background-sessions", activeCount: 1, items: [{ id: "b1", description: "bun test" }] });
-	spend(999_999);
+	const w = worker(1_000_000);
+	w.emit(live);
+	w.spend(999_999);
 	w.end();
 	expect(w.sent).toHaveLength(1);
-	spend(1);
+	w.spend(1);
 	w.end();
 	expect(w.sent).toHaveLength(1);
-	taskCap(1_000_000);
+});
+
+test("the cap belongs to its own runner: a second worker's cap does not stop the first worker's re-prompts", () => {
+	const first = worker(1_000_000);
+	const second = worker(1_000_000);
+	first.emit(live);
+	second.emit(live);
+	second.spend(1_000_000);
+	first.end();
+	second.end();
+	expect(first.sent).toHaveLength(1);
+	expect(second.sent).toHaveLength(0);
 });

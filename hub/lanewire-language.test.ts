@@ -20,8 +20,8 @@ const nextReport = (lane: string) => new Promise<HubEvent>(resolve => waiters.pu
 beforeAll(() => {
 	cfg.identity = { ...cfg.identity, language: "ko" };
 	Reflect.set(cfg, "runtime", "omp");
-	modelDeps.spawn = ((argv: string[]) => {
-		calls.push(argv[argv.length - 1]);
+	modelDeps.spawn = ((_argv: string[], options: { stdin: Uint8Array }) => {
+		calls.push(new TextDecoder().decode(options.stdin));
 		const line = JSON.stringify({ type: "message_end", message: { role: "assistant", content: [{ type: "text", text: KO }], usage: { input: 10, output: 5 } } });
 		return { stdout: new Response(`${line}\n`).body, exited: Promise.resolve(0) };
 	}) as unknown as typeof modelDeps.spawn;

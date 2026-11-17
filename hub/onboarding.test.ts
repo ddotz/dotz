@@ -393,7 +393,7 @@ describe("first-run setup gate", () => {
 		};
 		const gen = make(() => draftLang(readFirstRun(gateDir)?.draft ?? {}));
 		let signedIn = false;
-		const gate = open({ i18n: gen, scan: async () => ({ harnesses: [{ login_ready: signedIn }] }), jobs: { permissions: async () => ({ ok: true }) } });
+		const gate = open({ i18n: gen, scan: async () => ({ harnesses: [{ login_ready: signedIn }] }), jobs: { permissions: async () => ({ ok: true }) }, installed: async () => true });
 		gateDir = gate.dir;
 		try {
 			const cookie = await gate.login();
@@ -427,6 +427,22 @@ describe("first-run setup gate", () => {
 			setCatalogProvider(undefined);
 			setAppLang("ko");
 		}
+	});
+
+	test("the apply refuses a harness that is not installed and writes nothing; installed, it goes through", async () => {
+		let there = false;
+		const { dir, call, login } = open({ installed: async () => there, jobs: { permissions: async () => ({ ok: true }) } });
+		const cookie = await login();
+		expect((await call("/api/setup/draft", json({ step: "review", values: { runtime: "omp", name: "Dotty" } }, cookie, "PUT"))).status).toBe(200);
+		expect((await call("/api/setup/run/permissions", json({}, cookie))).status).toBe(202);
+		const refused = await call("/api/setup/apply", json({}, cookie));
+		expect(refused.status).toBe(400);
+		expect(((await refused.json()) as { error: string }).error).toContain("omp (oh-my-pi)");
+		expect(existsSync(join(dir, "config.json"))).toBe(false);
+		expect(existsSync(join(dir, "secrets"))).toBe(false);
+		there = true;
+		expect((await call("/api/setup/apply", json({}, cookie))).status).toBe(200);
+		expect(JSON.parse(readFileSync(join(dir, "config.json"), "utf8")).orchestrator.runtime).toBe("omp");
 	});
 });
 

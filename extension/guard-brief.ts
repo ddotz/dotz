@@ -8,6 +8,12 @@ import { DEFAULT_LOOKUP_MODEL, dataDir, type GuardConfig, omoProviderName } from
 
 const WRITING_AGENTS = new Set(["task", "sonic"]);
 const DONE_MARKER = /acceptance|done when|done-condition|end state|success criteria|완료 조건|완료 기준|끝 조건/i;
+
+/** Whether a brief names an observable done-condition ("Acceptance:", "Done when:", ...). */
+export const hasDoneCondition = (text: string): boolean => DONE_MARKER.test(text);
+
+/** Whether workers of this agent write files (a missing name is the generic `task` worker): they run in an isolated copy. */
+export const isWritingAgent = (agent: unknown): boolean => WRITING_AGENTS.has(String(agent ?? "task"));
 // Shared with the owner's original extension and the harness doctor, so a brief marked by either copy is never marked twice.
 export const BUDGET_MARKER = "[orchestrator-guard]";
 export const budgetLine = (g: GuardConfig) =>
@@ -67,6 +73,15 @@ export function relativizeRoots(text: string, roots: string[]): string {
 	return out;
 }
 
+/** What is wrong with one worker brief (`label` names it): no done-condition, longer than the limit, or a pasted code block over the fence limit. */
+export function briefProblems(label: string, brief: string, context: string, g: GuardConfig): string[] {
+	const problems: string[] = [];
+	if (!hasDoneCondition(`${brief}\n${context}`)) problems.push(`${label} has no observable done-condition (add an "Acceptance:" or "Done when:" line)`);
+	if (brief.length + context.length > g.max_brief_chars) problems.push(`${label} brief is ${brief.length + context.length} chars; pass paths instead of pasted contents (limit ${g.max_brief_chars})`);
+	if (longestFence(`${brief}\n${context}`) > g.max_fence_lines) problems.push(`${label} pastes a code block over ${g.max_fence_lines} lines; pass the path and line range instead`);
+	return problems;
+}
+
 // Isolation needs a git repo; outside one an isolated worker cannot start, so writing workers run in place there.
 // `roots`: checkout paths rewritten to cwd-relative in isolated briefs, so the worker edits its own copy.
 export function checkTaskInput(input: any, isolate = true, roots: string[] = [], g: GuardConfig): { reason: string } | { input: any } {
@@ -74,18 +89,12 @@ export function checkTaskInput(input: any, isolate = true, roots: string[] = [],
 	const items: any[] = Array.isArray(input?.tasks) ? input.tasks : [];
 	if (!items.length) return { input };
 	const problems: string[] = [];
-	items.forEach((item, i) => {
-		const brief = typeof item?.task === "string" ? item.task : "";
-		const label = `tasks[${i}]`;
-		if (!DONE_MARKER.test(`${brief}\n${context}`)) problems.push(`${label} has no observable done-condition (add an "Acceptance:" or "Done when:" line)`);
-		if (brief.length + context.length > g.max_brief_chars) problems.push(`${label} brief is ${brief.length + context.length} chars; pass paths instead of pasted contents (limit ${g.max_brief_chars})`);
-		if (longestFence(`${brief}\n${context}`) > g.max_fence_lines) problems.push(`${label} pastes a code block over ${g.max_fence_lines} lines; pass the path and line range instead`);
-	});
+	items.forEach((item, i) => problems.push(...briefProblems(`tasks[${i}]`, typeof item?.task === "string" ? item.task : "", context, g)));
 	if (problems.length) return { reason: `Worker brief rejected by the guard (worker-brief rules):\n- ${problems.join("\n- ")}\nRewrite the task call and retry.` };
 	let anyIsolated = false;
 	const tasks = items.map(item => {
 		const next = typeof item?.task === "string" && !item.task.includes(BUDGET_MARKER) ? { ...item, task: `${item.task}\n\n${budgetLine(g)}` } : { ...item };
-		if (isolate && WRITING_AGENTS.has(String(item?.agent ?? "task"))) next.isolated = true;
+		if (isolate && isWritingAgent(item?.agent)) next.isolated = true;
 		if (next.isolated && roots.length && typeof next.task === "string") {
 			next.task = relativizeRoots(next.task, roots);
 			anyIsolated = true;

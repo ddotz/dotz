@@ -1,23 +1,28 @@
 // A result turn runs at the effort its work was spawned at; the owner's turns run at the current effort.
 import { expect, test } from "bun:test";
-import { mkdtempSync } from "node:fs";
+import { existsSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { installEffortBound } from "./effort-bound.ts";
 import { en } from "../hub/i18n-en.ts";
 import { ko } from "../hub/i18n-ko.ts";
+import recording from "./fixtures/omp-wake.json";
 
 const ALL = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
 
 // `has`: the levels the session's model has. OmO sets the nearest one for a level it lacks (the next higher, else the next lower) and
 // says nothing when that changes nothing (agent-session _setThinkingLevel, _clampThinkingLevel).
-function orchestrator(level: string, has?: string[]) {
+function orchestrator(level: string, has?: string[], opts: { select?: boolean } = {}) {
 	const handlers: Record<string, ((event: any) => any)[]> = {};
 	const switches: string[] = [];
+	const hookOptions: Record<string, unknown> = {};
 	let current = level;
 	const fire = (name: string, event: any = {}) => (handlers[name] ?? []).forEach(fn => fn(event));
 	const pi = {
-		on: (name: string, fn: (event: any) => any) => (handlers[name] ??= []).push(fn),
+		on: (name: string, fn: (event: any) => any, options?: unknown) => {
+			(handlers[name] ??= []).push(fn);
+			if (options) hookOptions[name] = options;
+		},
 		getThinkingLevel: () => current,
 		setThinkingLevel: (l: string) => {
 			const previousLevel = current;
@@ -25,10 +30,11 @@ function orchestrator(level: string, has?: string[]) {
 			if (has && l === previousLevel) return;
 			switches.push(l);
 			current = l;
-			fire("thinking_level_select", { level: l, previousLevel });
+			if (opts.select !== false) fire("thinking_level_select", { level: l, previousLevel });
 		},
 	};
-	installEffortBound(pi, join(mkdtempSync(join(tmpdir(), "effort-bound-")), "effort-bound.json"));
+	const file = join(mkdtempSync(join(tmpdir(), "effort-bound-")), "effort-bound.json");
+	installEffortBound(pi, file);
 	const spawn = (id: string) => fire("tool_result", { toolName: "task", isError: false, input: {}, content: [{ type: "text", text: `Spawned ${id} in background.` }] });
 	// The gateway applies the owner's effort change between turns (hub/orchestrator.ts switchInPlace -> set_thinking_level).
 	const ownerSwitch = (l: string) => pi.setThinkingLevel(l);
@@ -40,7 +46,7 @@ function orchestrator(level: string, has?: string[]) {
 		return at;
 	};
 	const wake = (id: string) => `task completion name:job id:${id} category:deep-low status:completed result:"done"`;
-	return { spawn, ownerSwitch, turn, wake, fire, switches, level: () => current };
+	return { spawn, ownerSwitch, turn, wake, fire, switches, hookOptions, file, level: () => current };
 }
 
 test("a worker spawned at xhigh, then a switch to medium: its completion turn runs at xhigh and the next owner turn at medium", () => {
@@ -162,4 +168,200 @@ test("the owner's switch made during the raised turn is the level the session go
 	o.ownerSwitch("high");
 	o.fire("agent_end", { messages: [] });
 	expect(o.level()).toBe("high");
+});
+
+// why(protocol): fixtures/omp-wake.json holds what omp@18.22.0 fired for its main agent in rpc mode, recorded from a real run: a background task spawned with the session at high, the session switched to low over RPC set_thinking_level while it ran, then the wake, which fires agent_start, context, turn_start, message_start and before_provider_request, with no before_agent_start and no thinking_level_select
+type Step = { name: string; event: any };
+const recorded: { spawn: Step[]; wake: Step[] } = recording;
+const copyOf = (steps: Step[], name: string) => structuredClone(steps.find(s => s.name === name)!.event);
+
+function ompSession(level: string, has?: string[]) {
+	const o = orchestrator(level, has, { select: false });
+	const spawn = (...ids: string[]) => {
+		const event = copyOf(recorded.spawn, "tool_result");
+		event.details.progress = ids.map((id, index) => ({ ...event.details.progress[0], index, id }));
+		event.details.async.jobId = ids[0];
+		o.fire("tool_result", event);
+	};
+	const delivered = (...jobs: (string | object)[]) => {
+		const message = copyOf(recorded.wake, "message_start").message;
+		message.details.jobs = jobs.map(job => (typeof job === "string" ? { ...message.details.jobs[0], jobId: job, agentId: job, label: job } : job));
+		return message;
+	};
+	const start = () => o.fire("agent_start", copyOf(recorded.wake, "agent_start"));
+	const request = (...tail: object[]) => {
+		o.fire("context", { messages: [{ role: "toolResult" }, { role: "assistant" }, ...tail] });
+		return o.level();
+	};
+	const end = () => o.fire("agent_end", copyOf(recorded.wake, "agent_end"));
+	const wake = (...jobs: (string | object)[]) => {
+		start();
+		const at = request(delivered(...jobs));
+		end();
+		return at;
+	};
+	const replay = (steps: Step[]) => {
+		const at: string[] = [];
+		for (const step of steps) {
+			o.fire(step.name, structuredClone(step.event));
+			if (step.name === "before_provider_request") at.push(o.level());
+		}
+		return at;
+	};
+	return { ...o, spawn, delivered, start, request, end, wake, replay };
+}
+
+test("omp, replayed from the recording: a task spawned at high and the owner at low while it ran: the wake turn's request goes out at high, and the session is at low again when the turn ends", () => {
+	expect(recorded.wake.map(s => s.name)).not.toContain("before_agent_start");
+	const o = ompSession("high");
+	expect(o.replay(recorded.spawn)).toEqual(["high"]);
+	o.ownerSwitch("low");
+	expect(o.replay(recorded.wake)).toEqual(["high"]);
+	expect(o.level()).toBe("low");
+	expect(o.switches).toEqual(["low", "high", "low"]);
+	expect(o.hookOptions.context).toEqual({ mutatesMessages: false });
+});
+
+test("omp: every agent of a batch is recorded, and each result runs at the level its batch was spawned at", () => {
+	const o = ompSession("medium");
+	o.spawn("Alpha", "Beta");
+	o.ownerSwitch("xhigh");
+	expect(o.wake("Beta")).toBe("medium");
+	expect(o.level()).toBe("xhigh");
+	expect(o.wake("Alpha")).toBe("medium");
+	expect(o.level()).toBe("xhigh");
+});
+
+function lowThenMedium() {
+	const o = ompSession("low");
+	o.spawn("Low");
+	o.ownerSwitch("medium");
+	o.spawn("Mid");
+	o.ownerSwitch("xhigh");
+	return o;
+}
+
+test("omp: two results in one message run at the highest of their levels", () => {
+	const o = lowThenMedium();
+	expect(o.wake("Low", "Mid")).toBe("medium");
+	expect(o.level()).toBe("xhigh");
+});
+
+test("omp: two results delivered as separate messages run at the highest of their levels", () => {
+	const o = lowThenMedium();
+	o.start();
+	expect(o.request(o.delivered("Low"), o.delivered("Mid"))).toBe("medium");
+	o.end();
+	expect(o.level()).toBe("xhigh");
+});
+
+test("omp: a result that arrives while a turn runs joins that turn at its level, and its record is used up", () => {
+	const o = ompSession("high");
+	o.spawn("Alpha");
+	o.ownerSwitch("medium");
+	o.spawn("Beta");
+	o.ownerSwitch("low");
+	o.start();
+	expect(o.request(o.delivered("Alpha"))).toBe("high");
+	o.fire("context", { messages: [{ role: "assistant" }, o.delivered("Beta")] });
+	expect(o.level()).toBe("high");
+	o.end();
+	expect(o.level()).toBe("low");
+	expect(o.wake("Beta")).toBe("low");
+	expect(o.switches).toEqual(["medium", "low", "high", "low"]);
+});
+
+test("omp: a job nobody recorded, a shell job, a result already used up and a context without messages change nothing", () => {
+	const o = ompSession("high");
+	o.spawn("Alpha");
+	o.ownerSwitch("low");
+	const shell = { jobId: "bg_1", type: "bash", status: "completed", label: "sleep 5; echo shell-done", durationMs: 5049 };
+	expect(o.wake("Ghost")).toBe("low");
+	expect(o.wake(shell)).toBe("low");
+	expect(o.wake("Alpha")).toBe("high");
+	expect(o.wake("Alpha")).toBe("low");
+	o.start();
+	o.fire("context", {});
+	o.fire("context", { messages: [null, 3] });
+	o.end();
+	expect(o.switches).toEqual(["low", "high", "low"]);
+});
+
+test("omp: the owner's switch during the wake turn is the level the session goes back to", () => {
+	const o = ompSession("high");
+	o.spawn("Alpha");
+	o.ownerSwitch("low");
+	o.start();
+	expect(o.request(o.delivered("Alpha"))).toBe("high");
+	o.ownerSwitch("medium");
+	o.end();
+	expect(o.level()).toBe("medium");
+	expect(o.switches).toEqual(["low", "high", "medium"]);
+});
+
+test("omp: a recorded level equal to the current one makes no switch call", () => {
+	const o = ompSession("medium");
+	o.spawn("Alpha");
+	expect(o.wake("Alpha")).toBe("medium");
+	expect(o.switches).toEqual([]);
+});
+
+test("omp: a deep-marked prompt that starts the same run as a wake keeps xhigh, and the session goes back to its own level", () => {
+	const o = ompSession("low");
+	o.spawn("Alpha");
+	o.ownerSwitch("medium");
+	o.fire("before_agent_start", { prompt: deepPrompt("어려운 질문"), trigger: "prompt" });
+	expect(o.level()).toBe("xhigh");
+	o.start();
+	expect(o.request(o.delivered("Alpha"))).toBe("xhigh");
+	o.end();
+	expect(o.level()).toBe("medium");
+	expect(o.switches).toEqual(["medium", "xhigh", "medium"]);
+});
+
+test("omp: the oldest record past the cap is forgotten", () => {
+	const o = ompSession("high");
+	for (let i = 0; i <= 100; i++) o.spawn(`job${i}`);
+	o.ownerSwitch("low");
+	expect(o.wake("job0")).toBe("low");
+	expect(o.wake("job100")).toBe("high");
+});
+
+test("omp records stay in memory, while an OmO id still goes to the file", () => {
+	const o = ompSession("high");
+	o.spawn("Alpha");
+	expect(existsSync(o.file)).toBe(false);
+	o.fire("tool_result", { toolName: "task", isError: false, input: {}, content: [{ type: "text", text: "Spawned st_01a1jjjj in background." }] });
+	expect(existsSync(o.file)).toBe(true);
+});
+
+test("the context hook leaves OmO's wake, which arrives as prompt text, to before_agent_start", () => {
+	const o = orchestrator("xhigh");
+	o.spawn("st_01a1kkkk");
+	o.ownerSwitch("medium");
+	o.fire("agent_start");
+	o.fire("context", { messages: [{ role: "assistant" }, { role: "custom", customType: "omo-senpi:wake", content: [{ type: "text", text: o.wake("st_01a1kkkk") }] }] });
+	expect(o.level()).toBe("medium");
+	expect(o.turn(o.wake("st_01a1kkkk"))).toBe("xhigh");
+});
+
+test("omp: on a model without the recorded level the wake turn runs at the nearest level it has, and the session still goes back", () => {
+	const o = ompSession("xhigh", ["off", "low", "medium", "high", "max"]);
+	o.spawn("Alpha");
+	o.ownerSwitch("medium");
+	expect(o.wake("Alpha")).toBe("max");
+	expect(o.level()).toBe("medium");
+	expect(o.switches).toEqual(["medium", "max", "medium"]);
+});
+
+test("omp: a result recorded above xhigh beats the deep marker on the run they start together", () => {
+	const o = ompSession("max");
+	o.spawn("Alpha");
+	o.ownerSwitch("medium");
+	o.fire("before_agent_start", { prompt: deepPrompt("어려운 질문"), trigger: "prompt" });
+	o.start();
+	expect(o.request(o.delivered("Alpha"))).toBe("max");
+	o.end();
+	expect(o.level()).toBe("medium");
+	expect(o.switches).toEqual(["medium", "xhigh", "max", "medium"]);
 });

@@ -342,14 +342,16 @@ export function writeAtomic(file: string, text: string, mode?: number): void {
 	writeFileSync(tmp, text, mode === undefined ? undefined : { mode });
 	renameSync(tmp, file);
 }
-// Selects the agent runtime for the given roles (`orchestrator.runtime` / `lanes.runtime`), keeping every other key of config.json.
+/** Selects the agent runtime for the given roles (`orchestrator.runtime` / `lanes.runtime`) in config.json only, keeping every other key; the running gateway keeps its processes' runtime until it restarts. */
 export function setRuntime(roles: ("orchestrator" | "lanes")[], runtime: string): void {
 	const disk = JSON.parse(readFileSync(CONFIG_FILE, "utf8"));
-	for (const role of roles) {
-		disk[role] = { ...disk[role], runtime };
-		(cfg as any)[role] = { ...(cfg as any)[role], runtime };
-	}
+	for (const role of roles) disk[role] = { ...disk[role], runtime };
 	writeAtomic(CONFIG_FILE, `${JSON.stringify(disk, null, 2)}\n`);
+}
+/** The runtime config.json names per role now (what the next gateway start runs); undefined = no choice written, the default applies. */
+export function pendingRuntimes(): { orchestrator?: string; lanes?: string } {
+	const disk = JSON.parse(readFileSync(CONFIG_FILE, "utf8"));
+	return { orchestrator: disk.orchestrator?.runtime ?? disk.runtime, lanes: disk.lanes?.runtime ?? disk.runtime };
 }
 // Sets this computer's name (web.machine_name; "" clears it back to the hostname-derived default), keeping every other key of config.json.
 export function setMachineName(name: string): void {

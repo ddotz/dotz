@@ -124,3 +124,34 @@ test("a held limit whose window has reset is not shown with its old percent", ()
 	expect(text).not.toContain("40.0% used");
 	expect(text).toContain("70.0% used");
 });
+
+const login = (email: string, used: number) => ({ provider: "anthropic", metadata: { email }, limits: limitsOf(body(used, used)) });
+
+test("F8-12: each omp login keeps its own last good read; a failed read shows every login's own numbers, marked failed", async () => {
+	const { readReports } = await import("./usage-last.ts");
+	const last = await store();
+	let ok = true;
+	const read = async () => (ok ? { reports: [login("a@x.io", 10), login("b@x.io", 80), { provider: "openai", limits: limitsOf(body(5, 5)) }] } : { reason: "exit 1" });
+	await readReports(read, last);
+	expect(last.keys("omp:").sort()).toEqual(["omp:anthropic:a@x.io", "omp:anthropic:b@x.io", "omp:openai"]);
+	ok = false;
+	now += 5 * 60_000;
+	const held = (await readReports(read, last)) ?? [];
+	const used = (email: string) => held.find(r => r.metadata?.email === email)?.limits?.[0];
+	expect(held.filter(r => r.provider === "anthropic").map(r => [r.metadata?.email, r.problem, r.fetchedAt])).toEqual([["a@x.io", "failed", T0], ["b@x.io", "failed", T0]]);
+	expect((used("a@x.io") as { amount: { used: number } }).amount.used).toBe(10);
+	expect((used("b@x.io") as { amount: { used: number } }).amount.used).toBe(80);
+});
+
+test("F8-12: a login that left omp's store is dropped from the held reads; another provider's held read stays", async () => {
+	const { readReports } = await import("./usage-last.ts");
+	const last = await store();
+	let reports: object[] = [login("a@x.io", 10), login("b@x.io", 80), { provider: "openai", limits: limitsOf(body(5, 5)) }];
+	const read = async () => ({ reports });
+	await readReports(read, last);
+	reports = [login("a@x.io", 12)];
+	await readReports(read, last);
+	expect(last.keys("omp:").sort()).toEqual(["omp:anthropic:a@x.io", "omp:openai"]);
+	const failing = await readReports(async () => ({ reason: "exit 1" }), last);
+	expect(failing?.map(r => r.provider).sort()).toEqual(["anthropic", "openai"]);
+});

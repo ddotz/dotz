@@ -216,3 +216,35 @@ test("an answer to a message that joined the running turn is held the same way a
 	t.q.onAnswer("rewritten second answer");
 	expect(await t.posted()).toEqual([["web", "answer to the first", "m1"], ["web", "rewritten second answer", "m2"]]);
 });
+
+test("the answer of a run a worker woke is held the same way and is posted once, rewritten, to the request that waited", async () => {
+	const t = setup();
+	t.startTurn("work");
+	t.q.workersSpawned([{ id: "W~a.1" }]);
+	t.q.onAnswer("[later]");
+	t.idle();
+	t.state.working = true;
+	t.q.workersDone(["W~a.1"]);
+	t.q.onAnswer(`result with ${HIT}`);
+	expect(await t.posted()).toEqual([]);
+	expect(t.notes()).toEqual([{ text: NOTE, owner: false }]);
+	expect(t.state.delivered.at(-1)).toEqual({ text: NOTE, owner: false });
+	t.q.onPrompt(NOTE);
+	t.q.onAnswer("rewritten result");
+	t.idle();
+	expect(await t.posted()).toEqual([["web", "rewritten result", "m1"]]);
+	expect(t.q.isAnswered("m1")).toBe(true);
+});
+
+test("the clean answer of a woken run is posted as it is, with no note", async () => {
+	const t = setup();
+	t.startTurn("work");
+	t.q.workersSpawned([{ id: "W~a.1" }]);
+	t.q.onAnswer("[later]");
+	t.idle();
+	t.state.working = true;
+	t.q.workersDone(["W~a.1"]);
+	t.q.onAnswer("clean result");
+	expect(await t.posted()).toEqual([["web", "clean result", "m1"]]);
+	expect(t.notes()).toEqual([]);
+});

@@ -147,7 +147,7 @@ flowchart LR
     o_settings_float["float (2)"]
     o_settings_menu["menu (3)"]
     o_settings_select["select (8)"]
-    o_settings_toast["toast (54)"]
+    o_settings_toast["toast (56)"]
   end
   subgraph a_shell["shell"]
     c_shell(["shell code"])

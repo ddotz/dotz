@@ -18,6 +18,7 @@
   const D = () => S.draft;
   const qs = (s, r = root) => r.querySelector(s);
   const hz = id => S.scan.harnesses.find(z => z.id === id);
+  const defaultRuntime = () => { const ready = S.scan.harnesses.filter(z => z.adapter && z.installed); return (ready.find(z => z.id === "omo") || ready[0])?.id || "omo"; };
   const job = id => S.jobs.find(r => r.id === id) || { id, state: "idle", detail: "", owner: "" };
   const busy = () => S.jobs.some(r => r.state === "running");
   const furthest = () => Math.max(ORDER.indexOf(S.step === "apply" ? "review" : S.step), 0);
@@ -110,12 +111,12 @@
   /* ---------- the steps ---------- */
   const VIEWS = {
     start() {
-      const x = u(), sc = S.scan, om = hz("omo"), ts = sc.tailscale;
+      const x = u(), sc = S.scan, ts = sc.tailscale;
       const accounts = sc.zele.accounts.join(", ");
       return {
         title: x.titles.start, sup: x.sups.start,
         body: `<div class="sec">${h(x.start.found)}</div><div class="list">` +
-          row({ lead: dot(om?.installed ? "ok" : "warn"), title: "OmO", sup: om?.installed ? x.start.installed : x.start.missing }) +
+          sc.harnesses.filter(z => z.adapter).map(z => row({ lead: dot(z.installed ? "ok" : "warn"), title: z.label, sup: z.installed ? x.start.installed : x.start.missing })).join("") +
           (sc.mac ? row({ lead: dot(sc.aside.app && sc.aside.cli ? "ok" : "warn"), title: "Aside", sup: sc.aside.app && sc.aside.cli ? x.ready : x.start.asideMissing }) : "") +
           row({ lead: dot(ts.running ? "ok" : "warn"), title: "Tailscale", sup: ts.running ? fmt(x.start.signedInAs, { name: ts.login }) : ts.installed ? x.start.notSignedIn : x.start.missing }) +
           row({ lead: dot(sc.zele.installed ? "ok" : "warn"), title: "zele", sup: !sc.zele.installed ? x.start.missing : accounts || x.start.noAccounts }) + "</div>" +
@@ -124,10 +125,10 @@
       };
     },
     harness() {
-      const x = u(), sel = D().runtime || "omo", picked = hz(sel);
+      const x = u(), sel = D().runtime || defaultRuntime(), picked = hz(sel);
       const list = S.scan.harnesses.map(z => pick({ k: "runtime", i: z.id, on: sel === z.id, off: !z.adapter, title: z.label, sup: !z.adapter ? x.harness.noAdapter : z.installed ? [z.version, z.id === "omo" ? x.harness.defaultTag : ""].filter(Boolean).join(" · ") || x.ready : x.harness.notInstalled })).join("");
       let more = "";
-      if (picked?.adapter && !picked.installed) more = sel === "omo" ? `<div class="list ob-gap">${actionRow("install-omo", { job: "install-omo", title: S.text.jobs["install-omo"], idle: "bun add -g --trust omo-ai" })}</div>` : `<div class="note ob-gap">${h(fmt(x.harness.installOwn, { name: picked.label }))}</div>`;
+      if (picked?.adapter && !picked.installed) more = picked.install ? `<div class="list ob-gap">${actionRow(`install-${sel}`, { job: `install-${sel}`, title: S.text.jobs[`install-${sel}`], idle: picked.install })}</div>` : `<div class="note ob-gap">${h(fmt(x.harness.installOwn, { name: picked.label }))}</div>`;
       else if (picked?.adapter) {
         const n = Array.isArray(picked.accounts) ? picked.accounts.length : Number(picked.accounts) || 0;
         const spec = { title: fmt(x.harness.loginTitle, { name: picked.label }), idle: sel === "omo" ? x.harness.loginSupOmo : x.harness.loginSupTerm, ready: picked.login_ready, done: n ? fmt(x.harness.accounts, { n }) : x.ready };
@@ -195,7 +196,7 @@
       const x = u(), r = x.review, sc = S.scan, d = D();
       if (V.applying) return { title: x.titles.applying, sup: x.sups.applying, body: `<div class="list" data-apply>${applyRows()}</div>`, foot: "" };
       const line = (s, title, sup) => row({ title, sup, end: `<a class="btn text inrow" href="#${s}">${h(x.fix)}</a>` });
-      const hs = hz(d.runtime || "omo");
+      const hs = hz(d.runtime || defaultRuntime());
       const ok = (v, word) => `${word} ${v ? x.ready : r.laterWord}`;
       const tools = [sc.mac ? ok(sc.aside.app && sc.aside.cli, "Aside") : "", ok(sc.tailscale.running, "Tailscale"), ok(sc.zele.installed, "zele")].filter(Boolean).join(" · ");
       const dc = d.guild && !V.dcOff ? fmt(r.discordSum, { guild: d.guild, bot: S.saved["discord-bot-token"] || V.botMode === "token" ? r.botTokenWord : r.botAutoWord }) : r.noDiscord;
@@ -290,7 +291,7 @@
   async function next() {
     const v = V.view, values = gather();
     if (v === "discord" && V.dcOff) Object.assign(values, { guild: "", owner_id: "" });
-    if (v === "harness") values.runtime = D().runtime || "omo";
+    if (v === "harness") values.runtime = D().runtime || defaultRuntime();
     if (v === "start") values.lang = S.lang.slice(0, 2);
     const bad = validate(v, values);
     if (bad) { say(bad, true); return; }

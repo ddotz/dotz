@@ -47,8 +47,20 @@ async function target(cwd: string, pr: string | undefined, gh: Run): Promise<Tar
 	return { key: `branch ${realpathSync(common)}:${branch}`, label: `branch ${branch}`, head, repo: dirname(realpathSync(common)), branch };
 }
 
-const store = (d: Deps) => join(d.dir ?? process.env.DOTZ_DIR ?? join(homedir(), ".dotz"), "reviews");
+const dataDir = (d: Deps) => d.dir ?? process.env.DOTZ_DIR ?? join(homedir(), ".dotz");
+const store = (d: Deps) => join(dataDir(d), "reviews");
 const fileOf = (d: Deps, key: string) => join(store(d), `${createHash("sha256").update(key).digest("hex").slice(0, 24)}.json`);
+
+function laneBase(t: Target, d: Deps): string | undefined {
+	const lane = process.env.DOTZ_LANE;
+	if (!lane || !t.branch) return undefined;
+	try {
+		const record: { worktree?: { branch?: string; base?: string } } = JSON.parse(readFileSync(join(dataDir(d), "lanes", lane, "lane.json"), "utf8"));
+		return record.worktree?.branch === t.branch ? record.worktree.base : undefined;
+	} catch {
+		return undefined;
+	}
+}
 
 function load(d: Deps, key: string): Review | undefined {
 	try {
@@ -110,7 +122,7 @@ export async function mergeGate(p: { cwd: string; pr?: string; into?: string; dr
 	}
 	const repo = t.repo!;
 	const current = (await git(["symbolic-ref", "--short", "HEAD"], repo)).stdout.trim();
-	const into = p.into ?? current;
+	const into = p.into ?? laneBase(t, d) ?? current;
 	if (!into || into === t.branch) throw new Refusal(`no base branch to merge ${t.label} into; pass into`);
 	if (p.dryRun) return `MERGE_OK ${t.label} -> ${into} head=${short(t.head)} (dry run)`;
 	// The reviewed sha itself is merged, never the branch name, so a commit landing meanwhile cannot ride along.

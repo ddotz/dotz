@@ -1,9 +1,3 @@
-// The doctor, part A: one gateway-run pass over the install's own files, no model call. It runs the checks of hub/doctor-checks.ts once a night (at the
-// old token-audit slot, `token_audit_at`), keeps every finding in ONE file (<data>/doctor.json: the last run, the findings with the time they were first seen,
-// and what was told when at which level), and posts at most ONE item at the morning time (`doctor_at`: "auto" | "HH:MM" | "off").
-// Quiet when nothing is notable: a log line, nothing posted. A finding is told again only when its level grew 1.5x or a week passed; a resolved one is dropped.
-// The token audit and the failure report no longer schedule or alert by themselves; the immediate alerts (gateway down, login lost, a watch failing twice,
-// update failure, usage limits) stay where they are. usage: bun hub/doctor.ts --dry   (all checks on the real data dir, writes nothing; last line RESULT {...})
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { issueBlock } from "./choices.ts";
@@ -113,7 +107,16 @@ export function nextAt(hhmm: string, from: number): number {
 
 const off = (d: Deps): boolean => d.at().trim().toLowerCase() === "off";
 
-/** The night run: checks, then the one result file. Does nothing when the doctor is off. */
+/**
+ * The night run: checks, then the one result file. Does nothing when the doctor is off.
+ * The doctor, part A: one gateway-run pass over the install's own files. Its one model call is the weekly prompt review of hub/prompt-review.ts (skipped when
+ * the usage window is tight; `--dry` makes none). It runs the checks of hub/doctor-checks.ts once a night (at the old token-audit slot, `token_audit_at`),
+ * keeps every finding in ONE file (<data>/doctor.json: the last run, the findings with the time they were first seen, and what was told when at which level),
+ * and posts at most ONE item at the morning time (`doctor_at`: "auto" | "HH:MM" | "off"). Quiet when nothing is notable: a log line, nothing posted.
+ * A finding is told again only when its level grew 1.5x or a week passed; a resolved one is dropped. The token audit and the failure report no longer schedule
+ * or alert by themselves; the immediate alerts (gateway down, login lost, a watch failing twice, update failure, usage limits) stay where they are.
+ * Usage: `bun hub/doctor.ts --dry` runs all checks on the real data dir and writes nothing; the last line is RESULT {...}.
+ */
 export async function runNight(d: Deps): Promise<void> {
 	if (off(d)) return;
 	const now = d.now(), store = await runChecks(d.checks ?? CHECKS, d, loadStore(d.dataDir), now);

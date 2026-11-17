@@ -5,6 +5,7 @@ import { afterEach, expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { cfg } from "./config.ts";
 import { convWorkers, createConvSessions, type BgWork, type Conv, type ConvDeps, type Prompts } from "./convsessions.ts";
 import type { HubEvent } from "./events.ts";
 import { createPrompts } from "./prompts.ts";
@@ -23,7 +24,7 @@ const tmp = (): string => {
 
 type Fake = { o: Orchestrator; delivered: string[]; parked: number; applied: number; cancels: number; live: number; started(): boolean };
 
-function setup(opts: { on?: boolean; maxLive?: number; idleMin?: number; dir?: string; history?: HubEvent[]; log?: string[]; queue?: Prompts; kindModel?: (key: string) => string | undefined } = {}) {
+function setup(opts: { pin?: () => string; on?: boolean; maxLive?: number; idleMin?: number; dir?: string; history?: HubEvent[]; log?: string[]; queue?: Prompts; kindModel?: (key: string) => string | undefined } = {}) {
 	const dir = opts.dir ?? tmp();
 	let clock = 1_000_000;
 	const fakes = new Map<string, Fake>();
@@ -107,7 +108,7 @@ function setup(opts: { on?: boolean; maxLive?: number; idleMin?: number; dir?: s
 		dataDir: dir,
 		history: () => opts.history ?? [],
 		workers: convWorkers,
-		workerPin: () => "main-pin",
+		workerPin: () => opts.pin?.() ?? "main-pin",
 		kindModel: key => opts.kindModel?.(key),
 		log: line => void opts.log?.push(line),
 		now: () => clock,
@@ -361,4 +362,28 @@ test("an omp session with a running subagent or a pending async wake is never pa
 	expect([registry.parkable(c, 0), rests(), convWorkers(c)]).toEqual([true, true, 0]);
 	registry.sweep();
 	expect(registry.live(c)).toBe(false);
+});
+
+test("on omp a conversation on its own model follows main's workers: its session restarts when free once the workers' pin moved, and no pin file is written", () => {
+	const was = cfg.runtime;
+	cfg.runtime = "omp";
+	try {
+		let pin = "w/one";
+		const t = setup({ pin: () => pin });
+		t.registry.setOwnModel("ch:1", "m/own:low");
+		t.registry.ensure("ch:2");
+		expect(existsSync(join(t.dir, "conv-sessions", "ch_1", "worker-pin"))).toBe(false);
+		const applied = () => t.fakes.get("ch:1")!.applied;
+		const before = applied();
+		t.registry.followMain();
+		expect(applied()).toBe(before);
+		pin = "w/two";
+		t.registry.followMain();
+		expect(applied()).toBe(before + 1);
+		t.registry.followMain();
+		expect(applied()).toBe(before + 1);
+		expect(t.fakes.get("ch:2")!.applied).toBe(3);
+	} finally {
+		cfg.runtime = was;
+	}
 });

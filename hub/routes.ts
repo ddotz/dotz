@@ -35,7 +35,7 @@ import { isMailTarget } from "./conv-model.ts";
 import { syncCardFiles } from "./draft-attach.ts";
 import { mailOpened, mailByKey, mailByThread, sentMailEvent, type MailDeps } from "./mail.ts";
 import { canvasRoute, FileError, messageFiles, ownerFiles, serveFile, UPLOAD_MAX_BYTES, uploadsFrom } from "./files.ts";
-import { laneCapacity, laneClosed, lanes, laneSummary } from "./lanes.ts";
+import { laneCapacity, laneClosed, lanes, laneSummary, laneWatching } from "./lanes.ts";
 import { withHomes } from "./laneviews.ts";
 import { main as mainOrch, orch } from "./orchestrator.ts";
 import { listMonitors } from "./monitors.ts";
@@ -215,7 +215,7 @@ function stateRuns(): Record<string, RunState> {
 			resuming: lane.resuming,
 			lastAnswer: lane.lastText, acted: lastTurnActed(items),
 			compacting: compactingNow(lane.ctx),
-			watching: openMonitor(lane.sessionFile),
+			watching: laneWatching(lane),
 			todos: openTodos(laneTodo(lane)),
 			now: nowMs,
 		});

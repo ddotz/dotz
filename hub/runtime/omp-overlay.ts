@@ -14,6 +14,10 @@ type Workers = { task: string; lookup?: string; chains: Chains; limit?: number }
 
 const WORKER_MAX_DEPTH = 2;
 const LOOKUP_AGENTS = ["scout", "sonic"];
+const TASK_SOFT_REQUEST_BUDGET = 200;
+const TASK_MAX_RUNTIME_MS = 0;
+const PINS = ["startup:\n  checkUpdate: false\n", "magicKeywords:\n  enabled: false\n", "github:\n  enabled: false\n", "async:\n  enabled: true\n", "secrets:\n  enabled: true\n"].join("");
+const TASK_PINS = `  isolation:\n    enabled: true\n    apply: false\n    merge: patch\n  maxRuntimeMs: ${TASK_MAX_RUNTIME_MS}\n  softRequestBudget: ${TASK_SOFT_REQUEST_BUDGET}\n`;
 
 /** The home omp resolves user-level folders from: env HOME first. */
 export const homeDir = (): string => process.env.HOME ?? homedir();
@@ -76,19 +80,25 @@ const userAgents = (cwd: string): string[] => {
 	return [...new Set(ruleNames(join(ompAgentDir(), "agents")))].filter(n => !own.has(n)).sort();
 };
 
+function processChainKey(o: SpawnOpts, w: Workers): string {
+	const own = parseSelector(o.model);
+	const worker = parseSelector(w.task);
+	return worker.model === own.model && worker.thinking !== own.thinking ? selectorOf(own) : own.model;
+}
+
 function workersYaml(w: Workers, cwd: string): string {
 	const agents = [["task", "@task"], ...LOOKUP_AGENTS.map(agent => [agent, w.lookup ? "@lookup" : "@task"])];
 	const overrides = agents.map(([agent, role]) => `    ${agent}: ${JSON.stringify(role)}\n`).join("");
 	const roles = `  task: ${JSON.stringify(w.task)}\n${w.lookup ? `  lookup: ${JSON.stringify(w.lookup)}\n` : ""}`;
 	const disabled = userAgents(cwd);
-	return `modelRoles:\n${roles}task:\n  agentModelOverrides:\n${overrides}  maxRecursionDepth: ${WORKER_MAX_DEPTH}\n  agentIdleTtlMs: ${workerIdleMin() * 60_000}\n${w.limit ? `  maxConcurrency: ${w.limit}\n` : ""}${disabled.length ? `  disabledAgents:\n${quoted(disabled, "    ")}` : ""}`;
+	return `modelRoles:\n${roles}task:\n  agentModelOverrides:\n${overrides}  maxRecursionDepth: ${WORKER_MAX_DEPTH}\n  agentIdleTtlMs: ${workerIdleMin() * 60_000}\n${w.limit ? `  maxConcurrency: ${w.limit}\n` : ""}${TASK_PINS}${disabled.length ? `  disabledAgents:\n${quoted(disabled, "    ")}` : ""}`;
 }
 
 function compactionYaml(o: SpawnOpts): string {
 	const { lane } = o;
-	if (!lane) return `compaction:\n  keepRecentTokens: ${orchestratorKeepRecent()}\n`;
+	if (!lane) return `compaction:\n  idleEnabled: false\n  keepRecentTokens: ${orchestratorKeepRecent()}\n`;
 	const thresholds = [...new Set([parseSelector(o.model).model, parseSelector(lane.workerModel).model])].map(m => `    ${JSON.stringify(m)}: ${JSON.stringify(`f${lane.compactAt}`)}\n`).join("");
-	return `compaction:\n  modelThresholds:\n${thresholds}  keepRecentTokens: ${lane.keepRecent}\n`;
+	return `compaction:\n  idleEnabled: false\n  modelThresholds:\n${thresholds}  keepRecentTokens: ${lane.keepRecent}\n`;
 }
 
 function sessionOf(o: SpawnOpts): { file: string; who: string } {
@@ -107,11 +117,15 @@ function sessionOf(o: SpawnOpts): { file: string; who: string } {
  * toggles of the skill and command sources and the foreign user-level discovery sources are turned off), and the wait for a usage reset (the hub
  * handles limits). Fallback chains of the process's model and of its task and lookup roles are what the hub supplied, else
  * an explicit empty chain, so no chain of the owner's settings moves a dotz process.
- * omp picks a chain by the exact model id, then `provider/*`, then the role, so one key cannot carry a chain for the process
- * and another for workers on the same model: when the workers run on the process's own model (an orchestrator whose
- * `workers` is that model, a lane whose worker model equals its model) the process's chain is the one they walk, and the
- * `task` chain written next to it applies only to workers on another model. A hub-driven process therefore has same-model
- * workers with no omp fallback, where OmO walks the worker profile's model list.
+ * omp picks a chain by the exact model id (with its thinking level), then `provider/*`, then the role, and a key without a
+ * thinking level matches the model at any level, so a bare key would carry the process's chain for workers on the same model
+ * too. When the workers run on the process's own model at another thinking level (a lane whose worker model is its model, an
+ * orchestrator whose `workers` is that model) the process's chain is therefore keyed by its full selector: workers fall
+ * through to the `task` chain, and the process keeps its own (a level change at run time still reaches it, as the weakest
+ * match). Workers at the process's own level cannot be told apart from it and walk its chain.
+ * Over the owner's settings it also pins what dotz depends on: update check, magic keywords, the github tool and idle
+ * compaction off, async jobs and secret redaction on, task isolation on with patch review (`apply: false`), and omp's own
+ * soft request budget and run time limit instead of the owner's (the token cap of extension/task-cap.ts is the budget).
  * Task workers get what OmO's worker profiles give them (runtime/omo.ts): the task role is a lane's worker model, or the
  * orchestrator's `workers` (the model it runs on unless that is an expensive one), the scout and sonic agents run the
  * `models.lookups` model in the orchestrator and the worker model in a lane, workers delegate at most two levels deep, an
@@ -122,8 +136,8 @@ function sessionOf(o: SpawnOpts): { file: string; who: string } {
 export function writeOverlay(o: SpawnOpts): string {
 	const { file, who } = sessionOf(o);
 	const workers: Workers = o.lane ? { task: o.lane.workerModel, chains: [["task", o.lane.workerFallback ?? []]], limit: o.lane.workerSlots ?? lanesMaxWorkers() } : orchestratorWorkers(o);
-	const chains: Chains = [[parseSelector(o.model).model, nativeChain(o)], ...workers.chains];
+	const chains: Chains = [[processChainKey(o, workers), nativeChain(o)], ...workers.chains];
 	mkdirSync(dirname(file), { recursive: true });
-	writeAtomic(file, `# Written by the dotz gateway each time ${who} starts; passed to omp as --config.\n${isolationYaml(o.cwd)}${workersYaml(workers, o.cwd)}${compactionYaml(o)}${retryYaml(chains)}`);
+	writeAtomic(file, `# Written by the dotz gateway each time ${who} starts; passed to omp as --config.\n${isolationYaml(o.cwd)}${PINS}${workersYaml(workers, o.cwd)}${compactionYaml(o)}${retryYaml(chains)}`);
 	return file;
 }

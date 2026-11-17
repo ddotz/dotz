@@ -4,7 +4,7 @@
 import { chmodSync, existsSync, lstatSync, mkdirSync, readFileSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { randomBytes } from "node:crypto";
 import { join } from "node:path";
-import { type Answers, identityDoc, type Prior } from "./answers.ts";
+import { type Answers, identityDoc, type Prior, splitSelector } from "./answers.ts";
 import { writeAtomic } from "./atomic.ts";
 import { AsideRepl, createApp, invite, isAdmin, PERMISSIONS, resetToken } from "../onboard/discord.ts";
 import { tailscaleState, type TailscaleState } from "../onboard/tailscale.ts";
@@ -48,23 +48,20 @@ export function writeSecrets(env: Env, a: Answers): void {
 	}
 }
 
-const pick = (o: Record<string, unknown> | undefined, keys: string[]) => Object.fromEntries(keys.filter(k => o?.[k] != null).map(k => [k, o![k]]));
-const split = (sel: string) => {
-	const i = sel.lastIndexOf(":");
-	return i > 0 && !sel.slice(i + 1).includes("/") ? { model: sel.slice(0, i), thinking: sel.slice(i + 1) } : { model: sel, thinking: "medium" };
-};
+const diskConfig = (dir: string, fallback: Record<string, any>): Record<string, any> => (existsSync(join(dir, "config.json")) ? JSON.parse(readFileSync(join(dir, "config.json"), "utf8")) : fallback);
 
 /** config.json (no secrets), state.json and IDENTITY.md. `access` is the web access the web onboarding decided; the terminal leaves it as it was. */
 export function writeConfig(env: Env, a: Answers, prior: Prior, access?: "local" | "tailscale") {
+	const disk = diskConfig(env.dir, prior.raw);
 	const config = {
-		_comment: "Written by dotz setup.ts. Secrets live in secrets/ (0600), never here.",
+		...disk,
+		_comment: disk._comment ?? "Written by dotz setup.ts. Secrets live in secrets/ (0600), never here.",
 		identity: a.identity,
-		discord: { token_file: tokenFile(env.dir).replace(env.home, "~"), owner_id: a.owner_id, guild: a.guild, ...(prior.raw.discord?.app_id ? { app_id: prior.raw.discord.app_id } : {}) },
-		// The default name is not saved: an empty web.machine_name keeps following the hostname.
-		web: { ...prior.raw.web, port: a.web_port, tailscale_https_port: a.tailscale_https_port, allow_logins: a.allow_logins, ...(access ? { access } : {}), ...(a.machine_name !== prior.defaultMachineName || prior.machineName ? { machine_name: a.machine_name } : {}) },
-		orchestrator: { runtime: a.runtime, ...pick(prior.raw.orchestrator, ["rotate_tokens"]) },
-		lanes: { runtime: a.runtime, ...pick(prior.raw.lanes, ["max_active"]) },
-		models: { ...prior.raw.models, orchestrator: { ...prior.raw.models?.orchestrator, ...split(a.orchestrator_model) }, lanes: { ...prior.raw.models?.lanes, ...split(a.lane_model) } },
+		discord: { ...disk.discord, token_file: tokenFile(env.dir).replace(env.home, "~"), owner_id: a.owner_id, guild: a.guild },
+		web: { ...disk.web, port: a.web_port, tailscale_https_port: a.tailscale_https_port, allow_logins: a.allow_logins, ...(access ? { access } : {}), ...(a.machine_name !== prior.defaultMachineName || prior.machineName ? { machine_name: a.machine_name } : {}) },
+		orchestrator: { ...disk.orchestrator, runtime: a.runtime },
+		lanes: { ...disk.lanes, runtime: a.runtime },
+		models: { ...disk.models, orchestrator: { ...disk.models?.orchestrator, ...splitSelector(a.orchestrator_model) }, lanes: { ...disk.models?.lanes, ...splitSelector(a.lane_model) } },
 	};
 	writeAtomic(join(env.dir, "config.json"), `${JSON.stringify(config, null, 2)}\n`);
 	if (!existsSync(join(env.dir, "state.json"))) writeAtomic(join(env.dir, "state.json"), `${JSON.stringify({ open_tasks: [] }, null, 2)}\n`);
@@ -83,7 +80,12 @@ export async function linkOmp(env: Env): Promise<boolean> {
 	if ((await Bun.$`command -v omp`.nothrow().quiet()).exitCode !== 0) return false;
 	const link = join(env.home, ".omp", "agent", "extensions", "dotz");
 	mkdirSync(join(env.home, ".omp", "agent", "extensions"), { recursive: true });
-	if (existsSync(link) || (() => { try { return lstatSync(link).isSymbolicLink(); } catch { return false; } })()) rmSync(link, { force: true, recursive: false });
+	const found = lstatSync(link, { throwIfNoEntry: false });
+	if (found && !found.isSymbolicLink()) {
+		env.say(`omp plugin: ${link} is your own folder or file, so it was left alone. To use dotz there, link ${env.pkg} into it yourself.`);
+		return false;
+	}
+	if (found) rmSync(link, { force: true });
 	symlinkSync(env.pkg, link);
 	env.say(`omp plugin linked: ${link} -> ${env.pkg}`);
 	return true;
@@ -120,8 +122,9 @@ export async function setupDiscord(env: Env, r: DiscordRun): Promise<boolean> {
 			await ensureBrowser();
 			env.say(`discord: Aside로 '${a.identity.name}' 앱을 만들거나 기존 앱을 찾는 중...`);
 			const appId = prior.raw.discord?.app_id ?? (await createApp(a.identity.name));
-			config.discord = { ...config.discord, app_id: appId } as typeof config.discord;
-			writeAtomic(join(env.dir, "config.json"), `${JSON.stringify(config, null, 2)}\n`);
+			config.discord = { ...config.discord, app_id: appId };
+			const latest = diskConfig(env.dir, config);
+			writeAtomic(join(env.dir, "config.json"), `${JSON.stringify({ ...latest, discord: { ...latest.discord, app_id: appId } }, null, 2)}\n`);
 			r.ownerStep?.();
 			const fresh = await resetToken(repl, appId, msg => env.say(`discord: ${msg}`));
 			writeSecret(token, fresh);
