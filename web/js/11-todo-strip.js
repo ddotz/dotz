@@ -1,5 +1,6 @@
 /* ---------- todo strip: the target's plan (GET /api/todo), one line above the timeline ---------- */
 const TD = { by: {}, open: {}, timer: 0, calls: new Set() };
+const tdSeed = (t, todo) => { if (TD.by[t] === undefined && todo) TD.by[t] = todo; };   // a stored snapshot's plan, until the hub's arrives
 async function loadTodo(t = target) {
   if (isFixedT(t) || isMailT(t) || isRelayT(t)) { TD.by[t] = []; if (t === target) { paintTodo(); if (CV.key && !CV.placed) renderAll(); } return; }   // no plan in 알림 / 작업 기록
   let r;
@@ -121,6 +122,8 @@ function paintDelivery(mid) {
   if (rq) n.mt.append(rq);
   n.mt.classList.add("dv"); n.mt.classList.toggle("dv-fail", d.state === "failed");
 }
+// A message's meta line follows its delivery state; the newest 600 are kept.
+function delivTrack(mid, node) { DELIV.nodes.set(mid, node); if (DELIV.nodes.size > 600) DELIV.nodes.delete(DELIV.nodes.keys().next().value); paintDelivery(mid); }
 function applyDelivery(e) {
   const old = DELIV.state.get(e.ref);
   if (old && DELIV_RANK[old.state] > DELIV_RANK[e.state]) return;
@@ -260,7 +263,7 @@ function msgNode(e, inRow) {
       if (long) ub.classList.add("clamp");
       const more = long ? el("button", { class: "ubm", type: "button", onclick: () => { const c = ub.classList.toggle("clamp"); more.textContent = c ? TX("home.msg.more") : TX("home.fold.close"); } }, TX("home.msg.more")) : null;
       const base = [hm, via].filter(Boolean).join(" · "), mt = el("div", { class: "mt", text: base }), mid = e.mid || e.message_id || "";
-      if (mid) { DELIV.nodes.set(mid, { mt, base, rec: e.kind !== "_cmd" && Array.isArray(e.picks) && e.picks.length > 0 }); if (DELIV.nodes.size > 600) DELIV.nodes.delete(DELIV.nodes.keys().next().value); paintDelivery(mid); }
+      if (mid) delivTrack(mid, { mt, base, rec: e.kind !== "_cmd" && Array.isArray(e.picks) && e.picks.length > 0 });
       // The owner's files are uploads of the computer that holds the conversation: a peer's open there (15-attachments.js fileUrl).
       const pc = Array.isArray(e.files) && e.files.length ? pqPc(eventTarget(e) || "") : null;
       // An answered decision is a quiet record of what was decided, not a "1) …" bubble (10-decision-card.js dcRecordNode); the options

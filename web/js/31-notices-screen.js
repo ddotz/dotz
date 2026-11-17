@@ -245,7 +245,7 @@ function nscX(n, group, btn) {
   // ✕ on news: read.
   if (group === "news") return nscLeave(n, btn, async () => {
     const r = await ntMarkRead({ ids: [n.id] });   // it shows its own failure
-    return r && (() => { n.read = true; NT.unread = typeof r.unread === "number" ? r.unread : Math.max(0, NT.unread - 1); });
+    return r && (() => { n.read = true; ntReadDown(1); ntUnreadSet(r.unread); });
   });
   if (group === "need") return nscLeave(n, btn, () => nscHandled(n));
   return nscLeave(n, btn, () => nscDismiss(n));
@@ -263,9 +263,7 @@ async function nscDismiss(n) {
     const r = await api(`/api/notices/${enc(n.id)}/dismiss`, "POST", {});
     if (!r || !r.ok) throw new Error(TX("misc.nsc.clear_failed"));
     return () => {
-      NT.items = NT.items.filter(x => x.id !== n.id); NT.mut++;
-      if (n.at) NT.gone.add(n.at);
-      if (typeof r.unread === "number") NT.unread = r.unread;
+      ntDismissed(n, r.unread);
       toast(TX("misc.nsc.cleared"), false, { label: TX("common.undo"), onclick: () => nscUndo(n) }, 6000);
     };
   } catch (err) { toast(TX("misc.nsc.clear_one_failed"), true); return null; }
@@ -273,7 +271,7 @@ async function nscDismiss(n) {
 async function nscUndo(n) {
   try {
     const r = await api(`/api/notices/${enc(n.id)}/undismiss`, "POST", {});
-    NT.mut++; if (n.at) NT.gone.delete(n.at);
+    ntUndismissed(n);
     ntApply(r.item, r.unread);
     if (current === "notices") requestAnimationFrame(() => requestAnimationFrame(() => { const row = nscRowOf(n.id); if (row) motionIn(row, "top"); }));
   } catch (err) { toast(err.message, true); }
@@ -286,7 +284,7 @@ async function nscReadAll(btn) {
   const r = await ntMarkRead({ ids });   // it shows its own failure
   if (!r) { undo(); return; }
   for (const n of rows) n.read = true;
-  NT.unread = typeof r.unread === "number" ? r.unread : Math.max(0, NT.unread - ids.length);
+  ntReadDown(ids.length); ntUnreadSet(r.unread);
   const gone = new Set(ids);
   // From the last row up: a row lifted out of the flow does not move the ones above it, so each one folds at its own place.
   const leaving = [...nscBox.list.querySelectorAll(".nsc-r[data-nid]")].filter(x => gone.has(Number(x.dataset.nid)) || gone.has(x.dataset.nid)).reverse().map(x => motionGone(x));

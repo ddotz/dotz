@@ -24,7 +24,7 @@ const WORKLOG = [
 ];
 const PROJ = [{ ts: PROJ_AT, kind: "out", source: "orchestrator", target: "ch:1", text: "[done] 프로젝트 일을 마쳤어요" }];
 const SETTINGS = [{ ts: SET_AT, kind: "out", source: "orchestrator", target: "settings:disk", text: "[done] 감시 설정을 바꿨어요" }];
-// A project thread with 1800 messages; the pushed one is far enough back that paging older messages (web/js/30-notices.js ntReach) does not reach it.
+// A project thread with 1800 messages; the pushed one is far enough back that paging older messages (web/js/30-notices-jump.js ntReach) does not reach it.
 const LONG_AT = ts(100);
 const LONG = Array.from({ length: 1800 }, (_, i) => ({ ts: ts(i), kind: "out", source: "orchestrator", target: "ch:2", text: `긴 대화 ${i}번이에요.` }));
 const base = { read: false, tone: "", text: "내용" };

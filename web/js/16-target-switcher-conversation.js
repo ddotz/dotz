@@ -120,6 +120,8 @@ new ResizeObserver(() => { const sw = $("#thead .tsw"); if (sw) fitChips(sw); })
 // 0600 secrets file; they are never kept in the page.
 const AUTH_DONE = new Set(), AUTH_HID = new Set(), AUTH_CARDS = new Map();   // AUTH_HID: closed with the x or back, still waiting (the notice's 입력 창으로 가기 shows it again)
 let authH = null, authId = "", authWaits = false;
+// The notice's 입력 창으로 가기: every request closed with the x shows again, at once.
+function authUnhide() { AUTH_HID.clear(); paintAuth(true); }
 // `force` = the owner asked for it (the notice's 입력 창으로 가기); otherwise a request that arrives while a text field has the focus waits until the field is left, so its sheet does not take the focus (and a phone's keyboard) from what is being typed.
 function paintAuth(force) {
   const list = ((S && S.auth) || []).filter(a => !AUTH_DONE.has(a.id));
