@@ -1,12 +1,14 @@
 // While a gateway restart waits (hub/restart.ts markRestartPending), the orchestrator and every lane start no new task worker and
 // launch no session: the workers already running finish, the count reaches 0 and the restart goes. Running work is never cut.
 // 2026-11-10: a lane kept starting a worker as the last one ended, and an update with security fixes waited over 75 minutes.
-// OmO has no before_subagent_spawn (hub/runtime/omo-probes.ts), so the hold sits on the tool call.
+// why(platform): omp spawns through eval agent() and workpool() without a task tool call, and only before_subagent_spawn sees those; OmO has no such event (omp@18.22.0 docs/extensions.md)
 import { existsSync, readdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import type { WorkerRunning } from "./guard.ts";
 import { dirname, join } from "node:path";
 
 // The names hub/restart.ts writes and reads; extension/restart-hold.test.ts writes the marker with the hub's own code, so they cannot drift.
 const RESTART_PENDING_FILE = "restart-pending.json";
+const AGENT_PATH = /^agent:\/\/([^/?#]+)/;
 const RESTART_HELD_FILE = "restart-held";
 
 export const RESTART_HOLD_LANE = "게이트웨이 재시작 대기 중: 새 task 워커는 띄우지 않아요. 지금 도는 워커가 끝나면 재시작돼요. 지금 상태와 남은 일을 짧게 보고하고(report.md에 남아요) 멈추세요. 재시작 뒤 이어서 하라는 메시지가 와요.";
@@ -60,17 +62,23 @@ const sendStarts = (input: any, ctx: any): boolean =>
 	input?.redispatch === true || (typeof input?.message === "string" && childRunning(ctx?.sessionManager?.getSessionFile?.(), String(input?.to ?? "")) === false);
 
 // `lane`: the lane's name; a refusal leaves <data>/lanes/<lane>/restart-held so the next gateway start tells it to go on (hub/laneops.ts).
-export function holdOnRestart(pi: any, data: string, lane?: string): void {
-	pi.on("tool_call", (event: any, ctx: any) => {
-		const tool = event?.toolName;
-		if ((tool !== "task" && tool !== "task_send") || !restartPending(data)) return undefined;
-		if (tool === "task_send" && !sendStarts(event?.input, ctx)) return undefined;
+export function holdOnRestart(pi: any, data: string, lane?: string, running: WorkerRunning = () => false): void {
+	const hold = () => {
+		if (!restartPending(data)) return undefined;
 		const held = join(data, "lanes", lane ?? "", RESTART_HELD_FILE);
 		if (lane && existsSync(dirname(held))) {
 			writeFileSync(`${held}.tmp`, `${new Date().toISOString()}\n`);
 			renameSync(`${held}.tmp`, held);
 		}
 		return { block: true, reason: lane ? RESTART_HOLD_LANE : RESTART_HOLD_MAIN };
+	};
+	pi.on("before_subagent_spawn", hold);
+	pi.on("tool_call", (event: any, ctx: any) => {
+		const tool = event?.toolName;
+		const target = tool === "write" ? AGENT_PATH.exec(String(event?.input?.path ?? ""))?.[1] : undefined;
+		const revives = target !== undefined && target !== "all" && restartPending(data) && !running(ctx, target);
+		const starts = tool === "task" || revives || (tool === "task_send" && restartPending(data) && sendStarts(event?.input, ctx));
+		return starts ? hold() : undefined;
 	});
 }
 

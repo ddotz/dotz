@@ -16,8 +16,12 @@ beforeEach(() => {
 afterEach(() => rmSync(data, { recursive: true, force: true }));
 
 const host = () => {
-	const handlers: ((event: any, ctx?: any) => any)[] = [];
-	return { call: (event: any, ctx?: any) => handlers[0]!(event, ctx), pi: { on: (name: string, fn: (event: any, ctx?: any) => any) => void (name === "tool_call" && handlers.push(fn)) } };
+	const handlers: Record<string, ((event: any, ctx?: any) => any)[]> = {};
+	return {
+		call: (event: any, ctx?: any) => handlers.tool_call![0]!(event, ctx),
+		spawn: (event: any = { agent: "task", invocationKind: "eval" }) => handlers.before_subagent_spawn![0]!(event, {}),
+		pi: { on: (name: string, fn: (event: any, ctx?: any) => any) => void (handlers[name] ??= []).push(fn) },
+	};
 };
 const spawn = { toolName: "task", input: { prompt: "run the tests" } };
 
@@ -41,6 +45,23 @@ test("with a restart pending a lane's task spawn is refused with the stop note; 
 	markRestartPending(data, false);
 	expect(lane.call(spawn)).toBeUndefined();
 	expect(restartHeld("launch", data)).toBeUndefined();
+});
+
+test("while a restart waits omp's other ways to start a worker are held too: eval agent()/workpool() through before_subagent_spawn, a write to agent://<id>", () => {
+	const lane = host();
+	holdOnRestart(lane.pi, data, "qa-golden");
+	const revive = { toolName: "write", input: { path: "agent://Falcon", content: "go on" } };
+	expect(lane.spawn()).toBeUndefined();
+	expect(lane.call(revive)).toBeUndefined();
+	markRestartPending(data, true);
+	expect(lane.spawn()).toEqual({ block: true, reason: RESTART_HOLD_LANE });
+	expect(lane.call(revive)).toEqual({ block: true, reason: RESTART_HOLD_LANE });
+	expect(existsSync(join(data, "lanes", "qa-golden", RESTART_HELD_FILE))).toBe(true);
+	expect(lane.call({ toolName: "write", input: { path: "notes/agent.md", content: "x" } })).toBeUndefined();
+	expect(lane.call({ toolName: "write", input: { path: "/tmp/agent://x", content: "x" } })).toBeUndefined();
+	const main = host();
+	holdOnRestart(main.pi, data);
+	expect(main.spawn()).toEqual({ block: true, reason: RESTART_HOLD_MAIN });
 });
 
 test("task_send while pending: steering a running child passes, resuming an ended one or a redispatch is refused", () => {
@@ -95,4 +116,17 @@ test("a lane that starts a worker as each one ends no longer holds the restart: 
 	expect(workers).toBe(0);
 	await advance(5000);
 	expect(exits).toBe(1);
+});
+
+test("while a restart waits a write to agent://<id> steers a worker the guard knows as running and a broadcast, and is held for a worker that ended or is unknown", () => {
+	const lane = host();
+	const alive = new Set(["Falcon"]);
+	holdOnRestart(lane.pi, data, "qa-golden", (_ctx, id) => alive.has(id));
+	markRestartPending(data, true);
+	const send = (id: string) => lane.call({ toolName: "write", input: { path: `agent://${id}`, content: "wrap up" } });
+	expect(send("Falcon")).toBeUndefined();
+	expect(send("all")).toBeUndefined();
+	expect(send("Hawk")).toEqual({ block: true, reason: RESTART_HOLD_LANE });
+	alive.delete("Falcon");
+	expect(send("Falcon")).toEqual({ block: true, reason: RESTART_HOLD_LANE });
 });

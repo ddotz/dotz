@@ -7,6 +7,7 @@ import { execFileSync } from "node:child_process";
 import { appendFileSync, readFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { scopeReaches, writeScopes, writtenPaths } from "./codeguard.ts";
 
 export const TEMP_PATH = /^\/(private\/)?(tmp|var\/folders)\//;
 const isTempPath = (p: string): boolean => TEMP_PATH.test(resolve(p) + "/") || resolve(p).startsWith(resolve(tmpdir()) + "/");
@@ -132,17 +133,22 @@ function writeTargets(text: string): string[] {
 // A write/edit into the live data dir, or a shell/eval command whose write target is inside it (see writeTargets); the
 // data dir as a read source (`cp ~/.dotz/x ~/work/`, `cat`) is fine. After a `cd` into the data dir, or with an unknown JS
 // write target, any write in a command that names the dir counts.
-export function liveWrite(event: any, liveDirs: string[]): string | undefined {
+export function liveWrite(event: any, liveDirs: string[], cwd = process.cwd()): string | undefined {
 	const tool = String(event?.toolName ?? "");
 	const input = event?.input ?? {};
 	const dirs = liveDirs.map(d => resolve(d));
 	const under = (p: string) => dirs.find(d => resolve(p.replace(/^~(?=\/)/, homedir())) === d || resolve(p.replace(/^~(?=\/)/, homedir())).startsWith(`${d}/`));
-	if (tool === "write" || tool === "edit") {
-		const p = String(input.path ?? input.file_path ?? "");
-		const d = p && under(p);
-		return d ? `${tool} ${p} (inside the live data dir ${d})` : undefined;
+	if (tool !== "bash" && tool !== "eval") {
+		for (const p of writtenPaths(tool, input)) {
+			const d = under(p);
+			if (d) return `${tool} ${p} (inside the live data dir ${d})`;
+		}
+		for (const scope of writeScopes(tool, input, cwd)) {
+			const d = dirs.find(dir => scopeReaches(scope, dir));
+			if (d) return `${tool} ${scope} (reaches the live data dir ${d})`;
+		}
+		return undefined;
 	}
-	if (tool !== "bash" && tool !== "eval") return undefined;
 	const text = String(input.command ?? input.code ?? "");
 	const names = (s: string) => dirs.find(d => s.includes(d) || (d === resolve(defaultDataDir()) && /~\/\.dotz\b|\$HOME\/\.dotz\b/.test(s)));
 	const named = names(text);

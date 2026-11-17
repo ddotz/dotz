@@ -9,10 +9,10 @@ const run = (value?: string) => {
 	return r.stdout.toString().trim();
 };
 
-test("loading the extension keeps claude.ai connectors out of Claude Code children", () => {
-	expect(run()).toBe("[false]");
+test("merely loading the extension in an owner's own session leaves the claude.ai connectors switch alone (the role branches set it: omp-host.test.ts)", () => {
+	expect(run()).toBe("[undefined]");
 });
 
-test("an owner-set value wins", () => {
+test("an owner-set value stays", () => {
 	expect(run("true")).toBe("[true]");
 });

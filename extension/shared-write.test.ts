@@ -1,5 +1,5 @@
 import { afterAll, expect, test } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { sharedWriteBlock } from "./guard.ts";
@@ -33,4 +33,25 @@ test("a write whose target is a shared file is refused", () => {
 		["edit", { path: join(data, "memory", "owner.md"), edits: [] }],
 	];
 	for (const [tool, input] of writes) expect([tool, input, refused(tool, input)]).toEqual([tool, input, [true, true]]);
+});
+
+test("ast_edit with a folder, a glob or no paths is refused when its tree holds a shared file, and passes in a tree that holds none", () => {
+	const elsewhere = mkdtempSync(join(tmpdir(), "dotz-shared-write-else-"));
+	mkdirSync(join(data, "memory"), { recursive: true });
+	try {
+		const ops = [{ pat: "a", out: "b" }];
+		const block = (input: any, cwd: string) => sessions.map(([conv, lane]) => sharedWriteBlock("ast_edit", input, data, conv, lane, cwd) !== undefined);
+		expect(block({ ops }, data)).toEqual([true, true]);
+		expect(block({ paths: [], ops }, data)).toEqual([true, true]);
+		expect(block({ paths: [data], ops }, elsewhere)).toEqual([true, true]);
+		expect(block({ paths: [join(data, "memory")], ops }, elsewhere)).toEqual([true, true]);
+		expect(block({ paths: [join(data, "**", "*.md")], ops }, elsewhere)).toEqual([true, true]);
+		expect(block({ paths: [tmpdir()], ops }, elsewhere)).toEqual([true, true]);
+		expect(block({ ops }, tmpdir())).toEqual([true, true]);
+		expect(block({ ops }, elsewhere)).toEqual([false, false]);
+		expect(block({ paths: ["src/**/*.ts", elsewhere], ops }, elsewhere)).toEqual([false, false]);
+		expect(block({ paths: [join(data, "reports", "x.md")], ops }, elsewhere)).toEqual([false, false]);
+	} finally {
+		rmSync(elsewhere, { recursive: true, force: true });
+	}
 });

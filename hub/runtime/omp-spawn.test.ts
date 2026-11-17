@@ -92,6 +92,9 @@ const ISOLATION = [
 	'  - "rule:RULES"',
 ];
 
+const PINS = ["startup:", "  checkUpdate: false", "magicKeywords:", "  enabled: false", "github:", "  enabled: false", "async:", "  enabled: true", "secrets:", "  enabled: true"];
+const TASK_PINS = ["  isolation:", "    enabled: true", "    apply: false", "    merge: patch", "  maxRuntimeMs: 0", "  softRequestBudget: 200"];
+
 test("every omp agent loads only the dotz extension: --no-extensions, then one --extension, for the orchestrator, a conversation session and a lane", () => {
 	omp.start(orchestrator());
 	omp.start(conversation("mail:acme-1"));
@@ -139,6 +142,7 @@ test("the orchestrator's overlay switches the owner's advisor, memory, user cont
 			...ISOLATION,
 			'  - "rule:owner-a"',
 			'  - "rule:owner-b"',
+			...PINS,
 			"modelRoles:",
 			'  task: "anthropic/test-orch:low"',
 			`  lookup: ${JSON.stringify(DEFAULT_LOOKUP_MODEL)}`,
@@ -149,7 +153,9 @@ test("the orchestrator's overlay switches the owner's advisor, memory, user cont
 			'    sonic: "@lookup"',
 			"  maxRecursionDepth: 2",
 			"  agentIdleTtlMs: 300000",
+			...TASK_PINS,
 			"compaction:",
+			"  idleEnabled: false",
 			`  keepRecentTokens: ${DEFAULTS.orch_keep_recent}`,
 			"retry:",
 			"  waitForUsageReset: false",
@@ -176,11 +182,11 @@ test("a lane's overlay keeps its worker model and compaction settings and gets t
 	omp.start(lane("beta", {}, ["anthropic/worker-fb"]));
 	const body = [
 		'modelRoles:\n  task: "anthropic/test-worker:high"',
-		'task:\n  agentModelOverrides:\n    task: "@task"\n    scout: "@task"\n    sonic: "@task"\n  maxRecursionDepth: 2\n  agentIdleTtlMs: 300000',
-		'compaction:\n  modelThresholds:\n    "anthropic/test-lane": "f300000"\n    "anthropic/test-worker": "f300000"\n  keepRecentTokens: 30000',
+		`task:\n  agentModelOverrides:\n    task: "@task"\n    scout: "@task"\n    sonic: "@task"\n  maxRecursionDepth: 2\n  agentIdleTtlMs: 300000\n${TASK_PINS.join("\n")}`,
+		'compaction:\n  idleEnabled: false\n  modelThresholds:\n    "anthropic/test-lane": "f300000"\n    "anthropic/test-worker": "f300000"\n  keepRecentTokens: 30000',
 	].join("\n");
 	const overlay = (name: string, chains: string[]) =>
-		text([`# Written by the dotz gateway each time lane ${name} starts; passed to omp as --config.`, ...ISOLATION, '  - "rule:owner-a"', '  - "rule:owner-b"', body, "retry:", "  waitForUsageReset: false", "  modelFallback: true", "  fallbackChains:", ...chains]);
+		text([`# Written by the dotz gateway each time lane ${name} starts; passed to omp as --config.`, ...ISOLATION, '  - "rule:owner-a"', '  - "rule:owner-b"', ...PINS, body, "retry:", "  waitForUsageReset: false", "  modelFallback: true", "  fallbackChains:", ...chains]);
 	expect(overlayOf(started[0]!.argv)).toBe(overlay("alpha", ['    "anthropic/test-lane": []', '    "task": []']));
 	expect(overlayOf(started[1]!.argv)).toBe(overlay("beta", ['    "anthropic/test-lane": []', '    "task":', '      - "anthropic/worker-fb"']));
 });
@@ -276,16 +282,20 @@ test("user rules under ~/.agent/rules and ~/.agents/rules are disabled like the 
 	expect(disabled).toEqual(['  - "rule:RULES"', '  - "rule:home-a"', '  - "rule:home-b"', '  - "rule:home-shared"', '  - "rule:owner-a"', '  - "rule:owner-b"']);
 });
 
-test("workers on the process's own model walk the process's chain: the overlay writes that model's key from the hub and a task chain only workers on another model reach", () => {
+test("workers on the process's own model walk the process's chain at the same thinking level; at another level the process's key carries its level and the task chain is theirs alone", () => {
 	cfg.models = { ...cfg.models, orchestrator: { ...cfg.models?.orchestrator, fallback: ["anthropic/fb-1", "anthropic/test-orch", "anthropic/fb-2"] } } as typeof cfg.models;
 	omp.start(conversation("same-a", { fallback: ["anthropic/proc-fb"] }));
 	omp.start(conversation("same-b", { fallback: ["anthropic/proc-fb"], hubSwitches: true }));
 	omp.start(lane("zeta", { model: "anthropic/test-worker:low" }, ["anthropic/worker-fb"]));
+	omp.start(lane("eta", { model: "anthropic/test-worker:high" }, ["anthropic/worker-fb"]));
+	omp.start(conversation("apart", { fallback: ["anthropic/proc-fb"], workers: "anthropic/test-orch:high" }));
 	const chains = (i: number) => overlayOf(started[i]!.argv).split("retry:\n")[1]!;
 	expect(overlayOf(started[0]!.argv)).toContain('modelRoles:\n  task: "anthropic/test-orch:low"\n');
 	expect(chains(0)).toContain(text(["  fallbackChains:", '    "anthropic/test-orch":', '      - "anthropic/proc-fb"', '    "task":', '      - "anthropic/fb-1"', '      - "anthropic/fb-2"']));
 	expect(chains(1)).toContain(text(["  fallbackChains:", '    "anthropic/test-orch": []', '    "task":', '      - "anthropic/fb-1"', '      - "anthropic/fb-2"']));
-	expect(chains(2)).toContain(text(["  fallbackChains:", '    "anthropic/test-worker": []', '    "task":', '      - "anthropic/worker-fb"']));
+	expect(chains(2)).toContain(text(["  fallbackChains:", '    "anthropic/test-worker:low": []', '    "task":', '      - "anthropic/worker-fb"']));
+	expect(chains(3)).toContain(text(["  fallbackChains:", '    "anthropic/test-worker": []', '    "task":', '      - "anthropic/worker-fb"']));
+	expect(chains(4)).toContain(text(["  fallbackChains:", '    "anthropic/test-orch:low":', '      - "anthropic/proc-fb"', '    "task":']));
 });
 
 test("the owner's task agents are disabled for dotz workers, except one the lane's repo defines under the same name", () => {

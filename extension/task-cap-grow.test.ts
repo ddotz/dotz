@@ -243,3 +243,35 @@ test("git reading: commits and changed paths between two marks; not a repository
 	expect(gitDelta(dir, before, readGit(dir))).toEqual({ commits: 1, changed: [] });
 	expect(gitDelta(dir, undefined, readGit(dir))).toBeUndefined();
 });
+
+test("omp: the growth judges the git state of the subagent's own cwd (its isolation worktree), not the process's; OmO, with no ctx.agent, keeps the process cwd", () => {
+	const repo = (name: string) => {
+		const dir = mkdtempSync(join(tmpdir(), `dotz-cap-${name}-`));
+		const git = (...args: string[]) => execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@example.com", ...args], { cwd: dir, timeout: 10_000, stdio: "ignore" });
+		git("init", "-q");
+		writeFileSync(join(dir, "a.txt"), "a");
+		git("add", ".");
+		git("commit", "-q", "-m", "first");
+		let n = 0;
+		return { dir, commit: () => (writeFileSync(join(dir, `work-${n++}.txt`), "w"), git("add", "."), git("commit", "-q", "-m", "work")) };
+	};
+	const run = (cwd: string, ctxCwd: string, agent: unknown) => {
+		const handlers: Record<string, ((event: any, ctx: any) => any)[]> = {};
+		const growth = createGrowth(4 * M, { enabled: true, step: M, ceiling: 8 * M }, { cwd, now: () => NOW, readUsage: () => undefined, account: () => "acct" });
+		installTaskCap({ on: (name, fn) => (handlers[name] ??= []).push(fn), sendMessage: () => {} }, 4 * M, 0, growth);
+		const ctx = { agent, cwd: ctxCwd, abort: () => {}, compact: () => {}, sessionManager: { getSessionId: () => "sess-1" } };
+		return { growth, start: () => handlers.before_agent_start![0]!({ prompt: "do it" }, ctx), turn: (tokens: number) => handlers.turn_end![0]!({ message: { role: "assistant", usage: { input: 400, cacheRead: tokens - 1000, cacheWrite: 0, output: 600 } }, toolResults: [{}] }, ctx) };
+	};
+	const parent = repo("parent");
+	const worktree = repo("worktree");
+	const sub = run(parent.dir, worktree.dir, { kind: "sub" });
+	sub.start();
+	worktree.commit();
+	sub.turn(3 * M);
+	expect(sub.growth.cap()).toBe(5 * M);
+	const omo = run(parent.dir, worktree.dir, undefined);
+	omo.start();
+	worktree.commit();
+	omo.turn(3 * M);
+	expect(omo.growth.cap()).toBe(4 * M);
+});

@@ -38,9 +38,8 @@ const BLOCKS_BEFORE_ABORT = 3;
 // final answer can report what a run it started ended with; they count no block, up to this many.
 const READS_AT_CAP = 10;
 const collects = (name: unknown, input: any) => name === "read" || name === "bash_output" || (name === "eval" && input?.action === "peek");
-// Whether this process's task worker has reached its cap (bg-guard.ts stops re-prompting it then); false with no cap installed.
-let reached = () => false;
-export const capReached = (): boolean => reached();
+const reachedBy = new WeakMap<object, () => boolean>();
+export const capReached = (runner: object): boolean => reachedBy.get(runner)?.() ?? false;
 // After a compaction, failed or not, the next try waits until the context is this much above what it was then.
 const REARM_GROWTH = 50_000;
 const k = (n: number) => `${Math.round(n / 1000).toLocaleString("en-US")}K`;
@@ -95,6 +94,7 @@ export function installTaskCap(pi: Host, cap = loadGuardConfig().task_token_cap,
 	// Whether the latest turn was the worker's final answer; a compaction that ends after it must not start another turn.
 	let finalAnswer = false;
 	pi.on("turn_end", (event: any, ctx: any) => {
+		if (ctx?.agent) growth.setCwd(ctx.cwd);
 		finalAnswer = isFinalAnswer(event?.message);
 		if (finalAnswer) growth.finished();
 		const t = turnTokens(event?.message);
@@ -130,13 +130,15 @@ export function installTaskCap(pi: Host, cap = loadGuardConfig().task_token_cap,
 		if (cap > 0) announce(pi, ctx, growth.turn(spent), growth);
 	});
 	if (!(cap > 0)) return;
-	reached = () => spent >= growth.cap();
+	reachedBy.set(pi, () => spent >= growth.cap());
 	let reads = 0;
 	if (growth.enabled)
-		pi.on("before_agent_start", (event: any) => {
+		pi.on("before_agent_start", (event: any, ctx: { agent?: unknown; cwd?: unknown }) => {
+			if (ctx?.agent) growth.setCwd(ctx.cwd);
 			if (!event?.preview && growth.prompt(event?.prompt, spent) === "revived") blocked = reads = 0;
 		});
 	pi.on("tool_call", (event: any, ctx: any) => {
+		if (ctx?.agent) growth.setCwd(ctx.cwd);
 		growth.note(event?.toolName, event?.input);
 		announce(pi, ctx, growth.atCap(spent), growth);
 		if (spent < growth.cap()) return;
