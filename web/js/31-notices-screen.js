@@ -245,7 +245,7 @@ function nscX(n, group, btn) {
   // ✕ on news: read.
   if (group === "news") return nscLeave(n, btn, async () => {
     const r = await ntMarkRead({ ids: [n.id] });   // it shows its own failure
-    return r && (() => { n.read = true; ntUnreadLess(1, r.unread); });
+    return r && (() => { n.read = true; ntReadDown(1); ntUnreadSet(r.unread); });
   });
   if (group === "need") return nscLeave(n, btn, () => nscHandled(n));
   return nscLeave(n, btn, () => nscDismiss(n));
@@ -284,7 +284,7 @@ async function nscReadAll(btn) {
   const r = await ntMarkRead({ ids });   // it shows its own failure
   if (!r) { undo(); return; }
   for (const n of rows) n.read = true;
-  ntUnreadLess(ids.length, r.unread);
+  ntReadDown(ids.length); ntUnreadSet(r.unread);
   const gone = new Set(ids);
   // From the last row up: a row lifted out of the flow does not move the ones above it, so each one folds at its own place.
   const leaving = [...nscBox.list.querySelectorAll(".nsc-r[data-nid]")].filter(x => gone.has(Number(x.dataset.nid)) || gone.has(x.dataset.nid)).reverse().map(x => motionGone(x));

@@ -75,6 +75,7 @@
   "30-monitoring-mail.js": "mail",
   "30-monitoring-route.js": "monitoring",
   "30-monitoring.js": "monitoring",
+  "30-notices-jump.js": "notices",
   "30-notices.js": "notices",
   "30-replies.js": "reply",
   "30-triage.js": "reply",

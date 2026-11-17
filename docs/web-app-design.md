@@ -1143,7 +1143,7 @@ dotz 웹앱의 화면은 `web/js/03-screens.js`의 `SCREENS` 표에 한 줄씩 �
 - 기능: `대화에서 보기`는 시트를 닫고 `ntJump`(원문 메시지로 스크롤 + 강조). `닫기`.
 - 상태: 이 시트 자체의 로딩/빈 상태는 없어요(이미 있는 알림으로 열림).
 - 데이터: `NT.items` 항목(`GET /api/notices`).
-- 근거: `web/js/30-notices.js` `ntDetailOpen`, `ntDetailPaint`, `ntJump`.
+- 근거: `web/js/30-notices.js` `ntDetailOpen`, `ntDetailPaint`; `web/js/30-notices-jump.js` `ntJump`.
 - css: `09-notices.css`(`.ds-*`).
 
 ### 답변 필요 행 (홈과 알림 탭에서 쓰는 알림 행, `ntHomeRow`)
