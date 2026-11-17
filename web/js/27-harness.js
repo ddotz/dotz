@@ -55,7 +55,8 @@ const hNode = id => HG && HG.nodes.find(n => n.id === id);
 const hSvg = (tag, attrs) => { const n = document.createElementNS("http://www.w3.org/2000/svg", tag); for (const [k, v] of Object.entries(attrs || {})) n.setAttribute(k, v); return n; };
 
 function harnessEnter() { loadHarness(); }
-screenHooks("harness", { enter: harnessEnter });
+function harnessHash() { return hProjId ? `harness/project/${enc(hProjId)}` : ""; }
+screenHooks("harness", { enter: harnessEnter, route: hProjRoute, hash: harnessHash });
 async function loadHarness(quiet) {
   if (hLoading) return;
   hLoading = true;

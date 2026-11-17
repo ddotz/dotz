@@ -344,7 +344,16 @@ function pjPaintRows() {
   clear(box).append(...nodes);
 }
 function projectsEnter() { renderProjects(); prjLoad(); }
-screenHooks("projects", { enter: projectsEnter });
+// From 1100px 프로젝트 opens on a project with the list beside it: the open one while it still exists, else the first (19-project-main.js projectAim).
+function projectsAim() {
+  if (!ppWide() || relayCur()) return;
+  histAuto();
+  const key = ppCur && (!PRJ || PRJ.projects.some(p => p.key === ppCur)) ? ppCur : prjFirst() || "builtin:custom";
+  if (!PRJ) prjLoad().then(() => { if (current === "project" && ppCur === "builtin:custom" && prjFirst()) { histAuto(); go("project", prjFirst()); } });
+  projectAim(key);
+  return ["project", key];
+}
+screenHooks("projects", { enter: projectsEnter, aim: projectsAim });
 function renderProjects() {
   if (rvPaint("projects")) return;   // a messenger-only computer is chosen: its projects, read-only (44-relay-views.js)
   const box = $("#v-projects");

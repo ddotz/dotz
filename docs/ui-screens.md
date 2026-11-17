@@ -198,7 +198,7 @@ flowchart LR
   c_peers -->|"go (2)"| s_home
   c_peers -->|"go (1)"| s_settings
   c_projects -->|"go (1)"| s_monitoring
-  c_projects -->|"go (3)"| s_project
+  c_projects -->|"go (4)"| s_project
   c_projects -->|"go (1)"| s_projects
   c_reply -->|"go (2)"| s_any
   c_reply -->|"go (3)"| s_monitoring

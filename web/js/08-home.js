@@ -586,7 +586,11 @@ function renderHomeNowRaw() {
 // The home screen always opens at its top: on load, on the tab, and when the installed app comes back to the front (23-installable-app-web.js, 99-boot.js).
 const homeTop = () => { if (current === "home") { $("#views").scrollTop = 0; $("#appbar").classList.remove("scrolled"); } };
 function homeEnter() { renderHome(); loadHomeData(); }
-screenHooks("home", { enter: homeEnter });
+function homeTitle() { return botName; }   // the header names the bot on 홈
+screenHooks("home", { enter: homeEnter, title: homeTitle });
+// The card editor (a home card's 편집) names the card it edits in its address (#cardform/<id>); its page is drawn by web/custom.js, which may come in after the first go().
+function cardformHash(id) { return id ? `cardform/${enc(id)}` : ""; }
+screenHooks("cardform", { hash: cardformHash });
 function renderHome() {
   const box = $("#home-cards");   // not id="home": the address #home would scroll the page down to that element, not to the top
   if (!box || current !== "home") return;

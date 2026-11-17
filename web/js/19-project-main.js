@@ -5,7 +5,11 @@ const pmReset = () => ({ key: "", D: null, fail: false, open: 0, flight: null, s
 let PM = pmReset();
 // A project opens beside the list on a wide screen (ppWide), so the list is drawn and read first.
 function projectEnter(key) { if (ppWide()) projectsEnter(); pmOpen(key); }
-screenHooks("project", { enter: projectEnter });
+// go() opening a project: without a key the list opens instead; the key is the open project (ppCur) and its address.
+function projectAim(key) { if (!key) return ["projects", key]; ppCur = key; }
+function projectHash(key) { return key ? `project/${enc(key)}` : ""; }
+function projectBeside() { return ppWide() ? "projects" : ""; }
+screenHooks("project", { enter: projectEnter, aim: projectAim, hash: projectHash, beside: projectBeside });
 function pmOpen(key) {
   if (PM.key !== key) { for (const s of PM.sheets) s.h.close(false); PM = { ...pmReset(), key }; }
   pmPaint(); prjLoad(); pmLoad();

@@ -326,6 +326,7 @@ function hReveal(id) {
 // The drawer stopped showing it (it closed, or other content took it): the selection, its unsaved-edit check and the room the map made go too.
 function hSheetGone() { hSel = ""; hDirty = null; hGoto = null; $("#harness").classList.remove("hs-open"); paintHSel(); }
 function closeHSheet() { if (hSel) hideSheet(); }
+screenHooks("harness", { away: closeHSheet });   // the node sheet closes on every move to another screen
 function hSelClear() { closeHSheet(); hSel = ""; }
 // The simple view's edge overlay goes with each repaint (27-harness.js renderHarness); hSimple sets the new one.
 function hOvDrop() { hOv = null; }

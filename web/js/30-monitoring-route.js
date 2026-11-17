@@ -8,7 +8,7 @@ function monBack() { return asBack() || rqBack() || kkBack() || cmBack() || mxsB
 function monEnter() { renderMonitoring(); if (!monitorsFresh()) loadMonitors(); if (!noticesFresh()) loadNotices(); if (current === "monitoring" || !INTG.loaded) loadIntegrations(); }
 // The routes behind 모니터링 (32-history-nav.js routeChain): an open item sits on the list, a mailbox settings screen on its box (30-mailboxes-set.js mxChain).
 function monChain(hash) { return !MON.list ? ["home", "monitoring", ...mxChain(hash)] : ["home", hash]; }
-screenHooks("monitoring", { back: monBack, enter: monEnter, chain: monChain });
+screenHooks("monitoring", { back: monBack, enter: monEnter, chain: monChain, conv: monConvOf, aim: monRoute, hash: monHash });
 
 /* ---------- monitoring: the address ---------- */
 // A route: { list, sel, mx?, c? }. list: the list is on screen; sel: the open item's key; mx: what a mail item's address names, its account, box and
@@ -24,6 +24,8 @@ function monParse(tgt) {
   const sel = mxKeyOf(m[1].slice(2)), scr = m[4] === "set" || m[4] === "new" ? m[4] : "";
   return { list: false, sel, mx: m[2] !== undefined ? { acct: mxDec(m[2]), box: mxDec(m[3]), scr } : sel !== m[1] ? { acct: m[1].slice(2), box: "all", scr } : { scr } };
 }
+// The conversation a `monitoring/c:<target>` address opens inside 모니터링 (go()'s conv hook).
+function monConvOf(tgt) { return monParse(tgt).c; }
 // Opens what a route says; MX's part goes through its own setter (30-mailboxes.js mxRouteSet).
 function monApply(r) {
   MON.miss = false;
@@ -38,9 +40,9 @@ function monHashOf(r) {
   const x = r.mx;
   return `monitoring/${enc(r.sel)}${x && (x.acct !== "all" || x.box !== "all" || x.scr) ? `/${enc(x.acct)}/${enc(enc(x.box))}${x.scr ? `/${x.scr}` : ""}` : ""}`;
 }
-// go("monitoring", key) opens that item; without one the list shows.
+// go("monitoring", key) opens that item; without one the list shows (the aim hook: read before current changes).
 function monRoute(tgt) { pqOpen(); monApply(monParse(tgt)); }
-const monHash = () => monHashOf({ list: MON.list, sel: MON.sel, mx: MON.sel === MX.key ? MX : null });
+function monHash() { return monHashOf({ list: MON.list, sel: MON.sel, mx: MON.sel === MX.key ? MX : null }); }
 
 /* ---------- monitoring: what other files change on the screen ---------- */
 // Every file outside 모니터링 that changes what the screen shows asks for its redraw here: the next paint is not skipped as unchanged (side: the list beside the item is drawn again too).

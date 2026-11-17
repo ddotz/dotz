@@ -182,3 +182,4 @@ function paneStash() {
   const p = PNV.el && !PNV.el.hidden && current === "chat" && paneFind(PN.active);
   if (p && p.kind === "chat") { p.at = chatAnchor(); p.stick = chatStick; }
 }
+screenHooks("chat", { leave: paneStash });

@@ -136,50 +136,43 @@ function go(name, tgt) {
   nscLanding(name);
   paneAppOff();   // 모니터링 is a pane's screen only while the pane machinery lends it (43-panes.js paneGoApp)
   // A mail (or any "monitoring/c:<target>") opens inside 모니터링: the chat view is drawn, the tab, the list and the address stay 모니터링's.
-  const inChat = name === "chat" || name === "activity";
-  let mc = false, cv = name === "monitoring" ? monParse(tgt).c : undefined;
+  const inChat = SCREENS[name]?.tab === "chat";
+  let mc = false, cv = SCREEN_HOOKS[name]?.conv?.(tgt);
   if (cv !== undefined) { if (validTarget(cv)) { name = "chat"; tgt = cv; mc = true; } else tgt = undefined; }
   else if (inChat && !paneKeeps(tgt && tgt !== "list" ? tgt : target) && (tgt ? tgt !== "list" && monOwned(tgt) : monOwned(target))) { name = "chat"; mc = true; }
   else if (inChat && !tgt && monCtx && target === monCtx && !paneKeeps(target)) mc = true;
   monCtx = mc ? tgt || target : "";
   if (mc) monConvIn(tgt || target);
   if (!views.includes(name) || navOff(name)) name = "home";
-  if (name === "projects" && ppWide() && !relayCur()) { histAuto(); name = "project"; tgt = ppCur && (!PRJ || PRJ.projects.some(p => p.key === ppCur)) ? ppCur : prjFirst() || "builtin:custom"; if (!PRJ) prjLoad().then(() => { if (current === "project" && ppCur === "builtin:custom" && prjFirst()) { histAuto(); go("project", prjFirst()); } }); }
-  if (name === "project" && !tgt) name = "projects";
-  if (name === "accounts") accFocusAsk(tgt);
-  if (name === "project") ppCur = tgt;
-  if (name === "monitoring") monRoute(tgt);
-  // "chat/list" is the phone's chat list; any other way into 채팅 opens a conversation.
-  chatList = name === "chat" && tgt === "list" && narrowChat();
-  if (name === "chat" && tgt === "list") tgt = undefined;
-  if (tgt && name !== "project" && name !== "accounts" && name !== "cardform" && tgt !== target && validTarget(tgt)) setTarget(tgt, !PN.going);   // a pane coming forward changes the address in place
-  if (name === "activity" && (!LOG_VIEW || isRowT(target) || isRelayT(target))) name = "chat";   // 알림 / 작업 기록 have no terminal view; LOG_VIEW off: no log view at all
+  const aim = SCREEN_HOOKS[name]?.aim?.(tgt);   // before current changes: the screen reads the target, or opens another screen or target instead
+  if (aim) [name, tgt] = aim;
+  chatList = !!aim?.[2];   // the phone's chat list (13-data.js chatAim)
+  if (tgt && !SCREENS[name].keyed && tgt !== target && validTarget(tgt)) setTarget(tgt, !PN.going);   // a pane coming forward changes the address in place
   if (name !== current) prevView = current;
-  if (current === "chat" && name !== "chat") paneStash();
+  if (name !== current) SCREEN_HOOKS[current]?.leave?.();   // the screen being left keeps what it needs (43-panes.js paneStash for 채팅)
   current = name;
   bkKkSync(); bkCmSync();   // leaving 모니터링 (or its item list) releases an open room's or post's history step before the new view stacks
   relayPaint();
   SCREEN_HOOKS[name]?.route?.(tgt);   // after current is set, before the address is built: 앱's appsOpen draws only the shown tab and names it for appsHash
   if (convSync()) renderAll();
-  const tv = name === "chat" || name === "activity";
-  if (name === "harness") hProjRoute(tgt);
-  const hash = tv ? (chatList ? "chat/list" : mc ? `monitoring/c:${enc(target)}` : `${name}/${target}`) : name === "harness" && hProjId ? `harness/project/${enc(hProjId)}` : name === "project" && tgt ? `project/${enc(tgt)}` : name === "cardform" && tgt ? `cardform/${enc(tgt)}` : name === "monitoring" ? monHash() : name === "apps" ? appsHash() : name;
+  const tv = SCREENS[name].tab === "chat";
+  const hash = tv ? (chatList ? "chat/list" : mc ? `monitoring/c:${enc(target)}` : `${name}/${target}`) : SCREEN_HOOKS[name]?.hash?.(tgt) || name;
   navSync(name, hash);
-  const pp = name === "project" && ppWide();
-  for (const v of views) $(`#v-${v}`).hidden = v !== name && !(pp && v === "projects");
-  $("#views").classList.toggle("pp", pp);
+  const beside = SCREEN_HOOKS[name]?.beside?.() || "";   // a view shown beside this one (19-project-main.js projectBeside)
+  for (const v of views) $(`#v-${v}`).hidden = v !== name && v !== beside;
+  $("#views").classList.toggle("pp", !!beside);
   paneSync();
-  if ((name === "chat" || name === "activity") && !chatList) try { localStorage.setItem(isLaneT(target) ? `dotz-lane-view:${target}` : CHAT_MODE_KEY, name); } catch {}
+  if (tv && !chatList) try { localStorage.setItem(isLaneT(target) ? `dotz-lane-view:${target}` : CHAT_MODE_KEY, name); } catch {}
   document.querySelectorAll("#nav .ni").forEach(b => { const on = b.dataset.view === navView(SUB.has(name) ? "settings" : mc ? "monitoring" : paneLit(name) ? "chat" : name); b.classList.toggle("on", on); b.setAttribute("aria-current", on ? "page" : "false"); });
   $("#appbar").classList.toggle("tv", tv);
-  const th = $("#thead"), mode = name === "chat" ? "chat" : "term";
+  const th = $("#thead"), mode = SCREENS[name].term ? "term" : "chat";
   th.hidden = !tv; $("#vtog").hidden = !tv || !LOG_VIEW;
   if (tv && th.dataset.mode !== mode) { th.dataset.mode = mode; th.dataset.sig = ""; }
   if (MT_READY) mailThreadSync();   // the same-sender mail panel belongs to the mail conversation that is open (30-mail-thread.js)
-  $("#title").textContent = name === "home" ? botName : titles[name];
+  $("#title").textContent = SCREEN_HOOKS[name]?.title?.() ?? titles[name];
   convChrome();
   $("#views").scrollTop = 0; $("#appbar").classList.remove("scrolled");
-  if (name !== "harness") closeHSheet();
+  for (const id in SCREEN_HOOKS) if (id !== name) SCREEN_HOOKS[id].away?.();   // every other screen lets go of what it lent the page (28-harness-project.js closeHSheet)
   SCREEN_HOOKS[name]?.enter?.(tgt);   // the screen's own file draws it and asks for its data (screenHooks in 03-screens.js)
   // No screen is empty on its first frame: one whose loader has not drawn yet (사용량, 컨텍스트, 구성 ...) says so, and the loader replaces this line.
   const body = $(`#v-${name} > #${name}`);

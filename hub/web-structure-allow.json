@@ -6,7 +6,7 @@
     },
     "emptyBypass": {},
     "fnReassign": {},
-    "goBranches": 24,
+    "goBranches": 0,
     "overlaySites": [
       "overlay:asPaneOpen",
       "overlay:prGo",

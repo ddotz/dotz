@@ -293,8 +293,12 @@ function convChain(hash) {
   if (monCtx) return MON.sel && !monChatIt() ? ["home", "monitoring", `monitoring/${enc(MON.sel)}`, hash] : ["home", "monitoring", hash];
   return narrowChat() ? (chatList ? ["home", hash] : ["home", "chat/list", hash]) : ["home", hash];
 }
-screenHooks("chat", { enter: chatEnter, chain: convChain });
-screenHooks("activity", { enter: chatEnter, chain: convChain });
+// go() opening 채팅: "chat/list" is the phone's chat list (the third element, which go() keeps in chatList); any other way in opens a conversation.
+function chatAim(tgt) { if (tgt === "list") return ["chat", undefined, narrowChat()]; }
+// 알림 / 작업 기록 have no terminal view; LOG_VIEW off: no log view at all. t is the conversation go() is about to open (setTarget).
+function activityAim(tgt) { const t = tgt && validTarget(tgt) ? tgt : target; if (!LOG_VIEW || isRowT(t) || isRelayT(t)) return ["chat", tgt]; }
+screenHooks("chat", { enter: chatEnter, chain: convChain, aim: chatAim });
+screenHooks("activity", { enter: chatEnter, chain: convChain, aim: activityAim });
 function enterTarget() {
   // Appending moves the node and a moved focused field loses its focus (and a phone its keyboard): the composer moves only when it is on the other view, and keeps the focus there.
   const view = $(current === "activity" ? "#v-activity" : "#v-chat"), typing = document.activeElement === ta;

@@ -232,9 +232,9 @@ dotz 웹앱의 화면은 `web/js/03-screens.js`의 `SCREENS` 표에 한 줄씩 �
 | `#lanes` | `chat/list` | 05-command-palette.js |
 | `#providers/<id>` | `provider/<id>` | 05-command-palette.js |
 | `#accounts`, `#settings/accounts` | `provider/anthropic` | 05-command-palette.js |
-| `#monitoring/c:<키>`, 모니터링 소유 대화 | 대화 화면을 그리되 탭, 목록, 주소는 모니터링 쪽 | 05-command-palette.js |
-| `#chat/list` | 폰(1099px 이하)에서만 대화 목록, 넓은 화면은 대화 | 05-command-palette.js |
-| `#projects` (1100px 이상) | `project/<ppCur 또는 builtin:custom>` | 05-command-palette.js |
+| `#monitoring/c:<키>`, 모니터링 소유 대화 | 대화 화면을 그리되 탭, 목록, 주소는 모니터링 쪽 | 30-monitoring-route.js monConvOf, 05-command-palette.js |
+| `#chat/list` | 폰(1099px 이하)에서만 대화 목록, 넓은 화면은 대화 | 13-data.js chatAim |
+| `#projects` (1100px 이상) | `project/<ppCur 또는 builtin:custom>` | 18-lanes.js projectsAim |
 | `#project` (대상 없음), `#provider` (대상 없음) | 각각 `projects`, `providers` | 05-command-palette.js |
 | 모르는 뷰, 꺼진 앱 탭 | `home` | 05-command-palette.js |
 
