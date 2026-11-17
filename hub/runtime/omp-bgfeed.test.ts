@@ -129,9 +129,12 @@ test("awaitingAsync stays true through the first wake of a batch and ends with t
 	expect(steps.find(s => s.frame.type === "session_settled")!.awaiting).toBe(false);
 });
 
-test("a background shell job holds awaitingAsync like a worker does until its result is read, and its wake names no worker", async () => {
+test("a background shell job is a spawned and a done worker under its job id, and holds awaitingAsync like a worker until its result is read", async () => {
 	const steps = await replay(shell);
-	expect(workerEvents(steps)).toEqual([]);
+	expect(workerEvents(steps)).toEqual([
+		{ type: "workers_spawned", workers: [{ id: "bg_1#1" }] },
+		{ type: "workers_done", ids: ["bg_1#1"] },
+	]);
 	expect(awaitingChanges(steps)).toEqual(["agent_end:true", "agent_end:false"]);
 	const wake = steps.find(s => s.frame.message?.customType === "async-result")!;
 	expect(wake.frame.message?.details?.jobs?.map(j => j.type)).toEqual(["bash"]);
@@ -216,7 +219,7 @@ test("a subagent update carries the model and thinking level omp resolved for th
 	expect(updatesOf(await replay(batch)).map(u => `${u.id}:${u.status}`)).toEqual(["Beta#1:running", "Alpha#1:running", "Alpha#1:done", "Beta#1:done"]);
 });
 
-test("a spawn result without a background job, or a failed task call, spawns nothing, and a wake that delivers several jobs names each task worker once and leaves shell jobs out", () => {
+test("a spawn result without a background job, or a failed task call, spawns nothing, and a wake that delivers several jobs names each job once, shell jobs included", () => {
 	const result = (text: string, isError = false): Frame => ({ type: "tool_execution_end", toolName: "task", toolCallId: "c", isError, result: { content: [{ type: "text", text }] } });
 	const spawned = (frame: Frame) => eventsFromFrame(frame, new Map()).filter(e => e.type === "workers_spawned");
 	expect(spawned(result("Spawned agent `Napper` (job `Napper`)."))).toEqual([{ type: "workers_spawned", workers: [{ id: "Napper" }] }]);
@@ -232,9 +235,9 @@ test("a spawn result without a background job, or a failed task call, spawns not
 		{ jobId: "Gamma", type: "task", status: "completed", agentId: "Gamma" },
 		{ jobId: "Alpha", type: "task", status: "completed", agentId: "Alpha" },
 	];
-	expect(wake(jobs)).toEqual([{ type: "workers_done", ids: ["Alpha", "Beta", "Gamma"] }]);
+	expect(wake(jobs)).toEqual([{ type: "workers_done", ids: ["Alpha", "bg_1", "Beta", "Gamma"] }]);
 	expect(wake([{ jobId: "Solo" }])).toEqual([{ type: "workers_done", ids: ["Solo"] }]);
-	expect(wake([{ jobId: "bg_2", type: "eval", status: "completed" }])).toEqual([]);
+	expect(wake([{ jobId: "bg_2", type: "eval", status: "completed" }])).toEqual([{ type: "workers_done", ids: ["bg_2"] }]);
 	expect(wake([])).toEqual([]);
 	expect(wake([{ jobId: "Beta-2", type: "task", status: "failed", agentId: "Beta" }], '<task-result id="Beta" agent="task" status="cancelled">\n</task-result>')).toEqual([{ type: "workers_done", ids: ["Beta"] }]);
 });

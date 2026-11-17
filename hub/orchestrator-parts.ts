@@ -80,6 +80,9 @@ export function handover(runtime: RuntimeAdapter, previous: string): string {
 	return msg().handover(previous, turn >= 0 ? newest.slice(turn + 2) : newest, summary);
 }
 
+/** Where in the owner prompts sent to a process the one that `seen` (a user message the session recorded) carries sits; -1 when it carries none. */
+export const startedIndex = (unstarted: { text: string }[], seen: string): number => unstarted.findIndex(u => u.text !== "" && seen.includes(u.text));
+
 export const newOrchState = () => ({
 	status: "stopped" as "stopped" | "starting" | "idle" | "working" | "rate-limited",
 	// Why a "rate-limited" pause is on: a usage limit, or a billing/auth problem only the owner can fix.

@@ -16,6 +16,7 @@ import { createCapacity } from "./convcapacity.ts";
 import { convKindModel } from "./conv-model.ts";
 import { workersOf } from "./lanegates.ts";
 import { omoSelector } from "./runtime/omo.ts";
+import { createWorkerPins } from "./convsessions-pin.ts";
 import type { createPrompts, Pending, Reply } from "./prompts.ts";
 import { createConvEnd } from "./convsessions-end.ts";
 import { quickScope } from "./quick-chat.ts";
@@ -115,11 +116,8 @@ export function createConvSessions(d: ConvDeps) {
 	const effective = (c: Conv): string | undefined => c.meta.ownModel ?? kindModel(c.key);
 	// The model each session was last told to run on, so a default that did not change never restarts anything.
 	const told = new Map<string, string | undefined>();
-	const syncPin = (c: Conv): void => {
-		const file = join(c.dir!, "worker-pin");
-		if (effective(c)) writeAtomic(file, `${d.workerPin()}\n`);
-		else rmSync(file, { force: true });
-	};
+	const pins = createWorkerPins(key => get(key)!.dir!, key => (effective(get(key)!) ? d.workerPin() : undefined));
+	const syncPin = (c: Conv): void => pins.sync(c.key);
 
 	function setMain(c: Omit<Conv, "meta" | "primary"> & Partial<Pick<Conv, "meta" | "primary">>): Conv {
 		mainConv = { primary: "web", meta: { key: MAIN, primary: "web", aliases: [], createdAt: new Date(now()).toISOString() }, ...c } as Conv;
@@ -197,7 +195,7 @@ export function createConvSessions(d: ConvDeps) {
 		saveMeta(c);
 		d.log(`conversation session ${c.key} parked (${why})`);
 	}
-	const end = createConvEnd<Conv>({ get: key => convs.get(key), ensure, drop: c => (convs.delete(c.key), told.delete(c.key)), log: d.log });
+	const end = createConvEnd<Conv>({ get: key => convs.get(key), ensure, drop: c => (convs.delete(c.key), told.delete(c.key), pins.forget(c.key)), log: d.log });
 	// The live-process cap counts conversation sessions only. Past it the least recently used one that can stop is parked first;
 	// when none can, the new one starts anyway (an owner message is never held for capacity; the memory guard is the backstop).
 	function makeRoom(except: Conv): void {
@@ -236,8 +234,11 @@ export function createConvSessions(d: ConvDeps) {
 	/** Main's model changed: sessions that inherit follow it, the others only re-pin their workers on it. */
 	function followMain(): void {
 		for (const c of convs.values()) {
-			if (effective(c)) syncPin(c);
-			else c.o.applyModelChange();
+			if (!effective(c)) {
+				c.o.applyModelChange();
+				continue;
+			}
+			if (pins.movedOnOmp(c.key)) c.o.applyModelChange();
 		}
 	}
 	/** A kind's default model changed (`mail`): its sessions with no pick of their own follow it now, after their turn, or at their next start. */

@@ -332,7 +332,7 @@ test("e) a long tool with no events but growing process-tree CPU, or a growing s
 	await quiet(1000);
 });
 
-test("f) a [later] wait, running workers, an open owner question and a compaction are left alone", async () => {
+test("f) a [later] wait, running workers while the turn waits for them and an open owner question are left alone; workers beside a stalled turn and a compaction are not", async () => {
 	const later = session("main");
 	const l1 = await turn(later, "wait for the worker", chat("chat", "m5"));
 	await l1.push({ type: "assistant", text: "[later] 워커를 기다려요", stop: "stop" }, { type: "turn_end" });
@@ -342,11 +342,18 @@ test("f) a [later] wait, running workers, an open owner question and a compactio
 
 	const workers = session("main");
 	const w1 = await turn(workers, "spawn workers", chat("chat", "m6"));
-	await w1.push({ type: "subagent", update: { id: "w-stuck", status: "running" } });
+	await w1.push({ type: "subagent", update: { id: "w-stuck", status: "running" } }, { type: "activity", row: { type: "tool_call", tool: "wait", call_id: "wait1", text: "wait" } });
 	await quiet(STUCK_MS * 3);
 	expect(w1.aborts).toBe(0);
 	await w1.push({ type: "subagent", update: { id: "w-stuck", status: "done" } });
 	workers.o.stop();
+
+	const stalled = session("main");
+	const s1 = await turn(stalled, "spawn then stall", chat("chat", "m6b"));
+	await s1.push({ type: "subagent", update: { id: "w-stalled", status: "running" } });
+	await quiet(STUCK_MS * 3);
+	expect(s1.aborts).toBeGreaterThan(0);
+	stalled.o.stop();
 
 	const asked = session("main");
 	const a1 = await turn(asked, "needs the owner", chat("chat", "m8"));
@@ -363,7 +370,7 @@ test("f) a [later] wait, running workers, an open owner question and a compactio
 	const c1 = await turn(compacting, "compact meanwhile", chat("chat", "m10"));
 	compacting.o.orch.ctx.compaction.state = "compacting";
 	await quiet(STUCK_MS * 3);
-	expect(c1.aborts).toBe(0);
+	expect(c1.aborts).toBeGreaterThan(0);
 	compacting.o.orch.ctx.compaction.state = "idle";
 	compacting.o.stop();
 	await quiet(1000);

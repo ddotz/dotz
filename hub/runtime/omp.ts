@@ -17,6 +17,7 @@ import { touchedPath, withTouchedFiles } from "./handover-files.ts";
 import { lastCompactionSummary, summaryStale } from "./omo-summary.ts";
 import { keyProviderOf, startModelOf, writeOverlay } from "./omp-overlay.ts";
 import { RunKeys } from "./omp-runs.ts";
+import { RetryGate } from "./omp-retry.ts";
 import { realTurn, type SessionMessage } from "./real-turn.ts";
 import type { ActivityRow, AgentEvent, AgentProcess, RuntimeAdapter, SendMode, SpawnOpts, SubagentUpdate } from "./types.ts";
 
@@ -36,7 +37,8 @@ export type Frame = {
 	errorMessage?: string;
 	attempt?: number;
 	maxAttempts?: number;
-	error?: string;
+	error?: string | { message?: string; code?: string };
+	status?: string;
 	// retry_fallback_applied
 	from?: string;
 	to?: string;
@@ -48,6 +50,7 @@ export type Frame = {
 	skipped?: boolean;
 	isTerminal?: boolean;
 	awaitingAsyncWork?: boolean;
+	yielded?: boolean;
 };
 type Usage = { input?: number; cacheRead?: number; cacheWrite?: number; output?: number; cost?: { total?: number } };
 type AsyncJob = { jobId?: string; type?: string; status?: string; agentId?: string };
@@ -59,7 +62,7 @@ function activityFromFrame(f: Frame): ActivityRow[] {
 		case "agent_start":
 			return [{ type: "turn_start", text: "turn started" }];
 		case "agent_end":
-			return [{ type: "turn_end", text: "turn finished" }];
+			return yielded(f) ? [{ type: "turn_end", text: "turn finished" }] : [];
 		case "message_end": {
 			const m = f.message;
 			if (m?.role === "user") {
@@ -114,7 +117,7 @@ function subagentUpdate(p: Record<string, any>): SubagentUpdate | undefined {
 	const id = String(progress.id ?? p.id ?? "");
 	if (!id) return undefined;
 	const raw = String(progress.status ?? p.status ?? "").toLowerCase();
-	const status = /fail|error/.test(raw) ? "failed" : /abort|cancel/.test(raw) ? "aborted" : /done|complete|finish|success|end/.test(raw) ? "done" : "running";
+	const status = /fail|error/.test(raw) ? "failed" : /abort|cancel/.test(raw) ? "aborted" : /\b(?:done|completed?|finished?|success(?:ful)?|ended?)\b/.test(raw) ? "done" : "running";
 	const description = progress.description ?? p.description;
 	return {
 		id,
@@ -147,10 +150,27 @@ const finishedWorkers = (text: string) => [...text.matchAll(/task completion nam
 function doneWorkers(jobs: AsyncJob[] | undefined): AgentEvent[] {
 	const ids = new Set<string>();
 	for (const job of Array.isArray(jobs) ? jobs : []) {
-		const id = job?.type === undefined || job.type === "task" ? (job?.agentId ?? job?.jobId) : undefined;
+		const id = job?.agentId ?? job?.jobId;
 		if (typeof id === "string" && id) ids.add(id);
 	}
 	return ids.size ? [{ type: "workers_done", ids: [...ids] }] : [];
+}
+
+type ToolDetails = { async?: { state?: string; jobId?: string; type?: string }; message?: { op?: string; receipts?: { to?: string; outcome?: string }[] } };
+
+// why(protocol): omp's tool results carry details.async = {state:"running", jobId, type} for a call it ran as a background job, and `write agent://<name>` details.message = {op:"send", receipts:[{to, outcome}]} with outcome "injected" (a running worker took the message) or "woken" (an ended worker started a new run) (omp@18.22.0, hub/runtime/fixtures/omp-rpc.jsonl and omp-sessions/revived)
+function jobEvents(result: unknown): AgentEvent[] {
+	const details: ToolDetails | undefined = result && typeof result === "object" && "details" in result ? (result.details as ToolDetails | undefined) : undefined;
+	const job = details?.async;
+	if (job?.state === "running" && job.type !== "task" && typeof job.jobId === "string" && job.jobId) return [{ type: "workers_spawned", workers: [{ id: job.jobId }] }];
+	if (details?.message?.op !== "send") return [];
+	const named = (outcome: string) => (details.message?.receipts ?? []).flatMap(r => (r?.outcome === outcome && typeof r.to === "string" && r.to ? [r.to] : []));
+	const events: AgentEvent[] = [];
+	const woken = named("woken");
+	if (woken.length) events.push({ type: "workers_spawned", workers: woken.map(id => ({ id })) });
+	const injected = named("injected");
+	if (injected.length) events.push({ type: "workers_steered", ids: injected });
+	return events;
 }
 
 // Everything one omp frame means to the hub, in the order the hub must apply it. A task worker that moved to a fallback
@@ -173,7 +193,11 @@ export function eventsFromFrame(f: Frame, workers: Map<string, string>): AgentEv
 	for (const row of activityFromFrame(f)) out.push({ type: "activity", row });
 	switch (f.type) {
 		case "tool_execution_end": {
-			if ((f.toolName !== "task" && f.toolName !== "task_send") || f.isError) break;
+			if (f.isError) break;
+			if (f.toolName !== "task" && f.toolName !== "task_send") {
+				out.push(...jobEvents(f.result));
+				break;
+			}
 			const r = f.result as { content?: Block[] | string } | string | undefined;
 			const said = typeof r === "string" ? r : joined(r?.content);
 			if (f.toolName === "task_send") {
@@ -190,7 +214,7 @@ export function eventsFromFrame(f: Frame, workers: Map<string, string>): AgentEv
 			out.push({ type: "turn_start" });
 			break;
 		case "agent_end":
-			out.push({ type: "turn_end" });
+			if (yielded(f)) out.push({ type: "turn_end" });
 			break;
 		case "message_end": {
 			const m = f.message;
@@ -249,9 +273,12 @@ export function eventsFromFrame(f: Frame, workers: Map<string, string>): AgentEv
 
 export { writeQuietly };
 
+const yielded = (f: Frame): boolean => f.yielded ?? f.isTerminal !== false;
+
 export class OmpProcess implements AgentProcess {
 	private seq = 0;
 	private restoreId?: string;
+	private readonly gate = new RetryGate();
 	private readonly workerModels = new Map<string, string>();
 	readonly events: AsyncIterable<AgentEvent> = this.read();
 	readonly exited: Promise<number>;
@@ -286,9 +313,10 @@ export class OmpProcess implements AgentProcess {
 				const frame = this.translate(f as Frame);
 				if (this.restoreId !== undefined && frame.type === "response" && frame.id === this.restoreId && frame.success === false) this.write({ type: "abort" });
 				this.observe(frame);
-				yield* this.rekey(eventsFromFrame(frame, this.workerModels));
+				yield* this.rekey(this.gate.pass(frame, eventsFromFrame(frame, this.workerModels)));
 			}
 		}
+		yield* this.rekey(this.gate.release());
 	}
 	protected write(frame: Record<string, unknown>): string {
 		const id = `${this.idPrefix}${++this.seq}`;
@@ -422,6 +450,7 @@ export function ompArgv(o: SpawnOpts): string[] {
 
 export const omp: RuntimeAdapter = {
 	id: "omp",
+	// why(protocol): omp@18.22.0 runs RPC commands on a serialized queue, so an abort sent during compact is read after the compaction ends and there is no abortCompact (docs/rpc.md "Ordinary commands run on a serialized queue"; frames: hub/runtime/fixtures/omp-compact-queue.jsonl)
 	caps: { steer: "native", subagents: "live", contextNumbers: "exact", compact: "rpc", sessionTranscript: true, promptCacheKeepalive: true, contextLimit: "compact", extension: true },
 	start(o) {
 		const key = keyProviderOf(o);

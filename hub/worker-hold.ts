@@ -57,6 +57,7 @@ export function createOmpFeed(deps: { source: string; process: () => AgentProces
 	const count = (): number => Math.max(runningSubagents(deps.source), deps.process()?.awaitingAsync?.() ? 1 : 0);
 	return {
 		count,
+		tasks: (): number => runningSubagents(deps.source),
 		live: (): number => (deps.omp() ? count() : 0),
 		list: (): SubagentFile[] => (deps.omp() ? subagentsOf(deps.source) : []),
 		/** A note into the running process, steering the turn it is in; false when no process takes it now (none, or it is rotating, restarting or compacting). */

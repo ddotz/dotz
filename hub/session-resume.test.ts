@@ -1,7 +1,7 @@
 // Conversation sessions and the orchestrator resume like lanes (hub/sessionresume.ts, hub/laneresume.ts). The registry, the task store reader and
 // the signal are the real ones; only the agent process is a fake. The session rows are OmO's own shapes (2026-11-05, st_01a1abe7), cut to the fields read.
 import { afterEach, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createBgWork } from "./bgwork.ts";
@@ -311,4 +311,60 @@ test("an omp worker that finished or was waited for wakes nobody", async () => {
 		expect(await b.resume.tick()).toEqual([]);
 		expect(b.delivered).toEqual([]);
 	}
+});
+
+// An omp session file cut after its last row for which `keep` holds, as a process killed there leaves it.
+function ompCut(w: World, fixture: string, keep: (row: { type?: string; customType?: string; message?: { role?: string } }) => boolean): void {
+	const { file } = ompTree(fixture, w.dir);
+	const rows = readFileSync(file, "utf8").trimEnd().split("\n");
+	writeFileSync(file, `${rows.slice(0, rows.findLastIndex(r => keep(JSON.parse(r))) + 1).join("\n")}\n`);
+	const at = (Date.now() - 10 * 60_000) / 1000;
+	utimesSync(file, at, at);
+	w.file = file;
+}
+const isResult = (r: { type?: string; customType?: string }) => r.type === "custom_message" && r.customType === "async-result";
+
+test("an omp conversation whose process died mid-turn is brought back once, with no worker to name", async () => {
+	const w = world();
+	ompCut(w, "finished", isResult);
+	const b = restarted(w);
+	expect(await b.resume.tick()).toEqual(["mail:k1"]);
+	expect(b.delivered).toHaveLength(1);
+	expect(b.delivered[0]).toMatchObject({ key: "mail:k1", target: "mail:k1" });
+	expect(await b.resume.tick()).toEqual([]);
+	expect(b.delivered).toHaveLength(1);
+});
+
+test("an omp request nobody answered is resumed even though the answer before it closed its work", async () => {
+	const w = world();
+	ompCut(w, "finished", r => r.type === "message" && r.message?.role === "user");
+	const b = restarted(w);
+	expect(await b.resume.tick()).toEqual(["mail:k1"]);
+});
+
+test("an omp conversation that ended on its answer, or whose cut turn is days old, is left alone", async () => {
+	const done = world();
+	ompCut(done, "finished", r => r.type === "message" && r.message?.role === "assistant");
+	expect(await restarted(done).resume.tick()).toEqual([]);
+	const old = world();
+	ompCut(old, "finished", isResult);
+	const at = (Date.now() - 72 * HOUR) / 1000;
+	utimesSync(old.file, at, at);
+	expect(await restarted(old).resume.tick()).toEqual([]);
+});
+
+test("an omp turn cut again and again is resumed three times, then the owner is told once", async () => {
+	const w = world();
+	ompCut(w, "finished", isResult);
+	const b = restarted(w);
+	let now = Date.now();
+	const woken: string[][] = [];
+	for (let i = 0; i < 4; i++) {
+		woken.push(await b.resume.tick(undefined, now));
+		b.agents.get("mail:k1")!.pid = undefined;
+		b.agents.get("mail:k1")!.status = "stopped";
+		now += 2 * HOUR;
+	}
+	expect(woken.flat()).toHaveLength(3);
+	expect(b.told).toHaveLength(1);
 });

@@ -203,21 +203,24 @@ test(`an OmO task worker of ${role === "DOTZ_LANE" ? "a lane" : "the orchestrato
 	const host = new Proxy({ registerTool: (t: { name: string }) => names.push(t.name), on: (n: string, fn: (e: any) => any) => (handlers[n] = fn) } as Record<string, unknown>, {
 		get: (o, k) => (k in o ? o[k as string] : k === "then" || k === "zod" ? undefined : () => undefined),
 	});
-	const saved = { ...process.env };
+	const saved = { role: process.env[role], depth: process.env.OMO_SENPI_TASK_DEPTH };
 	process.env[role] = value;
 	process.env.OMO_SENPI_TASK_DEPTH = "1";
 	try {
 		await dotz(host);
+		expect(names).toEqual(["dotz_recall"]);
+		const big = Array.from({ length: 1000 }, (_, i) => `${i} ${"x".repeat(95)}`).join("\n");
+		const capped = handlers.tool_result!({ toolName: "read", input: { path: "/x" }, content: [{ type: "text", text: big }] });
+		expect(capped.content[0].text.length).toBeLessThan(61_000);
+		expect(handlers.tool_call!({ toolName: "bash", input: { command: "echo ok" } })).toBeUndefined();
+		const payload = handlers.before_provider_request!({ payload: { system: [{ type: "text", text: "s", cache_control: { type: "ephemeral", ttl: "1h" } }] } }, {});
+		expect(payload.system[0].cache_control).toEqual({ type: "ephemeral" });
 	} finally {
-		process.env = saved;
+		for (const [key, was] of [[role, saved.role], ["OMO_SENPI_TASK_DEPTH", saved.depth]] as const) {
+			if (was === undefined) delete process.env[key];
+			else process.env[key] = was;
+		}
 	}
-	expect(names).toEqual(["dotz_recall"]);
-	const big = Array.from({ length: 1000 }, (_, i) => `${i} ${"x".repeat(95)}`).join("\n");
-	const capped = handlers.tool_result!({ toolName: "read", input: { path: "/x" }, content: [{ type: "text", text: big }] });
-	expect(capped.content[0].text.length).toBeLessThan(61_000);
-	expect(handlers.tool_call!({ toolName: "bash", input: { command: "echo ok" } })).toBeUndefined();
-	const payload = handlers.before_provider_request!({ payload: { system: [{ type: "text", text: "s", cache_control: { type: "ephemeral", ttl: "1h" } }] } }, { agent: { kind: "main" } });
-	expect(payload.system[0].cache_control).toEqual({ type: "ephemeral" });
 });
 
 test("light profile: tools dotz never uses are left out (goal loop, html viewer; the orchestrator also lsp, workpool, pty resize); every tool dotz relies on stays", () => {
