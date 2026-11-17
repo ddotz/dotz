@@ -472,11 +472,11 @@ const monReadAll = (btn, list) => busy(btn, async () => {
   try { await pqNoticesRead(list); } catch (err) { for (const n of list) if (n.pc) n.read = false; pqSoon(); throw err; }
   if (ids.length) {
     for (const n of mine) n.read = true;
-    NT.unread = Math.max(0, NT.unread - ids.length); ntPaint(); homeSoon();
+    ntUnreadLess(ids.length); ntPaint(); homeSoon();
     let r;
     try { r = await api("/api/notices/read", "POST", { ids }); }
-    catch (err) { for (const n of mine) n.read = false; NT.unread += ids.length; ntPaint(); homeSoon(); loadNotices(); throw err; }
-    if (r && typeof r.unread === "number") NT.unread = r.unread;
+    catch (err) { for (const n of mine) n.read = false; ntUnreadLess(-ids.length); ntPaint(); homeSoon(); loadNotices(); throw err; }
+    if (r) ntUnreadLess(0, r.unread);
     ntPaint();
   }
   toast(TX("mon.read_done", { n: list.length }));
@@ -818,7 +818,7 @@ function monSeen() {
     pqNoticesRead(fresh).catch(() => pqSoon());
     if (!mine.length) return;
     for (const n of mine) n.read = true;
-    NT.unread = Math.max(0, NT.unread - mine.length);
+    ntUnreadLess(mine.length);
     ntPaint(); homeSoon();
     ntMarkRead({ ids: mine.map(n => n.id) });
   }, 700);

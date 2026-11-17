@@ -34,7 +34,7 @@ function peerMsgCard(e, p, hm) {
   if (long) body.classList.add("clamp");
   const more = long ? el("button", { class: "ubm", type: "button", onclick: () => { const c = body.classList.toggle("clamp"); more.textContent = c ? TX("base.more") : TX("base.less"); } }, TX("base.more")) : null;
   const mt = el("div", { class: "mt", text: hm }), mid = e.mid || e.message_id || "";
-  if (p.kind !== "ack" && mid) { DELIV.nodes.set(mid, { mt, base: hm }); if (DELIV.nodes.size > 600) DELIV.nodes.delete(DELIV.nodes.keys().next().value); paintDelivery(mid); }
+  if (p.kind !== "ack" && mid) delivTrack(mid, { mt, base: hm });
   return el("div", { class: "bm pmc" }, filesNode(e.files, true), rpQuote(e),
     el("div", { class: "ccard" },
       el("div", { class: "pmc-hd" }, icon("desktop"), el("span", { class: "mn", text: p.from }), el("span", { class: "tag", text: PEER_KIND[p.kind], ...(p.id ? { title: `id ${p.id}` } : {}) }), mt),

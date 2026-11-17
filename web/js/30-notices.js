@@ -102,8 +102,7 @@ function noticeLive(e) {
     ntHandled(e.id);
     const g = NT.items.find(x => x.id === e.id);
     if (g && g.at && (g.src || g.open) === "alert") NT.gone.add(g.at);
-    NT.items = NT.items.filter(x => x.id !== e.id);
-    NT.mut++;
+    ntRemove(e.id); NT.mut++;
     ntAlertMarks();
   } else if (e.kind === "notice_read") {
     const ids = new Set(e.ids || []);
@@ -309,6 +308,8 @@ function ntRead(n) {
   n.read = true; NT.unread = Math.max(0, NT.unread - 1); ntPaint(); homeSoon();
   ntMarkRead({ ids: [n.id] });
 }
+const ntUnreadLess = (k, unread) => { NT.unread = typeof unread === "number" ? unread : Math.max(0, NT.unread - k); }, ntSeed = (items, unread) => { NT.items = items; NT.unread = unread; };   // unread after k were read: the hub's count when it sent one (a negative k puts a failed read back); ntSeed: the home snapshot's, until the list arrives
+const ntRemove = (id, unread) => { NT.items = NT.items.filter(x => String(x.id) !== String(id)); ntUnreadLess(0, unread); }, ntDismissed = (n, unread) => { ntRemove(n.id, unread); NT.mut++; if (n.at) NT.gone.add(n.at); }, ntUndismissed = n => { NT.mut++; if (n.at) NT.gone.delete(n.at); };   // dismissed here: its alert message stays out (gone) and a list on its way is read again (mut)
 // The stored notice of a message (its decision first), by conversation and event time; a 작업내역 line of a session is stored under the session, so time alone is the fallback.
 const ntMsgFor = (src, at) => NT.items.find(x => ntIsDec(x) && x.decision.to === src && x.decision.reply_to === at)
   || NT.items.find(x => (x.src || x.open) === src && x.at === at) || NT.items.find(x => x.at === at) || null;
@@ -609,7 +610,7 @@ async function ntDirect(n) {
   if (!d.draft && d.state === "open" && !d.to.startsWith("auth:") && !convTakesText(ntWhere(n))) return ntOwnWords(n);   // a peer's question too: it is answered on its computer with the same call
   ntSheetClose(false);
   if (n.pc) { const t = n.decision.to; if (pqPc(t)) go("monitoring", `c:${t}`); else toast(TX("conv.nt.answer_on", { name: n.pc.name })); return; }   // a peer's question: its conversation as this page shows it
-  if (n.decision.to.startsWith("auth:")) { AUTH_HID.clear(); paintAuth(true); const f = document.querySelector(".au input"); if (f) { f.scrollIntoView({ block: "center" }); f.focus(); } else toast(TX("conv.nt.input_closed")); return; }
+  if (n.decision.to.startsWith("auth:")) { authUnhide(); const f = document.querySelector(".au input"); if (f) { f.scrollIntoView({ block: "center" }); f.focus(); } else toast(TX("conv.nt.input_closed")); return; }
   if (await ntJump(n) !== undefined || n.decision.draft || n.decision.state !== "open") return;
   if (!convTakesText(target)) return ntOwnWords(n);   // its message turned out to live in such a conversation
   const m = ntFind(n.at);
