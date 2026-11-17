@@ -17,6 +17,7 @@ import { convKindModel } from "./conv-model.ts";
 import { workersOf } from "./lanegates.ts";
 import { omoSelector } from "./runtime/omo.ts";
 import type { createPrompts, Pending, Reply } from "./prompts.ts";
+import { createConvEnd } from "./convsessions-end.ts";
 import { quickScope } from "./quick-chat.ts";
 import { CONV_KINDS, MAIN, primaryTarget, QUICK, safeDir, sessionKeyOf } from "./session-key.ts";
 import type { ResumeSession } from "./sessionresume.ts";
@@ -63,6 +64,15 @@ const readJson = (file: string): Record<string, unknown> => {
 		return {};
 	}
 };
+const metaFile = (c: Conv) => join(c.dir!, "state.json");
+
+// The quick chat's context is bounded by its park: the stored session file is dropped, so its next start is a new session seeded with
+// the last events (seedText) and not a resume of everything it said before.
+function forgetSession(c: Conv): void {
+	c.o.orch.sessionFile = "";
+	const { sessionFile: _gone, ...rest } = readJson(metaFile(c));
+	writeAtomic(metaFile(c), `${JSON.stringify(rest, null, 2)}\n`);
+}
 
 // The conversation's recent exchanges, handed to a brand-new session with its first prompt (it starts with no context of its own).
 // Context only: this first run has no prompt, so what it answers goes nowhere and what it starts belongs to no request. The message that
@@ -99,7 +109,6 @@ export function createConvSessions(d: ConvDeps) {
 	const rules = () => ({ on: d.on(), kinds: d.kinds(), mailOf: d.mailOf, quick: d.quick?.() ?? false });
 	const keyOf = (target: string | undefined): string => sessionKeyOf(target, rules());
 	const live = (c: Conv): boolean => c.o.orchestratorPid() !== undefined;
-	const metaFile = (c: Conv) => join(c.dir!, "state.json");
 	const saveMeta = (c: Conv) => writeAtomic(metaFile(c), `${JSON.stringify({ ...readJson(metaFile(c)), ...c.meta, parked: c.meta.parked }, null, 2)}\n`);
 	const kindModel = (key: string): string | undefined => d.kindModel?.(key) || undefined;
 	/** What this conversation runs on apart from main: its own pick, else its kind's default. */
@@ -188,6 +197,7 @@ export function createConvSessions(d: ConvDeps) {
 		saveMeta(c);
 		d.log(`conversation session ${c.key} parked (${why})`);
 	}
+	const end = createConvEnd<Conv>({ get: key => convs.get(key), ensure, drop: c => (convs.delete(c.key), told.delete(c.key)), log: d.log });
 	// The live-process cap counts conversation sessions only. Past it the least recently used one that can stop is parked first;
 	// when none can, the new one starts anyway (an owner message is never held for capacity; the memory guard is the backstop).
 	function makeRoom(except: Conv): void {
@@ -196,14 +206,6 @@ export function createConvSessions(d: ConvDeps) {
 		const lru = running.filter(c => parkable(c, 0)).sort((a, b) => a.o.lastTurnEndAt() - b.o.lastTurnEndAt())[0];
 		if (lru) park(lru, `cap of ${d.maxLive()} live sessions, least recently used`);
 		else d.log(`conversation session ${except.key} starts over the cap of ${d.maxLive()}: none of the ${running.length} live ones can stop now`);
-	}
-
-	// The quick chat's context is bounded by its park: the stored session file is dropped, so its next start is a new session seeded with
-	// the last events (seedText) and not a resume of everything it said before.
-	function forgetSession(c: Conv): void {
-		c.o.orch.sessionFile = "";
-		const { sessionFile: _gone, ...rest } = readJson(metaFile(c));
-		writeAtomic(metaFile(c), `${JSON.stringify(rest, null, 2)}\n`);
 	}
 
 	/** The session for `key`, created (not spawned) when it does not exist; room is made when it is about to spawn. */
@@ -262,7 +264,9 @@ export function createConvSessions(d: ConvDeps) {
 			c.meta.lastOwnerAt = new Date(now()).toISOString();
 			saveMeta(c);
 		}
-		return c.queue.deliver(text, reply);
+		const steered = c.queue.deliver(text, reply);
+		if (c.meta.parked && live(c)) void end.reviveAfterExit(c);
+		return steered;
 	}
 
 	/** new: no session yet; parked: one whose process is not running (the next message resumes it); live: running. Main is always live. */
@@ -274,6 +278,7 @@ export function createConvSessions(d: ConvDeps) {
 	}
 
 	function sweep(): void {
+		for (const c of convs.values()) end.revive(c);
 		const min = d.idleMin();
 		if (min > 0) for (const c of convs.values()) if (parkable(c, min * 60_000)) park(c, `idle ${min} min`);
 		// Short of memory (the cap fell below what runs): the longest-resting sessions are parked now instead of after the idle time, so
@@ -326,6 +331,7 @@ export function createConvSessions(d: ConvDeps) {
 		queueOf,
 		deliverTo,
 		setOwnModel,
+		remove: end.remove,
 		followMain,
 		followKind,
 		kindModel,

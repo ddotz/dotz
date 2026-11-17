@@ -167,6 +167,7 @@ export async function routeSend(req: Request, url: URL, parts: string[], { peer 
 			const cur = sender.queue.current();
 			if (cur && !cur.done && (cur.from || cur.handback)) return json({ error: "handed work: answer it here, do not pass it on" }, 409);
 			const toMain = from !== MAIN;
+			if (!toMain && !convs.get(key) && convs.keyOf(primaryTarget(key)) === key && historyEvents(primaryTarget(key), 1).length) convs.ensure(key);
 			if (!toMain && !convs.get(key)) return json({ error: `no conversation session ${key}` }, 404);
 			// Into main: its answer goes to the conversation that asked, where its own window shows it.
 			if (toMain) {
