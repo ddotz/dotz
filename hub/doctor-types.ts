@@ -3,7 +3,7 @@
 // A check never sends anything itself and never calls a model.
 
 /** Which part of the doctor found it; the morning item groups by it. */
-export type DoctorArea = "gateway" | "sessions" | "logins" | "watches" | "disk" | "update" | "failures" | "tokens" | "prompt";
+export type DoctorArea = "gateway" | "sessions" | "logins" | "watches" | "disk" | "update" | "failures" | "tokens" | "prompt" | "plugins";
 
 export type Finding = {
 	/** Stable id across runs, e.g. "watch-failing:<watch name>" or "tokens:<warning class>". Repeat suppression keys on it. */

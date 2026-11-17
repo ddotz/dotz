@@ -498,6 +498,7 @@ Do this, briefly:
 		tokens: (kind: string, n: number) => `Token waste (${kind}): ${n} session${n === 1 ? "" : "s"} flagged in the last day.`,
 		ownerExpensive: (n: number, cost: string) => `Expensive models you chose: ${n} session${n === 1 ? "" : "s"}, ${cost}. Not counted as waste.`,
 		selfUpdate: "the gateway",
+		pluginNotLoaded: (file: string, error: string) => `The plugin ${file} did not load and is off: ${error}`,
 	},
 	harness: {
 		locale: "en-US",

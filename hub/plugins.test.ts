@@ -1,9 +1,9 @@
 // Custom plugins (hub/plugins.ts): the loader, the four hooks and the failure policy, with a neutral fixture plugin written to a throwaway data dir.
 import { afterAll, beforeAll, beforeEach, expect, test } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, realpathSync, rmSync, utimesSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { loadPlugins, pluginClaim, pluginDeny, pluginMailThread, pluginThread, startPlugins, type PluginContext } from "./plugins.ts";
+import { loadPlugins, pluginClaim, pluginDeny, pluginFailuresFile, pluginMailThread, pluginThread, startPlugins, type PluginContext } from "./plugins.ts";
 import { inboxText } from "./intake.ts";
 import { advance } from "./runtime/test-clock.ts";
 
@@ -60,6 +60,9 @@ test("loads *.ts and *.js plugins in name order; a plugin that fails to load, is
 	expect(logs.some(l => l.includes("20-throws-on-load.ts not loaded") && l.includes("boom on load"))).toBe(true);
 	expect(logs.some(l => l.includes("30-not-a-plugin.js not loaded"))).toBe(true);
 	expect(logs.some(l => l.includes("test.ts") || l.includes("types.d.ts"))).toBe(false);
+	const failures = JSON.parse(readFileSync(pluginFailuresFile(data), "utf8"));
+	expect(Object.keys(failures)).toEqual(["20-throws-on-load.ts", "30-not-a-plugin.js"]);
+	expect(failures["20-throws-on-load.ts"]).toContain("boom on load");
 });
 
 test("the claim hook answers for its channels; a throwing sibling plugin is logged, not fatal", () => {
@@ -103,10 +106,13 @@ test("an edited, added or removed plugin file reaches the next hook without load
 	write("guard.ts", "export default 42;\n", 3000);
 	expect(pluginDeny("bar", other)).toBe("Blocked by dotz (custom plugin guard): no bar.");
 	expect(logs.some(l => l.includes("guard.ts not reloaded, keeping the previous version"))).toBe(true);
+	const failures = () => Object.keys(JSON.parse(readFileSync(pluginFailuresFile(other), "utf8")));
+	expect(failures()).toEqual(["guard.ts"]);
 	write("extra.ts", guard("baz"), 1000);
 	expect(pluginDeny("baz", other)).toBe("Blocked by dotz (custom plugin extra): no baz.");
 	rmSync(join(pdir, "guard.ts"));
 	expect(pluginDeny("bar", other)).toBeUndefined();
+	expect(failures()).toEqual([]);
 	rmSync(other, { recursive: true, force: true });
 });
 

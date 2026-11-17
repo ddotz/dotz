@@ -3,9 +3,10 @@ import { existsSync, mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync }
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { compose, loadStore, morningTime, nextAt, nightTime, runMorning, runNight, shouldTell, storeFile, type Deps } from "./doctor.ts";
-import { countTraces, gateway, logins, sessions, update, watches } from "./doctor-checks.ts";
+import { countTraces, gateway, logins, plugins, sessions, update, watches } from "./doctor-checks.ts";
 import { THRESHOLDS as T } from "./doctor-limits.ts";
 import type { DoctorCheck, Finding } from "./doctor-types.ts";
+import { loadPlugins } from "./plugins.ts";
 import * as audit from "./token-audit.ts";
 
 const H = 3600e3, D = 24 * H;
@@ -249,5 +250,25 @@ describe("checks read files only", () => {
 		].join(""));
 		const found = await update({ now: T0, dataDir: dir, home: dir });
 		expect(found.map(f => f.key).sort()).toEqual(["update:omo", "update:self"]);
+	});
+});
+
+describe("plugins check", () => {
+	const load = async (files: Record<string, string>) => {
+		mkdirSync(join(dir, "custom", "plugins"), { recursive: true });
+		for (const [name, text] of Object.entries(files)) writeFileSync(join(dir, "custom", "plugins", name), text);
+		await loadPlugins(dir);
+		await loadPlugins(join(dir, "none")); // leaves no plugin loaded for the other test files
+		return plugins({ now: T0, dataDir: dir, home: dir });
+	};
+
+	test("a plugin file that fails to load is reported with the error's first line", async () => {
+		const out = await load({ "pluginA.ts": `throw new Error("broken import\\nsecond line");\n`, "pluginB.ts": "export default { name: \"b\" };\n" });
+		expect(out.map(f => [f.key, f.area, f.evidence])).toEqual([["plugins:pluginA.ts", "plugins", "Error: broken import"]]);
+		expect(out[0]!.what).toContain("pluginA.ts");
+	});
+
+	test("plugins that load report nothing", async () => {
+		expect(await load({ "pluginB.ts": "export default { name: \"b\" };\n" })).toEqual([]);
 	});
 });

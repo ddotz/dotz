@@ -477,6 +477,7 @@ export const ko: Catalog = {
 		tokens: (kind: string, n: number) => `토큰 낭비(${kind}): 지난 하루 ${n}개 세션이 걸렸어요.`,
 		ownerExpensive: (n: number, cost: string) => `직접 고른 비싼 모델: 세션 ${n}개, ${cost}. 요청하신 것이라 경고에서 뺐어요.`,
 		selfUpdate: "게이트웨이",
+		pluginNotLoaded: (file: string, error: string) => `플러그인 ${file}을(를) 불러오지 못해서 꺼져 있어요: ${error}`,
 	},
 	harness: {
 		locale: "ko-KR",

@@ -6,6 +6,7 @@ import { THRESHOLDS as T } from "./doctor-limits.ts";
 import type { DoctorCheck, Finding } from "./doctor-types.ts";
 import { baselineOf, failureReport, grownClasses, isBaseline } from "./failure-report.ts";
 import { msg } from "./i18n.ts";
+import { pluginFailuresFile } from "./plugins.ts";
 import { runAudit } from "./token-audit.ts";
 import { HARNESS_FAILED_MID, HARNESS_RESTART_TAIL } from "./worklog-kind.ts";
 
@@ -196,4 +197,13 @@ export const tokens: DoctorCheck = ({ now, dry }) => {
 	return [...byKind].map(([kind, k]) => found(`tokens:${kind}`, "tokens", now, t.tokens(kind, k.n), kind, Math.round(k.cost * 100) / 100 || k.n));
 };
 
-export const CHECKS: DoctorCheck[] = [gateway, sessions, logins, watches, disk, update, failures, tokens];
+// A custom plugin whose import or default export failed in the last load (hub/plugins.ts writes the file); the error's first line is the evidence.
+export const plugins: DoctorCheck = ({ now, dataDir }) => {
+	const t = msg().doctor;
+	return Object.entries(jsonAt<Record<string, string>>(pluginFailuresFile(dataDir)) ?? {}).map(([file, error]) => {
+		const line = String(error).split("\n")[0]!.trim();
+		return found(`plugins:${file}`, "plugins", now, t.pluginNotLoaded(file, line), line, 1);
+	});
+};
+
+export const CHECKS: DoctorCheck[] = [gateway, sessions, logins, watches, disk, update, plugins, failures, tokens];
