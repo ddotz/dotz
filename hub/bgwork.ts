@@ -15,6 +15,7 @@ import { closeSync, existsSync, openSync, readdirSync, readFileSync, readSync, s
 import { dirname, join } from "node:path";
 import { scrub, subagentsOf, type SubagentFile } from "./activity.ts";
 import { cancelOmp, ompRecs, type OmpRec, type StoppedWork } from "./bgwork-omp.ts";
+import { ompDeadWork, ompFailedWork, type OmpWorker } from "./omp-deadwork.ts";
 import { type ResultFile, type ResultLink, resultFiles, resultLinks } from "./result-refs.ts";
 import { failureText } from "./runstate.ts";
 import { previewSource } from "./tone.ts";
@@ -140,6 +141,8 @@ const conversationOf = (d: OpenDeferred | undefined) => d && { target: d.target 
 const NO_PID_STALE_MS = 3 * 3600_000;
 // A record still "running" whose process is gone counts as killed work this long; older ones are leftovers nobody closed.
 export const DEAD_WORK_MS = 48 * 3600_000;
+/** BgWork.source of a worker read from an omp session file. */
+export const OMP_SOURCE = "omp-session";
 const QUEUED = new Set(["queued", "pending"]);
 const RUNNING = new Set(["running", ...QUEUED]);
 // A running worker with no transcript or task-log activity for this long is stalled (DOTZ_WORKER_STALL_MIN, default 15).
@@ -298,6 +301,10 @@ function readLogTail(store: string | undefined, id: string): string {
 		return "";
 	}
 }
+const fromOmp = (w: OmpWorker, status: BgWork["status"]): BgWork => {
+	const error = w.error ? scrub(w.error).replace(/\s+/g, " ").trim().slice(0, 200) : "";
+	return { id: w.id, description: scrub(w.description).replace(/\s+/g, " ").trim().slice(0, 120), status, started_at: w.started_at, ended_at: w.ended_at, ...(error ? { error } : {}), reason: failureText(error), source: OMP_SOURCE };
+};
 const ompRecOf = (deps: BgWorkDeps, id: string): OmpRec | undefined => ompRecs(deps.ompWorkers?.().filter(s => s.id === id) ?? [], deps.source)[0];
 
 export function createBgWork(deps: BgWorkDeps) {
@@ -615,11 +622,12 @@ export function createBgWork(deps: BgWorkDeps) {
 	}
 
 	/** Workers OmO still lists as running whose process is gone (st_01a1abe7: its host killed, "running" for 15 hours until a resume closed it). */
-	function deadWork(file: string): BgWork[] {
-		return records(file)
+	function deadWork(file: string, live?: number): BgWork[] {
+		const omo = records(file)
 			.filter(r => RUNNING.has((r.status ?? "").toLowerCase()) && !cancelled.has(r.task_id!))
 			.map(toWork)
 			.filter(w => w.status === "failed" && now() - (w.ended_at ?? 0) < DEAD_WORK_MS);
+		return [...omo, ...ompDeadWork(file, live, { now: now(), maxAgeMs: DEAD_WORK_MS }).map(w => fromOmp(w, "failed"))];
 	}
 
 	/**
@@ -677,7 +685,11 @@ export const runningOmoWorkers = (sessionFile: string | undefined): number => an
 export const runningOmoWork = (sessionFile: string | undefined): BgWork[] => (sessionFile ? anySession.runningWork(sessionFile) : []);
 /** The workers under one session file OmO still lists as running that stopped working (the error says why, when one did). */
 export const quietOmoWork = (sessionFile: string | undefined): BgWork[] => (sessionFile ? anySession.quietWork(sessionFile) : []);
-export const deadOmoWork = (sessionFile: string | undefined): BgWork[] => (sessionFile ? anySession.deadWork(sessionFile) : []);
+/** The workers under one session file whose process died: OmO's still listed as running, omp's with no result after them. `live`: when the process now running the session started (ms), undefined with none. */
+export const deadOmoWork = (sessionFile: string | undefined, live?: number): BgWork[] => (sessionFile ? anySession.deadWork(sessionFile, live) : []);
+/** The omp workers under one session file whose transcript ends on a failed model request and stayed quiet since (the provider's text in `error`). */
+export const quietOmpWork = (sessionFile: string | undefined): BgWork[] =>
+	sessionFile ? ompFailedWork(sessionFile, { now: Date.now(), maxAgeMs: DEAD_WORK_MS, quietMs: STALL_ERROR_MS }).map(w => fromOmp(w, "stalled")) : [];
 /** 중단 for a worker of a lane: OmO's from the lane's task store, else omp's, which only the lane's own process can cancel. */
 export async function cancelLaneWorker(id: string, lane: { name: string; runtime?: string; sessionFile?: string; proc?: { cancelWorker?(id: string): Promise<{ cancelled: boolean }> } }, ownerStopped?: (w: StoppedWork) => void): Promise<CancelResult> {
 	const stopped = await anySession.cancel(id, lane.sessionFile);

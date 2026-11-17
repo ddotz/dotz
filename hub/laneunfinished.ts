@@ -7,7 +7,7 @@
 // [run] was a finished step, 27 hours old, with nothing open behind it.
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
-import { DEAD_WORK_MS, deadOmoWork } from "./bgwork.ts";
+import { type BgWork, DEAD_WORK_MS, deadOmoWork, OMP_SOURCE } from "./bgwork.ts";
 import { log } from "./config.ts";
 import { msg } from "./i18n.ts";
 import { dir, hooks, type Lane, persist } from "./lanestate.ts";
@@ -40,6 +40,12 @@ export const STALE_WORK_MS = DEAD_WORK_MS;
 export function staleSession(file: string, now = Date.now()): boolean {
 	return now - statSync(file).mtimeMs >= STALE_WORK_MS;
 }
+/** When the process now running the lane started (ms), undefined with none: an omp worker spawned since is that process's own. */
+export const liveSince = (lane: Lane): number | undefined => (lane.proc ? (lane.spawnedAt ?? 0) : undefined);
+/** Dead workers a resume already named. omp keeps no record a resume could close, so one is named once, not again for the same death (OmO's are closed by the resume). */
+export const named = new Set<string>();
+/** The lane's workers whose process died: OmO's still listed as running, omp's with no result after them and not named by an earlier resume. */
+export const deadWork = (lane: Lane): BgWork[] => deadOmoWork(lane.sessionFile, liveSince(lane)).filter(w => w.source !== OMP_SOURCE || !named.has(w.id));
 function workOf(file: string | undefined, workers: string[]): Unfinished {
 	const todo = openTodos(readTodo(file));
 	return { plan: `${todo.open}:${todo.current ?? ""}`, open: todo.open, ...(todo.current ? { current: todo.current } : {}), workers };
@@ -53,7 +59,7 @@ export function unfinishedWork(lane: Lane): Unfinished | undefined {
 	if (!owed && laneClosed(lane)) return undefined;
 	const file = lane.sessionFile;
 	if (!held && file && existsSync(file) && staleSession(file)) return undefined;
-	const work = workOf(file, deadOmoWork(file).map(w => w.description));
+	const work = workOf(file, deadWork(lane).map(w => w.description));
 	return owed || work.open || work.workers.length || workCutOff(file) ? work : undefined;
 }
 

@@ -11,6 +11,7 @@ import { RESUME_BACKOFF_MS } from "./laneunfinished.ts";
 import type { Orchestrator } from "./orchestrator.ts";
 import type { Prompts } from "./prompts.ts";
 import { MAIN } from "./session-key.ts";
+import { ompTree } from "./runtime/test-omp-session.ts";
 import { createSessionResume } from "./sessionresume.ts";
 
 const DEAD_PID = 2 ** 22 + 7;
@@ -46,15 +47,15 @@ function worker(w: World, pid: number, id = "st_a"): void {
 	writeFileSync(join(tasks, `${id}.json`), JSON.stringify({ task_id: id, status: "running", pid, root_session_id: ROOT, description: "메일 첨부 분석", started_at: at, updated_at: at }));
 }
 
-type Agent = { pid?: number; status: string; stoppedBy: string; rateLimitedUntil: string };
+type Agent = { pid?: number; status: string; stoppedBy: string; rateLimitedUntil: string; startedAt: string };
 function boot(w: World, opts: { maxLive?: number; mainFile?: boolean; asked?: boolean } = {}) {
 	const agents = new Map<string, Agent>();
 	const delivered: { key: string; text: string; target?: string }[] = [];
 	const told: { target: string; text: string }[] = [];
 	const agent = (key: string): Orchestrator => {
-		const a: Agent = { status: "stopped", stoppedBy: "", rateLimitedUntil: "" };
+		const a: Agent = { status: "stopped", stoppedBy: "", rateLimitedUntil: "", startedAt: "" };
 		agents.set(key, a);
-		const orch = { get status() { return a.status; }, get stoppedBy() { return a.stoppedBy; }, get rateLimitedUntil() { return a.rateLimitedUntil; }, ctx: { tokens: 0, compaction: { state: "idle" } }, sessionFile: "", activeModel: "m" };
+		const orch = { get status() { return a.status; }, get stoppedBy() { return a.stoppedBy; }, get rateLimitedUntil() { return a.rateLimitedUntil; }, get startedAt() { return a.startedAt; }, ctx: { tokens: 0, compaction: { state: "idle" } }, sessionFile: "", activeModel: "m" };
 		return { orch, orchestratorPid: () => a.pid, heldCount: () => 0, lastTurnEndAt: () => undefined, park: () => true } as unknown as Orchestrator;
 	};
 	const queue = (key: string) =>
@@ -62,6 +63,7 @@ function boot(w: World, opts: { maxLive?: number; mainFile?: boolean; asked?: bo
 			deliver: (text: string, reply?: { target: string }) => {
 				delivered.push({ key, text, target: reply?.target });
 				const a = agents.get(key)!;
+				if (a.pid === undefined) a.startedAt = new Date(Date.now()).toISOString();
 				a.pid ??= 4242;
 				a.status = "working";
 				return false;
@@ -282,4 +284,31 @@ test("a worker the failed-worker handover already brought up gets no second wake
 	b.mainBg.handed.add("st_a");
 	expect(await b.resume.tick()).toEqual([]);
 	expect(b.delivered).toEqual([]);
+});
+
+test("an omp worker cut off by a killed process brings the parked conversation back naming it, and a turn after that never names it again", async () => {
+	const w = world();
+	w.file = ompTree("killed", w.dir).file;
+	const b = restarted(w);
+	expect(await b.resume.tick()).toEqual(["mail:k1"]);
+	expect(b.delivered).toHaveLength(1);
+	expect(b.delivered[0]!.text).toContain("Dozer");
+	const agent = b.agents.get("mail:k1")!;
+	expect(Date.parse(agent.startedAt)).toBeGreaterThan(0);
+	// The woken turn has not run yet: the worker is still owed. Once it ran, it is told.
+	const later = Date.now() + 2 * HOUR;
+	session(w, [], later);
+	agent.status = "idle";
+	expect(await b.resume.tick(undefined, later + HOUR)).toEqual([]);
+	expect(b.delivered).toHaveLength(1);
+});
+
+test("an omp worker that finished or was waited for wakes nobody", async () => {
+	for (const name of ["finished", "waited"]) {
+		const w = world();
+		w.file = ompTree(name, w.dir).file;
+		const b = restarted(w);
+		expect(await b.resume.tick()).toEqual([]);
+		expect(b.delivered).toEqual([]);
+	}
 });

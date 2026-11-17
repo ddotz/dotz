@@ -348,7 +348,7 @@ export function createConvSessions(d: ConvDeps) {
 				resting: () => resting(c),
 				dead: () => {
 					const file = fileOf(c);
-					return file ? c.bg.deadWork(file) : [];
+					return file ? c.bg.deadWork(file, live(c) ? Date.parse(c.o.orch.startedAt) || 0 : undefined) : [];
 				},
 				asked: () => asked(c),
 				taken: id => c.bg.handed.has(id),
