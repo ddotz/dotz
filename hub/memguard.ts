@@ -9,6 +9,7 @@ import { parseRows, processTable } from "./agent-tree.ts";
 import { lanesMaxRssGb, log } from "./config.ts";
 import { msg } from "./i18n.ts";
 import { lanes, restartLane } from "./lanes.ts";
+import { laneLive, runningNames } from "./lanehold.ts";
 import { orch, orchestratorPid, restart as restartOrchestrator } from "./orchestrator.ts";
 import { convs } from "./convsessions.ts";
 import { trackTimer } from "./shutdown.ts";
@@ -36,7 +37,7 @@ async function rssOf(pids: number[]): Promise<Map<number, number>> {
 	return out;
 }
 
-type Agent = { key: string; pid: number; busy: boolean; restart: (note: string) => Promise<void> | void };
+type Agent = { key: string; pid: number; busy: boolean; restart: (note: string) => Promise<void> | void; held?: () => string[] };
 
 function agents(): Agent[] {
 	const list: Agent[] = [];
@@ -48,7 +49,7 @@ function agents(): Agent[] {
 	}
 	for (const lane of lanes.values()) {
 		if (!lane.proc || lane.status === "rate-limited") continue;
-		list.push({ key: `lane:${lane.name}`, pid: lane.proc.pid, busy: lane.status === "working" || lane.status === "starting", restart: note => restartLane(lane.name, note) });
+		list.push({ key: `lane:${lane.name}`, pid: lane.proc.pid, busy: lane.status === "working" || lane.status === "starting", restart: note => restartLane(lane.name, note), held: () => (lane.runtime === "omp" && lane.proc && laneLive(lane) > 0 ? runningNames(lane) : []) });
 	}
 	return list;
 }
@@ -56,6 +57,23 @@ function agents(): Agent[] {
 const restarts = new Map<string, number[]>();
 const gaveUp = new Set<string>();
 let running = false;
+
+/** What the guard logs and tells the owner for a restart it asked for: a lane whose omp subagents are running holds the restart until they are done. */
+export function restartWording(held: string[] | undefined, gbUsed: string, limit: string, busy: boolean, orchestrator: boolean): { log: string; status: string; notify: string } {
+	if (held && held.length > 0) {
+		const who = held.join(", ");
+		return {
+			log: `restart held until its omp subagents are done or the worker hold ends (${who})`,
+			status: `memory guard: ${gbUsed} GB > ${limit} GB, restart held for running subagents`,
+			notify: `메모리를 ${gbUsed}GB 써서(한도 ${limit}GB) 재시작이 필요하지만 하위 작업(${who})이 돌고 있어 미뤘어요. 끝나면 다시 시작하고, 오래 걸리면 기다리는 한도가 지난 뒤 다시 시작해요.`,
+		};
+	}
+	return {
+		log: `restarting it on the same session${busy ? " (a turn was running)" : ""}`,
+		status: `memory guard: ${gbUsed} GB > ${limit} GB, restarted`,
+		notify: `메모리를 ${gbUsed}GB 써서(한도 ${limit}GB) 프로세스를 같은 세션으로 다시 시작했어요.${busy ? (orchestrator ? " 처리 중이던 요청은 끊겼을 수 있어요." : " 하던 작업은 이어서 해요.") : ""}`,
+	};
+}
 
 const gb = (kb: number) => (kb / 1024 / 1024).toFixed(1);
 
@@ -85,9 +103,10 @@ async function check(notify: (key: string, text: string) => void): Promise<void>
 			}
 			times.push(Date.now());
 			restarts.set(a.key, times);
-			log(`memory guard: ${what}; restarting it on the same session${a.busy ? " (a turn was running)" : ""}`);
-			statusActivity(a.key, `memory guard: ${gb(kb)} GB > ${lanesMaxRssGb()} GB, restarted`);
-			notify(a.key, `메모리를 ${gb(kb)}GB 써서(한도 ${lanesMaxRssGb()}GB) 프로세스를 같은 세션으로 다시 시작했어요.${a.busy ? (a.key === "orchestrator" ? " 처리 중이던 요청은 끊겼을 수 있어요." : " 하던 작업은 이어서 해요.") : ""}`);
+			const say = restartWording(a.held?.(), gb(kb), String(lanesMaxRssGb()), a.busy, a.key === "orchestrator");
+			log(`memory guard: ${what}; ${say.log}`);
+			statusActivity(a.key, say.status);
+			notify(a.key, say.notify);
 			await Promise.resolve(a.restart(msg().laneMemory(gb(kb), String(lanesMaxRssGb())))).catch(e => log(`memory guard: restarting ${a.key} failed: ${e}`));
 		}
 	} catch (e) {

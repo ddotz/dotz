@@ -10,11 +10,13 @@ import { accountsRoute } from "./accounts-api.ts";
 import { cancelByOwner, orch, restart as restartOrchestrator, resumeNow } from "./orchestrator.ts";
 import { convs } from "./convsessions.ts";
 import { stopAnswer } from "./ownerstop.ts";
-import { cancelLogin, completeLogin, forgetAccountUsage, LoginBusy, loginStatus, logoutProvider, quota, refreshQuota, saveProviderKey, startLogin } from "./providers.ts";
+import { anthropicUsage, cancelLogin, completeLogin, forgetAccountUsage, LoginBusy, loginStatus, logoutProvider, quota, refreshQuota, saveProviderKey, startLogin } from "./providers.ts";
 import { featureCatalog } from "./features.ts";
 import { mailboxRoute } from "./routes-mailbox.ts";
 import { harnessGraph, readHarnessFile } from "./harness.ts";
 import { lastReport, LOGIN_REFUSAL, loginView, RUNTIME_IDS, runtimesView, startVerify, UseRefused, useRuntime, verifyState, type UseRole } from "./runtime/verify.ts";
+import { runtimeIdOf } from "./runtime/runtime-id.ts";
+import { useOmpReset } from "./omp-reset.ts";
 import { json, body, terminals, BodyError } from "./routes-util.ts";
 import { useClaudeReset } from "./claude-reset.ts";
 import { checkUsageLimit, restartChecked } from "./limit-lift.ts";
@@ -186,9 +188,11 @@ export async function routeSettings(req: Request, url: URL, parts: string[]): Pr
 	if (req.method === "POST" && url.pathname === "/api/quota/reset-credit") {
 		const b = await body(req);
 		const claude = b?.provider === "anthropic";
-		const r = await (claude ? useClaudeReset(b, undefined, account => liftAfterReset(account)) : useResetCredit(b));
+		const viaOmp = claude && runtimeIdOf("orchestrator") !== "omo";
+		const r = await (viaOmp ? useOmpReset(b, account => liftAfterReset(account)) : claude ? useClaudeReset(b, undefined, account => liftAfterReset(account)) : useResetCredit(b));
 		if (claude && typeof b.account === "string") forgetAccountUsage(b.account);
-		if (r.status === 200) void refreshQuota().catch(e => log(`usage refresh failed: ${(e as Error).message}`));
+		const reread = viaOmp && r.status === 200 ? anthropicUsage("orchestrator", true).then(() => undefined) : Promise.resolve();
+		if (r.status === 200) void reread.then(() => refreshQuota()).catch(e => log(`usage refresh failed: ${(e as Error).message}`));
 		return json(r.body, r.status);
 	}
 	// The monthly API limit and the admin key behind the usage screen's spend figure (hub/api-budget.ts): the key is never returned, only its mask.

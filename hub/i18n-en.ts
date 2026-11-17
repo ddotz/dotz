@@ -535,7 +535,7 @@ Do this, briefly:
 			"reflect_at": { label: "Nightly review time", hint: "HH:MM or off" },
 			"day_note.enabled": { label: "Keep a note of the day", hint: "On: every night a small model writes a short memory file of the day. No prompt loads it; it is found by search when needed" },
 			"day_note.at": { label: "Day note time", hint: "HH:MM or off. Just before the nightly review is best" },
-			"day_note.model": { label: "Day note model", hint: "Empty follows the OmO quick model. To pin one, write provider/model:effort" },
+			"day_note.model": { label: "Day note model", hint: "Empty follows the {harness} quick model. To pin one, write provider/model:effort" },
 			"token_audit_at": { label: "Doctor night run time", hint: "HH:MM (when the nightly check runs)" },
 			"doctor_at": { label: "Doctor notice time", hint: "auto (morning brief time) · HH:MM · off (whole doctor off)" },
 			"omp_update.mode": { label: "Update mode", options: { check: "Notify of new versions only", install: "Install automatically and restart", off: "Off" } },

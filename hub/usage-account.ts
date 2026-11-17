@@ -288,8 +288,8 @@ export function scopeOf(scope: unknown): string | undefined {
 
 /**
  * omp's `resetCredits` of one Anthropic login as the 리셋권 the usage screen draws (omp@18.22.0 `omp usage --json`: availableCount, nextCreditId,
- * credits[] with remainingCount, clears, expiresAt). Shown only: dotz spends a reset through OmO's login (hub/claude-reset.ts) and omp spends one with
- * `omp usage reset anthropic/<credential id>`, so none is usable here.
+ * redeemableCount, credits[] with remainingCount, usable, clears, expiresAt). omp spends only its next credit (`nextCreditId`) and only when it is
+ * usable, with `omp usage reset anthropic/<credential id>` (hub/omp-reset.ts): that credit's kind is the one usable row, the others are shown only.
  */
 export function ompResets(rc: Json | undefined): ClaudeResets | undefined {
 	const credits: Json[] = Array.isArray(rc?.credits) ? rc.credits : [];
@@ -299,7 +299,7 @@ export function ompResets(rc: Json | undefined): ClaudeResets | undefined {
 		const clears: unknown[] = Array.isArray(c.clears) ? c.clears : [];
 		const text = `${c.id ?? ""} ${c.title ?? ""}`;
 		const kind = /fable/i.test(text) || clears.includes("anthropic:7d:fable") ? "Fable" : /weekly/i.test(text) ? "주간" : clears.includes("anthropic:5h") ? "전체" : clears.includes("anthropic:7d") ? "주간" : "기타";
-		return [{ id: typeof c.id === "string" ? c.id : undefined, kind, left, expires: typeof c.expiresAt === "number" ? c.expiresAt : msOf(c.expiresAt) }];
+		return [{ id: typeof c.id === "string" ? c.id : undefined, kind, left, usable: c.usable === true, expires: typeof c.expiresAt === "number" ? c.expiresAt : msOf(c.expiresAt) }];
 	}).sort((a, b) => (a.expires ?? Number.MAX_SAFE_INTEGER) - (b.expires ?? Number.MAX_SAFE_INTEGER));
 	const available = Number(rc?.availableCount);
 	const held = Number.isFinite(available) ? Math.max(0, Math.floor(available)) : grants.reduce((n, g) => n + g.left, 0);
@@ -311,7 +311,10 @@ export function ompResets(rc: Json | undefined): ClaudeResets | undefined {
 		else kinds.push({ kind: g.kind, left: g.left, expires_at: g.expires, usable: false, ...(g.id ? { grant_id: g.id } : {}) });
 	}
 	const next = grants.find(g => g.id !== undefined && g.id === rc?.nextCreditId);
-	return { held, usable: false, expires_at: grants[0]?.expires ?? null, kinds, ...(next?.id ? { grant: { id: next.id, kind: next.kind } } : {}) };
+	const ready = next?.usable && rc?.eligible !== false && !(Number(rc?.redeemableCount) < 1) ? next : undefined;
+	const readyKind = kinds.find(k => k.kind === ready?.kind);
+	if (readyKind && ready?.id) Object.assign(readyKind, { usable: true, grant_id: ready.id });
+	return { held, usable: ready !== undefined, expires_at: grants[0]?.expires ?? null, kinds, ...(next?.id ? { grant: { id: next.id, kind: next.kind } } : {}) };
 }
 
 type OmpReport = { provider: string; limits?: Json[]; metadata?: { email?: string }; resetCredits?: Json; problem?: "failed"; fetchedAt?: number };

@@ -1,6 +1,11 @@
 import { expect, test } from "bun:test";
+import { cfg, OMP } from "./config.ts";
+import { peerEnv } from "./limit-peer.ts";
+import { ompResetEnv, useOmpReset } from "./omp-reset.ts";
 import { limitsUsable } from "./orchestrator.ts";
 import { buildQuota } from "./providers.ts";
+import { routeSettings } from "./routes-settings.ts";
+import type { Ran } from "./run-limited.ts";
 import { fromOmp, ompAccounts, ompResets, ompStanding, scopeOf } from "./usage-account.ts";
 
 const NOW = Date.parse("2030-01-01T00:00:00Z");
@@ -77,4 +82,109 @@ test("F8-12: the subscription stands on the first login with no spent shared win
 	expect(ompStanding([spent("a@x.io", LATER), spent("b@x.io", SOON)], NOW)?.account).toBe("b@x.io");
 	expect(ompStanding([fromOmp(report("c@x.io", [{ ...limit("anthropic:5h", 100, SOON, SHARED), window: { id: "5h", label: "5h", durationMs: 1000 } }])), spent("d@x.io", LATER)], NOW)?.account).toBe("d@x.io");
 	expect(ompStanding([], NOW)).toBeUndefined();
+});
+
+type Json = Record<string, any>;
+const NEXT = "launch-6mo";
+const omp = (over: Json = {}, credits: Json[] = [credit(NEXT, { usable: true, clears: ["anthropic:7d:fable"] }), credit("weekly-1", { usable: false })]): Json => ({ provider: "anthropic", credentialId: 2, email: "a@x.io", availableCount: 2, redeemableCount: 2, nextCreditId: NEXT, credits, ...over });
+const ran = (stdout: string, over: Partial<Ran> = {}): Ran => ({ code: 0, stdout, stderr: "", timedOut: false, ...over });
+const SPEND = [OMP, "usage", "reset", "anthropic/2"];
+function stub(accounts: Json[], spend: Ran = ran("Reset applied for a@x.io (Claude) \u2014 the covered rate-limit window has been refreshed.\n")) {
+	const calls: string[][] = [];
+	const run = async (argv: readonly string[]): Promise<Ran> => {
+		calls.push([...argv]);
+		if (argv[3] === "--json") return ran(JSON.stringify({ accounts }));
+		return argv[2] === "reset" ? spend : ran("");
+	};
+	return { calls, env: { run } };
+}
+const spent = (calls: string[][]) => calls.filter(c => c[3]?.startsWith("anthropic/"));
+
+test("omp resets: only omp's next credit, when omp marks it usable, is a usable row; the rest are shown only", () => {
+	const rc = (over: Json = {}) => ({ availableCount: 2, redeemableCount: 2, nextCreditId: NEXT, credits: [credit(NEXT, { usable: true, clears: ["anthropic:7d:fable"] }), credit("weekly-1", { usable: false })], ...over });
+	const ok = ompResets(rc())!;
+	expect(ok.usable).toBe(true);
+	expect(ok.grant).toEqual({ id: NEXT, kind: "Fable" });
+	expect(ok.kinds.map(k => [k.kind, k.usable])).toEqual([["Fable", true], ["주간", false]]);
+	expect(ok.kinds.find(k => k.kind === "Fable")?.grant_id).toBe(NEXT);
+	for (const over of [{ eligible: false }, { redeemableCount: 0 }, { nextCreditId: "weekly-1" }, { nextCreditId: undefined }]) expect(ompResets(rc(over))?.usable).toBe(false);
+});
+
+test("omp spend: the fresh list picks the credential, then exactly `omp usage reset anthropic/<id>` runs once, with no shell", async () => {
+	const s = stub([omp(), omp({ credentialId: 9, email: "b@x.io" })]);
+	const r = await useOmpReset({ account: "a@x.io", grant_id: NEXT, confirm: true }, undefined, s.env);
+	expect(r).toEqual({ status: 200, body: { ok: true, outcome: "reset", left: 1 } });
+	expect(s.calls).toEqual([[OMP, "usage", "reset", "--json"], SPEND, [OMP, "usage", "invalidate", "--provider", "anthropic"]]);
+});
+
+test("omp spend: 400 without confirm or grant, 404 for another login, 409 when the fresh read shows it spent, not next or not usable; nothing runs", async () => {
+	const body = { account: "a@x.io", grant_id: NEXT, confirm: true };
+	const none = stub([omp()]);
+	expect((await useOmpReset({ ...body, confirm: undefined }, undefined, none.env)).status).toBe(400);
+	expect((await useOmpReset({ ...body, confirm: "yes" }, undefined, none.env)).status).toBe(400);
+	expect((await useOmpReset({ ...body, grant_id: undefined }, undefined, none.env)).status).toBe(400);
+	expect((await useOmpReset({ ...body, account: undefined }, undefined, none.env)).status).toBe(400);
+	expect(none.calls).toEqual([]);
+	const cases: [Json[], Json, number][] = [
+		[[omp()], { account: "other@x.io" }, 404],
+		[[omp({}, [credit(NEXT, { usable: true, remainingCount: 0 })])], {}, 409],
+		[[omp({}, [credit(NEXT, { usable: true, status: "redeemed" })])], {}, 409],
+		[[omp()], { grant_id: "no-such" }, 409],
+		[[omp()], { grant_id: "weekly-1" }, 409],
+		[[omp({}, [credit(NEXT, { usable: false })])], {}, 409],
+		[[omp({ redeemableCount: 0 })], {}, 409],
+		[[omp({ credentialId: undefined })], {}, 409],
+	];
+	for (const [accounts, over, status] of cases) {
+		const s = stub(accounts);
+		expect((await useOmpReset({ ...body, ...over }, undefined, s.env)).status).toBe(status);
+		expect(spent(s.calls)).toEqual([]);
+	}
+});
+
+test("omp spend: an unreadable list is 502 with nothing spent; omp's own refusals are 409, a timeout or an unconfirmed answer is 502", async () => {
+	const body = { account: "a@x.io", grant_id: NEXT, confirm: true };
+	const broken = stub([omp()]);
+	broken.env.run = async argv => (broken.calls.push([...argv]), ran("not json"));
+	expect((await useOmpReset(body, undefined, broken.env)).status).toBe(502);
+	expect(spent(broken.calls)).toEqual([]);
+	for (const [out, status, outcome] of [
+		[ran("", { code: 1, stderr: "a@x.io (Claude): that reset was already redeemed." }), 409, "already_redeemed"],
+		[ran("", { code: 1, stderr: "nothing to reset right now" }), 409, "nothing_to_reset"],
+		[ran("", { code: 124, timedOut: true, stderr: "already redeemed" }), 502, undefined],
+		[ran("", { code: 1, stderr: "couldn't confirm whether the reset applied" }), 502, undefined],
+		[ran("done"), 502, undefined],
+	] as const) {
+		const s = stub([omp()], out);
+		const r = await useOmpReset(body, undefined, s.env);
+		expect([r.status, r.body.outcome, r.body.ok]).toEqual([status, outcome, undefined]);
+		expect(spent(s.calls)).toEqual([SPEND]);
+	}
+});
+
+test("POST /api/quota/reset-credit on omp spends through omp; on OmO it never runs omp's reset", async () => {
+	const post = async (b: unknown) => {
+		const url = new URL("http://x/api/quota/reset-credit");
+		const res = (await routeSettings(new Request(url, { method: "POST", body: JSON.stringify(b), headers: { "content-type": "application/json" } }), url, ["api", "quota", "reset-credit"]))!;
+		return { status: res.status, body: (await res.json()) as Json };
+	};
+	const body = { provider: "anthropic", account: "a@x.io", grant_id: NEXT, confirm: true };
+	const was = { runtime: cfg.runtime, run: ompResetEnv.run, peers: peerEnv.peers };
+	peerEnv.peers = async () => [];
+	try {
+		const s = stub([omp()]);
+		ompResetEnv.run = s.env.run;
+		cfg.runtime = "omp";
+		expect(await post(body)).toMatchObject({ status: 200, body: { ok: true, outcome: "reset", left: 1 } });
+		expect(spent(s.calls)).toEqual([SPEND]);
+		expect((await post({ ...body, confirm: false })).status).toBe(400);
+		cfg.runtime = "omo";
+		const before = s.calls.length;
+		await post(body);
+		expect(s.calls.length).toBe(before);
+	} finally {
+		cfg.runtime = was.runtime;
+		ompResetEnv.run = was.run;
+		peerEnv.peers = was.peers;
+	}
 });

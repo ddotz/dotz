@@ -514,7 +514,7 @@ export const ko: Catalog = {
 			"reflect_at": { label: "야간 회고 시각", hint: "HH:MM 또는 off" },
 			"day_note.enabled": { label: "하루 기억 남기기", hint: "켜면 매일 새벽 그날 있었던 일을 짧은 기억 파일로 남겨요. 프롬프트에는 싣지 않고 필요할 때 찾아 읽어요" },
 			"day_note.at": { label: "하루 기억 시각", hint: "HH:MM 또는 off. 야간 회고 직전이 좋아요" },
-			"day_note.model": { label: "하루 기억 모델", hint: "비워 두면 OmO의 quick 모델을 따라가요. 정하려면 제공자/모델:강도로 적어요" },
+			"day_note.model": { label: "하루 기억 모델", hint: "비워 두면 {harness}의 quick 모델을 따라가요. 정하려면 제공자/모델:강도로 적어요" },
 			"token_audit_at": { label: "닥터 점검 실행 시각", hint: "HH:MM (밤에 점검을 돌리는 시각)" },
 			"doctor_at": { label: "닥터 알림 시각", hint: "auto(아침 브리핑 시각) · HH:MM · off(점검 전체 끔)" },
 			"omp_update.mode": { label: "업데이트 방식", options: { check: "새 버전만 알림", install: "자동 설치 후 재시작", off: "끄기" } },

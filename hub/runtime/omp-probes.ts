@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { withoutApiKeys } from "../apikey-policy.ts";
+import { ompAgentDir } from "../omp-dirs.ts";
 import { removeSessionsFor } from "../cleanup.ts";
 import { parseSelector, splitThinking, THINKING_LEVELS } from "../config.ts";
 import { runLimited } from "../run-limited.ts";
@@ -61,7 +62,7 @@ const answerOf = (events: AgentEvent[]): string => [...events].reverse().find(e 
 const toolCalls = (events: AgentEvent[]) => events.flatMap(e => (e.type === "activity" && e.row.type === "tool_call" ? [e.row] : []));
 const toolResults = (events: AgentEvent[]) => events.flatMap(e => (e.type === "activity" && e.row.type === "tool_result" ? [e.row] : []));
 
-const ownerDir = (): string => process.env.PI_CODING_AGENT_DIR || join(homeDir(), ".omp", "agent");
+const ownerDir = (): string => ompAgentDir(process.env, homeDir());
 
 function probeData(cwd: string): string {
 	const dir = join(cwd, ".dotz-probe-data");
