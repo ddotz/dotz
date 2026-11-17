@@ -96,7 +96,7 @@ async function ensureMsg(t, at) {
 // The page is back after being away: whatever the stream missed is fetched now, before anyone taps a notification for it.
 function resync() {
   refreshState();
-  for (const k of Object.keys(TS)) if (k !== target) TS[k].hLoaded = TS[k].aLoaded = false;
+  tsStale(target);
   loadTarget(target, hasCached(ts(target))); loadSubs(); loadQueue(); convLoad();
 }
 // Older activity from the saved session transcript, 300 at a time, prepended while the scroll position stays put.
@@ -213,7 +213,7 @@ function renderAll0(keepScroll) {
   const lit = tl.querySelector(".nt-hl")?.closest("[data-ts]")?.dataset.ts;   // the glow of a jump (ntFlash) sits on a row this draw replaces: it moves to the new row
   resetChat(); resetTerm();
   if (!((s.hLoaded && s.aLoaded) || hasCached(s)) || !chatReady()) {
-    CS.empty = tl.appendChild(el("div", { class: "a-div", text: TX("common.loading") }));
+    csEmptySet(tl.appendChild(el("div", { class: "a-div", text: TX("common.loading") })));
     termEmpty = term.appendChild(el("div", { class: "a-div", text: TX("common.loading") }));
     return;
   }
@@ -227,13 +227,13 @@ function renderAll0(keepScroll) {
     if (j < M.length && (i >= A.length || M[j].ts <= A[i].ts)) {
       const m = M[j++];
       chatPush({ m }, true);
-      if (s.gaps.has(m.ts) && M[j]?.ts !== m.ts) { tl.append(chatGapNode(m.ts)); CS.group = null; CS.who = ""; }
+      if (s.gaps.has(m.ts) && M[j]?.ts !== m.ts) { tl.append(chatGapNode(m.ts)); csGroupDrop(); csBreak(); }
       if (LOG_VIEW && ownerish(m) && first && m.ts >= first) termPush(ownerAct(m), true);
     } else { const a = A[i++]; if (!isProjT(target) && !isFixedT(target)) chatPush({ a }, true); if (LOG_VIEW) termPush(a, true); }
   }
   if (isRelayT(target)) relayTail(s);   // a send still waiting for its line and the last error, before the "no conversation yet" line is considered
   if (tl.children.length <= 1) {
-    CS.empty = tl.appendChild(s.herr ? emptyNode(TX("chat.empty.load_failed"), () => loadTarget(target).catch(() => { /* the card says it failed again */ })) : el("div", {}, emptyNode(TX("chat.empty.none")), acctConnectRow()));
+    csEmptySet(tl.appendChild(s.herr ? emptyNode(TX("chat.empty.load_failed"), () => loadTarget(target).catch(() => { /* the card says it failed again */ })) : el("div", {}, emptyNode(TX("chat.empty.none")), acctConnectRow())));
     if (!P && !s.herr) loadProviderData().then(() => current === "chat" && CS.empty && renderAll(true), () => {});   // the account line needs the list: draw again once it has come
   }   // only the top sentinel is there
   if (LOG_VIEW && !term.children.length) termEmpty = term.appendChild(el("div", { class: "a-div", text: TX("chat.empty.no_activity") }));

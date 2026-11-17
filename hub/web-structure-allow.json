@@ -17,13 +17,7 @@
     ],
     "ownerWrites": {
       "AUTH_HID|30-notices.js": 1,
-      "CONV|30-mail-box.js": 2,
-      "CONV|30-monitoring-mail.js": 1,
-      "CONV|31-conversations.js": 4,
-      "CONV|34-peer-monitoring.js": 1,
       "CPC|14-slash-commands.js": 1,
-      "CS|11-todo-strip.js": 16,
-      "CS|13-data.js": 4,
       "DC|30-notices.js": 3,
       "DC|41-runstate.js": 1,
       "DELIV|01-peer-msg.js": 2,
@@ -52,13 +46,10 @@
       "RELAY|44-relay-views.js": 3,
       "SHELL_RESTORE|31-conversations.js": 1,
       "TD|13-snapshot.js": 1,
-      "TS|13-data.js": 2,
-      "TS|99-boot.js": 2,
       "TURN|11-todo-strip.js": 2,
       "TURN|14-slash-commands.js": 1,
       "convSig|30-kakao.js": 1,
       "convSig|44-relay-views.js": 1,
-      "stripAt|08-home.js": 2,
       "termEmpty|13-data.js": 2
     },
     "rawNet": {

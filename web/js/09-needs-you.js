@@ -313,10 +313,14 @@ async function loadStrip() {
   stripAt = Date.now();
   try { noteQuota(await api("/api/quota")); } catch {}
 }
+const stripAsked = () => { stripAt = Date.now(); };   // a quota read is out: loadStrip waits its 3 minutes
+const stripRetry = () => { stripAt = 0; };   // that read failed: the next loadStrip asks again
 
 // Per-target data, shared by both views: conversation events (msgs) and what the agent did (acts).
 const TS = {};
 const ts = t => TS[t] || (TS[t] = { t, msgs: [], mk: new Set(), acts: [], ak: new Set(), hLoaded: false, aLoaded: false, unread: 0, draft: "", loading: null, ahist: false, amore: false, older: false, cap: 600, gaps: new Set() });
+// Every conversation's history and activity are read again when next opened, except keep (the one being reread now).
+const tsStale = keep => { for (const k of Object.keys(TS)) if (k !== keep) TS[k].hLoaded = TS[k].aLoaded = false; };
 const byTs = (a, b) => a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : 0;
 // The fields an event keeps from the stream to the history (hub/events.ts emit, history): two events of one ms, kind and opening tell apart by these.
 const msgKey = e => `${e.ts}|${e.kind}|${e.lane ?? ""}|${e.target ?? ""}|${e.id ?? ""}|${e.update_key ?? ""}|${e.ref ?? ""}${e.state ?? ""}|${String(e.text ?? "").slice(0, 60)}`;
@@ -389,8 +393,22 @@ function fmtDur(ms) {
   if (m < 60) return s % 60 ? TX("home.dur.ms", { m, s: s % 60 }) : TX("home.dur.m", { n: m });
   return m % 60 ? TX("home.dur.hm", { h: Math.floor(m / 60), m: m % 60 }) : TX("home.dur.h", { n: Math.floor(m / 60) });
 }
-const putCS = v => { CS = v; };
 let CS = { day: "", group: null, empty: null, prog: new Map(), who: "", whoT: 0 };
+// The chat timeline's draw state (11-todo-strip.js chatPush, 13-data.js renderAll) changes only through these.
+const csReset = () => { CS = { day: "", group: null, empty: null, prog: new Map(), who: "", whoT: 0 }; };
+const csBreak = () => { CS.who = ""; };   // the next message shows its speaker head again
+const csDay = d => { CS.day = d; CS.who = ""; };
+const csWho = (who, t) => { CS.who = who; CS.whoT = t; };
+const csEmptySet = n => { CS.empty = n; };
+const csEmptyDrop = () => { if (CS.empty) { CS.empty.remove(); CS.empty = null; } };
+const csGroupStart = g => { CS.group = g; };
+const csGroupAdd = a => { CS.group.add(a); };
+const csGroupDrop = () => { CS.group = null; };
+const csGroupLive = () => { const g = CS.group; g.live = true; g.node.classList.add("live"); g.update(); };
+const csProgSet = (key, p) => { CS.prog.set(key, p); };
+const csProgDrop = key => { CS.prog.delete(key); };
+const csParked = n => { CS.parked = n; };
+const csParkedDrop = () => { if (!CS.parked.classList.contains("cont")) CS.who = ""; CS.parked.remove(); CS.parked = null; };
 // The open conversation's read state (31-conversations.js): key = the target being looked at, div = the read position when it was opened
 // (the "새 메시지" divider goes before the first message after it), divNode = that divider in the timeline.
 // pin = what the view is anchored to while the opening settles (late images, the todo strip, an SSE frame): "div" (the divider at the top),
@@ -398,4 +416,8 @@ let CS = { day: "", group: null, empty: null, prog: new Map(), who: "", whoT: 0 
 const CV = { key: "", drawn: "", div: "", divNode: null, jump: "", from: "", low: "", seeded: false, loaded: false, captured: false, failed: false, placed: false, full: false, snap: null, pin: "", pinTs: "", pinOff: 0, openAt: 0, gateT: 0 };
 // 31-conversations.js state; declared here because the boot code calls go() before that file has run.
 const CONV = new Map(), READ = {}, convPend = new Map();
+// A row's last-message preview: convNewer keeps the newer one (a row it does not know yet gets null), convLastSet puts it as given.
+const convNewer = (t, last) => { const prev = CONV.get(t); if (last && (!prev || prev.ts <= last.ts)) CONV.set(t, last); else if (!CONV.has(t)) CONV.set(t, null); };
+const convLastSet = (t, last) => { CONV.set(t, last); };
+const convDrop = t => { CONV.delete(t); };
 let convRaf = 0, convSig = "", convHeadSig = "", convRetry = 0, convReadT = 0, convPendT = 0, convReadF = 0;
