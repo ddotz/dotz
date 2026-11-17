@@ -10,7 +10,7 @@ import type { Catalog } from "../hub/i18n-en.ts";
 // The long jobs of the web onboarding: a fixed server-side list (docs/web-onboarding.md "API 계약"), each one an existing onboard/ function run without
 // a terminal. A line reaches the stream only through scrubText; the log (deps.log) gets step names and outcomes, never the lines.
 
-export const JOB_IDS = ["install-omo", "aside-app", "aside-cli", "tailscale", "zele", "tailscale-start", "permissions", "apply"] as const;
+export const JOB_IDS = ["install-omo", "install-omp", "aside-app", "aside-cli", "tailscale", "zele", "tailscale-start", "permissions", "apply"] as const;
 export type JobId = (typeof JOB_IDS)[number];
 export const isJobId = (s: string): s is JobId => (JOB_IDS as readonly string[]).includes(s);
 export type SetupText = Catalog["setup"];
@@ -30,13 +30,16 @@ async function bunGlobalOnPath(): Promise<void> {
 const missing = (io: JobIO, what: string): JobResult => ({ ok: false, owner: fill(io.text.owner.missing, what) });
 const sudo = (io: JobIO, cmd: string): JobResult => ({ ok: false, owner: fill(io.text.owner.sudo, cmd) });
 
+async function installHarness(io: JobIO, id: "omo" | "omp"): Promise<JobResult> {
+	const h = harness(id);
+	if (!h?.install || !(await io.run(h.install))) return { ok: false, owner: fill(io.text.owner.sudo, h?.installHint ?? id) };
+	await bunGlobalOnPath();
+	return (await detectHarnesses()).some(d => d.id === id && d.found.installed) ? { ok: true } : missing(io, h.label);
+}
+
 export const DEFAULT_JOBS: Record<Exclude<JobId, "apply">, JobFn> = {
-	"install-omo": async io => {
-		const install = harness("omo")?.install;
-		if (!install || !(await io.run(install))) return { ok: false, owner: fill(io.text.owner.sudo, "bun add -g --trust omo-ai") };
-		await bunGlobalOnPath();
-		return (await detectHarnesses()).some(d => d.id === "omo" && d.found.installed) ? { ok: true } : missing(io, "OmO");
-	},
+	"install-omo": io => installHarness(io, "omo"),
+	"install-omp": io => installHarness(io, "omp"),
 	"aside-app": async io => {
 		if (!MAC) return { ok: true, detail: io.text.states.skipped };
 		if (!Bun.which("brew")) return { ok: false, owner: `${io.text.owner.noBrew} ${io.text.owner.asideDownload}` };

@@ -15,20 +15,22 @@
 // the Settings entries are for bun. Interactive runs and `permissions` turn what they can on themselves (prompts, panes, switches);
 // only a step macOS keeps for a person is printed, once. --answers runs only print the state. Standalone, safe to rerun:
 //   bun setup.ts permissions [--check]     (--check only prints the state, never raises a dialog; exit 3 = an owner step is left)
-import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { homedir, hostname } from "node:os";
 import { dirname, join } from "node:path";
 import { asideState, installApp, installCli, loginCli, openApp } from "./onboard/aside.ts";
-import { type Answers, CHARACTERS, NOTICES, priorOf, stripExample, TONES, validateAnswers, SNOWFLAKE, type Identity } from "./firstrun/answers.ts";
+import { type Answers, CHARACTERS, NOTICES, priorOf, selectorFor, stripExample, TONES, validateAnswers, SNOWFLAKE, type Identity } from "./firstrun/answers.ts";
 import { type Env, linkOmp, peerTokenFile, serveTailnet, setupDiscord, tokenFile, writeConfig, writeSecrets } from "./firstrun/apply.ts";
-import { defaultHarness, detectHarnesses, type Detected, harness, harnessLine, loginState } from "./onboard/harness.ts";
+import { defaultHarness, detectHarnesses, type Detected, harness, harnessLine } from "./onboard/harness.ts";
+import { loginOf } from "./hub/runtime/login.ts";
+import { runtimeModels, validateWithModels } from "./firstrun/models.ts";
 import { checkPermissions, printPermissions, requestPermissions } from "./onboard/permissions.ts";
 import { zeleAccounts } from "./firstrun/scan.ts";
 import { installTailscale, startTailscale, tailscaleState } from "./onboard/tailscale.ts";
 import { openerCommand, windowsToolDirs } from "./hub/opener.ts";
 import { LABEL, serviceFile, servicePath, UNIT } from "./onboard/service.ts";
-import { firstRunPending, issueToken, markTerminalDone } from "./firstrun/first-run.ts";
+import { firstRunPending, issueToken, markTerminalDone, saveDraft } from "./firstrun/first-run.ts";
 import { cleanName, MAX_NAME } from "./hub/machine-name.ts";
 import { installDotzCommand } from "./hub/dotz-command.ts";
 
@@ -45,7 +47,6 @@ const TOKEN_FILE = tokenFile(DIR);
 const PEER_TOKEN_FILE = peerTokenFile(DIR);
 const P = priorOf(DIR);
 const prior = P.raw;
-const priorSelector = P.selector;
 // This computer's name in the web app's computer list: the saved one, else the hostname-derived default (hub/machine-name.ts).
 const defaultMachineName = P.defaultMachineName;
 const priorMachineName = P.machineName;
@@ -174,8 +175,6 @@ async function prepareZele(interactiveRun: boolean, autoInstall = false): Promis
 }
 
 
-// Step 1: shows every harness with its install state, lets the user pick one dotz has an adapter for, installs OmO when
-// it is the pick and missing (interactive: asked; --answers: only with install_harness), then checks the login.
 async function prepareHarness(interactiveRun: boolean, pick?: string, autoInstall = false): Promise<string> {
 	let found = await detectHarnesses();
 	const def = defaultHarness(pick ?? priorRuntime);
@@ -183,7 +182,10 @@ async function prepareHarness(interactiveRun: boolean, pick?: string, autoInstal
 	if (interactiveRun) {
 		console.log("  봇의 오케스트레이터와 세션(프로젝트 작업)이 돌아갈 코딩 에이전트예요. 기본은 OmO 예요.");
 		found.forEach((d, i) => console.log(`    ${i + 1}) ${harnessLine(d, d.id === def)}`));
-		for (;;) {
+	}
+	const chosen = () => found.find(d => d.id === id) as Detected;
+	for (;;) {
+		while (interactiveRun) {
 			const v = (prompt("  번호 (Enter = 기본):") ?? "").trim();
 			const d = v ? found[Number(v) - 1] : harness(def);
 			if (d?.adapter) {
@@ -192,37 +194,41 @@ async function prepareHarness(interactiveRun: boolean, pick?: string, autoInstal
 			}
 			console.log(d ? `    ${d.label}: ${d.installHint}. 다른 번호를 골라 주세요.` : `    1~${found.length} 중에서 골라 주세요`);
 		}
-	}
-	const chosen = () => found.find(d => d.id === id) as Detected;
-	if (!chosen().found.installed) {
-		const h = chosen();
-		const yes = h.install && (interactiveRun ? !/^n/i.test(ask(`  ${h.label} 가 없어요. 지금 설치할까요? (${h.installHint}) Y/n`, "y")) : autoInstall);
-		if (yes && h.install) {
-			await Bun.spawn(h.install, { stdin: "inherit", stdout: "inherit", stderr: "inherit" }).exited;
-			// A fresh bun install's global bin folder is often not on PATH yet (bun add -g only warns about it).
-			const globalBin = (await Bun.$`bun pm bin -g`.nothrow().quiet()).stdout.toString().trim();
-			if (globalBin && !(process.env.PATH ?? "").split(":").includes(globalBin)) process.env.PATH = `${globalBin}:${process.env.PATH ?? ""}`;
-			found = await detectHarnesses();
+		if (!chosen().found.installed) {
+			const h = chosen();
+			const yes = h.install && (interactiveRun ? !/^n/i.test(ask(`  ${h.label} 가 없어요. 지금 설치할까요? (${h.installHint}) Y/n`, "y")) : autoInstall);
+			if (yes && h.install) {
+				await Bun.spawn(h.install, { stdin: "inherit", stdout: "inherit", stderr: "inherit" }).exited;
+				const freshBunGlobalBin = (await Bun.$`bun pm bin -g`.nothrow().quiet()).stdout.toString().trim();
+				if (freshBunGlobalBin && !(process.env.PATH ?? "").split(":").includes(freshBunGlobalBin)) process.env.PATH = `${freshBunGlobalBin}:${process.env.PATH ?? ""}`;
+				found = await detectHarnesses();
+			}
 		}
-		if (!chosen().found.installed) console.log(`  ${h.label} 가 아직 없어요: ${h.installHint}. 설치 전에는 게이트웨이가 에이전트를 띄우지 못해요. 설치 후 setup 을 다시 실행하세요.`);
+		if (chosen().found.installed) break;
+		const h = chosen();
+		if (!interactiveRun) {
+			console.error(`${h.label} 가 설치돼 있지 않아요: ${h.installHint}. 설치한 뒤 다시 실행하세요 (answers 에 install_harness: true 를 넣으면 setup 이 설치해요). 아무것도 쓰지 않았어요.`);
+			process.exit(1);
+		}
+		console.log(`  ${h.label} 가 아직 없어요: ${h.installHint}. 다른 번호를 고르거나, 다른 터미널에서 설치한 뒤 그 번호를 다시 골라 주세요.`);
 	}
 	const d = chosen();
-	if (d.found.installed) {
-		let login = await loginState(d);
-		while (interactiveRun && login.checked && !login.ready) {
-			console.log(`  ${d.label} 에 로그인된 계정이 없어요. ${d.loginHint} (명령을 못 찾으면 전체 경로로: ${d.found.path})`);
-			if (ask("  다른 터미널에서 로그인한 다음 Enter, 나중에 하려면 s", "", false).toLowerCase() === "s") break;
-			login = await loginState(d);
-		}
-		console.log(`  하네스: ${d.label} ${d.found.version ?? ""} (${d.found.path})${login.checked ? (login.ready ? `, 로그인된 계정 ${login.accounts}개` : `, 로그인 필요: ${d.loginHint}`) : `. 로그인이 안 돼 있으면: ${d.loginHint}`}`);
+	let login = await loginOf(d.id, d.found.path);
+	while (interactiveRun && login.checked && !login.ready) {
+		console.log(`  ${d.label} 에 로그인된 계정이 없어요. ${d.loginHint} (명령을 못 찾으면 전체 경로로: ${d.found.path})`);
+		if (ask("  다른 터미널에서 로그인한 다음 Enter, 나중에 하려면 s", "", false).toLowerCase() === "s") break;
+		login = await loginOf(d.id, d.found.path);
 	}
+	console.log(`  하네스: ${d.label} ${d.found.version ?? ""} (${d.found.path})${login.checked ? (login.ready ? `, 로그인된 계정 ${login.accounts}개` : `, 로그인 필요: ${d.loginHint}`) : `. 로그인이 안 돼 있으면: ${d.loginHint}`}`);
 	return id;
 }
 
 async function interactive(): Promise<Answers> {
 	console.log("\n봇 온보딩을 시작합니다. 대괄호 [ ] 안의 값은 Enter로 그대로 쓸 수 있어요.\n");
 	console.log("1/5 하네스");
-	const runtime = await prepareHarness(true);
+	const runtime = await prepareHarness(true, opt("--runtime"));
+	const models = await runtimeModels(runtime);
+	if (selectorFor(P, "orchestrator", models) !== P.selector("orchestrator")) console.log(`  이 하네스에 로그인된 계정이 쓸 수 있는 모델로 맞췄어요: ${selectorFor(P, "orchestrator", models)}`);
 	console.log("\n2/5 도구 준비: 봇이 쓰는 Aside 브라우저, 웹 앱 접속용 Tailscale, 메일·일정 도구(zele)를 확인하고, 없으면 설치해요.");
 	if (MAC) await prepareAside(true);
 	else console.log("  Aside 는 macOS 앱이라 건너뛰어요. 봇 자동 생성 대신 디스코드 봇 토큰을 붙여넣어 주세요.");
@@ -266,8 +272,8 @@ async function interactive(): Promise<Answers> {
 	const defaults = {
 		web_port: Number(prior.web?.port ?? 7420),
 		tailscale_https_port: Number(prior.web?.tailscale_https_port ?? 8443),
-		orchestrator_model: priorSelector("orchestrator"),
-		lane_model: priorSelector("lanes"),
+		orchestrator_model: selectorFor(P, "orchestrator", models),
+		lane_model: selectorFor(P, "lanes", models),
 	};
 	const port = (v: string) => Number.isInteger(Number(v)) && Number(v) > 0 && Number(v) < 65536;
 	const advanced = /^y/i.test(ask("포트나 모델도 바꿀까요? y/N", "n"));
@@ -307,13 +313,43 @@ async function interactive(): Promise<Answers> {
 	return a;
 }
 
+const runtimeOpt = opt("--runtime");
+if (runtimeOpt && !harness(runtimeOpt)?.adapter) {
+	console.error(`--runtime: ${runtimeOpt} 는 고를 수 없어요`);
+	process.exit(2);
+}
+
+function fail(errors: string[]): never {
+	console.error(`answers 파일 오류:\n  ${errors.join("\n  ")}`);
+	process.exit(1);
+}
+
 function validate(a: Partial<Answers>): Answers {
 	const checked = validateAnswers(a, P, HOME);
-	if (!checked.ok) {
-		console.error(`answers 파일 오류:\n  ${checked.errors.join("\n  ")}`);
-		process.exit(1);
+	return checked.ok ? checked.answers : fail(checked.errors);
+}
+
+function isThisInstallsService(file: string): boolean {
+	if (!existsSync(file)) return false;
+	const text = readFileSync(file, "utf8");
+	return [...new Set([PKG, realpathSync(PKG)])].some(pkg => text.includes(join(pkg, "hub", "main.ts"))) && text.includes(DIR);
+}
+
+async function loadService(): Promise<void> {
+	if (!MAC) {
+		const r = await Bun.$`systemctl --user daemon-reload && systemctl --user enable --now ${UNIT} && systemctl --user restart ${UNIT}`.nothrow().quiet();
+		console.log(r.exitCode === 0 ? "systemd: gateway started (loginctl enable-linger $USER keeps it running after logout)" : `systemd: start failed: ${r.stderr.toString().trim()}`);
+		return;
 	}
-	return checked.answers;
+	const uid = process.getuid?.() ?? 501;
+	await Bun.$`launchctl bootout gui/${uid}/${LABEL}`.nothrow().quiet();
+	for (let i = 0; i < 20 && (await Bun.$`launchctl print gui/${uid}/${LABEL}`.nothrow().quiet()).exitCode === 0; i++) await Bun.sleep(500);
+	let r = await Bun.$`launchctl bootstrap gui/${uid} ${PLIST}`.nothrow().quiet();
+	for (let i = 0; i < 5 && r.exitCode !== 0; i++) {
+		await Bun.sleep(1000);
+		r = await Bun.$`launchctl bootstrap gui/${uid} ${PLIST}`.nothrow().quiet();
+	}
+	console.log(r.exitCode === 0 ? "launchd: gateway loaded" : `launchd: bootstrap failed: ${r.stderr.toString().trim()}`);
 }
 
 // The service file (launchd plist or systemd unit) and, with --load, its start. Returns the bun the service runs.
@@ -323,29 +359,28 @@ async function installService(load: boolean): Promise<string> {
 	const harnessDirs = (await detectHarnesses()).filter(d => d.found.path).map(d => dirname(d.found.path!));
 	const plist = serviceFile({ home: HOME, bun, pkg: PKG, dir: DIR, pathDirs: harnessDirs, windowsDirs: windowsToolDirs() });
 	const kind = MAC ? "launchd" : "systemd";
-	// Without --load an existing service file is left alone (a test run with --dir once pointed the live gateway's plist
-	// at /tmp); the new file goes into the data dir instead.
-	const plistOut = !load && existsSync(PLIST) ? join(DIR, MAC ? `${LABEL}.plist` : UNIT) : PLIST;
+	const ours = isThisInstallsService(PLIST);
+	const otherInstallsServiceKept = !load && existsSync(PLIST) && !ours;
+	const plistOut = otherInstallsServiceKept ? join(DIR, MAC ? `${LABEL}.plist` : UNIT) : PLIST;
 	mkdirSync(dirname(plistOut), { recursive: true });
 	writeFileSync(plistOut, plist);
-	console.log(`${kind}: ${plistOut}${load ? "" : plistOut === PLIST ? " (not loaded; re-run with --load)" : " (existing service kept; re-run with --load to install this one)"}`);
-	if (load) for (const l of installDotzCommand({ dir: DIR, pkg: PKG, bun, home: HOME, expose: true, shell: process.env.SHELL })) console.log(l);
-	if (load && !MAC) {
-		const r = await Bun.$`systemctl --user daemon-reload && systemctl --user enable --now ${UNIT} && systemctl --user restart ${UNIT}`.nothrow().quiet();
-		console.log(r.exitCode === 0 ? "systemd: gateway started (loginctl enable-linger $USER keeps it running after logout)" : `systemd: start failed: ${r.stderr.toString().trim()}`);
-	}
-	if (load && MAC) {
-		const uid = process.getuid?.() ?? 501;
-		await Bun.$`launchctl bootout gui/${uid}/${LABEL}`.nothrow().quiet();
-		for (let i = 0; i < 20 && (await Bun.$`launchctl print gui/${uid}/${LABEL}`.nothrow().quiet()).exitCode === 0; i++) await Bun.sleep(500);
-		let r = await Bun.$`launchctl bootstrap gui/${uid} ${PLIST}`.nothrow().quiet();
-		for (let i = 0; i < 5 && r.exitCode !== 0; i++) {
-			await Bun.sleep(1000);
-			r = await Bun.$`launchctl bootstrap gui/${uid} ${PLIST}`.nothrow().quiet();
-		}
-		console.log(r.exitCode === 0 ? "launchd: gateway loaded" : `launchd: bootstrap failed: ${r.stderr.toString().trim()}`);
+	const note = load ? "" : plistOut !== PLIST ? " (existing service kept; re-run with --load to install this one)" : ours ? " (PATH refreshed; the running gateway reads it at its next load: --refresh-service)" : " (not loaded; re-run with --load)";
+	console.log(`${kind}: ${plistOut}${note}`);
+	if (load) {
+		for (const l of installDotzCommand({ dir: DIR, pkg: PKG, bun, home: HOME, expose: true, shell: process.env.SHELL })) console.log(l);
+		await loadService();
 	}
 	return bun;
+}
+
+if (flag("--refresh-service")) {
+	if (!isThisInstallsService(PLIST)) {
+		console.log("service: not this install's service file, left alone");
+		process.exit(3);
+	}
+	await installService(false);
+	await loadService();
+	process.exit(0);
 }
 
 if (args[0] === "permissions") {
@@ -388,20 +423,25 @@ if (flag("--first-run")) {
 	chmodSync(DIR, 0o700);
 	writeFileSync(join(DIR, "config.json"), `${JSON.stringify({ web: { port, access: "local" } }, null, 2)}\n`);
 	const token = issueToken(DIR);
+	if (runtimeOpt) saveDraft(DIR, "start", { runtime: runtimeOpt });
 	if (flag("--load")) await installService(true);
 	console.log(setupUrl(port, token));
 	process.exit(0);
 }
 
 const answersFile = opt("--answers");
-const a = validate(answersFile ? JSON.parse(readFileSync(answersFile, "utf8")) : await interactive());
+const given: Partial<Answers> = answersFile ? { ...(runtimeOpt ? { runtime: runtimeOpt } : {}), ...JSON.parse(readFileSync(answersFile, "utf8")) } : await interactive();
+const early = validate(given);
 if (answersFile) {
-	await prepareHarness(false, a.runtime, a.install_harness === true);
-	if (MAC) await prepareAside(false, a.install_aside === true);
-	await prepareZele(false, a.install_aside === true);
+	await prepareHarness(false, early.runtime, early.install_harness === true);
+	if (MAC) await prepareAside(false, early.install_aside === true);
+	await prepareZele(false, early.install_aside === true);
 }
+const checked = answersFile ? await validateWithModels(given, P, HOME) : undefined;
+const a = !checked ? early : checked.ok ? checked.answers : fail(checked.errors);
 const env: Env = { dir: DIR, home: HOME, pkg: PKG, say: line => console.log(line) };
 writeSecrets(env, a);
+if (a.runtime === "omp") console.log(`omp 모델: ${a.orchestrator_model} (봇), ${a.lane_model} (세션)`);
 const config = writeConfig(env, a, P);
 markTerminalDone(DIR, Object.keys(prior).length === 0);
 

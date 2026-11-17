@@ -43,6 +43,8 @@ TARBALL=${DOTZ_TARBALL:-}
 APP=${DOTZ_HOME:-$HOME/.local/share/dotz}
 DATA=${DOTZ_DIR:-$HOME/.dotz}
 HARNESS=${DOTZ_HARNESS:-omo}
+PICKED=${DOTZ_HARNESS:+1}
+RUNTIME=
 LABEL=dev.dotz.gateway
 UNIT=dotz-gateway.service
 
@@ -73,7 +75,8 @@ say() { printf '%s\n' "dotz: $*"; }
 die() { printf '%s\n' "dotz: $*" >&2; exit 1; }
 have() { command -v "$1" >/dev/null 2>&1; }
 # Questions read the terminal, not stdin: under `curl | sh` stdin is the script itself.
-tty_ok() { [ -z "$YES" ] && (exec </dev/tty) 2>/dev/null; }
+has_tty() { (exec </dev/tty) 2>/dev/null; }
+tty_ok() { [ -z "$YES" ] && has_tty; }
 confirm() {
 	if ! tty_ok; then [ "$2" = y ]; return; fi
 	printf 'dotz: %s [%s] ' "$1" "$( [ "$2" = y ] && echo Y/n || echo y/N )" >/dev/tty
@@ -113,6 +116,11 @@ svc_restart() {
 	ours || return 0
 	if [ "$OS" = Darwin ]; then set -- launchctl kickstart -k "gui/$(id -u)/$LABEL"; else set -- systemctl --user restart "$UNIT"; fi
 	if "$@" 2>/dev/null; then say "gateway restarted"; else say "gateway not running (start: bun $APP/setup.ts --load)"; fi
+}
+
+svc_refresh() {
+	ours || return 0
+	if (cd "$APP" && DOTZ_DIR=$DATA bun setup.ts --refresh-service --dir "$DATA" >/dev/null 2>&1); then say "gateway service refreshed and restarted"; else svc_restart; fi
 }
 
 if [ -n "$UNINSTALL" ]; then
@@ -170,14 +178,23 @@ case $HARNESS in
 none) ;;
 omo)
 	if have omo; then say "OmO $(omo --version 2>/dev/null | head -n 1)"
-	elif [ -n "$found" ] && ! confirm "OmO not found (installed:$found). Install OmO (bun add -g omo-ai)?" y; then say "skipping OmO; the wizard offers$found"
+	elif [ -n "$found" ] && [ -z "$PICKED" ] && [ -z "$YES" ] && ! has_tty; then
+		RUNTIME=${found# }
+		RUNTIME=${RUNTIME%% *}
+		say "OmO not found; using the installed $RUNTIME (DOTZ_HARNESS=omo or --yes installs OmO)"
+	elif [ -n "$found" ] && ! confirm "OmO not found (installed:$found). Install OmO (bun add -g omo-ai)?" y; then
+		RUNTIME=${found# }
+		RUNTIME=${RUNTIME%% *}
+		say "skipping OmO; the wizard offers$found"
 	else
 		say "installing OmO (bun add -g --trust omo-ai)"
 		bun add -g --trust omo-ai >/dev/null 2>&1 || die "bun add -g omo-ai failed"
 		have omo || die "omo not on PATH after install (bun global bin: $GLOBAL_BIN)"
 		say "OmO $(omo --version 2>/dev/null | head -n 1)"
 	fi ;;
-omp | claude) have "$HARNESS" || die "DOTZ_HARNESS=$HARNESS but '$HARNESS' is not installed; install it first" ;;
+omp | claude)
+	have "$HARNESS" || die "DOTZ_HARNESS=$HARNESS but '$HARNESS' is not installed; install it first"
+	RUNTIME=$HARNESS ;;
 *) die "DOTZ_HARNESS must be omo, omp, claude or none" ;;
 esac
 
@@ -403,7 +420,7 @@ if [ "$SETUP" = auto ]; then
 	else WEB=first; fi
 fi
 if [ "$SETUP" = no ]; then
-	[ -n "$UPGRADE" ] && svc_restart
+	[ -n "$UPGRADE" ] && svc_refresh
 	say "$(t "done. Wizard again: bun $APP/setup.ts" "다 됐어요. 설정을 다시 하려면: bun $APP/setup.ts")"
 	exit 0
 fi
@@ -413,10 +430,10 @@ if [ -n "$WEB" ]; then
 	cd "$APP"
 	# The output is held in a variable: it carries the one-time token, which must not reach a file or log.
 	if [ "$WEB" = link ]; then
-		svc_restart
+		svc_refresh
 		OUT=$(DOTZ_DIR=$DATA bun setup.ts --web-link --dir "$DATA") || die "could not issue a setup address"
 	else
-		OUT=$(DOTZ_DIR=$DATA bun setup.ts --first-run --port "$PORT" --load --dir "$DATA") || die "first-run setup failed"
+		OUT=$(DOTZ_DIR=$DATA bun setup.ts --first-run --port "$PORT" --load --dir "$DATA" ${RUNTIME:+--runtime "$RUNTIME"}) || die "first-run setup failed"
 	fi
 	URL=$(printf '%s\n' "$OUT" | sed -n 's/^setup-url: //p' | head -n 1)
 	printf '%s\n' "$OUT" | grep -v '^setup-url: ' || true
@@ -458,9 +475,9 @@ ask) confirm "Register the gateway as a login service ($( [ "$OS" = Darwin ] && 
 esac
 cd "$APP"
 if [ -n "$ANSWERS" ]; then
-	DOTZ_DIR=$DATA bun setup.ts --dir "$DATA" --answers "$ANSWERS" $LOAD $TAILSCALE $OPEN
+	DOTZ_DIR=$DATA bun setup.ts --dir "$DATA" --answers "$ANSWERS" ${RUNTIME:+--runtime "$RUNTIME"} $LOAD $TAILSCALE $OPEN
 elif (exec </dev/tty) 2>/dev/null; then
-	DOTZ_DIR=$DATA bun setup.ts --dir "$DATA" $LOAD $TAILSCALE $OPEN </dev/tty
+	DOTZ_DIR=$DATA bun setup.ts --dir "$DATA" ${RUNTIME:+--runtime "$RUNTIME"} $LOAD $TAILSCALE $OPEN </dev/tty
 else
 	say "no terminal for the wizard; run it yourself: cd $APP && bun setup.ts${LOAD:+ $LOAD}"
 	exit 0

@@ -29,7 +29,51 @@ export function pageAssets(html: string): string[] {
 	return [...out].filter(u => u.startsWith("/") && !u.startsWith("//"));
 }
 
-export async function smoke(root: string, o: { startMs?: number } = {}): Promise<SmokeResult> {
+const OMP_SMOKE_MS = 30_000;
+
+/** The runtime the owner's config.json runs the assistant or the sessions on, when the smoke has more to check than the gateway: "omp". */
+export function smokeRuntime(dataDir: string): "omp" | undefined {
+	let disk: { runtime?: string; orchestrator?: { runtime?: string }; lanes?: { runtime?: string } };
+	try {
+		disk = JSON.parse(readFileSync(join(dataDir, "config.json"), "utf8"));
+	} catch {
+		return undefined;
+	}
+	return [disk.orchestrator?.runtime ?? disk.runtime, disk.lanes?.runtime ?? disk.runtime].includes("omp") ? "omp" : undefined;
+}
+
+async function runBounded(argv: readonly string[], limitMs: number, opts: { cwd?: string; env?: Record<string, string | undefined>; stdin?: string } = {}): Promise<{ code: number; stdout: string; stderr: string; timedOut: boolean }> {
+	let proc: Bun.Subprocess<"pipe", "pipe", "pipe">;
+	try {
+		proc = Bun.spawn([...argv], { cwd: opts.cwd, env: opts.env, stdin: Buffer.from(opts.stdin ?? ""), stdout: "pipe", stderr: "pipe", timeout: limitMs, killSignal: "SIGKILL" });
+	} catch (e) {
+		return { code: 127, stdout: "", stderr: (e as Error).message, timedOut: false };
+	}
+	const [stdout, stderr, code] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text(), proc.exited]);
+	return { code, stdout, stderr, timedOut: proc.signalCode === "SIGKILL" };
+}
+
+async function ompSmoke(bin: string | undefined, limitMs: number): Promise<string> {
+	if (!bin) throw new Error("the runtime is omp but omp is not on PATH");
+	const [{ omp, ompArgv }, { makeOmpProbes }, { removeSessionsFor }, { orchestratorModel, selectorOf }] = await Promise.all([
+		import("./runtime/omp.ts"),
+		import("./runtime/omp-probes.ts"),
+		import("./cleanup.ts"),
+		import("./config.ts"),
+	]);
+	const cwd = mkdtempSync(join(tmpdir(), "dotz-smoke-omp-"));
+	try {
+		const probes = makeOmpProbes(omp, { argv: o => [bin, ...ompArgv(o).slice(1)], run: runBounded, forget: removeSessionsFor });
+		const r = await probes.guard_extension!({ cwd, model: selectorOf(orchestratorModel()), log: () => {}, timeoutMs: limitMs });
+		if (r.result !== "ok") throw new Error(`omp from this version does not load the dotz extension: ${r.note}`);
+		return "omp:guard_extension";
+	} finally {
+		removeSessionsFor(cwd);
+		rmSync(cwd, { recursive: true, force: true });
+	}
+}
+
+export async function smoke(root: string, o: { startMs?: number; runtime?: string; omp?: string; ompMs?: number } = {}): Promise<SmokeResult> {
 	const t0 = ms();
 	const tmp = mkdtempSync(join(tmpdir(), "dotz-smoke-"));
 	const home = join(tmp, "home"), data = join(tmp, "data");
@@ -109,6 +153,7 @@ export async function smoke(root: string, o: { startMs?: number } = {}): Promise
 			JSON.parse(text);
 			checked.push(p);
 		}
+		if (o.runtime === "omp") checked.push(await ompSmoke(o.omp, o.ompMs ?? OMP_SMOKE_MS));
 		if (exited) throw new Error(`the gateway exited during the check (exit ${proc.exitCode})`);
 		return { ok: true, ms: Math.round(ms() - t0), checked };
 	} catch (e) {

@@ -24,14 +24,18 @@ const RUNTIMES = [
 	{ id: "codex", label: "Codex", installed: false, hasAdapter: false, roles: [], reason: "설치 안 됨" },
 ];
 
-function harness(runtimes = RUNTIMES, reports: Record<string, unknown> = {}) {
+function harness(runtimes = RUNTIMES, reports: Record<string, unknown> = {}, extra: { view?: Record<string, unknown>; logins?: Record<string, unknown> } = {}) {
 	const calls: [string, string, any][] = [];
+	const toasts: string[] = [];
+	const shells: any[] = [];
 	const menus: { anchor: Node; items: any[]; opts: any }[] = [];
 	const dialogs: { title: string; actions: any[]; body: any }[] = [];
 	const api = async (path: string, method = "GET", body?: unknown) => {
 		calls.push([method, path, body]);
-		if (path === "/api/runtimes") return { runtimes };
+		if (path === "/api/runtimes") return { runtimes, ...extra.view };
 		if (/\/use$/.test(path)) return { applies: "다음 시작부터 적용돼요" };
+		const login = /^\/api\/runtimes\/([^/]+)\/login$/.exec(path)?.[1];
+		if (login) return extra.logins?.[login];
 		const id = /^\/api\/runtimes\/([^/]+)$/.exec(path)?.[1];
 		return { report: (id && reports[id]) || null, state: null };
 	};
@@ -39,11 +43,11 @@ function harness(runtimes = RUNTIMES, reports: Record<string, unknown> = {}) {
 	const icon = (name: string) => mkNode("icon", { name }, []);
 	const dialog = (o: { title: string; body: any }) => { const d = { title: o.title, body: o.body, actions: [] as any[] }; dialogs.push(d); return { setActions: (a: any[]) => { d.actions = a; } }; };
 	const g = new Function(
-		"api", "el", "icon", "dialog", "showMenu", "toast", "clear", "busy", "renderSettings", "current", "usErr", "usRun", "liEnd",
+		"api", "el", "icon", "dialog", "showMenu", "toast", "clear", "busy", "renderSettings", "current", "usErr", "usRun", "liEnd", "openShell",
 		`${i18nPrelude()}${src}\nreturn { loadRuntimes, rtSection };`,
-	)(api, el, icon, dialog, (anchor: Node, items: any[], opts: any) => menus.push({ anchor, items, opts }), () => {}, (n: Node) => { n.kids.length = 0; return n; },
-		(_b: unknown, fn: () => Promise<void>) => fn(), () => {}, "home", () => mkNode("p", {}, []), (_b: unknown, _e: unknown, fn: () => Promise<void>) => fn(), (...k: Node[]) => mkNode("span", {}, k)) as { loadRuntimes: () => Promise<void>; rtSection: () => Node[] };
-	return { g, calls, menus, dialogs };
+	)(api, el, icon, dialog, (anchor: Node, items: any[], opts: any) => menus.push({ anchor, items, opts }), (t: string) => toasts.push(t), (n: Node) => { n.kids.length = 0; return n; },
+		(_b: unknown, fn: () => Promise<void>) => fn(), () => {}, "home", () => mkNode("p", {}, []), (_b: unknown, _e: unknown, fn: () => Promise<void>) => fn(), (...k: Node[]) => mkNode("span", {}, k), (o: unknown) => shells.push(o)) as { loadRuntimes: () => Promise<void>; rtSection: () => Node[] };
+	return { g, calls, menus, dialogs, toasts, shells };
 }
 
 const settle = async () => { for (let i = 0; i < 50; i++) await Promise.resolve(); };
@@ -147,5 +151,61 @@ describe("settings: 작업 프로그램 picker", () => {
 		switches()[1].attrs.onclick({ stopPropagation() {} });
 		expect(switches().map(n => n.attrs["aria-checked"])).toEqual(["false", "false"]);
 		expect(dialogs[0].actions.find(a => a.label === "바꾸기").disabled).toBe(true);
+	});
+
+	test("a runtime that is signed out cannot be checked or switched to: the note, the terminal login and the re-check take the place of the check button", async () => {
+		const runtimes = RUNTIMES.map(r => (r.id === "omp" ? { ...r, login: { checked: true, ready: false, accounts: 0, command: "omp login" } } : r));
+		const report = { at: 0, version: "0.9", verdict: "ok", items: [{ label: "스트림", core: true, result: "ok" }] };
+		const { g, menus, dialogs, shells, toasts } = harness(runtimes, { omp: report }, { logins: { omp: { id: "omp", checked: true, ready: true, accounts: 1, command: "omp login" } } });
+		await g.loadRuntimes();
+		walk(g.rtSection()[1]).find(n => n.attrs["data-runtime"] === "omo")!.listeners.click[0]();
+		menus[0].opts.onPick("omp");
+		await settle();
+		expect(walk(dialogs[0].body[0]).map(n => n.text()).join("|")).toContain("아직 로그인이 안 돼 있어요");
+		expect(dialogs[0].actions.map(a => a.label)).toEqual(["취소", "터미널에서 로그인", "로그인 확인", "바꾸기"]);
+		expect(dialogs[0].actions.find(a => a.label === "바꾸기").disabled).toBe(true);
+		dialogs[0].actions.find(a => a.label === "터미널에서 로그인").onclick();
+		expect(shells).toEqual([{ command: "omp login" }]);
+		await dialogs[0].actions.find(a => a.label === "로그인 확인").onclick();
+		expect(toasts).toEqual(["로그인이 확인됐어요"]);
+		expect(dialogs[0].actions.map(a => a.label)).toEqual(["취소", "다시 검사", "바꾸기"]);
+		expect(dialogs[0].actions.find(a => a.label === "바꾸기").disabled).toBe(false);
+	});
+
+	test("the default runtime needs no check but still needs its login", async () => {
+		const runtimes = RUNTIMES.map(r => (r.id === "omo" ? { ...r, roles: [], login: { checked: true, ready: false, accounts: 0, command: "omo" } } : r.id === "omp" ? { ...r, roles: ["orchestrator", "lanes"] } : r));
+		const { g, menus, dialogs } = harness(runtimes);
+		await g.loadRuntimes();
+		walk(g.rtSection()[1]).find(n => n.attrs["data-runtime"] === "omp")!.listeners.click[0]();
+		menus[0].opts.onPick("omo");
+		await settle();
+		expect(dialogs[0].actions.find(a => a.label === "바꾸기").disabled).toBe(true);
+	});
+
+	test("the check note states its bounds from the view's limits", async () => {
+		const runtimes = RUNTIMES.map(r => (r.id === "omp" ? { ...r, limits: { items: 14, item_s: 90, worker_s: 360, max_min: 25 } } : r));
+		const { g, menus, dialogs } = harness(runtimes);
+		await g.loadRuntimes();
+		walk(g.rtSection()[1]).find(n => n.attrs["data-runtime"] === "omo")!.listeners.click[0]();
+		menus[0].opts.onPick("omp");
+		await settle();
+		const text = walk(dialogs[0].body[0]).map(n => n.text()).join("|");
+		for (const part of ["최대 14개", "90초", "360초", "25분"]) expect(text).toContain(part);
+	});
+
+	test("a saved switch shows what changes at the next start with a restart button; nothing pending shows no row", async () => {
+		const view = { current: { orchestrator: "omo", lanes: "omo" }, pending: { orchestrator: "omp", lanes: "omo" }, restart_needed: true };
+		const { g, calls, toasts } = harness(RUNTIMES, {}, { view });
+		await g.loadRuntimes();
+		const row = walk(g.rtSection()[2]).find(n => n.attrs["data-pending"])!;
+		expect(row.text()).toContain("다음 시작부터 바뀌어요");
+		expect(row.text()).toContain("omp");
+		const button = walk(row).find(n => n.tag === "button")!;
+		await button.attrs.onclick({ currentTarget: button });
+		expect(calls.filter(c => c[1] === "/api/update/restart")).toEqual([["POST", "/api/update/restart", {}]]);
+		expect(toasts).toEqual(["작업이 끝나면 다시 켜져요. 이 화면은 자동으로 다시 연결돼요"]);
+		const quiet = harness(RUNTIMES, {}, { view: { ...view, restart_needed: false, pending: view.current } });
+		await quiet.g.loadRuntimes();
+		expect(quiet.g.rtSection().flatMap(n => walk(n)).some(n => n.attrs["data-pending"])).toBe(false);
 	});
 });
