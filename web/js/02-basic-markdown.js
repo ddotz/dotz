@@ -187,29 +187,33 @@ function statedTone(text, keepFiles = false) {
 
 /* ---------- api ---------- */
 // index.html starts the first answers (state, history, plan, read positions, activity) in <head>, before this 480KB script is downloaded and parsed; the first api() of that path takes it over.
-// One run of fn per key at a time. A call while a run is out makes it run once more when it ends (with the newest caller's fn), and every caller of either
-// gets that last run's answer (or its error): no caller is handed an answer asked for before its call, and an older answer never lands after a newer one.
-// Calls that overlap cost one catch-up run, never more. api() runs every GET through it by path (each caller parses its own copy of the text); a loader
-// that reads in more than one step or paints once per read (loadTarget, convLoad, ...) runs through it by a key of its own.
-const FLIGHTS = new Map();
+// One run of fn per key at a time, and each caller is answered by the first run that starts after its call: a call while run N is out joins run N+1
+// (one queued run, started with the newest caller's fn when run N ends), and the callers of each run get that run's own answer or error. So no caller is
+// handed an answer asked for before its call, an older answer never lands after a newer one, and a wait is at most two reads however often calls come.
+// api() runs every GET through it by path (each caller parses its own copy of the text); a loader that reads in more than one step or paints once per
+// read (loadTarget, convLoad, ...) runs through it by a key of its own.
+const FLIGHTS = new Map();   // key -> { p: the run out, fn, next: the queued run's promise and its settle functions }
 function latest(key, fn) {
   const f = FLIGHTS.get(key);
-  if (f) { f.fn = fn; f.again = true; return f.p; }
-  const g = { fn, again: false };
-  g.p = (async () => {
-    try {
-      for (;;) {
-        g.again = false;
-        let v, err, failed = false;
-        try { v = await g.fn(); } catch (e) { err = e; failed = true; }
-        if (g.again) continue;
-        if (failed) throw err;
-        return v;
-      }
-    } finally { FLIGHTS.delete(key); }
-  })();
+  if (f) {
+    f.fn = fn;
+    if (!f.next) { const n = {}; n.p = new Promise((ok, no) => { n.ok = ok; n.no = no; }); f.next = n; }
+    return f.next.p;
+  }
+  const g = { fn, next: null };
+  const run = () => {
+    g.p = (async () => g.fn())();
+    g.p.then(after, after);
+    return g.p;
+  };
+  const after = () => {
+    const n = g.next;
+    if (!n) { FLIGHTS.delete(key); return; }
+    g.next = null;
+    run().then(n.ok, n.no);
+  };
   FLIGHTS.set(key, g);
-  return g.p;
+  return run();
 }
 const latestOut = key => FLIGHTS.get(key)?.p;   // the run of key on its way (to wait for it without asking for another), else undefined
 // Names this page's event stream to the gateway: every request carries it, so a stream whose page stopped asking (a phone asleep, the network gone) is closed by the gateway (hub/events.ts noteLive).

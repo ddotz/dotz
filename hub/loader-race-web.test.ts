@@ -26,3 +26,22 @@ test("a reload asked for during an older read waits for a read sent after it, an
 	expect(await view.evaluate(`Promise.all([__first, __second]).then(() => QUEUE.map(i => i.id).join(","))`)).toBe("new");
 	await view.evaluate(`(fetch = __fetch, 0)`);
 });
+
+test("with a call during every read, each caller is still answered by the first read sent after its call", async () => {
+	await view.evaluate(`(window.__fetch = fetch, window.__held = [], window.__got = {}, fetch = (p, o) => (String(p) === "/api/queue" ? new Promise(r => __held.push(r)) : __fetch(p, o)), 0)`);
+	const ask = (k: number) => view.evaluate(`(api("/api/queue").then(r => { __got[${k}] = r.items[0].id; }), 0)`);
+	const answer = (k: number) => view.evaluate(`(__held[${k - 1}](new Response(JSON.stringify({ items: [{ id: "read${k}" }] }))), 0)`);
+	await ask(1);
+	for (let k = 1; k <= 4; k++) {
+		await waitFor(`__held.length === ${k}`);
+		await ask(k + 1);
+		await answer(k);
+		await waitFor(`__got[${k}] === "read${k}"`);
+	}
+	await waitFor(`__held.length === 5`);
+	await answer(5);
+	await waitFor(`__got[5] === "read5" && !latestOut("/api/queue")`);
+	expect(await view.evaluate(`JSON.stringify(__got)`)).toBe(JSON.stringify({ 1: "read1", 2: "read2", 3: "read3", 4: "read4", 5: "read5" }));
+	expect(await view.evaluate(`__held.length`)).toBe(5);
+	await view.evaluate(`(fetch = __fetch, 0)`);
+});

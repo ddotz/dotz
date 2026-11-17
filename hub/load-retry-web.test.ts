@@ -71,7 +71,7 @@ test("사용량: a failed read keeps the usual 새로고침 and adds no second r
 test("대화: a failed first read shows 다시 시도, not 불러오는 중 for ever", async () => {
 	await waitFor(`ts("worklog").hLoaded`);
 	await view.evaluate(failing("/api/history"));
-	await view.evaluate(`((() => { const s = ts("worklog"); s.msgs = []; s.acts = []; s.hLoaded = s.aLoaded = false; s.herr = false; s.loading = null; openTarget("worklog", "chat"); })(), 0)`);
+	await view.evaluate(`((() => { const s = ts("worklog"); s.msgs = []; s.acts = []; s.hLoaded = s.aLoaded = false; s.herr = false; openTarget("worklog", "chat"); })(), 0)`);
 	await waitFor(`!!document.querySelector('#timeline [data-k="retry"]')`);
 	await view.evaluate(`(api = __api, document.querySelector('#timeline [data-k="retry"]').click(), 0)`);
 	await waitFor(`!document.querySelector('#timeline [data-k="retry"]')`);
