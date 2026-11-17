@@ -82,7 +82,7 @@ afterAll(() => {
 
 test("handover texts carry the nudge once, and only when there are exchanges to retain from", () => {
 	const nudge = msg().retainNudge;
-	expect(nudge).toContain("retain");
+	expect(nudge).toContain("memory/owner.md");
 	expect(msg().handover("old.jsonl", "tail")).toContain(nudge);
 	expect(msg().laneHandover("old.jsonl", "tail")).toContain(nudge);
 	expect(msg().laneHandover("old.jsonl", undefined)).not.toContain(nudge);

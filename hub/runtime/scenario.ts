@@ -251,18 +251,23 @@ export async function orchestratorScenario(): Promise<Trace> {
 	await advance(1000);
 	snap("after model switch");
 
-	// 10 rotation: past ROTATE_TOKENS at an idle turn (the second or later since start) the process is replaced by a fresh session with a handover.
 	await proc().push(stateResp(session, 2000));
 	await proc().push(agentStart);
 	await proc().push(asstEnd("one", "stop", { usage: { input: 10, cacheRead: 300_000, cacheWrite: 0, output: 20 } }));
 	await proc().push(agentEnd);
+	await advance(300);
+	snap("compacting in place");
+	await proc().push(compactResp);
+	await proc().push(statsResp(1200));
+	snap("compacted in place");
 	await proc().push(agentStart);
 	await proc().push(asstEnd("two", "stop", { usage: { input: 10, cacheRead: 300_000, cacheWrite: 0, output: 20 } }));
 	await proc().push(agentEnd);
+	await proc().push({ type: "response", command: "compact", success: false, error: "compaction failed: boom" });
 	await advance(300);
 	await proc().exit(0);
 	await advance(1000);
-	snap("rotated");
+	snap("rotated after a failed compaction");
 
 	// 11 stop and the activity the web UI saw.
 	o.stop();

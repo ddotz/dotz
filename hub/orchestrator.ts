@@ -665,10 +665,6 @@ export function createOrchestrator(opts: OrchOpts) {
 		}, wait);
 	}
 
-	// The session's own compaction point (compactAt()), re-read here: past it of context, at an idle point, the context is made small so each message does not re-read a huge
-	// prefix (the runtime's own threshold is sized for coding sessions, not a secretary). A runtime that compacts in place
-	// (OmO) keeps its session and with it what it was doing; a fresh session with a handover of recent exchanges forgot the
-	// progress, so that is only the fallback when compaction fails (and the omp/Claude Code behaviour).
 	let rotateWhenIdle = false;
 	let compactRetried = false;
 	let checkCompacted = false;

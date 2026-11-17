@@ -2,7 +2,7 @@
 // A session file is JSONL; the compaction entry is one line that begins {"type":"compaction" and has a string `summary`. A quote inside
 // a JSON string is escaped, so that text at the start of a line can only be an entry of that type.
 import { readFileSync } from "node:fs";
-import { realTurn, type SessionMessage } from "./omp.ts";
+import { realTurn, type SessionMessage } from "./real-turn.ts";
 
 const MARK = '{"type":"compaction"';
 

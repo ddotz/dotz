@@ -4,7 +4,7 @@ import { existsSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { cfg, DATA_DIR } from "../config.ts";
 import { advance, flush } from "./test-clock.ts";
-import { adjustItems, CHECKLIST, type CheckItem, type Detected, lastReport, type Probe, refusalFor, UseRefused, useRuntime, verdictOf, verifyRuntime } from "./verify.ts";
+import { adjustItems, CHECKLIST, checklistFor, type CheckItem, type Detected, lastReport, type Probe, refusalFor, UseRefused, useRuntime, verdictOf, verifyRuntime } from "./verify.ts";
 import type { RuntimeAdapter } from "./types.ts";
 
 // Stand-in adapter: verify.ts only needs its presence and the probes passed in the options.
@@ -35,7 +35,8 @@ test("a failing or unsupported core item blocks, non-core ones only adjust", () 
 test("verifyRuntime: all probes pass -> ok and the report is saved", async () => {
 	const r = await verifyRuntime("claude", { adapter: stub, probes: allOk, version: "1.0.0", timeoutMs: 1000 });
 	expect(r.verdict).toBe("ok");
-	expect(r.items.map(i => i.id)).toEqual(CHECKLIST.map(c => c.id));
+	expect(r.items.map(i => i.id)).toEqual(checklistFor("claude").map(c => c.id));
+	expect(r.items.some(i => i.id === "user_isolation")).toBe(false);
 	expect(lastReport("claude")?.verdict).toBe("ok");
 	expect(lastReport("claude")?.version).toBe("1.0.0");
 });
@@ -87,13 +88,28 @@ test("use: an ok report writes the runtime keys and keeps the rest of config.jso
 	expect(disk.lanes.runtime).toBe("claude");
 	expect(disk.models).toEqual(before.models);
 	expect(disk.discord).toEqual(before.discord);
-	await useRuntime("omp", ["orchestrator", "lanes"]);
+	await verifyRuntime("omp", { adapter: stub, probes: allOk, version: "1.0.0" });
+	await useRuntime("omp", ["orchestrator", "lanes"], detected("omp"));
 	expect((await Bun.file(join(DATA_DIR, "config.json")).json()).orchestrator.runtime).toBe("omp");
 });
 
-test("refusalFor: omp needs no report; uninstalled and adapterless runtimes are refused", () => {
-	expect(refusalFor("omp", undefined, undefined)).toBeUndefined();
+test("refusalFor: omp needs a passing report like every opt-in runtime; uninstalled and adapterless runtimes are refused", async () => {
+	expect(refusalFor("omp", detected("omp")[0], undefined)).toBe("작동 검사를 먼저 해야 해요");
+	expect(refusalFor("omp", undefined, undefined)).toBe("설치되어 있지 않아요");
+	await verifyRuntime("omp", { adapter: stub, probes: { ...allOk, resume: async () => ({ result: "unknown", note: "x" }) }, version: "1.0.0" });
+	expect(refusalFor("omp", detected("omp")[0], lastReport("omp"))).toBe("작동 검사에서 막혔어요. 핵심 항목이 통과해야 해요");
+	await verifyRuntime("omp", { adapter: stub, probes: allOk, version: "1.0.0" });
+	expect(refusalFor("omp", detected("omp")[0], lastReport("omp"))).toBeUndefined();
 	expect(refusalFor("omo", { id: "omo", label: "", installed: false, hasAdapter: false, usable: false }, undefined)).toBe("설치되어 있지 않아요");
 	expect(refusalFor("codex", { id: "codex", label: "", installed: true, hasAdapter: false, usable: false }, undefined)).toBe("dotz가 아직 지원하지 않아요");
-	expect(existsSync(join(DATA_DIR, "runtime-checks", "omp.json"))).toBe(false);
+});
+
+test("an unknown item is never a pass: a core one blocks, a non-core one adjusts, and no item of omp's checklist is reported ok without a probe", async () => {
+	expect(verdictOf([item("turn", "unknown")])).toBe("blocked");
+	expect(verdictOf([item("steer_abort", "unknown"), item("turn", "ok")])).toBe("adjusted");
+	expect(adjustItems([item("steer_abort", "unknown")])[0]!.result).toBe("unknown");
+	const r = await verifyRuntime("omp", { adapter: stub, probes: {}, version: "1" });
+	expect(r.items.map(i => i.id)).toEqual(checklistFor("omp").map(c => c.id));
+	expect(r.items.every(i => i.result !== "ok")).toBe(true);
+	expect(r.verdict).toBe("blocked");
 });

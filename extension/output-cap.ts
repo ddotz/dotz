@@ -15,6 +15,7 @@ import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, renameSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { isSubagent } from "./guard-config.ts";
 
 export const CAP_CHARS = 20_000;
 // A read gets more room than search and shell output: a spec or source file is judged whole, and 36 of 188 read cuts in
@@ -130,9 +131,9 @@ export function capNotices(messages: Msg[]): Msg[] | undefined {
 	return changed ? out : undefined;
 }
 
-export function installOutputCap(pi: { on: (name: string, fn: (event: any) => any, options?: { mutatesMessages?: boolean }) => void }, env: Record<string, string | undefined> = process.env): void {
+export function installOutputCap(pi: { on: (name: string, fn: (event: any) => any, options?: { mutatesMessages?: boolean }) => void }, env: Record<string, string | undefined> = process.env, worker = isSubagent(undefined, env)): void {
 	// The orchestrator itself (DOTZ_ORCHESTRATOR without OMO_SENPI_TASK_DEPTH) stays uncapped.
-	if (!env.DOTZ_LANE && !(env.DOTZ_ORCHESTRATOR === "1" && env.OMO_SENPI_TASK_DEPTH)) return;
+	if (!env.DOTZ_LANE && !(env.DOTZ_ORCHESTRATOR === "1" && worker)) return;
 	pi.on("tool_result", (event: any) => {
 		const content = capToolResult(String(event?.toolName ?? ""), event?.input, event?.content);
 		return content ? { content } : undefined;

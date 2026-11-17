@@ -8,6 +8,9 @@ import { basename, delimiter, join } from "node:path";
 const CLI = join(import.meta.dir, "..", "hub", "recall-cli.ts");
 const TIMEOUT_MS = 20_000;
 
+/** The one tool of this extension a task subagent keeps. */
+export const RECALL_TOOL = "dotz_recall";
+
 export interface RecallParams { query?: string; also?: string[]; after?: string; before?: string; project?: string; limit?: number; open?: string }
 
 export const RECALL_DESCRIPTION = `Search the owner's past conversations (this machine only) for what was said, decided or done earlier. Work out the period, project and topic from your current context first. query: plain words. also: 2 or 3 other phrasings, in words the original conversation likely used. after/before (YYYY-MM-DD): only from a real time hint, with a margin. project: name of the project or room. Results are short and each starts with an id: call again with open=<id> for the raw text, open the best candidates and answer from the raw text. If nothing fits, say it was not found; do not guess.`;
@@ -44,7 +47,7 @@ export const runCli: RunCli = (argv, dataDir) =>
 export function recallTool(pi: any, dataDir: string, run: RunCli = runCli): void {
 	const z = pi.zod;
 	pi.registerTool({
-		name: "dotz_recall",
+		name: RECALL_TOOL,
 		label: "Dotz recall",
 		description: RECALL_DESCRIPTION,
 		exposure: "search",
