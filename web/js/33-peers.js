@@ -217,6 +217,7 @@ function cpcPaint() {
   b.textContent = CPC.name || TX("chat.chip.pc_here");
   b.title = TX("chat.chip.pc_title", { name: b.textContent });
 }
+function cpcPick(name) { CPC.name = name; cpcPaint(); }
 const cpcTake = () => { const name = target === MAIN ? CPC.name : ""; return name ? { computer: name } : {}; };
 
 function prSheet() {
@@ -324,7 +325,7 @@ function cpcMenu(ev) {
   if (!(openMenu && openMenu.anchor === anchor)) await prFleetLoad();
   const rows = Array.isArray(PR.fleet) && !selfDown ? PR.fleet : PR.list.map(p => ({ name: p.name, self: p.self, online: p.online }));
   const items = [{ header: TX("chat.chip.pc_head") }, ...rows.map(f => ({ value: f.self ? "" : f.name, label: f.self ? TX("chat.chip.pc_here") : f.name, sub: f.state ? prFleetWord(f.state) : "", off: !f.self && !f.online }))];
-  showMenu(anchor, items, { value: CPC.name, onPick: v => { CPC.name = v; cpcPaint(); } });
+  showMenu(anchor, items, { value: CPC.name, onPick: cpcPick });
   });
 }
 $("#c-pc").onclick = cpcMenu;

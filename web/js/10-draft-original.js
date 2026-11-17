@@ -17,7 +17,7 @@ async function orgLoad(ref, t, paint, get) {
   };
   if (s.load === "busy" || s.load === "ok" || s.load === "missing") return;
   s.load = "busy"; go();
-  if (!get) DRF.pc[ref] = t ? pqPc(t) : null;
+  if (!get) drfFrom(ref, t);
   try { s.data = await (get ? get() : api(drfPath(ref, "original"))); s.load = "ok"; }
   catch (e) { s.load = /찾을 수 없|HTTP 404/.test(e.message) ? "missing" : "fail"; }
   go();
@@ -58,7 +58,7 @@ function orgFill(pane, d, t, retry) {
 function orgHas(ref, t, repaint) {
   const st = ref ? DRF.st[ref] : null;
   if (st) return st.original !== false;
-  if (ref) { DRF.pc[ref] = t ? pqPc(t) : null; drfLoad(ref).then(repaint); }
+  if (ref) { drfFrom(ref, t); drfLoad(ref).then(repaint); }
   return false;
 }
 // The comment a combined card (reply + mail) answers, as a compact block at the top of the card: the side panel has no room beside the mail part, so

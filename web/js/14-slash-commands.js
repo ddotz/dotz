@@ -287,7 +287,7 @@ async function sendChat(how) {
     if (owner && owner.pc && files.length) body.files = (await pqUpload(owner.pc, sentAtt)).map((f, i) => ({ ...f, label: sentAtt[i].no }));
     const r = await sendMsgOut(t, text, body, owner && owner.pc);   // null: the gateway is unreachable, the message waits in the outbox (14-outbox.js)
     sendCid = null;
-    if (body.computer) { CPC.name = ""; cpcPaint(); }   // the pick was for this one message
+    if (body.computer) cpcPick("");   // the pick was for this one message
     // A peer's conversation is not on this computer's event stream: its history is read again now, so the sent bubble shows at once.
     if (owner && owner.pc) loadTarget(t, true);
     scrollChat(true); scrollTerm(true);

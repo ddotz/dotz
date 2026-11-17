@@ -17,14 +17,7 @@
     ],
     "ownerWrites": {
       "AUTH_HID|30-notices.js": 1,
-      "CPC|14-slash-commands.js": 1,
-      "DC|30-notices.js": 3,
-      "DC|41-runstate.js": 1,
       "DELIV|01-peer-msg.js": 2,
-      "DRF|10-draft-original.js": 2,
-      "DRF|10-reply-actions.js": 2,
-      "DRR|10-reply-actions.js": 2,
-      "FS|02-basic-markdown.js": 1,
       "LAST|18-lanes.js": 1,
       "MAILS|30-mail-box.js": 4,
       "MAILS|30-monitoring-mail.js": 1,
@@ -40,17 +33,14 @@
       "PQ|10-draft-original.js": 1,
       "PQ|30-mail-box.js": 1,
       "PQ|30-monitoring-mail.js": 1,
-      "RA|30-replies.js": 1,
       "READ|13-snapshot.js": 1,
       "READ|34-peer-monitoring.js": 1,
-      "RELAY|44-relay-views.js": 3,
       "SHELL_RESTORE|31-conversations.js": 1,
       "TD|13-snapshot.js": 1,
       "TURN|11-todo-strip.js": 2,
       "TURN|14-slash-commands.js": 1,
       "convSig|30-kakao.js": 1,
-      "convSig|44-relay-views.js": 1,
-      "termEmpty|13-data.js": 2
+      "convSig|44-relay-views.js": 1
     },
     "rawNet": {
       "01-forbidden-pair.js": 1,

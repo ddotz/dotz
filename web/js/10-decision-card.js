@@ -78,6 +78,8 @@ const isChoiceMsg = pc => pc.blocks.some(b => b.options.length > 1);
 const isHeadedChoice = pc => pc.blocks.some(b => b.headed && b.options.length > 1);
 const choiceAsks = (e, tone, pc) => tone === "ask" || isHeadedChoice(pc) || (e.kind === "out" && e.source === "gateway" && e.target === "alert" && isChoiceMsg(pc));
 const DC = { cur: null, picks: {}, step: {}, fold: {}, st: {}, edit: {}, fresh: "", note: {} };
+function dcUnfold(t) { DC.fold[t] = false; }
+function dcMarkSent(key, pick) { DC.picks[key] = [pick]; DC.st[key] = "sent"; delete DC.edit[key]; }   // an answer given elsewhere (a revised draft's sheet, 30-notices.js dkPaint)
 { const k = kept("dc", () => ({ edit: DC.edit, note: DC.note })) || {}; Object.assign(DC.edit, k.edit); Object.assign(DC.note, k.note); }   // the open field and its text outlive a reload (01-core.js kept)
 // A draft waiting for send approval (hub/draft-approval.ts): the notice carries it, the sheet shows it above 보내기 / 고치기 / 보내지 않기.
 const DRAFT_EDIT = "고치기", DRAFT_OWN = "어떻게 보낼지 직접 입력";
@@ -213,6 +215,7 @@ function multiNodes(dc, picks, st) {
 // nothing is written until 반영 (raRowsApply), and 닫기 forgets it.
 const DR_IMG = /\.(png|jpe?g|gif|webp|avif|heic)$/i;
 const DRF = { st: {}, pc: {}, menu: {}, lib: {}, busy: {}, wait: {} };
+function drfFrom(ref, t) { DRF.pc[ref] = t ? pqPc(t) : null; }   // the computer a draft's files are read from: none is this one
 const DRF_WIRE_MAX = 10 * 1024 * 1024;
 const drfPath = (ref, tail) => `/api/drafts/${enc(ref)}/${tail}`;
 const drfNone = { files: [], canAttach: false, library: false, editable: false, failed: true };
@@ -310,6 +313,7 @@ function draftFilesNode(d, o = {}) {
 // o.stage (the 고치기 panel, 10-reply-actions.js rqFixNodes) = { to, cc, mode }, only what he changed: a change marks it (o.onstage is told) and 반영 writes it in one
 // request (raRowsApply). A new choice of 답장 | 전체 답장 drops the lists he typed, for the hub fills them again from the original mail, and the rows say so until then.
 const DRR = { st: {}, pc: {}, busy: {}, add: {}, edit: {} };
+function drRowIdle(ref) { DRR.add[ref] = ""; DRR.edit[ref] = ""; DRF.menu[ref] = ""; }   // no recipient editor and no file menu open on this draft
 const DRR_NONE = { to: [], cc: [], mode: "reply", editable: false, reply: false, failed: true };
 const drrPath = ref => `/api/drafts/${enc(ref)}/recipients`;
 const drrSplit = s => String(s || "").split(/\s*,\s*/).map(a => a.trim()).filter(Boolean);

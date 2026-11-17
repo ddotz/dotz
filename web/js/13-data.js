@@ -214,7 +214,7 @@ function renderAll0(keepScroll) {
   resetChat(); resetTerm();
   if (!((s.hLoaded && s.aLoaded) || hasCached(s)) || !chatReady()) {
     csEmptySet(tl.appendChild(el("div", { class: "a-div", text: TX("common.loading") })));
-    termEmpty = term.appendChild(el("div", { class: "a-div", text: TX("common.loading") }));
+    termNote(TX("common.loading"));
     return;
   }
   const A = s.acts, M = s.msgs, first = A.length ? A[0].ts : null, from = chatFrom(s);
@@ -236,7 +236,7 @@ function renderAll0(keepScroll) {
     csEmptySet(tl.appendChild(s.herr ? emptyNode(TX("chat.empty.load_failed"), () => loadTarget(target).catch(() => { /* the card says it failed again */ })) : el("div", {}, emptyNode(TX("chat.empty.none")), acctConnectRow())));
     if (!P && !s.herr) loadProviderData().then(() => current === "chat" && CS.empty && renderAll(true), () => {});   // the account line needs the list: draw again once it has come
   }   // only the top sentinel is there
-  if (LOG_VIEW && !term.children.length) termEmpty = term.appendChild(el("div", { class: "a-div", text: TX("chat.empty.no_activity") }));
+  if (LOG_VIEW && !term.children.length) termNote(TX("chat.empty.no_activity"));
   if (lit) { const n = [...tl.querySelectorAll("[data-ts]")].find(m => m.dataset.ts === lit); if (n) ntFlash(n); }
   if (!keepScroll) { chatOpen(); if (LOG_VIEW) scrollTerm(true); } else cvKeep();
   markLive();

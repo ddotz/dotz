@@ -16,6 +16,7 @@ function relayBrand() { return relayCur() ? targetName(relayCur()) : botName; }
 
 // The rows' names and notes (the title and the header line name the computer before the list is drawn again), and this view's state on the screen.
 function relayNames() { for (const p of PR.list) if (isRelayRow(p)) { RELAY.name[relayTargetOf(p)] = p.name; RELAY.note[relayTargetOf(p)] = p.note || ""; } }
+function relayPick(t, name) { RELAY.name[t] = name; if (!isRelayT(target)) RELAY.back = target; RELAY.cur = t; }   // chosen from outside its chat (44-relay-views.js relayShow)
 function relayPaint() {
   const on = relayOn();
   if (on) RELAY.cur = target; else if (RELAY.cur && target !== RELAY.cur) RELAY.cur = "";   // another conversation took the target: the computer is no longer the chosen one

@@ -388,7 +388,7 @@ function dkPaint() {
       const nx = ntSuccessor(n);
       if (nx && ntOpenDec(nx)) { ntDraftSheet(nx); return; }
       if (nx) { dkClose(false); return; }
-      if (!DC.picks[dc.key]) { DC.picks[dc.key] = [rv]; DC.st[dc.key] = "sent"; delete DC.edit[dc.key]; }
+      if (!DC.picks[dc.key]) dcMarkSent(dc.key, rv);
     } else if (DC.st[dc.key] !== "undo" && DC.st[dc.key] !== "sending" && (!n || !ntOpenDec(n))) { const answered = !!n && ntIsDec(n) && !ntIgnoredDec(n); dkClose(false); if (answered) dkNext(n); return; }
   } else {
     dc = decisionOf(DK.dc.t);

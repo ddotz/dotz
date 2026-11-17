@@ -12,6 +12,7 @@
 // loaded: the first read came back; min: how many waiting items make the 답장 대기 head offer 빠른 처리 and the app filter (the queue's triageMin);
 // err: the last failed read, kept for 답장 대기's 다시 시도.
 const RA = { items: new Map(), loaded: false, min: 1, err: null, busy: new Map(), fail: new Map(), fix: new Map(), asked: new Map(), nodes: new Map(), t: 0, ticking: false };
+function raKeep(it) { if (!RA.items.has(it.ref) && !it.pc) RA.items.set(it.ref, it); }   // a queue item this computer's list has not read yet (30-replies.js)
 // An open panel outlives a reload of the tab (01-core.js kept): its texts, subjects, line to the AI, part and the hash it opened on. The rows it marked (files picked) do not.
 for (const [ref, s] of kept("ra-fix", () => [...RA.fix].map(([r, f]) => [r, { part: f.part, text: f.text, subject: f.subject, note: f.note, hash: f.hash }])) || []) RA.fix.set(ref, { ...s, rows: {} });
 
@@ -217,7 +218,7 @@ function rqFixNodes(item, lead) {
   const edits = () => (hand ? parts.filter(p => moved("text", p) || moved("subject", p)) : []);
   const marked = () => !!rows && Object.keys(rows.recv).length + rows.files.remove.length + rows.files.add.length > 0;
   const ready = () => !off() && parts.every(p => st.text[p].trim() && (!was.subject[p] || st.subject[p].trim())) && (edits().length > 0 || !!st.note.trim() || marked());
-  const close = () => { RA.fix.delete(ref); RA.fail.delete(ref); if (rowRef) { DRR.add[rowRef] = ""; DRR.edit[rowRef] = ""; DRF.menu[rowRef] = ""; } raPaint(ref); };
+  const close = () => { RA.fix.delete(ref); RA.fail.delete(ref); if (rowRef) drRowIdle(rowRef); raPaint(ref); };
   const save = async () => {
     if (!ready()) return;
     const todo = edits(), change = st.note.trim();
@@ -285,7 +286,7 @@ function rqItemCard(item, opts = {}) {
   // A draft of this hub that the server can open (a mail, a comment): 원문 보기 loads the whole original (10-draft-original.js), also when the item came with no quote,
   // and a mail's 첨부 줄 reads the files staged on it (10-decision-card.js draftFilesNode); the queue item carries neither. Another computer's item keeps the quote it came with.
   const local = !item.pc && (item.kind === "mail" || item.kind === "webmail" || item.kind === "comment"), mail = local && item.kind !== "comment", src = local ? { ref, t: item.conv } : {};
-  if (mail && !DRF.st[ref]) { DRF.pc[ref] = null; drfLoad(ref).then(() => raPaint(ref)); }
+  if (mail && !DRF.st[ref]) { drfFrom(ref, null); drfLoad(ref).then(() => raPaint(ref)); }
   const node = rqCard({
     key: `ra:${item.item}`, bare: !!opts.bare,
     // The head names the person: a mail sender's address ("이름 <a@b>") stays in the quoted original only.

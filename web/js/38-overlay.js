@@ -3,6 +3,7 @@
 // viewport so the footer stays above the keyboard. The caller paints fsHead / .fs-body / .fs-ft into h.box. Built on it: decision, notice and computer sheets
 // (30-notices.js, 33-peers.js) and login requests (16-target-switcher-conversation.js); dialog() (02-basic-markdown.js) wears the same classes on a native <dialog>.
 const FS = [];   // open overlays, top last
+function fsOnEnd(h, f) { h.ends.push(f); }   // run f once overlay h closes (a confirm shown inside it, 02-basic-markdown.js openSheet)
 // The one place that sets a window's first focus: opened by a mouse or a touch (no key pressed since, 02-basic-markdown.js data-pointer) the window itself
 // holds it, so no button shows a ring; opened by the keyboard the first control does.
 function ovFocus(host, first) {
