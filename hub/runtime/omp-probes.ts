@@ -1,26 +1,40 @@
-import { mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { withoutApiKeys } from "../apikey-policy.ts";
+import { removeSessionsFor } from "../cleanup.ts";
 import { parseSelector } from "../config.ts";
 import { runLimited } from "../run-limited.ts";
-import { type ProbeOutcome, type Probes, type ProbeStart, Run } from "./claude-probes.ts";
+import { type ProbeOutcome, type Probes, Run } from "./claude-probes.ts";
 import { EXTENSION, ompArgv } from "./omp.ts";
 import { homeDir, userRuleDirs } from "./omp-overlay.ts";
 import type { AgentEvent, RuntimeAdapter, SpawnOpts } from "./types.ts";
 import type { ProbeCtx } from "./verify.ts";
 
-export type OmpProbeDeps = { argv: (o: SpawnOpts) => string[]; run: typeof runLimited };
-const REAL_DEPS: OmpProbeDeps = { argv: ompArgv, run: runLimited };
+export type OmpProbeDeps = { argv: (o: SpawnOpts) => string[]; run: typeof runLimited; forget: (cwd: string) => string[] };
+const REAL_DEPS: OmpProbeDeps = { argv: ompArgv, run: runLimited, forget: removeSessionsFor };
 
 const CHEAP = "anthropic/claude-sonnet-5-5:low";
 const SNAPSHOT_MS = 60_000;
 const PONG = "Reply with exactly the single word PONG and nothing else.";
 const DOTZ_TOOLS = ["dotz_verify", "dotz_merge", "dotz_main", "dotz_recall", "dotz_escalate", "dotz_auth"];
 const GUARD_TOOL = "harness_doctor";
+const COMPACT_KEEP = 1_000;
+const THRESHOLD_FACTOR = 1.5;
+const READ_LINES = 100;
+const OVERSHOOT = 2_000;
+const LEAD_FLOOR = 8_192;
+const LEAD_CAP = 32_000;
+const ANSWER_HI = /\bhi\b/i;
+const REPO = "repo";
+const WORKTREES = ".dotz-probe-wt";
+const GIT_SETUP_MS = 30_000;
+const PATCH_CAPTURED = /changes captured at `([^`]+\.patch)`/;
+const PATCH_NAMED = /(\/\S+\.patch)\b/;
+const TASK_STATUS = /<task-result\b[^>]*\bstatus="([^"]*)"/;
 
 const fail = (note: string): ProbeOutcome => ({ result: "fail", note });
 const ok = (note: string): ProbeOutcome => ({ result: "ok", note });
-const unknown = (note: string) => async (): Promise<ProbeOutcome> => ({ result: "unknown", note });
+const secs = (ms: number) => `${Math.round(ms / 1000)}s`;
 const answerOf = (events: AgentEvent[]): string => [...events].reverse().find(e => e.type === "assistant" && e.stop === "stop")?.text ?? "";
 const toolCalls = (events: AgentEvent[]) => events.flatMap(e => (e.type === "activity" && e.row.type === "tool_call" ? [e.row] : []));
 const toolResults = (events: AgentEvent[]) => events.flatMap(e => (e.type === "activity" && e.row.type === "tool_result" ? [e.row] : []));
@@ -34,12 +48,14 @@ function probeData(cwd: string): string {
 	return dir;
 }
 
+const probeEnv = (cwd: string): Record<string, string> => ({ DOTZ_DIR: probeData(cwd), DOTZ_LANE: "probe", ORCH_GUARD_STATE_DIR: join(cwd, ".dotz-probe-guard") });
+
 function spawnOpts(ctx: ProbeCtx, name: string, extra: Partial<SpawnOpts> = {}): SpawnOpts {
 	return {
 		role: "lane",
 		cwd: ctx.cwd,
 		model: CHEAP,
-		env: { DOTZ_DIR: probeData(ctx.cwd), DOTZ_LANE: "probe" },
+		env: probeEnv(ctx.cwd),
 		lane: { name: "probe", dir: join(ctx.cwd, `.dotz-probe-${name}`), workerModel: CHEAP, compactAt: 100_000, keepRecent: 10_000 },
 		...extra,
 	};
@@ -148,6 +164,161 @@ function fallbackProbe(ctx: ProbeCtx, deps: OmpProbeDeps): ProbeOutcome {
 	return ok(`overlay chain of ${model} = the hub's list (empty when the hub drives the switches), the task role's = the lane's, and no owner chain key reaches the process; read from the overlay and the owner's config.yml, the chain walk itself is not run`);
 }
 
+type OmpStartOpts = { model?: string; resume?: string; env?: Record<string, string>; fallback?: string[]; cwd?: string; lane?: Partial<NonNullable<SpawnOpts["lane"]>> };
+type OmpStart = (o?: OmpStartOpts) => Run;
+type Within = (capMs: number) => number;
+
+function within(ctx: ProbeCtx): Within {
+	const end = Date.now() + ctx.timeoutMs - Math.min(5_000, ctx.timeoutMs / 10);
+	return capMs => {
+		const left = end - Date.now();
+		if (left <= 0) throw new Error(`the ${secs(ctx.timeoutMs)} verify time limit ran out`);
+		return Math.min(capMs, left);
+	};
+}
+
+// why(vendor): omp@18.22.0 compaction: a context past the threshold by less than clamp(threshold / 8, 8192, 32000) only starts a background summary and waits for a later check, and automatic compaction pauses unless the system prompt and tool schemas fit in 80% of the threshold
+const speculationLead = (threshold: number): number => Math.min(LEAD_CAP, Math.max(LEAD_FLOOR, Math.floor(threshold / 8)));
+const reading = (lines: number, tag: string): string => `Read this text, then reply with exactly the single word hi.\n\n${Array.from({ length: lines }, (_, i) => `${tag} line ${i}: the quick brown fox jumps over the lazy dog near the riverbank.`).join("\n")}`;
+
+function refuse(note: string): never {
+	throw new Error(note);
+}
+
+async function requestedCompaction(start: OmpStart, within: Within): Promise<{ size: number; note: string }> {
+	const run = start({ lane: { compactAt: 100_000, keepRecent: COMPACT_KEEP } });
+	if (!/PONG/i.test(answerOf(await run.turn(PONG, within(60_000))))) refuse("the first turn did not answer");
+	const sized = run.events.length;
+	run.proc.refreshUsage();
+	const size = await run.waitFor(e => e.type === "usage" && e.tokens !== undefined && e.window !== undefined, within(15_000), sized);
+	if (size?.type !== "usage" || !size.tokens) refuse("get_session_stats was not answered with the context size");
+	const at = run.events.length;
+	run.proc.compact();
+	const wait = within(90_000);
+	const done = await run.waitFor(e => e.type === "compaction", wait, at);
+	if (done?.type !== "compaction") refuse(`no compaction event ${secs(wait)} after compact()`);
+	if (done.state !== "done") refuse(`compact() ended in a compaction error: ${done.error}`);
+	if (run.events.slice(at).some(e => e.type === "turn_start")) refuse("a requested compaction was reported as a turn");
+	if (!/PONG/i.test(answerOf(await run.turn(PONG, within(60_000))))) refuse("the session did not answer after compact()");
+	return { size: size.tokens, note: `compact() -> one compaction event${done.tokensBefore ? ` (was ${done.tokensBefore} tokens)` : ""} and no turn, the session kept working` };
+}
+
+async function thresholdCompaction(start: OmpStart, within: Within, size: number): Promise<string> {
+	const threshold = Math.ceil(size * THRESHOLD_FACTOR);
+	const run = start({ lane: { compactAt: threshold, keepRecent: COMPACT_KEEP } });
+	const first = await run.turn(reading(READ_LINES, "A"), within(60_000));
+	if (!ANSWER_HI.test(answerOf(first))) refuse("the first reading turn did not answer");
+	const held = first.reduce((tokens, e) => (e.type === "usage" && e.tokens ? e.tokens : tokens), 0);
+	const perLine = (held - size) / READ_LINES;
+	if (!(perLine > 0)) refuse(`the reading turn reported ${held} context tokens, not more than the ${size} of a session with no reading`);
+	const lead = speculationLead(threshold);
+	const target = threshold + lead + OVERSHOOT;
+	const second = await run.turn(reading(Math.ceil((target - held) / perLine), "B"), within(150_000));
+	const raised = second.findIndex(e => e.type === "compaction");
+	const compacted = second[raised];
+	if (compacted?.type !== "compaction") refuse(`a prompt that took the context to ${target} tokens, ${lead + OVERSHOOT} past the threshold (f${threshold}), raised no compaction event`);
+	if (compacted.state !== "done") refuse(`omp's own compaction ended in an error: ${compacted.error}`);
+	const began = second.findIndex(e => e.type === "activity" && e.row.type === "status" && /compacting/i.test(e.row.text));
+	if (began < 0 || began > raised) refuse("omp's own compaction raised no 'compacting context' start row before its compaction event");
+	if (!ANSWER_HI.test(answerOf(second))) refuse("the turn after omp's own compaction did not answer");
+	return `omp's own compaction (f${threshold}, a prompt ${lead + OVERSHOOT} tokens past it) raised its compacting-context start and a compaction event, and the turn answered`;
+}
+
+async function compactionProbe(start: OmpStart, within: Within): Promise<ProbeOutcome> {
+	const requested = await requestedCompaction(start, within);
+	return ok(`${requested.note}; ${await thresholdCompaction(start, within, requested.size)}`);
+}
+
+async function steerAbortProbe(start: OmpStart, within: Within): Promise<ProbeOutcome> {
+	const run = start();
+	const sleeping = (seconds: number) => (e: AgentEvent) => e.type === "activity" && e.row.type === "tool_call" && e.row.tool === "bash" && new RegExp(`sleep ${seconds}\\b`).test(e.row.args ?? "");
+	run.proc.send("Run this bash command: sleep 5; echo slept. Wait for it to finish, then reply with the single word done.", "prompt");
+	if (!(await run.waitFor(sleeping(5), within(60_000)))) return fail("the model never started the command");
+	const steerAt = run.events.length;
+	const steerSent = Date.now();
+	run.proc.send("Also: end your final answer with the word STEERED.", "steer");
+	const steered = await run.waitFor(e => e.type === "user" && /STEERED/.test(e.text), within(30_000), steerAt);
+	if (!steered) return fail("a message sent mid-turn never entered the session");
+	const entered = run.events.indexOf(steered);
+	if (run.events.slice(steerAt, entered).some(e => e.type === "turn_end")) return fail("the steer arrived only after the turn ended");
+	const steerMs = Date.now() - steerSent;
+	if (!(await run.waitFor(e => e.type === "turn_end", within(60_000), entered))) return fail("the steered turn did not end");
+	const followed = /STEERED/.test(answerOf(run.events.slice(entered)));
+	const next = run.events.length;
+	run.proc.send("Run this bash command: sleep 60. Then say done.", "followUp");
+	const running = await run.waitFor(sleeping(60), within(60_000), next);
+	if (!running) return fail("the model never started the long command");
+	const abortSent = Date.now();
+	run.proc.abort();
+	const wait = within(15_000);
+	const aborted = await run.waitFor(e => e.type === "assistant" && e.stop === "aborted", wait, run.events.indexOf(running));
+	if (!aborted) return fail(`abort() did not end the turn of the 60 s command as aborted within ${secs(wait)}`);
+	const abortMs = Date.now() - abortSent;
+	if (!(await run.waitFor(e => e.type === "turn_end", within(15_000), run.events.indexOf(aborted)))) return fail("the aborted turn never ended");
+	if (!/PONG/i.test(answerOf(await run.turn(PONG, within(60_000))))) return fail("the session did not answer after abort()");
+	return ok(`steer entered the running turn in ${steerMs} ms (the final answer ${followed ? "followed it" : "did not act on it"}); abort() ended the 60 s command's turn as aborted in ${abortMs} ms; the session answered afterwards`);
+}
+
+type Back = { at: number; patch?: string; failure?: string };
+
+function workerBack(events: AgentEvent[]): Back | undefined {
+	let failure: Back | undefined;
+	for (const [at, e] of events.entries()) {
+		if (e.type === "activity" && e.row.type === "tool_result") {
+			const patch = PATCH_CAPTURED.exec(e.row.text)?.[1];
+			if (patch) return { at, patch };
+			const status = TASK_STATUS.exec(e.row.text);
+			if (status && !status[1]!.startsWith("completed")) failure ??= { at, failure: e.row.text.slice(status.index).replace(/\s+/g, " ").slice(0, 300) };
+		} else if (e.type === "assistant" && e.stop === "stop") {
+			const patch = PATCH_NAMED.exec(e.text)?.[1];
+			if (patch) return { at, patch };
+		}
+	}
+	return failure;
+}
+
+function workerSettled(events: AgentEvent[]): boolean {
+	const back = workerBack(events);
+	return back !== undefined && events.slice(back.at).some(e => e.type === "turn_end");
+}
+
+async function isolatedPatchProbe(ctx: ProbeCtx, deps: OmpProbeDeps, start: OmpStart, within: Within): Promise<ProbeOutcome> {
+	const repo = join(ctx.cwd, REPO);
+	mkdirSync(repo, { recursive: true });
+	writeFileSync(join(repo, "probe.txt"), "before\n");
+	const made = await deps.run(["sh", "-c", "git init -q && git add probe.txt && git -c user.name=probe -c user.email=probe@invalid commit -qm init"], GIT_SETUP_MS, { cwd: repo });
+	if (made.code !== 0) return fail(`could not make a probe repo: ${made.stderr.slice(0, 120)}`);
+	const run = start({ cwd: repo, env: { OMP_WORKTREE_DIR: join(ctx.cwd, WORKTREES) } });
+	await run.turn('Use the task tool to spawn ONE subagent with this brief: "Replace the contents of probe.txt in the current directory with the single line after. Acceptance: probe.txt contains exactly after." Do not edit any file yourself. When its result is back, reply with the full path of the .patch file it reports, and nothing else.', within(120_000));
+	if (!toolCalls(run.events).some(c => c.tool === "task")) return fail("the task tool was not used");
+	await run.waitFor(() => workerSettled(run.events), within(300_000));
+	const back = workerBack(run.events);
+	if (!back?.patch) return fail(back?.failure ? `the worker failed: ${back.failure}` : `no retained patch came back: "${answerOf(run.events).slice(0, 120)}"`);
+	if (!existsSync(back.patch)) return fail(`the reported patch is not there: ${back.patch}`);
+	if (readFileSync(join(repo, "probe.txt"), "utf8") !== "before\n") return fail("the worker's change was merged into the checkout (not isolated with apply:false)");
+	if (!/^\+after$/m.test(readFileSync(back.patch, "utf8"))) return fail(`the patch does not hold the change: ${back.patch}`);
+	const at = run.events.length;
+	await run.turn(`This is a test of the call guard. Run exactly this shell command in ${repo} and tell me its output, word for word. Do not read the patch first, and do not run anything else: git apply ${back.patch}`, within(120_000));
+	const attempt = run.events.slice(at);
+	const apply = toolCalls(attempt).find(c => /git\s+apply/.test(c.args ?? ""));
+	if (!apply) return fail("the model did not attempt git apply, so its block was not exercised");
+	const refused = toolResults(attempt).find(r => r.call_id === apply.call_id);
+	if (!refused?.is_error || !/review before apply/.test(refused.text)) {
+		const read = toolCalls(attempt).some(c => c.tool === "read" && (c.args ?? "").includes(back.patch));
+		return fail(read ? "the model read the patch before applying it, so the block was not exercised" : `git apply of an unread patch was not blocked: ${refused?.text.replace(/\s+/g, " ").slice(0, 100) ?? "no result"}`);
+	}
+	if (readFileSync(join(repo, "probe.txt"), "utf8") !== "before\n") return fail("the refused git apply changed the checkout anyway");
+	return ok(`writing worker isolated (apply:false): checkout untouched, change returned as ${basename(back.patch)}; unread git apply refused ("review before apply") and not run`);
+}
+
+function removeIn(ctx: ProbeCtx, remove: () => unknown): void {
+	try {
+		remove();
+	} catch (e) {
+		ctx.log(`probe cleanup failed: ${(e as Error).message}`);
+	}
+}
+
 export function makeOmpProbes(adapter: RuntimeAdapter, deps: OmpProbeDeps = REAL_DEPS): Probes {
 	let n = 0;
 	const guarded = (body: (ctx: ProbeCtx) => Promise<ProbeOutcome> | ProbeOutcome) => async (ctx: ProbeCtx): Promise<ProbeOutcome> => {
@@ -157,19 +328,23 @@ export function makeOmpProbes(adapter: RuntimeAdapter, deps: OmpProbeDeps = REAL
 			return fail((e as Error).message);
 		}
 	};
-	const turns = (body: (ctx: ProbeCtx, start: ProbeStart, ms: number) => Promise<ProbeOutcome>) => async (ctx: ProbeCtx): Promise<ProbeOutcome> => {
+	const turns = (body: (ctx: ProbeCtx, start: OmpStart, ms: number, within: Within) => Promise<ProbeOutcome>) => async (ctx: ProbeCtx): Promise<ProbeOutcome> => {
 		const runs: Run[] = [];
-		const start: ProbeStart = (o = {}) => {
-			const run = new Run(adapter, ctx, String(++n), { model: CHEAP, env: { DOTZ_DIR: probeData(ctx.cwd), DOTZ_LANE: "probe" }, ...o });
+		const cwds = new Set<string>();
+		const start: OmpStart = ({ cwd, lane, env, ...o } = {}) => {
+			const through: RuntimeAdapter = { ...adapter, start: s => adapter.start({ ...s, ...(cwd ? { cwd } : {}), ...(lane && s.lane ? { lane: { ...s.lane, ...lane } } : {}) }) };
+			const run = new Run(through, ctx, String(++n), { model: CHEAP, env: { ...probeEnv(ctx.cwd), ...env }, ...o });
 			runs.push(run);
+			cwds.add(cwd ?? ctx.cwd);
 			return run;
 		};
 		try {
-			return await body(ctx, start, Math.min(ctx.timeoutMs, 120_000));
+			return await body(ctx, start, Math.min(ctx.timeoutMs, 120_000), within(ctx));
 		} catch (e) {
 			return fail((e as Error).message);
 		} finally {
 			await Promise.all(runs.map(r => r.close()));
+			for (const cwd of cwds) removeIn(ctx, () => deps.forget(cwd));
 		}
 	};
 	const sessionOf = async (run: Run): Promise<string | undefined> => {
@@ -272,8 +447,13 @@ export function makeOmpProbes(adapter: RuntimeAdapter, deps: OmpProbeDeps = REAL
 			return call.intent ? ok(`tool_call bash intent "${call.intent}", tool_result paired by id`) : { result: "adapted", note: "tool_call/tool_result rows paired by id; the row shows the command when the call carries no intent" };
 		}),
 
-		compaction_events: unknown("not probed on omp: a compaction needs a session over omp's compaction minimum (two long turns) and no omp probe for it exists yet"),
-		steer_abort: unknown("not probed on omp: steer and abort mid-turn need a long model turn to cut into, and no omp probe for it exists yet"),
-		workers_isolated_patch: unknown("not probed on omp: needs a worker that edits a git checkout and a patch review (apply:false), and no omp probe for it exists yet"),
+		compaction_events: turns((_ctx, start, _ms, within) => compactionProbe(start, within)),
+		steer_abort: turns((_ctx, start, _ms, within) => steerAbortProbe(start, within)),
+
+		workers_isolated_patch: async ctx => {
+			const outcome = await turns((c, start, _ms, within) => isolatedPatchProbe(c, deps, start, within))(ctx);
+			for (const dir of [REPO, WORKTREES]) removeIn(ctx, () => rmSync(join(ctx.cwd, dir), { recursive: true, force: true }));
+			return outcome;
+		},
 	};
 }

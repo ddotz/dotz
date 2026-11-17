@@ -16,6 +16,7 @@ import { detectBinary } from "./detect.ts";
 import { touchedPath, withTouchedFiles } from "./handover-files.ts";
 import { lastCompactionSummary, summaryStale } from "./omo-summary.ts";
 import { keyProviderOf, startModelOf, writeOverlay } from "./omp-overlay.ts";
+import { RunKeys } from "./omp-runs.ts";
 import { realTurn, type SessionMessage } from "./real-turn.ts";
 import type { ActivityRow, AgentEvent, AgentProcess, RuntimeAdapter, SendMode, SpawnOpts, SubagentUpdate } from "./types.ts";
 
@@ -25,7 +26,7 @@ export type Frame = {
 	id?: string;
 	command?: string;
 	success?: boolean;
-	message?: { role?: string; content?: Block[] | string; stopReason?: string; errorMessage?: string; usage?: Usage };
+	message?: { role?: string; customType?: string; content?: Block[] | string; details?: { jobs?: AsyncJob[] }; stopReason?: string; errorMessage?: string; usage?: Usage };
 	toolCallId?: string;
 	toolName?: string;
 	args?: unknown;
@@ -42,11 +43,14 @@ export type Frame = {
 	role?: string;
 	reason?: string;
 	payload?: Record<string, any>;
-	data?: { sessionFile?: string; contextUsage?: { tokens?: number; contextWindow?: number }; model?: { contextWindow?: number }; tokensBefore?: number };
+	data?: { sessionFile?: string; contextUsage?: { tokens?: number; contextWindow?: number }; model?: { contextWindow?: number }; tokensBefore?: number; hasPendingAsyncWork?: boolean; cancelled?: boolean };
 	aborted?: boolean;
 	skipped?: boolean;
+	isTerminal?: boolean;
+	awaitingAsyncWork?: boolean;
 };
 type Usage = { input?: number; cacheRead?: number; cacheWrite?: number; output?: number; cost?: { total?: number } };
+type AsyncJob = { jobId?: string; type?: string; status?: string; agentId?: string };
 
 export const EXTENSION = join(import.meta.dir, "..", "..", "extension", "index.ts");
 
@@ -120,18 +124,34 @@ function subagentUpdate(p: Record<string, any>): SubagentUpdate | undefined {
 		tool: progress.currentTool,
 		intent: progress.lastIntent ? String(progress.lastIntent) : undefined,
 		transcript: typeof p.sessionFile === "string" ? p.sessionFile : undefined,
+		model: typeof progress.resolvedModel === "string" ? progress.resolvedModel : undefined,
+		thinking: typeof progress.resolvedThinkingLevel === "string" ? progress.resolvedThinkingLevel : undefined,
 	};
 }
 
+// why(protocol): omp's background task result is "Spawned agent `<id>` (job `<jobId>`)." and, for a batch, one "- `<id>` (job `<jobId>`)" line per agent (omp@18.22.0 docs/tools/task.md "Background response")
+const OMP_SPAWNED = [/Spawned agent `([^`]+)`/g, /^\s*- `([^`]+)` \(job `[^`]+`\)/gm];
+const ompWorkers = (text: string) => [...new Set(OMP_SPAWNED.flatMap(re => [...text.matchAll(re)].map(m => m[1]!)))].map(id => ({ id }));
 const TASK_ID = /\bst_[0-9a-z]{6,}\b/g;
 // OmO's task result: "Started task <description> (st_x, running)...", or for a batch numbered lines naming each id.
 function spawnedWorkers(text: string): { id: string; description?: string }[] {
 	const single = /^Started task (.+) \((st_[0-9a-z]+),/.exec(text);
 	if (single) return [{ id: single[2]!, description: single[1]! }];
-	return [...new Set(text.match(TASK_ID) ?? [])].map(id => ({ id }));
+	const omo = [...new Set(text.match(TASK_ID) ?? [])].map(id => ({ id }));
+	return omo.length ? omo : ompWorkers(text);
 }
 // OmO's wake after a worker ended: one "task completion name:<n> id:st_x ..." per worker (a wake can carry several).
 const finishedWorkers = (text: string) => [...text.matchAll(/task completion name:\S+ id:(st_[0-9a-z]+)/g)].map(m => m[1]!);
+
+// why(protocol): omp wakes a session with a custom `async-result` message whose details.jobs lists every delivered job (omp@18.22.0, observed in hub/runtime/fixtures/omp-rpc.jsonl)
+function doneWorkers(jobs: AsyncJob[] | undefined): AgentEvent[] {
+	const ids = new Set<string>();
+	for (const job of Array.isArray(jobs) ? jobs : []) {
+		const id = job?.type === undefined || job.type === "task" ? (job?.agentId ?? job?.jobId) : undefined;
+		if (typeof id === "string" && id) ids.add(id);
+	}
+	return ids.size ? [{ type: "workers_done", ids: [...ids] }] : [];
+}
 
 // Everything one omp frame means to the hub, in the order the hub must apply it. A task worker that moved to a fallback
 // model has no frame of its own: its progress reports the model it resolved to (`resolvedModel`, flagged
@@ -175,9 +195,12 @@ export function eventsFromFrame(f: Frame, workers: Map<string, string>): AgentEv
 		case "message_end": {
 			const m = f.message;
 			if (m?.role === "user") out.push({ type: "user", text: textOf(m) || (typeof m.content === "string" ? m.content.trim() : "") });
-			else if (m?.role === "custom" && (m as { customType?: string }).customType === "omo-senpi:wake") {
-				const ids = finishedWorkers(textOf(m) || (typeof m.content === "string" ? m.content : ""));
-				if (ids.length) out.push({ type: "workers_done", ids });
+			else if (m?.role === "custom") {
+				const said = textOf(m) || (typeof m.content === "string" ? m.content : "");
+				if (m.customType === "omo-senpi:wake") {
+					const ids = finishedWorkers(said);
+					if (ids.length) out.push({ type: "workers_done", ids });
+				} else if (m.customType === "async-result") out.push(...doneWorkers(m.details?.jobs));
 			}
 			else if (m?.role === "assistant") {
 				const u = m.usage;
@@ -262,7 +285,8 @@ export class OmpProcess implements AgentProcess {
 				if (!f || typeof f !== "object") continue;
 				const frame = this.translate(f as Frame);
 				if (this.restoreId !== undefined && frame.type === "response" && frame.id === this.restoreId && frame.success === false) this.write({ type: "abort" });
-				yield* eventsFromFrame(frame, this.workerModels);
+				this.observe(frame);
+				yield* this.rekey(eventsFromFrame(frame, this.workerModels));
 			}
 		}
 	}
@@ -270,6 +294,10 @@ export class OmpProcess implements AgentProcess {
 		const id = `${this.idPrefix}${++this.seq}`;
 		writeQuietly(this.proc.stdin, `${JSON.stringify({ id, ...frame })}\n`);
 		return id;
+	}
+	protected observe(_frame: Frame): void {}
+	protected rekey(events: AgentEvent[]): AgentEvent[] {
+		return events;
 	}
 	send(text: string, mode: SendMode): void {
 		if (mode === "steer") this.write({ type: "steer", message: text });
@@ -302,6 +330,53 @@ export class OmpProcess implements AgentProcess {
 	}
 	kill(force?: boolean): void {
 		killAgent(this.proc, force);
+	}
+}
+
+const CANCEL_WAIT_MS = 10_000;
+
+// why(protocol): omp says whether outside work can still wake a session: a non-terminal `agent_end` with awaitingAsyncWork, `get_state` hasPendingAsyncWork, and `session_settled` once nothing can; `cancel_subagent` answers `{ cancelled }` (omp@18.22.0 docs/rpc.md "Yield vs settled", "Cancelling subagents"). OmO speaks the same pi RPC without them, so it stays on OmpProcess.
+class OmpRuntimeProcess extends OmpProcess {
+	private pending = false;
+	private readonly runs = new RunKeys();
+	private ended = false;
+	private readonly cancels = new Map<string, (cancelled: boolean) => void>();
+	constructor(proc: Subprocess<"pipe", "pipe", "pipe">, idPrefix: string) {
+		super(proc, idPrefix);
+		const gone = () => {
+			this.ended = true;
+			for (const answer of [...this.cancels.values()]) answer(false);
+		};
+		void this.exited.then(gone, gone);
+	}
+	awaitingAsync(): boolean {
+		return this.pending && !this.ended;
+	}
+	cancelWorker(id: string): Promise<{ cancelled: boolean }> {
+		if (this.ended) return Promise.resolve({ cancelled: false });
+		const { promise, resolve } = Promise.withResolvers<{ cancelled: boolean }>();
+		const request = this.write({ type: "cancel_subagent", subagentId: this.runs.nameOf(id) });
+		const answer = (cancelled: boolean) => {
+			clearTimeout(timer);
+			this.cancels.delete(request);
+			resolve({ cancelled });
+		};
+		const timer = setTimeout(() => answer(false), CANCEL_WAIT_MS);
+		this.cancels.set(request, answer);
+		return promise;
+	}
+	protected rekey(events: AgentEvent[]): AgentEvent[] {
+		return this.runs.rekey(events);
+	}
+	protected observe(f: Frame): void {
+		if (f.type === "agent_end") {
+			if (f.awaitingAsyncWork === true) this.pending = true;
+			else if (f.isTerminal !== false) this.pending = false;
+		} else if (f.type === "session_settled") this.pending = false;
+		else if (f.type === "response") {
+			if (f.command === "get_state" && f.success && typeof f.data?.hasPendingAsyncWork === "boolean") this.pending = f.data.hasPendingAsyncWork;
+			if (f.id) this.cancels.get(f.id)?.(f.success === true && f.data?.cancelled === true);
+		}
 	}
 }
 
@@ -354,7 +429,7 @@ export const omp: RuntimeAdapter = {
 			cwd: o.cwd,
 			env: withoutApiKeys({ PI_CACHE_RETENTION: "long", ...process.env, ...o.env, DOTZ_RUNTIME: "omp" }),
 		});
-		const agent = new OmpProcess(proc, o.role === "orchestrator" ? "o" : "h");
+		const agent = new OmpRuntimeProcess(proc, o.role === "orchestrator" ? "o" : "h");
 		if (key) agent.setModel(`${key.id}/${key.models[0].id}`);
 		return agent;
 	},

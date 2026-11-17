@@ -405,6 +405,8 @@ export const maxLiveView = () => {
 	const fixed = convMaxLive();
 	return fixed ? { max: fixed, reason: "설정(conversations.max_live)으로 고정" } : capacity.view();
 };
+/** Silent workers count: a long wait writes nothing, and the park would end it (the lanes' reply-voice stop, laneidle.ts). Work the omp process reports in frames counts too. */
+export const convWorkers = (c: Conv, file = c.o.orch.sessionFile): number => runningOmoWorkers(file) + quietOmoWork(file).length + c.o.liveWorkers();
 export const convs = createConvSessions({
 	on: () => (on ??= convSessionsOn()),
 	quick: () => (quickOn ??= convQuickChatOn()),
@@ -416,8 +418,7 @@ export const convs = createConvSessions({
 	wire: c => wiring!(c),
 	dataDir: DATA_DIR,
 	history: historyEvents,
-	// Silent workers count: a long wait writes nothing, and the park would end it (the lanes' reply-voice stop, laneidle.ts).
-	workers: (c, file = c.o.orch.sessionFile) => runningOmoWorkers(file) + quietOmoWork(file).length,
+	workers: convWorkers,
 	workerPin: () => omoSelector(workersOf(selectorOf(orchestratorModel()))),
 	kindModel: key => convKindModel(DATA_DIR, key),
 	log: hubLog,

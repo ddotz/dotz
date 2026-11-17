@@ -21,3 +21,13 @@ test("중단 and 다시 맡기기 of a background worker are routes that say pla
 		expect(((await res.json()) as { error?: string }).error).toBe("이 작업을 찾을 수 없어요");
 	}
 });
+
+test("중단 of a worker key (<name>~<run>) in a named session says plainly there is no such worker, whichever session is named", async () => {
+	const route = makeRoute({ busyNow: () => [], restartGateway: () => "", restartGatewayNow: () => "" });
+	const post = (path: string) => route(new Request(`http://127.0.0.1${path}`, { method: "POST", headers: { "x-dotz-token": HUB_TOKEN }, body: "{}" }));
+	for (const source of ["orchestrator", "lane:nobody", "conv:ch:nobody", "unknown"]) {
+		const res = await post(`/api/workers/Reviewer~k1.2/cancel?source=${encodeURIComponent(source)}`);
+		expect(res.status).toBe(404);
+		expect(((await res.json()) as { error?: string }).error).toBe("이 작업을 찾을 수 없어요");
+	}
+});

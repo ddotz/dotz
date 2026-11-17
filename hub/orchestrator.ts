@@ -7,7 +7,7 @@ import { existsSync, readFileSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { ledgerIn, loadLedger, openRequestsBlock } from "./recall-parts.ts";
 import { createNightly } from "./nightly-fresh.ts";
-import { emitEventActivity, runningSubagents, statusActivity } from "./activity.ts";
+import { emitEventActivity, endSubagents, statusActivity } from "./activity.ts";
 import { pendingAsksBlock } from "./asks.ts";
 import { workersOf } from "./lanegates.ts";
 import { cfg, chainAfter, compactAtFor, DATA_DIR, DEFAULTS, fallbackChain, HUB_TOKEN, log, NAME, now, orchestratorModel, parseSelector, selectorOf, TZ, tzLabel, writeAtomic } from "./config.ts";
@@ -22,6 +22,7 @@ import { pinnedLimitNotice } from "./accounts-api.ts";
 import { authStamp, blockText, limitAccount, limitKind, markTold, noteBlock, noteRecovered, ownerRetryMs, providerOf, recoveryText, watchAuth } from "./limit-alert.ts";
 import { markDeep } from "./deepmark.ts";
 import { runtimeFor } from "./runtime/index.ts";
+import { createOmpFeed, createWorkerHold } from "./worker-hold.ts";
 import { writeOrchestratorProfile } from "./runtime/omo.ts";
 import { atTime, Chain, ERROR_STREAK_STOP, ErrorStreak, failsOver, failureReason, hubChain, keyedSelector, type Move, quotaResetAt, Reverter, revertWhy } from "./fallback.ts";
 import type { AgentError, AgentProcess, RuntimeAdapter } from "./runtime/types.ts";
@@ -33,7 +34,7 @@ import { checkSoon as checkAccountSoon } from "./account-rules.ts";
 import { handover, lastAnswerAt, newOrchState, recallText } from "./orchestrator-parts.ts";
 import { noteModelChange } from "./model-guard.ts";
 import { orchStuck, takeSnapshot } from "./stuck.ts";
-import { stopFound, type StopFound } from "./ownerstop.ts";
+import { createOwnerCancel, stopFound, type StopFound } from "./ownerstop.ts";
 
 const ROTATE_BYTES = 50e6;
 // The compaction point of a session: the running model's own (config context.models, the 컨텍스트 screen) or
@@ -104,8 +105,12 @@ export function createOrchestrator(opts: OrchOpts) {
 	// The runtime of the running process, chosen at each start().
 	let adapter: RuntimeAdapter | undefined;
 	const orchestratorPid = (): number | undefined => proc?.pid;
+	const feed = createOmpFeed({ source: opts.source, process: () => proc, omp: () => adapter?.id === "omp", free: () => !rotating && !restarting && !compacting() });
+	const { count: workerCount, live: liveWorkers, list: ompWorkers, tell } = feed;
+	const hold = createWorkerHold({ process: () => proc, live: liveWorkers, log: line => log(`${who} ${line}`) });
+	const restartWhenFree = (why: string): void => hold.run(why, () => restart(why));
 	// A turn with no progress for stuckTurnMs() is aborted (its request stays open), then restarted when the abort does not end it (hub/stuck.ts).
-	const stuck = orchStuck({ key: opts.key, pid: orchestratorPid, sessionFile: () => orch.sessionFile, working: () => orch.status === "working", busy: () => runningSubagents(opts.source) > 0 || compacting(), abort: () => ((turnFailed = true), proc?.abort()), restart: why => restart(why, true), alert: text => onAlert(`${NAME}: ${text}`) });
+	const stuck = orchStuck({ key: opts.key, pid: orchestratorPid, sessionFile: () => orch.sessionFile, working: () => orch.status === "working", busy: () => workerCount() > 0 || compacting(), abort: () => ((turnFailed = true), proc?.abort()), restart: why => restart(why, true), alert: text => onAlert(`${NAME}: ${text}`) });
 	let stopping = false;
 	let rotating = false;
 	let restarting = false;
@@ -227,7 +232,7 @@ export function createOrchestrator(opts: OrchOpts) {
 		transientTimer = undefined;
 		probeAfterStart = true;
 		replayAfterStart = true; // a parked session exited without asking for it
-		restart("automatic resume after an error");
+		restartWhenFree("automatic resume after an error");
 	}
 	// Nothing runs that the resume would cut, and the owner did not stop this session.
 	const canResume = (): boolean => (orch.status === "idle" || orch.status === "stopped") && orch.stoppedBy !== "owner";
@@ -333,7 +338,7 @@ export function createOrchestrator(opts: OrchOpts) {
 	}
 	// At an idle moment: act on a spend cap reached during the turn, or go back to an earlier entry whose limit has reset.
 	function settleChain(): boolean {
-		if (!chain || orch.status !== "idle" || runningSubagents(opts.source) > 0) return false;
+		if (!chain || orch.status !== "idle" || workerCount() > 0) return false;
 		if (capped) {
 			const reached = capped;
 			capped = undefined;
@@ -365,7 +370,7 @@ export function createOrchestrator(opts: OrchOpts) {
 			resumeTimer = undefined;
 			pauseAlerted = false;
 			noteResuming();
-			restart("pause timer ended");
+			restartWhenFree("pause timer ended");
 		});
 	}
 
@@ -416,10 +421,10 @@ export function createOrchestrator(opts: OrchOpts) {
 						else if (pendingRestart) {
 							const why = pendingRestart;
 							pendingRestart = "";
-							restart(`${why}, after the turn`);
+							restartWhenFree(`${why}, after the turn`);
 						} else if (pendingModel) {
 							pendingModel = false;
-							if (!switchInPlace()) restart("model or effort change");
+							if (!switchInPlace()) restartWhenFree("model or effort change");
 						} else {
 							proc?.refreshUsage();
 							flushCompact(orch.ctx, port);
@@ -515,7 +520,7 @@ export function createOrchestrator(opts: OrchOpts) {
 					// A model/effort change that arrived during the compaction: a set_model mid-compaction cancels it.
 					if (pendingModel && !compacting() && !rotating && orch.status === "idle") {
 						pendingModel = false;
-						if (!switchInPlace()) restart("model or effort change");
+						if (!switchInPlace()) restartWhenFree("model or effort change");
 					}
 					// Owner prompts that arrived during the compaction go in now (OmO refuses a prompt while a requested
 					// compaction runs).
@@ -677,12 +682,15 @@ export function createOrchestrator(opts: OrchOpts) {
 	}
 
 	// What the session is doing as far as being at rest goes: the compaction ahead of time and the nightly fresh start read the same facts.
-	const restFacts = (): RestFacts => ({ alive: Boolean(proc), canAbort: Boolean(adapter?.caps.abortCompact), idle: orch.status === "idle", switching: rotating || restarting || rotateWhenIdle || pendingRestart || pendingModel, failing: Boolean(orch.error) || errorStreak.stopped, held: held.length + unstarted.length, workers: runningSubagents(opts.source), limitHold: Boolean(resumeTimer), quietMs: Date.now() - lastTurnEnd });
+	const restFacts = (): RestFacts => ({ alive: Boolean(proc), canAbort: Boolean(adapter?.caps.abortCompact), idle: orch.status === "idle", switching: rotating || restarting || rotateWhenIdle || pendingRestart || pendingModel, failing: Boolean(orch.error) || errorStreak.stopped, held: held.length + unstarted.length, workers: workerCount(), limitHold: Boolean(resumeTimer), quietMs: Date.now() - lastTurnEnd });
 	// The nightly handover (hygiene.ts, hub/nightly-fresh.ts): the main session every night (orchestrator.nightly_fresh), any session past `limitBytes`.
 	const nightly = createNightly({ who, every: () => opts.key === "main" && cfg.orchestrator?.nightly_fresh !== false, bytes: () => (proc && orch.sessionFile && existsSync(orch.sessionFile) ? statSync(orch.sessionFile).size : undefined), facts: restFacts, stale: () => Boolean(orch.sessionFile && adapter?.summaryStale?.(orch.sessionFile)), compact: () => requestAhead(orch.ctx, port, who, "nightly fresh start"), ctx: () => orch.ctx, rotate: () => rotate(), open: () => loadLedger(ledgerIn(dirname(opts.stateFile))).length });
 	const nightlyHandover = nightly.ask;
 
 	function rotate(): void {
+		if (proc && !rotating) hold.run("rotating to a fresh session", rotateNow);
+	}
+	function rotateNow(): void {
 		if (!proc || rotating) return;
 		log(`${who} context ${orch.ctx.tokens} tokens; rotating to a fresh session`);
 		rotateWhenIdle = false;
@@ -774,6 +782,7 @@ export function createOrchestrator(opts: OrchOpts) {
 			proc = undefined;
 			orch.status = "stopped";
 			stuck.reset();
+			if (adapter?.id === "omp") endSubagents(opts.source);
 			clearTimeout(errorHold);
 			abandonCompact(orch.ctx, "the orchestrator process exited");
 			if (unstarted.length) log(`${who} exited with ${unstarted.length} prompt(s) it never started; holding them for the next process`);
@@ -1013,16 +1022,10 @@ export function createOrchestrator(opts: OrchOpts) {
 
 	// The owner's 중단 (web stop button, /abort): besides the turn, what it set going ends too (outbound.ts registers the hook: request and
 	// steered messages closed, background workers cancelled). An interrupt that sends a new message right after uses abort() alone.
-	let ownerCancel: () => string | undefined = () => undefined;
-	const setOwnerCancel = (fn: () => string | undefined): void => {
-		ownerCancel = fn;
-	};
-	// Others holding that conversation's messages back (intake's burst, the web queue) drop them too (2026-10-28: a just-sent one restarted a turn).
-	const cancelHooks: ((target: string) => void)[] = [];
-	const onOwnerCancel = (fn: (target: string) => void): void => void cancelHooks.push(fn);
+	const ownerCancel = createOwnerCancel();
+	const { setClose: setOwnerCancel, onCancel: onOwnerCancel } = ownerCancel;
 	function cancelByOwner(): StopFound {
-		const target = ownerCancel();
-		if (target) for (const f of cancelHooks) f(target);
+		const target = ownerCancel.fire();
 		const found = stopFound(opts.key, !!proc && orch.status === "working", !!target, () => orch.status === "working");
 		if (proc && (found.running || target)) found.running ? stuck.ownerAbort(() => proc?.abort(true)) : proc.abort(true); // grace only for a running turn: on an idle one no turn_end disarms it
 		return found;
@@ -1057,9 +1060,9 @@ export function createOrchestrator(opts: OrchOpts) {
 		return true;
 	}
 
-	return { key: opts.key, source: opts.source, orch, orchestratorPid, setTurnHeader, setResumeExtra, setWorkerHandlers, setNoticeHandler, setAlertHandler, setErrorHandler, setRestartedHandler, setStuckHandler: stuck.setHandler, setStuckGuard: stuck.setGuard, resumeAfterError, canResume, resumeNow, liftLimit, limitPaused, limitModel, setIdleHandler, setAnswerHandlers, nightlyHandover, start, keepaliveSupported, deliver, steer, stop, park, restart, applyModelChange, applyChainChange, applyAccountChange, applyAccountPin, abort, setOwnerCancel, onOwnerCancel, cancelByOwner, compact, lastTurnEndAt: () => lastTurnEnd, inKeepalive: () => inKeepalive, heldCount: () => held.length + unstarted.length, turnFailed: () => turnFailed };
+	return { key: opts.key, source: opts.source, orch, orchestratorPid, setTurnHeader, setResumeExtra, setWorkerHandlers, setNoticeHandler, setAlertHandler, setErrorHandler, setRestartedHandler, setStuckHandler: stuck.setHandler, setStuckGuard: stuck.setGuard, resumeAfterError, canResume, resumeNow, liftLimit, limitPaused, limitModel, setIdleHandler, setAnswerHandlers, nightlyHandover, start, keepaliveSupported, deliver, steer, stop, park, restart, applyModelChange, applyChainChange, applyAccountChange, applyAccountPin, abort, setOwnerCancel, onOwnerCancel, cancelByOwner, compact, lastTurnEndAt: () => lastTurnEnd, inKeepalive: () => inKeepalive, heldCount: () => held.length + unstarted.length, turnFailed: () => turnFailed, liveWorkers, cancelWorker: (id: string) => proc?.cancelWorker?.(id), tell, ompWorkers };
 }
 export type Orchestrator = ReturnType<typeof createOrchestrator>;
 
 export const main = createOrchestrator({ key: "main", stateFile: join(DATA_DIR, "orchestrator.json"), source: "orchestrator", keepalive: true });
-export const { orch, orchestratorPid, setTurnHeader, setNoticeHandler, setAlertHandler, setErrorHandler, setRestartedHandler, resumeAfterError, resumeNow, setIdleHandler, setAnswerHandlers, nightlyHandover, start, keepaliveSupported, deliver, steer, stop, restart, applyModelChange, applyChainChange, applyAccountChange, applyAccountPin, abort, setOwnerCancel, onOwnerCancel, cancelByOwner, compact, turnFailed } = main;
+export const { orch, orchestratorPid, setTurnHeader, setNoticeHandler, setAlertHandler, setErrorHandler, setRestartedHandler, resumeAfterError, resumeNow, setIdleHandler, setAnswerHandlers, nightlyHandover, start, keepaliveSupported, deliver, steer, stop, restart, applyModelChange, applyChainChange, applyAccountChange, applyAccountPin, abort, setOwnerCancel, onOwnerCancel, cancelByOwner, compact, turnFailed, liveWorkers } = main;

@@ -59,11 +59,22 @@ export function emitEventActivity(source: string, ev: AgentEvent): void {
 
 // Subagents (task-tool workers) of each agent process, from the runtime's subagent events. Kept as one current list
 // per source (finished ones for 10 min) and streamed whole on every change.
-export type Subagent = { id: string; agent?: string; description?: string; status: "running" | "done" | "failed" | "aborted"; tool?: string; intent?: string; started_at: number; updated_at: number };
+export type Subagent = { id: string; agent?: string; description?: string; status: "running" | "done" | "failed" | "aborted"; tool?: string; intent?: string; model?: string; thinking?: string; name?: string; started_at: number; updated_at: number };
+/** A subagent with the transcript file its runtime reported (server-side only: the page never gets it). */
+export type SubagentFile = Subagent & { transcript?: string };
 const subagents = new Map<string, Map<string, Subagent>>();
 // Transcript file of each subagent (`<source>\n<id>` -> path); server-side only, never sent to the UI.
 const transcripts = new Map<string, string>();
 const FINISHED_KEEP_MS = 10 * 60_000;
+
+function purgeFinished(source: string, list: Map<string, Subagent>): void {
+	for (const [key, s] of list) {
+		if (s.status === "running" || Date.now() - s.updated_at <= FINISHED_KEEP_MS) continue;
+		list.delete(key);
+		transcripts.delete(`${source}\n${key}`);
+	}
+	if (!list.size) subagents.delete(source);
+}
 
 function trackSubagent(source: string, u: SubagentUpdate): void {
 	let list = subagents.get(source);
@@ -77,29 +88,42 @@ function trackSubagent(source: string, u: SubagentUpdate): void {
 		status: u.status,
 		tool: u.tool ?? prev?.tool,
 		intent: u.intent ? scrub(u.intent).slice(0, 120) : prev?.intent,
+		model: u.model ?? prev?.model,
+		thinking: u.thinking ?? prev?.thinking,
+		name: u.name ?? prev?.name,
 		started_at: prev?.started_at ?? Date.now(),
 		updated_at: Date.now(),
 	});
-	for (const [key, s] of list) {
-		if (s.status === "running" || Date.now() - s.updated_at <= FINISHED_KEEP_MS) continue;
-		list.delete(key);
-		transcripts.delete(`${source}\n${key}`);
-	}
+	purgeFinished(source, list);
 	broadcast({ kind: "subagents", source, items: [...list.values()] });
 }
 
 // Task workers still running under one omp process (a lane's turn can end while its background workers keep going).
 export const runningSubagents = (source: string): number => [...(subagents.get(source)?.values() ?? [])].filter(s => s.status === "running").length;
+export const quietSubagents = (source: string, quietMs: number, at = Date.now()): Subagent[] => [...(subagents.get(source)?.values() ?? [])].filter(s => s.status === "running" && at - s.updated_at >= quietMs);
 // The process is gone, so are its workers; their entries would otherwise stay "running" forever.
 export function endSubagents(source: string): void {
 	const list = subagents.get(source);
 	if (!list) return;
-	for (const s of list.values()) if (s.status === "running") s.status = "aborted";
+	for (const s of list.values()) {
+		if (s.status !== "running") continue;
+		s.status = "aborted";
+		s.updated_at = Date.now();
+	}
+	purgeFinished(source, list);
 	broadcast({ kind: "subagents", source, items: [...list.values()] });
 }
 
 export function subagentLists(): Record<string, Subagent[]> {
+	for (const [source, list] of [...subagents]) purgeFinished(source, list);
 	return Object.fromEntries([...subagents].map(([source, list]) => [source, [...list.values()]]));
+}
+
+/** One source's subagents with each one's transcript file: what bgwork.ts builds omp's background-worker records from. */
+export function subagentsOf(source: string): SubagentFile[] {
+	const list = subagents.get(source);
+	if (list) purgeFinished(source, list);
+	return [...(subagents.get(source)?.values() ?? [])].map(s => ({ ...s, transcript: transcripts.get(`${source}\n${s.id}`) }));
 }
 
 // OmO hands a refused nested task spawn (its depth limit) back as plain tool text, not as an error (omo-task.js; seen

@@ -28,8 +28,8 @@ const ownerName = (b: string): string =>
 		.replace(/^lane (\S+) background workers \((\d+)\)$/, "세션 $1 (워커 $2개)")
 		.replace(/^lane (\S+) \((\d+) background workers\)$/, "세션 $1 (워커 $2개)")
 		.replace(/^lane (\S+)$/, "세션 $1")
-		.replace(/^orchestrator background workers(?: \((\d+)\))?$/, (_, n) => `메인 대화 워커${n ? ` ${n}개` : ""}`)
-		.replace(/^conversation session (\S+) background workers(?: \((\d+)\))?$/, (_, k, n) => `대화 ${k} 워커${n ? ` ${n}개` : ""}`)
+		.replace(/^orchestrator background (workers|jobs)(?: \((\d+)\))?$/, (_, kind, n) => `메인 대화 ${kind === "jobs" ? "작업" : "워커"}${n ? ` ${n}개` : ""}`)
+		.replace(/^conversation session (\S+) background (workers|jobs)(?: \((\d+)\))?$/, (_, k, kind, n) => `대화 ${k} ${kind === "jobs" ? "작업" : "워커"}${n ? ` ${n}개` : ""}`)
 		.replace(/^conversation session (\S+)$/, "대화 $1");
 
 // The one alert of a restart that waited past the cap: what still runs, and the owner's choice. Nothing is killed on its own.

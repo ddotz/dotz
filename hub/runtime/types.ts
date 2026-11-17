@@ -27,7 +27,7 @@ export interface RuntimeCaps {
 export type ActivityRow = Omit<Activity, "ts" | "kind" | "source">;
 
 // A task worker's state as the runtime reported it, normalised; the hub keeps the list (activity.ts).
-export type SubagentUpdate = { id: string; agent?: string; description?: string; status: "running" | "done" | "failed" | "aborted"; tool?: string; intent?: string; transcript?: string };
+export type SubagentUpdate = { id: string; agent?: string; description?: string; status: "running" | "done" | "failed" | "aborted"; tool?: string; intent?: string; transcript?: string; model?: string; thinking?: string; name?: string };
 
 export type AgentError = {
 	text: string;
@@ -90,6 +90,8 @@ export interface AgentProcess {
 	setModel?(selector: string): void;
 	// Start receiving task-worker updates (subagent events).
 	watchSubagents(): void;
+	awaitingAsync?(): boolean;
+	cancelWorker?(id: string): Promise<{ cancelled: boolean }>;
 	// `force` is the unignorable kill; the hub decides when to escalate.
 	kill(force?: boolean): void;
 }
