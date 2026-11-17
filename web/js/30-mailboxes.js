@@ -232,7 +232,7 @@ function mxMoveOpen(anchor, keys) {
 // Rows the move takes out of the list leave first; the rest of the list is drawn again without them.
 function mxRowsOut(keys) {
   const rows = [...document.querySelectorAll("#mon-tl > .mr[data-t]")].filter(r => keys.includes(r.dataset.t) && !mxIn(r.dataset.t));
-  for (const r of rows) MBOX.rows.delete(r.dataset.t);
+  mbRowsForget(rows);
   return rows.length ? Promise.all(rows.map(r => motionGone(r))) : null;
 }
 // POST /api/mailbox/move: the rows say they are busy until the hub answers; then the card changes (box, why) and the rows that leave this box fold away.
@@ -258,7 +258,7 @@ async function mxPut(keys, id) {
   const a = MX.accts.get(MX.of.get(keys[0])), from = keys.every(t => mxBoxOf(t).id === mxBoxOf(keys[0]).id) ? mxBoxOf(keys[0]) : null, who = mxAddr(keys), kw = keys.length === 1 ? mxKw(MAILS.get(keys[0]).subject) : "";
   const r = await mxMove(keys, id);
   if (!r) return;
-  MBOX.sel.clear(); mbPaintBar();
+  mbSelClear(); mbPaintBar();
   MX.teach = { keys, to: a.byId.get(id), from, who, kw, was: r.was || {}, done: "" };
   mxTeachShow();
 }

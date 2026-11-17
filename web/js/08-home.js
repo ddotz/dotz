@@ -94,6 +94,7 @@ function homeMoveActs(id, inChat, add) {
 
 // Last meaningful line of each running lane, kept from the live activity stream (fetched once per lane for the first sight).
 const LAST = {}, LAST_ASKED = new Set();
+const laneLastPut = (name, s) => { LAST[name] = s; };
 let homeSoonT;
 const homeSoon = () => { clearTimeout(homeSoonT); homeSoonT = setTimeout(() => { if (current === "home") renderHome(); }, 500); };
 // A tool call said in Korean: the kind verb, plus the file's base name for a read or an edit ("파일 수정 · conversations.ts").
@@ -635,6 +636,7 @@ const projTargets = () => Object.keys((S && S.channels && S.channels.work) || {}
 const isMailT = t => t.startsWith("mail:");
 const mailOf = t => t.slice(5);
 const MAILS = new Map();
+const mailPut = (t, m) => { MAILS.set(t, m); }, mailDrop = t => { MAILS.delete(t); }, mailMark = (t, patch) => { Object.assign(MAILS.get(t), patch); };
 // The other computers' items (34-peer-monitoring.js). of: conversation target -> {pc, key: the list item it sits under}; seen: unread/read pair last taken from a snapshot.
 const PQ = { list: [], loaded: false, busy: false, again: false, at: 0, t: 0, of: new Map(), apps: new Map(), seen: new Map() };
 // An app's settings conversation (hub/app-settings.ts, 32-app-settings.js): target settings:<app>, answered by the orchestrator.
@@ -683,6 +685,7 @@ try { const v = localStorage.getItem(TARGET_KEY); if (v && v !== "alert" && vali
 // A settings conversation (a monitor's or an app's) shows the orchestrator busy only for a turn its own message started: TURN = target -> when that message
 // was sent, until the answer comes. A peer's monitor is answered on that computer, so this one's status never applies to it.
 const TURN = new Map();
+const turnStart = (t, at) => { TURN.set(t, at); }, turnEnd = t => { TURN.delete(t); };
 function targetInfo(t) {
   if (isRelayT(t)) return { status: "", alive: true, known: true };
   if (isSettingsT(t)) { const o = (S && S.orchestrator) || {}, busy = o.status === "working" || o.status === "starting"; return { status: busy && (!TURN.has(t) || PQ.of.has(t)) ? "idle" : o.status || "", alive: true, known: true }; }

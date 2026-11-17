@@ -74,7 +74,7 @@ function laneIngest(p, a) {
 // SSE "activity": keep every loaded session live, even while another view is open.
 function laneActivity(a) {
   const name = typeof a.source === "string" && a.source.startsWith("lane:") ? a.source.slice(5) : null;
-  if (name) { const s = actLine(a); if (s && LAST[name] !== s) { LAST[name] = s; homeSoon(); } }
+  if (name) { const s = actLine(a); if (s && LAST[name] !== s) { laneLastPut(name, s); homeSoon(); } }
   const p = name && LP[name];
   if (!p) return;
   if (p.loading) p.queue.push(a);

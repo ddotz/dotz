@@ -425,7 +425,7 @@ function chatPush(en, bulk) {
     if (CS.group) workDone(CS.group);
     csGroupDrop();
     const e = en.m;
-    if (isSettingsT(target) && eventTarget(e) === target) { if (e.kind === "message") TURN.set(target, Date.parse(e.ts) || Date.now()); else if (e.kind === "out" && !e.update_key) TURN.delete(target); }
+    if (isSettingsT(target) && eventTarget(e) === target) { if (e.kind === "message") turnStart(target, Date.parse(e.ts) || Date.now()); else if (e.kind === "out" && !e.update_key) turnEnd(target); }
     const pkey = e.kind === "out" && e.update_key ? `${e.target ?? ""}|${e.update_key}` : "";
     const et = eventTarget(e) || "", laneT = isLaneT(et) ? et : "";
     // One progress note per target+key (newest text at the newest position; a session keeps only its newest note);

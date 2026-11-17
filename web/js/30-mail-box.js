@@ -16,6 +16,7 @@ ICONS.mailopen = "M3 10l9-6 9 6v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1zM3 10l9 6 9-6";
 ICONS.replyoff = "M10 7l-5 5 5 5M5 12h9a6 6 0 0 1 6 6M4 4l16 16";
 ICONS.flag = "M6 21V4h12l-2.5 4 2.5 4H6";
 const MBOX = { sel: new Set(), vis: [], boxes: new Map(), cs: null, drawn: 100, fk: "", rows: new Map(), pass: new Set(), held: new Map() };
+const mbUnselect = t => { MBOX.sel.delete(t); }, mbSelClear = () => { MBOX.sel.clear(); }, mbRowsForget = rows => { for (const r of rows) MBOX.rows.delete(r.dataset.t); };
 const mbKey = t => t.slice(5);
 // Whether the mail's mailbox will follow an action. Every action still works in dotz either way: `can` only says what the hub can repeat in the
 // real mailbox (owner 2026-11-02: read/unread must always be there). A card with no `can` at all is an older hub, which knows only the delete route.
@@ -63,7 +64,7 @@ function mbFresh(scope, box) {
 function mbRowsOut(keys) {
   const keep = mailFilterOf()[2], gone = keys.filter(t => !MAILS.has(t) || !keep(MAILS.get(t), t));
   const rows = [...document.querySelectorAll("#mon-tl > .mr[data-t]")].filter(r => gone.includes(r.dataset.t));
-  for (const r of rows) MBOX.rows.delete(r.dataset.t);   // a row that fades out is not kept
+  mbRowsForget(rows);   // a row that fades out is not kept
   return rows.length ? Promise.all(rows.map(r => motionGone(r))) : null;
 }
 // Whether an action takes the mail out of the list that is shown: that row stays, and the button says it waits, until the hub has answered.
@@ -83,8 +84,8 @@ function mbApply(t, a) {
   else if (a === "unread") m.read = false;
   else if (a === "archive" || a === "unarchive") m.archived = a === "archive";
   else if (a === "star" || a === "unstar") m.starred = a === "star";
-  else if (a === "trash") { MAILS.delete(t); convDrop(t); MBOX.sel.delete(t); }
-  return () => { Object.assign(m, was); ts(t).unread = unread; if (a === "trash") { MAILS.set(t, m); if (conv) convLastSet(t, conv); } };
+  else if (a === "trash") { mailDrop(t); convDrop(t); MBOX.sel.delete(t); }
+  return () => { Object.assign(m, was); ts(t).unread = unread; if (a === "trash") { mailPut(t, m); if (conv) convLastSet(t, conv); } };
 }
 const MB_DONE = { read: n => (n > 1 ? TX("mail.done_n.read", { n }) : TX("mail.done.read")), unread: n => (n > 1 ? TX("mail.done_n.unread", { n }) : TX("mail.done.unread")), archive: n => (n > 1 ? TX("mail.done_n.archive", { n }) : TX("mail.done.archive")), unarchive: n => (n > 1 ? TX("mail.done_n.unarchive", { n }) : TX("mail.done.unarchive")), trash: n => (n > 1 ? TX("mail.done_n.trash", { n }) : TX("mail.done.trash")), star: n => (n > 1 ? TX("mail.done_n.star", { n }) : TX("mail.done.star")), unstar: n => (n > 1 ? TX("mail.done_n.unstar", { n }) : TX("mail.done.unstar")) };
 const MB_BACK = { archive: "unarchive", unarchive: "archive", read: "unread", unread: "read", star: "unstar", unstar: "star" };
@@ -120,7 +121,7 @@ async function mbRun(keys, action, quiet = false, btn = null) {
   if (!quiet && said) toast(said, res.some(x => x.ok === false));
   else if (!quiet && res.some(x => x.ok === false)) toast(TX("mail.err.failed"), true);
   else if (!quiet && done.length && MB_DONE[action]) toast(MB_DONE[action](done.length), false, MB_BACK[action] && action !== "trash" && !/star$/.test(action) ? { label: TX("common.undo"), onclick: () => mbRun(done, MB_BACK[action]) } : undefined);
-  if (legacy) for (const t of done) PQ.of.delete(t);
+  if (legacy) for (const t of done) pqUnbind(t);
   Promise.allSettled([convLoad(), loadIntegrations()]);
   return done;
 }
@@ -199,7 +200,7 @@ async function mbFyi(keys, on = true, btn = null) {
   if (on && keys.length > MB_FYI_ASK && !await ask(TX("mail.fyi.title"), TX("mail.fyi.ask_n", { n: keys.length }), TX("mail.fyi.go_n", { n: keys.length }))) return [];
   const was = new Map(keys.map(t => { const m = MAILS.get(t); return [t, { reply: m.reply, unreplied: m.unreplied }]; })), byPc = new Map(), mark = { reply: on ? "fyi" : "needs", unreplied: !on }, keep = mailFilterOf()[2];
   // A row that leaves this list stays until the hub said yes; the others change at once.
-  const wait = new Set(keys.filter(t => !keep({ ...MAILS.get(t), ...mark }, t))), put = t => { Object.assign(MAILS.get(t), mark); MBOX.sel.delete(t); };
+  const wait = new Set(keys.filter(t => !keep({ ...MAILS.get(t), ...mark }, t))), put = t => { mailMark(t, mark); MBOX.sel.delete(t); };
   for (const t of keys) {
     if (!wait.has(t)) put(t);
     const pc = pqPc(t), k = pc ? pc.url : "";
@@ -216,7 +217,7 @@ async function mbFyi(keys, on = true, btn = null) {
     } catch (e) { g.keys.forEach(t => bad.add(t)); return e.message; }
   }));
   unwait();
-  for (const t of bad) if (!wait.has(t) && MAILS.has(t)) Object.assign(MAILS.get(t), was.get(t));
+  for (const t of bad) if (!wait.has(t) && MAILS.has(t)) mailMark(t, was.get(t));
   const done = keys.filter(t => !bad.has(t));
   for (const t of done) if (wait.has(t) && MAILS.has(t)) put(t);
   const leaving = mbRowsOut(done.filter(t => wait.has(t)));

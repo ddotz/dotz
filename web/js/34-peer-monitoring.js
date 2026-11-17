@@ -15,6 +15,7 @@ const pqSig = sel => [pqSelf(), sel.pc ? sel.pc.name : ""];
 // The computer an item of the snapshot `p` came from, as every peer item carries it: its machine name, address and its own bot's name
 // (the snapshot's `bot`, hub/peer-monitor.ts; the machine name for an older gateway without it), never this computer's bot.
 function pqPcOf(p) { return { name: p.name, url: p.url, bot: (p.items && p.items.bot) || p.name }; }
+const pqBind = (t, pc, key) => { PQ.of.set(t, { pc, key }); }, pqUnbind = t => { PQ.of.delete(t); };
 function pqPc(t) { return (PQ.of.get(String(t)) || {}).pc || null; }
 function pqProxy(pc, path) { return `/api/peer/proxy?pc=${enc(pc.url)}&p=${enc(path)}`; }
 // An app of another computer is named `<key>~<hash of that computer>` here (its key may also be an app of this one); the computer gets the plain key.
@@ -189,10 +190,10 @@ function pqMail(c, pc, itemKey) {
   const t = String(c.target);
   if (!PQ.of.has(t) && CONV.has(t) && !intgHidden(t)) return null;
   PQ.of.set(t, { pc, key: itemKey });
-  if (c.mail) MAILS.set(t, c.mail);
+  if (c.mail) mailPut(t, c.mail);
   if (c.last) convLastSet(t, c.last);
   const sig = `${c.unread | 0}|${c.read || ""}`;
-  if (PQ.seen.get(t) !== sig) { PQ.seen.set(t, sig); ts(t).unread = c.unread | 0; READ[t] = c.read || null; }
+  if (PQ.seen.get(t) !== sig) { PQ.seen.set(t, sig); ts(t).unread = c.unread | 0; readMark(t, c.read || null); }
   return t;
 }
 

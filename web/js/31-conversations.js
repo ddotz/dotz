@@ -42,7 +42,7 @@ const convEnded = t => { const l = isLaneT(t) && ((S && S.lanes) || []).find(x =
 // A live message (called by ingestMsg once per new event): moves the row's preview and, unless the owner is looking at that
 // conversation's bottom right now, adds to its unread count (server rule: hub/conversations.ts).
 function convNote(e, t, was) {
-  if (isMailT(t) && e.kind === "mail" && !MAILS.has(t)) MAILS.set(t, { subject: e.subject || "", from: e.from || "", source: e.source || "", at: e.ts, summary: e.summary || "", ...(e.todo ? { todo: e.todo } : {}), ...(e.questions ? { questions: e.questions } : {}), preview: e.preview || "", attachments: e.attachments || [], html: !!e.html });
+  if (isMailT(t) && e.kind === "mail" && !MAILS.has(t)) mailPut(t, { subject: e.subject || "", from: e.from || "", source: e.source || "", at: e.ts, summary: e.summary || "", ...(e.todo ? { todo: e.todo } : {}), ...(e.questions ? { questions: e.questions } : {}), preview: e.preview || "", attachments: e.attachments || [], html: !!e.html });
   const last = convLastOf(e);
   if (!last) return;
   convNewer(t, last);
@@ -66,7 +66,7 @@ function convDropGone(items, cursor, whole) {
   const now = new Set(items.filter(it => it.mail).map(it => it.target)), gone = [...convHadMail].filter(t => !now.has(t) && !PQ.of.has(t) && (whole ? true : convInRange(t, cursor)));
   convHadMail = whole ? now : new Set([...convHadMail].filter(t => !gone.includes(t)).concat([...now]));
   if (!gone.length) return;
-  for (const t of gone) { MAILS.delete(t); convDrop(t); MBOX.sel.delete(t); ts(t).unread = 0; }
+  for (const t of gone) { mailDrop(t); convDrop(t); mbUnselect(t); ts(t).unread = 0; }
   if (current === "chat" && gone.includes(target)) go("monitoring", MON.sel || "i:mail");
   mbRefresh();
 }
@@ -95,7 +95,7 @@ const monitorsLive = coalesced(() => loadMonitors());
 function convApply(items) {
   for (const it of items) {
     const t = it.target;
-    if (it.mail) MAILS.set(t, it.mail);
+    if (it.mail) mailPut(t, it.mail);
     convNewer(t, it.last);
     let unread = it.unread | 0;
     const local = READ[t], last = CONV.get(t);
@@ -153,6 +153,7 @@ function convMore() {
   })().finally(() => { CVP.busy = null; });
   return CVP.busy;
 }
+const readMark = (t, at) => { READ[t] = at; }, convRepaint = () => { convSig = ""; convSchedule(); };
 // Another device (or this one) moved a read position.
 function convOnRead(e) {
   const t = e.target, at = e.ts;
@@ -211,7 +212,7 @@ function chatOpen() {
     }
     // reloaded onto a new shell (23-installable-app-web.js): the place the owner was at, unless they were at the bottom
     const r = SHELL_RESTORE;
-    if (r && r.key === CV.key && !r.stick && r.anchor) { SHELL_RESTORE = null; CV.pinTs = r.anchor.ts; CV.pinOff = r.anchor.off; chatPin("at"); return; }
+    if (r && r.key === CV.key && !r.stick && r.anchor) { shellRestoreDone(); CV.pinTs = r.anchor.ts; CV.pinOff = r.anchor.off; chatPin("at"); return; }
     chatPin(CV.divNode ? "div" : isMailT(CV.key) ? "top" : "bottom");   // a mail reads top-down: the first unread, else the start of the mail
     return;
   }

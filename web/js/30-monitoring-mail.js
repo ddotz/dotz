@@ -225,12 +225,12 @@ async function mailDelete(t, btn = null) {
   try { await api(`/api/mail/${t.slice(5)}`, "DELETE"); }
   catch (e) { unrow(); unwait(); throw e; }
   unrow(true); unwait(true);
-  MAILS.delete(t); convDrop(t);
+  mailDrop(t); convDrop(t);
   const p = pc && PQ.list.find(x => x && x.url === pc.url);
   if (p && p.items) p.items.conversations = (p.items.conversations || []).filter(c => String(c.target) !== t);
   if (monCtx === t && current === "chat") go("monitoring", MON.sel);   // deleted from its open conversation: back to the list
   const leaving = mbRowsOut([t]);
-  PQ.of.delete(t); monSigReset(true);
+  pqUnbind(t); monSigReset(true);
   if (leaving) leaving.then(monSchedule); else monSchedule();
   toast(TX("mon.mail.deleted"));
   await Promise.allSettled([pc ? pqLoad() : convLoad(), loadIntegrations(), pc ? null : loadNotices()]);

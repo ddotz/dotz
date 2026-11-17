@@ -523,7 +523,7 @@ async function kkLoadRooms() {
   if (KK.open && !kkRoom(KK.open) && !KK.failed) kkClose();
   kkPaintRooms();
   if (KK.open) kkPaintChat();
-  convSig = ""; convSchedule();   // the 채팅 list's 메일 · 카카오톡 card
+  convRepaint();   // the 채팅 list's 메일 · 카카오톡 card
 }
 function kkSwitch(on, label, key, change, small) {
   return el("button", { class: `kk-sw${on ? " on" : ""}${small ? " sm" : ""}`, type: "button", role: "switch", "aria-checked": on ? "true" : "false", "aria-label": label, "data-k": key, onclick: ev => { ev.stopPropagation(); change(!on); } }, el("span", { class: "kk-knob" }));

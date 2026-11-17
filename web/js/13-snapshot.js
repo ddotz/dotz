@@ -42,7 +42,7 @@ async function snapSeed(t) {
   if (isFixedT(t)) dedupKeyed(s);
   s.hmore = rec.hmore; s.amore = rec.amore; s.ahist = rec.ahist;
   tdSeed(t, rec.todo);
-  if (READ[t] === undefined && rec.read) READ[t] = rec.read;
+  if (READ[t] === undefined && rec.read) readMark(t, rec.read);
   cvSeeded();
   renderAll();
   return true;

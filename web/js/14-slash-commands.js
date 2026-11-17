@@ -276,7 +276,7 @@ async function sendChat(how) {
     sendCommand(text); return;
   }
   const mode = how || (isWorking(t) ? "steer" : undefined), reply = rpTake();
-  if (isSettingsT(t) && !TURN.has(t)) TURN.set(t, Date.now() - 5000);
+  if (isSettingsT(t) && !TURN.has(t)) turnStart(t, Date.now() - 5000);
   try {
     // One id per send, kept while it fails, so a retry of the same text is the same send to the hub (hub/routes.ts cid).
     if (!sendCid || sendCid.text !== text) sendCid = { text, id: Date.now().toString(36) + Math.random().toString(36).slice(2, 10) };

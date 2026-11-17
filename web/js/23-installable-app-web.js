@@ -59,7 +59,8 @@ if ("serviceWorker" in navigator) navigator.serviceWorker.addEventListener("mess
 const SHELL_KEY = "dotz-shell-reload", SHELL_LOOP_MS = 60000, SHELL_AWAY_MS = 3 * 60000;
 const shellMem = () => { try { return JSON.parse(sessionStorage.getItem(SHELL_KEY) || "null") || {}; } catch { return {}; } };
 let SHELL_RESTORE = (() => { const m = shellMem(); if (!m.at || m.used || Date.now() - m.at > 30000) return null; try { sessionStorage.setItem(SHELL_KEY, JSON.stringify({ ...m, used: true })); } catch {} return m; })();
-if (SHELL_RESTORE) setTimeout(() => { SHELL_RESTORE = null; }, 15000);
+const shellRestoreDone = () => { SHELL_RESTORE = null; };
+if (SHELL_RESTORE) setTimeout(shellRestoreDone, 15000);
 const shellSafe = () => !ta.value.trim() && !ATT.length && !OV.length && !SUBD && !document.querySelector("dialog[open]:not([data-leaving])");
 function shellApply() {
   shellPending = false;

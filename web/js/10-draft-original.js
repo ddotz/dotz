@@ -42,7 +42,7 @@ function orgFill(pane, d, t, retry) {
   if (s.load !== "ok") { note(TX("decision.org.loading")); return; }
   const m = s.data, pc = t ? pqPc(t) : null;
   if (m.kind === "comment") { orgComment(pane, m); return; }
-  if (pc) PQ.of.set(`mail:${m.key}`, { pc, key: m.key });   // its body and files are read from the computer that owns the mail
+  if (pc) pqBind(`mail:${m.key}`, pc, m.key);   // its body and files are read from the computer that owns the mail
   const files = mailRealFiles(m.attachments);   // the body's own pictures are drawn in it, not listed as files
   // 보낸 사람 / 받는 사람 / 참조 come from the mail view's own header (30-mail-thread.js), so every place a mail is read names them the same way
   const pp = mailPeople(m, m.text, m.subject), blank = v => !String(v || "").replace(/[\s\-–—]+/g, "");   // a lone "-" names nobody

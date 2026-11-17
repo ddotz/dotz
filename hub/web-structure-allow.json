@@ -15,26 +15,7 @@
       "rawdialog:kkViewer",
       "rawdialog:lightboxAt"
     ],
-    "ownerWrites": {
-      "LAST|18-lanes.js": 1,
-      "MAILS|30-mail-box.js": 4,
-      "MAILS|30-monitoring-mail.js": 1,
-      "MAILS|30-monitoring.js": 1,
-      "MAILS|31-conversations.js": 3,
-      "MAILS|34-peer-monitoring.js": 1,
-      "MBOX|30-mailboxes.js": 2,
-      "MBOX|31-conversations.js": 1,
-      "PQ|10-draft-original.js": 1,
-      "PQ|30-mail-box.js": 1,
-      "PQ|30-monitoring-mail.js": 1,
-      "READ|13-snapshot.js": 1,
-      "READ|34-peer-monitoring.js": 1,
-      "SHELL_RESTORE|31-conversations.js": 1,
-      "TURN|11-todo-strip.js": 2,
-      "TURN|14-slash-commands.js": 1,
-      "convSig|30-kakao.js": 1,
-      "convSig|44-relay-views.js": 1
-    },
+    "ownerWrites": {},
     "rawNet": {
       "01-forbidden-pair.js": 1,
       "11-mailbody.js": 2,

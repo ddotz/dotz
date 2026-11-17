@@ -26,7 +26,7 @@ async function rvLoad(t, quiet) {
   if (relayCur() === t) rvRefresh();
 }
 // How each relay screen (the SCREENS relay column, RELAY_VIEWS) draws itself again; hub/relay-views-web.test.ts keeps the keys equal to that column.
-const rvDraw = () => ({ home: renderHome, projects: renderProjects, monitoring: renderMonitoring, settings: renderSettings, chat: () => { convSig = ""; convSchedule(); } });
+const rvDraw = () => ({ home: renderHome, projects: renderProjects, monitoring: renderMonitoring, settings: renderSettings, chat: () => { convRepaint(); } });
 function rvRefresh() {
   const draw = rvDraw()[current];
   if (draw) draw();
