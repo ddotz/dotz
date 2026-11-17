@@ -10,7 +10,7 @@ import { checkBrief } from "./lanegates.ts";
 import { newCtx, type Compaction, requestCompact } from "./context.ts";
 import { join } from "node:path";
 import { spawn, runtimeMismatch, resumeLane, harnessName, sessionRuntime } from "./lanerun.ts";
-import { prompt } from "./laneprompt.ts";
+import { isCommand, prompt } from "./laneprompt.ts";
 import { footer } from "./lanefooter.ts";
 import { checkSoon as checkAccountSoon } from "./account-rules.ts";
 import { clearAsk, withHeld, report } from "./lanereport.ts";
@@ -18,9 +18,10 @@ import { baseLanguage } from "./language.ts";
 import { hubChain, Chain, Reverter } from "./fallback.ts";
 import { runtimeFor } from "./runtime/index.ts";
 import { statusActivity, runningSubagents, quietSubagents } from "./activity.ts";
+import { laneLive, restartWhenFree, runningNames } from "./lanehold.ts";
 import { quietOmoWork, runningOmoWorkers, STALL_IDLE_MS } from "./bgwork.ts";
 import { laneClosed, unfinishedWork, withWorkers } from "./laneunfinished.ts";
-import { backgroundWork } from "./todo.ts";
+import { backgroundWork, openMonitor } from "./todo.ts";
 import { parseTone } from "./tone.ts";
 import { activeCount, laneLimits, launchWait, waitingLanes } from "./lanelimits.ts";
 import { startMachineSampler } from "./limits.ts";
@@ -28,6 +29,8 @@ import { trackTimer } from "./shutdown.ts";
 import { diskGuardTick } from "./diskguard.ts";
 import { ABORT_GRACE_MS, takeSnapshot } from "./stuck.ts";
 import { markPark } from "./agent-tree.ts";
+import { endedFor, exclusive, laneClosing, stopProcess, whenClosed } from "./laneclose.ts";
+import type { AgentProcess } from "./runtime/types.ts";
 
 const NAME_RE = /^[a-z0-9][a-z0-9-]{0,31}$/;
 
@@ -104,7 +107,7 @@ function begin(lane: Lane, brief: string): void {
 	log(`lane ${lane.name} launched in ${lane.cwd} (${lane.model}, workers ${laneWorkerModel(lane)}, up to ${lane.workerSlots})`);
 }
 
-/** How an owner message reached a lane: "steered" into its running step, "received" by an idle process, "held" (paused on a limit, goes in with the resume), "resumed" (stopped session started again). */
+/** How an owner message reached a lane: "steered" into its running step, "received" by an idle process, "held" (paused on a limit, goes in with the resume), "resumed" (stopped session started again; so is a message that reached a process on its way out, which goes to the one that takes over from it). */
 export type LaneDelivery = "steered" | "received" | "held" | "resumed";
 
 /** `gateway`: the gateway's own prompt (a stall nudge), not the orchestrator asking: the lane's answer to it stays an untagged
@@ -151,15 +154,63 @@ export function sendToLane(name: string, text: string, ref?: string, gateway = f
 		persist(lane);
 	}
 	if (!/^\[owner via /.test(text) && text !== "/budget-ok") hooks.mainWrote(name);
-	const how: LaneDelivery = !lane.proc ? "resumed" : lane.status === "working" || lane.startingOn === lane.proc ? "steered" : lane.status === "rate-limited" ? "held" : "received";
+	const closing = lane.proc && laneClosing(lane) ? lane.proc : undefined;
+	if (!gateway && !isCommand(text) && lane.restored?.length) {
+		text = msg().heldMessages(text, lane.restored);
+		lane.restored = undefined;
+	}
+	const how: LaneDelivery = !lane.proc || closing ? "resumed" : lane.status === "working" || lane.startingOn === lane.proc ? "steered" : lane.status === "rate-limited" ? "held" : "received";
 	// The owner's "ultrathink": the prompt carries a line whatever its delivery, so a held one or the one that resumes a stopped lane keeps it
 	// (hub/deepmark.ts). A steered message starts no new turn, so there the line reads as a hint.
 	if (deep && !gateway) text = markDeep(text, { name: `lane ${lane.name}`, runtime: runtimeFor("lane").id, model: parseSelector(lane.model).model, onFallback: Boolean(lane.chained) || (lane.chain?.active ?? 0) > 0 }, log);
-	if (!gateway && lane.proc && lane.status === "working") (lane.steered ??= []).push(text);
+	if (closing) whenClosed(lane, closing, () => deliverLate(lane, closing, text, ref, gateway));
+	else deliver(lane, text, ref, gateway);
+	return how;
+}
+
+function deliver(lane: Lane, text: string, ref: string | undefined, gateway: boolean): void {
+	if (!gateway && lane.proc && lane.status === "working" && !isCommand(text)) (lane.steered ??= []).push(text);
 	if (lane.proc) prompt(lane, text);
 	else resumeLane(lane, text);
-	ownerNotes.asked(name, ref);
-	return how;
+	ownerNotes.asked(lane.name, ref);
+}
+
+function mustResume(lane: Lane, text: string): void {
+	if (!lane.sessionFile || !existsSync(lane.sessionFile)) throw new Error(`lane ${lane.name} is not running and has no session to resume`);
+	const wrong = runtimeMismatch(lane);
+	if (!wrong) return;
+	lane.pendingHandover = text;
+	throw wrong;
+}
+
+function deliverLate(lane: Lane, proc: AgentProcess, text: string, ref: string | undefined, gateway: boolean): void {
+	if (lanes.get(lane.name) !== lane) return;
+	if (endedFor(lane, proc) === "shutdown") {
+		(lane.held ??= []).push(text);
+		persist(lane);
+		return;
+	}
+	const closing = lane.proc && laneClosing(lane) ? lane.proc : undefined;
+	if (closing) return whenClosed(lane, closing, () => deliverLate(lane, closing, text, ref, gateway));
+	try {
+		if (!lane.proc) mustResume(lane, text);
+		deliver(lane, text, ref, gateway);
+	} catch (e) {
+		const why = (e as Error).message;
+		log(`lane ${lane.name}: a message sent while its process was stopping was not delivered: ${why}`);
+		ownerNotes.asked(lane.name, ref);
+		ownerNotes.lost(lane.name);
+		report(lane, `[fail] 멈추는 중인 세션에 보낸 메시지를 전하지 못했어요 (${why}). 전하지 못한 메시지를 다시 보내세요:\n${text.slice(0, 1000)}`, true);
+	}
+}
+
+function endedMeanwhile(lane: Lane, old: AgentProcess): boolean {
+	const why = endedFor(lane, old);
+	if (why === "stop") {
+		lane.quiet = false;
+		setStatus(lane, "exited");
+	}
+	return why !== undefined;
 }
 
 function known(name: string): Lane {
@@ -204,7 +255,7 @@ export function stopLane(name: string): void {
 		lane.waiting = undefined;
 		setStatus(lane, "exited");
 	}
-	proc?.kill();
+	stopProcess(lane, "stop");
 	void (proc?.exited ?? Promise.resolve()).then(() => {
 		const note = dropWorktree(lane);
 		if (note) log(`lane ${name}: ${note}`);
@@ -217,7 +268,13 @@ export function abortLane(name: string): void {
 	lane.ownerStopped = true;
 	persist(lane);
 	const p = lane.proc;
-	p.abort();
+	// why(protocol): omp's plain abort requeues stranded steers into a fresh turn, abort_and_restore_queue takes them back instead (omp@18.22.0 docs/rpc.md "abort_and_restore_queue payload")
+	const omp = lane.runtime === "omp";
+	if (omp && lane.steered?.length) {
+		lane.restored = [...(lane.restored ?? []), ...lane.steered];
+		lane.steered = undefined;
+	}
+	p.abort(omp);
 	// A process that ignores the abort stays "working": killed after the grace and resumed on the same session idle, with no continue text
 	// and not counted as a recovery (the owner stopped it; laneevents.ts turn_end disarms this).
 	clearTimeout(lane.abortTimer);
@@ -241,6 +298,8 @@ export function resumeByName(name: string, text?: string): void {
 			clearAsk(lane);
 			persist(lane);
 		}
+		const closing = laneClosing(lane) ? lane.proc : undefined;
+		if (closing) return whenClosed(lane, closing, () => deliverLate(lane, closing, text, undefined, true));
 		return prompt(lane, text);
 	}
 	const wrong = runtimeMismatch(lane);
@@ -252,24 +311,35 @@ export function resumeByName(name: string, text?: string): void {
 	resumeLane(lane, text || msg().laneOwnerResumed);
 }
 
-// Restarts the omp process of a lane, resuming its session (a turn that was running is cut off, so it is told to continue,
-// with `note` when the caller knows why).
+/** Restarts the omp process of a lane, resuming its session; a turn that was running is told to continue, with `note` when the caller knows why. The lane's omp subagents die with the process: the owner's own restart is refused while they run, any other waits for them (at most WORKER_HOLD_MS, hub/lanehold.ts) and returns at once. */
 export async function restartLane(name: string, note = msg().laneOwnerRestarted, byOwner = false): Promise<void> {
 	const lane = known(name);
+	const live = lane.runtime === "omp" && lane.proc ? laneLive(lane) : 0;
+	if (live > 0 && byOwner) throw new Error(`lane ${name} has ${live} omp subagent(s) running (${runningNames(lane).join(", ") || "background work"}); a restart would cut them. Wait for them to finish, or stop the lane.`);
 	if (byOwner) lane.ownerStopped = undefined;
-	if (!lane.proc) return resumeByName(name);
-	if (!lane.sessionFile || !existsSync(lane.sessionFile)) throw new Error(`lane ${name} has no session yet; try again in a few seconds`);
+	if (live > 0 && !lane.restarting) {
+		restartWhenFree(lane, "restart", () => void exclusive(lane, () => restartNow(lane, note)).catch(e => log(`lane ${name} held restart failed: ${(e as Error).message}`)));
+		return;
+	}
+	return exclusive(lane, () => restartNow(lane, note));
+}
+
+async function restartNow(lane: Lane, note: string): Promise<void> {
+	if (!lane.proc) return resumeByName(lane.name);
+	if (!lane.sessionFile || !existsSync(lane.sessionFile)) throw new Error(`lane ${lane.name} has no session yet; try again in a few seconds`);
 	// The process runs on the runtime it started on; a runtime switched in config since then cannot take its session over.
 	const wrong = runtimeMismatch(lane);
 	if (wrong) throw wrong;
 	// A worker or shell under an idle lane dies with the process (the memory guard asks for this too), so it is brought back with word of them.
 	const wasWorking = lane.status === "working" || lane.status === "starting";
-	const jobs = laneJobs(lane).map(j => j.what);
+	const running = runningNames(lane);
+	const jobs = [...new Set([...laneJobs(lane).map(j => j.what), ...running])];
 	const cut = wasWorking || ((laneBusy(lane) || jobs.length > 0) && !laneClosed(lane));
 	const old = lane.proc;
 	lane.quiet = true;
-	old.kill();
+	stopProcess(lane);
 	await old.exited;
+	if (endedMeanwhile(lane, old)) return;
 	if (cut) resumeLane(lane, withWorkers(note, jobs));
 	else if (spawn(lane, true)) setStatus(lane, "idle");
 }
@@ -283,6 +353,10 @@ export async function setLaneModel(name: string, selector: string): Promise<"liv
 	persist(lane);
 	if (!lane.proc) return "next-start";
 	if (switchLaneInPlace(lane)) return "live";
+	if (lane.runtime === "omp" && laneLive(lane) > 0) {
+		lane.accountStale = true;
+		return "next-start";
+	}
 	await restartLane(name);
 	return "restarted";
 }
@@ -296,17 +370,22 @@ export function setLaneWorkerModel(name: string, selector: string | undefined, b
 	lane.workerByLane = byLane && selector ? true : undefined;
 	persist(lane);
 	const next = laneWorkerModel(lane), was = lane.activeWorkerModel;
-	if (lane.proc) {
+	// why(protocol): an omp process keeps the worker model its overlay named at spawn, and a per-call model conflicts with the overlay's agentModelOverrides (omp@18.22.0 docs/task.md), so such a lane restarts at its next idle moment instead of being told
+	const pinned = lane.proc !== undefined && lane.runtime === "omp";
+	if (lane.proc && !pinned) {
 		lane.activeWorkerModel = next;
 		if (!byLane && was !== next) {
 			const note = msg().workerSwitched(next);
 			if (lane.status === "working") lane.proc.send(note, "steer");
 			else lane.workerNext = note;
 		}
+	} else if (pinned && was !== next) {
+		lane.accountStale = true;
+		restartStaleLanes();
 	}
 	log(`lane ${name} workers -> ${next}${byLane ? " (recorded by the lane)" : ""}`);
 	broadcast({ kind: "lanes", lane: name, status: lane.status, live: laneLive(lane), was_live: laneLive(lane) });
-	return lane.proc ? "live" : "next-start";
+	return lane.proc && !pinned ? "live" : "next-start";
 }
 function switchLaneInPlace(lane: Lane): boolean {
 	if (!lane.proc?.setModel || lane.chained || lane.status !== "idle" || (lane.chain && lane.chain.active !== 0)) return false;
@@ -342,17 +421,24 @@ export function refreshLaneStats(name: string): void {
 export async function rotateLane(name: string, why: string): Promise<void> {
 	const lane = known(name);
 	if (!lane.proc || lane.status !== "idle") throw new Error(`lane ${name} is not idle`);
+	if (lane.restarting) throw new Error(`lane ${name} is being restarted`);
+	if (lane.runtime === "omp" && laneLive(lane) > 0) throw new Error(`lane ${name} has omp subagent(s) running (${runningNames(lane).join(", ") || "background work"}); a rotation would cut them`);
+	return exclusive(lane, () => rotateNow(lane, why));
+}
+
+async function rotateNow(lane: Lane, why: string): Promise<void> {
 	const previous = lane.sessionFile;
-	const old = lane.proc;
+	const old = lane.proc!;
 	lane.quiet = true;
-	old.kill();
+	stopProcess(lane);
 	await old.exited;
+	if (endedMeanwhile(lane, old)) return;
 	lane.ctx = newCtx();
 	lane.retainNext = lane.contractDue = undefined; // the fresh session's handover already carries the nudge and the footer
 	spawn(lane, false);
 	const tail = previous && existsSync(previous) ? runtimeFor("lane").recentExchanges(previous) : undefined;
-	const brief = join(dir(name), "brief.md");
-	const lastReport = join(dir(name), "report.md");
+	const brief = join(dir(lane.name), "brief.md");
+	const lastReport = join(dir(lane.name), "report.md");
 	// The fresh session has neither the launch prompt nor a compaction hook to carry the lane's identity and rules: the footer goes in with it.
 	prompt(lane, `${msg().laneRotated(why, lane.cwd, brief, lastReport)}${previous ? `\n\n${msg().laneHandover(previous, tail)}` : ""}${footer(lane)}`);
 	lane.silent = { lastText: lane.lastText };
@@ -387,7 +473,7 @@ export function handoverLane(name: string, text?: string): void {
 	lane.silent = { lastText: lane.lastText };
 }
 
-const closesTurn = (text: string) => ["done", "ask"].includes(parseTone(text).tone ?? "");
+const closesTurn = (text = "") => ["done", "ask"].includes(parseTone(text).tone ?? "");
 
 export { laneClosed };
 
@@ -432,6 +518,7 @@ export function restoreLanes(): string[] {
 		}
 		const wrong = runtimeMismatch(lane);
 		if (wrong && rec.status !== "exited") log(`lane ${name} not restored: its session was written by ${wrong.from}, lanes run on ${wrong.to} (a message to it offers a handover)`);
+		if (wrong && rec.status !== "exited" && (rec.status !== "idle" || unfinishedWork(lane))) hooks.notice(lane, wrong.message);
 		const session = !wrong && Boolean(rec.sessionFile && existsSync(rec.sessionFile));
 		if (session && (rec.status === "working" || rec.status === "starting" || rec.status === "rate-limited")) {
 			resumeLane(lane, msg().laneGatewayRestarted);
@@ -462,9 +549,13 @@ export function restoreLanes(): string[] {
 // A shell left running after a [done] or an [ask] (a dev server, say) is not what the lane waits on.
 // Only a live process is busy: a queued lane or one whose spawn failed has nothing a gateway restart could cut off (the Mac mini's
 // restart waited on the dead acme-allowance-review, 2026-10-29). `shells` false leaves the shell out: the idle stop bounds it itself.
-const waitsOnShell = (lane: Lane): boolean => backgroundWork(lane.sessionFile) > 0 && !closesTurn(lane.lastText);
+const waitsOnShell = (lane: Lane): boolean => (backgroundWork(lane.sessionFile) > 0 || lane.proc?.awaitingAsync?.() === true) && !closesTurn(lane.lastText);
+/** The watch an omp or OmO lane waits on in its own background job, for its run line: a lane waiting on it is not resting with a plan left. */
+export const laneWatching = (lane: Lane): string | undefined => openMonitor(lane.sessionFile) ?? (lane.proc?.awaitingAsync?.() === true ? msg().laneShellJob : undefined);
+/** Background workers a lane has running, whichever store its runtime keeps them in. */
+export const laneWorkers = (lane: Lane): number => Math.max(runningOmoWorkers(lane.sessionFile), runningSubagents(`lane:${lane.name}`));
 export const laneBusy = (lane: Lane, shells = true): boolean =>
-	(Boolean(lane.proc) && (lane.status === "working" || lane.status === "starting" || runningOmoWorkers(lane.sessionFile) > 0 || (shells && (waitsOnShell(lane) || lane.proc?.awaitingAsync?.() === true)))) ||
+	(Boolean(lane.proc) && (lane.status === "working" || lane.status === "starting" || runningOmoWorkers(lane.sessionFile) > 0 || (shells && waitsOnShell(lane)))) ||
 	runningSubagents(`lane:${lane.name}`) > 0;
 
 // What an idle stop would end with the lane, and since when nothing was heard of it: its silent workers and the shell it waits on.
@@ -484,7 +575,7 @@ export function parkLane(lane: Lane): boolean {
 	lane.resumeDue = unfinishedWork(lane) ? { state: "due" } : undefined;
 	persist(lane);
 	markPark(lane.proc.pid); // a routine stop: what the lane left running for the owner stays (hub/agent-tree.ts)
-	lane.proc.kill();
+	stopProcess(lane);
 	return true;
 }
 
@@ -498,7 +589,7 @@ export function shutdownLanes(): void {
 			persist(lane);
 		}
 		lane.quiet = true;
-		lane.proc.kill();
+		stopProcess(lane, "shutdown");
 	}
 }
 
@@ -533,10 +624,15 @@ async function restartPaused(lane: Lane): Promise<void> {
 	lane.limitPause = false;
 	clearTimeout(lane.resumeTimer);
 	lane.resumeTimer = undefined;
+	return exclusive(lane, () => pausedNow(lane));
+}
+
+async function pausedNow(lane: Lane): Promise<void> {
 	const old = lane.proc!;
 	lane.quiet = true;
-	old.kill();
+	stopProcess(lane);
 	await old.exited;
+	if (endedMeanwhile(lane, old)) return;
 	setStatus(lane, "idle");
 	resumeLane(lane, msg().laneRate);
 }

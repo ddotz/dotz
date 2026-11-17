@@ -100,6 +100,9 @@ export async function readEvents(lane: Lane, proc: AgentProcess): Promise<void> 
 				lane.steered = undefined;
 				laneStuck(lane).begin();
 				break;
+			case "user":
+				if (lane.steered?.length) lane.steered = lane.steered.filter(t => !ev.text.includes(t));
+				break;
 			case "assistant":
 				if (ev.stop === "error" && lane.prompted !== undefined && REFUSED_RE.test(ev.error.text)) {
 					refusedTurn(lane, lane.prompted);
@@ -117,11 +120,15 @@ export async function readEvents(lane: Lane, proc: AgentProcess): Promise<void> 
 					laneRanOn(lane);
 					laneRecovered(lane);
 				}
-				if (ev.text) {
+				if (ev.stop === "error") {
+					clearTimeout(lane.watchdog);
+					lane.startingOn = undefined;
+				}
+				if (ev.stop !== "error" && ev.text) {
 					lane.lastText = nextLastText(lane, ev.text);
 					lane.unreported = true;
 					// A text that ends in a tool call, after an owner message, is the lane's short answer to it (the footer asks for one).
-					if (ev.stop !== "error") ownerNotes.text(lane.name, ev.text, ev.stop !== "other");
+					ownerNotes.text(lane.name, ev.text, ev.stop !== "other");
 				}
 				// A compaction error is handled at the compaction event below (retried once, then recover()), not retried here.
 				else if (ev.stop === "error" && !ev.error.compaction) {
@@ -188,6 +195,7 @@ export async function readEvents(lane: Lane, proc: AgentProcess): Promise<void> 
 					recover(lane, COMPACTION_FAILED, wasWorking || Boolean(first?.working));
 				} else {
 					compactFailed.delete(lane.name);
+					lane.ctx.tokens = 0;
 					lane.retainNext = true;
 					// On disk: a restart or a respawn loses the extension's queued re-read, and the next gateway prompt then carries the footer.
 					lane.contractDue = true;
