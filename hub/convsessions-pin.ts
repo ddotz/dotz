@@ -15,7 +15,6 @@ export function createWorkerPins(dirOf: (key: string) => string, pinFor: (key: s
 			if (pin && !ompWorkers()) writeAtomic(file, `${pin}\n`);
 			else rmSync(file, { force: true });
 		},
-		/** Re-pins and tells whether an omp session's workers moved (its process must restart to follow). */
 		movedOnOmp(key: string): boolean {
 			const before = pinned.get(key);
 			this.sync(key);

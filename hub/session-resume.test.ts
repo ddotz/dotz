@@ -295,7 +295,6 @@ test("an omp worker cut off by a killed process brings the parked conversation b
 	expect(b.delivered[0]!.text).toContain("Dozer");
 	const agent = b.agents.get("mail:k1")!;
 	expect(Date.parse(agent.startedAt)).toBeGreaterThan(0);
-	// The woken turn has not run yet: the worker is still owed. Once it ran, it is told.
 	const later = Date.now() + 2 * HOUR;
 	session(w, [], later);
 	agent.status = "idle";
@@ -313,7 +312,6 @@ test("an omp worker that finished or was waited for wakes nobody", async () => {
 	}
 });
 
-// An omp session file cut after its last row for which `keep` holds, as a process killed there leaves it.
 function ompCut(w: World, fixture: string, keep: (row: { type?: string; customType?: string; message?: { role?: string } }) => boolean): void {
 	const { file } = ompTree(fixture, w.dir);
 	const rows = readFileSync(file, "utf8").trimEnd().split("\n");

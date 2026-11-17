@@ -436,7 +436,6 @@ test("ddotz/dotz#44: a gateway nudge leaves the owner's [ask] pending, a stall o
 	await clear(lane.name);
 });
 
-// The lane's omp session, the way omp left it: the fixture's parent file and its workers' transcripts.
 function ompSession(lane: Lanes.Lane, fixture: string): void {
 	lane.sessionFile = ompTree(fixture, join(DATA, "agent-" + lane.name, "omp")).file;
 	persist(lane);
@@ -451,7 +450,6 @@ test("an omp worker cut off by a killed process is named when the sweep brings t
 	expect(unfinishedWork(back)?.workers[0]).toStartWith("Dozer: ");
 	expect(await resumeUnfinished()).toEqual([lane.name]);
 	expect(lastAgent().sent.join("\n")).toContain("Dozer");
-	// It was told, and nothing in the file closes the worker: the lane stopped again is not woken for the same death.
 	await down(back);
 	expect(unfinishedWork(back)).toBeUndefined();
 	const before = spawned();
