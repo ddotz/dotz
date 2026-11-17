@@ -20,9 +20,9 @@ const workTone = w => w.queued ? "" : w.status === "running" || workRecovering(w
 const workFailText = w => (w.cancelled ? TX("base.sub.aborted") : `${TX("base.mark.fail")} · ${w.reason || TX("base.work.no_reason")}`);
 // 중단: the worker's process ends (POST /api/workers/:id/cancel); 다시 맡기기: its request goes to the orchestrator again in its own conversation.
 const workCancel = (id, btn) => busy(btn, async () => {
-  const job = ((S && S.work) || []).find(w => w.id === id);
+  const job = [...((S && S.work) || []), ...((S && S.convs) || []).flatMap(c => c.work || [])].find(w => w.id === id);
   if (!await ask(TX("base.work.stop_title"), job ? TX("base.work.stop_text_job", { description: job.description }) : TX("base.work.stop_text"), TX("common.stop"), true)) return;
-  await api(`/api/workers/${enc(id)}/cancel`, "POST", {});
+  await api(`/api/workers/${enc(id)}/cancel${job && job.source ? `?source=${enc(job.source)}` : ""}`, "POST", {});
   // The work card in the chat shows the stop itself (중단됨, gray dot); a toast is only for a job with no card on screen.
   workRowNote({ id, status: "failed", cancelled: true }, workNow());
   paintSysLines();

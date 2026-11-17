@@ -5,7 +5,7 @@ import { afterEach, expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createConvSessions, type BgWork, type Conv, type ConvDeps, type Prompts } from "./convsessions.ts";
+import { convWorkers, createConvSessions, type BgWork, type Conv, type ConvDeps, type Prompts } from "./convsessions.ts";
 import type { HubEvent } from "./events.ts";
 import { createPrompts } from "./prompts.ts";
 import type { Orchestrator, OrchOpts } from "./orchestrator.ts";
@@ -21,7 +21,7 @@ const tmp = (): string => {
 	return d;
 };
 
-type Fake = { o: Orchestrator; delivered: string[]; parked: number; applied: number; cancels: number; started(): boolean };
+type Fake = { o: Orchestrator; delivered: string[]; parked: number; applied: number; cancels: number; live: number; started(): boolean };
 
 function setup(opts: { on?: boolean; maxLive?: number; idleMin?: number; dir?: string; history?: HubEvent[]; log?: string[]; queue?: Prompts; kindModel?: (key: string) => string | undefined } = {}) {
 	const dir = opts.dir ?? tmp();
@@ -41,6 +41,7 @@ function setup(opts: { on?: boolean; maxLive?: number; idleMin?: number; dir?: s
 			parked: 0,
 			applied: 0,
 			cancels: 0,
+			live: 0,
 			started: () => pid !== undefined,
 			o: {
 				orch: { status: "idle", error: undefined, activeModel: "m", ctx: { tokens: 0, compaction: { state: "idle" } }, rateLimitedUntil: "", pauseKind: "rate", stoppedAt: "", stoppedBy: "", startedAt: "" },
@@ -51,6 +52,7 @@ function setup(opts: { on?: boolean; maxLive?: number; idleMin?: number; dir?: s
 					return true;
 				},
 				heldCount: () => 0,
+				liveWorkers: () => f.live,
 				lastTurnEndAt: () => born,
 				deliver: (text: string) => {
 					pid ??= 4242;
@@ -104,7 +106,7 @@ function setup(opts: { on?: boolean; maxLive?: number; idleMin?: number; dir?: s
 		wire: (c: Conv) => ({ queue: opts.queue ?? queue(c.key), bg: { list: () => [], running: () => 0 } as unknown as BgWork }),
 		dataDir: dir,
 		history: () => opts.history ?? [],
-		workers: () => 0,
+		workers: convWorkers,
 		workerPin: () => "main-pin",
 		kindModel: key => opts.kindModel?.(key),
 		log: line => void opts.log?.push(line),
@@ -343,4 +345,20 @@ test("a prompt that names no target goes to the conversation session's own conve
 	registry.deliverTo(MAIN, "hello", undefined);
 	expect(delivered.at(-1)).toEqual({ key: MAIN, text: "hello", target: undefined });
 	expect(log).toHaveLength(1);
+});
+
+test("an omp session with a running subagent or a pending async wake is never parked or resumed over; with neither it is", () => {
+	const { registry, fakes, tick } = setup({ idleMin: 20 });
+	registry.deliverTo("ch:7", "first", { target: "ch:7", owner: true });
+	const c = registry.get("ch:7")!;
+	const rests = () => registry.resumeSessions(() => false, () => undefined).find(s => s.key === "ch:7")!.resting();
+	tick(21 * 60_000);
+	fakes.get("ch:7")!.live = 1;
+	expect([registry.parkable(c, 0), rests(), convWorkers(c)]).toEqual([false, false, 1]);
+	registry.sweep();
+	expect(registry.live(c)).toBe(true);
+	fakes.get("ch:7")!.live = 0;
+	expect([registry.parkable(c, 0), rests(), convWorkers(c)]).toEqual([true, true, 0]);
+	registry.sweep();
+	expect(registry.live(c)).toBe(false);
 });

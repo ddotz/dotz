@@ -45,7 +45,7 @@ import { setUsageSource, tick as accountTick } from "./account-rules.ts";
 import { onSwitch as onAccountSwitch } from "./account-sticky.ts";
 import { announceUsedChanges } from "./accounts-api.ts";
 import { activeHarness, runtimeFor } from "./runtime/index.ts";
-import { applyAccountChange as holdOrchestratorKeepalive, applyAccountPin, orch, orchBusy, steer as steerOrchestrator, setErrorHandler, setIdleHandler as setOrchIdleHandler, setRestartedHandler, start as startOrchestrator, stop as stopOrchestrator, turnFailed } from "./orchestrator.ts";
+import { applyAccountChange as holdOrchestratorKeepalive, applyAccountPin, liveWorkers, main as mainOrch, orch, orchBusy, steer as steerOrchestrator, setErrorHandler, setIdleHandler as setOrchIdleHandler, setRestartedHandler, start as startOrchestrator, stop as stopOrchestrator, turnFailed } from "./orchestrator.ts";
 import { restGuard } from "./context.ts";
 import { errorAsk, startResumeWatch, watchSession } from "./orch-error.ts";
 import { interruptedLanes } from "./lanereconnect.ts";
@@ -97,6 +97,7 @@ import { installDotzCommand } from "./dotz-command.ts";
 import { compressResponse } from "./compress.ts";
 import { sends, send, queue, deliver, deliverNow, lastOwner, receiptNote, laneFailed, out, alert, fileRoots, replayPending, replayOpen, installDelivery, clearLeftWebProgress, replies, bgWork, workRows, approvals, convOfTarget, setRefHandled, reconcileMailCards } from "./outbound.ts";
 import { runningOmoWorkers } from "./bgwork.ts";
+import { laneBusyLines, sessionBusyLines } from "./busy-lines.ts";
 import { convs } from "./convsessions.ts";
 import { primaryTarget } from "./session-key.ts";
 import { timeoutMs as outlangTimeoutMs } from "./outlang.ts";
@@ -710,28 +711,18 @@ const DEFER_GRACE_MS = 5 * 60_000;
 function busyNow(): string[] {
 	// The orchestrator's background task workers die with its process. OmO sends no worker frames, so they are counted from its
 	// task store (hub/bgwork.ts), for the orchestrator and every lane; a request deferred to one ([later]) also holds the restart.
-	const running = bgWork.running();
 	// With no worker running, a deferred request holds the restart only for the few minutes its worker needs to show up in the task store:
 	// an older one whose answer went elsewhere held every restart for an hour (2026-10-26, updates received but never applied), and a
 	// restart replays the open prompts anyway.
-	const justDeferred = queue.deferredOpen().some(d => Date.now() - d.at <= DEFER_GRACE_MS);
-	const workers = running ? `orchestrator background workers (${running})` : justDeferred ? "orchestrator background workers" : "";
-	const laneWorkers = (l: { sessionFile?: string }) => runningOmoWorkers(l.sessionFile);
+	const justDeferred = (q: { deferredOpen(): { at: number }[] }): boolean => q.deferredOpen().some(d => Date.now() - d.at <= DEFER_GRACE_MS);
+	const orchestrator = sessionBusyLines("orchestrator", { turn: orchBusy() ?? "", bgRunning: bgWork.running(), subagents: mainOrch.ompWorkers(), live: liveWorkers(), deferred: justDeferred(queue) });
 	// Each conversation session holds a restart the way main does: its turn or compaction, its workers, a request it just deferred.
-	const sessions = convs.conversations().flatMap(c => {
-		const n = c.bg.running();
-		const deferred = c.queue.deferredOpen().some(d => Date.now() - d.at <= DEFER_GRACE_MS);
-		return [orchBusy(c.o.orch) ? `conversation session ${c.key}` : "", n ? `conversation session ${c.key} background workers (${n})` : deferred ? `conversation session ${c.key} background workers` : ""];
-	});
+	const sessions = convs.conversations().flatMap(c => sessionBusyLines(`conversation session ${c.key}`, { turn: orchBusy(c.o.orch) ? `conversation session ${c.key}` : "", bgRunning: c.bg.running(), subagents: c.o.ompWorkers(), live: c.o.liveWorkers(), deferred: justDeferred(c.queue) }));
 	return [
-		orchBusy() ?? "",
-		workers,
+		...orchestrator,
 		...sessions,
 		replies.size() ? "reply" : "",
-		...[...lanes.values()].flatMap(l => {
-			const n = laneWorkers(l);
-			return laneBusy(l) ? [`lane ${l.name}${n ? ` (${n} background workers)` : ""}`] : n ? [`lane ${l.name} background workers (${n})`] : [];
-		}),
+		...[...lanes.values()].flatMap(l => laneBusyLines(l.name, laneBusy(l), runningOmoWorkers(l.sessionFile))),
 	].filter(Boolean);
 }
 // An open owner request with nothing running that could answer it: one bounded wake, no model call otherwise (hub/waitcheck.ts).
@@ -745,7 +736,7 @@ const waitCheck = createWaitCheck({
 		drop: c.queue.dropOpen,
 		busy: () => Boolean(orchBusy(c.o.orch)) || c.o.orch.status === "rate-limited",
 		down: () => c.o.orch.error !== undefined && !c.o.orch.error.probed,
-		workers: () => c.bg.running(),
+		workers: () => Math.max(c.bg.running(), c.o.liveWorkers()),
 		armed: since => allWatches().some(w => w.once && w.to === "orchestrator" && !w.paused && Date.parse(w.created) >= since),
 		lastTurnEndAt: () => c.o.lastTurnEndAt(),
 		wake: (open, last) => void convs.deliverTo(c.key, msg().openRequests(open.map(r => ({ ...r, asked: r.replyTo ? ownerMessage(r.replyTo)?.text : undefined })), last), wakeReply(open[0]!)),

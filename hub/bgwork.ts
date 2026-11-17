@@ -13,7 +13,8 @@
 // when the worker's todo list is still open, the worker closes the list, and that one line becomes the final_response (reportOf).
 import { closeSync, existsSync, openSync, readdirSync, readFileSync, readSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { scrub } from "./activity.ts";
+import { scrub, subagentsOf, type SubagentFile } from "./activity.ts";
+import { cancelOmp, ompRecs, type OmpRec, type StoppedWork } from "./bgwork-omp.ts";
 import { type ResultFile, type ResultLink, resultFiles, resultLinks } from "./result-refs.ts";
 import { failureText } from "./runstate.ts";
 import { previewSource } from "./tone.ts";
@@ -53,6 +54,7 @@ export type BgWork = {
 	/** A failure the session already took up: one of its turns ended after the worker failed (it read OmO's failure notice, or the
 	 * gateway's handover below). Nothing is asked of the owner about it. */
 	handled?: boolean;
+	source?: string;
 };
 
 /** What 중단 answered: done, or why not (an HTTP status for the route). */
@@ -123,6 +125,8 @@ type Rec = {
 	requested_model?: RecModel;
 	resolved_model?: RecModel;
 	effective_model?: RecModel;
+	omp?: true;
+	source?: string;
 };
 
 const CODE_ROOT = join(import.meta.dir, "..");
@@ -244,6 +248,10 @@ type BgWorkDeps = {
 	stallMs?: number;
 	/** Sends a signal to a worker process (default process.kill); 중단 ends the worker with it. */
 	kill?: (pid: number, signal: NodeJS.Signals) => void;
+	ompWorkers?: () => SubagentFile[];
+	cancelOmpWorker?: (id: string) => Promise<{ cancelled: boolean }> | undefined;
+	source?: string;
+	ownerStopped?: (w: StoppedWork) => void;
 };
 // A failure no turn took up this long after it ended is handed over (OmO's own notice wakes the session within seconds).
 export const HANDOVER_AFTER_MS = 3 * 60_000;
@@ -274,6 +282,23 @@ function scanOf(scans: Map<string, Scan>, projects: string, recordAt: (file: str
 	scans.set(projects, scan);
 	return scan;
 }
+
+function readLogTail(store: string | undefined, id: string): string {
+	if (!store) return "";
+	const file = join(store, "logs", `${id}.jsonl`);
+	try {
+		const size = statSync(file).size, len = Math.min(size, REPORT_LOG_TAIL_BYTES), buf = Buffer.alloc(len), fd = openSync(file, "r");
+		try {
+			readSync(fd, buf, 0, len, size - len);
+		} finally {
+			closeSync(fd);
+		}
+		return buf.toString("utf8");
+	} catch {
+		return "";
+	}
+}
+const ompRecOf = (deps: BgWorkDeps, id: string): OmpRec | undefined => ompRecs(deps.ompWorkers?.().filter(s => s.id === id) ?? [], deps.source)[0];
 
 export function createBgWork(deps: BgWorkDeps) {
 	const now = deps.now ?? Date.now;
@@ -337,8 +362,11 @@ export function createBgWork(deps: BgWorkDeps) {
 		}
 		return hit.rec;
 	}
+	const recordsOf = (file: string | undefined): Rec[] => [...(file ? records(file) : []), ...ompRecs(deps.ompWorkers?.() ?? [], deps.source)];
 	/** One job by id, whichever session ran it (hub/workrows.ts): only its own record is read. Undefined when no store holds it. */
 	function byId(id: string, projects: string[]): { work: BgWork; raw: string; created: number } | undefined {
+		const omp = ompRecOf(deps, id);
+		if (omp) return { work: toWork(omp), raw: omp.status, created: stamp(omp.created_at) };
 		const known = storeOf.get(id);
 		const stores = known ? [known] : projects.flatMap(p => readdirSync(p).map(n => join(p, n, "senpi-task")));
 		for (const store of stores) {
@@ -414,28 +442,12 @@ export function createBgWork(deps: BgWorkDeps) {
 	// A finished worker's report: its last message, or the real report when that message only closed its todo list.
 	function reportText(r: Rec): string | undefined {
 		const last = r.final_response;
-		if (!last || !r.task_id || last.trim().length >= TRAILING_MAX_CHARS) return last;
+		if (!last || !r.task_id || !storeOf.has(r.task_id) || last.trim().length >= TRAILING_MAX_CHARS) return last;
 		const known = reports.get(r.task_id);
 		if (known !== undefined) return known;
-		const report = trailingReport(last, readLogTail(r.task_id)) ?? last;
+		const report = trailingReport(last, readLogTail(storeOf.get(r.task_id), r.task_id)) ?? last;
 		reports.set(r.task_id, report);
 		return report;
-	}
-	function readLogTail(id: string): string {
-		const store = storeOf.get(id);
-		if (!store) return "";
-		const file = join(store, "logs", `${id}.jsonl`);
-		try {
-			const size = statSync(file).size, len = Math.min(size, REPORT_LOG_TAIL_BYTES), buf = Buffer.alloc(len), fd = openSync(file, "r");
-			try {
-				readSync(fd, buf, 0, len, size - len);
-			} finally {
-				closeSync(fd);
-			}
-			return buf.toString("utf8");
-		} catch {
-			return "";
-		}
 	}
 
 	function toWork(r: Rec): BgWork {
@@ -453,10 +465,10 @@ export function createBgWork(deps: BgWorkDeps) {
 		if (stoppedAt !== undefined && status !== "done") {
 			status = "failed";
 			ended = stoppedAt;
-		} else if (status === "running" && typeof r.pid === "number" && !alive(r.pid) && stamp(r.recovery_deadline_at) <= now()) {
+		} else if (!r.omp && status === "running" && typeof r.pid === "number" && !alive(r.pid) && stamp(r.recovery_deadline_at) <= now()) {
 			status = "failed";
 			ended = stamp(r.updated_at) || started;
-		} else if (status === "running" && typeof r.pid !== "number" && (now() - (stamp(r.updated_at) || started) > NO_PID_STALE_MS || (r.host_pid !== undefined && !alive(Number(r.host_pid)) && stamp(r.recovery_deadline_at) <= now()))) {
+		} else if (!r.omp && status === "running" && typeof r.pid !== "number" && (now() - (stamp(r.updated_at) || started) > NO_PID_STALE_MS || (r.host_pid !== undefined && !alive(Number(r.host_pid)) && stamp(r.recovery_deadline_at) <= now()))) {
 			status = "failed";
 			ended = stamp(r.updated_at) || started;
 		}
@@ -480,16 +492,14 @@ export function createBgWork(deps: BgWorkDeps) {
 		const reason = stopped ? "직접 중단했어요" : status === "failed" ? failureText(error) : "";
 		const files = status === "done" ? resultFiles(report) : [];
 		const links = status === "done" ? resultLinks(report, [folder ?? "", CODE_ROOT]) : [];
-		return { id: r.task_id!, description, status, ...(queued ? { queued } : {}), started_at: started, ...(status === "running" ? {} : { ended_at: ended || started }), ...(folder ? { folder } : {}), ...(error ? { error } : {}), ...(model ? { model } : {}), ...(reason ? { reason } : {}), ...(stopped ? { cancelled: true } : {}), ...(files.length ? { files } : {}), ...(links.length ? { links } : {}) };
+		return { id: r.task_id!, description, status, ...(queued ? { queued } : {}), started_at: started, ...(status === "running" ? {} : { ended_at: ended || started }), ...(folder ? { folder } : {}), ...(error ? { error } : {}), ...(model ? { model } : {}), ...(reason ? { reason } : {}), ...(stopped ? { cancelled: true } : {}), ...(files.length ? { files } : {}), ...(links.length ? { links } : {}), ...(r.source ? { source: r.source } : {}) };
 	}
 
 	/** Running work (oldest first), then what finished within the last hour (newest first). */
 	function list(): BgWork[] {
-		const file = deps.sessionFile();
-		if (!file) return [];
 		const t = now();
 		const open = deps.deferred().sort((a, b) => a.at - b.at);
-		const works = records(file).map(toWork).filter(w => w.status === "running" || w.status === "stalled" || t - (w.ended_at ?? 0) <= FINISHED_KEEP_MS);
+		const works = recordsOf(deps.sessionFile()).map(toWork).filter(w => w.status === "running" || w.status === "stalled" || t - (w.ended_at ?? 0) <= FINISHED_KEEP_MS);
 		for (const w of works) {
 			// The turn that spawned the worker is its message (an answered or newer message is no reason to move it: owner 2026-10-23);
 			// a worker no turn of ours spawned only stays in the conversation of the latest deferred message before it, tied to no
@@ -589,8 +599,7 @@ export function createBgWork(deps: BgWorkDeps) {
 	}
 
 	function runningWork(file = deps.sessionFile()): BgWork[] {
-		if (!file) return [];
-		const works = records(file).map(toWork);
+		const works = recordsOf(file).map(toWork);
 		// The restart gate polls this while it waits: a stalled worker it no longer waits for is handed to its session from here too.
 		wake(works);
 		return works.filter(w => w.status === "running").sort((a, b) => a.started_at - b.started_at);
@@ -618,6 +627,15 @@ export function createBgWork(deps: BgWorkDeps) {
 	 * stopped from then on. A worker with no process id cannot be ended from here, and that is said instead of claimed done.
 	 */
 	async function cancel(id: string, file = deps.sessionFile()): Promise<CancelResult> {
+		const omp = ompRecOf(deps, id);
+		if (omp) {
+			const stopped = await cancelOmp(omp, deps.cancelOmpWorker, deps.ownerStopped);
+			if (stopped.ok) {
+				cancelled.set(id, now());
+				deps.log?.(`background work ${id} stopped by the owner`);
+			}
+			return stopped;
+		}
 		const rec = file ? records(file).find(r => r.task_id === id) : undefined;
 		if (!rec) return { ok: false, status: 404, error: "이 작업을 찾을 수 없어요" };
 		const st = toWork(rec).status;
@@ -660,5 +678,10 @@ export const runningOmoWork = (sessionFile: string | undefined): BgWork[] => (se
 /** The workers under one session file OmO still lists as running that stopped working (the error says why, when one did). */
 export const quietOmoWork = (sessionFile: string | undefined): BgWork[] => (sessionFile ? anySession.quietWork(sessionFile) : []);
 export const deadOmoWork = (sessionFile: string | undefined): BgWork[] => (sessionFile ? anySession.deadWork(sessionFile) : []);
-/** 중단 for a worker of another session (a lane's). */
-export const cancelOmoWorker = (id: string, sessionFile: string | undefined): Promise<CancelResult> => anySession.cancel(id, sessionFile);
+/** 중단 for a worker of a lane: OmO's from the lane's task store, else omp's, which only the lane's own process can cancel. */
+export async function cancelLaneWorker(id: string, lane: { name: string; runtime?: string; sessionFile?: string; proc?: { cancelWorker?(id: string): Promise<{ cancelled: boolean }> } }, ownerStopped?: (w: StoppedWork) => void): Promise<CancelResult> {
+	const stopped = await anySession.cancel(id, lane.sessionFile);
+	if (stopped.ok || stopped.status !== 404 || lane.runtime !== "omp") return stopped;
+	const omp = ompRecs(subagentsOf(`lane:${lane.name}`).filter(s => s.id === id))[0];
+	return cancelOmp(omp, workerId => lane.proc?.cancelWorker?.(workerId), ownerStopped);
+}

@@ -181,6 +181,10 @@ const sessionBg = (o: Orchestrator, q: ReturnType<typeof createPrompts>) => {
 		paused: () => o.orch.status === "rate-limited",
 		handover: w => void q.deliver(msg().workFailed(w.description, w.id, w.reason || w.error || "이유가 기록되지 않았어요"), to(w)),
 		stalled: w => void q.deliver(msg().workStalled([w]), to(w)),
+		source: o.source,
+		ompWorkers: o.ompWorkers,
+		cancelOmpWorker: id => o.cancelWorker(id),
+		ownerStopped: w => void o.tell(msg().ownerStopped(w.name, w.description)),
 	});
 	o.setResumeExtra(() => {
 		const stalled = bg.takeStalled();
@@ -197,7 +201,9 @@ const taskProjects = () => [...new Set([join(process.env.OMO_CODING_AGENT_DIR ??
 export const workRows = createWorkRows({
 	find: id => {
 		const projects = taskProjects();
-		return projects.length ? omoWorkById(id, projects) : null;
+		const omo = projects.length ? omoWorkById(id, projects) : null;
+		if (omo) return omo;
+		return [bgWork, ...convs.conversations().map(c => c.bg)].map(bg => bg.byId(id, [])).find(Boolean) ?? omo;
 	},
 	answer: workAnswer,
 	replyOf: id => [queue, ...convs.conversations().map(c => c.queue)].map(q => q?.linkOf(id)?.replyTo).find(Boolean),

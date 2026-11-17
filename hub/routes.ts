@@ -12,7 +12,7 @@ import { createLocalLogin } from "./local-login.ts";
 import { createWebAccess, localBrowser, WebAccessError, webAccessRoute } from "./web-access.ts";
 import type { Server } from "bun";
 import { ADDRESS, cfg, DATA_DIR, HUB_TOKEN, log, NAME, now, PORT, setMachineName } from "./config.ts";
-import { lang } from "./i18n.ts";
+import { lang, msg } from "./i18n.ts";
 import { limitWaits } from "./limitwait.ts";
 import { buildWaitlist } from "./waitlist.ts";
 import { keyedSelector } from "./fallback.ts";
@@ -28,7 +28,7 @@ import { markRead } from "./reads.ts";
 import { shownEvent } from "./owner-text.ts";
 import { activityItems, historyEvents, historyPage, locateMessage, ownerMessage, recentEvents, sentFiles, sseResponse } from "./events.ts";
 import { subagentLists } from "./activity.ts";
-import { cancelOmoWorker, retryText, runningOmoWork, workConversation } from "./bgwork.ts";
+import { cancelLaneWorker, type CancelResult, retryText, runningOmoWork, workConversation } from "./bgwork.ts";
 import { lastTurnActed, lastTurnEnd, lastTurnFailed, mailConversation, openTodos, runIntent, runState, stallStep, workConversationRuns, type RunState, type StallMemo } from "./runstate.ts";
 import { isProjectTarget, projectTarget } from "./projectchat.ts";
 import { isMailTarget } from "./conv-model.ts";
@@ -263,6 +263,20 @@ function stateConvs(): { target: string; name?: string; work: ReturnType<typeof 
 		return { target: c.primary, ...(mail?.subject ? { name: mail.subject } : {}), work: c.bg.list().filter(w => w.status === "running").map(w => ({ ...w, target: c.primary })) };
 	});
 }
+async function cancelInSession(id: string, source: string): Promise<CancelResult> {
+	if (source === "orchestrator") return bgWork.cancel(id);
+	const lane = source.startsWith("lane:") ? lanes.get(source.slice(5)) : undefined;
+	if (lane) return cancelLaneWorker(id, lane, w => void lane.proc?.send(msg().ownerStopped(w.name, w.description), "steer"));
+	const conv = convs.conversations().find(c => c.o.source === source && convs.live(c));
+	return conv ? conv.bg.cancel(id) : { ok: false, status: 404, error: "이 작업을 찾을 수 없어요" };
+}
+async function cancelWorkOfAnySession(id: string, source?: string): Promise<CancelResult> {
+	if (source) return cancelInSession(id, source);
+	let stopped = await bgWork.cancel(id);
+	for (const c of convs.conversations().filter(c => convs.live(c))) if (!stopped.ok && stopped.status === 404) stopped = await c.bg.cancel(id);
+	for (const lane of lanes.values()) if (!stopped.ok && stopped.status === 404) stopped = await cancelInSession(id, `lane:${lane.name}`);
+	return stopped;
+}
 export const stateWaitlist = () => buildWaitlist({
 	deferred: limitWaits(join(DATA_DIR, "state.json")),
 	lanes: laneSummary(),
@@ -474,12 +488,11 @@ export function makeRoute({ tailnetName = ownTailnetName, busyNow, restartGatewa
 		}
 		if (req.method === "GET" && url.pathname === "/api/workers") return json({ items: bgWork.list() });
 		// 중단 (the worker's process ends; a lane's worker too) and 다시 맡기기 (its request goes to the orchestrator again, in its own conversation).
-		const workerAct = req.method === "POST" ? /^\/api\/workers\/([\w.-]{1,80})\/(cancel|retry)$/.exec(url.pathname) : null;
+		const workerAct = req.method === "POST" ? /^\/api\/workers\/([\w.~-]{1,80})\/(cancel|retry)$/.exec(url.pathname) : null;
 		if (workerAct) {
 			const id = workerAct[1]!;
 			if (workerAct[2] === "cancel") {
-				let r = await bgWork.cancel(id);
-				for (const lane of lanes.values()) if (!r.ok && r.status === 404) r = await cancelOmoWorker(id, lane.sessionFile);
+				const r = await cancelWorkOfAnySession(id, url.searchParams.get("source") ?? undefined);
 				if (r.ok) workRows.stopped(id);
 				return r.ok ? json({ ok: true, item: bgWork.list().find(w => w.id === id) }) : json({ error: r.error }, r.status);
 			}

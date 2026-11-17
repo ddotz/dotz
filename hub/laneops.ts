@@ -17,8 +17,8 @@ import { clearAsk, withHeld, report } from "./lanereport.ts";
 import { baseLanguage } from "./language.ts";
 import { hubChain, Chain, Reverter } from "./fallback.ts";
 import { runtimeFor } from "./runtime/index.ts";
-import { statusActivity, runningSubagents } from "./activity.ts";
-import { quietOmoWork, runningOmoWorkers } from "./bgwork.ts";
+import { statusActivity, runningSubagents, quietSubagents } from "./activity.ts";
+import { quietOmoWork, runningOmoWorkers, STALL_IDLE_MS } from "./bgwork.ts";
 import { laneClosed, unfinishedWork, withWorkers } from "./laneunfinished.ts";
 import { backgroundWork } from "./todo.ts";
 import { parseTone } from "./tone.ts";
@@ -464,12 +464,13 @@ export function restoreLanes(): string[] {
 // restart waited on the dead acme-allowance-review, 2026-10-29). `shells` false leaves the shell out: the idle stop bounds it itself.
 const waitsOnShell = (lane: Lane): boolean => backgroundWork(lane.sessionFile) > 0 && !closesTurn(lane.lastText);
 export const laneBusy = (lane: Lane, shells = true): boolean =>
-	(Boolean(lane.proc) && (lane.status === "working" || lane.status === "starting" || runningOmoWorkers(lane.sessionFile) > 0 || (shells && waitsOnShell(lane)))) ||
+	(Boolean(lane.proc) && (lane.status === "working" || lane.status === "starting" || runningOmoWorkers(lane.sessionFile) > 0 || (shells && (waitsOnShell(lane) || lane.proc?.awaitingAsync?.() === true)))) ||
 	runningSubagents(`lane:${lane.name}`) > 0;
 
 // What an idle stop would end with the lane, and since when nothing was heard of it: its silent workers and the shell it waits on.
 export const laneJobs = (lane: Lane): { what: string; since: number }[] => [
 	...quietOmoWork(lane.sessionFile).map(w => ({ what: w.description, since: w.ended_at ?? w.started_at })),
+	...(lane.runtime === "omp" ? quietSubagents(`lane:${lane.name}`, STALL_IDLE_MS).map(s => ({ what: s.description ?? s.agent ?? s.name ?? s.id, since: s.updated_at })) : []),
 	...(waitsOnShell(lane) ? [{ what: msg().laneShellJob, since: lane.lastFrameAt ?? Date.now() }] : []),
 ];
 
