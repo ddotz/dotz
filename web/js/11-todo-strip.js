@@ -51,8 +51,8 @@ function paintOlderTop() {
   TL_MORE_BTN.hidden = !more;
 }
 if (TL_MORE_BTN) TL_MORE_BTN.onclick = () => loadOlderMsgs();
-function resetChat() { clear(tl); cvForget(); if (TL_TOP_NODE) tl.append(TL_TOP_NODE); putCS({ day: "", group: null, empty: null, prog: new Map(), who: "", whoT: 0 }); paintOlderTop(); }
-function dayDiv(t) { const d = kstDay(t); if (d && d !== CS.day) { CS.day = d; CS.who = ""; tl.append(el("div", { class: "a-div", text: dayLabel(t) })); } }
+function resetChat() { clear(tl); cvForget(); if (TL_TOP_NODE) tl.append(TL_TOP_NODE); csReset(); paintOlderTop(); }
+function dayDiv(t) { const d = kstDay(t); if (d && d !== CS.day) { csDay(d); tl.append(el("div", { class: "a-div", text: dayLabel(t) })); } }
 // Who said a message, for the meta line: shown once per run of messages from the same speaker (a gap over 10 minutes starts a new run).
 function speakerOf(e) {
   const peer = peerMsgOf(e);
@@ -411,16 +411,16 @@ function newGroup(a) {
   };
   return g;
 }
-function dropProgress(key) { const p = CS.prog.get(key); if (p) { const home = p.node.parentNode; p.node.remove(); wlTidy(home); CS.prog.delete(key); } }
+function dropProgress(key) { const p = CS.prog.get(key); if (p) { const home = p.node.parentNode; p.node.remove(); wlTidy(home); csProgDrop(key); } }
 // entry: {m: conversation event} or {a: activity item}. Work between messages folds into one collapsed group.
 function chatPush(en, bulk) {
   let fresh = null;   // an incoming message node: a tall one is scrolled to by its top (scrollChat)
   if (en.m && en.m.kind === "delivery") { applyDelivery(en.m); return; }
-  if (CS.empty) { CS.empty.remove(); CS.empty = null; }
+  csEmptyDrop();
   if (en.m) {
     if (cleanRestart(en.m)) return;
     if (CS.group) workDone(CS.group);
-    CS.group = null;
+    csGroupDrop();
     const e = en.m;
     if (isSettingsT(target) && eventTarget(e) === target) { if (e.kind === "message") TURN.set(target, Date.parse(e.ts) || Date.now()); else if (e.kind === "out" && !e.update_key) TURN.delete(target); }
     const pkey = e.kind === "out" && e.update_key ? `${e.target ?? ""}|${e.update_key}` : "";
@@ -436,27 +436,27 @@ function chatPush(en, bulk) {
     }
     // Repeated [run]/[wait] reports are one message, as on Discord (hub/lanewire.ts): the newest takes the place of the one before it, until another message stands between.
     const parked = e.kind === "lane_report" && !e.answering && parkedTone(statedTone(noHandoff(String(e.text ?? ""))).tone);
-    if (parked && CS.parked) { if (!CS.parked.classList.contains("cont")) CS.who = ""; CS.parked.remove(); CS.parked = null; }
+    if (parked && CS.parked) csParkedDrop();
     const n = wlIs(e) ? wlNode(e) : msgNode(e);
     if (n) {
       dayDiv(e.ts);   // only above a drawn row: a conversation of rows that draw nothing keeps its empty state
-      if (!pkey) CS.parked = parked ? n : null;
+      if (!pkey) csParked(parked ? n : null);
       n.dataset.ts = e.ts;   // the notice jump finds its source message by this (30-notices.js ntFind)
       if (!n.classList.contains("wl-row")) rpMark(n, e);
-      if (CV.div && !CV.divNode && convIncoming(e) && e.ts > CV.div) { cvDivNode(tl.appendChild(convDivider())); CS.who = ""; }
+      if (CV.div && !CV.divNode && convIncoming(e) && e.ts > CV.div) { cvDivNode(tl.appendChild(convDivider())); csBreak(); }
       // A status goes when the answer comes, so it never carries a run of speaker heads: the answer keeps its own.
       const who = n.matches(".um, .bm:not(.wl-row)") && !n.querySelector(":scope > .lv") ? speakerOf(e) : "", t = Date.parse(e.ts) || 0;
       if (who && who === CS.who && t - CS.whoT < 600000 && !(e.target === "alert" && n.querySelector(":scope > .mt > .tag"))) n.classList.add("cont");   // an 알림 row that carries a status tag keeps its head, so the tag shows
-      CS.who = who; CS.whoT = t;
+      csWho(who, t);
       if (convIncoming(e)) fresh = n;
       if (held) n.style.minHeight = `${held}px`;
       tlHome(n).append(n); if (!bulk && !held) motionIn(n, "rise", M_MS.fast);   // a message that arrives live rises in (150ms); the drawn history never moves
-      if (pkey) CS.prog.set(pkey, { node: n, target: laneT || String(e.target ?? "") });
+      if (pkey) csProgSet(pkey, { node: n, target: laneT || String(e.target ?? "") });
     }
   } else {
     if (!WORK.has(en.a.type) || isMailT(target) || (isSettingsT(target) && !(TURN.get(target) <= (Date.parse(en.a.ts) || 0)))) return;
-    if (!CS.group) { dayDiv(en.a.ts); CS.group = newGroup(en.a); tl.append(CS.group.node); }
-    CS.group.add(en.a);
+    if (!CS.group) { dayDiv(en.a.ts); csGroupStart(newGroup(en.a)); tl.append(CS.group.node); }
+    csGroupAdd(en.a);
   }
   if (!bulk) syncLiveTags();
   const fixed = TL_TOP_NODE && TL_TOP_NODE.parentNode === tl ? 1 : 0;
@@ -474,5 +474,5 @@ function markLive() {
   if (!g) return;
   const live = isWorking(target) && tlTail() === g.node;
   if (g.live === live) return;
-  if (live) { g.live = true; g.node.classList.add("live"); g.update(); } else workDone(g);
+  if (live) csGroupLive(); else workDone(g);
 }

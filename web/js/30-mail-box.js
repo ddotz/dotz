@@ -83,8 +83,8 @@ function mbApply(t, a) {
   else if (a === "unread") m.read = false;
   else if (a === "archive" || a === "unarchive") m.archived = a === "archive";
   else if (a === "star" || a === "unstar") m.starred = a === "star";
-  else if (a === "trash") { MAILS.delete(t); CONV.delete(t); MBOX.sel.delete(t); }
-  return () => { Object.assign(m, was); ts(t).unread = unread; if (a === "trash") { MAILS.set(t, m); if (conv) CONV.set(t, conv); } };
+  else if (a === "trash") { MAILS.delete(t); convDrop(t); MBOX.sel.delete(t); }
+  return () => { Object.assign(m, was); ts(t).unread = unread; if (a === "trash") { MAILS.set(t, m); if (conv) convLastSet(t, conv); } };
 }
 const MB_DONE = { read: n => (n > 1 ? TX("mail.done_n.read", { n }) : TX("mail.done.read")), unread: n => (n > 1 ? TX("mail.done_n.unread", { n }) : TX("mail.done.unread")), archive: n => (n > 1 ? TX("mail.done_n.archive", { n }) : TX("mail.done.archive")), unarchive: n => (n > 1 ? TX("mail.done_n.unarchive", { n }) : TX("mail.done.unarchive")), trash: n => (n > 1 ? TX("mail.done_n.trash", { n }) : TX("mail.done.trash")), star: n => (n > 1 ? TX("mail.done_n.star", { n }) : TX("mail.done.star")), unstar: n => (n > 1 ? TX("mail.done_n.unstar", { n }) : TX("mail.done.unstar")) };
 const MB_BACK = { archive: "unarchive", unarchive: "archive", read: "unread", unread: "read", star: "unstar", unstar: "star" };

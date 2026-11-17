@@ -50,7 +50,7 @@
     // The drawn conversation stays as it is: loadTarget redraws it only when the read brought something new.
     // The first reset reads the open conversation again too when its history already came: what was sent between that answer and this stream is in neither.
     const reread = opened || ts(target).hLoaded;
-    if (opened) { refreshState(); for (const k of Object.keys(TS)) TS[k].hLoaded = TS[k].aLoaded = false; loadSubs(); loadQueue(); laneTailsStale(); kkResync(); }
+    if (opened) { refreshState(); tsStale(); loadSubs(); loadQueue(); laneTailsStale(); kkResync(); }
     if (reread) { loadTarget(target, hasCached(ts(target))); convLoad(); }
     opened = true;
   });

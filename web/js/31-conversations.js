@@ -45,8 +45,7 @@ function convNote(e, t, was) {
   if (isMailT(t) && e.kind === "mail" && !MAILS.has(t)) MAILS.set(t, { subject: e.subject || "", from: e.from || "", source: e.source || "", at: e.ts, summary: e.summary || "", ...(e.todo ? { todo: e.todo } : {}), ...(e.questions ? { questions: e.questions } : {}), preview: e.preview || "", attachments: e.attachments || [], html: !!e.html });
   const last = convLastOf(e);
   if (!last) return;
-  const prev = CONV.get(t);
-  if (!prev || prev.ts <= last.ts) CONV.set(t, last);
+  convNewer(t, last);
   // `was`: the older version of an edited post, still unread = this one is the same unread message (counted once, like the hub does)
   const again = !!was && !(READ[t] && READ[t] >= was.ts);
   if (convIncoming(e) && !again && !convEnded(t) && !(READ[t] && READ[t] >= e.ts) && !(CV.key === t && chatStick && document.visibilityState === "visible")) { ts(t).unread++; renderBars(); }
@@ -67,7 +66,7 @@ function convDropGone(items, cursor, whole) {
   const now = new Set(items.filter(it => it.mail).map(it => it.target)), gone = [...convHadMail].filter(t => !now.has(t) && !PQ.of.has(t) && (whole ? true : convInRange(t, cursor)));
   convHadMail = whole ? now : new Set([...convHadMail].filter(t => !gone.includes(t)).concat([...now]));
   if (!gone.length) return;
-  for (const t of gone) { MAILS.delete(t); CONV.delete(t); MBOX.sel.delete(t); ts(t).unread = 0; }
+  for (const t of gone) { MAILS.delete(t); convDrop(t); MBOX.sel.delete(t); ts(t).unread = 0; }
   if (current === "chat" && gone.includes(target)) go("monitoring", MON.sel || "i:mail");
   mbRefresh();
 }
@@ -95,10 +94,9 @@ const monitorsLive = coalesced(() => loadMonitors());
 // The rows of one answer into the stores.
 function convApply(items) {
   for (const it of items) {
-    const t = it.target, prev = CONV.get(t);
+    const t = it.target;
     if (it.mail) MAILS.set(t, it.mail);
-    if (it.last && (!prev || prev.ts <= it.last.ts)) CONV.set(t, it.last);
-    else if (!CONV.has(t)) CONV.set(t, null);
+    convNewer(t, it.last);
     let unread = it.unread | 0;
     const local = READ[t], last = CONV.get(t);
     // Our own read post may be ahead of what the server has answered with.
