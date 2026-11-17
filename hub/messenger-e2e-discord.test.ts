@@ -123,12 +123,14 @@ process.stdin.on("data", chunk => {
 		buf = buf.slice(nl + 1);
 		let f;
 		try { f = JSON.parse(line); } catch { continue; }
+		if (f.type === "new_session") out({ id: f.id, type: "response", command: "new_session", success: true });
 		if (f.type !== "prompt") continue;
 		const mark = /MARK-[A-Za-z0-9]+/.exec(String(f.message))?.[0];
 		out({ type: "agent_start" });
 		out({ type: "message_end", message: { role: "user", content: String(f.message) } });
 		if (mark) out({ type: "message_end", message: { role: "assistant", content: [{ type: "text", text: "answer " + mark }], stopReason: "stop" } });
 		out({ type: "agent_end" });
+		out({ id: f.id, type: "prompt_result", agentInvoked: true, status: "completed" });
 	}
 });
 `;

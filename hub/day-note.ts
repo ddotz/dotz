@@ -4,7 +4,7 @@
 import { closeSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, realpathSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { sessionDirs } from "./cleanup.ts";
+import { sessionDirs, sessionFolders } from "./cleanup.ts";
 import { cfg, DATA_DIR, DEFAULTS, log, workerModel, writeAtomic } from "./config.ts";
 import { daysDir, headingKey, kstDay, lineSrcs, LESSONS_MAX_LINES, LINE_MAX_CHARS, NOTE_MAX_CHARS, noteFile, type Note, OPEN_MAX_LINES, readNote, SECTION_KEYS, type Section, type SectionKey } from "./day-note-format.ts";
 import { lang, msg } from "./i18n.ts";
@@ -13,6 +13,7 @@ import { extractPairs, type Pair, sessionHeader } from "./recall-extract.ts";
 import { readLines } from "./recall-index.ts";
 import { renderState } from "./recall-parts.ts";
 import { OMO } from "./runtime/omo-hosts.ts";
+import { runtimeIdOf } from "./runtime/runtime-id.ts";
 import { trackTimer } from "./shutdown.ts";
 
 export const WINDOW_MAX_MS = 72 * 3_600_000;
@@ -57,11 +58,16 @@ function compactions(file: string): { at: number; text: string }[] {
 	return out;
 }
 
-function firstLine(file: string): string {
+function headerOf(file: string): { cwd: string; session: string } | undefined {
 	const fd = openSync(file, "r");
 	try {
 		const buf = Buffer.alloc(8192);
-		return buf.toString("utf8", 0, readSync(fd, buf, 0, buf.length, 0)).split("\n")[0] ?? "";
+		const head = buf.toString("utf8", 0, readSync(fd, buf, 0, buf.length, 0));
+		for (const line of head.split("\n", 3)) {
+			const header = sessionHeader(line);
+			if (header) return header;
+		}
+		return undefined;
 	} finally {
 		closeSync(fd);
 	}
@@ -89,7 +95,7 @@ export function collectInput(o: { files: readonly string[]; start: number; end: 
 	let summary: { at: number; text: string } | undefined;
 	for (const file of o.files) {
 		for (const c of compactions(file)) if (c.at >= o.start && c.at < o.end && (!summary || c.at > summary.at)) summary = c;
-		const header = sessionHeader(firstLine(file));
+		const header = headerOf(file);
 		if (!header) continue;
 		const ctx = { file, cwd: header.cwd, session: header.session, title: "", convKey: "", afterBrief: false, ownerCap: PAIR_OWNER_CAP, answerCap: PAIR_ANSWER_CAP };
 		for (const p of extractPairs(readLines(file, 0, 1, { end: 0, line: 1 }), ctx)) {
@@ -303,7 +309,7 @@ export interface RunDeps {
 	stateFile: string;
 	files(since: number): string[];
 	secrets(): string[];
-	resolve(): Promise<Resolution>;
+	resolve?(): Promise<Resolution>;
 	call(system: string, text: string, o: { model: string; timeoutMs: number }): Promise<{ text: string; inputTokens: number; outputTokens: number; ms: number }>;
 	language(): string;
 	log(line: string): void;
@@ -327,8 +333,9 @@ type Chosen = { model: string; label: string };
 async function choose(d: RunDeps): Promise<Chosen> {
 	const pinned = d.pinned().trim();
 	if (pinned) return { model: pinned, label: `${pinned} (day_note.model)` };
-	const r = await d.resolve();
-	if ("selector" in r) return { model: r.selector, label: `${r.selector} (OmO quick)` };
+	const r = d.resolve ? await d.resolve() : undefined;
+	if (r && "selector" in r) return { model: r.selector, label: `${r.selector} (OmO quick)` };
+	if (!r) return { model: d.fallback(), label: `${d.fallback()} (worker model)` };
 	return { model: d.fallback(), label: `${d.fallback()} (OmO quick not resolved: ${r.reason}; worker model)` };
 }
 
@@ -381,14 +388,9 @@ export async function runDayNote(d: RunDeps, sleep: (ms: number) => Promise<void
 	}
 }
 
-/** The main session's files that were written since `since`: the 04:30 rotation puts the day in the old file, so every file in the window is read. */
+/** The main session's files that were written since `since`: the 04:30 rotation puts the day in the old file, so every file in the window is read. A session folder is the main session's when its files' header names the data folder as the working directory, whatever the folder is called. */
 export function mainSessionFiles(since: number, roots: readonly string[] = sessionDirs(), dataDir = DATA_DIR): string[] {
-	const folder = `--${dataDir.replace(/^\/+/, "").replace(/[\\/:]/g, "-")}--`;
-	return roots.flatMap(root => {
-		const dir = join(root, folder);
-		if (!existsSync(dir)) return [];
-		return readdirSync(dir).filter(f => f.endsWith(".jsonl")).map(f => join(dir, f)).filter(f => statSync(f).mtimeMs >= since);
-	});
+	return sessionFolders(dataDir, roots).flatMap(dir => readdirSync(dir).filter(f => f.endsWith(".jsonl")).map(f => join(dir, f)).filter(f => statSync(f).mtimeMs >= since));
 }
 
 const conf = () => (cfg as { day_note?: { enabled?: boolean; at?: string; model?: string } }).day_note ?? {};
@@ -402,7 +404,7 @@ const realDeps = (): RunDeps => ({
 	stateFile: join(DATA_DIR, "state.json"),
 	files: mainSessionFiles,
 	secrets: () => secretFileValues(DATA_DIR),
-	resolve: () => resolveQuick({ exec: execOmo, bundle: omoBundle }),
+	resolve: runtimeIdOf("orchestrator") === "omo" && Bun.which(OMO) ? () => resolveQuick({ exec: execOmo, bundle: omoBundle }) : undefined,
 	call: async (system, text, o) => (await import("./outlang.ts")).callModel(system, text, o),
 	language: lang,
 	log,

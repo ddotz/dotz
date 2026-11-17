@@ -197,10 +197,10 @@ describe("the draft paths call the model they resolved", () => {
 describe("the effort reaches the model process", () => {
 	const flag = (argv: string[], name: string) => argv[argv.indexOf(name) + 1];
 	test("a selector with an effort sets --thinking; without one the call thinks off as before", () => {
-		const high = modelArgv("sys", "text", WORKER);
+		const high = modelArgv("sys", WORKER);
 		expect(flag(high, "--thinking")).toBe("high");
 		expect(flag(high, "--model")).toBe("anthropic-subscription/claude-sonnet-5-5");
-		expect(flag(modelArgv("sys", "text", SONNET), "--thinking")).toBe("off");
-		expect(flag(modelArgv("sys", "text", undefined), "--thinking")).toBe("off");
+		expect(flag(modelArgv("sys", SONNET), "--thinking")).toBe("off");
+		expect(flag(modelArgv("sys", undefined), "--thinking")).toBe("off");
 	});
 });

@@ -7,7 +7,7 @@
 // `bun hub/update.ts --check-now` runs the check path once per harness in use and prints the result without posting.
 import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { join } from "node:path";
-import { cfg, DATA_DIR, DEFAULTS, log, writeAtomic } from "./config.ts";
+import { cfg, DATA_DIR, DEFAULTS, log, OMP, writeAtomic } from "./config.ts";
 import { issueBlock } from "./choices.ts";
 import { activeHarness } from "./runtime/index.ts";
 import { BUN_GLOBAL_OMO, OMO } from "./runtime/omo-hosts.ts";
@@ -75,8 +75,8 @@ export function newer(a: string, b: string): boolean {
 // Output shapes (omp 18.12): "Current version: X" then "New version available: Y" or "<mark> Already up to date";
 // "<name> is installed and kept up to date by <manager>; update it from <manager>." when another program owns the install.
 async function checkOmp(t: Tools): Promise<Check> {
-	const r = await t.run(["omp", "update", "--check"], 120_000).catch(e => ({ code: -1, out: String(e) }));
-	const current = r.out.match(/Current version:\s*(\S+)/)?.[1] ?? (await versionOf("omp")(t));
+	const r = await t.run([OMP, "update", "--check"], 120_000).catch(e => ({ code: -1, out: String(e) }));
+	const current = r.out.match(/Current version:\s*(\S+)/)?.[1] ?? (await versionOf(OMP)(t));
 	const by = r.out.match(/kept up to date by (\S+?);/)?.[1];
 	if (by) return { status: "managed", current, by };
 	const latest = r.out.match(/New version available:\s*(\S+)/)?.[1];
@@ -110,8 +110,8 @@ const SPECS: Record<string, Spec> = {
 	omp: {
 		label: "omp",
 		check: checkOmp,
-		version: versionOf("omp"),
-		install: t => t.run(["omp", "update"], 15 * 60_000).catch(e => ({ code: -1, out: String(e) })),
+		version: versionOf(OMP),
+		install: t => t.run([OMP, "update"], 15 * 60_000).catch(e => ({ code: -1, out: String(e) })),
 		landed: (now, c) => now === c.latest,
 	},
 	omo: {
