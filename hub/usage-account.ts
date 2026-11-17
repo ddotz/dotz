@@ -13,7 +13,6 @@ import { readdirSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { authFile } from "./apikey-policy.ts";
-import { cfg } from "./config.ts";
 import { type UsageLast, usageLast } from "./usage-last.ts";
 
 const FRESH_MS = 2 * 60_000;
@@ -127,13 +126,6 @@ export function planName(shown: unknown, type: unknown, tier: unknown): string |
 	return name === "Max" && x ? `Max ${x}x` : name;
 }
 const planOf = (a: Json): string | undefined => planName(a.profile?.subscriptionType, a.subscriptionType, a.rateLimitTier);
-
-// The runtime that runs a role, as hub/runtime/index.ts runtimeFor decides it (unknown names run OmO); kept here so the
-// usage path does not import the adapters (they import providers.ts).
-export function runtimeIdOf(role: "orchestrator" | "lane"): string {
-	const id = (role === "orchestrator" ? cfg.orchestrator?.runtime : cfg.lanes?.runtime) ?? cfg.runtime ?? "omo";
-	return id === "omp" || id === "claude" ? id : "omo";
-}
 
 // Whether OmO skips an account now, and until when. OmO records a block in two places: on the account entry in auth.json
 // (blockedUntil/blockReason, which its account selection reads: isAccountBlocked) and in credential-pool-state.json (a slot).
@@ -282,16 +274,73 @@ export function claudeOrg(name: string, file = authFile()): string | undefined {
 	return typeof org === "string" && /^[0-9a-f-]{36}$/i.test(org) ? org : undefined;
 }
 
-// Pure: omp's Anthropic report (runtimes other than OmO run on omp's login) in the same shape, named by its email.
-export function fromOmp(r: { limits?: Json[]; metadata?: { email?: string }; problem?: "failed"; fetchedAt?: number }): AccountReport {
+/**
+ * omp's `scope` of one limit as the plain name the rest of dotz reads (hub/orchestrator.ts limitsUsable, hub/limit-lift.ts spentScopes):
+ * none for a window every model shares (5 hour, 7 day), the tier or model for a model's own window ("fable"). omp@18.22.0 `omp usage --json`
+ * gives an object {provider, windowId?, tier?, modelId?, shared?}; a string (OmO's display name) passes through.
+ */
+export function scopeOf(scope: unknown): string | undefined {
+	if (typeof scope === "string") return scope || undefined;
+	const s = scope && typeof scope === "object" ? (scope as Json) : undefined;
+	if (!s || s.shared === true) return undefined;
+	return [s.tier, s.modelId].find((v): v is string => typeof v === "string" && v.length > 0);
+}
+
+/**
+ * omp's `resetCredits` of one Anthropic login as the 리셋권 the usage screen draws (omp@18.22.0 `omp usage --json`: availableCount, nextCreditId,
+ * credits[] with remainingCount, clears, expiresAt). Shown only: dotz spends a reset through OmO's login (hub/claude-reset.ts) and omp spends one with
+ * `omp usage reset anthropic/<credential id>`, so none is usable here.
+ */
+export function ompResets(rc: Json | undefined): ClaudeResets | undefined {
+	const credits: Json[] = Array.isArray(rc?.credits) ? rc.credits : [];
+	const grants = credits.flatMap(c => {
+		const left = Math.floor(Number(c?.remainingCount ?? 1));
+		if (!(left > 0) || c.status === "expired" || c.status === "redeemed") return [];
+		const clears: unknown[] = Array.isArray(c.clears) ? c.clears : [];
+		const text = `${c.id ?? ""} ${c.title ?? ""}`;
+		const kind = /fable/i.test(text) || clears.includes("anthropic:7d:fable") ? "Fable" : /weekly/i.test(text) ? "주간" : clears.includes("anthropic:5h") ? "전체" : clears.includes("anthropic:7d") ? "주간" : "기타";
+		return [{ id: typeof c.id === "string" ? c.id : undefined, kind, left, expires: typeof c.expiresAt === "number" ? c.expiresAt : msOf(c.expiresAt) }];
+	}).sort((a, b) => (a.expires ?? Number.MAX_SAFE_INTEGER) - (b.expires ?? Number.MAX_SAFE_INTEGER));
+	const available = Number(rc?.availableCount);
+	const held = Number.isFinite(available) ? Math.max(0, Math.floor(available)) : grants.reduce((n, g) => n + g.left, 0);
+	if (held <= 0) return undefined;
+	const kinds: ClaudeResetKind[] = [];
+	for (const g of grants) {
+		const k = kinds.find(x => x.kind === g.kind);
+		if (k) k.left += g.left;
+		else kinds.push({ kind: g.kind, left: g.left, expires_at: g.expires, usable: false, ...(g.id ? { grant_id: g.id } : {}) });
+	}
+	const next = grants.find(g => g.id !== undefined && g.id === rc?.nextCreditId);
+	return { held, usable: false, expires_at: grants[0]?.expires ?? null, kinds, ...(next?.id ? { grant: { id: next.id, kind: next.kind } } : {}) };
+}
+
+type OmpReport = { provider: string; limits?: Json[]; metadata?: { email?: string }; resetCredits?: Json; problem?: "failed"; fetchedAt?: number };
+
+/** Pure: one login of omp's Anthropic subscription in the same shape as an OmO account's report, named by its email. */
+export function fromOmp(r: OmpReport): AccountReport {
 	const limits = (r.limits ?? []).flatMap((l): Limit[] => {
 		const used = l?.amount?.used;
 		if (typeof used !== "number") return [];
 		const remaining = typeof l.amount.remaining === "number" ? l.amount.remaining : 100 - used;
 		const w = l.window ?? {};
-		return [{ id: String(l.id), label: String(l.label ?? l.id), window: { id: String(w.id ?? ""), label: String(w.label ?? ""), durationMs: Number(w.durationMs ?? 0), ...(typeof w.resetsAt === "number" ? { resetsAt: w.resetsAt } : {}) }, amount: { used, limit: typeof l.amount.limit === "number" ? l.amount.limit : 100, remaining, usedFraction: used / 100, remainingFraction: remaining / 100, unit: "percent" }, status: String(l.status ?? "unknown") }];
+		const scope = scopeOf(l.scope);
+		return [{ id: String(l.id), label: String(l.label ?? l.id), window: { id: String(w.id ?? ""), label: String(w.label ?? ""), durationMs: Number(w.durationMs ?? 0), ...(typeof w.resetsAt === "number" ? { resetsAt: w.resetsAt } : {}) }, amount: { used, limit: typeof l.amount.limit === "number" ? l.amount.limit : 100, remaining, usedFraction: used / 100, remainingFraction: remaining / 100, unit: "percent" }, status: String(l.status ?? "unknown"), ...(scope ? { scope } : {}), ...(typeof l.active === "boolean" ? { active: l.active } : {}) }];
 	});
-	return { provider: "anthropic", account: r.metadata?.email ?? "omp login", via: "omp", limits, ...(r.problem ? { problem: r.problem } : {}), ...(typeof r.fetchedAt === "number" ? { fetchedAt: r.fetchedAt } : {}) };
+	const resets = ompResets(r.resetCredits);
+	return { provider: "anthropic", account: r.metadata?.email ?? "omp login", via: "omp", limits, ...(resets ? { resets } : {}), ...(r.problem ? { problem: r.problem } : {}), ...(typeof r.fetchedAt === "number" ? { fetchedAt: r.fetchedAt } : {}) };
+}
+
+/** Every Anthropic login of omp's `usage --json`, one report each: omp holds several and rotates between them. */
+export const ompAccounts = (reports: readonly OmpReport[]): AccountReport[] => reports.filter(r => r.provider === "anthropic").map(fromOmp);
+
+/**
+ * The login that stands for omp's Anthropic subscription as a whole. omp serves each request from whichever login it can, so the subscription is
+ * usable while any login is: the first one with no spent shared window; with every login spent, the one that frees first (a spent window with no
+ * reset time frees last).
+ */
+export function ompStanding(accounts: readonly AccountReport[], now = Date.now()): AccountReport | undefined {
+	const spentUntil = (r: AccountReport): number => r.limits.filter(l => !l.scope && l.amount.remaining < 1).reduce((t, l) => Math.max(t, l.window.resetsAt === undefined ? Number.MAX_SAFE_INTEGER : l.window.resetsAt > now ? l.window.resetsAt : 0), 0);
+	return accounts.reduce<AccountReport | undefined>((best, r) => (best === undefined || spentUntil(r) < spentUntil(best) ? r : best), undefined);
 }
 
 const retryAfterMs = (header: string | null, now: number): number | undefined => {

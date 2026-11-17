@@ -30,7 +30,7 @@ const body = (mode: "auto" | "pinned", over: object = {}) => ({
 	...over,
 });
 
-function card(acc: object, providers: object[] = []) {
+function card(acc: object, providers: object[] = [], lang = "ko") {
 	const calls: Array<[string, string, unknown]> = [];
 	const dialogs: string[] = [];
 	const logins: unknown[] = [];
@@ -62,7 +62,7 @@ function card(acc: object, providers: object[] = []) {
 		pctText: () => "",
 		selectButton: (o: { label: string; value: string }) => el("button", { class: "sel", "aria-label": o.label, "data-v": o.value }),
 	};
-	const mod = new Function(...Object.keys(env), `${i18nPrelude()}${src}\nACC = arguments[arguments.length - 1];\nreturn () => accountSection({ id: "anthropic", name: "Claude 구독" });`);
+	const mod = new Function(...Object.keys(env), `${i18nPrelude(lang)}${src}\nACC = arguments[arguments.length - 1];\nreturn () => accountSection({ id: "anthropic", name: "Claude 구독" });`);
 	const section = mod(...Object.values(env), acc) as () => Node[];
 	return { nodes: section(), calls, dialogs, logins, acts, outs };
 }
@@ -222,4 +222,28 @@ test("the only account leaves through 로그아웃 in its window (the card has n
 	expect(two.acts[0]).toContain("계정 삭제");
 	expect(two.acts[0]).not.toContain("로그아웃");
 	expect(two.outs).toEqual([]);
+});
+
+test("R10: where the runtime cannot pin an account the card shows a short notice in place of the switch, the limit answer, the rules, the script and the order grips, in ko and en", () => {
+	const off = body("auto", { pin_unavailable: "omp에서는 계정을 고정할 수 없어요" });
+	for (const [lang, said] of [["ko", "고정하거나"], ["en", "can't pin an account"]] as const) {
+		const c = card(off, [], lang);
+		const notice = find(c.nodes, n => n.attrs["data-acc-pin-off"] != null);
+		expect(notice).toHaveLength(1);
+		expect(text(notice)).toContain(said);
+		expect(find(c.nodes, n => n.attrs.role === "switch")).toHaveLength(0);
+		expect(find(c.nodes, n => n.attrs.class === "sel")).toHaveLength(0);
+		expect(find(c.nodes, n => n.attrs["data-acc-rules"] != null)).toHaveLength(0);
+		expect(find(c.nodes, n => n.attrs.class === "li tap")).toHaveLength(0);
+		expect(rowsOf(c.nodes).flatMap(r => find(r, n => n.attrs.class === "acc-grip"))).toHaveLength(0);
+		expect(rowsOf(c.nodes)).toHaveLength(2);
+	}
+	const c = card(off);
+	mainOf(rowsOf(c.nodes)[1]!).attrs.onclick({ currentTarget: {} });
+	expect(c.dialogs).toEqual(["teammate-shared"]);
+	expect(c.acts[0]).not.toContain("이 계정으로 고정");
+	expect(c.calls).toEqual([]);
+	const on = card(body("auto", { pin_unavailable: null }));
+	expect(find(on.nodes, n => n.attrs["data-acc-pin-off"] != null)).toHaveLength(0);
+	expect(find(on.nodes, n => n.attrs.role === "switch")).toHaveLength(1);
 });

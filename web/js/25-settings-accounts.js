@@ -86,7 +86,7 @@ function accountSection(p, g, conn) {
   const dec = ACC.decision, sc = ACC.script, lines = ACC.rules_text || [], pct = n => `${Math.round(n)}%`;
   const tx = (hd, ...sup) => el("span", { class: "tx" }, hd ? el("div", { class: "hd", text: hd }) : null, sup.length ? el("div", { class: "sup" }, ...sup) : null);
   // two modes: 자동 전환 (rules, and a switch when the account is blocked) or 고정 (one account, requests never move to another)
-  const pinned = ACC.mode === "pinned", ch = ACC.chosen, pin = pinned && ch ? ch.name : "";
+  const pinned = ACC.mode === "pinned", ch = ACC.chosen, pin = pinned && ch ? ch.name : "", off = Boolean(ACC.pin_unavailable);
   const setMode = (btn, body, msg) => accMut(btn, () => api("/api/accounts/mode", "PUT", body), msg);
   // the order is the fallback order of 자동 전환: the first usable account by number takes over when the current one is blocked
   const reorder = (btn, from, to) => { const names = ACC.accounts.map(x => x.name); names.splice(to, 0, names.splice(from, 1)[0]); return accMut(btn, () => api("/api/accounts/order", "PUT", { order: names })); };
@@ -99,7 +99,7 @@ function accountSection(p, g, conn) {
     const onclick = ev => { if (accSwallow) { accSwallow = false; return; } if (pinned) { if (a.name !== pin) setMode(ev.currentTarget, { mode: "pinned", account: a.name }, TX("connect.acc.pin_changed")); } else accDialog(a); };
     const rowOf = ev => ev.currentTarget.closest(".li.acc");
     // the grip drags at once; a long press on the row drags too (touch); ArrowUp/ArrowDown on the focused grip moves it one place
-    const grip = el("button", { class: "acc-grip", type: "button", "data-acc": a.name, "aria-label": TX("connect.acc.reorder", { name: label }), "aria-keyshortcuts": "ArrowUp ArrowDown",
+    const grip = off ? null : el("button", { class: "acc-grip", type: "button", "data-acc": a.name, "aria-label": TX("connect.acc.reorder", { name: label }), "aria-keyshortcuts": "ArrowUp ArrowDown",
       onpointerdown: ev => accDrag(ev, rowOf(ev), false, to => reorder(ev.target.closest(".acc-grip"), i, to)),
       onkeydown: ev => {
         const to = i + (ev.key === "ArrowUp" ? -1 : ev.key === "ArrowDown" ? 1 : 0);
@@ -109,15 +109,16 @@ function accountSection(p, g, conn) {
       } });
     return el("div", { class: `li acc${pinned && a.name === pin ? " on" : ""}` }, grip,
       el("button", { class: "acc-main", type: "button", ...(pinned ? { role: "radio", "aria-checked": String(a.name === pin) } : {}), onclick,
-        onpointerdown: ev => { if (ev.pointerType !== "mouse") accDrag(ev, rowOf(ev), true, to => reorder(ev.target.closest(".acc-main"), i, to)); } },
+        onpointerdown: ev => { if (!off && ev.pointerType !== "mouse") accDrag(ev, rowOf(ev), true, to => reorder(ev.target.closest(".acc-main"), i, to)); } },
         el("span", { class: "lead acc-no", text: String(a.order || i + 1) }), tx(label, sub), ...accTags(a, pin).map(([t, tone]) => el("span", { class: `tag ${tone}`, text: t }))),
       a.blocked === "auth_error" ? accRelogin(p) : null,
       pinned ? el("button", { class: "acc-mv", type: "button", "aria-label": TX("connect.acc.rename", { name: label }), onclick: () => accDialog(a) }, icon("chev", "lead")) : null);
   });
   const rows = [];
+  if (off) rows.push(el("div", { class: "li", "data-acc-pin-off": "" }, tx(TX("connect.acc.pin_off"))));
   const caption = pinned ? (ch && ch.blocked ? `${ch.text}.` : TX("connect.acc.pinned_note", { name: ch ? accName(ch.label) : TX("connect.acc.chosen") })) : "";
   // on = 자동 전환, off = 고정 (the account to fix is the row tapped below)
-  rows.unshift(el("div", { class: "li" }, tx(TX("connect.acc.auto"), ...(caption ? [caption] : [])),
+  if (!off) rows.unshift(el("div", { class: "li" }, tx(TX("connect.acc.auto"), ...(caption ? [caption] : [])),
     liEnd(el("button", { type: "button", class: "hs-sw", role: "switch", "aria-checked": String(!pinned), "aria-label": TX("connect.acc.auto"), onclick: ev => setMode(ev.currentTarget, { mode: pinned ? "auto" : "pinned" }, pinned ? TX("connect.acc.auto_done") : TX("connect.acc.pin_done")) }))));
   // What a 고정 account at its limit does next: unset asks once (the alert's question), then this is followed quietly.
   const onLimit = (ACC.rules && ACC.rules.on_limit) || "";
@@ -125,12 +126,12 @@ function accountSection(p, g, conn) {
   // three answers, so a menu (a pill toggles two): ask once (unset: the alert asks), wait, or switch to 자동 전환
   const setOnLimit = (btn, value) => accMut(btn, () => api("/api/accounts/on-limit", "PUT", { on_limit: value || null }), value === "wait" ? TX("connect.limit.wait_done") : value === "switch" ? TX("connect.limit.switch_done") : TX("connect.limit.unset_done"));
   const limitSel = selectButton({ label: TX("connect.limit.ask"), items: [["", TX("connect.limit.ask_once")], ["wait", TX("connect.limit.wait")], ["switch", TX("connect.acc.auto")]].map(([value, label]) => ({ value, label })), value: onLimit, onPick: v => setOnLimit(limitSel, v) });
-  rows.splice(1, 0, el("div", { class: "li" }, tx(TX("connect.limit.ask"), onLimitSub), liEnd(limitSel)));
-  rows.push(accRulesRow("anthropic", lines, pinned));
+  if (!off) rows.splice(1, 0, el("div", { class: "li" }, tx(TX("connect.limit.ask"), onLimitSub), liEnd(limitSel)));
+  if (!off) rows.push(accRulesRow("anthropic", lines, pinned));
   const run = sc && [sc.timeout_ms ? TX("connect.script.timeout", { n: Math.round(sc.timeout_ms / 1000) }) : "", sc.every_minutes ? TX("connect.script.every", { n: sc.every_minutes }) : ""].filter(Boolean).join(" · ");
-  if (!pinned && sc && sc.path) rows.push(el("button", { class: "li tap", type: "button", title: sc.path, onclick: () => accCopy(sc.path) }, tx(TX("project.rt.script"), el("code", { class: "path-short", text: shortPath(sc.path) }), run ? ` · ${run}` : "")));
+  if (!off && !pinned && sc && sc.path) rows.push(el("button", { class: "li tap", type: "button", title: sc.path, onclick: () => accCopy(sc.path) }, tx(TX("project.rt.script"), el("code", { class: "path-short", text: shortPath(sc.path) }), run ? ` · ${run}` : "")));
   const last = sc && sc.last;
-  if (!pinned && last) rows.push(el("div", { class: "li" }, tx(last.error || last.error_text ? TX("connect.script.failed") : TX("connect.script.last", { result: last.label || (last.account ? accLabel(last.account) : TX("connect.script.none")) }), [last.error_text || last.reason, last.at ? kstStamp(Date.parse(last.at)) : ""].filter(Boolean).join(" · "))));
+  if (!off && !pinned && last) rows.push(el("div", { class: "li" }, tx(last.error || last.error_text ? TX("connect.script.failed") : TX("connect.script.last", { result: last.label || (last.account ? accLabel(last.account) : TX("connect.script.none")) }), [last.error_text || last.reason, last.at ? kstStamp(Date.parse(last.at)) : ""].filter(Boolean).join(" · "))));
   rows.push(el("div", { class: "li" }, el("span", { class: "tx" }, el("div", { class: "sup", text: TX("settings.models.reply_note") }))));
   // accounts first (their usage on top); a provider with none keeps its login row and the 계정 추가 button in the head
   const hasAcc = accRows.length > 0;
@@ -166,7 +167,7 @@ function accProviderSection(p, g, conn) {
   }
   // two accounts or more: 자동 전환 (the rules pick through OmO's pin) or 고정 (the owner's own pin), and the rules. OmO still moves a request
   // off a blocked account of the pool, so neither promises a stop the way Claude's 고정 does.
-  if (g.can_rules) {
+  if (g.can_rules && !ACC.pin_unavailable) {
     const pinned = g.mode === "pinned", pin = g.accounts.find(a => a.pinned);
     rows.push(add ? accAddRow(p, g) : null, accLbl(TX("connect.limit.title")),
       el("div", { class: "li" }, accTx(TX("connect.acc.auto"), pinned && pin ? TX("connect.prov.pinned_note", { name: accName(pin.label || pin.name) }) : TX("connect.prov.auto_note")),
@@ -190,7 +191,7 @@ function accProviderDialog(g, a) {
   const alias = (v, msg) => (btn, close) => accMut(btn, () => api("/api/accounts/alias", "PUT", { key, alias: v }), msg, close, err);
   const actions = [
     g.can_delete ? { label: TX("connect.acc.delete"), kind: "danger", onclick: async (c, b) => { b.disabled = true; if (!await ask(TX("connect.delete_named", { name: label }), TX("connect.acc.delete_body"), TX("common.delete"), true)) { b.disabled = false; return; } accMut(b, () => api(`/api/accounts?provider=${enc(g.id)}&name=${enc(a.name)}`, "DELETE"), TX("connect.acc.deleted", { name: label }), c, err); } } : null,
-    g.can_pin ? (a.pinned ? { label: TX("connect.acc.unpin"), kind: "tonal", onclick: (c, b) => accMut(b, () => api("/api/accounts/pin", "PUT", { provider: g.id, account: null }), TX("connect.acc.unpinned"), c, err) } : { label: TX("connect.acc.pin_this"), kind: "tonal", onclick: (c, b) => accMut(b, () => api("/api/accounts/pin", "PUT", { provider: g.id, account: a.name }), TX("connect.acc.pinned_to", { name: label }), c, err) }) : null,
+    g.can_pin && !ACC.pin_unavailable ? (a.pinned ? { label: TX("connect.acc.unpin"), kind: "tonal", onclick: (c, b) => accMut(b, () => api("/api/accounts/pin", "PUT", { provider: g.id, account: null }), TX("connect.acc.unpinned"), c, err) } : { label: TX("connect.acc.pin_this"), kind: "tonal", onclick: (c, b) => accMut(b, () => api("/api/accounts/pin", "PUT", { provider: g.id, account: a.name }), TX("connect.acc.pinned_to", { name: label }), c, err) }) : null,
     { label: TX("common.save"), kind: "pri", onclick: (c, b) => alias(inp.value.trim(), inp.value.trim() ? TX("connect.alias.saved") : TX("connect.alias.removed"))(b, c) },
   ].filter(Boolean);
   const d = dialog({ classic: true, title: `${g.name} · ${label}`, body: el("div", { class: "col" }, accName(a.name) !== label ? el("div", { class: "sup" }, TX("connect.acc.name_prefix"), el("code", { text: accName(a.name) })) : null, el("div", {}, el("div", { class: "lbl", style: "margin:0 0 var(--sp-15)", text: TX("connect.alias") }), inp), err), actions: acGap(actions) });
@@ -207,7 +208,7 @@ function accDialog(a) {
   const out = ACC.accounts.length > 1 ? null : (P.providers || []).find(x => x.id === "anthropic" && (x.can_logout ?? x.removable));
   const d = dialog({ classic: true, title: label, body: el("div", { class: "col" }, accName(a.name) !== label ? el("div", { class: "sup" }, TX("connect.acc.name_prefix"), el("code", { text: accName(a.name) })) : null, el("div", {}, el("div", { class: "lbl", style: "margin:0 0 var(--sp-15)", text: TX("connect.alias") }), inp), err), actions: acGap([
     ACC.accounts.length > 1 ? { label: TX("connect.acc.delete"), kind: "danger", onclick: async (c, b) => { b.disabled = true; if (!await ask(TX("connect.delete_named", { name: label }), TX("connect.acc.delete_body"), TX("common.delete"), true)) { b.disabled = false; return; } accMut(b, () => api(`/api/accounts?name=${enc(a.name)}`, "DELETE"), TX("connect.acc.deleted", { name: label }), c, err); } } : out ? { label: TX("settings.logout.btn"), kind: "danger", onclick: c => { c(); logoutProvider(out); } } : null,
-    { label: TX("connect.acc.pin_this"), kind: "tonal", disabled: ACC.mode === "pinned" && ACC.chosen && ACC.chosen.name === a.name, onclick: (c, b) => accMut(b, () => api("/api/accounts/mode", "PUT", { mode: "pinned", account: a.name }), TX("connect.acc.pinned_to", { name: label }), c, err) },
+    ACC.pin_unavailable ? null : { label: TX("connect.acc.pin_this"), kind: "tonal", disabled: ACC.mode === "pinned" && ACC.chosen && ACC.chosen.name === a.name, onclick: (c, b) => accMut(b, () => api("/api/accounts/mode", "PUT", { mode: "pinned", account: a.name }), TX("connect.acc.pinned_to", { name: label }), c, err) },
     { label: TX("common.save"), kind: "pri", onclick: (c, b) => alias(inp.value.trim(), inp.value.trim() ? TX("connect.alias.saved") : TX("connect.alias.removed"))(b, c) }].filter(Boolean)) });
   inp.addEventListener("keydown", ev => { if (ev.key === "Enter" && !ev.isComposing) { ev.preventDefault(); d.node.querySelector(".dact .btn:last-child").click(); } });
   usDirty(d, [inp]);

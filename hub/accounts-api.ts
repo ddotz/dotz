@@ -15,6 +15,7 @@ import { deleteOmoAccount, writeOmoPin } from "./omo-pin.ts";
 import { accountUsedChanged } from "./notices.ts";
 import { ACCOUNT_CHANGED, ACCOUNT_LEAD, ACCOUNT_PICKED } from "./worklog-kind.ts";
 import { type AccountReport, limitsText, usedAccount } from "./usage-account.ts";
+import { rolesOn } from "./runtime/runtime-id.ts";
 
 export class AccountsError extends Error {
 	constructor(message: string, readonly status = 400) {
@@ -23,6 +24,13 @@ export class AccountsError extends Error {
 }
 
 const SOURCE_TEXT: Record<Decision["source"], string> = { manual: "직접 고름", script: "스크립트", rule: "규칙", auto: "자동" };
+
+const PIN_PATHS = ["/api/accounts/rules", "/api/accounts/use", "/api/accounts/mode", "/api/accounts/on-limit", "/api/accounts/order", "/api/accounts/pin"];
+const pinUnavailable = (): string | undefined => {
+	if (rolesOn("omo")) return undefined;
+	const rest = "계정 고정과 규칙은 OmO에서만 돼요.";
+	return rolesOn("omp") ? `omp에서는 계정을 고정하거나 규칙으로 바꿀 수 없어요. omp가 로그인된 Claude 계정을 직접 골라 돌려 쓰고, 한도에 걸리면 다음 계정으로 넘어가요. ${rest}` : `이 하네스에서는 계정을 고정하거나 규칙으로 바꿀 수 없어요. ${rest}`;
+};
 export const KIND_TEXT: Record<SwitchKind, string> = { start: "처음 선택", limit: "한도", owner: "직접 변경", gone: "계정 사라짐", rule: "규칙", script: "스크립트", manual: "직접 고름" };
 const SCRIPT_ERROR_TEXT: Record<ScriptErrorKind, string> = { timeout: "시간이 초과됐어요", exit: "오류로 끝났어요", spawn: "실행하지 못했어요", unknown_account: "모르는 계정을 골랐어요" };
 
@@ -243,6 +251,7 @@ export function accountsBody(now = Date.now(), catalog: { id: string; name: stri
 	});
 	return {
 		providers: [...(names.length ? [claude] : []), ...others],
+		pin_unavailable: pinUnavailable() ?? null,
 		login_providers: generic.login_providers,
 		// "pinned" (고정: manual pick, never moves) or "auto" (자동 전환: rules, and a switch when the account is blocked)
 		mode: manualId ? ("pinned" as const) : ("auto" as const),
@@ -422,6 +431,8 @@ export async function accountsRoute(req: Request, url: URL): Promise<Response | 
 	// the login providers this install offers, for the 계정 추가 picker (one OmO/omp process, then cached by providers.ts)
 	const catalog = async () => (await import("./providers.ts")).loginProviders().catch(() => []);
 	try {
+		const off = pinUnavailable();
+		if (off && req.method !== "GET" && PIN_PATHS.includes(p)) return Response.json({ error: off }, { status: 409 });
 		// DELETE /api/accounts/switches?at=<time of the entry> removes one history entry; without `at` it clears the whole history.
 		if (req.method === "DELETE" && p === "/api/accounts/switches") {
 			const at = url.searchParams.get("at");
@@ -548,6 +559,8 @@ const whyText = (d: AccountsBody["decision"]): string => (d.source === "auto" ? 
 
 // "/account": the whole picture in Korean, labels first.
 export function accountText(now = Date.now()): string {
+	const off = pinUnavailable();
+	if (off) return off;
 	const b = accountsBody(now);
 	if (!b.accounts.length) return "쓰는 Claude 구독 계정이 없어요. 다른 공급자 계정은 설정 → 계정에서 봐요.";
 	const cur = b.accounts.find(a => a.current);
@@ -583,7 +596,7 @@ export async function accountCommand(rest: string): Promise<string> {
 		setAlias(id, name);
 		return name ? `별칭을 정했어요: ${id} → ${name}` : `별칭을 지웠어요: ${id}`;
 	}
-	return pickedText(await useAccount(t));
+	return pinUnavailable() ?? pickedText(await useAccount(t));
 }
 
 // ---- chat requests answered by the gateway itself ----
@@ -619,6 +632,8 @@ export function accountAsk(text: string, names: string[], aliases: Record<string
 
 // The gateway's answer to an AccountAsk (may change the manual pick).
 export async function accountAnswer(ask: AccountAsk): Promise<string> {
+	const off = pinUnavailable();
+	if (off) return off;
 	// Answering the pinned-limit question remembers the answer, so it is asked once (both choices).
 	if (ask.kind === "auto") {
 		setOnLimit("switch");
