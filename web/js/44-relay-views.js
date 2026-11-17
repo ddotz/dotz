@@ -74,9 +74,7 @@ function rvConvRows(t) {
 
 /** Choose a relay computer from outside its chat (the 프로젝트 list's computer group) and show it on `view`. */
 function relayShow(t, name, view) {
-  RELAY.name[t] = name;
-  if (!isRelayT(target)) RELAY.back = target;
-  RELAY.cur = t;
+  relayPick(t, name);
   if (target !== t) setTarget(t, true);
   go(view);
 }

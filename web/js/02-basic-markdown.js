@@ -325,7 +325,7 @@ function openSheet() {
   const d = document.querySelector("dialog[open]:not([data-leaving]):not(.cf)");
   if (d) return { host: d, onEnd: f => d.addEventListener("close", f, { once: true }) };
   const top = FS[FS.length - 1];
-  return top ? { host: top.box, onEnd: f => top.ends.push(f) } : null;
+  return top ? { host: top.box, onEnd: f => fsOnEnd(top, f) } : null;
 }
 function confirmInSheet({ host, onEnd }, { title, body, actions, onclose }) {
   const sheet = host.classList.contains("fs-card"), from = document.activeElement, kept = [...host.children].map(n => [n, n.hidden]);

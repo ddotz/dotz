@@ -159,7 +159,7 @@ function rqDescs(shown) {
 // A queue item as its card (rqItemCard): only the first waiting card's 보내기 is filled; it is drawn again when its item changes.
 function rqCardDesc(r, shown) {
   const lead = r.state === "ask" && shown.find(x => x.state === "ask") === r;
-  RA.items.has(r.it.ref) || r.it.pc ? null : RA.items.set(r.it.ref, r.it);
+  raKeep(r.it);
   return { key: `r:${r.key}`, sig: JSON.stringify([r.it, lead, RA.busy.get(r.it.ref) || "", RA.fail.get(r.it.ref) || ""]), make: () => el("div", { class: "rq-c", "data-qr": r.key }, rqItemCard(r.it, { lead })) };
 }
 function rqPaintList(rows) {
