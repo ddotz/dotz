@@ -195,7 +195,10 @@ async function cleanWorktrees(entries?: WorktreeEntry[], root = WORKTREE_ROOT): 
 
 // Only omp keeps these worktrees (`omp worktree`); an install whose agents run on OmO or Claude Code has no omp to ask, and
 // spawning it failed every hour. Read per run: config.json can switch the runtime without a restart.
-export const worktreeCleanupApplies = (ids: readonly string[] = activeHarness().ids): boolean => ids.includes("omp");
+export const worktreeCleanupApplies = (ids: readonly string[] = activeHarness().ids): boolean => ids.includes("omp") && !sharedCleanupOff();
+
+/** `DOTZ_SHARED_CLEANUP=off`: a second gateway (a sandbox beside the owner's install) leaves alone what every gateway of this user shares: omp worktrees, the harness session folders and orphaned omp hosts. */
+export const sharedCleanupOff = (): boolean => process.env.DOTZ_SHARED_CLEANUP === "off";
 
 /** One cleanup pass; "skipped" when no role runs on omp. */
 export async function runWorktreeCleanup(): Promise<"skipped" | "done" | "failed"> {
@@ -253,6 +256,7 @@ const isOmpRpcHost = (command: string): boolean =>
 // Kills provable orphaned omp rpc hosts; `only` narrows the candidates to command lines it matches and `minAgeMin` is the
 // least age, both for smoke tests.
 async function reapOrphanHosts(only?: RegExp, minAgeMin = ORPHAN_MIN_AGE_MIN): Promise<number[]> {
+	if (sharedCleanupOff()) return [];
 	const rows = psRows();
 	const parentOf = new Map(rows.map(r => [r.pid, r.ppid]));
 	const tracked = new Set<number>([process.pid, orchestratorPid() ?? 0, ...convs.conversations().map(c => c.o.orchestratorPid() ?? 0), ...[...lanes.values()].map(l => l.proc?.pid ?? 0)]);
@@ -340,7 +344,7 @@ export function runDataCleanup(now = Date.now()): string[] {
 		const gone = pruneUploads(UPLOADS, UPLOAD_KEEP_DAYS, now);
 		return gone.length ? `removed upload folder(s) older than ${UPLOAD_KEEP_DAYS} days: ${gone.join(", ")}` : undefined;
 	});
-	for (const dir of sessionDirs())
+	for (const dir of sharedCleanupOff() ? [] : sessionDirs())
 		step(`temp sessions in ${dir}`, () => {
 			const r = pruneTempSessions(dir, TEMP_SESSION_IDLE_MS, now);
 			return r.removed.length ? `removed ${r.removed.length} session folder(s) of deleted temp folders in ${dir} (${(r.kb / 1024).toFixed(1)} MB)` : undefined;
