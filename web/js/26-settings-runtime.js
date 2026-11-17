@@ -2,7 +2,7 @@
 let RT = null, rtLive = null;
 const RT_ICON = { omp: "term", claude: "spark", codex: "code", omo: "braces" };
 const RT_ROLE = { orchestrator: TX("common.assistant"), lanes: TX("common.session") };
-const RT_RESULT = { ok: [TX("project.res.passed"), "ok"], adapted: [TX("connect.rt.adapted"), "pri"], disabled: [TX("connect.rt.disabled"), ""], unsupported: [TX("connect.rt.unsupported"), "warn"], fail: [TX("home.sys.failed"), "err"] };
+const RT_RESULT = { ok: [TX("project.res.passed"), "ok"], adapted: [TX("connect.rt.adapted"), "pri"], disabled: [TX("connect.rt.disabled"), ""], unsupported: [TX("connect.rt.unsupported"), "warn"], unknown: [TX("connect.rt.unknown"), "warn"], fail: [TX("home.sys.failed"), "err"] };
 async function loadRuntimes(refresh) {
   try { RT = await api(`/api/runtimes${refresh ? "?refresh=1" : ""}`); } catch { return; }
   if (current === "settings" || current === "runtime") renderSettings();
@@ -26,8 +26,8 @@ function rtBadge(it) {
   return el("span", { class: `tag ${it.core && it.result !== "ok" && tone === "warn" ? "err" : tone}`, text: label });
 }
 function rtReportView(r, report) {
-  const core = report.items.filter(i => i.core && (i.result === "fail" || i.result === "unsupported"));
-  const changed = report.items.filter(i => i.result === "adapted" || i.result === "disabled").length;
+  const core = report.items.filter(i => i.core && i.result !== "ok" && i.result !== "adapted" && i.result !== "disabled");
+  const changed = report.items.filter(i => i.result !== "ok").length;
   const stale = !!(r.version && report.version !== r.version);
   const sum = !r.hasAdapter ? TX("connect.rt.no_adapter")
     : report.verdict === "blocked" ? TX("connect.rt.blocked", { list: core.map(i => i.label).join(", ") })
@@ -46,7 +46,7 @@ function rtFlow(r) {
   const box = el("div", { style: "display:flex;flex-direction:column;gap:var(--sp-3)" });
   const err = usErr();
   const d = dialog({ classic: true, title: TX("connect.rt.switch_to", { name: r.label }), body: [box, err], wide: true, onclose: () => { clearInterval(timer); rtLive = null; loadRuntimes(true); } });
-  const usable = () => r.hasAdapter && (r.id === "omp" || (r.id === "omo" && r.installed !== false) || (report && report.verdict !== "blocked" && !(r.version && report.version !== r.version)));
+  const usable = () => r.hasAdapter && (r.id === "omo" && r.installed !== false || (report && report.verdict !== "blocked" && !(r.version && report.version !== r.version)));
   async function pull() {
     try { const x = await api(`/api/runtimes/${r.id}`); report = x.report; st = x.state; } catch { return; }
     if (checking && !(st && st.running)) { checking = false; clearInterval(timer); rtLive = null; }
@@ -68,15 +68,13 @@ function rtFlow(r) {
   function paint() {
     clear(box);
     const running = checking || (st && st.running);
-    if (r.id !== "omp") {
-      if (running) box.append(el("div", {}, el("p", { text: [TX("connect.rt.checking"), st && st.current].filter(Boolean).join(" · ") }), el("div", { class: "bar" }, el("i", { style: `width:${st && st.total ? Math.round((st.done / st.total) * 100) : 4}%` })), el("div", { class: "note", text: st && st.total ? TX("connect.rt.progress", { done: st.done, total: st.total }) : TX("connect.rt.starting") })));
-      else if (report) box.append(rtReportView(r, report));
-      else if (r.id === "omo" && r.hasAdapter) box.append(el("p", { text: TX("connect.rt.omo_note") }));
-      else box.append(el("p", { text: r.hasAdapter ? TX("connect.rt.check_note") : TX("connect.rt.no_adapter_check") }));
-    } else box.append(el("p", { text: TX("connect.rt.omp_note") }));
+    if (running) box.append(el("div", {}, el("p", { text: [TX("connect.rt.checking"), st && st.current].filter(Boolean).join(" · ") }), el("div", { class: "bar" }, el("i", { style: `width:${st && st.total ? Math.round((st.done / st.total) * 100) : 4}%` })), el("div", { class: "note", text: st && st.total ? TX("connect.rt.progress", { done: st.done, total: st.total }) : TX("connect.rt.starting") })));
+    else if (report) box.append(rtReportView(r, report));
+    else if (r.id === "omo" && r.hasAdapter) box.append(el("p", { text: TX("connect.rt.omo_note") }));
+    else box.append(el("p", { text: r.hasAdapter ? TX("connect.rt.check_note") : TX("connect.rt.no_adapter_check") }));
     if (r.hasAdapter) box.append(roleBar());
     const acts = [{ label: TX("common.cancel"), onclick: c => c() }];
-    if (r.id !== "omp" && !running) acts.push({ label: report ? TX("connect.rt.recheck") : TX("connect.rt.run_check"), kind: report ? "text" : "tonal", onclick: () => check() });
+    if (!running) acts.push({ label: report ? TX("connect.rt.recheck") : TX("connect.rt.run_check"), kind: report ? "text" : "tonal", onclick: () => check() });
     acts.push({ label: TX("connect.rt.switch"), kind: "pri", disabled: running || !usable() || !roles.size, onclick: (c, btn) => usRun(btn, err, async () => {
       try { const res = await api(`/api/runtimes/${r.id}/use`, "POST", { roles: [...roles] }); toast(res.applies); c(); }
       catch (e) { await pull(); throw e; } }) });

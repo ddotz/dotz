@@ -19,11 +19,18 @@ test("orchestrator and lane state machines keep their calls", async () => {
 	// The golden was captured from the omp adapter; since OmO became the default the scenario names omp explicitly.
 	const saved = cfg.runtime;
 	cfg.runtime = "omp";
+	const savedLanes = cfg.lanes;
+	cfg.lanes = { ...cfg.lanes, max_workers: 1 };
+	const savedAgentDir = process.env.PI_CODING_AGENT_DIR;
+	process.env.PI_CODING_AGENT_DIR = join(process.env.DOTZ_TEST_DIR!, "omp-agent");
 	const actual = await (async () => {
 		try {
 			return JSON.parse(JSON.stringify({ orchestrator: await orchestratorScenario(), lane: await laneScenario() }));
 		} finally {
 			cfg.runtime = saved;
+			cfg.lanes = savedLanes;
+			if (savedAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+			else process.env.PI_CODING_AGENT_DIR = savedAgentDir;
 		}
 	})();
 	if (process.env.CAPTURE_GOLDEN === "1") return void (await Bun.write(GOLDEN, `${JSON.stringify(actual, null, 1)}\n`));

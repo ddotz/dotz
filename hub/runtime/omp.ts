@@ -2,24 +2,27 @@
 // an omp command, an omp CLI argument or the omp session-file layout lives here. Frames carry complete blocks only
 // (message end, tool end), never token deltas, so the terminal view shows finished steps.
 import type { Subprocess } from "bun";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { type Block, blocks, failedCall, joined, ownIntent, summary } from "../activity.ts";
-import { DATA_DIR, OMP, parseSelector, splitThinking } from "../config.ts";
+import { withoutApiKeys } from "../apikey-policy.ts";
+import { OMP, splitThinking } from "../config.ts";
 import { ownerView } from "../gateway-added.ts";
 import { isNote } from "../i18n.ts";
-import { keyedWorker } from "../fallback.ts";
 import { classifyProviderError } from "../providers.ts";
 import { stripSteerMark } from "../steer-mark.ts";
-import { isLater, isSilent } from "../tone.ts";
 import { killAgent, spawnAgent, writeQuietly } from "./agent-proc.ts";
 import { detectBinary } from "./detect.ts";
 import { touchedPath, withTouchedFiles } from "./handover-files.ts";
+import { lastCompactionSummary, summaryStale } from "./omo-summary.ts";
+import { keyProviderOf, startModelOf, writeOverlay } from "./omp-overlay.ts";
+import { realTurn, type SessionMessage } from "./real-turn.ts";
 import type { ActivityRow, AgentEvent, AgentProcess, RuntimeAdapter, SendMode, SpawnOpts, SubagentUpdate } from "./types.ts";
 
 // The slice of an omp RPC frame this adapter reads (OmO speaks the same pi RPC protocol; omo.ts reuses this reader).
 export type Frame = {
 	type?: string;
+	id?: string;
 	command?: string;
 	success?: boolean;
 	message?: { role?: string; content?: Block[] | string; stopReason?: string; errorMessage?: string; usage?: Usage };
@@ -225,6 +228,7 @@ export { writeQuietly };
 
 export class OmpProcess implements AgentProcess {
 	private seq = 0;
+	private restoreId?: string;
 	private readonly workerModels = new Map<string, string>();
 	readonly events: AsyncIterable<AgentEvent> = this.read();
 	readonly exited: Promise<number>;
@@ -255,19 +259,25 @@ export class OmpProcess implements AgentProcess {
 				} catch {
 					continue;
 				}
-				if (f && typeof f === "object") yield* eventsFromFrame(this.translate(f as Frame), this.workerModels);
+				if (!f || typeof f !== "object") continue;
+				const frame = this.translate(f as Frame);
+				if (this.restoreId !== undefined && frame.type === "response" && frame.id === this.restoreId && frame.success === false) this.write({ type: "abort" });
+				yield* eventsFromFrame(frame, this.workerModels);
 			}
 		}
 	}
-	protected write(frame: Record<string, unknown>): void {
-		writeQuietly(this.proc.stdin, `${JSON.stringify({ id: `${this.idPrefix}${++this.seq}`, ...frame })}\n`);
+	protected write(frame: Record<string, unknown>): string {
+		const id = `${this.idPrefix}${++this.seq}`;
+		writeQuietly(this.proc.stdin, `${JSON.stringify({ id, ...frame })}\n`);
+		return id;
 	}
 	send(text: string, mode: SendMode): void {
 		if (mode === "steer") this.write({ type: "steer", message: text });
 		else this.write({ type: "prompt", message: text, ...(mode === "followUp" ? { streamingBehavior: "followUp" } : {}) });
 	}
-	abort(): void {
-		this.write({ type: "abort" });
+	abort(clearQueue?: boolean): void {
+		if (clearQueue) this.restoreId = this.write({ type: "abort_and_restore_queue" });
+		else this.write({ type: "abort" });
 	}
 	// omp aborts a running turn to compact, so the hub only calls this when idle.
 	compact(instructions?: string): void {
@@ -295,60 +305,10 @@ export class OmpProcess implements AgentProcess {
 	}
 }
 
-// `retry.fallbackChains` for a per-run overlay: omp walks the chain of the exact `provider/id` that failed (an exact key
-// beats a role), and a task worker's chain by role `task` (the overlay points that role at the worker model). Empty
-// chains write nothing, so a process without fallbacks sees the same settings as before.
-function retryYaml(chains: Array<[key: string, models: string[] | undefined]>): string {
-	const used = chains.filter((c): c is [string, string[]] => c[1] !== undefined && (c[1].length > 0 || c[0] !== "task"));
-	if (!used.length) return "";
-	return `retry:\n  modelFallback: true\n  fallbackChains:\n${used.map(([key, models]) => (models.length ? `    ${JSON.stringify(key)}:\n${models.map(m => `      - ${JSON.stringify(m)}\n`).join("")}` : `    ${JSON.stringify(key)}: []\n`)).join("")}`;
-}
-
-// The chain omp walks for the process's own model: the given bare models, or an explicit empty chain when the hub does the
-// switching itself (so no chain of the owner's own omp settings moves it behind the hub's back); undefined = leave omp's settings alone.
-const nativeChain = (o: Pick<SpawnOpts, "fallback" | "hubSwitches">): string[] | undefined => (o.fallback?.length ? o.fallback : o.hubSwitches ? [] : undefined);
-
-// Per-run omp config overlay of the orchestrator (--config): its model's fallback chain, written at every start so a
-// changed chain applies the next time the process starts. No chain, no overlay: the orchestrator then starts with the
-// arguments it always had.
-function orchestratorOverlay(o: SpawnOpts): string[] {
-	// On a keyed entry that lets its workers use the key, the task role points at the key provider's copy of the worker model.
-	const onKey = keyedWorker(o.env);
-	const yaml = `${onKey ? `modelRoles:\n  task: ${JSON.stringify(onKey)}\n` : ""}${retryYaml([[parseSelector(o.model).model, nativeChain(o)]])}`;
-	if (!yaml) return [];
-	const file = join(DATA_DIR, "omp-orchestrator-overlay.yml");
-	writeFileSync(file, `# Written by the dotz gateway each time the orchestrator starts; passed to omp as --config.\n${yaml}`);
-	return [`--config=${file}`];
-}
-
-// Per-run omp config overlay (--config): points the `task` role at the lane's worker model, so the lane plans and
-// reviews on its own model while task workers (implementation, tests, renders, grind) run on the cheaper one, and
-// sets omp's auto-compaction for both models to `compactAt` tokens (keeping the last `keepRecent`); the fallback
-// chains of the lane's model and of its workers go in too. Written at every spawn so changed lanes.* settings apply
-// the next time the lane starts or resumes.
-function writeOverlay(o: SpawnOpts, lane: NonNullable<SpawnOpts["lane"]>): string {
-	const model = o.model;
-	const file = join(lane.dir, "omp-overlay.yml");
-	mkdirSync(lane.dir, { recursive: true });
-	const thresholds = [...new Set([parseSelector(model).model, parseSelector(lane.workerModel).model])].map(m => `    ${JSON.stringify(m)}: ${JSON.stringify(`f${lane.compactAt}`)}\n`).join("");
-	writeFileSync(file, `# Written by the dotz gateway each time lane ${lane.name} starts; passed to omp as --config.\nmodelRoles:\n  task: ${JSON.stringify(lane.workerModel)}\ntask:\n  agentModelOverrides:\n    task: "@task"\n    scout: "@task"\ncompaction:\n  modelThresholds:\n${thresholds}  keepRecentTokens: ${lane.keepRecent}\n${retryYaml([[parseSelector(model).model, nativeChain(o)], ["task", lane.workerFallback]])}`);
-	return file;
-}
-
 // The most recent user messages and assistant final answers of a saved omp session (oldest first, ~9000 chars), the
 // body of a handover into a fresh session, then the paths its edit and write calls touched. Assistant text from a
 // tool-use step is mid-turn monologue, not an answer, so only `stop`/`length` assistant messages count. undefined when
 // the session file cannot be read.
-export type SessionMessage = { role?: string; stopReason?: string; content?: string | Array<{ type?: string; text?: string; name?: string; arguments?: { path?: unknown } }> };
-// The text of a real exchange (what a handover and the summary-staleness check count), undefined for what is not one: a reply that did not end its
-// turn, an empty message, a keepalive ping, "ok", a `[later]` or silent answer, a note, a lane message.
-export function realTurn(m: SessionMessage): string | undefined {
-	if (m.role === "assistant" && m.stopReason !== "stop" && m.stopReason !== "length") return undefined;
-	const t = stripSteerMark(Array.isArray(m.content) ? m.content.filter(b => b?.type === "text").map(b => b.text).join("") : (m.content ?? "")).trim();
-	if (!t || t.startsWith("[keepalive]") || t === "ok" || (m.role === "assistant" && (isLater(t) || isSilent(t))) || isNote(t, "youAre") || t.includes("\n[dotz lane ")) return undefined;
-	return t;
-}
-
 export function recentExchanges(sessionFile: string): string | undefined {
 	const turns: string[] = [];
 	const files: string[] = [];
@@ -375,19 +335,24 @@ export function recentExchanges(sessionFile: string): string | undefined {
 	return withTouchedFiles(tail.join("\n\n"), files);
 }
 
+/**
+ * The whole argv of one omp process, binary first; calling it writes the session's overlay file that `--config=` names.
+ * An API-key entry's provider only exists once the dotz extension has registered it (hub/fallback.ts keyEnv): the process
+ * starts on the entry's own model and is switched to the key provider's copy before the first prompt (RPC commands run in order).
+ */
+export function ompArgv(o: SpawnOpts): string[] {
+	if (o.role === "lane" && !o.lane) throw new Error("a lane needs its lane options");
+	return [OMP, "--mode", "rpc", "--model", startModelOf(o), "--no-extensions", "--extension", EXTENSION, `--config=${writeOverlay(o)}`, ...(o.systemNote ? ["--append-system-prompt", o.systemNote] : []), ...(o.resume ? ["--resume", o.resume] : [])];
+}
+
 export const omp: RuntimeAdapter = {
 	id: "omp",
-	caps: { steer: "native", subagents: "live", contextNumbers: "exact", compact: "rpc", sessionTranscript: true, promptCacheKeepalive: true, extension: true },
+	caps: { steer: "native", subagents: "live", contextNumbers: "exact", compact: "rpc", sessionTranscript: true, promptCacheKeepalive: true, contextLimit: "compact", extension: true },
 	start(o) {
-		if (o.role === "lane" && !o.lane) throw new Error("a lane needs its lane options");
-		const mode = o.role === "orchestrator" ? ["--extension", EXTENSION, ...orchestratorOverlay(o)] : [`--config=${writeOverlay(o, o.lane!)}`];
-		// An API-key entry's provider only exists once the dotz extension has registered it (hub/fallback.ts keyEnv): the process
-		// starts on the entry's own model and is switched to the key provider's copy before the first prompt (RPC commands run in order).
-		const key = o.env.DOTZ_KEY_PROVIDER && o.env.DOTZ_KEY_VALUE ? (JSON.parse(o.env.DOTZ_KEY_PROVIDER) as { id: string; baseModel: string; models: Array<{ id: string }> }) : undefined;
-		const startModel = key ? `${key.baseModel}:${parseSelector(o.model).thinking}` : o.model;
-		const proc = spawnAgent([OMP, "--mode", "rpc", "--model", startModel, ...mode, ...(o.systemNote ? ["--append-system-prompt", o.systemNote] : []), ...(o.resume ? ["--resume", o.resume] : [])], {
+		const key = keyProviderOf(o);
+		const proc = spawnAgent(ompArgv(o), {
 			cwd: o.cwd,
-			env: { ...process.env, ...o.env },
+			env: withoutApiKeys({ PI_CACHE_RETENTION: "long", ...process.env, ...o.env, DOTZ_RUNTIME: "omp" }),
 		});
 		const agent = new OmpProcess(proc, o.role === "orchestrator" ? "o" : "h");
 		if (key) agent.setModel(`${key.id}/${key.models[0].id}`);
@@ -395,5 +360,7 @@ export const omp: RuntimeAdapter = {
 	},
 	classifyError: classifyProviderError,
 	recentExchanges,
+	lastCompactionSummary,
+	summaryStale,
 	detect: () => detectBinary(OMP),
 };

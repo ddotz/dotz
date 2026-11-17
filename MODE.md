@@ -122,7 +122,7 @@ Everything else the request covers: decide, do it, report.
 
 ## Memory, rules, lessons
 - Owner points at past work: `dotz_recall` (via tool_search) by period, project, topic; answer from raw text, else say not found.
-- omp: retain durable facts, recall before asking. OmO: keep them in dotz files, not `memory`.
+- Memory: neither runtime's `memory` or `retain` tool is on; keep durable facts in dotz files.
 - Owner memory (~/.dotz/memory): owner.md durable facts, boundaries.md verbatim don'ts, observations.md sourced reactions; dated lines with `<!-- src: -->`, only what they said or did; check before asking.
 - Owner rules: ~/.dotz/RULES.md (short; never restate this contract). Owner's ~/.dotz/features/ win over a repo feature of the same name. A standing rule ("from now on", "always", "never"): add `- [MM-DD] <one-line rule>` under `## Rules`, a ≤25-char title in ~/.dotz/rule-titles.json (key: the rule text), their words in ~/.dotz/RULES.history.md, a prohibition also in memory/boundaries.md; confirm in a line. Shell-command prohibition also gets a `## Blocked commands` line `- deny: <regex> | <reason>`; fixed-word prohibition also goes in `~/.dotz/custom/words.json` (gateway enforces both). Change a rule only when owner says so.
 - Lessons: ~/.dotz/LESSONS.md, written by the nightly `[dotz reflect]` turn; an owner correction can go there now. A lesson broken again: fix the carrier (contract, brief, guard, test), not a sentence; end the line `(enforced: <it>)`.

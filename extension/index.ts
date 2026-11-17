@@ -32,7 +32,7 @@ import { connectText, type ConnectView } from "./connect-view.ts";
 import { staysInTerminal } from "./terminal-input.ts";
 import { installCompactKept } from "./compact-kept.ts";
 import { defaultDataDir, dryRun, hubPid, liveDataDir, liveWrite, throwawayReason } from "../hub/live-guard.ts";
-import { dropLongTtl, externalAction, installGuard, sharedWriteBlock } from "./guard.ts";
+import { dropLongTtl, externalAction, installGuard, installSubagentGuard, sharedWriteBlock } from "./guard.ts";
 import { dataDir, loadGuardConfig } from "./guard-config.ts";
 import { pipedStatusBlock } from "./guard-pipe.ts";
 import { expandShellVars } from "./guard-shell.ts";
@@ -47,6 +47,7 @@ import { jsonZod, params } from "./schema.ts";
 import { secretIn } from "./peer-secrets.ts";
 import { recallTool } from "./recall-tool.ts";
 import { scheduleKindRefusal } from "./schedule-tool.ts";
+import { type Host, ompHosts, refuseInSubagents } from "./omp-host.ts";
 
 // The claude.ai connectors (Gmail, Calendar, Drive, Docs) reach a fresh Claude Code process only after its first request, so
 // its second request adds their 48 tools mid-conversation, and every such request lost the whole message cache: 126 of 126
@@ -506,9 +507,9 @@ function mainTool(pi: any): void {
 }
 
 // Lanes and their workers write the 5-minute prompt cache (they inherit PI_CACHE_RETENTION=long from the gateway).
-function shortCache(pi: any): void {
+function shortCache(pi: any, kind: "main" | "sub" = "main"): void {
 	pi.on("before_provider_request", (event: any, ctx: any) => {
-		if (ctx?.agent?.kind !== "main" || !event?.payload) return;
+		if (ctx?.agent?.kind !== kind || !event?.payload) return;
 		const payload = structuredClone(event.payload);
 		return dropLongTtl(payload) ? payload : undefined;
 	});
@@ -703,9 +704,35 @@ function followAccount(pi: any): void {
 	});
 }
 
+function ompSession(pi: Host): void {
+	const lane = process.env.DOTZ_LANE;
+	const { main, workers, gateway } = ompHosts(pi);
+	refuseInSubagents(pi, gateway);
+	keyProvider(pi, !process.env.DOTZ_KEY_VALUE);
+	installTaskCap(workers);
+	installBgGuard(workers);
+	installGuard(main);
+	installHarnessTools(main);
+	installOwnerValues(main);
+	if (!lane) main.on("session_start", () => pi.setLabel?.("Dotz mode"));
+	holdOnRestart(main, DATA, lane);
+	enforceRules(pi);
+	workerGuard(workers);
+	installSubagentGuard(workers);
+	installOutputCap(lane ? pi : workers, process.env, true);
+	installCompactKept(pi);
+	if (lane) laneSession(main);
+	else {
+		installEffortBound(main, join(DATA, "effort-bound.json"));
+		orchestratorTools(main);
+	}
+	shortCache(workers, "sub");
+}
+
 export default function dotz(host: any) {
 	const pi = compatHost(host);
 	followAccount(pi);
+	if (process.env.DOTZ_RUNTIME === "omp" && (process.env.DOTZ_LANE || process.env.DOTZ_ORCHESTRATOR === "1")) return ompSession(pi);
 	// An OmO task worker of a lane or of the orchestrator (a child process with its parent's environment, hub/runtime/omo.ts
 	// WORKER_TASK; OmO sets OMO_SENPI_TASK_DEPTH): the owner's rules, the output caps and the 5-minute cache, none of the
 	// parent's tools or commands except the deferred dotz_recall (no prompt growth: no schema until tool search finds it).

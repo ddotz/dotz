@@ -39,7 +39,7 @@ import { debug } from "./guard-debug.ts";
 import { BUDGET_MARKER, budgetLine as briefBudgetLine, checkOmoTaskInput as briefCheckOmoTask, checkTaskInput as briefCheckTask, checkoutRoots, gitTop, isOmoTaskInput, livePin, LOOKUP_PIN, ownWorkerPin, pinOmoTaskModel, shouldIsolate, addProjectFooter } from "./guard-brief.ts";
 export { addProjectFooter, FOLDER_RULES_MARKER, livePin, LOOKUP_PIN, ownWorkerPin, pinOmoTaskModel, PROJECT_MARKER, projectFooter, relativizeRoots, shouldIsolate } from "./guard-brief.ts";
 import { applyDirsOf, GIT_APPLY, GIT_APPLY_NAMED, GIT_APPLY_RE, patchIsApplied, patchLanded } from "./guard-patches.ts";
-import { detectCycle, REPEAT_ESCALATION_ATTEMPTS, REPEAT_HISTORY, REPEAT_MAX_SESSIONS, REPEAT_MIN_LAPS, REPEAT_WINDOW_MS, repeatArgsDigest, repeatBlockReason, repeatResultDigest, repeatStopReason, repeatSubject, type RepeatCall, type RepeatRow } from "./guard-repeat.ts";
+import { createRepeatGuard, type RepeatCtx, type RepeatEvent } from "./guard-repeat.ts";
 
 // Active configuration: the defaults until installGuard() loads <DOTZ_DIR>/config.json. The exported checks take their
 // limits as a parameter that defaults to it, so tests pass their own.
@@ -408,8 +408,6 @@ export function settleFromText(state: ProjectState, text: string): boolean {
 	return changed;
 }
 
-// Laps of a `period`-long cycle before stage 1: period 1 -> 8 laps, 2 -> 4, 3 -> 3, 4 -> 3 (8, 8, 9, 12 calls). The laps floor keeps a coincidental A,B,A,B from reading as a loop.
-const requiredLaps = (period: number) => Math.max(REPEAT_MIN_LAPS, Math.ceil(G.repeat_block_threshold / period));
 export function installGuard(pi: any, config: GuardConfig = loadGuardConfig()): void {
 	if (!config.enabled) return;
 	const installed = config.defer_to_installed ? installedOriginal(pi, "orchestrator-guard") : undefined;
@@ -466,19 +464,11 @@ export function installGuard(pi: any, config: GuardConfig = loadGuardConfig()): 
 		injectState(ctx, true);
 	});
 
-	const repeatRows = new Map<string, RepeatRow>();
+	const repeat = createRepeatGuard(config);
 	const isolationUnavailable = new Set<string>();
-	const repeatKey = (ctx: any) => String(ctx?.sessionManager?.getSessionId?.() ?? ctx?.agent?.id ?? "");
 
 	pi.on("tool_result", (event: any, ctx: any) => {
-		// Fill in what the call returned, so an identical call whose output changes (a poll) is not counted as a loop. Before the main-only return: workers are guarded too.
-		try {
-			const id = String(event?.toolCallId ?? "");
-			const call = [...(repeatRows.get(repeatKey(ctx))?.calls ?? [])].reverse().find(c => (id ? c.id === id : !c.result && c.tool === event?.toolName && c.args === repeatArgsDigest(c.tool, event?.input)));
-			if (call) call.result = repeatResultDigest(event?.content);
-		} catch (error) {
-			debug({ phase: "repeat-result-error", message: String(error) });
-		}
+		repeat.record(event, ctx);
 		if (!isMain(ctx)) return;
 		const current = projectState(ctx);
 		const text = (event.content ?? []).map((b: { text?: string }) => b?.text ?? "").join("\n");
@@ -605,58 +595,6 @@ export function installGuard(pi: any, config: GuardConfig = loadGuardConfig()): 
 		return dropped ? payload : undefined;
 	});
 
-	// Evaluated after every other block in the tool_call handler so existing blocks win. Blocked calls are never recorded (the history freezes, so ignored blocks are counted instead of laps). Any failure here allows the call: a guard bug must not veto work.
-	const repeatGuard = async (event: any, ctx: any): Promise<{ block: true; reason: string } | undefined> => {
-		try {
-			const tool = String(event?.toolName ?? "");
-			const args = repeatArgsDigest(tool, event?.input);
-			if (!args) return;
-			const now = Date.now();
-			const key = repeatKey(ctx);
-			let row = repeatRows.get(key);
-			// Past the window the session was idle (or the id was reused): a streak that old no longer describes a loop.
-			if (!row || now - row.seen > REPEAT_WINDOW_MS) row = { calls: [], blocked: 0, seen: now };
-			row.seen = now;
-			repeatRows.delete(key);
-			repeatRows.set(key, row);
-			if (repeatRows.size > REPEAT_MAX_SESSIONS) repeatRows.delete(repeatRows.keys().next().value as string);
-			const cand: RepeatCall = { tool, args, result: "", id: String(event?.toolCallId ?? "") };
-			const tentative = [...row.calls, cand];
-			const cycle = detectCycle(tentative);
-			let engaged = row.engaged;
-			if (cycle && cycle[1] >= requiredLaps(cycle[0])) {
-				const [period, laps] = cycle;
-				const elements = tentative.slice(-period);
-				const sig = elements.map(c => `${c.tool}\0${c.args}`).sort().join("\n");
-				if (engaged?.sig !== sig) row.blocked = 0;
-				engaged = row.engaged = { sig, elements, ran: period * laps - 1, compared: tentative.slice(-period * laps, -1).every(c => c.result) };
-			} else if (!engaged?.elements.some(c => c.tool === tool && c.args === args)) {
-				// Not a loop call: it runs, joins the history and leaves no engaged cycle behind it. Another element of a blocked cycle stays blocked: the history did not advance, so it is the same loop one step along.
-				row.calls = tentative.slice(-REPEAT_HISTORY);
-				row.engaged = undefined;
-				row.blocked = 0;
-				return;
-			}
-			if (!engaged) return;
-			const ignored = row.blocked++;
-			debug({ phase: "repeat-block", agent: ctx?.agent?.id, tool, ignored, ran: engaged.ran });
-			if (ignored < REPEAT_ESCALATION_ATTEMPTS) return { block: true, reason: repeatBlockReason(engaged) };
-			// dotz gateway sessions run `omp --mode rpc`: hasUI is true there but nobody answers extension UI requests, so a
-			// confirm would hang the call forever. They (and any session without a UI) get the stop block instead.
-			const headless = !ctx?.hasUI || typeof ctx.ui?.confirm !== "function" || !!process.env.DOTZ_LANE || process.env.DOTZ_ORCHESTRATOR === "1";
-			if (headless) return { block: true, reason: repeatStopReason(engaged, ignored) };
-			// A dialog nobody answers within a minute counts as a deny.
-			const allowed = await ctx.ui.confirm("Repeat guard", `${repeatSubject(engaged.elements, engaged.ran)}, and ${ignored} further attempts were blocked. Allow this call once more? Denying ends the repetition.`, { timeout: 60_000 });
-			if (allowed !== true) return { block: true, reason: `orchestrator-guard repeat guard: the owner denied (or did not answer) this repeated call. ${repeatBlockReason(engaged)}` };
-			// A person said go on: they get a fresh budget of laps rather than a prompt on every call.
-			row.calls = [cand];
-			row.engaged = undefined;
-			row.blocked = 0;
-		} catch (error) {
-			debug({ phase: "repeat-error", message: String(error) });
-		}
-	};
-
 	const guardToolCall = async (event: any, ctx: any): Promise<any> => {
 		const tool = String(event?.toolName ?? "");
 		if (ctx?.agent?.kind === "sub" && compactions >= SUB_COMPACT_STOP) {
@@ -753,7 +691,7 @@ export function installGuard(pi: any, config: GuardConfig = loadGuardConfig()): 
 	pi.on("tool_call", async (event: any, ctx: any) => {
 		const verdict = await guardToolCall(event, ctx);
 		if (verdict?.block) return verdict;
-		return (await repeatGuard(event, ctx)) ?? verdict;
+		return (await repeat.check(event, ctx)) ?? verdict;
 	});
 
 	pi.on("context", (event: any, ctx: any) => {
@@ -783,5 +721,19 @@ export function installGuard(pi: any, config: GuardConfig = loadGuardConfig()): 
 		});
 		if (trimmed) debug({ phase: "context-trim", trimmed });
 		return trimmed ? { messages } : undefined;
+	});
+}
+
+/** The checks of installGuard that bind a task subagent, for a host that runs installGuard for the main agent alone (omp): a broad search, a quick chat's reach and a usage-limit stop line are refused, and a call repeated in a loop is blocked. The compaction wrap-up and stop stay out: the task cap owns a subagent's context. */
+export function installSubagentGuard(pi: { on(name: string, handler: (event: RepeatEvent, ctx: RepeatCtx) => unknown): unknown }, config: GuardConfig = loadGuardConfig()): void {
+	if (!config.enabled || (config.defer_to_installed && installedOriginal(pi, "orchestrator-guard"))) return;
+	const repeat = createRepeatGuard(config);
+	pi.on("tool_result", repeat.record);
+	pi.on("tool_call", async (event, ctx) => {
+		const tool = String(event?.toolName ?? "");
+		const reason = broadSearchProblem(tool, event?.input) ?? quickChatBlock(tool, event?.input) ?? limitStopProblem(tool, event?.input);
+		if (!reason) return repeat.check(event, ctx);
+		debug({ phase: "sub-check-block", agent: ctx?.agent?.id, tool });
+		return { block: true, reason };
 	});
 }

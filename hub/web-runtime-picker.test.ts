@@ -24,7 +24,7 @@ const RUNTIMES = [
 	{ id: "codex", label: "Codex", installed: false, hasAdapter: false, roles: [], reason: "설치 안 됨" },
 ];
 
-function harness(runtimes = RUNTIMES) {
+function harness(runtimes = RUNTIMES, reports: Record<string, unknown> = {}) {
 	const calls: [string, string, any][] = [];
 	const menus: { anchor: Node; items: any[]; opts: any }[] = [];
 	const dialogs: { title: string; actions: any[]; body: any }[] = [];
@@ -32,7 +32,8 @@ function harness(runtimes = RUNTIMES) {
 		calls.push([method, path, body]);
 		if (path === "/api/runtimes") return { runtimes };
 		if (/\/use$/.test(path)) return { applies: "다음 시작부터 적용돼요" };
-		return { report: null, state: null };
+		const id = /^\/api\/runtimes\/([^/]+)$/.exec(path)?.[1];
+		return { report: (id && reports[id]) || null, state: null };
 	};
 	const el = (tag: string, attrs: any, ...kids: any[]) => mkNode(tag, attrs, kids);
 	const icon = (name: string) => mkNode("icon", { name }, []);
@@ -44,6 +45,8 @@ function harness(runtimes = RUNTIMES) {
 		(_b: unknown, fn: () => Promise<void>) => fn(), () => {}, "home", () => mkNode("p", {}, []), (_b: unknown, _e: unknown, fn: () => Promise<void>) => fn(), (...k: Node[]) => mkNode("span", {}, k)) as { loadRuntimes: () => Promise<void>; rtSection: () => Node[] };
 	return { g, calls, menus, dialogs };
 }
+
+const settle = async () => { for (let i = 0; i < 50; i++) await Promise.resolve(); };
 
 describe("settings: 작업 프로그램 picker", () => {
 	test("renders only the running harness, not the whole list", async () => {
@@ -74,20 +77,67 @@ describe("settings: 작업 프로그램 picker", () => {
 		expect(menus[0].items.map(i => i.value)).toEqual(["omp", "claude"]);
 
 		menus[0].opts.onPick("omp");
-		for (let i = 0; i < 20 && !dialogs[0]?.actions.length; i++) await Promise.resolve();
+		await settle();
 		expect(dialogs[0].title).toBe("omp로 바꾸기");
+		const use = dialogs[0].actions.find(a => a.label === "바꾸기");
+		expect(use.disabled).toBe(true);
+		expect(calls.filter(c => c[1].endsWith("/use"))).toEqual([]);
+	});
+
+	test("a passing report makes omp usable and POSTs /use", async () => {
+		const report = { at: 0, version: "0.9", verdict: "ok", items: [{ label: "스트림", core: true, result: "ok" }] };
+		const { g, calls, menus, dialogs } = harness(RUNTIMES, { omp: report });
+		await g.loadRuntimes();
+		walk(g.rtSection()[1]).find(n => n.attrs["data-runtime"] === "omo")!.listeners.click[0]();
+		menus[0].opts.onPick("omp");
+		await settle();
 		const use = dialogs[0].actions.find(a => a.label === "바꾸기");
 		expect(use.disabled).toBe(false);
 		await use.onclick(() => {}, {});
 		expect(calls.filter(c => c[1].endsWith("/use"))).toEqual([["POST", "/api/runtimes/omp/use", { roles: ["orchestrator", "lanes"] }]]);
 	});
 
-	test("the two targets are separate switches, and 바꾸기 needs at least one on", async () => {
-		const { g, menus, dialogs } = harness();
+	test("omp offers the check button like claude, and the omp-only note is gone", async () => {
+		for (const id of ["omp", "claude"]) {
+			const { g, menus, dialogs } = harness();
+			await g.loadRuntimes();
+			walk(g.rtSection()[1]).find(n => n.attrs["data-runtime"] === "omo")!.listeners.click[0]();
+			menus[0].opts.onPick(id);
+			await settle();
+			expect(dialogs[0].actions.map(a => a.label)).toEqual(["취소", "작동 검사", "바꾸기"]);
+			expect(walk(dialogs[0].body[0]).map(n => n.text()).join("")).not.toContain("검사 없이 바꿀 수 있어요");
+		}
+	});
+
+	test("a core item that came back unknown blocks the switch and shows its own label", async () => {
+		const report = { at: 0, version: "0.9", verdict: "blocked", items: [{ label: "도구 호출", core: true, result: "unknown" }, { label: "스트림", core: true, result: "ok" }] };
+		const { g, menus, dialogs } = harness(RUNTIMES, { omp: report });
 		await g.loadRuntimes();
 		walk(g.rtSection()[1]).find(n => n.attrs["data-runtime"] === "omo")!.listeners.click[0]();
 		menus[0].opts.onPick("omp");
-		for (let i = 0; i < 20 && !dialogs[0]?.actions.length; i++) await Promise.resolve();
+		await settle();
+		const text = walk(dialogs[0].body[0]).map(n => n.text()).join("|");
+		expect(text).toContain("핵심 항목이 통과하지 못해서 바꿀 수 없어요: 도구 호출");
+		expect(walk(dialogs[0].body[0]).some(n => n.attrs.class === "tag err" && n.text() === "확인 안 됨")).toBe(true);
+		expect(dialogs[0].actions.find(a => a.label === "바꾸기").disabled).toBe(true);
+	});
+
+	test("an adjusted report counts every item that is not ok, unknown ones included", async () => {
+		const items = [{ label: "스트림", core: true, result: "ok" }, { label: "압축", core: false, result: "unknown" }, { label: "패치", core: false, result: "adapted" }];
+		const { g, menus, dialogs } = harness(RUNTIMES, { omp: { at: 0, version: "0.9", verdict: "adjusted", items } });
+		await g.loadRuntimes();
+		walk(g.rtSection()[1]).find(n => n.attrs["data-runtime"] === "omo")!.listeners.click[0]();
+		menus[0].opts.onPick("omp");
+		await settle();
+		expect(walk(dialogs[0].body[0]).map(n => n.text()).join("|")).toContain("2개 기능은 게이트웨이가 대신 처리하거나 꺼요");
+	});
+
+	test("the two targets are separate switches, and 바꾸기 needs at least one on", async () => {
+		const { g, menus, dialogs } = harness(RUNTIMES, { omp: { at: 0, version: "0.9", verdict: "ok", items: [] } });
+		await g.loadRuntimes();
+		walk(g.rtSection()[1]).find(n => n.attrs["data-runtime"] === "omo")!.listeners.click[0]();
+		menus[0].opts.onPick("omp");
+		await settle();
 		const switches = () => walk(dialogs[0].body[0]).filter(n => n.attrs.role === "switch");
 		expect(walk(dialogs[0].body[0]).some(n => n.attrs.role === "radio" || n.attrs.role === "radiogroup")).toBe(false);
 		expect(switches().map(n => n.attrs["aria-checked"])).toEqual(["true", "true"]);

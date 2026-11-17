@@ -242,3 +242,9 @@ export function blockedBy(command: string, rulesText: string): string | undefine
 // omp marks the session's own agent in ctx.agent (main / sub). OmO has no ctx.agent and runs task workers in its rpc host,
 // which does not load this extension, so there every session that loads it is the main one.
 export const isMain = (ctx: any) => (ctx?.agent ? ctx.agent.kind === "main" : process.env.DOTZ_RUNTIME === "omo");
+
+/** A task subagent: omp says so in ctx.agent (kind "sub"), OmO has no ctx.agent and marks the child process of a task worker with OMO_SENPI_TASK_DEPTH. */
+export const isSubagent = (ctx: unknown, env: Record<string, string | undefined> = process.env): boolean => {
+	const agent = (ctx as { agent?: { kind?: string } } | undefined)?.agent;
+	return agent ? agent.kind === "sub" : Boolean(env.OMO_SENPI_TASK_DEPTH);
+};
