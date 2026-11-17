@@ -105,6 +105,7 @@
   // poll could start a model-list process on the gateway, so a forgotten tab cost the computer one every minute for nothing.
   const missed = { state: false, models: false };
   const unlessHidden = (key, fn) => () => { if (document.hidden) missed[key] = true; else fn(); };
+  // The page's one 15 s state read (refreshState then reads /api/context): it also takes finished background work off the status line and refreshes the context ring.
   setInterval(unlessHidden("state", refreshState), 15000);
   // The 새 버전 badge comes from /api/update: read it on open and again every few minutes.
   loadUpdate(); setInterval(() => { if (!document.hidden) loadUpdate(); }, 5 * 60000);

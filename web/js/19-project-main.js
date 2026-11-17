@@ -527,6 +527,7 @@ async function ctxFetch(quiet) {
   catch (e) { if (!quiet && current === "context") clear($("#context")).append(emptyNode(TX("project.ctx.load_failed"))); return; }
   if (current === "context") { renderContext(); ctxTimer = setTimeout(() => loadContext(true), 4000); }
   if (current === "home") renderHome();
+  if (current === "chat" || current === "activity") renderCtxRing();
 }
 // "<model>:<thinking>" selector -> readable "model · thinking".
 function selLabel(sel) {

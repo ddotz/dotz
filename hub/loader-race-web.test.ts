@@ -1,9 +1,9 @@
 import { afterAll, expect, test } from "bun:test";
-import { fakeHub, on } from "./test-web.ts";
+import { advanceSettled, fakeHub, on } from "./test-web.ts";
 
 // A read asked for while an older read of the same path is out (sent before what changed) gets a read that starts after it, never that older answer
 // (web/js/02-basic-markdown.js latest, under api()). The page's own fetch holds each /api/queue answer until the test releases it.
-const hub = fakeHub({ stream: "fake" });
+const hub = fakeHub({ stream: "fake", slowTimers: true });
 afterAll(() => hub.stop());
 const view = await hub.view({ width: 390, height: 844 });
 const { waitFor } = on(view);
@@ -25,6 +25,24 @@ test("a reload asked for during an older read waits for a read sent after it, an
 	await view.evaluate(`(__held[1](${answer("new")}), 0)`);
 	expect(await view.evaluate(`Promise.all([__first, __second]).then(() => QUEUE.map(i => i.id).join(","))`)).toBe("new");
 	await view.evaluate(`(fetch = __fetch, 0)`);
+});
+
+// The page's 15 s polls share one state read, and that read brings the one context read with it (99-boot.js, 17-state-refresh.js refreshState).
+test("one 15 s tick on the chat sends one /api/state and one /api/context read", async () => {
+	await view.evaluate(`(go("chat"), 0)`);
+	await advanceSettled(view, 0);
+	await view.evaluate(`(window.__fetch = fetch, window.__n = {}, fetch = (p, o) => { const k = String(p).split("?")[0]; __n[k] = (__n[k] || 0) + 1; return __fetch(p, o); }, 0)`);
+	await advanceSettled(view, 15000);
+	expect(await view.evaluate(`JSON.stringify([__n["/api/state"], __n["/api/context"]])`)).toBe("[1,1]");
+	await view.evaluate(`(fetch = __fetch, 0)`);
+});
+
+// A poll needs no read that starts after it: a tick while the last read is still out leaves it alone instead of queueing another (42-relay-chat.js relayTick).
+test("a relay poll tick while the room's read is out sends nothing and queues nothing", async () => {
+	await view.evaluate(`(window.__ro = relayOn, relayOn = () => true, window.__out = latest(targetKey(target), () => new Promise(r => { window.__rel = r; })), window.__fetch = fetch, window.__sent = 0, fetch = (p, o) => (__sent++, __fetch(p, o)), 0)`);
+	await view.evaluate(`(relayTick(), 0)`);
+	expect(await view.evaluate(`JSON.stringify([__sent, !!FLIGHTS.get(targetKey(target)).next])`)).toBe("[0,false]");
+	await view.evaluate(`(__rel(), relayOn = __ro, fetch = __fetch, __out.then(() => 0))`);
 });
 
 test("with a call during every read, each caller is still answered by the first read sent after its call", async () => {

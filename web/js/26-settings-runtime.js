@@ -52,6 +52,7 @@ function rtFlow(r) {
     if (checking && !(st && st.running)) { checking = false; clearInterval(timer); rtLive = null; }
     paint();
   }
+  const tick = () => { if (!latestOut(`/api/runtimes/${r.id}`)) pull(); };   // a poll while the last read is out skips it
   // The two targets are separate on/off choices (switch rows), not one either/or pick; 바꾸기 needs at least one on.
   const roleBar = () => el("div", { class: "col" }, el("div", { class: "sup", text: TX("connect.rt.applies") }),
     el("div", { class: "list" }, ...Object.entries(RT_ROLE).map(([k, v]) => {
@@ -62,7 +63,7 @@ function rtFlow(r) {
     roles.size ? null : el("div", { class: "sup", text: TX("connect.rt.need_one") }));
   async function check() {
     try { await api(`/api/runtimes/${r.id}/verify`, "POST", { real: true }); } catch (e) { toast(e.message, true); return; }
-    checking = true; st = { running: true, done: 0, total: 0 }; rtLive = pull; clearInterval(timer); timer = setInterval(pull, 1000); paint();
+    checking = true; st = { running: true, done: 0, total: 0 }; rtLive = pull; clearInterval(timer); timer = setInterval(tick, 1000); paint();
   }
   function paint() {
     clear(box);
@@ -81,6 +82,6 @@ function rtFlow(r) {
       catch (e) { await pull(); throw e; } }) });
     d.setActions(acts);
   }
-  pull().then(() => { if (st && st.running) { checking = true; rtLive = pull; timer = setInterval(pull, 1000); paint(); } });
+  pull().then(() => { if (st && st.running) { checking = true; rtLive = pull; timer = setInterval(tick, 1000); paint(); } });
   paint();
 }

@@ -86,7 +86,8 @@ async function relaySend(text) {
   }
   await relayLoad(t, true);
 }
-const relayTick = () => { if (relayOn() && !document.hidden) relayLoad(target, true); };
+// A poll while the room's read is still out skips: that read is fresh enough, and asking again would queue polls back to back on a slow gateway.
+const relayTick = () => { if (relayOn() && !document.hidden && !latestOut(targetKey(target))) relayLoad(target, true); };
 setInterval(relayTick, RELAY_POLL_MS);
 document.addEventListener("visibilitychange", relayTick);
 

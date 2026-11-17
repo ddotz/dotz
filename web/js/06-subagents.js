@@ -46,8 +46,6 @@ function workAgo(w) {
 }
 // The left of the status line above the composer: what the background work is and how long it has run. The model is in the chip under the box, so the line does not say it.
 const workLine = ws => `${ws[0].description} · ${workElapsed(ws[0])}${ws.length > 1 ? ` · ${TX("base.work.more", { n: ws.length - 1 })}` : ""}`;
-// Re-read the state while work runs, so a finished or failed one leaves the line without waiting for another event.
-setInterval(() => { if (!document.hidden && (workRunning().length || Object.values((S && S.runs) || {}).some(runMoving))) refreshState(); }, 15000);
 function setSubs(source, items) {
   if (!source) return;
   SUBS[source] = Array.isArray(items) ? items : [];

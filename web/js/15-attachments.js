@@ -423,7 +423,6 @@ function pathFiles(md, pc) {
   if (n) for (const img of n.querySelectorAll("img")) img.onerror = () => img.closest(".fitem").remove();
   return n;
 }
-setInterval(() => { if ((current === "chat" || current === "activity") && !document.hidden) loadContext(true).then(renderCtxRing); }, 15000);
 // A reload lands on the conversation it left: its draft and waiting files come back (a microtask: the later modules of this one script must exist first).
 queueMicrotask(() => {
   try { if (!ta.value) ta.value = ts(target).draft = localStorage.getItem(DRAFT_KEY(target)) || ""; } catch {}
