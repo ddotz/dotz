@@ -84,7 +84,7 @@ function laneTailsStale() {
   for (const p of Object.values(LP)) p.loaded = false;
 }
 /* ---------- 프로젝트 (docs/layers.md §5): the list (GET /api/custom) and the main view (GET /api/custom/project?key=) ---------- */
-let PRJ = null, PRJ_FAIL = false, prjFlight = null, prjRev = 0, PRJ_AT = 0;
+let PRJ = null, PRJ_FAIL = false, prjRev = 0, PRJ_AT = 0;
 const prjTitle = p => (p.record && p.record.title) || p.title || p.name;
 const prjPurpose = p => (p.record && p.record.purpose) || p.purpose || p.note || "";
 // A purpose as the owner reads it: its first one or two plain sentences. A sentence that names a path, link, port, file or repo stays in the raw
@@ -102,16 +102,15 @@ function prjBlurb(text) {
 }
 const prjChat = p => p.key.startsWith("ch:") ? p.key : p.channel ? `ch:${p.channel.id}` : "";
 const prjPaused = p => !!(p.paused || (p.record && p.record.paused));
-function prjLoad() {
-  if (prjFlight) return prjFlight;
-  prjFlight = api("/api/custom").then(d => { PRJ = d; PRJ_FAIL = false; PRJ_AT = Date.now(); }, () => { if (!PRJ) PRJ_FAIL = true; }).then(() => {
-    prjFlight = null; prjRev++;
+// A screen that opens joins a read already out; again (asked after a write) reads after it, since that read may predate the write.
+function prjLoad(again) {
+  return (!again && latestOut("prj")) || latest("prj", () => api("/api/custom").then(d => { PRJ = d; PRJ_FAIL = false; PRJ_AT = Date.now(); }, () => { if (!PRJ) PRJ_FAIL = true; }).then(() => {
+    prjRev++;
     prjPcLoad();
     if (current === "project") { if (ppWide()) renderProjects(); pmPaint(); }
     else if (current === "projects") renderProjects();
     else if (current === "home") homeSoon();   // a 진행 중 row names the session's project
-  });
-  return prjFlight;
+  }));
 }
 // The computer groups (GET /api/custom/computers, hub/custom.ts computerGroups): this computer first, then the others, each with its own
 // projects. Read behind the project list, at most once a minute (another computer's answer can take seconds). One group: no headers.

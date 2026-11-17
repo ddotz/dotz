@@ -10,33 +10,24 @@
 // RA.asked: the line to the AI of a revise the panel posted, kept until the revise ends: its `next` forgets it, its `why` opens the panel again with it.
 // RA.nodes: every card of a ref on screen, a set of registrations per ref (raReg).
 // loaded: the first read came back; min: how many waiting items make the 답장 대기 head offer 빠른 처리 and the app filter (the queue's triageMin);
-// err: the last failed read, kept for 답장 대기's 다시 시도; load: the read on its way, again: a read was asked for while it was.
-const RA = { items: new Map(), loaded: false, min: 1, err: null, load: null, again: false, busy: new Map(), fail: new Map(), fix: new Map(), asked: new Map(), nodes: new Map(), t: 0, ticking: false };
+// err: the last failed read, kept for 답장 대기's 다시 시도.
+const RA = { items: new Map(), loaded: false, min: 1, err: null, busy: new Map(), fail: new Map(), fix: new Map(), asked: new Map(), nodes: new Map(), t: 0, ticking: false };
 function raKeep(it) { if (!RA.items.has(it.ref) && !it.pc) RA.items.set(it.ref, it); }   // a queue item this computer's list has not read yet (30-replies.js)
 // An open panel outlives a reload of the tab (01-core.js kept): its texts, subjects, line to the AI, part and the hash it opened on. The rows it marked (files picked) do not.
 for (const [ref, s] of kept("ra-fix", () => [...RA.fix].map(([r, f]) => [r, { part: f.part, text: f.text, subject: f.subject, note: f.note, hash: f.hash }])) || []) RA.fix.set(ref, { ...s, rows: {} });
 
-// One read at a time: a read asked for while one is on its way (api() would hand it that older answer, sent before what changed) reads once more when it ends,
-// so every caller sees the queue as it was at least when it asked, and an older answer never lands after a newer one.
-function raLoad() {
-  if (RA.load) { RA.again = true; return RA.load; }
-  return (RA.load = (async () => {
-    try {
-      do {
-        RA.again = false;
-        try {
-          const r = await api("/api/reply/queue");
-          RA.items = new Map((r.items || []).map(i => [i.ref, i]));
-          if (Number(r.triageMin) > 0) RA.min = Number(r.triageMin);
-          if (!RA.loaded) for (const ref of RA.fix.keys()) if (!RA.items.has(ref)) RA.fix.delete(ref);   // a panel kept over a reload whose draft no longer waits
-          RA.err = null;
-          RA.loaded = true;
-        } catch (e) { RA.err = e; }   // the next event or open reads it again; what was shown stays
-        for (const ref of [...RA.nodes.keys()]) raPaint(ref, undefined, true);
-        paintDecision();   // a send approval the queue now holds leaves the dock for its card (10-decision-card.js dcQueued)
-      } while (RA.again);
-    } finally { RA.load = null; }
-  })());
+// The read is api()'s (02-basic-markdown.js latest): every caller gets a queue read that started after its call, and reads never land out of order.
+async function raLoad() {
+  try {
+    const r = await api("/api/reply/queue");
+    RA.items = new Map((r.items || []).map(i => [i.ref, i]));
+    if (Number(r.triageMin) > 0) RA.min = Number(r.triageMin);
+    if (!RA.loaded) for (const ref of RA.fix.keys()) if (!RA.items.has(ref)) RA.fix.delete(ref);   // a panel kept over a reload whose draft no longer waits
+    RA.err = null;
+    RA.loaded = true;
+  } catch (e) { RA.err = e; }   // the next event or open reads it again; what was shown stays
+  for (const ref of [...RA.nodes.keys()]) raPaint(ref, undefined, true);
+  paintDecision();   // a send approval the queue now holds leaves the dock for its card (10-decision-card.js dcQueued)
 }
 const raSoon = () => { clearTimeout(RA.t); RA.t = setTimeout(raLoad, 300); };
 

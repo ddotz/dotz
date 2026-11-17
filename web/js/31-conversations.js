@@ -70,13 +70,8 @@ function convDropGone(items, cursor, whole) {
   if (current === "chat" && gone.includes(target)) go("monitoring", MON.sel || "i:mail");
   mbRefresh();
 }
-// One load at a time: a call that comes while one runs makes it read again once it ends, and both callers get the same promise.
-let convFlight = null, convAgain = false;
-function convLoad() {
-  if (convFlight) { convAgain = true; return convFlight; }
-  convFlight = (async () => { do { convAgain = false; await convLoadNow(); } while (convAgain); })().finally(() => { convFlight = null; });
-  return convFlight;
-}
+// One load at a time: a call that comes while one runs makes it read again once it ends, and both callers get the same promise (02-basic-markdown.js latest).
+function convLoad() { return latest("conv", convLoadNow); }
 // A live event (one per mail) refreshes through this: the first runs at once; events during the load or the next LIVE_GAP ms collapse into one trailing run.
 let LIVE_GAP = 2000;
 function coalesced(fn) {

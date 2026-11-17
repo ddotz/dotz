@@ -43,7 +43,7 @@ test("채팅 목록: a failed first read shows one 다시 시도 under the list,
 
 test("프로젝트: a failed list keeps its 다시 시도, and pressing it loads the list", async () => {
 	await view.evaluate(failing("/api/custom"));
-	await view.evaluate(`(PRJ = null, PRJ_FAIL = false, prjFlight = null, go("projects"), 0)`);
+	await view.evaluate(`(PRJ = null, PRJ_FAIL = false, go("projects"), 0)`);
 	await waitFor(`PRJ_FAIL && !!document.querySelector('#v-projects [data-k="retry"]')`);
 	await view.evaluate(`(api = __api, document.querySelector('#v-projects [data-k="retry"]').click(), 0)`);
 	await waitFor(`!!PRJ && !PRJ_FAIL`);

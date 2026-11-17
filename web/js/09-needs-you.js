@@ -318,7 +318,7 @@ const stripRetry = () => { stripAt = 0; };   // that read failed: the next loadS
 
 // Per-target data, shared by both views: conversation events (msgs) and what the agent did (acts).
 const TS = {};
-const ts = t => TS[t] || (TS[t] = { t, msgs: [], mk: new Set(), acts: [], ak: new Set(), hLoaded: false, aLoaded: false, unread: 0, draft: "", loading: null, ahist: false, amore: false, older: false, cap: 600, gaps: new Set() });
+const ts = t => TS[t] || (TS[t] = { t, msgs: [], mk: new Set(), acts: [], ak: new Set(), hLoaded: false, aLoaded: false, unread: 0, draft: "", ahist: false, amore: false, older: false, cap: 600, gaps: new Set() });
 // Every conversation's history and activity are read again when next opened, except keep (the one being reread now).
 const tsStale = keep => { for (const k of Object.keys(TS)) if (k !== keep) TS[k].hLoaded = TS[k].aLoaded = false; };
 const byTs = (a, b) => a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : 0;

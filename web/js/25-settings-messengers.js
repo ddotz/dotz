@@ -6,7 +6,7 @@ const MS_IDS = views.filter(id => SCREENS[id].under === "messengers");
 const MS_LABELS = Object.fromEntries(MS_IDS.map(id => [id, titles[id]]));
 const MS_KINDS = [["main", TX("common.main_chat")], ["project", TX("common.project")], ["alert", TX("common.alerts")], ["worklog", TX("common.worklog")]];
 const MS_AS_USER = TX("connect.ms.as_user");
-const MSS = { items: null, fail: "", asked: false, loading: false, page: null };
+const MSS = { items: null, fail: "", asked: false, page: null };
 const msItem = id => (MSS.items || []).find(x => x.id === id) || null;
 const msTag = m => !m ? ["", ""] : !m.configured ? [TX("connect.state.unset"), "warn"] : m.state === "error" ? [TX("settings.prov.not_connected"), "err"] : [TX("connect.state.on"), "ok"];
 const msConnectLabel = m => (!m || !m.configured || m.error ? TX("connect.connect") : !m.enabled ? TX("connect.turn_on") : TX("mail.reconnect"));
@@ -50,14 +50,14 @@ function msPaint() {
   else if (MS_IDS.includes(current)) renderMessenger(current);
 }
 // The index is fetched when a screen opens, never on every render; the rows stay while it is in flight.
-async function loadMessengerIndex() {
+// One read at a time: a screen that opens joins a read already out; again (a save's re-read) reads after it, since that read may predate the save.
+function loadMessengerIndex(again) {
   MSS.asked = true;
-  if (MSS.loading) return;
-  MSS.loading = true;
-  try { const j = await api("/api/messengers"); MSS.items = Array.isArray(j.items) ? j.items : []; MSS.fail = ""; }
-  catch (e) { MSS.fail = e.message; }
-  finally { MSS.loading = false; }
-  msPaint();
+  return (!again && latestOut("messengers")) || latest("messengers", async () => {
+    try { const j = await api("/api/messengers"); MSS.items = Array.isArray(j.items) ? j.items : []; MSS.fail = ""; }
+    catch (e) { MSS.fail = e.message; }
+    msPaint();
+  });
 }
 // JANDI, Slack and Telegram share one settings page shape; current names the one opening.
 function messengerEnter() { loadMessengerIndex(); loadMessengerSettings(current); loadOnboarding(current); }
@@ -100,7 +100,7 @@ function msConnect(id, btn) {
       const p = msPage(id);
       p.s = await api(`/api/messengers/${enc(id)}`, "PUT", { enabled: true });
       p.enabled = !!p.s.enabled;
-      await loadMessengerIndex();
+      await loadMessengerIndex(true);
       if (current === id) renderMessenger(id);
     });
   }
@@ -145,7 +145,7 @@ async function msSave(btn) {
     p.enabled = !!p.s.enabled; p.vals = {}; p.add = "";
     p.allow = p.s.allow ? p.s.allow.items.slice() : null;
     saved = true;
-    await loadMessengerIndex();
+    await loadMessengerIndex(true);
   });
   if (current === p.id) renderMessenger(p.id);
   if (saved) stFlash(`#${p.id} [data-ms-save]`);

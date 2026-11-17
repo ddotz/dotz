@@ -61,37 +61,38 @@ const hasCached = s => s.msgs.length > 0 || s.acts.length > 0;
 // quiet: a repeated read (a peer's conversation, 34-peer-monitoring.js; a refresh behind a drawn conversation) redraws only when it brought something new.
 // What the drawn stretch of a conversation holds: a quiet refresh that leaves it alone needs no redraw.
 const chatTail = s => `${s.msgs.filter(e => e.ts >= CV.low).length}|${s.acts.filter(a => a.ts >= CV.low).length}`;
+// One read of a conversation at a time (targetKey, 02-basic-markdown.js latest): a call while one is out reads again when it ends, so it sees what came before it.
+const targetKey = t => `target:${t}`;
 async function loadTarget(t, quiet) {
   if (isRelayT(t)) return relayLoad(t, quiet);
-  const s = ts(t), before = chatTail(s);
-  let settled = false;
-  if (s.loading) return s.loading;
-  s.loading = (async () => {
-    await Promise.all([
-      api(`/api/history?target=${enc(t)}&limit=150`).then(r => {
-        const got = r.events || [];
-        workRowsOf(got); settled = snapSettle(s, "msgs", got) || settled; s.hmore = got.length >= 150;
-        // A full page that starts after the newest stored row leaves the messages between unread: the stored stretch ends there (chatGapNode reads them on request).
-        const top = s.msgs.at(-1)?.ts;
-        if (s.hmore && top && got[0].ts > top) s.gaps.add(top);
-        for (const e of r.events || []) { const k = msgKey(e); if (!s.mk.has(k)) { s.mk.add(k); s.msgs.push(e); } } s.msgs.sort(byTs); if (isFixedT(t)) dedupKeyed(s); s.herr = false; }, () => { s.herr = true; }),
-      isRowT(t) || isMailT(t) ? null : api(`/api/activity?source=${enc(sourceOf(t))}&limit=300`).then(r => { settled = snapSettle(s, "acts", r.items || []) || settled; s.ahist = !!r.history; s.amore = !!r.more; for (const a of r.items || []) { const k = actKey(a); if (!s.ak.has(k) && !(a.type === "text" && isLaterText(a.text))) { s.ak.add(k); s.acts.push(a); } } s.acts.sort(byTs); }, () => {}),
-    ]);
-    s.hLoaded = s.aLoaded = true;
-    if (t === MAIN) paintRestartBanner();
-    { const te = isLaneT(t) ? s.acts.findLast(a => a.type === "turn_end") : s.msgs.findLast(e => chatAnswer(t, e) && !quietReply(s, e)); if (te) noteDone(t, te.ts, false); }
-  })().finally(() => { s.loading = null; });
-  await s.loading;
+  const s = ts(t), before = chatTail(s), settles = s.settles;
+  await latest(targetKey(t), () => targetRead(t, s));
   snapSoon(t);
   if (t !== target) return;
-  if (!quiet || settled || chatTail(s) !== before) renderAll();
+  if (!quiet || s.settles !== settles || chatTail(s) !== before) renderAll();
   else if (CV.full) { if (s.msgs[0] && s.msgs[0].ts < CV.low) cvFrom(CV.low); cvDrawn(chatSig(s)); }   // only rows above the drawn stretch came: nothing on screen changes
 }
+// settles counts the reads that replaced a stored snapshot's rows (snapSettle): a quiet caller redraws after one.
+async function targetRead(t, s) {
+  const settle = (kind, got) => { if (snapSettle(s, kind, got)) s.settles = (s.settles || 0) + 1; };
+  await Promise.all([
+    api(`/api/history?target=${enc(t)}&limit=150`).then(r => {
+      const got = r.events || [];
+      workRowsOf(got); settle("msgs", got); s.hmore = got.length >= 150;
+      // A full page that starts after the newest stored row leaves the messages between unread: the stored stretch ends there (chatGapNode reads them on request).
+      const top = s.msgs.at(-1)?.ts;
+      if (s.hmore && top && got[0].ts > top) s.gaps.add(top);
+      for (const e of r.events || []) { const k = msgKey(e); if (!s.mk.has(k)) { s.mk.add(k); s.msgs.push(e); } } s.msgs.sort(byTs); if (isFixedT(t)) dedupKeyed(s); s.herr = false; }, () => { s.herr = true; }),
+    isRowT(t) || isMailT(t) ? null : api(`/api/activity?source=${enc(sourceOf(t))}&limit=300`).then(r => { settle("acts", r.items || []); s.ahist = !!r.history; s.amore = !!r.more; for (const a of r.items || []) { const k = actKey(a); if (!s.ak.has(k) && !(a.type === "text" && isLaterText(a.text))) { s.ak.add(k); s.acts.push(a); } } s.acts.sort(byTs); }, () => {}),
+  ]);
+  s.hLoaded = s.aLoaded = true;
+  if (t === MAIN) paintRestartBanner();
+  { const te = isLaneT(t) ? s.acts.findLast(a => a.type === "turn_end") : s.msgs.findLast(e => chatAnswer(t, e) && !quietReply(s, e)); if (te) noteDone(t, te.ts, false); }
+}
 // A tapped push or notice names a message the stream may not have delivered (it stalls while the phone sleeps): fetch the
-// history until that message is in. loadTarget joins a fetch already in flight, so the second round covers one that began before the message existed.
+// history when that message is not in (loadTarget's read starts after this call, so it holds whatever the hub had by then).
 async function ensureMsg(t, at) {
-  const s = ts(t);
-  for (let i = 0; i < 2 && at && !s.msgs.some(e => e.ts >= at); i++) await loadTarget(t);
+  if (at && !ts(t).msgs.some(e => e.ts >= at)) await loadTarget(t);
 }
 // The page is back after being away: whatever the stream missed is fetched now, before anyone taps a notification for it.
 function resync() {
@@ -284,7 +285,7 @@ function setTarget(t, nav) {   // nav: go() follows and stacks the entry itself 
 // 채팅 and its 터미널 view opening: the open conversation is placed and read unless it is loaded or loading already; a conversation
 // opened inside 모니터링 (monCtx) also draws and refreshes 모니터링's list behind it (30-monitoring-route.js).
 function chatEnter() {
-  enterTarget(); if (!(ts(target).hLoaded && ts(target).aLoaded) && !ts(target).loading) loadTarget(target, hasCached(ts(target)));
+  enterTarget(); if (!(ts(target).hLoaded && ts(target).aLoaded) && !latestOut(targetKey(target))) loadTarget(target, hasCached(ts(target)));
   if (monCtx) monEnter();
 }
 // The routes behind a conversation (32-history-nav.js routeChain). One opened from 모니터링 (a mail of the 메일 list) returns to that item's list,

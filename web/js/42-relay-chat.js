@@ -54,8 +54,7 @@ function relayEvents(t, lines) {
 const relaySig = s => JSON.stringify([s.rids, s.rerr, s.serr, (s.rpend || []).length]);
 async function relayLoad(t, quiet) {
   const s = ts(t), before = relaySig(s);
-  if (s.loading) return s.loading;
-  s.loading = (async () => {
+  await latest(targetKey(t), async () => {   // one read of the room at a time, like loadTarget (13-data.js)
     try {
       const lines = await api(`${relayApi(t)}/messages`);
       const list = Array.isArray(lines) ? lines : [];
@@ -65,8 +64,7 @@ async function relayLoad(t, quiet) {
       s.rerr = "";
     } catch (e) { s.rerr = e.message; }
     s.hLoaded = s.aLoaded = true;
-  })().finally(() => { s.loading = null; });
-  await s.loading;
+  });
   if (t === target && (!quiet || relaySig(s) !== before)) renderAll();
 }
 // After the lines (renderAll0): what was sent and is not in the room yet, and the last error of a read or a send.

@@ -1,7 +1,7 @@
 /* ---------- 프로젝트: level 2 overview (header, 확인 필요, four summary rows) and level 3 drill-in pages ---------- */
 // PM.D = the detail; PM.open counts fields being edited (a refresh never repaints under them);
 // PM.sheets = the open drill-in pages, repainted from the re-fetched detail after every write.
-const pmReset = () => ({ key: "", D: null, fail: false, open: 0, flight: null, sheets: new Set() });
+const pmReset = () => ({ key: "", D: null, fail: false, open: 0, sheets: new Set() });
 let PM = pmReset();
 // A project opens beside the list on a wide screen (ppWide), so the list is drawn and read first.
 function projectEnter(key) { if (ppWide()) projectsEnter(); pmOpen(key); }
@@ -17,24 +17,20 @@ function pmOpen(key) {
 function pmLoad() {
   const st = PM;
   if (!st.key) return Promise.resolve(false);
-  if (st.flight) return st.flight;
-  st.flight = api(`/api/custom/project?key=${enc(st.key)}`).then(d => { st.D = d; st.fail = false; return true; }, () => { if (!st.D) st.fail = true; return false; })
-    .then(ok => { st.flight = null; if (PM === st) pmPaint(); return ok; });
-  return st.flight;
+  return latest(`project:${st.key}`, () => api(`/api/custom/project?key=${enc(st.key)}`).then(d => { st.D = d; st.fail = false; return true; }, () => { if (!st.D) st.fail = true; return false; })
+    .then(ok => { if (PM === st) pmPaint(); return ok; }));
 }
-// A project turn changed this project's info (hub/outbound.ts noteProjectInfo): a fetch already out may predate it, so one follows it.
+// A project turn changed this project's info (hub/outbound.ts noteProjectInfo): pmLoad reads after a fetch already out, which may predate it.
 function pmLive(e) {
   if (current !== "project" || (e.key !== PM.key && e.key !== (pmProject() || {}).recordKey)) return;
-  (PM.flight || Promise.resolve()).then(pmLoad);
+  pmLoad();
 }
 // After a write: fetch again and repaint from what the gateway kept (the page never shows the typed value as saved).
 async function pmReload() {
-  const st = PM;
-  if (st.flight) await st.flight;
   const root = $("#v-project");
   if (root) delete root.dataset.sig;
-  st.open = 0;
-  await Promise.all([pmLoad(), prjLoad()]);
+  PM.open = 0;
+  await Promise.all([pmLoad(), prjLoad(true)]);
 }
 // The record lives under the project's channel when it has one (hub/custom.ts recordKey).
 const pmWrite = body => api("/api/projects", "PUT", { key: (pmProject() || {}).recordKey || PM.key, ...body });
@@ -277,7 +273,7 @@ async function pmDeleteAsk(q) {
       toast(r && r.discord && !r.discord.ok ? TX("project.del.partial", { error: r.discord.error }) : TX("project.del.done", { name: (r && r.name) || p.name }), !!(r && r.discord && !r.discord.ok));
       PM = pmReset();
       if (fromChat) pickTarget(MAIN); else go("projects");
-      prjLoad();
+      prjLoad(true);
     } catch (e) { err.textContent = e.message || TX("project.del.failed"); st.busy = false; go1.disabled = false; }
   } }, TX("common.delete"));
   clear(h.box).append(
@@ -521,15 +517,10 @@ function ctxBar(p) {
     el("div", { class: `bar ${ctxTone(pct)}`, role: "progressbar", "aria-label": TX("project.ctx.of", { name: p.name }), "aria-valuenow": Math.round(pct || 0), "aria-valuemin": 0, "aria-valuemax": 100 }, el("i", { style: `width:${Math.min(100, pct || 0).toFixed(1)}%` })),
     el("div", { class: "kv", style: "margin-top:var(--sp-1)" }, el("span", { class: "v", text: p.window ? TX("project.ctx.tokens_of", { used: num(p.tokens), win: num(p.window) }) : TX("project.ctx.tokens", { tokens: num(p.tokens) }) }), el("span", { class: "v", text: pct != null ? `${pct}%` : "–" })));
 }
-// A quiet read asked while another is out shares it (the page's first read and refreshState ask at the same time).
-let ctxFlight = null;
+// One read at a time: one asked while another is out (the page's first read and refreshState ask at the same time) reads again when it ends.
 function contextEnter() { loadContext(); }
 screenHooks("context", { enter: contextEnter });
-function loadContext(quiet) {
-  if (quiet && ctxFlight) return ctxFlight;
-  const p = ctxFlight = ctxFetch(quiet).finally(() => { if (ctxFlight === p) ctxFlight = null; });
-  return p;
-}
+function loadContext(quiet) { return latest("context", () => ctxFetch(quiet)); }
 async function ctxFetch(quiet) {
   clearTimeout(ctxTimer);
   try { C = await api("/api/context"); }

@@ -214,7 +214,7 @@ button.pv-res:hover { background: var(--card-hover); }
   function load(maxAge) {
     if (DATA && Date.now() - loadedAt < maxAge) return Promise.resolve(DATA);
     // The main script reads the same list at boot (prjLoad, 18-lanes.js): its answer, or the one on its way, is this one.
-    const main = typeof prjLoad === "function" ? (prjFlight ? prjFlight.then(() => PRJ) : PRJ && Date.now() - PRJ_AT < maxAge ? Promise.resolve(PRJ) : null) : null;
+    const main = typeof prjLoad === "function" ? (latestOut("prj") ? latestOut("prj").then(() => PRJ) : PRJ && Date.now() - PRJ_AT < maxAge ? Promise.resolve(PRJ) : null) : null;
     if (!flight) flight = (main || api("/api/custom")).then(d => { if (!d) throw new Error("no list"); DATA = d; loadedAt = main ? PRJ_AT : Date.now(); onData(); return d; }).catch(() => DATA).finally(() => { flight = null; });
     return flight;
   }

@@ -117,12 +117,12 @@ test("a hidden page keeps its stream and its tab title count rises, vouching onc
 	await setVisible(false);
 	await advanceTimers(view, 120_000);
 	await vouched.until(v => v.length >= 1, 5000, "the first vouching request");
-	await waitFor(`!apiGets.has("/api/health")`);
+	await waitFor(`!latestOut("/api/health")`);
 	const first = vouched.length, mark = reqs.length;
 	for (let minute = 1; minute <= 5; minute++) {
 		await advanceTimers(view, 60_000);
 		await vouched.until(v => v.length >= first + minute, 5000, "one vouching request for the minute");
-		await waitFor(`!apiGets.has("/api/health")`);
+		await waitFor(`!latestOut("/api/health")`);
 	}
 	await view.evaluate(`fetch("/api/probe").then(() => 1)`);
 	expect(reqs.slice(mark).filter(p => p !== "/api/probe")).toEqual(Array(5).fill("/api/health"));

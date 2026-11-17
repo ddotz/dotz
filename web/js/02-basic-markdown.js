@@ -187,8 +187,31 @@ function statedTone(text, keepFiles = false) {
 
 /* ---------- api ---------- */
 // index.html starts the first answers (state, history, plan, read positions, activity) in <head>, before this 480KB script is downloaded and parsed; the first api() of that path takes it over.
-// A GET that is already in flight is shared (the same path asked twice at boot is one request); each caller parses its own copy of the text.
-const apiGets = new Map();
+// One run of fn per key at a time. A call while a run is out makes it run once more when it ends (with the newest caller's fn), and every caller of either
+// gets that last run's answer (or its error): no caller is handed an answer asked for before its call, and an older answer never lands after a newer one.
+// Calls that overlap cost one catch-up run, never more. api() runs every GET through it by path (each caller parses its own copy of the text); a loader
+// that reads in more than one step or paints once per read (loadTarget, convLoad, ...) runs through it by a key of its own.
+const FLIGHTS = new Map();
+function latest(key, fn) {
+  const f = FLIGHTS.get(key);
+  if (f) { f.fn = fn; f.again = true; return f.p; }
+  const g = { fn, again: false };
+  g.p = (async () => {
+    try {
+      for (;;) {
+        g.again = false;
+        let v, err, failed = false;
+        try { v = await g.fn(); } catch (e) { err = e; failed = true; }
+        if (g.again) continue;
+        if (failed) throw err;
+        return v;
+      }
+    } finally { FLIGHTS.delete(key); }
+  })();
+  FLIGHTS.set(key, g);
+  return g.p;
+}
+const latestOut = key => FLIGHTS.get(key)?.p;   // the run of key on its way (to wait for it without asking for another), else undefined
 // Names this page's event stream to the gateway: every request carries it, so a stream whose page stopped asking (a phone asleep, the network gone) is closed by the gateway (hub/events.ts noteLive).
 const LIVE_TOK = Array.from(crypto.getRandomValues(new Uint8Array(12)), b => b.toString(16).padStart(2, "0")).join("");
 async function api(path, method = "GET", body) {
@@ -196,18 +219,12 @@ async function api(path, method = "GET", body) {
   const go = () => fetch(path, { method, cache: "no-store", headers: { "x-dotz-live": LIVE_TOK, ...(body !== undefined && { "Content-Type": "application/json" }) }, body: body !== undefined ? JSON.stringify(body) : undefined });
   const read = async r => ({ ok: r.ok, status: r.status, text: await r.text() });
   let res;
-  if (method === "GET") {
-    let p = apiGets.get(path);
-    if (!p) {
-      const early = window.__early && window.__early[path];
-      if (early) delete window.__early[path];
-      p = (early ? early.catch(go) : go()).then(read);
-      apiGets.set(path, p);
-      const done = () => { if (apiGets.get(path) === p) apiGets.delete(path); };
-      p.then(done, done);
-    }
-    res = await p;
-  } else res = await read(await go());
+  if (method === "GET") res = await latest(path, () => {
+    const early = window.__early && window.__early[path];
+    if (early) delete window.__early[path];
+    return (early ? early.catch(go) : go()).then(read);
+  });
+  else res = await read(await go());
   let data = null;
   try { data = JSON.parse(res.text); } catch {}
   if (!res.ok) throw Object.assign(new Error(res.status === 503 && path.startsWith("/api/peer/proxy") ? (data && data.reason) || TX("base.peer.read_only") : (data && data.error) || `HTTP ${res.status}`), { data, status: res.status });

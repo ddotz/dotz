@@ -111,7 +111,7 @@ function paneFill(m) {
   clear(m.list);
   m.keys = new Set(s.mk);
   for (const e of s.msgs.slice(-60)) paneAppend(m, e);
-  if (!s.hLoaded && !s.loading) loadTarget(t, true).then(() => { if (PNM.get(m.p.id) === m) { paneFill(m); m.wrap.scrollTop = m.wrap.scrollHeight; } }, () => { /* the pane shows what it has */ });
+  if (!s.hLoaded && !latestOut(targetKey(t))) loadTarget(t, true).then(() => { if (PNM.get(m.p.id) === m) { paneFill(m); m.wrap.scrollTop = m.wrap.scrollHeight; } }, () => { /* the pane shows what it has */ });
 }
 // msgNode reads the global target (a lane report's look), so it is the pane's own for the call.
 function paneAppend(m, e) {
