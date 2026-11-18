@@ -28,7 +28,6 @@ export type Leads = typeof enLeads;
 // One sentence reused by every handover and, once after a compaction, by the next prompt: a fresh or compacted session
 // loses what the old context held, so facts worth keeping are saved to memory before the work goes on.
 const enRetainNudge = "Before continuing, save any durable owner, project or preference fact from the conversation so far that is not saved yet in the dotz data directory (owner facts in memory/owner.md, the owner's verbatim don'ts in memory/boundaries.md, rules in RULES.md, lessons in LESSONS.md, open work in state.json); skip this if there is none.";
-
 const enLaneLanguage = (language: string) => `Write every report, progress note, todo item and tool-call intent in ${language}, whatever language the brief, the code or the tool output is in.`;
 
 // How a nightly or monitoring run reports an issue (hub/reflect.ts, hub/watch.ts wake turn): one line plus a choice block that the web's
@@ -268,6 +267,7 @@ export const en = {
 	checkPassed: (n: number, landed: boolean) => `Checks passed: all ${n} checks passed${landed ? ", and the work branch is landed in main" : ""}`,
 	waitMainRefused: `[gateway check] Your last [wait] reached no one. If you wait on main (${NAME}), write what main is to do in the "For ${NAME}:" line or send it with dotz_main, then report again. If you wait on CI, time or workers rather than main, say so and report again.`,
 	askRefused: (text: string) => `[gateway check] Your last [ask] did not reach the owner: without choices he cannot answer it on the spot. Say in one line which project and work it is about, then put a \`결정: <one plain question>\` block with 2-4 options and what each one leads to, and send it as [ask] again. If you are only waiting and have nothing to ask, do not send it as [ask]: when only the owner or main can move it, end the turn with a one-line [wait] report; when you wait for a run of your own, do not end the turn, wait for it inside one blocking call.\n\nThe text sent back:\n${text}`,
+	languageRefused: (head: string, before: boolean, language: string) => `[gateway check] Your report did not reach the owner: ${before ? `it has text above the status line ("${head}...")` : `the paragraph starting "${head}..." is not in ${language}`}. Start with the status line ([done], [run], [wait], [ask] or [fail]) and write every paragraph in ${language} (code, paths, ids and dev terms such as red test or HEAD stay as they are), then send it again.`,
 	unverifiedRefused: (lines: string[]) => `[gateway check] Your report did not reach the owner: these lines say something is unchecked without saying why:\n- ${lines.join("\n- ")}\nFirst check everything this machine can check (run it, render it headless, read it back). For what still cannot be checked here, say why on that line and add \`instead checked:\` (or \`대신 확인:\`) with what you checked in its place. Then send the report again.`,
 	checkBounced: (n: number, failed: number) => `Some checks have not passed yet, so it went back to the session (${failed} of ${n} checks)`,
 	turnNoAnswer: "I could not write a reply this time. Please send your message again.",

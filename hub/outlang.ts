@@ -8,7 +8,7 @@ import { callWarm, ensureOmpProvider, ensureProvider, invalidateHealth, isTextEv
 import { OMO } from "./runtime/omo-hosts.ts";
 import { lang, msg } from "./i18n.ts";
 import { baseLanguage, languageName } from "./language.ts";
-import { leaksHandoff } from "./tone.ts";
+import { leaksHandoff, statedTone } from "./tone.ts";
 
 type Setting = { mode?: string; model?: string; timeout_s?: number };
 // Optional key outside the Config type (hub/config.ts is not touched for it); a string is the mode alone.
@@ -43,11 +43,12 @@ const MIN_LATIN_WORDS = 8;
 const MIN_LATIN_WORDS_PURE = 3;
 const MAX_NATIVE_SHARE = 0.1;
 
-// What is not prose: code blocks, inline code, URLs, paths, mentions and channel tags, emoji shortcodes.
+// What is not prose: code blocks, inline code, quoted strings, URLs, paths, mentions and channel tags, emoji shortcodes.
 function prose(text: string): string {
 	return text
 		.replace(/```[\s\S]*?(```|$)/g, " ")
 		.replace(/`[^`\n]*`/g, " ")
+		.replace(/"[^"\n]{1,200}"|“[^”\n]{1,200}”|「[^」\n]{1,200}」|(?<![\w'])'[^'\n]{1,200}'(?![\w'])/g, " ")
 		.replace(/<[@#:a][^>\n]*>/g, " ")
 		.replace(/\b[a-z][a-z0-9+.-]*:\/\/\S+/gi, " ")
 		.replace(/(^|\s)@\w+/g, " ")
@@ -60,11 +61,35 @@ const latinWords = (s: string): number => (s.match(/(?<![\w-])[A-Za-z][A-Za-z'�
 // English prose. A 137-char repo list was sent for a rewrite that took 12 s and came back 8x longer (2026-10-28).
 const sentenceWords = (s: string): number => s.split(/[,;|·\n]+/).map(latinWords).filter(n => n >= 2).reduce((a, n) => a + n, 0);
 
-// True when `text` should be in `language` but is mostly Latin-script prose.
+// True when `text` should be in `language` but is mostly Latin-script prose, as a whole or in any one paragraph: an English paragraph above a
+// Korean [run] line made the whole text count as Korean and reached the owner as written (prune-tests, 2026-11-18).
 export function languageMismatch(text: string, language: string): boolean {
 	const script = SCRIPTS[baseLanguage(language)];
-	if (!script) return false;
-	const body = prose(text);
+	return !!script && (latinProse(prose(text), script) || foreignParagraphs(text, script).length > 0);
+}
+
+// The first words of a paragraph, for a note that names it.
+const head = (paragraph: string): string => paragraph.trim().split(/\s+/).slice(0, 6).join(" ").slice(0, 60);
+
+// Paragraphs (blank-line separated, code blocks left out) that are mostly Latin-script prose.
+function foreignParagraphs(text: string, script: RegExp): string[] {
+	return text.replace(/```[\s\S]*?(```|$)/g, "\n\n").split(/\n[ \t]*\n/).filter(p => latinProse(prose(p), script)).map(head);
+}
+
+// What keeps a session's report from the owner in a language with its own script: a paragraph in another language, or text above the
+// status line ([done]/[run]/[wait]/[ask]/[fail] or its emoji). Pure, no model call; undefined when the report is fine or the language is unchecked.
+export function reportLanguage(text: string, language: string): { head: string; before: boolean } | undefined {
+	const script = SCRIPTS[baseLanguage(language)];
+	if (!script) return;
+	const lines = text.split("\n");
+	const at = lines.findIndex(l => statedTone(l.trim()).tone);
+	const above = at > 0 ? lines.slice(0, at).join("\n").trim() : "";
+	if (above) return { head: head(above), before: true };
+	const foreign = foreignParagraphs(text, script)[0];
+	return foreign ? { head: foreign, before: false } : undefined;
+}
+
+function latinProse(body: string, script: RegExp): boolean {
 	const words = latinWords(body);
 	const native = (body.match(script) ?? []).length;
 	if (native === 0) return sentenceWords(body) >= MIN_LATIN_WORDS_PURE;

@@ -77,6 +77,8 @@ export type Lane = Record_ & {
 	askRefused?: boolean;
 	// A report with a bare "unverified" line went back to the lane once; the next report goes through and clears it (hub/lanereport.ts).
 	unverifiedRefused?: boolean;
+	// A report with a paragraph not in the install language, or text above its status line, went back once; the next one goes through (hub/lanereport.ts).
+	languageRefused?: boolean;
 	// A report with a word of the owner's list (hub/word-ban.ts) went back to the lane once; the next clean report clears it.
 	bannedRefused?: boolean;
 	// A [wait] naming main with no for-line went back to the lane once; the next report goes through and clears it (hub/lanereport.ts).

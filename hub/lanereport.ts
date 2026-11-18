@@ -1,7 +1,7 @@
 import { type Lane, pendingFile, ownerNotes, persist, dir, hooks, setStatus } from "./lanestate.ts";
 import { rmSync, writeFileSync, existsSync, readFileSync } from "node:fs";
 import { now, writeAtomic, log } from "./config.ts";
-import { parseTone } from "./tone.ts";
+import { parseTone, stripHandoff } from "./tone.ts";
 import { pendingAskFile } from "./asks.ts";
 import { lastQuestion } from "./ask-options.ts";
 import { bareAsk, normalizeAsk } from "./ask-normalize.ts";
@@ -9,7 +9,9 @@ import { parseDecisions } from "./choices.ts";
 import { join } from "node:path";
 import { workerCheck } from "./activity.ts";
 import { forLines, mentionsMain, orchestratorOnlyAsk } from "./forline.ts";
-import { msg } from "./i18n.ts";
+import { lang, msg } from "./i18n.ts";
+import { languageName } from "./language.ts";
+import { reportLanguage } from "./outlang.ts";
 import { checkDone, doneChecks, type Check } from "./donesignals.ts";
 import { unlanded } from "./lanetree.ts";
 import { prompt } from "./laneprompt.ts";
@@ -81,6 +83,16 @@ export function report(lane: Lane, written: string, notice: boolean | "pause" = 
 			return prompt(lane, msg().unverifiedRefused(unchecked));
 		}
 		lane.unverifiedRefused = undefined;
+		// In a language with its own script, an English paragraph or text above the status line goes back once (prune-tests 2026-11-18: an
+		// English summary above a Korean [run] line reached the owner twice). The next report goes through; the shared rewrite still takes it.
+		const off = reportLanguage(stripHandoff(text), lang());
+		if (off && lane.proc && !lane.languageRefused) {
+			lane.languageRefused = true;
+			persist(lane);
+			log(`lane ${lane.name} report refused (${off.before ? "text above the status line" : "a paragraph not in the install language"})`);
+			return prompt(lane, msg().languageRefused(off.head, off.before, languageName(lang())));
+		}
+		lane.languageRefused = undefined;
 		const banned = bannedHits(text);
 		if (banned.length && lane.proc && !lane.bannedRefused) {
 			lane.bannedRefused = true;
