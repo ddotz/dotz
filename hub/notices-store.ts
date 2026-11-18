@@ -368,12 +368,13 @@ function adoptRepost(e: HubEvent): boolean {
 }
 
 export function putDecision(d: { key: string; title: string; detail: string; to: string; open?: string; options: DecisionOpt[]; group: number; replyTo?: string; draft?: DraftApproval; by?: string; ref?: string; assumed?: true }, at: string): void {
-	const old = items.find(n => n.key === d.key);
+	const old = items.find(n => n.key === d.key) ?? (d.draft ? undefined : items.findLast(n => n.decision?.to === d.to && !n.decision.draft && n.title === d.title));
 	if (old?.decision) {
 		// The same ask can arrive twice (a session's mid-turn line and its turn-end report): one notice, and an answered one stays answered.
-		if (isOpenDecision(old)) return;
-		if (Date.parse(at) - Date.parse(old.ignored ?? old.decision.answered_at ?? "") < REASK_MS) return void closeRepeat(old, at);
+		if (isOpenDecision(old) && old.key === d.key) return;
+		if (!isOpenDecision(old) && Date.parse(at) - Date.parse(old.ignored ?? old.decision.answered_at ?? "") < REASK_MS) return void closeRepeat(old, at);
 	}
+	if (old) old.key = d.key;
 	const open = d.open ?? d.to;
 	const expires_at = expiresAtOf(d, at);
 	if (d.draft && !shownAsStored(d.draft)) d = { ...d, draft: undefined };

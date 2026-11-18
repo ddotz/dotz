@@ -697,6 +697,19 @@ test("a message with two choice blocks gives two decision notices that stay unre
 	expect(stored().find(n => n.id === mine[0]!.id)!.dismissed).toBeUndefined();
 });
 
+test("a session that asks the same question again with other options keeps one card: open, it takes the new options; answered, the repeat makes none", async () => {
+	laneAsk("regate", "[ask] 막혔어요\n결정: 세션 gate를 어떻게 할까요?\n**1) 이번만 통과**\n**2) 그대로 두기**");
+	laneAsk("regate", "[ask] 아직 막혔어요\n결정: 세션 gate를 어떻게 할까요?\n**1) 이번만 통과**\n**2) 세션만 닫기**");
+	const asked = stored().filter(n => n.kind === "decision" && n.title === "세션 gate를 어떻게 할까요?");
+	expect(asked).toHaveLength(1);
+	expect(asked[0]!.decision!.options.map(o => o.label)).toEqual(["이번만 통과", "세션만 닫기"]);
+	expect((await answerDecision(asked[0]!.id, { n: 1 }, async () => {})).status).toBe(200);
+	laneAsk("regate", "[ask] 또 막혔어요\n결정: 세션 gate를 어떻게 할까요?\n**1) 이번만 통과**\n**2) 나중에**");
+	const after = stored().filter(n => n.kind === "decision" && n.title === "세션 gate를 어떻게 할까요?");
+	expect(after).toHaveLength(1);
+	expect(after[0]!.decision!.state).not.toBe("open");
+});
+
 test("a button answers one decision as a reply to the asking message; a plain owner reply settles the rest of that chat", async () => {
 	const at = ts();
 	post("web", "[ask] 순서를 정해 주세요\n결정: 첫째\n**1) 가**\n**2) 나**\n결정: 둘째\n**1) 다**\n**2) 라**", { ts: at });
