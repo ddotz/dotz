@@ -27,7 +27,7 @@ export type Leads = typeof enLeads;
 // One sentence reused by every handover and, once after a compaction, by the next prompt: a fresh or compacted session
 // loses what the old context held, so facts worth keeping are saved to memory before the work goes on.
 const enRetainNudge = "Before continuing, save any durable owner, project or preference fact from the conversation so far that is not saved yet in the dotz data directory (owner facts in memory/owner.md, the owner's verbatim don'ts in memory/boundaries.md, rules in RULES.md, lessons in LESSONS.md, open work in state.json); skip this if there is none.";
-const enLaneLanguage = (language: string) => `Write every report, progress note, todo item and tool-call intent in ${language}, whatever language the brief, the code or the tool output is in.`;
+const enClock = `Give times in ${tzLabel()}, converting the UTC times of logs and tool output.`, enLaneLanguage = (language: string) => `Write every report, progress note, todo item and tool-call intent in ${language}, whatever language the brief, the code or the tool output is in. ${enClock}`;
 
 // How a nightly or monitoring run reports an issue (hub/reflect.ts, hub/watch.ts wake turn): one line plus a choice block that the web's
 // decision buttons and decision notices read (web/js/10-decision-card.js, hub/choices.ts).
@@ -365,7 +365,7 @@ export const en = {
 	threadDone: "Done. This thread is archived in an hour.",
 	laneParked: "Stopped. Write here to pick this session back up from where it left off.",
 	laneLanguage: (language: string) => `(${enLaneLanguage(language)})`,
-	replyIn: (language: string, drifted: boolean) => drifted ? `(Your last text for the owner was not in ${language}. Write everything for the owner in ${language} only.)` : `(Answer the owner in ${language}.)`,
+	replyIn: (language: string, drifted: boolean) => drifted ? `(Your last text for the owner was not in ${language}. Write everything for the owner in ${language} only.)` : `(Answer the owner in ${language}. ${enClock})`,
 	handoffNote: "(Your last reply carried the For you / Now / Next handoff labels. Replies go to the owner as chat messages: no routing line and no Ask / For you / Now / Next block.)",
 
 	dayNote: {

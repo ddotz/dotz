@@ -16,7 +16,9 @@ const koIssue = `dotz_send alert로 보고하세요: 문제를 [ask]로 시작�
 **2) <이름>**
 <한 줄 결과>`;
 // 레인의 출력 언어: 푸터 맨 앞과 매 턴 끝에 둬요(영어 브리프를 받은 레인이 보고와 진행 메모를 영어로 써서 오너에게 보였어요, 2026-11-03).
-const koLaneLanguage = "보고, 진행 메모, 할 일 항목, 도구 호출 intent는 브리프·코드·도구 출력이 영어여도 모두 한국어로 쓰세요.";
+// The owner's clock rides with the language line: logs and tool output print UTC, and a session copied those times as they were.
+const koClock = `시각은 ${tzLabel()}로 쓰고, 로그·도구 출력의 UTC 시각은 바꿔 쓰세요.`;
+const koLaneLanguage = `보고, 진행 메모, 할 일 항목, 도구 호출 intent는 브리프·코드·도구 출력이 영어여도 모두 한국어로 쓰세요. ${koClock}`;
 
 const koLeads: Leads = {
 	youAre: "[dotz gateway] 당신은",
@@ -355,7 +357,7 @@ export const ko: Catalog = {
 	threadDone: "작업을 마쳤어요. 이 스레드는 1시간 뒤 보관할게요.",
 	laneParked: "멈췄어요. 여기에 쓰면 하던 데서부터 이어서 해요.",
 	laneLanguage: () => `(${koLaneLanguage})`,
-	replyIn: (_language, drifted) => (drifted ? "(직전에 오너에게 보낸 글이 한국어가 아니었어요. 오너에게 가는 글은 한국어로만 쓰세요.)" : "(오너에게는 한국어로 답하세요.)"),
+	replyIn: (_language, drifted) => (drifted ? "(직전에 오너에게 보낸 글이 한국어가 아니었어요. 오너에게 가는 글은 한국어로만 쓰세요.)" : `(오너에게는 한국어로 답하세요. ${koClock})`),
 	handoffNote: "(직전 답에 For you / Now / Next 블록이 들어갔어요. 답은 오너에게 가는 채팅 글이에요. 라우팅 줄과 Ask / For you / Now / Next 블록은 쓰지 마세요.)",
 
 	dayNote: {
