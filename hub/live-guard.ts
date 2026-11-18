@@ -137,7 +137,11 @@ export function liveWrite(event: any, liveDirs: string[], cwd = process.cwd()): 
 	const tool = String(event?.toolName ?? "");
 	const input = event?.input ?? {};
 	const dirs = liveDirs.map(d => resolve(d));
-	const under = (p: string) => dirs.find(d => resolve(p.replace(/^~(?=\/)/, homedir())) === d || resolve(p.replace(/^~(?=\/)/, homedir())).startsWith(`${d}/`));
+	// A relative path is the tool's, so it resolves against the call's cwd, not this process's (which may itself sit under the data dir).
+	const under = (p: string) => {
+		const abs = resolve(cwd, p.replace(/^~(?=\/)/, homedir()));
+		return dirs.find(d => abs === d || abs.startsWith(`${d}/`));
+	};
 	if (tool !== "bash" && tool !== "eval") {
 		for (const p of writtenPaths(tool, input)) {
 			const d = under(p);

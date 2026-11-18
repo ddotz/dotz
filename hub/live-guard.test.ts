@@ -115,13 +115,24 @@ test("sessions of a mkdtemp folder go after an idle hour, other temp folders kee
 });
 
 test("a throwaway's ast_edit over a folder, a glob or no paths is refused when the tree holds the live data dir", () => {
-	const ops = [{ pat: "a", out: "b" }];
-	const edit = (input: Record<string, unknown>, cwd: string) => liveWrite({ toolName: "ast_edit", input }, [LIVE], cwd);
-	expect(edit({ paths: [LIVE], ops }, "/tmp/dotz-x")).toContain("live data dir");
-	expect(edit({ paths: [join(LIVE, "**", "*.json")], ops }, "/tmp/dotz-x")).toContain("live data dir");
-	expect(edit({ paths: [homedir()], ops }, "/tmp/dotz-x")).toContain("live data dir");
-	expect(edit({ ops }, LIVE)).toContain("live data dir");
-	expect(edit({ paths: [], ops }, homedir())).toContain("live data dir");
-	expect(edit({ ops }, "/tmp/dotz-x")).toBeUndefined();
-	expect(edit({ paths: ["src/**/*.ts", "/tmp/dotz-x"], ops }, "/tmp/dotz-x")).toBeUndefined();
+	// A made-up home holding the data dir, so neither the real home nor the cwd of the test run (a worktree may sit inside ~/.dotz) decides.
+	const home = mkdtempSync(join(tmpdir(), "dotz-home-"));
+	const live = join(home, ".dotz");
+	const elsewhere = mkdtempSync(join(tmpdir(), "dotz-x-"));
+	mkdirSync(live);
+	try {
+		const ops = [{ pat: "a", out: "b" }];
+		const edit = (input: Record<string, unknown>, cwd: string) => liveWrite({ toolName: "ast_edit", input }, [live], cwd);
+		expect(edit({ paths: [live], ops }, elsewhere)).toContain("live data dir");
+		expect(edit({ paths: [join(live, "**", "*.json")], ops }, elsewhere)).toContain("live data dir");
+		expect(edit({ paths: [home], ops }, elsewhere)).toContain("live data dir");
+		expect(edit({ ops }, live)).toContain("live data dir");
+		expect(edit({ paths: [], ops }, home)).toContain("live data dir");
+		expect(edit({ paths: ["src/**/*.ts"], ops }, live)).toContain("live data dir");
+		expect(edit({ ops }, elsewhere)).toBeUndefined();
+		expect(edit({ paths: ["src/**/*.ts", elsewhere], ops }, elsewhere)).toBeUndefined();
+	} finally {
+		rmSync(home, { recursive: true, force: true });
+		rmSync(elsewhere, { recursive: true, force: true });
+	}
 });
