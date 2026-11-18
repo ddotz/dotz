@@ -1,7 +1,7 @@
 // The worker guard and its config: brief checks, output trimming, external-action list, the personal expensive-model
 // gate (off by default), budget gate, repeat/cycle block, deferral to an installed original, and the config defaults.
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { GUARD_DEFAULTS, guardConfigFrom, installedOriginal, loadGuardConfig } from "./guard-config.ts";
@@ -351,6 +351,20 @@ test("OmO task completion settles the worker and keeps its retained patch; eval 
 	expect(state.workers.st_01aa.status).toBe("completed");
 	expect(state.workers.st_01aa.patch).toEndWith("st_01aa.patch");
 	expect(shellText({ code: "await tool.bash({ command: 'git apply x.patch' })" })).toContain("git apply x.patch");
+});
+
+test("a replayed completion does not copy a patch the orchestrator already discarded back into the kept patches", () => {
+	const captured = join(dir, "root.patch");
+	writeFileSync(captured, "diff --git a/f b/f\n");
+	const state: Parameters<typeof settleFromText>[0] = { cwd: dir, workers: { st_02bb: { brief: "b", spawnedAt: 0, status: "running" } } };
+	const omo = `task completion name:st_02bb id:st_02bb category:quick(x) status:completed duration:9s\nresult:"done"\nisolation: retained via git-worktree -> ${captured}`;
+	const omp = `<task-result id="st_02bb" status="completed">changes captured at \`${captured}\`</task-result>`;
+	settleFromText(state, omo);
+	const kept = state.workers.st_02bb.patch!;
+	rmSync(kept);
+	expect(settleFromText(state, omo)).toBe(false);
+	expect(settleFromText(state, omp)).toBe(false);
+	expect(existsSync(kept)).toBe(false);
 });
 
 test("lookup subagents (explore, librarian) run Sonnet 5.5 medium on the subscription; other subagent types keep the live model; on an API-key session lookups follow the pin", () => {

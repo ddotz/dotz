@@ -269,7 +269,7 @@ export function settleFromText(state: ProjectState, text: string): boolean {
 		const worker = state.workers[id] ?? (state.settled?.[id] ? undefined : (state.workers[id] = { brief: "(spawned before tracking)", spawnedAt: Date.now(), status: "running" }));
 		if (!worker) continue;
 		const captured = body.match(/changes captured at `([^`]+\.patch)`/)?.[1];
-		const patch = captured ? keepPatch(state.cwd, id, captured) : undefined;
+		const patch = captured && !worker.patch ? keepPatch(state.cwd, id, captured) : undefined;
 		if (worker.status !== status || (patch && worker.patch !== patch)) {
 			worker.status = status;
 			if (patch) worker.patch = patch;
@@ -283,7 +283,7 @@ export function settleFromText(state: ProjectState, text: string): boolean {
 		const worker = state.workers[id] ?? (state.settled?.[id] ? undefined : (state.workers[id] = { brief: "(spawned before tracking)", spawnedAt: Date.now(), status: "running" }));
 		if (!worker) continue;
 		const isolation = /^isolation: ([\w-]+) via \S+ -> (\S+\.patch)\s*$/m.exec(rest);
-		const patch = isolation && isolation[1] === "retained" ? keepPatch(state.cwd, id, isolation[2]) : undefined;
+		const patch = isolation && isolation[1] === "retained" && !worker.patch ? keepPatch(state.cwd, id, isolation[2]) : undefined;
 		if (worker.status !== status || (patch && worker.patch !== patch)) {
 			worker.status = status;
 			if (patch) worker.patch = patch;
