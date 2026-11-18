@@ -1,0 +1,6 @@
+id: example-banned-api
+valid:
+  - httpClient.request("https://example.com");
+invalid:
+  - legacyFetch("https://example.com");
+  - "await legacyFetch(url, { method: \"POST\" });"

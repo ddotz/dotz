@@ -1,0 +1,9 @@
+id: example-banned-api
+language: TypeScript
+severity: error
+message: legacyFetch is banned because it skips the shared retry and timeout policy; call httpClient.request instead.
+rule:
+  pattern: legacyFetch($$$ARGS)
+metadata:
+  kind: banned-api
+  origin: "template: replace with the commit, session or date of the mistake this rule encodes"

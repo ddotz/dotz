@@ -1,0 +1,16 @@
+Change structure while behavior stays identical; distinct from Feature (adds behavior) and Bug fix (corrects it).
+
+A missing feature or real bug found mid-refactor is recorded and shipped separately, after the structural change lands against the pinned contract. A redesign is allowed: name it and route it to Feature. Large or cross-cutting structural work belongs to `skill://figure-it-out`; this playbook is the focused-to-medium change.
+
+1. Pin the behavior contract first. Trace the affected subsystem, then write a characterization test, snapshot, captured outputs, or an equivalence harness that records current behavior before any structure moves. No coverage means write the pin first. Types and lint passing are not a pin.
+2. Name the structure the code is missing (`skill://principle-model-the-domain`). Boring code stays when the shape is already clear and local; the reshape must delete branches or invalid states, not add indirection.
+3. Name the target shape: what the module layout, types, and call graph would be if built today (`skill://principle-foundational-thinking`, `skill://principle-redesign-from-first-principles`). A target that crosses a function boundary: `skill://architect` before the move.
+4. Subtract first. Delete dead code, collapse one-caller wrappers, drop redundant validators, and remove orphan references before the new shape appears (`skill://principle-subtract-before-you-add`). The smallest change that reaches the target ships (`skill://principle-laziness-protocol`); a speculative cleanup that "might help" is reverted.
+5. Move in small behavior-preserving steps, each keeping the pin green. For an API reshape, migrate every caller and delete the old API in the same wave (`skill://principle-migrate-callers-then-delete-legacy-apis`); no shims, no parallel old-and-new paths. A rename also covers strings, docs, config keys, and log text: spot-check against the actual files. Delegate the mechanical edits to a worker with a specific scope (paths, the names being moved, the behavior to hold); a mechanical change over many files is one script, not N workers.
+6. Prove behavior unchanged on the real artifact, not "it compiles" (`skill://principle-prove-it-works`). For a larger reshape, write an equivalence script: diff old-vs-new outputs, replay a recorded baseline against the new code, or smoke-run the surface through `verify-<app>`. The baseline diff must be empty.
+7. Reader-load revert test (`skill://principle-minimize-reader-load`): if the diff does not lower reader load somewhere, revert it. Report the delta.
+8. Return the work as small ordered commits: the subtraction commit, then the reshape, then follow-on cleanup, each slice green before the next (`skill://principle-sequence-verifiable-units`). The main session applies the patches. A PR only when the owner asked for one (or an autopilot queue grant covers it): run `playbooks/opening-a-pr.md` from the main session.
+
+Reply: the structure that changed, the pin you held it against, the equivalence proof, the reader-load delta, what shipped and what got reverted, in Korean plain text. No new behavior.
+
+Source: pstack skills/poteto-mode/playbooks/refactoring.md (MIT, skill://ulw/references/LICENSE-pstack).

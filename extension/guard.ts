@@ -29,21 +29,20 @@ import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from
 import { homedir } from "node:os";
 import { basename, join, resolve } from "node:path";
 import { broadSearchProblem, expandShellVars, shellText } from "./guard-shell.ts";
-import { pipedStatusBlock } from "./guard-pipe.ts";
-import { grantedHere, ownerPickedHere, swapExpensiveModels, workerPin } from "./guard-expensive.ts";
+import { swapExpensiveModels, workerPin } from "./guard-expensive.ts";
 export { shellText };
-import { limitStopProblem } from "./guard-limit.ts";
 import { callRules, expandCellVars, OMO_PROJECTS, readPaths, workerTrail } from "./guard-notes.ts";
-import { dataDir, expensiveMatch, type GuardConfig, GUARD_DEFAULTS, installedOriginal, isMain, laneShareReason, loadGuardConfig, loadLookupModel, logOnce, omoProviderName, stateDir, statePath as stateFile, SUB_COMPACT_STOP, SUB_COMPACT_WRAP_UP } from "./guard-config.ts";
+import { dataDir, expensiveMatch, type GuardConfig, GUARD_DEFAULTS, installedOriginal, isMain, loadGuardConfig, loadLookupModel, logOnce, omoProviderName, payloadHolding, stateDir, statePath as stateFile, SUB_COMPACT_STOP, SUB_COMPACT_WRAP_UP } from "./guard-config.ts";
 import { debug } from "./guard-debug.ts";
 import { BUDGET_MARKER, budgetLine as briefBudgetLine, checkOmoTaskInput as briefCheckOmoTask, checkTaskInput as briefCheckTask, checkoutRoots, gitTop, isOmoTaskInput, livePin, LOOKUP_PIN, ownWorkerPin, pinOmoTaskModel, shouldIsolate, addProjectFooter } from "./guard-brief.ts";
 export { addProjectFooter, FOLDER_RULES_MARKER, livePin, LOOKUP_PIN, ownWorkerPin, pinOmoTaskModel, PROJECT_MARKER, projectFooter, relativizeRoots, shouldIsolate } from "./guard-brief.ts";
 import { applyDirsOf, GIT_APPLY, GIT_APPLY_NAMED, GIT_APPLY_RE, patchIsApplied, patchLanded } from "./guard-patches.ts";
 import { createLongGuard, deletionBlock } from "./guard-long.ts";
 import { createRepeatGuard, type RepeatCtx, type RepeatEvent } from "./guard-repeat.ts";
-import { codeLockReason, scopeReaches, writeScopes, writtenPaths } from "../hub/codeguard.ts";
-import { evalSpawnBlock, evalSpawnProblem, reviveBrief } from "./guard-spawn.ts";
-export { codeLockReason };
+import { dotzCallBlock, installDotzGate, installDotzRules, subagentCallBlock, type WorkerRunning } from "./guard-dotz.ts";
+import { evalSpawnBlock, reviveBrief } from "./guard-spawn.ts";
+export { codeLockReason, laneMergeBlock, quickChatBlock, sharedWriteBlock } from "./guard-dotz.ts";
+export type { WorkerRunning } from "./guard-dotz.ts";
 
 // Active configuration: the defaults until installGuard() loads <DOTZ_DIR>/config.json. The exported checks take their
 // limits as a parameter that defaults to it, so tests pass their own.
@@ -77,12 +76,6 @@ export function externalAction(command: string, extra: readonly string[] = G.ext
 		}
 	}
 	return undefined;
-}
-
-// A lane lands a PR through dotz_merge, which checks the reviewed commit and CI; a direct `gh pr merge` would skip both.
-export function laneMergeBlock(command: string, lane = process.env.DOTZ_LANE): string | undefined {
-	if (!lane || !/\bgh\s+pr\s+merge\b/.test(command)) return undefined;
-	return "orchestrator-guard: a lane merges a PR only through dotz_merge (action=review records the verdict for the head you read, then action=merge checks that head and CI).";
 }
 
 // Per-job estimate in a brief: "Estimate: N%" = share of the 5h window the worker is expected to use (absent -> budget_default_estimate_percent).
@@ -192,116 +185,6 @@ function contextTokens(ctx: any): number {
 // the main one, so it keys its state the same way.
 export const stateOwner = (): string | undefined => process.env.DOTZ_LANE || process.env.DOTZ_CONV || undefined;
 
-// The quick chat (DOTZ_CONV=quick, hub/quick-chat.ts) is a cheaper model: what launches sessions, lands code or changes settings is main's.
-// Reads (dotz_connect status, dotz_channel list) and the hand-over to main (dotz_conv send main) stay.
-const QUICK_READS: Record<string, string> = { dotz_connect: "status", dotz_channel: "list" };
-export function quickChatBlock(tool: string, input: any, conv = process.env.DOTZ_CONV): string | undefined {
-	if (conv !== "quick") return undefined;
-	const launch = tool === "dotz_lane" && input?.action === "launch";
-	const changes = tool in QUICK_READS && input?.action !== QUICK_READS[tool];
-	if (!launch && !changes && tool !== "dotz_merge" && tool !== "dotz_escalate") return undefined;
-	return `orchestrator-guard: the quick chat does not launch sessions, merge, or change settings (${tool}). Hand it to main with dotz_conv send main.`;
-}
-
-// The files every session reads at start and only the main session writes (state.json, owner rules, lessons, owner memory):
-// a conversation's session hands a change to them to main, and a lane (DOTZ_LANE) puts it in its report's "<bot> 몫:" line
-// (hub/forline.ts), so two sessions never write one at once (2026-11-10: a lane wrote memory/owner.md).
-const SHARED_FILES = ["state.json", "RULES.md", "LESSONS.md"];
-// A shell or eval text writes a shared file only when a write's target is one: a JS/Python write call with it as its target
-// argument, Python open(<it>, "w"|"a"), a shell > / >> right before it, or tee/cp/mv/rm/sed -i/truncate with it as an argument.
-// A bare >, =>, >= or 2>&1 is no write (2026-11-13: 52 of 57 refusals were reads, most of them a lane's first rules read).
-const WRITE_CALLS = /(?<![\w$.])(?:Bun\.write|(?:os\.|fs\.)?(?:write|rename|unlink|remove|open|openSync))\s*\(|(?:(?:writeFile|appendFile)(?:Sync)?|writeAtomic|renameSync|unlinkSync|rmSync)\s*\(/g;
-const SHELL_REDIRECT = /(?:^|[^=<>&\d-])\d?>>?\|?\s*([^\s;&|<>()`]+)/g;
-const SHELL_WRITE_CMDS = /(?:^|[\s;&|(`"'])(tee|cp|mv|rm|truncate|sed)\s+([^;&|\n)`]*)/g;
-
-// The top-level arguments of the call whose "(" ends just before `from`.
-function callArgs(text: string, from: number): string[] {
-	const args: string[] = [];
-	let depth = 0, quote = "", start = from;
-	for (let i = from; i < text.length; i++) {
-		const c = text[i]!;
-		if (quote) {
-			if (c === "\\") i++;
-			else if (c === quote) quote = "";
-		} else if (c === '"' || c === "'" || c === "`") quote = c;
-		else if ("([{".includes(c)) depth++;
-		else if (")]}".includes(c) && depth-- === 0) return [...args, text.slice(start, i)];
-		else if (c === "," && depth === 0) (args.push(text.slice(start, i)), (start = i + 1));
-	}
-	return [...args, text.slice(start)];
-}
-
-// A target named by a variable counts when the text set it to a shared path (not to a read of one), or when a JS/Python write's
-// target is a name the text never set (an earlier cell did).
-function shellWritesShared(text: string, hits: (p: string) => boolean, data: string): boolean {
-	const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-	const dir = `(?:${esc(data)}|\\.dotz)`;
-	const file = /state\.json|RULES\.md|LESSONS\.md|memory\b/;
-	const path = new RegExp(`${dir}[\\s"'\`,+/]*(?:${file.source})`);
-	const dirOnly = new RegExp(`${dir}/?(?:["'\`)\\s]|$)`);
-	const assigned = new Map<string, string>();
-	for (const m of text.matchAll(/(?:^|[\s;,({`"'])(?:(?:const|let|var|export)\s+)?([A-Za-z_$][\w$]*)\s*=(?![=>~])\s*([^;\n]*)/g)) assigned.set(m[1]!, m[2]!);
-	const sharedVars = new Set<string>(), dirVars = new Set<string>();
-	const uses = (t: string, vars: Set<string>) => [...vars].some(v => new RegExp(`(?<![\\w$])${esc(v)}(?![\\w$])`).test(t));
-	const names = (t: string) => path.test(t) || uses(t, sharedVars) || (uses(t, dirVars) && file.test(t));
-	for (let grew = true; grew; ) {
-		grew = false;
-		for (const [v, rhs] of assigned) {
-			const read = /(?:open|read|load|parse|text)\w*\s*\(/i.test(rhs);
-			const set = read ? undefined : names(rhs) ? sharedVars : dirOnly.test(rhs) ? dirVars : undefined;
-			if (set && !set.has(v)) (set.add(v), (grew = true));
-		}
-	}
-	// Quoted text and shell words are literal paths; a bare JS/Python name or a shell $NAME is a variable.
-	const target = (raw: string, shell: boolean) => {
-		const quoted = /^["'`]/.test(raw.trim());
-		const t = raw.trim().replace(/^["'`]|["'`]$/g, "");
-		if (names(t)) return true;
-		const variable = quoted ? null : (shell ? /^\$\{?([A-Za-z_]\w*)\}?$/ : /^([A-Za-z_$][\w$]*)$/).exec(t);
-		if (variable) return !shell && !assigned.has(variable[1]!);
-		return (quoted || shell) && /^[~\w./-]+$/.test(t) && hits(t);
-	};
-	for (const m of text.matchAll(WRITE_CALLS)) {
-		const args = callArgs(text, m.index + m[0].length);
-		if (m[0].includes("open") && !/^\s*(?:mode\s*=\s*)?[rbfu]*["'][rbt]*[wax+]/i.test(args[1] ?? "")) continue;
-		if (args.slice(0, m[0].includes("rename") ? 2 : 1).some(a => target(a, false))) return true;
-	}
-	for (const m of text.matchAll(/([^\n;=]*)\.(?:write_text|write_bytes|unlink)\s*\(/g)) if (names(m[1]!)) return true;
-	for (const m of text.matchAll(SHELL_REDIRECT)) if (target(m[1]!, true)) return true;
-	for (const m of text.matchAll(SHELL_WRITE_CMDS)) {
-		if (m[1] === "sed" && !/(?:^|\s)-[a-zA-Z]*i/.test(m[2]!)) continue;
-		const words = m[2]!.split(/\s+/).filter(w => w && !w.startsWith("-"));
-		if ((m[1] === "cp" ? words.slice(-1) : words).some(w => target(w, true))) return true;
-	}
-	return false;
-}
-
-// A relative path resolves in the session's folder (cwd): a lane's worktree may hold its own RULES.md or state.json.
-export function sharedWriteBlock(tool: string, input: any, data = dataDir(), conv = process.env.DOTZ_CONV, lane = process.env.DOTZ_LANE, cwd = data): string | undefined {
-	if (!conv && !lane) return undefined;
-	const shared = [...SHARED_FILES.map(f => join(data, f)), join(data, "memory") + "/"];
-	const hits = (p: string) => {
-		const abs = p.startsWith("~/") ? join(homedir(), p.slice(2)) : resolve(cwd, p);
-		return shared.some(s => (s.endsWith("/") ? abs.startsWith(s) : abs === s));
-	};
-	let writes = false;
-	const written = writtenPaths(tool, input);
-	const scopes = writeScopes(tool, input, cwd);
-	if (written.length || scopes.length || tool === "apply_patch") {
-		writes =
-			written.some(hits) ||
-			scopes.some(scope => shared.some(s => scopeReaches(scope, s.replace(/\/$/, "")))) ||
-			(tool === "apply_patch" && typeof input?.input === "string" && shared.some(s => input.input.includes(s)));
-	} else if (tool === "bash" || tool === "eval") {
-		const text = shellText(input);
-		const named = shared.some(s => text.includes(s)) || SHARED_FILES.some(f => text.includes(`.dotz/${f}`)) || text.includes(".dotz/memory/");
-		writes = named && shellWritesShared(text, hits, data);
-	}
-	if (!writes) return undefined;
-	if (lane) return laneShareReason(data);
-	return `orchestrator-guard: this session answers only its own conversation (${conv}); state.json, RULES.md, LESSONS.md and owner memory are written by the main session. Hand the change over with dotz_conv send main.`;
-}
-
 function statePath(cwd: string, lane?: string): string {
 	return stateFile(stateDir(host), cwd, lane);
 }
@@ -386,7 +269,7 @@ export function settleFromText(state: ProjectState, text: string): boolean {
 		const worker = state.workers[id] ?? (state.settled?.[id] ? undefined : (state.workers[id] = { brief: "(spawned before tracking)", spawnedAt: Date.now(), status: "running" }));
 		if (!worker) continue;
 		const captured = body.match(/changes captured at `([^`]+\.patch)`/)?.[1];
-		const patch = captured ? keepPatch(state.cwd, id, captured) : undefined;
+		const patch = captured && !worker.patch ? keepPatch(state.cwd, id, captured) : undefined;
 		if (worker.status !== status || (patch && worker.patch !== patch)) {
 			worker.status = status;
 			if (patch) worker.patch = patch;
@@ -400,7 +283,7 @@ export function settleFromText(state: ProjectState, text: string): boolean {
 		const worker = state.workers[id] ?? (state.settled?.[id] ? undefined : (state.workers[id] = { brief: "(spawned before tracking)", spawnedAt: Date.now(), status: "running" }));
 		if (!worker) continue;
 		const isolation = /^isolation: ([\w-]+) via \S+ -> (\S+\.patch)\s*$/m.exec(rest);
-		const patch = isolation && isolation[1] === "retained" ? keepPatch(state.cwd, id, isolation[2]) : undefined;
+		const patch = isolation && isolation[1] === "retained" && !worker.patch ? keepPatch(state.cwd, id, isolation[2]) : undefined;
 		if (worker.status !== status || (patch && worker.patch !== patch)) {
 			worker.status = status;
 			if (patch) worker.patch = patch;
@@ -417,28 +300,22 @@ export function settleFromText(state: ProjectState, text: string): boolean {
 	return changed;
 }
 
-export type WorkerRunning = (ctx: unknown, id: string) => boolean;
-
-/** Installs the worker guard and returns whether the guard knows a worker as running (a write to its agent:// steers it, not revives it). Off or deferred to an installed copy, it knows none. */
+/** Installs the worker guard and returns whether the guard knows a worker as running (a write to its agent:// steers it, not revives it). Off or deferred to an installed copy, it knows none. The payload of a coding lane (DOTZ_CODING_HARNESS) is the exception: its own orchestrator-guard covers the generic checks, so dotz keeps only the rules it lacks (guard-dotz.ts) and reads the payload's worker state. */
 export function installGuard(pi: any, config: GuardConfig = loadGuardConfig()): WorkerRunning {
 	if (!config.enabled) return () => false;
 	const installed = config.defer_to_installed ? installedOriginal(pi, "orchestrator-guard") : undefined;
 	if (installed) {
-		logOnce(pi, "guard-deferred", `dotz guard: ${installed} is installed, so dotz's copy of the worker guard stays off (every hook would run twice). Set guard.defer_to_installed to false in <DOTZ_DIR>/config.json to run it anyway.`);
-		return () => false;
+		const payload = payloadHolding("orchestrator-guard");
+		logOnce(pi, "guard-deferred", payload
+			? `dotz guard: ${installed} is loaded with the coding harness, so dotz's copy of the worker guard keeps only the rules that harness lacks (lane merge, shared owner files, eval-started workers, usage-limit stop line, expensive-model gate). Set guard.defer_to_installed to false in <DOTZ_DIR>/config.json to run all of it.`
+			: `dotz guard: ${installed} is installed, so dotz's copy of the worker guard stays off (every hook would run twice). Set guard.defer_to_installed to false in <DOTZ_DIR>/config.json to run it anyway.`);
+		return payload ? installDotzRules(pi, config, payload) : () => false;
 	}
 	G = config;
 	host = pi; lookupPin = omoProviderName(loadLookupModel(dataDir(), m => logOnce(pi, "lookup-model", m)));
 	let state: ProjectState | undefined;
 	let budgetOkUntil = 0;
-	let fableOkUntil = 0;
-	let sessionFlagged = false;
 	const overrideMs = config.override_minutes * 60_000;
-	// Owner rule, off by default: models in `expensive_models` run only after the owner asked. A dotz lane launched with owner_asked_for_fable gets DOTZ_OWNER_ASKED_FABLE=1; otherwise the user runs /fable-ok.
-	const gateExpensive = config.ask_before_expensive && config.expensive_models.length > 0;
-	// The gateway's grants (<DOTZ_DIR>/state/expensive-grants.json) count while `until` lies ahead; the key is this process's conversation.
-	const fableOk = () => !gateExpensive || process.env.DOTZ_OWNER_ASKED_FABLE === "1" || Date.now() < fableOkUntil || grantedHere();
-	const fableReason = (what: string, found: string) => `orchestrator-guard: ${what} uses an expensive model (${found}). Models listed in guard.expensive_models run only when the owner explicitly asked for it. Use the default worker model. If the owner asked for it, get a grant on that message (POST /api/expensive-grant {conversation, owner_message: <mid>}) or have them type /fable-ok (${config.override_minutes} min).`;
 	const projectState = (ctx: any) => (state ??= loadState(String(ctx?.cwd ?? process.cwd())));
 	const refreshApplied = (current: ProjectState, extraDirs: string[] = [], history = false): boolean => {
 		let changed = false;
@@ -534,22 +411,7 @@ export function installGuard(pi: any, config: GuardConfig = loadGuardConfig()): 
 		});
 	}
 
-	if (gateExpensive) {
-		pi.registerCommand("fable-ok", {
-			description: `Allow expensive-model workers (guard.expensive_models) for ${config.override_minutes} minutes (guard expensive-model gate).`,
-			handler: async (_args: unknown, ctx: any) => {
-				fableOkUntil = Date.now() + overrideMs;
-				ctx.ui.notify(`orchestrator-guard: expensive-model workers allowed for ${config.override_minutes} minutes.`, "info");
-			},
-		});
-	}
-	pi.on("before_subagent_spawn", (event: { agent?: unknown; patterns?: unknown }) => {
-		const evalBlock = evalSpawnBlock(event);
-		if (evalBlock) return evalBlock;
-		const found = fableOk() ? undefined : expensiveModel(event?.patterns);
-		debug({ phase: "spawn-model", agent: event?.agent, patterns: event?.patterns, found });
-		if (found) return { block: true, reason: fableReason(`worker ${event?.agent ?? "task"}`, found) };
-	});
+	const gate = installDotzGate(pi, config);
 
 	pi.registerCommand("compact-switch", {
 		description: "Compact on the current model first (its cache is still warm), then switch: /compact-switch provider/model[:thinking]",
@@ -593,15 +455,7 @@ export function installGuard(pi: any, config: GuardConfig = loadGuardConfig()): 
 	});
 
 	pi.on("before_provider_request", (event: any, ctx: any) => {
-		if (isMain(ctx) && !sessionFlagged && !fableOk()) {
-			const effort = String(pi.getThinkingLevel?.() ?? "");
-			const found = expensiveModel([event?.payload?.model, /^(max|xhigh)$/i.test(effort) ? `:${effort}` : undefined]);
-			if (found && !ownerPickedHere(event?.payload?.model, effort, config)) {
-				sessionFlagged = true;
-				debug({ phase: "session-expensive", found });
-				ctx.ui?.notify?.(`orchestrator-guard: this session runs on an expensive model (${found}). Fable and max/xhigh effort are for explicit owner requests only. Do not change the model yourself: ask the owner whether it should stay (/fable-ok silences this).`, "warning");
-			}
-		}
+		gate.flag(event, ctx);
 		if (ctx?.agent?.kind !== "sub" || !event?.payload) return;
 		const payload = structuredClone(event.payload);
 		const dropped = dropLongTtl(payload);
@@ -632,18 +486,8 @@ export function installGuard(pi: any, config: GuardConfig = loadGuardConfig()): 
 				return { block: true, reason: `orchestrator-guard: workers do not run external-impact commands (${kind}). Finish the rest of the task, and list the exact command under "External actions needed" in your final answer; the orchestrator decides whether to run it.` };
 			}
 		}
-		const shell = tool === "bash" || tool === "eval" ? shellText(event?.input) : undefined;
-		const shellBlock = shell === undefined ? undefined : (laneMergeBlock(expandShellVars(shell)) ?? pipedStatusBlock(shell));
-		if (shellBlock) return { block: true, reason: shellBlock };
-		const shared = sharedWriteBlock(tool, event?.input, dataDir(), process.env.DOTZ_CONV, process.env.DOTZ_LANE, ctx?.cwd) ?? quickChatBlock(tool, event?.input);
-		if (shared) {
-			debug({ phase: "shared-write-block", tool });
-			return { block: true, reason: shared };
-		}
-		const spawnProblem = evalSpawnProblem(tool, event?.input);
-		if (spawnProblem) return { block: true, reason: spawnProblem };
-		const limitStop = limitStopProblem(tool, event?.input);
-		if (limitStop) return { block: true, reason: limitStop };
+		const own = dotzCallBlock(tool, event?.input, ctx?.cwd);
+		if (own) return { block: true, reason: own };
 		if (!isMain(ctx)) return;
 		// phase long-bash-block / wait-again-block / polling-block: the orchestrator does not block on long work (guard-long.ts).
 		const blocking = longGuard(tool, event?.input, () => Object.values(projectState(ctx).workers).filter(w => w.status === "running" && Date.now() - w.spawnedAt < RUNNING_MAX_AGE_MS).length);
@@ -673,17 +517,17 @@ export function installGuard(pi: any, config: GuardConfig = loadGuardConfig()): 
 			debug({ phase: "task", verdict });
 			if ("reason" in verdict) return { block: true, reason: verdict.reason };
 			addProjectFooter(verdict.input, process.env.DOTZ_CONV, taskCwd);
-			const gated = gateExpensive && !fableOk();
+			const gated = gate.gated && !gate.ok();
 			if (gated && swapExpensiveModels(verdict.input, config)) debug({ phase: "task-model-swap", worker: workerPin() });
 			const wanted = process.env.DOTZ_ORCHESTRATOR === "1" && !process.env.DOTZ_LANE && isOmoTaskInput(event.input) ? (ownWorkerPin(process.env.DOTZ_WORKER_PIN_FILE) ?? livePin(ctx?.model, pi.getThinkingLevel?.())) : undefined;
 			const pin = wanted && gated && expensiveModel(wanted) ? workerPin() : wanted;
 			if (pin) {
-				pinOmoTaskModel(event.input, pin, model => gateExpensive && !gated && Boolean(expensiveModel(model)), lookupPin);
+				pinOmoTaskModel(event.input, pin, model => gate.gated && !gated && Boolean(expensiveModel(model)), lookupPin);
 				debug({ phase: "task-model-pin", pin });
 			}
 			// Last net: only a worker model that is itself on the expensive list gets here.
 			const dear = gated ? expensiveTaskModel(verdict.input) : undefined;
-			if (dear) return { block: true, reason: fableReason("this task call", dear) };
+			if (dear) return { block: true, reason: gate.reason("this task call", dear) };
 			// The quota comes from `omp usage`, i.e. omp's own login; an OmO process may run on another account, so the gate
 			// would block on a quota that is not the one it spends. No gate on OmO until OmO's own usage can be read.
 			if (config.budget_gate && process.env.DOTZ_RUNTIME !== "omo" && Date.now() >= budgetOkUntil) {
@@ -758,16 +602,19 @@ export function installGuard(pi: any, config: GuardConfig = loadGuardConfig()): 
 	return (ctx, id) => projectState(ctx).workers[id]?.status === "running";
 }
 
-/** The checks of installGuard that bind a task subagent, for a host that runs installGuard for the main agent alone (omp): a broad search, a quick chat's reach and a usage-limit stop line are refused, and a call repeated in a loop is blocked. The compaction wrap-up and stop stay out: the task cap owns a subagent's context. */
+/** The checks of installGuard that bind a task subagent, for a host that runs installGuard for the main agent alone (omp): a broad search, a quick chat's reach and a usage-limit stop line are refused, and a call repeated in a loop is blocked. The compaction wrap-up and stop stay out: the task cap owns a subagent's context. Under a coding lane's payload, whose orchestrator-guard runs the broad-search, deletion and repeat checks, only the quick chat, usage-limit stop line and eval-started worker rules stay. */
 export function installSubagentGuard(pi: { on(name: string, handler: (event: RepeatEvent, ctx: RepeatCtx) => unknown): unknown }, config: GuardConfig = loadGuardConfig()): void {
-	if (!config.enabled || (config.defer_to_installed && installedOriginal(pi, "orchestrator-guard"))) return;
-	const repeat = createRepeatGuard(config);
-	pi.on("tool_result", repeat.record);
+	if (!config.enabled) return;
+	const installed = config.defer_to_installed ? installedOriginal(pi, "orchestrator-guard") : undefined;
+	if (installed && !payloadHolding("orchestrator-guard")) return;
+	const repeat = installed ? undefined : createRepeatGuard(config);
+	if (repeat) pi.on("tool_result", repeat.record);
 	pi.on("before_subagent_spawn", evalSpawnBlock);
 	pi.on("tool_call", async (event, ctx) => {
 		const tool = String(event?.toolName ?? "");
-		const reason = broadSearchProblem(tool, event?.input) ?? deletionBlock(tool, event?.input, (ctx as { cwd?: string } | undefined)?.cwd) ?? quickChatBlock(tool, event?.input) ?? limitStopProblem(tool, event?.input) ?? evalSpawnProblem(tool, event?.input);
-		if (!reason) return repeat.check(event, ctx);
+		const generic = repeat ? (broadSearchProblem(tool, event?.input) ?? deletionBlock(tool, event?.input, (ctx as { cwd?: string } | undefined)?.cwd)) : undefined;
+		const reason = generic ?? subagentCallBlock(tool, event?.input);
+		if (!reason) return repeat?.check(event, ctx);
 		debug({ phase: "sub-check-block", agent: ctx?.agent?.id, tool });
 		return { block: true, reason };
 	});

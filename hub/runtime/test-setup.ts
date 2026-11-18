@@ -35,6 +35,7 @@ await takeSuiteSlot(process.env);
 
 // Tuning knobs and lane/hub markers of whatever shell runs the tests must not leak into the code under test (DOTZ_GOLDEN_WRITE is read by hub/web-golden-web.test.ts only).
 for (const k of Object.keys(process.env)) if (k.startsWith("DOTZ_") && k !== "DOTZ_TEST_DIR" && k !== "DOTZ_GOLDEN_WRITE") delete process.env[k];
+delete process.env.HARNESS_AGENT_HOME;
 // A stripped environment (env -i) has no TMPDIR, so tmpdir() falls back to /tmp, which the code treats as a scratch
 // folder; on macOS use the per-user temp dir a login shell would have.
 if (!process.env.TMPDIR && process.platform === "darwin") process.env.TMPDIR = execFileSync("/usr/bin/getconf", ["DARWIN_USER_TEMP_DIR"], { encoding: "utf8" }).trim();

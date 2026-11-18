@@ -6,6 +6,7 @@ import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { CODING_HARNESS_ENV } from "./harness-gate.ts";
 
 export interface GuardConfig {
 	// false turns the whole guard (every hook, command and the state files) off.
@@ -201,11 +202,22 @@ export const stateDir = (pi?: any) => process.env.ORCH_GUARD_STATE_DIR ?? join(a
 export const statePath = (dir: string, cwd: string, lane?: string) =>
 	join(dir, `${createHash("sha1").update(lane ? `${cwd}\0${lane}` : cwd).digest("hex").slice(0, 16)}.json`);
 
+/** The coding payload that DOTZ_CODING_HARNESS names, when it holds extension `name`: that copy of the extension loads in this process. */
+export function payloadHolding(name: string): string | undefined {
+	const payload = process.env[CODING_HARNESS_ENV];
+	return payload && existsSync(join(payload, "extensions", `${name}.ts`)) ? payload : undefined;
+}
+
+/** Where the payload's orchestrator-guard keeps its worker state (harness/guard/state.ts): ORCH_GUARD_STATE_DIR, else `orchestrator-state` under HARNESS_AGENT_HOME, which the hub sets to the payload folder beside DOTZ_CODING_HARNESS. */
+export const payloadStateDir = (payload: string): string => process.env.ORCH_GUARD_STATE_DIR ?? join(process.env.HARNESS_AGENT_HOME || payload, "orchestrator-state");
+
 // omp exposes no list of loaded extensions to an extension: a command carries no path and a tool only the path of the
 // copy that registered last. So "installed" is read from the agent directory, the one place omp auto-discovers user
 // extensions from: the module is `<agentDir>/extensions/<name>.ts` (or `<name>/index.ts`), discovery is not switched off
 // for this process (`--no-extensions`), and `disabledExtensions` in the agent's config.yml does not name it.
 export function installedOriginal(pi: any, name: string): string | undefined {
+	const payload = payloadHolding(name);
+	if (payload) return join(payload, "extensions", `${name}.ts`);
 	if (process.argv.includes("--no-extensions")) return undefined;
 	const root = join(agentDir(pi), "extensions");
 	const file = [join(root, `${name}.ts`), join(root, `${name}.js`), join(root, name, "index.ts")].find(existsSync);

@@ -1,0 +1,135 @@
+#!/bin/sh
+. "${0%/*}/../worker-shim.sh"
+
+og_gh_value() {
+	case $1 in
+	method) _og_method=$2 ;;
+	field)
+		_og_nfields=$((_og_nfields + 1))
+		case $2 in
+		query=*)
+			_og_q=${2#query=}
+			_og_q=${_og_q#"${_og_q%%[![:space:]]*}"}
+			_og_nquery=$((_og_nquery + 1))
+			case $_og_q in
+			*mutation*) _og_badquery=1 ;;
+			query*) ;;
+			*) _og_badquery=1 ;;
+			esac
+			;;
+		esac
+		;;
+	esac
+}
+
+og_gh_api_check() {
+	shift
+	_og_method=
+	_og_endpoint=
+	_og_nfields=0
+	_og_nquery=0
+	_og_badquery=
+	_og_input=
+	_og_take=
+	_og_dashdash=
+	for _og_a in "$@"; do
+		if [ -n "$_og_take" ]; then
+			og_gh_value "$_og_take" "$_og_a"
+			_og_take=
+			continue
+		fi
+		if [ -n "$_og_dashdash" ]; then
+			_og_endpoint=${_og_endpoint:-$_og_a}
+			continue
+		fi
+		case $_og_a in
+		--) _og_dashdash=1 ;;
+		--field | --raw-field) _og_take=field ;;
+		--field=* | --raw-field=*) og_gh_value field "${_og_a#*=}" ;;
+		--input | --input=*) _og_input=1 ;;
+		--method) _og_take=method ;;
+		--method=*) og_gh_value method "${_og_a#*=}" ;;
+		--header | --jq | --template | --preview | --cache | --hostname) _og_take=other ;;
+		--*) ;;
+		-?*)
+			_og_rest=${_og_a#-}
+			while [ -n "$_og_rest" ]; do
+				_og_ch=${_og_rest%"${_og_rest#?}"}
+				_og_rest=${_og_rest#?}
+				case $_og_ch in
+				f | F) _og_kind=field ;;
+				X) _og_kind=method ;;
+				H | q | t | p) _og_kind=other ;;
+				*) continue ;;
+				esac
+				if [ -n "$_og_rest" ]; then
+					og_gh_value "$_og_kind" "${_og_rest#=}"
+				else
+					_og_take=$_og_kind
+				fi
+				break
+			done
+			;;
+		*) _og_endpoint=${_og_endpoint:-$_og_a} ;;
+		esac
+	done
+	[ -z "$_og_take" ] || [ "$_og_take" = other ] || og_block "gh api with an incomplete option"
+	[ -z "$_og_input" ] || og_block "gh api with --input"
+	case ${_og_endpoint#/} in
+	graphql)
+		case $_og_method in
+		'' | [Gg][Ee][Tt] | [Pp][Oo][Ss][Tt]) ;;
+		*) og_block "gh api graphql with method $_og_method" ;;
+		esac
+		{ [ "$_og_nquery" -ge 1 ] && [ -z "$_og_badquery" ]; } || og_block "gh api graphql that is not a read query"
+		;;
+	*)
+		case $_og_method in
+		'' | [Gg][Ee][Tt]) ;;
+		*) og_block "gh api with method $_og_method" ;;
+		esac
+		[ "$_og_nfields" -eq 0 ] || og_block "gh api with request fields (sent as POST)"
+		;;
+	esac
+}
+
+og_gh_status_check() {
+	shift 2
+	for _og_a in "$@"; do
+		case $_og_a in
+		-t* | --show-token | --show-token=* | -[!-]*t*) og_block "gh auth status with --show-token" ;;
+		esac
+	done
+}
+
+case $1 in
+pr)
+	case $2 in view | list | diff | checks | status) og_exec gh "$@" ;; esac
+	;;
+issue)
+	case $2 in view | list | status) og_exec gh "$@" ;; esac
+	;;
+repo)
+	case $2 in view) og_exec gh "$@" ;; esac
+	;;
+run)
+	case $2 in view | list) og_exec gh "$@" ;; esac
+	;;
+release)
+	case $2 in view | list) og_exec gh "$@" ;; esac
+	;;
+search) og_exec gh "$@" ;;
+auth)
+	case $2 in
+	status)
+		og_gh_status_check "$@"
+		og_exec gh "$@"
+		;;
+	esac
+	;;
+api)
+	og_gh_api_check "$@"
+	og_exec gh "$@"
+	;;
+esac
+og_block "gh $1 $2"

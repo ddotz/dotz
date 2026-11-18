@@ -103,3 +103,65 @@ SOFTWARE.
 - Copyright (c) 2017-2019, The xterm.js authors; (c) 2014-2016, SourceLair Private Company; (c) 2012-2013, Christopher Jeffrey
 - License: MIT (`web/vendor/xterm-LICENSE.txt`)
 - Vendored unchanged as `web/vendor/xterm.js`, `xterm.css` and `addon-fit.js` (source maps dropped); the web terminal (`web/js/36-shell.js`) loads them on first open.
+
+## pstack skills (vendor/coding-harness/skills)
+
+- Source: pstack, by Lauren Tan
+- Copyright (c) 2026 Lauren Tan
+- License: MIT (`vendor/coding-harness/skills/ulw/references/LICENSE-pstack`; the same text sits next to the scripts adapted from it in `vendor/coding-harness/skills/ulw/scripts/` and `vendor/coding-harness/skills/statechart/scripts/`)
+- Vendored as part of the coding harness payload (`vendor/coding-harness/`, docs/omp-harness.md section 5), adapted: 80 of its `SKILL.md` files end with a `Source: pstack skills/<name>` line naming the skill they come from, and the ulw and statechart scripts are derived from it. The payload itself is the owner's own code; only these skills are third-party.
+
+```
+MIT License
+
+Copyright (c) 2026 Lauren Tan
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
+## caldoai/skills (prune-tests)
+
+- Source: https://github.com/caldoai/skills (`skills/prune-tests/SKILL.md`)
+- Copyright (c) 2026 Maze
+- License: MIT (`vendor/coding-harness/skills/prune-tests/LICENSE-caldo`)
+- Vendored, adapted to the payload's skill format, as `vendor/coding-harness/skills/prune-tests/SKILL.md`; the file ends with a `Source: caldoai/skills` line.
+
+```
+MIT License
+
+Copyright (c) 2026 Maze
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```

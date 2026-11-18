@@ -1,0 +1,14 @@
+Drive one task to a command-checkable exit predicate without stopping, for multi-hour or multi-phase work or when the user steps away. You own the exit condition.
+
+1. Turn on `skill://decision-log`. Every iteration, discard, pivot and retry gets a row there, so the trail lives in `.omp/decision-log.tsv`, not in the conversation.
+2. Write the exit predicate as something a command can check (tests green, repro fixed, all N units landed, pixel diff zero) before iteration 1, and save it in the plan file. Never relax the predicate to declare victory; changing it needs the owner.
+3. Set the budget ceiling: the largest iteration count or wall time the predicate is worth, plus a quota check before each wave. A failed unit is retried only with a named cause and a changed approach; stop after two failed retries on the same unit and report the cause.
+4. Pick the wake mechanism. Main session in the omp TUI: enter loop mode with the `loop` tool (`action: enter`, a `prompt`, an `iterations` or `minutes` bound, and a `condition` that is the predicate command), then end the turn; the loop starts when the turn ends. Where the `loop` tool is refused (print, RPC and dotz sessions), use a background bash job (`timeout: 0`) that re-runs the check, or eval `agent()` / `wait()` waves. Only the main session starts a loop; workers never do.
+5. Split the work into units that each end in a check, riskiest unknown first. Before fanning out N similar units, run one unit end to end as a canary. Dependent lanes run as eval `agent()` / `wait()` waves, independent ones as one `task` batch; a mechanical change over many files is one script, not N workers. Verify each unit (`skill://verify` for the real surface) before starting the next.
+6. Each iteration makes the smallest change the evidence justifies, runs the predicate, and keeps the change only if the predicate moved (commit it); otherwise discard it. A change that "might help" is reverted, not left to ride. Never leave the tree red between units.
+7. Side fixes (broken skill, flaky check, related bug, tooling failure) are yours when they support the goal: do each as its own unit with its own commit and its own check, then return to the predicate. Ask the owner only for an irreversible action, a product or preference call no experiment settles, or a real dead end.
+8. Stop when the predicate is met. A plateau is not a stop: pivot the approach (attack the shared premise of the failed attempts, change the lever, change the unit size) and log the pivot. Surface a genuine dead end or an exhausted budget with the named cause instead of spinning.
+
+Reply: in Korean, plain text: the exit predicate, iterations run, what landed, what was discarded, final predicate state, and the decision-log path.
+
+Source: pstack skills/poteto-mode/playbooks/autonomous-run.md (MIT, skill://ulw/references/LICENSE-pstack).

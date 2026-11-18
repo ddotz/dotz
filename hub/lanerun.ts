@@ -140,7 +140,7 @@ export function spawn(lane: Lane, resume: boolean): boolean {
 		// A plain list cannot bill through a key: those entries are left out (on Claude Code one would repeat the main model).
 		fallback: lane.chain ? [] : entries.filter(e => !e.key_file).map(e => e.model),
 		hubSwitches: Boolean(lane.chain),
-		...(gate ? { doneGate: gate.extension } : {}),
+		...(gate ? { codingHarness: gate.dir } : {}),
 		resume: resume ? lane.sessionFile : undefined,
 		// The omp-side orchestrator-guard blocks Fable / max-effort worker spawns unless the owner asked for them.
 		env,

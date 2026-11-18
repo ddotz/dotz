@@ -8,6 +8,9 @@ export const BOOTSTRAP_LIMIT_MS = 100_000;
 
 export const WORKER_GATE_AGENT_DIR_ENV = "DOTZ_WORKER_GATE";
 
+/** Set on a coding-harness session to its payload dir: dotz's own guard copies stand down for the payload's originals (guard-config.ts installedOriginal). */
+export const CODING_HARNESS_ENV = "DOTZ_CODING_HARNESS";
+
 export function harnessFiles(agentDir: string): HarnessGate | undefined {
 	const gate = { extension: join(agentDir, "extensions", "done-gate.ts"), bootstrap: join(agentDir, "harness", "gate", "bootstrap.ts") };
 	return existsSync(gate.extension) && existsSync(gate.bootstrap) ? gate : undefined;
