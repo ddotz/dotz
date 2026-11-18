@@ -105,5 +105,7 @@ export function projectInfoContext(key: string): string {
 		state.length ? `Project info: ${state.join("; ")}.` : "",
 		prefs.length ? `Owner preferences here: ${prefs.join("; ")}.` : "",
 		"If this turn settled something, end the answer with a <project-info> block.",
+		// blocked lines stay until a block names blocked again: a session that saw them unstuck must know the bare line clears them.
+		info?.blocked.length ? "Once nothing is blocked any more, put a bare `blocked:` line in it to clear the blocked list." : "",
 	].filter(Boolean).join(" ");
 }
