@@ -4,7 +4,7 @@ import { afterEach, beforeEach, expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createRestartGate, markRestartPending, RESTART_HELD_FILE } from "../hub/restart.ts";
+import { createRestartGate, markRestartPending, RESTART_HELD_FILE, takeRestartHeld } from "../hub/restart.ts";
 import { advance } from "../hub/runtime/test-clock.ts";
 import { holdOnRestart, RESTART_HOLD_LANE, RESTART_HOLD_MAIN, restartHeld } from "./restart-hold.ts";
 
@@ -35,9 +35,15 @@ test("with a restart pending a lane's task spawn is refused with the stop note; 
 	expect(existsSync(join(data, "lanes", "qa-golden", RESTART_HELD_FILE))).toBe(true);
 	const main = host();
 	holdOnRestart(main.pi, data);
+	expect(takeRestartHeld(data)).toBe(false);
 	expect(main.call(spawn)).toEqual({ block: true, reason: RESTART_HOLD_MAIN });
-	expect(restartHeld("launch", data)).toBe(RESTART_HOLD_MAIN);
+	// The refused main start is picked up once by the next gateway start (hub/main.ts wakes the orchestrator), then not again.
+	expect(takeRestartHeld(data)).toBe(true);
+	expect(takeRestartHeld(data)).toBe(false);
 	expect(restartHeld("list", data)).toBeUndefined();
+	expect(takeRestartHeld(data)).toBe(false);
+	expect(restartHeld("launch", data)).toBe(RESTART_HOLD_MAIN);
+	expect(takeRestartHeld(data)).toBe(true);
 	// A marker a crashed hub left behind holds nothing.
 	writeFileSync(join(data, "restart-pending.json"), JSON.stringify({ pid: 2 ** 22 + 7, since: "2026-11-10T00:01:00.000Z" }));
 	expect(lane.call(spawn)).toBeUndefined();

@@ -61,15 +61,19 @@ function childRunning(sessionFile: string | undefined, to: string): boolean | un
 const sendStarts = (input: any, ctx: any): boolean =>
 	input?.redispatch === true || (typeof input?.message === "string" && childRunning(ctx?.sessionManager?.getSessionFile?.(), String(input?.to ?? "")) === false);
 
-// `lane`: the lane's name; a refusal leaves <data>/lanes/<lane>/restart-held so the next gateway start tells it to go on (hub/laneops.ts).
+const markHeld = (held: string): void => {
+	if (!existsSync(dirname(held))) return;
+	writeFileSync(`${held}.tmp`, `${new Date().toISOString()}\n`);
+	renameSync(`${held}.tmp`, held);
+};
+
+// A refusal leaves restart-held so the next gateway start tells the refused one to go on: a lane's in <data>/lanes/<lane>/ (hub/laneops.ts),
+// the orchestrator's and a conversation session's in <data>/ (hub/main.ts wakes the orchestrator once). 2026-11-18: the main session was
+// told "재시작 뒤 이어서 해요", nothing woke it after the restart, and a launch the owner chose waited until his next message.
 export function holdOnRestart(pi: any, data: string, lane?: string, running: WorkerRunning = () => false): void {
 	const hold = () => {
 		if (!restartPending(data)) return undefined;
-		const held = join(data, "lanes", lane ?? "", RESTART_HELD_FILE);
-		if (lane && existsSync(dirname(held))) {
-			writeFileSync(`${held}.tmp`, `${new Date().toISOString()}\n`);
-			renameSync(`${held}.tmp`, held);
-		}
+		markHeld(lane ? join(data, "lanes", lane, RESTART_HELD_FILE) : join(data, RESTART_HELD_FILE));
 		return { block: true, reason: lane ? RESTART_HOLD_LANE : RESTART_HOLD_MAIN };
 	};
 	pi.on("before_subagent_spawn", hold);
@@ -82,4 +86,8 @@ export function holdOnRestart(pi: any, data: string, lane?: string, running: Wor
 	});
 }
 
-export const restartHeld = (action: string, data: string): string | undefined => (action === "launch" && restartPending(data) ? RESTART_HOLD_MAIN : undefined);
+export function restartHeld(action: string, data: string): string | undefined {
+	if (action !== "launch" || !restartPending(data)) return undefined;
+	markHeld(join(data, RESTART_HELD_FILE));
+	return RESTART_HOLD_MAIN;
+}

@@ -50,7 +50,7 @@ import { restGuard } from "./context.ts";
 import { errorAsk, startResumeWatch, watchSession } from "./orch-error.ts";
 import { interruptedLanes } from "./lanereconnect.ts";
 import { queuedTargets } from "./queue.ts";
-import { createRestartGate, markRestartPending, RESTART_NOTICE_MS, restartCapText } from "./restart.ts";
+import { createRestartGate, markRestartPending, RESTART_NOTICE_MS, restartCapText, takeRestartHeld } from "./restart.ts";
 import { createWaitCheck, wakeReply } from "./waitcheck.ts";
 import { ownerMessage } from "./events.ts";
 import { forgetAccountUsage, onQuota, QUOTA_REFRESH_MS, refreshQuota, usageSnapshot } from "./providers.ts";
@@ -517,6 +517,7 @@ if (process.env.DOTZ_NO_ORCHESTRATOR !== "1") {
 	startWebI18n();
 	const lines = textsToReport();
 	if (lines.length) wakeOnce("texts-override", msg().textsReport(lines.join("\n")));
+	if (takeRestartHeld(DATA_DIR)) wakeOnce("restart-held", msg().restartHeldResume);
 	void pendingBackups(defaultExec, join(import.meta.dir, ".."), join(DATA_DIR, "logs"), DATA_DIR)
 		// several backups of one update are one wake (the Mac mini got two cards for the same edit, 2026-10-29)
 		.then(list => list.length && wakeOnce("self-update-local", list.map(b => msg().carryOver(b.where, b.read, b.stat, b.files)).join("\n\n---\n\n")))

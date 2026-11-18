@@ -2,7 +2,7 @@
 // restart waits for idle however long that takes, and says once that it is waiting (2026-10-19: three forced kills of a
 // lane after 20 min). Requests close together are coalesced: every request while one waits joins it, and a restart never
 // happens sooner than minGapMs after this process started (2026-10-19: 30 restarts in a day from a lane developing dotz).
-import { rmSync } from "node:fs";
+import { existsSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { issueBlock } from "./choices.ts";
 import { writeAtomic } from "./config.ts";
@@ -14,8 +14,16 @@ export const RESTART_NOTICE_MS = 20 * 60_000;
 // no new task worker and launch no session (extension/restart-hold.ts): the workers already running finish and the wait ends. A lane
 // kept starting a worker as the last one ended, and an update with security fixes waited over 75 minutes (2026-11-10).
 export const RESTART_PENDING_FILE = "restart-pending.json";
-// Left in <data dir>/lanes/<name>/ by a lane whose task worker the hold refused: the next start gives it one note to go on (hub/laneops.ts).
+// Left by work the hold refused: in <data dir>/lanes/<name>/ for a lane (the next start gives it one note to go on, hub/laneops.ts), in
+// <data dir>/ for the orchestrator or a conversation session (the next start wakes the orchestrator once, takeRestartHeld).
 export const RESTART_HELD_FILE = "restart-held";
+// True once per refused main or conversation-session start: the marker is removed as it is read.
+export function takeRestartHeld(dataDir: string): boolean {
+	const file = join(dataDir, RESTART_HELD_FILE);
+	if (!existsSync(file)) return false;
+	rmSync(file, { force: true });
+	return true;
+}
 export function markRestartPending(dataDir: string, on: boolean): void {
 	const file = join(dataDir, RESTART_PENDING_FILE);
 	if (on) writeAtomic(file, `${JSON.stringify({ pid: process.pid, since: new Date().toISOString() })}\n`);
