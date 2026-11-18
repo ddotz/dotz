@@ -113,6 +113,7 @@ function ruleChecks(): Check[] {
 		{ name: "13 same-name helpers", run: () => overCeilings("copies", M.helperCopies, CEILINGS.helperCopies ?? {}) },
 		{ name: "14 pasted blocks", run: () => overCeilings("blocks", { blocks: M.pastedBlocks.length }, { blocks: PASTED_BLOCKS }) },
 		{ name: "15 a module a test starts as a child without an env does not reach hub/config.ts", run: () => listErrors("child entry importing hub/config.ts", configImporters(tree, graph), CONFIG_IMPORTERS) },
+		{ name: "no messenger adapter imports hub/discord.ts: they read the stored event, and Discord has its own sender", run: () => prodOf(tree).filter(f => /^hub\/messenger-(?!discord)/.test(f.path) && /from "\.\/discord\.ts"/.test(f.text)).map(f => `${f.path} imports ./discord.ts`) },
 		// The repo is public; the owner's private term list is read from an untracked file and a failure names the file and the term's line number, never the term.
 		{ name: "no term from the owner's local privacy list is in the tree", run: () => privacyFindings(tree, ROOT) },
 	];

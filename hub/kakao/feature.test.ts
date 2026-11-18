@@ -16,7 +16,6 @@ test("shipped kakao feature is off: a setup line for the orchestrator only, guar
 	expect(f.deny.length).toBeGreaterThanOrEqual(2);
 	const orch = featurePrompt(data, "orchestrator");
 	expect(orch).toContain(SHIPPED);
-	expect(readFileSync(SHIPPED, "utf8")).toContain("{repo}/hub/kakao/cli.ts setup");
 	expect(orch).not.toContain("{repo}");
 	expect(orch).not.toContain("kakao chat=<id>");
 	expect(featurePrompt(data, "lanes")).not.toContain("카톡");

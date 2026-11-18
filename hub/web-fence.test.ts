@@ -1,18 +1,17 @@
-// hub/message-spec-derive.ts parse: which ``` opens a code block.
+// hub/message-spec-derive.ts: which ``` opens a code block.
 import { expect, test } from "bun:test";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { deriveBasicSpec } from "./message-spec-derive.ts";
 
-const src = readFileSync(join(import.meta.dir, "message-spec-derive.ts"), "utf8");
-const re = new Function(`return ${src.match(/const FENCE_SPLIT = (\/.*\/);/)![1]};`)() as RegExp;
-// [text, lang, code, text, ...] like parse
-const fences = (s: string) => s.split(re).flatMap((p, i) => (i % 3 === 1 ? [{ lang: p, code: s.split(re)[i + 1] }] : []));
+const blocks = (text: string) => {
+	const spec = deriveBasicSpec(text);
+	return spec.elements[spec.root]!.children!.map(id => spec.elements[id]!).map(e => [e.type, e.props] as const);
+};
+const codes = (text: string) => blocks(text).filter(([type]) => type === "Code").map(([, props]) => props);
 
 test("a fence opens only at the start of a line; ``` inside a sentence stays text", () => {
-	expect(fences("웹 채팅이 ```목록 블록을 그려요.\n- 다음 줄")).toEqual([]);
-	expect(fences("앞 글\n```목록\n# 제목\n가족 | 단체\n```\n뒤 글")).toEqual([{ lang: "목록", code: "# 제목\n가족 | 단체\n" }]);
-	expect(fences("```sh\nls -la\n```")).toEqual([{ lang: "sh", code: "ls -la\n" }]);
-	expect(fences("text\n  ```\na\nb```\nafter")).toEqual([{ lang: "", code: "a\nb" }]);
-	const parts = "intro\n```js\nx\n```\noutro".split(re);
-	expect([parts[0], parts[3]]).toEqual(["intro", "\noutro"]);
+	expect(blocks("웹 채팅이 ```목록 블록을 그려요.\n- 다음 줄").map(([type]) => type)).not.toContain("Code");
+	expect(blocks("앞 글\n```목록\n# 제목\n가족 | 단체\n```\n뒤 글").map(([type]) => type)).toEqual(["Text", "Rows", "Text"]);
+	expect(codes("```sh\nls -la\n```")).toEqual([{ code: "ls -la", lang: "sh" }]);
+	expect(blocks("text\n  ```\na\nb```\nafter")).toEqual([["Text", { text: "text" }], ["Code", { code: "a\nb" }], ["Text", { text: "after" }]]);
+	expect(blocks("intro\n```js\nx\n```\noutro")).toEqual([["Text", { text: "intro" }], ["Code", { code: "x", lang: "js" }], ["Text", { text: "outro" }]]);
 });

@@ -129,9 +129,14 @@ test("the push badge is a white-on-transparent alpha mask of the dotz mark, serv
 	const res = await route(new Request("http://x/icons/badge-96.png"));
 	expect([res.status, res.headers.get("content-type")]).toEqual([200, "image/png"]);
 	expect(Buffer.from(await res.arrayBuffer()).equals(file)).toBe(true);
-	const sw = readFileSync(join(WEB, "sw.js"), "utf8");
-	expect(sw).toMatch(/badge: "\/icons\/badge-96\.png"/);
-	expect(sw).toMatch(/icon: "\/icons\/icon-192\.png"/);
+	// The worker as the hub serves it, run with the platform stubbed: a push shows a notification whose badge is that mask.
+	const handlers: Record<string, (ev: unknown) => void> = {}, shown: Record<string, unknown>[] = [], pending: Promise<unknown>[] = [];
+	const self = { addEventListener: (type: string, h: (ev: unknown) => void) => { handlers[type] = h; }, registration: { showNotification: async (_title: string, o: Record<string, unknown>) => void shown.push(o), getNotifications: async () => [] }, clients: { matchAll: async () => [] } };
+	new Function("self", "location", "caches", "setTimeout", "clearTimeout", await (await route(new Request("http://x/sw.js"))).text())(self, new URL("http://x/"), {}, () => 0, () => {});
+	handlers.push!({ data: { json: () => ({ kind: "test", title: "dotz", body: "hi", url: "/" }) }, waitUntil: (p: Promise<unknown>) => pending.push(p) });
+	await Promise.all(pending);
+	expect(shown).toHaveLength(1);
+	expect(shown[0]).toMatchObject({ badge: "/icons/badge-96.png", icon: "/icons/icon-192.png" });
 	const manifest = JSON.parse(readFileSync(join(WEB, "manifest.webmanifest"), "utf8"));
 	for (const size of [192, 512]) {
 		expect(manifest.icons).toContainEqual({ src: `/icons/monochrome-${size}.png?v=6`, sizes: `${size}x${size}`, type: "image/png", purpose: "monochrome" });

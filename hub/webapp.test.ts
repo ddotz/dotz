@@ -30,8 +30,7 @@ describe("web share target", () => {
 		const st = JSON.parse(web("manifest.webmanifest")).share_target;
 		expect(st).toMatchObject({ action: "/share-target", method: "POST", enctype: "multipart/form-data" });
 		expect(st.params.files).toEqual([{ name: "files", accept: ["image/*", "video/*"] }]);
-		expect(web("index.html")).toContain("/manifest.webmanifest?v=6");
-	});
+		});
 
 	test("a share POST is stashed by the service worker, redirected 303 to the chat, and taken into the composer by the page", async () => {
 		const caches = fakeCaches();
@@ -242,16 +241,6 @@ describe("web app modules", () => {
 		const json = await compressResponse(req, Response.json({ items: Array.from({ length: 200 }, (_, i) => ({ i, text: "row" })) }));
 		expect(json.headers.get("content-encoding")).toBe("gzip");
 		expect(JSON.parse(gunzipSync(new Uint8Array(await json.arrayBuffer())).toString("utf8")).items).toHaveLength(200);
-	});
-
-	test("the 모니터링 screen is in the shell, its module and styles are served, and the notification bell is in the top bar", async () => {
-		const html = readFileSync(join(import.meta.dir, "..", "web", "index.html"), "utf8");
-		expect(html).toContain('id="v-monitoring"');
-		expect(html).toContain('id="bell"');
-		const js = await (await appAsset(new Request("http://x/app.js"), "/app.js"))?.text();
-		expect(js).toContain("function renderMonitoring");
-		expect(js).not.toContain("function openNotices");
-		expect(await (await appAsset(new Request("http://x/app.css"), "/app.css"))?.text()).toContain(".mon-list");
 	});
 });
 

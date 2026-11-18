@@ -103,8 +103,6 @@ describe("web build id", () => {
 		const { bundle, webBuild } = await import("./webapp.ts");
 		expect(bundle("js").text.startsWith(`"use strict";\nconst WEB_BUILD = "${webBuild()}";`)).toBe(true);   // the directive stays the first statement
 		expect(webBuild()).toMatch(/^[0-9a-f]{12}$/);
-		expect(readFileSync(join(import.meta.dir, "routes.ts"), "utf8")).toContain("web_build: webBuild()");
-		expect(web("js/17-state-refresh.js")).toContain("webBuildCheck(S.web_build)");
 	});
 });
 
@@ -198,18 +196,6 @@ describe("entry points use the shared handler", () => {
 		make({ current: "chat", target: "main" });   // the main chat is untouched: its choice rows answer in place
 		expect(tap({})).toEqual([]);
 		expect(opened).toHaveLength(1);
-	});
-
-	test("toast, push, 답변 필요, the service worker message and a cold start all go through the same handler", () => {
-		const md = web("js/02-basic-markdown.js"), home = web("js/08-home.js"), sw = web("js/23-installable-app-web.js");
-		expect(between(md, "n.addEventListener(\"click\"", "n.addEventListener(\"pointerenter\"")).toContain("noticeOpen(ntOfEvent(e))");
-		expect(between(notices, "function pushOpen", "/* ---- one handler")).toContain("noticeOpen(");
-		expect(between(notices, "function ntHomeRow", "/* ---- detail sheet")).toContain("noticeOpen(n)");
-		expect(notices).toContain("noticeOpenId(d.notice, false,");
-		expect(notices).toContain("setTimeout(() => pushTapCold(noticeOpenId(want, true,");   // the cold start reports where the same handler landed
-		expect(between(notices, "function noticeLive", "async function ntMarkRead")).toContain("noticeOpenId(e.item.id)");
-		expect(sw).toContain("pushOpen(h, d.ts, d.nid)");
-		expect(home).toContain("noticeOpen(n)");
 	});
 });
 

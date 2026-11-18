@@ -1,8 +1,9 @@
 // Every path from a model's text to the owner's screen ends at one rule (hub/owner-text.ts). This test walks the real tree, so a new path fails here, not on the owner's screen.
-import { afterAll, describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
+import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
-import { paths, DATA_DIR } from "./config.ts";
+import { paths, DATA_DIR, HUB_TOKEN } from "./config.ts";
+import * as discordApi from "./discord.ts";
 import { loadTree, prodOf } from "./engineering-rules.ts";
 import { emit, onEmit, type HubEvent } from "./events.ts";
 import { dir, hooks, type Lane } from "./lanestate.ts";
@@ -10,6 +11,9 @@ import { report } from "./lanereport.ts";
 import { brokenCount, ownerKind, shownEvent } from "./owner-text.ts";
 import { SHOT_BULLETS, SHOT_DRAFT } from "./owner-text.fixture.ts";
 import { parseDecisions } from "./choices.ts";
+import { installFanout, register, unregister, type Adapter, type OutMsg } from "./messenger.ts";
+import { makeRoute } from "./routes.ts";
+import { flush } from "./runtime/test-clock.ts";
 
 const prod = prodOf(loadTree(join(import.meta.dir, "..")));
 const source = (path: string) => prod.find(f => f.path === path)!.text;
@@ -26,7 +30,6 @@ describe("the store", () => {
 	test("only emit appends to the inbox and the outbox", () => {
 		const writers = prod.filter(f => f.path !== "hub/events.ts" && /(?:appendFile|appendFileSync|writeFile|writeFileSync|writeAtomic)\(\s*(?:paths\.(?:inbox|outbox)\b|box\b)/.test(f.text)).map(f => f.path);
 		expect(writers).toEqual([]);
-		expect(fnBody(source("hub/events.ts"), "emit")).toContain("ownerText(event.text");
 	});
 	test("every event kind is either shaped or known not to be the assistant's text", () => {
 		const kinds = new Set(prod.flatMap(f => [...f.text.matchAll(/\bemit\(\s*"(?:inbox|outbox)",\s*(?:outEvent\()?\{[^}\n]*?kind: "(\w+)"/g)].map(m => m[1]!)));
@@ -36,10 +39,16 @@ describe("the store", () => {
 	test("nothing pushes a message to the page around the store", () => {
 		expect(prod.filter(f => /broadcast\(\{[^}\n]*kind: "(?:out|lane_report|result)"/.test(f.text)).map(f => f.path)).toEqual([]);
 	});
-	test("the routes that serve stored messages shape them", () => {
-		expect(source("hub/routes.ts")).toMatch(/recentEvents\([^\n]*\.map\(shownEvent\)/);
-		expect(fnBody(source("hub/events.ts"), "historyEvents")).toContain("shownEvent");
-		expect(fnBody(source("hub/events.ts"), "historyPage")).toContain("shownEvent");
+	test("the routes that serve stored messages shape them", async () => {
+		const target = "lane:owner-text-hist", ts = "2026-11-05T08:00:00.000Z";
+		appendFileSync(paths.outbox, `${JSON.stringify({ ts, kind: "lane_report", source: target, target, text: SHOT_BULLETS })}\n`);
+		const route = makeRoute({ busyNow: () => [], restartGateway: () => "", restartGatewayNow: () => "" });
+		const get = async (query: string) => (await (await route(new Request(`http://hub.test/api/history?target=${target}${query}`, { headers: { "x-dotz-token": HUB_TOKEN } }))).json()) as { events: { text: string }[] };
+		for (const query of ["", `&around=${ts}`]) {
+			const { events } = await get(query);
+			expect(parseDecisions(events.at(-1)!.text).blocks[0]?.options.map(o => o.label)).toEqual(["보내기", "보내지 않기"]);
+		}
+		expect(readFileSync(paths.outbox, "utf8")).toContain(SHOT_BULLETS.split("\n")[0]!);
 	});
 });
 
@@ -50,16 +59,50 @@ describe("Discord", () => {
 		const writes = names.filter(n => /\b(?:post|postWithFiles)\(|rest\("(?:POST|PATCH)", `\/channels\/\$\{\w+\}\/messages/.test(fnBody(discord, n)));
 		expect(writes.filter(n => !DISCORD_OWNER_WRITERS.includes(n) && !DISCORD_GATEWAY_WRITERS.includes(n))).toEqual([]);
 	});
-	test("each one that carries model text passes the rule first", () => {
-		for (const n of DISCORD_OWNER_WRITERS) expect(fnBody(discord, n)).toContain("text = ownerText(text)");
+	describe("a sender with model text", () => {
+		const BROKEN = "[ask] 일이 있어요.\n\n결정: 지금 보낼까요?";
+		const requests: { method: string; content: string }[] = [];
+		let server: ReturnType<typeof Bun.serve>;
+		const was = discordApi.status.enabled;
+		beforeAll(() => {
+			server = Bun.serve({ port: 0, async fetch(req) { requests.push({ method: req.method, content: (await req.json() as { content: string }).content }); return Response.json({ id: `m${requests.length}` }); } });
+			process.env.DOTZ_DISCORD_API = `http://127.0.0.1:${server.port}/api/v10`;
+			discordApi.status.enabled = true;
+			discordApi.channels.work["333"] = "owner-text";
+		});
+		afterAll(() => {
+			server.stop(true);
+			delete process.env.DOTZ_DISCORD_API;
+			delete discordApi.channels.work["333"];
+			discordApi.status.enabled = was;
+		});
+		test.each([
+			["send", () => discordApi.send("ch:333", BROKEN)],
+			["edit", () => discordApi.edit("ch:333", "m0", BROKEN)],
+			["progress", () => discordApi.progress("ch:333", "owner-text-key", BROKEN)],
+		])("%s passes the rule before the text goes out", async (_name, call) => {
+			requests.length = 0;
+			expect((await call()).delivered).toBe(true);
+			expect(requests).toHaveLength(1);
+			expect(requests[0]!.content).toContain("지금 보낼까요?");
+			expect(requests[0]!.content).not.toContain("결정:");
+		});
 	});
 	test("no other file talks to Discord's message API", () => {
 		expect(prod.filter(f => f.path !== "hub/discord.ts" && /discord(?:app)?\.com\/api[^\n]*messages/.test(f.text)).map(f => f.path)).toEqual([]);
 	});
-	test("the other messengers read the stored event", () => {
-		const m = source("hub/messenger.ts");
-		expect(m).toContain("onEmit(e =>");
-		expect(prod.filter(f => /^hub\/messenger-(?!discord)/.test(f.path) && /from "\.\/discord\.ts"/.test(f.text)).map(f => f.path)).toEqual([]);
+	test("the other messengers read the stored event, so a card shaped by the store reaches them as buttons", async () => {
+		const got: OutMsg[] = [];
+		const adapter: Adapter = { id: "owner-text-fake", label: "fake", enabled: () => true, status: { state: "ok" }, start() {}, stop() {}, canEdit: false, canButtons: false, deliver: async m => (got.push(m), { delivered: true }) };
+		register(adapter);
+		installFanout();
+		try {
+			emit("outbox", { ts: "2026-11-05T07:40:00.000Z", kind: "out", source: "orchestrator", target: "main", text: SHOT_BULLETS });
+			await flush();
+			expect(got.at(-1)?.options?.map(o => o.label)).toEqual(["보내기", "보내지 않기"]);
+		} finally {
+			unregister(adapter.id);
+		}
 	});
 });
 

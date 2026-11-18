@@ -1,12 +1,10 @@
-import { expect, test } from "bun:test";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { afterAll, expect, test } from "bun:test";
 import { settleWaiting } from "./awaiting.ts";
 import { buildPayloads } from "./discord-format.ts";
 import { emit, ownerMessage } from "./events.ts";
 import { createPrompts } from "./prompts.ts";
 import { isLate, lateQuote, lateRequestId, LATE_MS, replyRef, snowflakeTime, withQuote } from "./threads.ts";
-import { i18nPrelude } from "./web-i18n.ts";
+import { ev, fakeHub, waitFor } from "./test-web.ts";
 
 const SNOW = "1500000000001908448";
 const snowAt = (ms: number) => ((BigInt(ms) - 1420070400000n) << 22n).toString();
@@ -70,24 +68,27 @@ test("an answer to one request does not mark an older waiting request answered",
 	expect(settleWaiting(open, undefined, false).keep).toEqual([]);
 });
 
-const reply = readFileSync(join(import.meta.dir, "..", "web", "js", "39-reply.js"), "utf8");
-const peerMsg = readFileSync(join(import.meta.dir, "..", "web", "js", "01-peer-msg.js"), "utf8");
-const part = (name: string) => reply.match(new RegExp(`function ${name}\\([^)]*\\) \\{[\\s\\S]*?\\n\\}\\n`))![0];
-type Node = { cls: string; kids: unknown[]; click?: () => void };
-const el = (_tag: string, p: { class?: string; text?: string; onclick?: () => void } | null, ...kids: unknown[]): Node => ({ cls: p?.class ?? "", kids: p?.text !== undefined ? [p.text, ...kids] : kids, click: p?.onclick });
-const quoteOf = (msgs: Record<string, unknown>[]) =>
-	new Function("el", "ts", "target", "rpJump", `${i18nPrelude()}${peerMsg}\nconst RP_QUOTE = 300;\n${part("rpText")}\n${part("rpAsked")}\n${part("rpQuote")}\nreturn rpQuote;`)(el, () => ({ msgs }), "ch:1", () => {}) as (e: Record<string, unknown>) => Node | null;
-const texts = (n: Node): string[] => n.kids.map(k => (typeof k === "string" ? k : (k as Node).kids[0] as string));
+// The real page draws the quote: rpQuote of web/js/39-reply.js, with the messages loaded for the conversation in its own store.
+const hub = fakeHub();
+afterAll(() => hub.stop());
+const quoteOf = async (msgs: Record<string, unknown>[], events: Record<string, unknown>[]) => {
+	const view = await hub.view({}, "/");
+	await waitFor(view, `typeof rpQuote === "function" && S`);
+	return ev<({ cls: string; texts: string[] } | null)[]>(view, `(target = "ch:1", ts("ch:1").msgs = ${JSON.stringify(msgs)}, ${JSON.stringify(events)}.map(e => { const n = rpQuote(e); return n && { cls: n.className, texts: [...n.children].map(c => c.textContent) }; }))`);
+};
 
-test("the web draws a bot message that replies to an owner message with the same quote block, from the hub's reply or from the loaded message", () => {
-	const rpQuote = quoteOf([{ kind: "message", mid: "cbfba25d", author: "owner", text: "계정 고정 만들어 줘" }]);
-	const sent = rpQuote({ kind: "out", reply_to: "cbfba25d", reply: { id: "cbfba25d", author: "owner", content: "계정 고정 만들어 줘" } })!;
-	expect(sent.cls).toBe("rpq");
-	expect(texts(sent)).toEqual(["나", "계정 고정 만들어 줘"]);
-	const old = rpQuote({ kind: "out", reply_to: "cbfba25d" })!;
-	expect(texts(old)).toEqual(["나", "계정 고정 만들어 줘"]);
-	expect(rpQuote({ kind: "out", reply_to: "ffffffff" })).toBeNull();
-	expect(rpQuote({ kind: "out" })).toBeNull();
+test("the web draws a bot message that replies to an owner message with the same quote block, from the hub's reply or from the loaded message", async () => {
+	const [sent, old, unknown, none] = await quoteOf([{ kind: "message", mid: "cbfba25d", author: "owner", text: "계정 고정 만들어 줘" }], [
+		{ kind: "out", reply_to: "cbfba25d", reply: { id: "cbfba25d", author: "owner", content: "계정 고정 만들어 줘" } },
+		{ kind: "out", reply_to: "cbfba25d" },
+		{ kind: "out", reply_to: "ffffffff" },
+		{ kind: "out" },
+	]);
+	expect(sent!.cls).toBe("rpq");
+	expect(sent!.texts).toEqual(["나", "계정 고정 만들어 줘"]);
+	expect(old!.texts).toEqual(["나", "계정 고정 만들어 줘"]);
+	expect(unknown).toBeNull();
+	expect(none).toBeNull();
 });
 
 test("a turn that ends with [later] leaves its request waiting until a real answer, and the woken run answers that request alone", async () => {

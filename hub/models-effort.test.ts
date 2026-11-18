@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { mkdirSync, readFileSync } from "node:fs";
+import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { THINKING_LEVELS } from "./config.ts";
 import { sseResponse } from "./events.ts";
@@ -8,7 +8,6 @@ import { EFFORT_KO, replyModelChoices } from "./reply-model-choices.ts";
 import { sweetSpot } from "./model-effort.ts";
 import { REPLY_DEFAULT } from "./reply-model.ts";
 import { appAsset, indexPage } from "./webapp.ts";
-import { i18nPrelude } from "./web-i18n.ts";
 
 // Effort follows the model (owner 2026-11-03: the fallback editor listed the runtime's whole set for every model and said 최고 twice):
 // the effort menus read each model's own `thinking` list from /api/models, keep off (dotz's own switch) and any saved level that is not
@@ -120,9 +119,6 @@ describe("effort levels follow the model", () => {
 		expect(new Set(labels).size).toBe(labels.length);
 		expect(EFFORT_KO.xhigh).toBe("매우 높음");
 		expect(EFFORT_KO.max).toBe("최고");
-		const web = readFileSync(join(import.meta.dir, "../web/js/04-state.js"), "utf8");
-		const table = new Function(`${i18nPrelude()}${web.match(/const THINK_KO = \{[^}]*\};/)![0]}\nreturn THINK_KO;`)() as Record<string, string>;
-		expect(Object.fromEntries(THINKING_LEVELS.map(l => [l, table[l]]))).toEqual(EFFORT_KO);
 	});
 	test("a switched-off step says so once: on its switch, not again as a tag", async () => {
 		const v = await boot();

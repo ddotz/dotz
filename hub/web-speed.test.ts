@@ -1,7 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { brotliDecompressSync, gunzipSync } from "node:zlib";
 import { cached } from "./peers.ts";
-import { appAsset, bundle, indexPage } from "./webapp.ts";
+import { fakeHub, json, waitFor } from "./test-web.ts";
+import { appAsset, bundle } from "./webapp.ts";
 
 const ask = (path: string, encoding: string): Promise<Response> => appAsset(new Request(`http://hub${path}`, { headers: { "Accept-Encoding": encoding } }), path.split("?")[0]!)!;
 const inflate = async (r: Response): Promise<string> => {
@@ -20,11 +21,16 @@ describe("web script delivery", () => {
 		expect(await inflate(gz)).toBe(bundle("js").text);
 	});
 
-	test("the first answers index.html asks for are the exact paths api() asks for", async () => {
-		const page = await (await indexPage(new Request("http://hub/"))).text();
-		for (const path of ['"/api/state?limit=0"', "/api/history?target=${q}&limit=150", "/api/todo?target=${q}", '"/api/conversations"', "/api/activity?source=${encodeURIComponent("]) expect(page).toContain(path);
-		const js = bundle("js").text;
-		for (const path of ["/api/history?target=${enc(t)}&limit=150", "/api/todo?target=${enc(t)}", 'api("/api/conversations")', "/api/activity?source=${enc(sourceOf(t))}&limit=300"]) expect(js).toContain(path);
+	test("the first answers index.html asks for are the exact paths api() asks for: the page takes each over (window.__early empties)", async () => {
+		const asked: string[] = [];
+		const hub = fakeHub({ api: (_req, url) => { if (url.pathname.startsWith("/api/")) asked.push(url.pathname + url.search); return url.pathname === "/api/history" ? json({ target: url.searchParams.get("target"), events: [] }) : undefined; } });
+		try {
+			const view = await hub.view({}, "/#chat/main");
+			await waitFor(view, `typeof NT !== "undefined" && S && Object.keys(window.__early).length === 0`);
+			for (const path of ["/api/state?limit=0", "/api/history?target=main&limit=150", "/api/todo?target=main", "/api/conversations", "/api/activity?source=orchestrator&limit=300"]) expect(asked).toContain(path);
+		} finally {
+			hub.stop();
+		}
 	});
 });
 

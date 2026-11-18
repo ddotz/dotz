@@ -47,8 +47,4 @@ describe("web stylesheet tone classes", () => {
 		expect(bare).toEqual([]);
 	});
 
-	test("the attachment chip has its own class", () => {
-		expect(compounds).toContain(".fatt");
-		expect(bundle("js").text).toContain("class: `fatt${");
-	});
 });

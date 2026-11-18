@@ -1,6 +1,6 @@
 // GET /api/file for the web chat's [file] chips: a file named in a [file] line of a sent message is served (also outside the
 // lanes' folders, e.g. qa/ shots), and nothing else is: not an unattached neighbour, not a traversal, not secrets or the data dir's own files.
-import { expect, test } from "bun:test";
+import { afterAll, expect, test } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { emit, sentFiles } from "./events.ts";
@@ -8,10 +8,13 @@ import { listedFileRoute } from "./listed-files.ts";
 import { upsert } from "./notices-store.ts";
 import { HUB_TOKEN } from "./config.ts";
 import { allowedRoots, fileLinePaths, fileRoute } from "./files.ts";
-import { noticeKo, plainTable } from "./notice-ko.ts";
 import { makeRoute } from "./routes.ts";
-import { bundle } from "./webapp.ts";
-import { i18nPrelude } from "./web-i18n.ts";
+import { ev, fakeHub, waitFor } from "./test-web.ts";
+
+const hub = fakeHub();
+afterAll(() => hub.stop());
+const view = await hub.view({}, "/");
+await waitFor(view, `typeof ntBody === "function" && typeof fileLines === "function" && S`);
 
 const DATA = process.env.DOTZ_DIR!;
 const QA = join(DATA, "qa", "notice-arch");
@@ -136,22 +139,19 @@ test("a peer gateway's sent [file] image is served through the whole route, and 
 	expect([head.status, head.headers.get("content-length")]).toEqual([200, "7"]);
 });
 
-test("a notice sheet keeps the files of its [file] lines as chips next to the text", () => {
-	const js = bundle("js").text;
-	const grab = (re: RegExp) => re.exec(js)?.[0] ?? "";
-	const answerParts = ({ text, files }: { text: string; files: { path: string }[] }) => [{ md: text }, files.length ? { files: files.map(x => x.path) } : null];
-	const fn = new Function("answerParts", "noticeKo", "NK", `${grab(/function fileLines\(text\) \{[\s\S]*?\n\}\n/)}\n${grab(/function ntBody\(n, text\) \{[\s\S]*?\n\}\n/)}\n${grab(/function ntCode\(text\) \{[\s\S]*?\n\}\n/)}\nreturn ntBody;`)(answerParts, noticeKo, {});
-	expect(fn({ text: "맥미니 결과\n[file] /Users/x/shot.png\n[file] /Users/x/report.pdf" })).toEqual([{ md: "맥미니 결과" }, { files: ["/Users/x/shot.png", "/Users/x/report.pdf"] }]);
-	expect(fn({ text: "파일 없음" })).toEqual([{ md: "파일 없음" }, null]);
+test("a notice sheet keeps the files of its [file] lines as chips next to the text", async () => {
+	const body = (text: string) => ev<{ cls: string; text: string }[]>(view, `ntBody({ text: ${JSON.stringify(text)} }).map(p => ({ cls: p.className, text: p.textContent }))`);
+	const [md, ...files] = await body("맥미니 결과\n[file] /work/shot.png\n[file] /work/report.pdf");
+	expect(md!.text).toBe("맥미니 결과");
+	expect(files.map(f => f.text).join(" ")).toContain("shot.png");
+	expect(files.map(f => f.text).join(" ")).toContain("report.pdf");
+	expect(files.map(f => f.text).join(" ")).not.toContain("[file]");
+	expect(await body("파일 없음")).toEqual([{ cls: "md ds-md", text: "파일 없음" }]);
 });
 
-test("the web turns [file] lines into chips, keeps them out of notice text and has the reader", () => {
-	const js = bundle("js").text;
-	const grab = (re: RegExp) => re.exec(js)?.[0] ?? "";
-	const fn = new Function("noticeKo", "plainTable", "NK", `${i18nPrelude()}${grab(/const PEER_HANDOFF[\s\S]*?(?=function peerMsgCard)/)}\n${grab(/const MK_BODY[\s\S]*?\nfunction stripMarkers[\s\S]*?\n\}\n/)}\n${grab(/function fileLines\(text\) \{[\s\S]*?\n\}\n/)}\n${grab(/const ntPlain = [\s\S]*?\.trim\(\);/)}\nreturn { fileLines, ntPlain };`)(noticeKo, plainTable, {});
-	const r = fn.fileLines("결과\n[file] /a/b/notice-arch.png\n[file] qa/findings.md\n```\n[file] /in/fence\n```");
-	expect(r.files.map((x: { name: string }) => x.name)).toEqual(["notice-arch.png", "findings.md"]);
+test("the web turns [file] lines into chips and keeps them out of notice text", async () => {
+	const r = await ev<{ names: string[]; text: string }>(view, `(() => { const r = fileLines("결과\\n[file] /a/b/notice-arch.png\\n[file] qa/findings.md\\n\`\`\`\\n[file] /in/fence\\n\`\`\`"); return { names: r.files.map(x => x.name), text: r.text }; })()`);
+	expect(r.names).toEqual(["notice-arch.png", "findings.md"]);
 	expect(r.text).toContain("[file] /in/fence");
-	expect(fn.ntPlain("끝났어요\n[file] /a/b.png")).toBe("끝났어요");
-	expect(js).toContain("async function viewer(path, name, pc)");
+	expect(await ev<string>(view, `ntPlain("끝났어요\\n[file] /a/b.png")`)).toBe("끝났어요");
 });
