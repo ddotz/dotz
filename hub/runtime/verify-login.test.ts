@@ -54,10 +54,12 @@ test("GET /api/runtimes/:id/login asks the CLI every time and carries the comman
 });
 
 test("a check is refused with login_required before any paid session starts", async () => {
+	// The verify state lives in a module map, so a check another test file ran in this process may already be there: the refused call must not start a new one.
+	const before = verifyState("omp");
 	const out = await call("POST", "/api/runtimes/omp/verify", { real: true });
 	expect(out.status).toBe(409);
 	expect(out.body).toMatchObject({ login_required: true, error: LOGIN_REFUSAL, command: "omp login" });
-	expect(verifyState("omp")).toBeUndefined();
+	expect(verifyState("omp")).toBe(before);
 });
 
 test("the switch is refused while signed out even with a passing report, then applies to the config file only", async () => {
