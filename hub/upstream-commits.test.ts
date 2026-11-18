@@ -28,7 +28,7 @@ const git = (cwd: string, ...args: string[]) => {
 const commit = (file: string, text: string, message = file, identity: [string, string] = [NAME, MAIL]) => {
 	writeFileSync(join(work, file), text);
 	git(work, "add", file);
-	git(work, "-c", `user.name=${identity[0]}`, "-c", `user.email=${identity[1]}`, "commit", "-q", "-m", message);
+	git(work, "-c", `user.name=${identity[0]}`, "-c", `user.email=${identity[1]}`, "commit", "-q", "-m", message, "-m", "왜: 시험용 커밋이에요.\n어떻게: 시험이 직접 만들어요.");
 };
 const deny = (command: string) => publicPostDeny(command, data, work);
 const login = async () => ({ login: LOGIN, id: ID });
@@ -254,4 +254,34 @@ test("a push to the public repo that cannot be checked is refused rather than pa
 	git(work, "update-ref", "-d", "refs/remotes/origin/main"); // what public main holds is no longer known
 	expect(deny("git push origin HEAD:main")).toBeDefined();
 	expect(contentFindings(join(root, "no-such-folder"), ["HEAD"], [], [])).toBeUndefined();
+});
+
+test("a push or a pull request with a commit that breaks the message rules is refused naming its sha and subject, and passes once it is amended", () => {
+	writeFileSync(join(work, "lane"), "x");
+	git(work, "add", "lane");
+	git(work, "-c", `user.name=${CLEAN[0]}`, "-c", `user.email=${CLEAN[1]}`, "commit", "-q", "-m", "omp: coding lane이 done gate를 싣는다");
+	const sha = git(work, "rev-parse", "--short", "HEAD");
+	for (const command of ["git push origin HEAD:main", PR]) {
+		const refused = deny(command);
+		expect(refused, command).toContain(`${sha} "omp: coding lane이 done gate를 싣는다"`);
+		expect(refused).toContain("영어 접두어");
+		expect(refused).toContain("존댓말로 끝내고");
+		expect(refused).toContain("`왜:`나 `어떻게:`");
+	}
+	expect(deny("git push fork feature")).toBeUndefined();
+	git(work, "-c", `user.name=${CLEAN[0]}`, "-c", `user.email=${CLEAN[1]}`, "commit", "-q", "--amend", "-m", "coding lane에 done gate를 싣습니다", "-m", "왜: 코딩 일에 필요해요.\n어떻게: lane이 시작할 때 정해요.");
+	expect(deny("git push origin HEAD:main")).toBeUndefined();
+	expect(deny(PR)).toBeUndefined();
+});
+
+test("a release commit and a merge commit need no 왜: line and no polite subject", () => {
+	commit("a", "a", "고쳐요", CLEAN);
+	git(work, "checkout", "-q", "-b", "side", "main");
+	commit("b", "b", "옆 가지를 고쳐요", CLEAN);
+	git(work, "checkout", "-q", "feature");
+	git(work, "-c", `user.name=${CLEAN[0]}`, "-c", `user.email=${CLEAN[1]}`, "merge", "-q", "--no-ff", "-m", "Merge branch side", "side");
+	writeFileSync(join(work, "version"), "1");
+	git(work, "add", "version");
+	git(work, "-c", `user.name=${CLEAN[0]}`, "-c", `user.email=${CLEAN[1]}`, "commit", "-q", "-m", "release: v1.0");
+	expect(deny("git push origin HEAD:main")).toBeUndefined();
 });
