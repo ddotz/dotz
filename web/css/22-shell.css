@@ -184,7 +184,7 @@ body { display: flow-root; }
   .appbar :is(.ib, .ustrip, .conn)::after { content: ""; position: absolute; left: 50%; top: 50%; width: max(100%, var(--btn-hit)); height: max(100%, var(--btn-hit)); transform: translate(-50%, -50%); }
   .appbar #back::after { left: 0; transform: translateY(-50%); }
   .appbar h1.pdot { padding-block: var(--sp-3); margin-block: calc(var(--sp-3) * -1); }   /* the title clips its overflow (ellipsis), so its area is padding with the same margin back */
-  .appbar.cvconv h1.pdot { padding-block: 0; margin-block: 0; min-height: var(--btn-hit); -webkit-box-pack: center; }   /* a title cut at two lines (-webkit-line-clamp) shows its third line in vertical padding: it keeps the tap height as min-height instead */
+  .appbar.cvconv h1.pdot { padding-block: 0; border-block: var(--sp-3) solid transparent; }   /* a title cut at two lines (-webkit-line-clamp) would show its third line in vertical padding, so the area is a clear border (outside the clip) with the same margin back; its lines stay centred on the bar, which a min-height would not do (-webkit-box-pack is ignored there) */
 }
 
 /* phone / touch: a control in the page body keeps its drawn size and answers a tap over --btn-hit through ::after, like the app bar above (a list row only needs 40). A row that scrolls sideways clips what hangs out above and below it (overflow-x: auto clips y too), so it carries the area as padding and gives the same back as negative margin: nothing moves. Where two areas would share a strip, the line gap or the end of the stack gives way, not the drawn size. */

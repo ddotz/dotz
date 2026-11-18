@@ -57,3 +57,34 @@ test("every app bar control answers a tap over 44x44 at 390 with a coarse pointe
 	for (const id of ["back", "cmdk", "bell", "ustrip", "conn", "as-bar", "as-more-bar"]) expect(seen.has(id), id).toBe(true);
 	expect(small).toEqual([]);
 });
+
+// The title's letters sit on the bar's middle line with the icons beside it, one line or two (a 2-line chat title is clamped, 16-result-card.css).
+// Measured on the text itself: a title box of tap height with its one line pinned to the top looks like a title with an empty line under it.
+const TITLE_OFF = `(() => {
+	const t = document.querySelector("#title"), b = document.querySelector("#bell").getBoundingClientRect(), r = document.createRange();
+	r.selectNodeContents(t);
+	const h = t.getBoundingClientRect(), bot = h.top + t.clientTop + t.clientHeight;   // lines past the clamp lie below the clip edge
+	const ls = [...r.getClientRects()].filter(q => q.height > 0 && q.bottom <= bot + 0.5);
+	if (!h.height || !ls.length) return null;
+	const top = Math.min(...ls.map(q => q.top)), end = Math.max(...ls.map(q => q.bottom));
+	return [Math.round(Math.abs((top + end) / 2 - (b.top + b.height / 2))), Math.round(end - top)];
+})()`;
+
+test("the app bar title is centred on the icon row at 412, with one line or two", async () => {
+	const p = await openPage(server, { width: 412, height: 915 });
+	try {
+		const off = async () => JSON.parse(await p.view.evaluate(`JSON.stringify(${TITLE_OFF})`)) as [number, number] | null;
+		const bad: string[] = [];
+		for (const name of ["home", "chat-open", "project", "monitoring", "mail", "kakao", "settings"]) {
+			await goScreen(p, name);
+			const o = await off();
+			if (o && o[0] > 1) bad.push(`${name}: ${o[0]}px`);
+		}
+		await goScreen(p, "chat-open");
+		await p.view.evaluate(`($("#title").textContent = "${"긴 대화 제목 ".repeat(12)}", 0)`);
+		const two = await off();
+		expect(two?.[1]).toBeGreaterThan(30);   // clamped to two lines, not one
+		if (two && two[0] > 1) bad.push(`chat-open 2 lines: ${two[0]}px`);
+		expect(bad).toEqual([]);
+	} finally { p.view.close(); }
+});
