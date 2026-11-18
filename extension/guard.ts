@@ -39,6 +39,7 @@ import { debug } from "./guard-debug.ts";
 import { BUDGET_MARKER, budgetLine as briefBudgetLine, checkOmoTaskInput as briefCheckOmoTask, checkTaskInput as briefCheckTask, checkoutRoots, gitTop, isOmoTaskInput, livePin, LOOKUP_PIN, ownWorkerPin, pinOmoTaskModel, shouldIsolate, addProjectFooter } from "./guard-brief.ts";
 export { addProjectFooter, FOLDER_RULES_MARKER, livePin, LOOKUP_PIN, ownWorkerPin, pinOmoTaskModel, PROJECT_MARKER, projectFooter, relativizeRoots, shouldIsolate } from "./guard-brief.ts";
 import { applyDirsOf, GIT_APPLY, GIT_APPLY_NAMED, GIT_APPLY_RE, patchIsApplied, patchLanded } from "./guard-patches.ts";
+import { createLongGuard, deletionBlock } from "./guard-long.ts";
 import { createRepeatGuard, type RepeatCtx, type RepeatEvent } from "./guard-repeat.ts";
 import { codeLockReason, scopeReaches, writeScopes, writtenPaths } from "../hub/codeguard.ts";
 import { evalSpawnBlock, evalSpawnProblem, reviveBrief } from "./guard-spawn.ts";
@@ -89,6 +90,7 @@ const ESTIMATE_RE = /^\s*Estimate:\s*(\d+(?:\.\d+)?)\s*%?/im;
 const ISOLATION_FAILED = /isolation_unavailable|Isolated subagent execution could not be prepared/;
 const USAGE_CACHE_MS = 120_000;
 const STATE_MAX_AGE_MS = 7 * 24 * 3600_000;
+const RUNNING_MAX_AGE_MS = 6 * 3600_000; // a worker "running" for longer is a stale row, not a reason to refuse sleep
 const SETTLED_MAX_AGE_MS = 30 * 24 * 3600_000;
 const OMP_BIN = /(^|\/)(bun|node)$/.test(process.execPath) ? "omp" : process.execPath;
 
@@ -520,6 +522,8 @@ export function installGuard(pi: any, config: GuardConfig = loadGuardConfig()): 
 		}
 	});
 
+	const longGuard = createLongGuard(pi); // after the first tool_result handler above: tests address it by index
+
 	if (config.budget_gate) {
 		pi.registerCommand("budget-ok", {
 			description: `Allow worker spawns for ${config.override_minutes} minutes despite a low Anthropic quota (guard budget gate).`,
@@ -616,6 +620,11 @@ export function installGuard(pi: any, config: GuardConfig = loadGuardConfig()): 
 			debug({ phase: "broad-search-block", agent: ctx?.agent?.id, tool });
 			return { block: true, reason: broad };
 		}
+		const removal = deletionBlock(tool, event?.input, ctx?.cwd);
+		if (removal) {
+			debug({ phase: "deletion-block", agent: ctx?.agent?.id });
+			return { block: true, reason: removal };
+		}
 		if (ctx?.agent?.kind === "sub" && tool === "bash") {
 			const kind = externalAction(expandShellVars(String(event?.input?.command ?? "")));
 			if (kind) {
@@ -636,6 +645,12 @@ export function installGuard(pi: any, config: GuardConfig = loadGuardConfig()): 
 		const limitStop = limitStopProblem(tool, event?.input);
 		if (limitStop) return { block: true, reason: limitStop };
 		if (!isMain(ctx)) return;
+		// phase long-bash-block / wait-again-block / polling-block: the orchestrator does not block on long work (guard-long.ts).
+		const blocking = longGuard(tool, event?.input, () => Object.values(projectState(ctx).workers).filter(w => w.status === "running" && Date.now() - w.spawnedAt < RUNNING_MAX_AGE_MS).length);
+		if (blocking) {
+			debug({ phase: blocking.phase, agent: ctx?.agent?.id });
+			return { block: true, reason: blocking.reason };
+		}
 		// A message to a finished worker revives it with its whole history, and it tends to redo its earlier steps.
 		const target = /^agent:\/\/([^/?#]+)/.exec(String(event?.input?.path ?? ""))?.[1];
 		if (tool === "write" && target && target !== "all") {
@@ -751,7 +766,7 @@ export function installSubagentGuard(pi: { on(name: string, handler: (event: Rep
 	pi.on("before_subagent_spawn", evalSpawnBlock);
 	pi.on("tool_call", async (event, ctx) => {
 		const tool = String(event?.toolName ?? "");
-		const reason = broadSearchProblem(tool, event?.input) ?? quickChatBlock(tool, event?.input) ?? limitStopProblem(tool, event?.input) ?? evalSpawnProblem(tool, event?.input);
+		const reason = broadSearchProblem(tool, event?.input) ?? deletionBlock(tool, event?.input, (ctx as { cwd?: string } | undefined)?.cwd) ?? quickChatBlock(tool, event?.input) ?? limitStopProblem(tool, event?.input) ?? evalSpawnProblem(tool, event?.input);
 		if (!reason) return repeat.check(event, ctx);
 		debug({ phase: "sub-check-block", agent: ctx?.agent?.id, tool });
 		return { block: true, reason };
