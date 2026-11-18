@@ -130,6 +130,9 @@ test("startedIndex names the owed prompt a recorded user message carries", () =>
 	expect(startedIndex(owed, "[running now: none]\nsecond question\n\nretain nudge")).toBe(2);
 	expect(startedIndex(owed, "an unrelated note")).toBe(-1);
 	expect(startedIndex([], "second question")).toBe(-1);
+	// The runtime records the user text trimmed: a prompt sent with a trailing newline is still the one it started.
+	expect(startedIndex([{ text: "handed back\n" }], "handed back")).toBe(0);
+	expect(startedIndex([{ text: "\n" }], "anything")).toBe(-1);
 });
 
 test("F2-01 a compaction nobody answers is given up at the deadline: the process is replaced and the held owner message reaches the new one", async () => {
