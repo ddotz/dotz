@@ -606,7 +606,7 @@ All behind the same auth as the rest of `/api`.
   API-key entries and leaves a chain of bare models to omp; on Claude Code the models go as a plain `--fallback-model` list.
 
 **Runtime differences.** OmO is the default; the first bullets say how dotz runs on it, the last ones what changes
-when omp is selected.
+when omp is selected. What dotz and an omp harness installed next to it rely on from each other is in docs/omp-harness.md.
 - *Fallback chain*: OmO runs with `--no-model-fallback` (its own chain would follow the owner's global OmO settings, and the
   per-process RPC override is refused on a resumed conversation). The hub drives every OmO chain itself: on a usage limit or
   provider error it restarts the process on the same conversation with the next entry (bare entries go back to the primary once
