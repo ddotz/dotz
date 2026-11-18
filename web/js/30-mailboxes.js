@@ -258,7 +258,7 @@ async function mxPut(keys, id) {
   const a = MX.accts.get(MX.of.get(keys[0])), from = keys.every(t => mxBoxOf(t).id === mxBoxOf(keys[0]).id) ? mxBoxOf(keys[0]) : null, who = mxAddr(keys), kw = keys.length === 1 ? mxKw(MAILS.get(keys[0]).subject) : "";
   const r = await mxMove(keys, id);
   if (!r) return;
-  mbSelClear(); mbPaintBar();
+  mbSelClear();
   MX.teach = { keys, to: a.byId.get(id), from, who, kw, was: r.was || {}, done: "" };
   mxTeachShow();
 }

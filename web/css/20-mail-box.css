@@ -30,7 +30,7 @@ span.mr-star:not(.on) { opacity: .45; }
 @media (hover: hover) { .mbox-b:hover:not(:disabled) { background: var(--hover); } }
 .mbox-b:disabled { opacity: .45; cursor: not-allowed; }
 .mbox-b .ic { width: 16px; height: 16px; }
-.mbox-b.mbox-ic { width: 32px; padding: 0; justify-content: center; }
+.mbox-b.danger { color: var(--err); }   /* 삭제 keeps the destructive tone of the menus (.mi.danger) */
 .mbox-b.mbox-x { width: 32px; padding: 0; justify-content: center; margin-left: auto; }
 /* the open mail's top bar (30-mail-box.js mailOpenBar): one row of icons on its own tinted strip across the card (prototype #mail/1) that separates
    it from the mail header, sticky while the mail scrolls. The card's padding is a variable so the strip can run edge to edge. */
@@ -161,11 +161,11 @@ textarea.mbox-ta { display: block; flex: 1; min-height: 160px; margin: var(--sp-
   .mr-chk, .mbox-all { width: 18px; height: 18px; }
   #back, #as-bar, #as-more-bar { width: 32px; height: 32px; }
   .mbox-bar { gap: var(--sp-05); height: 44px; padding: 0 var(--sp-1) 0 var(--sp-15); }
-  .mbox-bar.on .mbox-b { width: 44px; height: 44px; padding: 0; justify-content: center; border-radius: 22px; background: none; }
+  .mbox-bar.on .mbox-b { position: relative; width: 36px; height: 44px; padding: 0; justify-content: center; border-radius: 18px; background: none; }
+  .mbox-bar.on .mbox-b::after { content: ""; position: absolute; inset: 0 calc(var(--sp-1) * -1); }   /* six or seven icons share a 360px line: each draws 36px wide and is pressed over 44 */
   .mbox-bar.on .mbox-b .ic { width: 20px; height: 20px; }
   .mbox-bar.on .mbox-bt { display: none; }
-  .mbox-bar.on .mbox-b.mbox-w { width: auto; padding: 0 var(--sp-3); background: var(--layer); }   /* 읽음 and 보관 keep their word on a phone */
-  .mbox-bar.on .mbox-w .mbox-bt { display: inline; }
+  .mbox-bar.on:has([data-k="mail-move"]) .mbox-n { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }   /* with 옮기기 too the seven icons need the count's place; the half-ticked box still says a choice is on, and a screen reader still hears the count */
   .mbox-reply { margin: var(--sp-3) 0 var(--sp-4); padding: var(--sp-4); }
   .mbox-in { height: 44px; font-size: 16px; }
   textarea.mbox-ta { font-size: 16px; line-height: 24px; }

@@ -288,7 +288,6 @@
   "mail.act.done": "Done (archive)",
   "mail.act.unread": "Mark as unread",
   "mail.fyi.label_n": "No reply needed ({n})",
-  "mail.more": "More",
   "mail.selected_n": "{n} selected",
   "mail.deselect": "Clear selection",
   "mail.more_left": "Show {n} more",

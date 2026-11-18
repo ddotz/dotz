@@ -16,7 +16,7 @@ ICONS.mailopen = "M3 10l9-6 9 6v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1zM3 10l9 6 9-6";
 ICONS.replyoff = "M10 7l-5 5 5 5M5 12h9a6 6 0 0 1 6 6M4 4l16 16";
 ICONS.flag = "M6 21V4h12l-2.5 4 2.5 4H6";
 const MBOX = { sel: new Set(), vis: [], boxes: new Map(), cs: null, drawn: 100, fk: "", rows: new Map(), pass: new Set(), held: new Map() };
-const mbUnselect = t => { MBOX.sel.delete(t); }, mbSelClear = () => { MBOX.sel.clear(); }, mbRowsForget = rows => { for (const r of rows) MBOX.rows.delete(r.dataset.t); };
+const mbUnselect = t => { MBOX.sel.delete(t); }, mbRowsForget = rows => { for (const r of rows) MBOX.rows.delete(r.dataset.t); };
 const mbKey = t => t.slice(5);
 // Whether the mail's mailbox will follow an action. Every action still works in dotz either way: `can` only says what the hub can repeat in the
 // real mailbox (owner 2026-11-02: read/unread must always be there). A card with no `can` at all is an older hub, which knows only the delete route.
@@ -239,7 +239,7 @@ const mbLeave = keys => { if (monCtx && keys.includes(monCtx) && current === "ch
 // `o.short`: the visible word when the full label (kept as aria-label and title) is longer than the button needs.
 // `count` stays beside the icon on the phone, where the label is hidden.
 const mbBtn = (label, ic, onclick, o = {}) => el("button", { class: `mbox-b${o.cls ? ` ${o.cls}` : ""}`, type: "button", "data-k": o.k, title: label, "aria-label": label, onclick }, icon(ic), el("span", { class: "mbox-bt", text: o.short || label }), o.count ? el("span", { text: ` ${o.count}` }) : null);
-const MB_SHORT = { read: TX("mail.read"), unread: TX("common.unread"), archive: TX("mail.archive"), unarchive: TX("mail.inbox") };
+const MB_SHORT = { read: TX("mail.read"), unread: TX("common.unread"), archive: TX("mail.archive"), unarchive: TX("mail.inbox"), trash: TX("common.delete") };
 // Star: always a button (a star works in dotz whatever the mailbox does); the mailbox's refusal comes back as the hub's one line.
 function mbStar(t) {
   const m = MAILS.get(t) || {}, on = !!m.starred;
@@ -256,6 +256,14 @@ function mbLead(t, title) {
 
 /* ---------- the bar above the list: select all, and the actions of the selection. One line of one height in every state, so ticking a mail moves nothing. ---------- */
 const mbBar = () => el("div", { class: "mbox-bar", id: "mbox-bar" });
+// The choice ends: every tick and the select-all box clear and the bar goes back to the count. The × does it, and so does an action on the selection once it
+// went through (owner 11-18, as a mailbox does); an action refused for every mail keeps the choice so it can be tried again.
+function mbSelClear() {
+  MBOX.sel.clear();
+  document.querySelectorAll("#mon-tl .mr.mr-sel").forEach(r => { r.classList.remove("mr-sel"); const c = r.querySelector(".mr-chk"); if (c) c.checked = false; });
+  mbPaintBar();
+}
+const mbSelDone = p => p.then(done => { if (done && done.length) mbSelClear(); else mbPaintBar(); });
 function mbPaintBar() {
   const bar = document.getElementById("mbox-bar");
   if (!bar) return;
@@ -274,15 +282,17 @@ function mbPaintBar() {
     return;
   }
   const arch = mailFilterOf()[0] === "archived";
-  // The two used most stand as words (읽음, 보관); the rest is in the ⋯, so 삭제 is never the button beside the × that clears the choice.
-  const owed = mbOwed(keys).length, run = (a, b) => (a === "trash" ? mbTrash(keys, b) : mbRun(keys, a, false, b)).then(() => mbPaintBar());
-  const btns = [["read", TX("mail.act.read"), "check"], arch ? ["unarchive", TX("mail.act.unarchive"), "inbox"] : ["archive", TX("mail.act.done"), "archive"]].map(([a, label, ic]) => mbBtn(label, ic, ev => run(a, ev.currentTarget), { k: `mail-${a}`, short: MB_SHORT[a], cls: "mbox-w" }));
-  const items = [{ value: "unread", label: TX("mail.act.unread") }, ...(keys.some(mxCanMove) ? [{ value: "move", label: TX("mail.move"), ...(keys.some(pqPc) ? { sub: mxWhy(pqPc(keys.find(pqPc))) } : {}) }] : []), ...(owed ? [{ value: "fyi", label: owed < keys.length ? TX("mail.fyi.label_n", { n: owed }) : TX("mail.fyi.title") }] : []), { value: "trash", label: TX("common.delete"), danger: true }];
-  btns.push(el("button", { class: "mbox-b mbox-ic", type: "button", "data-k": "mail-more", title: TX("mail.more"), "aria-label": TX("mail.more"), "aria-haspopup": "listbox",
-    onclick: ev => { const b = ev.currentTarget; showMenu(b, items, { onPick: v => (v === "move" ? (keys.some(pqPc) ? toast(mxWhy(pqPc(keys.find(pqPc))), true) : mxMoveOpen(b, keys)) : v === "fyi" ? mbFyi(keys, true, b).then(() => mbPaintBar()) : run(v, b)) }); } }, icon("more")));
+  // Every action stands in the bar, none behind a ⋯ (owner 11-18): with its word on a wide screen, as an icon on a phone. 삭제 is never the button beside the × that clears the choice.
+  const owed = mbOwed(keys).length, act = (a, label, ic, onclick, o = {}) => mbBtn(label, ic, ev => mbSelDone(onclick(ev.currentTarget)), { k: `mail-${a}`, short: MB_SHORT[a], ...o });
+  const run = a => b => a === "trash" ? mbTrash(keys, b) : mbRun(keys, a, false, b);
+  const btns = [act("read", TX("mail.act.read"), "check", run("read")), act("unread", TX("mail.act.unread"), "mail", run("unread")),
+    arch ? act("unarchive", TX("mail.act.unarchive"), "inbox", run("unarchive")) : act("archive", TX("mail.act.done"), "archive", run("archive")),
+    act("trash", TX("common.delete"), "trash", run("trash"), { cls: "danger" }),
+    owed ? act("fyi", owed < keys.length ? TX("mail.fyi.label_n", { n: owed }) : TX("mail.fyi.title"), "replyoff", b => mbFyi(keys, true, b)) : null,
+    keys.some(mxCanMove) ? mbBtn(TX("mail.move"), "folder", ev => (keys.some(pqPc) ? toast(mxWhy(pqPc(keys.find(pqPc))), true) : mxMoveOpen(ev.currentTarget, keys)), { k: "mail-move" }) : null].filter(Boolean);
   bar.classList.add("on");
   clear(bar).append(chk, el("span", { class: "mbox-n", "aria-live": "polite", text: TX("mail.selected_n", { n: keys.length }) }), ...btns,
-    el("button", { class: "mbox-b mbox-x", type: "button", "aria-label": TX("mail.deselect"), title: TX("mail.deselect"), onclick: () => { MBOX.sel.clear(); document.querySelectorAll("#mon-tl .mr.mr-sel").forEach(r => { r.classList.remove("mr-sel"); const c = r.querySelector(".mr-chk"); if (c) c.checked = false; }); mbPaintBar(); } }, icon("close")));
+    el("button", { class: "mbox-b mbox-x", type: "button", "aria-label": TX("mail.deselect"), title: TX("mail.deselect"), onclick: mbSelClear }, icon("close")));
   mbBarHeld(bar);
 }
 // The visible mails of the list (select all) and the bar itself, at the head of the rows.

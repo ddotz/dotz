@@ -240,7 +240,6 @@
   "mail.act.done": "완료(보관)",
   "mail.act.unread": "안 읽음으로 표시",
   "mail.fyi.label_n": "답장 안 함 {n}개",
-  "mail.more": "더 보기",
   "mail.selected_n": "{n}개 선택",
   "mail.deselect": "선택 해제",
   "mail.more_left": "{n}개 더 보기",
