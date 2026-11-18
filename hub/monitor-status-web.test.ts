@@ -208,6 +208,22 @@ describe("screens", () => {
 		await v.evaluate(until(`current === "monitoring" && MON.sel === "m:flaky"`, "the row did not open the monitor"));
 	});
 
+	test("답변 필요 drops an app's failing watch once its alert of this streak is read or dismissed, and a closed app (check) is no 로그인 row; a new streak shows it again", async () => {
+		const v = await open();
+		const got = await q<Record<string, [string[], string[]]>>(v, `const t = ms => new Date(Date.now() + ms).toISOString(), base = NM.items.filter(m => m.watch !== "watch-a");
+			const wa = o => ({ name: "감시A", watch: "watch-a", kind: "watch", scope: "app", app: "kakao", last_run: t(-60_000), last_result: "fail", fails: 3, connection: "disconnected", since: t(-3600_000), last_ok: t(-3700_000), conn_reason: "check", ...o });
+			const alert = o => ({ id: "wa1", kind: "watch", tone: "", title: "감시A", text: "", open: "alert", src: "alert", watch: "watch-a", ts: t(-3000_000), at: t(-3000_000), read: false, ...o });
+			const look = (m, ns) => { NM.items = [...base, m]; NT.items = ns; return [nyMonFails().map(x => x.key).filter(k => k === "i:kakao"), nyLogins().map(x => x.id)]; };
+			return { closed: look(wa(), [alert()]), login: look(wa({ conn_reason: "login" }), [alert()]),
+				read: look(wa({ conn_reason: "login" }), [alert({ read: true })]), dismissed: look(wa(), [alert({ dismissed: true })]),
+				newStreak: look(wa({ conn_reason: "login", since: t(-60_000) }), [alert({ read: true })]) };`);
+		expect(got.closed).toEqual([["i:kakao"], []]);
+		expect(got.login).toEqual([["i:kakao"], ["i:kakao"]]);
+		expect(got.read).toEqual([[], []]);
+		expect(got.dismissed).toEqual([[], []]);
+		expect(got.newStreak).toEqual([["i:kakao"], ["i:kakao"]]);
+	});
+
 	test("in 모니터링 a peer item carries that gateway's own bot name: its question reads 맥북봇, never this gateway's bot (dotz)", async () => {
 		const v = await open();
 		await v.evaluate(`(go("monitoring"), 0)`);

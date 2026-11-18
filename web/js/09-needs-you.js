@@ -167,10 +167,13 @@ const nyHandled = n => ntNeeds(n) && !ntOpenDec(n) && !ntLinkedDec(n) && !nyOf(n
 // A monitor of this computer that failed NY_FAILS times in a row (about an hour) waits on the owner too: 확인 필요, with the count,
 // opening its row in 모니터링 (an app's watch opens the app). Only here: no push or Discord alert is sent for it.
 const NY_FAILS = 3;
+// Handled: the owner read, dismissed or ignored the watch's alert of this failure streak (sent since its outage began, else since its last good run)
+// in 알림. It stays off 답변 필요 until the watch recovers and a new streak sends a new alert.
+const nyMonSeen = m => { const from = Date.parse(m.since || m.last_ok || "") || 0; return NT.items.some(n => n.kind === "watch" && n.watch === m.watch && ntAt(n) >= from && (n.read || n.dismissed || n.ignored)); };
 function nyMonFails() {
   const out = [];
   for (const i of monItems()) if (!i.pc) for (const m of i.mon ? [i.mon] : i.owned || [])
-    if (!m.paused && (m.fails | 0) >= NY_FAILS) out.push({ m, key: i.key, pc: i.pc || null, rank: 2, crit: false, act: TX("home.attn.check"), at: m.last_run || "" });
+    if (!m.paused && (m.fails | 0) >= NY_FAILS && !nyMonSeen(m)) out.push({ m, key: i.key, pc: i.pc || null, rank: 2, crit: false, act: TX("home.attn.check"), at: m.last_run || "" });
   return out;
 }
 // Only this computer's: another computer's question is listed in 모니터링, and here only the computer chip's dot says it waits (owner 2026-10-31).
@@ -208,9 +211,12 @@ const nyLoginLost = n => n.waits === "login" || (!n.read && n.cls === "alert" &&
 function nyLogins() {
   const ns = NT.items.filter(n => n.id && !n.ignored && !n.dismissed && ntHomeAlert(n) && !ntNeeds(n) && nyLoginLost(n)).sort((a, b) => ntAt(b) - ntAt(a));
   const out = ns.map(n => ({ id: n.id, node: nyLoginRow(n) }));
-  for (const i of typeof INTG !== "undefined" ? INTG.items : []) if (i.state === "disconnected" && !ns.some(n => i.label && hcLine(n).includes(i.label))) out.push({ id: `i:${i.key}`, node: nyDownRow(i) });
+  for (const i of typeof INTG !== "undefined" ? INTG.items : []) if (nyLoginGone(i) && !ns.some(n => i.label && hcLine(n).includes(i.label))) out.push({ id: `i:${i.key}`, node: nyDownRow(i) });
   return out;
 }
+// An app's login is gone when a watch it owns lost its login (hub/watch-status.ts reason "login") and the owner has not handled that alert yet;
+// a check that keeps failing (the app is closed) is a failing watch row, not a login.
+const nyLoginGone = i => i.state === "disconnected" && NM.items.some(m => m.connection === "disconnected" && m.conn_reason === "login" && monOwner([i], m) && !nyMonSeen(m));
 function nyLoginRow(n) {
   const node = nyBare(ntHomeRow(n, TX("home.ny.relogin"))), app = (/^(.*?)\s*로그인이 풀렸어요/.exec(hcLine(n)) || [])[1], ha = node.querySelector(".ha");
   if (app && ha) ha.textContent = `${app} · ${ntWhen(n)}`;
