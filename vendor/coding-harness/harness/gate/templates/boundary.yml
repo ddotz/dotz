@@ -1,0 +1,17 @@
+id: example-boundary
+language: TypeScript
+severity: error
+message: Files under src/ui may not import from src/db; go through the service layer in src/services instead.
+files:
+  - "src/ui/**/*.ts"
+rule:
+  kind: import_statement
+  has:
+    field: source
+    pattern: $SOURCE
+constraints:
+  SOURCE:
+    regex: "/db/"
+metadata:
+  kind: boundary
+  origin: "template: replace with the commit, session or date of the mistake this rule encodes"

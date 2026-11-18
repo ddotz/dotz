@@ -1,0 +1,13 @@
+Write or change an omp skill. You own the skill's voice: when in doubt, delete.
+
+1. Pick the shape. A skill is `agent/skills/<name>/SKILL.md` (installed to `~/.omp/agent/skills/<name>/`), or `<repo>/.omp/skills/<name>/` for one project. Frontmatter has exactly `name` (matches the directory), `description` (what it does and when to use it, specific enough to route on), and `disable-model-invocation: true` for every skill that is entered through a router. Skills are hidden from the model's catalog by default here; the entry is a router row in `skill://ulw` or `agent/rules/routines.md`, or the owner's `/skill:<name>`. Add that router entry in the same change, else the skill is unreachable.
+2. Bundled files live inside the skill directory (`references/`, `scripts/`, `playbooks/`) and are linked as `skill://<name>/<path>`, not by absolute path. Point at other skills by `skill://<name>`; do not restate their content. Point at structural sources (types, READMEs, config) instead of copying them (`skill://principle-encode-lessons-in-structure`). Scripts carry no comments except `why(...)` with a checkable reference (the done gate refuses the rest).
+3. Write the body. Keep only prose that changes a decision. Tell the reader to do the thing and skip the reason; explain only when the rule is confusing without one. Match tone to scope. English, no long dash; the reply to the owner is Korean. A workflow that keeps recurring and is not captured: propose a new skill rather than lengthening an old one.
+4. Validate. Frontmatter has `name` and `description`; every `skill://` link and bundled path resolves (read each one); `omp skill list --json` lists the skill with the right `name`, `description`, and `hide` value (the command exists in this omp; it reads the installed `~/.omp/agent/skills`, so install first when the source is the harness repo, then run the repo's setup check `bun agent/harness/setup-verify.ts` if present). The router entry points at the right name.
+5. Tests if the skill is structural (a script, a checked format): a test that fails when the script breaks. Skip if subjective, and say `skip: subjective`.
+6. A lesson from a mistake belongs in a check, not a longer skill: route it through `skill://correct`.
+7. Commit through the eval `commit` namespace. A PR only when the owner asked: `playbooks/opening-a-pr.md` from main.
+
+Reply (Korean, plain text): what the skill does, key design decisions, validation notes (the `omp skill list --json` entry, unresolved links, the router entry added).
+
+Source: pstack skills/poteto-mode/playbooks/authoring-a-skill.md (MIT, skill://ulw/references/LICENSE-pstack).

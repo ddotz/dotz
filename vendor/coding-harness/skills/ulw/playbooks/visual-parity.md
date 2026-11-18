@@ -1,0 +1,11 @@
+Pixel-exact equivalence when migrating UI or matching two implementations. The baseline is the spec and nobody touches it. Equivalence is proven by image diff, not by eye. Mechanics of capture and diff live in `skill://visual-diff`; this playbook is the migration discipline around it.
+
+1. Establish the baseline first, before any migration: a visual regression harness that screenshots the current component across its states (and the target when matching two implementations), stored as `skill://visual-diff` lays out (`.omp/verify/baselines/<feature>/<state>@<width>.png`), captured from the base commit in a worktree, not from the changed build. No baseline, no parity claim: report `NO-BASELINE`. This is a blocking prerequisite, not a follow-up.
+2. Anti-shortcut clauses, stated in every worker brief and held: no harness modifications, no baseline tampering, no raising the tolerance, no cropping, no component restructuring to make a diff pass. A baseline that looks wrong: stop and report it to main (who asks the owner); do not edit it.
+3. Migrate one component at a time, one owner per component. Shared primitives migrate first as a blocking phase. Main spawns one `task` worker per component, each `isolated: true`, each brief naming the component, its baseline paths, the capture recipe from the project's `verify-<app>` skill (`skill://verify` creates it), and the Acceptance line "vdiff exits 0 for every state". Workers do not spawn further workers (`skill://principle-separate-before-serializing-shared-state`).
+4. Verify each component against its baseline with `skill://visual-diff/scripts/vdiff.sh` on the matching surface. Any nonzero diff is a fail: investigate the pixel delta, fix the component, rerun until the diff is zero. Main drives that retry loop as waves of new workers with the diff path in the brief; a worker that hit a nonzero diff reports it rather than looping forever. Main reads each worker's patch before `git apply` and reruns vdiff itself on the applied tree.
+5. A PR only when the owner asked for one: run `playbooks/opening-a-pr.md` from main, per component or per safe batch.
+
+Reply (Korean, plain text): components migrated, the vdiff line for each, the baseline harness location, what is left.
+
+Source: pstack skills/poteto-mode/playbooks/visual-parity.md (MIT, skill://ulw/references/LICENSE-pstack).
