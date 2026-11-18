@@ -13,7 +13,7 @@ import { dataDir, INSTALL, loadSettings, recordCorrection, validApp } from "../l
 import { addDraft, type DraftRec, getDraft, listDrafts, patchDraft } from "../lib/store.ts";
 import { listLibrary } from "../lib/library.ts";
 import { canAttach } from "../lib/senders.ts";
-import { removeStagedFile, stagedFiles, stageLibraryFile } from "../lib/staged.ts";
+import { cloudFile, cloudPlaceholder, EVICTED_LATER, isEvicted, removeStagedFile, stagedFiles, stageLibraryFile } from "../lib/staged.ts";
 
 // Exit code of `new --kind chat` when the message needs the owner's own decision: stdout is the choice block to post as an [ask] (hub/choices.ts replyChoiceBlock).
 export const ASK_EXIT = 4;
@@ -48,9 +48,10 @@ function editable(id: string | undefined): DraftRec | string {
 	if (!canAttach(rec.source)) return "이 메일은 파일을 붙여 보낼 수 없어요";
 	return rec;
 }
-// An absolute path of a file, else a name (or folder-relative path) in the mail app's 첨부 파일 폴더; one match only.
+// An absolute path of a file (one only in iCloud too), else a name (or folder-relative path) in the mail app's 첨부 파일 폴더; one match only.
 async function fileToAttach(rec: DraftRec, what: string): Promise<string | { error: string }> {
-	if (isAbsolute(what) && existsSync(what)) return what;
+	const path = cloudFile(what);
+	if (isAbsolute(path) && (existsSync(path) || existsSync(cloudPlaceholder(path)))) return path;
 	const folder = await attachFolder(rec.ref);
 	if (!folder) return { error: "첨부 파일 폴더가 정해져 있지 않아요. 파일의 전체 경로로 알려 주세요" };
 	const all = listLibrary(folder), exact = all.filter(f => nfc(f.rel) === nfc(what));
@@ -152,7 +153,11 @@ export async function runDraft(args: string[], stdin: string, deps: DraftDeps = 
 			try {
 				await stageLibraryFile(rec.id, src, deps.stage);
 			} catch (e) {
-				return { lines: [(e as Error).message], code: 1 };
+				if (!isEvicted(e)) return { lines: [(e as Error).message], code: 1 };
+				// Still downloading from iCloud: the draft waits for it (wantFiles) like a library pick; the gateway keeps trying and the send gate takes it.
+				const want = rec.wantFiles ?? [];
+				if (!want.some(w => w.path === src)) patchDraft(rec.id, { wantFiles: [...want, { name: basename(src), path: src }] });
+				return { lines: [askText(getDraft(rec.id)!, [], EVICTED_LATER(basename(src)))], code: 0 };
 			}
 			return { lines: [askText(getDraft(rec.id)!, [], "파일을 붙였어요")], code: 0 };
 		}

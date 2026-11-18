@@ -84,15 +84,25 @@ export const EVICTED = (name: string) => `${name}은(는) iCloud에만 있고 �
 export type CopyFile = (src: string, to: string) => void;
 export type Download = (src: string) => void;
 
-// The 첨부 파일 폴더 is often a symlink into iCloud Drive: brctl only works on the real path.
+// A file iCloud keeps only in the cloud can also be a `.<name>.icloud` placeholder where <name> belongs: it is that file, not yet downloaded.
+export const cloudPlaceholder = (path: string): string => join(dirname(path), `.${basename(path)}.icloud`);
+/** The path a `.<name>.icloud` placeholder stands for; any other path as it is. */
+export const cloudFile = (path: string): string => {
+	const name = /^\.(.+)\.icloud$/.exec(basename(path))?.[1];
+	return name ? join(dirname(path), name) : path;
+};
+const cloudOnly = (path: string): boolean => !existsSync(path) && existsSync(cloudPlaceholder(path));
+
+// The 첨부 파일 폴더 is often a symlink into iCloud Drive: brctl only works on the real path (the placeholder's while only that is here).
 export const brctlArgv = (src: string): string[] => {
-	let real = src;
-	try {
-		real = realpathSync(src);
-	} catch {
-		// not resolvable (gone, or no access): brctl gets the path as given
+	for (const path of [src, cloudPlaceholder(src)]) {
+		try {
+			return ["/usr/bin/brctl", "download", realpathSync(path)];
+		} catch {
+			// not resolvable (gone, or no access): the next form, else brctl gets the path as given
+		}
 	}
-	return ["/usr/bin/brctl", "download", real];
+	return ["/usr/bin/brctl", "download", src];
 };
 
 export const requestDownload: Download = src => {
@@ -106,6 +116,7 @@ export const requestDownload: Download = src => {
 
 // A copy that fails takes its slot away again, so no empty <n> folder is left between the files.
 function copyInto(ref: string, src: string, root: string, copy: CopyFile): StagedFile {
+	if (cloudOnly(src)) throw Object.assign(new Error(EVICTED(basename(src))), { code: "EDEADLK" });
 	if (!statSync(src).isFile()) throw new Error(`${src} is not a file`);
 	const to = slot(ref, ownName(src), root);
 	try {
@@ -179,6 +190,26 @@ const retrying = new Set<string>();
 // Drafts whose bounded retry ran out in this process: re-reading the cards does not start another round.
 const spent = new Set<string>();
 
+// One try, without waiting, for the files a pending draft still waits for (wantFiles): each that copies now is staged and leaves the list; one still
+// away gets its download asked again. True when a file was staged.
+export async function stageWanted(id: string, opts: StageOpts = {}): Promise<boolean> {
+	const rec = getDraft(id);
+	if (!rec?.wantFiles?.length || rec.status !== "pending") return false;
+	let staged = false;
+	const left: Want[] = [];
+	for (const w of rec.wantFiles) {
+		if (stagedFiles(id, opts.root).some(f => f.name === stagedName(w.name))) continue;
+		try {
+			await stageLibraryFile(id, w.path, { ...opts, tries: 0 });
+			staged = true;
+		} catch {
+			left.push(w);
+		}
+	}
+	patchDraft(id, { wantFiles: left.length ? left : undefined });
+	return staged;
+}
+
 // Tries again, in the background and bounded, for the files a pending draft still waits for (wantFiles): each that copies is staged and leaves
 // the list, and `changed` is called so the waiting card updates. The offer queue never waits on this.
 export function retryWanted(id: string, opts: StageOpts = {}): void {
@@ -187,22 +218,9 @@ export function retryWanted(id: string, opts: StageOpts = {}): void {
 	void (async () => {
 		for (let n = 0; n < RETRY_TRIES; n++) {
 			await nap(RETRY_WAIT_MS);
+			if (await stageWanted(id, opts)) opts.changed?.();
 			const rec = getDraft(id);
 			if (!rec?.wantFiles?.length || rec.status !== "pending") return;
-			let staged = false;
-			const left: Want[] = [];
-			for (const w of rec.wantFiles) {
-				if (stagedFiles(id, opts.root).some(f => f.name === stagedName(w.name))) continue;
-				try {
-					await stageLibraryFile(id, w.path, { ...opts, tries: 0 });
-					staged = true;
-				} catch {
-					left.push(w);
-				}
-			}
-			patchDraft(id, { wantFiles: left.length ? left : undefined });
-			if (staged) opts.changed?.();
-			if (!left.length) return;
 		}
 		spent.add(id);
 	})().catch(e => void console.error(`reply draft: files of draft ${id} not retried: ${(e as Error).message}`)).finally(() => void retrying.delete(id));

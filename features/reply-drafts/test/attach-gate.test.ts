@@ -114,7 +114,7 @@ describe("sendDraft with a mail whose files disagree with its words", () => {
 	});
 
 	test("a file chosen but not on the draft yet holds the send, by name", async () => {
-		const rec = draft(PROMISE, { wantFiles: [{ name: "beta-other.pdf", path: join(lib, "beta-other.pdf") }] });
+		const rec = draft(PROMISE, { wantFiles: [{ name: "beta-other.pdf", path: join(lib, "not-here", "beta-other.pdf") }] });
 		addStagedFile(rec.id, join(lib, "alpha-song.pdf"));
 		expect(draftAttachIssues(getDraft(rec.id)!)).toEqual(["아직 못 붙인 파일: beta-other.pdf"]);
 		choose(rec.id, 1, "보내기");

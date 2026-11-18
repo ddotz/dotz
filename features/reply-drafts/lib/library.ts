@@ -1,9 +1,10 @@
 // The 첨부 파일 폴더 of a mail app instance: a folder on this machine that holds the files the owner sends again and again (shared documents, forms).
 // A reply that asks for or promises a file gets the best filename matches staged (offer.ts); filename matching is plain code, a model sees names only on a tie.
 import { readdirSync, realpathSync, statSync } from "node:fs";
-import { join, relative, sep } from "node:path";
+import { basename, join, relative, sep } from "node:path";
 import { wordVariants } from "../../../hub/attach-check.ts";
 import { autoAttach } from "../../../hub/auto-attach.ts";
+import { cloudFile } from "./staged.ts";
 
 export const LIBRARY_PICK_MAX = 3;
 const SCAN_FILES = 3000;
@@ -12,6 +13,7 @@ const FILE_MAX_BYTES = 25 * 1024 * 1024;
 export const MIN_SCORE = 2;
 const SUBJECT_WEIGHT = 2;
 
+/** `size` 0: a file that is only in iCloud (its size is not known until it is downloaded). */
 export type LibraryFile = { rel: string; path: string; size: number };
 
 // Words that say "a file" or are mail politeness: they never match a file by themselves.
@@ -44,8 +46,13 @@ export function listLibrary(folder: string): LibraryFile[] {
 		}
 		for (const name of names) {
 			if (out.length >= SCAN_FILES) return;
-			if (name.startsWith(".")) continue;
 			const path = join(dir, name);
+			if (name.startsWith(".")) {
+				// A file only in iCloud is listed under its own name, at the path it gets once downloaded (staged.ts asks for the download).
+				const real = cloudFile(path);
+				if (real !== path && !names.includes(basename(real))) out.push({ rel: relative(root, real).split(sep).join("/"), path: real, size: 0 });
+				continue;
+			}
 			try {
 				const st = statSync(path);
 				if (st.isDirectory()) {
