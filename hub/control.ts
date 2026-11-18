@@ -533,6 +533,8 @@ let gatewayRestart: () => string = () => {
 export function setGatewayRestart(fn: () => string): void {
 	gatewayRestart = fn;
 }
+/** The idle restart (/restart gateway): waits until no turn or session is busy, never cuts one short. */
+export const requestGatewayRestart = (): string => gatewayRestart();
 
 const normalizeTarget = (arg: string) => (arg === "orchestrator" || arg === "lanes" || arg === "workers" || modelConv(arg) ? arg : `lane:${arg.replace(/^lane:/, "")}`);
 

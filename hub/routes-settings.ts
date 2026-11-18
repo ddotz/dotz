@@ -1,6 +1,6 @@
 // HTTP routes of models, runtimes, accounts, providers, activity and commands (the middle part of the route chain). Split out of main.ts.
 import { ContextLimitError, DATA_DIR, log } from "./config.ts";
-import { compactTarget, ControlError, contextView, modelCommandChange, parseCommand, setContextModel, ForceRequired, modelsView, providersView, runCommand, setFallback, setModel } from "./control.ts";
+import { compactTarget, ControlError, contextView, modelCommandChange, parseCommand, setContextModel, ForceRequired, modelsView, providersView, requestGatewayRestart, runCommand, setFallback, setModel } from "./control.ts";
 import { subagentDetail, subagentLists, transcriptPage } from "./activity.ts";
 import { activityItems } from "./events.ts";
 import { msg } from "./i18n.ts";
@@ -114,7 +114,9 @@ export async function routeSettings(req: Request, url: URL, parts: string[]): Pr
 			try {
 				const done = await useRuntime(id, roles);
 				log(`runtime ${id} selected for ${done.join(", ")}`);
-				return json({ ok: true, runtime: id, roles: done, applies: "게이트웨이를 다시 시작하면 적용돼요. 지금 실행 중인 어시스턴트와 세션은 그대로예요." });
+				// A switch takes effect only in new processes: the gateway restarts as soon as nothing is busy, so the owner's pick applies without a second step.
+				requestGatewayRestart();
+				return json({ ok: true, runtime: id, roles: done, applies: "하던 일이 끝나는 대로 게이트웨이를 다시 시작해서 바로 적용해요. 이 화면은 자동으로 다시 연결돼요." });
 			} catch (error) {
 				if (error instanceof UseRefused) return json({ error: error.message, runtime: id }, 409);
 				throw error;

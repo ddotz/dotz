@@ -3,6 +3,7 @@ import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { cfg, CONFIG_FILE, DATA_DIR, setRuntime } from "../config.ts";
+import { setGatewayRestart } from "../control.ts";
 import { routeSettings } from "../routes-settings.ts";
 import { adapters } from "./index.ts";
 import { checklistFor, CHECKLIST, detectAll, lastReport, LOGIN_REFUSAL, runtimesView, UseRefused, useRuntime, verifyRuntime, verifyState, type Detected, type Probe } from "./verify.ts";
@@ -62,17 +63,20 @@ test("a check is refused with login_required before any paid session starts", as
 	expect(verifyState("omp")).toBe(before);
 });
 
-test("the switch is refused while signed out even with a passing report, then applies to the config file only", async () => {
+test("the switch is refused while signed out even with a passing report, then writes the config file and asks for the idle gateway restart", async () => {
+	let restarts = 0;
+	setGatewayRestart(() => (restarts++, "queued"));
 	await verifyRuntime("omp", { adapter: stub, probes: allOk, version: "1.0.0" });
 	expect(lastReport("omp")?.verdict).toBe("ok");
 	const refused = await call("POST", "/api/runtimes/omp/use", { roles: ["orchestrator", "lanes"] });
 	expect(refused.status).toBe(409);
 	expect(refused.body.error).toBe(LOGIN_REFUSAL);
 	expect(readFileSync(CONFIG_FILE, "utf8")).toBe(config);
+	expect(restarts).toBe(0);
 	signIn();
 	const done = await call("POST", "/api/runtimes/omp/use", { roles: ["orchestrator", "lanes"] });
 	expect(done.status).toBe(200);
-	expect(done.body.applies).toContain("게이트웨이를 다시 시작하면");
+	expect(restarts).toBe(1);
 	expect(JSON.parse(readFileSync(CONFIG_FILE, "utf8")).orchestrator.runtime).toBe("omp");
 	expect(cfg.orchestrator?.runtime).toBeUndefined();
 });
