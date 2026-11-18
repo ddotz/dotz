@@ -1,8 +1,6 @@
-// The harness's done gate in lanes (hub/done-gate.ts, hub/lanerun.ts): a coding lane (in a git worktree, or started in that mode) loads it when the harness is installed and `lanes.harness_gate` is not false; an assistant lane never does.
 // A lane's fresh session in a worktree without a gate file waits for the harness's bootstrap before its first prompt; a failing or hanging bootstrap never keeps the lane waiting.
-// The harness is a stub here: a script in a temp omp agent folder that records its calls and writes the files the real one writes.
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { holdWorkOnApiKey } from "../extension/apikey-hold.ts";
@@ -24,8 +22,9 @@ resetLaneStateForTest();
 const DATA = process.env.DOTZ_DIR!;
 const TMP = mkdtempSync(join(tmpdir(), "dotz-done-gate-"));
 const AGENT = join(TMP, "agent");
-const EXTENSION = join(AGENT, "extensions", "done-gate.ts");
-const BOOTSTRAP = join(AGENT, "harness", "gate", "bootstrap.ts");
+const PAYLOAD = join(DATA, "coding-harness");
+const EXTENSION = join(PAYLOAD, "extensions", "done-gate.ts");
+const BOOTSTRAP = join(PAYLOAD, "harness", "gate", "bootstrap.ts");
 const STUB_LOG = join(TMP, "stub.log");
 
 // What the real script does for a repo: it takes the worktree path, writes the gate file and the lint kit, and tells what it did.
@@ -33,6 +32,7 @@ const STUB = `import { appendFileSync, mkdirSync, writeFileSync } from "node:fs"
 import { join } from "node:path";
 const repo = process.argv[2];
 appendFileSync(process.env.GATE_STUB_LOG, repo + "\\n");
+appendFileSync(process.env.GATE_STUB_LOG + ".home", (process.env.HARNESS_AGENT_HOME ?? "unset") + "\\n");
 if (process.env.GATE_STUB_MODE === "hang") setInterval(() => {}, 1000);
 else if (process.env.GATE_STUB_MODE === "fail") {
 	console.error("no check could run");
@@ -45,11 +45,12 @@ else if (process.env.GATE_STUB_MODE === "fail") {
 }
 `;
 
-// Puts the harness's files (the stub for the script) into an omp agent folder.
-function install(agent: string, files = ["extensions/done-gate.ts", "harness/gate/bootstrap.ts"]): void {
+const PAYLOAD_FILES = ["SHIPPED_FROM", "extensions/done-gate.ts", "extensions/orchestrator-guard.ts", "extensions/harness-tools.ts", "harness/gate/bootstrap.ts"];
+
+function install(dir: string, files = PAYLOAD_FILES): void {
 	for (const f of files) {
-		mkdirSync(dirname(join(agent, f)), { recursive: true });
-		writeFileSync(join(agent, f), f.endsWith("bootstrap.ts") ? STUB : "");
+		mkdirSync(dirname(join(dir, f)), { recursive: true });
+		writeFileSync(join(dir, f), f.endsWith("bootstrap.ts") ? STUB : "");
 	}
 }
 
@@ -105,7 +106,9 @@ beforeEach(() => {
 	process.env.OMP_PROFILE = ""; // no named profile, whatever the developer's shell has
 	process.env.GATE_STUB_LOG = STUB_LOG;
 	process.env.GATE_STUB_MODE = "ok";
+	install(PAYLOAD);
 	writeFileSync(STUB_LOG, "");
+	writeFileSync(`${STUB_LOG}.home`, "");
 });
 afterEach(async () => {
 	for (const n of running) l.stopLane(n);
@@ -119,6 +122,7 @@ afterEach(async () => {
 afterAll(() => {
 	for (const id of Object.keys(fakes)) delete adapters[id];
 	cfg.lanes = savedLanes;
+	rmSync(PAYLOAD, { recursive: true, force: true });
 });
 
 function repoWith(files: Record<string, string> = { "a.txt": "1\n" }): string {
@@ -177,30 +181,31 @@ function withSession(lane: { name: string; sessionFile?: string }): string {
 	return session;
 }
 
-test("lanes.harness_gate false: a coding lane gets no extension handed to the process, no bootstrap, and its first prompt goes at once", () => {
+test("lanes.harness_gate false: a coding lane is handed no payload, no bootstrap, and its first prompt goes at once", () => {
 	cfg.lanes.harness_gate = false;
 	expect(harnessGate()).toBeUndefined();
 	const { lane, opts, agent } = launch("gate-off", repoWith());
 	expect(lane.mode).toBe("coding");
-	expect("doneGate" in opts).toBe(false);
+	expect("codingHarness" in opts).toBe(false);
 	expect(loadsGate(opts)).toBe(false);
 	expect(agent.sent).toHaveLength(1);
 	expect(calls()).toEqual([]);
 });
 
-test("on with the harness installed: the process gets the gate extension, and the first prompt waits until the bootstrap has written the gate file", async () => {
-	expect(harnessGate()).toEqual({ extension: EXTENSION, bootstrap: BOOTSTRAP });
+test("on with the payload installed: the process is handed its folder, the bootstrap runs with it as the harness home, and the first prompt waits until the bootstrap has written the gate file", async () => {
+	expect(harnessGate()).toMatchObject({ dir: PAYLOAD, extension: EXTENSION, bootstrap: BOOTSTRAP });
 	const { lane, opts, agent } = launch("gate-on", repoWith());
-	expect(opts.doneGate).toBe(EXTENSION);
+	expect(opts.codingHarness).toBe(PAYLOAD);
 	expect(agent.sent).toHaveLength(0);
 	await within(agent.first.promise, "the first prompt");
 	expect(agent.sent).toHaveLength(1);
 	expect(agent.sent[0]!.text).toContain("Fix the thing.");
 	expect(agent.sent[0]!.gateFile).toBe(true);
 	expect(calls()).toEqual([lane.worktree!.path]);
+	expect(readFileSync(`${STUB_LOG}.home`, "utf8")).toBe(`${PAYLOAD}\n`);
 });
 
-test("with lanes.harness_gate unset the mode decides: a lane in a git worktree is a coding lane and has the gate in its omp argv, a lane without a worktree is an assistant lane and has none, a mode asked at launch wins over the folder", async () => {
+test("with lanes.harness_gate unset the mode decides: a lane in a git worktree is a coding lane and has the payload in its omp argv, a lane without a worktree is an assistant lane and has none, a mode asked at launch wins over the folder", async () => {
 	expect(cfg.lanes.harness_gate).toBeUndefined();
 	const coding = launch("mode-coding", repoWith());
 	expect(coding.lane.worktree).toBeDefined();
@@ -210,14 +215,14 @@ test("with lanes.harness_gate unset the mode decides: a lane in a git worktree i
 	const assistant = launch("mode-assistant", TMP);
 	expect(assistant.lane.worktree).toBeUndefined();
 	expect(assistant.lane.mode).toBe("assistant");
-	expect("doneGate" in assistant.opts).toBe(false);
+	expect("codingHarness" in assistant.opts).toBe(false);
 	expect(loadsGate(assistant.opts)).toBe(false);
 	expect(assistant.agent.sent).toHaveLength(1);
 	const askedCoding = launch("mode-asked-coding", TMP, "coding");
 	expect([askedCoding.lane.worktree, askedCoding.lane.mode, loadsGate(askedCoding.opts)]).toEqual([undefined, "coding", true]);
 	const askedAssistant = launch("mode-asked-assistant", repoWith(), "assistant");
 	expect(askedAssistant.lane.worktree).toBeDefined();
-	expect([askedAssistant.lane.mode, "doneGate" in askedAssistant.opts, loadsGate(askedAssistant.opts)]).toEqual(["assistant", false, false]);
+	expect([askedAssistant.lane.mode, "codingHarness" in askedAssistant.opts, loadsGate(askedAssistant.opts)]).toEqual(["assistant", false, false]);
 	const listed = l.laneList();
 	for (const { lane } of [coding, assistant, askedCoding, askedAssistant]) {
 		expect(recorded(lane.name)).toBe(lane.mode);
@@ -322,44 +327,48 @@ test("a worktree that already has the gate file is left alone: no bootstrap, no 
 	const repo = repoWith({ "a.txt": "1\n", ".omp/gate.json": "{}\n" });
 	const before = exclude(repo);
 	const { opts, agent } = launch("gate-has", repo);
-	expect(opts.doneGate).toBe(EXTENSION);
+	expect(opts.codingHarness).toBe(PAYLOAD);
 	expect(agent.sent).toHaveLength(1);
 	expect(calls()).toEqual([]);
 	expect(exclude(repo)).toBe(before);
 });
 
-test("a harness that is not installed, or only half of it, does nothing", () => {
-	const empty = mkdtempSync(join(TMP, "empty-agent-"));
-	const half = mkdtempSync(join(TMP, "half-agent-"));
-	install(half, ["extensions/done-gate.ts"]);
-	for (const agent of [empty, half]) {
-		process.env.PI_CODING_AGENT_DIR = agent;
+test("a payload that is not installed, or only half of it, does nothing, and the omp agent folder is never a fallback", () => {
+	for (const gone of [BOOTSTRAP, EXTENSION]) {
+		rmSync(gone);
 		expect(harnessGate()).toBeUndefined();
+		install(PAYLOAD);
 	}
+	rmSync(PAYLOAD, { recursive: true });
+	expect(existsSync(join(AGENT, "extensions", "done-gate.ts"))).toBe(true);
+	expect(harnessGate()).toBeUndefined();
 	const { opts, agent } = launch("gate-none", repoWith());
-	expect("doneGate" in opts).toBe(false);
+	expect("codingHarness" in opts).toBe(false);
+	expect(ompArgv(opts).some(a => a.startsWith(AGENT))).toBe(false);
 	expect(agent.sent).toHaveLength(1);
 	expect(calls()).toEqual([]);
 });
 
-test("the note that the harness is missing is for an owner who set the key to true: the default on says nothing, true says it once per agent folder", () => {
-	const agent = mkdtempSync(join(TMP, "noted-agent-"));
-	process.env.PI_CODING_AGENT_DIR = agent;
+test("the note that the payload is missing is for an owner who set the key to true: the default on says nothing, true says it once", () => {
+	rmSync(PAYLOAD, { recursive: true });
 	const said = hubLog();
 	expect(harnessGate()).toBeUndefined();
-	expect(said()).not.toContain("is not installed");
+	expect(said()).not.toContain("is not there");
 	cfg.lanes.harness_gate = true;
 	expect(harnessGate()).toBeUndefined();
 	expect(harnessGate()).toBeUndefined();
-	expect(said().split(`lanes.harness_gate is true, but the harness is not installed in ${agent}`)).toHaveLength(2);
+	expect(said().split(`lanes.harness_gate is true, but the coding harness dotz installs under ${DATA} at gateway start is not there`)).toHaveLength(2);
 });
 
-test("the agent folder is the one omp itself uses: a named profile lives under the home folder's .omp/profiles", () => {
+test("the omp profile and agent folder variables play no part: the payload is found in the data dir and nowhere else", () => {
 	const home = mkdtempSync(join(TMP, "home-"));
 	install(join(home, ".omp", "profiles", "work", "agent"));
 	process.env.HOME = home;
 	process.env.OMP_PROFILE = "work";
-	expect(harnessGate()?.extension).toBe(join(home, ".omp", "profiles", "work", "agent", "extensions", "done-gate.ts"));
+	delete process.env.PI_CODING_AGENT_DIR;
+	expect(harnessGate()?.dir).toBe(PAYLOAD);
+	rmSync(PAYLOAD, { recursive: true });
+	expect(harnessGate()).toBeUndefined();
 });
 
 test("a bootstrap that fails still lets the lane start; the exit code and the script's words go to the hub log", async () => {
@@ -400,7 +409,7 @@ test("a lane that resumes its session is not bootstrapped again, and still loads
 	expect(spawns).toHaveLength(before + 1);
 	const resumed = spawns.at(-1)!;
 	expect(resumed.opts.resume).toBe(session);
-	expect(resumed.opts.doneGate).toBe(EXTENSION);
+	expect(resumed.opts.codingHarness).toBe(PAYLOAD);
 	expect(resumed.agent.sent).toHaveLength(1);
 	expect(calls()).toHaveLength(1);
 });
@@ -429,13 +438,13 @@ test("messages to a held process go in the order they were sent once the bootstr
 	expect(calls()).toEqual([worktree]);
 });
 
-test("OmO lanes are untouched: with the setting on and the harness installed, a lane's spawn options, argv and prompt equal those with it off", async () => {
+test("OmO lanes are untouched: with the setting on and the payload installed, a lane's spawn options, argv and prompt equal those with it off", async () => {
 	cfg.lanes = { ...cfg.lanes, runtime: "fakeomo" };
 	const repo = repoWith();
 	const run = async (on: boolean) => {
 		cfg.lanes = { ...cfg.lanes, harness_gate: on };
 		const { opts, agent } = launch("omo-same", repo);
-		const out = { opts: JSON.stringify(opts), argv: omoArgs(opts), sent: agent.sent.map(s => `${s.mode}:${s.text}`), field: "doneGate" in opts };
+		const out = { opts: JSON.stringify(opts), argv: omoArgs(opts), sent: agent.sent.map(s => `${s.mode}:${s.text}`), field: "codingHarness" in opts };
 		l.stopLane("omo-same");
 		await advance(300);
 		return out;
@@ -446,6 +455,6 @@ test("OmO lanes are untouched: with the setting on and the harness installed, a 
 	expect(on.field).toBe(false);
 	expect(on.sent).toHaveLength(1); // the prompt went at once
 	expect(calls()).toEqual([]); // and no bootstrap ran
-	expect(omoArgs({ ...JSON.parse(on.opts), doneGate: EXTENSION })).toEqual(on.argv); // the OmO argv builder ignores the field even if it were handed one
+	expect(omoArgs({ ...JSON.parse(on.opts), codingHarness: PAYLOAD })).toEqual(on.argv); // the OmO argv builder ignores the field even if it were handed one
 	expect(omo.caps.doneGate).toBeUndefined();
 });
