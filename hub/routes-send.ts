@@ -31,6 +31,13 @@ import { bannedHits, bannedNote } from "./word-ban.ts";
 
 // Where a forwarded action came from (a machine name), as one short line; the event it makes carries it as `via`.
 export const viaOf = (v: unknown): string | undefined => (typeof v === "string" ? v.replace(/\s+/g, " ").trim().slice(0, 40) || undefined : undefined);
+// A dotz_send that answers an owner message already answered: it lands as a reply to an old message long after it was asked, which the
+// owner reads as an answer that went missing and arrived late (11-18: a 10:47 re-answer to a 08:52 request answered at 09:17).
+// News about that matter goes out as a new message, with no reply_to.
+export function reanswerRefusal(replyTo: unknown, isAnswered: (id: string) => boolean): string | undefined {
+	if (typeof replyTo !== "string" || !replyTo || !isAnswered(replyTo)) return undefined;
+	return `${replyTo} was already answered; a second reply to it reads as a late, lost answer. Send news about it without reply_to, or send nothing if it adds nothing.`;
+}
 // The last web sends by client id, with the answer each got (POST /api/message `cid`). Set before the send so a double tap in flight is a retry too.
 const sentCids = new Map<string, unknown>();
 const rememberCid = (cid: string, answer: unknown): void => {
@@ -194,7 +201,7 @@ export async function routeSend(req: Request, url: URL, parts: string[], { peer 
 		const session = typeof b.session === "string" && b.session ? b.session : MAIN;
 		if (session !== MAIN && convs.keyOf(target) !== session) return json({ delivered: false, reason: `this session answers only ${primaryTarget(session)}; hand other work to main with dotz_conv send main` }, 403);
 		const sender = convs.get(session)?.queue ?? queue;
-		const refused = session === MAIN && !b.update_key && repostRefusal(target, String(b.text ?? ""));
+		const refused = session === MAIN && !b.update_key && (repostRefusal(target, String(b.text ?? "")) || reanswerRefusal(b.reply_to, id => sender.isAnswered(id)));
 		if (refused) return json({ delivered: false, reason: refused });
 		// `resolves` (text in the title / text of the open questions it settles, or "*" for all): this post says their matter is over.
 		if (typeof b.resolves === "string" && b.resolves.trim()) resolveNotices(b.resolves.trim() === "*" ? { all: true } : { match: b.resolves }, conv => convs.keyOf(conv ?? "") === session);
