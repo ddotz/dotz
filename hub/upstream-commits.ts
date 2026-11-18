@@ -2,8 +2,8 @@
 // to ddotz/dotz publishes the commits of its head branch that public main lacks: their author and committer, their messages and their added lines must hold
 // nothing personal. A `git push` from a dotz clone to any GitHub remote, a contributor's fork included, gets the identity check, whether or not the
 // pre-push hook is installed; a push to the public repo itself (`origin HEAD:main`, `origin <branch>:main`, a plain `git push`, `--all`) gets the same message and added-line
-// check as a PR, and fails closed when git cannot be read. "Public main" is the clone's own tracking ref, so nothing here touches the network; a stale ref can list commits that are
-// already public, which refuses more, never less. A refusal names commits by short sha and labels and never a name, an address or a matched value.
+// check as a PR (plus the commit message rules of CONTRIBUTING.md: no English prefix, a polite ending, a 왜:/어떻게: line), and fails closed when git cannot be read. "Public main" is the clone's own tracking ref, so nothing here touches the network; a stale ref can list commits that are
+// already public, which refuses more, never less. A refusal names commits by short sha and labels and never a name, an address or a matched value; a subject is shown only when it holds none.
 import { FIX_COMMAND, PUBLIC_URL, badRows, gitText, identityRefusal, isDotzClone, isGithubRemote, isPublicRemote, newCommits, publicRefs, remoteUrls } from "./commit-identity.ts";
 import { MAYBE_POST, PUBLIC_REPO, installTerms, postDir, postKind, postStart, postsToDotz, scrub, shellPath, type Term } from "./public-scrub.ts";
 
@@ -64,6 +64,47 @@ export function contentFindings(dir: string, revs: readonly string[], refs: read
 	return found;
 }
 
+export type SubjectFinding = { sha: string; subject: string; rules: string[] };
+
+const CONVENTIONAL_PREFIX = /^[A-Za-z][\w()/-]*:\s/;
+const PLAIN_ENDING = /(?<!니)다\.?$/;
+const REASON_LABEL = /^[ \t]*(?:왜|어떻게)[ \t]*:/m;
+const SUBJECT_RULE_TEXT = {
+	prefix: "제목은 `omp:`나 `feat(x):` 같은 영어 접두어 없이 사용자에게 바뀐 점을 한 문장으로 써요(`내부 정리:`와 `release:`만 허용돼요)",
+	ending: "제목은 `~합니다`나 `~해요`처럼 존댓말로 끝내고 `~한다`로 끝내지 않아요",
+	body: "본문에는 `왜:`나 `어떻게:`로 시작하는 줄을 적어요",
+} as const;
+
+// The CONTRIBUTING.md rules a commit message breaks: no English prefix, a polite ending, a 왜:/어떻게: line in the body. A release commit is exempt from all of them.
+export function subjectRules(subject: string, body: string): (keyof typeof SUBJECT_RULE_TEXT)[] {
+	if (/^release:/.test(subject)) return [];
+	const rules: (keyof typeof SUBJECT_RULE_TEXT)[] = [];
+	if (CONVENTIONAL_PREFIX.test(subject)) rules.push("prefix");
+	if (PLAIN_ENDING.test(subject.trim())) rules.push("ending");
+	if (!REASON_LABEL.test(body)) rules.push("body");
+	return rules;
+}
+
+// Subjects and bodies of the non-merge commits `revs` holds beyond `refs`, against CONTRIBUTING.md; a commit already on public main never counts.
+export function subjectFindings(dir: string, revs: readonly string[], refs: readonly string[]): SubjectFinding[] | undefined {
+	const out = gitText(dir, ["log", "--no-show-signature", "--no-merges", "--format=%x1e%h%x1f%s%x1f%b", ...revs, "--not", ...refs], 30_000);
+	if (out === undefined) return undefined;
+	const found: SubjectFinding[] = [];
+	for (const chunk of out.split("\x1e").slice(1)) {
+		const [sha = "", subject = "", body = ""] = chunk.split("\x1f");
+		const rules = subjectRules(subject, body);
+		if (rules.length) found.push({ sha, subject, rules });
+	}
+	return found;
+}
+
+// The refusal for what subjectFindings found, in Korean like the commit messages it guards; a subject that holds an install value is not repeated.
+export function subjectRefusal(found: readonly SubjectFinding[], terms: readonly Term[]): string {
+	const shown = (subject: string) => (scrub(subject, terms).hits.length ? "(제목에 개인 값이 있어 가렸어요)" : `"${subject.length > 80 ? `${subject.slice(0, 80)}…` : subject}"`);
+	const lines = found.slice(0, 8).map(f => `${f.sha} ${shown(f.subject)}: ${f.rules.map(rule => `${SUBJECT_RULE_TEXT[rule]}.`).join(" ")}`);
+	return `커밋 메시지가 CONTRIBUTING.md의 커밋 메시지 규칙을 어겨요(${found.length}개). ${lines.join(" ")} 커밋을 amend하거나 rebase로 고친 뒤 다시 시도해요.`;
+}
+
 // The refusal for what contentFindings found; `again` is the verb that retries the command.
 export const contentRefusal = (found: readonly Finding[], again: "post" | "push"): string =>
 	`refused, ${found.length} commit(s) new to ${PUBLIC_REPO} carry personal or sensitive content: ${found.slice(0, 8).map(f => `${f.sha.slice(0, 8)} (${f.labels.join(", ")})`).join("; ")}. Remove the value from those commits (amend or rebase), keep the detail, and ${again} again${again === "push" ? ". A ref that is behind the public main can list commits that are already public: git fetch first" : ""}`;
@@ -86,10 +127,12 @@ function prDeny(flat: string, dataDir: string, cwd: string): string | undefined 
 	if (!refs.length) return NO_BRANCH_RULE;
 	const rows = newCommits(dir, [head], refs);
 	if (!rows) return cannot("git could not list them");
-	const found = contentFindings(dir, [head], refs, installTerms(dataDir));
-	if (!found) return cannot("git could not read their text");
+	const terms = installTerms(dataDir);
+	const found = contentFindings(dir, [head], refs, terms);
+	const styled = subjectFindings(dir, [head], refs);
+	if (!found || !styled) return cannot("git could not read their text");
 	const bad = badRows(rows);
-	const parts = [...(bad.length ? [identityRefusal(bad)] : []), ...(found.length ? [contentRefusal(found, "post")] : [])];
+	const parts = [...(bad.length ? [identityRefusal(bad)] : []), ...(found.length ? [contentRefusal(found, "post")] : []), ...(styled.length ? [subjectRefusal(styled, terms)] : [])];
 	return parts.length ? parts.join(" ") : undefined;
 }
 
@@ -121,9 +164,11 @@ function pushRefusal(dir: string, args: readonly string[], dataDir: string): str
 	const rows = newCommits(dir, revs, refs);
 	if (!rows && toPublic) return `refused, git could not list the commits this push to ${PUBLIC_REPO} would publish, so they cannot be checked. Retry the push`;
 	const bad = badRows(rows ?? []);
-	const found = toPublic ? contentFindings(dir, revs, refs, installTerms(dataDir)) : [];
-	if (!found) return `refused, git could not read the text of the commits this push to ${PUBLIC_REPO} would publish, so it cannot be checked. Retry the push`;
-	const parts = [...(bad.length ? [identityRefusal(bad)] : []), ...(found.length ? [contentRefusal(found, "push")] : [])];
+	const terms = toPublic ? installTerms(dataDir) : [];
+	const found = toPublic ? contentFindings(dir, revs, refs, terms) : [];
+	const styled = toPublic ? subjectFindings(dir, revs, refs) : [];
+	if (!found || !styled) return `refused, git could not read the text of the commits this push to ${PUBLIC_REPO} would publish, so it cannot be checked. Retry the push`;
+	const parts = [...(bad.length ? [identityRefusal(bad)] : []), ...(found.length ? [contentRefusal(found, "push")] : []), ...(styled.length ? [subjectRefusal(styled, terms)] : [])];
 	return parts.length ? parts.join(" ") : undefined;
 }
 
@@ -143,5 +188,5 @@ export function upstreamCommitsDeny(command: string, dataDir: string, cwd: strin
 	if (!push && !post) return undefined;
 	const flat = command.replace(/\\\r?\n\s*/g, " ");
 	const refused = (push ? pushDeny(flat, dataDir, cwd) : undefined) ?? (post ? prDeny(flat, dataDir, cwd) : undefined);
-	return refused && `this command would publish commits that are not de-identified: ${refused}`;
+	return refused && `this command would publish commits that are not de-identified or break the commit message rules: ${refused}`;
 }
