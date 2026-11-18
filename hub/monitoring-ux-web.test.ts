@@ -7,10 +7,10 @@ import { appAsset, indexPage } from "./webapp.ts";
 
 // 모니터링 over a fixed gateway: every plain monitor row and its conversation carries a last-run → next-run bar with the result as a tag,
 // a disconnected app or watch says so at once with 지금 다시 확인, and 감시 소식 opens with every plain monitor at a glance. The times are
-// built from the wall clock (new Date(), untouched by the test clock) so the page's own Date.now() puts the ok bar at about half.
+// built from a fixed instant T0, and boot() sets the page's Date.now() to it, so the ok bar is at exactly half whatever the machine's speed.
 const SHOTS = process.env.MONITORING_SHOTS ?? join(tmpdir(), "dotz-shots", "monitoring");
 mkdirSync(SHOTS, { recursive: true });
-const T0 = new Date().getTime();
+const T0 = Date.UTC(2026, 10, 18, 3, 0, 0);
 const at = (ms: number) => new Date(ms).toISOString();
 const WINDOW = 20 * 60_000;
 const base = (name: string, watch: string, extra: Record<string, unknown> = {}) => ({ name, watch, kind: "watch", last_run: at(T0 - WINDOW / 2), next_run: at(T0 + WINDOW / 2), last_result: "ok", connection: "connected", every: "20분마다", ...extra });
@@ -73,6 +73,7 @@ const boot = async (width: number, height: number) => {
   const v = new Bun.WebView({ width, height });
   views.push(v);
   await v.navigate(`http://127.0.0.1:${server.port}/`);
+  await run(v, `Date.now = () => ${T0}`);
   await waitFor(v, `S && NM.loaded && NT.loaded && PR.fresh && NM.items.length === 5`);
   await run(v, `if (dotzTheme.get() === "dark") dotzTheme.toggle()`);
   await run(v, `go("monitoring")`);
@@ -101,8 +102,7 @@ describe("a monitor row and its conversation", () => {
     await run(v, `go("monitoring", "m:절반 감시")`);
     await waitFor(v, `document.querySelector("#mon-head .mon-prog i")`);
     const pct = await q<number>(v, `return parseFloat(document.querySelector("#mon-head .mon-prog i").style.width || "")`);
-    expect(pct).toBeGreaterThan(48);
-    expect(pct).toBeLessThan(53);
+    expect(pct).toBe(50);
     expect(await q(v, `return document.querySelector("#mon-head .mon-prog-tx").textContent`)).toMatch(/^지난 실행 \d+분 전 · 다음 \d+분 후$/);
     await run(v, `go("monitoring", "m:늦은 감시")`);
     await waitFor(v, `MON.sel === "m:늦은 감시" && document.querySelector("#mon-head .mon-prog.warn")`);

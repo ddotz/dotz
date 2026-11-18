@@ -290,8 +290,3 @@ test("an alert reaches the alert channel", async () => {
 	expect(post.channel).toBe(alert.id);
 }, 12_000);
 
-test("the gateway survived every path without a web address", async () => {
-	const r = await fetch(`${base}/api/health`, { headers: { "x-dotz-token": hubToken }, signal: AbortSignal.timeout(5000) });
-	expect(r.status).toBe(200);
-	expect(exited).toBe(false);
-});

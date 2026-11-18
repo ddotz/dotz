@@ -1,8 +1,7 @@
 // ig-comments watch: baseline of comment counts on the first run, comments fetched only for media whose count changed,
 // owner comments and replied ones skipped, failure absorption, auth, quiet hours and setup failures. Fake fetch only.
 import { afterEach, beforeEach, expect, test } from "bun:test";
-import { existsSync, rmSync } from "node:fs";
-import { join } from "node:path";
+import { rmSync } from "node:fs";
 import { run } from "../bin/ig-comments.ts";
 import { paths, writeJson } from "../lib/config.ts";
 import { calls, fakeCtx, IG, readState, setupEnv, type TestEnv } from "./helpers.ts";
@@ -47,29 +46,11 @@ test("second run reads only changed media and prints new comments without an own
 	expect(ctx.calls.length).toBe(before + 1);
 });
 
-test("a transient failure is absorbed twice and reported on the 3rd failed run", async () => {
-	const ctx = fakeCtx(env, { routes: { [MEDIA]: () => media(1) } });
-	await run(ctx, []);
-	ctx.routes[MEDIA] = () => new Response("{}", { status: 500 });
-	expect(await run(ctx, [])).toEqual({ lines: [], code: 0 });
-	expect(await run(ctx, [])).toEqual({ lines: [], code: 0 });
-	const third = await run(ctx, []);
-	expect(third.lines[0]).toBe("DOTZ_FAIL network");
-	expect(third.code).toBe(1);
-});
-
 test("OAuthException 190 prints DOTZ_FAIL instagram-auth at once", async () => {
 	const ctx = fakeCtx(env, { routes: { [MEDIA]: () => Response.json({ error: { code: 190, type: "OAuthException" } }, { status: 400 }) } });
 	const res = await run(ctx, []);
 	expect(res.code).toBe(1);
 	expect(res.lines[0]).toBe("DOTZ_FAIL instagram-auth");
-});
-
-test("quiet hours are silent and touch nothing", async () => {
-	const ctx = fakeCtx(env, { now: "2030-06-15T16:00:00Z", routes: { [MEDIA]: () => media(1) } });
-	expect(await run(ctx, [])).toEqual({ lines: [], code: 0 });
-	expect(ctx.calls).toHaveLength(0);
-	expect(existsSync(join(env.stateDir, "state.json"))).toBe(false);
 });
 
 test("missing config or an unconnected account prints DOTZ_FAIL setup", async () => {

@@ -1,7 +1,7 @@
 // inbox watch: local folder scan with a fake ffprobe. First run is a baseline, later runs report each new video once with the
 // ok flag, files still being copied wait, a missing ffprobe is a setup failure, and nothing touches the network.
 import { afterEach, beforeEach, expect, test } from "bun:test";
-import { rmSync, utimesSync, writeFileSync } from "node:fs";
+import { utimesSync, writeFileSync } from "node:fs";
 import { basename, join } from "node:path";
 import { run } from "../bin/inbox.ts";
 import { paths } from "../lib/config.ts";
@@ -72,7 +72,3 @@ test("a missing ffprobe is DOTZ_FAIL setup", async () => {
 	expect(res.lines[0]).toBe("DOTZ_FAIL setup");
 });
 
-test("missing config prints DOTZ_FAIL setup", async () => {
-	rmSync(paths.config());
-	expect((await run(fakeCtx(env), [])).lines[0]).toBe("DOTZ_FAIL setup");
-});

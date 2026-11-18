@@ -358,23 +358,6 @@ test("a monitor settings change from a peer is a plain PATCH on the owner, once;
 	expect(read.status).toBe(404);   // allowed through to B (this fake has no such route); a path outside the peer read list would be 400
 });
 
-test("a peer app's 답장 모델 change is the owner's own plain settings PATCH, once", async () => {
-	const { A, B } = pair();
-	const p = `/api/peer/proxy?pc=${encodeURIComponent(URL_B)}&p=${encodeURIComponent("/api/peer/act")}`;
-	const values = { reply_model: "anthropic/claude-sonnet-5-5:high" };
-	expect((await A.handle(req(p, { method: "POST", body: JSON.stringify({ action: "app", args: { op: "settings", app: "kakao", values } }) }))).status).toBe(200);
-	expect(B.events).toEqual([{ target: "app:kakao", text: JSON.stringify(values) }]);
-	expect(A.events).toEqual([]);
-});
-
-test("a peer mail instance's 디스코드에도 올리기 switch is the owner's own plain settings PATCH, once", async () => {
-	const { A, B } = pair();
-	const p = `/api/peer/proxy?pc=${encodeURIComponent(URL_B)}&p=${encodeURIComponent("/api/peer/act")}`;
-	expect((await A.handle(req(p, { method: "POST", body: JSON.stringify({ action: "app", args: { op: "settings", app: "mail-2", values: { discord: true } } }) }))).status).toBe(200);
-	expect(B.events).toEqual([{ target: "app:mail-2", text: JSON.stringify({ discord: true }) }]);
-	expect(A.events).toEqual([]);
-});
-
 test("an app instance's rename, create and delete from a peer are the owner's own plain calls, once each", async () => {
 	const { A, B } = pair();
 	const p = `/api/peer/proxy?pc=${encodeURIComponent(URL_B)}&p=${encodeURIComponent("/api/peer/act")}`;

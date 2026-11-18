@@ -4,9 +4,9 @@ import { ev, fakeHub, json, run, waitFor, type View } from "./test-web.ts";
 
 // 설정 → 웹 접속: Tailscale stays the default PUT, Cloudflare and 이 컴퓨터만 start POST /api/web-access/onboard, and the
 // manual hostname/team/aud/token + tunnel status live only in the closed "직접 입력" disclosure.
-const SHOTS = process.env.MESSENGER_SHOTS ?? "/tmp/dotz-messenger-shots";
-mkdirSync(SHOTS, { recursive: true });
-mkdirSync("/tmp/messenger-onboarding", { recursive: true });
+// MESSENGER_SHOTS=<dir> also writes the screenshots of the overflow checks there.
+const SHOTS = process.env.MESSENGER_SHOTS ?? "";
+if (SHOTS) mkdirSync(SHOTS, { recursive: true });
 
 const TOKEN = "eyJ-secret-tunnel-token-value";
 let wa: Record<string, any>;
@@ -177,19 +177,16 @@ describe("웹 접속 화면", () => {
 		found = true;
 	}, 30_000);
 
-	test("screenshots: Cloudflare on, desktop and phone, light and dark", async () => {
+	test("Cloudflare on: desktop and phone, light and dark, do not overflow", async () => {
 		for (const [name, w, h] of [["desktop", 1280, 800], ["phone", 390, 844]] as const) {
 			for (const theme of ["light", "dark"] as const) {
 				reset();
 				wa = { ...wa, mode: "cloudflare", hostname: "dotz.example.com", team: "myteam", aud: "a".repeat(64), token_set: true, tunnel: { state: "running" }, devices: 2 };
 				onb = done("https://dotz.example.com");
 				const v = await open(w, h, theme);
-				await Bun.write(`${SHOTS}/web-access-${name}-${theme}.png`, await v.screenshot());
-				if (name === "desktop" && theme === "light") await Bun.write("/tmp/messenger-onboarding/web-access.png", await v.screenshot());
+				if (SHOTS) await Bun.write(`${SHOTS}/web-access-${name}-${theme}.png`, await v.screenshot());
 				expect(await noOverflow(v)).toBe(true);
 			}
 		}
-		for (const d of ["desktop", "phone"]) for (const t of ["light", "dark"]) expect(await Bun.file(`${SHOTS}/web-access-${d}-${t}.png`).exists()).toBe(true);
-		expect(await Bun.file("/tmp/messenger-onboarding/web-access.png").exists()).toBe(true);
 	}, 60_000);
 });

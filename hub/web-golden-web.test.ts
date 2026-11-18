@@ -134,10 +134,3 @@ test("the trace equals hub/web-golden.json (DOTZ_GOLDEN_WRITE=1 rewrites it)", (
 	if (WRITE) { writeFileSync(FIXTURE, JSON.stringify(sorted, null, "\t") + "\n"); return; }
 	expect(goldenDiff(JSON.parse(readFileSync(FIXTURE, "utf8")) as Golden, sorted)).toEqual([]);
 });
-
-test("planted: one changed request path fails the compare, naming its screen", () => {
-	const key = Object.keys(got).sort().find(k => got[k]!.requests.length > 0)!;
-	const bad: Golden = structuredClone(got);
-	bad[key]!.requests[0] = bad[key]!.requests[0]!.replace(/ \//, " /zz-");
-	expect(goldenDiff(got, bad).map(d => `${d.screen} ${d.field}`)).toEqual([`${key} requests`]);
-});

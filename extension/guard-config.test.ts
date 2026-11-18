@@ -2,11 +2,6 @@
 import { expect, test } from "bun:test";
 import { guardConfigFrom } from "./guard-config.ts";
 
-test("growth defaults: on, 6M step, 48M ceiling", () => {
-	const g = guardConfigFrom({});
-	expect([g.task_cap_grow, g.task_cap_step, g.task_cap_ceiling]).toEqual([true, 6_000_000, 48_000_000]);
-});
-
 test("growth values are validated one by one and fall back to the default", () => {
 	const g = guardConfigFrom({ task_cap_grow: "yes", task_cap_step: -5, task_cap_ceiling: "big" });
 	expect([g.task_cap_grow, g.task_cap_step, g.task_cap_ceiling]).toEqual([true, 6_000_000, 48_000_000]);

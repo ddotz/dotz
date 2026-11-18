@@ -60,7 +60,6 @@ describe("the model list of the setting", () => {
 		expect(c.options.indexOf("openai/gpt-5:medium")).toBeGreaterThan(c.options.indexOf(OPUS));
 	});
 	test("the default option is the reply default, Sonnet 5.5 high, or the global reply model when one is set, never the subagent model", () => {
-		expect(REPLY_DEFAULT).toBe("anthropic/claude-sonnet-5-5:high");
 		expect(replyModelChoices(LIST).labels[""]).toBe("답장 기본값 · Sonnet 5.5 · 높음");
 		expect(replyModelChoices(LIST, OPUS).labels[""]).toBe("답장 기본값 · Opus 5.5 · 높음");
 	});

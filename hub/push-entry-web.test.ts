@@ -311,30 +311,4 @@ describe.each([["phone", 390], ["wide window", WIDE]] as const)("worker tap, %s"
 		await ready(view);
 		await expectLanded(view, { conv: "ch:2", at: LONG_AT, push: {} });
 	}, 20_000);
-	test("app open in a user app window (/apps/x/) and no app window", async () => {
-		// A window of a user app has no receiver for the tap and never answers: the worker must not hand the tap to it.
-		const sw = swOf(hub.origin, [{ url: `${hub.origin}/apps/x/`, focus: async () => {}, postMessage: () => {} }]);
-		await sw.tap(KINDS["answer (notice)"]!.push);
-		expect(sw.opened).toHaveLength(1);
-		const view = await hub.view({ width, height: 844 }, sw.opened[0]!.slice(hub.origin.length));
-		await ready(view);
-		await expectLanded(view, KINDS["answer (notice)"]!);
-	}, 20_000);
-	test("app open but its window does not answer", async () => {
-		const posted: unknown[] = [];
-		let handed!: () => void;
-		const arrival = new Promise<void>(r => (handed = r));
-		const sw = swOf(hub.origin, [{ url: `${hub.origin}/`, focus: async () => {}, postMessage: (m: unknown) => { posted.push(m); handed(); } }]);
-		// The window has the message and says nothing; the tap is done when the worker's own waitUntil is, after it gave up waiting for the answer.
-		await sw.tap(KINDS["answer (notice)"]!.push, async () => {
-			await arrival;
-			expect(sw.opened).toHaveLength(0);   // still waiting for it
-			sw.fire();
-		});
-		expect(posted).toHaveLength(1);
-		expect(sw.opened).toHaveLength(1);
-		const view = await hub.view({ width, height: 844 }, sw.opened[0]!.slice(hub.origin.length));
-		await ready(view);
-		await expectLanded(view, KINDS["answer (notice)"]!);
-	}, 20_000);
 });

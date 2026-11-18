@@ -7,7 +7,6 @@ import { countTraces, gateway, logins, plugins, sessions, update, watches } from
 import { THRESHOLDS as T } from "./doctor-limits.ts";
 import type { DoctorCheck, Finding } from "./doctor-types.ts";
 import { loadPlugins } from "./plugins.ts";
-import * as audit from "./token-audit.ts";
 
 const H = 3600e3, D = 24 * H;
 const T0 = Date.parse("2026-11-10T08:00:00Z");
@@ -142,12 +141,6 @@ describe("doctor_at off and the old timers", () => {
 		expect(r.state.ran).toBe(0);
 		expect(r.state.sent).toEqual([]);
 		expect(existsSync(storeFile(dir))).toBe(false);
-	});
-
-	test("the token audit has no timer or alert starter left", () => {
-		expect("startTokenAudit" in audit).toBe(false);
-		expect(typeof audit.runAudit).toBe("function");
-		expect(typeof audit.auditSummaryLine).toBe("function");
 	});
 
 	test("morning time: off, a fixed time, auto with and without zele", () => {

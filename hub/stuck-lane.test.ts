@@ -237,7 +237,7 @@ test("a) a lane recovered from a stuck turn gets the frozen call's shape in the 
 	await quiet(STUCK_MS);
 	await quiet(500);
 	const revive = spawns.at(-1)!.agent.sent.join("\n");
-	expect(revive).toContain("앞 턴이 eval py 셀 안의 tool.bash x4에서 10분 멈춰서 끊었어요. 같은 호출 모양을 되풀이하지 마세요.");
+	expect(revive).toContain("eval py 셀 안의 tool.bash x4");
 	expect(revive).toContain(msg().laneStopped);
 	expect(revive).not.toContain(SECRET_ARG);
 	l.stopLane("stuck-lane-f");

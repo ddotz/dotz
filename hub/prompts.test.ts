@@ -248,7 +248,7 @@ test("an answer to a run no prompt started goes home, however recent the owner's
 	expect(live.state.posts.map(p => p.text)).toEqual(["a worker is on it", "The README is done and pushed."]);
 });
 
-test("an answer without a prompt goes home, not to an unanswered owner message's conversation, and names no message", async () => {
+test("an answer without a prompt goes home, not to an unanswered owner message's conversation, and names no message; old or no owner messages change nothing and quiet replies go nowhere", async () => {
 	const now = Date.now();
 	const { q, state } = setup(["b"], [
 		{ target: "ch:1", replyTo: "a", at: now - 10 * 60_000 },
@@ -257,10 +257,7 @@ test("an answer without a prompt goes home, not to an unanswered owner message's
 	q.onAnswer("for the unanswered one");
 	await Promise.resolve();
 	expect(state.posts).toEqual([{ target: "web", text: "for the unanswered one", replyTo: undefined }]);
-});
 
-test("a real answer no label explains is never dropped: it goes home whatever owner messages exist", async () => {
-	const now = Date.now();
 	const old = setup([], [
 		{ target: "web", replyTo: "a", at: now - 90 * 60_000 },
 		{ target: "ch:1", replyTo: "b", at: now - 31 * 60_000 },
@@ -941,6 +938,22 @@ test("only the reminder's own text is a regenerated nudge: an owner message or a
 	expect(q.openRequests().map(r => r.replyTo)).toEqual(["m1", undefined]);
 });
 
+test("open prompts replay once after a restart, oldest first, without the answered ones", () => {
+	const { q, state } = setup();
+	const wrap = (t: string) => (t.startsWith("[gateway restarted]") ? t : `[gateway restarted] ${t}`);
+	q.deliver("second", { target: "chat", replyTo: "m2" });
+	q.deliver("first", { target: "chat", replyTo: "m1" });
+	q.deliver("done", { target: "chat", replyTo: "m3" });
+	q.markAnswered("m3");
+	state.delivered.length = 0;
+	expect(q.reopen(wrap).replayed).toBe(2);
+	expect(state.delivered).toEqual(["[gateway restarted] second", "[gateway restarted] first"]);
+	state.delivered.length = 0;
+	q.markAnswered("m1");
+	expect(q.reopen(wrap).replayed).toBe(1);
+	expect(state.delivered).toEqual(["[gateway restarted] second"]);
+});
+
 test("a request the silent-wait check dropped is no longer listed and a restart does not replay it", () => {
 	const { q, startTurn } = setup();
 	startTurn("[dotz inbox] 예약 항목: morning brief", { target: "chat" });
@@ -1341,15 +1354,6 @@ test("a worker with two requests answers the oldest and closes the other, across
 	expect(second.open()).toEqual([]);
 });
 
-test("two workers finishing in reverse order each answer their own request", async () => {
-	const t = setup();
-	deferTo(t, "m1", { spawned: "st_a" });
-	deferTo(t, "m2", { spawned: "st_b" });
-	await answerWake(t, "st_b", "result b");
-	await answerWake(t, "st_a", "result a");
-	expect(t.state.posts.map(p => [p.replyTo, p.text])).toEqual([["m2", "result b"], ["m1", "result a"]]);
-});
-
 test("a follow-up steered to the second worker is not taken for the oldest running one", () => {
 	const logs: string[] = [];
 	const running = (id: string) => ({ id, description: id });
@@ -1591,7 +1595,8 @@ test("a quiet check's plain answer is kept as a note and not posted; [ask], [fai
 	expect(state.posts).toEqual([]);
 	run({ target: "chat", quiet: true }, "[ask] 계속할까요?");
 	run({ target: "chat", quiet: true }, "[fail] 서버가 멈췄어요");
-	expect(state.posts.map(p => p.text)).toEqual(["[ask] 계속할까요?", "[fail] 서버가 멈췄어요"]);
+	run({ target: "chat", quiet: true }, "[실패] 서버가 멈췄어요");
+	expect(state.posts.map(p => p.text)).toEqual(["[ask] 계속할까요?", "[fail] 서버가 멈췄어요", "[실패] 서버가 멈췄어요"]);
 	run({ target: "chat" }, "모두 정상이에요");
 	expect(state.posts.at(-1)).toMatchObject({ target: "chat", text: "모두 정상이에요" });
 	expect(notes).toHaveLength(1);

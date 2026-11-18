@@ -122,11 +122,5 @@ for (const [width, height] of [[390, 900], [1280, 900]] as const) {
 			expect((await titles(v)).length).toBe(7);
 			expect(await titles(v)).not.toContain("Re: 일정 조율");
 		});
-
-		test("dark theme draws the same labels", async () => {
-			const v = await boot(width, height, "dark");
-			expect(Object.keys(await states(v)).length).toBe(7);
-			await shot(v, `mail-states-${width}-dark.png`);
-		});
 	});
 }

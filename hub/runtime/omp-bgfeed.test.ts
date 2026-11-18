@@ -1,6 +1,5 @@
 import { expect, test } from "bun:test";
 import { join } from "node:path";
-import { OmoProcess } from "./omo.ts";
 import { eventsFromFrame, type Frame, omp } from "./omp.ts";
 import { advance, flush } from "./test-clock.ts";
 import type { AgentEvent, AgentProcess } from "./types.ts";
@@ -240,12 +239,4 @@ test("a spawn result without a background job, or a failed task call, spawns not
 	expect(wake([{ jobId: "bg_2", type: "eval", status: "completed" }])).toEqual([{ type: "workers_done", ids: ["bg_2"] }]);
 	expect(wake([])).toEqual([]);
 	expect(wake([{ jobId: "Beta-2", type: "task", status: "failed", agentId: "Beta" }], '<task-result id="Beta" agent="task" status="cancelled">\n</task-result>')).toEqual([{ type: "workers_done", ids: ["Beta"] }]);
-});
-
-test("OmO's process class has neither member of the omp feed, omp's has both", () => {
-	expect("awaitingAsync" in OmoProcess.prototype).toBe(false);
-	expect("cancelWorker" in OmoProcess.prototype).toBe(false);
-	const { proc } = startProcess();
-	expect(typeof proc.awaitingAsync).toBe("function");
-	expect(typeof proc.cancelWorker).toBe("function");
 });

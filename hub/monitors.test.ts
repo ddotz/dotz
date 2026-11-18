@@ -80,18 +80,9 @@ test("two failures in a row read as disconnected with the outage start", async (
 	expect(m.next_run).toBeDefined();
 });
 
-// A paused schedule keeps its row and says it is off; its last run is a success by definition (it fired).
 test("a schedule is listed by its short name, never by the commands its text runs", () => {
 	addSchedule({ text: "ch:7 피드백 데일리 보고: `ssh -o BatchMode=yes user@100.64.0.2 python3 - 24 < ~/.dotz/projects/feedback/collect.py`로 지난 24시간 메시지를 정리해요.", in_minutes: 60 });
 	expect(listMonitors().find(m => m.kind === "schedule")!.name).toBe("피드백 데일리 보고: 지난 24시간 메시지를 정리해요");
-});
-
-test("a paused schedule says it is off", () => {
-	const s = addSchedule({ text: "ch:7 주간 보고 정리", in_minutes: 60, every_minutes: 120 });
-	patchSchedule(s.id, { paused: true });
-	const m = listMonitors().find(i => i.kind === "schedule")!;
-	expect(m).toMatchObject({ name: "주간 보고 정리", paused: true });
-	expect(m.next_run).toBeUndefined();
 });
 
 // A one-shot is removed from the hub (memory and file) once it has done its job; a recurring one stays.

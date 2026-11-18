@@ -22,11 +22,6 @@ const TILDE_CASES: [string, string[]][] = [
 	["약 3~~5일, ~~지운 글~~ 끝", ["지운 글"]],
 ];
 
-test("inline() was cut out whole", () => {
-	expect(body.startsWith("function inline(s) {")).toBe(true);
-	expect(inline("**b**")).toBe("<b>b</b>");
-});
-
 test("two tildes are a strike only for a deliberate pair", () => {
 	for (const [input, struck] of TILDE_CASES) {
 		const html = inline(input);

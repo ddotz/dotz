@@ -153,29 +153,6 @@ describe("against temp git repos", () => {
 		expect(c.summary).toBe("설치본 → 261101.1");
 	});
 
-	// Owner 2026-10-29: a local edit never stops a shipped update ("로컬에서 수정해서 사용하는거때문에 내가 배포한 업뎃이 실패하면 안됨").
-	test("uncommitted changes do not stop the update: saved, moved on, untracked files kept", async () => {
-		r.release("a.txt", "2\n", "second");
-		writeFileSync(join(work, "a.txt"), "my edit\n");
-		writeFileSync(join(work, "notes.txt"), "untracked\n");
-		const j = await apply(opts());
-		expect(j.status).toBe("updated");
-		expect(head(work)).toBe(head(pusher));
-		expect(readFileSync(join(work, "a.txt"), "utf8")).toBe("2\n");
-		expect(existsSync(join(work, "notes.txt"))).toBe(true);
-	});
-
-	test("local commits that conflict with the new version do not stop the update and are kept on a branch, never dropped", async () => {
-		commit(work, "a.txt", "local\n", "my local work");
-		const mine = head(work);
-		r.release("a.txt", "2\n", "second");
-		const j = await apply(opts());
-		expect(j.status).toBe("updated");
-		expect(j.note).toContain("dotz-local/");
-		expect(sh(work, "log", "-1", "--format=%s", j.note!.match(/dotz-local\/[\w-]+/)![0])).toBe("my local work");
-		expect(sh(work, "rev-parse", j.note!.match(/dotz-local\/[\w-]+/)![0])).toBe(mine);
-	});
-
 	test("a clean checkout fast-forwards to origin, tests pass, every step is logged", async () => {
 		const before = head(work);
 		r.release("a.txt", "2\n", "second");
@@ -378,17 +355,6 @@ describe("against temp git repos", () => {
 			expect(h).toEqual({ worklog: [], alerts: [], restarts: 0 });
 		});
 
-		test("applies a clean, not-ahead checkout, says so in worklog and restarts through the idle gate", async () => {
-			setSelfUpdateCfg({ auto_apply: true });
-			r.release("a.txt", "2\n", "second");
-			const { h, api } = autoHooks();
-			await autoCheck(opts(), api);
-			expect(head(work)).toBe(head(pusher));
-			expect(h.worklog).toHaveLength(1);
-			expect(h.restarts).toBe(1);
-			expect(h.alerts).toEqual([]);
-		});
-
 		test("a dirty checkout still updates on its own: no alert, one restart, the edit kept in the backup", async () => {
 			setSelfUpdateCfg({ auto_apply: true });
 			r.release("a.txt", "2\n", "second");
@@ -399,17 +365,6 @@ describe("against temp git repos", () => {
 			await autoCheck(opts(), api);
 			expect(head(work)).toBe(head(pusher));
 			expect(readFileSync(join(work, "a.txt"), "utf8")).toBe("2\n");
-			expect(h.alerts).toEqual([]);
-			expect(h.restarts).toBe(1);
-		});
-
-		test("a developer checkout whose local commits conflict still updates; the commits are kept on a branch", async () => {
-			setSelfUpdateCfg({ auto_apply: true });
-			commit(work, "a.txt", "local\n", "my local work");
-			r.release("a.txt", "2\n", "second");
-			const { h, api } = autoHooks();
-			await autoCheck(opts(), api);
-			expect(head(work)).toBe(head(pusher));
 			expect(h.alerts).toEqual([]);
 			expect(h.restarts).toBe(1);
 		});

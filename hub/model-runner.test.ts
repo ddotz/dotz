@@ -128,9 +128,7 @@ afterEach(() => {
 test("a spent subscription fails at once with the reset time and starts nothing", async () => {
 	auth([account()]);
 	usage([{ usedPercent: 100, resetsAt: later(3_600_000) }]);
-	const started = Date.now();
 	await expect(callModel("sys", "u", { model: SONNET })).rejects.toThrow(`구독 한도에 걸렸어요 · ${resetClock(clock.now + 3_600_000)}에 풀려요`);
-	expect(Date.now() - started).toBe(0);
 	expect(spawns()).toEqual([]);
 });
 

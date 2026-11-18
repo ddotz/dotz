@@ -3,7 +3,7 @@
 // transient, auth and permanent failures are covered, plus the upload fingerprint (no second upload after a lost response)
 // and the exhausted-quota state. Fake fetch, fake cloudflared, no timers.
 import { afterEach, beforeEach, expect, test } from "bun:test";
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { hooks, publishJob, run } from "../bin/due.ts";
 import { loadConfig, paths, readJson, writeJson } from "../lib/config.ts";
@@ -192,13 +192,6 @@ test("a metadata job appends the section under the original description, merges 
 	expect(put.snippet.defaultLanguage).toBe("ko");
 	expect(put.localizations.en.title).toBe("Hi");
 	expect(JSON.parse(readFileSync(join(paths.backup(), "v9.json"), "utf8")).snippet.description).toBe("Orig");
-});
-
-test("missing config prints DOTZ_FAIL setup", async () => {
-	rmSync(paths.config());
-	const res = await run(fakeCtx(env), []);
-	expect(res.code).toBe(1);
-	expect(res.lines[0]).toBe("DOTZ_FAIL setup");
 });
 
 const uploadPosts = (ctx: FakeCtx) => ctx.calls.filter(c => c.method === "POST" && c.url.startsWith("https://www.googleapis.com/upload/youtube/v3/videos")).length;

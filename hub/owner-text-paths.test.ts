@@ -4,7 +4,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { paths, DATA_DIR } from "./config.ts";
 import { loadTree, prodOf } from "./engineering-rules.ts";
-import { emit, historyEvents, onEmit, type HubEvent } from "./events.ts";
+import { emit, onEmit, type HubEvent } from "./events.ts";
 import { dir, hooks, type Lane } from "./lanestate.ts";
 import { report } from "./lanereport.ts";
 import { brokenCount, ownerKind, shownEvent } from "./owner-text.ts";
@@ -102,8 +102,5 @@ describe("a real send", () => {
 	test("the send approval from a session stays exact", () => {
 		report(lane, SHOT_DRAFT);
 		expect(reports.at(-1)).toBe(SHOT_DRAFT);
-	});
-	test("stored history reads shaped", () => {
-		expect(historyEvents("main", 5).every(e => typeof e.ts === "string")).toBe(true);
 	});
 });

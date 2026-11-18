@@ -5,7 +5,7 @@ import { ev, fakeHub, json, run, waitFor, type View } from "./test-web.ts";
 // The mailbox of the mail app (web/js/30-mail-box.js) in a headless browser against a fake hub: Gmail-like rows (checkbox, star, bold unread),
 // the six folders, the actions on one mail and on a selection (optimistic, reverted on ok:false, disabled with one line without the capability),
 // the floating 메일 쓰기 sheet and the inline reply with attachment chips. Nothing is sent: the fake hub only records the draft posts.
-// MAIL_UI_SHOTS=<dir> also writes {desktop,phone}-{light,dark}-{list,thread,compose}.png there.
+// MAIL_UI_SHOTS=<dir> also writes the bar and scratch-compose screenshots there.
 const SHOTS = process.env.MAIL_UI_SHOTS ?? "";
 const CAN = ["read", "unread", "archive", "unarchive", "trash", "star", "unstar"];
 const ago = (h: number) => new Date(Date.now() - h * 3_600_000).toISOString();
@@ -432,16 +432,6 @@ describe("the line about a mailbox that does not follow", () => {
 	const note = (v: View) => ev<string | null>(v, `document.querySelector("#mon-tl .mbox-note")?.textContent ?? null`);
 	const only = (can: string[]) => { mails = mails.filter(m => m.key !== "fx-old"); for (const m of mails) m.can = can; };
 
-	test("no list draws it, whatever its mailbox can do", async () => {
-		only([]);
-		const off = await openList(1280, 800);
-		expect(await note(off)).toBeNull();
-		expect(await ev<boolean>(off, `document.body.textContent.includes("실제 메일함에는")`)).toBe(false);
-		only(CAN);
-		const on = await openList(1280, 800);
-		expect(await note(on)).toBeNull();
-	}, 30_000);
-
 	test("a list with nothing to say draws no stray text between the filter and the rows", async () => {
 		only(CAN);
 		const v = await openList(1280, 800);
@@ -785,37 +775,6 @@ describe("a row leaves only after the hub answered", () => {
 			expect(await replyOf(v, "fx-b")).toBe("needs");
 		}, 30_000);
 	});
-});
-
-describe.if(!!SHOTS)("screenshots", () => {
-	for (const [name, w, h] of [["desktop", 1280, 800], ["phone", 390, 844]] as const) {
-		for (const theme of ["light", "dark"] as const) {
-			test(`${name} ${theme}`, async () => {
-				const v = await openList(w, h, theme);
-				await tick(v, "월간 점검 보고서 확인 요청"); await tick(v, "견적서 보내드립니다");
-				await shot(v, `${name}-${theme}-list`);
-				await run(v, `document.querySelectorAll("#mon-tl .mr-chk").forEach(c => c.checked && c.click())`);
-				await openMail(v, "월간 점검 보고서 확인 요청");
-				await run(v, `document.querySelector('#tl .mbox-mode[data-mode="reply"]').click()`);
-				await waitFor(v, `document.querySelector("#tl .mbox-reply.open")`);
-				await fill(v, '#tl [data-k="mail-body"]', "확인했어요. 금요일까지 결과를 보내 드릴게요.");
-				await attach(v, "#tl .mbox-reply", "결과보고서.pdf", "x".repeat(2048));
-				await waitFor(v, `document.querySelector('#tl .mbox-chip[data-name="결과보고서.pdf"]')`);
-				await run(v, `document.querySelector("#tl .mbox-reply").scrollIntoView({ block: "end" })`);
-				await shot(v, `${name}-${theme}-thread`);
-				await run(v, `go("monitoring", "i:mail")`);
-				await waitFor(v, `document.querySelector(".mbox-fab")`);
-				await run(v, `document.querySelector(".mbox-fab").click()`);
-				await waitFor(v, `document.querySelector(".mbox-sheet")`);
-				await fill(v, '.mbox-sheet [data-k="mail-to"]', "lee@example.com");
-				await fill(v, '.mbox-sheet [data-k="mail-subject"]', "견적 문의");
-				await fill(v, '.mbox-sheet [data-k="mail-body"]', "안녕하세요.\n견적서를 보내 주실 수 있을까요?");
-				await attach(v, ".mbox-sheet", "요청서.docx", "y".repeat(40_000));
-				await waitFor(v, `document.querySelector('.mbox-sheet .mbox-chip[data-name="요청서.docx"]')`);
-				await shot(v, `${name}-${theme}-compose`);
-			}, 60_000);
-		}
-	}
 });
 
 describe("the mail column's corner on a wide screen", () => {

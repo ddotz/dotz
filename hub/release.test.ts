@@ -82,11 +82,9 @@ describe("planNext", () => {
 		expect(plan.code).toBe("limit");
 		expect(plan.reason).toContain("세 번");
 		expect(plan.reason).toContain("261104.1");
-	});
-
-	test("a day already carrying .3 is closed", () => {
-		const plan = planNext(["v261103.3"], "261103");
-		expect(plan.ok).toBe(false);
+		const closed = planNext(["v261103.3"], "261103");
+		expect(closed.ok).toBe(false);
+		if (!closed.ok) expect(closed.code).toBe("limit");
 	});
 
 	test("a tag dated after today is refused instead of reused", () => {
@@ -831,14 +829,6 @@ describe("release slots", () => {
 			});
 		});
 
-		test("a red suite releases nothing", async () => {
-			const dir = stateDir();
-			const kit = gateKit({ green: false, failed: ["hub/a.test.ts"], detail: "" });
-			expect(await launch(kit, { stateDir: dir, exec: gh("ddotz").exec, print }, "2026-11-05T12:00:10")).toBe(SLOT_SKIPPED_EXIT);
-			expect(kit.state.released).toEqual([]);
-			expect(JSON.parse(readFileSync(join(dir, "release-run.json"), "utf8"))).toMatchObject({ state: "failed" });
-		});
-
 		test("start, running, then red: running passes, the red tick fails once with the failing files, later ticks of the slot pass with one constant line; the next slot tests the new head", async () => {
 			const dir = stateDir();
 			const { calls, exec } = gh("ddotz");
@@ -857,6 +847,7 @@ describe("release slots", () => {
 			expect(red).toContain("hub/a.test.ts, hub/b.test.ts");
 			expect(calls).toEqual([]);
 			expect(kit.state.released).toEqual([]);
+			expect(JSON.parse(readFileSync(join(dir, "release-run.json"), "utf8"))).toMatchObject({ state: "failed" });
 			// the rest of the slot passes with one constant line: no second alert, no fail count; the suite is not run again
 			expect(await tick(kit, { stateDir: dir, exec, print: say, now: kst("2026-11-05T12:02:10") })).toBe(0);
 			const quiet = lines.at(-1)!;

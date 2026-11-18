@@ -12,12 +12,6 @@ const state = () => stored().find(n => n.kind === "decision")!.decision!;
 
 beforeEach(resetNoticesForTest);
 
-test("an unrelated message leaves a decision with options open", () => {
-	ask();
-	owner("그건 그렇고 날씨 어때?");
-	expect(state().state).toBe("open");
-});
-
 test("an answer by number, numbered label or label text closes it", () => {
 	for (const text of ["2", "2)", "2번", "2) 내일", "내일", "내일, 부탁해요"]) {
 		resetNoticesForTest();

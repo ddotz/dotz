@@ -7,38 +7,38 @@ const view = new Bun.WebView({ width: 390, height: 844 });
 afterAll(() => { view.close(); server.stop(); });
 
 const READY = `typeof S !== "undefined" && S && typeof target === "string" && CV.loaded && NT.loaded`;
-const HOOK = `(() => { window.__req = []; const f = window.fetch; window.fetch = function (i, o) { try { const u = new URL(typeof i === "string" ? i : i instanceof URL ? i.href : i.url, location.href); if (u.pathname.startsWith("/api/")) __req.push(String((o && o.method) || "GET").toUpperCase() + " " + u.pathname + u.search); } catch {} return f.apply(this, arguments); }; return 0; })()`;
-const QUIET = `new Promise(res => { let last = __req.length, t = performance.now(); const tick = () => { if (__req.length !== last) { last = __req.length; t = performance.now(); } if (performance.now() - t > 400) res(1); else setTimeout(tick, 50); }; tick(); })`;
+// __fly counts the requests that were sent and have not settled: a screen change is over when its ready condition holds, every request it is known to
+// send was seen, and nothing is in flight.
+const HOOK = `(() => { window.__req = []; window.__fly = 0; const f = window.fetch; window.fetch = function (i, o) { let p; try { const u = new URL(typeof i === "string" ? i : i instanceof URL ? i.href : i.url, location.href); if (u.pathname.startsWith("/api/")) __req.push(String((o && o.method) || "GET").toUpperCase() + " " + u.pathname + u.search); } catch {} __fly++; p = f.apply(this, arguments); p.then(() => __fly--, () => __fly--); return p; }; return 0; })()`;
 
 await view.navigate(`${server.origin}/?req=1#home`);
 await waitFor(view, READY);
 await view.evaluate(HOOK);
 
-async function change(away: string, reach: string, ready: string): Promise<string[]> {
+async function change(away: string, reach: string, ready: string, known: string[]): Promise<string[]> {
 	await view.evaluate(`(${away}, 0)`);
-	await view.evaluate(QUIET);
+	await waitFor(view, `__fly === 0`, 12_000);
 	await view.evaluate(`(__req.length = 0, 0)`);
 	await view.evaluate(`(${reach}, 0)`);
-	await waitFor(view, ready, 12_000);
-	await view.evaluate(QUIET);
+	await waitFor(view, `(${ready}) && ${JSON.stringify(known)}.every(q => __req.includes(q)) && __fly === 0`, 12_000);
 	return JSON.parse((await view.evaluate(`JSON.stringify(__req)`)) as string);
 }
 const repeated = (req: string[]) => req.filter((q, i) => req.indexOf(q) !== i);
 
 describe("requests of one screen change", () => {
 	test("opening a mail thread asks for the integrations once", async () => {
-		const req = await change(`go("home")`, `go("monitoring", "c:mail:m-1")`, `current === "chat" && CV.placed && target.startsWith("mail:")`);
+		const req = await change(`go("home")`, `go("monitoring", "c:mail:m-1")`, `current === "chat" && CV.placed && target.startsWith("mail:")`, ["GET /api/history?target=mail%3Am-1&limit=150", "GET /api/integrations/mail/settings", "POST /api/read", "GET /api/integrations"]);
 		expect(req.filter(q => q === "GET /api/integrations").length).toBe(1);
 		expect(repeated(req)).toEqual([]);
 	}, 60_000);
 
 	test("opening the mail list asks for nothing twice", async () => {
-		const req = await change(`go("home")`, `go("monitoring", "i:mail")`, `NM.loaded && MON.sel === "i:mail"`);
+		const req = await change(`go("home")`, `go("monitoring", "i:mail")`, `NM.loaded && MON.sel === "i:mail"`, ["GET /api/integrations"]);
 		expect(repeated(req)).toEqual([]);
 	}, 60_000);
 
 	test("opening the settings asks for nothing twice", async () => {
-		const req = await change(`go("home")`, `go("settings")`, `current === "settings" && !!document.querySelector("#settings > *")`);
+		const req = await change(`go("home")`, `go("settings")`, `current === "settings" && !!document.querySelector("#settings > *")`, ["GET /api/api-budget", "GET /api/messengers", "GET /api/runtimes", "GET /api/devices", "GET /api/web-access", "GET /api/accounts"]);
 		expect(repeated(req)).toEqual([]);
 	}, 60_000);
 });

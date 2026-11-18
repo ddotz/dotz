@@ -107,12 +107,6 @@ describe.each([[390, 844], [1280, 800]])("a monitor on the Mac mini and the same
 		expect(await q<number>(peerView, `return document.documentElement.scrollWidth`)).toBeLessThanOrEqual(width);
 	});
 
-	test("the screenshots", async () => {
-		for (const side of ["local", "peer"] as const) {
-			const v = await boot(width, height, KEYS[side]);
-		}
-	});
-
 	test("the conversation is chat only; ⋯ opens the settings screen with the same status card and rows, back returns", async () => {
 		const screens: string[] = [];
 		for (const side of ["local", "peer"] as const) {

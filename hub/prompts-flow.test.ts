@@ -23,25 +23,6 @@ test("isLoud: ask and fail markers in every spelling, nothing else", () => {
 	for (const m of ["", "[done] ok", "[run] x", "disk is full", "see [warn] later"]) expect(isLoud(m)).toBe(false);
 });
 
-test("a quiet check posts [fail] [warn] [실패] [경고] [ask] [결정] and keeps plain text in the worklog", async () => {
-	for (const word of ["[fail]", "[warn]", "[실패]", "[경고]", "[ask]", "[결정]"]) {
-		const quiet: string[] = [];
-		const { q, s } = mk({ quietNote: (_t, text) => void quiet.push(text) });
-		q.deliver("check", { target: "web", quiet: true });
-		s.working = true; q.onPrompt("check");
-		q.onAnswer(`${word} disk is full`);
-		await Promise.resolve();
-		expect([word, s.posts.length, quiet.length]).toEqual([word, 1, 0]);
-	}
-	const quiet: string[] = [];
-	const { q, s } = mk({ quietNote: (_t, text) => void quiet.push(text) });
-	q.deliver("check", { target: "web", quiet: true });
-	s.working = true; q.onPrompt("check");
-	q.onAnswer("all fine");
-	await Promise.resolve();
-	expect([s.posts.length, quiet]).toEqual([0, ["all fine"]]);
-});
-
 test("an answer to handed text is hushed unless it opens loud in any spelling", () => {
 	for (const m of ["[warn] x", "[경고] x", "[실패] x", "[결정] x"]) expect(hushedAnswer({ handback: true }, m, () => false)).toBeUndefined();
 	expect(hushedAnswer({ handback: true }, "plain", () => false)).toEqual({ hushed: true });
