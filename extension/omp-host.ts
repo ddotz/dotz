@@ -4,6 +4,9 @@ import { RECALL_TOOL } from "./recall-tool.ts";
 type Handler = (event: unknown, ctx: unknown, ...rest: unknown[]) => unknown;
 type ToolDef = { name: string; defaultInactive?: boolean; loadMode?: "essential" };
 
+// why(usage): 0 calls ever of merge/connect/escalate/ledger and 3 of auth (last 2026-10-24) across all OmO and omp session logs, against 15 of dotz_conv (2026-11-06, stays top-level); their schemas leave the always-sent tool list and the models reach them as `xd://<tool>` devices (the tool_call event still carries the tool's own name, so the guards keyed on it fire)
+const RARE_TOOLS: ReadonlySet<string> = new Set(["dotz_merge", "dotz_auth", "dotz_connect", "dotz_escalate", "dotz_ledger"]);
+
 const REFUSED = "dotz: this tool belongs to the session that started you, not to its subagents. Finish your task and say in your final answer what you needed it for.";
 
 /** The part of omp's extension API the install functions of this extension use. */
@@ -39,7 +42,7 @@ export function ompHosts(pi: Host, o: { topLevel?: boolean } = {}): { main: Host
 		if (tool.name === RECALL_TOOL) return pi.registerTool(tool);
 		gateway.add(tool.name);
 		// why(vendor): with the default `tools.xdev` omp mounts an extension tool as an `xd://` device unless its `loadMode` is "essential" (omp@18.22.0 docs custom-tools.md "How tools are exposed to the model")
-		const placed = o.topLevel && tool.name.startsWith("dotz_") ? { ...tool, loadMode: "essential" as const } : tool;
+		const placed = o.topLevel && tool.name.startsWith("dotz_") && !RARE_TOOLS.has(tool.name) ? { ...tool, loadMode: "essential" as const } : tool;
 		return pi.registerTool(first ? placed : { ...placed, defaultInactive: true });
 	});
 	if (!first) {

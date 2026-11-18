@@ -9,7 +9,7 @@ import type { SpawnOpts } from "./types.ts";
 type Overlay = {
 	task?: { isolation?: Record<string, unknown>; maxRuntimeMs?: number; softRequestBudget?: number };
 	compaction?: { idleEnabled?: boolean };
-	async?: { enabled?: boolean };
+	async?: { enabled?: boolean; widgets?: boolean };
 	startup?: { checkUpdate?: boolean };
 	magicKeywords?: { enabled?: boolean };
 	github?: { enabled?: boolean };
@@ -52,6 +52,7 @@ for (const [name, opts] of [["the orchestrator", orchestrator], ["a conversation
 		expect(overlay.task?.isolation).toEqual({ enabled: true, apply: false, merge: "patch" });
 		expect(overlay.compaction?.idleEnabled).toBe(false);
 		expect(overlay.async?.enabled).toBe(true);
+		expect(overlay.async?.widgets).toBe(false);
 		expect(overlay.startup?.checkUpdate).toBe(false);
 		expect(overlay.magicKeywords?.enabled).toBe(false);
 		expect(overlay.github?.enabled).toBe(false);

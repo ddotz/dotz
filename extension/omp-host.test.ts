@@ -163,20 +163,25 @@ test("omp orchestrator: the main agent (the first factory run) has the gateway t
 	expect(r.subProbe!.steers).toBe(0);
 });
 
+// Never or rarely called (0 calls in the OmO and omp session logs, dotz_auth last 3 weeks ago): devices, still registered.
+const RARE = ["dotz_merge", "dotz_auth", "dotz_connect", "dotz_escalate", "dotz_ledger"];
 const topLevel = (v: View) => Object.entries(v.modes).filter(([, mode]) => mode === "essential").map(([name]) => name).sort();
 
 test("omp orchestrator: the dotz_ gateway tools are top-level tools, not xd:// devices; dotz_recall and the harness tools stay devices, and a main agent that is not the first run gets the same placement", () => {
 	const r = host({ ...omp, TEST_PROBE: "", DOTZ_ORCHESTRATOR: "1" });
 	const gateway = r.gateway.filter(name => name.startsWith("dotz_")).sort();
 	expect(gateway).toEqual(expect.arrayContaining(["dotz_send", "dotz_conv", "dotz_peer", "dotz_lane", "dotz_channel", "dotz_watch", "dotz_schedule", "dotz_ledger", "dotz_merge", "dotz_verify", "dotz_connect", "dotz_auth", "dotz_escalate"]));
-	expect(topLevel(r.main)).toEqual(gateway);
-	expect(topLevel(r.again)).toEqual(gateway);
+	const common = gateway.filter(name => !RARE.includes(name));
+	expect(common).toEqual(expect.arrayContaining(["dotz_send", "dotz_conv"]));
+	expect(topLevel(r.main)).toEqual(common);
+	expect(topLevel(r.again)).toEqual(common);
+	for (const name of RARE) expect(r.main.modes[name]).toBeNull();
 	expect([r.main.modes.dotz_recall, r.main.modes.harness_doctor, r.main.modes.harness_token_audit]).toEqual([null, null, null]);
 });
 
 test("omp lane: the lane's dotz_ tools are top-level tools too; dotz_recall stays a device", () => {
 	const r = host({ ...omp, TEST_PROBE: "", DOTZ_LANE: "alpha" });
-	expect(topLevel(r.main)).toEqual(["dotz_auth", "dotz_escalate", "dotz_main", "dotz_merge", "dotz_verify"]);
+	expect(topLevel(r.main)).toEqual(["dotz_main", "dotz_verify"]);
 	expect(r.main.modes.dotz_recall).toBeNull();
 });
 
