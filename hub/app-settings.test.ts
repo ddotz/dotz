@@ -164,3 +164,14 @@ describe("앱 기억 (owner 2026-10-26: learned in conversation, not set in the 
 	});
 });
 
+
+describe("자동 초안 switch", () => {
+	test("shows what the drafting does: mail monitored with nothing decided reads on, and turning it off reads off", () => {
+		seed("config.json", { zele: { enabled: true } });
+		const shown = () => readSettings(dir, "mail").find(f => f.key === "auto_draft")!.value;
+		expect(shown()).toBe(true);
+		writeSettings(dir, "mail", { auto_draft: false });
+		expect(shown()).toBe(false);
+		expect(json("custom/reply-drafts/config.json").apps.mail.auto).toBe(false);
+	});
+});

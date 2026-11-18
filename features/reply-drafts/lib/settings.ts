@@ -8,10 +8,10 @@ import type { ReplyStyle } from "../../../hub/reply-draft.ts";
 
 export const dataDir = () => process.env.DOTZ_DIR ?? join(homedir(), ".dotz");
 export const REPO_FEATURE = join(import.meta.dir, "..");
-const root = () => join(dataDir(), "custom", "reply-drafts");
+const root = (dir = dataDir()) => join(dir, "custom", "reply-drafts");
 
 export const paths = {
-	config: () => join(root(), "config.json"),
+	config: (dir?: string) => join(root(dir), "config.json"),
 	legacyStyle: () => join(root(), "style.md"), // layout of the first version: read as the mail app profile until tone/mail.md exists
 	toneDir: () => join(root(), "tone"),
 	drafts: () => join(root(), "drafts.json"),
@@ -39,11 +39,11 @@ export type Settings = { enabled: boolean; decided: boolean; auto: boolean; apps
 
 const strings = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string" && !!x.trim()).map(x => x.trim()) : []);
 
-// A missing or unreadable config is "off": the feature does nothing until an install turns it on.
-export function loadSettings(): Settings {
+// A missing or unreadable config is "off": the feature does nothing until an install turns it on. `dir`: another data dir than DOTZ_DIR's.
+export function loadSettings(dir?: string): Settings {
 	let raw: Record<string, any> = {};
 	try {
-		raw = JSON.parse(readFileSync(paths.config(), "utf8")) ?? {};
+		raw = JSON.parse(readFileSync(paths.config(dir), "utf8")) ?? {};
 	} catch {
 		return { enabled: false, decided: false, auto: true, apps: {}, senders: { only: [], skip: [] } };
 	}
@@ -94,11 +94,11 @@ const readJson = (file: string): any => {
 
 // Whether the user set up monitoring of this source on this install: mail = zele turned on in config.json or a webmail-no-api site
 // onboarded; youtube / instagram = that platform connected in the SNS feature. That request is the user's opt-in for suggestions.
-export function monitored(app: string): boolean {
-	if (app === "youtube" || app === "instagram") return Boolean(readJson(join(dataDir(), "custom", "sns", "config.json"))?.[app]);
+export function monitored(app: string, dir = dataDir()): boolean {
+	if (app === "youtube" || app === "instagram") return Boolean(readJson(join(dir, "custom", "sns", "config.json"))?.[app]);
 	if (app !== "mail") return false;
-	if (readJson(join(dataDir(), "config.json"))?.zele?.enabled === true) return true;
-	const webmail = join(dataDir(), "custom", "webmail");
+	if (readJson(join(dir, "config.json"))?.zele?.enabled === true) return true;
+	const webmail = join(dir, "custom", "webmail");
 	return existsSync(webmail) && readdirSync(webmail).some(site => existsSync(join(webmail, site, "config.json")));
 }
 

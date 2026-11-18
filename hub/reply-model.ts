@@ -2,7 +2,7 @@
 // (custom/reply-drafts/config.json models.<app or instance id>), then the global reply-drafts `model` (the 답장 기본값 setting, 모델·폴백),
 // then REPLY_DEFAULT, Sonnet 5.5 high (owner 2026-11-04, RULES.md: its own default, no longer the subagent model).
 // Light on purpose: the CLI draft path imports it, so nothing here pulls in the web, the orchestrator or the model list (reply-model-choices.ts does).
-import { dataDir as installDir, loadSettings, type Settings } from "../features/reply-drafts/lib/settings.ts";
+import { appOn, dataDir as installDir, loadSettings, monitored, type Settings } from "../features/reply-drafts/lib/settings.ts";
 import { appEntries, inConv, type IntegrationEntry } from "./integrations.ts";
 import { DRAFT_MODEL } from "./kakao/draft.ts";
 
@@ -26,6 +26,9 @@ export const pickReplyModel = (s: Settings, instance: string): string => {
 	const own = s.models?.[instance];
 	return real(own) ? own : replyDefault(s);
 };
+
+/** Whether the app drafts on its own, as the drafting decides it (the 자동 초안 switch of the settings screen shows this, not only what is stored). */
+export const autoDraftOn = (app: string, dataDir: string): boolean => appOn(loadSettings(dataDir), app, a => monitored(a, dataDir));
 
 export async function replyModel(app: string, conv?: string, o: { dataDir?: string } = {}): Promise<string> {
 	return pickReplyModel(loadSettings(), instanceOf(appEntries(o.dataDir ?? installDir()), app, conv));

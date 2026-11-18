@@ -8,7 +8,7 @@ import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { appEntries, INTEGRATIONS, readAppsFile } from "./integrations.ts";
 import type { UnansweredSettings } from "./mail-unanswered.ts";
-import { instanceOf } from "./reply-model.ts";
+import { autoDraftOn, instanceOf } from "./reply-model.ts";
 
 export type FieldType = "bool" | "enum" | "list" | "text" | "number" | "rules";
 // Where a row belongs on the settings screen, in the order the owner reads it: 알림, 자동 초안과 승인, 감시, 기타 기능, then the rest.
@@ -38,6 +38,8 @@ export type SettingField = {
 	switch?: boolean;
 	/** Dotted paths in the same file that are set true together with this switch turned on. */
 	alsoOn?: string[];
+	/** The value the app acts on, shown instead of the stored one when the two can differ (a switch whose unset state follows other settings). */
+	read?: (dataDir: string) => SettingValue;
 	/** Why this bool cannot be turned on here now (asked when read and when written), or undefined. */
 	blocked?: (app: string) => string | undefined;
 	/** The stored boolean is the opposite of the value shown (the file says `off`, the switch says 쓰기). */
@@ -56,7 +58,7 @@ export const RULE_FILES_MAX = 10;
 
 const DRAFTS = "custom/reply-drafts/config.json";
 const SNS = "custom/sns/config.json";
-const draftSwitch = (app: string, label: string): SettingField => ({ key: "auto_draft", label: "자동 초안", type: "bool", help: `${label}에 답할 거리가 있으면 초안을 만들어요`, store: DRAFTS, path: `apps.${app}.auto`, def: false, switch: true, section: "draft", alsoOn: ["enabled"] });
+const draftSwitch = (app: string, label: string): SettingField => ({ key: "auto_draft", label: "자동 초안", type: "bool", help: `${label}에 답할 거리가 있으면 초안을 만들어요`, store: DRAFTS, path: `apps.${app}.auto`, def: false, switch: true, section: "draft", alsoOn: ["enabled"], read: dir => autoDraftOn(app, dir) });
 const approval: SettingField = { key: "approval", label: "승인 방식", type: "enum", help: "올리기 전에 하나씩 확인할지, 모아서 한 번에 확인할지 정해요. 인스타그램과 유튜브에 함께 적용돼요", store: SNS, path: "approval", options: ["each", "batch"], labels: { each: "하나씩 승인", batch: "모아서 승인" }, def: "each", section: "draft" };
 
 // Every app has this switch, under 고급: custom/apps.json {"<app>":{"off":true}} (hub/app-off.ts). Off wins over every rule that turned the app on here.
@@ -260,7 +262,7 @@ export function readSettings(dataDir: string, app: string): SettingView[] {
 		const raw = getPath(cache.get(f.store)!, f.path);
 		let value: SettingValue;
 		try {
-			value = raw === undefined ? (f.def ?? (f.type === "list" ? [] : f.type === "bool" ? false : "")) : f.invert ? !clean(f, raw) : clean(f, raw);
+			value = f.read ? f.read(dataDir) : raw === undefined ? (f.def ?? (f.type === "list" ? [] : f.type === "bool" ? false : "")) : f.invert ? !clean(f, raw) : clean(f, raw);
 		} catch {
 			value = f.def ?? "";
 		}
