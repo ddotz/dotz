@@ -5,6 +5,7 @@ import { readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DATA_DIR, paths } from "./config.ts";
+import { SLOT_SKIPPED_EXIT } from "./release-exit.ts";
 import { advance, clock } from "./runtime/test-clock.ts";
 import type { ReloginOpts, ReloginResult } from "./autologin.ts";
 import { addWatch, allWatches, approveWatch, exec, learnLife, listWatches, patchWatch, putWatchScript, reloadWatches, removeWatch, runWatch, sessionGapMs, setSessionIo, startWatches, wakeTarget, watchScript, watchShell } from "./watch.ts";
@@ -291,6 +292,25 @@ test("a flapping watch tells the owner once per episode; a refail that lasts, or
 	await step(1, 120);
 	await step(1);
 	expect(notes.map(n => n.reason)).toEqual(["failed 2 times in a row (exit 1)", "recovered", "failed 3 times in a row (exit 1)", "recovered", "failed 2 times in a row (exit 1)"]);
+});
+
+// A skipped release slot (exit SLOT_SKIPPED_EXIT) fails only the tick that found it: the owner hears of it at once, and the quiet rest of the
+// slot is no recovery news. The next skipped slot is news again.
+test("a skipped release slot alerts on its one failing tick, with no recovery note after, and the next skipped slot alerts again", async () => {
+	const code = join(DATA_DIR, "watch-slot.txt");
+	addWatch({ name: "t-slot", command: `exit $(cat '${code}')`, every_minutes: 1, on: "fail", to: "alert" }, "");
+	const step = async (c: number, minutes = 1) => {
+		writeFileSync(code, String(c));
+		clock.now += minutes * 60_000;
+		await runWatch("t-slot");
+	};
+	await step(SLOT_SKIPPED_EXIT);
+	expect(notes.map(n => n.reason)).toEqual([`failed 1 times in a row (exit ${SLOT_SKIPPED_EXIT})`]);
+	for (let i = 0; i < 5; i++) await step(0);
+	expect(notes).toHaveLength(1);
+	expect(state("t-slot").fails).toBe(0);
+	await step(SLOT_SKIPPED_EXIT, 6 * 60);
+	expect(notes).toHaveLength(2);
 });
 
 // The shape of a one-shot gate: the check fails until its condition holds, then prints one constant line. There is no second, different output

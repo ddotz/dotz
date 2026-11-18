@@ -24,6 +24,7 @@ import { blockedByFeatures } from "./featuredirs.ts";
 import { msg } from "./i18n.ts";
 import { convTargetOf } from "./session-key.ts";
 import { backupFile, classifyFailure, type FailClass, healTarget, type NotifyInfo, readHealNote } from "./watch-heal.ts";
+import { SLOT_SKIPPED_EXIT } from "./release-exit.ts";
 import { deriveLabel, isKeyLabel, plainLabel, watchReasonKo } from "./watchtext.ts";
 
 export type WatchOwner = { app?: string; project?: string; internal?: true };
@@ -72,8 +73,7 @@ export const watchShell = (has: (path: string) => boolean = existsSync): string 
 const WATCH_SHELL = watchShell();
 const READ_GRACE_MS = 2_000;
 export const FAIL_ALERT_EVERY_MS = 12 * 3600_000;
-// A watch that has failed this long in a row and in at least this many runs stops until the owner approves it again. A day, not a count of runs:
-// the release-slot watch fails on purpose for a whole slot (up to 6 hours) to keep alerting, and a 1-minute watch would reach any count in minutes.
+// A watch failing this long in a row, in at least this many runs, stops until the owner approves it (a day: a 1-minute watch reaches any count fast).
 const FAIL_PAUSE_AFTER_MS = 24 * 3600_000;
 const FAIL_PAUSE_RUNS = 10;
 export const FAIL_ALERT_AFTER = 2; // failures in a row before the first alert
@@ -433,6 +433,8 @@ async function runOnce(w: Watch): Promise<void> {
 				log(`watch ${w.name} could not write last-fail.log: ${error}`);
 			}
 			const info: NotifyInfo = { cls, log: failLog(w) };
+			// A skipped release slot fails only the tick that found it (hub/release.ts): told at once, no self-heal, no recovery note after.
+			const skipped = code === SLOT_SKIPPED_EXIT;
 			if (verifying) {
 				const note = healNotes.get(w.id) ?? "";
 				healNotes.delete(w.id);
@@ -466,9 +468,10 @@ async function runOnce(w: Watch): Promise<void> {
 			const since = w.state.failSince ?? Date.now();
 			const flapping = w.state.recoveredAt !== undefined && since - w.state.recoveredAt < flapWindow(w);
 			const due = toldDown(w.state) ? Date.now() - w.state.failAlertAt! > FAIL_ALERT_EVERY_MS : !flapping || Date.now() - since >= flapWindow(w);
-			if (w.state.fails >= FAIL_ALERT_AFTER && due) {
-				if (cls === "script" && startHeal(w, output, code, cls, "")) return;
+			if ((skipped || w.state.fails >= FAIL_ALERT_AFTER) && due) {
+				if (cls === "script" && !skipped && startHeal(w, output, code, cls, "")) return;
 				w.state.failAlertAt = Date.now();
+				if (skipped) w.state.recoveredAt = w.state.failAlertAt;
 				notify(w, `failed ${w.state.fails} times in a row (exit ${code})`, output, undefined, info);
 			}
 			return;
