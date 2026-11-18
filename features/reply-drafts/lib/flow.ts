@@ -207,15 +207,22 @@ export function ownerWarning(w: string): string {
 	return w;
 }
 
+/** A 고치기 asked for other files and the files stayed as they were: what it asked for is not in the 첨부 파일 폴더. */
+export const FILE_CHANGE_MISSED = "고쳐 달라고 한 파일을 첨부 파일 폴더에서 찾지 못해서 첨부는 그대로예요";
+
 // What a mail draft's words and its files disagree on, as the owner reads it on the card and in the refused send (hub/attach-check.ts), plus the files
 // chosen for it that are not on it yet. Mail only; a source that cannot carry files has nothing to check.
 export function draftAttachIssues(rec: DraftRec): string[] {
 	if (rec.kind !== "mail" || !canAttach(rec.source)) return [];
 	const files = stagedFiles(rec.id).map(f => f.name);
 	const found = attachIssues({ subject: rec.subject, body: rec.body, files, request: rec.compose ? undefined : rec.item.text }).map(i => i.text);
+	if (rec.fileChangeMissed && sortedNames(rec.fileChangeMissed) === sortedNames(files)) found.push(FILE_CHANGE_MISSED);
 	const want = notYetStaged(rec);
 	return want.length ? [...found, `아직 못 붙인 파일: ${want.join(", ")}`] : found;
 }
+const sortedNames = (names: readonly string[]): string => [...names].sort().join("\n");
+// The files on a draft and those chosen for it that are still downloading: what a 고치기 about the files is expected to change.
+const heldAndWanted = (rec: DraftRec): string => sortedNames([...stagedFiles(rec.id).map(f => f.name), ...(rec.wantFiles ?? []).map(f => stagedName(f.name))]);
 // The files chosen for a draft that are not on it yet (an iCloud file still downloading).
 const notYetStaged = (rec: DraftRec): string[] => {
 	const files = stagedFiles(rec.id).map(f => f.name);
@@ -438,6 +445,7 @@ export async function reviseDraft(id: string, change: string, deps: FlowDeps, op
 	if (!change.trim()) return { ok: false, text: "무엇을 고칠지 적어 주세요 (--change)" };
 	// The words are rewritten knowing which files ride on the draft now.
 	const held = stagedFiles(old.id).map(f => f.name);
+	const before = heldAndWanted(old);
 	const rev = await revisionCandidates(old, change);
 	const item = rev ? { ...old.item, candidates: rev.names } : held.length ? { ...old.item, files: held } : old.item;
 	const r = await reviseReply(item, await styleOf(old.item, toneKey(old), old.source, old), { to: old.to, subject: old.subject, body: old.body }, change, callOf(deps, old.item, old.ref));
@@ -460,6 +468,8 @@ export async function reviseDraft(id: string, change: string, deps: FlowDeps, op
 	if (old.rule) rec.rule = old.rule;
 	carryStagedFiles(old.id, rec.id);
 	const notStaged = await restageForRevision(rec, change, deps, rev && r.files ? { rev, chosen: r.files } : undefined).catch(e => [(e as Error).message]);
+	// The change asked for other files and none came: the card says so instead of a rewritten body that only promises them.
+	if (rec.kind === "mail" && canAttach(rec.source) && fileChange().test(change) && heldAndWanted(rec) === before) rec.fileChangeMissed = stagedFiles(rec.id).map(f => f.name);
 	addDraft(rec);
 	// Learned only once the new draft is stored: a revise that failed teaches nothing.
 	const lesson = lessonOf(r, change);

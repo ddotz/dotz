@@ -7,7 +7,7 @@ import { asksForFile, claimsAttachment } from "../../../hub/draft-approval.ts";
 import { composeMail } from "../../../hub/mail-cli.ts";
 import { buildPrompt, generateReply, type ReplyItem, type ReplyStyle } from "../../../hub/reply-draft.ts";
 import { advance } from "../../../hub/runtime/test-clock.ts";
-import { candidatesFor, CANDIDATE_MAX, reviseDraft } from "../lib/flow.ts";
+import { candidatesFor, CANDIDATE_MAX, draftAttachIssues, FILE_CHANGE_MISSED, reviseDraft } from "../lib/flow.ts";
 import { matchLibrary } from "../lib/library.ts";
 import { offerMailDraft } from "../lib/offer.ts";
 import { paths } from "../lib/settings.ts";
@@ -144,6 +144,18 @@ describe("(e) 고치기 about the files", () => {
 		const step = await reviseDraft(rec.id, "첨부파일 하나만 보내", { call: fakeModel([j(answer({ body: "문서 보내드립니다.", files: ["봄노래_문서.pdf"] }))]).call });
 		expect(step.ok).toBe(true);
 		expect(names(step.id!)).toEqual(["봄노래_문서.pdf"]);
+		expect(draftAttachIssues(getDraft(step.id!)!)).not.toContain(FILE_CHANGE_MISSED);
+	});
+	test("a change about the files that leaves them as they were says so on the card and in the result, until the files change", async () => {
+		enable(env, { attachFolders: { mail: lib } });
+		const rec = draft();
+		const step = await reviseDraft(rec.id, "곡A 전체 음원 파일로 바꿔 줘", { call: fakeModel([j(answer({ body: "전체 음원은 따로 보내드리겠습니다.", files: ["봄노래_문서.pdf", "봄노래_음원.mp3"] }))]).call });
+		expect(step.ok).toBe(true);
+		expect(names(step.id!)).toEqual(["봄노래_문서.pdf", "봄노래_음원.mp3"]);
+		expect(draftAttachIssues(getDraft(step.id!)!)).toContain(FILE_CHANGE_MISSED);
+		expect(step.text).toContain(FILE_CHANGE_MISSED);
+		addStagedFile(step.id!, join(lib, "여름노래_문서.pdf"));
+		expect(draftAttachIssues(getDraft(step.id!)!)).not.toContain(FILE_CHANGE_MISSED);
 	});
 	test("a change about wording keeps the files whatever the model says", async () => {
 		enable(env, { attachFolders: { mail: lib } });

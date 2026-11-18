@@ -28,6 +28,7 @@ export type DraftRec = {
 	origAttachments?: number; // files the mail it answers has; the senders carry none of them along, which the approval says
 	asksFile?: boolean; // the mail it answers asks for a file (hub/draft-approval.ts asksForFile)
 	libraryMiss?: boolean; // the 첨부 파일 폴더 is set and held no file that fits
+	fileChangeMissed?: string[]; // a 고치기 asked for other files and these stayed on it: the card's 첨부 확인 says so while they are still the draft's files
 	wantFiles?: { name: string; path: string }[]; // files chosen for the draft that are not on it yet (an iCloud file still downloading): the send gate waits for them
 	compose?: boolean; // a new mail the bot wrote (hub/mail-cli.ts compose), not an answer to a received one: `mailId` is not a mail, `ref` is its own key
 	origin?: { kind: string; id: string; text: string; link?: string }; // the approved action it follows up (hub/followup.ts): the card says so
