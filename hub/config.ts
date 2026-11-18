@@ -40,7 +40,7 @@ export type Config = {
 	// get one (hub/session-key.ts CONV_KINDS), `idle_stop_min` parks an idle one, `max_live` fixes how many run at once (main and lanes not counted; unset: sized from the
 	// computer's free memory and load, hub/convcapacity.ts). `quick_chat: true` adds the 가벼운 대화 (hub/quick-chat.ts): a second, cheaper session next to main.
 	conversations?: { sessions?: boolean; kinds?: string[]; idle_stop_min?: number; max_live?: number; quick_chat?: boolean };
-	lanes: { runtime?: string; max_active?: number; compact_at?: number; keep_recent?: number; nightly_at?: string; nightly_compact_at?: number; rotate_mb?: number; max_rss_gb?: number; max_workers?: number; idle_stop_min?: number; worker_idle_min?: number; min_free_disk_gb?: number };
+	lanes: { runtime?: string; max_active?: number; compact_at?: number; keep_recent?: number; nightly_at?: string; nightly_compact_at?: number; rotate_mb?: number; max_rss_gb?: number; max_workers?: number; idle_stop_min?: number; worker_idle_min?: number; min_free_disk_gb?: number; harness_gate?: boolean };
 	// Days an idle OmO session file is kept before the nightly hygiene deletes it (its pairs stay in recall); 0 keeps them. Default 90.
 	sessions?: { keep_days?: number };
 	// Model choice and fallback order, one block per target (the web 모델 · 폴백 screen edits exactly this).
@@ -305,6 +305,9 @@ export const lanesMaxActive = () => cap(cfg.lanes?.max_active);
 export const lanesMaxWorkers = () => cap(cfg.lanes?.max_workers);
 // Free space (GB) the data dir and a lane's working volume keep before new lanes wait (hub/diskguard.ts); 0 turns the guard off.
 export const lanesMinFreeDiskGb = () => (typeof cfg.lanes?.min_free_disk_gb === "number" && cfg.lanes.min_free_disk_gb >= 0 ? cfg.lanes.min_free_disk_gb : 10);
+// Off unless `lanes.harness_gate` is true: an omp lane then loads the harness's done gate next to dotz's extension, and the harness prepares
+// the lane's fresh worktree before its first prompt (hub/done-gate.ts). A harness that is not installed here makes it do nothing.
+export const lanesHarnessGate = () => cfg.lanes?.harness_gate === true;
 // On unless set to false (2026-11-01): with one shared session, an owner message that came while that session ran another
 // conversation's turn or one the gateway started (watch, schedule, lane report) waited for the turn to end; its own session
 // steers it into its conversation's running turn at once, as on the owner's Mac mini.

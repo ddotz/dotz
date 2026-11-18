@@ -442,16 +442,17 @@ export function recentExchanges(sessionFile: string): string | undefined {
  * The whole argv of one omp process, binary first; calling it writes the session's overlay file that `--config=` names.
  * An API-key entry's provider only exists once the dotz extension has registered it (hub/fallback.ts keyEnv): the process
  * starts on the entry's own model and is switched to the key provider's copy before the first prompt (RPC commands run in order).
+ * A lane that names `doneGate` loads that file beside the dotz extension, the only other extension (hub/done-gate.ts).
  */
 export function ompArgv(o: SpawnOpts): string[] {
 	if (o.role === "lane" && !o.lane) throw new Error("a lane needs its lane options");
-	return [OMP, "--mode", "rpc", "--model", startModelOf(o), "--no-extensions", "--extension", EXTENSION, `--config=${writeOverlay(o)}`, ...(o.systemNote ? ["--append-system-prompt", o.systemNote] : []), ...(o.resume ? ["--resume", o.resume] : [])];
+	return [OMP, "--mode", "rpc", "--model", startModelOf(o), "--no-extensions", "--extension", EXTENSION, ...(o.role === "lane" && o.doneGate ? ["--extension", o.doneGate] : []), `--config=${writeOverlay(o)}`, ...(o.systemNote ? ["--append-system-prompt", o.systemNote] : []), ...(o.resume ? ["--resume", o.resume] : [])];
 }
 
 export const omp: RuntimeAdapter = {
 	id: "omp",
 	// why(protocol): omp@18.22.0 runs RPC commands on a serialized queue, so an abort sent during compact is read after the compaction ends and there is no abortCompact (docs/rpc.md "Ordinary commands run on a serialized queue"; frames: hub/runtime/fixtures/omp-compact-queue.jsonl)
-	caps: { steer: "native", subagents: "live", contextNumbers: "exact", compact: "rpc", sessionTranscript: true, promptCacheKeepalive: true, contextLimit: "compact", restCompact: true, extension: true, modeInSystem: true },
+	caps: { steer: "native", subagents: "live", contextNumbers: "exact", compact: "rpc", sessionTranscript: true, promptCacheKeepalive: true, contextLimit: "compact", restCompact: true, extension: true, modeInSystem: true, doneGate: true },
 	start(o) {
 		const key = keyProviderOf(o);
 		const proc = spawnAgent(ompArgv(o), {

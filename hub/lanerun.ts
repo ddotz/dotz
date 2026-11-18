@@ -15,6 +15,7 @@ import { report, withHeld } from "./lanereport.ts";
 import { withWorktree } from "./lanetree.ts";
 import { prompt } from "./laneprompt.ts";
 import { writeContract } from "./lanefooter.ts";
+import { gateBootstrap, harnessGate } from "./done-gate.ts";
 import { existsSync, rmSync } from "node:fs";
 import { laneLimits } from "./lanelimits.ts";
 import { unfinishedWork } from "./laneunfinished.ts";
@@ -123,6 +124,7 @@ export function spawn(lane: Lane, resume: boolean): boolean {
 	const keyedWorkers = keyedWorker(env);
 	const workerModel = keyedWorkers ?? laneWorkerModel(lane);
 	lane.workerSlots = laneLimits(lane).workers;
+	const gate = runtimeFor("lane").caps.doneGate ? harnessGate() : undefined;
 	let proc: ReturnType<ReturnType<typeof runtimeFor>["start"]>;
 	try {
 	// posix_spawn with a missing cwd reports ENOENT for the binary (`omo`), which hides the real cause.
@@ -138,6 +140,7 @@ export function spawn(lane: Lane, resume: boolean): boolean {
 		// A plain list cannot bill through a key: those entries are left out (on Claude Code one would repeat the main model).
 		fallback: lane.chain ? [] : entries.filter(e => !e.key_file).map(e => e.model),
 		hubSwitches: Boolean(lane.chain),
+		...(gate ? { doneGate: gate.extension } : {}),
 		resume: resume ? lane.sessionFile : undefined,
 		// The omp-side orchestrator-guard blocks Fable / max-effort worker spawns unless the owner asked for them.
 		env,
@@ -148,6 +151,8 @@ export function spawn(lane: Lane, resume: boolean): boolean {
 		startFailed(lane, (e as Error).message, resume);
 		return false;
 	}
+	// A fresh session in a worktree without a gate file waits for the harness's bootstrap there before its first prompt (hub/done-gate.ts).
+	if (gate && !resume) proc = gateBootstrap(proc, gate, lane);
 	lane.activeModel = spawnModel;
 	lane.contractQueued = undefined; // a new process holds no queued re-read
 	lane.startedModel = spawnModel;
