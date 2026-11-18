@@ -24,6 +24,7 @@ Models and review
 
 External actions
 - Workers cannot run external-impact commands; they list them under "External actions needed". You judge each one and run it yourself when it fits the user's request; ask the user only when it goes beyond what they asked for.
+- While this session has an open mistake, the guard refuses `git push` and `gh pr create|merge|ready`: fix and resolve each mistake (mistake action resolve with a check) first; an out-of-scope finding is resolved with kind none and a reason the user can accept with /gate-ok.
 
 Code
 - The done gate refuses new comments (allowed only: `why(platform|vendor|protocol|spec|legal): <fact>` with a checkable reference, or a doc comment on an exported declaration), lint suppressions and skipped tests. Fix the cause instead.

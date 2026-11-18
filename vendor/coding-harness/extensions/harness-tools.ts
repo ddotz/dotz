@@ -2,7 +2,7 @@ import { execFile } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
-import { harnessDir } from "../harness/agent-home.ts";
+import { harnessDir, isHostCopy } from "../harness/agent-home.ts";
 import { loadState, patchDiscarded } from "../harness/guard/state.ts";
 
 const HOME = homedir();
@@ -251,6 +251,7 @@ function lastRateLimit(entries: LogEntry[]): string | undefined {
 }
 
 async function tokenAuditReport(hours: number, ifDue = false): Promise<{ text: string; flags: number; ok: boolean; skipped: boolean }> {
+	if (isHostCopy()) return { text: "token-audit is not available in a host copy: it reads the owner's omp sessions.", flags: 0, ok: false, skipped: false };
 	const r = await run(BUN, [AUDIT_SCRIPT, "--hours", String(hours), ...(ifDue ? ["--if-due"] : [])], { timeout: 120_000 });
 	const lines = r.out.trim().split("\n");
 	const result = lines.find(l => l.startsWith("RESULT "));
@@ -296,7 +297,8 @@ async function doctorReport(ctx: Ctx, fix: boolean): Promise<{ text: string; pro
 		problems.push(...health.problems);
 		info.push(health.info);
 	}
-	for (const big of bigSessions()) if (!file || !big.startsWith(file.replace(HOME, "~"))) info.push(`large session file: ${big}`);
+	if (isHostCopy()) info.push("large session check skipped: the harness runs from a host copy and does not read the owner's omp sessions");
+	else for (const big of bigSessions()) if (!file || !big.startsWith(file.replace(HOME, "~"))) info.push(`large session file: ${big}`);
 	if (orphanList.length) {
 		const list = orphanList.map(o => `${o.pid} (${o.age}) ${o.command}`).join("\n    ");
 		if (fix) {
@@ -322,9 +324,10 @@ export default function harnessTools(pi: Api) {
 
 	pi.on("session_start", async (_event, ctx) => {
 		if (ctx?.agent?.kind !== "main") return;
-		void tokenAuditReport(24, true).then(report => {
-			if (report.ok && !report.skipped && report.flags) ctx.ui?.notify?.(report.text, "warning");
-		});
+		if (!isHostCopy())
+			void tokenAuditReport(24, true).then(report => {
+				if (report.ok && !report.skipped && report.flags) ctx.ui?.notify?.(report.text, "warning");
+			});
 		const version = (await run(OMP_BIN, ["--version"])).out.trim();
 		let previous = "";
 		try {
@@ -348,7 +351,7 @@ export default function harnessTools(pi: Api) {
 		description: "Token-leak audit over omp sessions (report only): /token-audit [hours, default 24]",
 		handler: async (args, ctx) => {
 			const hours = Number(String(args ?? "").trim()) || 24;
-			ctx.ui.notify(`token-audit: scanning the last ${hours}h...`, "info");
+			if (!isHostCopy()) ctx.ui.notify(`token-audit: scanning the last ${hours}h...`, "info");
 			const report = await tokenAuditReport(hours);
 			ctx.ui.notify(report.text, !report.ok ? "error" : report.flags ? "warning" : "info");
 		},

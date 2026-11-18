@@ -12,3 +12,6 @@ export const harnessDir = (): string => join(agentHome(), "harness");
 
 /** The directory the harness writes its logs in: `<harness>/logs`. */
 export const logsDir = (): string => join(harnessDir(), "logs");
+
+/** True when a host ships its own harness copy (HARNESS_AGENT_HOME set); such a copy must not read the machine owner's omp sessions. */
+export const isHostCopy = (): boolean => Boolean(process.env.HARNESS_AGENT_HOME);

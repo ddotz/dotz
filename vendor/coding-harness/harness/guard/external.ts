@@ -96,7 +96,7 @@ function commandName(word: string): string {
 	return basename(word.startsWith("$") ? word.slice(1) : word);
 }
 
-function verbKindAt(tokens: readonly string[], at: number): string | undefined {
+function verbKindAt(tokens: readonly string[], at: number, publish: boolean): string | undefined {
 	const name = commandName(tokens[at]);
 	const table = valueOptionsOf(name);
 	if (!table && name !== "git-lfs") return undefined;
@@ -105,6 +105,7 @@ function verbKindAt(tokens: readonly string[], at: number): string | undefined {
 	const word = tokens[verb];
 	if (name === "git") return word === "push" || word === "send-pack" || (word === "lfs" && tokens[verb + 1] === "push") ? "git push" : undefined;
 	if (name === "git-lfs") return word === "push" ? "git push" : undefined;
+	if (publish) return undefined;
 	if (name === "yarn") return yarnPublish(tokens, verb) ? "package publish" : undefined;
 	return word === "publish" ? "package publish" : undefined;
 }
@@ -155,9 +156,17 @@ function ghApiWrites(tokens: readonly string[], from: number, live: ReadonlySet<
 	return (method !== undefined && WRITE_METHOD.test(method)) || (fields && method?.toUpperCase() !== "GET");
 }
 
-function ghKind(tokens: readonly string[], at: number, live: ReadonlySet<string> | undefined): string | undefined {
+const PR_PUBLISH_VERBS = ["create", "merge", "ready"];
+const PR_PUBLISH_API = /(?:^|\/)pulls(?:\/\d+\/merge)?\/?$|\b(?:createPullRequest|mergePullRequest|markPullRequestReadyForReview)\b/;
+
+function ghKind(tokens: readonly string[], at: number, live: ReadonlySet<string> | undefined, publish: boolean): string | undefined {
 	const noun = verbIndex(tokens, at + 1, GH_VALUE_OPTIONS);
 	if (noun < 0) return undefined;
+	if (publish) {
+		if (tokens[noun] === "api") return ghApiWrites(tokens, noun + 1, live) && tokens.slice(noun + 1).some(token => PR_PUBLISH_API.test(token)) ? "gh pr publish" : undefined;
+		const verb = tokens[noun] === "pr" ? verbIndex(tokens, noun + 1, GH_VALUE_OPTIONS) : -1;
+		return verb >= 0 && PR_PUBLISH_VERBS.includes(tokens[verb]) ? "gh pr publish" : undefined;
+	}
 	if (tokens[noun] === "api") return ghApiWrites(tokens, noun + 1, live) ? "gh api write" : undefined;
 	if (!Object.hasOwn(GH_WRITE_VERBS, tokens[noun])) return undefined;
 	const verb = verbIndex(tokens, noun + 1, GH_VALUE_OPTIONS);
@@ -182,9 +191,10 @@ function sshKind(tokens: readonly string[], at: number): string | undefined {
 	return i < tokens.length ? REMOTE_HOST : undefined;
 }
 
-function commandKind(tokens: readonly string[], at: number, facts: Facts, live: ReadonlySet<string> | undefined): string | undefined {
+function commandKind(tokens: readonly string[], at: number, facts: Facts, live: ReadonlySet<string> | undefined, publish: boolean): string | undefined {
 	const name = commandName(tokens[at]);
-	if (name === "gh") return ghKind(tokens, at, live);
+	if (name === "gh") return ghKind(tokens, at, live, publish);
+	if (publish) return undefined;
 	if (name === "ssh") return sshKind(tokens, at);
 	if (name === "scp" || name === "rsync") return tokens[at + 1] !== "-V" && facts.lastColon > at ? REMOTE_HOST : undefined;
 	if (/^wrangler\b/.test(name)) return facts.lastDeploy > at ? "wrangler deploy" : undefined;
@@ -283,15 +293,16 @@ function launcherArgsAt(tokens: readonly string[], at: number): number {
 	return target < 0 ? -1 : target + 1;
 }
 
-function exactKind(line: string[], live: ReadonlySet<string>): string | undefined {
+function exactKind(line: string[], live: ReadonlySet<string>, publish: boolean): string | undefined {
 	if (line.length === 0) return undefined;
-	const found = verbKindAt(line, 0) ?? commandKind(line, 0, factsOf(line), live);
+	const found = verbKindAt(line, 0, publish) ?? commandKind(line, 0, factsOf(line), live, publish);
 	if (found) return found;
+	if (publish) return undefined;
 	const from = curlWord(line[0]) ? 1 : launcherArgsAt(line, 0);
 	return from >= 0 && curlOutbound(line, from) ? OUTBOUND_WRITE : undefined;
 }
 
-function looseKind(words: string[], redirects: string[], live: ReadonlySet<string>, depth: number, inline: CodeCheck): string | undefined {
+function looseKind(words: string[], redirects: string[], live: ReadonlySet<string>, depth: number, inline: CodeCheck, publish: boolean): string | undefined {
 	const parts = [...words, ...redirects];
 	const split: string[] = [];
 	const origin: number[] = [];
@@ -304,16 +315,17 @@ function looseKind(words: string[], redirects: string[], live: ReadonlySet<strin
 	});
 	for (const tokens of [parts, split]) {
 		for (let at = 0; at < tokens.length; at++) {
-			const verb = verbKindAt(tokens, at);
+			const verb = verbKindAt(tokens, at, publish);
 			if (verb) return verb;
 		}
 	}
 	const facts = factsOf(split);
 	for (let at = 0; at < split.length; at++) {
 		const standaloneGh = commandName(split[at]) === "gh" && parts[origin[at]] === split[at];
-		const kind = standaloneGh ? ghKind(parts, origin[at], live) : commandKind(split, at, facts, undefined);
+		const kind = standaloneGh ? ghKind(parts, origin[at], live, publish) : commandKind(split, at, facts, undefined, publish);
 		if (kind) return kind;
 	}
+	if (publish) return undefined;
 	const first = words.findIndex(curlWord);
 	if (first >= 0 && curlOutbound(words, first + 1)) return OUTBOUND_WRITE;
 	for (let at = 0; at < words.length; at++) {
@@ -437,15 +449,16 @@ function opaqueRunner(name: string, args: string[]): boolean {
  * curl sends data, and so counts as an outbound write, with -d/--data*, -F/--form*, -T/--upload-file, --json or -X/--request POST|PUT|PATCH|DELETE, alone or inside a combined short flag (`-sd`, `-sX POST`, `-sF`).
  * It is exempt only when every target URL has a loopback host (`http://user@host:8080/p`, `host:8080/p`, `[::1]/p`): `localhost` in the query or user part of another URL is no exemption.
  * Options that take a value consume the next word (or the rest of the cluster), so `-H 'A: b'` and `-d @file` are never read as targets.
+ * With `publish`, only a `git push` (also `git lfs push`, `git send-pack`), `gh pr create|merge|ready` and a `gh api` write to a pull endpoint (`.../pulls`, `.../pulls/<n>/merge`) or a create, merge or ready-for-review pull request mutation count, and the kind of the PR ones is "gh pr publish"; a shell nested deeper than 4 levels counts in both modes.
  */
-export function scanCommand(command: string, depth: number, loose: boolean, inline: CodeCheck): string | undefined {
+export function scanCommand(command: string, depth: number, loose: boolean, inline: CodeCheck, publish = false): string | undefined {
 	if (depth > 4) return "nested shell too deep to check";
 	const segments = shellSegments(command);
 	const heads = segments.map(segment => commandHead(segment.words));
 	const opaque = heads.some(found => found !== undefined && opaqueRunner(found.name, found.args.map(a => a.text)));
 	for (const [i, { words, redirects }] of segments.entries()) {
 		for (const word of [...words, ...redirects]) for (const inner of word.subs) {
-			const kind = scanCommand(inner, depth + 1, loose, inline);
+			const kind = scanCommand(inner, depth + 1, loose, inline, publish);
 			if (kind) return kind;
 		}
 		const found = heads[i];
@@ -454,11 +467,11 @@ export function scanCommand(command: string, depth: number, loose: boolean, inli
 		const live = new Set([...words, ...redirects].filter(w => w.live).map(w => w.text));
 		if (SHELLS[found.name] === true) {
 			const flag = args.findIndex(a => /^-[A-Za-z]*c[A-Za-z]*$/.test(a));
-			const kind = flag >= 0 && args[flag + 1] !== undefined ? scanCommand(args[flag + 1], depth + 1, loose, inline) : undefined;
+			const kind = flag >= 0 && args[flag + 1] !== undefined ? scanCommand(args[flag + 1], depth + 1, loose, inline, publish) : undefined;
 			if (kind) return kind;
 		}
 		if (found.name === "eval") {
-			const kind = scanCommand(args.join(" "), depth + 1, loose, inline);
+			const kind = scanCommand(args.join(" "), depth + 1, loose, inline, publish);
 			if (kind) return kind;
 		}
 		const interpreters = DATA_ONLY[found.name] === true ? [] : [found.name, ...args.slice(0, MAX_OPTION_WALK).map(word => basename(word))];
@@ -472,13 +485,13 @@ export function scanCommand(command: string, depth: number, loose: boolean, inli
 		const line = verbFirst(unwrapLauncher(found.name, args));
 		const goExec = goExecCommand(line);
 		if (goExec !== undefined) {
-			const kind = scanCommand(goExec, depth + 1, loose, inline);
+			const kind = scanCommand(goExec, depth + 1, loose, inline, publish);
 			if (kind) return kind;
 		}
-		const exact = exactKind(line, live);
+		const exact = exactKind(line, live, publish);
 		if (exact) return exact;
 		if (!loose) continue;
-		const mention = looseKind(words.map(w => w.text), redirects.map(w => w.text), live, depth, inline);
+		const mention = looseKind(words.map(w => w.text), redirects.map(w => w.text), live, depth, inline, publish);
 		const dataOnly = DATA_ONLY[found.name] === true || (line[0] === "git" && DATA_ONLY_GIT.test(line[1] ?? "")) || testRunner(line);
 		if (mention && (opaque || !dataOnly)) return mention;
 	}

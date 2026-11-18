@@ -10,19 +10,23 @@ interface Fence {
 
 const MAX_LISTED = 5;
 const MAX_LINE_CHARS = 100;
-const CODE_SPAN = "\uFFFC";
+/** Stands in for an inline code span once it is masked out of a line. */
+export const CODE_SPAN = "\uFFFC";
 const FENCE_START = /^\s*(`{3,}|~{3,})(.*)$/;
 const FENCE_END = /^\s*(`{3,}|~{3,})\s*$/;
-const INLINE_CODE = /(?<!`)(`+)(?!`).*?(?<!`)\1(?!`)/g;
+/** Matches an inline code span, backticks included. */
+export const INLINE_CODE = /(?<!`)(`+)(?!`).*?(?<!`)\1(?!`)/g;
 const HEADING = /^#{1,6} /;
 const TABLE_ROW = /^\s*\|.*\|\s*$/;
 const TABLE_SEPARATOR = /^\s*\|(?:\s*:?-+:?\s*\|)+\s*$/;
 const BOLD = /(?<=^|[\s([{"'])\*\*(?![\s/])(?:[^*]|\*(?!\*))*?[^\s*\\/]\*\*\*?(?=$|[\s가-힣)\]}"']|[.,;:!?](?:$|[\s.,;:!?)\]}"'가-힣]))/;
-const CODE_LINE = /^(?: {4}|\t)/;
+/** Matches a line indented 4 spaces or a tab, which is code. */
+export const CODE_LINE = /^(?: {4}|\t)/;
 const INTRO = "Your last reply has markdown, and the terminal shows raw text: plain prose and `-` bullets only, no **bold**, # headings or | tables. Offending lines:";
 const OUTRO = "Write the reply again in plain prose and `-` bullets; real code and commands may be indented or in a fenced block.";
 
-function outsideFences(reply: string): (string | undefined)[] {
+/** The lines of `reply` in order, with `undefined` for every line inside or on the edge of a fenced code block (``` or ~~~). */
+export function outsideFences(reply: string): (string | undefined)[] {
 	const lines: (string | undefined)[] = [];
 	let fence: Fence | undefined;
 	for (const raw of reply.split("\n")) {
@@ -63,7 +67,8 @@ function kindOf(line: string, inTable: boolean): Kind | undefined {
 	return BOLD.test(line.replace(INLINE_CODE, CODE_SPAN)) ? "bold" : undefined;
 }
 
-function shortened(line: string): string {
+/** `line` trimmed and cut to 100 characters, with `...` after a cut. */
+export function shortened(line: string): string {
 	const text = line.trim();
 	const chars = [...text];
 	return chars.length > MAX_LINE_CHARS ? `${chars.slice(0, MAX_LINE_CHARS).join("")}...` : text;

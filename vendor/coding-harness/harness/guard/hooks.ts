@@ -15,6 +15,7 @@ import { failureStreak, pollingProblem } from "./loops.ts";
 import { machineRuleProblem } from "./machine-rules.ts";
 import { appliedPatchNames, applyDirsOf, patchesApplying, patchIsApplied, patchKey, patchLanded, runsGitApply } from "./patches.ts";
 import { detectCycle, REPEAT_ESCALATION_ATTEMPTS, REPEAT_HISTORY, REPEAT_MAX_SESSIONS, REPEAT_WINDOW_MS, repeatArgsDigest, repeatBlockReason, type RepeatCall, repeatResultDigest, type RepeatRow, repeatStopReason, repeatSubject, requiredLaps } from "./repeat.ts";
+import { mistakeSessionKey, openMistakeProblem } from "./open-mistakes.ts";
 import { broadSearchProblem } from "./search.ts";
 import { capToolResult, spillToStateDir } from "./output-cap.ts";
 import { deepBudgetProblem, effortProblem, patchChangedLines, reviewedPatchesIn, reviewProblem } from "./spawn-rules.ts";
@@ -374,6 +375,14 @@ export function registerGuardHooks(pi: HostApi): void {
 			}
 		}
 		if (ctx?.agent?.kind !== "main") return workerInput;
+		const publishing = tool === "bash" ? externalAction(expandShellVars(textOf(toolInput.command).replace(WORKER_ENV_PREFIX, "")), 0, new Map(), true) : tool === "eval" ? evalExternalAction(textOf(toolInput.code), 0, undefined, undefined, true) : undefined;
+		if (publishing) {
+			const open = openMistakeProblem(mistakeSessionKey(ctx), publishing);
+			if (open) {
+				debug({ phase: "open-mistake-block", kind: publishing });
+				return deny("open-mistake-block", open);
+			}
+		}
 		let mainInput: { input: Fields } | undefined;
 		if (tool === "bash" && typeof toolInput.command === "string") {
 			const command = toolInput.command.replace(WORKER_ENV_PREFIX, "");

@@ -110,7 +110,7 @@ export interface PendingCall {
  * patch-applying call changed, per repo with the count of each one's last write, `sourceWrites`; the last call that ran
  * something, `evidenceAt`; the repos it already `asked` about, and the repos it already asked to be given a gate file,
  * `askedGate`), the text of its last assistant message (`reply`), whether it already refused a reply for markdown
- * (`askedPlain`) and for not being a final report in the user's language (`askedReport`), the checks its last refusal only
+ * (`askedPlain`), for asking the user something in its text instead of the `ask` tool (`askedAsk`) and for not being a final report in the user's language (`askedReport`), the script of its last message when that was not the user's language and no tool call has told it yet (`interimLanguage`), how many such messages a tool call told it about (`interimWrong`), the checks its last refusal only
  * waited for, so the last reply answers that wait and not the user (`waitedFor`, empty otherwise), and what the next
  * `agent_start` is (`next`). Kept across runs: the language the user last asked the report in explicitly (`askedScript`), the
  * script of the user's last prompt (`userScript`), the non-latin script the user last wrote a prompt mostly in (`firmScript`, which a latin prompt does not replace), whether the session read skill://ulw (`ulwRead`), and whether it was reminded of the
@@ -145,6 +145,7 @@ export interface State {
 	asked: Set<string>;
 	askedGate: Set<string>;
 	askedPlain: boolean;
+	askedAsk: boolean;
 	nudgedUlw: boolean;
 	ulwRead: boolean;
 	askedReport: boolean;
@@ -153,6 +154,8 @@ export interface State {
 	askedScript?: Script;
 	firmScript?: Script;
 	reply?: string;
+	interimLanguage?: Script;
+	interimWrong: number;
 	harness?: string;
 }
 
@@ -207,8 +210,10 @@ export const newState = (): State => ({
 	asked: new Set(),
 	askedGate: new Set(),
 	askedPlain: false,
+	askedAsk: false,
 	askedReport: false,
 	nudgedUlw: false,
+	interimWrong: 0,
 	ulwRead: false,
 	waitedFor: [],
 	harness: setupCommit(),
@@ -238,9 +243,12 @@ export function endRun(state: State): void {
 	state.asked.clear();
 	state.askedGate.clear();
 	state.askedPlain = false;
+	state.askedAsk = false;
 	state.askedReport = false;
 	state.waitedFor = [];
 	state.reply = undefined;
+	state.interimLanguage = undefined;
+	state.interimWrong = 0;
 	state.errors = [];
 	state.streak = undefined;
 	state.refusals = 0;
@@ -248,6 +256,9 @@ export function endRun(state: State): void {
 	state.refusal = undefined;
 	state.active = false;
 }
+
+/** The script the user writes in: the one a prompt asked the report in, else the last prompt's, with a latin prompt (a pasted command, a short English word) not replacing the non-latin script the user last wrote mostly in. Undefined while no prompt showed it. */
+export const userScriptOf = (state: State): Script | undefined => state.askedScript ?? (state.userScript === "latin" ? (state.firmScript ?? "latin") : state.userScript);
 
 /** Whether `file` is a source file by its extension (ts, js, py, go, rs and the like; Markdown and data files are not). */
 export function isSourceFile(file: string): boolean {

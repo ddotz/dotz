@@ -23,10 +23,11 @@ import type { Deliver } from "./later.ts";
 import { appendRow, readPassed, writePassed } from "./log.ts";
 import type { GateRow, Passed } from "./log.ts";
 import { acceptProposed } from "./mistakes.ts";
+import { askFindings, askWarning } from "./ask.ts";
 import { plainTextFindings, plainTextWarning } from "./plaintext.ts";
-import { reportFindings, reportWarning } from "./report.ts";
+import { LANGUAGE_NAMES, reportFindings, reportWarning } from "./report.ts";
 import { failureClass, failureState, failureText, startRun, waitFor } from "./runs.ts";
-import { cancelChecks, checkKey, endRun, recentFailure } from "./session.ts";
+import { cancelChecks, checkKey, endRun, recentFailure, userScriptOf } from "./session.ts";
 import type { ActiveRun, State } from "./session.ts";
 import { baseRef, fingerprint, takeSnapshot } from "./snapshot.ts";
 import type { Snapshot } from "./snapshot.ts";
@@ -396,11 +397,27 @@ function withPlainText(state: State, results: RepoResult[], cwd: string): void {
 	if (problem) home.problems.push(problem);
 }
 
+function withAsk(state: State, results: RepoResult[], cwd: string): void {
+	const found = askFindings(state.reply);
+	if (found.length === 0) return;
+	let home = results.find(result => result.repo === cwd);
+	if (home === undefined) {
+		home = blankResult(state, cwd, false, 0);
+		results.push(home);
+	}
+	if (state.askedAsk) {
+		home.warnings.push(askWarning(found));
+		return;
+	}
+	const problem = findingProblem(cwd, "ask", found);
+	if (problem) home.problems.push(problem);
+}
+
 function withReport(state: State, results: RepoResult[], cwd: string, defers: boolean): void {
 	const answersWait = state.waitedFor.length > 0;
 	const blocked = results.some(result => result.problems.some(problem => problem.kind !== "running" || !defers));
 	const waited = answersWait ? `${state.waitedFor.map(name => `"${name}"`).join(", ")} ${results.every(result => result.error === undefined) ? "passed" : "finished without a verdict (see the gate's notice)"}` : undefined;
-	const user = state.askedScript ?? (state.userScript === "latin" ? (state.firmScript ?? "latin") : state.userScript);
+	const user = userScriptOf(state);
 	const found = reportFindings({ reply: state.reply, user, blocked, waited });
 	if (found.length === 0) return;
 	let home = results.find(result => result.repo === cwd);
@@ -414,6 +431,17 @@ function withReport(state: State, results: RepoResult[], cwd: string, defers: bo
 	}
 	const problem = findingProblem(cwd, "report", found);
 	if (problem) home.problems.push(problem);
+}
+
+function withInterim(state: State, results: RepoResult[], cwd: string): void {
+	const user = userScriptOf(state);
+	if (state.interimWrong === 0 || user === undefined) return;
+	let home = results.find(result => result.repo === cwd);
+	if (home === undefined) {
+		home = blankResult(state, cwd, false, 0);
+		results.push(home);
+	}
+	home.warnings.push(`done-gate: ${state.interimWrong} interim messages or tool-call intent labels this run were not in ${LANGUAGE_NAMES[user]}.`);
 }
 
 /**
@@ -434,6 +462,9 @@ function withReport(state: State, results: RepoResult[], cwd: string, defers: bo
  * read through a `skill://` URL is refused (`cite:unread-principle`), under the same waiver and streak rules as the stages' findings.
  * So is one with markdown the terminal shows raw: `**bold**`, a `#` heading or a table outside fenced code (`plain:bold`,
  * `plain:heading`, `plain:table`). That is refused once per run; a later stop of the run lets it through with a warning.
+ * A reply of an interactive session (`ctx.hasUI`, outside dotz) that asks the user something in its text, a request to choose or tell, a
+ * question ending or a line ending in `?`, outside fenced code (`ask:question`), is refused once per run with the order to put every
+ * question and decision into one `ask` tool form with a recommended option preselected; a later stop of the run lets it through with a warning.
  * A reply written in another script than the user's last prompt (`report:language`) is refused once per run, then let through
  * with a warning. A refusal for work asks in its own text that the reply after the fix be the final report.
  * A stop refused only to wait for running checks lets an interactive session (`ctx.hasUI`, with `deliver`) finish instead: the
@@ -523,7 +554,9 @@ async function judgeStop(state: State, ctx: Ctx, event: StopEvent, stages: Stage
 		withCitations(state, results, cwd);
 		if (!inDotz()) {
 			withPlainText(state, results, cwd);
+			if (ctx.hasUI === true) withAsk(state, results, cwd);
 			withReport(state, results, cwd, ctx.hasUI === true && deliver !== undefined);
+			withInterim(state, results, cwd);
 		}
 		if (event.signal?.aborted) {
 			cancelChecks(state);
@@ -569,6 +602,7 @@ async function judgeStop(state: State, ctx: Ctx, event: StopEvent, stages: Stage
 					if (Object.hasOwn(problem.classes, "verify:nothing-run")) state.asked.add(result.repo);
 					if (Object.hasOwn(problem.classes, "verify:no-gate-file")) state.askedGate.add(result.repo);
 					if (problem.kind === "finding" && problem.name === "plain") state.askedPlain = true;
+					if (problem.kind === "finding" && problem.name === "ask") state.askedAsk = true;
 					if (problem.kind === "finding" && problem.name === "report") state.askedReport = true;
 					if (Object.hasOwn(problem.classes, "verify:gate-not-from-script")) state.askedGate.add(originKey(result.repo));
 				}

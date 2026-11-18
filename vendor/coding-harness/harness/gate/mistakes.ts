@@ -71,6 +71,7 @@ export interface Advisory {
 const MIN_UNENCODED_REASON = 30;
 const PROOF_BUDGET_MS = 60_000;
 const NO_VERDICT_EXITS = [124, 127];
+const CD_FAILED = /\bcd: [^\n]*(?:No such file or directory|Not a directory|not a directory)/;
 const ASSERTION_FAILURE = /^\(fail\)|^error: expect\(|AssertionError|^not ok /m;
 const ASSERTION_SHOWN = /\bexpect\((?:received|actual)\)|AssertionError/;
 const LOAD_SIGNALS: readonly RegExp[] = [
@@ -92,6 +93,8 @@ const GUARD_DIRECTORIES = ["extensions", "harness"];
 const TRIVIAL_COMMAND = /^(?:(?:true|echo|printf|exit)(?![\w-])|:(?:\s|$))/;
 const RULE_KIT_COMMAND = /(?:^|[\s/])harness\/gate\/rules\.ts\s+\S/;
 const AST_GREP_COMMAND = /(?:^|[\s;&|/])ast-grep\s/;
+const SHELL_SAFE_PATH = /^[\w@%+=:,./-]+$/;
+const ABSOLUTE_PATH = /(?<![\w.@+~/-])\/[\w@+~./-]*(?=$|[\s"'`;&|()<>])/g;
 const OUTPUT_TAIL_CHARS = 1500;
 const DAY_MS = 86_400_000;
 const CHECK_KINDS: readonly CheckKind[] = ["type", "lint", "test", "property", "guard", "none"];
@@ -222,7 +225,8 @@ export function openMistake(sessionId: string, input: { source: MistakeSource; t
 	return openOrFind(sessionId, input).mistake;
 }
 
-function isUnresolved(mistake: Mistake): boolean {
+/** Whether an obligation still holds: open, or closed only by a proposal the user has not accepted with /gate-ok. */
+export function isUnresolved(mistake: Mistake): boolean {
 	return mistake.status === "open" || mistake.status === "proposed-unencoded";
 }
 
@@ -400,26 +404,43 @@ function overlayTestSupport(repo: string, tree: string, files: readonly string[]
 	}
 }
 
+function commonAncestor(first: string, second: string): string {
+	let dir = first;
+	while (!isInside(dir, second) && dirname(dir) !== dir) dir = dirname(dir);
+	return dir;
+}
+
+function inBaseCopy(command: string, repo: string, tree: string): string {
+	return command.replace(ABSOLUTE_PATH, typed => {
+		const real = canonical(typed);
+		if (!isInside(repo, real)) return typed;
+		const mapped = join(tree, relative(repo, real));
+		return SHELL_SAFE_PATH.test(mapped) && existsSync(mapped) ? mapped : typed;
+	});
+}
+
 async function runAtBase(point: BasePoint, cwd: string, file: string, changed: readonly string[], command: string, deps: ResolveDeps, deadline: AbortSignal): Promise<RunResult | undefined> {
 	const repo = canonical(point.repo);
+	const anchor = commonAncestor(repo, cwd);
+	const cwdInRepo = anchor === repo;
 	const holder = mkdtempSync(join(tmpdir(), "mistake-base-"));
-	const tree = join(holder, "tree");
+	const mirror = join(holder, "tree");
+	const tree = join(mirror, relative(anchor, repo));
+	const mapped = join(mirror, relative(anchor, cwd));
 	try {
 		if (point.base === EMPTY_TREE) {
-			mkdirSync(tree);
+			mkdirSync(tree, { recursive: true });
 		} else {
 			await git(repo, ["-c", "core.hooksPath=/dev/null", "clone", "--shared", "--no-checkout", "--quiet", repo, tree], deadline);
 			await git(tree, ["-c", "core.hooksPath=/dev/null", "checkout", "--quiet", "--detach", point.base], deadline);
 		}
-		const cwdRel = relative(repo, cwd);
 		const target = join(tree, relative(repo, file));
-		const mapped = join(tree, cwdRel);
-		if (!plainPathInTree(tree, target) || !plainPathInTree(tree, join(mapped, "-"))) throw new Error(`a directory on the way to ${relative(repo, file)} or to the check's directory is a symlink or a file at base, so the check would be written or run outside the base copy`);
+		if (!plainPathInTree(tree, target) || (cwdInRepo && !plainPathInTree(tree, join(mapped, "-")))) throw new Error(`a directory on the way to ${relative(repo, file)} or to the check's directory is a symlink or a file at base, so the check would be written or run outside the base copy`);
 		copyIntoTree(file, target);
 		overlayTestSupport(repo, tree, changed);
-		linkDependencies(repo, tree, cwdRel);
+		linkDependencies(repo, tree, relative(repo, cwdInRepo ? cwd : dirname(file)));
 		mkdirSync(mapped, { recursive: true });
-		return (await until(deps.run(command, mapped), deadline))?.value;
+		return (await until(deps.run(inBaseCopy(command, repo, tree), mapped), deadline))?.value;
 	} finally {
 		rmSync(holder, { recursive: true, force: true });
 	}
@@ -440,7 +461,7 @@ async function proveAtBase(check: Check, file: string, cwd: string, changed: rea
 	const root = [...opened, ...bases].map(candidate => canonical(candidate.repo)).filter(candidate => isInside(candidate, real)).sort((a, b) => b.length - a.length)[0];
 	const atOpen = root === undefined ? undefined : opened.find(candidate => canonical(candidate.repo) === root);
 	const point = atOpen ?? (root === undefined ? undefined : bases.find(candidate => canonical(candidate.repo) === root));
-	if (!point || root === undefined || !isInside(root, canonical(cwd)) || (await owningRepo(real, deadline)) !== root) {
+	if (!point || root === undefined || (await owningRepo(real, deadline)) !== root) {
 		return { refusal: `no session base point is known for ${file} (it is not inside a git repo this session baselined), so the check cannot be shown to fail without the fix. Kind "${check.kind}" is refused there; kind "none" with a reason is the only way to close it.` };
 	}
 	let result: RunResult | undefined;
@@ -452,7 +473,7 @@ async function proveAtBase(check: Check, file: string, cwd: string, changed: rea
 	if (!result) return { refusal: `running the check at the base point took longer than the ${proofBudget(deps) / 1000}s proof budget. Refused, not accepted; make the check faster.` };
 	const where = atOpen ? `on the tree as it was when the mistake was opened (${point.base.slice(0, 12)})` : `at the base point ${point.base.slice(0, 12)} (the check file over the session's starting tree)`;
 	if (result.exitCode === 0) return { refusal: `the check passed ${where}: it does not fail without the fix, so it encodes nothing. Make it assert the mistaken behavior so it fails at base and passes now.` };
-	if (NO_VERDICT_EXITS.includes(result.exitCode) || result.exitCode > 128) return { refusal: `the check did not run to a verdict ${where} (exit ${result.exitCode}):\n${outputTail(result.output)}\nMake it run at base and fail by an assertion.` };
+	if (NO_VERDICT_EXITS.includes(result.exitCode) || result.exitCode > 128 || CD_FAILED.test(result.output)) return { refusal: `the check did not run to a verdict ${where} (exit ${result.exitCode}${CD_FAILED.test(result.output) ? ", a cd in the command found no such directory in the base copy" : ""}):\n${outputTail(result.output)}\nMake it run at base and fail by an assertion.` };
 	if (isLoadError(result.output, real)) return { refusal: `the check failed ${where} only because something it loads does not exist there (exit ${result.exitCode}):\n${outputTail(result.output)}\nA load error proves nothing. Make the check exercise behavior that existed at base (a CLI, an existing export, a rule over existing code) and fail by an assertion.` };
 	if (usesAssertionRunner(command) && !ASSERTION_SHOWN.test(result.output)) return { refusal: `the check failed ${where} by a runtime error (a TypeError, ReferenceError or missing export), not by an assertion (exit ${result.exitCode}):\n${outputTail(result.output)}\nMake the check assert the mistaken behavior with expect(...) so that the failure shows an assertion diff.` };
 	return { baseExit: result.exitCode };
@@ -563,7 +584,7 @@ function unresolvedMessage(mistake: Mistake): string {
 		`Unresolved mistake ${mistake.id} (from ${mistake.source}): ${mistake.text}`,
 		"Finishing is refused until this is closed with a check, not an excuse. First state the cause: why did it happen?",
 		"Then encode the class with the strongest check that fits, in this order: a type that makes it unrepresentable; a lint rule with a test under .omp/lint/ (skill://correct); a test or property test; a guard.",
-		`Resolve it with the mistake tool: action "resolve", id "${mistake.id}", cause, check { kind: type|lint|test|property|guard, path, command }. The path must be a file you changed in this session, fit the kind (type: a typed source file; lint: .omp/lint/ rule or test, or a lint config; test or property: a test file; guard: under extensions/ or harness/), and the command must exit 0 and name that file (a lint rule under .omp/lint/ may use the rule kit or ast-grep).`,
+		`Resolve it with the mistake tool: action "resolve", id "${mistake.id}", cause, check { kind: type|lint|test|property|guard, path, command }. The path must be a file you changed in this session (in any git repo you edited, also outside the working directory), fit the kind (type: a typed source file; lint: .omp/lint/ rule or test, or a lint config; test or property: a test file; guard: under extensions/ or harness/), and the command must exit 0 and name that file, after a leading "cd <repo> &&" when the file is in another repo (a lint rule under .omp/lint/ may use the rule kit or ast-grep).`,
 		noneRule,
 	].join("\n");
 }
@@ -669,7 +690,7 @@ export interface MistakeHostDeps {
 }
 
 const TOOL_DESCRIPTION =
-	"Record and close mistake obligations. A mistake (a user correction, an advisor concern or blocker, a review or drive finding) blocks completion until it is encoded as a check. action open: text = the mistake. action resolve: id, cause (one line: why it happened), check { kind: type|lint|test|property|guard|none, path (a file you changed this session that fits the kind), command (required for every kind but none: must exit 0 now, name the path's file, and exit non-zero on the tree as it was when the mistake was opened (the session's base point when that tree is unknown) with only the check file copied over it, by an assertion, not by a load error; a lint rule under .omp/lint/ may use the rule kit or ast-grep), reason (kind none only, at least 30 characters and 6 distinct words; for a user-reported mistake it is only a proposal the user accepts with /gate-ok) }. action list: show the session's obligations. Strongest check first: type, lint rule with a test under .omp/lint/ (skill://correct), test or property test, guard.";
+	"Record and close mistake obligations. A mistake (a user correction, an advisor concern or blocker, a review or drive finding) blocks completion until it is encoded as a check. action open: text = the mistake. action resolve: id, cause (one line: why it happened), check { kind: type|lint|test|property|guard|none, path (a file you changed this session that fits the kind, in any git repo you edited, also outside the working directory), command (required for every kind but none: must exit 0 now, name the path's file, and exit non-zero on the tree as it was when the mistake was opened (the session's base point when that tree is unknown) with only the check file copied over it, by an assertion, not by a load error; for a check in another repo begin with cd into it: its absolute path, or one relative to the working directory, then names the copy at that tree; a lint rule under .omp/lint/ may use the rule kit or ast-grep), reason (kind none only, at least 30 characters and 6 distinct words; for a user-reported mistake it is only a proposal the user accepts with /gate-ok) }. action list: show the session's obligations. Strongest check first: type, lint rule with a test under .omp/lint/ (skill://correct), test or property test, guard.";
 
 function reply(text: string, isError = false): ToolResult {
 	return { content: [{ type: "text", text }], isError };

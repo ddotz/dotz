@@ -13,8 +13,8 @@ import { afterCommand, afterPatch, beforeCommand, beforePatch, markEdited, saveH
 import { PreEditTexts } from "./pre-edit.ts";
 import { appliesPatch, evidenceCall } from "./ran.ts";
 import { filesByRepo } from "./repo-files.ts";
-import { askedScriptOf, promptScriptOf, scriptOf } from "./report.ts";
-import { beginRun, changesOf, endCall, endRun, isSourceFile, newState, noteEvidence, noteSourceWrite, startCall, track } from "./session.ts";
+import { askedScriptOf, isProtocolAnswer, LANGUAGE_NAMES, promptScriptOf, scriptOf } from "./report.ts";
+import { beginRun, changesOf, endCall, endRun, isSourceFile, newState, noteEvidence, noteSourceWrite, startCall, track, userScriptOf } from "./session.ts";
 import type { SessionChange, State } from "./session.ts";
 import { baseRef, headBase } from "./snapshot.ts";
 import { realStages } from "./stages.ts";
@@ -134,7 +134,13 @@ export function createDoneGate(stages: Stages = realStages, deliver?: Deliver): 
 			if (deliver !== undefined) reportSettled(state, ctx, deliver);
 		},
 		async assistant_message(event, ctx) {
-			if (isMain(ctx)) stateOf(ctx).reply = replyText(event.message?.content);
+			if (!isMain(ctx)) return undefined;
+			const state = stateOf(ctx);
+			const reply = replyText(event.message?.content);
+			state.reply = reply;
+			const wrote = inDotz() || isProtocolAnswer(reply) ? undefined : scriptOf(reply);
+			const user = userScriptOf(state);
+			state.interimLanguage = wrote !== undefined && user !== undefined && wrote !== user ? wrote : undefined;
 			return undefined;
 		},
 		async tool_call(event, ctx) {
@@ -156,6 +162,22 @@ export function createDoneGate(stages: Stages = realStages, deliver?: Deliver): 
 				if (!inDotz() && !state.nudgedUlw && !state.ulwRead && edited.some(isSourceFile)) {
 					state.nudgedUlw = true;
 					nudge = { additionalContext: ULW_NUDGE };
+				}
+				const wrote = state.interimLanguage;
+				const user = userScriptOf(state);
+				if (wrote !== undefined && user !== undefined) {
+					state.interimLanguage = undefined;
+					state.interimWrong += 1;
+					const name = LANGUAGE_NAMES[user];
+					const told = `done-gate: your last message was written in ${LANGUAGE_NAMES[wrote]}, but the user writes in ${name}. Every message the user sees, interim notes between tool calls included, must be in ${name}; code, paths and commands stay as they are.`;
+					nudge = { additionalContext: nudge === undefined ? told : `${nudge.additionalContext}\n${told}` };
+				}
+				const label = typeof input.i === "string" && !inDotz() ? scriptOf(input.i) : undefined;
+				if (label !== undefined && user !== undefined && label !== user) {
+					state.interimWrong += 1;
+					const name = LANGUAGE_NAMES[user];
+					const told = `done-gate: the intent label of this tool call ("${String(input.i).slice(0, 80)}") is in ${LANGUAGE_NAMES[label]}, but the user writes in ${name}. The user sees every intent label: write them in ${name}.`;
+					nudge = { additionalContext: nudge === undefined ? told : `${nudge.additionalContext}\n${told}` };
 				}
 				await track(state, [{ paths: where, edited: false, bash: event.toolName === "bash" }, { paths: edited, edited: true }], deadline, true);
 				await saveHidden(state, edited, deadline);

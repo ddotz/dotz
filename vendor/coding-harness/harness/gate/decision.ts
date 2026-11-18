@@ -14,7 +14,7 @@ export const MAX_WAITS = 30;
 /** What a refusal for work ends with, and a check's failure that arrives after a stop: fix the cause and finish again, and make the reply after the fix the final report, since that reply is what the user reads. */
 export const CLOSING = "Fix the cause and finish again; do not edit the gate file or the check to get through. The reply you write after the fix is what the user reads, so write it as the final report.";
 const WAIT_CLOSING = "Finish again to wait for it: each stop waits for the check and the next one collects its result. End this turn with one short line, not a report; once the check is in, the gate asks for the final report.";
-const STAGE_ORDER: readonly string[] = ["escape", "rules", "defaults", "mistakes", "verify", "cite", "plain", "report"];
+const STAGE_ORDER: readonly string[] = ["escape", "rules", "defaults", "mistakes", "verify", "cite", "plain", "ask", "report"];
 
 /** What a stop came to for one repo. `running` is a refusal made only to wait for a check; `deferred` is a stop an interactive session was let through while a check of the repo was still running, whose result arrives when the check ends. */
 export type Outcome = "clean" | "pass" | "blocked" | "fixed" | "waived" | "user-waived" | "unsatisfied" | "no-gate" | "error" | "running" | "deferred";

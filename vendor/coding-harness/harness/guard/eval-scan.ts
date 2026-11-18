@@ -691,20 +691,20 @@ class Cell {
 	}
 }
 
-/** The external action a worker's eval cell would perform, or undefined. A string counts as a command only as a call argument (any callee but a known output or data function) or as the body of a tagged template; adjacent literal arguments and list or tuple literals among them are an argv; IPython `!` lines and `%%bash` bodies are commands. Each is judged by `externalAction`, the same check the bash tool runs, after decoding escapes, implicit concatenation and f-string fields; comments, docstrings and literals outside calls are never read. */
-export function evalExternalAction(code: string, depth = 0, js = looksLikeJs(code), seen = new Map<string, string | undefined>()): string | undefined {
+/** The external action a worker's eval cell would perform, or undefined. A string counts as a command only as a call argument (any callee but a known output or data function) or as the body of a tagged template; adjacent literal arguments and list or tuple literals among them are an argv; IPython `!` lines and `%%bash` bodies are commands. Each is judged by `externalAction`, the same check the bash tool runs, after decoding escapes, implicit concatenation and f-string fields; comments, docstrings and literals outside calls are never read. With `publish`, only a `git push` or `gh pr create|merge|ready` counts (see `scanCommand`). */
+export function evalExternalAction(code: string, depth = 0, js = looksLikeJs(code), seen = new Map<string, string | undefined>(), publish = false): string | undefined {
 	for (const command of new Cell(code, js).run()) {
-		const kind = externalAction(command, depth, seen);
+		const kind = externalAction(command, depth, seen, publish);
 		if (kind) return kind;
 	}
 	return undefined;
 }
 
-/** The external action a shell command would perform, or undefined: `scanCommand` in loose mode, with the code of interpreter one-liners read by `evalExternalAction`. Within one call each code text is read once per depth, so repeated nested one-liners cost linear time. */
-export function externalAction(command: string, depth = 0, seen = new Map<string, string | undefined>()): string | undefined {
+/** The external action a shell command would perform, or undefined: `scanCommand` in loose mode, with the code of interpreter one-liners read by `evalExternalAction`. Within one call each code text is read once per depth, so repeated nested one-liners cost linear time. With `publish`, only a `git push` or `gh pr create|merge|ready` counts. */
+export function externalAction(command: string, depth = 0, seen = new Map<string, string | undefined>(), publish = false): string | undefined {
 	return scanCommand(command, depth, true, (code, inner, js) => {
 		const key = `${inner}\u0000${js}\u0000${code}`;
-		if (!seen.has(key)) seen.set(key, evalExternalAction(code, inner, js, seen));
+		if (!seen.has(key)) seen.set(key, evalExternalAction(code, inner, js, seen, publish));
 		return seen.get(key);
-	});
+	}, publish);
 }
