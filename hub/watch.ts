@@ -14,7 +14,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import { chmodSync, existsSync, type FSWatcher, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, watch as fsWatch, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { blockedBy } from "../extension/index.ts";
+import { blockedBy } from "./lanegates.ts";
 import { ensureAside, replInTab } from "./aside.ts";
 import { type Relogin, relogin } from "./autologin.ts";
 import { josa } from "./account-rules.ts";
