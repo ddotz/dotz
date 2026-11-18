@@ -1,3 +1,4 @@
+import { say } from "../notice.ts";
 import type { Finding } from "./types.ts";
 
 /** A writing system the gate tells languages apart by. */
@@ -5,6 +6,9 @@ export type Script = "hangul" | "kana" | "han" | "cyrillic" | "latin";
 
 /** The language the gate names for each script in its refusals. */
 export const LANGUAGE_NAMES: Record<Script, string> = { hangul: "Korean", kana: "Japanese", han: "Chinese", cyrillic: "Russian", latin: "English" };
+
+/** The Korean names of the languages in {@link LANGUAGE_NAMES}, for notices the user reads in Korean. */
+export const LANGUAGE_NAMES_KO: Record<Script, string> = { hangul: "한국어", kana: "일본어", han: "중국어", cyrillic: "러시아어", latin: "영어" };
 
 const NON_LATIN_SHARE = 0.2;
 const MIN_LATIN_PROMPT_LETTERS = 20;
@@ -131,5 +135,9 @@ export function reportFindings(input: { reply: string | undefined; user: Script 
 /** What the user is told when a stop lets through a reply the `report` stage would refuse because the run already refused one: the class of the finding. */
 export function reportWarning(findings: readonly Finding[]): string {
 	const first = findings.at(0);
-	return `done-gate: the last reply is not a final report for the user (report:${first?.class ?? "unknown"}); this run already refused a reply for it, so the stop is allowed.`;
+	const kind = first?.class ?? "unknown";
+	return say({
+		en: `done-gate: the last reply is not a final report for the user (report:${kind}); this run already refused a reply for it, so the stop is allowed.`,
+		ko: `done-gate: 마지막 답변이 사용자에게 보여 줄 최종 보고가 아닙니다(report:${kind}). 이번 실행에서 이미 한 번 되돌렸으므로 종료를 허용합니다.`,
+	});
 }

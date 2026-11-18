@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "
 import { join } from "node:path";
 import { lookup } from "@oh-my-pi/pi-coding-agent/config/registry";
 import { harnessDir } from "../harness/agent-home.ts";
+import { say } from "../harness/notice.ts";
 import { type Data, type Family, key, LADDER, type Model, plan } from "../harness/model-tiers/plan.ts";
 
 const DATA_FILE = join(harnessDir(), "model-tiers.json");
@@ -117,16 +118,17 @@ const RESEARCH_BRIEF = [
 	"Record each result with the model_tiers tool (action record): model, effort, confidence, basis with the numbers, sources. Do not guess numbers.",
 ].join("\n");
 
-function statusText(data: Data, models: Model[], changed: string[]): string {
+function statusText(data: Data, models: Model[], changed: string[], display = false): string {
+	const t = (n: { en: string; ko: string }) => (display ? say(n) : n.en);
 	const p = plan(data, models);
 	const lines = [`model-tiers (primary provider ${data.primaryProvider}; data ${DATA_FILE})`];
 	for (const [tier, pick] of Object.entries(p.tiers)) {
 		const spot = pick.adopted ? data.sweetSpots[key(pick.adopted)] : undefined;
 		lines.push(`- ${tier}: ${pick.adopted ? `${key(pick.adopted)} sweet spot ${spot?.effort} (${spot?.confidence})` : "no researched model"}${pick.adopted && key(pick.adopted) !== key(pick.newest) ? `; newer ${key(pick.newest)} awaits research` : ""}`);
 	}
-	lines.push("roles:", ...Object.entries(p.roles).map(([role, value]) => `- ${role} = ${value}`));
-	if (changed.length) lines.push("changed:", ...changed.map(c => `- ${c}`));
-	if (p.research.length) lines.push("research needed:", ...p.research.map(r => `- ${r}`));
+	lines.push(t({ en: "roles:", ko: "역할:" }), ...Object.entries(p.roles).map(([role, value]) => `- ${role} = ${value}`));
+	if (changed.length) lines.push(t({ en: "changed:", ko: "변경됨:" }), ...changed.map(c => `- ${c}`));
+	if (p.research.length) lines.push(t({ en: "research needed:", ko: "조사 필요:" }), ...p.research.map(r => `- ${r}`));
 	return lines.join("\n");
 }
 
@@ -154,7 +156,10 @@ export default function modelTiers(pi: Api) {
 		if (!models.length) return;
 		const p = plan(data, models);
 		const changed = applyRoles(pi, p.roles);
-		if (changed.length) ctx.ui?.notify(`model-tiers: roles moved to the newest researched models\n${changed.map(c => `- ${c}`).join("\n")}`, "info");
+		if (changed.length) {
+			const list = changed.map(c => `- ${c}`).join("\n");
+			ctx.ui?.notify(say({ en: `model-tiers: roles moved to the newest researched models\n${list}`, ko: `model-tiers: 역할이 조사된 최신 모델로 옮겨졌습니다\n${list}` }), "info");
+		}
 		if (!p.research.length) return;
 		const state = readJson<Record<string, number>>(STATE_FILE, {});
 		const now = Date.now();
@@ -171,7 +176,7 @@ export default function modelTiers(pi: Api) {
 			{ deliverAs: "nextTurn", triggerTurn: true },
 		);
 	};
-	const report = (ctx: Ctx) => (error: unknown) => ctx.ui?.notify(`model-tiers: role check failed: ${error instanceof Error ? error.message : String(error)}`, "warning");
+	const report = (ctx: Ctx) => (error: unknown) => ctx.ui?.notify(say({ en: `model-tiers: role check failed: ${error instanceof Error ? error.message : String(error)}`, ko: `model-tiers: 역할 점검에 실패했습니다: ${error instanceof Error ? error.message : String(error)}` }), "warning");
 
 	pi.on("session_start", async (_event, ctx) => {
 		if (ctx.agent?.kind !== "main" || ctx.mode !== "tui") return;
@@ -234,10 +239,10 @@ export default function modelTiers(pi: Api) {
 		description: "Model tiers: show picks, roles and pending research; /model-tiers apply re-applies the roles now",
 		handler: async (args, ctx) => {
 			const data = loadData();
-			if (!data) return ctx.ui?.notify(`model-tiers: missing or invalid ${DATA_FILE}`, "warning");
+			if (!data) return ctx.ui?.notify(say({ en: `model-tiers: missing or invalid ${DATA_FILE}`, ko: `model-tiers: ${DATA_FILE} 파일이 없거나 올바르지 않습니다` }), "warning");
 			const models = await availableModels(ctx);
 			const changed = String(args ?? "").trim() === "apply" ? applyRoles(pi, plan(data, models).roles) : [];
-			ctx.ui?.notify(statusText(data, models, changed), "info");
+			ctx.ui?.notify(statusText(data, models, changed, true), "info");
 		},
 	});
 }

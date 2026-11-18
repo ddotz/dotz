@@ -6,6 +6,7 @@ import { handlerDeadline } from "../harness/gate/deadline.ts";
 import { createDoneGate } from "../harness/gate/engine.ts";
 import type { DoneGate } from "../harness/gate/engine.ts";
 import { cwdOf, notify, sessionKey } from "../harness/gate/host.ts";
+import { say } from "../harness/notice.ts";
 import type { Api, Ctx } from "../harness/gate/host.ts";
 import { registerMistakes } from "../harness/gate/mistakes.ts";
 import { runShell } from "../harness/gate/runs.ts";
@@ -17,33 +18,33 @@ const BOUNDARIES_DEADLINE_MS = 30_000;
 
 async function decline(ctx: Ctx, args: string): Promise<void> {
 	const undo = args === "undo";
-	if (args !== "" && !undo) return notify(ctx, "done-gate: usage: /gate-decline [undo]; nothing was recorded.", "warning");
+	if (args !== "" && !undo) return notify(ctx, say({ en: "done-gate: usage: /gate-decline [undo]; nothing was recorded.", ko: "done-gate: 사용법: /gate-decline [undo]. 아무것도 기록하지 않았습니다." }), "warning");
 	const dir = cwdOf(ctx);
 	const signal = handlerDeadline();
 	const repo = await repoOfDir(new Map(), dir, signal);
-	if (repo === undefined) return notify(ctx, signal.aborted ? `done-gate: the git repo of ${dir} was not found in time; nothing was recorded.` : `done-gate: ${dir} is not inside a git repo; nothing was recorded.`, "warning");
+	if (repo === undefined) return notify(ctx, signal.aborted ? say({ en: `done-gate: the git repo of ${dir} was not found in time; nothing was recorded.`, ko: `done-gate: ${dir}의 git 저장소를 제때 찾지 못했습니다. 아무것도 기록하지 않았습니다.` }) : say({ en: `done-gate: ${dir} is not inside a git repo; nothing was recorded.`, ko: `done-gate: ${dir}은(는) git 저장소 안에 있지 않습니다. 아무것도 기록하지 않았습니다.` }), "warning");
 	try {
 		if (undo) {
 			const removed = await undoDeclineBootstrap(repo);
-			return notify(ctx, removed ? `done-gate: the decline of ${repo} is removed; the gate asks for a gate file there again.` : `done-gate: ${repo} is not declined; nothing was changed.`, "info");
+			return notify(ctx, removed ? say({ en: `done-gate: the decline of ${repo} is removed; the gate asks for a gate file there again.`, ko: `done-gate: ${repo}의 거부 설정을 해제했습니다. 게이트가 다시 게이트 파일을 요청합니다.` }) : say({ en: `done-gate: ${repo} is not declined; nothing was changed.`, ko: `done-gate: ${repo}은(는) 거부 상태가 아닙니다. 바뀐 것은 없습니다.` }), "info");
 		}
 		await declineBootstrap(repo);
 	} catch (error) {
-		return notify(ctx, `done-gate: the decline for ${repo} could not be ${undo ? "removed" : "recorded"}: ${message(error)}`, "warning");
+		return notify(ctx, say({ en: `done-gate: the decline for ${repo} could not be ${undo ? "removed" : "recorded"}: ${message(error)}`, ko: `done-gate: ${repo}의 거부 설정을 ${undo ? "해제" : "기록"}하지 못했습니다: ${message(error)}` }), "warning");
 	}
-	notify(ctx, `done-gate: ${repo} is declined; the gate will not ask for a gate file in any checkout of this repo.`, "info");
+	notify(ctx, say({ en: `done-gate: ${repo} is declined; the gate will not ask for a gate file in any checkout of this repo.`, ko: `done-gate: ${repo}을(를) 거부했습니다. 게이트는 이 저장소의 어떤 체크아웃에서도 게이트 파일을 요청하지 않습니다.` }), "info");
 }
 
 async function boundaries(ctx: Ctx, args: string): Promise<void> {
 	const [verb, id, ...extra] = args.split(/\s+/).filter(Boolean);
 	const action: BoundariesAction | undefined = verb === undefined ? { kind: "list" } : (verb === "accept" || verb === "reject") && id !== undefined && extra.length === 0 ? { kind: verb, id } : undefined;
-	if (action === undefined) return notify(ctx, "done-gate: usage: /gate-boundaries [accept <id> | reject <id>]; nothing was changed.", "warning");
+	if (action === undefined) return notify(ctx, say({ en: "done-gate: usage: /gate-boundaries [accept <id> | reject <id>]; nothing was changed.", ko: "done-gate: 사용법: /gate-boundaries [accept <id> | reject <id>]. 바뀐 것은 없습니다." }), "warning");
 	const dir = cwdOf(ctx);
 	const signal = AbortSignal.timeout(BOUNDARIES_DEADLINE_MS);
 	const repo = await repoOfDir(new Map(), dir, signal);
-	if (repo === undefined) return notify(ctx, signal.aborted ? `done-gate: the git repo of ${dir} was not found in time; nothing was changed.` : `done-gate: ${dir} is not inside a git repo; nothing was changed.`, "warning");
+	if (repo === undefined) return notify(ctx, signal.aborted ? say({ en: `done-gate: the git repo of ${dir} was not found in time; nothing was changed.`, ko: `done-gate: ${dir}의 git 저장소를 제때 찾지 못했습니다. 바뀐 것은 없습니다.` }) : say({ en: `done-gate: ${dir} is not inside a git repo; nothing was changed.`, ko: `done-gate: ${dir}은(는) git 저장소 안에 있지 않습니다. 바뀐 것은 없습니다.` }), "warning");
 	const result = await runBoundaries({ repo, action, signal });
-	notify(ctx, `done-gate: ${result.message}`, result.ok ? "info" : "warning");
+	notify(ctx, result.message, result.ok ? "info" : "warning");
 }
 
 /** Registers the done gate's handlers and the /gate-ok, /gate-decline and /gate-boundaries commands on `pi` and returns the gate, whose `sessionChanges` the mistake obligations read. */
@@ -63,8 +64,8 @@ export function registerDoneGate(pi: Api, stages?: Stages): DoneGate {
 		description: "Let the next stop of this session through whatever the done gate finds, logged as user-waived: /gate-ok [reason]",
 		handler: async (args, ctx) => {
 			const reason = String(args ?? "").trim() || "no reason given";
-			if (!gate.waive(ctx, reason)) return notify(ctx, "done-gate: /gate-ok applies to the main session only.", "warning");
-			notify(ctx, `done-gate: the next stop of this session is allowed whatever it finds (${reason}); it is logged as user-waived.`, "info");
+			if (!gate.waive(ctx, reason)) return notify(ctx, say({ en: "done-gate: /gate-ok applies to the main session only.", ko: "done-gate: /gate-ok는 메인 세션에서만 쓸 수 있습니다." }), "warning");
+			notify(ctx, say({ en: `done-gate: the next stop of this session is allowed whatever it finds (${reason}); it is logged as user-waived.`, ko: `done-gate: 이 세션의 다음 종료는 무엇이 발견되든 허용됩니다(${reason}). 사용자 면제로 기록됩니다.` }), "info");
 		},
 	});
 	pi.registerCommand("gate-decline", {

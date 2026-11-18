@@ -1,3 +1,4 @@
+import { say } from "../notice.ts";
 import { isProtocolAnswer } from "./report.ts";
 import type { Finding } from "./types.ts";
 
@@ -101,9 +102,12 @@ export function plainTextRefusal(findings: readonly Finding[]): string {
 	return [INTRO, ...rows, OUTRO].join("\n");
 }
 
-/** What the user is told when a stop lets through a reply that still has markdown because the run already refused one: the first offending line and how many others there are. */
+/** What the user is told, in the machine's notice language, when a stop lets through a reply that still has markdown because the run already refused one: the first offending line and how many others there are. */
 export function plainTextWarning(findings: readonly Finding[]): string {
 	const others = findings.length - 1;
 	const first = findings.at(0)?.message ?? "";
-	return `done-gate: the last reply still has markdown the terminal shows as raw text, starting at ${first}${others > 0 ? ` (${others} more line${others === 1 ? "" : "s"})` : ""}; this run already refused a reply for it, so the stop is allowed.`;
+	return say({
+		en: `done-gate: the last reply still has markdown the terminal shows as raw text, starting at ${first}${others > 0 ? ` (${others} more line${others === 1 ? "" : "s"})` : ""}; this run already refused a reply for it, so the stop is allowed.`,
+		ko: `done-gate: 마지막 답변에 터미널에서 원문 그대로 보이는 마크다운이 남아 있습니다(${first}${others > 0 ? ` 외 ${others}줄` : ""}). 이번 실행에서 이미 한 번 되돌렸으므로 종료를 허용합니다.`,
+	});
 }

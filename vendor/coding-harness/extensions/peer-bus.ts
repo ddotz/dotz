@@ -2,6 +2,7 @@ import { execFileSync } from "node:child_process";
 import { mkdirSync, watch } from "node:fs";
 import type { FSWatcher } from "node:fs";
 import { basename } from "node:path";
+import { say } from "../harness/notice.ts";
 import { deliveryText, livePeers, peersDir, register, resolvePeers, send, takeNew, unregister } from "../harness/peers/bus.ts";
 import type { PeerRecord } from "../harness/peers/bus.ts";
 
@@ -144,10 +145,10 @@ export default function registerPeerBus(pi: Api): PeerBus {
 		description: "Name this session for peer messaging: /peer-name <name> (no spaces)",
 		handler: async (args, ctx) => {
 			const name = String(args ?? "").trim();
-			if (!/^\S+$/.test(name)) return ctx.ui?.notify("peer-bus: usage: /peer-name <name> (one word)", "warning");
+			if (!/^\S+$/.test(name)) return ctx.ui?.notify(say({ en: "peer-bus: usage: /peer-name <name> (one word)", ko: "peer-bus: 사용법: /peer-name <name> (한 단어)" }), "warning");
 			chosenName = name;
 			refreshName();
-			ctx.ui?.notify(`peer-bus: this session is "${name}" for peer messaging.`, "info");
+			ctx.ui?.notify(say({ en: `peer-bus: this session is "${name}" for peer messaging.`, ko: `peer-bus: 이 세션은 피어 메시지에서 "${name}"(으)로 불립니다.` }), "info");
 		},
 	});
 

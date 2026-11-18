@@ -17,6 +17,7 @@ import { countClasses, findingProblem } from "./findings.ts";
 import { gateFilePath, matchesAny, readGateFile } from "./gate-file.ts";
 import type { Check } from "./gate-file.ts";
 import { cwdOf, inDotz, notify, sessionKey } from "./host.ts";
+import { say } from "../notice.ts";
 import type { Ctx, StopEvent, StopResult } from "./host.ts";
 import { defer, dropLater, reportSettled } from "./later.ts";
 import type { Deliver } from "./later.ts";
@@ -24,8 +25,9 @@ import { appendRow, readPassed, writePassed } from "./log.ts";
 import type { GateRow, Passed } from "./log.ts";
 import { acceptProposed } from "./mistakes.ts";
 import { askFindings, askWarning } from "./ask.ts";
+import { leftoverFindings, leftoverWarning } from "./leftover.ts";
 import { plainTextFindings, plainTextWarning } from "./plaintext.ts";
-import { LANGUAGE_NAMES, reportFindings, reportWarning } from "./report.ts";
+import { LANGUAGE_NAMES, LANGUAGE_NAMES_KO, reportFindings, reportWarning } from "./report.ts";
 import { failureClass, failureState, failureText, startRun, waitFor } from "./runs.ts";
 import { cancelChecks, checkKey, endRun, recentFailure, userScriptOf } from "./session.ts";
 import type { ActiveRun, State } from "./session.ts";
@@ -133,7 +135,7 @@ async function judgeCheck(judging: Judging, check: Check, now: Snapshot, second 
 	const afterPrint = fingerprint(after.tree, after.dirty, check.paths);
 	if (afterPrint !== active.print) {
 		if (!active.second) return await judgeCheck(judging, check, after, true);
-		warnings.push(`done-gate: check "${check.name}" changed files under its own paths in ${repo} on two runs in a row; its second result is accepted for the tree it left behind.`);
+		warnings.push(say({ en: `done-gate: check "${check.name}" changed files under its own paths in ${repo} on two runs in a row; its second result is accepted for the tree it left behind.`, ko: `done-gate: 검사 "${check.name}"이(가) ${repo}에서 연속 두 번 실행하는 동안 자신의 경로 아래 파일을 바꿨습니다. 두 번째 결과를 그 검사가 남긴 트리 기준으로 받아들입니다.` }));
 	}
 	passed[check.name] = { fingerprint: afterPrint, command: check.command };
 	writePassed(repo, { ...readPassed(repo), [check.name]: passed[check.name] });
@@ -272,7 +274,7 @@ async function checkGateOrigin(prepared: Prepared, stop: Stop, floor: Floor): Pr
 
 function flagForeignGate(state: State, floor: Floor, repo: string): void {
 	if (state.askedGate.has(originKey(repo))) {
-		floor.ungated = `done-gate: ${repo} finished with a ${GATE_FILE} that is neither committed at HEAD nor the one the bootstrap script wrote.`;
+		floor.ungated = say({ en: `done-gate: ${repo} finished with a ${GATE_FILE} that is neither committed at HEAD nor the one the bootstrap script wrote.`, ko: `done-gate: ${repo}이(가) 끝날 때 ${GATE_FILE}이(가) HEAD에 커밋되어 있지 않고 부트스트랩 스크립트가 쓴 파일도 아닙니다.` });
 		return;
 	}
 	floor.findings.push({ stage: "verify", class: "gate-not-from-script", message: `${repo}/${GATE_FILE} is not committed at HEAD and is not the file the bootstrap script wrote in this checkout, so it does not count as a gate. If the user wrote it, they can commit it. Otherwise remove it and run \`bun ${shellQuote(BOOTSTRAP_SCRIPT)} ${shellQuote(repo)}\` once, which writes the gate file; do not write or edit the gate file by hand. Then finish again.`, file: GATE_FILE });
@@ -284,7 +286,7 @@ async function askForGateFile(state: State, prepared: Prepared, stop: Stop, floo
 		const needed = stop.hard.aborted ? undefined : await until(needsBootstrap(repo, stop.hard), stop.hard);
 		if (needed === undefined) throw new Error(outOfTime(repo, stop));
 		if (!needed.value) return;
-		if (state.askedGate.has(repo)) floor.ungated = `done-gate: ${repo} still has no gate file; the next run will ask again.`;
+		if (state.askedGate.has(repo)) floor.ungated = say({ en: `done-gate: ${repo} still has no gate file; the next run will ask again.`, ko: `done-gate: ${repo}에는 아직 게이트 파일이 없습니다. 다음 실행에서 다시 요청합니다.` });
 		else floor.findings.push({ stage: "verify", class: "no-gate-file", message: `${repo} has no gate file, so nothing checks a change here when a session stops. Run \`bun ${shellQuote(BOOTSTRAP_SCRIPT)} ${shellQuote(repo)}\` once: it finds the repo's typecheck, lint and test commands, keeps the ones that pass now within 20 s, and writes .omp/gate.json and the rule kit under .omp/lint. Then finish again.` });
 	} catch (error) {
 		floor.errors.push(stop.hard.aborted ? outOfTime(repo, stop) : message(error));
@@ -307,7 +309,7 @@ async function judgeFloor(state: State, prepared: Prepared, stop: Stop, floor: F
 	const [file, calls] = subject.reduce((last, write) => (write[1] > last[1] ? write : last));
 	if (ranAt < calls) {
 		if (state.asked.has(repo)) {
-			floor.unverified = `done-gate: ${repo} finished without anything being run after the last edit of ${file}.`;
+			floor.unverified = say({ en: `done-gate: ${repo} finished without anything being run after the last edit of ${file}.`, ko: `done-gate: ${repo}이(가) ${file}을(를) 마지막으로 수정한 뒤 아무것도 실행하지 않은 채 끝났습니다.` });
 		} else {
 			const text = `You changed ${subject.length} source file(s) in ${repo} and ran nothing after the last edit (${file}). Run the check that exercises the change (the repo's tests or typecheck, or the changed program itself) and read its output before you finish. If nothing here can run it, say in your reply what blocks it.`;
 			floor.findings.push({ stage: "verify", class: "nothing-run", message: text, file });
@@ -413,6 +415,23 @@ function withAsk(state: State, results: RepoResult[], cwd: string): void {
 	if (problem) home.problems.push(problem);
 }
 
+function withLeftover(state: State, results: RepoResult[], cwd: string): void {
+	if (state.edited.size === 0 && !results.some(result => result.changed > 0)) return;
+	const found = leftoverFindings(state.reply);
+	if (found.length === 0) return;
+	let home = results.find(result => result.repo === cwd);
+	if (home === undefined) {
+		home = blankResult(state, cwd, false, 0);
+		results.push(home);
+	}
+	if (state.askedLeftover) {
+		home.warnings.push(leftoverWarning(found));
+		return;
+	}
+	const problem = findingProblem(cwd, "leftover", found);
+	if (problem) home.problems.push(problem);
+}
+
 function withReport(state: State, results: RepoResult[], cwd: string, defers: boolean): void {
 	const answersWait = state.waitedFor.length > 0;
 	const blocked = results.some(result => result.problems.some(problem => problem.kind !== "running" || !defers));
@@ -441,7 +460,7 @@ function withInterim(state: State, results: RepoResult[], cwd: string): void {
 		home = blankResult(state, cwd, false, 0);
 		results.push(home);
 	}
-	home.warnings.push(`done-gate: ${state.interimWrong} interim messages or tool-call intent labels this run were not in ${LANGUAGE_NAMES[user]}.`);
+	home.warnings.push(say({ en: `done-gate: ${state.interimWrong} interim messages or tool-call intent labels this run were not in ${LANGUAGE_NAMES[user]}.`, ko: `done-gate: 이번 실행의 중간 메시지 또는 도구 호출 의도 설명 ${state.interimWrong}건이 ${LANGUAGE_NAMES_KO[user]}로 쓰이지 않았습니다.` }));
 }
 
 /**
@@ -465,6 +484,9 @@ function withInterim(state: State, results: RepoResult[], cwd: string): void {
  * A reply of an interactive session (`ctx.hasUI`, outside dotz) that asks the user something in its text, a request to choose or tell, a
  * question ending or a line ending in `?`, outside fenced code (`ask:question`), is refused once per run with the order to put every
  * question and decision into one `ask` tool form with a recommended option preselected; a later stop of the run lets it through with a warning.
+ * A reply of that kind from a run that edited files and lists known unfixed items (a line such as `남은 것:` or `Remaining:` with bullets under it, or a
+ * bullet with such a phrase; a line naming a blocker outside the agent's reach is exempt) is refused once per run (`leftover:unfixed`) with the order to fix
+ * them in this run; a later stop of the run lets it through with a warning.
  * A reply written in another script than the user's last prompt (`report:language`) is refused once per run, then let through
  * with a warning. A refusal for work asks in its own text that the reply after the fix be the final report.
  * A stop refused only to wait for running checks lets an interactive session (`ctx.hasUI`, with `deliver`) finish instead: the
@@ -488,7 +510,7 @@ function spendWaiver(state: State, ctx: Ctx): void {
 	state.waiver = undefined;
 	if (waiver === undefined) return;
 	for (const mistake of acceptProposed(sessionKey(ctx))) {
-		notify(ctx, `done-gate: /gate-ok accepted the proposal to close mistake ${mistake.id} without a check; it is closed as ${mistake.status}.`, "warning");
+		notify(ctx, say({ en: `done-gate: /gate-ok accepted the proposal to close mistake ${mistake.id} without a check; it is closed as ${mistake.status}.`, ko: `done-gate: /gate-ok로 실수 ${mistake.id}을(를) 검사 없이 닫자는 제안을 받아들였습니다. ${mistake.status} 상태로 닫혔습니다.` }), "warning");
 	}
 }
 
@@ -554,7 +576,10 @@ async function judgeStop(state: State, ctx: Ctx, event: StopEvent, stages: Stage
 		withCitations(state, results, cwd);
 		if (!inDotz()) {
 			withPlainText(state, results, cwd);
-			if (ctx.hasUI === true) withAsk(state, results, cwd);
+			if (ctx.hasUI === true) {
+				withAsk(state, results, cwd);
+				withLeftover(state, results, cwd);
+			}
 			withReport(state, results, cwd, ctx.hasUI === true && deliver !== undefined);
 			withInterim(state, results, cwd);
 		}
@@ -591,10 +616,10 @@ async function judgeStop(state: State, ctx: Ctx, event: StopEvent, stages: Stage
 			state.waitedFor = decision.running ? [...new Set(running.map(problem => problem.name))] : [];
 			if (decision.running) {
 				state.waits += 1;
-				notify(ctx, `done-gate: waiting for check ${state.waitedFor.map(name => `"${name}"`).join(", ")} to finish; this session goes on by itself and ends with the final report once the check is in.`, "info");
+				notify(ctx, say({ en: `done-gate: waiting for check ${state.waitedFor.map(name => `"${name}"`).join(", ")} to finish; this session goes on by itself and ends with the final report once the check is in.`, ko: `done-gate: 검사 ${state.waitedFor.map(name => `"${name}"`).join(", ")}이(가) 끝나기를 기다리는 중입니다. 이 세션은 스스로 이어서 진행하고, 검사 결과가 나오면 최종 보고로 마칩니다.` }), "info");
 			} else {
 				state.refusals += 1;
-				notify(ctx, `done-gate: refused (${Object.keys(findings).join(", ") || "see the gate log"}); refusal ${state.refusals} of this run; the agent goes on to fix it.`, "warning");
+				notify(ctx, say({ en: `done-gate: refused (${Object.keys(findings).join(", ") || "see the gate log"}); refusal ${state.refusals} of this run; the agent goes on to fix it.`, ko: `done-gate: 종료를 거절했습니다(${Object.keys(findings).join(", ") || "게이트 로그 참고"}). 이번 실행의 ${state.refusals}번째 거절이며, 에이전트가 이어서 고칩니다.` }), "warning");
 			}
 			for (const [repo, result] of Object.entries(decision.outcomes)) if (result === "blocked") state.blocked.add(repo);
 			for (const result of results) {
@@ -603,6 +628,7 @@ async function judgeStop(state: State, ctx: Ctx, event: StopEvent, stages: Stage
 					if (Object.hasOwn(problem.classes, "verify:no-gate-file")) state.askedGate.add(result.repo);
 					if (problem.kind === "finding" && problem.name === "plain") state.askedPlain = true;
 					if (problem.kind === "finding" && problem.name === "ask") state.askedAsk = true;
+					if (problem.kind === "finding" && problem.name === "leftover") state.askedLeftover = true;
 					if (problem.kind === "finding" && problem.name === "report") state.askedReport = true;
 					if (Object.hasOwn(problem.classes, "verify:gate-not-from-script")) state.askedGate.add(originKey(result.repo));
 				}
@@ -610,7 +636,7 @@ async function judgeStop(state: State, ctx: Ctx, event: StopEvent, stages: Stage
 			state.refusal = decision.reason;
 			return { decision: "block", reason: decision.reason };
 		}
-		if (errors.length) notify(ctx, `done-gate: not enforced (${errors.join("; ")}); the stop is allowed.`, "warning");
+		if (errors.length) notify(ctx, say({ en: `done-gate: not enforced (${errors.join("; ")}); the stop is allowed.`, ko: `done-gate: 적용하지 못했습니다(${errors.join("; ")}). 종료는 허용됩니다.` }), "warning");
 		for (const result of results) if (waiver || (result.problems.length === 0 && result.error === undefined && result.stageErrors.length === 0)) recordAccepted(result.repo);
 		spendWaiver(state, ctx);
 		if (deliver !== undefined) defer(state, deferred, ctx, deliver);
@@ -623,7 +649,7 @@ async function judgeStop(state: State, ctx: Ctx, event: StopEvent, stages: Stage
 			return undefined;
 		}
 		appendRow(row({ [cwd]: "error" }, 0, [message(error)], []));
-		notify(ctx, `done-gate: not enforced (${message(error)}); the stop is allowed.`, "warning");
+		notify(ctx, say({ en: `done-gate: not enforced (${message(error)}); the stop is allowed.`, ko: `done-gate: 적용하지 못했습니다(${message(error)}). 종료는 허용됩니다.` }), "warning");
 		spendWaiver(state, ctx);
 		endRun(state);
 		if (deliver !== undefined) reportSettled(state, ctx, deliver);

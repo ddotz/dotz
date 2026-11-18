@@ -29,6 +29,7 @@ External actions
 Code
 - The done gate refuses new comments (allowed only: `why(platform|vendor|protocol|spec|legal): <fact>` with a checkable reference, or a doc comment on an exported declaration), lint suppressions and skipped tests. Fix the cause instead.
 - After a worker's change or a `git apply`, run the check yourself: `task` calls and inspection commands do not count as a run. A changed round-trip pair (`encode`/`decode`) needs a property test (`skill://pbt`).
+- A defect you find in what you just changed is fixed in the same run, not listed in the final report as "remaining" or "follow-up"; list an item only when something outside your reach blocks it, and name that blocker in its line.
 - A mistake found by the user, a review, an interrogation or a drive is opened with the `mistake` tool and resolved with a check (`skill://correct` picks the layer).
 
 State

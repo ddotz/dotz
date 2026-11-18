@@ -7,7 +7,9 @@ import { agentHome, logsDir } from "../agent-home.ts";
 import { commandHead, shellSegments } from "../guard/shell.ts";
 import { until } from "./deadline.ts";
 import { EMPTY_TREE, git } from "./snapshot.ts";
+import { say } from "../notice.ts";
 import type { Finding } from "./types.ts";
+import { shellHome } from "./util.ts";
 
 export type MistakeSource = "user" | "advisor" | "agent";
 export type CheckKind = "type" | "lint" | "test" | "property" | "guard" | "none";
@@ -94,7 +96,9 @@ const TRIVIAL_COMMAND = /^(?:(?:true|echo|printf|exit)(?![\w-])|:(?:\s|$))/;
 const RULE_KIT_COMMAND = /(?:^|[\s/])harness\/gate\/rules\.ts\s+\S/;
 const AST_GREP_COMMAND = /(?:^|[\s;&|/])ast-grep\s/;
 const SHELL_SAFE_PATH = /^[\w@%+=:,./-]+$/;
-const ABSOLUTE_PATH = /(?<![\w.@+~/-])\/[\w@+~./-]*(?=$|[\s"'`;&|()<>])/g;
+const MAPPED_PATH = /"((?:\/|\$HOME\/|\$\{HOME\}\/)[^"]*)"|'(\/[^']*)'|(?<![\w.@+~/}-])((?:\/|~\/|\$HOME\/|\$\{HOME\}\/)[\w@+~./-]*)(?=$|[\s"'`;&|()<>])/g;
+const HOME_PREFIX = /^(?:~|\$HOME|\$\{HOME\})(?=\/)/;
+const DOUBLE_QUOTE_UNSAFE = /[$`\\"]/;
 const OUTPUT_TAIL_CHARS = 1500;
 const DAY_MS = 86_400_000;
 const CHECK_KINDS: readonly CheckKind[] = ["type", "lint", "test", "property", "guard", "none"];
@@ -410,12 +414,25 @@ function commonAncestor(first: string, second: string): string {
 	return dir;
 }
 
+function pathInBase(typed: string, repo: string, tree: string): string | undefined {
+	const real = canonical(typed.replace(HOME_PREFIX, shellHome()));
+	if (!isInside(repo, real)) return undefined;
+	const mapped = join(tree, relative(repo, real));
+	return existsSync(mapped) ? mapped : undefined;
+}
+
 function inBaseCopy(command: string, repo: string, tree: string): string {
-	return command.replace(ABSOLUTE_PATH, typed => {
-		const real = canonical(typed);
-		if (!isInside(repo, real)) return typed;
-		const mapped = join(tree, relative(repo, real));
-		return SHELL_SAFE_PATH.test(mapped) && existsSync(mapped) ? mapped : typed;
+	return command.replace(MAPPED_PATH, (typed, double: string | undefined, single: string | undefined, bare: string | undefined) => {
+		if (double !== undefined) {
+			const mapped = DOUBLE_QUOTE_UNSAFE.test(double.replace(HOME_PREFIX, "")) ? undefined : pathInBase(double, repo, tree);
+			return mapped === undefined || DOUBLE_QUOTE_UNSAFE.test(mapped) ? typed : `"${mapped}"`;
+		}
+		if (single !== undefined) {
+			const mapped = pathInBase(single, repo, tree);
+			return mapped === undefined || mapped.includes("'") ? typed : `'${mapped}'`;
+		}
+		const mapped = pathInBase(bare ?? typed, repo, tree);
+		return mapped !== undefined && SHELL_SAFE_PATH.test(mapped) ? mapped : typed;
 	});
 }
 
@@ -724,11 +741,11 @@ async function runTool(params: ToolParams, ctx: MistakeCtx, deps: MistakeHostDep
 	});
 	if (!outcome.ok) return reply(`mistake: refused to resolve ${params.id}: ${outcome.reason}`, true);
 	if (outcome.mistake.status === "proposed-unencoded") {
-		ctx.ui?.notify(`mistake ${params.id}: the agent proposes no check can encode it (${outcome.mistake.check?.reason ?? ""}); accept with /gate-ok or the agent must encode it.`, "warning");
+		ctx.ui?.notify(say({ en: `mistake ${params.id}: the agent proposes no check can encode it (${outcome.mistake.check?.reason ?? ""}); accept with /gate-ok or the agent must encode it.`, ko: `mistake ${params.id}: 에이전트가 이 실수는 검사로 만들 수 없다고 제안했습니다(${outcome.mistake.check?.reason ?? ""}). /gate-ok로 받아들이거나, 에이전트가 검사로 만들어야 합니다.` }), "warning");
 		return reply(`mistake: ${params.id} is NOT closed. Your reason is recorded as a proposal; only the user can accept it with /gate-ok. Encode a real check or leave it for the user.`);
 	}
 	if (outcome.mistake.status === "unencoded") {
-		ctx.ui?.notify(`mistake ${params.id} closed as unencoded: ${outcome.mistake.check?.reason ?? ""}`, "warning");
+		ctx.ui?.notify(say({ en: `mistake ${params.id} closed as unencoded: ${outcome.mistake.check?.reason ?? ""}`, ko: `mistake ${params.id}을(를) 검사 없이 닫았습니다: ${outcome.mistake.check?.reason ?? ""}` }), "warning");
 		return reply(`mistake: ${params.id} closed as unencoded (shown to the user).`);
 	}
 	return reply(`mistake: ${params.id} resolved by ${outcome.mistake.check?.kind} check ${outcome.mistake.check?.path}.`);
@@ -762,9 +779,9 @@ export function registerMistakes(pi: MistakeApi, deps: MistakeHostDeps): void {
 		description: "Record a mistake the agent made; it must be encoded as a check (type, lint rule with test, test, guard) before the session can finish",
 		handler: async (args, ctx) => {
 			const text = String(args ?? "").trim();
-			if (!text) return ctx.ui?.notify("usage: /mistake <what the agent did wrong>", "warning");
+			if (!text) return ctx.ui?.notify(say({ en: "usage: /mistake <what the agent did wrong>", ko: "사용법: /mistake <에이전트가 잘못한 내용>" }), "warning");
 			const { mistake, created } = openOrFind(deps.sessionId(ctx), { source: "user", text });
-			ctx.ui?.notify(created ? `mistake ${mistake.id} opened: the agent must encode it as a check before finishing.` : `mistake already recorded as ${describe(mistake)}`, "info");
+			ctx.ui?.notify(created ? say({ en: `mistake ${mistake.id} opened: the agent must encode it as a check before finishing.`, ko: `mistake ${mistake.id}을(를) 등록했습니다. 에이전트는 끝내기 전에 이를 검사로 만들어야 합니다.` }) : say({ en: `mistake already recorded as ${describe(mistake)}`, ko: `이미 ${describe(mistake)}(으)로 기록된 실수입니다.` }), "info");
 			if (!created) return;
 			await snapshotOpened(deps.sessionId(ctx), mistake.id, deps.bases(ctx));
 			pi.sendMessage({ customType: "mistake", display: true, content: unresolvedMessage(mistake) }, { deliverAs: "nextTurn", triggerTurn: true });
@@ -776,7 +793,7 @@ export function registerMistakes(pi: MistakeApi, deps: MistakeHostDeps): void {
 		const sessionId = deps.sessionId(ctx);
 		for (const advisory of advisoriesIn(event.messages)) {
 			const { mistake, created } = openOrFind(sessionId, { source: "advisor", text: advisory.text });
-			if (created) snapshotOpened(sessionId, mistake.id, deps.bases(ctx)).catch((error: unknown) => ctx.ui?.notify(`mistake ${mistake.id}: the tree at open was not recorded (${error instanceof Error ? error.message : String(error)}); its check is proven against the session base instead.`, "warning"));
+			if (created) snapshotOpened(sessionId, mistake.id, deps.bases(ctx)).catch((error: unknown) => ctx.ui?.notify(say({ en: `mistake ${mistake.id}: the tree at open was not recorded (${error instanceof Error ? error.message : String(error)}); its check is proven against the session base instead.`, ko: `mistake ${mistake.id}: 등록 시점의 트리를 기록하지 못했습니다(${error instanceof Error ? error.message : String(error)}). 대신 세션 기준 트리로 검사를 증명합니다.` }), "warning"));
 		}
 	});
 }

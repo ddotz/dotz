@@ -491,7 +491,7 @@ function ruleExists(repo: string, ruleId: string): boolean {
  * `ast-grep test` fails; `rule-unadopted` findings do not count, so several new rules can be adopted one after another.
  * Entries of other rules are never changed.
  */
-export async function adoptRule(input: { repo: string; rule: string }): Promise<{ ok: boolean; message: string }> {
+export async function adoptRule(input: { repo: string; rule: string }): Promise<{ ok: boolean; message: string; recorded?: { occurrences: number; files: number } }> {
 	const repo = resolve(input.repo);
 	const rule = input.rule;
 	if (!existsSync(join(lintDir(repo), "sgconfig.yml"))) return { ok: false, message: `${lintDir(repo)}/sgconfig.yml does not exist; run with --init first.` };
@@ -515,7 +515,7 @@ export async function adoptRule(input: { repo: string; rule: string }): Promise<
 	writeFileSync(join(lintDir(repo), "baseline.json"), `${JSON.stringify(sortedBaseline(next), null, 2)}\n`);
 	writeFileSync(join(lintDir(repo), "adopted.json"), `${JSON.stringify([...adopted.ids, rule].sort(), null, 2)}\n`);
 	const total = Object.values(mine).reduce((sum, rules) => sum + (rules[rule] ?? 0), 0);
-	return { ok: true, message: `adopted ${rule}: ${total} occurrences in ${Object.keys(mine).length} files recorded` };
+	return { ok: true, message: `adopted ${rule}: ${total} occurrences in ${Object.keys(mine).length} files recorded`, recorded: { occurrences: total, files: Object.keys(mine).length } };
 }
 
 function formatFinding(finding: Finding): string {

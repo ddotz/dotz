@@ -2,6 +2,7 @@ import { mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "n
 import { homedir } from "node:os";
 import { dirname, join, relative } from "node:path";
 import { logsDir } from "./agent-home.ts";
+import { noticeLanguage } from "./notice.ts";
 
 const HOME = homedir();
 const argv = process.argv.slice(2);
@@ -11,6 +12,8 @@ const DEFAULT_ROOT = join(HOME, ".omp", "agent", "sessions");
 const ROOT = arg("--root") ?? DEFAULT_ROOT;
 const DRY = argv.includes("--dry");
 const IF_DUE = argv.includes("--if-due");
+const LANG = arg("--lang") === "en" || arg("--lang") === "ko" ? arg("--lang") : noticeLanguage();
+const L = (en: string, ko: string): string => (LANG === "en" ? en : ko);
 const LOGS = arg("--logs");
 const KEEP_HISTORY = ROOT === DEFAULT_ROOT || LOGS !== undefined;
 const AGENT_DIR = dirname(ROOT);
@@ -33,7 +36,8 @@ if (IF_DUE && !DRY) {
 		updated = 0;
 	}
 	if (now - updated < DUE_GAP_MS) {
-		console.log(`토큰 점검 건너뜀: 마지막 실행 ${((now - updated) / 3600e3).toFixed(1)}h 전 (20h 이내)`);
+		const ago = ((now - updated) / 3600e3).toFixed(1);
+		console.log(L(`token audit skipped: last run ${ago}h ago (within 20h)`, `토큰 점검 건너뜀: 마지막 실행 ${ago}h 전 (20h 이내)`));
 		console.log(`RESULT ${JSON.stringify({ skipped: true, flags: 0, notes: 0, sessions: 0, tokens: 0, cost: 0, report: "" })}`);
 		process.exit(0);
 	}
@@ -374,10 +378,10 @@ for (const s of results) {
 		const save = s.busts.reduce((a, b) => a + Math.max(0, b.cost - b.uncached * s.readRate), 0);
 		const top = Object.entries(s.busts.flatMap(b => b.events).reduce<Record<string, number>>((acc, e) => ((acc[e] = (acc[e] ?? 0) + 1), acc), {})).sort((a, b) => b[1] - a[1]).slice(0, 4).map(([e]) => e);
 		findings.push({
-			flag: s.busts.length >= 3 || uncached > 1e6, kind: "캐시 깨짐", who,
-			what: `캐시 깨짐 ${s.busts.length}회 (압축/모델 변경/TTL 공백 아님)`, amount: `미캐시 재입력 ${M(uncached)} tok, ${usd(cost)}`, save,
-			evidence: s.busts.slice(0, 6).map(b => `${kst(b.ts)} 새로 ${K(b.uncached)}/읽기 ${K(b.cr)} (직전 ${K(b.prevCtx)}) <- ${b.events.join(", ") || "이벤트 없음: 도구 목록/시스템 프롬프트 변경 의심"}`).join("; "),
-			fix: `제안: 직전 주입 이벤트(${top.join(", ") || "없음"})가 프롬프트 앞부분을 바꾸는지 확인해 고정 - 예상 절감 ~${usd(save)}. 컨텍스트·모델은 그대로라 성능 영향 없음`,
+			flag: s.busts.length >= 3 || uncached > 1e6, kind: L("cache bust", "캐시 깨짐"), who,
+			what: L(`${s.busts.length} cache busts (not a compaction, model change or TTL gap)`, `캐시 깨짐 ${s.busts.length}회 (압축/모델 변경/TTL 공백 아님)`), amount: L(`uncached re-input ${M(uncached)} tok, ${usd(cost)}`, `미캐시 재입력 ${M(uncached)} tok, ${usd(cost)}`), save,
+			evidence: s.busts.slice(0, 6).map(b => `${kst(b.ts)} ${L("new", "새로")} ${K(b.uncached)}/${L("read", "읽기")} ${K(b.cr)} (${L("previous", "직전")} ${K(b.prevCtx)}) <- ${b.events.join(", ") || L("no event: suspect a tool list or system prompt change", "이벤트 없음: 도구 목록/시스템 프롬프트 변경 의심")}`).join("; "),
+			fix: L(`Proposal: check whether the events injected just before (${top.join(", ") || "none"}) change the start of the prompt and pin it - expected saving ~${usd(save)}. Context and model stay the same, so no performance impact`, `제안: 직전 주입 이벤트(${top.join(", ") || "없음"})가 프롬프트 앞부분을 바꾸는지 확인해 고정 - 예상 절감 ~${usd(save)}. 컨텍스트·모델은 그대로라 성능 영향 없음`),
 		});
 	}
 	const wakes = Object.entries(s.wakes);
@@ -386,56 +390,56 @@ for (const s of results) {
 		const tokens = wakes.reduce((a, [, w]) => a + w.tokens, 0);
 		const cost = wakes.reduce((a, [, w]) => a + w.cost, 0);
 		findings.push({
-			flag: wakeN >= 10 || cost >= 5, kind: "헛깨움", who, what: `할 일 없이 깨어난 턴 ${wakeN}회`, amount: `${M(tokens)} tok, ${usd(cost)}`, save: cost,
-			evidence: wakes.sort((a, b) => b[1].cost - a[1].cost).map(([k, w]) => `${k} ${w.n}회 ${usd(w.cost)}`).join(", "),
-			fix: `제안: 반응할 필요 없는 알림(모니터 라인·완료 알림 중복)을 소스에서 걸러 세션을 깨우지 않게 - 예상 절감 ~${usd(cost)}. 실제 일을 시키는 이벤트는 그대로`,
+			flag: wakeN >= 10 || cost >= 5, kind: L("idle wake", "헛깨움"), who, what: L(`${wakeN} turns woken with nothing to do`, `할 일 없이 깨어난 턴 ${wakeN}회`), amount: `${M(tokens)} tok, ${usd(cost)}`, save: cost,
+			evidence: wakes.sort((a, b) => b[1].cost - a[1].cost).map(([k, w]) => `${k} ${w.n}${L("x", "회")} ${usd(w.cost)}`).join(", "),
+			fix: L(`Proposal: filter notifications that need no reaction (monitor lines, duplicate completion notices) at the source so they do not wake the session - expected saving ~${usd(cost)}. Events that give real work stay`, `제안: 반응할 필요 없는 알림(모니터 라인·완료 알림 중복)을 소스에서 걸러 세션을 깨우지 않게 - 예상 절감 ~${usd(cost)}. 실제 일을 시키는 이벤트는 그대로`),
 		});
 	}
 	if (s.ttsr >= 10) {
 		findings.push({
-			flag: s.ttsr >= 30, kind: "TTSR 개입", who, what: `스트림 규칙(TTSR)이 응답을 끊고 다시 시도시킨 횟수 ${s.ttsr}회`, amount: `${s.ttsr}회`, save: 0,
-			fix: "제안: 어떤 규칙이 반복되는지 세션 파일의 ttsr_injection 항목으로 확인하고, 매번 걸리는 규칙은 지시문(RULES.md)으로 옮기거나 ttsr.disabledRules로 끄기 - 규칙의 의도는 유지",
+			flag: s.ttsr >= 30, kind: L("TTSR interventions", "TTSR 개입"), who, what: L(`stream rules (TTSR) cut off the reply and forced a retry ${s.ttsr} times`, `스트림 규칙(TTSR)이 응답을 끊고 다시 시도시킨 횟수 ${s.ttsr}회`), amount: L(`${s.ttsr} times`, `${s.ttsr}회`), save: 0,
+			fix: L("Proposal: find which rule repeats from the ttsr_injection entries of the session file; move a rule that fires every time into the instructions (RULES.md) or turn it off with ttsr.disabledRules - the rule's intent stays", "제안: 어떤 규칙이 반복되는지 세션 파일의 ttsr_injection 항목으로 확인하고, 매번 걸리는 규칙은 지시문(RULES.md)으로 옮기거나 ttsr.disabledRules로 끄기 - 규칙의 의도는 유지"),
 		});
 	}
 	if (s.maxErrStreak >= 3) {
 		findings.push({
-			flag: s.maxErrStreak >= 5, kind: "에러 재시도", who, what: `에러 턴 ${s.errTurns}회, 최장 연속 ${s.maxErrStreak}회 (${Object.entries(s.errCodes).map(([k, v]) => `${k}x${v}`).join(", ")})`,
-			amount: "대부분 0토큰, 대기·재시도 시간 낭비", save: 0, evidence: s.compactErr ? `압축 실패 ${s.compactErr}회 포함` : undefined,
-			fix: "제안: 429는 리셋까지 멈추고 재시도 상한 확인(retry.maxRetries) - 결과물엔 영향 없음",
+			flag: s.maxErrStreak >= 5, kind: L("error retries", "에러 재시도"), who, what: L(`${s.errTurns} error turns, longest streak ${s.maxErrStreak} (${Object.entries(s.errCodes).map(([k, v]) => `${k}x${v}`).join(", ")})`, `에러 턴 ${s.errTurns}회, 최장 연속 ${s.maxErrStreak}회 (${Object.entries(s.errCodes).map(([k, v]) => `${k}x${v}`).join(", ")})`),
+			amount: L("mostly 0 tokens, wasted waiting and retry time", "대부분 0토큰, 대기·재시도 시간 낭비"), save: 0, evidence: s.compactErr ? L(`includes ${s.compactErr} failed compactions`, `압축 실패 ${s.compactErr}회 포함`) : undefined,
+			fix: L("Proposal: on a 429 stop until the reset and check the retry cap (retry.maxRetries) - no effect on the result", "제안: 429는 리셋까지 멈추고 재시도 상한 확인(retry.maxRetries) - 결과물엔 영향 없음"),
 		});
 	}
 	if (s.maxBigStreak >= 10) {
 		findings.push({
-			flag: s.compactErr > 0, kind: "대형 컨텍스트", who, what: `컨텍스트 >${K(BIG_CTX)}로 압축 없이 연속 ${s.maxBigStreak}턴 (최대 ${K(s.maxCtx)})`,
-			amount: `해당 턴 ${M(s.bigTokens)} tok, ${usd(s.bigCost)}`, save: 0, evidence: `압축 ${s.compactions}회, 압축 실패 ${s.compactErr}회`,
-			fix: s.compactErr ? "제안: 압축 실패 원인 수리(설정된 자동 압축이 원래대로 돌게) - 의도된 동작 복원" : undefined,
-			hold: s.compactErr ? undefined : "보류(트레이드오프 있음): 압축 기준을 낮추면 토큰은 줄지만 작업 맥락이 줄어듦",
+			flag: s.compactErr > 0, kind: L("large context", "대형 컨텍스트"), who, what: L(`context >${K(BIG_CTX)} for ${s.maxBigStreak} turns in a row without compaction (max ${K(s.maxCtx)})`, `컨텍스트 >${K(BIG_CTX)}로 압축 없이 연속 ${s.maxBigStreak}턴 (최대 ${K(s.maxCtx)})`),
+			amount: L(`those turns ${M(s.bigTokens)} tok, ${usd(s.bigCost)}`, `해당 턴 ${M(s.bigTokens)} tok, ${usd(s.bigCost)}`), save: 0, evidence: L(`${s.compactions} compactions, ${s.compactErr} failed compactions`, `압축 ${s.compactions}회, 압축 실패 ${s.compactErr}회`),
+			fix: s.compactErr ? L("Proposal: repair the cause of the failed compaction (so the configured auto-compaction runs as intended) - restores intended behavior", "제안: 압축 실패 원인 수리(설정된 자동 압축이 원래대로 돌게) - 의도된 동작 복원") : undefined,
+			hold: s.compactErr ? undefined : L("On hold (has a trade-off): a lower compaction threshold saves tokens but shrinks the working context", "보류(트레이드오프 있음): 압축 기준을 낮추면 토큰은 줄지만 작업 맥락이 줄어듦"),
 		});
 	}
 	if (s.fable || s.effortTurns) {
-		const parts = [s.fable ? `Fable 응답 ${s.fable}회 (${usd(s.fableCost)})` : "", s.effortTurns ? `max/xhigh 생각 수준 ${s.effortTurns}턴 (${usd(s.effortCost)}; ${[...s.efforts].join(", ")})` : ""].filter(Boolean);
+		const parts = [s.fable ? L(`${s.fable} Fable replies (${usd(s.fableCost)})`, `Fable 응답 ${s.fable}회 (${usd(s.fableCost)})`) : "", s.effortTurns ? L(`${s.effortTurns} turns at max/xhigh thinking level (${usd(s.effortCost)}; ${[...s.efforts].join(", ")})`, `max/xhigh 생각 수준 ${s.effortTurns}턴 (${usd(s.effortCost)}; ${[...s.efforts].join(", ")})`) : ""].filter(Boolean);
 		const cost = s.fable && s.effortTurns ? s.expensiveCost : s.fable ? s.fableCost : s.effortCost;
 		findings.push({
-			flag: s.fable > 0, kind: "비싼 모델", who, what: `${parts.join(" + ")} (사용자 규칙: Fable은 명시적으로 요청하거나 설정된 역할일 때만, 폴백 금지; max/xhigh는 참고: 워커 effort는 가드가 역할+1단계로 막음)`, amount: usd(cost), save: cost,
-			fix: "제안: 이 세션/워커의 모델 경로(역할·폴백 체인·agentModelOverrides) 확인",
+			flag: s.fable > 0, kind: L("expensive model", "비싼 모델"), who, what: L(`${parts.join(" + ")} (user rule: Fable only when asked for explicitly or a configured role, no fallback; max/xhigh is a note: the guard caps worker effort at the role plus one step)`, `${parts.join(" + ")} (사용자 규칙: Fable은 명시적으로 요청하거나 설정된 역할일 때만, 폴백 금지; max/xhigh는 참고: 워커 effort는 가드가 역할+1단계로 막음)`), amount: usd(cost), save: cost,
+			fix: L("Proposal: check the model path of this session/worker (roles, fallback chain, agentModelOverrides)", "제안: 이 세션/워커의 모델 경로(역할·폴백 체인·agentModelOverrides) 확인"),
 		});
 	}
 	if (s.fbTurns >= 5) {
 		findings.push({
-			flag: s.fbTurns >= 20, kind: "폴백 모델", who, what: `의도한 ${s.intended}이 아닌 ${[...s.fbModels].join(", ")}로 ${s.fbTurns}턴`, amount: `${s.fbTurns}턴`, save: 0,
-			fix: "제안: 한도가 풀린 뒤에도 폴백에 머무는지 확인(retry.fallbackRevertPolicy) - 의도한 모델 복원",
+			flag: s.fbTurns >= 20, kind: L("fallback model", "폴백 모델"), who, what: L(`${s.fbTurns} turns on ${[...s.fbModels].join(", ")} instead of the intended ${s.intended}`, `의도한 ${s.intended}이 아닌 ${[...s.fbModels].join(", ")}로 ${s.fbTurns}턴`), amount: L(`${s.fbTurns} turns`, `${s.fbTurns}턴`), save: 0,
+			fix: L("Proposal: check whether it stays on the fallback after the limit is lifted (retry.fallbackRevertPolicy) - restores the intended model", "제안: 한도가 풀린 뒤에도 폴백에 머무는지 확인(retry.fallbackRevertPolicy) - 의도한 모델 복원"),
 		});
 	}
 	if (s.maxToolStreak >= 5) {
 		findings.push({
-			flag: true, kind: "반복 호출", who, what: `같은 도구 호출 연속 ${s.maxToolStreak}회`, amount: `~${M(s.loopTokens)} tok, ${usd(s.loopCost)}`, save: s.loopCost, evidence: s.maxToolDesc,
-			fix: `제안: 같은 호출로 폴링하는 대신 wait/monitor로 대기 - 예상 절감 ~${usd(s.loopCost)}, 결과 동일`,
+			flag: true, kind: L("repeated calls", "반복 호출"), who, what: L(`the same tool call ${s.maxToolStreak} times in a row`, `같은 도구 호출 연속 ${s.maxToolStreak}회`), amount: `~${M(s.loopTokens)} tok, ${usd(s.loopCost)}`, save: s.loopCost, evidence: s.maxToolDesc,
+			fix: L(`Proposal: wait with wait/monitor instead of polling with the same call - expected saving ~${usd(s.loopCost)}, same result`, `제안: 같은 호출로 폴링하는 대신 wait/monitor로 대기 - 예상 절감 ~${usd(s.loopCost)}, 결과 동일`),
 		});
 	}
 	if (s.src.child && s.tokens > SUB_NOTE) {
 		findings.push({
-			flag: s.tokens > SUB_FLAG, kind: "대형 워커", who, what: `${M(s.tokens)} tok, ${s.turns}턴, 압축 ${s.compactions}회, 최대 컨텍스트 ${K(s.maxCtx)}`, amount: usd(s.cost), save: 0,
-			fix: "제안: 브리프를 독립 단계(조사 -> 구현 -> 검증)로 나눠 별도 워커로 - 모델·검증은 그대로",
+			flag: s.tokens > SUB_FLAG, kind: L("large worker", "대형 워커"), who, what: L(`${M(s.tokens)} tok, ${s.turns} turns, ${s.compactions} compactions, max context ${K(s.maxCtx)}`, `${M(s.tokens)} tok, ${s.turns}턴, 압축 ${s.compactions}회, 최대 컨텍스트 ${K(s.maxCtx)}`), amount: usd(s.cost), save: 0,
+			fix: L("Proposal: split the brief into independent steps (research -> implement -> verify) for separate workers - model and verification stay the same", "제안: 브리프를 독립 단계(조사 -> 구현 -> 검증)로 나눠 별도 워커로 - 모델·검증은 그대로"),
 		});
 	}
 }
@@ -460,7 +464,15 @@ const medTok = median(prior.map(d => d.tokens));
 const medCost = median(prior.map(d => d.cost));
 if (prior.length >= 3 && (total > 2 * medTok || totalCost > 2 * medCost)) {
 	const top = [...results].sort((a, b) => b.cost - a.cost).slice(0, 3).map(s => `${s.src.label} ${M(s.tokens)}`).join(", ");
-	findings.push({ flag: true, kind: "급증", who: "전체", what: `합계가 7일 중앙값의 ${(total / Math.max(1, medTok)).toFixed(1)}배`, amount: `${M(total)} tok (${usd(totalCost)}) vs 중앙값 ${M(medTok)} (${usd(medCost)})`, save: 0, evidence: `상위: ${top}` });
+	findings.push({
+		flag: true,
+		kind: L("spike", "급증"),
+		who: L("overall", "전체"),
+		what: L(`total is ${(total / Math.max(1, medTok)).toFixed(1)}x the 7-day median`, `합계가 7일 중앙값의 ${(total / Math.max(1, medTok)).toFixed(1)}배`),
+		amount: L(`${M(total)} tok (${usd(totalCost)}) vs median ${M(medTok)} (${usd(medCost)})`, `${M(total)} tok (${usd(totalCost)}) vs 중앙값 ${M(medTok)} (${usd(medCost)})`),
+		save: 0,
+		evidence: L(`top: ${top}`, `상위: ${top}`),
+	});
 }
 const flags = findings.filter(f => f.flag);
 history = [...history.filter(d => d.date !== today), { date: today, tokens: total, cost: totalCost, cacheWrite: totalCw, sessions: results.length, flags: flags.length }].slice(-14);
@@ -470,40 +482,40 @@ if (KEEP_HISTORY && !DRY) writeFileSync(HISTORY, `${JSON.stringify({ updated: ne
 const ordered = [...findings].sort((a, b) => Number(b.flag) - Number(a.flag) || b.save - a.save);
 const sorted = [...results].sort((a, b) => b.tokens - a.tokens);
 const report = [
-	`# 토큰 누수 점검 ${today} (KST)`,
+	L(`# Token leak audit ${today} (KST)`, `# 토큰 누수 점검 ${today} (KST)`),
 	"",
-	`기간: ${kst(since)} ~ ${kst(now)} KST (${HOURS}h) · 세션 ${results.length}개 · 합계 ${M(total)} tok · ${usd(totalCost)} · 캐시 쓰기 ${M(totalCw)}`,
-	`7일 중앙값: ${prior.length ? `${M(medTok)} tok / ${usd(medCost)} (${prior.length}일)` : "기록 없음"}`,
+	L(`Period: ${kst(since)} ~ ${kst(now)} KST (${HOURS}h) · ${results.length} sessions · total ${M(total)} tok · ${usd(totalCost)} · cache writes ${M(totalCw)}`, `기간: ${kst(since)} ~ ${kst(now)} KST (${HOURS}h) · 세션 ${results.length}개 · 합계 ${M(total)} tok · ${usd(totalCost)} · 캐시 쓰기 ${M(totalCw)}`),
+	L(`7-day median: ${prior.length ? `${M(medTok)} tok / ${usd(medCost)} (${prior.length} days)` : "no history"}`, `7일 중앙값: ${prior.length ? `${M(medTok)} tok / ${usd(medCost)} (${prior.length}일)` : "기록 없음"}`),
 	"",
-	"모든 항목은 보고만 합니다. 자동 적용 없음. \"제안\"은 성능 트레이드오프가 없는 것만, 트레이드오프가 있는 후보는 \"보류\"로 따로 표시합니다.",
+	L("Everything is report only; nothing is applied automatically. A \"Proposal\" has no performance trade-off; candidates with a trade-off are marked \"On hold\" separately.", "모든 항목은 보고만 합니다. 자동 적용 없음. \"제안\"은 성능 트레이드오프가 없는 것만, 트레이드오프가 있는 후보는 \"보류\"로 따로 표시합니다."),
 	"",
-	`## 경고 ${flags.length}건 / 참고 ${findings.length - flags.length}건`,
+	L(`## ${flags.length} warnings / ${findings.length - flags.length} notes`, `## 경고 ${flags.length}건 / 참고 ${findings.length - flags.length}건`),
 	...ordered.flatMap(f => [
 		"",
-		`### ${f.flag ? "경고" : "참고"} [${f.kind}] ${f.who}`,
+		`### ${f.flag ? L("Warning", "경고") : L("Note", "참고")} [${f.kind}] ${f.who}`,
 		`- ${f.what} - ${f.amount}`,
-		...(f.evidence ? [`- 근거: ${f.evidence}`] : []),
+		...(f.evidence ? [`- ${L("Evidence", "근거")}: ${f.evidence}`] : []),
 		...(f.fix ? [`- ${f.fix}`] : []),
 		...(f.hold ? [`- ${f.hold}`] : []),
 	]),
 	"",
-	"## 세션별 (토큰 순)",
+	L("## Per session (by tokens)", "## 세션별 (토큰 순)"),
 	"",
-	...sorted.map(s => `- ${s.src.label}: 시작 ${s.start ? kst(s.start) : "-"}, ${s.turns}턴, ${M(s.tokens)} tok, ${usd(s.cost)}, 캐시 읽기 ${M(s.cr)}, 쓰기 ${M(s.cw)}, 깨짐 ${s.busts.length}, 설명된 큰 쓰기 ${Object.entries(s.explained).map(([k, v]) => `${k}x${v}`).join(" ") || "-"}${s.bigNew ? ` 새내용x${s.bigNew}` : ""}, 헛깨움 ${Object.values(s.wakes).reduce((a, w) => a + w.n, 0)}, 캐시 워밍 ${s.warmings}, TTSR ${s.ttsr}, 에러 ${s.errTurns}, 최대 컨텍스트 ${K(s.maxCtx)}, 압축 ${s.compactions}`),
+	...sorted.map(s => L(`- ${s.src.label}: started ${s.start ? kst(s.start) : "-"}, ${s.turns} turns, ${M(s.tokens)} tok, ${usd(s.cost)}, cache read ${M(s.cr)}, write ${M(s.cw)}, busts ${s.busts.length}, explained big writes ${Object.entries(s.explained).map(([k, v]) => `${k}x${v}`).join(" ") || "-"}${s.bigNew ? ` new content x${s.bigNew}` : ""}, idle wakes ${Object.values(s.wakes).reduce((a, w) => a + w.n, 0)}, cache warmings ${s.warmings}, TTSR ${s.ttsr}, errors ${s.errTurns}, max context ${K(s.maxCtx)}, compactions ${s.compactions}`, `- ${s.src.label}: 시작 ${s.start ? kst(s.start) : "-"}, ${s.turns}턴, ${M(s.tokens)} tok, ${usd(s.cost)}, 캐시 읽기 ${M(s.cr)}, 쓰기 ${M(s.cw)}, 깨짐 ${s.busts.length}, 설명된 큰 쓰기 ${Object.entries(s.explained).map(([k, v]) => `${k}x${v}`).join(" ") || "-"}${s.bigNew ? ` 새내용x${s.bigNew}` : ""}, 헛깨움 ${Object.values(s.wakes).reduce((a, w) => a + w.n, 0)}, 캐시 워밍 ${s.warmings}, TTSR ${s.ttsr}, 에러 ${s.errTurns}, 최대 컨텍스트 ${K(s.maxCtx)}, 압축 ${s.compactions}`)),
 	"",
-	"## 최근 기록",
+	L("## Recent history", "## 최근 기록"),
 	"",
-	...history.map(d => `- ${d.date}: ${M(d.tokens)} tok, ${usd(d.cost)}, 캐시 쓰기 ${M(d.cacheWrite)}, 세션 ${d.sessions}, 경고 ${d.flags}`),
+	...history.map(d => L(`- ${d.date}: ${M(d.tokens)} tok, ${usd(d.cost)}, cache writes ${M(d.cacheWrite)}, sessions ${d.sessions}, warnings ${d.flags}`, `- ${d.date}: ${M(d.tokens)} tok, ${usd(d.cost)}, 캐시 쓰기 ${M(d.cacheWrite)}, 세션 ${d.sessions}, 경고 ${d.flags}`)),
 	"",
-	`기준: 캐시 깨짐 = 미캐시 입력(캐시 쓰기+input) >${K(BUST_UNCACHED)}이면서 캐시 읽기가 직전 컨텍스트의 80% 미만이고, 직전에 압축/모델·thinking 변경/TTL(1h, 5m) 초과 공백이 없음. 헛깨움 = 사용자 입력 없이 알림만으로 시작된 턴이 도구 호출 없이 출력 ${IDLE_OUT} tok 이하로 끝남. 워커 >${M(SUB_NOTE)} 참고, >${M(SUB_FLAG)} 경고.`,
+	L(`Criteria: a cache bust = uncached input (cache writes + input) >${K(BUST_UNCACHED)} while the cache read is under 80% of the previous context, with no compaction, model/thinking change or gap beyond the TTL (1h, 5m) just before. An idle wake = a turn started by a notification alone, without user input, that ends with no tool call and at most ${IDLE_OUT} tok of output. Workers: >${M(SUB_NOTE)} note, >${M(SUB_FLAG)} warning.`, `기준: 캐시 깨짐 = 미캐시 입력(캐시 쓰기+input) >${K(BUST_UNCACHED)}이면서 캐시 읽기가 직전 컨텍스트의 80% 미만이고, 직전에 압축/모델·thinking 변경/TTL(1h, 5m) 초과 공백이 없음. 헛깨움 = 사용자 입력 없이 알림만으로 시작된 턴이 도구 호출 없이 출력 ${IDLE_OUT} tok 이하로 끝남. 워커 >${M(SUB_NOTE)} 참고, >${M(SUB_FLAG)} 경고.`),
 ].join("\n");
 const reportPath = join(LOG_DIR, `token-audit-${today.replace(/-/g, "")}${KEEP_HISTORY ? "" : "-external"}.md`);
 if (!DRY) writeFileSync(reportPath, `${report}\n`);
 
 const summary = [
-	`토큰 점검 (${kst(since)}~${kst(now)}): 세션 ${results.length}개, ${M(total)} tok ${usd(totalCost)}, 경고 ${flags.length}건`,
+	L(`Token audit (${kst(since)}~${kst(now)}): ${results.length} sessions, ${M(total)} tok ${usd(totalCost)}, ${flags.length} warnings`, `토큰 점검 (${kst(since)}~${kst(now)}): 세션 ${results.length}개, ${M(total)} tok ${usd(totalCost)}, 경고 ${flags.length}건`),
 	...flags.sort((a, b) => b.save - a.save).slice(0, 4).map(f => `- ${f.kind} ${f.who}: ${f.amount}`),
-	DRY ? "보고서: 저장 안 함 (--dry)" : `보고서: ${reportPath.replace(HOME, "~")}`,
+	DRY ? L("Report: not saved (--dry)", "보고서: 저장 안 함 (--dry)") : `${L("Report", "보고서")}: ${reportPath.replace(HOME, "~")}`,
 ].join("\n");
 console.log(summary);
 if (DRY) console.log(`\n${report}\n`);

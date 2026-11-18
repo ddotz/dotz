@@ -3,6 +3,7 @@ import { CLOSING } from "./decision.ts";
 import type { Problem } from "./decision.ts";
 import { notify } from "./host.ts";
 import type { Ctx, GateMessage } from "./host.ts";
+import { say } from "../notice.ts";
 import { readPassed, writePassed } from "./log.ts";
 import { failureText } from "./runs.ts";
 import { checkKey } from "./session.ts";
@@ -64,7 +65,7 @@ export function defer(state: State, running: readonly Problem[], ctx: Ctx, deliv
 			leaving.add(state);
 			void watch(state, key, active, ctx, deliver);
 		}
-		if (state.later.has(key)) notify(ctx, `done-gate: check "${problem.name}" is still running in ${problem.repo}; its result will follow.`, "info");
+		if (state.later.has(key)) notify(ctx, say({ en: `done-gate: check "${problem.name}" is still running in ${problem.repo}; its result will follow.`, ko: `done-gate: 검사 "${problem.name}"이(가) ${problem.repo}에서 아직 실행 중입니다. 결과는 끝나는 대로 알려 드립니다.` }), "info");
 	}
 }
 
@@ -101,17 +102,17 @@ async function conclude(state: State, key: string, active: ActiveRun, ctx: Ctx, 
 		state.later.delete(key);
 		const failed = done.timedOut || done.code !== 0;
 		if (done.spawnError !== undefined) {
-			notify(ctx, `done-gate: check "${check.name}" could not be started in ${repo}: ${done.spawnError}; it was not judged.`, "warning");
+			notify(ctx, say({ en: `done-gate: check "${check.name}" could not be started in ${repo}: ${done.spawnError}; it was not judged.`, ko: `done-gate: 검사 "${check.name}"을(를) ${repo}에서 시작하지 못했습니다: ${done.spawnError}. 판정하지 않았습니다.` }), "warning");
 		} else if (fingerprint(now.tree, now.dirty, check.paths) !== active.print) {
-			notify(ctx, `done-gate: check "${check.name}" ${failed ? "failed" : "passed"} in ${repo} for an earlier tree; the next stop runs it again.`, "info");
+			notify(ctx, say({ en: `done-gate: check "${check.name}" ${failed ? "failed" : "passed"} in ${repo} for an earlier tree; the next stop runs it again.`, ko: `done-gate: 검사 "${check.name}"이(가) ${repo}에서 이전 트리 기준으로 ${failed ? "실패했습니다" : "통과했습니다"}. 다음 종료 때 다시 실행합니다.` }), "info");
 		} else if (failed) {
 			deliver({ customType: "done-gate", display: true, content: `${failureText(repo, check, done)}\n\n${CLOSING}` });
 		} else {
 			writePassed(repo, { ...readPassed(repo), [check.name]: { fingerprint: active.print, command: check.command } });
-			notify(ctx, `done-gate: check "${check.name}" passed in ${repo}.`, "info");
+			notify(ctx, say({ en: `done-gate: check "${check.name}" passed in ${repo}.`, ko: `done-gate: 검사 "${check.name}"이(가) ${repo}에서 통과했습니다.` }), "info");
 		}
 	} catch (error) {
 		if (state.later.get(key) === active) state.later.delete(key);
-		notify(ctx, `done-gate: check "${check.name}" ended in ${repo}, but its result could not be handled (${message(error)}); the next stop judges it.`, "warning");
+		notify(ctx, say({ en: `done-gate: check "${check.name}" ended in ${repo}, but its result could not be handled (${message(error)}); the next stop judges it.`, ko: `done-gate: 검사 "${check.name}"이(가) ${repo}에서 끝났지만 결과를 처리하지 못했습니다(${message(error)}). 다음 종료 때 판정합니다.` }), "warning");
 	}
 }

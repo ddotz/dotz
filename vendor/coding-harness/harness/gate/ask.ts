@@ -1,3 +1,4 @@
+import { say } from "../notice.ts";
 import { CODE_LINE, CODE_SPAN, INLINE_CODE, outsideFences, shortened } from "./plaintext.ts";
 import { isProtocolAnswer } from "./report.ts";
 import type { Finding } from "./types.ts";
@@ -48,9 +49,12 @@ export function askRefusal(findings: readonly Finding[]): string {
 	return [INTRO, ...rows, OUTRO].join("\n");
 }
 
-/** What the user is told when a stop lets through a reply that still asks in its text because the run already refused one: the first asking line and how many others there are. */
+/** What the user is told, in the machine's notice language, when a stop lets through a reply that still asks in its text because the run already refused one: the first asking line and how many others there are. */
 export function askWarning(findings: readonly Finding[]): string {
 	const others = findings.length - 1;
 	const first = findings.at(0)?.message ?? "";
-	return `done-gate: the last reply still asks the user something in its text instead of the \`ask\` tool, starting at ${first}${others > 0 ? ` (${others} more line${others === 1 ? "" : "s"})` : ""}; this run already refused a reply for it, so the stop is allowed.`;
+	return say({
+		en: `done-gate: the last reply still asks the user something in its text instead of the \`ask\` tool, starting at ${first}${others > 0 ? ` (${others} more line${others === 1 ? "" : "s"})` : ""}; this run already refused a reply for it, so the stop is allowed.`,
+		ko: `done-gate: 마지막 답변이 \`ask\` 도구 대신 본문에서 사용자에게 질문하고 있습니다(${first}${others > 0 ? ` 외 ${others}줄` : ""}). 이번 실행에서 이미 한 번 되돌렸으므로 종료를 허용합니다.`,
+	});
 }

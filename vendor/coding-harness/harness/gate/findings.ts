@@ -2,11 +2,12 @@ import { createHash } from "node:crypto";
 import type { Problem } from "./decision.ts";
 import { askRefusal } from "./ask.ts";
 import { formatFindings } from "./escape.ts";
+import { leftoverRefusal } from "./leftover.ts";
 import { plainTextRefusal } from "./plaintext.ts";
 import type { Finding } from "./types.ts";
 
 /** The stages that produce findings; the order is the order their findings appear in a refusal. */
-export const STAGES = ["escape", "rules", "defaults", "mistakes", "verify", "cite", "plain", "ask", "report"] as const;
+export const STAGES = ["escape", "rules", "defaults", "mistakes", "verify", "cite", "plain", "ask", "leftover", "report"] as const;
 
 export type StageName = (typeof STAGES)[number];
 
@@ -22,6 +23,7 @@ const HEADERS: Record<StageName, (repo: string) => string | undefined> = {
 	cite: () => undefined,
 	plain: () => undefined,
 	ask: () => undefined,
+	leftover: () => undefined,
 	report: () => undefined,
 };
 
@@ -34,6 +36,7 @@ function bodyOf(stage: StageName, findings: readonly Finding[]): string {
 	if (stage === "escape") return formatFindings([...findings]);
 	if (stage === "plain") return plainTextRefusal(findings);
 	if (stage === "ask") return askRefusal(findings);
+	if (stage === "leftover") return leftoverRefusal(findings);
 	if (stage === "mistakes" || stage === "verify" || stage === "cite" || stage === "report") return findings.map(finding => finding.message).join("\n\n");
 	const rows = findings.slice(0, MAX_ROWS).map(rowOf);
 	if (findings.length > MAX_ROWS) rows.push(`... and ${findings.length - MAX_ROWS} more`);

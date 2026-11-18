@@ -1,10 +1,14 @@
+import { statSync } from "node:fs";
 import { homedir } from "node:os";
-import { basename, join, resolve } from "node:path";
-import { isRecord, list } from "./util.ts";
+import { basename, dirname, join, resolve } from "node:path";
+import { isRecord, list, shellHome } from "./util.ts";
 
 const EDIT_TOOLS: Record<string, true> = { edit: true, write: true, ast_edit: true };
 const SKILL_REF = /skill:\/\/([A-Za-z0-9][A-Za-z0-9._-]*)|(?:^|\/)skills\/([A-Za-z0-9][A-Za-z0-9._-]*)\/[^/\s]/g;
 const SHELL_DIRS = /(?:^|[;&|(\n]\s*)(?:cd|pushd)\s+("[^"]+"|'[^']+'|[^\s;&|)]+)|\bgit\s+-C\s+("[^"]+"|'[^']+'|[^\s;&|)]+)/g;
+const PATH_ARGS = /"([^"]*)"|'([^']*)'|(?<![\w.@+~/}-])((?:\/|~\/|\$HOME\/|\$\{HOME\}\/)[\w@+~./-]*)/g;
+const PATH_START = /^(?:\/|~\/|\$HOME\/|\$\{HOME\}\/)/;
+const HOME_PREFIX = /^(?:~|\$HOME|\$\{HOME\})(?=\/)/;
 
 const skillNames = (text: string): string[] => [...text.matchAll(SKILL_REF)].map(match => match[1] ?? match[2]);
 
@@ -64,7 +68,7 @@ export function editedPaths(tool: string | undefined, input: Record<string, unkn
 	return [...paths];
 }
 
-/** The directories a bash call works in before it runs: its `cwd` input, then each `cd`, `pushd` and `git -C` target of its command, resolved against the directory the command is in at that point. */
+/** The directories a bash call works in before it runs: its `cwd` input, then each `cd`, `pushd` and `git -C` target of its command, resolved against the directory the command is in at that point, then the directory of every absolute path (or `~/`, `$HOME/`, `${HOME}/` path) the command names as a bare word or as a whole quoted string; a path inside a quoted string that starts with something else is text, not an argument. The path itself counts when it is a directory or ends in `/`, else its parent. A file that need not exist yet leads to its nearest existing parent through `existingDir`; nothing is globbed. */
 export function bashDirs(input: Record<string, unknown>, cwd: string): string[] {
 	let at = typeof input.cwd === "string" ? resolve(cwd, input.cwd) : cwd;
 	const dirs = [at];
@@ -76,6 +80,13 @@ export function bashDirs(input: Record<string, unknown>, cwd: string): string[] 
 		if (target === undefined) continue;
 		if (entered !== undefined) at = target;
 		dirs.push(target);
+	}
+	for (const match of command.matchAll(PATH_ARGS)) {
+		const raw = match[1] ?? match[2] ?? match[3];
+		if (!PATH_START.test(raw)) continue;
+		const path = resolve(raw.replace(HOME_PREFIX, shellHome()));
+		const dir = raw.endsWith("/") || statSync(path, { throwIfNoEntry: false })?.isDirectory() === true ? path : dirname(path);
+		if (!dirs.includes(dir)) dirs.push(dir);
 	}
 	return dirs;
 }

@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { harnessDir } from "../agent-home.ts";
 import { setupCommit } from "../gate/log.ts";
 import { lastStopReason } from "../guard/limit-lift.ts";
+import { say } from "../notice.ts";
 
 /** Why a session restarts: the agent asked for it and goes on after it (`asked`), or the installed harness changed under it (`deployed`); `stopped` when its last run was aborted or ended in an error, so nothing is restarted for it. */
 export interface RestartRequest {
@@ -226,7 +227,8 @@ export function createSessionRestart(pi: RestartApi, loadComposer: () => Promise
 		try {
 			Base = await loadComposer();
 		} catch (error) {
-			ui.notify(`session-restart: the TUI composer could not be loaded (${error instanceof Error ? error.message : String(error)}); this session cannot restart itself.`, "warning");
+			const reason = error instanceof Error ? error.message : String(error);
+			ui.notify(say({ en: `session-restart: the TUI composer could not be loaded (${reason}); this session cannot restart itself.`, ko: `session-restart: TUI 입력창을 불러오지 못했습니다(${reason}). 이 세션은 스스로 재시작할 수 없습니다.` }), "warning");
 			return;
 		}
 		const previous = ui.getEditorComponent?.();

@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { type NoticeText, say } from "../notice.ts";
 import type { AcceptedComment } from "./escape.ts";
 import type { Preexisting } from "./types.ts";
 
@@ -14,7 +15,7 @@ export const MAX_WAITS = 30;
 /** What a refusal for work ends with, and a check's failure that arrives after a stop: fix the cause and finish again, and make the reply after the fix the final report, since that reply is what the user reads. */
 export const CLOSING = "Fix the cause and finish again; do not edit the gate file or the check to get through. The reply you write after the fix is what the user reads, so write it as the final report.";
 const WAIT_CLOSING = "Finish again to wait for it: each stop waits for the check and the next one collects its result. End this turn with one short line, not a report; once the check is in, the gate asks for the final report.";
-const STAGE_ORDER: readonly string[] = ["escape", "rules", "defaults", "mistakes", "verify", "cite", "plain", "ask", "report"];
+const STAGE_ORDER: readonly string[] = ["escape", "rules", "defaults", "mistakes", "verify", "cite", "plain", "ask", "leftover", "report"];
 
 /** What a stop came to for one repo. `running` is a refusal made only to wait for a check; `deferred` is a stop an interactive session was let through while a check of the repo was still running, whose result arrives when the check ends. */
 export type Outcome = "clean" | "pass" | "blocked" | "fixed" | "waived" | "user-waived" | "unsatisfied" | "no-gate" | "error" | "running" | "deferred";
@@ -90,7 +91,7 @@ export function decideStop(results: readonly RepoResult[], memory: RunMemory): D
 	const mark = (pick: (r: RepoResult) => Outcome) => {
 		for (const r of results) outcomes[r.repo] = pick(r);
 	};
-	const notices = results.filter(r => r.waived.length).map(r => `done-gate: ${r.repo} passed by waiver (${r.waived.join("; ")}).`);
+	const notices = results.filter(r => r.waived.length).map(r => say({ en: `done-gate: ${r.repo} passed by waiver (${r.waived.join("; ")}).`, ko: `done-gate: ${r.repo}은(는) 면제로 통과했습니다(${r.waived.join("; ")}).` }));
 	const all = results.flatMap(r => r.problems);
 	const staged = all.filter(p => p.kind === "finding").sort((a, b) => stageRank(a) - stageRank(b));
 	const verdicts = all.filter(p => p.kind === "check" || p.kind === "evidence");
@@ -100,20 +101,21 @@ export function decideStop(results: readonly RepoResult[], memory: RunMemory): D
 		mark(settled);
 		return { block: false, outcomes, streak: undefined, notices };
 	}
-	const letThrough = (why: string): Decision => {
+	const letThrough = (why: NoticeText): Decision => {
 		mark(r => (r.problems.length ? "unsatisfied" : settled(r)));
-		notices.push(`done-gate: ${why}; letting the session finish with it (${[...hard, ...waiting].map(describe).join("; ")}).`);
+		const left = [...hard, ...waiting].map(describe).join("; ");
+		notices.push(say({ en: `done-gate: ${why.en}; letting the session finish with it (${left}).`, ko: `done-gate: ${why.ko}. 이 상태 그대로 세션을 끝내도록 허용합니다(${left}).` }));
 		return { block: false, outcomes, streak: undefined, notices };
 	};
 	const reasonOf = (problems: readonly Problem[], closing: string) => `${problems.map(p => p.text).join("\n\n")}\n\n${closing}`;
-	if (hard.length > 0 && memory.refusals >= MAX_REFUSALS) return letThrough(`this run was refused ${MAX_REFUSALS} times`);
+	if (hard.length > 0 && memory.refusals >= MAX_REFUSALS) return letThrough({ en: `this run was refused ${MAX_REFUSALS} times`, ko: `이번 실행에서 ${MAX_REFUSALS}번 거절했습니다` });
 	if (waiting.length > 0) {
-		if (hard.length === 0 && memory.waits >= MAX_WAITS) return letThrough(`this run was refused ${MAX_WAITS} times only because a check was still running`);
+		if (hard.length === 0 && memory.waits >= MAX_WAITS) return letThrough({ en: `this run was refused ${MAX_WAITS} times only because a check was still running`, ko: `이번 실행에서 검사가 아직 실행 중이라는 이유만으로 ${MAX_WAITS}번 거절했습니다` });
 		mark(r => (r.problems.some(p => p.kind !== "running") ? "blocked" : r.problems.length ? "running" : settled(r)));
 		return { block: true, running: hard.length === 0, reason: reasonOf([...staged, ...waiting, ...verdicts], hard.length ? CLOSING : WAIT_CLOSING), outcomes, streak: memory.streak, notices };
 	}
 	const signature = createHash("sha256").update(hard.map(p => `${p.repo}|${p.kind}|${p.name}|${p.state}`).sort().join("\n")).digest("hex");
-	if (memory.streak?.signature === signature && memory.streak.blocks >= MAX_BLOCKS) return letThrough(`the same unsatisfied state was refused ${MAX_BLOCKS} times`);
+	if (memory.streak?.signature === signature && memory.streak.blocks >= MAX_BLOCKS) return letThrough({ en: `the same unsatisfied state was refused ${MAX_BLOCKS} times`, ko: `같은 미충족 상태를 ${MAX_BLOCKS}번 거절했습니다` });
 	mark(r => (r.problems.length ? "blocked" : settled(r)));
 	return { block: true, running: false, reason: reasonOf(hard, CLOSING), outcomes, streak: { signature, blocks: memory.streak?.signature === signature ? memory.streak.blocks + 1 : 1 }, notices };
 }
@@ -123,6 +125,8 @@ export function waivedStop(results: readonly RepoResult[], reason: string): Deci
 	const outcomes: Record<string, Outcome> = {};
 	for (const r of results) outcomes[r.repo] = "user-waived";
 	const carried = results.flatMap(r => r.problems).sort((a, b) => stageRank(a) - stageRank(b));
-	const found = carried.length ? `; it carried ${carried.map(describe).join("; ")}` : "";
-	return { block: false, outcomes, streak: undefined, notices: [`done-gate: /gate-ok let this stop through (${reason})${found}.`] };
+	const names = carried.map(describe).join("; ");
+	const en = `done-gate: /gate-ok let this stop through (${reason})${carried.length ? `; it carried ${names}` : ""}.`;
+	const ko = `done-gate: /gate-ok로 이 종료를 허용했습니다(${reason})${carried.length ? `. 이 종료에는 ${names}이(가) 남아 있었습니다` : ""}.`;
+	return { block: false, outcomes, streak: undefined, notices: [say({ en, ko })] };
 }

@@ -1,5 +1,6 @@
 import { constants, copyFileSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { extname, join, posix, resolve } from "node:path";
+import { say } from "../notice.ts";
 import { adoptRule, runBounded } from "./rules.ts";
 import { git } from "./snapshot.ts";
 import { AST_GREP } from "./types.ts";
@@ -67,7 +68,7 @@ export interface Outcome {
 	message: string;
 }
 
-const GUIDANCE = "Only the user accepts a draft: /gate-boundaries accept <id> moves it into the rule kit and adopts it, /gate-boundaries reject <id> drops it for good.";
+const guidance = (): string => say({ en: "Only the user accepts a draft: /gate-boundaries accept <id> moves it into the rule kit and adopts it, /gate-boundaries reject <id> drops it for good.", ko: "초안은 사용자만 수락할 수 있습니다. /gate-boundaries accept <id>는 초안을 규칙 키트로 옮기고 채택하며, /gate-boundaries reject <id>는 초안을 영구히 버립니다." });
 const DRAFTED_NOTE = " Drafted from the import graph; it matches relative imports only.";
 const MIN_FILES = 5;
 const MAX_DRAFTS = 20;
@@ -89,6 +90,7 @@ const draftsDir = (repo: string): string => join(lintDir(repo), "drafts");
 const hasKit = (repo: string): boolean => existsSync(join(lintDir(repo), "sgconfig.yml"));
 const byText = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
 const plural = (count: number, noun: string): string => `${count} ${noun}${count === 1 ? "" : "s"}`;
+const unreadable = (): string => say({ en: "(unreadable draft)", ko: "(읽을 수 없는 초안)" });
 
 function importForms(language: Language): string {
 	const forms = [
@@ -331,9 +333,9 @@ function readRejected(repo: string): { ids: string[] } | { problem: string } {
 	try {
 		parsed = JSON.parse(readFileSync(file, "utf8"));
 	} catch (error) {
-		return { problem: `.omp/lint/drafts/rejected.json does not parse: ${message(error)}` };
+		return { problem: say({ en: `.omp/lint/drafts/rejected.json does not parse: ${message(error)}`, ko: `.omp/lint/drafts/rejected.json을(를) 해석하지 못했습니다: ${message(error)}` }) };
 	}
-	if (!Array.isArray(parsed) || !parsed.every((id): id is string => typeof id === "string")) return { problem: ".omp/lint/drafts/rejected.json must be an array of rule ids" };
+	if (!Array.isArray(parsed) || !parsed.every((id): id is string => typeof id === "string")) return { problem: say({ en: ".omp/lint/drafts/rejected.json must be an array of rule ids", ko: ".omp/lint/drafts/rejected.json은(는) 규칙 id 배열이어야 합니다" }) };
 	return { ids: parsed };
 }
 
@@ -349,9 +351,9 @@ function draftIds(repo: string): string[] {
 function messageOfDraft(repo: string, id: string): string {
 	try {
 		const rule: unknown = Bun.YAML.parse(readFileSync(join(draftsDir(repo), `${id}.yml`), "utf8"));
-		return isRecord(rule) && typeof rule.message === "string" ? rule.message : "(unreadable draft)";
+		return isRecord(rule) && typeof rule.message === "string" ? rule.message : unreadable();
 	} catch {
-		return "(unreadable draft)";
+		return unreadable();
 	}
 }
 
@@ -384,7 +386,7 @@ export async function planDrafts(input: { repo: string; date?: string; signal?: 
 /** Writes the plan's drafts to `.omp/lint/drafts` (rule and test side by side) and returns the repo-relative paths; a draft already there is left as it is. Throws when the repo has no rule kit, because a bare `.omp/lint` would keep bootstrap from creating one. */
 export function writeDrafts(input: { repo: string; plan: DraftPlan }): string[] {
 	const repo = resolve(input.repo);
-	if (!hasKit(repo)) throw new Error(`${repo} has no rule kit (.omp/lint/sgconfig.yml); run \`bun ${BOOTSTRAP} ${repo}\` first.`);
+	if (!hasKit(repo)) throw new Error(say({ en: `${repo} has no rule kit (.omp/lint/sgconfig.yml); run \`bun ${BOOTSTRAP} ${repo}\` first.`, ko: `${repo}에는 규칙 키트(.omp/lint/sgconfig.yml)가 없습니다. 먼저 \`bun ${BOOTSTRAP} ${repo}\`를 실행하세요.` }));
 	const dir = draftsDir(repo);
 	mkdirSync(dir, { recursive: true });
 	const written: string[] = [];
@@ -409,24 +411,44 @@ function describeDrafts(drafts: { id: string; message: string }[]): string {
 
 function listing(repo: string): string {
 	const ids = draftIds(repo);
-	return `${plural(ids.length, "boundary draft")} in ${draftsDir(repo)}, inactive until accepted:\n${describeDrafts(ids.map(id => ({ id, message: messageOfDraft(repo, id) })))}\n${GUIDANCE}`;
+	const drafts = describeDrafts(ids.map(id => ({ id, message: messageOfDraft(repo, id) })));
+	return say({ en: `${plural(ids.length, "boundary draft")} in ${draftsDir(repo)}, inactive until accepted:\n${drafts}\n${guidance()}`, ko: `${draftsDir(repo)}의 경계 초안 ${ids.length}개(수락하기 전에는 적용되지 않습니다):\n${drafts}\n${guidance()}` });
 }
 
 function summary(plan: DraftPlan): string {
-	return `${plural(plan.sources, "source file")} in ${plural(plan.groups, "group")} of ${plural(plan.roots, "source root")}; ${plural(plan.kept.length, "draft")} already there`;
+	return say({
+		en: `${plural(plan.sources, "source file")} in ${plural(plan.groups, "group")} of ${plural(plan.roots, "source root")}; ${plural(plan.kept.length, "draft")} already there`,
+		ko: `소스 파일 ${plan.sources}개, 그룹 ${plan.groups}개, 소스 루트 ${plan.roots}개; 이미 있는 초안 ${plan.kept.length}개`,
+	});
 }
 
 async function draftCommand(input: { repo: string; dryRun: boolean; date?: string; signal?: AbortSignal }): Promise<Outcome> {
 	const { repo, dryRun } = input;
 	const plan = await planDrafts(input);
-	const found = plan.drafts.length === 0 ? "No new boundary qualifies." : `${plural(plan.drafts.length, "new draft")} would be written to ${draftsDir(repo)}:\n${describeDrafts(plan.drafts)}`;
-	if (dryRun) return { ok: true, message: `--dry-run: nothing was written. ${summary(plan)}.\n${found}` };
+	const found =
+		plan.drafts.length === 0
+			? say({ en: "No new boundary qualifies.", ko: "새로 만들 만한 경계가 없습니다." })
+			: say({ en: `${plural(plan.drafts.length, "new draft")} would be written to ${draftsDir(repo)}:\n${describeDrafts(plan.drafts)}`, ko: `${draftsDir(repo)}에 새 초안 ${plan.drafts.length}개를 쓸 예정입니다:\n${describeDrafts(plan.drafts)}` });
+	if (dryRun) return { ok: true, message: say({ en: `--dry-run: nothing was written. ${summary(plan)}.\n${found}`, ko: `--dry-run: 아무것도 쓰지 않았습니다. ${summary(plan)}.\n${found}` }) };
 	if (!hasKit(repo)) {
-		return { ok: false, message: `Nothing was written: ${repo} has no rule kit (.omp/lint/sgconfig.yml), and a bare .omp/lint would keep bootstrap from creating one. Run \`bun ${BOOTSTRAP} ${repo}\` first. ${summary(plan)}.\n${found}` };
+		return {
+			ok: false,
+			message: say({
+				en: `Nothing was written: ${repo} has no rule kit (.omp/lint/sgconfig.yml), and a bare .omp/lint would keep bootstrap from creating one. Run \`bun ${BOOTSTRAP} ${repo}\` first. ${summary(plan)}.\n${found}`,
+				ko: `아무것도 쓰지 않았습니다. ${repo}에는 규칙 키트(.omp/lint/sgconfig.yml)가 없고, 빈 .omp/lint가 있으면 부트스트랩이 키트를 만들지 못합니다. 먼저 \`bun ${BOOTSTRAP} ${repo}\`를 실행하세요. ${summary(plan)}.\n${found}`,
+			}),
+		};
 	}
 	writeDrafts({ repo, plan });
-	const head = `${summary(plan)}; ${plural(plan.drafts.length, "new draft")} written.`;
-	return draftIds(repo).length === 0 ? { ok: true, message: `${head} No boundary qualifies: it takes two directories of at least ${MIN_FILES} files where one never imports the other and a third does.` } : { ok: true, message: `${head}\n${listing(repo)}` };
+	const head = say({ en: `${summary(plan)}; ${plural(plan.drafts.length, "new draft")} written.`, ko: `${summary(plan)}; 새 초안 ${plan.drafts.length}개를 썼습니다.` });
+	if (draftIds(repo).length > 0) return { ok: true, message: `${head}\n${listing(repo)}` };
+	return {
+		ok: true,
+		message: say({
+			en: `${head} No boundary qualifies: it takes two directories of at least ${MIN_FILES} files where one never imports the other and a third does.`,
+			ko: `${head} 조건에 맞는 경계가 없습니다. 파일이 ${MIN_FILES}개 이상인 두 디렉터리가 있고, 한쪽이 다른 쪽을 가져오지 않는데 세 번째 디렉터리는 가져와야 합니다.`,
+		}),
+	};
 }
 
 function draftFiles(repo: string, id: string): { rule: string; test: string } {
@@ -442,20 +464,26 @@ function draftFiles(repo: string, id: string): { rule: string; test: string } {
 export async function acceptDraft(input: { repo: string; id: string }): Promise<Outcome> {
 	const repo = resolve(input.repo);
 	const { id } = input;
-	if (!hasKit(repo)) return { ok: false, message: `${repo} has no rule kit (.omp/lint/sgconfig.yml), so nothing was moved. Run \`bun ${BOOTSTRAP} ${repo}\` to create it, then accept ${id} again.` };
-	if (!ID_FORMAT.test(id)) return { ok: false, message: `${JSON.stringify(id)} is not a rule id; nothing was moved.` };
+	if (!hasKit(repo)) return { ok: false, message: say({ en: `${repo} has no rule kit (.omp/lint/sgconfig.yml), so nothing was moved. Run \`bun ${BOOTSTRAP} ${repo}\` to create it, then accept ${id} again.`, ko: `${repo}에는 규칙 키트(.omp/lint/sgconfig.yml)가 없어 아무것도 옮기지 않았습니다. \`bun ${BOOTSTRAP} ${repo}\`로 키트를 만든 뒤 ${id}을(를) 다시 수락하세요.` }) };
+	if (!ID_FORMAT.test(id)) return { ok: false, message: say({ en: `${JSON.stringify(id)} is not a rule id; nothing was moved.`, ko: `${JSON.stringify(id)}은(는) 규칙 id가 아니어서 아무것도 옮기지 않았습니다.` }) };
 	const draft = draftFiles(repo, id);
-	if (!existsSync(draft.rule) || !existsSync(draft.test)) return { ok: false, message: `No draft ${id} (rule and test) in ${draftsDir(repo)}; nothing was moved. Drafts: ${draftIds(repo).join(", ") || "none"}.` };
+	if (!existsSync(draft.rule) || !existsSync(draft.test)) {
+		const known = draftIds(repo).join(", ");
+		return { ok: false, message: say({ en: `No draft ${id} (rule and test) in ${draftsDir(repo)}; nothing was moved. Drafts: ${known || "none"}.`, ko: `${draftsDir(repo)}에 초안 ${id}(규칙과 테스트)이(가) 없어 아무것도 옮기지 않았습니다. 초안: ${known || "없음"}.` }) };
+	}
 	let parsed: unknown;
 	try {
 		parsed = Bun.YAML.parse(readFileSync(draft.rule, "utf8"));
 	} catch (error) {
-		return { ok: false, message: `The draft ${id} does not parse as YAML (${message(error)}); nothing was moved.` };
+		return { ok: false, message: say({ en: `The draft ${id} does not parse as YAML (${message(error)}); nothing was moved.`, ko: `초안 ${id}을(를) YAML로 해석하지 못해 아무것도 옮기지 않았습니다(${message(error)}).` }) };
 	}
-	if (!isRecord(parsed) || parsed.id !== id) return { ok: false, message: `The draft file ${id}.yml does not carry the id ${id}; nothing was moved.` };
+	if (!isRecord(parsed) || parsed.id !== id) return { ok: false, message: say({ en: `The draft file ${id}.yml does not carry the id ${id}; nothing was moved.`, ko: `초안 파일 ${id}.yml에 id ${id}이(가) 없어 아무것도 옮기지 않았습니다.` }) };
 	const rule = join(lintDir(repo), "rules", `${id}.yml`);
 	const test = join(lintDir(repo), "tests", `${id}-test.yml`);
-	if (existsSync(rule) || existsSync(test)) return { ok: false, message: `The rule kit already has ${id} (${existsSync(rule) ? "rules" : "tests"}); nothing was moved.` };
+	if (existsSync(rule) || existsSync(test)) {
+		const where = existsSync(rule) ? "rules" : "tests";
+		return { ok: false, message: say({ en: `The rule kit already has ${id} (${where}); nothing was moved.`, ko: `규칙 키트에 이미 ${id}이(가) 있어(${where}) 아무것도 옮기지 않았습니다.` }) };
+	}
 	mkdirSync(join(lintDir(repo), "rules"), { recursive: true });
 	mkdirSync(join(lintDir(repo), "tests"), { recursive: true });
 	const created: string[] = [];
@@ -466,11 +494,11 @@ export async function acceptDraft(input: { repo: string; id: string }): Promise<
 			created.push(target);
 		}
 		const result = await adoptRule({ repo, rule: id });
-		if (!result.ok) return { ok: false, message: `Adoption failed, so nothing was moved: ${result.message}` };
+		if (!result.ok) return { ok: false, message: say({ en: `Adoption failed, so nothing was moved: ${result.message}`, ko: `채택에 실패해 아무것도 옮기지 않았습니다: ${result.message}` }) };
 		adopted = true;
 		rmSync(draft.rule);
 		rmSync(draft.test);
-		return { ok: true, message: `Accepted ${id}: it is now a rule of .omp/lint/rules with its test in .omp/lint/tests, ${result.message}.` };
+		return { ok: true, message: say({ en: `Accepted ${id}: it is now a rule of .omp/lint/rules with its test in .omp/lint/tests, ${result.message}.`, ko: `${id}을(를) 수락했습니다. 이제 .omp/lint/rules의 규칙이며 테스트는 .omp/lint/tests에 있습니다. ${result.recorded === undefined ? result.message : `${result.recorded.files}개 파일의 ${result.recorded.occurrences}건을 기록했습니다`}.` }) };
 	} finally {
 		if (!adopted) for (const file of created) rmSync(file, { force: true });
 	}
@@ -480,15 +508,18 @@ export async function acceptDraft(input: { repo: string; id: string }): Promise<
 export function rejectDraft(input: { repo: string; id: string }): Outcome {
 	const repo = resolve(input.repo);
 	const { id } = input;
-	if (!ID_FORMAT.test(id)) return { ok: false, message: `${JSON.stringify(id)} is not a rule id; nothing was rejected.` };
+	if (!ID_FORMAT.test(id)) return { ok: false, message: say({ en: `${JSON.stringify(id)} is not a rule id; nothing was rejected.`, ko: `${JSON.stringify(id)}은(는) 규칙 id가 아니어서 아무것도 버리지 않았습니다.` }) };
 	const draft = draftFiles(repo, id);
-	if (!existsSync(draft.rule) && !existsSync(draft.test)) return { ok: false, message: `No draft ${id} in ${draftsDir(repo)}; nothing was rejected. Drafts: ${draftIds(repo).join(", ") || "none"}.` };
+	if (!existsSync(draft.rule) && !existsSync(draft.test)) {
+		const known = draftIds(repo).join(", ");
+		return { ok: false, message: say({ en: `No draft ${id} in ${draftsDir(repo)}; nothing was rejected. Drafts: ${known || "none"}.`, ko: `${draftsDir(repo)}에 초안 ${id}이(가) 없어 아무것도 버리지 않았습니다. 초안: ${known || "없음"}.` }) };
+	}
 	const rejected = readRejected(repo);
-	if ("problem" in rejected) return { ok: false, message: `${rejected.problem}; nothing was rejected. Fix or delete it.` };
+	if ("problem" in rejected) return { ok: false, message: say({ en: `${rejected.problem}; nothing was rejected. Fix or delete it.`, ko: `${rejected.problem}. 아무것도 버리지 않았습니다. 파일을 고치거나 삭제하세요.` }) };
 	writeFileSync(join(draftsDir(repo), "rejected.json"), `${JSON.stringify([...new Set([...rejected.ids, id])].sort(byText), null, 2)}\n`);
 	rmSync(draft.rule, { force: true });
 	rmSync(draft.test, { force: true });
-	return { ok: true, message: `Rejected ${id}: the draft is deleted and ${id} is recorded in .omp/lint/drafts/rejected.json, so it is not drafted again.` };
+	return { ok: true, message: say({ en: `Rejected ${id}: the draft is deleted and ${id} is recorded in .omp/lint/drafts/rejected.json, so it is not drafted again.`, ko: `${id}을(를) 버렸습니다. 초안을 삭제하고 ${id}을(를) .omp/lint/drafts/rejected.json에 기록했으므로 다시 만들지 않습니다.` }) };
 }
 
 /** Runs one boundary command on `repo`; see {@link BoundariesAction}. A failure of git or ast-grep is an `ok: false` outcome, not an exception. */
@@ -501,7 +532,7 @@ export async function runBoundaries(input: { repo: string; action: BoundariesAct
 		if (action.kind === "list" && draftIds(repo).length > 0) return { ok: true, message: listing(repo) };
 		return await draftCommand({ repo, dryRun: action.kind === "draft" && action.dryRun, date: input.date, signal: input.signal });
 	} catch (error) {
-		return { ok: false, message: `boundaries failed: ${message(error)}` };
+		return { ok: false, message: say({ en: `boundaries failed: ${message(error)}`, ko: `경계 규칙 작업에 실패했습니다: ${message(error)}` }) };
 	}
 }
 

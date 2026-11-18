@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, resolve } from "node:path";
+import { say } from "../notice.ts";
 import { type Block, block } from "./block.ts";
 import { checkoutRoots, checkTaskInput, dropLongTtl, estimateFrom, inGitRepo, trimWaitOutput } from "./briefs.ts";
 import { anthropicLimits, BUDGET_OK_MS, budgetProblem, roleEffortOfAgent } from "./budget.ts";
@@ -207,7 +208,7 @@ export function registerGuardHooks(pi: HostApi): void {
 		description: "Allow worker spawns for 30 minutes despite a low Anthropic quota (orchestrator-guard budget gate).",
 		handler: async (_args: unknown, ctx: HostCtx) => {
 			budgetOkUntil = Date.now() + BUDGET_OK_MS;
-			ctx.ui?.notify?.("orchestrator-guard: worker spawns allowed for 30 minutes despite low quota.", "info");
+			ctx.ui?.notify?.(say({ en: "orchestrator-guard: worker spawns allowed for 30 minutes despite low quota.", ko: "orchestrator-guard: 사용량이 부족해도 30분 동안 워커 생성을 허용합니다." }), "info");
 		},
 	});
 
@@ -217,9 +218,9 @@ export function registerGuardHooks(pi: HostApi): void {
 			const selector = String(args ?? "").trim();
 			const parts = selector.match(/^([^/\s]+)\/([^:\s]+)(?::(\w+))?$/);
 			debug({ phase: "switch-start", selector, parsed: Boolean(parts), tokens: contextTokens(ctx), usage: ctx?.getContextUsage?.() });
-			if (!parts) return ctx.ui?.notify?.("usage: /compact-switch provider/model[:thinking], e.g. /compact-switch anthropic/claude-opus-5-5:medium", "warning");
+			if (!parts) return ctx.ui?.notify?.(say({ en: "usage: /compact-switch provider/model[:thinking], e.g. /compact-switch anthropic/claude-opus-5-5:medium", ko: "사용법: /compact-switch provider/model[:thinking], 예: /compact-switch anthropic/claude-opus-5-5:medium" }), "warning");
 			const model = ctx.modelRegistry?.find?.(parts[1], parts[2]);
-			if (!model) return ctx.ui?.notify?.(`orchestrator-guard: model ${parts[1]}/${parts[2]} not found`, "warning");
+			if (!model) return ctx.ui?.notify?.(say({ en: `orchestrator-guard: model ${parts[1]}/${parts[2]} not found`, ko: `orchestrator-guard: 모델 ${parts[1]}/${parts[2]}을(를) 찾지 못했습니다` }), "warning");
 			const tokens = contextTokens(ctx);
 			try {
 				if (tokens >= SWITCH_COMPACT_MIN_TOKENS) {
@@ -231,13 +232,16 @@ export function registerGuardHooks(pi: HostApi): void {
 						debug({ phase: "switch-compact-noop" });
 					}
 				}
-				if (!(await pi.setModel?.(model))) return ctx.ui?.notify?.(`orchestrator-guard: could not switch to ${selector}`, "warning");
+				if (!(await pi.setModel?.(model))) return ctx.ui?.notify?.(say({ en: `orchestrator-guard: could not switch to ${selector}`, ko: `orchestrator-guard: ${selector}(으)로 전환하지 못했습니다` }), "warning");
 				if (parts[3]) pi.setThinkingLevel?.(parts[3]);
 				debug({ phase: "switch", selector, tokensBefore: tokens, tokensAfter: contextTokens(ctx) });
-				ctx.ui?.notify?.(`orchestrator-guard: switched to ${selector} (context ${Math.round(tokens / 1000)}K -> ${Math.round(contextTokens(ctx) / 1000)}K)`, "info");
+				const after = Math.round(contextTokens(ctx) / 1000);
+				const before = Math.round(tokens / 1000);
+				ctx.ui?.notify?.(say({ en: `orchestrator-guard: switched to ${selector} (context ${before}K -> ${after}K)`, ko: `orchestrator-guard: ${selector}(으)로 전환했습니다(컨텍스트 ${before}K -> ${after}K)` }), "info");
 			} catch (error) {
 				debug({ phase: "switch-error", message: String(error) });
-				ctx.ui?.notify?.(`orchestrator-guard: switch aborted, model unchanged (${error instanceof Error ? error.message : String(error)})`, "warning");
+				const reason = error instanceof Error ? error.message : String(error);
+				ctx.ui?.notify?.(say({ en: `orchestrator-guard: switch aborted, model unchanged (${reason})`, ko: `orchestrator-guard: 전환이 중단되어 모델은 그대로입니다(${reason})` }), "warning");
 			}
 		},
 	});

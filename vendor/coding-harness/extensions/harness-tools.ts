@@ -4,6 +4,7 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { harnessDir, isHostCopy } from "../harness/agent-home.ts";
 import { loadState, patchDiscarded } from "../harness/guard/state.ts";
+import { type NoticeLanguage, type NoticeText, noticeLanguage, say } from "../harness/notice.ts";
 
 const HOME = homedir();
 const AUDIT_SCRIPT = join(harnessDir(), "token-audit.ts");
@@ -23,13 +24,13 @@ const SETUP_FILE = join(harnessDir(), ".setup-version");
 const readSetupVersion = () => (existsSync(SETUP_FILE) ? readFileSync(SETUP_FILE, "utf8").trim() : "");
 const LOADED_SETUP = readSetupVersion();
 
-/** The doctor's harness line from the commit this process loaded and the one deployed now; a deploy the session has not restarted into is a problem. */
-export function setupStatus(loaded: string, deployed: string): { info?: string; problem?: string } {
-	if (!deployed) return { problem: `the harness on this machine was not set up from the harness-foundation repo (no ${SETUP_FILE}); have an agent follow SETUP.md of that repo, which ends with a check that the machine matches it` };
-	if (!loaded || loaded === deployed) return { info: `harness setup: ${deployed.slice(0, 7)}` };
+/** The doctor's harness line from the commit this process loaded and the one deployed now; a deploy the session has not restarted into is a problem. `t` picks the language of each line (English by default). */
+export function setupStatus(loaded: string, deployed: string, t: (text: NoticeText) => string = text => text.en): { info?: string; problem?: string } {
+	if (!deployed) return { problem: t({ en: `the harness on this machine was not set up from the harness-foundation repo (no ${SETUP_FILE}); have an agent follow SETUP.md of that repo, which ends with a check that the machine matches it`, ko: `이 기기의 하네스는 harness-foundation 저장소로 설치되지 않았습니다(${SETUP_FILE} 없음). 에이전트에게 그 저장소의 SETUP.md를 따르게 하세요. 마지막 단계가 기기와 저장소가 맞는지 확인합니다` }) };
+	if (!loaded || loaded === deployed) return { info: t({ en: `harness setup: ${deployed.slice(0, 7)}`, ko: `하네스 설치: ${deployed.slice(0, 7)}` }) };
 	return {
-		info: `harness setup: ${deployed.slice(0, 7)} (this session runs ${loaded.slice(0, 7)})`,
-		problem: `the deployed harness ${deployed.slice(0, 7)} is not loaded: this session still runs ${loaded.slice(0, 7)}; call session_restart`,
+		info: t({ en: `harness setup: ${deployed.slice(0, 7)} (this session runs ${loaded.slice(0, 7)})`, ko: `하네스 설치: ${deployed.slice(0, 7)} (이 세션은 ${loaded.slice(0, 7)}로 실행 중)` }),
+		problem: t({ en: `the deployed harness ${deployed.slice(0, 7)} is not loaded: this session still runs ${loaded.slice(0, 7)}; call session_restart`, ko: `배포된 하네스 ${deployed.slice(0, 7)}가 실리지 않았습니다. 이 세션은 아직 ${loaded.slice(0, 7)}로 실행 중이니 session_restart를 부르세요` }),
 	};
 }
 
@@ -151,7 +152,8 @@ async function anthropicLimits(): Promise<string> {
 	}
 }
 
-export function guardHealth(sessionDir: string): { problems: string[]; info: string } {
+/** What the session files of the last 7 days in `sessionDir` show about the guard: briefs it did not process, writers without isolation, task-result and merge-summary formats it no longer parses. `t` picks the language of each line (English by default). */
+export function guardHealth(sessionDir: string, t: (text: NoticeText) => string = text => text.en): { problems: string[]; info: string } {
 	const counts = { items: 0, marked: 0, writers: 0, isolated: 0, results: 0, parsed: 0, patchMentions: 0, patchParsed: 0 };
 	let files: string[] = [];
 	try {
@@ -193,11 +195,11 @@ export function guardHealth(sessionDir: string): { problems: string[]; info: str
 		}
 	}
 	const problems: string[] = [];
-	if (counts.marked < counts.items) problems.push(`orchestrator-guard did not process ${counts.items - counts.marked} of ${counts.items} worker briefs (extension not loaded, or omp changed how tool input revisions are stored)`);
-	if (counts.isolated < counts.writers) problems.push(`${counts.writers - counts.isolated} of ${counts.writers} writing workers ran without isolation (they edited the real checkout)`);
-	if (counts.parsed < counts.results) problems.push(`omp task-result format changed: the guard parses ${counts.parsed} of ${counts.results} results, so output trimming and worker state tracking are partly off`);
-	if (counts.patchParsed < counts.patchMentions) problems.push(`omp merge-summary format changed: ${counts.patchMentions - counts.patchParsed} patch paths are not recognised, so unapplied patches are not tracked`);
-	return { problems, info: `guard: ${counts.items} briefs, ${counts.results} results, ${counts.patchMentions} patches checked in ${files.length} session file(s) from the last 7 days` };
+	if (counts.marked < counts.items) problems.push(t({ en: `orchestrator-guard did not process ${counts.items - counts.marked} of ${counts.items} worker briefs (extension not loaded, or omp changed how tool input revisions are stored)`, ko: `orchestrator-guard가 워커 지시문 ${counts.items}개 중 ${counts.items - counts.marked}개를 처리하지 못했습니다(확장이 안 실렸거나 omp의 도구 입력 저장 방식이 바뀜)` }));
+	if (counts.isolated < counts.writers) problems.push(t({ en: `${counts.writers - counts.isolated} of ${counts.writers} writing workers ran without isolation (they edited the real checkout)`, ko: `쓰기 워커 ${counts.writers}개 중 ${counts.writers - counts.isolated}개가 격리 없이 돌았습니다(실제 체크아웃을 고침)` }));
+	if (counts.parsed < counts.results) problems.push(t({ en: `omp task-result format changed: the guard parses ${counts.parsed} of ${counts.results} results, so output trimming and worker state tracking are partly off`, ko: `omp task-result 형식이 바뀌었습니다: 가드가 결과 ${counts.results}개 중 ${counts.parsed}개만 읽어 출력 줄이기와 워커 상태 추적이 일부 꺼졌습니다` }));
+	if (counts.patchParsed < counts.patchMentions) problems.push(t({ en: `omp merge-summary format changed: ${counts.patchMentions - counts.patchParsed} patch paths are not recognised, so unapplied patches are not tracked`, ko: `omp merge-summary 형식이 바뀌었습니다: 패치 경로 ${counts.patchMentions - counts.patchParsed}개를 알아보지 못해 미적용 패치를 추적하지 못합니다` }));
+	return { problems, info: t({ en: `guard: ${counts.items} briefs, ${counts.results} results, ${counts.patchMentions} patches checked in ${files.length} session file(s) from the last 7 days`, ko: `가드: 최근 7일 세션 파일 ${files.length}개에서 지시문 ${counts.items}개, 결과 ${counts.results}개, 패치 ${counts.patchMentions}개를 확인했습니다` }) };
 }
 
 type Orphan = { pid: number; age: string; command: string };
@@ -250,22 +252,24 @@ function lastRateLimit(entries: LogEntry[]): string | undefined {
 	return `last turn ended on a rate limit (${msg.slice(0, 80)}); retry after ${at}`;
 }
 
-async function tokenAuditReport(hours: number, ifDue = false): Promise<{ text: string; flags: number; ok: boolean; skipped: boolean }> {
-	if (isHostCopy()) return { text: "token-audit is not available in a host copy: it reads the owner's omp sessions.", flags: 0, ok: false, skipped: false };
-	const r = await run(BUN, [AUDIT_SCRIPT, "--hours", String(hours), ...(ifDue ? ["--if-due"] : [])], { timeout: 120_000 });
+async function tokenAuditReport(hours: number, ifDue = false, language: NoticeLanguage = "en"): Promise<{ text: string; flags: number; ok: boolean; skipped: boolean }> {
+	const t = (n: NoticeText) => n[language];
+	if (isHostCopy()) return { text: t({ en: "token-audit is not available in a host copy: it reads the owner's omp sessions.", ko: "token-audit은 호스트 복사본에서 사용할 수 없습니다: 소유자의 omp 세션을 읽기 때문입니다." }), flags: 0, ok: false, skipped: false };
+	const r = await run(BUN, [AUDIT_SCRIPT, "--hours", String(hours), "--lang", language, ...(ifDue ? ["--if-due"] : [])], { timeout: 120_000 });
 	const lines = r.out.trim().split("\n");
 	const result = lines.find(l => l.startsWith("RESULT "));
-	if (!r.ok || !result) return { text: `token-audit failed: ${r.out.trim().slice(-300)}`, flags: 0, ok: false, skipped: false };
+	if (!r.ok || !result) return { text: t({ en: `token-audit failed: ${r.out.trim().slice(-300)}`, ko: `token-audit이 실패했습니다: ${r.out.trim().slice(-300)}` }), flags: 0, ok: false, skipped: false };
 	const parsed: { flags?: number; skipped?: boolean } = JSON.parse(result.slice(7));
 	return { text: lines.filter(l => !l.startsWith("RESULT ")).join("\n"), flags: parsed.flags ?? 0, ok: true, skipped: parsed.skipped === true };
 }
 
-async function doctorReport(ctx: Ctx, fix: boolean): Promise<{ text: string; problems: number }> {
+async function doctorReport(ctx: Ctx, fix: boolean, display = false): Promise<{ text: string; problems: number }> {
+	const t = (n: NoticeText) => (display ? say(n) : n.en);
 	const file: string | undefined = ctx.sessionManager?.getSessionFile?.();
 	const entries = file ? readTail(file, 400_000) : [];
 	const usage = ctx.getContextUsage?.();
 	const model = ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : "?";
-	const setup = setupStatus(LOADED_SETUP, readSetupVersion());
+	const setup = setupStatus(LOADED_SETUP, readSetupVersion(), t);
 	const [quota, orphanList, defaultRole] = await Promise.all([
 		anthropicLimits(),
 		orphans(),
@@ -279,35 +283,44 @@ async function doctorReport(ctx: Ctx, fix: boolean): Promise<{ text: string; pro
 	]);
 	const problems: string[] = [];
 	const info: string[] = [];
-	info.push(`context: ${usage ? `${Math.round(usage.tokens / 1000)}K / ${Math.round(usage.contextWindow / 1000)}K (${usage.percent?.toFixed?.(1) ?? "?"}%)` : "?"}`);
+	info.push(`${t({ en: "context", ko: "컨텍스트" })}: ${usage ? `${Math.round(usage.tokens / 1000)}K / ${Math.round(usage.contextWindow / 1000)}K (${usage.percent?.toFixed?.(1) ?? "?"}%)` : "?"}`);
 	const fileSize = file && existsSync(file) ? statSync(file).size : 0;
-	info.push(`session file: ${fileSize ? `${(fileSize / 1e6).toFixed(1)}MB` : "none (ephemeral)"}`);
-	if (fileSize > ROTATE_BYTES) problems.push(`session file ${Math.round(fileSize / 1e6)}MB > 50MB: compaction never shrinks it; the user should run /handover for a fresh session`);
-	info.push(`model: ${model}${defaultRole ? ` (default role ${defaultRole})` : ""}`);
-	if (defaultRole && !defaultRole.startsWith(model)) problems.push(`model differs from the default role (${defaultRole}); if this is a fallback, switch back with /compact-switch ${defaultRole}`);
+	info.push(`${t({ en: "session file", ko: "세션 파일" })}: ${fileSize ? `${(fileSize / 1e6).toFixed(1)}MB` : t({ en: "none (ephemeral)", ko: "없음 (임시 세션)" })}`);
+	if (fileSize > ROTATE_BYTES) problems.push(t({ en: `session file ${Math.round(fileSize / 1e6)}MB > 50MB: compaction never shrinks it; the user should run /handover for a fresh session`, ko: `세션 파일이 ${Math.round(fileSize / 1e6)}MB로 50MB를 넘습니다: 압축으로는 줄지 않으니 /handover로 새 세션을 여세요` }));
+	info.push(`${t({ en: "model", ko: "모델" })}: ${model}${defaultRole ? ` (${t({ en: "default role", ko: "기본 역할" })} ${defaultRole})` : ""}`);
+	if (defaultRole && !defaultRole.startsWith(model)) problems.push(t({ en: `model differs from the default role (${defaultRole}); if this is a fallback, switch back with /compact-switch ${defaultRole}`, ko: `모델이 기본 역할(${defaultRole})과 다릅니다. 대체 모델로 바뀐 것이면 /compact-switch ${defaultRole}로 되돌리세요` }));
 	if (setup.info) info.push(setup.info);
 	if (setup.problem) problems.push(setup.problem);
 	const rl = lastRateLimit(entries);
 	if (rl) problems.push(rl);
 	info.push(quota);
 	const open = orchestratorState(String(ctx.cwd ?? process.cwd()));
-	if (open.length) problems.push(`open workers/patches:\n    ${open.join("\n    ")}`);
+	if (open.length) problems.push(`${t({ en: "open workers/patches", ko: "열린 워커/패치" })}:\n    ${open.join("\n    ")}`);
 	if (file) {
-		const health = guardHealth(dirname(file));
+		const health = guardHealth(dirname(file), t);
 		problems.push(...health.problems);
 		info.push(health.info);
 	}
-	if (isHostCopy()) info.push("large session check skipped: the harness runs from a host copy and does not read the owner's omp sessions");
-	else for (const big of bigSessions()) if (!file || !big.startsWith(file.replace(HOME, "~"))) info.push(`large session file: ${big}`);
+	if (isHostCopy())
+		info.push(
+			t({
+				en: "large session check skipped: the harness runs from a host copy and does not read the owner's omp sessions",
+				ko: "큰 세션 검사를 건너뜁니다: 하네스가 호스트 복사본에서 실행되어 소유자의 omp 세션을 읽지 않습니다",
+			}),
+		);
+	else for (const big of bigSessions()) if (!file || !big.startsWith(file.replace(HOME, "~"))) info.push(`${t({ en: "large session file", ko: "큰 세션 파일" })}: ${big}`);
 	if (orphanList.length) {
 		const list = orphanList.map(o => `${o.pid} (${o.age}) ${o.command}`).join("\n    ");
 		if (fix) {
 			await run("kill", orphanList.map(o => String(o.pid)));
 			const left = await orphans();
-			info.push(`orphaned omp RPC processes killed: ${orphanList.length - left.length}/${orphanList.length}`);
-		} else problems.push(`orphaned omp RPC processes (ppid 1, >${ORPHAN_MIN_AGE_MIN} min); run doctor with fix to kill them:\n    ${list}`);
+			info.push(`${t({ en: "orphaned omp RPC processes killed", ko: "종료한 고아 omp RPC 프로세스" })}: ${orphanList.length - left.length}/${orphanList.length}`);
+		} else problems.push(t({ en: `orphaned omp RPC processes (ppid 1, >${ORPHAN_MIN_AGE_MIN} min); run doctor with fix to kill them:\n    ${list}`, ko: `고아 omp RPC 프로세스가 있습니다(ppid 1, ${ORPHAN_MIN_AGE_MIN}분 넘음). /doctor fix로 종료하세요:\n    ${list}` }));
 	}
-	return { text: [`doctor: ${problems.length ? `${problems.length} issue(s)` : "healthy"}`, ...problems.map(p => `- ${p}`), ...info.map(i => `  ${i}`)].join("\n"), problems: problems.length };
+	return {
+		text: [`doctor: ${problems.length ? t({ en: `${problems.length} issue(s)`, ko: `문제 ${problems.length}건` }) : t({ en: "healthy", ko: "정상" })}`, ...problems.map(p => `- ${p}`), ...info.map(i => `  ${i}`)].join("\n"),
+		problems: problems.length,
+	};
 }
 
 /**
@@ -325,7 +338,7 @@ export default function harnessTools(pi: Api) {
 	pi.on("session_start", async (_event, ctx) => {
 		if (ctx?.agent?.kind !== "main") return;
 		if (!isHostCopy())
-			void tokenAuditReport(24, true).then(report => {
+			void tokenAuditReport(24, true, noticeLanguage()).then(report => {
 				if (report.ok && !report.skipped && report.flags) ctx.ui?.notify?.(report.text, "warning");
 			});
 		const version = (await run(OMP_BIN, ["--version"])).out.trim();
@@ -340,9 +353,13 @@ export default function harnessTools(pi: Api) {
 		writeFileSync(VERSION_FILE, `${version}\n`);
 		if (!previous) return;
 		const file: string | undefined = ctx.sessionManager?.getSessionFile?.();
-		const health = file ? guardHealth(dirname(file)) : { problems: [], info: "guard: no session history to check" };
+		const health = file ? guardHealth(dirname(file), say) : { problems: [], info: say({ en: "guard: no session history to check", ko: "가드: 확인할 세션 기록이 없습니다" }) };
 		ctx.ui?.notify?.(
-			[`harness-tools: omp updated ${previous} -> ${version}.`, ...(health.problems.length ? health.problems.map(p => `- ${p}`) : ["guard health OK."]), `  ${health.info}`].join("\n"),
+			[
+				say({ en: `harness-tools: omp updated ${previous} -> ${version}.`, ko: `harness-tools: omp가 ${previous} -> ${version}(으)로 업데이트되었습니다.` }),
+				...(health.problems.length ? health.problems.map(p => `- ${p}`) : [say({ en: "guard health OK.", ko: "가드 상태 정상입니다." })]),
+				`  ${health.info}`,
+			].join("\n"),
 			health.problems.length ? "warning" : "info",
 		);
 	});
@@ -351,8 +368,13 @@ export default function harnessTools(pi: Api) {
 		description: "Token-leak audit over omp sessions (report only): /token-audit [hours, default 24]",
 		handler: async (args, ctx) => {
 			const hours = Number(String(args ?? "").trim()) || 24;
-			if (!isHostCopy()) ctx.ui.notify(`token-audit: scanning the last ${hours}h...`, "info");
-			const report = await tokenAuditReport(hours);
+			if (isHostCopy())
+				return ctx.ui.notify(
+					say({ en: "token-audit is not available in a host copy: it reads the owner's omp sessions.", ko: "token-audit은 호스트 복사본에서 사용할 수 없습니다: 소유자의 omp 세션을 읽기 때문입니다." }),
+					"error",
+				);
+			ctx.ui.notify(say({ en: `token-audit: scanning the last ${hours}h...`, ko: `token-audit: 최근 ${hours}시간을 검사하는 중입니다...` }), "info");
+			const report = await tokenAuditReport(hours, false, noticeLanguage());
 			ctx.ui.notify(report.text, !report.ok ? "error" : report.flags ? "warning" : "info");
 		},
 	});
@@ -382,7 +404,7 @@ export default function harnessTools(pi: Api) {
 	pi.registerCommand("doctor", {
 		description: "Session/harness health check: /doctor [fix]  (fix = kill orphaned omp RPC processes)",
 		handler: async (args, ctx) => {
-			const report = await doctorReport(ctx, String(args ?? "").trim() === "fix");
+			const report = await doctorReport(ctx, String(args ?? "").trim() === "fix", true);
 			ctx.ui.notify(report.text, report.problems ? "warning" : "info");
 		},
 	});
@@ -409,7 +431,7 @@ export default function harnessTools(pi: Api) {
 				...(open.length ? ["", "--- open workers / unapplied patches ---", ...open] : []),
 			].join("\n");
 			const result = await ctx.newSession(file ? { parentSession: file } : undefined);
-			if (result?.cancelled) return ctx.ui.notify("handover: new session was cancelled", "warning");
+			if (result?.cancelled) return ctx.ui.notify(say({ en: "handover: new session was cancelled", ko: "handover: 새 세션 시작이 취소되었습니다" }), "warning");
 			pi.sendUserMessage(handover);
 		},
 	});
