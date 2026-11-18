@@ -13,7 +13,8 @@ export type Ctx = { tokens: number; window: number; compaction: Compaction; retr
 export const newCtx = (): Ctx => ({ tokens: 0, window: 0, compaction: {} });
 
 // How a process is driven: whether it can take a compaction now, how to start one, how to re-read its numbers.
-export type CompactPort = { idle: () => boolean; compact: () => void; refreshUsage: () => void; abort?: () => void };
+// `waitOnly`: the runtime cannot abort a compaction but may start one at rest (caps.restCompact); an owner message waits for it to end.
+export type CompactPort = { idle: () => boolean; compact: () => void; refreshUsage: () => void; abort?: () => void; waitOnly?: boolean };
 
 // A conversation at rest (no turn, nothing queued, deferred or held, no worker, quiet for REST_QUIET_MS) past this share of its compaction
 // point is compacted ahead of time, while the 1h prompt cache of its last turn is still warm (keepalive pings start at 50 min).
@@ -68,7 +69,8 @@ export const restGuard = { blocked: (): boolean => false };
 // What a conversation is doing, as far as being at rest goes: read by the compaction ahead of time (restAhead) and by the nightly fresh
 // start (hub/nightly-fresh.ts), so both stop for the same reasons. `switching`: a rotation, restart or model switch is asked for or under way;
 // `failing`: an error banner or an error streak; `held`: held plus unstarted prompts; `limitHold`: a usage-limit resume timer is armed.
-export type RestFacts = { alive: boolean; canAbort: boolean; idle: boolean; switching: boolean; failing: boolean; held: number; workers: number; limitHold: boolean; quietMs: number };
+// `canAbort`: a running compaction can be cancelled (OmO); `restCompact`: it cannot, but a compaction at rest is allowed anyway (omp).
+export type RestFacts = { alive: boolean; canAbort: boolean; restCompact?: boolean; idle: boolean; switching: boolean; failing: boolean; held: number; workers: number; limitHold: boolean; quietMs: number };
 
 // Why a conversation is not at rest; empty when it is.
 export function restBlockers(f: RestFacts, c: Ctx): string[] {
@@ -89,21 +91,21 @@ export function restBlockers(f: RestFacts, c: Ctx): string[] {
 
 // The minute tick of a conversation: starts the compaction ahead of time when it is due at rest.
 export function restAhead(c: Ctx, port: CompactPort, who: string, f: RestFacts, at: number): void {
-	if (f.canAbort && !restBlockers(f, c).length && restDue(c, at, { busy: false, quietMs: f.quietMs })) requestAhead(c, port, who, `at rest for ${Math.round(f.quietMs / 60_000)} min`);
+	if ((f.canAbort || f.restCompact) && !restBlockers(f, c).length && restDue(c, at, { busy: false, quietMs: f.quietMs })) requestAhead(c, port, who, `at rest for ${Math.round(f.quietMs / 60_000)} min`);
 }
 
-// Starts a compaction at rest; false when the process cannot take it now or cannot abort it later (the owner would wait behind it).
+// Starts a compaction at rest; false when the process cannot take it now, or can neither abort it later nor is allowed to make the owner wait (waitOnly).
 export function requestAhead(c: Ctx, port: CompactPort, who: string, reason: string, at = Date.now()): boolean {
-	if (!port.abort || !port.idle() || c.compaction.state === "queued" || c.compaction.state === "compacting") return false;
+	if ((!port.abort && !port.waitOnly) || !port.idle() || c.compaction.state === "queued" || c.compaction.state === "compacting") return false;
 	c.ahead = { who, reason, tokens: c.tokens, t0: at };
 	startNow(c, port);
 	return true;
 }
 
 // An owner message arrived: a compaction started ahead of time is aborted (the message is delivered once it reports back). False when
-// the running compaction is the normal one, or its abort was already asked for.
+// the running compaction is the normal one, its abort was already asked for, or the runtime cannot abort (the message is held until the end).
 export function abortAhead(c: Ctx, port: CompactPort): boolean {
-	if (c.compaction.state !== "compacting" || !c.ahead || c.aborting || !port.abort) return false;
+	if (c.compaction.state !== "compacting" || !c.ahead || c.aborting || !port.abort || port.waitOnly) return false;
 	c.aborting = true;
 	port.abort();
 	return true;

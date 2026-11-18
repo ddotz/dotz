@@ -21,6 +21,7 @@ export interface RuntimeCaps {
 	contextLimit?: "compact" | "rotate";
 	extension?: boolean; // dotz's extension runs in the agent process, so its session hooks (the lane's contract re-read after a compaction) fire
 	abortCompact?: boolean; // a running compaction can be cancelled at once without harming the session (OmO abort_compaction)
+	restCompact?: boolean; // cannot abort a compaction, but may start one at rest (an owner message then waits for it to end): omp
 }
 
 // One row of the terminal view, before the hub stamps time and source on it and scrubs secrets.

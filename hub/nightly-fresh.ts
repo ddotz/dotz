@@ -70,7 +70,7 @@ export function createNightly(d: NightlyDeps) {
 			w.blocked = blockers.join("; ");
 			return undefined;
 		}
-		if (facts.canAbort && d.compact && d.stale?.()) {
+		if ((facts.canAbort || facts.restCompact) && d.compact && d.stale?.()) {
 			if (w.starts >= NIGHTLY_COMPACT_STARTS) return giveUp(`the summary was stale again after ${w.starts} compactions`);
 			w.starts++;
 			if (d.compact()) {

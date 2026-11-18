@@ -38,6 +38,8 @@ export function createCompaction(h: CompactionHost) {
 		},
 		refreshUsage: () => h.proc()?.refreshUsage(),
 		abort: () => h.proc()?.abortCompaction?.(),
+		// A runtime that cannot abort but may compact at rest: abortAhead leaves the owner's prompt held until the compaction ends.
+		get waitOnly() { return Boolean(h.adapter()?.caps.restCompact); },
 	};
 	const mustCompact = (): boolean => h.adapter()?.caps.contextLimit === "compact" && ctx().tokens > h.compactAt();
 

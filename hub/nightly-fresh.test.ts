@@ -175,6 +175,18 @@ test("a runtime that cannot abort a compaction rotates at once without one", () 
 	expect(w.compactions).toBe(0);
 });
 
+test("a runtime that cannot abort but may compact at rest compacts a stale summary first, like one that can", async () => {
+	const { n, state, w, ctx } = staleNight({ canAbort: false, restCompact: true });
+	expect(n.ask(50e6)).toBeUndefined();
+	expect(w.compactions).toBe(1);
+	expect(state.rotated).toBe(0);
+	ctx.compaction = { state: "done" };
+	w.stale = false;
+	await advance(MIN);
+	expect(state.rotated).toBe(1);
+	expect(w.compactions).toBe(1);
+});
+
 test("a compaction aborted by an owner message lets the night go on: stale again after the owner's turn it compacts once more, then rotates", async () => {
 	const { n, state, w, ctx, lines } = staleNight();
 	n.ask(50e6);

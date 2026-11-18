@@ -451,7 +451,7 @@ export function ompArgv(o: SpawnOpts): string[] {
 export const omp: RuntimeAdapter = {
 	id: "omp",
 	// why(protocol): omp@18.22.0 runs RPC commands on a serialized queue, so an abort sent during compact is read after the compaction ends and there is no abortCompact (docs/rpc.md "Ordinary commands run on a serialized queue"; frames: hub/runtime/fixtures/omp-compact-queue.jsonl)
-	caps: { steer: "native", subagents: "live", contextNumbers: "exact", compact: "rpc", sessionTranscript: true, promptCacheKeepalive: true, contextLimit: "compact", extension: true },
+	caps: { steer: "native", subagents: "live", contextNumbers: "exact", compact: "rpc", sessionTranscript: true, promptCacheKeepalive: true, contextLimit: "compact", restCompact: true, extension: true },
 	start(o) {
 		const key = keyProviderOf(o);
 		const proc = spawnAgent(ompArgv(o), {
