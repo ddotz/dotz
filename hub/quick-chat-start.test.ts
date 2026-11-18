@@ -8,6 +8,7 @@ import { cfg } from "./config.ts";
 import * as budget from "./prompt-budget.ts";
 import * as quick from "./quick-chat.ts";
 import type * as Orchestrator from "./orchestrator.ts";
+import { modeFile } from "./i18n.ts";
 import { recallText } from "./orchestrator-parts.ts";
 import { createPrompts } from "./prompts.ts";
 import { seedText } from "./convsessions.ts";
@@ -108,6 +109,32 @@ test("the lean start prompt leaves out the channel setups and state.json, and ke
 	expect(lean).toContain(DATA); // the owner rules / memory paths it must read
 	for (const marker of ["Current state.json:", "현재 state.json:", "Work channel setups", "작업 채널 설정"]) expect(lean).not.toContain(marker);
 	expect(full).toContain("Current state.json:");
+});
+
+test("on a runtime that keeps its system prompt, the quick chat's note carries the lean MODE and another conversation's the whole of it", async () => {
+	adapters["fake-system"] = { ...fake, caps: { ...fake.caps, modeInSystem: true } };
+	cfg.orchestrator = { ...cfg.orchestrator, runtime: "fake-system" };
+	const mode = readFileSync(modeFile(), "utf8");
+	const light = session("quick", true, []);
+	const whole = session("mail:b", false, []);
+	try {
+		light.start();
+		whole.start();
+		const lean = agentOf(light).opts.systemNote!;
+		const all = agentOf(whole).opts.systemNote!;
+		expect(lean).toContain(quick.quickMode(mode));
+		expect(lean).not.toContain("## Routing");
+		expect(all).toContain(mode);
+		expect(Buffer.byteLength(lean)).toBeLessThan(Buffer.byteLength(all));
+		// Neither start prompt repeats it.
+		for (const o of [light, whole]) expect(agentOf(o).sent[0]!.text).not.toContain("## Message layout");
+	} finally {
+		light.stop();
+		whole.stop();
+		await advance(1000);
+		delete adapters["fake-system"];
+		cfg.orchestrator = { ...cfg.orchestrator, runtime: "fake" };
+	}
 });
 
 test("a fresh light session started by the owner's message answers it in the start turn, with no context-only turn first", async () => {

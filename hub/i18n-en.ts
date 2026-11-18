@@ -2,7 +2,7 @@
 import { join } from "node:path";
 import { NAME, paths, tzLabel } from "./config.ts";
 import { LESSONS_MAX_BYTES } from "./prompt-budget.ts";
-import type { FileText, HelpText, LaneFooterArgs, RecallArgs, SettingText, WorktreeArgs } from "./i18n.ts";
+import type { ContractArgs, FileText, HelpText, LaneFooterArgs, RecallArgs, SettingText, WorktreeArgs } from "./i18n.ts";
 import { OMO_WORDS, type WorkerWords } from "./worker-words.ts";
 import type { FailClass, HealTurnArgs } from "./watch-heal.ts";
 
@@ -207,8 +207,8 @@ export const en = {
 			note: "Changing the model or effort of a running session needs --force, because its prompt cache is rewritten. Discord also takes ! instead of /. A model can be a unique part of its name (\"opus\").",
 		}),
 	},
-
-	recall: (a: RecallArgs) => `[dotz gateway] You are ${NAME}, the dotz orchestrator hosted headless by the gateway.\n\nIdentity (who you are and how you talk):\n${a.identity}\n\nContract:\n\n${a.mode}\n\nOwner rules (${paths.rules}; they override the contract):\n${a.rules}\n\nLessons (${paths.lessons}):\n${a.lessons}\n\nOwner memory (${paths.memory}; before asking the owner anything, check here and grep ${paths.observations}):\n${a.memory}${a.setups === undefined || a.state === undefined ? "" : `\n\nWork channel setups (dotz_channel list for login health):\n${a.setups}\n\nCurrent state.json:\n${a.state}`}`,
+	contract: (a: ContractArgs) => `Identity (who you are and how you talk):\n${a.identity}\n\nContract:\n\n${a.mode}`,
+	recall: (a: RecallArgs) => `[dotz gateway] You are ${NAME}, the dotz orchestrator hosted headless by the gateway.${a.contract === undefined ? " Your identity and the contract are in your system prompt." : `\n\n${a.contract}`}\n\nOwner rules (${paths.rules}; they override the contract):\n${a.rules}\n\nLessons (${paths.lessons}):\n${a.lessons}\n\nOwner memory (${paths.memory}; before asking the owner anything, check here and grep ${paths.observations}):\n${a.memory}${a.setups === undefined || a.state === undefined ? "" : `\n\nWork channel setups (dotz_channel list for login health):\n${a.setups}\n\nCurrent state.json:\n${a.state}`}`,
 	identityFallback: (character: string, tone: string) => `Name: ${NAME}\nCharacter: ${character}\nTone: ${tone}\nSpeak in this character and tone in every reply.`,
 	handover: (previous: string, tail: string, summary = "") => `\n\n[handover] The previous conversation (${previous}) was rotated to keep the context small.${summary ? ` The summary it wrote at its last compaction:\n${summary}\n\n` : " "}Its most recent exchanges, oldest first; continue any open thread from here:\n${tail}\n\n${enRetainNudge}`,
 	laneHandover: (previous: string, tail: string | undefined) => `[handover] The previous conversation (${previous}) was rotated.${tail ? ` Its most recent exchanges, oldest first:\n${tail}\n\n${enRetainNudge}` : ""}`,

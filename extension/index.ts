@@ -259,8 +259,9 @@ function ledger(): string {
 	return block ? `\n\n${block}` : "";
 }
 
+// DOTZ_MODE_IN_SYSTEM: the hub put identity and MODE in this process's system prompt (hub/orchestrator.ts, caps.modeInSystem), which a compaction keeps.
 export function recall(): string {
-	return recallContract(DATA, PKG).text;
+	return recallContract(DATA, PKG, { modeInSystem: process.env.DOTZ_MODE_IN_SYSTEM === "1" }).text;
 }
 
 // Re-running a Done-when command on an unchanged checkout is wasted time: a stored pass for the same command, HEAD,

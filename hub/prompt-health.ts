@@ -1,5 +1,6 @@
-// Daily prompt health check of the doctor (no model call, reads files only). It measures the text the orchestrator re-reads after a
-// compaction (hub/recall-contract.ts, the same builder extension/index.ts recall() uses) and reports three things as findings:
+// Daily prompt health check of the doctor (no model call, reads files only). It measures the whole contract the orchestrator re-reads after a
+// compaction (hub/recall-contract.ts, the builder extension/index.ts recall() uses, called without modeInSystem so identity and MODE are in it
+// wherever a runtime keeps them) and reports three things as findings:
 //   1. size: the text or one of its parts grew well past a baseline kept in <DATA_DIR>/prompt-health.json
 //   2. enforced: a line still spells out a rule that code already enforces (hub/enforced-rules.ts); a proposal, nothing is edited
 //   3. caps: a prompt file past its size limit (LESSONS.md, RULES.md) or a feature line past INLINE_MAX

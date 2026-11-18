@@ -33,7 +33,7 @@ import { createCompaction } from "./orch-compaction.ts";
 import { createErrorEpisode } from "./orch-episode.ts";
 import { LATER_LINE, stripLater } from "./tone.ts";
 import { checkSoon as checkAccountSoon } from "./account-rules.ts";
-import { handover, lastAnswerAt, newOrchState, recallText, startedIndex } from "./orchestrator-parts.ts";
+import { handover, lastAnswerAt, modeContract, newOrchState, recallText, startedIndex } from "./orchestrator-parts.ts";
 import { noteModelChange } from "./model-guard.ts";
 import { orchStuck, takeSnapshot } from "./stuck.ts";
 import { createOwnerCancel, stopFound, type StopFound } from "./ownerstop.ts";
@@ -703,7 +703,7 @@ export function createOrchestrator(opts: OrchOpts) {
 		chain = nextChain;
 		capped = undefined;
 		usable = undefined;
-		const env: Record<string, string> = { DOTZ_ORCHESTRATOR: "1", ...opts.env };
+		const env: Record<string, string> = { DOTZ_ORCHESTRATOR: "1", ...(runtime.caps.modeInSystem ? { DOTZ_MODE_IN_SYSTEM: "1" } : {}), ...opts.env };
 		// The orchestrator's task workers run on its own model (runtime/omo.ts writeOrchestratorProfile): on an API-key entry with
 		// `workers` on, the key's copy of that entry's model; the task-worker settings and chain are the lanes' workers'.
 		if (chain) Object.assign(env, chain.env(chain.active, chain.list[chain.active].model));
@@ -714,7 +714,7 @@ export function createOrchestrator(opts: OrchOpts) {
 		orch.activeModel = spawnModel;
 		chained = !chain && entries.length > 0;
 		const steer = steerToken(HUB_TOKEN, `orchestrator:${opts.key}`);
-		proc = markSteers(runtime.start({ role: "orchestrator", cwd: DATA_DIR, model: spawnModel, ...(opts.model?.() ? { workers: spawnWorkers } : {}), fallback: chain ? [] : entries.filter(e => !e.key_file).map(e => e.model), hubSwitches: Boolean(chain), resume: resume ? prior : undefined, env, systemNote: steerContract(steer) }), steer);
+		proc = markSteers(runtime.start({ role: "orchestrator", cwd: DATA_DIR, model: spawnModel, ...(opts.model?.() ? { workers: spawnWorkers } : {}), fallback: chain ? [] : entries.filter(e => !e.key_file).map(e => e.model), hubSwitches: Boolean(chain), resume: resume ? prior : undefined, env, systemNote: steerContract(steer) + (runtime.caps.modeInSystem ? `\n\n${modeContract(Boolean(opts.light))}` : "") }), steer);
 		orch.status = "starting";
 		orch.stoppedBy = "";
 		orch.stoppedAt = "";
@@ -766,7 +766,7 @@ export function createOrchestrator(opts: OrchOpts) {
 			// a steer queued before the turn starts is drained at the start of the agent loop, so it joins the first model call
 			// (a "followUp" would wait until the first answer is done and start an extra paid turn; a "prompt" would start one too),
 			// and a queued steer is not dropped when it arrives before the turn has begun.
-			proc.send(recallText(opts.scope?.() ?? "", openRequestsBlock(ledgerIn(dirname(opts.stateFile)), TZ, Date.now(), opts.skipOpen?.()), Boolean(opts.light)) + switchNote, "prompt");
+			proc.send(recallText(opts.scope?.() ?? "", openRequestsBlock(ledgerIn(dirname(opts.stateFile)), TZ, Date.now(), opts.skipOpen?.()), Boolean(opts.light), Boolean(runtime.caps.modeInSystem)) + switchNote, "prompt");
 			const seed = rotate ? "" : (opts.seed?.(joinNext) ?? "");
 			const lead = rotate ? handover(runtime, prior!) : seed;
 			const later = lead + (asks ? `${rotate || seed ? "\n\n" : ""}${asks}` : "");

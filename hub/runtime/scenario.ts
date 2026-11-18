@@ -15,11 +15,16 @@ const DATA = process.env.DOTZ_DIR!;
 const REPO = join(import.meta.dir, "..", "..");
 const norm = (s: string) => s.split(DATA).join("<DATA>").split(REPO).join("<REPO>").replace(/dotz-steer:[0-9a-f]+/g, "dotz-steer:<TOKEN>");
 // Long prompts (recall, footer) are compared by shape: paths normalised, digits blanked (the footer carries machine-sized slot counts).
-// Repo text that other work legitimately edits (MODE.md, the shipped feature catalog) is blanked first so only prompt structure is compared.
+// Repo text that other work legitimately edits (MODE.md, the shipped feature catalog) is blanked first so only prompt structure is compared:
+// in a prompt, and in a spawn's system note, which carries MODE where the runtime keeps it there (caps.modeInSystem).
 const volatile = () => [readFileSync(modeFile(), "utf8"), featurePrompt(DATA, "orchestrator", () => {}), featurePrompt(DATA, "lanes", () => {})].filter(Boolean);
-const short = (s: string) => {
+const blank = (s: string) => {
 	let t = norm(s);
 	for (const v of volatile()) t = t.split(norm(v)).join("<volatile>");
+	return t;
+};
+const short = (s: string) => {
+	const t = blank(s);
 	return t.length <= 140 ? t : `#${Bun.hash(t.replace(/\d+/g, "#")).toString(36)} ${t.slice(0, 60).replace(/\d+/g, "#")}…`;
 };
 
@@ -51,7 +56,7 @@ class FakeProc {
 	constructor(args: string[], opts: { cwd?: string; env?: Record<string, string | undefined> }) {
 		FakeProc.all.push(this);
 		const dotz = Object.fromEntries(Object.entries(opts.env ?? {}).filter(([k]) => k.startsWith("DOTZ_") && !["DOTZ_DIR", "DOTZ_OMP", "DOTZ_OMO", "DOTZ_TEST_DIR", "DOTZ_WEB_LIVE"].includes(k)).map(([k, v]) => [k, typeof v === "string" ? norm(v) : v]));
-		T("spawn", this.n, args.slice(NICE.length + 1).map(a => norm(a)), norm(opts.cwd ?? ""), dotz);
+		T("spawn", this.n, args.slice(NICE.length + 1).map(blank), norm(opts.cwd ?? ""), dotz);
 	}
 	kill(sig?: number) {
 		T("kill", this.n, sig ?? "TERM");

@@ -22,6 +22,9 @@ export interface RuntimeCaps {
 	extension?: boolean; // dotz's extension runs in the agent process, so its session hooks (the lane's contract re-read after a compaction) fire
 	abortCompact?: boolean; // a running compaction can be cancelled at once without harming the session (OmO abort_compaction)
 	restCompact?: boolean; // cannot abort a compaction, but may start one at rest (an owner message then waits for it to end): omp
+	// The orchestrator's static contract (identity and MODE) goes in the process's system prompt, not its first message: a compaction leaves the system
+	// prompt alone and a resume builds it from the same text, so its prompt cache holds (omp). Without it both stay in the first message (OmO, claude).
+	modeInSystem?: boolean;
 }
 
 // One row of the terminal view, before the hub stamps time and source on it and scrubs secrets.
@@ -108,7 +111,7 @@ export interface SpawnOpts {
 	resume?: string;
 	// Added to the hub's own environment (role markers read by the dotz extension).
 	env: Record<string, string>;
-	// Appended to the system prompt of this process (hub/steer-mark.ts); survives compaction, unlike a prompt.
+	// Appended to the system prompt of this process (the steer-mark rule, hub/steer-mark.ts; with caps.modeInSystem also the orchestrator's identity and MODE); survives compaction, unlike a prompt.
 	systemNote?: string;
 	// Model selectors tried in order after `model` fails at request time; empty/absent = no fallback.
 	fallback?: string[];
