@@ -5,7 +5,8 @@ import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:f
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { gateIn } from "./selfupdate-parse.ts";
-import { pageAssets, smoke, smokeRuntime } from "./update-smoke.ts";
+import { DEFAULT_MODEL, selectorOf } from "./config.ts";
+import { pageAssets, smoke, smokeOmpModel, smokeRuntime } from "./update-smoke.ts";
 
 const repo = join(import.meta.dir, "..");
 let tmp: string;
@@ -61,6 +62,20 @@ test("smokeRuntime: omp for either role or the top-level key, nothing for anothe
 	expect(at({ orchestrator: { runtime: "omo" } })).toBeUndefined();
 	expect(at("{not json")).toBeUndefined();
 	expect(smokeRuntime(join(tmp, "missing"))).toBeUndefined();
+});
+
+// The gate runs under the test preload, whose config names models omp does not know: the omp smoke must take the owner's model from disk.
+test("smokeOmpModel: the owner's orchestrator model from the data dir, never the test config's; the shipped default without one", async () => {
+	const at = (config: unknown) => {
+		const dir = mkdtempSync(join(tmp, "data-"));
+		writeFileSync(join(dir, "config.json"), JSON.stringify(config));
+		return smokeOmpModel(dir);
+	};
+	expect(await at({ models: { orchestrator: { model: "anthropic/claude-opus-5-5", thinking: "high" } } })).toBe("anthropic/claude-opus-5-5:high");
+	expect(await at({ runtime: "omp" })).toBe(selectorOf(DEFAULT_MODEL));
+	expect(await smokeOmpModel(join(tmp, "missing"))).toBe(selectorOf(DEFAULT_MODEL));
+	expect(await at({ models: { orchestrator: { model: "anthropic/claude-sonnet-5-5" } } })).toMatch(/^anthropic\/claude-sonnet-5-5:\w+$/);
+	expect(await at({})).not.toContain("test-orch");
 });
 
 test("with omp as the runtime the smoke also starts omp from this tree and passes when the dotz extension loads", async () => {

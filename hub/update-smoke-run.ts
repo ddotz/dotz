@@ -5,10 +5,11 @@
 import { expect, test } from "bun:test";
 import { join } from "node:path";
 import { defaultDataDir } from "./live-guard.ts";
-import { smoke, smokeRuntime } from "./update-smoke.ts";
+import { smoke, smokeOmpModel, smokeRuntime } from "./update-smoke.ts";
 
 test("the gateway of this version starts and serves the app", async () => {
-	const r = await smoke(join(import.meta.dir, ".."), { runtime: smokeRuntime(defaultDataDir()), omp: Bun.which("omp") ?? undefined });
+	const data = defaultDataDir();
+	const r = await smoke(join(import.meta.dir, ".."), { runtime: smokeRuntime(data), omp: Bun.which("omp") ?? undefined, ompModel: await smokeOmpModel(data) });
 	if (!r.ok) console.log(`update smoke check failed after ${r.ms} ms: ${r.why}\n${r.out}`);
 	else console.log(`update smoke check passed in ${r.ms} ms: ${r.checked.join(" ")}`);
 	expect(r.ok ? "" : r.why).toBe("");
