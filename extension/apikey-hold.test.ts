@@ -18,7 +18,7 @@ test("on the API key: the provider is registered, the key leaves the environment
 	expect(handlers.before_subagent_spawn[0]({ agent: "task" })).toMatchObject({ block: true });
 	expect(handlers.tool_call[0]({ toolName: "task", input: {} })).toMatchObject({ block: true });
 	expect(handlers.tool_call[0]({ toolName: "read", input: {} })).toBeUndefined();
-	for (const a of ["launch", "send", "handover", "verify"]) expect(laneHeld(a)).toContain("API-key fallback");
+	for (const a of ["launch", "send", "handover", "verify", "mode"]) expect(laneHeld(a)).toContain("API-key fallback");
 	expect(laneHeld("list")).toBeUndefined();
 	expect(laneHeld("stop")).toBeUndefined();
 });
@@ -40,7 +40,7 @@ test("on the API key with workers on: task workers and sessions are allowed, the
 	expect(providers.map(p => p[0])).toEqual(["anthropic-apikey"]);
 	expect(handlers.before_subagent_spawn).toBeUndefined();
 	expect(handlers.tool_call).toBeUndefined();
-	for (const a of ["launch", "send", "handover", "verify"]) expect(laneHeld(a)).toBeUndefined();
+	for (const a of ["launch", "send", "handover", "verify", "mode"]) expect(laneHeld(a)).toBeUndefined();
 	expect(process.env.DOTZ_KEY_VALUE).toBeUndefined();
 	expect(process.env.DOTZ_KEY_PROVIDER).toBe(spec);
 	expect(process.env.DOTZ_KEY_FILE).toBe("anthropic-api-key");

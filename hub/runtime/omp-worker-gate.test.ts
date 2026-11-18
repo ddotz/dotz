@@ -51,20 +51,20 @@ afterAll(() => {
 	cfg.workers = savedWorkers;
 });
 
-test("on, with the harness installed and omp's caps, the hub names the omp agent folder, and omp.start hands it to the process", () => {
-	setting(true);
-	expect(workerGateEnv(omp.caps)).toEqual({ [WORKER_GATE_AGENT_DIR_ENV]: AGENT });
+test("with the harness installed and omp's caps, a missing or true workers.harness_gate makes the hub name the omp agent folder, and omp.start hands it to the process", () => {
+	for (const on of [undefined, true]) {
+		setting(on);
+		expect(workerGateEnv(omp.caps)).toEqual({ [WORKER_GATE_AGENT_DIR_ENV]: AGENT });
+	}
 	omp.start(orchestratorOpts(omp.caps));
 	expect(started[0]?.env[WORKER_GATE_AGENT_DIR_ENV]).toBe(AGENT);
 	expect(started[0]?.env.DOTZ_ORCHESTRATOR).toBe("1");
 });
 
-test("off, unset, or on without the harness, nothing is named and nothing throws", () => {
-	for (const on of [false, undefined]) {
-		setting(on);
-		expect(workerGateEnv(omp.caps)).toEqual({});
-	}
-	setting(true);
+test("workers.harness_gate false, or the harness not installed, names nothing and nothing throws", () => {
+	setting(false);
+	expect(workerGateEnv(omp.caps)).toEqual({});
+	setting(undefined);
 	process.env.PI_CODING_AGENT_DIR = join(TMP, "no-harness-here");
 	expect(workerGateEnv(omp.caps)).toEqual({});
 	expect(workerGateEnv(omp.caps)).toEqual({});

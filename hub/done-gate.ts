@@ -1,6 +1,6 @@
-// The harness's done gate in dotz lanes. Off unless `lanes.harness_gate` is true (hub/config.ts). On, and with the harness installed, an omp lane loads
-// the gate's extension beside dotz's own (hub/runtime/omp.ts reads SpawnOpts.doneGate), and the bootstrap of the lane's fresh worktree runs before
-// its first prompt: the gate then finds its gate file, or the record that no check passes, and has no reason to ask the model to bootstrap.
+// The harness's done gate in dotz lanes. A lane in coding mode (hub/lanestate.ts laneMode) on omp loads the gate's extension beside dotz's own (hub/runtime/omp.ts reads
+// SpawnOpts.doneGate) when the harness is installed and `lanes.harness_gate` is not false (hub/config.ts); an assistant lane never does. The bootstrap of the lane's fresh worktree
+// runs before its first prompt: the gate then finds its gate file, or the record that no check passes, and has no reason to ask the model to bootstrap.
 // The harness belongs to the owner: none of its files is read or changed here. It counts as installed when its extension and its bootstrap script both
 // exist in the omp agent folder. The script runs as a command (`bun <script> <worktree>`): it writes `.omp/gate.json` and `.omp/lint/` into the worktree
 // and its own state into the gate's state folder, the same one the lane's gate reads (DONE_GATE_STATE_DIR).
@@ -8,33 +8,36 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { BOOTSTRAP_LIMIT_MS, excludeGenerated, type HarnessGate, harnessFiles, WORKER_GATE_AGENT_DIR_ENV } from "../extension/harness-gate.ts";
 import { withoutApiKeys } from "./apikey-policy.ts";
-import { lanesHarnessGate, log, workersHarnessGate } from "./config.ts";
+import { cfg, lanesHarnessGate, log, workersHarnessGate } from "./config.ts";
 import { ompAgentDir } from "./omp-dirs.ts";
 import { runLimited, type Ran } from "./run-limited.ts";
 import { NICE } from "./runtime/agent-proc.ts";
 import { homeDir } from "./runtime/omp-overlay.ts";
 import type { SendMode } from "./runtime/types.ts";
 
-let missingNoted = false;
-let workersMissingNoted = false;
+const noted = new Set<string>();
 
-/** The harness's two files in the omp agent folder when `lanes.harness_gate` is on and both exist; undefined when it is off or the harness is not installed. */
+function noteMissing(key: "lanes" | "workers", agent: string, without: string): void {
+	const once = `${key} ${agent}`;
+	if (cfg[key]?.harness_gate !== true || noted.has(once)) return;
+	noted.add(once);
+	log(`${key}.harness_gate is true, but the harness is not installed in ${agent} (extensions/done-gate.ts and harness/gate/bootstrap.ts): ${without}`);
+}
+
+/** The harness's two files in the omp agent folder when `lanes.harness_gate` is not false and both exist; undefined when it is off or the harness is not installed. */
 export function harnessGate(): HarnessGate | undefined {
 	if (!lanesHarnessGate()) return undefined;
 	const agent = ompAgentDir(process.env, homeDir());
 	const gate = harnessFiles(agent);
-	if (gate) return gate;
-	if (!missingNoted) log(`lanes.harness_gate is on, but the harness is not installed in ${agent} (extensions/done-gate.ts and harness/gate/bootstrap.ts): lanes start without its done gate`);
-	missingNoted = true;
-	return undefined;
+	if (!gate) noteMissing("lanes", agent, "coding lanes start without its done gate");
+	return gate;
 }
 
 export function workerGateEnv(caps: { doneGate?: boolean }): Record<string, string> {
 	if (!caps.doneGate || !workersHarnessGate()) return {};
 	const agent = ompAgentDir(process.env, homeDir());
 	if (harnessFiles(agent)) return { [WORKER_GATE_AGENT_DIR_ENV]: agent };
-	if (!workersMissingNoted) log(`workers.harness_gate is on, but the harness is not installed in ${agent} (extensions/done-gate.ts and harness/gate/bootstrap.ts): task workers run without its done gate`);
-	workersMissingNoted = true;
+	noteMissing("workers", agent, "task workers run without its done gate");
 	return {};
 }
 

@@ -1,4 +1,4 @@
-import { type Lane, setStatus, dir, laneWorkerModel, ownerNotes, hooks, pendingFile } from "./lanestate.ts";
+import { type Lane, setStatus, dir, laneMode, laneWorkerModel, ownerNotes, hooks, pendingFile } from "./lanestate.ts";
 import { HARNESS_NAMES, runtimeFor } from "./runtime/index.ts";
 import { msg } from "./i18n.ts";
 import { HUB_TOKEN, log, chainAfter, compactAtFor, fallbackChain, parseSelector, lanesCompactAt, lanesKeepRecent } from "./config.ts";
@@ -124,7 +124,7 @@ export function spawn(lane: Lane, resume: boolean): boolean {
 	const keyedWorkers = keyedWorker(env);
 	const workerModel = keyedWorkers ?? laneWorkerModel(lane);
 	lane.workerSlots = laneLimits(lane).workers;
-	const gate = runtimeFor("lane").caps.doneGate ? harnessGate() : undefined;
+	const gate = runtimeFor("lane").caps.doneGate && laneMode(lane) === "coding" ? harnessGate() : undefined;
 	let proc: ReturnType<ReturnType<typeof runtimeFor>["start"]>;
 	try {
 	// posix_spawn with a missing cwd reports ENOENT for the binary (`omo`), which hides the real cause.
@@ -151,8 +151,9 @@ export function spawn(lane: Lane, resume: boolean): boolean {
 		startFailed(lane, (e as Error).message, resume);
 		return false;
 	}
-	// A fresh session in a worktree without a gate file waits for the harness's bootstrap there before its first prompt (hub/done-gate.ts).
-	if (gate && !resume) proc = gateBootstrap(proc, gate, lane);
+	// A fresh session, or one resumed right after a switch to coding mode, in a worktree without a gate file waits for the harness's bootstrap there before its first prompt (hub/done-gate.ts).
+	if (gate && (!resume || lane.bootstrapDue)) proc = gateBootstrap(proc, gate, lane);
+	lane.bootstrapDue = undefined;
 	lane.activeModel = spawnModel;
 	lane.contractQueued = undefined; // a new process holds no queued re-read
 	lane.startedModel = spawnModel;

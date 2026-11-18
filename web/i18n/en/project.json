@@ -10,6 +10,8 @@
   "project.row.in_project": "Project {name}",
   "project.open_chat": "Open chat",
   "project.subs_count": "Subagents {done}/{total}",
+  "project.mode.coding": "Coding",
+  "project.mode.assistant": "Assistant",
   "project.view.all": "All",
   "project.paused": "Paused",
   "project.word.asks": "Waiting for your reply",

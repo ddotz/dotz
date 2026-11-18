@@ -70,8 +70,8 @@ number) or the usage limit.
   that is not a git repo with a remote lives only on its computer and is never moved. The branch to work from must be
   pushed (`git branch -r --contains HEAD`), or the launch is refused with "먼저 푸시".
 - The forward: `POST /api/peer/act` action `launch` with `{ v, repo, branch?, title, brief, why, hours?, est?, owner_asked_for_lane?, conv }`; `branch` is the sender's current branch, and the receiver refuses when its folder is on another.
-  The brief passes the same secret check as `dotz_peer` (`extension/peer-secrets.ts`). Model, worker model and `force`
-  are never forwarded: the receiver uses its own.
+  The brief passes the same secret check as `dotz_peer` (`extension/peer-secrets.ts`). Model, worker model, `mode` and `force`
+  are never forwarded: the receiver uses its own (its `mode` follows its own git repo: coding in a worktree).
 - The receiver finds its project folder for `repo`, refuses a dirty working tree, runs `git pull --ff-only` (never a copy),
   then starts the session through its own `POST /api/lanes` route: its title rule, Done-when check, budget gate and
   session cap apply, and a refusal comes back as the answer. The session records `peer: { name, conv }`.

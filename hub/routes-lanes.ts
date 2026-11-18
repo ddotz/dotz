@@ -10,9 +10,9 @@ import { deferForLimit, limitWaitStarted } from "./limitwait.ts";
 import * as discord from "./discord.ts";
 import { emit } from "./events.ts";
 import { deleteLanes, restoreLanes as restoreTrashedLanes, trashList } from "./lanetrash.ts";
-import { abortLane, BUDGET_WINDOW_HOURS, budgetLine, budgetVerdict, estimateOf, handoverLane, isExpensive, laneJustification, lanes, laneList, launch, restartLane, resumeByName, sendToLane, stopLane, titleProblem, verifyLane } from "./lanes.ts";
+import { abortLane, BUDGET_WINDOW_HOURS, budgetLine, budgetVerdict, estimateOf, handoverLane, isExpensive, laneJustification, lanes, laneList, launch, restartLane, resumeByName, sendToLane, setLaneMode, stopLane, titleProblem, verifyLane } from "./lanes.ts";
 import { anthropicUsage, availableModels } from "./providers.ts";
-import { keepHome, persist } from "./lanestate.ts";
+import { keepHome, parseLaneMode, persist } from "./lanestate.ts";
 import { closeLaneCards, laneVerified } from "./notices.ts";
 import { convs } from "./convsessions.ts";
 import { MAIN, QUICK } from "./session-key.ts";
@@ -53,6 +53,7 @@ export async function budgetProblem(name: string, est: number, force: boolean): 
 	return { text: r ? `${verdict} (account ${r.account})` : verdict, resetAt: fiveLimit?.window.resetsAt };
 }
 const STATE_FILE = () => join(DATA_DIR, "state.json");
+const BAD_MODE = "mode must be coding or assistant";
 
 // Stronger-model proposals (hub/escalate.ts): the card is the asking session's own message, an approved step goes through the lane launch
 // route below (title, Done-when, budget gate and model rules as any launch), and its report and the gateway's notes reach the asking session.
@@ -224,6 +225,8 @@ export async function routeLanes(req: Request, url: URL, parts: string[]): Promi
 			if (req.method === "POST" && parts.length === 2) {
 				const b = await body(req);
 				if (b.session === QUICK) return json({ error: "the quick chat does not launch sessions; hand it to main with dotz_conv send main" }, 403);
+				const mode = parseLaneMode(b.mode);
+				if (b.mode !== undefined && !mode) return json({ error: BAD_MODE }, 400);
 				const asked = Boolean(b.owner_asked_for_fable);
 				const dear = [b.model, b.worker_model].filter(m => m && isExpensive(String(m)));
 				if (dear.length && !asked) return json({ error: `Fable and max/xhigh-effort models (${dear.join(", ")}) run only when the owner explicitly asks for them. Use the defaults, or relaunch with owner_asked_for_fable=true after they ask.` }, 409);
@@ -273,7 +276,7 @@ export async function routeLanes(req: Request, url: URL, parts: string[]): Promi
 				const asking = b.escalation || peer || !turns ? undefined : turns.current();
 				const origin = { home, asking: asking?.target, askingMessage: asking?.replyTo, isWork: (id: string) => Boolean(discord.channels.work[id]), threadParent: (id: string) => discord.channels.threads[id]?.parent };
 				const place = lanePlace({ ...origin, discordForWeb: postSettings().web_lanes });
-				const lane = launch(String(b.name), String(b.cwd), String(b.brief ?? ""), b.model, b.worker_model ? String(b.worker_model) : undefined, asked, String(b.title).trim(), typeof b.session === "string" && b.session && b.session !== MAIN ? b.session : undefined, peer);
+				const lane = launch(String(b.name), String(b.cwd), String(b.brief ?? ""), b.model, b.worker_model ? String(b.worker_model) : undefined, asked, String(b.title).trim(), typeof b.session === "string" && b.session && b.session !== MAIN ? b.session : undefined, peer, mode);
 				// Started from the web: it lives in the web (its session conversation, notices and push), with no Discord channel.
 				if (place.kind === "web") {
 					lane.web = true;
@@ -315,6 +318,11 @@ export async function routeLanes(req: Request, url: URL, parts: string[]): Promi
 			if (req.method === "POST" && parts[3] === "restart") {
 				await restartLane(parts[2], undefined, true);
 				return json({ ok: true });
+			}
+			if (req.method === "POST" && parts[3] === "mode") {
+				const mode = parseLaneMode((await body(req)).mode);
+				if (!mode) return json({ error: BAD_MODE }, 400);
+				return json({ ok: true, mode, applied: await setLaneMode(parts[2], mode) });
 			}
 			if (req.method === "POST" && parts[3] === "resume") {
 				const text = String((await body(req)).text ?? "").trim();

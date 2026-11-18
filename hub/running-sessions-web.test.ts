@@ -4,8 +4,8 @@ import { ev, fakeHub, idleState, json, run, type View, waitFor } from "./test-we
 // 진행 중 is one list on 홈 and under 땅콩 and 작업내역 in 채팅, a shortcut to sessions that stay in their project's 세션 section: the shipped page against a stub gateway.
 const work = { "7001": "기획팀" };
 const lane = (name: string, title: string, extra: object) => ({ name, title, cwd: "/h/shared", status: "idle", live: true, reports: 1, startedAt: "2026-11-01T00:00:00Z", ...extra });
-const audit = lane("audit", "분기 안건 검토", { status: "working", home: "ch:7001", project: "기획팀", startedAt: "2026-11-01T01:00:00Z" });
-const free = lane("free", "회의록 정리", { status: "working", startedAt: "2026-11-01T02:00:00Z" });
+const audit = lane("audit", "분기 안건 검토", { status: "working", home: "ch:7001", project: "기획팀", startedAt: "2026-11-01T01:00:00Z", mode: "coding" });
+const free = lane("free", "회의록 정리", { status: "working", startedAt: "2026-11-01T02:00:00Z", mode: "assistant" });
 const ask = lane("ask", "손익 검토", { home: "ch:7001", project: "기획팀", startedAt: "2026-11-01T03:00:00Z", pendingAsk: { text: "어떻게 할까요?" } });
 const done = lane("done", "지난달 보고", { home: "ch:7001", project: "기획팀" });
 const held = lane("held", "한도 세션", { status: "rate-limited", home: "ch:7001", project: "기획팀" });
@@ -56,6 +56,12 @@ test("홈 and 채팅, under 땅콩 and 작업내역, list the same sessions: wai
 	await listed(chatRows, CHAT_WANT);
 	await run(v, `document.querySelector('#chat-convo .cv-card .cv-row[data-t="lane:audit"]').click()`);
 	await waitFor(v, `target === "lane:audit" && current === "chat"`);
+});
+
+test("a session row on 홈 says its mode (코딩 or 비서), a session with no mode says nothing, and the word is in the row's accessible name after the status", async () => {
+	await run(v, `go("home")`);
+	const rows = `(() => { renderHomeNow(); return [...document.querySelectorAll('#v-home .hn[data-k="running"] .srow')].map(r => [r.dataset.t, [...r.querySelectorAll(".hp")].map(m => m.textContent), r.getAttribute("aria-label").split(" · ").slice(2, 4)]); })()`;
+	await listed(rows, [["lane:ask", [], ["답을 기다림", "대화 열기"]], ["lane:audit", ["코딩"], ["진행 중", "코딩"]], ["lane:free", ["비서"], ["진행 중", "비서"]]]);
 });
 
 test("in the chat list a running session ends in no dot or word when read, in its unread count when not, and a waiting one keeps its word", async () => {

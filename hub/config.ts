@@ -306,10 +306,10 @@ export const lanesMaxActive = () => cap(cfg.lanes?.max_active);
 export const lanesMaxWorkers = () => cap(cfg.lanes?.max_workers);
 // Free space (GB) the data dir and a lane's working volume keep before new lanes wait (hub/diskguard.ts); 0 turns the guard off.
 export const lanesMinFreeDiskGb = () => (typeof cfg.lanes?.min_free_disk_gb === "number" && cfg.lanes.min_free_disk_gb >= 0 ? cfg.lanes.min_free_disk_gb : 10);
-// Off unless `lanes.harness_gate` is true: an omp lane then loads the harness's done gate next to dotz's extension, and the harness prepares
-// the lane's fresh worktree before its first prompt (hub/done-gate.ts). A harness that is not installed here makes it do nothing.
-export const lanesHarnessGate = () => cfg.lanes?.harness_gate === true;
-export const workersHarnessGate = () => cfg.workers?.harness_gate === true;
+// On unless `lanes.harness_gate` is false (2026-11-18): an omp lane in coding mode (hub/lanestate.ts laneMode) loads the harness's done gate next to dotz's extension, and the harness
+// prepares the lane's fresh worktree before its first prompt (hub/done-gate.ts). Task workers follow `workers.harness_gate` the same way. A harness that is not installed here makes it do nothing.
+export const lanesHarnessGate = () => cfg.lanes?.harness_gate !== false;
+export const workersHarnessGate = () => cfg.workers?.harness_gate !== false;
 // On unless set to false (2026-11-01): with one shared session, an owner message that came while that session ran another
 // conversation's turn or one the gateway started (watch, schedule, lane report) waited for the turn to end; its own session
 // steers it into its conversation's running turn at once, as on the owner's Mac mini.

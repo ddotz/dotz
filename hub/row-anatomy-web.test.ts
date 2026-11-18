@@ -3,7 +3,7 @@ import { sseResponse } from "./events.ts";
 import { appAsset, indexPage } from "./webapp.ts";
 
 // web/DESIGN.md 목록 줄 구성 (row anatomy), measured in a headless browser on the main list surfaces with seeded rows, some carrying an extra
-// marker (a result count, an unread count, an attachment, a tag): the row's status or time is its last visible content, every marker sits before
+// marker (a result count, an unread count, an attachment, a tag, a session's mode): the row's status or time is its last visible content, every marker sits before
 // it, its right edge is one x down the list, and a marker on a dense home card keeps the row one line tall until it is opened.
 // Content is measured as text ink (a Range over each text node, clipped to its box) and icons, so a full-width block box does not count as content.
 // Trailing row actions (an icon button: ✕, ⋯, 답장 쓰기, a fold chevron) stand after the status in their own fixed slot and are not content.
@@ -76,6 +76,8 @@ const MAIL_ROWS = `const at = new Date().toISOString();
   MAILS.set("mail:ra3", { subject: "답장이 필요한 메일", from: "박민수 <park@example.com>", at, source: "gmail", unreplied: true, reply: "needed" });
   const box = el("div", { id: "ra-mail" }, ...["mail:ra1", "mail:ra2", "mail:ra3"].map(t => monConvNode(t, "메일")));
   document.querySelector("#mon-side").append(box)`;
+const SESSION_ROWS = `const rows = [["ra-a", "로그인 화면 고치기", "coding"], ["ra-b", "회의록 정리", "assistant"], ["ra-c", "모드를 모르는 세션", undefined]].map(([name, title, mode]) => sessionRow({ name, title, status: "working", live: true, mode }, { project: "가계부" }));
+  document.querySelector("#mon-side").append(el("div", { id: "ra-sessions" }, ...rows))`;
 const SURFACES: Surface[] = [
 	{ name: "home 최근 끝난 작업", go: `go("home")`, ready: `document.querySelectorAll('#v-home [data-k="ended-work"] > .hr').length === 3`,
 		rows: `#v-home [data-k="ended-work"] > .hr`, end: ".hs", markers: ".hrx-n", trail: ".btn.text", dense: true },
@@ -91,6 +93,8 @@ const SURFACES: Surface[] = [
 		rows: "#mon-side .cv-row", end: ".cv-m2 > .tag", markers: ".nb, .tag, .dot" },
 	{ name: "mail list", go: `go("monitoring")`, ready: `document.querySelector("#mon-side")`,
 		mount: MAIL_ROWS, rows: "#ra-mail > .mr", end: ".rc-time", markers: ".tag, .mr-clip", trail: ".ib, .mr-more, .mr-draft" },
+	{ name: "session rows", go: `go("monitoring")`, ready: `document.querySelector("#mon-side")`,
+		mount: SESSION_ROWS, rows: "#ra-sessions > .srow", end: ".hs", markers: ".hp" },
 ];
 
 // Violations of one surface, one line each: "<rule> <row index> <detail>".

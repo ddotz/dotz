@@ -3,8 +3,8 @@
 // the subscription's limit resets, and dotz moves the orchestrator back to the subscription in a fresh conversation then.
 // 2026-10-22: an entry may let its task workers and sessions bill the same key; the settings switch is DOTZ_KEY_WORKERS).
 export const API_KEY_HOLD =
-	"dotz: you are on the API-key fallback (the subscription hit its usage limit). Task subagents and sessions (dotz_lane launch/send/handover/verify) do not run on the API key. Answer and do light work yourself; put heavier work in state.json open_tasks (with waiting_for 'limit-reset' and resume_at = the reset time, ISO) and tell the owner it starts when the subscription resets (dotz then moves you back in a fresh conversation).";
-const HELD_LANE_ACTIONS = new Set(["launch", "send", "handover", "verify"]);
+	"dotz: you are on the API-key fallback (the subscription hit its usage limit). Task subagents and sessions (dotz_lane launch/send/handover/verify/mode) do not run on the API key. Answer and do light work yourself; put heavier work in state.json open_tasks (with waiting_for 'limit-reset' and resume_at = the reset time, ISO) and tell the owner it starts when the subscription resets (dotz then moves you back in a fresh conversation).";
+const HELD_LANE_ACTIONS = new Set(["launch", "send", "handover", "verify", "mode"]);
 let held = false;
 
 // `workers`: the entry lets task workers and sessions run on the key, so nothing is held.

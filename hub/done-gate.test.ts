@@ -1,19 +1,22 @@
-// The harness's done gate in lanes (hub/done-gate.ts): off unless `lanes.harness_gate` is on and the harness is installed. A lane's fresh session in a
-// worktree without a gate file waits for the harness's bootstrap before its first prompt; a failing or hanging bootstrap never keeps the lane waiting.
+// The harness's done gate in lanes (hub/done-gate.ts, hub/lanerun.ts): a coding lane (in a git worktree, or started in that mode) loads it when the harness is installed and `lanes.harness_gate` is not false; an assistant lane never does.
+// A lane's fresh session in a worktree without a gate file waits for the harness's bootstrap before its first prompt; a failing or hanging bootstrap never keeps the lane waiting.
 // The harness is a stub here: a script in a temp omp agent folder that records its calls and writes the files the real one writes.
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { holdWorkOnApiKey } from "../extension/apikey-hold.ts";
 import { BOOTSTRAP_LIMIT_MS } from "../extension/harness-gate.ts";
+import dotz from "../extension/index.ts";
 import { cfg, paths } from "./config.ts";
 import { gateBootstrap, harnessGate } from "./done-gate.ts";
 import * as l from "./lanes.ts";
-import { resetLaneStateForTest } from "./lanestate.ts";
+import { laneMode, resetLaneStateForTest, type LaneMode } from "./lanestate.ts";
 import { git } from "./lanetree.ts";
+import { routeLanes } from "./routes-lanes.ts";
 import { adapters } from "./runtime/index.ts";
 import { omo, omoArgs } from "./runtime/omo.ts";
-import { omp } from "./runtime/omp.ts";
+import { EXTENSION as DOTZ_EXTENSION, omp, ompArgv } from "./runtime/omp.ts";
 import { advance, realClearTimeout, realSetTimeout } from "./runtime/test-clock.ts";
 import type { AgentEvent, AgentProcess, RuntimeAdapter, SendMode, SpawnOpts } from "./runtime/types.ts";
 
@@ -84,7 +87,7 @@ const fakes: Record<string, RuntimeAdapter> = {
 	fakeomo: { ...omo, start: record },
 };
 
-const ENV_KEYS = ["HOME", "PI_CODING_AGENT_DIR", "OMP_PROFILE", "GATE_STUB_LOG", "GATE_STUB_MODE"];
+const ENV_KEYS = ["HOME", "PI_CODING_AGENT_DIR", "OMP_PROFILE", "GATE_STUB_LOG", "GATE_STUB_MODE", "DOTZ_ALLOW_LIVE", "DOTZ_PORT"];
 const savedEnv = Object.fromEntries(ENV_KEYS.map(k => [k, process.env[k]]));
 const savedLanes = cfg.lanes;
 const running = new Set<string>();
@@ -97,7 +100,7 @@ beforeAll(() => {
 });
 beforeEach(() => {
 	// max_active and min_free_disk_gb keep this machine's memory and disk from queueing the lanes of a test.
-	cfg.lanes = { ...savedLanes, runtime: "fakegate", harness_gate: true, max_active: 8, min_free_disk_gb: 0 };
+	cfg.lanes = { ...savedLanes, runtime: "fakegate", max_active: 8, min_free_disk_gb: 0 };
 	process.env.PI_CODING_AGENT_DIR = AGENT;
 	process.env.OMP_PROFILE = ""; // no named profile, whatever the developer's shell has
 	process.env.GATE_STUB_LOG = STUB_LOG;
@@ -145,17 +148,42 @@ function within<T>(p: Promise<T>, what: string): Promise<T> {
 	return promise;
 }
 
-function launch(name: string, cwd: string) {
+function launch(name: string, cwd: string, mode?: LaneMode) {
 	running.add(name);
-	const lane = l.launch(name, cwd, "Fix the thing.\nDone when: the tests pass");
+	const lane = l.launch(name, cwd, "Fix the thing.\nDone when: the tests pass", undefined, undefined, undefined, undefined, undefined, undefined, mode);
 	return { lane, ...spawns.findLast(s => s.opts.lane?.name === name)! };
 }
+const loadsGate = (opts: SpawnOpts): boolean => ompArgv(opts).join(" ").includes(`--extension ${DOTZ_EXTENSION} --extension ${EXTENSION}`);
+const recorded = (name: string): unknown => JSON.parse(readFileSync(join(paths.lanes, name, "lane.json"), "utf8")).mode;
 
-test("off unless lanes.harness_gate is on: no extension handed to the process, no bootstrap, the first prompt goes at once", () => {
-	delete cfg.lanes.harness_gate;
+type Tool = { name: string; execute: (id: string, params: Record<string, unknown>) => Promise<{ content: { text: string }[] }> };
+async function dotzLaneTool(): Promise<{ tool: Tool; url: string; stop: () => void }> {
+	const hub = Bun.serve({ port: 0, hostname: "127.0.0.1", fetch: req => { const url = new URL(req.url); return routeLanes(req, url, url.pathname.split("/").filter(Boolean)).then(r => r ?? new Response("{}", { status: 404 })); } });
+	const tools: Tool[] = [];
+	const host = new Proxy({ registerTool: (t: Tool) => tools.push(t) } as Record<string, unknown>, { get: (target, key) => (key in target ? target[key as string] : key === "then" || key === "zod" ? undefined : () => undefined) });
+	Object.assign(process.env, { DOTZ_ORCHESTRATOR: "1", DOTZ_RUNTIME: "omo" });
+	holdWorkOnApiKey({}, true);
+	await dotz(host);
+	delete process.env.DOTZ_ORCHESTRATOR;
+	delete process.env.DOTZ_RUNTIME;
+	Object.assign(process.env, { DOTZ_ALLOW_LIVE: "1", DOTZ_PORT: String(hub.port) });
+	return { tool: tools.find(t => t.name === "dotz_lane")!, url: `http://127.0.0.1:${hub.port}`, stop: () => void hub.stop(true) };
+}
+function withSession(lane: { name: string; sessionFile?: string }): string {
+	const session = join(DATA, "omo-agent", "sessions", `${lane.name}.jsonl`);
+	mkdirSync(dirname(session), { recursive: true });
+	writeFileSync(session, "");
+	lane.sessionFile = session;
+	return session;
+}
+
+test("lanes.harness_gate false: a coding lane gets no extension handed to the process, no bootstrap, and its first prompt goes at once", () => {
+	cfg.lanes.harness_gate = false;
 	expect(harnessGate()).toBeUndefined();
-	const { opts, agent } = launch("gate-off", repoWith());
+	const { lane, opts, agent } = launch("gate-off", repoWith());
+	expect(lane.mode).toBe("coding");
 	expect("doneGate" in opts).toBe(false);
+	expect(loadsGate(opts)).toBe(false);
 	expect(agent.sent).toHaveLength(1);
 	expect(calls()).toEqual([]);
 });
@@ -170,6 +198,102 @@ test("on with the harness installed: the process gets the gate extension, and th
 	expect(agent.sent[0]!.text).toContain("Fix the thing.");
 	expect(agent.sent[0]!.gateFile).toBe(true);
 	expect(calls()).toEqual([lane.worktree!.path]);
+});
+
+test("with lanes.harness_gate unset the mode decides: a lane in a git worktree is a coding lane and has the gate in its omp argv, a lane without a worktree is an assistant lane and has none, a mode asked at launch wins over the folder", async () => {
+	expect(cfg.lanes.harness_gate).toBeUndefined();
+	const coding = launch("mode-coding", repoWith());
+	expect(coding.lane.worktree).toBeDefined();
+	expect(coding.lane.mode).toBe("coding");
+	expect(loadsGate(coding.opts)).toBe(true);
+	await within(coding.agent.first.promise, "the first prompt");
+	const assistant = launch("mode-assistant", TMP);
+	expect(assistant.lane.worktree).toBeUndefined();
+	expect(assistant.lane.mode).toBe("assistant");
+	expect("doneGate" in assistant.opts).toBe(false);
+	expect(loadsGate(assistant.opts)).toBe(false);
+	expect(assistant.agent.sent).toHaveLength(1);
+	const askedCoding = launch("mode-asked-coding", TMP, "coding");
+	expect([askedCoding.lane.worktree, askedCoding.lane.mode, loadsGate(askedCoding.opts)]).toEqual([undefined, "coding", true]);
+	const askedAssistant = launch("mode-asked-assistant", repoWith(), "assistant");
+	expect(askedAssistant.lane.worktree).toBeDefined();
+	expect([askedAssistant.lane.mode, "doneGate" in askedAssistant.opts, loadsGate(askedAssistant.opts)]).toEqual(["assistant", false, false]);
+	const listed = l.laneList();
+	for (const { lane } of [coding, assistant, askedCoding, askedAssistant]) {
+		expect(recorded(lane.name)).toBe(lane.mode);
+		expect(listed.find(row => row.name === lane.name)?.mode).toBe(lane.mode);
+	}
+	expect(calls()).toEqual([coding.lane.worktree!.path]);
+});
+
+test("a lane record from before modes has no mode: it reads as coding with a worktree and as assistant without, and the restored lane keeps it when its worktree goes", () => {
+	const worktree = { path: join(TMP, "gone-worktree"), repo: TMP, branch: "lane/old-coding", base: "main" };
+	expect([laneMode({ worktree }), laneMode({}), laneMode({ mode: "assistant", worktree })]).toEqual(["coding", "assistant", "assistant"]);
+	const record = (name: string, extra: object) => {
+		mkdirSync(join(paths.lanes, name), { recursive: true });
+		writeFileSync(join(paths.lanes, name, "lane.json"), JSON.stringify({ name, cwd: TMP, model: "m", status: "exited", startedAt: "2026-11-01T00:00:00.000Z", reports: 0, ...extra }));
+	};
+	record("old-coding", { worktree });
+	record("old-plain", {});
+	l.restoreLanes();
+	expect([l.lanes.get("old-coding")?.mode, l.lanes.get("old-plain")?.mode]).toEqual(["coding", "assistant"]);
+	l.lanes.get("old-coding")!.worktree = undefined;
+	expect(laneMode(l.lanes.get("old-coding")!)).toBe("coding");
+	for (const name of ["old-coding", "old-plain"]) l.lanes.delete(name);
+});
+
+test("dotz_lane action=mode records the new mode on the lane and restarts its process on the same session: the gate is loaded for coding and left out for assistant, and the same mode again restarts nothing", async () => {
+	const { tool, stop } = await dotzLaneTool();
+	try {
+		const { lane, agent } = launch("mode-switch", repoWith(), "assistant");
+		const session = withSession(lane);
+		const before = spawns.length;
+		expect(loadsGate(spawns.at(-1)!.opts)).toBe(false);
+		const to = async (mode: string) => JSON.parse((await tool.execute("c1", { action: "mode", name: "mode-switch", mode })).content[0]!.text);
+		expect(await to("coding")).toEqual({ ok: true, mode: "coding", applied: "restarting" });
+		expect([lane.mode, recorded("mode-switch")]).toEqual(["coding", "coding"]);
+		await within(agent.exited, "the old process to end");
+		expect(spawns).toHaveLength(before + 1);
+		expect(spawns.at(-1)!.opts.resume).toBe(session);
+		expect(loadsGate(spawns.at(-1)!.opts)).toBe(true);
+		await within(spawns.at(-1)!.agent.first.promise, "the restarted lane's first message, held for the bootstrap");
+		expect(calls()).toEqual([lane.worktree!.path]);
+		expect(await to("assistant")).toEqual({ ok: true, mode: "assistant", applied: "restarting" });
+		expect([lane.mode, recorded("mode-switch")]).toEqual(["assistant", "assistant"]);
+		expect(spawns).toHaveLength(before + 2);
+		expect(spawns.at(-1)!.opts.resume).toBe(session);
+		expect(loadsGate(spawns.at(-1)!.opts)).toBe(false);
+		expect(await to("assistant")).toEqual({ ok: true, mode: "assistant", applied: "unchanged" });
+		expect(spawns).toHaveLength(before + 2);
+	} finally {
+		stop();
+	}
+});
+
+test("dotz_lane action=mode on a stopped lane takes effect at its next start; a mode that is not one of the two, and a runtime that cannot load the gate, are refused with the lane unchanged", async () => {
+	const { tool, url, stop } = await dotzLaneTool();
+	try {
+		const { lane } = launch("mode-stopped", repoWith(), "assistant");
+		withSession(lane);
+		l.stopLane("mode-stopped");
+		await advance(300);
+		const before = spawns.length;
+		const out = JSON.parse((await tool.execute("c2", { action: "mode", name: "mode-stopped", mode: "coding" })).content[0]!.text);
+		expect(out).toEqual({ ok: true, mode: "coding", applied: "next-start" });
+		expect([lane.mode, recorded("mode-stopped"), spawns.length]).toEqual(["coding", "coding", before]);
+		l.sendToLane("mode-stopped", "[owner via Discord] one more tweak");
+		expect(spawns).toHaveLength(before + 1);
+		expect(loadsGate(spawns.at(-1)!.opts)).toBe(true);
+		const bad = await fetch(`${url}/api/lanes/mode-stopped/mode`, { method: "POST", body: JSON.stringify({ mode: "fast" }) });
+		expect([bad.status, await bad.json()]).toEqual([400, { error: "mode must be coding or assistant" }]);
+		const badLaunch = await fetch(`${url}/api/lanes`, { method: "POST", body: JSON.stringify({ name: "mode-bad", mode: "fast" }) });
+		expect(badLaunch.status).toBe(400);
+		cfg.lanes = { ...cfg.lanes, runtime: "fakeomo" };
+		await expect(tool.execute("c3", { action: "mode", name: "mode-stopped", mode: "assistant" })).rejects.toThrow(/not omp/);
+		expect([lane.mode, recorded("mode-stopped")]).toEqual(["coding", "coding"]);
+	} finally {
+		stop();
+	}
 });
 
 test("the files the bootstrap writes stay out of git status; info/exclude gets its two lines once, however many lanes the repo has", async () => {
@@ -216,6 +340,18 @@ test("a harness that is not installed, or only half of it, does nothing", () => 
 	expect("doneGate" in opts).toBe(false);
 	expect(agent.sent).toHaveLength(1);
 	expect(calls()).toEqual([]);
+});
+
+test("the note that the harness is missing is for an owner who set the key to true: the default on says nothing, true says it once per agent folder", () => {
+	const agent = mkdtempSync(join(TMP, "noted-agent-"));
+	process.env.PI_CODING_AGENT_DIR = agent;
+	const said = hubLog();
+	expect(harnessGate()).toBeUndefined();
+	expect(said()).not.toContain("is not installed");
+	cfg.lanes.harness_gate = true;
+	expect(harnessGate()).toBeUndefined();
+	expect(harnessGate()).toBeUndefined();
+	expect(said().split(`lanes.harness_gate is true, but the harness is not installed in ${agent}`)).toHaveLength(2);
 });
 
 test("the agent folder is the one omp itself uses: a named profile lives under the home folder's .omp/profiles", () => {

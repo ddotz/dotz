@@ -1,6 +1,6 @@
 import { DATA_DIR, log, paths, selectorOf, lanesModel, now, chainAfter, fallbackChain, parseSelector } from "./config.ts";
 import { markDeep } from "./deepmark.ts";
-import { type Lane, hooks, laneLive, laneWorkerModel, lanes, dir, persist, ownerNotes, setStatus, portOf, type Record_, pendingFile } from "./lanestate.ts";
+import { type Lane, type LaneMode, hooks, laneLive, laneMode, laneWorkerModel, lanes, dir, persist, ownerNotes, setStatus, portOf, type Record_, pendingFile } from "./lanestate.ts";
 import { broadcast } from "./events.ts";
 import { existsSync, readFileSync, mkdirSync, writeFileSync, readdirSync, rmSync } from "node:fs";
 import { RESTART_HELD_FILE } from "./restart.ts";
@@ -79,7 +79,7 @@ export function startLaneQueue(): void {
 	trackTimer("machine sampler", startMachineSampler());
 }
 
-export function launch(name: string, cwd: string, brief: string, model?: string, worker?: string, fableOk?: boolean, title?: string, from?: string, peer?: Lane["peer"]): Lane {
+export function launch(name: string, cwd: string, brief: string, model?: string, worker?: string, fableOk?: boolean, title?: string, from?: string, peer?: Lane["peer"], mode?: LaneMode): Lane {
 	if (!NAME_RE.test(name)) throw new Error("lane name must match [a-z0-9][a-z0-9-]{0,31}");
 	if (!cwd.startsWith("/") || !existsSync(cwd)) throw new Error(`cwd must be an existing absolute path: ${cwd}`);
 	const prior = lanes.get(name);
@@ -91,7 +91,7 @@ export function launch(name: string, cwd: string, brief: string, model?: string,
 	mkdirSync(dir(name), { recursive: true });
 	const place = laneWorktree(name, cwd);
 	if (!existsSync(place.cwd)) throw new Error(`lane ${name}: working directory does not exist: ${place.cwd}`);
-	const lane: Lane = { name, ...(title ? { title } : {}), cwd: place.cwd, worktree: place.worktree, model: selector, workerModel: worker || undefined, fableOk: fableOk || undefined, status: "starting", startedAt: now(), lastText: "", reports: 0, ctx: newCtx(), orchAsked: true, ...(from ? { from } : {}), ...(peer ? { peer } : {}), ...(why ? { waiting: why } : {}) };
+	const lane: Lane = { name, ...(title ? { title } : {}), cwd: place.cwd, worktree: place.worktree, mode: laneMode({ mode, worktree: place.worktree }), model: selector, workerModel: worker || undefined, fableOk: fableOk || undefined, status: "starting", startedAt: now(), lastText: "", reports: 0, ctx: newCtx(), orchAsked: true, ...(from ? { from } : {}), ...(peer ? { peer } : {}), ...(why ? { waiting: why } : {}) };
 	lanes.set(name, lane);
 	persist(lane);
 	writeFileSync(join(dir(name), "brief.md"), `${brief}\n`);
@@ -360,6 +360,27 @@ export async function setLaneModel(name: string, selector: string): Promise<"liv
 	await restartLane(name);
 	return "restarted";
 }
+
+export async function setLaneMode(name: string, mode: LaneMode): Promise<"unchanged" | "next-start" | "restarting"> {
+	const lane = known(name);
+	const runtime = runtimeFor("lane");
+	if (!runtime.caps.doneGate) throw new Error(`lane ${name} runs on ${harnessName(runtime.id)}, not omp: a mode only decides whether the harness done gate loads, and only omp can load it`);
+	const was = lane.mode;
+	if (laneMode(lane) === mode) return "unchanged";
+	lane.mode = mode;
+	lane.bootstrapDue = mode === "coding" ? true : undefined;
+	persist(lane);
+	if (!lane.proc) return "next-start";
+	try {
+		await restartLane(name);
+	} catch (e) {
+		lane.mode = was;
+		persist(lane);
+		throw e;
+	}
+	return "restarting";
+}
+
 // Sets the model a lane's task workers run on; `selector` undefined drops the lane's own value so it follows models.workers.
 // A running process keeps the worker profile it was spawned with (OMO_PROFILE is fixed at spawn), so the lane is told once:
 // steered in now when it is working, otherwise on its next prompt (no extra turn). `byLane`: the lane records a switch it
@@ -500,7 +521,7 @@ export function restoreLanes(): string[] {
 		const file = join(dir(name), "lane.json");
 		if (!existsSync(file) || lanes.has(name)) continue;
 		const rec = JSON.parse(readFileSync(file, "utf8")) as Record_;
-		const lane: Lane = { ...rec, lastText: "", ctx: newCtx() };
+		const lane: Lane = { ...rec, mode: laneMode(rec), lastText: "", ctx: newCtx() };
 		lanes.set(name, lane);
 		// It stopped because the waiting restart refused its task workers (extension/restart-hold.ts): one note to go on, sent by the
 		// resume sweep like a message its busy session refused. A lane cut off mid-turn gets laneGatewayRestarted instead.

@@ -139,13 +139,14 @@ function laneProject(l) {
   const work = (S && S.channels && S.channels.work) || {};
   return l.project || work[home.slice(3)] || "";
 }
-// The one session row (home, project screen): title, parent project, status word; one tap opens the session's chat.
+// The one session row (home, project screen): title, parent project, mode (코딩/비서), status word; one tap opens the session's chat.
 function sessionStatus(l) {
   if (!laneAlive(l)) return [TX("project.word.ended"), ""];
   return runStatus(`lane:${l.name}`, l.status, l.pendingAsk);
 }
 // The owner's words for a session, on every list of sessions: sessionStatus still decides, this only says it. What stopped short of finishing keeps its own word.
 const SESSION_WORD = { run: [TX("home.sys.running"), "pri"], wait: [TX("project.word.wait"), "warn"], done: [TX("home.sys.done"), ""] };
+const SESSION_MODE = { coding: TX("project.mode.coding"), assistant: TX("project.mode.assistant") };
 function sessionState(l) {
   const st = sessionStatus(l), t = `lane:${l.name}`;
   if (st[1] === "pri") return SESSION_WORD.run;
@@ -163,13 +164,14 @@ const sessionHead = l => { const p = laneProject(l), n = l.title || l.name; retu
 // o.project: the project name when the caller knows it better than the lane's own home; o.line: a short activity line after it;
 // o.word / o.tone: a status the caller knows better ("답변 필요"); o.head: the project stands in the name (sessionHead), not under it.
 function sessionRow(l, o = {}) {
-  const proj = o.project !== undefined ? o.project : laneProject(l), [word, tone] = o.word ? [o.word, o.tone || ""] : sessionState(l), name = l.title || l.name, t = `lane:${l.name}`;
+  const proj = o.project !== undefined ? o.project : laneProject(l), [word, tone] = o.word ? [o.word, o.tone || ""] : sessionState(l), name = l.title || l.name, t = `lane:${l.name}`, mode = SESSION_MODE[l.mode];
   const subs = SUBS[t] || [], done = subs.filter(s => s.status !== "running").length;
-  return el("button", { class: "hr srow", type: "button", "data-t": t, onclick: o.open || (() => openTarget(t, lastChatView())), "aria-label": [name, proj ? TX("project.row.in_project", { name: proj }) : TX("chat.tsw.no_project"), word, TX("project.open_chat")].join(" · ") },
+  return el("button", { class: "hr srow", type: "button", "data-t": t, onclick: o.open || (() => openTarget(t, lastChatView())), "aria-label": [name, proj ? TX("project.row.in_project", { name: proj }) : TX("chat.tsw.no_project"), word, ...(mode ? [mode] : []), TX("project.open_chat")].join(" · ") },
     el("span", { class: `dot ${tone}` }),
     el("span", { class: "hb" }, el("span", { class: "hn1" }, el("span", { class: "nm", text: o.head ? sessionHead(l) : name })),
       el("span", { class: "ha" }, o.head ? null : el("span", { class: `sproj${proj ? "" : " none"}`, text: proj || TX("chat.tsw.no_project") }), o.line ? el("span", { class: "sline", text: o.line }) : null, o.extra || null)),
     subs.length ? el("span", { class: "hp", title: TX("home.subs.title"), text: TX("project.subs_count", { done, total: subs.length }) }) : null,
+    mode ? el("span", { class: "hp", text: mode }) : null,
     el("span", { class: `hs ${tone}`, text: word }));
 }
 

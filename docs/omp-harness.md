@@ -15,18 +15,29 @@ the owner's own.
 | `DOTZ_LANE=<name>` | a lane | guard: worker state per lane; repeat guard: no UI confirm, refuse instead |
 | `DOTZ_ORCHESTRATOR=1` | the orchestrator and conversation sessions | repeat guard: no UI confirm, refuse instead |
 | `DOTZ_CONV=<key>` | a conversation session | not read by the harness |
-| `DOTZ_WORKER_GATE=<agent dir>` | the orchestrator and conversation sessions, only with `workers.harness_gate` on and the harness installed | not read by the harness; the dotz extension reads it (extension/worker-gate.ts) |
+| `DOTZ_WORKER_GATE=<agent dir>` | the orchestrator and conversation sessions, unless `workers.harness_gate` is false, and only with the harness installed | not read by the harness; the dotz extension reads it (extension/worker-gate.ts) |
 
 A rename or a new meaning needs both sides in one step.
 
 ## 2. What loads where
 
-- Orchestrator and conversation sessions: `--no-extensions --extension <dotz extension>` and the dotz overlay. No harness
-  extension, rule, skill or prompt text. Their replies are the assistant's, and the harness's reply checks do not fit them.
-- Lanes: the same, plus the harness done gate (`<agent dir>/extensions/done-gate.ts`) when `lanes.harness_gate` is true and
-  both `extensions/done-gate.ts` and `harness/gate/bootstrap.ts` exist (hub/done-gate.ts). Missing files: the lane starts
-  without the gate, one log line.
-- Task workers of the orchestrator and of conversation sessions: with `workers.harness_gate` true (default false) and the
+dotz runs each session in one of two modes (`laneMode` in hub/lanestate.ts). Every session starts from
+`--no-extensions --extension <dotz extension>` and the dotz overlay; the mode decides what the harness adds.
+
+- Assistant mode: the orchestrator, conversation sessions, and every lane that is not coding. No harness extension, rule, skill
+  or prompt text. Their replies are the assistant's, and the harness's reply checks do not fit them.
+- Coding mode: an omp lane whose work is code in a git repo, and only that. The same, plus the harness done gate
+  (`<agent dir>/extensions/done-gate.ts`) right after dotz's extension. It loads when `lanes.harness_gate` is not false (unset
+  means on) and both `extensions/done-gate.ts` and `harness/gate/bootstrap.ts` exist (hub/done-gate.ts). Nothing else of the
+  harness loads: no guard, rule, skill or other extension. Missing files: the lane starts without the gate; one log line, and
+  only when the setting is explicitly true.
+- A lane's mode is set once, at launch (`mode` in `lane.json` and on the lane in `/api/state`): the `mode` the launch asked for
+  (`dotz_lane`, `POST /api/lanes`), else coding when the lane got a git worktree, else assistant. A `lane.json` from before modes
+  holds no `mode` and reads by the same rule from its worktree. `dotz_lane` action `mode` (`POST /api/lanes/<name>/mode`) changes
+  it and restarts the lane on its session so the gate loads or drops; omp only, any other runtime refuses, because only omp can
+  load the gate. A switch to coding bootstraps the worktree before the resumed session's first message; any other restart or
+  resume is not bootstrapped again.
+- Task workers of the orchestrator and of conversation sessions: with `workers.harness_gate` not false (unset means on) and the
   same two files present, the hub sets `DOTZ_WORKER_GATE` and the dotz extension loads the gate inside each task subagent
   only (extension/worker-gate.ts). It imports two exports of the deployed harness: `registerDoneGate` from
   `extensions/done-gate.ts` (never the default export, so no `mistake` tool and no `/gate-*` commands) and `needsBootstrap`

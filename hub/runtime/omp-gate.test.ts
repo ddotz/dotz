@@ -1,12 +1,12 @@
 // The omp end of the harness done gate (hub/done-gate.ts): a lane's omp process loads the gate's extension right after dotz's own when the hub names it,
-// and no other role does. The hub names it only with lanes.harness_gate on and the harness installed in the omp agent folder (the stub files here).
+// and no other role does. The hub names it only for a coding lane, with lanes.harness_gate not false and the harness installed in the omp agent folder (the stub files here).
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { cfg, DATA_DIR } from "../config.ts";
 import * as l from "../lanes.ts";
-import { resetLaneStateForTest } from "../lanestate.ts";
+import { resetLaneStateForTest, type LaneMode } from "../lanestate.ts";
 import { NICE } from "./agent-proc.ts";
 import { adapters } from "./index.ts";
 import { EXTENSION, omp, ompArgv } from "./omp.ts";
@@ -68,7 +68,7 @@ beforeAll(() => {
 	l.setIdleHandler(() => {});
 });
 beforeEach(() => {
-	cfg.lanes = { ...savedLanes, runtime: "ompprobe", harness_gate: true, max_active: 8, min_free_disk_gb: 0 };
+	cfg.lanes = { ...savedLanes, runtime: "ompprobe", max_active: 8, min_free_disk_gb: 0 };
 	process.env.PI_CODING_AGENT_DIR = AGENT;
 	process.env.OMP_PROFILE = "";
 	for (const f of [GATE, join(AGENT, "harness", "gate", "bootstrap.ts")]) {
@@ -97,10 +97,10 @@ afterAll(() => {
 	cfg.lanes = savedLanes;
 });
 
-// What the hub hands the omp adapter for a lane started with the current settings (the lane runs in a plain folder: no worktree, no bootstrap).
-function launched(name: string): SpawnOpts {
+// What the hub hands the omp adapter for a lane started with the current settings (the lane runs in a plain folder: no worktree, no bootstrap, so it is an assistant lane unless `mode` asks for coding).
+function launched(name: string, mode?: LaneMode): SpawnOpts {
 	running.add(name);
-	l.launch(name, TMP, "Fix the thing.\nDone when: the tests pass");
+	l.launch(name, TMP, "Fix the thing.\nDone when: the tests pass", undefined, undefined, undefined, undefined, undefined, undefined, mode);
 	return handed.findLast(o => o.lane?.name === name)!;
 }
 
@@ -129,20 +129,23 @@ test("the process omp.start spawns for a lane differs from the plain one by that
 	expect(gated.env.DOTZ_RUNTIME).toBe("omp");
 });
 
-test("on with the harness installed, the hub hands a lane's omp process the gate extension, and its argv has it after dotz's own", () => {
-	const opts = launched("gate-hub-on");
+test("a coding lane with the harness installed and lanes.harness_gate unset: the hub hands its omp process the gate extension, and its argv has it after dotz's own", () => {
+	expect(cfg.lanes.harness_gate).toBeUndefined();
+	const opts = launched("gate-hub-on", "coding");
 	expect(opts.doneGate).toBe(GATE);
 	const argv = ompArgv(opts);
 	expect(argv.slice(argv.indexOf(EXTENSION) - 1, argv.indexOf(EXTENSION) + 3)).toEqual(["--extension", EXTENSION, "--extension", GATE]);
 });
 
-test("off, or on without the harness, the hub hands nothing and the argv has dotz's extension alone", () => {
+test("an assistant lane, a coding lane with the setting false, and a coding lane without the harness: the hub hands nothing and the argv has dotz's extension alone", () => {
+	const assistant = launched("gate-hub-assistant");
+	expect(l.lanes.get("gate-hub-assistant")?.mode).toBe("assistant");
 	cfg.lanes = { ...cfg.lanes, harness_gate: false };
-	const off = launched("gate-hub-off");
-	cfg.lanes = { ...cfg.lanes, harness_gate: true };
+	const off = launched("gate-hub-off", "coding");
+	delete cfg.lanes.harness_gate;
 	process.env.PI_CODING_AGENT_DIR = join(TMP, "no-harness-here");
-	const missing = launched("gate-hub-none");
-	for (const opts of [off, missing]) {
+	const missing = launched("gate-hub-none", "coding");
+	for (const opts of [assistant, off, missing]) {
 		expect("doneGate" in opts).toBe(false);
 		expect(ompArgv(opts).filter(a => a === "--extension")).toHaveLength(1);
 	}

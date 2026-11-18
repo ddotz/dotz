@@ -353,10 +353,10 @@ dotz 웹앱의 화면은 `web/js/03-screens.js`의 `SCREENS` 표에 한 줄씩 �
 
 ### 세션 행 (`sessionRow`)와 세션 상태 (18-lanes.js)
 - 목적: 세션(레인)을 제목, 소속 프로젝트, 상태 단어로 한 행에 보여요. 탭하면 그 세션 대화로 가요.
-- 구성: `button.hr.srow[data-t=lane:{name}]` 안에 상태 점, `.hb`(`.hn1 .nm` 제목, `.ha`에 `.sproj` 프로젝트, 있으면 `.sline` 활동 줄과 모델 `.smodel`), 서브에이전트 `.hp`, 상태 `.hs`.
+- 구성: `button.hr.srow[data-t=lane:{name}]` 안에 상태 점, `.hb`(`.hn1 .nm` 제목, `.ha`에 `.sproj` 프로젝트, 있으면 `.sline` 활동 줄과 모델 `.smodel`), 서브에이전트 `.hp`, 세션 모드 `.hp`(`코딩`/`비서`, 상태 바로 앞), 상태 `.hs`.
 - 기능: 기본 클릭은 `openTarget("lane:{name}", lastChatView())`(`o.open`으로 바꿀 수 있음). 홈의 지금 진행 중/대기 중/답변 필요가 이 행을 써요.
-- 상태: 프로젝트 이름은 세션이 시작된 작업 채널(`laneHome`)로만 찾고, 없으면 `프로젝트 없음`(`.sproj.none`). aria-label `{이름} · 프로젝트 {proj} 또는 프로젝트 없음 · {상태} · 대화 열기`. 상태 단어(`sessionState`: `진행 중`/`답을 기다림`/`완료`, 멈춘 세션은 제 단어. `sessionStatus` -> `runStatus`): 끝났으면 `종료됨`이 아니라 이 행에서는 `끝남`(회색), 실행 중 `작업 중`(파랑), `답을 기다려요`(주황), `순서 대기`/`진행 중`(핸드오프 작업, 파랑), `한도 걸림`(주황), `오류`(빨강), 그 외 `statusKo`(`대기` 등). 답변 필요 행은 `word: "답변 필요"`, 주황으로 덮어써요.
-- 데이터: `S.lanes`(`name`, `title`, `status`, `live`, `home`, `project`, `pendingAsk`, `lastText`), `S.channels.homes`/`S.channels.work`, `PRJ`(프로젝트 목록), `S.runs`, `SUBS`.
+- 상태: 프로젝트 이름은 세션이 시작된 작업 채널(`laneHome`)로만 찾고, 없으면 `프로젝트 없음`(`.sproj.none`). aria-label `{이름} · 프로젝트 {proj} 또는 프로젝트 없음 · {상태} · {모드, 있을 때만} · 대화 열기`. 모드는 세션이 시작될 때 한 번 정해져요(`l.mode`: `coding` -> `코딩`, `assistant` -> `비서`). 값이 없으면 아무것도 그리지 않아요(프로젝트 화면의 `pmSessionRow` 행은 모드를 모르므로 그리지 않아요). 상태 단어(`sessionState`: `진행 중`/`답을 기다림`/`완료`, 멈춘 세션은 제 단어. `sessionStatus` -> `runStatus`): 끝났으면 `종료됨`이 아니라 이 행에서는 `끝남`(회색), 실행 중 `작업 중`(파랑), `답을 기다려요`(주황), `순서 대기`/`진행 중`(핸드오프 작업, 파랑), `한도 걸림`(주황), `오류`(빨강), 그 외 `statusKo`(`대기` 등). 답변 필요 행은 `word: "답변 필요"`, 주황으로 덮어써요.
+- 데이터: `S.lanes`(`name`, `title`, `status`, `live`, `home`, `project`, `mode`, `pendingAsk`, `lastText`), `S.channels.homes`/`S.channels.work`, `PRJ`(프로젝트 목록), `S.runs`, `SUBS`.
 - 근거: web/js/18-lanes.js `sessionRow`, `sessionStatus`, `laneHome`, `laneProject`; web/js/41-runstate.js `runStatus`.
 - css: 03-base.css(`.srow`), 05-log.css(`.sproj`, `.sline`, `.hr`), 08-project-sessions.css(세션 관련).
 
