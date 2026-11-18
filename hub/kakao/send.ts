@@ -613,17 +613,6 @@ export function confirmSent(code: string, deps: Pick<SendDeps, "paths">): SendRe
 	return { ok: true };
 }
 
-// The owner says an unconfirmed send did not go out (다시 보내기): the draft waits again, and the part whose press was not confirmed counts
-// as not sent, so the next send presses that part and the rest, never a part that was confirmed.
-export function resendUnconfirmed(code: string, deps: Pick<SendDeps, "paths">): SendResult {
-	const d = readDrafts(deps.paths).find(x => x.code === code);
-	if (!d) return refuse("그 초안을 찾지 못했어요", "gone");
-	if (d.status !== "sent" || !d.unconfirmed) return refuse("확인할 전송이 없는 초안이에요", "not_pending");
-	const confirmed = Math.max(0, (d.sentParts ?? 1) - 1);
-	setStatus(deps.paths, code, "pending", { unconfirmed: undefined, sentAt: undefined, pressing: undefined, sentParts: confirmed || undefined });
-	return { ok: true };
-}
-
 // `ownerApproved`: the owner clicked 보내기 in the web app, which replaces the inbox verdict; every other check stays. `text`: the owner's edit.
 export function sendDraft(code: string, deps: SendDeps & { latestIncoming: (chatId: string) => Promise<string | undefined>; roomNames?: RoomNames; ownerApproved?: boolean; text?: string; retry?: boolean }): Promise<SendResult> {
 	if (sending.has(code)) return Promise.resolve(refuse("이미 보내는 중이에요", "already_sending"));

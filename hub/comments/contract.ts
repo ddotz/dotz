@@ -64,13 +64,6 @@ export const threadKey = (source: string, thread: string): string => `${source}/
 export const DM_THREAD = "dm:";
 export const watches = (src: SourceConfig, thread: string): boolean => src.watch.includes("*") || src.watch.includes(thread) || (thread.startsWith(DM_THREAD) && !!src.site?.dm && src.watch.length > 0);
 
-// Union by id, idempotent: the same id twice is one comment (the first collector is kept). Oldest first.
-export function mergeComments(...lists: Comment[][]): Comment[] {
-	const seen = new Map<string, Comment>();
-	for (const list of lists) for (const c of list) if (!seen.has(c.id)) seen.set(c.id, c);
-	return [...seen.values()].sort((a, b) => a.at - b.at || (a.id < b.id ? -1 : 1));
-}
-
 export function toComment(src: SourceConfig, r: RawComment, collector: string): Comment {
 	const { native, mine, ...rest } = r;
 	return { ...rest, id: commentId(src.key, native), source: src.key, native, mine: mine === true, collector };

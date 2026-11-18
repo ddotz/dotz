@@ -76,7 +76,6 @@ export class ProviderBlockedError extends Error {
 
 const HEALTH_TTL_MS = 30_000;
 let healthCache: { key: string; at: number; value: Health } | undefined;
-export const resetHealthForTest = (): void => invalidateHealth();
 export function invalidateHealth(): void {
 	healthCache = undefined;
 }
@@ -317,11 +316,6 @@ class WarmRunner {
 		this.timer.unref?.();
 	}
 
-	// The process' own exit, for a test that must know a crash happened before the next call.
-	whenExited(): Promise<number> {
-		return this.exited;
-	}
-
 	// A gateway that exits must leave no warm process behind, and an exit handler cannot wait for a rejection to settle.
 	killNow(): void {
 		this.stopped = true;
@@ -415,19 +409,6 @@ const pool = new Set<WarmRunner>();
 process.on("exit", () => {
 	for (const r of pool) r.killNow();
 });
-
-export function resetRunnersForTest(): void {
-	for (const r of [...pool]) r.stop();
-	pool.clear();
-}
-
-export function runnerCountForTest(): number {
-	return [...pool].filter(r => r.alive).length;
-}
-
-export function lastRunnerForTest(): { whenExited: () => Promise<number> } | undefined {
-	return [...pool].at(-1);
-}
 
 /** The errors of a spent or refused subscription or provider: a warm process stays pinned to that account, so it is stopped (the next call starts on the account the readiness check moves to). */
 export const LIMIT_ERROR = /\b429\b|rate[ _-]?limit|usage[ _-]?limit|\bquota\b|limit (reached|exceeded)|(account|credential|subscription)\w*\W.{0,60}\bblocked\b|not_ready|구독/i;

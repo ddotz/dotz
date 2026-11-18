@@ -1,6 +1,6 @@
 import { afterEach, expect, test } from "bun:test";
 import { cfg } from "./config.ts";
-import { DISK_ALERT_EVERY_MS, DISK_CACHE_MS, DISK_RECOVERED_TEXT, type DiskFree, diskShort, diskTick, resetDiskGuard, setDiskReader } from "./diskguard.ts";
+import { DISK_ALERT_EVERY_MS, DISK_CACHE_MS, DISK_RECOVERED_TEXT, type DiskFree, diskShort, diskTick, setDiskReader } from "./diskguard.ts";
 
 const GB = 2 ** 30;
 const disk = (freeGb: number): DiskFree => ({ freeBytes: freeGb * GB, totalBytes: 1000 * GB });
@@ -9,11 +9,9 @@ const savedLanes = cfg.lanes;
 afterEach(() => {
 	cfg.lanes = savedLanes;
 	setDiskReader(plenty);
-	resetDiskGuard();
 });
 
 test("one alert when the disk turns short, none again within 12 h, one more after, and one recovery note", () => {
-	resetDiskGuard();
 	let free = 4;
 	setDiskReader(() => disk(free));
 	const told: string[] = [];

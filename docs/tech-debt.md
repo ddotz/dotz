@@ -44,8 +44,8 @@ docs/ARCHITECTURE.md does not name: 150. Fixed sleeps in tests 3, wall-clock bud
 
 - `export` on names no other file uses: about 620 in hub/ and features/, 41 in extension/. The dead-export check
   counts words, so a name used twice in its own file passes.
-- 49 functions only tests call (for example hub/ui-surfaces.ts `extractOpenSites`, hub/kakao/draft.ts
-  `pickDraftModel`, hub/accounts-api.ts `switchText`). Test seams (`reset...ForTest`, `set...Runner`) stay.
+- 49 functions only tests call (for example hub/ui-surfaces.ts `extractOpenSites`, hub/accounts-api.ts
+  `switchText`). Test seams (`reset...ForTest`, `set...Runner`) stay.
 - hub/selfupdate.ts `onLocalSaved`: only hub/selfupdate-local.test.ts sets it.
 - Test fixtures in the hub/ root beside shipped code: hub/test-web.ts, hub/test-signing.ts, hub/test-pane-cards.ts,
   hub/selfupdate-fixture.ts, hub/ask-normalize.fixture.ts.

@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { runOnboard } from "../bin/onboard.ts";
 import { ensureKakaoRoom } from "../lib/kakao-tone.ts";
 import { offerMailDraft } from "../lib/offer.ts";
-import { COMMENT_TONE_VERSION, corpusFile, learnFirst, maybeRefine, parseIdentity, REFINE_EVERY } from "../lib/persona.ts";
+import { COMMENT_TONE_VERSION, corpusFile, learnFirst, maybeRefine, REFINE_EVERY } from "../lib/persona.ts";
 import { identityOf, loadStyle, paths, recordCorrection, templatesOf, toneFile, writeAtomic, writeIdentity } from "../lib/settings.ts";
 import { enable, fakeModel, goodReply, j, mailFixture, setupEnv } from "./helpers.ts";
 
@@ -20,12 +20,18 @@ beforeEach(() => {
 const MAIL_ID = ["존댓말(해요체)로 짧게 쓴다", "인사 없이 바로 본론으로 들어간다", "끝은 '확인 부탁드려요.'로 맺는다"];
 const sent = ["To: a@example.com\nSubject: 견적\n\n안녕하세요. 견적서 보내드려요.\n확인 부탁드려요.\n\n> 이전 메일 인용", "자료 첨부했어요. 확인 부탁드려요."];
 
-test("the identity drops what could identify someone and keeps at most 12 lines", () => {
-	const out = parseIdentity(j({ identity: ["해요체를 쓴다", "메일 끝에 kim@example.com을 적는다", "010-1234-5678로 연락을 받는다", "https://x.example 링크를 붙인다", ...Array.from({ length: 20 }, (_, i) => `습관 ${i}`)] }));
+test("the identity drops what could identify someone and keeps at most 12 lines", async () => {
+	const analyze = fakeModel([j({ identity: ["해요체를 쓴다", "메일 끝에 kim@example.com을 적는다", "010-1234-5678로 연락을 받는다", "https://x.example 링크를 붙인다", ...Array.from({ length: 20 }, (_, i) => `습관 ${i}`)] })]);
+	await offerMailDraft(mailFixture, { send: () => {}, call: fakeModel([j(goodReply)]).call, analyze: analyze.call, sentTexts: async () => sent });
+	const out = identityOf({ app: "mail" });
 	expect(out[0]).toBe("해요체를 쓴다");
 	expect(out.some(l => /@|010-|https/.test(l))).toBe(false);
 	expect(out).toHaveLength(12);
-	expect(parseIdentity("not json")).toEqual([]);
+});
+
+test("an analysis that is not JSON leaves no identity", async () => {
+	await offerMailDraft(mailFixture, { send: () => {}, call: fakeModel([j(goodReply)]).call, analyze: fakeModel(["not json"]).call, sentTexts: async () => sent });
+	expect(identityOf({ app: "mail" })).toEqual([]);
 });
 
 test("the first mail reads the sent mailbox once, analyses it into the mail identity, and the draft is written as that person", async () => {

@@ -4,7 +4,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { clock } from "./runtime/test-clock.ts";
-import { publishedWeb, resetPublishedWeb } from "./web-committed.ts";
+import { publishedWeb } from "./web-committed.ts";
 
 const sh = (cwd: string, ...args: string[]) => execFileSync("git", args, { cwd, stdio: "pipe" });
 const saved = { live: process.env.DOTZ_WEB_LIVE, debounce: process.env.DOTZ_WEB_DEBOUNCE_MS, dir: process.env.DOTZ_WEB_DIR };
@@ -29,11 +29,9 @@ beforeAll(() => {
 	process.env.DOTZ_WEB_LIVE = "0";
 	process.env.DOTZ_WEB_DEBOUNCE_MS = "0";
 	process.env.DOTZ_WEB_DIR = join(repo, "web");
-	resetPublishedWeb();
 });
 afterAll(() => {
 	for (const [k, v] of [["DOTZ_WEB_LIVE", saved.live], ["DOTZ_WEB_DEBOUNCE_MS", saved.debounce], ["DOTZ_WEB_DIR", saved.dir]] as const) { if (v === undefined) delete process.env[k]; else process.env[k] = v; }
-	resetPublishedWeb();
 	rmSync(repo, { recursive: true, force: true });
 });
 
@@ -134,9 +132,8 @@ describe("web commits and the server side of the process", () => {
 		put2("web/js/01-app.js", '"use strict";\nSTART\n');
 		commit2("start");
 		process.env.DOTZ_WEB_DIR = join(r2, "web");
-		resetPublishedWeb();
 	});
-	afterAll(() => { resetPublishedWeb(); rmSync(r2, { recursive: true, force: true }); });
+	afterAll(() => { rmSync(r2, { recursive: true, force: true }); });
 
 	test("a commit that changes only web/ is served as before", () => {
 		expect(served()).toContain("START");

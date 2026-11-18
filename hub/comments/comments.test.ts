@@ -3,7 +3,7 @@ import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFile
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { run as runComments } from "../../features/comments/bin/comments.ts";
-import { type Comment, type CommentAdapter, commentId, mergeComments, type RawComment, type SourceConfig } from "./contract.ts";
+import { type Comment, type CommentAdapter, commentId, type RawComment, type SourceConfig } from "./contract.ts";
 import { createEngine, type DraftModel, type Engine } from "./engine.ts";
 import { approvalHash } from "../draft-approval.ts";
 import { commentAdapter } from "./reply-adapter.ts";
@@ -67,9 +67,7 @@ describe("comment ids and collection", () => {
 			writeFileSync(join(dirB, "config.json"), JSON.stringify({ enabled: true, sources: { youtube: src() } }));
 			const b = createEngine({ dir: dirB, now: () => NOW, collector: "mac-b", adapters: { youtube: { kind: "youtube", list: async () => ({ comments: [raw("c1")] }), reply: async () => ({ ok: true }) } } });
 			await b.collect({ force: true });
-			const merged = mergeComments(a.engine.store.comments(), b.store.comments());
-			expect(merged.map(c => c.id).sort()).toEqual([commentId("youtube", "c1"), commentId("youtube", "c2"), commentId("youtube", "c3")]);
-			expect(merged.find(c => c.native === "c1")!.collector).toBe("mac-a");
+			expect(b.store.comments().map(c => [c.id, c.collector])).toEqual([[commentId("youtube", "c1"), "mac-b"]]);
 		} finally {
 			rmSync(dirB, { recursive: true, force: true });
 		}

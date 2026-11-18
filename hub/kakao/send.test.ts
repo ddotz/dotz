@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { appendSealed } from "../approval-seal.ts";
 import { parseDecisions } from "../choices.ts";
 import { approvalHash } from "../draft-approval.ts";
-import { approval, confirmSent, createDraft, draftBlock, editDraft, forgetWarm, kakaoView, listDrafts, readDrafts, resendUnconfirmed, sendDraft, sendText, type Draft } from "./send.ts";
+import { approval, confirmSent, createDraft, draftBlock, editDraft, forgetWarm, kakaoView, listDrafts, readDrafts, sendDraft, sendText, type Draft } from "./send.ts";
 import { KAKAO_BUNDLE, kakaoPaths, type Runner } from "./types.ts";
 import { type FakeRow, fakeScreen } from "./ui.fixture.ts";
 
@@ -603,18 +603,6 @@ test("나갔어요 closes an unconfirmed send as sent; nothing else can be confi
 	expect(confirmSent(d.code, { paths })).toMatchObject({ ok: false, code: "not_pending" });
 	expect(await sendDraft(d.code, { ...deps, confirm: async () => true })).toMatchObject({ ok: false, code: "already_sent" });
 	expect(s.sends).toHaveLength(2);
-});
-
-test("다시 보내기 of an unconfirmed send presses only the unconfirmed part and the rest, never a confirmed part", async () => {
-	const { d, s, deps } = await unconfirmedSecond();
-	expect(resendUnconfirmed(d.code, { paths })).toEqual({ ok: true });
-	const waiting = await stored(d.code);
-	expect(waiting).toMatchObject({ status: "pending", sentParts: 1 });
-	expect(waiting.unconfirmed).toBeUndefined();
-	expect(resendUnconfirmed(d.code, { paths })).toMatchObject({ ok: false, code: "not_pending" });
-	expect(await sendDraft(d.code, { ...deps, confirm: async () => true })).toMatchObject({ ok: true });
-	expect(s.sends.map(x => x[2])).toEqual(["하나", "둘", "둘", "셋"]);
-	expect(await stored(d.code)).toMatchObject({ status: "sent", sentParts: 3 });
 });
 
 test("a message the owner typed himself skips the newer-message check; a reply does not; replaces is kept", async () => {

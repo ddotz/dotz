@@ -5,13 +5,15 @@ import { join } from "node:path";
 import { cfg } from "./config.ts";
 import { callModel, modelDeps } from "./outlang.ts";
 import { UsageLast, readReports } from "./usage-last.ts";
-import { callWarm, ensureOmpProvider, lastRunnerForTest, ProviderBlockedError, resetClock, resetRunnersForTest, runnerCountForTest, runnerDeps } from "./model-runner.ts";
+import { callWarm, ensureOmpProvider, ProviderBlockedError, resetClock, runnerDeps } from "./model-runner.ts";
 import { advance, clock, flush } from "./runtime/test-clock.ts";
+import { fileLogged } from "./runtime/test-file-log.ts";
 
 const dir = mkdtempSync(join(tmpdir(), "dotz-model-runner-omp-"));
 const fake = join(dir, "fake-omp.ts");
 const logFile = join(dir, "spawns.log");
 const promptFile = join(dir, "prompts.log");
+const exitFile = join(dir, "exits.log");
 const SONNET = "anthropic/claude-sonnet-5-5";
 
 writeFileSync(
@@ -25,6 +27,8 @@ const assistant = (text, extra = {}) => ({ type: "message_end", message: { role:
 if (!argv.includes("rpc")) {
 	out(assistant("print 답", { stopReason: "stop" }));
 } else {
+	process.on("SIGTERM", () => process.exit(0));
+	process.on("exit", () => appendFileSync(${JSON.stringify(exitFile)}, "x\\n"));
 	if (mode === "start-crash") process.exit(3);
 	out({ type: "ready" });
 	let total = 0, session = 0;
@@ -84,6 +88,8 @@ const jsonLines = <T>(file: string): T[] => {
 	}
 };
 const spawns = (): { argv: string[]; pin: string | null; cache: string | null }[] => jsonLines(logFile);
+// The warm (rpc) processes the fake started and has not seen leave: a process that was stopped, timed out or crashed logs its exit.
+const aliveIs = (n: number): Promise<void> => fileLogged(exitFile, () => spawns().filter(s => s.argv.includes("rpc")).length - readFileSync(exitFile, "utf8").split("\n").filter(Boolean).length === n, `${n} warm processes alive`);
 const later = (ms: number) => clock.now + ms;
 const limit = (id: string, over: object) => ({ id, status: "ok", amount: { used: 10, limit: 100 }, window: { resetsAt: later(3_600_000) }, ...over });
 
@@ -98,16 +104,18 @@ const report = async (...logins: ReturnType<typeof login>[]) => {
 beforeEach(() => {
 	writeFileSync(logFile, "");
 	writeFileSync(promptFile, "");
+	writeFileSync(exitFile, "");
 	delete process.env.FAKE_OMP_MODE;
 	Reflect.set(cfg, "runtime", "omp");
-	resetRunnersForTest();
 	runnerDeps.which = () => "/usr/bin/omp";
 	runnerDeps.usage = freshStore();
 	runnerDeps.spawn = (argv, o) => Bun.spawn([process.execPath, fake, ...argv.slice(1)], { cwd: o.cwd, env: o.env, stdin: "pipe", stdout: "pipe", stderr: "ignore" } as never) as never;
 	modelDeps.spawn = (argv, options) => Bun.spawn([process.execPath, fake, ...argv.slice(1)], options as never) as never;
 });
-afterEach(() => {
-	resetRunnersForTest();
+afterEach(async () => {
+	// the idle window stops what a test left warm, and the next test starts only once every fake process is gone
+	await advance(runnerDeps.idleMs + 1);
+	await aliveIs(0);
 	delete process.env.FAKE_OMP_MODE;
 	Reflect.set(cfg, "runtime", realRuntime);
 	runnerDeps.spawn = realSpawn;
@@ -130,7 +138,7 @@ test("omp calls share one warm rpc process; each call starts on a fresh session"
 	expect(argv[argv.indexOf("--model") + 1]).toBe(SONNET);
 	expect(argv[argv.indexOf("--system-prompt") + 1]).toBe("sys");
 	expect([pin, cache]).toEqual([null, "long"]);
-	expect(runnerCountForTest()).toBe(1);
+	await aliveIs(1);
 });
 
 test("another system prompt, model or effort gets its own omp process", async () => {
@@ -158,8 +166,7 @@ test("a turn settles on the matching prompt_result, not on an intermediate error
 test("a final model error is the error of the call", async () => {
 	process.env.FAKE_OMP_MODE = "limit";
 	await expect(callWarm("sys", "u", { model: SONNET, timeoutMs: 45_000, runtime: "omp" })).rejects.toThrow("429 usage limit reached");
-	await flush();
-	expect(runnerCountForTest()).toBe(0);
+	await aliveIs(0);
 });
 
 test("a spent-limit answer is not retried on the one-shot path", async () => {
@@ -185,13 +192,13 @@ test("a process that dies in the middle of a prompt falls back to the one-shot c
 	expect(argv).toHaveLength(2);
 	expect(argv[0]).toContain("rpc");
 	expect(argv[1]).toContain("-p");
-	expect(runnerCountForTest()).toBe(0);
+	await aliveIs(0);
 });
 
 test("a process that exits after its answer is replaced on the next call", async () => {
 	process.env.FAKE_OMP_MODE = "crash-after";
 	expect((await callModel("sys", "u", { model: SONNET })).text).toBe("warm 1/1: u");
-	await lastRunnerForTest()!.whenExited();
+	await aliveIs(0);
 	delete process.env.FAKE_OMP_MODE;
 	expect((await callModel("sys", "u", { model: SONNET })).text).toBe("warm 1/1: u");
 	expect(spawns()).toHaveLength(2);
@@ -217,16 +224,15 @@ test("a turn that never answers times out once, stops the process and takes no o
 	await flush();
 	await advance(46_000);
 	expect(String(await call)).toContain("timed out after 45s");
-	await flush();
-	expect(runnerCountForTest()).toBe(0);
+	await aliveIs(0);
 	expect(oneShots).toEqual([]);
 });
 
 test("an idle omp process is released after the idle window", async () => {
 	await callModel("sys", "u", { model: SONNET });
-	expect(runnerCountForTest()).toBe(1);
+	await aliveIs(1);
 	await advance(runnerDeps.idleMs + 1);
-	expect(runnerCountForTest()).toBe(0);
+	await aliveIs(0);
 });
 
 test("a spent 5-hour window refuses at once with its reset time and starts nothing", async () => {

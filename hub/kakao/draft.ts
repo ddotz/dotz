@@ -64,7 +64,6 @@ const clip = (s: string, max: number) => {
 // The model of a draft: the reply-drafts setting when it names a real model, else Sonnet 5.5 high (the reply default, hub/reply-model.ts
 // REPLY_DEFAULT; owner 2026-11-04, RULES.md). Never a role such as @tiny or a mini/flash model; Haiku is allowed because the owner picks it in 답장 모델 (2026-10-26).
 export const DRAFT_MODEL = "anthropic/claude-sonnet-5-5:high";
-export const pickDraftModel = (configured?: string): string => (configured && !configured.startsWith("@") && !/mini|tiny|nano|flash|lite/i.test(configured) ? configured : DRAFT_MODEL);
 
 // What the reply answers: the messages after the owner's last own message. The owner's own memo room (self) has no other side,
 // so there every message counts.

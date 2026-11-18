@@ -60,8 +60,6 @@ export function parseAnalysis(text: string): Analysis {
 	return { identity: stringsOf(o.identity).slice(0, MAX_LINES), templates };
 }
 
-export const parseIdentity = (text: string): string[] => parseAnalysis(text).identity;
-
 // Each text as the user's own words, after a short line of what it answered.
 export function corpusOf(texts: string[]): string {
 	const parts: string[] = [];

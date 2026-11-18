@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { basisOf, buildDraftPrompt, chatLines, DRAFT_MODEL, MAX_PAIRS, MAX_PROMPT_CHARS, MIN_CONTEXT_LINES, ownPairs, parseDraftReply, pickDraftModel, registerOf } from "./draft.ts";
+import { basisOf, buildDraftPrompt, chatLines, MAX_PAIRS, MAX_PROMPT_CHARS, MIN_CONTEXT_LINES, ownPairs, parseDraftReply, registerOf } from "./draft.ts";
 import type { Msg } from "./types.ts";
 
 let n = 0;
@@ -118,13 +118,6 @@ describe("buildDraftPrompt", () => {
 	test("without pairs the owner's own lines (or the profile examples) are the voice samples", () => {
 		expect(buildDraftPrompt({ lines: ["나: memo"], samples: ["메모 하나"] }).user).toContain("- 메모 하나");
 		expect(buildDraftPrompt({ lines: ["나: memo"], samples: [], style: { rules: [], corrections: [], forbidden: [], samples: ["예시 줄"] } }).user).toContain("- 예시 줄");
-	});
-});
-
-describe("pickDraftModel", () => {
-	test("a real configured model (Haiku included) is kept; unset, a role, or a mini model becomes sonnet-class", () => {
-		expect(pickDraftModel("anthropic/claude-opus-4-1")).toBe("anthropic/claude-opus-4-1");
-		for (const bad of [undefined, "", "@tiny", "openai/gpt-5-mini"]) expect(pickDraftModel(bad)).toBe(DRAFT_MODEL);
 	});
 });
 

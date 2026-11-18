@@ -2,7 +2,6 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { resetPublishedWeb } from "./web-committed.ts";
 
 // A release folder without git: the web files and VERSION sit side by side, and an update replaces them under a running process.
 const saved = { live: process.env.DOTZ_WEB_LIVE, dir: process.env.DOTZ_WEB_DIR };
@@ -26,7 +25,6 @@ async function start(version: string, js: string, html: string) {
 	site(root, version, js, html);
 	process.env.DOTZ_WEB_LIVE = "0";
 	process.env.DOTZ_WEB_DIR = join(root, "web");
-	resetPublishedWeb();
 	const web = await import(`./webapp.ts?pinned${++n}`);
 	const get = async (path: string) => (await web.appAsset(new Request(`http://hub${path}`), path)!).text();
 	const page = async () => (await web.indexPage(new Request("http://hub/"))).text();
@@ -34,7 +32,6 @@ async function start(version: string, js: string, html: string) {
 }
 afterAll(() => {
 	for (const [k, v] of [["DOTZ_WEB_LIVE", saved.live], ["DOTZ_WEB_DIR", saved.dir]] as const) { if (v === undefined) delete process.env[k]; else process.env[k] = v; }
-	resetPublishedWeb();
 	for (const r of roots) rmSync(r, { recursive: true, force: true });
 });
 

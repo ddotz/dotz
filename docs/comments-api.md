@@ -6,7 +6,7 @@ One contract for the comments of every platform, shipped in `hub/comments/`, off
 ## Contract (`hub/comments/contract.ts`)
 
 - Comment id: `cm:<source>:<platform's own comment id>`. The same on every machine; `collector` only says who saw it first.
-  Merging two lists is a union by id (`mergeComments`), the first copy wins.
+  A comment the engine collects twice is stored once, the first copy wins.
 - A source is one account, channel or site: `{key, kind: youtube|instagram|website, label, watch[], autoDraft, autoSend?, everyMin?, site?, autoMail?, mailApp?}`.
   `watch` lists the post ids to follow (`"*"` = all). An empty `watch` reads nothing and costs nothing.
 - An adapter implements `list(src, cursor) -> {comments, cursor}` (comments newer than the adapter's own opaque cursor), `reply(src, comment, text, sendId)`,

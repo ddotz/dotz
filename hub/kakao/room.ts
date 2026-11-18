@@ -77,9 +77,6 @@ export const normalizeInput = (s: string) =>
 // The same text after KakaoTalk's own normalization (NFD/NFC, \\r vs \\n, trimmed ends, invisible marks).
 export const sameText = (a: string, b: string) => normalizeInput(a) === normalizeInput(b);
 
-// An empty input, also when it only shows its placeholder or invisible characters.
-export const inputFree = (value: string, placeholder?: string) => normalizeInput(value) === "" || (placeholder !== undefined && placeholder !== "" && sameText(value, placeholder));
-
 // A trailing member count some rows carry after the name ("스터디방 (5)") is not part of the name.
 export const normalizeTitle = (s: string) => normalizeInput(s).replace(/\s*\(\s*\d+\s*\)$/, "").trim();
 

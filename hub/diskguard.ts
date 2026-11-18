@@ -79,12 +79,6 @@ const saveState = () => {
 		log(`disk guard state not saved: ${(e as Error).message}`);
 	}
 };
-export function resetDiskGuard(): void {
-	alertedAt = undefined;
-	loaded = true;
-	cache.clear();
-	saveState();
-}
 
 /** One guard check: tells the owner when the disk turns short (again every 12 h while short) and once when it recovers. */
 export function diskTick(paths: readonly string[], notify: (text: string) => void, at = Date.now()): DiskShort | undefined {
