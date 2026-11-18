@@ -5,8 +5,9 @@ import { afterAll, afterEach, beforeAll, beforeEach, expect, test } from "bun:te
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { BOOTSTRAP_LIMIT_MS } from "../extension/harness-gate.ts";
 import { cfg, paths } from "./config.ts";
-import { BOOTSTRAP_LIMIT_MS, gateBootstrap, harnessGate } from "./done-gate.ts";
+import { gateBootstrap, harnessGate } from "./done-gate.ts";
 import * as l from "./lanes.ts";
 import { resetLaneStateForTest } from "./lanestate.ts";
 import { git } from "./lanetree.ts";

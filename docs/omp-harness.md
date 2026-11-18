@@ -15,6 +15,7 @@ the owner's own.
 | `DOTZ_LANE=<name>` | a lane | guard: worker state per lane; repeat guard: no UI confirm, refuse instead |
 | `DOTZ_ORCHESTRATOR=1` | the orchestrator and conversation sessions | repeat guard: no UI confirm, refuse instead |
 | `DOTZ_CONV=<key>` | a conversation session | not read by the harness |
+| `DOTZ_WORKER_GATE=<agent dir>` | the orchestrator and conversation sessions, only with `workers.harness_gate` on and the harness installed | not read by the harness; the dotz extension reads it (extension/worker-gate.ts) |
 
 A rename or a new meaning needs both sides in one step.
 
@@ -25,9 +26,22 @@ A rename or a new meaning needs both sides in one step.
 - Lanes: the same, plus the harness done gate (`<agent dir>/extensions/done-gate.ts`) when `lanes.harness_gate` is true and
   both `extensions/done-gate.ts` and `harness/gate/bootstrap.ts` exist (hub/done-gate.ts). Missing files: the lane starts
   without the gate, one log line.
-- Task workers of the orchestrator: being added (the worker gets the gate's code stages, main turns stay as they are).
-- The hub runs the gate bootstrap for a fresh worktree; the model never does. A repo whose checks all fail
-  (`nothing-passed`) must not loop.
+- Task workers of the orchestrator and of conversation sessions: with `workers.harness_gate` true (default false) and the
+  same two files present, the hub sets `DOTZ_WORKER_GATE` and the dotz extension loads the gate inside each task subagent
+  only (extension/worker-gate.ts). It imports two exports of the deployed harness: `registerDoneGate` from
+  `extensions/done-gate.ts` (never the default export, so no `mistake` tool and no `/gate-*` commands) and `needsBootstrap`
+  from `harness/gate/bootstrap.ts`. The main agent's run registers nothing: its prompt, tools and turns are the same with the
+  setting on or off. The gate sees the worker as a main session without a UI (`agent.kind` "main", `hasUI` false, no `ui`).
+  omp fires no `session_stop` for a subagent, so the stop judgement runs at the worker's final message (an
+  `assistant_message` without tool calls) when the worker changed files in a git repo; a refusal goes back to the worker as
+  a steer and it takes another turn. OmO does not get it.
+- The hub runs the gate bootstrap for a fresh lane worktree, and the dotz extension runs it for a worker's repos (its cwd
+  repo at its first prompt, each changed repo before the stop judgement, once per repo per process); the model never does.
+  A repo whose checks all fail (`nothing-passed`) is recorded by the harness and not bootstrapped again, so it does not loop.
+- Open: a worker in an isolated copy (`isolated: true`) of a checkout that holds an untracked, script-written
+  `.omp/gate.json` gets that file copied; the harness records the script's writes per checkout, so the copy is not
+  bootstrapped again and the gate refuses its first stop once (`verify:gate-not-from-script`). The orchestrator's cwd (the
+  data dir) has no such file today.
 
 ## 3. Replies the gate passes
 
@@ -40,5 +54,8 @@ A rename or a new meaning needs both sides in one step.
   orchestrator's in the data dir) so the next gateway start tells it to go on.
 - The harness's own session restart (the `session_restart` tool, the restart after a harness deploy) is for the owner's
   interactive sessions. It is not loaded in dotz sessions and must not restart one.
-- Open: while a restart waits, a lane's done-gate checks left running (the harness's deferred checks) do not count as busy
-  work for the gateway.
+- Task workers never leave deferred checks: without a UI the gate's stop waits for running checks inside the worker's run,
+  and the gateway counts that run as a running subagent while a restart waits.
+- Open: while a restart waits, a lane's done-gate checks left running (the harness's deferred checks, `pendingLater` in
+  `harness/gate/later.ts`) do not count as busy work for the gateway. A lane runs in RPC mode, where omp gives `hasUI`
+  true, so its gate can defer a check at a stop.

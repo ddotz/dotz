@@ -50,6 +50,8 @@ import { secretIn } from "./peer-secrets.ts";
 import { recallTool } from "./recall-tool.ts";
 import { scheduleKindRefusal } from "./schedule-tool.ts";
 import { type Host, ompHosts, refuseInSubagents } from "./omp-host.ts";
+import { WORKER_GATE_AGENT_DIR_ENV } from "./harness-gate.ts";
+import { installWorkerGate } from "./worker-gate.ts";
 
 // The claude.ai connectors (Gmail, Calendar, Drive, Docs) reach a fresh Claude Code process only after its first request, so
 // its second request adds their 48 tools mid-conversation, and every such request lost the whole message cache: 126 of 126
@@ -698,9 +700,9 @@ function followAccount(pi: any): void {
 	});
 }
 
-function ompSession(pi: Host): void {
+function ompSession(pi: Host): Promise<void> | undefined {
 	const lane = process.env.DOTZ_LANE;
-	const { main, workers, gateway } = ompHosts(pi, { topLevel: true });
+	const { main, workers, gateway, first } = ompHosts(pi, { topLevel: true });
 	keepClaudeAiConnectorsOff();
 	refuseInSubagents(pi, gateway);
 	keyProvider(pi, !process.env.DOTZ_KEY_VALUE);
@@ -722,6 +724,7 @@ function ompSession(pi: Host): void {
 		orchestratorTools(main);
 	}
 	shortCache(workers, "sub");
+	return lane ? undefined : installWorkerGate(pi, { agentDir: process.env[WORKER_GATE_AGENT_DIR_ENV], first });
 }
 
 export default function dotz(host: any) {

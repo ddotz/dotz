@@ -11,6 +11,7 @@ import { emitEventActivity, endSubagents, statusActivity } from "./activity.ts";
 import { pendingAsksBlock } from "./asks.ts";
 import { workersOf } from "./lanegates.ts";
 import { cfg, chainAfter, compactAtFor, DATA_DIR, DEFAULTS, fallbackChain, HUB_TOKEN, log, NAME, now, orchestratorModel, parseSelector, selectorOf, TZ, tzLabel, writeAtomic } from "./config.ts";
+import { workerGateEnv } from "./done-gate.ts";
 import { isNote, msg } from "./i18n.ts";
 import { markSteers, steerContract, steerToken } from "./steer-mark.ts";
 import { compactInstructions } from "./compact-instructions.ts";
@@ -703,7 +704,7 @@ export function createOrchestrator(opts: OrchOpts) {
 		chain = nextChain;
 		capped = undefined;
 		usable = undefined;
-		const env: Record<string, string> = { DOTZ_ORCHESTRATOR: "1", ...(runtime.caps.modeInSystem ? { DOTZ_MODE_IN_SYSTEM: "1" } : {}), ...opts.env };
+		const env: Record<string, string> = { DOTZ_ORCHESTRATOR: "1", ...(runtime.caps.modeInSystem ? { DOTZ_MODE_IN_SYSTEM: "1" } : {}), ...workerGateEnv(runtime.caps), ...opts.env };
 		// The orchestrator's task workers run on its own model (runtime/omo.ts writeOrchestratorProfile): on an API-key entry with
 		// `workers` on, the key's copy of that entry's model; the task-worker settings and chain are the lanes' workers'.
 		if (chain) Object.assign(env, chain.env(chain.active, chain.list[chain.active].model));

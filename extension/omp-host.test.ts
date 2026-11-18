@@ -85,9 +85,9 @@ const dotz = (await import(process.env.TEST_INDEX)).default;
 const main = bind({ kind: "main", id: "Main", name: "main", depth: 0 });
 const sub = bind({ kind: "sub", id: "Prober", name: "task", depth: 1, parentId: "Main" });
 const early = bind(sub.agent);
-for (const b of [main, sub, early]) dotz(b.pi);
+for (const b of [main, sub, early]) await dotz(b.pi);
 const again = bind({ kind: "main", id: "Main2", name: "main", depth: 0 });
-dotz(again.pi);
+await dotz(again.pi);
 const isolated = bind({ kind: "sub", id: "Isolated", name: "task", depth: 1, parentId: "Main" });
 const fresh = (await import(process.env.TEST_INDEX.replace(/index\.ts$/, "omp-host.ts?mtime=1"))).ompHosts(isolated.pi);
 for (const name of ["dotz_send", "dotz_recall"]) fresh.main.registerTool({ name });
@@ -305,4 +305,36 @@ test("installSubagentGuard installs nothing while the guard is off", () => {
 	expect(names).toEqual([]);
 	installSubagentGuard(pi, { ...GUARD_DEFAULTS, defer_to_installed: false });
 	expect(names).toEqual(["tool_result", "before_subagent_spawn", "tool_call"]);
+});
+
+const GATE_EVENTS = ["agent_end", "agent_start", "assistant_message", "before_agent_start", "session_branch", "session_shutdown", "session_switch", "tool_call", "tool_result"];
+
+function harness(agent: string): string {
+	const files = {
+		"extensions/done-gate.ts": `export function registerDoneGate(api) {\n\tfor (const name of ${JSON.stringify([...GATE_EVENTS, "session_stop"])}) api.on(name, () => undefined);\n\treturn { sessionChanges: async () => [] };\n}\n`,
+		"harness/gate/bootstrap.ts": "export const needsBootstrap = async () => false;\n",
+	};
+	for (const [file, text] of Object.entries(files)) {
+		mkdirSync(dirname(join(agent, file)), { recursive: true });
+		writeFileSync(join(agent, file), text);
+	}
+	return agent;
+}
+
+const hooksAdded = (on: View, off: View) => Object.fromEntries(Object.entries(on.hooks).map(([name, count]) => [name, count - (off.hooks[name] ?? 0)]).filter(([, extra]) => extra !== 0));
+
+test("omp orchestrator with the worker gate on: the main agent registers what it does without it, and a task subagent's run adds the gate's hooks and nothing else", () => {
+	const base = { ...omp, TEST_PROBE: "", DOTZ_ORCHESTRATOR: "1" };
+	const off = host(base);
+	const on = host({ ...base, DOTZ_WORKER_GATE: harness(join(root, "harness")) });
+	expect(on.main).toEqual(off.main);
+	expect(on.sub).toEqual({ ...off.sub, hooks: on.sub.hooks });
+	expect(hooksAdded(on.sub, off.sub)).toEqual(Object.fromEntries(GATE_EVENTS.map(name => [name, 1])));
+});
+
+test("the worker gate adds nothing where the harness is not in its folder, in a lane, or in the owner's own terminal", () => {
+	const gate = { DOTZ_WORKER_GATE: harness(join(root, "harness")) };
+	const orchestrator = { ...omp, TEST_PROBE: "", DOTZ_ORCHESTRATOR: "1" };
+	expect(hooksAdded(host({ ...orchestrator, DOTZ_WORKER_GATE: join(root, "nowhere") }).sub, host(orchestrator).sub)).toEqual({});
+	for (const base of [{ ...omp, TEST_PROBE: "", DOTZ_LANE: "alpha" }, { TEST_PROBE: "" }]) expect(hooksAdded(host({ ...base, ...gate }).sub, host(base).sub)).toEqual({});
 });
