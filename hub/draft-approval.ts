@@ -191,6 +191,26 @@ const fileWords = withFileWords(({ document, audio, english: own }) => {
 });
 const ASK = /요청|신청(?!서)|받을 수|받고 싶|부탁|보내\s*주|보내\s*줘|보내\s*달|(?:공유|전달)\s*해?\s*(?:주|달)|주세요|주시면|주실 수|주실래/;
 export const claimsAttachment = (text: string): boolean => (CLAIM.test(text) || fileWords().sends.test(text)) && !NO_CLAIM.test(text);
+
+// A comment reply and the mail that rides on its card (hub/comments/engine.ts) are checked against each other after either one changes, without a
+// model: what the reply says about the mail (a file goes, an address, a file name, a mail at all) must be what the mail does. Each finding is one
+// "확인:" line naming the side to look at; PAIR_NOTE finds the lines of an earlier check so a re-check replaces them. Never a refusal.
+export const PAIR_NOTE = /^확인: 답글과 메일이 달라요 - /;
+const MAIL_PROMISE = /(?:메일|e-?mail)[^.!?\n]{0,20}(?:보내|보냈|발송|전달|드릴|드렸|드려)|\be-?mail(?:ed|ing)?\b[^.!?\n]{0,20}\b(?:send|sent)\b|\b(?:send|sent)\b[^.!?\n]{0,20}\be-?mail\b/i;
+const FILE_NAMED = /[^\s"'`“”‘’「」『』<>()[\]@,]+\.(?:pdf|hwpx?|docx?|xlsx?|pptx?|zip|txt|csv|jpe?g|png|mp3|mp4|wav)\b/gi;
+/** `mail`: the linked mail as it is now, undefined when the card has none; `hadMail`: the card carried one (so a reply still promising it is off). */
+export function pairCheck(reply: string, mail: { to: string; attachments: { name: string }[] } | undefined, hadMail = false): string[] {
+	const note = (s: string) => `확인: 답글과 메일이 달라요 - ${s}`;
+	if (!mail) return hadMail && (MAIL_PROMISE.test(reply) || claimsAttachment(reply)) && !NO_CLAIM.test(reply) ? [note("답글은 메일을 보낸다고 하는데 함께 보낼 메일이 없으니 답글을 고쳐 주세요")] : [];
+	const names = mail.attachments.map(f => f.name.toLowerCase());
+	const others = addressesIn(reply).filter(a => a !== mail.to.trim().toLowerCase());
+	const unknown = [...new Set((reply.match(FILE_NAMED) ?? []).map(n => n.split("/").pop()!))].filter(n => !names.some(a => a === n.toLowerCase() || a.endsWith(n.toLowerCase())));
+	return [
+		...(!names.length && claimsAttachment(reply) ? [note("답글은 파일을 보낸다고 하는데 메일에 첨부가 없으니 메일 첨부를 확인해 주세요")] : []),
+		...(others.length ? [note(`답글에 적힌 주소 ${others.join(", ")}가 메일 받는이 ${mail.to}와 달라서 받는이나 답글을 확인해 주세요`)] : []),
+		...(names.length && unknown.length ? [note(`답글에 적힌 파일 ${unknown.join(", ")}이 메일 첨부에 없으니 메일 첨부를 확인해 주세요`)] : []),
+	];
+}
 // The mail being answered asks for a file ("문서 부탁드립니다", "견적서 보내주세요").
 export const asksForFile = (text: string): boolean =>
 	fileWords().askEn.test(text) || text.split(/[.!?\n]+/).some(sentence => fileWords().noun.test(sentence) && ASK.test(sentence));

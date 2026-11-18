@@ -1,6 +1,6 @@
 // A mail draft that rides on a comment reply: the comment draft names it (Draft.mail) and one pick on the reply's card approves both.
 // The mail then is not sent on its own: hub/mail-cli.ts send and features/reply-drafts sendDraft refuse it and point to the reply's send.
-import { type DraftPart } from "../draft-approval.ts";
+import { type DraftPart, PAIR_NOTE, pairCheck } from "../draft-approval.ts";
 import { dataDir } from "../../features/reply-drafts/lib/settings.ts";
 import { fileDigest, stagedFiles } from "../../features/reply-drafts/lib/staged.ts";
 import { type DraftRec, getDraft, setStatus } from "../../features/reply-drafts/lib/store.ts";
@@ -13,11 +13,12 @@ export const linkedComment = (mailId: string): string | undefined => createStore
 /** The mail drafts that ride on a pending comment draft: the reply queue shows each inside that reply's card, not as a card of its own. */
 export const ridingMails = (): Set<string> => new Set(createStore(commentsDir(dataDir())).drafts().flatMap(d => (d.status === "pending" && d.mail ? [d.mail] : [])));
 
-/** Puts the mail draft on the comment draft `code` (a mail attached before is dropped). The card is new then: `mailAt` keeps older picks from approving it. */
+/** Puts the mail draft on the comment draft `code` (a mail attached before is dropped). The card is new then: `mailAt` keeps older picks from approving it.
+ * The reply is checked against the mail (pairCheck): what disagrees is a "확인:" line on the card. */
 export function attachMail(store: Store, code: string, mailId: string, now: number): Draft {
 	const d = store.drafts().find(x => x.code === code)!;
 	if (d.mail && d.mail !== mailId) setStatus(d.mail, "dropped");
-	const next: Draft = { ...d, mail: mailId, mailAt: now, clean: false };
+	const next: Draft = { ...d, mail: mailId, mailAt: now, clean: false, notes: [...d.notes.filter(n => !PAIR_NOTE.test(n)), ...pairCheck(d.text, mailViewOf(mailId), true)] };
 	store.putDraft(next);
 	return next;
 }

@@ -6,7 +6,7 @@ import { createDraftRun } from "./draft-run.ts";
 import { createSendRecovery } from "./recover.ts";
 import { type Comment, type CommentAdapter, dispatchReply, type GateResult, isUntitled, type Post, ruleAllows, type SourceConfig, type SourceKind, threadKey, watches } from "./contract.ts";
 import { UNKNOWN_USER } from "../../features/youtube-instagram/lib/ig-owner.ts";
-import { ATTACH_AS_IS_HINT, ATTACH_REFUSED, LINT_REFUSED, asksForFile, fileSizeText, recipientCheck } from "../draft-approval.ts";
+import { ATTACH_AS_IS_HINT, ATTACH_REFUSED, LINT_REFUSED, PAIR_NOTE, asksForFile, fileSizeText, pairCheck, recipientCheck } from "../draft-approval.ts";
 import { type ClosedReason, createStore, type Draft, type MailOutcome, type Reply, type Store } from "./store.ts";
 import { unrepliedFresh } from "../unreplied.ts";
 import type { MailQuery } from "./mail-match.ts";
@@ -85,6 +85,19 @@ function mailGoneRefusal(store: { putDraft: (d: Draft) => void }, d: Draft, now:
 const MAIL_SENT_CLAIM = /(메일|e-?mail)[^.!?\n]{0,15}(보내\s?드렸|보냈|발송\s?(해\s?드렸|했|하였|됐|되었))|\be-?mailed\b|\bsent\b[^.!?\n]{0,20}\be-?mail\b/i;
 function mailClaimRefusal(text: string, mailId: string | undefined): GateResult | undefined {
 	return mailId && MAIL_SENT_CLAIM.test(text) ? { ok: false, code: "mail_claim_unsent", reason: `답글에 메일을 보냈다고 썼는데 그 메일(${mailId})은 아직 나가지 않았어요. 답글도 올리지 않았어요. 답글과 메일을 함께 보내려면 한 카드에서 1) 보내기를, 답글만 올리려면 답글을 고쳐 주세요.` } : undefined;
+}
+// After either part of a reply + mail card changed: the pair-check lines (draft-approval.ts pairCheck) of the draft `code` are replaced by fresh ones, so
+// they never pile up and go once both agree. `hadMail`: the card carried a mail before this change (a line of an earlier check says so too).
+function recheckPair(store: Store, view: (d: Draft) => MailView | undefined, emit: (e: Record<string, unknown>) => void, code: string, hadMail = false): Draft | undefined {
+	const d = store.drafts().find(x => x.code === code && x.status === "pending");
+	if (!d) return undefined;
+	const kept = d.notes.filter(n => !PAIR_NOTE.test(n));
+	const found = pairCheck(d.text, view(d), hadMail || !!d.mail || kept.length < d.notes.length);
+	if ([...kept, ...found].join("\n") === d.notes.join("\n")) return d;
+	const next: Draft = { ...d, notes: [...kept, ...found], ...(found.length ? { clean: false } : {}) };
+	store.putDraft(next);
+	emit({ kind: "comment_draft", source: d.source, thread: d.thread });
+	return next;
 }
 export const OFF_REASON = "댓글 답글이 꺼져 있어요. 앱 설정에서 켜 주세요";
 const MAX_AUTO_PER_RUN = 5;
@@ -188,6 +201,7 @@ export function createEngine(deps: EngineDeps) {
 	};
 
 	const run = createDraftRun({ deps, store, ownerOf, styleOf, contextOf, code, emit, mailView: d => mailView(d) });
+	const paired = (code: string, hadMail = false) => recheckPair(store, mailView, emit, code, hadMail);
 
 	function makeDraft(commentId: string): Promise<Step> {
 		const c = find(commentId);
@@ -254,6 +268,7 @@ export function createEngine(deps: EngineDeps) {
 			const notes = [...cur.notes.filter(n => n !== MAIL_NO_APP_NOTE), ...found.filter((n, i) => !cur.notes.includes(n) && found.indexOf(n) === i)];
 			store.putDraft({ ...cur, mail: made.id, mailAt: deps.now(), clean: false, notes });
 			emit({ kind: "comment_draft", source: d.source, thread: d.thread });
+			paired(code);
 			return { ok: true, mail: made.id };
 		} finally {
 			linking.delete(code);
@@ -278,7 +293,7 @@ export function createEngine(deps: EngineDeps) {
 		const draft: Draft = { code: code(), commentId: c.id, source: src.key, thread: c.thread, text, status: "pending", created: deps.now(), changes: [], clean: !notes.length && !made, notes, ...(made ? { mail: made.id, mailAt: deps.now() } : {}) };
 		store.putDraft(draft);
 		emit({ kind: "comment_draft", source: src.key, thread: c.thread });
-		return { ok: true, draft };
+		return { ok: true, draft: (made && paired(draft.code)) || draft };
 	}
 
 	// The reply goes through the gate (contract.ts); only when it was posted does the mail of the same card go out, so a refused or failed reply
@@ -591,13 +606,13 @@ export function createEngine(deps: EngineDeps) {
 			const next: Draft = { ...d, mail: m.id, mailAt: deps.now(), changes: [...d.changes, `메일: ${change.trim()}`] };
 			store.putDraft(next);
 			emit({ kind: "comment_draft", source: d.source, thread: d.thread });
-			return { ok: true, draft: next };
+			return { ok: true, draft: paired(next.code) ?? next };
 		}
 		const { mail: _mail, mailAt: _mailAt, ...replyOnly } = d;
 		return run(c, src, noMail ? replyOnly : d, change.trim(), opts)
 			.then(step => {
 				if (step.ok && noMail && d.mail) deps.mail?.drop(d.mail);
-				return step;
+				return step.ok ? { ...step, draft: paired(step.draft.code, !!d.mail || d.notes.some(n => PAIR_NOTE.test(n))) ?? step.draft } : step;
 			})
 			.catch(e => ({ ok: false as const, reason: e instanceof Error && e.message ? clip(e.message, 160) : "고친 초안을 만들지 못했어요" }));
 	}
@@ -608,12 +623,17 @@ export function createEngine(deps: EngineDeps) {
 		const src = d && sourceOf(d.source);
 		if (!d || !src) return { ok: false, reason: "그 초안을 찾지 못했어요", code: "gone" };
 		if (d.status !== "pending") return { ok: false, reason: "이 초안은 이미 처리됐어요", code: "not_pending" };
-		if (part === "mail") return d.mail && deps.mail?.edit ? deps.mail.edit(d.mail, text, subject) : { ok: false, reason: "이 초안에는 함께 보낼 메일이 없어요", code: "not_supported" };
+		if (part === "mail") {
+			const r = d.mail && deps.mail?.edit ? deps.mail.edit(d.mail, text, subject) : { ok: false as const, reason: "이 초안에는 함께 보낼 메일이 없어요", code: "not_supported" };
+			if (r.ok) paired(d.code);
+			return r;
+		}
 		const body = text.replace(/\r\n?/g, "\n").trim();
 		const found = ownerLint({ body }, { kind: "comment", app: src.key, from: find(d.commentId)?.author ?? "", text: "" }, styleOf(src));
 		if (found.length) return { ok: false, reason: `${LINT_REFUSED} ${found.join(" · ")}`, code: found[0]!.startsWith("it uses the forbidden") ? "forbidden_word" : found[0]!.startsWith("the body is empty") ? "empty" : found[0]!.startsWith("the body is") ? "too_long" : "placeholder", lint: found };
 		store.putDraft({ ...d, text: body, clean: false, ...(d.editedFrom === undefined ? { editedFrom: d.text } : {}) });
 		emit({ kind: "comment_draft", source: d.source, thread: d.thread });
+		paired(d.code);
 		return { ok: true };
 	}
 	// What a sent draft the owner edited teaches (design 3.4): his text against the model's, in the source's profile; nothing before it went out.
