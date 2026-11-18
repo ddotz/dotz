@@ -8,13 +8,12 @@ import { join } from "node:path";
 import { modelDeps, callModel } from "./outlang.ts";
 import { callWarm, ensureProvider, invalidateHealth, resetClock, runnerDeps, subscriptionHealth, PIN_ENV } from "./model-runner.ts";
 import { advance, clock, flush } from "./runtime/test-clock.ts";
-import { fileLogged } from "./runtime/test-file-log.ts";
+import { fileLogged, liveProcesses } from "./runtime/test-file-log.ts";
 
 const dir = mkdtempSync(join(tmpdir(), "dotz-model-runner-"));
 const fake = join(dir, "fake-omo.ts");
 const logFile = join(dir, "spawns.log");
 const cmdFile = join(dir, "commands.log");
-const exitFile = join(dir, "exits.log");
 const SONNET = "anthropic/claude-sonnet-5-5";
 
 // The fake: print mode answers one message_end; rpc mode stays up and answers prompts until it is told to leave.
@@ -30,7 +29,6 @@ if (!args.includes("rpc")) {
 	out({ type: "message_end", message: { role: "assistant", content: [{ type: "text", text: "print 답" }], stopReason: "stop", usage: { input: 7, output: 1 } } });
 } else {
 	process.on("SIGTERM", () => process.exit(0));
-	process.on("exit", () => appendFileSync(${JSON.stringify(exitFile)}, "x\\n"));
 	if (mode === "start-crash") process.exit(3);
 	let n = 0, resetting = false;
 	for await (const line of console) {
@@ -82,8 +80,8 @@ const commands = (): string[] => {
 	}
 };
 const commandsLogged = (type: string, n: number): Promise<void> => fileLogged(cmdFile, () => commands().filter(c => c === type).length >= n, `the fake omo logging ${n} "${type}" commands`);
-// The warm (rpc) processes the fake started and has not seen leave: a process that was stopped, timed out or crashed logs its exit.
-const aliveIs = (n: number): Promise<void> => fileLogged(exitFile, () => spawns().filter(s => s.argv.includes("rpc")).length - readFileSync(exitFile, "utf8").split("\n").filter(Boolean).length === n, `${n} warm processes alive`);
+// The warm (rpc) processes the injected spawn started and that have not exited.
+const { track, aliveIs } = liveProcesses("warm processes");
 const account = (name = "default", access = "a") => ({ name, access, refresh: "r", expires: 1 });
 const auth = (accounts: unknown[], pinned = "default") => writeFileSync(join(agent, "auth.json"), JSON.stringify({ "anthropic-subscription": { type: "oauth", pinned, accounts } }));
 const usage = (windows: { usedPercent: number; resetsAt: string }[], name = "default") => {
@@ -101,22 +99,24 @@ beforeEach(() => {
 	process.env.OMO_CODING_AGENT_DIR = agent;
 	writeFileSync(logFile, "");
 	writeFileSync(cmdFile, "");
-	writeFileSync(exitFile, "");
 	delete process.env.FAKE_OMO_MODE;
 	invalidateHealth();
 	// same argv, the fake script in place of the omo binary the test preload points at
-	runnerDeps.spawn = (argv, o) => Bun.spawn([process.execPath, fake, ...argv.slice(1)], { cwd: o.cwd, env: o.env, stdin: "pipe", stdout: "pipe", stderr: "ignore" } as never) as never;
+	runnerDeps.spawn = (argv, o) => track(Bun.spawn([process.execPath, fake, ...argv.slice(1)], { cwd: o.cwd, env: o.env, stdin: "pipe", stdout: "pipe", stderr: "ignore" } as never)) as never;
 	modelDeps.spawn = (argv, options) => Bun.spawn([process.execPath, fake, ...argv.slice(1)], options as never) as never;
 });
 afterEach(async () => {
 	// the idle window stops what a test left warm, and the next test starts only once every fake process is gone
-	await advance(runnerDeps.idleMs + 1);
-	await aliveIs(0);
-	invalidateHealth();
-	runnerDeps.spawn = realSpawn;
-	modelDeps.spawn = realModelSpawn;
-	process.env.OMO_CODING_AGENT_DIR = realAgentDir;
-});
+	try {
+		await advance(runnerDeps.idleMs + 1);
+		await aliveIs(0);
+	} finally {
+		invalidateHealth();
+		runnerDeps.spawn = realSpawn;
+		modelDeps.spawn = realModelSpawn;
+		process.env.OMO_CODING_AGENT_DIR = realAgentDir;
+	}
+}, 20_000);
 
 test("a spent subscription fails at once with the reset time and starts nothing", async () => {
 	auth([account()]);

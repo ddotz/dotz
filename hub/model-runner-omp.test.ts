@@ -7,13 +7,12 @@ import { callModel, modelDeps } from "./outlang.ts";
 import { UsageLast, readReports } from "./usage-last.ts";
 import { callWarm, ensureOmpProvider, ProviderBlockedError, resetClock, runnerDeps } from "./model-runner.ts";
 import { advance, clock, flush } from "./runtime/test-clock.ts";
-import { fileLogged } from "./runtime/test-file-log.ts";
+import { fileLogged, liveProcesses } from "./runtime/test-file-log.ts";
 
 const dir = mkdtempSync(join(tmpdir(), "dotz-model-runner-omp-"));
 const fake = join(dir, "fake-omp.ts");
 const logFile = join(dir, "spawns.log");
 const promptFile = join(dir, "prompts.log");
-const exitFile = join(dir, "exits.log");
 const SONNET = "anthropic/claude-sonnet-5-5";
 
 writeFileSync(
@@ -28,7 +27,6 @@ if (!argv.includes("rpc")) {
 	out(assistant("print 답", { stopReason: "stop" }));
 } else {
 	process.on("SIGTERM", () => process.exit(0));
-	process.on("exit", () => appendFileSync(${JSON.stringify(exitFile)}, "x\\n"));
 	if (mode === "start-crash") process.exit(3);
 	out({ type: "ready" });
 	let total = 0, session = 0;
@@ -88,8 +86,8 @@ const jsonLines = <T>(file: string): T[] => {
 	}
 };
 const spawns = (): { argv: string[]; pin: string | null; cache: string | null }[] => jsonLines(logFile);
-// The warm (rpc) processes the fake started and has not seen leave: a process that was stopped, timed out or crashed logs its exit.
-const aliveIs = (n: number): Promise<void> => fileLogged(exitFile, () => spawns().filter(s => s.argv.includes("rpc")).length - readFileSync(exitFile, "utf8").split("\n").filter(Boolean).length === n, `${n} warm processes alive`);
+// The warm (rpc) processes the injected spawn started and that have not exited.
+const { track, aliveIs } = liveProcesses("warm processes");
 const later = (ms: number) => clock.now + ms;
 const limit = (id: string, over: object) => ({ id, status: "ok", amount: { used: 10, limit: 100 }, window: { resetsAt: later(3_600_000) }, ...over });
 
@@ -104,25 +102,27 @@ const report = async (...logins: ReturnType<typeof login>[]) => {
 beforeEach(() => {
 	writeFileSync(logFile, "");
 	writeFileSync(promptFile, "");
-	writeFileSync(exitFile, "");
 	delete process.env.FAKE_OMP_MODE;
 	Reflect.set(cfg, "runtime", "omp");
 	runnerDeps.which = () => "/usr/bin/omp";
 	runnerDeps.usage = freshStore();
-	runnerDeps.spawn = (argv, o) => Bun.spawn([process.execPath, fake, ...argv.slice(1)], { cwd: o.cwd, env: o.env, stdin: "pipe", stdout: "pipe", stderr: "ignore" } as never) as never;
+	runnerDeps.spawn = (argv, o) => track(Bun.spawn([process.execPath, fake, ...argv.slice(1)], { cwd: o.cwd, env: o.env, stdin: "pipe", stdout: "pipe", stderr: "ignore" } as never)) as never;
 	modelDeps.spawn = (argv, options) => Bun.spawn([process.execPath, fake, ...argv.slice(1)], options as never) as never;
 });
 afterEach(async () => {
 	// the idle window stops what a test left warm, and the next test starts only once every fake process is gone
-	await advance(runnerDeps.idleMs + 1);
-	await aliveIs(0);
-	delete process.env.FAKE_OMP_MODE;
-	Reflect.set(cfg, "runtime", realRuntime);
-	runnerDeps.spawn = realSpawn;
-	runnerDeps.which = realWhich;
-	runnerDeps.usage = realUsage;
-	modelDeps.spawn = realModelSpawn;
-});
+	try {
+		await advance(runnerDeps.idleMs + 1);
+		await aliveIs(0);
+	} finally {
+		delete process.env.FAKE_OMP_MODE;
+		Reflect.set(cfg, "runtime", realRuntime);
+		runnerDeps.spawn = realSpawn;
+		runnerDeps.which = realWhich;
+		runnerDeps.usage = realUsage;
+		modelDeps.spawn = realModelSpawn;
+	}
+}, 20_000);
 
 test("omp calls share one warm rpc process; each call starts on a fresh session", async () => {
 	const first = await callModel("sys", "u1", { model: SONNET });
