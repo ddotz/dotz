@@ -4,7 +4,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { SLOT_SKIPPED_EXIT } from "./release-exit.ts";
-import { type Attempt, failedFiles, failedTests, RETRY_MAX_FAILED_SHARE, runGate, runWithRetry, type GateEnv, type SuiteFn, type SuiteResult, testFileCount } from "./release-gate.ts";
+import { type Attempt, checkRed, failedFiles, failedTests, RETRY_MAX_FAILED_SHARE, runGate, runWithRetry, type GateEnv, type SuiteFn, type SuiteResult, testFileCount } from "./release-gate.ts";
 import {
 	compareVersions,
 	cutInSlot,
@@ -704,6 +704,25 @@ describe("release slots", () => {
 			const stubborn = scripted([failing(names(2)), failing(names(2), 2), passing(2)]);
 			expect((await runWithRetry("d", stubborn.attempt)).green).toBe(false);
 			expect(stubborn.calls).toHaveLength(2);
+		});
+
+		test("a failing hub/check.ts is a red suite that names each failed check; a clean one, or a tree with no script, is not", async () => {
+			const dir = stateDir();
+			const calls: (readonly string[])[] = [];
+			const ran = (code: number, out: string) => async (cmd: readonly string[]) => { calls.push(cmd); return { code, out }; };
+			expect(await checkRed(dir, ran(1, ""))).toBeUndefined();
+			expect(calls).toEqual([]);
+			mkdirSync(join(dir, "hub"));
+			writeFileSync(join(dir, "hub", "check.ts"), "");
+			expect(await checkRed(dir, ran(0, "check: 26 checks passed\n"))).toBeUndefined();
+			const red = await checkRed(dir, ran(1, "FAIL 1 file size\n  file hub/a.ts is 900, ceiling 800\nFAIL 7 non-atomic writes\n  writes hub is 44, ceiling 43\ncheck: 2 of 26 checks failed\n"));
+			expect(calls).toEqual([["bun", "hub/check.ts"], ["bun", "hub/check.ts"]]);
+			expect(red?.green).toBe(false);
+			expect(red?.failed).toEqual(["hub/check.ts"]);
+			expect(red?.failures).toEqual([
+				{ file: "hub/check.ts", name: "1 file size", error: "file hub/a.ts is 900, ceiling 800" },
+				{ file: "hub/check.ts", name: "7 non-atomic writes", error: "writes hub is 44, ceiling 43" },
+			]);
 		});
 
 		test("the total of test files is the distinct files of the report", () => {

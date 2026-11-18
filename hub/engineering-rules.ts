@@ -1,7 +1,10 @@
+import { execFileSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
-import { join, posix } from "node:path";
+import { homedir } from "node:os";
+import { dirname, join, posix } from "node:path";
+import { listLines, PRIVACY_ALLOW } from "./public-scrub.ts";
 
-// Repo-wide code health detectors for hub/engineering-rules.test.ts. Pure text and regex scans (no TypeScript compiler); imports come from
+// Repo-wide code health detectors for hub/check.ts (the real-tree checks) and hub/engineering-rules.test.ts (seeded violations proving each detector can fail). Pure text and regex scans (no TypeScript compiler); imports come from
 // Bun.Transpiler.scanImports. `bun hub/engineering-rules.ts --json` prints every metric, without the flag a short table.
 // Prod scope: hub, extension, features, onboard, setup.ts, web/js, minus tests, test helpers and the generated web/js/01-notice-ko.js and 01-message-spec.js.
 
@@ -288,6 +291,91 @@ export function pastedBlocks(prod: readonly Src[]): string[] {
 			blocks.add(`${(lines[i] ?? "").slice(0, 60)} | ${[...seen.get(k) ?? []].join(" ")} | ${path}`);
 		});
 	return [...new Set([...blocks].map(b => b.slice(0, b.lastIndexOf(" | "))))].sort();
+}
+
+// hub/config.ts throws when it is imported under NODE_ENV=test with a real data dir (hub/live-guard.ts testDataRefusal). The suite's bunfig preload sets a temp
+// DOTZ_DIR in process.env, but a child a test starts without an env option gets the environment bun started with: NODE_ENV=test from bun test, no temp data dir.
+// So a module a test file starts that way (by path, or imported by a "-e" script) must not reach hub/config.ts. A spawn with an env option is the test's own choice
+// of environment (process.env carries the temp dir) and is not counted. Entries are found in the test files' spawn calls, not listed by hand.
+const CONFIG_MODULE = "hub/config.ts";
+const SPAWN_CALL = /\b(?:Bun\.)?(?:spawnSync|spawn|execFileSync|execFile|execSync)\(/g;
+const isTestSide = (p: string) => isTest(p) || /\.fixtures?\.ts$/.test(p) || /(?:^|\/)(?:test|fixtures)\//.test(p);
+// End of the bracketed group opening at "from", or of the statement starting there (";" or a line end outside any bracket); quoted text is skipped.
+const endOf = (text: string, from: number, group: boolean): number => {
+	let depth = 0;
+	for (let i = from; i < text.length; i++) {
+		const c = text[i] ?? "";
+		if (c === '"' || c === "'" || c === "`") { for (i++; i < text.length && text[i] !== c; i++) if (text[i] === "\\") i++; continue; }
+		if ("([{".includes(c)) depth++;
+		else if (")]}".includes(c)) { depth--; if (group && depth === 0) return i + 1; }
+		else if (!group && (c === ";" || c === "\n") && depth <= 0) return i;
+	}
+	return text.length;
+};
+export const entryModules = (files: readonly Src[]): string[] => {
+	const prod = new Set(prodOf(files).filter(f => f.path.endsWith(".ts")).map(f => f.path));
+	const found = new Set<string>();
+	for (const f of files) {
+		if (!isTestSide(f.path) || !f.path.endsWith(".ts")) continue;
+		const dir = posix.dirname(f.path);
+		// First "const|let id =" of the file per id, indexed once per file instead of one RegExp per identifier per spawn.
+		let defs: Map<string, number> | undefined;
+		const defEnd = (id: string): number | undefined => {
+			if (!defs) {
+				defs = new Map();
+				for (const d of f.text.matchAll(/(?:const|let)\s+([A-Za-z_]\w*)\s*(?::[^=]+)?=/g)) if (!defs.has(d[1] ?? "")) defs.set(d[1] ?? "", d.index + d[0].length);
+			}
+			return defs.get(id);
+		};
+		for (const m of f.text.matchAll(SPAWN_CALL)) {
+			const call = f.text.slice(m.index, endOf(f.text, m.index + m[0].length - 1, true));
+			if (/\benv\b/.test(call)) continue;
+			// A path or a "-e" script held in a variable counts through the variable's own assignment.
+			let text = call;
+			for (const id of new Set(call.match(/\b[A-Za-z_]\w*\b/g))) {
+				const at = defEnd(id);
+				if (at !== undefined) text += "\n" + f.text.slice(at, endOf(f.text, at, false));
+			}
+			for (const j of text.matchAll(/join\(\s*([\w.]+)\s*((?:,\s*"[^"]*")+)\s*\)/g)) {
+				found.add(posix.join(j[1] === "import.meta.dir" ? dir : "", ...[...(j[2] ?? "").matchAll(/"([^"]*)"/g)].map(s => s[1] ?? "")));
+			}
+			for (const s of text.matchAll(/["'`]((?:\.\/)?(?:[\w.-]+\/)*[\w.-]+\.ts)["'`]/g)) { found.add(posix.normalize(s[1] ?? "")); found.add(posix.join(dir, s[1] ?? "")); }
+		}
+	}
+	return [...found].filter(p => prod.has(p) && p !== CONFIG_MODULE).sort();
+};
+const reaches = (graph: Map<string, string[]>, from: string, to: string): boolean => {
+	const seen = new Set([from]), queue = [from];
+	for (let v = queue.shift(); v !== undefined; v = queue.shift()) {
+		if (v === to) return true;
+		for (const w of graph.get(v) ?? []) if (!seen.has(w)) { seen.add(w); queue.push(w); }
+	}
+	return false;
+};
+export const configImporters = (files: readonly Src[], graph = importGraph(prodOf(files))): string[] =>
+	entryModules(files).filter(e => reaches(graph, e, CONFIG_MODULE));
+
+// The markdown files of the tree: the tracked ones in a checkout, every one in an export with no git (the pre-push hook's `git archive` tree).
+export function treeDocs(root: string): Src[] {
+	const paths = existsSync(join(root, ".git"))
+		? execFileSync("git", ["ls-files", "*.md"], { cwd: root, encoding: "utf8", timeout: 10_000 }).split("\n").filter(Boolean)
+		: readdirSync(root, { recursive: true, encoding: "utf8" }).filter(p => p.endsWith(".md") && !p.split("/").includes("node_modules"));
+	return paths.map(path => ({ path, text: readFileSync(join(root, path), "utf8") }));
+}
+
+// The repo is public. The owner's personal terms live one per line in an untracked file, so this list stays private; without the file (CI) nothing is checked.
+// A failure names the file and the term's line number, never the term.
+export function privacyFindings(tree: readonly Src[], root: string): string[] {
+	const list = process.env.PRIVACY_TERMS_FILE ?? join(homedir(), ".dotz", "secrets", "privacy-terms.txt");
+	if (!existsSync(list)) return [];
+	const terms = readFileSync(list, "utf8").toLowerCase().split("\n").map((t, i) => ({ line: i + 1, term: t.trim() })).filter(t => t.term);
+	const allow = listLines(join(dirname(list), PRIVACY_ALLOW)).map(w => w.toLowerCase());
+	// One pass over a file answers for every term at once; only a file that holds one is then searched term by term, to name the lines.
+	const any = new RegExp(terms.map(t => t.term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|"));
+	return [...tree, ...treeDocs(root)].flatMap(src => {
+		const text = allow.reduce((t, word) => t.replaceAll(word, " "), src.text.toLowerCase());
+		return any.test(text) ? terms.filter(t => text.includes(t.term)).map(t => `${src.path}: term ${t.line}`) : [];
+	});
 }
 
 export function metrics(files: readonly Src[], graph?: Map<string, string[]>) {

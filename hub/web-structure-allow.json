@@ -1,5 +1,5 @@
 {
-  "_rule": "Structure ratchet for web/js and web/custom.js, checked by hub/web-structure-web.test.ts and frozen by .githooks/pre-push. A fix lowers the number in the same commit; never raise one.",
+  "_rule": "Structure ratchet for web/js and web/custom.js, checked by `bun hub/check.ts` (hub/web-structure.ts) and frozen by .githooks/pre-push. A fix lowers the number in the same commit; never raise one.",
   "counts": {
     "currentAssign": {
       "05-command-palette.js": 1

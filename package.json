@@ -12,6 +12,7 @@
     "gateway": "bun hub/main.ts",
     "setup": "bun setup.ts",
     "test": "bun test --parallel=4",
+    "check": "bun hub/check.ts",
     "load-qa": "bun hub/test/load-qa/run.ts --scale large --out /tmp/load-qa/run"
   },
   "dependencies": {

@@ -1,11 +1,11 @@
 #!/bin/sh
 # Refuses a push to public ddotz/dotz whose new commits carry a personal address, a personal value in a message or an added line, or land a PR by hand with no universal review (hub/push-identity.ts), and a push whose branch tips break the
-# repo-wide limits (hub/engineering-rules.test.ts), and one that raises a ceiling or adds a ceiling key compared with the remote main (hub/engineering-ceilings.json, and the
+# repo-wide limits (`bun hub/check.ts --rules`, hub/check.ts), and one that raises a ceiling or adds a ceiling key compared with the remote main (hub/engineering-ceilings.json, and the
 # "counts" of hub/web-structure-allow.json, where an ownerWrites number may rise only up to the baseline web code recounted by the pushed rule; a baseline without that file warns and passes), and one
-# with a top-level web/js name another file writes that hub/web-structure-owners.json neither owns nor exempts (the completeness test). The limits check the pushed commit, not the working tree, so
+# with a top-level web/js name another file writes that hub/web-structure-owners.json neither owns nor exempts (`bun hub/check.ts --completeness`). The limits check the pushed commit, not the working tree, so
 # an uncommitted change neither hides nor causes a failure. core.hooksPath points here: set by hub/git-hooks.ts, never by hand.
 export PATH="$HOME/.bun/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
-command -v bun >/dev/null 2>&1 || { echo "pre-push: bun not found, cannot run hub/engineering-rules.test.ts" >&2; exit 1; }
+command -v bun >/dev/null 2>&1 || { echo "pre-push: bun not found, cannot run hub/check.ts" >&2; exit 1; }
 tmp=$(mktemp -d) || exit 1
 trap 'rm -rf "$tmp"' EXIT
 seen=""
@@ -33,20 +33,22 @@ while read -r _ sha ref remotesha; do
 		# The baseline's web files counted by the pushed commit's rule C and owners: a write the baseline code already had, newly seen by the rule, is no raise. Not produced: no such allowance.
 		rm -rf "$tmp/recount" "$tmp/base/recount.json" && mkdir "$tmp/recount" || exit 1
 		{ git archive "$sha" | tar -x -C "$tmp/recount" && rm -rf "$tmp/recount/web/js" "$tmp/recount/web/custom.js" && git archive "$base" web/js web/custom.js | tar -x -C "$tmp/recount" \
-			&& (cd "$tmp/recount" && WEB_STRUCTURE_RECOUNT="$tmp/base/recount.json" DOTZ_TEST_NO_DEPS=1 bun test hub/web-structure-web.test.ts -t '^recount'); } >"$tmp/recount.out" 2>&1 </dev/null || rm -f "$tmp/base/recount.json"
+			&& (cd "$tmp/recount" && bun hub/check.ts --recount "$tmp/base/recount.json"); } >"$tmp/recount.out" 2>&1 </dev/null || rm -f "$tmp/base/recount.json"
 		bun "$rules" --ceiling-freeze --base-owners "$tmp/base/web-structure-owners.json" --base-recount "$tmp/base/recount.json" "$tmp/base/ceilings.json" "$tmp/head/ceilings.json" "$tmp/base/web-structure-allow.json" "$tmp/head/web-structure-allow.json" </dev/null || { echo "pre-push: refused, $ref at $sha raises a ceiling or an allowlist number. Shrink the code; never raise either (docs/engineering-standards.md)." >&2; exit 1; }
 	else
 		echo "pre-push: ceiling freeze skipped, no readable baseline ceilings for $ref" >&2
 	fi
 	rm -rf "$tmp/tree" && mkdir "$tmp/tree"
 	git archive "$sha" | tar -x -C "$tmp/tree" || exit 1
-	if ! (cd "$tmp/tree" && DOTZ_TEST_NO_DEPS=1 bun test hub/engineering-rules.test.ts) >"$tmp/out" 2>&1; then
-		grep -E '^\+ +"|\(fail\)' "$tmp/out" >&2 || tail -n 30 "$tmp/out" >&2
+	# A pushed commit from before hub/check.ts keeps the limits in the test file.
+	if [ -f "$tmp/tree/hub/check.ts" ]; then limits="bun hub/check.ts --rules"; else limits="DOTZ_TEST_NO_DEPS=1 bun test hub/engineering-rules.test.ts"; fi
+	if ! (cd "$tmp/tree" && eval "$limits") >"$tmp/out" 2>&1; then
+		grep -E '^(FAIL|  )|^\+ +"|\(fail\)' "$tmp/out" >&2 || tail -n 30 "$tmp/out" >&2
 		echo "pre-push: refused, $ref at $sha is over a limit. Shrink the code; never raise a ceiling (docs/engineering-standards.md)." >&2
 		exit 1
 	fi
-	if [ -f "$tmp/tree/hub/web-structure-web.test.ts" ] && ! (cd "$tmp/tree" && DOTZ_TEST_NO_DEPS=1 bun test hub/web-structure-web.test.ts -t '^completeness') >"$tmp/out" 2>&1; then
-		grep -E '^\+ +"|\(fail\)' "$tmp/out" >&2 || tail -n 30 "$tmp/out" >&2
+	if [ -f "$tmp/tree/hub/check.ts" ] && ! (cd "$tmp/tree" && bun hub/check.ts --completeness) >"$tmp/out" 2>&1; then
+		grep -E '^(FAIL|  )' "$tmp/out" >&2 || tail -n 30 "$tmp/out" >&2
 		echo "pre-push: refused, $ref at $sha has a web/js name another file writes that hub/web-structure-owners.json neither owns nor exempts. Call the owner's function, or register the name." >&2
 		exit 1
 	fi
