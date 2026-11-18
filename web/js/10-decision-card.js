@@ -165,17 +165,16 @@ async function answerDecision(dc, text, opt, note) {
   } catch (e) { delete DC.st[dc.key]; if (dc.blocks.length === 1) delete DC.picks[dc.key]; if (note) DC.edit[dc.key] = { bi: 0, opt }; toast(e.message, true); }   // a refused reason opens again with its text (DC.note); a lone question lets go of the chosen row; several keep their picks, so a retry does not start the card over
   paintDecision();
 }
-// A draft asks for text on 고치기 only; any other decision on an option that needs detail (안 됨 …): what to change / why is typed first, nothing is sent before.
 const needsNote = (dc, opt) => (dc.draft ? draftAsksText(opt) : detailOf(opt));
 const pickSay = o => `${o.n}) ${o.label}${o.note ? ` - ${o.note}` : ""}`;
-function pickOption(dc, bi, opt, note) {
+function pickOption(dc, bi, opt, note, typed) {
   if (DC.st[dc.key]) return;
   // A mail whose files disagree with its words is not sent by 보내기: the owner is shown what is off and 이대로 보내기 is the pick that sends it (cancel keeps the card).
   const asIs = dc.draft && (dc.draft.attachIssues || []).length && dc.blocks[bi] && dc.blocks[bi].options.find(o => o.label === "이대로 보내기");
   if (asIs && opt.label === "보내기" && !opt.sure) { ask(TX("decision.attach.check_title"), (dc.draft.to ? TX("decision.attach.asis_to", { to: dc.draft.to, issues: dc.draft.attachIssues.join(". ") }) : TX("decision.attach.asis", { issues: dc.draft.attachIssues.join(". ") })), TX("decision.send_anyway")).then(ok => { if (ok) pickOption(dc, bi, { ...asIs, sure: true }, note); }); return; }
   if (dc.draft && (dc.draft.warning || (dc.draft.attachments || []).length) && opt.label === "보내기" && !opt.sure) { drfSure(dc.draft, dc.t).then(ok => { if (ok) pickOption(dc, bi, { ...opt, sure: true }, note); }); return; }
   // fresh: the paint that draws the field this tap opened gives it the focus, once; a later live repaint never takes the focus
-  if (!note && needsNote(dc, opt)) { DC.edit[dc.key] = { bi, opt }; DC.fresh = dc.key; paintDecision(); return; }
+  if (!note && !typed && needsNote(dc, opt)) { DC.edit[dc.key] = { bi, opt }; DC.fresh = dc.key; paintDecision(); return; }
   const p = DC.picks[dc.key] || [];
   DC.picks[dc.key] = p;
   p[bi] = note ? { ...opt, note } : opt;
@@ -451,9 +450,9 @@ const draftNoteText = opt => (opt.label === DRAFT_OWN ? { hint: OWN_HINT, aria: 
 function editNode(dc, ed, st) {
   const opt = ed.opt, drf = !!dc.draft;
   const dt = draftNoteText(opt);
-  const ta = el("textarea", { class: "dc-note", rows: "2", maxlength: "500", placeholder: drf ? dt.hint : TX("decision.note.reason_ph"), "aria-label": drf ? dt.aria : TX("decision.note.details"), disabled: !!st, oninput: () => { DC.note[dc.key] = ta.value; go.disabled = !ta.value.trim(); }, "data-esc": "field", onkeydown: noteKeys(() => go.click(), () => back.click()) });
+  const ta = el("textarea", { class: "dc-note", rows: "2", maxlength: "500", placeholder: drf ? dt.hint : TX("decision.note.reason_ph"), "aria-label": drf ? dt.aria : TX("decision.note.details"), disabled: !!st, oninput: () => { DC.note[dc.key] = ta.value; go.disabled = drf && !ta.value.trim(); }, "data-esc": "field", onkeydown: noteKeys(() => go.click(), () => back.click()) });
   ta.value = DC.note[dc.key] ?? "";
-  const go = el("button", { class: "dc-go", type: "button", disabled: !!st || !ta.value.trim(), onclick: () => { const note = ta.value.trim(); if (note) pickOption(dc, ed.bi, opt, note); } }, noteGoLabel(opt, drf));
+  const go = el("button", { class: "dc-go", type: "button", disabled: !!st || (drf && !ta.value.trim()), onclick: () => { const note = ta.value.trim(); if (note || !drf) pickOption(dc, ed.bi, opt, note, true); } }, noteGoLabel(opt, drf));
   const back = el("button", { class: "dc-back", type: "button", disabled: !!st, onclick: () => { delete DC.edit[dc.key]; paintDecision(); } }, TX("decision.back"));
   return el("div", { class: "dc-edit" }, el("div", { class: "dc-ctx" }, el("span", { class: "dc-key", text: String(opt.n) }), el("span", { class: "dc-lb", text: drf ? dt.ask : opt.label })), ta, el("div", { class: "dc-eb" }, back, go));
 }
@@ -676,7 +675,7 @@ function paintInline(box, live) {
     if (!dc && !picks.some(Boolean)) kids.push(el("div", { class: "dc-ds", text: TX("decision.past") }));
     // No docked card to type in (a session's mid-turn question): what to change is asked here. Its text outlives a repaint (DC.note).
     if (edit) {
-      const go = () => note.value.trim() && pickOption(dc, edit.bi, edit.opt, note.value.trim());
+      const go = () => (note.value.trim() || !dc.draft) && pickOption(dc, edit.bi, edit.opt, note.value.trim(), true);
       note = el("textarea", { class: "dc-note", rows: 2, placeholder: TX("decision.note.detail_ph"), oninput: () => { DC.note[dc.key] = note.value; }, "data-esc": "field", onkeydown: noteKeys(go, () => { delete DC.edit[dc.key]; paintDecision(); }) });
       note.value = DC.note[dc.key] || "";
       kids.push(note, el("button", { class: "btn dc-send", type: "button", onclick: go }, TX("common.send")));

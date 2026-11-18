@@ -63,9 +63,9 @@
   "decision.own.ask": "How should it go out?",
   "decision.note.go_own": "Send it this way",
   "decision.note.go_answer": "Answer with {label}",
-  "decision.note.reason_ph": "Add a reason or details",
+  "decision.note.reason_ph": "A reason or details (optional)",
   "decision.note.details": "Details",
-  "decision.note.detail_ph": "Add details",
+  "decision.note.detail_ph": "Details (optional)",
   "decision.decide": "To decide",
   "decision.attach.count": {
     "one": "{n} attachment",

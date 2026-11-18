@@ -4,7 +4,8 @@ import { emit } from "./events.ts";
 import { listNotices, unreadCount } from "./notices.ts";
 import { fakeHub, json, on } from "./test-web.ts";
 
-// An option that needs detail (안 됨 / 고치기 / a trailing " …") opens a text field and sends nothing until the owner writes it; a positive option sends at once.
+// An option that needs detail (안 됨 / 고치기 / a trailing " …") opens a text field first; a plain decision may still be answered with the field left empty,
+// a draft's 고치기 sends nothing until the change is written; a positive option sends at once.
 // Headless browser against a fixture history and the real notice store; every POST is recorded, nothing leaves the process.
 const ASK = "[ask] 확인\n결정: 확인\n**1) 확인됨**\n잘 열려요\n**2) 안 됨**\n어디가 안 되는지 적어 주세요\n";
 const MARKED = "[ask] 배포\n결정: 배포\n**1) 배포하기**\n바로 올려요\n**2) 보류 …**\n이유만 남겨요\n";
@@ -50,7 +51,7 @@ describe("decision options that need detail", () => {
 		await settled();
 		expect(await view.evaluate(`document.activeElement === document.querySelector("#dcard .dc-note")`)).toBe(true);
 		expect(await view.evaluate(`document.querySelector("#dcard .dc-ctx").textContent`)).toBe("2안 됨");
-		expect(await view.evaluate(`document.querySelector("#dcard .dc-go").disabled`)).toBe(true);
+		expect(await view.evaluate(`document.querySelector("#dcard .dc-go").disabled`)).toBe(false);
 		expect(await view.evaluate(`document.querySelectorAll("#dcard .dc-row").length`)).toBe(0);
 		expect(await posts()).toEqual([]);
 		await type("  화면이 안 열려요  ");
@@ -99,6 +100,19 @@ describe("decision options that need detail", () => {
 		expect(posted[0]!.body.text).toBe("2) 보류 - 내일 다시");
 	});
 
+	test("a marked option of a plain decision is answered by its name alone when the field is left empty", async () => {
+		await openChat(MARKED);
+		await view.evaluate(`(${rowOf(2)}.click(), 0)`);
+		await waitFor(`document.querySelector("#dcard .dc-note")`);
+		expect(await view.evaluate(`document.querySelector("#dcard .dc-go").disabled`)).toBe(false);
+		await view.evaluate(`(document.querySelector("#dcard .dc-go").click(), 0)`);
+		await waitForPost();
+		const posted = await posts();
+		expect(posted).toHaveLength(1);
+		expect(posted[0]!.body.text).toBe("2) 보류");
+		expect(posted[0]!.body.picks).toEqual([{ q: "배포", n: 2, label: "보류" }]);
+	});
+
 	test("draft approval 고치기 still asks for the change first and posts it as the note of the notice answer", async () => {
 		const ref = `d-detail-${Date.now()}`;
 		emit("outbox", { ts: new Date().toISOString(), kind: "out", source: "orchestrator", target: "alert", text: `[ask] ${draftApprovalBlock({ to: "kim@example.com", subject: "일정", body: "다음 주 일정을 보내 드립니다.", ref })}` });
@@ -111,6 +125,7 @@ describe("decision options that need detail", () => {
 		expect(await posts()).toEqual([]);
 		// the input asks what to change, with the instruction hint as its placeholder; the draft stays above it
 		expect(await view.evaluate(`document.querySelector(".fs-ft .dc-go").textContent`)).toBeTruthy();
+		expect(await view.evaluate(`document.querySelector(".fs-ft .dc-go").disabled`)).toBe(true);
 		expect(await view.evaluate(`[document.querySelector(".fs-ft .dc-ctx .dc-lb").textContent === TX("decision.revise.ask"), document.querySelector(".fs-ft .dc-note").placeholder === TX("decision.hint.revise"), !!document.querySelector(".fs-body .dc-dr-b")]`)).toEqual([true, true, true]);
 		await settled();
 		await type("3시 말고 4시로");
