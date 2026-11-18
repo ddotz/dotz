@@ -378,7 +378,7 @@
   "settings.upd.waiting": "Waiting",
   "settings.upd.in_progress": "In progress",
   "settings.upd.btn": "Update",
-  "settings.upd.rt_note": "Restart the assistant and sessions to apply the change.",
+  "settings.upd.rt_note": "A switch applies once current work finishes.",
   "settings.upd.rt_versions": "Runtime versions",
   "settings.upd.checking": "Checking…",
   "settings.upd.check": "Check for updates",

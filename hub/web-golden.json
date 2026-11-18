@@ -5507,7 +5507,8 @@
 			"    span.li-end",
 			"     button.btn.tonal.inrow",
 			"      svg.ic",
-			"  div.note"
+			"  div.note",
+			"   span.wph *3"
 		],
 		"back": {
 			"hash": "#home",
@@ -5559,7 +5560,8 @@
 			"    span.li-end",
 			"     button.btn.tonal.inrow",
 			"      svg.ic",
-			"  div.note"
+			"  div.note",
+			"   span.wph *3"
 		],
 		"back": {
 			"hash": "#home",

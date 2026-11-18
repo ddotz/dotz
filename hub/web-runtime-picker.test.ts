@@ -193,12 +193,12 @@ describe("settings: 작업 프로그램 picker", () => {
 		for (const part of ["최대 14개", "90초", "360초", "25분"]) expect(text).toContain(part);
 	});
 
-	test("a saved switch shows what changes at the next start with a restart button; nothing pending shows no row", async () => {
+	test("a saved switch says it is switching with a restart button; nothing pending shows no row", async () => {
 		const view = { current: { orchestrator: "omo", lanes: "omo" }, pending: { orchestrator: "omp", lanes: "omo" }, restart_needed: true };
 		const { g, calls, toasts } = harness(RUNTIMES, {}, { view });
 		await g.loadRuntimes();
 		const row = walk(g.rtSection()[2]).find(n => n.attrs["data-pending"])!;
-		expect(row.text()).toContain("다음 시작부터 바뀌어요");
+		expect(row.text()).toContain("바꾸는 중이에요");
 		expect(row.text()).toContain("omp");
 		const button = walk(row).find(n => n.tag === "button")!;
 		await button.attrs.onclick({ currentTarget: button });
@@ -207,5 +207,20 @@ describe("settings: 작업 프로그램 picker", () => {
 		const quiet = harness(RUNTIMES, {}, { view: { ...view, restart_needed: false, pending: view.current } });
 		await quiet.g.loadRuntimes();
 		expect(quiet.g.rtSection().flatMap(n => walk(n)).some(n => n.attrs["data-pending"])).toBe(false);
+	});
+
+	test("right after a switch the row shows the new harness as switching, not the old one as in use", async () => {
+		const switching = RUNTIMES.map(r => ({ ...r, pending_roles: r.id === "omp" ? ["orchestrator", "lanes"] : [] }));
+		const view = { current: { orchestrator: "omo", lanes: "omo" }, pending: { orchestrator: "omp", lanes: "omp" }, restart_needed: true };
+		const { g } = harness(switching, {}, { view });
+		await g.loadRuntimes();
+		const rows = walk(g.rtSection()[1]).filter(n => n.attrs["data-runtime"]);
+		expect(rows.map(r => r.attrs["data-runtime"])).toEqual(["omp"]);
+		expect(rows[0].text()).toContain("바꾸는 중");
+		const applied = harness(switching.map(r => (r.id === "omp" ? { ...r, roles: ["orchestrator", "lanes"] } : { ...r, roles: [] })), {}, { view: { ...view, current: view.pending, restart_needed: false } });
+		await applied.g.loadRuntimes();
+		const after = walk(applied.g.rtSection()[1]).filter(n => n.attrs["data-runtime"]);
+		expect(after.map(r => r.attrs["data-runtime"])).toEqual(["omp"]);
+		expect(after[0].text()).not.toContain("바꾸는 중");
 	});
 });

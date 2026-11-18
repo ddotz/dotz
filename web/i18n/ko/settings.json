@@ -340,7 +340,7 @@
   "settings.upd.waiting": "대기 중",
   "settings.upd.in_progress": "진행 중",
   "settings.upd.btn": "업데이트",
-  "settings.upd.rt_note": "바꾼 뒤에는 어시스턴트와 세션을 다시 시작해야 적용돼요.",
+  "settings.upd.rt_note": "바꾸면 하던 일이 끝나는 대로 다시 시작해서 적용돼요.",
   "settings.upd.rt_versions": "작업 프로그램 버전",
   "settings.upd.checking": "확인하는 중…",
   "settings.upd.check": "새 버전 확인",
