@@ -5,7 +5,7 @@
 // False positives are the risk, so it needs both a trailing list of 2-4 clean options and a question line right above it that offers a
 // choice. A yes / no question counts only under a "결정 필요" heading, in an [ask], or when an option carries a recommendation.
 import { askedDraft } from "./ask-options.ts";
-import { D_CLOSE, DECISION_HEAD, D_OPT, DETAIL_DESC, DETAIL_MARK, parseDecisions, stripRecommendMark } from "./choices.ts";
+import { D_CLOSE, DECISION_HEAD, D_OPT, DETAIL_DESC, DETAIL_MARK, FILLER_QUESTIONS, parseDecisions, stripRecommendMark } from "./choices.ts";
 import { parseDraftApproval, parseQuotedDraft } from "./draft-approval.ts";
 import { isForLine, orchestratorOnlyAsk } from "./forline.ts";
 import { parseTone, splitTone } from "./tone.ts";
@@ -130,7 +130,7 @@ function findBlock(lines: string[], fenced: boolean[], limit: number, marked: bo
 
 function blockLines(f: Found): string[] {
 	const ko = /[가-힣]/.test(f.question + f.options.map(o => o.label).join(""));
-	const question = f.question.replace(/\*\*/g, "").trim() || (ko ? "어떻게 할까요?" : "How should I proceed?");
+	const question = f.question.replace(/\*\*/g, "").trim() || (ko ? FILLER_QUESTIONS.ko : FILLER_QUESTIONS.en);
 	const options = f.options.flatMap((o, i) => [`**${i + 1}) ${o.label}${o.detail ? " …" : ""}**`, ...(o.desc ? [o.desc] : [])]);
 	return [...(f.lead ? [f.lead, ""] : []), `${ko ? "결정" : "Decision"}: ${question}`, ...options];
 }
@@ -146,7 +146,7 @@ function rowToHead(text: string): string {
 	if (tone !== "ask" || at < 0 || lines.some((l, i) => !fenced[i] && DECISION_HEAD.test(l))) return text;
 	const items = lines[at]!.split(/\s[/|·]\s*(?=\d[.)])/).map(x => x.replace(/^\s*\d[.)]\s*/, "").trim());
 	if (items.length > 4 || items.some(x => !x)) return text;
-	lines.splice(at, 1, "결정: 어떻게 할까요?", ...items.map((x, i) => `**${i + 1}) ${x}**`));
+	lines.splice(at, 1, `결정: ${FILLER_QUESTIONS.ko}`, ...items.map((x, i) => `**${i + 1}) ${x}**`));
 	return `${head}${lines.join("\n")}`;
 }
 

@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { log, now, paths, writeAtomic } from "./config.ts";
 import type { DraftApproval } from "./draft-approval.ts";
 import { askDefaults } from "./ask-options.ts";
+import { FILLER_QUESTIONS } from "./choices.ts";
 import { alertMatter, quietAlert } from "./alert-gate.ts";
 import { eventTarget, isPeerMessage, type HubEvent } from "./events.ts";
 import { classOfNotice } from "./notice-class.ts";
@@ -368,7 +369,7 @@ function adoptRepost(e: HubEvent): boolean {
 }
 
 export function putDecision(d: { key: string; title: string; detail: string; to: string; open?: string; options: DecisionOpt[]; group: number; replyTo?: string; draft?: DraftApproval; by?: string; ref?: string; assumed?: true }, at: string): void {
-	const old = items.find(n => n.key === d.key) ?? (d.draft ? undefined : items.findLast(n => n.decision?.to === d.to && !n.decision.draft && n.title === d.title));
+	const old = items.find(n => n.key === d.key) ?? (d.draft || Object.values(FILLER_QUESTIONS).includes(d.title) ? undefined : items.findLast(n => n.decision?.to === d.to && !n.decision.draft && n.title === d.title));
 	if (old?.decision) {
 		// The same ask can arrive twice (a session's mid-turn line and its turn-end report): one notice, and an answered one stays answered.
 		if (isOpenDecision(old) && old.key === d.key) return;

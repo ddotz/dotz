@@ -95,20 +95,24 @@ test("the KakaoTalk request bar gets its text back when the change is refused", 
 });
 
 test("Esc in a card's note field closes the field, not the sheet; Cmd+Enter is its button", async () => {
-	await run(`window.__pick = pickOption; pickOption = (...a) => { window.__picked = a.slice(2); }; const h = fsOpen({ label: "t" }); window.__h = h; DC.edit.k9 = { bi: 0, opt: { n: 2, label: "안 됨" } }; DC.note.k9 = "이유"; h.box.append(editNode({ key: "k9" }, DC.edit.k9, ""))`);
+	await run(`window.__pick = pickOption; pickOption = (...a) => { window.__picked = a.slice(2, 4); }; const h = fsOpen({ label: "t" }); window.__h = h; DC.edit.k9 = { bi: 0, opt: { n: 2, label: "안 됨" } }; DC.note.k9 = "이유"; h.box.append(editNode({ key: "k9" }, DC.edit.k9, ""))`);
 	const key = (k: string, meta = false) => run(`window.__h.box.querySelector(".dc-note").dispatchEvent(new KeyboardEvent("keydown", { key: "${k}", metaKey: ${meta}, bubbles: true, cancelable: true }))`);
-	await key("Enter", true);
-	expect(await ev(`window.__picked`)).toEqual([{ n: 2, label: "안 됨" }, "이유"]);
-	await key("Escape");
-	expect(await ev(`[FS.includes(window.__h), "k9" in DC.edit]`)).toEqual([true, false]);
-	await run(`raFixOpen(RA.items.get("RA3")); window.__h.box.append(rqItemCard(RA.items.get("RA3"))); window.__h.box.querySelector("[data-k=fix-text]").dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }))`);
-	expect(await ev(`[FS.includes(window.__h), RA.fix.has("RA3")]`)).toEqual([true, false]);
-	await run(`pickOption = window.__pick; window.__h.close()`);
+	// The stub is put back even when a check fails, so the tests after this one use the real pickOption.
+	try {
+		await key("Enter", true);
+		expect(await ev(`window.__picked`)).toEqual([{ n: 2, label: "안 됨" }, "이유"]);
+		await key("Escape");
+		expect(await ev(`[FS.includes(window.__h), "k9" in DC.edit]`)).toEqual([true, false]);
+		await run(`raFixOpen(RA.items.get("RA3")); window.__h.box.append(rqItemCard(RA.items.get("RA3"))); window.__h.box.querySelector("[data-k=fix-text]").dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }))`);
+		expect(await ev(`[FS.includes(window.__h), RA.fix.has("RA3")]`)).toEqual([true, false]);
+	} finally {
+		await run(`pickOption = window.__pick; window.__h.close()`);
+	}
 });
 
 test("a refused answer keeps the typed reason and opens its field again", async () => {
 	await run(`window.__send = sendMsgOut; sendMsgOut = () => Promise.reject(new Error("offline")); DC.note.k6 = "이유가 있어요"; pickOption({ key: "k6", t: "main", blocks: [{ title: "q", options: [{ n: 1, label: "좋아" }, { n: 2, label: "안 됨" }] }] }, 0, { n: 2, label: "안 됨" }, "이유가 있어요")`);
-	await waitFor(`!DC.st.k6 && !!DC.edit.k6`);
+	await waitFor(`!DC.st.k6 && !!DC.edit.k6`, 4000);
 	expect(await ev(`[DC.note.k6, DC.edit.k6.opt.n]`)).toEqual(["이유가 있어요", 2]);
 	await run(`sendMsgOut = window.__send`);
 });

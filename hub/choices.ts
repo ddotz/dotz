@@ -118,6 +118,8 @@ type DecisionBlock = { title: string; options: DecisionOption[]; headed?: true }
 export const hasDecisionHead = (blocks: DecisionBlock[]): boolean => blocks.some(b => b.headed);
 export const D_OPT = /^\s*(?:\*\*)?\s*(\d+)\)\s*(.+?)\s*(?:\*\*)?\s*$/;
 export const DECISION_HEAD = /^\s*(?:\*\*)?\s*(?:결정|decision(?: needed)?)(?:\s*#?\d{1,2})?\s*[:：]\s*(.*?)\s*(?:\*\*)?\s*$/i;
+// The question written for an ask that names none (hub/ask-normalize.ts): two asks under it are not the same question (hub/notices-store.ts putDecision).
+export const FILLER_QUESTIONS = { ko: "어떻게 할까요?", en: "How should I proceed?" };
 export const D_CLOSE = /번호(?:로|를).*(?:답|알려)/;
 // A head written twice ("결정: [ask] 결정: <question>", outbox 2026-11-09) is one head: the marker and the second label after the first go.
 const DOUBLED_HEAD = /^(\s*(?:\*\*)?\s*(?:결정|decision(?: needed)?)(?:\s*#?\d{1,2})?\s*[:：]\s*)(?:\[[^\]\n]{1,10}\][ \t]*|(?:결정|decision(?: needed)?)\s*[:：][ \t]*)+/i;
