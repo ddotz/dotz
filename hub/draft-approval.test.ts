@@ -7,7 +7,7 @@ import { parseDecisions } from "./choices.ts";
 import { buildPayloads } from "./discord-format.ts";
 import { paths } from "./config.ts";
 import { approvalHash, briefLines, draftActionOf, draftApprovalBlock, draftVerdict, keepBrief, parseDraftApproval } from "./draft-approval.ts";
-import { AGENT_AUTHOR } from "./entry-check.ts";
+import { AGENT_AUTHOR } from "./agent-author.ts";
 import { emit } from "./events.ts";
 import { inboxText } from "./intake.ts";
 import { approval, createDraft, draftBlock, kakaoView, readDrafts } from "./kakao/send.ts";
@@ -302,4 +302,15 @@ test("a question that names another draft's ref is that other draft's choice onl
 	pickLine("owner", "이 답장 보낼까요? Re: 견적 (RREFAAA) (RREFBBB)", "보내지 않기");
 	expect(draftVerdict(paths.inbox, "RREFAAA", since, "h1")).toEqual({ verdict: "none" });
 	expect(draftVerdict(paths.inbox, "RREFBBB", since, "h1")).toEqual({ verdict: "drop" });
+});
+
+test("a question that closes with its ref before the question mark is that draft's choice, and only that draft's", () => {
+	const since = Date.parse(ts()) - 1;
+	pickLine("owner", "이 답장 보낼까요 (RQMARK1)?", "보내지 않기");
+	expect(draftVerdict(paths.inbox, "RQMARK1", since, "h1")).toEqual({ verdict: "drop" });
+	pickLine("owner", "이 답장 보낼까요 (RQMARK2) ？ ", "보내지 않기");
+	expect(draftVerdict(paths.inbox, "RQMARK2", since, "h1")).toEqual({ verdict: "drop" });
+	pickLine("owner", "이 답장 보낼까요 (XRQMARK3)?", "보내지 않기");
+	pickLine("owner", "이 답장 보낼까요 (RQMARK3)? 그리고 하나 더", "보내지 않기");
+	expect(draftVerdict(paths.inbox, "RQMARK3", since, "h1")).toEqual({ verdict: "none" });
 });

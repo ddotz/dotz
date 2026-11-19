@@ -6,7 +6,8 @@ import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { blockedBy, isExpensive, loadGuardConfig } from "./lanegates.ts";
 import { DATA_DIR, log, parseSelector, paths, splitThinking, writeAtomic } from "./config.ts";
-import { AGENT_AUTHOR, tokenOk } from "./entry-check.ts";
+import { AGENT_AUTHOR } from "./agent-author.ts";
+import { tokenOk } from "./entry-check.ts";
 import { eventTarget, isPeerMessage, tailEvents } from "./events.ts";
 import { PEER_HEADER } from "./peer-auth.ts";
 

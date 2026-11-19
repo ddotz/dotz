@@ -29,7 +29,7 @@ import { updateNow } from "./update-now.ts";
 import { askFollowup, deliver, awaiting, convOfTarget, lastOwner, refOf, newMid, laneFailed, out, expectReply, rateLimitNotice, turnSource } from "./outbound.ts";
 import { mailTarget, type MailRecord } from "./mail.ts";
 import { cardLine, ownerIntent, ownerPick } from "./reply-chat.ts";
-import { AGENT_AUTHOR } from "./entry-check.ts";
+import { AGENT_AUTHOR } from "./agent-author.ts";
 import { useReplies } from "./reply-actions.ts";
 import { memoryNote, settingsTarget } from "./app-settings.ts";
 import { appEntries } from "./integrations.ts";

@@ -390,6 +390,9 @@ const FILE_SIZE = /^(.*\S)\s+\((\d+(?:\.\d+)?(?:B|KB|MB|GB))(?:\s*[,·][^()]*)?\
 /** A draft ref as a card's question names it ("RAAAAAA", "mail:<id>", "indi:57259637"). */
 export const REF_ID = "[A-Za-z0-9][A-Za-z0-9_.:-]{1,63}";
 const REF = new RegExp(`\\((${REF_ID})\\)\\s*$`);
+const QUESTION_REF = new RegExp(`\\((${REF_ID})\\)\\s*[?？]?\\s*$`);
+/** The draft ref a card's question closes with: "(<ref>)", a question mark after it allowed (hub/ask-options.ts REF_END reads the same). */
+export const questionRef = (question: string): string | undefined => QUESTION_REF.exec(question)?.[1];
 
 const DRAFT_MODES = new Set([DRAFT_AS_IS, DRAFT_ONLY_MAIN, DRAFT_ONLY_MAIL, DRAFT_OWN]);
 const ATTACH_LINE = /^\s*-#\s*⚠️\s*첨부 확인\s*[:：]\s*(.+?)\s*$/m;
@@ -648,7 +651,6 @@ const parsedLine = <T>(line: string): T | undefined => {
 // `spent`; each later run of the gateway (다시 보내기, code's own retry) seals a new `go` first. Both marks are sealed lines in this one inbox, so
 // every process reads one record; the `token` (the granting line's seal) lets a CLI hold one approval to one run (features/reply-drafts/lib/flow.ts).
 export function draftVerdict(inboxPath: string, ref: string, sinceMs: number, current: string | undefined): DraftVerdict {
-	const tag = `(${ref})`;
 	type Entry = { ts?: unknown; kind?: unknown; source?: unknown; author?: unknown; text?: unknown; picks?: unknown; ref?: unknown; mark?: unknown; action?: unknown; hash?: unknown; seal?: unknown };
 	// Only a line the gateway sealed (hub/approval-seal.ts) is the owner's word: a line appended to the file by another process is not.
 	const key = readSealKey(inboxPath);
@@ -662,7 +664,7 @@ export function draftVerdict(inboxPath: string, ref: string, sinceMs: number, cu
 		}
 		if (!e || e.kind !== "message" || typeof e.source !== "string" || !OWNER_SOURCES.has(e.source) || typeof e.ts !== "string" || !(Date.parse(e.ts) > sinceMs) || !Array.isArray(e.picks) || e.author === AGENT_AUTHOR || !isSealed(key, e)) continue;
 		for (const p of e.picks as { q?: unknown; label?: unknown; hash?: unknown; until?: unknown }[]) {
-			if (typeof p?.q !== "string" || !p.q.trimEnd().endsWith(tag) || typeof p.label !== "string" || !draftActionOf(p.label)) continue;
+			if (typeof p?.q !== "string" || questionRef(p.q) !== ref || typeof p.label !== "string" || !draftActionOf(p.label)) continue;
 			if (SENDING.has(draftActionOf(p.label)!) && (!current || p.hash !== current)) {
 				out = { verdict: "changed" };
 				continue;

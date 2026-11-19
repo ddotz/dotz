@@ -53,7 +53,8 @@ import { updateNow } from "./update-now.ts";
 import { harnessUpdateRoute } from "./harness-update.ts";
 import { appAsset, committedText, indexPage, manifestI18n, setAppLang, setAppName, swScript, webBuild } from "./webapp.ts";
 import { forgetRoute, listPeers, ownLogin } from "./peers.ts";
-import { actSurface, AGENT_AUTHOR, agentCall, ambientWrite, entryHost, ownTailnetName, refuse, tokenOk } from "./entry-check.ts";
+import { AGENT_AUTHOR } from "./agent-author.ts";
+import { actSurface, agentCall, ambientWrite, entryHost, ownTailnetName, refuse, tokenOk } from "./entry-check.ts";
 import { peerProjects } from "./peer-projects.ts";
 import { relayRoute, relayRows } from "./relay-route.ts";
 import { handlePair, PAIR_PATH } from "./peer-pair.ts";
@@ -311,7 +312,7 @@ export async function deliverAnswer(a: Parameters<DecisionSend>[0] & { login: st
 	const mail = a.to.startsWith("mail:") ? mailByKey(a.to.slice(5)) : undefined;
 	if (a.to.startsWith("mail:") && !mail) throw new Error("이 메일 대화를 찾을 수 없어요");
 	// The owner's answer to a stronger-model card (hub/escalate.ts) is acted on here, then reaches the asking session like any answer.
-	if (a.picks?.length === 1) await escalations()?.answer({ to: a.to, label: a.picks[0]!.label }).catch(e => log(`stronger-model answer failed: ${(e as Error).message}`));
+	if (a.picks?.length === 1 && a.login !== AGENT_AUTHOR) await escalations()?.answer({ to: a.to, label: a.picks[0]!.label }).catch(e => log(`stronger-model answer failed: ${(e as Error).message}`));
 	await sendWeb({ lane, project, mail, conv, channel: "web", text: a.text, mode: "default", login: a.login, replyTo: a.replyTo, decision: a.notice, picks: a.picks, files: a.files, via: a.via });
 }
 
@@ -546,7 +547,7 @@ export function makeRoute({ tailnetName = ownTailnetName, busyNow, restartGatewa
 		// A button of a decision notice: the answer goes where the question came from (chat, session, project chat or login request).
 		const decide = req.method === "POST" ? /^\/api\/notices\/([^/]+)\/answer$/.exec(url.pathname) : null;
 		if (decide) {
-			const login = req.headers.get("tailscale-user-login") ?? "local";
+			const login = agentCall(req, peer) ? AGENT_AUTHOR : (req.headers.get("tailscale-user-login") ?? "local");
 			const answer = await body(req);
 			const via = viaOf(answer.via);
 			let files: ReturnType<typeof ownerFiles>;

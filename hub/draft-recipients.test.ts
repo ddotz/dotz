@@ -9,7 +9,10 @@ import { setReplies } from "./reply-actions.ts";
 import { resetOwnAddresses, setOwnAddresses } from "./mail-state.ts";
 import { listNotices, resetNoticesForTest } from "./notices.ts";
 import { askText, draftLintFailures } from "../features/reply-drafts/lib/flow.ts";
-import { addDraft, getDraft, type DraftRec } from "../features/reply-drafts/lib/store.ts";
+import { addDraft, claimFile, getDraft, type DraftRec } from "../features/reply-drafts/lib/store.ts";
+import { dataDir } from "../features/reply-drafts/lib/settings.ts";
+import { claimSend } from "./draft-claim.ts";
+import { commentsDir, createStore } from "./comments/store.ts";
 
 const deps: MailDeps = { createThread: async () => ({ id: "143000000000000001" }), send: async () => undefined, mailChannel: async () => undefined, discordOn: false, emit: () => undefined, wake: () => undefined };
 let seq = 0;
@@ -143,6 +146,37 @@ describe("only a pending mail draft", () => {
 			setReplies(undefined);
 		}
 		expect((await post(rec.id, { to: ["lee@example.com"] })).status).toBe(200);
+	});
+
+	test("while a revise of the comment reply that carries the draft runs, the edit is refused and changes nothing", async () => {
+		const rec = draft();
+		addDraft(rec);
+		const code = `CM${rec.id}`;
+		createStore(commentsDir(dataDir())).putDraft({ code, commentId: `cm:x:${rec.id}`, source: "x", thread: "t", text: "답글", status: "pending", created: 1, changes: [], clean: true, notes: [], mail: rec.id });
+		setReplies({ held: () => undefined, revising: (ref: string) => ref === code } as never);
+		try {
+			const r = await post(rec.id, { to: ["lee@example.com"] });
+			expect(r.status).toBe(409);
+			expect(((await r.json()) as { error: string }).error).toBe("지금 고치는 중이에요");
+			expect(getDraft(rec.id)!.to).toBe("kim@example.com");
+		} finally {
+			setReplies(undefined);
+		}
+	});
+
+	test("while another process (the draft CLI) revises the draft, the edit is refused and changes nothing", async () => {
+		const rec = draft();
+		addDraft(rec);
+		const release = claimSend(`${claimFile(rec.id)}.revise`)!;
+		try {
+			const r = await post(rec.id, { cc: ["park@example.com"] });
+			expect(r.status).toBe(409);
+			expect(((await r.json()) as { error: string }).error).toBe("지금 고치는 중이에요");
+			expect(getDraft(rec.id)!.cc ?? []).toEqual([]);
+		} finally {
+			release();
+		}
+		expect((await post(rec.id, { cc: ["park@example.com"] })).status).toBe(200);
 	});
 
 	test("an unknown draft is not found", async () => {

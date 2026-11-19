@@ -6,13 +6,14 @@
 // have gone out, and nothing is sent from here (the owner's 보내기 does that). The original mail's
 // headers come from the mail record; the owner's own addresses from hub/mail-state.ts (the config aliases and each source's account).
 import { addressesOf } from "./reply-draft.ts";
-import { getDraft, patchDraft } from "../features/reply-drafts/lib/store.ts";
+import { claimFile, getDraft, patchDraft } from "../features/reply-drafts/lib/store.ts";
 import { type Recipients, replyRecipients, recipientList, recipientText, parseRecipients, uniqAddresses, type ReplyMode } from "../features/reply-drafts/lib/recipients.ts";
 import { mailByKey } from "./mail.ts";
 
 import { ownAddresses } from "./mail-state.ts";
 import { updateDraftRecipients } from "./notices.ts";
 import { linkedComment } from "./comments/linked.ts";
+import { claimHolder } from "./draft-claim.ts";
 import { useReplies } from "./reply-actions.ts";
 import { reasonOf } from "./reply-reasons.ts";
 import { json } from "./routes-util.ts";
@@ -42,7 +43,9 @@ export async function draftRecipientsRoute(req: Request, ref: string): Promise<R
 	if (!editable(rec)) return json({ error: "이 초안은 이미 처리돼서 받는 사람을 바꿀 수 없어요" }, 409);
 	const hold = sendHold(rec.id);
 	if (hold) return hold;
-	if (useReplies()?.revising(rec.id)) return json({ ok: false, code: "revising", error: reasonOf("revising").text }, 409);
+	const linked = linkedComment(rec.id);
+	const revising = useReplies()?.revising(rec.id) || (linked !== undefined && useReplies()?.revising(linked)) || claimHolder(`${claimFile(rec.id)}.revise`) === "live";
+	if (revising) return json({ ok: false, code: "revising", error: reasonOf("revising").text }, 409);
 
 	try {
 		const b = (await req.json().catch(() => ({}))) as Record<string, unknown>;

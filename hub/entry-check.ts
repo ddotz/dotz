@@ -97,8 +97,6 @@ export function rememberName(load: () => Promise<string | undefined>, clock: () 
 const entryCheckOn = (): boolean => cfg.web?.entry_check !== false;
 
 /** The hub token, compared in constant time (the CLI, the extension, `dotz` login links). */
-// The author of a message an agent posts with the hub token (POST /api/message): never the owner's word for a model change (hub/model-guard.ts).
-export { AGENT_AUTHOR } from "./agent-author.ts";
 export const tokenOk = (req: Request): boolean => {
 	const sent = req.headers.get("x-dotz-token");
 	return sent !== null && same(sent, HUB_TOKEN);

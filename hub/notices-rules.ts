@@ -1,5 +1,6 @@
 // Limits and the plain questions asked of one notice (open, waiting, expired, who raised it). A part of the notice store split out of hub/notices.ts, code unchanged.
 import { now } from "./config.ts";
+import { AGENT_AUTHOR } from "./agent-author.ts";
 import type { HubEvent } from "./events.ts";
 import { classOfNotice, isLoginLost } from "./notice-class.ts";
 import { readOf } from "./reads.ts";
@@ -129,6 +130,17 @@ export function authorOf(e: HubEvent): string | undefined {
 	const src = String(e.source ?? "");
 	return src.startsWith("lane:") || src === "orchestrator" || src === "gateway" ? src : undefined;
 }
+/** Which open decisions in conversation `to` message `e` answers by its words. An agent's post (AGENT_AUTHOR, the owner's terminal included) answers only an option of a card with options, never a send-approval card, and naming the card or quoting its question gives it no more. */
+export const typedAnswer = (e: HubEvent, to: string) => {
+	const agent = e.author === AGENT_AUTHOR;
+	const id = typeof e.decision === "string" ? e.decision : "";
+	const text = String(e.text ?? "").trim();
+	const quoted = (e.reply as { id?: unknown } | undefined)?.id;
+	const quotesAsk = (i: Notice) => typeof quoted === "string" && quoted !== "" && i.decision!.reply_to === quoted && i.decision!.group === 1;
+	const answers = (i: Notice) => answersOption(i.decision!.options, text);
+	return (i: Notice): boolean =>
+		agent ? i.decision!.to === to && !i.decision!.draft && hasChoice(i) && answers(i) && (!id || i.id === id) : id ? i.id === id : i.decision!.to === to && !i.decision!.draft && (!hasChoice(i) || answers(i) || quotesAsk(i));
+};
 // Older items carry no `by`: a session's question shows in its decision target or lane key.
 export const originOf = (i: Notice): string | undefined => i.by ?? (i.decision?.to.startsWith("lane:") ? i.decision.to : i.key?.startsWith("lane:") ? i.key : undefined);
 export const isAsking = (i: Notice) => !i.dismissed && !i.decision?.to.startsWith("auth:") && (isOpenDecision(i) || (i.tone === "ask" && !i.read));

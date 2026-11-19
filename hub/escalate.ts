@@ -72,8 +72,10 @@ export function createEscalations(deps: Deps) {
 		mkdirSync(dirname(deps.file), { recursive: true });
 		writeAtomic(deps.file, `${JSON.stringify({ ...read(), [p.asker]: p }, null, 2)}\n`, 0o600);
 	};
+	const asked = (a: { to: string; label: string }): Proposal | undefined => Object.values(read()).find(x => x.state === "asked" && chat(x.target) === chat(a.to) && (a.label === x.yes || a.label === x.no));
 	return {
 		get: (asker: string): Proposal | undefined => read()[asker],
+		answers: (a: { to: string; label: string }): boolean => asked(a) !== undefined,
 		async propose(i: ProposeInput): Promise<{ ok: true; offer: string; text: string } | { refused: string }> {
 			const t = msg().escalate;
 			const prior = read()[i.asker];
@@ -89,7 +91,7 @@ export function createEscalations(deps: Deps) {
 		},
 		/** The owner's card answer (web or messenger button). "none": not an answer to an open proposal of that conversation. */
 		async answer(a: { to: string; label: string }): Promise<"none" | "declined" | "started" | "refused"> {
-			const p = Object.values(read()).find(x => x.state === "asked" && chat(x.target) === chat(a.to) && (a.label === x.yes || a.label === x.no));
+			const p = asked(a);
 			if (!p) return "none";
 			const t = msg().escalate;
 			if (a.label === p.no) {
