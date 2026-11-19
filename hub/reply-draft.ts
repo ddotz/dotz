@@ -63,6 +63,9 @@ export const AUTOMATED = /^(no[-_.]?reply|do[-_.]?not[-_.]?reply|mailer[-_.]?dae
 const norm = (s: string) => s.trim().toLowerCase();
 const EMAIL = /[^\s<>"',;()[\]]+@[^\s<>"',;()[\]]+\.[^\s<>"',;()[\]]+/g;
 
+/** What a file name is compared by: NFC, and the `'` the prompt shows for a `"` taken as that `"`. */
+export const fileNameKey = (name: string): string => name.normalize("NFC").replace(/'/g, '"');
+
 export function addressesOf(s: string | undefined): string[] {
 	return (s?.match(EMAIL) ?? []).map(a => a.toLowerCase().replace(/[.:]+$/, ""));
 }
@@ -400,8 +403,7 @@ async function run(item: ReplyItem, style: ReplyStyle, call: ModelCall, base: Pr
 		const draft: DraftOut = { to: recipientOf(parsed.to, item), subject: subjectOf(parsed.subject, item), body: parsed.body };
 		if (!draft.subject) delete draft.subject;
 		const found = [...lintReply(draft, item, style), ...(unfoundedSend(draft.body, item, base) ? [SENT_CLAIM_FAILURE] : []), ...(unfoundedRecipient(parsed.recipient, item) ? [RECIPIENT_FAILURE] : [])];
-		// Only exact members of the candidates count; no "files" key = the model chose nothing to report (old behaviour).
-		const files = item.candidates?.length && parsed.files ? [...new Set(parsed.files.filter(f => item.candidates!.includes(f)))] : undefined;
+		const files = item.candidates?.length && parsed.files ? [...new Set(parsed.files.flatMap(f => item.candidates!.find(c => fileNameKey(c) === fileNameKey(f)) ?? []))] : undefined;
 		const attach = files ? attachIssues({ subject: draft.subject, body: draft.body, files, request: item.text }).flatMap(i => ATTACH_FAILURE[i.kind] ?? []) : [];
 		const fixable = [...rewritable(found), ...attach];
 		const who = { ...(parsed.recipient ? { recipient: parsed.recipient } : {}), ...(parsed.lesson !== undefined ? { lesson: parsed.lesson } : {}), ...(files ? { files } : {}) };

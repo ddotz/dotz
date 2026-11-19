@@ -2,13 +2,13 @@
 // implementation ("record, then refine"). It is the hub's single door into the reply-drafts feature: it imports exactly flow.ts and store.ts,
 // and re-exports what the gateway's other modules read of it, so no other hub file needs a feature edge for them.
 import { askText, defaultCall, dropDraft, editDraft, mailView, realFlowDeps, recordCorrection, refineAfterCorrection, restoreDraft, reviseDraft, type FlowDeps, type MailOf, webmailSite } from "../features/reply-drafts/lib/flow.ts";
-import { claimFile, getDraft, listDrafts, patchDraft, setStatus, unlessUnreadable, type DraftRec } from "../features/reply-drafts/lib/store.ts";
+import { claimFile, DRAFT_ID, draftStoreIntact, getDraft, listDrafts, patchDraft, setStatus, unlessUnreadable, type DraftRec } from "../features/reply-drafts/lib/store.ts";
 import { pairedMails, ridingMails } from "./comments/linked.ts";
 import { sinceMidnight } from "./reply-route.ts";
 import { reasonOf } from "./reply-reasons.ts";
 import type { DraftView, Lesson, ReasonCode, ReplyAdapter } from "./reply-types.ts";
 
-export { claimFile, defaultCall, getDraft, patchDraft, unlessUnreadable };
+export { claimFile, defaultCall, DRAFT_ID, draftStoreIntact, getDraft, listDrafts, patchDraft, unlessUnreadable };
 
 const known = (ref: string): DraftRec | undefined => {
 	const rec = getDraft(ref);

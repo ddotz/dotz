@@ -48,6 +48,7 @@ export type DraftRec = {
 	created: string;
 	/** When it went out (ISO): stamped once by setStatus(id, "sent"); a draft sent before this field existed has none. */
 	sentAt?: string;
+	closedAt?: string;
 	changes: string[];
 	questions: string[];
 	item: ReplyItem;
@@ -270,6 +271,7 @@ export function answerDrafts(ref: string): string[] {
 export function setStatus(id: string, status: DraftStatus): void {
 	locked(() => {
 		const f = read();
-		write({ ...f, drafts: f.drafts.map(d => (d.id === id ? { ...d, status, ...(status === "sent" && !d.sentAt ? { sentAt: new Date(Date.now()).toISOString() } : {}) } : d)) });
+		const at = new Date(Date.now()).toISOString();
+		write({ ...f, drafts: f.drafts.map(d => (d.id === id ? { ...d, status, ...(status === "sent" && !d.sentAt ? { sentAt: at } : {}), ...(status === "pending" ? {} : { closedAt: at }) } : d)) });
 	});
 }

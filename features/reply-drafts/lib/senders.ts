@@ -196,7 +196,7 @@ const NO_CONNECT = /ENOTFOUND|ECONNREFUSED|EAI_AGAIN|ENETUNREACH|Unable to conne
 const CUT = /ECONNRESET|ETIMEDOUT|socket hang up|fetch failed|timed? ?out/i;
 const STALE = /newer message|latest message|new messages? (?:in|on) (?:the|this) thread|read (?:it|the thread) first/i;
 const BAD_RECIPIENT = /recipient|invalid (?:to|address|email)|address.{0,20}invalid/i;
-const REFUSED = /\b4\d\d\b|\bInvalid\b|Bad Request|Forbidden|not allowed|rejected/i;
+const REFUSED = /\b4\d\d\b|\bInvalid\b|Bad Request|Forbidden|not allowed|rejected|\b552\b|too (?:large|big)|size (?:exceeds|limit)/i;
 function zeleVerdict(raw: string): Verdict {
 	if (LOGIN_LOST.test(raw)) return { sent: "no", code: "login_expired" };
 	if (NO_CONNECT.test(raw)) return { sent: "no", code: "offline" };
@@ -230,6 +230,11 @@ async function discardWebmail(run: Runner, site: string, id: string): Promise<vo
 	if (gone.code !== 0) log(`reply draft: webmail draft ${id} not discarded: ${(gone.stderr || gone.stdout).trim().slice(0, 500)}`);
 }
 
+const vanishedFile = (files: readonly { name: string; path: string }[]): SendOutcome | undefined => {
+	const gone = files.find(f => !existsSync(f.path));
+	return gone && { ...fail(`첨부 파일 '${gone.name}'이(가) 사라져서 보내지 않았어요. 파일을 다시 붙여 주세요`, "attach_missing"), vars: { name: gone.name } };
+};
+
 export async function sendWith(rec: DraftRec, run: Runner): Promise<SendOutcome> {
 	if (rec.kind !== "mail") return fail(MANUAL, "manual_only");
 	const files = stagedFiles(rec.id), cc = rec.cc ?? [];
@@ -247,6 +252,8 @@ export async function sendWith(rec: DraftRec, run: Runner): Promise<SendOutcome>
 		return fail(`보내는 메일 계정을 ${account}(으)로 정했어요. 카드에서 계정을 확인하고 다시 보내 주세요`, "changed");
 	}
 	if (rec.compose && rec.source === "zele") {
+		const vanished = vanishedFile(files);
+		if (vanished) return vanished;
 		const r = await run(sendArgv(rec.to, rec.subject ?? "", rec.body, files.map(f => f.path), cc, account));
 		return r.code === 0 ? done(`${rec.to}에게 메일을 보냈어요`) : told(r, "보내지 못했어요: ", zeleVerdict);
 	}
@@ -260,6 +267,8 @@ export async function sendWith(rec: DraftRec, run: Runner): Promise<SendOutcome>
 			if (moved === "answered") return fail("이미 이 메일에 답했어요. 이 초안은 보내지 않았어요", "stale");
 			if (moved === "newer") return fail("그사이 새 메일이 와서 이 초안은 낡았어요. 보내지 않았어요. 다시 초안을 만들어야 해요", "stale");
 		}
+		const vanished = vanishedFile(files);
+		if (vanished) return vanished;
 		const r = await run(replyArgv(rec.mailId, rec.to, rec.body, files.map(f => f.path), cc, account));
 		if (r.code === 0) return done(`${rec.to}에게 답장을 보냈어요`);
 		return told(r, "보내지 못했어요. 그 사이 새 메일이 왔다면 이 초안은 낡은 거예요. 다시 초안을 만들어야 해요: ", zeleVerdict);
@@ -270,6 +279,8 @@ export async function sendWith(rec: DraftRec, run: Runner): Promise<SendOutcome>
 		if (rec.compose || !pluginsReply()) return fail(MANUAL, "manual_only");
 		// A plugin that did not ask for an account (needsAccount) may not send through zele at all: it gets what is on record and refuses the rest itself.
 		const mailbox = account ?? zeleAccountOf(rec) ?? addressedLogin(rec, await zeleLogins(run));
+		const vanished = vanishedFile(files);
+		if (vanished) return vanished;
 		const sent = await pluginReply({ source: rec.source, id: rec.mailId, ...(mailbox ? { account: mailbox } : {}), to: rec.to, ...(cc.length ? { cc: cc.join(", ") } : {}), ...(rec.mode === "all" ? { all: true } : {}), ...(rec.subject ? { subject: rec.subject } : {}), body: rec.body, attachments: files.map(f => ({ name: f.name, path: f.path, size: f.size })) });
 		if (!sent) return fail(MANUAL, "manual_only");
 		// A plugin is a third party: only an explicit "sent": "no" says nothing left (design 2.3); any other failure may have gone out.

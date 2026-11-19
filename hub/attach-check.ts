@@ -14,7 +14,7 @@ type FileKind = "audio" | "document" | "image" | "video";
 const KIND_LABEL: Record<FileKind, string> = { audio: "음원", document: "문서", image: "이미지", video: "영상" };
 const KIND_EXT: [FileKind, RegExp][] = [
 	["audio", /\.(?:mp3|wav|m4a|aac|flac|ogg|aiff?)$/i],
-	["document", /\.(?:pdf|hwpx?|docx?|xlsx?|pptx?|txt|csv|zip)$/i],
+	["document", /\.(?:pdf|hwpx?|docx?|xlsx?|pptx?|txt|csv|zip|numbers|key|pages|rtf|odt|rar|7z)$/i],
 	["image", /\.(?:png|jpe?g|gif|heic|webp)$/i],
 	["video", /\.(?:mp4|mov|m4v|webm|avi)$/i],
 ];

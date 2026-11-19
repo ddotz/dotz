@@ -2,7 +2,7 @@
 // every idle lane is looked at. A session file past lanes.rotate_mb starts a fresh session with a handover; otherwise a
 // context of lanes.nightly_compact_at tokens or more (default 300K, the same as the daytime lanes.compact_at) is compacted.
 // Working, rate-limited and stopped lanes are left alone.
-import { existsSync, readFileSync, realpathSync, rmSync, statSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, realpathSync, rmSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, join, sep } from "node:path";
 import { statusActivity } from "./activity.ts";
@@ -19,6 +19,8 @@ import { convs } from "./convsessions.ts";
 import { activeHarness } from "./runtime/index.ts";
 import { sweepTempRepeating } from "./temp-sweep.ts";
 import { trackTimer } from "./shutdown.ts";
+import { DRAFT_FILES } from "./draft-files.ts";
+import { DRAFT_ID, draftStoreIntact, listDrafts, unlessUnreadable } from "./reply-mail.ts";
 
 const STATS_WAIT_MS = 3000;
 // A run missed while the gateway was down is made up this long after the start, once restored lanes know their numbers.
@@ -299,6 +301,31 @@ const HUB_LOG_ARCHIVE_DAYS = 90;
 const UPLOAD_KEEP_DAYS = 60;
 const TEMP_SESSION_IDLE_MS = 86_400_000;
 const LANE_DEAD_MS = 3600_000;
+const DRAFT_FILES_KEEP_DAYS = 7;
+const DRAFT_FILES_NEW_MS = 3600_000;
+
+type DraftFacts = { id: string; status: string; sentAt?: string; closedAt?: string };
+
+/** Deletes the `draft-files/<id>` folders of drafts closed (sent, dropped, stale, answered) more than `keepDays` ago and of ids the store does not know (a folder under an hour old may belong to a draft not stored yet); returns the ids. A pending or held draft's folder stays. A closed draft is dated by its closedAt, else its sentAt, else its folder's mtime. */
+export function pruneDraftFiles(root: string, drafts: readonly DraftFacts[], keepDays = DRAFT_FILES_KEEP_DAYS, now = Date.now()): string[] {
+	if (!existsSync(root)) return [];
+	const byId = new Map(drafts.map(d => [d.id, d]));
+	const gone: string[] = [];
+	for (const entry of readdirSync(root, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
+		if (!entry.isDirectory() || !DRAFT_ID.test(entry.name)) continue;
+		const dir = join(root, entry.name);
+		const draft = byId.get(entry.name);
+		if (draft?.status === "pending" || draft?.status === "held") continue;
+		const touched = statSync(dir).mtimeMs;
+		const stamp = draft?.closedAt ?? (draft?.status === "sent" ? draft.sentAt : undefined);
+		const at = stamp ? Date.parse(stamp) : Number.NaN;
+		const closedAt = Number.isNaN(at) ? touched : at;
+		if (draft ? now - closedAt <= keepDays * 86_400_000 : now - touched < DRAFT_FILES_NEW_MS) continue;
+		rmSync(dir, { recursive: true, force: true });
+		gone.push(entry.name);
+	}
+	return gone;
+}
 
 // Why a lane counts as ended for its open tasks, or undefined while it is live or restarting. A lane must be seen ended
 // by two sweeps at least LANE_DEAD_MS apart (lane.json's mtime moves on every persist, so it cannot date the exit).
@@ -349,6 +376,12 @@ export function runDataCleanup(now = Date.now()): string[] {
 			const r = pruneTempSessions(dir, TEMP_SESSION_IDLE_MS, now);
 			return r.removed.length ? `removed ${r.removed.length} session folder(s) of deleted temp folders in ${dir} (${(r.kb / 1024).toFixed(1)} MB)` : undefined;
 		});
+	step("draft files", () => {
+		if (!draftStoreIntact()) return undefined;
+		const drafts = unlessUnreadable(() => listDrafts(), undefined, line => log(`data cleanup: draft files kept: ${line}`));
+		const gone = drafts?.length ? pruneDraftFiles(DRAFT_FILES, drafts, DRAFT_FILES_KEEP_DAYS, now) : undefined;
+		return gone?.length ? `removed ${gone.length} draft file folder(s) of drafts closed over ${DRAFT_FILES_KEEP_DAYS} days ago or not in the store: ${gone.join(", ")}` : undefined;
+	});
 	step("open tasks", () => {
 		const closed = closeDeadLaneTasks(join(DATA_DIR, "state.json"), join(DATA_DIR, "tasks-closed.jsonl"), name => laneEndedReason(name, now), now);
 		return closed.length ? `closed ${closed.length} open task(s) of ended lanes: ${closed.map(t => `${t.id} (${t.lane})`).join(", ")}` : undefined;

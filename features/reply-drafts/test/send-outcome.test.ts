@@ -54,6 +54,22 @@ describe("sendWith: the mail table", () => {
 		expect(await where(rec({ source: "corp" }), zele())).toBe("fail no cannot_attach");
 	});
 
+	test("a staged file that vanishes before the send is surely not sent, with its name", async () => {
+		const file = join(env.dir, "gone.pdf");
+		writeFileSync(file, "pdf");
+		const staged = addStagedFile("ROUT01", file);
+		const calls: string[][] = [];
+		const run: Runner = async argv => {
+			calls.push(argv);
+			if (argv[2] === "read") rmSync(staged.path);
+			return { code: 0, stdout: "", stderr: "" };
+		};
+		const o = await sendWith(rec(), run);
+		expect({ ok: o.ok, sent: o.sent, code: o.code, vars: o.vars }).toEqual({ ok: false, sent: "no", code: "attach_missing", vars: { name: "gone.pdf" } });
+		expect(o.message).toContain("gone.pdf");
+		expect(calls.some(a => a[2] === "reply")).toBe(false);
+	});
+
 	test("`mail read` failing before the reply sent nothing, whatever it says", async () => {
 		expect(await where(rec(), zele({ read: [1, "invalid_grant: token expired"] }))).toBe("fail no login_expired");
 		expect(await where(rec(), zele({ read: [1, "getaddrinfo ENOTFOUND gmail.googleapis.com"] }))).toBe("fail no offline");
@@ -71,6 +87,15 @@ describe("sendWith: the mail table", () => {
 		expect(await reply("Invalid To header: recipient address rejected")).toBe("fail no recipient_invalid");
 		expect(await reply("400 Bad Request")).toBe("fail no rejected");
 		expect(await reply("something odd happened")).toBe("fail maybe unknown");
+	});
+
+	test("a provider refusing the mail for its size is surely not sent, and the card gets a reason line", async () => {
+		for (const raw of ["552 5.3.4 Message size exceeds fixed maximum message size", "413 Request Entity Too Large", "Message too large", "Request Payload Size Exceeds the Limit: 35 MB"]) {
+			const o = await sendWith(rec(), zele({ reply: [1, raw] }));
+			expect({ ok: o.ok, sent: o.sent, code: o.code }).toEqual({ ok: false, sent: "no", code: "rejected" });
+			expect(o.message).toBeTruthy();
+			expect(o.message).not.toContain(raw);
+		}
 	});
 
 	test("a new mail through zele is classified the same way", async () => {

@@ -1,5 +1,5 @@
 import { afterAll, beforeEach, describe, expect, test } from "bun:test";
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { draftAttachRoute } from "../../../hub/draft-attach.ts";
@@ -7,7 +7,7 @@ import { claimsAttachment } from "../../../hub/attach-claim.ts";
 import { ATTACH_REFUSED, asksForFile, LIBRARY_MISS, NO_ATTACHMENT_WARNING, parseDraftApproval } from "../../../hub/draft-approval.ts";
 import { loadPlugins } from "../../../hub/plugins.ts";
 import { reviseDraft } from "../lib/flow.ts";
-import { matchLibrary } from "../lib/library.ts";
+import { listLibrary, matchLibrary } from "../lib/library.ts";
 import { offerMailDraft } from "../lib/offer.ts";
 import { canAttach, sendWith } from "../lib/senders.ts";
 import { addStagedFile, EVICTED, EVICTED_LATER, removeStagedFile, stagedFiles } from "../lib/staged.ts";
@@ -73,6 +73,20 @@ describe("the 첨부 파일 폴더", () => {
 		const found = await matchLibrary(lib, { subject: "달빛정원 ost 문서", text: "" });
 		expect(found.map(f => f.rel)).toEqual(["달빛정원_공유용.pdf"]);
 		expect((await matchLibrary(lib, { subject: TEACHER_SUBJECT, text: "" })).map(f => f.rel)).toEqual(["달빛정원_공유용.pdf"]);
+	});
+	test("a link whose real path is outside the folder is skipped; a link to a file inside stays", () => {
+		const root = mkdtempSync(join(tmpdir(), "rd-link-")), outside = mkdtempSync(join(tmpdir(), "rd-link-out-"));
+		writeFileSync(join(root, "안쪽.pdf"), "in");
+		writeFileSync(join(outside, "바깥.pdf"), "out");
+		mkdirSync(join(outside, "폴더"));
+		writeFileSync(join(outside, "폴더", "깊은.pdf"), "deep");
+		symlinkSync(join(outside, "바깥.pdf"), join(root, "바깥-링크.pdf"));
+		symlinkSync(join(outside, "폴더"), join(root, "폴더-링크"));
+		symlinkSync(join(root, "안쪽.pdf"), join(root, "안쪽-링크.pdf"));
+		symlinkSync(join(root, "없는.pdf"), join(root, "끊긴-링크.pdf"));
+		expect(listLibrary(root).map(f => f.rel)).toEqual(["안쪽-링크.pdf", "안쪽.pdf"]);
+		rmSync(root, { recursive: true, force: true });
+		rmSync(outside, { recursive: true, force: true });
 	});
 	test("a mail that names nothing in the folder matches nothing (a generic 문서 alone is not enough)", async () => {
 		expect(await matchLibrary(lib, { subject: "문서 부탁드립니다", text: "문서 보내주세요" })).toEqual([]);

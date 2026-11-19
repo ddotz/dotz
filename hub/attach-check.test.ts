@@ -122,3 +122,7 @@ test("a body that sends a file by any word the gate knows, in the verbs a mail u
 test("a file the mail asked for and the draft leaves off is skipped, a kind of its own that draft generation does not retry on", () => {
 	expect(attachIssues({ body: "확인했습니다.", files: [], request: "계약서 보내 주세요." }).map(i => i.kind)).toEqual(["skipped"]);
 });
+
+test("a numbers, key, pages, rtf, odt, rar or 7z file counts as the document the draft promises", () => {
+	for (const ext of ["numbers", "key", "pages", "rtf", "odt", "rar", "7z"]) expect([ext, kinds({ subject: "Re: 견적", body: "견적 문서 보내드립니다.", files: [`견적서.${ext}`] })]).toEqual([ext, []]);
+});
