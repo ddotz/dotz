@@ -44,7 +44,7 @@ const ROOMS = (): Room[] => [
 ];
 
 let rooms = ROOMS(), msgs: Msg[] = [], drafts: Draft[] = [], sends: Send[] = [], roomsAnswer: Record<string, unknown> | null = null;
-let ask: { question: string; choices: string[] } | null = null;
+let ask: { question: string; choices: string[]; kind?: "author" | "task" } | null = null;
 let reqs: Req[] = [];
 let waiters: { pred: (r: Req) => boolean; res: (r: Req) => void }[] = [];
 const reset = () => { revising.clear(); rooms = ROOMS(); msgs = [...OLD, ...MID, ...FRESH]; drafts = DRAFTS(); sends = []; roomsAnswer = null; ask = null; reqs = []; waiters = []; };
@@ -156,6 +156,12 @@ const hub = fakeHub({
 			if (c[2] === "draft" && typeof body!.intent === "string") {
 				const parts = ["내일 7시로 미루는 게 어떨까요?", "일정 조정해 주세요"];
 				drafts = [{ code: "di", text: parts.join("\n\n"), parts, intent: String(body!.intent), basisLogId: "4030", created: Date.now() }];
+				emit({ kind: "kakao_draft", chatId: c[1] });
+				return json({ state: "drafting" }, 202);
+			}
+			if (c[2] === "draft" && body!.known === true) {
+				ask = null;
+				drafts = [{ code: "dk", text: "아는 대로 쓴 글", basisLogId: "4034", created: Date.now() }];
 				emit({ kind: "kakao_draft", chatId: c[1] });
 				return json({ state: "drafting" }, 202);
 			}
@@ -482,6 +488,37 @@ describe("카카오톡 at desktop width (1280x800)", async () => {
 		await run(v, `document.querySelector('.kk-ask [data-k="own"]').click()`);
 		await expectReq(isReq("POST", "/api/kakao/chat/100/ask/drop"));
 		await waitFor(v, `!document.querySelector(".kk-ask") && document.activeElement && document.activeElement.id === "kk-text"`);
+	});
+
+	test("a question about his own request (author): the card shows it with 아는 대로 써 and 그만; 아는 대로 써 POSTs {known:true} and the draft card follows; 그만 drops it", async () => {
+		ask = { question: "말씀하신 내용이 대화에 없어요", choices: [], kind: "author" };
+		emit({ kind: "kakao_draft", chatId: "100" });
+		await waitFor(v, `document.querySelector(".kk-ask")`);
+		const card = await q<{ head: string; q: string; buttons: string[]; note: boolean }>(v, `const c = document.querySelector(".kk-ask"); return { head: c.querySelector(".kk-dh").textContent, q: c.querySelector(".kk-dt").textContent, buttons: [...c.querySelectorAll(".btn")].map(b => b.textContent), note: !!c.querySelector(".kk-dn") }`);
+		expect(card).toEqual({ head: "쓰기 전에 알려 주세요", q: "말씀하신 내용이 대화에 없어요", buttons: ["아는 대로 써", "그만"], note: false });
+		await run(v, `document.querySelector('.kk-ask [data-k="known"]').click()`);
+		expect((await expectReq(r => r.method === "POST" && r.path === "/api/kakao/chat/100/draft" && r.body?.known === true)).body).toEqual({ known: true });
+		await waitFor(v, `!document.querySelector(".kk-ask") && document.querySelector('.ra-card[data-ref="dk"] .rq-text')`);
+		expect(await q(v, `return document.querySelector('.ra-card[data-ref="dk"] .rq-text').textContent`)).toBe("아는 대로 쓴 글");
+
+		ask = { question: "다시 묻습니다", choices: [], kind: "author" };
+		emit({ kind: "kakao_draft", chatId: "100" });
+		await waitFor(v, `document.querySelector(".kk-ask")`);
+		await run(v, `document.querySelector('.kk-ask [data-k="stop"]').click()`);
+		await expectReq(isReq("POST", "/api/kakao/chat/100/ask/drop"));
+		await waitFor(v, `!document.querySelector(".kk-ask")`);
+	});
+
+	test("a request for work (task): the card says it is a task for the assistant and offers only 그만", async () => {
+		ask = { question: "작업으로 넘겨야 해요", choices: [], kind: "task" };
+		emit({ kind: "kakao_draft", chatId: "100" });
+		await waitFor(v, `document.querySelector(".kk-ask")`);
+		const card = await q<{ q: string; note: string; buttons: string[] }>(v, `const c = document.querySelector(".kk-ask"); return { q: c.querySelector(".kk-dt").textContent, note: c.querySelector(".kk-dn").textContent, buttons: [...c.querySelectorAll(".btn")].map(b => b.textContent) }`);
+		expect(card).toEqual({ q: "작업으로 넘겨야 해요", note: "이건 메시지가 아니라 작업이에요. 채팅에서 땃쥐에게 시켜 주세요", buttons: ["그만"] });
+		await run(v, `document.querySelector('.kk-ask [data-k="stop"]').click()`);
+		await expectReq(isReq("POST", "/api/kakao/chat/100/ask/drop"));
+		await waitFor(v, `!document.querySelector(".kk-ask")`);
+		expect(reqs.some(r => r.method === "POST" && r.path === "/api/kakao/chat/100/draft")).toBe(false);
 	});
 
 	test("dark", async () => {

@@ -12,7 +12,7 @@ import type { KakaoPaths } from "./types.ts";
 
 /** What createKakaoWeb hands the adapter: the store, a revise through its own model call, and the deps of one send. */
 // original: the message a draft answers (absent in tests that build the adapter alone).
-export type KakaoKit = { paths: KakaoPaths; original?: (d: Draft) => Promise<DraftView["original"]>; revise: (chatId: string, revise: { code: string; draft: string; change: string }) => Promise<Made>; sendDeps: () => Promise<DispatchDeps> };
+export type KakaoKit = { paths: KakaoPaths; original?: (d: Draft) => Promise<DraftView["original"]>; revise: (chatId: string, revise: { code: string; draft: string; change: string; intent?: string }) => Promise<Made>; sendDeps: () => Promise<DispatchDeps> };
 
 const codeOf = (c: string | undefined): ReasonCode => (isReasonCode(c) ? c : "unknown");
 
@@ -58,7 +58,7 @@ export function kakaoAdapter(kit: KakaoKit): ReplyAdapter {
 		revise: async (ref, change) => {
 			const d = draftOf(ref);
 			if (!d) return { ok: false, reason: { code: "gone", text: "그 초안을 찾지 못했어요" } };
-			const made = await kit.revise(d.chatId, { code: d.code, draft: d.text, change });
+			const made = await kit.revise(d.chatId, { code: d.code, draft: d.text, change, ...(d.intent ? { intent: d.intent } : {}) });
 			if (!made.ok || !made.code) return { ok: false, reason: { code: "revise_failed", text: made.ok ? "고친 초안을 만들지 못했어요" : made.error } };
 			return { ok: true, ref: made.code, replaces: ref, ...(made.lesson ? { lesson: { key: { app: "kakao", room: d.chatId }, line: made.lesson } } : {}) };
 		},

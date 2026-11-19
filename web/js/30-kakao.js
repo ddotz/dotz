@@ -932,8 +932,7 @@ async function kkSend() {
 }
 
 /* ---- drafts ---- */
-// The room's open question (the draft model found that the last message needs the owner's decision): { question, choices } or null.
-const kkAskOf = d => (d && d.ask && typeof d.ask.question === "string" && Array.isArray(d.ask.choices) && d.ask.choices.length ? d.ask : null);
+const kkAskOf = d => (d && d.ask && typeof d.ask.question === "string" && Array.isArray(d.ask.choices) && (d.ask.choices.length || d.ask.kind === "author" || d.ask.kind === "task") ? d.ask : null);
 // The question with one button per choice: a pick makes the draft for it (one model call, then the normal 보내기 / 고치기 / 버리기 card); 직접 쓸게 forgets the question and opens the composer.
 function kkAskCard() {
   const a = KK.ask, id = KK.open;
@@ -944,6 +943,16 @@ function kkAskCard() {
     if (KK.open !== id) return;
     KK.ask = null; kkPaintFoot(); kkTa.focus();
   };
+  if (a.kind) {
+    const task = a.kind === "task";
+    return el("div", { class: "kk-draft kk-ask", "data-kind": a.kind },
+      el("div", { class: "kk-dh", text: TX(task ? "apps.kk.ask_task" : "apps.kk.ask_author") }),
+      el("div", { class: "kk-dt", text: a.question }),
+      ...(task ? [el("div", { class: "kk-dn", text: TX("apps.kk.ask_task_note") })] : []),
+      el("div", { class: "btns kk-choices" },
+        ...(task ? [] : [el("button", { class: "btn tonal", type: "button", "data-k": "known", text: TX("apps.kk.ask_known"), onclick: () => kkDraftCall({ known: true }) })]),
+        el("button", { class: "btn text", type: "button", "data-k": "stop", text: TX("apps.kk.ask_stop"), onclick: own })));
+  }
   return el("div", { class: "kk-draft kk-ask" },
     el("div", { class: "kk-dh", text: TX("apps.kk.choose_first") }),
     el("div", { class: "kk-dt", text: a.question }),
@@ -978,32 +987,21 @@ function kkPaintFoot() {
   kkSendBtn.setAttribute("aria-label", label); kkSendBtn.title = label;
 }
 // A new message the owner asked for in his own words (kkAskBot with no draft waiting); the same draft call (POST .../draft { intent }) writes it in his voice.
-async function kkComposeMake(intent) {
-  const id = KK.open, text = String(intent || "").replace(/\s+/g, " ").trim().slice(0, 500);
-  if (!id || !text || KK.drafting === id) return;
+function kkComposeMake(intent) {
+  const text = String(intent || "").replace(/\s+/g, " ").trim().slice(0, 500);
+  return text ? kkDraftCall({ intent: text }) : undefined;
+}
+// Drafts are made only on demand (or by a room's 자동 초안): the request starts it, and the kakao_draft event for this room says it is done.
+function kkMakeDraft(choice) { return kkDraftCall(choice ? { choice } : {}); }
+async function kkDraftCall(body) {
+  const id = KK.open;
+  if (!id || KK.drafting === id) return;
   KK.drafting = id;
   kkPaintFoot();
   clearTimeout(KK.draftT);
   KK.draftT = setTimeout(() => { if (KK.drafting === id) { KK.drafting = ""; kkPaintFoot(); toast(TX("apps.kk.draft_late"), true); } }, 120000);
   try {
-    const r = await api(`/api/kakao/chat/${enc(id)}/draft`, "POST", { intent: text });
-    if (r && typeof r.error === "string" && r.error) throw new Error(r.error);
-  } catch (e) {
-    clearTimeout(KK.draftT);
-    if (KK.drafting === id) KK.drafting = "";
-    kkPaintFoot();
-    toast(e.message, true);
-  }
-}
-// Drafts are made only on demand (or by a room's 자동 초안): the request starts it, and the kakao_draft event for this room says it is done.
-async function kkMakeDraft(choice) {
-  const id = KK.open;
-  if (!id || KK.drafting === id) return;
-  KK.drafting = id; kkPaintFoot();
-  clearTimeout(KK.draftT);
-  KK.draftT = setTimeout(() => { if (KK.drafting === id) { KK.drafting = ""; kkPaintFoot(); toast(TX("apps.kk.draft_late"), true); } }, 120000);
-  try {
-    const r = await api(`/api/kakao/chat/${enc(id)}/draft`, "POST", choice ? { choice } : {});
+    const r = await api(`/api/kakao/chat/${enc(id)}/draft`, "POST", body);
     if (r && typeof r.error === "string" && r.error) throw new Error(r.error);
   } catch (e) {
     clearTimeout(KK.draftT);

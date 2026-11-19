@@ -85,7 +85,7 @@ flowchart LR
     c_kakao(["kakao code"])
     o_kakao_dialog["dialog (2)"]
     o_kakao_rawdialog["rawdialog (1)"]
-    o_kakao_toast["toast (18)"]
+    o_kakao_toast["toast (16)"]
   end
   subgraph a_mail["mail"]
     c_mail(["mail code"])

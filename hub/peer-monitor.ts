@@ -399,7 +399,7 @@ export function createPeerMonitor(deps: MonitorDeps): PeerMonitor {
 				if (!id) return bad("chatId required");
 				if (a.op === "send" && a.chatId) return ask("POST", `/api/kakao/chat/${id}/send`, { text: a.text }, login, owner);
 				if (a.op === "read" && a.chatId) return ask("POST", `/api/kakao/chat/${id}/read`, { logId: a.logId }, login, owner);
-				if (a.op === "draft" && a.chatId) return ask("POST", `/api/kakao/chat/${id}/draft`, typeof a.choice === "string" ? { choice: a.choice } : {}, login, owner);
+				if (a.op === "draft" && a.chatId) return ask("POST", `/api/kakao/chat/${id}/draft`, typeof a.choice === "string" ? { choice: a.choice } : a.known === true ? { known: true } : {}, login, owner);
 				if (a.op === "ask-drop" && a.chatId) return ask("POST", `/api/kakao/chat/${id}/ask/drop`, {}, login, owner);
 				// 지켜보기 / 자동 초안 of a room, switched from the other computer: the owner's own room PUT, which checks the values.
 				if (a.op === "room" && a.chatId) return ask("PUT", `/api/kakao/rooms/${id}`, { watched: a.watched, autoDraft: a.autoDraft }, login, owner);

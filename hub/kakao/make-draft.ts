@@ -9,7 +9,7 @@ import { type KakaoDb, messages, ownTextCounts, ownTexts, roomHead } from "./db.
 import { basisOf, buildDraftPrompt, chatLines, contextLines, estimateTokens, matchLines, ownPairs, ownSamples, parseDraftReply, registerOf, type StyleHint, sinceOwnLast } from "./draft.ts";
 import { createDraft } from "./send.ts";
 import type { KakaoConfig, KakaoPaths, Room } from "./types.ts";
-import type { WebDeps } from "./web.ts";
+import type { StoredAsk, WebDeps } from "./web.ts";
 
 const NO_REPLY = "답할 내용이 없어서 초안을 만들지 않았어요";
 const DRAFT_FAILED = "초안을 만들지 못했어요. 잠시 뒤에 다시 눌러 주세요";
@@ -31,7 +31,7 @@ export type MakeDraftCtx = {
 	getDb: (config: KakaoConfig) => Promise<KakaoDb>;
 	allRooms: (config: KakaoConfig, fresh?: boolean) => Promise<{ all: Room[] }>;
 	eligible: (rooms: Room[], config: KakaoConfig) => Room[];
-	setAsk: (chatId: string, ask: { question: string; choices: string[]; basisLogId: string; created: number } | undefined) => void;
+	setAsk: (chatId: string, ask: StoredAsk | undefined) => void;
 	storedAsks: () => Record<string, unknown>;
 };
 /** `code`: the stored draft (absent when the call asked the owner a question instead). */
@@ -45,7 +45,7 @@ export function kakaoLint(text: string, style: StyleHint | undefined): string[] 
 // The one model call of a draft request (never per incoming message). Never rejects: every outcome is a kakao_draft event.
 // With `choice` (the owner's pick of the room's open question) the call writes the reply for that pick instead of deciding again.
 // With `revise` (a pending draft and the owner's change request) the call rewrites that draft; createDraft marks the old one stale only when the new one is stored.
-export async function makeDraft(ctx: MakeDraftCtx, config: KakaoConfig, chatId: string, choice?: string, revise?: { code: string; draft: string; change: string }, intent?: string, opts: { learn?: false } = {}): Promise<Made> {
+export async function makeDraft(ctx: MakeDraftCtx, config: KakaoConfig, chatId: string, choice?: string, revise?: { code: string; draft: string; change: string }, intent?: string, opts: { learn?: false; known?: true } = {}): Promise<Made> {
 const { deps, paths, now, getDb, allRooms, eligible, setAsk, storedAsks } = ctx;
 const summaryFile = (id: string) => join(paths.dataDir, "kakao", "summaries", `${id}.md`);
 const done = (error?: string, made?: { code: string; lesson?: string }): Made => {
@@ -84,7 +84,7 @@ const done = (error?: string, made?: { code: string; lesson?: string }): Made =>
 		const pairs = ownPairs(compose ? recent : recent.slice(0, recent.length - window.length - context.length));
 		const group = room.kind === "group" || room.kind === "open";
 		const chat = chatLines(window, compose);
-		const { system, user } = buildDraftPrompt({ lines: chat, ...(intent ? { match: matchLines(recent, intent, chat.length) } : {}), context, group, summary: readJsonText(summaryFile(chatId)), pairs, samples: ownSamples(recent), register: registerOf(ownLines), style, ...(choice ? { choice } : {}), ...(revise ? { revise: { draft: revise.draft, change: revise.change } } : {}), ...(intent ? { intent } : {}) });
+		const { system, user } = buildDraftPrompt({ lines: chat, ...(intent ? { match: (shown: number) => matchLines(recent, intent, shown) } : {}), context, group, summary: readJsonText(summaryFile(chatId)), pairs, samples: ownSamples(recent), register: registerOf(ownLines), style, ...(choice ? { choice } : {}), ...(revise ? { revise: { draft: revise.draft, change: revise.change } } : {}), ...(intent ? { intent } : {}), ...(opts.known ? { known: true } : {}) });
 		// One retry with the findings when the model's text fails the lint (design 3.6); what still fails is a 확인 note on the draft.
 		let reply = await deps.draftModel!(system, user, chatId);
 		let parsed = parseDraftReply(reply.text);
@@ -95,7 +95,11 @@ const done = (error?: string, made?: { code: string; lesson?: string }): Made =>
 			notes = parsed?.action === "draft" ? kakaoLint(parsed.body, style) : [];
 		}
 		if (!parsed) return done(DRAFT_FAILED);
-		// A message he asked for has no room question and no skip: the call must write it.
+		if (intent && parsed.action === "ask" && !revise && !opts.known) {
+			if (parsed.summary) writePrivate(summaryFile(chatId), `${parsed.summary}\n`);
+			setAsk(chatId, { question: parsed.question!, choices: [], kind: parsed.mode === "task" ? "task" : "author", intent, basisLogId: basis, created: now() });
+			return done();
+		}
 		if (intent && parsed.action !== "draft") return done(DRAFT_FAILED);
 		if (parsed.action === "ask" && !choice && !revise && !intent) {
 			if (parsed.summary) writePrivate(summaryFile(chatId), `${parsed.summary}\n`);

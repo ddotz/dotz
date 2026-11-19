@@ -236,6 +236,7 @@
 .kk-draft .kk-dh { margin-top: var(--sp-2); }
 .kk-mk { padding: var(--sp-2) var(--sp-4); border-radius: var(--r-card); background: var(--card); color: var(--fg-3); font: 500 13px/18px var(--font); }
 .kk-dh { color: var(--fg-2); font: 600 12px/16px var(--font); }
+.kk-dn { margin: 0 0 var(--sp-2); color: var(--fg-3); font: 400 13px/18px var(--font); }
 .kk-draft .btns { gap: var(--sp-15); }
 .kk-choices { flex-wrap: wrap; }
 .kk-draft .btn { height: var(--btn-h-sm); padding: 0 var(--sp-3); font-size: 13px; }

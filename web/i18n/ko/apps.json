@@ -174,6 +174,11 @@
   "apps.kk.peer_revise": "다른 컴퓨터의 방에서는 초안을 만든 뒤에 고쳐 달라고 요청할 수 있어요",
   "apps.kk.choose_first": "답장 전에 골라 주세요",
   "apps.kk.write_own": "직접 쓸게",
+  "apps.kk.ask_author": "쓰기 전에 알려 주세요",
+  "apps.kk.ask_task": "메시지로 만들 수 없는 요청이에요",
+  "apps.kk.ask_task_note": "이건 메시지가 아니라 작업이에요. 채팅에서 땃쥐에게 시켜 주세요",
+  "apps.kk.ask_known": "아는 대로 써",
+  "apps.kk.ask_stop": "그만",
   "apps.kk.making_reply": "답장 초안을 만드는 중이에요…",
   "apps.kk.making": "초안 만드는 중…",
   "apps.kk.draft_late": "초안이 아직 오지 않았어요"
