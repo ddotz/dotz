@@ -56,7 +56,7 @@ import { createWaitCheck, wakeReply } from "./waitcheck.ts";
 import { ownerMessage } from "./events.ts";
 import { forgetAccountUsage, onQuota, QUOTA_REFRESH_MS, refreshQuota, usageSnapshot } from "./providers.ts";
 import { sealPlainSecrets } from "./secretbox.ts";
-import { allNotices, backfillNotices, draftCardCounts, dropChannelNotices, refreshStoredDrafts, setAppLabelResolver, setDraftHandled, settleExpiredQuestions, settleHandledDrafts, setConvNameResolver, setLaneTitleResolver, setAppBlocker, setAppResolver, setOrchestratorAvailable, setWatchLabelResolver, setWatchSummarizer, tagStoredApps, updateAvailable, updateResolved } from "./notices.ts";
+import { allNotices, backfillNotices, draftCardCounts, dropChannelNotices, flushNotices, refreshStoredDrafts, setAppLabelResolver, setDraftHandled, settleExpiredQuestions, settleHandledDrafts, setConvNameResolver, setLaneTitleResolver, setAppBlocker, setAppResolver, setOrchestratorAvailable, setWatchLabelResolver, setWatchSummarizer, tagStoredApps, updateAvailable, updateResolved } from "./notices.ts";
 import { channelTitle, laneTitle } from "./notices-lanes.ts";
 import { startDayNote } from "./day-note.ts";
 import { startReflection } from "./reflect.ts";
@@ -705,7 +705,7 @@ function shutdown(): Promise<never> {
 		{ name: "discord connection", run: () => discord.disconnect() },
 		{ name: "watch and schedule timers", run: () => (stopWatches(), stopSchedules(), stopKakaoLive(), clearTrackedTimers()) },
 		{ name: "cloudflare tunnel", run: () => webAccess.stop() },
-		{ name: "others", run: () => void 0 },
+		{ name: "notices", run: () => flushNotices() },
 	], 10_000 + (replies.size() ? outlangTimeoutMs() + 2000 : 0));
 }
 

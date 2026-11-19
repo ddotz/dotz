@@ -973,5 +973,4 @@ $("#mon-timeline").addEventListener("scroll", () => {
   monSeen();
   if (box.scrollTop <= 0) monOlderLoad(box.querySelector(".mon-sentinel[data-older]:not([data-end])"));
 }, { passive: true });
-setInterval(() => { if ((current === "monitoring" || monCtx) && !document.hidden) loadMonitors(); }, 60_000);
 loadMonitors();

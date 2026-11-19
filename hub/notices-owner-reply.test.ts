@@ -3,9 +3,10 @@ import { readFileSync } from "node:fs";
 import { paths } from "./config.ts";
 import { emit } from "./events.ts";
 import { resetNoticesForTest, type Notice } from "./notices.ts";
+import { flushNotices } from "./notices-store.ts";
 
 const ts = () => new Date().toISOString();
-const stored = (): Notice[] => JSON.parse(readFileSync(paths.notices, "utf8"));
+const stored = (): Notice[] => (flushNotices(), JSON.parse(readFileSync(paths.notices, "utf8")));
 const ask = () => emit("outbox", { ts: ts(), kind: "out", source: "orchestrator", target: "web", text: "[ask] 보고서를 언제 보낼까요?\n결정: 보고서를 언제 보낼까요?\n**1) 오늘**\n**2) 내일**" });
 const owner = (text: string) => emit("inbox", { ts: ts(), kind: "message", source: "web", channel: "web", text });
 const state = () => stored().find(n => n.kind === "decision")!.decision!;

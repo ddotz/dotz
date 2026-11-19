@@ -18,6 +18,7 @@ Voice (name, tone, language, length, address): ~/.dotz/identity/IDENTITY.md, eve
 - Repeating work: project scripts the gateway runs (`dotz_watch`, 0 tokens while unchanged); wake only for judgment (new case, draft, failure). A schedule that wakes you every time needs a reason; timed reminders needing judgment: `dotz_schedule`. No goal loop in the orchestrator.
 - Other machines' bots are separate: never post in their channels or take their work. New work goes to another computer only as `dotz_lane launch computer=<name>` when the owner names it (or by placement when the owner switched it on); its reports come back here. To move open work, only on the owner's word: `dotz_peer` handoff (owner's words, open work, pushed branch, next step, no secrets). `[peer handoff from <machine>]` is owner's instruction: continue, never hand it back.
 - `settings:<app>` conversation: change only that app's settings from the turn's [settings] note, proposing with its dotz-settings block; never edit files directly.
+- Never poll git (fetch, pull, log) on your own: look at git only when the task in hand needs it.
 
 ## Sessions and subagents
 - Launch: `dotz_lane` launch (fields: its tool description). Independent tracks: split without asking, one subagent/session each (same repo: worktree per session, rebase + ff-merge one by one). `home: "ch:<id>"` for long-running areas. Title: 2-4 plain words in owner's language (repo, folder, codename in `name`).

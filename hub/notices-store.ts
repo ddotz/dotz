@@ -26,6 +26,7 @@ import { decisionsOf, expiresAtOf, sending } from "./notices-decisions.ts";
 import { worklogKind } from "./worklog-kind.ts";
 import { en } from "./i18n-en.ts";
 import { ko } from "./i18n-ko.ts";
+import { coalescedWrite } from "./coalesced-write.ts";
 
 // A report stored before a schedule was said by its short name and a match that lists items by its count (2026-11-10) reads as a new one does.
 const MATCHED = `: ${watchReasonKo("matched /./")}`;
@@ -50,10 +51,9 @@ const load = (): Notice[] => {
 export let items: Notice[] = load();
 // True while backfillNotices replays old events: upsert then neither writes the file nor broadcasts per item.
 let replaying = false;
-
 // The file paths on the chips of the stored notices (hub/listed-files.ts).
 export const noticeFilePaths = (): string[] => items.flatMap(n => n.files?.map(f => f.path) ?? []);
-export const save = () => writeAtomic(paths.notices, `${JSON.stringify(items, null, 1)}\n`);
+export const { save, flush: flushNotices } = coalescedWrite(() => writeAtomic(paths.notices, `${JSON.stringify(items, null, 1)}\n`), 200);
 
 // The 알림 screen does not list quiet records (web/js/31-notices-screen.js nscListed), so the count must not hold what the owner cannot read there.
 // A conversation's unread answer (conv) is listed and counted: it is the bell's way to say an answer finished while he was elsewhere.
@@ -793,5 +793,5 @@ export function resetNoticesForTest(): void {
 	quietReplies.clear();
 	sending.clear();
 	orchTurnFrom = undefined;
-	save();
+	flushNotices(true);
 }

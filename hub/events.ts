@@ -268,7 +268,8 @@ export function eventTarget(e: HubEvent): string | undefined {
 // the bytes appended since are read (the logs only grow by appendFileSync; a smaller size or another inode is a rewrite: read afresh).
 // Each kept line remembers its byte offset, so the window moves exactly as a fresh read of the last HISTORY_TAIL bytes would.
 const HISTORY_TAIL = 4 * 1024 * 1024;
-type Tail = { ino: number; size: number; mtime: number; lines: { start: number; event: HubEvent }[] };
+type Line = { start: number; event: HubEvent; conv?: string };
+type Tail = { ino: number; size: number; mtime: number; lines: Line[]; byConv: Map<string, HubEvent[]> };
 const tails = new Map<string, Tail>();
 const parsed = (text: string): HubEvent | undefined => {
 	try {
@@ -277,17 +278,36 @@ const parsed = (text: string): HubEvent | undefined => {
 		return undefined;
 	}
 };
-export function tailEvents(file: string): HubEvent[] {
+function insertSorted(list: HubEvent[], event: HubEvent): void {
+	let at = list.length;
+	while (at > 0 && list[at - 1]!.ts.localeCompare(event.ts) > 0) at--;
+	list.splice(at, 0, event);
+}
+function indexLine(tail: Tail, line: Line): void {
+	const conv = typeof line.event.ts === "string" ? eventTarget(line.event) : undefined;
+	if (conv === undefined) return;
+	line.conv = conv;
+	const list = tail.byConv.get(conv);
+	if (list) insertSorted(list, line.event);
+	else tail.byConv.set(conv, [line.event]);
+}
+function unindexLine(tail: Tail, line: Line): void {
+	if (line.conv === undefined) return;
+	const list = tail.byConv.get(line.conv)!;
+	list.splice(list.indexOf(line.event), 1);
+	if (!list.length) tail.byConv.delete(line.conv);
+}
+function syncTail(file: string): { tail?: Tail; partial?: HubEvent } {
 	if (!existsSync(file)) {
 		tails.delete(file);
-		return [];
+		return {};
 	}
 	const { size, ino, mtimeMs } = statSync(file);
 	const windowStart = Math.max(0, size - HISTORY_TAIL);
 	const kept = (start: number) => windowStart === 0 || start > windowStart;
 	let tail = tails.get(file);
 	const rewritten = tail && (tail.ino !== ino || size < tail.size || (size === tail.size && mtimeMs !== tail.mtime));
-	if (!tail || rewritten || tail.size < windowStart) tail = { ino, size: windowStart, mtime: mtimeMs, lines: [] };
+	if (!tail || rewritten || tail.size < windowStart) tail = { ino, size: windowStart, mtime: mtimeMs, lines: [], byConv: new Map() };
 	tail.mtime = mtimeMs;
 	tails.set(file, tail);
 	let partial: HubEvent | undefined;
@@ -304,14 +324,21 @@ export function tailEvents(file: string): HubEvent[] {
 		for (let nl = buf.indexOf(10); nl !== -1; at = nl + 1, nl = buf.indexOf(10, at)) {
 			if (!kept(from + at)) continue;
 			const event = parsed(buf.toString("utf8", at, nl));
-			if (event) tail.lines.push({ start: from + at, event });
+			if (!event) continue;
+			const line: Line = { start: from + at, event };
+			tail.lines.push(line);
+			indexLine(tail, line);
 		}
-		// A line still being written is not kept (its end may not be there yet); it is read again once its newline lands.
 		tail.size = from + at;
 		if (at < buf.length && kept(from + at)) partial = parsed(buf.toString("utf8", at));
 	}
 	const drop = tail.lines.findIndex(l => kept(l.start));
-	if (drop !== 0) tail.lines.splice(0, drop === -1 ? tail.lines.length : drop);
+	if (drop !== 0) for (const line of tail.lines.splice(0, drop === -1 ? tail.lines.length : drop)) unindexLine(tail, line);
+	return { tail, partial };
+}
+export function tailEvents(file: string): HubEvent[] {
+	const { tail, partial } = syncTail(file);
+	if (!tail) return [];
 	const out = tail.lines.map(l => l.event);
 	if (partial) out.push(partial);
 	return out;
@@ -363,8 +390,15 @@ export function sentFiles(): ReadonlySet<string> {
 }
 
 function conversationEvents(target: string, before?: string): HubEvent[] {
-	let all = [...tailEvents(paths.inbox), ...tailEvents(paths.outbox)].filter(e => typeof e.ts === "string" && eventTarget(e) === target && (!before || e.ts < before));
-	all.sort((a, b) => a.ts.localeCompare(b.ts));
+	const side = (file: string): HubEvent[] => {
+		const { tail, partial } = syncTail(file);
+		let list = tail?.byConv.get(target) ?? [];
+		if (partial && typeof partial.ts === "string" && eventTarget(partial) === target) insertSorted((list = [...list]), partial);
+		return before ? list.filter(e => e.ts < before) : list;
+	};
+	const inbox = side(paths.inbox), outbox = side(paths.outbox);
+	let all: HubEvent[] = [];
+	for (let i = 0, j = 0; i < inbox.length || j < outbox.length; ) all.push(j >= outbox.length || (i < inbox.length && inbox[i]!.ts.localeCompare(outbox[j]!.ts) <= 0) ? inbox[i++]! : outbox[j++]!);
 	// A post edited in place (update_key, e.g. a lane's worklog line) shows once, as its newest version.
 	if (target === "alert" || target === "worklog") {
 		const last = new Map<string, HubEvent>();

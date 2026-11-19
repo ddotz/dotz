@@ -96,9 +96,8 @@ function paintMonAttn() {
   if (NM.loaded && NT.loaded && INTG.loaded) b.dataset.seen = "1";
   b.parentElement.setAttribute("aria-label", say ? TX("home.attn.mon_aria", { say }) : TX("common.monitoring"));
 }
-// The badge and 답변 필요 read this computer's monitors on every tab: 홈 and 모니터링 refresh them themselves, any other tab here.
 // The other computers' snapshot (pqLoad) is read only by 모니터링.
-setInterval(() => { if (!document.hidden && current !== "home" && current !== "monitoring" && !monCtx) loadMonitors(); }, 60_000);
+setInterval(() => { if (!document.hidden && (current !== "home" || monCtx)) loadMonitors(); }, 60_000);
 // A target that starts needing the owner pops one toast (tap = switch to it): a lane question, a rate limit, or the main chat
 // finishing unseen (a lane's finished turn already has its report toast). On page load only open questions pop, and several of them are
 // one toast with their count that opens 홈 (they are all rows of 답변 필요 there), not a stack of cards over the screen.

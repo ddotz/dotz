@@ -103,7 +103,8 @@ for (const r of records) trackBox(r);
 const aliases = cfg as unknown as { mail?: { own_addresses?: unknown }; zele?: { aliases?: unknown } };
 setOwnAddresses("config", [aliases.mail?.own_addresses, aliases.zele?.aliases].flatMap(v => (Array.isArray(v) ? v : [])).filter((v): v is string => typeof v === "string"));
 setToOnlyDir(DATA_DIR);
-if (migrateMails(records as StoredMail[])) writeAtomic(FILE, `${JSON.stringify(records, null, 2)}\n`);
+const saveRecords = (): void => writeAtomic(FILE, `${JSON.stringify(records)}\n`);
+if (migrateMails(records as StoredMail[])) saveRecords();
 
 export const mailByKey = (key: string): MailRecord | undefined => byKey.get(key);
 const cueOf = (r: MailRecord) => ({ source: r.source, account: r.account, from: r.from, to: r.to, cc: r.cc, subject: r.subject, text: mailCueText(r) || r.preview || "", list: r.list });
@@ -192,7 +193,7 @@ export function setMailsFyi(keys: readonly string[], on: boolean, at = new Date(
 	if (!changed.size) return found;
 	for (const [k, r] of changed) byKey.set(k, r);
 	records = records.map(r => changed.get(r.key) ?? r);
-	writeAtomic(FILE, `${JSON.stringify(records, null, 2)}\n`);
+	saveRecords();
 	return found;
 }
 
@@ -217,7 +218,7 @@ export function deleteMail(key: string): boolean {
 	if (!r) return false;
 	byKey.delete(key);
 	records = records.filter(x => x.key !== key);
-	writeAtomic(FILE, `${JSON.stringify(records, null, 2)}\n`);
+	saveRecords();
 	delete deleted[key];
 	deleted[key] = r.msg ?? "";
 	saveDeleted();
@@ -228,7 +229,7 @@ export function deleteMail(key: string): boolean {
 /** The stored mails brought up to the current rules (hub/mail-state.ts migrateMails), saved when anything changed. Safe to run any number of times. */
 export function migrateStoredMails(sentRefs?: ReadonlySet<string>): number {
 	const n = migrateMails(records as StoredMail[], { sentRefs });
-	if (n) writeAtomic(FILE, `${JSON.stringify(records, null, 2)}\n`);
+	if (n) saveRecords();
 	return n;
 }
 /** What a mailbox says now about one of its mails (POST /api/mail/state, the zele poll): `read` = read there (Gmail no UNREAD label, IMAP \Seen,
@@ -280,7 +281,7 @@ function settleNotMine(): string[] {
 		delete r.reply;
 		gone.push(r.key);
 	}
-	if (gone.length) writeAtomic(FILE, `${JSON.stringify(records, null, 2)}\n`);
+	if (gone.length) saveRecords();
 	return gone;
 }
 // The reply states of the mails (the 모니터링 app lines count them: hub/integrations.ts).
@@ -301,7 +302,7 @@ export function recordMail(r: MailRecord): void {
 	while (at > 0 && records[at - 1]!.at.localeCompare(r.at) > 0) at--;
 	records.splice(at, 0, r);
 	records = evictSurplus(records, mailKeep(), KEEP_MAX, k => byKey.delete(k));
-	writeAtomic(FILE, `${JSON.stringify(records, null, 2)}\n`);
+	saveRecords();
 }
 
 // A derived summary is written a moment later, in one write however many mails the start-up fills in.
@@ -310,7 +311,7 @@ function persistSoon(): void {
 	if (flushTimer) return;
 	flushTimer = setTimeout(() => {
 		flushTimer = undefined;
-		writeAtomic(FILE, `${JSON.stringify(records, null, 2)}\n`);
+		saveRecords();
 	}, 200);
 	flushTimer.unref?.();
 }

@@ -13,9 +13,10 @@ import { inboxText } from "./intake.ts";
 import { approval, createDraft, draftBlock, kakaoView, readDrafts } from "./kakao/send.ts";
 import { kakaoPaths, type Runner } from "./kakao/types.ts";
 import { answerDecision, setCardFingerprint, stampDraftCard, type DecisionSend, type Notice } from "./notices.ts";
+import { flushNotices } from "./notices-store.ts";
 
 const ts = () => new Date().toISOString();
-const stored = (): Notice[] => JSON.parse(readFileSync(paths.notices, "utf8"));
+const stored = (): Notice[] => (flushNotices(), JSON.parse(readFileSync(paths.notices, "utf8")));
 const ask = (text: string) => emit("outbox", { ts: ts(), kind: "out", source: "orchestrator", target: "main", text: `[ask] ${text}` });
 const noticeFor = (needle: string) => stored().find(n => n.kind === "decision" && n.title.includes(needle))!;
 // What the gateway's web send (hub/intake.ts sendWeb) writes to inbox.jsonl for a decision answer.

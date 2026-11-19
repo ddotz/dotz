@@ -7,12 +7,13 @@ import { emit } from "./events.ts";
 import { inboxText } from "./intake.ts";
 import { out } from "./outbound.ts";
 import { resetNoticesForTest, type Notice } from "./notices.ts";
+import { flushNotices } from "./notices-store.ts";
 import { makeRoute } from "./routes.ts";
 import { previewSource, stripHandoff } from "./tone.ts";
 
 const route = makeRoute({ busyNow: () => [], restartGateway: () => "", restartGatewayNow: () => "" });
 const PROJECT = "ch:1500000000000000001";
-const stored = (): Notice[] => JSON.parse(readFileSync(paths.notices, "utf8"));
+const stored = (): Notice[] => (flushNotices(), JSON.parse(readFileSync(paths.notices, "utf8")));
 const state = (title: string) => stored().find(n => n.kind === "decision" && n.title === title)!.decision!.state;
 const TITLE_MAIN = "사이트 배포 인증을 어떻게 할까요?";
 const TITLE_PROJECT = "폴더 이름을 무엇으로 할까요?";

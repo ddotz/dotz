@@ -7,6 +7,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { cfg, DATA_DIR, DEFAULTS, log, writeAtomic } from "./config.ts";
 import { isOwnAddress, ownAddresses, setOwnAddresses } from "./mail-state.ts";
+import { mapLimit } from "./map-limit.ts";
 import { runLimited } from "./run-limited.ts";
 
 type Item = Record<string, string | number | undefined>;
@@ -317,8 +318,11 @@ export async function tick(h: Hooks, now = new Date(), list: (args: string[]) =>
 	const flags = accountFlags(only);
 	const calFlags = accountFlags(calOnly);
 	const named = (m: Item): Item => (only.length === 1 && !m.account ? { ...m, account: only[0] } : m);
-	const mail = (await list(["mail", "list", "--filter", "newer_than:2d", "--limit", "60", ...flags])).map(named);
-	const sent = (await list(["mail", "list", "--folder", "sent", "--filter", "newer_than:2d", "--limit", "40", ...flags]).catch(error => (log(`zele: sent folder not read: ${(error as Error).message}`), [] as Item[]))).map(named);
+	const [mailRows, sentRows] = await Promise.all([
+		list(["mail", "list", "--filter", "newer_than:2d", "--limit", "60", ...flags]),
+		list(["mail", "list", "--folder", "sent", "--filter", "newer_than:2d", "--limit", "40", ...flags]).catch(error => (log(`zele: sent folder not read: ${(error as Error).message}`), [] as Item[])),
+	]);
+	const mail = mailRows.map(named), sent = sentRows.map(named);
 	const own = ownAddresses([...mail, ...sent].flatMap(m => (m.account ? [String(m.account)] : [])));
 	const note = (m: Item, isOwn: boolean) => void ((s.threads[String(m.id)] = { n: stampOf(m), own: isOwn, at: now.getTime() }));
 	for (const m of [...mail, ...sent]) {
@@ -330,6 +334,15 @@ export async function tick(h: Hooks, now = new Date(), list: (args: string[]) =>
 		note(m, true);
 		await h.sent?.(newMail(m));
 	}
+	const toRead: Item[] = [];
+	for (const m of mail) {
+		const key = String(m.id);
+		if (s.seeded && s.threads[key]?.own && !isOwnAddress(String(m.from ?? ""), own) && !isNoise(m) && !toRead.some(r => String(r.id) === key)) toRead.push(m);
+	}
+	const threadReads = new Map(await mapLimit(toRead, 3, async m => {
+		const key = String(m.id);
+		return [key, await read(key, String(m.account ?? "")).then(parseThread, error => (log(`zele: thread ${key} not read: ${(error as Error).message}`), [] as ThreadMessage[]))] as const;
+	}));
 	for (const m of mail) {
 		const key = String(m.id);
 		if (isOwnAddress(String(m.from ?? ""), own)) continue;
@@ -345,7 +358,7 @@ export async function tick(h: Hooks, now = new Date(), list: (args: string[]) =>
 			continue;
 		}
 		if (before?.own) {
-			const messages = await read(key, String(m.account ?? "")).then(parseThread, error => (log(`zele: thread ${key} not read: ${(error as Error).message}`), []));
+			const messages = threadReads.get(key) ?? [];
 			if (onlyAcksAfterOwner(messages, own)) {
 				log(`zele: skipped thread ${key}: only an acknowledgement after the owner's reply`);
 				continue;
@@ -367,7 +380,11 @@ export async function tick(h: Hooks, now = new Date(), list: (args: string[]) =>
 
 	let hasCalendar = true;
 	const noCalendar = () => void (hasCalendar = false);
-	const upcoming = (await calendar(list, ["cal", "events", "--days", "14", "--all", "--limit", "100", ...calFlags], noCalendar)).filter(ev => !isHoliday(ev));
+	const [upcomingRows, soon] = await Promise.all([
+		calendar(list, ["cal", "events", "--days", "14", "--all", "--limit", "100", ...calFlags], noCalendar),
+		calendar(list, ["cal", "events", "--from", now.toISOString(), "--to", "+45m", "--all", ...calFlags], noCalendar),
+	]);
+	const upcoming = upcomingRows.filter(ev => !isHoliday(ev));
 	const current = new Map(upcoming.map(ev => [String(ev.id), seen(ev)]));
 	for (const [id, e] of Object.entries(s.events)) if (!current.has(id) && !e.summary) delete s.events[id];
 	const vanished = Object.entries(s.events).filter(([id]) => !current.has(id));
@@ -393,7 +410,6 @@ export async function tick(h: Hooks, now = new Date(), list: (args: string[]) =>
 		delete s.events[id];
 	}
 
-	const soon = await calendar(list, ["cal", "events", "--from", now.toISOString(), "--to", "+45m", "--all", ...calFlags], noCalendar);
 	for (const ev of soon) {
 		const key = `${ev.id}:${ev.start}`;
 		if (s.soon.includes(key)) continue;

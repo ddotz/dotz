@@ -12,7 +12,7 @@ export { laneNameKo, conversationTitle } from "./notices-lanes.ts";
 export { summary } from "./notices-read.ts";
 export { isViewing } from "./notices-viewing.ts";
 export { decisionsOf } from "./notices-decisions.ts";
-export { openChoices, untouchedChoices, unreadCount, answerReply, orchestratorTurnStarted, backfillNotices, readConversationNotices, markNoticesRead, resetNoticesForTest } from "./notices-store.ts";
+export { openChoices, untouchedChoices, unreadCount, answerReply, orchestratorTurnStarted, backfillNotices, readConversationNotices, markNoticesRead, resetNoticesForTest, flushNotices } from "./notices-store.ts";
 export type { ListedChoice } from "./notices-store.ts";
 export { refreshNoticeDrafts, tagStoredApps } from "./notices-stored.ts";
 export { onDraftCardRefreshed, refreshDraftFiles, syncDraftFiles, markDraftPosted, markCardShown, stampDraftCard, openDraftRefs, openDraftCards, markDraftSend, openDraftText, rewriteOpenDraft, redrawDraftCards, repostDraftCard, setCardFingerprint, settleHandledDrafts, draftCardCounts, refreshStoredDrafts, confirmNoun, confirmGroup, reopenDraftNotices, updateDraftRecipients } from "./notices-drafts.ts";

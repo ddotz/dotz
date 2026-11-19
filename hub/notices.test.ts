@@ -17,9 +17,10 @@ import { watchLine } from "./watchtext.ts";
 import { allNotices, answerDecision, answerReply, authRequested, authSettled, type DecisionSend, dismissNotice, dropChannelNotices, dropLaneNotices, handledNotice, ignoreNotice, laneVerified, listNotices, markDraftSend, markNoticesRead, NOTICE_CAP, needsAnswer, type Notice, onDecision, orchestratorAnswered, orchestratorTurnStarted, resolveNotices, readConversationNotices, reopenNotices, rewriteOpenDraft, setConvNameResolver, setLaneTitleResolver, setViewing, setWatchLabelResolver, ANSWER_WINDOW_MS, ALERT_ANSWER_WINDOW_MS, settleExpiredQuestions, UPDATE_NOTICE_KEY, undismissNotice, unignoreNotice, unreadCount, updateAvailable, updateResolved } from "./notices.ts";
 import { sealLine } from "./approval-seal.ts";
 import { brokenCount } from "./owner-text.ts";
+import { flushNotices } from "./notices-store.ts";
 
 const ts = () => new Date().toISOString();
-const stored = (): Notice[] => JSON.parse(readFileSync(paths.notices, "utf8"));
+const stored = (): Notice[] => (flushNotices(), JSON.parse(readFileSync(paths.notices, "utf8")));
 const post = (target: string, text: string, extra: Record<string, unknown> = {}) => emit("outbox", { ts: ts(), kind: "out", source: "orchestrator", target, text, ...extra });
 const byText = (text: string) => stored().filter(n => n.text === text);
 
@@ -173,6 +174,7 @@ test("dismissing a notice reads it and removes it from the list and the count, a
 
 	// A fresh process reads notices.json again: the dismissed item stays gone and uncounted.
 	const script = `import { listNotices, unreadCount } from "./hub/notices.ts"; console.log(JSON.stringify({ ids: listNotices(300).items.map(n => n.id), unread: unreadCount() })); process.exit(0);`;
+	flushNotices();
 	const run = Bun.spawnSync([process.execPath, "-e", script], { cwd: join(import.meta.dir, ".."), env: process.env });
 	expect(run.exitCode).toBe(0);
 	const fresh = JSON.parse(run.stdout.toString().trim().split("\n").at(-1)!);
@@ -423,7 +425,7 @@ test("ignoring takes a question off the count, keeps it in the history, answers 
 	expect(ignoreNotice(plain).status).toBe(409);
 	expect(ignoreNotice("nope").status).toBe(404);
 	// survives a restart as stored
-	expect(JSON.parse(readFileSync(paths.notices, "utf8")).find((n: Notice) => n.id === id).decision.state).toBe("ignored");
+	expect(stored().find((n: Notice) => n.id === id)!.decision!.state).toBe("ignored");
 	// undo
 	since = lastEventId();
 	expect(unignoreNotice(id).status).toBe(200);
@@ -848,9 +850,9 @@ test("a plain question waits 72 hours; past them the sweep closes it as expired,
 test("the expiry sweep is idempotent: a second pass changes nothing", () => {
 	post("web", "[ask] 멈춘 Aside", { ts: new Date(Date.parse(ts()) - 4 * 86_400_000).toISOString() });
 	expect(settleExpiredQuestions()).toBe(1);
-	const file = readFileSync(paths.notices, "utf8");
+	const file = (flushNotices(), readFileSync(paths.notices, "utf8"));
 	expect(settleExpiredQuestions()).toBe(0);
-	expect(readFileSync(paths.notices, "utf8")).toBe(file);
+	expect((flushNotices(), readFileSync(paths.notices, "utf8"))).toBe(file);
 });
 
 test("a send-approval card and a login request carry no expiry: their own state closes them", () => {

@@ -5,13 +5,13 @@ import { draftApprovalBlock } from "./draft-approval.ts";
 import { emit } from "./events.ts";
 import { msg } from "./i18n.ts";
 import { onDraftRepost, repostNote, resetNoticesForTest, setStoredDraft, type Notice } from "./notices.ts";
-import { reconcileStored } from "./notices-store.ts";
+import { flushNotices, reconcileStored } from "./notices-store.ts";
 import { storedDraftOf } from "./notices-wiring.ts";
 
 // Issue #7: a send-approval card the bot re-words (or posts next to another card in one answer) is read as no draft. Its 보내기 would send the
 // draft by its "(<ref>)" while the owner saw other words, so it closes at once with a reason, and its session is told to post it again as printed.
 const ts = () => new Date().toISOString();
-const stored = (): Notice[] => JSON.parse(readFileSync(paths.notices, "utf8"));
+const stored = (): Notice[] => (flushNotices(), JSON.parse(readFileSync(paths.notices, "utf8")));
 const cards = () => stored().filter(n => n.kind === "decision");
 const card = (ref: string) => draftApprovalBlock({ to: "A <a@example.com>", subject: "Re: hello", body: "Hello there.\nSee you soon.", ref, question: "이 답장 보낼까요?" });
 // The re-worded card of the issue: a shorter question, the body cut to a pointer, the recipient line edited.

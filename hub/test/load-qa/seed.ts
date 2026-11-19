@@ -399,6 +399,7 @@ export async function seed(dirArg: string, scale: Scale, opts: { realMail?: "all
 	if (made.length !== size.notices) throw new Error(`seed: the feed made ${made.length} notices, wanted ${size.notices}`);
 	const kept = Notices.items.length;
 	for (const [i, n] of made.entries()) n.id = i.toString(16).padStart(8, "0");
+	Notices.flushNotices();
 	await timed("notices.direct", () => Cfg.writeAtomic(Cfg.paths.notices, `${JSON.stringify(made, null, 1)}\n`));
 
 	const total = Object.values(timings).reduce((a, b) => a + b, 0);
