@@ -69,7 +69,7 @@ test("only a question that asks for an email address is dropped from a mail draf
 	expect(built.rec.questions).toEqual(["배송 주소를 알려 드려도 될까요", "회의 날짜"]);
 });
 
-const DIRTY = "\u0000\u0007\u000B\u001F\u007F\u200B\u200C\u200D\u200E\u200F\u202A\u202B\u202C\u202D\u202E\u2060\u2066\u2067\u2068\u2069\uFEFF";
+const DIRTY = "\u0000\u0007\u000B\u001F\u007F\u200B\u200E\u200F\u202A\u202B\u202C\u202D\u202E\u2060\u2066\u2067\u2068\u2069\uFEFF";
 
 test("control, bidi and zero-width characters never reach a saved draft; tab, newline and Korean text stay", async () => {
 	addDraft(rec());
@@ -91,6 +91,22 @@ test("a dropped draft of a mail that was already answered is not brought back", 
 	expect(r.ok).toBe(false);
 	expect(r.text).toContain("이미 답한");
 	expect(getDraft("RHYG01")?.status).toBe("dropped");
+});
+
+test("a draft sent before the dropped one was made does not keep the dropped one from coming back", () => {
+	addDraft(rec({ id: "RHYG02", created: "2026-11-01T00:00:00.000Z" }));
+	setStatus("RHYG02", "sent");
+	addDraft(rec({ id: "RHYG01", created: "2026-11-02T00:00:00.000Z" }));
+	setStatus("RHYG01", "dropped");
+	expect(restoreDraft("RHYG01").ok).toBe(true);
+	expect(getDraft("RHYG01")?.status).toBe("pending");
+});
+
+test("an owner edit keeps the joiners inside an emoji and a word", () => {
+	addDraft(rec());
+	const body = "늦어서 죄송해요 🙇\u200D♂️ 확인 후 말씀드릴게요.";
+	expect(editDraft("RHYG01", body).ok).toBe(true);
+	expect(getDraft("RHYG01")?.body).toBe(body);
 });
 
 test("a second revise of the same draft is refused while the first one runs, and only the first asks the model", async () => {

@@ -167,8 +167,8 @@ export function withRecipient(rec: DraftRec): DraftRec {
 	return { ...rec, to: from, item: { ...rec.item, from }, questions };
 }
 const ADDRESS_ASK = /e-?mail address|(?:이)?메일\s*주소|recipient|받는\s*(?:사람|분|이)|수신자/i;
-const CONTROL = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F\u200B-\u200F\u202A-\u202E\u2060\u2066-\u2069\uFEFF]/g;
-/** `text` without control characters (all of C0 but tab, newline and carriage return), bidi overrides and isolates, and zero-width characters: none of them may reach a saved draft or a send. */
+const CONTROL = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F\u200B\u200E\u200F\u202A-\u202E\u2060\u2066-\u2069\uFEFF]/g;
+/** `text` without control characters (all of C0 but tab, newline and carriage return), bidi marks, overrides and isolates, and zero-width spaces: none of them may reach a saved draft or a send. The zero-width joiner and non-joiner stay: emoji sequences and scripts are built with them. */
 export const stripControl = (text: string): string => text.replace(CONTROL, "");
 
 // A question the model wrote because it could not see any file to attach ("첨부 폴더를 볼 수 없어 파일을 붙이지 못했습니다"). Once files are on the draft it is false and only confuses the card.
@@ -523,7 +523,7 @@ export function restoreDraft(ref: string): { ok: boolean; text: string } {
 	if (d.status === "pending") return { ok: true, text: `초안 ${ref}은(는) 이미 기다리는 중이에요` };
 	if (d.status !== "dropped") return { ok: false, text: `초안 ${ref}은(는) 이미 ${d.status} 상태라 되돌릴 수 없어요` };
 	if (listDrafts().some(x => x.id !== d.id && x.ref === d.ref && x.status === "pending")) return { ok: false, text: `같은 메일에 새 초안이 있어서 초안 ${ref}은(는) 되돌리지 않았어요` };
-	if (listDrafts().some(x => x.id !== d.id && x.ref === d.ref && (x.status === "sent" || x.status === "answered"))) return { ok: false, text: `이미 답한 메일이라 초안 ${ref}은(는) 되돌리지 않았어요` };
+	if (listDrafts().some(x => x.id !== d.id && x.ref === d.ref && x.created > d.created && (x.status === "sent" || x.status === "answered"))) return { ok: false, text: `이미 답한 메일이라 초안 ${ref}은(는) 되돌리지 않았어요` };
 	setStatus(ref, "pending");
 	return { ok: true, text: `초안 ${ref}을(를) 되돌렸어요` };
 }

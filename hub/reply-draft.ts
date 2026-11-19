@@ -115,7 +115,7 @@ const selfKeys = (self: readonly string[] | undefined) => new Set((self ?? []).f
 const MACHINE_NAME = /no[-_.]?reply|do[-_.]?not[-_.]?reply|mailer[-_.]?daemon|postmaster|administrator|notification|newsletter|news@|marketing|알림|공지/i;
 
 /** Whether a sender (a name, an address or "Name <address>") is a machine: the one judgement behind a mail's 자동 발송 tag and a reply draft's "automated sender". */
-export const automatedSender = (from: string | undefined): boolean => MACHINE_NAME.test(from ?? "") || AUTOMATED.test(addrOrHandle(from ?? "").split("@")[0] ?? "");
+export const automatedSender = (from: string | undefined): boolean => MACHINE_NAME.test((from ?? "").replace(/@[^\s>]+/g, "@")) || AUTOMATED.test(addrOrHandle(from ?? "").split("@")[0] ?? "");
 
 const matches = (entry: string, item: string) => {
 	const e = norm(entry);

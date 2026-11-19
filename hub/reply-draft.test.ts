@@ -255,6 +255,10 @@ test("one sender judgement: accounts-noreply and the other machine names are aut
 	}
 });
 
+test("a word of the machine names in a sender's domain does not make a person automated", () => {
+	for (const from of ["kim@bluemarketing.co.kr", "Kim <kim@news-agency.example>"]) expect(automatedSender(from)).toBe(false);
+});
+
 test("an allow-list entry without @ is a domain, and a +tag address of the user's is the user's own", () => {
 	expect(precheck(item, { only: ["example.com"], skip: [] })).toBeUndefined();
 	expect(precheck(item, { only: ["example.org"], skip: [] })).toBe("sender is not on the allow list");

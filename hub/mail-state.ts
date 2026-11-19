@@ -297,7 +297,7 @@ export function evictSurplus<T extends { key: string; reply?: MailReply; suggest
 	if (surplus <= 0) return records;
 	let total = records.length;
 	return records.filter(x => {
-		if (surplus <= 0 || x.reply === "draft" || (!!x.suggest && (x.suggest.state ?? "draft") !== "sent") || (x.reply === "needs" && total <= needsMax)) return true;
+		if (surplus <= 0 || x.reply === "draft" || (!!x.suggest && !["sent", "waiting"].includes(x.suggest.state ?? "draft")) || (x.reply === "needs" && total <= needsMax)) return true;
 		surplus--;
 		total--;
 		onDrop?.(x.key);
