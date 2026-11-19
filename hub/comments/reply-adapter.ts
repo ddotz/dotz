@@ -38,7 +38,7 @@ export function commentAdapter(engine: Engine): ReplyAdapter {
 		const c = engine.store.comments().find(x => x.id === d.commentId);
 		if (!src || !c) return undefined;
 		const pending = d.status === "pending";
-		const mail = engine.mailView(d) ?? (d.status === "sent" && sends.mailed.has(d.code) ? engine.mailRecord(d) : undefined);
+		const mail = d.status !== "sent" ? engine.mailView(d) : sends.mailed.has(d.code) ? (engine.mailView(d) ?? engine.mailRecord(d)) : sends.mailFailed.has(d.code) ? engine.mailView(d) : undefined;
 		const before = d.replaces ? draftOf(d.replaces) : undefined;
 		const sent = sentOf(d, sends);
 		return {

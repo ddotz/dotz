@@ -74,7 +74,7 @@ test("after 답글만 보내기 the mail left behind is its own open card in the
 	await approve(code);
 	expect((await runComments(["send", code, "--only", "reply"], t.engine, paths.inbox())).code).toBe(0);
 	expect(getDraft(mailId)?.status).toBe("pending");
-	expect(await commentAdapter(t.engine).list()).toEqual([]);
+	expect((await commentAdapter(t.engine).list()).map(v => [v.ref, v.draft.state, v.draft.mail?.ref])).toEqual([[code, "sent", undefined]]);
 	expect(await mailRefs()).toEqual([mailId]);
 });
 
