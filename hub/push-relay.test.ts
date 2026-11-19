@@ -404,6 +404,16 @@ test("what makes a notification stale: a decision answered or dismissed, a conve
 	expect(staleTags({ kind: "notice", item: { id: 3, decision: { state: "answered", options: [], to: "web" } } })).toEqual(["decision:3"]);
 });
 
+test("reading the alert conversation closes an alert another computer's app showed (its tag is per alert, so it is remembered when sent, not only when shown here)", async () => {
+	const phone = await sub("beta", PHONE, true);
+	const alert = { kind: "alert", title: "dotz · 경고", body: `alert-${++seq}`, url: "/#chat/alert", tag: `alert:a${seq}`, ts: "2026-10-22T01:02:03.004Z" };
+	await send("alpha", alert);
+	const shownTag = phone.got().map(x => x.tag);
+	expect(shownTag).toEqual([`alpha.ts.net:8443:${alert.tag}`]);
+	await inst.alpha.withdraw(inst.alpha.staleTags({ kind: "read", target: "alert" }));
+	expect(phone.got().at(-1)).toMatchObject({ kind: "withdraw", withdraw: shownTag });
+});
+
 const bell = (n: Partial<Notice>): Notice => ({ id: "x", ts: "2026-11-02T03:04:05.006Z", updated: "2026-11-02T03:04:05.006Z", kind: "message", tone: "", title: "제목", text: "본문", open: "main", at: "2026-11-02T03:04:05.006Z", read: false, ...n });
 const addrOfPush = (m: Record<string, unknown>) => {
 	const u = new URL(String(m.url), "http://x");

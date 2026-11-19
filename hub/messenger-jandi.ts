@@ -280,11 +280,15 @@ function selfChatBlock(dataDir: string, sc: SelfChatConfig | undefined): Pick<Se
 	return { self_chat: { state: lost ? "lost" : "ok", label: lost ? t.lost.label : t.ok.label, hint: lost ? t.lost.hint : t.ok.hint, connect: t.reconnect } };
 }
 
+const laneReachesOwner = (msg: OutMsg): boolean => {
+	const cls = postClass(msg.target, msg.text);
+	return cls === "result" || cls === "ask" || (cls === "alert" && parseTone(msg.text).tone === "fail");
+};
 /** With no webhook to post to, a reply goes out as a post of the owner's own session in the chat with the JANDI bot, always behind the reply prefix (so it is never read as a command). The worklog stays in the web app. */
 async function viaSession(selfChat: SelfChat | undefined, cfg: JandiConfig, msg: OutMsg, text: string): Promise<DeliverResult> {
 	const sc = cfg.self_chat;
 	const mainHasWebhook = cfg.rooms.some(r => r.kind === "main" && (r.incoming_url || cfg.incoming_url));
-	const wanted = msg.kind !== "worklog" && (msg.kind !== "lane" || ["result", "ask"].includes(postClass(msg.target, msg.text) ?? ""));
+	const wanted = msg.kind !== "worklog" && (msg.kind !== "lane" || laneReachesOwner(msg));
 	if (!selfChat || !selfChatReady(sc) || !wanted || mainHasWebhook) return { delivered: false, reason: "no room" };
 	const prefix = `${sc.reply_prefix || `[${NAME}]`} `;
 	const parts = splitText(text, MAX_PART - prefix.length);
@@ -614,7 +618,7 @@ export function createJandiAdapter(dataDir: string = DATA_DIR, spec?: (body: str
 		// A project with no room of its own talks in the main room.
 		if (!dests.length && msg.kind === "project") dests = ready.filter(r => r.room.kind === "main");
 		// JANDI has no lane room: a lane's result or question ([done]/[fail]/[ask]) reaches the owner in the main room; its progress stays in the web.
-		if (!dests.length && msg.kind === "lane" && ["result", "ask"].includes(postClass(msg.target, msg.text) ?? "")) dests = ready.filter(r => r.room.kind === "main");
+		if (!dests.length && msg.kind === "lane" && laneReachesOwner(msg)) dests = ready.filter(r => r.room.kind === "main");
 		dests = dests.filter((d, i) => dests.findIndex(x => x.url === d.url) === i);
 		if (!dests.length) {
 			const r = await viaSession(selfChat, cfg, msg, text);

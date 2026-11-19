@@ -7,6 +7,7 @@
 //   news   새 소식    mail, KakaoTalk, comments, monitors, schedules: push per app (that app's own switch), grouped by app in the bell.
 //   conv   대화       a new answer in a conversation the owner is not looking at: push only then (hub/push.ts shouldNotify); one unread item per conversation in 알림 / bell, under 새 소식, read by looking.
 //   log    기록       [run] progress, routine records and a monitor report that found nothing new (watchUnchanged): no push, no badge, only in 작업내역 / 모니터링.
+import { kindRow } from "./notice-kinds.ts";
 import type { Notice, NoticeKind, NoticeTone } from "./notices.ts";
 import { parkedTone } from "./tone.ts";
 import { loginLost, watchUnchanged } from "./watchtext.ts";
@@ -24,12 +25,15 @@ export const ROUTINE_ALERT = /^토큰 누수 점검/;
 
 // `decision`: the state of the notice's decision when it has one; `quiet`: an alert the gateway already told (a repeat, an all-clear, a reply in
 // the alert channel, or a non-critical post by someone other than the gateway; the event path decides it, hub/push.ts classifyEvent).
-export type ClassInput = { kind: NoticeKind; tone: NoticeTone; decision?: string; key?: string; text?: string; read?: boolean; ignored?: boolean; quiet?: boolean };
+/** `nk`: the kind its writer named (hub/notice-kinds.ts); when the registry knows it, its class is the kind's and nothing is guessed. */
+export type ClassInput = { kind: NoticeKind; tone: NoticeTone; decision?: string; key?: string; text?: string; read?: boolean; ignored?: boolean; quiet?: boolean; nk?: unknown };
 
 // A lost login: only the gateway's own alert and monitor reports can say so (a mail or a session's report that quotes the words is not one).
 export const isLoginLost = (n: Pick<ClassInput, "kind" | "tone" | "text">): boolean => (n.kind === "alert" || n.kind === "watch") && n.tone !== "done" && loginLost(n.text ?? "");
 
 function clsOf(n: ClassInput): NoticeClass {
+	const row = kindRow(n.nk);
+	if (row) return n.quiet ? "log" : row.cls;
 	if (n.kind === "decision" || n.decision !== undefined || n.tone === "ask") return "ask";
 	if (parkedTone(n.tone || undefined)) return "log";
 	if (isLoginLost(n)) return "alert";
@@ -39,7 +43,7 @@ function clsOf(n: ClassInput): NoticeClass {
 			return n.quiet || ROUTINE_ALERT.test(n.text ?? "") || watchUnchanged(n.text ?? "") ? "log" : "alert";
 		case "result":
 		case "worklog":
-			return n.tone === "done" || n.tone === "fail" ? "result" : "log";
+			return n.tone === "done" ? "result" : n.tone === "fail" ? "alert" : "log";
 		case "watch":
 			return watchUnchanged(n.text ?? "") ? "log" : "news";
 		case "message":
@@ -54,5 +58,5 @@ export function noticeClass(n: ClassInput): ClassOf {
 	const pin = cls === "ask" && (n.decision !== undefined ? n.decision === "open" : !n.read && !n.ignored);
 	return { cls, badge: BADGE[cls], pin };
 }
-export const classOfNotice = (n: Notice): ClassOf =>
-	noticeClass({ kind: n.kind, tone: n.tone, ...(n.decision ? { decision: n.decision.state } : {}), ...(n.key ? { key: n.key } : {}), text: n.text, read: n.read, ignored: !!n.ignored });
+export const classOfNotice = (n: Notice & { nk?: unknown }): ClassOf =>
+	noticeClass({ kind: n.kind, tone: n.tone, ...(n.decision ? { decision: n.decision.state } : {}), ...(n.key ? { key: n.key } : {}), text: n.text, read: n.read, ignored: !!n.ignored, ...(n.nk !== undefined ? { nk: n.nk } : {}) });

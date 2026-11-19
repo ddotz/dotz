@@ -7,6 +7,8 @@ import { chmodSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { cfg, DATA_DIR, log, NAME, updateNotifyPush, writeAtomic } from "./config.ts";
 import { classOfNotice, NOTICE_CLASSES, type NoticeClass, noticeClass } from "./notice-class.ts";
+import { type KindItem, kindOf, NOTICE_KINDS, type NoticeKindName, pushTitle } from "./notice-kinds.ts";
+import { clean } from "./notices-rules.ts";
 import { pushClasses, route } from "./notify-route.ts";
 import { eventTarget, type HubEvent, onBroadcast, onEmit } from "./events.ts";
 import { dropForLine, orchestratorOnlyAsk } from "./forline.ts";
@@ -16,6 +18,7 @@ import { DECISION_HEAD, decisionText } from "./choices.ts";
 import { dropIdNote, noticeKo, plainTable } from "./notice.ts";
 import { type Found, knownComputers } from "./peers.ts";
 import { isLater, parseTone, previewSource, stripMarkers } from "./tone.ts";
+import { webText } from "./web-i18n.ts";
 import { generateVapidKeys, sendPush, type Subscription, type VapidKeys } from "./webpush.ts";
 import { json } from "./routes-util.ts";
 
@@ -106,6 +109,10 @@ export function classify(e: HubEvent, sinceOwner?: number): PushMessage | undefi
 	return { ...rest, ...addrOf({ conv, at: e.ts }) };
 }
 type Classified = Omit<PushMessage, "url"> & { conv: string };
+function made(nk: NoticeKindName, item: KindItem, body: string): Classified {
+	const row = NOTICE_KINDS[nk];
+	return { kind: row.cls, title: pushTitle(nk, row.lead === "gateway" ? NAME : item.name), body, conv: row.open(item), tag: row.tag(item) };
+}
 function classifyEvent(e: HubEvent, sinceOwner?: number): Classified | undefined {
 	const text = typeof e.text === "string" ? e.text : "";
 	if (!text || isLater(text)) return undefined;
@@ -114,33 +121,30 @@ function classifyEvent(e: HubEvent, sinceOwner?: number): Classified | undefined
 	const key = typeof e.update_key === "string" ? e.update_key : "";
 	// An edited line (a lane's worklog entry, progress): its [done]/[fail] arrives as a bell notice (noticePush), its [run] never notifies.
 	if (key || e.hushed === true) return undefined;
+	const named = kindOf(e.nk);
 	const lane = typeof e.lane === "string" ? e.lane : src.startsWith("lane:") ? src.slice(5) : undefined;
 	if (lane && tone === "ask" && orchestratorOnlyAsk(rest)) return undefined;
+	const pick = (cls: NoticeClass, guess: Partial<Record<NoticeClass, NoticeKindName>>): NoticeKindName | undefined => (cls === "log" ? undefined : (named ?? guess[cls]));
 	if (e.kind === "out" && e.target === "alert") {
 		// An all-clear, or the same alert again (hub/alert-gate.ts), was already as good as told: a record, not a warning.
 		const quiet = !!e.reply_to || tone === "done" || e.repeat === true || quietAlert(text) || (tone !== "fail" && src !== "gateway" && !CRITICAL.test(rest));
-		const c = noticeClass({ kind: "alert", tone, text: rest, quiet });
-		if (c.cls === "ask") return { kind: "ask", title: `${NAME} · 확인 필요`, body: plain(rest), conv: "alert", tag: "ask:alert" };
-		return c.cls === "alert" ? { kind: "alert", title: `${NAME} · 경고`, body: plain(rest), conv: "alert", tag: "alert" } : undefined;
+		const nk = pick(noticeClass({ kind: "alert", tone: tone ?? "", text: rest, quiet, nk: named }).cls, { ask: "ask", alert: "alert" });
+		return nk ? made(nk, { name: NAME, conv: "alert", text: clean(text).text }, plain(rest)) : undefined;
 	}
 	if (lane && (e.kind === "out" || e.kind === "lane_report")) {
-		const conv = `lane:${lane}`;
 		// An untagged turn-end report that answers the owner, after a long turn, is the session's finished work, like the main chat's below.
 		const long = e.kind === "lane_report" && e.answering === true && !tone && (sinceOwner ?? 0) >= LONG_TURN_MS;
-		const c = noticeClass({ kind: "result", tone: long ? "done" : tone });
-		if (c.cls === "ask") return { kind: "ask", title: `${laneNameKo(lane)} · 질문`, body: plain(rest), conv, tag: `ask:${lane}` };
-		return c.cls === "result" ? { kind: "result", title: `${laneNameKo(lane)} · ${tone === "fail" ? "실패" : "완료"}`, body: plain(rest), conv, tag: `lane:${lane}` } : undefined;
+		const nk = pick(noticeClass({ kind: "result", tone: long ? "done" : (tone ?? ""), nk: named }).cls, { ask: "session-ask", result: "session-done", alert: "session-fail" });
+		return nk ? made(nk, { name: laneNameKo(lane), conv: `lane:${lane}`, key: `lane:${lane}`, text: clean(text).text }, plain(rest)) : undefined;
 	}
 	// The main chat's answers and a project's (work channel or one of its threads) are the same kind of message: one rule, each opening its own chat.
 	const chat = e.kind === "out" && e.source === "orchestrator" ? (e.target === "web" ? "main" : /^(?:ch:|settings:)/.test(eventTarget(e) ?? "") ? eventTarget(e) : undefined) : undefined;
 	if (chat) {
-		const conv = chat, sfx = chat === "main" ? "" : `:${chat}`;
 		// A monitor's or app's settings conversation is titled with its label, like its notice in the bell.
 		const name = chat.startsWith("settings:") ? conversationTitle(chat) : NAME;
 		// A quick reply is not finished work: it reaches the owner as the conversation's unread answer (noticePush, class conv) when he is elsewhere.
-		const c = noticeClass({ kind: "result", tone: tone || ((sinceOwner ?? 0) >= LONG_TURN_MS ? "done" : "") });
-		if (c.cls === "ask") return { kind: "ask", title: `${name} · 확인 필요`, body: plain(rest), conv, tag: `ask:${chat}` };
-		return c.cls === "result" ? { kind: "result", title: `${name} · ${tone === "fail" ? "실패" : "완료"}`, body: plain(rest), conv, tag: `answer${sfx}` } : undefined;
+		const nk = pick(noticeClass({ kind: "result", tone: tone || ((sinceOwner ?? 0) >= LONG_TURN_MS ? "done" : ""), nk: named }).cls, { ask: "ask", result: "answer-done", alert: "answer-fail" });
+		return nk ? made(nk, { name, conv: chat, text: clean(text).text }, plain(rest)) : undefined;
 	}
 	return undefined;
 }
@@ -176,46 +180,50 @@ export function addrOf(a: PushAddr): Pick<PushMessage, "url" | "ts" | "nid" | "i
 	if (a.gw) q.set("pc", a.gw);
 	return { url: `/${q.size ? `?${q}` : ""}${hashOf(a.conv)}`, ...(a.at ? { ts: a.at } : {}), ...(a.nid ? { nid: a.nid } : {}), ...(a.dec ? { id: a.dec } : {}), ...(a.gw ? { pc: a.gw } : {}) };
 }
-// The tag a conversation's answer notification carries (the same as classify's), so one matter is one notification whichever path sends it.
-const answerTag = (conv: string) => (conv === "main" ? "answer" : conv.startsWith("lane:") ? conv : conv === "alert" ? "alert" : `answer:${conv}`);
 
 // A bell notice that just became unread (hub/notices.ts onNoticeUnread) as a notification: results, monitoring news, alerts, unread answers.
 // Decisions push through decisionPush (onDecision), so an [ask] twin here stays quiet; [run] progress and the gateway's routine records never notify.
-export function noticePush(n: Notice): PushMessage | undefined {
+export function noticePush(n: Notice & { nk?: unknown }): PushMessage | undefined {
 	if (n.read || n.dismissed) return undefined;
 	const { cls } = classOfNotice(n);
-	if (cls === "ask") return undefined;
+	if (cls === "ask" || cls === "log") return undefined;
 	const conv = n.open || "main";
-	const base = { kind: cls, body: plain(n.text) || plain(n.title), ...addrOf({ conv, at: n.at, nid: n.id }) };
+	const nk = kindOf(n.nk) ?? guessedKind(n, cls, conv);
+	if (!nk || (cls === "news" && n.watch && watchPushOff(n.watch))) return undefined;
+	const item: KindItem = { name: n.title, conv, text: n.text, id: n.id, at: n.at, ...(n.key ? { key: n.key } : {}), ...(n.watch ? { watch: n.watch } : {}), folded: !!n.repeats?.length };
+	const { conv: open, ...m } = made(nk, item, plain(n.text) || plain(n.title));
+	return { ...m, ...addrOf({ conv: open, at: n.at, nid: n.id }), ...(cls === "news" && n.app ? { app: n.app } : {}) };
+}
+function guessedKind(n: Notice, cls: NoticeClass, conv: string): NoticeKindName | undefined {
 	switch (cls) {
-		case "result": {
-			const title = `${n.title} · ${n.tone === "fail" ? "실패" : "완료"}`;
-			return n.kind === "worklog" ? { ...base, title, tag: `worklog:${n.key ?? n.id}` } : { ...base, title, tag: conv.startsWith("lane:") ? conv : `result:${n.key ?? n.id}` };
-		}
-		case "news":
-			if (n.key === "self-update") return { ...base, title: `${NAME} · ${n.title}`, tag: "update" };
-			if (n.watch && watchPushOff(n.watch)) return undefined;
-			if (conv.startsWith("mail:")) return { ...base, title: `${n.title} · 새 메일`, tag: `watch:${conv}`, ...(n.app ? { app: n.app } : {}) };
-			return { ...base, title: `${n.title} · 새 소식`, tag: `watch:${n.key ?? n.watch ?? (n.repeats?.length ? `${n.id}:${n.at}` : n.id)}`, ...(n.app ? { app: n.app } : {}) };
+		case "result":
+			return n.kind === "worklog" ? "worklog-done" : "session-done";
 		case "alert":
-			return { ...base, title: `${NAME} · ${n.tone === "fail" || CRITICAL.test(n.text) ? "경고" : n.title}`, tag: "alert" };
+			return n.kind === "worklog" ? "worklog-fail" : n.kind === "result" ? "session-fail" : "alert";
+		case "news":
+			return n.key === "self-update" ? "self-update" : conv.startsWith("mail:") ? "mail" : "watch";
 		case "conv":
-			return { ...base, title: `${n.title} · 새 메시지`, tag: answerTag(conv) };
+			return "answer";
+		case "ask":
+		case "log":
+			return undefined;
+		default: {
+			const _exhaustive: never = cls;
+			return _exhaustive;
+		}
 	}
-	return undefined;
 }
 
-const DECISION_PUSH_TITLE = "답변이 필요해요";
 const DECISION_ACTIONS = 2;
 // A decision notice as a notification: the decision line as the body, at most two option buttons (never the login form's own input).
 export function decisionPush(n: Notice): PushMessage {
 	const d = n.decision!;
-	const conv = d.to.startsWith("auth:") ? "main" : d.to;
+	const { conv, ...m } = made("decision", { name: NAME, conv: d.to, id: n.id }, plain(n.title));
 	const group = confirmGroup(n);
 	// The send approvals of one monitoring app are one notification that evolves (same tag): "메일 답장 확인 3건", with no button, since a button answers one item.
-	if (group && group.count > 1) return { kind: "ask", title: DECISION_PUSH_TITLE, body: `${group.label} ${group.count}건`, ...addrOf({ conv: "home", at: n.at, dec: n.id }), tag: `decision-group:${group.key}` };
+	if (group && group.count > 1) return { ...m, body: `${group.label} ${group.count}건`, ...addrOf({ conv: "home", at: n.at, dec: n.id }), tag: `decision-group:${group.key}` };
 	const actions = d.options.filter(o => o.action !== "form").slice(0, DECISION_ACTIONS).map(o => ({ action: `opt:${o.n}`, title: plain(`${o.n}) ${o.label}`, 40) }));
-	return { kind: "ask", title: DECISION_PUSH_TITLE, body: plain(n.title), ...addrOf({ conv, at: n.at, dec: n.id }), tag: `decision:${n.id}`, ...(actions.length ? { actions } : {}) };
+	return { ...m, ...addrOf({ conv, at: n.at, dec: n.id }), ...(actions.length ? { actions } : {}) };
 }
 
 // Taking back what was handled (owner 2026-10-28: "완료된건데 확인이 필요하다고 막 이러면 좀 헷갈려"): every tag a device was shown is remembered with the
@@ -225,6 +233,7 @@ export function decisionPush(n: Notice): PushMessage {
 const SHOWN_MS = 3 * 24 * 3600_000;
 const shown = new Map<string, Map<string, number>>();
 const owed = new Map<string, Set<string>>();
+const alertsSent = new Map<string, number>();
 export const isAppleEndpoint = (endpoint: string): boolean => /(^|\.)push\.apple\.com$/.test(origin(endpoint).replace(/^https?:\/\//, ""));
 function noteShown(endpoint: string, tag: string | undefined): void {
 	if (!tag) return;
@@ -242,6 +251,7 @@ export async function withdraw(tags: readonly string[], relay = true): Promise<n
 	for (const tag of new Set(tags)) {
 		// A settled matter may notify again when something new comes for it.
 		recentTags.delete(tag);
+		alertsSent.delete(tag);
 		const eps = shown.get(tag);
 		if (!eps) continue;
 		shown.delete(tag);
@@ -286,20 +296,21 @@ export function staleTags(e: Record<string, unknown>): string[] {
 	if (e.kind === "read" && typeof e.target === "string") {
 		const t = e.target;
 		if (t === "main") return ["answer", "ask:main"];
-		if (t === "alert") return ["ask:alert", "alert"];
+		if (t === "alert") return ["ask:alert", "alert", ...new Set([...shown.keys(), ...alertsSent.keys()].filter(tag => tag.startsWith("alert:")))];
 		if (t.startsWith("lane:")) return [`ask:${t.slice(5)}`, `lane:${t.slice(5)}`, `start:${t.slice(5)}`];
 		if (/^(?:ch|settings):/.test(t)) return [`answer:${t}`, `ask:${t}`];
 	}
 	return [];
 }
 
+const RECALL_OPTS = { urgency: "low", ttl: 300 } as const;
 // One send, tried a second time when the push service's connection broke (a reused socket reset: ECONNRESET, 2026-11-03) or it answered 5xx.
 async function sendOnce(sub: Stored, msg: PushMessage): Promise<number> {
 	try {
-		const status = await sendPush(sub, msg, vapid(), subject());
+		const status = await sendPush(sub, msg, vapid(), subject(), msg.kind === "withdraw" ? RECALL_OPTS : {});
 		if (status < 500) return status;
 	} catch {}
-	return sendPush(sub, msg, vapid(), subject());
+	return sendPush(sub, msg, vapid(), subject(), msg.kind === "withdraw" ? RECALL_OPTS : {});
 }
 
 async function deliver(sub: Stored, m: PushMessage): Promise<number> {
@@ -548,6 +559,10 @@ export function notify(raw: PushMessage): Promise<void> {
 	const m = raw.kind === "withdraw" ? raw : { ...raw, title: noticeKo(raw.title, { lane: laneNameKo }), body: noticeKo(raw.body, { lane: laneNameKo }) };
 	const t = Date.now();
 	if (!shouldNotify(m, t)) return Promise.resolve();
+	if (m.tag?.startsWith("alert:")) {
+		for (const [tag, at] of alertsSent) if (t - at > SHOWN_MS) alertsSent.delete(tag);
+		alertsSent.set(m.tag, t);
+	}
 	if (m.kind === "test") {
 		for (const s of subs) if (wants(s, m, t)) void deliver(s, m);
 		return Promise.resolve();
@@ -710,7 +725,7 @@ export async function pushRoute(req: Request, url: URL): Promise<Response | unde
 	if (req.method === "POST" && p === "/api/push/test") {
 		const s = findSub(b.endpoint);
 		if (!s) return json({ error: "not subscribed" }, 404);
-		const status = await deliver(s, { kind: "test", title: `${NAME} 테스트 알림`, body: "알림이 잘 와요. 누르면 대화로 가요.", url: "/#chat/main", tag: "test" });
+		const status = await deliver(s, { kind: "test", title: webText("notice.push.test", { name: NAME }), body: webText("notice.push.test_body"), url: "/#chat/main", tag: "test" });
 		return json({ ok: status >= 200 && status < 300, status }, status >= 200 && status < 300 ? 200 : 502);
 	}
 	return json({ error: "unknown push route" }, 404);

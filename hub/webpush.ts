@@ -55,7 +55,7 @@ export function encryptPayload(plaintext: Uint8Array, p256dh: string, auth: stri
 export type Subscription = { endpoint: string; keys: { p256dh: string; auth: string } };
 
 // POSTs one message. Returns the push service status: 201 sent, 404/410 the subscription is gone.
-export async function sendPush(sub: Subscription, payload: unknown, keys: VapidKeys, subject: string, opts: { ttl?: number; urgency?: "normal" | "high"; fetchFn?: typeof fetch } = {}): Promise<number> {
+export async function sendPush(sub: Subscription, payload: unknown, keys: VapidKeys, subject: string, opts: { ttl?: number; urgency?: "low" | "normal" | "high"; fetchFn?: typeof fetch } = {}): Promise<number> {
 	const body = encryptPayload(Buffer.from(JSON.stringify(payload)), sub.keys.p256dh, sub.keys.auth);
 	const res = await (opts.fetchFn ?? fetch)(sub.endpoint, {
 		method: "POST",

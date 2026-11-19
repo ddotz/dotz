@@ -339,7 +339,7 @@ describe("a peer's new reply as a notification", () => {
 		expect(JSON.stringify(m)).not.toContain(String(cfg.room_id));
 	});
 	test("nothing goes out while that computer's chat is on a screen, and it notifies again once the page is gone", () => {
-		expect(peerReplyPush(peer, "[fail]", 10)).toMatchObject({ kind: "result", body: "❌" });
+		expect(peerReplyPush(peer, "[fail]", 10)).toMatchObject({ kind: "alert", body: "❌" });
 		const m = peerReplyPush(peer, "빌드 끝났어요", 11)!;
 		expect(setViewing("tab-relay", `relay:jandi:${peer.keyword}`).ok).toBe(true);
 		expect(shouldNotify(m, 1_000, undefined, () => true)).toBe(false);
@@ -350,9 +350,9 @@ describe("a peer's new reply as a notification", () => {
 	test("a class switched off in the app's settings stays quiet", () => {
 		expect(shouldNotify(peerReplyPush(peer, "빌드 끝났어요", 12)!, 1_000, () => false, () => false)).toBe(false);
 	});
-	test("the class follows the status marker: [ask] asks, [done] and [fail] are results, no marker is a message, [run] is silent", () => {
+	test("the class follows the status marker: [ask] asks, [done] is a result, [fail] a warning, no marker is a message, [run] is silent", () => {
 		const kind = (text: string) => peerReplyPush(peer, text, 1)?.kind;
-		expect([kind("[ask] 배포할까요?"), kind("[done] 끝났어요"), kind("[fail] 실패했어요"), kind("빌드 시작했어요"), kind("[run] 도는 중")]).toEqual(["ask", "result", "result", "conv", undefined]);
+		expect([kind("[ask] 배포할까요?"), kind("[done] 끝났어요"), kind("[fail] 실패했어요"), kind("빌드 시작했어요"), kind("[run] 도는 중")]).toEqual(["ask", "result", "alert", "conv", undefined]);
 		expect(peerReplyPush(peer, "[ask]", 1)).toBeUndefined();
 	});
 

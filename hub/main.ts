@@ -609,7 +609,6 @@ setFollowupWake(text => {
 });
 void startSelfUpdate(text => {
 	updateAvailable(text);
-	pushNotify({ kind: "update", title: `${NAME} 업데이트`, body: text, url: "/#settings", tag: "update" });
 	broadcast({ ts: now(), kind: "update_available", source: "gateway", text });
 }, undefined, {
 	worklog: text => void out("worklog", text, undefined, { source: "gateway", wk: "update" }).catch(e => log(`self-update worklog post failed: ${e}`)),

@@ -8,6 +8,7 @@ import { emit } from "./events.ts";
 import { type Notice, onNoticeUnread } from "./notices.ts";
 import { classify, convOfUrl, decisionPush, noticePush, presenceQuiets, pushRoute, resetPushDedupeForTest, shouldNotify } from "./push.ts";
 import { b64u } from "./webpush.ts";
+import { diskReader, HANGUL, resolveView, setWebView, webView } from "./web-i18n.ts";
 
 const notice = (n: Partial<Notice>): Notice => ({ id: "n1", ts: "2026-11-01T00:00:00Z", updated: "2026-11-01T00:00:00Z", kind: "message", tone: "", title: "제목", text: "본문", open: "main", at: "2026-11-01T00:00:00Z", read: false, ...n });
 
@@ -28,9 +29,9 @@ test("results, monitoring news, alerts and unread answers notify; progress, ques
 	expect(noticePush(notice({ kind: "watch", title: "예약", open: "ch:123", text: "3시 회의" }))).toMatchObject({ kind: "news", url: "/?m=2026-11-01T00%3A00%3A00Z&i=n1#chat/ch:123", tag: "watch:n1" });
 	expect(noticePush(notice({ kind: "message", title: NAME, open: "main", text: "보고서 정리했어요" }))).toMatchObject({ kind: "conv", title: `${NAME} · 새 메시지`, url: "/?m=2026-11-01T00%3A00%3A00Z&i=n1#chat/main", tag: "answer" });
 	expect(noticePush(notice({ kind: "message", title: "프로젝트", open: "ch:9" }))).toMatchObject({ tag: "answer:ch:9", url: "/?m=2026-11-01T00%3A00%3A00Z&i=n1#chat/ch:9" });
-	expect(noticePush(notice({ kind: "alert", tone: "", title: "알림", open: "alert", text: "모델 제공자 오류(timeout)" }))).toMatchObject({ kind: "alert", title: `${NAME} · 경고`, tag: "alert" });
+	expect(noticePush(notice({ kind: "alert", tone: "", title: "알림", open: "alert", text: "모델 제공자 오류(timeout)" }))).toMatchObject({ kind: "alert", title: `${NAME} · 경고`, tag: expect.stringMatching(/^alert:[0-9a-f]{12}$/) });
 	expect(noticePush(notice({ kind: "alert", tone: "", title: "새 버전", open: "settings", key: "self-update" }))).toMatchObject({ kind: "news", url: "/?m=2026-11-01T00%3A00%3A00Z&i=n1#settings", tag: "update" });
-	expect(noticePush(notice({ kind: "worklog", tone: "fail", title: "작업 기록", open: "worklog" }))).toMatchObject({ kind: "result", title: "작업 기록 · 실패" });
+	expect(noticePush(notice({ kind: "worklog", tone: "fail", title: "작업 기록", open: "worklog" }))).toMatchObject({ kind: "alert", title: "작업 기록 · 실패" });
 	// a finished work log entry is a result too (notice class result)
 	expect(noticePush(notice({ kind: "worklog", tone: "done", title: "작업 기록", open: "worklog" }))).toMatchObject({ kind: "result", title: "작업 기록 · 완료" });
 	// no notification
@@ -160,4 +161,65 @@ test("the service worker holds back a notification only for the conversation a f
 	expect(pushSuppressed([win("#home")], "/#home", O)).toBe(false);
 	expect(pushSuppressed([], "/#chat/main", O)).toBe(false);
 	expect(pushSuppressed([{ url: "https://other:1/#chat/main", visibilityState: "visible", focused: true }], "/#chat/main", O)).toBe(false);
+});
+
+test("a failed session or work log entry is a warning, pushed under the alert switch while results are off; a finished one stays a result", () => {
+	resetPushDedupeForTest();
+	const t = Date.parse("2026-11-19T00:00:00Z"), none = () => false, resultsOff = (cls: string) => cls !== "result";
+	const sessionFail = noticePush(notice({ kind: "result", tone: "fail", title: "ui-pwa", open: "lane:ui-pwa", key: "lane:ui-pwa", text: "테스트 실패" }))!;
+	const worklogFail = noticePush(notice({ kind: "worklog", tone: "fail", title: "작업 기록", open: "worklog", text: "야간 정리 실패" }))!;
+	const reportFail = classify({ ts: "2026-11-19T00:00:00Z", kind: "lane_report", source: "lane:nc3", lane: "nc3", text: "[fail] 빌드가 깨졌어요" })!;
+	const sessionDone = noticePush(notice({ kind: "result", tone: "done", title: "ui-done", open: "lane:ui-done", key: "lane:ui-done", text: "끝" }))!;
+	expect([sessionFail.kind, worklogFail.kind, reportFail.kind, sessionDone.kind]).toEqual(["alert", "alert", "alert", "result"]);
+	expect([sessionFail, worklogFail, reportFail, sessionDone].map(m => shouldNotify(m, t, none, resultsOff))).toEqual([true, true, true, false]);
+	resetPushDedupeForTest();
+});
+
+test("two different alerts within two minutes both notify, each under its own tag; the same alert again keeps its tag", () => {
+	resetPushDedupeForTest();
+	const t = Date.parse("2026-11-19T00:00:00Z"), none = () => false, on = () => true;
+	const first = classify({ ts: "2026-11-19T00:00:00Z", kind: "out", source: "gateway", target: "alert", text: "땃쥐: 모델 제공자 오류(timeout) 1회" })!;
+	const second = classify({ ts: "2026-11-19T00:01:00Z", kind: "out", source: "gateway", target: "alert", text: "땃쥐: 디스크 남은 공간 3GB" })!;
+	const again = noticePush(notice({ kind: "alert", open: "alert", text: "땃쥐: 모델 제공자 오류(timeout) 4회" }))!;
+	expect([first.kind, second.kind]).toEqual(["alert", "alert"]);
+	expect(second.tag).not.toBe(first.tag);
+	expect(again.tag).toBe(first.tag);
+	expect([shouldNotify(first, t, none, on), shouldNotify(second, t + 60_000, none, on), shouldNotify(again, t + 90_000, none, on)]).toEqual([true, true, false]);
+	resetPushDedupeForTest();
+});
+
+test("push titles are in the install's language: an English install gets no Korean word in any of them", () => {
+	const prev = webView();
+	setWebView(() => resolveView("en", diskReader()));
+	try {
+		const ev = (e: Record<string, unknown>) => classify({ ts: "2026-11-19T00:00:00Z", kind: "out", source: "orchestrator", text: "", ...e }, 5 * 60_000)!;
+		const dec = notice({ kind: "decision", tone: "ask", decision: { options: [], to: "main", group: 1, state: "open" } });
+		const titles = [
+			ev({ source: "gateway", target: "alert", text: "dotz: provider error" }).title,
+			ev({ target: "web", text: "[ask] which one?" }).title,
+			ev({ target: "web", text: "[done] shipped" }).title,
+			ev({ target: "web", text: "[fail] broke" }).title,
+			ev({ source: "lane:en-x", target: "lane:en-x", text: "[ask] merge?" }).title.replace(/^.* · /, "lane · "),
+			noticePush(notice({ kind: "watch", title: "Kim", open: "mail:en1", key: "mail:en1", text: "Quote" }))!.title,
+			noticePush(notice({ kind: "watch", title: "Feed", open: "ch:771", text: "new post" }))!.title,
+			noticePush(notice({ kind: "message", title: "Proj", open: "ch:772", text: "hi" }))!.title,
+			noticePush(notice({ kind: "result", tone: "done", title: "ui", open: "lane:ui", key: "lane:ui" }))!.title,
+			noticePush(notice({ kind: "result", tone: "fail", title: "ui", open: "lane:ui", key: "lane:ui" }))!.title,
+			noticePush(notice({ kind: "alert", tone: "", title: "x", open: "settings", key: "self-update", text: "1.2.3" }))!.title,
+			decisionPush(dec).title,
+		];
+		expect(titles.filter(s => HANGUL.test(s.replace(NAME, "")))).toEqual([]);
+		expect(titles).toEqual([`${NAME} · Alert`, `${NAME} · Needs a look`, `${NAME} · Done`, `${NAME} · Failed`, "lane · Question", "Kim · New mail", "Feed · News", "Proj · New message", "ui · Done", "ui · Failed", `${NAME} · New version`, "Needs your answer"]);
+	} finally {
+		setWebView(prev ? () => prev : undefined);
+	}
+});
+
+test("a push title is at most 80 characters with the sender's name in it, and keeps what happened at its end", () => {
+	for (const name of ["", "ui", "가".repeat(79), "가".repeat(1500), "x".repeat(4000), "👩‍💻 세션 \"quoted\" $(rm -rf)".repeat(30)]) {
+		const title = noticePush(notice({ kind: "result", tone: "done", title: name, open: "lane:cap", key: "lane:cap" }))!.title;
+		expect(title.length).toBeLessThanOrEqual(80);
+		expect(title.endsWith(" · 완료")).toBe(true);
+		if (`${name} · 완료`.length <= 80) expect(title).toBe(`${name} · 완료`);
+	}
 });

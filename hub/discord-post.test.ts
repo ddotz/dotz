@@ -83,7 +83,8 @@ test("postClass: the class of an outgoing post, or none for progress and the wor
 	expect(postClass("lane:x", "[ask] \uc9c8\ubb38")).toBe("ask");
 	expect(postClass("alert", "gateway stopped")).toBe("alert");
 	expect(postClass("lane:x", "[done] \ub05d")).toBe("result");
-	expect(postClass("lane:x", "[fail] \uc2e4\ud328")).toBe("result");
+	expect(postClass("lane:x", "[fail] \uc2e4\ud328")).toBe("alert");
+	expect(postClass("lane:x", "[fail] \uc2e4\ud328", { lane_report: true })).toBe("alert");
 	expect(postClass("lane:x", "\ubcf4\uace0", { lane_report: true })).toBe("result");
 	expect(postClass("th:9", "\uc0c8 \uba54\uc77c", { source: "gateway", mail: true })).toBe("news");
 	expect(postClass("ch:1", "\uac10\uc2dc \uacb0\uacfc", { source: "gateway", news: true })).toBe("news");

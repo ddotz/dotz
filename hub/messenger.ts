@@ -20,7 +20,7 @@ export type DeliverResult = { delivered: boolean; reason?: string; ids?: string[
 /** `files`: what the message carried, already saved locally (hub/files.ts Upload); the turn gets one [attachment] line per file. */
 export type Incoming = { adapter: string; target: string; text: string; author: string; replyTo?: string; messageId?: string; quoted?: string; files?: Upload[] };
 /** A phone notification an adapter raises for something that reached it outside the owner's own conversations (hub/push.ts notify). */
-export type AdapterPush = { kind: "ask" | "result" | "conv"; title: string; body: string; url: string; tag: string };
+export type AdapterPush = { kind: "ask" | "result" | "alert" | "conv"; title: string; body: string; url: string; tag: string };
 export type MessengerCtx = { receive(m: Incoming): void; log(s: string): void; notify?(m: AdapterPush): void; /** One plain alert line for the owner (hub/outbound.ts alert). */ alert?(text: string): void };
 /** One line of a conversation with a computer reached through a messenger: `me` is the owner's own line, `at` its time in ms (0 = unknown). */
 export type RelayLine = { id: number; at: number; me: boolean; text: string };

@@ -13,6 +13,7 @@ import { join } from "node:path";
 import { cfg, DATA_DIR, writeAtomic } from "./config.ts";
 import { isWebLane, postKind, postSettings } from "./discord-post.ts";
 import { CLASS_PUSH_DEFAULTS, NOTICE_CLASSES, type NoticeClass } from "./notice-class.ts";
+import { kindRow } from "./notice-kinds.ts";
 import { parkedTone, splitTone } from "./tone.ts";
 
 export type RouteInput = {
@@ -34,12 +35,14 @@ export type Route = { web: boolean; push: boolean; messengers: Record<string, bo
 // The notice class of an outgoing post, or undefined when none applies (progress, work log, anything else).
 // `extra` is the post's event fields (source, update_key, system, mail; news = a monitor's post, hub/main.ts).
 export function postClass(target: string, text: string, extra: Record<string, unknown> = {}): NoticeClass | undefined {
+	const row = kindRow(extra.nk);
+	if (row) return row.cls;
 	const { tone } = splitTone(text);
 	const t = target === "web:alert" ? "alert" : target === "web:worklog" ? "worklog" : target;
 	if (parkedTone(tone) || t === "worklog" || typeof extra.update_key === "string") return undefined;
 	if (tone === "ask") return "ask";
 	if (t === "alert") return "alert";
-	if (t.startsWith("lane:")) return tone === "done" || tone === "fail" || extra.lane_report === true ? "result" : undefined;
+	if (t.startsWith("lane:")) return tone === "fail" ? "alert" : tone === "done" || extra.lane_report === true ? "result" : undefined;
 	if (extra.mail === true || extra.news === true) return "news";
 	const bot = extra.source === undefined || extra.source === "orchestrator";
 	return bot && !extra.system && /^(?:main|ch:|th:|settings:)/.test(t) ? "conv" : undefined;
@@ -90,12 +93,15 @@ const discordOn = (target: string | undefined, cls: NoticeClass | undefined, rep
 };
 
 export function route(input: RouteInput): Route {
-	const cls = input.cls ?? (input.target !== undefined && input.text !== undefined ? postClass(input.target, input.text, input.extra) : undefined);
+	const row = kindRow(input.extra?.nk);
+	const cls = input.cls ?? row?.cls ?? (input.target !== undefined && input.text !== undefined ? postClass(input.target, input.text, input.extra) : undefined);
 	const c = cls ?? "log";
+	if (!(NOTICE_CLASSES as readonly string[]).includes(c) && process.env.NODE_ENV === "test") throw new Error(`route: unknown notice class ${c}`);
+	const on = row?.channels ?? { push: true, discord: true, messenger: true };
 	return {
 		web: true,
-		push: pushClasses()[c] && (c !== "news" || !input.app || appPushes(input.app)),
-		messengers: { discord: discordOn(input.target, cls, input.replyTo), ...Object.fromEntries((input.messengers ?? []).map(id => [id, messengerOn(id, c)])) },
+		push: on.push && pushClasses()[c] && (c !== "news" || !input.app || appPushes(input.app)),
+		messengers: { discord: on.discord && discordOn(input.target, cls, input.replyTo), ...Object.fromEntries((input.messengers ?? []).map(id => [id, on.messenger && messengerOn(id, c)])) },
 	};
 }
 
