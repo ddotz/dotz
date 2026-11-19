@@ -2,7 +2,7 @@
 // test can ever start a real omo or omp), and the fake clock. Runs before any hub module reads config.ts.
 import { beforeEach } from "bun:test";
 import { execFileSync } from "node:child_process";
-import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { installGitHooks } from "../git-hooks.ts";
@@ -54,9 +54,10 @@ if (!process.env.DOTZ_TEST_DIR) {
 		mkdirSync(runs, { recursive: true });
 		const alive = (pid: number) => { try { process.kill(pid, 0); return true; } catch (e) { return (e as NodeJS.ErrnoException).code === "EPERM"; } };
 		for (const name of readdirSync(runs)) {
-			const pid = Number(name.split("-")[0]);
+			const pid = Number(name.split("-")[0]), base = name.split(".gone-", 1)[0]!;
 			if (!pid || alive(pid)) continue;
-			const taken = join(runs, `${name}.gone-${process.pid}`);
+			if (name !== base && Date.now() - (statSync(join(runs, name), { throwIfNoEntry: false })?.ctimeMs ?? 0) < 600_000) continue;
+			const taken = join(runs, `${base}.gone-${process.pid}`);
 			// Another process starting now may take the same list first: the rename is the claim.
 			try { renameSync(join(runs, name), taken); } catch (e) { if ((e as NodeJS.ErrnoException).code === "ENOENT") continue; throw e; }
 			// Only a folder this preload made is removed (<tmp>/dotz-test-XXXXXX, no deeper path), whatever the list says.
