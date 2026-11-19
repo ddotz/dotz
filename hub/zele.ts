@@ -244,6 +244,41 @@ export const zeleRead = async (id: string, account: string): Promise<string> => 
 	return r.stdout;
 };
 
+/** The first message of a thread as `zele mail read --raw` prints it: its From and Reply-To addresses (each undefined when absent). */
+export type RawReplyTo = { from?: string; replyTo?: string };
+
+function firstAddress(value: string | undefined): string | undefined {
+	let text = value?.replace(/"(?:[^"\\]|\\.)*"/g, "");
+	for (let prev = ""; text !== undefined && prev !== text; ) {
+		prev = text;
+		text = text.replace(/\((?:[^()\\]|\\.)*\)/g, "");
+	}
+	return text?.match(/<([^<>\s]+@[^<>\s]+)>|([^\s<>,;:]+@[^\s<>,;:]+)/)?.slice(1).find(Boolean);
+}
+
+/** The first address of the From and of the Reply-To header in a raw RFC 822 message (`Name <a@b>` or bare); only the header block is read, so a body line "Reply-To:" never counts. */
+export function parseReplyTo(raw: string): RawReplyTo {
+	const header: string[] = [];
+	for (const line of raw.split(/\r?\n/)) {
+		if (line === "") break;
+		if (/^[ \t]/.test(line) && header.length) header[header.length - 1] += ` ${line.trim()}`;
+		else header.push(line);
+	}
+	const valueOf = (name: RegExp) => header.find(l => name.test(l))?.replace(/^[^:]*:/, "");
+	const from = firstAddress(valueOf(/^from[ \t]*:/i)), replyTo = firstAddress(valueOf(/^reply-to[ \t]*:/i));
+	return { ...(from ? { from } : {}), ...(replyTo ? { replyTo } : {}) };
+}
+
+/** The From and Reply-To of a thread's first message, from its raw text (`zele mail read <id> --raw`, a read: nothing is sent). A failed or timed-out read gives none and one log line: the reply then goes to the sender. */
+export async function zeleReplyTo(id: string, account: string): Promise<RawReplyTo | undefined> {
+	const r = await runLimited(["zele", "mail", "read", id, "--raw", ...(account ? ["--account", account] : watchFlags())], MAIL_READ_MS);
+	if (r.code !== 0) {
+		log(`zele: raw message of ${id} not read: ${r.timedOut ? "timed out" : r.stderr.trim().slice(0, 200)}`);
+		return undefined;
+	}
+	return parseReplyTo(r.stdout);
+}
+
 // zele lists a thread with the count and the date of its newest message; together they name that message (a new answer raises the count).
 // A recent message's date is its age ("just now", "5m ago", "6h ago", "2d ago"), which changes while the message stays the same, so an
 // age is left out of the stamp and the count alone names the message; a stamp noted with an age compares the same way. Once the message

@@ -334,7 +334,13 @@ function unfoundedRecipient(r: Recipient | undefined, item: ReplyItem): boolean 
 }
 const unfoundedSend = (body: string, item: ReplyItem, base: PromptExtras): boolean => SENT_CLAIM.test(body) && !item.files?.length && !item.candidates?.length && !item.instruction?.trim() && !item.choice && !base.change;
 
-const defaultTo = (item: ReplyItem) => (item.kind === "mail" ? addressesOf(item.replyTo)[0] ?? addressesOf(item.from)[0] ?? item.from : item.from);
+/** The address a reply follows out of a Reply-To value: the first one that is neither the owner's own nor an automated sender's, else none. */
+export function usableReplyTo(replyTo: string | undefined, self: readonly string[] | undefined): string | undefined {
+	const own = new Set((self ?? []).flatMap(addressesOf));
+	return addressesOf(replyTo).find(a => !own.has(a) && !AUTOMATED.test(a.split("@")[0]!));
+}
+
+const defaultTo = (item: ReplyItem) => (item.kind === "mail" ? usableReplyTo(item.replyTo, item.self) ?? addressesOf(item.from)[0] ?? item.from : item.from);
 const defaultSubject = (item: ReplyItem) => (item.kind === "mail" && item.subject?.trim() ? (/^re\s*:/i.test(item.subject.trim()) ? item.subject.trim() : `Re: ${item.subject.trim()}`) : undefined);
 
 // The model's recipient, unless it is a name only, the user's own or not on the original: then the sender's own address when it is known.
@@ -342,9 +348,12 @@ function recipientOf(to: string, item: ReplyItem): string {
 	if (item.kind !== "mail") return to || defaultTo(item);
 	const known = defaultTo(item);
 	if (!addressesOf(known).length) return to || known;
-	const allowed = new Set([item.from, item.replyTo ?? "", ...(item.cc ?? []), ...(item.to ?? [])].flatMap(addressesOf));
+	const named = usableReplyTo(item.replyTo, item.self);
+	const allowed = new Set([item.from, named ?? "", ...(item.cc ?? []), ...(item.to ?? [])].flatMap(addressesOf));
 	const self = new Set((item.self ?? []).flatMap(addressesOf));
 	const got = addressesOf(to);
+	const relay = named ? addressesOf(item.from) : [];
+	if (got.length && got.every(a => relay.includes(a) && a !== named)) return known;
 	return got.length && got.every(a => allowed.has(a) && !self.has(a)) ? to : known;
 }
 

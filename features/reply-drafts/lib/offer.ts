@@ -1,10 +1,10 @@
 // The gateway's hook for a new mail: when this install turned the feature on (and auto), a mail that warrants a reply gets a draft in
 // the user's tone, offered as a send-approval [ask] (hub/draft-approval.ts). Never throws; nothing is sent from here.
-import { addressesOf, precheck, withSenderAddress, type ReplyItem } from "../../../hub/reply-draft.ts";
+import { addressesOf, precheck, usableReplyTo, withSenderAddress, type ReplyItem } from "../../../hub/reply-draft.ts";
 import type { ModelCall } from "../../../hub/reply-draft.ts";
 import type { DraftBrief } from "../../../hub/mail-lines.ts";
 import { hasBoxes } from "../../../hub/mailbox.ts";
-import { threadText } from "../../../hub/zele.ts";
+import { threadText, type RawReplyTo } from "../../../hub/zele.ts";
 import { ownAddresses } from "../../../hub/mail-state.ts";
 import { threadIdOf, webmailSite } from "./senders.ts";
 import { basename } from "node:path";
@@ -19,7 +19,7 @@ import { addDraft, isDrafted, markDrafted } from "./store.ts";
 import { FairQueue } from "./fair-queue.ts";
 import type { Runner } from "./tone.ts";
 
-export type OfferMail = { account?: string; key: string; /** The card's first line instead of the usual one (hub/mail-unanswered.ts). */ headline?: string; /** false: the gateway judged the mail needs no reply (hub/mail.ts); only a draft rule drafts it then */ needs?: boolean; instruction?: string; messageId?: string; target: string; thread?: string; source: string; id: string; subject: string; from?: string; to?: string; cc?: string; summary?: string; body?: string; attachments?: { name: string; size?: number }[]; /** files the poster already chose for the reply (hub/mail.ts reply_files) */ replyFiles?: { path: string }[] };
+export type OfferMail = { account?: string; key: string; /** The card's first line instead of the usual one (hub/mail-unanswered.ts). */ headline?: string; /** false: the gateway judged the mail needs no reply (hub/mail.ts); only a draft rule drafts it then */ needs?: boolean; instruction?: string; messageId?: string; target: string; thread?: string; source: string; id: string; subject: string; from?: string; to?: string; cc?: string; replyTo?: string; summary?: string; body?: string; attachments?: { name: string; size?: number }[]; /** files the poster already chose for the reply (hub/mail.ts reply_files) */ replyFiles?: { path: string }[] };
 export type OfferDeps = BoxDeps & {
 	send: (target: string, text: string) => unknown;
 	call?: ModelCall;
@@ -44,6 +44,7 @@ export type OfferDeps = BoxDeps & {
 	suggest?: (key: string, s: { kind: "reply-draft"; label: string; ref: string; rule?: string }) => void;
 	/** The owner's own addresses for a mail source (hub/mail-state.ts ownAddressesFor in the gateway): never a recipient of 전체 답장, and a mail from one gets no draft. Absent = the mail's 받는 사람. */
 	own?: (source: string) => string[];
+	replyTo?: (m: OfferMail) => Promise<RawReplyTo | undefined>;
 };
 
 // The text a model call sees is capped; a long thread's tail (quoted history) adds tokens and nothing for the reply.
@@ -113,7 +114,7 @@ function mayDraft(m: OfferMail, instance: string, deps: OfferDeps): boolean {
 const rulesAllowed = (s: ReturnType<typeof loadSettings>) => !(s.decided && !s.enabled);
 
 type OfferResult = "offered" | "skipped" | "off" | "failed";
-type Reads = { body: Promise<string | undefined>; history: Promise<string[]> };
+type Reads = { body: Promise<string | undefined>; history: Promise<string[]>; replyTo: Promise<RawReplyTo | undefined> };
 type Job = { m: OfferMail; deps: OfferDeps; queued: number; instance: string; requested: boolean; reads?: Reads; counted?: boolean; done: (r: OfferResult) => void };
 
 // Offers run one at a time (a burst of new mail never starts many model calls at once), but not in arrival order: each mail app instance is a lane and
@@ -125,14 +126,22 @@ let busy = false;
 const READ_AHEAD = 2;
 let readingAhead = 0;
 
+function lookupReplyTo(m: OfferMail, deps: OfferDeps): Promise<RawReplyTo | undefined> {
+	if (m.replyTo || m.source !== "zele" || !deps.replyTo || !m.messageId?.startsWith("1|")) return Promise.resolve(undefined);
+	const late = Promise.withResolvers<undefined>();
+	const timer = setTimeout(() => late.resolve(undefined), HISTORY_WAIT_MS);
+	const read = deps.replyTo(m).catch(error => ((deps.log ?? console.error)(`mail ${m.key}: Reply-To not read: ${(error as Error).message}`), undefined));
+	return Promise.race([read, late.promise]).finally(() => clearTimeout(timer));
+}
+
 function startReads(j: Job): Reads {
 	if (j.reads) return j.reads;
 	try {
 		const may = j.requested || mayDraft(j.m, j.instance, j.deps);
-		return (j.reads = { body: may ? fullBody(j.m, j.deps) : Promise.resolve(j.m.body), history: may ? startHistory(j.m, j.deps) : Promise.resolve([]) });
+		return (j.reads = { body: may ? fullBody(j.m, j.deps) : Promise.resolve(j.m.body), history: may ? startHistory(j.m, j.deps) : Promise.resolve([]), replyTo: may ? lookupReplyTo(j.m, j.deps) : Promise.resolve(undefined) });
 	} catch (e) {
 		(j.deps.log ?? console.error)(`reply draft: mail ${j.m.key} reads not started: ${(e as Error).message}`);
-		return (j.reads = { body: Promise.resolve(j.m.body), history: Promise.resolve([]) });
+		return (j.reads = { body: Promise.resolve(j.m.body), history: Promise.resolve([]), replyTo: Promise.resolve(undefined) });
 	}
 }
 
@@ -176,7 +185,7 @@ async function enqueue(m: OfferMail, deps: OfferDeps, requested: boolean): Promi
 export const requestMailDraft = (m: OfferMail, deps: OfferDeps): Promise<OfferResult> => enqueue(m, deps, true);
 export const offerMailDraft = (m: OfferMail, deps: OfferDeps): Promise<OfferResult> => (readOnArrival(deps), enqueue(m, deps, false));
 
-async function offerOne(m: OfferMail, deps: OfferDeps, { body, history }: Reads, queued: number, instance: string, requested: boolean): Promise<OfferResult> {
+async function offerOne(m: OfferMail, deps: OfferDeps, { body, history, replyTo }: Reads, queued: number, instance: string, requested: boolean): Promise<OfferResult> {
 	const log = deps.log ?? ((line: string) => console.error(line));
 	const started = Date.now();
 	let trace: DraftTrace | undefined;
@@ -218,6 +227,9 @@ async function offerOne(m: OfferMail, deps: OfferDeps, { body, history }: Reads,
 			markDrafted(looked);
 			return "skipped";
 		}
+		const found = await replyTo;
+		const named = m.replyTo ?? (found?.from && addressesOf(found.from)[0] === addressesOf(item.from)[0] ? found.replyTo : undefined);
+		if (usableReplyTo(named, item.self)) item.replyTo = named;
 		// One budget for every model call of this draft: the rule match, the draft call and the file tie-break.
 		trace = draftTrace();
 		// A short wait for an iCloud file to come back (the offer queue waits on this draft); what is still away is retried in the background (wantFiles).

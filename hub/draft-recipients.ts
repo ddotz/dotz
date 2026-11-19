@@ -27,9 +27,8 @@ export function sendHold(id: string): Response | undefined {
 
 const editable = (rec: { kind: string; status: string } | undefined) => !!rec && rec.kind === "mail" && rec.status === "pending";
 
-// The sender a 답장 goes to: the address the reply follows (a 회신 주소 first), else the draft's own recipient.
-function senderOf(rec: { to: string; item: { from: string; replyTo?: string } }): string {
-	return addressesOf(rec.item.replyTo)[0] ?? addressesOf(rec.item.from)[0] ?? recipientList(rec.to)[0] ?? rec.to;
+function senderOf(rec: { to: string; item: { from: string } }): string {
+	return addressesOf(rec.item.from)[0] ?? recipientList(rec.to)[0] ?? rec.to;
 }
 
 export async function draftRecipientsRoute(req: Request, ref: string): Promise<Response> {
@@ -56,7 +55,7 @@ export async function draftRecipientsRoute(req: Request, ref: string): Promise<R
 			if (b.mode !== "reply" && b.mode !== "all") return json({ error: 'mode는 "reply" 또는 "all"이에요' }, 400);
 			if (!rec.compose && !reply) return json({ error: "원래 메일을 찾지 못해서 전체 답장을 고를 수 없어요" }, 409);
 			if (rec.compose) return json({ error: "새 메일 초안에는 답장·전체 답장이 없어요" }, 400);
-			next = replyRecipients({ sender: senderOf(rec), to: mail!.to, cc: mail!.cc, self: own })[b.mode];
+			next = replyRecipients({ sender: senderOf(rec), replyTo: rec.item.replyTo, to: mail!.to, cc: mail!.cc, self: own })[b.mode];
 			mode = b.mode;
 		}
 		for (const row of ["to", "cc"] as const) {

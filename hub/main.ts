@@ -78,7 +78,7 @@ import { watchOwner } from "./app-features.ts";
 import { blockedByOff, newsMuted, watchOff } from "./app-off.ts";
 import { loadPlugins, pluginClaim, pluginMailThread, pluginThread, startPlugins } from "./plugins.ts";
 import { startDoctor } from "./doctor.ts";
-import { startZele, zeleAccounts, zeleRead, zeleState } from "./zele.ts";
+import { startZele, zeleAccounts, zeleRead, zeleReplyTo, zeleState } from "./zele.ts";
 import { createReconciler } from "./mail-reconcile.ts";
 import { createUnansweredWatch } from "./mail-unanswered.ts";
 import { backfillMailSummaries, mailSummarizer } from "./mail-summary-live.ts";
@@ -373,8 +373,8 @@ const mailDeps = (): MailDeps => ({
 	emit: event => emit("inbox", event as Parameters<typeof emit>[1]),
 	wake: (event, target) => deliver(inboxText(event), { target }),
 	offerDraft: m =>
-		void offerMailDraft(m, { brief: mailDraftBrief, stage: { changed: cardFilesChanged }, send: (target, text) => out(target, text), run: realRunner, history: zeleHistory, refreshPairs: () => refreshPairs(realRunner), readBody: (source, id, account) => readMailBody(source, id, realRunner, account), log, suggest: (key, s) => void setMailSuggest(key, s), analyze: defaultCall(loadSettings().model), sentTexts: () => installSentMail(realRunner), own: source => [...ownAddressesFor(source)] }).then(r => r === "failed" && log(`mail ${m.key}: reply draft not offered`)),
-	requestDraft: m => requestMailDraft(m, { brief: mailDraftBrief, stage: { changed: cardFilesChanged }, send: (target, text) => out(target, text), run: realRunner, history: zeleHistory, refreshPairs: () => refreshPairs(realRunner), readBody: (source, id, account) => readMailBody(source, id, realRunner, account), log, suggest: (key, s) => void setMailSuggest(key, s), analyze: defaultCall(loadSettings().model), sentTexts: () => installSentMail(realRunner), own: source => [...ownAddressesFor(source)] }),
+		void offerMailDraft(m, { brief: mailDraftBrief, stage: { changed: cardFilesChanged }, send: (target, text) => out(target, text), replyTo: m => zeleReplyTo(m.id, m.account ?? ""), run: realRunner, history: zeleHistory, refreshPairs: () => refreshPairs(realRunner), readBody: (source, id, account) => readMailBody(source, id, realRunner, account), log, suggest: (key, s) => void setMailSuggest(key, s), analyze: defaultCall(loadSettings().model), sentTexts: () => installSentMail(realRunner), own: source => [...ownAddressesFor(source)] }).then(r => r === "failed" && log(`mail ${m.key}: reply draft not offered`)),
+	requestDraft: m => requestMailDraft(m, { brief: mailDraftBrief, stage: { changed: cardFilesChanged }, send: (target, text) => out(target, text), replyTo: m => zeleReplyTo(m.id, m.account ?? ""), run: realRunner, history: zeleHistory, refreshPairs: () => refreshPairs(realRunner), readBody: (source, id, account) => readMailBody(source, id, realRunner, account), log, suggest: (key, s) => void setMailSuggest(key, s), analyze: defaultCall(loadSettings().model), sentTexts: () => installSentMail(realRunner), own: source => [...ownAddressesFor(source)] }),
 });
 
 function classifyStoredMails(): void {
