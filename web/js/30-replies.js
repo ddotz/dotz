@@ -120,9 +120,15 @@ function rqSync(box, descs) {
   const have = new Map([...box.children].map(n => [n.dataset.rk, n]));
   listPlace(box, descs.map(d => {
     let n = have.get(d.key);
+    if (n && n._sig !== d.sig && n.contains(typingIn())) { rqHold(n); return n; }
     if (!n || n._sig !== d.sig) { n = d.make(); n._sig = d.sig; n.dataset.rk = d.key; }
     return n;
   }));
+}
+function rqHold(n) {
+  if (n._held) return;
+  n._held = true;
+  n.addEventListener("focusout", () => afterTap(() => { n._held = false; if (n.contains(typingIn())) rqHold(n); else monDirty(); }), { once: true });
 }
 // Puts `nodes` in `box` in that order: a child no longer wanted is removed, one already in place stays, the rest is inserted.
 function listPlace(box, nodes) {
@@ -199,7 +205,7 @@ function rqScreen(qSel, box, tl) {
     if (!pane) RQ.top = null;
     monDrawn(sig, qSel.key);
     clear($("#mon-head")).append(...monHead(qSel));
-    if (!(pane && tl.firstElementChild === RQ.sheet.box)) clear(tl).append(...(pane ? [RQ.sheet.box] : rqNodes()));   // an open pane already stands there: drawn again it would lose the focus
+    if (!(pane && tl.firstElementChild === RQ.sheet.box)) listPlace(tl, pane ? [RQ.sheet.box] : rqNodes());
     box.scrollTop = keep;
     rowHold(anchor);
     edgeFade(box);

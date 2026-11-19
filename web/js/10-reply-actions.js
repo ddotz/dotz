@@ -11,16 +11,19 @@
 // RA.nodes: every card of a ref on screen, a set of registrations per ref (raReg).
 // loaded: the first read came back; min: how many waiting items make the 답장 대기 head offer 빠른 처리 and the app filter (the queue's triageMin);
 // err: the last failed read, kept for 답장 대기's 다시 시도.
-const RA = { items: new Map(), loaded: false, min: 1, err: null, busy: new Map(), fail: new Map(), fix: new Map(), asked: new Map(), nodes: new Map(), t: 0, ticking: false };
+const RA = { items: new Map(), loaded: false, min: 1, err: null, busy: new Map(), fail: new Map(), fix: new Map(), asked: new Map(), answered: new Map(), nodes: new Map(), t: 0, ticking: false };
 function raKeep(it) { if (!RA.items.has(it.ref) && !it.pc) RA.items.set(it.ref, it); }   // a queue item this computer's list has not read yet (30-replies.js)
-// An open panel outlives a reload of the tab (01-core.js kept): its texts, subjects, line to the AI, part and the hash it opened on. The rows it marked (files picked) do not.
-for (const [ref, s] of Object.entries(keptMap("ra-fix", () => Object.fromEntries([...RA.fix].map(([r, f]) => [r, { part: f.part, text: f.text, subject: f.subject, note: f.note, hash: f.hash }]))))) RA.fix.set(ref, { ...s, rows: {} });
+const raRowsKeep = rows => Object.fromEntries(Object.entries(rows || {}).map(([r, x]) => [r, { recv: x.recv, remove: x.files.remove, library: x.files.add.filter(a => a.library) }]));
+const raRowsBack = kept => Object.fromEntries(Object.entries(kept && typeof kept === "object" ? kept : {}).map(([r, x]) => [r, { recv: x && typeof x.recv === "object" && x.recv ? x.recv : {}, files: { remove: Array.isArray(x && x.remove) ? x.remove : [], add: Array.isArray(x && x.library) ? x.library : [] } }]));
+const raPicked = f => [...new Set([...Object.values(f.rows || {}).flatMap(x => x.files.add.filter(a => a.file).map(a => a.name)), ...(f.repick || [])])];
+for (const [ref, s] of Object.entries(keptMap("ra-fix", () => Object.fromEntries([...RA.fix].map(([r, f]) => [r, { part: f.part, text: f.text, subject: f.subject, note: f.note, hash: f.hash, rows: raRowsKeep(f.rows), repick: raPicked(f) }]))))) RA.fix.set(ref, { ...s, rows: raRowsBack(s.rows), repick: Array.isArray(s.repick) ? s.repick : [] });
 
 // The read is api()'s (02-basic-markdown.js latest): every caller gets a queue read that started after its call, and reads never land out of order.
 async function raLoad() {
   try {
     const r = await api("/api/reply/queue", "GET", undefined, CARD_WAIT_MS);
     RA.items = new Map((r.items || []).map(i => [i.ref, i]));
+    for (const [ref, hash] of RA.answered) { const it = RA.items.get(ref); if (!it || it.draft.hash !== hash || it.draft.state !== "pending") RA.answered.delete(ref); }
     if (Number(r.triageMin) > 0) RA.min = Number(r.triageMin);
     if (!RA.loaded) for (const ref of RA.fix.keys()) if ((RA.items.get(ref) || { draft: {} }).draft.state !== "pending") RA.fix.delete(ref);   // a panel kept over a reload whose draft no longer waits
     RA.err = null;
@@ -31,7 +34,7 @@ async function raLoad() {
 }
 const raSoon = () => { clearTimeout(RA.t); RA.t = setTimeout(raLoad, 300); };
 
-const raFixNew = () => ({ part: "reply", text: {}, subject: {}, note: "", rows: {} });
+const raFixNew = () => ({ part: "reply", text: {}, subject: {}, note: "", rows: {}, repick: [] });
 const raWriting = () => [...RA.fix].some(([ref, st]) => !RA.loaded || RA.items.has(ref) || !!st.note.trim() || ["text", "subject"].some(k => Object.entries(st[k]).some(([p, v]) => v != null && v.trim() !== String(st.was?.[k]?.[p] ?? "").trim())));
 // A revise made elsewhere replaced the draft a panel is open on: what the owner typed goes on to the new draft (the parts he changed, his line to the AI) with a line
 // saying so, on the new draft's hash; the parts he left alone open on the new text. Nothing typed: the panel closes with the draft it was open on.
@@ -50,6 +53,7 @@ function raFixMove(ref, next) {
 // The reply event: one item changed (its draft, its send) or was replaced by a revise (`next`); a card shown anywhere follows at once.
 function raLive(e) {
   if (!e || !e.ref) return;
+  if (e.item || e.next || e.send) RA.answered.delete(e.ref);
   const fresh = !!e.item && !RA.items.has(e.item.ref);
   if (e.item) RA.items.set(e.item.ref, e.item);
   const it = RA.items.get(e.ref);
@@ -69,6 +73,17 @@ function raLive(e) {
   if (fresh) paintDecision();   // a draft the queue did not hold yet: its question leaves the dock (10-decision-card.js dcQueued)
   tqLive();
 }
+const raOther = d => ({ reply: d.text, mail: d.mail ? d.mail.text : "" });
+async function raSeen(item) {
+  if (!item.pc) { await raLoad(); return { now: RA.items.get(item.ref) }; }
+  await pqLoad();
+  const p = PQ.list.find(x => x && x.url === item.pc.url), q = p && p.online && !p.stale && p.items && p.items.reply;
+  return q ? { now: (q.items || []).find(i => i.ref === item.ref) } : null;
+}
+const raOtherNode = (f, st) => {
+  const t = f && f.other && f.other[st.part];
+  return t != null && t.trim() !== st.text[st.part].trim() ? el("div", { class: "ra-other", "data-k": "fix-other" }, el("div", { class: "kk-rq", text: TX("reply.fix.other") }), el("div", { class: "ra-other-tx", text: t })) : null;
+};
 
 // One action on one item, posted once: a second press while it waits does nothing. A refusal stays on the card (422 keeps the typed text).
 // An act that sends carries the hash of the version its card showed (item.draft.hash, the hub's approvalHash): the hub sends that version only. When the draft moved on
@@ -85,22 +100,22 @@ async function raAct(item, action, args = {}) {
     const body = { ref, action, ...args, ...(sends && item.draft.hash ? { hash: item.draft.hash } : {}) };
     const r = item.pc ? await api(pqProxy(item.pc, "/api/peer/act"), "POST", { action: "reply", args: body }, CARD_WAIT_MS) : await api("/api/reply/act", "POST", body, CARD_WAIT_MS);
     if (r && r.item) RA.items.set(ref, { ...RA.items.get(ref), ...r.item });
+    else if (item.kind === "card" && (sends || action === "drop")) RA.answered.set(ref, item.draft.hash);
     return true;
   } catch (e) {
     const d = (e && e.data) || {};
     if (d.code === "changed") {
       drForget(ref); if (item.draft.mail) drForget(item.draft.mail.ref);
       if (d.item && !item.pc) RA.items.set(ref, { ...RA.items.get(ref), ...d.item });
-      RA.fail.set(ref, { text: TX(action === "edit" ? "reply.fix.changed" : "reply.changed"), code: "changed" });
+      RA.fail.set(ref, { text: TX(action === "edit" ? "reply.fix.changed" : "reply.changed"), code: "changed", ...(action === "edit" && d.item ? { other: raOther(d.item.draft) } : {}) });
       return false;
     }
     // No status: the answer never came back (Safari "Load failed", a phone switching networks), yet the hub may have taken the action.
     // The queue read again says which: an item that left the waiting state was handled, so the card follows it and is not a failure. 되돌리기 is the exception: it went
     // through only when the send is gone (none, or failed); a window that closed meanwhile means the mail went, and that is said, never taken for success.
-    if (e && !e.status && !item.pc) {
-      await raLoad();
-      const now = RA.items.get(ref), st = i => (i.send ? i.send.state : "");
-      if (action === "undo" ? !!now && (!now.send || now.send.state === "failed") : !now || now.draft.state !== item.draft.state || st(now) !== st(item) || now.draft.text !== item.draft.text) return true;
+    if (e && !e.status) {
+      const seen = await raSeen(item), now = seen && seen.now, st = i => (i.send ? i.send.state : "");
+      if (seen && (action === "undo" ? !!now && (!now.send || now.send.state === "failed") : !now || (sends ? !!now.send && st(now) !== st(item) : now.draft.state !== item.draft.state || st(now) !== st(item) || now.draft.text !== item.draft.text))) return true;
       RA.fail.set(ref, { text: TX(action === "undo" ? "reply.undo_net" : sends ? "reply.act_net" : "reply.act_net_change") });
       return false;
     }
@@ -172,13 +187,14 @@ function rqSendNode(item) {
   if (s.state === "queued" || s.state === "sending") return el("div", { class: "rq-send sending", role: "status", text: TX("reply.sending") });
   if (s.state === "sent") return rqSentNode();
   const why = s.reason ? s.reason.text : "", has = k => (s.actions || []).includes(k);
-  if (s.state === "failed" && s.auto && s.safeToAuto) return el("div", { class: "rq-send failed auto", role: "status", text: `${why} · ${TX("reply.auto_retry", { n: s.auto.attempt, max: s.auto.max })}` });
+  const close = () => btn("close", TX("common.close"), ev => ev.currentTarget.closest(".rq").remove());
+  if (s.state === "failed" && s.auto && s.safeToAuto) return el("div", { class: "rq-send failed auto", role: "status" }, el("span", { text: `${why} · ${TX("reply.auto_retry", { n: s.auto.attempt, max: s.auto.max })}` }), el("div", { class: "dr-act dr-row rq-acts" }, close()));
   if (s.state === "failed") {
     const acts = has("retry") ? [btn("retry", TX("reply.retry"), () => raAct(item, "retry"), "btn tonal sm")] : has("send") ? [btn("send", TX("common.send"), () => raAct(item, "send"), "btn tonal sm")] : [];
     if (has("send_as_is")) acts.push(btn("send-as-is", TX("decision.send_anyway"), () => raAct(item, "send", { asIs: true })));
     if (raCanFix(item)) acts.push(btn("fix", TX("decision.fix"), () => raFixOpen(item)));
     if (item.can.drop) acts.push(btn("drop", TX("decision.drop"), () => raAct(item, "drop")));
-    return el("div", { class: "rq-send failed" }, el("div", { class: "rq-why", role: "alert", text: TX("reply.failed", { why }) }), ...(acts.length ? [el("div", { class: "dr-act dr-row rq-acts" }, ...acts)] : []));
+    return el("div", { class: "rq-send failed" }, el("div", { class: "rq-why", role: "alert", text: TX("reply.failed", { why }) }), el("div", { class: "dr-act dr-row rq-acts" }, ...(acts.length ? acts : [close()])));
   }
   const acts = [has("resolve_sent") ? btn("resolve-sent", TX("reply.went_out"), () => raAct(item, "resolve", { as: "sent" }), "btn tonal sm") : null, has("open_channel") ? btn("open", TX("reply.check"), () => go("monitoring", `c:${item.conv}`)) : null, has("resolve_retry") ? btn("resolve-retry", TX("reply.retry"), () => raAct(item, "resolve", { as: "retry" })) : null].filter(Boolean);
   return el("div", { class: "rq-send unsure" },
@@ -229,6 +245,7 @@ function rqFixNodes(item, lead) {
   // The rows open only on a draft of this computer, and never while the queue holds a send of it (the server refuses a change then).
   const rowRef = !item.pc && hand && (!item.send || item.send.state === "failed") ? (mailKind ? ref : item.kind === "comment" && d.mail ? d.mail.ref : "") : "";
   const rows = rowRef ? (st.rows[rowRef] ||= { recv: {}, files: { remove: [], add: [] } }) : null;
+  const again = (st.repick || []).filter(n => !(rows && rows.files.add.some(a => a.name === n)));
   const was = { text: { reply: d.text, mail: d.mail ? d.mail.text : "" }, subject: { reply: mailKind ? d.subject || "" : null, mail: d.mail ? d.mail.subject || "" : null } };
   st.was = was;
   for (const p of parts) { st.text[p] ??= was.text[p]; st.subject[p] ??= was.subject[p]; }   // also a mail that came to ride along while the panel was open
@@ -248,8 +265,8 @@ function rqFixNodes(item, lead) {
       st.busy = false;
       // A queue that could not be read says nothing of the version: nothing is written.
       if (RA.err) { RA.fail.set(ref, { text: TX("decision.err.offline_change") }); raPaint(ref); return; }
-      const now = (RA.items.get(ref) || item).draft.hash;
-      if (now !== st.hash) { st.hash = now; RA.fail.set(ref, { text: TX("reply.fix.changed"), code: "changed" }); raPaint(ref); return; }
+      const cur = (RA.items.get(ref) || item).draft, now = cur.hash;
+      if (now !== st.hash) { st.hash = now; RA.fail.set(ref, { text: TX("reply.fix.changed"), code: "changed", other: raOther(cur) }); raPaint(ref); return; }
     }
     for (const p of todo) {
       const ok = await raAct(item, "edit", { text: st.text[p].trim(), ...(moved("subject", p) ? { subject: st.subject[p].trim() } : {}), ...(d.mail ? { part: p } : {}), ...(st.hash ? { hash: st.hash } : {}) });
@@ -289,7 +306,9 @@ function rqFixNodes(item, lead) {
     // The AI changes one part: with a mail riding along, the line names the part the switch shows.
     foot: el("div", { class: "rq-edit" }, hand ? null : seg,
       note ? el("div", { class: "kk-rq", text: d.mail ? TX("reply.fix.note_part", { part: st.part === "mail" ? TX("common.mail") : TX("mon.cm.reply") }) : TX("reply.fix.note") }) : null, note,
+      raOtherNode(f, st),
       f ? el("div", { class: "ra-lint err", role: "alert", text: f.why || f.text }) : null,
+      again.length ? el("div", { class: "ra-lint", role: "status", "data-k": "fix-repick", text: TX("reply.fix.repick", { n: again.length, names: again.join(", ") }) }) : null,
       el("div", { class: "btns" }, go, el("button", { class: "btn text sm", type: "button", "data-k": "fix-close", disabled: off(), text: TX("common.close"), onclick: close }))),
     card: { ...(mailKind && hand ? { subject: subject("reply") } : {}),
       ...(rows && mailKind ? { recv: draftToNode({ ref, toLabel: d.toLabel, to: d.to, cc: d.cc, hash: d.hash }, { t: item.conv, edit: true, always: true, stage: rows.recv, onstage: sync }),
@@ -301,15 +320,14 @@ function rqFixNodes(item, lead) {
 function rqItemCard(item, opts = {}) {
   drSeen(item.ref, item.draft.hash); if (item.draft.mail) drSeen(item.draft.mail.ref, item.draft.hash);
   const ref = item.ref, d = item.draft, busy = RA.busy.has(ref), fail = RA.fail.get(ref) || (item.back && !item.send ? { text: TX("reply.back.restart"), code: "back" } : undefined), fx = RA.fix.has(ref) ? rqFixNodes(item, !!opts.lead) : null, p = opts.parts;
-  const foot = fx ? fx.foot : d.revising ? el("div", { class: "kk-st", role: "status", text: TX("reply.revising") }) : item.send ? rqSendNode(item) : null;
+  const foot = fx ? fx.foot : d.revising ? el("div", { class: "kk-st", role: "status", text: TX("reply.revising") }) : item.send ? rqSendNode(item) : d.state !== "pending" ? el("div", { class: "rq-send state", role: "status", "data-state": d.state, text: TX(`reply.state.${d.state}`) }) : null;
   // A draft of this hub that the server can open (a mail, a comment): 원문 보기 loads the whole original (10-draft-original.js), also when the item came with no quote,
   // and a mail's 첨부 줄 reads the files staged on it (10-decision-card.js draftFilesNode); the queue item carries neither. Another computer's item keeps the quote it came with.
   const local = !item.pc && (item.kind === "mail" || item.kind === "webmail" || item.kind === "comment"), mail = local && item.kind !== "comment", src = local ? { ref, t: item.conv } : {};
   if (mail && !DRF.st[ref]) { drfFrom(ref, null); drfLoad(ref).then(() => raPaint(ref)); }
   const node = rqCard({
     key: `ra:${item.item}`, bare: !!opts.bare,
-    // The head names the person: a mail sender's address ("이름 <a@b>") stays in the quoted original only.
-    head: { app: item.app, label: item.label, who: item.original && (String(item.original.who).replace(/\s*<[^<>]*>\s*$/, "") || item.original.who), at: item.at, tail: opts.tail },
+    head: { app: item.app, label: item.label, who: item.original && (rqWho(item.original.who) || item.original.who), at: item.at, tail: opts.tail },
     original: item.original ? { who: item.original.who, text: item.original.text, ...src } : local ? { who: "", text: "", ...src } : null,
     subject: d.subject,
     // Outside the 고치기 panel every row is only read: a mail's files as the hub holds them, any other draft's as the item lists them. The panel's own fields and open rows
@@ -327,7 +345,7 @@ function rqItemCard(item, opts = {}) {
     fail: fail && !fx ? fail : null,
     foot,
     // A draft that no longer waits (dropped, sent, replaced) offers nothing to press.
-    acts: d.state !== "pending" ? null : { quiet: !opts.lead, busy, press: RA.busy.get(ref),
+    acts: d.state !== "pending" ? null : { quiet: !opts.lead, busy: busy || RA.answered.has(ref), press: RA.busy.get(ref),
       send: !item.can.send ? null : opts.send ? () => opts.send(item) : () => (opts.sure ? opts.sure().then(ok => ok && raAct(item, "send")) : raAct(item, "send")).then(ok => ok && opts.after && opts.after("send")),
       // A reply with its mail: 보내기 sends both, and the card also offers each part alone (hub/reply-actions.ts sendAction).
       only: (item.can.sends || []).filter(s => s !== "send").map(s => { const part = s === "send-main" ? "reply" : "mail"; return { k: s, text: part === "reply" ? TX("reply.only_reply") : TX("reply.only_mail"), fn: () => raAct(item, "send", { part }).then(ok => ok && opts.after && opts.after("send")) }; }),

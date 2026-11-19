@@ -136,6 +136,9 @@
 .rq-edit .kk-rq { margin: 0; }
 .rq-edit .kk-rv { margin: 0; }
 .ra-lint.err { color: var(--err); font-size: var(--fs-meta); }
+.ra-other { display: flex; flex-direction: column; gap: var(--sp-1); }
+.ra-other .kk-rq { margin: 0; }
+.ra-other-tx { padding: var(--sp-2) var(--sp-3); border-radius: var(--r-ctl); background: var(--ff-fill); color: var(--fg-2); font-size: var(--fs-meta); white-space: pre-wrap; overflow-wrap: anywhere; max-height: calc(var(--sp-6) * 5); overflow: auto; }
 /* AI가 고친 초안 (10-reply-card.js rqDiffBody): the words that came in carry a wash of the text's own ink, the ones that went are struck and quiet. Neutral on purpose:
    a change is not a state, so no status colour, and the wash reads on the card, on a KakaoTalk bubble and in the dark theme alike. */
 .rq-diff .rq-dl { min-height: 1lh; }
