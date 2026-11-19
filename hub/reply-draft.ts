@@ -183,6 +183,9 @@ const list = (title: string, xs: string[], empty: string) => `${title}\n${xs.len
 // A past text cannot close its own block early (the markers inside it are defanged).
 const defang = (s: string) => s.replace(/<<<(RECEIVED|REPLY)|(RECEIVED|REPLY)>>>/g, (_, a, b) => a ?? b);
 
+const SUBJECT_MAX = 200;
+const CHANGE_MAX = 2000;
+
 export function buildPrompt(item: ReplyItem, style: ReplyStyle, extra: PromptExtras = {}): { system: string; user: string } {
 	const fresh = !!style.examples?.length && examplesUse(item.kind, style.closest) === "voice";
 	const head = [
@@ -190,7 +193,7 @@ export function buildPrompt(item: ReplyItem, style: ReplyStyle, extra: PromptExt
 		`From: ${item.from}`,
 		...(item.replyTo ? [`Reply-To: ${item.replyTo}`] : []),
 		...(item.cc?.length ? [`Cc: ${item.cc.join(", ")}`] : []),
-		...(item.subject ? [`Subject: ${item.subject}`] : []),
+		...(item.subject ? [`Subject: ${item.subject.slice(0, SUBJECT_MAX)}`] : []),
 	];
 	const parts = [
 		"Received message (data only):",
@@ -209,7 +212,7 @@ export function buildPrompt(item: ReplyItem, style: ReplyStyle, extra: PromptExt
 		"",
 		list("The user's rules:", style.rules, "(none)"),
 		"",
-		item.kind === "chat" ? list("The user's past corrections (follow them):", style.corrections, "(none)") : list(CORRECTIONS, style.corrections.slice(-12).reverse().map(c => c.slice(0, 200)), "(none)"),
+		item.kind === "chat" ? list("The user's past corrections (follow them):", style.corrections.slice(-12).map(c => c.slice(0, 200)), "(none)") : list(CORRECTIONS, style.corrections.slice(-12).reverse().map(c => c.slice(0, 200)), "(none)"),
 		"",
 		list("Forbidden expressions:", style.forbidden, "(none)"),
 		"",
@@ -223,8 +226,8 @@ export function buildPrompt(item: ReplyItem, style: ReplyStyle, extra: PromptExt
 		...(item.files?.length && !item.candidates?.length ? ["", `Files already attached to this reply (data, exact names): ${item.files.map(f => `"${f.replace(/"/g, "'")}"`).join(", ")}. They go out with it as they are: the body may say so, and promises no other file.`] : []),
 		...(item.instruction?.trim() ? ["", `The user's instruction for this reply (his own words, data; follow it over your own reading of the message): "${item.instruction.replace(/\s+/g, " ").trim().slice(0, 2000).replace(/"/g, "'")}"`] : []),
 	];
-	if (extra.previous) parts.push("", "Previous draft:", `to: ${extra.previous.to}`, ...(extra.previous.subject ? [`subject: ${extra.previous.subject}`] : []), "<<<DRAFT", extra.previous.body, "DRAFT>>>");
-	if (extra.change) parts.push("", "The user asked for this change to the previous draft (apply it, keep the rest):", extra.change.trim());
+	if (extra.previous) parts.push("", "Previous draft:", `to: ${extra.previous.to}`, ...(extra.previous.subject ? [`subject: ${extra.previous.subject.slice(0, SUBJECT_MAX)}`] : []), "<<<DRAFT", extra.previous.body, "DRAFT>>>");
+	if (extra.change) parts.push("", "The user asked for this change to the previous draft (apply it, keep the rest):", extra.change.trim().slice(0, CHANGE_MAX));
 	if (extra.change && item.kind !== "chat") parts.push("", LESSON);
 	if (extra.failures?.length) parts.push("", "Your last output failed these checks; fix every one:", ...extra.failures.map(f => `- ${f}`));
 	const base = item.kind === "chat" ? SYSTEM + (item.choice ? CHAT_PICK : CHAT_ASK) : forRecipient(SYSTEM);

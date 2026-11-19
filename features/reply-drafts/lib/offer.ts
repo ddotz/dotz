@@ -115,11 +115,12 @@ const rulesAllowed = (s: ReturnType<typeof loadSettings>) => !(s.decided && !s.e
 
 type OfferResult = "offered" | "skipped" | "off" | "failed";
 type Reads = { body: Promise<string | undefined>; history: Promise<string[]>; replyTo: Promise<RawReplyTo | undefined> };
-type Job = { m: OfferMail; deps: OfferDeps; queued: number; instance: string; requested: boolean; reads?: Reads; counted?: boolean; done: (r: OfferResult) => void };
+type Job = { m: OfferMail; deps: OfferDeps; queued: number; instance: string; requested: boolean; thread: string; reads?: Reads; counted?: boolean; done: ((r: OfferResult) => void)[] };
 
 // Offers run one at a time (a burst of new mail never starts many model calls at once), but not in arrival order: each mail app instance is a lane and
 // the lanes take turns, so one app's backlog never holds another app's mail, and an owner's request goes before every automatic offer.
 const urgent = new FairQueue<Job>(), waiting = new FairQueue<Job>();
+const waitingByThread = new Map<string, Job>();
 let busy = false;
 // The body and history reads (a mail CLI child each) start only for the first few automatic offers in line, while the one before them is in its model
 // call: at most this many offers have reads started and not yet begun, whatever the burst size. An owner's request reads at once (one per click).
@@ -150,10 +151,11 @@ function pump(): void {
 		const j = urgent.shift() ?? waiting.shift();
 		if (j) {
 			busy = true;
+			if (waitingByThread.get(j.thread) === j) waitingByThread.delete(j.thread);
 			if (j.counted) readingAhead--;
 			offerOne(j.m, j.deps, startReads(j), j.queued, j.instance, j.requested).catch(() => "failed" as const).then(r => {
 				busy = false;
-				j.done(r);
+				for (const done of j.done) done(r);
 				pump();
 			});
 		}
@@ -171,8 +173,21 @@ function pump(): void {
 async function enqueue(m: OfferMail, deps: OfferDeps, requested: boolean): Promise<OfferResult> {
 	const queued = Date.now();
 	const instance = await mailInstanceOf(m.key);
+	const thread = `${m.source}\0${accountOf(m) ?? ""}\0${threadIdOf(m.source, m.id)}`;
 	return new Promise<OfferResult>(done => {
-		const job: Job = { m, deps, queued, instance, requested, done };
+		const older = requested ? undefined : waitingByThread.get(thread);
+		if (older) {
+			older.m = m;
+			older.deps = deps;
+			older.done.push(done);
+			if (older.counted) readingAhead--;
+			older.reads = undefined;
+			older.counted = false;
+			pump();
+			return;
+		}
+		const job: Job = { m, deps, queued, instance, requested, thread, done: [done] };
+		if (!requested) waitingByThread.set(thread, job);
 		(requested ? urgent : waiting).push(instance !== "mail" ? instance : accountOf(m) || m.source, job);
 		if (requested) startReads(job);
 		pump();

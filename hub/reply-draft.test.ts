@@ -144,12 +144,27 @@ test("the prompt keeps received text as data and carries the user's samples, cor
 	expect(addressesOf("Kim <KIM@example.com>, lee@example.com")).toEqual(["kim@example.com", "lee@example.com"]);
 });
 
-test("mail and comment prompts list the newest 12 corrections newest first; the chat prompt keeps all of them in their order", () => {
+test("mail and comment prompts list the newest 12 corrections newest first; the chat prompt lists the newest 12 in their order", () => {
 	const corrections = Array.from({ length: 15 }, (_, i) => `c${String(i).padStart(2, "0")}`);
 	const listed = (user: string) => [...user.matchAll(/^- (c\d\d)$/gm)].map(m => m[1]);
 	expect(listed(buildPrompt(item, { ...style, corrections }).user)).toEqual(corrections.slice(-12).reverse());
 	expect(listed(buildPrompt({ ...item, kind: "comment", from: "viewer" }, { ...style, corrections }).user)).toEqual(corrections.slice(-12).reverse());
-	expect(listed(buildPrompt({ ...item, kind: "chat" }, { ...style, corrections }).user)).toEqual(corrections);
+	expect(listed(buildPrompt({ ...item, kind: "chat" }, { ...style, corrections }).user)).toEqual(corrections.slice(-12));
+});
+
+test("the chat prompt cuts each correction to 200 characters like the mail prompt", () => {
+	const long = `x${"가".repeat(500)}`;
+	expect(buildPrompt({ ...item, kind: "chat" }, { ...style, corrections: [long] }).user).not.toContain("가".repeat(200));
+	expect(buildPrompt({ ...item, kind: "mail" }, { ...style, corrections: [long] }).user).not.toContain("가".repeat(200));
+});
+
+test("a subject enters the prompt at 200 characters and a 고치기 memo at 2,000", () => {
+	const subject = `S${"b".repeat(400)}`;
+	const user = buildPrompt({ ...item, subject }, style, { previous: { to: "kim@example.com", subject, body: "본문" }, change: `M${"c".repeat(3000)}` }).user;
+	expect(user).not.toContain("b".repeat(200));
+	expect(user.match(/b+/g)!.every(r => r.length <= 200)).toBe(true);
+	expect(user).not.toContain("c".repeat(2000));
+	expect(user.match(/c{1000,}/g)!.every(r => r.length <= 1999)).toBe(true);
 });
 
 test("a reply the user asked for himself (초안 작성) is never a skip: the prompt says so and a skip is sent back once", async () => {
