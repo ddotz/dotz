@@ -476,11 +476,12 @@ export function createPrompts(deps: PromptDeps) {
 			.map(w => links.get(w.id))
 			.find(l => l && !l.delivered && !l.read && requestOpen(l));
 	}
-	/** The request a dotz_send to `target` from a run without a prompt answers: the one of the worker that woke the run. */
+	/** The request a dotz_send to `target` from a run without a prompt answers: the one of the worker that woke it. A request its own turn already
+	 * answered (a side job started there) is not one: news of that work posted as a reply to it reads as a wrong answer (owner 2026-11-19). */
 	function resultFor(target: string): string | undefined {
 		for (const w of woke) {
 			const l = links.get(w.id);
-			if (l && !l.delivered && sameConv(l.target, target)) return tiedOpen(l)[0]?.replyTo ?? l.replyTo;
+			if (l && !l.delivered && sameConv(l.target, target)) return tiedOpen(l)[0]?.replyTo ?? (isAnswered(l.replyTo) ? undefined : l.replyTo);
 		}
 		return undefined;
 	}

@@ -1188,6 +1188,19 @@ test("a dotz_send from a woken run with no reply_to settles the request of the w
 	expect(t.q.deferredOpen().map(d => d.replyTo)).toEqual(["a"]);
 });
 
+test("a worker started in a turn whose request that turn already answered names no message: its news is not posted as a late reply to it", async () => {
+	const t = setup();
+	t.startTurn("request a", { target: "web", replyTo: "a" });
+	t.q.workersSpawned([{ id: "st_side" }]);
+	t.q.onAnswer("answer to a, and a side job started");
+	t.state.working = false;
+	t.q.settleTurn();
+	await Promise.resolve();
+	t.q.workersDone(["st_side"]);
+	expect(t.q.resultFor("web")).toBeUndefined();
+	expect(t.q.sent("web", "the side job is done")).toBeUndefined();
+});
+
 test("a result for a request the owner cancelled is dropped, not guessed onto another message", async () => {
 	const t = setup();
 	t.startTurn("request a", { target: "web", replyTo: "a" });
