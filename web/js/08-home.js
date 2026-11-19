@@ -505,7 +505,7 @@ function renderHomeNowRaw() {
   // card (the drafts to check, the comments not answered), each with a count per source; every row still opens its own item.
   const running = el("div", { class: "hn", "data-k": "running", "data-cap": "running" }, ...waitT.map(t => homeNowRow(t, SESSION_WORD.wait[0], "att", true)), ...runT.map(t => homeNowRow(t, targetState(t)[0], "", true, homeSince(t))), ...convWork.map(x => x.conv ? workRow(x) : homeConvRow(x)), ...bg.map(workRow),
     ...(working || waitT.length || bg.length ? [] : [hcNone(hmState() || TX("home.card.nothing_running"))]));
-  clear(now).append(homeGreeting(h), ...[acctConnectRow()].filter(Boolean),
+  clear(now).append(homeGreeting(h), ...[pushOffRow(), acctConnectRow()].filter(Boolean),
     el("div", { class: "hneeds" },
       el("div", { class: "hn-h hneeds-h" }, el("h2", { text: TX("common.needs_reply") }), waiting ? el("span", { class: "sup", text: `${waiting}` }) : null, crit ? el("span", { class: "tag warn", text: TX("home.card.critical_n", { n: crit }) }) : null),
       list));

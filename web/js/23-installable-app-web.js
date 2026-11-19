@@ -181,6 +181,7 @@ async function pushTapCold(landing) {
 async function pwaInit() {
   if (!("serviceWorker" in navigator)) return;
   try { PWA.reg = await navigator.serviceWorker.register("/sw.js", { scope: "/" }); } catch (e) { console.warn("service worker", e); return; }
+  if (navigator.permissions && pushCapable()) navigator.permissions.query({ name: "notifications" }).then(st => { st.onchange = () => pwaRecheck(); }, e => console.warn("permission watch", e));
   if (pushCapable()) PWA.sub = await PWA.reg.pushManager.getSubscription().catch(() => null);
   await pushLoad();
   presence();
@@ -206,6 +207,7 @@ async function pushLoad() {
   }
   await pushGateways();
   if (inSettings()) renderSettings();
+  if (current === "home") renderHome();
 }
 // One delivery channel per device: the installed app. GET /api/push/gateways (hub/push.ts) answers with every gateway and whether its notices reach this device;
 // the page on any gateway's origin shows and edits the same list. A browser subscription of THIS origin for a device that has the app is a second channel: it goes.
@@ -251,6 +253,21 @@ async function pushDisable(btn) {
     toast(TX("settings.app.alerts_off"));
   });
   await pushLoad();
+}
+function pushOffKind() {
+  if (!isStandalone() || !pushCapable() || localStorage.getItem(PUSH_OFF) === "1") return "";
+  if (PWA.gw && PWA.gw.gateways.some(g => g.self && !g.on)) return "";
+  if (Notification.permission === "denied") return "blocked";
+  if (Notification.permission !== "granted") return "ask";
+  return PWA.info && !(PWA.sub && PWA.info.subscribed) ? "resub" : "";
+}
+function pushOffRow() {
+  const kind = pushOffKind();
+  if (!kind) return null;
+  const blocked = kind === "blocked";
+  return el("div", { class: "li hstrip", "data-push-off": kind },
+    el("span", { class: "tx" }, el("span", { class: "hd", text: TX(blocked ? "home.push_off.blocked" : "home.push_off.hint") })),
+    liEnd(el("button", { class: "btn tonal inrow", type: "button", onclick: ev => blocked ? go("notifications") : pushEnable(ev.currentTarget) }, TX(blocked ? "home.push_off.open" : "home.push_off.btn"))));
 }
 const pushTest = btn => busy(btn, async () => { await api("/api/push/test", "POST", { endpoint: PWA.sub.endpoint }); toast(TX("settings.app.test_sent")); });
 // The gateway skips a push to this device while its page is visible and focused on the same conversation (heartbeat every 25s, stale after 60s);
