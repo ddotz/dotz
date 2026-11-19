@@ -116,7 +116,7 @@ keychain, a browser or the network.
 
 ## Send gate (the only write path)
 
-`bin/mail.ts send <draftId>` refuses unless `~/.dotz/custom/webmail/<site>/send-approved` was touched within 15 minutes.
+`bin/mail.ts send <draftId>` refuses unless `~/.dotz/custom/webmail/<site>/send-approved`, written by `approve <draftId>` for that draft only, is at most 15 minutes old. `discard <draftId>` removes a draft and its own approval.
 The orchestrator writes that marker only after the owner says OK (ㅇㅇ/보내) in the mail thread, then runs send once; the
 marker and the draft are removed after a send. An install that wants a hard, hook-enforced gate can add a `deny` in a
 custom plugin that blocks the raw send command until an OK token appears in the thread; the shipped default is the in-code

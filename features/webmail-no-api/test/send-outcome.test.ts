@@ -24,7 +24,7 @@ const err = (name: string, message: string, code?: string) => Object.assign(new 
 // One approved draft, sent through a site whose POST does `post`; returns "<exit> <sent> <code>".
 async function where(post: () => Promise<Response>, approve = true): Promise<string> {
 	const { draft } = runDraft("corp", Date.now(), { to: "kim@example.com", subject: "Re: 문의", body: "확인했어요" });
-	if (approve) approveSend("corp", Date.now());
+	if (approve) approveSend("corp", Date.now(), draft.id);
 	const r = await runSend(ctxOf(post), spec, "corp", draft.id, Date.now());
 	return `${r.code} ${r.reason?.sent} ${r.reason?.code ?? "-"}`;
 }

@@ -44,7 +44,7 @@ export type ReplyStyle = {
 	habits?: string[]; // measured habits of the user's past replies
 };
 
-export type DraftOut = { to: string; subject?: string; body: string };
+export type DraftOut = { to: string; cc?: readonly string[]; subject?: string; body: string };
 /** Who wrote to the user, as the model judged it (mail and comment): `evidence` = the sender's own words that show it. */
 export type Recipient = { who: string; evidence: string };
 export type ReplyResult =
@@ -304,6 +304,7 @@ export function lintReply(draft: DraftOut, item: ReplyItem, style: ReplyStyle, o
 			if (self.has(untag(a))) out.push(`'${a}' is the user's own address`);
 			else if (!allowed.has(a) && !opts.anyRecipient) out.push(`'${a}' is not the sender, reply-to or a cc of the original`);
 		}
+		for (const a of (draft.cc ?? []).flatMap(addressesOf)) if (self.has(untag(a))) out.push(`'${a}' is the user's own address`);
 		if (item.subject?.trim() && !/^re\s*:/i.test((draft.subject ?? "").trim())) out.push("the subject must start with 'Re:'");
 	}
 	if (PLACEHOLDER.test(`${draft.subject ?? ""}\n${body}`)) out.push("the text contains a placeholder");

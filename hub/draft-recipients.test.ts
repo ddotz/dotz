@@ -7,7 +7,7 @@ import { emit } from "./events.ts";
 import { postMail, type MailDeps } from "./mail.ts";
 import { resetOwnAddresses, setOwnAddresses } from "./mail-state.ts";
 import { listNotices, resetNoticesForTest } from "./notices.ts";
-import { askText } from "../features/reply-drafts/lib/flow.ts";
+import { askText, draftLintFailures } from "../features/reply-drafts/lib/flow.ts";
 import { addDraft, getDraft, type DraftRec } from "../features/reply-drafts/lib/store.ts";
 
 const deps: MailDeps = { createThread: async () => ({ id: "143000000000000001" }), send: async () => undefined, mailChannel: async () => undefined, discordOn: false, emit: () => undefined, wake: () => undefined };
@@ -69,12 +69,33 @@ describe("답장 | 전체 답장", () => {
 });
 
 describe("what the owner types", () => {
-	test("a typed 참조 that is not on the original is kept, and the draft is marked as his own list", async () => {
+	test("a typed 참조 that is not on the original is kept without marking the 받는 사람 as his own list", async () => {
 		const rec = draft();
 		addDraft(rec);
 		const r = (await post(rec.id, { cc: ["new@example.org"] }).then(x => x.json())) as { ok: boolean; cc: string[] };
 		expect(r).toMatchObject({ ok: true, cc: ["new@example.org"] });
-		expect(getDraft(rec.id)).toMatchObject({ cc: ["new@example.org"], ownerRecipients: true });
+		expect(getDraft(rec.id)).toMatchObject({ cc: ["new@example.org"] });
+		expect(getDraft(rec.id)!.ownerRecipients).toBeUndefined();
+	});
+
+	test("a typed 받는 사람 marks the draft as his own list", async () => {
+		const rec = draft();
+		addDraft(rec);
+		await post(rec.id, { to: ["new@example.org"] });
+		expect(getDraft(rec.id)).toMatchObject({ to: "new@example.org", ownerRecipients: true });
+	});
+
+	test("editing the 참조 does not switch off the check of the 받는 사람", async () => {
+		const rec = draft({ to: "stranger@example.org" });
+		addDraft(rec);
+		await post(rec.id, { cc: ["park@example.com"] });
+		expect(draftLintFailures(getDraft(rec.id)!)).toEqual(["stranger@example.org은(는) 원래 메일의 보낸 사람·회신 주소·참조가 아니에요"]);
+	});
+
+	test("the owner's own address on the 참조 is refused at send time too", () => {
+		const rec = draft({ cc: ["me@example.net"] });
+		addDraft(rec);
+		expect(draftLintFailures(getDraft(rec.id)!).join("\n")).toContain("me@example.net");
 	});
 
 	test("a bad address, the owner's own address and an empty 받는 사람 are refused with a Korean line and change nothing", async () => {

@@ -68,7 +68,7 @@ export async function draftRecipientsRoute(req: Request, ref: string): Promise<R
 		const to = recipientText(next.to);
 		if (to === rec.to && (next.cc.join(",") === (rec.cc ?? []).join(",")) && mode === rec.mode) return json({ ok: true, ...view() });
 		// A list the owner wrote may hold people the original mail never named; the send's lint lets those through (ownerRecipients).
-		const mine = b.to !== undefined || b.cc !== undefined;
+		const mine = b.to !== undefined && to !== rec.to;
 		// A draft offered before this feature carries the mail's 받는 사람 as the owner's own addresses; the send's lint would then refuse a
 		// colleague on the list. The registered addresses replace that guess.
 		const self = registered.length && registered.join(",") !== (rec.item.self ?? []).join(",") ? { item: { ...rec.item, self: registered } } : {};

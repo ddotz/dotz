@@ -16,19 +16,31 @@ export const draftPath = (site: string, id: string) => join(paths.drafts(site), 
 
 // The marker stores the epoch ms the owner approved at, so freshness is judged against the same clock that wrote it (the
 // gateway touches it only after an OK in the mail thread).
-export function approveSend(site: string, now: number): void {
-	writeJson(paths.approval(site), { approvedAt: now });
+export function approveSend(site: string, now: number, draftId: string): void {
+	writeJson(paths.approval(site), { approvedAt: now, draftId });
 }
 
-export function sendApproved(site: string, now: number): boolean {
+function markerOf(site: string): { at: number; draftId: unknown } | undefined {
 	const f = paths.approval(site);
-	if (!existsSync(f)) return false;
+	if (!existsSync(f)) return undefined;
 	try {
-		const at = Number(JSON.parse(readFileSync(f, "utf8"))?.approvedAt);
-		return Number.isFinite(at) && now - at < APPROVAL_TTL_MS;
-	} catch {
-		return false;
+		const marker: unknown = JSON.parse(readFileSync(f, "utf8"));
+		if (typeof marker !== "object" || marker === null) return undefined;
+		return { at: "approvedAt" in marker ? Number(marker.approvedAt) : Number.NaN, draftId: "draftId" in marker ? marker.draftId : undefined };
+	} catch (error) {
+		console.error(`webmail ${site}: approval marker not read: ${(error as Error).message}`);
+		return undefined;
 	}
+}
+
+export function sendApproved(site: string, now: number, draftId: string): boolean {
+	const marker = markerOf(site);
+	return marker !== undefined && marker.draftId === draftId && Number.isFinite(marker.at) && now - marker.at < APPROVAL_TTL_MS;
+}
+
+export function discardDraft(site: string, draftId: string): void {
+	rmSync(draftPath(site, draftId), { force: true });
+	if (markerOf(site)?.draftId === draftId) rmSync(paths.approval(site), { force: true });
 }
 
 export async function runList(ctx: Ctx, spec: SiteSpec): Promise<{ lines: string[]; code: number }> {
@@ -94,7 +106,7 @@ export async function runSend(ctx: Ctx, spec: SiteSpec, site: string, draftId: s
 	const f = draftPath(site, draftId);
 	if (!existsSync(f)) return notSent(`초안 ${draftId}을(를) 찾지 못했어요`, "gone");
 	if (!spec.send) return notSent("이 사이트 스펙에는 전송 엔드포인트가 없어요. 초안만 만들 수 있어요", "manual_only");
-	if (!sendApproved(site, now)) return { lines: [`전송은 메일 스레드에서 오너가 OK(ㅇㅇ/보내)해야 돼요. 초안 ${draftId}을(를) 보여주고 승인을 기다려 주세요`], code: 2, reason: { sent: "no", code: "not_approved" } };
+	if (!sendApproved(site, now, draftId)) return { lines: [`전송은 메일 스레드에서 오너가 OK(ㅇㅇ/보내)해야 돼요. 초안 ${draftId}을(를) 보여주고 승인을 기다려 주세요`], code: 2, reason: { sent: "no", code: "not_approved" } };
 	const draft = JSON.parse(readFileSync(f, "utf8")) as Draft;
 	const cookie = await ctx.cookieHeader(spec);
 	// Every file must be accepted before the mail goes out; one refusal stops here, so no mail leaves half-attached.
@@ -178,14 +190,26 @@ async function main(argv: string[]): Promise<number> {
 			break;
 		}
 		case "approve":
-			approveSend(site, now);
-			out = { lines: [`전송 승인됨 (15분 유효): ${site}`], code: 0 };
+			if (!rest[0]) {
+				out = { lines: ["승인할 초안id가 필요해요: approve <초안id>"], code: 1 };
+				break;
+			}
+			approveSend(site, now, rest[0]);
+			out = { lines: [`전송 승인됨 (15분 유효, 초안 ${rest[0]}만): ${site}`], code: 0 };
+			break;
+		case "discard":
+			if (!rest[0]) {
+				out = { lines: ["지울 초안id가 필요해요: discard <초안id>"], code: 1 };
+				break;
+			}
+			discardDraft(site, rest[0]);
+			out = { lines: [`초안과 승인을 지웠어요: ${rest[0]}`], code: 0 };
 			break;
 		case "send":
 			out = await runSend(ctx, spec, site, rest[0], now);
 			break;
 		default:
-			out = { lines: ["사용법: list | read <id> | search <말> | sent [--limit n] | draft <받는이> <제목> <본문...> [--file <경로>]... | approve | send <초안id>"], code: 1 };
+			out = { lines: ["사용법: list | read <id> | search <말> | sent [--limit n] | draft <받는이> <제목> <본문...> [--file <경로>]... | approve <초안id> | send <초안id> | discard <초안id>"], code: 1 };
 	}
 	for (const l of out.lines) console.log(l);
 	if (out.reason) console.log(`DOTZ_SEND ${JSON.stringify(out.reason)}`);

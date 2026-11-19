@@ -235,7 +235,7 @@ const notYetStaged = (rec: DraftRec): string[] => {
 };
 
 // The send-time lint of a draft, in the lint's own words. A text the owner wrote himself (editedFrom) gets the owner-text lint: his length is not the style's.
-const draftLint = (d: DraftRec): string[] => (d.editedFrom !== undefined ? ownerLint : lintReply)({ to: d.to, subject: d.subject, body: d.body }, d.item, loadStyle(toneKey(d)), { anyRecipient: d.ownerRecipients === true });
+const draftLint = (d: DraftRec): string[] => (d.editedFrom !== undefined ? ownerLint : lintReply)({ to: d.to, cc: d.cc, subject: d.subject, body: d.body }, d.item, loadStyle(toneKey(d)), { anyRecipient: d.ownerRecipients === true });
 // The same as the owner reads it. The comment engine runs it before a combined card's reply is posted (hub/comments/engine.ts), so a hit never leaves a posted reply beside an unsent mail.
 export const draftLintFailures = (d: DraftRec): string[] => draftLint(d).map(ownerWarning);
 
@@ -261,7 +261,7 @@ export function editDraft(id: string, text: string, subject?: string): Step & { 
 	if (d.status !== "pending") return { ok: false, text: `초안 ${id}은(는) 이미 ${d.status} 상태라 고칠 수 없어요`, code: "not_pending" };
 	const body = stripControl(text).replace(/\r\n?/g, "\n").trim();
 	const subj = subject === undefined ? d.subject : stripControl(subject).replace(/\s+/g, " ").trim();
-	const found = ownerLint({ to: d.to, subject: subj, body }, d.item, loadStyle(toneKey(d)), { anyRecipient: d.ownerRecipients === true });
+	const found = ownerLint({ to: d.to, cc: d.cc, subject: subj, body }, d.item, loadStyle(toneKey(d)), { anyRecipient: d.ownerRecipients === true });
 	if (found.length) {
 		const lint = found.map(ownerWarning);
 		return { ok: false, text: `${LINT_REFUSED} ${lint.join(" · ")}`, ...lintCode(found[0]!), lint };

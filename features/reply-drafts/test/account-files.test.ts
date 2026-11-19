@@ -167,7 +167,7 @@ describe("zele argv with several accounts", () => {
 
 	test("a failed send gives a short reason, not zele's English error or the runtime warning printed before it", async () => {
 		const stderr = "(node:72075) ExperimentalWarning: SQLite is an experimental feature and might change at any time\n(Use `node --trace-warnings ...` to show where the warning was created)\nMultiple accounts matched\n";
-		const out = await sendWith(rec({ compose: true, mailId: "compose-x", ref: "compose-x" }), async () => ({ code: 1, stdout: "", stderr }));
+		const out = await sendWith(rec({ compose: true, mailId: "compose-x", ref: "compose-x" }), async argv => ({ code: argv[1] === "whoami" ? 0 : 1, stdout: "", stderr: argv[1] === "whoami" ? "" : stderr }));
 		expect(out).toMatchObject({ ok: false, message: `보내지 못했어요: ${msg().sendFail.other}` });
 	});
 
@@ -185,7 +185,7 @@ describe("zele argv with several accounts", () => {
 
 	test("an expired login or a lost connection is told as its own short reason, never with the tool's stack lines", async () => {
 		const stack = "Error: invalid_grant: Token has been expired or revoked.\n    at refresh (file:///opt/zele/dist/auth.js:88:11)";
-		const out = await sendWith(rec({ compose: true, mailId: "compose-x", ref: "compose-x" }), async () => ({ code: 1, stdout: "", stderr: stack }));
+		const out = await sendWith(rec({ compose: true, mailId: "compose-x", ref: "compose-x" }), async argv => ({ code: argv[1] === "whoami" ? 0 : 1, stdout: "", stderr: argv[1] === "whoami" ? "" : stack }));
 		expect(out).toEqual({ ok: false, message: `보내지 못했어요: ${msg().sendFail.login}`, sent: "no", code: "login_expired" });
 		expect(["Error: invalid_grant: Token expired", "fetch failed", "connect ECONNREFUSED 1.2.3.4:443", "boom"].map(sendReasonKey)).toEqual(["login", "offline", "offline", "other"]);
 	});

@@ -95,10 +95,12 @@ function addressedLogin(rec: Pick<DraftRec, "ref">, logins: string[]): string | 
 }
 
 const ADDRESS = /[\w.+-]+@[\w-]+\.[\w.-]+/g;
+type Run = { code: number; stdout: string; stderr: string };
+const whoami = (run: Runner): Promise<Run> => run(["zele", "whoami"]).catch(e => ({ code: 1, stdout: "", stderr: String(e) }));
+const loginsIn = (stdout: string): string[] => [...new Set(stdout.match(ADDRESS) ?? [])];
 export const zeleLogins = async (run: Runner): Promise<string[]> => {
-	// No zele at all reads as no accounts.
-	const r = await run(["zele", "whoami"]).catch(e => ({ code: 1, stdout: "", stderr: String(e) }));
-	return r.code === 0 ? [...new Set(r.stdout.match(ADDRESS) ?? [])] : [];
+	const r = await whoami(run);
+	return r.code === 0 ? loginsIn(r.stdout) : [];
 };
 // Category mails are posted as "<thread id>.<message count>"; a source `zele` already posts the thread id.
 export const threadIdOf = (source: string, id: string): string => (source === "zele" ? id : id.replace(/\.\d+$/, ""));
@@ -108,17 +110,27 @@ const threadOf = (rec: DraftRec) => threadIdOf(rec.source, rec.mailId);
  * account that can open the thread (`found`: it came from the logins, not from a record, so no card showed it). `several` = they are named and
  * none could be settled; with one account zele needs no choice.
  */
-export async function settleAccount(rec: DraftRec, run: Runner): Promise<{ account?: string; found?: true; several?: string[] }> {
+export async function settleAccount(rec: DraftRec, run: Runner): Promise<{ account?: string; found?: true; several?: string[]; blocked?: SendOutcome }> {
 	const known = zeleAccountOf(rec);
 	if (known) return { account: known };
-	const logins = await zeleLogins(run);
+	const asked = await whoami(run);
+	if (asked.code !== 0) return { blocked: told(asked, "메일 계정을 확인하지 못해서 보내지 않았어요: ", beforeReply) };
+	const logins = loginsIn(asked.stdout);
 	if (logins.length < 2) return {};
 	if (rec.compose) return { several: logins };
 	const addressed = addressedLogin(rec, logins);
 	if (addressed) return { account: addressed, found: true };
 	const holders: string[] = [];
-	for (const a of logins) if ((await run(readArgv(threadOf(rec), a))).code === 0) holders.push(a);
-	return holders.length === 1 ? { account: holders[0], found: true } : { several: logins };
+	const unread: Run[] = [];
+	for (const a of logins) {
+		const seen = await run(readArgv(threadOf(rec), a));
+		if (seen.code === 0) holders.push(a);
+		else unread.push(seen);
+	}
+	if (holders.length === 1) return { account: holders[0], found: true };
+	const raws = unread.map(r => withoutRuntimeWarnings(r.stderr).trim() || r.stdout.trim());
+	if (!holders.length && raws.every(raw => beforeReply(raw).code === "offline")) return { blocked: told(unread[0]!, "어느 계정 것인지 확인하지 못해서 보내지 않았어요: ", beforeReply) };
+	return { several: logins };
 }
 
 // Whether a mail of this source goes out through a zele account, so several accounts leave a choice: zele itself and a plugin that says so (needsAccount).
@@ -213,6 +225,11 @@ function webmailVerdict(r: { code: number; stdout: string }): Verdict & { vars?:
 	return byExit;
 }
 
+async function discardWebmail(run: Runner, site: string, id: string): Promise<void> {
+	const gone = await run(["bun", WEBMAIL_MAIL, site, "discard", id]);
+	if (gone.code !== 0) log(`reply draft: webmail draft ${id} not discarded: ${(gone.stderr || gone.stdout).trim().slice(0, 500)}`);
+}
+
 export async function sendWith(rec: DraftRec, run: Runner): Promise<SendOutcome> {
 	if (rec.kind !== "mail") return fail(MANUAL, "manual_only");
 	const files = stagedFiles(rec.id), cc = rec.cc ?? [];
@@ -222,6 +239,7 @@ export async function sendWith(rec: DraftRec, run: Runner): Promise<SendOutcome>
 	if (webmailSite(rec.source) && (cc.length || recipientList(rec.to).length > 1))
 		return fail("이 웹메일은 참조나 여러 받는 사람에게 보낼 수 없어요. 받는 사람을 한 명만 남기고 참조를 비우면 보내요", "webmail_recipients");
 	const settled = (await sendsThroughZele(rec.source)) ? await settleAccount(rec, run) : {};
+	if (settled.blocked) return settled.blocked;
 	if (settled.several) return fail(`메일 계정이 ${settled.several.join(", ")} 여러 개인데 이 메일이 어느 계정 것인지 알 수 없어서 보내지 않았어요. 초안은 그대로 있어요`, "account_needed");
 	const account = settled.account;
 	if (settled.found && account) {
@@ -264,8 +282,14 @@ export async function sendWith(rec: DraftRec, run: Runner): Promise<SendOutcome>
 	const saved = await run(["bun", WEBMAIL_MAIL, site, "draft", rec.to, rec.subject ?? "", rec.body]);
 	const id = /초안 저장:\s*(\S+)/.exec(saved.stdout)?.[1];
 	if (saved.code !== 0 || !id) return told(saved, "웹메일 초안을 만들지 못했어요: ", toolBeforeSend);
-	const approved = await run(["bun", WEBMAIL_MAIL, site, "approve"]);
-	if (approved.code !== 0) return told(approved, "웹메일 전송 승인을 기록하지 못했어요: ", toolBeforeSend);
+	const approved = await run(["bun", WEBMAIL_MAIL, site, "approve", id]);
+	if (approved.code !== 0) {
+		await discardWebmail(run, site, id);
+		return told(approved, "웹메일 전송 승인을 기록하지 못했어요: ", toolBeforeSend);
+	}
 	const sent = await run(["bun", WEBMAIL_MAIL, site, "send", id]);
-	return sent.code === 0 ? done(`${rec.to}에게 답장을 보냈어요`) : told(sent, "보내지 못했어요: ", () => webmailVerdict(sent));
+	if (sent.code === 0) return done(`${rec.to}에게 답장을 보냈어요`);
+	const outcome = told(sent, "보내지 못했어요: ", () => webmailVerdict(sent));
+	if (outcome.sent === "no") await discardWebmail(run, site, id);
+	return outcome;
 }
