@@ -32,6 +32,23 @@ function uploadXhr(f, name, onProgress) {
   });
   return { done, abort: () => x.abort() };
 }
+const UP_EXT = { "image/jpeg": "jpg", "image/png": "png", "image/gif": "gif", "image/webp": "webp", "image/heic": "heic", "image/heif": "heif", "image/avif": "avif", "application/pdf": "pdf", "video/mp4": "mp4", "video/quicktime": "mov" };
+const upSniff = async f => {
+  const b = new Uint8Array(await f.slice(0, 12).arrayBuffer());
+  const at = (s, o = 0) => [...s].every((c, i) => b[o + i] === c.charCodeAt(0));
+  if (b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) return "image/jpeg";
+  if (at("\x89PNG")) return "image/png";
+  if (at("GIF8")) return "image/gif";
+  if (at("RIFF") && at("WEBP", 8)) return "image/webp";
+  return at("%PDF") ? "application/pdf" : "";
+};
+async function upNamed(f) {
+  if (/\.[A-Za-z0-9]{1,6}$/.test(f.name || "")) return f;
+  let type = f.type;
+  if (!UP_EXT[type] && (!type || type === "application/octet-stream")) type = await upSniff(f);
+  const ext = UP_EXT[type];
+  return ext ? new File([f], `${f.name || TX("chat.att.pasted").replace(/\.[^.]*$/, "")}.${ext}`, { type, lastModified: f.lastModified }) : f;
+}
 async function uploadFile(f) {
   if (upTooBig(f.size)) throw new Error(upTooBig(f.size));
   return uploadXhr(f, f.name).done;

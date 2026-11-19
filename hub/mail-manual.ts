@@ -27,6 +27,8 @@ export type ManualIn = {
 };
 export type Manual = { ok: true; rec: DraftRec; app: string; attachments: StagedFile[] } | { ok: false; error: string; code: number };
 
+const BODY_MAX = 20_000;
+const RCPT_MAX = 500;
 const text = (v: unknown, max: number): string => (typeof v === "string" ? v.trim().slice(0, max) : "");
 
 /** The mail app instance a draft from the app belongs to: the one that owns the answered mail, else the default. */
@@ -39,10 +41,14 @@ export const manualApp = (mail?: MailRecord): string => {
 const answered = (key: string): MailRecord | undefined => (key ? mailByKey(key) : undefined);
 
 export function manualDraft(i: ManualIn): Manual {
-	const body = text(i.body, 20_000);
-	const to = text(i.to, 500);
+	const body = text(i.body, Infinity);
+	const to = text(i.to, Infinity);
+	const cc = text(i.cc, Infinity);
 	if (!body) return { ok: false, error: "내용을 적어 주세요", code: 400 };
 	if (!to) return { ok: false, error: "받는 사람을 적어 주세요", code: 400 };
+	if (body.length > BODY_MAX) return { ok: false, error: "내용이 너무 길어요. 20,000자까지 쓸 수 있어요", code: 400 };
+	if (to.length > RCPT_MAX) return { ok: false, error: "받는 사람이 너무 많아요. 500자까지 적을 수 있어요", code: 400 };
+	if (cc.length > RCPT_MAX) return { ok: false, error: "참조가 너무 길어요. 500자까지 적을 수 있어요", code: 400 };
 	const replyTo = text(i.replyTo, 200);
 	const mail = answered(replyTo);
 	if (replyTo && !mail) return { ok: false, error: "이 메일을 찾지 못했어요", code: 404 };
@@ -69,7 +75,6 @@ export function manualDraft(i: ManualIn): Manual {
 		return { ok: false, error: `첨부파일을 붙이지 못했어요: ${(error as Error).message}`, code: 400 };
 	}
 	const subject = text(i.subject, 300) || (mail ? `Re: ${mail.subject}` : "");
-	const cc = text(i.cc, 500);
 	const rec: DraftRec = {
 		id,
 		kind: "mail",

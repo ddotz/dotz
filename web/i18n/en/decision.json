@@ -96,6 +96,7 @@
   "decision.file.from_folder": "From attachments folder",
   "decision.file.attaching": "Attaching…",
   "decision.file.add": "Add file",
+  "decision.file.photo": "Add photo",
   "decision.file.locked": "Can't open",
   "decision.file.uploading": "Uploading…",
   "decision.rc.edit": "Edit",

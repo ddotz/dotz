@@ -102,6 +102,13 @@ test("an address with a direction-changing or zero-width character is not a vali
 	expect(await ev(`${q("RRCPT01", ".rq-rcpt")}.textContent`)).toBe("받는이kim@example.com참조lee@example.com보내는 계정기본 계정");
 });
 
+test("the recipient chips of an open 고치기 panel show an address without its hidden characters", async () => {
+	await run(`RA.fix.set("RRCPT01", raFixNew())`);
+	await mount("RRCPT01");
+	expect(await ev(`[...document.querySelectorAll('#ra-test [data-ref="RRCPT01"] .dr-rc-t')].map(n => n.textContent)`)).toEqual(["kim@example.com", "lee@example.com"]);
+	await run(`RA.fix.delete("RRCPT01")`);
+});
+
 test("a link in the original is drawn only for http, https and mailto", async () => {
 	const href = (link: string) => ev<string | null>(`(() => { const pane = document.createElement("div"); orgComment(pane, { text: "댓글", post: { title: "글", link: ${JSON.stringify(link)} } }); const a = pane.querySelector("a.od-open"); return a && a.getAttribute("href"); })()`);
 	expect(await href("javascript:alert(1)")).toBeNull();

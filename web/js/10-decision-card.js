@@ -246,6 +246,7 @@ function draftFilesNode(d, o = {}) {
   const ref = d.ref, sg = o.stage, box = el("div", { class: "dr-files" });
   if (ref) { DRF.pc[ref] = o.t ? pqPc(o.t) : null; drSeen(ref, d.hash); }
   const pickers = el("input", { type: "file", multiple: true, hidden: true, "aria-label": TX("decision.file.pick") });
+  const photos = el("input", { type: "file", accept: "image/*", multiple: true, hidden: true, "data-k": "photo-pick", "aria-label": TX("decision.file.photo") });
   const run = async (job, again) => {
     DRF.busy[ref] = true; delete DRF.again[ref]; paint();
     try { await job(); } catch (e) { if (again) DRF.again[ref] = again; toast(e instanceof TypeError ? TX("decision.err.offline_act") : e.message, true); }
@@ -253,7 +254,7 @@ function draftFilesNode(d, o = {}) {
   };
   const put = (mark, job, again) => { if (!sg) return run(job, again); mark(); DRF.menu[ref] = ""; paint(); o.onstage(); };   // one change: marked on the stage, or written at once
   const addAll = list => put(() => sg.add.push(...list.map(f => ({ name: f.name, size: mailSize(f.size), file: f }))), async () => { for (; list.length; list.shift()) await drfUpload(ref, list[0]); DRF.menu[ref] = ""; }, () => addAll(list));
-  pickers.onchange = () => { const list = [...pickers.files]; pickers.value = ""; addAll(list); };
+  for (const input of [pickers, photos]) input.onchange = async () => { const list = [...input.files]; input.value = ""; try { addAll(await Promise.all(list.map(upNamed))); } catch (e) { toast(e.message, true); } };
   const openLib = async () => {
     DRF.menu[ref] = DRF.menu[ref] === "lib" ? "" : "lib"; paint();
     if (DRF.menu[ref] !== "lib" || DRF.lib[ref]) return;
@@ -287,6 +288,7 @@ function draftFilesNode(d, o = {}) {
       el("button", { class: "btn tonal", type: "button", onclick: () => pickers.click() }, TX("decision.file.from_device")),
       st.library ? el("button", { class: "btn tonal", type: "button", onclick: openLib }, TX("decision.file.from_folder")) : null) : null;
     const add = can && st.canAttach ? el("button", { class: "dr-add", type: "button", disabled: busy, "aria-expanded": String(!!DRF.menu[ref]), onclick: () => { if (!st.library) pickers.click(); else { DRF.menu[ref] = DRF.menu[ref] ? "" : "menu"; paint(); } } }, icon("clip"), el("span", { text: busy ? TX("decision.file.attaching") : TX("decision.file.add") })) : null;
+    const photo = add ? el("button", { class: "btn tonal sm dr-photo", type: "button", "data-k": "photo-add", disabled: busy, text: TX("decision.file.photo"), onclick: () => photos.click() }) : null;
     const again = DRF.again[ref] && !busy ? el("button", { class: "btn tonal sm dr-again", type: "button", "data-k": "upload-again", text: TX("chat.upload.retry"), onclick: DRF.again[ref] }) : null;
     if (o.warn) { clear(o.warn).append(...warns.filter(Boolean)); o.warn.hidden = !warns.some(Boolean); }
     // The line is always there: the files, or 첨부 없음 (a mail draft too, owner 2026-11-16). o.live (the mail of a combined card, read only): the list is read from
@@ -294,7 +296,7 @@ function draftFilesNode(d, o = {}) {
     const on = o.live && live && !sg;
     clear(box).append(...[fl.length ? el("div", { class: on ? "dr-fh ok" : "dr-fh", text: on ? TX("decision.attach.attached", { n: fl.length }) : TX("decision.attach.count", { n: fl.length }) }) : el("div", { class: "dr-none", "data-k": "none" }, icon("clip"), el("span", { text: TX("decision.attach.none") })), ...rows,
       named ? el("div", { class: "dr-note", text: TX("decision.file.locked") }) : null,
-      add, again, menu, lib, ...(o.warn ? [] : warns), pickers].filter(Boolean));
+      add, photo, again, menu, lib, ...(o.warn ? [] : warns), pickers, photos].filter(Boolean));
   }
   paint();
   if (ref && (o.edit !== false || o.live || (d.attachments || []).length) && d.toLabel === "받는이" && !DRF.st[ref]) drfLoad(ref).then(paint);
@@ -358,8 +360,8 @@ function draftToNode(d, o = {}) {
     const chips = list.map((a, i) => (editing === `${name}:${i}`
       ? editor(name === "to" ? TX("decision.rc.to_addr") : TX("decision.rc.cc_addr"), a, v => change(name, list.map((x, n) => (n === i ? v : x))))
       : el("span", { class: "dr-chip dr-rc" },
-        editable ? el("button", { class: "dr-rc-t", type: "button", title: TX("decision.rc.edit"), "aria-label": TX("decision.edit_named", { name: a }), disabled: busy(), text: a, onclick: () => { DRR.add[ref] = ""; DRR.edit[ref] = `${name}:${i}`; paint(); } }) : el("span", { class: "dr-rc-t", text: a }),
-        editable ? el("button", { class: "dr-rc-x", type: "button", title: TX("decision.remove"), "aria-label": TX("decision.remove_named", { name: a }), disabled: busy(), onclick: () => change(name, list.filter((_, n) => n !== i)) }, icon("close")) : null)));
+        editable ? el("button", { class: "dr-rc-t", type: "button", title: TX("decision.rc.edit"), "aria-label": TX("decision.edit_named", { name: rqClean(a) }), disabled: busy(), text: rqClean(a), onclick: () => { DRR.add[ref] = ""; DRR.edit[ref] = `${name}:${i}`; paint(); } }) : el("span", { class: "dr-rc-t", text: rqClean(a) }),
+        editable ? el("button", { class: "dr-rc-x", type: "button", title: TX("decision.remove"), "aria-label": TX("decision.remove_named", { name: rqClean(a) }), disabled: busy(), onclick: () => change(name, list.filter((_, n) => n !== i)) }, icon("close")) : null)));
     if (editable && DRR.add[ref] === name) chips.push(editor(name === "to" ? TX("decision.rc.add_to") : TX("decision.rc.add_cc"), "", v => change(name, [...list, v])));
     else if (editable) chips.push(el("button", { class: "dr-rc-add", type: "button", "aria-label": TX("decision.add_named", { name: label }), disabled: busy(), onclick: () => { DRR.edit[ref] = ""; DRR.add[ref] = name; paint(); } }, icon("add"), el("span", { text: TX("decision.add") })));
     return el("div", { class: "dr-to dr-rcrow", "data-row": name }, el("span", { class: "dr-k", text: label }), chips.length ? el("div", { class: "dr-rc-list" }, ...chips) : el("span", { class: "dr-k", text: "-" }));

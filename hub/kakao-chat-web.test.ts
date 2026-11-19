@@ -525,6 +525,7 @@ describe("카카오톡 on a phone (390x844)", async () => {
 		expect(await q<boolean>(v, `const f = document.querySelector("#kk-form").getBoundingClientRect(); return f.bottom <= innerHeight && f.top >= 0`)).toBe(true);
 		await v.resize(390, 844);
 
+		await run(v, `const real = window.matchMedia.bind(window); window.matchMedia = q => (q.includes("pointer: coarse") ? { matches: true, media: q, addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {} } : real(q))`);
 		await run(v, `const t = document.querySelector("#kk-text"); t.value = "줄바꿈"; const e = new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }); t.dispatchEvent(e); window.__enterPrevented = e.defaultPrevented`);
 		expect(await q(v, `return window.__enterPrevented`)).toBe(false);
 		expect(reqs.some(r => r.path.endsWith("/send"))).toBe(false);

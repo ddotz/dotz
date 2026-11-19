@@ -429,7 +429,6 @@ function kkMatch(name, q) {
 }
 const kkSeen = () => document.visibilityState === "visible" && kkTl.offsetParent !== null && kkTl.clientHeight > 0;
 const kkWide = () => !narrowChat();
-const kkCoarse = () => matchMedia("(pointer: coarse), (max-width: 639px)").matches;
 
 /* ---- the pane ---- */
 const kkRooms = el("div", { class: "kk-rooms", id: "kk-rooms", "aria-label": TX("apps.kk.rooms_aria") });
@@ -483,9 +482,8 @@ if (typeof IntersectionObserver === "function") {
 
 const kkAutosize = () => { kkTa.style.height = "auto"; kkTa.style.height = `${Math.min(kkTa.scrollHeight, 140)}px`; };
 kkTa.addEventListener("input", () => { kkAutosize(); if (KK.open) KK.typed.set(KK.open, kkTa.value); });
-// Enter sends on a desktop; Shift+Enter, and Enter on a phone or a narrow screen, is a new line. The IME's own Enter (isComposing) never sends.
 kkTa.addEventListener("keydown", ev => {
-  if (ev.key !== "Enter" || ev.shiftKey || ev.isComposing || ev.keyCode === 229 || kkCoarse()) return;
+  if (!plainEnter(ev) || ev.shiftKey || !enterSends()) return;
   ev.preventDefault();
   kkSend();
 });

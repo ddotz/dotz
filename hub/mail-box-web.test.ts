@@ -327,6 +327,78 @@ describe("메일 쓰기", () => {
 		expect(await ev<boolean>(v, `document.querySelector(".mbox-sheet .mbox-err").hidden`)).toBe(true);
 	}, 30_000);
 
+	test("a body over 20,000 characters and recipients over 500 are refused with the reason under their field; nothing is posted and the text stays", async () => {
+		const v = await openList(1280, 800);
+		await run(v, `document.querySelector(".mbox-fab").click()`);
+		await waitFor(v, `document.querySelector(".mbox-sheet")`);
+		const err = (k: string) => ev<{ hidden: boolean; text: string }>(v, `(() => { const e = document.querySelector('.mbox-sheet [data-k="mail-err-${k}"]'); return { hidden: e.hidden, text: e.textContent }; })()`);
+		const save = () => run(v, `document.querySelector(".mbox-sheet .mbox-save").click()`);
+		await fill(v, '.mbox-sheet [data-k="mail-to"]', "lee@example.com");
+		await fill(v, '.mbox-sheet [data-k="mail-body"]', "가".repeat(20_001));
+		await save();
+		await waitFor(v, `!document.querySelector('.mbox-sheet [data-k="mail-err-body"]').hidden`);
+		expect(await err("body")).toEqual({ hidden: false, text: "내용이 너무 길어요. 20,000자까지 쓸 수 있어요" });
+		expect(await ev<number>(v, `document.querySelector('.mbox-sheet [data-k="mail-body"]').value.length`)).toBe(20_001);
+		await fill(v, '.mbox-sheet [data-k="mail-body"]', "가".repeat(20_000));
+		expect((await err("body")).hidden).toBe(true);
+		await fill(v, '.mbox-sheet [data-k="mail-to"]', `${"a".repeat(489)}@example.com`);
+		await save();
+		await waitFor(v, `!document.querySelector('.mbox-sheet [data-k="mail-err-to"]').hidden`);
+		expect(await err("to")).toEqual({ hidden: false, text: "받는 사람이 너무 많아요. 500자까지 적을 수 있어요" });
+		await fill(v, '.mbox-sheet [data-k="mail-to"]', "lee@example.com");
+		await run(v, `document.querySelector(".mbox-sheet .mbox-cc").click()`);
+		await fill(v, '.mbox-sheet [data-k="mail-cc"]', `${"b".repeat(489)}@example.com`);
+		await save();
+		await waitFor(v, `!document.querySelector('.mbox-sheet [data-k="mail-err-cc"]').hidden`);
+		expect(await err("cc")).toEqual({ hidden: false, text: "참조가 너무 길어요. 500자까지 적을 수 있어요" });
+		expect(posts).toEqual([]);
+		await fill(v, '.mbox-sheet [data-k="mail-cc"]', "park@example.com");
+		await save();
+		await posted(1);
+		expect(posts[0]!.body).toMatchObject({ to: "lee@example.com", cc: "park@example.com", body: "가".repeat(20_000) });
+		expect(posts.length).toBe(1);
+	}, 30_000);
+
+	const photoInput = (scope: string) => `${scope} input[type=file][accept="image/*"]`;
+	const attachAs = (v: View, sel: string, name: string, type: string, bytes: number[]) => run(v, `const i = document.querySelector(${JSON.stringify(sel)}), dt = new DataTransfer(); dt.items.add(new File([new Uint8Array(${JSON.stringify(bytes)})], ${JSON.stringify(name)}, { type: ${JSON.stringify(type)} })); i.files = dt.files; i.dispatchEvent(new Event("change"))`);
+	const photoOpens = (v: View, scope: string) => ev<boolean>(v, `(() => { const i = document.querySelector(${JSON.stringify(photoInput(scope))}); let hit = false; i.addEventListener("click", e => { hit = true; e.preventDefault(); }, { once: true }); document.querySelector(${JSON.stringify(`${scope} [data-k="mail-attach-photo"]`)}).click(); return hit; })()`);
+
+	test("the compose sheet and the reply box each offer a photo picker next to the file picker", async () => {
+		const v = await openList(1280, 800);
+		await run(v, `document.querySelector(".mbox-fab").click()`);
+		await waitFor(v, `document.querySelector(".mbox-sheet")`);
+		expect(await ev<number>(v, `document.querySelectorAll('.mbox-sheet input[type=file]:not([accept])').length`)).toBe(1);
+		expect(await photoOpens(v, ".mbox-sheet")).toBe(true);
+		await attachAs(v, photoInput(".mbox-sheet"), "사진.jpg", "image/jpeg", [1, 2, 3]);
+		await waitFor(v, `document.querySelector('.mbox-sheet .mbox-chip[data-name="사진.jpg"]')`);
+		await openMail(v, "월간 점검 보고서 확인 요청");
+		await run(v, `document.querySelector('#tl .mbox-mode[data-mode="reply"]').click()`);
+		await waitFor(v, `document.querySelector("#tl .mbox-reply.open")`);
+		expect(await ev<number>(v, `document.querySelectorAll('#tl .mbox-reply input[type=file]:not([accept])').length`)).toBe(1);
+		expect(await photoOpens(v, "#tl .mbox-reply")).toBe(true);
+		await attachAs(v, photoInput("#tl .mbox-reply"), "현장.png", "image/png", [4, 5]);
+		await waitFor(v, `document.querySelector('#tl .mbox-chip[data-name="현장.png"]')`);
+	}, 30_000);
+
+	test("a pick with no extension is named by its type, or by its first bytes when the type is empty or generic; any other keeps its name", async () => {
+		const v = await openList(390, 844);
+		await run(v, `document.querySelector(".mbox-fab").click()`);
+		await waitFor(v, `document.querySelector(".mbox-sheet")`);
+		const PNG = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0];
+		const picks: [string, string, number[], string][] = [
+			["image:1234", "image/jpeg", [1, 2, 3], "image:1234.jpg"],
+			["doc", "", PNG, "doc.png"],
+			["raw", "application/octet-stream", [0xff, 0xd8, 0xff, 0xe0, 0, 0], "raw.jpg"],
+			["memo", "application/octet-stream", [0x68, 0x69], "memo"],
+			["IMG_0001.HEIC", "image/heic", [7], "IMG_0001.HEIC"],
+		];
+		for (const [name, type, bytes, shown] of picks) {
+			await attachAs(v, ".mbox-sheet input[type=file]:not([accept])", name, type, bytes);
+			await waitFor(v, `document.querySelector('.mbox-sheet .mbox-chip[data-name=${JSON.stringify(shown)}]')`);
+		}
+		expect(await ev<string[]>(v, `[...document.querySelectorAll(".mbox-sheet .mbox-chip")].map(c => c.dataset.name)`)).toEqual(picks.map(p => p[3]));
+	}, 30_000);
+
 	test("on a phone the folded bar sits above the tab bar, says 펼치기, and opens again with the text kept", async () => {
 		const v = await openList(390, 844);
 		await run(v, `document.querySelector(".mbox-fab").click()`);

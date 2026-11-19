@@ -206,7 +206,7 @@ ta.addEventListener("keydown", ev => {
 ta.addEventListener("keydown", ev => {
   if (ev.key === "Escape" && isWorking(target) && !document.querySelector("dialog[open]:not([data-leaving])") && !openMenu) { ev.preventDefault(); stopTarget(); return; }
   if (ev.key !== "Enter" || ev.shiftKey || imeKey(ev)) return;
-  if (matchMedia("(pointer: coarse)").matches) return;
+  if (!enterSends()) return;
   ev.preventDefault();
   sendChat(ev.altKey ? "interrupt" : ev.metaKey || ev.ctrlKey ? "queue" : undefined);
 });

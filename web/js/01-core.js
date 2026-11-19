@@ -221,6 +221,7 @@ document.addEventListener("visibilitychange", () => { if (document.visibilitySta
 // why(platform): Chrome sends the Enter that commits a composition with isComposing true, Safari sends it after compositionend with keyCode 229, https://bugs.webkit.org/show_bug.cgi?id=165004
 const imeKey = ev => !!ev.isComposing || ev.keyCode === 229;
 const plainEnter = ev => ev.key === "Enter" && !imeKey(ev);
+const enterSends = () => !matchMedia("(pointer: coarse)").matches;
 // A filter or tab row that scrolls sideways keeps its chosen item in view after it is drawn (a repaint starts the row at its left end).
 // Only the row scrolls, never the page. Returns the row.
 function segKeep(row) {

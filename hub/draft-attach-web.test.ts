@@ -102,6 +102,15 @@ describe("files in the send sheet at 390px", () => {
 		}
 	});
 
+	test("the file row offers 사진 추가 next to 파일 추가, which opens a picker that accepts images", async () => {
+		const v = await open(390, 844);
+		await openSheet(v, drafts.match!);
+		await waitFor(v, `document.querySelector(".fs-body .dr-photo")`);
+		expect(await texts(v, ".fs-body .dr-photo")).toEqual(["사진 추가"]);
+		expect(await v.evaluate(`document.querySelectorAll('.fs-body input[type=file]:not([accept])').length`)).toBe(1);
+		expect(await v.evaluate(`(() => { const i = document.querySelector('.fs-body input[type=file][accept="image/*"]'); let hit = false; i.addEventListener("click", e => { hit = true; e.preventDefault(); }, { once: true }); document.querySelector(".fs-body .dr-photo").click(); return hit; })()`)).toBe(true);
+	});
+
 	test("no match: the amber warning sits above 보내기; 파일 추가 from the folder clears it, x brings it back", async () => {
 		const ref = drafts.miss!;
 		const d = find(ref).decision!.draft!;
