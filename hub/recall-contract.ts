@@ -40,7 +40,7 @@ export function laneContract(contractFile: string | undefined): string {
  * compaction leaves that alone, so the re-read leaves both out and says where they are. `parts` holds them either way: what hub/prompt-health.ts measures is the
  * whole contract, wherever a runtime keeps it, so it calls this without the option.
  */
-export function recallContract(data: string, pkg: string, opts: { modeInSystem?: boolean } = {}): { text: string; parts: RecallParts } {
+export function recallContract(data: string, pkg: string, opts: { modeInSystem?: boolean } = {}): { text: string; parts: RecallParts; modeFile: string } {
 	const file = (p: string, max: number) => (existsSync(p) ? readFileSync(p, "utf8").slice(0, max) : "");
 	const code = language(data);
 	const base = baseLanguage(code);
@@ -52,7 +52,8 @@ export function recallContract(data: string, pkg: string, opts: { modeInSystem?:
 	} catch {
 		// no readable config: zele's default (on)
 	}
-	const modeText = file(chain.find(existsSync) ?? join(pkg, "MODE.md"), 30000);
+	const modeFile = chain.find(existsSync) ?? join(pkg, "MODE.md");
+	const modeText = file(modeFile, 30000);
 	const mode = zeleOn ? modeText : dropSection(modeText, "## Mail and calendar");
 	const features = featurePrompt(data, "orchestrator");
 	const stateFile = join(data, "state.json");
@@ -61,7 +62,7 @@ export function recallContract(data: string, pkg: string, opts: { modeInSystem?:
 	const parts = { identity: identityText(data), rules: rules + (features ? `\n\n${features}` : ""), lessons: file(join(data, "LESSONS.md"), 3000), setups: existsSync(setupsFile) ? renderSetups(readFileSync(setupsFile, "utf8")) : "", state: (existsSync(stateFile) && renderState(readFileSync(stateFile, "utf8"), stateFile)) || "{}" };
 	const split: RecallParts = { identity: parts.identity, mode, rules, features, lessons: parts.lessons, setups: parts.setups, state: parts.state };
 	const sys = opts.modeInSystem === true;
-	if (base === "ko") return { text: `[dotz] 컨텍스트 압축 뒤 계약을 다시 읽어요${sys ? " (정체성과 계약은 시스템 프롬프트에 있어요)" : ""}:\n\n${sys ? "" : `정체성:\n${parts.identity}\n\n${mode}\n\n`}오너 규칙:\n${parts.rules}\n\n교훈:\n${parts.lessons}\n\n작업 채널 설정 (자세한 건 dotz_channel list):\n${parts.setups || "(없음)"}\n\n현재 state.json:\n${parts.state}`, parts: split };
+	if (base === "ko") return { text: `[dotz] 컨텍스트 압축 뒤 계약을 다시 읽어요${sys ? " (정체성과 계약은 시스템 프롬프트에 있어요)" : ""}:\n\n${sys ? "" : `정체성:\n${parts.identity}\n\n${mode}\n\n`}오너 규칙:\n${parts.rules}\n\n교훈:\n${parts.lessons}\n\n작업 채널 설정 (자세한 건 dotz_channel list):\n${parts.setups || "(없음)"}\n\n현재 state.json:\n${parts.state}`, parts: split, modeFile };
 	const reply = base === "en" ? "" : `\n\nReply to the owner in ${languageName(code)} (${code}).`;
-	return { text: `[dotz] Contract re-read after compaction${sys ? " (your identity and the contract are in your system prompt)" : ""}:\n\n${sys ? "" : `Identity:\n${parts.identity}\n\n${mode}\n\n`}Owner rules:\n${parts.rules}\n\nLessons:\n${parts.lessons}\n\nWork channel setups (dotz_channel list for details):\n${parts.setups || "(none)"}\n\nCurrent state.json:\n${parts.state}${reply}`, parts: split };
+	return { text: `[dotz] Contract re-read after compaction${sys ? " (your identity and the contract are in your system prompt)" : ""}:\n\n${sys ? "" : `Identity:\n${parts.identity}\n\n${mode}\n\n`}Owner rules:\n${parts.rules}\n\nLessons:\n${parts.lessons}\n\nWork channel setups (dotz_channel list for details):\n${parts.setups || "(none)"}\n\nCurrent state.json:\n${parts.state}${reply}`, parts: split, modeFile };
 }

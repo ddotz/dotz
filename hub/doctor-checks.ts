@@ -185,7 +185,7 @@ export const failures: DoctorCheck = ({ now, dataDir, home, memo }) => {
 	const r = failureReport({ home, dataDir, days: T.failureDays, now }), base = isBaseline(memo?.failBase) ? memo.failBase : undefined;
 	if (memo) memo.failBase = baselineOf(r);
 	const t = msg().doctor;
-	return grownClasses(r, base, T.failures).map(g => found(`failures:${g.name}`, "failures", now, t.failuresGrew(g.line), g.name, Math.round(g.weight)));
+	return grownClasses(r, base, T.failures).map(g => found(`failures:${g.name}`, "failures", now, t.failuresGrew(g.label, g.change), g.name, Math.round(g.weight)));
 };
 
 export const tokens: DoctorCheck = ({ now, dry }) => {

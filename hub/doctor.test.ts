@@ -6,6 +6,7 @@ import { compose, loadStore, morningTime, nextAt, nightTime, runMorning, runNigh
 import { countTraces, gateway, logins, plugins, sessions, update, watches } from "./doctor-checks.ts";
 import { THRESHOLDS as T } from "./doctor-limits.ts";
 import type { DoctorCheck, Finding } from "./doctor-types.ts";
+import { msg } from "./i18n.ts";
 import { loadPlugins } from "./plugins.ts";
 
 const H = 3600e3, D = 24 * H;
@@ -96,15 +97,15 @@ describe("morning delivery", () => {
 		expect(text.split("\n").filter(Boolean)).toHaveLength(1);
 	});
 
-	test("a finding with a decision carries a choice block, one without does not", async () => {
+	test("a finding with a decision is its own paragraph with a choice block, out of the list", async () => {
 		const decide = { question: "Q-DECIDE", options: [{ name: "OPT-ONE", result: "R1" }, { name: "OPT-TWO", result: "R2" }] };
 		const r = rig([finding({ key: "disk:low", area: "disk", what: "DISK", decide }), finding()]);
 		await r.day();
 		const { text, decision } = r.state.sent[0]!;
 		expect(decision).toBe(true);
-		expect(text).toContain("**1) OPT-ONE**");
-		expect(text).toContain("**2) OPT-TWO**");
-		expect(text.match(/\*\*\d\)/g)).toHaveLength(2);
+		const [list, block] = text.split("\n\n");
+		expect(list).toBe(`${msg().doctor.head(1, 1)}\n- WHAT-A`);
+		expect(block).toBe("결정: Q-DECIDE\n**1) OPT-ONE**\nR1\n**2) OPT-TWO**\nR2");
 	});
 
 	test("a finding without a decision has no choice block", async () => {

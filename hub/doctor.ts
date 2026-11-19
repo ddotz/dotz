@@ -79,8 +79,8 @@ export function compose(store: DoctorStore, now: number): Notice | undefined {
 	const due = Object.values(store.findings).filter(f => shouldTell(f, store.told[f.key], now));
 	const open = due.filter(f => !f.fixed), fixed = due.filter(f => f.fixed);
 	if (!due.length) return undefined;
-	const t = msg().doctor, ask = open.find(f => f.decide);
-	const parts = [open.length ? [t.head(open.length), ...open.map(f => `- ${f.what}${f.decide ? `\n  ${f.evidence}` : ""}`)].join("\n") : "", fixed.length ? t.fixedLine(fixed.map(f => f.what).join(", ")) : "", ask?.decide ? issueBlock(ask.decide.question, ask.decide.options) : ""];
+	const t = msg().doctor, ask = open.find(f => f.decide), listed = open.filter(f => f !== ask);
+	const parts = [open.length ? [t.head(listed.length, ask ? 1 : 0), ...listed.map(f => `- ${f.what}`)].join("\n") : "", fixed.length ? t.fixedLine(fixed.map(f => f.what).join(", ")) : "", ask?.decide ? issueBlock(ask.decide.question, ask.decide.options) : ""];
 	return { text: parts.filter(Boolean).join("\n\n"), decision: !!ask, open: open.length > 0, keys: due.map(f => f.key) };
 }
 
