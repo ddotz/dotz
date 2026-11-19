@@ -34,6 +34,10 @@ html, body, #setup { height: 100%; }
 .ob-pick[disabled] { opacity: .5; cursor: default; }
 .ob-pick .li-end { color: var(--accent); }
 .ob-pick.on .hd { font-weight: 600; }
+.ob-box { display: inline-flex; align-items: center; justify-content: center; width: var(--sp-6); height: var(--sp-6); border: 1.5px solid var(--line-2); border-radius: var(--r-seg-in); }
+.ob-box.on { border-color: var(--accent); }
+.ob-access .seg button { flex: 1 1 0; }
+.ob-access { margin-bottom: var(--sp-3); }
 .ob-two { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-3); }
 .ob-more { margin-top: var(--sp-4); }
 .ob-more summary { display: flex; align-items: center; min-height: var(--btn-hit); padding: 0 var(--sp-1); color: var(--fg-2); font-size: 14px; font-weight: 500; cursor: pointer; }

@@ -86,7 +86,7 @@ import { proxyMatch, proxyRequest } from "./app-proxy.ts";
 import { igDmRoute } from "./ig-dm-gateway.ts";
 import { kakaoRoute } from "./kakao/gateway.ts";
 import { defaultOnboardDeps, onboardingService, setOnboardDeps } from "./onboarding.ts";
-import { saveWebAccessInput } from "./onboarding-web-access.ts";
+import { saveWebAccessInput } from "./web-access-input.ts";
 import { createSetupGate } from "../firstrun/setup-gate.ts";
 import { chartRoute } from "./chart.ts";
 

@@ -1,10 +1,10 @@
 # 웹 접속 (온보딩)
 
-설정 → 웹 접속에서 접속 방식을 고르면 dotz가 그 방식에 필요한 설정을 스스로 마칩니다. 기본값은 **Tailscale**이고, 지금 쓰는 tailnet 주소는 바뀌지 않습니다.
+설치 마법사나 설정 → 웹 접속에서 접속 방식을 고르면 dotz가 그 방식에 필요한 설정을 스스로 마칩니다. Tailscale 로그인이 있는 설치는 기본값이 **Tailscale**이고(지금 쓰는 tailnet 주소는 바뀌지 않습니다), 로그인이 없으면 **이 컴퓨터만**으로 시작합니다.
 
 ## 방식
 
-- **Tailscale** (기본): tailnet에 연결한 기기에서 `https://<기기>.<tailnet>.ts.net`으로 엽니다. dotz가 `tailscale serve`를 확인하고, 없으면 설정합니다.
+- **Tailscale**: tailnet에 연결한 기기에서 `https://<기기>.<tailnet>.ts.net`으로 엽니다. dotz가 `tailscale serve`를 확인하고, 없으면 설정합니다.
 - **Cloudflare**: 고정 주소(예: `dotz.example.com`)를 열고 Cloudflare Access와 기기 연결(패스키)을 씁니다.
 - **이 컴퓨터만**: `127.0.0.1`에서만 엽니다. 다른 기기에서는 열리지 않습니다.
 
