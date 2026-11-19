@@ -82,7 +82,7 @@ function world(o: { outcome?: string; reviseFails?: boolean; lesson?: string; ed
 		log: () => undefined,
 	};
 	const replies = createReplyActions(deps);
-	const only = (prefix: string) => log.filter(l => l.startsWith(prefix));
+	const linesOf = (prefix: string) => log.filter(l => l.startsWith(prefix));
 	/** Time passes by `ms` and every timer that was set runs (one approval in the window, or code's next attempt). */
 	const fire = async (ms = 0) => {
 		clock += ms;
@@ -92,7 +92,7 @@ function world(o: { outcome?: string; reviseFails?: boolean; lesson?: string; ed
 	const last = () => sender.results().at(-1);
 	// The version the owner is shown now (a web card names it with its 보내기).
 	const seen = (ref: string) => approvalHash(drafts.get(ref)!);
-	return { replies, sender, log, ran, drafts, seen, drawn, reposts, only, picks, set, fire, last, timers, calls, onAsk: (fn: typeof onAsk) => void (onAsk = fn), reported };
+	return { replies, sender, log, ran, drafts, seen, drawn, reposts, linesOf, picks, set, fire, last, timers, calls, onAsk: (fn: typeof onAsk) => void (onAsk = fn), reported };
 }
 
 test("send: the owner's pick is written before the send is queued, and a second send of the same draft sends nothing", async () => {
@@ -135,7 +135,7 @@ test("다시 보내기 of a send that failed for want of a fresh approval (mail_
 		o.outcome = undefined;
 		expect((await w.replies.act({ ref: "RAAAAAA", action: "retry", hash: w.seen("RAAAAAA") }, owner)).status).toBe(200);
 		await w.sender.idle();
-		expect(w.only("pick")).toEqual(["pick 보내기", "pick 보내기"]);
+		expect(w.linesOf("pick")).toEqual(["pick 보내기", "pick 보내기"]);
 		expect(w.last()).toMatchObject({ state: "sent" });
 		expect(jobs.map(j => j.retry ?? false)).toEqual([false, retried]);
 	}
@@ -162,8 +162,8 @@ test("revise: the new draft cannot be sent until its cards moved; a revise that 
 	const same = world({ sameRef: true });
 	await same.replies.act({ ref: "RAAAAAA", action: "revise", change: "더 짧게" }, owner);
 	await same.replies.idle();
-	expect(same.only("event").at(-1)).toStartWith("event RAAAAAA 고치지 못했어요");
-	expect(same.only("rewrite")).toEqual([]);
+	expect(same.linesOf("event").at(-1)).toStartWith("event RAAAAAA 고치지 못했어요");
+	expect(same.linesOf("rewrite")).toEqual([]);
 });
 
 test("a revise that fails leaves the old draft pending, learns nothing and says why on the card", async () => {
@@ -171,8 +171,8 @@ test("a revise that fails leaves the old draft pending, learns nothing and says 
 	await w.replies.act({ ref: "RAAAAAA", action: "revise", change: "더 짧게" }, owner);
 	await w.replies.idle();
 	expect(w.drafts.get("RAAAAAA")!.draft.state).toBe("pending");
-	expect(w.only("learn")).toEqual([]);
-	expect(w.only("event").at(-1)).toBe("event RAAAAAA 고치지 못했어요 - 고친 초안을 만들지 못했어요");
+	expect(w.linesOf("learn")).toEqual([]);
+	expect(w.linesOf("event").at(-1)).toBe("event RAAAAAA 고치지 못했어요 - 고친 초안을 만들지 못했어요");
 });
 
 test("a 고치기 pressed on a Discord card that fails says why once in that conversation; the web's says it on the card only", async () => {
@@ -181,16 +181,16 @@ test("a 고치기 pressed on a Discord card that fails says why once in that con
 		const w = world(o);
 		await w.replies.act({ ref: "RAAAAAA", action: "revise", change: "더 짧게" }, discord);
 		await w.replies.idle();
-		expect(w.only("say")).toEqual([said]);
+		expect(w.linesOf("say")).toEqual([said]);
 	}
 	const w = world({ reviseFails: true });
 	await w.replies.act({ ref: "RAAAAAA", action: "revise", change: "더 짧게" }, owner);
 	await w.replies.idle();
-	expect(w.only("say")).toEqual([]);
+	expect(w.linesOf("say")).toEqual([]);
 	const ok = world();
 	await ok.replies.act({ ref: "RAAAAAA", action: "revise", change: "더 짧게" }, discord);
 	await ok.replies.idle();
-	expect(ok.only("say")).toEqual([]);
+	expect(ok.linesOf("say")).toEqual([]);
 });
 
 test("D3e2ymp: 직접 고치기 saves only (its one pick, no send, a body with send is 400); a 보내기 picked before a change cannot send the changed text", async () => {
@@ -202,7 +202,7 @@ test("D3e2ymp: 직접 고치기 saves only (its one pick, no send, a body with s
 	const r = await w.replies.act({ ref: "RAAAAAA", action: "edit", text: "제가 쓴 그대로예요" }, owner);
 	expect(r.status).toBe(200);
 	expect(w.drafts.get("RAAAAAA")!.draft.text).toBe("제가 쓴 그대로예요");
-	expect(w.only("pick")).toEqual(["pick 직접 고치기"]);
+	expect(w.linesOf("pick")).toEqual(["pick 직접 고치기"]);
 	expect(w.sender.results()).toEqual([]);
 
 	// 보내기 on the saved version; while it waits nothing may edit it, and a change made under it anyway voids it.
@@ -283,7 +283,7 @@ test("unsure: a second send answers needs_resolve; 나갔어요 closes it as sen
 	await v.sender.idle();
 	expect((await v.replies.act({ ref: "RAAAAAA", action: "resolve", as: "sent" }, owner)).status).toBe(200);
 	expect(v.drafts.get("RAAAAAA")!.draft.state).toBe("sent");
-	expect(v.only("text")).toEqual(["text 나갔어요"]);
+	expect(v.linesOf("text")).toEqual(["text 나갔어요"]);
 	expect(v.ran).toHaveLength(1);
 });
 
@@ -297,8 +297,8 @@ test("undo inside the window cancels the send; drop and restore move the draft a
 	expect(sender.cancel("RAAAAAA")).toBe("cancelled");
 
 	expect((await w.replies.act({ ref: "RAAAAAA", action: "drop" }, owner)).status).toBe(200);
-	expect(w.only("pick")).toEqual(["pick 보내지 않기"]);
-	expect(w.only("close")).toEqual(["close RAAAAAA"]);
+	expect(w.linesOf("pick")).toEqual(["pick 보내지 않기"]);
+	expect(w.linesOf("close")).toEqual(["close RAAAAAA"]);
 	expect((await w.replies.act({ ref: "RAAAAAA", action: "restore" }, owner)).status).toBe(200);
 	expect(w.drafts.get("RAAAAAA")!.draft.state).toBe("pending");
 });
@@ -310,7 +310,7 @@ test("an agent caller may only revise: it writes no pick, and send and everythin
 	await w.replies.idle();
 	expect((await w.replies.act({ ref: "RBBBBBB", action: "send" }, agent)).status).toBe(403);
 	expect(w.ran).toEqual([]);
-	expect(w.only("pick")).toEqual([]);
+	expect(w.linesOf("pick")).toEqual([]);
 });
 
 test("a hand-written card goes to the bot as its numbered answer; a batch sends one message per conversation", async () => {
@@ -349,7 +349,7 @@ test("A1: a refused send tells every surface; a send naming no version (typed ch
 	w.set("RAAAAAA", { text: "다른 기기에서 바뀐 글" });
 	const r = await w.replies.act({ ref: "RAAAAAA", action: "send" }, { surface: "chat" });
 	expect([r.status, r.body]).toEqual([409, expect.objectContaining({ ok: false, code: "changed" })]);
-	expect(w.only("event")).toEqual(["event RAAAAAA"]);
+	expect(w.linesOf("event")).toEqual(["event RAAAAAA"]);
 	expect([w.picks, w.sender.results()]).toEqual([[], []]);
 	card.hash = approvalHash(w.drafts.get("RAAAAAA")!);
 	expect((await w.replies.act({ ref: "RAAAAAA", action: "send" }, { surface: "chat" })).status).toBe(200);
@@ -413,7 +413,7 @@ test("A7: a revised draft whose card cannot be drawn ends 고치는 중 with a r
 	const w = world({ askThrows: true });
 	await w.replies.act({ ref: "RAAAAAA", action: "revise", change: "더 짧게" }, owner);
 	await w.replies.idle();
-	expect(w.only("event").at(-1)).toStartWith("event RAAAAAA->RBBBBBB ");
+	expect(w.linesOf("event").at(-1)).toStartWith("event RAAAAAA->RBBBBBB ");
 	expect((await w.replies.view("RBBBBBB"))!.draft.revising).toBeUndefined();
 	expect((await w.replies.act({ ref: "RBBBBBB", action: "drop" }, owner)).status).toBe(200);
 });
@@ -440,18 +440,18 @@ test("revise: the cards move to the new draft with its hash", async () => {
 test("amend (Discord's 고치기 form with changed text): text alone only saves; with words it saves, then revises the saved text; a failed save revises nothing", async () => {
 	const saveOnly = world();
 	expect((await saveOnly.replies.amend({ ref: "RAAAAAA", text: "제가 쓴 글이에요" }, owner)).status).toBe(200);
-	expect([saveOnly.only("pick"), saveOnly.only("model"), saveOnly.drafts.get("RAAAAAA")!.draft.text]).toEqual([["pick 직접 고치기"], [], "제가 쓴 글이에요"]);
+	expect([saveOnly.linesOf("pick"), saveOnly.linesOf("model"), saveOnly.drafts.get("RAAAAAA")!.draft.text]).toEqual([["pick 직접 고치기"], [], "제가 쓴 글이에요"]);
 
 	const both = world();
 	expect((await both.replies.amend({ ref: "RAAAAAA", text: "제가 쓴 글이에요", change: "더 공손하게" }, owner)).status).toBe(202);
 	await both.replies.idle();
 	expect(both.log.slice(0, 5)).toEqual(["pick 직접 고치기", "rewrite RAAAAAA", "event RAAAAAA", "pick 고치기 - 더 공손하게", "event RAAAAAA revising"]);
-	expect(both.only("model")).toEqual(["model 더 공손하게"]);
+	expect(both.linesOf("model")).toEqual(["model 더 공손하게"]);
 	expect(both.drafts.get("RBBBBBB")!.draft.replaces?.text).toBe("제가 쓴 글이에요");
 
 	const refused = world({ editLint: ["무조건"] });
 	expect((await refused.replies.amend({ ref: "RAAAAAA", text: "무조건 됩니다", change: "더 짧게" }, owner)).status).toBe(422);
-	expect(refused.only("model")).toEqual([]);
+	expect(refused.linesOf("model")).toEqual([]);
 });
 
 // B2 (server.md S3): the store keeps the draft in mail:k1, its card was posted in "web": a typed answer and the model's marker look there.
@@ -472,7 +472,7 @@ test("an agent's revise of a hand-written card goes to the bot once as its 고�
 	const w = world({ cards: [{ ref: "X9", conv: "ch:1", notice: "n9", title: "이 답글 올릴까요? (X9)" }] });
 	expect((await w.replies.act({ ref: "X9", action: "revise", change: "더 짧게" }, agent)).status).toBe(200);
 	expect((await w.replies.act({ ref: "X9", action: "send" }, agent)).body).toMatchObject({ ok: false, code: "owner_only" });
-	expect(w.only("bot")).toEqual(["bot ch:1 결정 답: 이 답글 올릴까요? (X9) → 2) 고치기 - 더 짧게"]);
+	expect(w.linesOf("bot")).toEqual(["bot ch:1 결정 답: 이 답글 올릴까요? (X9) → 2) 고치기 - 더 짧게"]);
 });
 
 // The reply intent design, option (i): a send the model read from the owner's words never sends.
@@ -482,7 +482,7 @@ test("confirm: a model-read send posts the card again headed 보낼까요? with 
 	const w = world({ cards: [{ ref: "RAAAAAA", conv: "ch:1", notice: "n1", title: "이 답장 보낼까요? (RAAAAAA)" }] });
 	const r = await w.replies.confirm({ ref: "RAAAAAA" }, fromOwner("보내"));
 	const hash = (r.body as { item: ReplyItem }).item.draft.hash;
-	expect([r.status, w.reposts, w.picks, w.sender.results(), w.only("event")]).toEqual([200, [["RAAAAAA", '[ask] 보낼까요? → 받는이 kim@example.com: "확인해 보고 말씀드릴게요." (RAAAAAA)', hash]], [], [], ["event RAAAAAA"]]);
+	expect([r.status, w.reposts, w.picks, w.sender.results(), w.linesOf("event")]).toEqual([200, [["RAAAAAA", '[ask] 보낼까요? → 받는이 kim@example.com: "확인해 보고 말씀드릴게요." (RAAAAAA)', hash]], [], [], ["event RAAAAAA"]]);
 	expect((await w.replies.act({ ref: "RAAAAAA", action: "send", hash: "other" }, owner)).body).toMatchObject({ ok: false, code: "changed" });
 	expect(w.sender.results()).toEqual([]);
 	expect((await w.replies.act({ ref: "RAAAAAA", action: "send", hash }, owner)).status).toBe(200);
@@ -506,7 +506,7 @@ test("confirm refuses as a send would and posts nothing: a draft being revised, 
 test("confirm on a hand-written card posts it again as it is and tells its bot nothing", async () => {
 	const w = world({ cards: [{ ref: "X9", conv: "ch:1", notice: "n9", title: "이 답글 올릴까요? (X9)", hash: "h9" }] });
 	const r = await w.replies.confirm({ ref: "X9" }, fromOwner("보내"));
-	expect([r.status, w.reposts, w.only("bot")]).toEqual([200, [["X9", undefined, "h9"]], []]);
+	expect([r.status, w.reposts, w.linesOf("bot")]).toEqual([200, [["X9", undefined, "h9"]], []]);
 });
 
 test("a drop or a revise the model read from the owner's words is his pick naming his message; the agent's own revise writes none", async () => {
