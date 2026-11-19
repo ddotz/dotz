@@ -14,15 +14,15 @@
 const RA = { items: new Map(), loaded: false, min: 1, err: null, busy: new Map(), fail: new Map(), fix: new Map(), asked: new Map(), nodes: new Map(), t: 0, ticking: false };
 function raKeep(it) { if (!RA.items.has(it.ref) && !it.pc) RA.items.set(it.ref, it); }   // a queue item this computer's list has not read yet (30-replies.js)
 // An open panel outlives a reload of the tab (01-core.js kept): its texts, subjects, line to the AI, part and the hash it opened on. The rows it marked (files picked) do not.
-for (const [ref, s] of kept("ra-fix", () => [...RA.fix].map(([r, f]) => [r, { part: f.part, text: f.text, subject: f.subject, note: f.note, hash: f.hash }])) || []) RA.fix.set(ref, { ...s, rows: {} });
+for (const [ref, s] of Object.entries(keptMap("ra-fix", () => Object.fromEntries([...RA.fix].map(([r, f]) => [r, { part: f.part, text: f.text, subject: f.subject, note: f.note, hash: f.hash }]))))) RA.fix.set(ref, { ...s, rows: {} });
 
 // The read is api()'s (02-basic-markdown.js latest): every caller gets a queue read that started after its call, and reads never land out of order.
 async function raLoad() {
   try {
-    const r = await api("/api/reply/queue");
+    const r = await api("/api/reply/queue", "GET", undefined, CARD_WAIT_MS);
     RA.items = new Map((r.items || []).map(i => [i.ref, i]));
     if (Number(r.triageMin) > 0) RA.min = Number(r.triageMin);
-    if (!RA.loaded) for (const ref of RA.fix.keys()) if (!RA.items.has(ref)) RA.fix.delete(ref);   // a panel kept over a reload whose draft no longer waits
+    if (!RA.loaded) for (const ref of RA.fix.keys()) if ((RA.items.get(ref) || { draft: {} }).draft.state !== "pending") RA.fix.delete(ref);   // a panel kept over a reload whose draft no longer waits
     RA.err = null;
     RA.loaded = true;
   } catch (e) { RA.err = e; }   // the next event or open reads it again; what was shown stays
@@ -32,6 +32,7 @@ async function raLoad() {
 const raSoon = () => { clearTimeout(RA.t); RA.t = setTimeout(raLoad, 300); };
 
 const raFixNew = () => ({ part: "reply", text: {}, subject: {}, note: "", rows: {} });
+const raWriting = () => [...RA.fix].some(([ref, st]) => !RA.loaded || RA.items.has(ref) || !!st.note.trim() || ["text", "subject"].some(k => Object.entries(st[k]).some(([p, v]) => v != null && v.trim() !== String(st.was?.[k]?.[p] ?? "").trim())));
 // A revise made elsewhere replaced the draft a panel is open on: what the owner typed goes on to the new draft (the parts he changed, his line to the AI) with a line
 // saying so, on the new draft's hash; the parts he left alone open on the new text. Nothing typed: the panel closes with the draft it was open on.
 function raFixMove(ref, next) {
@@ -75,18 +76,20 @@ function raLive(e) {
 async function raAct(item, action, args = {}) {
   const ref = item.ref, sends = action === "send" || action === "retry" || (action === "resolve" && args.as === "retry");
   if (RA.busy.has(ref)) return false;
+  if (sends && drfUploading({ ref, mail: item.draft.mail })) { RA.fail.set(ref, { text: TX("chat.send.uploading") }); raPaint(ref); return false; }
   RA.busy.set(ref, action);
   RA.fail.delete(ref);
   raPaint(ref);
   try {
     // Another computer's item runs there, through its own queue (hub/peer-monitor.ts "reply").
     const body = { ref, action, ...args, ...(sends && item.draft.hash ? { hash: item.draft.hash } : {}) };
-    const r = item.pc ? await api(pqProxy(item.pc, "/api/peer/act"), "POST", { action: "reply", args: body }) : await api("/api/reply/act", "POST", body);
+    const r = item.pc ? await api(pqProxy(item.pc, "/api/peer/act"), "POST", { action: "reply", args: body }, CARD_WAIT_MS) : await api("/api/reply/act", "POST", body, CARD_WAIT_MS);
     if (r && r.item) RA.items.set(ref, { ...RA.items.get(ref), ...r.item });
     return true;
   } catch (e) {
     const d = (e && e.data) || {};
     if (d.code === "changed") {
+      drForget(ref); if (item.draft.mail) drForget(item.draft.mail.ref);
       if (d.item && !item.pc) RA.items.set(ref, { ...RA.items.get(ref), ...d.item });
       RA.fail.set(ref, { text: TX(action === "edit" ? "reply.fix.changed" : "reply.changed"), code: "changed" });
       return false;
@@ -168,19 +171,19 @@ function rqSendNode(item) {
   }
   if (s.state === "queued" || s.state === "sending") return el("div", { class: "rq-send sending", role: "status", text: TX("reply.sending") });
   if (s.state === "sent") return rqSentNode();
-  const why = s.reason ? s.reason.text : "";
+  const why = s.reason ? s.reason.text : "", has = k => (s.actions || []).includes(k);
   if (s.state === "failed" && s.auto && s.safeToAuto) return el("div", { class: "rq-send failed auto", role: "status", text: `${why} · ${TX("reply.auto_retry", { n: s.auto.attempt, max: s.auto.max })}` });
   if (s.state === "failed") {
-    const has = k => (s.actions || []).includes(k), acts = has("retry") ? [btn("retry", TX("reply.retry"), () => raAct(item, "retry"), "btn tonal sm")] : [];
+    const acts = has("retry") ? [btn("retry", TX("reply.retry"), () => raAct(item, "retry"), "btn tonal sm")] : [];
     if (has("send_as_is")) acts.push(btn("send-as-is", TX("decision.send_anyway"), () => raAct(item, "send", { asIs: true })));
     if (raCanFix(item)) acts.push(btn("fix", TX("decision.fix"), () => raFixOpen(item)));
     if (item.can.drop) acts.push(btn("drop", TX("decision.drop"), () => raAct(item, "drop")));
-    return el("div", { class: "rq-send failed" }, el("div", { class: "rq-why", role: "alert", text: TX("reply.failed", { why }) }), el("div", { class: "dr-act dr-row rq-acts" }, ...acts));
+    return el("div", { class: "rq-send failed" }, el("div", { class: "rq-why", role: "alert", text: TX("reply.failed", { why }) }), ...(acts.length ? [el("div", { class: "dr-act dr-row rq-acts" }, ...acts)] : []));
   }
+  const acts = [has("resolve_sent") ? btn("resolve-sent", TX("reply.went_out"), () => raAct(item, "resolve", { as: "sent" }), "btn tonal sm") : null, has("open_channel") ? btn("open", TX("reply.check"), () => go("monitoring", `c:${item.conv}`)) : null, has("resolve_retry") ? btn("resolve-retry", TX("reply.retry"), () => raAct(item, "resolve", { as: "retry" })) : null].filter(Boolean);
   return el("div", { class: "rq-send unsure" },
     el("div", { class: "rq-why warn", role: "alert", text: TX("reply.unsure") }), el("div", { class: "rq-sub2", text: `${why} · ${TX("reply.no_auto")}` }),
-    el("div", { class: "dr-act dr-row rq-acts" }, btn("resolve-sent", TX("reply.went_out"), () => raAct(item, "resolve", { as: "sent" }), "btn tonal sm"),
-      btn("open", TX("reply.check"), () => go("monitoring", `c:${item.conv}`)), btn("resolve-retry", TX("reply.retry"), () => raAct(item, "resolve", { as: "retry" }))));
+    ...(acts.length ? [el("div", { class: "dr-act dr-row rq-acts" }, ...acts)] : []));
 }
 
 // 고치기 opens the card's panel (once: a second call keeps what is being changed). What he changes is kept until 반영 or 닫기: the text and the subject per part (a comment
@@ -196,8 +199,21 @@ function raFixOpen(item) {
 async function raRowsApply(ref, rows) {
   const f = rows.files;
   if (Object.keys(rows.recv).length) { await drrWrite(ref, { ...rows.recv }); for (const k of Object.keys(rows.recv)) delete rows.recv[k]; }
-  for (f.remove.sort((a, b) => a - b); f.remove.length; f.remove.pop()) await drfWrite(ref, { remove: f.remove[f.remove.length - 1] });
-  for (; f.add.length; f.add.shift()) await (f.add[0].file ? drfUpload(ref, f.add[0].file) : drfWrite(ref, { library: f.add[0].library }));
+  await drfHold(ref, async () => {
+    for (let again = true; f.remove.length;) {
+      f.remove.sort((a, b) => a.at - b.at);
+      const m = f.remove[f.remove.length - 1];
+      try { await drfWrite(ref, { remove: m.at, name: m.name, size: m.size }); f.remove.pop(); }
+      catch (e) {
+        const now = DRF.st[ref];
+        if (!(e && e.status === 409) || !now || now.failed) throw e;
+        f.remove = f.remove.flatMap(r => { const at = now.files.findIndex(x => x.name === r.name && x.bytes === r.size); return at < 0 ? [] : [{ ...r, at }]; });
+        if (!again) throw e;
+        again = false;
+      }
+    }
+    for (; f.add.length; f.add.shift()) await (f.add[0].file ? drfUpload(ref, f.add[0].file) : drfWrite(ref, { library: f.add[0].library }));
+  });
 }
 /** 고치기 (the panel): the draft's text as a field in the body's own place (답글 / 메일 choosing which part it shows), a mail's 제목 as a field and its 받는이 and 첨부 rows
  *  open in their own places, then one optional line to the AI, and 반영 · 닫기. 반영 checks the version first: it posts `edit` (with the hash the panel opened on) for
@@ -214,6 +230,7 @@ function rqFixNodes(item, lead) {
   const rowRef = !item.pc && hand && (!item.send || item.send.state === "failed") ? (mailKind ? ref : item.kind === "comment" && d.mail ? d.mail.ref : "") : "";
   const rows = rowRef ? (st.rows[rowRef] ||= { recv: {}, files: { remove: [], add: [] } }) : null;
   const was = { text: { reply: d.text, mail: d.mail ? d.mail.text : "" }, subject: { reply: mailKind ? d.subject || "" : null, mail: d.mail ? d.mail.subject || "" : null } };
+  st.was = was;
   for (const p of parts) { st.text[p] ??= was.text[p]; st.subject[p] ??= was.subject[p]; }   // also a mail that came to ride along while the panel was open
   const moved = (k, p) => was[k][p] !== null && st[k][p].trim() !== was[k][p].trim();
   const edits = () => (hand ? parts.filter(p => moved("text", p) || moved("subject", p)) : []);
@@ -257,7 +274,7 @@ function rqFixNodes(item, lead) {
   // One field of the panel: `box[key]` is what it shows and writes.
   const field = (tag, k, box, key, attrs) => {
     const n = el(tag, { ...attrs, "data-k": k, "data-esc": "field", disabled: off(), oninput: () => { box[key] = n.value; sync(); }, onkeydown: ev => {
-      if (ev.isComposing) return;
+      if (imeKey(ev)) return;
       if (ev.key === "Enter" && (ev.metaKey || ev.ctrlKey || k === "fix-note")) { ev.preventDefault(); save(); }
       else if (ev.key === "Escape") { ev.preventDefault(); ev.stopPropagation(); close(); }   // the sheet or pane around the card stays open
     } });
@@ -275,13 +292,14 @@ function rqFixNodes(item, lead) {
       f ? el("div", { class: "ra-lint err", role: "alert", text: f.why || f.text }) : null,
       el("div", { class: "btns" }, go, el("button", { class: "btn text sm", type: "button", "data-k": "fix-close", disabled: off(), text: TX("common.close"), onclick: close }))),
     card: { ...(mailKind && hand ? { subject: subject("reply") } : {}),
-      ...(rows && mailKind ? { to: null, recv: draftToNode({ ref, toLabel: d.toLabel, to: d.to, cc: d.cc }, { t: item.conv, edit: true, always: true, stage: rows.recv, onstage: sync }),
+      ...(rows && mailKind ? { recv: draftToNode({ ref, toLabel: d.toLabel, to: d.to, cc: d.cc, hash: d.hash }, { t: item.conv, edit: true, always: true, stage: rows.recv, onstage: sync }),
         attach: draftFilesNode({ ref, toLabel: d.toLabel, attachments: d.attachments }, { t: item.conv, stage: rows.files, onstage: sync }) } : {}) },
     mail: d.mail && hand ? { subject: subject("mail"), ...(rows && !mailKind ? { recv: rows.recv, files: rows.files, onstage: sync } : {}) } : null };
 }
 
 /** The one card of a reply, on every surface. */
 function rqItemCard(item, opts = {}) {
+  drSeen(item.ref, item.draft.hash); if (item.draft.mail) drSeen(item.draft.mail.ref, item.draft.hash);
   const ref = item.ref, d = item.draft, busy = RA.busy.has(ref), fail = RA.fail.get(ref), fx = RA.fix.has(ref) ? rqFixNodes(item, !!opts.lead) : null, p = opts.parts;
   const foot = fx ? fx.foot : d.revising ? el("div", { class: "kk-st", role: "status", text: TX("reply.revising") }) : item.send ? rqSendNode(item) : null;
   // A draft of this hub that the server can open (a mail, a comment): 원문 보기 loads the whole original (10-draft-original.js), also when the item came with no quote,
@@ -296,15 +314,16 @@ function rqItemCard(item, opts = {}) {
     subject: d.subject,
     // Outside the 고치기 panel every row is only read: a mail's files as the hub holds them, any other draft's as the item lists them. The panel's own fields and open rows
     // (fx.card) then stand in the same places.
-    attach: mail ? draftFilesNode({ ref, toLabel: d.toLabel, attachments: d.attachments }, { t: item.conv, edit: false }) : d.attachments,
-    ...(p || { to: [d.toLabel, d.to] }), ...(fx ? fx.card : {}),
+    attach: mail ? draftFilesNode({ ref, toLabel: d.toLabel, attachments: d.attachments, hash: d.hash }, { t: item.conv, edit: false }) : d.attachments,
+    rcpt: { label: d.toLabel || TX("decision.to"), to: d.to, cc: d.cc, account: d.account, accountHeld: d.accountHeld, mail: item.kind === "mail" || item.kind === "webmail" },
+    ...(p || {}), ...(fx ? fx.card : {}),
     cls: `ra-card${opts.lead ? " lead" : ""}${opts.cls ? ` ${opts.cls}` : ""}${p && p.cls ? ` ${p.cls}` : ""}`, attrs: { "data-ref": ref, "data-item": item.item, ...opts.attrs },
     // Which version this is, said above the body: the owner's own text, or the model's rewrite with what it changed marked against the draft it replaced (rqDiffBody).
     label: d.edited ? TX("reply.edited") : d.replaces ? TX("reply.revised") : "",
     body: fx && fx.body ? { node: fx.body, full: true } : (d.replaces && !d.edited && rqDiffBody(d)) || { text: d.text, parts: d.parts, sentParts: d.sentParts },
     extra: [...(d.notes || []).map(n => el("div", { class: "dr-wn", text: n })),
       // The mail a comment reply carries goes out with it, so it stands in the card: who gets it, its subject, its text and its files.
-      d.mail ? draftMailNode({ ...(local ? { ref: d.mail.ref } : {}), to: d.mail.to, subject: d.mail.subject, body: d.mail.text, attachments: d.mail.attachments }, { t: item.conv, fix: fx && fx.mail }) : null, ...((p && p.extra) || [])],
+      d.mail ? draftMailNode({ ...(local ? { ref: d.mail.ref } : {}), to: d.mail.to, account: d.mail.account, accountHeld: d.mail.accountHeld, subject: d.mail.subject, body: d.mail.text, attachments: d.mail.attachments }, { t: item.conv, fix: fx && fx.mail }) : null, ...((p && p.extra) || [])],
     fail: fail && !fx ? fail : null,
     foot,
     // A draft that no longer waits (dropped, sent, replaced) offers nothing to press.

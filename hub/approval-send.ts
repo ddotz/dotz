@@ -405,10 +405,9 @@ export function createApprovalSender(deps: SenderDeps) {
 		},
 		/** An unsure job got its answer (proof read back, the owner's pick, its old sender finished). */
 		settle: (j: SendJob, state: "sent" | "failed", text = "") => (state === "sent" ? set(j, "sent") : set(j, "failed", text, undefined, { reason: { code: "tool_before_send", text }, safeToAuto: false, attempts: attempts(j.ref) })),
-		/** A failed or unsure send the owner cleared (its draft waits again, or it was dropped): the file and the list forget it; nothing is sent. */
 		forget: (ref: string): boolean => {
-			const k = kept.get(ref);
-			if (k?.state !== "failed" && k?.state !== "unsure") return false;
+			const st = kept.get(ref)?.state ?? results.get(ref)?.state;
+			if (st !== "failed" && st !== "unsure") return false;
 			autoAt.delete(ref);
 			kept.delete(ref);
 			results.delete(ref);

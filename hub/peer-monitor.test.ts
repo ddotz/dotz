@@ -454,12 +454,12 @@ test("a peer's mail draft gets and loses files through the owner's own draft fil
 	const act = (args: object) => A.handle(req(p, { method: "POST", body: JSON.stringify({ action: "draft-files", args }) }));
 	expect((await act({ ref: "RPEER0001", library: "문서/달빛정원_공유용.pdf" })).status).toBe(200);
 	expect((await act({ ref: "RPEER0001", name: "견적.pdf", data: "JVBERg==" })).status).toBe(200);
-	expect((await act({ ref: "RPEER0001", remove: 0 })).status).toBe(200);
+	expect((await act({ ref: "RPEER0001", remove: 0, name: "견적.pdf", size: 5 })).status).toBe(200);
 	expect((await act({ remove: 0 })).status).toBe(400);
 	expect(B.events).toEqual([
 		{ target: "draft:RPEER0001", text: JSON.stringify({ library: "문서/달빛정원_공유용.pdf" }) },
 		{ target: "draft:RPEER0001", text: JSON.stringify({ name: "견적.pdf", data: "JVBERg==" }) },
-		{ target: "draft:RPEER0001", text: JSON.stringify({ remove: 0 }) },
+		{ target: "draft:RPEER0001", text: JSON.stringify({ remove: 0, name: "견적.pdf", size: 5 }) },
 	]);
 	expect(A.events).toEqual([]);
 	const read = await A.handle(req(`/api/peer/proxy?pc=${encodeURIComponent(URL_B)}&p=${encodeURIComponent("/api/drafts/RPEER0001/files")}`));

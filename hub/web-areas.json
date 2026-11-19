@@ -23,6 +23,7 @@
   "10-decision-card.js": "chat",
   "10-decision-undo.js": "chat",
   "10-draft-original.js": "reply",
+  "10-draft-upload.js": "reply",
   "10-reply-actions.js": "reply",
   "10-reply-card.js": "reply",
   "11-mailbody.js": "chat",

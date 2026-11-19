@@ -437,7 +437,7 @@ export function createPeerMonitor(deps: MonitorDeps): PeerMonitor {
 			case "draft-files": {
 				const ref = encodeURIComponent(String(a.ref ?? ""));
 				if (!a.ref) return bad("ref required");
-				return ask("POST", `/api/drafts/${ref}/files`, Number.isInteger(a.remove) ? { remove: a.remove } : typeof a.library === "string" ? { library: a.library } : { name: a.name, data: a.data }, login, owner);
+				return ask("POST", `/api/drafts/${ref}/files`, Number.isInteger(a.remove) ? { remove: a.remove, ...(typeof a.name === "string" ? { name: a.name } : {}), ...(typeof a.size === "number" ? { size: a.size } : {}) } : typeof a.library === "string" ? { library: a.library } : { name: a.name, data: a.data }, login, owner);
 			}
 			// The 받는 사람·참조 and 답장 | 전체 답장 of a mail reply draft (hub/draft-recipients.ts), changed on the computer that owns the draft.
 			case "draft-recipients": {

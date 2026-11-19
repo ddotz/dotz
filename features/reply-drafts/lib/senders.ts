@@ -16,7 +16,7 @@ import { parseThread } from "../../../hub/zele.ts";
 import { dataDir } from "./settings.ts";
 import { recipientList } from "./recipients.ts";
 import { stagedFiles } from "./staged.ts";
-import type { DraftRec } from "./store.ts";
+import { patchDraft, type DraftRec } from "./store.ts";
 import type { Runner } from "./tone.ts";
 
 /** Where a send left the mail: it went out, it surely did not, or it may have (design 1.5). */
@@ -105,19 +105,20 @@ export const threadIdOf = (source: string, id: string): string => (source === "z
 const threadOf = (rec: DraftRec) => threadIdOf(rec.source, rec.mailId);
 /**
  * The account a send goes through. With several accounts and no record of it: the one account the stored mail was addressed to, else the one
- * account that can open the thread. `several` = they are named and none could be settled; with one account zele needs no choice.
+ * account that can open the thread (`found`: it came from the logins, not from a record, so no card showed it). `several` = they are named and
+ * none could be settled; with one account zele needs no choice.
  */
-export async function settleAccount(rec: DraftRec, run: Runner): Promise<{ account?: string; several?: string[] }> {
+export async function settleAccount(rec: DraftRec, run: Runner): Promise<{ account?: string; found?: true; several?: string[] }> {
 	const known = zeleAccountOf(rec);
 	if (known) return { account: known };
 	const logins = await zeleLogins(run);
 	if (logins.length < 2) return {};
 	if (rec.compose) return { several: logins };
 	const addressed = addressedLogin(rec, logins);
-	if (addressed) return { account: addressed };
+	if (addressed) return { account: addressed, found: true };
 	const holders: string[] = [];
 	for (const a of logins) if ((await run(readArgv(threadOf(rec), a))).code === 0) holders.push(a);
-	return holders.length === 1 ? { account: holders[0] } : { several: logins };
+	return holders.length === 1 ? { account: holders[0], found: true } : { several: logins };
 }
 
 // Whether a mail of this source goes out through a zele account, so several accounts leave a choice: zele itself and a plugin that says so (needsAccount).
@@ -223,6 +224,10 @@ export async function sendWith(rec: DraftRec, run: Runner): Promise<SendOutcome>
 	const settled = (await sendsThroughZele(rec.source)) ? await settleAccount(rec, run) : {};
 	if (settled.several) return fail(`메일 계정이 ${settled.several.join(", ")} 여러 개인데 이 메일이 어느 계정 것인지 알 수 없어서 보내지 않았어요. 초안은 그대로 있어요`, "account_needed");
 	const account = settled.account;
+	if (settled.found && account) {
+		patchDraft(rec.id, { account });
+		return fail(`보내는 메일 계정을 ${account}(으)로 정했어요. 카드에서 계정을 확인하고 다시 보내 주세요`, "changed");
+	}
 	if (rec.compose && rec.source === "zele") {
 		const r = await run(sendArgv(rec.to, rec.subject ?? "", rec.body, files.map(f => f.path), cc, account));
 		return r.code === 0 ? done(`${rec.to}에게 메일을 보냈어요`) : told(r, "보내지 못했어요: ", zeleVerdict);

@@ -289,13 +289,39 @@ describe("adding and removing files of a draft (the send sheet's routes)", () =>
 		expect(listed.map(i => i.rel)).toContain("문서/기타/캐논.pdf");
 		expect((await call("GET", ref, "library", undefined, "?q=캐논")).body.items.map((i: { rel: string }) => i.rel)).toEqual(["문서/기타/캐논.pdf"]);
 		const added = await call("POST", ref, "files", { library: "문서/기타/캐논.pdf" });
-		expect(added.body.files).toEqual([{ name: "캐논.pdf", size: "33B" }]);
+		expect(added.body.files).toEqual([{ name: "캐논.pdf", size: "33B", bytes: 33 }]);
 		const bytes = await call("POST", ref, "files", { name: "../../메모.txt", data: Buffer.from("hello").toString("base64") });
 		expect(bytes.body.files.map((f: { name: string }) => f.name)).toEqual(["캐논.pdf", "메모.txt"]);
 		const removed = await call("POST", ref, "files", { remove: 0 });
-		expect(removed.body.files).toEqual([{ name: "메모.txt", size: "5B" }]);
+		expect(removed.body.files).toEqual([{ name: "메모.txt", size: "5B", bytes: 5 }]);
 		expect(stagedFiles(ref).map(f => f.name)).toEqual(["메모.txt"]);
 		expect((await call("POST", ref, "files", { remove: 5 })).status).toBe(404);
+	});
+	test("x on a list another device changed meanwhile: the file at that place has another name, so nothing is taken off and the list comes back with 409", async () => {
+		const ref = await draft();
+		for (const name of ["a.pdf", "b.pdf", "c.pdf"]) await call("POST", ref, "files", { name, data: Buffer.from(name).toString("base64") });
+		expect((await call("POST", ref, "files", { remove: 0, name: "a.pdf" })).status).toBe(200);
+		const stale = await call("POST", ref, "files", { remove: 1, name: "b.pdf" });
+		expect(stale.status).toBe(409);
+		expect(stale.body).toMatchObject({ code: "changed", files: [{ name: "b.pdf" }, { name: "c.pdf" }] });
+		expect(stagedFiles(ref).map(f => f.name)).toEqual(["b.pdf", "c.pdf"]);
+		expect((await call("POST", ref, "files", { remove: 0, name: "b.pdf" })).body.files.map((f: { name: string }) => f.name)).toEqual(["c.pdf"]);
+	});
+	test("x on a file another device replaced by a same-named one of another size: nothing is taken off and the list comes back with 409; the size it was shown with takes it off", async () => {
+		const ref = await draft();
+		const put = (name: string, text: string) => call("POST", ref, "files", { name, data: Buffer.from(text).toString("base64") });
+		await put("x.pdf", "XX");
+		await put("a.pdf", "AAAA");
+		const shown = (await call("GET", ref, "files")).body.files as { name: string; bytes: number }[];
+		expect(shown.map(f => [f.name, f.bytes])).toEqual([["x.pdf", 2], ["a.pdf", 4]]);
+		await call("POST", ref, "files", { remove: 1 });
+		await put("a.pdf", "BBBBBBBB");
+		const stale = await call("POST", ref, "files", { remove: 1, name: "a.pdf", size: 4 });
+		expect(stale.status).toBe(409);
+		expect(stale.body).toMatchObject({ code: "changed", files: [{ name: "x.pdf" }, { name: "a.pdf", bytes: 8 }] });
+		expect(stagedFiles(ref).map(f => `${f.name}:${f.size}`)).toEqual(["x.pdf:2", "a.pdf:8"]);
+		expect((await call("POST", ref, "files", { remove: 1, name: "a.pdf", size: 8 })).status).toBe(200);
+		expect(stagedFiles(ref).map(f => f.name)).toEqual(["x.pdf"]);
 	});
 	test("a path outside the folder, an unknown draft and a sent draft change nothing", async () => {
 		const ref = await draft();

@@ -218,17 +218,19 @@ function latest(key, fn) {
 const latestOut = key => FLIGHTS.get(key)?.p;   // the run of key on its way (to wait for it without asking for another), else undefined
 // Names this page's event stream to the gateway: every request carries it, so a stream whose page stopped asking (a phone asleep, the network gone) is closed by the gateway (hub/events.ts noteLive).
 const LIVE_TOK = Array.from(crypto.getRandomValues(new Uint8Array(12)), b => b.toString(16).padStart(2, "0")).join("");
-async function api(path, method = "GET", body) {
+const CARD_WAIT_MS = 15000;
+async function api(path, method = "GET", body, limit = 0) {
   [path, method, body] = pqRoute(path, method, body);   // a peer's item is read and acted on through /api/peer/proxy (34-peer-monitoring.js)
-  const go = () => fetch(path, { method, cache: "no-store", headers: { "x-dotz-live": LIVE_TOK, ...(body !== undefined && { "Content-Type": "application/json" }) }, body: body !== undefined ? JSON.stringify(body) : undefined });
+  const stop = limit ? new AbortController() : null, t = stop ? setTimeout(() => stop.abort(new TypeError(TX("chat.upload.lost"))), limit) : 0;
+  const go = () => fetch(path, { method, cache: "no-store", headers: { "x-dotz-live": LIVE_TOK, ...(body !== undefined && { "Content-Type": "application/json" }) }, body: body !== undefined ? JSON.stringify(body) : undefined, ...(stop ? { signal: stop.signal } : {}) });
   const read = async r => ({ ok: r.ok, status: r.status, text: await r.text() });
-  let res;
-  if (method === "GET") res = await latest(path, () => {
+  const got = method === "GET" ? latest(path, () => {
     const early = window.__early && window.__early[path];
     if (early) delete window.__early[path];
     return (early ? early.catch(go) : go()).then(read);
-  });
-  else res = await read(await go());
+  }) : go().then(read);
+  let res;
+  try { res = await new Promise((ok, no) => { got.then(ok, no); if (stop) stop.signal.addEventListener("abort", () => no(stop.signal.reason)); }); } finally { clearTimeout(t); }
   let data = null;
   try { data = JSON.parse(res.text); } catch {}
   if (!res.ok) throw Object.assign(new Error(res.status === 503 && path.startsWith("/api/peer/proxy") ? (data && data.reason) || TX("base.peer.read_only") : (data && data.error) || `HTTP ${res.status}`), { data, status: res.status });

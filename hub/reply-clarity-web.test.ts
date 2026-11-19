@@ -233,6 +233,12 @@ test("Ctrl+Enter is 반영, and so is Enter in the line to the AI; Esc closes an
 
 	await fix("RKEY01");
 	await type(`${card("RKEY01")} [data-k=fix-note]`, "한 문장으로");
+	await key(`${card("RKEY01")} [data-k=fix-note]`, { key: "Enter", isComposing: true });
+	await key(`${card("RKEY01")} [data-k=fix-note]`, { key: "Enter", keyCode: 229 });
+	await run(`document.querySelector(${q(`${card("RKEY01")} [data-k=fix-note]`)}).dispatchEvent(new CompositionEvent("compositionend", { bubbles: true }))`);
+	await key(`${card("RKEY01")} [data-k=fix-note]`, { key: "Enter", keyCode: 229 });
+	await view.evaluate(`new Promise(r => setTimeout(() => r(0), 80))`);
+	expect(of("RKEY01")).toEqual([]);
 	await key(`${card("RKEY01")} [data-k=fix-note]`, { key: "Enter" });
 	expect(await acted("RKEY01", "revise")).toEqual([{ ref: "RKEY01", action: "revise", change: "한 문장으로" }]);
 	await fixed("RKEY01");
@@ -323,7 +329,7 @@ test("반영 checks the version with edit first, then writes the marked rows, th
 	expect(writesInOrder.filter(l => l.path.includes("RROW02") || l.path === "/api/upload" || l.body.ref === "RROW02")).toEqual([
 		{ path: "/api/reply/act", body: { ref: "RROW02", action: "edit", hash: "RROW02-v1", text: "일정표를 붙여 보내 드려요." } },
 		{ path: "/api/drafts/RROW02/recipients", body: { cc: ["lee@example.com"] } },
-		{ path: "/api/drafts/RROW02/files", body: { remove: 0 } },
+		{ path: "/api/drafts/RROW02/files", body: { remove: 0, name: "견적서.pdf" } },
 		{ path: "/api/upload", body: { name: "일정표.pdf" } },
 		{ path: "/api/drafts/RROW02/files", body: { upload: { path: "/uploads/일정표.pdf", name: "일정표.pdf" } } },
 		{ path: "/api/reply/act", body: { ref: "RROW02", action: "revise", change: "더 정중하게" } },
@@ -346,7 +352,7 @@ test("반영 writes no row when the version moved or the edit is refused; the ma
 	expect(rows()).toEqual([]);
 	await click(`${c} [data-k=fix-apply]`);
 	await fixed("RROW05");
-	expect(rows()).toEqual([{ path: "/api/drafts/RROW05/files", body: { remove: 0 } }]);
+	expect(rows()).toEqual([{ path: "/api/drafts/RROW05/files", body: { remove: 0, name: "견적서.pdf" } }]);
 
 	await fix("RROW05");
 	await waitFor(`!!document.querySelector(${q(`${c} .dr-files input[type=file]`)})`);
@@ -367,7 +373,7 @@ test("반영 of rows alone writes them, and the next 보내기 goes with the ver
 	await click(`${c} .dr-files .dr-x`);
 	await click(`${c} [data-k=fix-apply]`);
 	await fixed("RROW04");
-	expect(writesInOrder.filter(l => l.path.includes("RROW04"))).toEqual([{ path: "/api/drafts/RROW04/files", body: { remove: 0 } }]);
+	expect(writesInOrder.filter(l => l.path.includes("RROW04"))).toEqual([{ path: "/api/drafts/RROW04/files", body: { remove: 0, name: "견적서.pdf" } }]);
 	expect(await has(`${c} .dr-files [data-k=none]`)).toBe(true);
 	await click(`${c} [data-k=send]`);
 	expect(await acted("RROW04", "send")).toEqual([{ ref: "RROW04", action: "send", hash: "RROW04-v2" }]);

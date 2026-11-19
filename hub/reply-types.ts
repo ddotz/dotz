@@ -17,13 +17,13 @@ export type ReasonCode =
 
 /** `text` is plain Korean; raw tool output never leaves hub.log. */
 export type Reason = { code: ReasonCode; text: string };
-export type SentHow = "owner" | "retry" | "auto" | "confirmed" | "proved";
+export type SentHow = "owner" | "rule" | "retry" | "auto" | "confirmed" | "proved";
 /** `failed` always means surely not sent; `unsure` always means it may have gone out. There is no third bucket. */
 export type SendState =
 	| { state: "undo"; at: number; until: number }
 	| { state: "queued"; at: number; attempt: number }
 	| { state: "sending"; at: number; attempt: number }
-	| { state: "sent"; at: number; how: SentHow }
+	| { state: "sent"; at: number; how: SentHow; today?: boolean }
 	| { state: "failed"; at: number; reason: Reason; safeToAuto: boolean; attempts: number; auto?: { attempt: number; max: number; nextAt: number } }
 	| { state: "unsure"; at: number; reason: Reason; attempts: number };
 
@@ -56,11 +56,15 @@ export type ReplyItem = {
 		toLabel: string;
 		to: string;
 		cc?: string[];
+		/** The account the mail goes out from, as the send resolves it; it is in the approvalHash. */
+		account?: string;
+		/** Several accounts are logged in and none is chosen yet: the mail is not sent until the owner picks one. */
+		accountHeld?: true;
 		subject?: string;
 		text: string;
 		parts?: string[];
 		sentParts?: number;
-		mail?: { ref: string; to: string; subject?: string; text: string; attachments?: FileShown[] };
+		mail?: { ref: string; to: string; account?: string; accountHeld?: true; subject?: string; text: string; attachments?: FileShown[] };
 		attachments?: FileShown[];
 		notes?: string[];
 		decide?: string[];
@@ -78,8 +82,13 @@ export type ReplyItem = {
 	/** One plain line for the tag: a failure reason, or why a rule did not send it. */
 	why?: string;
 };
-/** What an adapter knows of a draft: the item without the send, which the ledger adds. */
-export type DraftView = Omit<ReplyItem, "send">;
+/** What an adapter knows of a draft: the item without the send, which the ledger adds. `sent`: when and how it went out, read from the store
+ * (the ledger's record is in memory only); it shows as the item's send when the ledger has none, and is no part of its approvalHash. */
+export type DraftView = Omit<ReplyItem, "send"> & {
+	sent?: { at: number; how: SentHow };
+	/** A reply that went out whose mail did not and still waits: the mail is a row of its own, so this row keeps the failure of its send as a state and offers no button for it. */
+	mailLeft?: true;
+};
 
 /** How one send ended, said by the place that knows (an in-process runner, or a CLI's `DOTZ_SEND` line). `detail`: the place's own answer (masked,
  * bounded), for hub.log and the send queue's record only. */

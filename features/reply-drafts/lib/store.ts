@@ -45,6 +45,8 @@ export type DraftRec = {
 	editedFrom?: string; // the model's text before the owner's first direct edit (직접 수정); set once, never overwritten
 	status: DraftStatus;
 	created: string;
+	/** When it went out (ISO): stamped once by setStatus(id, "sent"); a draft sent before this field existed has none. */
+	sentAt?: string;
 	changes: string[];
 	questions: string[];
 	item: ReplyItem;
@@ -221,7 +223,7 @@ export function addRevision(rec: DraftRec, id: string): RevisionConflict | undef
 	});
 }
 
-export function patchDraft(id: string, patch: Partial<Pick<DraftRec, "to" | "cc" | "mode" | "ownerRecipients" | "item" | "questions" | "body" | "wantFiles" | "editedFrom" | "subject">>): void {
+export function patchDraft(id: string, patch: Partial<Pick<DraftRec, "to" | "cc" | "mode" | "ownerRecipients" | "item" | "questions" | "body" | "wantFiles" | "editedFrom" | "subject" | "account">>): void {
 	locked(() => {
 		const f = read();
 		write({ ...f, drafts: f.drafts.map(d => (d.id === id ? { ...d, ...patch } : d)) });
@@ -267,6 +269,6 @@ export function answerDrafts(ref: string): string[] {
 export function setStatus(id: string, status: DraftStatus): void {
 	locked(() => {
 		const f = read();
-		write({ ...f, drafts: f.drafts.map(d => (d.id === id ? { ...d, status } : d)) });
+		write({ ...f, drafts: f.drafts.map(d => (d.id === id ? { ...d, status, ...(status === "sent" && !d.sentAt ? { sentAt: new Date(Date.now()).toISOString() } : {}) } : d)) });
 	});
 }

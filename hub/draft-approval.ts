@@ -49,6 +49,7 @@ export const DRAFT_UNDO = "보내기 취소";
 /** Recorded by the gateway when the owner saves his own text (직접 고치기): a change like 고치기, so an older 보내기 no longer lets a CLI send. Not a card option. */
 export const DRAFT_HAND_EDIT = "직접 고치기";
 export const ATTACH_MARK = "-# ⚠️ 첨부 확인: ";
+export const ACCOUNT_MARK = "-# 보내는 계정: ";
 export const ATTACH_REFUSED = "첨부를 확인해 주세요:";
 // The send-time lint (placeholder, forbidden expression, recipient) refused the mail; the findings follow.
 export const LINT_REFUSED = "보내기 직전 검사에서 걸려서 보내지 않았어요:";
@@ -166,7 +167,7 @@ export function withRecipientMark(text: string): string {
 	return lines.join("\n");
 }
 // One part of a card: the reply (or the mail) with its recipient line, files and body.
-export type DraftPart = { /** The mail draft id its files are staged under: the "함께 보낼 메일 (<id>)" line, so the card can open them. */ id?: string; origin?: DraftOrigin; rule?: string; to: string; toLabel?: DraftToLabel; cc?: string[]; subject?: string; body: string; attachments?: DraftFileIn[]; attachmentsNone?: boolean; asksFile?: boolean; libraryMiss?: boolean; /** The source cannot send files: the names of the files staged for it (they do not go out), [] when none. */ cannotAttach?: string[]; /** Where this part's words and files disagree (flow.ts draftAttachIssues): the card's `첨부 확인` line and its 4th option. */ attachIssues?: string[] };
+export type DraftPart = { /** The mail draft id its files are staged under: the "함께 보낼 메일 (<id>)" line, so the card can open them. */ id?: string; origin?: DraftOrigin; rule?: string; to: string; toLabel?: DraftToLabel; cc?: string[]; account?: string; accountHeld?: true; subject?: string; body: string; attachments?: DraftFileIn[]; attachmentsNone?: boolean; asksFile?: boolean; libraryMiss?: boolean; /** The source cannot send files: the names of the files staged for it (they do not go out), [] when none. */ cannotAttach?: string[]; /** Where this part's words and files disagree (flow.ts draftAttachIssues): the card's `첨부 확인` line and its 4th option. */ attachIssues?: string[] };
 // `mail`: the mail that goes out right after this comment reply, shown below it in the same card (hub/comments).
 export type DraftInput = DraftPart & { ref: string; question?: string; /** What only the owner can decide: a "정할 것:" list above the 결정 line, one "- " line each. */ decide?: string[]; sendResult?: string; mail?: DraftPart; sendModes?: boolean };
 export const MAIL_MARK = "함께 보낼 메일";
@@ -241,7 +242,8 @@ export function draftApprovalBlock(d: DraftInput): string {
 	];
 	const mail = d.mail ? [">", `> ${MAIL_MARK}${d.mail.id && MAIL_ID.test(d.mail.id) ? ` (${d.mail.id})` : ""}`, ...partLines({ ...d.mail, toLabel: "받는이" })] : [];
 	const decide = (d.decide ?? []).map(oneLine).filter(Boolean);
-	return [...(issues.length ? [`${ATTACH_MARK}${issues.join(" · ")}`] : []), ...partLines(d), ...mail, ...(decide.length ? [DECIDE_MARK, ...decide.map(q => `- ${q}`)] : []), issueBlock(`${d.question ?? "보낼까요?"} (${d.ref})`, options)].join("\n");
+	const account = (p: DraftPart, label: string): string[] => (p.accountHeld ? [`${ACCOUNT_MARK}${label}계정이 아직 정해지지 않았어요`] : p.account ? [`${ACCOUNT_MARK}${label}${p.account}`] : []);
+	return [...(issues.length ? [`${ATTACH_MARK}${issues.join(" · ")}`] : []), ...account(d, ""), ...(d.mail ? account(d.mail, "함께 보낼 메일은 ") : []), ...partLines(d), ...mail, ...(decide.length ? [DECIDE_MARK, ...decide.map(q => `- ${q}`)] : []), issueBlock(`${d.question ?? "보낼까요?"} (${d.ref})`, options)].join("\n");
 }
 
 // The points only the owner can decide sit on their own lines above the 결정 line, so the question stays one short line (its "(<ref>)" is what
@@ -578,14 +580,14 @@ export const draftNeedsText = (label: string): boolean => {
 	return a === "edit" || a === "own";
 };
 
-/** The fingerprint of what a send would carry: recipients, subject, text, parts, files (name, size and, for a file held locally, its content) and a
- * bundled mail. Display fields (labels, notes, state) are not in it. The one definition: the gateway's gate (hub/approval-send.ts), every act's
+/** The fingerprint of what a send would carry: recipients, the account it goes out from, subject, text, parts, files (name, size and, for a file held locally, its content) and a
+ * bundled mail (with the account that mail goes out from). Display fields (labels, notes, state) are not in it. The one definition: the gateway's gate (hub/approval-send.ts), every act's
  * pick and the CLIs' draftVerdict all compare this. Kept here, beside draftVerdict, so a CLI computes it without loading the gateway. */
 export function approvalHash(view: DraftView): string {
 	const d = view.draft;
 	const files = (list?: FileShown[]) => (list ?? []).map(f => `${f.name}\n${f.size ?? ""}\n${f.digest ?? ""}`).sort();
-	const mail = d.mail ? { to: d.mail.to, subject: d.mail.subject ?? "", text: d.mail.text, attachments: files(d.mail.attachments) } : null;
-	const body = { to: d.to, cc: [...(d.cc ?? [])].sort(), subject: d.subject ?? "", text: d.text, parts: d.parts ?? [], attachments: files(d.attachments), mail };
+	const mail = d.mail ? { to: d.mail.to, ...(d.mail.account ? { account: d.mail.account } : {}), subject: d.mail.subject ?? "", text: d.mail.text, attachments: files(d.mail.attachments) } : null;
+	const body = { to: d.to, cc: [...(d.cc ?? [])].sort(), ...(d.account ? { account: d.account } : {}), subject: d.subject ?? "", text: d.text, parts: d.parts ?? [], attachments: files(d.attachments), mail };
 	return createHash("sha256").update(JSON.stringify(body)).digest("hex").slice(0, 16);
 }
 

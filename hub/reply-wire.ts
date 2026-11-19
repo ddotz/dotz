@@ -8,6 +8,7 @@ import { cfg, DATA_DIR, log, now, writeAtomic } from "./config.ts";
 import { broadcast, emit } from "./events.ts";
 import { approvals, cardMoved, newMid, out, showSendOnCard } from "./outbound.ts";
 import { allNotices, markDraftSend, onDecision, openDraftCards, redrawDraftCards, repostDraftCard, setCardFingerprint, setStoredDraft, settleOpenDecision, stampDraftCard } from "./notices.ts";
+import { settleSoon } from "./notices-drafts.ts";
 import { commentPostedOf, commentProveSends, commentReply, commentSendOutcome, commentSettleSending, commentSettleStale } from "./comments/gateway.ts";
 import { kakaoReply } from "./kakao/gateway.ts";
 import { linkedComment } from "./comments/linked.ts";
@@ -88,6 +89,7 @@ export const reportSend = (r: SendResult): void => {
 	showSendOnCard(r.conv, r.ref, r.state, r.text, r.until ? r.until - Date.now() : 0);
 	const send = sendOf(r);
 	broadcast({ ts: now(), kind: "reply", ref: r.ref, ...(send ? { send } : {}) });
+	if (r.state === "failed" || r.state === "unsure") void replies.view(r.ref).then(item => item && broadcast({ ts: now(), kind: "reply", ref: r.ref, item }), e => log(`reply ${r.ref}: item after its send not read: ${(e as Error).message}`));
 	if (kakaoReply.target(r.ref)) broadcast({ kind: "kakao_draft", chatId: "" });
 	if (r.state === "sent") cardOwedMail(r);
 	// A KakaoTalk draft goes out in this process (no CLI posts /api/followup for it): the app's 이어서 할 일 is woken here, once per draft.
@@ -195,6 +197,10 @@ export const replies = createReplyActions({
 	toBot: (conv, text) => toBot(conv, text),
 	emit: e => broadcast({ ts: now(), ...e }),
 	log,
+	settle: () => {
+		settleSoon();
+		void replies.settleOwed().catch(e => log(`reply: settle of owed sends failed: ${(e as Error).message}`));
+	},
 	// Milliseconds: config's now() is an ISO string for event stamps.
 	now: Date.now,
 });
@@ -225,7 +231,7 @@ function proveSends(): void {
 		e => log(`comment read-back failed: ${e instanceof Error ? e.message : String(e)}`),
 	);
 }
-/** Boot and every sweep after it: the sends the last run left are taken up (never re-run), unsure comments are read back and proof is asked for every unsure send; a comment reply whose sender died while running is left unsure. */
+/** Boot and every sweep after it: the sends the last run left are taken up (never re-run), unsure comments are read back and proof is asked for every unsure send; a comment reply whose sender died while running is left unsure; a failed or unsure record whose draft was closed elsewhere is cleared (settleOwed). */
 export function settleSends(): void {
 	if (!sendsBooted) {
 		sendsBooted = true;
@@ -235,6 +241,7 @@ export function settleSends(): void {
 	} else if (commentSettleStale(draft => claimHolder(claimFile(draft)) === "live")) proveSends();
 	sender.recheck();
 	settleUnsureCards();
+	void replies.settleOwed().catch(e => log(`reply: settle of owed sends failed: ${(e as Error).message}`));
 }
 // A send run from a CLI (a session's draft.ts send) failed: the card it answers shows it and the owner hears it, like a send of the gateway's own.
 export function reportCliFailure(ref: string, conv: string, text: string): void {

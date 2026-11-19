@@ -1,5 +1,6 @@
 /* ---------- uploads: POST /api/upload with progress (fetch has none), and the composer's running uploads by conversation ---------- */
 const UP_RING_MS = 700;   // an upload done sooner shows the plain chip all along: no ring that blinks past
+const UP_STALL_MS = 30000;
 let upLive = 0;   // requests under way, of every caller; a page closed now would lose them
 const upGuard = ev => { ev.preventDefault(); ev.returnValue = ""; };
 const upBytes = n => n >= 10485760 ? `${Math.round(n / 1048576)}MB` : fsize(n);
@@ -9,10 +10,12 @@ const upTooBig = n => S && S.upload_max && n > S.upload_max ? TX("chat.upload.to
 function uploadXhr(f, name, onProgress) {
   const x = new XMLHttpRequest(), form = new FormData();
   form.append("file", f, name);
+  let stalled = false, idle = 0;
+  const watch = () => { clearTimeout(idle); idle = setTimeout(() => { stalled = true; x.abort(); }, UP_STALL_MS); };
   const done = new Promise((ok, no) => {
-    const end = fn => v => { if (!--upLive) removeEventListener("beforeunload", upGuard); fn(v); };
+    const end = fn => v => { clearTimeout(idle); if (!--upLive) removeEventListener("beforeunload", upGuard); fn(v); };
     const fine = end(ok), bad = end(no);
-    x.upload.onprogress = ev => { if (onProgress && ev.lengthComputable) onProgress(f.size * ev.loaded / ev.total); };
+    x.upload.onprogress = ev => { watch(); if (onProgress && ev.lengthComputable) onProgress(f.size * ev.loaded / ev.total); };
     x.onload = () => {
       pairGate(x.status, x.getResponseHeader("x-dotz-pair"));
       let d = {};
@@ -21,13 +24,19 @@ function uploadXhr(f, name, onProgress) {
       else bad(new Error(d.error || TX("chat.upload.failed", { status: x.status })));
     };
     x.onerror = () => bad(new Error(TX("chat.upload.lost")));
-    x.onabort = () => fine(null);
+    x.onabort = () => (stalled ? bad(new Error(TX("chat.upload.lost"))) : fine(null));
     if (!upLive++) addEventListener("beforeunload", upGuard);
     x.open("POST", "/api/upload");
     x.send(form);
+    watch();
   });
   return { done, abort: () => x.abort() };
 }
+async function uploadFile(f) {
+  if (upTooBig(f.size)) throw new Error(upTooBig(f.size));
+  return uploadXhr(f, f.name).done;
+}
+const drfBase64 = f => new Promise((ok, no) => { const r = new FileReader(); r.onload = () => ok(String(r.result).split(",")[1] || ""); r.onerror = () => no(r.error); r.readAsDataURL(f); });
 // target -> { attachment id: job }: the uploads of the composer. The tray only paints from here, so a repaint or a move to another conversation
 // and back finds the live numbers. A job's attachment waits in ATT or ts(t).att, whichever holds that conversation's files now.
 const UPS = {};

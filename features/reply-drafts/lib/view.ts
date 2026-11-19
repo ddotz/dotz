@@ -3,7 +3,7 @@
 // and the version a CLI would send are read the same way in both processes.
 import { approvalHash, fileSizeText } from "../../../hub/draft-approval.ts";
 import type { DraftView, ReplyKind } from "../../../hub/reply-types.ts";
-import { webmailSite } from "./senders.ts";
+import { webmailSite, zeleAccountOf } from "./senders.ts";
 import { fileDigest, stagedFiles } from "./staged.ts";
 import { getDraft, type DraftRec } from "./store.ts";
 
@@ -20,10 +20,18 @@ function originalOf(rec: DraftRec, mailOf: MailOf): NonNullable<DraftView["origi
 	return { who: rec.item.from || m?.from || "", text: m ? m.preview || m.summary || subject || "" : rec.item.text, ...(subject ? { subject } : {}) };
 }
 
+/** The account a send of `rec` goes out from (senders.ts zeleAccountOf; a send that would settle one from the logins records it and is refused `changed`, so no mail leaves from an account no card showed), and `held` when several accounts are logged in and none is chosen, so it is not sent yet. A webmail site has only the account its record names. */
+export function sendAccountOf(rec: DraftRec): { account?: string; held?: true } {
+	if (webmailSite(rec.source)) return rec.account ? { account: rec.account } : {};
+	const account = zeleAccountOf(rec);
+	return account ? { account } : rec.accounts ? { held: true } : {};
+}
+
 export function mailView(rec: DraftRec, mailOf: MailOf = () => undefined): DraftView {
 	const pending = rec.status === "pending";
 	const before = rec.replaces ? getDraft(rec.replaces) : undefined;
 	const attachments = stagedFiles(rec.id).map(f => ({ name: f.name, size: fileSizeText(f.size), digest: fileDigest(f.path) }));
+	const sendsFrom = sendAccountOf(rec);
 	return {
 		item: `mail:${rec.ref}`,
 		ref: rec.id,
@@ -38,6 +46,8 @@ export function mailView(rec: DraftRec, mailOf: MailOf = () => undefined): Draft
 			toLabel: "받는이",
 			to: rec.to,
 			...(rec.cc?.length ? { cc: rec.cc } : {}),
+			...(sendsFrom.account ? { account: sendsFrom.account } : {}),
+			...(sendsFrom.held ? { accountHeld: true as const } : {}),
 			...(rec.subject ? { subject: rec.subject } : {}),
 			text: rec.body,
 			...(attachments.length ? { attachments } : {}),

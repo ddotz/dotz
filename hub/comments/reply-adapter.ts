@@ -2,10 +2,11 @@
 // comments and site DMs) as the one view, and its revise, direct edit, drop, restore and read-back behind the adapter interface.
 import { fileSizeText } from "../draft-approval.ts";
 import { reasonOf } from "../reply-reasons.ts";
+import { sinceMidnight } from "../reply-route.ts";
 import type { DraftView, ReasonCode, ReplyAdapter } from "../reply-types.ts";
 import { commentAsk } from "./ask.ts";
 import type { Engine } from "./engine.ts";
-import type { Draft } from "./store.ts";
+import type { Draft, Reply } from "./store.ts";
 
 const STATE: Record<string, DraftView["draft"]["state"]> = { pending: "pending", dropped: "dropped", stale: "stale", sent: "sent", answered: "closed" };
 const question = (d: Draft | undefined) => (d?.mail ? "이 답글을 올리고 메일도 보낼까요?" : "이 답글 올릴까요?");
@@ -13,17 +14,36 @@ const question = (d: Draft | undefined) => (d?.mail ? "이 답글을 올리고 �
 const PLACE = "comment:";
 export const isCommentPlace = (conv: string): boolean => conv.startsWith(PLACE);
 
+type Sends = { posted: Map<string, Reply>; mailed: Set<string>; mailFailed: Set<string> };
+const NO_SENDS: Sends = { posted: new Map(), mailed: new Set(), mailFailed: new Set() };
+
 export function commentAdapter(engine: Engine): ReplyAdapter {
 	// By the store, not the ref's shape: older and seeded codes do not all follow D + 6.
 	const draftOf = (ref: string): Draft | undefined => engine.store.drafts().find(d => d.code === ref);
-	const viewOf = (d: Draft): DraftView | undefined => {
+	const sendsOf = (): Sends => {
+		const posted = new Map<string, Reply>(), mailed = new Set<string>(), mailFailed = new Set<string>();
+		for (const r of engine.store.replies()) {
+			if (r.state === "sent") posted.set(r.draft, r);
+			if (r.mail?.state === "sent") mailed.add(r.draft);
+			if (r.mail?.state === "failed") mailFailed.add(r.draft);
+		}
+		return { posted, mailed, mailFailed };
+	};
+	const sentOf = (d: Draft, sends: Sends): DraftView["sent"] => {
+		const r = d.status === "sent" ? sends.posted.get(d.code) : undefined;
+		return r && { at: r.at, how: r.via === "rule" ? "rule" : "owner" };
+	};
+	const viewOf = (d: Draft, sends: Sends): DraftView | undefined => {
 		const src = engine.store.config().sources[d.source];
 		const c = engine.store.comments().find(x => x.id === d.commentId);
 		if (!src || !c) return undefined;
 		const pending = d.status === "pending";
-		const mail = engine.mailView(d);
+		const mail = engine.mailView(d) ?? (d.status === "sent" && sends.mailed.has(d.code) ? engine.mailRecord(d) : undefined);
 		const before = d.replaces ? draftOf(d.replaces) : undefined;
+		const sent = sentOf(d, sends);
 		return {
+			...(sent ? { sent } : {}),
+			...(d.status === "sent" && sends.mailFailed.has(d.code) && engine.mailView(d) ? { mailLeft: true as const } : {}),
 			item: `comment:${d.commentId}`,
 			ref: d.code,
 			kind: "comment",
@@ -38,7 +58,7 @@ export function commentAdapter(engine: Engine): ReplyAdapter {
 				to: `${c.author} 댓글`,
 				text: d.text,
 				...(d.notes.length ? { notes: d.notes } : {}),
-				...(mail ? { mail: { ref: mail.id, to: mail.to, ...(mail.subject ? { subject: mail.subject } : {}), text: mail.body, ...(mail.attachments.length ? { attachments: mail.attachments.map(f => ({ name: f.name, ...(f.size !== undefined ? { size: fileSizeText(f.size) } : {}), ...(f.digest ? { digest: f.digest } : {}) })) } : {}) } } : {}),
+				...(mail ? { mail: { ref: mail.id, to: mail.to, ...(mail.account ? { account: mail.account } : {}), ...(mail.accountHeld ? { accountHeld: true as const } : {}), ...(mail.subject ? { subject: mail.subject } : {}), text: mail.body, ...(mail.attachments.length ? { attachments: mail.attachments.map(f => ({ name: f.name, ...(f.size !== undefined ? { size: fileSizeText(f.size) } : {}), ...(f.digest ? { digest: f.digest } : {}) })) } : {}) } } : {}),
 				...(before ? { replaces: { ref: before.code, text: before.text } } : {}),
 				...(d.editedFrom !== undefined ? { edited: true as const } : {}),
 			},
@@ -52,9 +72,12 @@ export function commentAdapter(engine: Engine): ReplyAdapter {
 		kind: "comment",
 		get: async ref => {
 			const d = draftOf(ref);
-			return d ? viewOf(d) : undefined;
+			return d ? viewOf(d, d.status === "sent" ? sendsOf() : NO_SENDS) : undefined;
 		},
-		list: async () => engine.store.drafts().filter(d => d.status === "pending").flatMap(d => viewOf(d) ?? []),
+		list: async () => {
+			const sends = sendsOf();
+			return engine.store.drafts().filter(d => d.status === "pending" || sinceMidnight(sentOf(d, sends)?.at ?? Number.NEGATIVE_INFINITY)).flatMap(d => viewOf(d, sends) ?? []);
+		},
 		target: ref => {
 			const d = draftOf(ref);
 			return d ? { kind: "comment", lane: `comment:${d.source}` } : undefined;
@@ -92,7 +115,7 @@ export function commentAdapter(engine: Engine): ReplyAdapter {
 			const c = d && engine.store.comments().find(x => x.id === d.commentId);
 			if (!d || !src || !c) return undefined;
 			const mail = engine.mailView(d);
-			return commentAsk(src, c, d, headline, mail ? { to: mail.to, ...(mail.subject ? { subject: mail.subject } : {}), body: mail.body, id: mail.id, ...(mail.notes ? { notes: mail.notes } : {}) } : undefined);
+			return commentAsk(src, c, d, headline, mail ? { to: mail.to, ...(mail.account ? { account: mail.account } : {}), ...(mail.accountHeld ? { accountHeld: true as const } : {}), ...(mail.subject ? { subject: mail.subject } : {}), body: mail.body, id: mail.id, ...(mail.notes ? { notes: mail.notes } : {}) } : undefined);
 		},
 		question: ref => `${question(draftOf(ref))} (${ref})`,
 	};

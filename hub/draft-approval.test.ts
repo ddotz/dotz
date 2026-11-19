@@ -276,3 +276,12 @@ test("a draft that replaces the mail's open card keeps the lines only that card 
 	expect(parseDraftApproval(keepBrief(old, own))?.brief).toEqual({ from: "Lee", summary: "새 요약", todo: ["시간 확인"], questions: ["인원은요?", "장소는요?"] });
 	expect(keepBrief("", own)).toBe(own);
 });
+
+test("the approval text of a mail names the account it goes out from, or says none is chosen yet; the pick is tied to that account", () => {
+	const lines = (o: object) => draftApprovalBlock({ to: "kim@example.com", toLabel: "받는이", body: "안녕하세요.", ref: "D777", ...o }).split("\n");
+	expect(lines({ account: "me@example.net" })).toContain("-# 보내는 계정: me@example.net");
+	expect(lines({ accountHeld: true })).toContain("-# 보내는 계정: 계정이 아직 정해지지 않았어요");
+	expect(lines({}).some(l => l.includes("보내는 계정"))).toBe(false);
+	const view = (account?: string) => ({ item: "mail:k", ref: "D777", kind: "mail", app: "mail", label: "메일", conv: "mail:k", at: 0, can: { send: true, revise: true, edit: true, drop: true, restore: false }, draft: { state: "pending", toLabel: "받는이", to: "kim@example.com", text: "안녕하세요.", ...(account ? { account } : {}) } }) as never;
+	expect(approvalHash(view("a@example.net"))).not.toBe(approvalHash(view("b@example.net")));
+});

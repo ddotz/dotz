@@ -18,7 +18,7 @@ import { createPastRefresh, type PastDeps } from "./past-refresh.ts";
 // after the reply is posted, revised or dropped with it.
 // `request`: the writer's own words, for the install's narrow rule (hub/auto-attach.ts; see hub/mail-cli.ts composeMail).
 export type MailSpec = { app: string; to: string; subject: string; body: string; attach?: string[]; fromLibrary?: string; request?: string };
-export type MailView = { id: string; to: string; subject?: string; body: string; attachments: { name: string; size?: number; digest?: string }[]; asksFile?: boolean; libraryMiss?: boolean; /** Warnings the owner reads before approving, shown with the mail. */ notes?: string[]; /** Where the mail's words and files disagree (flow.ts draftAttachIssues): the card's `첨부 확인` line. */ attachIssues?: string[] };
+export type MailView = { id: string; to: string; /** The account the mail goes out from (reply-drafts view.ts sendAccountOf); `accountHeld`: none is chosen yet, so it is not sent. */ account?: string; accountHeld?: true; subject?: string; body: string; attachments: { name: string; size?: number; digest?: string }[]; asksFile?: boolean; libraryMiss?: boolean; /** Warnings the owner reads before approving, shown with the mail. */ notes?: string[]; /** Where the mail's words and files disagree (flow.ts draftAttachIssues): the card's `첨부 확인` line. */ attachIssues?: string[] };
 /** What the mail text is written from: the comment, its author and post, the mail app of the source and the address the mail goes to. */
 export type MailWrite = { app: string; to: string; author: string; text: string; postTitle: string };
 export type MailLink = {
@@ -28,6 +28,8 @@ export type MailLink = {
 	compose: (spec: MailSpec) => Promise<{ ok: true; id: string; notes?: string[]; libraryMiss?: boolean } | { ok: false; reason: string }>;
 	/** The status of a mail draft whatever it is ("pending", "sent", ...); missing = only pending drafts are known (`view`). */
 	state?: (id: string) => string | undefined;
+	/** The mail draft whatever its state, sent included (`view` knows pending ones only): a sent reply's row shows the mail that went with it. Missing = none is known. */
+	record?: (id: string) => MailView | undefined;
 	/** A pending mail draft made for the comment `commentId` on its own (compose --origin comment:<id>). Missing = none is known. */
 	pendingFor?: (commentId: string) => string | undefined;
 	/** Sends the mail draft; the reply was just posted by the owner's pick, so no second pick is asked. A mail whose files disagree with its words is refused unless `asIs` (the owner picked 이대로 보내기). */
@@ -355,6 +357,7 @@ export function createEngine(deps: EngineDeps) {
 	}
 
 	const mailView = (d: Draft): MailView | undefined => (d.mail ? deps.mail?.view(d.mail) : undefined);
+	const mailRecord = (d: Draft): MailView | undefined => (d.mail ? deps.mail?.record?.(d.mail) : undefined);
 	const mailCovered = (d: Draft): boolean => !!mailView(d) || d.mailAt !== undefined || d.mailKept !== undefined || d.notes.some(n => n.startsWith(EXTRA_NOTE)) || !!deps.mail?.pendingFor?.(d.commentId);
 
 	// The linked mail of a comment, from the send record (the mail went out or failed after the reply) or from its draft: the mail draft that rides on a
@@ -774,6 +777,6 @@ export function createEngine(deps: EngineDeps) {
 	const idle = async () => {
 		while (pending.size) await Promise.all([...pending]);
 	};
-	return { store, ownerOf, ...createSendRecovery({ store, adapters: deps.adapters, onState: gate.onState, now: deps.now, inflight }), collect, refreshPast: createPastRefresh(store, deps, ownerOf), reconcile, makeDraft, revise, edit, learned, drop, restore, retrySend, dismissSend, pendingDrafts, send, sendMailOnly, update, threads, threadView, markRead, addDraft, linkMail, mailView, mailMarkOf, needs, noReply, unreplied, tokenStats, posts, ownReplies, idle, needsReply };
+	return { store, ownerOf, ...createSendRecovery({ store, adapters: deps.adapters, onState: gate.onState, now: deps.now, inflight }), collect, refreshPast: createPastRefresh(store, deps, ownerOf), reconcile, makeDraft, revise, edit, learned, drop, restore, retrySend, dismissSend, pendingDrafts, send, sendMailOnly, update, threads, threadView, markRead, addDraft, linkMail, mailView, mailRecord, mailMarkOf, needs, noReply, unreplied, tokenStats, posts, ownReplies, idle, needsReply };
 }
 export type Engine = ReturnType<typeof createEngine>;

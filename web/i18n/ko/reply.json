@@ -35,5 +35,9 @@
   "reply.q.done": "{n}건 처리했어요",
   "reply.q.fails": "실패만 다시 보기 ({n})",
   "reply.q.skip": "건너뛰기",
-  "reply.q.go": "고른 것 처리 ({n})"
+  "reply.q.go": "고른 것 처리 ({n})",
+  "reply.rcpt.none": "없음",
+  "reply.rcpt.account": "보내는 계정",
+  "reply.rcpt.account_default": "기본 계정",
+  "reply.rcpt.account_held": "계정이 아직 정해지지 않았어요"
 }

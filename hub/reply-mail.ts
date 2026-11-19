@@ -3,9 +3,10 @@
 // and re-exports what the gateway's other modules read of it, so no other hub file needs a feature edge for them.
 import { askText, defaultCall, dropDraft, editDraft, mailView, realFlowDeps, recordCorrection, refineAfterCorrection, restoreDraft, reviseDraft, type FlowDeps, type MailOf, webmailSite } from "../features/reply-drafts/lib/flow.ts";
 import { claimFile, getDraft, listDrafts, patchDraft, setStatus, unlessUnreadable, type DraftRec } from "../features/reply-drafts/lib/store.ts";
-import { ridingMails } from "./comments/linked.ts";
+import { pairedMails, ridingMails } from "./comments/linked.ts";
+import { sinceMidnight } from "./reply-route.ts";
 import { reasonOf } from "./reply-reasons.ts";
-import type { Lesson, ReasonCode, ReplyAdapter } from "./reply-types.ts";
+import type { DraftView, Lesson, ReasonCode, ReplyAdapter } from "./reply-types.ts";
 
 export { claimFile, defaultCall, getDraft, patchDraft, unlessUnreadable };
 
@@ -14,20 +15,28 @@ const known = (ref: string): DraftRec | undefined => {
 	return rec?.kind === "mail" ? rec : undefined;
 };
 const done = (r: { ok: boolean; text: string }, code: ReasonCode = "not_pending") => (r.ok ? { ok: true as const } : { ok: false as const, reason: { code, text: r.text } });
+const sentAtOf = (rec: DraftRec): number | undefined => {
+	const at = rec.status === "sent" && rec.sentAt ? Date.parse(rec.sentAt) : Number.NaN;
+	return Number.isFinite(at) ? at : undefined;
+};
 
 /** The mail and webmail adapter over the reply-drafts store; `deps` gives the model and tool runner of a revise (the real ones by default), `mailOf` the mail records. */
 export function mailAdapter(deps: () => FlowDeps = realFlowDeps, mailOf: MailOf = () => undefined): ReplyAdapter {
+	const viewOf = (rec: DraftRec): DraftView => {
+		const at = sentAtOf(rec);
+		return at === undefined ? mailView(rec, mailOf) : { ...mailView(rec, mailOf), sent: { at, how: "owner" } };
+	};
 	return {
 		kind: "mail",
 		get: async ref => {
 			const rec = known(ref);
 			// The same view the send CLI's gate hashes (features/reply-drafts/lib/view.ts).
-			return rec ? mailView(rec, mailOf) : undefined;
+			return rec ? viewOf(rec) : undefined;
 		},
 		// A mail riding on a waiting comment reply is part of that reply's card (one item, one 보내기); once the reply is gone it is listed on its own.
 		list: async () => {
-			const riding = ridingMails();
-			return listDrafts().filter(d => d.kind === "mail" && d.status === "pending" && !riding.has(d.id)).map(d => mailView(d, mailOf));
+			const riding = ridingMails(), paired = pairedMails();
+			return listDrafts().filter(d => d.kind === "mail" && ((d.status === "pending" && !riding.has(d.id)) || (!paired.has(d.id) && sinceMidnight(sentAtOf(d) ?? Number.NEGATIVE_INFINITY)))).map(viewOf);
 		},
 		target: ref => {
 			const rec = known(ref);
@@ -50,7 +59,8 @@ export function mailAdapter(deps: () => FlowDeps = realFlowDeps, mailOf: MailOf 
 		markSent: async ref => {
 			const rec = known(ref);
 			if (!rec) return { ok: false, reason: reasonOf("gone") };
-			if (rec.status !== "sent") setStatus(ref, "sent");
+			if (rec.status === "pending") setStatus(ref, "sent");
+			else if (rec.status !== "sent") return { ok: false, reason: reasonOf("not_pending") };
 			return { ok: true };
 		},
 		// Proof can say "sent", never "not sent": the draft itself, or the mail answered since.

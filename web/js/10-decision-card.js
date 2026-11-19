@@ -169,6 +169,7 @@ const needsNote = (dc, opt) => (dc.draft ? draftAsksText(opt) : detailOf(opt));
 const pickSay = o => `${o.n}) ${o.label}${o.note ? ` - ${o.note}` : ""}`;
 function pickOption(dc, bi, opt, note, typed) {
   if (DC.st[dc.key]) return;
+  if (dc.draft && (DRAFT_ACTS[opt.label] || [])[0] === "send" && drfUploading(dc.draft)) { toast(TX("chat.send.uploading")); return; }
   // A mail whose files disagree with its words is not sent by 보내기: the owner is shown what is off and 이대로 보내기 is the pick that sends it (cancel keeps the card).
   const asIs = dc.draft && (dc.draft.attachIssues || []).length && dc.blocks[bi] && dc.blocks[bi].options.find(o => o.label === "이대로 보내기");
   if (asIs && opt.label === "보내기" && !opt.sure) { ask(TX("decision.attach.check_title"), (dc.draft.to ? TX("decision.attach.asis_to", { to: dc.draft.to, issues: dc.draft.attachIssues.join(". ") }) : TX("decision.attach.asis", { issues: dc.draft.attachIssues.join(". ") })), TX("decision.send_anyway")).then(ok => { if (ok) pickOption(dc, bi, { ...asIs, sure: true }, note); }); return; }
@@ -210,34 +211,30 @@ function multiNodes(dc, picks, st) {
 // A mail reply draft of reply-drafts can change its files here (hub/draft-attach.ts): 파일 추가 = a file of this device or of the mail
 // app's 첨부 파일 폴더, x = take one off. The live list (DRF.st) replaces the one written in the message. o.t = the draft's conversation
 // (a peer's draft is changed on its own computer), o.edit false = read only, o.warn = a box the warning is drawn into instead of under the files.
-// o.stage (the 고치기 panel, 10-reply-actions.js rqFixNodes) = { remove: [place], add: [{ name, size, file | library }] }: a change only marks it (o.onstage is told);
+// o.stage (the 고치기 panel, 10-reply-actions.js rqFixNodes) = { remove: [{ at, name, size }], add: [{ name, size, file | library }] }: a change only marks it (o.onstage is told);
 // nothing is written until 반영 (raRowsApply), and 닫기 forgets it.
 const DR_IMG = /\.(png|jpe?g|gif|webp|avif|heic)$/i;
-const DRF = { st: {}, pc: {}, menu: {}, lib: {}, busy: {}, wait: {} };
+const DRF = { st: {}, pc: {}, menu: {}, lib: {}, busy: {}, wait: {}, again: {}, hash: {}, gen: {} };
+const drfUploading = d => [d.ref, d.mail && d.mail.ref].some(r => r && DRF.busy[r]);
+function drForget(ref) { drfStale(ref); delete DRF.lib[ref]; delete DRR.st[ref]; }
+function drSeen(ref, hash) { if (!ref || !hash || DRF.hash[ref] === hash) return; drForget(ref); DRF.hash[ref] = hash; }
 function drfFrom(ref, t) { DRF.pc[ref] = t ? pqPc(t) : null; }   // the computer a draft's files are read from: none is this one
 const DRF_WIRE_MAX = 10 * 1024 * 1024;
 const drfPath = (ref, tail) => `/api/drafts/${enc(ref)}/${tail}`;
 const drfNone = { files: [], canAttach: false, library: false, editable: false, failed: true };
+function drfStale(ref) { DRF.gen[ref] = (DRF.gen[ref] || 0) + 1; delete DRF.st[ref]; delete DRF.wait[ref]; }
 function drfLoad(ref) {
-  return DRF.wait[ref] ||= api(drfPath(ref, "files")).then(r => { DRF.st[ref] = r && Array.isArray(r.files) ? r : drfNone; }, () => { DRF.st[ref] = drfNone; }).finally(() => { delete DRF.wait[ref]; });
+  if (DRF.wait[ref]) return DRF.wait[ref];
+  const gen = DRF.gen[ref] || 0, keep = v => { if ((DRF.gen[ref] || 0) === gen) DRF.st[ref] = v; };
+  const p = api(drfPath(ref, "files")).then(r => keep(r && Array.isArray(r.files) ? r : drfNone), () => keep(drfNone)).finally(() => { if (DRF.wait[ref] === p) delete DRF.wait[ref]; });
+  return (DRF.wait[ref] = p);
 }
 async function drfWrite(ref, body) {
-  const r = await api(drfPath(ref, "files"), "POST", body);
+  const r = await api(drfPath(ref, "files"), "POST", body, body.data ? 0 : CARD_WAIT_MS).catch(async e => { if (e && e.status === 409) { drfStale(ref); await drfLoad(ref); } throw e; });
+  drfStale(ref);
   DRF.st[ref] = { files: r.files, canAttach: r.canAttach, library: r.library, editable: r.editable, attachIssues: r.attachIssues };
 }
-const drfBase64 = f => new Promise((ok, no) => { const r = new FileReader(); r.onload = () => ok(String(r.result).split(",")[1] || ""); r.onerror = () => no(r.error); r.readAsDataURL(f); });
-async function drfUpload(ref, f) {
-  if (DRF.pc[ref]) {
-    if (f.size > DRF_WIRE_MAX) throw new Error(TX("decision.file.peer_max"));
-    return drfWrite(ref, { name: f.name, data: await drfBase64(f) });
-  }
-  return drfWrite(ref, { upload: await uploadFile(f) });
-}
-// One file to this gateway's uploads (hub/files.ts): the record that a draft's 첨부 or a message's `files` names.
-async function uploadFile(f) {
-  if (upTooBig(f.size)) throw new Error(upTooBig(f.size));
-  return uploadXhr(f, f.name).done;
-}
+async function drfHold(ref, job) { DRF.busy[ref] = true; try { return await job(); } finally { DRF.busy[ref] = false; } }
 // 보내기 on a draft whose mail account cannot send files: the owner is asked once more (resolves true to go on).
 async function drfSure(d, t) {
   const ref = d.ref;
@@ -249,15 +246,15 @@ async function drfSure(d, t) {
 }
 function draftFilesNode(d, o = {}) {
   const ref = d.ref, sg = o.stage, box = el("div", { class: "dr-files" });
-  if (ref) DRF.pc[ref] = o.t ? pqPc(o.t) : null;
+  if (ref) { DRF.pc[ref] = o.t ? pqPc(o.t) : null; drSeen(ref, d.hash); }
   const pickers = el("input", { type: "file", multiple: true, hidden: true, "aria-label": TX("decision.file.pick") });
-  const run = async job => {
-    DRF.busy[ref] = true; paint();
-    try { await job(); } catch (e) { toast(e instanceof TypeError ? TX("decision.err.offline_act") : e.message, true); }
+  const run = async (job, again) => {
+    DRF.busy[ref] = true; delete DRF.again[ref]; paint();
+    try { await job(); } catch (e) { if (again) DRF.again[ref] = again; toast(e instanceof TypeError ? TX("decision.err.offline_act") : e.message, true); }
     DRF.busy[ref] = false; paint();
   };
-  const put = (mark, job) => { if (!sg) return run(job); mark(); DRF.menu[ref] = ""; paint(); o.onstage(); };   // one change: marked on the stage, or written at once
-  const addAll = list => put(() => sg.add.push(...list.map(f => ({ name: f.name, size: mailSize(f.size), file: f }))), async () => { for (const f of list) await drfUpload(ref, f); DRF.menu[ref] = ""; });
+  const put = (mark, job, again) => { if (!sg) return run(job, again); mark(); DRF.menu[ref] = ""; paint(); o.onstage(); };   // one change: marked on the stage, or written at once
+  const addAll = list => put(() => sg.add.push(...list.map(f => ({ name: f.name, size: mailSize(f.size), file: f }))), async () => { for (; list.length; list.shift()) await drfUpload(ref, list[0]); DRF.menu[ref] = ""; }, () => addAll(list));
   pickers.onchange = () => { const list = [...pickers.files]; pickers.value = ""; addAll(list); };
   const openLib = async () => {
     DRF.menu[ref] = DRF.menu[ref] === "lib" ? "" : "lib"; paint();
@@ -270,7 +267,7 @@ function draftFilesNode(d, o = {}) {
     // Files named in the message that dotz did not stage itself: the names stand, with a plain line saying the session attaches them.
     const named = !!st && st.tracked === false && Array.isArray(d.attachments) && d.attachments.length > 0;
     // at: a file's place on the draft. A file the panel only marked (sg.add) has none yet, and the ones it marked as taken off are left out.
-    const fl = (live ? st.files : Array.isArray(d.attachments) ? d.attachments : []).map((f, at) => ({ ...f, at })).filter(f => !sg || !sg.remove.includes(f.at)).concat(sg ? sg.add : []);
+    const fl = (live ? st.files : Array.isArray(d.attachments) ? d.attachments : []).map((f, at) => ({ ...f, at })).filter(f => !sg || !sg.remove.some(r => r.name === f.name)).concat(sg ? sg.add : []);
     const can = live && st.editable && o.edit !== false, busy = !!DRF.busy[ref] || !!o.hold;   // o.hold: the sheet is sending; the rows stay, off
     const warn = d.warning && !fl.length;
     const noSend = live && st.editable && !st.canAttach && (fl.length || d.warning);
@@ -283,7 +280,7 @@ function draftFilesNode(d, o = {}) {
       const ext = (String(f.name).match(/\.([A-Za-z0-9]{1,5})$/) || [0, ""])[1].toUpperCase(), meta = [ext, f.size].filter(Boolean).join(" · ");
       const kids = [el("span", { class: "dr-fi" }, icon(DR_IMG.test(f.name) ? "image" : "file")), el("span", { class: "dr-fn", text: f.name }), meta ? el("span", { class: "dr-fm", text: meta }) : null];
       const link = ref && !named && f.at !== undefined ? el("a", { class: "dr-att", href: pqLink(drfPath(ref, `files/${f.at}`)), target: "_blank", rel: "noopener", title: TX("decision.file.open", { name: f.name }), "aria-label": f.size ? TX("decision.file.open_size", { name: f.name, size: f.size }) : TX("decision.file.open", { name: f.name }) }, ...kids, icon("open")) : el("div", { class: "dr-att" }, ...kids);
-      return can ? el("div", { class: "dr-ar" }, link, el("button", { class: "dr-x", type: "button", disabled: busy, title: TX("decision.file.detach"), "aria-label": TX("decision.remove_named", { name: f.name }), onclick: () => put(() => (f.at === undefined ? sg.add.splice(sg.add.indexOf(f), 1) : sg.remove.push(f.at)), () => drfWrite(ref, { remove: f.at })) }, icon("close"))) : link;
+      return can ? el("div", { class: "dr-ar" }, link, el("button", { class: "dr-x", type: "button", disabled: busy, title: TX("decision.file.detach"), "aria-label": TX("decision.remove_named", { name: f.name }), onclick: () => put(() => (f.at === undefined ? sg.add.splice(sg.add.indexOf(f), 1) : sg.remove.push({ at: f.at, name: f.name, size: f.bytes })), () => drfWrite(ref, { remove: f.at, name: f.name, size: f.bytes })) }, icon("close"))) : link;
     });
     const items = DRF.lib[ref] || [];
     const lib = can && DRF.menu[ref] === "lib" ? el("div", { class: "dr-lib", role: "list" }, ...(items.length ? items.map(it => el("button", { class: "dr-li", type: "button", role: "listitem", disabled: busy, title: it.rel, onclick: () => put(() => sg.add.push({ name: it.name || it.rel, size: it.size, library: it.rel }), async () => { await drfWrite(ref, { library: it.rel }); DRF.menu[ref] = ""; }) },
@@ -292,13 +289,14 @@ function draftFilesNode(d, o = {}) {
       el("button", { class: "btn tonal", type: "button", onclick: () => pickers.click() }, TX("decision.file.from_device")),
       st.library ? el("button", { class: "btn tonal", type: "button", onclick: openLib }, TX("decision.file.from_folder")) : null) : null;
     const add = can && st.canAttach ? el("button", { class: "dr-add", type: "button", disabled: busy, "aria-expanded": String(!!DRF.menu[ref]), onclick: () => { if (!st.library) pickers.click(); else { DRF.menu[ref] = DRF.menu[ref] ? "" : "menu"; paint(); } } }, icon("clip"), el("span", { text: busy ? TX("decision.file.attaching") : TX("decision.file.add") })) : null;
+    const again = DRF.again[ref] && !busy ? el("button", { class: "btn tonal sm dr-again", type: "button", "data-k": "upload-again", text: TX("chat.upload.retry"), onclick: DRF.again[ref] }) : null;
     if (o.warn) { clear(o.warn).append(...warns.filter(Boolean)); o.warn.hidden = !warns.some(Boolean); }
     // The line is always there: the files, or 첨부 없음 (a mail draft too, owner 2026-11-16). o.live (the mail of a combined card, read only): the list is read from
     // the staged files, so a ✓ says they are on the mail.
     const on = o.live && live && !sg;
     clear(box).append(...[fl.length ? el("div", { class: on ? "dr-fh ok" : "dr-fh", text: on ? TX("decision.attach.attached", { n: fl.length }) : TX("decision.attach.count", { n: fl.length }) }) : el("div", { class: "dr-none", "data-k": "none" }, icon("clip"), el("span", { text: TX("decision.attach.none") })), ...rows,
       named ? el("div", { class: "dr-note", text: TX("decision.file.locked") }) : null,
-      add, menu, lib, ...(o.warn ? [] : warns), pickers].filter(Boolean));
+      add, again, menu, lib, ...(o.warn ? [] : warns), pickers].filter(Boolean));
   }
   paint();
   if (ref && (o.edit !== false || o.live || (d.attachments || []).length) && d.toLabel === "받는이" && !DRF.st[ref]) drfLoad(ref).then(paint);
@@ -318,13 +316,14 @@ const drrPath = ref => `/api/drafts/${enc(ref)}/recipients`;
 const drrSplit = s => String(s || "").split(/\s*,\s*/).map(a => a.trim()).filter(Boolean);
 async function drrLoad(ref) { try { const r = await api(drrPath(ref)); DRR.st[ref] = r && Array.isArray(r.to) ? r : DRR_NONE; } catch { DRR.st[ref] = DRR_NONE; } }
 async function drrWrite(ref, body) {
-  const r = await api(drrPath(ref), "POST", body);
+  const r = await api(drrPath(ref), "POST", body, CARD_WAIT_MS).catch(async e => { if (e && e.status === 409) await drrLoad(ref); throw e; });
   DRR.st[ref] = { to: r.to || [], cc: r.cc || [], mode: r.mode || "reply", editable: !!r.editable, reply: !!r.reply };
   DRR.add[ref] = ""; DRR.edit[ref] = "";
   return DRR.st[ref];
 }
 function draftToNode(d, o = {}) {
   const ref = d.ref, sg = o.stage;
+  drSeen(ref, d.hash);
   let base = null;   // the lists as the hub holds them (paint)
   // Which computer holds the draft: a peer's rows change there (the same map the 첨부 줄 uses for its own requests).
   if (ref && o.t !== undefined) DRF.pc[ref] = DRR.pc[ref] = o.t ? pqPc(o.t) : null;
@@ -348,7 +347,7 @@ function draftToNode(d, o = {}) {
     const i = el("input", { class: "dr-rc-in", type: "email", inputmode: "email", autocomplete: "off", placeholder: label, "aria-label": label, disabled: busy() });
     i.value = value || "";
     const go = () => { const v = i.value.trim(); if (v) done(v); };
-    i.onkeydown = ev => { if (ev.key === "Enter" && !ev.isComposing) { ev.preventDefault(); go(); } };
+    i.onkeydown = ev => { if (plainEnter(ev)) { ev.preventDefault(); go(); } };
     return { i, go };
   };
   const editor = (label, value, done) => {
@@ -404,6 +403,7 @@ function draftMailNode(m, o = {}) {
   return el("div", { class: "dr-mailpart" },
     el("div", { class: "dr-mh" }, icon("mail"), el("span", { text: TX("decision.mail.along") })),
     fx && fx.recv ? draftToNode(part, { t: o.t, edit: true, always: true, stage: fx.recv, onstage: fx.onstage }) : row(m.toLabel || TX("decision.to"), m.to || "-"),
+    m.accountHeld ? row(TX("reply.rcpt.account"), TX("reply.rcpt.account_held")) : m.account ? row(TX("reply.rcpt.account"), m.account) : null,
     fx ? fx.subject : m.subject ? row(TX("decision.subject"), m.subject, " sub") : null,
     fx ? null : draftBodyNode(m.body, "dc-dr-b", { tabindex: "0", role: "region", "aria-label": TX("decision.mail.along_body") }),
     draftFilesNode(part, { edit: !!(fx && fx.files), live: !!ref, t: o.t, stage: fx && fx.files, onstage: fx && fx.onstage }));
@@ -445,7 +445,7 @@ const OWN_HINT = TX("decision.hint.own");
 const draftQ = t => String(t || "").replace(/\s*\([^()]*\)\s*$/, "").replace(/\s*정할 것\s*[:：][\s\S]*$/, "");
 const decideNode = d => (d && d.decide && d.decide.length ? el("div", { class: "dc-decide" }, el("div", { class: "dc-decide-k", text: TX("decision.decide") }), el("ul", {}, ...d.decide.map(q => el("li", { text: q })))) : null);
 // A note field's keys: Cmd/Ctrl+Enter is its button, Esc closes the field only (the field carries data-esc, so the sheet around the card stays open: 38-overlay.js).
-const noteKeys = (go, back) => ev => { if (ev.isComposing) return; if (ev.key === "Enter" && (ev.metaKey || ev.ctrlKey)) { ev.preventDefault(); go(); } else if (ev.key === "Escape") { ev.preventDefault(); ev.stopPropagation(); back(); } };
+const noteKeys = (go, back) => ev => { if (imeKey(ev)) return; if (ev.key === "Enter" && (ev.metaKey || ev.ctrlKey)) { ev.preventDefault(); go(); } else if (ev.key === "Escape") { ev.preventDefault(); ev.stopPropagation(); back(); } };
 const draftNoteText = opt => (opt.label === DRAFT_OWN ? { hint: OWN_HINT, aria: TX("decision.own.aria"), ask: TX("decision.own.ask") } : { hint: DRAFT_HINT, aria: TX("decision.revise.what"), ask: TX("decision.revise.ask") });
 function editNode(dc, ed, st) {
   const opt = ed.opt, drf = !!dc.draft;

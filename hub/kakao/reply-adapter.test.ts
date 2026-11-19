@@ -3,6 +3,7 @@ import { afterAll, beforeEach, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { localMidnight } from "../reply-route.ts";
 import { kakaoAdapter, outcomeOf } from "./reply-adapter.ts";
 import { createDraft, readDrafts } from "./send.ts";
 import { kakaoPaths } from "./types.ts";
@@ -90,4 +91,16 @@ test("a draft sent but unconfirmed is still open until the owner says it went ou
 	expect(await a.prove!(d.code)).toBe("unknown");
 	expect(await a.markSent(d.code)).toEqual({ ok: true });
 	expect(await a.prove!(d.code)).toBe("sent");
+});
+
+test("U4-7 a draft sent today is listed as sent with its time; one sent before midnight, an unconfirmed one and one with no time are not", async () => {
+	const a = kakaoAdapter(kit);
+	const made = [await draft(), await draft(), await draft(), await draft()].map(d => d.code);
+	const today = Date.now(), yesterday = localMidnight() - 3_600_000;
+	const sent: Record<string, object> = { [made[0]!]: { sentAt: new Date(today).toISOString() }, [made[1]!]: { sentAt: new Date(yesterday).toISOString() }, [made[2]!]: { sentAt: new Date(today).toISOString(), unconfirmed: true }, [made[3]!]: {} };
+	await Bun.write(join(dir, "kakao", "drafts.json"), JSON.stringify(readDrafts(paths).map(x => ({ ...x, status: "sent", ...sent[x.code] }))));
+	expect((await a.list()).map(v => v.ref)).toEqual([made[0]]);
+	expect(await a.get(made[0]!)).toMatchObject({ draft: { state: "sent" }, can: { send: false }, sent: { at: today, how: "owner" } });
+	expect((await a.get(made[1]!))!.sent).toEqual({ at: yesterday, how: "owner" });
+	expect((await a.get(made[2]!))!.sent).toBeUndefined();
 });

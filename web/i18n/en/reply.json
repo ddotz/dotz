@@ -35,5 +35,9 @@
   "reply.q.done": "{n} handled",
   "reply.q.fails": "Review failures ({n})",
   "reply.q.skip": "Skip",
-  "reply.q.go": "Run picks ({n})"
+  "reply.q.go": "Run picks ({n})",
+  "reply.rcpt.none": "None",
+  "reply.rcpt.account": "From",
+  "reply.rcpt.account_default": "Default account",
+  "reply.rcpt.account_held": "Account not chosen yet"
 }

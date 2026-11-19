@@ -83,7 +83,7 @@ async function view(rec: DraftRec | undefined, ref: string) {
 	const editable = !!rec && rec.kind === "mail" && rec.status === "pending";
 	const asked = rec ? undefined : askedFiles(ref);
 	return {
-		files: asked ? asked.map(f => ({ name: f.name, size: f.size })) : stagedFiles(rec?.id ?? ref).map(f => ({ name: f.name, size: fileSizeText(f.size) })),
+		files: asked ? asked.map(f => ({ name: f.name, size: f.size })) : stagedFiles(rec?.id ?? ref).map(f => ({ name: f.name, size: fileSizeText(f.size), bytes: f.size })),
 		canAttach: !!rec && canAttach(rec.source),
 		library: editable && !!(await attachFolder(rec.ref)),
 		editable,
@@ -147,6 +147,8 @@ export async function draftAttachRoute(req: Request, url: URL, ref: string, tail
 			if (hold) return hold;
 			const b = (await req.json().catch(() => ({}))) as Record<string, any>;
 			if (Number.isInteger(b.remove)) {
+				const marked = typeof b.name === "string" ? stagedFiles(rec.id)[b.remove] : undefined;
+				if (typeof b.name === "string" && (marked?.name !== b.name || (typeof b.size === "number" && marked?.size !== b.size))) return json({ error: "첨부 파일이 바뀌었어요. 목록을 다시 불러왔어요", code: "changed", ...(await view(rec, ref)) }, 409);
 				if (!removeStagedFile(rec.id, b.remove)) return json({ error: "그런 첨부파일이 없어요" }, 404);
 			} else if (typeof b.library === "string") {
 				const folder = await attachFolder(rec.ref);

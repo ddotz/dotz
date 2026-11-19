@@ -165,22 +165,25 @@ function rqMailParts(dr, o) {
     brief: b.summary || (!o.seen && (b.todo || b.questions)) ? el("div", { class: "rq-brief" }, b.summary ? el("div", { class: "rq-sumline", text: b.summary }) : null, o.seen ? null : mailLinesNode(b.todo, b.questions)) : null, recv: draftRecvFold(dr, { t: o.t, edit: o.edit, hold: o.hold }), subject: dr.subject,
     attach: draftFilesNode(dr, { t: o.t, edit: o.edit, warn: o.warn, hold: o.hold }) };
 }
-// The card. c: { key, cls, attrs, head (rqHeadNode), label + labelCls (a sub-head such as "답장 초안 · 메시지 2개"), to: [label, value],
-// recv (a mail draft's own 받는이·참조 rows, 10-decision-card.js draftToNode; given instead of `to`), subject (its text, or the field that stands there in the 고치기 panel),
+// The card. c: { key, cls, attrs, head (rqHeadNode), label + labelCls (a sub-head such as "답장 초안 · 메시지 2개"),
+// rcpt ({ label, to, cc, account, accountHeld, mail }: the line under the head with who gets it; a mail adds 참조 and 보내는 계정), recv (a mail draft's own 받는이·참조 rows, 10-decision-card.js draftToNode), subject (its text, or the field that stands there in the 고치기 panel),
 // original: {who, text, ref} (what the draft answers) or its node, body, attach (the draft's attachments [{ name, size }], or the caller's own files node),
 // extra (nodes under the body: the mail that goes along), then one of: sent (보냈어요 at sentAt), acts (rqActsNode: { send, fix, drop, busy, press, quiet }),
 // fail (rqFailNode: the line above the buttons after a failed action), foot (a node that stands in the foot instead: 10-reply-actions.js rqSendNode, or the
 // AI line and 반영 / 닫기 of rqFixNodes) }.
+const rqRcptNode = r => el("div", { class: "rq-rcpt", "data-k": "rcpt" },
+  ...[[r.label, r.to || "-"], ...(r.mail ? [[TX("decision.cc"), (r.cc || []).join(", ") || TX("reply.rcpt.none")], [TX("reply.rcpt.account"), r.accountHeld ? TX("reply.rcpt.account_held") : r.account || TX("reply.rcpt.account_default")]] : [])]
+    .map(([k, v]) => el("span", { class: "rq-rc" }, el("span", { class: "dr-k", text: k }), el("span", { class: "rq-rv", text: v }))));
 function rqCard(c) {
   const foot = c.foot ? c.foot : c.sent ? rqSentNode(c.sentAt) : c.acts ? rqActsNode(c.acts) : null;
   const att = c.attach && c.attach.nodeType ? c.attach : rqAttachNode(c.attach);
   const cm = !!(c.head && c.head.who);   // a comment card: its text quoted under the head, the post title a grey hint, the draft as the body
   return el("div", { class: `rq${cm ? " cm" : ""}${c.cls ? ` ${c.cls}` : ""}`, ...(c.attrs || {}) },
-    c.bare ? null : rqHeadNode(c.head),
+    c.bare ? null : rqHeadNode(c.head), c.rcpt ? rqRcptNode(c.rcpt) : null,
     c.bare || !c.original ? null : c.original.nodeType ? c.original : c.original.text || c.original.ref ? rqOrigNode(c.key, c.original) : null,   // a node: the caller's own block
     c.brief || null,
     c.label ? el("div", { class: c.labelCls || "rq-lb", text: c.label }) : null,
-    c.to ? (cm ? null : el("div", { class: "rq-to dr-to" }, el("span", { class: "dr-k", text: c.to[0] }), el("span", { class: "dr-chip", text: c.to[1] || "-" }))) : c.recv || null,   // a mail keeps its 받는이 rows
+    c.recv || null,
     c.subject && c.subject.nodeType ? c.subject : c.subject ? el("div", { class: "dr-sub rq-sub", text: c.subject }) : null,
     rqBodyNode(c.key, c.body), att, ...(c.extra || []).filter(Boolean),
     c.fail ? rqFailNode(c.fail) : null, foot);

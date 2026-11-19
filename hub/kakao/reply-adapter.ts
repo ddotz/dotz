@@ -2,6 +2,7 @@
 // one view, a revise through the room's own prompt (lint, lesson, stored before anything is learned) and a send through dispatchSend with the
 // lease, the newer-message check and the room list, as the web's own send does.
 import type { SendJob } from "../approval-send.ts";
+import { sinceMidnight } from "../reply-route.ts";
 import { isReasonCode } from "../reply-reasons.ts";
 import type { DraftView, ReasonCode, ReplyAdapter, SendOutcome } from "../reply-types.ts";
 import { dispatchSend, type DispatchDeps } from "./contract.ts";
@@ -26,11 +27,16 @@ export function outcomeOf(r: SendResult): SendOutcome {
 
 export function kakaoAdapter(kit: KakaoKit): ReplyAdapter {
 	const draftOf = (ref: string): Draft | undefined => readDrafts(kit.paths).find(d => d.code === ref);
+	const sentAtOf = (d: Draft): number | undefined => {
+		const at = d.status === "sent" && !d.unconfirmed && d.sentAt ? Date.parse(d.sentAt) : Number.NaN;
+		return Number.isFinite(at) ? at : undefined;
+	};
 	// The card quotes the message it answers; a database that cannot be read leaves the draft without the quote. The view itself is the one the
 	// inbox verdict hashes too (send.ts kakaoView).
 	const withOriginal = async (d: Draft): Promise<DraftView> => {
 		const v = kakaoView(d, readDrafts(kit.paths)), original = kit.original ? await kit.original(d).catch(() => undefined) : undefined;
-		return original ? { ...v, original } : v;
+		const at = sentAtOf(d);
+		return { ...v, ...(original ? { original } : {}), ...(at === undefined ? {} : { sent: { at, how: "owner" as const } }) };
 	};
 	const done = (r: SendResult) => (r.ok ? { ok: true as const } : { ok: false as const, reason: { code: codeOf(r.code), text: r.reason ?? "" } });
 
@@ -40,7 +46,7 @@ export function kakaoAdapter(kit: KakaoKit): ReplyAdapter {
 			const d = draftOf(ref);
 			return d ? withOriginal(d) : undefined;
 		},
-		list: async () => Promise.all(readDrafts(kit.paths).filter(d => d.status === "pending").map(withOriginal)),
+		list: async () => Promise.all(readDrafts(kit.paths).filter(d => d.status === "pending" || sinceMidnight(sentAtOf(d) ?? Number.NEGATIVE_INFINITY)).map(withOriginal)),
 		target: ref => (draftOf(ref) ? { kind: "kakao", lane: "kakao" } : undefined),
 		// The inbox verdict is skipped (ownerApproved) only because every job the queue runs is the owner's own act or code's retry of one, and the
 		// queue's gate (hub/approval-send.ts) checked it carries the version he approved; any other job is refused. The 다시 보내기 after 확인 필요
