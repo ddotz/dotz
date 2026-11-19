@@ -7,7 +7,7 @@
 <meta name="description" content="dotz 웹 앱을 직접 써 보는 데모예요.">
 <title>dotz — 데모</title>
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="/demo/app.css?v=e9fd00f25859">
+<link rel="stylesheet" href="/demo/app.css?v=5af5f5148a7f">
 <style>
 :root { --demobar-h: 44px; }
 .demo-bar { position: fixed; inset: 0 0 auto 0; z-index: 3000; display: flex; align-items: center; gap: 10px; height: var(--demobar-h); padding: 0 12px 0 16px; border-bottom: 1px solid var(--line); background: var(--card); color: var(--fg); font-family: var(--font); }
@@ -43,8 +43,8 @@ addEventListener("error", e => __demoLog.errors.push(`${e.message} @ ${String(e.
 addEventListener("unhandledrejection", e => __demoLog.errors.push(String(e.reason && e.reason.message || e.reason)));
 { const e = console.error; console.error = (...a) => { __demoLog.errors.push(a.map(String).join(" ")); e(...a); }; const w = console.warn; console.warn = (...a) => { __demoLog.warnings.push(a.map(String).join(" ")); w(...a); }; }
 </script>
-<script src="/demo/fixtures.js?v=e9fd00f25859"></script>
-<script src="/demo/demo-api.js?v=e9fd00f25859"></script>
+<script src="/demo/fixtures.js?v=5af5f5148a7f"></script>
+<script src="/demo/demo-api.js?v=5af5f5148a7f"></script>
 </head>
 <body>
 <header class="demo-bar">
@@ -81,10 +81,10 @@ addEventListener("unhandledrejection", e => __demoLog.errors.push(String(e.reaso
       <section class="view fill" id="v-monitoring" hidden>
         <aside class="cv-side" id="mon-side" aria-label="모니터링 목록"></aside>
         <div class="cv-head" id="mon-head"></div>
+        <aside class="mx-pane app-side" id="mx-pane" aria-label="메일함"></aside>
         <div class="chatbox"><div class="timeline" id="mon-timeline"><div class="tl-in" id="mon-tl"></div></div></div>
       </section>
       <section class="view fill" id="v-chat" hidden>
-        <div class="subs" hidden></div>
         <div class="todo" id="todo" hidden></div>
         <div class="chatbox">
           <div class="timeline" id="timeline"><div class="tl-in" id="tl"><div class="tl-top" id="tl-top" hidden><button class="btn text tl-more" id="tl-more" type="button" hidden>이전 메시지 더 보기</button></div></div></div>
@@ -165,6 +165,6 @@ addEventListener("unhandledrejection", e => __demoLog.errors.push(String(e.reaso
   </div>
   <div class="sh-body" id="hs-body"></div>
 </aside>
-<script src="/demo/app.js?v=e9fd00f25859"></script>
+<script src="/demo/app.js?v=5af5f5148a7f"></script>
 </body>
 </html>

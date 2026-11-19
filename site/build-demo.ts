@@ -37,7 +37,7 @@ const rewrite = (text: string) => scrubBundle(text.replaceAll('"/custom.js"', '"
 const css = rewrite(joined("css"));
 // The joined text is served by the gateway verbatim, so the demo needs no other surgery on it than rewrite: the same bundles run here.
 let js = rewrite(joined("js"));
-assertDemoViews(js, readFileSync(join(OUT, "index.html"), "utf8"));   // before anything is written: a failed build leaves the demo as it was
+assertDemoViews(js, readFileSync(join(OUT, "index.html"), "utf8"), source("index.html"));   // before anything is written: a failed build leaves the demo as it was
 const build = createHash("sha1").update(js).update(css).update(koCatalog).digest("hex").slice(0, 12);
 // WEB_BUILD goes after the "use strict" directive, which must stay the first statement (hub/webapp.ts does the same).
 js = js.replace('"use strict";', m => `${m}\nconst WEB_BUILD = "${build}";\n${koCatalog}`);
