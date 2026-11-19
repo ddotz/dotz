@@ -58,6 +58,8 @@ export const draftTextError = (text: string): string | undefined =>
 const textCode = (text: string): SendCode => (text.trim() ? "too_long" : "empty");
 const MAX_DRAFTS = 200;
 const ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+/** The shape of a draft code newCode() makes. */
+export const KAKAO_CODE = new RegExp(`^K[${ALPHABET}]{4}$`);
 
 const nowMs = (d: SendDeps) => (d.now ?? Date.now)();
 

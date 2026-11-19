@@ -19,7 +19,7 @@ import { dataDir, loadSettings, loadStyle, paths, recordCorrection, toneFile, va
 import { banWarnings, boxById } from "./box.ts";
 import { maybeRefine } from "./persona.ts";
 import { addPair, styleFrom, styleWithExamples } from "./pairs.ts";
-import { addDraft, claimFile, getDraft, listDrafts, newId, patchDraft, setStatus, type DraftRec } from "./store.ts";
+import { addRevision, claimFile, getDraft, listDrafts, newId, patchDraft, type RevisionConflict, setStatus, type DraftRec } from "./store.ts";
 import { realRunner, type Runner } from "./tone.ts";
 import { mailHash, mailView, type MailOf } from "./view.ts";
 import { reasonOf } from "../../../hub/reply-reasons.ts";
@@ -471,12 +471,21 @@ export async function reviseDraft(id: string, change: string, deps: FlowDeps, op
 	const notStaged = await restageForRevision(rec, change, deps, rev && r.files ? { rev, chosen: r.files } : undefined).catch(e => [(e as Error).message]);
 	// The change asked for other files and none came: the card says so instead of a rewritten body that only promises them.
 	if (rec.kind === "mail" && canAttach(rec.source) && fileChange().test(change) && heldAndWanted(rec) === before) rec.fileChangeMissed = stagedFiles(rec.id).map(f => f.name);
-	addDraft(rec);
+	const conflict = addRevision(rec, old.id);
+	if (conflict) {
+		for (let n = stagedFiles(rec.id).length; n > 0; n--) removeStagedFile(rec.id, n - 1);
+		return { ok: false, text: revisionRefused(id, conflict) };
+	}
 	// Learned only once the new draft is stored: a revise that failed teaches nothing.
 	const lesson = lessonOf(r, change);
 	if (lesson && opts.learn !== false) await recordLesson(toneKey(old), lesson, deps);
 	return { ok: true, text: askText(rec, [...r.warnings, ...banned, ...notStaged], "답장 초안을 고쳤어요"), id: rec.id, replaces: old.id, ...(lesson ? { lesson: { key: toneKey(old), line: lesson } } : {}) };
 }
+
+const revisionRefused = (id: string, c: RevisionConflict): string => {
+	const why = c.kind === "gone" ? `초안 ${id}이(가) 고치는 동안 사라졌어요` : c.kind === "closed" ? `초안 ${id}은(는) 고치는 동안 ${c.status} 상태가 되었어요` : `이 메일에 더 새 초안 ${c.id}이(가) 기다리고 있어요`;
+	return `${why}. 고친 초안은 저장하지 않았어요`;
+};
 
 export function dropDraft(id: string): Step {
 	const d = getDraft(id);

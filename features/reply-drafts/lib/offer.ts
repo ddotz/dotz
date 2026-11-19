@@ -292,11 +292,15 @@ async function offerOne(m: OfferMail, deps: OfferDeps, { body, history }: Reads,
 			if (missing.length) warnings.push(ruleFileMissing(missing));
 		} else warnings.push(...(await stageForReply(built.rec, flow).catch(notStaged)));
 		await settleDraft(built.rec, deps.run);
-		await deps.send(m.thread ? `th:${m.thread}` : m.target, askText(built.rec, warnings, m.headline));
 		addDraft(built.rec);
-		if (built.rec.wantFiles?.length) retryWanted(built.rec.id, flow.stage);
 		markDrafted(looked);
+		if (built.rec.wantFiles?.length) retryWanted(built.rec.id, flow.stage);
 		deps.suggest?.(m.key, { kind: "reply-draft", label: "답장 초안", ref: built.rec.id, ...(rule ? { rule: rule.name } : {}) });
+		try {
+			await deps.send(m.thread ? `th:${m.thread}` : m.target, askText(built.rec, warnings, m.headline));
+		} catch (e) {
+			log(`reply draft: card of draft ${built.rec.id} (mail ${m.key}) not posted, the draft waits in the queue: ${(e as Error).message}`);
+		}
 		// Where the time went, so a slow draft can be traced: queue wait, body read, identity sweep (first draft only), the draft model call and the rest.
 		log(`reply draft: mail ${m.key} offered in ${Date.now() - queued}ms (queue ${started - queued}, body ${read - started}, identity ${learned - read}, draft+files ${Date.now() - learned})`);
 		return "offered";

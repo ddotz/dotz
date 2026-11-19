@@ -77,15 +77,15 @@ test("automated senders, own address and an already drafted mail are skipped wit
 	expect(out.sent).toHaveLength(1);
 });
 
-test("a model skip, a failing model and a failing send never throw and leave no pending draft", async () => {
+test("a model skip and a failing model never throw and leave no draft; a failing card post keeps the stored draft waiting", async () => {
 	enable(env);
 	const out = sink();
 	expect(await offerMailDraft({ ...mailFixture, key: "s-1" }, { send: out.send, call: fakeModel([j({ action: "skip", reason: "newsletter" })]).call })).toBe("skipped");
 	const log = () => {};
 	expect(await offerMailDraft({ ...mailFixture, key: "s-2" }, { send: out.send, call: async () => Promise.reject(new Error("down")), log })).toBe("failed");
-	expect(await offerMailDraft({ ...mailFixture, key: "s-3" }, { send: () => Promise.reject(new Error("post failed")), call: fakeModel([j(goodReply)]).call, log })).toBe("failed");
+	expect(await offerMailDraft({ ...mailFixture, key: "s-3" }, { send: () => Promise.reject(new Error("post failed")), call: fakeModel([j(goodReply)]).call, log })).toBe("offered");
 	expect(out.sent).toEqual([]);
-	expect(listDrafts()).toEqual([]);
+	expect(listDrafts().map(d => [d.ref, d.status])).toEqual([["s-3", "pending"]]);
 });
 
 test("send refuses without a pick, with a pick for another id, and after 보내지 않기", async () => {

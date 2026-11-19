@@ -9,6 +9,7 @@ import { triggerFollowup } from "../followup.ts";
 import { commentOriginal } from "./original.ts";
 import { realEngine } from "./real.ts";
 import { POST_UNKNOWN } from "./recover.ts";
+import { COMMENT_CODE } from "./engine.ts";
 import { commentAdapter } from "./reply-adapter.ts";
 import { createCommentsWeb } from "./web.ts";
 
@@ -34,6 +35,8 @@ export const commentOriginalOf = (code: string) => commentOriginal(engine.store,
 export const commentNeeds = () => engine.needs();
 /** On boot: a reply left `sending` by the run that stopped ends unsure (recover.ts): only proof read back from the platform or the owner's own pick ends it. */
 export const commentSettleSending = (): number => engine.leaveUnsure();
+/** Every sweep: a reply left `sending` by a sender that is gone (older than the send CLI's limit, no live claim) ends unsure too. */
+export const commentSettleStale = (live: (draft: string) => boolean): number => engine.leaveUnsure({ live: r => live(r.draft) });
 export const commentProveSends = () => engine.proveSends();
 /** How the last send of comment draft `code` ended, when the store knows. */
 export function commentSendOutcome(code: string): Exclude<SendLook, { state: "alive" }> | undefined {
@@ -44,6 +47,8 @@ export function commentSendOutcome(code: string): Exclude<SendLook, { state: "al
 }
 export const commentDraftFacts = {
 	drafts: () => engine.store.drafts().map(d => ({ code: d.code, commentId: d.commentId, status: d.status, created: d.created })),
+	idShape: COMMENT_CODE,
+	intact: () => engine.store.draftsIntact(),
 	waiting: (commentId: string): boolean | undefined => {
 		const c = engine.store.comments().find(x => x.id === commentId);
 		return c ? engine.unreplied(c) : undefined;

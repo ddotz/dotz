@@ -86,7 +86,7 @@ import { placeMail } from "./routes-mailbox.ts";
 import { mailByKey, mailDraftBrief, mailByThread, mailRecords, mailTarget, migrateStoredMails, postMail, sentReplyRefs, setMailReadOut, setMailReply, setMailSuggest, storedBodyText, type MailDeps } from "./mail.ts";
 import { ownAddresses, ownAddressesFor, replyExpected } from "./mail-state.ts";
 import { offerMailDraft, requestMailDraft } from "../features/reply-drafts/lib/offer.ts";
-import { listDrafts } from "../features/reply-drafts/lib/store.ts";
+import { DRAFT_ID, draftStoreIntact, listDrafts, unlessUnreadable } from "../features/reply-drafts/lib/store.ts";
 import { readMailBody, zeleHistory } from "../features/reply-drafts/lib/senders.ts";
 import { installSentMail, realRunner, refreshPairs } from "../features/reply-drafts/lib/tone.ts";
 import { defaultCall } from "./reply-mail.ts";
@@ -177,7 +177,7 @@ tagStoredApps();
 const cardFilesChanged = () => void syncCardFiles();
 setAppLabelResolver(key => appEntries(DATA_DIR).find(e => e.key === key)?.label ?? key);
 // One answer for the notices and the approval queue: is the item behind this send-approval ref (in this conversation) already handled?
-const refHandled = (ref: string, conv: string) => draftHandled(ref, { mail: { drafts: draftHeads, record: mailByKey }, comment: commentDraftFacts, kakao: kakaoDraftFacts }, conv);
+const refHandled = (ref: string, conv: string) => draftHandled(ref, { mail: { drafts: draftHeads, record: mailByKey, idShape: DRAFT_ID, intact: draftStoreIntact }, comment: commentDraftFacts, kakao: kakaoDraftFacts }, conv);
 setDraftHandled((d, _n, ref) => refHandled(ref, d.to));
 setRefHandled(refHandled);
 // Mails that wait are checked against their real thread (zele or a plugin's mailThread, read-only): an answer sent from Gmail or another script makes the mail 답장함 and closes its cards
@@ -378,7 +378,8 @@ const mailDeps = (): MailDeps => ({
 });
 
 function classifyStoredMails(): void {
-	const n = migrateStoredMails(sentReplyRefs(listDrafts()));
+	const refs = unlessUnreadable(() => sentReplyRefs(listDrafts()), undefined, line => log(`mail: stored mails not classified: ${line}`));
+	const n = refs ? migrateStoredMails(refs) : 0;
 	if (n) log(`mail: ${n} stored mails classified`);
 }
 classifyStoredMails();

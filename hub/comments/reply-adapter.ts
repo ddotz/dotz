@@ -74,6 +74,7 @@ export function commentAdapter(engine: Engine): ReplyAdapter {
 		markSent: async ref => {
 			const r = engine.store.replies().filter(x => x.draft === ref).at(-1);
 			if (r?.state === "unsure") return done(engine.markPosted(r.id));
+			if (r?.state === "sending" && engine.markPosted(r.id).ok) return { ok: true };
 			if (draftOf(ref)?.status !== "pending") return { ok: false, reason: reasonOf("gone") };
 			engine.store.setDraftStatus(ref, "sent");
 			return { ok: true };

@@ -15,10 +15,11 @@ import { makeDraft } from "./make-draft.ts";
 import { buildPersonPrompt, personStats, type PersonStats } from "./person.ts";
 import { fetchMedia, mediaTarget, replySource, serveLocalFile } from "./media.ts";
 import { type AxStep, type Focus, sameText } from "./room.ts";
-import { createDraft, type Draft, listDrafts, newer, readDrafts, type SendMs } from "./send.ts";
+import { createDraft, type Draft, KAKAO_CODE, listDrafts, newer, readDrafts, type SendMs } from "./send.ts";
 import type { KakaoConfig, KakaoPaths, Room, Runner } from "./types.ts";
 import { chatView, clip, owedRooms, pendingRow, watchLists, withSummary } from "./web-shape.ts";
 import { json } from "../routes-util.ts";
+import { stateIntact } from "../statefile.ts";
 
 export type WebDeps = {
 	paths: KakaoPaths;
@@ -198,6 +199,8 @@ export function createKakaoWeb(deps: WebDeps) {
 	};
 	const draftFacts = {
 		drafts: async () => (await listDrafts({ paths, runner: deps.runner })).map(d => ({ code: d.code, chatId: d.chatId, status: d.status, created: d.created })),
+		idShape: KAKAO_CODE,
+		intact: () => stateIntact(paths.drafts),
 		waiting: async (chatId: string): Promise<boolean | undefined> => {
 			const config = readConfig(paths);
 			if (config?.enabled !== true || !(config.watch_chats ?? []).includes(chatId)) return undefined;

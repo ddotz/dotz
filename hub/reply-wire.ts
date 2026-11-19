@@ -8,11 +8,11 @@ import { cfg, DATA_DIR, log, now, writeAtomic } from "./config.ts";
 import { broadcast, emit } from "./events.ts";
 import { approvals, cardMoved, newMid, out, showSendOnCard } from "./outbound.ts";
 import { allNotices, markDraftSend, onDecision, openDraftCards, redrawDraftCards, repostDraftCard, setCardFingerprint, setStoredDraft, settleOpenDecision, stampDraftCard } from "./notices.ts";
-import { commentPostedOf, commentProveSends, commentReply, commentSendOutcome, commentSettleSending } from "./comments/gateway.ts";
+import { commentPostedOf, commentProveSends, commentReply, commentSendOutcome, commentSettleSending, commentSettleStale } from "./comments/gateway.ts";
 import { kakaoReply } from "./kakao/gateway.ts";
 import { linkedComment } from "./comments/linked.ts";
 import { isCommentPlace } from "./comments/reply-adapter.ts";
-import { claimFile, getDraft, mailAdapter, replyLearning } from "./reply-mail.ts";
+import { claimFile, getDraft, mailAdapter, replyLearning, unlessUnreadable } from "./reply-mail.ts";
 import { mailByKey } from "./mail.ts";
 import { claimHolder } from "./draft-claim.ts";
 import { approvalHash, createApprovalSender, MAY_HAVE_GONE_OUT, refOfQuestion, runCli, type SendAction, type SendJob, type SendLook, type SendResult, type SendTarget } from "./approval-send.ts";
@@ -46,7 +46,7 @@ setCardFingerprint(async ref => {
 // A mail send card must show its pending draft as stored, or it keeps no draft (hub/notices-rules.ts shownAsStored), with the recipient its send
 // will use: an address-less one takes the mail's sender (flow.ts withRecipient).
 setStoredDraft(ref => {
-	const m = getDraft(ref);
+	const m = unlessUnreadable(() => getDraft(ref), undefined, line => log(`approval card ${ref}: its stored draft is not known (${line})`));
 	if (m?.status !== "pending") return undefined;
 	const r = withRecipient(m);
 	return { to: r.to, body: r.body };
@@ -216,20 +216,23 @@ function settleUnsureCards(): void {
 		if (o?.state === "sent" || o?.state === "failed") sender.settle({ ref, conv: d.to, action: "send", title: n.title }, o.state, o.state === "failed" ? o.text : "");
 	}
 }
-/** Boot and every sweep after it: the sends the last run left are taken up (never re-run), unsure comments are read back and proof is asked for every unsure send. */
+function proveSends(): void {
+	void commentProveSends().then(
+		r => {
+			if (r.proved.length || r.errors.length) log(`comment read-back: proved ${r.proved.join(", ") || "none"}${r.errors.length ? `; not read: ${r.errors.join("; ")}` : ""}`);
+			settleUnsureCards();
+		},
+		e => log(`comment read-back failed: ${e instanceof Error ? e.message : String(e)}`),
+	);
+}
+/** Boot and every sweep after it: the sends the last run left are taken up (never re-run), unsure comments are read back and proof is asked for every unsure send; a comment reply whose sender died while running is left unsure. */
 export function settleSends(): void {
 	if (!sendsBooted) {
 		sendsBooted = true;
 		commentSettleSending();
 		sender.recover();
-		void commentProveSends().then(
-			r => {
-				if (r.proved.length || r.errors.length) log(`comment read-back: proved ${r.proved.join(", ") || "none"}${r.errors.length ? `; not read: ${r.errors.join("; ")}` : ""}`);
-				settleUnsureCards();
-			},
-			e => log(`comment read-back failed: ${e instanceof Error ? e.message : String(e)}`),
-		);
-	}
+		proveSends();
+	} else if (commentSettleStale(draft => claimHolder(claimFile(draft)) === "live")) proveSends();
 	sender.recheck();
 	settleUnsureCards();
 }

@@ -50,7 +50,7 @@ import { allNotices, markCardShown, markDraftPosted, onDecisionClosed, onDraftCa
 import { channelTitle, GENERIC_TITLES } from "./notices-lanes.ts";
 import { cardPointer, cardRef, cardTitle, CARDS_LEAD, closedCardText, createApprovalQueue, loadHeld, pendingCardsNote, splitDraftCards, withSendState } from "./approval-queue.ts";
 import { mailItemKey, mailKeyOfRef } from "./draft-handled.ts";
-import { draftHeads, listDrafts as listMailDrafts } from "../features/reply-drafts/lib/store.ts";
+import { draftHeads, listDrafts as listMailDrafts, unlessUnreadable } from "../features/reply-drafts/lib/store.ts";
 import { askText } from "../features/reply-drafts/lib/flow.ts";
 import { recheckAnswered } from "./watch-recheck.ts";
 import { route } from "./notify-route.ts";
@@ -374,11 +374,20 @@ export const convOfTarget = (target: string) => eventTarget(outEvent({ ts: "", k
 // Whether the item behind a card was handled elsewhere (hub/main.ts wires the apps' facts, as it does for notices.ts settleHandledDrafts).
 let refHandled: (ref: string, conv: string) => boolean | Promise<boolean> = () => false;
 export const setRefHandled = (fn: typeof refHandled): void => void (refHandled = fn);
+let itemOfDown = false;
 export const approvals = createApprovalQueue({
 	convOf: convOfTarget,
 	openRefs: openDraftRefs,
 	// The bot's `mail:<id>` card and the app's reply draft of that mail are one item.
-	itemOf: (conv, ref) => mailItemKey(ref, conv, draftHeads),
+	itemOf: (conv, ref) => {
+		const key = unlessUnreadable<string | undefined>(() => mailItemKey(ref, conv, draftHeads), undefined, line => {
+			if (!itemOfDown) log(`approval cards: the reply draft store cannot be read, cards are matched by their own refs until it can (${line})`);
+			itemOfDown = true;
+		});
+		if (key === undefined) return ref;
+		itemOfDown = false;
+		return key;
+	},
 	// A ref whose card is open in another conversation is handled there: a second copy (held here, or posted again) would ask twice.
 	handled: (ref, conv) => openDraftCards().some(c => c.ref === ref && c.to !== conv) || refHandled(ref, conv),
 	// A held card goes out with the text its store holds when it is released (hub/reply-actions.ts ask).

@@ -1,9 +1,11 @@
 // Drafts made by the feature: <DATA_DIR>/custom/reply-drafts/drafts.json = { drafts, keys }. `keys` remembers every mail key that
 // was already looked at (drafted or skipped) so a mail is never drafted twice, even after its draft is gone.
 import { randomBytes } from "node:crypto";
-import { readFileSync, statSync } from "node:fs";
+import { readFileSync, renameSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { withLock } from "../../../hub/file-lock.ts";
 import type { DraftBrief } from "../../../hub/mail-lines.ts";
+import { stateIntact } from "../../../hub/statefile.ts";
 import type { ReplyItem, ReplyKind } from "../../../hub/reply-draft.ts";
 import { paths, writeAtomic } from "./settings.ts";
 
@@ -55,27 +57,91 @@ export const claimFile = (id: string): string => join(dirname(paths.drafts()), "
 const MAX_DRAFTS = 200;
 const MAX_KEYS = 2000;
 const ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+/** The shape of a draft id newId() makes. */
+export const DRAFT_ID = new RegExp(`^R[${ALPHABET}]{6}$`);
 
 // The parsed file is kept while its identity (path, inode, mtime, size) is the same: every write is an atomic rename, so a write by the CLI in another
 // process changes the inode. Every public read hands out a copy of what it returns; `read()` (the write paths) works on a copy too.
 let cached: { id: string; file: File; heads?: readonly DraftHead[] } | undefined;
 
-function parsed(): File {
-	const path = paths.drafts();
+/** drafts.json exists but could not be read (EACCES, EMFILE, ...): no reader may take it for an empty store and no writer may write over it. */
+export class DraftStoreUnreadable extends Error {}
+
+/** `read()`, or `fallback` after one line to `note` when the store cannot be read (DraftStoreUnreadable); any other error is thrown. */
+export function unlessUnreadable<T>(read: () => T, fallback: T, note: (line: string) => void): T {
 	try {
-		const st = statSync(path);
-		const id = `${path}|${st.ino}|${st.mtimeMs}|${st.size}`;
-		if (cached?.id === id) return cached.file;
-		const raw = JSON.parse(readFileSync(path, "utf8"));
-		const file = { drafts: Array.isArray(raw?.drafts) ? raw.drafts : [], keys: Array.isArray(raw?.keys) ? raw.keys : [] };
-		cached = { id, file };
-		return file;
-	} catch {
-		cached = undefined;
-		return { drafts: [], keys: [] };
+		return read();
+	} catch (e) {
+		if (!(e instanceof DraftStoreUnreadable)) throw e;
+		note(e.message);
+		return fallback;
 	}
 }
+
+/** Whether the store can say a draft is gone: drafts.json is absent or parses and no quarantined copy (`drafts.json.corrupt-*`) lies beside it. Reads only. */
+export const draftStoreIntact = (): boolean => stateIntact(paths.drafts(), ".corrupt-");
+
+const empty = (): File => ({ drafts: [], keys: [] });
+const fileId = (path: string): string => {
+	const st = statSync(path);
+	return `${path}|${st.ino}|${st.mtimeMs}|${st.size}`;
+};
+
+function parsed(): File {
+	const path = paths.drafts();
+	let id: string, text: string;
+	try {
+		id = fileId(path);
+		if (cached?.id === id) return cached.file;
+		text = readFileSync(path, "utf8");
+	} catch (e) {
+		cached = undefined;
+		if ((e as NodeJS.ErrnoException).code === "ENOENT") return empty();
+		throw new DraftStoreUnreadable(`답장 초안 파일을 읽지 못했어요 (${path}): ${(e as Error).message}`);
+	}
+	let raw: { drafts?: unknown; keys?: unknown } | null;
+	try {
+		raw = JSON.parse(text);
+	} catch (e) {
+		cached = undefined;
+		return quarantined(path, id, e as Error);
+	}
+	const file = { drafts: Array.isArray(raw?.drafts) ? (raw.drafts as DraftRec[]) : [], keys: Array.isArray(raw?.keys) ? (raw.keys as string[]) : [] };
+	cached = { id, file };
+	return file;
+}
+
+function quarantined(path: string, id: string, why: Error): File {
+	const moveAside = () => {
+		let now: string;
+		try {
+			now = fileId(path);
+		} catch (e) {
+			if ((e as NodeJS.ErrnoException).code === "ENOENT") return;
+			throw e;
+		}
+		if (now !== id) return;
+		const moved = `${path}.corrupt-${Date.now()}`;
+		renameSync(path, moved);
+		console.error(`reply draft: ${path} did not parse (${why.message}); kept as ${moved}, the store starts empty`);
+	};
+	if (holding) moveAside();
+	else locked(moveAside);
+	return holding ? empty() : parsed();
+}
 const read = (): File => structuredClone(parsed());
+
+let holding = false;
+function locked<T>(fn: () => T): T {
+	return withLock(paths.drafts(), "답장 초안", () => {
+		holding = true;
+		try {
+			return fn();
+		} finally {
+			holding = false;
+		}
+	});
+}
 
 // Only closed drafts (sent, dropped, stale, answered) are trimmed, oldest first: a pending or held draft still has a card, so it always stays.
 // A key of a kept draft is never forgotten either (the mail would be drafted twice); other keys beyond MAX_KEYS go oldest first.
@@ -118,53 +184,89 @@ export const getDraft = (id: string): DraftRec | undefined => {
 export const isDrafted = (ref: string): boolean => parsed().keys.includes(ref);
 
 export function markDrafted(ref: string): void {
-	const f = read();
-	if (!f.keys.includes(ref)) write({ ...f, keys: [...f.keys, ref] });
+	locked(() => {
+		const f = read();
+		if (!f.keys.includes(ref)) write({ ...f, keys: [...f.keys, ref] });
+	});
 }
 
+const waiting = (d: DraftRec, ref: string) => d.ref === ref && (d.status === "pending" || d.status === "held");
 // A newer draft for the same mail makes every older pending (or held) one stale.
+function withDraft(f: File, rec: DraftRec): File {
+	const older = (d: DraftRec) => d.id === rec.replaces || d.created <= rec.created;
+	const newer = f.drafts.some(d => waiting(d, rec.ref) && !older(d));
+	for (const d of f.drafts) if (waiting(d, rec.ref) && older(d)) d.status = "stale";
+	return { drafts: [...f.drafts, newer ? { ...rec, status: "stale" } : rec], keys: f.keys.includes(rec.ref) ? f.keys : [...f.keys, rec.ref] };
+}
 export function addDraft(rec: DraftRec): void {
-	const f = read();
-	for (const d of f.drafts) if (d.ref === rec.ref && (d.status === "pending" || d.status === "held")) d.status = "stale";
-	write({ drafts: [...f.drafts, rec], keys: f.keys.includes(rec.ref) ? f.keys : [...f.keys, rec.ref] });
+	locked(() => write(withDraft(read(), rec)));
+}
+
+/** Why a revision of draft `id` is not stored: that draft is gone or left `pending` while the model worked, or a newer draft of its mail waits. */
+export type RevisionConflict = { kind: "gone" } | { kind: "closed"; status: DraftStatus } | { kind: "newer"; id: string };
+function revisionConflict(f: File, id: string): RevisionConflict | undefined {
+	const old = f.drafts.find(d => d.id === id);
+	if (!old) return { kind: "gone" };
+	if (old.status !== "pending") return { kind: "closed", status: old.status };
+	const newer = f.drafts.find(d => d.id !== id && waiting(d, old.ref) && d.created > old.created);
+	return newer && { kind: "newer", id: newer.id };
+}
+/** Stores `rec` as the revision of draft `id` unless a RevisionConflict stands, checked and written under the store's lock. */
+export function addRevision(rec: DraftRec, id: string): RevisionConflict | undefined {
+	return locked(() => {
+		const f = read();
+		const conflict = revisionConflict(f, id);
+		if (!conflict) write(withDraft(f, rec));
+		return conflict;
+	});
 }
 
 export function patchDraft(id: string, patch: Partial<Pick<DraftRec, "to" | "cc" | "mode" | "ownerRecipients" | "item" | "questions" | "body" | "wantFiles" | "editedFrom" | "subject">>): void {
-	const f = read();
-	write({ ...f, drafts: f.drafts.map(d => (d.id === id ? { ...d, ...patch } : d)) });
+	locked(() => {
+		const f = read();
+		write({ ...f, drafts: f.drafts.map(d => (d.id === id ? { ...d, ...patch } : d)) });
+	});
 }
 
 // 답장 안 해도 돼요 on a mail: its waiting drafts are kept aside (held), not dropped, so the undo can bring them back. Returns the held ids.
 export const holdDrafts = (ref: string): string[] => holdDraftsOf(new Set([ref]));
 export function holdDraftsOf(refs: ReadonlySet<string>): string[] {
-	const f = read();
-	const hit = f.drafts.filter(d => refs.has(d.ref) && d.status === "pending");
-	if (hit.length) write({ ...f, drafts: f.drafts.map(d => (hit.includes(d) ? { ...d, status: "held" as const } : d)) });
-	return hit.map(d => d.id);
+	return locked(() => {
+		const f = read();
+		const hit = f.drafts.filter(d => refs.has(d.ref) && d.status === "pending");
+		if (hit.length) write({ ...f, drafts: f.drafts.map(d => (hit.includes(d) ? { ...d, status: "held" as const } : d)) });
+		return hit.map(d => d.id);
+	});
 }
 
 // Its undo: the newest held draft of the mail waits for approval again (older held ones were already replaced by it: stale). Returns its id.
 export const restoreDrafts = (ref: string): string | undefined => restoreDraftsOf(new Set([ref]))[0];
 export function restoreDraftsOf(refs: ReadonlySet<string>): string[] {
-	const f = read();
-	const held = f.drafts.filter(d => refs.has(d.ref) && d.status === "held");
-	const newest = new Map<string, DraftRec>();
-	for (const d of held) { const a = newest.get(d.ref); if (!a || d.created >= a.created) newest.set(d.ref, d); }
-	if (!newest.size) return [];
-	const top = new Set(newest.values());
-	write({ ...f, drafts: f.drafts.map(d => (top.has(d) ? { ...d, status: "pending" as const } : held.includes(d) ? { ...d, status: "stale" as const } : d)) });
-	return [...top].map(d => d.id);
+	return locked(() => {
+		const f = read();
+		const held = f.drafts.filter(d => refs.has(d.ref) && d.status === "held");
+		const newest = new Map<string, DraftRec>();
+		for (const d of held) { const a = newest.get(d.ref); if (!a || d.created >= a.created) newest.set(d.ref, d); }
+		if (!newest.size) return [];
+		const top = new Set(newest.values());
+		write({ ...f, drafts: f.drafts.map(d => (top.has(d) ? { ...d, status: "pending" as const } : held.includes(d) ? { ...d, status: "stale" as const } : d)) });
+		return [...top].map(d => d.id);
+	});
 }
 
 // The mail was answered outside dotz: its waiting drafts (pending or held) are closed as answered. Returns their ids.
 export function answerDrafts(ref: string): string[] {
-	const f = read();
-	const hit = f.drafts.filter(d => d.ref === ref && (d.status === "pending" || d.status === "held"));
-	if (hit.length) write({ ...f, drafts: f.drafts.map(d => (hit.includes(d) ? { ...d, status: "answered" as const } : d)) });
-	return hit.map(d => d.id);
+	return locked(() => {
+		const f = read();
+		const hit = f.drafts.filter(d => waiting(d, ref));
+		if (hit.length) write({ ...f, drafts: f.drafts.map(d => (hit.includes(d) ? { ...d, status: "answered" as const } : d)) });
+		return hit.map(d => d.id);
+	});
 }
 
 export function setStatus(id: string, status: DraftStatus): void {
-	const f = read();
-	write({ ...f, drafts: f.drafts.map(d => (d.id === id ? { ...d, status } : d)) });
+	locked(() => {
+		const f = read();
+		write({ ...f, drafts: f.drafts.map(d => (d.id === id ? { ...d, status } : d)) });
+	});
 }

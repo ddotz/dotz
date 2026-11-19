@@ -2,7 +2,7 @@
 // shown one at a time, the same card again is not a second post, and closing the shown card brings the next one.
 import { afterAll, expect, spyOn, test } from "bun:test";
 import { realSetTimeout, realClearTimeout } from "./runtime/test-clock.ts";
-import { rmSync } from "node:fs";
+import { mkdirSync, rmSync } from "node:fs";
 import { type HubEvent, onEmit } from "./events.ts";
 import { draftApprovalBlock } from "./draft-approval.ts";
 import * as discord from "./discord.ts";
@@ -151,4 +151,21 @@ test("a card held in one conversation leaves the queue when the same draft is ca
 	expect(approvals.heldIn(b)).toEqual([]);
 	expect(openIn(b)).toEqual([]);
 	for (const n of openIn(a)) ignoreNotice(n.id);
+});
+
+test("a card is posted while the reply-draft store cannot be read: the queue takes the ref as its own item", async () => {
+	const conv = "mail:aq-unreadable";
+	const openIn = () => listNotices(500).items.filter((n: any) => n.decision?.state === "open" && n.decision.to === conv);
+	const shown: string[] = [];
+	onEmit(e => void (e.kind === "out" && e.target === conv && shown.push(cardRef(String(e.text)) ?? "")));
+	mkdirSync(paths.drafts(), { recursive: true });
+	try {
+		await out(conv, card("aq-unreadable-one"));
+		await out(conv, card("aq-unreadable-two"));
+		expect(shown).toEqual(["aq-unreadable-one"]);
+		expect(approvals.heldIn(conv).map(h => h.ref)).toEqual(["aq-unreadable-two"]);
+	} finally {
+		rmSync(paths.drafts(), { recursive: true, force: true });
+		for (const n of openIn()) ignoreNotice(n.id);
+	}
 });

@@ -4,7 +4,7 @@
 import { chmodSync, mkdirSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { log } from "../config.ts";
-import { readState } from "../statefile.ts";
+import { readState, stateIntact } from "../statefile.ts";
 import type { Comment, CommentsConfig, SourceConfig } from "./contract.ts";
 
 // "answered": the comment stopped waiting without this draft (the owner answered on the platform, it was deleted, 답장 안 함); see closedReason.
@@ -27,8 +27,8 @@ export type Reply = { id: string; commentId: string; source: string; thread: str
 	attempts?: number;
 	/** Why it is failed or unsure: a reason code of hub/reply-reasons.ts. */
 	code?: string };
-// `queue`: ids of new comments waiting for an auto-draft (engine.ts collect), left for the next run when one run's cap or budget is reached.
-export type Cursor = { cursor?: string; ranAt?: number; error?: string; queue?: string[] };
+/** `queue`: ids of new comments waiting for an auto-draft (engine.ts collect), left for the next run when one run's cap or budget is reached. `tries`: failed draft attempts per queued id (auto-queue.ts). */
+export type Cursor = { cursor?: string; ranAt?: number; error?: string; queue?: string[]; tries?: Record<string, number> };
 
 const MAX_COMMENTS = 3000;
 const MAX_DRAFTS = 300;
@@ -156,6 +156,7 @@ export function createStore(dir: string) {
 			writeAtomic(f("comments.json"), have.map(c => (c.source === source && c.thread === thread ? { ...c, postTitle: p.postTitle, ...(p.postLink ? { postLink: p.postLink } : {}), ...(p.thumb ? { thumb: p.thumb } : {}) } : c)));
 		},
 		drafts,
+		draftsIntact: () => stateIntact(f("drafts.json")),
 		putDraft: (d: Draft) => writeAtomic(f("drafts.json"), upsert(drafts(), d, "code", MAX_DRAFTS, x => x.status === "pending")),
 		patchDraft: (code: string, patch: Partial<Draft>) => writeAtomic(f("drafts.json"), drafts().map(d => (d.code === code ? { ...d, ...patch } : d))),
 		setDraftStatus: (code: string, status: DraftStatus) => writeAtomic(f("drafts.json"), drafts().map(d => (d.code === code ? { ...d, status } : d))),

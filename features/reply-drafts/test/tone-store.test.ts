@@ -10,7 +10,7 @@ import { learnKakaoRoom, type OwnerReader } from "../lib/kakao-tone.ts";
 import { offerMailDraft } from "../lib/offer.ts";
 import { readMailBody, sendWith } from "../lib/senders.ts";
 import { loadStyle, paths, recordCorrection, roomFile, toneFile, writeExamples } from "../lib/settings.ts";
-import { addDraft, getDraft } from "../lib/store.ts";
+import { addDraft, getDraft, listDrafts } from "../lib/store.ts";
 import { learnTone, zeleEnabled, type Runner } from "../lib/tone.ts";
 import { enable, fakeModel, goodReply, j, mailFixture, setupEnv } from "./helpers.ts";
 
@@ -212,13 +212,14 @@ test("sent mail is listed with --folder sent then read by id; readMailBody reads
 	expect(await readMailBody("zele", "m1", async () => ({ code: 1, stdout: "", stderr: "" }))).toBeUndefined();
 });
 
-test("an offer that fails logs the error and still returns failed; a body that cannot be read is logged too", async () => {
+test("an offer whose card post fails logs the error and keeps the stored draft; a body that cannot be read is logged too", async () => {
 	enable(env);
 	const logged: string[] = [];
 	const log = (line: string) => void logged.push(line);
 	const mail = { ...mailFixture, body: undefined };
 	const r = await offerMailDraft(mail, { send: () => Promise.reject(new Error("post failed")), call: fakeModel([j(goodReply)]).call, readBody: () => Promise.reject(new Error("zele down")), log });
-	expect(r).toBe("failed");
+	expect(r).toBe("offered");
+	expect(listDrafts().map(d => [d.ref, d.status])).toEqual([[mailFixture.key, "pending"]]);
 	expect(logged.some(l => l.includes("zele down"))).toBe(true);
 	expect(logged.some(l => l.includes("post failed") && l.includes(mailFixture.key))).toBe(true);
 });

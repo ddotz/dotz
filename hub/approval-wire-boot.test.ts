@@ -4,6 +4,7 @@ import { dirname, join } from "node:path";
 import { DATA_DIR } from "./config.ts";
 import { commentSettleSending } from "./comments/gateway.ts";
 import { commentsDir, createStore } from "./comments/store.ts";
+import { SEND_CLI_MS } from "./approval-send.ts";
 import { sender, settleSends } from "./approval-wire.ts";
 import { addDraft, claimFile, newId, setStatus } from "../features/reply-drafts/lib/store.ts";
 
@@ -43,4 +44,16 @@ test("a comment reply left sending by the run that stopped ends unsure, visible,
 	expect(commentSettleSending()).toBe(1);
 	expect(store.replies().find(r => r.id === "send:cm:a:1")).toMatchObject({ state: "unsure" });
 	expect(commentSettleSending()).toBe(0);
+});
+
+test("the periodic sweep leaves a comment reply whose sender died unsure and keeps a fresh sending one", () => {
+	settleSends();
+	const store = createStore(commentsDir(DATA_DIR));
+	const put = (id: string, at: number) => store.putReply({ id: `send:cm:a:${id}`, commentId: `cm:a:${id}`, source: "a", thread: "p", text: "답", state: "sending", at, draft: `D${id}`, via: "owner", collector: "x" });
+	put("stale", Date.now() - SEND_CLI_MS - 120_000);
+	put("fresh", Date.now() - 60_000);
+	settleSends();
+	const state = (id: string) => store.replies().find(r => r.id === `send:cm:a:${id}`)?.state;
+	expect(state("stale")).toBe("unsure");
+	expect(state("fresh")).toBe("sending");
 });

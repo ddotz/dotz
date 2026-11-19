@@ -2,6 +2,7 @@
 // the gate in contract.ts). Everything is injected (adapters, model, clock, tone, broadcast) so tests run without a network.
 import { editLesson, ownerLint, type ReplyStyle } from "../reply-draft.ts";
 import { absorbComments, mergeIgTwins } from "./absorb.ts";
+import { failAuto, leaveQueue } from "./auto-queue.ts";
 import { createDraftRun } from "./draft-run.ts";
 import { createSendRecovery } from "./recover.ts";
 import { type Comment, type CommentAdapter, dispatchReply, type GateResult, isUntitled, type Post, ruleAllows, type SourceConfig, type SourceKind, threadKey, watches } from "./contract.ts";
@@ -117,6 +118,15 @@ const SAMPLES = 5;
 const CONTEXT_COMMENTS = 6;
 const CLIP = 240;
 const BASE32 = "abcdefghjkmnpqrstvwxyz23456789";
+/** A new draft code, none of `taken`. */
+export function newCommentCode(taken: ReadonlySet<string>): string {
+	for (;;) {
+		const c = `D${Array.from({ length: 6 }, () => BASE32[Math.floor(Math.random() * BASE32.length)]).join("")}`;
+		if (!taken.has(c)) return c;
+	}
+}
+/** The shape of a draft code newCommentCode() makes. */
+export const COMMENT_CODE = new RegExp(`^D[${BASE32}]{6}$`);
 const clip = (s: string, n = CLIP) => s.replace(/\s+/g, " ").trim().slice(0, n);
 
 // Only comments that ever carried a mail are looked up: a thread list runs on every comment watched.
@@ -129,7 +139,8 @@ function threadMailCounts(replies: Reply[], drafts: Draft[], stateOf: (commentId
 	};
 }
 
-export type Step = { ok: true; draft: Draft } | { ok: false; reason: string };
+/** `permanent`: asking again changes nothing (comment gone or mine, source off, the model chose to skip). */
+export type Step = { ok: true; draft: Draft } | { ok: false; reason: string; permanent?: true };
 
 // The options MailLink.send gets: only what is set, so a plain send stays a plain call.
 const sendOpts = (o: { retry?: true; asIs?: true }): { asIs?: true; retry?: true } | undefined => (o.asIs || o.retry ? { ...(o.asIs ? { asIs: true as const } : {}), ...(o.retry ? { retry: true as const } : {}) } : undefined);
@@ -193,13 +204,7 @@ export function createEngine(deps: EngineDeps) {
 		const s = deps.style?.(src) ?? { rules: [], corrections: [], forbidden: [], samples: [] };
 		return { ...s, samples: s.samples.slice(0, SAMPLES) };
 	};
-	const code = (): string => {
-		const taken = new Set(store.drafts().map(d => d.code));
-		for (;;) {
-			const c = `D${Array.from({ length: 6 }, () => BASE32[Math.floor(Math.random() * BASE32.length)]).join("")}`;
-			if (!taken.has(c)) return c;
-		}
-	};
+	const code = (): string => newCommentCode(new Set(store.drafts().map(d => d.code)));
 
 	const run = createDraftRun({ deps, store, ownerOf, styleOf, contextOf, code, emit, mailView: d => mailView(d), mailPlanned: (c, src) => mailPlanned(c, src, !!deps.mail) });
 	const noMailChecked = (code: string) => checkNoMail({ store, emit, find, sourceOf, covered: mailCovered, mailOn: !!deps.mail }, code);
@@ -208,9 +213,9 @@ export function createEngine(deps: EngineDeps) {
 	function makeDraft(commentId: string): Promise<Step> {
 		const c = find(commentId);
 		const src = c && sourceOf(c.source);
-		if (!c || !src) return Promise.resolve({ ok: false, reason: "원댓글을 찾지 못했어요" });
-		if (!replyOn(src)) return Promise.resolve({ ok: false, reason: OFF_REASON });
-		if (c.mine) return Promise.resolve({ ok: false, reason: "내가 쓴 댓글에는 답글 초안을 만들지 않아요" });
+		if (!c || !src) return Promise.resolve({ ok: false, reason: "원댓글을 찾지 못했어요", permanent: true });
+		if (!replyOn(src)) return Promise.resolve({ ok: false, reason: OFF_REASON, permanent: true });
+		if (c.mine) return Promise.resolve({ ok: false, reason: "내가 쓴 댓글에는 답글 초안을 만들지 않아요", permanent: true });
 		return run(c, src).then(async (step): Promise<Step> => {
 			if (!step.ok) return step;
 			if (src.autoMail) await linkMail(step.draft.code);
@@ -479,7 +484,7 @@ export function createEngine(deps: EngineDeps) {
 				const wanted = src.autoDraft && replyOn(src) ? fresh.filter(c => c.at >= (src.autoSince ?? 0) && needsReply(c)).map(c => c.id) : [];
 				// Not capped: a waiting comment is never dropped silently. It is bounded anyway: only stored comments (MAX_COMMENTS) are queued, and a queue entry whose comment is gone or answered is settled without a model call.
 				const queue = [...new Set([...(prior.queue ?? []), ...wanted])];
-				store.setCursor(src.key, { cursor: res.cursor ?? prior.cursor, ranAt: deps.now(), ...(res.error ? { error: clip(res.error, 160) } : {}), ...(queue.length ? { queue } : {}) });
+				store.setCursor(src.key, { cursor: res.cursor ?? prior.cursor, ranAt: deps.now(), ...(res.error ? { error: clip(res.error, 160) } : {}), ...(queue.length ? { queue } : {}), ...(prior.tries ? { tries: prior.tries } : {}) });
 				if (res.error) out.errors[src.key] = clip(res.error, 160);
 			} catch (e) {
 				const reason = e instanceof Error ? clip(e.message, 160) : "읽지 못했어요";
@@ -501,26 +506,24 @@ export function createEngine(deps: EngineDeps) {
 		return out;
 	}
 
-	async function autoDrafts(src: SourceConfig, out: { drafted: Draft[]; sent: Reply[] }, late: () => boolean): Promise<void> {
+	async function autoDrafts(src: SourceConfig, out: { drafted: Draft[]; sent: Reply[]; errors: Record<string, string> }, late: () => boolean): Promise<void> {
 		if (!src.autoDraft || !replyOn(src)) return;
-		const done = (id: string) => {
-			const cur = store.cursors()[src.key] ?? {};
-			const queue = (cur.queue ?? []).filter(x => x !== id);
-			const { queue: _q, ...rest } = cur;
-			store.setCursor(src.key, { ...rest, ...(queue.length ? { queue } : {}) });
-		};
 		let made = 0;
 		for (const id of store.cursors()[src.key]?.queue ?? []) {
 			if (made >= MAX_AUTO_PER_RUN || late()) break;
 			const c = find(id);
 			if (!c || store.drafts().some(d => d.commentId === id) || !needsReply(c)) {
-				done(id);
+				leaveQueue(store, src.key, id);
 				continue;
 			}
 			made++;
 			const step = await makeDraft(c.id);
-			done(id);
-			if (!step.ok) continue;
+			if (!step.ok) {
+				if (step.permanent) leaveQueue(store, src.key, id);
+				else failAuto(store, src.key, id, step.reason, out.errors);
+				continue;
+			}
+			leaveQueue(store, src.key, id);
 			out.drafted.push(step.draft);
 			if (ruleAllows(src, c.text)) {
 				const r = send(step.draft.code, { by: "rule" });
@@ -771,6 +774,6 @@ export function createEngine(deps: EngineDeps) {
 	const idle = async () => {
 		while (pending.size) await Promise.all([...pending]);
 	};
-	return { store, ownerOf, ...createSendRecovery({ store, adapters: deps.adapters, onState: gate.onState }), collect, refreshPast: createPastRefresh(store, deps, ownerOf), reconcile, makeDraft, revise, edit, learned, drop, restore, retrySend, dismissSend, pendingDrafts, send, sendMailOnly, update, threads, threadView, markRead, addDraft, linkMail, mailView, mailMarkOf, needs, noReply, unreplied, tokenStats, posts, ownReplies, idle, needsReply };
+	return { store, ownerOf, ...createSendRecovery({ store, adapters: deps.adapters, onState: gate.onState, now: deps.now, inflight }), collect, refreshPast: createPastRefresh(store, deps, ownerOf), reconcile, makeDraft, revise, edit, learned, drop, restore, retrySend, dismissSend, pendingDrafts, send, sendMailOnly, update, threads, threadView, markRead, addDraft, linkMail, mailView, mailMarkOf, needs, noReply, unreplied, tokenStats, posts, ownReplies, idle, needsReply };
 }
 export type Engine = ReturnType<typeof createEngine>;

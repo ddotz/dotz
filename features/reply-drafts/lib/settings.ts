@@ -4,6 +4,7 @@
 import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
+import { withLock } from "../../../hub/file-lock.ts";
 import type { ReplyStyle } from "../../../hub/reply-draft.ts";
 
 export const dataDir = () => process.env.DOTZ_DIR ?? join(homedir(), ".dotz");
@@ -79,9 +80,11 @@ export function loadSettings(dir?: string): Settings {
 }
 
 export function saveSettings(patch: Partial<Settings>): Settings {
-	const { decided: _d, ...base } = { ...loadSettings(), ...patch };
-	writeAtomic(paths.config(), `${JSON.stringify(base, null, 2)}\n`, 0o644);
-	return { ...base, decided: true };
+	return withLock(paths.config(), "답장 설정", () => {
+		const { decided: _d, ...base } = { ...loadSettings(), ...patch };
+		writeAtomic(paths.config(), `${JSON.stringify(base, null, 2)}\n`, 0o644);
+		return { ...base, decided: true };
+	});
 }
 
 const readJson = (file: string): any => {
@@ -256,29 +259,35 @@ export function loadStyle(key: ToneKey): LoadedStyle {
 	return { identity, templates: narrowest(HEADINGS.templates), samples, samplesFrom, rules: unique([...merged(HEADINGS.rules, HEADINGS.learned, HEADINGS.profile), ...[install, app, room ?? ""].flatMap(md => unknownSections(md).flatMap(s => s.items))]), corrections: merged(HEADINGS.corrections), forbidden: merged(HEADINGS.forbidden) };
 }
 
+function editProfile(key: ToneKey | "install", edit: (md: string) => string): void {
+	const file = toneFile(key);
+	withLock(file, "말투", () => writeAtomic(file, edit(profile(key))));
+}
+
 // Writes into exactly that profile (a legacy style.md is carried over first when the mail profile is written for the first time).
 export function writeExamples(key: ToneKey | "install", examples: string[]): void {
-	writeAtomic(toneFile(key), setSection(profile(key), HEADINGS.samples, examples));
+	editProfile(key, md => setSection(md, HEADINGS.samples, examples));
 }
 
 // Replaces several sections of exactly that profile at once (every other section stays).
 export function writeSections(key: ToneKey | "install", sections: [heading: string, items: string[]][]): void {
-	writeAtomic(toneFile(key), sections.reduce((md, [heading, items]) => setSection(md, heading, items), profile(key)));
+	editProfile(key, md => sections.reduce((acc, [heading, items]) => setSection(acc, heading, items), md));
 }
 
 export const profileBullets = (key: ToneKey | "install", heading: string): string[] => bullets(profile(key), heading);
 
 export function writeIdentity(key: ToneKey | "install", lines: string[], templates?: string[]): void {
-	const md = setSection(profile(key), HEADINGS.identity, lines);
-	writeAtomic(toneFile(key), templates?.length ? setSection(md, HEADINGS.templates, templates) : md);
+	editProfile(key, md => {
+		const withIdentity = setSection(md, HEADINGS.identity, lines);
+		return templates?.length ? setSection(withIdentity, HEADINGS.templates, templates) : withIdentity;
+	});
 }
 export const templatesOf = (key: ToneKey | "install"): string[] => bullets(profile(key), HEADINGS.templates);
 
 // The user's change request, verbatim and dated, in the profile of the draft that was revised, so every later draft there follows it.
 export function recordCorrection(key: ToneKey, change: string, now: Date): void {
-	const md = profile(key);
 	const line = `${now.toISOString().slice(0, 10)}: ${change.replace(/\s+/g, " ").trim()}`;
-	writeAtomic(toneFile(key), setSection(md, HEADINGS.corrections, [...bullets(md, HEADINGS.corrections), line]));
+	editProfile(key, md => setSection(md, HEADINGS.corrections, [...bullets(md, HEADINGS.corrections), line]));
 }
 
 // Profile files that exist, relative to the tone dir (for `onboard.ts status`).
