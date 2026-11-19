@@ -7,11 +7,11 @@ const button = (name: string, onPress: () => void = () => {}) => ({ name: () => 
 // An element collection as JXA has it: called for its members, or asked for one attribute of all of them.
 const collection = (members: unknown[], attrs: Record<string, () => unknown[]>) => new Proxy(() => members, { get: (_t, k) => attrs[String(k)] });
 
-function chatWindow(title: string, opts: { self?: boolean; value?: string } = {}) {
+function chatWindow(title: string, opts: { members?: number; value?: string } = {}) {
 	const input = { value: () => opts.value ?? "", placeholderValue: () => "", focused: false };
 	const sheetList: object[] = [];
 	const buttons = collection([button("전송")], { name: () => ["전송"] });
-	const uiElements = collection([], { role: () => ["AXStaticText"], name: () => [opts.self ? "나와의 채팅" : ""], value: () => [""] });
+	const uiElements = collection([], { role: () => ["AXButton"], name: () => [opts.members ? `대화상대 ${opts.members}명` : "프로필"], value: () => [""] });
 	return { name: () => title, id: () => title, subrole: () => "AXStandardWindow", scrollAreas: () => [{ textAreas: () => [input] }], sheets: () => sheetList, buttons, uiElements, sheetList };
 }
 
@@ -22,7 +22,7 @@ function world(opts: { paste: (w: ReturnType<typeof scene>) => void; extra?: Ret
 }
 
 function scene(opts: { paste: (w: any) => void; extra?: ReturnType<typeof chatWindow>[]; self?: ReturnType<typeof chatWindow> }) {
-	const self = opts.self ?? chatWindow("나", { self: true });
+	const self = opts.self ?? chatWindow("나");
 	const main = { name: () => "카카오톡", id: () => "Main Window", subrole: () => "AXStandardWindow", scrollAreas: () => [], sheets: () => [], buttons: () => [] };
 	const windows: any[] = [main, self, ...(opts.extra ?? [])];
 	const log: string[] = [];
@@ -80,8 +80,8 @@ test("another chat window open refuses before the clipboard or the paste is touc
 	expect(s.pb.changeCount).toBe(1);
 });
 
-test("a window of the right title that does not show it is the 나와의 채팅 refuses", () => {
-	const s = world({ paste: () => {}, self: chatWindow("나") });
+test("a window of the right title that shows a member count (a group) refuses", () => {
+	const s = world({ paste: () => {}, self: chatWindow("나", { members: 3 }) });
 	expect(s.attach()).toMatchObject({ ok: false, why: "not_self" });
 	expect(s.log).toEqual([]);
 });

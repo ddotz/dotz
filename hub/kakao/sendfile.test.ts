@@ -63,11 +63,18 @@ test("a database room of the same name refuses before any window is opened", asy
 	expect(reqs).toEqual([]);
 });
 
-test("a closed list window is reported, not opened: KakaoTalk would come to the front", async () => {
-	const { runner, reqs } = fake(req => (req.action === "rows" ? { ok: false, step: "list", why: "no_list" } : window(req)));
-	const r = await sendFilesToSelf({ files: ["/x/a.png"], room, all: [room], messages: async () => [] }, deps(runner));
-	expect(r.ok).toBe(false);
-	expect(reqs.some(q => q.action === "openlist" || q.action === "attach")).toBe(false);
+test("a closed list window is opened from the menu once and the file still goes out", async () => {
+	const log: Msg[] = [me("10", 1)];
+	let listShown = false;
+	const { runner, reqs } = fake(req => {
+		if (req.action === "openlist") return (listShown = true), { ok: true, focus: { from: "Aside", took: true, restored: true } };
+		if (req.action === "rows" && !listShown) return { ok: false, step: "list", why: "no_list" };
+		if (req.action === "attach") log.push(me("11", 2));
+		return window(req);
+	});
+	const r = await sendFilesToSelf({ files: ["/x/a.png"], room, all: [room], messages: async n => log.slice(-n) }, deps(runner));
+	expect(r).toMatchObject({ ok: true, sent: 1 });
+	expect(reqs.filter(q => q.action === "openlist")).toHaveLength(1);
 });
 
 test("the owner's own open window with their text stays open", async () => {

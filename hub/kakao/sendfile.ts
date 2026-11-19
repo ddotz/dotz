@@ -97,7 +97,7 @@ export async function sendFilesToSelf(input: FileSendInput, deps: FileSendDeps):
 			} catch {
 				return fail(sent, "나와의 채팅을 읽지 못해서 보내지 않았어요");
 			}
-			const opened = await openRoom(input.room, input.all, deps.runner, { stayBehind: true, ...(hint >= 0 ? { hint } : {}) });
+			const opened = await openRoom(input.room, input.all, deps.runner, hint >= 0 ? { hint } : {});
 			// why carries how the room was opened (how=return|menu(reason)) and the step times, so a test send shows which way it went.
 			steps.push(`open:${opened.ok}:${opened.steps.map(s => `${s.step}=${s.ok}${s.why ? `(${s.why})` : ""}`).join(",")}`);
 			if (!opened.ok) return fail(sent, opened.reason);

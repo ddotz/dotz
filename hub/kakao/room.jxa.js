@@ -348,7 +348,7 @@ function batch(els, name) {
 	}
 }
 
-function facts(w, deep, budgetMs) {
+function facts(w, deep) {
 	var info = { title: attr(w, "name") };
 	var els = w.uiElements;
 	var roles = batch(els, "role");
@@ -362,10 +362,8 @@ function facts(w, deep, budgetMs) {
 	}
 	if (!deep || info.self) return info;
 	var seen = 0;
-	// `budgetMs` (the file send's gate): the walk ends at the words or at the budget; what it did not reach stays "not shown".
-	var end = budgetMs ? Date.now() + budgetMs : 0;
 	var done = function () {
-		return seen >= MAX_NODES || (end > 0 && (info.self === true || Date.now() > end));
+		return seen >= MAX_NODES;
 	};
 	var walk = function (el, depth) {
 		if (done() || depth > MAX_DEPTH) return;

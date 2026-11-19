@@ -4,12 +4,13 @@
 // KakaoTalk stays where it is: no activation, no frontmost, no AXRaise (the owner's rule, and a text send does the same). A paste it does not
 // answer in the background ends as no_dialog, never as a raised window.
 // The menu item reaches whatever KakaoTalk has focused, so selfGate runs right before the paste and again right before the press: the self
-// window must be the only chat window and must show the words 나와의 채팅. A press of the dialog is refused otherwise and the dialog cancelled.
+// window must be the only chat window and must show no member count. KakaoTalk 26.9 no longer shows the words 나와의 채팅 in that window
+// (measured 2026-11-19, 213 nodes walked), so the words cannot be required; sendfile.ts already refuses when another database room has the
+// self room's name, and openRoom checked the window title. A press of the dialog is refused otherwise and the dialog cancelled.
 // A new window that has a message input is another chat, never the dialog: its own 전송 would send what the owner typed there.
 // The owner's pasteboard is saved before and restored after, whatever happened, unless the owner copied something newer meanwhile. An input
 // holding the owner's text is never touched. Prints {ok:true, pressed:true} once the dialog closed after the press, or {ok:false, why,
 // pressed?, seen?}: seen names the windows and buttons that were there instead of the dialog. clipboard:false: not fully restored.
-var GATE_MS = 4000;
 
 function pasteMenuItem(proc) {
 	var bar = proc.menuBars[0].menuBarItems();
@@ -64,15 +65,14 @@ function press(el) {
 	}
 }
 
-// "" when the self window of `name` is the only chat window besides `dialogs` new windows and shows that it is the 나와의 채팅.
+// "" when the self window of `name` is the only chat window besides `dialogs` new windows and shows no member count (a group shows one).
 function selfGate(name, before, dialogs) {
 	var wins = chatWindows();
 	var kept = wins.filter(function (x) {
 		return before.indexOf(windowKey(x)) !== -1;
 	});
 	if (kept.length !== 1 || wins.length - kept.length !== dialogs || !sameTitle(attr(kept[0], "name"), name)) return "other_window";
-	var f = facts(kept[0], true, GATE_MS);
-	return f.self === true && !(f.members > 1) ? "" : "not_self";
+	return facts(kept[0], false).members > 1 ? "not_self" : "";
 }
 
 // A send button of a sheet of the chat window, or of a window that was not there before the paste and is not a chat.

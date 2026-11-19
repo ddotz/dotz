@@ -223,9 +223,8 @@ const DEEP_ROWS = 120;
 // Opens the one list row that is this database room and checks its window. `all` lists every database room (same-name detection). Nothing
 // is typed. `hint`: the row the database order predicts (the list is newest first); the scan starts there, so a room far down costs one row
 // read instead of hundreds. `deep`: scan without the hint and with the whole budget (the order assumption was wrong). The open phase (rows
-// read + row open) is capped at OPEN_CAP_MS; every outcome other than ok leaves no window of ours open. `stayBehind`: a closed list window is
-// reported instead of opened, because KakaoTalk comes to the front when it shows.
-export async function openRoom(room: RoomFact, all: RoomFact[], runner: Runner, opts: { deep?: boolean; hint?: number; memo?: number; stayBehind?: boolean; reuse?: FoundRow } = {}): Promise<Opened> {
+// read + row open) is capped at OPEN_CAP_MS; every outcome other than ok leaves no window of ours open.
+export async function openRoom(room: RoomFact, all: RoomFact[], runner: Runner, opts: { deep?: boolean; hint?: number; memo?: number; reuse?: FoundRow } = {}): Promise<Opened> {
 	const steps: AxStep[] = [];
 	const t0 = performance.now();
 	const left = () => cap - (performance.now() - t0);
@@ -256,7 +255,7 @@ export async function openRoom(room: RoomFact, all: RoomFact[], runner: Runner, 
 	let listed = opts.reuse ? { out: { ok: true, scanned: 1, stopped: "found", hits: [{ index: opts.reuse.row, texts: opts.reuse.texts }] } as Out, ms: 0, timedOut: false } : await call(runner, rowsReq, Math.min(left(), rowsCallMs));
 	// No list window (KakaoTalk runs from the menu bar): open it once through its menu 창 > 채팅. KakaoTalk then comes to the front for
 	// a moment; the app in front before is put back inside that call, and the change is kept on the send record.
-	if (listed.out.ok !== true && listed.out.why === "no_list" && opts.stayBehind !== true) {
+	if (listed.out.ok !== true && listed.out.why === "no_list") {
 		steps.push({ step: "rows", ms: listed.ms, ok: false, why: "no_list" });
 		const opening = await call(runner, { action: "openlist" }, Math.min(Math.max(1_500, left()), 4_000));
 		const f = opening.out.focus;
