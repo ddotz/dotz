@@ -116,7 +116,7 @@ if (feature === "auto-reply") {
 	artifacts.push("outbound-calls.log");
 	noExternalNetwork("after");
 	artifacts.push(...browser("browser-cold", autoReplyColdScript(browserRun, posted.target)));
-	note("cold: the mail conversation shows 보낸 답장 at 390 and 1280; 답장 대기 shows 기다리는 답장이 없어요 (the sent mail is not listed under 보낸 것 after a reload)");
+	note("cold: the mail conversation shows 보낸 답장 at 390 and 1280; 답장 대기 lists the sent mail (sender@example.invalid) under 보낸 것 after a reload");
 } else {
 	artifacts.push(...browser("browser-shell", appShellScript(browserRun)));
 	noExternalNetwork("after");
