@@ -5,7 +5,7 @@
 // by a plain claim, only by a caller that says the owner retried on purpose (`takeOver`). The claim holds the pid and that process's start time, so a pid the system gave
 // to another process does not count as the sender. No clock and no config import (the CLIs use it).
 import { execFileSync } from "node:child_process";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { closeSync, linkSync, mkdirSync, openSync, readFileSync, renameSync, rmSync, writeFileSync, writeSync } from "node:fs";
 import { dirname } from "node:path";
 
@@ -71,19 +71,28 @@ function contentOf(file: string): string | undefined {
 	}
 }
 
-function retireDead(file: string, dead: string, mine: string): boolean {
-	const lock = `${file}.takeover`;
+/** The takeover lock for one dead claim: named after what the dead claim holds, so takers of that one claim queue on it and a later claim gets its own. */
+export const takeoverLock = (file: string, dead: string): string => `${file}.takeover.${tagOf(dead)}`;
+const tagOf = (s: string): string => createHash("sha256").update(s).digest("hex").slice(0, 12);
+
+function enterLock(lock: string, passed: readonly string[] = []): string[] | undefined {
 	const tmp = `${lock}.${process.pid}.${randomUUID()}`;
 	writeFileSync(tmp, ownClaim(), { mode: 0o600 });
 	try {
 		linkSync(tmp, lock);
+		return [...passed, lock];
 	} catch (e) {
 		if ((e as NodeJS.ErrnoException).code !== "EEXIST") throw e;
-		if (claimHolder(lock) === "dead") rmSync(lock, { force: true });
-		return false;
 	} finally {
 		rmSync(tmp, { force: true });
 	}
+	const holder = contentOf(lock);
+	return holder !== undefined && holderOf(holder) === "dead" ? enterLock(`${lock}.${tagOf(holder)}`, [...passed, lock]) : undefined;
+}
+
+function retireDead(file: string, dead: string, mine: string): boolean {
+	const held = enterLock(takeoverLock(file, dead));
+	if (!held) return false;
 	try {
 		if (contentOf(file) !== dead) return false;
 		const next = `${file}.${process.pid}.${randomUUID()}.tmp`;
@@ -91,7 +100,7 @@ function retireDead(file: string, dead: string, mine: string): boolean {
 		renameSync(next, file);
 		return true;
 	} finally {
-		rmSync(lock, { force: true });
+		for (const lock of held) rmSync(lock, { force: true });
 	}
 }
 
