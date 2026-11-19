@@ -1699,8 +1699,8 @@ dotz 웹앱의 화면은 `web/js/03-screens.js`의 `SCREENS` 표에 한 줄씩 �
   - 다른 컴퓨터 방에서 초안이 없을 때 요청: 토스트 `다른 컴퓨터의 방에서는 초안을 만든 뒤에 고쳐 달라고 요청할 수 있어요`. 그 방에서는 `직접 보내기` 칩이 숨어요(`KK.pc`). 칩은 입력이 비었을 때도 숨어요.
   - 입력 내용은 방별로 보관해 방을 바꿔도 복원돼요.
   - 입력줄은 전송 중(`KK.sending`)이면 중복 전송을 막아요.
-- 데이터: `POST /api/kakao/chat/<id>/draft`(본문 `{intent}` 새 메시지, `{choice}` 선택, `{}` 자동), `POST /api/kakao/chat/<id>/send {text}`(직접 보내기), 초안 고치기는 `POST /api/reply/act`(revise). SSE `kakao_draft`(열린 방의 초안 완료, `e.error`가 있으면 토스트).
-- 근거: web/js/30-kakao.js `kkAskBot`, `kkSendDirect`, `kkSend`, `kkSendText`, `kkComposeMake`, `kkMakeDraft`, `kkPaintFoot`.
+- 데이터: `POST /api/kakao/chat/<id>/draft`(본문 `{intent}` 새 메시지, `{choice}` 선택, `{known: true}` 새 메시지 질문의 `아는 대로 써`, `{}` 자동), `POST /api/kakao/chat/<id>/send {text}`(직접 보내기), 초안 고치기는 `POST /api/reply/act`(revise). SSE `kakao_draft`(열린 방의 초안 완료, `e.error`가 있으면 토스트).
+- 근거: web/js/30-kakao.js `kkAskBot`, `kkSendDirect`, `kkSend`, `kkSendText`, `kkComposeMake`, `kkMakeDraft`, `kkDraftCall`(세 요청이 함께 쓰는 만드는 중 표시·120초 시간 초과·실패 토스트), `kkPaintFoot`.
 - css: web/css/17-kakao.css (`.kk-composer`, `.kk-send`, `.kk-dbtn`).
 
 ### 카카오톡 답장 초안 카드와 질문 카드
@@ -1708,11 +1708,12 @@ dotz 웹앱의 화면은 `web/js/03-screens.js`의 `SCREENS` 표에 한 줄씩 �
 - 구성: `#kk-drafts` 안에 (있으면) 질문 카드 `.kk-draft.kk-ask`, 만드는 중 표시 `.kk-mk`, 초안마다 공통 큐 카드(`rqItemCard(item, {bare:true})`: 머리·근거 원문 없이 본문, 여러 메시지면 메시지마다 한 덩이, 첨부 줄(`첨부 없음`), 동작 `보내기` `고치기` `보내지 않기`). 카드 영역은 화면 높이의 40%까지이고 넘으면 안에서 스크롤해요.
 - 기능:
   - 질문 카드: 제목 `답장 전에 골라 주세요`, 질문 글, 선택 버튼마다 `kkMakeDraft(choice)`, `직접 쓸게`(`POST /api/kakao/chat/<id>/ask/drop` 후 입력창 포커스).
+  - 새 메시지 요청의 질문 카드(`ask.kind`, `data-kind`): 재료가 없는 작성 요청(`author`)은 제목 `쓰기 전에 알려 주세요`, 질문 글, `아는 대로 써`(`kkDraftCall({known: true})`), `그만`(ask/drop). 메시지가 아닌 작업(`task`)은 제목 `메시지로 만들 수 없는 요청이에요`, 질문 글, 안내 `이건 메시지가 아니라 작업이에요. 채팅에서 땃쥐에게 시켜 주세요`(`.kk-dn`), `그만`만.
   - 초안 카드 동작은 모두 공통 큐(`raAct`): `보내기`(여러 메시지 초안은 한 번에), `고치기`(패널 `rqFixNodes`: 글을 직접 고치거나 AI에게 부탁할 내용을 적고 `반영`, 보내지 않아요. AI에게 부탁하면 새 초안이 오기 전까지 카드는 `고치는 중…`, 새 초안은 바뀐 낱말을 표시), `보내지 않기`, 되돌리기 시간, 실패와 확인 필요의 버튼.
 - 상태: 버튼은 처리 중 제자리에서 꺼지고 실패는 카드 안 한 줄로 남아요. 새 초안이 도착하면 카드 영역이 화면에 스크롤돼 들어와요. 큐가 아직 그 초안을 모르면 큐를 한 번 다시 읽고 다시 그려요(`KK.raMiss`).
-- 데이터: 방 응답 `drafts[]`(code, text, parts, created, intent), `ask`({question, choices}), `sends[]`(직접 보낸 메시지의 상태 말풍선); 카드는 공통 큐 항목(`ref` = 초안 code). 같은 초안은 답장 대기 목록에도 같은 카드로 나와요(`kakao_draft` 이벤트에서 `rqSoon`).
+- 데이터: 방 응답 `drafts[]`(code, text, parts, created, intent), `ask`({question, choices, kind?}; 새 메시지 질문은 `choices: []`와 `kind`), `sends[]`(직접 보낸 메시지의 상태 말풍선); 카드는 공통 큐 항목(`ref` = 초안 code). 같은 초안은 답장 대기 목록에도 같은 카드로 나와요(`kakao_draft` 이벤트에서 `rqSoon`).
 - 근거: web/js/30-kakao.js `kkItem`, `kkPaintFoot`, `kkAskCard`.
-- css: web/css/17-kakao.css (`.kk-draft`, `.kk-ask`, `.kk-dh`, `.kk-dt`, `.kk-choices`), web/css/15-reply-card.css (공용 카드).
+- css: web/css/17-kakao.css (`.kk-draft`, `.kk-ask`, `.kk-dh`, `.kk-dt`, `.kk-dn`, `.kk-choices`), web/css/15-reply-card.css (공용 카드).
 
 ### 카카오톡 실시간 갱신과 다른 컴퓨터 변형 (눈에 안 보이는 상태)
 - 목적: 화면 상태가 서버와 맞게 유지되는 규칙이에요.
