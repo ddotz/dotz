@@ -73,11 +73,11 @@ calendar; `bun add -g zele`, accounts through zele's own login). Tailscale on ma
 `tailscale` is not on PATH. A missing tool is skipped with a note; Aside is not asked on Linux.
 
 The wizard's first step is the harness: it lists OmO, omp, Claude Code and Codex with their install state, takes OmO
-by default (Codex is listed but has no adapter yet), installs OmO with bun when it is the pick and missing, and checks
+by default (Codex is listed but has no adapter yet), installs the pick when it is missing (OmO and omp with bun, Claude Code with its own installer `curl -fsSL https://claude.ai/install.sh | bash` into `~/.local/bin`), and checks
 the login without reading credentials (`omo auth check --json`: an account pool with at least one account counts as
 signed in; `claude auth status`; `omp auth export`, parsed in memory: a store with a credential counts as signed in). Sign-in itself
 happens in the harness (`omo`, then `/login`; another `/login` adds an account to the pool; `omp login`). The pick is written to `orchestrator.runtime` and `lanes.runtime`; `--answers` takes `runtime`
-(`omo` | `omp` | `claude`) and `install_harness: true` (OmO and omp install with bun; a harness that is not installed stops the run with
+(`omo` | `omp` | `claude`) and `install_harness: true` (each of the three installs as above, in the web onboarding too; a harness that is not installed stops the run with
 exit 1 before anything is written). With omp the default model is omp's own when the Anthropic default is not in `omp models --json`. Web access (`web.access`: `tailscale`, `cloudflare` or `local`) defaults to Tailscale only when the install has a Tailscale login; otherwise it starts on this computer only, and the gateway and Discord work either way. On Linux setup writes a systemd user unit (`~/.config/systemd/user/dotz-gateway.service`)
 instead of the launchd plist and skips the Aside and macOS-permission steps.
 

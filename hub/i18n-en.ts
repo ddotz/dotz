@@ -702,7 +702,7 @@ Do this, briefly:
 	},
 	// Texts the gateway sends to the web onboarding (firstrun/setup-*.ts): job rows, owner steps, errors. {name} marks a value filled in on the server.
 	setup: {
-		jobs: { "install-omo": "Install OmO", "install-omp": "Install omp", "aside-app": "Install the Aside app", "aside-cli": "Install the Aside CLI", tailscale: "Install Tailscale", zele: "Install the mail and calendar tool (zele)", "tailscale-start": "Open Tailscale", permissions: "macOS permissions", apply: "Save and apply" },
+		jobs: { "install-omo": "Install OmO", "install-omp": "Install omp", "install-claude": "Install Claude Code", "aside-app": "Install the Aside app", "aside-cli": "Install the Aside CLI", tailscale: "Install Tailscale", zele: "Install the mail and calendar tool (zele)", "tailscale-start": "Open Tailscale", permissions: "macOS permissions", apply: "Save and apply" },
 		terms: { "aside-login": "Aside sign-in", "zele-login": "Connect a mail and calendar account", "claude-login": "Claude Code sign-in", "omp-login": "omp sign-in" },
 		states: { done: "Done", skipped: "Not needed on this computer, skipped", failed: "Could not finish", running: "Working on it" },
 		steps: { secrets: "Saving secrets", tailnet: "Opening the web app on Tailscale", config: "Writing settings and identity", plugin: "Linked the omp plugin", permissions: "Checking macOS permissions", finish: "Finishing up" },

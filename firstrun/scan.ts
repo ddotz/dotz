@@ -19,7 +19,7 @@ export async function scanMachine() {
 	const harnesses = await Promise.all(
 		found.map(async d => {
 			const login = await loginOf(d.id, d.found.path);
-			return { id: d.id, label: d.label, adapter: d.adapter, installed: d.found.installed, version: d.found.version ?? "", login_checked: login.checked, login_ready: login.ready, accounts: login.accounts, install: d.install?.join(" ") ?? "" };
+			return { id: d.id, label: d.label, adapter: d.adapter, installed: d.found.installed, version: d.found.version ?? "", login_checked: login.checked, login_ready: login.ready, accounts: login.accounts, install: d.install ? d.installHint : "" };
 		}),
 	);
 	const tailscale = { installed: Boolean(ts.bin), running: ts.running, login: ts.login, host: ts.host };
@@ -33,6 +33,7 @@ export async function scanMachine() {
 		ready: {
 			"install-omo": harnesses.some(h => h.id === "omo" && h.installed),
 			"install-omp": harnesses.some(h => h.id === "omp" && h.installed),
+			"install-claude": harnesses.some(h => h.id === "claude" && h.installed),
 			"aside-app": !MAC || aside.app,
 			"aside-cli": !MAC || Boolean(aside.cli),
 			tailscale: tailscale.installed,

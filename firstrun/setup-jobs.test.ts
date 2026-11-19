@@ -1,7 +1,8 @@
 import { afterEach, expect, test } from "bun:test";
-import { chmodSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
-import { dirname } from "node:path";
-import { harness } from "../onboard/harness.ts";
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
+import { harness, installBinsOnPath } from "../onboard/harness.ts";
 import { DEFAULT_JOBS, isJobId, type JobIO } from "./setup-jobs.ts";
 import { setupText } from "./setup-state.ts";
 
@@ -34,4 +35,21 @@ test("install-omp fails with the install command for the owner when the install 
 	const silent = await DEFAULT_JOBS["install-omp"](jobIO(async () => true));
 	expect(silent.ok).toBe(false);
 	expect(silent.owner).toContain("omp (oh-my-pi)");
+});
+
+test("install-claude runs Claude Code's installer, and its ~/.local/bin lands on PATH so the fresh claude answers at once", async () => {
+	const home = mkdtempSync(join(tmpdir(), "claude-home-"));
+	const path = process.env.PATH;
+	try {
+		process.env.PATH = "/usr/bin:/bin";
+		await installBinsOnPath(home);
+		expect((process.env.PATH ?? "").split(":")).toContain(join(home, ".local", "bin"));
+		const ran: string[][] = [];
+		const failed = await DEFAULT_JOBS["install-claude"](jobIO(async cmd => (ran.push(cmd), false)));
+		expect(ran).toEqual([["bash", "-c", "curl -fsSL https://claude.ai/install.sh | bash"]]);
+		expect(failed.owner).toContain("curl -fsSL https://claude.ai/install.sh | bash");
+	} finally {
+		process.env.PATH = path;
+		rmSync(home, { recursive: true, force: true });
+	}
 });

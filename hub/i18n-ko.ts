@@ -686,7 +686,7 @@ export const ko: Catalog = {
 	},
 	// Texts the gateway sends to the web onboarding (firstrun/setup-*.ts): job rows, owner steps, errors. {name} marks a value filled in on the server.
 	setup: {
-		jobs: { "install-omo": "OmO 설치", "install-omp": "omp 설치", "aside-app": "Aside 앱 설치", "aside-cli": "Aside CLI 설치", tailscale: "Tailscale 설치", zele: "메일·일정 도구(zele) 설치", "tailscale-start": "Tailscale 열기", permissions: "macOS 권한", apply: "저장하고 적용" },
+		jobs: { "install-omo": "OmO 설치", "install-omp": "omp 설치", "install-claude": "Claude Code 설치", "aside-app": "Aside 앱 설치", "aside-cli": "Aside CLI 설치", tailscale: "Tailscale 설치", zele: "메일·일정 도구(zele) 설치", "tailscale-start": "Tailscale 열기", permissions: "macOS 권한", apply: "저장하고 적용" },
 		terms: { "aside-login": "Aside 로그인", "zele-login": "메일·일정 계정 연결", "claude-login": "Claude Code 로그인", "omp-login": "omp 로그인" },
 		states: { done: "끝났어요", skipped: "이 컴퓨터에서는 필요 없어서 넘어갔어요", failed: "끝내지 못했어요", running: "하는 중이에요" },
 		steps: { secrets: "비밀값을 저장하고 있어요", tailnet: "Tailscale로 웹 앱을 열고 있어요", config: "설정과 정체성을 쓰고 있어요", plugin: "omp 플러그인을 연결했어요", permissions: "macOS 권한을 확인하고 있어요", finish: "마무리하고 있어요" },

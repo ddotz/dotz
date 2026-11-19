@@ -14,7 +14,7 @@ import { asideState, installApp, installCli, loginCli, openApp } from "./onboard
 import { type Answers, type AccessMode, CHARACTERS, CONNECT_KEYS, type ConnectKey, cleanHostname, NOTICES, priorOf, selectorFor, SNOWFLAKE, stripExample, TONES, validateAnswers, type Identity } from "./firstrun/answers.ts";
 import { type Env, linkOmp, peerTokenFile, serveTailnet, tokenFile, writeConfig, writeSecrets } from "./firstrun/apply.ts";
 import { type ConnectTarget, type ConnectUI, connectAll, gatewayUp, switchAccess } from "./firstrun/connect.ts";
-import { defaultHarness, detectHarnesses, type Detected, harness, harnessHint } from "./onboard/harness.ts";
+import { defaultHarness, detectHarnesses, type Detected, harness, harnessHint, installBinsOnPath } from "./onboard/harness.ts";
 import { type LoginState, loginOf } from "./hub/runtime/login.ts";
 import { runtimeModels, validateWithModels } from "./firstrun/models.ts";
 import { checkPermissions, printPermissions, requestPermissions } from "./onboard/permissions.ts";
@@ -152,11 +152,6 @@ async function prepareZele(autoInstall = false): Promise<void> {
 	if (!FANCY && !accounts.length) console.log("zele 계정이 없어요: zele login 으로 연결하면 게이트웨이가 다음 재시작부터 메일·일정을 봐요.");
 }
 
-async function refreshBunPath(): Promise<void> {
-	const freshBunGlobalBin = (await Bun.$`bun pm bin -g`.nothrow().quiet()).stdout.toString().trim();
-	if (freshBunGlobalBin && !(process.env.PATH ?? "").split(":").includes(freshBunGlobalBin)) process.env.PATH = `${freshBunGlobalBin}:${process.env.PATH ?? ""}`;
-}
-
 function reportHarness(d: Detected, login: LoginState): void {
 	const pool = d.accountPoolHint && login.checked && login.ready ? ` ${d.accountPoolHint}` : "";
 	const text = `하네스: ${d.label} ${d.found.version ?? ""} (${d.found.path})${login.checked ? (login.ready ? `, 로그인된 계정 ${login.accounts}개.` : `, 로그인 필요: ${d.loginHint}`) : `. 로그인이 안 돼 있으면: ${d.loginHint}`}`;
@@ -185,7 +180,7 @@ async function chooseHarness(wanted?: string): Promise<string> {
 			if (d.install && (await yesNo(`${d.label} 가 없어요. 지금 설치할까요?`))) {
 				out.dim(d.installHint);
 				await installQuiet(d.label, d.install);
-				await refreshBunPath();
+				await installBinsOnPath(HOME);
 				d = (await detectHarnesses()).find(x => x.id === id) as Detected;
 			}
 			if (!d.found.installed) {
@@ -210,7 +205,7 @@ async function ensureHarness(id: string, autoInstall: boolean): Promise<void> {
 	let d = (await detectHarnesses()).find(x => x.id === id) as Detected;
 	if (!d.found.installed && autoInstall && d.install) {
 		await installQuiet(d.label, d.install);
-		await refreshBunPath();
+		await installBinsOnPath(HOME);
 		d = (await detectHarnesses()).find(x => x.id === id) as Detected;
 	}
 	if (!d.found.installed) {
@@ -281,7 +276,7 @@ async function interactive(): Promise<Partial<Answers>> {
 	let guild: string = prior.discord?.guild ?? "";
 	let owner_id: string = prior.discord?.owner_id ?? "";
 	if (aside?.cli) {
-		if (await yesNo("메신저에서도 대화할까요? (아니요면 웹·터미널만)", false)) connect = await pickMany({ message: "어디서 대화할까요?", options: hinted(MESSENGERS) });
+		if (await yesNo("메신저에서도 대화할까요? (아니요면 웹·터미널만)", false)) connect = await pickMany({ message: "어디서 대화할까요?", options: MESSENGERS });
 	} else {
 		out.warn("Aside CLI 가 없어서 메신저 자동 연결은 못 해요. 슬랙·텔레그램·잔디는 설정 > 메신저 > 직접 입력 으로 연결해요.");
 		if (existsSync(TOKEN_FILE)) out.info("저장된 디스코드 봇 토큰을 그대로 써요.");

@@ -72,7 +72,6 @@ export function stepHeader(n: number, total: number, title: string, why: string)
 }
 
 const KEYS_PICK = "↑↓ 이동 · Enter 확인";
-const KEYS_MANY = "↑↓ 이동 · Space 선택 · Enter 확인";
 
 export type Choice<T extends string> = { value: T; label: string; hint?: string; disabled?: boolean };
 
@@ -84,9 +83,18 @@ export async function pick<T extends string>(o: { message: string; options: Choi
 	return must(await p.select<T>({ message: `${o.message}  ${dim(KEYS_PICK)}`, options: o.options as p.Option<T>[], initialValue: o.initial, showInstructions: false, maxItems: 9 }));
 }
 
-/** Any number of choices, none included. */
-export async function pickMany<T extends string>(o: { message: string; options: Choice<T>[]; initial?: T[] }): Promise<T[]> {
-	return must(await p.multiselect<T>({ message: `${o.message}  ${dim(KEYS_MANY)}`, options: o.options as p.Option<T>[], initialValues: o.initial, required: false, showInstructions: false }));
+/** One or more choices, picked one at a time: the first pick is required, then "다 골랐어요" ends the list. */
+export async function pickMany<T extends string>(o: { message: string; options: Choice<T>[] }): Promise<T[]> {
+	const chosen: T[] = [];
+	for (;;) {
+		const left = o.options.filter(c => !chosen.includes(c.value));
+		if (!left.length) return chosen;
+		const names = o.options.filter(c => chosen.includes(c.value)).map(c => c.label).join(", ");
+		const options: Choice<T | "">[] = chosen.length ? [{ value: "", label: "다 골랐어요" }, ...hinted(left)] : hinted(left);
+		const next = await pick<T | "">({ message: chosen.length ? `더 고를까요? (고른 곳: ${names})` : o.message, options });
+		if (!next) return chosen;
+		chosen.push(next);
+	}
 }
 
 /** A yes/no question; `labels` renames the two answers (for "done" / "later" style pauses). */

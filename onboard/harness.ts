@@ -5,6 +5,8 @@
 import { detectBinary } from "../hub/runtime/detect.ts";
 import type { LoginState } from "../hub/runtime/login.ts";
 import type { DetectResult } from "../hub/runtime/types.ts";
+import { homedir } from "node:os";
+import { join } from "node:path";
 
 type HarnessId = "omo" | "omp" | "claude" | "codex";
 export type Harness = {
@@ -38,7 +40,7 @@ export const HARNESSES: Harness[] = [
 		installHint: "bun add -g @oh-my-pi/pi-coding-agent",
 		loginHint: "터미널에서 omp login 을 실행해 로그인해요.",
 	},
-	{ id: "claude", label: "Claude Code", bin: process.env.DOTZ_CLAUDE ?? "claude", adapter: true, installHint: "curl -fsSL https://claude.ai/install.sh | bash", loginHint: "터미널에서 claude auth login 을 실행해 로그인해요." },
+	{ id: "claude", label: "Claude Code", bin: process.env.DOTZ_CLAUDE ?? "claude", adapter: true, install: ["bash", "-c", "curl -fsSL https://claude.ai/install.sh | bash"], installHint: "curl -fsSL https://claude.ai/install.sh | bash", loginHint: "터미널에서 claude auth login 을 실행해 로그인해요." },
 	{ id: "codex", label: "Codex", bin: process.env.DOTZ_CODEX ?? "codex", adapter: false, installHint: "dotz 는 아직 Codex 로 돌릴 수 없어요", loginHint: "" },
 ];
 
@@ -54,6 +56,14 @@ export async function detectHarnesses(): Promise<Detected[]> {
 export async function harnessInstalled(id: string): Promise<boolean> {
 	const h = harness(id);
 	return h ? (await detectBinary(h.bin)).installed : false;
+}
+
+/** Puts the folders the harness installers write to (bun's global bin, ~/.local/bin for Claude Code's installer) on this process's PATH, so a fresh install answers at once. */
+export async function installBinsOnPath(home = homedir()): Promise<void> {
+	const bunBin = (await Bun.$`bun pm bin -g`.nothrow().quiet()).stdout.toString().trim();
+	const path = (process.env.PATH ?? "").split(":");
+	const add = [bunBin, join(home, ".local", "bin")].filter(d => d && !path.includes(d));
+	if (add.length) process.env.PATH = [...add, ...path].join(":");
 }
 
 /** The harness the wizard offers as Enter: the one config.json already names (when dotz can run it), else OmO when installed, else the first installed adapter, else OmO. */
