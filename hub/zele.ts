@@ -36,7 +36,11 @@ const POLL_MS = Math.max(60, Number(zcfg.poll_sec ?? DEFAULTS.zele_poll_sec)) * 
 // With no account yet, look again after this long.
 export const NO_ACCOUNT_RETRY_MS = 600_000;
 // `zele.accounts` in config.json: the addresses dotz watches. Missing or empty = every account zele is logged in to. Read at start like its siblings.
-const wanted = (): string[] => (Array.isArray(cfg.zele?.accounts) ? cfg.zele.accounts : []).filter((a): a is string => typeof a === "string").map(a => a.trim()).filter(Boolean);
+// `zele.calendar_accounts`: the addresses the calendar is read from, when they differ from the mail ones (mail on an IMAP account, which has no
+// calendar, and the calendar on a Google one). Missing or empty = the same accounts as mail.
+const addresses = (v: unknown): string[] => (Array.isArray(v) ? v : []).filter((a): a is string => typeof a === "string").map(a => a.trim()).filter(Boolean);
+const wanted = (): string[] => addresses(cfg.zele?.accounts);
+const wantedCalendar = (): string[] => addresses(cfg.zele?.calendar_accounts);
 const sameAddress = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
 /** The logged-in accounts a non-empty list names (the CLI's own spelling), the listed addresses it is not logged into, and `none` = a list was set and nothing in it is logged in. */
 export function resolveWatch(logged: readonly string[], list: readonly string[]): { watch: string[]; missing: string[]; none: boolean } {
@@ -45,11 +49,14 @@ export function resolveWatch(logged: readonly string[], list: readonly string[])
 	return { watch, missing: list.filter(w => !logged.some(a => sameAddress(a, w))), none: !watch.length };
 }
 let watching: string[] = [];
+let calendarWatching: string[] = [];
 /** The accounts every list call is limited to; empty = no limit. With a list set it is never empty-as-all: before start resolves it, the listed addresses stand in. */
 export const watchList = (): string[] => {
 	const list = wanted();
 	return list.length ? (watching.length ? watching : list) : [];
 };
+/** The accounts `zele.calendar_accounts` names, resolved at start (as listed before); empty when it is not set. */
+const calendarList = (): string[] => (calendarWatching.length ? calendarWatching : wantedCalendar());
 const accountFlags = (accounts: readonly string[]): string[] => accounts.flatMap(a => ["--account", a]);
 export const watchFlags = (): string[] => accountFlags(watchList());
 const BRIEF_HOUR = Number(zcfg.brief_hour ?? DEFAULTS.zele_brief_hour);
@@ -119,9 +126,9 @@ const calendar = (list: (args: string[]) => Promise<Item[]>, args: string[], non
 // The morning brief's turn. Its shape is what the web draws as a briefing card (web/js/11-resultcard.js hcBriefParse): two or more
 // `- HH:MM title` rows under a short heading, set apart by blank lines, and a mail count line ("메일 N통"). Without a calendar there is
 // nothing to say about the day's events, so the calendar is not mentioned at all.
-export function briefPrompt(today: string, only_: string, hasCalendar: boolean): string {
+export function briefPrompt(today: string, only_: string, cal_: string, hasCalendar: boolean): string {
 	const cal = hasCalendar
-		? `today's calendar (zele cal events --today --all${only_}): a short heading line "오늘 일정 N개", then one "- HH:MM title" line per event, a blank line before and after them; `
+		? `today's calendar (zele cal events --today --all${cal_}): a short heading line "오늘 일정 N개", then one "- HH:MM title" line per event, a blank line before and after them; `
 		: "";
 	const skip = hasCalendar ? "" : " This account has no calendar: do not mention the calendar or events.";
 	return `morning brief for ${today}, in this shape: one opening sentence naming it 아침 브리핑; ${cal}the unread mail that matters (zele mail list --filter "is:unread newer_than:1d"${only_}) as one count line ("새 메일 N통, 답장할 메일 N통이에요.") and at most three short "- " lines for the mail that needs the owner. Short, no bold headings.${skip} Skip if there is nothing.`;
@@ -241,13 +248,17 @@ const newMail = (m: Item): NewMail => ({ id: String(m.id), message: stampOf(m), 
 // A thank-you the other side sends after the owner's reply is read from the thread and not posted: it needs no draft and no conversation.
 // A thread that cannot be read is posted, so a failure only makes the watch louder.
 // `only`: the accounts every list call is limited to (`--account`, repeatable); none = all of them. With one account the CLI may leave `account` out of its list, so it is filled in.
-export async function tick(h: Hooks, now = new Date(), list: (args: string[]) => Promise<Item[]> = zele, read: (id: string, account: string) => Promise<string> = zeleRead, only: readonly string[] = watchList()): Promise<void> {
+// `calOnly`: the same for the calendar calls (`zele.calendar_accounts`, else `only`).
+export async function tick(h: Hooks, now = new Date(), list: (args: string[]) => Promise<Item[]> = zele, read: (id: string, account: string) => Promise<string> = zeleRead, only: readonly string[] = watchList(), calOnly: readonly string[] = calendarList().length ? calendarList() : only): Promise<void> {
 	const s = load();
 	// A state recorded for another set of accounts (the list changed) makes this run a first run: what it lists is recorded with no notices, so a newly
-	// watched account's recent mail is not posted all at once, and the events of an account no longer watched are forgotten, not reported as cancelled.
-	const watch = only.map(a => a.toLowerCase()).sort().join(",");
+	// watched account's recent mail is not posted all at once, the events of a newly read calendar are not each reported as new, and the events of an
+	// account no longer watched are forgotten, not reported as cancelled.
+	const key = (xs: readonly string[]) => xs.map(a => a.toLowerCase()).sort().join(",");
+	const watch = key(only) + (key(calOnly) === key(only) ? "" : ` cal:${key(calOnly)}`);
 	if ((s.watch ?? "") !== watch) Object.assign(s, { seeded: false, events: {}, soon: [], watch });
 	const flags = accountFlags(only);
+	const calFlags = accountFlags(calOnly);
 	const named = (m: Item): Item => (only.length === 1 && !m.account ? { ...m, account: only[0] } : m);
 	const mail = (await list(["mail", "list", "--filter", "newer_than:2d", "--limit", "60", ...flags])).map(named);
 	const sent = (await list(["mail", "list", "--folder", "sent", "--filter", "newer_than:2d", "--limit", "40", ...flags]).catch(error => (log(`zele: sent folder not read: ${(error as Error).message}`), [] as Item[]))).map(named);
@@ -299,7 +310,7 @@ export async function tick(h: Hooks, now = new Date(), list: (args: string[]) =>
 
 	let hasCalendar = true;
 	const noCalendar = () => void (hasCalendar = false);
-	const upcoming = (await calendar(list, ["cal", "events", "--days", "14", "--all", "--limit", "100", ...flags], noCalendar)).filter(ev => !isHoliday(ev));
+	const upcoming = (await calendar(list, ["cal", "events", "--days", "14", "--all", "--limit", "100", ...calFlags], noCalendar)).filter(ev => !isHoliday(ev));
 	const current = new Map(upcoming.map(ev => [String(ev.id), seen(ev)]));
 	for (const [id, e] of Object.entries(s.events)) if (!current.has(id) && !e.summary) delete s.events[id];
 	const vanished = Object.entries(s.events).filter(([id]) => !current.has(id));
@@ -321,11 +332,11 @@ export async function tick(h: Hooks, now = new Date(), list: (args: string[]) =>
 	// A vanished event is cancelled only if zele no longer finds it; otherwise it moved out of the 14-day window or
 	// passed, and it is simply forgotten.
 	for (const [id, e] of vanished) {
-		if (s.seeded && !(await stillThere(id, flags))) h.alert(`일정 취소: ${whenSeen(e)} · ${e.summary}`);
+		if (s.seeded && !(await stillThere(id, calFlags))) h.alert(`일정 취소: ${whenSeen(e)} · ${e.summary}`);
 		delete s.events[id];
 	}
 
-	const soon = await calendar(list, ["cal", "events", "--from", now.toISOString(), "--to", "+45m", "--all", ...flags], noCalendar);
+	const soon = await calendar(list, ["cal", "events", "--from", now.toISOString(), "--to", "+45m", "--all", ...calFlags], noCalendar);
 	for (const ev of soon) {
 		const key = `${ev.id}:${ev.start}`;
 		if (s.soon.includes(key)) continue;
@@ -337,7 +348,8 @@ export async function tick(h: Hooks, now = new Date(), list: (args: string[]) =>
 	if (s.seeded && now.getHours() >= BRIEF_HOUR && s.briefDate !== today) {
 		s.briefDate = today;
 		const only_ = flags.length ? ` ${flags.join(" ")}` : "";
-		h.brief(briefPrompt(today, only_, hasCalendar));
+		const cal_ = calFlags.length ? ` ${calFlags.join(" ")}` : "";
+		h.brief(briefPrompt(today, only_, cal_, hasCalendar));
 	}
 	if (!s.seeded) log(`zele: first run recorded ${mail.length} mails, ${upcoming.length} events (no notices)`);
 	s.seeded = true;
@@ -363,7 +375,10 @@ export async function startZele(h: Hooks): Promise<void> {
 	setOwnAddresses("zele", accounts);
 	h.accounts?.(accounts);
 	watching = watch;
-	log(`zele: watching ${(watch.length ? watch : accounts).join(", ")} every ${POLL_MS / 1000}s`);
+	const cal = resolveWatch(accounts, wantedCalendar());
+	for (const a of cal.missing) if (!said.has(a.toLowerCase())) (said.add(a.toLowerCase()), log(`zele: ${a} in zele.calendar_accounts is not logged in (zele login), ignored`));
+	calendarWatching = cal.watch;
+	log(`zele: watching ${(watch.length ? watch : accounts).join(", ")} every ${POLL_MS / 1000}s${cal.watch.length ? `, calendar from ${cal.watch.join(", ")}` : ""}`);
 	let fails = 0;
 	const loop = async () => {
 		try {
