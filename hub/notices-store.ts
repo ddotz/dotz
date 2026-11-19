@@ -9,6 +9,7 @@ import { FILLER_QUESTIONS } from "./choices.ts";
 import { alertMatter, quietAlert } from "./alert-gate.ts";
 import { eventTarget, isPeerMessage, type HubEvent } from "./events.ts";
 import { classOfNotice } from "./notice-class.ts";
+import { kindOf, NOTICE_KINDS, type NoticeKindName } from "./notice-kinds.ts";
 import { dropClaim, isSilent, parkedTone } from "./tone.ts";
 import { describeOutput, humanLabel, isIssue, itemRefOf, LOGIN_BLOCKED_KO, matchItems, matchTitle, PROVIDER_BACK_KO, scheduleLine, sentinelMatch, watchLine, watchReasonKo } from "./watchtext.ts";
 import { resolveItem, type WatchItem } from "./watchitem.ts";
@@ -81,7 +82,7 @@ function trim(): void {
 }
 
 // `repeat`: overwrites the alert it repeats (alert-gate), `fold`: a monitor report that joins the watch's newest row; both keep the old text in `repeats`.
-type Input = { kind: NoticeKind; tone: NoticeTone; title: string; text: string; open: string; files?: ResultFile[]; links?: ResultLink[]; key?: string; watch?: string; by?: string; ref?: string; item?: WatchItem; read?: boolean; unread?: boolean; src?: string; at?: string; msg?: string; repeat?: boolean; fold?: boolean; wk?: string; wst?: string };
+type Input = { kind: NoticeKind; tone: NoticeTone; title: string; text: string; open: string; files?: ResultFile[]; links?: ResultLink[]; key?: string; watch?: string; by?: string; ref?: string; item?: WatchItem; read?: boolean; unread?: boolean; src?: string; at?: string; msg?: string; repeat?: boolean; fold?: boolean; wk?: string; wst?: string; nk?: NoticeKindName };
 // The row a monitor report joins: the watch's newest row when it is under a day old, has the same tone and no card on either side, and neither is a
 // report with nothing new (log). One pass over the list.
 function foldTarget(i: Input, at: string): Notice | undefined {
@@ -104,11 +105,13 @@ function closeWaiting(pick: (n: Notice) => boolean, at: string): Notice[] {
 	return hit;
 }
 
+export const ANSWER_REPUSH_MS = 5 * 60_000;
+const answerPushed = new Map<string, number>();
 export function upsert(i: Input): Notice {
 	const at = i.at ?? now();
 	const old = i.key ? items.find(n => n.key === i.key) : i.fold ? foldTarget(i, at) : undefined;
 	const folded = !i.key && i.fold === true && old !== undefined;
-	const wasUnread = old ? !old.read && !old.dismissed : false;
+	const wasUnread = old ? !old.read && !old.dismissed : false, prevAt = old?.at;
 	const quiet = appBlocked({ kind: i.kind, app: i.kind === "watch" ? appOf(i as unknown as Notice) : undefined, ...(i.watch ? { watch: i.watch } : {}), src: i.src ?? i.open, open: i.open });
 	if (quiet && old) return old;
 	let item: Notice;
@@ -154,6 +157,8 @@ export function upsert(i: Input): Notice {
 		}
 	}
 	if (quiet) return item;
+	if (i.nk) item.nk = i.nk;
+	else delete item.nk;
 	if (i.wk) {
 		item.wk = i.wk;
 		if (i.wst) item.wst = i.wst;
@@ -167,7 +172,11 @@ export function upsert(i: Input): Notice {
 		save();
 		broadcast({ ts: at, kind: "notice", source: "gateway", item, unread: unreadCount() });
 		// A folded report is a new matter for the phone even when its row was already unread (hub/push.ts tags it by report time).
-		if ((!wasUnread || folded) && !item.read && !item.dismissed) for (const fn of unreadHooks) fn(item);
+		const again = wasUnread && item.kind === "message" && !!item.key && Date.parse(at) - (answerPushed.get(item.key) ?? Date.parse(prevAt ?? at)) >= ANSWER_REPUSH_MS;
+		if ((!wasUnread || folded || again) && !item.read && !item.dismissed) {
+			if (item.kind === "message" && item.key) answerPushed.set(item.key, Date.parse(at));
+			for (const fn of unreadHooks) fn(item);
+		}
 	}
 	return item;
 }
@@ -192,6 +201,7 @@ function fromOutbox(e: HubEvent, asks = false): void {
 	const { text } = cleaned;
 	const tone = laneTone(e, cleaned.tone, text);
 	if (!text) return;
+	const nk = kindOf(e.nk), named = nk ? { nk } : {};
 	const restart = RESTART_PREFIX.test(text);
 	const by = authorOf(e);
 	const back = e.source === "gateway" ? /^(?:\[([^\]\n]+)\]\s*|([^:\n]{1,60}):\s+)(?:recovered\b|다시 정상이에요)/.exec(text) : null;
@@ -200,13 +210,13 @@ function fromOutbox(e: HubEvent, asks = false): void {
 	if (target === "worklog" || (restart && target === "web" && e.source === "gateway")) {
 		if (key?.startsWith("lane:")) {
 			const name = key.slice(5);
-			return void upsert({ kind: "result", tone, title: laneTitle(name), text, open: key, key, ...(by ? { by } : {}), ...(target === "worklog" ? { msg: target } : {}), ...resultsOf(e.text, name), at: e.ts });
+			return void upsert({ kind: "result", tone, title: laneTitle(name), text, open: key, key, ...(by ? { by } : {}), ...(target === "worklog" ? { msg: target } : {}), ...resultsOf(e.text, name), at: e.ts, ...named });
 		}
 		// The gateway's own status lines there (a restart, a model fallback, an account switch, a harness upgrade) are a record, not news: born read.
 		// A gateway [ask] / [fail] there still waits, and so does a daily digest with its own title (야간 정리, 토큰 점검).
 		const title = systemTitle(text, "작업 기록");
 		const status = e.source === "gateway" && tone !== "ask" && tone !== "fail" && title === "작업 기록";
-		return void upsert({ kind: "worklog", tone, title, text, open: target === "worklog" ? "worklog" : "main", key, read: restart || status, ...resultsOf(e.text), ...worklogKind(e), at: e.ts });
+		return void upsert({ kind: "worklog", tone, title, text, open: target === "worklog" ? "worklog" : "main", key, read: restart || status, ...resultsOf(e.text), ...worklogKind(e), at: e.ts, ...named });
 	}
 	if (target === "alert") {
 		if (asks) return;
@@ -218,12 +228,16 @@ function fromOutbox(e: HubEvent, asks = false): void {
 		if (e.source === "gateway" && ((quiet && rest.startsWith(PROVIDER_BACK_KO)) || LIFTED.some(l => rest.startsWith(l)))) providerBack(e.ts);
 		const prior = e.repeat === true ? items.findLast(n => n.kind === "alert" && !n.dismissed && n.by === by && alertMatter(n.text) === alertMatter(text)) : undefined;
 		if (prior && !prior.key) prior.key = `alert:${prior.id}`;
-		return void upsert({ kind: "alert", tone, title: systemTitle(text, "알림"), text, open: "alert", key: prior?.key ?? key, ...(by ? { by } : {}), ...(refOf(e) ? { ref: refOf(e) } : {}), read: Boolean(recovered) || quiet, ...(prior ? { repeat: true } : {}), at: e.ts });
+		return void upsert({ kind: "alert", tone, title: systemTitle(text, "알림"), text, open: "alert", key: prior?.key ?? key, ...(by ? { by } : {}), ...(refOf(e) ? { ref: refOf(e) } : {}), read: Boolean(recovered) || quiet, ...(prior ? { repeat: true } : {}), at: e.ts, ...named });
 	}
+	const row = nk && e.source === "gateway" ? NOTICE_KINDS[nk] : undefined;
 	const watch = /^ch:\d+$/.test(target) && e.source === "gateway" ? /^\[([^\]\n]+)\]\s*/.exec(text) : null;
-	if (watch) {
+	if (watch && row?.cls !== "alert") {
 		const ref = recovered ? undefined : itemRefOf(text);
-		upsert({ kind: "watch", tone, title: watchLabelOf(watch[1]!), text: text.slice(watch[0].length) || text, open: target, key, read: Boolean(recovered), at: e.ts, ...(recovered || key ? {} : { fold: true }), ...(ref ? { item: resolveItem(ref) } : {}) });
+		upsert({ kind: "watch", tone, title: watchLabelOf(watch[1]!), text: text.slice(watch[0].length) || text, open: target, key, read: Boolean(recovered), at: e.ts, ...(recovered || key ? {} : { fold: true }), ...(ref ? { item: resolveItem(ref) } : {}), ...named });
+	} else if (row && !asks && (row.cls === "alert" || nk === "ledger")) {
+		const open = eventTarget(e) ?? "main";
+		upsert({ kind: row.cls === "news" ? "watch" : "alert", tone, title: nk === "ledger" ? "챙길 일" : systemTitle(text, "알림"), text, open, key, by: "gateway", at: e.ts, ...named });
 	}
 }
 
@@ -243,9 +257,11 @@ function fromInbox(e: HubEvent): void {
 		if (recovered) watchRecovered(name, e.ts, label);
 		// The wake event itself is a message of the 알림 conversation (hub/events.ts eventTarget); the bell gets nothing extra when the
 		// orchestrator, which reports in the channel, is up.
-		if (e.to === "orchestrator" && Array.isArray(e.channels) && e.channels.length && orchestratorUp()) return;
+		const failed = kindOf(e.nk) === "alert";
+		if (!failed && e.to === "orchestrator" && Array.isArray(e.channels) && e.channels.length && orchestratorUp()) return;
 		const [head, reason, output] = [label || "모니터링", String(e.reason ?? ""), String(e.text ?? "")];
 		const prev = typeof e.prev === "string" ? e.prev : undefined;
+		if (failed) return void upsert({ kind: "alert", tone: "fail", title: head, text: clean(watchLine(head, reason, output, { prev })).text || "알림이 왔어요", open: "alert", ...(name ? { watch: name } : {}), by: "gateway", at: e.ts, nk: "alert" });
 		const ref = recovered || isIssue(reason) ? undefined : itemRefOf(output);
 		const item = upsert({ kind: "watch", tone: "", title: head, text: clean(watchLine(head, reason, output, { prev })).text || "알림이 왔어요", open: "alert", ...(name ? { watch: name } : {}), read: recovered, at: e.ts, ...(recovered ? {} : { fold: true }), ...(ref ? { item: resolveItem(ref) } : {}) });
 		if (summarizeWatch && !isIssue(reason) && !recovered && !sentinelMatch(reason, output) && !describeOutput(output, { prev }).readable)

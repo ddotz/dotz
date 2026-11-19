@@ -188,7 +188,7 @@ const authWait: WaitDeps = {
 	sessionOf: target => convs.keyOf(target),
 	busy: target => convs.forTarget(target)?.o.orch.status === "working",
 	cancel: cancelAuth,
-	post: (to, text, replyTo) => void out(to, text, replyTo, { source: "gateway" }).catch(e => log(`auth wait reply to ${to} failed: ${e}`)),
+	post: (to, text, replyTo) => void out(to, text, replyTo, { source: "gateway", nk: "gateway-note" }).catch(e => log(`auth wait reply to ${to} failed: ${e}`)),
 };
 // Every surface hands intake the owner's messages only (discord.ts OWNER, each messenger's allow list), as deliver's owner: true below says.
 // The owner's own typed words ask for a deeper turn (hub/ultrathink.ts): judged on each message's raw text, never the wrapped prompt, a quote or an attachment.
@@ -217,7 +217,7 @@ async function cardChatAnswer(target: string, b: Burst): Promise<void> {
 	const seen = head.source === "discord" ? { hash: cards.find(c => c.ref === intent.ref)?.discord ?? "" } : {};
 	const r = await replies.act(intent.act === "revise" ? { ref: intent.ref, action: "revise", change: intent.change } : { ref: intent.ref, action: intent.act, ...(intent.act === "send" && intent.asIs ? { asIs: true } : {}), ...(intent.act === "send" ? seen : {}) }, { surface: "chat" }).catch(e => ({ body: { ok: false as const, error: (e as Error).message } }));
 	const line = r.body.ok ? cardLine(intent.act, r.body.item, Date.now()) : `답장 카드에 반영하지 못했어요: ${(r.body as { error?: string }).error ?? "알 수 없는 이유"}`;
-	await out(target, line, b.replyTo, { source: "gateway" }).catch(e => log(`card chat reply failed: ${e}`));
+	await out(target, line, b.replyTo, { source: "gateway", nk: "gateway-note" }).catch(e => log(`card chat reply failed: ${e}`));
 }
 
 export function flush(target: string): void {
@@ -236,12 +236,12 @@ export function flush(target: string): void {
 	const errAnswer = session?.orch.error && b.events.length === 1 ? errorAnswer(String(head.text ?? "")) : undefined;
 	if (errAnswer) return void answerOrchError(target, errAnswer, session!, b.replyTo);
 	const legacy = b.events.length === 1 ? legacyAnswer(DATA_DIR, String(head.text ?? "")) : undefined;
-	if (legacy) return void out(target, legacy, b.replyTo, { source: "gateway" }).catch(e => log(`legacy import reply failed: ${e}`));
+	if (legacy) return void out(target, legacy, b.replyTo, { source: "gateway", nk: "gateway-note" }).catch(e => log(`legacy import reply failed: ${e}`));
 	if (b.events.length === 1 && LIMITS_ASK.test(String(head.text)) && !head.attachments?.length) return void limitsAnswer(target, b.replyTo);
 	const ask = b.events.length === 1 && !head.attachments?.length ? accountAsk(String(head.text ?? ""), readPool()?.names ?? [], readAliases()) : undefined;
 	if (ask) return void accountChatAnswer(target, ask, b.replyTo);
 	const recipe = b.events.length === 1 && !head.attachments?.length ? recipeAnswer(String(head.text ?? "")) : undefined;
-	if (recipe) return void out(target, recipe, b.replyTo, { source: "gateway" }).catch(e => log(`recipe reply failed: ${e}`));
+	if (recipe) return void out(target, recipe, b.replyTo, { source: "gateway", nk: "gateway-note" }).catch(e => log(`recipe reply failed: ${e}`));
 	rateLimitNotice(target, b.replyTo);
 	const merged = b.events.length > 1 ? { ...head, message_id: refOf(b.events.at(-1)!), parts: b.events } : head;
 	const was = convs.stateOf(target);
@@ -269,7 +269,7 @@ export function flush(target: string): void {
 // Slash/bang commands (/model, /restart, ...) are answered by the gateway itself, never by the orchestrator.
 export async function answerCommand(target: string, text: string, replyTo?: string): Promise<void> {
 	const card = await runCommand(text, target);
-	await out(target, card.text, replyTo, { source: "gateway", card }).catch(e => log(`command reply to ${target} failed: ${e}`));
+	await out(target, card.text, replyTo, { source: "gateway", nk: "gateway-note", card }).catch(e => log(`command reply to ${target} failed: ${e}`));
 }
 
 // The owner's answer to the orchestrator-error ask (orch-error.ts): handled here because the orchestrator cannot read it.
@@ -278,7 +278,7 @@ async function answerOrchError(target: string, answer: "restart" | "wait", sessi
 	if (answer === "restart") session.resumeNow("owner's 다시 시작 on the error card");
 	else if (session.orch.error) session.orch.error.waiting = true;
 	const text = answer === "restart" ? "오케스트레이터만 다시 시작하고 답하지 못한 요청을 다시 처리해요." : "연결이 돌아오면 한 번 자동으로 다시 시도해요.";
-	await out(target, text, replyTo, { source: "gateway" }).catch(e => log(`orchestrator error reply failed: ${e}`));
+	await out(target, text, replyTo, { source: "gateway", nk: "orch-error" }).catch(e => log(`orchestrator error reply failed: ${e}`));
 }
 
 // "한도" is answered by the gateway without waking the orchestrator, from the account the orchestrator really runs on
@@ -288,13 +288,13 @@ async function limitsAnswer(target: string, replyTo?: string): Promise<void> {
 	const r = await anthropicUsage("orchestrator").catch(() => undefined);
 	const last = accountView(1).switches[0];
 	const card = limitsCard(r, last);
-	await out(target, card.text, replyTo, { source: "gateway", card }).catch(e => log(`limits reply failed: ${e}`));
+	await out(target, card.text, replyTo, { source: "gateway", nk: "gateway-note", card }).catch(e => log(`limits reply failed: ${e}`));
 }
 
 // "계정 바꿔줘", "회사 계정으로", "지금 무슨 계정이야?": answered here too (hub/accounts-api.ts accountAsk), never by the orchestrator.
 async function accountChatAnswer(target: string, ask: Parameters<typeof accountAnswer>[0], replyTo?: string): Promise<void> {
 	const text = await accountAnswer(ask).catch(e => (e as Error).message);
-	await out(target, text, replyTo, { source: "gateway" }).catch(e => log(`account reply failed: ${e}`));
+	await out(target, text, replyTo, { source: "gateway", nk: "gateway-note" }).catch(e => log(`account reply failed: ${e}`));
 }
 
 // Sends one web message the way the composer's modes mean it. "default" (no mode): the main assistant takes it as the next
@@ -379,7 +379,7 @@ export function flushQueue(target: string): void {
 	const status = lane ? lanes.get(lane)?.status : orch.status;
 	if (lane && !lanes.has(lane)) {
 		const gone = drain(target);
-		void out("web", `세션 ${lane}이(가) 없어서 대기 중이던 메시지 ${gone.length}개를 전달하지 못했어요:\n${gone.map(i => i.text).join("\n---\n")}`, undefined, { source: "gateway" }).catch(() => undefined);
+		void out("web", `세션 ${lane}이(가) 없어서 대기 중이던 메시지 ${gone.length}개를 전달하지 못했어요:\n${gone.map(i => i.text).join("\n---\n")}`, undefined, { source: "gateway", nk: "undelivered" }).catch(() => undefined);
 		return;
 	}
 	if (status !== "idle" && status !== (lane ? "exited" : "stopped")) return;

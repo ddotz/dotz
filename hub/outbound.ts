@@ -291,7 +291,7 @@ export function laneFailed(target: string, lane: string, ref: string | undefined
 	log(`lane ${lane}: owner message not delivered: ${reason}`);
 	// A session of another runtime: the refusal itself offers the handover (answer "인계" here).
 	const text = error instanceof LaneRuntimeMismatch ? error.message : `세션 ${lane}을(를) 이어갈 수 없어요 (${reason}). 대화 채널에서 다시 맡겨 주세요. 이전 보고는 ${join(paths.lanes, lane, "report.md")}에 있어요.`;
-	void out(target, text, replyTo, { source: "gateway" }).catch(e => log(`lane failure notice failed: ${e}`));
+	void out(target, text, replyTo, { source: "gateway", nk: "undelivered" }).catch(e => log(`lane failure notice failed: ${e}`));
 }
 type OutJob = { target: string; text: string; replyTo?: string; extra: Record<string, unknown> };
 const jobAnswers = (j: OutJob) => (j.extra.source === undefined || j.extra.source === "orchestrator" ? j.replyTo : undefined);
@@ -481,7 +481,7 @@ const cardsNoteFor = (target: string): string | undefined => {
 };
 // A gateway status line (a deferral receipt): `system` on its event makes the web draw a compact system line (opening `worker` with its
 // live state) and Discord a small `-# ` line; it is never unread and never pushed (push.ts classify only pushes orchestrator answers).
-export const systemNote = (target: string, text: string, system: string, worker?: string) => out(target, text, undefined, { source: "gateway", system, ...(worker ? { worker } : {}) });
+export const systemNote = (target: string, text: string, system: string, worker?: string) => out(target, text, undefined, { source: "gateway", nk: "gateway-note", system, ...(worker ? { worker } : {}) });
 // A session's post stays in its own conversation unless it names a reason (hub/conv-guard.ts); a post with no session (the gateway's) is not checked.
 function guarded(session: unknown, target: string, cross?: unknown): string {
 	if (typeof session !== "string") return target;
@@ -503,7 +503,7 @@ export async function out(target: string, text: string, replyTo?: string, extra:
 			const asked = answersOwner && !extra.update_key ? (replyTo ?? lateRequest(target)) : undefined;
 			const said = asked ? ownerMessage(asked) : undefined;
 			const owner = asked && said?.conv === conv ? { owner: { mid: asked, text: said.text } } : {};
-			if (replies) void applyCardMarkers(marks, { replies, ...owner, tell: line => out(target, line, replyTo, { source: "gateway" }), log }).catch(e => log(`card markers in ${target} failed: ${(e as Error).message}`));
+			if (replies) void applyCardMarkers(marks, { replies, ...owner, tell: line => out(target, line, replyTo, { source: "gateway", nk: "gateway-note" }), log }).catch(e => log(`card markers in ${target} failed: ${(e as Error).message}`));
 			text = marks.rest;
 			// A marker alone still answers the owner's message: it is settled (shown answered, its progress line stopped) as a posted answer is.
 			if (!text) return (settleAnswer({ target, text, replyTo: replyTo ?? lateRequest(target), extra }), { delivered: true });
@@ -516,6 +516,7 @@ export async function out(target: string, text: string, replyTo?: string, extra:
 	if (said && !stripProjectInfo(text)) return { delivered: true };
 	// A gateway post to the alert conversation (a failing watch) is gated like alert() below.
 	if (target === "alert" && extra.source === "gateway" && !extra.update_key && repeatAlert(text)) extra = { ...extra, repeat: true };
+	if (target === "alert" && answersOwner && extra.nk === undefined && !["fail", "ask"].includes(splitTone(text).tone)) extra = { ...extra, nk: "answer" };
 	// The assistant's send-approval card waits its turn in its conversation (a held card is posted later by the queue, marked `queued`).
 	const routed = answersOwner && !extra.update_key && !extra.queued;
 	// Every answer and dotz_send of every conversation passes here: a list of options becomes a decision card whoever wrote it (hub/ask-normalize.ts).
@@ -596,7 +597,7 @@ export function clearLeftWebProgress(): void {
 // The same alert again (hub/alert-gate.ts) is marked on its event (the bell rewrites the first one, no push) and not posted to Discord again.
 export function alert(text: string): void {
 	const repeat = repeatAlert(text);
-	emit("outbox", { ts: now(), kind: "out", source: "gateway", target: "alert", text, ...(repeat ? { repeat: true } : {}) });
+	emit("outbox", { ts: now(), kind: "out", source: "gateway", target: "alert", text, nk: "alert", ...(repeat ? { repeat: true } : {}) });
 	if (route({ target: "alert", text }).messengers.discord && !repeat) void send("alert", text).catch(e => log(`alert send failed: ${e}`));
 }
 
@@ -622,7 +623,7 @@ export function rateLimitNotice(target: string, replyTo?: string): void {
 	const until = new Date(orch.rateLimitedUntil);
 	const at = Number.isNaN(until.getTime()) ? "한도가 풀리면" : `${until.toLocaleString("ko-KR", { timeZone: TZ, month: "numeric", day: "numeric", weekday: "short", hour: "2-digit", minute: "2-digit" })}쯤`;
 	const text = orch.pauseKind === "owner" ? "지금 모델 제공자 결제/인증 문제로 멈춰 있어요. 해결되면 받은 메시지부터 이어서 처리할게요." : `지금 사용량 한도로 멈춰 있어요. ${at} 이어서 처리할게요.`;
-	void out(target, text, replyTo, { source: "gateway" }).catch(() => undefined);
+	void out(target, text, replyTo, { source: "gateway", nk: "usage-stop" }).catch(() => undefined);
 }
 
 export async function progress(target: string, key: string, text: string, replyTo?: string, session?: string, cross?: string): Promise<{ delivered: boolean; reason?: string; edited?: boolean }> {
@@ -680,7 +681,7 @@ export function cancelOwnerTurn(c: Conv = mainConv): string | undefined {
 	if (!target) return undefined;
 	for (const w of c.bg.list().filter(w => w.status === "running" && w.target === target))
 		void c.bg.cancel(w.id).then(r => (r.ok ? log(`worker ${w.id} cancelled with its request`) : log(`worker ${w.id} not cancelled: ${r.error}`)));
-	void out(target, "중단했어요.", undefined, { source: "gateway" }).catch(() => undefined);
+	void out(target, "중단했어요.", undefined, { source: "gateway", nk: "gateway-note" }).catch(() => undefined);
 	return target;
 }
 
@@ -692,7 +693,7 @@ function wireAnswers(c: Conv): void {
 	c.o.setStuckHandler(minutes => {
 		const target = c.queue.current()?.target ?? (c.key === MAIN ? undefined : c.primary);
 		if (!target) return log(`stuck turn of ${c.key} (${minutes} min): no conversation to tell`);
-		void out(target, `작업이 ${minutes}분 동안 멈춰 있어서 끊고 다시 이어가요.`, undefined, { source: "gateway" }).catch(e => log(`stuck notice to ${target} failed: ${e}`));
+		void out(target, `작업이 ${minutes}분 동안 멈춰 있어서 끊고 다시 이어가요.`, undefined, { source: "gateway", nk: "gateway-note" }).catch(e => log(`stuck notice to ${target} failed: ${e}`));
 	});
 	// An open question to the owner (a decision notice, a dotz_auth wait) is a legitimate wait, not a stall.
 	c.o.setStuckGuard(() => allNotices().some(n => n.kind === "decision" && n.decision?.state === "open" && (n.decision.to === c.primary || (c.key === MAIN && (n.decision.to === "main" || n.decision.to.startsWith("auth:"))))) || pendingWaits().some(w => w.session === c.key));
@@ -740,7 +741,7 @@ setWiring(c => {
 		q.redeliverSteered();
 		convIdle(c.key);
 	});
-	c.o.setErrorHandler(e => void out(c.primary, errorAsk(NAME, e), undefined, { source: "gateway" }).catch(err => log(`error ask to ${c.primary} failed: ${err}`)));
+	c.o.setErrorHandler(e => void out(c.primary, errorAsk(NAME, e), undefined, { source: "gateway", nk: "decision" }).catch(err => log(`error ask to ${c.primary} failed: ${err}`)));
 	return { queue: q, bg };
 });
 

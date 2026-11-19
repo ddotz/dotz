@@ -95,12 +95,12 @@ export const reportSend = (r: SendResult): void => {
 	// A KakaoTalk draft goes out in this process (no CLI posts /api/followup for it): the app's 이어서 할 일 is woken here, once per draft.
 	if (r.state === "sent" && kakaoReply.target(r.ref)) triggerFollowup({ app: "kakao", kind: "kakao", key: r.ref, ids: { draft: r.ref } });
 	const what = r.title.replace(/\s*\([^()]*\)\s*$/, "");
-	if (r.state === "back" && r.cause === "restart") return void out(noteTarget(r.conv, r.ref), `[wait] ${what} (${r.ref}): ${r.text}`, undefined, { source: "gateway" }).catch(e => log(`send back note for ${r.ref} failed: ${e}`));
+	if (r.state === "back" && r.cause === "restart") return void out(noteTarget(r.conv, r.ref), `[wait] ${what} (${r.ref}): ${r.text}`, undefined, { source: "gateway", nk: "send-check" }).catch(e => log(`send back note for ${r.ref} failed: ${e}`));
 	if (r.state !== "failed" && r.state !== "unsure") return;
 	// Code is still retrying a surely-unsent send: the card shows it; the owner hears only when it needs him.
 	if (r.state === "failed" && r.safeToAuto) return;
-	if (r.state === "unsure") return void out(noteTarget(r.conv, r.ref), `[wait] 보냈는지 확인되지 않았어요: ${what} (${r.ref})\n${r.text}\n자동으로 다시 보내지 않아요. 답장 대기에서 나갔어요 또는 다시 보내기를 골라 주세요.`, undefined, { source: "gateway" }).catch(e => log(`send check note for ${r.ref} failed: ${e}`));
-	void out(noteTarget(r.conv, r.ref), `[fail] 보내지 못했어요: ${what} (${r.ref})\n${r.text || "이유를 알 수 없어요"}\n다른 카드는 그대로 보내고 있어요.`, undefined, { source: "gateway" }).catch(e => log(`send failure note for ${r.ref} failed: ${e}`));
+	if (r.state === "unsure") return void out(noteTarget(r.conv, r.ref), `[wait] 보냈는지 확인되지 않았어요: ${what} (${r.ref})\n${r.text}\n자동으로 다시 보내지 않아요. 답장 대기에서 나갔어요 또는 다시 보내기를 골라 주세요.`, undefined, { source: "gateway", nk: "send-check" }).catch(e => log(`send check note for ${r.ref} failed: ${e}`));
+	void out(noteTarget(r.conv, r.ref), `[fail] 보내지 못했어요: ${what} (${r.ref})\n${r.text || "이유를 알 수 없어요"}\n다른 카드는 그대로 보내고 있어요.`, undefined, { source: "gateway", nk: "send-fail" }).catch(e => log(`send failure note for ${r.ref} failed: ${e}`));
 };
 
 // Every send that is not finished is kept here (hub/approval-send.ts), so a restart finds it.

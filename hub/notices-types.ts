@@ -3,6 +3,7 @@ import type { DecisionOption } from "./choices.ts";
 import type { DraftApproval } from "./draft-approval.ts";
 import type { WatchItem } from "./watchitem.ts";
 import type { ResultFile, ResultLink } from "./result-refs.ts";
+import type { NoticeKindName } from "./notice-kinds.ts";
 import { say } from "./notices-read.ts";
 
 // The web notification store: every worklog / alert / session result / watch / schedule post, kept in notices.json so the
@@ -55,6 +56,7 @@ export type Notice = {
 	repeats?: { at: string; text: string }[];
 	// kind "decision": a question that waits on the owner (title = the decision line, text = the whole asking message).
 	decision?: Decision;
+	nk?: NoticeKindName;
 };
 
 // `say` is the text sent when the button is chosen (default "<n>) <label>"); `action` marks a login request's button (approve / cancel /

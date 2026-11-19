@@ -36,7 +36,7 @@ export type Route = { web: boolean; push: boolean; messengers: Record<string, bo
 // `extra` is the post's event fields (source, update_key, system, mail; news = a monitor's post, hub/main.ts).
 export function postClass(target: string, text: string, extra: Record<string, unknown> = {}): NoticeClass | undefined {
 	const row = kindRow(extra.nk);
-	if (row) return row.cls;
+	if (row) return row.cls === "log" ? undefined : row.cls;
 	const { tone } = splitTone(text);
 	const t = target === "web:alert" ? "alert" : target === "web:worklog" ? "worklog" : target;
 	if (parkedTone(tone) || t === "worklog" || typeof extra.update_key === "string") return undefined;

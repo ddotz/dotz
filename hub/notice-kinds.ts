@@ -39,6 +39,13 @@ export const NOTICE_KINDS = {
 	watch: { cls: "news", channels: ALL, title: "notice.push.news", lead: "item", tag: watchTag, open: inConv, renotify: true },
 	"self-update": { cls: "news", channels: ALL, title: "notice.push.update", lead: "gateway", tag: () => "update", open: inConv, renotify: false },
 	answer: { cls: "conv", channels: ALL, title: "notice.push.message", lead: "item", tag: i => answerTag(i.conv), open: inConv, renotify: false },
+	"send-fail": { cls: "alert", channels: ALL, title: "notice.push.fail", lead: "gateway", tag: i => `send:${i.id}`, open: inConv, renotify: false },
+	"send-check": { cls: "alert", channels: ALL, title: "notice.push.check", lead: "gateway", tag: i => `send:${i.id}`, open: inConv, renotify: false },
+	undelivered: { cls: "alert", channels: ALL, title: "notice.push.fail", lead: "gateway", tag: i => `undelivered:${i.id}`, open: inConv, renotify: false },
+	"usage-stop": { cls: "alert", channels: ALL, title: "notice.push.alert", lead: "gateway", tag: () => "usage-stop", open: inConv, renotify: false },
+	"orch-error": { cls: "alert", channels: ALL, title: "notice.push.alert", lead: "gateway", tag: () => "orch-error", open: inConv, renotify: false },
+	ledger: { cls: "news", channels: ALL, title: "notice.push.news", lead: "gateway", tag: i => `ledger:${i.id}`, open: inConv, renotify: true },
+	"gateway-note": { cls: "log", channels: { bell: false, push: false, discord: true, messenger: true }, title: "notice.push.message", lead: "gateway", tag: i => `note:${i.id}`, open: inConv, renotify: false },
 } as const satisfies Record<string, KindRow>;
 export type NoticeKindName = keyof typeof NOTICE_KINDS;
 export const NOTICE_KIND_NAMES = Object.keys(NOTICE_KINDS) as NoticeKindName[];

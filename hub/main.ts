@@ -69,7 +69,7 @@ import { CARD_AUDIT_ID, type CardAudit, legacyComments, runMigrations } from "./
 import { applyAndSave, defaultExec, onUpdateResolved, startSelfUpdate, updateBoot, diskCommit } from "./selfupdate.ts";
 import { createUpdateNow, setUpdateNow, updateNow } from "./update-now.ts";
 import { pendingBackups } from "./carryover.ts";
-import { clearChannel, endStanding, lapseStandings, nameWatches, setupChannel, wakeOnly, watchLabel, watchWakeEvent } from "./workchannels.ts";
+import { clearChannel, endStanding, lapseStandings, nameWatches, setupChannel, wakeOnly, watchLabel, watchNoticeKind, watchWakeEvent } from "./workchannels.ts";
 import { watchIssueLine, watchLine } from "./watchtext.ts";
 import { createWatchSummarizer } from "./watchsummary.ts";
 import { clearTrackedTimers, runShutdown } from "./shutdown.ts";
@@ -248,7 +248,7 @@ setAuthOpened((w, discordPosted) => {
 	const same = convs.keyOf(w.target) === w.session;
 	const to = same ? w.target : primaryTarget(w.session);
 	const base = getWebBase();
-	void out(to, openedText(w, base ? `${base}/` : undefined), undefined, { source: "gateway", ...(discordPosted && same ? { discord_route: false } : {}) }).catch(e => log(`auth open notice to ${to} failed: ${e}`));
+	void out(to, openedText(w, base ? `${base}/` : undefined), undefined, { source: "gateway", nk: "gateway-note", ...(discordPosted && same ? { discord_route: false } : {}) }).catch(e => log(`auth open notice to ${to} failed: ${e}`));
 });
 discord.setFileLink(p => webLink(`/api/file?path=${encodeURIComponent(p)}&dl=1`));
 // Apple's push service rejects a VAPID subject it cannot parse as a contact: the app's own https URL is one.
@@ -390,7 +390,7 @@ backfillMailSummaries();
 
 // A mail he opened in dotz is read in its mailbox too (zele: `mail read-mark`, a plugin: its mailAction): hub/mail-sync.ts, mailbox side only.
 setMailReadOut(r => void mailAction(r.key, "read", mailSyncDeps, { providerOnly: true }));
-recoverOriginalDeletes(mailOriginal.pending, text => out("alert", text, undefined, { source: "gateway" }));
+recoverOriginalDeletes(mailOriginal.pending, text => out("alert", text, undefined, { source: "gateway", nk: "alert" }));
 
 void startZele({
 	alert,
@@ -557,7 +557,7 @@ startRecallIndexing({ busy: busyNow });
 startMemoryGuard((key, text) => {
 	if (key === "orchestrator") return alert(text);
 	// A conversation session's notice goes into its own conversation.
-	if (key.startsWith("conv:")) return void out(convs.get(key.slice(5))?.primary ?? "alert", text, undefined, { source: "gateway" }).catch(e => log(`memory guard notice to ${key} failed: ${e}`));
+	if (key.startsWith("conv:")) return void out(convs.get(key.slice(5))?.primary ?? "alert", text, undefined, { source: "gateway", nk: "alert" }).catch(e => log(`memory guard notice to ${key} failed: ${e}`));
 	void send(key, text).catch(e => log(`memory guard notice to ${key} failed: ${e}`));
 });
 startLaneIdleStop();
@@ -589,14 +589,14 @@ startSchedules((s, group) => {
 	deliver(inboxText(event), { target: channel });
 });
 syncRoutineSchedules();
-startReflection(text => deliver(text), () => orch.sessionFile, text => out("alert", text, undefined, { source: "gateway" }), text => void steerOrchestrator(text), recipeBlock);
+startReflection(text => deliver(text), () => orch.sessionFile, text => out("alert", text, undefined, { source: "gateway", nk: "alert" }), text => void steerOrchestrator(text), recipeBlock);
 startDayNote();
 for (const l of telemetryOff()) log(l);
 for (const l of installDotzCommand({ dir: DATA_DIR, pkg: join(import.meta.dir, ".."), bun: Bun.which("bun") ?? process.execPath, home: HOME, expose: DATA_DIR === join(HOME, ".dotz"), shell: process.env.SHELL })) log(l);
 startHarnessUpdate(text => void out("worklog", text, undefined, { source: "gateway", wk: "update" }).catch(e => log(`harness update post failed: ${e}`)), restartGateway, alert);
 // The hidden doctor (hub/doctor.ts): one night run, at most one morning item: an alert when something is not fixed (a choice block when he must decide),
 // a work log entry when dotz fixed everything itself. The ledger's day-before notices (hub/ledger-tick.ts) start with it and go out as news.
-startDoctor((text, _decision, open) => out(open ? "alert" : "worklog", text, undefined, { source: "gateway", wk: "doctor" }), log, () => (zeleState() === "on" ? Number(cfg.zele?.brief_hour ?? DEFAULTS.zele_brief_hour) : undefined), { send: (text, project) => out(project ?? (discord.status.enabled ? "chat" : "web"), text, undefined, { source: "gateway", news: true }), waiting: () => draftCardCounts().open + approvals.held().length });
+startDoctor((text, _decision, open) => out(open ? "alert" : "worklog", text, undefined, { source: "gateway", wk: "doctor" }), log, () => (zeleState() === "on" ? Number(cfg.zele?.brief_hour ?? DEFAULTS.zele_brief_hour) : undefined), { send: (text, project) => out(project ?? (discord.status.enabled ? "chat" : "web"), text, undefined, { source: "gateway", nk: "ledger", news: true }), waiting: () => draftCardCounts().open + approvals.held().length });
 // Settings → 업데이트: the daily check announces a new dotz version (push + a toast on open pages + one bell item); with self_update.auto_apply
 // on it applies it instead (worklog on success, alert with a choice block otherwise) and restarts through the idle restart gate.
 onUpdateResolved(updateResolved);
@@ -649,13 +649,13 @@ startWatches((w, reason, output, prev, info) => {
 		if (!w.channels?.length) return deliver(wake, target ? { target } : undefined);
 		const [first, ...others] = w.channels;
 		endStanding(first, "once");
-		if (!quiet) for (const c of others) void out(`ch:${c}`, (isWatchIssue(reason) ? watchIssueLine(event.label, reason, info, output) : watchLine(event.label, reason, output, { note: `(처리는 #${discord.channels.work[first] ?? first}에서)`, prev })).slice(0, 1900), undefined, { source: "gateway", news: true, ...watchRoute(w) }).catch(() => undefined);
+		if (!quiet) for (const c of others) void out(`ch:${c}`, (isWatchIssue(reason) ? watchIssueLine(event.label, reason, info, output) : watchLine(event.label, reason, output, { note: `(처리는 #${discord.channels.work[first] ?? first}에서)`, prev })).slice(0, 1900), undefined, { source: "gateway", nk: "watch", news: true, ...watchRoute(w) }).catch(() => undefined);
 		return deliver(wake, { target: target ?? `ch:${first}` });
 	}
 	// A failing, stopped or unapproved check is an issue: it goes to alert with a choice block, whatever `to` the watch has.
 	const issue = isWatchIssue(reason);
 	const label = watchLabel(w.name);
-	void out(issue ? "alert" : w.to, (issue ? watchIssueLine(label, reason, info, output) : watchLine(label, reason, output, { prev })).slice(0, issue ? 1500 : 1900) + (issue ? `\n${watchChoice(label, reason)}` : ""), undefined, { source: "gateway", news: true, ...(issue ? {} : watchRoute(w)) }).catch(e => log(`watch ${w.name} send failed: ${e}`));
+	void out(issue ? "alert" : w.to, (issue ? watchIssueLine(label, reason, info, output) : watchLine(label, reason, output, { prev })).slice(0, issue ? 1500 : 1900) + (issue ? `\n${watchChoice(label, reason)}` : ""), undefined, { source: "gateway", nk: issue ? "alert" : watchNoticeKind(output), news: true, ...(issue ? {} : watchRoute(w)) }).catch(e => log(`watch ${w.name} send failed: ${e}`));
 });
 // A watch whose check script broke (hub/watch.ts): the fix turn goes quietly to the watch's conversation (or main), and a fix that held is one worklog line.
 setHealHandler((w, turn) => {
@@ -663,7 +663,7 @@ setHealHandler((w, turn) => {
 	deliver(turn, target ? { target } : undefined);
 });
 setHealedHandler((w, note) => void out(discord.status.enabled ? "worklog" : "web", `스스로 고쳤어요: ${watchLabel(w.name)}${note ? `: ${note}` : ""}`, undefined, { source: "gateway", wk: "system" }).catch(e => log(`watch ${w.name} heal notice failed: ${e}`)));
-setInterval(() => lapseStandings(s => void out(`ch:${s.channel}`, `이 채널의 자동 처리 기한이 끝났어요: ${s.standing}\n모니터링은 계속 돌아요. 앞으로 깨어나면 먼저 여쭤볼게요.`, undefined, { source: "gateway", news: true }).catch(e => log(`standing notice failed: ${e}`))), 60_000);
+setInterval(() => lapseStandings(s => void out(`ch:${s.channel}`, `이 채널의 자동 처리 기한이 끝났어요: ${s.standing}\n모니터링은 계속 돌아요. 앞으로 깨어나면 먼저 여쭤볼게요.`, undefined, { source: "gateway", nk: "watch", news: true }).catch(e => log(`standing notice failed: ${e}`))), 60_000);
 syncFeatureWatches();
 startKakaoLive();
 startPlugins({
@@ -778,7 +778,7 @@ const sessionResume = createSessionResume({
 	sessions: () =>
 		convs.resumeSessions(
 			c => allNotices().some(n => n.kind === "decision" && n.decision?.state === "open" && (n.decision.to === c.primary || (c.key === MAIN && (n.decision.to === "main" || n.decision.to.startsWith("auth:"))))),
-			(target, text) => void out(target, text, undefined, { source: "gateway" }).catch(e => log(`session resume notice to ${target} failed: ${e}`)),
+			(target, text) => void out(target, text, undefined, { source: "gateway", nk: "gateway-note" }).catch(e => log(`session resume notice to ${target} failed: ${e}`)),
 		),
 });
 startLaneResumeSweep({ budget: name => budgetProblem(name, estimateOf(undefined, ""), false), restarting: () => restartGate.waiting(), sessions: sessionResume.tick });
