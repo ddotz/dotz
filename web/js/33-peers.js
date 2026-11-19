@@ -307,7 +307,7 @@ function mnDialog() {
   const d = dialog({ title: TX("misc.pr.this_name"), mid: true, body: el("div", { class: "col" }, inp), actions: [
     i.custom ? { label: TX("misc.pr.name_default"), kind: "text", onclick: (c, b) => save("", TX("misc.pr.name_reset"))(b, c) } : null,
     { label: TX("common.save"), kind: "pri", onclick: (c, b) => save(inp.value.trim(), TX("misc.pr.name_saved"))(b, c) }].filter(Boolean) });
-  inp.addEventListener("keydown", ev => { if (ev.key === "Enter" && !ev.isComposing) { ev.preventDefault(); d.node.querySelector(".dact .btn:last-child").click(); } });
+  inp.addEventListener("keydown", ev => { if (plainEnter(ev)) { ev.preventDefault(); d.node.querySelector(".dact .btn:last-child").click(); } });
   inp.focus();
 }
 const mnRow = () => MN.info && el("button", { class: "li tap", type: "button", onclick: mnDialog },
@@ -332,7 +332,7 @@ $("#c-pc").onclick = cpcMenu;
 // The phone's page title, on a page without a back arrow (there the title names the conversation or sub-page and the arrow leads back).
 const prTitleTap = () => { if (prTrig() && !$("#appbar").classList.contains("back")) prOpen(); };
 $("#title").addEventListener("click", prTitleTap);
-$("#title").addEventListener("keydown", ev => { if ((ev.key === "Enter" || ev.key === " ") && !ev.isComposing) { ev.preventDefault(); prTitleTap(); } });
+$("#title").addEventListener("keydown", ev => { if ((ev.key === "Enter" || ev.key === " ") && !imeKey(ev)) { ev.preventDefault(); prTitleTap(); } });
 // ⌘` (Ctrl+` elsewhere) goes straight to the next computer in the sheet's order, wrapping round, skipping ones that are offline, with no sheet;
 // with Shift it goes the other way. macOS keeps ⌘` for cycling an app's windows, so Ctrl+` also works on a Mac.
 const prKeyHint = isMac ? "⌘` · Ctrl+`" : "Ctrl+`";

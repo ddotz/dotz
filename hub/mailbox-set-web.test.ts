@@ -140,6 +140,9 @@ describe("메일함 설정", () => {
 		expect(await ev<string>(v, `${live("b-score")}.mode`)).toBe("auto");
 		await openItem(v, "bans");
 		await click(v, '.mxs-ab .mxs-c2');
+		await run(v, `(() => { const i = document.querySelector("[data-mxs-add]"); i.value = "곤란"; i.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", isComposing: true, bubbles: true })); i.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", keyCode: 229, bubbles: true })); i.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true })); i.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", keyCode: 229, bubbles: true })); })()`);
+		await v.evaluate(`new Promise(r => setTimeout(() => r(0), 80))`);
+		expect(posts).toHaveLength(1);
 		await run(v, `(() => { const i = document.querySelector("[data-mxs-add]"); i.value = "곤란합니다"; i.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })); })()`);
 		await waitForPosts(2);
 		expect(posts[1]!.body.box.bans).toEqual(["죄송", "곤란합니다"]);

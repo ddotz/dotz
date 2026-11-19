@@ -195,7 +195,7 @@ function accProviderDialog(g, a) {
     { label: TX("common.save"), kind: "pri", onclick: (c, b) => alias(inp.value.trim(), inp.value.trim() ? TX("connect.alias.saved") : TX("connect.alias.removed"))(b, c) },
   ].filter(Boolean);
   const d = dialog({ classic: true, title: `${g.name} · ${label}`, body: el("div", { class: "col" }, accName(a.name) !== label ? el("div", { class: "sup" }, TX("connect.acc.name_prefix"), el("code", { text: accName(a.name) })) : null, el("div", {}, el("div", { class: "lbl", style: "margin:0 0 var(--sp-15)", text: TX("connect.alias") }), inp), err), actions: acGap(actions) });
-  inp.addEventListener("keydown", ev => { if (ev.key === "Enter" && !ev.isComposing) { ev.preventDefault(); d.node.querySelector(".dact .btn:last-child").click(); } });
+  inp.addEventListener("keydown", ev => { if (plainEnter(ev)) { ev.preventDefault(); d.node.querySelector(".dact .btn:last-child").click(); } });
   usDirty(d, [inp]);
   inp.focus();
 }
@@ -210,7 +210,7 @@ function accDialog(a) {
     ACC.accounts.length > 1 ? { label: TX("connect.acc.delete"), kind: "danger", onclick: async (c, b) => { b.disabled = true; if (!await ask(TX("connect.delete_named", { name: label }), TX("connect.acc.delete_body"), TX("common.delete"), true)) { b.disabled = false; return; } accMut(b, () => api(`/api/accounts?name=${enc(a.name)}`, "DELETE"), TX("connect.acc.deleted", { name: label }), c, err); } } : out ? { label: TX("settings.logout.btn"), kind: "danger", onclick: c => { c(); logoutProvider(out); } } : null,
     ACC.pin_unavailable ? null : { label: TX("connect.acc.pin_this"), kind: "tonal", disabled: ACC.mode === "pinned" && ACC.chosen && ACC.chosen.name === a.name, onclick: (c, b) => accMut(b, () => api("/api/accounts/mode", "PUT", { mode: "pinned", account: a.name }), TX("connect.acc.pinned_to", { name: label }), c, err) },
     { label: TX("common.save"), kind: "pri", onclick: (c, b) => alias(inp.value.trim(), inp.value.trim() ? TX("connect.alias.saved") : TX("connect.alias.removed"))(b, c) }].filter(Boolean)) });
-  inp.addEventListener("keydown", ev => { if (ev.key === "Enter" && !ev.isComposing) { ev.preventDefault(); d.node.querySelector(".dact .btn:last-child").click(); } });
+  inp.addEventListener("keydown", ev => { if (plainEnter(ev)) { ev.preventDefault(); d.node.querySelector(".dact .btn:last-child").click(); } });
   usDirty(d, [inp]);
   inp.focus();
 }

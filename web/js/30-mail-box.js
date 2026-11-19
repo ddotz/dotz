@@ -437,6 +437,7 @@ function mbForm(st, host, o) {
 }
 const mbPayload = (st, extra = {}) => ({ to: st.to.trim(), cc: st.cc.trim(), subject: st.subject.trim(), body: st.body, attachments: st.files.map(f => ({ name: f.name, path: f.path, size: f.size })), ...extra });
 const mbEmpty = st => !st.to.trim() && !st.cc.trim() && !st.subject.trim() && !st.body.trim() && !st.files.length;
+const mbWriting = () => (!!MBOX.cs && !mbEmpty(MBOX.cs.st)) || [...MBOX.boxes.values()].some(b => b.open && b.st && (b.st.body.trim() || b.st.files.length));
 async function mbSave(st, extra, btn) {
   if (!st.to.trim()) { st.needTo(); return null; }
   if (st.up.length) { toast(TX("mail.uploading_wait"), true); return null; }
@@ -468,8 +469,9 @@ function mbCompose(init = {}) {
   const node = el("div", { class: "mbox-sheet", role: "dialog", "aria-label": TX("mail.new_mail") });
   // The sheet fades down and away before it is removed; it is no longer the open one from the first moment.
   const leave = async () => { MBOX.cs = null; refit.disconnect(); node.inert = true; await motionOut(node, "rise"); node.remove(); };
-  const close = async () => { if (!mbEmpty(st) && !await ask(TX("mail.discard.title"), TX("mail.discard.body"), TX("mail.discard.go"), true)) return; leave(); };
-  const save = ev => mbSave(st, {}, ev.currentTarget).then(r => { if (r) leave(); });
+  const done = () => { leave(); keptSave(); };
+  const close = async () => { if (!mbEmpty(st) && !await ask(TX("mail.discard.title"), TX("mail.discard.body"), TX("mail.discard.go"), true)) return; done(); };
+  const save = ev => mbSave(st, {}, ev.currentTarget).then(r => { if (r) done(); });
   node.append(
     el("div", { class: "mbox-sh", onclick: ev => { if (node.classList.contains("min") && !ev.target.closest("button")) mbFold(node, false); } }, el("span", { class: "mbox-st", text: TX("mail.new_mail") }),
       el("button", { class: "ib mbox-min", type: "button", "aria-label": TX("mail.sheet.min"), title: TX("mail.sheet.min"), onclick: () => mbFold(node, !node.classList.contains("min")) }, icon("minus")),
@@ -484,6 +486,28 @@ function mbCompose(init = {}) {
   motionIn(node, "rise", 240);
   MBOX.cs = { node, st };
   node.querySelector(".mbox-in").focus();
+}
+const mbKeepFields = st => ({ to: st.to, cc: st.cc, subject: st.subject, body: st.body, files: st.files, showCc: !!st.showCc });
+const mbKeepCs = () => (MBOX.cs && !mbEmpty(MBOX.cs.st) ? { ...mbKeepFields(MBOX.cs.st), min: MBOX.cs.node.classList.contains("min") } : null);
+const mbKeepBox = b => (b.open && b.st && (b.st.body.trim() || b.st.files.length) ? { mode: b.mode, ...mbKeepFields(b.st) } : null);
+{
+  const openCs = v => { mbCompose({ ...mbKeepFields(v) }); if (v.min && MBOX.cs) mbFold(MBOX.cs.node, true); };
+  const openBox = (t, v) => MBOX.boxes.set(t, { open: true, mode: v.mode, st: { ...mbKeepFields(v), up: [] } });
+  const k = keptMap("mail-write", () => {
+    const o = {}, cs = mbKeepCs();
+    if (cs) o.cs = cs;
+    for (const [t, b] of MBOX.boxes) { const v = mbKeepBox(b); if (v) o[`box:${t}`] = v; }
+    return o;
+  }, (key, v) => {
+    if (!v || typeof v !== "object") return false;
+    if (key === "cs") { if (MBOX.cs) return false; openCs(v); return true; }
+    const t = key.startsWith("box:") ? key.slice(4) : "";
+    if (!t || MBOX.boxes.get(t)?.open) return false;
+    openBox(t, v); mbReplyPaint(true);
+    return true;
+  });
+  for (const [key, b] of Object.entries(k)) if (key.startsWith("box:")) openBox(key.slice(4), b);
+  if (k.cs) setTimeout(() => { openCs(k.cs); keptMark("mail-write"); }, 0);
 }
 
 /* ---------- the inline reply at the bottom of the open mail ---------- */
@@ -535,9 +559,9 @@ function mbReplyPaint(force) {
       el("div", { class: "mbox-modes" }, ...MB_MODES.map(([k, label, ic]) => el("button", { class: `cchip mbox-mode${k === b.mode ? " on" : ""}`, type: "button", "data-mode": k, "aria-pressed": String(k === b.mode), onclick: () => mbOpenReply(t, k) }, icon(ic), label))),
       host,
       el("div", { class: "mbox-sf" },
-        el("button", { class: "btn pri mbox-save", type: "button", "data-k": "mail-reply-save", onclick: ev => mbSave(b.st, { reply_to: mbKey(t), mode: b.mode }, ev.currentTarget).then(r => { if (r) { MBOX.boxes.delete(t); mbReplyPaint(true); } }) }, TX("mail.draft_create")),
+        el("button", { class: "btn pri mbox-save", type: "button", "data-k": "mail-reply-save", onclick: ev => mbSave(b.st, { reply_to: mbKey(t), mode: b.mode }, ev.currentTarget).then(r => { if (r) { MBOX.boxes.delete(t); mbReplyPaint(true); keptSave(); } }) }, TX("mail.draft_create")),
         el("button", { class: "ib mbox-attach", type: "button", "aria-label": TX("mail.attach"), title: TX("mail.attach"), onclick: () => form.pick() }, icon("clip")),
-        el("button", { class: "btn text mbox-cancel", type: "button", onclick: () => { b.open = false; mbReplyPaint(true); } }, TX("mail.reply.fold"))));
+        el("button", { class: "btn text mbox-cancel", type: "button", onclick: () => { b.open = false; mbReplyPaint(true); keptSave(); } }, TX("mail.reply.fold"))));
   }
   tl.append(slot);
 }

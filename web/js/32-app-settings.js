@@ -236,7 +236,7 @@ function asAddPaint() {
   const send = el("button", { class: "btn", type: "button", "data-k": "new-app", disabled: (AT.draft || "").trim() ? null : true, onclick: asNewSend }, TX("appset.add.send"));
   const box = el("textarea", { class: "as-new-in", rows: "3", "data-k": "new-app-text", placeholder: TX("appset.add.ph"), "aria-label": TX("appset.add.aria"),
     oninput: ev => { AT.draft = ev.currentTarget.value; send.disabled = !AT.draft.trim(); },
-    onkeydown: ev => { if (ev.key === "Enter" && !ev.shiftKey && !ev.isComposing) { ev.preventDefault(); asNewSend(); } } });
+    onkeydown: ev => { if (plainEnter(ev) && !ev.shiftKey && !matchMedia("(pointer: coarse)").matches) { ev.preventDefault(); asNewSend(); } } });
   box.value = AT.draft || "";
   clear(h.box).append(
     fsHead([el("h2", { class: "fs-t", id: "as-add-t", text: TX("appset.add.title") })], { close: () => h.close() }),

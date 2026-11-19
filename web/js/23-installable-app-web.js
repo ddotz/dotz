@@ -61,7 +61,7 @@ const shellMem = () => { try { return JSON.parse(sessionStorage.getItem(SHELL_KE
 let SHELL_RESTORE = (() => { const m = shellMem(); if (!m.at || m.used || Date.now() - m.at > 30000) return null; try { sessionStorage.setItem(SHELL_KEY, JSON.stringify({ ...m, used: true })); } catch {} return m; })();
 const shellRestoreDone = () => { SHELL_RESTORE = null; };
 if (SHELL_RESTORE) setTimeout(shellRestoreDone, 15000);
-const shellSafe = () => !ta.value.trim() && !ATT.length && !OV.length && !SUBD && !document.querySelector("dialog[open]:not([data-leaving])");
+const shellSafe = () => !ta.value.trim() && !ATT.length && !OV.length && !SUBD && !raWriting() && !mbWriting() && !document.querySelector("dialog[open]:not([data-leaving])");
 function shellApply() {
   shellPending = false;
   const s = { at: Date.now(), hash: location.hash, views: $("#views").scrollTop };

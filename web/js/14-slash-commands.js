@@ -194,7 +194,7 @@ ta.addEventListener("focus", () => updateHints());
 ta.addEventListener("blur", () => { const box = $("#hints"); box.hidden = true; });
 // Registered before the send/stop key handler: while the menu is open, arrows move, Tab/Enter pick, Esc closes it.
 ta.addEventListener("keydown", ev => {
-  if ($("#hints").hidden || !SL.items.length || ev.isComposing || ev.keyCode === 229) return;
+  if ($("#hints").hidden || !SL.items.length || imeKey(ev)) return;
   const n = SL.items.length, stop = () => { ev.preventDefault(); ev.stopImmediatePropagation(); };
   if (ev.key === "ArrowDown") { stop(); SL.idx = (SL.idx + 1) % n; slMark(); }
   else if (ev.key === "ArrowUp") { stop(); SL.idx = SL.idx <= 0 ? n - 1 : SL.idx - 1; slMark(); }
@@ -205,7 +205,7 @@ ta.addEventListener("keydown", ev => {
 // While the target works: Enter steers into the running turn, ⌘/Ctrl+Enter queues it for the next turn, ⌥/Alt+Enter stops it and sends, Esc stops it.
 ta.addEventListener("keydown", ev => {
   if (ev.key === "Escape" && isWorking(target) && !document.querySelector("dialog[open]:not([data-leaving])") && !openMenu) { ev.preventDefault(); stopTarget(); return; }
-  if (ev.key !== "Enter" || ev.shiftKey || ev.isComposing || ev.keyCode === 229) return;
+  if (ev.key !== "Enter" || ev.shiftKey || imeKey(ev)) return;
   if (matchMedia("(pointer: coarse)").matches) return;
   ev.preventDefault();
   sendChat(ev.altKey ? "interrupt" : ev.metaKey || ev.ctrlKey ? "queue" : undefined);
