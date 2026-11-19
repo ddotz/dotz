@@ -45,6 +45,7 @@ describe("the draft call", () => {
 		const merged = parseDraftReply(JSON.stringify({ action: "draft", mode: "author", parts: long, summary: "" }))!.body;
 		expect(draftParts(merged).map(p => [...p].length)).toEqual([600, 500, 403]);
 		expect(draftTextError(merged)).toBeUndefined();
+		expect([draftTextError("가".repeat(3001)), draftTextError("가".repeat(1001))]).toEqual(["답장은 모두 합쳐 3000자까지예요", "메시지 하나는 1000자까지예요"]);
 		const six = Array.from({ length: 6 }, (_, i) => `p${i}`);
 		expect(draftParts(parseDraftReply(JSON.stringify({ action: "draft", mode: "relay", parts: six, summary: "" }))!.body)).toEqual(["p0", "p1", "p2", "p3", "p4"]);
 		expect(draftParts(parseDraftReply(JSON.stringify({ action: "draft", parts: six, summary: "" }))!.body)).toEqual(["p0", "p1", "p2", "p3", "p4"]);
