@@ -11,7 +11,15 @@ import { isOwnAddress } from "./mail-state.ts";
 import type { MailThreadMessage, MailThreadRequest } from "./plugins.ts";
 import { parseThread, threadDate } from "./zele.ts";
 
-export type ReconcileResult = { checked: number; replied: number; notChecked: number; skipped: number };
+export type ReconcileResult = { checked: number; replied: number; notChecked: number; skipped: number; skippedBySource: Record<string, number> };
+
+/** The one line a round is logged as, or undefined when the round had nothing to say; skipped mails are named once per source, not per mail. */
+export function reconcileSummary(r: ReconcileResult): string | undefined {
+	if (!r.checked && !r.notChecked && !r.skipped) return undefined;
+	const base = `mail reconcile: ${r.checked} threads checked, ${r.replied} answered elsewhere, ${r.notChecked} not checked`;
+	if (!r.skipped) return base;
+	return `${base}, ${r.skipped} skipped because no plugin reads the source (${Object.entries(r.skippedBySource).map(([source, n]) => `${source} ${n}`).join(", ")})`;
+}
 export type ReconcileMail = Pick<MailRecord, "key" | "source" | "id" | "at"> & Partial<Pick<MailRecord, "account" | "dir" | "reply">>;
 export type ReconcileDeps = {
 	mails: () => readonly ReconcileMail[];
@@ -74,7 +82,7 @@ export function movedOn(messages: readonly MailThreadMessage[], own: ReadonlySet
 /** One round: reads at most `limit` waiting mails (oldest looked-at first) and closes the ones the owner answered. */
 export async function reconcileMails(deps: ReconcileDeps, opts: { limit: number }): Promise<ReconcileResult> {
 	const now = deps.now ?? Date.now;
-	const result: ReconcileResult = { checked: 0, replied: 0, notChecked: 0, skipped: 0 };
+	const result: ReconcileResult = { checked: 0, replied: 0, notChecked: 0, skipped: 0, skippedBySource: {} };
 	const drafts = deps.draftRefs();
 	const all = deps.mails().filter(r => r.dir !== "out");
 	// A mail already 답장함 whose reply draft still waits (it was answered some other way): the draft is closed, no thread to read.
@@ -102,10 +110,14 @@ export async function reconcileMails(deps: ReconcileDeps, opts: { limit: number 
 
 	const noPlugin = new Set<string>(); // sources found unread this round: each costs one question, not one per mail
 	const failing = new Set<string>(); // plugin sources that failed this round: a mailbox that hangs costs one wait, the mail it failed on goes last next round
+	const skip = (source: string) => {
+		result.skipped++;
+		result.skippedBySource[source] = (result.skippedBySource[source] ?? 0) + 1;
+	};
 	let reads = 0;
 	for (const r of waiting) {
 		if (noPlugin.has(r.source)) {
-			result.skipped++;
+			skip(r.source);
 			continue;
 		}
 		if (failing.has(r.source)) {
@@ -127,7 +139,7 @@ export async function reconcileMails(deps: ReconcileDeps, opts: { limit: number 
 		}
 		if (!thread) {
 			noPlugin.add(r.source);
-			result.skipped++;
+			skip(r.source);
 			continue;
 		}
 		reads++;

@@ -79,7 +79,7 @@ import { blockedByOff, newsMuted, watchOff } from "./app-off.ts";
 import { loadPlugins, pluginClaim, pluginMailThread, pluginThread, startPlugins } from "./plugins.ts";
 import { startDoctor } from "./doctor.ts";
 import { startZele, zeleAccounts, zeleRead, zeleReplyTo, zeleState } from "./zele.ts";
-import { createReconciler } from "./mail-reconcile.ts";
+import { createReconciler, reconcileSummary, type ReconcileResult } from "./mail-reconcile.ts";
 import { createUnansweredWatch } from "./mail-unanswered.ts";
 import { backfillMailSummaries, mailSummarizer } from "./mail-summary-live.ts";
 import { placeMail } from "./routes-mailbox.ts";
@@ -213,7 +213,10 @@ const unansweredWatch = createUnansweredWatch({
 	target: mailTarget,
 	log,
 }, { file: join(DATA_DIR, "mail-unanswered.json"), everyMs: MAIL_RECONCILE_EVERY_MS });
-const reconcileLog = (r: { checked: number; replied: number; notChecked: number } | undefined) => void (r && (r.checked || r.notChecked) && log(`mail reconcile: ${r.checked} threads checked, ${r.replied} answered elsewhere, ${r.notChecked} not checked`));
+const reconcileLog = (r: ReconcileResult | undefined) => {
+	const line = r && reconcileSummary(r);
+	if (line) log(line);
+};
 const reconcileMails = (limit: number) => mailReconciler.run(limit).then(r => (reconcileLog(r), r));
 const settleSweep = () => {
 	settleSends();
