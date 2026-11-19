@@ -684,14 +684,20 @@ dotz 웹앱의 화면은 `web/js/03-screens.js`의 `SCREENS` 표에 한 줄씩 �
 - 근거: web/js/10-draft-original.js `orgLoad`, `orgComment`, `orgFill`, `orgInline`, `orgNodes`.
 - css: web/css/15-draft-original.css(`.od-*`; `min-width:900px`, `max-width:899px`, `prefers-reduced-motion`), 18-comments.css(`.od-bar`).
 
-### 결과 카드 (메일/감시/예약 결과)
-- 목적: 메일이나 모니터링 결과(감시 보고, 예약 실행, 서비스 글)를 머리글, 제목, 라벨 붙은 요약, 접힌 원문으로 그려요(채팅과 모니터링 공통).
+### 결과 카드 (메일/감시 결과)
+- 목적: 메일이나 모니터링 결과(감시 보고, 서비스 글)를 머리글, 제목, 라벨 붙은 요약, 접힌 원문으로 그려요(채팅과 모니터링 공통).
 - 구성: `div.bm.alert.rc`: `.rc-hd`(`.rc-src` 출처, 태그, `.rc-time` KST 시각), `.rc-title`, 섹션 `.rc-sec`(`.rc-sh` 라벨, 본문 마크다운 또는 `.rc-rows`), 파일 칩, 접힘 `details.rc-raw`(`summary` + `.rc-rawbody`), 동작 `.btns.cc-act`.
 - 기능: 라벨 인식(`요약`, `할 일`, `할일`, `다음 할 일`, `핵심`, `결과`, `변경`, `참고`, `상세`, `확인할 것`)로 섹션을 나눠요. `<시각|답장|가격|재고|새 글|확인|변경> 내용 · 상세` 줄 목록은 열 정렬 행(`.rc-row`)이 되고 가격 변경은 이전 값 취소선 → 새 값. 원문은 `원문` 줄 또는 ` ```원문 ` 울타리에서 떼어 내 파이프 줄을 표로 바꿔 보여요. `[file]` 줄은 파일 칩으로.
 - 상태: 원문 접힘 `원문 보기`/펼침 `원문 접기`(`rawOpen`이면 처음부터 열림). 내용이 전혀 없으면 `null`(카드 안 그림). 시각은 오늘이면 `HH:MM`, 아니면 `날짜 HH:MM`.
 - 데이터: 없음(호출자가 text/at/title/raw/tag/actions를 줌).
 - 근거: web/js/11-resultcard.js `rcLabel`, `rcSplit`, `rcSections`, `rcRawMd`, `rcRawFold`, `rcRowsNode`, `resultCard`.
 - css: web/css/16-result-card.css(`.rc-*`; `pointer:coarse or max-width:639px`), 20-mail-box.css, 04-files.css(`.bm.res`).
+
+### 깨움 줄 (예약 실행, 다른 대화가 넘긴 일)
+- 목적: 예약이 돌거나 다른 대화가 일을 넘기면 카드 없이 그 턴의 작업 줄 앞에 이유를 붙여 한 줄로 보여요.
+- 구성: 작업 줄 `details.work`의 `.wsum`이 `예약 · <예약 이름> → 20초 작업 · 명령 3`, `<보낸 대화> · <넘긴 일> → …`이에요. 이름은 벨 알림 줄과 같은 `scheduleLabel` 규칙(웹은 `scheduleName`)이고 한글이 없으면 `예약`만 남아요. 줄을 펼치면 맨 위에 원문(예약 지시문, 넘긴 글)이 나와요. 넘긴 일에 대한 첫 답 머리 줄 끝에 `<보낸 대화>에서`(`.wl-sess`, 누르면 그 대화로)가 붙어요.
+- 상태: 턴이 끝났는데(`turn_start` 뒤 `turn_end`) 이 대화에 보낸 것이 없으면 그 깨움의 작업 줄을 숨기고(실시간은 3초 기다린 뒤), 그 뒤 답이 오면 다시 보여요. 다음 깨움, 주인 메시지, 다른 턴의 작업이 오면 숨긴 줄을 지워요. 게이트웨이 자신의 깨움(`source: gateway`)은 이유 없이 같은 규칙을 따라요. 작업내역과 활동 기록에는 그대로 남아요.
+- 근거: web/js/11-todo-strip.js `wakeOf`, `wakeEnded`, `wakeAnswered`, `wakeQuiet`, `newGroup`, `chatPush`; web/js/09-needs-you.js `CS.wake`; hub/wake-rows-web.test.ts.
 
 ### 아침 점검 브리핑 카드
 - 목적: 봇의 아침 브리핑 형태 답(`- 10:00 제목` 줄 묶음 + 개수/메일 줄)을 행과 칩으로 그려요.

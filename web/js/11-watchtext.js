@@ -188,7 +188,7 @@ const WT_CMD = /\b[\w.-]+\.(?:md|jsonl?|ya?ml|toml|log|py|sh)\b|\b(?:ssh|scp|rsy
 const WT_RUNS = new RegExp(["`[^`\\n]*(?:`|$)", "(?<!\\S)(?:~|\\.{1,2})?\\/[\\w.\\/-]*[\\w\\/]", "(?<![\\w.\\/-])[\\w.\\/-]*\\.(?:md|jsonl?|ya?ml|toml|log|py|sh|ts|js|mjs)\\b", "\\b(?=[0-9a-f]*\\d)(?=[0-9a-f]*[a-f])[0-9a-f]{7,40}\\b"]
   .map(p => p + "(?:대로|으로|에서|로|을|를|이|가|은|는|에|의)?").join("|"), "g");
 function wtScheduleLabel(text) {
-  let s = (String(text || "").replace(/^\s*(?:(?:ch|lane|th):\S+\s*)+/, "").trim().split("\n")[0] || "").replace(/\s+/g, " ");
+  let s = (String(text || "").replace(/^\s*(?:(?:ch|lane|th):\S+\s*)+/, "").replace(/^\s*#[^\s(]+\((?:ch|lane|th):[^)\s]+\):?\s*/, "").trim().split("\n")[0] || "").replace(/\s+/g, " ");
   s = s.replace(/\s*[(（][^()（）]*(?:[)）]|$)/g, m => (WT_CMD.test(m) || /^\s*[(（]state\s/.test(m) ? "" : m)).replace(WT_RUNS, "");
   s = s.replace(/[ \t]*[,·][ \t]*([)）])/g, "$1").replace(/([(（])[ \t]*[,·][ \t]*/g, "$1").replace(/\s*[(（]\s*[)）]/g, "");
   s = s.replace(/\s+([,.!?)])/g, "$1").replace(/\s{2,}/g, " ").trim();
@@ -203,12 +203,4 @@ function wtScheduleLabel(text) {
   else if (sentence.length > 40) { const t = sentence.slice(0, 39), at = t.lastIndexOf(" "); label = (at > 20 ? t.slice(0, at) : t).replace(/[\s,·:(]+$/, "") + "…"; }
   return /[가-힣A-Za-z]{2,}/.test(label) && !isMachineOutput(label) ? label : "";
 }
-function scheduleLine(text, opts = {}) {
-  const body = String(text || "").replace(/^\s*(?:(?:ch|lane|th):\S+\s*)+/, "").trim(), label = wtScheduleLabel(body);
-  const said = WT_HANGUL.test(label) ? label : "";
-  if (opts.raw === false) return said || TX("home.watch.schedule_started");
-  const lines = [TX("home.watch.schedule_started")];
-  if (said) lines.push(said);
-  if (body && body !== said) lines.push(rawFence(body));
-  return lines.join("\n");
-}
+const scheduleName = text => { const label = wtScheduleLabel(text); return WT_HANGUL.test(label) ? label : ""; };

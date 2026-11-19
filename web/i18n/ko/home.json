@@ -38,7 +38,6 @@
   "home.watch.unchanged": "내용은 그대로이고 시각 같은 값만 바뀌었어요",
   "home.watch.fresh": "새로 생겼어요",
   "home.watch.gone": "사라졌어요",
-  "home.watch.schedule_started": "예약한 일이 시작됐어요",
   "home.watch.value": "값",
   "home.watch.fail_login": "로그인이 풀렸어요",
   "home.watch.fail_fetch": "내용을 가져오지 못했어요",
@@ -242,7 +241,6 @@
   "home.wk.no_activity": "활동이 없어요",
   "home.wk.retry": "다시 맡기기",
   "home.wk.go_chat": "대화로 가기",
-  "home.handed.sent": "다른 대화에서 일을 넘겨 줬어요",
-  "home.handed.back": "넘긴 일의 결과가 돌아왔어요",
+  "home.handed.from": "{name}에서",
   "home.wk.aria": "{desc} · {state} · {act}"
 }

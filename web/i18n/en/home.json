@@ -50,7 +50,6 @@
   "home.watch.unchanged": "Only values like timestamps changed",
   "home.watch.fresh": "New",
   "home.watch.gone": "Removed",
-  "home.watch.schedule_started": "A scheduled task started",
   "home.watch.value": "Value",
   "home.watch.fail_login": "Signed out",
   "home.watch.fail_fetch": "Couldn't fetch the content",
@@ -314,7 +313,6 @@
   "home.wk.no_activity": "No activity",
   "home.wk.retry": "Run again",
   "home.wk.go_chat": "Open conversation",
-  "home.handed.sent": "Another conversation handed over a task",
-  "home.handed.back": "The result of the handed task came back",
+  "home.handed.from": "From {name}",
   "home.wk.aria": "{desc} · {state} · {act}"
 }

@@ -113,11 +113,11 @@ test("a JSON report reads in Korean key words, a long log says its lines and las
 
 test("web/js/11-watchtext.js words the same posts as this module", () => {
 	const src = readFileSync(join(import.meta.dir, "../web/js/11-watchtext.js"), "utf8");
-	const web = new Function(`${i18nPrelude()}${src}; return { watchLine, scheduleLine, humanLabel };`)() as Record<string, (...a: any[]) => string>;
+	const web = new Function(`${i18nPrelude()}${src}; return { watchLine, scheduleName, humanLabel };`)() as Record<string, (...a: any[]) => string>;
 	const opts = { now: NOW, tz: TZ };
 	const cases: [string, string, string, string?][] = [["kakao-new", "matched /./", KAKAO], ["재고", "output changed", "새 메일이 1통 왔어요"], ["저장소 감시", "matched /gone/", "sample-repo-gone"], ["저장소 감시", "matched /gone/", "READY\n재고가 들어왔어요"], ["저장소 감시", "output changed", "sample-repo-gone", "sample-repo-here"], ["api-health", "failed 3 times in a row (exit 7)", "curl: (7) boom"], ["x", "recovered", ""], ["x", "recovered", "ok"], ["상태", "output changed", '{"status":"ok","latest":{"at":"2025-01-02T01:00:00Z"}}'], ["로그", "output changed", "2025-01-02T01:10:00Z a=1 b=2\n2025-01-02T01:11:00Z a=1 b=3\n2025-01-02T01:12:00Z a=1 b=4"], ["재고", "output changed", "Item A\nItem C", "Item A\nItem B"], ["재고", "fail", "DOTZ_FAIL login\nx"], ["상태", "output changed", '{"version":"8.2.36","id":"q"}'], ["상태", "output changed", "+ Build 9.1.0\n- Build 9.0.9"], ["sample-items", "match", ITEMS_NOW, ITEMS_PREV]];
 	for (const [l, r, o, prev] of [...cases, ...MATCHES.map(([l, r, o]) => [l, r, o] as [string, string, string])]) expect(web.watchLine!(l, r, o, { ...opts, prev })).toBe(watchLine(l, r, o, { ...opts, prev }));
-	for (const t of ["ch:7 morning brief: summarize", "주간 보고 정리", ...SCHEDULES.map(([t]) => t)]) expect(web.scheduleLine!(t)).toBe(scheduleLine(t));
+	for (const t of ["ch:7 morning brief: summarize", "주간 보고 정리", "#데모-점검(ch:7001): 주간 보고 정리", ...SCHEDULES.map(([t]) => t)]) expect(web.scheduleName!(t)).toBe(/[가-힣]/.test(scheduleLabel(t)) ? scheduleLabel(t) : "");
 	expect(web.humanLabel!("kakao-new")).toBe(humanLabel("kakao-new"));
 });
 
