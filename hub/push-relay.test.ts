@@ -5,6 +5,7 @@ import { afterEach, beforeEach, expect, test } from "bun:test";
 import { createDecipheriv, createECDH, createHmac } from "node:crypto";
 import { rmSync } from "node:fs";
 import { join } from "node:path";
+import type { Notice } from "./notices.ts";
 import { b64u } from "./webpush.ts";
 
 type Push = typeof import("./push.ts");
@@ -240,10 +241,10 @@ test("a lone gateway keeps the old behavior, and a test notification goes to eve
 test("the relayed message names the gateway, tags per gateway, opens with ?pc= and the item, has no option buttons, and cannot be steered by the sender", () => {
 	const m = inst.alpha.relayedMessage(GW.beta, { ...notice(), id: "n-7", actions: [{ action: "opt:1", title: "1) x" }] })!;
 	expect(m).toMatchObject({ kind: "result", title: "베타 · custom-ui · 완료", pc: GW.beta.url, id: "n-7" });
-	expect(m.url).toBe("/?pc=https%3A%2F%2Fbeta.ts.net%3A8445&n=n-7#chat/lane:custom-ui");
+	expect(m.url).toBe("/?m=2026-10-22T01%3A02%3A03.004Z&n=n-7&pc=https%3A%2F%2Fbeta.ts.net%3A8445#chat/lane:custom-ui");
 	expect(m.actions).toBeUndefined();
-	expect(inst.alpha.relayedMessage(GW.beta, notice())!.url).toStartWith("/?pc=https%3A%2F%2Fbeta.ts.net%3A8445&m=");
-	expect(inst.alpha.relayedMessage(GW.beta, { ...notice(), url: "https://evil.example/x#chat/main" })!.url).toStartWith("/?pc=");
+	expect(inst.alpha.relayedMessage(GW.beta, notice())!.url).toStartWith("/?m=2026-10-22T01%3A02%3A03.004Z&pc=https%3A%2F%2Fbeta.ts.net%3A8445");
+	expect(inst.alpha.relayedMessage(GW.beta, { ...notice(), url: "https://evil.example/x#chat/main" })!.url).toStartWith("/?m=2026-10-22T01%3A02%3A03.004Z&pc=");
 	expect(inst.alpha.relayedMessage(GW.beta, { ...notice(), url: "/#<script>" })!.url).not.toContain("<");
 });
 
@@ -401,4 +402,40 @@ test("what makes a notification stale: a decision answered or dismissed, a conve
 	expect(staleTags({ kind: "read", target: "ch:5" })).toEqual(["answer:ch:5", "ask:ch:5"]);
 	expect(staleTags({ kind: "notice", item: { id: 3, decision: { state: "open", options: [], to: "web" } } })).toEqual([]);
 	expect(staleTags({ kind: "notice", item: { id: 3, decision: { state: "answered", options: [], to: "web" } } })).toEqual(["decision:3"]);
+});
+
+const bell = (n: Partial<Notice>): Notice => ({ id: "x", ts: "2026-11-02T03:04:05.006Z", updated: "2026-11-02T03:04:05.006Z", kind: "message", tone: "", title: "제목", text: "본문", open: "main", at: "2026-11-02T03:04:05.006Z", read: false, ...n });
+const addrOfPush = (m: Record<string, unknown>) => {
+	const u = new URL(String(m.url), "http://x");
+	return { q: Object.fromEntries(u.searchParams), hash: u.hash };
+};
+
+const pair = () => {
+	const at = "2026-11-02T03:04:05.006Z";
+	const lane = `addr-${++seq}`;
+	const note = inst.gamma.noticePush(bell({ id: `nt${seq}`, kind: "result", tone: "done", title: "custom-ui", open: `lane:${lane}`, at, text: `[done] 끝 ${seq}` }))!;
+	const ask = inst.gamma.decisionPush(bell({ id: `dc${++seq}`, kind: "decision", tone: "ask", title: `배포할까요 ${seq}`, open: "main", at, decision: { options: [], to: "main", group: 1, state: "open" } }));
+	return { at, note, ask, hash: `#chat/lane:${lane}` };
+};
+
+test("an own push carries its message time, notice id and decision id in the address, and no pc", async () => {
+	const d = await devices();
+	const { at, note, ask, hash } = pair();
+	await send("gamma", note);
+	expect(addrOfPush(d.laptop.got()[0]!)).toEqual({ q: { m: at, i: note.nid! }, hash });
+	pushes.length = 0;
+	await send("gamma", ask);
+	expect(addrOfPush(d.laptop.got()[0]!)).toEqual({ q: { m: at, n: ask.id! }, hash: "#chat/main" });
+});
+
+test("a relayed notice push keeps m and i, a relayed decision push keeps m and n; the relay only adds pc", async () => {
+	const d = await devices();
+	const { at, note, ask, hash } = pair();
+	await send("gamma", note);
+	expect(addrOfPush(d.phoneApp.got()[0]!)).toEqual({ q: { m: at, i: note.nid!, pc: GW.gamma.url }, hash });
+	expect(d.phoneApp.got()[0]).toMatchObject({ ts: at, nid: note.nid, pc: GW.gamma.url });
+	pushes.length = 0;
+	await send("gamma", ask);
+	expect(addrOfPush(d.phoneApp.got()[0]!)).toEqual({ q: { m: at, n: ask.id!, pc: GW.gamma.url }, hash: "#chat/main" });
+	expect(d.phoneApp.got()[0]).toMatchObject({ ts: at, id: ask.id, pc: GW.gamma.url });
 });

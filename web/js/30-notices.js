@@ -133,7 +133,7 @@ async function pushOpen(hash, at, nid) {
   if (!find()) await loadNotices();   // a cold start, or a page that slept through it: the notice decides where this lands (a monitor's row, a failure's sheet)
   const n = find();
   if (!n && t === "alert") { go("notices"); return "no-notice"; }   // no notice behind it: the 알림 screen, not the record conversation
-  return noticeOpen(n || { kind: "message", tone: "", src: t, open: t, at });
+  return noticeOpen(n && noticeKindAction(n) === "message" ? { ...n, at } : n || { kind: "message", tone: "", src: t, open: t, at });
 }
 
 /* ---- one handler for every notice entry point ---- */
@@ -184,10 +184,10 @@ async function noticeOpen(n, here = false) {
   }
 }
 // `quiet`: a page load, not a tap, asked (?n=): a stale link just stays on the route it loaded. `hash`, `at`: where its push pointed, the landing when the notice is gone.
-async function noticeOpenId(id, quiet, hash, at) {
+async function noticeOpenId(id, quiet, hash, at, nid = "") {
   let n = ntById(id);
   if (!n) { await loadNotices(); n = ntById(id); }
-  if (!n && at) return pushOpen(hash, at, "");
+  if (!n && at) return pushOpen(hash, at, nid);
   if (!n) { if (!quiet) toast(TX("conv.nt.handled")); return "notice-gone"; }
   return noticeOpen(n);
 }
@@ -690,16 +690,11 @@ function ntSheetShow(id, det, pn = null) {
   ntSheetPaint();   // fsOpen already put the focus on the sheet itself: no option shows a ring until the keyboard moves to it
 }
 
-// A tapped notification (or an option button on it) asks an open window to show the decision; a cold start carries it as ?n=<id>.
-if ("serviceWorker" in navigator) navigator.serviceWorker.addEventListener("message", ev => { const d = ev.data || {}; if (d.notice) { pushTapGot(ev); ovCloseAll(); noticeOpenId(d.notice, false, new URL(d.open, location.href).hash, d.ts).then(r => pushTapReport(d.tap, r), () => pushTapReport(d.tap, "error")); } });
-{
-  const want = PUSH_FOLLOW ? "" : new URLSearchParams(location.search).get("n") || "";   // a relayed notice's ?n names an item on the other computer (prFollow)
-  if (want) {
-    const u = new URL(location.href);
-    u.searchParams.delete("n");
-    history.replaceState(history.state, "", u.pathname + u.search + u.hash);
-    setTimeout(() => pushTapCold(noticeOpenId(want, true, PUSH_HASH, pushDecisionAt)), 500);
-  }
+if (PUSH_ADDR.dec && !PUSH_FOLLOW) {
+  const u = new URL(location.href);
+  u.searchParams.delete("n");
+  history.replaceState(history.state, "", u.pathname + u.search + u.hash);
+  setTimeout(() => pushLand(PUSH_ADDR, { cold: true }), 500);
 }
 
 ntPaint();

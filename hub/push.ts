@@ -101,9 +101,12 @@ export const LONG_TURN_MS = 2 * 60_000;
 const CRITICAL = /멈췄|멈춤|막혔|실패|오류|끊겼|한도|위험|소진|확인이 필요|failed|error|stopped|limit/i;
 export function classify(e: HubEvent, sinceOwner?: number): PushMessage | undefined {
 	const m = classifyEvent(e, sinceOwner);
-	return m ? { ...m, ts: e.ts } : undefined;
+	if (!m) return undefined;
+	const { conv, ...rest } = m;
+	return { ...rest, ...addrOf({ conv, at: e.ts }) };
 }
-function classifyEvent(e: HubEvent, sinceOwner?: number): PushMessage | undefined {
+type Classified = Omit<PushMessage, "url"> & { conv: string };
+function classifyEvent(e: HubEvent, sinceOwner?: number): Classified | undefined {
 	const text = typeof e.text === "string" ? e.text : "";
 	if (!text || isLater(text)) return undefined;
 	const src = String(e.source ?? "");
@@ -117,27 +120,27 @@ function classifyEvent(e: HubEvent, sinceOwner?: number): PushMessage | undefine
 		// An all-clear, or the same alert again (hub/alert-gate.ts), was already as good as told: a record, not a warning.
 		const quiet = !!e.reply_to || tone === "done" || e.repeat === true || quietAlert(text) || (tone !== "fail" && src !== "gateway" && !CRITICAL.test(rest));
 		const c = noticeClass({ kind: "alert", tone, text: rest, quiet });
-		if (c.cls === "ask") return { kind: "ask", title: `${NAME} · 확인 필요`, body: plain(rest), url: "/#chat/alert", tag: "ask:alert" };
-		return c.cls === "alert" ? { kind: "alert", title: `${NAME} · 경고`, body: plain(rest), url: "/#chat/alert", tag: "alert" } : undefined;
+		if (c.cls === "ask") return { kind: "ask", title: `${NAME} · 확인 필요`, body: plain(rest), conv: "alert", tag: "ask:alert" };
+		return c.cls === "alert" ? { kind: "alert", title: `${NAME} · 경고`, body: plain(rest), conv: "alert", tag: "alert" } : undefined;
 	}
 	if (lane && (e.kind === "out" || e.kind === "lane_report")) {
-		const url = `/#chat/lane:${encodeURIComponent(lane)}`;
+		const conv = `lane:${lane}`;
 		// An untagged turn-end report that answers the owner, after a long turn, is the session's finished work, like the main chat's below.
 		const long = e.kind === "lane_report" && e.answering === true && !tone && (sinceOwner ?? 0) >= LONG_TURN_MS;
 		const c = noticeClass({ kind: "result", tone: long ? "done" : tone });
-		if (c.cls === "ask") return { kind: "ask", title: `${laneNameKo(lane)} · 질문`, body: plain(rest), url, tag: `ask:${lane}` };
-		return c.cls === "result" ? { kind: "result", title: `${laneNameKo(lane)} · ${tone === "fail" ? "실패" : "완료"}`, body: plain(rest), url, tag: `lane:${lane}` } : undefined;
+		if (c.cls === "ask") return { kind: "ask", title: `${laneNameKo(lane)} · 질문`, body: plain(rest), conv, tag: `ask:${lane}` };
+		return c.cls === "result" ? { kind: "result", title: `${laneNameKo(lane)} · ${tone === "fail" ? "실패" : "완료"}`, body: plain(rest), conv, tag: `lane:${lane}` } : undefined;
 	}
 	// The main chat's answers and a project's (work channel or one of its threads) are the same kind of message: one rule, each opening its own chat.
 	const chat = e.kind === "out" && e.source === "orchestrator" ? (e.target === "web" ? "main" : /^(?:ch:|settings:)/.test(eventTarget(e) ?? "") ? eventTarget(e) : undefined) : undefined;
 	if (chat) {
-		const url = `/#chat/${chat}`, sfx = chat === "main" ? "" : `:${chat}`;
+		const conv = chat, sfx = chat === "main" ? "" : `:${chat}`;
 		// A monitor's or app's settings conversation is titled with its label, like its notice in the bell.
 		const name = chat.startsWith("settings:") ? conversationTitle(chat) : NAME;
 		// A quick reply is not finished work: it reaches the owner as the conversation's unread answer (noticePush, class conv) when he is elsewhere.
 		const c = noticeClass({ kind: "result", tone: tone || ((sinceOwner ?? 0) >= LONG_TURN_MS ? "done" : "") });
-		if (c.cls === "ask") return { kind: "ask", title: `${name} · 확인 필요`, body: plain(rest), url, tag: `ask:${chat}` };
-		return c.cls === "result" ? { kind: "result", title: `${name} · ${tone === "fail" ? "실패" : "완료"}`, body: plain(rest), url, tag: `answer${sfx}` } : undefined;
+		if (c.cls === "ask") return { kind: "ask", title: `${name} · 확인 필요`, body: plain(rest), conv, tag: `ask:${chat}` };
+		return c.cls === "result" ? { kind: "result", title: `${name} · ${tone === "fail" ? "실패" : "완료"}`, body: plain(rest), conv, tag: `answer${sfx}` } : undefined;
 	}
 	return undefined;
 }
@@ -152,7 +155,27 @@ export function convOfUrl(url: string): string | undefined {
 		return undefined;
 	}
 }
-const convUrl = (conv: string) => (conv === "settings" ? "/#settings" : conv.startsWith("lane:") ? `/#chat/lane:${encodeURIComponent(conv.slice(5))}` : `/#chat/${conv}`);
+const hashOf = (conv: string) => (!conv ? "" : conv === "settings" || conv === "home" ? `#${conv}` : conv.startsWith("lane:") ? `#chat/lane:${encodeURIComponent(conv.slice(5))}` : `#chat/${conv}`);
+const convOfHash = (hash: string): string => {
+	if (hash === "#settings" || hash === "#home") return hash.slice(1);
+	const m = /^#chat\/(.+)$/.exec(hash);
+	try {
+		return m ? decodeURIComponent(m[1]!) : "";
+	} catch {
+		return "";
+	}
+};
+/** The one address a push carries: `gw` the origin of the computer that owns the item (set only on a relayed copy), `conv` its conversation, `at` the message's time, `nid` the bell notice, `dec` the decision. */
+export type PushAddr = { gw?: string; conv: string; at?: string; nid?: string; dec?: string };
+/** The address as the push fields every receiver reads: the URL `/?m=<at>&i=<nid>&n=<dec>[&pc=<gw>]#chat/<conv>` and the same values as ts, nid, id, pc. */
+export function addrOf(a: PushAddr): Pick<PushMessage, "url" | "ts" | "nid" | "id" | "pc"> {
+	const q = new URLSearchParams();
+	if (a.at) q.set("m", a.at);
+	if (a.nid) q.set("i", a.nid);
+	if (a.dec) q.set("n", a.dec);
+	if (a.gw) q.set("pc", a.gw);
+	return { url: `/${q.size ? `?${q}` : ""}${hashOf(a.conv)}`, ...(a.at ? { ts: a.at } : {}), ...(a.nid ? { nid: a.nid } : {}), ...(a.dec ? { id: a.dec } : {}), ...(a.gw ? { pc: a.gw } : {}) };
+}
 // The tag a conversation's answer notification carries (the same as classify's), so one matter is one notification whichever path sends it.
 const answerTag = (conv: string) => (conv === "main" ? "answer" : conv.startsWith("lane:") ? conv : conv === "alert" ? "alert" : `answer:${conv}`);
 
@@ -163,7 +186,7 @@ export function noticePush(n: Notice): PushMessage | undefined {
 	const { cls } = classOfNotice(n);
 	if (cls === "ask") return undefined;
 	const conv = n.open || "main";
-	const base = { kind: cls, body: plain(n.text) || plain(n.title), url: convUrl(conv), nid: n.id, ...(n.at ? { ts: n.at } : {}) };
+	const base = { kind: cls, body: plain(n.text) || plain(n.title), ...addrOf({ conv, at: n.at, nid: n.id }) };
 	switch (cls) {
 		case "result": {
 			const title = `${n.title} · ${n.tone === "fail" ? "실패" : "완료"}`;
@@ -187,12 +210,12 @@ const DECISION_ACTIONS = 2;
 // A decision notice as a notification: the decision line as the body, at most two option buttons (never the login form's own input).
 export function decisionPush(n: Notice): PushMessage {
 	const d = n.decision!;
-	const url = d.to.startsWith("auth:") ? "/#chat/main" : convUrl(d.to);
+	const conv = d.to.startsWith("auth:") ? "main" : d.to;
 	const group = confirmGroup(n);
 	// The send approvals of one monitoring app are one notification that evolves (same tag): "메일 답장 확인 3건", with no button, since a button answers one item.
-	if (group && group.count > 1) return { kind: "ask", title: DECISION_PUSH_TITLE, body: `${group.label} ${group.count}건`, url: "/#home", tag: `decision-group:${group.key}`, ts: n.at, id: n.id };
+	if (group && group.count > 1) return { kind: "ask", title: DECISION_PUSH_TITLE, body: `${group.label} ${group.count}건`, ...addrOf({ conv: "home", at: n.at, dec: n.id }), tag: `decision-group:${group.key}` };
 	const actions = d.options.filter(o => o.action !== "form").slice(0, DECISION_ACTIONS).map(o => ({ action: `opt:${o.n}`, title: plain(`${o.n}) ${o.label}`, 40) }));
-	return { kind: "ask", title: DECISION_PUSH_TITLE, body: plain(n.title), url, tag: `decision:${n.id}`, ts: n.at, id: n.id, ...(actions.length ? { actions } : {}) };
+	return { kind: "ask", title: DECISION_PUSH_TITLE, body: plain(n.title), ...addrOf({ conv, at: n.at, dec: n.id }), tag: `decision:${n.id}`, ...(actions.length ? { actions } : {}) };
 }
 
 // Taking back what was handled (owner 2026-10-28: "완료된건데 확인이 필요하다고 막 이러면 좀 헷갈려"): every tag a device was shown is remembered with the
@@ -417,7 +440,7 @@ async function fanOut(m: PushMessage): Promise<void> {
 	const ask = async (via: "app" | "all") => {
 		for (const p of [...up]) {
 			const skip = [...done].filter(k => !k.startsWith("e:"));
-			const got = await relayTo(p.url, JSON.stringify({ from: me!.url, via, skip, kind: m.kind, title: m.title, body: m.body, url: m.url, tag: m.tag, ts: m.ts, id: m.id }));
+			const got = await relayTo(p.url, JSON.stringify({ from: me!.url, via, skip, kind: m.kind, title: m.title, body: m.body, url: m.url, tag: m.tag, ts: m.ts, id: m.id, nid: m.nid }));
 			if (got) {
 				for (const k of got) done.add(k);
 				reached += got.filter(k => EP_KEY.test(k)).length;   // one ep: key per device the peer reached
@@ -487,15 +510,14 @@ export function relayedMessage(peer: { name: string; url: string }, p: Record<st
 	if (!kind || typeof p.title !== "string" || typeof p.body !== "string" || !p.title) return undefined;
 	const id = typeof p.id === "string" && /^[\w.:-]{1,80}$/.test(p.id) ? p.id : "";
 	const ts = typeof p.ts === "string" && /^[\w.:+-]{1,40}$/.test(p.ts) ? p.ts : "";
+	const nid = typeof p.nid === "string" && /^[\w.:-]{1,80}$/.test(p.nid) ? p.nid : "";
 	let hash = "";
 	try {
 		hash = new URL(typeof p.url === "string" ? p.url : "/", "http://x").hash;
 	} catch {}
 	if (!RELAY_HASH.test(hash)) hash = "";
-	const q = new URLSearchParams({ pc: new URL(peer.url).origin });
-	if (id) q.set("n", id);
-	else if (ts) q.set("m", ts);
-	return { kind, title: `${peer.name} · ${plain(p.title, 80)}`, body: plain(p.body), url: `/?${q}${hash}`, tag: `${new URL(peer.url).host}:${typeof p.tag === "string" ? p.tag.slice(0, 80) : kind}`, pc: new URL(peer.url).origin, ...(id ? { id } : {}), ...(ts && !id ? { ts } : {}) };
+	const gw = new URL(peer.url).origin;
+	return { kind, title: `${peer.name} · ${plain(p.title, 80)}`, body: plain(p.body), tag: `${new URL(peer.url).host}:${typeof p.tag === "string" ? p.tag.slice(0, 80) : kind}`, ...addrOf({ gw, conv: convOfHash(hash), at: ts, nid, dec: id }) };
 }
 
 const recent = new Map<string, number>();

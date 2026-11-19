@@ -12,7 +12,7 @@ const ev = (e: Record<string, unknown>) => ({ ts: "2026-10-20T00:00:00Z", kind: 
 
 test("a web answer notifies only when it finishes work or needs the owner; a quick reply does not", () => {
 	expect(classify(ev({ target: "web", text: "네, 맞아요" }), 5_000)).toBeUndefined();
-	expect(classify(ev({ target: "web", text: "다 했어요" }), LONG_TURN_MS)).toMatchObject({ kind: "result", title: `${NAME} · 완료`, url: "/#chat/main", body: "다 했어요" });
+	expect(classify(ev({ target: "web", text: "다 했어요" }), LONG_TURN_MS)).toMatchObject({ kind: "result", title: `${NAME} · 완료`, url: "/?m=2026-10-20T00%3A00%3A00Z#chat/main", body: "다 했어요" });
 	expect(classify(ev({ target: "web", text: "[done] 배포 끝" }), 5_000)).toMatchObject({ title: `${NAME} · 완료` });
 	expect(classify(ev({ target: "web", text: "[ask] 어느 쪽?" }))).toMatchObject({ kind: "ask", body: "어느 쪽?" });
 });
@@ -26,9 +26,9 @@ test("a push body never shows the \"For <bot>:\" line of a report", () => {
 test("a project's answers notify like the main chat's and open that project's chat; a thread of it does too", () => {
 	const CH = "ch:1500000000001908448";
 	expect(classify(ev({ target: CH, text: "네, 맞아요" }), 5_000)).toBeUndefined();
-	expect(classify(ev({ target: CH, text: "다 했어요" }), LONG_TURN_MS)).toMatchObject({ kind: "result", title: `${NAME} · 완료`, url: `/#chat/${CH}`, tag: `answer:${CH}` });
-	expect(classify(ev({ target: CH, text: "[ask] 어느 쪽?" }))).toMatchObject({ kind: "ask", url: `/#chat/${CH}` });
-	expect(classify(ev({ target: "th:42", channel: CH, text: "[done] 끝" }))).toMatchObject({ title: `${NAME} · 완료`, url: `/#chat/${CH}` });
+	expect(classify(ev({ target: CH, text: "다 했어요" }), LONG_TURN_MS)).toMatchObject({ kind: "result", title: `${NAME} · 완료`, url: `/?m=2026-10-20T00%3A00%3A00Z#chat/${CH}`, tag: `answer:${CH}` });
+	expect(classify(ev({ target: CH, text: "[ask] 어느 쪽?" }))).toMatchObject({ kind: "ask", url: `/?m=2026-10-20T00%3A00%3A00Z#chat/${CH}` });
+	expect(classify(ev({ target: "th:42", channel: CH, text: "[done] 끝" }))).toMatchObject({ title: `${NAME} · 완료`, url: `/?m=2026-10-20T00%3A00%3A00Z#chat/${CH}` });
 	expect(classify(ev({ target: CH, source: "gateway", text: "[done] 끝" }))).toBeUndefined();
 	expect(classify(ev({ target: "th:42", text: "[done] 끝" }))).toBeUndefined(); // a thread of no known project stays on Discord
 });
@@ -50,7 +50,7 @@ test("alerts notify only when critical or when the owner is needed", () => {
 });
 
 test("lane [ask]/[done]/[fail] lines notify and open that lane; progress does not", () => {
-	expect(classify(ev({ source: "lane:ui-pwa", target: "lane:ui-pwa", text: "[ask] 머지할까?" }))).toMatchObject({ kind: "ask", url: "/#chat/lane:ui-pwa" });
+	expect(classify(ev({ source: "lane:ui-pwa", target: "lane:ui-pwa", text: "[ask] 머지할까?" }))).toMatchObject({ kind: "ask", url: "/?m=2026-10-20T00%3A00%3A00Z#chat/lane:ui-pwa" });
 	expect(classify(ev({ kind: "lane_report", source: "lane:x", lane: "x", text: "[done] 끝" }))).toMatchObject({ kind: "result", title: expect.stringMatching(/^(?!x · ).+ · 완료$/) });
 	expect(classify(ev({ source: "lane:x", target: "lane:x", text: "[fail] 테스트 실패" }))).toMatchObject({ kind: "result", title: expect.stringMatching(/^(?!x · ).+ · 실패$/) });
 	expect(classify(ev({ source: "lane:x", target: "lane:x", text: "[run] 빌드 중", update_key: "progress" }))).toBeUndefined();
@@ -59,7 +59,7 @@ test("lane [ask]/[done]/[fail] lines notify and open that lane; progress does no
 
 test("a session's untagged report that answers the owner after a long turn notifies as its answer", () => {
 	const report = (extra: Record<string, unknown>) => ev({ kind: "lane_report", source: "lane:x", lane: "x", text: "리포트가 완성됐어요", ...extra });
-	expect(classify(report({ answering: true }), LONG_TURN_MS)).toMatchObject({ kind: "result", title: expect.stringMatching(/^(?!x · ).+ · 완료$/), url: "/#chat/lane:x", tag: "lane:x", body: "리포트가 완성됐어요" });
+	expect(classify(report({ answering: true }), LONG_TURN_MS)).toMatchObject({ kind: "result", title: expect.stringMatching(/^(?!x · ).+ · 완료$/), url: "/?m=2026-10-20T00%3A00%3A00Z#chat/lane:x", tag: "lane:x", body: "리포트가 완성됐어요" });
 	expect(classify(report({ answering: true }), LONG_TURN_MS - 1)).toBeUndefined();
 	expect(classify(report({}), LONG_TURN_MS)).toBeUndefined();
 	expect(classify(report({ answering: true, text: "[run] 아직 하는 중" }), LONG_TURN_MS)).toBeUndefined();
@@ -189,11 +189,11 @@ test("a decision notice pushes as 답변이 필요해요 with its id, the decisi
 	emit("outbox", { ts: new Date().toISOString(), kind: "out", source: "orchestrator", target: "web", text: "[ask] 어떻게 할까요?\n결정: 배포 방식\n**1) 지금 바로**\n**2) 밤에**\n**3) 하지 않기**" });
 	const n = fresh.find(x => x.title === "배포 방식")!;
 	expect(n).toBeDefined();
-	expect(decisionPush(n)).toEqual({ kind: "ask", title: "답변이 필요해요", body: "배포 방식", url: "/#chat/main", tag: `decision:${n.id}`, ts: n.at, id: n.id, actions: [{ action: "opt:1", title: "1) 지금 바로" }, { action: "opt:2", title: "2) 밤에" }] });
+	expect(decisionPush(n)).toEqual({ kind: "ask", title: "답변이 필요해요", body: "배포 방식", url: `/?m=${encodeURIComponent(n.at)}&n=${n.id}#chat/main`, tag: `decision:${n.id}`, ts: n.at, id: n.id, actions: [{ action: "opt:1", title: "1) 지금 바로" }, { action: "opt:2", title: "2) 밤에" }] });
 	emit("outbox", { ts: new Date().toISOString(), kind: "out", source: "lane:fix-ui", target: "lane:fix-ui", text: "[ask] 어느 쪽으로 이어갈까요?" });
 	const lane = fresh.find(x => x.title === "어느 쪽으로 이어갈까요?")!;
 	const m = decisionPush(lane);
-	expect(m).toMatchObject({ title: "답변이 필요해요", url: "/#chat/lane:fix-ui", id: lane.id });
+	expect(m).toMatchObject({ title: "답변이 필요해요", url: `/?m=${encodeURIComponent(lane.at)}&n=${lane.id}#chat/lane:fix-ui`, id: lane.id });
 	expect(m.actions).toBeUndefined();   // an open question has no options (a yes / no one gets 1) 네 2) 아니요, ask-options.ts): a tap opens the detail
 	// the store is shared with other test files: answer both so no pinned decision is left behind
 	emit("inbox", { ts: new Date().toISOString(), kind: "message", source: "web", channel: "web", text: "1" });
@@ -204,7 +204,7 @@ test("an answer in a monitor's or app's settings conversation notifies like any 
 	setWatchLabelResolver(name => (name === "login-boutique-com" ? "부티크 로그인 유지" : name));
 	const conv = "settings:w:login-boutique-com";
 	expect(classify(ev({ target: conv, text: "원인을 찾았어요. 로그인이 풀렸어요." }), 5_000)).toBeUndefined();
-	expect(classify(ev({ target: conv, text: "원인을 찾았어요. 로그인이 풀렸어요." }), LONG_TURN_MS)).toMatchObject({ kind: "result", title: "부티크 로그인 유지 · 완료", url: `/#chat/${conv}`, tag: `answer:${conv}` });
+	expect(classify(ev({ target: conv, text: "원인을 찾았어요. 로그인이 풀렸어요." }), LONG_TURN_MS)).toMatchObject({ kind: "result", title: "부티크 로그인 유지 · 완료", url: `/?m=2026-10-20T00%3A00%3A00Z#chat/${conv}`, tag: `answer:${conv}` });
 	expect(classify(ev({ target: conv, text: "[fail] 다시 로그인하지 못했어요" }), 5_000)).toMatchObject({ kind: "result", title: "부티크 로그인 유지 · 실패" });
 	expect(classify(ev({ target: conv, text: "[ask] 다시 로그인할까요?" }))).toMatchObject({ kind: "ask", title: "부티크 로그인 유지 · 확인 필요" });
 	expect(classify(ev({ source: "gateway", target: conv, text: "받았어요" }), LONG_TURN_MS)).toBeUndefined();

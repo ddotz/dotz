@@ -13,23 +13,23 @@ const notice = (n: Partial<Notice>): Notice => ({ id: "n1", ts: "2026-11-01T00:0
 
 test("a notification names the place its message lives in", () => {
 	const t = "2026-11-01T00:00:00Z";
-	expect(noticePush(notice({ kind: "watch", title: "메일", open: "mail:abc", at: t }))).toMatchObject({ url: "/#chat/mail:abc", ts: t, nid: "n1" });
-	expect(classify({ ts: t, kind: "out", source: "gateway", target: "alert", text: "[fail] 게이트웨이 오류" })).toMatchObject({ url: "/#chat/alert", ts: t });
+	expect(noticePush(notice({ kind: "watch", title: "메일", open: "mail:abc", at: t }))).toMatchObject({ url: "/?m=2026-11-01T00%3A00%3A00Z&i=n1#chat/mail:abc", ts: t, nid: "n1" });
+	expect(classify({ ts: t, kind: "out", source: "gateway", target: "alert", text: "[fail] 게이트웨이 오류" })).toMatchObject({ url: "/?m=2026-11-01T00%3A00%3A00Z#chat/alert", ts: t });
 	const dec = (to: string) => notice({ kind: "decision", tone: "ask", at: t, decision: { options: [], to, group: 1, state: "open" } });
-	expect(decisionPush(dec("alert")).url).toBe("/#chat/alert");
-	expect(decisionPush(dec("mail:abc")).url).toBe("/#chat/mail:abc");
-	expect(decisionPush(dec("auth:1")).url).toBe("/#chat/main");
+	expect(decisionPush(dec("alert")).url).toBe("/?m=2026-11-01T00%3A00%3A00Z&n=n1#chat/alert");
+	expect(decisionPush(dec("mail:abc")).url).toBe("/?m=2026-11-01T00%3A00%3A00Z&n=n1#chat/mail:abc");
+	expect(decisionPush(dec("auth:1")).url).toBe("/?m=2026-11-01T00%3A00%3A00Z&n=n1#chat/main");
 });
 
 test("results, monitoring news, alerts and unread answers notify; progress, questions (decisionPush) and read items do not", () => {
-	expect(noticePush(notice({ kind: "result", tone: "done", title: "ui-pwa", open: "lane:ui-pwa", key: "lane:ui-pwa", text: "[done] 배포 끝" }))).toMatchObject({ kind: "result", title: "ui-pwa · 완료", url: "/#chat/lane:ui-pwa", tag: "lane:ui-pwa", ts: "2026-11-01T00:00:00Z" });
+	expect(noticePush(notice({ kind: "result", tone: "done", title: "ui-pwa", open: "lane:ui-pwa", key: "lane:ui-pwa", text: "[done] 배포 끝" }))).toMatchObject({ kind: "result", title: "ui-pwa · 완료", url: "/?m=2026-11-01T00%3A00%3A00Z&i=n1#chat/lane:ui-pwa", tag: "lane:ui-pwa", ts: "2026-11-01T00:00:00Z" });
 	expect(noticePush(notice({ kind: "result", tone: "fail", title: "ui-pwa", open: "lane:ui-pwa" }))).toMatchObject({ title: "ui-pwa · 실패" });
-	expect(noticePush(notice({ kind: "watch", title: "메일", open: "alert", watch: "mail-new", text: "새 메일 2통" }))).toMatchObject({ kind: "news", title: "메일 · 새 소식", body: "새 메일 2통", url: "/#chat/alert", tag: "watch:mail-new" });
-	expect(noticePush(notice({ kind: "watch", title: "예약", open: "ch:123", text: "3시 회의" }))).toMatchObject({ kind: "news", url: "/#chat/ch:123", tag: "watch:n1" });
-	expect(noticePush(notice({ kind: "message", title: NAME, open: "main", text: "보고서 정리했어요" }))).toMatchObject({ kind: "conv", title: `${NAME} · 새 메시지`, url: "/#chat/main", tag: "answer" });
-	expect(noticePush(notice({ kind: "message", title: "프로젝트", open: "ch:9" }))).toMatchObject({ tag: "answer:ch:9", url: "/#chat/ch:9" });
+	expect(noticePush(notice({ kind: "watch", title: "메일", open: "alert", watch: "mail-new", text: "새 메일 2통" }))).toMatchObject({ kind: "news", title: "메일 · 새 소식", body: "새 메일 2통", url: "/?m=2026-11-01T00%3A00%3A00Z&i=n1#chat/alert", tag: "watch:mail-new" });
+	expect(noticePush(notice({ kind: "watch", title: "예약", open: "ch:123", text: "3시 회의" }))).toMatchObject({ kind: "news", url: "/?m=2026-11-01T00%3A00%3A00Z&i=n1#chat/ch:123", tag: "watch:n1" });
+	expect(noticePush(notice({ kind: "message", title: NAME, open: "main", text: "보고서 정리했어요" }))).toMatchObject({ kind: "conv", title: `${NAME} · 새 메시지`, url: "/?m=2026-11-01T00%3A00%3A00Z&i=n1#chat/main", tag: "answer" });
+	expect(noticePush(notice({ kind: "message", title: "프로젝트", open: "ch:9" }))).toMatchObject({ tag: "answer:ch:9", url: "/?m=2026-11-01T00%3A00%3A00Z&i=n1#chat/ch:9" });
 	expect(noticePush(notice({ kind: "alert", tone: "", title: "알림", open: "alert", text: "모델 제공자 오류(timeout)" }))).toMatchObject({ kind: "alert", title: `${NAME} · 경고`, tag: "alert" });
-	expect(noticePush(notice({ kind: "alert", tone: "", title: "새 버전", open: "settings", key: "self-update" }))).toMatchObject({ kind: "news", url: "/#settings", tag: "update" });
+	expect(noticePush(notice({ kind: "alert", tone: "", title: "새 버전", open: "settings", key: "self-update" }))).toMatchObject({ kind: "news", url: "/?m=2026-11-01T00%3A00%3A00Z&i=n1#settings", tag: "update" });
 	expect(noticePush(notice({ kind: "worklog", tone: "fail", title: "작업 기록", open: "worklog" }))).toMatchObject({ kind: "result", title: "작업 기록 · 실패" });
 	// a finished work log entry is a result too (notice class result)
 	expect(noticePush(notice({ kind: "worklog", tone: "done", title: "작업 기록", open: "worklog" }))).toMatchObject({ kind: "result", title: "작업 기록 · 완료" });

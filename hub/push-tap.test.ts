@@ -78,6 +78,29 @@ describe("the worker hands a tap to the app's own window", () => {
 		await sw.tap(data);
 		expect(sw.kept[0]).toMatchObject({ path: "new-window", why: "focus-refused" });
 	});
+
+	test("a tap goes to the installed app's window, not a browser tab listed before it", async () => {
+		const installedGot: Array<Record<string, unknown>> = [];
+		const tab = win(`${ORIGIN}/#home`, true), installed = win(`${ORIGIN}/#home`, true, {
+			postMessage: (m, ports) => { installedGot.push(m); ports?.[0]?.postMessage(m.probe ? { standalone: true } : 1); },
+		});
+		const sw = worker([tab.w, installed.w]);
+		await sw.tap(data);
+		expect(installedGot.filter(m => !m.probe)).toMatchObject([{ open: `${ORIGIN}/#chat/main`, ts: data.ts, nid: "n1", tap: { path: "open-window" } }]);
+		expect(tab.got.filter(m => !m.probe)).toEqual([]);
+		expect(sw.opened).toEqual([]);
+	});
+
+	test("windows that do not say they are installed (an older page, a browser tab) keep the usual choice: the focused one", async () => {
+		const older = win(`${ORIGIN}/#home`, false), tab = win(`${ORIGIN}/#home`, true, { focused: true });
+		const sw = worker([older.w, tab.w]);
+		await sw.tap(data, async () => {
+			await older.arrival;
+			sw.fire();
+		});
+		expect(tab.got.filter(m => !m.probe)).toMatchObject([{ open: `${ORIGIN}/#chat/main`, nid: "n1" }]);
+		expect(sw.opened).toEqual([]);
+	});
 });
 
 describe("the gateway log", () => {

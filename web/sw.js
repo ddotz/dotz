@@ -32,6 +32,23 @@ function tellWindow(win, msg) {
     try { win.postMessage(msg, [ch.port2]); } catch { clearTimeout(t); res(false); }
   });
 }
+const PROBE_MS = 400;
+function probeInstalled(win) {
+  return new Promise(res => {
+    const ch = new MessageChannel();
+    const t = setTimeout(() => res(false), PROBE_MS);
+    ch.port1.onmessage = ev => { clearTimeout(t); res(!!ev.data && ev.data.standalone === true); };
+    try { win.postMessage({ probe: "display-mode" }, [ch.port2]); } catch { clearTimeout(t); res(false); }
+  });
+}
+async function pickAppWin(wins) {
+  if (wins.length > 1) {
+    const installed = await Promise.all(wins.map(probeInstalled));
+    const apps = wins.filter((_, i) => installed[i]);
+    if (apps.length) wins = apps;
+  }
+  return wins.find(w => w.focused) || wins.find(w => w.visibilityState === "visible") || wins[0];
+}
 // A navigation answers from the cache at once; its background check waits this long, so its eight requests do not join the page's own first ones on a busy gateway.
 const REFRESH_AFTER_MS = 3000;
 
@@ -215,7 +232,7 @@ self.addEventListener("notificationclick", ev => {
   const tag = ev.notification.tag || "";
   const openApp = async () => {
     const wins = (await self.clients.matchAll({ type: "window", includeUncontrolled: true })).filter(w => isAppWin(w, location.origin));
-    const win = wins.find(w => w.focused) || wins.find(w => w.visibilityState === "visible") || wins[0];
+    const win = await pickAppWin(wins);
     // A window that refuses focus (a browser may) would change where nobody sees it, and one that does not answer has not got the tap: a new one opens at the item instead.
     let why = "no-window";
     if (win) {

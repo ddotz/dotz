@@ -45,12 +45,36 @@ function pushTapReport(tap, reason) {
   const screen = current === "chat" ? `chat:${target}` : current;
   fetch("/api/push/tap", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ tag: tap.tag || "", path: tap.path, why: tap.why || "", screen, reason: typeof reason === "string" ? reason : "" }), keepalive: true }).catch(e => console.warn("push tap report", e));
 }
-if ("serviceWorker" in navigator) navigator.serviceWorker.addEventListener("message", ev => { const d = ev.data || {}, h = d.open ? new URL(d.open, location.href).hash : "";
-  if (d.open && !d.notice) pushTapGot(ev);   // a decision push (d.notice) is answered and opened by its id (30-notices.js)
-  if (!h || d.notice) { if (d.open && !d.notice) pushTapReport(d.tap, "no-address"); return; }
-  ovCloseAll();   // nothing left open covers the landing
-  const landed = d.ts ? pushOpen(h, d.ts, d.nid) : location.hash !== h ? (p => go(p.view, p.t))(parseHash(h)) : "";
-  Promise.resolve(landed).then(r => pushTapReport(d.tap, r), () => pushTapReport(d.tap, "error"));
+function pushAddr(href, m = {}) {
+  const u = new URL(href, location.href), q = u.searchParams;
+  return { pc: q.get("pc") || "", hash: u.hash, at: m.ts || q.get("m") || "", nid: m.nid || q.get("i") || "", dec: m.notice || q.get("n") || "" };
+}
+async function pushLand(addr, via = {}) {
+  const report = landing => (via.tap ? Promise.resolve(landing).then(r => pushTapReport(via.tap, r), () => pushTapReport(via.tap, "error")) : via.cold ? pushTapCold(landing) : undefined);
+  if (addr.pc && addr.pc !== location.origin) {
+    const hop = await prHandOver(addr, !!via.pressed);
+    await report(hop.reason);
+    if (hop.href) prGo(hop.href, !via.pressed);
+    return hop.reason;
+  }
+  const landing = pushHere(addr, !!via.cold);
+  report(landing);
+  return landing;
+}
+async function pushHere(addr, quiet) {
+  if (!addr.hash && !addr.dec) return "no-address";
+  if (!quiet) { ovCloseAll(); prFrameClose(false); }
+  if (addr.dec) return noticeOpenId(addr.dec, quiet, addr.hash, addr.at, addr.nid);
+  if (addr.at) return pushOpen(addr.hash, addr.at, addr.nid);
+  if (location.hash !== addr.hash) { const p = parseHash(addr.hash); go(p.view, p.t); }
+  return "";
+}
+if ("serviceWorker" in navigator) navigator.serviceWorker.addEventListener("message", ev => {
+  const d = ev.data || {}, href = typeof d.follow === "string" ? d.follow : d.open;
+  if (d.probe === "display-mode" && ev.ports[0]) { ev.ports[0].postMessage({ standalone: isStandalone() }); return; }
+  if (typeof href !== "string") return;
+  pushTapGot(ev);
+  pushLand(pushAddr(href, d), { tap: d.tap });
 });
 // A new shell version: sw.js refreshShell posts {type:"shell-updated"} when its background fetch brought a changed page, script or styles.
 // The page reloads onto it only while it is hidden and nothing would be lost (empty composer, no attachment, sheet, dialog, or viewer open): a reload
@@ -112,17 +136,16 @@ try {
   DEVICE_ID = localStorage.getItem("dotz-did") || "";
   if (!DEVICE_ID) localStorage.setItem("dotz-did", DEVICE_ID = crypto.randomUUID());
 } catch {}
-if (pushQ.has("did")) { pushQ.delete("did"); const rest = pushQ.toString(); history.replaceState(history.state, "", location.pathname + (rest ? `?${rest}` : "") + location.hash); }
+const PUSH_HOP = pushQ.has("hop");
+if (pushQ.has("did") || PUSH_HOP) { pushQ.delete("did"); pushQ.delete("hop"); const rest = pushQ.toString(); history.replaceState(history.state, "", location.pathname + (rest ? `?${rest}` : "") + location.hash); }
 // An address a tap already spent, come back with the app: its landing is over, and only the route stays.
 const PUSH_SPENT = "dotz-push-spent", PUSH_SPENT_MAX = 30;
 const pushSpent = () => { try { return JSON.parse(localStorage.getItem(PUSH_SPENT) || "[]"); } catch { return []; } };
 const PUSH_REPLAY = pushSpent().includes(PUSH_HREF);
 if (PUSH_REPLAY) { for (const k of ["m", "i", "n", "pc"]) pushQ.delete(k); const rest = pushQ.toString(); history.replaceState(history.state, "", location.pathname + (rest ? `?${rest}` : "") + location.hash); }
-// ?pc=<origin> (a notice relayed from another computer): the page switches to that computer (33-peers.js prFollow), with ?n / ?m as its own item.
 const PUSH_FOLLOW = pushQ.has("pc") ? location.href : "";
 let pushOpenTs = pushQ.has("n") || PUSH_FOLLOW ? "" : pushQ.get("m") || "";
-const pushOpenNid = pushQ.get("i") || "", pushDecisionAt = pushQ.has("n") ? pushQ.get("m") || "" : "";
-const PUSH_HASH = location.hash;   // the tapped address: the first go() rewrites it (#chat/alert to #notices, a mail to #monitoring/c:...)
+const PUSH_ADDR = { pc: pushQ.get("pc") || "", hash: location.hash, at: pushQ.get("m") || "", nid: pushQ.get("i") || "", dec: pushQ.get("n") || "" };
 if (pushQ.has("m") && !PUSH_FOLLOW) { pushQ.delete("m"); pushQ.delete("i"); const rest = pushQ.toString(); history.replaceState(history.state, "", location.pathname + (rest ? `?${rest}` : "") + location.hash); }
 // The tap that started the app wins over the address it started at (web/sw.js openAt: a phone may bring back an older one), and that address is then spent.
 // Runs on load and on coming back: a window that never opened leaves its tap to the page it brought forward.
@@ -148,10 +171,11 @@ async function pushTapCold(landing) {
   if (PUSH_REPORTED || PUSH_REPLAY) return;   // a spent address reloads at the real tap (pushTapCheck), and that page reports
   PUSH_REPORTED = true;
   try {
-    const hit = await (await caches.open("dotz-share")).match("/push/tap"), tap = hit && await hit.json();
-    if (!tap || tap.href !== PUSH_HREF || Date.now() - tap.at > 5 * PUSH_TAP_MS) return;
-    const reason = await landing;
-    pushTapReport(tap, PUSH_FOLLOW && !reason ? "follow" : reason);
+    const hit = await (await caches.open("dotz-share")).match("/push/tap"), kept = hit && await hit.json();
+    const own = kept && kept.href === PUSH_HREF && Date.now() - kept.at <= 5 * PUSH_TAP_MS;
+    const tap = own ? kept : PUSH_HOP ? { path: "open-window", tag: "", why: "follow" } : null;
+    if (!tap) return;
+    pushTapReport(tap, await landing);
   } catch (e) { console.warn("push tap", e); }
 }
 async function pwaInit() {
