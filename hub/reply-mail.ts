@@ -15,6 +15,11 @@ const known = (ref: string): DraftRec | undefined => {
 	return rec?.kind === "mail" ? rec : undefined;
 };
 const done = (r: { ok: boolean; text: string }, code: ReasonCode = "not_pending") => (r.ok ? { ok: true as const } : { ok: false as const, reason: { code, text: r.text } });
+/** The lane a pending mail draft is sent in: a webmail site's own, else its source and sending account. */
+export const mailLane = (rec: DraftRec): string => {
+	const site = webmailSite(rec.source);
+	return site ? `mail:${site}` : `mail:${rec.source}:${rec.account ?? ""}`;
+};
 const sentAtOf = (rec: DraftRec): number | undefined => {
 	const at = rec.status === "sent" && rec.sentAt ? Date.parse(rec.sentAt) : Number.NaN;
 	return Number.isFinite(at) ? at : undefined;
@@ -41,8 +46,7 @@ export function mailAdapter(deps: () => FlowDeps = realFlowDeps, mailOf: MailOf 
 		target: ref => {
 			const rec = known(ref);
 			if (!rec) return undefined;
-			const site = webmailSite(rec.source);
-			return { kind: "mail", lane: site ? `mail:${site}` : `mail:${rec.source}:${rec.account ?? ""}` };
+			return { kind: "mail", lane: mailLane(rec) };
 		},
 		revise: async (ref, change) => {
 			const r = await reviseDraft(ref, change, deps(), { learn: false });

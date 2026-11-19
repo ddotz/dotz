@@ -8,15 +8,18 @@ import { cfg, DATA_DIR, log, now, writeAtomic } from "./config.ts";
 import { broadcast, emit } from "./events.ts";
 import { approvals, cardMoved, newMid, out, showSendOnCard } from "./outbound.ts";
 import { allNotices, markDraftSend, onDecision, openDraftCards, redrawDraftCards, repostDraftCard, setCardFingerprint, setStoredDraft, settleOpenDecision, stampDraftCard } from "./notices.ts";
-import { settleSoon } from "./notices-drafts.ts";
+import { newestDraftCard, setSendOwed, settleSoon } from "./notices-drafts.ts";
 import { commentPostedOf, commentProveSends, commentReply, commentSendOutcome, commentSettleSending, commentSettleStale } from "./comments/gateway.ts";
 import { kakaoReply } from "./kakao/gateway.ts";
 import { linkedComment } from "./comments/linked.ts";
 import { isCommentPlace } from "./comments/reply-adapter.ts";
-import { claimFile, getDraft, mailAdapter, replyLearning, unlessUnreadable } from "./reply-mail.ts";
+import { claimFile, getDraft, mailAdapter, mailLane, replyLearning, unlessUnreadable } from "./reply-mail.ts";
 import { mailByKey } from "./mail.ts";
 import { claimHolder } from "./draft-claim.ts";
 import { approvalHash, createApprovalSender, MAY_HAVE_GONE_OUT, refOfQuestion, runCli, type SendAction, type SendJob, type SendLook, type SendResult, type SendTarget } from "./approval-send.ts";
+import { readDrafts } from "./kakao/send.ts";
+import { kakaoPaths } from "./kakao/types.ts";
+import { reasonOf } from "./reply-reasons.ts";
 import { DRAFT_UNDO, draftActionOf, SEND_GATE } from "./draft-approval.ts";
 import { askText, withRecipient } from "./draft-attach.ts";
 import { createReplyActions, sendOf, setReplies } from "./reply-actions.ts";
@@ -62,9 +65,17 @@ export function sendTargetOf(ref: string, action?: SendAction): SendTarget | und
 	if (p?.mail && (!action || action === "send-mail") && getDraft(p.mail)?.status === "pending") return { kind: "comment", lane: `comment:${p.source}` };
 	if (c) return c;
 	const m = getDraft(ref);
-	if (m && m.kind === "mail" && m.status === "pending" && !linkedComment(ref)) return { kind: "mail", lane: `mail:${m.source}:${m.account ?? m.app}` };
+	if (m && m.kind === "mail" && m.status === "pending" && !linkedComment(ref)) return { kind: "mail", lane: mailLane(m) };
 	return action === undefined || action === "send" ? kakaoReply.target(ref) : undefined;
 }
+
+setSendOwed(async ref => {
+	for (const a of adapters) {
+		const view = await a.get(ref);
+		if (view) return view.draft.state === "pending" || sendTargetOf(ref, "send-mail") !== undefined;
+	}
+	return false;
+});
 
 // A conversation's gateway note goes where its cards were posted.
 const targetOf = (conv: string, ref: string): string => approvals.targetOf(conv, ref) ?? (conv === "main" ? "web" : conv);
@@ -117,6 +128,9 @@ const jobStore = {
 function lookSend(j: SendJob): SendLook {
 	const m = getDraft(j.ref);
 	if (m) return m.status === "sent" ? { state: "sent" } : claimHolder(claimFile(j.ref)) === "live" ? { state: "alive" } : { state: "unsure", text: MAY_HAVE_GONE_OUT };
+	const k = readDrafts(kakaoPaths(DATA_DIR)).find(d => d.code === j.ref);
+	if (k?.status === "sent") return k.unconfirmed ? { state: "unsure", text: reasonOf("press_unconfirmed").text } : { state: "sent" };
+	if (k?.status === "pending" && claimHolder(join(DATA_DIR, "kakao", "sending", j.ref)) === "live") return { state: "alive" };
 	return commentSendOutcome(j.ref) ?? { state: "unsure", text: MAY_HAVE_GONE_OUT };
 }
 // The cancel window (settings: web.send_undo_sec, seconds, default 10, 0 = off) is read when a send is approved.
@@ -161,7 +175,7 @@ let toBot: (conv: string, text: string) => Promise<void> = async conv => log(`re
 export const setReplyBot = (fn: typeof toBot): void => void (toBot = fn);
 const openCardOf = (conv: string, ref: string) => openDraftCards(conv).find(c => c.ref === ref);
 // The card of draft `ref`, open or answered: the conversation its sends report to.
-const cardOfRef = (ref: string) => allNotices().find(i => i.decision && i.title.endsWith(`(${ref})`));
+const cardOfRef = newestDraftCard;
 
 export const replies = createReplyActions({
 	adapters,

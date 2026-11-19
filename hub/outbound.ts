@@ -48,6 +48,7 @@ import { isLate, isSnowflake, lateQuote, lateRequestId, replyRef, snowflakeTime,
 import { keepBrief } from "./draft-approval.ts";
 import { allNotices, markCardShown, markDraftPosted, onDecisionClosed, onDraftCardRefreshed, openDraftCards, openDraftRefs, openDraftText, orchestratorAnswered, resolveNotices, rewriteOpenDraft, untouchedChoices } from "./notices.ts";
 import { channelTitle, GENERIC_TITLES } from "./notices-lanes.ts";
+import { answeredDraftCard } from "./notices-drafts.ts";
 import { cardPointer, cardRef, cardTitle, CARDS_LEAD, closedCardText, createApprovalQueue, loadHeld, pendingCardsNote, splitDraftCards, withSendState } from "./approval-queue.ts";
 import { mailItemKey, mailKeyOfRef } from "./draft-handled.ts";
 import { draftHeads, listDrafts as listMailDrafts, unlessUnreadable } from "../features/reply-drafts/lib/store.ts";
@@ -451,7 +452,16 @@ export const cardMoved = (to: string, ref: string, c: { text: string; target: st
 /** A send of draft `ref` changed state (hub/reply-wire.ts reportSend): its Discord card shows it in place, the buttons kept so a failed one can be sent again. */
 export function showSendOnCard(conv: string, ref: string, state: string, why = "", left = 0): void {
 	const target = approvals.targetOf(conv, ref), ids = approvals.idsOf(conv, ref), text = openDraftText(conv, ref);
-	if (target && text && state !== "sent") editCard(target, ids, ref, withSendState(text, state, why, left), { to: conv, text });
+	if (text !== undefined) return target && text && state !== "sent" ? editCard(target, ids, ref, withSendState(text, state, why, left), { to: conv, text }) : undefined;
+	const closed = answeredDraftCard(conv, ref);
+	if (!closed || !["undo", "queued", "sending", "sent", "failed", "unsure"].includes(state) || isLocal(closed.target) || !route({ target: closed.target }).messengers.discord) return;
+	const base = closedCardText(closed.text, closed.how, closed.label);
+	const shown = state === "sent" ? `${base}\n-# 보냈어요` : withSendState(base, state, why, left);
+	if (/^\s*\[file\]\s/m.test(shown)) return;
+	void discord.edit(closed.target, closed.ids[0]!, shown, { clearComponents: true }).then(
+		r => r.delivered || log(`approval card ${ref} not edited on Discord: ${r.reason}`),
+		e => log(`approval card ${ref} not edited on Discord: ${e}`),
+	);
 }
 onDraftCardRefreshed(n => {
 	const d = n.decision;
