@@ -20,8 +20,8 @@ const AT = "2026-10-22T01:02:03.004Z";
 const ADDR: Addr = { pc: MINI.url, hash: "#chat/lane:x", at: AT, nid: "n-1", dec: "d-7" };
 const HOP = `https://mini:8445/?did=phone-device-0001&m=${encodeURIComponent(AT)}&i=n-1&n=d-7&hop=1#chat/lane:x`;
 
-function peerPage(stored: Peer[], reachable = true) {
-	const toasts: string[] = [], address: string[] = [], probes: string[] = [];
+function peerPage(stored: Peer[], selfDown = false) {
+	const toasts: string[] = [], address: string[] = [];
 	let answer: (list: Peer[]) => void = () => {};
 	const env: Record<string, unknown> = {
 		lsJson: () => stored,
@@ -32,10 +32,10 @@ function peerPage(stored: Peer[], reachable = true) {
 		toast: (m: string) => toasts.push(m),
 		location: { href: "https://mac:8443/", pathname: "/", hash: "#home" },
 		history: { state: null, replaceState: (_s: unknown, _t: string, url: string) => address.push(url) },
-		fetch: async (url: string) => { probes.push(url); if (!reachable) throw new TypeError("offline"); return {}; },
+		selfDown,
 	};
 	const api = new Function(...Object.keys(env), `${i18nPrelude()}${hand}\nreturn { prHandOver, prLoad };`)(...Object.values(env)) as { prHandOver: (a: Addr) => Promise<Hop>; prLoad: () => Promise<void> };
-	return { ...api, toasts, address, probes, arrive: (list: Peer[]) => answer(list) };
+	return { ...api, toasts, address, arrive: (list: Peer[]) => answer(list) };
 }
 const settled = async (p: Promise<unknown>) => { let done = false; void p.then(() => { done = true; }, () => { done = true; }); await flush(); return done; };
 
@@ -68,22 +68,21 @@ describe("a relayed tap hands over to the computer that owns the item", () => {
 		expect(await out).toEqual({ reason: "handed-over", href: HOP.replace("&hop=1", "") });
 	});
 
-	test("a computer the fresh list still marks offline is tried first; one that does not answer is refused with a toast", async () => {
+	test("a computer this gateway's fresh list marks offline is refused with a toast and the page stays; while this gateway is unreachable its stale flag is tried anyway", async () => {
 		const down = { ...MINI, online: false };
-		const up = peerPage([SELF, down]);
-		const opened = up.prHandOver(ADDR);
-		void up.prLoad();
-		up.arrive([SELF, down]);
-		expect(await opened).toEqual({ reason: "handed-over", href: HOP });
-		expect(up.probes).toEqual(["https://mini:8445/api/peer-info"]);
-
-		const gone = peerPage([SELF, down], false);
+		const gone = peerPage([SELF, down]);
 		const refused = gone.prHandOver(ADDR);
 		void gone.prLoad();
 		gone.arrive([SELF, down]);
 		expect(await refused).toEqual({ reason: "refused" });
 		expect(gone.toasts).toEqual(["맥미니에 연결할 수 없어요"]);
 		expect(gone.address).toEqual(["/#home"]);
+
+		const stale = peerPage([SELF, down], true);
+		const tried = stale.prHandOver(ADDR);
+		await advance(8000);
+		expect(await tried).toEqual({ reason: "handed-over", href: HOP });
+		expect(stale.toasts).toEqual([]);
 	});
 
 	test("an origin that is not one of this owner's computers is never followed", async () => {
@@ -168,7 +167,7 @@ const first = fakeHub({
 	state: () => idleState(),
 	api: async (req, url) => {
 		if (url.pathname === "/api/push/tap") { taps.mac.push(await req.json() as Record<string, string>); return json({ ok: true }); }
-		if (url.pathname === "/api/peers") return json([{ name: "맥북", url: first.origin, self: true, online: true }, { name: "맥미니", url: second.origin, self: false, online: false }, { name: "꺼진 컴퓨터", url: "http://127.0.0.1:1", self: false, online: false }]);
+		if (url.pathname === "/api/peers") return json([{ name: "맥북", url: first.origin, self: true, online: true }, { name: "맥미니", url: second.origin, self: false, online: true }, { name: "꺼진 컴퓨터", url: "http://127.0.0.1:1", self: false, online: false }]);
 	},
 });
 afterAll(() => { first.stop(); second.stop(); });
@@ -190,7 +189,7 @@ describe("the app starts on one computer at a relayed push's address", () => {
 
 	test.each([
 		["a computer this owner does not have", "https://evil.example", "unknown-computer", "그 컴퓨터를 찾지 못했어요"],
-		["a computer that is marked offline and does not answer", "http://127.0.0.1:1", "refused", "꺼진 컴퓨터에 연결할 수 없어요"],
+		["a computer this gateway marks offline", "http://127.0.0.1:1", "refused", "꺼진 컴퓨터에 연결할 수 없어요"],
 	])("%s: the page stays on its own home with a clean address, says why, and reports it", async (_name, pc, reason, toast) => {
 		const cold = `${first.origin}/?pc=${encodeURIComponent(pc)}&m=${encodeURIComponent(AT_ITEM)}&i=n-30#chat/lane:elsewhere`;
 		const view = await first.view({ width: 390, height: 844 }, "/");

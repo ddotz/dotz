@@ -25,7 +25,6 @@
       "23-installable-app-web.js": 2,
       "30-canvas.js": 1,
       "31-conversations.js": 1,
-      "33-peers.js": 1,
       "34-input-diag.js": 1,
       "36-shell.js": 1,
       "99-boot.js": 1
@@ -47,7 +46,6 @@
     "rawNet 23-installable-app-web.js": "keepalive push tap and presence beacons; beacons must not mark the page alive, so they stay outside api().",
     "rawNet 30-canvas.js": "canvas file body, not a JSON call.",
     "rawNet 31-conversations.js": "keepalive viewing beacon on unload; beacons must not mark the page alive, so they stay outside api().",
-    "rawNet 33-peers.js": "reachability probe of another computer's own origin before a tap is handed over to it (no-cors, abort timeout): api() is same-origin and reads JSON.",
     "rawNet 34-input-diag.js": "input-diagnostics report that may go out as a keepalive beacon on page hide.",
     "rawNet 36-shell.js": "streamed terminal output read chunk by chunk with an abort signal.",
     "rawNet 99-boot.js": "the live event stream (EventSource), not a JSON call."

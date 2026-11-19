@@ -32,19 +32,15 @@ async function prLoad() {
   if (typeof paintPause === "function") paintPause();   // the pause line names this computer, which the list gives
 }
 
-const PR_FRESH_MS = 8000, PR_REACH_MS = 4000;
+const PR_FRESH_MS = 8000;
 const PR_WAIT = [];
 const prFresh = () => (PR.fresh ? Promise.resolve() : new Promise(res => { PR_WAIT.push(res); setTimeout(res, PR_FRESH_MS); }));
-async function prReach(url) {
-  const stop = new AbortController(), timer = setTimeout(() => stop.abort(), PR_REACH_MS);
-  try { await fetch(`${url}/api/peer-info`, { mode: "no-cors", cache: "no-store", signal: stop.signal }); return true; } catch { return false; } finally { clearTimeout(timer); }
-}
 async function prHandOver(addr, pressed = false) {
   await prFresh();
   history.replaceState(history.state, "", location.pathname + location.hash);
   const p = prOthers().find(x => x.url === addr.pc);
   if (!p) { toast(TX("misc.pr.not_found"), true); return { reason: "unknown-computer" }; }
-  if (!p.online && !(await prReach(p.url))) { toast(TX("misc.pr.cant_reach", { name: p.name }), true); return { reason: "refused" }; }
+  if (!p.online && !selfDown) { toast(TX("misc.pr.cant_reach", { name: p.name }), true); return { reason: "refused" }; }
   const q = new URLSearchParams(p.public ? {} : { did: DEVICE_ID });
   for (const [k, v] of [["m", addr.at], ["i", addr.nid], ["n", addr.dec]]) if (v) q.set(k, v);
   if (!pressed) q.set("hop", "1");
