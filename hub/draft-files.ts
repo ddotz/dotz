@@ -1,28 +1,11 @@
 // The files a draft sends along, kept as they will go out so the approval can open them (hub/draft-approval.ts `> 첨부:` lines).
-// Whoever builds an approval block with attachments stages them first: stageDraftFiles copies each file to
-// <data dir>/draft-files/<ref>/<n>/<name> and returns the { name, size } list draftApprovalBlock takes. The n-th `> 첨부:` line of the draft
-// `ref` is then served read-only by GET /api/drafts/<ref>/files/<n>[?dl=1]; the route reaches nothing outside that folder.
-import { copyFileSync, existsSync, mkdirSync, readdirSync, realpathSync, statSync } from "node:fs";
+import { existsSync, readdirSync, realpathSync } from "node:fs";
 import { join, sep } from "node:path";
 import { DATA_DIR } from "./config.ts";
-import type { DraftFileIn } from "./draft-approval.ts";
-import { FileError, safeName, serveFile } from "./files.ts";
+import { FileError, serveFile } from "./files.ts";
 
 export const DRAFT_FILES = join(DATA_DIR, "draft-files");
-export const DRAFT_FILES_MAX = 10;
 const REF = /^[A-Za-z0-9][A-Za-z0-9_.-]{1,63}$/;
-
-export function stageDraftFiles(ref: string, paths: string[], root: string = DRAFT_FILES): DraftFileIn[] {
-	if (!REF.test(ref)) throw new Error(`draft ref ${ref} is not usable as a folder name`);
-	if (paths.length > DRAFT_FILES_MAX) throw new Error(`at most ${DRAFT_FILES_MAX} attachments`);
-	return paths.map((src, n) => {
-		if (!statSync(src).isFile()) throw new Error(`${src} is not a file`);
-		const name = safeName(src.split(/[\\/]/).pop() ?? "file");
-		mkdirSync(join(root, ref, String(n)), { recursive: true });
-		copyFileSync(src, join(root, ref, String(n), name));
-		return { name, size: statSync(src).size };
-	});
-}
 
 // The one file staged as attachment n of draft `ref`, or undefined.
 export function stagedDraftFile(ref: string, index: string, root: string = DRAFT_FILES): { path: string; name: string } | undefined {

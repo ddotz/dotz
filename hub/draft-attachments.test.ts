@@ -3,10 +3,11 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { askText } from "../features/reply-drafts/lib/flow.ts";
+import { addStagedFile } from "../features/reply-drafts/lib/staged.ts";
 import type { DraftRec } from "../features/reply-drafts/lib/store.ts";
 import { claimsAttachment } from "./attach-claim.ts";
 import { draftApprovalBlock, fileSizeText, NO_ATTACHMENT_WARNING, parseDraftApproval, parseQuotedDraft, quotedDraft } from "./draft-approval.ts";
-import { draftFileRoute, stageDraftFiles } from "./draft-files.ts";
+import { draftFileRoute } from "./draft-files.ts";
 import { PEER_GET } from "./peer-auth.ts";
 
 const base = { to: "kim@example.com", subject: "견적서 회신", body: "안녕하세요.\n\n견적서 보내 드립니다.", ref: "RABC123" };
@@ -105,7 +106,7 @@ describe("draft files route", () => {
 	});
 	writeFileSync(join(src, "견적서.pdf"), "%PDF-1.4 fixture");
 	writeFileSync(join(src, "photo.jpg"), "jpg-bytes");
-	const staged = stageDraftFiles("RABC123", [join(src, "견적서.pdf"), join(src, "photo.jpg")], root);
+	const staged = [join(src, "견적서.pdf"), join(src, "photo.jpg")].map(p => addStagedFile("RABC123", p, root)).map(f => ({ name: f.name, size: f.size }));
 	const get = (ref: string, n: string, q = "", method = "GET") => {
 		const url = new URL(`http://x/api/drafts/${ref}/files/${n}${q}`);
 		return draftFileRoute(new Request(url, { method }), url, ref, n, root);
@@ -127,7 +128,7 @@ describe("draft files route", () => {
 		expect(get("RNOPE99", "0").status).toBe(404);
 		expect(get("RABC123", "5").status).toBe(404);
 		expect(get("..", "0").status).toBe(404);
-		expect(() => stageDraftFiles("../x", [join(src, "photo.jpg")], root)).toThrow();
+		expect(() => addStagedFile("../x", join(src, "photo.jpg"), root)).toThrow();
 	});
 
 	test("a peer gateway may read the route", () => {
