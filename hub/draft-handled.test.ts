@@ -172,7 +172,7 @@ test("a ref shaped like a store's id is handled once that store was read and lac
 	expect(await draftHandled("Dzzzzzz", facts({}))).toBe(true);
 	expect(await draftHandled("DZZZZZZ", facts({}))).toBe(false);
 	expect(await draftHandled("RZZZZZZ", facts({ mail: { drafts: () => [mail("RZZZZZZ", "m1")], record: () => ({}) } }))).toBe(false);
-	expect(await draftHandled("hatch-x1", facts({}))).toBe(false);
+	expect(await draftHandled("handwritten-x1", facts({}))).toBe(false);
 	const unreadable = { drafts: () => { throw new Error("EACCES: permission denied"); }, record: () => undefined, intact: () => false };
 	await expect(draftHandled("RZZZZZZ", facts({ mail: unreadable }))).rejects.toThrow("EACCES");
 });
@@ -251,13 +251,13 @@ test("the sweep closes a card whose draft the mail store lacks, keeps a hand-wri
 	setDraftHandled((d, _n, ref) => draftHandled(ref, facts({ mail: { drafts: draftHeads, record: () => ({ reply: "needs" }), intact: draftStoreIntact } }), d.to));
 	addDraft({ id: "RKEPT01", kind: "mail", app: "mail", source: "zele", mailId: "k1", ref: "kept-1", to: "a@example.com", body: "b", status: "pending", created: "2026-11-01T00:00:00.000Z", changes: [], questions: [], item: { kind: "mail", from: "a@example.com", text: "t" } } as DraftRec);
 	post("mail:sample-1", "RZZZZZZ", "a@example.com");
-	post("mail:sample-2", "hatch-x1", "b@example.com");
+	post("mail:sample-2", "handwritten-x1", "b@example.com");
 	try {
 		chmodSync(paths.drafts(), 0o000);
 		expect(await settleHandledDrafts()).toBe(0);
 		chmodSync(paths.drafts(), 0o600);
 		expect(await settleHandledDrafts()).toBe(1);
-		expect(open().map(i => i.decision!.draft!.ref)).toEqual(["hatch-x1"]);
+		expect(open().map(i => i.decision!.draft!.ref)).toEqual(["handwritten-x1"]);
 	} finally {
 		rmSync(paths.drafts(), { force: true });
 	}
