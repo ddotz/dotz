@@ -979,6 +979,7 @@ details.work.live .wdot { display: block; }
 @container tlcol (max-width: 559.98px) { .um { max-width: 90%; } .bm pre { padding: var(--sp-2) var(--sp-3); } .bm.rep, .bm.alert { padding: var(--sp-2) var(--sp-3) var(--sp-3); } }
 :root { --col: 736px; }
 .composer { flex: none; width: 100%; max-width: var(--col); margin: 0 auto; padding: 0 0 max(var(--sp-4), env(safe-area-inset-bottom)); }
+:root[data-kb] .composer { padding-bottom: var(--sp-4); }
 .composer.tmode { max-width: var(--col); }
 .working { display: flex; align-items: center; gap: var(--sp-2); min-height: 24px; margin-bottom: var(--sp-2); color: var(--fg-3); font-size: 12.5px; line-height: 20px; }
 #working-tx { min-width: 0; }
@@ -2323,6 +2324,7 @@ button.nt-x:active { background: var(--active); color: var(--fg); }
 /* another computer opened inside the installed app (33-peers.js prGo): the whole screen, the safe areas kept by this frame because a page in an iframe reads them as 0 */
 .pr-frame { position: fixed; inset: 0; z-index: 2000; padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); background: var(--bg); }
 .pr-frame iframe { display: block; width: 100%; height: 100%; border: 0; background: var(--bg); }
+.pr-frame-x { position: absolute; top: calc(env(safe-area-inset-top) + 4px); right: calc(env(safe-area-inset-right) + 4px); z-index: 1; border: 1px solid var(--line); border-radius: 50%; background: var(--bg); box-shadow: var(--shadow-menu); }
 
 /* a relayed computer's chat (42-relay-chat.js): the normal chat view; what its messenger cannot carry is not drawn */
 body.rl :is(#c-attach, #c-own, #c-model, #c-effort, #c-worker, #ctx-ring, #c-pc, #c-api, #c-fb, #working, #runline, #runstate, #pausenote, #dcard, #hints, #atray, #todo, #vtog, #cvmenu, #pjmenu) { display: none !important; }
@@ -2350,7 +2352,7 @@ body.rl :is(#c-attach, #c-own, #c-model, #c-effort, #c-worker, #ctx-ring, #c-pc,
    whole composer (box + chip row + paddings, ~72px), then the box scrolls inside itself. */
 @media (max-width: 639px) {
   .app { height: calc(100dvh - var(--kb, 0px)); }
-  .sendrow textarea { max-height: min(calc(7.5em + 2 * var(--ta-pad)), calc(var(--vvh, 100dvh) * .4 - 72px)); overflow-y: auto; }
+  .sendrow textarea { max-height: max(calc(2.5em + 2 * var(--ta-pad)), min(calc(7.5em + 2 * var(--ta-pad)), calc(var(--vvh, 100dvh) * .4 - 72px))); overflow-y: auto; }
 }
 
 /* code blocks in messages: a bar with copy / run buttons above the code (web/js/35-code-blocks.js); web terminal sheet (36-shell.js) */
@@ -2517,7 +2519,7 @@ dialog.fs-card::backdrop { background: var(--scrim); }
   .fs-bd:has(> .fs-card.mid) { align-items: flex-end; background: var(--scrim); }
   dialog.dlg.fs-card.mid[open] { margin: auto 0 0; }
   /* the sheet is a card, so a field in it takes the fill a field has on a card (on the full screen it sits on --bg) */
-  .fs-card.mid, dialog.dlg.fs-card.mid[open] { --ff-fill: var(--ff-pop); height: fit-content; max-height: min(86dvh, 820px); border-radius: var(--r-sheet) var(--r-sheet) 0 0; background: var(--card); padding-top: 0; }
+  .fs-card.mid, dialog.dlg.fs-card.mid[open] { --ff-fill: var(--ff-pop); height: fit-content; max-height: min(86dvh, 820px, calc(var(--vvh, 100dvh) - var(--sp-2))); border-radius: var(--r-sheet) var(--r-sheet) 0 0; background: var(--card); padding-top: 0; }
 }
 
 /* ---------- 원문 보기 (web/js/10-draft-original.js): the mail or comment a draft answers, as its own panel next to the draft ---------- */
@@ -2625,8 +2627,9 @@ dialog.fs-card::backdrop { background: var(--scrim); }
 .rq-meta .mon-pc { flex: none; white-space: pre; }
 .rq-hd .rc-time { flex: none; }
 .rq-lb { margin-top: var(--sp-2); color: var(--fg-3); font: 500 var(--fs-meta)/var(--lh-meta) var(--font); }
-.rq-to { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; margin-top: var(--sp-2); }
-.rq-to .dr-chip { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rq-rcpt { display: flex; flex-wrap: wrap; gap: var(--sp-05) var(--sp-3); min-width: 0; margin-top: var(--sp-2); }
+.rq-rc { display: inline-flex; gap: var(--sp-1); min-width: 0; max-width: 100%; }
+.rq-rv { min-width: 0; color: var(--fg-2); font-size: var(--fs-meta); line-height: var(--lh-meta); overflow-wrap: anywhere; }
 .rq-sub { margin-top: var(--sp-15); }
 /* 원문: 회색·왼쪽 괘선·두 줄, 길면 원문 보기 (원칙 5: 남의 글은 조용한 인용, 초안과 눈에 띄게 나뉨) */
 .rq-og-wrap { display: flex; flex-direction: column; align-items: flex-start; min-width: 0; max-width: 100%; margin-top: var(--sp-2); }
@@ -2752,6 +2755,9 @@ dialog.fs-card::backdrop { background: var(--scrim); }
 .rq-edit .kk-rq { margin: 0; }
 .rq-edit .kk-rv { margin: 0; }
 .ra-lint.err { color: var(--err); font-size: var(--fs-meta); }
+.ra-other { display: flex; flex-direction: column; gap: var(--sp-1); }
+.ra-other .kk-rq { margin: 0; }
+.ra-other-tx { padding: var(--sp-2) var(--sp-3); border-radius: var(--r-ctl); background: var(--ff-fill); color: var(--fg-2); font-size: var(--fs-meta); white-space: pre-wrap; overflow-wrap: anywhere; max-height: calc(var(--sp-6) * 5); overflow: auto; }
 /* AI가 고친 초안 (10-reply-card.js rqDiffBody): the words that came in carry a wash of the text's own ink, the ones that went are struck and quiet. Neutral on purpose:
    a change is not a state, so no status colour, and the wash reads on the card, on a Messenger bubble and in the dark theme alike. */
 .rq-diff .rq-dl { min-height: 1lh; }
@@ -3559,6 +3565,7 @@ a.dr-att:active { background: var(--active); }
 .kk-draft .kk-dh { margin-top: var(--sp-2); }
 .kk-mk { padding: var(--sp-2) var(--sp-4); border-radius: var(--r-card); background: var(--card); color: var(--fg-3); font: 500 13px/18px var(--font); }
 .kk-dh { color: var(--fg-2); font: 600 12px/16px var(--font); }
+.kk-dn { margin: 0 0 var(--sp-2); color: var(--fg-3); font: 400 13px/18px var(--font); }
 .kk-draft .btns { gap: var(--sp-15); }
 .kk-choices { flex-wrap: wrap; }
 .kk-draft .btn { height: var(--btn-h-sm); padding: 0 var(--sp-3); font-size: 13px; }
