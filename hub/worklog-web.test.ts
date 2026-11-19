@@ -45,7 +45,7 @@ const EVENTS = [
 	sess(iso(10, 8), "lane:theta", "[wait] 답을 기다려요.", { wk: "session", wst: "wait" }),
 ];
 
-const notice = (id: string, e: (typeof EVENTS)[number], extra: object = {}) => ({ id, ts: e.ts, at: e.ts, updated: e.ts, kind: "worklog", tone: "", title: "작업 기록", text: e.text, open: "worklog", read: true, ...extra });
+const notice = (id: string, e: (typeof EVENTS)[number], extra: object = {}) => ({ id, ts: e.ts, at: e.ts, updated: e.ts, kind: "worklog", tone: "", title: "작업내역", text: e.text, open: "worklog", read: true, ...extra });
 const NOTICES = [
 	notice("n1", EVENTS[0]!, { tone: "done", key: "lane:alpha", wk: "session", wst: "done", text: "메신저 로그인 연결을 끝냈어요." }),
 	notice("n2", EVENTS[4]!, { wk: "update" }),

@@ -16,12 +16,12 @@ const chats: HubEvent[] = [];
 onEmit(e => void (e.kind === "out" && String(e.text).includes("웹 대화") && chats.push(e)));
 
 test("worklog and alert posts reach the web and count as delivered when Discord is not configured", async () => {
-	expect(await out("worklog", "[done] 웹 전용 작업 기록")).toEqual({ delivered: true });
+	expect(await out("worklog", "[done] 웹 전용 작업내역")).toEqual({ delivered: true });
 	expect(await out("alert", "[fail] 웹 전용 알림")).toEqual({ delivered: true });
 	expect(await progress("worklog", "lane:web-only", "[run] 웹 전용 진행")).toEqual({ delivered: true });
 	alert("웹 전용 게이트웨이 알림");
 	expect(seen.map(e => `${e.target}:${e.text}`)).toEqual([
-		"worklog:[done] 웹 전용 작업 기록",
+		"worklog:[done] 웹 전용 작업내역",
 		"alert:[fail] 웹 전용 알림",
 		"worklog:[run] 웹 전용 진행",
 		"alert:웹 전용 게이트웨이 알림",

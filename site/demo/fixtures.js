@@ -20,7 +20,7 @@
       text: "안녕하세요.\n\n다음 주 미팅 시간을 정하려고 해요.\n화요일 오후 2시나 수요일 오전 10시 중에\n편한 시간을 알려 주세요.\n\n한서윤 드림",
     },
     {
-      key: "m-2", at: ago(95), dir: "in", read: false, reply: "fyi",
+      key: "m-2", at: ago(95), dir: "in", read: false, reply: "fyi", box: "b-shop",
       from: "별빛상회 주문팀 <orders@example.net>", to: "나 <me@example.com>", name: "별빛상회 주문팀", short: "주문팀", org: true,
       subject: "주문하신 책상 램프가 출발했어요",
       summary: "책상 램프가 오늘 출발했고 목요일에 도착한다는 배송 안내예요. 답장은 필요 없어요.",
@@ -35,7 +35,7 @@
       attachments: [{ name: "견적서-수정본.pdf", size: 182000 }],
     },
     {
-      key: "m-4", at: ago(420), dir: "in", read: true, reply: "fyi",
+      key: "m-4", at: ago(420), dir: "in", read: true, reply: "fyi", box: "b-news",
       from: "달무리 소식지 <news@example.com>", to: "나 <me@example.com>", name: "달무리 소식지", short: "소식지", org: true,
       subject: "11월 첫째 주 소식",
       summary: "새 기능 소개와 다음 달 일정이 담긴 소식지예요.",
@@ -62,9 +62,23 @@
       subject: "견적 일정 안내드려요",
       text: "하은님, 안녕하세요.\n요청하신 견적은 이번 주 금요일까지 정리해서 보내드릴게요.\n먼저 범위와 일정부터 맞춰 보면 좋겠어요.\n\n- 1차 범위 확정: 수요일\n- 견적서 전달: 금요일\n\n궁금한 점은 편하게 말씀해 주세요.",
     },
+    {
+      key: "w-1", at: ago(130), dir: "in", read: true, reply: "fyi", box: "b-team",
+      from: "운영팀 <ops@work.example.com>", to: "나 <me@work.example.com>", name: "운영팀", short: "운영팀", org: true,
+      subject: "[공지] 다음 주 수요일 사무실 전기 점검",
+      summary: "다음 주 수요일 오후 2시부터 한 시간 동안 사무실 전기 점검이 있다는 공지예요. 따로 할 일은 없어요.",
+      text: "안녕하세요, 운영팀이에요.\n\n다음 주 수요일 오후 2시부터 한 시간 동안\n사무실 전기 점검이 있어요.\n그 시간에는 회의실을 쓸 수 없어요.\n\n운영팀 드림",
+    },
+    {
+      key: "w-2", at: ago(260), dir: "in", read: true, reply: "fyi",
+      from: "문가람 <garam.moon@work.example.com>", to: "나 <me@work.example.com>", name: "문가람", short: "가람님",
+      subject: "어제 회의록 공유드려요",
+      summary: "어제 회의에서 정한 일정과 담당을 정리한 회의록이에요. 확인만 하면 돼요.",
+      text: "안녕하세요.\n\n어제 회의록 공유드려요.\n정한 일정과 담당은 아래와 같아요.\n\n- 시안 정리: 금요일, 가람\n- 검토: 다음 주 월요일, 전원\n\n문가람 드림",
+    },
   ];
   const mailBody = m => m.html ? "<!doctype html><meta charset=utf-8><body style=\"font:15px/1.6 sans-serif;margin:16px\">" + m.text.split("\n").map(l => l.trim() ? "<p>" + l + "</p>" : "").join("") + "</body>" : "";
-  const mailCard = m => ({ subject: m.subject, from: m.from, to: m.to, at: m.at, summary: m.summary, preview: m.html ? m.text.split("\n").filter(l => l.trim()).slice(0, 3).join("\n") : m.text.split("\n").find(l => l.trim()) || "", dir: m.dir, read: m.read, ...(m.html ? { html: true } : {}), ...(m.reply ? { reply: m.reply } : {}), ...(m.suggest ? { suggest: m.suggest } : {}), can: CAN, attachments: m.attachments || [] });
+  const mailCard = m => ({ subject: m.subject, from: m.from, to: m.to, at: m.at, summary: m.summary, preview: m.html ? m.text.split("\n").filter(l => l.trim()).slice(0, 3).join("\n") : m.text.split("\n").find(l => l.trim()) || "", dir: m.dir, read: m.read, ...(m.html ? { html: true } : {}), ...(m.reply ? { reply: m.reply } : {}), ...(m.suggest ? { suggest: m.suggest } : {}), ...(m.box ? { box: m.box } : {}), can: CAN, attachments: m.attachments || [] });
   const mailEvent = m => m.dir === "out" && m.html ? ({ ts: m.at, kind: "mail", dir: "out", source: "mail", target: `mail:${m.key}`, mail: m.key, conv: `mail:${m.key}`, subject: m.subject, from: m.from, to: m.to, preview: mailCard(m).preview, html: true, attachments: [], text: `${m.from} · ${m.subject}\n\n${m.text.split("\n").filter(l => l.trim()).slice(0, 3).join("\n")}` }) : ({ ts: m.at, kind: "mail", source: "mail", target: `mail:${m.key}`, mail: m.key, conv: `mail:${m.key}`, subject: m.subject, from: m.from, to: m.to, summary: m.summary, preview: mailCard(m).preview, attachments: m.attachments || [], text: `${m.subject}\n${m.summary}\n\n\`\`\`원문\n${m.text}\n\`\`\`` });
 
   // 오늘·내일 일정 (아침 브리핑과 일정 질문이 읽어요)
@@ -165,8 +179,12 @@
     ...mails.map(m => ({ target: `mail:${m.key}`, last: { ts: m.at, text: m.subject, from: m.dir === "out" ? "owner" : "bot" }, unread: m.read ? 0 : 1, read: m.read ? m.at : null, mail: mailCard(m) })),
   ];
 
+  const mailbox = (id, name, icon, mode, conds = {}) => ({ id, name, icon, ...(mode ? { mode } : { base: true }), notify: mode !== "quiet", conds: { from: [], subj: [], body: [], src: [], ...conds }, not: { from: [] }, judge: { on: false, text: "" }, how: "", greets: [], folders: [], bans: [], rules: [] });
   const integrations = [
-    { key: "mail", label: "메일", icon: "mail", conv: ["mail:"], notices: ["n-demo-1"], state: "connected" },
+    { key: "mail", app: "mail", label: "구름 메일", icon: "mail", kind: "app", conv: ["mail:"], convNot: ["mail:w-"], notices: ["n-demo-1"], state: "connected", account: "me@example.com",
+      boxes: [mailbox("base", "일반", "mail"), mailbox("b-shop", "쇼핑", "tag", "notify", { from: ["orders@example.net"] }), mailbox("b-news", "소식지", "folder", "quiet", { from: ["news@example.com"] })] },
+    { key: "mail-2", app: "mail", label: "회사 메일", icon: "mail", kind: "app", conv: ["mail:w-"], notices: [], state: "connected", account: "me@work.example.com",
+      boxes: [mailbox("base", "일반", "mail"), mailbox("b-team", "팀 공지", "users", "ask", { subj: ["공지"] })] },
   ];
 
   // 설정 화면 (GET /api/integrations/<app>/settings and /features, hub/app-settings.ts, hub/app-features.ts).

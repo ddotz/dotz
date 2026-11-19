@@ -265,7 +265,7 @@ async function interactive(): Promise<Partial<Answers>> {
 	const name = await ask({ message: "봇 이름 (2~32자, 예: 루미, 모모, 비서)", def: priorIdentity.name, check: v => (v.length >= 2 && v.length <= 32 ? undefined : "2~32자로 적어 주세요") });
 	const character = await chooseLine("성격을 골라 주세요", CHARACTERS, priorIdentity.character);
 	const tone = await chooseLine("말투를 골라 주세요", TONES, priorIdentity.tone);
-	const notices = await chooseLine("작업로그·알림 문체를 골라 주세요", NOTICES, priorIdentity.notices ?? "");
+	const notices = await chooseLine("작업내역·알림 문체를 골라 주세요", NOTICES, priorIdentity.notices ?? "");
 	out.dim("알림 문체는 나중에 대화에서 '알림 문체 STE로'처럼 바꿀 수 있어요.");
 	const address = await ask({ message: "봇이 나를 부르는 호칭 (예: 형, 대표님, 이름. 비우면 호칭 없이 말해요)", def: priorIdentity.address ?? "", required: false });
 	const avatar = await ask({ message: "프로필 이미지 파일 경로 (png/jpg, 없으면 Enter)", def: priorIdentity.avatar ?? "", required: false, check: v => (existsSync(expandHome(v)) ? undefined : "그 경로에 파일이 없어요") });

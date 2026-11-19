@@ -103,7 +103,7 @@
   "connect.dc.kind_chat": "대화 답장",
   "connect.dc.kind_chat_sub": "내가 Discord에서 묻지 않은 대화의 답",
   "connect.dc.kind_lanes_sub": "세션이 올리는 진행·완료 보고",
-  "connect.dc.kind_worklog_sub": "작업 기록 메시지",
+  "connect.dc.kind_worklog_sub": "작업내역 메시지",
   "connect.dc.kind_web": "웹에서 시작한 세션",
   "connect.dc.kind_web_sub": "웹이나 터미널에서 시작한 세션도 Discord에 채널을 만들어요",
   "connect.dc.id_ph": "예: 123456789012345678",

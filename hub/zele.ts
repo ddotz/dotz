@@ -108,7 +108,7 @@ async function stillThere(id: string, flags: string[]): Promise<boolean> {
 const save = (s: State) => writeAtomic(STATE, `${JSON.stringify(s)}\n`);
 const cap = (xs: string[]) => xs.slice(-2000);
 
-async function zele(args: string[]): Promise<Item[]> {
+export async function zele(args: string[]): Promise<Item[]> {
 	const r = await runLimited(["zele", ...args], LIST_MS);
 	if (r.code !== 0) throw new Error(`zele ${args.join(" ")}: ${r.timedOut ? "timed out" : (r.stderr || r.stdout).trim().slice(0, 200)}`);
 	return ((Bun.YAML.parse(r.stdout) as { items?: Item[] } | null)?.items ?? []) as Item[];

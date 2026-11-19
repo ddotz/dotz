@@ -31,9 +31,9 @@ test("results, monitoring news, alerts and unread answers notify; progress, ques
 	expect(noticePush(notice({ kind: "message", title: "프로젝트", open: "ch:9" }))).toMatchObject({ tag: "answer:ch:9", url: "/?m=2026-11-01T00%3A00%3A00Z&i=n1#chat/ch:9" });
 	expect(noticePush(notice({ kind: "alert", tone: "", title: "알림", open: "alert", text: "모델 제공자 오류(timeout)" }))).toMatchObject({ kind: "alert", title: `${NAME} · 경고`, tag: expect.stringMatching(/^alert:[0-9a-f]{12}$/) });
 	expect(noticePush(notice({ kind: "alert", tone: "", title: "새 버전", open: "settings", key: "self-update" }))).toMatchObject({ kind: "news", url: "/?m=2026-11-01T00%3A00%3A00Z&i=n1#settings", tag: "update" });
-	expect(noticePush(notice({ kind: "worklog", tone: "fail", title: "작업 기록", open: "worklog" }))).toMatchObject({ kind: "alert", title: "작업 기록 · 실패" });
+	expect(noticePush(notice({ kind: "worklog", tone: "fail", title: "작업내역", open: "worklog" }))).toMatchObject({ kind: "alert", title: "작업내역 · 실패" });
 	// a finished work log entry is a result too (notice class result)
-	expect(noticePush(notice({ kind: "worklog", tone: "done", title: "작업 기록", open: "worklog" }))).toMatchObject({ kind: "result", title: "작업 기록 · 완료" });
+	expect(noticePush(notice({ kind: "worklog", tone: "done", title: "작업내역", open: "worklog" }))).toMatchObject({ kind: "result", title: "작업내역 · 완료" });
 	// no notification
 	expect(noticePush(notice({ kind: "result", tone: "run", open: "lane:x" }))).toBeUndefined();
 	expect(noticePush(notice({ kind: "worklog", tone: "run" }))).toBeUndefined();
@@ -167,7 +167,7 @@ test("a failed session or work log entry is a warning, pushed under the alert sw
 	resetPushDedupeForTest();
 	const t = Date.parse("2026-11-19T00:00:00Z"), none = () => false, resultsOff = (cls: string) => cls !== "result";
 	const sessionFail = noticePush(notice({ kind: "result", tone: "fail", title: "ui-pwa", open: "lane:ui-pwa", key: "lane:ui-pwa", text: "테스트 실패" }))!;
-	const worklogFail = noticePush(notice({ kind: "worklog", tone: "fail", title: "작업 기록", open: "worklog", text: "야간 정리 실패" }))!;
+	const worklogFail = noticePush(notice({ kind: "worklog", tone: "fail", title: "작업내역", open: "worklog", text: "야간 정리 실패" }))!;
 	const reportFail = classify({ ts: "2026-11-19T00:00:00Z", kind: "lane_report", source: "lane:nc3", lane: "nc3", text: "[fail] 빌드가 깨졌어요" })!;
 	const sessionDone = noticePush(notice({ kind: "result", tone: "done", title: "ui-done", open: "lane:ui-done", key: "lane:ui-done", text: "끝" }))!;
 	expect([sessionFail.kind, worklogFail.kind, reportFail.kind, sessionDone.kind]).toEqual(["alert", "alert", "alert", "result"]);

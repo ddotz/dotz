@@ -138,7 +138,7 @@ const off = (d: Deps): boolean => d.at().trim().toLowerCase() === "off";
  * and posts at most ONE item at the morning time (`doctor_at`: "auto" | "HH:MM" | "off"). Quiet when nothing is notable: a log line, nothing posted.
  * A finding is told again only when its level grew 1.5x or a week passed; a resolved one is dropped. The token audit and the failure report no longer schedule
  * or alert by themselves; the immediate alerts (gateway down, login lost, a watch failing twice, update failure, usage limits) stay where they are.
- * Usage: `bun hub/doctor.ts --dry` runs all checks on the real data dir and writes nothing; the last line is RESULT {...}.
+ * Usage: `bun hub/doctor.ts --dry` runs all checks on the real data dir and writes nothing; the last line is RESULT {...}. `dotz doctor` prints the same report (hub/doctor-cli.ts).
  */
 export async function runNight(d: Deps): Promise<void> {
 	if (off(d)) return;
@@ -199,16 +199,23 @@ if (import.meta.main && process.argv.includes("--night")) {
 	await runNight({ now: Date.now, dataDir: DATA_DIR, home: HOME, at: () => String(conf.doctor_at ?? DEFAULTS.doctor_at), send: () => undefined, log: l => console.error(l) });
 	process.exit(0);
 }
+
+export type DryResult = { ms: number; peakRssMb: number; findings: number };
+/** The dry run: every check on the real data dir; nothing written, posted or asked of a model. `text` is the owner's report, `result` the machine line. */
+export async function dryRun(): Promise<{ text: string; result: DryResult }> {
+	const t0 = Date.now(), now = Date.now(), prev = loadStore(DATA_DIR), t = msg().doctor;
+	const store = await runChecks(CHECKS, { dataDir: DATA_DIR, home: HOME, log: l => console.error(l) }, prev, now, true);
+	const report = compose(store, now, true)!, notice = compose(store, now);
+	const morning = !notice ? t.dryNone(T.repeatFactor, T.repeatDays) : notice.text === report.text ? t.drySame : `${t.dryMorning}\n\n${notice.text}`;
+	const text = [report.text, "", morning, "", t.dryAt(t.when(now))].join("\n");
+	return { text, result: { ms: Date.now() - t0, peakRssMb: Math.round(process.resourceUsage().maxRSS / 1024), findings: Object.keys(store.findings).length } };
+}
+
 if (import.meta.main) {
 	if (!process.argv.includes("--dry")) {
 		console.error("usage: bun hub/doctor.ts --dry | --night");
 		process.exit(2);
 	}
-	const t0 = Date.now(), now = Date.now(), prev = loadStore(DATA_DIR), t = msg().doctor;
-	const store = await runChecks(CHECKS, { dataDir: DATA_DIR, home: HOME, log: l => console.error(l) }, prev, now, true);
-	const report = compose(store, now, true)!, notice = compose(store, now);
-	console.log(`${report.text}\n`);
-	console.log(!notice ? t.dryNone(T.repeatFactor, T.repeatDays) : notice.text === report.text ? t.drySame : `${t.dryMorning}\n\n${notice.text}`);
-	console.log(`\n${t.dryAt(t.when(now))}`);
-	console.log(`RESULT ${JSON.stringify({ ms: Date.now() - t0, peakRssMb: Math.round(process.resourceUsage().maxRSS / 1024), findings: Object.keys(store.findings).length })}`);
+	const { text, result } = await dryRun();
+	console.log(`${text}\nRESULT ${JSON.stringify(result)}`);
 }

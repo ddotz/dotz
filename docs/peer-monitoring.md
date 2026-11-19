@@ -20,7 +20,7 @@ gateway that owns the item. That gateway executes it and records it.
   Discovery asks the bound URL first and scans ports only when it no longer answers as dotz (the new port is bound then), so one port
   number can be another app on another computer. A bound peer that tailscale reports offline stays in the list as '연결 안 됨'; an unbound one does not.
   A request that carries `x-dotz-peer` can reach only the read-only GET list and the peer POSTs: `/api/peer/act`,
-  `/api/peer/lease` and `/api/peer/limit-lift`.
+  `/api/peer/lease`, `/api/peer/limit-lift` and `/api/peer/mail-code`.
 - Setup (`setup.ts`) makes the key on the first computer. On another computer, setup asks for that key (or takes
   `peer_token` in an answers file) and stores it 0600. A rerun keeps the key.
 - No token file: reads still work through the owner's tailnet identity (the same way the computer switcher works).
@@ -93,3 +93,24 @@ gateway that owns the item. That gateway executes it and records it.
 ## Reply cards across computers
 
 The snapshot carries `reply: { items }`, the gateway's one reply queue (`GET /api/reply/queue`); an older gateway leaves it out. A card's action on another computer's item goes as `POST /api/peer/act` with `{ action: "reply", args }`, where `args` is the same body the page posts to its own `POST /api/reply/act`, and it runs there through that gateway's queue (undo window, lease, retries).
+
+## Mail codes (a site's login code, for a computer with no mail)
+
+A computer without mail (no zele) takes a site's mailed login code from another gateway that has mail, so the owner is not asked. The code is the only
+thing of the mail that moves; it is never typed in chat, put in a prompt, a notice, an event, Discord, a log line or an answer's JSON. Code in `hub/mail-otp.ts`.
+
+- `POST /api/peer/mail-code {from, account?, minutes?}` on the gateway with mail. `from` is a domain or an address (no spaces, quotes or filter operators),
+  `account` a zele account, `minutes` 1..60 (default 10). Only a request that passed the peer gates is answered (`checkPeer` "ok"); the hub token or a web
+  login without `x-dotz-peer` gets 403. It lists the sender's newest 5 threads (`zele mail list --filter "from:<from> newer_than:1d"`), reads the newest first,
+  and takes the code (4 to 8 digits, or 4 to 8 capitals and digits with a digit) from the sender's messages dated inside the window, newest first.
+  A keyword (인증/확인/보안 코드·번호, verification, one-time, passcode, OTP, code) on the number's line or up to two lines above it decides; years, times, phone parts,
+  amounts and links never count; two different best candidates are `ambiguous`. It looks up to 3 times, 15 s apart (45 s in all). Answer:
+  `{ok:true, code}` or `{ok:false, reason: "no-mail"|"not-found"|"ambiguous"|"already-given"|"error", detail}` (a short Korean reason). A code is given once per
+  sender for an hour (remembered as a hash, in memory), and overlapping requests for one sender share one look.
+- `POST /api/auth/mail-code {site, from, account?, minutes?}` on the gateway that asks (hub token only). With zele on here it looks in this mailbox; otherwise it asks
+  the other gateways in turn (60 s each; a peer with no mail, no token or an older version is skipped; the first code wins). The code is written to
+  `secrets/once/mail-<site>-<id>` (0600, sealed) and the answer is `{ok:true, id, take: "/api/auth/<id>/take"}`. A failure is `{ok:false, reason, detail}` with HTTP 200.
+- `GET /api/auth/<id>/take` (hub token only) gives the code once and deletes the file; the second call is 410. An untaken code is deleted after 5 minutes.
+  The request's view (`GET /api/auth/<id>`) shows no path.
+- `dotz_auth` (kind `otp`) takes `from_mail`, `mail_account` and `mail_minutes`; when no code comes it falls back to asking the owner, with the reason added to the purpose.
+- Log lines carry the sender's domain and the outcome only (`mail code: example.com not-found`).

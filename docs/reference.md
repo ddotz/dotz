@@ -152,7 +152,7 @@ gateway after a restart (`/restart gateway`).
 
 Discord: create a dedicated bot in the Developer Portal, enable the MESSAGE CONTENT intent, give its token to setup,
 and invite it with the printed link. The gateway creates two categories named after the bot, e.g. "땃쥐" (the main
-channels 대화, 알림, 작업로그) and "땃쥐 작업" (one channel per project, topic or session, named plainly with no emoji). Every text channel in these two categories
+channels 대화, 알림, 작업내역) and "땃쥐 작업" (one channel per project, topic or session, named plainly with no emoji). Every text channel in these two categories
 is a work channel; threads in them are sub-items. It listens to nothing else, and only the configured owner id can
 command it.
 
@@ -395,6 +395,7 @@ and at which level, and the baselines the checks compare with).
   usage window is tight; about 23K input tokens for a 26K-character contract (Korean text is about 1.1 characters a token; at the 40K-character cap about 36K) and at most 2K output tokens a run, the cost written into each of its findings. It proposes only: a line changes after the owner picks it.
 - *Now vs. morning.* The immediate alerts stay as they were: gateway down, a login lost, a watch failing twice, an update failure, usage limits. The doctor only adds the morning "still" and trend items.
 - *Try it.* `bun hub/doctor.ts --dry` runs every check on the real data dir, writes nothing, prints every finding in the owner's language in the morning notice's layout, then what the morning notice would carry (only what is new or grew), the check time in the owner's time zone, and ends with `RESULT {ms, peakRssMb, findings}`.
+  `dotz doctor` is the same run from the owner's terminal (`hub/doctor-cli.ts`): the report without the RESULT line; `dotz doctor --json` prints only the RESULT object. Nothing is posted or saved.
   `bun hub/token-audit.ts --dry [--hours N]` and `bun hub/failure-report.ts [--days 7] [--json | --md <path> | --check --state <file>]` stay as command-line tools (the latter prints one line per class whose
   share grew since the baseline in the state file); neither has a timer of its own any more.
 

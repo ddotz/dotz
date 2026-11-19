@@ -41,7 +41,7 @@ bun add -g agent-messenger
 ```
 
 - `allow`: 명령을 내릴 수 있는 소유자의 사용자 ID 목록입니다. 여기에 없는 사람이 보낸 메시지는 읽지도, 반응하지도 않습니다. Slack은 `U`로 시작하는 멤버 ID, Telegram은 숫자 사용자 ID입니다.
-- `chats[].kind`: `main`(기본 대화), `project`(프로젝트별 대화, `project`에 `ch:<디스코드 채널 ID>` 지정), `alert`(알림), `worklog`(작업 기록)입니다.
+- `chats[].kind`: `main`(기본 대화), `project`(프로젝트별 대화, `project`에 `ch:<디스코드 채널 ID>` 지정), `alert`(알림), `worklog`(작업내역)입니다.
 - `auth`: `bot` 또는 `user`입니다. 사용자 토큰(`user`)을 쓰는 Slack은 `cookie`(`xoxd-...`) 항목이 하나 더 필요합니다.
 - 연결 추가나 `enabled` 변경은 dotz를 다시 시작해야 반영되고, `allow`와 `chats` 변경은 바로 반영됩니다.
 

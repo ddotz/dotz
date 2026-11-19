@@ -614,7 +614,7 @@ Do this, briefly:
 			},
 			update: {
 				label: "Harness update", install: "automatic install", check: "new versions only", na: (h: string) => `Not applicable · the runtime is ${h}`,
-				desc: "Checks nightly whether the harness (OmO or omp) has a new version. With 'automatic install' (the default) it installs and restarts the gateway when everything is idle; 'new versions only' just tells the work-log channel.",
+				desc: "Checks nightly whether the harness (OmO or omp) has a new version. With 'automatic install' (the default) it installs and restarts the gateway when everything is idle; 'new versions only' just tells the worklog channel.",
 			},
 			doctor: {
 				label: "Doctor",
@@ -728,7 +728,7 @@ Do this, briefly:
 			harness: { noAdapter: "dotz cannot use this one yet", defaultTag: "default", notInstalled: "Not installed", installOwn: "Install {name} in a terminal first, then reload this page.", loginTitle: "Sign in to {name}", loginSupOmo: "The bot works with this account", loginSupTerm: "You sign in inside a terminal window", loginSupClaude: "Sign in inside a terminal window with claude auth login", accounts: "{n} account(s) connected" },
 			tools: { secAside: "Aside browser", secMail: "Mail and calendar", asideApp: "Aside app", asideAppSup: "Keeps logins, does web work, and runs the messenger and Cloudflare connections", asideCli: "Aside command", asideCliSup: "Used when the bot drives the browser", asideLogin: "Aside sign-in", asideLoginSup: "Approve the code in the app", zeleSup: "The tool that reads mail and calendars", mailTitle: "Connect mail and calendar accounts", mailSup: "Google, Outlook, or IMAP such as Naver", needFirst: "Finish the install above first" },
 			bot: {
-				name: "Name", namePh: "Lumi, Momo, Assistant", nameHint: "2 to 32 characters. The Discord bot and its category use this name too.", character: "Character", tone: "Way of talking", notices: "Style of work logs and notices", custom: "Write my own", customPh: "Write it however you like", later: "You can change these later in a chat.",
+				name: "Name", namePh: "Lumi, Momo, Assistant", nameHint: "2 to 32 characters. The Discord bot and its category use this name too.", character: "Character", tone: "Way of talking", notices: "Style of worklog posts and notices", custom: "Write my own", customPh: "Write it however you like", later: "You can change these later in a chat.",
 				address: "What the bot calls you", addressPh: "boss, a name", addressHint: "Leave it empty and the bot uses no form of address.", avatar: "Profile image", avatarPh: "/Users/me/Pictures/bot.png", avatarHint: "The path of a png or jpg file. Leave it empty to start without an image.",
 				// v is the text kept in the identity; t and s are what the page shows.
 				opts: {

@@ -49,7 +49,7 @@ await view.navigate(`${hub.origin}/`);
 await waitFor(`typeof msgNode === "function" && S`);
 
 const ts = "2026-11-05T01:00:00.000Z";
-const notice = (text: string, kind = "worklog") => `({ id: "n1", kind: ${JSON.stringify(kind)}, title: "작업 기록", tone: "", text: ${JSON.stringify(text)}, src: "worklog", open: "worklog", at: "${ts}", ts: "${ts}", updated: "${ts}" })`;
+const notice = (text: string, kind = "worklog") => `({ id: "n1", kind: ${JSON.stringify(kind)}, title: "작업내역", tone: "", text: ${JSON.stringify(text)}, src: "worklog", open: "worklog", at: "${ts}", ts: "${ts}", updated: "${ts}" })`;
 const out = (text: string, extra = "") => `{ ts: "${ts}", kind: "out", source: "orchestrator", target: "web", text: ${JSON.stringify(text)}${extra} }`;
 // Each surface as the page draws it: an expression that gives the node, or the nodes, of one message.
 const SURFACES: Record<string, (text: string) => string> = {

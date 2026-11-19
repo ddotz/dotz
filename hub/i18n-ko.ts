@@ -330,7 +330,7 @@ export const ko: Catalog = {
 	mailNote: (source, id, subject) => `(이 대화는 메일 한 통이에요: ${source} ${id}, "${subject}". 답장·보내기·전달·삭제는 먼저 발송 승인 블록(1) 보내기 / 2) 고치기 / 3) 보내지 않기)으로 초안을 보여 주고, 여기서 오너가 분명히 OK한 뒤에만 하세요.)`,
 	textsReport: lines => `[dotz gateway] 이 설치의 문구 고침(<데이터 폴더>/custom/texts.json) 중 새 버전과 맞지 않는 것이 있어요:\n${lines}\n새 기본 문구(bun hub/texts-cli.ts show <키>)와 비교해서 다시 확인하고, \`bun hub/texts-cli.ts set <키> --file <파일>\`로 다시 쓰거나 항목을 지우세요. 이 안내는 문제마다 한 번만 와요. 무엇을 고쳤는지 오너에게 한 줄로 알리세요.`,
 	restartHeldResume: "[dotz gateway] 게이트웨이가 재시작됐어요. 재시작 대기 중에 막혔던 워커나 세션 시작이 있어요. state.json open_tasks에서 재시작 뒤로 미룬 일을 찾아 지금 이어서 하세요. 이미 시작했으면 아무것도 하지 마세요.",
-	carryOver: (where, read, stat, files) => `[dotz 업데이트] 이 설치에서 dotz 코드를 직접 고친 내용이 업데이트 전에 보관됐어요(보관본마다 이 안내는 한 번만 와요). 보관: ${where}\n변경: ${stat}\n${files}\n해 주세요: 1) \`${read}\`로 diff를 읽으세요. 2) 각 변경을 가능하면 사용자 층으로 옮기세요: 문구는 <데이터 폴더>/custom/texts.json(bun hub/texts-cli.ts), 기능은 <데이터 폴더>/features, 규칙은 RULES.md. 3) dotz 코어에서만 의미가 있는 변경은 dotz 관리자에게 보낼 한국어 보고를 작업로그에 남기고(개인정보와 민감한 내용은 모두 빼서 비식별화·일반화하되 증상, 재현 순서, 기대 결과, 실제 결과, 버전은 상세하게), ddotz/dotz에 GitHub 이슈로 열지 오너에게 물으세요. 4) 마지막으로 오너에게 한 번에, 무엇을 옮겼고 무엇을 못 옮겼는지 알리세요. dotz 코드는 고치지 마세요.`,
+	carryOver: (where, read, stat, files) => `[dotz 업데이트] 이 설치에서 dotz 코드를 직접 고친 내용이 업데이트 전에 보관됐어요(보관본마다 이 안내는 한 번만 와요). 보관: ${where}\n변경: ${stat}\n${files}\n해 주세요: 1) \`${read}\`로 diff를 읽으세요. 2) 각 변경을 가능하면 사용자 층으로 옮기세요: 문구는 <데이터 폴더>/custom/texts.json(bun hub/texts-cli.ts), 기능은 <데이터 폴더>/features, 규칙은 RULES.md. 3) dotz 코어에서만 의미가 있는 변경은 dotz 관리자에게 보낼 한국어 보고를 작업내역에 남기고(개인정보와 민감한 내용은 모두 빼서 비식별화·일반화하되 증상, 재현 순서, 기대 결과, 실제 결과, 버전은 상세하게), ddotz/dotz에 GitHub 이슈로 열지 오너에게 물으세요. 4) 마지막으로 오너에게 한 번에, 무엇을 옮겼고 무엇을 못 옮겼는지 알리세요. dotz 코드는 고치지 마세요.`,
 	cardAudit: (closed, refreshed, open) => `[dotz 업데이트] 이번 업데이트에서 이 설치의 카드를 한 번 전역 점검해요. 게이트웨이가 전송 기록으로 보낸 카드 ${closed}장을 닫았고 ${refreshed}장을 새로 고쳤어요. 열린 카드는 ${open}장이에요.\n메일, 답장 초안, 댓글, 쪽지, 카톡, sns 작업, 승인 대기, 알림을 모두 읽고 전송 기록과 맞춰 보세요. 읽는 길은 features/<앱>/feature.md에 있고, 카드는 GET /api/notices와 GET /api/reply/queue로 읽어요.\n- 외부로 아무것도 보내지 않아요. 다시 보내기, 승인, 버리기를 하지 않아요. 보내기 명령은 실행하지 않아요.\n- 전송 기록으로 보낸 것이 증명된 카드만 닫아요(POST /api/notices/resolve의 ids).\n- 증명하지 못한 카드는 열어 둬요. 초안과 어긋나면 보내기가 되도록 카드만 새로 고쳐요.\n- 끝나면 이 대화에 오너에게 짧게 요약해요: 닫은 카드, 남은 카드, 오너가 볼 것. 이 점검은 다시 오지 않아요.`,
 	watchIssue: {
 		cls: { script: "확인 스크립트에 오류가 있어요", outside: "바깥 서비스(네트워크·서버) 문제예요", owner: "로그인이나 승인이 필요해요", unknown: "원인을 알 수 없어요" },
@@ -342,7 +342,7 @@ export const ko: Catalog = {
 		return `[dotz 모니터링 고치기] 모니터링 "${a.label}"의 확인 스크립트가 실패했어요 (종료 코드 ${a.code}, 분류 ${a.cls}). 이번이 오늘 ${a.attempt}번째 시도예요 (하루 ${a.max}번까지).\n고칠 파일: ${a.file}\n백업: ${a.backup}\n마지막 출력 끝부분:\n${fence(a.tail)}\n마지막 성공: ${a.lastOk ?? "기록 없음"}.${edited}${a.okLines ? `\n그때 출력의 첫 줄들:\n${fence(a.okLines)}` : ""}${a.tried ? `\n지난번에 해 본 것: ${a.tried}` : ""}\n- 이 파일만 고쳐요.\n- 비밀 폴더나 비밀값을 읽거나 적지 않아요.\n- 메일·메시지·게시처럼 남에게 나가는 동작과 로그인·2차 인증 시도는 하지 않아요.\n- 스크립트를 직접 돌리지 않아요. 게이트웨이가 다시 돌려요. 문법 검사(bash -n, bun build --no-bundle 같은 것)는 괜찮아요.\n- 하위 작업이나 [later] 없이 이 턴에서 끝내요.\n- 원인이 스크립트가 아니면 아무것도 바꾸지 않고, 이유를 노트에 써요.\n끝내는 법: ${a.notePath} 에 "무엇을, 왜"를 한 줄로 쓰고, 최종 답은 "-" 한 글자만 보내요.`;
 	},
 	inboxSchedule: (id, every, channel) => `[dotz inbox] 예약 항목 (${id}${every ? `, ${every}분마다` : ""}) - 지금 처리하세요. 최종 답은 ${channel}로 가요:`,
-	inboxCheck: (ids, channel) => `[dotz inbox] 조용한 점검 (${ids.join(", ")}) - 오너가 시킨 일이 아니라 내가 걸어 둔 시스템 점검${ids.length > 1 ? `이에요. ${ids.length}개가 같은 시각이라 한 번에 와요: 번호 순서대로 보고 답은 하나로 쓰세요` : "이에요"}. 모두 정상이면 평범한 한 줄로만 답하세요(조용히 작업로그에만 남아요). 오너가 정해야 하거나 꼭 알아야 할 때만 답을 [ask] 또는 [fail]로 시작하세요. 할 말이 없으면 \"-\" 한 글자만 답하세요. 최종 답은 ${channel}로 가요:`,
+	inboxCheck: (ids, channel) => `[dotz inbox] 조용한 점검 (${ids.join(", ")}) - 오너가 시킨 일이 아니라 내가 걸어 둔 시스템 점검${ids.length > 1 ? `이에요. ${ids.length}개가 같은 시각이라 한 번에 와요: 번호 순서대로 보고 답은 하나로 쓰세요` : "이에요"}. 모두 정상이면 평범한 한 줄로만 답하세요(조용히 작업내역에만 남아요). 오너가 정해야 하거나 꼭 알아야 할 때만 답을 [ask] 또는 [fail]로 시작하세요. 할 말이 없으면 \"-\" 한 글자만 답하세요. 최종 답은 ${channel}로 가요:`,
 	scheduleCheckLine: text => `${SCHEDULE_CHECK_LEAD} ${text}`,
 	inboxThread: (thread, parent) => ` (#${parent}의 스레드 "${thread}". 답은 스레드로 가요)`,
 	inboxFirst: channel => `(새 작업 채널 #${channel}: 오너는 채널 단위로 일을 맡겨요. 이 채널의 작업과 보고는 여기에 두세요. 이 채널의 일에 로그인 유지나 시간이 지나며 확인할 것이 필요하면 직접 dotz_channel setup으로 이 채널에 설정하세요.)`,
@@ -353,7 +353,7 @@ export const ko: Catalog = {
 	openQuestions: titles => `(이 대화에 아직 열린 질문: ${titles.map(t => `"${t}"`).join(", ")}. 이 글이 그 답인지 먼저 판단하세요. 답이면(일부여도) 처음 보내는 글에서 바로 dotz_send의 resolves로 닫고, 최종 답뿐이면 끝에 <resolves>질문 제목의 단어</resolves> 줄을 붙이세요. 다른 얘기면 질문은 두고 그 얘기를 하세요.)`,
 	openQuestionsLeft: titles => `[dotz gateway] 오너의 마지막 메시지에 이 열린 질문들이 함께 갔는데, 그 턴이 하나도 닫지 않고 끝났어요: ${titles.map(t => `"${t}"`).join(", ")}. 그 메시지가 질문의 답이었으면(일부여도) 답한 질문마다 <resolves>질문 제목의 단어</resolves> 한 줄씩만 쓰고, 다른 얘기였으면 - 한 글자만 답하세요. 다른 말은 덧붙이지 말고 다른 일도 하지 마세요. 두 답 모두 오너에게는 보이지 않아요.`,
 	workChannels: list => `(작업 채널 목록, 이 메시지의 채널은 아님: ${list.length ? list.join("; ") : "아직 없음"})`,
-	channelNames: { chat: "대화", alert: "알림", worklog: "작업로그", mail: "메일", workCategory: name => `${name} 작업` },
+	channelNames: { chat: "대화", alert: "알림", worklog: "작업내역", mail: "메일", workCategory: name => `${name} 작업` },
 	threadDone: "작업을 마쳤어요. 이 스레드는 1시간 뒤 보관할게요.",
 	laneParked: "멈췄어요. 여기에 쓰면 하던 데서부터 이어서 해요.",
 	laneLanguage: () => `(${koLaneLanguage})`,
@@ -598,7 +598,7 @@ export const ko: Catalog = {
 			},
 			update: {
 				label: "실행 하네스 업데이트", install: "자동 설치", check: "새 버전만 알림", na: h => `해당 없음 · 지금 런타임은 ${h}`,
-				desc: "매일 새벽 실행 하네스(OmO 또는 omp)에 새 버전이 있는지 확인해요. '자동 설치'(기본)면 설치하고 모두 한가해질 때 게이트웨이를 재시작하고, '새 버전만 알림'이면 작업 기록 채널에 알리기만 해요.",
+				desc: "매일 새벽 실행 하네스(OmO 또는 omp)에 새 버전이 있는지 확인해요. '자동 설치'(기본)면 설치하고 모두 한가해질 때 게이트웨이를 재시작하고, '새 버전만 알림'이면 작업내역 채널에 알리기만 해요.",
 			},
 			doctor: {
 				label: "닥터 점검",
@@ -712,7 +712,7 @@ export const ko: Catalog = {
 			harness: { noAdapter: "아직 dotz에서 쓸 수 없어요", defaultTag: "기본", notInstalled: "설치돼 있지 않아요", installOwn: "{name}은(는) 터미널에서 먼저 설치해 주세요. 설치한 뒤 이 페이지를 새로 고치면 돼요.", loginTitle: "{name} 로그인", loginSupOmo: "봇이 이 계정으로 일해요", loginSupTerm: "터미널 창에서 로그인해요", loginSupClaude: "터미널 창에서 claude auth login 으로 로그인해요", accounts: "계정 {n}개가 연결됐어요" },
 			tools: { secAside: "Aside 브라우저", secMail: "메일과 일정", asideApp: "Aside 앱", asideAppSup: "로그인 유지, 웹 작업, 메신저와 Cloudflare 연결에 써요", asideCli: "Aside 명령어", asideCliSup: "봇이 브라우저를 다룰 때 써요", asideLogin: "Aside 로그인", asideLoginSup: "코드를 앱에서 승인하면 돼요", zeleSup: "메일과 캘린더를 읽는 도구예요", mailTitle: "메일·일정 계정 연결", mailSup: "Google, Outlook, 네이버 같은 IMAP", needFirst: "먼저 위의 설치를 끝내 주세요" },
 			bot: {
-				name: "이름", namePh: "루미, 모모, 비서", nameHint: "2~32자예요. Discord 봇 이름과 카테고리도 이 이름을 써요.", character: "성격", tone: "말투", notices: "작업 기록과 알림 문체", custom: "직접 쓰기", customPh: "원하는 대로 적어 주세요", later: "나중에 대화에서 바꿀 수 있어요.",
+				name: "이름", namePh: "루미, 모모, 비서", nameHint: "2~32자예요. Discord 봇 이름과 카테고리도 이 이름을 써요.", character: "성격", tone: "말투", notices: "작업내역과 알림 문체", custom: "직접 쓰기", customPh: "원하는 대로 적어 주세요", later: "나중에 대화에서 바꿀 수 있어요.",
 				address: "나를 부르는 말", addressPh: "형, 대표님, 이름", addressHint: "비워 두면 호칭 없이 말해요.", avatar: "프로필 이미지", avatarPh: "/Users/me/Pictures/bot.png", avatarHint: "png나 jpg 파일 경로를 적어요. 비워 두면 이미지 없이 시작해요.",
 				// v is the text kept in the identity (the same lists as firstrun/answers.ts); t and s are what the page shows.
 				opts: {

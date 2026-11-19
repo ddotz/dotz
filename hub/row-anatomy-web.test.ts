@@ -23,8 +23,8 @@ const API: Record<string, unknown> = {
 	},
 	"/api/activity": { items: [], more: false, history: false },
 	"/api/notices": { unread: 2, items: [
-		{ id: "n1", kind: "worklog", title: "작업 기록", text: "문서를 고쳤어요", ts: iso(60_000), read: true },
-		{ id: "n2", kind: "worklog", title: "작업 기록", text: "결과를 남긴 기록", ts: iso(120_000), read: true, files: [file("d.md")] },
+		{ id: "n1", kind: "worklog", title: "작업내역", text: "문서를 고쳤어요", ts: iso(60_000), read: true },
+		{ id: "n2", kind: "worklog", title: "작업내역", text: "결과를 남긴 기록", ts: iso(120_000), read: true, files: [file("d.md")] },
 		{ id: "n3", kind: "result", title: "결과", text: "보고서를 다 썼어요", ts: iso(30_000), read: false, files: [file("e.md")] },
 		{ id: "n4", kind: "alert", title: "경고", text: "디스크가 거의 찼어요", ts: iso(90_000), read: false },
 	] },
