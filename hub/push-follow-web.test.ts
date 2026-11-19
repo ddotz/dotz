@@ -208,6 +208,7 @@ describe("the other computer's view in the installed app", () => {
 	test("a hand-over adds no history entry and closes with its x button; a switch the owner pressed still takes one", async () => {
 		const view = await first.view({ width: 390, height: 844 }, "/");
 		const { run, waitFor, ev } = on(view);
+		await run(`dispatchEvent(new Event("pointerup"));`);
 		await waitFor(`PR.fresh && history.state && history.state.dz`);
 		await run(`Object.defineProperty(navigator, "standalone", { value: true }); window.__len = history.length;`);
 		await run(`prGo("about:blank", true);`);

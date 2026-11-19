@@ -42,6 +42,20 @@ async function open(width: number, hash = "home") {
 	return v;
 }
 const MAIL_LIST = "#monitoring/i%3Amail";
+const touch = (v: V) => v.evaluate(`(window.dispatchEvent(new Event("pointerup")), history.state && history.state.dz)`);
+
+test("390: no history entry is stacked before the first touch; the first touch seeds the chain, and back then returns to the view before", async () => {
+	const v = await open(390);
+	const len0 = (await where(v)).len;
+	await v.evaluate(`go("settings")`);
+	await until(v, `current === "settings" && location.hash === "#settings"`, "settings not shown");
+	expect((await where(v)).len).toBe(len0);
+	await touch(v);
+	await until(v, `history.state && history.state.dz && history.state.c.length === 2`, "first touch did not seed the chain");
+	expect((await where(v)).len).toBeGreaterThan(len0);
+	await back(v);
+	await until(v, `current === "home"`, "back did not return to 홈");
+});
 
 test("390: 알림 shows the app bar's 뒤로, and it leads to 홈", async () => {
 	const v = await open(390, "notices");
@@ -192,6 +206,7 @@ for (const width of [390, 1280]) test(`${width}: every press beside or below the
 		[press('#nav .ni[data-view="settings"]'), () => `current === "settings"`],
 		[press('#nav .ni[data-view="home"]'), () => `current === "home" && location.hash === "#home"`],
 	];
+	await touch(v);
 	const seen = [await state(v)];
 	for (const [run, cond] of steps) {
 		await v.evaluate(run);

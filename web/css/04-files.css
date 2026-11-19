@@ -192,6 +192,7 @@ details.work.live .wdot { display: block; }
 @container tlcol (max-width: 559.98px) { .um { max-width: 90%; } .bm pre { padding: var(--sp-2) var(--sp-3); } .bm.rep, .bm.alert { padding: var(--sp-2) var(--sp-3) var(--sp-3); } }
 :root { --col: 736px; }
 .composer { flex: none; width: 100%; max-width: var(--col); margin: 0 auto; padding: 0 0 max(var(--sp-4), env(safe-area-inset-bottom)); }
+:root[data-kb] .composer { padding-bottom: var(--sp-4); }
 .composer.tmode { max-width: var(--col); }
 .working { display: flex; align-items: center; gap: var(--sp-2); min-height: 24px; margin-bottom: var(--sp-2); color: var(--fg-3); font-size: 12.5px; line-height: 20px; }
 #working-tx { min-width: 0; }

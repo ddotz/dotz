@@ -2,6 +2,7 @@
 const UP_RING_MS = 700;   // an upload done sooner shows the plain chip all along: no ring that blinks past
 const UP_STALL_MS = 30000;
 let upLive = 0;   // requests under way, of every caller; a page closed now would lose them
+const upRun = new Set(), upCut = new Set();
 const upGuard = ev => { ev.preventDefault(); ev.returnValue = ""; };
 const upBytes = n => n >= 10485760 ? `${Math.round(n / 1048576)}MB` : fsize(n);
 // The hub's own words (hub/files.ts), said before a byte goes. Empty until the first /api/state: the hub still refuses then.
@@ -11,11 +12,13 @@ function uploadXhr(f, name, onProgress) {
   const x = new XMLHttpRequest(), form = new FormData();
   form.append("file", f, name);
   let stalled = false, idle = 0;
-  const watch = () => { clearTimeout(idle); idle = setTimeout(() => { stalled = true; x.abort(); }, UP_STALL_MS); };
+  const rec = { name, hid: document.visibilityState === "hidden", last: Date.now(), retry: null, stall: () => { stalled = true; x.abort(); } };
+  const watch = () => { rec.last = Date.now(); clearTimeout(idle); idle = setTimeout(rec.stall, UP_STALL_MS); };
   const done = new Promise((ok, no) => {
-    const end = fn => v => { clearTimeout(idle); if (!--upLive) removeEventListener("beforeunload", upGuard); fn(v); };
+    const end = fn => v => { clearTimeout(idle); upRun.delete(rec); if (!--upLive) removeEventListener("beforeunload", upGuard); fn(v); };
     const fine = end(ok), bad = end(no);
-    x.upload.onprogress = ev => { watch(); if (onProgress && ev.lengthComputable) onProgress(f.size * ev.loaded / ev.total); };
+    const lost = () => { if (rec.hid) { upCut.add(rec); upNoteSoon(); } bad(new Error(TX("chat.upload.lost"))); };
+    x.upload.onprogress = ev => { rec.hid = false; watch(); if (onProgress && ev.lengthComputable) onProgress(f.size * ev.loaded / ev.total); };
     x.onload = () => {
       pairGate(x.status, x.getResponseHeader("x-dotz-pair"));
       let d = {};
@@ -23,14 +26,15 @@ function uploadXhr(f, name, onProgress) {
       if (x.status >= 200 && x.status < 300 && d.files) fine(d.files[0]);
       else bad(new Error(d.error || TX("chat.upload.failed", { status: x.status })));
     };
-    x.onerror = () => bad(new Error(TX("chat.upload.lost")));
-    x.onabort = () => (stalled ? bad(new Error(TX("chat.upload.lost"))) : fine(null));
+    x.onerror = lost;
+    x.onabort = () => (stalled ? lost() : fine(null));
     if (!upLive++) addEventListener("beforeunload", upGuard);
+    upRun.add(rec);
     x.open("POST", "/api/upload");
     x.send(form);
     watch();
   });
-  return { done, abort: () => x.abort() };
+  return { done, abort: () => x.abort(), rec };
 }
 const UP_EXT = { "image/jpeg": "jpg", "image/png": "png", "image/gif": "gif", "image/webp": "webp", "image/heic": "heic", "image/heif": "heif", "image/avif": "avif", "application/pdf": "pdf", "video/mp4": "mp4", "video/quicktime": "mov" };
 const upSniff = async f => {
@@ -53,6 +57,23 @@ async function uploadFile(f) {
   if (upTooBig(f.size)) throw new Error(upTooBig(f.size));
   return uploadXhr(f, f.name).done;
 }
+function upNote() {
+  const cut = [...upCut];
+  upCut.clear();
+  if (!cut.length) return;
+  const retry = cut.filter(r => r.retry);
+  toast(cut.length === 1 ? TX("chat.upload.cut_one", { name: cut[0].name }) : TX("chat.upload.cut_many", { n: cut.length }), true,
+    retry.length ? { label: TX("chat.upload.cut_retry"), onclick: () => retry.forEach(r => r.retry()) } : undefined, 12000);
+}
+const upNoteSoon = () => { if (document.visibilityState === "visible") setTimeout(upNote, 400); };
+const upHidden = () => { for (const r of upRun) r.hid = true; };
+function upBack() {
+  for (const r of upRun) if (r.hid && Date.now() - r.last > UP_STALL_MS) r.stall();
+  upNoteSoon();
+}
+document.addEventListener("visibilitychange", () => (document.visibilityState === "hidden" ? upHidden() : upBack()));
+addEventListener("pagehide", upHidden);
+addEventListener("pageshow", upBack);
 const drfBase64 = f => new Promise((ok, no) => { const r = new FileReader(); r.onload = () => ok(String(r.result).split(",")[1] || ""); r.onerror = () => no(r.error); r.readAsDataURL(f); });
 // target -> { attachment id: job }: the uploads of the composer. The tray only paints from here, so a repaint or a move to another conversation
 // and back finds the live numbers. A job's attachment waits in ATT or ts(t).att, whichever holds that conversation's files now.
@@ -66,6 +87,7 @@ function upStart(t, a, ring = false) {
     else upPaint(t, job);
   });
   job.abort = up.abort;
+  up.rec.retry = () => { if (upJob(t, a.id) === job && job.error) { upStart(t, a, true); if (t === target) renderAtt(); } };
   up.done.then(rec => {
     if (!rec) return;
     a.file = rec;

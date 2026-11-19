@@ -78,6 +78,20 @@ function histSeed() {
   history.replaceState(list[0], "", `#${urls[0]}`);
   for (let i = 1; i < list.length; i++) history.pushState(list[i], "", `#${urls[i]}`);
 }
+const HT = { on: Boolean(navigator.userActivation && navigator.userActivation.hasBeenActive), ev: ["pointerup", "touchend", "keydown", "click"] };
+async function histPersist() {
+  if (!isStandalone() || !navigator.storage || !navigator.storage.persist) return;
+  try { await navigator.storage.persist(); } catch (e) { console.warn("storage persist", e); }
+}
+function histWake() {
+  if (HT.on) return;
+  HT.on = true;
+  for (const t of HT.ev) removeEventListener(t, histWake, true);
+  histPersist();
+  histSync();
+}
+if (HT.on) histPersist();
+else for (const t of HT.ev) addEventListener(t, histWake, true);
 // A wide screen has no back gesture to serve, and a history traversal (history.go) the app starts there is a real browser navigation: the
 // address bar blinks and the page looks reloaded (owner 2026-11-04): so on a wide screen overlays take no entry and moving up only replaces
 // the current entry; going deeper or sideways (another tab, another item of a list) stacks an entry, and only the browser's own back and
@@ -87,7 +101,12 @@ const histFlat = () => !narrowChat();
 function histSync() {
   if (H.hold || H.moving) return;   // a traversal is in flight (or overlays are closing): its end calls this again
   const flat = histFlat(), k = flat ? 0 : OV.length, S = history.state;
-  if (!S || !S.dz) { histSeed(); return; }
+  if (!S || !S.dz) {
+    if (!HT.on) { history.replaceState(S, "", hurl(H.want)); return; }
+    histSeed();
+    if (history.state && history.state.dz) histSync();
+    return;
+  }
   if (S.g) {   // on the exit guard: a view other than 홈 (or an overlay) needs the 홈 entry above it first
     if (H.want.length > 1 || k) { pushChain(H.want, 0, []); histSync(); }
     return;
