@@ -539,7 +539,6 @@ export function restoreDraft(ref: string): { ok: boolean; text: string } {
 export async function sendDraft(id: string, deps: FlowDeps, opts: { withReply?: true; asIs?: true; retry?: true } = {}): Promise<Step> {
 	const stored = getDraft(id);
 	const d = stored && withRecipient(stored);
-	if (stored && d && d !== stored && stored.status === "pending") patchDraft(id, { to: d.to, item: d.item, questions: d.questions });
 	if (!d) return { ok: false, text: `초안 ${id}을(를) 찾지 못했어요`, sent: "no", code: "gone" };
 	if (d.status !== "pending") return { ok: false, text: `초안 ${id}은(는) 이미 ${d.status} 상태라 보내지 않았어요`, sent: "no", code: "gone" };
 	const card = opts.withReply ? undefined : linkedComment(id);
@@ -565,9 +564,8 @@ export async function sendDraft(id: string, deps: FlowDeps, opts: { withReply?: 
 	if (v.token && (v.go || opts.retry) && claimToken(claimFile(id)) === v.token) return { ok: false, text: SPENT_REFUSED, sent: "no", code: "not_approved" };
 	// A second send of the same draft (a double tap, a replayed answer, the CLI beside the gateway) waits for no one: it is refused.
 	if (!opts.retry && claimHolder(claimFile(id)) === "dead") return { ok: false, text: `초안 ${id}은(는) 지난번에 보내다가 멈춰서 메일이 이미 나갔을 수 있어요. 보낸편지함을 확인하고, 안 나갔을 때만 다시 보내기를 눌러 주세요`, sent: "maybe", code: "interrupted" };
-	// Another sender holds the claim and may still send it: no outcome of this run (design 2.3, the queue keeps it `sending`).
 	const release = claimSend(claimFile(id), opts.retry === true);
-	if (!release) return { ok: false, text: `초안 ${id}은(는) 지금 보내는 중이라 한 번 더 보내지 않았어요` };
+	if (!release) return { ok: false, text: `초안 ${id}은(는) 지금 보내는 중이라 한 번 더 보내지 않았어요`, sent: "no", code: "already_sending" };
 	if (v.token) keepClaimToken(claimFile(id), v.token);
 	let keepClaim = false;
 	try {
@@ -575,7 +573,7 @@ export async function sendDraft(id: string, deps: FlowDeps, opts: { withReply?: 
 		if (now?.status !== "pending") return { ok: false, text: `초안 ${id}은(는) 이미 ${now?.status ?? "없는"} 상태라 보내지 않았어요`, sent: "no", code: "gone" };
 		let out: SendOutcome;
 		try {
-			out = await (deps.send ?? (rec => sendWith(rec, deps.run ?? realRunner)))(now);
+			out = await (deps.send ?? (rec => sendWith(rec, deps.run ?? realRunner)))(withRecipient(now));
 		} catch (e) {
 			console.error(`reply draft: sending ${id} threw: ${(e as Error).stack ?? (e as Error).message}`);
 			out = { ok: false, message: `보내지 못했어요: ${(e as Error).message}`, sent: "maybe", code: "unknown" };
@@ -591,6 +589,14 @@ export async function sendDraft(id: string, deps: FlowDeps, opts: { withReply?: 
 			keepClaim = true;
 			console.error(`reply draft: ${id} went out but its status was not saved: ${(e as Error).message}`);
 			return { ok: true, text: `${out.message} 다만 초안 상태를 저장하지 못해서 초안이 아직 대기 중으로 보일 수 있어요. 다시 보내지는 않아요` };
+		}
+		const filled = withRecipient(now);
+		if (filled !== now) {
+			try {
+				patchDraft(id, { to: filled.to, item: filled.item, questions: filled.questions });
+			} catch (e) {
+				console.error(`reply draft: the address filled in for ${id} was not saved: ${(e as Error).message}`);
+			}
 		}
 		// A text the owner wrote himself (직접 수정) teaches what he changed, in the profile of that draft, once it went out (design 3.4).
 		const taught = now.editedFrom !== undefined ? editLesson(now.editedFrom, now.body) : undefined;

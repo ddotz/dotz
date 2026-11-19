@@ -5,7 +5,8 @@
 // by a plain claim, only by a caller that says the owner retried on purpose (`takeOver`). The claim holds the pid and that process's start time, so a pid the system gave
 // to another process does not count as the sender. No clock and no config import (the CLIs use it).
 import { execFileSync } from "node:child_process";
-import { closeSync, mkdirSync, openSync, readFileSync, renameSync, rmSync, writeFileSync, writeSync } from "node:fs";
+import { randomUUID } from "node:crypto";
+import { closeSync, linkSync, mkdirSync, openSync, readFileSync, renameSync, rmSync, writeFileSync, writeSync } from "node:fs";
 import { dirname } from "node:path";
 
 const alive = (pid: number): boolean => {
@@ -35,7 +36,7 @@ const ownClaim = (): string => {
 export function claimHolder(file: string): "none" | "live" | "dead" {
 	let claim: string;
 	try {
-		claim = readFileSync(file, "utf8").trim();
+		claim = readFileSync(file, "utf8").split("\n", 1)[0]!.trim();
 	} catch {
 		return "none";
 	}
@@ -62,25 +63,57 @@ export function keepClaimToken(file: string, token: string): void {
 	renameSync(tmp, `${file}.token`);
 }
 
+const contentOf = (file: string): string | undefined => {
+	try {
+		return readFileSync(file, "utf8");
+	} catch {
+		return undefined;
+	}
+};
+
+function retireDead(file: string): boolean {
+	const lock = `${file}.takeover`;
+	const tmp = `${lock}.${process.pid}.${randomUUID()}`;
+	writeFileSync(tmp, ownClaim(), { mode: 0o600 });
+	try {
+		linkSync(tmp, lock);
+	} catch (e) {
+		if ((e as NodeJS.ErrnoException).code !== "EEXIST") throw e;
+		if (claimHolder(lock) === "dead") rmSync(lock, { force: true });
+		return false;
+	} finally {
+		rmSync(tmp, { force: true });
+	}
+	try {
+		if (claimHolder(file) === "live") return false;
+		rmSync(file, { force: true });
+		return true;
+	} finally {
+		rmSync(lock, { force: true });
+	}
+}
+
 // The release function when this caller holds the claim now, undefined when another sender holds it (or died holding it and `takeOver` is not set).
 export function claimSend(file: string, takeOver = false): (() => void) | undefined {
 	mkdirSync(dirname(file), { recursive: true });
 	for (let attempt = 0; attempt < 2; attempt++) {
 		try {
 			const fd = openSync(file, "wx", 0o600);
+			const mine = `${ownClaim()}\n${randomUUID()}`;
 			try {
-				writeSync(fd, ownClaim());
+				writeSync(fd, mine);
 			} finally {
 				closeSync(fd);
 			}
-			return () => rmSync(file, { force: true });
+			return () => {
+				if (contentOf(file) === mine) rmSync(file, { force: true });
+			};
 		} catch (e) {
 			if ((e as NodeJS.ErrnoException).code !== "EEXIST") throw e;
 		}
 		const who = claimHolder(file);
 		if (who === "none") continue;
-		if (who === "live" || !takeOver) return undefined;
-		rmSync(file, { force: true });
+		if (who === "live" || !takeOver || !retireDead(file)) return undefined;
 	}
 	return undefined;
 }

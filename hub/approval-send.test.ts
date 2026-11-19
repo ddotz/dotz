@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { createApprovalSender, refOfQuestion, sendActionOf, sendArgv, type SendResult } from "./approval-send.ts";
+import { createApprovalSender, outcomeOf, refOfQuestion, runCli, sendActionOf, sendArgv, type SendResult } from "./approval-send.ts";
 import { reasonOf } from "./reply-reasons.ts";
 
 const said = (o: object) => `DOTZ_SEND ${JSON.stringify(o)}`;
@@ -157,6 +157,37 @@ describe("approval sender", () => {
 		expect(r.detail!.startsWith("site said: duplicate text")).toBe(true);
 		expect(r.detail!.length).toBe(300);
 		expect(logged.filter(l => l.startsWith("approved send D1") && l.includes("site said: duplicate text"))).toHaveLength(1);
+	});
+
+	test("a long error output after the result line keeps the line: surely not sent, not 'may have gone out'", async () => {
+		const script = `console.log(${JSON.stringify(said({ sent: "no", code: "offline" }))}); console.error("w".repeat(6000)); process.exit(1);`;
+		const r = await runCli([process.execPath, "-e", script]);
+		expect(r.out.length).toBeLessThan(4500);
+		expect(outcomeOf(r)).toEqual({ sent: "no", code: "offline" });
+	});
+
+	test("a report that throws is logged and leaves no place stuck sending", async () => {
+		const g = gatedRun();
+		const logs: string[] = [];
+		const s = createApprovalSender({
+			kind: ref => PLACES[ref],
+			run: g.run,
+			report: r => {
+				if (r.state === "sent") throw new Error("EACCES: permission denied");
+			},
+			log: l => void logs.push(l),
+		});
+		expect(s.enqueue({ ref: "D1", conv: "ch:1", action: "send", title: "q (D1)" })).toBe(true);
+		await g.startedCount(1);
+		g.finish("D1");
+		await s.idle();
+		expect(s.results().find(r => r.ref === "D1")?.state).toBe("sent");
+		expect(logs.some(l => l.includes("EACCES"))).toBe(true);
+		expect(s.enqueue({ ref: "D2", conv: "ch:1", action: "send", title: "q (D2)" })).toBe(true);
+		await g.startedCount(2);
+		g.finish("D2");
+		await s.idle();
+		expect(s.results().find(r => r.ref === "D2")?.state).toBe("sent");
 	});
 
 	test("the send commands are the ones the bot runs", () => {

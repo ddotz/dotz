@@ -158,7 +158,7 @@ export function createApprovalSender(deps: SenderDeps) {
 		results.set(j.ref, r);
 		// The oldest finished result goes: one the file still keeps (waiting, sending, failed, unsure) is what a second approval is checked against, so it stays however many wait.
 		if (results.size > KEEP) for (const [ref, old] of results) if (!kept.has(ref)) { results.delete(ref); break; }
-		if (!quiet) deps.report(r);
+		if (!quiet) tell(deps, r);
 	};
 	const attempts = (ref: string): number => kept.get(ref)?.attempts ?? 0;
 
@@ -226,11 +226,10 @@ export function createApprovalSender(deps: SenderDeps) {
 			lanes.set(t.lane, l);
 			l.run = drain(t.lane, l.jobs);
 		}
-		return true;
 	}
 
 	// The lane is dropped in the same tick its last job is taken, so a job queued later always starts a new runner.
-	async function drain(key: string, jobs: (SendJob & { kind: SendKind })[]): Promise<void> {
+	async function drainJobs(key: string, jobs: (SendJob & { kind: SendKind })[]): Promise<void> {
 		for (let j = jobs.shift(); j; j = jobs.shift() ?? (lanes.delete(key), undefined)) {
 			const refusal = deps.fingerprint ? await unapproved(deps, j) : undefined;
 			if (refusal) {
@@ -252,6 +251,10 @@ export function createApprovalSender(deps: SenderDeps) {
 			ended(j, o, tries);
 		}
 	}
+	const drain = (key: string, jobs: (SendJob & { kind: SendKind })[]): Promise<void> =>
+		drainJobs(key, jobs)
+			.catch(e => deps.log(`approved sends in ${key}: the queue stopped: ${(e as Error).stack ?? (e as Error).message}`))
+			.finally(() => lanes.get(key)?.jobs === jobs && lanes.delete(key));
 
 	async function runOne(j: SendJob & { kind: SendKind }): Promise<SendOutcome> {
 		const inProcess = deps.runJob?.(j);
@@ -423,6 +426,13 @@ export function createApprovalSender(deps: SenderDeps) {
 	};
 }
 
+function tell(deps: Pick<SenderDeps, "report" | "log">, r: SendResult): void {
+	try {
+		deps.report(r);
+	} catch (e) {
+		deps.log(`approved send ${r.ref} in ${r.conv}: the ${r.state} report was not written: ${(e as Error).message}`);
+	}
+}
 // The owner's 보내기 of a job that will not go out is taken back in the inbox, so no CLI can send on it either.
 function takeBack(deps: Pick<SenderDeps, "revoke" | "log">, j: SendJob, why: "cancel" | "restart" | "changed"): void {
 	try {
@@ -463,6 +473,7 @@ async function unapproved(deps: Pick<SenderDeps, "fingerprint" | "log">, j: Send
 const lastLine = (out: string): string => out.trim().split("\n").filter(Boolean).slice(-1)[0] ?? "";
 // A CLI's `detail` is another process's text: bounded here, whatever it printed.
 const DETAIL_MAX = 300;
+const OUT_TAIL = 4000;
 const SENT = new Set(["yes", "no", "maybe"]);
 
 /** How a CLI send ended (design 1.11): timed out is unsure; the last `DOTZ_SEND` line decides (a "yes" wins over a non-zero exit); without one, exit 0 is sent and anything else may have gone out. */
@@ -491,5 +502,8 @@ export async function runCli(argv: string[]): Promise<{ code: number; out: strin
 	// `env` is passed on purpose: without it Bun hands the child the environment the process started with, not process.env as it is now
 	// (the data folder a test or the gateway set at run time would be lost, and the CLI would read another install's drafts).
 	const r = await runLimited(argv, SEND_CLI_MS, { env: { ...process.env, DOTZ_GATEWAY_SEND: "1" } });
-	return { code: r.code, out: `${r.stdout}\n${r.timedOut ? "timed out" : r.stderr}`.slice(-4000), ...(r.timedOut ? { timedOut: true } : {}) };
+	const full = `${r.stdout}\n${r.timedOut ? "timed out" : r.stderr}`;
+	const tail = full.slice(-OUT_TAIL);
+	const line = full.split("\n").filter(l => l.startsWith("DOTZ_SEND ")).at(-1);
+	return { code: r.code, out: line && !tail.includes(line) && line.length <= OUT_TAIL ? `${tail}\n${line}` : tail, ...(r.timedOut ? { timedOut: true } : {}) };
 }
