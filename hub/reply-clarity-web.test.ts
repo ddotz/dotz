@@ -73,6 +73,7 @@ const queue: Item[] = [
 	mail("RFRT03", 30_000, "내일 오전에 다시 보내 드릴게요.", { send: failed("offline", "인터넷에 연결되지 않았어요", ["retry", "drop"]) }),
 	mail("RUNS01", 31_000, "방금 보낸 메일 확인 부탁드려요.", { send: { state: "unsure", at: NOW, reason: { code: "net_cut", text: "보내는 중에 연결이 끊겼어요" }, attempts: 1, actions: ["resolve_sent", "open_channel", "resolve_retry"] } }),
 	mail("RNAP01", 32_000, "내일 다시 연락드릴게요.", { send: failed("not_approved", "보내기로 고른 기록이 없어요", ["send"]) }),
+	mail("RBCK01", 32_500, "다시 보내려던 답장이에요.", { back: { at: NOW, cause: "restart" } }),
 ];
 const notice = (id: string, ref: string, labels: string[]) => ({ id, kind: "decision", title: `이 답장 보낼까요? (${ref})`, ts: new Date(NOW).toISOString(), text: "",
 	decision: { to: `mail:${ref}`, state: "open", options: labels.map((label, i) => ({ n: i + 1, label })), draft: { ref, toLabel: "받는이", to: "kim@example.com", body: "다음 주 일정을 보내 드립니다." } } });
@@ -560,4 +561,12 @@ test("on a phone the three actions stay on one line and 고치기 opens the same
 	expect(await p.ev(`(() => { const c = document.querySelector(${q(card("RROW03"))}); return c.scrollWidth > c.clientWidth; })()`)).toBe(false);
 	await centre(v, card("RROW03"));
 	await shot(v, "04-fix-panel-mail-390.png");
+});
+
+test("a draft the gateway took back on a restart says why on its card and keeps its three actions", async () => {
+	const c = card("RBCK01");
+	await waitFor(`!!document.querySelector(${q(`${c} .rq-fail[data-code=back]`)})`);
+	expect(await texts(`${c} .rq-fail`)).toEqual(["게이트웨이가 다시 시작돼서 보내지 않았어요. 보내려면 보내기를 눌러 주세요"]);
+	expect(await keys(`${c} .rq-acts`)).toEqual(["send", "fix", "drop"]);
+	expect(await has(`${card("RPEN01")} .rq-fail`)).toBe(false);
 });

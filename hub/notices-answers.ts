@@ -4,7 +4,7 @@ import { detailOf } from "./choices.ts";
 import { DRAFT_BODY_MAX, draftActionOf, draftNeedsText } from "./draft-approval.ts";
 import type { Upload } from "./files.ts";
 import type { DecisionOpt, Notice } from "./notices-types.ts";
-import { closedHooks } from "./notices-wiring.ts";
+import { closedHooks, decisionHooks } from "./notices-wiring.ts";
 import { TEXT_MAX, clean, closedInfo, isOpenDecision, needsAnswer, twinOf } from "./notices-rules.ts";
 import { broadcast } from "./notices-read.ts";
 import { expiresAtOf, sending } from "./notices-decisions.ts";
@@ -186,7 +186,8 @@ export function unignoreNotice(id: unknown): { status: number; body: Record<stri
 
 // Puts questions back that were closed by mistake (a wrong auto-resolve): open, unread, not resolved or ignored, no answer text. Only a decision or an
 // [ask] item can be reopened; the hub does it in its own memory, so no file is edited behind its back.
-export function reopenNotices(ids: unknown): { reopened: string[]; unread: number } {
+const pushedFor = new Map<string, string>();
+export function reopenNotices(ids: unknown, because?: string): { reopened: string[]; unread: number } {
 	const want = new Set(Array.isArray(ids) ? ids.map(String) : []);
 	const hit = items.filter(i => want.has(i.id) && (i.decision || i.tone === "ask"));
 	const at = now();
@@ -206,5 +207,13 @@ export function reopenNotices(ids: unknown): { reopened: string[]; unread: numbe
 		if (exp) d.expires_at = exp;
 	}
 	if (hit.length) announce(hit, at);
+	if (because !== undefined) {
+		if (pushedFor.size > 200) for (const id of pushedFor.keys()) if (!items.some(i => i.id === id)) pushedFor.delete(id);
+		for (const i of hit) {
+			if (i.decision?.state !== "open" || pushedFor.get(i.id) === because) continue;
+			pushedFor.set(i.id, because);
+			for (const fn of decisionHooks) fn(i);
+		}
+	}
 	return { reopened: hit.map(i => i.id), unread: unreadCount() };
 }

@@ -405,7 +405,8 @@ function itemFor(v: DraftView, last: SendResult | undefined, revising: boolean, 
 	const { sent, mailLeft: _m, ...view } = v;
 	const held = sendOf(!owes(v) && OWED.has(last?.state ?? "") ? undefined : last, now);
 	const send = (held && v.draft.state !== "pending" && (held.state === "failed" || held.state === "unsure") ? { ...held, actions: [] } : held) ?? (sent && { state: "sent" as const, at: sent.at, how: sent.how, today: sinceMidnight(sent.at, now), actions: [] });
-	return { ...view, draft: { ...view.draft, hash: approvalHash(view), ...(revising ? { revising: true as const } : {}) }, ...(send ? { send, why: "reason" in send ? send.reason.text : view.why } : {}) };
+	const back = last?.state === "back" && last.cause === "restart" && v.draft.state === "pending" ? { at: last.at, cause: "restart" as const } : undefined;
+	return { ...view, draft: { ...view.draft, hash: approvalHash(view), ...(revising ? { revising: true as const } : {}) }, ...(send ? { send, why: "reason" in send ? send.reason.text : view.why } : {}), ...(back && !send ? { back } : {}) };
 }
 type Settler = { deps: ReplyDeps; known: (ref: string) => Promise<{ view: DraftView } | undefined>; ledger: (ref: string) => SendResult | undefined; revising: Set<string> };
 async function settleOwed(c: Settler): Promise<number> {

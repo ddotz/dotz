@@ -101,6 +101,18 @@ describe("send undo window", () => {
 		expect(third.ran).toEqual([]);
 	});
 
+	test("a send taken back says which way it came back: the owner's cancel or the gateway's restart", async () => {
+		const m = memoryStore();
+		const first = rig(m);
+		first.s.enqueue(job("RAAAAAA"));
+		first.s.cancel("RAAAAAA");
+		expect(first.last("RAAAAAA")).toMatchObject({ state: "back", cause: "cancel" });
+		first.s.enqueue(job("RAAAAAA"));
+		const second = rig(m);
+		second.s.recover();
+		expect(second.last("RAAAAAA")).toMatchObject({ state: "back", cause: "restart" });
+	});
+
 	test("a second approval or a double click in the window makes no second send", async () => {
 		const r = rig();
 		r.s.enqueue(job("RAAAAAA"));

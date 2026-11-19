@@ -77,12 +77,13 @@ export type ReplyItem = {
 	original?: { who: string; text: string; at?: number; subject?: string; post?: string; cut?: true };
 	/** Absent: it waits for the owner. */
 	send?: SendState & { actions: OwnerAction[] };
+	back?: { at: number; cause: "restart" };
 	/** One plain line for the tag: a failure reason, or why a rule did not send it. */
 	why?: string;
 };
 /** What an adapter knows of a draft: the item without the send, which the ledger adds. `sent`: when and how it went out, read from the store
  * (the ledger's record is in memory only); it shows as the item's send when the ledger has none, and is no part of its approvalHash. */
-export type DraftView = Omit<ReplyItem, "send"> & {
+export type DraftView = Omit<ReplyItem, "send" | "back"> & {
 	sent?: { at: number; how: SentHow };
 	mailLeft?: true;
 };

@@ -8,6 +8,7 @@
   "reply.failed": "Not sent - {why}",
   "reply.unsure": "Not sure it was sent",
   "reply.no_auto": "Won't resend on its own",
+  "reply.back.restart": "Not sent: the gateway restarted during the undo window. Press Send to send it",
   "reply.went_out": "It went out",
   "reply.check": "Check",
   "reply.retry": "Send again",

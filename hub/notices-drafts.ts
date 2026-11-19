@@ -126,7 +126,7 @@ export function markDraftSend(to: string, ref: string, state: NonNullable<Decisi
 	// A send refused for its files leaves the draft pending: its card opens again with the reason, so it can be answered (이대로 보내기) or the files fixed.
 	// A send taken back (cancelled in its window, or the gateway restarted in it) leaves the draft pending: the card opens again with the reason, once, on the card.
 	const refused = state === "failed" && (code ? policyOf(code).reopen === true : text.startsWith(ATTACH_REFUSED));
-	if ((refused || state === "back") && n.decision!.state !== "open") reopenNotices([n.id]);
+	if ((refused || state === "back") && n.decision!.state !== "open") reopenNotices([n.id], `${state}:${code ?? text}`);
 	else announce([n], at);
 }
 // The bot posted the open card of draft `ref` again with changes (or the queue changed its "남은 N건" line): the open card shows the new text in place.

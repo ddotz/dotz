@@ -56,7 +56,7 @@ type Hold = { approvedAt: number; wait: number };
 const PROVE_EVERY_MS = 10 * 60_000;
 export type AutoRetry = { attempt: number; max: number; nextAt: number };
 /** `detail`: what the place itself answered to the last try (hub/reply-types.ts SendOutcome), kept with the job, never shown on a card. */
-type Ended = { reason?: Reason; safeToAuto?: boolean; auto?: AutoRetry; attempts?: number; detail?: string };
+type Ended = { reason?: Reason; safeToAuto?: boolean; auto?: AutoRetry; attempts?: number; detail?: string; cause?: "cancel" | "restart" };
 type Kept = SendJob & { state: "queued" | "sending" | "undo" | "failed" | "unsure" } & Partial<Hold> & Ended;
 /** `undo`: approved, inside the cancel window (`until`); `back`: not sent, the draft waits for approval again (cancelled, or the gateway restarted in the window).
  * `failed` is surely not sent, `unsure` may have gone out; both carry `reason`, and `text` is its plain Korean for today's readers. */
@@ -207,7 +207,7 @@ export function createApprovalSender(deps: SenderDeps) {
 	/** A job in the window will not be sent: the owner's pick is taken back, then the card waits for approval again. */
 	function back(j: SendJob, why: "cancel" | "restart"): void {
 		takeBack(deps, j, why);
-		set(j, "back", why === "cancel" ? UNDONE : RETURNED_ON_RESTART);
+		set(j, "back", why === "cancel" ? UNDONE : RETURNED_ON_RESTART, undefined, { cause: why });
 	}
 	/** The gate refused `j` before it ran: nothing sent, no retry by code; a `changed` one also loses the pick it was approved with. */
 	function refuse(j: SendJob, code: ReasonCode, tries: number | undefined): void {
