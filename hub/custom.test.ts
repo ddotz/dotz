@@ -19,7 +19,7 @@ import { addSchedule, listSchedules, removeSchedule } from "./schedule.ts";
 const CUSTOM = join(DATA_DIR, "custom");
 const WORK = join(process.env.DOTZ_TEST_DIR!, "custom-work");
 let sent: Array<{ target: string; text: string; login: string }>;
-const deps: CustomDeps = { lanes: () => [], channels: () => ({}), send: async (target, text, login) => void sent.push({ target, text, login }) };
+const deps: CustomDeps = { lanes: () => [], channels: () => ({}), send: async (target, text, login) => void sent.push({ target, text, login }), caller: "local" };
 
 const card = (id: string, spec: unknown) => {
 	mkdirSync(join(CUSTOM, "cards"), { recursive: true });

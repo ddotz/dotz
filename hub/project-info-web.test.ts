@@ -14,7 +14,7 @@ const SHOTS_TAG = process.env.PROJECT_INFO_TAG ?? "after";
 if (SHOTS) mkdirSync(SHOTS, { recursive: true });
 
 const work: Record<string, string> = { "7001": "윈도우-화면앱", "7002": "윈도우-화면앱" };
-const deps = { lanes: () => [], channels: () => ({ work }), send: async () => {} };
+const deps = { lanes: () => [], channels: () => ({ work }), send: async () => {}, caller: "local" };
 const hub = fakeHub({
 	stream: "fake",
 	slowTimers: true,   // the page's 20 s refresh never runs here: only the stream can change the screen

@@ -179,7 +179,7 @@ export const sender = createApprovalSender({
 });
 
 // The bot's turn for a hand-written card (kind `card`): routes.ts hands its deliver here once it exists.
-let toBot: (conv: string, text: string) => Promise<void> = async conv => log(`reply: a hand-written card in ${conv} has no bot path yet`);
+let toBot: (conv: string, text: string, agent: boolean) => Promise<void> = async conv => log(`reply: a hand-written card in ${conv} has no bot path yet`);
 export const setReplyBot = (fn: typeof toBot): void => void (toBot = fn);
 const openCardOf = (conv: string, ref: string) => openDraftCards(conv).find(c => c.ref === ref);
 // The card of draft `ref`, open or answered: the conversation its sends report to.
@@ -218,7 +218,7 @@ export const replies = createReplyActions({
 			for (const c of openDraftCards().filter(x => x.ref === ref)) settleOpenDecision(c.id, "");
 		},
 	},
-	toBot: (conv, text) => toBot(conv, text),
+	toBot: (conv, text, agent) => toBot(conv, text, agent),
 	emit: e => broadcast({ ts: now(), ...e }),
 	log,
 	settle: () => {

@@ -76,14 +76,13 @@ const TWICE = "two markers for one card";
 const STILL_REVISING = "고치는 중이에요. 고친 카드가 올라오면 거기서 보내기를 눌러 주세요";
 export type MarkDeps = {
 	replies: { act: (input: ActInput, ctx: ActCtx) => Promise<ActResult>; confirm: (input: { ref: string }, ctx: ActCtx) => Promise<ActResult> };
-	/** The owner's message the post answers, when it is one of this conversation: only then may a send or a drop act, and a revise is his word. */
 	owner?: { mid: string; text: string };
 	/** One gateway line in the conversation. */
 	tell: (line: string) => Promise<unknown>;
 	log: (line: string) => void;
 };
-/** Acts on the model's markers: `[send]` posts the confirm card (nothing is sent), `[drop]` and `[revise]` in an answer to the owner are his word (a
- * sealed pick naming his message), a `[revise]` in any other post stays the agent's own. One hub.log line per marker; a refused one is told. */
+/** Acts on the model's markers: `[send]` posts the confirm card (nothing is sent) and only in an answer to the owner's own message; `[drop]` and
+ * `[revise]` there are his word (a sealed pick naming his message). Anywhere else they are the agent's own: a drop is refused and the session told why. */
 export async function applyCardMarkers(marks: CardMarks, d: MarkDeps): Promise<void> {
 	for (const u of marks.unknown) {
 		d.log(`card marker ${u.verb} ${u.ref} refused: ${u.why}`);
@@ -93,7 +92,7 @@ export async function applyCardMarkers(marks: CardMarks, d: MarkDeps): Promise<v
 	if (clashed.length) await d.tell(`한 카드에 서로 맞지 않는 표시가 겹쳐서 반영하지 않았어요 (${clashed.join(", ")}). 보낼지 고칠지 버릴지 한 번만 알려 주세요`);
 	const from = d.owner ? ` for owner msg ${d.owner.mid} "${d.owner.text.replace(/\s+/g, " ").slice(0, 80)}"` : "";
 	for (const m of marks.acts) {
-		if (m.act !== "revise" && !d.owner) {
+		if (m.act === "send" && !d.owner) {
 			d.log(`card marker ${m.act} ${m.ref} refused: the post answers no owner message`);
 			continue;
 		}

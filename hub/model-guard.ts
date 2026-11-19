@@ -6,9 +6,8 @@ import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { blockedBy, isExpensive, loadGuardConfig } from "./lanegates.ts";
 import { DATA_DIR, log, parseSelector, paths, splitThinking, writeAtomic } from "./config.ts";
-import { AGENT_AUTHOR } from "./agent-author.ts";
 import { tokenOk } from "./entry-check.ts";
-import { eventTarget, isPeerMessage, tailEvents } from "./events.ts";
+import { eventTarget, ownerWrote, tailEvents } from "./events.ts";
 import { PEER_HEADER } from "./peer-auth.ts";
 
 const DAY_MS = 24 * 3_600_000;
@@ -84,14 +83,14 @@ function missing(text: string, ask: Ask): string[] {
 
 // Owner requests pass. An agent request passes only with `owner_message`: the id (mid or message_id) of a message of the owner in the inbox that is
 // fresh, in the right conversation and names what is asked for.
-export function ownerGate(req: Request, ask: Ask, ownerMessage: unknown, now = Date.now()): Gate {
-	if (!isAgentRequest(req)) return { by: "owner" };
+export function ownerGate(agent: boolean, ask: Ask, ownerMessage: unknown, now = Date.now()): Gate {
+	if (!agent) return { by: "owner" };
 	const id = typeof ownerMessage === "string" ? ownerMessage.trim() : "";
 	const denied = (why: string): Gate => ({ denied: `an agent changes models only for what the owner just said: ${why}` });
 	if (!id) return denied("send owner_message with the mid or message_id of the owner's message in the inbox");
 	const e = tailEvents(paths.inbox).findLast(x => (x.kind === "message" || x.kind === "lane_message") && (x.mid === id || x.message_id === id));
 	if (!e) return denied(`no owner message ${id} in the inbox`);
-	if (e.source === "gateway" || e.author === AGENT_AUTHOR || isPeerMessage(e)) return denied(`${id} is not a message the owner wrote`);
+	if (!ownerWrote(e)) return denied(`${id} is not a message the owner wrote`);
 	const age = now - Date.parse(e.ts);
 	if (Number.isNaN(age) || age > DAY_MS) return denied(`${id} is older than 24 hours`);
 	if (ask.conv && eventTarget(e) !== ask.conv) return denied(`${id} was written in another conversation than ${ask.conv}`);

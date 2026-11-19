@@ -19,7 +19,7 @@ import { enqueue, queueItems, restore, take } from "./queue.ts";
 import { resolveNotices } from "./notices.ts";
 import { ownerOnlyCard } from "./approval-wire.ts";
 import { AGENT_AUTHOR } from "./agent-author.ts";
-import { agentCall } from "./entry-check.ts";
+import { agentCall, callerLogin } from "./entry-check.ts";
 import { queue, bgWork, out, progress } from "./outbound.ts";
 import { convs, maxLiveView } from "./convsessions.ts";
 import { repostRefusal } from "./lanewire.ts";
@@ -68,7 +68,7 @@ export async function routeSend(req: Request, url: URL, parts: string[], { peer 
 		});
 		if (!String(b.text ?? "").trim() && !files.length && !elements.length) return json({ error: "text required" }, 400);
 		const text = String(b.text ?? "");
-		const login = agentCall(req, peer) ? AGENT_AUTHOR : (req.headers.get("tailscale-user-login") ?? "local"); // an agent's own post is never the owner's word (hub/model-guard.ts); his forward from his other computer is
+		const login = callerLogin(req, peer);
 		// mode: none (main takes it as the next message, a working lane is steered), "steer" (into the running turn
 		// now), "interrupt" (abort the running turn, then send as a new prompt), "queue" (a working target gets it
 		// when its turn ends, see queue.ts; an idle target gets it now).

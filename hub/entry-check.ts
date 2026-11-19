@@ -9,6 +9,7 @@ import { cfg, HUB_TOKEN, log } from "./config.ts";
 import { same } from "./peer-auth.ts";
 import { tailscaleStatus } from "./peers.ts";
 import { sameOrigin } from "./routes-util.ts";
+import { AGENT_AUTHOR } from "./agent-author.ts";
 
 const LOOPBACK = ["127.0.0.1", "localhost", "[::1]"];
 const SAFE = new Set(["GET", "HEAD", "OPTIONS"]);
@@ -107,6 +108,8 @@ const ownerForwards = new WeakSet<Request>();
 export const ownerForward = (req: Request): Request => (ownerForwards.add(req), req);
 /** An agent's own call (the hub token from this computer), never the owner's word; the owner's forward from his other computer is not one. */
 export const agentCall = (req: Request, peer: string): boolean => peer === "none" && tokenOk(req) && !ownerForwards.has(req);
+/** The author a request's own messages carry: the agent author for an agent's own call (agentCall), else the owner's login. */
+export const callerLogin = (req: Request, peer: string): string => (agentCall(req, peer) ? AGENT_AUTHOR : (req.headers.get("tailscale-user-login") ?? "local"));
 /** Where an owner's act came from: this computer's web, or his other computer (a peer's own request or his forward from there). */
 export const actSurface = (req: Request, peer: string): "web" | "peer" => (peer === "none" && !ownerForwards.has(req) ? "web" : "peer");
 

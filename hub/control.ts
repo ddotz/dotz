@@ -18,7 +18,7 @@ import { convs, type Conv } from "./convsessions.ts";
 import { isProjectTarget } from "./projectchat.ts";
 import { isMailTarget } from "./conv-model.ts";
 import { MAIN, QUICK } from "./session-key.ts";
-import { convOfTarget, grantExpensive, noteModelChange, ownerGate } from "./model-guard.ts";
+import { convOfTarget, type Gate, grantExpensive, isAgentRequest, noteModelChange, ownerGate } from "./model-guard.ts";
 import { abortLane, applyChainChange as applyLaneChain, compactLane, laneLive, laneModels, lanes, restartLane, resumeByName, setLaneModel, setLaneWorkerModel, stopLane } from "./lanes.ts";
 import { cancelByOwner, applyChainChange as applyOrchestratorChain, applyModelChange, compact as compactOrchestrator, orch, orchestratorPid, restart as restartOrchestrator } from "./orchestrator.ts";
 import { keepsCacheOnEffort } from "./mid-effort.ts";
@@ -258,7 +258,7 @@ export async function changeTarget(target: string, change: { model?: string; thi
 	// inherit puts a conversation back on main's model: a model change like any other.
 	const inherits = change.inherit && Boolean(projectOf(key));
 	if (change.req && (change.model || change.thinking || change.workerModel || inherits)) {
-		const gate = ownerGate(change.req, { conv: convOfTarget(target === "workers" ? target : key), model: inherits ? orchestratorModel().model : (change.model ?? change.workerModel), thinking: inherits ? undefined : change.thinking }, change.ownerMessage);
+		const gate = ownerGate(isAgentRequest(change.req), { conv: convOfTarget(target === "workers" ? target : key), model: inherits ? orchestratorModel().model : (change.model ?? change.workerModel), thinking: inherits ? undefined : change.thinking }, change.ownerMessage);
 		if ("denied" in gate) throw new ControlError(gate.denied, 403);
 		by = gate.by;
 	}
@@ -492,6 +492,8 @@ function errorCard(e: unknown, text: string): CommandCard {
 	if (!known && !/[가-힣]/.test(raw)) log(`command ${text.trim().split(/\s+/)[0]} failed: ${raw}`);
 	return card(t.failed, [], { tone: "err", note: known ? known.text : /[가-힣]/.test(raw) ? raw : msg().cmdError.other });
 }
+/** The answer card of a command that was refused before it ran, `note` the owner-visible reason. */
+export const refusedCard = (note: string): CommandCard => card(T().failed, [], { tone: "err", note });
 
 // The English reasons the control API gives agents (ControlError), told to the owner in his language: the kind of failure picks the key.
 const ERROR_KINDS: [RegExp, Exclude<keyof ReturnType<typeof msg>["cmdError"], "other">][] = [
@@ -609,7 +611,7 @@ export function modelCommandChange(text: string, from?: string): { target: strin
 	if (!cmd || (cmd.name !== "model" && cmd.name !== "effort")) return undefined;
 	const [first, second, third] = cmd.args.filter(a => a !== "--force" && a !== "force");
 	const isLevel = (v?: string) => !!v && (THINKING_LEVELS as readonly string[]).includes(v);
-	const inProject = (key: string, a?: string, b?: string) => (!a || a === "inherit" ? undefined : isLevel(a) ? { target: key, thinking: a } : { target: key, model: a, ...(b ? { thinking: b } : {}) });
+	const inProject = (key: string, a?: string, b?: string) => (!a ? undefined : a === "inherit" ? { target: key, model: orchestratorModel().model } : isLevel(a) ? { target: key, thinking: a } : { target: key, model: a, ...(b ? { thinking: b } : {}) });
 	if (first && projectOf(first)) return inProject(first, second, third);
 	const here = from && projectOf(from);
 	if (here && !(first && namesTarget(first))) return inProject(here, first, second);
@@ -619,6 +621,15 @@ export function modelCommandChange(text: string, from?: string): { target: strin
 	return isLevel(second) && !third ? { target, thinking: second } : { target, model: second, ...(third ? { thinking: third } : {}) };
 }
 const namesTarget = (a: string) => a === "orchestrator" || a === "lanes" || a === "workers" || lanes.has(a.replace(/^lane:/, ""));
+
+/** Who a slash command runs as, or why it is refused: a model change or /fable-ok from an agent needs the owner's message (hub/model-guard.ts ownerGate);
+ * any other command runs as its caller, `agent` or the owner. `/api/command` and a chat message both ask here. */
+export function commandGate(line: string, from: string | undefined, agent: boolean, ownerMessage: unknown): Gate {
+	const change = modelCommandChange(line, from);
+	if (change) return ownerGate(agent, { conv: convOfTarget(change.target), model: change.model, thinking: change.thinking }, ownerMessage);
+	if (parseCommand(line)?.name === "fable-ok") return ownerGate(agent, { conv: from && /^(?:ch:\d+|lane:.+)$/.test(from) ? from : undefined, expensive: true }, ownerMessage);
+	return { by: agent ? "agent" : "owner" };
+}
 
 // `from`: the conversation the command was written in.
 export async function runCommand(text: string, from?: string, by = "owner"): Promise<CommandCard> {

@@ -1,6 +1,7 @@
 // Inbound path of the hub: inbox text, burst coalescing (intake/flush), web sends and the queued-message sweep. Split out of main.ts.
 import { BURST_GAP_MS, BURST_WAIT_MS, cfg, COALESCE_MAX_MS, DATA_DIR, DEFAULTS, log, now } from "./config.ts";
-import { limitsCard, parseCommand, runCommand } from "./control.ts";
+import { commandGate, limitsCard, parseCommand, refusedCard, runCommand } from "./control.ts";
+import { reasonOf } from "./reply-reasons.ts";
 import * as discord from "./discord.ts";
 import * as livestatus from "./livestatus.ts";
 import { msg } from "./i18n.ts";
@@ -267,8 +268,9 @@ export function flush(target: string): void {
 }
 
 // Slash/bang commands (/model, /restart, ...) are answered by the gateway itself, never by the orchestrator.
-export async function answerCommand(target: string, text: string, replyTo?: string): Promise<void> {
-	const card = await runCommand(text, target);
+export async function answerCommand(target: string, text: string, replyTo?: string, agent = false): Promise<void> {
+	const gate = commandGate(text, target, agent, undefined);
+	const card = "denied" in gate ? refusedCard(reasonOf("owner_only").text) : await runCommand(text, target, gate.by);
 	await out(target, card.text, replyTo, { source: "gateway", nk: "gateway-note", card }).catch(e => log(`command reply to ${target} failed: ${e}`));
 }
 
@@ -321,8 +323,9 @@ export async function sendWeb(s: WebSend): Promise<void> {
 		// The state of this message shows in its meta line at once (hub/events.ts emitDelivery); a refusal comes back as a
 		// gateway message in the session's chat, not only as the request's error.
 		try {
-			if (approvesBudget(name, s.text)) sendToLane(name, "/budget-ok");
-			const how = sendToLane(name, [`[owner via web] ${s.text}`, ...(s.picks?.length || s.decision ? decisionLines({ picks: s.picks, reply_to: s.replyTo, decision: s.decision }) : []), ...openQuestionLines(openChoices(channel)), s.reply ? replyLine(s.reply) : "", s.files?.length ? attachmentLines(s.files) : "", s.elements?.length ? pickedLines(s.elements) : "", ...(s.refs ?? [])].filter(Boolean).join("\n"), mid, false, ownerWantsUltrathink(s.text));
+			const byOwner = s.login !== AGENT_AUTHOR;
+			if (byOwner && approvesBudget(name, s.text)) sendToLane(name, "/budget-ok");
+			const how = sendToLane(name, [`${byOwner ? "[owner via web]" : "[agent via web]"} ${s.text}`, ...(s.picks?.length || s.decision ? decisionLines({ picks: s.picks, reply_to: s.replyTo, decision: s.decision }) : []), ...openQuestionLines(openChoices(channel)), s.reply ? replyLine(s.reply) : "", s.files?.length ? attachmentLines(s.files) : "", s.elements?.length ? pickedLines(s.elements) : "", ...(s.refs ?? [])].filter(Boolean).join("\n"), mid, false, ownerWantsUltrathink(s.text));
 			emitDelivery(channel, mid, how);
 			// The web shows the receipt as the message's delivery state only (no canned receipt message, owner 2026-10-17).
 			livestatus.begin(channel, channel, true);
@@ -347,7 +350,7 @@ export async function sendWeb(s: WebSend): Promise<void> {
 	const turn = note ? { ...event, plugin_note: note } : event;
 	// The session that answers `to` (main with conversation sessions off): steer and interrupt act on its turn only.
 	const session = convs.forTarget(to)?.o;
-	if (parseCommand(event.text)) void answerCommand(to, event.text);
+	if (parseCommand(event.text)) void answerCommand(to, event.text, undefined, s.login === AGENT_AUTHOR);
 	else if (s.mode === "steer" && s.sendNow && session?.orch.status === "working" && !updateNow()?.holding()) {
 		// Through the prompt queue, which steers it in as a note now: raw inbox text admitted mid-turn read as a new prompt
 		// and unpaired the running turn, so its answer went nowhere (2026-10-20 19:43 KST, the 19:36 and 19:38 web messages).
@@ -387,8 +390,9 @@ export function flushQueue(target: string): void {
 	if (!items.length) return;
 	try {
 		if (lane) {
-			for (const i of items) if (approvesBudget(lane, i.text)) sendToLane(lane, "/budget-ok");
-			const how = sendToLane(lane, `[owner via web] ${items.map(i => i.text).join("\n\n")}`, items[0].id, false, items.some(i => ownerWantsUltrathink(i.text)));
+			const byOwner = items.every(i => i.author !== AGENT_AUTHOR);
+			for (const i of items) if (i.author !== AGENT_AUTHOR && approvesBudget(lane, i.text)) sendToLane(lane, "/budget-ok");
+			const how = sendToLane(lane, `${byOwner ? "[owner via web]" : "[agent via web]"} ${items.map(i => i.text).join("\n\n")}`, items[0].id, false, items.some(i => ownerWantsUltrathink(i.text)));
 			for (const i of items.slice(1)) ownerNotes.asked(lane, i.id);
 			// The messages waited for the session's turn to end and went in as one: "queued" unless the stopped session had to be resumed.
 			for (const i of items) {

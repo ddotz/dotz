@@ -11,6 +11,7 @@ import { hangUp } from "./routes-util.ts";
 import { withWorklogKind } from "./worklog-kind.ts";
 import { maskSecrets } from "./public-scrub.ts";
 import { dropClaim, statedTone, stripHandoff } from "./tone.ts";
+import { AGENT_AUTHOR } from "./agent-author.ts";
 
 export type HubEvent = { ts: string; kind: string; source: string; text: string; [key: string]: unknown };
 
@@ -22,6 +23,9 @@ const isAnswer = (e: HubEvent): boolean =>
  * message or decision answer from the other computer's page carries it too. Both arrive as web messages under the owner's login, so only this tells them apart. */
 export const isPeerMessage = (e: HubEvent): boolean =>
 	!!e.via && (e.kind === "message" || e.kind === "lane_message") && !e.decision && !e.picks && !/^(?:mail|th|settings):/.test(String(e.conv || e.channel || ""));
+
+/** Whether the owner wrote this inbox message himself: not the gateway's, not an agent's with the hub token (hub/agent-author.ts), not a peer gateway's. */
+export const ownerWrote = (e: HubEvent): boolean => e.source !== "gateway" && e.author !== AGENT_AUTHOR && !isPeerMessage(e);
 
 /** What goes into inbox/outbox: a secret pasted into a message is masked in the file (hub/public-scrub.ts maskSecrets), in the text, its parts and every string of
  * its spec (a page drawn after a reload reads the spec from the file); the live event, its ids and its replies are untouched. */
@@ -356,10 +360,10 @@ export function answeredIds(): string[] {
 
 // The owner message with this id (a web `mid` or a Discord message id): the live ring first, then the inbox tail. A reply_to
 // names it, so a late answer can quote it (hub/outbound.ts). `conv`: the conversation it was written in.
-export function ownerMessage(id: string): { text: string; ts: string; author?: string; conv: string } | undefined {
+export function ownerMessage(id: string): { text: string; ts: string; author?: string; conv: string; notOwner?: true } | undefined {
 	const is = (e: HubEvent) => (e.kind === "message" || e.kind === "lane_message") && (e.mid === id || e.message_id === id);
 	const e = recent.findLast(is) ?? tailEvents(paths.inbox).findLast(is);
-	return e ? { text: String(e.text ?? ""), ts: e.ts, ...(typeof e.author === "string" ? { author: e.author } : {}), conv: eventTarget(e) ?? "main" } : undefined;
+	return e ? { text: String(e.text ?? ""), ts: e.ts, ...(typeof e.author === "string" ? { author: e.author } : {}), conv: eventTarget(e) ?? "main", ...(ownerWrote(e) ? {} : { notOwner: true as const }) } : undefined;
 }
 
 // Did the orchestrator answer in `target` after `at` (ms)? A stored prompt without a message id counts as answered then.

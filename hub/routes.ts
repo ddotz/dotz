@@ -54,7 +54,7 @@ import { harnessUpdateRoute } from "./harness-update.ts";
 import { appAsset, committedText, indexPage, manifestI18n, setAppLang, setAppName, swScript, webBuild } from "./webapp.ts";
 import { forgetRoute, listPeers, ownLogin } from "./peers.ts";
 import { AGENT_AUTHOR } from "./agent-author.ts";
-import { actSurface, agentCall, ambientWrite, entryHost, ownTailnetName, refuse, tokenOk } from "./entry-check.ts";
+import { actSurface, agentCall, ambientWrite, callerLogin, entryHost, ownTailnetName, refuse, tokenOk } from "./entry-check.ts";
 import { peerProjects } from "./peer-projects.ts";
 import { relayRoute, relayRows } from "./relay-route.ts";
 import { handlePair, PAIR_PATH } from "./peer-pair.ts";
@@ -319,7 +319,7 @@ export async function deliverAnswer(a: Parameters<DecisionSend>[0] & { login: st
 export { applyMailStates, mailOriginal, mailSyncDeps } from "./routes-mail.ts";
 
 // A hand-written card's answer (kind `card`) is one owner message to the bot, as its own numbered answer would be.
-setReplyBot((to, text) => deliverAnswer({ to, text, picks: [], notice: "", login: "local" }));
+setReplyBot((to, text, agent) => deliverAnswer({ to, text, picks: [], notice: "", login: agent ? AGENT_AUTHOR : "local" }));
 
 const agentKakaoOwnerOnly = (req: Request, url: URL, peer: string): Response | undefined =>
 	req.method === "POST" && /^\/api\/kakao\/chat\/[^/]+\/(send|ask\/drop)$/.test(url.pathname) && agentCall(req, peer) ? json({ ok: false, code: "owner_only", error: "오너만 할 수 있어요" }, 403) : undefined;
@@ -428,7 +428,7 @@ export function makeRoute({ tailnetName = ownTailnetName, busyNow, restartGatewa
 		// Settings → 업데이트 → 실행 하네스 (hub/harness-update.ts): the harness binary itself, from the package registry.
 		const harnessUpdateResponse = await harnessUpdateRoute(req, url, { busy: busyNow, restartIdle: restartGateway });
 		if (harnessUpdateResponse) return harnessUpdateResponse;
-		const customResponse = await customRoute(req, url, { lanes: () => withHomes(laneSummary(), discord.channels), channels: () => discord.channels, work: () => bgWork.list(), send: (target, text, login) => sendWeb({ ...(target === "main" ? {} : { lane: target.slice(5) }), channel: "web", text, mode: "default", login }), machine: () => resolveName(cfg.web?.machine_name, machineHost()), peerProjects });
+		const customResponse = await customRoute(req, url, { lanes: () => withHomes(laneSummary(), discord.channels), channels: () => discord.channels, work: () => bgWork.list(), send: (target, text, login) => sendWeb({ ...(target === "main" ? {} : { lane: target.slice(5) }), channel: "web", text, mode: "default", login }), caller: callerLogin(req, peer), machine: () => resolveName(cfg.web?.machine_name, machineHost()), peerProjects });
 		if (customResponse) return customResponse;
 		// Project records (hub/projects.ts) and the todo strip (hub/todo.ts), docs/layers.md §4.
 		if (url.pathname === "/api/projects" && req.method === "PUT") {
@@ -502,7 +502,7 @@ export function makeRoute({ tailnetName = ownTailnetName, busyNow, restartGatewa
 			const mail = to.startsWith("mail:") ? mailByKey(to.slice(5)) : undefined;
 			try {
 				const project = to.startsWith("ch:") ? projectTarget(to, discord.channels.work) : undefined;
-				await sendWeb({ mail, project, settings: to.startsWith("settings:") ? to.slice(9) : undefined, channel: "web", text: retryText(w, w.reply_to ? ownerMessage(w.reply_to)?.text : undefined), mode: "default", login: req.headers.get("tailscale-user-login") ?? "local" });
+				await sendWeb({ mail, project, settings: to.startsWith("settings:") ? to.slice(9) : undefined, channel: "web", text: retryText(w, w.reply_to ? ownerMessage(w.reply_to)?.text : undefined), mode: "default", login: callerLogin(req, peer) });
 			} catch (error) {
 				return json({ error: (error as Error).message }, 409);
 			}
@@ -539,14 +539,14 @@ export function makeRoute({ tailnetName = ownTailnetName, busyNow, restartGatewa
 		if (req.method === "POST" && url.pathname === "/api/input-diag") return json({ ok: true, kept: addInputDiag(await body(req)) }, 201);
 		// The one reply flow (hub/reply-route.ts) and a session CLI's failed-send report (hub/approval-wire.ts).
 		if (url.pathname.startsWith("/api/reply/") || url.pathname === "/api/approvals/failed") {
-			const login = agentCall(req, peer) ? AGENT_AUTHOR : (req.headers.get("tailscale-user-login") ?? "local"); // an agent's own call is never the owner's word; his forward from his other computer is (hub/entry-check.ts)
+			const login = callerLogin(req, peer);
 			const res = (await replyRoute(req, url, { replies, login, agent: login === AGENT_AUTHOR, triageMin: 1, undoSec: cfg.web.send_undo_sec ?? 10, surface: actSurface(req, peer) })) ?? (await approvalRoute(req, url));
 			if (res) return res;
 		}
 		// A button of a decision notice: the answer goes where the question came from (chat, session, project chat or login request).
 		const decide = req.method === "POST" ? /^\/api\/notices\/([^/]+)\/answer$/.exec(url.pathname) : null;
 		if (decide) {
-			const login = agentCall(req, peer) ? AGENT_AUTHOR : (req.headers.get("tailscale-user-login") ?? "local");
+			const login = callerLogin(req, peer);
 			const answer = await body(req);
 			const via = viaOf(answer.via);
 			let files: ReturnType<typeof ownerFiles>;

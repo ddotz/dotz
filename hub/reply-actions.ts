@@ -44,7 +44,7 @@ export type ReplyDeps = {
 		/** The conversation of the newest card of `ref`, open or already answered. */
 		convOf?: (ref: string) => string | undefined };
 	/** A card a session wrote by hand (kind `card`): its answer goes to the bot as one message per conversation. */
-	toBot: (conv: string, text: string) => Promise<void>;
+	toBot: (conv: string, text: string, agent: boolean) => Promise<void>;
 	emit: (e: { kind: "reply"; ref: string; item?: ReplyItem; next?: string; revising?: true; why?: string }) => void;
 	log: (line: string) => void;
 	/** One settle pass (hub/reply-wire.ts: the handled-draft sweep and `settleOwed`): list() asks for it when an open card shows a draft that waits no more, or a failed or unsure send is owed to a draft that was closed. */
@@ -343,7 +343,7 @@ export function createReplyActions(deps: ReplyDeps) {
 		if (ctx.agent && input.action !== "revise") return refused(403, "owner_only");
 		const line = cardAnswer(card, input);
 		if (!line) return refused(409, "not_supported");
-		await deps.toBot(card.conv, line);
+		await deps.toBot(card.conv, line, ctx.agent === true);
 		return { status: 200, body: { ok: true } };
 	}
 
@@ -386,7 +386,7 @@ export function createReplyActions(deps: ReplyDeps) {
 				const r = await act(it, ctx);
 				results.push(r.body.ok ? { ref: it.ref, ok: true, ...(r.body.item ? { item: r.body.item } : {}) } : { ref: it.ref, ok: false, code: r.body.code, error: r.body.error });
 			}
-			for (const [conv, lines] of forBot) await deps.toBot(conv, lines.join("\n"));
+			for (const [conv, lines] of forBot) await deps.toBot(conv, lines.join("\n"), ctx.agent === true);
 			return { status: 200, body: { results } };
 		},
 		/** Every reply every surface shows: the adapters' drafts with their sends, then the hand-written cards. A draft with an open card is in the

@@ -38,6 +38,7 @@ export type CustomDeps = {
 	/** The main assistant's background work (hub/bgwork.ts); a project page lists what is tied to it. */
 	work?: () => BgWork[];
 	send: (target: "main" | `lane:${string}`, text: string, login: string) => Promise<void>;
+	caller: string;
 	machine?: () => string; // this gateway's machine name (hub/machine-name.ts), the computer its projects belong to
 	peerProjects?: () => Promise<PeerProjects[]>; // the other computers with their projects (hub/peer-projects.ts)
 };
@@ -841,10 +842,9 @@ export async function customRoute(req: Request, url: URL, deps: CustomDeps): Pro
 		if (!c) return jsonOf({ error: `card ${id} not found` }, 404);
 		return jsonOf("error" in c ? { id: c.id, file: c.file, error: c.error } : await cardView(c, true));
 	}
-	const login = req.headers.get("tailscale-user-login") ?? "local";
 	const sent = async (target: "main" | `lane:${string}`, text: string) => {
 		try {
-			await deps.send(target, text, login);
+			await deps.send(target, text, deps.caller);
 		} catch (e) {
 			return jsonOf({ error: msg(e) }, 409);
 		}

@@ -512,7 +512,7 @@ export async function out(target: string, text: string, replyTo?: string, extra:
 		if (marks.acts.length || marks.unknown.length) {
 			const asked = answersOwner && !extra.update_key ? (replyTo ?? lateRequest(target)) : undefined;
 			const said = asked ? ownerMessage(asked) : undefined;
-			const owner = asked && said?.conv === conv ? { owner: { mid: asked, text: said.text } } : {};
+			const owner = asked && said?.conv === conv && !said.notOwner ? { owner: { mid: asked, text: said.text } } : {};
 			if (replies) void applyCardMarkers(marks, { replies, ...owner, tell: line => out(target, line, replyTo, { source: "gateway", nk: "gateway-note" }), log }).catch(e => log(`card markers in ${target} failed: ${(e as Error).message}`));
 			text = marks.rest;
 			// A marker alone still answers the owner's message: it is settled (shown answered, its progress line stopped) as a posted answer is.
