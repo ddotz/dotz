@@ -351,14 +351,24 @@ const NOT_REPO_TEXT = /(?:\.test\.[jt]sx?|\.(?:png|jpe?g|gif|webp|ico|woff2?|ttf
 const REPO = join(import.meta.dir, "..");
 const MAX_REPORTED = 12;
 
-function repoFiles(root: string, into: string[] = []): string[] {
+function walkFiles(root: string, into: string[] = []): string[] {
 	for (const entry of readdirSync(root, { withFileTypes: true })) {
 		if (entry.name === "node_modules" || entry.name === ".git" || entry.name === ".omo") continue;
 		const path = join(root, entry.name);
-		if (entry.isDirectory()) repoFiles(path, into);
+		if (entry.isDirectory()) walkFiles(path, into);
 		else into.push(path);
 	}
 	return into;
+}
+
+function repoFiles(root: string): string[] {
+	let listed: string;
+	try {
+		listed = execFileSync("git", ["ls-files", "-co", "--exclude-standard", "-z"], { cwd: root, encoding: "utf8", timeout: 5000, maxBuffer: 64 * 1024 * 1024, stdio: ["ignore", "pipe", "ignore"] });
+	} catch {
+		return walkFiles(root);
+	}
+	return listed.split("\0").filter(f => f && !f.startsWith(".omo/")).map(f => join(root, f));
 }
 
 // The branch being posted from can hold files the installed code does not have yet (a PR's new file). Only a dotz checkout is listed.
