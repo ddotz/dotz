@@ -5,7 +5,8 @@ import { afterEach, beforeEach, expect, test } from "bun:test";
 import { createDecipheriv, createECDH, createHmac } from "node:crypto";
 import { rmSync } from "node:fs";
 import { join } from "node:path";
-import type { Notice } from "./notices.ts";
+import { resetNoticesForTest, type Notice } from "./notices.ts";
+import { upsert } from "./notices-store.ts";
 import { b64u } from "./webpush.ts";
 
 type Push = typeof import("./push.ts");
@@ -39,6 +40,7 @@ function decrypt(msg: Buffer, uaPrivate: Buffer, uaPublic: Buffer, auth: Buffer)
 let down: Set<Id>;
 let relays: Array<{ to: Id; from: string; via: string }>;
 let pushes: Array<{ endpoint: string; body: Uint8Array }>;
+let refusing: Set<string>;
 // A presence POST is forwarded to the other gateways in the background; a test awaits the n forwards it expects instead of sleeping.
 let presenceLeft = 0;
 let presenceDone: () => void = () => {};
@@ -52,6 +54,7 @@ beforeEach(() => {
 	down = new Set();
 	relays = [];
 	pushes = [];
+	refusing = new Set();
 	for (const id of ids) inst[id].setRelayPeers(async () => ids.map(i => ({ ...GW[i], self: i === id })));
 	globalThis.fetch = (async (input: unknown, init?: { body?: Uint8Array | string; method?: string }) => {
 		const url = new URL(String(input instanceof Request ? input.url : input));
@@ -72,6 +75,7 @@ beforeEach(() => {
 			if (--presenceLeft === 0) presenceDone();
 			return res;
 		}
+		if (refusing.has(String(input))) return new Response(null, { status: 503 });
 		pushes.push({ endpoint: String(input), body: init!.body as Uint8Array });
 		return new Response(null, { status: 201 });
 	}) as unknown as typeof fetch;
@@ -448,4 +452,26 @@ test("a relayed notice push keeps m and i, a relayed decision push keeps m and n
 	await send("gamma", ask);
 	expect(addrOfPush(d.phoneApp.got()[0]!)).toEqual({ q: { m: at, n: ask.id!, pc: GW.gamma.url }, hash: "#chat/main" });
 	expect(d.phoneApp.got()[0]).toMatchObject({ ts: at, id: ask.id, pc: GW.gamma.url });
+});
+
+test("a device counts as sent only when its push service answered 2xx: a failed send is left to the other computer's subscription of the same device", async () => {
+	const a1 = await sub("alpha", PHONE, true), a2 = await sub("beta", PHONE, true);
+	refusing.add(a1.endpoint);
+	await send("gamma");
+	expect(a1.got()).toHaveLength(0);
+	expect(a2.got()).toHaveLength(1);
+	pushes.length = 0;
+	await send("alpha");
+	expect(a1.got()).toHaveLength(0);
+	expect(a2.got()).toHaveLength(1);
+});
+
+test("every push carries the unread count the bell shows", async () => {
+	resetNoticesForTest();
+	upsert({ kind: "result", tone: "done", title: "a", text: "끝", open: "lane:a", key: "lane:a" });
+	upsert({ kind: "result", tone: "done", title: "b", text: "끝", open: "lane:b", key: "lane:b" });
+	const d = await devices();
+	await send("alpha");
+	expect(d.phoneApp.got()[0]).toMatchObject({ unread: 2 });
+	expect(d.laptop.got()[0]).toMatchObject({ unread: 2 });
 });

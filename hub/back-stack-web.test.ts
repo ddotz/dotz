@@ -333,3 +333,19 @@ test("1280: comment post: opening a post adds no history step", async () => {
 	await back(v);
 	await until(v, `location.hash === "#monitoring"`, "one back did not leave the comment item");
 });
+
+test("installed app 390: the other computer's view closed by a tap landing here leaves no back entry of its own", async () => {
+	const v = await open(390);
+	await v.evaluate(`(Object.defineProperty(navigator, "standalone", { value: true, configurable: true }), true)`);
+	await touch(v);
+	await tab(v, "settings");
+	await until(v, `current === "settings" && history.state.dz && history.state.c.length === 2`, "settings not stacked");
+	const before = await ev<string[]>(v, `history.state.c`);
+	await v.evaluate(`(prGo("about:blank"), true)`);
+	await until(v, `OV.length === 1 && history.state.ov === 1 && !!document.querySelector(".pr-frame")`, "the other computer's view did not take its entry");
+	await v.evaluate(`(ovCloseAll(), prFrameClose(false), true)`);
+	await until(v, `!document.querySelector(".pr-frame") && history.state.ov === 0`, "the view's entry stayed on the stack");
+	expect(await ev(v, `({ ov: OV.length, c: history.state.c })`)).toEqual({ ov: 0, c: before });
+	await back(v);
+	await until(v, `current === "home" && history.state.c.length === 1`, "one back did not leave the settings view");
+});

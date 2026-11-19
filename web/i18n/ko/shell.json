@@ -32,5 +32,7 @@
   "shell.sw.cleanup_title": "알림 정리",
   "shell.sw.cleanup_body": "처리한 알림을 정리했어요",
   "shell.sw.reply_sent": "답변을 보냈어요",
+  "shell.sw.reply_failed": "답을 보내지 못했어요",
+  "shell.sw.reply_failed_body": "앱을 열어 다시 눌러 주세요",
   "shell.manifest.description": "{name} · 항상 켜져 있는 개인 비서"
 }

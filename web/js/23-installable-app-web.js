@@ -181,6 +181,7 @@ async function pushTapCold(landing) {
 async function pwaInit() {
   if (!("serviceWorker" in navigator)) return;
   try { PWA.reg = await navigator.serviceWorker.register("/sw.js", { scope: "/" }); } catch (e) { console.warn("service worker", e); return; }
+  pushStale();
   if (navigator.permissions && pushCapable()) navigator.permissions.query({ name: "notifications" }).then(st => { st.onchange = () => pwaRecheck(); }, e => console.warn("permission watch", e));
   if (pushCapable()) PWA.sub = await PWA.reg.pushManager.getSubscription().catch(() => null);
   await pushLoad();
@@ -283,6 +284,11 @@ function presence() {
 document.addEventListener("visibilitychange", presence);
 // An installed app is resumed far more often than it is reloaded (iOS keeps it suspended): its subscription is checked again on return, at most every 10 minutes.
 document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible" && PWA.reg && pushCapable() && Date.now() - (PWA.checked || 0) > 600000) pwaRecheck(); });
+async function pushStale() {
+  if (document.visibilityState !== "visible" || !PWA.reg || !/iPhone|iPad|iPod/.test(navigator.userAgent)) return;
+  try { for (const n of await PWA.reg.getNotifications()) n.close(); } catch (e) { console.warn("stale notifications", e); }
+}
+document.addEventListener("visibilitychange", pushStale);
 async function pwaRecheck() {
   PWA.sub = await PWA.reg.pushManager.getSubscription().catch(() => PWA.sub);
   await pushLoad();

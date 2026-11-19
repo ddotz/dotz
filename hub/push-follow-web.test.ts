@@ -229,3 +229,33 @@ describe("the other computer's view in the installed app", () => {
 		expect(await ev(`window.__probe`)).toEqual({ standalone: true });
 	});
 });
+
+describe("the installed app on an iPhone", () => {
+	const shown = (view: Awaited<ReturnType<typeof first.view>>, ua: string, visible: string) => on(view).run(`
+		window.__closed = [];
+		const mk = tag => ({ tag, close() { window.__closed.push(tag); } });
+		Object.defineProperty(navigator, "userAgent", { value: ${JSON.stringify(ua)}, configurable: true });
+		Object.defineProperty(document, "visibilityState", { value: ${JSON.stringify(visible)}, configurable: true });
+		PWA.reg = { getNotifications: async () => [mk("lane:a"), mk("decision:7")] };
+		document.dispatchEvent(new Event("visibilitychange"));`);
+	const IPHONE = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 Mobile/15E148";
+
+	test("the notifications still shown are closed from the page when the app becomes visible (WebKit 258922: a tag does not replace them)", async () => {
+		const view = await first.view({ width: 390, height: 844 }, "/");
+		await on(view).waitFor(`PR.fresh && typeof pushStale === "function"`);
+		await shown(view, IPHONE, "visible");
+		await on(view).waitFor(`window.__closed.length === 2`);
+		expect(await on(view).ev(`window.__closed`)).toEqual(["lane:a", "decision:7"]);
+	});
+
+	test("a hidden page, or a browser that is not on an iPhone, leaves the notifications alone", async () => {
+		const view = await first.view({ width: 390, height: 844 }, "/");
+		await on(view).waitFor(`PR.fresh && typeof pushStale === "function"`);
+		const ANDROID = "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Chrome/126 Mobile Safari/537.36";
+		for (const [ua, vis] of [[IPHONE, "hidden"], [ANDROID, "visible"]] as const) {
+			await shown(view, ua, vis);
+			await view.evaluate(`pushStale().then(() => 0)`);
+			expect(await on(view).ev(`window.__closed`)).toEqual([]);
+		}
+	});
+});

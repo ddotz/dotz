@@ -137,7 +137,7 @@ function histSync() {
 
 function ovOpen(close) { const o = { close }; OV.push(o); histSync(); return o; }
 function ovDone(o) { const i = o ? OV.indexOf(o) : -1; if (i < 0) return; OV.splice(i, 1); histSync(); }
-const ovCloseAll = () => { for (const o of [...OV].reverse()) o.close(); };
+const ovCloseAll = () => { for (const o of [...OV].reverse()) { o.close(); ovDone(o); } };
 // A modal <dialog> is an overlay for as long as it is open (Esc, ✕ and back all end in its close event).
 function dialogHist(d) { const o = ovOpen(() => d.close()); d.addEventListener("close", () => ovDone(o)); }
 // On a phone, a screen's inner state that the app bar arrow closes (a KakaoTalk room, a comment post or DM) is one history step, like a sheet: the browser's back

@@ -32,5 +32,7 @@
   "shell.sw.cleanup_title": "Alerts cleared",
   "shell.sw.cleanup_body": "Cleared the alerts you've handled",
   "shell.sw.reply_sent": "Reply sent",
+  "shell.sw.reply_failed": "Your answer did not go through",
+  "shell.sw.reply_failed_body": "Open the app and press it again",
   "shell.manifest.description": "{name} · your always-on personal assistant"
 }

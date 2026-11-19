@@ -21,7 +21,7 @@ async function openAt(href, how) {
   await self.clients.openWindow(href);
 }
 // The app itself: a top-level window at the root. Other windows of this origin (a user app under /apps/<id>/, a screen share) have no receiver for a tap.
-const isAppWin = (w, origin) => { try { const u = new URL(w.url); return u.origin === origin && u.pathname === "/"; } catch { return false; } };
+const isAppWin = (w, origin) => { try { const u = new URL(w.url); return u.origin === origin && u.pathname === "/" && w.frameType !== "nested"; } catch { return false; } };
 // How long a window has to say it got a tap's message: a frozen or reloading page drops it, and the tap then opens the address instead.
 const ACK_MS = 2500;
 function tellWindow(win, msg) {
@@ -161,9 +161,18 @@ async function warmConv(url, nid) {
   if (events.length) await snapTx(os => { const g = os.get(t); g.onsuccess = () => os.put({ v: 1, t, acts: [], amore: true, ahist: false, read: "", ...g.result, at: Date.now(), msgs: events, hmore: events.length >= WARM_MSGS }, t); });
 }
 
+function showBadge(n) {
+  const nav = self.navigator;
+  if (!nav || !Number.isFinite(n) || n < 0) return undefined;
+  if (n > 0) return nav.setAppBadge ? nav.setAppBadge(n) : undefined;
+  if (nav.clearAppBadge) return nav.clearAppBadge();
+  return nav.setAppBadge ? nav.setAppBadge(0) : undefined;
+}
+
 self.addEventListener("push", ev => {
   let m = {};
   try { m = ev.data ? ev.data.json() : {}; } catch { m = { body: ev.data ? ev.data.text() : "" }; }
+  if (typeof m.unread === "number") ev.waitUntil(showBadge(m.unread));
   // A decision (m.id): up to two of its option buttons where the platform shows action buttons (Android); a tap elsewhere opens the detail.
   const max = typeof Notification !== "undefined" && Notification.maxActions ? Math.min(2, Notification.maxActions) : 0;
   const actions = m.id && Array.isArray(m.actions) ? m.actions.slice(0, max) : [];
@@ -226,7 +235,8 @@ self.addEventListener("pushsubscriptionchange", ev => ev.waitUntil(resubscribe(e
 self.addEventListener("notificationclick", ev => {
   ev.notification.close();
   const data = ev.notification.data || {};
-  const url = new URL(data.url || "/", location.origin).href;
+  const asked = new URL(data.url || "/", location.origin);
+  const url = new URL(asked.origin === location.origin ? asked.pathname + asked.search + asked.hash : "/", location.origin).href;
   // The message the notification is about: the page makes sure it is loaded before it jumps to it (a cold start gets it as ?m=, its notice as ?i=).
   const at = data.ts || "", id = data.id || "", nid = data.nid || "";
   const tag = ev.notification.tag || "";
@@ -253,12 +263,17 @@ self.addEventListener("notificationclick", ev => {
   // An option button of a decision: the answer is posted from here, the app stays closed. If it could not be delivered the detail opens.
   if (id && /^opt:\d+$/.test(ev.action || "")) {
     ev.waitUntil((async () => {
-      let ok = false;
+      let ok = false, reason = "";
       try {
         const r = await fetch(`/api/notices/${encodeURIComponent(id)}/answer`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ n: Number(ev.action.slice(4)) }) });
         ok = r.ok;
-      } catch {}
-      if (!ok) return openApp();
+        if (!ok) reason = String(r.status);
+      } catch (e) { reason = e instanceof Error ? e.message : String(e); }
+      await fetch("/api/push/tap", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ tag, path: "action", why: ok ? "answered" : "failed", reason }), keepalive: true }).catch(e => console.warn("push tap report", e));
+      if (!ok) {
+        await self.registration.showNotification("{{shell.sw.reply_failed}}", { tag: `decision:${id}`, body: "{{shell.sw.reply_failed_body}}", icon: "/icons/icon-192.png", badge: "/icons/badge-96.png", data: { url, ts: at, id, nid } });
+        return;
+      }
       await self.registration.showNotification("{{shell.sw.reply_sent}}", { tag: `decision:${id}`, silent: true, icon: "/icons/icon-192.png", badge: "/icons/badge-96.png", data: { url, ts: "", id: "" } });
       await new Promise(res => setTimeout(res, 3500));
       for (const n of await self.registration.getNotifications({ tag: `decision:${id}` })) n.close();

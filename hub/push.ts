@@ -13,7 +13,7 @@ import { pushClasses, route } from "./notify-route.ts";
 import { eventTarget, type HubEvent, onBroadcast, onEmit } from "./events.ts";
 import { dropForLine, orchestratorOnlyAsk } from "./forline.ts";
 import { quietAlert } from "./alert-gate.ts";
-import { answerReply, confirmGroup, conversationTitle, decisionsOf, isViewing, laneNameKo, type Notice, onDecision, onNoticeUnread, setViewing } from "./notices.ts";
+import { answerReply, confirmGroup, conversationTitle, decisionsOf, isViewing, laneNameKo, type Notice, onDecision, onNoticeUnread, setViewing, unreadCount } from "./notices.ts";
 import { DECISION_HEAD, decisionText } from "./choices.ts";
 import { dropIdNote, noticeKo, plainTable } from "./notice.ts";
 import { type Found, knownComputers } from "./peers.ts";
@@ -44,7 +44,7 @@ type Stored = Subscription & { prefs: Prefs; ua?: string; at: string; app?: bool
 type PushAction = { action: string; title: string };
 // `pc`: a notice relayed from another computer (its origin); a tap opens the app, which switches to that computer (web/js/33-peers.js prFollow).
 // `withdraw`: tags of notifications already handled; the service worker closes them (a "withdraw" push carries nothing else).
-type PushMessage = { kind: PushKind | "test" | "withdraw"; title: string; body: string; url: string; tag?: string; app?: string; ts?: string; id?: string; nid?: string; actions?: PushAction[]; pc?: string; withdraw?: string[] };
+type PushMessage = { kind: PushKind | "test" | "withdraw"; title: string; body: string; url: string; tag?: string; app?: string; ts?: string; id?: string; nid?: string; actions?: PushAction[]; pc?: string; withdraw?: string[]; unread?: number };
 
 const KEY_FILE = join(DATA_DIR, "secrets", "vapid.json");
 const SUBS_FILE = join(DATA_DIR, "push.json");
@@ -317,7 +317,7 @@ async function deliver(sub: Stored, m: PushMessage): Promise<number> {
 	try {
 		// What this device still owes closing rides on its next real notification.
 		const due = m.kind === "withdraw" ? undefined : owed.get(sub.endpoint);
-		const msg = due?.size ? { ...m, withdraw: [...due] } : m;
+		const msg = { ...m, ...(due?.size ? { withdraw: [...due] } : {}), unread: unreadCount() };
 		const status = await sendOnce(sub, msg);
 		if (status > 0 && status < 300) {
 			if (due) owed.delete(sub.endpoint);
@@ -406,22 +406,34 @@ export function presenceQuiets(p: { at: number; conv?: string } | undefined, url
 }
 const wants = (s: Stored, m: PushMessage, t: number) => m.kind === "test" || !presenceQuiets(presence.get(s.endpoint), m.url, t);
 
-// Deliver through one subscription for each device not in `done` (an app's before a browser's) and mark the device done. A device whose chosen
-// subscription has the kind switched off (or whose page is open) stays quiet: that is its owner's choice there, and no other subscription fires.
-function cover(list: Stored[], m: PushMessage, done: Set<string>): number {
+async function cover(list: Stored[], m: PushMessage, done: Set<string>, failed: Set<string> = new Set()): Promise<number> {
 	const now = Date.now();
-	let sent = 0;
+	const picked = new Set<string>();
+	const sends: Promise<boolean>[] = [];
 	for (const s of [...list].sort((x, y) => Number(y.app === true) - Number(x.app === true))) {
-		if (done.has(device(s)) || done.has(epKey(s.endpoint))) continue;
-		done.add(device(s));
-		done.add(epKey(s.endpoint));
-		if (!s.app && hasApp(s.did)) continue;   // a browser of a device that has the app is never a channel
-		if (wants(s, m, now)) {
-			void deliver(s, m);
-			sent++;
+		const dk = device(s), ek = epKey(s.endpoint);
+		if (done.has(dk) || done.has(ek) || picked.has(dk) || failed.has(s.endpoint)) continue;
+		if (!s.app && hasApp(s.did)) {
+			done.add(ek);
+			continue;
 		}
+		if (!wants(s, m, now)) {
+			done.add(dk);
+			done.add(ek);
+			continue;
+		}
+		picked.add(dk);
+		sends.push(deliver(s, m).then(status => {
+			if (status > 0 && status < 300) {
+				done.add(dk);
+				done.add(ek);
+				return true;
+			}
+			failed.add(s.endpoint);
+			return false;
+		}));
 	}
-	return sent;
+	return (await Promise.all(sends)).filter(Boolean).length;
 }
 
 // undefined: the peer did not take the relay (down, refused, an error); otherwise the devices it covered.
@@ -440,7 +452,8 @@ async function fanOut(m: PushMessage): Promise<void> {
 	// A device this gateway is switched off for counts as covered: no subscription of it fires here, and the peers are told to skip it too.
 	const done = new Set<string>(Object.keys(devices).filter(isOff));
 	for (const s of subs) if (s.did && isOff(s.did)) done.add(epKey(s.endpoint));
-	let reached = cover(subs.filter(s => s.app === true), m, done);
+	const failed = new Set<string>();
+	let reached = await cover(subs.filter(s => s.app === true), m, done, failed);
 	let list: Awaited<ReturnType<typeof relayPeers>> = [];
 	try {
 		list = await relayPeers();
@@ -459,7 +472,7 @@ async function fanOut(m: PushMessage): Promise<void> {
 		}
 	};
 	await ask("app");
-	reached += cover(subs, m, done);
+	reached += await cover(subs, m, done, failed);
 	await ask("all");
 	// One line per send, so a tap that does not land can be traced to what was sent (ids and address only, never the title or body).
 	log(`push: sent ${logFields({ tag: m.tag, kind: m.kind, to: m.url, ts: m.ts, nid: m.nid, id: m.id })} devices=${reached}`);
@@ -467,7 +480,7 @@ async function fanOut(m: PushMessage): Promise<void> {
 const logValue = (v: unknown): string => (typeof v === "string" ? v.replace(/[\s=]+/g, "_").slice(0, 120) : "");
 const logFields = (f: Record<string, unknown>): string => Object.entries(f).flatMap(([k, v]) => (logValue(v) ? [`${k}=${logValue(v)}`] : [])).join(" ");
 // A tapped notification, as its page reports it (web/js/23-installable-app-web.js pushTapReport): the way it came in and the screen it reached.
-const TAP_PATHS = ["open-window", "new-window"];
+const TAP_PATHS = ["open-window", "new-window", "action"];
 export function tapLanded(b: Record<string, unknown>): boolean {
 	if (typeof b.path !== "string" || !TAP_PATHS.includes(b.path)) return false;
 	log(`push: tap ${logFields({ tag: b.tag, path: b.path, via: b.why, screen: b.screen, reason: b.reason })}`);
@@ -687,7 +700,7 @@ export async function pushRoute(req: Request, url: URL): Promise<Response | unde
 		if (!m) return json({ error: "kind, title and body required" }, 400);
 		const skip = new Set<string>(Array.isArray(b.skip) ? b.skip.filter((k: unknown): k is string => typeof k === "string" && k.length <= 80).slice(0, 200) : []);
 		const done = new Set(skip);
-		cover(b.via === "app" ? subs.filter(s => s.app === true) : subs, m, done);
+		await cover(b.via === "app" ? subs.filter(s => s.app === true) : subs, m, done);
 		return json({ ok: true, served: [...done].filter(k => !skip.has(k)) });
 	}
 	if (req.method === "POST" && p === "/api/push/tap") return tapLanded(b) ? json({ ok: true }) : json({ error: "path required" }, 400);
