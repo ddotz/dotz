@@ -49,7 +49,7 @@ function world(o: { replyFails?: string; zeleFails?: boolean } = {}) {
 	const zele: string[][] = [];
 	let replyFails = o.replyFails;
 	let zeleFails = o.zeleFails;
-	const run: Runner = async argv => (zele.push(argv), zeleFails ? { code: 1, stdout: "", stderr: "smtp refused" } : { code: 0, stdout: "", stderr: "" });
+	const run: Runner = async argv => (zele.push(argv), zeleFails && argv[1] !== "whoami" ? { code: 1, stdout: "", stderr: "smtp refused" } : { code: 0, stdout: "", stderr: "" });
 	const adapter: CommentAdapter = {
 		kind: "youtube",
 		list: async () => ({ comments: [{ native: "c1", thread: "v1", author: "팬", text: "캐논 문서 받을 수 있나요? fan@example.com", postTitle: "캐논 연주", at: NOW - 1000 }], cursor: "1" }),
