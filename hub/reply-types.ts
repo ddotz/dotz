@@ -78,6 +78,8 @@ export type ReplyItem = {
 	/** Absent: it waits for the owner. */
 	send?: SendState & { actions: OwnerAction[] };
 	back?: { at: number; cause: "restart" };
+	/** CM-13: the same person was already answered the other way (a comment reply posted to a mail's sender, or a mail reply sent to a commenter), and when, if known. Shown only; no part of the approvalHash. */
+	answeredElsewhere?: { via: "comment" | "mail"; at?: number };
 	/** One plain line for the tag: a failure reason, or why a rule did not send it. */
 	why?: string;
 };

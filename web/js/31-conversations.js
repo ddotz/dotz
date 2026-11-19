@@ -99,6 +99,7 @@ function convApply(items) {
     else READ[t] = it.read || null;
     ts(t).unread = unread;
   }
+  mailCmtSync();
 }
 async function convLoadNow() {
   clearTimeout(convRetry);

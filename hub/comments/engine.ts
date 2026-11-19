@@ -6,6 +6,7 @@ import { absorbComments, mergeIgTwins } from "./absorb.ts";
 import { failAuto, leaveQueue } from "./auto-queue.ts";
 import { createDraftRun, earlierMailTo, MAIL_SAME_ADDRESS_NOTE, mailJson, POSTING_REASON, reviseMail, tokenStats } from "./draft-run.ts";
 import { createSendRecovery } from "./recover.ts";
+import { replyPosted } from "./posted.ts";
 import { type Comment, type CommentAdapter, dispatchReply, type GateResult, isUntitled, type Post, ruleAllows, type SourceConfig, type SourceKind, threadKey, watches } from "./contract.ts";
 import { UNKNOWN_USER } from "../../features/youtube-instagram/lib/ig-owner.ts";
 import { ATTACH_AS_IS_HINT, ATTACH_REFUSED, LINT_REFUSED, PAIR_NOTE, asksForFile, pairCheck, recipientCheck } from "../draft-approval.ts";
@@ -69,6 +70,7 @@ export type EngineDeps = {
 	/** Comment <-> mail matching for sources with `mailMatch` on (hub/comments/mail-match.ts): card lines `메일 대조:` / `근거:` / `초안 메모:`. Missing = no matching. */
 	mailMatch?: (q: MailQuery) => Promise<string[]>;
 	mailOwed?: (mailId: string) => void;
+	answeredMailThread?: (mailThreadId: string, at: number) => void;
 } & PastDeps;
 
 export const appOf = (src: Pick<SourceConfig, "kind">): string => (src.kind === "website" ? "site" : src.kind);
@@ -178,7 +180,7 @@ export function createEngine(deps: EngineDeps) {
 		emit({ kind: "comment_send", source: r.source, thread: r.thread, id: r.id, state: r.state, ...(r.reason ? { reason: r.reason } : {}) });
 		const src = store.config().sources[r.source];
 		// A reply that carries a mail wakes no 이어서 할 일 rule: the mail it would draft is already in the card.
-		if (r.state === "sent" && src && !store.drafts().find(d => d.code === r.draft)?.mail) deps.sent?.(ownerOf(src), r);
+		if (r.state === "sent") replyPosted(deps, store, r, src && ownerOf(src));
 	} };
 
 	const ownerOf = (src: SourceConfig): string => deps.owner?.(src) ?? appOf(src);

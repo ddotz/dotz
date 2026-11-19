@@ -3,7 +3,7 @@ import { afterEach, beforeEach, expect, test } from "bun:test";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { CommentAdapter, RawComment, SourceConfig } from "./contract.ts";
+import type { CommentAdapter, RawComment, ReplyOutcome, SourceConfig } from "./contract.ts";
 import { createEngine, type MailLink, type MailView } from "./engine.ts";
 import { localMidnight } from "../reply-route.ts";
 import { commentAdapter } from "./reply-adapter.ts";
@@ -27,14 +27,15 @@ afterEach(() => {
 	else process.env.DOTZ_DIR = savedDir;
 });
 
-function setup(o: { model?: string[]; learn?: string[]; files?: MailView["attachments"]; now?: number; mail?: MailLink } = {}) {
+function setup(o: { model?: string[]; learn?: string[]; files?: MailView["attachments"]; now?: number; mail?: MailLink; posts?: ReplyOutcome[]; answered?: { thread: string; at: number }[] } = {}) {
 	writeFileSync(join(dir, "config.json"), JSON.stringify({ enabled: true, sources: { youtube: source } }));
-	const platform: CommentAdapter = { kind: "youtube", list: async () => ({ comments: [raw], cursor: "1" }), reply: async () => ({ ok: true, ref: "r1" }), posts: async () => [] };
+	const posts = [...(o.posts ?? [])];
+	const platform: CommentAdapter = { kind: "youtube", list: async () => ({ comments: [raw], cursor: "1" }), reply: async () => posts.shift() ?? { ok: true, ref: "r1" }, posts: async () => [] };
 	const mails = new Map<string, MailView>([["RMAIL01", { id: "RMAIL01", to: "fan@example.com", subject: "자료", body: "보내드려요", attachments: o.files ?? [] }]]);
 	const mail: MailLink = o.mail ?? { compose: async () => ({ ok: false, reason: "x" }), send: async () => ({ ok: true, text: "" }), drop: () => undefined, revise: async () => ({ ok: false, reason: "x" }), view: id => mails.get(id), edit: (id, text, subject) => (mails.set(id, { ...mails.get(id)!, body: text, ...(subject !== undefined ? { subject } : {}) }), { ok: true }) };
 	let n = 0;
 	const outs = o.model ?? [reply("이번 주말이에요!")];
-	const engine = createEngine({ dir, now: () => o.now ?? NOW, collector: "mac", adapters: { youtube: platform }, model: async () => ({ text: outs[Math.min(n++, outs.length - 1)]! }), mail, learn: (_s, line) => void o.learn?.push(line), style: () => ({ rules: [], corrections: [], forbidden: ["무조건"], samples: [] }) });
+	const engine = createEngine({ dir, now: () => o.now ?? NOW, collector: "mac", adapters: { youtube: platform }, model: async () => ({ text: outs[Math.min(n++, outs.length - 1)]! }), mail, learn: (_s, line) => void o.learn?.push(line), style: () => ({ rules: [], corrections: [], forbidden: ["무조건"], samples: [] }), answeredMailThread: (thread, at) => void o.answered?.push({ thread, at }) });
 	return { engine, a: commentAdapter(engine) };
 }
 async function drafted(engine: ReturnType<typeof createEngine>): Promise<string> {
@@ -203,4 +204,58 @@ test("a listing reads the send records once, however many drafts it shows", asyn
 	engine.store.replies = () => (reads++, read());
 	expect((await a.list()).map(v => v.ref).sort()).toEqual([first]);
 	expect(reads).toBe(1);
+});
+
+async function sendWithThread(o: { posts?: ReplyOutcome[]; thread?: { id: string; answered?: boolean } }) {
+	const answered: { thread: string; at: number }[] = [];
+	const { engine } = setup({ ...(o.posts ? { posts: o.posts } : {}), answered });
+	const code = await drafted(engine);
+	if (o.thread) engine.store.patchDraft(code, { mailThread: o.thread });
+	const r = engine.send(code, { by: "owner" });
+	if (!r.ok) throw new Error(r.reason);
+	const rep = await r.done;
+	return { engine, answered, rep };
+}
+
+test("CM-13 a posted reply to a comment whose writer's mail was found names that mail thread and the time", async () => {
+	const { answered, rep } = await sendWithThread({ thread: { id: "18c2f0a9d1", answered: false } });
+	expect([rep.state, answered]).toEqual(["sent", [{ thread: "18c2f0a9d1", at: NOW }]]);
+});
+
+for (const [what, failed] of [["failed", { ok: false, reason: "거절됐어요", code: "rejected", sent: "no" }], ["unknown", { ok: false, reason: "모름", code: "server_error", sent: "maybe" }]] as const) {
+	test(`CM-13 a reply whose post ${what === "failed" ? "failed" : "has an unknown outcome"} names no mail thread until a later send of it is posted`, async () => {
+		const { engine, answered, rep } = await sendWithThread({ thread: { id: "18c2f0a9d1", answered: false }, posts: [failed, { ok: true, ref: "r2" }] });
+		expect([rep.state, answered]).toEqual([what === "failed" ? "failed" : "unsure", []]);
+		const again = engine.retrySend(rep.id);
+		if (!again.ok) throw new Error(again.reason);
+		expect((await again.done).state).toBe("sent");
+		expect(answered).toEqual([{ thread: "18c2f0a9d1", at: NOW }]);
+	});
+}
+
+test("CM-13 a comment draft whose writer's mail was already answered says so on its card, outside the approved version; one not answered says nothing", async () => {
+	const { engine, a } = setup();
+	const code = await drafted(engine);
+	const before = (await a.get(code))!;
+	expect(before.answeredElsewhere).toBeUndefined();
+	engine.store.patchDraft(code, { mailThread: { id: "t1", answered: false } });
+	expect((await a.get(code))!.answeredElsewhere).toBeUndefined();
+	engine.store.patchDraft(code, { mailThread: { id: "t1", answered: true } });
+	const after = (await a.get(code))!;
+	expect(after.answeredElsewhere).toEqual({ via: "mail" });
+	expect(approvalHash(after)).toBe(approvalHash(before));
+});
+
+test("CM-13 a pending comment draft says 메일로 이미 답했어요 once its writer's mail is answered after the draft was made; a posted one does not take it up", async () => {
+	const { engine } = setup();
+	const answeredMails = new Set<string>();
+	const a = commentAdapter(engine, () => thread => answeredMails.has(thread));
+	const code = await drafted(engine);
+	engine.store.patchDraft(code, { mailThread: { id: "t1", answered: false } });
+	expect((await a.get(code))!.answeredElsewhere).toBeUndefined();
+	answeredMails.add("t1");
+	expect((await a.get(code))!.answeredElsewhere).toEqual({ via: "mail" });
+	expect((await a.list()).find(v => v.ref === code)?.answeredElsewhere).toEqual({ via: "mail" });
+	engine.store.setDraftStatus(code, "sent");
+	expect((await a.get(code))!.answeredElsewhere).toBeUndefined();
 });

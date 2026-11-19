@@ -15,7 +15,8 @@ export async function moveMail(key: string, source: string, deps: MailDeps): Pro
 	const moved = await postMail({ source, id: r.id, subject: r.subject, from: r.from, to: r.to, cc: r.cc, replyTo: r.replyTo, account: r.account, at: r.at, messageId: r.msg, summary: r.summary, todo: r.todo, questions: r.questions, body: storedBodyText(key) ?? r.preview, ...(page ? { html: readFileSync(page, "utf8") } : {}), attachments: r.attachments?.map(a => ({ name: a.name, type: a.type, path: join(MAIL_FILES, a.file), ...(a.cid ? { cid: a.cid } : {}) })) }, deps);
 	if (moved.skipped || moved.duplicate) throw new MailError(`${moved.key} is already there`, 409);
 	const now = mailByKey(moved.key);
-	if (now && r.reply) recordMail({ ...now, reply: r.reply, ...(r.sentAt ? { sentAt: r.sentAt } : {}), ...(r.reply_by ? { reply_by: r.reply_by, reply_at: r.reply_at } : {}) });
+	const kept = { ...(r.reply ? { reply: r.reply, ...(r.sentAt ? { sentAt: r.sentAt } : {}), ...(r.reply_by ? { reply_by: r.reply_by, reply_at: r.reply_at } : {}) } : {}), ...(r.commentReplyAt ? { commentReplyAt: r.commentReplyAt } : {}) };
+	if (now && Object.keys(kept).length) recordMail({ ...now, ...kept });
 	deleteMail(key);
 	return moved;
 }

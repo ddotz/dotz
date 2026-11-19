@@ -33,7 +33,7 @@ export const realModel: DraftModel = async (system, user, app) => {
 	return { text: r.text, inputTokens: r.inputTokens, outputTokens: r.outputTokens };
 };
 
-export function realEngine(dataDir: string, opts: { broadcast?: (e: Record<string, unknown>) => void; collector?: string; model?: DraftModel; sent?: EngineDeps["sent"]; mail?: MailLink; mailOwed?: EngineDeps["mailOwed"] } = {}): Engine {
+export function realEngine(dataDir: string, opts: { broadcast?: (e: Record<string, unknown>) => void; collector?: string; model?: DraftModel; sent?: EngineDeps["sent"]; mail?: MailLink; mailOwed?: EngineDeps["mailOwed"]; answeredMailThread?: EngineDeps["answeredMailThread"] } = {}): Engine {
 	const dir = commentsDir(dataDir);
 	const authors = createStore(dir);
 	const secretsDir = join(process.env.DOTZ_DIR ?? join(homedir(), ".dotz"), "secrets");
@@ -56,6 +56,7 @@ export function realEngine(dataDir: string, opts: { broadcast?: (e: Record<strin
 		featureOn: (app, id) => appBase(app) !== "site" || featureEnabled(dataDir, app, id),
 		...(opts.sent ? { sent: opts.sent } : {}),
 		...(opts.mailOwed ? { mailOwed: opts.mailOwed } : {}),
+		...(opts.answeredMailThread ? { answeredMailThread: opts.answeredMailThread } : {}),
 		style: src => loadStyle({ app: src.key }),
 		learn: (src, change) => recordCorrection({ app: src.key }, change, new Date()),
 		// The past pairs of a source live in the reply-drafts pair file of its key (a comment pair carries no `source` tag): comment <-> received, author <-> from.

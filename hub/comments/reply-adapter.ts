@@ -17,7 +17,8 @@ export const isCommentPlace = (conv: string): boolean => conv.startsWith(PLACE);
 type Sends = { posted: Map<string, Reply>; mailed: Set<string>; mailFailed: Set<string> };
 const NO_SENDS: Sends = { posted: new Map(), mailed: new Set(), mailFailed: new Set() };
 
-export function commentAdapter(engine: Engine): ReplyAdapter {
+/** `mailAnswered`: one lookup per view pass, whether the mail matched to a comment's writer was answered by mail since (메일로 이미 답했어요). */
+export function commentAdapter(engine: Engine, mailAnswered: () => (thread: string) => boolean = () => () => false): ReplyAdapter {
 	// By the store, not the ref's shape: older and seeded codes do not all follow D + 6.
 	const draftOf = (ref: string): Draft | undefined => engine.store.drafts().find(d => d.code === ref);
 	const sendsOf = (): Sends => {
@@ -33,7 +34,7 @@ export function commentAdapter(engine: Engine): ReplyAdapter {
 		const r = d.status === "sent" ? sends.posted.get(d.code) : undefined;
 		return r && { at: r.at, how: r.via === "rule" ? "rule" : "owner" };
 	};
-	const viewOf = (d: Draft, sends: Sends): DraftView | undefined => {
+	const viewOf = (d: Draft, sends: Sends, answered: (thread: string) => boolean): DraftView | undefined => {
 		const src = engine.store.config().sources[d.source];
 		const c = engine.store.comments().find(x => x.id === d.commentId);
 		if (!src || !c) return undefined;
@@ -63,6 +64,7 @@ export function commentAdapter(engine: Engine): ReplyAdapter {
 				...(d.editedFrom !== undefined ? { edited: true as const } : {}),
 			},
 			original: { who: c.author, text: c.text, at: c.at, ...(c.postTitle ? { post: c.postTitle } : {}) },
+			...(d.mailThread && (d.mailThread.answered === true || (pending && answered(d.mailThread.id))) ? { answeredElsewhere: { via: "mail" as const } } : {}),
 		};
 	};
 	const reason = (text: string | undefined, code: ReasonCode = "not_pending") => ({ code, text: text ?? reasonOf(code).text });
@@ -72,11 +74,11 @@ export function commentAdapter(engine: Engine): ReplyAdapter {
 		kind: "comment",
 		get: async ref => {
 			const d = draftOf(ref);
-			return d ? viewOf(d, d.status === "sent" ? sendsOf() : NO_SENDS) : undefined;
+			return d ? viewOf(d, d.status === "sent" ? sendsOf() : NO_SENDS, mailAnswered()) : undefined;
 		},
 		list: async () => {
-			const sends = sendsOf();
-			return engine.store.drafts().filter(d => d.status === "pending" || sinceMidnight(sentOf(d, sends)?.at ?? Number.NEGATIVE_INFINITY)).flatMap(d => viewOf(d, sends) ?? []);
+			const sends = sendsOf(), answered = mailAnswered();
+			return engine.store.drafts().filter(d => d.status === "pending" || sinceMidnight(sentOf(d, sends)?.at ?? Number.NEGATIVE_INFINITY)).flatMap(d => viewOf(d, sends, answered) ?? []);
 		},
 		target: ref => {
 			const d = draftOf(ref);

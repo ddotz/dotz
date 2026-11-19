@@ -156,7 +156,14 @@ function mailMetaNode(t, e) {
   const line = [to.length ? TX("mail.to_line", { names: names(to) }) : "", cc.length ? TX("mail.cc_line", { names: names(cc) }) : ""].filter(Boolean).join(" · ") || TX("mail.people.aria");
   const tog = el("button", { class: "mhd-tog", type: "button", "aria-expanded": "false", title: TX("mail.people.details"), onclick: () => { const open = head.hidden; head.hidden = !open; tog.setAttribute("aria-expanded", String(open)); tog.classList.toggle("open", open); } },
     el("span", { class: "mhd-tl", text: line }), icon("drop", "mhd-ch"));
-  return el("div", { class: "mhd-wrap" }, el("div", { class: "mhd-line" }, tog, mailThreadMobile(t)), head);
+  return el("div", { class: "mhd-wrap" }, el("div", { class: "mhd-line" }, tog, mailThreadMobile(t)), head, mailCmtPaint(el("div", { class: "note mhd-cmt", role: "note", "data-k": "answered-elsewhere", "data-t": t, text: TX("reply.answered.comment") })));
+}
+function mailCmtPaint(n) {
+  n.hidden = !(MAILS.get(n.dataset.t) || {}).commentReplyAt;
+  return n;
+}
+function mailCmtSync() {
+  document.querySelectorAll(".mhd-cmt[data-t]").forEach(mailCmtPaint);
 }
 
 // The wide panel, beside the conversation (see the CSS): it sits in the chat box and only shows for a mail with related mail.

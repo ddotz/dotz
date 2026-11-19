@@ -20,7 +20,7 @@ import { reasonOf } from "../../../hub/reply-reasons.ts";
 import { dataDir } from "../../reply-drafts/lib/settings.ts";
 import { notifyGateway } from "../../../hub/followup.ts";
 
-type Out = { lines: string[]; code: number };
+type Out = { lines: string[]; code: number; posted?: string };
 const flag = (args: string[], name: string) => (args.includes(name) ? args[args.indexOf(name) + 1] : undefined);
 type Part = "reply" | "mail";
 type Sent = "yes" | "no" | "maybe";
@@ -32,7 +32,8 @@ const mailFailure = (text: string): [Sent, string] => (text.startsWith(ATTACH_RE
 
 export async function run(args: string[], engine: Engine = realEngine(dataDir()), inbox = join(dataDir(), "inbox.jsonl")): Promise<Out> {
 	const out = await runCmd(args, engine, inbox);
-	return process.env.DOTZ_GATEWAY_SEND && out.send ? { lines: [...out.send, ...out.lines], code: out.code } : { lines: out.lines, code: out.code };
+	const posted = out.posted ? { posted: out.posted } : {};
+	return process.env.DOTZ_GATEWAY_SEND && out.send ? { lines: [...out.send, ...out.lines], code: out.code, ...posted } : { lines: out.lines, code: out.code, ...posted };
 }
 
 async function runCmd(args: string[], engine: Engine, inbox: string): Promise<Out & { send?: string[] }> {
@@ -107,7 +108,7 @@ async function runCmd(args: string[], engine: Engine, inbox: string): Promise<Ou
 			if (!r.ok) {
 				// Another sender still runs (no line: the queue keeps it sending), or an earlier send may have gone up (needs_resolve: no line, never "no").
 				if (r.code === "already_sending" || r.code === "needs_resolve") return fail(r.reason);
-				if (r.code === "already_sent") return { ...fail(r.reason), send: [sendLine("yes", "reply")] };
+				if (r.code === "already_sent") return { ...fail(r.reason), send: [sendLine("yes", "reply")], posted: d.code };
 				return refused(r.reason, refusalCode(r));
 			}
 			const done = await r.done;
@@ -117,12 +118,12 @@ async function runCmd(args: string[], engine: Engine, inbox: string): Promise<Ou
 				return { ...fail(`답글을 올리지 못했어요${d.mail ? " (메일도 보내지 않았어요)" : ""}: ${done.reason ?? "알 수 없는 이유"}`), send: parts.map(p => (p === "reply" ? sendLine(sent, "reply", done.code ?? "unknown", done.detail) : sendLine("no", "mail", done.code ?? "unknown"))) };
 			}
 			const replyUp = sendLine("yes", "reply");
-			if (only === "reply" && d.mail) return { lines: [...said, `답글만 올렸어요 (${d.code}). 메일 초안 ${d.mail}은 따로 물어요: bun hub/mail-cli.ts ask --draft ${d.mail}`], code: 0, send: [replyUp] };
+			if (only === "reply" && d.mail) return { lines: [...said, `답글만 올렸어요 (${d.code}). 메일 초안 ${d.mail}은 따로 물어요: bun hub/mail-cli.ts ask --draft ${d.mail}`], code: 0, send: [replyUp], posted: d.code };
 			if (done.mail?.state === "failed") {
 				const [sent, code] = mailFailure(done.mail.text);
-				return { ...fail(`답글은 올렸지만 메일은 보내지 못했어요: ${done.mail.text} (메일 초안 ${d.mail}은 남아 있어요. 사용자에게 알려 주세요)`), send: [replyUp, sendLine(sent, "mail", code, done.mail.text)] };
+				return { ...fail(`답글은 올렸지만 메일은 보내지 못했어요: ${done.mail.text} (메일 초안 ${d.mail}은 남아 있어요. 사용자에게 알려 주세요)`), send: [replyUp, sendLine(sent, "mail", code, done.mail.text)], posted: d.code };
 			}
-			return { lines: [...said, done.mail ? `답글을 올리고 메일을 보냈어요 (${d.code})` : `답글을 올렸어요 (${d.code})`], code: 0, send: done.mail ? [replyUp, sendLine("yes", "mail")] : [replyUp] };
+			return { lines: [...said, done.mail ? `답글을 올리고 메일을 보냈어요 (${d.code})` : `답글을 올렸어요 (${d.code})`], code: 0, send: done.mail ? [replyUp, sendLine("yes", "mail")] : [replyUp], posted: d.code };
 		}
 		case "status": {
 			const cfg = engine.store.config();
@@ -138,6 +139,7 @@ async function runCmd(args: string[], engine: Engine, inbox: string): Promise<Ou
 
 if (import.meta.main) {
 	const r = await run(process.argv.slice(2));
+	if (r.posted && !process.env.DOTZ_GATEWAY_SEND) await notifyGateway({ path: "/api/comments/changed", body: { threads: [], mails: [], sent: [r.posted] } });
 	console.log(r.lines.join("\n"));
 	process.exit(r.code);
 }

@@ -4,6 +4,8 @@
   "reply.revising": "Revising…",
   "reply.revised": "Revised by AI",
   "reply.edited": "Edited by you",
+  "reply.answered.comment": "Already answered in a comment",
+  "reply.answered.mail": "Already answered by mail",
   "reply.auto_retry": "Retrying automatically ({n}/{max})",
   "reply.failed": "Not sent - {why}",
   "reply.unsure": "Not sure it was sent",

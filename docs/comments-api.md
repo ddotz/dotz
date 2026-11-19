@@ -100,6 +100,11 @@ on the next poll (`adapter.retitle`); the drafts' [ask] text names the post (`> 
 - `mailMatch: true`: before a draft, the owner's mail is searched read-only (zele `mail search`/`mail read`, window +-14 days, `-from:me`) for a mail from the
   commenter (same sender name or the commenter's handle in the mail; a mail that only names the same post is reported as someone else's). The draft gets the
   notes `메일 대조: 있음|못 찾음|확인 실패 ...`, `근거: ...` and, when that mail is not answered yet, `초안 메모: ...` (`hub/comments/mail-match.ts`). A found thread is kept on the draft (`mailThread`); a revise searches again unless the owner already answered that thread, so a mail that came later is matched. A search that fails on a revise keeps the `메일 대조: 있음` and `근거:` lines and the `mailThread` found before and adds the `확인 실패` line.
+  Marks between the two (display only, never the reply state, the list or the approved version): a reply posted for a draft with a `mailThread` marks that mail
+  `commentReplyAt` (댓글로 이미 답했어요 on its row, its conversation and its reply draft card; the first mark stays, and a moved mail keeps it). Only the gateway writes it, since it owns the mail
+  list: from its own engine, from a send it ran that ended (a reply that went up counts even when the mail riding on it failed), from `comments.ts send` run outside its queue,
+  and from the watch; the last two list the draft codes whose reply went up in `POST /api/comments/changed {threads, mails, sent}`.
+  A pending draft whose matched mail was answered by mail (`mailThread.answered` when it was drafted, its mail record saying 답장함, or a reply draft of that mail sent) shows 메일로 이미 답했어요, and its card is drawn again when that mail changes.
 - `pastSeed: true`: the 3 stored comments most like this one that the owner answered (his reply under it, or a reply sent through the gate) go into the
   draft prompt; when the model skips or leaves the reply empty, the closest past answer becomes the draft with a `확인 필요:` note (`hub/comments/past.ts`).
 - Sending one part of a reply + mail card: the gateway runs `features/comments/bin/comments.ts send <code> --only reply|mail` on the owner's

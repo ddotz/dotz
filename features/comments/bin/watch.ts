@@ -12,15 +12,16 @@ const HARD_STOP_MS = 480_000;
 const HISTORY_MS = 400_000;
 
 const owedMails: string[] = [];
-export async function run(dir = dataDir(), engine = realEngine(dir, { mailOwed: id => void owedMails.push(id) }), notify: (threads: { source: string; thread: string }[], mails: string[]) => Promise<void> = async (t, mails) => void (await createHub(dir).post("/api/comments/changed", { threads: t, mails })).status, deadline = Date.now() + RUN_BUDGET_MS): Promise<string[]> {
+export async function run(dir = dataDir(), engine = realEngine(dir, { mailOwed: id => void owedMails.push(id) }), notify: (threads: { source: string; thread: string }[], mails: string[], sent: string[]) => Promise<void> = async (t, mails, sent) => void (await createHub(dir).post("/api/comments/changed", { threads: t, mails, sent })).status, deadline = Date.now() + RUN_BUDGET_MS): Promise<string[]> {
 	const r = await engine.collect({ deadline });
 	const touched = [...new Map([...r.added, ...r.drafted.map(d => ({ source: d.source, thread: d.thread }))].map(x => [`${x.source}/${x.thread}`, { source: x.source, thread: x.thread }])).values()];
 	const mails = owedMails.splice(0);
-	if (touched.length || mails.length) await notify(touched, mails).catch(e => console.error(`comments: telling the gateway failed: ${e instanceof Error ? e.message : String(e)}`));
+	const sent = r.sent.map(s => s.draft);
+	if (touched.length || mails.length || sent.length) await notify(touched, mails, sent).catch(e => console.error(`comments: telling the gateway failed: ${e instanceof Error ? e.message : String(e)}`));
 	// A failure here costs nothing: the pair file keeps what it has and a failed read waits a day (`~tried`).
 	await engine.refreshPast({ deadline: deadline - RUN_BUDGET_MS + HISTORY_MS, read: Date.now() < deadline }).catch(() => {});
 	const cfg = engine.store.config();
-	const sentIds = new Set(r.sent.map(s => s.draft));
+	const sentIds = new Set(sent);
 	const cards = r.drafted
 		.filter(d => !sentIds.has(d.code))
 		.flatMap(d => {

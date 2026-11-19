@@ -4,6 +4,8 @@
   "reply.revising": "고치는 중…",
   "reply.revised": "AI가 고친 초안",
   "reply.edited": "직접 고친 초안",
+  "reply.answered.comment": "댓글로 이미 답했어요",
+  "reply.answered.mail": "메일로 이미 답했어요",
   "reply.auto_retry": "자동으로 다시 보내요 ({n}/{max})",
   "reply.failed": "보내지 못했어요 - {why}",
   "reply.unsure": "보냈는지 확인되지 않았어요",

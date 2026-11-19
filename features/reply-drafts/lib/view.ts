@@ -10,8 +10,15 @@ import { getDraft, type DraftRec } from "./store.ts";
 const STATE: Record<DraftRec["status"], DraftView["draft"]["state"]> = { pending: "pending", dropped: "dropped", stale: "stale", sent: "sent", answered: "closed", held: "closed" };
 const kindOf = (rec: DraftRec): ReplyKind => (webmailSite(rec.source) ? "webmail" : "mail");
 
-/** The mail record a draft answers (hub/mail.ts mailByKey), read only for a draft that kept no text of it. */
-export type MailOf = (key: string) => { from?: string; subject?: string; summary?: string; preview?: string } | undefined;
+/** The mail record a draft answers (hub/mail.ts mailByKey): its text, read only for a draft that kept none, and its 댓글로 이미 답했어요 mark (CM-13). */
+export type MailOf = (key: string) => { from?: string; subject?: string; summary?: string; preview?: string; commentReplyAt?: string } | undefined;
+
+function answeredByComment(rec: DraftRec, mailOf: MailOf): Pick<DraftView, "answeredElsewhere"> {
+	const mark = rec.compose ? undefined : mailOf(rec.ref)?.commentReplyAt;
+	if (!mark) return {};
+	const at = Date.parse(mark);
+	return { answeredElsewhere: { via: "comment", ...(Number.isFinite(at) ? { at } : {}) } };
+}
 
 // What the draft answers, quoted on its card. The reply the owner writes under an open mail (hub/mail-manual.ts) keeps no text of that mail,
 // so the card reads the mail record instead: its first lines, else its summary, else its subject.
@@ -56,6 +63,7 @@ export function mailView(rec: DraftRec, mailOf: MailOf = () => undefined): Draft
 			...(rec.editedFrom !== undefined ? { edited: true as const } : {}),
 		},
 		...(rec.compose ? {} : { original: originalOf(rec, mailOf) }),
+		...answeredByComment(rec, mailOf),
 	};
 }
 

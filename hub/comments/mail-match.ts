@@ -16,6 +16,8 @@ export type MailSearch = {
 	/** The owner's own addresses: a message from one of them is his answer. */
 	own: () => Promise<ReadonlySet<string>>;
 };
+/** The mail source whose ids the real search (zeleMailSearch) reports: a matched thread `id` is the mail the gateway recorded from the zele watch under `mailKey(MATCH_SOURCE, id)` (hub/main.ts). */
+export const MATCH_SOURCE = "zele";
 
 const DAY = 864e5;
 export const WINDOW_DAYS = 14;

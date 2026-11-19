@@ -5,16 +5,16 @@ import { triggerFollowup } from "./followup.ts";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { cfg, DATA_DIR, log, now, writeAtomic } from "./config.ts";
-import { broadcast, emit } from "./events.ts";
+import { broadcast, emit, onBroadcast } from "./events.ts";
 import { approvals, cardMoved, newMid, out, showSendOnCard } from "./outbound.ts";
 import { allNotices, markDraftSend, onDecision, openDraftCards, redrawDraftCards, repostDraftCard, setCardFingerprint, setStoredDraft, settleOpenDecision, stampDraftCard } from "./notices.ts";
 import { newestDraftCard, setSendOwed, settleSoon } from "./notices-drafts.ts";
-import { commentKeptMails, commentMailCarded, commentPostedOf, commentProveSends, commentReply, commentSendOutcome, commentSettleSending, commentSettleStale, onCommentMailOwed } from "./comments/gateway.ts";
+import { commentDraftsOnMail, commentKeptMails, commentMailCarded, commentMarkMails, commentPostedOf, commentProveSends, commentReply, commentSendOutcome, commentSettleSending, commentSettleStale, onCommentAnsweredMail, onCommentMailOwed } from "./comments/gateway.ts";
 import { kakaoReply } from "./kakao/gateway.ts";
 import { linkedComment } from "./comments/linked.ts";
 import { isCommentPlace } from "./comments/reply-adapter.ts";
-import { claimFile, getDraft, mailAdapter, mailLane, replyLearning, unlessUnreadable } from "./reply-mail.ts";
-import { mailByKey } from "./mail.ts";
+import { claimFile, getDraft, listDrafts, mailAdapter, mailLane, replyLearning, unlessUnreadable } from "./reply-mail.ts";
+import { mailByKey, mailTarget } from "./mail.ts";
 import { claimHolder } from "./draft-claim.ts";
 import { approvalHash, createApprovalSender, MAY_HAVE_GONE_OUT, refOfQuestion, runCli, type SendAction, type SendJob, type SendLook, type SendResult, type SendTarget } from "./approval-send.ts";
 import { readDrafts } from "./kakao/send.ts";
@@ -110,6 +110,7 @@ export const reportSend = (r: SendResult): void => {
 	broadcast({ ts: now(), kind: "reply", ref: r.ref, ...(send ? { send } : {}) });
 	if (r.state === "failed" || r.state === "unsure") void replies.view(r.ref).then(item => item && broadcast({ ts: now(), kind: "reply", ref: r.ref, item }), e => log(`reply ${r.ref}: item after its send not read: ${(e as Error).message}`));
 	if (kakaoReply.target(r.ref)) broadcast({ kind: "kakao_draft", chatId: "" });
+	if (r.state === "sent" || r.state === "failed" || r.state === "unsure") commentMarkMails([r.ref]);
 	if (r.state === "sent") cardOwedMail(r);
 	// A KakaoTalk draft goes out in this process (no CLI posts /api/followup for it): the app's 이어서 할 일 is woken here, once per draft.
 	if (r.state === "sent" && kakaoReply.target(r.ref)) triggerFollowup({ app: "kakao", kind: "kakao", key: r.ref, ids: { draft: r.ref } });
@@ -234,6 +235,17 @@ onDecision(n => {
 	const ref = n.decision?.draft?.ref;
 	if (ref) void stampDraftCard(n.id);
 	if (ref) void replies.view(ref).then(item => item && broadcast({ ts: now(), kind: "reply", ref, item: { ...item, conv: n.decision!.to, notice: n.id } }), e => log(`reply ${ref}: carded item not read: ${(e as Error).message}`));
+});
+const showReplyItem = (ref: string, why: string): void =>
+	void replies.view(ref).then(item => item && broadcast({ ts: now(), kind: "reply", ref, item }), e => log(`reply ${ref}: item after ${why} not read: ${(e as Error).message}`));
+onCommentAnsweredMail(key => {
+	broadcast({ kind: "mail_unreplied", target: mailTarget(key) });
+	const drafts = unlessUnreadable(listDrafts, [], line => log(`mail ${key}: reply drafts not read for 댓글로 이미 답했어요: ${line}`));
+	for (const d of drafts) if (d.kind === "mail" && d.ref === key && d.status === "pending") showReplyItem(d.id, "its mail's 댓글로 이미 답했어요");
+});
+onBroadcast(e => {
+	if (e.kind !== "mail_unreplied" || typeof e.target !== "string" || !e.target.startsWith("mail:")) return;
+	for (const code of commentDraftsOnMail(e.target.slice("mail:".length))) showReplyItem(code, "its writer's mail changed");
 });
 
 let sendsBooted = false;

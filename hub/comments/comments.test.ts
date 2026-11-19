@@ -277,8 +277,9 @@ describe("the send gate", () => {
 		expect(t.state.posted).toHaveLength(0);
 		pick(t.code, "보내기");
 		const ok = await runComments(["send", t.code], t.engine, inbox);
-		expect(ok.code).toBe(0);
-		expect((await runComments(["send", t.code], t.engine, inbox)).code).toBe(1);
+		expect([ok.code, ok.posted]).toEqual([0, t.code]);
+		const again = await runComments(["send", t.code], t.engine, inbox);
+		expect([again.code, again.posted, refused.posted]).toEqual([1, undefined, undefined]);
 		expect(t.state.posted).toHaveLength(1);
 	});
 
