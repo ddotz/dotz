@@ -316,11 +316,12 @@ function rqFixNodes(item, lead) {
     mail: d.mail && hand ? { subject: subject("mail"), ...(rows && !mailKind ? { recv: rows.recv, files: rows.files, onstage: sync } : {}) } : null };
 }
 
+const raStateText = s => s === "dropped" ? TX("reply.state.dropped") : s === "stale" ? TX("reply.state.stale") : s === "sent" ? TX("reply.state.sent") : TX("reply.state.closed");
 /** The one card of a reply, on every surface. */
 function rqItemCard(item, opts = {}) {
   drSeen(item.ref, item.draft.hash); if (item.draft.mail) drSeen(item.draft.mail.ref, item.draft.hash);
   const ref = item.ref, d = item.draft, busy = RA.busy.has(ref), fail = RA.fail.get(ref) || (item.back && !item.send ? { text: TX("reply.back.restart"), code: "back" } : undefined), fx = RA.fix.has(ref) ? rqFixNodes(item, !!opts.lead) : null, p = opts.parts;
-  const foot = fx ? fx.foot : d.revising ? el("div", { class: "kk-st", role: "status", text: TX("reply.revising") }) : item.send ? rqSendNode(item) : d.state !== "pending" ? el("div", { class: "rq-send state", role: "status", "data-state": d.state, text: TX(`reply.state.${d.state}`) }) : null;
+  const foot = fx ? fx.foot : d.revising ? el("div", { class: "kk-st", role: "status", text: TX("reply.revising") }) : item.send ? rqSendNode(item) : d.state !== "pending" ? el("div", { class: "rq-send state", role: "status", "data-state": d.state, text: raStateText(d.state) }) : null;
   // A draft of this hub that the server can open (a mail, a comment): 원문 보기 loads the whole original (10-draft-original.js), also when the item came with no quote,
   // and a mail's 첨부 줄 reads the files staged on it (10-decision-card.js draftFilesNode); the queue item carries neither. Another computer's item keeps the quote it came with.
   const local = !item.pc && (item.kind === "mail" || item.kind === "webmail" || item.kind === "comment"), mail = local && item.kind !== "comment", src = local ? { ref, t: item.conv } : {};

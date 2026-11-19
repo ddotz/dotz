@@ -25,6 +25,7 @@
   "reply.undo_net": "연결이 끊겨서 되돌리지 못했어요. 보내기는 그대로 진행돼요",
   "reply.act_net_change": "연결이 끊겨서 하지 못했어요. 다시 눌러 주세요",
   "reply.fix.changed": "그사이 다른 곳에서 초안이 바뀌었어요. 쓴 내용은 남겨 뒀어요. 다시 반영하면 그 위에 저장돼요",
+  "reply.fix.other": "다른 곳에서 저장된 글",
   "reply.fix.moved": "AI가 다시 고친 초안이 왔어요. 쓰던 내용은 옮겨 뒀어요",
   "reply.fix.repick": "고른 파일 {n}개는 다시 골라 주세요: {names}",
   "reply.state.dropped": "보내지 않은 초안이에요",
