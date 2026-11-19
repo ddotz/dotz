@@ -168,6 +168,28 @@ export function parseThread(text: string): ThreadMessage[] {
 	return out;
 }
 
+const AGO_MS = { m: 60_000, h: 3_600_000, d: 86_400_000 } as const;
+const AGO = /^(?:(just now)|(\d{1,3})([mhd]) ago)$/i;
+const YEAR = /(?<!\d)(?:19|20)\d\d(?!\d)/;
+const YMD = /(\d{4})\D+(\d{1,2})\D+(\d{1,2})/;
+
+/**
+ * The earliest time a thread message's `Date:` text can mean, relative to `now` (ms). `zele mail read` prints dates through its own formatter:
+ * "just now", "<N>m ago", "<N>h ago", "<N>d ago", then a short date without the year, or with it past 365 days. A relative text is one unit wide
+ * ("5m ago" is 5 to 6 minutes old), so it returns the far end ("5m ago" = now - 6m). A date with a year, RFC or ISO, parses as itself; a date without a year
+ * or text it does not know is NaN, never a guess.
+ */
+export function threadDate(text: string, now: number): number {
+	const t = text.trim();
+	const ago = AGO.exec(t);
+	if (ago) return ago[1] ? now - 60_000 : now - (Number(ago[2]) + 1) * AGO_MS[ago[3].toLowerCase() as keyof typeof AGO_MS];
+	if (!YEAR.test(t)) return Number.NaN;
+	const parsed = Date.parse(t);
+	if (!Number.isNaN(parsed)) return parsed;
+	const ymd = YMD.exec(t);
+	return ymd ? new Date(Number(ymd[1]), Number(ymd[2]) - 1, Number(ymd[3])).getTime() : Number.NaN;
+}
+
 // Where a client starts quoting the earlier mail; everything from there on is not the new text.
 const QUOTE_START = [/^On .+wrote:\s*$/i, /^20\d\d[.\-/년 ].*작성:?\s*$/, /^-{2,}\s*(Original Message|원본 메시지)\s*-{2,}$/i, /^(From|보낸 사람):\s/i];
 /** The new text of a message: quoted lines, the quoted earlier mail and a `-- ` signature dropped (`keepSignature`: the signature stays, it says who wrote). */

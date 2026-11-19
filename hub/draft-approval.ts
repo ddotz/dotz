@@ -26,6 +26,7 @@
 // which is what the per-feature approval checks read (hub/kakao/send.ts verdict, orchestrator turn "결정 답: ... → 1) 보내기").
 import { isSealed, readSealKey } from "./approval-seal.ts";
 import { withFileWords } from "./auto-attach.ts";
+import { claimsAttachment, ownClaimText, ENGLISH_NOUN, FILE_NOUN, NO_CLAIM } from "./attach-claim.ts";
 import { mailLineText, type DraftBrief } from "./mail-lines.ts";
 import { closeSync, existsSync, openSync, readSync, statSync } from "node:fs";
 import { createHash } from "node:crypto";
@@ -176,27 +177,18 @@ export function fileSizeText(b: number): string {
 	return b >= 1073741824 ? `${(b / 1073741824).toFixed(1)}GB` : b >= 1048576 ? `${(b / 1048576).toFixed(1)}MB` : b >= 1024 ? `${Math.round(b / 1024)}KB` : `${Math.max(0, Math.round(b))}B`;
 }
 
-// The draft says it attaches something ("첨부합니다", "attached"). A refusal ("첨부하지 못", "첨부 없음") is not a claim.
-const CLAIM = /첨부\s*(?:파일|자료|문서|서류)?\s*(?:을|를|은|는)?\s*(?:합니다|했습니다|했어요|해요|드립니다|드려요|드릴게요|해\s*드립니다|해\s*드려요|해\s*드릴게요|하였습니다)|첨부(?:파일|자료|문서|서류)?\s*(?:을|를)?\s*(?:보내|함께)|\b(?:attached|attaching)\b|\bI(?:'ve| have)?\s+attach|\bplease\s+find\b.*\battach/i;
-const NO_CLAIM = /첨부\s*(?:파일)?\s*(?:은|는|이|가)?\s*(?:없|못|불가)|첨부(?:하지|할 수 없)|not\s+attach|no\s+attach|보내\s*(?:드리지|지)\s*못|못\s*보내|보내\s*드릴 수 없|보낼 수 없/i;
-// Nouns that name a file when a draft says it sends one or a mail asks for one.
-const FILE_NOUN = "파일|자료|문서|견적서|청구서|계약서|제안서|보고서|이력서|영수증|사진|이미지|영상|음원|녹음|양식|서식|신청서|스캔본|스캔|첨부|pdf|hwpx?|docx?|xlsx?|pptx?|zip";
-const SENDS = "보내\\s*드(?:립니다|려요|릴게요|릴께요|리겠습니다|렸습니다|렸어요|립니다만)|보냅니다|보내요|보낼게요|보냈(?:습니다|어요)";
-// "달빛정원 문서 보내드립니다", "보내드린 문서는": the draft says it sends a file-like thing.
-const ENGLISH_NOUN = "file|pdf|document|photo|invoice|quote";
 const fileWords = withFileWords(({ document, audio, english: own }) => {
 	const noun = `${FILE_NOUN}${document}${audio}`;
 	const english = `${ENGLISH_NOUN}${own}`;
-	return { noun: new RegExp(noun, "i"), askEn: new RegExp(`\\b(?:please|could you|can you|would you)\\b[^.\\n]{0,40}\\b(?:send|share|attach|forward)\\b[^.\\n]{0,40}\\b(?:${english}|copy)s?\\b`, "i"), sends: new RegExp(`(?:${noun})[가-힣]{0,2}\\s*(?:을|를|은|는|도|만)?\\s*(?:[가-힣A-Za-z0-9]+\\s+){0,2}(?:${SENDS})|(?:보내\\s*드린|보낸)\\s*(?:${noun})|\\b(?:I'm sending|I'll send|I sent|I've sent|sending you|here is|here's)\\b[^.\\n]{0,40}\\b(?:${english})s?\\b`, "i") };
+	return { noun: new RegExp(noun, "i"), askEn: new RegExp(`\\b(?:please|could you|can you|would you)\\b[^.\\n]{0,40}\\b(?:send|share|attach|forward)\\b[^.\\n]{0,40}\\b(?:${english}|copy)s?\\b`, "i") };
 });
 const ASK = /요청|신청(?!서)|받을 수|받고 싶|부탁|보내\s*주|보내\s*줘|보내\s*달|(?:공유|전달)\s*해?\s*(?:주|달)|주세요|주시면|주실 수|주실래/;
-export const claimsAttachment = (text: string): boolean => (CLAIM.test(text) || fileWords().sends.test(text)) && !NO_CLAIM.test(text);
 
 // A comment reply and the mail that rides on its card (hub/comments/engine.ts) are checked against each other after either one changes, without a
 // model: what the reply says about the mail (a file goes, an address, a file name, a mail at all) must be what the mail does. Each finding is one
 // "확인:" line naming the side to look at; PAIR_NOTE finds the lines of an earlier check so a re-check replaces them. Never a refusal.
 export const PAIR_NOTE = /^확인: 답글과 메일이 달라요 - /;
-const MAIL_PROMISE = /(?:메일|e-?mail)[^.!?\n]{0,20}(?:보내|보냈|발송|전달|드릴|드렸|드려)|\be-?mail(?:ed|ing)?\b[^.!?\n]{0,20}\b(?:send|sent)\b|\b(?:send|sent)\b[^.!?\n]{0,20}\be-?mail\b/i;
+export const MAIL_PROMISE = /(?:메일|e-?mail)[^.!?\n]{0,20}(?:보내|보냈|발송|전달|드릴|드렸|드려)|\be-?mail(?:ed|ing)?\b[^.!?\n]{0,20}\b(?:send|sent)\b|\b(?:send|sent)\b[^.!?\n]{0,20}\be-?mail\b/i;
 const FILE_NAMED = /[^\s"'`“”‘’「」『』<>()[\]@,]+\.(?:pdf|hwpx?|docx?|xlsx?|pptx?|zip|txt|csv|jpe?g|png|mp3|mp4|wav)\b/gi;
 /** `mail`: the linked mail as it is now, undefined when the card has none; `hadMail`: the card carried one (so a reply still promising it is off). */
 export function pairCheck(reply: string, mail: { to: string; attachments: { name: string }[] } | undefined, hadMail = false): string[] {
@@ -221,7 +213,7 @@ const fileLine = (f: DraftFileIn) => `> 첨부: ${f.name.replace(/\s+/g, " ").tr
 
 function partLines(d: DraftPart): string[] {
 	const files = (d.attachments ?? []).map(fileLine);
-	const note = files.length ? "" : (d.toLabel ?? "받는이") !== "받는이" ? "" : claimsAttachment(`${d.subject ?? ""}\n${d.body}`) ? NOTE_BODY : d.asksFile ? NOTE_ASKED : "";
+	const note = files.length ? "" : (d.toLabel ?? "받는이") !== "받는이" ? "" : claimsAttachment(ownClaimText(d.subject, d.body)) ? NOTE_BODY : d.asksFile ? NOTE_ASKED : "";
 	// A mail always says what goes with it, files or 없음, so a missing file is seen before 보내기 (owner 2026-10-26).
 	const mail = (d.toLabel ?? "받는이") === "받는이";
 	const left = (d.cannotAttach ?? []).map(n => n.replace(/\s+/g, " ").trim());
@@ -332,7 +324,7 @@ export function withStagedFiles(text: string, files: DraftFileIn[], part: "main"
 		if (old.every(l => /^\s*>\s?첨부\s*[:：]\s*없음/.test(l))) return text;
 		const d = parseQuotedDraft(text);
 		const p = part === "main" ? d : d?.mail;
-		next = [p && p.toLabel === "받는이" && claimsAttachment(`${p.subject ?? ""}\n${p.body}`) ? `> 첨부: 없음 (${NOTE_BODY})` : "> 첨부: 없음"];
+		next = [p && p.toLabel === "받는이" && claimsAttachment(ownClaimText(p.subject, p.body)) ? `> 첨부: 없음 (${NOTE_BODY})` : "> 첨부: 없음"];
 	}
 	if (next.join("\n") === old.join("\n")) return text;
 	const place = rows[0] ?? (at >= 0 ? at : end);
@@ -553,7 +545,7 @@ function parseDraftLines(quoted: string[]): DraftApproval | undefined {
 	const body = lines.join("\n").replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n").replace(/^\n+|\s+$/g, "");
 	if (!body) return undefined;
 	const clipped = body.slice(0, DRAFT_BODY_MAX);
-	const warn = toLabel === "받는이" && !attachments.length && (!!note || claimsAttachment(`${subject ?? ""}\n${clipped}`));
+	const warn = toLabel === "받는이" && !attachments.length && (!!note || claimsAttachment(ownClaimText(subject, clipped)));
 	return { toLabel, to, ...(cc.length ? { cc } : {}), ...(subject ? { subject } : {}), body: clipped, ...(attachments.length ? { attachments } : none || toLabel === "받는이" ? { noAttachments: true as const } : {}), ...(warn ? { warning: note?.startsWith(CANNOT_ATTACH) ? CANNOT_ATTACH_WARNING : NO_ATTACHMENT_WARNING } : {}), ...(note ? { note } : {}), ...(origin ? { origin } : {}), ...(rule ? { rule } : {}) };
 }
 

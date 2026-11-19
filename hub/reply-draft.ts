@@ -4,7 +4,7 @@
 // the user's own sent texts and corrections. The script, never the model, posts and sends.
 // Pure: no fs, no network, no config import.
 
-import { attachIssues } from "./attach-check.ts";
+import { type AttachIssueKind, attachIssues } from "./attach-check.ts";
 import { cleanChoices, cleanQuestion } from "./choices.ts";
 
 export type ModelCall = (system: string, user: string) => Promise<string>;
@@ -317,7 +317,7 @@ export function editLesson(before: string, after: string): string | undefined {
 const REWRITABLE = /^the body is empty$|^the body is \d+ characters|^the text contains a placeholder$|^it uses the forbidden expression |^it says something was already sent|^the recipient evidence /;
 export const rewritable = (failures: string[]): string[] => failures.filter(f => REWRITABLE.test(f));
 // With candidates: a body that promises a file the chosen files do not carry (hub/attach-check.ts missing | partial) is rewritten once, never shown as a warning.
-const ATTACH_FAILURE = { missing: "the body says a file is sent, but you chose no file: choose the file the message asks for from the list, or take the promise out of the body", partial: "the message asks for or the body promises a file that the files you chose do not cover: fix the choice or the body" } as const;
+const ATTACH_FAILURE: Partial<Record<AttachIssueKind, string>> = { missing: "the body says a file is sent, but you chose no file: choose the file the message asks for from the list, or take the promise out of the body", partial: "the message asks for or the body promises a file that the files you chose do not cover: fix the choice or the body" };
 
 // A real reply says "메일로 보내드렸습니다", so a draft copies it though nothing was sent (reply-voice test set, 1 in 49 at Sonnet medium and high alike).
 // Draft time only, never in lintReply: the owner may have sent it himself by the time he approves, and a lint failure refuses the send.
@@ -386,7 +386,7 @@ async function run(item: ReplyItem, style: ReplyStyle, call: ModelCall, base: Pr
 		const found = [...lintReply(draft, item, style), ...(unfoundedSend(draft.body, item, base) ? [SENT_CLAIM_FAILURE] : []), ...(unfoundedRecipient(parsed.recipient, item) ? [RECIPIENT_FAILURE] : [])];
 		// Only exact members of the candidates count; no "files" key = the model chose nothing to report (old behaviour).
 		const files = item.candidates?.length && parsed.files ? [...new Set(parsed.files.filter(f => item.candidates!.includes(f)))] : undefined;
-		const attach = files ? attachIssues({ subject: draft.subject, body: draft.body, files, request: item.text }).flatMap(i => (i.kind === "missing" || i.kind === "partial" ? [ATTACH_FAILURE[i.kind]] : [])) : [];
+		const attach = files ? attachIssues({ subject: draft.subject, body: draft.body, files, request: item.text }).flatMap(i => ATTACH_FAILURE[i.kind] ?? []) : [];
 		const fixable = [...rewritable(found), ...attach];
 		const who = { ...(parsed.recipient ? { recipient: parsed.recipient } : {}), ...(parsed.lesson !== undefined ? { lesson: parsed.lesson } : {}), ...(files ? { files } : {}) };
 		if (!fixable.length || tries === 2) return { action: "draft", draft, questions: parsed.questions, warnings: found, tries, ...who };

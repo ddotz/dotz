@@ -86,6 +86,96 @@ describe("sendWith: the mail table", () => {
 	});
 });
 
+describe("sendWith: a thread that moved on since the draft", () => {
+	const minutesAgo = (n: number) => new Date(Date.now() - n * 60_000).toUTCString();
+	const block = (from: string, ago: number) => `From: ${from}\nTo: someone@example.org\nDate: ${minutesAgo(ago)}\n\n본문\n`;
+	const thread = (...blocks: string[]) => `Thread: 문의\n${blocks.join("────────────\n")}`;
+	const runner = (read: string, whoami = "") => {
+		const replies: string[][] = [];
+		const run: Runner = async argv => {
+			if (argv[1] === "whoami") return { code: 0, stdout: whoami, stderr: "" };
+			if (argv[2] === "reply") replies.push(argv);
+			return { code: 0, stdout: argv[2] === "read" ? read : "ok", stderr: "" };
+		};
+		return { run, replies };
+	};
+	const drafted = (ago: number) => rec({ created: new Date(Date.now() - ago * 60_000).toISOString() });
+
+	test("the owner already answered the thread: refused as stale, nothing replied", async () => {
+		const t = runner(thread(block("Kim <kim@example.com>", 120), block("Me <me@example.net>", 30)));
+		const o = await sendWith(drafted(60), t.run);
+		expect({ ok: o.ok, sent: o.sent, code: o.code }).toEqual({ ok: false, sent: "no", code: "stale" });
+		expect(o.message).toContain("이미 이 메일에 답했어요");
+		expect(t.replies).toEqual([]);
+	});
+
+	test("the owner answered from another logged-in address: also stale", async () => {
+		const t = runner(thread(block("Kim <kim@example.com>", 120), block("Me <other@example.net>", 30)), "me@example.net\nother@example.net\n");
+		expect((await sendWith(drafted(60), t.run)).code).toBe("stale");
+		expect(t.replies).toEqual([]);
+	});
+
+	test("a newer message from the sender than the one the draft answers: refused as stale", async () => {
+		const t = runner(thread(block("Kim <kim@example.com>", 120), block("Kim <kim@example.com>", 10)));
+		const o = await sendWith(drafted(60), t.run);
+		expect({ ok: o.ok, sent: o.sent, code: o.code }).toEqual({ ok: false, sent: "no", code: "stale" });
+		expect(o.message).toContain("새 메일");
+		expect(t.replies).toEqual([]);
+	});
+
+	test("a thread with only the mail it answers is sent", async () => {
+		const t = runner(thread(block("Kim <kim@example.com>", 120)));
+		expect(await sendWith(drafted(60), t.run)).toMatchObject({ ok: true, sent: "yes" });
+		expect(t.replies).toHaveLength(1);
+	});
+
+	test("an earlier answer of the owner, followed by the sender's newest mail, is not a reason to refuse", async () => {
+		const t = runner(thread(block("Me <me@example.net>", 300), block("Kim <kim@example.com>", 120)));
+		expect(await sendWith(drafted(60), t.run)).toMatchObject({ ok: true, sent: "yes" });
+	});
+
+	test("a thread text that cannot be read does not block the send", async () => {
+		const t = runner("zele printed something else");
+		expect(await sendWith(drafted(60), t.run)).toMatchObject({ ok: true, sent: "yes" });
+	});
+
+	const shown = (from: string, date: string) => `From: ${from}\nTo: someone@example.org\nDate: ${date}\n\n본문\n`;
+
+	test("a message the thread shows as 5m ago, after a draft made 60 minutes ago: refused as stale", async () => {
+		const t = runner(thread(shown("Kim <kim@example.com>", "2h ago"), shown("Kim <kim@example.com>", "5m ago")));
+		const o = await sendWith(drafted(60), t.run);
+		expect({ ok: o.ok, sent: o.sent, code: o.code }).toEqual({ ok: false, sent: "no", code: "stale" });
+		expect(o.message).toContain("새 메일");
+		expect(t.replies).toEqual([]);
+	});
+
+	test("a message the thread shows as just now is newer than a draft made 60 minutes ago", async () => {
+		const t = runner(thread(shown("Kim <kim@example.com>", "3h ago"), shown("Kim <kim@example.com>", "just now")));
+		expect((await sendWith(drafted(60), t.run)).code).toBe("stale");
+		expect(t.replies).toEqual([]);
+	});
+
+	test("a message the thread shows as 2h ago is older than a draft made 60 minutes ago: sent", async () => {
+		const t = runner(thread(shown("Kim <kim@example.com>", "2h ago")));
+		expect(await sendWith(drafted(60), t.run)).toMatchObject({ ok: true, sent: "yes" });
+		expect(t.replies).toHaveLength(1);
+	});
+
+	test("a yearless short date cannot be placed in time: it does not refuse the send", async () => {
+		const t = runner(thread(shown("Kim <kim@example.com>", "Oct 21"), shown("Kim <kim@example.com>", "11월 21일")));
+		expect(await sendWith(drafted(60), t.run)).toMatchObject({ ok: true, sent: "yes" });
+		expect(t.replies).toHaveLength(1);
+	});
+
+	test("the owner's answer is still found when the thread shows relative dates", async () => {
+		const t = runner(thread(shown("Kim <kim@example.com>", "2h ago"), shown("Me <me@example.net>", "30m ago")));
+		const o = await sendWith(drafted(60), t.run);
+		expect({ ok: o.ok, code: o.code }).toEqual({ ok: false, code: "stale" });
+		expect(o.message).toContain("이미 이 메일에 답했어요");
+		expect(t.replies).toEqual([]);
+	});
+});
+
 describe("sendWith: the webmail table", () => {
 	// The site's own CLI: `draft` and `approve` answer as told, `send` exits with `send[0]` and prints `send[1]`.
 	const site = (o: { draft?: number; approve?: number; send?: [number, string] }): Runner => async argv => {

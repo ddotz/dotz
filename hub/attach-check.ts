@@ -3,9 +3,10 @@
 // install's own file words (hub/auto-attach.ts).
 // It knows kinds of files, never particular ones: a draft that promises a file and has none, promises a kind it does not carry, carries a kind nobody
 // promised or asked for, carries files the draft has nothing to do with, or carries several cuts of one file.
+import { claimsAttachment, ownClaimText, REFERS_BACK, SENDS_VERB } from "./attach-claim.ts";
 import { withFileWords } from "./auto-attach.ts";
 
-export type AttachIssueKind = "missing" | "partial" | "extra" | "unrelated" | "variants";
+export type AttachIssueKind = "missing" | "partial" | "extra" | "unrelated" | "variants" | "skipped";
 export type AttachIssue = { kind: AttachIssueKind; text: string };
 export type AttachCheck = { subject?: string; body: string; files: readonly string[]; /** What the draft answers; a kind asked for here is not "extra". Absent for a new mail. */ request?: string };
 
@@ -31,11 +32,17 @@ const words = withFileWords(extra => {
 	const any = kinds.map(([, re]) => re.source).join("|");
 	return { kinds, file: new RegExp(`${any}|파일|자료|첨부`, "i"), kind: new RegExp(any, "gi"), noise: new RegExp(`^(?:${NOISE_WORDS}${extra.document}${extra.audio}${extra.noise})$`, "i") };
 });
-// A promise made now. "보내드리겠습니다" counts unless it waits on the reader ("이름을 알려 주시면 보내드리겠습니다"); "보내드린 문서는 ..." only refers back.
-const SEND_NOW = /보내\s*드(?:립니다|려요|릴게요|릴께요|리겠습니다)|보냅니다|보낼게요|첨부\s*(?:합니다|해요|드립니다|드려요|드릴게요|해\s*드립니다|해\s*드려요|해\s*드릴게요)|\b(?:attached|attaching|I'm sending|I am sending)\b/i;
-const NOT_NOW = /(?:주시|하시|보시|되시|으시|시|으)면\s|못\s*보내|보내\s*(?:드리지|지)\s*못|보내\s*드릴 수 없|보낼 수 없|첨부\s*(?:파일)?\s*(?:은|는|이|가)?\s*(?:없|못|불가)|첨부(?:하지|할 수 없)|\bnot\s+attach|\bno\s+attach|판매/i;
+const NEGATIVE = /못\s*보내|보내\s*(?:드리지|지)\s*못|보내\s*드릴 수 없|보낼 수 없|첨부\s*(?:파일)?\s*(?:은|는|이|가)?\s*(?:없|못|불가)|첨부(?:하지|할 수 없)|\bnot\s+(?:be\s+)?attach|\bno\s+attach/i;
 const sentences = (text: string): string[] => text.split(/\n+|(?<=[.!?。])\s+/).map(s => s.trim()).filter(Boolean);
-const promises = (text: string): string[] => sentences(text).filter(s => SEND_NOW.test(s) && words().file.test(s) && !NOT_NOW.test(s));
+const claims = (sentence: string): boolean => claimsAttachment(sentence.replace(REFERS_BACK, " "));
+const SEND_TALK = /보내|보낼|송부|발송|전달|전송|공유|첨부|\b(?:send|sending|attach|attaching|share|forward|email)\b/i;
+const IF = /(?:주시|하시|보시|되시|으시|시|으)면\s|\b(?:if|once)\b/i;
+const LATER = /나중|따로|별도로|내일|추후|다음에|이따|\b(?:later|separately|afterwards?|next time)\b/i;
+const FUTURE = /겠|[릴낼줄]\s*게|[릴낼]\s*께|예정|\bwill\b|'ll\b|\bgoing to\b|\bplan to\b/i;
+const PAST = /(?:했|드렸|보냈|하였)(?:습니다|어요|으니|고)|\b(?:sent|attached|enclosed|I've|I have)\b/i;
+const putsOff = (s: string): boolean => SEND_TALK.test(s) && !PAST.test(s) && (IF.test(s) || (LATER.test(s) && FUTURE.test(s)));
+const holdsNothing = (s: string): boolean => NEGATIVE.test(s) || /판매/.test(s) || putsOff(s);
+const promises = (text: string): string[] => sentences(text).filter(s => claims(s) && !holdsNothing(s));
 const kindsIn = (text: string): Set<FileKind> => new Set(words().kinds.filter(([, re]) => re.test(text)).map(([k]) => k));
 const kindOf = (name: string): FileKind | undefined => KIND_EXT.find(([, re]) => re.test(name))?.[0];
 const labels = (kinds: Iterable<FileKind>) => [...kinds].map(k => KIND_LABEL[k]).join("·");
@@ -47,6 +54,8 @@ export const withoutKindWords = (text: string): string => text.replace(words().k
 const ASKED = /부탁|주세요|주시|요청|신청|받을 수|받고 싶|\b(?:please|could you|can you)\b/i;
 export const ownWords = (text: string): string => text.split(/-{3,}\s*Original Message/i)[0]!.split("\n").filter(l => !l.trimStart().startsWith(">")).join("\n");
 const askedKinds = (request: string): Set<FileKind> => kindsIn(sentences(ownWords(request)).filter(s => ASKED.test(s)).join("\n"));
+const SEND_ASKED = /보내\s*(?:주|줘|달)|송부\s*(?:를\s*)?(?:부탁|요청|바랍|해\s*주)|(?:전달|공유|발송|전송|첨부)\s*(?:을\s*)?(?:부탁|해\s*주|해\s*줘|바랍)|받을 수|받고 싶|\b(?:please|kindly|could you|can you|would you|will you)\s+(?:\w+\s+)?(?:send|share|forward)\b|\b(?:send|share|forward)\s+(?:me|us)\b/i;
+const sendAskedKinds = (request: string): Set<FileKind> => kindsIn(sentences(ownWords(request)).filter(s => SEND_ASKED.test(s)).join("\n"));
 
 // "1탄, 2탄, 3탄", "1,2,3부": the numbered parts a sentence names. Names do not always carry the number, so parts are compared with a count of files, per kind.
 const PART = /(\d+(?:\s*[,.·]\s*\d+)*)\s*(탄|부|권|편)/g;
@@ -120,10 +129,15 @@ function cutsOfOneFile(files: readonly string[]): string[] {
 export function attachIssues(d: AttachCheck): AttachIssue[] {
 	// When the mail asked for a file, "모두 보내드리겠습니다" is about that file whether or not the sentence says so.
 	const asked = d.request === undefined ? new Set<FileKind>() : askedKinds(`${d.subject ?? ""}\n${d.request}`);
-	const said = asked.size ? sentences(d.body).filter(s => SEND_NOW.test(s) && !NOT_NOW.test(s)) : promises(d.body);
+	const claimText = ownClaimText(d.subject, d.body);
+	const said = asked.size ? sentences(claimText).filter(s => (claims(s) || SENDS_VERB.test(s)) && !holdsNothing(s)) : promises(claimText);
 	const promised = kindsIn(said.join("\n"));
 	const has = new Set(d.files.flatMap(f => kindOf(f) ?? []));
-	if (!d.files.length) return said.length ? [{ kind: "missing", text: `본문에 ${promised.size ? `${labels(promised)} ` : ""}파일을 보낸다고 썼지만 첨부파일이 없어요` }] : [];
+	if (!d.files.length) {
+		if (said.length) return [{ kind: "missing", text: `본문에 ${promised.size ? `${labels(promised)} ` : ""}파일을 보낸다고 썼지만 첨부파일이 없어요` }];
+		const wanted = d.request === undefined ? new Set<FileKind>() : sendAskedKinds(d.request);
+		return wanted.size && !sentences(d.body).some(s => NEGATIVE.test(s) || putsOff(s)) ? [{ kind: "skipped", text: `받은 메일이 요청한 ${labels(wanted)} 파일이 안 붙었어요` }] : [];
+	}
 	const out: AttachIssue[] = [];
 	const short = [...promised].filter(k => !has.has(k));
 	if (short.length) out.push({ kind: "partial", text: `본문에 쓴 ${labels(short)} 파일이 안 붙었어요` });

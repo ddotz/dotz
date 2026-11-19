@@ -5,11 +5,14 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { MailSearch } from "../../../hub/comments/mail-match.ts";
 import { log } from "../../../hub/config.ts";
+import { movedOn } from "../../../hub/mail-reconcile.ts";
+import { ownAddresses } from "../../../hub/mail-state.ts";
 import { msg } from "../../../hub/i18n.ts";
 import { type AppRaw, readAppsFile } from "../../../hub/integrations.ts";
 import { addressesOf } from "../../../hub/reply-draft.ts";
 import { loadPlugins, pluginNeedsAccount, pluginReply, pluginRepliesWithFiles, pluginsLoaded, pluginsReply } from "../../../hub/plugins.ts";
 import { withoutRuntimeWarnings } from "../../../hub/tool-output.ts";
+import { parseThread } from "../../../hub/zele.ts";
 import { dataDir } from "./settings.ts";
 import { recipientList } from "./recipients.ts";
 import { stagedFiles } from "./staged.ts";
@@ -227,6 +230,13 @@ export async function sendWith(rec: DraftRec, run: Runner): Promise<SendOutcome>
 	if (rec.source === "zele") {
 		const seen = await run(readArgv(rec.mailId, account));
 		if (seen.code !== 0) return told(seen, "보내기 전에 메일을 읽지 못해서 보내지 않았어요: ", beforeReply);
+		const thread = parseThread(seen.stdout);
+		if (thread.length) {
+			const own = ownAddresses([...(account ? [account] : []), ...(await zeleLogins(run))]);
+			const moved = movedOn(thread, own, rec.created);
+			if (moved === "answered") return fail("이미 이 메일에 답했어요. 이 초안은 보내지 않았어요", "stale");
+			if (moved === "newer") return fail("그사이 새 메일이 와서 이 초안은 낡았어요. 보내지 않았어요. 다시 초안을 만들어야 해요", "stale");
+		}
 		const r = await run(replyArgv(rec.mailId, rec.to, rec.body, files.map(f => f.path), cc, account));
 		if (r.code === 0) return done(`${rec.to}에게 답장을 보냈어요`);
 		return told(r, "보내지 못했어요. 그 사이 새 메일이 왔다면 이 초안은 낡은 거예요. 다시 초안을 만들어야 해요: ", zeleVerdict);

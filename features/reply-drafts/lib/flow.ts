@@ -6,7 +6,8 @@ import { linkedComment } from "../../../hub/comments/linked.ts";
 import { claimHolder, claimSend, claimToken, keepClaimToken } from "../../../hub/draft-claim.ts";
 import { attachIssues, ownWords, withoutKindWords } from "../../../hub/attach-check.ts";
 import { withFileWords } from "../../../hub/auto-attach.ts";
-import { ATTACH_AS_IS_HINT, ATTACH_REFUSED, LINT_REFUSED, asksForFile, briefLines, claimsAttachment, draftApprovalBlock, draftVerdict, type DraftVerdict, SPENT_REFUSED, WAITING_REFUSED } from "../../../hub/draft-approval.ts";
+import { claimsAttachment, ownClaimText } from "../../../hub/attach-claim.ts";
+import { ATTACH_AS_IS_HINT, ATTACH_REFUSED, LINT_REFUSED, asksForFile, briefLines, draftApprovalBlock, draftVerdict, type DraftVerdict, SPENT_REFUSED, WAITING_REFUSED } from "../../../hub/draft-approval.ts";
 import type { ReplyCall } from "../../../hub/reply-model.ts";
 import { addressesOf, editLesson, generateChatReply, lintReply, lessonOf, NO_RECIPIENT, ownerLint, RECIPIENT_FAILURE, reviseReply, SENT_CLAIM_FAILURE, withSenderAddress, type ModelCall, type Recipient, type ReplyItem, type ReplyKind, type ReplyStyle } from "../../../hub/reply-draft.ts";
 import { listLibrary, matchLibrary, MIN_SCORE, rankLibrary, type LibraryFile } from "./library.ts";
@@ -215,9 +216,9 @@ export const FILE_CHANGE_MISSED = "고쳐 달라고 한 파일을 첨부 파일 
 export function draftAttachIssues(rec: DraftRec): string[] {
 	if (rec.kind !== "mail" || !canAttach(rec.source)) return [];
 	const files = stagedFiles(rec.id).map(f => f.name);
-	const found = attachIssues({ subject: rec.subject, body: rec.body, files, request: rec.compose ? undefined : rec.item.text }).map(i => i.text);
-	if (rec.fileChangeMissed && sortedNames(rec.fileChangeMissed) === sortedNames(files)) found.push(FILE_CHANGE_MISSED);
 	const want = notYetStaged(rec);
+	const found = files.length || !want.length ? attachIssues({ subject: rec.subject, body: rec.body, files, request: rec.compose ? undefined : rec.item.text }).map(i => i.text) : [];
+	if (rec.fileChangeMissed && sortedNames(rec.fileChangeMissed) === sortedNames(files)) found.push(FILE_CHANGE_MISSED);
 	return want.length ? [...found, `아직 못 붙인 파일: ${want.join(", ")}`] : found;
 }
 const sortedNames = (names: readonly string[]): string => [...names].sort().join("\n");
@@ -375,7 +376,7 @@ export const mailAsksFile = (item: Pick<ReplyItem, "subject" | "text">): boolean
 export async function stageForReply(rec: DraftRec, deps: FlowDeps, files?: Promise<LibraryFile[] | undefined>): Promise<string[]> {
 	if (rec.kind !== "mail") return [];
 	rec.asksFile = mailAsksFile(rec.item) || undefined;
-	const wants = !!rec.asksFile || claimsAttachment(`${rec.subject ?? ""}\n${rec.body}`);
+	const wants = !!rec.asksFile || claimsAttachment(ownClaimText(rec.subject, rec.body));
 	const found = files ? await files : wants ? await libraryFor(rec.item, rec, deps) : undefined;
 	if (!found || (!found.length && !wants)) return [];
 	if (!found.length) rec.libraryMiss = true;
@@ -413,7 +414,7 @@ async function restageForRevision(rec: DraftRec, change: string, deps: FlowDeps,
 	const have = () => new Set(stagedFiles(rec.id).map(f => f.name));
 	const named = await matchLibrary(folder, { subject: change, text: change });
 	let found = named.filter(f => !have().has(stagedName(basename(f.path))));
-	const wants = asksForFile(rec.item.text) || claimsAttachment(`${rec.subject ?? ""}\n${rec.body}`);
+	const wants = asksForFile(rec.item.text) || claimsAttachment(ownClaimText(rec.subject, rec.body));
 	let missed = false;
 	if (!named.length && !have().size && wants) {
 		found = (await libraryFor(rec.item, rec, deps)) ?? [];
@@ -538,6 +539,7 @@ export async function sendDraft(id: string, deps: FlowDeps, opts: { withReply?: 
 	const release = claimSend(claimFile(id), opts.retry === true);
 	if (!release) return { ok: false, text: `초안 ${id}은(는) 지금 보내는 중이라 한 번 더 보내지 않았어요` };
 	if (v.token) keepClaimToken(claimFile(id), v.token);
+	let keepClaim = false;
 	try {
 		const now = getDraft(id);
 		if (now?.status !== "pending") return { ok: false, text: `초안 ${id}은(는) 이미 ${now?.status ?? "없는"} 상태라 보내지 않았어요`, sent: "no", code: "gone" };
@@ -553,7 +555,13 @@ export async function sendDraft(id: string, deps: FlowDeps, opts: { withReply?: 
 		const where: Outcome = out.ok ? { sent: out.sent ?? "yes" } : { sent: out.sent ?? "maybe", code: out.code ?? "unknown", ...(out.vars ? { vars: out.vars } : {}) };
 		deps.onOutcome?.(where);
 		if (!out.ok) return { ok: false, text: out.message, sendFailed: true, sent: where.sent === "no" ? "no" : "maybe", code: where.code, ...(where.vars ? { vars: where.vars } : {}) };
-		setStatus(id, "sent");
+		try {
+			setStatus(id, "sent");
+		} catch (e) {
+			keepClaim = true;
+			console.error(`reply draft: ${id} went out but its status was not saved: ${(e as Error).message}`);
+			return { ok: true, text: `${out.message} 다만 초안 상태를 저장하지 못해서 초안이 아직 대기 중으로 보일 수 있어요. 다시 보내지는 않아요` };
+		}
 		// A text the owner wrote himself (직접 수정) teaches what he changed, in the profile of that draft, once it went out (design 3.4).
 		const taught = now.editedFrom !== undefined ? editLesson(now.editedFrom, now.body) : undefined;
 		if (taught) await recordLesson(toneKey(now), taught, deps).catch(e => console.error(`reply draft: what the edit of ${id} teaches was not recorded: ${(e as Error).message}`));
@@ -568,7 +576,7 @@ export async function sendDraft(id: string, deps: FlowDeps, opts: { withReply?: 
 		}
 		return { ok: true, text: out.message };
 	} finally {
-		release();
+		if (!keepClaim) release();
 	}
 }
 

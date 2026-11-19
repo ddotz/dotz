@@ -3,7 +3,8 @@ import { copyFileSync, existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync,
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { draftAttachRoute } from "../../../hub/draft-attach.ts";
-import { ATTACH_REFUSED, asksForFile, claimsAttachment, LIBRARY_MISS, NO_ATTACHMENT_WARNING, parseDraftApproval } from "../../../hub/draft-approval.ts";
+import { claimsAttachment } from "../../../hub/attach-claim.ts";
+import { ATTACH_REFUSED, asksForFile, LIBRARY_MISS, NO_ATTACHMENT_WARNING, parseDraftApproval } from "../../../hub/draft-approval.ts";
 import { loadPlugins } from "../../../hub/plugins.ts";
 import { reviseDraft } from "../lib/flow.ts";
 import { matchLibrary } from "../lib/library.ts";

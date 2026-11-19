@@ -4,7 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { askText } from "../features/reply-drafts/lib/flow.ts";
 import type { DraftRec } from "../features/reply-drafts/lib/store.ts";
-import { claimsAttachment, draftApprovalBlock, fileSizeText, NO_ATTACHMENT_WARNING, parseDraftApproval, parseQuotedDraft, quotedDraft } from "./draft-approval.ts";
+import { claimsAttachment } from "./attach-claim.ts";
+import { draftApprovalBlock, fileSizeText, NO_ATTACHMENT_WARNING, parseDraftApproval, parseQuotedDraft, quotedDraft } from "./draft-approval.ts";
 import { draftFileRoute, stageDraftFiles } from "./draft-files.ts";
 import { PEER_GET } from "./peer-auth.ts";
 

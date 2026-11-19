@@ -3,7 +3,8 @@ import { copyFileSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { writeSettings } from "../../../hub/app-settings.ts";
-import { asksForFile, claimsAttachment } from "../../../hub/draft-approval.ts";
+import { claimsAttachment } from "../../../hub/attach-claim.ts";
+import { asksForFile } from "../../../hub/draft-approval.ts";
 import { composeMail } from "../../../hub/mail-cli.ts";
 import { buildPrompt, generateReply, type ReplyItem, type ReplyStyle } from "../../../hub/reply-draft.ts";
 import { advance } from "../../../hub/runtime/test-clock.ts";

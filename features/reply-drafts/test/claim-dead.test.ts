@@ -1,6 +1,6 @@
 // A claim left by a sender that died may have sent the mail already (the mailbox accepted it, `setStatus("sent")` never ran): a replayed answer must not send again.
 import { afterAll, beforeEach, expect, test } from "bun:test";
-import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { runDraft } from "../bin/draft.ts";
 import { sendDraft } from "../lib/flow.ts";
@@ -51,5 +51,28 @@ test("draft.ts send takes the owner's retry only from --retry", async () => {
 	expect((await runDraft(["send", "RDEAD1"], "", { send })).code).toBe(1);
 	expect(sends).toBe(0);
 	expect((await runDraft(["send", "RDEAD1", "--retry"], "", { send })).code).toBe(0);
+	expect(sends).toBe(1);
+});
+
+test("a mail that left but whose status could not be saved is reported sent and never goes out twice", async () => {
+	addDraft(draft());
+	pick(env, "RDEAD1", 1);
+	const dir = dirname(paths.drafts());
+	let sends = 0;
+	const send = async () => {
+		sends++;
+		chmodSync(dir, 0o500);
+		return { ok: true as const, message: "보냈어요" };
+	};
+	const told: string[] = [];
+	try {
+		const first = await sendDraft("RDEAD1", { send, onOutcome: o => void told.push(o.sent) });
+		expect(first.ok).toBe(true);
+	} finally {
+		chmodSync(dir, 0o700);
+	}
+	expect(told).toEqual(["yes"]);
+	const second = await sendDraft("RDEAD1", { send });
+	expect(second.ok).toBe(false);
 	expect(sends).toBe(1);
 });

@@ -9,7 +9,7 @@
 import type { MailRecord } from "./mail.ts";
 import { isOwnAddress } from "./mail-state.ts";
 import type { MailThreadMessage, MailThreadRequest } from "./plugins.ts";
-import { parseThread } from "./zele.ts";
+import { parseThread, threadDate } from "./zele.ts";
 
 export type ReconcileResult = { checked: number; replied: number; notChecked: number; skipped: number };
 export type ReconcileMail = Pick<MailRecord, "key" | "source" | "id" | "at"> & Partial<Pick<MailRecord, "account" | "dir" | "reply">>;
@@ -59,6 +59,16 @@ export function answerIn(messages: readonly MailThreadMessage[], own: ReadonlySe
 	if (!reply) return undefined;
 	const t = Date.parse(reply.date);
 	return Number.isNaN(t) ? "" : new Date(t).toISOString();
+}
+
+/**
+ * Whether a thread read right before a send has moved on from the mail a draft answers (`at`: when that mail came or the draft was made): the owner
+ * answered it, or the sender wrote again after it. undefined = nothing moved.
+ */
+export function movedOn(messages: readonly MailThreadMessage[], own: ReadonlySet<string>, at: string, now: number = Date.now()): "answered" | "newer" | undefined {
+	if (answerIn(messages, own, at) !== undefined) return "answered";
+	const limit = Date.parse(at) + SLACK_MS;
+	return messages.some(m => !isOwnAddress(m.from, own) && threadDate(m.date, now) > limit) ? "newer" : undefined;
 }
 
 /** One round: reads at most `limit` waiting mails (oldest looked-at first) and closes the ones the owner answered. */

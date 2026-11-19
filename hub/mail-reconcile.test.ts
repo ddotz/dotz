@@ -1,7 +1,8 @@
 // Mail reconcile (hub/mail-reconcile.ts): a mail that waits and was answered outside dotz becomes 답장함 and its drafts close; zele is never really called.
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mailDraftHandled } from "./draft-handled.ts";
-import { createReconciler, reconcileMails, resetReconcile, type ReconcileDeps, type ReconcileMail } from "./mail-reconcile.ts";
+import { createReconciler, movedOn, reconcileMails, resetReconcile, type ReconcileDeps, type ReconcileMail } from "./mail-reconcile.ts";
+import { threadDate } from "./zele.ts";
 import { resetOwnAddresses, setOwnAddresses } from "./mail-state.ts";
 import { mailByKey, postMail, setMailReply, type MailDeps } from "./mail.ts";
 import { HUB_TOKEN } from "./config.ts";
@@ -44,6 +45,47 @@ function setup(mails: Mem[], opts: { accounts?: string[]; threads?: Record<strin
 const mail = (id: string, over: Partial<Mem> = {}): Mem => ({ key: `zele-${id}`, source: "zele", id, at: "2026-10-30T01:00:00.000Z", account: A1, reply: "needs", ...over });
 const pluginMail = (id: string, over: Partial<Mem> = {}): Mem => mail(id, { key: `work-${id}`, source: "work", account: undefined, ...over });
 const gmailReply = thread([KIM, "2026-10-30T00:59:00Z"], [`Me <${ME}>`, "2026-10-30T05:00:00Z"]);
+
+describe("threadDate: the earliest time a zele Date: text can mean", () => {
+	const NOW = Date.parse("2026-11-19T12:00:00Z");
+	const MIN = 60_000;
+	test.each([
+		["just now", NOW - MIN],
+		["1m ago", NOW - 2 * MIN],
+		["5m ago", NOW - 6 * MIN],
+		["59m ago", NOW - 60 * MIN],
+		["2h ago", NOW - 3 * 60 * MIN],
+		["23h ago", NOW - 24 * 60 * MIN],
+		["3d ago", NOW - 4 * 24 * 60 * MIN],
+		["6d ago", NOW - 7 * 24 * 60 * MIN],
+		["Wed, 21 Oct 2026 07:28:00 GMT", Date.parse("2026-10-21T07:28:00Z")],
+		["2026-10-21T07:28:00Z", Date.parse("2026-10-21T07:28:00Z")],
+		["Oct 21, 2024", new Date("Oct 21, 2024").getTime()],
+		["2024. 10. 21.", new Date(2024, 9, 21).getTime()],
+		["2024년 10월 21일", new Date(2024, 9, 21).getTime()],
+	])("%s", (text, expected) => expect(threadDate(text, NOW)).toBe(expected));
+
+	test.each(["Oct 21", "Nov 3", "11월 21일", "10. 21.", "", "yesterday", "zele printed something else"])("%p cannot be placed in time", text =>
+		expect(threadDate(text, NOW)).toBeNaN(),
+	);
+
+	test("a longer time ago is never a later time", () => {
+		for (const unit of ["m ago", "h ago", "d ago"]) {
+			const times = Array.from({ length: 6 }, (_, i) => threadDate(`${i + 1}${unit}`, NOW));
+			expect(times).toEqual([...times].sort((a, b) => b - a));
+			expect(times.every(t => t < NOW)).toBe(true);
+		}
+	});
+});
+
+describe("movedOn with the dates zele prints", () => {
+	const own = new Set([ME]);
+	const created = new Date(Date.now() - 60 * 60_000).toISOString();
+	const ago = (from: string, date: string) => ({ from, to: "x", date, body: "" });
+	test("a message 5m ago is newer than a draft made an hour ago", () => expect(movedOn([ago(KIM, "2h ago"), ago(KIM, "5m ago")], own, created)).toBe("newer"));
+	test("a message 2h ago is not newer than a draft made an hour ago", () => expect(movedOn([ago(KIM, "2h ago")], own, created)).toBeUndefined());
+	test("a yearless date is not newer", () => expect(movedOn([ago(KIM, "Oct 21")], own, created)).toBeUndefined());
+});
 
 beforeEach(resetReconcile);
 
