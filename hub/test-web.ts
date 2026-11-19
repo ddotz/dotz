@@ -47,10 +47,17 @@ const SLOW_TIMERS = `(() => { const q = []; let now = 0, seq = 1e9; const rs = s
 	window.__rt = rs;
 	window.__advance = async (ms, quiet) => { const end = now + ms; if (quiet) await settle(); for (;;) { const due = q.filter(t => t.at <= end).sort((x, y) => x.at - y.at)[0]; if (!due) break; now = due.at; if (due.every) due.at += due.every; else q.splice(q.indexOf(due), 1); due.f(); } if (quiet) await settle(); now = end; };
 })();`;
-async function slowIndex(req: Request, head = ""): Promise<Response> {
-	const plain = await indexPage(new Request(req.url));
-	const html = (await plain.text()).replace(/<head[^>]*>/i, m => `${m}<script>${SLOW_TIMERS}${head}</script>`);
-	return new Response(html, { headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" } });
+// why(platform): WebKit run from a launchd job without ProcessType Interactive (launchd.plist(5) man page) nearly stops the timers of a page opened while a smooth scroll still runs.
+const INSTANT_SCROLL = `(() => { const flat = o => o && typeof o === "object" && o.behavior === "smooth" ? { ...o, behavior: "instant" } : o;
+	for (const [t, ks] of [[Element.prototype, ["scrollIntoView", "scroll", "scrollTo", "scrollBy"]], [window, ["scroll", "scrollTo", "scrollBy"]]]) for (const k of ks) { const real = t[k]; t[k] = function (o, ...a) { return real.call(this, flat(o), ...a); }; }
+})();`;
+async function testIndex(req: Request, slow: boolean, head = ""): Promise<Response> {
+	const headers = new Headers(req.headers);
+	headers.delete("accept-encoding");
+	const plain = await indexPage(slow ? new Request(req.url) : new Request(req.url, { method: req.method, headers }));
+	if (!slow && (plain.status !== 200 || req.method === "HEAD")) return plain;
+	const html = (await plain.text()).replace(/<head[^>]*>/i, m => `${m}<script>${INSTANT_SCROLL}${slow ? SLOW_TIMERS + head : ""}</script>`);
+	return new Response(html, { headers: slow ? { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" } : plain.headers });
 }
 
 // A WebView costs ~120 ms to start, a navigation ~20 ms: finished views go back to a process-wide pool (bun runs every test file in one process)
@@ -97,7 +104,7 @@ export function fakeHub(opts: HubOptions = {}) {
 		idleTimeout: 0,
 		async fetch(req) {
 			const url = new URL(req.url), p = url.pathname;
-			if (p === "/") return opts.slowTimers ? slowIndex(req, opts.headScript) : indexPage(req);
+			if (p === "/") return testIndex(req, !!opts.slowTimers, opts.headScript);
 			const asset = appAsset(req, p);
 			if (asset) return asset;
 			const own = await opts.api?.(req, url);

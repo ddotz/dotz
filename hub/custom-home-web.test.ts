@@ -138,7 +138,6 @@ describe("custom cards on 홈", () => {
 	test("a new card is saved, the board scrolls to it and its header takes focus, with no uncaught page error", async () => {
 		await boot();
 		await view.evaluate(`(() => { window.__errs = []; addEventListener("error", e => __errs.push(String(e.message))); addEventListener("unhandledrejection", e => __errs.push(String(e.reason))); })()`);
-		await view.evaluate(`(() => { const real = Element.prototype.scrollIntoView; Element.prototype.scrollIntoView = function (o) { return real.call(this, o && typeof o === "object" ? { ...o, behavior: "instant" } : o); }; })()`);
 		await view.evaluate(`dotzCustom.add()`);
 		await waitFor(`current === "cardform" && document.querySelector("#v-cardform form")`);
 		await view.evaluate(`(() => { const f = document.querySelector("#v-cardform form"); f.querySelector(".cu-t .fi").value = "새 카드"; f.requestSubmit(); })()`);
