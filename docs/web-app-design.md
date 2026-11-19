@@ -307,7 +307,7 @@ dotz 웹앱의 화면은 `web/js/03-screens.js`의 `SCREENS` 표에 한 줄씩 �
 - css: 05-log.css(`.hrx`, `.hrx-f`), 22-shell.css(`.hrx`, `.hrx-f`), 09-notices.css(`.hrx`).
 
 ### 홈 알림 / 작업내역 / 모니터링 카드
-- 목적: 최근 알림, 작업 기록, 모니터링 상태를 카드마다 3~4줄 미리 보여요.
+- 목적: 최근 알림, 작업내역, 모니터링 상태를 카드마다 3~4줄 미리 보여요.
 - 구성: `hcCard`(`.card.tap.hc`)에 머리(`hcHead`: 상태 점, `h3` 제목, 개수/메모, ⋯ 버튼)와 `.hc-list`. 알림/작업내역 행 `.hc-row`(점 `.nt-dot`, 제목과 세션 메모, 시각, 필요하면 무시 버튼; 작업내역 행의 점과 제목은 대화의 행과 같은 `wlDot`, `wlTitle`). 모니터링 행 `.hc-mon[data-status]`(점, 이름, `실행 · 상태 · 다음` 문구).
 - 기능: 카드 전체 탭은 알림 `nscGo`, 작업내역 `openTarget("worklog","chat")`, 모니터링 `go("monitoring")`. 각 행은 `noticeOpen(n)`로 그 항목을 열고 이벤트 전파를 막아요. ⋯ 메뉴: `알림 열기`/`작업내역 열기`/`모니터링 열기` + `앞으로 옮기기`/`뒤로 옮기기`.
 - 상태: 알림 카드 머리에 안 읽은 수. 불러오기 전 `불러오는 중…`, 실패 `불러오지 못했어요`, 알림 비어 있음 `새 알림이 없어요`, 작업내역 비어 있음 `아직 작업내역이 없어요`, 모니터링 비어 있음 `모니터링 중인 항목이 없어요`. 모니터링은 4개까지, 더 있으면 `더 보기 · {n}개`, 실패가 있으면 머리에 빨간 점과 `실패 {n}`. 알림 카드는 안 읽은 새 소식만 최대 3개(게이트웨이 재시작 알림 제외, 이미 답변 필요에 있는 질문 제외). 제목이 `작업 기록`/`작업내역`/`알림`처럼 일반적이면 본문 첫 줄을 대신 보여요.
@@ -486,7 +486,7 @@ dotz 웹앱의 화면은 `web/js/03-screens.js`의 `SCREENS` 표에 한 줄씩 �
 - css: 01-tokens.css(`.ustrip`), 22-shell.css(`.ustrip`, `.bellbtn`, 사이드바 `#sf-usage`).
 
 ### 채팅 목록 (대화 목록)
-- 목적: 카카오톡식으로 모든 대화(비서, 알림, 작업 기록, 세션, 프로젝트, 메일/카카오톡 대기)를 한 목록에서 고르고 안 읽음 수를 봐요.
+- 목적: 카카오톡식으로 모든 대화(비서, 알림, 작업내역, 세션, 프로젝트, 메일/카카오톡 대기)를 한 목록에서 고르고 안 읽음 수를 봐요.
 - 구성: `aside#chat-convo.cv-side`(목록 패널, `#v-chat` 맨 앞에 붙음) 안에 `.cv-sec`(섹션 라벨) 다음 `.cv-card`(행 묶음)이 이어져요. 행은 `button.cv-row`(아이콘 `.cv-av`, 이름 `.cv-n`, 미리보기 `.cv-p`, 시각 `.cv-t`, 배지 `.cv-m2`). `진행 중` 구역의 진행 중 줄은 오른쪽 끝에 아무 표식도 달지 않아요(머리글이 이미 진행 중이라고 말하고, 파란 표식은 이 목록에서 안 읽음만 뜻해요). 안 읽은 글이 있으면 다른 줄처럼 개수 `nb`만 뜨고, 답을 기다리는 줄은 `답을 기다림` 표식을 그대로 써요. 맨 아래에 `.cv-foot`의 읽음 처리 버튼이 와요.
 - 기능: 행 탭으로 `go("chat", t)`(대화 열기). `프로젝트 N개 더 보기` 버튼으로 `CVF.more`를 40개씩 늘려요(`convRow`). 읽음 처리 버튼은 `convReadAll`로 답이 필요 없는 안 읽은 대화를 일괄 읽음으로 보내요. 메일/카카오톡 카드 행은 `go("monitoring", "c:<mail>")` 또는 `go("monitoring","i:kakao")`+`kkOpen`으로 모니터링을 열어요. 목록은 `convRows`(순서: 세션이 돌거나 답을 기다릴 때만 맨 위 `진행 중`(`sessionsNow`, 홈 카드와 같은 목록, 행 이름 `프로젝트 · 제목`, 답을 기다리는 세션 먼저), 비서, `worklog`, `프로젝트`, 열려 있거나 안 읽은 것·답할 것이 남은 종료 세션, 종료 세션 묶음, `메일 · 카카오톡`)로 짜고 `convCards`가 카드로 묶어요.
 - 상태: 섹션 라벨 `진행 중`, `프로젝트`, `메일 · 카카오톡`. 더 보기 `프로젝트 ${n}개 더 보기`. 읽음 처리 `${n}개 읽음 처리`(title `답이 필요한 대화는 그대로 둬요`), 성공 토스트 `대화 ${n}개를 읽음으로 표시했어요`, 실패 `${n}개를 읽음으로 표시하지 못했어요: ...`(카운트는 되돌리고 `convLoad`로 다시 읽음). 행 상태: 안 읽음(`.unread`, 배지 `nb` aria `읽지 않은 메시지 ${n}개`), 선택(`.on`, `aria-current`), 마지막 글 없음(`.none`), 답변 필요 점(`dot warn` aria `답변 필요`). 세션 행은 `sessionStatus` 배지. 메일 카드 행: 이름 없으면 `(제목 없음)`, 힌트 `${보낸이} · 답장 초안이 기다려요`, 칩 `미답장`, 최대 5개. 목록 로딩 실패 시 문구 없이 5초 뒤 `/api/conversations` 재시도(`CV.failed`). 모니터링에서 연 대화는 같은 `#chat-convo`가 `모니터링 목록`(aria)으로 바뀌고 `monSideNodes`가 그려요. 폰(`max-width:1099px`)은 `chatList`가 켜진 때만 목록 전체 화면(`convListing`), 데스크톱(`>=1100px`)은 목록이 왼쪽 패널로 항상 보여요. 다른 컴퓨터 변형: 메일은 `!PQ.of.has(t)`인 것만 대기 카드에 넣어요. 종료 세션 묶음 행(`endedGroup`)과 `r.empty`(`.cv-empty`) 문구는 이 파일 밖이라 코드에서 확인 못 함.
@@ -498,7 +498,7 @@ dotz 웹앱의 화면은 `web/js/03-screens.js`의 `SCREENS` 표에 한 줄씩 �
 - 목적: 열린 대화의 이름, 상태, 그 대화의 동작(세션 메뉴, 프로젝트 메뉴, 설정 앱 더보기)을 보여 줘요.
 - 구성: 넓은 화면은 `#cv-head.cv-head`(`.cv-hd-b`의 `.cv-hd-t` 제목 + `.cv-hd-s` 상태, 오른쪽 `.cv-hd-a` 동작). 폰은 앱바 `#title`에 대화 이름, `#back` 뒤로, `#cvmenu`(세션 메뉴), `#pjmenu`(프로젝트 메뉴). 모니터링에서 연 대화(`monCtx`)는 아바타+이름+상태 줄 형태예요. 넓은 화면의 뒤로 화살표는 앱바의 `‹ 모니터링`(`#back.mon-up`) 하나뿐이에요.
 - 기능: 앱바의 `‹ 모니터링`(`#back`, aria `모니터링 목록으로`)은 보던 목록(`MON.sel`)으로 돌아가요. 세션 메뉴 `button.cvmenu`(aria `세션 메뉴`)는 `homeMenu`를 열어요. 프로젝트 메뉴는 `pmMenuButton`. 설정 대화는 `asMoreBtn`. 알림 종은 `#bell`(title `알림 (⌘/)` 또는 `알림 (Ctrl+/)`)이 `nscGo`로 알림 화면을 열어요.
-- 상태: 상태 줄 문구는 `알림`=`경고와 결정 요청`, `작업 기록`=`야간 정리와 세션 진행 기록`(`FIXED_DESC`), 메일 대화는 보낸 사람 또는 `메일`, 설정 대화는 `말로 설정을 바꾸고 적용을 눌러요`, 살아 있는 세션은 `statusKo(status)`, 종료된 세션은 `종료됨`. 알림 대화(`target==="alert"`)는 `#v-chat.no-composer`로 입력창이 사라져요. 폰에서 대화 안(`convOnPhone`)일 때만 `#cvmenu`/`#pjmenu`가 보이고 앱바는 `back`/`cvconv` 클래스를 가져요. 넓은 화면의 모니터링 대화는 `#back`이 `‹ 모니터링 목록으로`(aria `모니터링 목록으로`) 모양(`mon-up`)이에요. 미디어쿼리 변화(`max-width:1099px`)에서 `convChrome`이 다시 그려요.
+- 상태: 상태 줄 문구는 `알림`=`경고와 결정 요청`, `작업내역`=`야간 정리와 세션 진행 기록`(`FIXED_DESC`), 메일 대화는 보낸 사람 또는 `메일`, 설정 대화는 `말로 설정을 바꾸고 적용을 눌러요`, 살아 있는 세션은 `statusKo(status)`, 종료된 세션은 `종료됨`. 알림 대화(`target==="alert"`)는 `#v-chat.no-composer`로 입력창이 사라져요. 폰에서 대화 안(`convOnPhone`)일 때만 `#cvmenu`/`#pjmenu`가 보이고 앱바는 `back`/`cvconv` 클래스를 가져요. 넓은 화면의 모니터링 대화는 `#back`이 `‹ 모니터링 목록으로`(aria `모니터링 목록으로`) 모양(`mon-up`)이에요. 미디어쿼리 변화(`max-width:1099px`)에서 `convChrome`이 다시 그려요.
 - 데이터: 읽는 것은 `targetInfo`, `MAILS`, `S.lanes` 등 메모리 상태뿐이에요. 프로젝트 대화면 `prjLoad`(프로젝트 목록)를 한 번 불러와요.
 - 근거: web/js/31-conversations.js `convPaintHead`, 31-conversations.js(메뉴 버튼), `convOnPhone`, `convTitle`, `convChrome`, 31-conversations.js(미디어쿼리 리스너), 31-conversations.js(종).
 - css: web/css/10-conversations.css(`.cv-head`, `.cv-hd-*`), web/css/16-result-card.css(`.appbar.cvconv h1` 2줄 말줄임, `max-width:1099px`), 18-app-settings.css.
@@ -513,10 +513,10 @@ dotz 웹앱의 화면은 `web/js/03-screens.js`의 `SCREENS` 표에 한 줄씩 �
 - css: web/css/10-conversations.css(`.cv-new`), 03-base.css(`.tl-in`, `max-width:639px`), 07-chat.css.
 
 ### 대화 대상 전환 칩과 대화/로그 토글
-- 목적: 헤더에서 대화 대상(비서, 알림, 작업 기록, 프로젝트, 세션)을 바꾸고 같은 세션을 대화 또는 로그로 봐요.
+- 목적: 헤더에서 대화 대상(비서, 알림, 작업내역, 프로젝트, 세션)을 바꾸고 같은 세션을 대화 또는 로그로 봐요.
 - 구성: 각 `.thead`(`#thead` 등) 안에 `div.tsw[role=group][aria-label=대화 대상]`(칩 `button.tchip`: `.dot`, `.tx`, `.sb`, `.nb`; 구분선 `.tsep`; 접힘 `.tmore`)와 `button.sel.tdrop`(드롭다운), 오른쪽 `#vtog`(대화/로그 아이콘 버튼).
 - 기능: 칩 탭은 `pickTarget`. 칩 끌어다 놓기로 순서 변경(`dragItem`/`moveInOrder`, `localStorage dotz-order`; 비서와 고정 대상은 안 끌려요). 드롭다운은 `showMenu`(프로젝트 아래 그 세션을 들여쓰기). `종료된 세션 N` 항목은 `endedOpen=true; go("chat","list")`. 넓은 화면은 칩이 넘치면 `fitChips`가 선택된 칩만 남기고 `더 보기 N` 칩으로 접어요. `#vtog` 탭은 `go("activity")`/`go("chat")`.
-- 상태: 칩 title은 확인 필요면 `${attnLabel} · ${status}`. 서브에이전트 `서브 ${n}`(title `서브에이전트`). 안 읽음 `99+` 상한. 드롭다운 aria `대화 대상: ${이름}`, 다른 대상 안 읽음 합계 title `다른 대상의 새 메시지`, 확인 필요 `다른 대상 확인 필요 ${n}개`. 접힘 칩 `더 보기 ${n}`(확인 필요 개수 title `확인 필요 ${n}개`). 메뉴 헤더 `프로젝트`, `프로젝트 없음`, 항목 `종료된 세션 ${n}`(sub `기록 보기 · 재개`). 토글 title/aria `대화 보기` 또는 `로그 보기`, 로그 보기 중 안 읽음 점 `.ud`. 토글은 `LOG_VIEW` 꺼짐, `.tv` 없음, 목록 보기, 고정 대상(알림/작업 기록)이면 숨겨요. 폰은 칩을 숨기고 드롭다운을 써요(`.thead.lanev .tdrop.sel`이 `max-width:639px`에서 112px 상한). 데스크톱 터치(`pointer:coarse`)는 칩 36px.
+- 상태: 칩 title은 확인 필요면 `${attnLabel} · ${status}`. 서브에이전트 `서브 ${n}`(title `서브에이전트`). 안 읽음 `99+` 상한. 드롭다운 aria `대화 대상: ${이름}`, 다른 대상 안 읽음 합계 title `다른 대상의 새 메시지`, 확인 필요 `다른 대상 확인 필요 ${n}개`. 접힘 칩 `더 보기 ${n}`(확인 필요 개수 title `확인 필요 ${n}개`). 메뉴 헤더 `프로젝트`, `프로젝트 없음`, 항목 `종료된 세션 ${n}`(sub `기록 보기 · 재개`). 토글 title/aria `대화 보기` 또는 `로그 보기`, 로그 보기 중 안 읽음 점 `.ud`. 토글은 `LOG_VIEW` 꺼짐, `.tv` 없음, 목록 보기, 고정 대상(알림/작업내역)이면 숨겨요. 폰은 칩을 숨기고 드롭다운을 써요(`.thead.lanev .tdrop.sel`이 `max-width:639px`에서 112px 상한). 데스크톱 터치(`pointer:coarse`)는 칩 36px.
 - 데이터: 상태 `S.lanes`, 이벤트로 오는 안 읽음 수. 따로 API 없음.
 - 근거: web/js/16-target-switcher-conversation.js `renderBars`, `fitChips`, `moveInOrder`, `dragItem`.
 - css: web/css/03-base.css(`.tchip`, `.tsw`, `.tdrop`, `.tmore`), 10-conversations.css(`.tsw`/`.tdrop`), 22-shell.css 및 07-chat.css(`#vtog`).
@@ -616,7 +616,7 @@ dotz 웹앱의 화면은 `web/js/03-screens.js`의 `SCREENS` 표에 한 줄씩 �
 - 목적: 오너의 답을 기다리는 질문(세션의 `pendingAsk`, `[ask]` 메시지, `결정:` 선택 블록)을 입력창 위에 붙여 번호를 눌러 답하게 해요.
 - 구성: `section#dcard.dcard`(`aria-label=답변 필요`): 머리 `.dc-hd`(`.dc-meta`의 `확인 필요`(`.dc-ey`) + `답 기다림`(`tag warn dc-wt`), 질문 `mdNode .dc-q`, 정할 것 `.dc-decide`, 접기 버튼 `.dc-fold`), 본문 `.dc-body`(초안 `.dc-draft`, 선택지 `button.dc-row`(`.dc-key` 번호, `.dc-lb`, `.dc-tag 추천`, `.dc-ds` 설명), 여러 결정이면 `.dc-sub` 소제목과 `button.dc-send`, 직접 입력 `.dc-edit`), 상태 줄 `.dc-st`.
 - 기능: 선택지 탭은 `pickOption`. 결정이 하나면 바로 답(`answerDecision`: 알림 경로 `ntPost` 또는 `POST /api/message` with `picks`, `reply_to`). 결정이 여럿이면 선택만 표시(`✓`)하고 모두 고른 뒤 `보내기`(`dcSendAll`, 문장 `결정 답: 1) ... · 2) ...`). 알림 그룹(`decisionGroup`)은 하나씩 즉시 답하고 그 블록이 빠져요(`answerEach`). 이유가 필요한 선택지(이름 끝 ` …`, `안됨/아니/고치기/수정/다른` 시작, 설명이 글을 요구)는 입력칸(`editNode`)을 먼저 열어요. 접기 `.dc-fold`(aria `접기`/`펼치기`). 보낸 뒤 카드는 바로 접혀 사라지고 기록은 대화에 남아요(`dcLeave`, `motionOut`).
-- 상태: 상태 줄 `보내는 중…`, `보냈어요 · 처리하는 중`, 초안 고치기 선택 뒤 `고치는 중…`. 보낸 뒤에는 고른 행만 남아요(초안 카드 제외). 입력칸 placeholder `이유나 내용을 적어 주세요`(aria `자세한 내용`), 버튼 `돌아가기`와 `${옵션}(으)로 답하기`. 초안 카드 전용 버튼은 아래 시트 항목 참조. 실패 시 토스트로 오류, 고른 값은 유지(`DC.picks`). 알림/작업 기록 대화에서는 카드를 붙이지 않고 시트로 열어요(`isFixedT`). 세션이 종료되고 재개 불가면 카드 없음. 같은 대화 안에서 이미 답이 있는 질문은 카드 없음. 새로 도착한 카드만 위로 올라오는 애니메이션(`motionIn`), 첫 그림과 대화 전환 직후는 없음. 입력창 placeholder가 `번호를 누르거나 직접 입력해 주세요`로 바뀌어요.
+- 상태: 상태 줄 `보내는 중…`, `보냈어요 · 처리하는 중`, 초안 고치기 선택 뒤 `고치는 중…`. 보낸 뒤에는 고른 행만 남아요(초안 카드 제외). 입력칸 placeholder `이유나 내용을 적어 주세요`(aria `자세한 내용`), 버튼 `돌아가기`와 `${옵션}(으)로 답하기`. 초안 카드 전용 버튼은 아래 시트 항목 참조. 실패 시 토스트로 오류, 고른 값은 유지(`DC.picks`). 알림/작업내역 대화에서는 카드를 붙이지 않고 시트로 열어요(`isFixedT`). 세션이 종료되고 재개 불가면 카드 없음. 같은 대화 안에서 이미 답이 있는 질문은 카드 없음. 새로 도착한 카드만 위로 올라오는 애니메이션(`motionIn`), 첫 그림과 대화 전환 직후는 없음. 입력창 placeholder가 `번호를 누르거나 직접 입력해 주세요`로 바뀌어요.
 - 데이터: `POST /api/message`(text, picks, reply_to, lane/project/mail/conv, mode), 알림 경로 `ntPost`, 읽는 쪽 `NT.items`(알림), 세션 `pendingAsk`.
 - 근거: web/js/10-decision-card.js `parseChoices`, `decisionGroup`, `decisionOf`, `decisionOne`, `answerDecision`, `pickOption`, `answerEach`, `dcSendAll`, `multiNodes`, `renderDecision`, `dcLeave`, `paintDecision`, `dcSig`. 정규식.
 - css: web/css/07-chat.css(`#dcard`, `.dc-*` `pointer:coarse`), 14-overlay.css(`.dc-row` 시트용), 01-tokens.css.
@@ -792,10 +792,10 @@ dotz 웹앱의 화면은 `web/js/03-screens.js`의 `SCREENS` 표에 한 줄씩 �
 - css: web/css/03-base.css(`.snack`; `max-width:639px`).
 
 ### 떠다니는 알림 카드 (우상단 `.ntf`)
-- 목적: 새 알림/세션 보고/작업 기록을 우상단 카드로 잠깐 띄워요.
+- 목적: 새 알림/세션 보고/작업내역을 우상단 카드로 잠깐 띄워요.
 - 구성: `.ntf-box[aria-live=polite]` 안 `.ntf`(점 `.dot`, 이름 `.nm`, 시각 `.tm`, 본문 첫 줄 `.bd2` 240자, 닫기 `button.x` `×`).
 - 기능: 카드 탭은 `noticeOpen`으로 해당 항목 열기. x는 닫기. 최대 3개(넘치면 가장 오래된 것 닫음). 닫힌 카드는 `localStorage dotz-ntf-done`(최대 300)에 저장해 재접속/새로고침에 다시 안 떠요.
-- 상태: 제목은 `e.title`, 없으면 세션 제목 또는 `세션`, 알림 대화(`alert`)는 `알림`, 그 밖은 `${봇} 작업 기록`. 4초 뒤 자동으로 닫히는데, 탭이 안 보이거나 창 포커스가 없으면 멈추고(복귀하면 남은 시간만큼) 카드에 호버해도 멈춰요. 알림 카드는 `role=alert`. `needs` 종류는 그 대화가 더 이상 오너를 필요로 하지 않으면 바로 사라져요. 폰(`max-width:639px`)은 `top: 8px + safe-area`.
+- 상태: 제목은 `e.title`, 없으면 세션 제목 또는 `세션`, 알림 대화(`alert`)는 `알림`, 그 밖은 `${봇} 작업내역`. 4초 뒤 자동으로 닫히는데, 탭이 안 보이거나 창 포커스가 없으면 멈추고(복귀하면 남은 시간만큼) 카드에 호버해도 멈춰요. 알림 카드는 `role=alert`. `needs` 종류는 그 대화가 더 이상 오너를 필요로 하지 않으면 바로 사라져요. 폰(`max-width:639px`)은 `top: 8px + safe-area`.
 - 데이터: 라이브 이벤트(`notify(e)`).
 - 근거: web/js/02-basic-markdown.js `notify`.
 - css: web/css/03-base.css(`.ntf-box`, `.ntf`).
@@ -1755,7 +1755,7 @@ dotz 웹앱의 화면은 `web/js/03-screens.js`의 `SCREENS` 표에 한 줄씩 �
 ### 앱과 알림 (`#notifications`, `pushSection`)
 - 목적: 이 기기의 푸시 알림 켜기/끄기, 앱 설치, 알림 종류별 스위치를 한 화면에서 정해요.
 - 구성: `#notifications.st-page` 안에 `.sec` `이 기기` + 목록, `.sec` `알림 종류` + 목록(`appNotifyRows`가 데이터를 받은 뒤에만).
-- 기능: `홈 화면에 추가` 줄의 `앱 설치` 버튼(`installApp`, 설치된 앱이 아닐 때만). 앱이 설치된 기기는 게이트웨이마다 `{이름 또는 이 컴퓨터} 알림` 스위치(`pushGw` -> `PUT /api/push/gateways`). 앱이 없는 브라우저는 `알림 켜기`(`pushEnable`). 구독 중이면 `알림 확인` 행에 `테스트 알림`(`pushTest`)과 `끄기`(`pushDisable`). 알림 종류 6개 스위치(`notifyRows`, `appNotifySet` -> `PUT /api/push/classes`): `답변 필요`(질문 · 승인 · 로그인), `경고`(게이트웨이 오류 · 로그인 끊김 · 감시 반복 실패), `결과`(세션 · 작업 완료 · 실패), `새 소식`(메일 · 카톡 · 댓글 · 감시 · 예약), `대화`(보고 있지 않은 대화의 새 답), `진행`(진행 중 보고 · 작업 기록).
+- 기능: `홈 화면에 추가` 줄의 `앱 설치` 버튼(`installApp`, 설치된 앱이 아닐 때만). 앱이 설치된 기기는 게이트웨이마다 `{이름 또는 이 컴퓨터} 알림` 스위치(`pushGw` -> `PUT /api/push/gateways`). 앱이 없는 브라우저는 `알림 켜기`(`pushEnable`). 구독 중이면 `알림 확인` 행에 `테스트 알림`(`pushTest`)과 `끄기`(`pushDisable`). 알림 종류 6개 스위치(`notifyRows`, `appNotifySet` -> `PUT /api/push/classes`): `답변 필요`(질문 · 승인 · 로그인), `경고`(게이트웨이 오류 · 로그인 끊김 · 감시 반복 실패), `결과`(세션 · 작업 완료 · 실패), `새 소식`(메일 · 카톡 · 댓글 · 감시 · 예약), `대화`(보고 있지 않은 대화의 새 답), `진행`(진행 중 보고 · 작업내역).
 - 상태: 푸시 불가 브라우저 `이 브라우저는 알림을 지원하지 않아요. Chrome이나 설치한 앱에서 켤 수 있어요`, iPhone이면서 설치 전 `iPhone은 홈 화면에 추가한 앱에서 알림을 켤 수 있어요`. 권한 거부 `알림 권한이 막혀 있어요`. 게이트웨이가 응답하지 않으면 스위치 대신 `연결 안 됨`. 토스트: `알림을 켰어요`, `알림을 껐어요`, `테스트 알림을 보냈어요`, 권한이 꺼져 있으면 `알림 권한이 꺼져 있어요. 기기 설정에서 {봇 이름} 알림을 허용해 주세요`. `알림 종류` 구역은 `/api/push/classes` 응답이 오기 전과 실패했을 때 아예 안 그려요(`APPN.v` null이면 빈 배열). 스위치를 누르면 먼저 값을 바꿔 보여 주고 실패하면 되돌리며 토스트로 오류를 보여요. 알림 종류 아래 설명 줄: `웹앱과 휴대폰에 같이 적용돼요. 꺼도 알림 목록에는 남아요. 메신저 알림은 설정 → 메신저의 각 연결에서 따로 정해요.` 폰 vs 데스크톱 전용 분기는 코드에 없어요(설치 방법만 UA로 iOS/Android/그 외로 갈라요).
 - 데이터: `GET /api/push[?endpoint=]`, `POST /api/push/subscribe`, `POST /api/push/unsubscribe`, `POST /api/push/test`, `POST /api/push/presence`, `GET|PUT /api/push/gateways`, `POST /api/push/claim`, `GET|PUT /api/push/classes`. SSE 직접 구독은 없어요.
 - 근거: web/js/23-installable-app-web.js `pushSection`, `pushLoad`, `pushGateways`, `pushGw`, `pushEnable`, `pushDisable`, `pushTest`; web/js/24-settings-update.js `NOTIFY_CLASSES` `notifyRows` `appNotifyLoad` `appNotifySet` `appNotifyRows`; web/js/22-settings-pages.js `SET_PAGE.notifications`.

@@ -204,8 +204,8 @@ function fromOutbox(e: HubEvent, asks = false): void {
 		}
 		// The gateway's own status lines there (a restart, a model fallback, an account switch, a harness upgrade) are a record, not news: born read.
 		// A gateway [ask] / [fail] there still waits, and so does a daily digest with its own title (야간 정리, 토큰 점검).
-		const title = systemTitle(text, "작업 기록");
-		const status = e.source === "gateway" && tone !== "ask" && tone !== "fail" && title === "작업 기록";
+		const title = systemTitle(text, "작업내역");
+		const status = e.source === "gateway" && tone !== "ask" && tone !== "fail" && title === "작업내역";
 		return void upsert({ kind: "worklog", tone, title, text, open: target === "worklog" ? "worklog" : "main", key, read: restart || status, ...resultsOf(e.text), ...worklogKind(e), at: e.ts });
 	}
 	if (target === "alert") {
@@ -341,7 +341,7 @@ function fromAnswer(e: HubEvent): void {
 	// A closing report (its session already exited) may update the text of a notice the owner has read, but not re-open it.
 	const owner = conv.startsWith("lane:") ? conv.slice(5) : conv.startsWith("ch:") ? channelLanes().get(conv) : undefined;
 	const closing = [owner, lane ? src.slice(5) : undefined].some(name => name !== undefined && stoppedSince(name) !== undefined);
-	const title = conv.startsWith("lane:") ? laneTitle(conv.slice(5)) : conv === "alert" ? "알림" : conv === "worklog" ? "작업 기록" : channelTitle(conv);
+	const title = conv.startsWith("lane:") ? laneTitle(conv.slice(5)) : conv === "alert" ? "알림" : conv === "worklog" ? "작업내역" : channelTitle(conv);
 	upsert({ kind: "message", tone: "", title, text: preview.length > MESSAGE_PREVIEW ? `${preview.slice(0, MESSAGE_PREVIEW - 1)}…` : preview, open: conv, key: `msg:${conv}`, unread: true, src: conv, at: e.ts, read: closing && items.find(n => n.key === `msg:${conv}`)?.read === true });
 }
 

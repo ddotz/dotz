@@ -32,7 +32,7 @@ flowchart LR
   subgraph a_core["core"]
     c_core(["core code"])
     s_accounts["accounts: 계정"]
-    s_activity["activity: 채팅 작업 기록"]
+    s_activity["activity: 채팅 작업내역"]
     s_apps["apps: 앱"]
     s_cardform["cardform: 카드 양식"]
     s_chat["chat: 채팅"]

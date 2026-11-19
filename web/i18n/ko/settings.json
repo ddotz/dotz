@@ -375,7 +375,7 @@
   "settings.notify.news": "메일 · 카톡 · 댓글 · 감시 · 예약",
   "settings.notify.conv": "보고 있지 않은 대화의 새 답",
   "settings.notify.log_label": "진행",
-  "settings.notify.log": "진행 중 보고 · 작업 기록",
+  "settings.notify.log": "진행 중 보고 · 작업내역",
   "settings.notify.stays": "꺼도 목록에는 남아요.",
   "settings.fb.saved_off": "저장했어요. API 키 단계는 꺼진 채라 켜야 써요",
   "settings.fb.acc_auto": "자동 전환 · 지금 {name}",

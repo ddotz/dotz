@@ -184,7 +184,7 @@ export async function writeSavedSummary(exec: Exec, dir: string, dataDir: string
 	mkdirSync(folder, { recursive: true });
 	const file = join(folder, `local-${saved.tag}.md`);
 	writeFileSync(file, text);
-	const turn = `[dotz 업데이트] 이 설치에서 dotz 코드가 직접 고쳐져 있어서, 업데이트 전에 로컬 커밋을 보관하고 새 버전으로 바꿨어요. 요약은 ${file}에 있어요.\n${text}\n개인 설정에 해당하는 것은 ~/.dotz/custom, features, RULES.md에 다시 만들어 주세요. 개인 몰인지 분명하지 않은 것은 오너에게 물어보세요. 모두에게 필요한 수정은 짧은 보고(작업로그)로 남기세요. dotz 코드는 고치지 마세요.`;
+	const turn = `[dotz 업데이트] 이 설치에서 dotz 코드가 직접 고쳐져 있어서, 업데이트 전에 로컬 커밋을 보관하고 새 버전으로 바꿨어요. 요약은 ${file}에 있어요.\n${text}\n개인 설정에 해당하는 것은 ~/.dotz/custom, features, RULES.md에 다시 만들어 주세요. 개인 몰인지 분명하지 않은 것은 오너에게 물어보세요. 모두에게 필요한 수정은 짧은 보고(작업내역)로 남기세요. dotz 코드는 고치지 마세요.`;
 	return { file, text, turn };
 }
 

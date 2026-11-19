@@ -50,7 +50,7 @@ export function notices(): FixNotice[] {
 	for (let i = 0; i < 12; i++) list.push(decision(i, projectTarget(i * 7), 25 * i + 8, `프로젝트 ${i * 7 + 1}: 배포할까요?`, `테스트가 모두 통과했어요. 지금 배포할까요?\n\n결정:\n1) 진행해요\n2) 보류\n3) 다르게`));
 	for (let i = 0; i < 3; i++) { const t = at(70 * i + 12); list.push({ id: id("a"), kind: "alert", tone: "ask", title: `계정 ${i + 1} 로그인이 풀렸어요`, text: "다시 로그인할까요?", open: "alert", src: "alert", read: false, ts: t, updated: t, at: t }); }
 	for (let i = 0; i < 6; i++) { const t = at(55 * i + 14); list.push({ id: id("f"), kind: "alert", tone: "fail", title: `세션 ${i + 1}이 멈췄어요`, text: "빌드가 실패해서 멈췄어요. 로그를 확인해 주세요", open: "alert", src: "alert", read: i > 1, ts: t, updated: t, at: t }); }
-	for (let i = 0; i < 10; i++) { const t = at(100 * i + 16); list.push({ id: id("l"), kind: "worklog", tone: "", title: "작업 기록", text: `프로젝트 ${i + 1}의 밤 정리를 마쳤어요`, open: "worklog", src: "worklog", read: i > 3, ts: t, updated: t, at: t }); }
+	for (let i = 0; i < 10; i++) { const t = at(100 * i + 16); list.push({ id: id("l"), kind: "worklog", tone: "", title: "작업내역", text: `프로젝트 ${i + 1}의 밤 정리를 마쳤어요`, open: "worklog", src: "worklog", read: i > 3, ts: t, updated: t, at: t }); }
 	for (let i = 0; i < 5; i++) { const t = at(120 * i + 18); list.push({ id: id("r"), kind: "result", tone: "done", title: `세션 ${i + 1}`, text: "끝났어요", open: `lane:s${i + 1}`, src: `lane:s${i + 1}`, read: i > 1, ts: t, updated: t, at: t }); }
 	return list.sort((a, b) => b.updated.localeCompare(a.updated));
 }

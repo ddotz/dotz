@@ -54,7 +54,7 @@ const live = (state: "open" | "answered"): N[] => [
 	{ id: "eb0e4c1e", ts: "2026-10-22T00:32:40.030Z", updated: "2026-10-22T06:34:23.811Z", kind: "message", tone: "", title: "알림", open: "alert", src: "alert", at: "2026-10-22T06:34:23.811Z", key: "msg:alert", read: false },
 	{ id: "1f3d708d", ts: "2026-10-22T06:34:12.758Z", updated: "2026-10-22T06:34:12.758Z", kind: "alert", tone: "ask", title: "알림", open: "alert", src: "alert", at: "2026-10-22T06:34:12.758Z", read: false },
 	{ id: "2989a018", ts: "2026-10-21T13:36:56.683Z", updated: "2026-10-22T06:32:58.531Z", kind: "message", tone: "", title: "땃쥐", open: "main", src: "main", at: "2026-10-22T06:32:58.531Z", key: "msg:main", read: true },
-	{ id: "9973c0d6", ts: "2026-10-22T06:01:21.759Z", updated: "2026-10-22T06:01:21.759Z", kind: "worklog", tone: "", title: "작업 기록", open: "worklog", src: "worklog", at: "2026-10-22T06:01:21.759Z", read: true },
+	{ id: "9973c0d6", ts: "2026-10-22T06:01:21.759Z", updated: "2026-10-22T06:01:21.759Z", kind: "worklog", tone: "", title: "작업내역", open: "worklog", src: "worklog", at: "2026-10-22T06:01:21.759Z", read: true },
 ];
 
 describe("a notice that links to an open decision", () => {

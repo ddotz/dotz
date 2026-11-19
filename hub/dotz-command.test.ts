@@ -121,6 +121,32 @@ describe("launcher", () => {
 		expect(usage.err).toContain("restart");
 	});
 
+	test("doctor goes to the doctor's dry run, --json to its result; the usage names it", async () => {
+		const pkg = installed();
+		expect(await run(["doctor"], dir, pkg)).toEqual({ code: 0, out: "hub/doctor-cli.ts", err: "" });
+		expect(await run(["doctor", "--json"], dir, pkg)).toEqual({ code: 0, out: "hub/doctor-cli.ts --json", err: "" });
+		expect((await run(["doctor", "--fix"], dir, pkg)).err).toContain("doctor [--json]");
+	});
+
+	test("doctor prints the owner's report and saves and posts nothing", async () => {
+		mkdirSync(join(dir, "secrets"), { recursive: true });
+		writeFileSync(join(dir, "secrets", "hub-token"), "t");
+		const script = join(home, "launcher");
+		writeFileSync(script, launcherText({ dir, pkg: join(import.meta.dir, ".."), bun: process.execPath }), { mode: 0o755 });
+		const doctor = async (...args: string[]) => {
+			const p = Bun.spawn([script, "doctor", ...args], { stdout: "pipe", stderr: "pipe", cwd: home, env: { ...process.env, HOME: home } });
+			const [out, code] = await Promise.all([new Response(p.stdout).text(), p.exited]);
+			return { out, code };
+		};
+		const report = await doctor();
+		expect(report.code).toBe(0);
+		expect(report.out).toMatch(/^(닥터 점검:|Doctor check:)/);
+		expect(report.out).not.toContain("RESULT");
+		const json = await doctor("--json");
+		expect(JSON.parse(json.out)).toMatchObject({ findings: 0 });
+		for (const written of ["doctor.json", "outbox.jsonl", "notices.json"]) expect(lstatSync(join(dir, written), { throwIfNoEntry: false })).toBeUndefined();
+	});
+
 	test("an install without the onboard command is one line and exit 1, not a shell error", async () => {
 		const r = await run(["status"], dir, join(home, "missing"));
 		expect(r.code).toBe(1);

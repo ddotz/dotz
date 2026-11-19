@@ -10,7 +10,7 @@ JANDI에서 다음 토픽을 만듭니다.
 - 메인 대화: dotz와 일상 대화를 나누는 토픽입니다.
 - 프로젝트 토픽: 프로젝트마다 하나씩 만듭니다. 토픽 하나가 dotz 프로젝트 채널(`ch:<채널 ID>`) 하나와 연결됩니다.
 - 알림: 경고와 선택 질문(`[ask]`)이 올라오는 토픽입니다.
-- 작업 기록(선택): 작업 기록을 따로 모아 보고 싶을 때만 만듭니다.
+- 작업내역(선택): 작업내역을 따로 모아 보고 싶을 때만 만듭니다.
 
 ## 2. 토픽마다 웹훅 두 개 만들기
 
@@ -39,7 +39,7 @@ Outgoing Webhook 사용 방법은 JANDI 안내를 참고합니다: https://suppo
     { "id": "main", "name": "메인 대화", "kind": "main", "outgoing_token": "<토큰>", "incoming_url": "<Incoming Webhook URL>" },
     { "id": "proj-web", "name": "웹 프로젝트", "kind": "project", "project": "ch:123456789", "outgoing_token": "<토큰>", "incoming_url": "<URL>" },
     { "id": "alert", "name": "알림", "kind": "alert", "outgoing_token": "<토큰>", "incoming_url": "<URL>" },
-    { "id": "worklog", "name": "작업 기록", "kind": "worklog", "outgoing_token": "<토큰>", "incoming_url": "<URL>" }
+    { "id": "worklog", "name": "작업내역", "kind": "worklog", "outgoing_token": "<토큰>", "incoming_url": "<URL>" }
   ]
 }
 ```

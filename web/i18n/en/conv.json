@@ -34,7 +34,7 @@
   "conv.nt.no_msg": "Can't find that message",
   "conv.nt.handled": "This alert was already handled",
   "conv.nt.ignore_aria": "Ignore {title}",
-  "conv.worklog": "Work log",
+  "conv.worklog": "Worklog",
   "conv.session_named": "Session {name}",
   "conv.nt.no_news": "Can't find that update",
   "conv.nt.sent": "Answer sent",

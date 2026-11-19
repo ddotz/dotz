@@ -240,7 +240,7 @@ async function interactive(): Promise<Answers> {
 	const name = askValid("봇 이름 (2~32자, 예: 루미, 모모, 비서)", priorIdentity.name, v => v.length >= 2 && v.length <= 32, "2~32자로 적어 주세요");
 	const character = choose("성격을 골라 주세요", CHARACTERS, priorIdentity.character);
 	const tone = choose("말투를 골라 주세요", TONES, priorIdentity.tone);
-	const notices = choose("작업로그·알림 문체를 골라 주세요 (나중에 대화에서 '알림 문체 STE로'처럼 바꿀 수 있어요)", NOTICES, priorIdentity.notices ?? "");
+	const notices = choose("작업내역·알림 문체를 골라 주세요 (나중에 대화에서 '알림 문체 STE로'처럼 바꿀 수 있어요)", NOTICES, priorIdentity.notices ?? "");
 	const address = ask("봇이 주인을 부르는 호칭 (예: 형, 대표님, 이름. 없으면 Enter: 호칭 없이 말해요)", priorIdentity.address ?? "", false);
 	const avatar = askValid("프로필 이미지 파일 경로 (png/jpg, 없으면 Enter)", priorIdentity.avatar ?? "", v => existsSync(expandHome(v)), "그 경로에 파일이 없어요", false);
 

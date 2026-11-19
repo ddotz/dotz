@@ -37,7 +37,7 @@ const notices = [
 	{ ...base, id: "dec", kind: "decision", tone: "ask", cls: "ask", title: "배포할까요?", open: "main", src: "main", ts: ASK_AT, updated: ASK_AT, at: ASK_AT, decision },
 	{ ...base, id: "ml", kind: "watch", cls: "news", title: "김철수", text: "견적서", open: "mail:abc", src: "mail:abc", key: "mail:abc", ts: MAIL_AT, updated: MAIL_AT, at: MAIL_AT },
 	{ ...base, id: "al", kind: "alert", tone: "fail", cls: "alert", title: "게이트웨이 오류", open: "alert", src: "alert", ts: ALERT_AT, updated: ALERT_AT, at: ALERT_AT },
-	{ ...base, id: "wl", kind: "worklog", tone: "done", cls: "result", title: "작업 기록", open: "worklog", src: "worklog", key: "worklog:1", ts: WORK_AT, updated: WORK_AT, at: WORK_AT },
+	{ ...base, id: "wl", kind: "worklog", tone: "done", cls: "result", title: "작업내역", open: "worklog", src: "worklog", key: "worklog:1", ts: WORK_AT, updated: WORK_AT, at: WORK_AT },
 	{ ...base, id: "wls", kind: "result", tone: "done", cls: "result", title: "빌드 세션", open: "lane:a", src: "lane:a", key: "lane:a", msg: "worklog", ts: WORK2_AT, updated: WORK2_AT, at: WORK2_AT },
 	{ ...base, id: "prj", kind: "message", cls: "conv", title: "프로젝트", open: "ch:1", src: "ch:1", ts: PROJ_AT, updated: PROJ_AT, at: PROJ_AT },
 	{ ...base, id: "set", kind: "message", cls: "conv", title: "디스크 감시", open: "settings:disk", src: "settings:disk", ts: SET_AT, updated: SET_AT, at: SET_AT },

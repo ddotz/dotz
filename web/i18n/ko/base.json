@@ -22,7 +22,7 @@
   "base.claim.verified": "확인됨",
   "base.claim.reported": "보고만 함",
   "base.peer.read_only": "이 컴퓨터에서는 읽기만 돼요",
-  "base.notice.worklog": "{name} 작업 기록",
+  "base.notice.worklog": "{name} 작업내역",
   "base.bot_default": "비서",
   "base.select": "선택",
   "base.select_all": "전체 선택",

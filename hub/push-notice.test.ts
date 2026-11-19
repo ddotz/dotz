@@ -30,9 +30,9 @@ test("results, monitoring news, alerts and unread answers notify; progress, ques
 	expect(noticePush(notice({ kind: "message", title: "프로젝트", open: "ch:9" }))).toMatchObject({ tag: "answer:ch:9", url: "/#chat/ch:9" });
 	expect(noticePush(notice({ kind: "alert", tone: "", title: "알림", open: "alert", text: "모델 제공자 오류(timeout)" }))).toMatchObject({ kind: "alert", title: `${NAME} · 경고`, tag: "alert" });
 	expect(noticePush(notice({ kind: "alert", tone: "", title: "새 버전", open: "settings", key: "self-update" }))).toMatchObject({ kind: "news", url: "/#settings", tag: "update" });
-	expect(noticePush(notice({ kind: "worklog", tone: "fail", title: "작업 기록", open: "worklog" }))).toMatchObject({ kind: "result", title: "작업 기록 · 실패" });
+	expect(noticePush(notice({ kind: "worklog", tone: "fail", title: "작업내역", open: "worklog" }))).toMatchObject({ kind: "result", title: "작업내역 · 실패" });
 	// a finished work log entry is a result too (notice class result)
-	expect(noticePush(notice({ kind: "worklog", tone: "done", title: "작업 기록", open: "worklog" }))).toMatchObject({ kind: "result", title: "작업 기록 · 완료" });
+	expect(noticePush(notice({ kind: "worklog", tone: "done", title: "작업내역", open: "worklog" }))).toMatchObject({ kind: "result", title: "작업내역 · 완료" });
 	// no notification
 	expect(noticePush(notice({ kind: "result", tone: "run", open: "lane:x" }))).toBeUndefined();
 	expect(noticePush(notice({ kind: "worklog", tone: "run" }))).toBeUndefined();

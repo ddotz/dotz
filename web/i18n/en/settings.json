@@ -425,7 +425,7 @@
   "settings.notify.news": "Mail · KakaoTalk · comments · watches · schedules",
   "settings.notify.conv": "New replies in conversations you are not viewing",
   "settings.notify.log_label": "Progress",
-  "settings.notify.log": "Progress reports · work log",
+  "settings.notify.log": "Progress reports · worklog",
   "settings.notify.stays": "Turned-off alerts still appear in the list.",
   "settings.fb.saved_off": "Saved. The API key step stays off until you turn it on",
   "settings.fb.acc_auto": "Auto switch · now {name}",
