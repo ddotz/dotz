@@ -7,7 +7,7 @@ import { createEngine } from "./comments/engine.ts";
 import { realMailLink } from "./comments/mail-link.ts";
 import { commentAdapter } from "./comments/reply-adapter.ts";
 import { commentsDir } from "./comments/store.ts";
-import { approvalHash, createApprovalSender } from "./approval-send.ts";
+import { approvalHash, createApprovalSender, type SendResult } from "./approval-send.ts";
 import { createReplyActions, type ActCtx, type ActInput } from "./reply-actions.ts";
 import { mailAdapter } from "./reply-mail.ts";
 
@@ -76,7 +76,7 @@ const REPLY = "DPOST0001";
 type MailOut = { ok: boolean; message: string; sent: "yes" | "no" | "maybe"; code?: string };
 const line = (sent: string, part: string, code?: string) => `DOTZ_SEND ${JSON.stringify({ sent, ...(code ? { code } : {}), part })}`;
 
-async function world(mailOut: MailOut) {
+async function world(mailOut: MailOut, kept?: { store: { load: () => unknown[]; save: (body: string) => void }; reports: SendResult[] }) {
 	const cdir = commentsDir(dir);
 	mkdirSync(cdir, { recursive: true });
 	const source = { key: "youtube", kind: "youtube", label: "유튜브 댓글", watch: ["*"], autoDraft: false };
@@ -118,10 +118,11 @@ async function world(mailOut: MailOut) {
 			if (done.mail?.state === "failed") return { code: 1, out: `${line("yes", "reply")}\n${line(mailOut.sent, "mail", mailOut.code)}` };
 			return { code: 0, out: line("yes", "reply") };
 		},
-		report: () => undefined,
+		report: r => void kept?.reports.push(r),
 		log: () => undefined,
 		undoMs: () => 0,
 		after: () => undefined,
+		...(kept ? { store: kept.store } : {}),
 	});
 	const acts = createReplyActions({
 		adapters,
@@ -249,4 +250,18 @@ test("나갔어요 on an unsure mail whose draft was closed elsewhere (dropped, 
 		const retry = await acts.act({ ref: id, action: "resolve", as: "retry", hash: approvalHash((await mailAdapter().get(id))!) }, owner);
 		expect(retry.status).toBe(409);
 	}
+});
+
+test("LV-2 a comment draft dropped through the comment engine's own path leaves a failed job: a restart tells nothing, one settle pass removes the job and no note goes out", async () => {
+	const body = { box: JSON.stringify([{ ref: REPLY, conv: "youtube", action: "send", title: `이 답글 올릴까요? (${REPLY})`, state: "failed", reason: { code: "rejected", text: "앱에서 이 글을 받지 않았어요" }, safeToAuto: false, attempts: 3 }]) };
+	const reports: SendResult[] = [];
+	const store = { load: () => JSON.parse(body.box) as unknown[], save: (b: string) => void (body.box = b) };
+	const w = await world(FAILED, { store, reports });
+	w.sender.recover();
+	expect(await w.rows()).toEqual([`comment:${REPLY}:pending:failed`]);
+	expect(w.engine.drop(REPLY).ok).toBe(true);
+	expect(await w.acts.settleOwed()).toBe(1);
+	expect(w.sender.results().filter(r => r.ref === REPLY)).toEqual([]);
+	expect(JSON.parse(body.box)).toEqual([]);
+	expect(reports).toEqual([]);
 });

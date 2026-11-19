@@ -72,6 +72,7 @@ const queue: Item[] = [
 	mail("RFAS01", 29_000, "첨부한 3부 자료 확인해 주세요.", { send: failed("attach_mismatch", "글에서 말한 파일과 붙인 파일이 달라요", ["send_as_is", "redraft", "drop"]) }),
 	mail("RFRT03", 30_000, "내일 오전에 다시 보내 드릴게요.", { send: failed("offline", "인터넷에 연결되지 않았어요", ["retry", "drop"]) }),
 	mail("RUNS01", 31_000, "방금 보낸 메일 확인 부탁드려요.", { send: { state: "unsure", at: NOW, reason: { code: "net_cut", text: "보내는 중에 연결이 끊겼어요" }, attempts: 1, actions: ["resolve_sent", "open_channel", "resolve_retry"] } }),
+	mail("RNAP01", 32_000, "내일 다시 연락드릴게요.", { send: failed("not_approved", "보내기로 고른 기록이 없어요", ["send"]) }),
 ];
 const notice = (id: string, ref: string, labels: string[]) => ({ id, kind: "decision", title: `이 답장 보낼까요? (${ref})`, ts: new Date(NOW).toISOString(), text: "",
 	decision: { to: `mail:${ref}`, state: "open", options: labels.map((label, i) => ({ n: i + 1, label })), draft: { ref, toLabel: "받는이", to: "kim@example.com", body: "다음 주 일정을 보내 드립니다." } } });
@@ -437,6 +438,9 @@ test("every act that sends carries the hash of the version its card showed; a fa
 	expect(await keys(`${card("RFRT01")} .rq-send`)).toEqual(["retry", "fix", "drop"]);
 	expect(await keys(`${card("RFAS01")} .rq-send`)).toEqual(["send-as-is", "fix", "drop"]);
 	expect(await keys(`${card("RUNS01")} .rq-send`)).toEqual(["resolve-sent", "open", "resolve-retry"]);
+	expect(await keys(`${card("RNAP01")} .rq-send`)).toEqual(["send", "fix", "drop"]);
+	await click(`${card("RNAP01")} [data-k=send]`);
+	expect(await acted("RNAP01", "send")).toEqual([{ ref: "RNAP01", action: "send", hash: "RNAP01-v1" }]);
 	await centre(view, card("RFRT03"));
 	await shot(view, "06-failed-1280.png");
 	await click(`${card("RSND01")} [data-k=send]`);

@@ -85,7 +85,7 @@ function cardOwedMail(r: SendResult): void {
 }
 
 export const reportSend = (r: SendResult): void => {
-	markDraftSend(r.conv, r.ref, r.state, r.text, r.until);
+	markDraftSend(r.conv, r.ref, r.state, r.text, r.until, r.reason?.code);
 	showSendOnCard(r.conv, r.ref, r.state, r.text, r.until ? r.until - Date.now() : 0);
 	const send = sendOf(r);
 	broadcast({ ts: now(), kind: "reply", ref: r.ref, ...(send ? { send } : {}) });
@@ -231,17 +231,24 @@ function proveSends(): void {
 		e => log(`comment read-back failed: ${e instanceof Error ? e.message : String(e)}`),
 	);
 }
-/** Boot and every sweep after it: the sends the last run left are taken up (never re-run), unsure comments are read back and proof is asked for every unsure send; a comment reply whose sender died while running is left unsure; a failed or unsure record whose draft was closed elsewhere is cleared (settleOwed). */
+const settleOwedSends = (): Promise<void> => replies.settleOwed().then(() => undefined, e => log(`reply: settle of owed sends failed: ${(e as Error).message}`));
+/** Boot and every sweep after it: the sends the last run left are taken up (never re-run, and a failed or unsure one is held again without a note), a failed or unsure record whose draft was closed elsewhere is cleared (settleOwed) before anything reads back or reports, unsure comments are read back and proof is asked for every unsure send; a comment reply whose sender died while running is left unsure. */
 export function settleSends(): void {
 	if (!sendsBooted) {
 		sendsBooted = true;
 		commentSettleSending();
 		sender.recover();
-		proveSends();
-	} else if (commentSettleStale(draft => claimHolder(claimFile(draft)) === "live")) proveSends();
+		sender.recheck();
+		void settleOwedSends().then(() => {
+			proveSends();
+			settleUnsureCards();
+		});
+		return;
+	}
+	if (commentSettleStale(draft => claimHolder(claimFile(draft)) === "live")) proveSends();
 	sender.recheck();
 	settleUnsureCards();
-	void replies.settleOwed().catch(e => log(`reply: settle of owed sends failed: ${(e as Error).message}`));
+	void settleOwedSends();
 }
 // A send run from a CLI (a session's draft.ts send) failed: the card it answers shows it and the owner hears it, like a send of the gateway's own.
 export function reportCliFailure(ref: string, conv: string, text: string): void {

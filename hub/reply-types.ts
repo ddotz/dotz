@@ -36,7 +36,7 @@ export type Done = { ok: true } | { ok: false; reason: Reason };
 /** A file a draft carries: `digest` is the content fingerprint of a file the store holds locally (staged files), so a same-named swap is a new version. */
 export type FileShown = { name: string; size?: string; digest?: string };
 
-export type OwnerAction = "retry" | "resolve_sent" | "resolve_retry" | "open_channel" | "relogin" | "fix_recipient" | "pick_file" | "pick_account" | "redraft" | "drop" | "send_as_is";
+export type OwnerAction = "retry" | "resolve_sent" | "resolve_retry" | "open_channel" | "relogin" | "fix_recipient" | "pick_file" | "pick_account" | "redraft" | "drop" | "send_as_is" | "send";
 
 /** What every surface shows of one reply (GET /api/reply/queue, the `reply` event). */
 export type ReplyItem = {

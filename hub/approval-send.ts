@@ -147,7 +147,7 @@ export function createApprovalSender(deps: SenderDeps) {
 	// Jobs left sending by an earlier run whose sender may still be running: checked again by `recheck`.
 	const orphans = new Map<string, SendJob>();
 	// `gone`: the draft is no longer pending, so there is nothing left to resolve and the file does not keep it.
-	const set = (j: SendJob, state: SendResult["state"], text = "", hold?: Hold, ended: Ended = {}) => {
+	const set = (j: SendJob, state: SendResult["state"], text = "", hold?: Hold, ended: Ended = {}, quiet = false) => {
 		if ((state === "failed" || state === "unsure") && !spentAlready(kept.get(j.ref)?.state)) gateMark(deps, j, "spent");
 		const keep = state === "queued" || state === "sending" || state === "undo" || ((state === "failed" || state === "unsure") && ended.reason?.code !== "gone");
 		if (keep) kept.set(j.ref, { ref: j.ref, conv: j.conv, action: j.action, title: j.title, ...(j.retry ? { retry: true as const } : {}), ...(j.force ? { force: true as const } : {}), ...(j.hash ? { hash: j.hash } : {}), ...(j.by ? { by: j.by } : {}), state, ...(hold ?? {}), ...ended });
@@ -158,7 +158,7 @@ export function createApprovalSender(deps: SenderDeps) {
 		results.set(j.ref, r);
 		// The oldest finished result goes: one the file still keeps (waiting, sending, failed, unsure) is what a second approval is checked against, so it stays however many wait.
 		if (results.size > KEEP) for (const [ref, old] of results) if (!kept.has(ref)) { results.delete(ref); break; }
-		deps.report(r);
+		if (!quiet) deps.report(r);
 	};
 	const attempts = (ref: string): number => kept.get(ref)?.attempts ?? 0;
 
@@ -361,7 +361,7 @@ export function createApprovalSender(deps: SenderDeps) {
 			for (const { state, approvedAt: _a, wait: _w, reason, safeToAuto, auto, attempts: tries, detail, ...j } of left) {
 				// A failed or unsure send is shown again as it was; a failed one's automatic attempt keeps its schedule.
 				if ((state === "failed" || state === "unsure") && reason && isReasonCode(reason.code)) {
-					set(j, state, reason.text, undefined, { reason, attempts: tries ?? 0, ...(detail ? { detail } : {}), ...(state === "failed" ? { safeToAuto: safeToAuto === true, ...(auto ? { auto } : {}) } : {}) });
+					set(j, state, reason.text, undefined, { reason, attempts: tries ?? 0, ...(detail ? { detail } : {}), ...(state === "failed" ? { safeToAuto: safeToAuto === true, ...(auto ? { auto } : {}) } : {}) }, true);
 					if (state === "failed" && safeToAuto && auto) schedule(j, auto);
 				} else if (state === "failed" || state === "unsure") kept.delete(j.ref);
 				else if (state === "undo") back(j, "restart");

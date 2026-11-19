@@ -3,6 +3,8 @@ import { createHash } from "node:crypto";
 import { log, now } from "./config.ts";
 import { parseDecisions } from "./choices.ts";
 import { ATTACH_REFUSED, blockDraftRef, type DraftApproval, type DraftFileIn, parseDraftApproval, refreshDraft, rewriteDraftTo, sameDraft, withAttachIssues, withStagedFiles } from "./draft-approval.ts";
+import { policyOf } from "./reply-reasons.ts";
+import type { ReasonCode } from "./reply-types.ts";
 import { parseTone, stripHandoff } from "./tone.ts";
 import type { Decision, DecisionOpt, Notice } from "./notices-types.ts";
 import { appLabelOf, appOf, draftHandled } from "./notices-wiring.ts";
@@ -114,7 +116,7 @@ export const openDraftRefs = (to: string): string[] => items.flatMap(i => (isOpe
 export const openDraftCards = (to?: string): { id: string; to: string; ref: string; title: string; draft: DraftApproval; at: string; text: string; hash?: string; discord?: string; asked?: string; posts?: string[] }[] =>
 	items.flatMap(i => (isOpenDecision(i) && (to === undefined || i.decision!.to === to) && i.decision!.draft?.ref ? [{ id: i.id, to: i.decision!.to, ref: i.decision!.draft.ref, title: i.title, draft: i.decision!.draft, at: i.at ?? i.ts, text: i.text, ...(i.decision!.hash ? { hash: i.decision!.hash } : {}), ...(discordHash(i) ? { discord: discordHash(i) } : {}), ...(i.decision!.reply_to ? { asked: i.decision!.reply_to } : {}), ...(i.decision!.card?.ids.length ? { posts: i.decision!.card.ids } : {}) }] : []));
 /** The newest card of draft `ref` in `to` shows how the gateway's send of it went. */
-export function markDraftSend(to: string, ref: string, state: NonNullable<Decision["send"]>["state"], text = "", until?: number): void {
+export function markDraftSend(to: string, ref: string, state: NonNullable<Decision["send"]>["state"], text = "", until?: number, code?: ReasonCode): void {
 	const n = items.findLast(i => i.decision?.to === to && openDraftRef(i) === ref);
 	if (!n) return;
 	const at = now();
@@ -123,7 +125,8 @@ export function markDraftSend(to: string, ref: string, state: NonNullable<Decisi
 	n.decision!.send = { state, ...(text ? { text: text.slice(0, 300) } : {}), at, ...(attempts ? { attempts } : {}), ...(until ? { until } : {}) };
 	// A send refused for its files leaves the draft pending: its card opens again with the reason, so it can be answered (이대로 보내기) or the files fixed.
 	// A send taken back (cancelled in its window, or the gateway restarted in it) leaves the draft pending: the card opens again with the reason, once, on the card.
-	if (((state === "failed" && text.startsWith(ATTACH_REFUSED)) || state === "back") && n.decision!.state !== "open") reopenNotices([n.id]);
+	const refused = state === "failed" && (code ? policyOf(code).reopen === true : text.startsWith(ATTACH_REFUSED));
+	if ((refused || state === "back") && n.decision!.state !== "open") reopenNotices([n.id]);
 	else announce([n], at);
 }
 // The bot posted the open card of draft `ref` again with changes (or the queue changed its "남은 N건" line): the open card shows the new text in place.

@@ -174,7 +174,7 @@ function rqSendNode(item) {
   const why = s.reason ? s.reason.text : "", has = k => (s.actions || []).includes(k);
   if (s.state === "failed" && s.auto && s.safeToAuto) return el("div", { class: "rq-send failed auto", role: "status", text: `${why} · ${TX("reply.auto_retry", { n: s.auto.attempt, max: s.auto.max })}` });
   if (s.state === "failed") {
-    const acts = has("retry") ? [btn("retry", TX("reply.retry"), () => raAct(item, "retry"), "btn tonal sm")] : [];
+    const acts = has("retry") ? [btn("retry", TX("reply.retry"), () => raAct(item, "retry"), "btn tonal sm")] : has("send") ? [btn("send", TX("common.send"), () => raAct(item, "send"), "btn tonal sm")] : [];
     if (has("send_as_is")) acts.push(btn("send-as-is", TX("decision.send_anyway"), () => raAct(item, "send", { asIs: true })));
     if (raCanFix(item)) acts.push(btn("fix", TX("decision.fix"), () => raFixOpen(item)));
     if (item.can.drop) acts.push(btn("drop", TX("decision.drop"), () => raAct(item, "drop")));

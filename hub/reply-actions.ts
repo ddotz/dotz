@@ -65,9 +65,9 @@ export function sendOf(r: SendResult | undefined, now: number = Date.now()): (Se
 	if (r.state === "queued" || r.state === "sending") return { state: r.state, at: r.at, attempt: n, actions: [] };
 	if (r.state === "sent") return { state: "sent", at: r.at, how: "owner", today: sinceMidnight(r.at, now), actions: [] };
 	const reason: Reason = r.reason ?? { code: r.state === "unsure" ? "unknown" : "tool_before_send", text: r.text };
-	const actions = policyOf(reason.code).actions;
+	const { actions, reopen } = policyOf(reason.code);
 	if (r.state === "unsure") return { state: "unsure", at: r.at, reason, attempts: n, actions };
-	return { state: "failed", at: r.at, reason, safeToAuto: r.safeToAuto === true, attempts: n, ...(r.auto ? { auto: r.auto } : {}), actions: actions.includes("retry") ? actions : ["retry", ...actions] };
+	return { state: "failed", at: r.at, reason, safeToAuto: r.safeToAuto === true, attempts: n, ...(r.auto ? { auto: r.auto } : {}), actions: actions.includes("retry") || reopen ? actions : ["retry", ...actions] };
 }
 
 const SENDS = new Set(["send", "retry", "resolve"]);
