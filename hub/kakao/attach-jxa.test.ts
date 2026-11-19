@@ -17,7 +17,9 @@ function chatWindow(title: string, opts: { members?: number; value?: string } = 
 
 function world(opts: { paste: (w: ReturnType<typeof scene>) => void; extra?: ReturnType<typeof chatWindow>[]; self?: ReturnType<typeof chatWindow> }) {
 	const w = scene(opts);
-	const jxa = loadJxa({ systemEvents: { processes: { whose: () => () => [w.proc] } }, objc: w.objc });
+	// System Events: the front app is the owner's app until KakaoTalk is put in front; any other bundle id is the owner's app.
+	const whose = (q: { frontmost?: boolean; bundleIdentifier?: string }) => () => (q.frontmost ? [w.front.kakao ? w.proc : w.ownerApp] : q.bundleIdentifier && q.bundleIdentifier !== "com.kakao.KakaoTalkMac" ? [w.ownerApp] : [w.proc]);
+	const jxa = loadJxa({ systemEvents: { processes: { whose } }, objc: w.objc });
 	return { ...w, attach: () => jxa.attachFile("나", "/x/a.png") };
 }
 
@@ -26,12 +28,25 @@ function scene(opts: { paste: (w: any) => void; extra?: ReturnType<typeof chatWi
 	const main = { name: () => "카카오톡", id: () => "Main Window", subrole: () => "AXStandardWindow", scrollAreas: () => [], sheets: () => [], buttons: () => [] };
 	const windows: any[] = [main, self, ...(opts.extra ?? [])];
 	const log: string[] = [];
+	const front = { kakao: false };
 	const pasteItem = { name: () => "붙여넣기", actions: { byName: () => ({ perform: () => (log.push("paste"), opts.paste(state)) }) } };
 	const proc = {
 		windows: () => windows,
 		menuBars: [{ menuBarItems: () => [{ name: () => "편집", menus: [{ menuItems: () => [pasteItem] }] }] }],
-		set frontmost(_v: boolean) {
+		bundleIdentifier: () => "com.kakao.KakaoTalkMac",
+		get frontmost() {
+			return () => front.kakao;
+		},
+		set frontmost(v: boolean) {
 			log.push("frontmost");
+			front.kakao = v;
+		},
+	};
+	const ownerApp = {
+		bundleIdentifier: () => "com.owner.App",
+		set frontmost(_v: boolean) {
+			log.push("restore");
+			front.kakao = false;
 		},
 	};
 	const item = (data: string) => ({ types: { count: 1, objectAtIndex: () => "public.utf8-plain-text" }, dataForType: () => ({ isNil: () => false, data }) });
@@ -56,7 +71,7 @@ function scene(opts: { paste: (w: any) => void; extra?: ReturnType<typeof chatWi
 		},
 		NSPasteboardItem: { alloc: { get init() { return { saved: [] as string[], setDataForType(d: { data: string }) { this.saved.push(d.data); } }; } } },
 	};
-	const state = { self, windows, log, proc, pb, objc, clipboard: () => JSON.stringify(pb.items.map(i => i.saved ?? i.url ?? "owner's copy")) };
+	const state = { self, windows, log, proc, pb, objc, front, ownerApp, clipboard: () => JSON.stringify(pb.items.map(i => i.saved ?? i.url ?? "owner's copy")) };
 	return state;
 }
 
@@ -86,10 +101,10 @@ test("a window of the right title that shows a member count (a group) refuses", 
 	expect(s.log).toEqual([]);
 });
 
-test("a chat opened during the wait is never taken for the dialog: its own 전송 is not pressed", () => {
+test("a chat opened during the wait is never taken for the dialog, and KakaoTalk is not brought forward over it", () => {
 	const other = chatWindow("친구");
 	const s = world({ paste: w => void w.windows.push(other) });
-	expect(s.attach()).toMatchObject({ ok: false, why: "no_dialog" });
+	expect(s.attach()).toMatchObject({ ok: false, why: "other_window" });
 	expect(s.log).toEqual(["paste"]);
 	expect(s.clipboard()).toBe(owners);
 });
@@ -102,10 +117,10 @@ test("a chat opened while the dialog is up cancels the dialog instead of pressin
 	expect(s.clipboard()).toBe(owners);
 });
 
-test("no dialog in the background fails without raising anything, and a newer copy of the owner's is not overwritten", () => {
+test("no dialog even in front fails after one retry, the owner's app comes back, and a newer copy of the owner's is not overwritten", () => {
 	const s = world({ paste: w => void w.pb.writeObjects({ values: [{ saved: ["newer copy"] }] }) });
-	expect(s.attach()).toMatchObject({ ok: false, why: "no_dialog" });
-	expect(s.log).toEqual(["paste"]);
+	expect(s.attach()).toMatchObject({ ok: false, why: "no_dialog", front: { took: true, restored: true } });
+	expect(s.log).toEqual(["paste", "frontmost", "paste", "restore"]);
 	expect(s.clipboard()).toBe('[["newer copy"]]');
 });
 
@@ -113,4 +128,23 @@ test("an unreadable clipboard type is reported as not restored", () => {
 	const s = world({ paste: () => {} });
 	s.pb.items = [{ types: { count: 1, objectAtIndex: () => "x" }, dataForType: () => null }];
 	expect(s.attach()).toMatchObject({ ok: false, why: "no_dialog", clipboard: false });
+});
+
+test("a paste ignored in the background is tried once more with KakaoTalk in front, and the owner's app comes back after the press", () => {
+	const s = world({ paste: w => void (w.front.kakao && sheet(w, () => w.self.sheetList.pop())) });
+	expect(s.attach()).toEqual({ ok: true, pressed: true, front: { from: "com.owner.App", took: true, restored: true } });
+	expect(s.log).toEqual(["paste", "frontmost", "paste", "send", "restore"]);
+	expect(s.clipboard()).toBe(owners);
+});
+
+test("the owner's own switch away during the send is kept: no restore over it", () => {
+	const s = world({ paste: w => void (w.front.kakao && sheet(w, () => (w.self.sheetList.pop(), (w.front.kakao = false)))) });
+	expect(s.attach()).toMatchObject({ ok: true, front: { took: true, restored: false } });
+	expect(s.log).not.toContain("restore");
+});
+
+test("the 26.9 dialog button named after the count (1개 전송) is pressed", () => {
+	const s = world({ paste: w => void w.self.sheetList.push({ buttons: () => [button("1개 전송", () => (w.log.push("send"), w.self.sheetList.pop())), button("취소")] }) });
+	expect(s.attach()).toEqual({ ok: true, pressed: true });
+	expect(s.log).toEqual(["paste", "send"]);
 });

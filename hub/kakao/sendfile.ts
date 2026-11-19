@@ -4,7 +4,8 @@
 // that room) before the next one starts; a file whose press is not confirmed is never pressed again. No Kakao API, HTTP or protocol here.
 // Only the self room is ever opened: the caller passes it from the database (type 5), nothing here takes another room, and a doubt refuses:
 // a room of the same name in the database, another chat window, a window that does not show it is the 나와의 채팅 (attach.jxa.js selfGate).
-// KakaoTalk is never brought to the front, not even for its list window: without the dialog in the background the send fails and says so.
+// KakaoTalk stays behind for the list window and the paste; a paste it ignores in the background (26.9) is tried once more with KakaoTalk in
+// front, and the app in front before is put back (attach.jxa.js bringFront). The step line shows front=took/restored when that happened.
 import attachJxa from "./attach.jxa.js" with { type: "text" };
 import jxa from "./room.jxa.js" with { type: "text" };
 import { closeWindow, normalizeTitle, openRoom, type RoomFact } from "./room.ts";
@@ -22,7 +23,8 @@ export type FileSendDeps = { runner: Runner; sleep: (ms: number) => Promise<void
 // warning: something the owner must know whatever the outcome (the clipboard was not put back).
 export type FileSendResult = { ok: boolean; sent: number; reason?: string; warning?: string; steps: string[] };
 
-// One attach is at most two gates, the dialog wait and the close wait (about 17 s); past that the kill leaves the clipboard unrestored.
+// One attach is at most three gates, two dialog waits (behind, then in front) and the close wait (about 22 s); past that the kill leaves
+// the clipboard unrestored.
 const ATTACH_MS = 30_000;
 const CONFIRM_MS = 20_000;
 const POLL_MS = 1_000;
@@ -30,15 +32,17 @@ const TEXT_TYPES = new Set([0, 1, 26]);
 
 const newer = (a: string, b: string) => (/^\d+$/.test(a) && /^\d+$/.test(b) ? BigInt(a) > BigInt(b) : a !== b);
 
-type AttachOut = { ok: boolean; why?: string; pressed?: boolean; seen?: string; clipboard?: boolean };
+type Front = { took: boolean; restored: boolean };
+type AttachOut = { ok: boolean; why?: string; pressed?: boolean; seen?: string; clipboard?: boolean; front?: Front };
 async function attach(runner: Runner, name: string, path: string): Promise<AttachOut> {
 	try {
 		const r = await runner(["osascript", "-l", "JavaScript", "-e", jxa, "-e", attachJxa], { stdin: `${JSON.stringify({ action: "attach", name, path })}\n`, timeoutMs: ATTACH_MS });
 		const out = JSON.parse(r.stdout.trim().split("\n").at(-1) ?? "");
 		const clipboard = out?.clipboard === false ? { clipboard: false } : {};
-		if (out?.ok === true) return { ok: true, pressed: true, ...clipboard };
+		const front = out?.front && typeof out.front === "object" ? { front: { took: out.front.took === true, restored: out.front.restored === true } } : {};
+		if (out?.ok === true) return { ok: true, pressed: true, ...clipboard, ...front };
 		if (typeof out?.why !== "string") return { ok: false, why: "uncertain", pressed: true, clipboard: false };
-		return { ok: false, why: out.why, pressed: out.pressed === true, ...clipboard, ...(typeof out.seen === "string" ? { seen: out.seen } : {}) };
+		return { ok: false, why: out.why, pressed: out.pressed === true, ...clipboard, ...front, ...(typeof out.seen === "string" ? { seen: out.seen } : {}) };
 	} catch {
 		// No answer that says how far it got: the press may have happened, so the database decides and nothing is pressed again. A killed
 		// script never reached its restore, so the clipboard counts as not put back.
@@ -55,7 +59,7 @@ const WHY: Record<string, string> = {
 	no_paste_item: "카카오톡 편집 메뉴에서 붙여넣기를 찾지 못했어요",
 	pasteboard: "파일을 클립보드에 올리지 못했어요",
 	pasted_text: "카카오톡이 파일 대신 글로 붙여 넣어서 지우고 보내지 않았어요",
-	no_dialog: "카카오톡이 뒤에 있는 상태에서 파일 전송 창이 뜨지 않았어요. 앞으로 가져오지 않고 멈췄어요",
+	no_dialog: "카카오톡을 잠깐 앞으로 가져와 다시 붙여 넣어도 파일 전송 창이 뜨지 않아서 보내지 않았어요",
 	other_window: "다른 카카오톡 채팅창이 열려 있어서 보내지 않았어요. 그 창을 닫고 다시 보내 주세요",
 	not_self: "열린 창이 나와의 채팅인지 확인하지 못해서 보내지 않았어요",
 	dialog_left: "보내지 않았지만 파일 전송 창을 닫지 못했어요. 카카오톡에서 취소해 주세요",
@@ -103,7 +107,7 @@ export async function sendFilesToSelf(input: FileSendInput, deps: FileSendDeps):
 			if (!opened.ok) return fail(sent, opened.reason);
 			if (i === 0 && opened.steps.some(s => s.why === "already_open")) keepWindow = true;
 			const r = await attach(deps.runner, input.room.name, path);
-			steps.push(`attach:${r.ok ? "ok" : r.why}${r.seen ? `:${r.seen}` : ""}`);
+			steps.push(`attach:${r.ok ? "ok" : r.why}${r.front ? `:front=${r.front.took ? "took" : "no"}/${r.front.restored ? "restored" : "kept"}` : ""}${r.seen ? `:${r.seen}` : ""}`);
 			if (r.clipboard === false) clipboardLost = true;
 			if (r.why === "owner_text") keepWindow = true;
 			if (!r.ok && !r.pressed) return fail(sent, WHY[r.why ?? ""] ?? "카카오톡에 파일을 넣지 못했어요");

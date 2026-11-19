@@ -32,13 +32,13 @@ test("each file is pasted once into the verified self window and confirmed from 
 	expect(reqs.at(-1)).toEqual({ action: "close", name: "나" });
 });
 
-test("no dialog in the background stops with the reason: no second try, nothing to the front, no later file", async () => {
-	const { runner, reqs } = fake(req => (req.action === "attach" ? { ok: false, why: "no_dialog" } : window(req)));
+test("no dialog stops with the reason: no second attach, no later file", async () => {
+	const { runner, reqs } = fake(req => (req.action === "attach" ? { ok: false, why: "no_dialog", front: { took: true, restored: true } } : window(req)));
 	const r = await sendFilesToSelf({ files: ["/x/a.png", "/x/b.png"], room, all: [room], messages: async () => [me("10", 1)] }, deps(runner));
 	expect(r).toMatchObject({ ok: false, sent: 0 });
-	expect(r.reason).toContain("앞으로 가져오지");
+	expect(r.reason).toContain("파일 전송 창이 뜨지 않아서");
+	expect(r.steps).toContain("attach:no_dialog:front=took/restored");
 	expect(reqs.filter(q => q.action === "attach")).toHaveLength(1);
-	expect(JSON.stringify(reqs)).not.toContain("front");
 });
 
 test("an unconfirmed press stops without pressing again, and a killed script says the clipboard may not be back", async () => {
