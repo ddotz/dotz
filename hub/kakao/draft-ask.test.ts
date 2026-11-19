@@ -40,10 +40,15 @@ describe("decision detection: the draft model's answer", () => {
 		expect(buildDraftPrompt({ lines: ["Alex: 취소할까?"], choice: "취소해" }).system).not.toContain("RELAY");
 		expect(buildDraftPrompt({ lines: ["Alex: 취소할까?"], revise: { draft: "응", change: "더 짧게" } }).system).not.toContain("RELAY");
 	});
-	test("known adds the write-from-knowledge sentence to a compose request only when set", () => {
-		const sentence = "do not ask";
-		expect(buildDraftPrompt({ lines: ["Alex: 안녕"], intent: "정리해 줘", known: true }).user).toContain(sentence);
-		expect(buildDraftPrompt({ lines: ["Alex: 안녕"], intent: "정리해 줘" }).user).not.toContain(sentence);
+	test("아는 대로 써 (known) writes the content with no question format to fall back on; a plain compose request still has it", () => {
+		const sentence = "write it from what you know";
+		const known = buildDraftPrompt({ lines: ["Alex: 안녕"], intent: "정리해 줘", known: true });
+		expect(known.user).toContain(sentence);
+		expect(known.system).toContain("AUTHOR");
+		expect(known.system).not.toContain('"action":"ask"');
+		const plain = buildDraftPrompt({ lines: ["Alex: 안녕"], intent: "정리해 줘" });
+		expect(plain.user).not.toContain(sentence);
+		expect(plain.system).toContain('"action":"ask"');
 		expect(buildDraftPrompt({ lines: ["Alex: 안녕"], intent: "정리해 줘", known: false }).user).not.toContain(sentence);
 		expect(buildDraftPrompt({ lines: ["Alex: 안녕"], intent: "정리해 줘", known: true, revise: { draft: "초안", change: "더 짧게" } }).user).not.toContain(sentence);
 	});
