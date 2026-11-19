@@ -13,11 +13,10 @@
 // page (AXScrollDownByPage) until the name is found or the list stops moving. Nothing is clicked or opened. Prints
 // {ok:true, rows:<count>, scanned, hits:[{index, texts}], stopped:"found"|"budget"|"end", pages, ms:{scan}}, or {ok:true, opened:true}
 // when a window of the name is open already, or {ok:false, step:"list", why:"no_list"}.
-// open opens list row number `row` by Accessibility actions only: its title is read again (a list that moved is refused), then the row
-// cell's AXShowMenu once, then AXPress on its "채팅방 열기" item (list rows have no AXPress/AXOpen; kmsg selects the row and posts an Enter
-// key, which needs KakaoTalk in front). KakaoTalk is not activated and the owner's front app and focus stay (measured 2026-10-23). At most
-// one context menu per call. Prints {ok:true, ms} or {ok:false, step:"list"|"recheck"|"menu"|"press"|"window", why, err?, ms}. A window that
-// appeared since the press but is not the room is closed (why "no_input": it has no message input; "untitled": it has an input, no title).
+// open re-reads row `row`'s title (a moved list is refused), then tries returnOpen (open.jxa.js: select + one Return to KakaoTalk's pid),
+// and only when that is unsafe or opens nothing, the row cell's AXShowMenu once and AXPress on "채팅방 열기" (rows have no AXPress/AXOpen).
+// Prints {ok:true, ms, how:"return"|"menu", returnSkipped?} or {ok:false, step:"list"|"recheck"|"menu"|"press"|"window", why, err?, ms}. A
+// window that appeared but is not the room is closed (why "no_input": it has no message input; "untitled": it has an input, no title).
 // send puts `text` into the input of the one window titled `name` (AXValue) and presses its 전송 button (AXPress): no key event, no
 // activation. Setting AXValue enables the button (measured 2026-10-23). The input is compared normalized (NFC, line breaks, invisible
 // marks, ends): a value equal to one dotz typed into this room (`ours`, or this text) is dotz's leftover and is cleared for real (read back,
@@ -616,6 +615,12 @@ function openRowIn(index, name, expect, axl, rev) {
 		return fail("recheck", "gone", e);
 	}
 	lap("recheck");
+	// Return first. Another room's window means the selection was wrong: closed, nothing else tried. No window: the menu way below.
+	var before = chatWindows().map(winKey);
+	var ret = returnOpen(list, index, name);
+	if (ret.pressed && (lap("return"), until(function () { return windowNamed(name); }, 2))) return (lap("window"), { ok: true, ms: ms, how: "return" });
+	if (ret.pressed && windowsSince(before).length) return fail("window", sweepSince(before));
+	var skipped = ret.pressed ? "no_window" : ret.why;
 	if (axl && index < axl.rows.length) {
 		var moved = axReveal(axl, index);
 		rev.moved = moved.moved;
@@ -652,7 +657,7 @@ function openRowIn(index, name, expect, axl, rev) {
 		return fail("menu", "no_item", labels.join("|"));
 	}
 	lap("menu");
-	var before = chatWindows().map(winKey);
+	before = chatWindows().map(winKey);
 	try {
 		item.actions.byName("AXPress").perform();
 	} catch (e) {
@@ -665,7 +670,7 @@ function openRowIn(index, name, expect, axl, rev) {
 	}, 1.2);
 	if (!shown) return fail("window", sweepSince(before));
 	lap("window");
-	return { ok: true, ms: ms };
+	return { ok: true, ms: ms, how: "menu", returnSkipped: skipped };
 }
 
 // The input after a failed attempt holds OUR text when it is one we typed (this text or an earlier attempt's), and dotz's text must never be
