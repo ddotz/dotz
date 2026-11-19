@@ -34,12 +34,12 @@ const ownClaim = (): string => {
 
 /** Who holds the claim: nobody, a sender still running, or one that died without releasing it (the send may have gone out). */
 export function claimHolder(file: string): "none" | "live" | "dead" {
-	let claim: string;
-	try {
-		claim = readFileSync(file, "utf8").split("\n", 1)[0]!.trim();
-	} catch {
-		return "none";
-	}
+	const claim = contentOf(file);
+	return claim === undefined ? "none" : holderOf(claim);
+}
+
+function holderOf(content: string): "live" | "dead" {
+	const claim = content.split("\n", 1)[0]!.trim();
 	const id = claim.split(" ", 1)[0]!, holder = Number(id), started = claim.slice(id.length + 1);
 	if (!Number.isInteger(holder) || holder <= 0) return "live";
 	if (!alive(holder)) return "dead";
@@ -63,15 +63,15 @@ export function keepClaimToken(file: string, token: string): void {
 	renameSync(tmp, `${file}.token`);
 }
 
-const contentOf = (file: string): string | undefined => {
+function contentOf(file: string): string | undefined {
 	try {
 		return readFileSync(file, "utf8");
 	} catch {
 		return undefined;
 	}
-};
+}
 
-function retireDead(file: string): boolean {
+function retireDead(file: string, dead: string, mine: string): boolean {
 	const lock = `${file}.takeover`;
 	const tmp = `${lock}.${process.pid}.${randomUUID()}`;
 	writeFileSync(tmp, ownClaim(), { mode: 0o600 });
@@ -85,35 +85,41 @@ function retireDead(file: string): boolean {
 		rmSync(tmp, { force: true });
 	}
 	try {
-		if (claimHolder(file) === "live") return false;
-		rmSync(file, { force: true });
+		if (contentOf(file) !== dead) return false;
+		const next = `${file}.${process.pid}.${randomUUID()}.tmp`;
+		writeFileSync(next, mine, { mode: 0o600 });
+		renameSync(next, file);
 		return true;
 	} finally {
 		rmSync(lock, { force: true });
 	}
 }
 
-// The release function when this caller holds the claim now, undefined when another sender holds it (or died holding it and `takeOver` is not set).
+/** The release function when this caller holds the claim now, undefined when another sender holds it (or died holding it and `takeOver` is not set).
+ * A dead claim is replaced in place under the takeover lock (rename over it, after checking it still holds what was seen dead), so the file never
+ * goes missing in between and a plain `wx` claim cannot slip in next to the taker. */
 export function claimSend(file: string, takeOver = false): (() => void) | undefined {
 	mkdirSync(dirname(file), { recursive: true });
+	const mine = `${ownClaim()}\n${randomUUID()}`;
+	const release = () => {
+		if (contentOf(file) === mine) rmSync(file, { force: true });
+	};
 	for (let attempt = 0; attempt < 2; attempt++) {
 		try {
 			const fd = openSync(file, "wx", 0o600);
-			const mine = `${ownClaim()}\n${randomUUID()}`;
 			try {
 				writeSync(fd, mine);
 			} finally {
 				closeSync(fd);
 			}
-			return () => {
-				if (contentOf(file) === mine) rmSync(file, { force: true });
-			};
+			return release;
 		} catch (e) {
 			if ((e as NodeJS.ErrnoException).code !== "EEXIST") throw e;
 		}
-		const who = claimHolder(file);
-		if (who === "none") continue;
-		if (who === "live" || !takeOver || !retireDead(file)) return undefined;
+		const seen = contentOf(file);
+		if (seen === undefined) continue;
+		if (holderOf(seen) === "live" || !takeOver) return undefined;
+		return retireDead(file, seen, mine) ? release : undefined;
 	}
 	return undefined;
 }

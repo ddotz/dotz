@@ -1,5 +1,5 @@
 import { afterAll, expect, test } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { claimHolder, claimSend } from "./draft-claim.ts";
@@ -85,21 +85,27 @@ test("a sender judged dead that finishes late releases nothing of the taker's cl
 test("several takers of one dead claim at once: exactly one wins", async () => {
 	const gone = Bun.spawn([process.execPath, "-e", "0"]);
 	await gone.exited;
-	const script = `import { existsSync, writeFileSync } from "node:fs";
+	const script = `import { existsSync, renameSync, writeFileSync } from "node:fs";
 import { claimSend } from ${JSON.stringify(join(import.meta.dir, "draft-claim.ts"))};
 const [file, go] = process.argv.slice(1);
 writeFileSync(go + "." + process.pid, "");
 while (!existsSync(go));
-console.log(claimSend(file, true) ? "won" : "lost");`;
+writeFileSync(go + ".said." + process.pid + ".tmp", claimSend(file, true) ? "won" : "lost");
+renameSync(go + ".said." + process.pid + ".tmp", go + ".said." + process.pid);
+while (!existsSync(go + ".end"));`;
 	mkdirSync(join(dir, "sending"), { recursive: true });
 	for (let round = 0; round < 10; round++) {
 		const f = join(dir, "sending", `R8-${round}`);
 		writeFileSync(f, String(gone.pid));
 		const go = join(dir, `go-${round}`);
-		const runs = Array.from({ length: 6 }, () => Bun.spawn([process.execPath, "-e", script, f, go], { stdout: "pipe", stderr: "inherit" }));
-		while (readdirSync(dir).filter(n => n.startsWith(`go-${round}.`)).length < runs.length) await Bun.sleep(0);
+		const runs = Array.from({ length: 6 }, () => Bun.spawn([process.execPath, "-e", script, f, go], { stdout: "ignore", stderr: "inherit" }));
+		const marks = (kind: string) => readdirSync(dir).filter(n => new RegExp(`^go-${round}\\.${kind}\\d+$`).test(n));
+		while (marks("").length < runs.length) await Bun.sleep(0);
 		writeFileSync(go, "");
-		const said = await Promise.all(runs.map(async r => (await new Response(r.stdout).text()).trim()));
+		while (marks("said\\.").length < runs.length) await Bun.sleep(0);
+		const said = marks("said\\.").map(n => readFileSync(join(dir, n), "utf8"));
+		writeFileSync(`${go}.end`, "");
+		await Promise.all(runs.map(r => r.exited));
 		expect(said.filter(x => x === "won"), `round ${round}`).toHaveLength(1);
 	}
 }, 30_000);
