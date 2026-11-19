@@ -79,7 +79,7 @@ try {
   for (const w of [390, 1280]) {
     await cold('', w, 'cold-home', 'verify');
     await cold(${JSON.stringify(`#chat/${target}`)}, w, 'cold-mail-sent', '보낸 답장');
-    await cold('#monitoring/replies', w, 'cold-replies', '기다리는 답장이 없어요');
+    await cold('#monitoring/replies', w, 'cold-replies', 'sender@example.invalid');
   }
 } finally {
   await logout();
