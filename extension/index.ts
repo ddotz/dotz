@@ -173,7 +173,7 @@ async function call(path: string, init: RequestInit = {}): Promise<any> {
 	return data;
 }
 
-type AuthParams = { site: string; kind: "secret" | "otp" | "approve" | "form"; fields?: string[]; form?: { type: string; label?: string; optional?: boolean; mask?: boolean }[]; remember?: boolean; purpose: string; target?: string; timeout_minutes?: number };
+type AuthParams = { site: string; kind: "secret" | "otp" | "approve" | "form"; fields?: string[]; form?: { type: string; label?: string; optional?: boolean; mask?: boolean }[]; remember?: boolean; purpose: string; target?: string; timeout_minutes?: number; from_mail?: string; mail_account?: string; mail_minutes?: number };
 
 // Web-login credentials typed by the owner in the web app only (Discord carries a link button, never a value). The value goes only to the gateway: the
 // secret kind lands in a 0600 file, the otp kind is fetched once with `take`; this tool never sees or returns a value.
@@ -183,7 +183,7 @@ function authTool(pi: any, lane?: string): void {
 	pi.registerTool({
 		name: "dotz_auth",
 		label: "Dotz auth",
-		description: `Ask the owner, through the web app, for a web-login credential or any personal or security data (password, code, card, address, phone, ID or account number, birth date and the like). ALWAYS use this for such data: never ask for it or accept it in chat; if the owner pastes it into chat anyway, do not repeat or store it, say it was not used and ask again here. The owner types it only in the web app's form (Discord, when set up, gets just a button to it); the value never enters the prompt, logs or chat. Use it when a login needs a password, an OTP code or a push/FIDO approval, or the account has no stored credentials. Asking here is the owner's OK for the second factor: trigger it once, never retry. kind=secret {fields? (any of username|password|code; default username,password)}: stored as JSON {field: value} in a 0600 file under the secrets dir, whose path is returned. kind=form {form: [{type, label?, optional?, mask?}], remember?}: a personal-data form; type is one of ${FIELD_TYPES.join(", ")} (card_number Luhn-checked, card_expiry MM/YY; card_cvc, id_number and account_number masked; 'other' needs a label and is keyed other_<label>; address2 optional); stored as JSON {type: value}, and you get the path and field names, never the values. remember=true (default false; the owner can change it in the form) keeps it as secrets/<site> for reuse (read it before asking again); otherwise it is one-time under secrets/once: read it, use it, delete it right after. Never copy a value into a prompt, brief, report, log or message. kind=otp: a one-time code you fetch once with the returned command. kind=approve: the owner confirms the push/FIDO approval on their device. site = short key [a-z0-9._-] (the secrets file name). purpose = one line telling the owner what it is for. ${where} timeout_minutes 1-30 (default 10). The call waits until the owner answers, cancels or it times out; do the login step after it returns.`,
+		description: `Ask the owner, through the web app, for a web-login credential or any personal or security data (password, code, card, address, phone, ID or account number, birth date and the like). ALWAYS use this for such data: never ask for it or accept it in chat; if the owner pastes it into chat anyway, do not repeat or store it, say it was not used and ask again here. The owner types it only in the web app's form (Discord, when set up, gets just a button to it); the value never enters the prompt, logs or chat. Use it when a login needs a password, an OTP code or a push/FIDO approval, or the account has no stored credentials. Asking here is the owner's OK for the second factor: trigger it once, never retry. kind=secret {fields? (any of username|password|code; default username,password)}: stored as JSON {field: value} in a 0600 file under the secrets dir, whose path is returned. kind=form {form: [{type, label?, optional?, mask?}], remember?}: a personal-data form; type is one of ${FIELD_TYPES.join(", ")} (card_number Luhn-checked, card_expiry MM/YY; card_cvc, id_number and account_number masked; 'other' needs a label and is keyed other_<label>; address2 optional); stored as JSON {type: value}, and you get the path and field names, never the values. remember=true (default false; the owner can change it in the form) keeps it as secrets/<site> for reuse (read it before asking again); otherwise it is one-time under secrets/once: read it, use it, delete it right after. Never copy a value into a prompt, brief, report, log or message. kind=otp: a one-time code you fetch once with the returned command. For a code sent by mail, try the mail first: kind=otp with from_mail=<sender domain> (mail_account?, mail_minutes? 1-60, default 10): the gateway fetches it from a computer with mail, without asking the owner, and falls back to asking the owner. kind=approve: the owner confirms the push/FIDO approval on their device. site = short key [a-z0-9._-] (the secrets file name). purpose = one line telling the owner what it is for. ${where} timeout_minutes 1-30 (default 10). The call waits until the owner answers, cancels or it times out; do the login step after it returns.`,
 		parameters: z.object({
 			site: z.string(),
 			kind: z.enum(["secret", "otp", "approve", "form"]),
@@ -193,10 +193,23 @@ function authTool(pi: any, lane?: string): void {
 			purpose: z.string(),
 			...(lane ? {} : { target: z.string().optional() }),
 			timeout_minutes: z.number().min(1).max(30).optional(),
+			from_mail: z.string().optional(),
+			mail_account: z.string().optional(),
+			mail_minutes: z.number().min(1).max(60).optional(),
 		}),
 		async execute(_id: string, p: AuthParams, signal?: AbortSignal) {
 			const text = (t: string) => ({ content: [{ type: "text", text: t }] });
-			const body: Record<string, unknown> = { site: p.site, kind: p.kind, purpose: p.purpose, target: lane ? `lane:${lane}` : (p.target ?? "chat"), ...(lane ? {} : { session: process.env.DOTZ_CONV ?? "main" }) };
+			const takeText = (what: string, takePath: string) => text(`The ${what} OTP code is ready. Take it once, within 5 minutes, and pipe it straight into the consumer without printing it: curl -s -H "x-dotz-token: $(cat ${join(DATA, "secrets", "hub-token")})" ${hub()?.url ?? ""}${takePath}`);
+			let purpose = p.purpose;
+			if (p.kind === "otp" && p.from_mail) {
+				const miss = await call("/api/auth/mail-code", { method: "POST", body: JSON.stringify({ site: p.site, from: p.from_mail, account: p.mail_account, minutes: p.mail_minutes }), signal }).then(
+					(m: { ok?: boolean; id?: string; take?: string; reason?: string; detail?: string }) => (m.ok && m.id ? { take: m.take ?? `/api/auth/${m.id}/take` } : { why: m.detail ?? m.reason ?? "no result" }),
+					(e: unknown) => ({ why: e instanceof Error ? e.message : "unavailable" }),
+				);
+				if ("take" in miss) return takeText(`${p.site} (from mail)`, miss.take);
+				purpose = `${purpose} (메일에서 못 찾음: ${miss.why})`;
+			}
+			const body: Record<string, unknown> = { site: p.site, kind: p.kind, purpose, target: lane ? `lane:${lane}` : (p.target ?? "chat"), ...(lane ? {} : { session: process.env.DOTZ_CONV ?? "main" }) };
 			if (p.fields) body.fields = p.fields;
 			if (p.form) body.form = p.form;
 			if (p.remember !== undefined) body.remember = p.remember;

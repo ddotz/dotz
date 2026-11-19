@@ -61,6 +61,7 @@ import { checkPeer } from "./peer-auth.ts";
 import { activatePeerMonitor, createPeerMonitor } from "./peer-monitor.ts";
 import { activateFleet, createFleet, loadCore } from "./fleet.ts";
 import { peerLimitNotice } from "./limit-peer.ts";
+import { mailCodeRoute } from "./mail-otp.ts";
 import { handleLease, type LeaseReq } from "./send-lease.ts";
 import { cleanName, friendlyName, resolveName } from "./machine-name.ts";
 import { machineHost } from "./hostname.ts";
@@ -409,6 +410,7 @@ export function makeRoute({ tailnetName = ownTailnetName, busyNow, restartGatewa
 			return (await proxyRequest(req, url, app, proxied, srv)) as Response;
 		}
 		const parts = url.pathname.split("/").filter(Boolean);
+		const mailCode = mailCodeRoute(req, url.pathname, { peer, hubToken: tokenOk(req) }); if (mailCode) return mailCode;
 		const authResponse = authRoute(req, url);
 		if (authResponse) return authResponse;
 		const ptyResponse = await ptyRoute(req, url);
