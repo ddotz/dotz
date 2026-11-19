@@ -121,10 +121,8 @@ function bringFront(proc, w) {
 		from = String(se.processes.whose({ frontmost: true })()[0].bundleIdentifier());
 	} catch (e) {}
 	try {
-		w.actions.byName("AXRaise").perform();
-	} catch (e) {}
-	try {
 		proc.frontmost = true;
+		w.actions.byName("AXRaise").perform();
 	} catch (e) {}
 	var took = until(function () {
 		try {
