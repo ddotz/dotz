@@ -39,7 +39,7 @@ import { laneCapacity, laneClosed, lanes, laneSummary, laneWatching } from "./la
 import { withHomes } from "./laneviews.ts";
 import { main as mainOrch, orch } from "./orchestrator.ts";
 import { listMonitors } from "./monitors.ts";
-import { type DecisionSend, type Notice, allNotices, listNotices, dismissedAlertAts, readConversationNotices, unreadCount } from "./notices.ts";
+import { type DecisionSend, type Notice, openDecisionNotices, listNotices, dismissedAlertAts, readConversationNotices, unreadCount } from "./notices.ts";
 import { loadProjects, saveProject } from "./projects.ts";
 import { deleteProject, planDelete, ProjectDeleteError } from "./projectdelete.ts";
 import { listSchedules } from "./schedule.ts";
@@ -165,8 +165,7 @@ function stateRuns(): Record<string, RunState> {
 	const works = bgWork.list();
 	const running = works.filter(w => w.status === "running");
 	const deferred = queue.deferredOpen();
-	const asks = allNotices()
-		.filter(n => n.kind === "decision" && n.decision?.state === "open")
+	const asks = openDecisionNotices()
 		.sort((a, b) => String(a.at ?? "").localeCompare(String(b.at ?? "")));
 	const askFor = (target: string) => {
 		const n = asks.find(x => { const to = x.decision!.to; return to === target || (target === "main" && to.startsWith("auth:")); });
