@@ -1,0 +1,28 @@
+{
+  "checks": [
+    {
+      "name": "lint",
+      "command": "bun run lint",
+      "paths": [
+        "**/*.ts",
+        "**/*.tsx",
+        "**/*.mts",
+        "**/*.cts",
+        "**/*.js",
+        "**/*.jsx",
+        "**/*.mjs",
+        "**/*.cjs",
+        "package.json",
+        "tsconfig*.json"
+      ],
+      "timeoutSec": 30
+    }
+  ],
+  "evidence": [
+    {
+      "name": "ui",
+      "paths": ["web/index.html", "web/custom.js", "web/sw.js", "web/js/*.js", "web/css/*.css", "web/i18n/**/*.json"],
+      "dir": ".omp/verify/runs"
+    }
+  ]
+}
