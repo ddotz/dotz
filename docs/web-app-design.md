@@ -697,8 +697,8 @@ dotz 웹앱의 화면은 `web/js/03-screens.js`의 `SCREENS` 표에 한 줄씩 �
 ### 깨움 줄 (예약 실행, 다른 대화가 넘긴 일)
 - 목적: 예약이 돌거나 다른 대화가 일을 넘기면 카드 없이 그 턴의 작업 줄 앞에 이유를 붙여 한 줄로 보여요.
 - 구성: 작업 줄 `details.work`의 `.wsum`이 `예약 · <예약 이름> → 20초 작업 · 명령 3`, `<보낸 대화> · <넘긴 일> → …`이에요. 이름은 벨 알림 줄과 같은 `scheduleLabel` 규칙(웹은 `scheduleName`)이고 한글이 없으면 `예약`만 남아요. 줄을 펼치면 맨 위에 원문(예약 지시문, 넘긴 글)이 나와요. 넘긴 일에 대한 첫 답 머리 줄 끝에 `<보낸 대화>에서`(`.wl-sess`, 누르면 그 대화로)가 붙어요.
-- 상태: 턴이 끝났는데(`turn_start` 뒤 `turn_end`) 이 대화에 보낸 것이 없으면 그 깨움의 작업 줄을 숨기고(실시간은 3초 기다린 뒤), 그 뒤 답이 오면 다시 보여요. 다음 깨움, 주인 메시지, 다른 턴의 작업이 오면 숨긴 줄을 지워요. 게이트웨이 자신의 깨움(`source: gateway`)은 이유 없이 같은 규칙을 따라요. 작업내역과 활동 기록에는 그대로 남아요.
-- 근거: web/js/11-todo-strip.js `wakeOf`, `wakeEnded`, `wakeAnswered`, `wakeQuiet`, `newGroup`, `chatPush`; web/js/09-needs-you.js `CS.wake`; hub/wake-rows-web.test.ts.
+- 상태: 턴이 끝났는데(`turn_start` 뒤 `turn_end`) 이 대화에 보낸 것이 없으면 그 깨움의 작업 줄을 숨기고(실시간은 3초 기다린 뒤), 그 뒤 답이 오면 다시 보여요. 다음 깨움, 주인 메시지, 다른 턴의 작업이 오면 숨긴 줄을 지워요. 게이트웨이 자신의 깨움(`source: gateway`)은 이유 없이 같은 규칙을 따라요. 메시지 없이 게이트웨이가 시작한 턴(활동 기록의 첫 프롬프트가 `promptOf`로 흐리게 보이는 것: `[keepalive]`, `[dotz reflect]`, `[handover]` 등)도 같은 깨움이라, 앞 작업 줄을 닫고 따로 줄을 만들며 보낸 것이 없으면 숨겨요. 작업내역과 활동 기록에는 그대로 남아요.
+- 근거: web/js/11-todo-strip.js `wakeOf`, `gatewayTurnStart`, `wakeEnded`, `wakeAnswered`, `wakeQuiet`, `newGroup`, `chatPush`; web/js/12-terminal-view.js `promptOf`; web/js/09-needs-you.js `CS.wake`; hub/wake-rows-web.test.ts, hub/quiet-turns-web.test.ts.
 
 ### 아침 점검 브리핑 카드
 - 목적: 봇의 아침 브리핑 형태 답(`- 10:00 제목` 줄 묶음 + 개수/메일 줄)을 행과 칩으로 그려요.

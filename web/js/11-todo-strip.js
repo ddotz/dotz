@@ -78,6 +78,11 @@ function wakeOf(e) {
   if (gatewayWake(e)) return { lead: "", raw: "", ts: e.ts, from: "" };
   return { lead: wakeLead(SYS_LABEL.schedule, text), raw: text.replace(/^(?:(?:ch|lane|th):\S+\s*)+/, ""), ts: e.ts, from: "" };
 }
+function gatewayTurnStart(a) {
+  if (a.type !== "status" || !/^>\s/.test(a.text ?? "") || !promptOf(a.text).dim) return false;
+  const A = ts(target).acts;
+  return A[A.lastIndexOf(a) - 1]?.type === "turn_start";
+}
 const WAKE_ANSWER_WAIT_MS = 3000;
 function wakeQuiet() {
   const w = CS.wake;
@@ -493,6 +498,11 @@ function chatPush(en, bulk) {
     const a = en.a, w = CS.wake;
     if (w && !w.ended && a.ts >= w.ts && a.type === "turn_start") csWakeNote("began");
     else if (w && w.began && !w.ended && a.type === "turn_end") wakeEnded(w, bulk);
+    else if (!(w && !w.ended) && gatewayTurnStart(a)) {
+      if (CS.group) workDone(CS.group);
+      csGroupDrop(); wakeQuiet();
+      csWakeSet({ ts: a.ts, from: "", rows: [], day: null, began: true, ended: false });
+    }
     if (!WORK.has(a.type) || isMailT(target) || (isSettingsT(target) && !(TURN.get(target) <= (Date.parse(a.ts) || 0)))) return;
     if (!CS.group) {
       if (CS.wake && CS.wake.ended) wakeQuiet();
