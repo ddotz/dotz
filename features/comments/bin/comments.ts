@@ -120,7 +120,7 @@ async function runCmd(args: string[], engine: Engine, inbox: string): Promise<Ou
 			if (only === "reply" && d.mail) return { lines: [...said, `답글만 올렸어요 (${d.code}). 메일 초안 ${d.mail}은 따로 물어요: bun hub/mail-cli.ts ask --draft ${d.mail}`], code: 0, send: [replyUp] };
 			if (done.mail?.state === "failed") {
 				const [sent, code] = mailFailure(done.mail.text);
-				return { ...fail(`답글은 올렸지만 메일은 보내지 못했어요: ${done.mail.text} (메일 초안 ${d.mail}은 남아 있어요. 사용자에게 알려 주세요)`), send: [replyUp, sendLine(sent, "mail", code)] };
+				return { ...fail(`답글은 올렸지만 메일은 보내지 못했어요: ${done.mail.text} (메일 초안 ${d.mail}은 남아 있어요. 사용자에게 알려 주세요)`), send: [replyUp, sendLine(sent, "mail", code, done.mail.text)] };
 			}
 			return { lines: [...said, done.mail ? `답글을 올리고 메일을 보냈어요 (${d.code})` : `답글을 올렸어요 (${d.code})`], code: 0, send: done.mail ? [replyUp, sendLine("yes", "mail")] : [replyUp] };
 		}

@@ -240,7 +240,7 @@ export function createApprovalSender(deps: SenderDeps) {
 			const auto = kept.get(j.ref)?.auto;
 			set(j, "sending", "", undefined, { attempts: tries, ...(auto ? { auto } : {}) });
 			gateMark(deps, j, "go");
-			let o: SendOutcome;
+			let o: SendOutcome | MailLeft;
 			try {
 				o = await runOne(j);
 			} catch (e) {
@@ -256,7 +256,7 @@ export function createApprovalSender(deps: SenderDeps) {
 			.catch(e => deps.log(`approved sends in ${key}: the queue stopped: ${(e as Error).stack ?? (e as Error).message}`))
 			.finally(() => lanes.get(key)?.jobs === jobs && lanes.delete(key));
 
-	async function runOne(j: SendJob & { kind: SendKind }): Promise<SendOutcome> {
+	async function runOne(j: SendJob & { kind: SendKind }): Promise<SendOutcome | MailLeft> {
 		const inProcess = deps.runJob?.(j);
 		if (inProcess) return inProcess;
 		const argv = sendArgv(j.kind, j.ref, j.action, process.execPath, j.force === true);
@@ -268,9 +268,9 @@ export function createApprovalSender(deps: SenderDeps) {
 	}
 
 	// One send ended: sent, surely not sent (retried by code when its policy allows) or may have gone out.
-	function ended(j: SendJob, o: SendOutcome, tries: number): void {
+	function ended(j: SendJob, o: SendOutcome | MailLeft, tries: number): void {
 		if (o.sent === "yes") return set(j, "sent");
-		const reason = o.sent === "partial" ? partialReason(o) : reasonOf(o.code, o.sent === "no" ? o.vars : {});
+		const reason = o.sent === "partial" ? ("mail" in o ? { code: o.code, text: `답글은 올렸고 메일은 못 보냈어요: ${o.mail}` } : partialReason(o)) : reasonOf(o.code, o.sent === "no" ? o.vars : {});
 		const said = "detail" in o && o.detail ? { detail: o.detail } : {};
 		if (o.sent === "maybe" || (o.sent === "partial" && o.rest === "maybe")) return set(j, "unsure", reason.text, undefined, { reason, attempts: tries, ...said });
 		const p = policyOf(reason.code).auto;
@@ -476,23 +476,43 @@ const DETAIL_MAX = 300;
 const OUT_TAIL = 4000;
 const SENT = new Set(["yes", "no", "maybe"]);
 
-/** How a CLI send ended (design 1.11): timed out is unsure; the last `DOTZ_SEND` line decides (a "yes" wins over a non-zero exit); without one, exit 0 is sent and anything else may have gone out. */
-export function outcomeOf(r: { code: number; out: string; timedOut?: boolean }): SendOutcome {
-	if (r.timedOut) return { sent: "maybe", code: "timeout" };
-	const line = r.out.split("\n").filter(l => l.startsWith("DOTZ_SEND ")).at(-1);
-	let said: { sent?: unknown; code?: unknown; vars?: unknown; detail?: unknown } | undefined;
-	try {
-		said = line ? JSON.parse(line.slice("DOTZ_SEND ".length)) : undefined;
-	} catch {
-		said = undefined; // a broken line says nothing: the exit code decides below
+/** A comment reply that went up while its mail did not: `mail` is the mail's own reason, as the CLI printed it. */
+export type MailLeft = Extract<SendOutcome, { sent: "partial" }> & { mail: string };
+type SendLine = { sent?: unknown; code?: unknown; vars?: unknown; detail?: unknown; part?: unknown };
+
+function sendLines(out: string): SendLine[] {
+	const said: SendLine[] = [];
+	for (const l of out.split("\n").filter(x => x.startsWith("DOTZ_SEND "))) {
+		let v: SendLine | null;
+		try {
+			v = JSON.parse(l.slice("DOTZ_SEND ".length)) as SendLine | null;
+		} catch {
+			v = null;
+		}
+		if (v && typeof v === "object") said.push(v);
 	}
-	if (said && SENT.has(String(said.sent))) {
+	return said;
+}
+const detailOf = (said: SendLine): string | undefined => (typeof said.detail === "string" && said.detail.trim() ? said.detail.trim().slice(0, DETAIL_MAX) : undefined);
+
+/** How a CLI send ended (design 1.11): timed out is unsure; the `DOTZ_SEND` lines decide (the last one, but a reply line "yes" followed by a mail line that is not "yes" is a reply posted and a mail left, with the mail's reason; a "yes" wins over a non-zero exit); without one, exit 0 is sent and anything else may have gone out. */
+export function outcomeOf(r: { code: number; out: string; timedOut?: boolean }): SendOutcome | MailLeft {
+	if (r.timedOut) return { sent: "maybe", code: "timeout" };
+	const lines = sendLines(r.out).filter(x => SENT.has(String(x.sent)));
+	const mail = lines.find(x => x.part === "mail" && x.sent !== "yes");
+	if (mail && lines.some(x => x.part === "reply" && x.sent === "yes")) {
+		const code = isReasonCode(mail.code) ? mail.code : "unknown";
+		const why = detailOf(mail) ?? reasonOf(code).text;
+		return { sent: "partial", done: 1, total: 2, code, rest: mail.sent === "maybe" || code === "unknown" ? "maybe" : "no", mail: why };
+	}
+	const said = lines.at(-1);
+	if (said) {
 		if (said.sent === "yes") return { sent: "yes" };
 		const code = isReasonCode(said.code) ? said.code : "unknown";
-		const detail = typeof said.detail === "string" && said.detail.trim() ? { detail: said.detail.trim().slice(0, DETAIL_MAX) } : {};
-		if (said.sent === "maybe" || code === "unknown") return { sent: "maybe", code, ...detail };
+		const detail = detailOf(said);
+		if (said.sent === "maybe" || code === "unknown") return { sent: "maybe", code, ...(detail ? { detail } : {}) };
 		const vars = said.vars && typeof said.vars === "object" ? (said.vars as Record<string, string | number>) : undefined;
-		return { sent: "no", code, ...(vars ? { vars } : {}), ...detail };
+		return { sent: "no", code, ...(vars ? { vars } : {}), ...(detail ? { detail } : {}) };
 	}
 	return r.code === 0 ? { sent: "yes" } : { sent: "maybe", code: "unknown" };
 }

@@ -2,7 +2,7 @@
 // revised through the same reply-drafts flow, so its lint, files and sender are the ones of every other mail. It is not listed in the web mail
 // app on its own (the card of the comment reply is the one place to approve it).
 import { accountHold, draftAttachIssues, draftLintFailures, dropDraft, editDraft, withRecipient, mailStyleOf, realRunner, reviseDraft, sendAccountOf, sendDraft, type FlowDeps } from "../../features/reply-drafts/lib/flow.ts";
-import { getDraft, listDrafts } from "../../features/reply-drafts/lib/store.ts";
+import { getDraft, listDrafts, patchDraft } from "../../features/reply-drafts/lib/store.ts";
 import { addressesOf, generateReply } from "../reply-draft.ts";
 import { callReplyModel } from "../reply-model.ts";
 import { composeMail } from "../mail-cli.ts";
@@ -57,6 +57,9 @@ export function realMailLink(deps: FlowDeps = { run: realRunner }): RealMailLink
 			return rec ? [...draftLintFailures(withRecipient(rec)), ...(hold ? [hold] : [])] : [];
 		},
 		drop: id => void dropDraft(id),
+		retarget: (id, to) => {
+			if (getDraft(id)?.status === "pending") patchDraft(id, { to });
+		},
 		edit: (id, text, subject) => {
 			const r = editDraft(id, text, subject);
 			return r.ok ? { ok: true } : { ok: false, reason: r.text, ...(r.code ? { code: r.code } : {}), ...(r.lint ? { lint: r.lint } : {}) };

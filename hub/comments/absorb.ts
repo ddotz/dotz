@@ -6,7 +6,7 @@ import type { Store } from "./store.ts";
 // Stores what an adapter read. New ids are added (and returned). A stored reply row keyed by position (Instagram's old `<comment>.<index>`) is replaced by
 // the same reply under its real id, with everything that pointed at it (drafts, send records, 답장 안 함) moved along; a stored row whose author or
 // `mine` could not be known then gets it once the adapter can tell. Reading the same thing again changes nothing.
-export function absorbComments(store: Store, collector: string, unknownUser: string, src: SourceConfig, raws: RawComment[]): Comment[] {
+export function absorbComments(store: Store, collector: string, unknownUser: string, src: SourceConfig, raws: RawComment[], onEdited?: (c: Comment, before: string) => void): Comment[] {
 	const incoming = raws.filter(r => watches(src, r.thread)).map(r => toComment(src, r, collector));
 	if (!incoming.length) return [];
 	const stored = store.comments();
@@ -14,6 +14,7 @@ export function absorbComments(store: Store, collector: string, unknownUser: str
 	const matched = new Set<string>();
 	const renames: { from: string; to: Comment }[] = [];
 	const refine: Record<string, Partial<Comment>> = {};
+	const edited: { c: Comment; before: string }[] = [];
 	const add: Comment[] = [];
 	for (const c of incoming) {
 		const old = byId.get(c.id);
@@ -23,6 +24,10 @@ export function absorbComments(store: Store, collector: string, unknownUser: str
 			// A reply first stored as a comment of its own (Instagram listed it top-level) gets its comment once a read names it (issue #31).
 			if (c.parent && !old.parent) patch.parent = c.parent;
 			if (old.author === unknownUser && c.author !== unknownUser) patch.author = c.author;
+			if (c.text && c.text !== old.text) {
+				patch.text = c.text;
+				if (old.text) edited.push({ c: { ...old, text: c.text }, before: old.text });
+			}
 			if (Object.keys(patch).length) refine[old.id] = { ...refine[old.id], ...patch };
 			continue;
 		}
@@ -37,7 +42,9 @@ export function absorbComments(store: Store, collector: string, unknownUser: str
 	}
 	store.replaceComments(renames);
 	store.patchComments(refine);
-	return store.addComments(add);
+	const fresh = store.addComments(add);
+	for (const e of edited) onEdited?.(e.c, e.before);
+	return fresh;
 }
 
 // Issue #31: older Instagram reads stored each reply twice, as `<comment>.<n>` (no author, not his, the comment's time) and under its real id (often

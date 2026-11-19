@@ -9,6 +9,7 @@ import { parseDecisions } from "../choices.ts";
 import { LINT_REFUSED, PAIR_NOTE, parseDraftApproval } from "../draft-approval.ts";
 import { commentAsk } from "./ask.ts";
 import { type Comment, type CommentAdapter, commentId, type RawComment, type SourceConfig } from "./contract.ts";
+import { outcomeOf } from "../approval-send.ts";
 import { createEngine, type Engine, type MailLink, type MailView } from "./engine.ts";
 import { approvalHash } from "../draft-approval.ts";
 import { commentAdapter } from "./reply-adapter.ts";
@@ -179,6 +180,19 @@ describe("the combined card", () => {
 		const out2 = await runComments(["send", d2.code], f.engine, f.inbox);
 		expect(out2.code).toBe(1);
 		expect(f.log).toEqual(["compose M1", "reply"]);
+	});
+
+	test("under the gateway the send prints the mail's own reason, and the queue's outcome carries it (CM-7)", async () => {
+		const t = setup({ failSend: "SMTP 거부" });
+		const d = await withMail(t);
+		await pick(t, d.code, 1);
+		process.env.DOTZ_GATEWAY_SEND = "1";
+		try {
+			const out = await runComments(["send", d.code], t.engine, t.inbox);
+			expect(outcomeOf({ code: out.code, out: out.lines.join("\n") })).toMatchObject({ sent: "partial", rest: "maybe", mail: "SMTP 거부" });
+		} finally {
+			delete process.env.DOTZ_GATEWAY_SEND;
+		}
 	});
 
 	test("a mail whose files disagree with its words is refused before the reply is posted; the card shows why and offers 이대로 보내기", async () => {

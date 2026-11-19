@@ -199,4 +199,18 @@ describe("approval sender", () => {
 		expect(sendActionOf("어떻게 보낼지 직접 입력")).toBeUndefined();
 		expect(refOfQuestion("이대로 보낼까? (D2jwqz9)")).toBe("D2jwqz9");
 	});
+
+	test("a reply that went up while its mail failed is told with the mail's own reason (CM-7)", async () => {
+		const out = [said({ sent: "yes", part: "reply" }), said({ sent: "maybe", code: "unknown", part: "mail", detail: "smtp refused" })].join("\n");
+		expect(outcomeOf({ code: 1, out })).toMatchObject({ sent: "partial", done: 1, total: 2, rest: "maybe" });
+		const reports: SendResult[] = [];
+		const s = createApprovalSender({ kind: ref => PLACES[ref], run: async () => ({ code: 1, out }), report: r => void reports.push(r), log: () => undefined });
+		s.enqueue({ ref: "D1", conv: "comment:site-a", action: "send", title: "q (D1)" });
+		await s.idle();
+		expect(reports.at(-1)?.text).toBe("답글은 올렸고 메일은 못 보냈어요: smtp refused");
+		const refused = [said({ sent: "yes", part: "reply" }), said({ sent: "no", code: "attach_mismatch", part: "mail", detail: "첨부를 확인해 주세요: 본문에 쓴 파일이 안 붙었어요" })].join("\n");
+		expect(outcomeOf({ code: 1, out: refused })).toMatchObject({ sent: "partial", rest: "no", code: "attach_mismatch" });
+		expect(outcomeOf({ code: 0, out: [said({ sent: "yes", part: "reply" }), said({ sent: "yes", part: "mail" })].join("\n") })).toEqual({ sent: "yes" });
+		expect(outcomeOf({ code: 1, out: [said({ sent: "no", code: "offline", part: "reply" }), said({ sent: "no", code: "offline", part: "mail" })].join("\n") })).toEqual({ sent: "no", code: "offline" });
+	});
 });

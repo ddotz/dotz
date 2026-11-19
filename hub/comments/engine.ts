@@ -1,5 +1,6 @@
 // The comment engine: collect (script only, no model), draft (a model call only on request or per-source auto-draft), send (only through
 // the gate in contract.ts). Everything is injected (adapters, model, clock, tone, broadcast) so tests run without a network.
+import { editFollower } from "./edited.ts";
 import { editLesson, ownerLint, type ReplyStyle } from "../reply-draft.ts";
 import { absorbComments, mergeIgTwins } from "./absorb.ts";
 import { failAuto, leaveQueue } from "./auto-queue.ts";
@@ -43,6 +44,7 @@ export type MailLink = {
 	revise: (id: string, change: string) => Promise<{ ok: true; id: string } | { ok: false; reason: string }>;
 	/** The owner's own text for the mail, saved as written (직접 수정); refused with the lint's lines. Missing = the mail cannot be edited here. */
 	edit?: (id: string, text: string, subject?: string) => { ok: true } | { ok: false; reason: string; code?: string; lint?: string[] };
+	retarget?: (id: string, to: string) => void;
 	view: (id: string) => MailView | undefined;
 };
 export type ModelReply = { text: string; inputTokens?: number; outputTokens?: number };
@@ -441,7 +443,7 @@ export function createEngine(deps: EngineDeps) {
 				const waiting = batch.filter(c => !c.parent && !c.mine && !answeredBy(c, replies));
 				try {
 					const res = await adapter.recheck(src, batch);
-					absorbComments(store, deps.collector, UNKNOWN_USER, src, res.comments);
+					absorbComments(store, deps.collector, UNKNOWN_USER, src, res.comments, editFollower(store, deps.mail, emit));
 					const at = deps.now();
 					const gone = new Set(res.gone);
 					if (orphans.length) store.setCursor(parentsKey, { ranAt: at });
@@ -484,7 +486,7 @@ export function createEngine(deps: EngineDeps) {
 				// A time after the read (a source's clock or a misparsed stamp, issue #31) is the read time: a comment from the future would sort above
 				// everything that comes later and never age out of the unreplied list.
 				const now = deps.now();
-				fresh = absorbComments(store, deps.collector, UNKNOWN_USER, src, res.comments.map(r => (r.at > now ? { ...r, at: now } : r)));
+				fresh = absorbComments(store, deps.collector, UNKNOWN_USER, src, res.comments.map(r => (r.at > now ? { ...r, at: now } : r)), editFollower(store, deps.mail, emit));
 				const wanted = src.autoDraft && replyOn(src) ? fresh.filter(c => c.at >= (src.autoSince ?? 0) && needsReply(c)).map(c => c.id) : [];
 				// Not capped: a waiting comment is never dropped silently. It is bounded anyway: only stored comments (MAX_COMMENTS) are queued, and a queue entry whose comment is gone or answered is settled without a model call.
 				const queue = [...new Set([...(prior.queue ?? []), ...wanted])];
