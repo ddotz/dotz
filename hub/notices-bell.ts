@@ -54,6 +54,9 @@ const sortedNotices = (): Notice[] => {
 // The same list with no limit: what a lookup or a scan inside the hub reads (a limit would hide a card past it).
 export const allNotices = (): Notice[] => sortedNotices().map(i => withClass(i, readable(i)));
 
+/** The open decisions in the order of allNotices, converted without converting the rest of the list. */
+export const openDecisionNotices = (): Notice[] => sortedNotices().filter(i => i.kind === "decision" && i.decision?.state === "open").map(i => withClass(i, readable(i)));
+
 // `keepOpen` (GET /api/notices): never fewer rows than the open decisions plus 100, so no open card falls off the page.
 export function listNotices(limit = 100, keepOpen = false): { items: Notice[]; unread: number } {
 	const sorted = sortedNotices();

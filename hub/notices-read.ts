@@ -1,7 +1,9 @@
 // A notice as the owner reads it, and the frame the pages are sent. A part of the notice store split out of hub/notices.ts, code unchanged.
 import { broadcast as broadcastRaw } from "./events.ts";
 import { classOfNotice } from "./notice-class.ts";
-import { noticeKo } from "./notice.ts";
+import { TZ } from "./config.ts";
+import { noticeFor, noticeKo } from "./notice.ts";
+import { webView } from "./web-i18n.ts";
 import { watchLine, watchReasonKo } from "./watchtext.ts";
 import type { Notice } from "./notices-types.ts";
 import { laneTitleOf, watchLabelOf } from "./notices-wiring.ts";
@@ -25,21 +27,45 @@ export function summary(text: string): string {
 		.join("\n");
 }
 
+type Dep = { read: () => unknown; was: unknown };
+let deps: Dep[] | undefined;
+const dep = <T>(read: () => T): T => {
+	const was = read();
+	deps?.push({ read, was });
+	return was;
+};
+const laneName = (name: string): string | undefined => laneTitleOf(name)?.trim() || recordedTitle(name);
 // A notice as the owner reads it (the stored one keeps what the bot wrote): everyday Korean, no tool names, commands, ids or paths (hub/notice-ko.ts).
-export const say = (s: string): string => noticeKo(s, { lane: name => laneTitleOf(name)?.trim() || recordedTitle(name), keepFiles: true });
+export const say = (s: string): string => noticeKo(s, { lane: name => dep(() => laneName(name)), keepFiles: true });
+type Shown = { kind: Notice["kind"]; key: string | undefined; title: string; text: string; draft: boolean; engine: unknown; day: string; deps: Dep[]; outTitle: string; outText: string };
+const shown = new WeakMap<Notice, Shown>();
+let dayOf: Intl.DateTimeFormat | undefined;
+const today = (): string => (dayOf ??= new Intl.DateTimeFormat("en-CA", { timeZone: TZ })).format(Date.now());
 export function readable(n: Notice): Notice {
-	const r = readableStored(n);
-	const title = say(r.title), text = r.decision?.draft ? r.text : say(r.text);
-	return title === r.title && text === r.text ? r : { ...r, title, text };
+	const engine = noticeFor(webView()), day = today(), draft = !!n.decision?.draft;
+	let c = shown.get(n);
+	if (!c || c.kind !== n.kind || c.key !== n.key || c.title !== n.title || c.text !== n.text || c.draft !== draft || c.engine !== engine || c.day !== day || c.deps.some(d => d.read() !== d.was)) {
+		const seen: Dep[] = [];
+		deps = seen;
+		try {
+			const r = readableStored(n);
+			const outTitle = say(r.title), outText = r.decision?.draft ? r.text : say(r.text);
+			c = { kind: n.kind, key: n.key, title: n.title, text: n.text, draft, engine, day, deps: seen, outTitle, outText };
+		} finally {
+			deps = undefined;
+		}
+		shown.set(n, c);
+	}
+	return c.outTitle === n.title && c.outText === n.text ? n : { ...n, title: c.outTitle, text: c.outText };
 }
 // A watch notice stored before labels and Korean reasons: its title is the watch name and its text starts with the raw reason.
 function readableStored(n: Notice): Notice {
 	if (n.kind === "message" && n.key?.startsWith("msg:settings:")) {   // stored before settings conversations had a name: titled "대화"
-		const title = channelTitle(n.key.slice(4));
+		const title = dep(() => channelTitle(n.key!.slice(4)));
 		return title === n.title ? n : { ...n, title };
 	}
 	if (n.kind !== "watch") return n;
-	const title = watchLabelOf(n.title);
+	const title = dep(() => watchLabelOf(n.title));
 	const [first = "", ...rest] = n.text.split("\n");
 	const named = title !== n.title && n.text.startsWith(`${n.title}:`) ? `${title}${n.text.slice(n.title.length)}` : n.text;
 	const text = watchReasonKo(first) !== first ? watchLine(title, first, rest.join("\n"), { raw: false }) : named;
