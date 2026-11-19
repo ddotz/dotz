@@ -166,7 +166,6 @@ function rqMailParts(dr, o) {
     attach: draftFilesNode(dr, { t: o.t, edit: o.edit, warn: o.warn, hold: o.hold }) };
 }
 // The card. c: { key, cls, attrs, head (rqHeadNode), label + labelCls (a sub-head such as "답장 초안 · 메시지 2개"),
-// rcpt ({ label, to, cc, account, accountHeld, mail }: the line under the head with who gets it; a mail adds 참조 and 보내는 계정), recv (a mail draft's own 받는이·참조 rows, 10-decision-card.js draftToNode), subject (its text, or the field that stands there in the 고치기 panel),
 // original: {who, text, ref} (what the draft answers) or its node, body, attach (the draft's attachments [{ name, size }], or the caller's own files node),
 // extra (nodes under the body: the mail that goes along), then one of: sent (보냈어요 at sentAt), acts (rqActsNode: { send, fix, drop, busy, press, quiet }),
 // fail (rqFailNode: the line above the buttons after a failed action), foot (a node that stands in the foot instead: 10-reply-actions.js rqSendNode, or the

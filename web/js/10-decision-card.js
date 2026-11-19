@@ -211,8 +211,6 @@ function multiNodes(dc, picks, st) {
 // A mail reply draft of reply-drafts can change its files here (hub/draft-attach.ts): 파일 추가 = a file of this device or of the mail
 // app's 첨부 파일 폴더, x = take one off. The live list (DRF.st) replaces the one written in the message. o.t = the draft's conversation
 // (a peer's draft is changed on its own computer), o.edit false = read only, o.warn = a box the warning is drawn into instead of under the files.
-// o.stage (the 고치기 panel, 10-reply-actions.js rqFixNodes) = { remove: [{ at, name, size }], add: [{ name, size, file | library }] }: a change only marks it (o.onstage is told);
-// nothing is written until 반영 (raRowsApply), and 닫기 forgets it.
 const DR_IMG = /\.(png|jpe?g|gif|webp|avif|heic)$/i;
 const DRF = { st: {}, pc: {}, menu: {}, lib: {}, busy: {}, wait: {}, again: {}, hash: {}, gen: {} };
 const drfUploading = d => [d.ref, d.mail && d.mail.ref].some(r => r && DRF.busy[r]);

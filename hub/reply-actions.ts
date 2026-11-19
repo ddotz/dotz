@@ -4,7 +4,7 @@
 // vocabulary (the reply clarity design, 2026-11-16): `send` only sends the version the owner sees (its pick and job carry its approvalHash),
 // `revise` (AI로 고치기) and `edit` (직접 고치기) only change, and an agent caller may only revise. A send the model read from the owner's words
 // (`confirm`, the reply intent design 2026-11-16) sends nothing: it posts the card again to be pressed. Everything it touches is injected: it
-// imports no adapter, no notice code and no route handler; the one thing it reads from hub/reply-route.ts is `sinceMidnight`, the gateway's "today".
+// imports no adapter, no notice code and no route.
 import { approvalHash, type SendJob, type SendResult } from "./approval-send.ts";
 import { DRAFT_HAND_EDIT } from "./draft-approval.ts";
 import { draftHead } from "./reply-chat.ts";
@@ -388,7 +388,6 @@ export function createReplyActions(deps: ReplyDeps) {
 		/** Every reply every surface shows: the adapters' drafts with their sends, then the hand-written cards. A draft with an open card is in the
 		 * card's conversation and names its notice (as `act` places its pick), so a typed answer or the model's marker there finds it. */
 		list: (): Promise<ReplyItem[]> => listAll({ deps, known, itemOf, ledger }),
-		/** The settle pass for send records: a failed or unsure record whose draft was closed elsewhere (dropped, replaced; not sent) is cleared. Returns how many. */
 		settleOwed: (): Promise<number> => settleOwed({ deps, known, ledger, revising }),
 		/** The open cards of conversation `conv`, as stored (no list needed): what a typed answer and the model's marker there may name. */
 		open: (conv: string): OpenCard[] => deps.cards.open().filter(c => c.conv === conv),

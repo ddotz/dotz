@@ -56,9 +56,7 @@ export type ReplyItem = {
 		toLabel: string;
 		to: string;
 		cc?: string[];
-		/** The account the mail goes out from, as the send resolves it; it is in the approvalHash. */
 		account?: string;
-		/** Several accounts are logged in and none is chosen yet: the mail is not sent until the owner picks one. */
 		accountHeld?: true;
 		subject?: string;
 		text: string;
@@ -86,7 +84,6 @@ export type ReplyItem = {
  * (the ledger's record is in memory only); it shows as the item's send when the ledger has none, and is no part of its approvalHash. */
 export type DraftView = Omit<ReplyItem, "send"> & {
 	sent?: { at: number; how: SentHow };
-	/** A reply that went out whose mail did not and still waits: the mail is a row of its own, so this row keeps the failure of its send as a state and offers no button for it. */
 	mailLeft?: true;
 };
 
