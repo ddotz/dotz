@@ -159,6 +159,11 @@ describe("session hygiene", () => {
 	});
 });
 
+test("in a test run every session root lies in the run's own folder, so the hygiene pass never rewrites the machine's real sessions", () => {
+	const own = process.env.DOTZ_TEST_DIR!;
+	expect(sessionRoots().filter(r => !r.startsWith(`${own}/`))).toEqual([]);
+});
+
 describe("Claude runtime sessions", () => {
 	test("the Claude projects folder is a session root, and an idle Claude session file is masked there", () => {
 		const prev = process.env.CLAUDE_CONFIG_DIR;

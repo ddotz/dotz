@@ -85,6 +85,8 @@ process.env.DOTZ_OMO = join(dir, "no-such-omo");
 // OmO's agent dir (auth.json pin, rpc hosts) is a throwaway one too, so the machine's real login state cannot change a test.
 process.env.OMO_CODING_AGENT_DIR = join(dir, "omo-agent");
 delete process.env.PI_AGENT_DIR;
+process.env.PI_CODING_AGENT_DIR = join(dir, "omp-agent");
+process.env.CLAUDE_CONFIG_DIR = join(dir, "claude-home");
 // The Codex CLI's login (hub/codex-usage.ts reads <CODEX_HOME>/auth.json): an empty dir, so no test reads the machine's token or reaches its account.
 process.env.CODEX_HOME = join(dir, "codex-home");
 // The user omo.json a lane's worker profile is written to (omo.ts writeWorkerProfile); not DOTZ_-prefixed, so spawns do not carry it.
