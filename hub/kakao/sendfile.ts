@@ -98,7 +98,8 @@ export async function sendFilesToSelf(input: FileSendInput, deps: FileSendDeps):
 				return fail(sent, "나와의 채팅을 읽지 못해서 보내지 않았어요");
 			}
 			const opened = await openRoom(input.room, input.all, deps.runner, { stayBehind: true, ...(hint >= 0 ? { hint } : {}) });
-			steps.push(`open:${opened.ok}:${opened.steps.map(s => `${s.step}=${s.ok}`).join(",")}`);
+			// why carries how the room was opened (how=return|menu(reason)) and the step times, so a test send shows which way it went.
+			steps.push(`open:${opened.ok}:${opened.steps.map(s => `${s.step}=${s.ok}${s.why ? `(${s.why})` : ""}`).join(",")}`);
 			if (!opened.ok) return fail(sent, opened.reason);
 			if (i === 0 && opened.steps.some(s => s.why === "already_open")) keepWindow = true;
 			const r = await attach(deps.runner, input.room.name, path);
