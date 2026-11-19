@@ -3,7 +3,7 @@ import { setupEnv } from "../features/reply-drafts/test/helpers.ts";
 import { draftApprovalBlock } from "./draft-approval.ts";
 import { HUB_TOKEN, paths } from "./config.ts";
 import { AGENT_AUTHOR } from "./agent-author.ts";
-import { openDraftCards } from "./notices-drafts.ts";
+import { openDraftCards, redrawDraftCards } from "./notices-drafts.ts";
 import { emit, onEmit, tailEvents, type HubEvent } from "./events.ts";
 import { activeGrant } from "./model-guard.ts";
 import { commandGate } from "./control.ts";
@@ -28,12 +28,14 @@ const next = (want: (e: HubEvent) => boolean) => {
 };
 const midOf = (text: string) => String(tailEvents(paths.inbox).findLast(e => e.kind === "message" && e.text === text)!.mid);
 const inboxLine = (has: string) => next(e => e.kind === "message" && String(e.text).includes(has));
-const gatewayLine = () => next(e => e.kind === "out" && e.target === "web" && e.source === "gateway");
+const gatewayLine = (target = "web") => next(e => e.kind === "out" && e.target === target && e.source === "gateway");
 
-const draftCard = (ref: string) => {
-	resetNoticesForTest();
-	emit("outbox", { ts: new Date().toISOString(), kind: "out", source: "orchestrator", target: "web", text: `[ask] 답장 초안이에요\n${draftApprovalBlock({ to: "kim@example.com", toLabel: "받는이", body: "안녕하세요", ref, question: "이 메일 보낼까요?" })}` });
+const draftCard = (ref: string, o: { target?: string; ts?: number; keep?: boolean } = {}) => {
+	if (!o.keep) resetNoticesForTest();
+	emit("outbox", { ts: (o.ts === undefined ? new Date() : new Date(o.ts)).toISOString(), kind: "out", source: "orchestrator", target: o.target ?? "web", text: `[ask] 답장 초안이에요\n${draftApprovalBlock({ to: "kim@example.com", toLabel: "받는이", body: "안녕하세요", ref, question: "이 메일 보낼까요?" })}` });
 };
+const ownerSaid = (mid: string, at: number, conv?: string) => emit("inbox", { ts: new Date(at).toISOString(), kind: "message", source: "web", mid, text: `버려 ${mid}`, ...(conv ? { conv } : {}) });
+const DROP_ON_CARD = "버리기는 카드에서 눌러 주세요";
 
 describe("a card marker answering a message (P1-1)", () => {
 	test("[drop] answering a hub-token message drops nothing, and the refusal names the owner's own button", async () => {
@@ -55,11 +57,73 @@ describe("a card marker answering a message (P1-1)", () => {
 	});
 
 	test("[drop] answering the owner's own web message drops it as his word", async () => {
-		draftCard("RAGT003");
+		draftCard("RAGT003", { ts: new Date().getTime() - 1000 });
 		await owner({ text: "그 답장 버려 (형)" });
 		const dropped = inboxLine("(RAGT003) → 3) 보내지 않기");
 		await agent("POST", "/api/send", { target: "web", text: "[drop RAGT003]", reply_to: midOf("그 답장 버려 (형)") });
 		expect((await dropped).author).toBe("local");
+	});
+
+	test("[drop] answering an older owner message, when he wrote again after it, drops nothing and says to use the card", async () => {
+		const t = new Date().getTime() - 60_000;
+		draftCard("RAGT004", { ts: t });
+		ownerSaid("m-old-1", t + 1000);
+		ownerSaid("m-new-1", t + 2000);
+		const told = gatewayLine();
+		await agent("POST", "/api/send", { target: "web", text: "[drop RAGT004]", reply_to: "m-old-1" });
+		expect((await told).text).toContain(DROP_ON_CARD);
+		expect(openDraftCards("main").map(c => c.ref)).toEqual(["RAGT004"]);
+	});
+
+	test("[drop] answering the owner's newest message, written before the card, drops nothing", async () => {
+		const t = new Date().getTime() - 60_000;
+		ownerSaid("m-before-1", t);
+		draftCard("RAGT005", { ts: t + 1000 });
+		const told = gatewayLine();
+		await agent("POST", "/api/send", { target: "web", text: "[drop RAGT005]", reply_to: "m-before-1" });
+		expect((await told).text).toContain(DROP_ON_CARD);
+		expect(openDraftCards("main").map(c => c.ref)).toEqual(["RAGT005"]);
+	});
+
+	test("[drop] answering the owner's newest message after the card drops it", async () => {
+		const t = new Date().getTime() - 60_000;
+		draftCard("RAGT006", { ts: t });
+		ownerSaid("m-after-1", t + 1000);
+		const dropped = inboxLine("(RAGT006) → 3) 보내지 않기");
+		await agent("POST", "/api/send", { target: "web", text: "[drop RAGT006]", reply_to: "m-after-1" });
+		expect((await dropped).author).toBe("local");
+	});
+
+	test("in a mail's conversation too, a [drop] answering an owner message older than his newest drops nothing", async () => {
+		const t = new Date().getTime() - 60_000, conv = "mail:zele-agt7";
+		draftCard("RAGT007", { ts: t, target: conv });
+		ownerSaid("m-mail-old", t + 1000, conv);
+		ownerSaid("m-mail-new", t + 2000, conv);
+		const told = gatewayLine(conv);
+		await agent("POST", "/api/send", { target: conv, text: "[drop RAGT007]", reply_to: "m-mail-old" });
+		expect((await told).text).toContain(DROP_ON_CARD);
+		expect(openDraftCards(conv).map(c => c.ref)).toEqual(["RAGT007"]);
+	});
+
+	test("a [drop] answering a message the owner wrote on another computer drops nothing, and the session is told to use the card", async () => {
+		const t = new Date().getTime() - 60_000;
+		draftCard("RAGT010", { ts: t });
+		emit("inbox", { ts: new Date(t + 1000).toISOString(), kind: "message", source: "web", mid: "m-peer-1", via: "macmini", text: "버려 (다른 컴퓨터)" });
+		const told = gatewayLine();
+		await agent("POST", "/api/send", { target: "web", text: "[drop RAGT010]", reply_to: "m-peer-1" });
+		expect((await told).text).toContain(DROP_ON_CARD);
+		expect(openDraftCards("main").map(c => c.ref)).toEqual(["RAGT010"]);
+	});
+
+	test("a card revised into a new ref is not dropped by an owner message written before the new card", async () => {
+		const t = new Date().getTime() - 60_000;
+		draftCard("RAGT008", { ts: t });
+		ownerSaid("m-revise-1", t + 1000);
+		redrawDraftCards("RAGT008", `[ask] 답장 초안이에요\n${draftApprovalBlock({ to: "kim@example.com", toLabel: "받는이", body: "안녕하세요, 고쳤어요", ref: "RAGT009", question: "이 메일 보낼까요?" })}`, undefined, "RAGT009");
+		const told = gatewayLine();
+		await agent("POST", "/api/send", { target: "web", text: "[drop RAGT009]", reply_to: "m-revise-1" });
+		expect((await told).text).toContain(DROP_ON_CARD);
+		expect(openDraftCards("main").map(c => c.ref)).toEqual(["RAGT009"]);
 	});
 });
 

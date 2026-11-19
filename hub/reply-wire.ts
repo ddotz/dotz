@@ -203,7 +203,7 @@ export const replies = createReplyActions({
 	say: (conv, ref, text) => void out(noteTarget(conv, ref), text, undefined, { source: "gateway", nk: "gateway-note" }).catch(e => log(`reply ${ref}: note to ${conv} failed: ${e}`)),
 	learning: replyLearning(),
 	cards: {
-		open: () => openDraftCards().map(c => ({ ref: c.ref, conv: c.to, notice: c.id, title: c.title, ...(c.hash ? { hash: c.hash } : {}), ...(c.discord ? { discord: c.discord } : {}), ...(c.asked ? { asked: c.asked } : {}), ...(c.posts ? { posts: c.posts } : {}) })),
+		open: () => openDraftCards().map(c => ({ ref: c.ref, conv: c.to, notice: c.id, title: c.title, shown: c.shown, ...(c.hash ? { hash: c.hash } : {}), ...(c.discord ? { discord: c.discord } : {}), ...(c.asked ? { asked: c.asked } : {}), ...(c.posts ? { posts: c.posts } : {}) })),
 		convOf: ref => cardOfRef(ref)?.decision?.to,
 		replace: (oldRef, newRef, text, hash) => void redrawDraftCards(oldRef, text, hash, newRef),
 		rewrite: (ref, text, hash) => void redrawDraftCards(ref, text, hash),

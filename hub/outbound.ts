@@ -18,7 +18,7 @@ import { normalizeAsk, plainBareAsk } from "./ask-normalize.ts";
 import { stripRecommendMark } from "./choices.ts";
 import { asksLimitStopInChat } from "./limit-ask.ts";
 import { asksPersonalInChat } from "./personal-ask.ts";
-import { answeredIds, answeredSince, broadcast, emit, emitDelivery, eventTarget, type HubEvent, ownerMessage, recentOwnerMessages, tailEvents, workAnswer } from "./events.ts";
+import { answeredIds, answeredSince, broadcast, emit, emitDelivery, eventTarget, type HubEvent, newestOwnerMessage, ownerMessage, recentOwnerMessages, tailEvents, workAnswer } from "./events.ts";
 import { settleWaiting, type Waiting } from "./awaiting.ts";
 import { outEvent } from "./projectchat.ts";
 import { recordProjectInfo } from "./projectinfo.ts";
@@ -513,7 +513,11 @@ export async function out(target: string, text: string, replyTo?: string, extra:
 			const asked = answersOwner && !extra.update_key ? (replyTo ?? lateRequest(target)) : undefined;
 			const said = asked ? ownerMessage(asked) : undefined;
 			const owner = asked && said?.conv === conv && !said.notOwner ? { owner: { mid: asked, text: said.text } } : {};
-			if (replies) void applyCardMarkers(marks, { replies, ...owner, tell: line => out(target, line, replyTo, { source: "gateway", nk: "gateway-note" }), log }).catch(e => log(`card markers in ${target} failed: ${(e as Error).message}`));
+			const mayDrop = (ref: string) => {
+				const shown = replies?.open(conv).find(c => c.ref === ref)?.shown;
+				return !!asked && !!said && !!shown && newestOwnerMessage(conv)?.id === asked && Date.parse(said.ts) > Date.parse(shown);
+			};
+			if (replies) void applyCardMarkers(marks, { replies, ...owner, mayDrop, tell: line => out(target, line, replyTo, { source: "gateway", nk: "gateway-note" }), log }).catch(e => log(`card markers in ${target} failed: ${(e as Error).message}`));
 			text = marks.rest;
 			// A marker alone still answers the owner's message: it is settled (shown answered, its progress line stopped) as a posted answer is.
 			if (!text) return (settleAnswer({ target, text, replyTo: replyTo ?? lateRequest(target), extra }), { delivered: true });

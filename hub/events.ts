@@ -365,6 +365,12 @@ export function ownerMessage(id: string): { text: string; ts: string; author?: s
 	const e = recent.findLast(is) ?? tailEvents(paths.inbox).findLast(is);
 	return e ? { text: String(e.text ?? ""), ts: e.ts, ...(typeof e.author === "string" ? { author: e.author } : {}), conv: eventTarget(e) ?? "main", ...(ownerWrote(e) ? {} : { notOwner: true as const }) } : undefined;
 }
+/** The id and time of the newest message the owner himself wrote in conversation `conv` (the live ring and the inbox tail; another computer's or an agent's do not count). */
+export function newestOwnerMessage(conv: string): { id: string; ts: string } | undefined {
+	const is = (e: HubEvent) => (e.kind === "message" || e.kind === "lane_message") && (typeof e.mid === "string" || typeof e.message_id === "string") && ownerWrote(e) && (eventTarget(e) ?? "main") === conv;
+	const e = [recent.findLast(is), tailEvents(paths.inbox).findLast(is)].filter((x): x is HubEvent => !!x).sort((a, b) => Date.parse(b.ts) - Date.parse(a.ts))[0];
+	return e ? { id: String(e.mid ?? e.message_id), ts: e.ts } : undefined;
+}
 
 // Did the orchestrator answer in `target` after `at` (ms)? A stored prompt without a message id counts as answered then.
 export function answeredSince(target: string, at: number): boolean {

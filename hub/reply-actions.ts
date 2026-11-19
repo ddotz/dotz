@@ -26,8 +26,9 @@ type Sender = {
 	results: () => SendResult[];
 };
 /** An open send-approval card (a notice) that shows draft `ref` in conversation `conv`; `hash`: the version it was last drawn with; `discord`: the
- * version its Discord message shows; `asked`: the ts of the post that asked it (a web quote names it); `posts`: its Discord message ids (a Discord reply names one). */
-export type OpenCard = { ref: string; conv: string; notice: string; title: string; hash?: string; discord?: string; asked?: string; posts?: string[] };
+ * version its Discord message shows; `asked`: the ts of the post that asked it (a web quote names it); `posts`: its Discord message ids (a Discord reply names one);
+ * `shown`: when the card was last drawn as it reads now (made, revised, reopened). */
+export type OpenCard = { ref: string; conv: string; notice: string; title: string; hash?: string; discord?: string; asked?: string; posts?: string[]; shown?: string };
 export type ReplyDeps = {
 	adapters: ReplyAdapter[];
 	sender: Sender;
