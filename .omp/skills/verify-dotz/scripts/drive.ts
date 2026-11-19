@@ -1,7 +1,7 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, relative } from "node:path";
-import { REPO, type Run, call, readRun } from "./lib.ts";
+import { REPO, type Run, alive, call, readRun } from "./lib.ts";
 import { appShellScript, autoReplyColdScript, autoReplyScript } from "./browser.ts";
 
 const [feature, runId] = process.argv.slice(2);
@@ -39,9 +39,44 @@ const fail = (why: string): never => {
 };
 
 const ART = /^@@ART (\S+) (\S+)$/;
+const REAL_HOME = process.env.VERIFY_REAL_HOME ?? homedir();
+const BROWSER_LOCK = join(REAL_HOME, ".cache", "verify-dotz", "browser.lock");
+const LOCK_WAIT_MS = 600_000;
+
+function takeBrowserLock(): void {
+	mkdirSync(join(REAL_HOME, ".cache", "verify-dotz"), { recursive: true });
+	const until = Date.now() + LOCK_WAIT_MS;
+	for (;;) {
+		try {
+			writeFileSync(BROWSER_LOCK, `${process.pid} ${runId}\n`, { flag: "wx" });
+			return;
+		} catch (error) {
+			if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+		}
+		const holder = Number(readFileSync(BROWSER_LOCK, "utf8").split(" ")[0]);
+		if (!holder || !alive(holder)) {
+			unlinkSync(BROWSER_LOCK);
+			continue;
+		}
+		if (Date.now() > until) fail(`another verify-dotz drive (pid ${holder}) held the Aside browser for ${LOCK_WAIT_MS / 1000} s; see ${BROWSER_LOCK}`);
+		Bun.sleepSync(500);
+	}
+}
+
+function releaseBrowserLock(): void {
+	try {
+		if (readFileSync(BROWSER_LOCK, "utf8").startsWith(`${process.pid} `)) unlinkSync(BROWSER_LOCK);
+	} catch (error) {
+		if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+	}
+}
+process.on("exit", releaseBrowserLock);
+
 function browser(step: string, script: string): string[] {
-	const env = { ...process.env, HOME: process.env.VERIFY_REAL_HOME ?? homedir() };
+	const env = { ...process.env, HOME: REAL_HOME };
+	takeBrowserLock();
 	const r = Bun.spawnSync(["aside", "repl", "--file", "-"], { stdin: Buffer.from(script), stdout: "pipe", stderr: "pipe", env, timeout: 118_000 });
+	releaseBrowserLock();
 	const lines = r.stdout.toString().split("\n");
 	const written: string[] = [];
 	const kept: string[] = [];
@@ -128,7 +163,7 @@ artifacts.push("checks.log");
 const kinds = artifacts.map(a => `${a}:${a.endsWith(".png") ? "screenshot" : "log"}`);
 const command = `bun .omp/skills/verify-dotz/scripts/drive.ts ${feature} ${runId}`;
 const manifest = Bun.spawnSync(
-	["bun", join(process.env.VERIFY_REAL_HOME ?? homedir(), ".omp/agent/harness/gate/evidence.ts"), "manifest", "--repo", REPO, "--feature", feature, "--driver", ".omp/skills/verify-dotz/scripts/drive.ts", "--command", command, "--run", out, ...kinds],
+	["bun", join(REAL_HOME, ".omp/agent/harness/gate/evidence.ts"), "manifest", "--repo", REPO, "--feature", feature, "--driver", ".omp/skills/verify-dotz/scripts/drive.ts", "--command", command, "--run", out, ...kinds],
 	{ stdout: "inherit", stderr: "inherit" },
 );
 if (manifest.exitCode !== 0) process.exit(1);
