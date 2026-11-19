@@ -10,6 +10,7 @@ import { UNKNOWN_USER } from "../../features/youtube-instagram/lib/ig-owner.ts";
 import { ATTACH_AS_IS_HINT, ATTACH_REFUSED, LINT_REFUSED, PAIR_NOTE, asksForFile, fileSizeText, pairCheck, recipientCheck } from "../draft-approval.ts";
 import { ADDRESS, checkNoMail, EXTRA_NOTE, MAIL_FAILED_NOTE, MAIL_NO_APP_NOTE, mailPlanned, NO_MAIL_REFUSED, promisesMail } from "./no-mail.ts";
 import { type ClosedReason, createStore, type Draft, type MailOutcome, type Reply, type Store } from "./store.ts";
+import { type CommentNotice, sendFailedNotice, waitingNotice } from "./news.ts";
 import { unrepliedFresh } from "../unreplied.ts";
 import type { MailQuery } from "./mail-match.ts";
 import { createPastRefresh, type PastDeps } from "./past-refresh.ts";
@@ -463,8 +464,8 @@ export function createEngine(deps: EngineDeps) {
 	// MAX_AUTO_PER_RUN of them and starts nothing after `deadline` (the watch's run budget), so the rest waits for the next run. A comment
 	// leaves the queue only after its draft is stored, and one that already has a draft is skipped: a run killed mid-draft loses nothing and
 	// drafts nothing twice.
-	async function collect(opts: { force?: boolean; deadline?: number } = {}): Promise<{ added: Comment[]; drafted: Draft[]; sent: Reply[]; errors: Record<string, string> }> {
-		const out = { added: [] as Comment[], drafted: [] as Draft[], sent: [] as Reply[], errors: {} as Record<string, string> };
+	async function collect(opts: { force?: boolean; deadline?: number } = {}): Promise<{ added: Comment[]; drafted: Draft[]; sent: Reply[]; notices: CommentNotice[]; errors: Record<string, string> }> {
+		const out = { added: [] as Comment[], drafted: [] as Draft[], sent: [] as Reply[], notices: [] as CommentNotice[], errors: {} as Record<string, string> };
 		const cfg = store.config();
 		if (!cfg.enabled) return out;
 		const late = () => opts.deadline !== undefined && deps.now() >= opts.deadline;
@@ -499,6 +500,9 @@ export function createEngine(deps: EngineDeps) {
 			out.added.push(...fresh);
 			for (const t of new Set(fresh.map(c => c.thread))) emit({ kind: "comment", source: src.key, thread: t });
 			await autoDrafts(src, out, late);
+			const queued = new Set(store.cursors()[src.key]?.queue), carded = new Set(store.drafts().map(d => d.commentId));
+			const waiting = prior.ranAt && replyOn(src) ? waitingNotice(src, fresh.filter(c => needsReply(c) && !queued.has(c.id) && !carded.has(c.id))) : undefined;
+			if (waiting) out.notices.push(waiting);
 		}
 		// Settle what the reads showed; the slow part (re-reading open comments on the platforms) runs at most every RECHECK_EVERY_MS unless forced.
 		const last = store.cursors().reconcile?.ranAt ?? 0;
@@ -509,7 +513,7 @@ export function createEngine(deps: EngineDeps) {
 		return out;
 	}
 
-	async function autoDrafts(src: SourceConfig, out: { drafted: Draft[]; sent: Reply[]; errors: Record<string, string> }, late: () => boolean): Promise<void> {
+	async function autoDrafts(src: SourceConfig, out: { drafted: Draft[]; sent: Reply[]; notices: CommentNotice[]; errors: Record<string, string> }, late: () => boolean): Promise<void> {
 		if (!src.autoDraft || !replyOn(src)) return;
 		let made = 0;
 		for (const id of store.cursors()[src.key]?.queue ?? []) {
@@ -530,7 +534,11 @@ export function createEngine(deps: EngineDeps) {
 			out.drafted.push(step.draft);
 			if (ruleAllows(src, c.text)) {
 				const r = send(step.draft.code, { by: "rule" });
-				if (r.ok) out.sent.push(await r.done);
+				if (r.ok) {
+					const rep = await r.done;
+					if (rep.state === "sent") out.sent.push(rep);
+					else out.notices.push(sendFailedNotice(src, c, rep));
+				}
 			}
 		}
 	}
