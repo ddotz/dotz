@@ -629,7 +629,7 @@ describe("답장 안 함 on many mails", () => {
 		expect(posts[0]).toEqual({ path: "/api/mail/fyi", body: { keys: ["fx-a", "fx-b"], on: true } });
 		await waitFor(v, `${rowJs("회의 일정 변경")}.querySelector('.mr-state[data-state="답장 안 함"]')`);
 		// the action went through, so the whole choice clears, the mail that owed nothing too
-		expect(await ev<number>(v, `document.querySelectorAll("#mon-tl .mr-chk:checked").length`)).toBe(0);
+		await waitFor(v, `document.querySelectorAll("#mon-tl .mr-chk:checked").length === 0`);
 		await toastAct(v);
 		await posted(2);
 		expect(posts[1]).toEqual({ path: "/api/mail/fyi", body: { keys: ["fx-a", "fx-b"], on: false } });
