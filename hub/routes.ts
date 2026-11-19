@@ -321,9 +321,8 @@ export { applyMailStates, mailOriginal, mailSyncDeps } from "./routes-mail.ts";
 // A hand-written card's answer (kind `card`) is one owner message to the bot, as its own numbered answer would be.
 setReplyBot((to, text) => deliverAnswer({ to, text, picks: [], notice: "", login: "local" }));
 
-// An agent's own call never sends into a KakaoTalk room: that send is the owner's (hub/reply-actions.ts owner_only).
-const agentKakaoSend = (req: Request, url: URL, peer: string): Response | undefined =>
-	req.method === "POST" && /^\/api\/kakao\/chat\/[^/]+\/send$/.test(url.pathname) && agentCall(req, peer) ? json({ ok: false, code: "owner_only", error: "보내기는 오너만 할 수 있어요" }, 403) : undefined;
+const agentKakaoOwnerOnly = (req: Request, url: URL, peer: string): Response | undefined =>
+	req.method === "POST" && /^\/api\/kakao\/chat\/[^/]+\/(send|ask\/drop)$/.test(url.pathname) && agentCall(req, peer) ? json({ ok: false, code: "owner_only", error: "오너만 할 수 있어요" }, 403) : undefined;
 
 export function makeRoute({ tailnetName = ownTailnetName, busyNow, restartGateway, restartGatewayNow, mailDeps, mailReconcile }: RestartHooks): (req: Request, srv?: Server<unknown>) => Promise<Response> {
 	const setupGate = createSetupGate({ dir: DATA_DIR, localHeaders: () => localLogin.sessionHeaders(), restart: () => void restartGatewayNow(), providers: routeSettings, log });
@@ -409,7 +408,7 @@ export function makeRoute({ tailnetName = ownTailnetName, busyNow, restartGatewa
 			return (await proxyRequest(req, url, app, proxied, srv)) as Response;
 		}
 		const parts = url.pathname.split("/").filter(Boolean);
-		const authResponse = authRoute(req, url);
+		const authResponse = authRoute(req, url, agentCall(req, peer));
 		if (authResponse) return authResponse;
 		const ptyResponse = await ptyRoute(req, url);
 		if (ptyResponse) return ptyResponse;
@@ -534,7 +533,7 @@ export function makeRoute({ tailnetName = ownTailnetName, busyNow, restartGatewa
 		}
 		const appsResponse = await routeApps(req, url, unrepliedMailList);
 		if (appsResponse) return appsResponse;
-		const noticesResponse = await routeNotices(req, url);
+		const noticesResponse = await routeNotices(req, url, agentCall(req, peer));
 		if (noticesResponse) return noticesResponse;
 		// The phone's input diagnostic reports itself here (web/js/34-input-diag.js): known fields only, into a capped file under the data dir.
 		if (req.method === "POST" && url.pathname === "/api/input-diag") return json({ ok: true, kept: addInputDiag(await body(req)) }, 201);
@@ -635,7 +634,7 @@ export function makeRoute({ tailnetName = ownTailnetName, busyNow, restartGatewa
 		if (commentsResponse) return commentsResponse;
 		const igDmResponse = await igDmRoute(req, url, parts);
 		if (igDmResponse) return igDmResponse;
-		const kakaoResponse = agentKakaoSend(req, url, peer) ?? (await kakaoRoute(req, url, parts));
+		const kakaoResponse = agentKakaoOwnerOnly(req, url, peer) ?? (await kakaoRoute(req, url, parts));
 		if (kakaoResponse) return kakaoResponse;
 		const settingsResponse = await routeSettings(req, url, parts);
 		if (settingsResponse) return settingsResponse;

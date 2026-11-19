@@ -15,6 +15,7 @@ import { authRequested, authSettled } from "./notices.ts";
 import { buildForm, type FormField, normalizeValue } from "./authfields.ts";
 import { writeSecretFile } from "./secretbox.ts";
 import { json } from "./routes-util.ts";
+import { reasonOf } from "./reply-reasons.ts";
 
 type Kind = "secret" | "otp" | "approve" | "form";
 type Field = "username" | "password" | "code";
@@ -319,13 +320,12 @@ export function pendingAuth() {
 	}));
 }
 
-// The web app's answer: {action: "submit", values} | {action: "approve"} | {action: "cancel"}. The caller already passed
-// the gateway's owner check (hub token or an allowed tailnet login).
-async function answer(req: Request, r: AuthRequest | undefined): Promise<Response> {
+async function answer(req: Request, r: AuthRequest | undefined, agent: boolean): Promise<Response> {
 	if (!r) return err("unknown request", 404);
 	if (r.status !== "pending") return json(view(r));
 	const b = (await req.json().catch(() => undefined)) as { action?: unknown; values?: unknown; remember?: unknown } | undefined;
 	const action = b?.action;
+	if (agent && (action === "approve" || action === "submit")) return json({ code: "owner_only", error: reasonOf("owner_only").text }, 403);
 	if (action === "cancel") settle(r, "cancelled");
 	else if (action === "approve" && r.kind === "approve") settle(r, "approved");
 	else if (action === "submit" && r.form) {
@@ -367,7 +367,7 @@ async function answer(req: Request, r: AuthRequest | undefined): Promise<Respons
 	return json({ id: r.id, status: r.status });
 }
 
-export function authRoute(req: Request, url: URL): Promise<Response> | undefined {
+export function authRoute(req: Request, url: URL, agent = false): Promise<Response> | undefined {
 	if (url.pathname !== "/api/auth" && !url.pathname.startsWith("/api/auth/")) return undefined;
 	const parts = url.pathname.split("/").filter(Boolean);
 	if (parts.length === 2) return req.method === "POST" ? create(req) : Promise.resolve(err("method not allowed", 405));
@@ -382,7 +382,7 @@ export function authRoute(req: Request, url: URL): Promise<Response> | undefined
 		}
 		return Promise.resolve(json(view(r)));
 	}
-	if (req.method === "POST") return answer(req, r);
+	if (req.method === "POST") return answer(req, r, agent);
 	if (req.method !== "GET") return Promise.resolve(err("method not allowed", 405));
 	if (!r) return Promise.resolve(err("unknown request", 404));
 	const wait = Math.min(Math.max(Number(url.searchParams.get("wait") ?? 0) || 0, 0), MAX_WAIT_S);

@@ -17,6 +17,7 @@ import { lanes } from "./lanes.ts";
 import { orch } from "./orchestrator.ts";
 import { enqueue, queueItems, restore, take } from "./queue.ts";
 import { resolveNotices } from "./notices.ts";
+import { ownerOnlyCard } from "./approval-wire.ts";
 import { AGENT_AUTHOR } from "./agent-author.ts";
 import { agentCall } from "./entry-check.ts";
 import { queue, bgWork, out, progress } from "./outbound.ts";
@@ -205,7 +206,7 @@ export async function routeSend(req: Request, url: URL, parts: string[], { peer 
 		const refused = session === MAIN && !b.update_key && (repostRefusal(target, String(b.text ?? "")) || reanswerRefusal(b.reply_to, id => sender.isAnswered(id)));
 		if (refused) return json({ delivered: false, reason: refused });
 		// `resolves` (text in the title / text of the open questions it settles, or "*" for all): this post says their matter is over.
-		if (typeof b.resolves === "string" && b.resolves.trim()) resolveNotices(b.resolves.trim() === "*" ? { all: true } : { match: b.resolves }, conv => convs.keyOf(conv ?? "") === session);
+		if (typeof b.resolves === "string" && b.resolves.trim()) resolveNotices(b.resolves.trim() === "*" ? { all: true } : { match: b.resolves }, conv => convs.keyOf(conv ?? "") === session, agentCall(req, peer) ? ownerOnlyCard : undefined);
 		if (b.update_key) {
 			try {
 				return json(await progress(target, String(b.update_key), String(b.text ?? ""), b.reply_to, session, "dotz_send"));

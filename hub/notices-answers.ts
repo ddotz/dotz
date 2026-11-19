@@ -115,12 +115,13 @@ export function orchestratorAnswered(text: string, ref?: string, at = now()): nu
 export const closeLaneCards = (name: string): number => resolveAsks(i => i.decision?.to === `lane:${name}` && !i.decision.draft, now(), true);
 
 // `inSession` limits match / all to the notices of one session's conversations (dotz_send's `resolves` from a conversation session); ids and conv name theirs.
-export function resolveNotices(sel: { ids?: unknown; match?: unknown; conv?: unknown; all?: unknown }, inSession?: (conv: string | undefined) => boolean): { resolved: number; unread: number } {
+export function resolveNotices(sel: { ids?: unknown; match?: unknown; conv?: unknown; all?: unknown }, inSession?: (conv: string | undefined) => boolean, ownerOnly?: (i: Notice) => boolean): { resolved: number; unread: number } {
 	const ids = Array.isArray(sel.ids) ? new Set(sel.ids.map(String)) : undefined;
 	const match = typeof sel.match === "string" && sel.match.trim() ? sel.match.trim().toLowerCase() : undefined;
 	const conv = typeof sel.conv === "string" && sel.conv ? sel.conv : undefined;
 	const mine = (i: Notice) => !inSession || (inSession(i.src ?? i.open) && (!i.decision?.to || inSession(i.decision.to)));
-	const pick = (i: Notice) => (ids ? ids.has(i.id) : match ? mine(i) && `${i.title}\n${i.text}`.toLowerCase().includes(match) : conv ? (i.src ?? i.open) === conv || i.decision?.to === conv : sel.all === true && mine(i));
+	const chosen = (i: Notice) => (ids ? ids.has(i.id) : match ? mine(i) && `${i.title}\n${i.text}`.toLowerCase().includes(match) : conv ? (i.src ?? i.open) === conv || i.decision?.to === conv : sel.all === true && mine(i));
+	const pick = (i: Notice) => !ownerOnly?.(i) && chosen(i);
 	// ids / match name notices; conv / all do not, so a decision with options is left for the owner there.
 	return { resolved: resolveAsks(pick, now(), !!(ids || match)), unread: unreadCount() };
 }

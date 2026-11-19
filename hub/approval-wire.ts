@@ -2,7 +2,7 @@
 // approval route left beside /api/reply/*:
 //   POST /api/approvals/failed           { op: "report", ref, conv, text }: a session's own CLI send of a draft failed; the card shows it and the owner hears it
 import { log } from "./config.ts";
-import { answerDecision, type DecisionSend, allNotices, openDraftCards } from "./notices.ts";
+import { answerDecision, type DecisionSend, type Notice, allNotices, openDraftCards } from "./notices.ts";
 import type { Upload } from "./files.ts";
 import { refOfQuestion } from "./approval-send.ts";
 import { draftActionOf, questionRef } from "./draft-approval.ts";
@@ -16,6 +16,12 @@ import { json } from "./routes-util.ts";
 
 /** The refusal of an answer whose label is not the option's label now: the card changed since the owner looked. */
 const STALE_OPTIONS = "카드 선택지가 바뀌었어요. 다시 확인하고 골라 주세요";
+
+/** A card only the owner may settle: a send approval, a card naming a draft ref, a stronger-model request or a login request. An agent's call (the hub token) never closes, ignores or reopens one. */
+export const ownerOnlyCard = (card: Notice): boolean => {
+	const d = card.decision;
+	return !!d && (!!d.draft || questionRef(card.title) !== undefined || d.to.startsWith("auth:") || d.options.some(o => !!escalations()?.answers({ to: d.to, label: o.label })));
+};
 
 /** What a card's picked label asks of the one reply flow, or undefined when the bot reads it (직접 입력, a 고치기 with no words). */
 function replyInputOf(ref: string, label: string, note?: string): ActInput | undefined {
@@ -67,7 +73,7 @@ export async function webAnswer(id: string, body: { n?: unknown; label?: unknown
 	const card = allNotices().find(n => n.id === id);
 	const d = card?.decision;
 	const opt = d?.state === "open" ? d.options.find(o => o.n === Number(body.n)) : undefined;
-	const ownersOnly = agent && !!d && (!!d.draft || questionRef(card!.title) !== undefined || (!!opt && !!escalations()?.answers({ to: d.to, label: opt.label })));
+	const ownersOnly = agent && !!card && ownerOnlyCard(card);
 	// The hub token is an agent's, never the owner's word: on a draft's card it may only ask for a change (고치기), on any path the answer takes.
 	if (ownersOnly && !(d!.draft?.ref && draftActionOf(opt?.label ?? "") === "edit")) return { status: 403, body: { code: "owner_only", error: reasonOf("owner_only").text } };
 	// The page names the label it showed for `n`: a card whose options changed since (a staged file moves 이대로 보내기 and 답글만) answers 409 instead of running another action. No label = as before.
