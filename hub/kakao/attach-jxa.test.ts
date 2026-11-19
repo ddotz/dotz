@@ -12,7 +12,8 @@ function chatWindow(title: string, opts: { members?: number; value?: string } = 
 	const sheetList: object[] = [];
 	const buttons = collection([button("전송")], { name: () => ["전송"] });
 	const uiElements = collection([], { role: () => ["AXButton"], name: () => [opts.members ? `대화상대 ${opts.members}명` : "프로필"], value: () => [""] });
-	return { name: () => title, id: () => title, subrole: () => "AXStandardWindow", scrollAreas: () => [{ textAreas: () => [input] }], sheets: () => sheetList, buttons, uiElements, sheetList };
+	const actions = { byName: (name: string) => ({ perform: () => name === "AXRaise" }) };
+	return { name: () => title, id: () => title, subrole: () => "AXStandardWindow", scrollAreas: () => [{ textAreas: () => [input] }], sheets: () => sheetList, buttons, uiElements, sheetList, actions };
 }
 
 function world(opts: { paste: (w: ReturnType<typeof scene>) => void; extra?: ReturnType<typeof chatWindow>[]; self?: ReturnType<typeof chatWindow> }) {
@@ -132,7 +133,7 @@ test("an unreadable clipboard type is reported as not restored", () => {
 
 test("a paste ignored in the background is tried once more with KakaoTalk in front, and the owner's app comes back after the press", () => {
 	const s = world({ paste: w => void (w.front.kakao && sheet(w, () => w.self.sheetList.pop())) });
-	expect(s.attach()).toEqual({ ok: true, pressed: true, front: { from: "com.owner.App", took: true, restored: true } });
+	expect(s.attach()).toEqual({ ok: true, pressed: true, front: { from: "com.owner.App", took: true, restored: true, failed: [] } });
 	expect(s.log).toEqual(["paste", "frontmost", "paste", "send", "restore"]);
 	expect(s.clipboard()).toBe(owners);
 });

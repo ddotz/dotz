@@ -117,13 +117,18 @@ function seenNow(proc, w) {
 function bringFront(proc, w) {
 	var se = Application("System Events");
 	var from = "";
+	var failed = [];
 	try {
 		from = String(se.processes.whose({ frontmost: true })()[0].bundleIdentifier());
-	} catch (e) {}
+	} catch (e) {
+		failed.push("from: " + String(e).slice(0, 120));
+	}
 	try {
 		proc.frontmost = true;
 		w.actions.byName("AXRaise").perform();
-	} catch (e) {}
+	} catch (e) {
+		failed.push("raise: " + String(e).slice(0, 120));
+	}
 	var took = until(function () {
 		try {
 			return proc.frontmost() === true;
@@ -131,7 +136,7 @@ function bringFront(proc, w) {
 			return false;
 		}
 	}, 1);
-	return { from: from, took: took === true, restored: false };
+	return { from: from, took: took === true, restored: false, failed: failed };
 }
 
 // Puts back the app that was in front, only while KakaoTalk is still the front app (the owner may have switched meanwhile).
@@ -141,7 +146,9 @@ function restoreFront(proc, front) {
 		if (proc.frontmost() !== true) return;
 		Application("System Events").processes.whose({ bundleIdentifier: front.from })()[0].frontmost = true;
 		front.restored = true;
-	} catch (e) {}
+	} catch (e) {
+		front.failed.push("restore: " + String(e).slice(0, 120));
+	}
 }
 
 // From a clipboard that holds the file to the press of the dialog; the caller restores the clipboard and the front app (state.front).

@@ -32,14 +32,15 @@ const TEXT_TYPES = new Set([0, 1, 26]);
 
 const newer = (a: string, b: string) => (/^\d+$/.test(a) && /^\d+$/.test(b) ? BigInt(a) > BigInt(b) : a !== b);
 
-type Front = { took: boolean; restored: boolean };
+type Front = { took: boolean; restored: boolean; failed?: string[] };
 type AttachOut = { ok: boolean; why?: string; pressed?: boolean; seen?: string; clipboard?: boolean; front?: Front };
 async function attach(runner: Runner, name: string, path: string): Promise<AttachOut> {
 	try {
 		const r = await runner(["osascript", "-l", "JavaScript", "-e", jxa, "-e", attachJxa], { stdin: `${JSON.stringify({ action: "attach", name, path })}\n`, timeoutMs: ATTACH_MS });
 		const out = JSON.parse(r.stdout.trim().split("\n").at(-1) ?? "");
 		const clipboard = out?.clipboard === false ? { clipboard: false } : {};
-		const front = out?.front && typeof out.front === "object" ? { front: { took: out.front.took === true, restored: out.front.restored === true } } : {};
+		const failed: string[] = Array.isArray(out?.front?.failed) ? out.front.failed.filter((f: unknown) => typeof f === "string") : [];
+		const front = out?.front && typeof out.front === "object" ? { front: { took: out.front.took === true, restored: out.front.restored === true, ...(failed.length ? { failed } : {}) } } : {};
 		if (out?.ok === true) return { ok: true, pressed: true, ...clipboard, ...front };
 		if (typeof out?.why !== "string") return { ok: false, why: "uncertain", pressed: true, clipboard: false };
 		return { ok: false, why: out.why, pressed: out.pressed === true, ...clipboard, ...front, ...(typeof out.seen === "string" ? { seen: out.seen } : {}) };
@@ -107,7 +108,7 @@ export async function sendFilesToSelf(input: FileSendInput, deps: FileSendDeps):
 			if (!opened.ok) return fail(sent, opened.reason);
 			if (i === 0 && opened.steps.some(s => s.why === "already_open")) keepWindow = true;
 			const r = await attach(deps.runner, input.room.name, path);
-			steps.push(`attach:${r.ok ? "ok" : r.why}${r.front ? `:front=${r.front.took ? "took" : "no"}/${r.front.restored ? "restored" : "kept"}` : ""}${r.seen ? `:${r.seen}` : ""}`);
+			steps.push(`attach:${r.ok ? "ok" : r.why}${r.front ? `:front=${r.front.took ? "took" : "no"}/${r.front.restored ? "restored" : "kept"}${r.front.failed ? `(${r.front.failed.join("; ")})` : ""}` : ""}${r.seen ? `:${r.seen}` : ""}`);
 			if (r.clipboard === false) clipboardLost = true;
 			if (r.why === "owner_text") keepWindow = true;
 			if (!r.ok && !r.pressed) return fail(sent, WHY[r.why ?? ""] ?? "카카오톡에 파일을 넣지 못했어요");
