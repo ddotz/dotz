@@ -186,7 +186,7 @@ test("zele send: read first, then reply with --to and --body; a refusal is repor
 	expect(refused.message).toContain(catalog().sendFail.other);
 	expect(refused.message).not.toContain("newer message in thread");
 	argvs.length = 0;
-	const noRead: Runner = async argv => (argv[1] === "whoami" || argvs.push(argv), { code: 1, stdout: "", stderr: "not found" });
+	const noRead: Runner = async argv => (argv[1] === "whoami" ? { code: 0, stdout: "", stderr: "" } : (argvs.push(argv), { code: 1, stdout: "", stderr: "not found" }));
 	expect((await sendWith(rec, noRead)).ok).toBe(false);
 	expect(argvs).toHaveLength(1);
 });
