@@ -8,7 +8,7 @@ import { recordCorrection } from "./corrections.ts";
 import { coalesceFor } from "./quick-chat.ts";
 import { recipeAnswer } from "./recipes.ts";
 import { askedText, emit, emitDelivery, eventTarget, isPeerMessage, onEmit, type HubEvent } from "./events.ts";
-import { openChoiceTitles } from "./notices.ts";
+import { openChoices, type ListedChoice } from "./notices.ts";
 import { attachmentLine, attachmentLines, type Upload } from "./files.ts";
 import { pickedLines, type Picked } from "./picked.ts";
 import { abortLane, approvesBudget, lanes, ownerNotes, sendToLane } from "./lanes.ts";
@@ -26,7 +26,7 @@ import { withTurnLanguage } from "./outlang.ts";
 import { MAIL_TURN_MARK } from "./systemdeny.ts";
 import { channelContext, listSetups } from "./workchannels.ts";
 import { updateNow } from "./update-now.ts";
-import { deliver, awaiting, convOfTarget, lastOwner, refOf, newMid, laneFailed, out, expectReply, rateLimitNotice, turnSource } from "./outbound.ts";
+import { askFollowup, deliver, awaiting, convOfTarget, lastOwner, refOf, newMid, laneFailed, out, expectReply, rateLimitNotice, turnSource } from "./outbound.ts";
 import { mailTarget, type MailRecord } from "./mail.ts";
 import { cardLine, ownerIntent, ownerPick } from "./reply-chat.ts";
 import { AGENT_AUTHOR } from "./entry-check.ts";
@@ -89,11 +89,8 @@ function decisionLines(p: Record<string, any>): string[] {
 }
 
 // The owner's message holds no answer by itself when it lands in a conversation with open choice questions: the bot is told which, judges whether the message answers one, and closes it at once with `resolves` or a closing `<resolves>` line.
-const TITLE_MAX = 60;
-const openQuestionLines = (target: string): string[] => {
-	const titles = openChoiceTitles(target).map(t => t.slice(0, TITLE_MAX));
-	return titles.length ? [msg().openQuestions(titles)] : [];
-};
+const openQuestionLines = (listed: ListedChoice[]): string[] => (listed.length ? [msg().openQuestions(listed.map(q => q.title))] : []);
+const askedIn = (e: HubEvent): ListedChoice[] => (e.kind === "message" && !isPeerMessage(e) ? openChoices(eventTarget(e) ?? "main") : []);
 
 function inboxBody(e: Record<string, any>): string {
 	const m = msg();
@@ -123,7 +120,7 @@ function inboxBody(e: Record<string, any>): string {
 		if (p.refs?.length) lines.push(...p.refs);
 		lines.push(...decisionLines(p));
 	}
-	if (e.kind === "message" && !isPeerMessage(e as HubEvent)) lines.push(...openQuestionLines(eventTarget(e as HubEvent) ?? "main"));
+	lines.push(...openQuestionLines(askedIn(e as HubEvent)));
 	if (e.plugin_note) lines.push(e.plugin_note);
 	const home = e.parent?.startsWith("ch:") ? e.parent : e.channel;
 	const ctx = home?.startsWith("ch:") ? channelContext(home.slice(3)) : "";
@@ -178,6 +175,7 @@ export function dropPending(target: string): number {
 		clearTimeout(b.timer);
 		bursts.delete(target);
 	}
+	askFollowup.forget(target);
 	const n = (b?.events.length ?? 0) + drain(target).length;
 	if (n) log(`${n} message(s) for ${target} not delivered: the owner cancelled`);
 	return n;
@@ -253,6 +251,7 @@ export function flush(target: string): void {
 	if (updateNow()?.hold(inboxText(merged), { target, replyTo: b.replyTo, owner: true }, heldRefs)) return heldForUpdate(target, heldRefs, b.replyTo);
 	waitNotice(inbound, authWait);
 	const steered = deliver(inboxText(merged), { target, replyTo: b.replyTo, refs: heldRefs, owner: true, ...deepOf(b.events) });
+	askFollowup.asked(target, { key: convs.keyOf(target), refs: [...heldRefs, ...(b.replyTo ? [b.replyTo] : [])], listed: askedIn(merged as HubEvent) });
 	// Another conversation's message waits for the running turn to end and goes in as its own turn (prompts.ts deliver); a parked
 	// conversation session was started again for it.
 	const status = convs.forTarget(target)?.o.orch.status;
@@ -323,7 +322,7 @@ export async function sendWeb(s: WebSend): Promise<void> {
 		// gateway message in the session's chat, not only as the request's error.
 		try {
 			if (approvesBudget(name, s.text)) sendToLane(name, "/budget-ok");
-			const how = sendToLane(name, [`[owner via web] ${s.text}`, ...(s.picks?.length || s.decision ? decisionLines({ picks: s.picks, reply_to: s.replyTo, decision: s.decision }) : []), ...openQuestionLines(channel), s.reply ? replyLine(s.reply) : "", s.files?.length ? attachmentLines(s.files) : "", s.elements?.length ? pickedLines(s.elements) : "", ...(s.refs ?? [])].filter(Boolean).join("\n"), mid, false, ownerWantsUltrathink(s.text));
+			const how = sendToLane(name, [`[owner via web] ${s.text}`, ...(s.picks?.length || s.decision ? decisionLines({ picks: s.picks, reply_to: s.replyTo, decision: s.decision }) : []), ...openQuestionLines(openChoices(channel)), s.reply ? replyLine(s.reply) : "", s.files?.length ? attachmentLines(s.files) : "", s.elements?.length ? pickedLines(s.elements) : "", ...(s.refs ?? [])].filter(Boolean).join("\n"), mid, false, ownerWantsUltrathink(s.text));
 			emitDelivery(channel, mid, how);
 			// The web shows the receipt as the message's delivery state only (no canned receipt message, owner 2026-10-17).
 			livestatus.begin(channel, channel, true);
@@ -357,12 +356,16 @@ export async function sendWeb(s: WebSend): Promise<void> {
 		if (cancelReply(inbound, authWait)) return;
 		waitNotice(inbound, authWait);
 		const steered = deliver(inboxText(turn), { target: to, replyTo: mid, owner: true, ...deepOf([turn]) });
+		askFollowup.asked(to, { key: convs.keyOf(to), refs: [mid], listed: askedIn(turn) });
 		expectReply(to);
 		emitDelivery(to, mid, steered ? "steered" : "queued");
 		awaiting.set(to, [...(awaiting.get(to) ?? []), { ref: mid, by: mid }]);
 		lastOwner.set(to, mid);
 	} else {
-		if (s.mode === "interrupt" && session?.orch.status === "working") session.abort();
+		if (s.mode === "interrupt" && session?.orch.status === "working") {
+			askFollowup.forget(to);
+			session.abort();
+		}
 		intake(turn, to, mid);
 	}
 }

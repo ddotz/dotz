@@ -35,6 +35,7 @@ import { createWorkRows } from "./workrows.ts";
 import { digest } from "./convdigest.ts";
 import { createPrompts, type Pending, type Reply, type WorkLink } from "./prompts.ts";
 import { recordHanded } from "./handed.ts";
+import { createAskFollowup } from "./ask-followup.ts";
 import { handBackToLane } from "./lane-handback.ts";
 import { createSendLedger } from "./sendlog.ts";
 import { createInflight } from "./inflight.ts";
@@ -45,7 +46,7 @@ import { OMO_WORDS, ompWords, runName, type WorkerWords } from "./worker-words.t
 import { dropClaim, resolvesOf, splitTone, stripHandoff, stripLater, stripProjectInfo, stripResolves } from "./tone.ts";
 import { isLate, isSnowflake, lateQuote, lateRequestId, replyRef, snowflakeTime, withQuote } from "./threads.ts";
 import { keepBrief } from "./draft-approval.ts";
-import { allNotices, markCardShown, markDraftPosted, onDecisionClosed, onDraftCardRefreshed, openDraftCards, openDraftRefs, openDraftText, orchestratorAnswered, resolveNotices, rewriteOpenDraft } from "./notices.ts";
+import { allNotices, markCardShown, markDraftPosted, onDecisionClosed, onDraftCardRefreshed, openDraftCards, openDraftRefs, openDraftText, orchestratorAnswered, resolveNotices, rewriteOpenDraft, untouchedChoices } from "./notices.ts";
 import { cardPointer, cardRef, cardTitle, CARDS_LEAD, closedCardText, createApprovalQueue, loadHeld, pendingCardsNote, splitDraftCards, withSendState } from "./approval-queue.ts";
 import { mailItemKey, mailKeyOfRef } from "./draft-handled.ts";
 import { draftHeads, listDrafts as listMailDrafts } from "../features/reply-drafts/lib/store.ts";
@@ -174,6 +175,7 @@ function makeQueue(key: string, o: Orchestrator, pendingFile: string, bg: () => 
 		recent: () => recentOwnerMessages().filter(m => convs.keyOf(m.target) === key),
 		answeredSince,
 		settled: settleRefs,
+		turnEnded: () => askFollowup.turnEnded(key),
 	});
 	return q;
 }
@@ -202,6 +204,17 @@ const sessionBg = (key: string, o: Orchestrator, q: ReturnType<typeof createProm
 	});
 	return bg;
 };
+/** Asks a session once whether the owner's message its turn just answered answered the open choice questions it went in with, when that turn closed none of them. */
+export const askFollowup = createAskFollowup({
+	untouched: untouchedChoices,
+	waiting: (key, target) => convs.get(key)?.queue.waitingIds(target) ?? [],
+	followUp: (key, target, titles) => {
+		const text = msg().openQuestionsLeft(titles);
+		if (key === MAIN) deliver(text);
+		else convs.deliverTo(key, text, { target });
+	},
+	log,
+});
 export const queue = makeQueue(MAIN, main, PENDING, () => bgWork);
 // The orchestrator's background task workers (what a `[later]` turn waits for), read from OmO's task store: /api/workers, /api/state `work`.
 export const bgWork = sessionBg(MAIN, main, queue);

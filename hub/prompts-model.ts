@@ -89,6 +89,8 @@ export type PromptDeps = {
 	answeredSince?: (target: string, at: number) => boolean;
 	/** These messages of `target` were answered by an answer that names another one of the burst. */
 	settled?: (target: string, ids: string[]) => void;
+	/** A turn ended and was settled; not one a provider error stopped before it answered (that request stays open). */
+	turnEnded?: () => void;
 };
 
 // Near-identical answers: the first NEAR_CHARS letters and digits (lowercased, no spaces or punctuation) match, at least NEAR_MIN long.

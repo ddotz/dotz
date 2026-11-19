@@ -441,14 +441,19 @@ function ownerReplied(e: HubEvent): void {
 	for (const i of items) if (isOpenDecision(i) && !i.decision!.to.startsWith("auth:") && (id ? i.id === id : i.decision!.to === to && !i.decision!.draft && (!hasChoice(i) || answersOption(i.decision!.options, text) || quotesAsk(i)))) settleDecision(i, text, e.ts);
 }
 
-// The titles of the choice questions still open in conversation `target` (the newest `max` first): what the bot is told with the owner's next message there.
-export function openChoiceTitles(target: string, max = 3): string[] {
+/** `updated` tells, after the turn the question was listed for, whether anything touched it since (hub/ask-followup.ts). */
+export type ListedChoice = { id: string; title: string; updated: string };
+const TITLE_MAX = 60;
+/** The choice questions still open in conversation `target`, newest first, titles cut to TITLE_MAX: what the bot is told with the owner's next message there. */
+export function openChoices(target: string, max = 3): ListedChoice[] {
 	return items
 		.filter(i => isOpenDecision(i) && hasChoice(i) && !i.decision!.draft && i.decision!.to === target)
 		.sort((a, b) => b.updated.localeCompare(a.updated))
 		.slice(0, max)
-		.map(i => i.title);
+		.map(i => ({ id: i.id, title: i.title.slice(0, TITLE_MAX), updated: i.updated }));
 }
+/** Of `listed`, the questions still open and untouched since: nothing answered, resolved, ignored or asked them again. */
+export const untouchedChoices = (listed: readonly ListedChoice[]): ListedChoice[] => listed.filter(q => items.some(i => i.id === q.id && i.updated === q.updated && isOpenDecision(i)));
 
 function readIds(ids: string[]): void {
 	if (!ids.length) return;

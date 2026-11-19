@@ -23,7 +23,6 @@ export const enLeads = {
 	openLead: "[dotz gateway] Nothing is running, yet these owner requests are unanswered",
 };
 export type Leads = typeof enLeads;
-
 // One sentence reused by every handover and, once after a compaction, by the next prompt: a fresh or compacted session
 // loses what the old context held, so facts worth keeping are saved to memory before the work goes on.
 const enRetainNudge = "Before continuing, save any durable owner, project or preference fact from the conversation so far that is not saved yet in the dotz data directory (owner facts in memory/owner.md, the owner's verbatim don'ts in memory/boundaries.md, rules in RULES.md, lessons in LESSONS.md, open work in state.json); skip this if there is none.";
@@ -359,6 +358,7 @@ export const en = {
 	decisionAnswer: (picks: { q: string; n: number; label: string; note?: string }[]) => `Decision answer: ${picks.map((p, i) => `${picks.length > 1 ? `${i + 1}) ` : ""}${p.q || "-"} -> ${p.n}) ${p.label}${p.note ? ` - ${p.note}` : ""}`).join("; ")}`,
 	decisionAsked: (quote: string) => `(this answers your question: "${quote}")`,
 	openQuestions: (titles: string[]) => `(still open for the owner in this conversation: ${titles.map(t => `"${t}"`).join(", ")}. First judge whether this message answers one. If so (even in part), close it in your first send, not at the end: dotz_send's resolves, or end a lone final answer with <resolves>words of the title</resolves>. Otherwise leave it open and handle the other subject.)`,
+	openQuestionsLeft: (titles: string[]) => `[dotz gateway] The owner's last message here went in with these open questions, and its turn ended with none of them closed: ${titles.map(t => `"${t}"`).join(", ")}. If that message answered one (even in part), reply only with one <resolves>words of its title</resolves> line per question it answered; if it was about something else, reply only "-". Add nothing else and do no other work: neither reply is shown to the owner.`,
 	workChannels: (list: string[]) => `(work channel list, not this message's channel: ${list.length ? list.join("; ") : "none yet"})`,
 	// Discord channel names the gateway creates, and the done marker of a lane thread.
 	channelNames: { chat: "chat", alert: "alerts", worklog: "worklog", mail: "mail", workCategory: (name: string) => `${name} work` },

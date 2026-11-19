@@ -340,7 +340,8 @@ export function createPrompts(deps: PromptDeps) {
 		resultTo = undefined;
 		if (!p) {
 			unpairedRun = false;
-			return askLeftover();
+			askLeftover();
+			return deps.turnEnded?.();
 		}
 		// A turn stopped by a provider error before it wrote anything is not answered: its request stays open like a deferred one, so the
 		// run that resumes after the pause answers it in its own conversation and a restart replays it (2026-10-28 13:25Z on the Mac mini:
@@ -375,6 +376,7 @@ export function createPrompts(deps: PromptDeps) {
 		askBack(p.target);
 		askLeftover(p.target);
 		save();
+		deps.turnEnded?.();
 	}
 
 	const { askLeftover, askBack } = createAskAgain({ deps, woke, links, askedBack, turns, saveLinks, tiedOpen, linksOf, openDeferred, deliver });
