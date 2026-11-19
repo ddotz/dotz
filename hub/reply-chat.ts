@@ -46,8 +46,9 @@ export function ownerIntent(message: { text: string }, o: { cards: { ref: string
 export type CardMark = { act: "send" | "drop"; ref: string } | { act: "revise"; ref: string; change: string };
 export type CardMarks = { acts: CardMark[]; rest: string; unknown: { verb: string; ref: string; why: string }[] };
 const MARK = new RegExp(`^\\s*\\[(send|drop|revise)\\s+(${REF_ID})\\]\\s*(.*?)\\s*$`);
-/** The model's marker lines (each one leads its line) for the cards open here, and its post without them. A ref that is not open, a revise with
- * no change and two markers for one card (they contradict each other) act on nothing; every marker line leaves the post. */
+/** The model's marker lines (each one leads its line) for the cards open here, and its post without them. A ref that is not open and a revise with
+ * no change act on nothing; two revises for one card are one revise (their changes joined), any other two markers for one card contradict each
+ * other and act on nothing; every marker line leaves the post. */
 export function cardMarkers(text: string, openRefs: readonly string[]): CardMarks {
 	const acts: CardMark[] = [], unknown: CardMarks["unknown"] = [], rest: string[] = [];
 	for (const line of text.split("\n")) {
@@ -58,12 +59,20 @@ export function cardMarkers(text: string, openRefs: readonly string[]): CardMark
 		else if (verb === "revise") acts.push({ act: "revise", ref, change: change! });
 		else acts.push({ act: verb === "send" ? "send" : "drop", ref });
 	}
-	const twice = new Set(acts.filter((a, i) => acts.findIndex(b => b.ref === a.ref) !== i).map(a => a.ref));
-	for (const a of acts) if (twice.has(a.ref)) unknown.push({ verb: a.act, ref: a.ref, why: "two markers for one card" });
-	return { acts: acts.filter(a => !twice.has(a.ref)), rest: rest.join("\n").trim(), unknown };
+	const byRef = new Map<string, CardMark[]>();
+	for (const a of acts) byRef.set(a.ref, [...(byRef.get(a.ref) ?? []), a]);
+	const kept: CardMark[] = [];
+	for (const [ref, group] of byRef) {
+		const changes = group.flatMap(a => (a.act === "revise" ? [a.change] : []));
+		if (group.length === 1) kept.push(group[0]!);
+		else if (changes.length === group.length) kept.push({ act: "revise", ref, change: changes.join("; ") });
+		else for (const a of group) unknown.push({ verb: a.act, ref, why: TWICE });
+	}
+	return { acts: kept, rest: rest.join("\n").trim(), unknown };
 }
 
 const NOT_FOUND = "보낼 카드를 찾지 못했어요. 카드의 보내기를 눌러 주세요";
+const TWICE = "two markers for one card";
 const STILL_REVISING = "고치는 중이에요. 고친 카드가 올라오면 거기서 보내기를 눌러 주세요";
 export type MarkDeps = {
 	replies: { act: (input: ActInput, ctx: ActCtx) => Promise<ActResult>; confirm: (input: { ref: string }, ctx: ActCtx) => Promise<ActResult> };
@@ -78,8 +87,10 @@ export type MarkDeps = {
 export async function applyCardMarkers(marks: CardMarks, d: MarkDeps): Promise<void> {
 	for (const u of marks.unknown) {
 		d.log(`card marker ${u.verb} ${u.ref} refused: ${u.why}`);
-		if (u.verb === "send") await d.tell(NOT_FOUND);
+		if (u.verb === "send" && u.why !== TWICE) await d.tell(NOT_FOUND);
 	}
+	const clashed = [...new Set(marks.unknown.filter(u => u.why === TWICE).map(u => u.ref))];
+	if (clashed.length) await d.tell(`한 카드에 서로 맞지 않는 표시가 겹쳐서 반영하지 않았어요 (${clashed.join(", ")}). 보낼지 고칠지 버릴지 한 번만 알려 주세요`);
 	const from = d.owner ? ` for owner msg ${d.owner.mid} "${d.owner.text.replace(/\s+/g, " ").slice(0, 80)}"` : "";
 	for (const m of marks.acts) {
 		if (m.act !== "revise" && !d.owner) {

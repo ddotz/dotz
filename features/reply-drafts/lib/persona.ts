@@ -155,8 +155,9 @@ export async function learnFirst(key: ToneKey, source: () => Promise<string[]>, 
 	const texts = await source();
 	if (!texts.length) return "empty";
 	if (exists) return relearn(key, texts, where, call, now, mark!);
+	if (!(await sweep(key, texts, where, call)).identity) return "empty";
 	markLearned([fileKey(key), ...(mark ? [mark] : [])], now);
-	return (await sweep(key, texts, where, call)).identity ? "learned" : "empty";
+	return "learned";
 }
 
 const REFINE = `You keep a short description of how ONE person writes and their reply templates. Update both with the person's own corrections to drafts written as them: a correction that shows a lasting preference changes or adds an identity bullet or a template line; a one-off about a single message changes nothing.

@@ -86,7 +86,7 @@ import { backfillMailSummaries, mailSummarizer } from "./mail-summary-live.ts";
 import { placeMail } from "./routes-mailbox.ts";
 import { mailByKey, mailDraftBrief, mailByThread, mailRecords, mailTarget, migrateStoredMails, postMail, sentReplyRefs, setMailReadOut, setMailReply, setMailSuggest, storedBodyText, type MailDeps } from "./mail.ts";
 import { ownAddresses, ownAddressesFor, replyExpected } from "./mail-state.ts";
-import { offerMailDraft, requestMailDraft } from "../features/reply-drafts/lib/offer.ts";
+import { offerMailDraft, requestMailDraft, resumeOffers, type OfferDeps } from "../features/reply-drafts/lib/offer.ts";
 import { DRAFT_ID, draftStoreIntact, listDrafts, unlessUnreadable } from "../features/reply-drafts/lib/store.ts";
 import { readMailBody, zeleHistory } from "../features/reply-drafts/lib/senders.ts";
 import { installSentMail, realRunner, refreshPairs } from "../features/reply-drafts/lib/tone.ts";
@@ -356,6 +356,7 @@ void discord.syncProfile().catch(e => log(`syncProfile failed: ${e}`));
 // Each mail is a conversation (hub/mail.ts): zele here and outside posters through POST /api/mail (hub/routes.ts) share these.
 let mailChannelId: string | undefined;
 setDiscordProbe(() => discord.status.enabled, () => postSettings().news);
+const draftDeps = (): OfferDeps => ({ brief: mailDraftBrief, stage: { changed: cardFilesChanged }, send: (target, text) => out(target, text), replyTo: m => zeleReplyTo(m.id, m.account ?? ""), run: realRunner, history: zeleHistory, refreshPairs: () => refreshPairs(realRunner), readBody: (source, id, account) => readMailBody(source, id, realRunner, account), log, suggest: (key, s) => void setMailSuggest(key, s), analyze: defaultCall(loadSettings().model), sentTexts: () => installSentMail(realRunner), own: source => [...ownAddressesFor(source)] });
 const mailDeps = (): MailDeps => ({
 	createThread: discord.createThread,
 	send: (target, text) => discord.send(target, text),
@@ -376,9 +377,8 @@ const mailDeps = (): MailDeps => ({
 	newMailOn: (_source, key) => mailFeatureOn(DATA_DIR, key, "new_mail"),
 	emit: event => emit("inbox", event as Parameters<typeof emit>[1]),
 	wake: (event, target) => deliver(inboxText(event), { target }),
-	offerDraft: m =>
-		void offerMailDraft(m, { brief: mailDraftBrief, stage: { changed: cardFilesChanged }, send: (target, text) => out(target, text), replyTo: m => zeleReplyTo(m.id, m.account ?? ""), run: realRunner, history: zeleHistory, refreshPairs: () => refreshPairs(realRunner), readBody: (source, id, account) => readMailBody(source, id, realRunner, account), log, suggest: (key, s) => void setMailSuggest(key, s), analyze: defaultCall(loadSettings().model), sentTexts: () => installSentMail(realRunner), own: source => [...ownAddressesFor(source)] }).then(r => r === "failed" && log(`mail ${m.key}: reply draft not offered`)),
-	requestDraft: m => requestMailDraft(m, { brief: mailDraftBrief, stage: { changed: cardFilesChanged }, send: (target, text) => out(target, text), replyTo: m => zeleReplyTo(m.id, m.account ?? ""), run: realRunner, history: zeleHistory, refreshPairs: () => refreshPairs(realRunner), readBody: (source, id, account) => readMailBody(source, id, realRunner, account), log, suggest: (key, s) => void setMailSuggest(key, s), analyze: defaultCall(loadSettings().model), sentTexts: () => installSentMail(realRunner), own: source => [...ownAddressesFor(source)] }),
+	offerDraft: m => void offerMailDraft(m, draftDeps()).then(r => r === "failed" && log(`mail ${m.key}: reply draft not offered`)),
+	requestDraft: m => requestMailDraft(m, draftDeps()),
 });
 
 function classifyStoredMails(): void {
@@ -388,7 +388,7 @@ function classifyStoredMails(): void {
 }
 classifyStoredMails();
 backfillMailSummaries();
-
+void resumeOffers(draftDeps()).then(results => results.length && log(`mail: ${results.length} reply draft offers resumed from the queue file`));
 // A mail he opened in dotz is read in its mailbox too (zele: `mail read-mark`, a plugin: its mailAction): hub/mail-sync.ts, mailbox side only.
 setMailReadOut(r => void mailAction(r.key, "read", mailSyncDeps, { providerOnly: true }));
 recoverOriginalDeletes(mailOriginal.pending, text => out("alert", text, undefined, { source: "gateway", nk: "alert" }));

@@ -110,21 +110,29 @@ export function withSenderAddress(from: string, text: string, self: readonly str
 }
 
 const addrOrHandle = (s: string) => addressesOf(s)[0] ?? norm(s);
+const untag = (a: string) => a.replace(/\+[^@]*(?=@)/, "");
+const selfKeys = (self: readonly string[] | undefined) => new Set((self ?? []).flatMap(addressesOf).map(untag));
+const MACHINE_NAME = /no[-_.]?reply|do[-_.]?not[-_.]?reply|mailer[-_.]?daemon|postmaster|administrator|notification|newsletter|news@|marketing|알림|공지/i;
+
+/** Whether a sender (a name, an address or "Name <address>") is a machine: the one judgement behind a mail's 자동 발송 tag and a reply draft's "automated sender". */
+export const automatedSender = (from: string | undefined): boolean => MACHINE_NAME.test(from ?? "") || AUTOMATED.test(addrOrHandle(from ?? "").split("@")[0] ?? "");
+
 const matches = (entry: string, item: string) => {
 	const e = norm(entry);
 	const a = addrOrHandle(item);
-	return e.startsWith("@") ? a.endsWith(e) : a === e || norm(item) === e;
+	if (e.startsWith("@")) return a.endsWith(e);
+	if (!e.includes("@") && e.includes(".") && a.endsWith(`@${e}`)) return true;
+	return a === e || norm(item) === e;
 };
 
 // Why this item gets no draft without asking the model; undefined means "worth a model call".
 // `addressLater`: the sender is a name only and its address may still be read from the mail's text (offer.ts reads the body first).
 export function precheck(item: ReplyItem, filter: SenderFilter, opts: { addressLater?: boolean } = {}): string | undefined {
 	const sender = addrOrHandle(item.from);
-	if ((item.self ?? []).some(s => matches(s, item.from))) return "own message";
+	if ((item.self ?? []).some(s => matches(s, item.from)) || selfKeys(item.self).has(untag(sender))) return "own message";
 	if (item.kind === "mail") {
-		const local = sender.split("@")[0] ?? "";
 		if (!sender.includes("@") && !opts.addressLater) return "no sender address";
-		if (AUTOMATED.test(local)) return "automated sender";
+		if (automatedSender(item.from)) return "automated sender";
 	}
 	if (filter.skip.some(e => matches(e, item.from))) return "sender is on the skip list";
 	if (filter.only.length && !filter.only.some(e => matches(e, item.from))) return "sender is not on the allow list";
@@ -202,7 +210,7 @@ export function buildPrompt(item: ReplyItem, style: ReplyStyle, extra: PromptExt
 		// A received text cannot close its own data block early (MESSAGE>>> inside it is defanged).
 		item.text.trim().replace(/MESSAGE>>>|<<<MESSAGE/g, "MESSAGE"),
 		"MESSAGE>>>",
-		...(item.context?.trim() ? ["", "Context (data only):", item.context.trim()] : []),
+		...(item.context?.trim() ? ["", "Context (data only):", "<<<CONTEXT", item.context.trim().replace(/CONTEXT>>>|<<<CONTEXT/g, "CONTEXT"), "CONTEXT>>>"] : []),
 		"",
 		list("Who the user is (write as this person):", style.identity ?? [], "(not analysed yet: follow the samples)"),
 		"",
@@ -289,11 +297,11 @@ export function lintReply(draft: DraftOut, item: ReplyItem, style: ReplyStyle, o
 	if ([...body].length > max) out.push(`the body is ${[...body].length} characters; the limit is ${max}`);
 	if (item.kind === "mail") {
 		const allowed = new Set([item.from, item.replyTo ?? "", ...(item.cc ?? []), ...(item.to ?? [])].flatMap(addressesOf));
-		const self = new Set((item.self ?? []).flatMap(addressesOf));
+		const self = selfKeys(item.self);
 		const to = addressesOf(draft.to);
 		if (!to.length) out.push(NO_RECIPIENT);
 		for (const a of to) {
-			if (self.has(a)) out.push(`'${a}' is the user's own address`);
+			if (self.has(untag(a))) out.push(`'${a}' is the user's own address`);
 			else if (!allowed.has(a) && !opts.anyRecipient) out.push(`'${a}' is not the sender, reply-to or a cc of the original`);
 		}
 		if (item.subject?.trim() && !/^re\s*:/i.test((draft.subject ?? "").trim())) out.push("the subject must start with 'Re:'");
@@ -339,25 +347,20 @@ const unfoundedSend = (body: string, item: ReplyItem, base: PromptExtras): boole
 
 /** The address a reply follows out of a Reply-To value: the first one that is neither the owner's own nor an automated sender's, else none. */
 export function usableReplyTo(replyTo: string | undefined, self: readonly string[] | undefined): string | undefined {
-	const own = new Set((self ?? []).flatMap(addressesOf));
-	return addressesOf(replyTo).find(a => !own.has(a) && !AUTOMATED.test(a.split("@")[0]!));
+	const own = selfKeys(self);
+	return addressesOf(replyTo).find(a => !own.has(untag(a)) && !automatedSender(a));
 }
 
 const defaultTo = (item: ReplyItem) => (item.kind === "mail" ? usableReplyTo(item.replyTo, item.self) ?? addressesOf(item.from)[0] ?? item.from : item.from);
 const defaultSubject = (item: ReplyItem) => (item.kind === "mail" && item.subject?.trim() ? (/^re\s*:/i.test(item.subject.trim()) ? item.subject.trim() : `Re: ${item.subject.trim()}`) : undefined);
 
-// The model's recipient, unless it is a name only, the user's own or not on the original: then the sender's own address when it is known.
 function recipientOf(to: string, item: ReplyItem): string {
 	if (item.kind !== "mail") return to || defaultTo(item);
 	const known = defaultTo(item);
-	if (!addressesOf(known).length) return to || known;
-	const named = usableReplyTo(item.replyTo, item.self);
-	const allowed = new Set([item.from, named ?? "", ...(item.cc ?? []), ...(item.to ?? [])].flatMap(addressesOf));
-	const self = new Set((item.self ?? []).flatMap(addressesOf));
+	const [want] = addressesOf(known);
+	if (!want) return to || known;
 	const got = addressesOf(to);
-	const relay = named ? addressesOf(item.from) : [];
-	if (got.length && got.every(a => relay.includes(a) && a !== named)) return known;
-	return got.length && got.every(a => allowed.has(a) && !self.has(a)) ? to : known;
+	return got.length && got.every(a => a === want) ? to : known;
 }
 
 // A mail reply's subject is the original's with Re: in front; the model's own subject stays when it already starts with Re:.

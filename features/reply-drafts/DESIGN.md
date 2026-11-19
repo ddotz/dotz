@@ -64,7 +64,7 @@ The base is a deep first sweep, the details come from use (owner 2026-10-23; met
 mail agent drafted from an extract of the whole sent mailbox, a per-situation reply template in the user's own sentences, and verbatim
 corrections turned into a checklist). `lib/persona.ts`:
 
-- First sweep, once per profile (`learnFirst`, recorded in `learned.json`; a source with nothing to read yet is asked again): up to
+- First sweep, once per profile (`learnFirst`, recorded in `learned.json` once it produced an identity; a source with nothing to read yet, a model failure or an answer with no identity is asked again): up to
   `SWEEP_LIMIT` (200) sent texts, each with the start of what it answered, are kept in `sent/<profile>.md` and analysed in one model
   call into `## 정체성` (6-12 bullets: register, structure, exact greeting and sign-off, emoticons, recurring requests, how the user
   declines, asks and thanks, what they never write) and `## 답장 틀` (`<situation> => <sentence> | <sentence>`: how the user answers each
@@ -90,7 +90,7 @@ corrections turned into a checklist). `lib/persona.ts`:
 
 ## Code
 
-- `lib/offer.ts` `offerMailDraft`: the gateway hook for a new mail (off unless enabled and auto; never throws; a failure is logged and returns `failed`). `hub/main.ts` wires it into `mailDeps().offerDraft`.
+- `lib/offer.ts` `offerMailDraft`: the gateway hook for a new mail (off unless enabled and auto; never throws; a failure is logged and returns `failed`). `hub/main.ts` wires it into `mailDeps().offerDraft`. The automatic offers waiting or running are kept in `custom/reply-drafts/offer-queue.json` (`{ "<thread>": { mail, tries } }`); a settled offer leaves it, a failed one stays with `tries` + 1 until the third try and is marked `답장 대기` on a mail that needs a reply (`suggest.state` "waiting"), and `resumeOffers` (called once at gateway start) puts back only what the file still holds. A rules-only install whose rule-judging call fails returns `failed` and leaves the mail unmarked; the judge answer counts only when it is just a number. A draft written from the subject alone carries `본문을 읽지 못해 제목만 보고 썼어요`.
 - `lib/flow.ts` build / revise / send / drop shared by the offer and `bin/draft.ts`.
 - `lib/box-voice.ts` one learned voice per mailbox from his own replies in it (docs/mailbox.md "Voice"), run beside the pair refresh of a draft, once, not per mail.
 - `lib/tone.ts` sentence extraction (3-120 chars, quoted history and signatures dropped, deduped, at most 40) from injected sources, into one profile.

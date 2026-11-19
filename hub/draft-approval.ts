@@ -50,6 +50,7 @@ export const DRAFT_UNDO = "보내기 취소";
 export const DRAFT_HAND_EDIT = "직접 고치기";
 export const ATTACH_MARK = "-# ⚠️ 첨부 확인: ";
 export const ACCOUNT_MARK = "-# 보내는 계정: ";
+export const NO_SEND_MARK = "-# 보내기 없음: ";
 export const ATTACH_REFUSED = "첨부를 확인해 주세요:";
 // The send-time lint (placeholder, forbidden expression, recipient) refused the mail; the findings follow.
 export const LINT_REFUSED = "보내기 직전 검사에서 걸려서 보내지 않았어요:";
@@ -169,7 +170,7 @@ export function withRecipientMark(text: string): string {
 // One part of a card: the reply (or the mail) with its recipient line, files and body.
 export type DraftPart = { /** The mail draft id its files are staged under: the "함께 보낼 메일 (<id>)" line, so the card can open them. */ id?: string; origin?: DraftOrigin; rule?: string; to: string; toLabel?: DraftToLabel; cc?: string[]; account?: string; accountHeld?: true; subject?: string; body: string; attachments?: DraftFileIn[]; attachmentsNone?: boolean; asksFile?: boolean; libraryMiss?: boolean; /** The source cannot send files: the names of the files staged for it (they do not go out), [] when none. */ cannotAttach?: string[]; /** Where this part's words and files disagree (flow.ts draftAttachIssues): the card's `첨부 확인` line and its 4th option. */ attachIssues?: string[] };
 // `mail`: the mail that goes out right after this comment reply, shown below it in the same card (hub/comments).
-export type DraftInput = DraftPart & { ref: string; question?: string; /** What only the owner can decide: a "정할 것:" list above the 결정 line, one "- " line each. */ decide?: string[]; sendResult?: string; mail?: DraftPart; sendModes?: boolean };
+export type DraftInput = DraftPart & { ref: string; noSend?: string; question?: string; /** What only the owner can decide: a "정할 것:" list above the 결정 line, one "- " line each. */ decide?: string[]; sendResult?: string; mail?: DraftPart; sendModes?: boolean };
 export const MAIL_MARK = "함께 보낼 메일";
 const MAIL_ID = /^[A-Za-z0-9][A-Za-z0-9_.-]{1,63}$/;
 const MAIL_LINE = /^함께 보낼 메일(?: \(([A-Za-z0-9][A-Za-z0-9_.-]{1,63})\))?$/;
@@ -228,10 +229,10 @@ function partLines(d: DraftPart): string[] {
 export function draftApprovalBlock(d: DraftInput): string {
 	const issues = [...(d.attachIssues ?? []), ...(d.mail?.attachIssues ?? [])].map(s => s.replace(/\s+/g, " ").trim()).filter(Boolean);
 	const options = [
-		{ name: DRAFT_SEND, result: `${d.sendResult ?? `${d.to.replace(/\s+/g, " ").trim()}에 이 글을 그대로 보내요`}${issues.length ? ATTACH_HELD : ""}` },
+		...(d.noSend ? [] : [{ name: DRAFT_SEND, result: `${d.sendResult ?? `${d.to.replace(/\s+/g, " ").trim()}에 이 글을 그대로 보내요`}${issues.length ? ATTACH_HELD : ""}` }]),
 		{ name: `${DRAFT_EDIT} …`, result: d.mail ? "답글과 메일 중 어느 쪽을 어떻게 고칠지 알려 주면 고쳐서 다시 물어봐요" : "어떻게 고칠지 알려 주면 고쳐서 다시 물어봐요" },
 		{ name: DRAFT_DROP, result: d.mail ? "답글과 메일을 모두 버려요" : "" },
-		...(issues.length ? [{ name: DRAFT_AS_IS, result: asIsResult(!!d.mail) }] : []),
+		...(issues.length && !d.noSend ? [{ name: DRAFT_AS_IS, result: asIsResult(!!d.mail) }] : []),
 		...(d.sendModes && d.mail
 			? [
 					{ name: DRAFT_ONLY_MAIN, result: "답글만 올리고 메일은 보내지 않아요" },
@@ -243,7 +244,7 @@ export function draftApprovalBlock(d: DraftInput): string {
 	const mail = d.mail ? [">", `> ${MAIL_MARK}${d.mail.id && MAIL_ID.test(d.mail.id) ? ` (${d.mail.id})` : ""}`, ...partLines({ ...d.mail, toLabel: "받는이" })] : [];
 	const decide = (d.decide ?? []).map(oneLine).filter(Boolean);
 	const account = (p: DraftPart, label: string): string[] => (p.accountHeld ? [`${ACCOUNT_MARK}${label}계정이 아직 정해지지 않았어요`] : p.account ? [`${ACCOUNT_MARK}${label}${p.account}`] : []);
-	return [...(issues.length ? [`${ATTACH_MARK}${issues.join(" · ")}`] : []), ...account(d, ""), ...(d.mail ? account(d.mail, "함께 보낼 메일은 ") : []), ...partLines(d), ...mail, ...(decide.length ? [DECIDE_MARK, ...decide.map(q => `- ${q}`)] : []), issueBlock(`${d.question ?? "보낼까요?"} (${d.ref})`, options)].join("\n");
+	return [...(issues.length ? [`${ATTACH_MARK}${issues.join(" · ")}`] : []), ...account(d, ""), ...(d.mail ? account(d.mail, "함께 보낼 메일은 ") : []), ...(d.noSend ? [`${NO_SEND_MARK}${oneLine(d.noSend)}`] : []), ...partLines(d), ...mail, ...(decide.length ? [DECIDE_MARK, ...decide.map(q => `- ${q}`)] : []), issueBlock(`${d.question ?? "보낼까요?"} (${d.ref})`, options)].join("\n");
 }
 
 // The points only the owner can decide sit on their own lines above the 결정 line, so the question stays one short line (its "(<ref>)" is what
@@ -397,7 +398,9 @@ export function parseDraftApproval(text: string): DraftApproval | undefined {
 	const pc = parseDecisions(text);
 	const block = pc.blocks.length === 1 ? pc.blocks[0]! : undefined;
 	const labels = block?.options.map(o => o.label) ?? [];
-	if (!block || labels.slice(0, 3).join("|") !== [DRAFT_SEND, DRAFT_EDIT, DRAFT_DROP].join("|") || !labels.slice(3).every(l => DRAFT_MODES.has(l))) return undefined;
+	const noSend = text.split("\n").some(l => l.trim().startsWith(NO_SEND_MARK.trim()));
+	const lead = noSend ? [DRAFT_EDIT, DRAFT_DROP] : [DRAFT_SEND, DRAFT_EDIT, DRAFT_DROP];
+	if (!block || labels.slice(0, lead.length).join("|") !== lead.join("|") || !labels.slice(lead.length).every(l => DRAFT_MODES.has(l))) return undefined;
 	const draft = parseQuotedDraft(text);
 	const ref = REF.exec(block.title)?.[1];
 	return draft && ref ? { ...draft, ref } : draft;
@@ -412,7 +415,8 @@ export function sameDraft(a: DraftApproval, b: DraftApproval): boolean {
 // `draft` (parseDraftApproval reads a one-block message only), yet the draft behind it can be sent or dropped elsewhere (the 모니터링 queue),
 // so hub/notices.ts settleHandledDrafts asks for it by this ref.
 export function blockDraftRef(title: string, labels: string[]): string | undefined {
-	if (labels.slice(0, 3).join("|") !== [DRAFT_SEND, DRAFT_EDIT, DRAFT_DROP].join("|") || !labels.slice(3).every(l => DRAFT_MODES.has(l))) return undefined;
+	const noSend = labels.join("|") === [DRAFT_EDIT, DRAFT_DROP].join("|");
+	if (!noSend && (labels.slice(0, 3).join("|") !== [DRAFT_SEND, DRAFT_EDIT, DRAFT_DROP].join("|") || !labels.slice(3).every(l => DRAFT_MODES.has(l)))) return undefined;
 	return REF.exec(title)?.[1];
 }
 
