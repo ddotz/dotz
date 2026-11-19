@@ -13,7 +13,7 @@ import { addressesOf, editLesson, fileNameKey, generateChatReply, lintReply, les
 import { listLibrary, matchLibrary, MIN_SCORE, rankLibrary, type LibraryFile } from "./library.ts";
 import { basename } from "node:path";
 import { ruleFilePath } from "./rules.ts";
-import { canAttach, sendsThroughZele, sendWith, settleAccount, webmailSite, zeleAccountOf, type Sent, type SendOutcome } from "./senders.ts";
+import { canAttach, sendsThroughZele, sendWith, settleAccount, threadMoved, webmailSite, zeleAccountOf, type Sent, type SendOutcome } from "./senders.ts";
 import { carryStagedFiles, removeStagedFile, stagedFiles, stagedName, stageFiles, stageWanted, type StageOpts, type Want } from "./staged.ts";
 import { dataDir, loadSettings, loadStyle, paths, recordCorrection, toneFile, validApp, type ToneKey } from "./settings.ts";
 import { banWarnings, boxById } from "./box.ts";
@@ -517,15 +517,22 @@ export function dropDraft(id: string): Step {
 	return { ok: true, text: `초안 ${id}을(를) 버렸어요` };
 }
 
-// 되돌리기 after the owner's 보내지 기: a dropped draft waits for approval again. A sent or replaced (stale) draft stays as it is, and so does one
-// whose mail already has a newer draft waiting, so a mail never has two drafts pending.
-export function restoreDraft(ref: string): { ok: boolean; text: string } {
+/** 되돌리기 after the owner's 보내지 기: a dropped draft waits for approval again. A sent or replaced (stale) draft stays as it is, and so does one
+ * whose mail already has a newer draft waiting, so a mail never has two drafts pending. With `deps.run` a zele reply's thread is read as a send reads
+ * it (senders.ts threadMoved): answered outside dotz or followed by a newer mail stays dropped; a thread that cannot be read does not block it. */
+export async function restoreDraft(ref: string, deps: Pick<FlowDeps, "run"> = {}): Promise<{ ok: boolean; text: string; code?: "stale" }> {
 	const d = getDraft(ref);
 	if (!d) return { ok: false, text: `초안 ${ref}을(를) 찾지 못했어요` };
 	if (d.status === "pending") return { ok: true, text: `초안 ${ref}은(는) 이미 기다리는 중이에요` };
 	if (d.status !== "dropped") return { ok: false, text: `초안 ${ref}은(는) 이미 ${d.status} 상태라 되돌릴 수 없어요` };
 	if (listDrafts().some(x => x.id !== d.id && x.ref === d.ref && x.status === "pending")) return { ok: false, text: `같은 메일에 새 초안이 있어서 초안 ${ref}은(는) 되돌리지 않았어요` };
 	if (listDrafts().some(x => x.id !== d.id && x.ref === d.ref && x.created > d.created && (x.status === "sent" || x.status === "answered"))) return { ok: false, text: `이미 답한 메일이라 초안 ${ref}은(는) 되돌리지 않았어요` };
+	if (deps.run && d.source === "zele" && !d.compose) {
+		const seen = await threadMoved(d, deps.run, zeleAccountOf(d));
+		if (seen.unread) console.error(`reply draft: ${ref} restored without reading its thread: ${seen.unread.stderr.trim() || `exit ${seen.unread.code}`}`);
+		if (seen.moved === "answered") return { ok: false, code: "stale", text: `이미 이 메일에 답했어요. 초안 ${ref}은(는) 되돌리지 않았어요` };
+		if (seen.moved === "newer") return { ok: false, code: "stale", text: `그사이 새 메일이 와서 초안 ${ref}은(는) 낡았어요. 되돌리지 않았어요` };
+	}
 	setStatus(ref, "pending");
 	return { ok: true, text: `초안 ${ref}을(를) 되돌렸어요` };
 }

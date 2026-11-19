@@ -17,7 +17,7 @@ import { dataDir } from "./settings.ts";
 import { recipientList } from "./recipients.ts";
 import { stagedFiles } from "./staged.ts";
 import { patchDraft, type DraftRec } from "./store.ts";
-import type { Runner } from "./tone.ts";
+import type { Runner, RunResult } from "./tone.ts";
 
 /** Where a send left the mail: it went out, it surely did not, or it may have (design 1.5). */
 export type Sent = "yes" | "no" | "maybe";
@@ -235,6 +235,16 @@ const vanishedFile = (files: readonly { name: string; path: string }[]): SendOut
 	return gone && { ...fail(`첨부 파일 '${gone.name}'이(가) 사라져서 보내지 않았어요. 파일을 다시 붙여 주세요`, "attach_missing"), vars: { name: gone.name } };
 };
 
+/** What a zele reply draft's thread did since the draft was made (batch 1 RS-1, hub/mail-reconcile.ts movedOn): the owner answered it, a newer mail came, or
+ * neither; `unread` carries the read that failed. A send refuses on `moved` and on `unread`; a 되돌리기 refuses on `moved` only. */
+export async function threadMoved(rec: DraftRec, run: Runner, account?: string): Promise<{ moved?: "answered" | "newer"; unread?: RunResult }> {
+	const seen = await run(readArgv(rec.mailId, account));
+	if (seen.code !== 0) return { unread: seen };
+	const thread = parseThread(seen.stdout);
+	if (!thread.length) return {};
+	const moved = movedOn(thread, ownAddresses([...(account ? [account] : []), ...(await zeleLogins(run))]), rec.created);
+	return moved ? { moved } : {};
+}
 export async function sendWith(rec: DraftRec, run: Runner): Promise<SendOutcome> {
 	if (rec.kind !== "mail") return fail(MANUAL, "manual_only");
 	const files = stagedFiles(rec.id), cc = rec.cc ?? [];
@@ -258,15 +268,10 @@ export async function sendWith(rec: DraftRec, run: Runner): Promise<SendOutcome>
 		return r.code === 0 ? done(`${rec.to}에게 메일을 보냈어요`) : told(r, "보내지 못했어요: ", zeleVerdict);
 	}
 	if (rec.source === "zele") {
-		const seen = await run(readArgv(rec.mailId, account));
-		if (seen.code !== 0) return told(seen, "보내기 전에 메일을 읽지 못해서 보내지 않았어요: ", beforeReply);
-		const thread = parseThread(seen.stdout);
-		if (thread.length) {
-			const own = ownAddresses([...(account ? [account] : []), ...(await zeleLogins(run))]);
-			const moved = movedOn(thread, own, rec.created);
-			if (moved === "answered") return fail("이미 이 메일에 답했어요. 이 초안은 보내지 않았어요", "stale");
-			if (moved === "newer") return fail("그사이 새 메일이 와서 이 초안은 낡았어요. 보내지 않았어요. 다시 초안을 만들어야 해요", "stale");
-		}
+		const seen = await threadMoved(rec, run, account);
+		if (seen.unread) return told(seen.unread, "보내기 전에 메일을 읽지 못해서 보내지 않았어요: ", beforeReply);
+		if (seen.moved === "answered") return fail("이미 이 메일에 답했어요. 이 초안은 보내지 않았어요", "stale");
+		if (seen.moved === "newer") return fail("그사이 새 메일이 와서 이 초안은 낡았어요. 보내지 않았어요. 다시 초안을 만들어야 해요", "stale");
 		const vanished = vanishedFile(files);
 		if (vanished) return vanished;
 		const r = await run(replyArgv(rec.mailId, rec.to, rec.body, files.map(f => f.path), cc, account));

@@ -91,21 +91,21 @@ test("a reopen of a card answered 보내기 leaves the sent draft alone", async 
 	expect(getDraft(id)?.status).toBe("sent");
 });
 
-test("restoreDraft refuses a sent or replaced draft and one whose mail has a newer draft waiting", () => {
+test("restoreDraft refuses a sent or replaced draft and one whose mail has a newer draft waiting", async () => {
 	const [sent, older, newer, newest] = [newId(), newId(), newId(), newId()];
 	mailDraft(sent);
 	setStatus(sent, "sent");
-	expect(restoreDraft(sent)).toMatchObject({ ok: false });
+	expect(await restoreDraft(sent)).toMatchObject({ ok: false });
 	const mailRef = `wt-shared-${older.toLowerCase()}`;
 	mailDraft(older, mailRef);
 	mailDraft(newer, mailRef); // the newer draft of the same mail makes the older one stale
 	expect(getDraft(older)!.status).toBe("stale");
-	expect(restoreDraft(older)).toMatchObject({ ok: false });
+	expect(await restoreDraft(older)).toMatchObject({ ok: false });
 	setStatus(newer, "dropped");
 	mailDraft(newest, mailRef);
-	expect(restoreDraft(newer)).toMatchObject({ ok: false });
+	expect(await restoreDraft(newer)).toMatchObject({ ok: false });
 	expect([getDraft(newer)!.status, getDraft(newest)!.status]).toEqual(["dropped", "pending"]);
-	expect(restoreDraft("RZZZZZ2")).toMatchObject({ ok: false });
+	expect(await restoreDraft("RZZZZZ2")).toMatchObject({ ok: false });
 });
 
 test("D1: the hub token on a draft's card answer is an agent's: a 보내기 or 보내지 않기 pick is 403 owner_only and nothing is queued or dropped", async () => {

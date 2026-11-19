@@ -1,9 +1,10 @@
-import { afterAll, beforeEach, expect, spyOn, test } from "bun:test";
+import { afterAll, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import * as outlang from "../../../hub/outlang.ts";
 import type { ReplyItem } from "../../../hub/reply-draft.ts";
 import { buildDraft, callOf, editDraft, restoreDraft, reviseDraft } from "../lib/flow.ts";
+import type { Runner } from "../lib/tone.ts";
 import { paths } from "../lib/settings.ts";
 import { addDraft, getDraft, setStatus, type DraftRec } from "../lib/store.ts";
 import { enable, fakeModel, goodReply, j, mailFixture, setupEnv } from "./helpers.ts";
@@ -82,24 +83,65 @@ test("control, bidi and zero-width characters never reach a saved draft; tab, ne
 	expect([built.rec.to, built.rec.subject, built.rec.body]).toEqual(["kim@example.com", "Re: 문의", "확인해 보고 말씀드릴게요."]);
 });
 
-test("a dropped draft of a mail that was already answered is not brought back", () => {
+test("a dropped draft of a mail that was already answered is not brought back", async () => {
 	addDraft(rec({ id: "RHYG01", created: "2026-11-01T00:00:00.000Z" }));
 	setStatus("RHYG01", "dropped");
 	addDraft(rec({ id: "RHYG02", created: "2026-11-02T00:00:00.000Z", status: "pending" }));
 	setStatus("RHYG02", "sent");
-	const r = restoreDraft("RHYG01");
+	const r = await restoreDraft("RHYG01");
 	expect(r.ok).toBe(false);
 	expect(r.text).toContain("이미 답한");
 	expect(getDraft("RHYG01")?.status).toBe("dropped");
 });
 
-test("a draft sent before the dropped one was made does not keep the dropped one from coming back", () => {
+test("a draft sent before the dropped one was made does not keep the dropped one from coming back", async () => {
 	addDraft(rec({ id: "RHYG02", created: "2026-11-01T00:00:00.000Z" }));
 	setStatus("RHYG02", "sent");
 	addDraft(rec({ id: "RHYG01", created: "2026-11-02T00:00:00.000Z" }));
 	setStatus("RHYG01", "dropped");
-	expect(restoreDraft("RHYG01").ok).toBe(true);
+	expect((await restoreDraft("RHYG01")).ok).toBe(true);
 	expect(getDraft("RHYG01")?.status).toBe("pending");
+});
+
+describe("되돌리기 reads the mail's thread as a send does", () => {
+	const minutesAgo = (n: number) => new Date(Date.now() - n * 60_000).toUTCString();
+	const block = (from: string, ago: number) => `From: ${from}\nTo: someone@example.org\nDate: ${minutesAgo(ago)}\n\n본문\n`;
+	const thread = (...blocks: string[]) => `Thread: 문의\n${blocks.join("────────────\n")}`;
+	const runner = (read: { code: number; stdout: string }) => {
+		const reads: string[][] = [];
+		const run: Runner = async argv => {
+			if (argv[1] === "whoami") return { code: 0, stdout: "me@example.net\n", stderr: "" };
+			if (argv[2] === "read") reads.push(argv);
+			return argv[2] === "read" ? { ...read, stderr: read.code ? "zele: not running" : "" } : { code: 0, stdout: "ok", stderr: "" };
+		};
+		return { run, reads };
+	};
+	const dropped = () => {
+		addDraft(rec({ created: new Date(Date.now() - 60 * 60_000).toISOString() }));
+		setStatus("RHYG01", "dropped");
+	};
+
+	test("the owner answered the mail outside dotz: the dropped draft stays dropped and the stale reason says why", async () => {
+		dropped();
+		const t = runner({ code: 0, stdout: thread(block("Kim <kim@example.com>", 120), block("Me <me@example.net>", 30)) });
+		const r = await restoreDraft("RHYG01", { run: t.run });
+		expect([r.ok, r.code, getDraft("RHYG01")?.status]).toEqual([false, "stale", "dropped"]);
+		expect(r.text).toContain("이미 이 메일에 답했어요");
+	});
+
+	test("a mail nobody answered since: the thread is read and the draft comes back", async () => {
+		dropped();
+		const t = runner({ code: 0, stdout: thread(block("Kim <kim@example.com>", 120)) });
+		expect((await restoreDraft("RHYG01", { run: t.run })).ok).toBe(true);
+		expect([t.reads.length, getDraft("RHYG01")?.status]).toEqual([1, "pending"]);
+	});
+
+	test("a thread that cannot be read does not block it: the draft comes back and the send checks again", async () => {
+		dropped();
+		const t = runner({ code: 1, stdout: "" });
+		expect((await restoreDraft("RHYG01", { run: t.run })).ok).toBe(true);
+		expect([t.reads.length, getDraft("RHYG01")?.status]).toEqual([1, "pending"]);
+	});
 });
 
 test("an owner edit keeps the joiners inside an emoji and a word", () => {
