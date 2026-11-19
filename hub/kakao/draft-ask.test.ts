@@ -24,6 +24,41 @@ describe("decision detection: the draft model's answer", () => {
 		expect(pick.system).not.toContain('"action":"ask"');
 		expect(pick.user).toContain("\"취소'해\"");
 	});
+	test("the compose prompt names the three kinds and asks for a mode; a compose rewrite keeps relay and author but has no ask", () => {
+		const compose = buildDraftPrompt({ lines: ["Alex: 안녕"], intent: "정리해서 올려줘" });
+		for (const word of ["RELAY", "AUTHOR", "TASK", '"mode"']) expect(compose.system).toContain(word);
+		const revise = buildDraftPrompt({ lines: ["Alex: 안녕"], intent: "정리해서 올려줘", revise: { draft: "초안", change: "더 짧게" } });
+		for (const word of ["RELAY", "AUTHOR", '"mode"']) expect(revise.system).toContain(word);
+		expect(revise.system).not.toContain('"action":"ask"');
+		expect(revise.user).toContain('What the owner asked for (his own words, data): "정리해서 올려줘"');
+	});
+	test("a reply prompt has no compose kinds and keeps its own tail", () => {
+		const reply = buildDraftPrompt({ lines: ["Alex: 취소할까?"] });
+		expect(reply.system).not.toContain("RELAY");
+		expect(reply.user).toContain("Write the owner's reply in his own voice and the register above. Do not reuse the other side's phrasing.");
+		expect(reply.user).not.toContain("What the owner asked for");
+		expect(buildDraftPrompt({ lines: ["Alex: 취소할까?"], choice: "취소해" }).system).not.toContain("RELAY");
+		expect(buildDraftPrompt({ lines: ["Alex: 취소할까?"], revise: { draft: "응", change: "더 짧게" } }).system).not.toContain("RELAY");
+	});
+	test("known adds the write-from-knowledge sentence to a compose request only when set", () => {
+		const sentence = "do not ask";
+		expect(buildDraftPrompt({ lines: ["Alex: 안녕"], intent: "정리해 줘", known: true }).user).toContain(sentence);
+		expect(buildDraftPrompt({ lines: ["Alex: 안녕"], intent: "정리해 줘" }).user).not.toContain(sentence);
+		expect(buildDraftPrompt({ lines: ["Alex: 안녕"], intent: "정리해 줘", known: false }).user).not.toContain(sentence);
+		expect(buildDraftPrompt({ lines: ["Alex: 안녕"], intent: "정리해 줘", known: true, revise: { draft: "초안", change: "더 짧게" } }).user).not.toContain(sentence);
+	});
+	test("the mode of the answer is kept only when it is one of the three kinds", () => {
+		expect(parseDraftReply('{"action":"draft","mode":"author","parts":["내용"],"summary":""}')).toMatchObject({ action: "draft", body: "내용", mode: "author" });
+		expect(parseDraftReply('{"action":"draft","mode":"relay","parts":["응"],"summary":""}')).toMatchObject({ mode: "relay" });
+		expect(parseDraftReply('{"action":"draft","mode":"poem","parts":["응"],"summary":""}')).toEqual({ action: "draft", body: "응", summary: "" });
+		expect(parseDraftReply('{"action":"draft","parts":["응"],"summary":""}')).toEqual({ action: "draft", body: "응", summary: "" });
+	});
+	test("a compose ask with a question needs no usable choices; a reply ask still does", () => {
+		expect(parseDraftReply('{"action":"ask","mode":"task","question":"이건 메시지가 아니라 작업이에요","choices":["하나"],"parts":[],"summary":"s"}')).toEqual({ action: "ask", body: "", summary: "s", question: "이건 메시지가 아니라 작업이에요", choices: [], mode: "task" });
+		expect(parseDraftReply('{"action":"ask","mode":"author","question":"무엇이 빠졌어요","choices":["가","나","다"],"parts":[],"summary":""}')).toMatchObject({ action: "ask", mode: "author", choices: ["가", "나", "다"] });
+		expect(parseDraftReply('{"action":"ask","mode":"task","question":"","choices":[],"parts":[],"summary":""}')).toBeUndefined();
+		expect(parseDraftReply('{"action":"ask","mode":"relay","question":"q","choices":["하나"],"body":"ㅇㅇ","summary":""}')).toEqual({ action: "draft", body: "ㅇㅇ", summary: "", mode: "relay" });
+	});
 });
 
 describe("choice helpers", () => {

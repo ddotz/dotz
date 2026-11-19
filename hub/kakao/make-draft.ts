@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { ownerLint } from "../reply-draft.ts";
 import { writePrivate } from "./creds.ts";
 import { type KakaoDb, messages, ownTextCounts, ownTexts, roomHead } from "./db.ts";
-import { basisOf, buildDraftPrompt, chatLines, contextLines, estimateTokens, ownPairs, ownSamples, parseDraftReply, registerOf, type StyleHint, sinceOwnLast } from "./draft.ts";
+import { basisOf, buildDraftPrompt, chatLines, contextLines, estimateTokens, matchLines, ownPairs, ownSamples, parseDraftReply, registerOf, type StyleHint, sinceOwnLast } from "./draft.ts";
 import { createDraft } from "./send.ts";
 import type { KakaoConfig, KakaoPaths, Room } from "./types.ts";
 import type { WebDeps } from "./web.ts";
@@ -83,7 +83,8 @@ const done = (error?: string, made?: { code: string; lesson?: string }): Made =>
 		// The pairs come from before the context, so the prompt does not spend its budget on the same lines twice.
 		const pairs = ownPairs(compose ? recent : recent.slice(0, recent.length - window.length - context.length));
 		const group = room.kind === "group" || room.kind === "open";
-		const { system, user } = buildDraftPrompt({ lines: chatLines(window), context, group, summary: readJsonText(summaryFile(chatId)), pairs, samples: ownSamples(recent), register: registerOf(ownLines), style, ...(choice ? { choice } : {}), ...(revise ? { revise: { draft: revise.draft, change: revise.change } } : {}), ...(intent ? { intent } : {}) });
+		const chat = chatLines(window, compose);
+		const { system, user } = buildDraftPrompt({ lines: chat, ...(intent ? { match: matchLines(recent, intent, chat.length) } : {}), context, group, summary: readJsonText(summaryFile(chatId)), pairs, samples: ownSamples(recent), register: registerOf(ownLines), style, ...(choice ? { choice } : {}), ...(revise ? { revise: { draft: revise.draft, change: revise.change } } : {}), ...(intent ? { intent } : {}) });
 		// One retry with the findings when the model's text fails the lint (design 3.6); what still fails is a 확인 note on the draft.
 		let reply = await deps.draftModel!(system, user, chatId);
 		let parsed = parseDraftReply(reply.text);

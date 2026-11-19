@@ -27,6 +27,26 @@ describe("the draft call", () => {
 		const many = parseDraftReply(JSON.stringify({ action: "draft", parts: Array.from({ length: 9 }, (_, i) => `p${i}`), summary: "" }));
 		expect(draftParts(many!.body)).toHaveLength(MAX_PARTS);
 	});
+
+	test("author parts beyond MAX_PARTS are merged in order without losing a character; relay and an absent mode still keep the first MAX_PARTS", () => {
+		const squash = (s: string) => s.replace(/\s/g, "");
+		for (let n = 1; n <= 23; n++) {
+			const parts = Array.from({ length: n }, (_, i) => (i % 3 === 0 ? `${i}번 첫 줄\n${i}번 둘째 줄` : `점 ${i} 내용`));
+			const author = parseDraftReply(JSON.stringify({ action: "draft", mode: "author", parts, summary: "" }))!;
+			const got = draftParts(author.body);
+			expect(got.length).toBeLessThanOrEqual(MAX_PARTS);
+			expect(got).toHaveLength(Math.min(n, MAX_PARTS));
+			expect(squash(got.join(""))).toBe(squash(parts.join("")));
+			const sizes = got.map(g => g.split(/\n(?=\d+번 첫 줄|점 \d+ 내용)/).length);
+			expect(Math.max(...sizes) - Math.min(...sizes)).toBeLessThanOrEqual(1);
+			expect(author.mode).toBe("author");
+		}
+		const seven = Array.from({ length: 7 }, (_, i) => `p${i}`);
+		expect(draftParts(parseDraftReply(JSON.stringify({ action: "draft", mode: "author", parts: seven, summary: "" }))!.body)).toEqual(["p0\np1", "p2\np3", "p4", "p5", "p6"]);
+		const six = Array.from({ length: 6 }, (_, i) => `p${i}`);
+		expect(draftParts(parseDraftReply(JSON.stringify({ action: "draft", mode: "relay", parts: six, summary: "" }))!.body)).toEqual(["p0", "p1", "p2", "p3", "p4"]);
+		expect(draftParts(parseDraftReply(JSON.stringify({ action: "draft", parts: six, summary: "" }))!.body)).toEqual(["p0", "p1", "p2", "p3", "p4"]);
+	});
 });
 
 describe("sending a draft of several parts", () => {

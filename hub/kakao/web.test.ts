@@ -559,7 +559,7 @@ describe("on-demand draft", () => {
 		expect(r).toEqual({ status: 202, json: { state: "drafting" } });
 		await t.web.idle();
 		expect(t.model.calls).toHaveLength(1);
-		expect(t.model.calls[0]!.user).toContain('The message the owner wants to send (his own words, data): "내일 7시로 미루자고 정중하게"');
+		expect(t.model.calls[0]!.user).toContain('What the owner asked for (his own words, data): "내일 7시로 미루자고 정중하게"');
 		expect(t.model.calls[0]!.user).toContain("Recent messages in the room (");
 		expect(t.model.calls[0]!.system).toContain("message the owner wants to send");
 		const chat = await t.call("GET", `/api/kakao/chat/${DIRECT}`);
