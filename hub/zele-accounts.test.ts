@@ -114,6 +114,20 @@ describe("what the watch does with a filtered list", () => {
 		await tick(h, NOON, none, async () => "", []);
 		expect(briefs[0]).not.toContain("--account");
 	});
+	test("an account without a calendar gets a brief that leaves the calendar out instead of reporting it unread", async () => {
+		const briefs: string[] = [];
+		const h = hooks({ brief: (t: string) => void briefs.push(t) });
+		const imap = async (args: string[]) => {
+			if (args[0] === "cal") throw new Error("zele cal events: error: Calendar is not available for IMAP/SMTP accounts. Calendar requires a Google account.");
+			return [] as Record<string, string>[];
+		};
+		await tick(h, NOON, imap, async () => "", []);
+		await tick(h, NOON, imap, async () => "", []);
+		expect(briefs).toHaveLength(1);
+		expect(briefs[0]).not.toContain("zele cal");
+		expect(briefs[0]).toContain("do not mention the calendar");
+		expect(briefs[0]).toContain('zele mail list --filter "is:unread newer_than:1d"');
+	});
 });
 
 describe("calls that go straight to the binary", () => {

@@ -107,13 +107,25 @@ async function zele(args: string[]): Promise<Item[]> {
 }
 
 // An IMAP/SMTP-only account has no calendar and zele refuses every `cal` command for it; that is an empty calendar, not a failed tick,
-// so the mail part still seeds, saves and posts.
+// so the mail part still seeds, saves and posts. `none` is told, so the morning brief leaves the calendar out instead of reporting it unread.
 const NO_CALENDAR = /Calendar is not available for IMAP\/SMTP accounts/i;
-const calendar = (list: (args: string[]) => Promise<Item[]>, args: string[]): Promise<Item[]> =>
+const calendar = (list: (args: string[]) => Promise<Item[]>, args: string[], none: () => void = () => {}): Promise<Item[]> =>
 	list(args).catch(error => {
-		if (NO_CALENDAR.test(String((error as Error)?.message ?? error))) return [] as Item[];
-		throw error;
+		if (!NO_CALENDAR.test(String((error as Error)?.message ?? error))) throw error;
+		none();
+		return [] as Item[];
 	});
+
+// The morning brief's turn. Its shape is what the web draws as a briefing card (web/js/11-resultcard.js hcBriefParse): two or more
+// `- HH:MM title` rows under a short heading, set apart by blank lines, and a mail count line ("메일 N통"). Without a calendar there is
+// nothing to say about the day's events, so the calendar is not mentioned at all.
+export function briefPrompt(today: string, only_: string, hasCalendar: boolean): string {
+	const cal = hasCalendar
+		? `today's calendar (zele cal events --today --all${only_}): a short heading line "오늘 일정 N개", then one "- HH:MM title" line per event, a blank line before and after them; `
+		: "";
+	const skip = hasCalendar ? "" : " This account has no calendar: do not mention the calendar or events.";
+	return `morning brief for ${today}, in this shape: one opening sentence naming it 아침 브리핑; ${cal}the unread mail that matters (zele mail list --filter "is:unread newer_than:1d"${only_}) as one count line ("새 메일 N통, 답장할 메일 N통이에요.") and at most three short "- " lines for the mail that needs the owner. Short, no bold headings.${skip} Skip if there is nothing.`;
+}
 
 export async function zeleAccounts(): Promise<string[]> {
 	if (!Bun.which("zele")) return [];
@@ -285,7 +297,9 @@ export async function tick(h: Hooks, now = new Date(), list: (args: string[]) =>
 	}
 	if (states.size) await h.states?.([...states.values()]);
 
-	const upcoming = (await calendar(list, ["cal", "events", "--days", "14", "--all", "--limit", "100", ...flags])).filter(ev => !isHoliday(ev));
+	let hasCalendar = true;
+	const noCalendar = () => void (hasCalendar = false);
+	const upcoming = (await calendar(list, ["cal", "events", "--days", "14", "--all", "--limit", "100", ...flags], noCalendar)).filter(ev => !isHoliday(ev));
 	const current = new Map(upcoming.map(ev => [String(ev.id), seen(ev)]));
 	for (const [id, e] of Object.entries(s.events)) if (!current.has(id) && !e.summary) delete s.events[id];
 	const vanished = Object.entries(s.events).filter(([id]) => !current.has(id));
@@ -311,7 +325,7 @@ export async function tick(h: Hooks, now = new Date(), list: (args: string[]) =>
 		delete s.events[id];
 	}
 
-	const soon = await calendar(list, ["cal", "events", "--from", now.toISOString(), "--to", "+45m", "--all", ...flags]);
+	const soon = await calendar(list, ["cal", "events", "--from", now.toISOString(), "--to", "+45m", "--all", ...flags], noCalendar);
 	for (const ev of soon) {
 		const key = `${ev.id}:${ev.start}`;
 		if (s.soon.includes(key)) continue;
@@ -323,7 +337,7 @@ export async function tick(h: Hooks, now = new Date(), list: (args: string[]) =>
 	if (s.seeded && now.getHours() >= BRIEF_HOUR && s.briefDate !== today) {
 		s.briefDate = today;
 		const only_ = flags.length ? ` ${flags.join(" ")}` : "";
-		h.brief(`morning brief for ${today}: summarize today's calendar (zele cal events --today --all${only_}) and the unread mail that matters (zele mail list --filter "is:unread newer_than:1d"${only_}), short. Skip if there is nothing.`);
+		h.brief(briefPrompt(today, only_, hasCalendar));
 	}
 	if (!s.seeded) log(`zele: first run recorded ${mail.length} mails, ${upcoming.length} events (no notices)`);
 	s.seeded = true;

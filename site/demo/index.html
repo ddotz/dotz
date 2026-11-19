@@ -7,7 +7,7 @@
 <meta name="description" content="dotz 웹 앱을 직접 써 보는 데모예요.">
 <title>dotz — 데모</title>
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="/demo/app.css?v=69a72621a1fe">
+<link rel="stylesheet" href="/demo/app.css?v=e9fd00f25859">
 <style>
 :root { --demobar-h: 44px; }
 .demo-bar { position: fixed; inset: 0 0 auto 0; z-index: 3000; display: flex; align-items: center; gap: 10px; height: var(--demobar-h); padding: 0 12px 0 16px; border-bottom: 1px solid var(--line); background: var(--card); color: var(--fg); font-family: var(--font); }
@@ -43,8 +43,8 @@ addEventListener("error", e => __demoLog.errors.push(`${e.message} @ ${String(e.
 addEventListener("unhandledrejection", e => __demoLog.errors.push(String(e.reason && e.reason.message || e.reason)));
 { const e = console.error; console.error = (...a) => { __demoLog.errors.push(a.map(String).join(" ")); e(...a); }; const w = console.warn; console.warn = (...a) => { __demoLog.warnings.push(a.map(String).join(" ")); w(...a); }; }
 </script>
-<script src="/demo/fixtures.js?v=69a72621a1fe"></script>
-<script src="/demo/demo-api.js?v=69a72621a1fe"></script>
+<script src="/demo/fixtures.js?v=e9fd00f25859"></script>
+<script src="/demo/demo-api.js?v=e9fd00f25859"></script>
 </head>
 <body>
 <header class="demo-bar">
@@ -95,10 +95,10 @@ addEventListener("unhandledrejection", e => __demoLog.errors.push(String(e.reaso
           <section class="dcard" id="dcard" aria-label="답변 필요" hidden></section>
           <div class="qlist" id="queue" hidden></div>
           <div class="hintrow" id="hints" hidden></div>
-          <div class="runstate" id="runstate" role="status" hidden><span class="dot" id="runstate-dot"></span><span class="rs-tx" id="runstate-tx"></span><button class="btn text rs-go" id="runstate-act" type="button" hidden></button></div>
+          <div class="runstate" id="runstate" role="status" hidden><span class="dot" id="runstate-dot"></span><span class="rs-tx" id="runstate-tx"></span><button class="btn text rs-go" id="runstate-act" type="button" hidden></button><button class="btn text rs-go rs-subs" id="runstate-subs" type="button" hidden></button></div>
           <div class="pausenote" id="pausenote" role="status" hidden></div>
           <div class="relaynote" id="relaynote" role="note" hidden></div>
-          <div class="runline" id="runline" hidden><span class="dot pri"></span><span id="runline-tx"></span></div>
+          <div class="runline runstate" id="runline" hidden><span class="dot pri"></span><span class="rs-tx" id="runline-tx"></span><button class="btn text rs-go rs-subs" id="runline-subs" type="button" hidden></button></div>
           <form class="sendrow" id="send">
             <div class="atray" id="atray" hidden></div>
             <input type="file" id="c-file" multiple hidden>
@@ -165,6 +165,6 @@ addEventListener("unhandledrejection", e => __demoLog.errors.push(String(e.reaso
   </div>
   <div class="sh-body" id="hs-body"></div>
 </aside>
-<script src="/demo/app.js?v=69a72621a1fe"></script>
+<script src="/demo/app.js?v=e9fd00f25859"></script>
 </body>
 </html>
