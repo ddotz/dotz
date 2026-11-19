@@ -311,3 +311,31 @@ test("omp: a rest compaction is not started while a prompt is held or the quiet 
 	restGuard.blocked = () => false;
 	await finish();
 });
+
+test("a compaction at rest or at night is skipped within 2 h of the last one or when it would remove under 40K tokens; the owner's compaction still runs", async () => {
+	const calls: string[] = [];
+	const port = ompPort(calls);
+	const c = newCtx();
+	c.tokens = 169_345;
+	expect(requestAhead(c, port, "orch", "nightly fresh start")).toBe(true);
+	noteEvent(c, { type: "compaction", state: "done", tokensBefore: 169_345 }, port);
+	noteEvent(c, { type: "usage", tokens: 46_694 }, port);
+	c.tokens = 55_259;
+	await advance(61 * 60_000);
+	expect(requestAhead(c, port, "orch", "nightly fresh start")).toBe(false);
+	c.tokens = AT * REST_FRACTION;
+	restAhead(c, port, "orch", OMP_REST, AT);
+	expect(calls).toEqual(["compact"]);
+
+	await advance(60 * 60_000);
+	c.tokens = 46_694 + 39_999;
+	expect(requestAhead(c, port, "orch", "nightly fresh start")).toBe(false);
+	expect(calls).toEqual(["compact"]);
+	c.tokens = 46_694 + 40_000;
+	expect(requestAhead(c, port, "orch", "nightly fresh start")).toBe(true);
+	expect(calls).toEqual(["compact", "compact"]);
+	noteEvent(c, { type: "compaction", state: "done", tokensBefore: c.tokens }, port);
+
+	requestCompact(c, port);
+	expect(calls).toEqual(["compact", "compact", "compact"]);
+});

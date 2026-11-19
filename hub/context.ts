@@ -8,7 +8,7 @@ import type { AgentEvent } from "./runtime/types.ts";
 type CompactState = "queued" | "compacting" | "done" | "error";
 export type Compaction = { state?: CompactState; at?: string; tokensBefore?: number; error?: string };
 // `ahead`: the running compaction was started at rest, ahead of the compaction point; `aborting`: its abort was asked for.
-export type Ctx = { tokens: number; window: number; compaction: Compaction; retried?: boolean; ahead?: { who: string; reason: string; tokens: number; t0: number }; aborting?: boolean };
+export type Ctx = { tokens: number; window: number; compaction: Compaction; retried?: boolean; ahead?: { who: string; reason: string; tokens: number; t0: number }; aborting?: boolean; last?: { at: number; left?: number } };
 
 export const newCtx = (): Ctx => ({ tokens: 0, window: 0, compaction: {} });
 
@@ -91,12 +91,29 @@ export function restBlockers(f: RestFacts, c: Ctx): string[] {
 
 // The minute tick of a conversation: starts the compaction ahead of time when it is due at rest.
 export function restAhead(c: Ctx, port: CompactPort, who: string, f: RestFacts, at: number): void {
-	if ((f.canAbort || f.restCompact) && !restBlockers(f, c).length && restDue(c, at, { busy: false, quietMs: f.quietMs })) requestAhead(c, port, who, `at rest for ${Math.round(f.quietMs / 60_000)} min`);
+	if ((f.canAbort || f.restCompact) && !restBlockers(f, c).length && restDue(c, at, { busy: false, quietMs: f.quietMs }) && !aheadSkip(c)) requestAhead(c, port, who, `at rest for ${Math.round(f.quietMs / 60_000)} min`);
+}
+
+/** A compaction the gateway starts on its own at rest or at night is not worth its cost this soon after the last one, or for this little. */
+export const AHEAD_MIN_GAP_MS = 2 * 3_600_000;
+export const AHEAD_MIN_GAIN = 40_000;
+
+/** Why a compaction at rest or at night is skipped now (the tokens left by the last compaction stand for what this one would keep); undefined: it runs. */
+export function aheadSkip(c: Ctx, at = Date.now()): string | undefined {
+	if (!c.last) return undefined;
+	if (at - c.last.at < AHEAD_MIN_GAP_MS) return `the last compaction ended ${Math.round((at - c.last.at) / 60_000)} min ago`;
+	if (c.last.left !== undefined && c.tokens - c.last.left < AHEAD_MIN_GAIN) return `it would remove about ${c.tokens - c.last.left} tokens`;
+	return undefined;
 }
 
 // Starts a compaction at rest; false when the process cannot take it now, or can neither abort it later nor is allowed to make the owner wait (waitOnly).
 export function requestAhead(c: Ctx, port: CompactPort, who: string, reason: string, at = Date.now()): boolean {
 	if ((!port.abort && !port.waitOnly) || !port.idle() || c.compaction.state === "queued" || c.compaction.state === "compacting") return false;
+	const skip = aheadSkip(c, at);
+	if (skip) {
+		log(`${who} ahead-of-time compaction skipped (${reason}): ${skip}`);
+		return false;
+	}
 	c.ahead = { who, reason, tokens: c.tokens, t0: at };
 	startNow(c, port);
 	return true;
@@ -129,9 +146,11 @@ export function noteEvent(c: Ctx, ev: AgentEvent, port: CompactPort): void {
 	if (ev.type === "usage") {
 		if (ev.tokens !== undefined) c.tokens = ev.tokens;
 		if (ev.window !== undefined) c.window = ev.window;
+		if (c.last && c.last.left === undefined && ev.tokens !== undefined && c.compaction.state === "done" && ev.tokens < (c.compaction.tokensBefore ?? Infinity)) c.last.left = ev.tokens;
 	} else if (ev.type === "compaction" && ev.state === "done") {
 		endAhead(c, "done");
 		c.compaction = { state: "done", at: now(), tokensBefore: ev.tokensBefore };
+		c.last = { at: Date.now() };
 		c.retried = false;
 		port.refreshUsage();
 	} else if (ev.type === "compaction" && ev.state === "error" && ev.requested) {

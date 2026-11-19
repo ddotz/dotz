@@ -368,7 +368,7 @@ let job: Job | undefined;
 // `how.keep`: skip the trial rebase of local commits and save them aside at once (an older client's '보관하고 새 버전 받기'). `how.auto`:
 // the daily auto-apply. Both, like a plain apply, never stop at local work: it is saved and the update goes on.
 // A step that throws (a sync fs call, an injected or spawned exec) ends the job as failed: a job left 'running' would make every later apply return it.
-export async function apply(o: Options, how: { keep?: boolean; auto?: boolean } = {}): Promise<Job> {
+export async function apply(o: Options, how: { keep?: boolean; auto?: boolean; retry?: boolean } = {}): Promise<Job> {
 	if (job?.status === "running") return job;
 	try {
 		return await runApply(o, how);
@@ -387,7 +387,7 @@ export async function apply(o: Options, how: { keep?: boolean; auto?: boolean } 
 	}
 }
 
-async function runApply(o: Options, how: { keep?: boolean; auto?: boolean }): Promise<Job> {
+async function runApply(o: Options, how: { keep?: boolean; auto?: boolean; retry?: boolean }): Promise<Job> {
 	const { dir, remote, branch, exec, testCmd, logDir } = resolve(o);
 	const upstream = `${remote}/${branch}`;
 	const j: Job = { id: ++jobSeq, startedAt: new Date().toISOString(), status: "running", phase: "확인", message: "새 버전을 확인하고 있어요", steps: [] };
@@ -423,8 +423,8 @@ async function runApply(o: Options, how: { keep?: boolean; auto?: boolean }): Pr
 	}
 	if (c.blocked.length) return end("refused", `업데이트하지 않았어요. ${c.blocked.join(" ")}`);
 	if (!updateAvailable(c) || !c.remoteHead) return end("current", `이미 최신이에요 (${v.commit.short}).`);
-	const to = c.remoteHead;
-	j.to = to;
+	const to = (j.to = c.remoteHead);
+	if (!how.retry && readState().autoFailed === to) return end("failed", `같은 커밋(${to.slice(0, 7)})은 이미 확인을 통과하지 못해서 다시 해 보지 않았어요. 쓰던 버전 그대로예요. 새 커밋이 오거나 다시 해 달라고 하시면 다시 해요.`);
 
 	const runTests = async (cwd: string, where: string) => {
 		const gate = gateIn(cwd, testCmd);
@@ -502,6 +502,7 @@ async function runApply(o: Options, how: { keep?: boolean; auto?: boolean }): Pr
 	if (m.code !== 0) return end("failed", `새 버전으로 합칠 수 없어요: ${lastLine(m.out)}`);
 
 	const back = async (why: string, deps: boolean) => {
+		saveState({ ...readState(), autoFailed: to });
 		step("되돌리기", `${why} → ${v.commit.short}로 되돌려요`);
 		// --keep moves HEAD and the files the merge changed only; it refuses rather than overwrite anything else.
 		const r = await exec(["git", "reset", hard ? "--hard" : "--keep", from], dir, 60_000);
@@ -789,7 +790,7 @@ if (import.meta.main) {
 	const i = process.argv.indexOf("--dir");
 	const t = process.argv.indexOf("--test-cmd");
 	const o: Options = { dir: i > 0 ? process.argv[i + 1] : REPO_DIR, ...(t > 0 ? { testCmd: ["sh", "-c", process.argv[t + 1]] } : {}) };
-	if (process.argv.includes("--apply")) console.log(JSON.stringify(await apply(o, { keep: process.argv.includes("--keep") }), null, 2));
+	if (process.argv.includes("--apply")) console.log(JSON.stringify(await apply(o, { keep: process.argv.includes("--keep"), retry: true }), null, 2));
 	else if (process.argv.includes("--check")) {
 		const c = await check(o);
 		// The first line is the owner-facing check line; the JSON below keeps every field for scripts.

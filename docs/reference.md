@@ -331,7 +331,7 @@ conversation every night whatever its size, with the open-request list, a handov
 only; a session file over `rotate_mb` starts fresh in both cases, and conversation sessions always follow the size rule.
 The start waits until the session is at rest (no turn, held or unstarted prompt, running worker, open or deferred request,
 queued or running compaction, armed usage-limit resume timer, pending restart or model switch, error or error streak, and quiet for
-10 minutes), asking again every minute for two hours after `nightly_at`; then the night is skipped with one hub-log line. When the session has a real exchange after its last compaction summary (OmO only, read from the session file), it is compacted first through the compaction ahead of time (an owner message aborts it) and starts fresh once that has ended, so the handover carries a fresh summary; at most two such compactions a night, then the night is skipped with the same line. The last run date is kept
+10 minutes), asking again every minute for two hours after `nightly_at`; then the night is skipped with one hub-log line. When the session has a real exchange after its last compaction summary (OmO only, read from the session file), it is compacted first through the compaction ahead of time (an owner message aborts it) and starts fresh once that has ended, so the handover carries a fresh summary; at most two such compactions a night, then the night is skipped with the same line. A compaction ahead of time (at rest or for the night) is skipped when the session's last compaction ended less than 2 hours ago or it would remove under 40K tokens (the context minus what the last compaction left); the night's skip writes one hub-log line and the night then starts fresh without it. The owner's `/compact` and the compaction at the compaction point always run. The last run date is kept
 in `~/.dotz/lane-hygiene.json`; a run missed while the gateway was down is made up a minute after the next start.
 Settings apply when a session starts or resumes.
 `orchestrator.keep_recent` (default `10000`, minimum `5000`, in OmO's own estimate of 4 characters per token, so `10000` keeps about 40,000 characters) is how much recent conversation the main session and the conversation sessions keep word for word at a compaction; the gateway writes it to `<data folder>/.omo/settings.json` (only `compaction.keepRecentTokens`, other keys of that file stay) when it starts one, and starts them with `--approve`, which OmO needs to read a project settings file and which leaves the folder as trusted as it is without the file. Lanes are not affected.
@@ -782,7 +782,9 @@ changes go back on top as a local patch when they still apply and the tests stil
 clean and the patch stays in the backup, which the bot carries over to the custom layer (docs/customization.md, Surviving updates).
 An update is otherwise fast-forward, runs `bun install` when needed and the tests, and returns to the old commit if they fail. With
 `self_update.auto_apply: true` (default off) the daily check applies it itself, the same way, and restarts through the idle gate.
-A failure alerts with a choice block.
+A failure alerts with a choice block. A commit whose `bun install` or tests failed, or that the rollback watchdog undid, is not tried
+again (top bar, settings or the daily check) until a newer commit arrives; `bun hub/selfupdate.ts --apply` (what the bot runs when you
+ask) tries it again.
 
 **Setup steps after an update** (`hub/migrations.ts`). A feature that needs a one-time step for existing installs ships it as a migration: the gateway runs every migration it has not run yet at start (so after the restart that applies an update), records the id in `<data dir>/migrations.json`, logs one line each, and posts one line listing what changed. A migration is idempotent, never deletes user data, and on failure posts a Korean notice and is retried at the next start. Today: `site-comment-apps` (an app instance in `custom/apps.json` for every website comment source that has none, the same as `features/comments/bin/onboard.ts on --app site --name X`) and `legacy-sns-tokens` (finding the earlier YouTube/Instagram login asks the owner once, `1) 가져오기` / `2) 안 가져오기`; only yes copies, 0600, values never printed) and `card-audit` (once, after the start's own card passes: closes the send-approval cards the send records prove went out, refreshes stale refs, then gives the install's orchestrator one turn to compare every app with the send records and summarize for the owner; it never sends, resends, approves or discards, a card nothing proves stays open, an install with no card gets no turn, and a gateway with no orchestrator leaves it for a later start). The `onboard.ts` commands stay for manual use.
 
@@ -797,7 +799,13 @@ through to the next one. Files you changed inside the code folder are not carrie
 
 The launchd job keeps the old code until it is restarted. Restart it from the gateway (`/restart gateway` or
 `POST /api/gateway/restart`): it waits until the orchestrator and every session are idle (at most 20 min), then exits and
-launchd starts the new code. `launchctl kickstart -k gui/$(id -u)/dev.dotz.gateway` restarts at once and cuts running
+launchd starts the new code. A restart the gateway asks for by itself (the omp update) or an agent asks for (`POST
+/api/gateway/restart` without `{"now": true}`) that would change the prompt head (the main session's MODE and identity note, the
+dotz extension sources or the omp binary) waits, holding no work, until the main context is at most 60K tokens (right after a
+compaction or the nightly fresh start), at most once a day (`<data dir>/restart-head`) and never more than 24 h. It goes at once
+when the gateway's own code (`hub/`, `features/`) changed since it started, and so does one that changes no prompt head, the
+daily auto-apply, the OmO engine watch, `{"now": true}` and every restart the owner asks for (the web buttons, `/restart gateway`).
+`launchctl kickstart -k gui/$(id -u)/dev.dotz.gateway` restarts at once and cuts running
 turns short.
 
 Nothing is lost either way: a message counts as handled when it is answered, not when it arrives. Unanswered prompts

@@ -4,7 +4,7 @@
 // events (a release in this process wakes its waiters directly: the OS watch can start too late to see it); a slow
 // recheck only covers holders that die without releasing and a watch that missed a release. Only node builtins: hub/receipts.ts imports it.
 import { randomUUID } from "node:crypto";
-import { linkSync, mkdirSync, readFileSync, unlinkSync, watch, writeFileSync } from "node:fs";
+import { linkSync, mkdirSync, readdirSync, readFileSync, rmSync, unlinkSync, watch, writeFileSync } from "node:fs";
 import { cpus } from "node:os";
 import { join } from "node:path";
 
@@ -86,6 +86,15 @@ export async function acquireHeavySlot(o: SlotOptions): Promise<HeavySlot> {
 	const owner = `${o.pid ?? process.pid} ${Date.now()} ${randomUUID()} ${o.label.replace(/\s+/g, " ").slice(0, 120)}`;
 	const me = join(o.dir, `.${randomUUID()}.tmp`);
 	writeFileSync(me, owner);
+	for (const name of readdirSync(o.dir)) {
+		const file = join(o.dir, name);
+		const line = name.startsWith("slot.") || (name.endsWith(".tmp") && file !== me) ? read(file) : undefined;
+		if (line === undefined) continue;
+		const pid = Number(line.split(" ")[0]);
+		if (!Number.isInteger(pid) || pid <= 0 || pidAlive(pid)) continue;
+		if (name.startsWith("slot.")) reap(o.dir, file, line, me);
+		else rmSync(file, { force: true });
+	}
 	let heldBy = "";
 	const attempt = (): string | undefined => {
 		for (let n = 1; n <= slots; n++) {

@@ -2,10 +2,45 @@
 // restart waits for idle however long that takes, and says once that it is waiting (2026-10-19: three forced kills of a
 // lane after 20 min). Requests close together are coalesced: every request while one waits joins it, and a restart never
 // happens sooner than minGapMs after this process started (2026-10-19: 30 restarts in a day from a lane developing dotz).
-import { existsSync, rmSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { existsSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { issueBlock } from "./choices.ts";
-import { writeAtomic } from "./config.ts";
+import { OMP, writeAtomic } from "./config.ts";
+
+/** A restart that changes the prompt head (system note or tool text) makes every session write its whole prompt cache anew: it waits for a small context and comes at most once per HEAD_RESTART_EVERY_MS. */
+export const HEAD_RESTART_EVERY_MS = 24 * 3_600_000;
+/** No prompt-head restart is deferred longer than this. */
+export const HEAD_DEFER_MAX_MS = 24 * 3_600_000;
+/** A main context at or under this size is small: right after a compaction (about 45K on 2026-11-18) or a nightly fresh start. */
+export const SMALL_CONTEXT_TOKENS = 60_000;
+export const HEAD_CHECK_MS = 60_000;
+
+/** What a session started now would carry at the head of its prompt: the system note, every extension source (the tool texts) and the harness binary. */
+export function promptHeadPrint(o: { systemNote: string; extensionDir: string; harness?: string }): string {
+	const hash = createHash("sha256").update(o.systemNote);
+	const sources = readdirSync(o.extensionDir, { recursive: true, encoding: "utf8" }).filter(f => f.endsWith(".ts") && !f.endsWith(".test.ts") && !f.startsWith("fixtures")).sort();
+	for (const f of sources) hash.update(`\0${f}\0`).update(readFileSync(join(o.extensionDir, f)));
+	if (o.harness && existsSync(o.harness)) {
+		const s = statSync(o.harness);
+		hash.update(`\0${o.harness}\0${s.size}\0${s.mtimeMs}`);
+	}
+	return hash.digest("hex");
+}
+
+/** Armed at start: true from the moment a session started now would carry another prompt head than one started at arming (the dotz extension and the omp on PATH). */
+export function promptHeadChanged(systemNote: () => string): () => boolean {
+	const print = () => promptHeadPrint({ systemNote: systemNote(), extensionDir: join(import.meta.dir, "..", "extension"), harness: Bun.which(OMP) ?? undefined });
+	const boot = print();
+	return () => print() !== boot;
+}
+
+/** Armed at start: true once any gateway source file under `dirs` was written after arming (an applied update or an edit): such a restart is never deferred, since the running process would mix old code with new files read later. */
+export function gatewayCodeChanged(dirs: string[]): () => boolean {
+	const newest = () => dirs.reduce((m, dir) => readdirSync(dir, { recursive: true, encoding: "utf8" }).reduce((n, f) => (f.endsWith(".ts") && !f.includes("node_modules") ? Math.max(n, statSync(join(dir, f)).mtimeMs) : n), m), 0);
+	const boot = newest();
+	return () => newest() > boot;
+}
 
 // A restart waiting on busy work posts one notice after this long (hub/main.ts).
 export const RESTART_NOTICE_MS = 20 * 60_000;
@@ -70,6 +105,11 @@ type RestartGateDeps = {
 	cap?: (busy: string[], waitedMin: number) => void;
 	log: (line: string) => void;
 	exit: () => void;
+	headChanged?: () => boolean;
+	codeChanged?: () => boolean;
+	contextTokens?: () => number;
+	headFile?: string;
+	headCheckMs?: number;
 };
 
 export function createRestartGate(deps: RestartGateDeps) {
@@ -79,6 +119,15 @@ export function createRestartGate(deps: RestartGateDeps) {
 	let noticed = false;
 	let capped = false;
 	let lastStill = 0;
+	let deferred: number | undefined;
+	let head = false;
+	const lastHead = (): number => (deps.headFile && existsSync(deps.headFile) ? Number(readFileSync(deps.headFile, "utf8")) || 0 : 0);
+	const headDue = (): string | undefined => {
+		const tokens = deps.contextTokens?.() ?? Infinity;
+		if (Date.now() - lastHead() >= HEAD_RESTART_EVERY_MS && tokens <= SMALL_CONTEXT_TOKENS) return `context ${tokens} tokens`;
+		if (deferred !== undefined && Date.now() - deferred >= HEAD_DEFER_MAX_MS) return `deferred ${Math.round((Date.now() - deferred) / 3_600_000)} h`;
+		return undefined;
+	};
 
 	const earliest = () => deps.startedAt + deps.minGapMs;
 	const tick = () => {
@@ -101,21 +150,45 @@ export function createRestartGate(deps: RestartGateDeps) {
 			}
 			return void setTimeout(tick, tickMs);
 		}
-		deps.log(`gateway restart (${requests} request(s) coalesced, waited ${Math.round((Date.now() - since!) / 1000)}s)`);
+		deps.log(`gateway restart (${requests} request(s) coalesced, waited ${Math.round((Date.now() - since!) / 1000)}s${head ? ", changes the prompt head" : ""})`);
+		if (head && deps.headFile) writeAtomic(deps.headFile, `${Date.now()}\n`);
 		deps.exit();
 	};
 
-	function request(): string {
-		requests++;
+	const deferTick = () => {
+		if (deferred === undefined || since !== undefined) return;
+		const due = deps.codeChanged?.() ? "the gateway code changed" : deps.headChanged?.() ? headDue() : "the prompt head no longer changes";
+		if (!due) return void setTimeout(deferTick, deps.headCheckMs ?? HEAD_CHECK_MS);
+		deps.log(`deferred gateway restart goes now (${due})`);
+		deferred = undefined;
+		begin();
+	};
+
+	function begin(): string {
 		const busy = deps.busy();
-		if (since !== undefined) return `gateway restart is already waiting (${requests} requests coalesced${busy.length ? `; waiting for: ${busy.join(", ")}` : ""})`;
 		since = Date.now();
+		head = deps.headChanged?.() ?? false;
 		deps.hold?.();
 		setTimeout(tick, tickMs);
 		const gap = Math.max(0, earliest() - Date.now());
 		const why = [busy.length ? `waiting for: ${busy.join(", ")}` : "", gap ? `coalescing for ${Math.ceil(gap / 1000)}s` : ""].filter(Boolean);
 		if (why.length) deps.log(`gateway restart requested; ${why.join("; ")}`);
 		return why.length ? `gateway restarts when idle (${why.join("; ")}; a busy lane is never killed)` : "gateway restarting";
+	}
+
+	function request(o: { auto?: boolean } = {}): string {
+		requests++;
+		const busy = deps.busy();
+		if (since !== undefined) return `gateway restart is already waiting (${requests} requests coalesced${busy.length ? `; waiting for: ${busy.join(", ")}` : ""})`;
+		if (!o.auto || !deps.headChanged?.() || deps.codeChanged?.() || headDue()) {
+			deferred = undefined;
+			return begin();
+		}
+		if (deferred !== undefined) return `gateway restart is already deferred (${requests} requests coalesced)`;
+		deferred = Date.now();
+		setTimeout(deferTick, deps.headCheckMs ?? HEAD_CHECK_MS);
+		deps.log(`gateway restart deferred: it changes the prompt head (context ${deps.contextTokens?.() ?? "unknown"} tokens)`);
+		return `gateway restart deferred: it changes the system prompt or tool text, so it goes once the main context is small (after a compaction or the nightly fresh start), at most once a day and within ${HEAD_DEFER_MAX_MS / 3_600_000} h; the owner's restart goes at once`;
 	}
 
 	return { request, waiting: () => since !== undefined };

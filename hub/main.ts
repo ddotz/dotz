@@ -50,7 +50,8 @@ import { restGuard } from "./context.ts";
 import { errorAsk, startResumeWatch, watchSession } from "./orch-error.ts";
 import { interruptedLanes } from "./lanereconnect.ts";
 import { queuedTargets } from "./queue.ts";
-import { createRestartGate, markRestartPending, RESTART_NOTICE_MS, restartCapText, takeRestartHeld } from "./restart.ts";
+import { createRestartGate, gatewayCodeChanged, markRestartPending, promptHeadChanged, RESTART_NOTICE_MS, restartCapText, takeRestartHeld } from "./restart.ts";
+import { modeContract } from "./orchestrator-parts.ts";
 import { createWaitCheck, wakeReply } from "./waitcheck.ts";
 import { ownerMessage } from "./events.ts";
 import { forgetAccountUsage, onQuota, QUOTA_REFRESH_MS, refreshQuota, usageSnapshot } from "./providers.ts";
@@ -593,7 +594,7 @@ startReflection(text => deliver(text), () => orch.sessionFile, text => out("aler
 startDayNote();
 for (const l of telemetryOff()) log(l);
 for (const l of installDotzCommand({ dir: DATA_DIR, pkg: join(import.meta.dir, ".."), bun: Bun.which("bun") ?? process.execPath, home: HOME, expose: DATA_DIR === join(HOME, ".dotz"), shell: process.env.SHELL })) log(l);
-startHarnessUpdate(text => void out("worklog", text, undefined, { source: "gateway", wk: "update" }).catch(e => log(`harness update post failed: ${e}`)), restartGateway, alert);
+startHarnessUpdate(text => void out("worklog", text, undefined, { source: "gateway", wk: "update" }).catch(e => log(`harness update post failed: ${e}`)), () => restartGateway({ auto: true }), alert);
 // The hidden doctor (hub/doctor.ts): one night run, at most one morning item: an alert when something is not fixed (a choice block when he must decide),
 // a work log entry when dotz fixed everything itself. The ledger's day-before notices (hub/ledger-tick.ts) start with it and go out as news.
 startDoctor((text, _decision, open) => out(open ? "alert" : "worklog", text, undefined, { source: "gateway", wk: "doctor" }), log, () => (zeleState() === "on" ? Number(cfg.zele?.brief_hour ?? DEFAULTS.zele_brief_hour) : undefined), { send: (text, project) => out(project ?? (discord.status.enabled ? "chat" : "web"), text, undefined, { source: "gateway", nk: "ledger", news: true }), waiting: () => draftCardCounts().open + approvals.held().length });
@@ -766,6 +767,10 @@ const restartGate = createRestartGate({
 	capAfterMs: restartCapMs(),
 	cap: (busy, min) => alert(restartCapText(busy, min, (kind, key) => (kind === "lane" ? laneTitle(key) : convs.get(key)?.meta.name?.trim() || channelTitle(convs.get(key)?.primary ?? key)))),
 	log,
+	headChanged: promptHeadChanged(modeContract),
+	codeChanged: gatewayCodeChanged([import.meta.dir, join(import.meta.dir, "..", "features")]),
+	contextTokens: () => orch.ctx.tokens,
+	headFile: join(DATA_DIR, "restart-head"),
 	exit: () => {
 		updateNow()?.restarting();
 		void shutdown();
@@ -782,8 +787,8 @@ const sessionResume = createSessionResume({
 		),
 });
 startLaneResumeSweep({ budget: name => budgetProblem(name, estimateOf(undefined, ""), false), restarting: () => restartGate.waiting(), sessions: sessionResume.tick });
-function restartGateway(): string {
-	return restartGate.request();
+function restartGateway(o: { auto?: boolean } = {}): string {
+	return restartGate.request(o);
 }
 // The owner chose '지금 재시작' in settings → 업데이트: running turns are cut (unanswered prompts replay on the next start).
 // The short delay lets the HTTP answer reach the page first.

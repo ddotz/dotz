@@ -387,4 +387,28 @@ describe("against temp git repos", () => {
 			expect(h.alerts).toHaveLength(1);
 		});
 	});
+
+	test("a commit that failed its tests is not tested again until a newer commit arrives or the owner asks", async () => {
+		const before = head(work);
+		r.release("FAIL", "boom\n", "breaks the tests");
+		const { seen, exec } = spy();
+		const tests = () => seen.filter(c => c === testCmd.join(" ")).length;
+		expect((await apply(opts(exec))).status).toBe("failed");
+		expect(tests()).toBe(1);
+		const merged = merges(seen);
+
+		const again = await apply(opts(exec));
+		expect(again.status).toBe("failed");
+		expect(again.message).toContain("같은 커밋");
+		expect(tests()).toBe(1);
+		expect(merges(seen)).toBe(merged);
+		expect(head(work)).toBe(before);
+
+		expect((await apply(opts(exec), { retry: true })).status).toBe("failed");
+		expect(tests()).toBe(2);
+
+		r.release("FAIL", "fixed? no\n", "still breaks the tests");
+		expect((await apply(opts(exec))).status).toBe("failed");
+		expect(tests()).toBe(3);
+	});
 });
