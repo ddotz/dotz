@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { compose, loadStore, morningTime, nextAt, nightTime, runMorning, runNight, shouldTell, storeFile, type Deps } from "./doctor.ts";
 import { countTraces, gateway, logins, plugins, sessions, update, watches } from "./doctor-checks.ts";
 import { THRESHOLDS as T } from "./doctor-limits.ts";
-import type { DoctorCheck, Finding } from "./doctor-types.ts";
+import { DOCTOR_AREAS, type DoctorCheck, type Finding } from "./doctor-types.ts";
 import { msg } from "./i18n.ts";
 import { loadPlugins } from "./plugins.ts";
 
@@ -65,6 +65,7 @@ describe("morning delivery", () => {
 		expect(r.state.sent).toHaveLength(1);
 		await r.day();
 		expect(r.state.sent).toHaveLength(2);
+		expect(r.state.sent[1]!.text).toContain(msg().doctor.since(msg().doctor.day(T0)));
 	});
 
 	test("a resolved finding is dropped, and when it comes back it is new", async () => {
@@ -104,7 +105,7 @@ describe("morning delivery", () => {
 		const { text, decision } = r.state.sent[0]!;
 		expect(decision).toBe(true);
 		const [list, block] = text.split("\n\n");
-		expect(list).toBe(`${msg().doctor.head(1, 1)}\n- WHAT-A`);
+		expect(list!.split("\n").filter(l => l.startsWith("- "))).toEqual(["- WHAT-A"]);
 		expect(block).toBe("결정: Q-DECIDE\n**1) OPT-ONE**\nR1\n**2) OPT-TWO**\nR2");
 	});
 
@@ -112,6 +113,41 @@ describe("morning delivery", () => {
 		const r = rig([finding()]);
 		await r.day();
 		expect(r.state.sent[0]!.text).not.toContain("**1)");
+	});
+
+	test("each problem is one line with what to do; findings of one kind share a line", async () => {
+		const fail = (k: string) => finding({ key: `failures:${k}`, area: "failures", what: `LONG-${k}`, short: `S-${k}`, todo: "TODO-F" });
+		const r = rig([finding({ todo: "TODO-A" }), fail("a"), fail("b")]);
+		await r.day();
+		const t = msg().doctor, lines = r.state.sent[0]!.text.split("\n");
+		expect(lines[0]).toBe(t.head(2));
+		expect(lines.filter(l => l.startsWith("- "))).toEqual(["- WHAT-A TODO-A", `- ${t.failuresGrew(["S-a", "S-b"])} TODO-F`]);
+	});
+
+	test("a step shared by several problems is said once, after them", async () => {
+		const r = rig([finding({ todo: "TODO-SAME" }), finding({ key: "disk:low", area: "disk", what: "DISK", todo: "TODO-SAME" }), finding({ key: "update:self", area: "update", what: "UPDATE", todo: "TODO-OWN" })]);
+		await r.day();
+		const lines = r.state.sent[0]!.text.split("\n");
+		expect(lines.filter(l => l.startsWith("- "))).toEqual(["- WHAT-A", "- DISK", "- UPDATE TODO-OWN"]);
+		expect(lines.filter(l => l.includes("TODO-SAME"))).toEqual(["TODO-SAME"]);
+	});
+
+	test("the checks that found nothing are named on one line", async () => {
+		const r = rig([finding()]);
+		await r.day();
+		const t = msg().doctor;
+		expect(r.state.sent[0]!.text).toContain(t.healthy(DOCTOR_AREAS.filter(a => a !== "gateway").map(a => t.areas[a])));
+	});
+
+	test("something told before and still there is counted, not told again", async () => {
+		const r = rig([finding()]);
+		await r.day();
+		r.state.found = [finding(), finding({ key: "disk:low", area: "disk", what: "DISK" })];
+		await r.day();
+		const { text } = r.state.sent[1]!;
+		expect(text).toContain("DISK");
+		expect(text).not.toContain("WHAT-A");
+		expect(text).toContain(msg().doctor.still(1));
 	});
 
 	test("a message that failed to land is not marked as told", async () => {
@@ -165,7 +201,9 @@ describe("doctor_at off and the old timers", () => {
 		expect(shouldTell(f, undefined, T0)).toBe(true);
 		expect(shouldTell(f, { at: T0, level: 4 }, T0 + H)).toBe(true);
 		expect(shouldTell(f, { at: T0, level: 5 }, T0 + H)).toBe(false);
-		expect(compose({ version: 1, lastRun: T0, memo: {}, findings: { [f.key]: f }, told: { [f.key]: { at: T0, level: 6 } } }, T0 + H)).toBeUndefined();
+		const told = { version: 1 as const, lastRun: T0, memo: {}, findings: { [f.key]: f }, told: { [f.key]: { at: T0, level: 6 } } };
+		expect(compose(told, T0 + H)).toBeUndefined();
+		expect(compose(told, T0 + H, true)!.text).toContain("WHAT-A");
 	});
 });
 

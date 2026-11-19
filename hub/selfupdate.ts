@@ -435,7 +435,7 @@ async function runApply(o: Options, how: { keep?: boolean; auto?: boolean }): Pr
 		if (t.code === 0) return { ok: true as const, why: "" };
 		const blocks = failureBlocks(t.out);
 		if (blocks) record(logDir, `update #${j.id}: failed tests\n${blocks}`);
-		record(logDir, `update #${j.id}: test output (tail)\n${t.out.split("\n").slice(-40).join("\n")}`);
+		record(logDir, `update #${j.id}: test output (tail, exit ${t.code})\n${t.out.split("\n").slice(-40).join("\n")}`);
 		const names = failedTestNames(t.out);
 		return { ok: false as const, why: testFailure(t.code, names) };
 	};
@@ -511,7 +511,7 @@ async function runApply(o: Options, how: { keep?: boolean; auto?: boolean }): Pr
 			const i = await exec(["bun", "install"], dir, 10 * 60_000);
 			if (i.code !== 0) step("되돌리기", `이전 의존성 bun install 실패: ${lastLine(i.out)}`);
 		}
-		return end("failed", `${why}. 이전 버전(${v.commit.short})에 그대로 있어요.`);
+		return end("failed", `${why}. 쓰던 버전 그대로예요.`);
 	};
 
 	const changed = await exec(["git", "diff", "--name-only", from, target], dir, 15_000);
@@ -608,7 +608,7 @@ function signalSignature(o: Options, c: CheckResult, hooks: Pick<AutoHooks, "ale
 }
 
 const autoChoice = (): string =>
-	issueBlock("dotz 자동 업데이트를 어떻게 할까요?", [
+	issueBlock("원인을 확인할까요, 자동 업데이트를 끌까요?", [
 		{ name: "원인 확인", result: "업데이트 로그와 저장소 상태를 보고 원인과 고칠 방법을 알려드려요." },
 		{ name: "자동 업데이트 끄기", result: "자동 적용을 꺼서 새 버전 알림만 받아요. 설정 → 업데이트에서 직접 적용해요." },
 	]);
@@ -625,7 +625,7 @@ async function autoApply(o: Options, c: CheckResult, s: State, hooks: AutoHooks)
 		record(logDir, `auto-apply: refused ${rel} (${short}): ${c.blocked.join(" ")}`);
 		if (s.autoRefused === remoteHead) return;
 		s.autoRefused = remoteHead;
-		hooks.alert(`dotz 자동 업데이트를 하지 않았어요 (${rel}, ${short}). ${c.blocked.join(" ")}\n${autoChoice()}`);
+		hooks.alert(`dotz 자동 업데이트를 하지 않았어요 (${rel}). ${c.blocked.join(" ")}\n${autoChoice()}`);
 		return;
 	}
 	record(logDir, `auto-apply: applying ${rel} (${short})`);

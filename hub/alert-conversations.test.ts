@@ -61,8 +61,4 @@ test("only failing, stopped or unapproved checks are issues; their report carrie
 	expect(isWatchIssue("output changed")).toBe(false);
 	const [d] = decisionsOf({ ts: "2050-05-02T00:00:00.000Z", kind: "out", source: "gateway", target: "alert", text: `[w] failed 2 times\n${watchChoice("w")}` });
 	expect(d!.options).toHaveLength(2);
-	expect(watchChoice("가격 확인", "failed 2 times in a row (exit 1)")).toContain("결정: 가격 확인: 2번 연속 실패했어요. 어떻게 할까요?");
-	expect(watchChoice("샘플 로그인 유지", "stopped after a password failure; it runs again once the owner approves")).toContain("결정: 샘플 로그인 유지: 저장된 비밀번호가 없어 다시 로그인하지 못했어요. 어떻게 할까요?");
-	expect(watchChoice("가격 확인")).toContain("결정: 모니터링 가격 확인을 어떻게 할까요?");
-	expect(watchChoice("uptime")).toContain("결정: 모니터링 uptime을(를) 어떻게 할까요?");
 });

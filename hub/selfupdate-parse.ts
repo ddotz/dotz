@@ -123,11 +123,10 @@ export function failureBlocks(out: string): string {
 	return `${blocks.join("\n--\n")}${failed > blocks.length ? `\n… ${failed - blocks.length} more failure(s) not kept` : ""}`;
 }
 
-// bun's closing counts ("12 pass", "0 fail"): the update log keeps them; owner-facing text never carries them (owner 2026-11-01:
-// "1pass 이거 뜨는거 불필요"). A failure names the failing tests, or the exit code when bun named none.
 export const testSummary = (out: string): string =>
 	out.split("\n").filter(l => /^\s*\d+ (pass|fail)\b/.test(l)).map(l => l.trim()).join(", ");
-export const testFailure = (code: number, names: string[]): string => `테스트 실패${names.length ? `: ${names.join(" / ")}` : ` (exit ${code})`}`;
+export const testFailure = (code: number, names: string[]): string =>
+	names.length ? `테스트 실패: ${names.join(" / ")}` : code === 143 || code === 137 ? "테스트가 제한 시간 안에 끝나지 않았어요" : "테스트가 통과하지 못했어요";
 
 // The names of the failing tests (at most `max`, once each: bun prints every `(fail)` line again in its closing summary), for the
 // owner-facing message; the counts alone do not say what broke.

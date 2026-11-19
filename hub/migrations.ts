@@ -131,7 +131,10 @@ const modelPicks: Migration = {
 		for (const [target, selector] of added) picks[target] = { ...parseSelector(selector), by: "owner", at, evidence: "earlier setting, recorded at update" };
 		mkdirSync(join(dataDir, "state"), { recursive: true });
 		writeAtomic(file, `${JSON.stringify(picks, null, 2)}\n`);
-		return `기존 모델 설정을 오너 설정으로 기록 (${added.map(([t, s]) => `${t} ${s}`).join(", ")})`;
+		const role: Record<string, string> = { orchestrator: "메인", lanes: "세션", workers: "서브에이전트" };
+		const named = added.filter(([t]) => role[t]).map(([t, s]) => `${role[t]} ${parseSelector(s).model.split("/").pop()}`);
+		const convCount = added.length - named.length;
+		return `쓰던 모델 설정을 직접 고른 설정으로 기록 (${[...named, ...(convCount ? [`대화 ${convCount}곳`] : [])].join(", ")})`;
 	},
 };
 

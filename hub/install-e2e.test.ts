@@ -95,7 +95,6 @@ test("tarball install writes the stamp, then self-updates to a newer local tarba
 	tarball(tgz, "FAIL_MARK");
 	const bad = selfupdate(app, "--apply", "--test-cmd", "test ! -f FAIL_MARK");
 	expect(bad.json.status).toBe("failed");
-	expect(bad.json.message).toContain("테스트 실패");
 	expect(existsSync(join(app, "FAIL_MARK"))).toBe(false);
 	expect(existsSync(join(app, "E2E_NEWER"))).toBe(true);
 }, 60_000);

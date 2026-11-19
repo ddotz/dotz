@@ -17,7 +17,6 @@ import { dirname, join } from "node:path";
 import { blockedBy } from "./lanegates.ts";
 import { ensureAside, replInTab } from "./aside.ts";
 import { type Relogin, relogin } from "./autologin.ts";
-import { josa } from "./account-rules.ts";
 import { issueBlock } from "./choices.ts";
 import { cfg, DATA_DIR, log, now, paths, readJsonOrQuarantine, TZ, writeAtomic } from "./config.ts";
 import { blockedByFeatures } from "./featuredirs.ts";
@@ -87,7 +86,7 @@ const toldDown = (s: Watch["state"]) => s.failAlertAt !== undefined && !(s.recov
 export const isWatchIssue = (reason: string): boolean => /^(?:failed \d+ times|stopped after|needs the owner)/.test(reason);
 // The question says what happened when the reason is given (가격 확인: 2번 연속 실패했어요), so the 알림 row reads without opening it.
 export const watchChoice = (name: string, reason = ""): string =>
-	issueBlock(reason ? `${name}: ${watchReasonKo(reason).split(". ")[0]}. 어떻게 할까요?` : `모니터링 ${name}${/[가-힣]$/.test(name) ? josa(name, "을", "를") : "을(를)"} 어떻게 할까요?`, [{ name: "원인 확인", result: "출력을 보고 원인과 고칠 방법을 알려드려요." }, { name: "모니터링 끄기", result: "고칠 때까지 이 모니터링을 멈춰 둬요." }]);
+	issueBlock(`${reason ? `${name}: ${watchReasonKo(reason).split(". ")[0]}. 원인을 확인할까요, 이 모니터링을` : `원인을 확인할까요, ${name} 모니터링을`} 꺼 둘까요?`, [{ name: "원인 확인", result: "출력을 보고 원인과 고칠 방법을 알려드려요." }, { name: "모니터링 끄기", result: "고칠 때까지 이 모니터링을 멈춰 둬요." }]);
 const loadItems = (): Watch[] => readJsonOrQuarantine<Watch[]>(paths.watches, () => []);
 const items: Watch[] = loadItems();
 // A kept login signs itself in again (sessionRun), so it has the gate for the one human step: a second factor waits for the owner's yes
@@ -102,7 +101,7 @@ const loginGate = (w: Watch): boolean => {
 if (items.map(loginGate).some(Boolean)) writeAtomic(paths.watches, `${JSON.stringify(items, null, 2)}\n`);
 const SCRIPT_MAX_BYTES = 64 * 1024;
 const LAST_MAX = 2000; // the last output is kept so the next change can be told as what was added or gone
-const stateDir = (w: Watch) => join(DATA_DIR, "watches", w.id);
+const stateDir = (w: Pick<Watch, "id">) => join(DATA_DIR, "watches", w.id);
 const timers = new Map<string, ReturnType<typeof setTimeout>>();
 const running = new Map<string, Promise<void>>();
 // The process group of a running check (approveWatch kills it to start over) and the runs cancelled that way (their result is not counted).
@@ -131,7 +130,7 @@ const healWatchers = new Map<string, FSWatcher>();
 const healNotes = new Map<string, string>();
 const healChecking = new Set<string>();
 const notePath = (w: Watch) => join(stateDir(w), "heal-note.txt");
-const failLog = (w: Watch) => join(stateDir(w), "last-fail.log");
+const failLog = (w: Pick<Watch, "id">) => join(stateDir(w), "last-fail.log");
 const today = () => new Date(Date.now()).toLocaleDateString("en-CA", { timeZone: TZ });
 const healTriesToday = (w: Watch) => (w.state.healDay === today() ? (w.state.healN ?? 0) : 0);
 // Read at use, so a changed setting applies to the next failure.
@@ -795,6 +794,6 @@ export function setWatchChannels(id: string, channels: string[]): void {
 }
 
 // `paused` is the failure kind that stopped the watch until approval, or true when the owner paused it.
-const watchView = ({ state, paused, ...w }: Watch) => ({ ...w, fails: state.fails, lastRun: state.lastRun, lastOk: state.lastOk, ...(state.kind ? { kind: state.kind } : {}), ...(state.nextAt ? { nextAt: new Date(state.nextAt).toISOString() } : {}), ...(state.paused || paused ? { paused: state.paused ?? true } : {}), ...(state.approvalAskedAt ? { awaitingApproval: true } : {}) });
+const watchView = ({ state, paused, ...w }: Watch) => ({ ...w, fails: state.fails, lastRun: state.lastRun, lastOk: state.lastOk, ...(state.kind ? { kind: state.kind } : {}), ...(state.nextAt ? { nextAt: new Date(state.nextAt).toISOString() } : {}), ...(state.paused || paused ? { paused: state.paused ?? true } : {}), ...(state.approvalAskedAt ? { awaitingApproval: true } : {}), ...(state.fails && existsSync(failLog(w)) ? { lastFailLog: failLog(w) } : {}) });
 
 export const listWatches = () => items.map(watchView);

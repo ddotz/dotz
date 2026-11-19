@@ -47,6 +47,7 @@ import { dropClaim, resolvesOf, splitTone, stripHandoff, stripLater, stripProjec
 import { isLate, isSnowflake, lateQuote, lateRequestId, replyRef, snowflakeTime, withQuote } from "./threads.ts";
 import { keepBrief } from "./draft-approval.ts";
 import { allNotices, markCardShown, markDraftPosted, onDecisionClosed, onDraftCardRefreshed, openDraftCards, openDraftRefs, openDraftText, orchestratorAnswered, resolveNotices, rewriteOpenDraft, untouchedChoices } from "./notices.ts";
+import { channelTitle, GENERIC_TITLES } from "./notices-lanes.ts";
 import { cardPointer, cardRef, cardTitle, CARDS_LEAD, closedCardText, createApprovalQueue, loadHeld, pendingCardsNote, splitDraftCards, withSendState } from "./approval-queue.ts";
 import { mailItemKey, mailKeyOfRef } from "./draft-handled.ts";
 import { draftHeads, listDrafts as listMailDrafts } from "../features/reply-drafts/lib/store.ts";
@@ -705,7 +706,10 @@ function wireAnswers(c: Conv): void {
 	} else {
 		// What main posted in this conversation reaches the session's next owner prompt (the header is added to owner prompts only: a handed-over prompt carries none, and its answer goes back to the sender anyway).
 		c.o.setTurnHeader(() => digest.takeInto(c.key));
-		c.o.setAlertHandler(text => alert(`[${c.meta.name || c.primary}] ${text}`));
+		c.o.setAlertHandler(text => {
+			const name = c.meta.name?.trim() || channelTitle(c.primary);
+			alert(GENERIC_TITLES.has(name) ? text : `[${name}] ${text}`);
+		});
 	}
 }
 

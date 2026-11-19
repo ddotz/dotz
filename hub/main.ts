@@ -56,6 +56,7 @@ import { ownerMessage } from "./events.ts";
 import { forgetAccountUsage, onQuota, QUOTA_REFRESH_MS, refreshQuota, usageSnapshot } from "./providers.ts";
 import { sealPlainSecrets } from "./secretbox.ts";
 import { allNotices, backfillNotices, draftCardCounts, dropChannelNotices, refreshStoredDrafts, setAppLabelResolver, setDraftHandled, settleExpiredQuestions, settleHandledDrafts, setConvNameResolver, setLaneTitleResolver, setAppBlocker, setAppResolver, setOrchestratorAvailable, setWatchLabelResolver, setWatchSummarizer, tagStoredApps, updateAvailable, updateResolved } from "./notices.ts";
+import { channelTitle, laneTitle } from "./notices-lanes.ts";
 import { startDayNote } from "./day-note.ts";
 import { startReflection } from "./reflect.ts";
 import { recipeBlock } from "./recipes.ts";
@@ -502,7 +503,7 @@ for (const name of resumedLanes) void send(`lane:${name}`, "게이트웨이가 �
 // flooded worklog (owner 2026-10-20). Failures to start go to alert elsewhere.
 if (restarted) {
 	const at = new Date().toLocaleTimeString("ko-KR", { timeZone: TZ, hour: "2-digit", minute: "2-digit" });
-	if (replayed || resumedLanes.length) void out(discord.status.enabled ? "worklog" : "web", msg().gatewayRestart(replayed, resumedLanes), undefined, { source: "gateway", update_key: "gateway-restart", wk: "system" }).catch(e => log(`restart notice failed: ${e}`));
+	if (replayed || resumedLanes.length) void out(discord.status.enabled ? "worklog" : "web", msg().gatewayRestart(replayed, resumedLanes.map(laneTitle)), undefined, { source: "gateway", update_key: "gateway-restart", wk: "system" }).catch(e => log(`restart notice failed: ${e}`));
 	else log(`restart at ${at}: nothing interrupted, worklog notice skipped`);
 }
 // After an update and restart: local changes the updater backed up (dotz-local/<stamp>) and text overrides that no longer fit this version
@@ -550,7 +551,7 @@ startDataCleanup();
 startEffortLearning({ enabled: () => cfg.orchestrator?.effort_learn !== false, say: (model, effort, evidence) => void out(discord.status.enabled ? "worklog" : "web", msg().effortLearned(model, effort, evidence), undefined, { source: "gateway", wk: "system" }).catch(e => log(`effort notice failed: ${e}`)) });
 startRecallIndexing({ busy: busyNow });
 startMemoryGuard((key, text) => {
-	if (key === "orchestrator") return alert(`${NAME}: ${text}`);
+	if (key === "orchestrator") return alert(text);
 	// A conversation session's notice goes into its own conversation.
 	if (key.startsWith("conv:")) return void out(convs.get(key.slice(5))?.primary ?? "alert", text, undefined, { source: "gateway" }).catch(e => log(`memory guard notice to ${key} failed: ${e}`));
 	void send(key, text).catch(e => log(`memory guard notice to ${key} failed: ${e}`));
@@ -760,7 +761,7 @@ const restartGate = createRestartGate({
 	notice: text => void out(discord.status.enabled ? "worklog" : "web", text, undefined, { source: "gateway", wk: "system" }).catch(e => log(`restart wait notice failed: ${e}`)),
 	hold: () => markRestartPending(DATA_DIR, true),
 	capAfterMs: restartCapMs(),
-	cap: (busy, min) => alert(restartCapText(busy, min)),
+	cap: (busy, min) => alert(restartCapText(busy, min, (kind, key) => (kind === "lane" ? laneTitle(key) : convs.get(key)?.meta.name?.trim() || channelTitle(convs.get(key)?.primary ?? key)))),
 	log,
 	exit: () => {
 		updateNow()?.restarting();

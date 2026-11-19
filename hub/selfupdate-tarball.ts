@@ -182,7 +182,7 @@ export async function applyTarball(o: Options, c: CheckResult, v: Tarball, j: Jo
 	const oldStamp = readStamp(dir) ?? {};
 	const fail = (why: string) => {
 		rmSync(stage, { recursive: true, force: true });
-		return end("failed", `${why}. 이전 버전(${v.commit.short})이 그대로 있어요.`);
+		return end("failed", `${why}. 쓰던 버전 그대로예요.`);
 	};
 	let to = c.remoteHead as string;
 	let auth = v.auth;
@@ -228,7 +228,7 @@ export async function applyTarball(o: Options, c: CheckResult, v: Tarball, j: Jo
 	if (t.code !== 0) {
 		const blocks = failureBlocks(t.out);
 		if (blocks) record(logDir, `update #${j.id}: failed tests\n${blocks}`);
-		record(logDir, `update #${j.id}: test output (tail)\n${t.out.split("\n").slice(-40).join("\n")}`);
+		record(logDir, `update #${j.id}: test output (tail, exit ${t.code})\n${t.out.split("\n").slice(-40).join("\n")}`);
 		const names = failedTestNames(t.out);
 		return fail(testFailure(t.code, names));
 	}

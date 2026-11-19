@@ -4,8 +4,9 @@ import { issueBlock } from "./choices.ts";
 import { cfg, DATA_DIR, DEFAULTS, HOME, writeAtomic } from "./config.ts";
 import { CHECKS as HEALTH } from "./doctor-checks.ts";
 import { THRESHOLDS as T } from "./doctor-limits.ts";
-import type { DoctorCheck, Finding } from "./doctor-types.ts";
+import { type DoctorArea, type DoctorCheck, DOCTOR_AREAS, type Finding } from "./doctor-types.ts";
 import { msg } from "./i18n.ts";
+import type { Catalog } from "./i18n-en.ts";
 import { ledger } from "./ledger.ts";
 import { type Send, morningExtra, startLedger } from "./ledger-tick.ts";
 import { promptHealth } from "./prompt-health.ts";
@@ -75,13 +76,35 @@ export function shouldTell(f: Finding, t: Told | undefined, now: number): boolea
 }
 
 export type Notice = { text: string; decision: boolean; open: boolean; keys: string[] };
-export function compose(store: DoctorStore, now: number): Notice | undefined {
-	const due = Object.values(store.findings).filter(f => shouldTell(f, store.told[f.key], now));
-	const open = due.filter(f => !f.fixed), fixed = due.filter(f => f.fixed);
-	if (!due.length) return undefined;
-	const t = msg().doctor, ask = open.find(f => f.decide), listed = open.filter(f => f !== ask);
-	const parts = [open.length ? [t.head(listed.length, ask ? 1 : 0), ...listed.map(f => `- ${f.what}`)].join("\n") : "", fixed.length ? t.fixedLine(fixed.map(f => f.what).join(", ")) : "", ask?.decide ? issueBlock(ask.decide.question, ask.decide.options) : ""];
-	return { text: parts.filter(Boolean).join("\n\n"), decision: !!ask, open: open.length > 0, keys: due.map(f => f.key) };
+const SAID_TOGETHER: Partial<Record<DoctorArea, (t: Catalog["doctor"]) => (items: string[]) => string>> = { failures: t => t.failuresGrew, tokens: t => t.tokens };
+
+function items(found: Finding[], store: DoctorStore, now: number): { what: string; todo?: string }[] {
+	const t = msg().doctor, out: { what: string; todo?: string }[] = [], said = new Set<DoctorArea>();
+	for (const f of found) {
+		const together = SAID_TOGETHER[f.area];
+		if (together && said.has(f.area)) continue;
+		said.add(f.area);
+		const same = together ? found.filter(g => g.area === f.area) : [f];
+		const lasting = store.told[f.key] && now - f.since >= DAY;
+		const what = same.length > 1 ? together!(t)(same.map(g => g.short ?? g.what)) : lasting ? `${f.what} ${t.since(t.day(f.since))}` : f.what;
+		out.push({ what, todo: f.todo });
+	}
+	return out;
+}
+
+export function compose(store: DoctorStore, now: number, all = false): Notice | undefined {
+	const t = msg().doctor, every = Object.values(store.findings);
+	const due = all ? every : every.filter(f => shouldTell(f, store.told[f.key], now));
+	if (!due.length && !all) return undefined;
+	const open = due.filter(f => !f.fixed), fixed = due.filter(f => f.fixed), quiet = every.filter(f => !f.fixed && !due.includes(f));
+	const ask = open.find(f => f.decide), rows = items(open.filter(f => f !== ask), store, now), fixedNames = fixed.map(f => f.what).join(", ");
+	const shared = [...new Set(rows.map(r => r.todo).filter((todo): todo is string => !!todo && rows.filter(r => r.todo === todo).length > 1))];
+	const lines = rows.map(r => `- ${r.todo && !shared.includes(r.todo) ? `${r.what} ${r.todo}` : r.what}`);
+	const sick = new Set(every.filter(f => !f.fixed).map(f => f.area)), fine = DOCTOR_AREAS.filter(a => !sick.has(a)).map(a => t.areas[a]);
+	const head = open.length ? t.head(rows.length, ask ? 1 : 0) : fixed.length ? t.fixedHead(fixedNames) : t.clear;
+	const body = [head, ...lines, ...shared, open.length && fixed.length ? t.fixedLine(fixedNames) : "", quiet.length ? t.still(items(quiet, store, now).length) : "", (open.length || all) && fine.length ? t.healthy(fine) : ""];
+	const text = [body.filter(Boolean).join("\n"), ask?.decide ? issueBlock(ask.decide.question, ask.decide.options) : ""].filter(Boolean).join("\n\n");
+	return { text, decision: !!ask, open: open.length > 0, keys: due.map(f => f.key) };
 }
 
 const pad = (n: number): string => String(n).padStart(2, "0");
@@ -181,10 +204,11 @@ if (import.meta.main) {
 		console.error("usage: bun hub/doctor.ts --dry | --night");
 		process.exit(2);
 	}
-	const t0 = Date.now(), now = Date.now(), prev = loadStore(DATA_DIR);
+	const t0 = Date.now(), now = Date.now(), prev = loadStore(DATA_DIR), t = msg().doctor;
 	const store = await runChecks(CHECKS, { dataDir: DATA_DIR, home: HOME, log: l => console.error(l) }, prev, now, true);
-	const notice = compose(store, now);
-	for (const f of Object.values(store.findings)) console.log(`- [${f.area}] ${f.what} (level ${f.level}${f.decide ? ", decision" : ""}${f.fixed ? ", fixed" : ""})`);
-	console.log(notice ? `--- (dry) would post${notice.decision ? " with a choice block" : ""} ---\n${notice.text}\n---` : "--- (dry) nothing notable, nothing would be posted ---");
+	const report = compose(store, now, true)!, notice = compose(store, now);
+	console.log(`${report.text}\n`);
+	console.log(!notice ? t.dryNone(T.repeatFactor, T.repeatDays) : notice.text === report.text ? t.drySame : `${t.dryMorning}\n\n${notice.text}`);
+	console.log(`\n${t.dryAt(t.when(now))}`);
 	console.log(`RESULT ${JSON.stringify({ ms: Date.now() - t0, peakRssMb: Math.round(process.resourceUsage().maxRSS / 1024), findings: Object.keys(store.findings).length })}`);
 }

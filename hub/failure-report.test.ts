@@ -185,7 +185,7 @@ describe("--check", () => {
 		appendFileSync(join(home, ".dotz/hub.log"), Array.from({ length: 12 }, () => `${iso()} gateway restart (1 request(s) coalesced, waited 1s)\n`).join(""));
 		const grown = check(run(home), state, th);
 		expect(grown).toHaveLength(1);
-		expect(grown[0]).toContain("재시작: 게이트웨이");
+		expect(grown[0]).toContain("게이트웨이 재시작");
 	});
 
 	test("a busy window with the same shares prints nothing, however much the volume grew", () => {

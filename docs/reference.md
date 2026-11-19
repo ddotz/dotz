@@ -386,13 +386,15 @@ and at which level, and the baselines the checks compare with).
   at least 1M tokens or 10 more occurrences) against a baseline kept in the doctor's file; tokens: one finding per token-audit warning class (the audit still writes its report `~/.dotz/logs/token-audit-YYYYMMDD.md` and
   14 days of totals in `~/.dotz/token-audit.json`; the reflection digest cites them).
 - *Telling.* A finding is told when it is new, when its level reached 1.5x the level last told, or 7 days after it was last told while still present; a resolved one is dropped (back again = new). Nothing
-  notable: one log line, nothing posted anywhere. Self-fixed things are one line together. A choice block appears only for a finding with a decision. The item is an alert when anything in it is not fixed;
+  notable: one log line, nothing posted anywhere. Self-fixed things are one line together. Each open problem is one line with what to do (failure classes share one line, token classes another;
+  a step several lines share is said once after them), then the count of things told before and still there and the checks that found nothing; a re-told problem says since when it lasts.
+  A choice block appears only for a finding with a decision. The item is an alert when anything in it is not fixed;
   when dotz fixed everything itself it is a worklog entry only. The night pass runs in its own process (`bun hub/doctor.ts --night`): reading a week of session logs
   peaks at several hundred MB on a busy install, and the gateway's heap never holds it. Prompt health (`hub/prompt-health.ts`) is one of the checks, and so is the one check that calls a model, the prompt review
   (`hub/prompt-review.ts`): weekly, or after 3 days when prompt health saw real growth; the install's ordinary model, never Fable or max/xhigh effort, skipped while the
   usage window is tight; about 23K input tokens for a 26K-character contract (Korean text is about 1.1 characters a token; at the 40K-character cap about 36K) and at most 2K output tokens a run, the cost written into each of its findings. It proposes only: a line changes after the owner picks it.
 - *Now vs. morning.* The immediate alerts stay as they were: gateway down, a login lost, a watch failing twice, an update failure, usage limits. The doctor only adds the morning "still" and trend items.
-- *Try it.* `bun hub/doctor.ts --dry` runs every check on the real data dir, writes nothing, prints the findings and the notice it would post, and ends with `RESULT {ms, peakRssMb, findings}`.
+- *Try it.* `bun hub/doctor.ts --dry` runs every check on the real data dir, writes nothing, prints every finding in the owner's language in the morning notice's layout, then what the morning notice would carry (only what is new or grew), the check time in the owner's time zone, and ends with `RESULT {ms, peakRssMb, findings}`.
   `bun hub/token-audit.ts --dry [--hours N]` and `bun hub/failure-report.ts [--days 7] [--json | --md <path> | --check --state <file>]` stay as command-line tools (the latter prints one line per class whose
   share grew since the baseline in the state file); neither has a timer of its own any more.
 

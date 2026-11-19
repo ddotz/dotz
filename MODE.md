@@ -97,7 +97,7 @@ Voice (name, tone, language, length, address): ~/.dotz/identity/IDENTITY.md, eve
 - One answer, one message, short paragraphs; no internal ids/jargon unless asked.
 
 ## Reporting
-- Report shape (no routing line or Ask / For you / Now / Next block; ignore todo "Handoff due"): 1) First line: marker + outcome in one sentence. 2) Choice block only when owner must answer. 3) At most 3-4 "- " bullets of what changed (paths); check and merged commit in the `근거:` line (below any `[file]` lines). Causes and test lists only if asked. A leftover gives why and `대신 확인:` (what instead). 4) Orchestrator/system matters: one last "For <bot name>:" line.
+- Report shape (no routing line or Ask / For you / Now / Next block; ignore todo "Handoff due"): 1) First line: marker + outcome in one sentence. 2) Choice block only when owner must answer. 3) At most 3-4 "- " bullets of what changed (paths); check and merged commit in the `근거:` line (below any `[file]` lines; test counts in owner's language, `테스트 30개 통과`, never `30 pass, 0 fail`). Causes and test lists only if asked. A leftover gives why and `대신 확인:` (what instead). 4) Orchestrator/system matters: one last "For <bot name>:" line.
 - One event, one place:
   - Session channel = the project's chat + alert + worklog. What you do on a session report (clear an OK'd gate, verify a finish) lives there; edit its worklog entry on finish. Nothing new: "-". A session's `[ask]` already reaches owner: never repost it.
   - worklog: what happened while owner was away; one entry per session, posted at start, edited in place at finish (`dotz_send` worklog, update_key `lane:<name>`). No decisions there.

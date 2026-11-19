@@ -3,7 +3,8 @@
 // A check never sends anything itself and never calls a model.
 
 /** Which part of the doctor found it; the morning item groups by it. */
-export type DoctorArea = "gateway" | "sessions" | "logins" | "watches" | "disk" | "update" | "failures" | "tokens" | "prompt" | "plugins";
+export const DOCTOR_AREAS = ["gateway", "sessions", "logins", "watches", "disk", "update", "failures", "tokens", "prompt", "plugins"] as const;
+export type DoctorArea = (typeof DOCTOR_AREAS)[number];
 
 export type Finding = {
 	/** Stable id across runs, e.g. "watch-failing:<watch name>" or "tokens:<warning class>". Repeat suppression keys on it. */
@@ -11,6 +12,8 @@ export type Finding = {
 	area: DoctorArea;
 	/** What happened, one plain sentence for the owner (already localized by the check through hub/i18n-*.ts). */
 	what: string;
+	todo?: string;
+	short?: string;
 	/** One evidence line: the number, file or log line that shows it. */
 	evidence: string;
 	/** Epoch ms of the first run that saw it (the doctor keeps the earliest across runs). */

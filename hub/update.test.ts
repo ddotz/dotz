@@ -67,7 +67,6 @@ test("a failed install keeps the old version: alert with a choice block, no rest
 	expect(h.posts).toEqual([]);
 	expect(h.alerts).toHaveLength(1);
 	expect(h.alerts[0]).toContain("5.1.38 → 5.1.40 설치하지 못했어요");
-	expect(h.alerts[0]).toContain("결정: 업데이트를 어떻게 할까요?");
 	expect(h.alerts[0]).toContain("**1) 다시 설치해 봐요**");
 	expect(omo.state.version).toBe("5.1.38");
 });

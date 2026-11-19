@@ -57,16 +57,27 @@ export function wakeOf(text: string): string {
 }
 // The digest line the owner reads names a class in words: a wake with no known prefix is keyed by its raw first words ("other:[dotz gateway] ..."),
 // which stay the key (the baseline compares it) but not the words.
-const shownClass = (name: string): string => name.replace(/other:\[dotz gateway\].*$/, "게이트웨이 알림").replace(/other:.*$/, "기타");
+const WAKE_WORDS: [RegExp, string][] = [
+	[/^keepalive$/, "연결 유지"], [/^cm:goal-continuation$/, "목표 이어가기"], [/^cm:/, "작업 알림"], [/^inbox:lane-report$/, "세션 보고"], [/^inbox:watch$|^watch$/, "모니터링"],
+	[/^inbox:schedule$|^schedule$/, "예약"], [/^(?:inbox:|lane-brief|bgtask|sysreminder|peer)/, "기타 알림"], [/^other:\[dotz gateway\]/, "게이트웨이 알림"], [/^other:/, "기타"],
+];
+const shownClass = (name: string): string => {
+	const wake = /^빈 깨움 (.+)$/.exec(name);
+	if (wake) return `빈 깨움(${WAKE_WORDS.find(([re]) => re.test(wake[1]!))?.[1] ?? wake[1]})`;
+	const hub = /^허브 로그 (.+)$/.exec(name);
+	if (hub) return HUB_COUNTERS.find(c => c.name === hub[1])?.shown ?? hub[1]!;
+	return name.replace(/429·한도$/, "사용 한도").replace(/^(도구|모델) 오류 기타$/, "그 밖의 $1 오류");
+};
 const NOT_A_WAKE = new Set(["cm:senpi-task.usage", "cm:environment-context", "cm:senpi.todo-owed"]);
 
 // Hub log events worth counting; `sum` reads the number out of the line when the line stands for several things.
-const HUB_COUNTERS: { name: string; re: RegExp; sum?: RegExp }[] = [
-	{ name: "재시도: 막힌 턴", re: /login store changed; retrying the blocked turn/ }, { name: "재시도: 메일·카드 요약", re: /summary failed, retry|keep their original \(retry in/ },
-	{ name: "재시도: 답 전에 끊긴 턴", re: /stopped on an error before answering; its request stays open for the retry/ },
-	{ name: "재생: 못 받은 프롬프트", re: /replaying \d+ unanswered prompt/, sum: /replaying (\d+) unanswered/ },
-	{ name: "답: 워커 결과로 연결", re: /an answer had no prompt; sent to (?!no message)/ }, { name: "답: 메시지 없이 전달", re: /an answer had no prompt; sent to no message/ }, { name: "[later]: 프롬프트 없는 턴", re: /a run without a prompt said \[later\]/ },
-	{ name: "재시작: 게이트웨이", re: /gateway restart \(/ }, { name: "재시작: 레인 중단", re: /stopped for a gateway restart/ }, { name: "재시작: 오래 기다림", re: /gateway restart still waiting/ },
+const HUB_COUNTERS: { name: string; shown: string; re: RegExp; sum?: RegExp }[] = [
+	{ name: "재시도: 막힌 턴", shown: "막힌 턴 다시 하기", re: /login store changed; retrying the blocked turn/ }, { name: "재시도: 메일·카드 요약", shown: "메일·카드 요약 다시 하기", re: /summary failed, retry|keep their original \(retry in/ },
+	{ name: "재시도: 답 전에 끊긴 턴", shown: "답 전에 끊긴 턴 다시 하기", re: /stopped on an error before answering; its request stays open for the retry/ },
+	{ name: "재생: 못 받은 프롬프트", shown: "못 받은 프롬프트 다시 보내기", re: /replaying \d+ unanswered prompt/, sum: /replaying (\d+) unanswered/ },
+	{ name: "답: 워커 결과로 연결", shown: "질문 없이 워커 결과로 간 답", re: /an answer had no prompt; sent to (?!no message)/ }, { name: "답: 메시지 없이 전달", shown: "질문 없이 나간 답", re: /an answer had no prompt; sent to no message/ },
+	{ name: "[later]: 프롬프트 없는 턴", shown: "질문 없이 미룬 턴", re: /a run without a prompt said \[later\]/ },
+	{ name: "재시작: 게이트웨이", shown: "게이트웨이 재시작", re: /gateway restart \(/ }, { name: "재시작: 레인 중단", shown: "재시작으로 멈춘 세션", re: /stopped for a gateway restart/ }, { name: "재시작: 오래 기다림", shown: "오래 기다린 재시작", re: /gateway restart still waiting/ },
 ];
 
 const entry = (): Entry => ({ count: 0, tokens: 0, chars: 0, noop: 0, lost: 0, sample: "", tools: new Map() });
@@ -322,9 +333,9 @@ export type Thresholds = { pct: number; minTokens: number; minCount: number };
 // A class grew when its share grew by at least pct percent and it cost at least the floor beyond what its old share predicts for this window
 // (tokens, or count for classes that carry no tokens). Share = tokens / all tokens, or count / assistant turns for a count-only class: counts have
 // no token total, and turns are what a model error or a hub.log retry happens per, so a longer or busier window dilutes them like it dilutes tokens.
-export function grownClasses(r: Report, base: Baseline | undefined, th: Thresholds): { name: string; label: string; change: string; line: string; weight: number }[] {
+export function grownClasses(r: Report, base: Baseline | undefined, th: Thresholds): { name: string; label: string; grew: string; change: string; line: string; weight: number }[] {
 	if (!base) return [];
-	const out: { name: string; label: string; change: string; line: string; weight: number }[] = [];
+	const out: { name: string; label: string; grew: string; change: string; line: string; weight: number }[] = [];
 	for (const c of r.lost) {
 		const b = base.classes[c.name] ?? { count: 0, tokens: 0 };
 		const byTokens = c.tokens > 0 || b.tokens > 0;
@@ -337,7 +348,7 @@ export function grownClasses(r: Report, base: Baseline | undefined, th: Threshol
 		const pct = before ? `+${Math.round((after / before - 1) * 100)}%` : "새로 생김";
 		const share = byTokens ? `비중 ${P(before)} → ${P(after)}` : `1천 턴당 ${(before * 1e3).toFixed(2)} → ${(after * 1e3).toFixed(2)}`;
 		const label = shownClass(c.name), change = `${byTokens ? `토큰 ${M(b.tokens)} → ${M(c.tokens)}, ` : ""}건수 ${b.count} → ${c.count}, ${share} (${pct})`;
-		out.push({ name: c.name, label, change, weight: byTokens ? excess : excess * 1e3, line: `${label}: ${change}` });
+		out.push({ name: c.name, label, grew: pct, change, weight: byTokens ? excess : excess * 1e3, line: `${label}: ${change}` });
 	}
 	return out.sort((a, b) => b.weight - a.weight);
 }

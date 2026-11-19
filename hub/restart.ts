@@ -31,20 +31,23 @@ export function markRestartPending(dataDir: string, on: boolean): void {
 }
 
 // What the owner reads for the hub's busy list (hub/main.ts busyNow).
-const ownerName = (b: string): string =>
-	b
-		.replace(/^lane (\S+) background workers \((\d+)\)$/, "세션 $1 (워커 $2개)")
-		.replace(/^lane (\S+) \((\d+) background workers\)$/, "세션 $1 (워커 $2개)")
-		.replace(/^lane (\S+)$/, "세션 $1")
-		.replace(/^orchestrator background (workers|jobs)(?: \((\d+)\))?$/, (_, kind, n) => `메인 대화 ${kind === "jobs" ? "작업" : "워커"}${n ? ` ${n}개` : ""}`)
-		.replace(/^conversation session (\S+) background (workers|jobs)(?: \((\d+)\))?$/, (_, k, kind, n) => `대화 ${k} ${kind === "jobs" ? "작업" : "워커"}${n ? ` ${n}개` : ""}`)
-		.replace(/^conversation session (\S+)$/, "대화 $1");
+export type BusyTitle = (kind: "lane" | "conv", key: string) => string;
+const ownerName = (b: string, title: BusyTitle): string => {
+	const work = (kind: string, n?: string) => `${kind === "jobs" ? "작업" : "워커"}${n ? ` ${n}개` : ""}`;
+	const lane = /^lane (\S+)(?: background workers \((\d+)\)| \((\d+) background workers\))?$/.exec(b);
+	if (lane) return `세션 ${title("lane", lane[1]!)}${lane[2] ?? lane[3] ? ` (워커 ${lane[2] ?? lane[3]}개)` : ""}`;
+	const main = /^orchestrator background (workers|jobs)(?: \((\d+)\))?$/.exec(b);
+	if (main) return `메인 대화 ${work(main[1]!, main[2])}`;
+	const conv = /^conversation session (\S+)(?: background (workers|jobs)(?: \((\d+)\))?)?$/.exec(b);
+	if (conv) return `대화 ${title("conv", conv[1]!)}${conv[2] ? ` ${work(conv[2], conv[3])}` : ""}`;
+	return b === "reply" ? "보내는 중인 답" : b;
+};
 
 // The one alert of a restart that waited past the cap: what still runs, and the owner's choice. Nothing is killed on its own.
-export function restartCapText(busy: string[], waitedMin: number): string {
+export function restartCapText(busy: string[], waitedMin: number, title: BusyTitle = (_, key) => key): string {
 	return [
-		`게이트웨이 재시작을 ${waitedMin}분째 기다리고 있어요. 새 버전은 아직 적용되지 않았어요. 새 워커는 막아 두었지만 이 작업이 아직 돌고 있어요: ${busy.map(ownerName).join(", ")}.`,
-		issueBlock("게이트웨이 재시작을 어떻게 할까요?", [
+		`게이트웨이 재시작을 ${waitedMin}분째 기다리고 있어요. 새 버전은 아직 적용되지 않았어요. 새 워커는 막아 두었지만 이 작업이 아직 돌고 있어요: ${busy.map(b => ownerName(b, title)).join(", ")}.`,
+		issueBlock("지금 재시작할까요, 작업이 끝날 때까지 기다릴까요?", [
 			{ name: "지금 재시작", result: "설정 → 업데이트의 '지금 재시작'으로 바로 다시 시작해요. 돌던 작업은 끊기고, 세션은 재시작 뒤 이어서 해요." },
 			{ name: "계속 기다리기", result: "그대로 두면 돌던 작업이 끝나는 대로 저절로 재시작해요." },
 		]),

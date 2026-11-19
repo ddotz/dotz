@@ -2,8 +2,9 @@
 // (an option of out()); anything stored before that, and anything a writer does not tag, is classified here when it is served (history, live frames,
 // notices). The gateway's own lines are told by the openers its writers build them from, exported below and used by the writer and by this file alike,
 // so a reworded line changes both. Pure: no I/O, and the writers import this file, never the other way round.
-import { DOCTOR_LEAD as DOCTOR_EN, NIGHT_LEAD as NIGHT_EN, SCHEDULE_CHECK_LEAD as CHECK_EN } from "./i18n-en.ts";
-import { DOCTOR_LEAD as DOCTOR_KO, NIGHT_LEAD as NIGHT_KO, SCHEDULE_CHECK_LEAD as CHECK_KO } from "./i18n-ko.ts";
+import { DOCTOR_LEAD_EN as DOCTOR_EN, DOCTOR_LEAD_KO as DOCTOR_KO } from "./doctor-text.ts";
+import { NIGHT_LEAD as NIGHT_EN, SCHEDULE_CHECK_LEAD as CHECK_EN } from "./i18n-en.ts";
+import { NIGHT_LEAD as NIGHT_KO, SCHEDULE_CHECK_LEAD as CHECK_KO } from "./i18n-ko.ts";
 import { splitTone, type Tone } from "./tone.ts";
 
 export const WORKLOG_KINDS = ["session", "check", "night", "update", "account", "system", "note", "doctor"] as const;
