@@ -17,6 +17,8 @@ export type Tokens = { in: number; out: number; estimated?: true };
 export type Draft = { code: string; commentId: string; source: string; thread: string; text: string; status: DraftStatus; created: number; changes: string[]; clean: boolean; notes: string[]; tokens?: Tokens; mail?: string; mailAt?: number; closedReason?: ClosedReason;
 	/** The mail draft that was linked to this draft and left on its own (the reply was answered elsewhere, or 메일만 보내기 sent it): the comment keeps showing its state. */
 	mailKept?: string;
+	mailThread?: { id: string; answered?: boolean };
+	mailCarded?: true;
 	/** The draft code this draft replaced (set by revise). */
 	replaces?: string;
 	/** The model's text before the owner's first direct edit (set by edit, never overwritten). */

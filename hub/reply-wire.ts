@@ -9,7 +9,7 @@ import { broadcast, emit } from "./events.ts";
 import { approvals, cardMoved, newMid, out, showSendOnCard } from "./outbound.ts";
 import { allNotices, markDraftSend, onDecision, openDraftCards, redrawDraftCards, repostDraftCard, setCardFingerprint, setStoredDraft, settleOpenDecision, stampDraftCard } from "./notices.ts";
 import { newestDraftCard, setSendOwed, settleSoon } from "./notices-drafts.ts";
-import { commentPostedOf, commentProveSends, commentReply, commentSendOutcome, commentSettleSending, commentSettleStale } from "./comments/gateway.ts";
+import { commentKeptMails, commentMailCarded, commentPostedOf, commentProveSends, commentReply, commentSendOutcome, commentSettleSending, commentSettleStale, onCommentMailOwed } from "./comments/gateway.ts";
 import { kakaoReply } from "./kakao/gateway.ts";
 import { linkedComment } from "./comments/linked.ts";
 import { isCommentPlace } from "./comments/reply-adapter.ts";
@@ -88,12 +88,20 @@ const noteTarget = (conv: string, ref: string): string => {
 export const channelOf = (conv: string) => (conv === "main" ? "web" : conv);
 
 // 답글만 보내기 posts the reply and leaves its mail draft on its own; the card is posted as the assistant would post it, judged from the stores.
+function cardMail(mailId: string, conv: string, posted: () => void = () => {}): void {
+	const m = getDraft(mailId);
+	if (m?.status !== "pending" || openDraftCards().some(c => c.ref === mailId)) return;
+	void out(noteTarget(conv, mailId), askText(m, []), undefined, { source: "orchestrator" }).then(posted, e => log(`mail card for ${mailId} failed: ${e instanceof Error ? e.message : String(e)}`));
+}
 function cardOwedMail(r: SendResult): void {
 	const mailId = commentPostedOf(r.ref)?.mail;
-	const m = mailId ? getDraft(mailId) : undefined;
-	if (!mailId || m?.status !== "pending" || openDraftCards().some(c => c.ref === mailId)) return;
-	void out(noteTarget(r.conv, mailId), askText(m, []), undefined, { source: "orchestrator" }).catch(e => log(`mail card for ${mailId} failed: ${e instanceof Error ? e.message : String(e)}`));
+	if (mailId) cardMail(mailId, r.conv);
 }
+function cardKeptMail(mailId: string): void {
+	const code = commentKeptMails().find(k => k.mail === mailId)?.code;
+	if (code) cardMail(mailId, newestDraftCard(code)?.decision?.to ?? "main", () => commentMailCarded(code));
+}
+onCommentMailOwed(cardKeptMail);
 
 export const reportSend = (r: SendResult): void => {
 	markDraftSend(r.conv, r.ref, r.state, r.text, r.until, r.reason?.code);
@@ -253,6 +261,7 @@ export function settleSends(): void {
 	if (!sendsBooted) {
 		sendsBooted = true;
 		commentSettleSending();
+		for (const k of commentKeptMails()) if (!newestDraftCard(k.mail)) cardKeptMail(k.mail);
 		sender.recover();
 		sender.recheck();
 		void settleOwedSends().then(() => {

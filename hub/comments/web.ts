@@ -14,9 +14,9 @@ const validMail = (m: any): boolean =>
 	&& (m.attach === undefined || (Array.isArray(m.attach) && m.attach.length <= 10 && m.attach.every((p: unknown) => typeof p === "string" && p)))
 	&& (m.fromLibrary === undefined || typeof m.fromLibrary === "string");
 
-export type WebDeps = { engine: Engine; broadcast: (event: Record<string, unknown>) => void };
+export type WebDeps = { engine: Engine; broadcast: (event: Record<string, unknown>) => void; mailOwed?: (mailId: string) => void };
 
-export function createCommentsWeb({ engine, broadcast }: WebDeps) {
+export function createCommentsWeb({ engine, broadcast, mailOwed }: WebDeps) {
 	const drafting = new Set<string>();
 	const pending = new Set<Promise<unknown>>();
 	const track = (p: Promise<unknown>) => {
@@ -35,6 +35,7 @@ export function createCommentsWeb({ engine, broadcast }: WebDeps) {
 		if (area === "changed" && method === "POST") {
 			const b = await body();
 			for (const s of Array.isArray(b.threads) ? b.threads.slice(0, 50) : []) if (typeof s?.source === "string") broadcast({ kind: "comment", source: s.source, thread: String(s.thread ?? "") });
+			for (const id of Array.isArray(b.mails) ? b.mails.slice(0, 50) : []) if (typeof id === "string" && id) mailOwed?.(id);
 			return json({ ok: true });
 		}
 		// Backfill: re-read the open comments on the platforms and close what is answered or deleted (idempotent; posts nothing). Answers the counts.

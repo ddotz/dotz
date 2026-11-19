@@ -13,13 +13,17 @@ import { COMMENT_CODE } from "./engine.ts";
 import { commentAdapter } from "./reply-adapter.ts";
 import { createCommentsWeb } from "./web.ts";
 
+let owedHook: (mailId: string) => void = () => {};
+export const onCommentMailOwed = (hook: (mailId: string) => void): void => void (owedHook = hook);
+const mailOwed = (mailId: string): void => owedHook(mailId);
 // An approved reply that was posted starts the app's 이어서 할 일 check (hub/followup.ts), once per send record.
 const engine = realEngine(DATA_DIR, {
 	broadcast,
 	collector: resolveName(cfg.web?.machine_name, hostname()),
 	sent: (app, r) => triggerFollowup({ app, kind: "comment", key: r.id, ids: { comment: r.commentId, source: r.source, thread: r.thread.replace(/\s+/g, "_"), draft: r.draft } }),
+	mailOwed,
 });
-const web = createCommentsWeb({ engine, broadcast });
+const web = createCommentsWeb({ engine, broadcast, mailOwed });
 // Once at start (also the migration of an install that has stale open comments / pending drafts): re-read the open comments, close what is answered or deleted.
 void engine.reconcile({ recheck: true }).then(
 	r => log(`comments reconcile: ${JSON.stringify({ answered: r.answered, gone: r.gone, draftsClosed: r.draftsClosed, ...(r.merged ? { merged: r.merged } : {}) })}${r.errors ? ` errors=${JSON.stringify(r.errors)}` : ""}`),
@@ -58,4 +62,9 @@ export const commentDraftFacts = {
 export const commentDraftOf = (code: string) => engine.store.drafts().find(d => d.code === code && d.status === "pending");
 /** The comment draft `code` whose reply is already posted (a combined card whose mail may still be owed). */
 export const commentPostedOf = (code: string) => engine.store.drafts().find(d => d.code === code && d.status === "sent");
+export const commentKeptMails = (): { code: string; mail: string }[] => engine.store.drafts().flatMap(d => (d.status === "answered" && d.closedReason === "answered-on-platform" && d.mailKept && !d.mailCarded ? [{ code: d.code, mail: d.mailKept }] : []));
+export const commentMailCarded = (code: string): void => {
+	const d = engine.store.drafts().find(x => x.code === code);
+	if (d) engine.store.putDraft({ ...d, mailCarded: true });
+};
 export const commentFlags = (): string[] => (Object.values(engine.store.config().sources).some(s => s.kind === "website") && engine.store.config().enabled ? ["comments-site"] : []);
