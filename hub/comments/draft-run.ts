@@ -21,9 +21,10 @@ export type DraftRunCtx = {
 	code: () => string;
 	emit: (e: Record<string, unknown>) => void;
 	mailView: (d: Draft) => MailView | undefined;
+	mailPlanned: (c: Comment, src: SourceConfig) => boolean;
 };
 
-export function createDraftRun({ deps, store, ownerOf, styleOf, contextOf, code, emit, mailView }: DraftRunCtx) {
+export function createDraftRun({ deps, store, ownerOf, styleOf, contextOf, code, emit, mailView, mailPlanned }: DraftRunCtx) {
 	return async function run(c: Comment, src: SourceConfig, previous?: Draft, change?: string, opts: { learn?: false } = {}): Promise<Step & { lesson?: string }> {
 		if (!deps.model) return { ok: false, reason: "초안 만들기를 쓸 수 없어요" };
 		const tokens = { in: 0, out: 0, reported: false, chars: 0, outChars: 0 };
@@ -44,7 +45,8 @@ export function createDraftRun({ deps, store, ownerOf, styleOf, contextOf, code,
 			: src.mailMatch && deps.mailMatch
 				? await deps.mailMatch({ author: c.author, postTitle: c.postTitle, text: c.text, at: c.at }).catch(e => [`메일 대조: 확인 실패 - ${e instanceof Error ? clip(e.message, 160) : "알 수 없는 이유"}`])
 				: [];
-		const item: ReplyItem = { kind: "comment", app: src.key, from: c.author, text: c.text, context: [contextOf(c), ...matched].join("\n") };
+		const mailLine = (previous ? !!mailView(previous) : mailPlanned(c, src)) ? "함께 보내는 메일: 있어요 (답글과 같은 카드로 나가요)" : "함께 보내는 메일: 없어요 (메일이나 파일을 보내 준다고 약속하지 마세요)";
+		const item: ReplyItem = { kind: "comment", app: src.key, from: c.author, text: c.text, context: [contextOf(c), mailLine, ...matched].join("\n") };
 		const style = withExamples(styleOf(src), similarPairs(c.text, past, EXAMPLES, undefined, deps.now()), [...past].sort((a, b) => b.at - a.at).map(p => p.reply), c.text);
 		const r = previous && change !== undefined ? await reviseReply(item, style, { to: `${c.author} 댓글`, body: previous.text }, change, call) : await generateReply(item, style, call);
 		// pastSeed: no empty card. An empty or skipped reply takes the closest past answer of the owner, marked 확인 필요.

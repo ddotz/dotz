@@ -79,7 +79,7 @@ test("after 답글만 보내기 the mail left behind is its own open card in the
 });
 
 test("a pending mail made for a comment whose reply already went out (origin comment:<id>) is listed when the queue is built", async () => {
-	const code = await reply("메일로 보내 드릴게요");
+	const code = await reply("확인했어요. 곧 연락드릴게요");
 	await approve(code);
 	expect((await runComments(["send", code], t.engine, paths.inbox())).code).toBe(0);
 	expect((await compose(["--origin", `comment:${t.id}`])).code).toBe(0);

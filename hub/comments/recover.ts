@@ -2,7 +2,7 @@
 // `sending` becomes `unsure`: no sender, no rule and no card sends it again (contract.ts dispatchReply), only the owner's 다시 보내기 does. On boot the platform is read
 // back; the owner's own reply with the same words under that comment proves it went up and it ends `sent`. No proof changes nothing: the owner picks 다시 보내기 or 완료.
 // A missing reply is no proof either way (a platform may list it late), and a source that cannot show the owner's replies (an RSS read) never proves anything.
-import { type CommentAdapter, DM_THREAD, type RawComment, sameWords, type SourceKind } from "./contract.ts";
+import { type CommentAdapter, type RawComment, repliedWith, type SourceKind } from "./contract.ts";
 import type { Reply, Store } from "./store.ts";
 
 export const POST_UNKNOWN = "게이트웨이가 멈출 때 답글을 올리던 중이라 올라갔는지 알 수 없어요. 확인한 뒤 다시 보내기나 완료를 골라 주세요";
@@ -23,8 +23,7 @@ export function createSendRecovery({ store, adapters, onState }: Deps) {
 		if (!src || !adapter || !c) return false;
 		// A website has no re-check: its full read carries the owner's replies (adapters/website.ts).
 		const rows: RawComment[] = (adapter.recheck ? await adapter.recheck(src, [c]) : await adapter.list(src, undefined)).comments;
-		const under = c.thread.startsWith(DM_THREAD) ? (x: RawComment) => x.thread === c.thread && x.at >= c.at : (x: RawComment) => x.parent === (c.parent ?? c.native);
-		return rows.some(x => x.mine === true && under(x) && sameWords(x.text, r.text));
+		return repliedWith(rows, c, r.text);
 	}
 
 	return {

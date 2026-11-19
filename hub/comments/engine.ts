@@ -7,6 +7,7 @@ import { createSendRecovery } from "./recover.ts";
 import { type Comment, type CommentAdapter, dispatchReply, type GateResult, isUntitled, type Post, ruleAllows, type SourceConfig, type SourceKind, threadKey, watches } from "./contract.ts";
 import { UNKNOWN_USER } from "../../features/youtube-instagram/lib/ig-owner.ts";
 import { ATTACH_AS_IS_HINT, ATTACH_REFUSED, LINT_REFUSED, PAIR_NOTE, asksForFile, fileSizeText, pairCheck, recipientCheck } from "../draft-approval.ts";
+import { ADDRESS, checkNoMail, EXTRA_NOTE, MAIL_FAILED_NOTE, MAIL_NO_APP_NOTE, mailPlanned, NO_MAIL_REFUSED, promisesMail } from "./no-mail.ts";
 import { type ClosedReason, createStore, type Draft, type MailOutcome, type Reply, type Store } from "./store.ts";
 import { unrepliedFresh } from "../unreplied.ts";
 import type { MailQuery } from "./mail-match.ts";
@@ -92,7 +93,9 @@ function recheckPair(store: Store, view: (d: Draft) => MailView | undefined, emi
 	const d = store.drafts().find(x => x.code === code && x.status === "pending");
 	if (!d) return undefined;
 	const kept = d.notes.filter(n => !PAIR_NOTE.test(n));
-	const found = pairCheck(d.text, view(d), hadMail || !!d.mail || kept.length < d.notes.length);
+	const mail = view(d);
+	const had = hadMail || !!d.mail || kept.length < d.notes.length;
+	const found = mail || promisesMail(d.text) ? pairCheck(d.text, mail, had) : [];
 	if ([...kept, ...found].join("\n") === d.notes.join("\n")) return d;
 	const next: Draft = { ...d, notes: [...kept, ...found], ...(found.length ? { clean: false } : {}) };
 	store.putDraft(next);
@@ -104,9 +107,7 @@ const MAX_AUTO_PER_RUN = 5;
 const RECHECK_CAP = 200;
 const RECHECK_EVERY_MS = 30 * 60_000;
 export const MAIL_KEPT_NOTE = "확인: 댓글은 이미 답했어요. 메일은 따로 확인해 주세요";
-export const MAIL_NO_APP_NOTE = "확인: 메일 앱이 정해지지 않아 메일 초안은 만들지 않았어요";
 const LIBRARY_MISS_NOTE = "확인: 첨부 파일 폴더에서 맞는 파일을 찾지 못했어요";
-const ADDRESS = /[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+/;
 /** The linked mail of a comment as the item shows it: 메일 초안 작성됨 / 메일 보냄 / 메일 실패: <이유>. */
 export type MailMark = { state: "drafted" | "sent" | "failed"; label: string };
 // `merged`: Instagram reply rows stored twice that became one (issue #31); only when there were any.
@@ -200,8 +201,9 @@ export function createEngine(deps: EngineDeps) {
 		}
 	};
 
-	const run = createDraftRun({ deps, store, ownerOf, styleOf, contextOf, code, emit, mailView: d => mailView(d) });
-	const paired = (code: string, hadMail = false) => recheckPair(store, mailView, emit, code, hadMail);
+	const run = createDraftRun({ deps, store, ownerOf, styleOf, contextOf, code, emit, mailView: d => mailView(d), mailPlanned: (c, src) => mailPlanned(c, src, !!deps.mail) });
+	const noMailChecked = (code: string) => checkNoMail({ store, emit, find, sourceOf, covered: mailCovered, mailOn: !!deps.mail }, code);
+	const paired = (code: string, hadMail = false) => noMailChecked(recheckPair(store, mailView, emit, code, hadMail)?.code ?? code);
 
 	function makeDraft(commentId: string): Promise<Step> {
 		const c = find(commentId);
@@ -210,9 +212,9 @@ export function createEngine(deps: EngineDeps) {
 		if (!replyOn(src)) return Promise.resolve({ ok: false, reason: OFF_REASON });
 		if (c.mine) return Promise.resolve({ ok: false, reason: "내가 쓴 댓글에는 답글 초안을 만들지 않아요" });
 		return run(c, src).then(async (step): Promise<Step> => {
-			if (!step.ok || !src.autoMail) return step;
-			await linkMail(step.draft.code);
-			return { ok: true, draft: store.drafts().find(d => d.code === step.draft.code) ?? step.draft };
+			if (!step.ok) return step;
+			if (src.autoMail) await linkMail(step.draft.code);
+			return { ok: true, draft: noMailChecked(step.draft.code) ?? step.draft };
 		}).catch(e => ({ ok: false as const, reason: e instanceof Error && e.message ? clip(e.message, 160) : "초안을 만들지 못했어요. 잠시 뒤에 다시 눌러 주세요" }));
 	}
 
@@ -253,7 +255,7 @@ export function createEngine(deps: EngineDeps) {
 				request: c.text,
 			}).catch((e): { ok: false; reason: string } => ({ ok: false, reason: e instanceof Error && e.message ? clip(e.message, 160) : "메일 초안을 만들지 못했어요" }));
 			if (!made.ok) {
-				addNote(`확인: 메일 초안을 만들지 못했어요 - ${made.reason}`);
+				addNote(`${MAIL_FAILED_NOTE} - ${made.reason}`);
 				return { ok: false, reason: made.reason };
 			}
 			// The draft may have changed while the mail was written (revised, dropped): the mail rides on the draft as it is now, or is dropped again.
@@ -288,12 +290,12 @@ export function createEngine(deps: EngineDeps) {
 		if (made && !made.ok) return { ok: false, reason: made.reason };
 		// The mail goes to the address the comment wrote, as written: one that differs (or looks like the writer's typo) is a line on the card.
 		const toCheck = mail ? recipientCheck(mail.to, c.text) : undefined;
-		const notes = [...(extra ? [`함께 할 일: ${extra}`] : []), ...(toCheck ? [`확인: ${toCheck}`] : [])];
+		const notes = [...(extra ? [`${EXTRA_NOTE}${extra}`] : []), ...(toCheck ? [`확인: ${toCheck}`] : [])];
 		for (const d of store.drafts()) if (d.commentId === c.id && d.status === "pending") store.setDraftStatus(d.code, "stale");
 		const draft: Draft = { code: code(), commentId: c.id, source: src.key, thread: c.thread, text, status: "pending", created: deps.now(), changes: [], clean: !notes.length && !made, notes, ...(made ? { mail: made.id, mailAt: deps.now() } : {}) };
 		store.putDraft(draft);
 		emit({ kind: "comment_draft", source: src.key, thread: c.thread });
-		return { ok: true, draft: (made && paired(draft.code)) || draft };
+		return { ok: true, draft: (made ? paired : noMailChecked)(draft.code) ?? draft };
 	}
 
 	// The reply goes through the gate (contract.ts); only when it was posted does the mail of the same card go out, so a refused or failed reply
@@ -309,6 +311,7 @@ export function createEngine(deps: EngineDeps) {
 		const owed = d && !mailId ? (d.mail && mailView(d) ? d.mail : deps.mail?.pendingFor?.(d.commentId)) : undefined;
 		const held = d && mailClaimRefusal(opts.text ?? d.text, owed);
 		if (held) return held;
+		if (d && !mailCovered(d) && (opts.by === "rule" || !opts.asIs) && promisesMail(opts.text ?? d.text)) return opts.by === "rule" ? { ok: false, code: "not_approved", reason: `${NO_MAIL_REFUSED}. 자동으로는 올리지 않아요` } : { ok: false, code: "attach_mismatch", reason: `${ATTACH_REFUSED} ${NO_MAIL_REFUSED}. 답글도 올리지 않았어요. ${ATTACH_AS_IS_HINT}` };
 		const r = (mailId ? mailLintRefusal(deps.mail, mailId) : undefined) ?? (mailId && !opts.asIs ? mailRefusal(deps.mail, mailId) : undefined) ?? dispatchReply({ code: codeOrId, approval: { by: opts.by }, ...(opts.text !== undefined ? { text: opts.text } : {}), ...(opts.resend ? { resend: true as const } : {}) }, gate);
 		if (!r.ok) return r;
 		const done = mailId ? r.done.then(rep => sendMail(rep, mailId, opts.asIs)) : r.done;
@@ -347,6 +350,7 @@ export function createEngine(deps: EngineDeps) {
 	}
 
 	const mailView = (d: Draft): MailView | undefined => (d.mail ? deps.mail?.view(d.mail) : undefined);
+	const mailCovered = (d: Draft): boolean => !!mailView(d) || d.mailAt !== undefined || d.mailKept !== undefined || d.notes.some(n => n.startsWith(EXTRA_NOTE)) || !!deps.mail?.pendingFor?.(d.commentId);
 
 	// The linked mail of a comment, from the send record (the mail went out or failed after the reply) or from its draft: the mail draft that rides on a
 	// pending reply, or one left on its own (reply answered elsewhere, 답글만/메일만 보내기). A mail draft that is gone shows nothing.

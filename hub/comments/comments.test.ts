@@ -25,7 +25,7 @@ beforeEach(() => {
 });
 afterEach(() => rmSync(dir, { recursive: true, force: true }));
 
-function setup(sources: SourceConfig[], opts: { model?: DraftModel; collector?: string; clock?: () => number; featureOn?: (app: string, id: string) => boolean } = {}) {
+function setup(sources: SourceConfig[], opts: { model?: DraftModel; collector?: string; clock?: () => number; featureOn?: (app: string, id: string) => boolean; recheck?: CommentAdapter["recheck"] } = {}) {
 	mkdirSync(dir, { recursive: true });
 	writeFileSync(join(dir, "config.json"), JSON.stringify({ enabled: true, sources: Object.fromEntries(sources.map(s => [s.key, s])) }));
 	const state = { pages: [] as RawComment[][], listCalls: 0, posted: [] as { id: string; text: string }[], failReply: undefined as string | undefined, hold: undefined as Promise<void> | undefined };
@@ -42,6 +42,7 @@ function setup(sources: SourceConfig[], opts: { model?: DraftModel; collector?: 
 			return { ok: true, ref: "ref1" };
 		},
 		posts: async () => [{ id: "p1", title: "Post one" }],
+		...(opts.recheck ? { recheck: opts.recheck } : {}),
 	};
 	const prompts: { system: string; user: string }[] = [];
 	const model: DraftModel = opts.model ?? (async (system, user) => (prompts.push({ system, user }), { text: reply("고마워요, 곧 알려 드릴게요."), inputTokens: 900, outputTokens: 40 }));
@@ -532,5 +533,91 @@ describe("답장 확인: a failed reply, a dropped draft and the pending list", 
 		expect(t.engine.restore(t.code)).toEqual({ ok: true });
 		expect((await t.call("GET", "/api/comments/drafts")).json.items.map((d: any) => d.code)).toEqual([t.code]);
 		expect(t.engine.restore(t.code).ok).toBe(false);
+	});
+});
+
+describe("the send gate looks at the platform before it posts (CM-4)", () => {
+	const owner = (native: string, parent: string): RawComment => raw(native, { parent, author: "나", mine: true, text: "이미 답했어요", at: NOW - 500 });
+	async function waiting(recheck?: CommentAdapter["recheck"]) {
+		let armed = false;
+		const t = setup([src()], recheck ? { recheck: (s, open) => (armed ? recheck(s, open) : Promise.resolve({ comments: [], gone: [] })) } : {});
+		t.state.pages = [[raw("c1")]];
+		await t.engine.collect({ force: true });
+		const step = await t.engine.addDraft(commentId("youtube", "c1"), "중복 답글");
+		if (!step.ok) throw new Error(step.reason);
+		armed = true;
+		return { ...t, code: step.draft.code, id: commentId("youtube", "c1") };
+	}
+
+	test("D4: the owner's own reply is already stored: refused as already answered, nothing is posted", async () => {
+		const t = setup([src()]);
+		t.state.pages = [[raw("c1"), owner("c2", "c1")]];
+		await t.engine.collect({ force: true });
+		const step = await t.engine.addDraft(commentId("youtube", "c1"), "중복 답글");
+		if (!step.ok) throw new Error(step.reason);
+		const r = t.engine.send(step.draft.code, { by: "owner" });
+		expect(r).toMatchObject({ ok: false, code: "stale", reason: "이미 답했어요" });
+		expect(t.state.posted).toEqual([]);
+		expect(t.engine.store.replies()).toEqual([]);
+	});
+
+	test("a comment found deleted (gone) is refused as the original gone, nothing is posted", async () => {
+		const t = await waiting();
+		t.engine.store.patchComments({ [t.id]: { gone: NOW } });
+		expect(t.engine.send(t.code, { by: "owner" })).toMatchObject({ ok: false, code: "original_gone" });
+		expect(t.state.posted).toEqual([]);
+	});
+
+	test("the owner answered on the platform since the last read: the one recheck finds it and nothing is posted", async () => {
+		const asked: string[][] = [];
+		const t = await waiting(async (_s, open) => (asked.push(open.map(c => c.native)), { comments: [owner("c2", "c1")], gone: [] }));
+		const r = t.engine.send(t.code, { by: "owner" });
+		if (!r.ok) throw new Error(r.reason);
+		expect(await r.done).toMatchObject({ state: "failed", code: "stale", reason: "이미 답했어요" });
+		expect(asked).toEqual([["c1"]]);
+		expect(t.state.posted).toEqual([]);
+		expect(t.engine.store.drafts().find(d => d.code === t.code)!.status).toBe("pending");
+	});
+
+	test("the recheck finds the comment deleted: not posted, and the comment is marked gone", async () => {
+		const t = await waiting(async () => ({ comments: [], gone: ["c1"] }));
+		const r = t.engine.send(t.code, { by: "owner" });
+		if (!r.ok) throw new Error(r.reason);
+		expect(await r.done).toMatchObject({ state: "failed", code: "original_gone" });
+		expect(t.state.posted).toEqual([]);
+		expect(t.engine.store.comments().find(c => c.id === t.id)!.gone).toBe(NOW);
+	});
+
+	test("nothing new on the platform, or a recheck that cannot be read: the reply is posted", async () => {
+		const quiet = await waiting(async () => ({ comments: [], gone: [] }));
+		const a = quiet.engine.send(quiet.code, { by: "owner" });
+		expect(a.ok && (await a.done).state).toBe("sent");
+		expect(quiet.state.posted.map(p => p.text)).toEqual(["중복 답글"]);
+		rmSync(dir, { recursive: true, force: true });
+		const down = await waiting(async () => { throw new Error("ENOTFOUND www.googleapis.com"); });
+		const b = down.engine.send(down.code, { by: "owner" });
+		expect(b.ok && (await b.done).state).toBe("sent");
+		expect(down.state.posted.map(p => p.text)).toEqual(["중복 답글"]);
+	});
+});
+
+describe("a send that never reached the platform leaves no record (CM-4)", () => {
+	test("while the platform is read nothing is stored, so a restart then finds nothing to call unsure; a second tap is still refused", async () => {
+		const gate = Promise.withResolvers<{ comments: RawComment[]; gone: string[] }>();
+		let armed = false;
+		const t = setup([src()], { recheck: () => (armed ? gate.promise : Promise.resolve({ comments: [], gone: [] })) });
+		t.state.pages = [[raw("c1")]];
+		await t.engine.collect({ force: true });
+		const step = await t.engine.addDraft(commentId("youtube", "c1"), "중복 답글");
+		if (!step.ok) throw new Error(step.reason);
+		armed = true;
+		const first = t.engine.send(step.draft.code, { by: "owner" });
+		if (!first.ok) throw new Error(first.reason);
+		expect(t.engine.store.replies()).toEqual([]);
+		expect(t.engine.leaveUnsure()).toBe(0);
+		expect(t.engine.send(step.draft.code, { by: "owner" })).toMatchObject({ ok: false, code: "already_sending" });
+		gate.resolve({ comments: [], gone: [] });
+		expect((await first.done).state).toBe("sent");
+		expect(t.state.posted.map(p => p.text)).toEqual(["중복 답글"]);
 	});
 });

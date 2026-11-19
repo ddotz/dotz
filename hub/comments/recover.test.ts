@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { CommentAdapter, RawComment, SourceConfig, SourceKind } from "./contract.ts";
+import type { CommentAdapter, GateResult, RawComment, SourceConfig, SourceKind } from "./contract.ts";
 import { createEngine } from "./engine.ts";
 import type { Reply } from "./store.ts";
 
@@ -123,5 +123,34 @@ test("the record cannot be wiped: 지우기 would open the gate for a second pos
 	const w = world("youtube", {}, { state: "unsure" });
 	expect(w.engine.dismissSend(ID)).toMatchObject({ ok: false });
 	expect(w.reply().state).toBe("unsure");
+});
+
+describe("다시 보내기 of a reply that may already be up", () => {
+	const resend = (w: { engine: { retrySend: (id: string) => GateResult } }) => {
+		const r = w.engine.retrySend(ID);
+		if (!r.ok) throw new Error(r.reason);
+		return r.done;
+	};
+
+	test("the platform shows this very reply: it is recorded sent and nothing is posted again", async () => {
+		const w = world("youtube", { recheck: async () => ({ comments: [own()], gone: [] }) }, { state: "unsure" });
+		expect(await resend(w)).toMatchObject({ state: "sent" });
+		expect(w.posted).toEqual([]);
+		expect(w.reply().state).toBe("sent");
+		expect(w.reply().reason).toBeUndefined();
+		expect(w.reply().code).toBeUndefined();
+		expect(w.draft().status).toBe("sent");
+	});
+
+	test("the platform shows another reply of the owner: refused as already answered, nothing is posted, and the record stays unsure", async () => {
+		const w = world("youtube", { recheck: async () => ({ comments: [own({ text: "다른 답" })], gone: [] }) }, { state: "unsure" });
+		const before = w.reply();
+		const done = await resend(w);
+		expect(done.state).not.toBe("failed");
+		expect(done.reason).toBe("이미 답했어요");
+		expect(w.posted).toEqual([]);
+		expect(w.reply()).toEqual(before);
+		expect(w.draft().status).toBe("pending");
+	});
 });
 
