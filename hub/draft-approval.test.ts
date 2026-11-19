@@ -7,6 +7,7 @@ import { parseDecisions } from "./choices.ts";
 import { buildPayloads } from "./discord-format.ts";
 import { paths } from "./config.ts";
 import { approvalHash, briefLines, draftActionOf, draftApprovalBlock, draftVerdict, keepBrief, parseDraftApproval } from "./draft-approval.ts";
+import { AGENT_AUTHOR } from "./entry-check.ts";
 import { emit } from "./events.ts";
 import { inboxText } from "./intake.ts";
 import { approval, createDraft, draftBlock, kakaoView, readDrafts } from "./kakao/send.ts";
@@ -284,4 +285,21 @@ test("the approval text of a mail names the account it goes out from, or says no
 	expect(lines({}).some(l => l.includes("보내는 계정"))).toBe(false);
 	const view = (account?: string) => ({ item: "mail:k", ref: "D777", kind: "mail", app: "mail", label: "메일", conv: "mail:k", at: 0, can: { send: true, revise: true, edit: true, drop: true, restore: false }, draft: { state: "pending", toLabel: "받는이", to: "kim@example.com", text: "안녕하세요.", ...(account ? { account } : {}) } }) as never;
 	expect(approvalHash(view("a@example.net"))).not.toBe(approvalHash(view("b@example.net")));
+});
+
+const pickLine = (author: string, q: string, label: string) => emit("inbox", { ts: ts(), kind: "message", source: "web", channel: "web", author, text: label, picks: [{ q, n: 3, label }] });
+
+test("a pick line an agent wrote is no verdict; the same line from the owner is", () => {
+	const since = Date.parse(ts()) - 1;
+	pickLine(AGENT_AUTHOR, "이 답장 보낼까요? (RAGENT1)", "보내지 않기");
+	expect(draftVerdict(paths.inbox, "RAGENT1", since, "h1")).toEqual({ verdict: "none" });
+	pickLine("owner", "이 답장 보낼까요? (RAGENT1)", "보내지 않기");
+	expect(draftVerdict(paths.inbox, "RAGENT1", since, "h1")).toEqual({ verdict: "drop" });
+});
+
+test("a question that names another draft's ref is that other draft's choice only", () => {
+	const since = Date.parse(ts()) - 1;
+	pickLine("owner", "이 답장 보낼까요? Re: 견적 (RREFAAA) (RREFBBB)", "보내지 않기");
+	expect(draftVerdict(paths.inbox, "RREFAAA", since, "h1")).toEqual({ verdict: "none" });
+	expect(draftVerdict(paths.inbox, "RREFBBB", since, "h1")).toEqual({ verdict: "drop" });
 });

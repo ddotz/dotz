@@ -25,6 +25,7 @@
 // The answer comes back as the owner's own inbox message with picks [{q: "<question> (<ref>)", n, label}] (hub/notices.ts answerDecision),
 // which is what the per-feature approval checks read (hub/kakao/send.ts verdict, orchestrator turn "결정 답: ... → 1) 보내기").
 import { isSealed, readSealKey } from "./approval-seal.ts";
+import { AGENT_AUTHOR } from "./agent-author.ts";
 import { withFileWords } from "./auto-attach.ts";
 import { claimsAttachment, ownClaimText, ENGLISH_NOUN, FILE_NOUN, NO_CLAIM } from "./attach-claim.ts";
 import { mailLineText, type DraftBrief } from "./mail-lines.ts";
@@ -648,7 +649,7 @@ const parsedLine = <T>(line: string): T | undefined => {
 // every process reads one record; the `token` (the granting line's seal) lets a CLI hold one approval to one run (features/reply-drafts/lib/flow.ts).
 export function draftVerdict(inboxPath: string, ref: string, sinceMs: number, current: string | undefined): DraftVerdict {
 	const tag = `(${ref})`;
-	type Entry = { ts?: unknown; kind?: unknown; source?: unknown; text?: unknown; picks?: unknown; ref?: unknown; mark?: unknown; action?: unknown; hash?: unknown; seal?: unknown };
+	type Entry = { ts?: unknown; kind?: unknown; source?: unknown; author?: unknown; text?: unknown; picks?: unknown; ref?: unknown; mark?: unknown; action?: unknown; hash?: unknown; seal?: unknown };
 	// Only a line the gateway sealed (hub/approval-seal.ts) is the owner's word: a line appended to the file by another process is not.
 	const key = readSealKey(inboxPath);
 	let out: DraftVerdict = { verdict: "none" };
@@ -659,9 +660,9 @@ export function draftVerdict(inboxPath: string, ref: string, sinceMs: number, cu
 			else if (e.mark === "go" && typeof e.action === "string" && SENDING.has(e.action as DraftAction)) out = current && e.hash === current ? { verdict: e.action as DraftAction, token: String(e.seal), go: true } : { verdict: "changed" };
 			continue;
 		}
-		if (!e || e.kind !== "message" || typeof e.source !== "string" || !OWNER_SOURCES.has(e.source) || typeof e.ts !== "string" || !(Date.parse(e.ts) > sinceMs) || !Array.isArray(e.picks) || !isSealed(key, e)) continue;
+		if (!e || e.kind !== "message" || typeof e.source !== "string" || !OWNER_SOURCES.has(e.source) || typeof e.ts !== "string" || !(Date.parse(e.ts) > sinceMs) || !Array.isArray(e.picks) || e.author === AGENT_AUTHOR || !isSealed(key, e)) continue;
 		for (const p of e.picks as { q?: unknown; label?: unknown; hash?: unknown; until?: unknown }[]) {
-			if (typeof p?.q !== "string" || !p.q.includes(tag) || typeof p.label !== "string" || !draftActionOf(p.label)) continue;
+			if (typeof p?.q !== "string" || !p.q.trimEnd().endsWith(tag) || typeof p.label !== "string" || !draftActionOf(p.label)) continue;
 			if (SENDING.has(draftActionOf(p.label)!) && (!current || p.hash !== current)) {
 				out = { verdict: "changed" };
 				continue;

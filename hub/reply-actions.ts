@@ -36,6 +36,7 @@ export type ReplyDeps = {
 	recordPick: (p: { surface: ActCtx["surface"]; conv: string; q: string; n: number; label: string; note?: string; hash?: string; until?: number; from?: ActCtx["owner"] }) => void;
 	/** A plain line from the owner in the card's conversation (나갔어요), no pick. */
 	recordText?: (conv: string, text: string) => void;
+	say?: (conv: string, ref: string, text: string) => void;
 	learning: { record: (key: Lesson["key"], line: string) => Promise<void>; refine: (key: Lesson["key"]) => Promise<void> };
 	/** `rewrite` and `replace` draw a card anew (every surface, Discord included) and store `hash`, the version it now shows. `repost` posts the open card
 	 * of `ref` again at the bottom of its conversation (the same notice; `text` and `hash` when given), its old post marked moved. */
@@ -183,7 +184,7 @@ export function createReplyActions(deps: ReplyDeps) {
 		// Code's own retry of an earlier failed send would send the text this changes.
 		deps.sender.forget(view.ref);
 		deps.emit({ kind: "reply", ref: view.ref, revising: true, item: itemOf(view) });
-		const run = runRevise(a, view, change, input.part).finally(() => {
+		const run = runRevise(a, view, change, input.part, ctx.surface).finally(() => {
 			revising.delete(view.ref);
 			running.delete(run);
 		});
@@ -193,7 +194,8 @@ export function createReplyActions(deps: ReplyDeps) {
 
 	// The adapter stores the new draft (the success point), the cards move to it, one event names it, then learning. The new ref is
 	// `revising` until its cards moved, so nothing sends a draft the owner has not been shown yet.
-	async function runRevise(a: ReplyAdapter, view: DraftView, change: string, part?: Part): Promise<void> {
+	async function runRevise(a: ReplyAdapter, view: DraftView, change: string, part: Part | undefined, surface: ActCtx["surface"]): Promise<void> {
+		const tell = (why: string) => void (surface === "discord" && deps.say?.(view.conv, view.ref, `${why} (${view.ref})`));
 		let r: Awaited<ReturnType<ReplyAdapter["revise"]>>;
 		try {
 			r = await a.revise(view.ref, change, part);
@@ -208,6 +210,7 @@ export function createReplyActions(deps: ReplyDeps) {
 		}
 		if (!r.ok) {
 			deps.emit({ kind: "reply", ref: view.ref, why: `고치지 못했어요 - ${r.reason.text}`, item: itemOf(view) });
+			tell(`고치지 못했어요 - ${r.reason.text}`);
 			return;
 		}
 		const moved = r.ref !== view.ref;
@@ -221,6 +224,7 @@ export function createReplyActions(deps: ReplyDeps) {
 			// The new draft is stored but its cards could not be drawn: every surface leaves 고치는 중 and says so.
 			deps.log(`reply ${view.ref}: card of the revised draft ${r.ref} not drawn: ${(e as Error).stack ?? (e as Error).message}`);
 			deps.emit({ kind: "reply", ref: view.ref, ...(moved ? { next: r.ref } : {}), why: "고친 초안을 카드에 올리지 못했어요", ...(next ? { item: itemOf(next) } : {}) });
+			tell("고친 초안을 카드에 올리지 못했어요");
 			return;
 		} finally {
 			if (moved) revising.delete(r.ref);
@@ -413,7 +417,7 @@ async function settleOwed(c: Settler): Promise<number> {
 	let n = 0;
 	for (const ref of new Set(c.deps.sender.results().map(r => r.ref))) {
 		if (!OWED.has(c.ledger(ref)?.state ?? "") || c.revising.has(ref)) continue;
-		const found = await c.known(ref).catch(() => undefined);
+		const found = await c.known(ref).catch(e => (c.deps.log(`reply settle of ${ref} failed: ${(e as Error).message}`), undefined));
 		if (found && !owes(found.view) && c.deps.sender.forget(ref)) n++;
 	}
 	return n;

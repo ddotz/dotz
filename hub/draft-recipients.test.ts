@@ -5,6 +5,7 @@ import { parseDraftApproval } from "./draft-approval.ts";
 import { draftRecipientsRoute } from "./draft-recipients.ts";
 import { emit } from "./events.ts";
 import { postMail, type MailDeps } from "./mail.ts";
+import { setReplies } from "./reply-actions.ts";
 import { resetOwnAddresses, setOwnAddresses } from "./mail-state.ts";
 import { listNotices, resetNoticesForTest } from "./notices.ts";
 import { askText, draftLintFailures } from "../features/reply-drafts/lib/flow.ts";
@@ -123,6 +124,25 @@ describe("only a pending mail draft", () => {
 		expect(r.status).toBe(409);
 		expect(((await r.json()) as { error: string }).error).toBe("이 초안은 이미 처리돼서 받는 사람을 바꿀 수 없어요");
 		expect(getDraft(rec.id)!.to).toBe("kim@example.com");
+	});
+
+	test("while a revise of the draft runs, a 받는 사람 or 참조 edit is refused with a Korean reason and changes nothing", async () => {
+		const rec = draft();
+		addDraft(rec);
+		setReplies({ held: () => undefined, revising: (ref: string) => ref === rec.id } as never);
+		try {
+			for (const body of [{ to: ["lee@example.com"] }, { cc: ["park@example.com"] }, { mode: "all" }]) {
+				const r = await post(rec.id, body);
+				expect(r.status).toBe(409);
+				expect(((await r.json()) as { error: string }).error).toBe("지금 고치는 중이에요");
+			}
+			expect(getDraft(rec.id)!.to).toBe("kim@example.com");
+			expect(getDraft(rec.id)!.cc ?? []).toEqual([]);
+			expect(getDraft(rec.id)!.mode).toBe("reply");
+		} finally {
+			setReplies(undefined);
+		}
+		expect((await post(rec.id, { to: ["lee@example.com"] })).status).toBe(200);
 	});
 
 	test("an unknown draft is not found", async () => {

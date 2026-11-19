@@ -42,6 +42,7 @@ export async function draftRecipientsRoute(req: Request, ref: string): Promise<R
 	if (!editable(rec)) return json({ error: "이 초안은 이미 처리돼서 받는 사람을 바꿀 수 없어요" }, 409);
 	const hold = sendHold(rec.id);
 	if (hold) return hold;
+	if (useReplies()?.revising(rec.id)) return json({ ok: false, code: "revising", error: reasonOf("revising").text }, 409);
 
 	try {
 		const b = (await req.json().catch(() => ({}))) as Record<string, unknown>;

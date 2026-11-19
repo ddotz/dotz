@@ -464,12 +464,14 @@ async function reviseClaimed(id: string, change: string, deps: FlowDeps, opts: {
 		if (old.subject !== undefined) rec.subject = old.subject;
 	}
 	// The recipients the owner set on the card stay: a rewrite of the words is not a reason to send it to somebody else.
-	rec.to = old.to;
+	const edited = getDraft(id);
+	const kept = edited?.status === "pending" ? withRecipient(edited) : old;
+	rec.to = kept.to;
 	rec.replaces = old.id;
 	if (old.brief) rec.brief = old.brief;
-	if (old.cc?.length) rec.cc = old.cc;
-	if (old.mode) rec.mode = old.mode;
-	if (old.ownerRecipients) rec.ownerRecipients = true;
+	if (kept.cc?.length) rec.cc = kept.cc;
+	if (kept.mode) rec.mode = kept.mode;
+	if (kept.ownerRecipients) rec.ownerRecipients = true;
 	if (old.asksFile) rec.asksFile = true;
 	if (old.wantFiles?.length) rec.wantFiles = old.wantFiles;
 	if (old.libraryMiss) rec.libraryMiss = true;

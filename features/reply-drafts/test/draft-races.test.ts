@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { dropDraft, reviseDraft } from "../lib/flow.ts";
 import { offerMailDraft } from "../lib/offer.ts";
 import { paths } from "../lib/settings.ts";
-import { answerDrafts, getDraft, isDrafted, listDrafts, type DraftRec } from "../lib/store.ts";
+import { answerDrafts, getDraft, isDrafted, listDrafts, patchDraft, type DraftRec } from "../lib/store.ts";
 import { enable, fakeModel, goodReply, j, mailFixture, setupEnv } from "./helpers.ts";
 
 const env = setupEnv();
@@ -73,4 +73,11 @@ test("a card post that throws keeps the stored draft: the next offer of the mail
 	expect(listDrafts()).toHaveLength(1);
 	expect(cards).toHaveLength(1);
 	expect(model.calls).toHaveLength(1);
+});
+
+test("the recipients the owner set while a revise ran are the revised draft's recipients", async () => {
+	const old = await offered();
+	const r = await reviseDraft(old.id, "더 짧게", { call: revisedWhile(() => patchDraft(old.id, { to: "kim@example.com, lee@example.com", cc: ["boss@example.com"], mode: "all", ownerRecipients: true })) });
+	expect(r.ok).toBe(true);
+	expect(getDraft(r.id!)).toMatchObject({ to: "kim@example.com, lee@example.com", cc: ["boss@example.com"], mode: "all", ownerRecipients: true, body: "수정된 답" });
 });

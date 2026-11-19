@@ -74,6 +74,7 @@ function world(o: { outcome?: string; reviseFails?: boolean; lesson?: string; ed
 		sender,
 		recordPick: p => void (picks.push(p), log.push(`pick ${p.label}${p.note ? ` - ${p.note}` : ""}`)),
 		recordText: (_c, t) => void log.push(`text ${t}`),
+		say: (conv, ref, text) => void log.push(`say ${conv} ${ref} ${text}`),
 		learning: { record: async (_k, line) => void log.push(`learn ${line}`), refine: async () => void log.push("refine") },
 		cards: { open: () => o.cards ?? [], convOf: () => o.cardConv, replace: (a, b, _t, hash) => void (drawn.push([b, hash]), log.push(`cards ${a}->${b}`)), rewrite: (ref, _t, hash) => void (drawn.push([ref, hash]), log.push(`rewrite ${ref}`)), repost: async (ref, text, hash) => void reposts.push([ref, text, hash]), close: ref => void log.push(`close ${ref}`) },
 		toBot: async (conv, text) => void log.push(`bot ${conv} ${text}`),
@@ -172,6 +173,24 @@ test("a revise that fails leaves the old draft pending, learns nothing and says 
 	expect(w.drafts.get("RAAAAAA")!.draft.state).toBe("pending");
 	expect(w.only("learn")).toEqual([]);
 	expect(w.only("event").at(-1)).toBe("event RAAAAAA 고치지 못했어요 - 고친 초안을 만들지 못했어요");
+});
+
+test("a 고치기 pressed on a Discord card that fails says why once in that conversation; the web's says it on the card only", async () => {
+	const discord: ActCtx = { surface: "discord", login: "owner" };
+	for (const [o, said] of [[{ reviseFails: true }, "say mail:k1 RAAAAAA 고치지 못했어요 - 고친 초안을 만들지 못했어요 (RAAAAAA)"], [{ askThrows: true }, "say mail:k1 RAAAAAA 고친 초안을 카드에 올리지 못했어요 (RAAAAAA)"]] as const) {
+		const w = world(o);
+		await w.replies.act({ ref: "RAAAAAA", action: "revise", change: "더 짧게" }, discord);
+		await w.replies.idle();
+		expect(w.only("say")).toEqual([said]);
+	}
+	const w = world({ reviseFails: true });
+	await w.replies.act({ ref: "RAAAAAA", action: "revise", change: "더 짧게" }, owner);
+	await w.replies.idle();
+	expect(w.only("say")).toEqual([]);
+	const ok = world();
+	await ok.replies.act({ ref: "RAAAAAA", action: "revise", change: "더 짧게" }, discord);
+	await ok.replies.idle();
+	expect(ok.only("say")).toEqual([]);
 });
 
 test("D3e2ymp: 직접 고치기 saves only (its one pick, no send, a body with send is 400); a 보내기 picked before a change cannot send the changed text", async () => {

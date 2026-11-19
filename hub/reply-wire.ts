@@ -192,6 +192,7 @@ export const replies = createReplyActions({
 		if (settles) settleOpenDecision(card.id, said);
 	},
 	recordText: (conv, text) => recordAnswer({ source: "web", channel: channelOf(conv), author: "owner", text, picks: [] }),
+	say: (conv, ref, text) => void out(noteTarget(conv, ref), text, undefined, { source: "gateway", nk: "gateway-note" }).catch(e => log(`reply ${ref}: note to ${conv} failed: ${e}`)),
 	learning: replyLearning(),
 	cards: {
 		open: () => openDraftCards().map(c => ({ ref: c.ref, conv: c.to, notice: c.id, title: c.title, ...(c.hash ? { hash: c.hash } : {}), ...(c.discord ? { discord: c.discord } : {}), ...(c.asked ? { asked: c.asked } : {}), ...(c.posts ? { posts: c.posts } : {}) })),
