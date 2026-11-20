@@ -142,5 +142,20 @@
   "decision.deliv.queued": "Received · will be read when the work ends",
   "decision.deliv.compacting": "Received · will be read after the compaction",
   "decision.deliv.held": "Received · will be read after the limit resets",
-  "decision.deliv.update": "Received · will be read after the update"
+  "decision.deliv.update": "Received · will be read after the update",
+  "decision.ask.other": "Write another answer",
+  "decision.ask.more": "Ask for details",
+  "decision.ask.later": "Later",
+  "decision.ask.hour": "In 1 hour",
+  "decision.ask.morning": "Tomorrow morning",
+  "decision.ask.more_at": "Asked for details · {t}",
+  "decision.ask.later_at": "Back to it later · reminder at {t}",
+  "decision.ask.left_h": "Please answer within {n} h",
+  "decision.ask.left_m": "Please answer within {n} min",
+  "decision.closed.words": "Answered in words",
+  "decision.closed.expired": "Closed after the deadline",
+  "decision.closed.gone": "That session has already ended · passed to main",
+  "decision.closed.again": "Ask again",
+  "decision.judging": "Checking whether this answers \"{title}\"",
+  "decision.kept_open": "The question stays open"
 }

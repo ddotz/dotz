@@ -243,5 +243,6 @@
   "misc.pane.close": "창 닫기",
   "misc.pane.menu": "세션 메뉴",
   "misc.pane.list": "대화 목록",
-  "misc.pane.bar_tip": "끌어서 크기를 바꿔요, 두 번 누르면 반반이에요"
+  "misc.pane.bar_tip": "끌어서 크기를 바꿔요, 두 번 누르면 반반이에요",
+  "misc.nsc.sched_remind": "알림 예약"
 }

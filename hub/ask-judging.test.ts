@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { now } from "./config.ts";
 import { emit, onEmit } from "./events.ts";
 import { flush, sendWeb } from "./intake.ts";
-import { JUDGING_MS, allNotices, flushNotices, laterNotice, markJudging, openChoices, resetNoticesForTest, resolveNotices, type Notice } from "./notices.ts";
+import { JUDGING_MS, allNotices, flushNotices, ignoreNotice, laterNotice, markJudging, openChoices, resetNoticesForTest, resolveNotices, type Notice } from "./notices.ts";
 import { queue } from "./outbound.ts";
 
 process.env.DOTZ_NO_ORCHESTRATOR = "1";
@@ -87,6 +87,13 @@ test("a card put off until later is not listed to the model as an open question"
 	expect(openChoices("main").map(q => q.id)).toEqual([card().id]);
 	laterNotice(card().id, { for: "hour" });
 	expect(openChoices("main")).toEqual([]);
+});
+
+test("a card put off until later can still be ignored", () => {
+	laterNotice(card().id, { for: "hour" });
+	expect(ignoreNotice(card().id).status).toBe(200);
+	expect(card().decision!.state).toBe("ignored");
+	expect(card().decision!.later_until).toBeUndefined();
 });
 
 test("a turn of another conversation that ends before the follow-up leaves the card judging, and the follow-up that closes it records the owner's words", async () => {

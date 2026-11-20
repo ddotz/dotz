@@ -178,7 +178,7 @@ function nyMonFails() {
 // Only this computer's: another computer's question is listed in 모니터링, and here only the computer chip's dot says it waits (owner 2026-10-31).
 function nyList() {
   const lanes = ((S && S.lanes) || []).filter(laneAlive).map(l => `lane:${l.name}`);
-  const asks = lanes.filter(t => (askOf(t) || attnKind(t) === "ask") && !ntHasDecision(t)).map(t => ({ t, rank: 3, crit: false, act: TX("home.ny.reply"), at: (targetInfo(t).ask || {}).at || "" }));
+  const asks = lanes.filter(t => (askOf(t) || attnKind(t) === "ask") && !ntHasDecision(t) && !ntLaterAt(t, (targetInfo(t).ask || {}).at)).map(t => ({ t, rank: 3, crit: false, act: TX("home.ny.reply"), at: (targetInfo(t).ask || {}).at || "" }));
   const loose = ntLooseAsks().filter(n => !asks.some(x => x.t === (n.src || n.open)));
   const items = [...ntDecisions(), ...loose].map(nyOf).filter(Boolean).concat(asks, nyMonFails());
   const when = x => x.n ? ntAt(x.n) : Date.parse(x.at) || 0;

@@ -59,10 +59,10 @@ const schedRebook = (btn, r) => busy(btn, async () => {
   await loadMonitors();
 });
 function schedPastRow(r) {
-  const sub = [schedKindOf(r.kind), TX("sched.past_at", { t: monTime(r.firedAt) }), SCHED_RUN[r.state] || ""].filter(Boolean).join(" · ");
+  const sub = [schedKindOf(r.kind), TX("sched.past_at", { t: monTime(r.firedAt) }), SCHED_RUN[r.state] || ""].filter(Boolean).flatMap((p, i) => [i ? " " : "", el("span", { class: "wph", text: i ? `· ${p}` : p })]);
   return el("div", { class: "li", "data-past": r.run },
     el("span", { class: "lead" }, icon("list")),
-    el("span", { class: "tx" }, el("div", { class: "hd", text: r.name }), el("div", { class: "sup", text: sub })),
+    el("span", { class: "tx" }, el("div", { class: "hd", text: r.name }), el("div", { class: "sup" }, ...sub)),
     liEnd(el("button", { class: "btn tonal sm", type: "button", "data-k": "rebook", text: TX("sched.rebook"), onclick: ev => schedRebook(ev.currentTarget, r) })));
 }
 function schedPage() {

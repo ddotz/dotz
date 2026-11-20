@@ -22,6 +22,7 @@ const ntPlain = s => plainTable(noticeKo(peerMsgLine(s), NK))
 
 // Phone: the count is part of the chat tab badge.
 function ntPaint() {
+  askNotes();
   monAttnSoon();
   convSchedule();
   paintAttn();
@@ -199,7 +200,7 @@ async function noticeOpenId(id, quiet, hash, at, nid = "") {
   return noticeOpen(n);
 }
 function ntRead(n) {
-  if (!n.id || n.read || ntNeeds(n) || !ntById(n.id)) return;
+  if (!n.id || n.read || ntNeeds(n) || ntLaterTwin(n) || !ntById(n.id)) return;
   n.read = true; ntReadDown(1); ntPaint(); homeSoon();
   ntMarkRead({ ids: [n.id] });
 }
@@ -282,7 +283,7 @@ function ntAlertMarks() {
     if (NT.gone.has(row.dataset.ts)) { row.hidden = true; continue; }
   }
 }
-new MutationObserver(ntAlertMarks).observe(tl, { childList: true });
+new MutationObserver(() => { ntAlertMarks(); askNotes(); }).observe(tl, { childList: true });
 
 /* ---- decision sheet: the docked decision card (10-decision-card.js) over the current screen ---- */
 // Same card and same answer path as the one above the composer, for the conversation the notice came from; no navigation, no scroll.
@@ -376,7 +377,10 @@ function ntLaneNote(n) {
 // shown on 홈 and cannot be dismissed; tapping it opens a sheet with the whole text and one button per option. A
 // button posts /api/notices/:id/answer: the hub sends the answer to the chat, session or login request the question came from.
 const ntIsDec = n => n.kind === "decision" && !!n.decision;
-const ntOpenDec = n => ntIsDec(n) && n.decision.state === "open";
+const ntOpenDec = n => ntIsDec(n) && n.decision.state === "open" && !ntLater(n);
+const ntLater = n => ntIsDec(n) && n.decision.state === "open" && Date.parse(n.decision.later_until) > Date.now();
+const ntLaterTwin = n => ntLater(n) || (n.tone === "ask" && !!n.at && NT.items.some(d => ntLater(d) && d.decision.to === (n.src || n.open) && d.decision.reply_to === n.at));
+const ntLaterAt = (t, at) => !!at && NT.items.some(d => ntLater(d) && d.decision.to === t && d.decision.reply_to === at);
 // A draft whose 고치기 was answered: its 고치기 option, until the new draft of the same conversation arrives (the successor).
 const ntRevising = n => {
   if (!ntIsDec(n) || !n.decision.draft || n.decision.state !== "answered") return null;
@@ -386,7 +390,7 @@ const ntRevising = n => {
 const ntSuccessor = n => (n.pc ? (((PQ.list.find(p => p && p.url === n.pc.url) || {}).items || {}).notices || []) : NT.items).find(x => x.id !== n.id && ntIsDec(x) && x.decision.draft && x.decision.to === n.decision.to && String(x.ts) > String(n.ts)) || null;
 // Waits on the owner's action: an open decision or an [ask] item (the alert / message twin of one), unread and not ignored. Same rule as
 // hub/notices.ts needsAnswer, which keeps these unread however they are viewed: only an answer, a resolving signal or the x (무시) clears them.
-const ntNeeds = n => !n.read && !n.ignored && !n.dismissed && (ntOpenDec(n) || n.tone === "ask");
+const ntNeeds = n => !n.read && !n.ignored && !n.dismissed && !ntLaterTwin(n) && (ntOpenDec(n) || n.tone === "ask");
 const ntIgnoredDec = n => ntIsDec(n) && n.decision.state === "ignored";
 // The open decision a notice carries or is the twin of: itself, or the one asked in the same conversation at the same time (the [ask] alert twin the hub
 // stores beside it). Rows and counts use this to show a question once.
@@ -448,7 +452,7 @@ function ntFor(t, at, opt) {
 
 // The x (무시) on a question that waits: off the badge and 답변 필요, kept in the history as 무시함, nothing is sent to the bot. The toast undoes it.
 async function ntIgnore(n, btn) {
-  if (!n || !n.id || !ntNeeds(n)) return;
+  if (!n || !n.id || !(ntNeeds(n) || ntLater(n))) return;
   const id = String(n.id), undo = pressWait(btn);
   try {
     if (n.pc) await pqNotice(n, "notice", { op: "ignore", id });
@@ -676,14 +680,14 @@ function ntSheetPaint() {
       { ignore: open ? () => ntIgnore(n) : null, ignoreOff: NS.busy, close: () => ntSheetClose() }),
     el("div", { class: "fs-body" },
       el("h2", { class: "ds-t", id: "ds-t", text: parts.title || TX("decision.needs_reply") }),
-      el("div", { class: "ds-m", text: ntWhen(n) }),
+      el("div", { class: "ds-m", text: [ntWhen(n), open ? askLeft(n) : ""].filter(Boolean).join(" · ") }),
       ...ntBody(n, fold.head),
       fold.rest ? el("details", { class: "ds-more", open: ntMoreOpen.has(String(n.id)), ontoggle: ev => { if (ev.currentTarget.open) ntMoreOpen.add(String(n.id)); else ntMoreOpen.delete(String(n.id)); } }, el("summary", { text: TX("conv.nt.more") }), ...ntBody(n, fold.rest)) : null),
     el("button", { type: "button", class: "ds-hint", hidden: true }, TX("conv.nt.more_below"))];
   const foot = el("div", { class: "fs-ft" }), ed = open && NS.edit && NS.edit.id === String(n.id) ? NS.edit : null;
   // Every notice event repaints the open sheet; one that changes nothing it shows leaves it alone, so the reason field being typed in is not
   // replaced (a new field takes the focus and a phone closes and reopens its keyboard).
-  const sig = JSON.stringify([n.title, n.text, d, ntWhen(n), NS.busy, ed ? (ed.opt ? ed.opt.n : -1) : 0, sibs.map(x => [x.id, x.decision.state]), DCG.get(String(n.id)) || 0]);
+  const sig = JSON.stringify([n.title, n.text, d, ntWhen(n), NS.busy, ed ? (ed.opt ? ed.opt.n : -1) : 0, sibs.map(x => [x.id, x.decision.state]), DCG.get(String(n.id)) || 0, ASK.later === String(n.id), ASK.busy === String(n.id), askLeft(n)]);
   if (NS.h.box.dataset.sig === sig) return;
   NS.h.box.dataset.sig = sig;
   const hadNote = !!NS.node.querySelector(".dc-note:focus");
@@ -693,7 +697,8 @@ function ntSheetPaint() {
     for (const o of d.options) foot.append(el("button", { type: "button", class: "ds-opt", "data-k": `o${o.n}`, disabled: NS.busy, onclick: () => ntAnswer(n, o) },
       el("span", { class: "ds-lb" }, el("span", { class: "dc-key", text: String(o.n) }), o.label),
       o.desc ? el("span", { class: "ds-ds", text: o.desc }) : null));
-    foot.append(el("button", { type: "button", class: "ds-direct", "data-k": "direct", disabled: NS.busy, onclick: () => ntDirect(n), text: d.to.startsWith("auth:") ? TX("conv.nt.go_input") : TX("conv.nt.direct") }));
+    if (askFixed(n)) foot.append(...askLines(n).map(t => el("div", { class: "ds-st", role: "status", text: t })), askBtns(n, "ds"));
+    else foot.append(el("button", { type: "button", class: "ds-direct", "data-k": "direct", disabled: NS.busy, onclick: () => ntDirect(n), text: d.to.startsWith("auth:") ? TX("conv.nt.go_input") : TX("conv.nt.direct") }));
     const nx = ntNextOpen(n);
     if (nx) foot.append(el("button", { type: "button", class: "ds-direct", "data-k": "next", disabled: NS.busy, onclick: () => ntSheetGo(nx.id), text: TX("conv.nt.next_q") }));
     if (NS.busy) foot.append(el("div", { class: "ds-st", role: "status", text: TX("decision.pending.send") }));
@@ -703,7 +708,9 @@ function ntSheetPaint() {
     if (!d.to.startsWith("auth:")) foot.append(el("button", { type: "button", class: "ds-direct", "data-k": "go", onclick: () => { ntSheetClose(false); ntJump(n); }, text: TX("conv.nt.see_in_chat") }));
     foot.append(el("button", { type: "button", class: "ds-opt rec c", "data-k": "close", onclick: () => ntSheetClose(), text: TX("common.close") }));
   } else {
-    foot.append(el("div", { class: "ds-res", role: "status" }, el("span", { class: "ds-rl", text: d.expired ? TX("misc.nsc.d_expired") : d.resolved ? TX("misc.nsc.d_closed") : TX("conv.nt.you_answered") }), el("span", { class: "ds-ra", text: d.expired ? TX("conv.nt.closed_late") : d.resolved ? TX("conv.nt.closed_done") : ntPlain(d.answer || "") || TX("misc.nsc.d_answered") })));
+    const cl = askClosed(d), ra = cl ? cl.ra : d.expired ? TX("conv.nt.closed_late") : d.resolved ? TX("conv.nt.closed_done") : ntPlain(d.answer || "") || TX("misc.nsc.d_answered");
+    foot.append(el("div", { class: "ds-res", role: "status" }, el("span", { class: "ds-rl", text: cl ? cl.lb : d.expired ? TX("misc.nsc.d_expired") : d.resolved ? TX("misc.nsc.d_closed") : TX("conv.nt.you_answered") }), ra ? el("span", { class: "ds-ra", text: ra }) : null));
+    if (cl && cl.again) foot.append(el("button", { type: "button", class: "ds-direct", "data-k": "again", onclick: async () => { await dcReopen(n); ntSheetPaint(); }, text: TX("decision.closed.again") }));
     if (!d.to.startsWith("auth:")) foot.append(el("button", { type: "button", class: "ds-direct", "data-k": "go", onclick: () => { ntSheetClose(false); ntJump(n); }, text: TX("conv.nt.see_in_chat") }));
     foot.append(el("button", { type: "button", class: "ds-opt rec c", "data-k": "close", onclick: () => ntSheetClose(), text: TX("common.close") }));
   }

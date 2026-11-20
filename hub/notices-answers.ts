@@ -7,7 +7,7 @@ import type { Decision, DecisionOpt, Notice, OwnerSaid } from "./notices-types.t
 import { msg } from "./i18n.ts";
 import { tellAsker } from "./notices-tell.ts";
 import { closedHooks, decisionHooks } from "./notices-wiring.ts";
-import { TEXT_MAX, clean, closedInfo, isOpenDecision, needsAnswer, twinOf } from "./notices-rules.ts";
+import { TEXT_MAX, clean, closedInfo, isOpenDecision, laterOn, needsAnswer, twinOf } from "./notices-rules.ts";
 import { broadcast } from "./notices-read.ts";
 import { expiresAtOf, sending } from "./notices-decisions.ts";
 import { RUN_DECISION } from "./notices-schedule.ts";
@@ -173,7 +173,7 @@ export function ignoreNotice(id: unknown): { status: number; body: Record<string
 	const item = items.find(i => i.id === String(id));
 	if (!item) return { status: 404, body: { error: "unknown notice" } };
 	if (item.ignored) return { status: 200, body: { ok: true, already: true, item, unread: unreadCount() } };
-	if (!needsAnswer(item)) return { status: 409, body: { error: "not waiting" } };
+	if (!needsAnswer(item) && !(isOpenDecision(item) && laterOn(item.decision))) return { status: 409, body: { error: "not waiting" } };
 	const at = now(), group = askGroup(item, false);
 	for (const n of group) {
 		n.ignored = at;

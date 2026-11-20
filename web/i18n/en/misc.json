@@ -255,5 +255,6 @@
   "misc.pane.close": "Close pane",
   "misc.pane.menu": "Session menu",
   "misc.pane.list": "Conversation list",
-  "misc.pane.bar_tip": "Drag to resize, double-click for half and half"
+  "misc.pane.bar_tip": "Drag to resize, double-click for half and half",
+  "misc.nsc.sched_remind": "Reminder"
 }

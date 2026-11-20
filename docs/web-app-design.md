@@ -622,6 +622,10 @@ dotz 웹앱의 화면은 `web/js/03-screens.js`의 `SCREENS` 표에 한 줄씩 �
 - 데이터: `POST /api/message`(text, picks, reply_to, lane/project/mail/conv, mode), 알림 경로 `ntPost`, 읽는 쪽 `NT.items`(알림), 세션 `pendingAsk`.
 - 접힘과 높이: 대화마다 처음에는 접힌 한 줄이에요. `질문 제목 · 3가지 중 고르기 ▾`(질문이 여럿이면 `질문 {n}개`, 선택지가 없으면 `답 기다림`)이고 줄 어디를 눌러도 펼쳐져요(`dcFolded`, `dcFoldSum`, 10-decision-fold.js). 펼쳐도 화면 높이의 35%(`35dvh`)를 넘지 않고 넘치는 선택지는 `.dc-body` 안에서 스크롤해요. 한번 펼친 대화는 그다음 질문도 펼친 채로 두고 `질문으로 가기`(`runAskGo`)는 접혀 있으면 펼쳐요.
 - 긴 질문 시트(알림에서 연 결정 시트, `ntSheetPaint`): 본문은 문장 끝 세 개까지만 위에 두고 나머지가 160자 넘게 남으면 `자세히 보기`(`details.ds-more`) 아래에 접어요(`ntFold`). 코드 블록과 `1.` 목록 번호는 문장 끝으로 세지 않아요. 본문 칸이 넘치면 아래 가장자리가 흐려지고 `더 있어요 ↓`(`.ds-hint`)가 떠요. 끝까지 내리면 둘 다 사라지고, 누르면 아래로 내려가요(`ntOverflow`). 선택지 버튼 앞에는 본문이 부르는 번호(`1`, `2`, …)를 그대로 달아요.
+- 고정 버튼 셋(요청 계약 3번, 10-decision-fold.js `askBtns`): 열린 질문 카드(시트 `ntSheetPaint`와 입력창 위 카드 `renderDecision`)는 선택지 아래에 `다른 답 쓰기`(`ntDirect`: 대화가 글을 받으면 그 말을 인용한 입력창, 알림 대화처럼 못 받으면 시트의 입력칸), `자세히 알려 주세요`(`POST /api/notices/<id>/more`, 카드는 열린 채로 `더 알려 달라고 했어요 · HH:MM`), `나중에`(`1시간 뒤` / `내일 아침` / `돌아가기` 중 하나를 고르면 `POST /api/notices/<id>/later {for: hour|morning}`, 라벨 `나중에 볼게요 · HH:MM에 다시 알려요`)를 둬요. 임시 글(`draft`), 로그인(`auth:`), 예약 실행(`schedule:`)과 다른 컴퓨터의 질문에는 없어요(`askFixed`). `later_until`이 미래인 질문은 `ntOpenDec`/`ntNeeds`가 열린 것으로 세지 않아서 홈 `답변 필요`, 입력창 위 카드, 알림 화면 `처리할 것`, 홈 `새 소식`, `모두 읽음`에서 빠지고(알림 화면에서는 `지난 알림`에 `나중에 볼게요 · …` 줄로 남아요), 그 시각이 지나면 다시 열린 것으로 돌아와요(허브가 그때 알림 이벤트를 한 번 보내요). 한 메시지가 질문을 여럿 담은 카드에는 버튼이 없어요(질문마다 알림 시트에서 눌러요).
+- 기한(요청 계약 7번): 열린 질문에 `expires_at`이 있으면 시트 시각 줄에 `· 72시간 안에 답해 주세요`, 입력창 위 카드 아래 줄에 같은 문구가 붙어요(1시간 미만은 `30분 안에`; `askLeft`, 올림).
+- 닫힌 뒤의 라벨(요청 계약 4번, `askClosed`): `closed_how`가 `words`면 `말로 답했어요 · "…"`(시트는 두 줄), `expired`면 `기한이 지나 닫았어요`와 `다시 묻기`(`dcReopen`, 시트가 다시 열린 질문으로 바뀌어요), `gone`이면 `이 세션은 이미 끝났어요 · 메인에 전달`이에요. `done`이거나 값이 없으면 예전 라벨(`답 없이 끝났어요`, `기한 지남`, `이렇게 답했어요`)이에요. 시트, 알림 화면 줄(`nscDecLine`), 모니터링 결정 카드(`monDecisionNode`)가 같은 `askClosedLine`을 써요.
+- 말로 한 답의 표시(요청 계약 5번, `askNotes`): 오너 메시지(`.um[data-ts]`) 아래에 `judging.at`이 그 메시지의 ts면 `이 말이 "<카드 제목>"의 답인지 확인하는 중`, `kept_open.at`이 맞으면 `질문은 열어 뒀어요`(`.ask-note`)를 붙여요. 알림 목록이 바뀔 때와 대화가 그려질 때 다시 맞춰요. 판단은 게이트웨이 몫이고 웹은 상태만 보여 줘요.
 - 근거: web/js/10-decision-card.js `parseChoices`, `decisionGroup`, `decisionOf`, `decisionOne`, `answerDecision`, `pickOption`, `answerEach`, `dcSendAll`, `multiNodes`, `renderDecision`, `dcLeave`, `paintDecision`, `dcSig`. 정규식.
 - css: web/css/07-chat.css(`#dcard`, `.dc-*` `pointer:coarse`), 14-overlay.css(`.dc-row` 시트용), 01-tokens.css.
 
@@ -1128,6 +1132,8 @@ dotz 웹앱의 화면은 `web/js/03-screens.js`의 `SCREENS` 표에 한 줄씩 �
   - 로딩 `불러오는 중이에요`, 실패 `알림을 불러오지 못했어요`, 비었음 `새 알림이 없어요`, 묶음 더 보기 `N개 더 보기`.
   - 행 태그(`nscTag`): `카카오톡`/`답장 확인`/`결정`, `로그인`, `실패`, `질문`, `작업 완료`/`결과`, `가격 변경`, 앱별 `메일`/`카카오톡`/`댓글`, `일정`, `아침 점검`, `감시`, `경고`, 앱 이름, 기본 `새 소식`. 점 색은 처리할 것/로그인/주의는 warn, 실패는 err, 완료/결과는 ok. 반복이면 요약 앞에 `N번 · `. 가격 변경은 이전 값 취소선 → 새 값. 시각은 `방금`/`HH:MM`/`어제`/날짜.
   - `처리할 것`은 ✕ 대신 화살표(`nsc-tr`)를 보여 주는 경우가 있어요(실패 알림만 ✕ 유지).
+  - 닫힌 질문 행의 둘째 줄은 `closed_how`를 따라 `말로 답했어요 · "…"`, `기한이 지나 닫았어요`, `이 세션은 이미 끝났어요 · 메인에 전달`이에요(`nscDecLine`, `askClosedLine`). `나중에`로 미룬 질문(`later_until`이 미래)은 `지난 알림`에 `<어디서> · 나중에 볼게요 · HH:MM에 다시 알려요`로 있고 `모두 읽음`에 들지 않아요.
+  - 예약 알림 행(`ntIsRemind`: 키가 `schedule:`로 시작하고 작업 실행(`nk: schedule`)이 아닌 줄)의 둘째 줄은 글의 첫 문장이고, 글이 없거나 제목과 같으면 `알림 예약`이에요(`nscSummary`).
   - 지운 알림 토스트 `알림을 지웠어요`(버튼 `되돌리기`, 6초; `undismiss`). 답이 필요한 알림이 있는 필터에서 `모두 읽음` 뒤 토스트 `답이 필요한 알림은 그대로 뒀어요`.
   - 벨, 팔레트, 주소로 열면 필터와 펼침이 초기화되고, 행에서 돌아오면 유지(`NSC.keep`). 새 알림은 묶음 위로 슬라이드 인(`motionIn`).
   - 폰 vs 데스크톱: `09-notices-screen.css`에는 `@media` 규칙이 없어요(`grep ^@media` 결과 없음). 폭별 차이는 코드에서 확인 못 함.
@@ -1293,6 +1299,7 @@ dotz 웹앱의 화면은 `web/js/03-screens.js`의 `SCREENS` 표에 한 줄씩 �
 - 구성: 감시 항목과 같아요. 섹션 제목이 `실행 기록`이고, `m.watch`가 없으면 `지금 확인` 버튼이 없어요.
 - 기능: `대화로 이어가기`, 설정은 `s:<id>`(화면만, 대화 없음, `asEntry`).
 - 상태: 설명 `<every> 알아서 실행해요.`(every 없으면 `정해 둔 때에 한 번 실행해요.`). 마지막 실행 줄 `예약한 일을 실행했어요`(실행 전 `아직 확인 전이에요`). 이름이 명령뿐이면 `예약한 일`. 설정 이름은 예약 이름 또는 `예약`. 다른 컴퓨터 예약의 목록 배지는 `예약`(`MON_KIND.schedule`), 끊김, 꺼짐, 실패 배지가 우선.
+- 설정 `예약한 일` › `지난 예약` 행(`schedPastRow`)의 둘째 줄은 `알림 · 11월 18일 오후 2:30 실행 · 결과를 올렸어요`처럼 조각마다 `·`를 다음 조각 앞에 붙여 한 덩어리(`.wph`)로 두어요. 폰 폭에서 줄이 바뀌어도 `·`가 줄 끝에 홀로 남지 않고 다음 낱말과 같이 내려가요.
 - 데이터: `GET /api/monitors`(`kind:"schedule"`, `schedule` id).
 - css: 감시와 같아요.
 - 근거: web/js/30-monitoring.js `monDesc`, `monRunLine`, 30-monitoring.js(`실행 기록`), `monSettingsName`, `monSettingsApp`, web/js/34-peer-monitoring.js.

@@ -357,7 +357,7 @@ function monDecisionNode(n) {
     onclick: () => (d.draft || o.action === "form" ? noticeSheetOpen(n.pc ? n : n.id) : answerInline(n, o)) },
     el("span", { class: "dc-key", text: String(o.n) }),
     el("span", { class: "dc-tx" }, el("span", { class: "dc-lb" }, o.label), o.desc ? el("span", { class: "dc-ds", text: dcDesc(o) }) : null)));
-  const end = open ? null : el("div", { class: "mt", text: d.state === "ignored" ? TX("mon.dec.ignored") : d.expired ? TX("mon.dec.expired") : d.resolved ? TX("mon.dec.closed") : `${TX("mon.dec.answered")}${said ? ` · ${ntPlain(said)}` : ""}` });
+  const end = open ? null : el("div", { class: "mt", text: d.state === "ignored" ? TX("mon.dec.ignored") : askClosedLine(d) || (d.expired ? TX("mon.dec.expired") : d.resolved ? TX("mon.dec.closed") : `${TX("mon.dec.answered")}${said ? ` · ${ntPlain(said)}` : ""}`) });
   return el("div", { class: "bm alert", "data-nid": n.id }, el("div", { class: "mt" }, el("span", { class: "mn", text: ntPlain(n.title) || TX("mon.dec.needs") }), ` · ${monWhen(n)}`, open ? " " : null, open ? monTag("ask") : null),
     answerParts(fl, { lead: false }), el("div", { class: "dcm fx mon-dc" }, ...rows), end);
 }

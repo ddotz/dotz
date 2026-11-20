@@ -22,7 +22,7 @@ flowchart LR
     o_chat_overlay["overlay (1)"]
     o_chat_rawdialog["rawdialog (1)"]
     o_chat_reveal["reveal (3)"]
-    o_chat_toast["toast (53)"]
+    o_chat_toast["toast (55)"]
   end
   subgraph a_comments["comments"]
     c_comments(["comments code"])

@@ -117,7 +117,7 @@ function decisionOne(t) {
   const info = targetInfo(t), s = ts(t);
   if (dcGone(t)) return null;
   let raw = "", at = "";
-  if (info.ask) { raw = String(info.ask.text); at = info.ask.at || ""; }
+  if (info.ask) { if (ntLaterAt(t, info.ask.at)) return null; raw = String(info.ask.text); at = info.ask.at || ""; }
   else {
     for (let k = s.msgs.length - 1; k >= 0; k--) {
       const e = s.msgs[k];
@@ -565,7 +565,7 @@ function renderDecision(box, dc, picks, step) {
     kids.push(body);
     }
   }
-  const goneN = dcGoneNotice(dc), sn = dcStNode(dc, st); if (goneN) kids.push(el("div", { class: "dc-gonebox" }, ...dcGoneNodes(goneN, true))); if (sn) kids.push(sn);
+  const goneN = dcGoneNotice(dc), sn = dcStNode(dc, st), ax = fold || st ? null : askCardNode(dc); if (ax) kids.push(ax); if (goneN) kids.push(el("div", { class: "dc-gonebox" }, ...dcGoneNodes(goneN, true))); if (sn) kids.push(sn);
   if (!paintKeep(box, kids, dcAgain(box))) return;
   box.classList.toggle("fold", fold);
   const nb = $(".dc-body", box); if (nb) nb.scrollTop = top;
@@ -781,7 +781,7 @@ function dcPointer(box, n) {
 // a phone the keyboard closes and reopens while the owner types (owner 2026-10-22), so a live update that changes none of it leaves the card alone.
 function dcSig(dc, picks, step) {
   const dr = dc.draft ? [dc.draft.to, (dc.draft.cc || []).join(","), dc.draft.mode || ""] : 0;
-  return JSON.stringify([dc.key, dc.question, dc.each ? dc.blocks.map(b => b.nd.id) : 0, picks.map(o => o && o.n), step, dcFolded(dc.t), DC.st[dc.key] || "", DC.edit[dc.key] ? DC.edit[dc.key].opt.n : 0, dr, dcGoneKey()]);
+  return JSON.stringify([dc.key, dc.question, dc.each ? dc.blocks.map(b => b.nd.id) : 0, picks.map(o => o && o.n), step, dcFolded(dc.t), DC.st[dc.key] || "", DC.edit[dc.key] ? DC.edit[dc.key].opt.n : 0, dr, dcGoneKey(), askSig(dc)]);
 }
 // What was decided stays in the conversation once the card is gone (owner 2026-11-03): the owner's answer message already carries the
 // question and the chosen option (hub/intake.ts decisionLines, `picks`), so the record is drawn from it here and from history after a

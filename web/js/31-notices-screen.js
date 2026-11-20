@@ -17,14 +17,15 @@ const nscListed = n => !!n.id && n.cls !== "log" && !n.dismissed;
 const nscFits = (n, k) => k === "all" || n.cls === k || (k === "news" && n.cls === "conv");
 const nscIn = k => NT.items.filter(n => nscListed(n) && nscFits(n, k));
 const nscUnreadIn = k => NT.items.reduce((c, n) => c + (nscListed(n) && !n.read && nscFits(n, k) ? 1 : 0), 0);
-const nscGroup = n => (ntNeeds(n) || n.waits ? "need" : n.read ? "past" : "news");
-const nscReadable = () => nscIn(NSC.f).filter(n => !n.read && !ntNeeds(n));
+const nscGroup = n => (ntLaterTwin(n) ? "past" : ntNeeds(n) || n.waits ? "need" : n.read ? "past" : "news");
+const nscReadable = () => nscIn(NSC.f).filter(n => !n.read && !ntNeeds(n) && !ntLaterTwin(n));
 const nscTone = n => ntNeeds(n) || n.waits === "login" || n.tone === "warn" ? "warn" : n.tone === "fail" ? "err" : n.tone === "done" || n.cls === "result" ? "ok" : "";
 // The tag word of the prototype's D.notices, from the notice's own kind, tone and app: the app is the integration key (mail, kakao, instagram/youtube/site = 댓글)
 // or the prefix of the conversation it lives in. A word the data does not give is not made up: the rest is 감시 / 경고 / the app's name / 새 소식.
 const NSC_APP_TAG = { mail: TX("common.mail"), kakao: TX("decision.app.kakao"), instagram: TX("misc.nsc.comments"), youtube: TX("misc.nsc.comments"), site: TX("misc.nsc.comments") };
 const nscApp = n => String(n.app || (n.item && n.item.app) || n.src || n.open || "").split(/[-:]/)[0];
 const ntIsSched = n => n.nk === "schedule" || String(n.key || "").startsWith("schedule:") || (n.kind === "watch" && n.title === "예약");
+const ntIsRemind = n => !n.decision && !n.nk && String(n.key || "").startsWith("schedule:");
 function nscTag(n) {
   const app = nscApp(n);
   if (ntIsDec(n)) return n.decision.draft ? (app === "kakao" ? TX("decision.app.kakao") : TX("misc.nsc.tag_reply")) : TX("common.decision");
@@ -45,8 +46,10 @@ function nscTag(n) {
 // A decision's second line follows its state: waiting says so, an answer says what was chosen, the rest say how it ended (the words of monDecisionNode).
 function nscDecLine(n) {
   const d = n.decision, ctx = ntDecCtx(n);
+  if (ntLater(n)) return `${ctx} · ${TX("decision.ask.later_at", { t: kstHM(d.later_until) })}`;
   if (d.state === "open") return `${ctx} · ${TX("misc.nsc.d_open")}`;
   if (d.state === "ignored") return `${ctx} · ${TX("misc.nsc.d_ignored")}`;
+  if (askClosed(d)) return `${ctx} · ${askClosedLine(d)}`;
   if (d.expired) return `${ctx} · ${TX("misc.nsc.d_expired")}`;
   if (d.resolved) return `${ctx} · ${TX("misc.nsc.d_closed")}`;
   const m = /^\s*(\d+)\)/.exec(String(d.answer || "")), o = m && (d.options || []).find(x => x.n === Number(m[1]));
@@ -58,6 +61,7 @@ function nscSummary(n, text = n.text) {
   const chg = NW_CHANGE.exec(nwChangeLine(text));
   if (chg) return el("span", {}, el("s", { text: chg[2] }), " → ", chg[3]);
   if (n.decision) return n.decision.draft ? ntPlain(n.decision.draft.body.split("\n").find(l => l.trim()) || "") : nscDecLine(n);
+  if (ntIsRemind(n)) return ntShort(String(text || "").split("\n").map(ntPlain).find(l => l && l !== ntPlain(hcLine(n))) || "") || TX("misc.nsc.sched_remind");
   if (n.kind === "watch" && n.item) return (n.item.card && n.item.card.subject) || ntPlain(hcLine(n));   // a mail report says the mail
   const title = ntPlain(hcLine(n)), src = n.src || n.open;
   // the feed's own summary: the name is not said twice, nor the title when the summary opens with it
