@@ -46,7 +46,7 @@ test("an old file loads as it is; hard signs make a task at once, the assistant 
 	for (const id of ["a00001", "b00002", "c00003", "d00004", "f00006"]) expect(woke[0]).toContain(id);
 	expect(woke[0]).not.toContain("e00005");
 	expect(byId(store, "a00001").kind).toBe("task");
-	expect(byId(store, "b00002").kind).toBe("task");
+	expect(byId(store, "b00002").kind).toBeUndefined();
 	expect(byId(store, "f00006").kind).toBe("task");
 	expect(byId(store, "c00003").kind).toBeUndefined();
 	expect(byId(store, "d00004").kind).toBe("check");
@@ -59,10 +59,10 @@ test("an old file loads as it is; hard signs make a task at once, the assistant 
 	expect(posted).toEqual([]);
 	store.patchSchedule("f00006", { name: "sample-3 정리" }, true);
 	expect(byId(store, "c00003").kind).toBe("task");
-	expect(byId(store, "b00002").kind).toBe("task");
+	expect(byId(store, "b00002").kind).toBe("owner");
 	expect(onDisk("f00006")).toMatchObject({ name: "sample-3 정리", kind: "task", keep: { by: "a newer version" } });
 	expect(byId(store, "e00005").name).toBeUndefined();
-	expect(posted).toEqual([msg().scheduleNamed([{ name: "sample-2 확인", kind: "task" }, { name: "sample-2 소식", kind: "task" }, { name: "회의", kind: "task" }, { name: "sample-2 점검", kind: "check" }, { name: "sample-3 정리", kind: "task" }])]);
+	expect(posted).toEqual([msg().scheduleNamed([{ name: "sample-2 확인", kind: "task" }, { name: "sample-2 소식", kind: "owner" }, { name: "회의", kind: "task" }, { name: "sample-2 점검", kind: "check" }, { name: "sample-3 정리", kind: "task" }])]);
 
 	const again = deps();
 	const next = await load(LEGACY);
@@ -162,9 +162,17 @@ test("an entry of a kind this version does not know loads, acts as a reminder an
 	expect(onDisk("g00007")).toEqual({ ...later, paused: true });
 });
 
-test("the hard signs: a backtick command, a file path, a ch:/lane: target or an instruction verb, never the language", async () => {
-	for (const text of ["`ls`", "/Users/example/a 봐 줘", "./bin/run 결과", "notes.md 읽기", "lane:sample-2 상황", "ch:1 상황", "매일 결과 보고해", "PR 올려", "테스트 돌려", "run the report"]) expect(hardTask({ text })).toBe(true);
-	for (const text of ["3시에 회의 알려줘", "remind me of the 3 pm meeting", "약 먹을 시간", "sample-2 생일", "책상 정리해", "https://example.com/a/b.html 다시 알려줘"]) expect(hardTask({ text })).toBe(false);
-	expect(hardTask({ text: "3시에 회의 알려줘", conv: "ch:5" })).toBe(true);
-	expect(hardTask({ text: "3시에 회의 알려줘", conv: "th:5" })).toBe(false);
+test("the hard signs: a backtick command, a file path or a ch:/lane: target in the text, never a verb, the conversation or the language", async () => {
+	for (const text of ["`ls`", "/Users/example/a 봐 줘", "./bin/run 결과", "notes.md 읽기", "lane:sample-2 상황", "ch:1 상황", "매일 sample-2 상태를 `bun run check` 로 확인"]) expect(hardTask({ text })).toBe(true);
+	for (const text of ["3시에 회의 알려줘", "remind me of the 3 pm meeting", "약 먹을 시간", "sample-2 생일", "책상 정리해", "https://example.com/a/b.html 다시 알려줘", "세탁기 돌려야 하는 날", "가스 점검해야 해", "볼륨 올려 달라고 말하기", "매일 결과 보고해"]) expect(hardTask({ text })).toBe(false);
+	expect(hardTask({ text: "~/example/notes 정리하고 `bun run check` 결과" })).toBe(true);
+});
+
+test("a reminder made in a project channel stays for the assistant to judge, and a command there is still a task at once", async () => {
+	const store = await load([old("h00008", "3시에 회의 알려줘", { conv: "ch:5" }), old("i00009", "~/example/notes 정리하고 `bun run check` 결과", { conv: "ch:5" })]);
+	const { woke, naming } = deps();
+	store.startSchedules(() => {}, naming);
+	expect(byId(store, "i00009").kind).toBe("task");
+	expect(byId(store, "h00008").kind).toBeUndefined();
+	expect(woke.join("\n")).toContain("h00008");
 });
