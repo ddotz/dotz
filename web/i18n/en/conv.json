@@ -47,6 +47,7 @@
   "conv.nt.input_closed": "The input box is already closed",
   "conv.nt.sent_next_q": "Answer sent · next question",
   "conv.nt.problem": "Something went wrong",
+  "conv.nt.login_open": "Open sign-in",
   "conv.nt.see_in_chat": "View in chat",
   "conv.nt.resolved": "Resolved",
   "conv.nt.answered": "Answered",

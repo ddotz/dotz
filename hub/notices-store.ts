@@ -24,6 +24,7 @@ import { type ResultFile, type ResultLink, resultFiles, resultLinks } from "./re
 import { broadcast, summary } from "./notices-read.ts";
 import { QUIET_MS, awaitingReply, isViewing, quietReplies, viewers } from "./notices-viewing.ts";
 import { decisionsOf, expiresAtOf, sending } from "./notices-decisions.ts";
+import { askedAgain, optionsOf, sameQuestion, withAskedLine } from "./notices-repeat.ts";
 import { worklogKind } from "./worklog-kind.ts";
 import { en } from "./i18n-en.ts";
 import { ko } from "./i18n-ko.ts";
@@ -388,20 +389,19 @@ function adoptRepost(e: HubEvent): boolean {
 }
 
 export function putDecision(d: { key: string; title: string; detail: string; to: string; open?: string; options: DecisionOpt[]; group: number; replyTo?: string; draft?: DraftApproval; by?: string; ref?: string; assumed?: true }, at: string): void {
-	const old = items.find(n => n.key === d.key) ?? (d.draft || Object.values(FILLER_QUESTIONS).includes(d.title) ? undefined : items.findLast(n => n.decision?.to === d.to && !n.decision.draft && n.title === d.title));
+	const old = items.find(n => n.key === d.key) ?? (d.draft || Object.values(FILLER_QUESTIONS).includes(d.title) ? undefined : items.findLast(n => n.decision?.to === d.to && !n.decision.draft && sameQuestion(n.title, d.title))), asked = askedAgain(old, d, at);
 	if (old?.decision) {
 		// The same ask can arrive twice (a session's mid-turn line and its turn-end report): one notice, and an answered one stays answered.
-		if (isOpenDecision(old) && old.key === d.key) return;
+		if (isOpenDecision(old) && old.key === d.key && !asked) return;
 		if (!isOpenDecision(old) && Date.parse(at) - Date.parse(old.ignored ?? old.decision.answered_at ?? "") < REASK_MS) return void closeRepeat(old, at);
 	}
 	if (old) old.key = d.key;
-	const open = d.open ?? d.to;
-	const expires_at = expiresAtOf(d, at);
+	const open = d.open ?? d.to, expires_at = expiresAtOf(d, at);
 	if (d.draft && !shownAsStored(d.draft)) d = { ...d, draft: undefined };
-	const decision: Decision = { options: d.options, to: d.to, ...(d.replyTo ? { reply_to: d.replyTo } : {}), group: d.group, state: "open", ...(expires_at ? { expires_at } : {}), ...(d.draft ? { draft: d.draft } : {}), ...(d.assumed ? { assumed: true as const } : {}) };
+	const decision: Decision = { options: optionsOf(d), to: d.to, ...(d.replyTo ? { reply_to: d.replyTo } : {}), group: d.group, state: "open", ...(expires_at ? { expires_at } : {}), ...(d.draft ? { draft: d.draft } : {}), ...(d.assumed ? { assumed: true as const } : {}), ...(asked ? { asked } : {}) };
 	let item: Notice;
 	if (old) {
-		Object.assign(old, { kind: "decision", tone: "ask", title: d.title, text: d.detail, open, src: open, at, updated: at, read: false, decision, ...(d.by ? { by: d.by } : {}), ...(d.ref ? { ref: d.ref } : {}) });
+		Object.assign(old, { kind: "decision", tone: "ask", title: d.title, text: withAskedLine(d.detail, asked), open, src: open, at, updated: at, read: false, decision, ...(d.by ? { by: d.by } : {}), ...(d.ref ? { ref: d.ref } : {}) });
 		delete old.dismissed;
 		delete old.ignored;
 		item = old;
@@ -578,7 +578,7 @@ function rerenderPending(): number {
 			if (!n?.decision) return;
 			const before = was(i);
 			i.title = n.title;
-			i.text = n.text;
+			i.text = withAskedLine(n.text, i.decision!.asked);
 			if (n.key) i.key = n.key;
 			const d = i.decision!;
 			d.options = n.decision.options;

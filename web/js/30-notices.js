@@ -155,7 +155,7 @@ async function pushOpen(hash, at, nid) {
 function noticeKindAction(n, mons = NM.items) {
   if (ntIsDec(n) || ntTapDec(n)) return "sheet";
   if (n.tone === "ask") return "ask";
-  if (n.kind === "alert" && n.tone === "fail") return "detail";
+  if (n.kind === "alert" && (n.tone === "fail" || ntLoginOf(n))) return "detail";
   if (ntIsSched(n)) return "schedule";
   if (String(n.src || n.open || "").startsWith("mail:")) return "message";   // a new mail is a watch-kind notice, but it has its own conversation
   if (n.kind === "result" || String(n.src || n.open || "").startsWith("lane:")) return "session";
@@ -619,6 +619,13 @@ function ntDetailOpen(n) {
   ntSheetClose(false);
   ntSheetShow(String(n.id || ""), n);
 }
+const ntLoginOf = n => (n && !n.pc && n.kind === "alert" && n.waits === "login" && n.login) || "";
+async function ntLoginOpen(id) {
+  let data;
+  try { data = await loadProviderData(); } catch (e) { toast(e.message, true); return; }
+  const p = data.providers.find(x => x.id === id);
+  if (p && p.can_login) startLogin(p); else go("accounts", id);
+}
 function ntDetailPaint(n) {
   clear(NS.h.box).append(
     fsHead([el("span", { class: "fs-ey err", text: TX("conv.nt.problem") })], { close: () => ntSheetClose() }),
@@ -627,6 +634,7 @@ function ntDetailPaint(n) {
       el("div", { class: "ds-m", text: ntWhen(n) }),
       ...ntBody(n)),
     el("div", { class: "fs-ft" },
+      ntLoginOf(n) ? el("button", { type: "button", class: "ds-opt rec", "data-k": "login", onclick: () => { ntSheetClose(false); ntLoginOpen(ntLoginOf(n)); }, text: TX("conv.nt.login_open") }) : null,
       el("button", { type: "button", class: "ds-direct", "data-k": "go", onclick: () => { ntSheetClose(false); ntJump(n); }, text: TX("conv.nt.see_in_chat") }),
       el("button", { type: "button", class: "ds-opt rec c", "data-k": "close", onclick: () => ntSheetClose(), text: TX("common.close") })));
 }

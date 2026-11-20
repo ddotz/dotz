@@ -559,7 +559,7 @@ Do this, briefly:
 			},
 			watch: {
 				label: "Monitoring", summary: (n: number, failing: number) => `Monitoring: ${n}${failing ? ` · failing in a row: ${failing}` : ""}`, none: "No monitoring",
-				desc: (after: number, every: string) => `Runs a check script at a set interval without waking the model, and tells you only when the value changed, a condition matched, or it failed. Keeping logins alive (expiry checks) is done here too. After ${after} failures in a row it notifies once per ${every}, and once more when it recovers.`,
+				desc: (after: number, every: string) => `Runs a check script at a set interval without waking the model, and tells you only when the value changed, a condition matched, or it failed. Keeping logins alive (expiry checks) is done here too. After ${after} failures in a row it notifies, then again after ${every}, after 24 hours, and every 3 days after that, and once more when it recovers.`,
 				watches: "Monitoring", setups: "Per-work-channel setups", failing: "Failing in a row",
 			},
 			mail: {

@@ -21,8 +21,9 @@ import * as discord from "./discord.ts";
 import { authRoute, pendingAuth } from "./auth.ts";
 import { pushRoute } from "./push.ts";
 import { INTEGRATIONS } from "./integrations.ts";
-import { allWatches, approveWatch, runWatch } from "./watch.ts";
-import { watchConnection } from "./watch-status.ts";
+import { allWatches } from "./watch.ts";
+import { RECONNECT_ACTION } from "./watch-ask.ts";
+import { reconnectFromCard, reconnectWatch } from "./watch-reconnect.ts";
 import { isSettingsTarget } from "./app-settings.ts";
 import { markRead } from "./reads.ts";
 import { shownEvent } from "./owner-text.ts";
@@ -305,6 +306,7 @@ type RestartHooks = { /** This node's tailnet name (tests); default `tailscale s
 // A card's answer to where its question came from (chat, session, project chat, mail or login request): the bot's turn.
 export async function deliverAnswer(a: Parameters<DecisionSend>[0] & { login: string; via?: ReturnType<typeof viaOf> }): Promise<void> {
 	if (a.to.startsWith(RUN_DECISION)) return void answerRunDecision(a.to.slice(RUN_DECISION.length), a.action);
+	if (a.to === "alert" && a.action === RECONNECT_ACTION) return reconnectFromCard(a.picks?.[0]?.q ?? "");
 	if (a.to.startsWith("auth:")) {
 		const path = `/api/auth/${a.to.slice(5)}`;
 		const res = await authRoute(new Request(`http://local${path}`, { method: "POST", body: JSON.stringify({ action: a.action }) }), new URL(`http://local${path}`));
@@ -533,14 +535,10 @@ export function makeRoute({ tailnetName = ownTailnetName, busyNow, restartGatewa
 			if (!w) return json({ error: `no watch ${name}` }, 404);
 			// A disconnected watch behind an approval gate (a login that sends a push to the owner's phone) reconnects only with his yes; the tap
 			// on 다시 연결 is that yes, so it is approved (approveWatch runs it) instead of a plain run that would only report it still waits.
-			if (w.approval_minutes && watchConnection(w).state === "disconnected") {
-				approveWatch(w.id);
-				const item = listMonitors().find(m => m.kind === "watch" && m.watch === name);
-				return json({ ok: true, approved: true, ...(item ? { item } : {}) });
-			}
-			await runWatch(name);
+			const { approved, done } = reconnectWatch(w);
+			await done;
 			const item = listMonitors().find(m => m.kind === "watch" && m.watch === name);
-			return json({ ok: true, ...(item ? { item } : {}) });
+			return json({ ok: true, ...(approved ? { approved } : {}), ...(item ? { item } : {}) });
 		}
 		const appsResponse = await routeApps(req, url, unrepliedMailList);
 		if (appsResponse) return appsResponse;

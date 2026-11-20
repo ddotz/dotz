@@ -3,7 +3,7 @@ import { now } from "./config.ts";
 import { listNotices, NOTICE_CAP } from "./notices.ts";
 import { feed } from "./notices-store.ts";
 import { fakeHub, json } from "./test-web.ts";
-import { watchChoice } from "./watch.ts";
+import { watchChoice } from "./watch-ask.ts";
 import { watchLine } from "./watchtext.ts";
 
 // The other report kinds, as the store makes them from the gateway's events (neutral fixture text): in the 감시 소식 feed a folded row says the

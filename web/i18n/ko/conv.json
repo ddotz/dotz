@@ -38,6 +38,7 @@
   "conv.nt.input_closed": "입력 창이 이미 닫혔어요",
   "conv.nt.sent_next_q": "답을 보냈어요 · 다음 질문이에요",
   "conv.nt.problem": "문제가 생겼어요",
+  "conv.nt.login_open": "로그인 열기",
   "conv.nt.see_in_chat": "대화에서 보기",
   "conv.nt.resolved": "해결됨",
   "conv.nt.answered": "답변함",

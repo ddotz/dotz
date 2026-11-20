@@ -3,7 +3,8 @@ import { issueBlock } from "./choices.ts";
 import { unreadOf } from "./conversations.ts";
 import { emit, eventTarget, historyEvents } from "./events.ts";
 import { decisionsOf } from "./notices.ts";
-import { isWatchIssue, watchChoice } from "./watch.ts";
+import { isWatchIssue } from "./watch.ts";
+import { watchChoice } from "./watch-ask.ts";
 
 const post = (ts: string, target: string, extra: Record<string, unknown> = {}) => emit("outbox", { ts, kind: "out", source: "gateway", target, text: `글 ${ts}`, ...extra });
 

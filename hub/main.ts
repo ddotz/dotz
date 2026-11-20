@@ -75,7 +75,8 @@ import { clearChannel, endStanding, lapseStandings, nameWatches, setupChannel, w
 import { watchIssueLine, watchLine } from "./watchtext.ts";
 import { createWatchSummarizer } from "./watchsummary.ts";
 import { clearTrackedTimers, runShutdown } from "./shutdown.ts";
-import { addWatch, allWatches, approveWatch, isWatchIssue, setHealedHandler, setHealHandler, setWatchGate, startWatches, stopWatches, type Watch, wakeTarget, watchChoice } from "./watch.ts";
+import { addWatch, allWatches, approveWatch, isWatchIssue, setHealedHandler, setHealHandler, setWatchGate, startWatches, stopWatches, type Watch, wakeTarget } from "./watch.ts";
+import { watchIssueText } from "./watch-ask.ts";
 import { watchOwner } from "./app-features.ts";
 import { blockedByOff, newsMuted, watchOff } from "./app-off.ts";
 import { loadPlugins, pluginClaim, pluginMailThread, pluginThread, startPlugins } from "./plugins.ts";
@@ -648,7 +649,7 @@ startWatches((w, reason, output, prev, info) => {
 	// A failing, stopped or unapproved check is an issue: it goes to alert with a choice block, whatever `to` the watch has.
 	const issue = isWatchIssue(reason);
 	const label = watchLabel(w.name);
-	void out(issue ? "alert" : w.to, (issue ? watchIssueLine(label, reason, info, output) : watchLine(label, reason, output, { prev })).slice(0, issue ? 1500 : 1900) + (issue ? `\n${watchChoice(label, reason)}` : ""), undefined, { source: "gateway", nk: issue ? "alert" : watchNoticeKind(output), news: true, ...(issue ? {} : watchRoute(w)) }).catch(e => log(`watch ${w.name} send failed: ${e}`));
+	void out(issue ? "alert" : w.to, issue ? watchIssueText(w, label, reason, info, output) : watchLine(label, reason, output, { prev }).slice(0, 1900), undefined, { source: "gateway", nk: issue ? "alert" : watchNoticeKind(output), news: true, ...(issue ? {} : watchRoute(w)) }).catch(e => log(`watch ${w.name} send failed: ${e}`));
 });
 // A watch whose check script broke (hub/watch.ts): the fix turn goes quietly to the watch's conversation (or main), and a fix that held is one worklog line.
 setHealHandler((w, turn) => {

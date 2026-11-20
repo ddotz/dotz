@@ -4,16 +4,17 @@ import { classOfNotice } from "./notice-class.ts";
 import { TZ } from "./config.ts";
 import { noticeFor, noticeKo } from "./notice.ts";
 import { webView } from "./web-i18n.ts";
-import { watchLine, watchReasonKo } from "./watchtext.ts";
+import { loginBlockedProvider, watchLine, watchReasonKo } from "./watchtext.ts";
 import type { Notice } from "./notices-types.ts";
 import { laneTitleOf, watchLabelOf } from "./notices-wiring.ts";
 import { waitsOf, type Waits } from "./notices-rules.ts";
 import { channelTitle, recordedTitle } from "./notices-lanes.ts";
 import { worklogKind } from "./worklog-kind.ts";
 
-export const withClass = (n: Notice, shown: Notice = n): Notice & { cls: string; waits?: Waits } => {
+export const withClass = (n: Notice, shown: Notice = n): Notice & { cls: string; waits?: Waits; login?: string } => {
 	const waits = waitsOf(n);
-	return { ...shown, cls: classOfNotice(n).cls, ...(waits ? { waits } : {}), ...(n.kind === "worklog" ? worklogKind({ ...n, update_key: n.key, source: n.by }) : {}) };
+	const login = waits === "login" && n.kind === "alert" ? loginBlockedProvider(n.text) : undefined;
+	return { ...shown, cls: classOfNotice(n).cls, ...(waits ? { waits } : {}), ...(login ? { login } : {}), ...(n.kind === "worklog" ? worklogKind({ ...n, update_key: n.key, source: n.by }) : {}) };
 };
 export const broadcast = (e: Record<string, unknown>): void => broadcastRaw(e.kind === "notice" && e.item && typeof e.item === "object" ? { ...e, item: withClass(e.item as Notice, readable(e.item as Notice)) } : e);
 // First three meaningful lines (no blank lines, rules or fences).

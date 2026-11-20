@@ -110,7 +110,7 @@ flowchart LR
   subgraph a_notices["notices"]
     c_notices(["notices code"])
     o_notices_fsOpen["fsOpen (2)"]
-    o_notices_toast["toast (26)"]
+    o_notices_toast["toast (27)"]
   end
   subgraph a_panes["panes"]
     c_panes(["panes code"])
@@ -187,6 +187,7 @@ flowchart LR
   c_monitoring -->|"go (3)"| s_chat
   c_monitoring -->|"go (11)"| s_monitoring
   c_notices -->|"go (1)"| s_any
+  c_notices -->|"go (1)"| s_accounts
   c_notices -->|"go (1)"| s_chat
   c_notices -->|"go (1)"| s_home
   c_notices -->|"go (2)"| s_monitoring

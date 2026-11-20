@@ -17,6 +17,9 @@ export const loginBlockedKo = (provider: string): string => `${provider} 로그�
 const LOGIN_BLOCKED_RE = /(?:모델 제공자|\S+) 로그인이 풀려서 (?:일이 )?멈췄어요/;
 const LOGIN_BLOCKED_HEAD = new RegExp(`^${LOGIN_BLOCKED_RE.source}`);
 export const loginBlockedIn = (text: string): boolean => LOGIN_BLOCKED_RE.test(text);
+const LOGIN_BLOCKED_PROVIDER = /(?:^|[\s:])([A-Za-z][\w.-]*) 로그인이 풀려서 (?:일이 )?멈췄어요/;
+/** The provider id a model provider's login stop names ("anthropic 로그인이 풀려서 일이 멈췄어요"), undefined for any other text. */
+export const loginBlockedProvider = (text: string): string | undefined => LOGIN_BLOCKED_PROVIDER.exec(text)?.[1];
 export const PROVIDER_BACK_KO = "모델 제공자가 다시 연결됐어요";
 export const WATCH_UNCHANGED_KO = "내용은 그대로이고 시각 같은 값만 바뀌었어요";
 

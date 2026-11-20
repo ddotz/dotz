@@ -70,6 +70,7 @@ export type Decision = {
 	reply_to?: string;
 	// How many decisions the asking message held; with more than one the answer names its decision.
 	group: number;
+	asked?: { n: number; first: string };
 	// "ignored": the owner waved it off with the x (Notice.ignored); the matter was not answered.
 	state: "open" | "answered" | "ignored";
 	// True when no answer came but the matter was resolved by other means (resolveAsks): the bot finished it, the owner acted outside the app.

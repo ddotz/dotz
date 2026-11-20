@@ -446,7 +446,7 @@ export function createOrchestrator(opts: OrchOpts) {
 						errorStreak.ok();
 						streakAlerted = false;
 						clearError();
-						if (noteRecovered("orchestrator")) onAlert(recoveryText());
+						if (noteRecovered("orchestrator", providerOf(limitModel()))) onAlert(recoveryText());
 					} else if (inKeepalive && keepaliveErrorDropped(ev.error.kind)) {
 						log(`keepalive failed (${ev.error.text.replace(/\s+/g, " ").slice(0, 120)}); not retried, the next message is the next try`);
 					} else if (ev.error.kind !== "rate" && ev.error.kind !== "owner" && errorStreak.fail() !== "go") {
@@ -555,11 +555,12 @@ export function createOrchestrator(opts: OrchOpts) {
 			const owner = kind === "owner";
 			const lk = limitKind(err, kind);
 			const account = limitAccount(err, currentModel);
+			const provider = providerOf(limitModel());
 			log(`${who} blocked (${lk}, ${account}): ${err.replace(/\s+/g, " ").slice(0, 300)}`);
-			let note = owner ? noteBlock("orchestrator", account, lk) : undefined;
+			let note = owner ? noteBlock("orchestrator", account, lk, Date.now(), false, provider) : undefined;
 			const { ms: retry, reset } = owner ? { ms: ownerRetryMs(note!.failures), reset: false } : await rateLimitDelay(err, currentModel);
 			if (holdId !== id || orch.status !== "rate-limited") return;
-			note ??= noteBlock("orchestrator", account, lk, Date.now(), true);
+			note ??= noteBlock("orchestrator", account, lk, Date.now(), true, provider);
 			const until = new Date(Date.now() + retry);
 			orch.rateLimitedUntil = until.toISOString();
 			const at = until.toLocaleString("ko-KR", { timeZone: TZ, month: "numeric", day: "numeric", weekday: "short", hour: "2-digit", minute: "2-digit" });
@@ -567,7 +568,7 @@ export function createOrchestrator(opts: OrchOpts) {
 			const authSince = authStamp();
 			save({ pausedUntil: orch.rateLimitedUntil, pausedKind: owner ? "owner" : undefined, pausedAuth: owner ? authSince : undefined });
 			if (note.alert) {
-				if (owner) onAlert(blockText(lk as "auth" | "billing", account, providerOf(currentModel), retry));
+				if (owner) onAlert(blockText(lk as "auth" | "billing", account, provider, retry));
 				else {
 					const pinned = await pinnedLimitNotice(until.getTime());
 					if (holdId !== id || orch.status !== "rate-limited") return;

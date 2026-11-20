@@ -24,7 +24,8 @@ import { NO_ACCOUNT_RETRY_MS, zeleState } from "./zele.ts";
 import { loadGuardConfig, SUB_COMPACT_STOP, SUB_COMPACT_WRAP_UP } from "./lanegates.ts";
 import { harnessProjects, denyLines } from "./harnessprojects.ts";
 import { listSetups } from "./workchannels.ts";
-import { allWatches, FAIL_ALERT_AFTER, FAIL_ALERT_EVERY_MS } from "./watch.ts";
+import { allWatches, FAIL_ALERT_AFTER } from "./watch.ts";
+import { FAIL_ALERT_EVERY_MS } from "./watch-backoff.ts";
 import { activeHarness, EXTENSION_DIRS, runtimeFor } from "./runtime/index.ts";
 
 export type Applies = "live" | "restart" | "next-turn";

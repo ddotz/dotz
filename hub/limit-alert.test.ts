@@ -67,11 +67,26 @@ test("kinds, accounts, owner text and the slow backoff", () => {
 	expect(limitAccount("401", "openai/x")).toBe("openai");
 	const text = blockText("auth", "imported-anthropic", "anthropic", 30 * MIN);
 	expect(text.startsWith("anthropic 로그인이 풀려서 일이 멈췄어요. 계정: imported-anthropic.")).toBe(true);
-	expect(text).toContain("/login anthropic");
-	expect(blockText("auth", "anthropic", "anthropic", 30 * MIN).startsWith("anthropic 로그인이 풀려서 일이 멈췄어요. 이 게이트웨이")).toBe(true);
+	expect(text).toContain("로그인 열기");
+	expect(text).not.toMatch(/\/login|컴퓨터에서/);
+	expect(text).toContain("30분 뒤에 조용히 다시 시도해요");
+	expect(text).toContain("그동안 온 메시지는 모아뒀다가 해결되면 순서대로 처리해요");
+	expect(blockText("auth", "anthropic", "anthropic", 30 * MIN).startsWith("anthropic 로그인이 풀려서 일이 멈췄어요. 알림의 로그인 열기 버튼이나 설정 > 계정에서 anthropic에 다시 로그인해 주세요.")).toBe(true);
 	expect(text).not.toMatch(/authentication|fallback is off/);
 	expect([1, 2, 3, 4, 5, 9].map(ownerRetryMs)).toEqual([30 * MIN, 60 * MIN, 120 * MIN, 240 * MIN, 360 * MIN, 360 * MIN]);
 	expect(omo.classifyError("authentication_failed")).toBe("owner");
+});
+
+test("a turn that works on another provider does not end the login stop of the one still down, so the next blocked session is not told again", () => {
+	expect(noteBlock("orchestrator", "anthropic", "auth", T0, false, "anthropic").alert).toBe(true);
+	expect(noteBlock("lane:site", "anthropic", "auth", T0 + MIN, false, "anthropic").alert).toBe(false);
+	expect(noteRecovered("orchestrator", "openai-codex")).toBeUndefined();
+	expect(noteBlock("lane:site", "anthropic", "auth", T0 + 40 * MIN, false, "anthropic").alert).toBe(false);
+	expect(noteBlock("lane:other", "openai-codex", "auth", T0 + 41 * MIN, false, "openai-codex").alert).toBe(true);
+	expect(noteRecovered("lane:site", "anthropic")?.kind).toBe("auth");
+	expect(noteRecovered("lane:other", "openai-codex")?.provider).toBe("openai-codex");
+	expect(noteBlock("orchestrator", "anthropic", "auth", T0 + 3 * 3600_000, false, "anthropic").alert).toBe(true);
+	rmSync(limitAlertsFile(), { force: true });
 });
 
 class FakeAgent implements AgentProcess {
@@ -159,7 +174,7 @@ test("orchestrator: an auth block alerts once in plain Korean, retries slowly an
 	expect(o.orch.pauseKind).toBe("owner");
 	expect(alerts).toHaveLength(1);
 	expect(alerts[0]).toContain("imported-anthropic");
-	expect(alerts[0]).toContain("/login anthropic");
+	expect(alerts[0]).toContain("로그인 열기");
 	expect(alerts[0]).not.toMatch(/authentication|fallback is off/);
 
 	// the first probe (30 min) fails again: no new alert, and the next probe waits twice as long

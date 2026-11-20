@@ -9,7 +9,7 @@ import { shortTitle } from "./notice-title.ts";
 import { DRAFT_SEND, draftApprovalBlock, draftVerdict } from "./draft-approval.ts";
 import { emit, eventTarget, type HubEvent, lastEventId, recentEvents, replayAfter } from "./events.ts";
 import { markRead } from "./reads.ts";
-import { watchChoice } from "./watch.ts";
+import { watchChoice } from "./watch-ask.ts";
 import { blockText, recoveryText } from "./limit-alert.ts";
 import { en } from "./i18n-en.ts";
 import { ko } from "./i18n-ko.ts";
@@ -1715,7 +1715,7 @@ test("worklog posts that are not [ask], [fail] or [done] are born read and are t
 test("a login-lost alert is the same with or without the channel tag in front, and its stored text has no tag", () => {
 	const stop = blockText("auth", "anthropic", "anthropic", 1_800_000);
 	post("alert", `[ch:1570000000000000001] 샘플-2: ${stop}`, { source: "gateway" });
-	const p = stored().find(n => n.kind === "alert" && n.text.includes("/login anthropic"))!;
+	const p = stored().find(n => n.kind === "alert" && n.text.includes("anthropic 로그인이 풀려서 일이 멈췄어요"))!;
 	expect(p.text.startsWith("샘플-2: anthropic 로그인이 풀려서 일이 멈췄어요")).toBe(true);
 	expect(classOfNotice(p)).toMatchObject({ cls: "alert" });
 	post("alert", `[ch:1570000000000000001] 샘플-2: ${recoveryText()}`, { source: "gateway" });
