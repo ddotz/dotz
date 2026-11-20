@@ -17,9 +17,18 @@ const call = async (method: string, path: string, body?: unknown) => {
 };
 
 test("the fields read the schedule's own values, the words without its internal target", () => {
-	const s = addSchedule({ text: "ch:123 아침 보고 써 줘", in_minutes: 60, every_minutes: 1440 });
-	expect(val(s.id)).toEqual({ enabled: true, at: localTime(s.at), every_minutes: 1440, text: "아침 보고 써 줘" });
-	expect(SCHEDULE_FIELDS.map(f => [f.key, f.section])).toEqual([["enabled", "watch"], ["at", "watch"], ["every_minutes", "watch"], ["text", "advanced"]]);
+	const s = addSchedule({ name: "sample-2 보고", kind: "task", text: "ch:123 아침 보고 써 줘", in_minutes: 60, every_minutes: 1440 });
+	expect(val(s.id)).toEqual({ name: "sample-2 보고", kind: "task", enabled: true, at: localTime(s.at), every_minutes: 1440, text: "아침 보고 써 줘" });
+	expect(SCHEDULE_FIELDS.map(f => [f.key, f.section])).toEqual([["name", "watch"], ["kind", "watch"], ["enabled", "watch"], ["at", "watch"], ["every_minutes", "watch"], ["text", "advanced"]]);
+});
+
+test("the name and the kind are the owner's to change; a blank name or an unknown kind is refused", () => {
+	const s = addSchedule({ name: "sample-2", text: "ch:123 회의 알려 줘", in_minutes: 60 });
+	expect(val(s.id)).toMatchObject({ name: "sample-2", kind: "owner" });
+	writeScheduleSettings(s.id, { name: " sample-3 ", kind: "task" });
+	expect(stored(s.id)).toMatchObject({ name: "sample-3", kind: "task", text: "ch:123 회의 알려 줘" });
+	for (const bad of [{ name: "  " }, { kind: "loud" }]) expect(() => writeScheduleSettings(s.id, bad)).toThrow();
+	expect(stored(s.id)).toMatchObject({ name: "sample-3", kind: "task" });
 });
 
 test("one write pauses, moves, repeats and rewords it; the target stays and 0 makes it one-shot", () => {

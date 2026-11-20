@@ -343,6 +343,8 @@ export const ko: Catalog = {
 	},
 	inboxSchedule: (id, every, channel) => `[dotz inbox] 예약 항목 (${id}${every ? `, ${every}분마다` : ""}) - 지금 처리하세요. 최종 답은 ${channel}로 가요:`,
 	inboxCheck: (ids, channel) => `[dotz inbox] 조용한 점검 (${ids.join(", ")}) - 오너가 시킨 일이 아니라 내가 걸어 둔 시스템 점검${ids.length > 1 ? `이에요. ${ids.length}개가 같은 시각이라 한 번에 와요: 번호 순서대로 보고 답은 하나로 쓰세요` : "이에요"}. 모두 정상이면 평범한 한 줄로만 답하세요(조용히 작업내역에만 남아요). 오너가 정해야 하거나 꼭 알아야 할 때만 답을 [ask] 또는 [fail]로 시작하세요. 할 말이 없으면 \"-\" 한 글자만 답하세요. 최종 답은 ${channel}로 가요:`,
+	scheduleNaming: items => `[dotz gateway] 이름과 작업 종류가 생기기 전에 만든 예약에 이름을 한 번 붙여요. 아래 id마다 dotz_schedule action=edit {id, name, kind}를 부르세요. name: 그것이 무엇인지 말하는 오너의 언어로 된 짧은 제목이에요(40자까지, 언제인지가 아니라 무엇인지, 예: "피드백 일일 보고"). kind: 글이 그 시각에 오너에게 전할 말이면(예: "3시에 회의 알려줘") "owner", 당신이 할 일이면(보고, 찾아보기, 명령 실행) "task"예요. [task]나 [check]가 붙은 id는 그 종류 그대로 두고 이름만 주세요. 다른 것은 바꾸지 마세요. 모두 마치면 "-" 하나만 답하세요.\n${items.map(i => `- ${i.id}${i.fixed ? ` [${i.fixed}]` : ""}${i.conv ? ` (${i.conv})` : ""}: ${i.text.replace(/\s+/g, " ").slice(0, 300)}`).join("\n")}`,
+	scheduleNamed: list => `예약에 이름과 종류를 붙였어요: ${list.map(s => `${s.name}(${({ owner: "알림", task: "작업", check: "조용한 점검" })[s.kind]})`).join(", ")}. 바꾸려면 모니터링의 예약 줄 ⋯이나 설정의 예약한 일에서 고칠 수 있어요.`,
 	scheduleCheckLine: text => `${SCHEDULE_CHECK_LEAD} ${text}`,
 	inboxThread: (thread, parent) => ` (#${parent}의 스레드 "${thread}". 답은 스레드로 가요)`,
 	inboxFirst: channel => `(새 작업 채널 #${channel}: 오너는 채널 단위로 일을 맡겨요. 이 채널의 작업과 보고는 여기에 두세요. 이 채널의 일에 로그인 유지나 시간이 지나며 확인할 것이 필요하면 직접 dotz_channel setup으로 이 채널에 설정하세요.)`,
@@ -371,7 +373,7 @@ export const ko: Catalog = {
 2. 진짜 교훈마다 ${lessons}에 날짜가 붙은 줄을 하나 추가하거나 고치세요(파일은 ${LESSONS_MAX_BYTES}바이트 안으로 유지하고(넘는 줄은 게이트웨이가 거절해요), 더 이상 맞지 않거나 규칙이 이미 다루는 교훈은 지우세요). 위 오너의 정정이나 반응마다 ${paths.observations}에 출처가 붙은 줄을 하나 남기세요. 오래 갈 오너의 선호나 맥락(분명히 말했거나 거기서 두 번 보인 것)은 ${paths.owner}로, 오너가 직접 한 '하지 마'는 원문 그대로 출처와 함께 ${paths.boundaries}로 옮기세요. 오너가 말하거나 한 것만 적고, 다른 사람에 대해서는 여기에 쓰지 마세요.
 3. 문제가 있으면(실패, 이상, 되풀이된 실수, 토큰 누수, RULES.md나 LESSONS.md가 이미 다루는데도 되풀이된 일) alert로 한 번만 ${koIssue}
 4. 여기서 RULES.md는 절대 수정하지 마세요. 규칙 변경은 선택지로 올리고 답을 기다리세요.
-5. 위 예약이 서로 겹치면 합치고(dotz_schedule remove 후 add), 할 일이 끝난 예약은 지우세요.
+5. 위 예약이 서로 겹치면 합치고(dotz_schedule remove 후 같은 이름과 종류로 add), 할 일이 끝난 예약은 지우세요.
 6. 마지막으로 dotz_send worklog에 한 줄만 올리세요(identity의 Notices 문체, "${NIGHT_LEAD} ..."로 시작). 문제가 없었다면 이 한 줄이 전부예요. alert에는 아무것도 보내지 마세요.`,
 
 	lessonRepeats: (rows, today) => `\n\n아직 지키게 하는 장치가 없는 교훈이에요. 오늘의 정정과 맞춰 봤어요. 단어가 아니라 뜻으로 판단하세요: 점수는 정정이 교훈의 단어를 얼마나 되풀이했는지일 뿐이고("likely" = 0.4 이상), "broken N"은 이미 어긴 것으로 확인된 밤의 수예요. 오늘 정말 어긴 교훈마다: 그 줄의 "(broken: ...)" 목록에 ${today}를 더하고(없으면 새로), 되는 가장 높은 단계에서 고치세요: 코드나 이 계약에서 원인을 없애고, 안 되면 바른 방법을 알려 주는 가드나 검사, 그다음 테스트예요. 판단이 필요한 것만 문장을 고치고 실패 예를 붙이세요. 구조로 고친 뒤 줄 끝에 "(enforced: <가드·검사·테스트>)"를 붙이고, 실수가 더는 일어날 수 없으면 교훈을 지우세요. 두 밤 이상 어긴 교훈은 문장을 또 고치지 말고 지금 구조로 고치세요. 나머지는 그대로 두세요:\n${rows.map(r => `${r.line}${r.broken ? ` [broken ${r.broken}]` : ""}${r.likely ? ` [likely ${r.score}]` : ""}`).join("\n")}`,

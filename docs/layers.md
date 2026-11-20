@@ -115,7 +115,7 @@ API (all behind the hub token, JSON):
   every_minutes, on, pattern, lastRun, lastOk, nextAt, fails, paused), `routines`/`schedules` scoped to the project.
 - `PUT /api/projects` `{ key, title?, purpose?, paused? }` -> the merged record. `goal` and `milestones` in the body are ignored.
 - `PATCH /api/watches/<id>` `{ every_minutes?, pattern?, on?, paused? }` -> the watch.
-- `PATCH /api/schedules/<id>` `{ every_minutes?, at?, text?, paused? }` -> the schedule.
+- `PATCH /api/schedules/<id>` `{ name?, kind?, every_minutes?, at?, text?, paused? }` -> the schedule (`kind`: owner, task or check).
 - `GET /api/todo?target=main|lane:<n>|ch:<id>` -> `{ phases: [{ name, tasks: [{ content, status }] }], at }` from the
   latest `todo` tool result `details` in the target's OmO session file, or `{ phases: [] }`.
 

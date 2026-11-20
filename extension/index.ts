@@ -48,7 +48,7 @@ import { installSubagentBrief } from "./subagent-brief.ts";
 import { jsonZod, params } from "./schema.ts";
 import { secretIn } from "./peer-secrets.ts";
 import { recallTool } from "./recall-tool.ts";
-import { scheduleKindRefusal } from "./schedule-tool.ts";
+import { scheduleAddRefusal } from "./schedule-tool.ts";
 import { type Host, ompHosts, refuseInSubagents } from "./omp-host.ts";
 import { WORKER_GATE_AGENT_DIR_ENV } from "./harness-gate.ts";
 import { installWorkerGate } from "./worker-gate.ts";
@@ -460,13 +460,14 @@ function orchestratorTools(pi: any): void {
 	pi.registerTool({
 		name: "dotz_schedule",
 		label: "Dotz schedule",
-		description: "Reminders and recurring jobs: at the time, the text comes back to you as an inbox turn to act on. Use it when the owner says remind me / tell me when / every day. action=add {kind (required), text, at (ISO with offset, e.g. 2026-10-17T09:00:00+09:00) or in_minutes, every_minutes? (>=5), project? (a ch:/th:/mail:/settings: conversation target)}; list; remove {id}. kind owner: the owner explicitly asked to be told, reminded or sent this (delivered and notified). kind check: your own check or follow-up (quiet: the owner hears only an answer starting with [ask] or [fail]); one-shot checks round up to the next :00/:30, and those of one conversation due together are one turn. A schedule made in a conversation session comes back to that session; project names another conversation.",
-		parameters: z.object({ action: z.enum(["add", "list", "remove"]), kind: z.enum(["owner", "check"]).optional(), text: z.string().optional(), at: z.string().optional(), in_minutes: z.number().optional(), every_minutes: z.number().optional(), project: z.string().optional(), id: z.string().optional() }),
+		description: "Reminders, scheduled jobs and your own checks: at the time, the text comes back to you as an inbox turn to act on. Use it when the owner says remind me / tell me when / every day / do this at. action=add {name (required), kind (required), text, at (ISO with offset, e.g. 2026-10-17T09:00:00+09:00) or in_minutes, every_minutes? (>=5), project? (a ch:/th:/mail:/settings: conversation target)}; edit {id, name?, kind?, text?, at?, every_minutes?}; list; remove {id}. name: a short title in the owner's language (up to 40 characters) saying what it is, not when (e.g. \"Daily feedback report\"); the owner reads it and can change it. Pick the kind by what the text is: kind owner = a reminder, words to pass on to the owner at that time (\"remind me of the 3 pm meeting\"; it rings). kind task = work the owner gave you, an instruction you carry out at that time (a report, a lookup, a command, posting somewhere); the owner hears your result. kind check = your own check or follow-up (quiet: the owner hears only an answer starting with [ask] or [fail]); one-shot checks round up to the next :00/:30, and those of one conversation due together are one turn. A schedule made in a conversation session comes back to that session; project names another conversation.",
+		parameters: z.object({ action: z.enum(["add", "edit", "list", "remove"]), name: z.string().optional(), kind: z.enum(["owner", "task", "check"]).optional(), text: z.string().optional(), at: z.string().optional(), in_minutes: z.number().optional(), every_minutes: z.number().optional(), project: z.string().optional(), id: z.string().optional() }),
 		async execute(_id: string, p: any) {
-			const refusal = scheduleKindRefusal(p);
+			const refusal = scheduleAddRefusal(p);
 			if (refusal) return { content: [{ type: "text", text: refusal }] };
 			const out =
 				p.action === "add" ? await call("/api/schedules", { method: "POST", body: JSON.stringify({ ...p, session: process.env.DOTZ_CONV ?? "main" }) })
+				: p.action === "edit" ? await call(`/api/schedules/${p.id}`, { method: "PATCH", body: JSON.stringify({ name: p.name, kind: p.kind, text: p.text, at: p.at, every_minutes: p.every_minutes }) })
 				: p.action === "list" ? await call("/api/schedules")
 				: await call(`/api/schedules/${p.id}`, { method: "DELETE" });
 			return { content: [{ type: "text", text: JSON.stringify(out).slice(0, 3000) }] };

@@ -192,7 +192,7 @@ columns from 1100px, one on a phone. The request box sends to the orchestrator (
 
 One click on a routine sends `[루틴 <name>] <prompt>` as an owner web message, to the orchestrator or to the session in
 `target`. A routine with `schedule` keeps exactly one `dotz_schedule` entry whose text starts with
-`[routine:<id>:<hash6>] ` (`hash6` = sha1 of the routine's JSON). The gateway syncs these entries at start and whenever
+`[routine:<id>:<hash6>] ` (`hash6` = sha1 of the routine's JSON), named after the routine and of kind `task`. The gateway syncs these entries at start and whenever
 `pins.json` changes: it removes stale ones (the id is gone, the routine changed, or its schedule was removed) and adds
 missing ones. Schedules without the `[routine:` tag are never touched.
 

@@ -511,6 +511,20 @@ test("routine sync adds one entry per scheduled routine with the contract tag, t
 	expect(b.every_minutes).toBe(30);
 });
 
+test("a routine's entry carries the routine's name and the task kind; one stored before names gets them at the next sync", () => {
+	pins({ routines: [{ id: "morning", name: "sample-2 점검", prompt: "훑어줘", target: "main", schedule: { at: "09:00" } }] });
+	syncRoutineSchedules();
+	const [entry] = routineEntries();
+	expect(entry).toMatchObject({ name: "sample-2 점검", kind: "task" });
+	const before = addSchedule({ text: entry!.text, at: entry!.at, every_minutes: 1440 });
+	removeSchedule(entry!.id);
+	const legacy = listSchedules().find(s => s.id === before.id)!;
+	delete legacy.name;
+	delete legacy.kind;
+	syncRoutineSchedules();
+	expect(routineEntries()).toEqual([expect.objectContaining({ id: before.id, name: "sample-2 점검", kind: "task" })]);
+});
+
 test("routine sync is idempotent, replaces on a hash change and removes what is no longer wanted", () => {
 	const r = { id: "r1", name: "n", prompt: "one", schedule: { at: "09:00" } };
 	pins({ routines: [r] });

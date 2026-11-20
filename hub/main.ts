@@ -513,11 +513,11 @@ if (restarted) {
 }
 // After an update and restart: local changes the updater backed up (dotz-local/<stamp>) and text overrides that no longer fit this version
 // each wake the orchestrator once (hub/carryover.ts, hub/texts.ts), so the bot ports them to the custom layer.
-function wakeOnce(id: string, text: string) {
+function wakeOnce(id: string, text: string, quiet?: true) {
 	const channel = discord.status.enabled ? "chat" : "web";
 	const event = { ts: now(), kind: "schedule", source: "gateway", channel, id, text };
 	emit("inbox", event);
-	deliver(inboxText(event), { target: channel });
+	deliver(inboxText(event), { target: channel, quiet });
 }
 if (process.env.DOTZ_NO_ORCHESTRATOR !== "1") {
 	startWebI18n();
@@ -574,21 +574,21 @@ startStallSweep((conversation, r) => {
 startOrphanReaper();
 startAgentTrees();
 startHostSweep();
-startSchedules((s, group) => {
+startSchedules((s, group, runs) => {
 	const channel = scheduleTarget(s, discord.status.enabled ? "chat" : "web");
 	// A check is the assistant's own: its turn is quiet (hub/prompts.ts quiet). Checks due together arrive as one numbered turn.
 	if (s.kind === "check") {
 		const all = group ?? [s];
 		const text = all.length > 1 ? all.map((x, i) => `${i + 1}) [${x.id}] ${x.text}`).join("\n") : s.text;
 		// source "gateway" like wakeOnce: no 예약 notice in the bell and no card in the chat, the turn is the assistant's own
-		const event = { ts: now(), kind: "schedule", source: "gateway", channel, id: all.map(x => x.id).join(","), ids: all.map(x => x.id), quiet: true, text };
+		const event = { ts: now(), kind: "schedule", source: "gateway", channel, id: all.map(x => x.id).join(","), ids: all.map(x => x.id), runs, quiet: true, text };
 		emit("inbox", event);
 		return void deliver(inboxText(event), { target: channel, quiet: true });
 	}
-	const event = { ts: now(), kind: "schedule", source: "schedule", channel, id: s.id, every: s.every_minutes, text: s.text };
+	const event = { ts: now(), kind: "schedule", source: "schedule", channel, id: s.id, run: runs[0], every: s.every_minutes, text: s.text };
 	emit("inbox", event);
 	deliver(inboxText(event), { target: channel });
-});
+}, process.env.DOTZ_NO_ORCHESTRATOR === "1" ? undefined : { wake: text => wakeOnce("schedule-naming", text, true), post: line => void out(discord.status.enabled ? "worklog" : "web", line, undefined, { source: "gateway", wk: "system" }).catch(e => log(`schedule naming notice failed: ${e}`)) });
 syncRoutineSchedules();
 startReflection(text => deliver(text), () => orch.sessionFile, text => out("alert", text, undefined, { source: "gateway", nk: "alert" }), text => void steerOrchestrator(text), recipeBlock);
 startDayNote();

@@ -398,6 +398,8 @@ export const paths = {
 	hubToken: join(DATA_DIR, "secrets", "hub-token"),
 	pid: join(DATA_DIR, "hub.pid"),
 	schedules: join(DATA_DIR, "schedules.json"),
+	scheduleRuns: join(DATA_DIR, "schedule-runs.json"),
+	scheduleNaming: join(DATA_DIR, "schedule-naming.json"),
 	watches: join(DATA_DIR, "watches.json"),
 	setups: join(DATA_DIR, "channel-setups.json"),
 	rules: join(DATA_DIR, "RULES.md"),

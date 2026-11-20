@@ -12,7 +12,7 @@ import { cfg, DATA_DIR, expand, HOME, log, paths, TEMPLATES, TZ, writeAtomic } f
 import { loadFeatureDirs } from "./featuredirs.ts";
 import { loadProjectInfo, type ProjectInfo } from "./projectinfo.ts";
 import { loadProjects, type ProjectRecord } from "./projects.ts";
-import { addSchedule, listSchedules, removeSchedule, type Schedule } from "./schedule.ts";
+import { addSchedule, listSchedules, patchSchedule, removeSchedule, type Schedule } from "./schedule.ts";
 import { type GitState, gitState, type ReceiptIn, readReceipts, readReport } from "./custom-detail-data.ts";
 import { newestRules, reportHead, ruleTitle } from "./custom-text.ts";
 import { repoOfCached } from "./fleet-launch.ts";
@@ -454,14 +454,16 @@ function syncRoutines(routines: Routine[]): void {
 			if (!s.text.startsWith("[routine:")) continue;
 			const m = ROUTINE_TAG.exec(s.text);
 			const r = m ? wanted.get(m[1]) : undefined;
-			if (m && r && m[2] === hashOf(r) && !kept.has(r.id)) kept.add(r.id);
-			else removeSchedule(s.id);
+			if (m && r && m[2] === hashOf(r) && !kept.has(r.id)) {
+				kept.add(r.id);
+				if (!s.name) patchSchedule(s.id, { name: r.name.trim() || r.id, kind: "task" });
+			} else removeSchedule(s.id);
 		}
 		for (const r of wanted.values()) {
 			if (kept.has(r.id)) continue;
-			const text = `[routine:${r.id}:${hashOf(r)}] ${r.name}\n${r.prompt}`;
-			if ("at" in r.schedule!) addSchedule({ text, at: new Date(nextAt(r.schedule.at)).toISOString(), every_minutes: 1440 });
-			else addSchedule({ text, at: new Date(Date.now() + r.schedule!.every_minutes * 60_000).toISOString(), every_minutes: r.schedule!.every_minutes });
+			const text = `[routine:${r.id}:${hashOf(r)}] ${r.name}\n${r.prompt}`, named = { name: r.name.trim() || r.id, kind: "task" };
+			if ("at" in r.schedule!) addSchedule({ ...named, text, at: new Date(nextAt(r.schedule.at)).toISOString(), every_minutes: 1440 });
+			else addSchedule({ ...named, text, at: new Date(Date.now() + r.schedule!.every_minutes * 60_000).toISOString(), every_minutes: r.schedule!.every_minutes });
 		}
 	} catch (e) {
 		log(`custom: routine schedule sync failed: ${msg(e)}`);
