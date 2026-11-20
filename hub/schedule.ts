@@ -182,7 +182,7 @@ export function addSchedule(input: { name?: unknown; text?: string; at?: string;
 
 // The owner's edit from the project page (PATCH /api/schedules/<id>): persisted and re-armed. `paused` keeps the entry but
 // nothing fires; a recurring one resumes at its next slot after now, a one-shot whose time passed fires at once. `every_minutes: null` makes it one-shot.
-export function patchSchedule(id: string, input: { name?: unknown; every_minutes?: unknown; at?: unknown; text?: unknown; paused?: unknown; kind?: unknown }): Schedule {
+export function patchSchedule(id: string, input: { name?: unknown; every_minutes?: unknown; at?: unknown; text?: unknown; paused?: unknown; kind?: unknown }, byAssistant = false): Schedule {
 	const s = items.find(x => x.id === id);
 	if (!s) throw new Error(`no schedule ${id}`);
 	const name = input.name === undefined ? s.name : nameOf(input.name);
@@ -192,8 +192,9 @@ export function patchSchedule(id: string, input: { name?: unknown; every_minutes
 	const at = input.at === undefined ? Date.parse(s.at) : typeof input.at === "string" ? Date.parse(input.at) : Number.NaN;
 	if (!Number.isFinite(at)) throw new Error("at must be an ISO time with offset, e.g. 2026-10-17T09:00:00+09:00");
 	if (input.paused !== undefined && typeof input.paused !== "boolean") throw new Error("paused must be true or false");
-	const late = lateEdit(id, input);
+	const late = byAssistant ? lateEdit(id, input) : undefined;
 	const kind = late?.hard ? "task" : input.kind === undefined ? s.kind : kindOf(input.kind);
+	if (!byAssistant && input.kind !== undefined) ownerKind(id);
 	if (name) s.name = name;
 	s.text = text;
 	s.at = new Date(at).toISOString();
@@ -260,6 +261,13 @@ function lateEdit(id: string, input: { name?: unknown; kind?: unknown }): { hard
 	if (!state?.late?.includes(id) || (input.name === undefined && input.kind === undefined)) return undefined;
 	if (Date.now() - Date.parse(state.at) >= LATE_EDIT_MS) return void (lateNaming = undefined);
 	return { hard: state.hard.includes(id) };
+}
+function ownerKind(id: string): void {
+	for (const n of [naming, lateNaming]) {
+		if (!n?.state.hard.includes(id)) continue;
+		n.state.hard = n.state.hard.filter(x => x !== id);
+		saveNaming(n.state);
+	}
 }
 function queueLate(id: string): void {
 	lateQueue.add(id);

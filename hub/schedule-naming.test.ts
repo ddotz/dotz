@@ -52,12 +52,12 @@ test("an old file loads as it is; hard signs make a task at once, the assistant 
 	expect(byId(store, "d00004").kind).toBe("check");
 	expect(posted).toEqual([]);
 
-	store.patchSchedule("a00001", { name: "sample-2 확인" });
-	store.patchSchedule("b00002", { name: "sample-2 소식", kind: "owner" });
-	store.patchSchedule("c00003", { name: "회의", kind: "task" });
-	store.patchSchedule("d00004", { name: "sample-2 점검" });
+	store.patchSchedule("a00001", { name: "sample-2 확인" }, true);
+	store.patchSchedule("b00002", { name: "sample-2 소식", kind: "owner" }, true);
+	store.patchSchedule("c00003", { name: "회의", kind: "task" }, true);
+	store.patchSchedule("d00004", { name: "sample-2 점검" }, true);
 	expect(posted).toEqual([]);
-	store.patchSchedule("f00006", { name: "sample-3 정리" });
+	store.patchSchedule("f00006", { name: "sample-3 정리" }, true);
 	expect(byId(store, "c00003").kind).toBe("task");
 	expect(byId(store, "b00002").kind).toBe("task");
 	expect(onDisk("f00006")).toMatchObject({ name: "sample-3 정리", kind: "task", keep: { by: "a newer version" } });
@@ -95,16 +95,30 @@ test("an edit that lands after the deadline keeps a hard id a task and is told o
 	store.startSchedules(() => {}, naming);
 	await advance(store.NAMING_WAIT_MS);
 	expect(posted).toHaveLength(1);
-	store.patchSchedule("a00001", { name: "sample-2 확인", kind: "owner" });
-	store.patchSchedule("c00003", { name: "회의", kind: "task" });
+	store.patchSchedule("a00001", { name: "sample-2 확인", kind: "owner" }, true);
+	store.patchSchedule("c00003", { name: "회의", kind: "task" }, true);
 	expect(byId(store, "a00001").kind).toBe("task");
 	expect(posted).toHaveLength(1);
 	await advance(store.LATE_POST_MS);
 	expect(posted[1]).toBe(msg().scheduleNamed([{ name: "sample-2 확인", kind: "task" }, { name: "회의", kind: "task" }]));
-	store.patchSchedule("c00003", { name: "주간 회의", kind: "owner" });
+	store.patchSchedule("c00003", { name: "주간 회의", kind: "owner" }, true);
 	await advance(store.LATE_POST_MS);
 	expect(posted).toHaveLength(2);
 	expect(byId(store, "c00003").kind).toBe("owner");
+});
+
+test("the owner's own kind edit in settings during the late window stays as he set it and is not told as a naming edit", async () => {
+	const store = await load([old("a00001", "sample-2 `bun run check`")]);
+	const { posted, naming } = deps();
+	store.startSchedules(() => {}, naming);
+	await advance(store.NAMING_WAIT_MS);
+	expect(posted).toHaveLength(1);
+	store.patchSchedule("a00001", { name: "sample-2 알림", kind: "owner" });
+	await advance(store.LATE_POST_MS);
+	expect(store.scheduleKind(byId(store, "a00001"))).toBe("owner");
+	expect(posted).toHaveLength(1);
+	store.patchSchedule("a00001", { name: "sample-2 확인", kind: "owner" }, true);
+	expect(store.scheduleKind(byId(store, "a00001"))).toBe("owner");
 });
 
 test("a restart while the assistant is naming does not wake it again and keeps the deadline", async () => {

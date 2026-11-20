@@ -3,7 +3,7 @@ import type { HubEvent } from "./events.ts";
 import { msg } from "./i18n.ts";
 import { items, putDecision, upsert } from "./notices-store.ts";
 import { RUN_DECISION, runKey } from "./notices-schedule.ts";
-import type { Reply, RunLabel, RunOutcome } from "./prompts-model.ts";
+import { REPLAY_MAX_AGE_MS, type Reply, type RunLabel, type RunOutcome } from "./prompts-model.ts";
 import { listScheduleRuns, markScheduleRun, runNow, type Schedule, type ScheduleNaming, type ScheduleRun, scheduleKind, scheduleTarget } from "./schedule.ts";
 
 /** What a fire needs from the running gateway: the inbox event out, the prompt in, and the default channel ("chat" with Discord, else "web"). */
@@ -42,8 +42,12 @@ export const namingDeps = (d: { wake: (id: string, text: string, quiet: true) =>
 const rowOf = (run: string) => items.find(n => n.key === runKey(run));
 const stillWaiting = (r: ScheduleRun, text: string) => text === msg().scheduleRun.running || text === msg().scheduleRun.held(r.name);
 
-/** What became of a run's turn (hub/prompts.ts): the run record's state, and a task run's row when no posted answer rewrote it. */
-export function scheduleRan(label: RunLabel, outcome: RunOutcome): void {
+/** Did the runs of `label` get their own outcome (posted or nothing to tell)? A restart replays a run prompt only while they did not. */
+export const runSettled = (label: RunLabel): boolean => label.ids.every(id => ["answered", "silent"].includes(runOf(id)?.state ?? ""));
+
+/** What became of a run's turn (hub/prompts.ts): the run record's state, and a task run's row when no posted answer rewrote it. `seen`: the answer
+ *  went out as the owner's own exchange (he wrote into the run's turn), so the row is born read and pushes nothing of its own. */
+export function scheduleRan(label: RunLabel, outcome: RunOutcome, seen = false): void {
 	const marked = label.ids.flatMap(id => markScheduleRun(id, outcome) ?? []);
 	const [r] = marked;
 	if (label.sk === "check" || marked.length !== 1 || !r) return;
@@ -51,7 +55,7 @@ export function scheduleRan(label: RunLabel, outcome: RunOutcome): void {
 	const row = rowOf(r.run);
 	if (label.sk !== "task" || (row && !stillWaiting(r, row.text))) return;
 	const t = msg().scheduleRun;
-	upsert({ kind: "watch", tone: "", title: r.name, text: outcome === "silent" ? t.nothing : t.posted, open: row?.open ?? r.conv ?? "main", key: runKey(r.run), nk: "schedule", at: now(), ...(outcome === "silent" ? { read: true } : { unread: true }) });
+	upsert({ kind: "watch", tone: "", title: r.name, text: outcome === "silent" ? t.nothing : t.posted, open: row?.open ?? r.conv ?? "main", key: runKey(r.run), nk: "schedule", at: now(), ...(outcome === "silent" || seen ? { read: true } : { unread: true }) });
 }
 
 function heldRun(r: ScheduleRun): void {
@@ -68,10 +72,12 @@ function failRun(r: ScheduleRun): void {
 	putDecision({ key: runKey(r.run), title: t.failed(r.name), detail: r.name, to: `${RUN_DECISION}${r.run}`, open: row?.open ?? r.conv ?? "main", options: [{ n: 1, label: t.rerun, desc: "", action: "rerun" }, { n: 2, label: t.stop, desc: "", action: "stop" }], group: 1 }, now());
 }
 
-/** Looks at every run still waiting: one whose session is paused on a usage limit is held; a held one whose limit lifted FAIL_AFTER_MS ago with no result failed. */
+/** Looks at every run still waiting: one whose session is paused on a usage limit is held; a held one whose limit lifted FAIL_AFTER_MS ago with no result failed.
+ *  A fired run older than a restart replays (REPLAY_MAX_AGE_MS) is left alone: its prompt is gone, so no limit holds it. */
 export function sweepRuns(limited: (target: string) => boolean, fallback: string): void {
 	for (const r of listScheduleRuns()) {
 		if (r.state !== "fired" && r.state !== "held") continue;
+		if (r.state === "fired" && Date.now() - Date.parse(r.firedAt) >= REPLAY_MAX_AGE_MS) continue;
 		if (limited(r.conv ?? fallback)) {
 			if (r.state === "fired" || r.liftedAt) heldRun(markScheduleRun(r.run, "held") ?? r);
 		} else if (r.state === "held" && !r.liftedAt) markScheduleRun(r.run, "held", new Date(Date.now()).toISOString());

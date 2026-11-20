@@ -7,12 +7,12 @@ import { inboxText } from "./intake.ts";
 import { allNotices, answerDecision, answerReply, decisionsOf, type Notice, onDecision, onNoticeUnread } from "./notices.ts";
 import { firstSentence, SENTENCE_MAX } from "./notices-schedule.ts";
 import { createPrompts, type Pending } from "./prompts.ts";
-import type { Reply } from "./prompts-model.ts";
+import { type PromptDeps, REPLAY_MAX_AGE_MS, type Reply } from "./prompts-model.ts";
 import { classify, decisionPush, noticePush } from "./push.ts";
 import { deliverAnswer } from "./routes.ts";
 import { routeLanes } from "./routes-lanes.ts";
 import { advance, flush } from "./runtime/test-clock.ts";
-import { FAIL_AFTER_MS, fireSchedule, namingDeps, scheduleRan, sweepRuns } from "./schedule-fire.ts";
+import { FAIL_AFTER_MS, fireSchedule, namingDeps, runSettled, scheduleRan, sweepRuns } from "./schedule-fire.ts";
 import { addSchedule, listScheduleRuns, listSchedules, markScheduleRun, removeSchedule, runNow, startSchedules } from "./schedule.ts";
 
 const events: HubEvent[] = [];
@@ -34,11 +34,12 @@ afterEach(() => {
 	events.length = delivered.length = pushes.length = 0;
 });
 
-function session() {
+function session(extra: Partial<PromptDeps> = {}) {
 	const saved: Pending[][] = [];
 	const q = createPrompts({
 		deliver: () => {}, steer: () => true, working: () => true, note: (_t, _r, t) => t, isNote: () => false, clearProgress: () => {}, log: () => {}, persist: o => void saved.push(o), ran: scheduleRan,
 		post: async (target, text, replyTo, opts) => (emit("outbox", { ts: now(), kind: "out", source: "orchestrator", target, text, reply_to: replyTo ?? null, auto: true, ...opts }), { delivered: true }),
+		...extra,
 	});
 	const answer = async (d: { text: string; reply: Reply }, said: string) => {
 		q.deliver(d.text, d.reply);
@@ -164,6 +165,92 @@ test("a restart replay keeps the run link: the replayed prompt's answer still la
 	await flush();
 	expect(rowOf(run)).toMatchObject({ text: "다시 시작해서 끝냈어요", read: false });
 	expect(stateOf(run)).toBe("answered");
+});
+
+test("a run a usage limit stopped answers on its run when the session resumes with no prompt, and is not failed after the lift", async () => {
+	const s = addSchedule({ name: "sample-8 매일 점검", kind: "task", text: "sample-8 상태 보고해", in_minutes: 600 });
+	const run = runNow(s.id);
+	const { q } = session();
+	q.deliver(delivered[0]!.text, delivered[0]!.reply);
+	q.onPrompt(delivered[0]!.text);
+	q.settleTurn(true);
+	sweepRuns(() => true, "web");
+	sweepRuns(() => false, "web");
+	q.onAnswer("한도가 풀려서 끝냈어요. 표는 대화에 있어요.");
+	await flush();
+	expect(rowOf(run)).toMatchObject({ title: "sample-8 매일 점검", text: "한도가 풀려서 끝냈어요", read: false });
+	expect(pushes).toEqual([expect.objectContaining({ title: "sample-8 매일 점검 · 한도가 풀려서 끝냈어요" })]);
+	await advance(FAIL_AFTER_MS);
+	sweepRuns(() => false, "web");
+	expect(stateOf(run)).toBe("answered");
+});
+
+test("a run that waited on a background worker with [later] posts the worker's result on its run", async () => {
+	const s = addSchedule({ name: "sample-9 정리", kind: "task", text: "sample-9 정리해 줘", in_minutes: 600 });
+	const run = runNow(s.id);
+	const { q } = session();
+	q.deliver(delivered[0]!.text, delivered[0]!.reply);
+	q.onPrompt(delivered[0]!.text);
+	q.workersSpawned([{ id: "w-sample-9", description: "sample-9 정리" }]);
+	q.onAnswer("[later]");
+	q.settleTurn();
+	q.workersDone(["w-sample-9"]);
+	q.onAnswer("정리를 마쳤어요. 목록은 대화에 있어요.");
+	await flush();
+	expect(rowOf(run)).toMatchObject({ title: "sample-9 정리", text: "정리를 마쳤어요", read: false });
+	expect(stateOf(run)).toBe("answered");
+});
+
+test("the reword turn of a held run answer keeps the run: the rewrite lands on the run's row", async () => {
+	const s = addSchedule({ name: "sample-10 보고", kind: "task", text: "sample-10 보고해", in_minutes: 600 });
+	const run = runNow(s.id);
+	const notes: string[] = [];
+	const { q } = session({ review: t => (t.includes("금지어") ? "[다시 쓰기] 금지어 빼고 다시 써 주세요" : undefined), deliver: t => void notes.push(t) });
+	q.deliver(delivered[0]!.text, delivered[0]!.reply);
+	q.onPrompt(delivered[0]!.text);
+	q.onAnswer("금지어가 든 결과예요. 표는 대화에 있어요.");
+	expect(notes).toHaveLength(2);
+	q.onPrompt(notes[1]!);
+	q.onAnswer("고쳐 쓴 결과예요. 표는 대화에 있어요.");
+	await flush();
+	expect(rowOf(run)).toMatchObject({ title: "sample-10 보고", text: "고쳐 쓴 결과예요", read: false });
+	expect(stateOf(run)).toBe("answered");
+});
+
+test("a restart replays a run prompt until its own run is answered, whatever else was answered in its conversation", () => {
+	const s = addSchedule({ name: "sample-11 보고", kind: "task", text: "sample-11 보고해", in_minutes: 600 });
+	const run = runNow(s.id);
+	const pending: Pending[] = [{ text: delivered[0]!.text, at: Date.now(), target: "web", run: { ids: [run], sk: "task" } }];
+	const later = { answeredSince: () => true, runSettled };
+	expect(session(later).q.replay(pending, t => t)).toBe(1);
+	markScheduleRun(run, "answered");
+	expect(session({ answeredSince: () => false, runSettled }).q.replay(pending, t => t)).toBe(0);
+});
+
+test("the owner's message steered into a running schedule turn keeps the conversation's own push, and the run's row stays quiet", async () => {
+	const s = addSchedule({ name: "sample-12 보고", kind: "task", text: "sample-12 보고해", in_minutes: 600 });
+	const run = runNow(s.id);
+	const { q } = session({ note: (_t, _r, t) => `[note] ${t}`, isNote: t => t.startsWith("[note]") });
+	q.deliver(delivered[0]!.text, delivered[0]!.reply);
+	q.onPrompt(delivered[0]!.text);
+	expect(q.deliver("오늘 표도 같이 보여 줘", { target: "web", replyTo: "m-sample-12", owner: true })).toBe(true);
+	q.onPrompt("[note] 오늘 표도 같이 보여 줘");
+	q.onAnswer("결과와 오늘 표를 같이 올려요. 표는 아래에 있어요.");
+	await flush();
+	expect(pushes).toHaveLength(1);
+	expect(pushes[0]!.title).not.toContain("sample-12 보고");
+	expect(allNotices().find(n => n.key === "msg:main")).toMatchObject({ text: expect.stringContaining("결과와 오늘 표를 같이 올려요") });
+	expect(rowOf(run)).toMatchObject({ text: msg().scheduleRun.posted, read: true });
+	expect(stateOf(run)).toBe("answered");
+});
+
+test("a fired run older than a restart replays is not held by a later usage limit", async () => {
+	const s = addSchedule({ name: "sample-13 보고", kind: "task", text: "sample-13 보고해", in_minutes: 6000 });
+	const run = runNow(s.id);
+	await advance(REPLAY_MAX_AGE_MS);
+	sweepRuns(() => true, "web");
+	expect(stateOf(run)).toBe("fired");
+	expect(rowOf(run)).toMatchObject({ text: msg().scheduleRun.running });
 });
 
 test("POST /api/schedules/<id>/run fires a new run without moving `at`; GET lists the items and the runs", async () => {

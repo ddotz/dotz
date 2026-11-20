@@ -95,8 +95,10 @@ export type PromptDeps = {
 	settled?: (target: string, ids: string[]) => void;
 	/** A turn ended and was settled; not one a provider error stopped before it answered (that request stays open). */
 	turnEnded?: () => void;
-	/** What became of the turn of a prompt fired for schedule runs (its `run` label). */
-	ran?: (run: RunLabel, outcome: RunOutcome) => void;
+	/** What became of the turn of a prompt fired for schedule runs (its `run` label); `seen`: the answer went out as the owner's own exchange. */
+	ran?: (run: RunLabel, outcome: RunOutcome, seen?: boolean) => void;
+	/** Did these schedule runs already get their own outcome? Settles a stored run prompt on a restart, whatever else was answered in its conversation. */
+	runSettled?: (run: RunLabel) => boolean;
 };
 
 // Near-identical answers: the first NEAR_CHARS letters and digits (lowercased, no spaces or punctuation) match, at least NEAR_MIN long.

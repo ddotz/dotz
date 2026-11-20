@@ -649,7 +649,7 @@ export function makeRoute({ tailnetName = ownTailnetName, busyNow, restartGatewa
 		if (kakaoResponse) return kakaoResponse;
 		const settingsResponse = await routeSettings(req, url, parts);
 		if (settingsResponse) return settingsResponse;
-		const laneResponse = await routeLanes(req, url, parts);
+		const laneResponse = await routeLanes(req, url, parts, agentCall(req, peer));
 		if (laneResponse) return laneResponse;
 		return new Response("not found", { status: 404 });
 	};

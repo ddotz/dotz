@@ -40,7 +40,7 @@ import { createBurst, sameConv } from "./promptburst.ts";
 import { isSilent, laterParts, stripLater } from "./tone.ts";
 import { closeHanded, closeIdless, hushedAnswer, isLoud, waitedOn } from "./handed.ts";
 import { createAskAgain } from "./prompts-ask.ts";
-import { NEAR_CHARS, NEAR_MIN, head, MAX_PROMPTS, MAX_ANSWERED, REPLAY_MAX_AGE_MS, ORPHAN_MAX_AGE_MS, MAX_RECENT, remember, DEFER_MAX_AGE_MS, DEFER_BLOCKS_RESTART_MS, MAX_TURNS, TURN_SLACK_MS, CANCEL_NOTE_MS, LINK_MAX_AGE_MS, MAX_LINKS, REPORT_NOTE_CHARS, labels, type Prompt, type OwnerMessage, type Pending, type WorkLink, type OpenRequest, type WorkRow, type Reply, type PromptDeps, type Woke, type Turn } from "./prompts-model.ts";
+import { NEAR_CHARS, NEAR_MIN, head, MAX_PROMPTS, MAX_ANSWERED, REPLAY_MAX_AGE_MS, ORPHAN_MAX_AGE_MS, MAX_RECENT, remember, DEFER_MAX_AGE_MS, DEFER_BLOCKS_RESTART_MS, MAX_TURNS, TURN_SLACK_MS, CANCEL_NOTE_MS, LINK_MAX_AGE_MS, MAX_LINKS, REPORT_NOTE_CHARS, labels, type Prompt, type OwnerMessage, type Pending, type WorkLink, type OpenRequest, type WorkRow, type Reply, type PromptDeps, type Woke, type Turn, type RunLabel } from "./prompts-model.ts";
 export type { Prompt, OwnerMessage, Pending, WorkLink, OpenRequest, WorkRow, Reply, PromptDeps } from "./prompts-model.ts";
 
 /**
@@ -53,7 +53,7 @@ function holdForRewrite(deps: PromptDeps, prompts: Prompt[], deliver: (text: str
 	const note = p.target && !p.fallback && !p.from && !p.handback && !p.quiet && !p.cancelled && !deps.keepalive?.() && !isSilent(text) ? deps.review?.(text) : undefined;
 	if (!note) return false;
 	deps.log(`the answer to ${p.target} holds a word of the user's list; its session is asked to reword it`);
-	deliver(note, { target: p.target!, replyTo, refs, fallback: text });
+	deliver(note, { target: p.target!, replyTo, refs, fallback: text, ...(p.run ? { run: p.run } : {}) });
 	Object.assign(prompts.at(-1)!, { sent: p.sent, held: p.held });
 	p.held = undefined;
 	return true;
@@ -61,6 +61,7 @@ function holdForRewrite(deps: PromptDeps, prompts: Prompt[], deliver: (text: str
 
 /** A rewrite turn that wrote nothing (or only the no-op word) leaves the held answer as its answer. */
 const rewriteText = (p: Prompt, said: string, later: boolean): string => (p.fallback && !later && (!said.trim() || isSilent(said)) ? p.fallback : said);
+const postedRun = (run: RunLabel | undefined) => (run?.ids.length === 1 ? { run: run.ids[0], sk: run.sk } : {});
 /** The silent-wait check gave up on `d` (hub/waitcheck.ts): it is closed, and a session that handed it over, still waiting, is told once. */
 function closeDropped(deps: PromptDeps, d: Prompt): void {
 	d.done = true;
@@ -552,10 +553,12 @@ export function createPrompts(deps: PromptDeps) {
 		if (!via && rewrite(to.prompt ?? { key: "", text: "", at: Date.now(), target: to.target, replyTo: to.replyTo, sent: [] }, t, to.replyTo, to.prompt?.refs)) return save();
 		deps.answering?.(t, to.replyTo);
 		if (via) return (deps.handBack!(via, t, to.replyTo), settle());
+		const run = to.prompt?.run;
 		void deps
-			.post(to.target, t, to.replyTo, to.prompt && hushedAnswer(to.prompt, t, id => !isAnswered(id)))
+			.post(to.target, t, to.replyTo, { ...(to.prompt && hushedAnswer(to.prompt, t, id => !isAnswered(id))), ...postedRun(run) })
 			.then(r => {
 				if (!r.delivered) return;
+				if (run) deps.ran?.(run, "answered");
 				settle();
 				deps.clearProgress(to.target);
 			})
@@ -660,6 +663,7 @@ export function createPrompts(deps: PromptDeps) {
 		// (2026-11-11: usage-limit stops; 2026-11-13: a worker failed at start, and the reminder kept coming). Any other answer with no
 		// message id (another scheduled item, a quiet check) did not do their work, so it leaves them open for the run that resumes them.
 		if (!hush && p.target && !p.replyTo) closeIdless(openDeferred(), p, linksOf, deps.work?.() ?? [], deps.regenerated?.(p.text) === true);
+		const owned = Boolean(p.target && !hush && burst.seen(p.target).some(q => q.owner));
 		const ids = p.target && !hush ? [...(p.refs ?? []), ...burst.cover(p.target)] : [];
 		save();
 		if (!p.target) return;
@@ -673,7 +677,7 @@ export function createPrompts(deps: PromptDeps) {
 		const prior = [...p.sent.filter(s => sameConv(s.target, target)).map(s => s.text), ...held];
 		const repeat = hush || !t || (p.from && deps.handBack ? held : prior).some(h => h.includes(t) || (key.length >= NEAR_MIN && head(h) === key));
 		if (repeat && !held.length) {
-			if (p.run && !hush) deps.ran?.(p.run, t || sentHere ? "answered" : "silent");
+			if (p.run && !hush) deps.ran?.(p.run, t || sentHere ? "answered" : "silent", owned);
 			if (sentHere) deps.clearProgress(target);
 			return burst.close(target, ids);
 		}
@@ -686,10 +690,10 @@ export function createPrompts(deps: PromptDeps) {
 			return burst.close(target, ids);
 		}
 		void deps
-			.post(target, body, p.replyTo, { ...hushedAnswer(p, body, id => !isAnswered(id)), ...(p.run?.ids.length === 1 ? { run: p.run.ids[0], sk: p.run.sk } : {}) })
+			.post(target, body, p.replyTo, { ...hushedAnswer(p, body, id => !isAnswered(id)), ...(owned ? {} : postedRun(p.run)) })
 			.then(r => {
 				if (!r.delivered) return;
-				if (p.run) deps.ran?.(p.run, "answered");
+				if (p.run) deps.ran?.(p.run, "answered", owned);
 				markAnswered(p.replyTo);
 				burst.close(target, ids);
 				deps.clearProgress(target);
@@ -703,7 +707,7 @@ export function createPrompts(deps: PromptDeps) {
 		const fresh = unanswered.filter(p => {
 			if (!p.text || Date.now() - (p.at ?? 0) >= REPLAY_MAX_AGE_MS) return false;
 			if (deps.regenerated?.(p.text)) { deps.log(`not replaying a gateway nudge for ${p.target ?? "-"}: the silent-wait check sends it again if still due`); return false; }
-			const done = isAnswered(p.replyTo) || Boolean(!p.replyTo && p.target && p.at && deps.answeredSince?.(p.target, p.at));
+			const done = isAnswered(p.replyTo) || (p.run ? deps.runSettled?.(p.run) === true : Boolean(!p.replyTo && p.target && p.at && deps.answeredSince?.(p.target, p.at)));
 			if (done) deps.log(`not replaying ${p.target ?? "-"} ${p.replyTo ?? "(no id)"} after the restart: already answered`);
 			return !done;
 		});

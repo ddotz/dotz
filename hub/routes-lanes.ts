@@ -100,7 +100,7 @@ const readLastReport = (name: string): string => {
 	}
 };
 
-export async function routeLanes(req: Request, url: URL, parts: string[]): Promise<Response | undefined> {
+export async function routeLanes(req: Request, url: URL, parts: string[], agent = false): Promise<Response | undefined> {
 	if (parts[0] === "api" && parts[1] === "channels") {
 		try {
 			if (req.method === "GET") return json({ work_channels: Object.entries(discord.channels.work).map(([id, name]) => ({ channel: `ch:${id}`, name })), setups: listSetups() });
@@ -193,7 +193,7 @@ export async function routeLanes(req: Request, url: URL, parts: string[]): Promi
 				// A check fires on the :00 / :30 grid: the answer names its slot and the checks it shares the turn with.
 				return json({ ok: true, schedule, ...(schedule.kind === "check" ? { slot: schedule.at, shares_turn_with: checksSharingSlot(schedule) } : {}) });
 			}
-			if (req.method === "PATCH" && parts[2]) return json(patchSchedule(parts[2], await body(req)));
+			if (req.method === "PATCH" && parts[2]) return json(patchSchedule(parts[2], await body(req), agent));
 			if (req.method === "DELETE" && parts[2]) return json({ ok: removeSchedule(parts[2]) });
 		} catch (error) {
 			return json({ error: (error as Error).message }, 400);
