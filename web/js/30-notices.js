@@ -413,7 +413,7 @@ const ntDecWhere = (d, pc) => d.to.startsWith("auth:") ? TX("conv.nt.login_req")
 // What a question is about: the project of the session that asks, then the session (or the place it was asked).
 function ntDecCtx(n) {
   const d = n.decision, l = !n.pc && d.to.startsWith("lane:") && S && S.lanes.find(x => `lane:${x.name}` === d.to), proj = l ? laneProject(l) : "";
-  return [proj, ntDecWhere(d, n.pc)].filter(Boolean).join(" · ");
+  return [proj, d.to.startsWith("schedule:") ? pcTargetName(ntWhere(n), n.pc) : ntDecWhere(d, n.pc)].filter(Boolean).join(" · ");
 }
 function ntApply(item, unread) {
   if (item) { const i = NT.items.findIndex(x => x.id === item.id); if (i >= 0) NT.items[i] = item; else NT.items.push(item); }

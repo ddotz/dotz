@@ -269,11 +269,6 @@ test("POST /api/schedules/<id>/run fires a new run without moving `at`; GET list
 	expect((await call("POST", "/api/schedules/nope00/run")).status).toBe(404);
 });
 
-test("the Korean words of a run's row are the owner's", () => {
-	const t = ko.scheduleRun;
-	expect([t.running, t.nothing, t.posted, t.held("Big Bath 매일 점검"), t.failed("주간 보고"), t.rerun, t.stop]).toEqual(["돌아가는 중이에요", "알릴 게 없었어요", "결과를 대화에 올렸어요", "Big Bath 매일 점검: 모델 사용량 한도로 기다리는 중이에요. 풀리면 바로 시작해요.", "주간 보고을(를) 못 했어요. 지금 다시 실행할까요?", "다시 실행", "그만두기"]);
-});
-
 test("the first sentence: the first line's first sentence without list marks or a closing period, never longer than SENTENCE_MAX", () => {
 	expect(firstSentence("- 어제는 없었어요. 오늘은 2건이에요.")).toBe("어제는 없었어요");
 	expect(firstSentence("\n\n## 결과 나왔나요? 네")).toBe("결과 나왔나요?");

@@ -6,6 +6,7 @@ const row = (id: string, m: number, o: Record<string, unknown>) => ({ id, cls: "
 const DOCTOR = "실패한 도구 호출이 어제 12번에서 38번으로 늘었고 비싼 모델을 쓴 세션도 2개 있어요 · 원인을 찾아볼까요?";
 const notices = [
 	row("doc", 50, { cls: "ask", kind: "decision", tone: "ask", title: DOCTOR, text: "닥터", open: "alert", src: "alert", decision: { options: [{ n: 1, label: "찾아봐요", desc: "" }, { n: 2, label: "이번엔 둬요", desc: "" }], to: "alert", group: 1, state: "open" } }),
+	row("failed", 45, { cls: "ask", kind: "decision", tone: "ask", title: "sample-3 매주 월요일 정리 보고을(를) 못 했어요 · 지금 다시 실행할까요?", text: "sample-3 매주 월요일 정리 보고", key: "schedule:r4", nk: "schedule", decision: { options: [{ n: 1, label: "다시 실행", desc: "" }, { n: 2, label: "그만두기", desc: "" }], to: "schedule:r4", group: 1, state: "open" } }),
 	row("task", 40, { cls: "result", title: "sample-2 피드백 일일 보고", text: "어제는 불편·재요청이 없었어요", key: "schedule:r1", nk: "schedule", at: iso(45) }),
 	row("remind", 30, { title: "회의 알림", text: "예약한 일이 시작됐어요", key: "schedule:r2" }),
 	row("legacy", 20, { title: "예약", text: "예약한 일이 시작됐어요" }),
@@ -62,5 +63,14 @@ describe("the 알림 screen's schedule and question rows", () => {
 		await run(`document.querySelector('#v-notices .nsc-r[data-nid="task"] .nsc-tx').click()`);
 		await waitFor(`current === "chat" && target === MAIN`);
 		expect(await ev(`window.__jumps`)).toEqual([["main", iso(45)]]);
+	}, 30_000);
+
+	test("at 390 a failed run's 다시 실행 card keeps its question whole and names the conversation it runs in, not its answer key", async () => {
+		const v = await open(390);
+		const { ev } = on(v);
+		const text = await ev<string>(`document.querySelector('#v-notices .nsc-r[data-nid="failed"]').textContent`);
+		expect(text).toContain(`${await ev<string>(`pcTargetName(MAIN)`)} · `);
+		expect(text).not.toContain("r4");
+		expect(await ev(`(() => { const q = ${hd("failed")}.querySelector(".q"); return q && [q.textContent, q.scrollWidth <= q.clientWidth + 1]; })()`)).toEqual([" · 지금 다시 실행할까요?", true]);
 	}, 30_000);
 });
