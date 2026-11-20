@@ -20,7 +20,7 @@ const ntDecisions = (items: N[]) => () => items.filter(n => ntIsDec(n) && (n.dec
 const helpersOf = (items: N[]) => new Function("NT", "ntIsDec", "ntDecisions", `${linkedBlock}; return { ntLinkedDec, ntTapDec };`)({ items }, ntIsDec, ntDecisions(items)) as { ntLinkedDec: (n: N) => N | null; ntTapDec: (n: N) => N | null };
 const linkedOf = (items: N[]) => helpersOf(items).ntLinkedDec;
 const tapDecOf = (items: N[]) => helpersOf(items).ntTapDec;
-const actionIn = (items: N[]) => new Function("NM", "ntIsDec", "ntTapDec", `${between(web("js/31-notices-screen.js"), "const ntIsSched", "\n")}; ${between(notices, "function noticeKindAction", "async function noticeOpen(")}; return noticeKindAction;`)(
+const actionIn = (items: N[]) => new Function("NM", "ntIsDec", "ntTapDec", `${between(web("js/31-notices-screen.js"), "const ntIsSched", "\n")}; ${between(notices, "const ntLoginOf", "\n")}; ${between(notices, "function noticeKindAction", "async function noticeOpen(")}; return noticeKindAction;`)(
 	{ items: [] }, ntIsDec, tapDecOf(items),
 ) as (n: N, mons?: { name: string }[]) => string;
 const actionOf = actionIn([]);

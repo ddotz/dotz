@@ -25,7 +25,7 @@ import { loadGuardConfig, SUB_COMPACT_STOP, SUB_COMPACT_WRAP_UP } from "./lanega
 import { harnessProjects, denyLines } from "./harnessprojects.ts";
 import { listSetups } from "./workchannels.ts";
 import { allWatches, FAIL_ALERT_AFTER } from "./watch.ts";
-import { FAIL_ALERT_EVERY_MS } from "./watch-backoff.ts";
+import { failAlertGapMs } from "./watch-backoff.ts";
 import { activeHarness, EXTENSION_DIRS, runtimeFor } from "./runtime/index.ts";
 
 export type Applies = "live" | "restart" | "next-turn";
@@ -342,7 +342,7 @@ export async function harnessGraph(opts: { terminals?: number; light?: boolean }
 		},
 		{
 			id: "watch", kind: "channel", group: "flow", label: N.watch.label, status: failing ? "warn" : watches.length ? "ok" : "off", summary: watches.length ? N.watch.summary(watches.length, failing) : N.watch.none,
-			desc: N.watch.desc(FAIL_ALERT_AFTER, dur(FAIL_ALERT_EVERY_MS)),
+			desc: N.watch.desc(FAIL_ALERT_AFTER, dur(failAlertGapMs(1)), dur(failAlertGapMs(2)), dur(failAlertGapMs(3))),
 			facts: [{ label: N.watch.watches, value: c.count(watches.length) }, { label: N.watch.setups, value: c.count(setups.length) }, { label: N.watch.failing, value: c.count(failing) }], settings: [S("watch.self_heal")],
 		},
 		{
