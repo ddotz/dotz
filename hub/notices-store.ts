@@ -387,6 +387,15 @@ function adoptRepost(e: HubEvent): boolean {
 	return true;
 }
 
+// A new choice card in a conversation takes the place of the open choice cards there the owner wrote back to without picking (2026-11-20: he
+// asked for the reasons, the card came again with them, the first stayed open). A card he has not written after stays: both questions wait.
+const ownerWroteAt = new Map<string, string>();
+function supersedeCards(to: string, at: string, keep?: Notice): void {
+	const since = ownerWroteAt.get(to);
+	if (!since || since > at) return;
+	for (const i of items) if (i !== keep && isOpenDecision(i) && hasChoice(i) && !i.decision!.draft && i.decision!.to === to && (i.at ?? i.ts) < since) settleDecision(i, "", at, true);
+}
+
 export function putDecision(d: { key: string; title: string; detail: string; to: string; open?: string; options: DecisionOpt[]; group: number; replyTo?: string; draft?: DraftApproval; by?: string; ref?: string; assumed?: true }, at: string): void {
 	const old = items.find(n => n.key === d.key) ?? (d.draft || Object.values(FILLER_QUESTIONS).includes(d.title) ? undefined : items.findLast(n => n.decision?.to === d.to && !n.decision.draft && n.title === d.title));
 	if (old?.decision) {
@@ -395,6 +404,7 @@ export function putDecision(d: { key: string; title: string; detail: string; to:
 		if (!isOpenDecision(old) && Date.parse(at) - Date.parse(old.ignored ?? old.decision.answered_at ?? "") < REASK_MS) return void closeRepeat(old, at);
 	}
 	if (old) old.key = d.key;
+	if (d.options.length && !d.draft) supersedeCards(d.to, at, old);
 	const open = d.open ?? d.to;
 	const expires_at = expiresAtOf(d, at);
 	if (d.draft && !shownAsStored(d.draft)) d = { ...d, draft: undefined };
@@ -450,26 +460,13 @@ export function settleDecision(item: Notice, answer: string, at = now(), resolve
 function ownerReplied(e: HubEvent): void {
 	// A peer gateway's line arrives as a web message under the owner's login, but he said nothing (2026-11-05: it answered an [ask] nobody had seen).
 	if (isPeerMessage(e)) return;
-	const settles = typedAnswer(e, eventTarget(e) ?? "main");
+	const to = eventTarget(e) ?? "main", settles = typedAnswer(e, to);
+	ownerWroteAt.set(to, String(e.ts));
 	const text = String(e.text ?? "").trim();
 	// A typed message is not the answer to a waiting send-approval card (2026-10-31: "19번 카드는 위에 있어", "마지막 카드 어디?" closed it):
 	// the card stays open until its buttons answer it or the draft is handled elsewhere (settleHandledDrafts).
 	for (const i of items) if (isOpenDecision(i) && !i.decision!.to.startsWith("auth:") && settles(i)) settleDecision(i, text, e.ts);
 }
-
-/** `updated` tells, after the turn the question was listed for, whether anything touched it since (hub/ask-followup.ts). */
-export type ListedChoice = { id: string; title: string; updated: string };
-const TITLE_MAX = 60;
-/** The choice questions still open in conversation `target`, newest first, titles cut to TITLE_MAX: what the bot is told with the owner's next message there. */
-export function openChoices(target: string, max = 3): ListedChoice[] {
-	return items
-		.filter(i => isOpenDecision(i) && hasChoice(i) && !i.decision!.draft && i.decision!.to === target)
-		.sort((a, b) => b.updated.localeCompare(a.updated))
-		.slice(0, max)
-		.map(i => ({ id: i.id, title: i.title.slice(0, TITLE_MAX), updated: i.updated }));
-}
-/** Of `listed`, the questions still open and untouched since: nothing answered, resolved, ignored or asked them again. */
-export const untouchedChoices = (listed: readonly ListedChoice[]): ListedChoice[] => listed.filter(q => items.some(i => i.id === q.id && i.updated === q.updated && isOpenDecision(i)));
 
 function readIds(ids: string[]): void {
 	if (!ids.length) return;
@@ -794,6 +791,7 @@ export function resetNoticesForTest(): void {
 	viewers.clear();
 	awaitingReply.clear();
 	quietReplies.clear();
+	ownerWroteAt.clear();
 	sending.clear();
 	orchTurnFrom = undefined;
 	flushNotices(true);

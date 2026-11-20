@@ -12,14 +12,14 @@ export { laneNameKo, conversationTitle } from "./notices-lanes.ts";
 export { summary } from "./notices-read.ts";
 export { isViewing } from "./notices-viewing.ts";
 export { decisionsOf } from "./notices-decisions.ts";
-export { openChoices, untouchedChoices, unreadCount, answerReply, orchestratorTurnStarted, backfillNotices, readConversationNotices, markNoticesRead, resetNoticesForTest, flushNotices } from "./notices-store.ts";
-export type { ListedChoice } from "./notices-store.ts";
+export { unreadCount, answerReply, orchestratorTurnStarted, backfillNotices, readConversationNotices, markNoticesRead, resetNoticesForTest, flushNotices } from "./notices-store.ts";
+export type { ListedChoice } from "./notices-bell.ts";
 export { refreshNoticeDrafts, tagStoredApps } from "./notices-stored.ts";
 export { onDraftCardRefreshed, refreshDraftFiles, syncDraftFiles, markDraftPosted, markCardShown, stampDraftCard, openDraftRefs, openDraftCards, markDraftSend, openDraftText, rewriteOpenDraft, redrawDraftCards, repostDraftCard, setCardFingerprint, settleHandledDrafts, draftCardCounts, refreshStoredDrafts, confirmNoun, confirmGroup, reopenDraftNotices, updateDraftRecipients } from "./notices-drafts.ts";
 export { settleExpiredQuestions, settleOpenDecision, answerDecision, SessionEnded, authRequested, authSettled, orchestratorAnswered, closeLaneCards, resolveNotices, ignoreNotice, unignoreNotice, reopenNotices } from "./notices-answers.ts";
 export type { DecisionSend } from "./notices-answers.ts";
 export { laneVerified, UPDATE_NOTICE_KEY, updateAvailable, accountUsedChanged, updateResolved } from "./notices-signals.ts";
-export { laneHasOpenCard, setViewing, dropLaneNotices, dropChannelNotices, countChannelNotices, listNotices, allNotices, openDecisionNotices, dismissedAlertAts, dismissNotice, handledNotice, undismissNotice } from "./notices-bell.ts";
+export { laneHasOpenCard, openChoices, untouchedChoices, setViewing, dropLaneNotices, dropChannelNotices, countChannelNotices, listNotices, allNotices, openDecisionNotices, dismissedAlertAts, dismissNotice, handledNotice, undismissNotice } from "./notices-bell.ts";
 
 onBroadcast(e => {
 	if (DRAFT_CHANGED.has(String(e.kind))) settleSoon();

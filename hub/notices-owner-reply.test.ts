@@ -5,7 +5,9 @@ import { emit } from "./events.ts";
 import { resetNoticesForTest, type Notice } from "./notices.ts";
 import { flushNotices } from "./notices-store.ts";
 
-const ts = () => new Date().toISOString();
+// One second apart, so the order of a card and the owner's message is never a tie inside one millisecond.
+let clock = Date.now();
+const ts = () => new Date((clock += 1000)).toISOString();
 const stored = (): Notice[] => (flushNotices(), JSON.parse(readFileSync(paths.notices, "utf8")));
 const ask = () => emit("outbox", { ts: ts(), kind: "out", source: "orchestrator", target: "web", text: "[ask] 보고서를 언제 보낼까요?\n결정: 보고서를 언제 보낼까요?\n**1) 오늘**\n**2) 내일**" });
 const owner = (text: string) => emit("inbox", { ts: ts(), kind: "message", source: "web", channel: "web", text });
@@ -45,4 +47,20 @@ test("a number that is no option, or a label inside another sentence, leaves it 
 	owner("7");
 	owner("내일 날씨 어때?");
 	expect(state().state).toBe("open");
+});
+
+const reask = (q: string) => emit("outbox", { ts: ts(), kind: "out", source: "orchestrator", target: "web", text: `[ask] 근거를 붙였어요.\n결정: ${q}\n**1) 오늘**\n**2) 내일**` });
+const open = () => stored().filter(n => n.decision?.state === "open").map(n => n.title);
+
+test("a card asked again after the owner wrote back closes the earlier one", () => {
+	ask();
+	owner("근거와 같이 물어봐야지");
+	reask("보고서를 언제 보내면 좋을까요? (근거 포함)");
+	expect(open()).toEqual(["보고서를 언제 보내면 좋을까요? (근거 포함)"]);
+});
+
+test("a second question the owner has not written after leaves the first one open", () => {
+	ask();
+	reask("회의는 언제 할까요?");
+	expect(open().length).toBe(2);
 });
