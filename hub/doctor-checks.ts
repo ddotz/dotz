@@ -66,19 +66,20 @@ export function countTraces(text: string): number {
 }
 
 const found = (key: string, area: Finding["area"], now: number, what: string, evidence: string, level: number, todo?: string): Finding => ({ key, area, what, ...(todo ? { todo } : {}), evidence, since: now, level });
+const asking = (f: Finding): Finding => ({ ...f, ask: true });
 const names = (list: string[]): string => list.slice(0, SHOWN_NAMES).join(", ") + (list.length > SHOWN_NAMES ? ` +${list.length - SHOWN_NAMES}` : "");
 
 export const gateway: DoctorCheck = ({ now, dataDir, memo }) => {
 	const t = msg().doctor, out: Finding[] = [];
 	const restarts = logRows(dataDir).filter(r => r.at >= now - T.restartWindowH * HOUR && r.text.startsWith("gateway restart (")).length;
-	if (restarts >= T.restarts) out.push(found("gateway:restarts", "gateway", now, t.restarts(restarts), "hub.log", restarts, t.todo.answer));
+	if (restarts >= T.restarts) out.push(asking(found("gateway:restarts", "gateway", now, t.restarts(restarts), "hub.log", restarts)));
 	const errFile = join(dataDir, "gateway.err.log");
 	const size = existsSync(errFile) ? statSync(errFile).size : 0;
 	const seen = typeof memo?.errBytes === "number" ? memo.errBytes : undefined;
 	if (memo) memo.errBytes = size;
 	if (seen !== undefined) {
 		const crashes = countTraces(readRange(errFile, size < seen ? 0 : Math.max(seen, size - T.logTailBytes), size));
-		if (crashes >= T.crashes) out.push(found("gateway:crashes", "gateway", now, t.crashes(crashes), "gateway.err.log", crashes, t.todo.answer));
+		if (crashes >= T.crashes) out.push(asking(found("gateway:crashes", "gateway", now, t.crashes(crashes), "gateway.err.log", crashes)));
 	}
 	return out;
 };
@@ -135,7 +136,7 @@ export const watches: DoctorCheck = ({ now, dataDir, last }) => {
 	for (const w of all) {
 		const fails = w.state?.fails ?? 0, failing = failingFor(w, now);
 		if (w.paused || w.state?.paused || LOGIN_KINDS.test(w.state?.kind ?? "")) continue;
-		if (fails >= T.watchFails || failing > T.watchFailH * HOUR) out.push(found(`watches:${w.id}`, "watches", now, t.watchFailing(w.label ?? w.name, Math.floor(failing / HOUR), fails), w.name, fails, t.todo.answer));
+		if (fails >= T.watchFails || failing > T.watchFailH * HOUR) out.push(asking(found(`watches:${w.id}`, "watches", now, t.watchFailing(w.label ?? w.name, Math.floor(failing / HOUR), fails), w.name, fails)));
 	}
 	const fixed = new Set<string>();
 	for (const r of logRows(dataDir)) {
@@ -179,7 +180,7 @@ export const update: DoctorCheck = ({ now, dataDir }) => {
 		const m = /^(\S+) update(?: failed)?: /.exec(text);
 		if (m) mark(m[1]!, text.includes(" update failed: ") || text.includes(HARNESS_FAILED_MID) ? true : text.includes(HARNESS_RESTART_TAIL) ? false : undefined);
 	}
-	return [...state].filter(([, failedAt]) => failedAt !== undefined).map(([id]) => found(`update:${id}`, "update", now, t.updateFailed(id === "self" ? t.selfUpdate : (UPDATER_NAMES[id] ?? id)), id, fails.get(id) ?? 1, t.todo.answer));
+	return [...state].filter(([, failedAt]) => failedAt !== undefined).map(([id]) => asking(found(`update:${id}`, "update", now, t.updateFailed(id === "self" ? t.selfUpdate : (UPDATER_NAMES[id] ?? id)), id, fails.get(id) ?? 1)));
 };
 
 export const failures: DoctorCheck = ({ now, dataDir, home, memo }) => {
@@ -188,7 +189,7 @@ export const failures: DoctorCheck = ({ now, dataDir, home, memo }) => {
 	const t = msg().doctor;
 	return grownClasses(r, base, T.failures).map(g => {
 		const short = t.failureShort(g.label, g.grew);
-		return { ...found(`failures:${g.name}`, "failures", now, t.failuresGrew([short]), g.name, Math.round(g.weight), t.todo.answer), short };
+		return { ...asking(found(`failures:${g.name}`, "failures", now, t.failuresGrew([short]), g.name, Math.round(g.weight))), short };
 	});
 };
 
@@ -200,7 +201,7 @@ export const tokens: DoctorCheck = ({ now, dry }) => {
 	}
 	return [...byKind].map(([kind, k]) => {
 		const short = t.tokenShort(kind, k.n);
-		return { ...found(`tokens:${kind}`, "tokens", now, t.tokens([short]), kind, Math.round(k.cost * 100) / 100 || k.n, t.todo.answer), short };
+		return { ...asking(found(`tokens:${kind}`, "tokens", now, t.tokens([short]), kind, Math.round(k.cost * 100) / 100 || k.n)), short };
 	});
 };
 
@@ -209,7 +210,7 @@ export const plugins: DoctorCheck = ({ now, dataDir }) => {
 	const t = msg().doctor;
 	return Object.entries(jsonAt<Record<string, string>>(pluginFailuresFile(dataDir)) ?? {}).map(([file, error]) => {
 		const line = String(error).split("\n")[0]!.trim();
-		return found(`plugins:${file}`, "plugins", now, t.pluginNotLoaded(file), line, 1, t.todo.answer);
+		return asking(found(`plugins:${file}`, "plugins", now, t.pluginNotLoaded(file), line, 1));
 	});
 };
 

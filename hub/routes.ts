@@ -77,6 +77,7 @@ import { listedFileRoute } from "./listed-files.ts";
 import { routeApps } from "./routes-apps.ts";
 import { routeLanes } from "./routes-lanes.ts";
 import { escalations } from "./escalate.ts";
+import { isDoctorLeave } from "./doctor-text.ts";
 import { routeNotices } from "./routes-notices.ts";
 import { addInputDiag } from "./input-diag.ts";
 import { routeSettings } from "./routes-settings.ts";
@@ -305,6 +306,11 @@ export async function deliverAnswer(a: Parameters<DecisionSend>[0] & { login: st
 		const path = `/api/auth/${a.to.slice(5)}`;
 		const res = await authRoute(new Request(`http://local${path}`, { method: "POST", body: JSON.stringify({ action: a.action }) }), new URL(`http://local${path}`));
 		if (!res?.ok) throw new Error("로그인 요청을 처리하지 못했어요");
+		return;
+	}
+	const pick = a.picks?.length === 1 ? a.picks[0]! : undefined;
+	if (a.to === "alert" && pick && a.login !== AGENT_AUTHOR && isDoctorLeave(pick.q, pick.label)) {
+		log(`doctor: left as it is, no turn: ${pick.q}`);
 		return;
 	}
 	const lane = a.to.startsWith("lane:") ? a.to.slice(5) : undefined;

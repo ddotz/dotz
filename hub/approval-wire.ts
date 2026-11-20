@@ -2,6 +2,7 @@
 // approval route left beside /api/reply/*:
 //   POST /api/approvals/failed           { op: "report", ref, conv, text }: a session's own CLI send of a draft failed; the card shows it and the owner hears it
 import { log } from "./config.ts";
+import { isDoctorLeave } from "./doctor-text.ts";
 import { answerDecision, type DecisionSend, type Notice, allNotices, openDraftCards } from "./notices.ts";
 import type { Upload } from "./files.ts";
 import { refOfQuestion } from "./approval-send.ts";
@@ -64,6 +65,15 @@ export async function discordGatewayAnswer(_target: string, conv: string, text: 
 	return { error: r.body.code === "changed" ? DISCORD_CHANGED : r.body.error };
 }
 const DISCORD_CHANGED = "초안이 바뀌었어요. 보내지 않았어요. 웹앱 답장 대기에서 지금 초안을 확인하고 보내 주세요";
+
+/** A Discord button pick of 이번엔 둬요 on the doctor's cause card in the alert conversation: answered like the web's button (closed, no model turn). False when it is not that card. */
+export async function discordDoctorLeave(target: string, picks: AnswerPick[], deliver: DecisionSend): Promise<boolean> {
+	const p = picks.length === 1 ? picks[0]! : undefined;
+	if (target !== "alert" || !p || !isDoctorLeave(p.q, p.label)) return false;
+	const card = allNotices().find(n => n.decision?.state === "open" && n.decision.to === "alert" && n.title === p.q);
+	if (!card) return false;
+	return (await webAnswer(card.id, { n: p.n }, "owner", deliver)).status === 200;
+}
 
 /**
  * A card's button on the web (POST /api/notices/<id>/answer). 보내기 on a draft the gateway can send is recorded with no model turn, the

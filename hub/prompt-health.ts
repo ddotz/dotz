@@ -105,7 +105,7 @@ export function sizeFindings(state: PromptState, now: number): Finding[] {
 		key: `prompt:size:${g.key}`,
 		area: "prompt",
 		what: m.promptGrew(g.key === "total" ? undefined : (m.promptPartLabels[g.key] ?? g.key), g.from, g.to, m.doctor.day(g.at)),
-		todo: m.doctor.todo.answer,
+		ask: true,
 		evidence: m.promptSizeEvidence(g.from, g.to, day(g.at)),
 		since: now,
 		level: g.to - g.from,
@@ -159,7 +159,7 @@ export function capFindings(dataDir: string, now: number): Finding[] {
 	const out: Finding[] = [];
 	const over = (file: string, size: number, cap: number, unit: string) => {
 		if (size <= cap) return;
-		out.push({ key: `prompt:cap:${file}`, area: "prompt", what: m.promptCapOver(file, size, cap, unit), todo: m.doctor.todo.answer, evidence: m.promptCapEvidence(size, cap, unit), since: now, level: size - cap });
+		out.push({ key: `prompt:cap:${file}`, area: "prompt", what: m.promptCapOver(file, size, cap, unit), ask: true, evidence: m.promptCapEvidence(size, cap, unit), since: now, level: size - cap });
 	};
 	const read = (name: string): string | undefined => (existsSync(join(dataDir, name)) ? readFileSync(join(dataDir, name), "utf8") : undefined);
 	const lessons = read("LESSONS.md");

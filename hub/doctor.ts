@@ -75,11 +75,13 @@ export function shouldTell(f: Finding, t: Told | undefined, now: number): boolea
 	return t.level > 0 ? f.level >= t.level * T.repeatFactor : f.level > 0;
 }
 
-export type Notice = { text: string; decision: boolean; open: boolean; keys: string[] };
+export type Notice = { text: string; decision: boolean; decisions: number; open: boolean; keys: string[] };
 const SAID_TOGETHER: Partial<Record<DoctorArea, (t: Catalog["doctor"]) => (items: string[]) => string>> = { failures: t => t.failuresGrew, tokens: t => t.tokens };
 
-function items(found: Finding[], store: DoctorStore, now: number): { what: string; todo?: string }[] {
-	const t = msg().doctor, out: { what: string; todo?: string }[] = [], said = new Set<DoctorArea>();
+type Row = { what: string; todo?: string; ask?: string };
+
+function items(found: Finding[], store: DoctorStore, now: number): Row[] {
+	const t = msg().doctor, out: Row[] = [], said = new Set<DoctorArea>();
 	for (const f of found) {
 		const together = SAID_TOGETHER[f.area];
 		if (together && said.has(f.area)) continue;
@@ -87,24 +89,30 @@ function items(found: Finding[], store: DoctorStore, now: number): { what: strin
 		const same = together ? found.filter(g => g.area === f.area) : [f];
 		const lasting = store.told[f.key] && now - f.since >= DAY;
 		const what = same.length > 1 ? together!(t)(same.map(g => g.short ?? g.what)) : lasting ? `${f.what} ${t.since(t.day(f.since))}` : f.what;
-		out.push({ what, todo: f.todo });
+		const ask = same.some(g => g.ask) ? (together ? t.areas[f.area] : f.what.replace(/[.。]$/, "")) : undefined;
+		out.push({ what, todo: f.todo, ...(ask ? { ask } : {}) });
 	}
 	return out;
 }
 
+/** The morning item. One decision card per thing the owner decides: the findings with their own question first, then each line that offers a look at its cause, named by that line. */
 export function compose(store: DoctorStore, now: number, all = false): Notice | undefined {
 	const t = msg().doctor, every = Object.values(store.findings);
 	const due = all ? every : every.filter(f => shouldTell(f, store.told[f.key], now));
 	if (!due.length && !all) return undefined;
 	const open = due.filter(f => !f.fixed), fixed = due.filter(f => f.fixed), quiet = every.filter(f => !f.fixed && !due.includes(f));
-	const ask = open.find(f => f.decide), rows = items(open.filter(f => f !== ask), store, now), fixedNames = fixed.map(f => f.what).join(", ");
+	const asking = open.filter(f => f.decide), rows = items(open.filter(f => !f.decide), store, now), fixedNames = fixed.map(f => f.what).join(", ");
+	const cards = [
+		...asking.map(f => issueBlock(f.decide!.question, f.decide!.options)),
+		...rows.flatMap(r => (r.ask ? [issueBlock(t.askCard(r.ask), [{ name: t.askFind, result: t.askFindResult }, { name: t.askLeave, result: t.askLeaveResult }])] : [])),
+	];
 	const shared = [...new Set(rows.map(r => r.todo).filter((todo): todo is string => !!todo && rows.filter(r => r.todo === todo).length > 1))];
 	const lines = rows.map(r => `- ${r.todo && !shared.includes(r.todo) ? `${r.what} ${r.todo}` : r.what}`);
 	const sick = new Set(every.filter(f => !f.fixed).map(f => f.area)), fine = DOCTOR_AREAS.filter(a => !sick.has(a)).map(a => t.areas[a]);
-	const head = open.length ? t.head(rows.length, ask ? 1 : 0) : fixed.length ? t.fixedHead(fixedNames) : t.clear;
+	const head = open.length ? t.head(rows.filter(r => !r.ask).length, cards.length) : fixed.length ? t.fixedHead(fixedNames) : t.clear;
 	const body = [head, ...lines, ...shared, open.length && fixed.length ? t.fixedLine(fixedNames) : "", quiet.length ? t.still(items(quiet, store, now).length) : "", (open.length || all) && fine.length ? t.healthy(fine) : ""];
-	const text = [body.filter(Boolean).join("\n"), ask?.decide ? issueBlock(ask.decide.question, ask.decide.options) : ""].filter(Boolean).join("\n\n");
-	return { text, decision: !!ask, open: open.length > 0, keys: due.map(f => f.key) };
+	const text = [body.filter(Boolean).join("\n"), ...cards].join("\n\n");
+	return { text, decision: cards.length > 0, decisions: cards.length, open: open.length > 0, keys: due.map(f => f.key) };
 }
 
 const pad = (n: number): string => String(n).padStart(2, "0");
@@ -163,7 +171,7 @@ export async function runMorning(d: Deps): Promise<void> {
 	if (!notice) return d.log("doctor: only the ledger had something, told as news");
 	for (const k of notice.keys) store.told[k] = { at: now, level: store.findings[k]!.level };
 	writeAtomic(storeFile(d.dataDir), `${JSON.stringify(store, null, 2)}\n`);
-	d.log(`doctor: told ${notice.keys.length} finding(s)${notice.decision ? " with a decision" : ""}${extra ? " and the ledger" : ""}`);
+	d.log(`doctor: told ${notice.keys.length} finding(s)${notice.decisions ? ` with ${notice.decisions} decision(s)` : ""}${extra ? " and the ledger" : ""}`);
 }
 
 // Local-time scheduling like the other nightly jobs: one timer per job, re-armed after each run. "off" arms nothing.

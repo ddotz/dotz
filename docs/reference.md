@@ -388,7 +388,8 @@ and at which level, and the baselines the checks compare with).
 - *Telling.* A finding is told when it is new, when its level reached 1.5x the level last told, or 7 days after it was last told while still present; a resolved one is dropped (back again = new). Nothing
   notable: one log line, nothing posted anywhere. Self-fixed things are one line together. Each open problem is one line with what to do (failure classes share one line, token classes another;
   a step several lines share is said once after them), then the count of things told before and still there and the checks that found nothing; a re-told problem says since when it lasts.
-  A choice block appears only for a finding with a decision. The item is an alert when anything in it is not fixed;
+  Anything the owner may answer is a decision card at the end of the message (the alert conversation has no composer and no buttons, so no line asks a question): a finding with its own question
+  (`decide`) is one card, and a finding that offers a look at its cause (`ask`) is one card titled `<what happened> · 원인을 찾아볼까요?` with `찾아봐요` (the answer goes to the model like any card answer) and `이번엔 둬요` (closes the card, starts no turn); findings said together on one line share one card. The item is an alert when anything in it is not fixed;
   when dotz fixed everything itself it is a worklog entry only. The night pass runs in its own process (`bun hub/doctor.ts --night`): reading a week of session logs
   peaks at several hundred MB on a busy install, and the gateway's heap never holds it. Prompt health (`hub/prompt-health.ts`) is one of the checks, and so is the one check that calls a model, the prompt review
   (`hub/prompt-review.ts`): weekly, or after 3 days when prompt health saw real growth; the install's ordinary model, never Fable or max/xhigh effort, skipped while the

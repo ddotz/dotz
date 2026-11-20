@@ -14,7 +14,13 @@ export const doctorEn = {
 	day: (ms: number) => new Date(ms).toLocaleDateString("en-US", { timeZone: TZ, month: "long", day: "numeric" }),
 	when: (ms: number) => `${new Date(ms).toLocaleString("en-US", { timeZone: TZ, month: "long", day: "numeric", hour: "2-digit", minute: "2-digit", hourCycle: "h23" })} ${tzLabel()}`,
 	areas: { gateway: "gateway", sessions: "sessions", logins: "logins", watches: "monitors", disk: "disk", update: "updates", failures: "failed or repeated work", tokens: "token use", prompt: "re-read text", plugins: "plugins" },
-	todo: { answer: "Fix it? Answer and I'll look for the cause first.", sessions: "Let it go on or close it.", login: "Log in to that site again.", disk: "Delete large files you no longer need." },
+	todo: { sessions: "Let it go on or close it.", login: "Log in to that site again.", disk: "Delete large files you no longer need." },
+	askCard: (name: string) => `${name} · Look for the cause?`,
+	askTitle: "Look for the cause?",
+	askFind: "Look for the cause",
+	askFindResult: "Looks for the cause first. Nothing is changed yet.",
+	askLeave: "Leave it this time",
+	askLeaveResult: "Left as it is and not asked again now. Told again after a week or when it gets worse.",
 	dryAt: (when: string) => `Check at ${when}. A dry run: nothing saved or sent.`,
 	dryMorning: "The morning notice carries only the new ones:",
 	drySame: "The morning notice says the same.",
@@ -53,7 +59,13 @@ export const doctorKo: typeof doctorEn = {
 	day: (ms: number) => new Date(ms).toLocaleDateString("ko-KR", { timeZone: TZ, month: "long", day: "numeric" }),
 	when: (ms: number) => `${new Date(ms).toLocaleString("ko-KR", { timeZone: TZ, month: "long", day: "numeric", hour: "2-digit", minute: "2-digit", hourCycle: "h23" })} ${tzLabel()}`,
 	areas: { gateway: "게이트웨이", sessions: "세션", logins: "로그인", watches: "모니터링", disk: "디스크", update: "업데이트", failures: "실패·반복 작업", tokens: "토큰 사용", prompt: "다시 읽는 글", plugins: "플러그인" },
-	todo: { answer: "고칠까요? 답하면 원인부터 찾아볼게요.", sessions: "이어서 하게 하거나 닫아 주세요.", login: "그 사이트에 다시 로그인해 주세요.", disk: "안 쓰는 큰 파일을 지워 주세요." },
+	todo: { sessions: "이어서 하게 하거나 닫아 주세요.", login: "그 사이트에 다시 로그인해 주세요.", disk: "안 쓰는 큰 파일을 지워 주세요." },
+	askCard: (name: string) => `${name} · 원인을 찾아볼까요?`,
+	askTitle: "원인을 찾아볼까요?",
+	askFind: "찾아봐요",
+	askFindResult: "원인부터 찾아봐요. 아직 아무것도 바꾸지 않아요.",
+	askLeave: "이번엔 둬요",
+	askLeaveResult: "그대로 두고 지금은 더 묻지 않아요. 일주일 뒤나 더 나빠지면 다시 알려요.",
 	dryAt: (when: string) => `${when} 점검이에요. 시험 실행이라 아무것도 저장하거나 보내지 않았어요.`,
 	dryMorning: "아침 알림에는 이 중 새로 알릴 것만 이렇게 올라가요.",
 	drySame: "아침 알림에도 이대로 올라가요.",
@@ -80,3 +92,6 @@ export const doctorKo: typeof doctorEn = {
 	selfUpdate: "dotz",
 	pluginNotLoaded: (file: string) => `불러오지 못해서 꺼진 플러그인이 있어요: ${file}.`,
 };
+
+/** Whether a card answer is "leave it" on a doctor cause question (either language, so a card posted before a language change still counts). `question` is the card title. */
+export const isDoctorLeave = (question: string, label: string): boolean => [doctorKo, doctorEn].some(t => label === t.askLeave && question.endsWith(t.askTitle));

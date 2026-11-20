@@ -22,6 +22,8 @@ export type Finding = {
 	level: number;
 	/** dotz already fixed it itself (cleanup, self-heal, retry): one line in the briefing, no choice. */
 	fixed?: boolean;
+	/** The owner may have the cause looked into: the morning item carries a decision card for it, never a question sentence. */
+	ask?: true;
 	/** What the owner must decide, when he must; the briefing shows a choice block only then. */
 	decide?: { question: string; options: { name: string; result: string }[] };
 };
