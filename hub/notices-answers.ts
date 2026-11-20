@@ -8,6 +8,7 @@ import { closedHooks, decisionHooks } from "./notices-wiring.ts";
 import { TEXT_MAX, clean, closedInfo, isOpenDecision, needsAnswer, twinOf } from "./notices-rules.ts";
 import { broadcast } from "./notices-read.ts";
 import { expiresAtOf, sending } from "./notices-decisions.ts";
+import { RUN_DECISION } from "./notices-schedule.ts";
 import { items, orchTurnFrom, putDecision, resolveAsks, save, settleDecision, unreadCount } from "./notices-store.ts";
 
 // A question whose time is up stops waiting on the owner: it is closed as resolved (no answer), marked `expired` so the card reads 기한 지남, read, saved
@@ -88,7 +89,7 @@ async function deliverDecision(item: Notice, label: string, payload: Parameters<
 // login request are answered by their buttons only.
 async function answerInWords(item: Notice, said: string, send: DecisionSend, handoff: boolean): Promise<{ status: number; body: Record<string, unknown> }> {
 	const d = item.decision!;
-	if (d.draft || d.to.startsWith("auth:")) return { status: 400, body: { error: "unknown option" } };
+	if (d.draft || d.to.startsWith("auth:") || d.to.startsWith(RUN_DECISION)) return { status: 400, body: { error: "unknown option" } };
 	if (!said) return { status: 400, body: { error: "내용을 적어 주세요" } };
 	const text = d.group > 1 || !d.reply_to ? `${item.title}: ${said}` : said;
 	return deliverDecision(item, handoff ? `${said} · ${HANDED_OFF}` : said, { to: handoff ? "main" : d.to, text: handoff ? handedOff(item, text) : text, notice: item.id, ...(d.reply_to && !handoff ? { replyTo: d.reply_to } : {}) }, send);

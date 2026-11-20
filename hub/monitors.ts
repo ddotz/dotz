@@ -1,7 +1,8 @@
 import { DATA_DIR } from "./config.ts";
 import { appEntries } from "./integrations.ts";
 import { loadProjects } from "./projects.ts";
-import { listSchedules } from "./schedule.ts";
+import { listScheduleRuns, listSchedules, type ScheduleKind, type ScheduleRunState, scheduleKind } from "./schedule.ts";
+import { repeatLabel } from "./schedule-settings.ts";
 import { allWatches, type Watch } from "./watch.ts";
 import { watchConnection } from "./watch-status.ts";
 import { describeOutput, failKindKo, scheduleLabel } from "./watchtext.ts";
@@ -16,6 +17,10 @@ export type Monitor = {
 	// A schedule's id: its ⋯ settings screen reads and edits it through /api/schedules/<id>/settings and deletes it with DELETE /api/schedules/<id>.
 	schedule?: string;
 	kind: "watch" | "schedule";
+	/** A schedule's own kind: 알림 owner, 작업 task, 조용한 점검 check. */
+	sk?: ScheduleKind;
+	/** What became of a schedule's latest run; none for one fired before run records. */
+	run_state?: ScheduleRunState;
 	channel?: string;
 	last_run?: string;
 	last_result?: "ok" | "changed" | "fail";
@@ -78,18 +83,21 @@ export function listMonitors(): Monitor[] {
 			...facts,
 		};
 	});
+	const latest = new Map(listScheduleRuns().map(r => [r.scheduleId, r]));
 	const schedules: Monitor[] = listSchedules().map(s => {
 		// A schedule's text is the whole instruction it runs, after its internal target (ch:<id>, lane:<name>); the owner reads its short name.
 		const channel = /^\s*(ch:\d+)/.exec(s.text)?.[1];
-		const name = scheduleLabel(s.text) || "예약";
+		const run = latest.get(s.id), last = run?.firedAt ?? s.last;
 		return {
-			name,
+			name: s.name || scheduleLabel(s.text) || "예약",
 			schedule: s.id,
 			kind: "schedule",
+			sk: scheduleKind(s),
 			...(channel ? { channel, scope: "project" as const, project: channel, project_title: projectTitle(channel, ctx) } : { scope: "plain" as const }),
-			...(s.last ? { last_run: s.last, last_result: "ok" as const } : {}),
+			...(last ? { last_run: last, last_result: run?.state === "failed" ? ("fail" as const) : ("ok" as const) } : {}),
+			...(run ? { run_state: run.state } : {}),
 			...(s.paused ? { paused: true } : { next_run: s.at }),
-			...(s.every_minutes ? { every: everyKo(s.every_minutes) } : {}),
+			...(s.every_minutes ? { every: repeatLabel(s.every_minutes, s.at) } : {}),
 		};
 	});
 	return [...watches, ...schedules];

@@ -62,7 +62,8 @@ import { startDayNote } from "./day-note.ts";
 import { startReflection } from "./reflect.ts";
 import { recipeBlock } from "./recipes.ts";
 import { syncFeatureWatches } from "./features.ts";
-import { scheduleTarget, startSchedules, stopSchedules } from "./schedule.ts";
+import { startSchedules, stopSchedules } from "./schedule.ts";
+import { fireSchedule, namingDeps, startRunWatch } from "./schedule-fire.ts";
 import { syncRoutineSchedules } from "./custom.ts";
 import { startHarnessUpdate } from "./update.ts";
 import { startOmoEngineWatch } from "./runtime/omo-engine-watch.ts";
@@ -574,21 +575,12 @@ startStallSweep((conversation, r) => {
 startOrphanReaper();
 startAgentTrees();
 startHostSweep();
-startSchedules((s, group, runs) => {
-	const channel = scheduleTarget(s, discord.status.enabled ? "chat" : "web");
-	// A check is the assistant's own: its turn is quiet (hub/prompts.ts quiet). Checks due together arrive as one numbered turn.
-	if (s.kind === "check") {
-		const all = group ?? [s];
-		const text = all.length > 1 ? all.map((x, i) => `${i + 1}) [${x.id}] ${x.text}`).join("\n") : s.text;
-		// source "gateway" like wakeOnce: no 예약 notice in the bell and no card in the chat, the turn is the assistant's own
-		const event = { ts: now(), kind: "schedule", source: "gateway", channel, id: all.map(x => x.id).join(","), ids: all.map(x => x.id), runs, quiet: true, text };
-		emit("inbox", event);
-		return void deliver(inboxText(event), { target: channel, quiet: true });
-	}
-	const event = { ts: now(), kind: "schedule", source: "schedule", channel, id: s.id, run: runs[0], every: s.every_minutes, text: s.text };
-	emit("inbox", event);
-	deliver(inboxText(event), { target: channel });
-}, process.env.DOTZ_NO_ORCHESTRATOR === "1" ? undefined : { wake: text => wakeOnce("schedule-naming", text, true), post: line => void out(discord.status.enabled ? "worklog" : "web", line, undefined, { source: "gateway", wk: "system" }).catch(e => log(`schedule naming notice failed: ${e}`)) });
+const scheduleChannel = () => (discord.status.enabled ? "chat" : "web");
+startSchedules((s, group, runs) => fireSchedule(s, group, runs, { emit, deliver, inboxText, fallback: scheduleChannel }), process.env.DOTZ_NO_ORCHESTRATOR === "1" ? undefined : namingDeps({ wake: wakeOnce, out, fallback: scheduleChannel }));
+startRunWatch(target => {
+	const o = (convs.forTarget(target)?.o ?? mainOrch).orch;
+	return o.status === "rate-limited" && o.pauseKind === "rate";
+}, scheduleChannel);
 syncRoutineSchedules();
 startReflection(text => deliver(text), () => orch.sessionFile, text => out("alert", text, undefined, { source: "gateway", nk: "alert" }), text => void steerOrchestrator(text), recipeBlock);
 startDayNote();

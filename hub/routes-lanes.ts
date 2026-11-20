@@ -21,7 +21,7 @@ import { stripHandoff } from "./tone.ts";
 import { answerMovesToLane, lanePlace, startedIn } from "./threads.ts";
 import { ledger } from "./ledger.ts";
 import { ledgerApi } from "./ledger-api.ts";
-import { addSchedule, checksSharingSlot, listSchedules, patchSchedule, removeSchedule } from "./schedule.ts";
+import { addSchedule, checksSharingSlot, listScheduleRuns, listSchedules, patchSchedule, removeSchedule, runNow } from "./schedule.ts";
 import { clearChannel, endStanding, listSetups, setupChannel, standingLabelKo } from "./workchannels.ts";
 import { readWatchSettings, writeWatchSettings } from "./watch-settings.ts";
 import { readScheduleSettings, writeScheduleSettings } from "./schedule-settings.ts";
@@ -183,7 +183,11 @@ export async function routeLanes(req: Request, url: URL, parts: string[]): Promi
 				if (!listSchedules().some(s => s.id === parts[2])) return json({ error: `no schedule ${parts[2]}` }, 404);
 				return json({ key: `s:${parts[2]}`, fields: req.method === "GET" ? readScheduleSettings(parts[2]) : writeScheduleSettings(parts[2], (await body(req)).values) });
 			}
-			if (req.method === "GET") return json(listSchedules());
+			if (req.method === "POST" && parts[2] && parts[3] === "run" && parts.length === 4) {
+				if (!listSchedules().some(s => s.id === parts[2]) && !listScheduleRuns().some(r => r.scheduleId === parts[2])) return json({ error: `no schedule ${parts[2]}` }, 404);
+				return json({ run: runNow(parts[2]) });
+			}
+			if (req.method === "GET") return json({ items: listSchedules(), runs: listScheduleRuns() });
 			if (req.method === "POST") {
 				const schedule = addSchedule(await body(req));
 				// A check fires on the :00 / :30 grid: the answer names its slot and the checks it shares the turn with.

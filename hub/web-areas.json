@@ -80,6 +80,7 @@
   "30-notices-jump.js": "notices",
   "30-notices.js": "notices",
   "30-replies.js": "reply",
+  "30-schedules.js": "monitoring",
   "30-triage.js": "reply",
   "31-conversations.js": "chat",
   "31-notices-screen.js": "notices",

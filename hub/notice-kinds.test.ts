@@ -35,6 +35,7 @@ const SAMPLES: Record<NoticeKindName, { event?: HubEvent; run?: () => void; find
 	"usage-stop": { event: out(33, { source: "gateway", nk: "usage-stop", target: `${ch}33`, text: `지금 사용량 한도로 멈춰 있어요 ${u}` }), find: n => n.open === `${ch}33` },
 	"orch-error": { event: out(34, { source: "gateway", nk: "orch-error", target: `${ch}34`, text: `연결이 돌아오면 다시 시도해요 ${u}` }), find: n => n.open === `${ch}34` },
 	ledger: { event: out(35, { source: "gateway", nk: "ledger", target: `${ch}35`, text: `내일 마감인 일이 1건 있어요 ${u}` }), find: n => n.open === `${ch}35` },
+	schedule: { event: out(37, { target: `${ch}37`, text: `어제는 재요청이 없었어요 ${u}. 표는 아래에 있어요.`, run: `sk${u}`, sk: "task" }), find: n => n.key === `schedule:sk${u}` },
 	"gateway-note": { event: out(36, { source: "gateway", nk: "gateway-note", target: `${ch}36`, text: `모델을 바꿨어요 ${u}` }), find: n => n.open === `${ch}36` },
 };
 

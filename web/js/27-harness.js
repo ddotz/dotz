@@ -63,8 +63,11 @@ async function loadHarness(quiet) {
   try { if (!M) await loadModels(true); [HGB, FC] = await Promise.all([api("/api/harness"), api("/api/features").then(fcSplit).catch(() => FC)]); }
   catch (e) { hLoading = false; if (!quiet && current === "harness") clear($("#harness")).append(emptyNode(TX("system.load_failed"))); return; }
   hLoading = false;
-  if (current === "harness") { renderHarness(); hHead(); }
+  if (current === "harness") { renderHarness(); hHead(); hWantOpen(); }
 }
+let hWant = "";
+function hWantOpen() { const id = hWant; hWant = ""; if (id && hNode(id)) openHSheet(id); }
+function harnessOpenNode(id) { hWant = id; go("harness"); }
 
 // Layered layout: flow nodes sit in the column of their longest path from an input; file and support nodes join the
 // column of the node they attach to. Shared by the simple map (one stage per column) and the full graph.

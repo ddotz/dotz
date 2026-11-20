@@ -9,6 +9,7 @@ import { cfg, DATA_DIR, log, NAME, updateNotifyPush, writeAtomic } from "./confi
 import { classOfNotice, NOTICE_CLASSES, type NoticeClass, noticeClass } from "./notice-class.ts";
 import { type KindItem, kindOf, NOTICE_KINDS, type NoticeKindName, pushTitle } from "./notice-kinds.ts";
 import { clean } from "./notices-rules.ts";
+import { RUN_DECISION, taskRunOf } from "./notices-schedule.ts";
 import { pushClasses, route } from "./notify-route.ts";
 import { eventTarget, type HubEvent, onBroadcast, onEmit } from "./events.ts";
 import { dropForLine, orchestratorOnlyAsk } from "./forline.ts";
@@ -120,7 +121,7 @@ function classifyEvent(e: HubEvent, sinceOwner?: number): Classified | undefined
 	const { tone, text: rest } = parseTone(text);
 	const key = typeof e.update_key === "string" ? e.update_key : "";
 	// An edited line (a lane's worklog entry, progress): its [done]/[fail] arrives as a bell notice (noticePush), its [run] never notifies.
-	if (key || e.hushed === true) return undefined;
+	if (key || e.hushed === true || (taskRunOf(e) && tone !== "ask" && tone !== "fail")) return undefined;
 	const named = kindOf(e.nk);
 	const lane = typeof e.lane === "string" ? e.lane : src.startsWith("lane:") ? src.slice(5) : undefined;
 	if (lane && tone === "ask" && orchestratorOnlyAsk(rest)) return undefined;
@@ -190,8 +191,9 @@ export function noticePush(n: Notice & { nk?: unknown }): PushMessage | undefine
 	const conv = n.open || "main";
 	const nk = kindOf(n.nk) ?? guessedKind(n, cls, conv);
 	if (!nk || (cls === "news" && n.watch && watchPushOff(n.watch))) return undefined;
-	const item: KindItem = { name: n.title, conv, text: n.text, id: n.id, at: n.at, ...(n.key ? { key: n.key } : {}), ...(n.watch ? { watch: n.watch } : {}), folded: !!n.repeats?.length };
-	const { conv: open, ...m } = made(nk, item, plain(n.text) || plain(n.title));
+	const result = nk === "schedule";
+	const item: KindItem = { name: result ? `${n.title} · ${plain(n.text)}` : n.title, conv, text: n.text, id: n.id, at: n.at, ...(n.key ? { key: n.key } : {}), ...(n.watch ? { watch: n.watch } : {}), folded: !!n.repeats?.length };
+	const { conv: open, ...m } = made(nk, item, result ? "" : plain(n.text) || plain(n.title));
 	return { ...m, ...addrOf({ conv: open, at: n.at, nid: n.id }), ...(cls === "news" && n.app ? { app: n.app } : {}) };
 }
 function guessedKind(n: Notice, cls: NoticeClass, conv: string): NoticeKindName | undefined {
@@ -218,7 +220,7 @@ const DECISION_ACTIONS = 2;
 // A decision notice as a notification: the decision line as the body, at most two option buttons (never the login form's own input).
 export function decisionPush(n: Notice): PushMessage {
 	const d = n.decision!;
-	const { conv, ...m } = made("decision", { name: NAME, conv: d.to, id: n.id }, plain(n.title));
+	const { conv, ...m } = made("decision", { name: NAME, conv: d.to.startsWith(RUN_DECISION) ? n.open : d.to, id: n.id }, plain(n.title));
 	const group = confirmGroup(n);
 	// The send approvals of one monitoring app are one notification that evolves (same tag): "메일 답장 확인 3건", with no button, since a button answers one item.
 	if (group && group.count > 1) return { ...m, body: `${group.label} ${group.count}건`, ...addrOf({ conv: "home", at: n.at, dec: n.id }), tag: `decision-group:${group.key}` };

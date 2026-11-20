@@ -34,6 +34,7 @@ import { createBgWork, omoWorkById, sessionProjects } from "./bgwork.ts";
 import { createWorkRows } from "./workrows.ts";
 import { digest } from "./convdigest.ts";
 import { createPrompts, type Pending, type Reply, type WorkLink } from "./prompts.ts";
+import { scheduleRan } from "./schedule-fire.ts";
 import { recordHanded } from "./handed.ts";
 import { createAskFollowup } from "./ask-followup.ts";
 import { handBackToLane } from "./lane-handback.ts";
@@ -176,6 +177,7 @@ function makeQueue(key: string, o: Orchestrator, pendingFile: string, bg: () => 
 		pending: sends.pending,
 		recent: () => recentOwnerMessages().filter(m => convs.keyOf(m.target) === key),
 		answeredSince,
+		ran: scheduleRan,
 		settled: settleRefs,
 		turnEnded: () => askFollowup.turnEnded(key),
 	});

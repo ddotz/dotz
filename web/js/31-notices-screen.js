@@ -24,17 +24,17 @@ const nscTone = n => ntNeeds(n) || n.waits === "login" || n.tone === "warn" ? "w
 // or the prefix of the conversation it lives in. A word the data does not give is not made up: the rest is 감시 / 경고 / the app's name / 새 소식.
 const NSC_APP_TAG = { mail: TX("common.mail"), kakao: TX("decision.app.kakao"), instagram: TX("misc.nsc.comments"), youtube: TX("misc.nsc.comments"), site: TX("misc.nsc.comments") };
 const nscApp = n => String(n.app || (n.item && n.item.app) || n.src || n.open || "").split(/[-:]/)[0];
-const ntIsSched = n => n.kind === "watch" && n.title === "예약";
+const ntIsSched = n => n.nk === "schedule" || String(n.key || "").startsWith("schedule:") || (n.kind === "watch" && n.title === "예약");
 function nscTag(n) {
   const app = nscApp(n);
   if (ntIsDec(n)) return n.decision.draft ? (app === "kakao" ? TX("decision.app.kakao") : TX("misc.nsc.tag_reply")) : TX("common.decision");
   if (n.waits === "login") return TX("misc.nsc.tag_login");
   if (n.waits === "fail" || n.tone === "fail") return TX("home.sys.failed");
   if (n.tone === "ask") return TX("misc.nsc.tag_ask");
+  if (ntIsSched(n)) return TX("misc.nsc.tag_sched");
   if (n.cls === "result") return n.tone === "done" ? TX("misc.nsc.tag_done") : TX("settings.notify.result_label");
   if (n.kind === "watch" && nwChangeLine(n.text)) return TX("misc.nsc.tag_price");
   if (NSC_APP_TAG[app]) return NSC_APP_TAG[app];
-  if (ntIsSched(n)) return TX("misc.nsc.tag_sched");
   if (/아침/.test(n.title || "")) return TX("misc.nsc.tag_morning");
   if (n.kind === "watch") return TX("misc.nsc.tag_watch");
   if (n.cls === "alert" && /^[^\n]*: 다시 정상이에요/.test(n.text || "")) return TX("misc.nsc.tag_back");
@@ -70,8 +70,14 @@ function nscWhen(t) {
   if (kstDay(t) === kstDay(Date.now())) return kstHM(t);
   return kstDay(t) === kstDay(Date.now() - 86400000) ? TX("project.yesterday") : dayLabel(t).replace(/ \(.\)$/, "");
 }
+const NSC_ASK_TAIL = / · ([^·]+\?)$/u;
+function nscHead(title) {
+  const m = NSC_ASK_TAIL.exec(title);
+  if (!m) return el("span", { class: "hd", title, text: title });
+  return el("span", { class: "hd hd-q", title }, el("span", { class: "w", text: title.slice(0, m.index) }), el("span", { class: "q", text: ` · ${m[1]}` }));
+}
 function nscLines(n, group, summary, when, tag, prefix = "") {
-  return [el("span", { class: "ln" }, el("span", { class: "hd", title: ntPlain(hcLine(n)), text: ntPlain(hcLine(n)) }), el("span", { class: "t", text: when })),
+  return [el("span", { class: "ln" }, nscHead(ntPlain(hcLine(n))), el("span", { class: "t", text: when })),
     el("span", { class: "ln" }, el("span", { class: "nsc-s" }, prefix, summary), el("span", { class: "tag", text: tag }))];
 }
 function nscRow(n, group) {

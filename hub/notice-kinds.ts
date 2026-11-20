@@ -45,6 +45,7 @@ export const NOTICE_KINDS = {
 	"usage-stop": { cls: "alert", channels: ALL, title: "notice.push.alert", lead: "gateway", tag: () => "usage-stop", open: inConv, renotify: false },
 	"orch-error": { cls: "alert", channels: ALL, title: "notice.push.alert", lead: "gateway", tag: () => "orch-error", open: inConv, renotify: false },
 	ledger: { cls: "news", channels: ALL, title: "notice.push.news", lead: "gateway", tag: i => `ledger:${i.id}`, open: inConv, renotify: true },
+	schedule: { cls: "result", channels: ALL, title: "notice.push.schedule", lead: "item", tag: i => i.key ?? `schedule:${i.id}`, open: inConv, renotify: true },
 	"gateway-note": { cls: "log", channels: { bell: false, push: false, discord: true, messenger: true }, title: "notice.push.message", lead: "gateway", tag: i => `note:${i.id}`, open: inConv, renotify: false },
 } as const satisfies Record<string, KindRow>;
 export type NoticeKindName = keyof typeof NOTICE_KINDS;

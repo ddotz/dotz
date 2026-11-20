@@ -5571,6 +5571,82 @@
 			]
 		}
 	},
+	"screen-schedules@1280": {
+		"requests": [
+			"GET /api/harness | GET /api/monitors",
+			"GET /api/schedules"
+		],
+		"hash": "#schedules",
+		"historyDelta": 1,
+		"c": [
+			"home",
+			"schedules"
+		],
+		"w": [
+			"home",
+			"schedules"
+		],
+		"nav": [
+			"home",
+			"chat",
+			"projects",
+			"monitoring",
+			"settings"
+		],
+		"views": [
+			"section#v-schedules.view",
+			" div#schedules.st-page",
+			"  div.sec",
+			"  div.card.empty.compact"
+		],
+		"back": {
+			"hash": "#home",
+			"c": [
+				"home"
+			],
+			"w": [
+				"home"
+			]
+		}
+	},
+	"screen-schedules@390": {
+		"requests": [
+			"GET /api/harness | GET /api/monitors",
+			"GET /api/schedules"
+		],
+		"hash": "#schedules",
+		"historyDelta": 1,
+		"c": [
+			"home",
+			"schedules"
+		],
+		"w": [
+			"home",
+			"schedules"
+		],
+		"nav": [
+			"home",
+			"chat",
+			"projects",
+			"monitoring",
+			"settings"
+		],
+		"views": [
+			"section#v-schedules.view",
+			" div#schedules.st-page",
+			"  div.sec",
+			"  div.card.empty.compact"
+		],
+		"back": {
+			"hash": "#home",
+			"c": [
+				"home"
+			],
+			"w": [
+				"home"
+			]
+		}
+	},
 	"screen-settings@1280": {
 		"requests": [
 			"GET /api/api-budget | GET /api/messengers | GET /api/runtimes | GET /api/devices | GET /api/web-access | GET /api/accounts"
@@ -5653,6 +5729,15 @@
 			"      div.hd",
 			"      div.sup",
 			"       span.wph",
+			"     span.li-end",
+			"      svg.ic.chev",
+			"    button.li.tap",
+			"     span.lead",
+			"      svg.ic",
+			"     span.tx",
+			"      div.hd",
+			"      div.sup",
+			"       span.wph *3",
 			"     span.li-end",
 			"      svg.ic.chev",
 			"    button.li.tap",
@@ -5783,6 +5868,15 @@
 			"      div.hd",
 			"      div.sup",
 			"       span.wph",
+			"     span.li-end",
+			"      svg.ic.chev",
+			"    button.li.tap",
+			"     span.lead",
+			"      svg.ic",
+			"     span.tx",
+			"      div.hd",
+			"      div.sup",
+			"       span.wph *3",
 			"     span.li-end",
 			"      svg.ic.chev",
 			"    button.li.tap",

@@ -34,6 +34,8 @@ export type SettingField = {
 	def?: boolean | string | string[] | number | DraftRule[];
 	/** Greyed text in an empty box that says how the value is used (text, rules). */
 	placeholder?: string;
+	/** A text that runs over several lines is edited in a box this many lines tall (an instruction, not a one-line value). */
+	lines?: number;
 	/** A common setting the web draws as a control above the conversation: a switch (bool), a menu (enum) or a box (number, text). */
 	switch?: boolean;
 	/** Dotted paths in the same file that are set true together with this switch turned on. */
@@ -252,9 +254,9 @@ export function validate(app: string, values: unknown): Record<string, SettingVa
 	return validateFields(fields, values);
 }
 
-export type SettingView = Pick<SettingField, "key" | "label" | "type" | "help" | "section" | "options" | "labels" | "min" | "max" | "switch" | "memory" | "placeholder"> & { value: SettingValue; blocked?: string };
+export type SettingView = Pick<SettingField, "key" | "label" | "type" | "help" | "section" | "options" | "labels" | "min" | "max" | "switch" | "memory" | "placeholder" | "lines"> & { value: SettingValue; blocked?: string };
 /** A field with its current value, as GET returns it. */
-export const viewOf = (f: SettingField, value: SettingValue): SettingView => ({ key: f.key, label: f.label, type: f.type, help: f.help, ...(f.section ? { section: f.section } : {}), ...(f.options ? { options: f.options } : {}), ...(f.labels ? { labels: f.labels } : {}), ...(f.min !== undefined ? { min: f.min } : {}), ...(f.max !== undefined ? { max: f.max } : {}), ...(f.switch ? { switch: true } : {}), ...(f.memory ? { memory: true as const } : {}), ...(f.placeholder ? { placeholder: f.placeholder } : {}), value });
+export const viewOf = (f: SettingField, value: SettingValue): SettingView => ({ key: f.key, label: f.label, type: f.type, help: f.help, ...(f.section ? { section: f.section } : {}), ...(f.options ? { options: f.options } : {}), ...(f.labels ? { labels: f.labels } : {}), ...(f.min !== undefined ? { min: f.min } : {}), ...(f.max !== undefined ? { max: f.max } : {}), ...(f.switch ? { switch: true } : {}), ...(f.memory ? { memory: true as const } : {}), ...(f.placeholder ? { placeholder: f.placeholder } : {}), ...(f.lines ? { lines: f.lines } : {}), value });
 export function readSettings(dataDir: string, app: string): SettingView[] {
 	const cache = new Map<string, Record<string, any>>();
 	return fieldsOf(app).map(f => {

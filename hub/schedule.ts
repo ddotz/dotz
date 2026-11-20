@@ -18,12 +18,15 @@ export const NAME_MAX = 40;
 export type Schedule = { id: string; name?: string; text: string; at: string; every_minutes?: number; created: string; paused?: boolean; last?: string; /** The conversation (ch:/th:/mail:/settings: target) whose session it fires into; none = main, as for items stored before this field. */ conv?: string; kind?: ScheduleKind };
 /** What became of one fire: "fired" when the timer went off and the turn was queued; the later states are set by whoever learns the turn's outcome. */
 export type ScheduleRunState = "fired" | "answered" | "silent" | "held" | "failed";
-/** One fire of a schedule, kept for RUN_KEEP_MS in schedule-runs.json even after a one-shot or check entry is gone; `run` is the id the inbox event carries. */
-export type ScheduleRun = { run: string; scheduleId: string; name: string; kind: ScheduleKind; text: string; firedAt: string; state: ScheduleRunState };
+/** One fire of a schedule, kept for RUN_KEEP_MS in schedule-runs.json even after a one-shot or check entry is gone; `run` is the id the inbox event carries.
+ *  `conv`: the entry's conversation then (a run again fires there); `liftedAt`: when the usage limit a held run waited on lifted (hub/schedule-fire.ts). */
+export type ScheduleRun = { run: string; scheduleId: string; name: string; kind: ScheduleKind; text: string; firedAt: string; state: ScheduleRunState; conv?: string; liftedAt?: string };
 /** The one-time naming of entries stored before names and the task kind (routine entries excepted: hub/custom.ts names those). "asked": a hard sign
  *  (hardTask) already made those of no kind or "owner" a task, and the assistant names and judges each id in one quiet turn (dotz_schedule edit);
- *  `hard` are the ids a rule made a task. "done" for good: what it left unnamed after NAMING_WAIT_MS got a name from its text and stayed as it was. */
-export type ScheduleNamingState = { state: "asked" | "done"; at: string; ids: string[]; hard: string[] };
+ *  `hard` are the ids a rule made a task. "done" for good: what it left unnamed after NAMING_WAIT_MS got a name from its text and stayed as it was;
+ *  those ids are `late`: the assistant's edit of one of them within LATE_EDIT_MS (its turn was held past the deadline) keeps a hard id a task and
+ *  is told to the owner once more. */
+export type ScheduleNamingState = { state: "asked" | "done"; at: string; ids: string[]; hard: string[]; late?: string[] };
 /** What the one-time naming needs from the running gateway: a quiet wake of the assistant and the one owner-visible line. */
 export type ScheduleNaming = { wake: (text: string) => void; post: (line: string) => void };
 
@@ -33,6 +36,10 @@ export const RUN_KEEP_MS = 7 * 24 * 3600_000;
 export const RUN_CAP = 500;
 /** How long the one-time naming waits for the assistant before the unnamed entries get a name from their text and stay reminders. */
 export const NAMING_WAIT_MS = 30 * 60_000;
+/** How long after the deadline a late naming edit still counts as the naming's (a held prompt is replayed for 12 hours, hub/prompts-model.ts REPLAY_MAX_AGE_MS). */
+export const LATE_EDIT_MS = 12 * 3600_000;
+/** Late naming edits that land within this of each other are told in one line. */
+export const LATE_POST_MS = 60_000;
 const kindOf = (value: unknown): ScheduleKind => {
 	if (!SCHEDULE_KINDS.includes(value as ScheduleKind)) throw new Error(`kind must be ${SCHEDULE_KINDS.join(" or ")}`);
 	return value as ScheduleKind;
@@ -56,11 +63,11 @@ const HARD_TASK = [
 	/`[^`\n]+`/,
 	/(?:^|[\s("'])(?:~|\.{1,2})?\/[\w.@-]+\/[\w.@-]|\b[\w.-]+\/[\w./-]*\.\w{1,5}\b|\b[\w-]+\.(?:sh|py|ts|js|mjs|jsonl?|md|ya?ml|toml|log|csv)\b/,
 	/(?:^|\s)(?:ch|lane):\S/,
-	/보고해|올려|돌려|정리해|요약해|실행해|점검해|^\s*(?:report|post|run|summari[sz]e)\b/im,
+	/보고해|올려|돌려|요약해|실행해|점검해|^\s*(?:report|post|run|summari[sz]e)\b/im,
 ];
 /** Is this entry work for the assistant by a rule, with no judgement needed: a backtick command, a file path, a ch:/lane: target (in its text or
- *  its conversation) or an instruction verb? */
-export const hardTask = (s: { text: string; conv?: string }): boolean => /^(?:ch|lane):/.test(s.conv ?? "") || HARD_TASK.some(re => re.test(s.text));
+ *  its conversation) or an instruction verb? A web address is no path: a reminder may carry a link. */
+export const hardTask = (s: { text: string; conv?: string }): boolean => /^(?:ch|lane):/.test(s.conv ?? "") || HARD_TASK.some(re => re.test(s.text.replace(/\bhttps?:\/\/\S+/g, "")));
 const stamp = () => new Date(Date.now()).toISOString();
 
 const items: Schedule[] = readJsonOrQuarantine(paths.schedules, () => []);
@@ -97,7 +104,7 @@ function settle(s: Schedule): void {
 
 function recordRun(s: Schedule): string {
 	const run = randomBytes(4).toString("hex");
-	runs.push({ run, scheduleId: s.id, name: s.name ?? nameFromText(s), kind: scheduleKind(s), text: s.text, firedAt: stamp(), state: "fired" });
+	runs.push({ run, scheduleId: s.id, name: s.name ?? nameFromText(s), kind: scheduleKind(s), text: s.text, firedAt: stamp(), state: "fired", ...(s.conv ? { conv: s.conv } : {}) });
 	return run;
 }
 
@@ -120,6 +127,19 @@ function fire(s: Schedule): void {
 	onFire(s, group, ids);
 }
 
+/** Fires schedule `id` now as a new run (its `at` stays): the entry, or, for a one-shot already gone, its last run record within RUN_KEEP_MS. Returns the run id. */
+export function runNow(id: string): string {
+	keepRuns();
+	const past = runs.findLast(r => r.scheduleId === id);
+	const s: Schedule | undefined = items.find(x => x.id === id) ?? (past && { id, name: past.name, text: past.text, kind: past.kind, at: stamp(), created: past.firedAt, ...(past.conv ? { conv: past.conv } : {}) });
+	if (!s) throw new Error(`no schedule ${id}`);
+	const run = recordRun(s);
+	saveRuns();
+	log(`schedule ${id} run now`);
+	onFire(s, undefined, [run]);
+	return run;
+}
+
 /** Arms every entry; `handler` gets the fired entry, its check group, and the run ids (one per entry of `group ?? [s]`, in that order).
  *  `naming` starts (or resumes after a restart) the one-time naming of entries stored before names; without it (no orchestrator) the naming waits. */
 export function startSchedules(handler: (s: Schedule, group: Schedule[] | undefined, runs: string[]) => void, naming?: ScheduleNaming): void {
@@ -133,6 +153,8 @@ export function stopSchedules(): void {
 	for (const t of timers.values()) clearTimeout(t);
 	timers.clear();
 	clearTimeout(namingTimer);
+	clearTimeout(lateTimer);
+	lateTimer = undefined;
 }
 
 /** Where a fired schedule is delivered: its conversation, else the gateway's default channel (main's session). */
@@ -170,7 +192,8 @@ export function patchSchedule(id: string, input: { name?: unknown; every_minutes
 	const at = input.at === undefined ? Date.parse(s.at) : typeof input.at === "string" ? Date.parse(input.at) : Number.NaN;
 	if (!Number.isFinite(at)) throw new Error("at must be an ISO time with offset, e.g. 2026-10-17T09:00:00+09:00");
 	if (input.paused !== undefined && typeof input.paused !== "boolean") throw new Error("paused must be true or false");
-	const kind = input.kind === undefined ? s.kind : kindOf(input.kind);
+	const late = lateEdit(id, input);
+	const kind = late?.hard ? "task" : input.kind === undefined ? s.kind : kindOf(input.kind);
 	if (name) s.name = name;
 	s.text = text;
 	s.at = new Date(at).toISOString();
@@ -188,6 +211,7 @@ export function patchSchedule(id: string, input: { name?: unknown; every_minutes
 	}
 	save();
 	arm(s);
+	if (late) queueLate(id);
 	const asked = naming?.state.ids;
 	if (asked && !items.some(x => !x.name && asked.includes(x.id))) finishNaming();
 	return s;
@@ -209,11 +233,13 @@ export const listScheduleRuns = (): ScheduleRun[] => {
 	keepRuns();
 	return [...runs];
 };
-/** Sets what became of one fire; undefined when the record is gone (older than RUN_KEEP_MS) or never existed. */
-export function markScheduleRun(run: string, state: ScheduleRunState): ScheduleRun | undefined {
+/** Sets what became of one fire; undefined when the record is gone (older than RUN_KEEP_MS) or never existed. `liftedAt` is kept only while given. */
+export function markScheduleRun(run: string, state: ScheduleRunState, liftedAt?: string): ScheduleRun | undefined {
 	const r = runs.find(x => x.run === run);
 	if (!r) return undefined;
 	r.state = state;
+	if (liftedAt) r.liftedAt = liftedAt;
+	else delete r.liftedAt;
 	keepRuns();
 	saveRuns();
 	return r;
@@ -221,11 +247,40 @@ export function markScheduleRun(run: string, state: ScheduleRunState): ScheduleR
 
 let naming: { deps: ScheduleNaming; state: ScheduleNamingState } | undefined;
 let namingTimer: ReturnType<typeof setTimeout> | undefined;
+let lateNaming: { deps: ScheduleNaming; state: ScheduleNamingState } | undefined;
+let lateTimer: ReturnType<typeof setTimeout> | undefined;
+const lateQueue = new Set<string>();
 const saveNaming = (state: ScheduleNamingState) => writeAtomic(paths.scheduleNaming, `${JSON.stringify(state, null, 1)}\n`);
+const keepLate = (deps: ScheduleNaming, state: ScheduleNamingState) => {
+	lateNaming = state.late?.length && Date.now() - Date.parse(state.at) < LATE_EDIT_MS ? { deps, state } : undefined;
+};
+
+function lateEdit(id: string, input: { name?: unknown; kind?: unknown }): { hard: boolean } | undefined {
+	const state = lateNaming?.state;
+	if (!state?.late?.includes(id) || (input.name === undefined && input.kind === undefined)) return undefined;
+	if (Date.now() - Date.parse(state.at) >= LATE_EDIT_MS) return void (lateNaming = undefined);
+	return { hard: state.hard.includes(id) };
+}
+function queueLate(id: string): void {
+	lateQueue.add(id);
+	lateTimer ??= setTimeout(postLate, LATE_POST_MS);
+}
+function postLate(): void {
+	lateTimer = undefined;
+	const late = lateNaming;
+	if (!late) return lateQueue.clear();
+	const told = items.filter(s => lateQueue.has(s.id));
+	const state: ScheduleNamingState = { ...late.state, late: (late.state.late ?? []).filter(id => !lateQueue.has(id)) };
+	lateQueue.clear();
+	saveNaming(state);
+	keepLate(late.deps, state);
+	log(`schedule naming: ${told.length} late edit(s) told`);
+	if (told.length) late.deps.post(msg().scheduleNamed(told.map(s => ({ name: s.name ?? nameFromText(s), kind: scheduleKind(s) }))));
+}
 
 function startNaming(deps: ScheduleNaming): void {
 	let state = readJsonOrQuarantine<ScheduleNamingState | undefined>(paths.scheduleNaming, () => undefined, { keepGood: false });
-	if (state?.state === "done") return;
+	if (state?.state === "done") return keepLate(deps, state);
 	if (!state) {
 		const legacy = items.filter(s => !s.name && !s.text.startsWith("[routine:"));
 		if (!legacy.length) return saveNaming({ state: "done", at: stamp(), ids: [], hard: [] });
@@ -254,12 +309,15 @@ function finishNaming(): void {
 	naming = undefined;
 	clearTimeout(namingTimer);
 	const named = state.ids.flatMap(id => items.filter(s => s.id === id));
+	const late = named.filter(s => !s.name).map(s => s.id);
 	for (const s of named) {
 		s.name ??= nameFromText(s);
 		if (state.hard.includes(s.id)) s.kind = "task";
 	}
 	save();
-	saveNaming({ ...state, state: "done", at: stamp() });
+	const done: ScheduleNamingState = { ...state, state: "done", at: stamp(), ...(late.length ? { late } : {}) };
+	saveNaming(done);
+	keepLate(deps, done);
 	log(`schedule naming done: ${named.length} named`);
 	if (named.length) deps.post(msg().scheduleNamed(named.map(s => ({ name: s.name!, kind: scheduleKind(s) }))));
 }

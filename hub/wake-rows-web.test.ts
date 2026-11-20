@@ -47,7 +47,7 @@ for (const [width, height] of [[390, 844], [1280, 900]] as const) {
 		if (SHOTS) await Bun.write(join(SHOTS, `wake-rows-${width}.png`), await v.screenshot());
 		expect(await ev<number>(v, `document.querySelectorAll("#tl .rc").length`)).toBe(0);
 		expect(await ev<string[]>(v, `[...document.querySelectorAll("#tl > details.work:not([hidden]) .wsum")].map(s => s.textContent)`)).toEqual([
-			"예약 · 아침 브리핑 → 20초 작업 · 명령 1",
+			"예약 → 20초 작업 · 명령 1",
 			"데모 점검 · 알림 설정 확인 → 20초 작업 · 명령 1",
 			"아침 브리핑 → 20초 작업 · 명령 1",
 		]);

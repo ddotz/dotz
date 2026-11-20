@@ -86,6 +86,25 @@ test("with no answer in time a reminder stays a reminder and is named from its t
 	expect(store.scheduleKind(c)).toBe("owner");
 	expect(c.name).toBe("3시에 회의 알려줘");
 	expect(posted).toEqual([msg().scheduleNamed([{ name: "3시에 회의 알려줘", kind: "owner" }])]);
+	expect(posted[0]).toMatch(/모니터링|Monitoring/);
+});
+
+test("an edit that lands after the deadline keeps a hard id a task and is told once more, in one line; a second edit is not told again", async () => {
+	const store = await load([old("a00001", "sample-2 `bun run check`"), old("c00003", "3시에 회의 알려줘")]);
+	const { posted, naming } = deps();
+	store.startSchedules(() => {}, naming);
+	await advance(store.NAMING_WAIT_MS);
+	expect(posted).toHaveLength(1);
+	store.patchSchedule("a00001", { name: "sample-2 확인", kind: "owner" });
+	store.patchSchedule("c00003", { name: "회의", kind: "task" });
+	expect(byId(store, "a00001").kind).toBe("task");
+	expect(posted).toHaveLength(1);
+	await advance(store.LATE_POST_MS);
+	expect(posted[1]).toBe(msg().scheduleNamed([{ name: "sample-2 확인", kind: "task" }, { name: "회의", kind: "task" }]));
+	store.patchSchedule("c00003", { name: "주간 회의", kind: "owner" });
+	await advance(store.LATE_POST_MS);
+	expect(posted).toHaveLength(2);
+	expect(byId(store, "c00003").kind).toBe("owner");
 });
 
 test("a restart while the assistant is naming does not wake it again and keeps the deadline", async () => {
@@ -131,7 +150,7 @@ test("an entry of a kind this version does not know loads, acts as a reminder an
 
 test("the hard signs: a backtick command, a file path, a ch:/lane: target or an instruction verb, never the language", async () => {
 	for (const text of ["`ls`", "/Users/example/a 봐 줘", "./bin/run 결과", "notes.md 읽기", "lane:sample-2 상황", "ch:1 상황", "매일 결과 보고해", "PR 올려", "테스트 돌려", "run the report"]) expect(hardTask({ text })).toBe(true);
-	for (const text of ["3시에 회의 알려줘", "remind me of the 3 pm meeting", "약 먹을 시간", "sample-2 생일"]) expect(hardTask({ text })).toBe(false);
+	for (const text of ["3시에 회의 알려줘", "remind me of the 3 pm meeting", "약 먹을 시간", "sample-2 생일", "책상 정리해", "https://example.com/a/b.html 다시 알려줘"]) expect(hardTask({ text })).toBe(false);
 	expect(hardTask({ text: "3시에 회의 알려줘", conv: "ch:5" })).toBe(true);
 	expect(hardTask({ text: "3시에 회의 알려줘", conv: "th:5" })).toBe(false);
 });

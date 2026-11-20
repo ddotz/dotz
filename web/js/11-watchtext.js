@@ -183,24 +183,3 @@ function watchLine(label, reason, output = "", opts = {}) {
   if (opts.raw !== false) lines.push(rawFence(out));
   return lines.join("\n");
 }
-// hub/watchtext.ts scheduleLabel: a schedule's short name, its first sentence without what it runs.
-const WT_CMD = /\b[\w.-]+\.(?:md|jsonl?|ya?ml|toml|log|py|sh)\b|\b(?:ssh|scp|rsync|curl|wget|python3?|node|bun|npm|npx|bash|zsh|git|sudo|docker|osascript)\s+(?:-|[\w.-]*@|~|\.{0,2}\/|[\w.-]+\.(?:py|sh|js|ts|mjs)\b)|(?:^|\s)-{1,2}[A-Za-z][\w-]*(?:=|\s|$)|\s[<>|]{1,2}\s|\$\(|~\/|(?:^|\s)\.{0,2}\/[\w.-]+\/|@\d{1,3}(?:\.\d{1,3}){3}/;
-const WT_RUNS = new RegExp(["`[^`\\n]*(?:`|$)", "(?<!\\S)(?:~|\\.{1,2})?\\/[\\w.\\/-]*[\\w\\/]", "(?<![\\w.\\/-])[\\w.\\/-]*\\.(?:md|jsonl?|ya?ml|toml|log|py|sh|ts|js|mjs)\\b", "\\b(?=[0-9a-f]*\\d)(?=[0-9a-f]*[a-f])[0-9a-f]{7,40}\\b"]
-  .map(p => p + "(?:대로|으로|에서|로|을|를|이|가|은|는|에|의)?").join("|"), "g");
-function wtScheduleLabel(text) {
-  let s = (String(text || "").replace(/^\s*(?:(?:ch|lane|th):\S+\s*)+/, "").replace(/^\s*#[^\s(]+\((?:ch|lane|th):[^)\s]+\):?\s*/, "").trim().split("\n")[0] || "").replace(/\s+/g, " ");
-  s = s.replace(/\s*[(（][^()（）]*(?:[)）]|$)/g, m => (WT_CMD.test(m) || /^\s*[(（]state\s/.test(m) ? "" : m)).replace(WT_RUNS, "");
-  s = s.replace(/[ \t]*[,·][ \t]*([)）])/g, "$1").replace(/([(（])[ \t]*[,·][ \t]*/g, "$1").replace(/\s*[(（]\s*[)）]/g, "");
-  s = s.replace(/\s+([,.!?)])/g, "$1").replace(/\s{2,}/g, " ").trim();
-  if (WT_CMD.test(s)) {
-    const i = s.search(/[:：]\s/), keep = [];
-    for (const t of (i > 0 ? s.slice(0, i) : s).split(/(?<=[.!?。])\s+/)) { if (WT_CMD.test(t)) break; keep.push(t); }
-    s = keep.join(" ");
-  }
-  const sentence = (s.split(/(?<=[.!?。])\s+/)[0] || "").replace(/[\s,·:.。]+$/, ""), head = sentence.split(/[:：]\s/)[0].trim();
-  let label = sentence;
-  if (sentence.length > 40 && head !== sentence && head.length <= 40 && /[가-힣A-Za-z]{2,}/.test(head)) label = head;
-  else if (sentence.length > 40) { const t = sentence.slice(0, 39), at = t.lastIndexOf(" "); label = (at > 20 ? t.slice(0, at) : t).replace(/[\s,·:(]+$/, "") + "…"; }
-  return /[가-힣A-Za-z]{2,}/.test(label) && !isMachineOutput(label) ? label : "";
-}
-const scheduleName = text => { const label = wtScheduleLabel(text); return WT_HANGUL.test(label) ? label : ""; };

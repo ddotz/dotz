@@ -156,12 +156,12 @@ function noticeKindAction(n, mons = NM.items) {
   if (ntIsDec(n) || ntTapDec(n)) return "sheet";
   if (n.tone === "ask") return "ask";
   if (n.kind === "alert" && n.tone === "fail") return "detail";
+  if (ntIsSched(n)) return "schedule";
   if (String(n.src || n.open || "").startsWith("mail:")) return "message";   // a new mail is a watch-kind notice, but it has its own conversation
   if (n.kind === "result" || String(n.src || n.open || "").startsWith("lane:")) return "session";
   if (String(n.src || n.open || "").startsWith("settings:")) return "app";   // a monitor's or app's settings conversation: it lives in 모니터링, not in 채팅
   if ((n.src || n.open) === "settings") return "settings";   // an account / update alert: 설정
   if (n.kind === "worklog") return "worklog";
-  if (ntIsSched(n)) return "schedule";
   if (n.kind === "watch") return "monitor";
   return "message";
 }

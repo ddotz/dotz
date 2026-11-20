@@ -51,6 +51,7 @@ flowchart LR
     s_project["project: 프로젝트 상세"]
     s_projects["projects: 프로젝트 목록"]
     s_runtime["runtime: 실행 하네스"]
+    s_schedules["schedules: 예약한 일"]
     s_settings["settings: 설정"]
     s_slack["slack: Slack 연결"]
     s_telegram["telegram: Telegram 연결"]
@@ -104,7 +105,7 @@ flowchart LR
     o_monitoring_menu["menu (1)"]
     o_monitoring_overlay["overlay (1)"]
     o_monitoring_select["select (1)"]
-    o_monitoring_toast["toast (32)"]
+    o_monitoring_toast["toast (35)"]
   end
   subgraph a_notices["notices"]
     c_notices(["notices code"])
@@ -172,6 +173,7 @@ flowchart LR
   c_core -->|"go (1)"| s_monitoring
   c_custom -->|"go (2)"| s_cardform
   c_custom -->|"go (3)"| s_home
+  c_harness -->|"go (1)"| s_harness
   c_home -->|"go (2)"| s_any
   c_home -->|"go (4)"| s_accounts
   c_home -->|"go (2)"| s_chat
@@ -214,6 +216,7 @@ flowchart LR
   c_settings -->|"go (1)"| s_models
   c_settings -->|"go (2)"| s_notifications
   c_settings -->|"go (1)"| s_runtime
+  c_settings -->|"go (1)"| s_schedules
   c_settings -->|"go (1)"| s_update
   c_settings -->|"go (1)"| s_usage
   c_settings -->|"go (1)"| s_webaccess

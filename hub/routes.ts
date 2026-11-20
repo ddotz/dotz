@@ -43,6 +43,8 @@ import { type DecisionSend, type Notice, openDecisionNotices, listNotices, dismi
 import { loadProjects, saveProject } from "./projects.ts";
 import { deleteProject, planDelete, ProjectDeleteError } from "./projectdelete.ts";
 import { listSchedules } from "./schedule.ts";
+import { answerRunDecision } from "./schedule-fire.ts";
+import { RUN_DECISION } from "./notices-schedule.ts";
 import { laneTodo, openMonitor, readTodo } from "./todo.ts";
 import { customRoute, ownFolders } from "./custom.ts";
 import { activateFleetLaunch, activeFleetLaunch, createFleetLaunch } from "./fleet-launch.ts";
@@ -302,6 +304,7 @@ const runningChildren = (source: string) =>
 type RestartHooks = { /** This node's tailnet name (tests); default `tailscale status`. */ tailnetName?: () => Promise<string | undefined>; busyNow: () => string[]; restartGateway: (o?: { auto?: boolean }) => string; restartGatewayNow: () => string; mailDeps?: () => MailDeps; /** One mail reconcile round of at most `limit` mails (hub/mail-reconcile.ts); absent = not wired in this process. */ mailReconcile?: (limit: number) => Promise<{ checked: number; replied: number; notChecked: number; skipped: number }> };
 // A card's answer to where its question came from (chat, session, project chat, mail or login request): the bot's turn.
 export async function deliverAnswer(a: Parameters<DecisionSend>[0] & { login: string; via?: ReturnType<typeof viaOf> }): Promise<void> {
+	if (a.to.startsWith(RUN_DECISION)) return void answerRunDecision(a.to.slice(RUN_DECISION.length), a.action);
 	if (a.to.startsWith("auth:")) {
 		const path = `/api/auth/${a.to.slice(5)}`;
 		const res = await authRoute(new Request(`http://local${path}`, { method: "POST", body: JSON.stringify({ action: a.action }) }), new URL(`http://local${path}`));

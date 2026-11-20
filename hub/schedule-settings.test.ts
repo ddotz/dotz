@@ -18,8 +18,18 @@ const call = async (method: string, path: string, body?: unknown) => {
 
 test("the fields read the schedule's own values, the words without its internal target", () => {
 	const s = addSchedule({ name: "sample-2 보고", kind: "task", text: "ch:123 아침 보고 써 줘", in_minutes: 60, every_minutes: 1440 });
-	expect(val(s.id)).toEqual({ name: "sample-2 보고", kind: "task", enabled: true, at: localTime(s.at), every_minutes: 1440, text: "아침 보고 써 줘" });
+	expect(val(s.id)).toEqual({ name: "sample-2 보고", kind: "task", enabled: true, at: localTime(s.at), every_minutes: "1440", text: "아침 보고 써 줘" });
 	expect(SCHEDULE_FIELDS.map(f => [f.key, f.section])).toEqual([["name", "watch"], ["kind", "watch"], ["enabled", "watch"], ["at", "watch"], ["every_minutes", "watch"], ["text", "advanced"]]);
+});
+
+test("the repeat is a menu in words with the time of day of the next run, and the instruction a box several lines tall", () => {
+	const at = new Date(Date.now() + 2 * 86_400_000);
+	at.setHours(19, 30, 0, 0);
+	const s = addSchedule({ text: "ch:123 저녁 정리", at: at.toISOString(), every_minutes: 90 });
+	const every = readScheduleSettings(s.id).find(f => f.key === "every_minutes")!;
+	expect(every).toMatchObject({ type: "enum", value: "90" });
+	expect(every.options!.map(o => every.labels![o])).toEqual(["한 번만", "30분마다", "매시간", "90분마다", "3시간마다", "6시간마다", "12시간마다", "매일 오후 7:30", `매주 ${"일월화수목금토"[at.getDay()]}요일 오후 7:30`]);
+	expect(readScheduleSettings(s.id).find(f => f.key === "text")!.lines).toBeGreaterThan(1);
 });
 
 test("the name and the kind are the owner's to change; a blank name or an unknown kind is refused", () => {
@@ -35,18 +45,18 @@ test("one write pauses, moves, repeats and rewords it; the target stays and 0 ma
 	const s = addSchedule({ text: "ch:123 보고", in_minutes: 60, every_minutes: 30 });
 	const next = new Date(Date.now() + 3 * 3600_000);
 	next.setSeconds(0, 0);
-	writeScheduleSettings(s.id, { enabled: false, at: localTime(next.toISOString()), every_minutes: 120, text: " 저녁 보고 " });
-	expect(stored(s.id)).toMatchObject({ paused: true, at: next.toISOString(), every_minutes: 120, text: "ch:123 저녁 보고" });
-	writeScheduleSettings(s.id, { enabled: true, every_minutes: 0 });
+	writeScheduleSettings(s.id, { enabled: false, at: localTime(next.toISOString()), every_minutes: "180", text: " 저녁 보고 " });
+	expect(stored(s.id)).toMatchObject({ paused: true, at: next.toISOString(), every_minutes: 180, text: "ch:123 저녁 보고" });
+	writeScheduleSettings(s.id, { enabled: true, every_minutes: "0" });
 	expect(stored(s.id).paused).toBeUndefined();
 	expect(stored(s.id).every_minutes).toBeUndefined();
-	expect(val(s.id).every_minutes).toBe(0);
+	expect(val(s.id).every_minutes).toBe("0");
 });
 
 test("bad values are refused and change nothing", () => {
 	const s = addSchedule({ text: "그대로", in_minutes: 60, every_minutes: 30 });
 	const before = JSON.stringify(stored(s.id));
-	for (const bad of [{ every_minutes: 3 }, { every_minutes: 10081 }, { at: "내일 아침" }, { text: "  " }, { enabled: "yes" }, { nope: 1 }]) expect(() => writeScheduleSettings(s.id, bad)).toThrow();
+	for (const bad of [{ every_minutes: 3 }, { every_minutes: "3" }, { every_minutes: "10081" }, { at: "내일 아침" }, { text: "  " }, { enabled: "yes" }, { nope: 1 }]) expect(() => writeScheduleSettings(s.id, bad)).toThrow();
 	expect(JSON.stringify(stored(s.id))).toBe(before);
 	expect(() => readScheduleSettings("nope00")).toThrow("no schedule");
 });

@@ -11,7 +11,8 @@ import { eventTarget, isPeerMessage, type HubEvent } from "./events.ts";
 import { classOfNotice, noticeClass } from "./notice-class.ts";
 import { kindOf, NOTICE_KINDS, type NoticeKindName } from "./notice-kinds.ts";
 import { dropClaim, isSilent, parkedTone } from "./tone.ts";
-import { BRACKET_CHANNEL_TAG, describeOutput, humanLabel, isIssue, itemRefOf, loginBlockedIn, matchItems, matchTitle, PROVIDER_BACK_KO, scheduleLine, sentinelMatch, watchLine, watchReasonKo } from "./watchtext.ts";
+import { BRACKET_CHANNEL_TAG, describeOutput, humanLabel, isIssue, itemRefOf, loginBlockedIn, PROVIDER_BACK_KO, sentinelMatch, watchLine } from "./watchtext.ts";
+import { answerRow, fireRow, restored, runKey, taskRunOf } from "./notices-schedule.ts";
 import { resolveItem, type WatchItem } from "./watchitem.ts";
 import type { Decision, DecisionOpt, Notice, NoticeKind, NoticeTone } from "./notices-types.ts";
 import { msg } from "./i18n.ts";
@@ -28,15 +29,6 @@ import { en } from "./i18n-en.ts";
 import { ko } from "./i18n-ko.ts";
 import { coalescedWrite } from "./coalesced-write.ts";
 
-// A report stored before a schedule was said by its short name and a match that lists items by its count (2026-11-10) reads as a new one does.
-const MATCHED = `: ${watchReasonKo("matched /./")}`;
-function restored(n: Notice): string {
-	if (n.kind !== "watch") return n.text;
-	if (n.title === "예약") return clean(scheduleLine(n.text, { raw: false })).text;
-	const [head = "", ...rest] = n.text.split("\n");
-	const title = head.endsWith(MATCHED) ? matchTitle(rest.join("\n")) : undefined;
-	return title ? [`${head.slice(0, -MATCHED.length)}: ${title}`, matchItems(rest.join("\n"), title)].join("\n") : n.text;
-}
 const load = (): Notice[] => {
 	if (!existsSync(paths.notices)) return [];
 	try {
@@ -280,11 +272,17 @@ function fromInbox(e: HubEvent): void {
 		const open = typeof e.conv === "string" ? e.conv : `mail:${e.mail}`;
 		return void upsert({ kind: "watch", tone: "", title: name || "새 메일", text: String(e.subject ?? "") || "(제목 없음)", open, key: open, unread: true, at: e.ts });
 	}
-	// the gateway's own wakes (update carry-over, text overrides: main.ts wakeOnce) are instructions to the assistant, not the owner's schedules
-	if (e.kind === "schedule" && e.source !== "gateway" && e.source !== "zele") {
-		const ch = typeof e.channel === "string" && /^ch:\d+$/.test(e.channel) ? e.channel : "main";
-		upsert({ kind: "watch", tone: "", title: "예약", text: clean(scheduleLine(String(e.text ?? ""), { raw: false })).text, open: ch, at: e.ts });
+	const run = fireRow(e);
+	if (run) upsert(run);
+}
+
+function fromRunAnswer(e: HubEvent, run: string, loud: boolean): void {
+	const prev = items.find(n => n.key === runKey(run));
+	if (prev?.decision) {
+		settleDecision(prev, "", e.ts, true);
+		delete prev.key;
 	}
+	upsert(answerRow(e, run, prev, loud || ["ask", "fail"].includes(clean(e.text).tone)));
 }
 
 export function feed(e: HubEvent): void {
@@ -298,7 +296,9 @@ export function feed(e: HubEvent): void {
 			for (const d of ds) putDecision(d, e.ts);
 			// A decision message makes only its decision item; any other answer may become the conversation's unread message item
 			// (not the reply to a button answer: answerReply).
-			if (!answerReply(e) && !ds.length) fromAnswer(e);
+			const run = taskRunOf(e);
+			if (run) fromRunAnswer(e, run, ds.length > 0);
+			else if (!answerReply(e) && !ds.length) fromAnswer(e);
 		} else if (e.kind === "message" || e.kind === "lane_message") {
 			answerReply(e);
 			ownerReplied(e);

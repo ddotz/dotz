@@ -148,7 +148,7 @@ export function createPrompts(deps: PromptDeps) {
 	 * prompt that has not started yet it gathers (hub/promptburst.ts).
 	 */
 	function deliver(text: string, reply?: Reply): boolean {
-		const running = Boolean(!reply?.from && !reply?.handback && !reply?.quiet && !reply?.bookkeeping && current?.target && reply && sameConv(current.target, reply.target) && (!current.done || (reply.owner && !current.cancelled)));
+		const running = Boolean(!reply?.from && !reply?.handback && !reply?.quiet && !reply?.bookkeeping && !reply?.run && current?.target && reply && sameConv(current.target, reply.target) && (!current.done || (reply.owner && !current.cancelled)));
 		// A turn that answers no request of ours (a woken run, a session report) does not take the owner's message: it waits as its own prompt and gets a turn of its own.
 		const steered = deps.working() && running;
 		const gather = !steered && reply?.owner === true && burst.gathers(reply.target);
@@ -368,7 +368,10 @@ export function createPrompts(deps: PromptDeps) {
 			const unanswered = p.replyTo !== undefined && !isAnswered(p.replyTo) && !p.sent.some(s => sameConv(s.target, p.target!)) && !openDeferred().some(d => d.replyTo === p.replyTo);
 			if (p.last || p.held?.length || p.fallback) onAnswer(p.last ?? "");
 			else if (unanswered && deps.noAnswerNote) onAnswer(deps.noAnswerNote());
-			else p.done = true;
+			else {
+				p.done = true;
+				if (p.run) deps.ran?.(p.run, p.sent.length ? "answered" : "failed");
+			}
 		}
 		flushHeld(p);
 		closeTurn();
@@ -647,6 +650,7 @@ export function createPrompts(deps: PromptDeps) {
 		}
 		// From here a quiet answer is handled like "-": it posts nothing, and what gathered behind the prompt is released as below.
 		const hush = silent || quiet;
+		if (hush && p.run) deps.ran?.(p.run, quiet ? "answered" : "silent");
 		if (!hush) deps.answering?.(t, p.replyTo);
 		if (silent && t !== "-") deps.log(`a no-op answer for ${p.target ?? "-"} was not posted: ${t.slice(0, 160)}`);
 		if (p.target && !hush) receipted.delete(receiptKey(p.target));
@@ -669,6 +673,7 @@ export function createPrompts(deps: PromptDeps) {
 		const prior = [...p.sent.filter(s => sameConv(s.target, target)).map(s => s.text), ...held];
 		const repeat = hush || !t || (p.from && deps.handBack ? held : prior).some(h => h.includes(t) || (key.length >= NEAR_MIN && head(h) === key));
 		if (repeat && !held.length) {
+			if (p.run && !hush) deps.ran?.(p.run, t || sentHere ? "answered" : "silent");
 			if (sentHere) deps.clearProgress(target);
 			return burst.close(target, ids);
 		}
@@ -681,9 +686,10 @@ export function createPrompts(deps: PromptDeps) {
 			return burst.close(target, ids);
 		}
 		void deps
-			.post(target, body, p.replyTo, hushedAnswer(p, body, id => !isAnswered(id)))
+			.post(target, body, p.replyTo, { ...hushedAnswer(p, body, id => !isAnswered(id)), ...(p.run?.ids.length === 1 ? { run: p.run.ids[0], sk: p.run.sk } : {}) })
 			.then(r => {
 				if (!r.delivered) return;
+				if (p.run) deps.ran?.(p.run, "answered");
 				markAnswered(p.replyTo);
 				burst.close(target, ids);
 				deps.clearProgress(target);

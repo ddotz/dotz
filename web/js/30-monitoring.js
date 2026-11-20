@@ -39,6 +39,7 @@ async function monFetch() {
     NM.loaded = true; NM.failed = false; NM.at = Date.now();
   } catch { NM.failed = !NM.loaded; }
   monSchedule();
+  if (current === "schedules") schedLoad();
   homeSoon();
 }
 // Failed ones first, then the soonest next run.
@@ -58,11 +59,11 @@ const monRel = (ms, past) => {
   const n = Math.floor(min / 1440);
   return past ? TX("mon.rel.day_past", { n }) : TX("mon.rel.day_future", { n });
 };
-const MON_PTAG = { ok: [TX("mon.tag.ok"), "ok"], changed: [TX("mon.tag.changed"), "warn"], fail: [TX("mon.tag.fail"), "err"], disconnected: [TX("mon.tag.disconnected"), "err"], need: [TX("mon.tag.need"), "warn"], off: [TX("mon.tag.off"), "off"], late: [TX("mon.tag.late"), "warn"], run: [TX("mon.tag.run"), "pri"] };
+const MON_PTAG = { ok: [TX("mon.tag.ok"), "ok"], changed: [TX("mon.tag.changed"), "warn"], fail: [TX("mon.tag.fail"), "err"], disconnected: [TX("mon.tag.disconnected"), "err"], need: [TX("mon.tag.need"), "warn"], off: [TX("mon.tag.off"), "off"], late: [TX("mon.tag.late"), "warn"], run: [TX("mon.tag.run"), "pri"], wait: [TX("mon.tag.wait"), "off"] };
 // A monitor's one status, read the same on every screen (the list row's badge, the detail's state line and tag, the home card, the app settings):
 // connection > paused > fail > late > changed > ok > not run yet. key is a MON_PTAG key; text and tone are its words and colour.
 function monStatus(m, now = Date.now()) {
-  const key = m.connection === "disconnected" ? "disconnected" : m.paused ? "off" : m.last_result === "fail" ? "fail" : (Date.parse(m.next_run) || Infinity) <= now ? "late" : m.last_result === "changed" ? "changed" : m.last_run ? "ok" : "need";
+  const key = m.connection === "disconnected" ? "disconnected" : m.paused ? "off" : m.last_result === "fail" ? "fail" : m.run_state === "held" || (Date.parse(m.next_run) || Infinity) <= now ? "late" : m.last_result === "changed" ? "changed" : m.last_run ? "ok" : m.kind === "schedule" && m.next_run ? "wait" : "need";
   const [text, tone] = MON_PTAG[key];
   return { key, text, tone };
 }
@@ -74,6 +75,7 @@ const monConnShort = m => [TX("mon.tag.disconnected"), m.since ? TX("mon.conn.si
 // Empty for a paused or disconnected monitor: its one tag (꺼짐 / 연결 끊김) and, when down, the banner's single line already say it.
 const monProgLine = (from, to, now, m, short) => {
   if (m && (m.paused || m.connection === "disconnected")) return "";
+  if (m && monStatus(m, now).key === "wait") return schedStarts(m);
   if (m && m.watch && MON.running.has(m.watch)) return short ? TX("mon.tag.run") : TX("mon.checking_now");
   if (short) return [from > 0 ? monRel(now - from, true) : TX("mon.prog.before"), to > 0 ? now >= to ? TX("mon.tag.late") : monRel(to - now, false) : TX("mon.prog.none")].join(" · ");
   return [from > 0 ? TX("mon.prog.last", { t: monRel(now - from, true) }) : TX("mon.prog.not_yet"), to > 0 ? now >= to ? TX("mon.prog.next_late") : TX("mon.next_at", { t: monRel(to - now, false) }) : TX("mon.prog.none")].join(" · ");
@@ -83,7 +85,7 @@ function monProgState(m, now) {
   if (m.watch && MON.running.has(m.watch)) return { kind: "run", pct: 0, tag: "run" };
   const tag = monStatus(m, now).key;
   if (tag === "disconnected") return { kind: "err", pct: 100, tag };
-  if (tag === "off") return { kind: "off", pct: 100, tag };
+  if (tag === "off" || tag === "wait") return { kind: "off", pct: tag === "off" ? 100 : 0, tag };
   const from = Date.parse(m.last_run), to = Date.parse(m.next_run);
   if (!(to > 0)) return { kind: "none", pct: 0, tag };
   if (now >= to) return { kind: "warn", pct: 100, tag };
@@ -154,7 +156,7 @@ function monStrip(s, names) {
 // 마지막 정상 only says something after a failure, when it is not the last run: a monitor that is fine already reads 정상 with its last run's time.
 const monLastOk = m => (m.fails || m.last_result === "fail") && m.last_ok && m.last_ok !== m.last_run ? TX("mon.last_ok", { t: monTime(m.last_ok) }) : "";
 const MON_RUN = { ok: TX("mon.run.ok"), changed: TX("mon.run.changed"), fail: TX("mon.run.fail") };
-const monRunLine = m => !m.last_run ? TX("mon.run.unchecked") : m.kind === "schedule" ? TX("mon.run.sched_ran") : MON_RUN[m.last_result] || TX("mon.run.checked");
+const monRunLine = m => m.kind === "schedule" ? schedRunLine(m) : !m.last_run ? TX("mon.run.unchecked") : MON_RUN[m.last_result] || TX("mon.run.checked");
 const monNewest = list => list.slice().sort((a, b) => ntAt(b) - ntAt(a))[0] || null;
 const monNoticeAt = n => new Date(ntAt(n)).toISOString();
 const monLine = n => convPreview(n.text) || ntPlain(n.title);
@@ -208,7 +210,7 @@ function monItems() {
     const fresh = last && (!m.last_run || ntAt(last) >= Date.parse(m.last_run) - 60_000);
     const need = notices.filter(monNeed).length, conn = m.connection === "disconnected", running = !!m.watch && MON.running.has(m.watch);
     (monProject(m) ? proj : plain).push({ key: `m:${m.name}`, group: monGroupOf(m), ...(monProject(m) ? { proj: true } : {}), name: monTitle(m), raw: monRaw(m), ic: "activity", notices, mails: [], mon: m, unread: monUnread(notices), need, chips: monNeedChips(need),
-      hint: conn ? monConnShort(m) : running ? TX("mon.checking_now") : m.last_result === "fail" && m.last_summary ? monClean(m.last_summary, monRunLine(m)) : fresh ? monClean(monStrip(monLine(last), names), monRunLine(m)) : monRunLine(m), at: m.last_run || (last ? monNoticeAt(last) : ""),
+      hint: conn ? monConnShort(m) : running ? TX("mon.checking_now") : m.kind === "schedule" ? monRunLine(m) : m.last_result === "fail" && m.last_summary ? monClean(m.last_summary, monRunLine(m)) : fresh ? monClean(monStrip(monLine(last), names), monRunLine(m)) : monRunLine(m), at: m.last_run || (last ? monNoticeAt(last) : ""),
       msig: [m.last_run, m.next_run, m.last_result, m.paused, m.connection, running].join("|"),
       badge: (st => [st.text, st.tone])(monStatus(m)) });
   }
@@ -533,7 +535,7 @@ function monRunRow(it) {
   // The head's bar already says the state (정상) and the wait to the next check (다음 12분 후): the record keeps the result, the facts and the time.
   const same = m.kind === "watch" && m.last_result === "ok" && monStatus(m).key === "ok";
   const facts = [m.fails ? TX("mon.fails", { n: m.fails }) : "", monLastOk(m), monLastOut(m), m.every || ""].filter(Boolean);
-  return monLogLine({ tone: m.kind === "watch" ? m.last_result : "ok", main: same ? TX("mon.run.checked") : monRunLine(m), sub: facts.join(" · "), at: m.last_run });
+  return monLogLine({ tone: m.last_result || "ok", main: same ? TX("mon.run.checked") : monRunLine(m), sub: facts.join(" · "), at: m.last_run });
 }
 // The question chips of a watch (asChipTexts): one row of small buttons under its log.
 function monRunChips(it) {
@@ -657,7 +659,7 @@ function monTopNodes(it) {
   const out = [], banner = monBannerOf(it);
   if (it.mon) out.push(el("div", { class: "cv-p mon-desc" }, monDesc(it.mon), ...(pqLabel(it) ? [" ", pqLabel(it)] : [])), monProgNode(it.mon, { tag: !banner }));   // the machine's name sits here, not in the one-line title
   if (banner) out.push(banner);
-  const acts = [...(it.mon && it.mon.watch && !banner ? [monRunBtn(it.mon)] : []), asChatOn(monSettingsApp(it)) ? null : monConvBtn(it)].filter(Boolean);   // the app bar's 대화 icon is the one control for it on a phone
+  const acts = [...(monRunnable(it) && !banner ? [monRunBtn(it.mon)] : []), asChatOn(monSettingsApp(it)) ? null : monConvBtn(it)].filter(Boolean);   // the app bar's 대화 icon is the one control for it on a phone
   if (acts.length) out.push(el("div", { class: "mon-actions" }, ...acts));
   // The prototype's detail card opens the conversation on a phone too: the wait, a down banner and the actions in one card (never loose).
   return out.length ? [el("div", { class: "mon-topcard" }, ...out)] : [];
@@ -741,7 +743,8 @@ function monBannerNode(kind, detail, btn, head = kind === "down" ? TX("mon.banne
 }
 // The app hint the hub writes for a down app starts with the row word ("연결 끊김 · ..."); the banner has its own head, so only the why is kept.
 const monHintWhy = h => String(h || "").replace(/^\s*연결\s*(끊김|이 끊겼어요)\s*(·\s*)?/, "");
-const monRunBtn = (m, text) => el("button", { class: "btn tonal sm mon-run", type: "button", "data-run": m.watch, text: text || TX("mon.run_btn"), onclick: ev => monRunNow(ev.currentTarget, m) });
+const monRunnable = it => !!it.mon && (!!it.mon.watch || (!!it.mon.schedule && !it.pc));
+const monRunBtn = (m, text) => el("button", { class: "btn tonal sm mon-run", type: "button", "data-run": m.watch || m.schedule, text: text || (m.watch ? TX("mon.run_btn") : TX("sched.run_btn")), onclick: ev => (m.watch ? monRunNow : schedRunNow)(ev.currentTarget, m) });
 const monRecheckBtn = (watch, onclick, text = TX("mon.recheck_btn")) => el("button", { class: "btn tonal sm mon-recheck", type: "button", "data-watch": watch, text, onclick });
 // One re-check control per conversation: a down or failing monitor, and a down app, get the banner and its button; a healthy one gets 지금 확인
 // in the head (a phone at the top of the timeline). The latest-run card never repeats it.
@@ -753,8 +756,8 @@ function monBannerOf(it) {
     const m = it.mon, kind = monBannerKind(m), down = kind === "down", streak = kind === "fail" && m.connection === "disconnected";
     if (!kind) return null;
     const detail = down ? monConnWhy(m) : streak ? [m.since ? TX("mon.conn.since", { t: monTime(m.since) }) : "", monClean(m.last_summary || "")].filter(Boolean).join(" · ")
-      : [m.fails > 1 ? TX("mon.fail_streak", { n: m.fails }) : TX("mon.run.fail"), monClean(m.last_summary || "")].filter(Boolean).join(" · ");
-    return monBannerNode(kind, detail, m.watch ? monRecheckBtn(m.watch, ev => monRunNow(ev.currentTarget, m), down ? TX("mon.reconnect") : undefined) : null, streak ? TX("mon.conn.failing") : undefined);
+      : m.kind === "schedule" ? monRunLine(m) : [m.fails > 1 ? TX("mon.fail_streak", { n: m.fails }) : TX("mon.run.fail"), monClean(m.last_summary || "")].filter(Boolean).join(" · ");
+    return monBannerNode(kind, detail, m.watch ? monRecheckBtn(m.watch, ev => monRunNow(ev.currentTarget, m), down ? TX("mon.reconnect") : undefined) : monRunnable(it) ? monRunBtn(m, TX("sched.rerun_btn")) : null, streak ? TX("mon.conn.failing") : undefined);
   }
   if (!it.conn) return null;
   const names = (it.owned || []).map(m => m.watch).filter(Boolean);
@@ -778,7 +781,7 @@ const monHead = it => {
   // 대화로 이어가기 (owner 2026-11-03): every item continues in its own chat - the conversation its settings talk in (asOpen's own go()).
   // A mail or KakaoTalk item is already a conversation, so the way in is its row and this button stays out of the way there.
   const convBtn = monConvBtn(it);
-  const acts = [convBtn, rqBtn, it.mon && it.mon.watch && !banner ? monRunBtn(it.mon) : null, it.unreplied ? unrepCount(it.unreplied) : null, ...(kkItem(it) && KK.open ? [] : asEntry(monSettingsApp(it), !convBtn))].filter(Boolean);   // the labeled button is the one control for 대화 on the wide head
+  const acts = [convBtn, rqBtn, monRunnable(it) && !banner ? monRunBtn(it.mon) : null, it.unreplied ? unrepCount(it.unreplied) : null, ...(kkItem(it) && KK.open ? [] : asEntry(monSettingsApp(it), !convBtn))].filter(Boolean);   // the labeled button is the one control for 대화 on the wide head
   const extra = [];
   if (it.mon) extra.push(monProgNode(it.mon, { compact: true, tag: !banner }));
   if (banner) extra.push(banner);

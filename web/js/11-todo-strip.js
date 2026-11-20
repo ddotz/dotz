@@ -70,14 +70,15 @@ const isRestart = e => e.kind === "out" && e.source === "gateway" && /^게이트
 const cleanRestart = e => isRestart(e) && /끊긴 작업은 없어요/.test(String(e.text ?? ""));
 // The gateway's own wake for a check is an instruction to the assistant: no card, so no message and never unread (hub/conversations.ts gatewayWake).
 const gatewayWake = e => e.kind === "schedule" && e.source === "gateway";
-const wakeLead = (src, text) => [src, scheduleName(text)].filter(Boolean).join(" · ");
+const handedTitle = text => { const line = text.split("\n")[0].trim(); return WT_HANGUL.test(line) && line.length <= 40 ? line : ""; };
+const wakeLead = (src, text) => [src, handedTitle(text)].filter(Boolean).join(" · ");
 function wakeOf(e) {
   const text = String(e.text ?? "").trim();
   if (e.kind === "handed") return { lead: wakeLead(targetName(e.from), text), raw: text, ts: e.ts, from: e.from };
   if (e.kind !== "schedule") return null;
   if (gatewayWake(e)) return { lead: "", raw: "", ts: e.ts, from: "" };
   const name = typeof e.name === "string" ? e.name.trim() : "";
-  return { lead: name || wakeLead(SYS_LABEL.schedule, text), raw: text.replace(/^(?:(?:ch|lane|th):\S+\s*)+/, ""), ts: e.ts, from: "" };
+  return { lead: name || SYS_LABEL.schedule, raw: text.replace(/^(?:(?:ch|lane|th):\S+\s*)+/, ""), ts: e.ts, from: "", sched: String(e.id ?? "") };
 }
 function gatewayTurnStart(a) {
   if (a.type !== "status" || !/^>\s/.test(a.text ?? "") || !promptOf(a.text).dim) return false;
@@ -104,10 +105,11 @@ function wakeEnded(w, bulk) {
   if (bulk) wakeShow(w, false);
   else setTimeout(() => { if (CS.wake === w) wakeShow(w, false); }, WAKE_ANSWER_WAIT_MS);
 }
-function wakeAnswered(n) {
+function wakeAnswered(n, at) {
   const w = CS.wake, mt = w.from && n.querySelector(":scope > .mt");
   csWakeSet(null);
   wakeShow(w, true);
+  for (const r of w.rows) if (r.matches("details.work")) r.dataset.answer = at;
   if (!mt) return;
   const open = () => openTarget(w.from, "chat");
   mt.append(" · ", el("span", { class: "wl-sess", role: "link", tabindex: "0", text: TX("home.handed.from", { name: targetName(w.from) }), onclick: ev => { ev.stopPropagation(); open(); }, onkeydown: ev => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); open(); } } }));
@@ -424,8 +426,9 @@ const WORK = new Set(["tool_call", "tool_result", "thinking", "text", "error"]);
 function newGroup(wake) {
   const wsum = el("span", { class: "wsum" }), body = el("div", { class: "wbody" });
   // A fold's rows are built when it opens: a conversation holds hundreds of them and drawing them took most of a chat switch. Its summary counts stay live.
-  const waiting = wake && wake.raw ? [{ type: "text", ts: wake.ts, text: wake.raw }] : [];
-  const fill = () => { for (const w of waiting.splice(0)) { const n = actNode(w, g.ctx); if (n) g.body.append(n); } };
+  const waiting = wake && wake.raw && !wake.sched ? [{ type: "text", ts: wake.ts, text: wake.raw }] : [];
+  let head = wake && wake.sched ? () => schedWakeNode(wake, node) : null;
+  const fill = () => { if (head) { g.body.append(head()); head = null; } for (const w of waiting.splice(0)) { const n = actNode(w, g.ctx); if (n) g.body.append(n); } };
   const node = el("details", { class: "work" }, el("summary", { onclick: () => fill() }, el("span", { class: "wdot" }), wsum), body);
   const g = { node, body, ctx: { calls: new Map() }, kinds: new Map(), tools: 0, think: 0, errs: 0, acts: 0, t0: 0, t1: 0, live: false, lead: wake ? wake.lead : "" };
   g.update = () => {
@@ -481,7 +484,7 @@ function chatPush(en, bulk) {
     if (n) {
       const day = dayDiv(e.ts);   // only above a drawn row: a conversation of rows that draw nothing keeps its empty state
       if (g) { csGroupStart(g); csWakeRow(n, day); }
-      else if (CS.wake && !OWNER.has(e.kind) && !pkey && !e.live) wakeAnswered(n);
+      else if (CS.wake && !OWNER.has(e.kind) && !pkey && !e.live) wakeAnswered(n, e.ts);
       if (!pkey) csParked(parked ? n : null);
       n.dataset.ts = e.ts;   // the notice jump finds its source message by this (30-notices.js ntFind)
       if (!n.classList.contains("wl-row")) rpMark(n, e);
