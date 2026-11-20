@@ -63,11 +63,10 @@ const HARD_TASK = [
 	/`[^`\n]+`/,
 	/(?:^|[\s("'])(?:~|\.{1,2})?\/[\w.@-]+\/[\w.@-]|\b[\w.-]+\/[\w./-]*\.\w{1,5}\b|\b[\w-]+\.(?:sh|py|ts|js|mjs|jsonl?|md|ya?ml|toml|log|csv)\b/,
 	/(?:^|\s)(?:ch|lane):\S/,
-	/보고해|올려|돌려|요약해|실행해|점검해|^\s*(?:report|post|run|summari[sz]e)\b/im,
 ];
-/** Is this entry work for the assistant by a rule, with no judgement needed: a backtick command, a file path, a ch:/lane: target (in its text or
- *  its conversation) or an instruction verb? A web address is no path: a reminder may carry a link. */
-export const hardTask = (s: { text: string; conv?: string }): boolean => /^(?:ch|lane):/.test(s.conv ?? "") || HARD_TASK.some(re => re.test(s.text.replace(/\bhttps?:\/\/\S+/g, "")));
+/** Is this entry work for the assistant by a rule, with no judgement needed: a backtick command, a file path or a ch:/lane: target in its text?
+ *  Words and the conversation it rings in are left to the assistant's judgement. A web address is no path: a reminder may carry a link. */
+export const hardTask = (s: { text: string }): boolean => HARD_TASK.some(re => re.test(s.text.replace(/\bhttps?:\/\/\S+/g, "")));
 const stamp = () => new Date(Date.now()).toISOString();
 
 const items: Schedule[] = readJsonOrQuarantine(paths.schedules, () => []);
