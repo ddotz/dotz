@@ -415,11 +415,13 @@ const homeGreetWord = () => { const h = new Date().getHours(); return h < 5 ? TX
 function homeRunning() {
   if (S && S.seeded) return { all: [], runT: [], waitT: [], convWork: [], runW: [], n: 0, ask: false };
   const laneT = l => `lane:${l.name}`, now = sessionsNow(), waitT = now.wait.map(laneT);
-  const all = [MAIN, ...((S && S.lanes) || []).filter(laneAlive).map(laneT)], runT = [...(targetState(MAIN)[1] === "pri" ? [MAIN] : []), ...now.run.map(laneT)];
   // A conversation's own workers are listed under its row; a mail with no session whose worker is the assistant's (S.work) is that worker's row alone.
   const runW = workRunning(), mainBg = new Set(runW.map(w => w.id)), convs = (S && S.convs) || [];
+  // The worker a conversation's own row already names (its run waits on it): that worker gets no second row.
+  const awaitedWorker = t => { const r = runOf(t); return (r && r.kind === "waiting" && r.reason === "work" && r.work) || ""; };
+  const all = [MAIN, ...((S && S.lanes) || []).filter(laneAlive).map(laneT)], runT = [...(targetState(MAIN)[1] === "pri" && !mainBg.has(awaitedWorker(MAIN)) ? [MAIN] : []), ...now.run.map(laneT)];
   const convT = convs.filter(c => validTarget(convWebT(c.target)) && convRunning(c) && !(runOf(c.target).work && mainBg.has(runOf(c.target).work)));
-  const convWork = convT.flatMap(c => [c, ...(c.work || []).filter(w => !w.queued).map(w => ({ ...w, target: convWebT(c.target), conv: true }))]);
+  const convWork = convT.flatMap(c => [c, ...(c.work || []).filter(w => !w.queued && w.id !== awaitedWorker(c.target)).map(w => ({ ...w, target: convWebT(c.target), conv: true }))]);
   const asks = t => { const r = runOf(t); return !!r && waitsOnOwner(r); };
   return { all, runT, waitT, convWork, runW, n: runT.length + convWork.length + runW.length, ask: all.some(t => targetInfo(t).ask || asks(t)) || convs.some(c => asks(c.target)) };
 }
