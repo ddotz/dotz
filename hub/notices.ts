@@ -2,9 +2,10 @@
 // below stay in this order (listen for broadcasts, listen for events, then reconcile what was stored) after every module is loaded.
 import { onBroadcast, onEmit } from "./events.ts";
 import { feed, reconcileStored } from "./notices-store.ts";
+import { laneTurnEnded } from "./notices-judging.ts";
 import { DRAFT_CHANGED, settleSoon } from "./notices-drafts.ts";
 export type { NoticeKind, NoticeTone, Notice, DecisionOpt, Decision } from "./notices-types.ts";
-export { setLaneTitleResolver, setWatchLabelResolver, setAppResolver, setAppBlocker, setWatchSummarizer, setOrchestratorAvailable, onNoticeUnread, setConvNameResolver, onDecision, onDraftRepost, onDecisionClosed, setDraftHandled, setStoredDraft, setAppLabelResolver } from "./notices-wiring.ts";
+export { setLaneTitleResolver, setWatchLabelResolver, setAppResolver, setAppBlocker, setWatchSummarizer, setOrchestratorAvailable, onNoticeUnread, setConvNameResolver, onDecision, onHalfTime, onDraftRepost, onDecisionClosed, setDraftHandled, setStoredDraft, setAppLabelResolver } from "./notices-wiring.ts";
 export type { ClosedCard } from "./notices-wiring.ts";
 export { repostNote, NOTICE_CAP, WATCH_KEEP, WATCH_DAYS, keepWatchNewest, needsAnswer, ANSWER_WINDOW_MS, ALERT_ANSWER_WINDOW_MS, BACKFILL_DAYS } from "./notices-rules.ts";
 export type { Waits } from "./notices-rules.ts";
@@ -12,8 +13,12 @@ export { laneNameKo, conversationTitle } from "./notices-lanes.ts";
 export { summary } from "./notices-read.ts";
 export { isViewing } from "./notices-viewing.ts";
 export { decisionsOf } from "./notices-decisions.ts";
-export { openChoices, untouchedChoices, unreadCount, answerReply, orchestratorTurnStarted, backfillNotices, readConversationNotices, markNoticesRead, resetNoticesForTest, flushNotices } from "./notices-store.ts";
-export type { ListedChoice } from "./notices-store.ts";
+export { unreadCount, answerReply, orchestratorTurnStarted, backfillNotices, readConversationNotices, markNoticesRead, resetNoticesForTest, flushNotices } from "./notices-store.ts";
+export { openChoices, untouchedChoices, markJudging, keepOpen, JUDGING_MS } from "./notices-judging.ts";
+export type { ListedChoice } from "./notices-judging.ts";
+export { moreNotice, laterNotice, sweepQuestions, nextMorning, clockText, cardAsked, LATER_FOR } from "./notices-later.ts";
+export type { CardReply } from "./notices-later.ts";
+export { takeAskerNotes } from "./notices-tell.ts";
 export { refreshNoticeDrafts, tagStoredApps } from "./notices-stored.ts";
 export { onDraftCardRefreshed, refreshDraftFiles, syncDraftFiles, markDraftPosted, markCardShown, stampDraftCard, openDraftRefs, openDraftCards, markDraftSend, openDraftText, rewriteOpenDraft, redrawDraftCards, repostDraftCard, setCardFingerprint, settleHandledDrafts, draftCardCounts, refreshStoredDrafts, confirmNoun, confirmGroup, reopenDraftNotices, updateDraftRecipients } from "./notices-drafts.ts";
 export { settleExpiredQuestions, settleOpenDecision, answerDecision, SessionEnded, authRequested, authSettled, orchestratorAnswered, closeLaneCards, resolveNotices, ignoreNotice, unignoreNotice, reopenNotices } from "./notices-answers.ts";
@@ -26,5 +31,6 @@ onBroadcast(e => {
 });
 
 onEmit(feed);
+onEmit(laneTurnEnded);
 
 reconcileStored();

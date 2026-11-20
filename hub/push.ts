@@ -14,7 +14,8 @@ import { pushClasses, route } from "./notify-route.ts";
 import { eventTarget, type HubEvent, onBroadcast, onEmit } from "./events.ts";
 import { dropForLine, orchestratorOnlyAsk } from "./forline.ts";
 import { quietAlert } from "./alert-gate.ts";
-import { answerReply, confirmGroup, conversationTitle, decisionsOf, isViewing, laneNameKo, type Notice, onDecision, onNoticeUnread, setViewing, unreadCount } from "./notices.ts";
+import { answerReply, confirmGroup, conversationTitle, decisionsOf, isViewing, laneNameKo, type Notice, onDecision, onHalfTime, onNoticeUnread, setViewing, unreadCount } from "./notices.ts";
+import { msg } from "./i18n.ts";
 import { DECISION_HEAD, decisionText } from "./choices.ts";
 import { dropIdNote, noticeKo, plainTable } from "./notice.ts";
 import { type Found, knownComputers } from "./peers.ts";
@@ -227,6 +228,8 @@ export function decisionPush(n: Notice): PushMessage {
 	const actions = d.options.filter(o => o.action !== "form").slice(0, DECISION_ACTIONS).map(o => ({ action: `opt:${o.n}`, title: plain(`${o.n}) ${o.label}`, 40) }));
 	return { ...m, ...addrOf({ conv, at: n.at, dec: n.id }), ...(actions.length ? { actions } : {}) };
 }
+/** The one reminder when half of a card's answer time has gone (notices.ts onHalfTime): the card's push, its body `<title> · 답할 시간이 절반 남았어요`. */
+export const halfTimePush = (n: Notice): PushMessage => ({ ...decisionPush(n), body: msg().asker.half(plain(n.title)) });
 
 // Taking back what was handled (owner 2026-10-28: "완료된건데 확인이 필요하다고 막 이러면 좀 헷갈려"): every tag a device was shown is remembered with the
 // endpoints it reached, and once its matter is settled (a decision answered or dismissed, a conversation read) those devices close it. Apple's push
@@ -599,6 +602,7 @@ export function startPush(opts: { subject: () => string }): void {
 		if (m && !decisionsOf(e).length && !answerReply(e)) notify(m);
 	});
 	onDecision(n => notify(decisionPush(n)));
+	onHalfTime(n => notify(halfTimePush(n)));
 	onNoticeUnread(n => {
 		const m = noticePush(n);
 		if (m) void notify(m);

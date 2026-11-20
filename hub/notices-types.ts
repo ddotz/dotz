@@ -46,8 +46,7 @@ export type Notice = {
 	links?: ResultLink[];
 	// Swiped away / x in the bell: kept (so a session's next progress line does not bring it back) but never listed or counted.
 	dismissed?: boolean;
-	// The owner's x on a question (ignoreNotice): off the badge and 답변 필요 but kept in the history, marked as ignored; undoable.
-	// Nothing is sent to the bot. The value is when it was ignored.
+	/** The owner's x on a question (ignoreNotice): off the badge and 답변 필요 but kept in the history, marked as ignored; undoable. Its asker hears it with its next prompt, no turn of its own. The value is when it was ignored. */
 	ignored?: string;
 	// A failure or lost login waits on the owner until this is a time (✕ on it, a rerun that passed, the login back); null = waiting. Absent on a notice stored before it:
 	// unread = waiting, read = a past notice (reading an unread one sets null). Never migrated in the file.
@@ -95,4 +94,24 @@ export type Decision = {
 	// The approvalHash (hub/approval-send.ts) of the draft version this card shows, set whenever it is drawn: a pick from the card carries it, so a
 	// card drawn before a change is refused `changed` instead of sending a version it never showed. Absent: not known, so a send pick from it is refused too.
 	hash?: string;
+	/** The owner asked for more detail (POST /api/notices/<id>/more): the card stays open; reset when the card is asked again. */
+	more_at?: string;
+	/** The owner chose 나중에 (POST /api/notices/<id>/later): off the open lists, read, and not pushed until this time; then it reopens once with one push. */
+	later_until?: string;
+	/** How a card closed when no button answered it: `words` (the owner's message, `words`, judged its answer), `expired`, `gone` (its session ended), `done` (its work ended). */
+	closed_how?: "words" | "expired" | "gone" | "done";
+	/** With `closed_how: "words"`: the owner's message that answered it, trimmed to 80 characters. */
+	words?: string;
+	/** An owner message (its event ts, text up to 80 characters) went to the model with this card listed as an open question; cleared by `closed_how: "words"` or `kept_open`. */
+	judging?: { at: string; text: string };
+	/** The model judged that owner message (`at`, the `judging` ts) not to be this card's answer, or its turn ended without saying. */
+	kept_open?: { at: string };
+	/** The half-time reminder of `expires_at` was pushed (once). */
+	half_told?: true;
+	/** The one line the asking session or the orchestrator still has to hear about this card, sent with its next prompt (hub/notices-later.ts takeAskerNotes); never shown. */
+	tell?: string;
 };
+/** How settleDecision closes a card no button answered (Decision.closed_how); `words` carries the owner's message. */
+export type Closing = { how: "words"; words: string } | { how: "expired" | "gone" | "done" };
+/** An owner message as the gateway knows it: its event ts and text. */
+export type OwnerSaid = { ts: string; text: string };

@@ -14,16 +14,16 @@ import { dropClaim, isSilent, parkedTone } from "./tone.ts";
 import { BRACKET_CHANNEL_TAG, describeOutput, humanLabel, isIssue, itemRefOf, loginBlockedIn, PROVIDER_BACK_KO, sentinelMatch, watchLine } from "./watchtext.ts";
 import { answerRow, fireRow, restored, runKey, taskRunOf } from "./notices-schedule.ts";
 import { resolveItem, type WatchItem } from "./watchitem.ts";
-import type { Decision, DecisionOpt, Notice, NoticeKind, NoticeTone } from "./notices-types.ts";
+import type { Closing, Decision, DecisionOpt, Notice, NoticeKind, NoticeTone, OwnerSaid } from "./notices-types.ts";
 import { msg } from "./i18n.ts";
 import { appBlocked, appOf, closedHooks, decisionHooks, repostHooks, orchestratorUp, stampApp, summarizeWatch, unreadHooks, watchLabelOf } from "./notices-wiring.ts";
-import { BACKFILL_DAYS, DAY_MS, FOLD_MS, LOUD, MESSAGE_PREVIEW, NOTICE_CAP, REASK_MS, REPEATS_MAX, REPEAT_TEXT, RESTART_PREFIX, authorOf, clean, closedInfo, repostNote, shownAsStored, unreadDraftRef, coveredByRead, hasChoice, hasExpired, isAsking, isOpenDecision, keepWatchNewest, laneTone, needsAnswer, originOf, refOf, systemTitle, twinOf, typedAnswer, waitKind, waitsOf } from "./notices-rules.ts";
+import { BACKFILL_DAYS, DAY_MS, FOLD_MS, LOUD, MESSAGE_PREVIEW, NOTICE_CAP, REASK_MS, REPEATS_MAX, REPEAT_TEXT, RESTART_PREFIX, authorOf, clean, closedInfo, repostNote, shownAsStored, unreadDraftRef, coveredByRead, hasChoice, hasExpired, isAsking, isOpenDecision, keepWatchNewest, laneTone, needsAnswer, originOf, refOf, systemTitle, twinOf, typedAnswer, waitKind, waitsOf, wordsClose, wordsOf } from "./notices-rules.ts";
 import { GENERIC_TITLES, channelLanes, channelTitle, laneExists, laneOfNotice, laneTitle, launchTitles, noteLaunch, readChannelMap, recordedCwd, stoppedSince } from "./notices-lanes.ts";
 import { snapshotResults } from "./files.ts";
 import { type ResultFile, type ResultLink, resultFiles, resultLinks } from "./result-refs.ts";
 import { broadcast, summary } from "./notices-read.ts";
 import { QUIET_MS, awaitingReply, isViewing, quietReplies, viewers } from "./notices-viewing.ts";
-import { decisionsOf, expiresAtOf, sending } from "./notices-decisions.ts";
+import { decisionsOf, expiresAtOf, plainCard, sending } from "./notices-decisions.ts";
 import { askedAgain, optionsOf, sameQuestion, withAskedLine } from "./notices-repeat.ts";
 import { worklogKind } from "./worklog-kind.ts";
 import { en } from "./i18n-en.ts";
@@ -424,13 +424,17 @@ export function putDecision(d: { key: string; title: string; detail: string; to:
 	for (const fn of decisionHooks) fn(item);
 }
 
-export function settleDecision(item: Notice, answer: string, at = now(), resolved = false): void {
+export function settleDecision(item: Notice, answer: string, at = now(), resolved = false, how?: Closing): void {
 	const d = item.decision;
 	if (!d || d.state !== "open") return;
 	d.state = "answered";
 	// A resolved matter was not answered: it is marked resolved and carries no answer text.
 	if (resolved) d.resolved = true;
 	else d.answer = (sending.get(item.id) ?? answer).slice(0, 200);
+	const closing = how ?? (resolved ? { how: "done" as const } : undefined);
+	if (closing && plainCard(d)) Object.assign(d, closing.how === "words" ? { closed_how: "words", words: closing.words } : { closed_how: closing.how });
+	delete d.judging;
+	delete d.later_until;
 	d.answered_at = at;
 	item.read = true;
 	item.updated = at;
@@ -452,24 +456,12 @@ function ownerReplied(e: HubEvent): void {
 	if (isPeerMessage(e)) return;
 	const settles = typedAnswer(e, eventTarget(e) ?? "main");
 	const text = String(e.text ?? "").trim();
+	const byButton = typeof e.decision === "string" || (Array.isArray(e.picks) && e.picks.length > 0);
+	const words: Closing | undefined = byButton ? undefined : { how: "words", words: wordsOf(text) };
 	// A typed message is not the answer to a waiting send-approval card (2026-10-31: "19번 카드는 위에 있어", "마지막 카드 어디?" closed it):
 	// the card stays open until its buttons answer it or the draft is handled elsewhere (settleHandledDrafts).
-	for (const i of items) if (isOpenDecision(i) && !i.decision!.to.startsWith("auth:") && settles(i)) settleDecision(i, text, e.ts);
+	for (const i of items) if (isOpenDecision(i) && !i.decision!.to.startsWith("auth:") && settles(i)) settleDecision(i, text, e.ts, false, words);
 }
-
-/** `updated` tells, after the turn the question was listed for, whether anything touched it since (hub/ask-followup.ts). */
-export type ListedChoice = { id: string; title: string; updated: string };
-const TITLE_MAX = 60;
-/** The choice questions still open in conversation `target`, newest first, titles cut to TITLE_MAX: what the bot is told with the owner's next message there. */
-export function openChoices(target: string, max = 3): ListedChoice[] {
-	return items
-		.filter(i => isOpenDecision(i) && hasChoice(i) && !i.decision!.draft && i.decision!.to === target)
-		.sort((a, b) => b.updated.localeCompare(a.updated))
-		.slice(0, max)
-		.map(i => ({ id: i.id, title: i.title.slice(0, TITLE_MAX), updated: i.updated }));
-}
-/** Of `listed`, the questions still open and untouched since: nothing answered, resolved, ignored or asked them again. */
-export const untouchedChoices = (listed: readonly ListedChoice[]): ListedChoice[] => listed.filter(q => items.some(i => i.id === q.id && i.updated === q.updated && isOpenDecision(i)));
 
 function readIds(ids: string[]): void {
 	if (!ids.length) return;
@@ -479,10 +471,10 @@ function readIds(ids: string[]): void {
 
 // Resolves every asking notice that `pick` accepts and that was raised before `at`. Returns how many it closed. Decisions with options (and
 // their alert twins) are skipped unless `named`: the bot named that notice itself.
-export function resolveAsks(pick: (i: Notice) => boolean, at: string, named = false): number {
+export function resolveAsks(pick: (i: Notice) => boolean, at: string, named = false, said?: OwnerSaid): number {
 	const owned = new Set(items.filter(hasChoice).map(d => d.decision!.reply_to));
 	const hit = items.filter(i => isAsking(i) && (i.at ?? i.ts) < at && pick(i) && (named || !(hasChoice(i) || (!i.decision && owned.has(i.at)))));
-	for (const i of hit) if (isOpenDecision(i)) settleDecision(i, "", at, true);
+	for (const i of hit) if (isOpenDecision(i)) settleDecision(i, "", at, true, named ? wordsClose(i, said) : undefined);
 	readIds(hit.filter(i => !i.read).map(i => i.id));
 	return hit.length;
 }
@@ -527,7 +519,7 @@ function providerBack(at: string): void {
 export function retire(list: Notice[], at = now()): void {
 	if (!list.length) return;
 	for (const i of list) {
-		if (i.decision?.state === "open") settleDecision(i, "", at, true);
+		if (i.decision?.state === "open") settleDecision(i, "", at, true, { how: "gone" });
 		i.read = true;
 		i.dismissed = true;
 	}

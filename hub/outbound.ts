@@ -24,7 +24,7 @@ import { outEvent } from "./projectchat.ts";
 import { recordProjectInfo } from "./projectinfo.ts";
 import { mailByThread, mailTarget } from "./mail.ts";
 import { allowedRoots } from "./files.ts";
-import { claimPrefix, LaneRuntimeMismatch, lanes, type LaneDelivery, turnHeader } from "./lanes.ts";
+import { claimPrefix, LaneRuntimeMismatch, lanes, type LaneDelivery, sendToLane, turnHeader } from "./lanes.ts";
 import { main, type Orchestrator, steer as steerOrchestrator } from "./orchestrator.ts";
 import { type Conv, convs, setWiring } from "./convsessions.ts";
 import { MAIN, primaryTarget } from "./session-key.ts";
@@ -47,7 +47,9 @@ import { OMO_WORDS, ompWords, runName, type WorkerWords } from "./worker-words.t
 import { dropClaim, resolvesOf, splitTone, stripHandoff, stripLater, stripProjectInfo, stripResolves } from "./tone.ts";
 import { isLate, isSnowflake, lateQuote, lateRequestId, replyRef, snowflakeTime, withQuote } from "./threads.ts";
 import { keepBrief } from "./draft-approval.ts";
-import { allNotices, markCardShown, markDraftPosted, onDecisionClosed, onDraftCardRefreshed, openDraftCards, openDraftRefs, openDraftText, orchestratorAnswered, resolveNotices, rewriteOpenDraft, SessionEnded, untouchedChoices } from "./notices.ts";
+import { allNotices, keepOpen, markCardShown, markDraftPosted, markJudging, onDecisionClosed, onDraftCardRefreshed, openDraftCards, openDraftRefs, openDraftText, orchestratorAnswered, resolveNotices, rewriteOpenDraft, SessionEnded, untouchedChoices } from "./notices.ts";
+import type { OwnerSaid } from "./notices-types.ts";
+import { askerLines, askerNotes } from "./asker-notes.ts";
 import { channelTitle, GENERIC_TITLES } from "./notices-lanes.ts";
 import { answeredDraftCard } from "./notices-drafts.ts";
 import { cardPointer, cardRef, cardTitle, CARDS_LEAD, closedCardText, createApprovalQueue, loadHeld, pendingCardsNote, splitDraftCards, withSendState } from "./approval-queue.ts";
@@ -180,7 +182,8 @@ function makeQueue(key: string, o: Orchestrator, pendingFile: string, bg: () => 
 		ran: scheduleRan,
 		runSettled,
 		settled: settleRefs,
-		turnEnded: () => askFollowup.turnEnded(key),
+		turnEnded: text => askFollowup.turnEnded(key, text),
+		askerNotes: () => askerLines(askerNotes(to => !to.startsWith("lane:") && convs.keyOf(to) === key)) || undefined,
 	});
 	return q;
 }
@@ -217,9 +220,31 @@ export const askFollowup = createAskFollowup({
 		const text = msg().openQuestionsLeft(titles);
 		if (key === MAIN) deliver(text);
 		else convs.deliverTo(key, text, { target });
+		return text;
+	},
+	judging: markJudging,
+	keptOpen: (listed, at) => {
+		const ids = new Set(listed.map(q => q.id));
+		keepOpen(n => ids.has(n.id) && n.decision!.judging!.at === at);
 	},
 	log,
 });
+const WEB_CONVS = ["alert", "worklog", "quick"];
+/** The owner asked the asker of a card in conversation `to` for more (hub/notices-later.ts moreNotice): a gateway turn of the session that asked, or of the session answering that conversation. */
+export function askAsker(to: string, text: string): void {
+	const line = `[dotz gateway] ${text}`;
+	if (!to.startsWith("lane:")) return void deliver(line, { target: to === "main" ? "web" : WEB_CONVS.includes(to) ? `web:${to}` : to });
+	try {
+		sendToLane(to.slice(5), line, undefined, true);
+	} catch (error) {
+		log(`more for ${to} not delivered: ${(error as Error).message}`);
+	}
+}
+/** The owner's own message `id` (a reply_to of an answer), as the words a card it settles was answered with. */
+export function ownerSaid(id: unknown): OwnerSaid | undefined {
+	const m = typeof id === "string" && id ? ownerMessage(id) : undefined;
+	return m && !m.notOwner ? { ts: m.ts, text: m.text } : undefined;
+}
 export const queue = makeQueue(MAIN, main, PENDING, () => bgWork);
 // The orchestrator's background task workers (what a `[later]` turn waits for), read from OmO's task store: /api/workers, /api/state `work`.
 export const bgWork = sessionBg(MAIN, main, queue);
@@ -267,9 +292,9 @@ function noteProjectInfo(target: string, text: string): void {
 }
 // An answer's closing `<resolves>…</resolves>` line closes the open questions it names, exactly as dotz_send's `resolves` does (routes.ts): only those of
 // `session`'s conversations, "*" for every one. A line that names nothing closes nothing and leaves one line in hub.log. The line itself is stripped for the owner (tone.ts).
-function settleResolves(text: string, session: string): void {
+function settleResolves(text: string, session: string, replyTo?: string): void {
 	for (const words of resolvesOf(text)) {
-		const r = resolveNotices(words === "*" ? { all: true } : { match: words }, conv => convs.keyOf(conv ?? "") === session);
+		const r = resolveNotices(words === "*" ? { all: true } : { match: words }, conv => convs.keyOf(conv ?? "") === session, undefined, ownerSaid(replyTo));
 		if (!r.resolved) log(`resolves line of ${session} matched no open question: ${words.slice(0, 80)}`);
 	}
 }
@@ -533,7 +558,7 @@ export async function out(target: string, text: string, replyTo?: string, extra:
 	}
 	const said = stripSteerMark(text);
 	text = stripLater(said);
-	if (typeof extra.session === "string") settleResolves(text, extra.session);
+	if (typeof extra.session === "string") settleResolves(text, extra.session, replyTo);
 	noteProjectInfo(target, text);
 	if (said && !stripProjectInfo(text)) return { delivered: true };
 	// A gateway post to the alert conversation (a failing watch) is gated like alert() below.
@@ -725,7 +750,7 @@ function wireAnswers(c: Conv): void {
 		answer => {
 			// Read here too: an answer already sent with dotz_send drops this final text, and `[later]` must arrive bare.
 			noteProjectInfo(c.queue.current()?.target ?? c.primary, answer);
-			settleResolves(answer, c.key);
+			settleResolves(answer, c.key, c.queue.current()?.replyTo);
 			const text = stripProjectInfo(answer) || stripResolves(answer);
 			c.queue.onAnswer(text);
 		},

@@ -37,7 +37,37 @@ export function askComponentsFor(target: string, text: string, shown = text): un
 	const rows = part.options.length === options.length && sameQuestion ? askComponents(target, options) : [];
 	// A reply draft's card also opens the web app's 답장 대기, where the same card can be edited by hand (the reply design, mockup 4).
 	const open = rows.length && rows.length < ROW && draft ? webLink("/#monitoring/replies") : undefined;
-	return open ? [...rows, { type: 1, components: [{ type: 2, style: LINK, label: "웹앱에서 열기", url: open }] }] : rows;
+	if (open) return [...rows, { type: 1, components: [{ type: 2, style: LINK, label: "웹앱에서 열기", url: open }] }];
+	const extras = EXTRAS.map(e => ({ type: 2, style: SECONDARY, label: e.label, custom_id: `${ASK_PREFIX}:${target}:${e.act}` }));
+	return rows.length && !draft && rows.length < ROW && extras.every(b => b.custom_id.length <= ID_MAX) ? [...rows, { type: 1, components: extras }] : rows;
+}
+
+export type AskExtra = "more" | "later";
+const EXTRAS: { act: AskExtra; label: string }[] = [
+	{ act: "more", label: "자세히 알려 주세요" },
+	{ act: "later", label: "나중에 (1시간 뒤)" },
+];
+type Extra = (target: string, question: string, act: AskExtra) => string;
+let extra: Extra = () => {
+	throw new Error("no ask extra handler");
+};
+/** The card's 자세히 알려 주세요 / 나중에 button runs `fn` (hub/routes-notices.ts: the same paths as the web), which says what it did. */
+export function setAskExtra(fn: Extra): void {
+	extra = fn;
+}
+const EXTRA_ID = new RegExp(`^${ASK_PREFIX}:(.+):(more|later)$`);
+function extraInteraction(d: Interaction, deps: AskDeps, m: RegExpExecArray): Promise<void> {
+	const user = String(d.member?.user?.id ?? d.user?.id ?? "");
+	if (!deps.owner || user !== deps.owner) return deps.reply(d, 4, ephemeral(msg().auth.notOwner));
+	const question = parseChoices(String(d.message?.content ?? "")).question ?? "";
+	let said: string;
+	try {
+		said = (deps.extra ?? extra)(m[1]!, question, m[2] === "more" ? "more" : "later");
+	} catch (e) {
+		log(`ask ${m[1]} ${m[2]} failed: ${e}`);
+		said = msg().auth.answerFailed;
+	}
+	return deps.reply(d, 4, ephemeral(said));
 }
 
 /** A button's or form's id; `hash`: the draft version a reply draft's 고치기 form was opened on (its submit is refused for any other). */
@@ -67,6 +97,7 @@ type AskDeps = {
 	owner: string;
 	reply: (d: Interaction, type: number, data?: unknown) => Promise<void>;
 	answer?: Answer;
+	extra?: Extra;
 };
 
 const NOTE_FIELD = "note";
@@ -104,7 +135,10 @@ const ephemeral = (content: string) => ({ content, flags: 64, allowed_mentions: 
 /** Handles one click on an ask button: the owner only; acknowledges by updating the message with every button disabled. */
 export async function askInteraction(d: Interaction, deps: AskDeps): Promise<void> {
 	const m = msg().auth;
-	const parsed = parseAskId(String(d.data?.custom_id ?? ""));
+	const customId = String(d.data?.custom_id ?? "");
+	const extraId = d.type === 3 ? EXTRA_ID.exec(customId) : null;
+	if (extraId) return extraInteraction(d, deps, extraId);
+	const parsed = parseAskId(customId);
 	if (!parsed || (d.type !== 3 && d.type !== 5)) return deps.reply(d, 4, ephemeral(m.finished));
 	const user = String(d.member?.user?.id ?? d.user?.id ?? "");
 	if (!deps.owner || user !== deps.owner) {

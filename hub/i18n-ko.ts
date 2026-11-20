@@ -358,6 +358,7 @@ export const ko: Catalog = {
 	decisionAsked: quote => `(당신이 한 이 질문에 대한 답이에요: "${quote}")`,
 	openQuestions: titles => `(이 대화에 아직 열린 질문: ${titles.map(t => `"${t}"`).join(", ")}. 이 글이 그 답인지 먼저 판단하세요. 답이면(일부여도) 처음 보내는 글에서 바로 dotz_send의 resolves로 닫고, 최종 답뿐이면 끝에 <resolves>질문 제목의 단어</resolves> 줄을 붙이세요. 다른 얘기면 질문은 두고 그 얘기를 하세요.)`,
 	openQuestionsLeft: titles => `[dotz gateway] 오너의 마지막 메시지에 이 열린 질문들이 함께 갔는데, 그 턴이 하나도 닫지 않고 끝났어요: ${titles.map(t => `"${t}"`).join(", ")}. 그 메시지가 질문의 답이었으면(일부여도) 답한 질문마다 <resolves>질문 제목의 단어</resolves> 한 줄씩만 쓰고, 다른 얘기였으면 - 한 글자만 답하세요. 다른 말은 덧붙이지 말고 다른 일도 하지 마세요. 두 답 모두 오너에게는 보이지 않아요.`,
+	asker: { more: title => `오너가 "${title}"에 대해 더 알려 달라고 했어요. 같은 카드를 무엇이 바뀌는지 전 → 후와 함께 다시 올려 주세요.`, later: (title, at) => `오너가 "${title}"을(를) ${at}에 다시 볼게요. 기다리지 마세요.`, ignored: title => `오너가 "${title}" 질문에 답하지 않고 넘겼어요. 기다리지 마세요.`, expired: title => `"${title}" 질문은 답 없이 기한이 지나 닫혔어요. 기다리지 마세요.`, half: title => `${title} · 답할 시간이 절반 남았어요`, askedMore: at => `더 알려 달라고 했어요 · ${at}`, putOff: at => `나중에 볼게요 · ${at}에 다시 알려요` },
 	workChannels: list => `(작업 채널 목록, 이 메시지의 채널은 아님: ${list.length ? list.join("; ") : "아직 없음"})`,
 	channelNames: { chat: "대화", alert: "알림", worklog: "작업내역", mail: "메일", workCategory: name => `${name} 작업` },
 	threadDone: "작업을 마쳤어요. 이 스레드는 1시간 뒤 보관할게요.",

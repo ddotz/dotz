@@ -3,7 +3,10 @@ import { log } from "./config.ts";
 import { draftActionOf } from "./draft-approval.ts";
 import { replies } from "./reply-wire.ts";
 import { viewConversation } from "./push.ts";
-import { type Notice, allNotices, dismissNotice, handledNotice, ignoreNotice, undismissNotice, markNoticesRead, reopenNotices, resolveNotices, unignoreNotice } from "./notices.ts";
+import { type Notice, allNotices, cardAsked, clockText, dismissNotice, handledNotice, ignoreNotice, laterNotice, moreNotice, undismissNotice, markNoticesRead, reopenNotices, resolveNotices, unignoreNotice } from "./notices.ts";
+import { askAsker, convOfTarget } from "./outbound.ts";
+import { setAskExtra } from "./askbuttons.ts";
+import { msg } from "./i18n.ts";
 import { ownerOnlyCard } from "./approval-wire.ts";
 import { reasonOf } from "./reply-reasons.ts";
 import { json, body } from "./routes-util.ts";
@@ -21,6 +24,14 @@ function droppedDraftRefs(items: Notice[], ids: unknown): Map<string, string> {
 }
 
 const OWNER_ONLY = { code: "owner_only", error: reasonOf("owner_only").text };
+
+setAskExtra((target, question, act) => {
+	const id = cardAsked(convOfTarget(target), question);
+	const r = act === "more" ? moreNotice(id, askAsker) : laterNotice(id, { for: "hour" });
+	if (r.status !== 200) return msg().auth.finished;
+	const d = r.body.item.decision!;
+	return act === "more" ? msg().asker.askedMore(clockText(Date.parse(d.more_at ?? ""))) : msg().asker.putOff(clockText(Date.parse(d.later_until ?? "")));
+});
 
 /** `agent`: the call came with the hub token (hub/entry-check.ts agentCall); it never settles, ignores or reopens a card only the owner may (hub/approval-wire.ts ownerOnlyCard). */
 export async function routeNotices(req: Request, url: URL, agent = false): Promise<Response | undefined> {
@@ -56,7 +67,13 @@ export async function routeNotices(req: Request, url: URL, agent = false): Promi
 		const r = (settle[2] === "handled" ? handledNotice : undismissNotice)(decodeURIComponent(settle[1]!));
 		return json(r.body, r.status);
 	}
-	// The x (무시) on a question that waits, and its undo: off the badge and 답변 필요, kept in the history, nothing sent to the bot.
+	const ask = req.method === "POST" ? /^\/api\/notices\/([^/]+)\/(more|later)$/.exec(url.pathname) : null;
+	if (ask) {
+		if (agent) return json(OWNER_ONLY, 403);
+		const id = decodeURIComponent(ask[1]!);
+		const r = ask[2] === "more" ? moreNotice(id, askAsker) : laterNotice(id, await body(req));
+		return json(r.body, r.status);
+	}
 	const ignore = req.method === "POST" ? /^\/api\/notices\/([^/]+)\/(ignore|unignore)$/.exec(url.pathname) : null;
 	if (ignore) {
 		const id = decodeURIComponent(ignore[1]!);

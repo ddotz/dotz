@@ -164,6 +164,8 @@ export function createPrompts(deps: PromptDeps) {
 		if (elsewhere?.target) text = `${text}\n\n${deps.foreignNote!(elsewhere, elsewhere.target)}`;
 		const cards = reply?.owner && !gather && !deps.hasCardsNote?.(text) ? deps.cardsNote?.(reply.target) : undefined;
 		if (cards) text = `${cards}\n\n${text}`;
+		const told = reply?.owner && !gather ? deps.askerNotes?.() : undefined;
+		if (told) text = `${told}\n\n${text}`;
 		const prompt: Prompt = { key: text.slice(0, 300), text, at: Date.now(), target: reply?.target, replyTo: reply?.replyTo, ...(reply?.refs?.length ? { refs: reply.refs } : {}), sent: [], steered, ...(reply?.owner ? { owner: true } : {}), ...(reply?.deep ? { deep: true } : {}), ...(gather ? { gathered: true } : {}), ...labels(reply ?? {}) };
 		prompts.push(prompt);
 		if (prompts.length > MAX_PROMPTS) prompts.splice(0, prompts.length - MAX_PROMPTS);
@@ -380,7 +382,7 @@ export function createPrompts(deps: PromptDeps) {
 		askBack(p.target);
 		askLeftover(p.target);
 		save();
-		deps.turnEnded?.();
+		deps.turnEnded?.(p.text);
 	}
 
 	const { askLeftover, askBack } = createAskAgain({ deps, woke, links, askedBack, turns, saveLinks, tiedOpen, linksOf, openDeferred, deliver });

@@ -3,7 +3,9 @@ import { log, now } from "./config.ts";
 import { detailOf, unnumbered } from "./choices.ts";
 import { DRAFT_BODY_MAX, draftActionOf, draftNeedsText } from "./draft-approval.ts";
 import type { Upload } from "./files.ts";
-import type { DecisionOpt, Notice } from "./notices-types.ts";
+import type { Decision, DecisionOpt, Notice, OwnerSaid } from "./notices-types.ts";
+import { msg } from "./i18n.ts";
+import { tellAsker } from "./notices-tell.ts";
 import { closedHooks, decisionHooks } from "./notices-wiring.ts";
 import { TEXT_MAX, clean, closedInfo, isOpenDecision, needsAnswer, twinOf } from "./notices-rules.ts";
 import { broadcast } from "./notices-read.ts";
@@ -18,7 +20,8 @@ export function settleExpiredQuestions(at = now()): number {
 	const hit = items.filter(i => i.decision?.state === "open" && i.decision.expires_at !== undefined && i.decision.expires_at <= stamp);
 	for (const i of hit) {
 		i.decision!.expired = true;
-		settleDecision(i, "", at, true);
+		tellAsker(i, msg().asker.expired(i.title));
+		settleDecision(i, "", at, true, { how: "expired" });
 	}
 	return hit.length;
 }
@@ -133,7 +136,7 @@ export function orchestratorAnswered(text: string, ref?: string, at = now()): nu
 export const closeLaneCards = (name: string): number => resolveAsks(i => i.decision?.to === `lane:${name}` && !i.decision.draft, now(), true);
 
 // `inSession` limits match / all to the notices of one session's conversations (dotz_send's `resolves` from a conversation session); ids and conv name theirs.
-export function resolveNotices(sel: { ids?: unknown; match?: unknown; conv?: unknown; all?: unknown }, inSession?: (conv: string | undefined) => boolean, ownerOnly?: (i: Notice) => boolean): { resolved: number; unread: number } {
+export function resolveNotices(sel: { ids?: unknown; match?: unknown; conv?: unknown; all?: unknown }, inSession?: (conv: string | undefined) => boolean, ownerOnly?: (i: Notice) => boolean, said?: OwnerSaid): { resolved: number; unread: number } {
 	const ids = Array.isArray(sel.ids) ? new Set(sel.ids.map(String)) : undefined;
 	const match = typeof sel.match === "string" && sel.match.trim() ? sel.match.trim().toLowerCase() : undefined;
 	const conv = typeof sel.conv === "string" && sel.conv ? sel.conv : undefined;
@@ -141,7 +144,7 @@ export function resolveNotices(sel: { ids?: unknown; match?: unknown; conv?: unk
 	const chosen = (i: Notice) => (ids ? ids.has(i.id) : match ? mine(i) && `${i.title}\n${i.text}`.toLowerCase().includes(match) : conv ? (i.src ?? i.open) === conv || i.decision?.to === conv : sel.all === true && mine(i));
 	const pick = (i: Notice) => !ownerOnly?.(i) && chosen(i);
 	// ids / match name notices; conv / all do not, so a decision with options is left for the owner there.
-	return { resolved: resolveAsks(pick, now(), !!(ids || match)), unread: unreadCount() };
+	return { resolved: resolveAsks(pick, now(), !!(ids || match), said), unread: unreadCount() };
 }
 
 // The ask notices that go with `item` (the decision and its alert / message twins, made by one asking message). Ignoring a decision of a message
@@ -164,8 +167,8 @@ export function announce(group: Notice[], at: string): void {
 	for (const n of group) broadcast({ ts: at, kind: "notice", source: "gateway", item: n, unread });
 }
 
-// The x (무시) on a question that waits on the owner: it leaves the badge and 답변 필요, stays in the history marked ignored, answers nothing to
-// the bot, and every open page hears the changed items. An item that is not waiting (answered, resolved, plain info) cannot be ignored.
+/** The x (무시) on a question that waits on the owner: it leaves the badge and 답변 필요, stays in the history marked ignored, its asker hears it with its next prompt
+ * (hub/notices-tell.ts), and every open page hears the changed items. An item that is not waiting (answered, resolved, plain info) cannot be ignored. */
 export function ignoreNotice(id: unknown): { status: number; body: Record<string, unknown> } {
 	const item = items.find(i => i.id === String(id));
 	if (!item) return { status: 404, body: { error: "unknown notice" } };
@@ -175,7 +178,11 @@ export function ignoreNotice(id: unknown): { status: number; body: Record<string
 	for (const n of group) {
 		n.ignored = at;
 		n.read = true;
-		if (n.decision?.state === "open") n.decision.state = "ignored";
+		if (n.decision?.state !== "open") continue;
+		n.decision.state = "ignored";
+		delete n.decision.judging;
+		delete n.decision.later_until;
+		tellAsker(n, msg().asker.ignored(n.title));
 	}
 	announce(group, at);
 	for (const n of group) if (n.decision?.state === "ignored") for (const fn of closedHooks) fn(n.decision.to, n.decision.draft?.ref, closedInfo(n, "ignored"));
@@ -195,6 +202,8 @@ export function unignoreNotice(id: unknown): { status: number; body: Record<stri
 			n.decision.state = "open";
 			// A question that waits again gets a full window from now, not the one it had before it was waved off.
 			delete n.decision.expired;
+			delete n.decision.half_told;
+			delete n.decision.tell;
 			const exp = expiresAtOf(n.decision, at);
 			if (exp) n.decision.expires_at = exp;
 		}
@@ -205,6 +214,7 @@ export function unignoreNotice(id: unknown): { status: number; body: Record<stri
 
 // Puts questions back that were closed by mistake (a wrong auto-resolve): open, unread, not resolved or ignored, no answer text. Only a decision or an
 // [ask] item can be reopened; the hub does it in its own memory, so no file is edited behind its back.
+const REOPEN_CLEARS = ["closed_how", "words", "judging", "kept_open", "half_told", "later_until", "more_at", "tell"] as const satisfies readonly (keyof Decision)[];
 const pushedFor = new Map<string, string>();
 export function reopenNotices(ids: unknown, because?: string): { reopened: string[]; unread: number } {
 	const want = new Set(Array.isArray(ids) ? ids.map(String) : []);
@@ -222,6 +232,7 @@ export function reopenNotices(ids: unknown, because?: string): { reopened: strin
 		delete d.expired;
 		delete d.answer;
 		delete d.answered_at;
+		for (const k of REOPEN_CLEARS) delete d[k];
 		const exp = expiresAtOf(d, at);
 		if (exp) d.expires_at = exp;
 	}

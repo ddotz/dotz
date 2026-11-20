@@ -7,7 +7,7 @@ import { readOf } from "./reads.ts";
 import { orchestratorOnlyAsk } from "./forline.ts";
 import { numberLedQuestion } from "./ask-normalize.ts";
 import { dropClaim, parseTone, stripHandoff } from "./tone.ts";
-import type { Decision, Notice, NoticeTone } from "./notices-types.ts";
+import type { Closing, Decision, Notice, NoticeTone, OwnerSaid } from "./notices-types.ts";
 import type { ClosedCard } from "./notices-wiring.ts";
 import { addressesIn, blockDraftRef, DRAFT_BODY_MAX, type DraftApproval } from "./draft-approval.ts";
 import { storedDraftOf } from "./notices-wiring.ts";
@@ -20,6 +20,15 @@ export const RESTART_PREFIX = /^게이트웨이(?: 재시작했어요|를 다시
 // A question whose time is up is no longer open on any surface, even before the sweep reaches it (settleExpiredQuestions): the badge,
 // 답변 필요, push re-asks and the approval queue all read this one check. Stored times are the hub's clock (now()), compared as ISO strings.
 export const hasExpired = (d: Decision | undefined, nowIso = now()): boolean => !!d?.expires_at && d.expires_at <= nowIso;
+/** A card the owner put off (Decision.later_until) and whose time has not come: read, off the model's open questions, never pushed. */
+export const laterOn = (d: Decision | undefined, nowIso = now()): boolean => !!d?.later_until && d.later_until > nowIso;
+/** The owner's message as a card's `words` / `judging` text: one line, trimmed, at most 80 characters. */
+export const wordsOf = (text: string): string => text.replace(/\s+/g, " ").trim().slice(0, 80);
+/** A card the bot named as settled (resolveAsks `named`) after an owner message: the message it was listed with (`judging`), else `said` when it came after the card. */
+export function wordsClose(i: Notice, said?: OwnerSaid): Closing | undefined {
+	const text = i.decision?.judging?.text ?? (said && said.ts > (i.at ?? i.ts) ? said.text : undefined);
+	return text?.trim() ? { how: "words", words: wordsOf(text) } : undefined;
+}
 // The 감시 소식 feed stays small: each watch keeps its newest WATCH_KEEP reports and none older than WATCH_DAYS, dropped when a report is written and
 // when the file loads, so notices.json and the payload never grow with the age of the install. An open decision is never dropped.
 export const WATCH_KEEP = 50;

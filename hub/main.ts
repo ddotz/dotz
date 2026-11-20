@@ -56,7 +56,7 @@ import { createWaitCheck, wakeReply } from "./waitcheck.ts";
 import { ownerMessage } from "./events.ts";
 import { forgetAccountUsage, onQuota, QUOTA_REFRESH_MS, refreshQuota, usageSnapshot } from "./providers.ts";
 import { sealPlainSecrets } from "./secretbox.ts";
-import { allNotices, backfillNotices, draftCardCounts, dropChannelNotices, flushNotices, refreshStoredDrafts, setAppLabelResolver, setDraftHandled, settleExpiredQuestions, settleHandledDrafts, setConvNameResolver, setLaneTitleResolver, setAppBlocker, setAppResolver, setOrchestratorAvailable, setWatchLabelResolver, setWatchSummarizer, tagStoredApps, updateAvailable, updateResolved } from "./notices.ts";
+import { allNotices, backfillNotices, draftCardCounts, dropChannelNotices, flushNotices, refreshStoredDrafts, setAppLabelResolver, setDraftHandled, settleHandledDrafts, setConvNameResolver, setLaneTitleResolver, setAppBlocker, setAppResolver, setOrchestratorAvailable, setWatchLabelResolver, setWatchSummarizer, sweepQuestions, tagStoredApps, updateAvailable, updateResolved } from "./notices.ts";
 import { channelTitle, laneTitle } from "./notices-lanes.ts";
 import { startDayNote } from "./day-note.ts";
 import { startReflection } from "./reflect.ts";
@@ -224,7 +224,7 @@ const reconcileMails = (limit: number) => mailReconciler.run(limit).then(r => (r
 const settleSweep = () => {
 	settleSends();
 	// Questions past their answer time close here, in the pass that already settles handled drafts: no timer of their own.
-	const expired = settleExpiredQuestions();
+	const expired = sweepQuestions();
 	if (expired) log(`notices: ${expired} questions past their answer time closed`);
 	return settleHandledDrafts().then(n => (n && log(`notices: ${n} send approvals closed, their drafts were handled elsewhere`), n), e => (log(`handled-draft sweep failed: ${(e as Error).message}`), 0));
 };

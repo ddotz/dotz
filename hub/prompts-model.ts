@@ -74,6 +74,8 @@ export type PromptDeps = {
 	cardsNote?: (target: string) => string | undefined;
 	/** Does this text already carry that note (a restart replay stored it with the prompt)? */
 	hasCardsNote?: (text: string) => boolean;
+	/** The gateway lines the asker of this session's cards still has to hear (hub/asker-notes.ts), taken once by the owner prompt that carries them. */
+	askerNotes?: () => string | undefined;
 	clearProgress: (target: string) => void;
 	/** Writes the open prompts to disk. */
 	persist: (open: Pending[]) => void;
@@ -93,8 +95,8 @@ export type PromptDeps = {
 	answeredSince?: (target: string, at: number) => boolean;
 	/** These messages of `target` were answered by an answer that names another one of the burst. */
 	settled?: (target: string, ids: string[]) => void;
-	/** A turn ended and was settled; not one a provider error stopped before it answered (that request stays open). */
-	turnEnded?: () => void;
+	/** A turn ended and was settled (`text`: its prompt, none for a run no prompt of ours started); not one a provider error stopped before it answered (that request stays open). */
+	turnEnded?: (text?: string) => void;
 	/** What became of the turn of a prompt fired for schedule runs (its `run` label); `seen`: the answer went out as the owner's own exchange. */
 	ran?: (run: RunLabel, outcome: RunOutcome, seen?: boolean) => void;
 	/** Did these schedule runs already get their own outcome? Settles a stored run prompt on a restart, whatever else was answered in its conversation. */

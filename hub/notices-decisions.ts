@@ -8,6 +8,7 @@ import { eventTarget, historyEvents, type HubEvent } from "./events.ts";
 import { shortTitle } from "./notice-title.ts";
 import { parseTone, stripHandoff } from "./tone.ts";
 import type { DecisionOpt } from "./notices-types.ts";
+import { RUN_DECISION } from "./notices-schedule.ts";
 import { ALERT_ANSWER_WINDOW_MS, ANSWER_WINDOW_MS, TEXT_MAX, authorOf, laneTone, refOf } from "./notices-rules.ts";
 import { say } from "./notices-read.ts";
 
@@ -102,6 +103,8 @@ export const expiresAtOf = (d: { to: string; by?: string; draft?: DraftApproval 
 	const from = Date.parse(at);
 	return new Date((Number.isNaN(from) ? Date.parse(now()) : from) + (d.by === "gateway" || d.to === "alert" ? ALERT_ANSWER_WINDOW_MS : ANSWER_WINDOW_MS)).toISOString();
 };
+/** A question card that 자세히 / 나중에, the close labels, the half-time reminder and the asker's note apply to: no send approval, login request or schedule run. */
+export const plainCard = (d: { to: string; draft?: DraftApproval }): boolean => !d.draft && !d.to.startsWith("auth:") && !d.to.startsWith(RUN_DECISION);
 
 // The label a button answer shows (the sent text may be longer): set while its message is on the way, since that message settles the notice too.
 export const sending = new Map<string, string>();
