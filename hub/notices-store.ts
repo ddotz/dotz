@@ -17,12 +17,12 @@ import { resolveItem, type WatchItem } from "./watchitem.ts";
 import type { Closing, Decision, DecisionOpt, Notice, NoticeKind, NoticeTone, OwnerSaid } from "./notices-types.ts";
 import { msg } from "./i18n.ts";
 import { appBlocked, appOf, closedHooks, decisionHooks, repostHooks, orchestratorUp, stampApp, summarizeWatch, unreadHooks, watchLabelOf } from "./notices-wiring.ts";
-import { BACKFILL_DAYS, DAY_MS, FOLD_MS, LOUD, MESSAGE_PREVIEW, NOTICE_CAP, REASK_MS, REPEATS_MAX, REPEAT_TEXT, RESTART_PREFIX, authorOf, clean, closedInfo, repostNote, shownAsStored, unreadDraftRef, coveredByRead, hasChoice, hasExpired, isAsking, isOpenDecision, keepWatchNewest, laneTone, needsAnswer, originOf, refOf, systemTitle, twinOf, typedAnswer, waitKind, waitsOf, wordsClose, wordsOf } from "./notices-rules.ts";
+import { BACKFILL_DAYS, DAY_MS, FOLD_MS, LOUD, MESSAGE_PREVIEW, NOTICE_CAP, REASK_MS, REPEATS_MAX, REPEAT_TEXT, RESTART_PREFIX, authorOf, clean, closedInfo, repostNote, shownAsStored, unreadDraftRef, coveredByRead, hasChoice, hasExpired, isAsking, isOpenDecision, keepWatchNewest, laneTone, laterOn, needsAnswer, originOf, refOf, systemTitle, twinOf, typedAnswer, waitKind, waitsOf, wordsClose, wordsOf } from "./notices-rules.ts";
 import { GENERIC_TITLES, channelLanes, channelTitle, laneExists, laneOfNotice, laneTitle, launchTitles, noteLaunch, readChannelMap, recordedCwd, stoppedSince } from "./notices-lanes.ts";
 import { snapshotResults } from "./files.ts";
 import { type ResultFile, type ResultLink, resultFiles, resultLinks } from "./result-refs.ts";
 import { broadcast, summary } from "./notices-read.ts";
-import { QUIET_MS, awaitingReply, isViewing, quietReplies, viewers } from "./notices-viewing.ts";
+import { QUIET_MS, awaitingReply, isViewing, ownerWroteAt, quietReplies, viewers } from "./notices-viewing.ts";
 import { decisionsOf, expiresAtOf, plainCard, sending } from "./notices-decisions.ts";
 import { askedAgain, optionsOf, sameQuestion, withAskedLine } from "./notices-repeat.ts";
 import { worklogKind } from "./worklog-kind.ts";
@@ -388,6 +388,11 @@ function adoptRepost(e: HubEvent): boolean {
 	return true;
 }
 
+function closeCardsWrittenBackTo(to: string, at: string, keep?: Notice): void {
+	const since = ownerWroteAt.get(to);
+	if (since && since <= at) for (const i of items) if (i !== keep && isOpenDecision(i) && hasChoice(i) && !i.decision!.draft && i.decision!.to === to && !laterOn(i.decision) && (i.at ?? i.ts) < since) settleDecision(i, "", at, true);
+}
+
 export function putDecision(d: { key: string; title: string; detail: string; to: string; open?: string; options: DecisionOpt[]; group: number; replyTo?: string; draft?: DraftApproval; by?: string; ref?: string; assumed?: true }, at: string): void {
 	const old = items.find(n => n.key === d.key) ?? (d.draft || Object.values(FILLER_QUESTIONS).includes(d.title) ? undefined : items.findLast(n => n.decision?.to === d.to && !n.decision.draft && sameQuestion(n.title, d.title))), asked = askedAgain(old, d, at);
 	if (old?.decision) {
@@ -396,6 +401,7 @@ export function putDecision(d: { key: string; title: string; detail: string; to:
 		if (!isOpenDecision(old) && Date.parse(at) - Date.parse(old.ignored ?? old.decision.answered_at ?? "") < REASK_MS) return void closeRepeat(old, at);
 	}
 	if (old) old.key = d.key;
+	if (d.options.length && !d.draft) closeCardsWrittenBackTo(d.to, at, old);
 	const open = d.open ?? d.to, expires_at = expiresAtOf(d, at);
 	if (d.draft && !shownAsStored(d.draft)) d = { ...d, draft: undefined };
 	const decision: Decision = { options: optionsOf(d), to: d.to, ...(d.replyTo ? { reply_to: d.replyTo } : {}), group: d.group, state: "open", ...(expires_at ? { expires_at } : {}), ...(d.draft ? { draft: d.draft } : {}), ...(d.assumed ? { assumed: true as const } : {}), ...(asked ? { asked } : {}) };
@@ -454,7 +460,8 @@ export function settleDecision(item: Notice, answer: string, at = now(), resolve
 function ownerReplied(e: HubEvent): void {
 	// A peer gateway's line arrives as a web message under the owner's login, but he said nothing (2026-11-05: it answered an [ask] nobody had seen).
 	if (isPeerMessage(e)) return;
-	const settles = typedAnswer(e, eventTarget(e) ?? "main");
+	const to = eventTarget(e) ?? "main", settles = typedAnswer(e, to);
+	ownerWroteAt.set(to, String(e.ts));
 	const text = String(e.text ?? "").trim();
 	const byButton = typeof e.decision === "string" || (Array.isArray(e.picks) && e.picks.length > 0);
 	const words: Closing | undefined = byButton ? undefined : { how: "words", words: wordsOf(text) };
@@ -786,6 +793,7 @@ export function resetNoticesForTest(): void {
 	viewers.clear();
 	awaitingReply.clear();
 	quietReplies.clear();
+	ownerWroteAt.clear();
 	sending.clear();
 	orchTurnFrom = undefined;
 	flushNotices(true);

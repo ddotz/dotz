@@ -2,10 +2,11 @@ import { beforeEach, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { paths } from "./config.ts";
 import { emit } from "./events.ts";
-import { resetNoticesForTest, type Notice } from "./notices.ts";
+import { laterNotice, markJudging, resetNoticesForTest, type Notice } from "./notices.ts";
 import { flushNotices } from "./notices-store.ts";
 
-const ts = () => new Date().toISOString();
+let clock = Date.now();
+const ts = () => new Date((clock += 1000)).toISOString();
 const stored = (): Notice[] => (flushNotices(), JSON.parse(readFileSync(paths.notices, "utf8")));
 const ask = () => emit("outbox", { ts: ts(), kind: "out", source: "orchestrator", target: "web", text: "[ask] 보고서를 언제 보낼까요?\n결정: 보고서를 언제 보낼까요?\n**1) 오늘**\n**2) 내일**" });
 const owner = (text: string) => emit("inbox", { ts: ts(), kind: "message", source: "web", channel: "web", text });
@@ -45,4 +46,59 @@ test("a number that is no option, or a label inside another sentence, leaves it 
 	owner("7");
 	owner("내일 날씨 어때?");
 	expect(state().state).toBe("open");
+});
+
+const reask = (q: string) => emit("outbox", { ts: ts(), kind: "out", source: "orchestrator", target: "web", text: `[ask] 근거를 붙였어요.\n결정: ${q}\n**1) 오늘**\n**2) 내일**` });
+const open = () => stored().filter(n => n.decision?.state === "open").map(n => n.title);
+
+test("a card asked again after the owner wrote back closes the earlier one", () => {
+	ask();
+	owner("근거와 같이 물어봐야지");
+	reask("보고서를 언제 보내면 좋을까요? (근거 포함)");
+	expect(open()).toEqual(["보고서를 언제 보내면 좋을까요? (근거 포함)"]);
+});
+
+test("a second question the owner has not written after leaves the first one open", () => {
+	ask();
+	reask("회의는 언제 할까요?");
+	expect(open().length).toBe(2);
+});
+
+const first = () => stored().find(n => n.title === "보고서를 언제 보낼까요?")!;
+
+test("the cards one reply brings after the owner wrote stay open together, and the card it replaces closes as done", () => {
+	ask();
+	owner("근거와 같이 물어봐야지");
+	reask("보고서를 언제 보내면 좋을까요? (근거 포함)");
+	reask("받는 사람도 바꿀까요?");
+	expect(open()).toEqual(["보고서를 언제 보내면 좋을까요? (근거 포함)", "받는 사람도 바꿀까요?"]);
+	expect(first().decision).toMatchObject({ state: "answered", resolved: true, closed_how: "done" });
+});
+
+test("a card put off until later stays open when a new card comes after the owner wrote", () => {
+	ask();
+	expect(laterNotice(first().id, { for: "hour" }).status).toBe(200);
+	owner("근거와 같이 물어봐야지");
+	reask("회의는 언제 할까요?");
+	expect(open()).toEqual(["보고서를 언제 보낼까요?", "회의는 언제 할까요?"]);
+});
+
+test("a card being judged that a new card replaces drops its judging line", () => {
+	ask();
+	const card = first();
+	markJudging([{ id: card.id, title: card.title, updated: card.updated }], { ts: ts(), text: "근거와 같이 물어봐야지" });
+	expect(first().decision!.judging).toBeDefined();
+	owner("근거와 같이 물어봐야지");
+	reask("보고서를 언제 보내면 좋을까요? (근거 포함)");
+	expect(first().decision!.state).toBe("answered");
+	expect(first().decision!.judging).toBeUndefined();
+});
+
+test("the same question asked again after the owner wrote is the same card counted again, not a card closing it", () => {
+	ask();
+	owner("음");
+	clock += 31 * 60_000;
+	ask();
+	expect(open()).toEqual(["보고서를 언제 보낼까요?"]);
+	expect(first().decision!.asked?.n).toBe(2);
 });

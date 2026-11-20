@@ -17,3 +17,5 @@ export function isViewing(conv: string, nowMs = Date.now()): boolean {
 export const QUIET_MS = 10 * 60_000;
 export const awaitingReply = new Map<string, number>();
 export const quietReplies = new Set<string>();
+/** When the owner last wrote in each conversation: open choice cards there from before it are ones he wrote back to without picking. */
+export const ownerWroteAt = new Map<string, string>();
