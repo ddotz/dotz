@@ -54,7 +54,7 @@ const schedPast = () => {
 const schedAgain = (iso, now = Date.now()) => { let t = Date.parse(iso); while (t <= now) t += 86_400_000; return new Date(t).toISOString(); };
 const schedRebook = (btn, r) => busy(btn, async () => {
   const at = schedAgain(r.firedAt);
-  await api("/api/schedules", "POST", { name: r.name, text: r.text, kind: r.kind, at });
+  await api("/api/schedules", "POST", { name: r.name, text: r.text, kind: r.kind, at, ...(r.conv ? { conv: r.conv } : {}) });
   toast(TX("sched.rebooked", { name: r.name, t: `${dayLabel(at)} ${kstHM(at)}` }));
   await loadMonitors();
 });

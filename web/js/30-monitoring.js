@@ -684,7 +684,7 @@ function monOverview(it) {
   const sorted = list.slice().sort((a, b) => rank(a) - rank(b) || (Date.parse(a.mon.next_run) || Infinity) - (Date.parse(b.mon.next_run) || Infinity));
   // A monitor that is fine (정상, 꺼짐) folds under ONE summary row: how many, all normal, the latest check. One that is down, failed, late, changed or not run yet
   // always stands in its own row above it, so a card of fine monitors is one row (the same fold row as the project list's computer heads, 18-lanes.js pcHead).
-  const fine = i => { const k = monStatus(i.mon, now).key; return k === "ok" || k === "off"; };
+  const fine = i => { const k = monStatus(i.mon, now).key; return k === "ok" || k === "off" || k === "wait"; };
   const loud = sorted.filter(i => !fine(i)), calm = sorted.filter(fine), open = !!MON.ovOpen;
   const row = i => {
     const m = i.mon, peerBar = i.pc && !m.paused && !(Date.parse(m.next_run) > 0);   // a paused peer monitor draws the grey 꺼짐 bar like a local one

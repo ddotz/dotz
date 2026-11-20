@@ -19,7 +19,7 @@ const schedules = [
 ];
 const PAST_AT = "2026-11-18T05:30:00Z";
 const runs = [
-	{ run: "r0", scheduleId: "s9", name: "sample-5 서류 알림", kind: "owner", text: "서류 내라고 알려 줘", firedAt: PAST_AT, state: "answered" },
+	{ run: "r0", scheduleId: "s9", name: "sample-5 서류 알림", kind: "owner", text: "서류 내라고 알려 줘", firedAt: PAST_AT, state: "answered", conv: "ch:7" },
 	{ run: "r1", scheduleId: "s8", name: "sample-6 정리 점검", kind: "check", text: "정리 점검", firedAt: PAST_AT, state: "silent" },
 	{ run: "r2", scheduleId: "s1", name: "sample-2 일일 보고", kind: "task", text: "ch:7 Run the daily report.", firedAt: iso(NOW - 3600_000), state: "answered" },
 ];
@@ -95,6 +95,14 @@ describe("schedules say facts, are listed in settings and open to their result",
 			await shot(v, `schedule-detail-${width}.png`);
 		}, 60_000);
 
+		test(`the monitoring overview folds a waiting schedule with the fine ones, only the late one stands out at ${width}px`, async () => {
+			const v = await boot(width, height);
+			await run(v, `go("monitoring", "notice")`);
+			await waitFor(v, `document.querySelector(".mon-ov-h")`);
+			expect(await q(v, `return [...document.querySelectorAll(".mon-ov-row")].map(r => r.querySelector(".mon-ov-n").textContent)`)).toEqual(["sample-4 점검"]);
+			expect(await q(v, `return document.querySelector(".mon-ov-ht").textContent`)).toBe("나머지 2개");
+		}, 60_000);
+
 		test(`settings 예약한 일 lists each schedule by name and kind, the morning brief and the past ones to book again at ${width}px`, async () => {
 			const v = await boot(width, height);
 			await run(v, `go("settings")`);
@@ -111,8 +119,8 @@ describe("schedules say facts, are listed in settings and open to their result",
 			await shot(v, `schedule-settings-list-${width}.png`);
 			await run(v, `document.querySelector("#schedules [data-past] button").click()`);
 			await waitFor(v, `[...document.querySelectorAll(".snack")].some(s => s.textContent.includes("다시 예약했어요"))`);
-			const sent = posts.find(x => x.path === "/api/schedules")!.body as { name: string; text: string; kind: string; at: string };
-			expect({ name: sent.name, text: sent.text, kind: sent.kind }).toEqual({ name: "sample-5 서류 알림", text: "서류 내라고 알려 줘", kind: "owner" });
+			const sent = posts.find(x => x.path === "/api/schedules")!.body as { name: string; text: string; kind: string; at: string; conv?: string };
+			expect({ name: sent.name, text: sent.text, kind: sent.kind, conv: sent.conv }).toEqual({ name: "sample-5 서류 알림", text: "서류 내라고 알려 줘", kind: "owner", conv: "ch:7" });
 			expect(Date.parse(sent.at)).toBeGreaterThan(NOW);
 			expect((Date.parse(sent.at) - Date.parse(PAST_AT)) % 86_400_000).toBe(0);
 			await run(v, `document.querySelector('#schedules [data-sched="s1"]').click()`);
