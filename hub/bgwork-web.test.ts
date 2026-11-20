@@ -159,6 +159,42 @@ test("홈: an app conversation whose own session runs is a row of 지금 진행 
 	}
 }, 20_000);
 
+test("홈: a conversation waiting on its worker and that worker are one row of 지금 진행 중", async () => {
+	const BUILD = { id: "st_build", description: "Download and verify 0.2.15 build artifacts", status: "running", started_at: ago(8), model: "Opus 5.5 low" };
+	WORK = [];
+	CONVS = [{ target: "mail:acme-67180972", name: "릴리스 채널", work: [BUILD] }];
+	RUNS = { main: { kind: "idle" }, "mail:acme-67180972": { kind: "waiting", reason: "work", since: agoIso(8), detail: "Download and verify 0.2.15 build artifacts · Opus 5.5 low", work: "st_build" } };
+	const count = `document.querySelector('#home-cards [data-id="now:running"] .hc-n').textContent`;
+	try {
+		const v = await boot("#home");
+		await waitFor(v, `current === "home" && document.querySelector('#home-cards [data-id="now:running"] [data-t="mail:acme-67180972"]')`);
+		let s = await sections(v);
+		expect(s.running).toHaveLength(1);
+		expect(s.running![0]).toContain("릴리스 채널");
+		expect(s.running![0]).toContain("맡긴 작업 진행 중 · Download and verify 0.2.15 build artifacts · Opus 5.5 low · 8분");
+		expect(await v.evaluate(count)).toBe("1개");
+		CONVS = [{ target: "mail:acme-67180972", name: "릴리스 채널", work: [BUILD, { ...BUILD, id: "st_more", description: "릴리스 노트 쓰기" }] }];
+		await v.evaluate(`refreshState().then(() => true)`);
+		await waitFor(v, `document.querySelector('#v-home [data-work="st_more"]')`);
+		s = await sections(v);
+		expect(s.running).toHaveLength(2);
+		expect(await v.evaluate(`!!document.querySelector('#v-home [data-work="st_build"]')`)).toBe(false);
+		expect(await v.evaluate(count)).toBe("2개");
+		CONVS = [];
+		WORK = [{ ...RUNNING, target: "web" }];
+		RUNS = { main: { kind: "waiting", reason: "work", since: agoIso(3), detail: "흐름도 그리기 · Opus 5.5 medium", work: "st_run" } };
+		await v.evaluate(`refreshState().then(() => true)`);
+		await waitFor(v, `document.querySelector('#v-home [data-work="st_run"]') && !document.querySelector('#v-home [data-t="mail:acme-67180972"]')`);
+		s = await sections(v);
+		expect(s.running).toHaveLength(1);
+		expect(s.running![0]).toContain("흐름도 그리기");
+		expect(await v.evaluate(count)).toBe("1개");
+	} finally {
+		CONVS = [];
+		WORK = [RUNNING, FAILED, DONE];
+	}
+}, 30_000);
+
 test("홈: nothing running says so instead of listing idle conversations under 지금 진행 중", async () => {
 	WORK = [];
 	RUNS = { main: { kind: "idle" } };
