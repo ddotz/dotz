@@ -252,6 +252,48 @@ test("an [ask] without choices raises nothing: it goes back to the session once,
 	expect(decisionsOf({ ts: "t", kind: "lane_report", source: "lane:pd", lane: "pd", text: reports[0]! })).toEqual([]);
 });
 
+test("D5: a report that ends asking the owner in words with no card goes back once, then goes through; an offer goes through at once", async () => {
+	const { agent, reports } = await fresh("pp");
+	const prose = "[done] 설정 화면을 고쳤어요. 어느 색이 좋은지 알려 주세요.";
+	await said(agent, prose);
+	await advance(500);
+	expect(reports).toEqual([]);
+	expect(agent.sent.at(-1)!.text).toContain(msg().askProseRefused("설정 화면을 고쳤어요. 어느 색이 좋은지 알려 주세요.", prose.slice(7)));
+	const count = agent.sent.length;
+	await said(agent, prose);
+	await advance(500);
+	expect(agent.sent.length).toBe(count);
+	expect(reports).toEqual([prose]);
+	const offered = await fresh("po");
+	const offer = "[done] 설정 화면을 고쳤어요. 다른 색을 원하면 말해 주세요.";
+	await said(offered.agent, offer);
+	await advance(500);
+	expect(offered.reports).toEqual([offer]);
+});
+
+test("a card from a session titled with no subject goes back once asking for its subject, then becomes the card", async () => {
+	const { lane, agent, reports } = await fresh("pg");
+	const generic = "[ask] sample-2 정리가 끝났어요.\n\n결정: 어떻게 할까요?\n**1) 바로 반영**\n**2) 보류**";
+	await said(agent, generic);
+	await advance(500);
+	expect(reports).toEqual([]);
+	expect(lane.pendingAsk).toBeUndefined();
+	expect(agent.sent.at(-1)!.text).toContain(msg().askTitleRefused("어떻게 할까요?", generic.slice(6)));
+	await said(agent, generic);
+	await advance(500);
+	expect(reports).toEqual([generic]);
+	expect(lane.pendingAsk?.text).toBe(generic);
+});
+
+test("D3: a session's question whose list became no card goes back once, naming that question", async () => {
+	const { agent, reports } = await fresh("pq");
+	const two = "[ask] 정할 게 두 가지예요.\n\n배포 시각은 어느 쪽으로 할까요?\n- 오늘 밤에 바로 올려요.\n- 내일 아침에 올려요.\n\n결정: 백업 위치는 어디로 할까요?\n**1) 외장 디스크**\n**2) 클라우드**";
+	await said(agent, two);
+	await advance(500);
+	expect(reports).toEqual([]);
+	expect(agent.sent.at(-1)!.text).toContain(msg().askUnread(["배포 시각은 어느 쪽으로 할까요?"], two.slice(6)));
+});
+
 test("a report that says something is unverified without why and what was checked instead goes back once", async () => {
 	const { lane, agent, reports } = await fresh("pu");
 	const bare = "[done] 키보드가 안 내려가게 고쳤어요.\n- 실기기 미확인";

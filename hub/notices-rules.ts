@@ -5,6 +5,7 @@ import type { HubEvent } from "./events.ts";
 import { classOfNotice, isLoginLost } from "./notice-class.ts";
 import { readOf } from "./reads.ts";
 import { orchestratorOnlyAsk } from "./forline.ts";
+import { numberLedQuestion } from "./ask-normalize.ts";
 import { dropClaim, parseTone, stripHandoff } from "./tone.ts";
 import type { Decision, Notice, NoticeTone } from "./notices-types.ts";
 import type { ClosedCard } from "./notices-wiring.ts";
@@ -119,6 +120,7 @@ export const hasChoice = (i: Notice) => !!i.decision && i.decision.options.lengt
 const NUMBER_REF = /(?<![\d.,:/-])(\d+)(?:\s*-\s*(\d+))?(?=번|으로|로|이요|요|\)|\]|\.(?!\d)|[,!?~]|\s+(?![시분초일월년개명원통건회%])|$)/gu;
 const bare = (s: string) => s.replace(/\s*…\s*$/, "").trim().toLowerCase();
 export function answersOption(options: { n: number; label: string; say?: string }[], text: string): boolean {
+	if (numberLedQuestion(text)) return false;
 	const t = text.trim().toLowerCase();
 	for (const m of t.matchAll(NUMBER_REF)) if (options.some(o => o.n === Number(m[1]) || (m[2] !== undefined && o.n === Number(m[2])))) return true;
 	return options.some(o => [o.label, o.say ?? ""].some(w => bare(w) && (t === bare(w) || (t.startsWith(bare(w)) && /^[,.!~)]/.test(t.slice(bare(w).length))))));

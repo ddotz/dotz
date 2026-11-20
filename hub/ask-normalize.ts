@@ -29,6 +29,9 @@ const LABELED = /^\s*[^\s:：|]{1,12}\s?[:：]\s/;
 const CLOSING = /^[^|]{0,60}(?:골라|알려|말씀|답해)\s*주(?:세요|시면|면)/;
 const NUMBERED = /^\s*(?:\*\*)?\s*(\d)[.)]\s*(.+)$/;
 const BULLET = /^\s*[-*•]\s+(.+)$/;
+const BOLD_LEAD = /^\s*\*\*[^*\s]/;
+const BOLD_NAMED = /^\s*\*\*[^*]+\*\*\s*(?:[:：]|[-–—]\s)/;
+const BOLD_NOTE = /^\s*\*\*\s*(?:추천|참고|메모|주의|note|tip|recommended)\s*\*\*\s*[:：]/i;
 const REC = /←\s*(?:추천|recommended)|\(\s*(?:추천|권장|recommended)\s*\)/i;
 // A finished sentence or an instruction is a report line or a step, never a button.
 const NOT_LABEL = /(?:세요|십시오|습니다|했어요|됐어요|있어요|었어요|았어요)\s*[.!]?$|[.。]$/;
@@ -76,9 +79,15 @@ function readOptions(lines: string[], fenced: boolean[], from: number, limit: nu
 		const line = lines[i]!;
 		if (fenced[i]) return undefined;
 		if (!line.trim()) continue;
-		if (META.test(line)) break;
+		if (META.test(line) || BOLD_NOTE.test(line)) break;
 		const n = NUMBERED.exec(line), b = BULLET.exec(line);
-		const body = n && style !== "bullet" && Number(n[1]) === options.length + 1 ? n[2] : !n && b && style !== "number" ? b[1] : undefined;
+		const bold = !n && !b && (!style || style === "bold") && BOLD_LEAD.test(line) ? boldOption(line) : undefined;
+		if (bold) {
+			options.push(bold);
+			style = "bold";
+			continue;
+		}
+		const body = n && (!style || style === "number") && Number(n[1]) === options.length + 1 ? n[2] : !n && b && (!style || style === "bullet") ? b[1] : undefined;
 		if (body !== undefined) {
 			const o = optionOf(body, marked && !!n);
 			if (!o) return undefined;
@@ -107,7 +116,7 @@ function findBlock(lines: string[], fenced: boolean[], limit: number, marked: bo
 		const line = lines[q]!;
 		if (fenced[q] || !line.trim() || /^\s*[>|]/.test(line)) continue;
 		const head = HEADING.exec(line);
-		if (!head && BULLET.test(line)) continue;
+		if (!head && (BULLET.test(line) || BOLD_NAMED.test(line))) continue;
 		// A question on the "For <bot>:" line is the orchestrator's to answer: its list is no owner card (forline.ts orchestratorOnlyAsk).
 		if (isForLine(line)) return undefined;
 		const text = head ? (head[1] ?? "") : plain(line);
@@ -295,6 +304,14 @@ const fenceMap = (lines: string[]): boolean[] => {
 	});
 };
 
+const isItem = (line: string) => NUMBERED.test(line) || BULLET.test(line) || BOLD_LEAD.test(line);
+const cardLabels = (text: string): Set<string> => new Set(parseDecisions(text).blocks.flatMap(b => b.options.map(o => flat(o.label))));
+function paragraphStart(lines: string[], kept: boolean[], from: number): number {
+	let i = from;
+	while (i > 0 && !kept[i - 1] && lines[i - 1]!.trim() && !isItem(lines[i - 1]!)) i--;
+	return i;
+}
+
 // A session's [ask] the owner cannot answer from the card (owner 2026-11-05: "뭐에 대한 질문인지 저기에서 바로 답변이 어려워"): no choice block, not a
 // budget question or a quoted draft (both have their own buttons), not a chore for the orchestrator. It never becomes an answer-needed item:
 // a turn-end report goes back to the session once (lanereport.ts), everything else goes on as a plain note (plainBareAsk).
@@ -304,25 +321,94 @@ export function bareAsk(text: string): boolean {
 }
 export const plainBareAsk = (text: string): string => (bareAsk(text) ? parseTone(text).text : text);
 
+const ASKS_FOR = /(?:말(?:씀)?해|알려|정해|골라|선택해|답해|결정해|적어|써)\s*주(?:세요|십시오|시겠어요|실래요|시면)(?![가-힣])|\b(?:let me know|tell me|please (?:choose|pick|decide|reply|answer))\b/i;
+const OFFER = /(?:원하|필요하|궁금하|싶으|괜찮으|있으|생기)시?(?:면|다면)|언제든|\bif you (?:want|need|like|'d like)\b|\bfeel free\b|\banytime\b/i;
+/** The line a message ends on when it asks the owner for something in words ("어느 쪽이 좋은지 알려 주세요") and holds no card to answer with; an offer ("원하면 말해 주세요") asks nothing. */
+export function proseAsk(text: string): string | undefined {
+	const p = parseTone(text);
+	if (parseDecisions(p.text).blocks.length || askedDraft(p.text) || /\/budget-ok/.test(text) || orchestratorOnlyAsk(p.text)) return undefined;
+	const lines = p.text.split("\n");
+	const fenced = fenceMap(lines);
+	const at = lines.findLastIndex((l, i) => !fenced[i] && l.trim() && !QUOTED.test(l) && !META.test(l) && !/^\s*-#\s/.test(l) && !isForLine(l));
+	const last = at < 0 ? "" : (sentences(plain(lines[at]!).replace(/`[^`]*`|"[^"]*"|“[^”]*”|‘[^’]*’|「[^」]*」/g, "")).at(-1) ?? "");
+	return ASKS_FOR.test(last) && !OFFER.test(last) ? lines[at]!.trim() : undefined;
+}
+
+const GENERIC_KO = /^(?:그럼|그러면|이제|자|그래서)?\s*(?:이걸|이거|이것을?|그걸|그거|그것을?|이대로|그대로|이렇게|그렇게|어떻게|뭘|뭐|무엇을)?\s*(?:(?:진행|처리|반영|결정|마무리|정리|적용|수정)\s*)?(?:할|해야\s*할|하면\s*될|만들|고칠|바꿀)까요$/;
+const GENERIC_EN = /^(?:so,?\s+)?(?:how should (?:i|we) proceed|what (?:should|shall) (?:i|we) do(?: next)?|(?:shall|should) (?:i|we) (?:go ahead|proceed|do (?:it|this|that)|make (?:it|this|that)))$/i;
+/** The title of a card in `text` that names no subject ("어떻게 할까요?", "이걸 만들까요?", or none): the owner cannot tell from it what he decides. */
+export function genericTitle(text: string): string | undefined {
+	const p = parseTone(text);
+	if (parseDraftApproval(p.text)) return undefined;
+	return parseDecisions(p.text).blocks.map(b => b.title).find(t => {
+		const s = t.replace(/\*\*/g, "").replace(/\s*\([^()]*\)\s*$/, "").replace(/[?？.!\s]+$/, "").trim();
+		return !s || GENERIC_KO.test(s) || GENERIC_EN.test(s);
+	});
+}
+
+/** The questions of `text` with a list of their own under them that no card came from (a list shape the parser does not read): the owner would answer only the cards. */
+export function unreadQuestions(text: string): string[] {
+	const { tone, rest } = splitTone(text);
+	const lines = rest.split("\n");
+	const fenced = fenceMap(lines);
+	const carded = cardLabels(rest);
+	const out: string[] = [];
+	for (let i = 0; i < lines.length; i++) {
+		const line = lines[i]!;
+		if (fenced[i] || QUOTED.test(line) || DECISION_HEAD.test(line) || D_OPT.test(line) || isForLine(line) || !ASKS.test(plain(line))) continue;
+		const question = sentences(plain(line)).at(-1) ?? "";
+		if (RHETORICAL.test(question) || asksPast(question) || !(HOW.test(question) ? HOW_PROCEED.test(question) : OFFERS.test(question))) continue;
+		const labels: string[] = [];
+		for (let n = i + 1; n < lines.length && !fenced[n]; n++) {
+			const l = lines[n]!;
+			if (!l.trim()) continue;
+			if (isItem(l)) labels.push(flat((boldOption(l) ?? optionOf(NUMBERED.exec(l)?.[2] ?? BULLET.exec(l)?.[1] ?? l, true))?.label ?? l));
+			else if (!labels.length || !isItem(lines[n - 1]!)) break;
+		}
+		if (labels.length >= 2 && !labels.every(l => carded.has(l))) out.push(question);
+	}
+	return out;
+}
+
+export type AskFault = { kind: "unread"; questions: string[] } | { kind: "title"; title: string } | { kind: "prose"; line: string };
+/** What keeps the owner from answering a message on the spot, checked in this order: a question whose list became no card, a card titled with no subject, a request in words alone. */
+export function askFault(text: string): AskFault | undefined {
+	const questions = unreadQuestions(text);
+	if (questions.length) return { kind: "unread", questions };
+	const title = genericTitle(text);
+	if (title !== undefined) return { kind: "title", title };
+	const line = proseAsk(text);
+	return line ? { kind: "prose", line } : undefined;
+}
+
+const NUMBER_LEAD = /^\s*\d{1,2}\s*(?:번(?:은|이|도)?|[.),:\]])?\s*/;
+const ASKS_BACK = /(?:[?？]|냐|니|나요|까요|가요|는지|을지|어때요?|뭐예요|뭔데|왜)[.~!]*$/;
+/** A typed answer that starts with an option's number but asks back ("1. 근데 이건 왜 이래?"): a question about the card, never the pick of that option (hub/notices-rules.ts answersOption). */
+export function numberLedQuestion(text: string): boolean {
+	const lead = NUMBER_LEAD.exec(text);
+	const rest = lead ? text.slice(lead[0].length).trim() : "";
+	return rest.replace(/[\s?？.!~]/g, "").length >= 2 && rest.split(/(?<=[.!?？。])\s+|\n+/).some(s => ASKS_BACK.test(s.trim()));
+}
+
 function toChoiceBlock(text: string): string {
 	if (!SIGNAL.test(text) || /\[(?:done|완료)\]/i.test(text)) return text;
 	const { tone, rest: bare } = splitTone(text);
 	if (tone === "done") return text;
 	const lines = bare.split("\n");
 	const fenced = fenceMap(lines);
-	if (lines.some((l, i) => !fenced[i] && DECISION_HEAD.test(l))) return text;
+	const heads = lines.flatMap((l, i) => (!fenced[i] && DECISION_HEAD.test(l) ? [i] : []));
+	const kept = fenced.slice();
+	for (const h of heads) for (let i = h; i < lines.length && lines[i]!.trim(); i++) kept[i] = true;
+	const carded = cardLabels(bare);
 	const found: Found[] = [];
-	for (let limit = lines.length; ; ) {
-		const f = findBlock(lines, fenced, limit, tone === "ask");
-		if (!f) break;
-		found.unshift(f);
-		// "2. <question>" under a heading: the decisions before it are blocks of the same message.
-		if (!/^\s*(?:\*\*)?[2-9][.)]/.test(lines[f.from]!)) break;
-		limit = f.from;
-	}
+	for (const stop of [lines.length, ...heads.slice().reverse()])
+		for (let limit = stop, f = findBlock(lines, kept, limit, tone === "ask"); f; f = findBlock(lines, kept, limit, tone === "ask")) {
+			if (!f.options.every(o => carded.has(flat(o.label))) && ((!found.length && !heads.length) || HEADING.test(lines[f.from]!) || /^\s*(?:\*\*)?\d[.)]/.test(lines[f.from]!) || (HOW.test(f.question) ? HOW_PROCEED.test(f.question) : OFFERS.test(f.question)))) found.push(f);
+			limit = paragraphStart(lines, kept, f.from);
+		}
 	if (!found.length || parseQuotedDraft(bare)) return text;
 	let out = lines;
-	for (const f of found.slice().reverse()) out = [...out.slice(0, f.from), ...(f.from && out[f.from - 1]!.trim() ? [""] : []), ...blockLines(f), ...(f.end < out.length && out[f.end]!.trim() ? [""] : []), ...out.slice(f.end)];
+	for (const f of found) out = [...out.slice(0, f.from), ...(f.from && out[f.from - 1]!.trim() ? [""] : []), ...blockLines(f), ...(f.end < out.length && out[f.end]!.trim() ? [""] : []), ...out.slice(f.end)];
 	return `${tone === "fail" ? "[fail]" : "[ask]"} ${out.join("\n").trim()}`;
 }
 
