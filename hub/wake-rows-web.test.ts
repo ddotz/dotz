@@ -12,9 +12,11 @@ const history = [
 	{ ts: at(20), kind: "handed", source: "session", channel: "web", from: "ch:7002", text: "알림 설정 확인\n설정 화면에서 알림이 켜져 있는지 봐 주세요." },
 	{ ts: at(21), kind: "out", source: "orchestrator", target: "web", text: "알림은 켜져 있어요." },
 	{ ts: at(30), kind: "schedule", source: "schedule", channel: "web", id: "s2", every: 60, text: "주간 정리\nCheck the weekly log." },
+	{ ts: at(40), kind: "schedule", source: "zele", channel: "web", id: "zele", name: "아침 브리핑", text: "morning brief for 2026-10-20, in this shape: one opening sentence naming it" },
+	{ ts: at(41), kind: "out", source: "orchestrator", target: "web", text: "오늘은 일정이 두 개예요." },
 ];
 const step = (ts: string, type: string, extra: object = {}) => ({ ts, kind: "activity", source: "orchestrator", type, text: "", ...extra });
-const activity = [10, 20, 30].flatMap(m => [
+const activity = [10, 20, 30, 40].flatMap(m => [
 	step(at(m, 1), "turn_start"),
 	step(at(m, 2), "tool_call", { tool: "bash", call_id: `c${m}`, args: "{\"command\":\"ls\"}" }),
 	step(at(m, 22), "tool_result", { tool: "bash", call_id: `c${m}`, text: "ok" }),
@@ -47,6 +49,7 @@ for (const [width, height] of [[390, 844], [1280, 900]] as const) {
 		expect(await ev<string[]>(v, `[...document.querySelectorAll("#tl > details.work:not([hidden]) .wsum")].map(s => s.textContent)`)).toEqual([
 			"예약 · 아침 브리핑 → 20초 작업 · 명령 1",
 			"데모 점검 · 알림 설정 확인 → 20초 작업 · 명령 1",
+			"아침 브리핑 → 20초 작업 · 명령 1",
 		]);
 		expect(await ev<string>(v, `document.querySelector("#tl").innerText`)).not.toContain("주간 정리");
 		await run(v, `document.querySelector("#tl > details.work summary").click()`);

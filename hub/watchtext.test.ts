@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { i18nPrelude } from "./web-i18n.ts";
-import { clockKo, deriveLabel, describeOutput, failKindKo, humanLabel, isKeyLabel, isMachineOutput, nameKo, plainLabel, rawFence, scheduleLabel, scheduleLine, sentinelMatch, watchLine, watchSummary } from "./watchtext.ts";
+import { clockKo, deriveLabel, describeOutput, failKindKo, humanLabel, isKeyLabel, isMachineOutput, loginLost, nameKo, plainLabel, rawFence, scheduleLabel, scheduleLine, sentinelMatch, watchLine, watchSummary } from "./watchtext.ts";
 
 const KAKAO = "kakao chat=100000000000001 new=1 from=3900000000000000001 to=3900000000000000001 at=2026-10-22T12:26:36.000Z";
 const NOW = Date.parse("2026-10-22T13:00:00.000Z");
@@ -226,4 +226,14 @@ test("a schedule's name skips a leading channel tag and is never cut inside a br
 	for (const n of names.slice(1)) expect({ n, open: n.replace(/[^("“(\[]/g, "").length > n.replace(/[^)”)\]]/g, "").length || (n.match(/"/g) ?? []).length % 2 === 1 }).toEqual({ n, open: false });
 	expect(names[1]!.startsWith("12:00 릴리스 뒤 Claude 리셋권 표시 확인")).toBe(true);
 	expect(names[2]!.startsWith("답장 파일 재대조")).toBe(true);
+});
+
+test("a lost provider login is recognised with or without a channel tag or a name in front, in the new and the stored wording", () => {
+	const now = "anthropic 로그인이 풀려서 일이 멈췄어요. 이 게이트웨이를 돌리는 컴퓨터에서 /login anthropic 를 실행해 주세요.";
+	const stored = "모델 제공자 로그인이 풀려서 멈췄어요. 계정: anthropic.";
+	for (const body of [now, stored]) {
+		for (const lead of ["", "샘플-2: ", "[ch:1570000000000000001] ", "[ch:1570000000000000001] 샘플-2: ", "[샘플-2] "]) expect({ lead, lost: loginLost(`${lead}${body}`) }).toEqual({ lead, lost: true });
+	}
+	expect(loginLost("[ch:1570000000000000001] 샘플-2: 오늘 점검은 잘 끝났어요")).toBe(false);
+	expect(loginLost("로그인이 풀려서 일이 멈췄어요는 문구를 인용한 글이에요")).toBe(false);
 });

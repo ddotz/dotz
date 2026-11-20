@@ -24,6 +24,7 @@ const nscTone = n => ntNeeds(n) || n.waits === "login" || n.tone === "warn" ? "w
 // or the prefix of the conversation it lives in. A word the data does not give is not made up: the rest is 감시 / 경고 / the app's name / 새 소식.
 const NSC_APP_TAG = { mail: TX("common.mail"), kakao: TX("decision.app.kakao"), instagram: TX("misc.nsc.comments"), youtube: TX("misc.nsc.comments"), site: TX("misc.nsc.comments") };
 const nscApp = n => String(n.app || (n.item && n.item.app) || n.src || n.open || "").split(/[-:]/)[0];
+const ntIsSched = n => n.kind === "watch" && n.title === "예약";
 function nscTag(n) {
   const app = nscApp(n);
   if (ntIsDec(n)) return n.decision.draft ? (app === "kakao" ? TX("decision.app.kakao") : TX("misc.nsc.tag_reply")) : TX("common.decision");
@@ -33,7 +34,7 @@ function nscTag(n) {
   if (n.cls === "result") return n.tone === "done" ? TX("misc.nsc.tag_done") : TX("settings.notify.result_label");
   if (n.kind === "watch" && nwChangeLine(n.text)) return TX("misc.nsc.tag_price");
   if (NSC_APP_TAG[app]) return NSC_APP_TAG[app];
-  if (n.kind === "watch" && n.title === "예약") return TX("misc.nsc.tag_sched");
+  if (ntIsSched(n)) return TX("misc.nsc.tag_sched");
   if (/아침/.test(n.title || "")) return TX("misc.nsc.tag_morning");
   if (n.kind === "watch") return TX("misc.nsc.tag_watch");
   if (n.cls === "alert" && /^[^\n]*: 다시 정상이에요/.test(n.text || "")) return TX("misc.nsc.tag_back");
@@ -51,6 +52,7 @@ function nscDecLine(n) {
   const m = /^\s*(\d+)\)/.exec(String(d.answer || "")), o = m && (d.options || []).find(x => x.n === Number(m[1]));
   return `${ctx} · ${TX("misc.nsc.d_answered")}${o ? ` · ${o.label}` : ""}`;
 }
+const nscOwnsTitle = (s, title) => s.startsWith(title) && /^[\s\p{P}]/u.test(s.slice(title.length));
 // The second line: a price change as the old value struck and the new one bold, else the first line of the text that is not the title, else the place.
 function nscSummary(n, text = n.text) {
   const chg = NW_CHANGE.exec(nwChangeLine(text));
@@ -59,7 +61,7 @@ function nscSummary(n, text = n.text) {
   if (n.kind === "watch" && n.item) return (n.item.card && n.item.card.subject) || ntPlain(hcLine(n));   // a mail report says the mail
   const title = ntPlain(hcLine(n)), src = n.src || n.open;
   // the feed's own summary: the name is not said twice, nor the title when the summary opens with it
-  if (n.kind === "watch") { const s = monSummary({ ...n, text }, []); return typeof s === "string" && title && s.startsWith(title) ? s.slice(title.length).replace(/^[.\s·]+/, "") || s : s; }
+  if (n.kind === "watch") { const s = monSummary({ ...n, text }, []); return typeof s === "string" && title && nscOwnsTitle(s, title) ? s.slice(title.length).replace(/^[.\s·]+/, "") || s : s; }
   return String(text || "").split("\n").map(ntPlain).find(l => l && l !== title) || ntLaneNote(n) || (src ? pcTargetName(src, n.pc) : TX("misc.nsc.one"));
 }
 // The time at the row's end stays short: 방금, the hour today, 어제, then the date.

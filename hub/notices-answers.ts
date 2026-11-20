@@ -1,6 +1,6 @@
 // Answering, ignoring and reopening decisions, login requests, expiry. A part of the notice store split out of hub/notices.ts, code unchanged.
-import { now } from "./config.ts";
-import { detailOf } from "./choices.ts";
+import { log, now } from "./config.ts";
+import { detailOf, unnumbered } from "./choices.ts";
 import { DRAFT_BODY_MAX, draftActionOf, draftNeedsText } from "./draft-approval.ts";
 import type { Upload } from "./files.ts";
 import type { DecisionOpt, Notice } from "./notices-types.ts";
@@ -28,20 +28,32 @@ export function settleOpenDecision(id: string, label: string): void {
 	if (item && isOpenDecision(item)) settleDecision(item, label);
 }
 const OWN_WORDS_MAX = 1000;
+/** The asking session has ended, so an answer cannot reach it: the card stays open and offers the hand-off to the main conversation. */
+export class SessionEnded extends Error {
+	readonly code = "session_ended";
+	constructor(readonly lane: string) {
+		super("이 세션은 이미 끝나서 전달하지 못했어요");
+	}
+}
+const NOT_DELIVERED = "전달하지 못했어요. 잠시 뒤에 다시 해 주세요";
 export type DecisionSend = (a: { to: string; text: string; replyTo?: string; notice: string; action?: string; files?: Upload[]; picks?: { q: string; n: number; label: string; note?: string; hash?: string }[] }) => Promise<void>;
+const HANDED_OFF = "메인에 넘겼어요";
+const handedOff = (item: Notice, answer: string): string => `세션 ${item.decision!.to.slice(5)}은(는) 이미 끝나서 메인에 대신 전해요.\n질문: ${item.title}\n답: ${answer}`;
 // A button of a decision: `n` is the option's number. The answer goes to the asking chat / session (or the login request) through `send`; only
 // when that worked is the notice answered.
-export async function answerDecision(id: unknown, body: { n?: unknown; note?: unknown; files?: Upload[] }, send: DecisionSend): Promise<{ status: number; body: Record<string, unknown> }> {
+export async function answerDecision(id: unknown, body: { n?: unknown; note?: unknown; files?: Upload[]; handoff?: unknown }, send: DecisionSend): Promise<{ status: number; body: Record<string, unknown> }> {
 	const item = items.find(i => i.id === String(id));
 	const d = item?.decision;
 	if (!item || !d) return { status: 404, body: { error: "unknown decision" } };
 	if (d.state !== "open") return { status: 200, body: { ok: true, already: true, item, unread: unreadCount() } };
 	// a second tap while the first answer is still going out: that one carries it (a double tap never sends the answer twice)
 	if (sending.has(item.id)) return { status: 200, body: { ok: true, already: true, item, unread: unreadCount() } };
-	if (body.n === undefined || body.n === null) return answerInWords(item, String(body.note ?? "").trim().slice(0, OWN_WORDS_MAX), send);
+	const handoff = body.handoff === "main";
+	if (body.handoff !== undefined && (!handoff || !d.to.startsWith("lane:") || d.draft)) return { status: 400, body: { error: "unknown option" } };
+	if (body.n === undefined || body.n === null) return answerInWords(item, String(body.note ?? "").trim().slice(0, OWN_WORDS_MAX), send, handoff);
 	const o = d.options.find(x => x.n === Number(body.n));
 	if (!o || o.action === "form") return { status: 400, body: { error: "unknown option" } };
-	const label = `${o.n}) ${o.label}`;
+	const label = `${o.n}) ${unnumbered(o.label)}`;
 	// 고치기 on a draft carries what to change and needs it. Elsewhere an option that needs detail (choices.ts detailOf: 안 됨 …) needs the owner's written reason too;
 	// a button with its own `say` / `action` (login request, fixed yes / no) never does.
 	const draftEdit = !!d.draft && draftNeedsText(o.label);
@@ -50,7 +62,7 @@ export async function answerDecision(id: unknown, body: { n?: unknown; note?: un
 	if (draftEdit && !note) return { status: 400, body: { error: draftActionOf(o.label) === "own" ? "어떻게 보낼지 적어 주세요" : "무엇을 고칠지 적어 주세요" } };
 	if (asksDetail && !note) return { status: 400, body: { error: "내용을 적어 주세요" } };
 	const text = (o.say ?? (d.group > 1 ? `${item.title}: ${label}` : label)) + (note ? ` - ${note}` : "");
-	return deliverDecision(item, label, { to: d.to, text, notice: item.id, ...(d.to.startsWith("auth:") ? {} : { picks: [{ q: item.title, n: o.n, label: o.label, ...(asksDetail ? { note } : {}), ...(d.draft && d.hash ? { hash: d.hash } : {}) }] }), ...(d.reply_to ? { replyTo: d.reply_to } : {}), ...(o.action ? { action: o.action } : {}), ...(draftEdit && body.files?.length ? { files: body.files } : {}) }, send);   // `picks` carries the question with the chosen option, so the agent gets the context even from another conversation (intake.ts decisionLines); files: what 직접 수정 attached, for the bot to put on the draft
+	return deliverDecision(item, handoff ? `${label} · ${HANDED_OFF}` : label, { to: handoff ? "main" : d.to, text: handoff ? handedOff(item, text) : text, notice: item.id, ...(d.to.startsWith("auth:") ? {} : { picks: [{ q: item.title, n: o.n, label: o.label, ...(asksDetail ? { note } : {}), ...(d.draft && d.hash ? { hash: d.hash } : {}) }] }), ...(d.reply_to && !handoff ? { replyTo: d.reply_to } : {}), ...(o.action ? { action: o.action } : {}), ...(draftEdit && body.files?.length ? { files: body.files } : {}) }, send);   // `picks` carries the question with the chosen option, so the agent gets the context even from another conversation (intake.ts decisionLines); files: what 직접 수정 attached, for the bot to put on the draft
 }
 // Sends the answer, and only when that worked is the notice answered. `label` is what the notice then shows as the answer.
 async function deliverDecision(item: Notice, label: string, payload: Parameters<DecisionSend>[0], send: DecisionSend): Promise<{ status: number; body: Record<string, unknown> }> {
@@ -59,7 +71,11 @@ async function deliverDecision(item: Notice, label: string, payload: Parameters<
 		await send(payload);
 		settleDecision(item, label);
 	} catch (err) {
-		return { status: 409, body: { error: (err as Error).message } };
+		if (err instanceof SessionEnded) return { status: 409, body: { code: err.code, error: err.message } };
+		const said = (err as Error).message;
+		log(`answer of ${item.id} not delivered: ${said}`);
+		if (err instanceof Error && "code" in err && err.code === "runtime_mismatch") return { status: 409, body: { code: "runtime_mismatch", error: said } };
+		return { status: 409, body: { code: "not_delivered", error: /[A-Za-z]{3,}|\//.test(said) ? NOT_DELIVERED : said } };
 	} finally {
 		sending.delete(item.id);
 	}
@@ -70,11 +86,12 @@ async function deliverDecision(item: Notice, label: string, payload: Parameters<
 // text field is the only place to write. It reaches the asking chat / session as an option answer does, with the question (intake.ts decisionLines reads
 // replyTo and the notice); a question of a several-question message, or one with no asking message to point at, carries its title. A send approval and a
 // login request are answered by their buttons only.
-async function answerInWords(item: Notice, said: string, send: DecisionSend): Promise<{ status: number; body: Record<string, unknown> }> {
+async function answerInWords(item: Notice, said: string, send: DecisionSend, handoff: boolean): Promise<{ status: number; body: Record<string, unknown> }> {
 	const d = item.decision!;
 	if (d.draft || d.to.startsWith("auth:")) return { status: 400, body: { error: "unknown option" } };
 	if (!said) return { status: 400, body: { error: "내용을 적어 주세요" } };
-	return deliverDecision(item, said, { to: d.to, text: d.group > 1 || !d.reply_to ? `${item.title}: ${said}` : said, notice: item.id, ...(d.reply_to ? { replyTo: d.reply_to } : {}) }, send);
+	const text = d.group > 1 || !d.reply_to ? `${item.title}: ${said}` : said;
+	return deliverDecision(item, handoff ? `${said} · ${HANDED_OFF}` : said, { to: handoff ? "main" : d.to, text: handoff ? handedOff(item, text) : text, notice: item.id, ...(d.reply_to && !handoff ? { replyTo: d.reply_to } : {}) }, send);
 }
 
 // A login request (dotz_auth) waits on the owner: approve / cancel here, the form for typed values stays the page's own.

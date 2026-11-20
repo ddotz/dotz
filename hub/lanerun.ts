@@ -60,6 +60,7 @@ export const harnessName = (id: string) => HARNESS_NAMES[id] ?? id;
 // at once (gateway-ui, 2026-10-20 17:16), and a resumed foreign session would also lose its prompt cache. The owner is
 // offered a handover instead (handoverLane): the same lane in a fresh session on the current runtime.
 export class LaneRuntimeMismatch extends Error {
+	readonly code = "runtime_mismatch";
 	constructor(readonly lane: string, readonly from: string, readonly to: string) {
 		super(msg().laneRuntimeRefused(lane, harnessName(from), harnessName(to)));
 	}

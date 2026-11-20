@@ -13,7 +13,10 @@ import { SLOT_SKIPPED_EXIT } from "./release-exit.ts";
 export const LOGIN_LOST_KO = "로그인이 풀렸어요";
 export const LOGIN_NO_PASSWORD_KO = "저장된 비밀번호가 없어 다시 로그인하지 못했어요";
 export const LOGIN_SECOND_FACTOR_KO = "2차 인증이 필요해요";
-export const LOGIN_BLOCKED_KO = "모델 제공자 로그인이 풀려서 멈췄어요";
+export const loginBlockedKo = (provider: string): string => `${provider} 로그인이 풀려서 일이 멈췄어요`;
+const LOGIN_BLOCKED_RE = /(?:모델 제공자|\S+) 로그인이 풀려서 (?:일이 )?멈췄어요/;
+const LOGIN_BLOCKED_HEAD = new RegExp(`^${LOGIN_BLOCKED_RE.source}`);
+export const loginBlockedIn = (text: string): boolean => LOGIN_BLOCKED_RE.test(text);
 export const PROVIDER_BACK_KO = "모델 제공자가 다시 연결됐어요";
 export const WATCH_UNCHANGED_KO = "내용은 그대로이고 시각 같은 값만 바뀌었어요";
 
@@ -116,11 +119,13 @@ export const isIssue = (reason: string) => /^(?:fail\b|failed \d+|stopped after|
 // A notice text that says a login was lost, from the words above and nothing broader: the reason line of a stopped check (password, second factor),
 // the provider's own stop, or a failing check whose output named a login kind (the line after the reason is exactly LOGIN_LOST_KO).
 const LEAD = /^[^:\n]{1,60}:\s+/;
+const TAG = /^\s*\[[^\]\n]{1,80}\]\s*/;
+export const BRACKET_CHANNEL_TAG = /^\s*\[(?:ch|th|lane):[^\]\s]+\]\s*/;
 const ISSUE_HEAD = /^(?:\d+번 연속 실패했어요|실패가 이어져 멈췄어요|점검에 실패했어요|승인이 필요해요)/;
 export function loginLost(text: string): boolean {
-	const [first = "", second = ""] = text.split("\n", 2);
+	const [first = "", second = ""] = text.replace(TAG, "").split("\n", 2);
 	const bare = first.replace(LEAD, "");
-	if ([first, bare].some(h => h.startsWith(LOGIN_NO_PASSWORD_KO) || h.startsWith(LOGIN_SECOND_FACTOR_KO) || h.startsWith(LOGIN_BLOCKED_KO))) return true;
+	if ([first, bare].some(h => h.startsWith(LOGIN_NO_PASSWORD_KO) || h.startsWith(LOGIN_SECOND_FACTOR_KO) || LOGIN_BLOCKED_HEAD.test(h))) return true;
 	return second === LOGIN_LOST_KO && ISSUE_HEAD.test(bare);
 }
 // A change report whose only difference was values like times (describeOutput's last words): the line after the reason is exactly WATCH_UNCHANGED_KO.

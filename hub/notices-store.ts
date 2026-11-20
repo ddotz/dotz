@@ -8,10 +8,10 @@ import { askDefaults } from "./ask-options.ts";
 import { FILLER_QUESTIONS } from "./choices.ts";
 import { alertMatter, quietAlert } from "./alert-gate.ts";
 import { eventTarget, isPeerMessage, type HubEvent } from "./events.ts";
-import { classOfNotice } from "./notice-class.ts";
+import { classOfNotice, noticeClass } from "./notice-class.ts";
 import { kindOf, NOTICE_KINDS, type NoticeKindName } from "./notice-kinds.ts";
 import { dropClaim, isSilent, parkedTone } from "./tone.ts";
-import { describeOutput, humanLabel, isIssue, itemRefOf, LOGIN_BLOCKED_KO, matchItems, matchTitle, PROVIDER_BACK_KO, scheduleLine, sentinelMatch, watchLine, watchReasonKo } from "./watchtext.ts";
+import { BRACKET_CHANNEL_TAG, describeOutput, humanLabel, isIssue, itemRefOf, loginBlockedIn, matchItems, matchTitle, PROVIDER_BACK_KO, scheduleLine, sentinelMatch, watchLine, watchReasonKo } from "./watchtext.ts";
 import { resolveItem, type WatchItem } from "./watchitem.ts";
 import type { Decision, DecisionOpt, Notice, NoticeKind, NoticeTone } from "./notices-types.ts";
 import { msg } from "./i18n.ts";
@@ -77,7 +77,8 @@ const keptByTrim = (i: Notice): boolean => isOpenDecision(i) || (i.decision?.sen
 function trim(): void {
 	const over = items.length - NOTICE_CAP;
 	if (over <= 0) return;
-	const drop = new Set(items.filter(i => !keptByTrim(i)).sort((a, b) => Number(b.read) - Number(a.read) || (a.updated < b.updated ? -1 : a.updated > b.updated ? 1 : 0)).slice(0, over));
+	const records = new Set(items.filter(i => i.kind === "worklog" && !i.decision && unlisted(i)));
+	const drop = new Set(items.filter(i => !keptByTrim(i)).sort((a, b) => Number(records.has(b)) - Number(records.has(a)) || Number(b.read) - Number(a.read) || (a.updated < b.updated ? -1 : a.updated > b.updated ? 1 : 0)).slice(0, over));
 	if (drop.size) items = items.filter(i => !drop.has(i));
 }
 
@@ -216,19 +217,21 @@ function fromOutbox(e: HubEvent, asks = false): void {
 		// A gateway [ask] / [fail] there still waits, and so does a daily digest with its own title (야간 정리, 토큰 점검).
 		const title = systemTitle(text, "작업내역");
 		const status = e.source === "gateway" && tone !== "ask" && tone !== "fail" && title === "작업내역";
-		return void upsert({ kind: "worklog", tone, title, text, open: target === "worklog" ? "worklog" : "main", key, read: restart || status, ...resultsOf(e.text), ...worklogKind(e), at: e.ts, ...named });
+		const record = tone !== "ask" && tone !== "fail" && tone !== "done" && noticeClass({ kind: "worklog", tone, text, nk }).cls === "log";
+		return void upsert({ kind: "worklog", tone, title, text, open: target === "worklog" ? "worklog" : "main", key, read: restart || status || record, ...resultsOf(e.text), ...worklogKind(e), at: e.ts, ...named });
 	}
 	if (target === "alert") {
 		if (asks) return;
+		const body = text.replace(BRACKET_CHANNEL_TAG, "");
 		// An all-clear of the gateway is born read; a repeat (hub/alert-gate.ts) rewrites the alert it repeats, in place and in its read state.
-		const quiet = e.source === "gateway" && quietAlert(text);
+		const quiet = e.source === "gateway" && quietAlert(body);
 		// The provider is back: the logins it stopped on are over (limit-alert noteRecovered said so once for every agent), and so they are when
 		// the usage limit lifts (hub/limit-lift.ts), which runs the held work on the same provider (2026-11-14: the stop stayed in 답변 필요).
-		const rest = text.replace(/^[^:\n]{1,60}:\s+/, "");
+		const rest = body.replace(/^[^:\n]{1,60}:\s+/, "");
 		if (e.source === "gateway" && ((quiet && rest.startsWith(PROVIDER_BACK_KO)) || LIFTED.some(l => rest.startsWith(l)))) providerBack(e.ts);
-		const prior = e.repeat === true ? items.findLast(n => n.kind === "alert" && !n.dismissed && n.by === by && alertMatter(n.text) === alertMatter(text)) : undefined;
+		const prior = e.repeat === true ? items.findLast(n => n.kind === "alert" && !n.dismissed && n.by === by && alertMatter(n.text) === alertMatter(body)) : undefined;
 		if (prior && !prior.key) prior.key = `alert:${prior.id}`;
-		return void upsert({ kind: "alert", tone, title: systemTitle(text, "알림"), text, open: "alert", key: prior?.key ?? key, ...(by ? { by } : {}), ...(refOf(e) ? { ref: refOf(e) } : {}), read: Boolean(recovered) || quiet, ...(prior ? { repeat: true } : {}), at: e.ts, ...named });
+		return void upsert({ kind: "alert", tone, title: systemTitle(body, "알림"), text: body, open: "alert", key: prior?.key ?? key, ...(by ? { by } : {}), ...(refOf(e) ? { ref: refOf(e) } : {}), read: Boolean(recovered) || quiet, ...(prior ? { repeat: true } : {}), at: e.ts, ...named });
 	}
 	const row = nk && e.source === "gateway" ? NOTICE_KINDS[nk] : undefined;
 	const watch = /^ch:\d+$/.test(target) && e.source === "gateway" ? /^\[([^\]\n]+)\]\s*/.exec(text) : null;
@@ -278,7 +281,7 @@ function fromInbox(e: HubEvent): void {
 		return void upsert({ kind: "watch", tone: "", title: name || "새 메일", text: String(e.subject ?? "") || "(제목 없음)", open, key: open, unread: true, at: e.ts });
 	}
 	// the gateway's own wakes (update carry-over, text overrides: main.ts wakeOnce) are instructions to the assistant, not the owner's schedules
-	if (e.kind === "schedule" && e.source !== "gateway") {
+	if (e.kind === "schedule" && e.source !== "gateway" && e.source !== "zele") {
 		const ch = typeof e.channel === "string" && /^ch:\d+$/.test(e.channel) ? e.channel : "main";
 		upsert({ kind: "watch", tone: "", title: "예약", text: clean(scheduleLine(String(e.text ?? ""), { raw: false })).text, open: ch, at: e.ts });
 	}
@@ -515,7 +518,7 @@ function watchRecovered(name: string, at: string, label = name): void {
 const LIFTED = [ko.limitLifted, ko.limitLiftedReset, en.limitLifted, en.limitLiftedReset];
 // Signal 3b: the model provider answers again (limit-alert recoveryText). The login stops it raised are over, read or not.
 function providerBack(at: string): void {
-	const ended = closeWaiting(i => i.kind === "alert" && i.text.includes(LOGIN_BLOCKED_KO), at);
+	const ended = closeWaiting(i => i.kind === "alert" && loginBlockedIn(i.text), at);
 	readIds(ended.filter(i => !i.read).map(i => i.id));
 }
 

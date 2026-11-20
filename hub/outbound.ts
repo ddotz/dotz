@@ -46,7 +46,7 @@ import { OMO_WORDS, ompWords, runName, type WorkerWords } from "./worker-words.t
 import { dropClaim, resolvesOf, splitTone, stripHandoff, stripLater, stripProjectInfo, stripResolves } from "./tone.ts";
 import { isLate, isSnowflake, lateQuote, lateRequestId, replyRef, snowflakeTime, withQuote } from "./threads.ts";
 import { keepBrief } from "./draft-approval.ts";
-import { allNotices, markCardShown, markDraftPosted, onDecisionClosed, onDraftCardRefreshed, openDraftCards, openDraftRefs, openDraftText, orchestratorAnswered, resolveNotices, rewriteOpenDraft, untouchedChoices } from "./notices.ts";
+import { allNotices, markCardShown, markDraftPosted, onDecisionClosed, onDraftCardRefreshed, openDraftCards, openDraftRefs, openDraftText, orchestratorAnswered, resolveNotices, rewriteOpenDraft, SessionEnded, untouchedChoices } from "./notices.ts";
 import { channelTitle, GENERIC_TITLES } from "./notices-lanes.ts";
 import { answeredDraftCard } from "./notices-drafts.ts";
 import { cardPointer, cardRef, cardTitle, CARDS_LEAD, closedCardText, createApprovalQueue, loadHeld, pendingCardsNote, splitDraftCards, withSendState } from "./approval-queue.ts";
@@ -285,14 +285,19 @@ export const newMid = () => randomUUID().slice(0, 8);
 const webNote = (target: string, text: string, live = false) => emit("outbox", { ts: now(), kind: "out", source: "gateway", target, text, update_key: "progress", ...(live ? { live } : {}) });
 export const receiptNote = (how: LaneDelivery): string | undefined =>
 	how === "steered" ? "📨 받았어요. 하던 작업에 바로 넣었고, 답이 준비되면 여기로 올게요." : how === "held" ? "📨 받았어요. 사용량 한도가 풀리면 바로 전달할게요." : how === "resumed" ? "📨 받았어요. 멈춰 있던 세션을 다시 시작해서 전달했어요." : undefined;
-// An owner message that could not reach its session: the failed state on the message and, in that chat, a gateway message with the way forward.
-export function laneFailed(target: string, lane: string, ref: string | undefined, error: unknown, replyTo?: string): void {
-	const reason = (error as Error).message;
-	emitDelivery(target, ref, "failed", reason.slice(0, 200));
-	log(`lane ${lane}: owner message not delivered: ${reason}`);
-	// A session of another runtime: the refusal itself offers the handover (answer "인계" here).
-	const text = error instanceof LaneRuntimeMismatch ? error.message : `세션 ${lane}을(를) 이어갈 수 없어요 (${reason}). 대화 채널에서 다시 맡겨 주세요. 이전 보고는 ${join(paths.lanes, lane, "report.md")}에 있어요.`;
-	void out(target, text, replyTo, { source: "gateway", nk: "undelivered" }).catch(e => log(`lane failure notice failed: ${e}`));
+function endedOr(lane: string, error: unknown): unknown {
+	const l = lanes.get(lane);
+	const ended = !l || (!l.proc && !l.waiting && (!l.sessionFile || !existsSync(l.sessionFile)));
+	return ended && !(error instanceof LaneRuntimeMismatch) ? new SessionEnded(lane) : error;
+}
+/** An owner message that could not reach its session: the failed state on the message and a gateway message in that chat. The owner reads Korean with no path, the raw reason goes to the log; returns the error the caller ends with. */
+export function laneFailed(target: string, lane: string, ref: string | undefined, error: unknown, replyTo?: string): unknown {
+	const cause = endedOr(lane, error);
+	log(`lane ${lane}: owner message not delivered: ${(error as Error).message}`);
+	const said = cause instanceof LaneRuntimeMismatch ? cause.message : cause instanceof SessionEnded ? `세션 ${lane}은(는) 이미 끝나서 전달하지 못했어요. 이 일은 메인에게 맡겨 주세요.` : `지금은 세션 ${lane}에 전달하지 못했어요. 잠시 뒤에 다시 해 주세요.`;
+	emitDelivery(target, ref, "failed", said.slice(0, 200));
+	void out(target, said, replyTo, { source: "gateway", nk: "undelivered" }).catch(e => log(`lane failure notice failed: ${e}`));
+	return cause;
 }
 type OutJob = { target: string; text: string; replyTo?: string; extra: Record<string, unknown> };
 const jobAnswers = (j: OutJob) => (j.extra.source === undefined || j.extra.source === "orchestrator" ? j.replyTo : undefined);

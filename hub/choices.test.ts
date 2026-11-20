@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { clipKeepingAsk, normalizeAsk } from "./ask-normalize.ts";
 import { ASK_A, ASK_B } from "./ask-normalize.fixture.ts";
 import { draftApprovalBlock } from "./draft-approval.ts";
-import { decisionText, detailOf, hasDecisionHead, parseChoices, parseDecisions, plainDecisions, stripRecommendMark } from "./choices.ts";
+import { cleanChoices, decisionText, detailOf, hasDecisionHead, issueBlock, parseChoices, parseDecisions, plainDecisions, replyChoiceBlock, stripRecommendMark, unnumbered } from "./choices.ts";
 
 test("an old message's recommendation mark does not survive parsing or display", () => {
 	const old = "[ask] 배포\n결정: 시점\n**1) 지금** ← 추천\n바로 올려요\n2) 내일 (recommended)\n3) 모레 <- recommended";
@@ -159,4 +159,17 @@ test("a send card is never cut, however long: the owner approves only a draft he
 	const card = `[ask] 초안이에요\n${draftApprovalBlock({ to: "a@example.test", body: "긴 본문이에요.\n".repeat(300), ref: "abc123", question: "보낼까요?" } as Parameters<typeof draftApprovalBlock>[0])}`;
 	expect(card.length).toBeGreaterThan(1800);
 	expect(clipKeepingAsk(card, 1800)).toBe(card);
+});
+
+test("a choice label that already starts with its number is numbered once, whoever wrote the number", () => {
+	const written = "결정: 어디로 받을까요?\n**1) 1) 회사 메일로 받기**\n본사 주소로 와요\n**2) 2. 집 메일로 받기**\n집 주소로 와요";
+	expect(parseDecisions(written).blocks[0]!.options.map(o => `${o.n}) ${o.label}`)).toEqual(["1) 회사 메일로 받기", "2) 집 메일로 받기"]);
+	expect(parseChoices(written).options.map(o => `${o.n}) ${o.label}`)).toEqual(["1) 회사 메일로 받기", "2) 집 메일로 받기"]);
+	const posted = replyChoiceBlock("어디로 받을까요?", cleanChoices(["1) 회사 메일로 받기", "2) 집 메일로 받기"]));
+	expect(posted.split("\n").filter(l => l.startsWith("**"))).toEqual(["**1) 회사 메일로 받기**", "**2) 집 메일로 받기**", "**3) 직접 쓸게 …**"]);
+	expect(issueBlock("어떻게 할까요?", [{ name: "1) 원인 확인", result: "살펴봐요." }, { name: "넘어가요", result: "" }])).toBe("결정: 어떻게 할까요?\n**1) 원인 확인**\n살펴봐요.\n**2) 넘어가요**");
+});
+
+test("a label is cut only at a number the model wrote as a list mark", () => {
+	for (const [label, shown] of [["3개월 보관", "3개월 보관"], ["2.5 버전으로", "2.5 버전으로"], ["10) 열 번째", "열 번째"], ["", ""]] as const) expect(unnumbered(label)).toBe(shown);
 });

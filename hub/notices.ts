@@ -16,7 +16,7 @@ export { openChoices, untouchedChoices, unreadCount, answerReply, orchestratorTu
 export type { ListedChoice } from "./notices-store.ts";
 export { refreshNoticeDrafts, tagStoredApps } from "./notices-stored.ts";
 export { onDraftCardRefreshed, refreshDraftFiles, syncDraftFiles, markDraftPosted, markCardShown, stampDraftCard, openDraftRefs, openDraftCards, markDraftSend, openDraftText, rewriteOpenDraft, redrawDraftCards, repostDraftCard, setCardFingerprint, settleHandledDrafts, draftCardCounts, refreshStoredDrafts, confirmNoun, confirmGroup, reopenDraftNotices, updateDraftRecipients } from "./notices-drafts.ts";
-export { settleExpiredQuestions, settleOpenDecision, answerDecision, authRequested, authSettled, orchestratorAnswered, closeLaneCards, resolveNotices, ignoreNotice, unignoreNotice, reopenNotices } from "./notices-answers.ts";
+export { settleExpiredQuestions, settleOpenDecision, answerDecision, SessionEnded, authRequested, authSettled, orchestratorAnswered, closeLaneCards, resolveNotices, ignoreNotice, unignoreNotice, reopenNotices } from "./notices-answers.ts";
 export type { DecisionSend } from "./notices-answers.ts";
 export { laneVerified, UPDATE_NOTICE_KEY, updateAvailable, accountUsedChanged, updateResolved } from "./notices-signals.ts";
 export { laneHasOpenCard, setViewing, dropLaneNotices, dropChannelNotices, countChannelNotices, listNotices, allNotices, openDecisionNotices, dismissedAlertAts, dismissNotice, handledNotice, undismissNotice } from "./notices-bell.ts";

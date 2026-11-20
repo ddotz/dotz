@@ -22,7 +22,7 @@ flowchart LR
     o_chat_overlay["overlay (1)"]
     o_chat_rawdialog["rawdialog (1)"]
     o_chat_reveal["reveal (3)"]
-    o_chat_toast["toast (51)"]
+    o_chat_toast["toast (53)"]
   end
   subgraph a_comments["comments"]
     c_comments(["comments code"])
@@ -190,7 +190,7 @@ flowchart LR
   c_notices -->|"go (2)"| s_monitoring
   c_notices -->|"go (3)"| s_notices
   c_notices -->|"go (1)"| s_projects
-  c_notices -->|"go (2)"| s_settings
+  c_notices -->|"go (2)"| s_update
   c_panes -->|"go (2)"| s_chat
   c_panes -->|"go (2)"| s_monitoring
   c_peers -->|"go (2)"| s_any

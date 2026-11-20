@@ -20,7 +20,7 @@ const ntDecisions = (items: N[]) => () => items.filter(n => ntIsDec(n) && (n.dec
 const helpersOf = (items: N[]) => new Function("NT", "ntIsDec", "ntDecisions", `${linkedBlock}; return { ntLinkedDec, ntTapDec };`)({ items }, ntIsDec, ntDecisions(items)) as { ntLinkedDec: (n: N) => N | null; ntTapDec: (n: N) => N | null };
 const linkedOf = (items: N[]) => helpersOf(items).ntLinkedDec;
 const tapDecOf = (items: N[]) => helpersOf(items).ntTapDec;
-const actionIn = (items: N[]) => new Function("NM", "ntIsDec", "ntTapDec", `${between(notices, "function noticeKindAction", "async function noticeOpen(")}; return noticeKindAction;`)(
+const actionIn = (items: N[]) => new Function("NM", "ntIsDec", "ntTapDec", `${between(web("js/31-notices-screen.js"), "const ntIsSched", "\n")}; ${between(notices, "function noticeKindAction", "async function noticeOpen(")}; return noticeKindAction;`)(
 	{ items: [] }, ntIsDec, tapDecOf(items),
 ) as (n: N, mons?: { name: string }[]) => string;
 const actionOf = actionIn([]);
@@ -37,6 +37,9 @@ describe("notice kind -> action", () => {
 		["failed session report", { kind: "result", tone: "fail", src: "lane:a" }, "session"],
 		["worklog item", { kind: "worklog", tone: "", src: "worklog" }, "worklog"],
 		["monitor notice", { kind: "watch", tone: "", title: "디스크 감시", src: "alert" }, "monitor"],
+		["schedule notice", { kind: "watch", tone: "", title: "예약", src: "main", open: "main" }, "schedule"],
+		["schedule notice of a project", { kind: "watch", tone: "", title: "예약", src: "ch:3", open: "ch:3" }, "schedule"],
+		["update notice", { kind: "alert", tone: "", title: "새 버전", src: "settings", open: "settings", key: "self-update" }, "settings"],
 		["monitor that is gone", { kind: "watch", tone: "", title: "없는 감시", src: "alert" }, "monitor"],
 		["plain alert", { kind: "alert", tone: "", src: "alert" }, "message"],
 		["plain message", { kind: "message", tone: "", src: "main" }, "message"],
@@ -121,6 +124,7 @@ describe("noticeOpen dispatch", () => {
 		expect(await run({ act: "detail", id: "8" })).toEqual([["read", { act: "detail", id: "8" }], ["under", { act: "detail", id: "8" }], ["detail", { act: "detail", id: "8" }]]);
 		expect((await run({ act: "session", id: "9" }))[1]![0]).toBe("jump");
 		expect(await run({ act: "monitor", title: "디스크 감시" })).toEqual([["read", { act: "monitor", title: "디스크 감시" }], ["monitor", { act: "monitor", title: "디스크 감시" }]]);
+		expect(await run({ act: "schedule", id: "4" })).toEqual([["read", { act: "schedule", id: "4" }], ["jump", { act: "schedule", id: "4" }]]);
 		expect(await run({ act: "worklog", id: "1" })).toEqual([["jump", { act: "worklog", id: "1" }]]);
 		expect(await run({ act: "message", id: "2" })).toEqual([["jump", { act: "message", id: "2" }]]);
 		expect(await run(null)).toEqual([]);
@@ -212,7 +216,7 @@ describe("a decision never docks in the 알림 / 작업내역 conversations", ()
 		const page: Record<string, unknown> = {
 			$: () => box, document: { querySelectorAll: () => [] }, decisionOf: () => dc, isFixedT: (x: string) => x === "alert" || x === "worklog", target, DC, clear: () => {}, renderDecision: () => calls.push("render"),
 			syncInlineChoices: () => {}, dkPaint: () => {}, updateComposerMeta: () => {}, S: null, DC_SEEN: new Set(), freshKeys: () => new Set(), dcLast: null, dcOut: null, dcShownT: "",
-			dcLeave: () => calls.push("leave"), dcBackNote: () => "", RA: { loaded: false }, motionSwap: (_: unknown, f: () => void) => f(), motionIn: () => {},
+			dcLeave: () => calls.push("leave"), dcBackNote: () => "", RA: { loaded: false }, motionSwap: (_: unknown, f: () => void) => f(), motionIn: () => {}, dcGoneKey: () => "",
 		};
 		new Function(...Object.keys(page), `${body}; paintDecision();`)(...Object.values(page));
 		return { hidden: box.hidden, cur: DC.cur, calls };

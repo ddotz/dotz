@@ -76,7 +76,8 @@ function wakeOf(e) {
   if (e.kind === "handed") return { lead: wakeLead(targetName(e.from), text), raw: text, ts: e.ts, from: e.from };
   if (e.kind !== "schedule") return null;
   if (gatewayWake(e)) return { lead: "", raw: "", ts: e.ts, from: "" };
-  return { lead: wakeLead(SYS_LABEL.schedule, text), raw: text.replace(/^(?:(?:ch|lane|th):\S+\s*)+/, ""), ts: e.ts, from: "" };
+  const name = typeof e.name === "string" ? e.name.trim() : "";
+  return { lead: name || wakeLead(SYS_LABEL.schedule, text), raw: text.replace(/^(?:(?:ch|lane|th):\S+\s*)+/, ""), ts: e.ts, from: "" };
 }
 const WAKE_ANSWER_WAIT_MS = 3000;
 function wakeQuiet() {

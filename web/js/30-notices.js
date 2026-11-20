@@ -128,6 +128,11 @@ async function ntMarkRead(body) {
 // A tapped push: open its notice, or its conversation at the message it is about (loaded first when the stream missed it).
 async function pushOpen(hash, at, nid) {
   const p = parseHash(hash), t = p.t || MAIN;
+  if (p.view === "settings" && nid) {
+    if (!ntById(nid)) await loadNotices();
+    const u = ntById(nid);
+    if (u) return noticeOpen(u);
+  }
   if (!at || p.view !== "chat") { go(p.view, p.t); return ""; }
   const find = () => (NT.loaded && ntById(nid)) || ntMsgFor(t, at);
   if (!find()) await loadNotices();   // a cold start, or a page that slept through it: the notice decides where this lands (a monitor's row, a failure's sheet)
@@ -156,13 +161,14 @@ function noticeKindAction(n, mons = NM.items) {
   if (String(n.src || n.open || "").startsWith("settings:")) return "app";   // a monitor's or app's settings conversation: it lives in 모니터링, not in 채팅
   if ((n.src || n.open) === "settings") return "settings";   // an account / update alert: 설정
   if (n.kind === "worklog") return "worklog";
+  if (ntIsSched(n)) return "schedule";
   if (n.kind === "watch") return "monitor";
   return "message";
 }
 async function noticeOpen(n, here = false) {
   if (!n) return;
   const a = noticeKindAction(n);
-  if (a === "detail" || a === "session" || a === "monitor" || a === "settings" || a === "app") ntRead(n);   // no chat view follows these, so nothing else would mark them seen
+  if (a === "detail" || a === "session" || a === "schedule" || a === "monitor" || a === "settings" || a === "app") ntRead(n);   // no chat view follows these, so nothing else would mark them seen
   switch (a) {
     case "sheet": {
       const d = ntTapDec(n) || n;
@@ -177,9 +183,10 @@ async function noticeOpen(n, here = false) {
       if (!here) ntUnder(n);
       return ntDetailOpen(n);
     case "session": return ntJump(n);
+    case "schedule": return ntJump(n);
     case "monitor": return monOpen(n);
     case "app": return ntJump(n);   // a monitor's or app's settings conversation opens inside 모니터링 (go)
-    case "settings": return void go("settings");
+    case "settings": return void go("update");
     default: return ntJump(n);
   }
 }
@@ -538,7 +545,7 @@ async function ntAnswer(n, opt, note) {
   NS.busy = true; ntSheetPaint();
   let sent = false;
   try { await ntPost(n, opt ? opt.n : undefined, note, undefined, opt ? opt.label : ""); NS.edit = null; sent = true; }
-  catch (err) { toast(err.message, true); }
+  catch (err) { if (!dcGoneFail(n, err, opt, note)) toast(err.message, true); }
   NS.busy = false;
   if (sent && NS.id === String(n.id) && ntAfterAnswer(n)) return;
   ntSheetPaint();
@@ -640,10 +647,11 @@ function ntSheetPaint() {
   const foot = el("div", { class: "fs-ft" }), ed = open && NS.edit && NS.edit.id === String(n.id) ? NS.edit : null;
   // Every notice event repaints the open sheet; one that changes nothing it shows leaves it alone, so the reason field being typed in is not
   // replaced (a new field takes the focus and a phone closes and reopens its keyboard).
-  const sig = JSON.stringify([n.title, n.text, d, ntWhen(n), NS.busy, ed ? (ed.opt ? ed.opt.n : -1) : 0, sibs.map(x => [x.id, x.decision.state])]);
+  const sig = JSON.stringify([n.title, n.text, d, ntWhen(n), NS.busy, ed ? (ed.opt ? ed.opt.n : -1) : 0, sibs.map(x => [x.id, x.decision.state]), DCG.get(String(n.id)) || 0]);
   if (NS.h.box.dataset.sig === sig) return;
   NS.h.box.dataset.sig = sig;
   const hadNote = !!NS.node.querySelector(".dc-note:focus");
+  if (open) foot.append(...dcGoneNodes(n));
   if (ed) foot.append(ntEditNode(n, ed));
   else if (open) {
     for (const o of d.options) foot.append(el("button", { type: "button", class: "ds-opt", "data-k": `o${o.n}`, disabled: NS.busy, onclick: () => ntAnswer(n, o) },

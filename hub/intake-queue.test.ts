@@ -40,7 +40,7 @@ test("a message queued for an exited lane is sent, and a lane that cannot resume
 	enqueue("lane:gone-lane", "계속 해 주세요");
 	flushQueue("lane:gone-lane");
 	await flush();
-	expect(events.some(e => String((e as { text?: string }).text).includes("세션 gone-lane을(를) 이어갈 수 없어요"))).toBe(true);
+	expect(events.some(e => String((e as { text?: string }).text).includes("세션 gone-lane은(는) 이미 끝나서 전달하지 못했어요"))).toBe(true);
 	expect(queueItems().filter(i => i.target === "lane:gone-lane")).toHaveLength(1);
 });
 
@@ -48,7 +48,7 @@ test("a lane that cannot resume is logged and told once across the 5 s sweeps, n
 	lanes.set("gone-once", { name: "gone-once", cwd: "/tmp", model: "m", status: "exited", startedAt: "", reports: 0, ctx: { compaction: { state: "idle" } } } as unknown as Lane);
 	enqueue("lane:gone-once", "또 안 가는 메시지");
 	const failures = (): number => readFileSync(paths.log, "utf8").split("\n").filter(l => l.includes("queued web messages for lane:gone-once not sent")).length;
-	const told = (): number => events.filter(e => String((e as { text?: string }).text).includes("세션 gone-once을(를) 이어갈 수 없어요")).length;
+	const told = (): number => events.filter(e => String((e as { text?: string }).text).includes("세션 gone-once은(는) 이미 끝나서 전달하지 못했어요")).length;
 	const [logged0, told0] = [failures(), told()];
 	for (let sweep = 0; sweep < 4; sweep++) {
 		flushQueue("lane:gone-once");

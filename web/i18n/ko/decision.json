@@ -1,5 +1,8 @@
 {
   "decision.gone": "이 세션이 끝나서 답을 보낼 수 없어요",
+  "decision.gone_fail": "이 세션은 이미 끝나서 전달하지 못했어요",
+  "decision.gone_main": "메인에 넘기기",
+  "decision.gone_sent": "메인에 넘겼어요",
   "decision.org.post_video": "영상",
   "decision.org.post_post": "게시물",
   "decision.org.post_other": "글",

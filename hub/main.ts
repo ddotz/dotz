@@ -412,7 +412,7 @@ void startZele({
 	accounts: classifyStoredMails,
 	brief: text => {
 		const target = !discord.status.enabled ? "web" : discord.channels.brief ? "brief" : "chat";
-		const event = { ts: now(), kind: "schedule", source: "zele", id: "zele", channel: target, text };
+		const event = { ts: now(), kind: "schedule", source: "zele", id: "zele", channel: target, name: "아침 브리핑", text };
 		emit("inbox", event);
 		deliver(inboxText(event), { target });
 	},

@@ -12,6 +12,7 @@ const CH_CLOSE = /번호(?:로|를).*(?:답|알려)/;
 // (stripped from the label), or it is guessed from a negative / edit label or a description that asks for text. Mirrors hub/choices.ts detailOf.
 const DETAIL_MARK = /\s*…\s*$/, DETAIL_LABEL = /^(?:안\s*됨|안\s*돼|고치기|수정)/, DETAIL_DESC = /(?:적어|알려|써|말해)\s*(?:주|줘|달라|세요)|내용.*(?:적|알려|써)/;
 const detailOf = o => !!o.detail || DETAIL_LABEL.test(o.label) || DETAIL_DESC.test(o.desc || "");
+const unnumbered = l => l.replace(/^(?:\d{1,2}[).]\s+)+/, "").trim() || l;
 const CH_FENCE = /^\s*```/;
 const isDescLine = nx => nx !== undefined && !!nx.trim() && !/^\s*\[file\]\s+\S/.test(nx) && !CH_OPT.test(nx) && !CH_HEAD.test(nx) && !CH_CLOSE.test(nx) && !CH_FENCE.test(nx);
 // The message text without its option lines (and their description lines): the buttons show them, so the body must not repeat them.
@@ -67,7 +68,7 @@ function parseChoices(text) {
     const nx = lines[i + 1];
     if (isDescLine(nx)) { desc = nx.trim(); i++; }
     const raw = m[2].replace(/^\*+|\*+$/g, "").trim();
-    cur.options.push({ n, label: raw.replace(DETAIL_MARK, "").trim(), desc, ...(DETAIL_MARK.test(raw) ? { detail: true } : {}) });
+    cur.options.push({ n, label: unnumbered(raw.replace(DETAIL_MARK, "").trim()), desc, ...(DETAIL_MARK.test(raw) ? { detail: true } : {}) });
   }
   // Only a block a "결정:" line opened holds options (mirrors hub/choices.ts parseDecisions): a numbered or bold list in the body is text.
   return { question, blocks: blocks.filter(b => b.headed && b.options.length) };
@@ -152,9 +153,9 @@ const dcSettledAt = (t, at) => {
 async function answerDecision(dc, text, opt, note) {
   const t = dc.t, lane = isLaneT(t) ? laneOf(t) : "";   // the card's own conversation: the notice sheet may answer for one that is not on screen
   DC.st[dc.key] = "sending"; paintDecision();
+  const nd = opt && dc.blocks.length === 1 ? ntFor(t, dc.at, opt) : null;
   try {
     // A card with one block whose question is a decision notice answers through the notice path (30-notices.js), so both stay in step.
-    const nd = opt && dc.blocks.length === 1 ? ntFor(t, dc.at, opt) : null;
     const held = nd ? await ntPost(nd, opt.n, note, undefined, opt.label) : null;
     // The agent gets the question with each chosen option and the asking message (hub/intake.ts decisionLines); the bubble stays short.
     const pk = DC.picks[dc.key] || [], picks = dc.blocks.flatMap((b, i) => (pk[i] ? [{ q: b.title || dc.question || "", n: pk[i].n, label: pk[i].label, ...(pk[i].note && !dc.draft ? { note: pk[i].note } : {}) }] : []));
@@ -162,7 +163,7 @@ async function answerDecision(dc, text, opt, note) {
     if (r && r.queued) { putQueue(QUEUE.filter(i => i.id !== r.queued.id).concat(r.queued)); renderQueue(); }
     DC.st[dc.key] = "sent"; delete DC.edit[dc.key]; delete DC.note[dc.key];
     if (t === target) { putChatStick(true); scrollChat(true); }
-  } catch (e) { delete DC.st[dc.key]; if (dc.blocks.length === 1) delete DC.picks[dc.key]; if (note) DC.edit[dc.key] = { bi: 0, opt }; toast(e.message, true); }   // a refused reason opens again with its text (DC.note); a lone question lets go of the chosen row; several keep their picks, so a retry does not start the card over
+  } catch (e) { delete DC.st[dc.key]; if (dc.blocks.length === 1) delete DC.picks[dc.key]; if (note) DC.edit[dc.key] = { bi: 0, opt }; if (!dcGoneFail(nd, e, opt, note)) toast(e.message, true); }
   paintDecision();
 }
 const needsNote = (dc, opt) => (dc.draft ? draftAsksText(opt) : detailOf(opt));
@@ -188,7 +189,7 @@ function pickOption(dc, bi, opt, note, typed) {
 }
 async function answerEach(dc, bi, opt, note) {
   DC.st[dc.key] = "sending"; paintDecision();
-  try { await ntPost(dc.blocks[bi].nd, opt.n, note, undefined, opt.label); delete DC.note[dc.key]; } catch (e) { if (note) DC.edit[dc.key] = { bi, opt }; toast(e.message, true); }
+  try { await ntPost(dc.blocks[bi].nd, opt.n, note, undefined, opt.label); delete DC.note[dc.key]; } catch (e) { if (note) DC.edit[dc.key] = { bi, opt }; if (!dcGoneFail(dc.blocks[bi].nd, e, opt, note)) toast(e.message, true); }
   delete DC.picks[dc.key]; delete DC.step[dc.key];
   // The last question of the card answered: it leaves through dcLeave (fades, then goes) like any answered card; the others still wait on the card.
   if (decisionOf(dc.t)) delete DC.st[dc.key]; else DC.st[dc.key] = "sent";
@@ -564,7 +565,7 @@ function renderDecision(box, dc, picks, step) {
     kids.push(body);
     }
   }
-  const sn = dcStNode(dc, st); if (sn) kids.push(sn);
+  const goneN = dcGoneNotice(dc), sn = dcStNode(dc, st); if (goneN) kids.push(el("div", { class: "dc-gonebox" }, ...dcGoneNodes(goneN, true))); if (sn) kids.push(sn);
   if (!paintKeep(box, kids, dcAgain(box))) return;
   box.classList.toggle("fold", fold);
   const nb = $(".dc-body", box); if (nb) nb.scrollTop = top;
@@ -600,7 +601,7 @@ async function answerInline(nd, opt) {
   }
   const fk = rqNtKey(nd), act = opt.label === "보내기" ? "send" : opt.label === DRAFT_EDIT ? "fix" : "drop";
   dcSending.add(nd.id); rqFail.delete(fk); rqPress.set(fk, act); syncInlineChoices(); let ok = true;
-  try { dcAnswerToast(nd, opt, await ntPost(nd, opt.n, undefined, undefined, opt.label)); } catch (e) { ok = false; if (nd.decision.draft) rqFail.set(fk, rqFailOf(e, act)); else toast(e.message, true); }
+  try { dcAnswerToast(nd, opt, await ntPost(nd, opt.n, undefined, undefined, opt.label)); } catch (e) { ok = false; dcGoneFail(nd, e, opt); if (nd.decision.draft) rqFail.set(fk, rqFailOf(e, act)); else toast(e.message, true); }
   dcSending.delete(nd.id); rqPress.delete(fk); syncInlineChoices();
   return ok;
 }
@@ -780,7 +781,7 @@ function dcPointer(box, n) {
 // a phone the keyboard closes and reopens while the owner types (owner 2026-10-22), so a live update that changes none of it leaves the card alone.
 function dcSig(dc, picks, step) {
   const dr = dc.draft ? [dc.draft.to, (dc.draft.cc || []).join(","), dc.draft.mode || ""] : 0;
-  return JSON.stringify([dc.key, dc.question, dc.each ? dc.blocks.map(b => b.nd.id) : 0, picks.map(o => o && o.n), step, !!DC.fold[dc.t], DC.st[dc.key] || "", DC.edit[dc.key] ? DC.edit[dc.key].opt.n : 0, dr]);
+  return JSON.stringify([dc.key, dc.question, dc.each ? dc.blocks.map(b => b.nd.id) : 0, picks.map(o => o && o.n), step, !!DC.fold[dc.t], DC.st[dc.key] || "", DC.edit[dc.key] ? DC.edit[dc.key].opt.n : 0, dr, dcGoneKey()]);
 }
 // What was decided stays in the conversation once the card is gone (owner 2026-11-03): the owner's answer message already carries the
 // question and the chosen option (hub/intake.ts decisionLines, `picks`), so the record is drawn from it here and from history after a

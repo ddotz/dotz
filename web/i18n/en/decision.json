@@ -1,5 +1,8 @@
 {
   "decision.gone": "This session has ended, so it can't take an answer",
+  "decision.gone_fail": "This session has already ended, so the answer was not delivered",
+  "decision.gone_main": "Hand over to main",
+  "decision.gone_sent": "Handed over to main",
   "decision.org.post_video": "Video",
   "decision.org.post_post": "Post",
   "decision.org.post_other": "Post",

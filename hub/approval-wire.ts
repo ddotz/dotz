@@ -69,7 +69,7 @@ const DISCORD_CHANGED = "초안이 바뀌었어요. 보내지 않았어요. 웹�
  * A card's button on the web (POST /api/notices/<id>/answer). 보내기 on a draft the gateway can send is recorded with no model turn, the
  * card closes (its queue shows the next one at once) and the send is queued; 직접 수정 files ride to the bot, so such an answer keeps its path.
  */
-export async function webAnswer(id: string, body: { n?: unknown; label?: unknown; note?: unknown; hash?: unknown; files?: Upload[] }, login: string, deliver: DecisionSend, agent = false) {
+export async function webAnswer(id: string, body: { n?: unknown; label?: unknown; note?: unknown; hash?: unknown; files?: Upload[]; handoff?: unknown }, login: string, deliver: DecisionSend, agent = false) {
 	const card = allNotices().find(n => n.id === id);
 	const d = card?.decision;
 	const opt = d?.state === "open" ? d.options.find(o => o.n === Number(body.n)) : undefined;

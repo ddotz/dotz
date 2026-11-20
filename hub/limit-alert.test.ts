@@ -66,8 +66,9 @@ test("kinds, accounts, owner text and the slow backoff", () => {
 	expect(limitAccount(raw, "anthropic/x")).toBe("imported-anthropic");
 	expect(limitAccount("401", "openai/x")).toBe("openai");
 	const text = blockText("auth", "imported-anthropic", "anthropic", 30 * MIN);
-	expect(text).toContain("imported-anthropic");
+	expect(text.startsWith("anthropic 로그인이 풀려서 일이 멈췄어요. 계정: imported-anthropic.")).toBe(true);
 	expect(text).toContain("/login anthropic");
+	expect(blockText("auth", "anthropic", "anthropic", 30 * MIN).startsWith("anthropic 로그인이 풀려서 일이 멈췄어요. 이 게이트웨이")).toBe(true);
 	expect(text).not.toMatch(/authentication|fallback is off/);
 	expect([1, 2, 3, 4, 5, 9].map(ownerRetryMs)).toEqual([30 * MIN, 60 * MIN, 120 * MIN, 240 * MIN, 360 * MIN, 360 * MIN]);
 	expect(omo.classifyError("authentication_failed")).toBe("owner");

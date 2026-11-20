@@ -314,7 +314,8 @@ export async function sendWeb(s: WebSend): Promise<void> {
 	if (s.lane) {
 		const name = s.lane;
 		const channel = `lane:${name}`;
-		emit("inbox", { ts: now(), kind: "lane_message", source: s.source ?? "web", author: s.login, lane: name, text: s.text, ...extra });
+		const heard = { ts: now(), kind: "lane_message", source: s.source ?? "web", author: s.login, lane: name, text: s.text, ...extra };
+		if (!s.decision) emit("inbox", heard);
 		if (s.mode === "interrupt" && lanes.get(name)?.status === "working") {
 			abortLane(name);
 			// Let the aborted turn end first, or the message would be steered into it.
@@ -325,13 +326,13 @@ export async function sendWeb(s: WebSend): Promise<void> {
 		try {
 			const byOwner = s.login !== AGENT_AUTHOR;
 			if (byOwner && approvesBudget(name, s.text)) sendToLane(name, "/budget-ok");
-			const how = sendToLane(name, [`${byOwner ? "[owner via web]" : "[agent via web]"} ${s.text}`, ...(s.picks?.length || s.decision ? decisionLines({ picks: s.picks, reply_to: s.replyTo, decision: s.decision }) : []), ...openQuestionLines(openChoices(channel)), s.reply ? replyLine(s.reply) : "", s.files?.length ? attachmentLines(s.files) : "", s.elements?.length ? pickedLines(s.elements) : "", ...(s.refs ?? [])].filter(Boolean).join("\n"), mid, false, ownerWantsUltrathink(s.text));
+			const how = sendToLane(name, [`${byOwner ? "[owner via web]" : "[agent via web]"} ${s.text}`, ...(s.picks?.length || s.decision ? decisionLines({ picks: s.picks, reply_to: s.replyTo, decision: s.decision }) : []), ...openQuestionLines(openChoices(channel).filter(q => q.id !== s.decision)), s.reply ? replyLine(s.reply) : "", s.files?.length ? attachmentLines(s.files) : "", s.elements?.length ? pickedLines(s.elements) : "", ...(s.refs ?? [])].filter(Boolean).join("\n"), mid, false, ownerWantsUltrathink(s.text));
+			if (s.decision) emit("inbox", heard);
 			emitDelivery(channel, mid, how);
 			// The web shows the receipt as the message's delivery state only (no canned receipt message, owner 2026-10-17).
 			livestatus.begin(channel, channel, true);
 		} catch (error) {
-			laneFailed(channel, name, mid, error);
-			throw error;
+			throw laneFailed(channel, name, mid, error);
 		}
 		return;
 	}
