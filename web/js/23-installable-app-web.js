@@ -255,8 +255,10 @@ async function pushDisable(btn) {
   });
   await pushLoad();
 }
+// Inside another computer's app frame (33-peers.js prGo) the browser reports a cross-origin frame's permission as "denied"; the app around it
+// holds the device's one push channel, so this page has nothing to warn about.
 function pushOffKind() {
-  if (!isStandalone() || !pushCapable() || localStorage.getItem(PUSH_OFF) === "1") return "";
+  if (!isStandalone() || !pushCapable() || window.top !== window.self || localStorage.getItem(PUSH_OFF) === "1") return "";
   if (PWA.gw && PWA.gw.gateways.some(g => g.self && !g.on)) return "";
   if (Notification.permission === "denied") return "blocked";
   if (Notification.permission !== "granted") return "ask";
