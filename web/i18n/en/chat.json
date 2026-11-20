@@ -119,6 +119,7 @@
   "chat.ph.mail": "Ask {bot} to reply or forward this mail · /command",
   "chat.ph.settings": "Ask {bot} about {name} settings · /command",
   "chat.ph.target": "Message {name} · /command",
+  "chat.ph.worklog": "Ask about this record · the answer comes here",
   "chat.run.limit": "Waiting on usage limit",
   "chat.run.working": "Working…",
   "chat.run.stop_title": "Stop what's running",

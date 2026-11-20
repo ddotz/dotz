@@ -5,7 +5,7 @@ import { sseResponse } from "./events.ts";
 import { appAsset, indexPage } from "./webapp.ts";
 
 export type View = InstanceType<typeof Bun.WebView>;
-export type ViewOptions = { width?: number; height?: number; console?: (type: string, ...args: unknown[]) => void };
+export type ViewOptions = { width?: number; height?: number; console?: (type: string, ...args: unknown[]) => void; foldedCards?: boolean };
 // A route for the fake hub: return a Response to answer, or undefined to fall through to the defaults.
 export type Api = (req: Request, url: URL) => Response | Promise<Response | undefined> | undefined;
 
@@ -65,10 +65,12 @@ async function testIndex(req: Request, slow: boolean, head = ""): Promise<Respon
 const idle: View[] = [];
 const pooled = new WeakSet<View>();
 const pending = new WeakMap<View, number>();   // evaluate() calls still running: a view with one is closed, never reused
+const cardsOpen = new WeakMap<View, boolean>();
+const OPEN_CARDS = `(typeof DC === "undefined" || (DC.fold = new Proxy({}, { get: (o, k) => (k in o ? o[k] : false) })), 0)`;
 async function acquire(o: ViewOptions): Promise<View> {
 	const width = o.width ?? 390, height = o.height ?? 844;
 	const v = o.console ? undefined : idle.pop();
-	if (v) { await v.resize(width, height); return v; }
+	if (v) { await v.resize(width, height); cardsOpen.set(v, !o.foldedCards); return v; }
 	const fresh = new Bun.WebView({ width, height, ...(o.console ? { console: o.console } : {}) } as ConstructorParameters<typeof Bun.WebView>[0]);
 	if (!o.console) pooled.add(fresh);
 	const evaluate = fresh.evaluate.bind(fresh);
@@ -79,6 +81,12 @@ async function acquire(o: ViewOptions): Promise<View> {
 		p.then(done, done);
 		return p;
 	}) as View["evaluate"];
+	cardsOpen.set(fresh, !o.foldedCards);
+	const navigate = fresh.navigate.bind(fresh);
+	fresh.navigate = (async (...a: Parameters<View["navigate"]>) => {
+		await navigate(...a);
+		if (cardsOpen.get(fresh)) await fresh.evaluate(OPEN_CARDS);
+	}) as View["navigate"];
 	return fresh;
 }
 // What a page keeps for its origin (localStorage, the snapshot in indexedDB, caches) outlives the navigation: the next test on this hub would start from it.

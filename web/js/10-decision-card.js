@@ -537,14 +537,14 @@ function renderDecision(box, dc, picks, step) {
   if (dc.close) { renderSheet(box, dc, picks, step); return; }
   // Folded per conversation, not per question (owner 2026-11-04: the arrow did not lower it): the bot re-asks what is left as a new
   // message, and a fold kept on the old question let the next one cover the conversation again.
-  const st = DC.st[dc.key] || "", fold = !!DC.fold[dc.t], old = $(".dc-body", box), top = old && box.dataset.key === dc.key ? old.scrollTop : 0;
+  const st = DC.st[dc.key] || "", fold = dcFolded(dc.t) && !DC.edit[dc.key], old = $(".dc-body", box), top = old && box.dataset.key === dc.key ? old.scrollTop : 0;
   dcHold(box, !!st);
   // A draft message starts with its quoted draft, so the question is the block's own title without the draft's id.
   const qText = dc.draft ? draftQ(dc.blocks[0] && dc.blocks[0].title) : dc.question;
   // ONE tight header (owner 2026-11-03): the status 답 기다림 on one line, then the short question as the card's one lead (a 확인 필요 label said it twice); the card asks only what it must.
-  const head = el("div", { class: "dc-hd" }, el("div", { class: "dc-tt" },
+  const head = el("div", { class: "dc-hd" }, el("div", { class: "dc-tt", onclick: fold ? () => { DC.fold[dc.t] = false; paintDecision(); } : null },
     el("div", { class: "dc-meta" }, el("span", { class: "tag warn dc-wt", text: TX("decision.waiting_tag") })),
-    qText ? mdNode(qText, "md dc-q") : null, decideNode(dc.draft)),
+    qText ? mdNode(qText, "md dc-q") : null, fold ? el("span", { class: "dc-sum", text: dcFoldSum(dc) }) : null, decideNode(dc.draft)),
     el("div", { class: "dc-hb" },
       el("button", { class: "dc-fold", type: "button", "aria-expanded": String(!fold), "aria-label": fold ? TX("decision.more") : TX("decision.less"), onclick: () => { DC.fold[dc.t] = !fold; paintDecision(); } }, icon("drop"))));
   const kids = [head];
@@ -781,7 +781,7 @@ function dcPointer(box, n) {
 // a phone the keyboard closes and reopens while the owner types (owner 2026-10-22), so a live update that changes none of it leaves the card alone.
 function dcSig(dc, picks, step) {
   const dr = dc.draft ? [dc.draft.to, (dc.draft.cc || []).join(","), dc.draft.mode || ""] : 0;
-  return JSON.stringify([dc.key, dc.question, dc.each ? dc.blocks.map(b => b.nd.id) : 0, picks.map(o => o && o.n), step, !!DC.fold[dc.t], DC.st[dc.key] || "", DC.edit[dc.key] ? DC.edit[dc.key].opt.n : 0, dr, dcGoneKey()]);
+  return JSON.stringify([dc.key, dc.question, dc.each ? dc.blocks.map(b => b.nd.id) : 0, picks.map(o => o && o.n), step, dcFolded(dc.t), DC.st[dc.key] || "", DC.edit[dc.key] ? DC.edit[dc.key].opt.n : 0, dr, dcGoneKey()]);
 }
 // What was decided stays in the conversation once the card is gone (owner 2026-11-03): the owner's answer message already carries the
 // question and the chosen option (hub/intake.ts decisionLines, `picks`), so the record is drawn from it here and from history after a

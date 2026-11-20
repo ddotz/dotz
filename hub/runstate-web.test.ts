@@ -99,13 +99,13 @@ test("a question waiting on the owner: 답을 기다려요 with 질문으로 가
 test("질문으로 가기 with no notice opens the docked question card, folded or not", async () => {
 	HIST = [LAST, { ts: ts(2), kind: "out", source: "orchestrator", text: "[ask] 어느 화면으로 할까요?\n결정: 어느 화면으로 할까요?\n1) 캔버스\n2) 앱 화면" }];
 	const v = await boot(1280, 900);
-	await waitFor(v, `!document.querySelector("#dcard").hidden && document.querySelectorAll("#dcard .dc-row").length === 2`);
+	await waitFor(v, `!document.querySelector("#dcard").hidden && document.querySelector("#dcard").classList.contains("fold") && !document.querySelector("#dcard .dc-row")`);
 	await show(v, { kind: "waiting", reason: "ask", since: ts(2), detail: "어느 화면으로 할까요?" });
-	await v.evaluate(`(document.querySelector("#dcard .dc-fold").click(), 0)`);
-	await waitFor(v, `document.querySelector("#dcard").classList.contains("fold")`);
 	await v.evaluate(`(window.__toasts = [], window.toast = (m) => __toasts.push(m), document.querySelector("#runstate-act").click(), 0)`);
 	await waitFor(v, `!document.querySelector("#dcard").classList.contains("fold") && document.activeElement && document.activeElement.classList.contains("dc-row")`);
 	expect(await v.evaluate(`({ toasts: __toasts, sheet: !!document.querySelector('.fs-card[role="dialog"] #ds-t'), focused: document.activeElement.textContent })`)).toEqual({ toasts: [], sheet: false, focused: "1캔버스" });
+	await v.evaluate(`(document.activeElement.blur(), document.querySelector("#runstate-act").click(), 0)`);
+	await waitFor(v, `!document.querySelector("#dcard").classList.contains("fold") && document.activeElement.classList.contains("dc-row")`);
 	await shot(v, "run-ask-docked-1280.png");
 	HIST = [LAST];
 }, 20_000);

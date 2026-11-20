@@ -124,6 +124,8 @@
   "decision.needs_decision": "결정이 필요해요",
   "decision.needs_reply": "답변이 필요해요",
   "decision.waiting_tag": "답 기다림",
+  "decision.fold_pick": "{n}가지 중 고르기",
+  "decision.fold_many": "질문 {n}개",
   "decision.toast.sending_soon": "곧 보내요",
   "decision.toast.restored": "초안을 되돌렸어요",
   "decision.past": "지난 결정이에요",

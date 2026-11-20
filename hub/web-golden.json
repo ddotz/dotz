@@ -569,6 +569,8 @@
 			"    span#working-tx",
 			"    span.sp",
 			"    button#working-stop.btn.text",
+			" div#al-bar.al-bar",
+			"  button#al-ask.al-ask",
 			" section#canvas.cvs-pane.apps-pane"
 		],
 		"back": {
@@ -895,6 +897,8 @@
 			"    span#working-tx",
 			"    span.sp",
 			"    button#working-stop.btn.text",
+			" div#al-bar.al-bar",
+			"  button#al-ask.al-ask",
 			" section#canvas.cvs-pane.apps-pane"
 		],
 		"back": {
@@ -1450,6 +1454,8 @@
 			"    span#working-tx",
 			"    span.sp",
 			"    button#working-stop.btn.text",
+			" div#al-bar.al-bar",
+			"  button#al-ask.al-ask",
 			" section#canvas.cvs-pane.apps-pane"
 		],
 		"back": {
@@ -1776,6 +1782,8 @@
 			"    span#working-tx",
 			"    span.sp",
 			"    button#working-stop.btn.text",
+			" div#al-bar.al-bar",
+			"  button#al-ask.al-ask",
 			" section#canvas.cvs-pane.apps-pane"
 		],
 		"back": {
@@ -7469,6 +7477,8 @@
 			"    span#working-tx",
 			"    span.sp",
 			"    button#working-stop.btn.text",
+			" div#al-bar.al-bar",
+			"  button#al-ask.al-ask",
 			" section#canvas.cvs-pane.apps-pane"
 		],
 		"back": {
@@ -7771,6 +7781,8 @@
 			"    span#working-tx",
 			"    span.sp",
 			"    button#working-stop.btn.text",
+			" div#al-bar.al-bar",
+			"  button#al-ask.al-ask",
 			" section#canvas.cvs-pane.apps-pane"
 		],
 		"back": {
@@ -8041,6 +8053,8 @@
 			"    span#working-tx",
 			"    span.sp",
 			"    button#working-stop.btn.text",
+			" div#al-bar.al-bar",
+			"  button#al-ask.al-ask",
 			" section#canvas.cvs-pane.apps-pane"
 		],
 		"back": {
@@ -8343,6 +8357,8 @@
 			"    span#working-tx",
 			"    span.sp",
 			"    button#working-stop.btn.text",
+			" div#al-bar.al-bar",
+			"  button#al-ask.al-ask",
 			" section#canvas.cvs-pane.apps-pane"
 		],
 		"back": {
@@ -8613,6 +8629,8 @@
 			"    span#working-tx",
 			"    span.sp",
 			"    button#working-stop.btn.text",
+			" div#al-bar.al-bar",
+			"  button#al-ask.al-ask",
 			" section#canvas.cvs-pane.apps-pane"
 		],
 		"back": {
@@ -8915,6 +8933,8 @@
 			"    span#working-tx",
 			"    span.sp",
 			"    button#working-stop.btn.text",
+			" div#al-bar.al-bar",
+			"  button#al-ask.al-ask",
 			" section#canvas.cvs-pane.apps-pane"
 		],
 		"back": {
@@ -9243,6 +9263,8 @@
 			"    span#working-tx",
 			"    span.sp",
 			"    button#working-stop.btn.text",
+			" div#al-bar.al-bar",
+			"  button#al-ask.al-ask",
 			" section#canvas.cvs-pane.apps-pane"
 		],
 		"back": {
@@ -9441,6 +9463,8 @@
 			"    span#working-tx",
 			"    span.sp",
 			"    button#working-stop.btn.text",
+			" div#al-bar.al-bar",
+			"  button#al-ask.al-ask",
 			" section#canvas.cvs-pane.apps-pane"
 		],
 		"back": {
@@ -9765,6 +9789,8 @@
 			"    span#working-tx",
 			"    span.sp",
 			"    button#working-stop.btn.text",
+			" div#al-bar.al-bar",
+			"  button#al-ask.al-ask",
 			" section#canvas.cvs-pane.apps-pane"
 		],
 		"back": {
@@ -10091,6 +10117,8 @@
 			"    span#working-tx",
 			"    span.sp",
 			"    button#working-stop.btn.text",
+			" div#al-bar.al-bar",
+			"  button#al-ask.al-ask",
 			" section#canvas.cvs-pane.apps-pane"
 		],
 		"back": {
@@ -12499,6 +12527,8 @@
 			"    span#working-tx",
 			"    span.sp",
 			"    button#working-stop.btn.text",
+			" div#al-bar.al-bar",
+			"  button#al-ask.al-ask",
 			" section#canvas.cvs-pane.apps-pane"
 		],
 		"back": {
@@ -12801,6 +12831,8 @@
 			"    span#working-tx",
 			"    span.sp",
 			"    button#working-stop.btn.text",
+			" div#al-bar.al-bar",
+			"  button#al-ask.al-ask",
 			" section#canvas.cvs-pane.apps-pane"
 		],
 		"back": {

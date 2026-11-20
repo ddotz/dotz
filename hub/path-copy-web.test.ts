@@ -58,6 +58,8 @@ async function open(width: number, lang: string) {
 	// A clipboard stub: copyText uses navigator.clipboard in a secure context (127.0.0.1 is one) and records what it wrote.
 	await v.evaluate(`(Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText: async t => { (window.__copied ||= []).push(t); } } }), 0)`);
 	await v.evaluate(`(openTarget("main", "chat"), 0)`);
+	await waitFor(v, `DC.cur`);
+	await v.evaluate(`(dcUnfold(DC.cur.t), paintDecision(), 0)`);
 	await waitFor(v, `document.querySelectorAll(".fitem .fpath").length === 2 && document.querySelector("#dcard .dc-row")`);
 	return v;
 }

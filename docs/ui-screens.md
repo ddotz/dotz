@@ -162,7 +162,7 @@ flowchart LR
   c_boot -->|"go (1)"| s_home
   c_boot -->|"go (1)"| s_usage
   c_chat -->|"go (5)"| s_any
-  c_chat -->|"go (3)"| s_chat
+  c_chat -->|"go (4)"| s_chat
   c_chat -->|"go (1)"| s_context
   c_chat -->|"go (1)"| s_home
   c_chat -->|"go (6)"| s_monitoring

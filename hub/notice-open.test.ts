@@ -212,7 +212,7 @@ describe("a decision never docks in the 알림 / 작업내역 conversations", ()
 		const src = web("js/10-decision-card.js"), motion = web("js/01-motion.js");
 		// paintDecision stops a dock that is still leaving (motionStay, 01-motion.js); the shipped function and its store come along.
 		const stay = `${between(motion, "const M_GONE = new WeakMap()", "const mFocusable")}${between(motion, "function motionStay", "const M_GONE_STYLE")}`;
-		const body = `${stay}${between(src, "function dcHold", "function renderDecision")}${src.slice(src.indexOf("function paintDecision"))}`;
+		const body = `${stay}${between(web("js/10-decision-fold.js"), "const dcFolded", "\n")}${between(src, "function dcHold", "function renderDecision")}${src.slice(src.indexOf("function paintDecision"))}`;
 		const page: Record<string, unknown> = {
 			$: () => box, document: { querySelectorAll: () => [] }, decisionOf: () => dc, isFixedT: (x: string) => x === "alert" || x === "worklog", target, DC, clear: () => {}, renderDecision: () => calls.push("render"),
 			syncInlineChoices: () => {}, dkPaint: () => {}, updateComposerMeta: () => {}, S: null, DC_SEEN: new Set(), freshKeys: () => new Set(), dcLast: null, dcOut: null, dcShownT: "",

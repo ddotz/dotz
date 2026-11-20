@@ -50,5 +50,8 @@
   "conv.nt.skipped": "답하지 않고 넘겼어요",
   "conv.nt.you_answered": "이렇게 답했어요",
   "conv.nt.closed_late": "답할 시간이 지나 닫혔어요",
-  "conv.nt.closed_done": "일이 끝나서 닫혔어요"
+  "conv.nt.closed_done": "일이 끝나서 닫혔어요",
+  "conv.nt.more": "자세히 보기",
+  "conv.nt.more_below": "더 있어요 ↓",
+  "conv.alert_ask": "이 알림에 대해 메인에서 묻기 ›"
 }

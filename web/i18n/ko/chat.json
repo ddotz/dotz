@@ -116,6 +116,7 @@
   "chat.ph.mail": "이 메일 답장·전달은 {bot}에게 · /명령",
   "chat.ph.settings": "{name} 설정은 {bot}에게 말해요 · /명령",
   "chat.ph.target": "{name}에게 메시지 · /명령",
+  "chat.ph.worklog": "이 기록에 대해 물어보세요 · 답은 여기에 와요",
   "chat.run.limit": "사용량 한도로 대기 중",
   "chat.run.working": "작업 중…",
   "chat.run.stop_title": "지금 하는 일 중단",

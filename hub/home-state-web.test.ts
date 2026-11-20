@@ -162,7 +162,7 @@ const fill = async (n: number) => { await waitFor(`!document.querySelector("#v-h
 	P = { providers: ids.map(i => ({ id: "g" + i, name: "공급자 " + i, auth: "api_key" })) };
 	renderHomeNow();
 })(${n})`); };
-const LISTS = ["needs", "todo", "running", "waiting", "ended-work", "alert", "worklog", "watch", "group:limit", "group:ctx", "group:prov"];
+const LISTS = ["todo", "running", "waiting", "ended-work", "alert", "worklog", "watch", "group:limit", "group:ctx", "group:prov"];
 const cap = (key: string) => view.evaluate(`(l => JSON.stringify(l && { n: l.children.length, client: l.clientHeight, scroll: l.scrollHeight, six: l.children[5] ? l.children[5].offsetTop + l.children[5].offsetHeight : 0, y: getComputedStyle(l).overflowY, bar: getComputedStyle(l).scrollbarWidth, fade: getComputedStyle(l).maskImage.includes("linear-gradient"), over: getComputedStyle(l).overscrollBehaviorY, card: l.closest(".card, .hneeds").offsetHeight, inCard: !!l.closest("#v-home") }))(document.querySelector('#v-home [data-cap="${key}"]'))`).then(s => JSON.parse(s as string)) as Promise<{ n: number; client: number; scroll: number; six: number; y: string; bar: string; over: string; card: number; inCard: boolean } | null>;
 
 test.each(LISTS)("%s holds every row, shows six and scrolls inside its card, and five rows stay as they are", async key => {

@@ -22,14 +22,13 @@ function rpMark(n, e) {
   if (mt) mt.append(btn); else { btn.classList.add("out"); n.append(btn); }
 }
 // `decision`: the id of the question this reply answers in the owner's own words (30-notices.js ntDirect); it rides with the quote until it is sent or dropped.
-function rpStart(n, decision = "") {
-  const e = RP.src.get(n);
+function rpStart(n, decision = "", to = target, e = RP.src.get(n)) {
   if (!e) return;
   // tone: the status tag of the quoted bot message, shown in the bar like in the message (not sent; the server only gets id, author, content)
-  RP.cur = { t: target, id: n.dataset.rid, author: rpOwnerKind(e) ? "" : ($(".mn", n)?.textContent || botName), content: rpText(e).slice(0, RP_QUOTE), tone: rpOwnerKind(e) || parkedTone(parseTone(noHandoff(String(e.text ?? ""))).tone) ? "" : parseTone(noHandoff(String(e.text ?? ""))).tone, ...(decision ? { decision } : {}) };
+  RP.cur = { t: to, id: rpRid(e), author: rpOwnerKind(e) ? "" : ($(".mn", n)?.textContent || botName), content: rpText(e).slice(0, RP_QUOTE), tone: rpOwnerKind(e) || parkedTone(parseTone(noHandoff(String(e.text ?? ""))).tone) ? "" : parseTone(noHandoff(String(e.text ?? ""))).tone, ...(decision ? { decision } : {}) };
   rpPaint();
   const ta = $("#text");
-  if (!ta.disabled) ta.focus({ preventScroll: true });
+  if (to === target && !ta.disabled) ta.focus({ preventScroll: true });
 }
 function rpPaint() {
   if (RP.cur && RP.cur.decision && RP.cur.t !== target) delete RP.cur.decision;   // moving to another conversation: the question is no longer being answered

@@ -305,7 +305,7 @@ async function sendChat(how) {
 // an inactive pane's mirror asks with open = false and gets its own conversation's hint (43-panes-mirror.js).
 function composerHint(t, open) {
   const info = targetInfo(t), gone = isLaneT(t) && info.known && !info.alive, off = gone && !info.resumable;
-  return off ? TX("chat.ph.ended") : open && DC.cur ? TX("chat.ph.pick_number") : gone ? TX("chat.ph.resume") : open && modeOf() === "term" ? TX("shell.composer.placeholder") : isProjT(t) ? TX("chat.ph.project", { name: targetName(t), bot: botName }) : isMailT(t) ? TX("chat.ph.mail", { bot: botName }) : isSettingsT(t) ? TX("chat.ph.settings", { name: targetName(t), bot: botName }) : TX("chat.ph.target", { name: targetName(t) });
+  return off ? TX("chat.ph.ended") : open && DC.cur ? TX("chat.ph.pick_number") : gone ? TX("chat.ph.resume") : open && modeOf() === "term" ? TX("shell.composer.placeholder") : t === "worklog" ? TX("chat.ph.worklog") : isProjT(t) ? TX("chat.ph.project", { name: targetName(t), bot: botName }) : isMailT(t) ? TX("chat.ph.mail", { bot: botName }) : isSettingsT(t) ? TX("chat.ph.settings", { name: targetName(t), bot: botName }) : TX("chat.ph.target", { name: targetName(t) });
 }
 // The composer follows the selected target and the view mode.
 function updateComposerMeta() {

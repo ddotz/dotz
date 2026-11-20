@@ -638,20 +638,48 @@ function ntDetailPaint(n) {
       el("button", { type: "button", class: "ds-direct", "data-k": "go", onclick: () => { ntSheetClose(false); ntJump(n); }, text: TX("conv.nt.see_in_chat") }),
       el("button", { type: "button", class: "ds-opt rec c", "data-k": "close", onclick: () => ntSheetClose(), text: TX("common.close") })));
 }
+const NT_HEAD_SENTENCES = 3, NT_FOLD_REST = 160, ntMoreOpen = new Set();
+function ntFold(text) {
+  let seen = 0, last = 0, fenced = false;
+  for (const m of text.matchAll(/```|[.!?。？！](?=\s|$)|\n[ \t]*\n/g)) {
+    const end = m.index + m[0].length, item = m[0].length === 1 && /(?:^|\n)[ \t]*\d{1,2}$/.test(text.slice(0, m.index));
+    if (m[0] === "```") { fenced = !fenced; continue; }
+    if (fenced || item) continue;
+    const empty = !text.slice(last, m.index).trim();
+    last = end;
+    if (empty || ++seen < NT_HEAD_SENTENCES) continue;
+    const cut = m[0].length === 1 ? end : m.index, rest = text.slice(cut).trim();
+    return rest.length >= NT_FOLD_REST ? { head: text.slice(0, cut).trim(), rest } : { head: text, rest: "" };
+  }
+  return { head: text, rest: "" };
+}
+function ntOverflow(box) {
+  const body = $(".fs-body", box), hint = $(".ds-hint", box);
+  if (!body || !hint) return;
+  const sync = () => { const below = body.scrollHeight - body.scrollTop - body.clientHeight > 4; body.classList.toggle("ov", below); hint.hidden = !below; };
+  const watch = new ResizeObserver(sync);
+  hint.onclick = () => body.scrollBy({ top: body.clientHeight * 0.8, behavior: "smooth" });
+  body.addEventListener("scroll", sync, { passive: true });
+  watch.observe(body);
+  for (const c of body.children) watch.observe(c);
+  sync();
+}
 function ntSheetPaint() {
   if (!NS.node) return;
   if (NS.det) { ntDetailPaint(NS.det); return; }
   const n = NS.pn ? pqNoticeNow(NS.pn) : ntById(NS.id);
   if (!n || !ntIsDec(n)) { ntSheetClose(false); return; }
   const d = n.decision, open = d.state === "open", ignd = d.state === "ignored", parts = ntParts(n), sibs = ntSibs(n), keep = NS.node.contains(document.activeElement) ? document.activeElement.dataset.k : "";
+  const fold = d.draft ? { head: parts.rest, rest: "" } : ntFold(d.options.length ? choiceBody(parts.rest, ntPlain(n.title)) : parts.rest);
   const kids = [
     fsHead([el("span", { class: `fs-ey ${open ? "warn" : ignd ? "ign" : "done"}`, text: `${ntDecCtx(n)} · ${open ? TX("common.needs_reply") : ignd ? TX("mon.dr.st.ignored") : d.expired ? TX("misc.nsc.d_expired") : d.resolved ? TX("conv.nt.resolved") : TX("conv.nt.answered")}` }, sibs.length ? el("span", { class: "fs-left", "data-k": "count", text: ` · ${sibs.findIndex(x => x.id === n.id) + 1}/${d.group}` }) : null)],
       { ignore: open ? () => ntIgnore(n) : null, ignoreOff: NS.busy, close: () => ntSheetClose() }),
     el("div", { class: "fs-body" },
       el("h2", { class: "ds-t", id: "ds-t", text: parts.title || TX("decision.needs_reply") }),
       el("div", { class: "ds-m", text: ntWhen(n) }),
-      // The buttons show the options; a "결정:" line that only repeats the title goes too.
-      ...ntBody(n, d.options.length && !d.draft ? choiceBody(parts.rest, ntPlain(n.title)) : parts.rest))];
+      ...ntBody(n, fold.head),
+      fold.rest ? el("details", { class: "ds-more", open: ntMoreOpen.has(String(n.id)), ontoggle: ev => { if (ev.currentTarget.open) ntMoreOpen.add(String(n.id)); else ntMoreOpen.delete(String(n.id)); } }, el("summary", { text: TX("conv.nt.more") }), ...ntBody(n, fold.rest)) : null),
+    el("button", { type: "button", class: "ds-hint", hidden: true }, TX("conv.nt.more_below"))];
   const foot = el("div", { class: "fs-ft" }), ed = open && NS.edit && NS.edit.id === String(n.id) ? NS.edit : null;
   // Every notice event repaints the open sheet; one that changes nothing it shows leaves it alone, so the reason field being typed in is not
   // replaced (a new field takes the focus and a phone closes and reopens its keyboard).
@@ -663,7 +691,7 @@ function ntSheetPaint() {
   if (ed) foot.append(ntEditNode(n, ed));
   else if (open) {
     for (const o of d.options) foot.append(el("button", { type: "button", class: "ds-opt", "data-k": `o${o.n}`, disabled: NS.busy, onclick: () => ntAnswer(n, o) },
-      el("span", { class: "ds-lb" }, o.label),
+      el("span", { class: "ds-lb" }, el("span", { class: "dc-key", text: String(o.n) }), o.label),
       o.desc ? el("span", { class: "ds-ds", text: o.desc }) : null));
     foot.append(el("button", { type: "button", class: "ds-direct", "data-k": "direct", disabled: NS.busy, onclick: () => ntDirect(n), text: d.to.startsWith("auth:") ? TX("conv.nt.go_input") : TX("conv.nt.direct") }));
     const nx = ntNextOpen(n);
@@ -683,6 +711,7 @@ function ntSheetPaint() {
   const box = NS.h.box, top = $(".fs-body", box) ? $(".fs-body", box).scrollTop : 0;
   if (!paintKeep(box, kids, ntSheetPaint)) return;
   $(".fs-body", box).scrollTop = top;
+  ntOverflow(box);
   const again = keep ? box.querySelector(`[data-k="${keep}"]`) : null;
   if (again) again.focus({ preventScroll: true });
   const ta = ed ? box.querySelector(".dc-note") : null;
@@ -700,6 +729,7 @@ async function noticeSheetOpen(id) {
   ntSheetShow(String(n.id), null, pn);
 }
 function ntSheetShow(id, det, pn = null) {
+  ntMoreOpen.clear();
   NS.id = id; NS.det = det; NS.pn = pn; NS.busy = false; NS.edit = NS.stash.get(id) || null; NS.stash.delete(id);
   const h = fsOpen({ labelledby: "ds-t", onClose: () => { if (NS.h === h) { NS.h = NS.node = null; NS.id = ""; NS.det = null; NS.edit = null; NS.pn = null; NS.stash.clear(); } } });
   NS.h = h; NS.node = h.node;

@@ -190,6 +190,8 @@ function nyRows(items) {
   const mark = (node, it) => {
     if (it.n && it.n.pc) for (const h of node.querySelectorAll(".hrx-m .hn1")) h.append(el("span", { class: "tag mon-pc", text: it.n.pc.name }));   // another computer's question names it
     for (const hs of node.querySelectorAll(".hrx-m .hs")) hs.textContent = it.act;
+    const choices = it.n && it.n.decision && !it.n.decision.to.startsWith("auth:") ? it.n.decision.options.length : 0;
+    if (choices) for (const ha of node.querySelectorAll(".hrx-m .ha")) ha.textContent = [ha.textContent, TX("home.ny.choices", { n: choices })].filter(Boolean).join(" · ");
     for (const b of node.querySelectorAll(".hrx-m")) b.setAttribute("aria-label", b.getAttribute("aria-label").replace(new RegExp(`${TX("common.needs_reply")}$`), it.crit ? TX("home.ny.critical", { act: it.act }) : it.act));
     if (it.crit) { node.classList.add("crit"); if (it.n && it.n.tone === "fail") for (const e of node.querySelectorAll(".hs")) e.classList.add("err"); }   // a login stays orange; only a failure is red
     return nyBare(node);

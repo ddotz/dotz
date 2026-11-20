@@ -59,5 +59,8 @@
   "conv.nt.skipped": "Skipped without answering",
   "conv.nt.you_answered": "Your answer",
   "conv.nt.closed_late": "Closed after the time to answer passed",
-  "conv.nt.closed_done": "Closed because the work finished"
+  "conv.nt.closed_done": "Closed because the work finished",
+  "conv.nt.more": "Show the rest",
+  "conv.nt.more_below": "There's more ↓",
+  "conv.alert_ask": "Ask main about this alert ›"
 }

@@ -127,6 +127,8 @@
   "decision.needs_decision": "Needs a decision",
   "decision.needs_reply": "Needs your reply",
   "decision.waiting_tag": "Awaiting answer",
+  "decision.fold_pick": "Pick 1 of {n}",
+  "decision.fold_many": "{n} questions",
   "decision.toast.sending_soon": "Sending soon",
   "decision.toast.restored": "Draft restored",
   "decision.past": "Past decision",
