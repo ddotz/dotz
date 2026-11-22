@@ -328,6 +328,13 @@ test("joinPublic pairs a public address that does not answer by the bound record
 	expect(r.bind).toEqual([]);
 });
 
+test("joinPublic does not fold by name when two tailnet computers share the same name", () => {
+	const dup = [PC_A, { name: "pcA", host: "a2.ts.net.", url: "https://a2.ts.net:8443", self: false }];
+	const r = joinPublic(dup, [{ url: "https://a.example.com", ok: true, name: "pcA" }], () => undefined);
+	expect(r.found).toEqual([...dup, { name: "pcA", host: "a.example.com", url: "https://a.example.com", self: false, public: true }]);
+	expect(r.bind).toEqual([]);
+});
+
 test("bindPeer keeps the public address bindPublic set; bindPublic sets it on a known computer only and does not rewrite an unchanged one", () => {
 	const { dir } = rigResolve([]);
 	bindPeer("a.ts.net.", "https://a.ts.net:8443", "pcA", dir, 1);

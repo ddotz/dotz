@@ -212,7 +212,9 @@ export function joinPublic(found: Found[], manual: Array<{ url: string; ok: bool
 	for (const m of manual) {
 		if (out.some(f => f.url === m.url)) continue;
 		const host = new URL(m.url).hostname, pub = isPublicHost(host);
-		const i = pub ? out.findIndex(f => !f.self && !f.public && (publicOf(f.host) === m.url || (m.name !== undefined && m.name === f.name))) : -1;
+		const byBound = pub ? out.findIndex(f => !f.self && !f.public && publicOf(f.host) === m.url) : -1;
+		const byName = pub && byBound < 0 && m.name !== undefined ? out.map((f, idx) => (!f.self && !f.public && f.name === m.name ? idx : -1)).filter(idx => idx >= 0) : [];
+		const i = byBound >= 0 ? byBound : byName.length === 1 ? byName[0]! : -1;
 		if (i >= 0) {
 			out[i] = { ...out[i]!, alt: m.url };
 			if (publicOf(out[i]!.host) !== m.url) bind.push({ host: out[i]!.host, url: m.url });
