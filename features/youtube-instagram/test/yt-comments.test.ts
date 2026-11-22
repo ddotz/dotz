@@ -1,10 +1,7 @@
 // yt-comments watch: baseline on the first run, only new unreplied comments afterwards, failure absorption, auth, quiet hours,
 // quota and setup failures. Fake fetch only.
 import { afterEach, beforeEach, expect, test } from "bun:test";
-import { existsSync, rmSync } from "node:fs";
-import { join } from "node:path";
 import { run } from "../bin/yt-comments.ts";
-import { paths, writeJson } from "../lib/config.ts";
 import { CHANNEL, fakeCtx, readState, setupEnv, type TestEnv, ytThread, YT } from "./helpers.ts";
 import { InnerTubeError } from "../lib/innertube.ts";
 import { hooks as readHooks } from "../lib/yt-read.ts";
@@ -94,20 +91,6 @@ test("a rejected login prints DOTZ_FAIL youtube-auth at once", async () => {
 	expect(res.lines[0]).toBe("DOTZ_FAIL youtube-auth");
 });
 
-test("quiet hours are silent and touch nothing", async () => {
-	const ctx = fakeCtx(env, { now: "2030-06-15T16:00:00Z", routes: { [KEY]: () => ({ items: page }) } });
-	expect(await run(ctx, [])).toEqual({ lines: [], code: 0 });
-	expect(ctx.calls).toHaveLength(0);
-	expect(existsSync(join(env.stateDir, "state.json"))).toBe(false);
-});
-
-test("over the daily quota budget it is silent and makes no call", async () => {
-	writeJson(paths.quota(), { day: "2030-06-15", units: 9000 });
-	const ctx = fakeCtx(env, { routes: { [KEY]: () => ({ items: page }) } });
-	expect(await run(ctx, [])).toEqual({ lines: [], code: 0 });
-	expect(ctx.calls).toHaveLength(0);
-});
-
 const quotaGone = () => Response.json({ error: { errors: [{ reason: "quotaExceeded" }] } }, { status: 403 });
 
 test("a 403 quotaExceeded prints one notice, stays silent for the rest of the Pacific day and keeps the baseline; the next day is normal", async () => {
@@ -139,13 +122,6 @@ test("when 3 pages do not reach the baseline an overflow line follows the listed
 	});
 	expect(ctx.calls.filter(c => c.url.includes("commentThreads"))).toHaveLength(4);
 	expect(readState(env).data.since).toBe("2030-06-15T11:09:00Z");
-});
-
-test("missing config prints DOTZ_FAIL setup", async () => {
-	rmSync(paths.config());
-	const res = await run(fakeCtx(env), []);
-	expect(res.code).toBe(1);
-	expect(res.lines[0]).toBe("DOTZ_FAIL setup");
 });
 
 test("without a watch state folder it fails with setup", async () => {

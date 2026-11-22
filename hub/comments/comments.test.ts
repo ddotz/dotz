@@ -3,14 +3,18 @@ import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFile
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { run as runComments } from "../../features/comments/bin/comments.ts";
-import { type Comment, type CommentAdapter, commentId, mergeComments, type RawComment, type SourceConfig } from "./contract.ts";
-import { createEngine, type DraftModel } from "./engine.ts";
+import { type Comment, type CommentAdapter, commentId, type RawComment, type SourceConfig } from "./contract.ts";
+import { createEngine, type DraftModel, type Engine } from "./engine.ts";
+import { approvalHash } from "../draft-approval.ts";
+import { commentAdapter } from "./reply-adapter.ts";
 import { instagramAdapter } from "./adapters/google-meta.ts";
 import { bunExec, parseRss, websiteAdapter } from "./adapters/website.ts";
 import { createCommentsWeb } from "./web.ts";
 import { appendSealed } from "../approval-seal.ts";
+import { reasonOf } from "../reply-reasons.ts";
 
 const NOW = Date.parse("2026-10-23T00:00:00.000Z");
+const shownHash = async (engine: Engine, code: string): Promise<string | undefined> => ((v => v && approvalHash(v))(await commentAdapter(engine).get(code)));
 const reply = (body: string, extra: object = {}) => `\`\`\`json\n${JSON.stringify({ action: "draft", reason: "asks", to: "", body, questions: [], ...extra })}\n\`\`\``;
 const raw = (native: string, o: Partial<RawComment> = {}): RawComment => ({ native, thread: "p1", author: "A", text: `question ${native}?`, postTitle: "Post one", at: NOW - 1000, ...o });
 const src = (o: Partial<SourceConfig> = {}): SourceConfig => ({ key: "youtube", kind: "youtube", label: "유튜브 댓글", watch: ["*"], autoDraft: false, ...o });
@@ -21,7 +25,7 @@ beforeEach(() => {
 });
 afterEach(() => rmSync(dir, { recursive: true, force: true }));
 
-function setup(sources: SourceConfig[], opts: { model?: DraftModel; collector?: string; clock?: () => number; featureOn?: (app: string, id: string) => boolean } = {}) {
+function setup(sources: SourceConfig[], opts: { model?: DraftModel; collector?: string; clock?: () => number; featureOn?: (app: string, id: string) => boolean; recheck?: CommentAdapter["recheck"] } = {}) {
 	mkdirSync(dir, { recursive: true });
 	writeFileSync(join(dir, "config.json"), JSON.stringify({ enabled: true, sources: Object.fromEntries(sources.map(s => [s.key, s])) }));
 	const state = { pages: [] as RawComment[][], listCalls: 0, posted: [] as { id: string; text: string }[], failReply: undefined as string | undefined, hold: undefined as Promise<void> | undefined };
@@ -33,11 +37,12 @@ function setup(sources: SourceConfig[], opts: { model?: DraftModel; collector?: 
 		},
 		async reply(_s, c, text) {
 			if (state.hold) await state.hold;
-			if (state.failReply) return { ok: false, reason: state.failReply };
+			if (state.failReply) return { ok: false, reason: state.failReply, code: "rejected", sent: "no" };
 			state.posted.push({ id: c.id, text });
 			return { ok: true, ref: "ref1" };
 		},
 		posts: async () => [{ id: "p1", title: "Post one" }],
+		...(opts.recheck ? { recheck: opts.recheck } : {}),
 	};
 	const prompts: { system: string; user: string }[] = [];
 	const model: DraftModel = opts.model ?? (async (system, user) => (prompts.push({ system, user }), { text: reply("고마워요, 곧 알려 드릴게요."), inputTokens: 900, outputTokens: 40 }));
@@ -63,9 +68,7 @@ describe("comment ids and collection", () => {
 			writeFileSync(join(dirB, "config.json"), JSON.stringify({ enabled: true, sources: { youtube: src() } }));
 			const b = createEngine({ dir: dirB, now: () => NOW, collector: "mac-b", adapters: { youtube: { kind: "youtube", list: async () => ({ comments: [raw("c1")] }), reply: async () => ({ ok: true }) } } });
 			await b.collect({ force: true });
-			const merged = mergeComments(a.engine.store.comments(), b.store.comments());
-			expect(merged.map(c => c.id).sort()).toEqual([commentId("youtube", "c1"), commentId("youtube", "c2"), commentId("youtube", "c3")]);
-			expect(merged.find(c => c.native === "c1")!.collector).toBe("mac-a");
+			expect(b.store.comments().map(c => [c.id, c.collector])).toEqual([[commentId("youtube", "c1"), "mac-b"]]);
 		} finally {
 			rmSync(dirB, { recursive: true, force: true });
 		}
@@ -259,16 +262,24 @@ describe("the send gate", () => {
 		const refused = await runComments(["send", t.code], t.engine, inbox);
 		expect(refused.code).toBe(1);
 		expect(t.state.posted).toHaveLength(0);
-		const pick = (id: string, label: string, source = "web") => appendSealed(inbox, { ts: new Date(NOW + 5000).toISOString(), kind: "message", source, text: `1) ${label}`, picks: [{ q: `이 답글 올릴까요? (${id})`, n: 1, label }] });
+		const hash = await shownHash(t.engine, t.code);
+		const pick = (id: string, label: string, source = "web", named = hash) => appendSealed(inbox, { ts: new Date(NOW + 5000).toISOString(), kind: "message", source, text: `1) ${label}`, picks: [{ q: `이 답글 올릴까요? (${id})`, n: 1, label, ...(named ? { hash: named } : {}) }] });
 		pick("Dother00", "보내기");
 		expect((await runComments(["send", t.code], t.engine, inbox)).code).toBe(1);
 		pick(t.code, "보내기", "lane_message");
 		expect((await runComments(["send", t.code], t.engine, inbox)).code).toBe(1);
+		// A 보내기 that names no version, or another one, is refused `changed` (qa-clean-3 H1).
+		for (const named of ["", "0000000000000000"]) {
+			pick(t.code, "보내기", "web", named);
+			const r = await runComments(["send", t.code], t.engine, inbox);
+			expect([r.code, r.lines[0]]).toEqual([1, reasonOf("changed").text]);
+		}
 		expect(t.state.posted).toHaveLength(0);
 		pick(t.code, "보내기");
 		const ok = await runComments(["send", t.code], t.engine, inbox);
-		expect(ok.code).toBe(0);
-		expect((await runComments(["send", t.code], t.engine, inbox)).code).toBe(1);
+		expect([ok.code, ok.posted]).toEqual([0, t.code]);
+		const again = await runComments(["send", t.code], t.engine, inbox);
+		expect([again.code, again.posted, refused.posted]).toEqual([1, undefined, undefined]);
 		expect(t.state.posted).toHaveLength(1);
 	});
 
@@ -285,7 +296,7 @@ describe("the send gate", () => {
 });
 
 describe("web routes", () => {
-	test("threads, status counts, draft on request, send once with 202, read clears unread", async () => {
+	test("threads, status counts, draft on request, send once, read clears unread", async () => {
 		const t = setup([src()]);
 		t.state.pages = [[raw("c1"), raw("c2", { thread: "p2", postTitle: "Post two" })]];
 		await t.engine.collect({ force: true });
@@ -306,9 +317,8 @@ describe("web routes", () => {
 		expect(view.json.drafts).toHaveLength(1);
 		expect(t.engine.needs().youtube).toEqual({ drafts: 1, unread: 2, unreplied: 2 });
 		const code = view.json.drafts[0].code;
-		const sent = await call("POST", `/api/comments/drafts/${code}/send`, { text: "고친 글이에요" });
-		expect(sent.status).toBe(202);
-		expect((await call("POST", `/api/comments/drafts/${code}/send`, {})).status).toBe(409);
+		expect(t.engine.send(code, { by: "owner", text: "고친 글이에요" }).ok).toBe(true);
+		expect(t.engine.send(code, { by: "owner" }).ok).toBe(false);
 		await web.idle();
 		expect(t.state.posted).toEqual([{ id, text: "고친 글이에요" }]);
 		expect((await call("GET", "/api/comments/thread/youtube/p1")).json.sends[0]).toMatchObject({ state: "sent" });
@@ -395,14 +405,14 @@ console.log(JSON.stringify({ comments: all.filter(c => Number(c.id) > since), cu
 		expect(JSON.parse(posted[0]!)).toMatchObject({ commentId: "3", thread: "post-8", text: "답해 드릴게요." });
 	});
 
-	test("a failing post script is a failed send with its output as the reason", async () => {
+	test("a post script that exits non-zero without saying sent: no may have posted: unsure, its output kept for the log only", async () => {
 		const { read } = fixtureDir();
 		const bad = join(dir, "bad.ts");
 		writeFileSync(bad, `console.error("login expired"); process.exit(2);\n`);
 		const adapter = websiteAdapter({ exec: bunExec, fetch, secretsDir: dir, siteDir: dir });
 		const s = site(read, bad);
 		const out = await adapter.reply(s, { id: "cm:site-blog:3", source: s.key, native: "3", thread: "post-8", author: "Lee", text: "?", postTitle: "x", at: 0, mine: false, collector: "m" } as Comment, "hi", "send:1");
-		expect(out).toEqual({ ok: false, reason: "login expired" });
+		expect(out).toEqual({ ok: false, code: "unknown", sent: "maybe", reason: "보내다가 문제가 생겼어요", detail: "login expired" });
 	});
 
 	test("an RSS comment feed and a webhook with a bearer secret", async () => {
@@ -496,11 +506,11 @@ describe("답장 확인: a failed reply, a dropped draft and the pending list", 
 		if (first.ok) await first.done;
 		const id = first.ok ? first.reply.id : "";
 		t.state.failReply = undefined;
-		expect((await t.call("POST", `/api/comments/sends/${encodeURIComponent(id)}/retry`)).status).toBe(202);
+		expect(t.engine.retrySend(id).ok).toBe(true);
 		await t.engine.idle();
 		expect(t.state.posted).toHaveLength(1);
-		expect((await t.call("POST", `/api/comments/sends/${encodeURIComponent(id)}/retry`)).status).toBe(409);
-		expect((await t.call("POST", `/api/comments/sends/${encodeURIComponent(id)}/dismiss`)).status).toBe(409);
+		expect(t.engine.retrySend(id).ok).toBe(false);
+		expect(t.engine.dismissSend(id).ok).toBe(false);
 		expect(t.state.posted).toHaveLength(1);
 	});
 
@@ -510,7 +520,7 @@ describe("답장 확인: a failed reply, a dropped draft and the pending list", 
 		const f = u.engine.send(u.code, { by: "owner" });
 		if (f.ok) await f.done;
 		const fid = f.ok ? f.reply.id : "";
-		expect(await u.call("POST", `/api/comments/sends/${encodeURIComponent(fid)}/dismiss`)).toEqual({ status: 200, json: { ok: true } });
+		expect(u.engine.dismissSend(fid)).toEqual({ ok: true });
 		expect(u.engine.store.replies()).toEqual([]);
 		expect(u.engine.store.drafts().find(d => d.code === u.code)!.status).toBe("pending");
 		expect(u.events.some(e => e.kind === "comment_send" && e.state === "removed")).toBe(true);
@@ -518,11 +528,97 @@ describe("답장 확인: a failed reply, a dropped draft and the pending list", 
 
 	test("되돌리기 after 보내지 않기 makes the draft wait again, once", async () => {
 		const t = await drafted();
-		expect((await t.call("POST", `/api/comments/drafts/${t.code}/restore`)).status).toBe(409);
-		expect((await t.call("POST", `/api/comments/drafts/${t.code}/drop`)).status).toBe(200);
+		expect(t.engine.restore(t.code).ok).toBe(false);
+		expect(t.engine.drop(t.code).ok).toBe(true);
 		expect((await t.call("GET", "/api/comments/drafts")).json.items).toEqual([]);
-		expect(await t.call("POST", `/api/comments/drafts/${t.code}/restore`)).toEqual({ status: 200, json: { ok: true } });
+		expect(t.engine.restore(t.code)).toEqual({ ok: true });
 		expect((await t.call("GET", "/api/comments/drafts")).json.items.map((d: any) => d.code)).toEqual([t.code]);
-		expect((await t.call("POST", `/api/comments/drafts/${t.code}/restore`)).status).toBe(409);
+		expect(t.engine.restore(t.code).ok).toBe(false);
+	});
+});
+
+describe("the send gate looks at the platform before it posts (CM-4)", () => {
+	const owner = (native: string, parent: string): RawComment => raw(native, { parent, author: "나", mine: true, text: "이미 답했어요", at: NOW - 500 });
+	async function waiting(recheck?: CommentAdapter["recheck"]) {
+		let armed = false;
+		const t = setup([src()], recheck ? { recheck: (s, open) => (armed ? recheck(s, open) : Promise.resolve({ comments: [], gone: [] })) } : {});
+		t.state.pages = [[raw("c1")]];
+		await t.engine.collect({ force: true });
+		const step = await t.engine.addDraft(commentId("youtube", "c1"), "중복 답글");
+		if (!step.ok) throw new Error(step.reason);
+		armed = true;
+		return { ...t, code: step.draft.code, id: commentId("youtube", "c1") };
+	}
+
+	test("D4: the owner's own reply is already stored: refused as already answered, nothing is posted", async () => {
+		const t = setup([src()]);
+		t.state.pages = [[raw("c1"), owner("c2", "c1")]];
+		await t.engine.collect({ force: true });
+		const step = await t.engine.addDraft(commentId("youtube", "c1"), "중복 답글");
+		if (!step.ok) throw new Error(step.reason);
+		const r = t.engine.send(step.draft.code, { by: "owner" });
+		expect(r).toMatchObject({ ok: false, code: "stale", reason: "이미 답했어요" });
+		expect(t.state.posted).toEqual([]);
+		expect(t.engine.store.replies()).toEqual([]);
+	});
+
+	test("a comment found deleted (gone) is refused as the original gone, nothing is posted", async () => {
+		const t = await waiting();
+		t.engine.store.patchComments({ [t.id]: { gone: NOW } });
+		expect(t.engine.send(t.code, { by: "owner" })).toMatchObject({ ok: false, code: "original_gone" });
+		expect(t.state.posted).toEqual([]);
+	});
+
+	test("the owner answered on the platform since the last read: the one recheck finds it and nothing is posted", async () => {
+		const asked: string[][] = [];
+		const t = await waiting(async (_s, open) => (asked.push(open.map(c => c.native)), { comments: [owner("c2", "c1")], gone: [] }));
+		const r = t.engine.send(t.code, { by: "owner" });
+		if (!r.ok) throw new Error(r.reason);
+		expect(await r.done).toMatchObject({ state: "failed", code: "stale", reason: "이미 답했어요" });
+		expect(asked).toEqual([["c1"]]);
+		expect(t.state.posted).toEqual([]);
+		expect(t.engine.store.drafts().find(d => d.code === t.code)!.status).toBe("pending");
+	});
+
+	test("the recheck finds the comment deleted: not posted, and the comment is marked gone", async () => {
+		const t = await waiting(async () => ({ comments: [], gone: ["c1"] }));
+		const r = t.engine.send(t.code, { by: "owner" });
+		if (!r.ok) throw new Error(r.reason);
+		expect(await r.done).toMatchObject({ state: "failed", code: "original_gone" });
+		expect(t.state.posted).toEqual([]);
+		expect(t.engine.store.comments().find(c => c.id === t.id)!.gone).toBe(NOW);
+	});
+
+	test("nothing new on the platform, or a recheck that cannot be read: the reply is posted", async () => {
+		const quiet = await waiting(async () => ({ comments: [], gone: [] }));
+		const a = quiet.engine.send(quiet.code, { by: "owner" });
+		expect(a.ok && (await a.done).state).toBe("sent");
+		expect(quiet.state.posted.map(p => p.text)).toEqual(["중복 답글"]);
+		rmSync(dir, { recursive: true, force: true });
+		const down = await waiting(async () => { throw new Error("ENOTFOUND www.googleapis.com"); });
+		const b = down.engine.send(down.code, { by: "owner" });
+		expect(b.ok && (await b.done).state).toBe("sent");
+		expect(down.state.posted.map(p => p.text)).toEqual(["중복 답글"]);
+	});
+});
+
+describe("a send that never reached the platform leaves no record (CM-4)", () => {
+	test("while the platform is read nothing is stored, so a restart then finds nothing to call unsure; a second tap is still refused", async () => {
+		const gate = Promise.withResolvers<{ comments: RawComment[]; gone: string[] }>();
+		let armed = false;
+		const t = setup([src()], { recheck: () => (armed ? gate.promise : Promise.resolve({ comments: [], gone: [] })) });
+		t.state.pages = [[raw("c1")]];
+		await t.engine.collect({ force: true });
+		const step = await t.engine.addDraft(commentId("youtube", "c1"), "중복 답글");
+		if (!step.ok) throw new Error(step.reason);
+		armed = true;
+		const first = t.engine.send(step.draft.code, { by: "owner" });
+		if (!first.ok) throw new Error(first.reason);
+		expect(t.engine.store.replies()).toEqual([]);
+		expect(t.engine.leaveUnsure()).toBe(0);
+		expect(t.engine.send(step.draft.code, { by: "owner" })).toMatchObject({ ok: false, code: "already_sending" });
+		gate.resolve({ comments: [], gone: [] });
+		expect((await first.done).state).toBe("sent");
+		expect(t.state.posted.map(p => p.text)).toEqual(["중복 답글"]);
 	});
 });

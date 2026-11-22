@@ -41,8 +41,7 @@ async function mailSentRemove(n, btn, quiet = false) {
       const r = await api(`/api/notices/${enc(id)}/dismiss`, "POST", {});
       if (!r || !r.ok) throw new Error(TX("mail.sent.remove_failed"));
       leave();
-      NT.items = NT.items.filter(x => String(x.id) !== id);
-      if (typeof r.unread === "number") NT.unread = r.unread;
+      ntRemove(id, r.unread);
       ntPaint();
     }
     if (out) out.then(mailSentPaint); else mailSentPaint();

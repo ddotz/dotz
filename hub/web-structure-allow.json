@@ -1,0 +1,53 @@
+{
+  "_rule": "Structure ratchet for web/js and web/custom.js, checked by `bun hub/check.ts` (hub/web-structure.ts) and frozen by .githooks/pre-push. A fix lowers the number in the same commit; never raise one.",
+  "counts": {
+    "currentAssign": {
+      "05-command-palette.js": 1
+    },
+    "emptyBypass": {},
+    "fnReassign": {},
+    "goBranches": 0,
+    "overlaySites": [
+      "overlay:asPaneOpen",
+      "overlay:prGo",
+      "overlay:prOpen",
+      "overlay:trPaneOpen",
+      "rawdialog:kkViewer",
+      "rawdialog:lightboxAt"
+    ],
+    "ownerWrites": {},
+    "rawNet": {
+      "01-forbidden-pair.js": 1,
+      "11-mailbody.js": 2,
+      "15-attachments.js": 3,
+      "15-upload.js": 1,
+      "17-state-refresh.js": 1,
+      "23-installable-app-web.js": 2,
+      "30-canvas.js": 1,
+      "31-conversations.js": 1,
+      "34-input-diag.js": 1,
+      "36-shell.js": 1,
+      "99-boot.js": 1
+    }
+  },
+  "reasons": {
+    "currentAssign 05-command-palette.js": "go() is the one navigation entry and the only place current changes.",
+    "overlaySites overlay:asPaneOpen": "An app's settings on a wide monitoring screen stand in the right column of the app frame (#as-pane) with the item's list still at the left: a pane of the screen, not a window, with no scrim, nothing modal and no fade. The same settings on a phone are fsOpen (asScreen). ovOpen only makes the pane one back step. Pinned by hub/settings-header-web.test.ts and hub/monitoring-home-frame-web.test.ts.",
+    "overlaySites overlay:prGo": "Another computer opened inside the installed app is that computer's whole page in a full-screen iframe (.pr-frame, which keeps the safe areas), not a window of this app: no card, title, scrim or focus trap of ours, the page inside draws its own. A switch the owner pressed takes one back step with ovOpen; a hand-over from a tapped push has no gesture behind it, so it takes none and closes with its own x button. Pinned by hub/peers-web.test.ts and hub/push-follow-web.test.ts.",
+    "overlaySites overlay:prOpen": "The computer switcher (.ds-sheet.pr-sheet) is a part of its own: on a wide screen a popover under the sidebar's brand row with no scrim, on a phone a bottom sheet that leaves the tab bar free so the home tab pressed again closes it. fsOpen covers the whole screen and has no anchor. Pinned by hub/overlay-fullscreen-web.test.ts (it stays the bottom sheet, not the full-screen frame).",
+    "overlaySites overlay:trPaneOpen": "Fast triage on a wide monitoring screen stands in the right column in place of the reply queue (.rq-pane.tr-pane, drawn by the screen as RQ.sheet) with the list still at the left: a pane of the screen, not a window. On a phone it is fsOpen (tqOpen). ovOpen only makes the pane one back step. Pinned by hub/surface-geometry-web.test.ts.",
+    "overlaySites rawdialog:kkViewer": "KakaoTalk's photo and video viewer is the same lightbox (dialog.lbox.kk-vwd, docs/ui-spec.md lightbox): a media stage with previous and next, not a window.",
+    "overlaySites rawdialog:lightboxAt": "The lightbox (dialog.lbox, docs/ui-spec.md lightbox) is a media stage of its own, not a window: a fitted picture, pinch and double-tap zoom, arrows and swipe between pictures. Pinned by hub/composer-image-web.test.ts and hub/ask-sheet-images-web.test.ts.",
+    "rawNet 01-forbidden-pair.js": "window.fetch wrapper: every response, api() or raw, passes the pairing gate (403 with X-Dotz-Pair) first.",
+    "rawNet 11-mailbody.js": "the mail's stored HTML body (text, not JSON, which api() would turn into null) and inline image blobs read through a cache-friendly fetch, not JSON calls.",
+    "rawNet 15-attachments.js": "file bodies and HEAD probes of attachments, not JSON calls.",
+    "rawNet 15-upload.js": "XMLHttpRequest for upload progress, which fetch cannot report.",
+    "rawNet 17-state-refresh.js": "keepalive input-diagnostics beacon; beacons must not mark the page alive, so they stay outside api().",
+    "rawNet 23-installable-app-web.js": "keepalive push tap and presence beacons; beacons must not mark the page alive, so they stay outside api().",
+    "rawNet 30-canvas.js": "canvas file body, not a JSON call.",
+    "rawNet 31-conversations.js": "keepalive viewing beacon on unload; beacons must not mark the page alive, so they stay outside api().",
+    "rawNet 34-input-diag.js": "input-diagnostics report that may go out as a keepalive beacon on page hide.",
+    "rawNet 36-shell.js": "streamed terminal output read chunk by chunk with an abort signal.",
+    "rawNet 99-boot.js": "the live event stream (EventSource), not a JSON call."
+  }
+}

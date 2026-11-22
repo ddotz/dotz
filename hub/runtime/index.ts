@@ -3,18 +3,19 @@
 // leaves the gateway without an agent; omp runs only when config.json names it.
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { cfg, log } from "../config.ts";
+import { log } from "../config.ts";
+import { ompAgentDir } from "../omp-dirs.ts";
 import { claude } from "./claude.ts";
 import { omo } from "./omo.ts";
 import { omp } from "./omp.ts";
+import { configuredRuntime, DEFAULT_RUNTIME } from "./runtime-id.ts";
 import type { Role, RuntimeAdapter } from "./types.ts";
 
-export const DEFAULT_RUNTIME = "omo";
 export const adapters: Record<string, RuntimeAdapter> = { omo, omp, claude };
 const warned = new Set<string>();
 
 export function runtimeFor(role: Role): RuntimeAdapter {
-	const id = (role === "orchestrator" ? cfg.orchestrator?.runtime : cfg.lanes?.runtime) ?? cfg.runtime ?? DEFAULT_RUNTIME;
+	const id = configuredRuntime(role);
 	if (Object.hasOwn(adapters, id)) return adapters[id];
 	if (!warned.has(`${role}:${id}`)) {
 		warned.add(`${role}:${id}`);
@@ -33,5 +34,5 @@ export function activeHarness(): { ids: string[]; name: string } {
 const home = () => process.env.HOME ?? homedir();
 export const EXTENSION_DIRS: Record<string, () => string> = {
 	omo: () => join(process.env.OMO_CODING_AGENT_DIR || join(home(), ".omo", "agent"), "extensions"),
-	omp: () => join(process.env.PI_CODING_AGENT_DIR || join(home(), ".omp", "agent"), "extensions"),
+	omp: () => join(ompAgentDir(process.env, home()), "extensions"),
 };

@@ -17,23 +17,25 @@ const nscListed = n => !!n.id && n.cls !== "log" && !n.dismissed;
 const nscFits = (n, k) => k === "all" || n.cls === k || (k === "news" && n.cls === "conv");
 const nscIn = k => NT.items.filter(n => nscListed(n) && nscFits(n, k));
 const nscUnreadIn = k => NT.items.reduce((c, n) => c + (nscListed(n) && !n.read && nscFits(n, k) ? 1 : 0), 0);
-const nscGroup = n => (ntNeeds(n) || n.waits ? "need" : n.read ? "past" : "news");
-const nscReadable = () => nscIn(NSC.f).filter(n => !n.read && !ntNeeds(n));
+const nscGroup = n => (ntLaterTwin(n) ? "past" : ntNeeds(n) || n.waits ? "need" : n.read ? "past" : "news");
+const nscReadable = () => nscIn(NSC.f).filter(n => !n.read && !ntNeeds(n) && !ntLaterTwin(n));
 const nscTone = n => ntNeeds(n) || n.waits === "login" || n.tone === "warn" ? "warn" : n.tone === "fail" ? "err" : n.tone === "done" || n.cls === "result" ? "ok" : "";
 // The tag word of the prototype's D.notices, from the notice's own kind, tone and app: the app is the integration key (mail, kakao, instagram/youtube/site = 댓글)
 // or the prefix of the conversation it lives in. A word the data does not give is not made up: the rest is 감시 / 경고 / the app's name / 새 소식.
 const NSC_APP_TAG = { mail: TX("common.mail"), kakao: TX("decision.app.kakao"), instagram: TX("misc.nsc.comments"), youtube: TX("misc.nsc.comments"), site: TX("misc.nsc.comments") };
 const nscApp = n => String(n.app || (n.item && n.item.app) || n.src || n.open || "").split(/[-:]/)[0];
+const ntIsSched = n => n.nk === "schedule" || String(n.key || "").startsWith("schedule:") || (n.kind === "watch" && n.title === "예약");
+const ntIsRemind = n => !n.decision && !n.nk && String(n.key || "").startsWith("schedule:");
 function nscTag(n) {
   const app = nscApp(n);
   if (ntIsDec(n)) return n.decision.draft ? (app === "kakao" ? TX("decision.app.kakao") : TX("misc.nsc.tag_reply")) : TX("common.decision");
   if (n.waits === "login") return TX("misc.nsc.tag_login");
   if (n.waits === "fail" || n.tone === "fail") return TX("home.sys.failed");
   if (n.tone === "ask") return TX("misc.nsc.tag_ask");
+  if (ntIsSched(n)) return TX("misc.nsc.tag_sched");
   if (n.cls === "result") return n.tone === "done" ? TX("misc.nsc.tag_done") : TX("settings.notify.result_label");
   if (n.kind === "watch" && nwChangeLine(n.text)) return TX("misc.nsc.tag_price");
   if (NSC_APP_TAG[app]) return NSC_APP_TAG[app];
-  if (n.kind === "watch" && n.title === "예약") return TX("misc.nsc.tag_sched");
   if (/아침/.test(n.title || "")) return TX("misc.nsc.tag_morning");
   if (n.kind === "watch") return TX("misc.nsc.tag_watch");
   if (n.cls === "alert" && /^[^\n]*: 다시 정상이에요/.test(n.text || "")) return TX("misc.nsc.tag_back");
@@ -44,22 +46,26 @@ function nscTag(n) {
 // A decision's second line follows its state: waiting says so, an answer says what was chosen, the rest say how it ended (the words of monDecisionNode).
 function nscDecLine(n) {
   const d = n.decision, ctx = ntDecCtx(n);
+  if (ntLater(n)) return `${ctx} · ${TX("decision.ask.later_at", { t: kstHM(d.later_until) })}`;
   if (d.state === "open") return `${ctx} · ${TX("misc.nsc.d_open")}`;
   if (d.state === "ignored") return `${ctx} · ${TX("misc.nsc.d_ignored")}`;
+  if (askClosed(d)) return `${ctx} · ${askClosedLine(d)}`;
   if (d.expired) return `${ctx} · ${TX("misc.nsc.d_expired")}`;
   if (d.resolved) return `${ctx} · ${TX("misc.nsc.d_closed")}`;
   const m = /^\s*(\d+)\)/.exec(String(d.answer || "")), o = m && (d.options || []).find(x => x.n === Number(m[1]));
   return `${ctx} · ${TX("misc.nsc.d_answered")}${o ? ` · ${o.label}` : ""}`;
 }
+const nscOwnsTitle = (s, title) => s.startsWith(title) && /^[\s\p{P}]/u.test(s.slice(title.length));
 // The second line: a price change as the old value struck and the new one bold, else the first line of the text that is not the title, else the place.
 function nscSummary(n, text = n.text) {
   const chg = NW_CHANGE.exec(nwChangeLine(text));
   if (chg) return el("span", {}, el("s", { text: chg[2] }), " → ", chg[3]);
   if (n.decision) return n.decision.draft ? ntPlain(n.decision.draft.body.split("\n").find(l => l.trim()) || "") : nscDecLine(n);
+  if (ntIsRemind(n)) return ntShort(String(text || "").split("\n").map(ntPlain).find(l => l && l !== ntPlain(hcLine(n))) || "") || TX("misc.nsc.sched_remind");
   if (n.kind === "watch" && n.item) return (n.item.card && n.item.card.subject) || ntPlain(hcLine(n));   // a mail report says the mail
   const title = ntPlain(hcLine(n)), src = n.src || n.open;
   // the feed's own summary: the name is not said twice, nor the title when the summary opens with it
-  if (n.kind === "watch") { const s = monSummary({ ...n, text }, []); return typeof s === "string" && title && s.startsWith(title) ? s.slice(title.length).replace(/^[.\s·]+/, "") || s : s; }
+  if (n.kind === "watch") { const s = monSummary({ ...n, text }, []); return typeof s === "string" && title && nscOwnsTitle(s, title) ? s.slice(title.length).replace(/^[.\s·]+/, "") || s : s; }
   return String(text || "").split("\n").map(ntPlain).find(l => l && l !== title) || ntLaneNote(n) || (src ? pcTargetName(src, n.pc) : TX("misc.nsc.one"));
 }
 // The time at the row's end stays short: 방금, the hour today, 어제, then the date.
@@ -68,8 +74,14 @@ function nscWhen(t) {
   if (kstDay(t) === kstDay(Date.now())) return kstHM(t);
   return kstDay(t) === kstDay(Date.now() - 86400000) ? TX("project.yesterday") : dayLabel(t).replace(/ \(.\)$/, "");
 }
+const NSC_ASK_TAIL = / · ([^·]+\?)$/u;
+function nscHead(title) {
+  const m = NSC_ASK_TAIL.exec(title);
+  if (!m) return el("span", { class: "hd", title, text: title });
+  return el("span", { class: "hd hd-q", title }, el("span", { class: "w", text: title.slice(0, m.index) }), el("span", { class: "q", text: ` · ${m[1]}` }));
+}
 function nscLines(n, group, summary, when, tag, prefix = "") {
-  return [el("span", { class: "ln" }, el("span", { class: "hd", title: ntPlain(hcLine(n)), text: ntPlain(hcLine(n)) }), el("span", { class: "t", text: when })),
+  return [el("span", { class: "ln" }, nscHead(ntPlain(hcLine(n))), el("span", { class: "t", text: when })),
     el("span", { class: "ln" }, el("span", { class: "nsc-s" }, prefix, summary), el("span", { class: "tag", text: tag }))];
 }
 function nscRow(n, group) {
@@ -93,8 +105,8 @@ const nscRows = (n, group) => [nscRow(n, group), ...(n.repeats && n.repeats.leng
 
 function nscList(rows, defer = false) {
   nscTodo = [];
-  if (!NT.loaded) return [el("div", { class: "list" }, el("div", { class: "empty", text: NT.failed ? TX("misc.nsc.load_failed") : TX("misc.nsc.loading") }))];
-  if (!rows.length) return [el("div", { class: "list" }, el("div", { class: "empty", text: TX("misc.nsc.empty") }))];
+  if (!NT.loaded) return [emptyNode(NT.failed ? TX("misc.nsc.load_failed") : TX("misc.nsc.loading"))];
+  if (!rows.length) return [emptyNode(TX("misc.nsc.empty"))];
   const out = [];
   let room = defer ? NSC_FIRST : Infinity;   // rows to build now, over all groups
   for (const [g, label] of NSC_GROUPS) {
@@ -159,7 +171,17 @@ function nscPaint(force, fresh = false) {
   if (!first) for (const id of arrived) { const r = nscRowOf(id); if (r) motionIn(r, "top"); }   // a notification that arrives slides in at the top of its group
 }
 const nscRowOf = id => nscBox && nscBox.list.querySelector(`.nsc-r[data-nid="${CSS.escape(String(id))}"]:not([data-child])`);
+const nscPass = ms => { NSC.pass = Date.now() + ms; };
+// go() landed on a screen: the alert pass and the row arm are spent, and the way back to the list holds only when a row led here.
+function nscLanding(name) {
+  NSC.pass = 0;
+  const viaRow = NSC.arm > Date.now();
+  NSC.arm = 0;
+  if (name === "notices") NSC.ret = false;
+  else { NSC.ret = viaRow; if (!viaRow) NSC.keep = false; }
+}
 function nscSchedule() { if (!NSC.raf) NSC.raf = requestAnimationFrame(() => { NSC.raf = 0; nscPaint(false); }); }
+screenHooks("notices", { enter: nscOpen });
 function nscOpen() {
   nscInit();
   const keep = NSC.keep;
@@ -235,7 +257,7 @@ function nscX(n, group, btn) {
   // ✕ on news: read.
   if (group === "news") return nscLeave(n, btn, async () => {
     const r = await ntMarkRead({ ids: [n.id] });   // it shows its own failure
-    return r && (() => { n.read = true; NT.unread = typeof r.unread === "number" ? r.unread : Math.max(0, NT.unread - 1); });
+    return r && (() => { n.read = true; ntReadDown(1); ntUnreadSet(r.unread); });
   });
   if (group === "need") return nscLeave(n, btn, () => nscHandled(n));
   return nscLeave(n, btn, () => nscDismiss(n));
@@ -253,9 +275,7 @@ async function nscDismiss(n) {
     const r = await api(`/api/notices/${enc(n.id)}/dismiss`, "POST", {});
     if (!r || !r.ok) throw new Error(TX("misc.nsc.clear_failed"));
     return () => {
-      NT.items = NT.items.filter(x => x.id !== n.id); NT.mut++;
-      if (n.at) NT.gone.add(n.at);
-      if (typeof r.unread === "number") NT.unread = r.unread;
+      ntDismissed(n, r.unread);
       toast(TX("misc.nsc.cleared"), false, { label: TX("common.undo"), onclick: () => nscUndo(n) }, 6000);
     };
   } catch (err) { toast(TX("misc.nsc.clear_one_failed"), true); return null; }
@@ -263,7 +283,7 @@ async function nscDismiss(n) {
 async function nscUndo(n) {
   try {
     const r = await api(`/api/notices/${enc(n.id)}/undismiss`, "POST", {});
-    NT.mut++; if (n.at) NT.gone.delete(n.at);
+    ntUndismissed(n);
     ntApply(r.item, r.unread);
     if (current === "notices") requestAnimationFrame(() => requestAnimationFrame(() => { const row = nscRowOf(n.id); if (row) motionIn(row, "top"); }));
   } catch (err) { toast(err.message, true); }
@@ -276,7 +296,7 @@ async function nscReadAll(btn) {
   const r = await ntMarkRead({ ids });   // it shows its own failure
   if (!r) { undo(); return; }
   for (const n of rows) n.read = true;
-  NT.unread = typeof r.unread === "number" ? r.unread : Math.max(0, NT.unread - ids.length);
+  ntReadDown(ids.length); ntUnreadSet(r.unread);
   const gone = new Set(ids);
   // From the last row up: a row lifted out of the flow does not move the ones above it, so each one folds at its own place.
   const leaving = [...nscBox.list.querySelectorAll(".nsc-r[data-nid]")].filter(x => gone.has(Number(x.dataset.nid)) || gone.has(x.dataset.nid)).reverse().map(x => motionGone(x));

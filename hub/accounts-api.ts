@@ -1,11 +1,13 @@
-// What the owner sees and does about the Claude subscription accounts, from the HTTP API (GET /api/accounts, PUT
-// /api/accounts/alias, PUT /api/accounts/rules, POST /api/accounts/use), the /account command (hub/control.ts) and short chat
-// requests the gateway answers itself ("계정 바꿔줘", main.ts). Every account is shown by its alias (hub/account-alias.ts label);
-// the raw id appears only in API fields named `name`/`key` and on "-# " detail lines.
-import { aliasesFile, label, readAliases, resolveAccount, setAlias } from "./account-alias.ts";
-import { blockedKind, checkNow, DEFAULT_EVERY_MINUTES, DEFAULT_SCRIPT_TIMEOUT_MS, decisionsFile, describeRule, type Decision, getScriptOpinion, getUsage, josa, lastDecision, type Manual, readRules, rulesFile, type ScriptErrorKind, setManual, setOnLimit, setOrder, validateRules, writeRules } from "./account-rules.ts";
+// What the owner sees and does about the subscription accounts, from the HTTP API (GET /api/accounts, PUT /api/accounts/alias,
+// PUT /api/accounts/rules, POST /api/accounts/rules/check, POST /api/accounts/use), the /account command (hub/control.ts) and short
+// chat requests the gateway answers itself ("계정 바꿔줘", main.ts). Every account is shown by its alias (hub/account-alias.ts label);
+// the raw id appears only in API fields named `name`/`key` and on "-# " detail lines. The rule, mode and pin routes take `provider`
+// (default `anthropic`, the Claude subscription, so older clients keep working); the manual pick, the order, the limit answer and
+// the script are Claude's only.
+import { aliasesFile, aliasesOf, label, readAliases, resolveAccount, setAlias } from "./account-alias.ts";
+import { ANTHROPIC, blockedKind, checkNow, checkRules, DEFAULT_EVERY_MINUTES, DEFAULT_SCRIPT_TIMEOUT_MS, decisionsFile, describeRule, type Decision, getScriptOpinion, getUsage, josa, lastDecision, type Manual, readRules, rulesFile, type ScriptErrorKind, setManual, setOnLimit, setOrder, setRuleList } from "./account-rules.ts";
 import { type AccountSwitch, accountView, clearSwitches, deleteSwitch, hardPinned, inOrder, MAX_LOG_LINES, onUsedChange, type Pool, quietly, readPool, stickyAccount, type SwitchKind, type UsedChange } from "./account-sticky.ts";
-import { deletePoolAccount, providerGroups, readProviderStore, windowsOf, writeProviderPin } from "./accounts-providers.ts";
+import { deletePoolAccount, forgetOwnProviderPin, ownProviderPins, providerGroups, readProviderStore, windowsOf, writeProviderPin } from "./accounts-providers.ts";
 import { issueBlock } from "./choices.ts";
 import { TZ } from "./config.ts";
 import { msg } from "./i18n.ts";
@@ -13,6 +15,7 @@ import { deleteOmoAccount, writeOmoPin } from "./omo-pin.ts";
 import { accountUsedChanged } from "./notices.ts";
 import { ACCOUNT_CHANGED, ACCOUNT_LEAD, ACCOUNT_PICKED } from "./worklog-kind.ts";
 import { type AccountReport, limitsText, usedAccount } from "./usage-account.ts";
+import { rolesOn } from "./runtime/runtime-id.ts";
 
 export class AccountsError extends Error {
 	constructor(message: string, readonly status = 400) {
@@ -21,6 +24,13 @@ export class AccountsError extends Error {
 }
 
 const SOURCE_TEXT: Record<Decision["source"], string> = { manual: "직접 고름", script: "스크립트", rule: "규칙", auto: "자동" };
+
+const PIN_PATHS = ["/api/accounts/rules", "/api/accounts/use", "/api/accounts/mode", "/api/accounts/on-limit", "/api/accounts/order", "/api/accounts/pin"];
+const pinUnavailable = (): string | undefined => {
+	if (rolesOn("omo")) return undefined;
+	const rest = "계정 고정과 규칙은 OmO에서만 돼요.";
+	return rolesOn("omp") ? `omp에서는 계정을 고정하거나 규칙으로 바꿀 수 없어요. omp가 로그인된 Claude 계정을 직접 골라 돌려 쓰고, 한도에 걸리면 다음 계정으로 넘어가요. ${rest}` : `이 하네스에서는 계정을 고정하거나 규칙으로 바꿀 수 없어요. ${rest}`;
+};
 export const KIND_TEXT: Record<SwitchKind, string> = { start: "처음 선택", limit: "한도", owner: "직접 변경", gone: "계정 사라짐", rule: "규칙", script: "스크립트", manual: "직접 고름" };
 const SCRIPT_ERROR_TEXT: Record<ScriptErrorKind, string> = { timeout: "시간이 초과됐어요", exit: "오류로 끝났어요", spawn: "실행하지 못했어요", unknown_account: "모르는 계정을 골랐어요" };
 
@@ -204,6 +214,7 @@ export function accountsBody(now = Date.now(), catalog: { id: string; name: stri
 	});
 	// The Claude subscription group: the same accounts as `accounts` (dotz's own order and labels), shaped like every other
 	// provider's group so the card can render all of them the same way.
+	const rulesText = (rules.rules ?? []).map((r, index) => ({ index, text: describeRule(r, labAny) }));
 	const claude = {
 		id: "anthropic",
 		name: "Claude 구독",
@@ -212,22 +223,35 @@ export function accountsBody(now = Date.now(), catalog: { id: string; name: stri
 		can_add: catalog.some(p => p.id === "anthropic"),
 		can_pin: true,
 		can_delete: accounts.length > 1,
+		// 자동 전환 or 고정, the rules and their sentences: the same fields every pooled provider's group carries
+		mode: manualId ? ("pinned" as const) : ("auto" as const),
+		can_rules: true,
+		rules,
+		rules_text: rulesText,
 		accounts: accounts.map(a => ({
 			name: a.name,
 			label: a.label,
 			order: a.order,
 			current: a.current,
 			pinned: pool?.pinned === a.name,
+			picked: false,
 			blocked: a.blocked,
 			blocked_until: a.blocked_until,
 			blocked_tag: a.blocked_tag,
 			windows: claudeWindows(a.name).length ? claudeWindows(a.name) : [...(a.five_hour_left !== null ? [{ id: "anthropic:5h", label: "5시간", left: a.five_hour_left, resets_at: null }] : []), ...(a.seven_day_left !== null ? [{ id: "anthropic:7d", label: "7일", left: a.seven_day_left, resets_at: null }] : [])],
 		})),
 	};
-	const generic = providerGroups({ ...store, aliases, catalog, now });
+	const generic = providerGroups({ ...store, aliases, own: ownProviderPins(), catalog, now });
 	for (const g of generic.providers) for (const a of g.accounts) if (a.blocked) a.blocked_tag = blockedTag(blockedKind(a.blocked), a.blocked_until ? Date.parse(a.blocked_until) : undefined, now);
+	// every other pool: its rules (applied through OmO's pin, account-rules.ts applyProviderRules) once it holds two accounts or more
+	const others = generic.providers.map(g => {
+		const part = readRules(g.id);
+		const slots = g.accounts.map(a => a.name);
+		return { ...g, mode: g.accounts.some(a => a.pinned) ? ("pinned" as const) : ("auto" as const), can_rules: g.auth === "oauth" && g.can_pin && slots.length > 1, rules: part, rules_text: (part.rules ?? []).map((r, index) => ({ index, text: describeRule(r, ruleNames(g.id, slots).label) })) };
+	});
 	return {
-		providers: [...(names.length ? [claude] : []), ...generic.providers],
+		providers: [...(names.length ? [claude] : []), ...others],
+		pin_unavailable: pinUnavailable() ?? null,
 		login_providers: generic.login_providers,
 		// "pinned" (고정: manual pick, never moves) or "auto" (자동 전환: rules, and a switch when the account is blocked)
 		mode: manualId ? ("pinned" as const) : ("auto" as const),
@@ -247,7 +271,7 @@ export function accountsBody(now = Date.now(), catalog: { id: string; name: stri
 			at: d.at,
 		},
 		rules,
-		rules_text: (rules.rules ?? []).map((r, index) => ({ index, text: describeRule(r, labAny) })),
+		rules_text: rulesText,
 		manual_text: manualText(rules.manual, now, names, aliases, pool, current),
 		used: current ? { name: current, label: lab(current) } : null,
 		script: {
@@ -346,13 +370,49 @@ async function useAccount(text: string, until?: string): Promise<{ auto: true } 
 	return { id, label: label(id), applied: d.account === id };
 }
 
-function putRules(raw: unknown): void {
+// The provider a request names: Claude's subscription when it names none (older clients), else a pool OmO holds accounts for.
+function providerOf(v: unknown, now = Date.now()): string {
+	const id = typeof v === "string" && v.trim() ? v.trim() : ANTHROPIC;
+	if (id !== ANTHROPIC && !readPool(undefined, now, id)) throw new AccountsError(`그런 공급자가 없어요: ${id}`, 404);
+	return id;
+}
+// How one provider's rules name accounts: a slot id or that provider's alias, shown by the alias.
+function ruleNames(provider: string, names = readPool(undefined, Date.now(), provider)?.names ?? []) {
+	const al = aliasesOf(provider);
+	const id = (t: string) => resolveAccount(t, names, al);
+	return { label: (t: string) => { const x = id(t); return x ? (al[x] ?? x) : t; }, known: names.length ? (t: string) => Boolean(id(t)) : undefined };
+}
+const claudeOnly = (provider: string, what: string) => {
+	if (provider !== ANTHROPIC) throw new AccountsError(`${what}은 Claude 구독에만 있어요`, 400);
+};
+
+// The rules dialog's save: {provider?, rules: [...], script?}. An older client's {rules: {rules, manual, order, ...}} still works and
+// writes only its rule list (and its script), never its stale copy of the order, the manual pick or the limit answer.
+async function putRules(b: Record<string, any>): Promise<void> {
+	const provider = providerOf(b.provider);
+	const whole = b.rules && typeof b.rules === "object" && !Array.isArray(b.rules) ? b.rules : undefined;
+	const list = Array.isArray(b.rules) ? b.rules : whole ? (whole.rules ?? []) : undefined;
+	if (!list) throw new AccountsError("rules(규칙 목록)가 필요해요", 400);
 	try {
-		validateRules(raw);
+		setRuleList(provider, list, whole ? whole.script : b.script);
 	} catch (e) {
 		throw new AccountsError((e as Error).message, 400);
 	}
-	writeRules(raw);
+	await quietly(async () => void (await checkNow()));
+}
+
+// Another provider's 자동 전환 / 고정: 고정 is the owner's own OmO pin (the account given, else the one requests use now); 자동 전환
+// clears it, and the rules take over again.
+async function setProviderMode(provider: string, mode: unknown, account: unknown): Promise<void> {
+	const pool = readPool(undefined, Date.now(), provider)!;
+	if (mode === "auto") {
+		if (pool.pinned && pool.pinned !== ownProviderPins()[provider]) writeProviderPin(provider, undefined);
+	} else if (mode === "pinned") {
+		const to = typeof account === "string" && account.trim() ? account.trim() : usedAccount(pool.pinned, pool.names, n => Boolean(pool.blocked[n]), n => pool.lastSuccess[n] ?? 0);
+		forgetOwnProviderPin(provider);
+		if (!to || writeProviderPin(provider, to) === "missing") throw new AccountsError(`그런 계정이 없어요: ${to ?? ""}`, 404);
+	} else throw new AccountsError('mode는 "auto" 또는 "pinned"여야 해요', 400);
+	await quietly(async () => void (await checkNow()));
 }
 
 const readBody = async (req: Request): Promise<Record<string, any>> => {
@@ -367,10 +427,12 @@ const readBody = async (req: Request): Promise<Record<string, any>> => {
 // The /api/accounts routes (the caller has already checked the token). Undefined: not one of them.
 export async function accountsRoute(req: Request, url: URL): Promise<Response | undefined> {
 	const p = url.pathname;
-	if (p !== "/api/accounts" && !["/api/accounts/alias", "/api/accounts/rules", "/api/accounts/use", "/api/accounts/mode", "/api/accounts/on-limit", "/api/accounts/order", "/api/accounts/pin", "/api/accounts/switches"].includes(p)) return undefined;
+	if (p !== "/api/accounts" && !["/api/accounts/alias", "/api/accounts/rules", "/api/accounts/rules/check", "/api/accounts/use", "/api/accounts/mode", "/api/accounts/on-limit", "/api/accounts/order", "/api/accounts/pin", "/api/accounts/switches"].includes(p)) return undefined;
 	// the login providers this install offers, for the 계정 추가 picker (one OmO/omp process, then cached by providers.ts)
 	const catalog = async () => (await import("./providers.ts")).loginProviders().catch(() => []);
 	try {
+		const off = pinUnavailable();
+		if (off && req.method !== "GET" && PIN_PATHS.includes(p)) return Response.json({ error: off }, { status: 409 });
 		// DELETE /api/accounts/switches?at=<time of the entry> removes one history entry; without `at` it clears the whole history.
 		if (req.method === "DELETE" && p === "/api/accounts/switches") {
 			const at = url.searchParams.get("at");
@@ -406,8 +468,11 @@ export async function accountsRoute(req: Request, url: URL): Promise<Response | 
 			const account = typeof b.account === "string" && b.account.trim() ? b.account.trim() : undefined;
 			if (provider === "anthropic") await useAccount(account ?? "auto");
 			else {
+				// the owner's own pin from now on; clearing it lets the provider's rules pick again
+				forgetOwnProviderPin(provider);
 				const r = writeProviderPin(provider, account);
 				if (r === "missing") throw new AccountsError(`그런 공급자가 없어요: ${provider}`, 404);
+				await quietly(async () => void (await checkNow()));
 			}
 			return Response.json(accountsBody(Date.now(), await catalog()));
 		}
@@ -419,13 +484,21 @@ export async function accountsRoute(req: Request, url: URL): Promise<Response | 
 			return Response.json(accountsBody(Date.now(), await catalog()));
 		}
 		if (req.method === "PUT" && p === "/api/accounts/rules") {
-			putRules((await readBody(req)).rules);
+			await putRules(await readBody(req));
 			return Response.json(accountsBody(Date.now(), await catalog()));
+		}
+		// {provider?, rules: [...]}: each rule's sentence (null for a bad one) and the bad fields, {index, field, text}; nothing is saved
+		if (req.method === "POST" && p === "/api/accounts/rules/check") {
+			const b = await readBody(req);
+			const n = ruleNames(providerOf(b.provider));
+			return Response.json(checkRules(b.rules, n.label, n.known));
 		}
 		// 계정 선택 모드: {mode:"auto"} = 자동 전환 (clears the pick), {mode:"pinned", account?} = 고정 (account, else the one requests use now)
 		if (req.method === "PUT" && p === "/api/accounts/mode") {
 			const b = await readBody(req);
-			if (b.mode === "auto") await useAccount("auto");
+			const provider = providerOf(b.provider);
+			if (provider !== ANTHROPIC) await setProviderMode(provider, b.mode, b.account);
+			else if (b.mode === "auto") await useAccount("auto");
 			else if (b.mode === "pinned") {
 				const account = typeof b.account === "string" && b.account.trim() ? b.account : accountsBody().used?.name;
 				if (!account) throw new AccountsError("고정할 계정을 골라 주세요", 400);
@@ -433,16 +506,21 @@ export async function accountsRoute(req: Request, url: URL): Promise<Response | 
 			} else throw new AccountsError('mode는 "auto" 또는 "pinned"여야 해요', 400);
 			return Response.json(accountsBody(Date.now(), await catalog()));
 		}
-		// 한도에 걸렸을 때의 선택: {on_limit:"switch"|"wait"} — 고정/자동 전환 모드 자체는 그대로 두고 다음부터 조용히 따라요
-		if (req.method === "PUT" && p === "/api/accounts/on-limit") {
-			const v = (await readBody(req)).on_limit;
-			if (v !== "switch" && v !== "wait") throw new AccountsError('on_limit은 "switch" 또는 "wait"여야 해요', 400);
-			setOnLimit(v);
+		// 한도에 걸렸을 때의 선택: {on_limit:"switch"|"wait"|null} — 고정/자동 전환 모드 자체는 그대로 두고 다음부터 조용히 따라요.
+		// null (or DELETE) clears it: the next limit asks once again.
+		if ((req.method === "PUT" || req.method === "DELETE") && p === "/api/accounts/on-limit") {
+			const b = req.method === "PUT" ? await readBody(req) : { on_limit: null, provider: url.searchParams.get("provider") };
+			claudeOnly(providerOf(b.provider), "한도에 걸렸을 때의 선택");
+			const v = b.on_limit;
+			if (v !== "switch" && v !== "wait" && v !== null) throw new AccountsError('on_limit은 "switch", "wait" 또는 null이어야 해요', 400);
+			setOnLimit(v ?? undefined);
 			return Response.json(accountsBody(Date.now(), await catalog()));
 		}
 		// {order:[id, ...]}: the account order (the fallback order of 자동 전환); every id must be an account in OmO's pool
 		if (req.method === "PUT" && p === "/api/accounts/order") {
-			const order = (await readBody(req)).order;
+			const b = await readBody(req);
+			claudeOnly(providerOf(b.provider), "계정 순서");
+			const order = b.order;
 			const names = readPool()?.names ?? [];
 			if (!Array.isArray(order) || order.some(x => typeof x !== "string" || !names.includes(x))) throw new AccountsError("order는 계정 id 목록이어야 해요", 400);
 			await quietly(async () => {
@@ -481,6 +559,8 @@ const whyText = (d: AccountsBody["decision"]): string => (d.source === "auto" ? 
 
 // "/account": the whole picture in Korean, labels first.
 export function accountText(now = Date.now()): string {
+	const off = pinUnavailable();
+	if (off) return off;
 	const b = accountsBody(now);
 	if (!b.accounts.length) return "쓰는 Claude 구독 계정이 없어요. 다른 공급자 계정은 설정 → 계정에서 봐요.";
 	const cur = b.accounts.find(a => a.current);
@@ -516,7 +596,7 @@ export async function accountCommand(rest: string): Promise<string> {
 		setAlias(id, name);
 		return name ? `별칭을 정했어요: ${id} → ${name}` : `별칭을 지웠어요: ${id}`;
 	}
-	return pickedText(await useAccount(t));
+	return pinUnavailable() ?? pickedText(await useAccount(t));
 }
 
 // ---- chat requests answered by the gateway itself ----
@@ -552,6 +632,8 @@ export function accountAsk(text: string, names: string[], aliases: Record<string
 
 // The gateway's answer to an AccountAsk (may change the manual pick).
 export async function accountAnswer(ask: AccountAsk): Promise<string> {
+	const off = pinUnavailable();
+	if (off) return off;
 	// Answering the pinned-limit question remembers the answer, so it is asked once (both choices).
 	if (ask.kind === "auto") {
 		setOnLimit("switch");

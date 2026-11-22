@@ -8,8 +8,9 @@
 .rq-meta .mon-pc { flex: none; white-space: pre; }
 .rq-hd .rc-time { flex: none; }
 .rq-lb { margin-top: var(--sp-2); color: var(--fg-3); font: 500 var(--fs-meta)/var(--lh-meta) var(--font); }
-.rq-to { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; margin-top: var(--sp-2); }
-.rq-to .dr-chip { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rq-rcpt { display: flex; flex-wrap: wrap; gap: var(--sp-05) var(--sp-3); min-width: 0; margin-top: var(--sp-2); }
+.rq-rc { display: inline-flex; gap: var(--sp-1); min-width: 0; max-width: 100%; }
+.rq-rv { min-width: 0; color: var(--fg-2); font-size: var(--fs-meta); line-height: var(--lh-meta); overflow-wrap: anywhere; }
 .rq-sub { margin-top: var(--sp-15); }
 /* 원문: 회색·왼쪽 괘선·두 줄, 길면 원문 보기 (원칙 5: 남의 글은 조용한 인용, 초안과 눈에 띄게 나뉨) */
 .rq-og-wrap { display: flex; flex-direction: column; align-items: flex-start; min-width: 0; max-width: 100%; margin-top: var(--sp-2); }
@@ -36,7 +37,12 @@
 /* 메시지 답글 카드 (소개 페이지 댓글 답글 데모): 남의 글은 조용한 인용, 초안 글이 주인공(원칙 1·5). 게시물 제목과 첨부 안내는 회색으로 물러나요 */
 .rq[data-kind="comment"] .rq-sub { margin-top: var(--sp-15); color: var(--fg-2); font: 500 13px/19px var(--font); }
 .rq-orig .rq-ow { color: var(--fg-2); font-weight: 500; }
-.rq-att[data-k="none"] .dr-none:not(:has(.dr-wn)) { margin-top: var(--sp-2); }
+.rq-att[data-k="none"] .dr-none { margin-top: var(--sp-2); }
+/* the 첨부 줄 of a card that only reads its files (10-reply-card.js rqAttachNode): the count, then one quiet line per file with its size */
+.rq-att[data-k="files"] { display: grid; gap: var(--sp-05); min-width: 0; margin-top: var(--sp-2); }
+.rq-af { display: flex; align-items: center; gap: var(--sp-15); min-width: 0; color: var(--fg-2); font: 400 var(--fs-meta)/var(--lh-meta) var(--font); }
+.rq-af .ic { flex: none; width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.rq-af .rq-afn { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg); }
 /* 보냈어요: 버튼 행과 같은 높이, 그 자리에서 바뀝니다(원칙 6) */
 .rq-sent { display: flex; align-items: center; gap: var(--sp-15); height: var(--btn-h-sm); margin-top: var(--sp-3); color: var(--fg); font: 500 14px/20px var(--font); }
 .rq-sent .ic { flex: none; width: 16px; height: 16px; fill: none; stroke: var(--ok); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
@@ -55,8 +61,6 @@
 .bm.dr.rq-ml { gap: 0; }   /* the parts carry their own margins, as in the sheet */
 .rq.cm.rq-ml .rq-og { padding-left: 0; }
 .rq.cm.rq-ml .dr-files { margin-top: var(--sp-2); }
-.rq-acts .rq-manual { margin-left: auto; gap: var(--sp-1); color: var(--fg-3); }
-.rq-acts .rq-manual .ic { width: 14px; height: 14px; }
 
 /* the queue: one list, newest first, an app filter on top */
 .rq-chips .sel { width: 160px; }
@@ -78,7 +82,7 @@
 .rq-acts .btn.sm { height: var(--btn-h-sm); min-height: 0; padding: 0 var(--sp-3); border-radius: var(--r-ctl); font: 600 13px/20px var(--font); }
 /* the reply draft's small buttons keep the 32px box on a phone too: the box is what the owner reads, the 44px reach is an invisible ::after (ui-spec 버튼).
    The keyboard hint of the quick triage has no keys to name on a touch screen. */
-@media (pointer: coarse), (max-width: 639px) { .rq-acts .btn.sm { position: relative; height: var(--btn-h-sm); min-height: 0; } .rq-acts .btn.sm::after { content: ""; position: absolute; inset: calc(var(--sp-2) * -1) -2px; } .tr-keys { display: none; } }
+@media (pointer: coarse), (max-width: 639px) { .rq-acts .btn.sm { position: relative; height: var(--btn-h-sm); min-height: 0; } .rq-acts .btn.sm::after { content: ""; position: absolute; inset: calc(var(--sp-2) * -1) -2px; } }
 .rq-acts .btn.text.sm { padding: 0 var(--sp-2); }
 .rq-acts.dr-row .dr-send { flex: none; }
 
@@ -93,20 +97,14 @@
 /* the card fits the column the way the sheet fits the window: its head stays and a long draft scrolls in its body */
 #mon-tl:has(> .rq-pane) { display: flex; flex-direction: column; height: 100%; }
 .rq-pane { --ff-fill: var(--layer); display: flex; flex: 0 1 auto; flex-direction: column; min-height: 0; border-radius: var(--r-card); background: var(--card); }
-.rq-empty { display: flex; flex-direction: column; align-items: center; gap: var(--sp-3); padding: var(--sp-8) var(--sp-4); color: var(--fg-3); font-size: var(--fs-meta); line-height: var(--lh-meta); text-align: center; text-wrap: balance; }
 #v-monitoring.rq-on .tl-in { max-width: none; }
-.bm.q-fold .md > :not(:first-child) { display: none; }
+.bm.q-fold .md > :not(:first-child), .bm.q-fold .ra-inl { display: none; }
 .rq-qm .sp { flex: 1; }
 .rq-qm[hidden], .rq-fast[hidden], .rq-chips:empty { display: none; }
 .nsc-fb .n.err { color: var(--err); } .nsc-fb.on .n.err { color: inherit; }
 .rq-ls .sec { margin: var(--sp-6) var(--sp-1) var(--sp-2); } .rq-ls .sec:first-child { margin-top: 0; }
 .rq-r .hd { font-weight: 500; color: var(--fg); } .rq-r.sent .hd { font-weight: 400; color: var(--fg-2); }
 .rq-r .ln .tag { flex: 0 1 auto; min-width: 0; max-width: 60%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.rq-g .rq-retry { position: relative; z-index: 1; flex: none; align-self: center; height: var(--btn-h-sm); min-height: 0; }
-.rq-g .rq-retry:disabled { opacity: .4; pointer-events: none; }
-.rq-g .nsc-tr svg { transition: transform var(--m-fast) var(--m-ease); }
-.rq-g .nsc-tx[aria-expanded="true"] ~ .nsc-tr svg { transform: rotate(180deg); }
-.rq-r[data-kid] { padding-left: calc(var(--row-px) + var(--sp-6)); }
 /* the sheet's body under its fixed head: .fs-card caps the height and clips, so a long draft scrolls here down to its 첨부 줄 */
 .rq-sheet .rq-sb { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 0 var(--sp-4) var(--sp-4); }
 .rq-sheet .rq-why { margin: 0 var(--sp-05) var(--sp-3); font: 400 var(--fs-meta)/var(--lh-meta) var(--font); color: var(--fg-2); }
@@ -119,3 +117,37 @@
 .qline .tx { flex: none; } .qline .tx b { font-weight: 600; color: var(--fg); font-variant-numeric: tabular-nums; }
 .qline .sep { color: var(--fg-3); } .qline .go { font-weight: 600; color: var(--fg); }
 .qline:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* the foot of a card whose send the queue holds (10-reply-actions.js rqSendNode): status colour only under its state class */
+.rq-send { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); margin-top: var(--sp-2); padding: var(--sp-2) var(--sp-3); border-radius: var(--r-ctl); background: var(--layer); color: var(--fg-2); font-size: var(--fs-meta); }
+.rq-send.undo { justify-content: space-between; }
+.rq-send.failed .rq-why { color: var(--err); }
+.rq-send.unsure .rq-why.warn { color: var(--warn); }
+.rq-send .rq-sub2 { width: 100%; color: var(--fg-2); }
+.rq-send .dr-act { width: 100%; }
+/* 고치기 panel (10-reply-actions.js rqFixNodes): every part of the draft is a field in its own place, filled like every field of the card (--ff-fill). The text takes the
+   body's place with 답글 | 메일 above it when a mail rides along, a mail's 제목 its subject line, its 받는이 and 첨부 rows open where they stand; the line to the AI and 반영 · 닫기 are the foot. */
+.ra-editbox { display: flex; flex-direction: column; gap: var(--sp-2); }
+.ra-edit, .ra-sub { display: block; width: 100%; box-sizing: border-box; padding: var(--sp-2) var(--sp-3); border: 0; border-radius: var(--r-ctl); background: var(--ff-fill); color: var(--fg); }
+.ra-edit { min-height: calc(var(--sp-6) * 5); font: inherit; resize: vertical; }
+.ra-sub { min-height: var(--field-h-touch); font: 600 var(--fs-card)/var(--lh-card) var(--font); }
+.ra-edit:focus, .ra-sub:focus { outline: 0; box-shadow: var(--ff-ring); }
+.rq > .ra-sub, .rq > .dr-recv { margin-top: var(--sp-2); }
+.rq-edit .kk-rq { margin: 0; }
+.rq-edit .kk-rv { margin: 0; }
+.ra-lint.err { color: var(--err); font-size: var(--fs-meta); }
+.ra-other { display: flex; flex-direction: column; gap: var(--sp-1); }
+.ra-other .kk-rq { margin: 0; }
+.ra-other-tx { padding: var(--sp-2) var(--sp-3); border-radius: var(--r-ctl); background: var(--ff-fill); color: var(--fg-2); font-size: var(--fs-meta); white-space: pre-wrap; overflow-wrap: anywhere; max-height: calc(var(--sp-6) * 5); overflow: auto; }
+/* AI가 고친 초안 (10-reply-card.js rqDiffBody): the words that came in carry a wash of the text's own ink, the ones that went are struck and quiet. Neutral on purpose:
+   a change is not a state, so no status colour, and the wash reads on the card, on a KakaoTalk bubble and in the dark theme alike. */
+.rq-diff .rq-dl { min-height: 1lh; }
+.rq-diff ins { padding: 0 var(--sp-05); border-radius: 4px; background: color-mix(in srgb, var(--fg) 10%, transparent); font-weight: 500; text-decoration: none; -webkit-box-decoration-break: clone; box-decoration-break: clone; }
+.rq-diff del { color: var(--fg-3); text-decoration: none; background: linear-gradient(transparent calc(55% - 0.06em), var(--fg-2) 0 calc(55% + 0.06em), transparent 0); -webkit-box-decoration-break: clone; box-decoration-break: clone; }   /* the strike is drawn, not a text-decoration: WebKit leaves line-through off Hangul fallback glyphs, so only the gaps between words showed it */
+.rq-diff .rq-dgap { color: var(--fg-3); }
+
+/* 답장 대기 as a queue of cards (design 4.4). One column: at 1280px the queue's column is about 640px wide, too narrow for two cards. */
+.rq-list:has(> .rq-c) { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--sp-3); background: none; overflow: visible; }
+.rq-c { min-width: 0; overflow-wrap: anywhere; }
+.rq-list > .rq-c + .rq-c { border-top: 0; }
+.rq-c { background: var(--card); border-radius: var(--r-card); padding: var(--sp-3); }

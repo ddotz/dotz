@@ -1,7 +1,10 @@
+import { execFileSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
-import { join, posix } from "node:path";
+import { homedir } from "node:os";
+import { dirname, join, posix } from "node:path";
+import { listLines, PRIVACY_ALLOW } from "./public-scrub.ts";
 
-// Repo-wide code health detectors for hub/engineering-rules.test.ts. Pure text and regex scans (no TypeScript compiler); imports come from
+// Repo-wide code health detectors for hub/check.ts (the real-tree checks) and hub/engineering-rules.test.ts (seeded violations proving each detector can fail). Pure text and regex scans (no TypeScript compiler); imports come from
 // Bun.Transpiler.scanImports. `bun hub/engineering-rules.ts --json` prints every metric, without the flag a short table.
 // Prod scope: hub, extension, features, onboard, setup.ts, web/js, minus tests, test helpers and the generated web/js/01-notice-ko.js and 01-message-spec.js.
 
@@ -290,6 +293,91 @@ export function pastedBlocks(prod: readonly Src[]): string[] {
 	return [...new Set([...blocks].map(b => b.slice(0, b.lastIndexOf(" | "))))].sort();
 }
 
+// hub/config.ts throws when it is imported under NODE_ENV=test with a real data dir (hub/live-guard.ts testDataRefusal). The suite's bunfig preload sets a temp
+// DOTZ_DIR in process.env, but a child a test starts without an env option gets the environment bun started with: NODE_ENV=test from bun test, no temp data dir.
+// So a module a test file starts that way (by path, or imported by a "-e" script) must not reach hub/config.ts. A spawn with an env option is the test's own choice
+// of environment (process.env carries the temp dir) and is not counted. Entries are found in the test files' spawn calls, not listed by hand.
+const CONFIG_MODULE = "hub/config.ts";
+const SPAWN_CALL = /\b(?:Bun\.)?(?:spawnSync|spawn|execFileSync|execFile|execSync)\(/g;
+const isTestSide = (p: string) => isTest(p) || /\.fixtures?\.ts$/.test(p) || /(?:^|\/)(?:test|fixtures)\//.test(p);
+// End of the bracketed group opening at "from", or of the statement starting there (";" or a line end outside any bracket); quoted text is skipped.
+const endOf = (text: string, from: number, group: boolean): number => {
+	let depth = 0;
+	for (let i = from; i < text.length; i++) {
+		const c = text[i] ?? "";
+		if (c === '"' || c === "'" || c === "`") { for (i++; i < text.length && text[i] !== c; i++) if (text[i] === "\\") i++; continue; }
+		if ("([{".includes(c)) depth++;
+		else if (")]}".includes(c)) { depth--; if (group && depth === 0) return i + 1; }
+		else if (!group && (c === ";" || c === "\n") && depth <= 0) return i;
+	}
+	return text.length;
+};
+export const entryModules = (files: readonly Src[]): string[] => {
+	const prod = new Set(prodOf(files).filter(f => f.path.endsWith(".ts")).map(f => f.path));
+	const found = new Set<string>();
+	for (const f of files) {
+		if (!isTestSide(f.path) || !f.path.endsWith(".ts")) continue;
+		const dir = posix.dirname(f.path);
+		// First "const|let id =" of the file per id, indexed once per file instead of one RegExp per identifier per spawn.
+		let defs: Map<string, number> | undefined;
+		const defEnd = (id: string): number | undefined => {
+			if (!defs) {
+				defs = new Map();
+				for (const d of f.text.matchAll(/(?:const|let)\s+([A-Za-z_]\w*)\s*(?::[^=]+)?=/g)) if (!defs.has(d[1] ?? "")) defs.set(d[1] ?? "", d.index + d[0].length);
+			}
+			return defs.get(id);
+		};
+		for (const m of f.text.matchAll(SPAWN_CALL)) {
+			const call = f.text.slice(m.index, endOf(f.text, m.index + m[0].length - 1, true));
+			if (/\benv\b/.test(call)) continue;
+			// A path or a "-e" script held in a variable counts through the variable's own assignment.
+			let text = call;
+			for (const id of new Set(call.match(/\b[A-Za-z_]\w*\b/g))) {
+				const at = defEnd(id);
+				if (at !== undefined) text += "\n" + f.text.slice(at, endOf(f.text, at, false));
+			}
+			for (const j of text.matchAll(/join\(\s*([\w.]+)\s*((?:,\s*"[^"]*")+)\s*\)/g)) {
+				found.add(posix.join(j[1] === "import.meta.dir" ? dir : "", ...[...(j[2] ?? "").matchAll(/"([^"]*)"/g)].map(s => s[1] ?? "")));
+			}
+			for (const s of text.matchAll(/["'`]((?:\.\/)?(?:[\w.-]+\/)*[\w.-]+\.ts)["'`]/g)) { found.add(posix.normalize(s[1] ?? "")); found.add(posix.join(dir, s[1] ?? "")); }
+		}
+	}
+	return [...found].filter(p => prod.has(p) && p !== CONFIG_MODULE).sort();
+};
+const reaches = (graph: Map<string, string[]>, from: string, to: string): boolean => {
+	const seen = new Set([from]), queue = [from];
+	for (let v = queue.shift(); v !== undefined; v = queue.shift()) {
+		if (v === to) return true;
+		for (const w of graph.get(v) ?? []) if (!seen.has(w)) { seen.add(w); queue.push(w); }
+	}
+	return false;
+};
+export const configImporters = (files: readonly Src[], graph = importGraph(prodOf(files))): string[] =>
+	entryModules(files).filter(e => reaches(graph, e, CONFIG_MODULE));
+
+// The markdown files of the tree: the tracked ones in a checkout, every one in an export with no git (the pre-push hook's `git archive` tree).
+export function treeDocs(root: string): Src[] {
+	const paths = existsSync(join(root, ".git"))
+		? execFileSync("git", ["ls-files", "*.md"], { cwd: root, encoding: "utf8", timeout: 10_000 }).split("\n").filter(Boolean)
+		: readdirSync(root, { recursive: true, encoding: "utf8" }).filter(p => p.endsWith(".md") && !p.split("/").includes("node_modules"));
+	return paths.map(path => ({ path, text: readFileSync(join(root, path), "utf8") }));
+}
+
+// The repo is public. The owner's personal terms live one per line in an untracked file, so this list stays private; without the file (CI) nothing is checked.
+// A failure names the file and the term's line number, never the term.
+export function privacyFindings(tree: readonly Src[], root: string): string[] {
+	const list = process.env.PRIVACY_TERMS_FILE ?? join(homedir(), ".dotz", "secrets", "privacy-terms.txt");
+	if (!existsSync(list)) return [];
+	const terms = readFileSync(list, "utf8").toLowerCase().split("\n").map((t, i) => ({ line: i + 1, term: t.trim() })).filter(t => t.term);
+	const allow = listLines(join(dirname(list), PRIVACY_ALLOW)).map(w => w.toLowerCase());
+	// One pass over a file answers for every term at once; only a file that holds one is then searched term by term, to name the lines.
+	const any = new RegExp(terms.map(t => t.term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|"));
+	return [...tree, ...treeDocs(root)].flatMap(src => {
+		const text = allow.reduce((t, word) => t.replaceAll(word, " "), src.text.toLowerCase());
+		return any.test(text) ? terms.filter(t => text.includes(t.term)).map(t => `${src.path}: term ${t.line}`) : [];
+	});
+}
+
 export function metrics(files: readonly Src[], graph?: Map<string, string[]>) {
 	const prod = prodOf(files);
 	graph ??= importGraph(prod);
@@ -317,28 +405,72 @@ export function metrics(files: readonly Src[], graph?: Map<string, string[]>) {
 export type Raised = { key: string; from: number | undefined; to: number };
 export const ceilingsRaised = (base: Counts, head: Counts): Raised[] =>
 	Object.entries(head).flatMap(([key, to]) => (base[key] === undefined || to > base[key] ? [{ key, from: base[key], to }] : []));
-const flatCeilings = (text: string | undefined): Counts | undefined => {
-	let groups: unknown;
-	try { groups = JSON.parse(text ?? ""); } catch { return undefined; } // unreadable text is the "no baseline" case, reported by the caller
-	if (typeof groups !== "object" || groups === null || Array.isArray(groups)) return undefined;
+const isGroup = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
+// One flat "group key" -> number map. A group is a map of numbers, a bare number (key "group"), or a list whose entries count 1 each. A document
+// with a "counts" object (hub/web-structure-allow.json) is read from there only, so its "reasons" and "_rule" never count.
+export const flatCounts = (doc: unknown): Counts | undefined => {
+	if (!isGroup(doc)) return undefined;
 	const flat: Counts = {};
-	for (const [group, counts] of Object.entries(groups)) for (const [k, n] of Object.entries(counts as Counts)) flat[`${group} ${k}`] = n;
+	for (const [group, v] of Object.entries(isGroup(doc.counts) ? doc.counts : doc)) {
+		if (typeof v === "number") flat[group] = v;
+		else if (Array.isArray(v)) for (const k of v) flat[`${group} ${k}`] = 1;
+		else if (isGroup(v)) for (const [k, n] of Object.entries(v)) flat[`${group} ${k}`] = n as number;
+	}
 	return flat;
 };
-// hub/engineering-ceilings.json at the baseline and at the pushed commit. A side that cannot be read never blocks: one warning line, ok.
-export const freezeReport = (baseText: string | undefined, headText: string | undefined): { ok: boolean; lines: string[] } => {
+const flatCeilings = (text: string | undefined): Counts | undefined => {
+	try { return flatCounts(JSON.parse(text ?? "")); } catch { return undefined; } // unreadable text is the "no baseline" case, reported by the caller
+};
+// The names hub/web-structure-owners.json registers (its objects and lets); undefined when the text cannot be read.
+const ownedNames = (text: string | undefined): Set<string> | undefined => {
+	try {
+		const doc = JSON.parse(text ?? "") as unknown;
+		if (!isGroup(doc)) return undefined;
+		return new Set([doc.objects, doc.lets].flatMap(g => (isGroup(g) ? Object.keys(g) : [])));
+	} catch { return undefined; } // no readable baseline owners: no new ownerWrites key is let through
+};
+// hub/engineering-ceilings.json (or the "counts" of hub/web-structure-allow.json) at the baseline and at the pushed commit. A side that cannot be
+// read never blocks: one warning line, ok. A new "ownerWrites NAME|file" key is the first count of an object registered after the baseline
+// (NAME is not in the baseline's hub/web-structure-owners.json, baseOwnersText), a baseline rather than a raise. An "ownerWrites NAME|file" number
+// may also rise up to baseRecountText's (the baseline's web files counted by the pushed commit's rule C, a { "NAME|file": n } map): a write
+// the baseline code already had and the rule now sees; each such key is still named, as a "recount allowed" line. Every other new or raised
+// key refuses.
+export const freezeReport = (baseText: string | undefined, headText: string | undefined, what = "ceilings", baseOwnersText?: string, baseRecountText?: string): { ok: boolean; lines: string[] } => {
 	const base = flatCeilings(baseText), head = flatCeilings(headText);
-	if (!base || !head) return { ok: true, lines: ["pre-push: ceiling freeze skipped, the baseline ceilings cannot be read"] };
-	const lines = ceilingsRaised(base, head).map(r => `ceiling raised ${r.key}: ${r.from ?? "none"} -> ${r.to}`);
-	return { ok: lines.length === 0, lines };
+	if (!base || !head) return { ok: true, lines: [`pre-push: ceiling freeze skipped, the baseline ${what} cannot be read`] };
+	const owned = ownedNames(baseOwnersText), recount = flatCeilings(baseRecountText) ?? {};
+	const recounted = (r: Raised) => r.key.startsWith("ownerWrites ") && r.to <= (recount[r.key.slice("ownerWrites ".length)] ?? -1);
+	const newlyOwned = (r: Raised) => {
+		if (r.from !== undefined || !owned) return false;
+		const name = /^ownerWrites ([^|]+)\|/.exec(r.key)?.[1];
+		return name !== undefined && !owned.has(name);
+	};
+	const raised = ceilingsRaised(base, head).filter(r => !newlyOwned(r)), shown = (r: Raised) => `${r.key}: ${r.from ?? "none"} -> ${r.to}`;
+	const refused = raised.filter(r => !recounted(r)).map(r => `ceiling raised ${shown(r)}`);
+	const allowed = raised.filter(recounted).map(r => `recount allowed ${shown(r)} (recount ${recount[r.key.slice("ownerWrites ".length)]})`);
+	return { ok: refused.length === 0, lines: [...refused, ...allowed] };
 };
 
 if (import.meta.main && process.argv[2] === "--ceiling-freeze") {
-	// bun hub/engineering-rules.ts --ceiling-freeze <baseline json file> <pushed json file>: exit 1 and one line per raised key; a missing file counts as unreadable.
+	// bun hub/engineering-rules.ts --ceiling-freeze <baseline json> <pushed json> [<baseline json> <pushed json> ...]: each pair is checked on its own,
+	// named by the pushed file's name; exit 1 and one line per raised key; a missing file counts as unreadable. A leading
+	// --base-owners <baseline hub/web-structure-owners.json> lets through the first ownerWrites counts of objects registered since then; a leading
+	// --base-recount <json> lets an ownerWrites number rise up to the baseline code's count under the pushed rule (freezeReport).
 	const read = (p: string | undefined) => (p && existsSync(p) ? readFileSync(p, "utf8") : undefined);
-	const r = freezeReport(read(process.argv[3]), read(process.argv[4]));
-	for (const l of r.lines) console.error(l);
-	process.exit(r.ok ? 0 : 1);
+	let args = process.argv.slice(3), owners: string | undefined, recount: string | undefined;
+	for (;;) {
+		if (args[0] === "--base-owners") owners = read(args[1]);
+		else if (args[0] === "--base-recount") recount = read(args[1]);
+		else break;
+		args = args.slice(2);
+	}
+	let ok = true;
+	for (let i = 0; i < args.length; i += 2) {
+		const r = freezeReport(read(args[i]), read(args[i + 1]), posix.basename(args[i + 1] ?? "ceilings"), owners, recount);
+		for (const l of r.lines) console.error(l);
+		ok &&= r.ok;
+	}
+	process.exit(ok ? 0 : 1);
 } else if (import.meta.main) {
 	const m = metrics(loadTree(join(import.meta.dir, "..")));
 	if (process.argv.includes("--json")) console.log(JSON.stringify(m, null, 2));

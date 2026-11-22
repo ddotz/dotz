@@ -10,7 +10,7 @@
 // The choice block a gateway job appends to an issue report on alert: "결정: <question>", then 2-4 options,
 // each a `**n) name**` line and a one-line consequence. The web's decision buttons and the decision notices read exactly this shape.
 export function issueBlock(question: string, options: { name: string; result: string }[]): string {
-	return [`결정: ${question}`, ...options.flatMap((o, i) => [`**${i + 1}) ${o.name}**`, ...(o.result ? [o.result] : [])])].join("\n");
+	return [`결정: ${question}`, ...options.flatMap((o, i) => [`**${i + 1}) ${unnumbered(o.name)}**`, ...(o.result ? [o.result] : [])])].join("\n");
 }
 
 // KakaoTalk reply drafts: when the incoming message needs a decision only the owner can make, the draft model returns 2-4 short choices
@@ -22,13 +22,16 @@ export const MAX_ASK_CHARS = 80;
 
 const flat = (s: string) => s.replace(/\s+/g, " ").trim();
 
+/** A choice label without a number the model wrote into it ("1) 회사 메일로 받기" -> "회사 메일로 받기"): the option's own number is the only one shown and sent. */
+export const unnumbered = (label: string): string => label.replace(/^(?:\d{1,2}[).]\s+)+/, "").trim() || label;
+
 // The model's choices: trimmed strings of at most 24 characters, deduped, the "직접 쓸게" option removed (the UI adds it), at most 4.
 // Fewer than 2 usable choices is not a question: an empty list.
 export function cleanChoices(v: unknown): string[] {
 	const out: string[] = [];
 	for (const x of Array.isArray(v) ? v : []) {
 		if (typeof x !== "string") continue;
-		const c = flat(x.replace(/[*\n]/g, " "));
+		const c = unnumbered(flat(x.replace(/[*\n]/g, " ")));
 		if (!c || [...c].length > MAX_REPLY_CHOICE_CHARS || c === OWN_CHOICE || out.includes(c)) continue;
 		out.push(c);
 	}
@@ -43,7 +46,7 @@ export const cleanQuestion = (v: unknown): string => {
 // The choice block the orchestrator posts unchanged (the issue-report shape: "결정: <question>", `**n) name**` lines, one description line each;
 // the last option is "직접 쓸게 …": the trailing mark makes the answer carry the owner's own text).
 export function replyChoiceBlock(question: string, choices: string[]): string {
-	return [`결정: ${question}`, ...choices.flatMap((c, i) => [`**${i + 1}) ${c}**`, "고른 대로 답장을 써요"]), `**${choices.length + 1}) ${OWN_CHOICE} …**`, "적은 글을 답장으로 써요"].join("\n");
+	return [`결정: ${question}`, ...choices.flatMap((c, i) => [`**${i + 1}) ${unnumbered(c)}**`, "고른 대로 답장을 써요"]), `**${choices.length + 1}) ${OWN_CHOICE} …**`, "적은 글을 답장으로 써요"].join("\n");
 }
 
 export type ChoiceOption = { n: number; label: string; detail?: true };
@@ -87,14 +90,14 @@ export function parseChoices(text: string): Choices {
 				continue;
 			}
 			const raw = stripRecommendMark(`1) ${m[2]!}`).slice(3).replace(/\*\*/g, "").trim();
-			const label = raw.replace(DETAIL_MARK, "").trim();
+			const label = unnumbered(raw.replace(DETAIL_MARK, "").trim());
 			if (!label) return { options: [] };
 			if (!options.length) question = before;
 			options.push({ n, label, ...(detailOf({ label, detail: DETAIL_MARK.test(raw) }) ? { detail: true as const } : {}) });
 			continue;
 		}
 		const plain = line.replace(/^\s*>\s?/, "").replace(/\*\*/g, "").trim();
-		if (plain && !options.length) before = plain.replace(/^\[[^\]]{1,10}\][ \t]*/, "");
+		if (plain && !options.length) before = oneHead(plain.replace(/^\[[^\]]{1,10}\][ \t]*/, ""));
 	}
 	if (options.length < 2 || options.length > MAX_OPTIONS) return { options: [] };
 	return { ...(question ? { question } : {}), options };
@@ -107,7 +110,8 @@ export function parseChoices(text: string): Choices {
 // The bot marks it with a trailing ` …` on the option name (`**2) 안 됨 …**`, MODE.md); without the mark, detailOf guesses from the label and the description.
 export type DecisionOption = { n: number; label: string; desc: string; detail?: true };
 export const DETAIL_MARK = /\s*…\s*$/;
-const DETAIL_LABEL = /^(?:안\s*됨|안\s*돼|아니|아냐|고치기|수정|다른)/;
+// "아니요" and "다른 …" are answers in themselves: only a refusal that needs its reason or an edit asks for text unmarked.
+const DETAIL_LABEL = /^(?:안\s*됨|안\s*돼|고치기|수정)/;
 export const DETAIL_DESC = /(?:적어|알려|써|말해)\s*(?:주|줘|달라|세요)|내용.*(?:적|알려|써)/;
 // Mirrors detailOf in web/js/10-decision-card.js. A marked option (`detail`) always asks; otherwise a negative / edit label or a description that asks for text does.
 export const detailOf = (o: { label: string; desc?: string; detail?: boolean }): boolean => !!o.detail || DETAIL_LABEL.test(o.label) || DETAIL_DESC.test(o.desc ?? "");
@@ -117,7 +121,12 @@ type DecisionBlock = { title: string; options: DecisionOption[]; headed?: true }
 export const hasDecisionHead = (blocks: DecisionBlock[]): boolean => blocks.some(b => b.headed);
 export const D_OPT = /^\s*(?:\*\*)?\s*(\d+)\)\s*(.+?)\s*(?:\*\*)?\s*$/;
 export const DECISION_HEAD = /^\s*(?:\*\*)?\s*(?:결정|decision(?: needed)?)(?:\s*#?\d{1,2})?\s*[:：]\s*(.*?)\s*(?:\*\*)?\s*$/i;
+// The question written for an ask that names none (hub/ask-normalize.ts): two asks under it are not the same question (hub/notices-store.ts putDecision).
+export const FILLER_QUESTIONS = { ko: "어떻게 할까요?", en: "How should I proceed?" };
 export const D_CLOSE = /번호(?:로|를).*(?:답|알려)/;
+// A head written twice ("결정: [ask] 결정: <question>", outbox 2026-11-09) is one head: the marker and the second label after the first go.
+const DOUBLED_HEAD = /^(\s*(?:\*\*)?\s*(?:결정|decision(?: needed)?)(?:\s*#?\d{1,2})?\s*[:：]\s*)(?:\[[^\]\n]{1,10}\][ \t]*|(?:결정|decision(?: needed)?)\s*[:：][ \t]*)+/i;
+const oneHead = (line: string): string => line.replace(DOUBLED_HEAD, "$1");
 // One decision of a several-decision message: the lead text before the first "결정:" line plus that block's own lines, without its option
 // lines (the buttons show them) and without the other decisions. A message whose blocks are not all headed stays whole. Empty when nothing is left.
 export function decisionText(body: string, index: number): string {
@@ -142,6 +151,27 @@ export function decisionText(body: string, index: number): string {
 	}
 	return [...lead, "", ...(parts[index] ?? [])].join("\n").replace(/\n{3,}/g, "\n\n").trim();
 }
+// A message for a place with no buttons (the main chat's compact result card): each "결정:" line keeps its question in words, its option lines and their
+// description lines go (a summary cut inside the block left a head with one option: a card that could not be, 2026-11-10 "라이선스").
+export function plainDecisions(text: string): string {
+	const lines = text.split("\n"), out: string[] = [];
+	let fence = false, headed = false;
+	for (let i = 0; i < lines.length; i++) {
+		const line = lines[i]!;
+		if (FENCE.test(line)) fence = !fence;
+		const h = fence ? null : DECISION_HEAD.exec(oneHead(line));
+		if (h || (!fence && headed && (D_OPT.test(line) || D_CLOSE.test(line)))) {
+			if (h) out.push(h[1]!);
+			const nx = lines[i + 1];
+			if (!h && D_OPT.test(line) && nx !== undefined && nx.trim() && !D_OPT.test(nx) && !DECISION_HEAD.test(nx) && !D_CLOSE.test(nx) && !FENCE.test(nx)) i++;
+			headed = true;
+			continue;
+		}
+		if (line.trim()) headed = false;
+		out.push(line);
+	}
+	return out.join("\n");
+}
 export function parseDecisions(text: string): { question: string; blocks: DecisionBlock[] } {
 	const lines = stripRecommendMark(text).replace(/^\s*\[[^\]\n]+\][ \t]*/, "").split("\n");
 	const blocks: DecisionBlock[] = [];
@@ -158,7 +188,7 @@ export function parseDecisions(text: string): { question: string; blocks: Decisi
 			continue;
 		}
 		if (fence) continue;
-		const h = DECISION_HEAD.exec(line);
+		const h = DECISION_HEAD.exec(oneHead(line));
 		if (h) {
 			cur = { title: h[1]!.trim(), options: [], headed: true };
 			blocks.push(cur);
@@ -179,7 +209,7 @@ export function parseDecisions(text: string): { question: string; blocks: Decisi
 		}
 		const raw = m[2]!.replace(/^\*+|\*+$/g, "").trim();
 		const marked = DETAIL_MARK.test(raw);
-		cur.options.push({ n, label: raw.replace(DETAIL_MARK, "").trim(), desc, ...(marked ? { detail: true as const } : {}) });
+		cur.options.push({ n, label: unnumbered(raw.replace(DETAIL_MARK, "").trim()), desc, ...(marked ? { detail: true as const } : {}) });
 	}
 	// Only a block a "결정:" line opened is a decision (owner 2026-11-01): a numbered or bold list in the body ("**1) 답변 필요:** ...") is text, never an option.
 	return { question, blocks: blocks.filter(b => b.headed && b.options.length >= 2) };

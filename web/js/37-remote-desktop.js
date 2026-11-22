@@ -68,7 +68,7 @@ const dskPillText = vs => (vs.length === 1 ? TX("misc.dsk.viewing_from", { who: 
 // An answer of GET/PUT /api/desk/... is the new status; S.desk follows it at once instead of waiting for the next state refresh.
 function dskTake(st) {
   DSK.st = st;
-  if (S && S.desk) S.desk = { ...S.desk, on: st.on, running: st.running, viewers: Array.isArray(st.viewers) ? st.viewers : [] };
+  if (S && S.desk) stateMerge({ desk: { ...S.desk, on: st.on, running: st.running, viewers: Array.isArray(st.viewers) ? st.viewers : [] } });
   dskPaint();
   if (inSettings()) renderSettings();
 }

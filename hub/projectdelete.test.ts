@@ -10,12 +10,14 @@ import { allWatches, removeWatch } from "./watch.ts";
 import { clearChannel, getSetup, setupChannel } from "./workchannels.ts";
 
 let removed: string[];
+let ended: string[];
 let running: Record<string, string[]>;
 let failWith: string | undefined;
 const deps: DeleteDeps = {
 	work: () => ({ "7001": "유튜브", "7002": "메일" }),
 	builtin: () => ({ "111": "chat", "112": "worklog", "113": "alert", "114": "dm" }),
 	running: id => running[id] ?? [],
+	endSession: async key => void ended.push(key),
 	removeChannel: async id => {
 		removed.push(id);
 		if (failWith) throw new Error(failWith);
@@ -32,6 +34,7 @@ function seed() {
 beforeEach(() => {
 	removed = [];
 	running = {};
+	ended = [];
 	failWith = undefined;
 	rmSync(join(DATA_DIR, "archive"), { recursive: true, force: true });
 	dropSeeded();
@@ -112,4 +115,14 @@ test("a channel with a running session is refused and the session is named", asy
 	expect(removed).toEqual([]);
 	expect(getSetup("7001")).toBeDefined();
 	expect(existsSync(archiveFile)).toBe(false);
+});
+
+test("deleting a project ends its channel's conversation session, and a refused delete leaves it", async () => {
+	seed();
+	running["7001"] = ["yt-upload"];
+	await deleteProject("ch:7001", {}, deps).catch(x => x);
+	expect(ended).toEqual([]);
+	running = {};
+	await deleteProject("ch:7001", {}, deps);
+	expect(ended).toEqual(["ch:7001"]);
 });

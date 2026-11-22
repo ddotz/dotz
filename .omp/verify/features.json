@@ -1,0 +1,23 @@
+[
+	{
+		"id": "auto-reply",
+		"paths": [
+			"features/reply-drafts/**",
+			"hub/draft-*.ts",
+			"hub/reply-*.ts",
+			"hub/approval-*.ts",
+			"web/js/10-*.js",
+			"web/js/30-replies.js",
+			"web/css/15-reply*.css",
+			"web/css/15-draft-original.css",
+			"web/i18n/*/reply.json",
+			"web/i18n/*/decision.json"
+		],
+		"proof": "screenshot"
+	},
+	{
+		"id": "app-shell",
+		"paths": ["web/index.html", "web/custom.js", "web/sw.js", "web/manifest.webmanifest", "web/js/**", "web/css/**", "web/i18n/**"],
+		"proof": "screenshot"
+	}
+]

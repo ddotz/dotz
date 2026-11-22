@@ -1,10 +1,10 @@
 // Refusals of send.ts and sendfile.ts that no other test pins: each test fails when its guard (or the exact condition) is mutated away.
 // Everything runs against fake runners and temp dirs; nothing touches KakaoTalk, Accessibility or the Keychain.
 import { afterEach, beforeEach, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createDraft, dropDraft, forgetWarm, listDrafts, restoreDraft, sendDraft, sendText } from "./send.ts";
+import { createDraft, dropDraft, forgetWarm, listDrafts, restoreDraft, sendDraft, type SendResult, sendText } from "./send.ts";
 import { sendFilesToSelf } from "./sendfile.ts";
 import { kakaoPaths, type Msg, type Runner } from "./types.ts";
 import { type FakeRow, fakeScreen } from "./ui.fixture.ts";
@@ -98,6 +98,81 @@ test("a dropped draft is not brought back when a newer draft of the room is pend
 	expect(dropDraft(second.code, { paths })).toEqual({ ok: true });
 	expect(restoreDraft(first.code, { paths })).toEqual({ ok: true });
 	expect(await status(first.code)).toBe("pending");
+});
+
+// The KakaoTalk table of the reply design's failure taxonomy: every send that did not end as sent says whether anything may be in the room
+// (`sent`) and why (`code`). Each case fails when its branch answers another class or code.
+const approved = (screen: ReturnType<typeof fakeScreen>, over: Record<string, unknown> = {}) => ({ paths, runner: screen.runner, latestIncoming: async () => "500", ownerApproved: true, confirm: async () => true, later: () => {}, sleep: noop, ...over });
+let chat = 0;
+const draftOf = async (over: Partial<typeof draftIn> = {}) => createDraft({ ...draftIn, chatId: `t${++chat}`, ...over }, { paths, runner: fakeScreen([]).runner });
+const room = () => fakeScreen([row("스터디방")]);
+const withPressing = async (code: string) => {
+	const list = await listDrafts({ paths, runner: room().runner });
+	writeFileSync(paths.drafts, JSON.stringify(list.map(d => (d.code === code ? { ...d, pressing: { part: 0, text: d.text, at: 1 } } : d))));
+};
+
+test("outcome: every KakaoTalk send result says whether anything may be in the room, with its reason code", async () => {
+	const cases: [string, () => Promise<SendResult>, Partial<SendResult>][] = [
+		["unknown draft", () => sendDraft("KNONE", approved(room())), { sent: "no", code: "gone" }],
+		["dropped draft", async () => {
+			const d = await draftOf();
+			dropDraft(d.code, { paths });
+			return sendDraft(d.code, approved(room()));
+		}, { sent: "no", code: "gone" }],
+		["empty text", async () => sendDraft((await draftOf()).code, approved(room(), { text: "  " })), { sent: "no", code: "empty" }],
+		["too long", async () => sendDraft((await draftOf()).code, approved(room(), { text: "가".repeat(1001) })), { sent: "no", code: "too_long" }],
+		["no approval", async () => sendDraft((await draftOf()).code, approved(room(), { ownerApproved: false })), { sent: "no", code: "not_approved" }],
+		["newer message unreadable", async () => sendDraft((await draftOf()).code, approved(room(), { latestIncoming: () => Promise.reject(new Error("db")) })), { sent: "no", code: "app_not_ready" }],
+		["newer message", async () => sendDraft((await draftOf()).code, approved(room(), { latestIncoming: async () => "501" })), { sent: "no", code: "stale" }],
+		["sender died holding the claim", async () => {
+			const d = await draftOf();
+			mkdirSync(join(dir, "kakao", "sending"), { recursive: true });
+			writeFileSync(join(dir, "kakao", "sending", d.code), `${process.pid} Mon Jan  1 00:00:00 2001`);
+			return sendDraft(d.code, approved(room()));
+		}, { sent: "maybe", code: "interrupted" }],
+		["died at the press, database cannot confirm", async () => {
+			const d = await draftOf();
+			await withPressing(d.code);
+			return sendDraft(d.code, approved(room(), { confirm: async () => undefined }));
+		}, { sent: "maybe", code: "press_unconfirmed", unconfirmed: true }],
+		["already sent but unconfirmed", async () => {
+			const d = await draftOf();
+			await withPressing(d.code);
+			await sendDraft(d.code, approved(room(), { confirm: async () => false }));
+			return sendDraft(d.code, approved(room()));
+		}, { sent: "no", code: "needs_resolve" }],
+		["already sent", async () => {
+			const d = await draftOf();
+			await sendDraft(d.code, approved(room()));
+			return sendDraft(d.code, approved(room()));
+		}, { sent: "no", code: "already_sent" }],
+		["room name unknown", () => sendText({ chatId: "u1", roomName: "(unknown)", text: "안녕" }, approved(room())), { sent: "no", code: "room_unknown" }],
+		["no list row of that room", () => sendText({ chatId: "u2", roomName: "없는방", text: "안녕" }, approved(room())), { sent: "no", code: "room_unknown" }],
+		["room list unreadable", () => sendText({ chatId: "u3", roomName: "스터디방", text: "안녕" }, approved(room(), { roomNames: () => Promise.reject(new Error("db")) })), { sent: "no", code: "app_not_ready" }],
+		["input never ready", () => sendText({ chatId: "u4", roomName: "스터디방", text: "안녕" }, approved(fakeScreen([row("스터디방")], { axSend: () => ({ ok: false, why: "not_set" }) }))), { sent: "no", code: "app_not_ready" }],
+		["the owner's text in the input", () => sendText({ chatId: "u5", roomName: "스터디방", text: "안녕" }, approved(fakeScreen([row("스터디방")], { axSend: () => ({ ok: false, why: "owner_text", preview: "내 글" }) }))), { sent: "no", code: "input_busy" }],
+		["pressed, not confirmed", () => sendText({ chatId: "u6", roomName: "스터디방", text: "안녕" }, approved(fakeScreen([row("스터디방")], { axSend: () => ({ ok: false, why: "unclear", pressed: true }) }), { confirm: async () => false })), { sent: "maybe", code: "press_unconfirmed", unconfirmed: true }],
+		["some parts in the room", async () => {
+			const d = await draftOf({ text: "첫째\n\n둘째" });
+			return sendDraft(d.code, approved(fakeScreen([row("스터디방")], { axSend: (_n, req) => (req.text === "둘째" ? { ok: false, why: "not_set" } : { ok: true }) })));
+		}, { sent: "partial", done: 1, total: 2, code: "app_not_ready" }],
+	];
+	for (const [name, run, want] of cases) {
+		forgetWarm();
+		const r = await run();
+		expect({ name, ok: r.ok, sent: r.sent, code: r.code, done: r.done, total: r.total, unconfirmed: r.unconfirmed }).toMatchObject({ name, ok: false, ...want });
+	}
+});
+
+test("a state file that cannot be written is logged and the send ends as state_write: it may be in the room and is never pressed again", async () => {
+	mkdirSync(join(dir, "kakao", "sends.json", "blocked"), { recursive: true });
+	const screen = room();
+	const d = await draftOf();
+	expect(await sendDraft(d.code, approved(screen))).toMatchObject({ ok: false, sent: "maybe", code: "state_write", unconfirmed: true });
+	expect(readFileSync(join(dir, "hub.log"), "utf8")).toContain("state file sends.json could not be written");
+	expect((await listDrafts(idle(screen))).find(x => x.code === d.code)).toMatchObject({ status: "sent", unconfirmed: true });
+	expect(await sendDraft(d.code, approved(screen))).toMatchObject({ ok: false, sent: "no", code: "needs_resolve" });
+	expect(screen.sends).toHaveLength(1);
 });
 
 const me = (logId: string, type: number): Msg => ({ logId, chatId: "777", authorId: "1", sender: "나", text: "", type, sentAt: 0, fromMe: true });

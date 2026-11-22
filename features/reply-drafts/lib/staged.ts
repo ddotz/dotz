@@ -1,11 +1,16 @@
 // The files a mail draft sends along, as hub/draft-files.ts staged them: <data dir>/draft-files/<draft id>/<n>/<name>, n = 0.. without gaps.
 // Pure fs (no hub/config.ts import, the CLI send path reads it too); the data dir is read from DOTZ_DIR on every call like settings.ts.
-import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { closeSync, copyFileSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { basename, dirname, extname, join, sep } from "node:path";
+import { createHash } from "node:crypto";
 import { dataDir } from "./settings.ts";
 import { getDraft, listDrafts, patchDraft } from "./store.ts";
 
 export const STAGED_MAX = 10;
+/** The most a mail's attachments weigh together, the one size limit every way a file reaches a draft passes (slot). */
+export const STAGED_TOTAL_MAX = 25 * 1024 * 1024;
+export const EMPTY_FILE = "빈 파일이에요";
+export const TOTAL_LIMIT = `첨부파일은 모두 합쳐 ${STAGED_TOTAL_MAX / 1024 / 1024}MB까지 붙일 수 있어요`;
 export const stagedRoot = () => join(dataDir(), "draft-files");
 const REF = /^[A-Za-z0-9][A-Za-z0-9_.-]{1,63}$/;
 export type StagedFile = { name: string; size: number; path: string };
@@ -14,7 +19,7 @@ export type StagedFile = { name: string; size: number; path: string };
 // a slash or backslash (the last path part is kept), control characters and NUL, and leading dots (never a dotfile).
 export function stagedName(name: string): string {
 	const base = basename(String(name || "").replace(/\\/g, "/")).normalize("NFC");
-	const clean = base.replace(/[\u0000-\u001f\u007f]+/g, "_").replace(/\s+/g, " ").replace(/^[.\s]+/, "").trim();
+	const clean = base.replace(/[\u200b\u200e\u200f\u202a-\u202e\u2066-\u2069\ufeff]/g, "").replace(/[\u0000-\u001f\u007f]+/g, "_").replace(/\s+/g, " ").replace(/^[.\s]+/, "").trim();
 	const ext = extname(clean).slice(0, 16);
 	return `${clean.slice(0, clean.length - extname(clean).length).slice(0, 100) || "file"}${ext}`;
 }
@@ -37,6 +42,27 @@ const dirOf = (ref: string, root: string) => {
 	return join(root, ref);
 };
 
+// The content fingerprint of a staged file (the approval hash of a draft carries it, so a same-named file with other bytes is another version).
+// Read once per path, size and mtime: listing the drafts stats each file and hashes only one that changed.
+const digests = new Map<string, { key: string; digest: string }>();
+const hashBuf = Buffer.allocUnsafe(1 << 20);
+export function fileDigest(path: string): string {
+	const st = statSync(path);
+	const key = `${st.size}:${st.mtimeMs}`;
+	const known = digests.get(path);
+	if (known?.key === key) return known.digest;
+	const hash = createHash("sha256");
+	const fd = openSync(path, "r");
+	try {
+		for (let n = readSync(fd, hashBuf, 0, hashBuf.length, null); n > 0; n = readSync(fd, hashBuf, 0, hashBuf.length, null)) hash.update(hashBuf.subarray(0, n));
+	} finally {
+		closeSync(fd);
+	}
+	const digest = hash.digest("hex").slice(0, 16);
+	digests.set(path, { key, digest });
+	return digest;
+}
+
 export function stagedFiles(ref: string, root: string = stagedRoot()): StagedFile[] {
 	if (!REF.test(ref)) return [];
 	const dir = dirOf(ref, root);
@@ -50,10 +76,15 @@ export function stagedFiles(ref: string, root: string = stagedRoot()): StagedFil
 		});
 }
 
-function slot(ref: string, name: string, root: string): string {
+function slot(ref: string, name: string, size: number, root: string): string {
+	if (size === 0) throw new Error(EMPTY_FILE);
 	const files = stagedFiles(ref, root);
 	if (files.length >= STAGED_MAX) throw new Error(`첨부파일은 ${STAGED_MAX}개까지 붙일 수 있어요`);
-	const dir = join(dirOf(ref, root), String(files.length));
+	if (files.reduce((sum, f) => sum + f.size, size) > STAGED_TOTAL_MAX) throw new Error(TOTAL_LIMIT);
+	const base = dirOf(ref, root);
+	let n = 0;
+	while (existsSync(join(base, String(n))) && readdirSync(join(base, String(n))).length > 0) n++;
+	const dir = join(base, String(n));
 	mkdirSync(dir, { recursive: true });
 	// A second file of the same name gets " (2)", " (3)"... so the receiver can tell them apart.
 	const taken = new Set(files.map(f => f.name));
@@ -70,15 +101,25 @@ export const EVICTED = (name: string) => `${name}은(는) iCloud에만 있고 �
 export type CopyFile = (src: string, to: string) => void;
 export type Download = (src: string) => void;
 
-// The 첨부 파일 폴더 is often a symlink into iCloud Drive: brctl only works on the real path.
+// A file iCloud keeps only in the cloud can also be a `.<name>.icloud` placeholder where <name> belongs: it is that file, not yet downloaded.
+export const cloudPlaceholder = (path: string): string => join(dirname(path), `.${basename(path)}.icloud`);
+/** The path a `.<name>.icloud` placeholder stands for; any other path as it is. */
+export const cloudFile = (path: string): string => {
+	const name = /^\.(.+)\.icloud$/.exec(basename(path))?.[1];
+	return name ? join(dirname(path), name) : path;
+};
+const cloudOnly = (path: string): boolean => !existsSync(path) && existsSync(cloudPlaceholder(path));
+
+// The 첨부 파일 폴더 is often a symlink into iCloud Drive: brctl only works on the real path (the placeholder's while only that is here).
 export const brctlArgv = (src: string): string[] => {
-	let real = src;
-	try {
-		real = realpathSync(src);
-	} catch {
-		// not resolvable (gone, or no access): brctl gets the path as given
+	for (const path of [src, cloudPlaceholder(src)]) {
+		try {
+			return ["/usr/bin/brctl", "download", realpathSync(path)];
+		} catch {
+			// not resolvable (gone, or no access): the next form, else brctl gets the path as given
+		}
 	}
-	return ["/usr/bin/brctl", "download", real];
+	return ["/usr/bin/brctl", "download", src];
 };
 
 export const requestDownload: Download = src => {
@@ -92,8 +133,10 @@ export const requestDownload: Download = src => {
 
 // A copy that fails takes its slot away again, so no empty <n> folder is left between the files.
 function copyInto(ref: string, src: string, root: string, copy: CopyFile): StagedFile {
-	if (!statSync(src).isFile()) throw new Error(`${src} is not a file`);
-	const to = slot(ref, ownName(src), root);
+	if (cloudOnly(src)) throw Object.assign(new Error(EVICTED(basename(src))), { code: "EDEADLK" });
+	const st = statSync(src);
+	if (!st.isFile()) throw new Error(`${src} is not a file`);
+	const to = slot(ref, ownName(src), st.size, root);
 	try {
 		copy(src, to);
 	} catch (error) {
@@ -165,6 +208,26 @@ const retrying = new Set<string>();
 // Drafts whose bounded retry ran out in this process: re-reading the cards does not start another round.
 const spent = new Set<string>();
 
+// One try, without waiting, for the files a pending draft still waits for (wantFiles): each that copies now is staged and leaves the list; one still
+// away gets its download asked again. True when a file was staged.
+export async function stageWanted(id: string, opts: StageOpts = {}): Promise<boolean> {
+	const rec = getDraft(id);
+	if (!rec?.wantFiles?.length || rec.status !== "pending") return false;
+	let staged = false;
+	const left: Want[] = [];
+	for (const w of rec.wantFiles) {
+		if (stagedFiles(id, opts.root).some(f => f.name === stagedName(w.name))) continue;
+		try {
+			await stageLibraryFile(id, w.path, { ...opts, tries: 0 });
+			staged = true;
+		} catch {
+			left.push(w);
+		}
+	}
+	patchDraft(id, { wantFiles: left.length ? left : undefined });
+	return staged;
+}
+
 // Tries again, in the background and bounded, for the files a pending draft still waits for (wantFiles): each that copies is staged and leaves
 // the list, and `changed` is called so the waiting card updates. The offer queue never waits on this.
 export function retryWanted(id: string, opts: StageOpts = {}): void {
@@ -173,22 +236,9 @@ export function retryWanted(id: string, opts: StageOpts = {}): void {
 	void (async () => {
 		for (let n = 0; n < RETRY_TRIES; n++) {
 			await nap(RETRY_WAIT_MS);
+			if (await stageWanted(id, opts)) opts.changed?.();
 			const rec = getDraft(id);
 			if (!rec?.wantFiles?.length || rec.status !== "pending") return;
-			let staged = false;
-			const left: Want[] = [];
-			for (const w of rec.wantFiles) {
-				if (stagedFiles(id, opts.root).some(f => f.name === stagedName(w.name))) continue;
-				try {
-					await stageLibraryFile(id, w.path, { ...opts, tries: 0 });
-					staged = true;
-				} catch {
-					left.push(w);
-				}
-			}
-			patchDraft(id, { wantFiles: left.length ? left : undefined });
-			if (staged) opts.changed?.();
-			if (!left.length) return;
 		}
 		spent.add(id);
 	})().catch(e => void console.error(`reply draft: files of draft ${id} not retried: ${(e as Error).message}`)).finally(() => void retrying.delete(id));
@@ -201,7 +251,7 @@ export function resumeWantedFiles(opts: StageOpts = {}): void {
 
 // Bytes that came over the wire (a file added to a peer's draft).
 export function addStagedBytes(ref: string, name: string, bytes: Uint8Array, root: string = stagedRoot()): StagedFile {
-	const to = slot(ref, name, root);
+	const to = slot(ref, name, bytes.length, root);
 	writeFileSync(to, bytes);
 	return { name: basename(to), size: bytes.length, path: to };
 }

@@ -9,27 +9,31 @@ import { shortTitle } from "./notice-title.ts";
 import { DRAFT_SEND, draftApprovalBlock, draftVerdict } from "./draft-approval.ts";
 import { emit, eventTarget, type HubEvent, lastEventId, recentEvents, replayAfter } from "./events.ts";
 import { markRead } from "./reads.ts";
-import { watchChoice } from "./watch.ts";
+import { watchChoice } from "./watch-ask.ts";
 import { blockText, recoveryText } from "./limit-alert.ts";
+import { en } from "./i18n-en.ts";
+import { ko } from "./i18n-ko.ts";
 import { watchLine } from "./watchtext.ts";
 import { allNotices, answerDecision, answerReply, authRequested, authSettled, type DecisionSend, dismissNotice, dropChannelNotices, dropLaneNotices, handledNotice, ignoreNotice, laneVerified, listNotices, markDraftSend, markNoticesRead, NOTICE_CAP, needsAnswer, type Notice, onDecision, orchestratorAnswered, orchestratorTurnStarted, resolveNotices, readConversationNotices, reopenNotices, rewriteOpenDraft, setConvNameResolver, setLaneTitleResolver, setViewing, setWatchLabelResolver, ANSWER_WINDOW_MS, ALERT_ANSWER_WINDOW_MS, settleExpiredQuestions, UPDATE_NOTICE_KEY, undismissNotice, unignoreNotice, unreadCount, updateAvailable, updateResolved } from "./notices.ts";
 import { sealLine } from "./approval-seal.ts";
+import { brokenCount } from "./owner-text.ts";
+import { flushNotices } from "./notices-store.ts";
 
 const ts = () => new Date().toISOString();
-const stored = (): Notice[] => JSON.parse(readFileSync(paths.notices, "utf8"));
+const stored = (): Notice[] => (flushNotices(), JSON.parse(readFileSync(paths.notices, "utf8")));
 const post = (target: string, text: string, extra: Record<string, unknown> = {}) => emit("outbox", { ts: ts(), kind: "out", source: "orchestrator", target, text, ...extra });
 const byText = (text: string) => stored().filter(n => n.text === text);
 
 setLaneTitleResolver(name => (name === "x" ? "로그인 고치기" : undefined));
 beforeEach(resetNoticesForTest);
 
-test("a worklog post becomes a persisted unread notice", () => {
-	post("worklog", "[run] 첫 번째 작업 기록");
-	const [n] = byText("첫 번째 작업 기록");
-	expect(n).toMatchObject({ kind: "worklog", tone: "run", title: "작업 기록", open: "worklog", read: false });
+test("a worklog post becomes a persisted notice, born read like every worklog record that is not an [ask], [fail] or [done]", () => {
+	post("worklog", "[run] 첫 번째 작업내역");
+	const [n] = byText("첫 번째 작업내역");
+	expect(n).toMatchObject({ kind: "worklog", tone: "run", title: "작업내역", open: "worklog", read: true });
 	expect(n!.id).toHaveLength(8);
 	expect(listNotices(300).items.find(i => i.id === n!.id)).toMatchObject({ wk: "note" });
-	expect(unreadCount()).toBe(0);   // class log: stored unread, but the 알림 screen does not list it
+	expect(unreadCount()).toBe(0);
 });
 
 test("a session's line in 작업내역 records where its message lives; the session's own report clears that", () => {
@@ -122,6 +126,17 @@ test("verifying a session reopens its result and puts one compact card into the 
 	expect(replayAfter(seen)?.some(f => f.includes('"kind":"notice"'))).toBe(true);
 });
 
+test("a verified card cut from a report with a decision keeps the question in words and no option of it", () => {
+	markNoticesRead({ all: true });
+	post("worklog", "[done] README를 올렸어요.\n\n결정: 라이선스를 무엇으로 할까요?\n**1) MIT**\n**2) Apache-2.0**\n**3) GPL-3.0**", { update_key: "lane:lic" });
+	const broken = brokenCount();
+	laneVerified("lic", "[done] 무시");
+	const card = recentEvents(300).at(-1)!;
+	expect(card).toMatchObject({ kind: "result", session: "lic" });
+	expect(String(card.text)).not.toContain("MIT");
+	expect(brokenCount()).toBe(broken);
+});
+
 test("notice broadcasts belong to no conversation", () => {
 	expect(eventTarget({ ts: ts(), kind: "notice", source: "gateway", text: "" })).toBeUndefined();
 	expect(eventTarget({ ts: ts(), kind: "notice_read", source: "gateway", text: "" })).toBeUndefined();
@@ -159,6 +174,7 @@ test("dismissing a notice reads it and removes it from the list and the count, a
 
 	// A fresh process reads notices.json again: the dismissed item stays gone and uncounted.
 	const script = `import { listNotices, unreadCount } from "./hub/notices.ts"; console.log(JSON.stringify({ ids: listNotices(300).items.map(n => n.id), unread: unreadCount() })); process.exit(0);`;
+	flushNotices();
 	const run = Bun.spawnSync([process.execPath, "-e", script], { cwd: join(import.meta.dir, ".."), env: process.env });
 	expect(run.exitCode).toBe(0);
 	const fresh = JSON.parse(run.stdout.toString().trim().split("\n").at(-1)!);
@@ -409,7 +425,7 @@ test("ignoring takes a question off the count, keeps it in the history, answers 
 	expect(ignoreNotice(plain).status).toBe(409);
 	expect(ignoreNotice("nope").status).toBe(404);
 	// survives a restart as stored
-	expect(JSON.parse(readFileSync(paths.notices, "utf8")).find((n: Notice) => n.id === id).decision.state).toBe("ignored");
+	expect(stored().find((n: Notice) => n.id === id)!.decision!.state).toBe("ignored");
 	// undo
 	since = lastEventId();
 	expect(unignoreNotice(id).status).toBe(200);
@@ -467,14 +483,14 @@ test("on load, an alert item stored next to the decision of the same message rea
 test("the store keeps at most 300 items, dropping read ones first and then the oldest", () => {
 	resolveNotices({ ids: stored().filter(n => n.decision?.state === "open").map(n => n.id) });   // questions that wait are never read away: close them first so every item can be read
 	markNoticesRead({ all: true });
-	post("worklog", "읽지 않은 오래된 글");
-	for (let i = 0; i < NOTICE_CAP - 1; i++) post("worklog", `채우기 ${i}`);
+	post("worklog", "[fail] 읽지 않은 오래된 글");
+	for (let i = 0; i < NOTICE_CAP - 1; i++) post("worklog", `[fail] 채우기 ${i}`);
 	let items = stored();
 	expect(items).toHaveLength(NOTICE_CAP);
 	expect(items.every(n => !n.read)).toBe(true);
 	expect(items.some(n => n.text === "읽지 않은 오래된 글")).toBe(true);
 
-	post("worklog", "채우기 마지막");
+	post("worklog", "[fail] 채우기 마지막");
 	items = stored();
 	expect(items).toHaveLength(NOTICE_CAP);
 	expect(items.some(n => n.text === "읽지 않은 오래된 글")).toBe(false);
@@ -500,12 +516,12 @@ test("a closed card whose send failed outlives the cap until it is dismissed", a
 	const card = stored().find(n => n.decision?.draft?.ref === "RC0")!;
 	expect((await answerDecision(card.id, { n: 1 }, async () => {})).status).toBe(200);
 	markDraftSend(card.decision!.to, "RC0", "failed", "보내지 못했어요");
-	for (let i = 0; i < NOTICE_CAP + 20; i++) post("worklog", `[run] 채우기 ${i}`);
+	for (let i = 0; i < NOTICE_CAP + 20; i++) post("worklog", `[fail] 채우기 ${i}`);
 	expect(stored()).toHaveLength(NOTICE_CAP);
 	expect(stored().find(n => n.id === card.id)?.decision?.send?.state).toBe("failed");
 	expect(allNotices().some(n => n.id === card.id)).toBe(true);
 	dismissNotice(card.id);
-	post("worklog", "[run] 채우기 마지막");
+	post("worklog", "[fail] 채우기 마지막");
 	expect(stored().some(n => n.id === card.id)).toBe(false);
 });
 
@@ -596,9 +612,9 @@ test("backfill builds the store once from persisted history: last 7 days, one it
 	// Original ts kept; older than 24 h is read, newer unread; kinds come from the live mapping.
 	expect(first.items.find(n => n.text === "새 경고")).toMatchObject({ kind: "alert", tone: "fail", ts: hoursAgo(3), read: false });
 	expect(first.items.find(n => n.text === "오래된 기록")).toMatchObject({ kind: "worklog", ts: hoursAgo(36), read: true });
-	expect(first.items.find(n => n.text.startsWith("야간 정리"))).toMatchObject({ kind: "worklog", title: "야간 정리", read: false });
+	expect(first.items.find(n => n.text.startsWith("야간 정리"))).toMatchObject({ kind: "worklog", title: "야간 정리", read: true });
 	expect(first.items.find(n => n.text === "예약 시작")).toMatchObject({ kind: "watch", title: "예약", read: false });
-	expect(first.items.filter(n => !n.read)).toHaveLength(4);
+	expect(first.items.filter(n => !n.read)).toHaveLength(3);
 
 	// A restart (a fresh process on the same files) must not add or change anything.
 	const before = readFileSync(join(dir, "notices.json"), "utf8");
@@ -683,6 +699,19 @@ test("a message with two choice blocks gives two decision notices that stay unre
 	expect(stored().find(n => n.id === mine[0]!.id)!.dismissed).toBeUndefined();
 });
 
+test("a session that asks the same question again with other options keeps one card: open, it takes the new options; answered, the repeat makes none", async () => {
+	laneAsk("regate", "[ask] 막혔어요\n결정: 세션 gate를 어떻게 할까요?\n**1) 이번만 통과**\n**2) 그대로 두기**");
+	laneAsk("regate", "[ask] 아직 막혔어요\n결정: 세션 gate를 어떻게 할까요?\n**1) 이번만 통과**\n**2) 세션만 닫기**");
+	const asked = stored().filter(n => n.kind === "decision" && n.title === "세션 gate를 어떻게 할까요?");
+	expect(asked).toHaveLength(1);
+	expect(asked[0]!.decision!.options.map(o => o.label)).toEqual(["이번만 통과", "세션만 닫기"]);
+	expect((await answerDecision(asked[0]!.id, { n: 1 }, async () => {})).status).toBe(200);
+	laneAsk("regate", "[ask] 또 막혔어요\n결정: 세션 gate를 어떻게 할까요?\n**1) 이번만 통과**\n**2) 나중에**");
+	const after = stored().filter(n => n.kind === "decision" && n.title === "세션 gate를 어떻게 할까요?");
+	expect(after).toHaveLength(1);
+	expect(after[0]!.decision!.state).not.toBe("open");
+});
+
 test("a button answers one decision as a reply to the asking message; a plain owner reply settles the rest of that chat", async () => {
 	const at = ts();
 	post("web", "[ask] 순서를 정해 주세요\n결정: 첫째\n**1) 가**\n**2) 나**\n결정: 둘째\n**1) 다**\n**2) 라**", { ts: at });
@@ -743,8 +772,8 @@ test("a card rewritten to a newer draft of the same mail switches the open notic
 	// 보내기 on this card records its title as the pick: the send gate looks for the draft's own id there (features/reply-drafts/lib/flow.ts sendDraft).
 	expect(open[0]!.title).toBe("이 답장 보낼까요? (RAYVKXK)");
 	const inbox = join(mkdtempSync(join(tmpdir(), "notice-pick-")), "inbox.jsonl");
-	writeFileSync(inbox, `${sealLine(inbox, { ts: new Date().toISOString(), kind: "message", source: "web", channel: "mail:acct-1a1a", text: "결정 답", picks: [{ q: open[0]!.title, n: 1, label: DRAFT_SEND }] })}\n`);
-	expect(draftVerdict(inbox, "RAYVKXK", 0, { conv: "mail:acct-1a1a" }).verdict).toBe("send");
+	writeFileSync(inbox, `${sealLine(inbox, { ts: new Date().toISOString(), kind: "message", source: "web", channel: "mail:acct-1a1a", text: "결정 답", picks: [{ q: open[0]!.title, n: 1, label: DRAFT_SEND, hash: "h-shown" }] })}\n`);
+	expect(draftVerdict(inbox, "RAYVKXK", 0, "h-shown").verdict).toBe("send");
 });
 
 test("a session [ask] makes one decision for that session, a repeated copy adds none, and only a reply in that session settles it", () => {
@@ -821,9 +850,9 @@ test("a plain question waits 72 hours; past them the sweep closes it as expired,
 test("the expiry sweep is idempotent: a second pass changes nothing", () => {
 	post("web", "[ask] 멈춘 Aside", { ts: new Date(Date.parse(ts()) - 4 * 86_400_000).toISOString() });
 	expect(settleExpiredQuestions()).toBe(1);
-	const file = readFileSync(paths.notices, "utf8");
+	const file = (flushNotices(), readFileSync(paths.notices, "utf8"));
 	expect(settleExpiredQuestions()).toBe(0);
-	expect(readFileSync(paths.notices, "utf8")).toBe(file);
+	expect((flushNotices(), readFileSync(paths.notices, "utf8"))).toBe(file);
 });
 
 test("a send-approval card and a login request carry no expiry: their own state closes them", () => {
@@ -1299,7 +1328,7 @@ test("an answer in a monitor's settings conversation is titled with the monitor'
 	setWatchLabelResolver(name => name);
 });
 
-test("the gateway's own worklog status lines are born read; a gateway failure and the assistant's worklog post there still wait", () => {
+test("the gateway's own worklog status lines and the assistant's progress lines are born read; a gateway failure there still waits", () => {
 	post("worklog", "모델 폴백: anthropic/claude-opus-5-5 → anthropic/claude-sonnet-5", { source: "gateway" });
 	post("worklog", "계정을 default에서 teammate-shared로 바꿨어요. 직접 골랐기 때문이에요.", { source: "gateway" });
 	post("worklog", "게이트웨이 재시작을 기다리는 중이에요: orchestrator 작업이 끝나면 다시 시작해요", { source: "gateway" });
@@ -1309,8 +1338,8 @@ test("the gateway's own worklog status lines are born read; a gateway failure an
 	expect(byText("계정을 default에서 teammate-shared로 바꿨어요. 직접 골랐기 때문이에요.")[0]!.read).toBe(true);
 	expect(byText("게이트웨이 재시작을 기다리는 중이에요: orchestrator 작업이 끝나면 다시 시작해요")[0]!.read).toBe(true);
 	expect(byText("자동 업데이트를 하지 못했어요")[0]!.read).toBe(false);
-	expect(byText("야간 정리 시작했어요")[0]!.read).toBe(false);
-	expect(unreadCount()).toBe(1);   // the [run] post waits in 작업내역, not in the count
+	expect(byText("야간 정리 시작했어요")[0]!.read).toBe(true);
+	expect(unreadCount()).toBe(1);
 });
 
 test("an all-clear alert is born read; a repeat updates the first alert in place and does not raise it again", () => {
@@ -1475,6 +1504,14 @@ test("a lost login is an alert of any kind and waits for its recovery: the watch
 	post("alert", "땃쥐: " + recoveryText(), { source: "gateway" });
 	expect(listed(p.id)!.waits).toBeUndefined();
 	expect(stored().find(n => n.id === p.id)).toMatchObject({ read: true });
+	// a stop that ends with the usage limit lifting (no recovery line of its own) is over too (2026-11-14: it stayed in 답변 필요)
+	for (const [n, lifted] of [["9545", ko.limitLifted], ["9546", ko.limitLiftedReset], ["9547", en.limitLifted]] as const) {
+		post("alert", "땃쥐: " + blockText("auth", `acct${n}`, "anthropic", 1_800_000), { source: "gateway" });
+		const q = stored().find(i => i.kind === "alert" && i.text.includes(`acct${n}`))!;
+		expect(listed(q.id)).toMatchObject({ waits: "login" });
+		post("alert", "땃쥐: " + lifted, { source: "gateway" });
+		expect(listed(q.id)!.waits).toBeUndefined();
+	}
 });
 
 test("a monitor report with nothing new is a record (log), also when it was stored before; one with news is not", () => {
@@ -1563,7 +1600,7 @@ test("the count is what the 알림 screen lists: a conversation's unread answer 
 	post("worklog", "[run] 기록 한 줄");
 	const conv = stored().find(n => n.key === "msg:main")!;
 	const log = byText("기록 한 줄")[0]!;
-	expect([conv.read, log.read]).toEqual([false, false]);
+	expect([conv.read, log.read]).toEqual([false, true]);
 	expect([classOfNotice(conv).cls, classOfNotice(log).cls]).toEqual(["conv", "log"]);
 	expect(unreadCount()).toBe(1);
 
@@ -1643,4 +1680,44 @@ test("a quiet check's inbox event (source gateway) makes no 예약 notice; an ow
 	expect(byText("점검 하나 둘")).toEqual([]);
 	emit("inbox", { ts: ts(), kind: "schedule", source: "schedule", channel: "web", id: "c3", text: "알려 줄 일" });
 	expect(byText("알려 줄 일")).toMatchObject([{ kind: "watch", title: "예약" }]);
+});
+
+test("the morning brief wake is named in its event and makes no 예약 start notice, so no push either; an owner schedule still does", () => {
+	emit("inbox", { ts: ts(), kind: "schedule", source: "zele", id: "zele", channel: "web", name: "아침 브리핑", text: "morning brief for 2026-11-20, in this shape: one opening sentence" });
+	expect(stored().filter(n => n.title === "예약")).toEqual([]);
+	expect(unreadCount()).toBe(0);
+	emit("inbox", { ts: ts(), kind: "schedule", source: "schedule", channel: "web", id: "c4", text: "알려 줄 일" });
+	expect(stored().filter(n => n.title === "예약")).toHaveLength(1);
+});
+
+test("worklog posts that are not [ask], [fail] or [done] are born read and are the first to go at the cap; the others wait and stay", () => {
+	resolveNotices({ ids: stored().filter(n => n.decision?.state === "open").map(n => n.id) });
+	markNoticesRead({ all: true });
+	post("worklog", "[fail] 읽어 둔 오래된 실패");
+	markNoticesRead({ all: true });
+	post("worklog", "[run] 기록 시작", { source: "gateway" });
+	post("worklog", "정리한 기록");
+	post("worklog", "[fail] 새 실패");
+	post("worklog", "[done] 끝낸 일");
+	expect(byText("기록 시작")[0]!.read).toBe(true);
+	expect(byText("정리한 기록")[0]!.read).toBe(true);
+	expect(byText("새 실패")[0]!.read).toBe(false);
+	expect(byText("끝낸 일")[0]!.read).toBe(false);
+	for (let i = 0; i < NOTICE_CAP + 5; i++) post("worklog", `기록 ${i}`);
+	const items = stored();
+	expect(items).toHaveLength(NOTICE_CAP);
+	expect(items.some(n => n.text === "읽어 둔 오래된 실패")).toBe(true);
+	expect(items.some(n => n.text === "새 실패")).toBe(true);
+	expect(items.some(n => n.text === "끝낸 일")).toBe(true);
+	expect(items.some(n => n.text === "기록 0")).toBe(false);
+});
+
+test("a login-lost alert is the same with or without the channel tag in front, and its stored text has no tag", () => {
+	const stop = blockText("auth", "anthropic", "anthropic", 1_800_000);
+	post("alert", `[ch:1570000000000000001] 샘플-2: ${stop}`, { source: "gateway" });
+	const p = stored().find(n => n.kind === "alert" && n.text.includes("anthropic 로그인이 풀려서 일이 멈췄어요"))!;
+	expect(p.text.startsWith("샘플-2: anthropic 로그인이 풀려서 일이 멈췄어요")).toBe(true);
+	expect(classOfNotice(p)).toMatchObject({ cls: "alert" });
+	post("alert", `[ch:1570000000000000001] 샘플-2: ${recoveryText()}`, { source: "gateway" });
+	expect(stored().find(n => n.id === p.id)).toMatchObject({ read: true });
 });

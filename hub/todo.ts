@@ -149,7 +149,7 @@ function lifecycle(file: string | undefined): Lifecycle | undefined {
 		life.cut = life.turnCut || d.lastStop?.cause === "no_wake" || human.some(h => h?.kind === "stalled");
 		if (String(d.state ?? "").startsWith("waiting")) {
 			const items = (src: string) => bg.filter(b => b?.source === src && b.activeCount > 0).flatMap(b => (Array.isArray(b.items) ? b.items : []));
-			const mon = items("terminal-monitors").map(x => str(x?.description)).find(Boolean);
+			const mon = items("terminal-monitors").map(x => str(x?.label ?? x?.description)).find(Boolean);
 			const shells = items("terminal-background-sessions").length;
 			life.desc = mon || (shells ? `백그라운드 작업 ${shells}개` : kids ? `서브에이전트 ${kids}개` : undefined);
 		}

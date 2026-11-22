@@ -2,7 +2,7 @@
 // test can ever start a real omo or omp), and the fake clock. Runs before any hub module reads config.ts.
 import { beforeEach } from "bun:test";
 import { execFileSync } from "node:child_process";
-import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { installGitHooks } from "../git-hooks.ts";
@@ -33,8 +33,8 @@ installGitHooks(join(import.meta.dir, "..", "..")); // the push gate reaches a d
 // A whole-suite run waits here for the machine-wide heavy slot, before anything below starts (and before DOTZ_* is cleared).
 await takeSuiteSlot(process.env);
 
-// Tuning knobs and lane/hub markers of whatever shell runs the tests must not leak into the code under test.
-for (const k of Object.keys(process.env)) if (k.startsWith("DOTZ_") && k !== "DOTZ_TEST_DIR") delete process.env[k];
+// Tuning knobs and lane/hub markers of whatever shell runs the tests must not leak into the code under test (DOTZ_GOLDEN_WRITE is read by hub/web-golden-web.test.ts only).
+for (const k of Object.keys(process.env)) if (k.startsWith("DOTZ_") && k !== "DOTZ_TEST_DIR" && k !== "DOTZ_GOLDEN_WRITE") delete process.env[k];
 // A stripped environment (env -i) has no TMPDIR, so tmpdir() falls back to /tmp, which the code treats as a scratch
 // folder; on macOS use the per-user temp dir a login shell would have.
 if (!process.env.TMPDIR && process.platform === "darwin") process.env.TMPDIR = execFileSync("/usr/bin/getconf", ["DARWIN_USER_TEMP_DIR"], { encoding: "utf8" }).trim();
@@ -54,9 +54,10 @@ if (!process.env.DOTZ_TEST_DIR) {
 		mkdirSync(runs, { recursive: true });
 		const alive = (pid: number) => { try { process.kill(pid, 0); return true; } catch (e) { return (e as NodeJS.ErrnoException).code === "EPERM"; } };
 		for (const name of readdirSync(runs)) {
-			const pid = Number(name.split("-")[0]);
+			const pid = Number(name.split("-")[0]), base = name.split(".gone-", 1)[0]!;
 			if (!pid || alive(pid)) continue;
-			const taken = join(runs, `${name}.gone-${process.pid}`);
+			if (name !== base && Date.now() - (statSync(join(runs, name), { throwIfNoEntry: false })?.ctimeMs ?? 0) < 600_000) continue;
+			const taken = join(runs, `${base}.gone-${process.pid}`);
 			// Another process starting now may take the same list first: the rename is the claim.
 			try { renameSync(join(runs, name), taken); } catch (e) { if ((e as NodeJS.ErrnoException).code === "ENOENT") continue; throw e; }
 			// Only a folder this preload made is removed (<tmp>/dotz-test-XXXXXX, no deeper path), whatever the list says.
@@ -84,6 +85,8 @@ process.env.DOTZ_OMO = join(dir, "no-such-omo");
 // OmO's agent dir (auth.json pin, rpc hosts) is a throwaway one too, so the machine's real login state cannot change a test.
 process.env.OMO_CODING_AGENT_DIR = join(dir, "omo-agent");
 delete process.env.PI_AGENT_DIR;
+process.env.PI_CODING_AGENT_DIR = join(dir, "omp-agent");
+process.env.CLAUDE_CONFIG_DIR = join(dir, "claude-home");
 // The Codex CLI's login (hub/codex-usage.ts reads <CODEX_HOME>/auth.json): an empty dir, so no test reads the machine's token or reaches its account.
 process.env.CODEX_HOME = join(dir, "codex-home");
 // The user omo.json a lane's worker profile is written to (omo.ts writeWorkerProfile); not DOTZ_-prefixed, so spawns do not carry it.

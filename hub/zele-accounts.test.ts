@@ -114,6 +114,38 @@ describe("what the watch does with a filtered list", () => {
 		await tick(h, NOON, none, async () => "", []);
 		expect(briefs[0]).not.toContain("--account");
 	});
+	test("an account without a calendar gets a brief that leaves the calendar out instead of reporting it unread", async () => {
+		const briefs: string[] = [];
+		const h = hooks({ brief: (t: string) => void briefs.push(t) });
+		const imap = async (args: string[]) => {
+			if (args[0] === "cal") throw new Error("zele cal events: error: Calendar is not available for IMAP/SMTP accounts. Calendar requires a Google account.");
+			return [] as Record<string, string>[];
+		};
+		await tick(h, NOON, imap, async () => "", []);
+		await tick(h, NOON, imap, async () => "", []);
+		expect(briefs).toHaveLength(1);
+		expect(briefs[0]).not.toContain("zele cal");
+		expect(briefs[0]).toContain("do not mention the calendar");
+		expect(briefs[0]).toContain('zele mail list --filter "is:unread newer_than:1d"');
+	});
+	test("a separate calendar account reads the calendar there and mail from the mail account, and switching to it posts no event as new", async () => {
+		const alerts: string[] = [];
+		const calls: string[] = [];
+		const h = hooks({ alert: (t: string) => void alerts.push(t) });
+		const ev = { id: "e1", summary: "회의", start: "2026-01-15T15:00:00+09:00", end: "2026-01-15T16:00:00+09:00" };
+		const both = async (args: string[]) => {
+			calls.push(args.join(" "));
+			if (args[0] === "cal" && args.includes(A)) throw new Error("zele cal events: error: Calendar is not available for IMAP/SMTP accounts. Calendar requires a Google account.");
+			return (args[0] === "cal" && args.includes(B) && args.includes("--days") ? [ev] : []) as Record<string, string>[];
+		};
+		await tick(h, NOON, both, async () => "", [A], [A]); // mail and calendar on the IMAP account
+		await tick(h, NOON, both, async () => "", [A], [A]);
+		await tick(h, NOON, both, async () => "", [A], [B]); // the calendar moves to the Google account: a first run
+		await tick(h, NOON, both, async () => "", [A], [B]);
+		expect(alerts).toEqual([]);
+		expect(calls.filter(c => c.startsWith("mail")).every(c => c.includes(`--account ${A}`) && !c.includes(B))).toBe(true);
+		expect(calls.slice(-4).filter(c => c.startsWith("cal")).every(c => c.includes(`--account ${B}`) && !c.includes(A))).toBe(true);
+	});
 });
 
 describe("calls that go straight to the binary", () => {

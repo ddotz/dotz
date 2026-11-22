@@ -2,7 +2,7 @@
 // shell output keeps its head and tail with a note in the middle, small or ranged results and images stay as they are.
 import { expect, test } from "bun:test";
 import { existsSync, readFileSync, statSync, utimesSync } from "node:fs";
-import { CAP_CHARS, capNotices, capToolResult, installOutputCap, NOTICE_TYPE } from "./output-cap.ts";
+import { CAP_CHARS, capNotices, capToolResult, installOutputCap, NOTICE_TYPE, PATCH_READ_CAP, READ_CAP } from "./output-cap.ts";
 
 const lines = (n: number, width = 99) => Array.from({ length: n }, (_, i) => `${String(i + 1).padStart(5, "0")} ${"x".repeat(width - 6)}`).join("\n");
 const text = (t: string) => [{ type: "text", text: t }];
@@ -12,7 +12,7 @@ test("an unranged read past the cap is cut after a whole line and names the offs
 	const body = lines(1000); // 100K chars
 	const out = capToolResult("read", { path: "/x/big.ts" }, text(body))!;
 	const t = out[0].text as string;
-	expect(t.length).toBeLessThan(CAP_CHARS + 400);
+	expect(t.length).toBeLessThan(READ_CAP + 400);
 	const kept = t.split("\n[dotz: ")[0];
 	expect(body.startsWith(kept)).toBe(true);
 	expect(kept.endsWith("x")).toBe(true); // a whole line, not a cut one
@@ -22,6 +22,20 @@ test("an unranged read past the cap is cut after a whole line and names the offs
 	// A read that started further down continues from there.
 	const later = capToolResult("read", { path: "/x/big.ts", offset: 301 }, text(body))![0].text as string;
 	expect(later).toContain(`offset=${301 + shown}`);
+});
+
+test("a read gets more room than a search result, and a patch or diff is read whole up to its own bound", () => {
+	// Cut at the search cap before; whole now.
+	expect(capToolResult("read", { path: "/p/x.patch" }, text(lines(300)))).toBeUndefined(); // 30K
+	expect(capToolResult("read", { path: "/tmp/ptA-1.diff" }, text(lines(1000)))).toBeUndefined(); // 100K
+	expect((capToolResult("read", { path: "/tmp/huge.patch" }, text(lines(3000)))![0].text as string).length).toBeLessThan(PATCH_READ_CAP + 400); // 300K
+	expect(capToolResult("read", { path: "/d/a.md" }, text(lines(450)))).toBeUndefined(); // 45K
+	// Still cut.
+	const md = capToolResult("read", { path: "/d/a.md" }, text(lines(700)))![0].text as string; // 70K
+	expect(md.length).toBeGreaterThan(CAP_CHARS);
+	expect(md.length).toBeLessThan(READ_CAP + 400);
+	const grep = capToolResult("grep", { pattern: "x" }, text(lines(300)))![0].text as string; // 30K
+	expect(grep.length).toBeLessThan(CAP_CHARS + 400);
 });
 
 test("a ranged read, a small read and images are left alone", () => {
@@ -123,7 +137,7 @@ test("the hook is installed for lane processes only and returns the capped conte
 	expect(handlers.tool_result).toBeUndefined();
 	installOutputCap(pi, { DOTZ_LANE: "alpha" });
 	const r = handlers.tool_result!({ toolName: "read", input: { path: "/x" }, content: text(lines(1000)) });
-	expect((r.content[0].text as string).length).toBeLessThan(CAP_CHARS + 400);
+	expect((r.content[0].text as string).length).toBeLessThan(READ_CAP + 400);
 	expect(handlers.tool_result!({ toolName: "read", input: { path: "/x" }, content: text("short") })).toBeUndefined();
 	// The context hook cuts notices in the same processes and leaves the orchestrator itself alone.
 	expect(((handlers.context!({ messages: [notice(lines(800))] }) as any).messages[0].content as string).length).toBeLessThan(CAP_CHARS + 600);

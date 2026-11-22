@@ -42,11 +42,10 @@ const convEnded = t => { const l = isLaneT(t) && ((S && S.lanes) || []).find(x =
 // A live message (called by ingestMsg once per new event): moves the row's preview and, unless the owner is looking at that
 // conversation's bottom right now, adds to its unread count (server rule: hub/conversations.ts).
 function convNote(e, t, was) {
-  if (isMailT(t) && e.kind === "mail" && !MAILS.has(t)) MAILS.set(t, { subject: e.subject || "", from: e.from || "", source: e.source || "", at: e.ts, summary: e.summary || "", ...(e.todo ? { todo: e.todo } : {}), ...(e.questions ? { questions: e.questions } : {}), preview: e.preview || "", attachments: e.attachments || [], html: !!e.html });
+  if (isMailT(t) && e.kind === "mail" && !MAILS.has(t)) mailPut(t, { subject: e.subject || "", from: e.from || "", source: e.source || "", at: e.ts, summary: e.summary || "", ...(e.todo ? { todo: e.todo } : {}), ...(e.questions ? { questions: e.questions } : {}), preview: e.preview || "", attachments: e.attachments || [], html: !!e.html });
   const last = convLastOf(e);
   if (!last) return;
-  const prev = CONV.get(t);
-  if (!prev || prev.ts <= last.ts) CONV.set(t, last);
+  convNewer(t, last);
   // `was`: the older version of an edited post, still unread = this one is the same unread message (counted once, like the hub does)
   const again = !!was && !(READ[t] && READ[t] >= was.ts);
   if (convIncoming(e) && !again && !convEnded(t) && !(READ[t] && READ[t] >= e.ts) && !(CV.key === t && chatStick && document.visibilityState === "visible")) { ts(t).unread++; renderBars(); }
@@ -67,17 +66,12 @@ function convDropGone(items, cursor, whole) {
   const now = new Set(items.filter(it => it.mail).map(it => it.target)), gone = [...convHadMail].filter(t => !now.has(t) && !PQ.of.has(t) && (whole ? true : convInRange(t, cursor)));
   convHadMail = whole ? now : new Set([...convHadMail].filter(t => !gone.includes(t)).concat([...now]));
   if (!gone.length) return;
-  for (const t of gone) { MAILS.delete(t); CONV.delete(t); MBOX.sel.delete(t); ts(t).unread = 0; }
+  for (const t of gone) { mailDrop(t); convDrop(t); mbUnselect(t); ts(t).unread = 0; }
   if (current === "chat" && gone.includes(target)) go("monitoring", MON.sel || "i:mail");
   mbRefresh();
 }
-// One load at a time: a call that comes while one runs makes it read again once it ends, and both callers get the same promise.
-let convFlight = null, convAgain = false;
-function convLoad() {
-  if (convFlight) { convAgain = true; return convFlight; }
-  convFlight = (async () => { do { convAgain = false; await convLoadNow(); } while (convAgain); })().finally(() => { convFlight = null; });
-  return convFlight;
-}
+// One load at a time: a call that comes while one runs makes it read again once it ends, and both callers get the same promise (02-basic-markdown.js latest).
+function convLoad() { return latest("conv", convLoadNow); }
 // A live event (one per mail) refreshes through this: the first runs at once; events during the load or the next LIVE_GAP ms collapse into one trailing run.
 let LIVE_GAP = 2000;
 function coalesced(fn) {
@@ -95,10 +89,9 @@ const monitorsLive = coalesced(() => loadMonitors());
 // The rows of one answer into the stores.
 function convApply(items) {
   for (const it of items) {
-    const t = it.target, prev = CONV.get(t);
-    if (it.mail) MAILS.set(t, it.mail);
-    if (it.last && (!prev || prev.ts <= it.last.ts)) CONV.set(t, it.last);
-    else if (!CONV.has(t)) CONV.set(t, null);
+    const t = it.target;
+    if (it.mail) mailPut(t, it.mail);
+    convNewer(t, it.last);
     let unread = it.unread | 0;
     const local = READ[t], last = CONV.get(t);
     // Our own read post may be ahead of what the server has answered with.
@@ -106,6 +99,7 @@ function convApply(items) {
     else READ[t] = it.read || null;
     ts(t).unread = unread;
   }
+  mailCmtSync();
 }
 async function convLoadNow() {
   clearTimeout(convRetry);
@@ -155,6 +149,7 @@ function convMore() {
   })().finally(() => { CVP.busy = null; });
   return CVP.busy;
 }
+const readMark = (t, at) => { READ[t] = at; }, convRepaint = () => { convSig = ""; convSchedule(); };
 // Another device (or this one) moved a read position.
 function convOnRead(e) {
   const t = e.target, at = e.ts;
@@ -213,12 +208,12 @@ function chatOpen() {
     }
     // reloaded onto a new shell (23-installable-app-web.js): the place the owner was at, unless they were at the bottom
     const r = SHELL_RESTORE;
-    if (r && r.key === CV.key && !r.stick && r.anchor) { SHELL_RESTORE = null; CV.pinTs = r.anchor.ts; CV.pinOff = r.anchor.off; chatPin("at"); return; }
+    if (r && r.key === CV.key && !r.stick && r.anchor) { shellRestoreDone(); CV.pinTs = r.anchor.ts; CV.pinOff = r.anchor.off; chatPin("at"); return; }
     chatPin(CV.divNode ? "div" : isMailT(CV.key) ? "top" : "bottom");   // a mail reads top-down: the first unread, else the start of the mail
     return;
   }
   if (CV.pin) chatPlace();
-  else if (snap && !snap.stick) { timeline.scrollTop = snap.top; chatStick = timeline.scrollTop + timeline.clientHeight >= timeline.scrollHeight - 40; $("#chat-jump").hidden = chatStick; }
+  else if (snap && !snap.stick) { timeline.scrollTop = snap.top; putChatStick(timeline.scrollTop + timeline.clientHeight >= timeline.scrollHeight - 40); $("#chat-jump").hidden = chatStick; }
   else scrollChat(true);
 }
 // A jump target (notice, toast, push, 답변 필요, ?m=) sits with its top just under the app bar, wherever the divider is, and stays there while
@@ -228,6 +223,17 @@ function chatJump(node) {
   CV.pinTs = node.dataset.ts; CV.pinOff = Math.max(0, bar.bottom - a.top) + 20;
   chatPin("at");
 }
+// Every write to CV from another screen file goes through these (hub/web-structure-owners.json: CV is this file's).
+function cvPinAt(ts, off) { CV.pinTs = ts; CV.pinOff = off; }
+function cvJump(ts) { CV.jump = ts; }
+function cvSeeded() { CV.seeded = true; }
+function cvForget() { CV.drawn = ""; CV.divNode = null; }
+function cvDivNode(node) { CV.divNode = node; }
+function cvDrawn(sig) { CV.drawn = CV.divNode ? "" : sig; }
+function cvFrom(ts) { CV.from = ts; }
+function cvRange(from, low) { CV.from = from; CV.low = low; }
+function cvStash(snap) { CV.snap = snap; CV.full = false; }
+function cvKeep() { CV.snap = null; CV.full = true; }
 function chatPin(kind) { CV.pin = kind; chatPlace(); }
 function chatUnpin() { CV.pin = ""; }
 // Put the view where the pin says. Runs right after the draw and again whenever the timeline or its content changes size (images,
@@ -244,7 +250,7 @@ function chatPlace() {
     if (n) want = timeline.scrollTop + n.getBoundingClientRect().top - timeline.getBoundingClientRect().top - CV.pinOff;   // gone from the history: the bottom
   }
   if (Math.abs(timeline.scrollTop - want) > 1) timeline.scrollTop = want;
-  chatStick = timeline.scrollTop + timeline.clientHeight >= timeline.scrollHeight - 40;
+  putChatStick(timeline.scrollTop + timeline.clientHeight >= timeline.scrollHeight - 40);
   $("#chat-jump").hidden = chatStick;
   convMaybeRead();   // what this placement put on screen is read now
 }
@@ -286,7 +292,7 @@ function convMaybeRead() {
 }
 // A mail read on the page moves its row, the app's badge and the 안 읽음 filter now; once the hub holds the position its app counts raise
 // (needs.unread, GET /api/integrations), and a peer's mail has its snapshot read again (34-peer-monitoring.js).
-function mailReadPainted() { const m = MAILS.get(CV.key); if (m && m.read === false) m.read = true; MON.sig = ""; monSchedule(); }
+function mailReadPainted() { const m = MAILS.get(CV.key); if (m && m.read === false) m.read = true; monDirty(); }
 function mailReadSynced(t) { if (typeof pqPc === "function" && pqPc(t)) pqSoon(); else loadIntegrations(); }
 function convFlush() {
   convPendT = 0;
@@ -332,6 +338,7 @@ setInterval(viewReport, 2000);
 // has something unread or asked; the ended ones fold into one group after that, and the mails and rooms that wait on the owner close the list. 모니터링 has its
 // own tab (30-monitoring.js) and uses this same row.
 function convRows() {
+  if (relayCur()) return rvConvRows(relayCur());   // another computer is the chosen one: its list, from what it sent (44-relay-views.js)
   const at = t => (CONV.get(t) || {}).ts || "";
   const projects = projTargets().map((t, i) => ({ t, i })).sort((a, b) => at(b.t).localeCompare(at(a.t)) || a.i - b.i).map(x => x.t);
   const mk = t => { const last = CONV.get(t) || null; return { t, last, name: targetName(t), hint: last ? convPreview(last.text) : "", unread: ts(t).unread, need: convNeeds(t) }; };
@@ -421,7 +428,7 @@ function convAvatar(t) {
 // { name, badge: [word, tone], unread }, with an optional one-line preview (hint) under the name. A row never shows a time: the name and the content tell what it is.
 function convRow(r) {
   if (r.header) return el("div", { class: "cv-gh", role: "presentation", text: r.header });
-  if (r.empty) return el("div", { class: "cv-empty", text: r.empty });
+  if (r.empty) return emptyNode(r.empty);
   if (r.more) return moreRow(TX("conv.more_projects", { n: r.more }), () => { CVF.more += CVF_PAGE; convSig = ""; convSchedule(); });
   if (r.ended) return endedGroup() || "";
   const sel = r.sel !== undefined ? r.sel : r.t === target && current === "chat";
@@ -481,9 +488,9 @@ function convPaint() {
   convTitle();
   mailSentPaint();
   mbReplyPaint();
-  if (monCtx && isSettingsT(target)) MON.sel = monItemOf(target) || MON.sel;   // the monitor list may have loaded after this conversation opened
+  if (monCtx && isSettingsT(target)) monSelSet(monItemOf(target) || MON.sel);   // the monitor list may have loaded after this conversation opened
   const two = mxTwo(), items = monCtx ? monItems() : null, rows = items ? monListRows(items, items.find(i => i.key === MON.sel) || null) : convRows(), sig = JSON.stringify([rows.map(r => [r.t, r.k, r.key, r.name, r.last, r.unread, r.badge, r.dotOnly, r.header, r.hint, r.sel, r.need, r.more, r.empty]), target, current, !!monCtx, CV.loaded, CV.failed, two ? [two.esig, MX.box] : 0]);
-  if (!monCtx && !KK.loaded && !KK.asked && typeof INTG !== "undefined" && INTG.items.some(i => i.key === "kakao")) { KK.asked = true; kkLoadRooms(); }
+  if (!monCtx && !KK.loaded && !KK.asked && typeof INTG !== "undefined" && INTG.items.some(i => i.key === "kakao")) kkRoomsAsk();
   if (sig !== convSig && motionAfter(convSide, convPaint)) return;   // a session leaves 진행 중 right now: the list is drawn once it is gone
   if (sig !== convSig) {
     convSig = sig;
@@ -508,11 +515,20 @@ function convPaint() {
   monChatTop.hidden = !mit;
   if (topSig !== monChatTop.dataset.sig) { monChatTop.dataset.sig = topSig; clear(monChatTop); if (mit) monChatTop.append(...monChatTopNodes(mit).filter(Boolean)); }
   $("#v-chat").classList.toggle("no-composer", !convTakesText(target));
+  $("#al-bar").hidden = convTakesText(target);
   convPaintHead();
   paneHeads();
 }
 // Whether the owner can type into conversation t. The 알림 record is read-only (no composer): a question asked there is answered in its sheet (30-notices.js ntDirect).
 const convTakesText = t => t !== "alert";
+function convAlertAsk() {
+  const edge = $("#timeline").getBoundingClientRect().bottom, rows = [...$("#tl").querySelectorAll("[data-ts]")].filter(r => r.getBoundingClientRect().top < edge), row = rows[rows.length - 1];
+  const e = row && ts("alert").msgs.find(m => m.ts === row.dataset.ts);
+  if (e) rpStart(row, "", MAIN, e);
+  go("chat", MAIN);
+  rpPaint();
+  $("#text").focus({ preventScroll: true });
+}
 function convSchedule() { if (!convRaf) convRaf = requestAnimationFrame(convPaint); }
 
 /* ---- app bar ---- */
@@ -564,3 +580,4 @@ convLoad();
 $("#bell").prepend(icon("bell"));
 $("#bell").title = TX("conv.bell_title", { key: isMac ? "⌘/" : "Ctrl+/" });
 $("#bell").onclick = nscGo;
+$("#al-ask").onclick = convAlertAsk;

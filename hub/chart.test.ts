@@ -1,8 +1,8 @@
 // In-message charts (hub/chart.ts): a ```chart fence becomes a Chart element, the gateway checks and draws it (SVG for the web, PNG for Discord),
-// a spec it refuses stays readable as JSON with a note, and ztd-charts never loads on the gateway start path.
+// a spec it refuses stays readable as JSON with a note. That ztd-charts never loads on the gateway start path is checked by `bun hub/check.ts`.
 import { expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { join } from "node:path";
 import { chartFiles, chartRoute, checkChart } from "./chart.ts";
 import { deriveSpec } from "./message-spec-derive.ts";
 import { specChildren } from "./message-spec.ts";
@@ -76,22 +76,4 @@ test("Discord: a chart fence leaves the text as a PNG attachment; a refused spec
 	const bad = await chartFiles({ text: fence('{"type":"nope","data":[]}'), files: [] });
 	expect(bad.files).toEqual([]);
 	expect(bad.text).toContain('```json\n{"type":"nope","data":[]}\n```\n-# ');
-});
-
-// Static imports only: what the gateway loads when it starts. hub/chart.ts must be reachable and load ztd-charts and resvg by dynamic import alone.
-test("the gateway start path reaches hub/chart.ts but never imports ztd-charts, resvg or react statically", () => {
-	const seen = new Set<string>(), heavy: string[] = [];
-	const walk = (file: string) => {
-		if (seen.has(file)) return;
-		seen.add(file);
-		const src = readFileSync(file, "utf8");
-		for (const m of src.matchAll(/^\s*(?:import|export)\s[^;]*?from\s+"([^"]+)"|^\s*import\s+"([^"]+)"/gm)) {
-			const spec = (m[1] ?? m[2])!;
-			if (/^(ztd-charts|@resvg\/|react)/.test(spec)) heavy.push(`${file}: ${spec}`);
-			if (spec.startsWith(".") && /\.ts$/.test(spec)) walk(resolve(dirname(file), spec));
-		}
-	};
-	walk(join(import.meta.dir, "main.ts"));
-	expect(seen.has(join(import.meta.dir, "chart.ts"))).toBe(true);
-	expect(heavy).toEqual([]);
 });

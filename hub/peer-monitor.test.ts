@@ -1,6 +1,8 @@
 import { expect, test } from "bun:test";
 import { checkPeer, peerToken } from "./peer-auth.ts";
 import { type Computer, createPeerMonitor, type PeerMonitor } from "./peer-monitor.ts";
+import { HUB_TOKEN } from "./config.ts";
+import { actSurface, agentCall } from "./entry-check.ts";
 
 // Two simulated gateways (A and B) in one process: each is a handler function (peer gate, peer routes, then a small fake of the owner's own API),
 // wired to the other by an injected fetch. No network, no real clock.
@@ -9,6 +11,8 @@ const LOGIN = "owner@example.test";
 const URL_A = "https://a.example.test";
 const URL_B = "https://b.example.test";
 let clock = 1_000_000;
+// How each owner-only route read a forwarded act (hub/entry-check.ts): an agent's hub-token call, or the owner's word and from where.
+const readAs: { agent: boolean; surface: string }[] = [];
 
 type Gateway = { name: string; mon: PeerMonitor; handle: (req: Request) => Promise<Response>; events: Array<{ target: string; text: string; via?: string; files?: unknown }>; uploads: Map<string, Uint8Array>; notes: Array<{ id: string; title: string }>; sends: Array<{ target: string; text: string; session?: string }>; logs: string[]; down: boolean; hang: boolean; statuses: number[]; seen: Request[] };
 const nodes = new Map<string, Gateway>();
@@ -49,7 +53,8 @@ function gateway(name: string, self: string, other: string, otherName: string): 
 			events.push({ target: b.conv ?? b.project ?? (b.settings ? `settings:${b.settings}` : b.mail ? `mail:${b.mail}` : `lane:${b.lane}`), text: b.text, ...(b.project && b.settings ? { settings: b.settings } : {}), ...(b.via ? { via: b.via } : {}), ...(b.files ? { files: b.files } : {}) });
 			return Response.json({ ok: true });
 		}
-		if (req.method === "POST" && path.endsWith("/answer")) {
+		if (req.method === "POST" && (path.endsWith("/answer") || path === "/api/reply/act")) {
+			readAs.push({ agent: agentCall(req, "none"), surface: actSurface(req, "none") });
 			events.push({ target: path, text: JSON.stringify(await req.json()) });
 			return Response.json({ ok: true });
 		}
@@ -57,21 +62,15 @@ function gateway(name: string, self: string, other: string, otherName: string): 
 			sends.push((await req.json()) as Gateway["sends"][number]);
 			return Response.json({ delivered: true });
 		}
-		if (req.method === "DELETE" && path.startsWith("/api/kakao/chat/")) {
-			const p = path.split("/");
-			events.push({ target: `kakao:${p[4]}`, text: `delete ${p[6]}` });
-			return Response.json({ ok: true, removed: true });
-		}
 		if (req.method === "POST" && path.startsWith("/api/kakao/chat/")) {
 			const b = (await req.json()) as { text: string };
 			events.push({ target: `kakao:${decodeURIComponent(path.split("/")[4]!)}`, text: path.endsWith("/draft") ? `draft ${JSON.stringify(b)}` : b.text });
 			return Response.json({ ok: true });
 		}
-		if (req.method === "POST" && (path.startsWith("/api/comments/") || path.startsWith("/api/kakao/drafts/"))) {
+		if (req.method === "POST" && path.startsWith("/api/comments/")) {
 			events.push({ target: "comments", text: `${path} ${JSON.stringify(await req.json())}` });
 			return Response.json({ ok: true });
 		}
-		if (req.method === "GET" && path === "/api/replies") return Response.json({ items: [{ kind: "kakao", app: "kakao", code: `K-${name}`, at: 1 }] });
 		if (req.method === "PUT" && path.startsWith("/api/kakao/rooms/")) {
 			events.push({ target: `kakao:${decodeURIComponent(path.split("/")[4]!)}`, text: `room ${JSON.stringify(await req.json())}` });
 			return Response.json({ ok: true });
@@ -115,7 +114,7 @@ function gateway(name: string, self: string, other: string, otherName: string): 
 		return new Response("not found", { status: 404 });
 	};
 	const computers: Computer[] = [{ name, url: self, self: true }, { name: otherName, url: other, self: false }];
-	const mon = createPeerMonitor({ name: () => name, local, computers: async () => computers, fetch: netFetch, now: () => clock, token: () => TOKEN, timeoutMs: 20, log: m => logs.push(m) });
+	const mon = createPeerMonitor({ name: () => name, local, localHeaders: { "x-dotz-token": HUB_TOKEN }, computers: async () => computers, fetch: netFetch, now: () => clock, token: () => TOKEN, timeoutMs: 20, log: m => logs.push(m) });
 	const handle = async (req: Request): Promise<Response> => {
 		if (checkPeer(req, TOKEN) === "denied") return new Response("forbidden", { status: 403 });
 		return (await mon.route(req, new URL(req.url))) ?? local(req);
@@ -282,6 +281,22 @@ test("an answer from the other computer carries the label the owner saw, so the 
 	expect(B.events.map(e => [e.target, JSON.parse(e.text).label])).toEqual([["/api/notices/n1/answer", "이대로 보내기"]]);
 });
 
+// qa-clean-3 M1: the forward carries the hub token to pass the local checks, but it is the owner's own act: never read as an agent's (which may
+// only revise), and the 보내기 keeps the hash of the version his page showed.
+test("the owner's answer and reply act from the other computer are his, not an agent's, and the answer keeps the page's hash", async () => {
+	const { A, B } = pair();
+	await A.mon.peerMonitoring();
+	readAs.length = 0;
+	const act = (body: object) => A.handle(req(`/api/peer/proxy?pc=${encodeURIComponent(URL_B)}&p=${encodeURIComponent("/api/peer/act")}`, { method: "POST", body: JSON.stringify(body) }));
+	expect((await act({ action: "answer", args: { id: "n1", n: 1, label: "보내기", hash: "h-shown" } })).status).toBe(200);
+	expect((await act({ action: "reply", args: { ref: "RAAAAAA", action: "send", hash: "h-shown" } })).status).toBe(200);
+	expect(B.events.map(e => [e.target, JSON.parse(e.text).hash])).toEqual([["/api/notices/n1/answer", "h-shown"], ["/api/reply/act", "h-shown"]]);
+	expect(readAs).toEqual([{ agent: false, surface: "peer" }, { agent: false, surface: "peer" }]);
+	// The same hub token on a request nobody forwarded is an agent's.
+	const own = new Request("http://local/api/reply/act", { method: "POST", headers: { "x-dotz-token": HUB_TOKEN } });
+	expect([agentCall(own, "none"), actSurface(own, "none")]).toEqual([true, "web"]);
+});
+
 test("a forwarded message is recorded once on the owner with via, and shows once in the sender's merged view", async () => {
 	const { A, B } = pair();
 	await A.mon.peerMonitoring();
@@ -332,17 +347,6 @@ test("act: unknown action, unknown target and a missing sender are refused", asy
 	expect(B.events).toEqual([]);
 });
 
-test("deleting a failed KakaoTalk send from a peer runs on the owner's own delete route, once", async () => {
-	const { A, B } = pair();
-	const p = `/api/peer/proxy?pc=${encodeURIComponent(URL_B)}&p=${encodeURIComponent("/api/peer/act")}`;
-	const r = await A.handle(req(p, { method: "POST", body: JSON.stringify({ action: "kakao", args: { op: "send-delete", chatId: "123", sendId: "S1" } }) }));
-	expect(r.status).toBe(200);
-	expect(await r.json()).toEqual({ ok: true, removed: true });
-	expect(B.events).toEqual([{ target: "kakao:123", text: "delete S1" }]);
-	expect(A.events).toEqual([]);
-	expect((await A.handle(req(p, { method: "POST", body: JSON.stringify({ action: "kakao", args: { op: "send-delete", chatId: "123" } }) }))).status).toBe(400);
-});
-
 test("a monitor settings change from a peer is a plain PATCH on the owner, once; its settings read is a proxied GET", async () => {
 	const { A, B } = pair();
 	const p = `/api/peer/proxy?pc=${encodeURIComponent(URL_B)}&p=${encodeURIComponent("/api/peer/act")}`;
@@ -352,23 +356,6 @@ test("a monitor settings change from a peer is a plain PATCH on the owner, once;
 	expect(A.events).toEqual([]);
 	const read = await A.handle(req(`/api/peer/proxy?pc=${encodeURIComponent(URL_B)}&p=${encodeURIComponent("/api/watches/disk-check/settings")}`));
 	expect(read.status).toBe(404);   // allowed through to B (this fake has no such route); a path outside the peer read list would be 400
-});
-
-test("a peer app's 답장 모델 change is the owner's own plain settings PATCH, once", async () => {
-	const { A, B } = pair();
-	const p = `/api/peer/proxy?pc=${encodeURIComponent(URL_B)}&p=${encodeURIComponent("/api/peer/act")}`;
-	const values = { reply_model: "anthropic/claude-sonnet-5-5:high" };
-	expect((await A.handle(req(p, { method: "POST", body: JSON.stringify({ action: "app", args: { op: "settings", app: "kakao", values } }) }))).status).toBe(200);
-	expect(B.events).toEqual([{ target: "app:kakao", text: JSON.stringify(values) }]);
-	expect(A.events).toEqual([]);
-});
-
-test("a peer mail instance's 디스코드에도 올리기 switch is the owner's own plain settings PATCH, once", async () => {
-	const { A, B } = pair();
-	const p = `/api/peer/proxy?pc=${encodeURIComponent(URL_B)}&p=${encodeURIComponent("/api/peer/act")}`;
-	expect((await A.handle(req(p, { method: "POST", body: JSON.stringify({ action: "app", args: { op: "settings", app: "mail-2", values: { discord: true } } }) }))).status).toBe(200);
-	expect(B.events).toEqual([{ target: "app:mail-2", text: JSON.stringify({ discord: true }) }]);
-	expect(A.events).toEqual([]);
 });
 
 test("an app instance's rename, create and delete from a peer are the owner's own plain calls, once each", async () => {
@@ -415,16 +402,6 @@ test("되돌리기 of a peer's draft answered 보내지 않기 reopens that noti
 	const p = `/api/peer/proxy?pc=${encodeURIComponent(URL_B)}&p=${encodeURIComponent("/api/peer/act")}`;
 	expect((await A.handle(req(p, { method: "POST", body: JSON.stringify({ action: "notice", args: { op: "reopen", id: "d1" } }) }))).status).toBe(200);
 	expect(B.events).toEqual([{ target: "notices", text: `reopen ${JSON.stringify({ ids: ["d1"] })}` }]);
-	expect(A.events).toEqual([]);
-});
-
-test("a 고치기 request for a peer's KakaoTalk draft reaches the owner's draft route with the instruction", async () => {
-	const { A, B } = pair();
-	const p = `/api/peer/proxy?pc=${encodeURIComponent(URL_B)}&p=${encodeURIComponent("/api/peer/act")}`;
-	const revise = { code: "d2", change: "더 짧게" };
-	const r = await A.handle(req(p, { method: "POST", body: JSON.stringify({ action: "kakao", args: { op: "draft", chatId: "123", revise } }) }));
-	expect(r.status).toBe(200);
-	expect(B.events).toEqual([{ target: "kakao:123", text: `draft ${JSON.stringify({ revise })}` }]);
 	expect(A.events).toEqual([]);
 });
 
@@ -477,12 +454,12 @@ test("a peer's mail draft gets and loses files through the owner's own draft fil
 	const act = (args: object) => A.handle(req(p, { method: "POST", body: JSON.stringify({ action: "draft-files", args }) }));
 	expect((await act({ ref: "RPEER0001", library: "문서/달빛정원_공유용.pdf" })).status).toBe(200);
 	expect((await act({ ref: "RPEER0001", name: "견적.pdf", data: "JVBERg==" })).status).toBe(200);
-	expect((await act({ ref: "RPEER0001", remove: 0 })).status).toBe(200);
+	expect((await act({ ref: "RPEER0001", remove: 0, name: "견적.pdf", size: 5 })).status).toBe(200);
 	expect((await act({ remove: 0 })).status).toBe(400);
 	expect(B.events).toEqual([
 		{ target: "draft:RPEER0001", text: JSON.stringify({ library: "문서/달빛정원_공유용.pdf" }) },
 		{ target: "draft:RPEER0001", text: JSON.stringify({ name: "견적.pdf", data: "JVBERg==" }) },
-		{ target: "draft:RPEER0001", text: JSON.stringify({ remove: 0 }) },
+		{ target: "draft:RPEER0001", text: JSON.stringify({ remove: 0, name: "견적.pdf", size: 5 }) },
 	]);
 	expect(A.events).toEqual([]);
 	const read = await A.handle(req(`/api/peer/proxy?pc=${encodeURIComponent(URL_B)}&p=${encodeURIComponent("/api/drafts/RPEER0001/files")}`));
@@ -491,29 +468,17 @@ test("a peer's mail draft gets and loses files through the owner's own draft fil
 	expect(lib.status).toBe(404);
 });
 
-test("a peer snapshot carries that gateway's store reply drafts; a handler without them leaves the field out", async () => {
-	const { A } = pair();
-	const [m] = await A.mon.peerMonitoring();
-	expect(m!.items!.replies).toEqual([{ kind: "kakao", app: "kakao", code: "K-맥미니", at: 1 }]);
-	const plain = createPeerMonitor({ name: () => "맥미니", local: async () => new Response("not found", { status: 404 }), computers: async () => [] });
-	expect((await plain.snapshot().catch(() => null))?.replies).toBeUndefined();
-});
-
-test("a peer's comment draft, failed reply and dropped draft are acted on its owner's comment routes, once each", async () => {
+test("a peer's comment request and read run on its owner's comment routes, once each; a draft's own actions are not comment ops any more", async () => {
 	const { A, B } = pair();
 	const p = `/api/peer/proxy?pc=${encodeURIComponent(URL_B)}&p=${encodeURIComponent("/api/peer/act")}`;
-	const act = (args: object) => A.handle(req(p, { method: "POST", body: JSON.stringify({ action: "comments", args }) }));
-	for (const a of [{ op: "draft-send", code: "D1" }, { op: "draft-drop", code: "D1" }, { op: "draft-restore", code: "D1" }, { op: "draft-revise", code: "D1", change: "더 짧게" }, { op: "send-retry", id: "send:cm:1" }, { op: "send-dismiss", id: "send:cm:1" }, { op: "read", source: "youtube", thread: "v1" }])
-		expect((await act(a)).status).toBe(200);
-	expect(B.events.map(e => e.text)).toEqual([
-		"/api/comments/drafts/D1/send {}", "/api/comments/drafts/D1/drop {}", "/api/comments/drafts/D1/restore {}", `/api/comments/drafts/D1/revise ${JSON.stringify({ change: "더 짧게" })}`,
-		"/api/comments/sends/send%3Acm%3A1/retry {}", "/api/comments/sends/send%3Acm%3A1/dismiss {}", "/api/comments/thread/youtube/v1/read {}",
-	]);
+	const act = (action: string, args: object) => A.handle(req(p, { method: "POST", body: JSON.stringify({ action, args }) }));
+	for (const a of [{ op: "draft", commentId: "cm:youtube:c1" }, { op: "read", source: "youtube", thread: "v1" }]) expect((await act("comments", a)).status).toBe(200);
+	expect(B.events.map(e => e.text)).toEqual(["/api/comments/comment/cm%3Ayoutube%3Ac1/draft {}", "/api/comments/thread/youtube/v1/read {}"]);
 	expect(A.events).toEqual([]);
-	expect((await act({ op: "rm", code: "D1" })).status).toBe(400);
-	const k = await A.handle(req(p, { method: "POST", body: JSON.stringify({ action: "kakao", args: { op: "draft-restore", code: "K1" } }) }));
-	expect(k.status).toBe(200);
-	expect(B.events.at(-1)!.text).toBe("/api/kakao/drafts/K1/restore {}");
+	for (const a of [{ op: "draft-send", code: "D1" }, { op: "send-retry", id: "send:cm:1" }]) expect((await act("comments", a)).status).toBe(400);
+	for (const a of [{ op: "draft-restore", code: "K1" }, { op: "send-retry", chatId: "123", sendId: "S1" }]) expect((await act("kakao", a)).status).toBe(400);
+	expect((await act("approvals", { op: "retry", items: [] })).status).toBe(400);
+	expect(B.events).toHaveLength(2);
 });
 
 test("handoff: B gets the owner's words and note as a chat message from A, then A's chat shows B's ack", async () => {
@@ -575,4 +540,45 @@ test("handoff from a sender that is not a known computer is delivered, with no a
 	expect(A.seen).toHaveLength(0);
 	expect(A.sends).toEqual([]);
 	expect(B.logs).toHaveLength(1);
+});
+
+test("a reply card's action on a peer's item is forwarded to that gateway's /api/reply/act with the same body", async () => {
+	const { A, B } = pair();
+	await A.mon.peerMonitoring();
+	const args = { ref: "RA00001", action: "revise", change: "좀 더 짧게" };
+	const r = await A.handle(req(`/api/peer/proxy?pc=${encodeURIComponent(URL_B)}&p=${encodeURIComponent("/api/peer/act")}`, { method: "POST", body: JSON.stringify({ action: "reply", args }) }));
+	expect(r.status).toBe(200);
+	expect(B.events.filter(e => e.target === "/api/reply/act").map(e => JSON.parse(e.text))).toEqual([args]);
+});
+
+test("the snapshot carries the reply queue when the gateway has it, and leaves it out on an older one", async () => {
+	const local = (queue: boolean) => async (r: Request) => (new URL(r.url).pathname === "/api/reply/queue" ? (queue ? Response.json({ items: [{ ref: "RA00002" }] }) : new Response("", { status: 404 })) : Response.json({}));
+	const withQueue = await createPeerMonitor({ name: () => "맥미니", local: local(true), computers: async () => [] }).snapshot();
+	const older = await createPeerMonitor({ name: () => "맥미니", local: local(false), computers: async () => [] }).snapshot();
+	expect(withQueue.reply).toEqual({ items: [{ ref: "RA00002" }] });
+	expect(older.reply).toBeUndefined();
+	expect(older.name).toBe("맥미니");
+});
+
+// qa-clean-4 N1: an agent on this computer (its own hub token: the dotz_peer tool, a curl) that posts the proxy stays an agent's call on the other
+// computer, so that gateway's send routes refuse it; only the owner's own page makes a forward his word there.
+test("an agent's call through the proxy is an agent's on the other computer, never the owner's word", async () => {
+	const { A, B } = pair();
+	await A.mon.peerMonitoring();
+	readAs.length = 0;
+	const agent = (body: object) => A.handle(req(`/api/peer/proxy?pc=${encodeURIComponent(URL_B)}&p=${encodeURIComponent("/api/peer/act")}`, { method: "POST", headers: { "x-dotz-token": HUB_TOKEN }, body: JSON.stringify(body) }));
+	expect((await agent({ action: "reply", args: { ref: "RAAAAAA", action: "send" } })).status).toBe(200);
+	expect((await agent({ action: "answer", args: { id: "n1", n: 1, label: "보내기", agent: false }, agent: false })).status).toBe(200);
+	expect(readAs).toEqual([{ agent: true, surface: "web" }, { agent: true, surface: "web" }]);
+});
+
+// qa-clean-5 N7/N8: /api/peer/act posted on this computer with its own hub token, or by a peer that does not say `agent: false` (an older
+// computer, a string), is an agent's call: the owner's word comes only from his page through the other computer's proxy.
+test("a peer act is the owner's only from a paired computer that says no agent asked", async () => {
+	const { B } = pair();
+	readAs.length = 0;
+	const post = (headers: Record<string, string>, body: object) => B.handle(new Request(`${URL_B}/api/peer/act`, { method: "POST", headers, body: JSON.stringify({ action: "reply", args: { ref: "RAAAAAA", action: "send" }, from: "노트북", ...body }) }));
+	const peer = { "x-dotz-peer": TOKEN, "tailscale-user-login": LOGIN };
+	for (const [headers, body] of [[{ "x-dotz-token": HUB_TOKEN }, { agent: false }], [peer, {}], [peer, { agent: "false" }], [peer, { agent: true }], [peer, { agent: false }]] as const) expect((await post(headers, body)).status).toBe(200);
+	expect(readAs.map(r => r.agent)).toEqual([true, true, true, true, false]);
 });

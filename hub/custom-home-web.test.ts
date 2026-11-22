@@ -18,13 +18,14 @@ beforeAll(() => { process.env.DOTZ_WEB_LIVE = "1"; });
 afterAll(() => { if (live === undefined) delete process.env.DOTZ_WEB_LIVE; else process.env.DOTZ_WEB_LIVE = live; });
 
 const hub = fakeHub({
-	api: (_req, url) => {
+	api: (req, url) => {
 		if (url.pathname === "/custom.js") return new Response(Bun.file(new URL("../web/custom.js", import.meta.url).pathname), { headers: { "content-type": "text/javascript" } });
 		if (url.pathname === "/api/state") return json({ name: "dotz", orchestrator: { status: "idle" }, lanes, terminals: {}, channels: { work: [] }, discord: {}, notices_unread: 0 });
 		if (url.pathname === "/api/history") return json({ target: url.searchParams.get("target"), events: [] });
 		if (url.pathname === "/api/activity") return json({ items: [], more: false, history: false });
 		if (url.pathname === "/api/conversations") return json({ items: [] });
 		if (url.pathname === "/api/notices") return json({ unread: 0, items: [] });
+		if (url.pathname === "/api/custom/cards" && req.method === "POST") return req.json().then(v => json({ id: "fresh", rev: "1", view: "text", actions: [], data: "", ...(v as object) }));
 		if (url.pathname === "/api/custom") return json({ dir: "~/.dotz/custom", cards, projects: [], routines: [], links: [] });
 	},
 });
@@ -132,6 +133,18 @@ describe("custom cards on 홈", () => {
 		expect(foot.clipped).toBe(false);
 		expect(((await view.evaluate(`dotzCustom.menuActs("multi").map(a => a.label)`)) as string[]).slice(0, 3)).toEqual(["새로고침", "셋", "넷"]);
 		expect(await view.evaluate(`JSON.stringify(dotzCustom.split([1, 2, 3, 4, 5, 6]))`)).toBe(JSON.stringify({ shown: [1, 2], rest: [3, 4] }));
+	});
+
+	test("a new card is saved, the board scrolls to it and its header takes focus, with no uncaught page error", async () => {
+		await boot();
+		await view.evaluate(`(() => { window.__errs = []; addEventListener("error", e => __errs.push(String(e.message))); addEventListener("unhandledrejection", e => __errs.push(String(e.reason))); })()`);
+		await view.evaluate(`dotzCustom.add()`);
+		await waitFor(`current === "cardform" && document.querySelector("#v-cardform form")`);
+		await view.evaluate(`(() => { const f = document.querySelector("#v-cardform form"); f.querySelector(".cu-t .fi").value = "새 카드"; f.requestSubmit(); })()`);
+		await waitFor(`document.querySelector('.bi[data-id="custom:fresh"]')`);
+		await waitFor(`__errs.length || (document.activeElement && document.activeElement.classList.contains("bhead"))`, 3000);
+		expect(await view.evaluate(`JSON.stringify(window.__errs)`)).toBe("[]");
+		expect(await view.evaluate(`!!document.activeElement.closest('.bi[data-id="custom:fresh"]') && document.activeElement.classList.contains("bhead")`)).toBe(true);
 	});
 
 	test("the ⋯ menu lists size presets and hide, and 배치 초기화 brings a hidden card back", async () => {

@@ -1,6 +1,7 @@
 /* ---------- attachments: + button, drag-drop, paste -> POST /api/upload; sent as `files` with the message ---------- */
 // The composer's files of the conversation open now; another conversation's wait in its ts(t).att (13-data.js setTarget swaps them).
 let ATT = [];   // [{id, name, type, size, url (local preview), file (server record once uploaded)}]
+const putAtt = v => { ATT = v; };
 const IMG_RE = /\.(png|jpe?g|gif|webp|avif|heic)$/i;
 // pc: the file is an upload of that other computer (a file sent to its conversation), read there through the peer proxy (hub/routes.ts /api/peer/file).
 const fileUrl = (p, dl, pc) => pc ? pqProxy(pc, `/api/peer/file?path=${enc(p)}${dl ? "&download=1" : ""}`) : `/api/file?path=${enc(p)}${dl ? "&download=1" : ""}`;
@@ -324,18 +325,16 @@ function mdFiles(src) {
   const { text, files } = fileLines(src);
   return [text.trim() ? mdNode(text) : null, filesNode(files)].filter(Boolean);
 }
-// Markdown renders, other text shows as it is; a big file shows its first 200KB and offers the download.
+// Markdown renders, other text shows as it is; a big file shows its first 200KB and offers the download. The reader is dialog()'s large card: one at a
+// time (a second open while it is up is ignored), the download beside ✕, and the text takes the focus so the keys scroll it.
 async function viewer(path, name, pc) {
-  const body = el("div", { class: "tv-body md", tabindex: "-1", autofocus: true }, el("p", { class: "tv-st", text: TX("common.loading") }));
-  const d = el("dialog", { class: "tbox", "aria-label": name },
-    el("div", { class: "tv-in" },
-      el("div", { class: "tv-bar" }, el("span", { class: "tv-n", text: name }),
-        el("a", { href: fileUrl(path, true, pc), download: name }, TX("chat.att.download")),
-        el("button", { class: "x", type: "button", "aria-label": TX("common.close"), onclick: () => d.close() }, icon("close"))),
-      body));
-  d.addEventListener("close", () => d.remove());
-  d.addEventListener("click", ev => { if (ev.target === d) d.close(); });
-  document.body.append(d); d.showModal(); dialogHist(d);
+  if (document.querySelector("dialog.tbox:not([data-leaving])")) return;
+  const body = el("div", { class: "tv-body md", tabindex: "-1" }, el("p", { class: "tv-st", text: TX("common.loading") }));
+  const d = dialog({ title: name, body }).node;
+  d.classList.add("tbox", "tall"); d.setAttribute("aria-label", name);
+  d.querySelector(".dtitle").classList.add("tv-n");
+  d.querySelector(".fs-hb").prepend(el("a", { class: "btn text sm", href: fileUrl(path, true, pc), download: name }, TX("chat.att.download")));
+  body.focus({ preventScroll: true });
   try {
     const r = await fetch(fileUrl(path, false, pc));
     if (!r.ok) throw refusedNote(r);
@@ -424,7 +423,6 @@ function pathFiles(md, pc) {
   if (n) for (const img of n.querySelectorAll("img")) img.onerror = () => img.closest(".fitem").remove();
   return n;
 }
-setInterval(() => { if ((current === "chat" || current === "activity") && !document.hidden) loadContext(true).then(renderCtxRing); }, 15000);
 // A reload lands on the conversation it left: its draft and waiting files come back (a microtask: the later modules of this one script must exist first).
 queueMicrotask(() => {
   try { if (!ta.value) ta.value = ts(target).draft = localStorage.getItem(DRAFT_KEY(target)) || ""; } catch {}

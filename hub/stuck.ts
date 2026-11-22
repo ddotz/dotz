@@ -293,6 +293,9 @@ export type StuckWatchOpts = {
 	capped: (minutes: number) => void;
 };
 
+const WAIT_TOOL = /^(?:wait|task)$/;
+const WAIT_CELL = /\btool\.(?:wait|task)\b/;
+
 export function createStuckWatch(o: StuckWatchOpts) {
 	const s: StuckState = { lastAt: Date.now(), recoveries: [], capped: false };
 	let timer: ReturnType<typeof setInterval> | undefined;
@@ -401,8 +404,12 @@ export function createStuckWatch(o: StuckWatchOpts) {
 			s.sampledAt = Date.now(); // after a slow sampler, so its own time is not taken for a sleep
 		}
 	}
+	function waiting(): boolean {
+		const call = [...open.values()].at(-1);
+		return call !== undefined && (WAIT_TOOL.test(call.tool ?? "") || WAIT_CELL.test(call.shape));
+	}
 	/** What the last abort found: the open tool call's shape and the minutes of silence; kept until the next turn starts. */
-	return { progress, begin, end, reset: stop, tick, info: (): StuckInfo | undefined => info };
+	return { progress, begin, end, reset: stop, tick, waiting, info: (): StuckInfo | undefined => info };
 }
 
 export type OrchStuckHost = {
@@ -410,7 +417,6 @@ export type OrchStuckHost = {
 	pid: () => number | undefined;
 	sessionFile: () => string | undefined;
 	working: () => boolean;
-	/** Workers running or a compaction: a wait, not a stall. */
 	busy: () => boolean;
 	/** Mark the turn failed (its request stays open) and abort the process. */
 	abort: () => void;
@@ -438,7 +444,7 @@ export function orchStuck(h: OrchStuckHost) {
 		key: h.key,
 		pid: h.pid,
 		sessionFile: h.sessionFile,
-		exempt: () => !h.working() || h.busy() || guard(),
+		exempt: () => !h.working() || (h.busy() && watch.waiting()) || guard(),
 		abort: h.abort,
 		restart: why => stuckRestart(`stuck turn: ${why}`),
 		stuck: minutes => onStuck(minutes),

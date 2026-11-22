@@ -36,10 +36,10 @@ const settle = () => { for (const w of waiters) if (w.ok()) { waiters.delete(w);
 const has = (c: string) => calls.includes(c);
 const live = () => notices.filter(n => !n.dismissed);
 
+let noticeReads = 0;
+
 const hub = fakeHub({
 	slowTimers: true,
-	// Marks the end of the boot's own ?n= timer (web/js/30-notices.js), which has no other trace when the id is stale.
-	headScript: `(() => { const st = setTimeout; setTimeout = (f, ms, ...a) => st(String(f).includes("noticeOpenId") ? async () => { await f(...a); window.__staleLinkDone = true; } : f, ms, ...a); })();`,
 	state: () => idleState({ notices_unread: unread() }),
 	api: async (req, url) => {
 		const p = url.pathname, key = `${req.method} ${p}`;
@@ -48,7 +48,7 @@ const hub = fakeHub({
 		if (p === "/api/activity") return json({ items: [], more: false, history: false });
 		if (p === "/api/conversations") return json({ items: [] });
 		if (p === "/api/update") return json({ settings: { auto_apply: false } });
-		if (p === "/api/notices" && req.method === "GET") return json({ items: live(), unread: unread(), gone: [] });
+		if (p === "/api/notices" && req.method === "GET") { noticeReads++; return json({ items: live(), unread: unread(), gone: [] }); }
 		if (req.method !== "POST") return undefined;
 		const body = (await req.json().catch(() => ({}))) as { ids?: string[] };
 		calls.push(key);
@@ -69,7 +69,7 @@ const hub = fakeHub({
 afterAll(() => hub.stop());
 
 async function open(width: number, hash = "#notices"): Promise<View> {
-	reset(); calls = []; bodies = {};
+	reset(); calls = []; bodies = {}; noticeReads = 0;
 	const v = await hub.view({ width, height: 844 });
 	await v.navigate(`${hub.origin}/${hash}`);
 	await on(v).waitFor(`typeof NT !== "undefined" && NT.loaded && NT.items.length === ${live().length}`);
@@ -232,15 +232,15 @@ describe("the 알림 screen", () => {
 		expect(calls).toEqual([]);   // a read notice, a jump and a way back: nothing to write
 	}, 30_000);
 
-	test("no back arrow on the screen at any width, the title stays where it was, and a row opened from it keeps its way back", async () => {
+	test("the screen's back arrow leads to 홈 at every width, the sidebar's chevron stays put, and a row opened from it keeps its way back", async () => {
 		for (const width of [390, 800, 1280]) {
 			const v = await open(width, "#settings");
-			const spot = () => on(v).ev<{ arrow: boolean; title: [number, number]; fold: number[] }>(`(r => ({ arrow: !$("#back").hidden, title: [r.left, r.top], fold: (b => [b.left, b.top])($("#side-tog").getBoundingClientRect()) }))($("#title").getBoundingClientRect())`);
+			const spot = () => on(v).ev<{ arrow: boolean; to: string | null; fold: number[] }>(`({ arrow: !$("#back").hidden, to: backTarget(), fold: (b => [b.left, b.top])($("#side-tog").getBoundingClientRect()) })`);
 			await on(v).waitFor(`current === "settings"`);
 			const plain = await spot();
 			await on(v).run(`go("notices")`);
 			await shown(v);
-			expect(await spot()).toEqual({ ...plain, arrow: false });   // the spot of a page that has no arrow, the sidebar's chevron unmoved
+			expect(await spot()).toEqual({ ...plain, arrow: true, to: "home" });   // the sidebar's chevron unmoved
 		}
 		const v = await shown(await open(390));
 		await click(v, '#v-notices .nsc-r[data-nid="a3"] .nsc-tx');
@@ -250,9 +250,10 @@ describe("the 알림 screen", () => {
 
 	test("a page load with a stale ?n= stays on its route, with no toast", async () => {
 		const v = await shown(await open(1280, "?n=gone#notices"));
-		await on(v).waitFor(`window.__staleLinkDone`);
+		await hubState(() => noticeReads >= 3);
+		await on(v).waitFor(`ntLoads === 0`);
 		await settled(v);
-		expect(await on(v).ev(`[current, location.search, document.querySelectorAll(".snack").length]`)).toEqual(["notices", "", 0]);
+		expect([noticeReads, ...(await on(v).ev<unknown[]>(`[current, location.search, document.querySelectorAll(".snack").length]`))]).toEqual([3, "notices", "", 0]);
 	}, 30_000);
 	test("more than a page of old alerts: 더 보기 is the list's own last line, not a control under it", async () => {
 		const v = await shown(await open(390));

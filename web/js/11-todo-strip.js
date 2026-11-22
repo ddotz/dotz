@@ -1,5 +1,6 @@
 /* ---------- todo strip: the target's plan (GET /api/todo), one line above the timeline ---------- */
 const TD = { by: {}, open: {}, timer: 0, calls: new Set() };
+const tdSeed = (t, todo) => { if (TD.by[t] === undefined && todo) TD.by[t] = todo; };   // a stored snapshot's plan, until the hub's arrives
 async function loadTodo(t = target) {
   if (isFixedT(t) || isMailT(t) || isRelayT(t)) { TD.by[t] = []; if (t === target) { paintTodo(); if (CV.key && !CV.placed) renderAll(); } return; }   // no plan in 알림 / 작업 기록
   let r;
@@ -51,8 +52,8 @@ function paintOlderTop() {
   TL_MORE_BTN.hidden = !more;
 }
 if (TL_MORE_BTN) TL_MORE_BTN.onclick = () => loadOlderMsgs();
-function resetChat() { clear(tl); CV.drawn = ""; if (TL_TOP_NODE) tl.append(TL_TOP_NODE); CV.divNode = null; CS = { day: "", group: null, empty: null, prog: new Map(), who: "", whoT: 0 }; paintOlderTop(); }
-function dayDiv(t) { const d = kstDay(t); if (d && d !== CS.day) { CS.day = d; CS.who = ""; tl.append(el("div", { class: "a-div", text: dayLabel(t) })); } }
+function resetChat() { clear(tl); cvForget(); if (TL_TOP_NODE) tl.append(TL_TOP_NODE); csReset(); paintOlderTop(); }
+function dayDiv(t) { const d = kstDay(t); if (!d || d === CS.day) return null; csDay(d); return tl.appendChild(el("div", { class: "a-div", text: dayLabel(t) })); }
 // Who said a message, for the meta line: shown once per run of messages from the same speaker (a gap over 10 minutes starts a new run).
 function speakerOf(e) {
   const peer = peerMsgOf(e);
@@ -69,6 +70,50 @@ const isRestart = e => e.kind === "out" && e.source === "gateway" && /^게이트
 const cleanRestart = e => isRestart(e) && /끊긴 작업은 없어요/.test(String(e.text ?? ""));
 // The gateway's own wake for a check is an instruction to the assistant: no card, so no message and never unread (hub/conversations.ts gatewayWake).
 const gatewayWake = e => e.kind === "schedule" && e.source === "gateway";
+const handedTitle = text => { const line = text.split("\n")[0].trim(); return WT_HANGUL.test(line) && line.length <= 40 ? line : ""; };
+const wakeLead = (src, text) => [src, handedTitle(text)].filter(Boolean).join(" · ");
+function wakeOf(e) {
+  const text = String(e.text ?? "").trim();
+  if (e.kind === "handed") return { lead: wakeLead(targetName(e.from), text), raw: text, ts: e.ts, from: e.from };
+  if (e.kind !== "schedule") return null;
+  if (gatewayWake(e)) return { lead: "", raw: "", ts: e.ts, from: "" };
+  const name = typeof e.name === "string" ? e.name.trim() : "";
+  return { lead: name || SYS_LABEL.schedule, raw: text.replace(/^(?:(?:ch|lane|th):\S+\s*)+/, ""), ts: e.ts, from: "", sched: String(e.id ?? "") };
+}
+function gatewayTurnStart(a) {
+  if (a.type !== "status" || !/^>\s/.test(a.text ?? "") || !promptOf(a.text).dim) return false;
+  const A = ts(target).acts;
+  return A[A.lastIndexOf(a) - 1]?.type === "turn_start";
+}
+const WAKE_ANSWER_WAIT_MS = 3000;
+function wakeQuiet() {
+  const w = CS.wake;
+  if (!w) return;
+  csWakeSet(null);
+  for (const n of w.rows) { if (CS.group && CS.group.node === n) csGroupDrop(); n.remove(); }
+  if (w.day && w.day.isConnected && (w.day.hidden || !w.day.nextElementSibling)) { w.day.remove(); csDay(""); }
+}
+function wakeShow(w, shown) {
+  for (const n of w.rows) n.hidden = !shown;
+  let after = w.day && w.day.nextElementSibling;
+  while (after && after.hidden) after = after.nextElementSibling;
+  if (w.day) w.day.hidden = !shown && !after;
+}
+function wakeEnded(w, bulk) {
+  csWakeNote("ended");
+  if (CS.group && w.rows.includes(CS.group.node)) { workDone(CS.group); csGroupDrop(); }
+  if (bulk) wakeShow(w, false);
+  else setTimeout(() => { if (CS.wake === w) wakeShow(w, false); }, WAKE_ANSWER_WAIT_MS);
+}
+function wakeAnswered(n, at) {
+  const w = CS.wake, mt = w.from && n.querySelector(":scope > .mt");
+  csWakeSet(null);
+  wakeShow(w, true);
+  for (const r of w.rows) if (r.matches("details.work")) r.dataset.answer = at;
+  if (!mt) return;
+  const open = () => openTarget(w.from, "chat");
+  mt.append(" · ", el("span", { class: "wl-sess", role: "link", tabindex: "0", text: TX("home.handed.from", { name: targetName(w.from) }), onclick: ev => { ev.stopPropagation(); open(); }, onkeydown: ev => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); open(); } } }));
+}
 const BAN_KEY = "dotz-restart-seen";
 function paintRestartBanner() {
   const today = kstDay(Date.now()), list = ts(MAIN).msgs.filter(e => isRestart(e) && kstDay(e.ts) === today);
@@ -121,6 +166,8 @@ function paintDelivery(mid) {
   if (rq) n.mt.append(rq);
   n.mt.classList.add("dv"); n.mt.classList.toggle("dv-fail", d.state === "failed");
 }
+// A message's meta line follows its delivery state; the newest 600 are kept.
+function delivTrack(mid, node) { DELIV.nodes.set(mid, node); if (DELIV.nodes.size > 600) DELIV.nodes.delete(DELIV.nodes.keys().next().value); paintDelivery(mid); }
 function applyDelivery(e) {
   const old = DELIV.state.get(e.ref);
   if (old && DELIV_RANK[old.state] > DELIV_RANK[e.state]) return;
@@ -260,7 +307,7 @@ function msgNode(e, inRow) {
       if (long) ub.classList.add("clamp");
       const more = long ? el("button", { class: "ubm", type: "button", onclick: () => { const c = ub.classList.toggle("clamp"); more.textContent = c ? TX("home.msg.more") : TX("home.fold.close"); } }, TX("home.msg.more")) : null;
       const base = [hm, via].filter(Boolean).join(" · "), mt = el("div", { class: "mt", text: base }), mid = e.mid || e.message_id || "";
-      if (mid) { DELIV.nodes.set(mid, { mt, base, rec: e.kind !== "_cmd" && Array.isArray(e.picks) && e.picks.length > 0 }); if (DELIV.nodes.size > 600) DELIV.nodes.delete(DELIV.nodes.keys().next().value); paintDelivery(mid); }
+      if (mid) delivTrack(mid, { mt, base, rec: e.kind !== "_cmd" && Array.isArray(e.picks) && e.picks.length > 0 });
       // The owner's files are uploads of the computer that holds the conversation: a peer's open there (15-attachments.js fileUrl).
       const pc = Array.isArray(e.files) && e.files.length ? pqPc(eventTarget(e) || "") : null;
       // An answered decision is a quiet record of what was decided, not a "1) …" bubble (10-decision-card.js dcRecordNode); the options
@@ -311,18 +358,11 @@ function msgNode(e, inRow) {
       const snip = (text.match(/^snippet: ?([\s\S]*)$/m) || [])[1] || "";
       const from = f("from").replace(/\s*<[^>]+>\s*$/, "").replace(/^"|"$/g, "") || f("from");
       if (subj) return resultCard({ src: from || acct || SYS_LABEL.mail, at: e.ts, title: subj, text: snip.trim() });
+      // a mail without a subject (hub/mail.ts accepts one) shows as plain text
+      return mdNode(text);
     }
-    // falls through: a mail without a subject line shows as plain text
-    // Text one session handed to another (hub/handed.ts): the schedule start's card, the sender in the header, the text behind 원문 보기.
-    case "handed":
-      return resultCard({ src: targetName(e.from), at: e.ts, title: TX(e.handback ? "home.handed.back" : "home.handed.sent"), raw: text });
-    case "schedule": case "watch": {
-      // the gateway's own wake (hub/main.ts wakeOnce: update carry-over, text overrides) is an instruction to the assistant: no card
-      if (gatewayWake(e)) return null;
-      // Same card as any other assistant message: who, when, then the plain line; the raw output folds under 원문.
-      const body = e.kind === "watch" ? watchLine(e.label || e.watch, e.reason, text, { prev: e.prev }) : scheduleLine(text);
-      return resultCard({ src: e.kind === "watch" ? humanLabel(e.label || e.watch) : SYS_LABEL[e.kind], at: e.ts, text: e.kind === "watch" ? body : body.replace(/^[^\n]*\n?/, ""), title: e.kind === "watch" ? undefined : body.split("\n")[0] });
-    }
+    case "handed": case "schedule": { const w = wakeOf(e); return w.lead ? newGroup(w).node : null; }
+    case "watch": return resultCard({ src: humanLabel(e.label || e.watch), at: e.ts, text: watchLine(e.label || e.watch, e.reason, text, { prev: e.prev }) });
     default: {
       const fromLane = typeof e.source === "string" && e.source.startsWith("lane:");
       // A session's report or answer is a full message; its mid-turn progress line (update_key), new or stored, reads as the live status.
@@ -383,19 +423,20 @@ function liveNode(body, tone, tap) {
 // A progress note as rows: no file line, code fence, table rule, small-line or quote mark of a full message.
 const noteText = t => fileLines(t).text.split("\n").filter(l => !/^\s*```/.test(l) && !isSep(l)).map(l => l.replace(/^\s*(?:-#|>)\s+/, "")).join("\n");
 const WORK = new Set(["tool_call", "tool_result", "thinking", "text", "error"]);
-function newGroup(a) {
+function newGroup(wake) {
   const wsum = el("span", { class: "wsum" }), body = el("div", { class: "wbody" });
   // A fold's rows are built when it opens: a conversation holds hundreds of them and drawing them took most of a chat switch. Its summary counts stay live.
-  const waiting = [];
-  const fill = () => { for (const w of waiting.splice(0)) { const n = actNode(w, g.ctx); if (n) g.body.append(n); } };
+  const waiting = wake && wake.raw && !wake.sched ? [{ type: "text", ts: wake.ts, text: wake.raw }] : [];
+  let head = wake && wake.sched ? () => schedWakeNode(wake, node) : null;
+  const fill = () => { if (head) { g.body.append(head()); head = null; } for (const w of waiting.splice(0)) { const n = actNode(w, g.ctx); if (n) g.body.append(n); } };
   const node = el("details", { class: "work" }, el("summary", { onclick: () => fill() }, el("span", { class: "wdot" }), wsum), body);
-  const g = { node, body, ctx: { calls: new Map() }, kinds: new Map(), tools: 0, think: 0, errs: 0, t0: Date.parse(a.ts), t1: Date.parse(a.ts), live: false };
+  const g = { node, body, ctx: { calls: new Map() }, kinds: new Map(), tools: 0, think: 0, errs: 0, acts: 0, t0: 0, t1: 0, live: false, lead: wake ? wake.lead : "" };
   g.update = () => {
     const parts = [g.t1 - g.t0 >= 1000 ? TX("home.work.dur", { dur: fmtDur(g.t1 - g.t0) }) : g.tools ? TX("home.work.work") : g.think ? TX("home.work.think") : TX("home.work.work")];
-    if (g.live) { const d = Math.max(g.t1, Date.now()) - g.t0; parts[0] = `${TX("common.status.working")}${d >= 1000 ? ` ${fmtDur(d)}` : ""}`; }
+    if (g.live) { const d = g.acts ? Math.max(g.t1, Date.now()) - g.t0 : 0; parts[0] = `${TX("common.status.working")}${d >= 1000 ? ` ${fmtDur(d)}` : ""}`; }
     for (const [k, v] of g.kinds) parts.push(`${({ 명령: TX("home.kind.cmd"), 읽기: TX("home.kind.read"), 수정: TX("home.kind.edit"), 검색: TX("home.kind.search"), 서브에이전트: TX("home.kind.subagent"), 웹: TX("home.kind.web"), 기록: TX("home.kind.notes"), 도구: TX("home.kind.tool") })[k] || k} ${v}`);
     if (g.errs) parts.push(TX("home.work.errs", { n: g.errs }));
-    wsum.textContent = parts.join(" · ");
+    wsum.textContent = !g.lead ? parts.join(" · ") : g.acts || g.live ? `${g.lead} → ${parts.join(" · ")}` : g.lead;
     node.classList.toggle("bad", g.errs > 0);
   };
   g.add = a => {
@@ -405,24 +446,25 @@ function newGroup(a) {
     else if (a.type === "thinking") g.think++;
     if (a.type === "error" || (a.type === "tool_result" && a.is_error)) g.errs++;
     const t = Date.parse(a.ts);
-    if (t > g.t1) g.t1 = t;
+    if (!g.acts++) g.t0 = g.t1 = t; else if (t > g.t1) g.t1 = t;
     g.update();
   };
+  g.update();
   return g;
 }
-function dropProgress(key) { const p = CS.prog.get(key); if (p) { const home = p.node.parentNode; p.node.remove(); wlTidy(home); CS.prog.delete(key); } }
+function dropProgress(key) { const p = CS.prog.get(key); if (p) { const home = p.node.parentNode; p.node.remove(); wlTidy(home); csProgDrop(key); } }
 // entry: {m: conversation event} or {a: activity item}. Work between messages folds into one collapsed group.
 function chatPush(en, bulk) {
   let fresh = null;   // an incoming message node: a tall one is scrolled to by its top (scrollChat)
   if (en.m && en.m.kind === "delivery") { applyDelivery(en.m); return; }
-  if (CS.empty) { CS.empty.remove(); CS.empty = null; }
+  csEmptyDrop();
   if (en.m) {
     if (cleanRestart(en.m)) return;
-    dayDiv(en.m.ts);
     if (CS.group) workDone(CS.group);
-    CS.group = null;
-    const e = en.m;
-    if (isSettingsT(target) && eventTarget(e) === target) { if (e.kind === "message") TURN.set(target, Date.parse(e.ts) || Date.now()); else if (e.kind === "out" && !e.update_key) TURN.delete(target); }
+    csGroupDrop();
+    const e = en.m, wake = wakeOf(e);
+    if (wake || OWNER.has(e.kind)) wakeQuiet();
+    if (isSettingsT(target) && eventTarget(e) === target) { if (e.kind === "message") turnStart(target, Date.parse(e.ts) || Date.now()); else if (e.kind === "out" && !e.update_key) turnEnd(target); }
     const pkey = e.kind === "out" && e.update_key ? `${e.target ?? ""}|${e.update_key}` : "";
     const et = eventTarget(e) || "", laneT = isLaneT(et) ? et : "";
     // One progress note per target+key (newest text at the newest position; a session keeps only its newest note);
@@ -436,26 +478,43 @@ function chatPush(en, bulk) {
     }
     // Repeated [run]/[wait] reports are one message, as on Discord (hub/lanewire.ts): the newest takes the place of the one before it, until another message stands between.
     const parked = e.kind === "lane_report" && !e.answering && parkedTone(statedTone(noHandoff(String(e.text ?? ""))).tone);
-    if (parked && CS.parked) { if (!CS.parked.classList.contains("cont")) CS.who = ""; CS.parked.remove(); CS.parked = null; }
-    const n = wlIs(e) ? wlNode(e) : msgNode(e);
+    if (parked && CS.parked) csParkedDrop();
+    const g = wake && wake.lead ? newGroup(wake) : null, n = g ? g.node : wake ? null : wlIs(e) ? wlNode(e) : msgNode(e);
+    if (wake) csWakeSet({ ts: e.ts, from: wake.from, rows: [], day: null, began: false, ended: false });
     if (n) {
-      if (!pkey) CS.parked = parked ? n : null;
+      const day = dayDiv(e.ts);   // only above a drawn row: a conversation of rows that draw nothing keeps its empty state
+      if (g) { csGroupStart(g); csWakeRow(n, day); }
+      else if (CS.wake && !OWNER.has(e.kind) && !pkey && !e.live) wakeAnswered(n, e.ts);
+      if (!pkey) csParked(parked ? n : null);
       n.dataset.ts = e.ts;   // the notice jump finds its source message by this (30-notices.js ntFind)
       if (!n.classList.contains("wl-row")) rpMark(n, e);
-      if (CV.div && !CV.divNode && convIncoming(e) && e.ts > CV.div) { CV.divNode = tl.appendChild(convDivider()); CS.who = ""; }
+      if (CV.div && !CV.divNode && convIncoming(e) && e.ts > CV.div) { cvDivNode(tl.appendChild(convDivider())); csBreak(); }
       // A status goes when the answer comes, so it never carries a run of speaker heads: the answer keeps its own.
       const who = n.matches(".um, .bm:not(.wl-row)") && !n.querySelector(":scope > .lv") ? speakerOf(e) : "", t = Date.parse(e.ts) || 0;
       if (who && who === CS.who && t - CS.whoT < 600000 && !(e.target === "alert" && n.querySelector(":scope > .mt > .tag"))) n.classList.add("cont");   // an 알림 row that carries a status tag keeps its head, so the tag shows
-      CS.who = who; CS.whoT = t;
+      csWho(who, t);
       if (convIncoming(e)) fresh = n;
       if (held) n.style.minHeight = `${held}px`;
       tlHome(n).append(n); if (!bulk && !held) motionIn(n, "rise", M_MS.fast);   // a message that arrives live rises in (150ms); the drawn history never moves
-      if (pkey) CS.prog.set(pkey, { node: n, target: laneT || String(e.target ?? "") });
+      if (pkey) csProgSet(pkey, { node: n, target: laneT || String(e.target ?? "") });
     }
   } else {
-    if (!WORK.has(en.a.type) || isMailT(target) || (isSettingsT(target) && !(TURN.get(target) <= (Date.parse(en.a.ts) || 0)))) return;
-    if (!CS.group) { dayDiv(en.a.ts); CS.group = newGroup(en.a); tl.append(CS.group.node); }
-    CS.group.add(en.a);
+    const a = en.a, w = CS.wake;
+    if (w && !w.ended && a.ts >= w.ts && a.type === "turn_start") csWakeNote("began");
+    else if (w && w.began && !w.ended && a.type === "turn_end") wakeEnded(w, bulk);
+    else if (!(w && !w.ended) && gatewayTurnStart(a)) {
+      if (CS.group) workDone(CS.group);
+      csGroupDrop(); wakeQuiet();
+      csWakeSet({ ts: a.ts, from: "", rows: [], day: null, began: true, ended: false });
+    }
+    if (!WORK.has(a.type) || isMailT(target) || (isSettingsT(target) && !(TURN.get(target) <= (Date.parse(a.ts) || 0)))) return;
+    if (!CS.group) {
+      if (CS.wake && CS.wake.ended) wakeQuiet();
+      const day = dayDiv(a.ts);
+      csGroupStart(newGroup()); tl.append(CS.group.node);
+      if (CS.wake) csWakeRow(CS.group.node, day);
+    }
+    csGroupAdd(a);
   }
   if (!bulk) syncLiveTags();
   const fixed = TL_TOP_NODE && TL_TOP_NODE.parentNode === tl ? 1 : 0;
@@ -473,5 +532,5 @@ function markLive() {
   if (!g) return;
   const live = isWorking(target) && tlTail() === g.node;
   if (g.live === live) return;
-  if (live) { g.live = true; g.node.classList.add("live"); g.update(); } else workDone(g);
+  if (live) csGroupLive(); else workDone(g);
 }

@@ -29,6 +29,199 @@ function el(tag, props, ...kids) {
   return n;
 }
 const clear = n => { while (n.firstChild) n.removeChild(n.firstChild); return n; };
+const KEPT_PREFIX = "dotz.kept.", KEPT_ALIVE = "dotz.alive.", KEPT_TTL_MS = 24 * 3600 * 1000, KEPT_DEAD_MS = 90 * 1000, KEPT_OPEN_MS = 45 * 1000, KEPT_HOLD = {}, KEPT_SEEN = {}, KEPT_AT = {}, KEPT_LOAD = {}, KEPT_TOUCHED = new Set();
+const keptAliveAt = raw => parseInt(raw, 10) || 0;
+const keptClosed = raw => typeof raw === "string" && raw.endsWith(":closed");
+const keptHidden = raw => typeof raw === "string" && raw.endsWith(":hidden");
+const keptAdopted = raw => typeof raw === "string" && raw.endsWith(":adopted");
+const KEPT_TAB_RE = /^t[a-z0-9]{8,}$/;
+const keptEmpty = v => v == null || v === "" || v === false || (Array.isArray(v) ? v.every(keptEmpty) : typeof v === "object" && Object.values(v).every(keptEmpty));
+const keptText = v => (keptEmpty(v) ? null : JSON.stringify(v));
+const keptParse = t => { try { return t == null ? undefined : JSON.parse(t); } catch { return undefined; } };
+function keptEntry(raw, now) {
+  try {
+    const o = JSON.parse(raw || "null");
+    return o && typeof o.text === "string" && typeof o.at === "number" && now - o.at <= KEPT_TTL_MS ? o : null;
+  } catch { return null; }
+}
+const KEPT_TAB = (() => {
+  const fresh = () => `t${[...crypto.getRandomValues(new Uint8Array(6))].map(b => b.toString(16).padStart(2, "0")).join("")}`;
+  try {
+    let t = sessionStorage.getItem("dotz.tab");
+    const stamp = KEPT_TAB_RE.test(t || "") ? localStorage.getItem(KEPT_ALIVE + t) : null;
+    const taken = !!stamp && !keptClosed(stamp) && (keptHidden(stamp) || keptAdopted(stamp) || Date.now() - keptAliveAt(stamp) < KEPT_OPEN_MS);
+    if (!KEPT_TAB_RE.test(t || "") || taken) sessionStorage.setItem("dotz.tab", t = fresh());
+    return t;
+  } catch { return fresh(); }
+})();
+const KEPT_OWN = `${KEPT_PREFIX}${KEPT_TAB}.`;
+let keptBlocked = false, keptMode = "";
+const keptFailed = e => { if (!(e instanceof DOMException)) throw e; keptBlocked = true; };
+function keptStamp(state) {
+  if (keptMode === "closed" || (keptMode === "hidden" && state !== "closed")) return;
+  if (state) keptMode = state;
+  try { localStorage.setItem(KEPT_ALIVE + KEPT_TAB, state ? `${Date.now()}:${state}` : String(Date.now())); keptBlocked = false; } catch { keptBlocked = true; }
+}
+const KEPT = (() => {
+  const out = {}, now = Date.now(), tabs = new Map(), legacy = [];
+  try {
+    localStorage.removeItem("dotz.kept");
+    const own = (field, raw, e) => { if (field in out) return false; localStorage.setItem(KEPT_OWN + field, raw); out[field] = e.text; KEPT_AT[field] = e.at; return true; };
+    for (let i = localStorage.length - 1; i >= 0; i--) {
+      const k = localStorage.key(i);
+      if (!k) continue;
+      if (k.startsWith(KEPT_ALIVE)) { if (!(now - keptAliveAt(localStorage.getItem(k)) <= KEPT_TTL_MS)) localStorage.removeItem(k); continue; }
+      if (!k.startsWith(KEPT_PREFIX)) continue;
+      const raw = localStorage.getItem(k), e = keptEntry(raw, now);
+      if (!e) { localStorage.removeItem(k); continue; }
+      const rest = k.slice(KEPT_PREFIX.length), dot = rest.indexOf("."), id = dot > 0 ? rest.slice(0, dot) : "";
+      if (id === KEPT_TAB) { out[rest.slice(dot + 1)] = e.text; KEPT_AT[rest.slice(dot + 1)] = e.at; }
+      else if (KEPT_TAB_RE.test(id)) { if (!tabs.has(id)) tabs.set(id, []); tabs.get(id).push([rest.slice(dot + 1), k, e]); }
+      else legacy.push([rest, raw, e, k]);
+    }
+    for (const [field, raw, e, k] of legacy) { own(field, raw, e); localStorage.removeItem(k); }
+    try {
+      const old = JSON.parse(sessionStorage.getItem("dotz.kept") || "null");
+      sessionStorage.removeItem("dotz.kept");
+      for (const [name, v] of Object.entries(old && typeof old === "object" ? old : {})) {
+        const e = { text: JSON.stringify(v), at: now };
+        if (!keptEmpty(v)) own(name, JSON.stringify(e), e);
+      }
+    } catch (e) { if (!(e instanceof SyntaxError)) keptFailed(e); }
+    if (!Object.keys(out).length) {
+      const stamp = id => localStorage.getItem(KEPT_ALIVE + id);
+      const gone = [...tabs].filter(([id]) => !keptAdopted(stamp(id)) && (keptClosed(stamp(id)) || keptHidden(stamp(id)) || !(now - keptAliveAt(stamp(id)) < KEPT_DEAD_MS))).map(([id, es]) => [id, es, Math.max(keptAliveAt(stamp(id)), ...es.map(x => x[2].at))]).sort((a, b) => b[2] - a[2]);
+      for (const [id, es] of gone) {
+        const copy = keptHidden(stamp(id));
+        for (const [field, k] of es) {
+          const raw = localStorage.getItem(k), e = keptEntry(raw, now);
+          if (!e || field in out) continue;
+          own(field, raw, e);
+          if (!copy) localStorage.removeItem(k);
+        }
+        if (copy) localStorage.setItem(KEPT_ALIVE + id, `${keptAliveAt(stamp(id))}:adopted`);
+        else if (!es.some(([, k]) => localStorage.getItem(k) != null)) localStorage.removeItem(KEPT_ALIVE + id);
+      }
+    }
+  } catch (e) { keptFailed(e); }
+  return out;
+})();
+Object.assign(KEPT_LOAD, KEPT);
+keptStamp();
+setInterval(() => { keptStamp(); keptLate(); }, 30000);
+function kept(name, from, fill) {
+  KEPT_HOLD[name] = { from, fill };
+  KEPT_SEEN[name] = KEPT[name] ?? null;
+  setTimeout(() => keptMark(name), 0);
+  return keptParse(KEPT[name]);
+}
+function keptMap(name, from, fill) {
+  KEPT_HOLD[name] = { from, map: true, fill };
+  const whole = keptParse(KEPT[name]);
+  if (Array.isArray(whole)) {
+    const at = KEPT_AT[name] ?? Date.now();
+    delete KEPT[name]; delete KEPT_AT[name];
+    try { localStorage.removeItem(KEPT_OWN + name); } catch (e) { keptFailed(e); }
+    for (const [r, v] of whole) {
+      const f = `${name}.${r}`;
+      KEPT[f] = JSON.stringify(v); KEPT_AT[f] = at;
+      try { localStorage.setItem(KEPT_OWN + f, JSON.stringify({ text: KEPT[f], at })); } catch (e) { keptFailed(e); }
+    }
+  }
+  const out = {};
+  for (const [f, t] of Object.entries(KEPT)) {
+    if (!f.startsWith(`${name}.`)) continue;
+    const v = keptParse(t);
+    if (v !== undefined) out[f.slice(name.length + 1)] = v;
+  }
+  setTimeout(() => keptMark(name), 0);
+  return out;
+}
+function keptCur(name) {
+  const h = KEPT_HOLD[name], out = {};
+  let v;
+  try { v = h.from(); } catch { return null; }
+  if (h.map) for (const [k, x] of Object.entries(v || {})) out[`${name}.${k}`] = keptText(x);
+  else out[name] = keptText(v);
+  return out;
+}
+function keptMark(name) {
+  const cur = keptCur(name);
+  if (cur) Object.assign(KEPT_SEEN, cur);
+}
+const keptWatch = (f, text) => { if ((text ?? null) !== (KEPT_LOAD[f] ?? null)) KEPT_TOUCHED.add(f); };
+function keptHolder(field) {
+  let best = null;
+  for (const [name, h] of Object.entries(KEPT_HOLD)) if ((field === name || (h.map && field.startsWith(`${name}.`))) && (!best || name.length > best[0].length)) best = [name, h];
+  return best;
+}
+function keptOwnText(field) {
+  const e = keptEntry(localStorage.getItem(KEPT_OWN + field), Date.now());
+  return e && !keptEmpty(keptParse(e.text)) ? e.text : null;
+}
+function keptLate() {
+  if (keptBlocked) return;
+  try {
+    for (const name of Object.keys(KEPT_HOLD)) {
+      const cur = keptCur(name);
+      if (cur) for (const [f, text] of Object.entries(cur)) keptWatch(f, text);
+    }
+    const now = Date.now(), gone = new Map();
+    for (let i = localStorage.length - 1; i >= 0; i--) {
+      const k = localStorage.key(i);
+      if (!k || !k.startsWith(KEPT_PREFIX)) continue;
+      const rest = k.slice(KEPT_PREFIX.length), dot = rest.indexOf("."), id = dot > 0 ? rest.slice(0, dot) : "";
+      const stamp = id === KEPT_TAB ? "" : localStorage.getItem(KEPT_ALIVE + id);
+      if (id === KEPT_TAB || !KEPT_TAB_RE.test(id) || keptHidden(stamp) || keptAdopted(stamp) || now - keptAliveAt(stamp) < KEPT_DEAD_MS) continue;
+      if (!gone.has(id)) gone.set(id, []);
+      gone.get(id).push([rest.slice(dot + 1), k]);
+    }
+    const newest = es => Math.max(0, ...es.map(([, k]) => keptEntry(localStorage.getItem(k), now)?.at ?? 0));
+    for (const [id, es] of [...gone].sort((a, b) => newest(b[1]) - newest(a[1]))) {
+      for (const [field, k] of es) {
+        const held = keptHolder(field), e = keptEntry(localStorage.getItem(k), now);
+        if (!held || !held[1].fill || !e || KEPT_TOUCHED.has(field) || keptOwnText(field) != null) continue;
+        const [name, h] = held, v = keptParse(e.text);
+        if (!(h.map ? h.fill(field.slice(name.length + 1), v) : h.fill(v))) continue;
+        localStorage.setItem(KEPT_OWN + field, JSON.stringify(e));
+        localStorage.removeItem(k);
+        KEPT[field] = e.text; KEPT_AT[field] = e.at; KEPT_SEEN[field] = e.text; KEPT_LOAD[field] = e.text;
+      }
+      if (!es.some(([, k]) => localStorage.getItem(k) != null)) localStorage.removeItem(KEPT_ALIVE + id);
+    }
+  } catch { keptBlocked = true; }
+}
+function keptSave() {
+  keptStamp();
+  const now = Date.now();
+  for (const name of Object.keys(KEPT_HOLD)) {
+    const cur = keptCur(name);
+    if (!cur) continue;
+    if (KEPT_HOLD[name].map) for (const f of Object.keys(KEPT_SEEN)) if (f.startsWith(`${name}.`) && !(f in cur)) cur[f] = null;
+    for (const [f, text] of Object.entries(cur)) {
+      keptWatch(f, text);
+      const had = KEPT_SEEN[f] ?? null, key = KEPT_OWN + f;
+      try {
+        if (text == null) {
+          if (had == null) continue;
+          localStorage.removeItem(key);
+          delete KEPT_AT[f];
+        } else {
+          if (text === had && localStorage.getItem(key) != null) continue;
+          localStorage.setItem(key, JSON.stringify({ text, at: KEPT_AT[f] ??= now }));
+        }
+        KEPT_SEEN[f] = text;
+      } catch (e) { keptFailed(e); }
+    }
+  }
+}
+addEventListener("pagehide", () => { keptSave(); keptStamp("closed"); });
+addEventListener("pageshow", () => { keptMode = ""; keptStamp(); });
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") { keptSave(); keptStamp("hidden"); } else { keptMode = ""; keptStamp(); keptLate(); } });
+// why(platform): Chrome sends the Enter that commits a composition with isComposing true, Safari sends it after compositionend with keyCode 229, https://bugs.webkit.org/show_bug.cgi?id=165004
+const imeKey = ev => !!ev.isComposing || ev.keyCode === 229;
+const plainEnter = ev => ev.key === "Enter" && !imeKey(ev);
+const enterSends = () => !matchMedia("(pointer: coarse)").matches;
 // A filter or tab row that scrolls sideways keeps its chosen item in view after it is drawn (a repaint starts the row at its left end).
 // Only the row scrolls, never the page. Returns the row.
 function segKeep(row) {
@@ -126,7 +319,6 @@ const ICONS = {
   side: "M14 6.4 10.5 12l3.5 5.6",
   pick: "M6 3l13 8-5.6 1.6L10 19zM13 13l4 6",
 };
-const VIEW_ICON = { home: "home", chat: "chat", activity: "activity", projects: "projects", project: "projects", lanes: "lanes", monitoring: "activity", apps: "apps", notices: "bell", harness: "harness", settings: "settings", models: "model", accounts: "key", usage: "usage", context: "context", discord: "discord", jandi: "chat", slack: "chat", telegram: "chat", messengers: "chat", devices: "key", webaccess: "open" };
 const icon = (n, cls = "") => { const s = document.createElementNS("http://www.w3.org/2000/svg", "svg"); s.setAttribute("viewBox", "0 0 24 24"); s.setAttribute("class", `ic ${cls}`.trim()); s.setAttribute("aria-hidden", "true"); const p = document.createElementNS("http://www.w3.org/2000/svg", "path"); p.setAttribute("d", ICONS[n]); s.append(p); return s; };
 
 /* ---------- formatting ---------- */

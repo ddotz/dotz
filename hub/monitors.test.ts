@@ -3,7 +3,7 @@ import { afterAll, beforeEach, expect, test } from "bun:test";
 import { paths } from "./config.ts";
 import { advance } from "./runtime/test-clock.ts";
 import { listMonitors } from "./monitors.ts";
-import { addSchedule, listSchedules, patchSchedule, removeSchedule, startSchedules, stopSchedules } from "./schedule.ts";
+import { addSchedule, listScheduleRuns, listSchedules, markScheduleRun, patchSchedule, removeSchedule, startSchedules, stopSchedules } from "./schedule.ts";
 import { addWatch, allWatches, patchWatch, removeWatch, runWatch, startWatches } from "./watch.ts";
 
 const clearAll = () => {
@@ -30,14 +30,42 @@ test("one watch and one schedule come back in the owner-facing shape", async () 
 	expect(Date.parse(watch.next_run!) - Date.parse(watch.last_run!)).toBe(10 * 60_000);
 
 	const sched = items.find(i => i.kind === "schedule")!;
-	expect(sched).toEqual({ name: "주간 보고 정리", schedule: s.id, kind: "schedule", channel: "ch:7", scope: "project", project: "ch:7", project_title: "프로젝트", next_run: s.at, every: "2시간마다" });
+	expect(sched).toEqual({ name: "주간 보고 정리", schedule: s.id, kind: "schedule", sk: "owner", channel: "ch:7", scope: "project", project: "ch:7", project_title: "프로젝트", next_run: s.at, every: "2시간마다" });
 });
 
 test("a schedule carries its id, so the web can pause, resume and delete it (PATCH / DELETE /api/schedules/<id>)", () => {
 	const s = addSchedule({ text: "메일 연결 확인", in_minutes: 30 });
-	expect(listMonitors()).toEqual([{ name: "메일 연결 확인", schedule: s.id, kind: "schedule", scope: "plain", next_run: s.at }]);
+	expect(listMonitors()).toEqual([{ name: "메일 연결 확인", schedule: s.id, kind: "schedule", sk: "owner", scope: "plain", next_run: s.at }]);
 	patchSchedule(s.id, { paused: true });
-	expect(listMonitors()).toEqual([{ name: "메일 연결 확인", schedule: s.id, kind: "schedule", scope: "plain", paused: true }]);
+	expect(listMonitors()).toEqual([{ name: "메일 연결 확인", schedule: s.id, kind: "schedule", sk: "owner", scope: "plain", paused: true }]);
+});
+
+test("a schedule row is named by its own name and says what its latest run became, not always ok", async () => {
+	startSchedules(() => {});
+	const s = addSchedule({ name: "sample-2 일일 보고", kind: "task", text: "ch:7 Run the daily report and post it.", in_minutes: 1, every_minutes: 1440 });
+	expect(listMonitors()[0]).toMatchObject({ name: "sample-2 일일 보고", sk: "task" });
+	expect(listMonitors()[0]!.last_run).toBeUndefined();
+	await advance(61_000);
+	stopSchedules();
+	const run = listScheduleRuns().filter(r => r.scheduleId === s.id).at(-1)!;
+	const row = () => listMonitors().find(m => m.schedule === s.id)!;
+	expect(row()).toMatchObject({ run_state: "fired", last_run: run.firedAt, last_result: "ok" });
+	markScheduleRun(run.run, "held");
+	expect(row()).toMatchObject({ run_state: "held", last_result: "ok" });
+	markScheduleRun(run.run, "failed");
+	expect(row()).toMatchObject({ run_state: "failed", last_result: "fail" });
+	markScheduleRun(run.run, "silent");
+	expect(row()).toMatchObject({ run_state: "silent", last_result: "ok" });
+});
+
+test("a repeat reads as the owner says it, with the time of day of its next run", () => {
+	const at = (h: number, m: number) => { const d = new Date(Date.now() + 2 * 86_400_000); d.setHours(h, m, 0, 0); return d; };
+	const daily = addSchedule({ text: "아침 점검", at: at(7, 0).toISOString(), every_minutes: 1440 });
+	const weekly = addSchedule({ text: "주간 정리", at: at(21, 5).toISOString(), every_minutes: 10080 });
+	const day = "일월화수목금토"[at(21, 5).getDay()];
+	const every = (id: string) => listMonitors().find(m => m.schedule === id)!.every;
+	expect(every(daily.id)).toBe("매일 오전 7:00");
+	expect(every(weekly.id)).toBe(`매주 ${day}요일 오후 9:05`);
 });
 
 test("a watch carries its own connection, a short last line and a paused flag", async () => {
@@ -80,18 +108,9 @@ test("two failures in a row read as disconnected with the outage start", async (
 	expect(m.next_run).toBeDefined();
 });
 
-// A paused schedule keeps its row and says it is off; its last run is a success by definition (it fired).
 test("a schedule is listed by its short name, never by the commands its text runs", () => {
 	addSchedule({ text: "ch:7 피드백 데일리 보고: `ssh -o BatchMode=yes user@100.64.0.2 python3 - 24 < ~/.dotz/projects/feedback/collect.py`로 지난 24시간 메시지를 정리해요.", in_minutes: 60 });
 	expect(listMonitors().find(m => m.kind === "schedule")!.name).toBe("피드백 데일리 보고: 지난 24시간 메시지를 정리해요");
-});
-
-test("a paused schedule says it is off", () => {
-	const s = addSchedule({ text: "ch:7 주간 보고 정리", in_minutes: 60, every_minutes: 120 });
-	patchSchedule(s.id, { paused: true });
-	const m = listMonitors().find(i => i.kind === "schedule")!;
-	expect(m).toMatchObject({ name: "주간 보고 정리", paused: true });
-	expect(m.next_run).toBeUndefined();
 });
 
 // A one-shot is removed from the hub (memory and file) once it has done its job; a recurring one stays.

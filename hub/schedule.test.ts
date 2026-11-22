@@ -4,12 +4,14 @@ import { readFileSync } from "node:fs";
 import { paths } from "./config.ts";
 import { advance, clock } from "./runtime/test-clock.ts";
 import { sessionKeyOf } from "./session-key.ts";
-import { addSchedule, checksSharingSlot, listSchedules, patchSchedule, removeSchedule, scheduleTarget, startSchedules } from "./schedule.ts";
+import { addSchedule, checksSharingSlot, listScheduleRuns, listSchedules, markScheduleRun, NAME_MAX, patchSchedule, removeSchedule, RUN_KEEP_MS, type ScheduleRun, scheduleTarget, startSchedules } from "./schedule.ts";
+import type * as ScheduleModule from "./schedule.ts";
 
 const fired: string[] = [];
 // One entry per handler call: the ids of the schedules that call carries.
 const turns: string[][] = [];
-beforeAll(() => startSchedules((s, group) => (fired.push(s.id), turns.push((group ?? [s]).map(x => x.id)))));
+const runIds: string[][] = [];
+beforeAll(() => startSchedules((s, group, runs) => (fired.push(s.id), turns.push((group ?? [s]).map(x => x.id)), runIds.push(runs))));
 afterEach(() => {
 	for (const s of listSchedules()) removeSchedule(s.id);
 	fired.length = 0;
@@ -146,4 +148,44 @@ test("PATCH changes the kind and refuses an unknown one", () => {
 	expect(stored(s.id).kind).toBe("check");
 	expect(() => patchSchedule(s.id, { kind: "quiet" })).toThrow("kind must be");
 	expect(patchSchedule(s.id, { text: "고침" }).kind).toBe("check");
+});
+
+test("a name is trimmed, kept on one line and cut at NAME_MAX; a blank one is refused; with none the text names it", () => {
+	const s = addSchedule({ name: "  sample-2\n 보고  ", kind: "task", text: "x", in_minutes: 7 });
+	expect(stored(s.id)).toMatchObject({ name: "sample-2 보고", kind: "task" });
+	expect(addSchedule({ name: "가".repeat(NAME_MAX + 9), text: "x", in_minutes: 7 }).name).toBe("가".repeat(NAME_MAX));
+	for (const name of ["", "   ", 7]) expect(() => addSchedule({ name, text: "x", in_minutes: 7 })).toThrow("name must be");
+	expect(addSchedule({ text: "sample-2 회의 알려 줘", in_minutes: 7 }).name).toBe("sample-2 회의 알려 줘");
+	expect(patchSchedule(s.id, { name: " sample-3 " }).name).toBe("sample-3");
+	expect(() => patchSchedule(s.id, { name: " " })).toThrow("name must be");
+	expect(stored(s.id).name).toBe("sample-3");
+});
+
+test("a fire keeps a run record past the one-shot's deletion and a restart, hands its id to the handler, and drops it after 7 days", async () => {
+	const s = addSchedule({ name: "sample-2", kind: "task", text: "sample-2 보고해", in_minutes: 7 });
+	await advance(8 * 60_000);
+	expect(listSchedules()).toEqual([]);
+	const [run] = runIds.at(-1)!;
+	const record: ScheduleRun = { run: run!, scheduleId: s.id, name: "sample-2", kind: "task", text: "sample-2 보고해", firedAt: new Date(Date.parse(s.at)).toISOString(), state: "fired" };
+	expect(listScheduleRuns().filter(r => r.scheduleId === s.id)).toEqual([record]);
+	expect(markScheduleRun(run!, "answered")).toMatchObject({ run, state: "answered" });
+	const fresh = "./schedule.ts?runs-restart";
+	const restarted: typeof ScheduleModule = await import(fresh);
+	expect(restarted.listScheduleRuns().filter(r => r.scheduleId === s.id)).toEqual([{ ...record, state: "answered" }]);
+	await advance(RUN_KEEP_MS);
+	expect(listScheduleRuns().some(r => r.scheduleId === s.id)).toBe(false);
+	expect(markScheduleRun(run!, "failed")).toBeUndefined();
+	addSchedule({ name: "sample-3", text: "x", in_minutes: 1 });
+	await advance(2 * 60_000);
+	expect(JSON.parse(readFileSync(paths.scheduleRuns, "utf8")).some((r: { scheduleId: string }) => r.scheduleId === s.id)).toBe(false);
+});
+
+test("each check of a merged turn gets its own run id, in the order of the group", async () => {
+	const a = addSchedule({ name: "sample-2", text: "하나", in_minutes: 7, kind: "check" });
+	const b = addSchedule({ name: "sample-3", text: "둘", at: a.at, kind: "check" });
+	await advance(40 * 60_000);
+	expect(turns.at(-1)).toEqual([a.id, b.id]);
+	const runs = runIds.at(-1)!;
+	expect(new Set(runs).size).toBe(2);
+	expect(runs.map(r => listScheduleRuns().find(x => x.run === r)?.scheduleId)).toEqual([a.id, b.id]);
 });

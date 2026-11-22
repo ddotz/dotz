@@ -25,7 +25,7 @@ beforeEach(() => {
 	stateFile = join(base, "state.json");
 	sessionFile = join(base, "main.jsonl");
 	writeFileSync(stateFile, JSON.stringify({ open_tasks: [{ id: "t-open-1", what: "finish the report" }] }));
-	const header = JSON.stringify({ type: "session", version: 3, id: SESSION, timestamp: "2026-11-09T00:00:00.000Z", cwd: "/home/x/.dotz" });
+	const header = JSON.stringify({ type: "session", version: 3, id: SESSION, timestamp: "2026-11-09T00:00:00.000Z", cwd: "/srv/x/.dotz" });
 	const compaction = JSON.stringify({ type: "compaction", timestamp: "2026-11-10T10:00:00.000Z", summary: "SUMMARY-IN-WINDOW commit abc1234def" });
 	const oldCompaction = JSON.stringify({ type: "compaction", timestamp: "2026-11-01T10:00:00.000Z", summary: "SUMMARY-TOO-OLD" });
 	writeFileSync(sessionFile, [header, oldCompaction, compaction, ...exchange("m1", "please fix the build", "fixed it, token sk-ant-api03-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", "2026-11-10T03:00:00.000Z"), ...exchange("m2", "ancient question", "ancient answer", "2026-11-01T03:00:00.000Z")].join("\n") + "\n");
@@ -220,7 +220,7 @@ describe("a run", () => {
 		fallback: () => "worker/model:high",
 		dir,
 		stateFile,
-		files: since => mainSessionFiles(since, [base], "/home/x/.dotz").concat(since < 0 ? [] : [sessionFile]),
+		files: since => mainSessionFiles(since, [base], "/srv/x/.dotz").concat(since < 0 ? [] : [sessionFile]),
 		secrets: () => [],
 		resolve: async () => (resolved++, resolution),
 		call: async (system, text, o) => {
@@ -323,6 +323,15 @@ describe("a run", () => {
 		expect(logs[0]).toContain("omo doctor exited 2");
 	});
 
+	test("without a resolver (a runtime other than OmO) the worker model writes the note and the label says so", async () => {
+		pinned = "";
+		await runDayNote({ ...run(), resolve: undefined }, sleep, NOW + 4 * 60_000);
+		expect(calls[0]!.model).toBe("worker/model:high");
+		expect(resolved).toBe(0);
+		expect(logs[0]).toContain("worker/model:high (worker model)");
+		expect(logs[0]).not.toContain("OmO quick");
+	});
+
 	test("no exchange and no summary in the window: skipped without a call", async () => {
 		const quiet = { ...run(), files: () => [] as string[] };
 		const a = await attempt(quiet, async () => ({ model: "m", label: "m" }));
@@ -338,17 +347,43 @@ describe("a run", () => {
 });
 
 describe("mainSessionFiles", () => {
-	test("reads the folder named for the data folder, files written since the window began", () => {
-		const folder = join(base, "--home-x-.dotz--");
+	const header = (cwd: string): string => `${JSON.stringify({ type: "session", version: 3, id: SESSION, cwd })}\n`;
+	const title = `${JSON.stringify({ type: "title", title: "x", pad: " ".repeat(200) })}\n`;
+
+	test("reads the folders whose files' header names the data folder, files written since the window began", () => {
+		const folder = join(base, "any-name");
 		mkdirSync(folder);
 		const fresh = join(folder, "fresh.jsonl");
 		const stale = join(folder, "stale.jsonl");
-		writeFileSync(fresh, "");
-		writeFileSync(stale, "");
+		writeFileSync(fresh, header("/srv/x/.dotz"));
+		writeFileSync(stale, header("/srv/x/.dotz"));
 		utimesSync(stale, 1, 1);
-		mkdirSync(join(base, "--home-x-.dotz-lanes-a--"));
-		writeFileSync(join(base, "--home-x-.dotz-lanes-a--", "lane.jsonl"), "");
-		expect(mainSessionFiles(statSync(fresh).mtimeMs - 1000, [base, join(base, "nope")], "/home/x/.dotz")).toEqual([fresh]);
+		mkdirSync(join(base, "--srv-x-.dotz-lanes-a--"));
+		writeFileSync(join(base, "--srv-x-.dotz-lanes-a--", "lane.jsonl"), header("/srv/x/.dotz/lanes/a"));
+		expect(mainSessionFiles(statSync(fresh).mtimeMs - 1000, [base, join(base, "nope")], "/srv/x/.dotz")).toEqual([fresh]);
+	});
+
+	test("an omp file starts with a title record: the header on its second line still names the folder", () => {
+		const folder = join(base, "--srv-x-.dotz--");
+		mkdirSync(folder);
+		const file = join(folder, "omp.jsonl");
+		writeFileSync(file, title + header("/srv/x/.dotz"));
+		expect(mainSessionFiles(0, [base], "/srv/x/.dotz")).toEqual([file]);
+	});
+
+	test("a folder is not the data folder's because of its name", () => {
+		const folder = join(base, "--srv-x-.dotz--");
+		mkdirSync(folder);
+		writeFileSync(join(folder, "other.jsonl"), header("/srv/x/elsewhere"));
+		expect(mainSessionFiles(0, [base], "/srv/x/.dotz")).toEqual([]);
+	});
+
+	test("the input of an omp file with a title record first is collected", () => {
+		const text = [title.trim(), header("/srv/x/.dotz").trim(), ...exchange("m1", "hello there", "hi back", "2026-11-10T08:00:00.000Z")].join("\n");
+		const file = join(base, "omp-main.jsonl");
+		writeFileSync(file, `${text}\n`);
+		const got = collectInput({ files: [file], start: Date.parse("2026-11-10T00:00:00.000Z"), end: Date.parse("2026-11-11T00:00:00.000Z"), stateFile, secrets: [] });
+		expect(got.pairs).toBe(1);
 	});
 });
 

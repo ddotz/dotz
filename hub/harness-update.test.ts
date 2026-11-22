@@ -4,7 +4,7 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { flush } from "./runtime/test-clock.ts";
-import { CACHE_FILE, applyHarness, checkHarness, harnessIds, harnessUpdateRoute, jobOf, resetHarnessJobs, type Tools } from "./harness-update.ts";
+import { CACHE_FILE, applyHarness, checkHarness, harnessIds, harnessUpdateRoute, jobOf, type Tools } from "./harness-update.ts";
 
 let dir: string;
 const OMO_BIN = "/Users/fake/.bun/bin/omo";
@@ -13,7 +13,6 @@ const OMO_REAL = "/Users/fake/.bun/install/global/node_modules/omo-ai/bin/omo.js
 
 beforeEach(() => {
 	dir = mkdtempSync(join(tmpdir(), "dotz-harness-update-"));
-	resetHarnessJobs();
 });
 afterEach(() => rmSync(dir, { recursive: true, force: true }));
 

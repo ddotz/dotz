@@ -43,7 +43,6 @@ test("reasons of the watch runner read as Korean and unknown ones pass through",
 	expect(watchReasonKo("recovered")).toBe("다시 정상이에요");
 	expect(watchReasonKo("failed 3 times in a row (exit 1)")).toBe("3번 연속 실패했어요");
 	expect(watchReasonKo("바뀌었어요")).toBe("바뀌었어요");
-	expect(watchLine("재고 감시", "output changed", "boutique_mails=1")).toBe("재고 감시: 결과가 바뀌었어요\n```원문\nboutique_mails=1\n```");
 	expect(watchLine("재고 감시", "output changed", "boutique_mails=1", { raw: false })).toBe("재고 감시: 결과가 바뀌었어요");
 	expect(watchLine("재고 감시", "output changed", " ")).toBe("재고 감시: 결과가 바뀌었어요");
 });

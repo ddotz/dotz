@@ -121,16 +121,11 @@ test("read prints text messages oldest first with the owner as 나, and refuses 
 	expect(log.out).toHaveLength(2);
 });
 
-test("draft bases itself on the newest incoming text message; send hands the approval check the latest incoming log id", async () => {
+test("draft bases itself on the newest incoming text message; there is no send command (only the owner's 보내기 on the card sends)", async () => {
 	const created: any[] = [];
-	const sent: string[] = [];
 	const drafts: DraftsApi = {
 		create: async input => (created.push(input), { code: "KAAAAA" }),
 		block: d => `block:${d.code}`,
-		send: async (code, deps) => {
-			sent.push(`${code}:${await deps.latestIncoming("101")}:${(await deps.roomNames()).map(r => r.name).join(",")}`);
-			return code === "KGOOD" ? { ok: true } : { ok: false, reason: "아직 보내도 된다는 답을 받지 못했어요" };
-		},
 	};
 	const { ctx, log } = build({ drafts: async () => drafts, stdin: async () => " 좋아요, 정오에 봐요 \n" });
 	enable(ctx);
@@ -140,10 +135,9 @@ test("draft bases itself on the newest incoming text message; send hands the app
 	log.out.length = 0;
 	expect(await run(["draft", "--chat", "105"], ctx)).toBe(1);
 	expect(created).toHaveLength(1);
-	expect(await run(["send", "--draft", "KGOOD"], ctx)).toBe(0);
-	expect(await run(["send", "--draft", "KBAD"], ctx)).toBe(1);
-	expect(sent).toEqual([`KGOOD:${MSGS[2]!.logId}:Alex,Shop`, `KBAD:${MSGS[2]!.logId}:Alex,Shop`]);
-	expect(log.out.at(-1)).toContain("아직 보내도 된다는 답을 받지 못했어요");
+	const posts = log.hub.length;
+	expect(await run(["send", "--draft", "KGOOD"], ctx)).toBe(2);
+	expect(log.hub).toHaveLength(posts);
 });
 
 test("status when on lists the setup state, the app and the pending draft count; off removes what setup wrote", async () => {

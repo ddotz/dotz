@@ -257,4 +257,8 @@ describe("evictSurplus: the keep limit", () => {
 		evictSurplus(list, 6, 8, k => dropped.push(k));
 		expect(dropped).toEqual(["sent", "plain"]);
 	});
+	test("a mail whose automatic offer failed (suggest waiting, no draft) only awaits a reply: it goes beyond the needs bound", () => {
+		const failed: R[] = [{ key: "failed", reply: "needs", suggest: { state: "waiting" } }, { key: "new1" }];
+		expect(keys(evictSurplus(failed, 1, 1))).toEqual(["new1"]);
+	});
 });

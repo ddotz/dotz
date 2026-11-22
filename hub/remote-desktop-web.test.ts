@@ -454,12 +454,12 @@ describe("the viewer in voxl's page", () => {
 
 	test("the first touch asks for fullscreen once; a refusal is quiet", async () => {
 		const v = await viewer(412, 915, "?touch");
-		await run(v, `window.asked = 0; window.bad = 0; addEventListener("unhandledrejection", () => bad++); document.documentElement.requestFullscreen = () => (asked++, Promise.reject(new TypeError("refused")));`);
+		await run(v, `window.asked = 0; window.bad = 0; window.refusals = []; addEventListener("unhandledrejection", () => bad++); document.documentElement.requestFullscreen = () => (asked++, refusals.push(Promise.reject(new TypeError("refused"))), refusals.at(-1));`);
 		await run(v, `touch("up", 9, 400, 900, document.getElementById("fs-btn"));`);
 		expect(await ev(v, "asked")).toBe(0);
 		await touch(v, ["down", 1, 100, 400], ["up", 1, 100, 400], ["down", 1, 100, 400], ["up", 1, 100, 400]);
 		expect(await ev(v, "asked")).toBe(1);
-		await v.evaluate("new Promise(r => setTimeout(r))");
+		await v.evaluate("Promise.allSettled(refusals).then(() => 0)");
 		expect(await ev(v, "bad")).toBe(0);
 	});
 

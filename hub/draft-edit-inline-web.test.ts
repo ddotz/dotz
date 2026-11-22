@@ -61,7 +61,7 @@ test("a draft that left the dock answers through its 답 대기 row, and 고치�
 	expect(await ev(v, `document.querySelectorAll("#tl .dcm-row").length`)).toBe(0);
 	await run(v, `document.querySelector("#dcard .dc-wait").click()`);
 	await waitFor(v, `document.querySelectorAll(".fs-ft .dc-act").length === 3`);
-	await run(v, `[...document.querySelectorAll(".fs-ft .dc-act")].find(b => b.textContent === "고치기").click()`);
+	await run(v, `document.querySelector('.fs-ft .dc-act[data-n="2"]').click()`);
 	await waitFor(v, `document.querySelector(".fs-ft .dc-note")`);
 	expect(answers).toEqual([]);
 	await run(v, `const ta = document.querySelector(".fs-ft .dc-note"); ta.value = "더 짧게"; ta.dispatchEvent(new Event("input"))`);

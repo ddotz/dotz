@@ -8,6 +8,20 @@ import { cleanName, friendlyName } from "../hub/machine-name.ts";
 import { defaultHarness, harness, HARNESSES } from "../onboard/harness.ts";
 
 export const SNOWFLAKE = /^\d{17,20}$/;
+const HOSTNAME = /^(?=.{1,253}$)[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*$/;
+
+export const ACCESS_MODES = ["tailscale", "cloudflare", "local"] as const;
+export type AccessMode = (typeof ACCESS_MODES)[number];
+export const CONNECT_KEYS = ["discord", "slack", "telegram", "jandi"] as const;
+export type ConnectKey = (typeof CONNECT_KEYS)[number];
+const isAccess = (v: unknown): v is AccessMode => (ACCESS_MODES as readonly unknown[]).includes(v);
+const isConnectKey = (v: unknown): v is ConnectKey => (CONNECT_KEYS as readonly unknown[]).includes(v);
+
+/** The hostname as the connection engine reads it: lowercase, no scheme, no trailing slash; "" when it is no valid hostname. */
+export function cleanHostname(value: unknown): string {
+	const s = typeof value === "string" ? value.trim().toLowerCase().replace(/^https?:\/\//, "").replace(/\/+$/, "") : "";
+	return HOSTNAME.test(s) && s !== "dotz" ? s : "";
+}
 
 export type Identity = { name: string; character: string; tone: string; notices?: string; address?: string; avatar?: string; language?: string };
 export type Answers = {
@@ -25,6 +39,9 @@ export type Answers = {
 	install_aside?: boolean;
 	runtime: string;
 	install_harness?: boolean;
+	access: AccessMode;
+	cloudflare_hostname?: string;
+	connect: ConnectKey[];
 };
 
 export const CHARACTERS = [
@@ -48,18 +65,47 @@ export const NOTICES = [
 export const stripExample = (o: string): string => o.replace(/\s*\(예:.*\)$/, "");
 
 /** What an earlier run left in config.json: every answer is the default of the next run. */
-export type Prior = { raw: Record<string, any>; identity: Identity; machineName: string; defaultMachineName: string; runtime: string | undefined; selector: (t: "orchestrator" | "lanes") => string };
+export type Prior = { raw: Record<string, any>; identity: Identity; machineName: string; defaultMachineName: string; runtime: string | undefined; access: AccessMode; accessSaved: boolean; cloudflareHost: string; selector: (t: "orchestrator" | "lanes") => string };
+function savedAccess(file: string): { mode?: unknown; hostname?: unknown } {
+	if (!existsSync(file)) return {};
+	try {
+		return (JSON.parse(readFileSync(file, "utf8")) as { mode?: unknown; hostname?: unknown } | null) ?? {};
+	} catch (e) {
+		if (e instanceof SyntaxError) return {};
+		throw e;
+	}
+}
+const derivedAccess = (logins: unknown): AccessMode => (Array.isArray(logins) && logins.length ? "tailscale" : "local");
 export function priorOf(dir: string): Prior {
 	const raw = existsSync(join(dir, "config.json")) ? JSON.parse(readFileSync(join(dir, "config.json"), "utf8")) : {};
+	const live = savedAccess(join(dir, "web-access.json"));
+	const seeded = savedAccess(join(dir, "onboarding", "web-access-input.json"));
+	const saved = isAccess(live.mode) ? live.mode : isAccess(raw.web?.access) ? raw.web.access : undefined;
 	return {
 		raw,
 		identity: { name: "", character: "", tone: "", ...raw.identity },
 		machineName: cleanName(raw.web?.machine_name),
 		defaultMachineName: friendlyName(hostname()),
 		runtime: (raw.orchestrator?.runtime ?? raw.lanes?.runtime ?? raw.runtime) as string | undefined,
+		access: saved ?? derivedAccess(raw.web?.allow_logins),
+		accessSaved: saved !== undefined,
+		cloudflareHost: cleanHostname(live.hostname) || cleanHostname(seeded.hostname) || cleanHostname(raw.web?.cloudflare?.hostname),
 		// Model settings live in `models` (hub/config.ts).
 		selector: t => `${raw.models?.[t]?.model ?? "anthropic/claude-opus-5-5"}:${raw.models?.[t]?.thinking ?? "medium"}`,
 	};
+}
+
+export type RuntimeModels = { available: ReadonlySet<string>; fallback?: string };
+
+export function splitSelector(sel: string): { model: string; thinking: string } {
+	const i = sel.lastIndexOf(":");
+	return i > 0 && !sel.slice(i + 1).includes("/") ? { model: sel.slice(0, i), thinking: sel.slice(i + 1) } : { model: sel, thinking: "medium" };
+}
+
+/** The earlier run's model (or the Anthropic default) while the runtime offers it, else the runtime's own default when it has one. */
+export function selectorFor(prior: Prior, t: "orchestrator" | "lanes", models?: RuntimeModels): string {
+	const kept = prior.selector(t);
+	return models?.fallback && !models.available.has(splitSelector(kept).model) ? models.fallback : kept;
 }
 
 export const expandHome = (p: string, home: string): string => p.replace(/^~(?=\/|$)/, home);
@@ -67,7 +113,7 @@ export const expandHome = (p: string, home: string): string => p.replace(/^~(?=\
 export type Checked = { ok: true; answers: Answers } | { ok: false; errors: string[] };
 
 /** Fills what an answers file may leave out from the earlier run and the defaults, and lists what is wrong. */
-export function validateAnswers(a: Partial<Answers>, prior: Prior, home: string): Checked {
+export function validateAnswers(a: Partial<Answers>, prior: Prior, home: string, models?: RuntimeModels): Checked {
 	const errors: string[] = [];
 	const identity: Identity = { ...prior.identity, ...a.identity };
 	identity.character ||= CHARACTERS[0];
@@ -79,10 +125,21 @@ export function validateAnswers(a: Partial<Answers>, prior: Prior, home: string)
 	if (!identity.character) errors.push("identity.character: 성격 한 줄");
 	if (!identity.tone) errors.push("identity.tone: 말투 한 줄");
 	if (identity.avatar && !existsSync(expandHome(identity.avatar, home))) errors.push(`identity.avatar: 파일 없음 ${identity.avatar}`);
-	const guild = String(a.guild ?? "");
-	const owner = String(a.owner_id ?? "");
+	const guild = String(a.guild ?? prior.raw.discord?.guild ?? "");
+	const owner = String(a.owner_id ?? prior.raw.discord?.owner_id ?? "");
 	if (guild && !SNOWFLAKE.test(guild)) errors.push("guild: 17~20자리 숫자");
 	if (guild && !SNOWFLAKE.test(owner)) errors.push("owner_id: 17~20자리 숫자 (guild 가 있으면 필수)");
+	const allow_logins = a.allow_logins ?? prior.raw.web?.allow_logins ?? [];
+	const access = a.access ?? (prior.accessSaved ? prior.access : derivedAccess(allow_logins));
+	if (!isAccess(access)) errors.push(`access: ${ACCESS_MODES.join(" | ")} 중 하나`);
+	const hostGiven = typeof a.cloudflare_hostname === "string" && a.cloudflare_hostname.trim() !== "";
+	const cloudflareHost = hostGiven ? cleanHostname(a.cloudflare_hostname) : "";
+	if (hostGiven && !cloudflareHost) errors.push("cloudflare_hostname: 도메인 주소 (예: dotz.example.com)");
+	const tokenPath = typeof prior.raw.discord?.token_file === "string" ? expandHome(prior.raw.discord.token_file, home) : "";
+	const hasToken = Boolean(a.bot_token) || (tokenPath !== "" && existsSync(tokenPath));
+	const chosen = a.connect;
+	const connect = Array.isArray(chosen) ? [...new Set(chosen.filter(isConnectKey))] : a.guild && !hasToken ? ["discord" as const] : [];
+	if (chosen !== undefined && (!Array.isArray(chosen) || chosen.some(k => !isConnectKey(k)))) errors.push(`connect: ${CONNECT_KEYS.join(" | ")} 의 목록`);
 	const runtime = String(a.runtime ?? defaultHarness(prior.runtime));
 	if (!harness(runtime)?.adapter) errors.push(`runtime: ${HARNESSES.filter(h => h.adapter).map(h => h.id).join(" | ")} 중 하나`);
 	if (errors.length) return { ok: false, errors };
@@ -95,14 +152,17 @@ export function validateAnswers(a: Partial<Answers>, prior: Prior, home: string)
 			owner_id: owner,
 			guild,
 			bot_token: a.bot_token,
-			allow_logins: a.allow_logins ?? prior.raw.web?.allow_logins ?? [],
+			allow_logins,
 			machine_name: cleanName(a.machine_name) || prior.machineName || prior.defaultMachineName,
 			...(typeof a.peer_token === "string" && a.peer_token.trim().length >= 16 ? { peer_token: a.peer_token.trim() } : {}),
 			web_port: Number(a.web_port ?? prior.raw.web?.port ?? 7420),
 			tailscale_https_port: Number(a.tailscale_https_port ?? prior.raw.web?.tailscale_https_port ?? 8443),
-			orchestrator_model: a.orchestrator_model ?? prior.selector("orchestrator"),
-			lane_model: a.lane_model ?? prior.selector("lanes"),
+			orchestrator_model: a.orchestrator_model ?? selectorFor(prior, "orchestrator", models),
+			lane_model: a.lane_model ?? selectorFor(prior, "lanes", models),
 			install_aside: a.install_aside === true,
+			access: isAccess(access) ? access : prior.access,
+			...(cloudflareHost ? { cloudflare_hostname: cloudflareHost } : {}),
+			connect,
 		},
 	};
 }

@@ -24,7 +24,7 @@ export function termArgv(id: TermId): string[] | undefined {
 		case "claude-login":
 			return bin(process.env.DOTZ_CLAUDE ?? "claude") ? [bin(process.env.DOTZ_CLAUDE ?? "claude")!, "auth", "login"] : undefined;
 		case "omp-login":
-			return bin("omp") ? [bin("omp")!, "login"] : undefined;
+			return bin(process.env.DOTZ_OMP ?? "omp") ? [bin(process.env.DOTZ_OMP ?? "omp")!, "login"] : undefined;
 		default:
 			return assertNever(id);
 	}

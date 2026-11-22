@@ -12,21 +12,27 @@ import { TEMP_PATH } from "./live-guard.ts";
 export type LaneStatus = "starting" | "working" | "idle" | "rate-limited" | "exited";
 // A lane in a git repo works in its own worktree (repo = the owner's checkout, base = the branch it lands on).
 export type Worktree = { path: string; repo: string; branch: string; base: string };
+export type LaneMode = "coding" | "assistant";
 type Claim = { state: "reported" | "verified"; at: string; evidence?: string; problems?: string[]; /** The owner wrote after it: it no longer closes the lane (laneunfinished.ts). */ reopened?: boolean };
 // A lane's own [ask] report stays a question for the owner until the owner answers (sendToLane) or the lane reports again.
 // The full text also sits in pending-ask.md (dir(name)) while pending, because report.md is overwritten by gateway notices.
 type Ask = { text: string; at: string };
 // Continuation turns a gateway restart gave a lane on one unchanged plan (laneops.ts restoreLanes); on disk, since restarts are what it counts.
 type RestartWakes = { plan: string; count: number; nextAt?: number };
+// since: when that report was written (ms); toldAt: the last reminder (ms).
+type WaitingMain = { text: string; since: number; tells: number; toldAt?: number };
 // `runtime`: the runtime that wrote sessionFile (omo, omp, claude); a session is only ever resumed by that runtime.
-export type Record_ = { name: string; title?: string; cwd: string; model: string; workerModel?: string; /** workerModel was recorded by the lane itself (lane-cli), not picked by the owner (lanerun.ts ownerAsked). */ workerByLane?: boolean; fableOk?: boolean; status: LaneStatus; startedAt: string; endedAt?: string; sessionFile?: string; runtime?: string; reports: number; lastReportAt?: string; parked?: boolean; held?: string[]; /** Sent again after a busy session refused it (laneevents.ts refusedTurn); on disk, so a restart sends it too. */ refused?: { text: string; tries: number }; /** A compaction finished and the lane has not yet been shown its footer again (identity and rules): cleared at the next turn start when the process holds the extension's re-read, else the next gateway prompt carries the footer (laneprompt.ts). */ contractDue?: boolean; /** Its last report was an [ask] with no choice block, refused and kept as a plain note (lanereport.ts): still a question. */ bareAsk?: boolean; /** The owner stopped this lane or its turn: it is not brought back until someone writes to it. */ ownerStopped?: boolean; /** Its process ended by itself with work unfinished (lanerun.ts); the resume sweep brings it back. */ died?: { at: string; code: number }; /** A network failure stopped its work (lanereconnect.ts); on disk, so a restart keeps it. resumed: this outage's one resume went out. */ interrupted?: { resumed?: boolean }; worktree?: Worktree; claim?: Claim; pendingAsk?: Ask; restartWakes?: RestartWakes; waiting?: string; home?: string; homeName?: string; channel?: string; web?: boolean; /** Session key of the conversation that launched it (none = main): its reports go back to that session (lanerelay.ts). */ from?: string; /** Started for another computer (hub/fleet-launch.ts): that computer's name and the conversation there that asked; its reports go back to it. */ peer?: { name: string; conv: string } };
+export type Record_ = { name: string; title?: string; cwd: string; model: string; workerModel?: string; /** workerModel was recorded by the lane itself (lane-cli), not picked by the owner (lanerun.ts ownerAsked). */ workerByLane?: boolean; fableOk?: boolean; status: LaneStatus; startedAt: string; endedAt?: string; sessionFile?: string; runtime?: string; mode?: LaneMode; reports: number; lastReportAt?: string; parked?: boolean; held?: string[]; /** Sent again after a busy session refused it (laneevents.ts refusedTurn); on disk, so a restart sends it too. */ refused?: { text: string; tries: number }; /** A compaction finished and the lane has not yet been shown its footer again (identity and rules): cleared at the next turn start when the process holds the extension's re-read, else the next gateway prompt carries the footer (laneprompt.ts). */ contractDue?: boolean; /** Its last report was an [ask] with no choice block, refused and kept as a plain note (lanereport.ts): still a question. */ bareAsk?: boolean; /** The owner stopped this lane or its turn: it is not brought back until someone writes to it. */ ownerStopped?: boolean; /** Its process ended by itself with work unfinished (lanerun.ts); the resume sweep brings it back. */ died?: { at: string; code: number }; /** A network failure stopped its work (lanereconnect.ts); on disk, so a restart keeps it. resumed: this outage's one resume went out. */ interrupted?: { resumed?: boolean }; worktree?: Worktree; claim?: Claim; pendingAsk?: Ask; restartWakes?: RestartWakes; waiting?: string; /** Its last report, a [wait] on main, and how often it was told since (laneidle.ts remindMainWaits); on disk, so a restart keeps the count. */ waitingMain?: WaitingMain; home?: string; homeName?: string; channel?: string; web?: boolean; /** Session key of the conversation that launched it (none = main): its reports go back to that session (lanerelay.ts). */ from?: string; /** Started for another computer (hub/fleet-launch.ts): that computer's name and the conversation there that asked; its reports go back to it. */ peer?: { name: string; conv: string } };
 export type Lane = Record_ & {
 	ctx: Ctx;
+	bootstrapDue?: true;
 	// The orchestrator sent work (launch, dotz_lane send) that no relayed report answered yet; an owner-only exchange in
 	// the lane channel leaves it false, so that reply is not relayed (lanerelay.ts); unknown (a restored lane) relays.
 	orchAsked?: boolean;
 	// The turn now running began from main's answer to this lane's own request (dotz_main, lane-handback.ts): it may not hand main work again.
 	handedBack?: true;
+	// When this lane last handed main a request (dotz_main, hub/routes-send.ts), ms: a bare [wait] of the same turn waits on that request (hub/lanereport.ts).
+	mainAskedAt?: number;
 	lastText: string;
 	// [done] reports the gateway's Done-when check sent back in a row (lanereport.ts); past DONE_BOUNCES the orchestrator gets it.
 	doneBounces?: number;
@@ -45,6 +51,9 @@ export type Lane = Record_ & {
 	quiet?: boolean;
 	// Set to restart the process on the same session once it exits: text is the resume prompt (none = back to idle).
 	revive?: { text?: string };
+	closing?: { proc: AgentProcess; why?: "stop" | "shutdown" };
+	restarting?: Promise<void>;
+	restored?: string[];
 	lastFrameAt?: number;
 	/** Owner messages steered into the running turn since its turn_start: a stuck-turn recovery sends them again (lanerun.ts recover). */
 	steered?: string[];
@@ -70,6 +79,8 @@ export type Lane = Record_ & {
 	askRefused?: boolean;
 	// A report with a bare "unverified" line went back to the lane once; the next report goes through and clears it (hub/lanereport.ts).
 	unverifiedRefused?: boolean;
+	// A report with a paragraph not in the install language, or text above its status line, went back once; the next one goes through (hub/lanereport.ts).
+	languageRefused?: boolean;
 	// A report with a word of the owner's list (hub/word-ban.ts) went back to the lane once; the next clean report clears it.
 	bannedRefused?: boolean;
 	// A [wait] naming main with no for-line went back to the lane once; the next report goes through and clears it (hub/lanereport.ts).
@@ -114,7 +125,7 @@ export type Lane = Record_ & {
 
 export const lanes = new Map<string, Lane>();
 type ReportFn = (lane: Lane, text: string, answeringOwner?: boolean, pause?: boolean) => void;
-export const hooks: { report: ReportFn; progress: ReportFn; notice: ReportFn; idle: (name: string) => void; verified: (name: string, text: string) => void; openCard: (name: string) => boolean } = { report: () => {}, progress: () => {}, notice: () => {}, idle: () => {}, verified: () => {}, openCard: () => false };
+export const hooks: { report: ReportFn; progress: ReportFn; notice: ReportFn; idle: (name: string) => void; verified: (name: string, text: string) => void; openCard: (name: string) => boolean; mainWrote: (name: string) => void } = { report: () => {}, progress: () => {}, notice: () => {}, idle: () => {}, verified: () => {}, openCard: () => false, mainWrote: () => {} };
 // Owner messages sent to a lane and not answered yet (lanerelay.ts createOwnerNotes): the lane's short answer note at its next
 // tool boundary reaches the owner at once, and the delivery state of each message follows (hub/events.ts emitDelivery).
 export type OwnerNoteHandlers = { note: (lane: string, text: string, refs: string[]) => void; answered: (lane: string, refs: string[]) => void; refused?: (lane: string, refs: string[]) => void; lost: (lane: string, refs: string[]) => void };
@@ -151,6 +162,12 @@ export function setOpenCardCheck(fn: (name: string) => boolean): void {
 	hooks.openCard = fn;
 }
 
+// Called when a message that is not the owner's reached a lane (main's or the gateway's): the lane relay forgets the lane's last
+// relayed report, so its next one is news even in the same words (review-a G7; lanerelay.ts forget).
+export function setMainWroteHandler(fn: (name: string) => void): void {
+	hooks.mainWrote = fn;
+}
+
 // Tests: bring every piece of module state back to its import-time value (a lane or handler left by one test file must not leak into the next).
 export function resetLaneStateForTest(): void {
 	lanes.clear();
@@ -160,6 +177,7 @@ export function resetLaneStateForTest(): void {
 	hooks.idle = () => {};
 	hooks.verified = () => {};
 	hooks.openCard = () => false;
+	hooks.mainWrote = () => {};
 	ownerHandlers = noopOwnerHandlers();
 	ownerNotes = newOwnerNotes();
 }
@@ -203,9 +221,9 @@ export function persist(lane: Lane): void {
 			// no record yet
 		}
 	}
-	const { name, title, cwd, model, workerModel, workerByLane, fableOk, status, startedAt, endedAt, sessionFile, runtime, reports, lastReportAt, parked, held, refused, contractDue, bareAsk, ownerStopped, died, interrupted, worktree, claim, pendingAsk, restartWakes, waiting, home, homeName, channel, web, from, peer } = lane;
+	const { name, title, cwd, model, workerModel, workerByLane, fableOk, status, startedAt, endedAt, sessionFile, runtime, mode, reports, lastReportAt, parked, held, refused, contractDue, bareAsk, ownerStopped, died, interrupted, worktree, claim, pendingAsk, restartWakes, waiting, waitingMain, home, homeName, channel, web, from, peer } = lane;
 	mkdirSync(dir(name), { recursive: true });
-	writeAtomic(join(dir(name), "lane.json"), `${JSON.stringify({ name, ...(title ? { title } : {}), cwd, model, workerModel, ...(workerByLane ? { workerByLane } : {}), ...(fableOk ? { fableOk } : {}), status, startedAt, ...(endedAt ? { endedAt } : {}), sessionFile, ...(runtime ? { runtime } : {}), reports, ...(lastReportAt ? { lastReportAt } : {}), ...(parked ? { parked } : {}), ...(held?.length ? { held } : {}), ...(refused ? { refused } : {}), ...(contractDue ? { contractDue } : {}), ...(bareAsk ? { bareAsk } : {}), ...(ownerStopped ? { ownerStopped } : {}), ...(died ? { died } : {}), ...(interrupted ? { interrupted } : {}), ...(worktree ? { worktree } : {}), ...(claim ? { claim } : {}), ...(pendingAsk ? { pendingAsk } : {}), ...(restartWakes ? { restartWakes } : {}), ...(waiting ? { waiting } : {}), ...(home ? { home, ...(homeName ? { homeName } : {}) } : {}), ...(channel ? { channel } : {}), ...(web ? { web } : {}), ...(from ? { from } : {}), ...(peer ? { peer } : {}) }, null, 2)}\n`);
+	writeAtomic(join(dir(name), "lane.json"), `${JSON.stringify({ name, ...(title ? { title } : {}), cwd, model, workerModel, ...(workerByLane ? { workerByLane } : {}), ...(fableOk ? { fableOk } : {}), status, startedAt, ...(endedAt ? { endedAt } : {}), sessionFile, ...(runtime ? { runtime } : {}), ...(mode ? { mode } : {}), reports, ...(lastReportAt ? { lastReportAt } : {}), ...(parked ? { parked } : {}), ...(held?.length ? { held } : {}), ...(refused ? { refused } : {}), ...(contractDue ? { contractDue } : {}), ...(bareAsk ? { bareAsk } : {}), ...(ownerStopped ? { ownerStopped } : {}), ...(died ? { died } : {}), ...(interrupted ? { interrupted } : {}), ...(worktree ? { worktree } : {}), ...(claim ? { claim } : {}), ...(pendingAsk ? { pendingAsk } : {}), ...(restartWakes ? { restartWakes } : {}), ...(waiting ? { waiting } : {}), ...(waitingMain ? { waitingMain } : {}), ...(home ? { home, ...(homeName ? { homeName } : {}) } : {}), ...(channel ? { channel } : {}), ...(web ? { web } : {}), ...(from ? { from } : {}), ...(peer ? { peer } : {}) }, null, 2)}\n`);
 }
 export function setStatus(lane: Lane, status: LaneStatus): void {
 	if (lane.status === status) return;
@@ -227,6 +245,10 @@ export const portOf = (lane: Lane): CompactPort => ({ idle: () => lane.status ==
 export const pendingFile = (lane: Lane) => join(dir(lane.name), "pending-report.md");
 
 export const laneWorkerModel = (lane: Pick<Lane, "workerModel">) => lane.workerModel ?? workerModel();
+
+const LANE_MODES: readonly LaneMode[] = ["coding", "assistant"];
+export const parseLaneMode = (v: unknown): LaneMode | undefined => LANE_MODES.find(m => m === v);
+export const laneMode = (l: Pick<Record_, "mode" | "worktree">): LaneMode => l.mode ?? (l.worktree ? "coding" : "assistant");
 
 // Throwaway projects (lanes run in a temp folder, e.g. gateway tests) are never shown as live lanes.
 export const isTempLane = (l: Pick<Lane, "cwd" | "worktree">): boolean => TEMP_PATH.test(l.worktree?.repo ?? l.cwd) || TEMP_PATH.test(l.cwd);

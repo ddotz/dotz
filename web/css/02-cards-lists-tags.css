@@ -22,6 +22,9 @@ code.path-short { display: inline-block; max-width: 100%; vertical-align: bottom
 .muted { color: var(--fg-2); }
 .empty { padding: var(--sp-8) var(--sp-4); text-align: center; color: var(--fg-3); font-size: 12px; }
 .empty > .btn { margin-top: var(--sp-3); }
+/* emptyNode (05-command-palette.js) builds every one: a hint under the sentence, and the tighter line of one section among others */
+.empty > .sup { margin-top: var(--sp-2); }
+.empty.compact { padding: var(--sp-4); }
 .dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--fg-3); }
 .dot.ok { background: var(--ok); } .dot.warn, .dot.att { background: var(--warn); } .dot.err { background: var(--err); }
 .dot.pri { background: var(--accent); }

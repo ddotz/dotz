@@ -1,15 +1,27 @@
 import { beforeEach, expect, test } from "bun:test";
+import { chmodSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
+import { paths } from "../features/reply-drafts/lib/settings.ts";
+import { addDraft, DRAFT_ID, draftHeads, draftStoreIntact, newId, type DraftRec } from "../features/reply-drafts/lib/store.ts";
+import { COMMENT_CODE, newCommentCode } from "./comments/engine.ts";
+import { createStore } from "./comments/store.ts";
 import { draftApprovalBlock } from "./draft-approval.ts";
-import { commentDraftHandled, draftHandled, kakaoDraftHandled, mailDraftHandled, mailItemKey, mailRefHandled, type AllFacts } from "./draft-handled.ts";
+import { commentDraftHandled, draftHandled, kakaoDraftHandled, mailDraftHandled, mailItemKey, mailRefHandled, type CommentFacts, type KakaoFacts, type MailFacts, type AllFacts } from "./draft-handled.ts";
 import { broadcast, emit } from "./events.ts";
+import { msg } from "./i18n.ts";
+import { createDraft, KAKAO_CODE, listDrafts as listKakaoDrafts } from "./kakao/send.ts";
+import type { KakaoPaths } from "./kakao/types.ts";
 import { type ClosedCard, confirmGroup, listNotices, markDraftPosted, markDraftSend, onDecisionClosed, resetNoticesForTest, setAppLabelResolver, setAppResolver, setDraftHandled, settleHandledDrafts, unreadCount } from "./notices.ts";
 import { decisionPush } from "./push.ts";
+import { stateIntact } from "./statefile.ts";
 
 const mail = (id: string, ref: string, status = "pending", created = "2026-10-01T00:00:00.000Z") => ({ id, ref, status, created });
-const noMail = { drafts: () => [], record: () => undefined };
-const noComment = { drafts: () => [], waiting: () => undefined };
-const noKakao = { drafts: async () => [], waiting: async () => undefined };
-const facts = (over: Partial<AllFacts>): AllFacts => ({ mail: noMail, comment: noComment, kakao: noKakao, ...over });
+const noMail: MailFacts = { drafts: () => [], record: () => undefined, idShape: DRAFT_ID, intact: () => true };
+const noComment: CommentFacts = { drafts: () => [], waiting: () => undefined, idShape: COMMENT_CODE, intact: () => true };
+const noKakao: KakaoFacts = { drafts: async () => [], waiting: async () => undefined, idShape: KAKAO_CODE, intact: () => true };
+type Over = { mail?: Partial<MailFacts>; comment?: Partial<CommentFacts>; kakao?: Partial<KakaoFacts> };
+const facts = (over: Over): AllFacts => ({ mail: { ...noMail, ...over.mail }, comment: { ...noComment, ...over.comment }, kakao: { ...noKakao, ...over.kakao } });
 
 test("a mail draft is handled once it was sent, dropped, replaced, answered from his own client, marked 답장 안 함 or deleted at the source", () => {
 	const rec = (r?: { reply?: string; noReply?: boolean; suggest?: { state?: string } } | undefined) => ({ drafts: () => [mail("d1", "m1")], record: () => r });
@@ -134,21 +146,17 @@ test("one message asking about several drafts: a failed send shows on its own bl
 	expect(listNotices(100).items.filter(i => i.decision?.to === "ch:9" && i.decision.send).map(i => [i.title, i.decision!.send!.state])).toEqual([["이 답글 올릴까? (f2)", "failed"]]);
 });
 
-test("one message asking about several drafts: each block closes when its own draft was sent or dropped elsewhere (the 모니터링 queue)", async () => {
+test("one message asking about several drafts: every block closes at once to be posted again one card per message, and a plain several-decision question is never asked about", async () => {
 	const block = (ref: string) => draftApprovalBlock({ to: "유튜브 댓글", toLabel: "대상", body: `답글 ${ref}`, ref, question: "이 답글 올릴까?" });
 	emit("outbox", { ts: new Date().toISOString(), kind: "out", source: "orchestrator", target: "ch:1", text: `[ask] 댓글 답글 초안이에요\n\n${["c1", "c2", "c3"].map(block).join("\n\n")}` });
 	const blocks = () => listNotices(100).items.filter(i => i.decision?.to === "ch:1");
-	expect(blocks().map(i => [i.decision!.group, !!i.decision!.draft, i.decision!.state])).toEqual([[3, false, "open"], [3, false, "open"], [3, false, "open"]]);
-	handled.add("c2");
-	expect(await settleHandledDrafts()).toBe(1);
-	const settled = blocks().filter(i => i.decision!.state !== "open");
-	expect(settled.map(i => i.title)).toEqual(["이 답글 올릴까? (c2)"]);
-	expect(settled[0]).toMatchObject({ read: true, decision: { state: "answered", resolved: true } });
+	// The blocks of one message are not read as drafts (a card per message), so each closes at once with the reason and goes back to be posted again (issue #7).
+	expect(blocks().map(i => [i.decision!.group, !!i.decision!.draft, i.decision!.state, i.decision!.answer])).toEqual(["c1", "c2", "c3"].map(() => [3, false, "answered", msg().draftCardRedo]));
 	// A plain several-decision question (no draft options) is never asked about.
 	emit("outbox", { ts: new Date().toISOString(), kind: "out", source: "orchestrator", target: "ch:2", text: "[ask] 두 가지\n\n결정: 어느 쪽? (c1)\n1) 가\n2) 나\n\n결정: 언제? (c3)\n1) 오늘\n2) 내일" });
 	handled.add("c1");
 	handled.add("c3");
-	expect(await settleHandledDrafts()).toBe(2);
+	expect(await settleHandledDrafts()).toBe(0);
 	expect(listNotices(100).items.filter(i => i.decision?.to === "ch:2" && i.decision.state === "open")).toHaveLength(2);
 });
 
@@ -156,6 +164,103 @@ test("draftHandled answers a mail:<id> ref from the conversation it was asked in
 	const gone = facts({ mail: { drafts: () => [], record: () => undefined } });
 	expect(await draftHandled("mail:1a16.1", gone, "mail:score-1a16.1")).toBe(true);
 	expect(await draftHandled("mail:1a16.1", gone)).toBe(false);
+});
+
+test("a ref shaped like a store's id is handled once that store was read and lacks it; a hand-written ref or an unreadable store is not", async () => {
+	expect(await draftHandled("RZZZZZZ", facts({}))).toBe(true);
+	expect(await draftHandled("KZZZZ", facts({}))).toBe(true);
+	expect(await draftHandled("Dzzzzzz", facts({}))).toBe(true);
+	expect(await draftHandled("DZZZZZZ", facts({}))).toBe(false);
+	expect(await draftHandled("RZZZZZZ", facts({ mail: { drafts: () => [mail("RZZZZZZ", "m1")], record: () => ({}) } }))).toBe(false);
+	expect(await draftHandled("handwritten-x1", facts({}))).toBe(false);
+	const unreadable = { drafts: () => { throw new Error("EACCES: permission denied"); }, record: () => undefined, intact: () => false };
+	await expect(draftHandled("RZZZZZZ", facts({ mail: unreadable }))).rejects.toThrow("EACCES");
+});
+
+const silenced = async <T>(fn: () => Promise<T>): Promise<T> => {
+	const error = console.error;
+	console.error = () => undefined;
+	try {
+		return await fn();
+	} finally {
+		console.error = error;
+	}
+};
+
+test("a real mail draft id closes when the store lacks it, and stays open once the store was damaged and quarantined", async () => {
+	const pending = [newId(new Set()), newId(new Set()), newId(new Set())];
+	const mailFacts = facts({ mail: { drafts: draftHeads, record: () => ({ reply: "needs" }), intact: draftStoreIntact } });
+	const dir = dirname(paths.drafts());
+	try {
+		pending.forEach((id, i) => addDraft({ id, kind: "mail", app: "mail", source: "zele", mailId: `q${i}`, ref: `quarantine-${i}`, to: "a@example.com", body: "b", status: "pending", created: "2026-11-01T00:00:00.000Z", changes: [], questions: [], item: { kind: "mail", from: "a@example.com", text: "t" } } as DraftRec));
+		const gone = newId(new Set(pending));
+		expect(await draftHandled(gone, mailFacts)).toBe(true);
+		expect(await Promise.all(pending.map(id => draftHandled(id, mailFacts)))).toEqual([false, false, false]);
+		const good = readFileSync(paths.drafts(), "utf8");
+		writeFileSync(paths.drafts(), good.slice(0, good.length - 30));
+		expect(await silenced(() => Promise.all(pending.map(id => draftHandled(id, mailFacts))))).toEqual([false, false, false]);
+		expect(readdirSync(dir).some(n => n.startsWith("drafts.json.corrupt-"))).toBe(true);
+		expect(await draftHandled(gone, mailFacts)).toBe(false);
+	} finally {
+		for (const n of readdirSync(dir)) if (n.startsWith("drafts.json")) rmSync(join(dir, n), { recursive: true, force: true });
+	}
+});
+
+test("a real comment draft code closes when its store lacks it, and stays open while the store is damaged or set aside", async () => {
+	const dir = mkdtempSync(join(tmpdir(), "draft-handled-comments-"));
+	try {
+		const store = createStore(dir);
+		const waiting = newCommentCode(new Set());
+		store.putDraft({ code: waiting, commentId: "c1", status: "pending", created: 1, text: "hi" } as Parameters<typeof store.putDraft>[0]);
+		const comment = { drafts: () => store.drafts().map(d => ({ code: d.code, commentId: d.commentId, status: d.status, created: d.created })), waiting: () => true, intact: store.draftsIntact };
+		const gone = newCommentCode(new Set([waiting]));
+		expect(await draftHandled(waiting, facts({ comment }))).toBe(false);
+		expect(await draftHandled(gone, facts({ comment }))).toBe(true);
+		writeFileSync(join(dir, "drafts.json"), `[{"code":"${waiting}","commentId":"c1","sta`);
+		expect(store.draftsIntact()).toBe(false);
+		expect(await draftHandled(waiting, facts({ comment }))).toBe(false);
+		expect(readdirSync(dir).some(n => n.startsWith("drafts.json.bad-"))).toBe(true);
+		expect(await draftHandled(waiting, facts({ comment }))).toBe(false);
+		expect(await draftHandled(gone, facts({ comment }))).toBe(false);
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+test("a real KakaoTalk draft code closes when its store lacks it, and stays open while the store is damaged or set aside", async () => {
+	const dir = mkdtempSync(join(tmpdir(), "draft-handled-kakao-"));
+	try {
+		mkdirSync(join(dir, "kakao"));
+		const kpaths = { dataDir: dir, drafts: join(dir, "kakao", "drafts.json") } as KakaoPaths;
+		const d = await createDraft({ chatId: "r1", roomName: "친구", text: "안녕하세요", basisLogId: "1" }, { paths: kpaths });
+		const kakao = { drafts: async () => (await listKakaoDrafts({ paths: kpaths })).map(x => ({ code: x.code, chatId: x.chatId, status: x.status, created: x.created })), waiting: async () => true, intact: () => stateIntact(kpaths.drafts) };
+		const gone = (await createDraft({ chatId: "r2", roomName: "동료", text: "네", basisLogId: "2" }, { paths: { dataDir: dir, drafts: join(dir, "other.json") } as KakaoPaths })).code;
+		expect(gone).not.toBe(d.code);
+		expect(await draftHandled(d.code, facts({ kakao }))).toBe(false);
+		expect(await draftHandled(gone, facts({ kakao }))).toBe(true);
+		writeFileSync(kpaths.drafts, `[{"code":"${d.code}","chatId":"r1"`);
+		expect(await draftHandled(d.code, facts({ kakao }))).toBe(false);
+		expect(readdirSync(join(dir, "kakao")).some(n => n.startsWith("drafts.json.bad-"))).toBe(true);
+		expect(await draftHandled(gone, facts({ kakao }))).toBe(false);
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+test("the sweep closes a card whose draft the mail store lacks, keeps a hand-written card, and keeps it while the store cannot be read", async () => {
+	setDraftHandled((d, _n, ref) => draftHandled(ref, facts({ mail: { drafts: draftHeads, record: () => ({ reply: "needs" }), intact: draftStoreIntact } }), d.to));
+	addDraft({ id: "RKEPT01", kind: "mail", app: "mail", source: "zele", mailId: "k1", ref: "kept-1", to: "a@example.com", body: "b", status: "pending", created: "2026-11-01T00:00:00.000Z", changes: [], questions: [], item: { kind: "mail", from: "a@example.com", text: "t" } } as DraftRec);
+	post("mail:sample-1", "RZZZZZZ", "a@example.com");
+	post("mail:sample-2", "handwritten-x1", "b@example.com");
+	try {
+		chmodSync(paths.drafts(), 0o000);
+		expect(await settleHandledDrafts()).toBe(0);
+		chmodSync(paths.drafts(), 0o600);
+		expect(await settleHandledDrafts()).toBe(1);
+		expect(open().map(i => i.decision!.draft!.ref)).toEqual(["handwritten-x1"]);
+	} finally {
+		rmSync(paths.drafts(), { force: true });
+	}
 });
 
 test("a closing send approval hands the hook what closes its Discord message: where it went, and how it ended", async () => {
@@ -169,7 +274,7 @@ test("a closing send approval hands the hook what closes its Discord message: wh
 	expect(closed).toHaveLength(1);
 	expect(closed[0]).toMatchObject({ ref: "d1", card: { how: "resolved", target: "mail:sample-1", ids: ["111"] } });
 	// The ids are on the stored notice, so a restart still finds the message.
-	expect(listNotices(100).items.find(i => i.decision?.draft?.ref === "d1")?.decision?.card).toEqual({ target: "mail:sample-1", ids: ["111"] });
+	expect(listNotices(100).items.find(i => i.decision?.draft?.ref === "d1")?.decision?.card).toEqual({ target: "mail:sample-1", ids: ["111"], shows: expect.any(String) });
 	// A card that never reached Discord closes with no ids.
 	handled.add("d2");
 	expect(await settleHandledDrafts()).toBe(1);

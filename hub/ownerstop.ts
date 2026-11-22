@@ -29,3 +29,18 @@ export async function stopAnswer(found: StopFound | undefined): Promise<StopAnsw
 	if (!found) return { ok: true, stopped: false, ended: true };
 	return { ok: true, stopped: found.running || found.request, ended: found.running ? await endedWithin(found.working) : true };
 }
+
+/** What the owner's stop reaches besides the turn: the hook that closes the request and steered messages (outbound.ts) answers with the conversation it closed, and everyone holding that conversation's messages back (intake's burst, the web queue) hears the target and drops them. */
+export function createOwnerCancel() {
+	let close: () => string | undefined = () => undefined;
+	const hooks: ((target: string) => void)[] = [];
+	return {
+		setClose: (fn: () => string | undefined): void => void (close = fn),
+		onCancel: (fn: (target: string) => void): void => void hooks.push(fn),
+		fire(): string | undefined {
+			const target = close();
+			if (target) for (const hook of hooks) hook(target);
+			return target;
+		},
+	};
+}

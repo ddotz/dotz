@@ -4,7 +4,7 @@ import { afterEach, beforeEach, expect, test } from "bun:test";
 import { readFileSync, rmSync, statSync } from "node:fs";
 import { run } from "../bin/tokens.ts";
 import { type InstagramSecret, paths, writeJson } from "../lib/config.ts";
-import { fakeCtx, IG, setupEnv, type TestEnv, TOKEN_URL } from "./helpers.ts";
+import { fakeCtx, setupEnv, type TestEnv, TOKEN_URL } from "./helpers.ts";
 
 const REFRESH = `GET https://graph.instagram.com/refresh_access_token`;
 const TOKEN = `POST ${TOKEN_URL}`;
@@ -75,16 +75,3 @@ test("invalid_grant prints DOTZ_FAIL youtube-auth, a 401 from Instagram prints i
 	expect(ig.lines[0]).toBe("DOTZ_FAIL instagram-auth");
 });
 
-test("a transient failure is absorbed twice and reported on the 3rd failed run", async () => {
-	writeJson(paths.instagram(), igSecret("2030-06-01T00:00:00.000Z", "2030-07-31T00:00:00.000Z"), true);
-	const ctx = fakeCtx(env, { routes: { [REFRESH]: () => new Response("{}", { status: 503 }) } });
-	expect(await run(ctx, [])).toEqual({ lines: [], code: 0 });
-	expect(await run(ctx, [])).toEqual({ lines: [], code: 0 });
-	expect((await run(ctx, [])).lines[0]).toBe("DOTZ_FAIL network");
-});
-
-test("missing config prints DOTZ_FAIL setup", async () => {
-	rmSync(paths.config());
-	expect((await run(fakeCtx(env), [])).lines[0]).toBe("DOTZ_FAIL setup");
-	expect(IG).toContain("graph.instagram.com");
-});

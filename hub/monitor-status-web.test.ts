@@ -36,6 +36,13 @@ describe("monStatus: connection > paused > fail > late > changed > ok > not run"
 		expect(key({ last_run: past, last_result: "ok", next_run: soon })).toBe("ok");
 		expect(monStatus({ next_run: soon }, NOW)).toEqual({ key: "need", text: "확인 필요", tone: "warn" });
 	});
+	test("a schedule not run yet waits in grey; one held by a usage limit is late; a failed run fails", () => {
+		expect(monStatus({ kind: "schedule", next_run: soon }, NOW)).toEqual({ key: "wait", text: "대기 중", tone: "off" });
+		expect(key({ kind: "schedule", next_run: past })).toBe("late");
+		expect(key({ kind: "schedule", last_run: past, last_result: "ok", run_state: "held", next_run: soon })).toBe("late");
+		expect(key({ kind: "schedule", last_run: past, last_result: "fail", run_state: "failed", next_run: soon })).toBe("fail");
+		expect(key({ kind: "schedule", last_run: past, last_result: "ok", run_state: "answered", next_run: soon })).toBe("ok");
+	});
 });
 
 describe("monNeedLine: sent today only; drafts, 미답장 and 안 읽음 are the row's own counts", () => {
@@ -94,8 +101,8 @@ const PEERS = [{
 		conversations: [],
 	},
 }];
-// A draft this computer's store keeps for the owner (GET /api/replies): the one waiting reply the badge counts.
-const KAKAO_DRAFT = { kind: "kakao", app: "kakao", code: "K1", chatId: "100", room: "가나다 모임", text: "안녕하세요", parts: ["안녕하세요"], at: Date.parse("2026-10-27T11:00:00Z"), attachmentsNone: true, cannotAttach: [], original: { who: "가나", text: "내일 어때요?" } };
+// A waiting draft of this computer's reply queue (GET /api/reply/queue): the one waiting reply the badge counts.
+const KAKAO_DRAFT = { item: "kakao:K1", ref: "K1", kind: "chat", app: "kakao", label: "카카오톡", conv: "kakao:100", at: Date.parse("2026-10-27T11:00:00Z"), can: { send: true, revise: true, edit: true, drop: true, restore: false }, draft: { state: "pending", toLabel: "대화방", to: "가나다 모임", text: "안녕하세요" }, original: { who: "가나", text: "내일 어때요?" } };
 let localReplies: object[] = [KAKAO_DRAFT];
 const server = Bun.serve({
 	port: 0,
@@ -110,7 +117,7 @@ const server = Bun.serve({
 		if (url.pathname === "/api/state") return json({ name: "dotz", orchestrator: { status: "idle" }, lanes: [], terminals: {}, channels: { work: [] }, discord: {}, notices_unread: 0 });
 		if (url.pathname === "/api/notices") return json({ items: [], unread: 0 });
 		if (url.pathname === "/api/monitors") return json({ items: MONITORS });
-		if (url.pathname === "/api/replies") return json({ items: localReplies });
+		if (url.pathname === "/api/reply/queue") return json({ items: localReplies, counts: {}, triageMin: 1, undoSec: 10 });
 		if (url.pathname === "/api/integrations") return json({ items: ITEMS });
 		if (url.pathname === "/api/monitoring/peers") return json(PEERS);
 		if (url.pathname === "/api/conversations") return json({ items: [] });
@@ -176,7 +183,7 @@ describe("screens", () => {
 
 	test("with nothing to count, an unread watch report puts the small dot on 모니터링 at the label's bottom-right corner, and reading it clears the dot", async () => {
 		const v = await open();
-		await v.evaluate(`(RQ.local = [], NM.items.forEach(m => { m.last_result = "ok"; m.connection = "connected"; }), INTG.items.forEach(i => { i.state = "connected"; i.needs = { drafts: 0, unread: 0, unreplied: 0, sentToday: 0 }; }), NT.items.push({ id: "w-news", kind: "watch", read: false, at: new Date().toISOString(), title: "새 소식" }), monSchedule(), 0)`);
+		await v.evaluate(`(RA.items = new Map(), NM.items.forEach(m => { m.last_result = "ok"; m.connection = "connected"; }), INTG.items.forEach(i => { i.state = "connected"; i.needs = { drafts: 0, unread: 0, unreplied: 0, sentToday: 0 }; }), NT.items.push({ id: "w-news", kind: "watch", read: false, at: new Date().toISOString(), title: "새 소식" }), monSchedule(), 0)`);
 		await v.evaluate(until(`(b => b && !b.hidden && b.classList.contains("nub"))(document.querySelector("#nav-mon"))`, "dot not shown"));
 		const dotBg = (theme: string) => q<string>(v, `document.documentElement.dataset.theme = "${theme}"; return getComputedStyle(document.querySelector("#nav-mon")).backgroundColor`);
 		expect(await dotBg("dark")).toBe("rgb(245, 165, 36)");
@@ -206,6 +213,22 @@ describe("screens", () => {
 		for (const s of ["네이버 앱 비밀번호", "배포할까요?", "peer-b", "peer-watch", "맥북봇"]) expect(got.text).not.toContain(s);
 		await v.evaluate(`(document.querySelector('#home-now [data-mon="m:flaky"]').click(), 0)`);
 		await v.evaluate(until(`current === "monitoring" && MON.sel === "m:flaky"`, "the row did not open the monitor"));
+	});
+
+	test("답변 필요 drops an app's failing watch once its alert of this streak is read or dismissed, and a closed app (check) is no 로그인 row; a new streak shows it again", async () => {
+		const v = await open();
+		const got = await q<Record<string, [string[], string[]]>>(v, `const t = ms => new Date(Date.now() + ms).toISOString(), base = NM.items.filter(m => m.watch !== "watch-a");
+			const wa = o => ({ name: "감시A", watch: "watch-a", kind: "watch", scope: "app", app: "kakao", last_run: t(-60_000), last_result: "fail", fails: 3, connection: "disconnected", since: t(-3600_000), last_ok: t(-3700_000), conn_reason: "check", ...o });
+			const alert = o => ({ id: "wa1", kind: "watch", tone: "", title: "감시A", text: "", open: "alert", src: "alert", watch: "watch-a", ts: t(-3000_000), at: t(-3000_000), read: false, ...o });
+			const look = (m, ns) => { NM.items = [...base, m]; NT.items = ns; return [nyMonFails().map(x => x.key).filter(k => k === "i:kakao"), nyLogins().map(x => x.id)]; };
+			return { closed: look(wa(), [alert()]), login: look(wa({ conn_reason: "login" }), [alert()]),
+				read: look(wa({ conn_reason: "login" }), [alert({ read: true })]), dismissed: look(wa(), [alert({ dismissed: true })]),
+				newStreak: look(wa({ conn_reason: "login", since: t(-60_000) }), [alert({ read: true })]) };`);
+		expect(got.closed).toEqual([["i:kakao"], []]);
+		expect(got.login).toEqual([["i:kakao"], ["i:kakao"]]);
+		expect(got.read).toEqual([[], []]);
+		expect(got.dismissed).toEqual([[], []]);
+		expect(got.newStreak).toEqual([["i:kakao"], ["i:kakao"]]);
 	});
 
 	test("in 모니터링 a peer item carries that gateway's own bot name: its question reads 맥북봇, never this gateway's bot (dotz)", async () => {

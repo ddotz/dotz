@@ -42,17 +42,47 @@ describe("login capture inbox", () => {
 });
 
 describe("login capture script", () => {
-	test("posts the page value to the inbox and prints only a verdict", () => {
-		const code = loginCaptureScript({ key: "jandi", url: "https://example.test/app/", read: "() => ({ a: 1 })", inbox: "http://127.0.0.1:9/abc" });
-		expect(code).toContain("http://127.0.0.1:9/abc");
-		expect(code).toContain("() => ({ a: 1 })");
-		expect(code).toContain("closeTab");
-		expect(code).not.toMatch(/console\.log\([^)]*\bv\b/);
-		expect(code.split("\n")).toHaveLength(1);
+	const AsyncFunction = Object.getPrototypeOf(async () => {}).constructor;
+	type Tab = { evaluate: (read: () => unknown) => Promise<unknown>; isClosed: () => boolean };
+	// The repl's globals the script reaches: openTab, closeTab, fetch (real, against a one-shot inbox), a timer that runs the page wait at once and never fires the post's limit, console, and globalThis for the kept tabs.
+	const runScript = async (read: string, inboxUrl: string, tab: Tab, kept: Record<string, unknown> = {}) => {
+		const logs: string[] = [], closed: Tab[] = [];
+		let opened = 0;
+		const code = loginCaptureScript({ key: "jandi", url: "https://example.test/app/", read, inbox: inboxUrl });
+		await new AsyncFunction("openTab", "closeTab", "fetch", "setTimeout", "console", "globalThis", code)(
+			async () => (opened++, tab), async (t: Tab) => void closed.push(t), fetch, (f: () => void, ms: number) => { if (ms < 10_000) f(); }, { log: (s: string) => logs.push(s) }, { dzLogin: kept });
+		return { logs, closed, opened, kept };
+	};
+
+	test("posts the page value to the inbox and prints only a verdict", async () => {
+		const inbox = oneShotInbox();
+		try {
+			const tab: Tab = { evaluate: async read => read(), isClosed: () => false };
+			const r = await runScript("() => ({ token: 'secret-value' })", inbox.url, tab);
+			expect(inbox.got()).toEqual({ token: "secret-value" });
+			expect(r.logs).toEqual(['RESULT {"ok":true}']);
+			expect(r.closed).toEqual([tab]);
+			expect(r.kept).toEqual({ jandi: undefined });
+		} finally {
+			inbox.stop();
+		}
 	});
 
-	test("a read that fails while the page navigates keeps the tab: the owner may be logging in there", () => {
-		const code = loginCaptureScript({ key: "jandi", url: "https://example.test/app/", read: "() => null", inbox: "http://127.0.0.1:9/abc" });
-		expect(code).toContain("tab.isClosed()");
+	test("a read that fails while the page navigates keeps the tab: the owner may be logging in there", async () => {
+		const inbox = oneShotInbox();
+		try {
+			const tab: Tab = { evaluate: async () => { throw new Error("Execution context was destroyed"); }, isClosed: () => false };
+			const first = await runScript("() => null", inbox.url, tab);
+			expect(first.logs).toEqual(['RESULT {"ok":true,"waiting":"login"}']);
+			expect(first.closed).toEqual([]);
+			expect(first.kept.jandi).toBe(tab);
+			const again = await runScript("() => null", inbox.url, tab, first.kept);
+			expect([again.opened, again.closed]).toEqual([0, []]);
+			expect(inbox.got()).toBeUndefined();
+			const gone: Tab = { evaluate: async () => { throw new Error("target closed"); }, isClosed: () => true };
+			expect((await runScript("() => null", inbox.url, gone)).kept.jandi).toBeUndefined();
+		} finally {
+			inbox.stop();
+		}
 	});
 });

@@ -5,5 +5,5 @@
    whole composer (box + chip row + paddings, ~72px), then the box scrolls inside itself. */
 @media (max-width: 639px) {
   .app { height: calc(100dvh - var(--kb, 0px)); }
-  .sendrow textarea { max-height: min(calc(7.5em + 2 * var(--ta-pad)), calc(var(--vvh, 100dvh) * .4 - 72px)); overflow-y: auto; }
+  .sendrow textarea { max-height: max(calc(2.5em + 2 * var(--ta-pad)), min(calc(7.5em + 2 * var(--ta-pad)), calc(var(--vvh, 100dvh) * .4 - 72px))); overflow-y: auto; }
 }

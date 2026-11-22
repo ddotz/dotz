@@ -74,7 +74,7 @@ function laneIngest(p, a) {
 // SSE "activity": keep every loaded session live, even while another view is open.
 function laneActivity(a) {
   const name = typeof a.source === "string" && a.source.startsWith("lane:") ? a.source.slice(5) : null;
-  if (name) { const s = actLine(a); if (s && LAST[name] !== s) { LAST[name] = s; homeSoon(); } }
+  if (name) { const s = actLine(a); if (s && LAST[name] !== s) { laneLastPut(name, s); homeSoon(); } }
   const p = name && LP[name];
   if (!p) return;
   if (p.loading) p.queue.push(a);
@@ -84,7 +84,7 @@ function laneTailsStale() {
   for (const p of Object.values(LP)) p.loaded = false;
 }
 /* ---------- 프로젝트 (docs/layers.md §5): the list (GET /api/custom) and the main view (GET /api/custom/project?key=) ---------- */
-let PRJ = null, PRJ_FAIL = false, prjFlight = null, prjRev = 0, PRJ_AT = 0;
+let PRJ = null, PRJ_FAIL = false, prjRev = 0, PRJ_AT = 0;
 const prjTitle = p => (p.record && p.record.title) || p.title || p.name;
 const prjPurpose = p => (p.record && p.record.purpose) || p.purpose || p.note || "";
 // A purpose as the owner reads it: its first one or two plain sentences. A sentence that names a path, link, port, file or repo stays in the raw
@@ -102,16 +102,15 @@ function prjBlurb(text) {
 }
 const prjChat = p => p.key.startsWith("ch:") ? p.key : p.channel ? `ch:${p.channel.id}` : "";
 const prjPaused = p => !!(p.paused || (p.record && p.record.paused));
-function prjLoad() {
-  if (prjFlight) return prjFlight;
-  prjFlight = api("/api/custom").then(d => { PRJ = d; PRJ_FAIL = false; PRJ_AT = Date.now(); }, () => { if (!PRJ) PRJ_FAIL = true; }).then(() => {
-    prjFlight = null; prjRev++;
+// A screen that opens joins a read already out; again (asked after a write) reads after it, since that read may predate the write.
+function prjLoad(again) {
+  return (!again && latestOut("prj")) || latest("prj", () => api("/api/custom").then(d => { PRJ = d; PRJ_FAIL = false; PRJ_AT = Date.now(); }, () => { if (!PRJ) PRJ_FAIL = true; }).then(() => {
+    prjRev++;
     prjPcLoad();
     if (current === "project") { if (ppWide()) renderProjects(); pmPaint(); }
     else if (current === "projects") renderProjects();
     else if (current === "home") homeSoon();   // a 진행 중 row names the session's project
-  });
-  return prjFlight;
+  }));
 }
 // The computer groups (GET /api/custom/computers, hub/custom.ts computerGroups): this computer first, then the others, each with its own
 // projects. Read behind the project list, at most once a minute (another computer's answer can take seconds). One group: no headers.
@@ -140,13 +139,14 @@ function laneProject(l) {
   const work = (S && S.channels && S.channels.work) || {};
   return l.project || work[home.slice(3)] || "";
 }
-// The one session row (home, project screen): title, parent project, status word; one tap opens the session's chat.
+// The one session row (home, project screen): title, parent project, mode (코딩/비서), status word; one tap opens the session's chat.
 function sessionStatus(l) {
   if (!laneAlive(l)) return [TX("project.word.ended"), ""];
   return runStatus(`lane:${l.name}`, l.status, l.pendingAsk);
 }
 // The owner's words for a session, on every list of sessions: sessionStatus still decides, this only says it. What stopped short of finishing keeps its own word.
 const SESSION_WORD = { run: [TX("home.sys.running"), "pri"], wait: [TX("project.word.wait"), "warn"], done: [TX("home.sys.done"), ""] };
+const SESSION_MODE = { coding: TX("project.mode.coding"), assistant: TX("project.mode.assistant") };
 function sessionState(l) {
   const st = sessionStatus(l), t = `lane:${l.name}`;
   if (st[1] === "pri") return SESSION_WORD.run;
@@ -164,13 +164,14 @@ const sessionHead = l => { const p = laneProject(l), n = l.title || l.name; retu
 // o.project: the project name when the caller knows it better than the lane's own home; o.line: a short activity line after it;
 // o.word / o.tone: a status the caller knows better ("답변 필요"); o.head: the project stands in the name (sessionHead), not under it.
 function sessionRow(l, o = {}) {
-  const proj = o.project !== undefined ? o.project : laneProject(l), [word, tone] = o.word ? [o.word, o.tone || ""] : sessionState(l), name = l.title || l.name, t = `lane:${l.name}`;
+  const proj = o.project !== undefined ? o.project : laneProject(l), [word, tone] = o.word ? [o.word, o.tone || ""] : sessionState(l), name = l.title || l.name, t = `lane:${l.name}`, mode = SESSION_MODE[l.mode];
   const subs = SUBS[t] || [], done = subs.filter(s => s.status !== "running").length;
-  return el("button", { class: "hr srow", type: "button", "data-t": t, onclick: o.open || (() => openTarget(t, lastChatView())), "aria-label": [name, proj ? TX("project.row.in_project", { name: proj }) : TX("chat.tsw.no_project"), word, TX("project.open_chat")].join(" · ") },
+  return el("button", { class: "hr srow", type: "button", "data-t": t, onclick: o.open || (() => openTarget(t, lastChatView())), "aria-label": [name, proj ? TX("project.row.in_project", { name: proj }) : TX("chat.tsw.no_project"), word, ...(mode ? [mode] : []), TX("project.open_chat")].join(" · ") },
     el("span", { class: `dot ${tone}` }),
     el("span", { class: "hb" }, el("span", { class: "hn1" }, el("span", { class: "nm", text: o.head ? sessionHead(l) : name })),
       el("span", { class: "ha" }, o.head ? null : el("span", { class: `sproj${proj ? "" : " none"}`, text: proj || TX("chat.tsw.no_project") }), o.line ? el("span", { class: "sline", text: o.line }) : null, o.extra || null)),
     subs.length ? el("span", { class: "hp", title: TX("home.subs.title"), text: TX("project.subs_count", { done, total: subs.length }) }) : null,
+    mode ? el("span", { class: "hp", text: mode }) : null,
     el("span", { class: `hs ${tone}`, text: word }));
 }
 
@@ -331,7 +332,7 @@ function pjPaintRows() {
     }
   }
   if (rest > 0 && card) card.append(moreRow(TX("project.more_n", { n: rest }), () => { PJ.more += PJ_PAGE; pjPaintRows(); }));
-  if (!rows.length && !(pcs && nodes.length)) nodes.push(el("div", { class: "empty pl-empty", text: searching ? TX("project.empty.search") : PJ.view === "need" ? TX("project.empty.need") : PJ.view === "run" ? TX("project.empty.run") : PJ.view === "done" ? TX("project.empty.done") : TX("project.empty.none") }));
+  if (!rows.length && !(pcs && nodes.length)) nodes.push(emptyNode(searching ? TX("project.empty.search") : PJ.view === "need" ? TX("project.empty.need") : PJ.view === "run" ? TX("project.empty.run") : PJ.view === "done" ? TX("project.empty.done") : TX("project.empty.none")));
   // The built-in 커스텀 page is the owner's settings list: always reachable, never part of the filters.
   if (showBuiltin) {
     nodes.push(el("div", { class: "sec pl-sec pl-gh", role: "presentation", text: TX("project.my_settings") }));
@@ -343,6 +344,17 @@ function pjPaintRows() {
   }
   clear(box).append(...nodes);
 }
+function projectsEnter() { renderProjects(); prjLoad(); }
+// From 1100px 프로젝트 opens on a project with the list beside it: the open one while it still exists, else the first (19-project-main.js projectAim).
+function projectsAim() {
+  if (!ppWide() || relayCur()) return;
+  histAuto();
+  const key = ppCur && (!PRJ || PRJ.projects.some(p => p.key === ppCur)) ? ppCur : prjFirst() || "builtin:custom";
+  if (!PRJ) prjLoad().then(() => { if (current === "project" && ppCur === "builtin:custom" && prjFirst()) { histAuto(); go("project", prjFirst()); } });
+  projectAim(key);
+  return ["project", key];
+}
+screenHooks("projects", { enter: projectsEnter, aim: projectsAim });
 function renderProjects() {
   if (rvPaint("projects")) return;   // a messenger-only computer is chosen: its projects, read-only (44-relay-views.js)
   const box = $("#v-projects");

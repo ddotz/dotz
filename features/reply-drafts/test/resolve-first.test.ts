@@ -2,7 +2,9 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { parseDecisions } from "../../../hub/choices.ts";
 import { parseDraftApproval } from "../../../hub/draft-approval.ts";
 import { runDraft } from "../bin/draft.ts";
-import { commentAsk } from "../lib/comments.ts";
+import { commentAsk } from "../../../hub/comments/ask.ts";
+import type { Comment, SourceConfig } from "../../../hub/comments/contract.ts";
+import type { Draft } from "../../../hub/comments/store.ts";
 import { fakeModel, goodReply, j, setupEnv } from "./helpers.ts";
 
 const env = setupEnv();
@@ -42,8 +44,7 @@ describe("a reply draft is resolved before the owner is asked", () => {
 	});
 
 	test("a lint warning stays a check note; a comment reply's open question sits in its card too", () => {
-		const a = { app: "youtube", label: "유튜브", parse: () => undefined, stage: async () => "J1", discard: async () => {} };
-		const text = commentAsk(a, { id: "c1", author: "kim", text: "다음 공연 언제예요?", context: "" }, "곧 알려 드릴게요", "J1", ["확인: 길이"], undefined, ["공연 날짜"]);
+		const text = commentAsk({ kind: "youtube" } as SourceConfig, { id: "c1", author: "kim", text: "다음 공연 언제예요?", at: 0, postTitle: "" } as unknown as Comment, { code: "J1", text: "곧 알려 드릴게요", notes: ["확인: 길이", "정해 주세요: 공연 날짜"] } as unknown as Draft);
 		expect(text).toContain("-# 확인: 길이");
 		expect(text).not.toContain("정해 주세요");
 		expect(parseDecisions(text).blocks[0]!.title).toBe("이 답글 올릴까요? (J1)");

@@ -41,9 +41,9 @@ async function snapSeed(t) {
   s.msgs.sort(byTs); s.acts.sort(byTs);
   if (isFixedT(t)) dedupKeyed(s);
   s.hmore = rec.hmore; s.amore = rec.amore; s.ahist = rec.ahist;
-  if (TD.by[t] === undefined && rec.todo) TD.by[t] = rec.todo;
-  if (READ[t] === undefined && rec.read) READ[t] = rec.read;
-  CV.seeded = true;
+  tdSeed(t, rec.todo);
+  if (READ[t] === undefined && rec.read) readMark(t, rec.read);
+  cvSeeded();
   renderAll();
   return true;
 }
@@ -74,7 +74,7 @@ const snapHomeSoon = () => { if (Date.now() - snapHomeAt >= SNAP_HOME_EVERY_MS) 
 async function snapHomeSeed() {
   const rec = await Promise.race([window.__snapHome, new Promise(r => setTimeout(r, SNAP_HOME_WAIT_MS))]);
   if (!rec || rec.v !== 1 || S || Date.now() - rec.at > SNAP_HOME_MAX_MS) return;
-  S = { ...rec.state, seeded: true };
-  if (!NT.loaded) { NT.items = rec.notices; NT.unread = rec.unread; }
+  stateSet({ ...rec.state, seeded: true });
+  if (!NT.loaded) ntSeed(rec.notices, rec.unread);
 }
 document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") { snapSave(target); snapHomeSave(); } });

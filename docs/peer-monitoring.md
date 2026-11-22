@@ -20,7 +20,7 @@ gateway that owns the item. That gateway executes it and records it.
   Discovery asks the bound URL first and scans ports only when it no longer answers as dotz (the new port is bound then), so one port
   number can be another app on another computer. A bound peer that tailscale reports offline stays in the list as '연결 안 됨'; an unbound one does not.
   A request that carries `x-dotz-peer` can reach only the read-only GET list and the peer POSTs: `/api/peer/act`,
-  `/api/peer/lease` and `/api/peer/limit-lift`.
+  `/api/peer/lease`, `/api/peer/limit-lift` and `/api/peer/mail-code`.
 - Setup (`setup.ts`) makes the key on the first computer. On another computer, setup asks for that key (or takes
   `peer_token` in an answers file) and stores it 0600. A rerun keeps the key.
 - No token file: reads still work through the owner's tailnet identity (the same way the computer switcher works).
@@ -45,7 +45,7 @@ gateway that owns the item. That gateway executes it and records it.
   to the owner as `answer` (`pqNotice`), and the owner's notice replaces the snapshot copy. A peer's loose `[ask]` report still has no 답하러 가기.
 - `pqMail` (`web/js/34-peer-monitoring.js`) puts a peer's mail into `MAILS`, `CONV` and the unread count. `api()` runs each request through
   `pqRoute`: a read of a peer's mail, history or Kakao room becomes `/api/peer/proxy?pc=..&p=<path>`; `pqLink(path)` does the same for `fetch`
-  and download links. A POST that belongs to a peer (`/api/message` for its mail, `/api/read`, `/api/kakao/...` send, read, draft, draft send and drop)
+  and download links. A POST that belongs to a peer (`/api/message` for its mail, `/api/read`, `/api/kakao/...` send, read and draft, `/api/reply/act`)
   becomes `/api/peer/act`. A new route that a peer item uses needs a line in `pqFor` (read) or `pqAct` (action) and in `PEER_GET` (`hub/peer-auth.ts`).
 - A mail that this computer also holds stays a local row, unless this computer switched the mail app off (`available[].off` of `/api/integrations`): then the peer's copy shows.
 - 이 기기에서 쓰기 (off) and 제거 are per machine (`custom/apps.json`, `hub/app-off.ts`). Turning mail off here never hides what a peer shows. An app's switch,
@@ -64,7 +64,8 @@ gateway that owns the item. That gateway executes it and records it.
 
 - `POST /api/peer/act {action, args, from}` on the owning gateway. The actions are `message` (a reply or a confirmed draft
   in a conversation), `answer` (a decision, with `note` for 고치기), `notice` (`op` read with `ids`, ignore or unignore with `id`), `read` (mark read), `watch` (pause, resume or run a watch) and `kakao`
-  (`op` send, read, draft, draft-send or draft-drop on the owner's `/api/kakao/...` routes). `handoff` (`owner_words`, `note`, `id?`: the owner's work handed over from the sender; it lands in the owner's main chat as the owner's own instruction, then the owner sends `handoff-ack` back, fire and forget) and `handoff-ack` (`id`: a note in the sender's chat that the other computer took it). The owner runs
+  (`op` send, read, draft, ask-drop or room on the owner's `/api/kakao/...` routes), `comments` (`op` draft, no-reply, read or source) and `reply` (`args` = the
+  body of the owner's own `POST /api/reply/act`: every draft action of every kind, KakaoTalk and comment drafts included). `handoff` (`owner_words`, `note`, `id?`: the owner's work handed over from the sender; it lands in the owner's main chat as the owner's own instruction, then the owner sends `handoff-ack` back, fire and forget) and `handoff-ack` (`id`: a note in the sender's chat that the other computer took it). The owner runs
   the same handler as its own web app. It records the event with `via: <from machine name>`. Its own web and history show
   the action the same as a local action, with a small 'from <machine>' note. The other gateway keeps no copy beyond its cache.
 
@@ -88,3 +89,28 @@ gateway that owns the item. That gateway executes it and records it.
 ## 모니터마다 대화
 
 모든 감시(로컬과 피어)는 그 감시를 가진 컴퓨터의 오케스트레이터와 대화합니다. 대화 대상은 `settings:w:<감시 이름>`이고, 피어 감시의 메시지와 스위치는 `/api/peer/act`의 `message`와 `watch settings`로 그 컴퓨터에 갑니다. 답은 그 컴퓨터에 쓰이고, 열린 대화가 프록시로 기록을 다시 읽어 보여 줍니다. 실패한 감시에는 '다시 로그인해 줘'(로그인 유지만), '원인 찾아 줘', '일시정지' 칩이 입력칸을 채웁니다. 예약(schedule)에는 설정이 없어서 아직 대화가 없습니다.
+
+## Reply cards across computers
+
+The snapshot carries `reply: { items }`, the gateway's one reply queue (`GET /api/reply/queue`); an older gateway leaves it out. A card's action on another computer's item goes as `POST /api/peer/act` with `{ action: "reply", args }`, where `args` is the same body the page posts to its own `POST /api/reply/act`, and it runs there through that gateway's queue (undo window, lease, retries).
+
+## Mail codes (a site's login code, for a computer with no mail)
+
+A computer without mail (no zele) takes a site's mailed login code from another gateway that has mail, so the owner is not asked. The code is the only
+thing of the mail that moves; it is never typed in chat, put in a prompt, a notice, an event, Discord, a log line or an answer's JSON. Code in `hub/mail-otp.ts`.
+
+- `POST /api/peer/mail-code {from, account?, minutes?}` on the gateway with mail. `from` is a domain or an address (no spaces, quotes or filter operators),
+  `account` a zele account, `minutes` 1..60 (default 10). Only a request that passed the peer gates is answered (`checkPeer` "ok"); the hub token or a web
+  login without `x-dotz-peer` gets 403. It lists the sender's newest 5 threads (`zele mail list --filter "from:<from> newer_than:1d"`), reads the newest first,
+  and takes the code (4 to 8 digits, or 4 to 8 capitals and digits with a digit) from the sender's messages dated inside the window, newest first.
+  A keyword (인증/확인/보안 코드·번호, verification, one-time, passcode, OTP, code) on the number's line or up to two lines above it decides; years, times, phone parts,
+  amounts and links never count; two different best candidates are `ambiguous`. It looks up to 3 times, 15 s apart (45 s in all). Answer:
+  `{ok:true, code}` or `{ok:false, reason: "no-mail"|"not-found"|"ambiguous"|"already-given"|"error", detail}` (a short Korean reason). A code is given once per
+  sender for an hour (remembered as a hash, in memory), and overlapping requests for one sender share one look.
+- `POST /api/auth/mail-code {site, from, account?, minutes?}` on the gateway that asks (hub token only). With zele on here it looks in this mailbox; otherwise it asks
+  the other gateways in turn (60 s each; a peer with no mail, no token or an older version is skipped; the first code wins). The code is written to
+  `secrets/once/mail-<site>-<id>` (0600, sealed) and the answer is `{ok:true, id, take: "/api/auth/<id>/take"}`. A failure is `{ok:false, reason, detail}` with HTTP 200.
+- `GET /api/auth/<id>/take` (hub token only) gives the code once and deletes the file; the second call is 410. An untaken code is deleted after 5 minutes.
+  The request's view (`GET /api/auth/<id>`) shows no path.
+- `dotz_auth` (kind `otp`) takes `from_mail`, `mail_account` and `mail_minutes`; when no code comes it falls back to asking the owner, with the reason added to the purpose.
+- Log lines carry the sender's domain and the outcome only (`mail code: example.com not-found`).

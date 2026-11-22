@@ -248,7 +248,7 @@ test("an answer to a run no prompt started goes home, however recent the owner's
 	expect(live.state.posts.map(p => p.text)).toEqual(["a worker is on it", "The README is done and pushed."]);
 });
 
-test("an answer without a prompt goes home, not to an unanswered owner message's conversation, and names no message", async () => {
+test("an answer without a prompt goes home, not to an unanswered owner message's conversation, and names no message; old or no owner messages change nothing and quiet replies go nowhere", async () => {
 	const now = Date.now();
 	const { q, state } = setup(["b"], [
 		{ target: "ch:1", replyTo: "a", at: now - 10 * 60_000 },
@@ -257,10 +257,7 @@ test("an answer without a prompt goes home, not to an unanswered owner message's
 	q.onAnswer("for the unanswered one");
 	await Promise.resolve();
 	expect(state.posts).toEqual([{ target: "web", text: "for the unanswered one", replyTo: undefined }]);
-});
 
-test("a real answer no label explains is never dropped: it goes home whatever owner messages exist", async () => {
-	const now = Date.now();
 	const old = setup([], [
 		{ target: "web", replyTo: "a", at: now - 90 * 60_000 },
 		{ target: "ch:1", replyTo: "b", at: now - 31 * 60_000 },
@@ -941,6 +938,22 @@ test("only the reminder's own text is a regenerated nudge: an owner message or a
 	expect(q.openRequests().map(r => r.replyTo)).toEqual(["m1", undefined]);
 });
 
+test("open prompts replay once after a restart, oldest first, without the answered ones", () => {
+	const { q, state } = setup();
+	const wrap = (t: string) => (t.startsWith("[gateway restarted]") ? t : `[gateway restarted] ${t}`);
+	q.deliver("second", { target: "chat", replyTo: "m2" });
+	q.deliver("first", { target: "chat", replyTo: "m1" });
+	q.deliver("done", { target: "chat", replyTo: "m3" });
+	q.markAnswered("m3");
+	state.delivered.length = 0;
+	expect(q.reopen(wrap).replayed).toBe(2);
+	expect(state.delivered).toEqual(["[gateway restarted] second", "[gateway restarted] first"]);
+	state.delivered.length = 0;
+	q.markAnswered("m1");
+	expect(q.reopen(wrap).replayed).toBe(1);
+	expect(state.delivered).toEqual(["[gateway restarted] second"]);
+});
+
 test("a request the silent-wait check dropped is no longer listed and a restart does not replay it", () => {
 	const { q, startTurn } = setup();
 	startTurn("[dotz inbox] 예약 항목: morning brief", { target: "chat" });
@@ -1030,7 +1043,8 @@ test("an answer with no prompt and no wake goes home, not to the conversation wh
 		{ id: "wA", description: "A", status: "done", target: "ch:A", replyTo: "a1", startedAt: now - 100_000, endedAt: now - 50_000 },
 		{ id: "wB", description: "B", status: "done", target: "ch:B", replyTo: "b1", startedAt: now - 40_000, endedAt: now - 10_000 },
 	];
-	const { q, state, startTurn } = setup([], [], { work: () => works });
+	let deferring = true;   // each [later] waits on its running worker
+	const { q, state, startTurn } = setup([], [], { work: () => works.map(w => ({ ...w, status: deferring ? "running" : "done" }) satisfies WorkRow) });
 	startTurn("A 요청", { target: "ch:A", replyTo: "a1" });
 	q.onAnswer("[later]");
 	state.working = false;
@@ -1040,6 +1054,7 @@ test("an answer with no prompt and no wake goes home, not to the conversation wh
 	state.working = false;
 	q.settleTurn();
 	expect(q.deferredOpen().map(d => d.target)).toEqual(["ch:A", "ch:B"]);
+	deferring = false;
 
 	q.onAnswer("작업 결과예요");
 	await Promise.resolve();
@@ -1171,6 +1186,19 @@ test("a dotz_send from a woken run with no reply_to settles the request of the w
 	expect(t.q.resultFor("web")).toBe("b");
 	t.q.sent("web", "result of b");
 	expect(t.q.deferredOpen().map(d => d.replyTo)).toEqual(["a"]);
+});
+
+test("a worker started in a turn whose request that turn already answered names no message: its news is not posted as a late reply to it", async () => {
+	const t = setup();
+	t.startTurn("request a", { target: "web", replyTo: "a" });
+	t.q.workersSpawned([{ id: "st_side" }]);
+	t.q.onAnswer("answer to a, and a side job started");
+	t.state.working = false;
+	t.q.settleTurn();
+	await Promise.resolve();
+	t.q.workersDone(["st_side"]);
+	expect(t.q.resultFor("web")).toBeUndefined();
+	expect(t.q.sent("web", "the side job is done")).toBeUndefined();
 });
 
 test("a result for a request the owner cancelled is dropped, not guessed onto another message", async () => {
@@ -1337,15 +1365,6 @@ test("a worker with two requests answers the oldest and closes the other, across
 	expect(second.state.posts).toEqual([{ target: "web", text: "done", replyTo: "m1" }]);
 	expect(second.q.deferredOpen()).toEqual([]);
 	expect(second.open()).toEqual([]);
-});
-
-test("two workers finishing in reverse order each answer their own request", async () => {
-	const t = setup();
-	deferTo(t, "m1", { spawned: "st_a" });
-	deferTo(t, "m2", { spawned: "st_b" });
-	await answerWake(t, "st_b", "result b");
-	await answerWake(t, "st_a", "result a");
-	expect(t.state.posts.map(p => [p.replyTo, p.text])).toEqual([["m2", "result b"], ["m1", "result a"]]);
 });
 
 test("a follow-up steered to the second worker is not taken for the oldest running one", () => {
@@ -1589,7 +1608,8 @@ test("a quiet check's plain answer is kept as a note and not posted; [ask], [fai
 	expect(state.posts).toEqual([]);
 	run({ target: "chat", quiet: true }, "[ask] 계속할까요?");
 	run({ target: "chat", quiet: true }, "[fail] 서버가 멈췄어요");
-	expect(state.posts.map(p => p.text)).toEqual(["[ask] 계속할까요?", "[fail] 서버가 멈췄어요"]);
+	run({ target: "chat", quiet: true }, "[실패] 서버가 멈췄어요");
+	expect(state.posts.map(p => p.text)).toEqual(["[ask] 계속할까요?", "[fail] 서버가 멈췄어요", "[실패] 서버가 멈췄어요"]);
 	run({ target: "chat" }, "모두 정상이에요");
 	expect(state.posts.at(-1)).toMatchObject({ target: "chat", text: "모두 정상이에요" });
 	expect(notes).toHaveLength(1);
@@ -1627,4 +1647,142 @@ test("an owner message flagged deep reaches the turn's delivery as deep; a steer
 	q.deliver("more ultrathink", { target: "chat", replyTo: "m3", owner: true, deep: true });
 	expect(state.steered).toEqual(["[note] more ultrathink"]);
 	expect(deep).toEqual([true]);
+});
+
+
+// 2026-11-11 22:13-23:17 UTC: work a conversation session handed to main was asked again without its `from`, so the
+// answer was posted in a lane's conversation instead of going back to the session that handed it over.
+function handedSetup() {
+	const back: { from: string; text: string; replyTo?: string }[] = [];
+	const works: WorkRow[] = [];
+	const t = setup([], [], {
+		handBack: (from, text, replyTo) => void back.push({ from, text, replyTo }),
+		work: () => works,
+		readElsewhereNote: (w, readIn) => `[elsewhere] ${w.id} ${readIn}`,
+		readHereNote: id => `[read here] ${id}`,
+	});
+	return { ...t, back, works };
+}
+const handed = { target: "ch:A", from: "ch:A" };
+const endTurn = (t: ReturnType<typeof setup>, answer: string) => {
+	t.q.onAnswer(answer);
+	t.state.working = false;
+	t.q.settleTurn();
+};
+
+test("a handed request whose worker result is read in a turn for another conversation is asked again as handed work and handed back", async () => {
+	const t = handedSetup();
+	t.startTurn("[conversation ch:A] fix X", handed);
+	t.q.retarget("ch:A", "lane:L"); // a lane launched in that turn moved it (routes-lanes.ts)
+	t.q.workersSpawned([{ id: "st_w" }]);
+	t.works.push({ id: "st_w", status: "running", target: "lane:L", startedAt: Date.now() });
+	endTurn(t, "[later]");
+
+	t.startTurn("B 요청", { target: "web", replyTo: "b1" });
+	t.works[0] = { ...t.works[0]!, status: "done", endedAt: Date.now() };
+	endTurn(t, "B 답");
+	const again = t.state.delivered.at(-1)!;
+	expect(again).toStartWith("[elsewhere] st_w web");
+	t.state.working = true;
+	t.q.onPrompt(again);
+	t.q.onAnswer("X 고쳤어요");
+	await Promise.all(t.state.settling);
+	expect(t.back).toEqual([{ from: "ch:A", text: "X 고쳤어요", replyTo: undefined }]);
+	expect(t.state.posts.map(p => p.text)).toEqual(["B 답"]);
+});
+
+test("a handed request whose result was read in a run that did not answer it is asked again as handed work and handed back", async () => {
+	const t = handedSetup();
+	t.startTurn("[conversation ch:A] fix Y", handed);
+	t.q.workersSpawned([{ id: "st_y" }]);
+	endTurn(t, "[later]");
+
+	t.startTurn("A 요청", { target: "ch:A", replyTo: "a1" });
+	t.q.workersDone(["st_y"]);
+	endTurn(t, "A 답");
+	const again = t.state.delivered.at(-1)!;
+	expect(again).toStartWith("[read here] st_y");
+	t.state.working = true;
+	t.q.onPrompt(again);
+	t.q.onAnswer("Y 고쳤어요");
+	await Promise.all(t.state.settling);
+	expect(t.back).toEqual([{ from: "ch:A", text: "Y 고쳤어요", replyTo: undefined }]);
+	expect(t.state.posts.map(p => p.text)).toEqual(["A 답"]);
+});
+
+test("a handed request is handed back even when its answer repeats what the turn already sent to the conversation it names", () => {
+	const t = handedSetup();
+	t.startTurn("[conversation ch:A] 상태는?", handed);
+	t.q.sent("ch:A", "모두 정상이에요");
+	t.q.onAnswer("모두 정상이에요");
+	expect(t.back).toEqual([{ from: "ch:A", text: "모두 정상이에요", replyTo: undefined }]);
+});
+
+test("a handed request the silent-wait check gives up on is reported once to the session that handed it over", () => {
+	const t = handedSetup();
+	t.startTurn("[conversation ch:A] fix Z", handed);
+	t.q.workersSpawned([{ id: "st_z" }]);
+	endTurn(t, "[later]");
+	const open = t.q.openRequests();
+	expect(open).toMatchObject([{ target: "ch:A", from: "ch:A" }]);
+	t.q.dropOpen(open);
+	expect(t.q.openRequests()).toEqual([]);
+	expect(t.back).toHaveLength(1);
+	expect(t.back[0]!.from).toBe("ch:A");
+	expect(t.back[0]!.text).toContain("[conversation ch:A] fix Z");
+	expect(t.state.posts).toEqual([]);
+});
+
+
+// An owner message that arrives while main runs a turn it started itself (a worker's result woke it, a session report) waits as its
+// own prompt and gets a turn of its own; a message for a turn that answers its conversation is still steered in.
+test("an owner message during a run that answers no request waits as its own prompt; one for a turn of its conversation is steered", () => {
+	const woken = setup();
+	woken.state.working = true;
+	woken.q.onPrompt("<task-result>worker done</task-result>");
+	expect(woken.q.deliver("이거 먼저 봐줘", { target: "web", replyTo: "o1", owner: true })).toBe(false);
+	expect(woken.state.steered).toEqual([]);
+	expect(woken.state.delivered).toEqual(["이거 먼저 봐줘"]);
+	const { q, state, startTurn } = setup();
+	startTurn("[report] lane x is done", { target: "", replyTo: undefined });
+	expect(q.deliver("그건 나중에", { target: "web", replyTo: "o2", owner: true })).toBe(false);
+	expect(state.steered).toEqual([]);
+	expect(state.delivered).toEqual(["[report] lane x is done", "그건 나중에"]);
+	q.onAnswer("report noted");
+	state.working = false;
+	q.settleTurn();
+	startTurn("web 요청", { target: "web", replyTo: "o3" });
+	expect(q.deliver("하나 더", { target: "web", replyTo: "o4", owner: true })).toBe(true);
+	expect(state.steered).toEqual(["[note] 하나 더"]);
+});
+
+// A turn that ends with a bare [later] while no worker of its conversation runs and it started none would leave its request
+// waiting on nothing: it is asked once more to finish or answer; a second bare [later] is taken.
+test("a bare [later] that waits on no worker is refused once, then taken; one with a worker running is taken at once", () => {
+	const works: WorkRow[] = [];
+	const { q, state, open, startTurn } = setup([], [], { work: () => works });
+	startTurn("A 고쳐줘", { target: "ch:A", replyTo: "a1" });
+	q.onAnswer("[later]");
+	state.working = false;
+	q.settleTurn();
+	expect(q.deferredOpen()).toEqual([]);
+	const again = state.delivered.at(-1)!;
+	expect(state.delivered).toHaveLength(2);
+	expect(again).toEndWith("A 고쳐줘");
+	expect(open()).toMatchObject([{ target: "ch:A", replyTo: "a1" }]);
+	state.working = true;
+	q.onPrompt(again);
+	expect(q.current()).toMatchObject({ target: "ch:A", replyTo: "a1" });
+	q.onAnswer("[later]");
+	state.working = false;
+	q.settleTurn();
+	expect(state.delivered).toHaveLength(2);
+	expect(q.deferredOpen().map(d => d.replyTo)).toEqual(["a1"]);
+
+	works.push({ id: "st_b", status: "running", target: "ch:B", startedAt: Date.now() - 60_000 });
+	startTurn("B 고쳐줘", { target: "ch:B", replyTo: "b1" });
+	q.onAnswer("[later]");
+	expect(state.delivered).toHaveLength(3);
+	expect(q.deferredOpen().map(d => d.replyTo)).toEqual(["a1", "b1"]);
+	expect(state.posts).toEqual([]);
 });

@@ -58,6 +58,11 @@ test("bash: an unquoted expansion in a recursive search is blocked, a quoted one
 	for (const command of ['P=/tmp/x; rg foo "$P"', 'rg foo "$P"', "rg foo '$P'"]) expect([command, bash(command)]).toEqual([command, undefined]);
 });
 
+test("bash: an unquoted variable is expanded first; only an unknown, space-holding or broad value is blocked", () => {
+	for (const command of ["rg foo $HOME/.dotz/projects/x/gate", "rg foo ${HOME}/projects/app", "D=/tmp/x; rg foo $D", "export D=/tmp/x && find $D -name y", "G=/tmp/g; rg foo $G/omo-ai"]) expect([command, bash(command)]).toEqual([command, undefined]);
+	for (const command of ["rg foo $UNSET_VAR", "rg foo /Users", "rg foo $HOME", "D=/; rg foo $D", 'D="/tmp/a b"; rg foo $D', "D=$X/y; rg foo $D", "HOME=/; rg foo $HOME"]) expect([command, typeof bash(command)]).toEqual([command, "string"]);
+});
+
 test("bash: a search inside a project, a non-recursive command and other commands pass", () => {
 	const passed = [
 		"rg foo ~/projects/app",

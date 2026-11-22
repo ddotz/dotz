@@ -18,7 +18,7 @@ function asLoad(app, again) {
     try { AS.by[app] = (await api(asUrl(app))).fields || []; delete AS.none[app]; }
     catch { AS.none[app] = true; }
     asPaint();
-    MON.sig = ""; monSchedule();
+    monDirty();
     if (typeof KK !== "undefined" && KK.loaded && app === "kakao") kkPaintAll();
     if (monCtx) convSchedule();
   })();
@@ -41,7 +41,7 @@ async function asRetry(app, watch, down) {
   if (AS.busy[app]) return;
   AS.busy[app] = true;
   try { asFeatSave(app, await api(asFeatUrl(app, "retry"), "POST", { watch })); toast(down ? MON_RECONNECT : TX("appset.retry.done")); } catch (e) { toast(e.message || TX("appset.retry.fail"), true); }
-  AS.busy[app] = false; MON.sig = ""; monSchedule(); asPaint();
+  AS.busy[app] = false; monDirty(); asPaint();
 }
 // 승인 대기 is one row: the count and a chevron that opens 답장 대기 (30-replies.js rqOpen) on this app's own drafts. The answers live there, not in a settings screen.
 function asWaitRow(app, n) {
@@ -66,7 +66,7 @@ const monLastOut = m => m.last_output && !MON_CMD.test(m.last_output) ? TX("apps
 // 다시 시도. The machine hooks other panels read stay stable: .as-stat, data-watch, data-internal.
 function asStatRow(app, m, i) {
   const st = m ? monStatus(m) : null;   // the monitor's one status (30-monitoring.js)
-  const dot = i ? i.dot : st ? (st.tone === "err" ? "fail" : st.key === "off" || st.key === "need" ? "idle" : "ok") : "idle";
+  const dot = i ? i.dot : st ? (st.tone === "err" ? "fail" : st.key === "off" || st.key === "need" || st.key === "wait" ? "idle" : "ok") : "idle";
   const name = m ? monTitle(m) : i ? i.name : "";
   const line = i
     ? [i.status, i.last_run ? TX("appset.last.check", { at: monTime(i.last_run) }) : "", m ? ntMonNext(m) : ""].filter(Boolean).join(" · ")
@@ -105,7 +105,7 @@ async function asPatch(app, values) {
   const got = new Map((r.fields || []).map(f => [f.key, f])), prev = AS.by[app] || [];
   AS.by[app] = [...prev.map(f => got.get(f.key) || f), ...[...got.values()].filter(f => !prev.some(p => p.key === f.key))];
   asPaint();
-  MON.sig = ""; monSchedule();
+  monDirty();
   if (app.includes("~") || pqPc(`settings:${app}`)) pqSoon(); else if (asOwn(app)) loadMonitors(); else loadIntegrations();   // a peer's app or monitor is read back from that computer
   // The Kakao room list draws the same watch and draft lists: read it again so its switches and the screen never disagree.
   if (pqBare(app) === "kakao" && typeof KK !== "undefined" && KK.loaded) kkLoadRooms().catch(() => {});
@@ -236,7 +236,7 @@ function asAddPaint() {
   const send = el("button", { class: "btn", type: "button", "data-k": "new-app", disabled: (AT.draft || "").trim() ? null : true, onclick: asNewSend }, TX("appset.add.send"));
   const box = el("textarea", { class: "as-new-in", rows: "3", "data-k": "new-app-text", placeholder: TX("appset.add.ph"), "aria-label": TX("appset.add.aria"),
     oninput: ev => { AT.draft = ev.currentTarget.value; send.disabled = !AT.draft.trim(); },
-    onkeydown: ev => { if (ev.key === "Enter" && !ev.shiftKey && !ev.isComposing) { ev.preventDefault(); asNewSend(); } } });
+    onkeydown: ev => { if (plainEnter(ev) && !ev.shiftKey && !matchMedia("(pointer: coarse)").matches) { ev.preventDefault(); asNewSend(); } } });
   box.value = AT.draft || "";
   clear(h.box).append(
     fsHead([el("h2", { class: "fs-t", id: "as-add-t", text: TX("appset.add.title") })], { close: () => h.close() }),
@@ -345,7 +345,8 @@ function asControl(f, set) {
     return b;
   }
   if (f.type === "number") return asStepper(f.label, f.value, f.min, f.max, set, f.unit || (/\(([^)]+)\)\s*$/.exec(f.label) || [])[1] || "", f.key);
-  const c = el("input", { class: "fi as-in", type: "text", "aria-label": f.label, "data-k": f.key, onchange: () => set(c.value.trim()) });
+  const c = f.lines ? el("textarea", { class: "fi as-in as-ta", rows: String(f.lines), maxlength: f.max || 2000, "aria-label": f.label, "data-k": f.key, onchange: () => set(c.value.trim()) })
+    : el("input", { class: "fi as-in", type: "text", "aria-label": f.label, "data-k": f.key, onchange: () => set(c.value.trim()) });
   c.value = String(f.value);
   return c;
 }
@@ -434,7 +435,7 @@ function asConnNode(app) {
 // One settings row. A feature whose switch IS this setting is not drawn again under 기능; only its waiting count rides along here.
 function asSettingRow(app, f, feat, box) {
   const bound = feat && feat.features.find(x => x.setting === f.key), wait = bound && /승인 대기/.test(bound.status) ? bound.status : "";
-  return el("div", { class: "as-row", "data-setting": f.key },
+  return el("div", { class: f.lines ? "as-row as-col" : "as-row", "data-setting": f.key },
     el("span", { class: "as-b" }, el("span", { class: "as-n", text: f.type === "number" && !f.blocked ? f.label.replace(/\s*\([^)]+\)\s*$/, "") : f.label }), f.blocked || (f.help && !asEcho(f.label, f.help)) ? el("span", { class: "as-h", text: f.blocked || f.help }) : null, wait ? el("span", { class: "as-h", "data-wait": "1", text: wait }) : null),
     // A list is edited in the conversation (a change card); here it only says how many.
     f.type === "list" ? el("span", { class: "as-v", text: asFmt(f, f.value) }) : f.blocked ? Object.assign(kkSwitch(false, f.label, f.key, () => {}), { disabled: true }) : asControl(f, async v => {
@@ -536,7 +537,7 @@ function asPaneFollow(items) {
   const h = ASC.h;
   if (!h || !h.pane || !asOwn(ASC.app) || items.some(i => i.key === MON.sel)) return;
   const it = items.find(i => monSettingsApp(i) === ASC.app);
-  if (it) MON.sel = h.sel = it.key;
+  if (it) { h.sel = it.key; monSelSet(it.key); }
 }
 const asBack = () => !!(current === "monitoring" && ASC.h && ASC.h.pane && (ASC.h.close(), true));
 function asScreen(app) {

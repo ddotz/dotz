@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node
 import { join } from "node:path";
 import { expect, test } from "bun:test";
 import { API_KEY_OFF, allowFile, apiKeyBan, withoutApiKeys } from "./apikey-policy.ts";
-import { DATA_DIR } from "./config.ts";
+import { cfg, DATA_DIR } from "./config.ts";
 import { Chain, entryView, resetFallbackState } from "./fallback.ts";
 
 const pin = (account: string) =>
@@ -105,4 +105,27 @@ test("the settings view says an API-key entry is down because of the pin, and no
 	expect(entryView(entry)).toMatchObject({ down: "error", down_reason: "api_key_ban", down_account: "teammate-shared" });
 	pin("default");
 	expect(entryView(entry).down_reason).toBeUndefined();
+});
+
+test("R11: with a role on omp a named account bans every API key whichever account omp runs on; another runtime and an empty list do not", () => {
+	const was = cfg.runtime;
+	pin("default");
+	try {
+		setBan(["teammate-shared"]);
+		cfg.runtime = "omo";
+		expect(apiKeyBan()).toBeUndefined();
+		cfg.runtime = "omp";
+		expect(apiKeyBan()).toBe("teammate-shared");
+		expect(withoutApiKeys({ PATH: "/bin", ANTHROPIC_API_KEY: "sk", DOTZ_KEY_VALUE: "k" })).toEqual({ PATH: "/bin" });
+		resetFallbackState();
+		expect(() => new Chain("anthropic/claude-opus-5-5:medium", [{ model: "anthropic/claude-opus-5-5", key_file: "anthropic-api-key" }], "medium").env(1)).toThrow(/teammate-shared/);
+		setBan([]);
+		expect(apiKeyBan()).toBeUndefined();
+		expect(withoutApiKeys({ ANTHROPIC_API_KEY: "sk" })).toEqual({ ANTHROPIC_API_KEY: "sk" });
+		setBan(["teammate-shared"]);
+		cfg.runtime = "claude";
+		expect(apiKeyBan()).toBeUndefined();
+	} finally {
+		cfg.runtime = was;
+	}
 });

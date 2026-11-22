@@ -4,7 +4,7 @@ import { afterAll, beforeAll, expect, test } from "bun:test";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { pendingAskFile, pendingAsks, pendingAsksBlock } from "./asks.ts";
-import { cfg, NAME } from "./config.ts";
+import { cfg, HUB_TOKEN, NAME } from "./config.ts";
 import { msg } from "./i18n.ts";
 import { decisionsOf } from "./notices.ts";
 import type * as Lanes from "./lanes.ts";
@@ -13,6 +13,9 @@ import { adapters } from "./runtime/index.ts";
 import { omp } from "./runtime/omp.ts";
 import { advance, flush } from "./runtime/test-clock.ts";
 import type { AgentEvent, AgentProcess, RuntimeAdapter, SendMode } from "./runtime/types.ts";
+import { makeRoute } from "./routes.ts";
+import { queue } from "./outbound.ts";
+import { MAIN } from "./session-key.ts";
 
 const DATA = process.env.DOTZ_DIR!;
 // Own copies of the stateful modules (the query makes a new instance): the scenario test drives the originals in this process.
@@ -249,6 +252,48 @@ test("an [ask] without choices raises nothing: it goes back to the session once,
 	expect(decisionsOf({ ts: "t", kind: "lane_report", source: "lane:pd", lane: "pd", text: reports[0]! })).toEqual([]);
 });
 
+test("D5: a report that ends asking the owner in words with no card goes back once, then goes through; an offer goes through at once", async () => {
+	const { agent, reports } = await fresh("pp");
+	const prose = "[done] 설정 화면을 고쳤어요. 어느 색이 좋은지 알려 주세요.";
+	await said(agent, prose);
+	await advance(500);
+	expect(reports).toEqual([]);
+	expect(agent.sent.at(-1)!.text).toContain(msg().askProseRefused("설정 화면을 고쳤어요. 어느 색이 좋은지 알려 주세요.", prose.slice(7)));
+	const count = agent.sent.length;
+	await said(agent, prose);
+	await advance(500);
+	expect(agent.sent.length).toBe(count);
+	expect(reports).toEqual([prose]);
+	const offered = await fresh("po");
+	const offer = "[done] 설정 화면을 고쳤어요. 다른 색을 원하면 말해 주세요.";
+	await said(offered.agent, offer);
+	await advance(500);
+	expect(offered.reports).toEqual([offer]);
+});
+
+test("a card from a session titled with no subject goes back once asking for its subject, then becomes the card", async () => {
+	const { lane, agent, reports } = await fresh("pg");
+	const generic = "[ask] sample-2 정리가 끝났어요.\n\n결정: 어떻게 할까요?\n**1) 바로 반영**\n**2) 보류**";
+	await said(agent, generic);
+	await advance(500);
+	expect(reports).toEqual([]);
+	expect(lane.pendingAsk).toBeUndefined();
+	expect(agent.sent.at(-1)!.text).toContain(msg().askTitleRefused("어떻게 할까요?", generic.slice(6)));
+	await said(agent, generic);
+	await advance(500);
+	expect(reports).toEqual([generic]);
+	expect(lane.pendingAsk?.text).toBe(generic);
+});
+
+test("D3: a session's question whose list became no card goes back once, naming that question", async () => {
+	const { agent, reports } = await fresh("pq");
+	const two = "[ask] 정할 게 두 가지예요.\n\n배포 시각은 어느 쪽으로 할까요?\n- 오늘 밤에 바로 올려요.\n- 내일 아침에 올려요.\n\n결정: 백업 위치는 어디로 할까요?\n**1) 외장 디스크**\n**2) 클라우드**";
+	await said(agent, two);
+	await advance(500);
+	expect(reports).toEqual([]);
+	expect(agent.sent.at(-1)!.text).toContain(msg().askUnread(["배포 시각은 어느 쪽으로 할까요?"], two.slice(6)));
+});
+
 test("a report that says something is unverified without why and what was checked instead goes back once", async () => {
 	const { lane, agent, reports } = await fresh("pu");
 	const bare = "[done] 키보드가 안 내려가게 고쳤어요.\n- 실기기 미확인";
@@ -279,6 +324,35 @@ test("a [wait] that names main without saying in a for-line what main must do go
 	await said(agent, onCi);
 	await advance(500);
 	expect(reports).toEqual([withLine, onCi]);
+});
+
+test("a [wait] on main in the turn that handed main the request with dotz_main is not refused; a later turn's is", async () => {
+	const { agent, reports } = await fresh("pm");
+	const handed: string[] = [];
+	const realDeliver = queue.deliver;
+	queue.deliver = ((text: string) => (handed.push(text), false)) as typeof queue.deliver;
+	try {
+		const route = makeRoute({ busyNow: () => [], restartGateway: () => "", restartGatewayNow: () => "", mailDeps: () => ({}) as never });
+		const wait = "[wait] dotz_main으로 릴리스를 부탁했어요. 메인의 답을 기다려요.";
+		await agent.push({ type: "alive" }, { type: "turn_start" });
+		const r = await route(new Request(`http://hub.test/api/conv-sessions/${MAIN}/send`, { method: "POST", headers: { "x-dotz-token": HUB_TOKEN, "content-type": "application/json" }, body: JSON.stringify({ text: "cut the release", from: "lane:pm" }) }));
+		expect(r!.status).toBe(200);
+		expect(handed).toHaveLength(1);
+		const count = agent.sent.length;
+		await agent.push({ type: "assistant", text: wait, stop: "stop" }, { type: "turn_end" });
+		await advance(500);
+		expect(agent.sent.length).toBe(count);
+		expect(reports).toEqual([wait]);
+		// The next turn handed main nothing: its bare [wait] on main goes back to the lane as before.
+		await advance(1000);
+		const later = "[wait] 메인의 답을 아직 기다려요.";
+		await said(agent, later);
+		await advance(500);
+		expect(reports).toEqual([wait]);
+		expect(agent.sent.at(-1)!.text).toContain(msg().waitMainRefused);
+	} finally {
+		queue.deliver = realDeliver;
+	}
 });
 
 test("a \"still waiting\" [ask] on a card the owner still has open makes nothing, however its words differ", async () => {

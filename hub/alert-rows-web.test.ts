@@ -1,6 +1,6 @@
 import { afterAll, expect, test } from "bun:test";
 import { fakeHub, json, on } from "./test-web.ts";
-import { watchChoice } from "./watch.ts";
+import { watchChoice } from "./watch-ask.ts";
 import { watchLine } from "./watchtext.ts";
 
 // The 알림 conversation in a headless browser: the gateway's posts of a day are the rows of ONE list card, drawn by the 작업내역 row builder

@@ -70,10 +70,10 @@ function openPalette() {
       else if (!spaced) for (const x of hintList) if (x.c.startsWith(v)) items.push(palCmd(x));
     } else {
       for (const x of hintList) if (!x.dup && (!v || x.c.includes(v))) items.push(palCmd(x));
-      for (const id of views) if (id !== "activity" && id !== "project" && id !== "cardform" && !navOff(id) && (!v || titles[id].toLowerCase().includes(v) || id.includes(v) || (PAL_WORDS[id] || "").includes(v))) items.push({ kind: "nav", ic: VIEW_ICON[id], label: titles[id], desc: navKeyHint(id), go: id === "chat" ? lastChatView() : id });
+      for (const id of views) if (SCREENS[id].palette !== false && !navOff(id) && (!v || titles[id].toLowerCase().includes(v) || id.includes(v) || (PAL_WORDS[id] || "").includes(v))) items.push({ kind: "nav", ic: VIEW_ICON[id], label: titles[id], desc: navKeyHint(id), go: id === "chat" ? lastChatView() : id });
       // Ended lanes stay folded: one row without a query, each lane once the query names it (or "종료").
       const ended = endedLanes();
-      if (ended.length && !v) items.push({ kind: "act", ic: "lanes", label: TX("base.ended.label", { n: ended.length }), act: () => { endedOpen = true; go("chat", "list"); } });
+      if (ended.length && !v) items.push({ kind: "act", ic: "lanes", label: TX("base.ended.label", { n: ended.length }), act: () => { putEndedOpen(true); go("chat", "list"); } });
       else for (const l of ended) if (v && (l.name.toLowerCase().includes(v) || TX("base.pal.words.ended").includes(v))) items.push({ kind: "act", ic: "lanes", label: `${TX("common.ended_sessions")} · ${l.name}`, act: () => openTarget(`lane:${l.name}`, lastChatView()) });
       if (!v || TX("base.pal.words.terminal").includes(v)) items.push({ kind: "act", ic: "shell", label: TX("base.pal.open_terminal"), act: () => openShell() });
       if (S && S.desk && (!v || TX("base.pal.words.screen").includes(v))) items.push({ kind: "act", ic: "desktop", label: TX("base.pal.open_screen"), act: () => openScreen() });
@@ -133,74 +133,47 @@ function go(name, tgt) {
   // does one raised together with the move ("프로젝트를 지웠어요" and then the list).
   document.querySelectorAll("body > .snack:not(.act)").forEach(n => { if (n !== toastNew) toastGone(n); });
   [name, tgt] = routeAlias(name, tgt);
-  NSC.pass = 0;
-  if (!PN.going) PN.app = false;   // 모니터링 is a pane's screen only while the pane machinery lends it (43-panes.js paneGoApp)
-  const viaRow = NSC.arm > Date.now();
-  NSC.arm = 0;
-  if (name === "notices") NSC.ret = false;
-  else { NSC.ret = viaRow; if (!viaRow) NSC.keep = false; }
+  nscLanding(name);
+  paneAppOff();   // 모니터링 is a pane's screen only while the pane machinery lends it (43-panes.js paneGoApp)
   // A mail (or any "monitoring/c:<target>") opens inside 모니터링: the chat view is drawn, the tab, the list and the address stay 모니터링's.
-  const inChat = name === "chat" || name === "activity";
-  let mc = false;
-  if (name === "monitoring" && tgt && tgt.startsWith("c:")) { if (validTarget(tgt.slice(2))) { name = "chat"; tgt = tgt.slice(2); mc = true; } else tgt = undefined; }
+  const inChat = SCREENS[name]?.tab === "chat";
+  let mc = false, cv = SCREEN_HOOKS[name]?.conv?.(tgt);
+  if (cv !== undefined) { if (validTarget(cv)) { name = "chat"; tgt = cv; mc = true; } else tgt = undefined; }
   else if (inChat && !paneKeeps(tgt && tgt !== "list" ? tgt : target) && (tgt ? tgt !== "list" && monOwned(tgt) : monOwned(target))) { name = "chat"; mc = true; }
   else if (inChat && !tgt && monCtx && target === monCtx && !paneKeeps(target)) mc = true;
   monCtx = mc ? tgt || target : "";
-  if (mc) { const k = monItemOf(tgt || target); if (k) MON.sel = k; MON.list = false; }
+  if (mc) monConvIn(tgt || target);
   if (!views.includes(name) || navOff(name)) name = "home";
-  if (name === "projects" && ppWide() && !relayCur()) { H.auto = true; name = "project"; tgt = ppCur && (!PRJ || PRJ.projects.some(p => p.key === ppCur)) ? ppCur : prjFirst() || "builtin:custom"; if (!PRJ) prjLoad().then(() => { if (current === "project" && ppCur === "builtin:custom" && prjFirst()) { H.auto = true; go("project", prjFirst()); } }); }
-  if (name === "project" && !tgt) name = "projects";
-  if (name === "accounts") accFocus = tgt || "";
-  if (name === "project") ppCur = tgt;
-  if (name === "monitoring") monRoute(tgt);
-  // "chat/list" is the phone's chat list; any other way into 채팅 opens a conversation.
-  chatList = name === "chat" && tgt === "list" && narrowChat();
-  if (name === "chat" && tgt === "list") tgt = undefined;
-  if (tgt && name !== "project" && name !== "accounts" && name !== "cardform" && tgt !== target && validTarget(tgt)) setTarget(tgt, !PN.going);   // a pane coming forward changes the address in place
-  if (name === "activity" && (!LOG_VIEW || isRowT(target) || isRelayT(target))) name = "chat";   // 알림 / 작업 기록 have no terminal view; LOG_VIEW off: no log view at all
+  const aim = SCREEN_HOOKS[name]?.aim?.(tgt);   // before current changes: the screen reads the target, or opens another screen or target instead
+  if (aim) [name, tgt] = aim;
+  chatList = !!aim?.[2];   // the phone's chat list (13-data.js chatAim)
+  if (tgt && !SCREENS[name].keyed && tgt !== target && validTarget(tgt)) setTarget(tgt, !PN.going);   // a pane coming forward changes the address in place
   if (name !== current) prevView = current;
-  if (current === "chat" && name !== "chat") paneStash();
+  if (name !== current) SCREEN_HOOKS[current]?.leave?.();   // the screen being left keeps what it needs (43-panes.js paneStash for 채팅)
   current = name;
   bkKkSync(); bkCmSync();   // leaving 모니터링 (or its item list) releases an open room's or post's history step before the new view stacks
   relayPaint();
-  if (name === "apps") appsOpen(tgt);   // after current is set: appsRender draws only the shown 앱 tab
+  SCREEN_HOOKS[name]?.route?.(tgt);   // after current is set, before the address is built: 앱's appsOpen draws only the shown tab and names it for appsHash
   if (convSync()) renderAll();
-  const tv = name === "chat" || name === "activity";
-  if (name === "harness") hProjId = tgt && tgt.startsWith("project/") ? tgt.slice(8) : "";
-  const hash = tv ? (chatList ? "chat/list" : mc ? `monitoring/c:${enc(target)}` : `${name}/${target}`) : name === "harness" && hProjId ? `harness/project/${enc(hProjId)}` : name === "project" && tgt ? `project/${enc(tgt)}` : name === "cardform" && tgt ? `cardform/${enc(tgt)}` : name === "monitoring" ? monHash() : name === "apps" ? appsHash() : name;
+  const tv = SCREENS[name].tab === "chat";
+  const hash = tv ? (chatList ? "chat/list" : mc ? `monitoring/c:${enc(target)}` : `${name}/${target}`) : SCREEN_HOOKS[name]?.hash?.(tgt) || name;
   navSync(name, hash);
-  const pp = name === "project" && ppWide();
-  for (const v of views) $(`#v-${v}`).hidden = v !== name && !(pp && v === "projects");
-  $("#views").classList.toggle("pp", pp);
+  const beside = SCREEN_HOOKS[name]?.beside?.() || "";   // a view shown beside this one (19-project-main.js projectBeside)
+  for (const v of views) $(`#v-${v}`).hidden = v !== name && v !== beside;
+  $("#views").classList.toggle("pp", !!beside);
   paneSync();
-  if ((name === "chat" || name === "activity") && !chatList) try { localStorage.setItem(isLaneT(target) ? `dotz-lane-view:${target}` : CHAT_MODE_KEY, name); } catch {}
+  if (tv && !chatList) try { localStorage.setItem(isLaneT(target) ? `dotz-lane-view:${target}` : CHAT_MODE_KEY, name); } catch {}
   document.querySelectorAll("#nav .ni").forEach(b => { const on = b.dataset.view === navView(SUB.has(name) ? "settings" : mc ? "monitoring" : paneLit(name) ? "chat" : name); b.classList.toggle("on", on); b.setAttribute("aria-current", on ? "page" : "false"); });
   $("#appbar").classList.toggle("tv", tv);
-  const th = $("#thead"), mode = name === "chat" ? "chat" : "term";
+  const th = $("#thead"), mode = SCREENS[name].term ? "term" : "chat";
   th.hidden = !tv; $("#vtog").hidden = !tv || !LOG_VIEW;
   if (tv && th.dataset.mode !== mode) { th.dataset.mode = mode; th.dataset.sig = ""; }
   if (MT_READY) mailThreadSync();   // the same-sender mail panel belongs to the mail conversation that is open (30-mail-thread.js)
-  $("#title").textContent = name === "home" ? botName : titles[name];
+  $("#title").textContent = SCREEN_HOOKS[name]?.title?.() ?? titles[name];
   convChrome();
   $("#views").scrollTop = 0; $("#appbar").classList.remove("scrolled");
-  if (name === "harness") loadHarness(); else closeHSheet();
-  if (tv) { enterTarget(); if (!(ts(target).hLoaded && ts(target).aLoaded) && !ts(target).loading) loadTarget(target, hasCached(ts(target))); }
-  if (name === "home") { renderHome(); loadHomeData(); }
-  if (name === "projects" || pp) { renderProjects(); prjLoad(); }
-  if (name === "monitoring" || mc) { renderMonitoring(); if (!monitorsFresh()) loadMonitors(); if (!noticesFresh()) loadNotices(); if (name === "monitoring" || !INTG.loaded) loadIntegrations(); }   // opening a conversation reads the app list kept fresh already; the read it sends asks again
-  if (name === "project") pmOpen(tgt);
-  if (name === "notices") nscOpen();
-  if (name === "settings") { if (!updFresh()) loadUpdate(); renderSettings(); loadMessengerIndex(); if (!provFresh()) loadProviderData().then(() => current === "settings" && renderSettings(), () => {}); loadRuntimes(); }
-  if (name === "models") { renderModels(); loadModels(); loadProviderData().then(() => current === "models" && renderModels(), () => {}); }
-  if (name === "accounts") { renderAccounts(); loadProviders(); loadAccounts(); if (!SQ) api("/api/quota").then(q => { noteQuota(q); if (current === "accounts") renderAccounts(); }, () => {}); }
-  if (name === "messengers") { renderMessengers(); loadMessengerIndex(); }
-  if (name === "usage") { gaugeForget("usage:"); quotaDrawn = 0; loadQuota(); }   // opening the screen shows the values as they are, no motion
-  if (name === "context") loadContext();
-  if (name === "discord") { loadMessengerIndex(); loadDiscord(); loadOnboarding("discord"); }
-  if (name === "jandi" || name === "slack" || name === "telegram") { loadMessengerIndex(); loadMessengerSettings(name); loadOnboarding(name); }
-  if (name === "devices" || name === "settings") loadDevices();
-  if (name === "webaccess" || name === "settings") loadWebAccess();
-  if (name === "webaccess") loadOnboarding("web-access");
+  for (const id in SCREEN_HOOKS) if (id !== name) SCREEN_HOOKS[id].away?.();   // every other screen lets go of what it lent the page (28-harness-project.js closeHSheet)
+  SCREEN_HOOKS[name]?.enter?.(tgt);   // the screen's own file draws it and asks for its data (screenHooks in 03-screens.js)
   // No screen is empty on its first frame: one whose loader has not drawn yet (사용량, 컨텍스트, 구성 ...) says so, and the loader replaces this line.
   const body = $(`#v-${name} > #${name}`);
   if (body && !body.firstChild) body.append(emptyNode(TX("common.loading")));
@@ -227,8 +200,13 @@ const limitKo = s => String(s).replace(/^Claude\s+/i, "").replace(/^7\s*Day\s*\(
 const limitLabel = (p, l, multi) => `${multi ? `${p.name || providerName(p.provider)} · ` : ""}${limitKo(l.label || l.id)}`;
 const isConnected = p => p.auth && p.auth !== "none";
 const needsAttention = p => p.in_use && !isConnected(p);
-// A card that failed to load passes `retry`: its 다시 시도 button asks again (a load that gave no data is never a dead end).
-const emptyNode = (t, retry) => (retry ? el("div", { class: "card empty" }, el("div", { text: t }), el("button", { class: "btn tonal", type: "button", "data-k": "retry", text: TX("base.retry"), onclick: ev => busy(ev.currentTarget, async () => retry()) })) : el("div", { class: "card empty", text: t }));
+// The one empty, loading or failed place of a screen (docs/ui-spec.md 빈 화면): a sentence on a card, and nothing else builds one (rule G of
+// hub/web-structure-web.test.ts). `retry` puts 다시 시도 under the sentence (a load that gave no data is never a dead end) and `more` what else stands
+// there: a hint, the one action. `compact` is the line of one section among others; `id` and `role` are for a node a test or a screen reader finds.
+const emptyNode = (t, retry, { id, role, compact, more = [] } = {}) => {
+  const under = [retry ? el("button", { class: "btn tonal", type: "button", "data-k": "retry", text: TX("base.retry"), onclick: ev => busy(ev.currentTarget, async () => retry()) }) : null, ...more].filter(Boolean);
+  return el("div", { class: compact ? "card empty compact" : "card empty", id, role, text: under.length ? null : t }, ...(under.length ? [el("div", { text: t }), ...under] : []));
+};
 // The one 더 보기 of a list: the card's own last line, inside the card, never a control floating under it (.cv-more, 19-volume.css).
 const moreRow = (text, onclick) => el("button", { class: "cv-more", type: "button", "data-k": "more", onclick, text });
 

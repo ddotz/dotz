@@ -1,4 +1,4 @@
-// The release gate (docs/releases.md): the full suite on the head of origin/main before a slot dispatches release.yml. Not a CI step: the suite has
+// The release gate (docs/releases.md): `bun hub/check.ts` and the full suite on the head of origin/main before a slot dispatches release.yml. Not a CI step: the suite has
 // only been shown green on the owner's machine. The owner's slot watch kills a tick after ~2 minutes and the suite takes minutes, so the gate runs
 // across ticks: one tick starts a detached runner (`release.ts --gate-run`) and returns; later ticks only read the state it leaves in the watch's
 // state dir. The runner keeps its own clone there, because the install that runs the watch is usually a tarball with no .git.
@@ -260,10 +260,20 @@ function suiteAttempt(): AttemptFn {
 	};
 }
 
-// Installs from the lockfile and runs `bun run test` (the heavy slot, like any full run) in `dir`, with the one retry of runWithRetry. An install
-// that fails throws: that is the gate not running, not the suite failing.
+// The repo and CSS lints that left the suite (hub/check.ts) count as a red suite: a failing check is the result, one failure per `FAIL <check>` block of
+// its output. A tree from before the script has none to run.
+export async function checkRed(dir: string, run: (cmd: readonly string[], cwd: string) => Promise<Output> = spawn): Promise<SuiteResult | undefined> {
+	if (!existsSync(join(dir, "hub", "check.ts"))) return undefined;
+	const checked = await run(["bun", "hub/check.ts"], dir);
+	if (checked.code === 0) return undefined;
+	const failures = [...checked.out.matchAll(/^FAIL (.+)\n(?:  (.+))?/gm)].map(m => ({ file: "hub/check.ts", name: m[1]!, error: m[2] ?? "" }));
+	return { green: false, failed: ["hub/check.ts"], failures, detail: checked.out.trim().slice(-DETAIL_CHARS) };
+}
+
+// Installs from the lockfile, runs `bun hub/check.ts` (checkRed), then `bun run test` (the heavy slot, like any full run) in `dir`, with the one retry of
+// runWithRetry. An install that fails throws: that is the gate not running, not the suite failing.
 export async function runSuiteIn(dir: string): Promise<SuiteResult> {
 	const installed = await spawn(["bun", "install", "--frozen-lockfile"], dir);
 	if (installed.code !== 0) throw new Error(`bun install이 실패했어요: ${installed.out.trim().slice(-300)}`);
-	return runWithRetry(dir, suiteAttempt());
+	return (await checkRed(dir)) ?? runWithRetry(dir, suiteAttempt());
 }

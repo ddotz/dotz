@@ -20,8 +20,8 @@ const nextReport = (lane: string) => new Promise<HubEvent>(resolve => waiters.pu
 beforeAll(() => {
 	cfg.identity = { ...cfg.identity, language: "ko" };
 	Reflect.set(cfg, "runtime", "omp");
-	modelDeps.spawn = ((argv: string[]) => {
-		calls.push(argv[argv.length - 1]);
+	modelDeps.spawn = ((_argv: string[], options: { stdin: Uint8Array }) => {
+		calls.push(new TextDecoder().decode(options.stdin));
 		const line = JSON.stringify({ type: "message_end", message: { role: "assistant", content: [{ type: "text", text: KO }], usage: { input: 10, output: 5 } } });
 		return { stdout: new Response(`${line}\n`).body, exited: Promise.resolve(0) };
 	}) as unknown as typeof modelDeps.spawn;
@@ -55,6 +55,14 @@ test("an English lane report is recorded once in the owner's language, its For l
 	expect(e.text).toBe(`${KO}\n\n${forLine}`);
 	// The model saw the owner-visible part only, once (Discord reuses the same text).
 	expect(calls).toEqual(["The prototype build passes now. All 12 tests are green."]);
+});
+
+test("a lane error reaches the owner in plain words; the provider's own text does not", async () => {
+	Reflect.set(cfg, "output_language", "off");
+	const e = await report("lw-err", "[lane error] Provider stream start timed out after 300000ms (raise streamStartTimeoutMs: retry.provider.streamStartTimeoutMs in senpi settings; 0 disables)");
+	expect(e.text).toStartWith("[lane error] ");
+	expect(e.text).not.toContain("streamStartTimeoutMs");
+	expect(e.text).not.toContain("Provider stream");
 });
 
 test('output_language "off" records the raw report and makes no model call', async () => {

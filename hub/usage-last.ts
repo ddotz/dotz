@@ -57,6 +57,11 @@ export class UsageLast {
 		this.say(`usage read ok again (${key}) after ${n} failed reads`);
 	}
 
+	drop(key: string): void {
+		this.streak.delete(key);
+		if (this.held.delete(key)) this.save();
+	}
+
 	// A failed read: logs the reason on the first of a streak and returns the value to show, if there is one.
 	failed(key: string, reason: string): { report: Record<string, any>; readAt: number } | undefined {
 		const n = (this.streak.get(key) ?? 0) + 1;
@@ -78,9 +83,15 @@ export class UsageLast {
 
 export const usageLast = new UsageLast();
 
+type Identified = { provider: string; limits?: unknown[]; metadata?: { email?: string; accountId?: string } };
+const keyOf = (rep: Identified): string => {
+	const who = rep.metadata?.email ?? rep.metadata?.accountId;
+	return `omp:${rep.provider}${who ? `:${who}` : ""}`;
+};
+
 // One `usage --json` read through the last-good store. `read` answers the reports, or why it could not. A failed read returns the
 // held reports of every provider marked problem "failed" with their read time; nothing held: undefined (the caller reads again next time).
-export async function readReports<R extends { provider: string; limits?: unknown[] }>(
+export async function readReports<R extends Identified>(
 	read: () => Promise<{ reports?: R[]; reason?: string }>,
 	last: UsageLast = usageLast,
 ): Promise<(R & { problem?: "failed"; fetchedAt?: number })[] | undefined> {
@@ -88,7 +99,11 @@ export async function readReports<R extends { provider: string; limits?: unknown
 	if (r.reports) {
 		const at = last.now();
 		for (const key of last.failing("omp:")) last.ok(key);
-		for (const rep of r.reports) if (rep.limits?.length) last.good(`omp:${rep.provider}`, rep, at);
+		const live = r.reports.filter(rep => rep.limits?.length);
+		const now = new Set(live.map(keyOf));
+		const providers = new Set(live.map(rep => rep.provider));
+		for (const key of last.keys("omp:")) if (!now.has(key) && providers.has(key.split(":")[1] ?? "")) last.drop(key);
+		for (const rep of live) last.good(keyOf(rep), rep, at);
 		return r.reports;
 	}
 	const reason = r.reason ?? "no answer";

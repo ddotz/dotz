@@ -7,13 +7,14 @@
 //   work can live in /tmp, so an existing one is kept). A real project's sessions are never looked at.
 // - removeSessionsFor: the session folders of one throwaway cwd, for a probe that is done with it.
 // - closeDeadLaneTasks: state.json open tasks waiting on an ended lane are moved to a history file with the reason.
-import { appendFileSync, closeSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { appendFileSync, closeSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { gzipSync } from "node:zlib";
 import { writeAtomic } from "./config.ts";
 import { isLimitWait, withoutLimitWait } from "./limitwait.ts";
 import { TEMP_PATH } from "./live-guard.ts";
+import { ompSessionsDir } from "./omp-dirs.ts";
 
 const DAY = 86_400_000;
 const MKDTEMP_CWD = /^\/(private\/)?var\/folders\//;
@@ -22,7 +23,7 @@ export const MKDTEMP_IDLE_MS = 3600_000;
 
 export const sessionDirs = (): string[] => [
 	join(process.env.OMO_CODING_AGENT_DIR ?? process.env.PI_AGENT_DIR ?? join(homedir(), ".omo", "agent"), "sessions"),
-	join(homedir(), ".omp", "agent", "sessions"),
+	ompSessionsDir(),
 ];
 
 const stamp = (now: number) => new Date(now).toISOString().replace(/[-:]/g, "").replace("T", "-").slice(0, 15);
@@ -66,17 +67,25 @@ export function pruneUploads(dir: string, keepDays: number, now = Date.now()): s
 	return gone;
 }
 
+function cwdInFirstThreeLines(head: string): string | undefined {
+	for (const line of head.split("\n", 3)) {
+		try {
+			const cwd = JSON.parse(line).cwd;
+			if (typeof cwd === "string") return cwd;
+		} catch {
+			continue;
+		}
+	}
+	return undefined;
+}
+
 function sessionCwd(dir: string): string | undefined {
 	const first = readdirSync(dir).find(n => n.endsWith(".jsonl"));
 	if (!first) return undefined;
 	const fd = openSync(join(dir, first), "r");
 	try {
 		const buf = Buffer.alloc(4096);
-		const line = buf.subarray(0, readSync(fd, buf, 0, buf.length, 0)).toString("utf8").split("\n")[0];
-		const cwd = JSON.parse(line ?? "").cwd;
-		return typeof cwd === "string" ? cwd : undefined;
-	} catch {
-		return undefined;
+		return cwdInFirstThreeLines(buf.subarray(0, readSync(fd, buf, 0, buf.length, 0)).toString("utf8"));
 	} finally {
 		closeSync(fd);
 	}
@@ -111,20 +120,20 @@ export function pruneTempSessions(sessionsDir: string, minIdleMs: number, now = 
 	return { removed, kb };
 }
 
-// Session folders record the resolved path (/private/var/...), mkdtemp returns /var/...: both spellings match.
+/** The session folders of one working directory: those whose files' header names `cwd`. The folder records the resolved path (/private/var/...) where mkdtemp returns /var/..., so every spelling matches. */
+export function sessionFolders(cwd: string, dirs: readonly string[] = sessionDirs()): string[] {
+	const real = existsSync(cwd) ? realpathSync(cwd) : cwd;
+	const want = new Set([cwd, real, cwd.replace(/^\/private\//, "/"), `/private${cwd}`]);
+	return dirs.flatMap(sd => {
+		if (!existsSync(sd)) return [];
+		return readdirSync(sd).map(name => join(sd, name)).filter(dir => statSync(dir).isDirectory() && want.has(sessionCwd(dir) ?? ""));
+	});
+}
+
 export function removeSessionsFor(cwd: string, dirs = sessionDirs()): string[] {
-	const want = new Set([cwd, cwd.replace(/^\/private\//, "/"), `/private${cwd}`]);
-	const removed: string[] = [];
-	for (const sd of dirs) {
-		if (!existsSync(sd)) continue;
-		for (const name of readdirSync(sd)) {
-			const dir = join(sd, name);
-			if (!statSync(dir).isDirectory() || !want.has(sessionCwd(dir) ?? "")) continue;
-			rmSync(dir, { recursive: true, force: true });
-			removed.push(name);
-		}
-	}
-	return removed;
+	const folders = sessionFolders(cwd, dirs);
+	for (const dir of folders) rmSync(dir, { recursive: true, force: true });
+	return folders.map(dir => basename(dir));
 }
 
 type OpenTask = { id?: string; lane?: unknown; [key: string]: unknown };

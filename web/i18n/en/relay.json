@@ -10,6 +10,7 @@
   "relay.none_title": "{name} hasn't sent its status yet",
   "relay.none_hint": "On that computer, turn on Settings > Messengers > JANDI > Send this computer's status to JANDI.",
   "relay.sessions": "Sessions",
+  "relay.conv_none": "No conversations from {name} yet",
   "relay.no_sessions": "No sessions running",
   "relay.todos": { "one": "{n} open to-do", "other": "{n} open to-dos" },
   "relay.todos_title": "To-dos",

@@ -2,7 +2,7 @@ import { afterAll, beforeAll, expect, test } from "bun:test";
 import { readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { cfg, paths } from "./config.ts";
-import { abortAhead, compactDue, newCtx, noteEvent, REST_FRACTION, REST_QUIET_MS, requestAhead, requestCompact, restDue, restGuard } from "./context.ts";
+import { abortAhead, compactDue, newCtx, noteEvent, REST_FRACTION, REST_QUIET_MS, requestAhead, requestCompact, restAhead, restDue, restGuard } from "./context.ts";
 import type * as Orchestrator from "./orchestrator.ts";
 import { adapters } from "./runtime/index.ts";
 import { omo } from "./runtime/omo.ts";
@@ -71,9 +71,65 @@ test("the normal compaction is never aborted, and it still runs from the normal 
 	expect(calls).toEqual(["compact"]);
 });
 
-test("only OmO is asked to compact ahead of time: it is the engine whose compaction was shown to abort cleanly", () => {
+test("only OmO is asked to compact ahead of time by aborting; omp is asked to by waiting, and the abort path of OmO is not open to it", () => {
 	expect(omo.caps.abortCompact).toBe(true);
+	expect(omo.caps.restCompact).toBeUndefined();
 	expect(omp.caps.abortCompact).toBeUndefined();
+	expect(omp.caps.restCompact).toBe(true);
+});
+
+// A runtime that cannot abort a compaction but may start one at rest (omp): an owner message waits for the compaction to end.
+const ompPort = (calls: string[]) => ({ idle: () => true, compact: () => calls.push("compact"), refreshUsage: () => {}, waitOnly: true });
+const OMP_REST = { alive: true, canAbort: false, restCompact: true, idle: true, switching: false, failing: false, held: 0, workers: 0, limitHold: false, quietMs: REST_QUIET_MS };
+
+test("a no-abort runtime with the rest capability compacts ahead of time at rest past the lower point", () => {
+	const calls: string[] = [];
+	const c = newCtx();
+	c.tokens = AT * REST_FRACTION;
+	restAhead(c, ompPort(calls), "omp", OMP_REST, AT);
+	expect(calls).toEqual(["compact"]);
+	expect(c.compaction.state).toBe("compacting");
+	expect(c.ahead?.reason).toMatch(/at rest/);
+});
+
+test("a no-abort runtime without the rest capability, or one that is not at rest, does not compact ahead of time", () => {
+	const cases: Partial<typeof OMP_REST>[] = [{ restCompact: false }, { held: 1 }, { workers: 1 }, { quietMs: REST_QUIET_MS - 1 }, { idle: false }];
+	for (const over of cases) {
+		const calls: string[] = [];
+		const c = newCtx();
+		c.tokens = AT * REST_FRACTION;
+		restAhead(c, ompPort(calls), "omp", { ...OMP_REST, ...over }, AT);
+		expect(calls).toEqual([]);
+	}
+});
+
+test("abortAhead does nothing on a runtime that waits: the compaction is not marked aborted, so a failure stays a failure", () => {
+	const calls: string[] = [];
+	// The orchestrator's port always carries an abort function (a no-op without abortCompaction); waitOnly is what stops abortAhead.
+	const port = { ...ompPort(calls), abort: () => calls.push("abort") };
+	const c = newCtx();
+	requestAhead(c, port, "omp", "at rest");
+	expect(abortAhead(c, port)).toBe(false);
+	expect(c.aborting).toBeFalsy();
+	expect(calls).toEqual(["compact"]);
+	noteEvent(c, { type: "compaction", state: "error", error: "boom", requested: true }, port);
+	expect(c.compaction.state).toBe("error");
+});
+
+test("OmO keeps its abort path: a port without waitOnly aborts, and one with no abort is still refused", () => {
+	const calls: string[] = [];
+	const c = newCtx();
+	c.tokens = AT * REST_FRACTION;
+	const port = { idle: () => true, compact: () => calls.push("compact"), refreshUsage: () => {}, abort: () => calls.push("abort") };
+	restAhead(c, port, "omo", { ...OMP_REST, canAbort: true, restCompact: undefined }, AT);
+	expect(abortAhead(c, port)).toBe(true);
+	expect(calls).toEqual(["compact", "abort"]);
+	const c2 = newCtx();
+	c2.tokens = AT * REST_FRACTION;
+	restAhead(c2, { ...port, abort: undefined }, "omo", { ...OMP_REST, canAbort: true, restCompact: undefined }, AT);
+	expect(c2.compaction.state).toBeUndefined();
+	restAhead(c2, port, "omp", { ...OMP_REST, canAbort: false, restCompact: undefined }, AT);
+	expect(c2.compaction.state).toBeUndefined();
 });
 
 const DATA = process.env.DOTZ_DIR!;
@@ -127,18 +183,33 @@ const fake: RuntimeAdapter = {
 	recentExchanges: () => "",
 };
 
+// omp: the same agent without abortCompaction, and the capability that lets it compact at rest by making the owner wait.
+const fakeOmp: RuntimeAdapter = {
+	...fake,
+	caps: { ...fake.caps, abortCompact: undefined, restCompact: true },
+	start() {
+		const agent = new FakeAgent();
+		Reflect.deleteProperty(agent, "abortCompaction");
+		started.push(agent);
+		return agent;
+	},
+};
+
 const savedCfg = { orchestrator: cfg.orchestrator };
 beforeAll(() => {
 	adapters.fake = fake;
+	adapters.fakeOmp = fakeOmp;
 	cfg.orchestrator = { ...cfg.orchestrator, runtime: "fake", rotate_tokens: AT };
 });
 afterAll(() => {
 	delete adapters.fake;
+	delete adapters.fakeOmp;
 	Object.assign(cfg, savedCfg);
 });
 
 // A started orchestrator whose context holds `tokens`, `quietMin` minutes after its last turn.
-async function atRest(tokens: number, quietMin: number): Promise<FakeAgent> {
+async function atRest(tokens: number, quietMin: number, runtime = "fake"): Promise<FakeAgent> {
+	cfg.orchestrator = { ...cfg.orchestrator, runtime };
 	const session = join(DATA, "rest-compact-session.jsonl");
 	writeFileSync(session, "{}\n");
 	writeFileSync(join(DATA, "orchestrator.json"), JSON.stringify({ sessionFile: session, runtime: "omp" }));
@@ -198,5 +269,73 @@ test("an owner message during an ahead-of-time compaction aborts it and is deliv
 	expect(o.orch.ctx.compaction).toEqual({});
 	expect(started.length).toBe(1);
 	expect(readFileSync(paths.log, "utf8")).toMatch(/ahead-of-time compaction aborted: 181000 tokens before/);
+	await agent.push({ type: "turn_start" }, { type: "turn_end" });
 	await finish();
+});
+
+test("omp: the orchestrator compacts at rest without an abort, and an owner message waits for the done event", async () => {
+	const agent = await atRest(AT * REST_FRACTION + 1000, 11, "fakeOmp");
+	expect(agent.compacts).toBe(1);
+	o.deliver("hello", true);
+	expect(agent.sent).toEqual([]);
+	expect(o.orch.ctx.compaction.state).toBe("compacting");
+	await agent.push({ type: "compaction", state: "done", tokensBefore: AT * REST_FRACTION + 1000 }, { type: "usage", tokens: 95_000, window: 1_000_000 });
+	expect(agent.sent.map(s => s.text.includes("hello"))).toEqual([true]);
+	expect(started.length).toBe(1);
+	expect(readFileSync(paths.log, "utf8")).toMatch(/ahead-of-time compaction done: 181000 tokens before/);
+	await agent.push({ type: "turn_start" }, { type: "turn_end" });
+	await finish();
+});
+
+test("omp: an owner message that waited for a failed rest compaction is still delivered", async () => {
+	const agent = await atRest(AT * REST_FRACTION + 1000, 11, "fakeOmp");
+	expect(agent.compacts).toBe(1);
+	o.deliver("hello", true);
+	expect(agent.sent).toEqual([]);
+	await agent.push({ type: "compaction", state: "error", error: "compaction failed", requested: true });
+	expect(agent.sent.map(s => s.text.includes("hello"))).toEqual([true]);
+	expect(o.orch.ctx.compaction.state).toBe("error");
+	expect(started.length).toBe(1);
+	expect(readFileSync(paths.log, "utf8")).toMatch(/ahead-of-time compaction failed: 181000 tokens before/);
+	await agent.push({ type: "turn_start" }, { type: "turn_end" });
+	await finish();
+});
+
+test("omp: a rest compaction is not started while a prompt is held or the quiet period is short", async () => {
+	const agent = await atRest(AT * REST_FRACTION + 1000, 9, "fakeOmp");
+	await advance(30_000);
+	expect(agent.compacts).toBe(0);
+	restGuard.blocked = () => true;
+	await advance(20 * 60_000);
+	expect(agent.compacts).toBe(0);
+	restGuard.blocked = () => false;
+	await finish();
+});
+
+test("a compaction at rest or at night is skipped within 2 h of the last one or when it would remove under 40K tokens; the owner's compaction still runs", async () => {
+	const calls: string[] = [];
+	const port = ompPort(calls);
+	const c = newCtx();
+	c.tokens = 169_345;
+	expect(requestAhead(c, port, "orch", "nightly fresh start")).toBe(true);
+	noteEvent(c, { type: "compaction", state: "done", tokensBefore: 169_345 }, port);
+	noteEvent(c, { type: "usage", tokens: 46_694 }, port);
+	c.tokens = 55_259;
+	await advance(61 * 60_000);
+	expect(requestAhead(c, port, "orch", "nightly fresh start")).toBe(false);
+	c.tokens = AT * REST_FRACTION;
+	restAhead(c, port, "orch", OMP_REST, AT);
+	expect(calls).toEqual(["compact"]);
+
+	await advance(60 * 60_000);
+	c.tokens = 46_694 + 39_999;
+	expect(requestAhead(c, port, "orch", "nightly fresh start")).toBe(false);
+	expect(calls).toEqual(["compact"]);
+	c.tokens = 46_694 + 40_000;
+	expect(requestAhead(c, port, "orch", "nightly fresh start")).toBe(true);
+	expect(calls).toEqual(["compact", "compact"]);
+	noteEvent(c, { type: "compaction", state: "done", tokensBefore: c.tokens }, port);
+
+	requestCompact(c, port);
+	expect(calls).toEqual(["compact", "compact", "compact"]);
 });

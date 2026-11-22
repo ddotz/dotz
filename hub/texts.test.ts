@@ -71,9 +71,9 @@ test("the real catalogs: inboxMail can be overridden and youAre cannot", () => {
 	expect(textProblems(CATALOGS.ko, dir, LOCKED_TEXTS).map(p => `${p.key}:${p.kind}`)).toEqual(["youAre:locked"]);
 });
 
-test("the new-mail wake text carries the shared approval block parts in both languages", () => {
+test("the new-mail wake text names its conversation, the draft command and the revise marker in both languages", () => {
 	for (const c of Object.values(CATALOGS)) {
 		const t = c.inboxMail("th:7");
-		for (const part of ["th:7", "> 받는이:", "> 제목:", "> 첨부:", "결정: 보낼까요?", "1) 보내기", "2) 고치기", "3) 보내지 않기"]) expect(t).toContain(part);
+		for (const part of ["th:7", "draft.ts new", "[revise "]) expect(t).toContain(part);
 	}
 });

@@ -28,7 +28,6 @@ const FILE_LABEL = /^(?:이미지|파일)\d{1,3}$/;
 // Keeps letters (any script), digits, dot, dash and underscore; never empty, never a dotfile, at most 120 chars.
 /** A file a mail poster already chose to go out WITH the reply (POST /api/mail `reply_files`), copied onto the reply draft from where it is. */
 export type ReplyFile = { path: string };
-// The draft's own cap (hub/draft-files.ts DRAFT_FILES_MAX) and the mail file cap (hub/mail.ts).
 const REPLY_FILES_MAX = 10, REPLY_FILE_MAX_BYTES = 1024 * 1024 * 1024;
 
 /** `reply_files` as posted: each an absolute path (no `..`) of a non-empty, readable regular file that is not itself a symlink. A bad entry

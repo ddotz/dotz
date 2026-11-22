@@ -16,6 +16,7 @@ function relayBrand() { return relayCur() ? targetName(relayCur()) : botName; }
 
 // The rows' names and notes (the title and the header line name the computer before the list is drawn again), and this view's state on the screen.
 function relayNames() { for (const p of PR.list) if (isRelayRow(p)) { RELAY.name[relayTargetOf(p)] = p.name; RELAY.note[relayTargetOf(p)] = p.note || ""; } }
+function relayPick(t, name) { RELAY.name[t] = name; if (!isRelayT(target)) RELAY.back = target; RELAY.cur = t; }   // chosen from outside its chat (44-relay-views.js relayShow)
 function relayPaint() {
   const on = relayOn();
   if (on) RELAY.cur = target; else if (RELAY.cur && target !== RELAY.cur) RELAY.cur = "";   // another conversation took the target: the computer is no longer the chosen one
@@ -53,8 +54,7 @@ function relayEvents(t, lines) {
 const relaySig = s => JSON.stringify([s.rids, s.rerr, s.serr, (s.rpend || []).length]);
 async function relayLoad(t, quiet) {
   const s = ts(t), before = relaySig(s);
-  if (s.loading) return s.loading;
-  s.loading = (async () => {
+  await latest(targetKey(t), async () => {   // one read of the room at a time, like loadTarget (13-data.js)
     try {
       const lines = await api(`${relayApi(t)}/messages`);
       const list = Array.isArray(lines) ? lines : [];
@@ -64,8 +64,7 @@ async function relayLoad(t, quiet) {
       s.rerr = "";
     } catch (e) { s.rerr = e.message; }
     s.hLoaded = s.aLoaded = true;
-  })().finally(() => { s.loading = null; });
-  await s.loading;
+  });
   if (t === target && (!quiet || relaySig(s) !== before)) renderAll();
 }
 // After the lines (renderAll0): what was sent and is not in the room yet, and the last error of a read or a send.
@@ -78,7 +77,7 @@ async function relaySend(text) {
   ta.value = ""; s.draft = ""; try { localStorage.removeItem(DRAFT_KEY(t)); } catch { /* no storage here: there is no stored draft to clear */ } autosize(); updateHints();
   const mine = { text, at: Date.now(), n: relayOwned(s.msgs, text) + (s.rpend || []).filter(p => relayNorm(p.text) === relayNorm(text)).length };
   s.rpend = (s.rpend || []).concat(mine); s.serr = "";
-  chatStick = true; renderAll(); scrollChat(true);
+  putChatStick(true); renderAll(); scrollChat(true);
   try { await api(`${relayApi(t)}/send`, "POST", { text }); }
   catch (e) {
     s.rpend = s.rpend.filter(p => p !== mine); s.serr = TX("misc.rl.failed", { why: e.message });
@@ -87,7 +86,8 @@ async function relaySend(text) {
   }
   await relayLoad(t, true);
 }
-const relayTick = () => { if (relayOn() && !document.hidden) relayLoad(target, true); };
+// A poll while the room's read is still out skips: that read is fresh enough, and asking again would queue polls back to back on a slow gateway.
+const relayTick = () => { if (relayOn() && !document.hidden && !latestOut(targetKey(target))) relayLoad(target, true); };
 setInterval(relayTick, RELAY_POLL_MS);
 document.addEventListener("visibilitychange", relayTick);
 

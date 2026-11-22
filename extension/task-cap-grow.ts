@@ -258,7 +258,8 @@ export function createGrowth(base: number, cfg: GrowthConfig, deps: GrowthDeps =
 	const now = deps.now ?? Date.now;
 	const account = deps.account ?? (() => process.env.SENPI_CLAUDE_SDK_OAUTH_PINNED_ACCOUNT);
 	const engine = createCapEngine({ base, grow: cfg.enabled, ceiling: cfg.ceiling, step: () => stepFor(cfg.step, usageLeft((deps.readUsage ?? readUsageFile)(), account(), now())) });
-	const probeNow = () => (probe ??= createGitProbe(deps.cwd ?? process.cwd()));
+	let probeCwd = deps.cwd ?? process.cwd();
+	const probeNow = () => (probe ??= createGitProbe(probeCwd));
 	const ask = (): Verdict => {
 		const verdict = judge(win.snapshot(probeNow().delta()));
 		win.reset();
@@ -279,6 +280,13 @@ export function createGrowth(base: number, cfg: GrowthConfig, deps: GrowthDeps =
 		turn: (spent: number) => record(engine.turn(spent, ask)),
 		atCap: (spent: number) => record(engine.atCap(spent, ask)),
 		finished: () => void (answered = true),
+		// why(platform): an omp task subagent runs in its own isolation worktree while process.cwd() stays the parent's (omp@18.22.0)
+		setCwd(cwd: unknown): void {
+			if (typeof cwd !== "string" || cwd === "" || cwd === probeCwd || deps.probe) return;
+			probeCwd = cwd;
+			probe = undefined;
+			if (started) probeNow().mark();
+		},
 		// A run is about to start with this prompt: the first one is the brief (its Estimate line sets the starting cap); a later one
 		// after a final answer is a follow-up that gets a fresh allowance. Returns "revived" for the second.
 		prompt(text: unknown, spent: number): "revived" | undefined {

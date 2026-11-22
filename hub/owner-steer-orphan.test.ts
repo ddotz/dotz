@@ -1,5 +1,6 @@
-// An owner message that arrives in a turn that answers no request (a worker's result woke the session, a session report, a quiet
-// check) is steered into it at once with the usual note, not queued behind the engine's own chain of runs.
+// An owner message that arrives in a turn that answers no request of the owner's (a worker's result woke the session, a session report)
+// waits as a prompt of its own instead of being steered into that turn, so it gets a whole turn (2026-11-13 diagnosis: 148 mid-turn owner
+// steers in 7 days). A quiet check's turn, which has a target, still takes it as before.
 import { expect, test } from "bun:test";
 import { createPrompts, type Pending, type PromptDeps } from "./prompts.ts";
 import { flush } from "./runtime/test-clock.ts";
@@ -29,47 +30,28 @@ function setup(extra: Partial<PromptDeps> = {}) {
 	return { q, s, frame };
 }
 
-test("a run a worker's result woke takes the owner message as a steer, and its answer goes to that message", async () => {
+test("a run a worker's result woke does not take the owner message: it waits as its own prompt and its own turn answers it", async () => {
 	const { q, s, frame } = setup();
 	frame("<task-result>worker done</task-result>");
-	expect(q.deliver("답했는데 왜 씹혀", web("c5878d56"))).toBe(true);
-	expect(s.notes).toEqual(["[note c5878d56] 답했는데 왜 씹혀"]);
-	expect(s.sent).toEqual([]);
-	frame(s.notes[0]!);
+	expect(q.deliver("답했는데 왜 씹혀", web("c5878d56"))).toBe(false);
+	expect(s.notes).toEqual([]);
+	expect(s.sent).toEqual(["답했는데 왜 씹혀"]);
+	q.onAnswer("[done] 워커 결과 정리");
+	q.settleTurn();
+	frame("답했는데 왜 씹혀");
 	q.onAnswer("미안해요, 지금 봤어요");
 	await flush();
-	expect(s.posts).toEqual([{ text: "미안해요, 지금 봤어요", replyTo: "c5878d56" }]);
-	expect(s.settled).toEqual(["c5878d56"]);
+	expect(s.posts.at(-1)).toEqual({ text: "미안해요, 지금 봤어요", replyTo: "c5878d56" });
 	expect(q.isAnswered("c5878d56")).toBe(true);
-	q.settleTurn();
-	q.redeliverSteered();
-	expect(s.sent).toEqual([]);   // answered once; nothing comes back as a prompt
-	expect(s.open).toEqual([]);
 });
 
-test("a dotz_send with reply_to settles a message steered into a run with no request", () => {
-	const { q, s, frame } = setup();
-	frame("<task-result>worker done</task-result>");
-	expect(q.deliver("바로 알려줘", web("m1"))).toBe(true);
-	frame(s.notes[0]!);
-	q.sent("web", "알려드려요", "m1");
-	expect(q.isAnswered("m1")).toBe(true);
-	q.settleTurn();
-	q.redeliverSteered();
-	expect(s.sent).toEqual([]);
-});
-
-test("a session report's turn (a prompt with no target) takes the owner message too", async () => {
+test("a session report's turn (a prompt with no target) does not take the owner message either", () => {
 	const { q, s, frame } = setup();
 	q.deliver("[report] lane x is done");
 	frame("[report] lane x is done");
-	expect(q.deliver("그건 나중에, 이거 먼저", web("m2"))).toBe(true);
-	expect(s.notes).toEqual(["[note m2] 그건 나중에, 이거 먼저"]);
-	frame(s.notes[0]!);
-	q.onAnswer("네, 이걸 먼저 했어요");
-	await flush();
-	expect(s.posts).toEqual([{ text: "네, 이걸 먼저 했어요", replyTo: "m2" }]);
-	expect(q.isAnswered("m2")).toBe(true);
+	expect(q.deliver("그건 나중에, 이거 먼저", web("m2"))).toBe(false);
+	expect(s.notes).toEqual([]);
+	expect(s.sent.at(-1)).toBe("그건 나중에, 이거 먼저");
 });
 
 test("a quiet check's turn takes the owner message and the quiet mark goes, so its answer is posted", async () => {

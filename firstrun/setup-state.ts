@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { harness } from "../onboard/harness.ts";
-import { SNOWFLAKE } from "./answers.ts";
+import { ACCESS_MODES, CONNECT_KEYS } from "./answers.ts";
 import { peerTokenFile, tokenFile, writeSecret } from "./apply.ts";
 import { en } from "../hub/i18n-en.ts";
 import { ko } from "../hub/i18n-ko.ts";
@@ -14,7 +14,7 @@ import type { SetupText } from "./setup-jobs.ts";
 export const SECRET_NAMES = ["discord-bot-token", "peer-token"] as const;
 export type SecretName = (typeof SECRET_NAMES)[number];
 
-const STRING_FIELDS = ["lang", "runtime", "name", "character", "tone", "notices", "address", "avatar", "guild", "owner_id", "machine_name", "orchestrator_model", "lane_model"] as const;
+const STRING_FIELDS = ["lang", "runtime", "name", "character", "tone", "notices", "address", "avatar", "machine_name", "orchestrator_model", "lane_model", "cloudflare_hostname"] as const;
 const PORT_FIELDS = ["web_port", "tailscale_https_port"] as const;
 const LANG = /^[a-z]{2,3}(-[A-Za-z0-9]{2,8})?$/;
 
@@ -40,7 +40,17 @@ export function parseDraft(values: unknown): Record<string, unknown> | undefined
 		if (!Array.isArray(v.allow_logins) || v.allow_logins.length > 20 || v.allow_logins.some(x => typeof x !== "string" || x.length > 200)) return undefined;
 		out.allow_logins = v.allow_logins.map(x => (x as string).trim()).filter(Boolean);
 	}
-	const bad = (out.name !== undefined && out.name !== "" && ((out.name as string).length < 2 || (out.name as string).length > 32)) || (typeof out.lang === "string" && out.lang !== "" && !LANG.test(out.lang)) || (typeof out.guild === "string" && out.guild !== "" && !SNOWFLAKE.test(out.guild)) || (typeof out.owner_id === "string" && out.owner_id !== "" && !SNOWFLAKE.test(out.owner_id)) || (typeof out.runtime === "string" && out.runtime !== "" && !harness(out.runtime)?.adapter);
+	if (v.access !== undefined) {
+		const access = ACCESS_MODES.find(m => m === v.access);
+		if (!access) return undefined;
+		out.access = access;
+	}
+	if (v.connect !== undefined) {
+		if (!Array.isArray(v.connect) || v.connect.some(k => !CONNECT_KEYS.some(c => c === k))) return undefined;
+		const asked: unknown[] = v.connect;
+		out.connect = CONNECT_KEYS.filter(k => asked.includes(k));
+	}
+	const bad = (out.name !== undefined && out.name !== "" && ((out.name as string).length < 2 || (out.name as string).length > 32)) || (typeof out.lang === "string" && out.lang !== "" && !LANG.test(out.lang)) || (typeof out.cloudflare_hostname === "string" && out.cloudflare_hostname.length > 253) || (typeof out.runtime === "string" && out.runtime !== "" && !harness(out.runtime)?.adapter);
 	return bad ? undefined : out;
 }
 

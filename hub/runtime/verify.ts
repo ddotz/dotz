@@ -7,13 +7,16 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { removeSessionsFor } from "../cleanup.ts";
 import { withRealProbes } from "./claude-probes.ts";
-import { cfg, DATA_DIR, log, now, orchestratorModel, selectorOf, setRuntime, writeAtomic } from "../config.ts";
+import { DATA_DIR, log, now, orchestratorModel, pendingRuntimes, selectorOf, setRuntime, writeAtomic } from "../config.ts";
 import { broadcast } from "../events.ts";
 import { codex } from "./detect.ts";
-import { adapters, DEFAULT_RUNTIME } from "./index.ts";
+import { adapters } from "./index.ts";
+import { loginCommand, loginOf, type LoginState } from "./login.ts";
+import { makeOmpProbes } from "./omp-probes.ts";
+import { configuredRuntime, DEFAULT_RUNTIME } from "./runtime-id.ts";
 import type { DetectResult, RuntimeAdapter, RuntimeId } from "./types.ts";
 
-export type CheckResult = "ok" | "adapted" | "disabled" | "unsupported" | "fail";
+export type CheckResult = "ok" | "adapted" | "disabled" | "unsupported" | "fail" | "unknown";
 export type CheckItem = { id: string; label: string; core: boolean; result: CheckResult; note: string };
 export type VerifyReport = { runtime: RuntimeId; at: string; version?: string; items: CheckItem[]; verdict: "ok" | "adjusted" | "blocked" };
 export type ProbeCtx = { cwd: string; model: string; log: (s: string) => void; timeoutMs: number };
@@ -32,7 +35,7 @@ export const RUNTIME_LABEL: Record<string, string> = { omp: "omp", claude: "Clau
 const DETECT_ONLY: Record<string, { detect(): Promise<DetectResult> }> = { codex };
 
 // The checklist. `core` items block a switch when they do not pass; the others are adapted or turned off.
-export const CHECKLIST: { id: string; label: string; core: boolean }[] = [
+export const CHECKLIST: { id: string; label: string; core: boolean; only?: RuntimeId }[] = [
 	{ id: "turn", label: "한 턴 실행", core: true },
 	{ id: "model_effort", label: "모델·추론 강도 지정", core: true },
 	{ id: "resume", label: "세션 이어가기", core: true },
@@ -47,7 +50,10 @@ export const CHECKLIST: { id: string; label: string; core: boolean }[] = [
 	{ id: "workers_spawn", label: "작업자 생성", core: false },
 	{ id: "workers_isolated_patch", label: "격리 작업자 패치", core: false },
 	{ id: "fallback_chain", label: "모델 대체 체인", core: false },
+	{ id: "user_isolation", label: "사용자 설정 격리", core: false, only: "omp" },
 ];
+
+export const checklistFor = (id: RuntimeId) => CHECKLIST.filter(c => !c.only || c.only === id);
 
 // What the hub does when a non-core item is not provided: `adapted` = a hub-side substitute keeps the feature,
 // `disabled` = the feature is off for this runtime (recorded in the report and shown on the settings screen).
@@ -64,8 +70,8 @@ const ADJUST: Record<string, { result: "adapted" | "disabled"; note: string }> =
 };
 
 export function verdictOf(items: CheckItem[]): VerifyReport["verdict"] {
-	if (items.some(i => i.core && (i.result === "fail" || i.result === "unsupported"))) return "blocked";
-	return items.some(i => i.result === "adapted" || i.result === "disabled") ? "adjusted" : "ok";
+	if (items.some(i => i.core && (i.result === "fail" || i.result === "unsupported" || i.result === "unknown"))) return "blocked";
+	return items.some(i => i.result !== "ok") ? "adjusted" : "ok";
 }
 
 // Turns raw probe results into the report items: a non-core fail/unsupported becomes adapted or disabled and keeps the cause.
@@ -119,10 +125,21 @@ const withTimeout = <T>(p: Promise<T>, ms: number): Promise<T> => {
 
 export type VerifyOpts = { adapter?: Probing; probes?: Record<string, Probe>; model?: string; timeoutMs?: number; version?: string; persist?: boolean; real?: boolean };
 
+const WORKER_ITEM_MS = 360_000;
+const itemMs = (): number => Number(process.env.DOTZ_VERIFY_TIMEOUT_MS ?? 90_000);
+const limitOf = (itemId: string, timeoutMs: number): number => (itemId.startsWith("workers_") ? Math.max(timeoutMs, WORKER_ITEM_MS) : timeoutMs);
+
+const limitsOf = (id: RuntimeId, timeoutMs = itemMs()) => ({
+	items: checklistFor(id).length,
+	item_s: Math.round(timeoutMs / 1000),
+	worker_s: Math.round(limitOf("workers_", timeoutMs) / 1000),
+	max_min: Math.ceil(checklistFor(id).reduce((t, c) => t + limitOf(c.id, timeoutMs), 0) / 60_000),
+});
+
 // Runs every checklist item, never throws. Without an adapter every item fails; without a probe it is unsupported.
 export async function verifyRuntime(id: RuntimeId, o: VerifyOpts = {}): Promise<VerifyReport> {
 	// The state is registered before the first await, so startVerify() hands out this same object.
-	const state: VerifyState = { runtime: id, running: true, startedAt: now(), done: 0, total: CHECKLIST.length };
+	const state: VerifyState = { runtime: id, running: true, startedAt: now(), done: 0, total: checklistFor(id).length };
 	states.set(id, state);
 	const announce = (text: string) => broadcast({ ts: now(), kind: "runtime_check", source: "hub", text, runtime: id, running: state.running, done: state.done, total: state.total, current: state.current });
 	const adapter = o.adapter ?? ((Object.hasOwn(adapters, id) ? adapters[id] : undefined) as Probing | undefined);
@@ -135,31 +152,29 @@ export async function verifyRuntime(id: RuntimeId, o: VerifyOpts = {}): Promise<
 		mkdirSync(dir(), { recursive: true });
 		const version = o.version ?? (await detectAll()).find(d => d.id === id)?.version;
 		if (!adapter) {
-			for (const c of CHECKLIST) raw.push({ ...c, result: "fail", note: "아직 지원 안 해요" });
+			for (const c of checklistFor(id)) raw.push({ id: c.id, label: c.label, core: c.core, result: "fail", note: "아직 지원 안 해요" });
 		} else {
-			const probes = o.probes ?? (adapter as Probing).probes ?? {};
+			const probes = o.probes ?? (adapter as Probing).probes ?? (id === "omp" ? makeOmpProbes(adapter) : {});
 			const model = o.model ?? selectorOf(orchestratorModel());
-			const timeoutMs = o.timeoutMs ?? Number(process.env.DOTZ_VERIFY_TIMEOUT_MS ?? 90_000);
+			const timeoutMs = o.timeoutMs ?? itemMs();
 			cwd = mkdtempSync(join(tmpdir(), `dotz-verify-${id}-`));
-			for (const c of CHECKLIST) {
+			for (const c of checklistFor(id)) {
 				state.current = c.label;
 				announce(`checking ${c.id}`);
 				const probe = Object.hasOwn(probes, c.id) ? probes[c.id] : undefined;
-				let r: { result: CheckResult; note: string };
-				// omp is the harness the hub was first built on: without probes of its own its items are the baseline.
-				if (!probe) r = id === "omp" ? { result: "ok", note: "처음에 쓰던 작업 프로그램이에요" } : { result: "unsupported", note: "이 작업 프로그램에서는 확인할 방법이 없어요" };
-				else {
+				let r: { result: CheckResult; note: string } = { result: "unsupported", note: "이 작업 프로그램에서는 확인할 방법이 없어요" };
+				if (probe) {
 					note(`probe ${c.id} start`);
 					try {
 						// A worker item runs a real worker (and, isolated, snapshots the repo) and may need a second turn for its result.
-						const limit = c.id.startsWith("workers_") ? Math.max(timeoutMs, 360_000) : timeoutMs;
+						const limit = limitOf(c.id, timeoutMs);
 						r = await withTimeout(probe({ cwd, model, log: s => note(`${c.id}: ${s}`), timeoutMs: limit }), limit);
 					} catch (e) {
 						r = { result: "fail", note: String((e as Error)?.message ?? e).slice(0, 300) };
 					}
 					note(`probe ${c.id} -> ${r.result}: ${r.note}`);
 				}
-				raw.push({ ...c, result: r.result, note: r.note });
+				raw.push({ id: c.id, label: c.label, core: c.core, result: r.result, note: r.note });
 				state.done++;
 			}
 		}
@@ -195,15 +210,30 @@ export function startVerify(id: RuntimeId, o: VerifyOpts = {}): VerifyState {
 
 export class UseRefused extends Error {}
 
-// Why a switch to `id` is refused, or undefined when allowed. omp (the original baseline) needs no report; it is only
-// ever chosen explicitly. The default runtime (OmO) needs its report like any other, but going back to it when it is
-// installed is never refused, so a failed check cannot strand the gateway on an opt-in runtime.
-export function refusalFor(id: string, detected: Detected | undefined, report: VerifyReport | undefined): string | undefined {
+const NO_LOGIN: LoginState = { checked: false, ready: false, accounts: 0 };
+const LOGIN_CACHE_MS = 30_000;
+export const LOGIN_REFUSAL = "로그인이 안 돼 있어요. 먼저 로그인해 주세요";
+const loginCache = new Map<string, { at: number; state: LoginState }>();
+
+async function loginFor(d: Detected | undefined, fresh = false): Promise<LoginState> {
+	if (!d?.installed || !d.hasAdapter) return NO_LOGIN;
+	const hit = loginCache.get(d.id);
+	if (!fresh && hit && Date.now() - hit.at < LOGIN_CACHE_MS) return hit.state;
+	const state = await loginOf(d.id, d.path);
+	loginCache.set(d.id, { at: Date.now(), state });
+	return state;
+}
+
+export async function loginView(id: RuntimeId) {
+	return { id, ...(await loginFor((await detectAll()).find(d => d.id === id), true)), command: loginCommand(id) };
+}
+
+export function refusalFor(id: string, detected: Detected | undefined, report: VerifyReport | undefined, login?: LoginState): string | undefined {
 	if (!RUNTIME_IDS.includes(id as RuntimeId)) return `알 수 없는 작업 프로그램이에요: ${id}`;
-	if (id === "omp") return undefined;
-	if (id === DEFAULT_RUNTIME && detected?.installed && detected.hasAdapter) return undefined;
 	if (!detected?.installed) return "설치되어 있지 않아요";
 	if (!detected.hasAdapter) return "dotz가 아직 지원하지 않아요";
+	if (id === DEFAULT_RUNTIME) return undefined;
+	if (login?.checked && !login.ready) return LOGIN_REFUSAL;
 	if (states.get(id)?.running) return "작동 검사가 아직 끝나지 않았어요";
 	if (!report) return "작동 검사를 먼저 해야 해요";
 	// The stored verdict is not trusted: it is recomputed, and a report missing a core item counts as blocked.
@@ -213,9 +243,10 @@ export function refusalFor(id: string, detected: Detected | undefined, report: V
 	return undefined;
 }
 
-// Writes the choice to config.json for the chosen roles. Returns the roles written; nothing is restarted.
-export async function useRuntime(id: string, roles: UseRole[], detected?: Detected[]): Promise<UseRole[]> {
-	const reason = refusalFor(id, (detected ?? (await detectAll(true))).find(d => d.id === id), lastReport(id));
+/** Writes the choice to config.json for the chosen roles and returns the roles written; the running gateway applies it at its next start. */
+export async function useRuntime(id: string, roles: UseRole[], detected?: Detected[], login?: LoginState): Promise<UseRole[]> {
+	const d = (detected ?? (await detectAll(true))).find(x => x.id === id);
+	const reason = refusalFor(id, d, lastReport(id), login ?? (await loginFor(d, true)));
 	if (reason) throw new UseRefused(reason);
 	const chosen = roles.filter((r, i) => (r === "orchestrator" || r === "lanes") && roles.indexOf(r) === i);
 	if (!chosen.length) throw new UseRefused("적용할 대상이 없어요 (orchestrator, lanes)");
@@ -223,20 +254,34 @@ export async function useRuntime(id: string, roles: UseRole[], detected?: Detect
 	return chosen;
 }
 
-// What config.json currently selects per role (before the hub's default for a name without an adapter).
-export const currentRuntimes = () => ({ orchestrator: cfg.orchestrator?.runtime ?? cfg.runtime ?? DEFAULT_RUNTIME, lanes: cfg.lanes?.runtime ?? cfg.runtime ?? DEFAULT_RUNTIME });
+/** What the running gateway's processes use per role (the config as it was read at start). */
+export const currentRuntimes = () => ({ orchestrator: configuredRuntime("orchestrator"), lanes: configuredRuntime("lane") });
 
-export async function runtimesView(refresh = false) {
+const pendingOf = (): Record<UseRole, string> => {
+	const p = pendingRuntimes();
+	return { orchestrator: p.orchestrator ?? DEFAULT_RUNTIME, lanes: p.lanes ?? DEFAULT_RUNTIME };
+};
+
+export async function runtimesView(refresh = false, login: (d: Detected, fresh: boolean) => Promise<LoginState> = loginFor) {
 	const current = currentRuntimes();
+	const pending = pendingOf();
+	const roles = Object.keys(current) as UseRole[];
+	const list = await detectAll(refresh);
+	const logins = await Promise.all(list.map(d => login(d, refresh)));
 	return {
 		current,
+		pending,
+		restart_needed: roles.some(r => current[r] !== pending[r]),
 		checklist: CHECKLIST,
-		runtimes: (await detectAll(refresh)).map(d => {
+		runtimes: list.map((d, i) => {
 			const report = lastReport(d.id);
-			const refusal = refusalFor(d.id, d, report);
+			const refusal = refusalFor(d.id, d, report, logins[i]);
 			return {
 				...d,
-				roles: (Object.keys(current) as UseRole[]).filter(r => current[r] === d.id),
+				roles: roles.filter(r => current[r] === d.id),
+				pending_roles: roles.filter(r => pending[r] === d.id),
+				login: { ...logins[i]!, command: loginCommand(d.id) },
+				limits: limitsOf(d.id),
 				report: report ? { at: report.at, version: report.version, verdict: report.verdict, counts: countResults(report.items) } : null,
 				state: verifyState(d.id) ?? null,
 				switchable: !refusal,

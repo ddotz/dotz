@@ -24,6 +24,15 @@ test("a secret in the text of a burst part and in an answer is masked in the fil
 	expect(lastLine(paths.outbox).text).not.toContain(FAKE_GH);
 });
 
+test("a secret in an answer is masked in the spec written with it", () => {
+	emit("outbox", { ts: "2098-01-01T00:00:04.000Z", kind: "out", source: "orchestrator", target: "web", text: `배포 키를 바꿨어요.\n\n- 새 키: ${FAKE_GH}\n- 위치: .env` });
+	const line = lastLine(paths.outbox);
+	expect(line.text).toContain("[가림");
+	expect(line.spec).toBeDefined();
+	expect(JSON.stringify(line.spec)).not.toContain(FAKE_GH);
+	expect(JSON.stringify(recentEvents(5).find(e => e.ts === "2098-01-01T00:00:04.000Z")?.spec)).toContain(FAKE_GH);
+});
+
 test("an event without a secret is written as it is", () => {
 	const e = { ts: "2098-01-01T00:00:03.000Z", kind: "message", source: "web", mid: "m-mask-3", text: "커밋 3f2a9c1d8e7b6a5f4e3d2c1b0a9f8e7d6c5b4a3f 확인", parts: [{ text: "a" }] };
 	expect(maskedForDisk(e)).toBe(e);

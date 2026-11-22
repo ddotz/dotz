@@ -1,20 +1,11 @@
-// What onboarding does once the answers are complete: secrets, config.json, state.json, IDENTITY.md, the omp plugin link, `tailscale serve`
-// and the Discord bot. Moved out of setup.ts so the terminal wizard and the web onboarding (firstrun/setup-apply.ts) run the same code;
-// every line goes through env.say (console.log in the terminal, the scrubbed stream on the web).
 import { chmodSync, existsSync, lstatSync, mkdirSync, readFileSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { randomBytes } from "node:crypto";
 import { join } from "node:path";
-import { type Answers, identityDoc, type Prior } from "./answers.ts";
+import { type Answers, identityDoc, type Prior, splitSelector } from "./answers.ts";
 import { writeAtomic } from "./atomic.ts";
-import { AsideRepl, createApp, invite, isAdmin, PERMISSIONS, resetToken } from "../onboard/discord.ts";
+import { ompAgentDir } from "../hub/omp-dirs.ts";
+import { saveWebAccessInput } from "../hub/web-access-input.ts";
 import { tailscaleState, type TailscaleState } from "../onboard/tailscale.ts";
-
-async function ensureBrowser(): Promise<void> {
-	const probe = (await Bun.$`aside repl ${"const p = await openTab('about:blank'); console.log('READY');"}`.nothrow().quiet()).stdout.toString();
-	if (/READY/.test(probe)) return;
-	await Bun.$`open -a Aside`.nothrow().quiet();
-	await Bun.sleep(6000);
-}
 
 async function serveWeb(bin: string, httpsPort: number, localPort: number): Promise<{ ok: boolean; out: string }> {
 	const r = await Bun.$`${bin} serve --bg --https=${httpsPort} http://127.0.0.1:${localPort}`.nothrow().quiet();
@@ -48,25 +39,24 @@ export function writeSecrets(env: Env, a: Answers): void {
 	}
 }
 
-const pick = (o: Record<string, unknown> | undefined, keys: string[]) => Object.fromEntries(keys.filter(k => o?.[k] != null).map(k => [k, o![k]]));
-const split = (sel: string) => {
-	const i = sel.lastIndexOf(":");
-	return i > 0 && !sel.slice(i + 1).includes("/") ? { model: sel.slice(0, i), thinking: sel.slice(i + 1) } : { model: sel, thinking: "medium" };
-};
+const diskConfig = (dir: string, fallback: Record<string, any>): Record<string, any> => (existsSync(join(dir, "config.json")) ? JSON.parse(readFileSync(join(dir, "config.json"), "utf8")) : fallback);
 
-/** config.json (no secrets), state.json and IDENTITY.md. `access` is the web access the web onboarding decided; the terminal leaves it as it was. */
+/** config.json (no secrets), state.json and IDENTITY.md. `access` overrides the web access the answers chose (the web onboarding decides it itself). */
 export function writeConfig(env: Env, a: Answers, prior: Prior, access?: "local" | "tailscale") {
+	const disk = diskConfig(env.dir, prior.raw);
+	const chosen = access ?? (a.access === "cloudflare" ? (prior.access === "cloudflare" ? "cloudflare" : "local") : a.access);
 	const config = {
-		_comment: "Written by dotz setup.ts. Secrets live in secrets/ (0600), never here.",
+		...disk,
+		_comment: disk._comment ?? "Written by dotz setup.ts. Secrets live in secrets/ (0600), never here.",
 		identity: a.identity,
-		discord: { token_file: tokenFile(env.dir).replace(env.home, "~"), owner_id: a.owner_id, guild: a.guild, ...(prior.raw.discord?.app_id ? { app_id: prior.raw.discord.app_id } : {}) },
-		// The default name is not saved: an empty web.machine_name keeps following the hostname.
-		web: { ...prior.raw.web, port: a.web_port, tailscale_https_port: a.tailscale_https_port, allow_logins: a.allow_logins, ...(access ? { access } : {}), ...(a.machine_name !== prior.defaultMachineName || prior.machineName ? { machine_name: a.machine_name } : {}) },
-		orchestrator: { runtime: a.runtime, ...pick(prior.raw.orchestrator, ["rotate_tokens"]) },
-		lanes: { runtime: a.runtime, ...pick(prior.raw.lanes, ["max_active"]) },
-		models: { ...prior.raw.models, orchestrator: { ...prior.raw.models?.orchestrator, ...split(a.orchestrator_model) }, lanes: { ...prior.raw.models?.lanes, ...split(a.lane_model) } },
+		discord: { ...disk.discord, token_file: !a.bot_token && typeof disk.discord?.token_file === "string" ? disk.discord.token_file : tokenFile(env.dir).replace(env.home, "~"), owner_id: a.owner_id, guild: a.guild },
+		web: { ...disk.web, port: a.web_port, tailscale_https_port: a.tailscale_https_port, allow_logins: a.allow_logins, access: chosen, ...(a.machine_name !== prior.defaultMachineName || prior.machineName ? { machine_name: a.machine_name } : {}) },
+		orchestrator: { ...disk.orchestrator, runtime: a.runtime },
+		lanes: { ...disk.lanes, runtime: a.runtime },
+		models: { ...disk.models, orchestrator: { ...disk.models?.orchestrator, ...splitSelector(a.orchestrator_model) }, lanes: { ...disk.models?.lanes, ...splitSelector(a.lane_model) } },
 	};
 	writeAtomic(join(env.dir, "config.json"), `${JSON.stringify(config, null, 2)}\n`);
+	if (a.access === "cloudflare" && a.cloudflare_hostname) saveWebAccessInput(env.dir, { hostname: a.cloudflare_hostname });
 	if (!existsSync(join(env.dir, "state.json"))) writeAtomic(join(env.dir, "state.json"), `${JSON.stringify({ open_tasks: [] }, null, 2)}\n`);
 	const identityFile = join(env.dir, "identity", "IDENTITY.md");
 	if (JSON.stringify(a.identity) !== JSON.stringify(prior.raw.identity ?? null) || !existsSync(identityFile)) {
@@ -78,12 +68,18 @@ export function writeConfig(env: Env, a: Answers, prior: Prior, access?: "local"
 	return config;
 }
 
-/** The hub loads the dotz extension into its own OmO processes (--extension); omp is an opt-in runtime: its terminals get the plugin only when omp is installed here. */
+/** The hub loads the dotz extension into its own OmO processes (--extension); omp terminals get the plugin when omp is installed here. */
 export async function linkOmp(env: Env): Promise<boolean> {
 	if ((await Bun.$`command -v omp`.nothrow().quiet()).exitCode !== 0) return false;
-	const link = join(env.home, ".omp", "agent", "extensions", "dotz");
-	mkdirSync(join(env.home, ".omp", "agent", "extensions"), { recursive: true });
-	if (existsSync(link) || (() => { try { return lstatSync(link).isSymbolicLink(); } catch { return false; } })()) rmSync(link, { force: true, recursive: false });
+	const extensions = join(ompAgentDir(process.env, env.home), "extensions");
+	const link = join(extensions, "dotz");
+	mkdirSync(extensions, { recursive: true });
+	const found = lstatSync(link, { throwIfNoEntry: false });
+	if (found && !found.isSymbolicLink()) {
+		env.say(`omp plugin: ${link} is your own folder or file, so it was left alone. To use dotz there, link ${env.pkg} into it yourself.`);
+		return false;
+	}
+	if (found) rmSync(link, { force: true });
 	symlinkSync(env.pkg, link);
 	env.say(`omp plugin linked: ${link} -> ${env.pkg}`);
 	return true;
@@ -104,66 +100,4 @@ export async function serveTailnet(env: Env, a: Answers, wantServe: boolean): Pr
 	else if (enable) env.say(`tailscale: 이 테일넷에서 HTTPS 공유(serve)가 꺼져 있어요. 이 주소에서 한 번 켜 주고 bun setup.ts --tailscale 을 다시 실행하세요: ${enable}`);
 	else env.say(`tailscale serve 실패: ${r.out}`);
 	return { tsNow, ok: r.ok, reason: r.ok ? "" : (enable ?? r.out) };
-}
-
-type DiscordRun = { a: Answers; config: ReturnType<typeof writeConfig>; prior: Prior; auto: boolean; ownerStep?: () => void };
-
-/** Creates or finds the bot through the Aside browser, invites it as administrator and checks the token. Returns true when it made a new bot token. */
-export async function setupDiscord(env: Env, r: DiscordRun): Promise<boolean> {
-	const { a, config, prior, auto } = r;
-	const token = tokenFile(env.dir);
-	let provisioned = false;
-	if (!existsSync(token) && a.guild && !auto) env.say("discord: Aside CLI 가 없어서 봇을 자동으로 만들지 않아요. 개발자 포털에서 만든 봇 토큰을 setup 을 다시 실행해 붙여넣어 주세요.");
-	if (!existsSync(token) && a.guild && auto) {
-		const repl = new AsideRepl();
-		try {
-			await ensureBrowser();
-			env.say(`discord: Aside로 '${a.identity.name}' 앱을 만들거나 기존 앱을 찾는 중...`);
-			const appId = prior.raw.discord?.app_id ?? (await createApp(a.identity.name));
-			config.discord = { ...config.discord, app_id: appId } as typeof config.discord;
-			writeAtomic(join(env.dir, "config.json"), `${JSON.stringify(config, null, 2)}\n`);
-			r.ownerStep?.();
-			const fresh = await resetToken(repl, appId, msg => env.say(`discord: ${msg}`));
-			writeSecret(token, fresh);
-			env.say("discord: 봇 토큰을 secrets/ 에 저장했어요 (화면에 표시 안 함)");
-			await invite(repl, appId, a.guild, fresh, msg => env.say(`discord: ${msg}`));
-			env.say("discord: 봇이 서버에 들어왔어요");
-			provisioned = true;
-		} catch (error) {
-			env.say(`discord: 자동 설정이 멈췄어요: ${(error as Error).message}. setup 을 다시 실행하면 이어서 해요.`);
-		} finally {
-			await repl.close();
-		}
-	}
-	await checkBot(env, r);
-	return provisioned;
-}
-
-async function checkBot(env: Env, { a, auto, ownerStep }: DiscordRun): Promise<void> {
-	const file = tokenFile(env.dir);
-	const token = existsSync(file) ? readFileSync(file, "utf8").trim() : "";
-	if (!token) return void (a.guild && env.say("discord: 아직 봇 토큰이 없어요. 웹 앱과 터미널로는 지금도 쓸 수 있어요."));
-	const me = await fetch("https://discord.com/api/v10/oauth2/applications/@me", { headers: { Authorization: `Bot ${token}` }, signal: AbortSignal.timeout(15_000) });
-	if (!me.ok) return void env.say(`discord: 토큰이 거절됐어요 (${me.status}). secrets/discord-bot-token 을 지우고 setup 을 다시 실행하세요.`);
-	const app = (await me.json()) as { id: string; name: string };
-	// Every install runs the bot as server administrator; an older install invited with fewer rights is re-authorized.
-	if (a.guild && !(await isAdmin(token, a.guild))) {
-		const url = `https://discord.com/oauth2/authorize?client_id=${app.id}&scope=bot&permissions=${PERMISSIONS}&guild_id=${a.guild}&disable_guild_select=true`;
-		if (!auto) env.say(`discord: 봇에 관리자 권한이 없어요. 이 주소로 다시 승인해 주세요: ${url}`);
-		else {
-			const repl = new AsideRepl();
-			try {
-				await ensureBrowser();
-				env.say("discord: 봇에 관리자 권한을 주도록 Aside로 다시 승인해요...");
-				ownerStep?.();
-				await invite(repl, app.id, a.guild, token, msg => env.say(`discord: ${msg}`));
-				env.say("discord: 봇이 서버 관리자 권한을 갖게 됐어요");
-			} catch (error) {
-				env.say(`discord: 관리자 권한 승인이 멈췄어요 (${(error as Error).message}). 이 주소로 직접 승인해 주세요: ${url}`);
-			} finally {
-				await repl.close();
-			}
-		}
-	} else env.say("discord: 봇 확인됨 (서버 관리자 권한)");
-	env.say("discord: 개발자 포털 > Bot > Privileged Gateway Intents > MESSAGE CONTENT 가 켜져 있어야 해요.");
 }

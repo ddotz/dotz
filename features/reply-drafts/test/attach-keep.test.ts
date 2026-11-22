@@ -142,7 +142,7 @@ describe("what the mailer gets", () => {
 		addDraft(d);
 		twoFiles(d.id);
 		const out = await sendWith(getDraft(d.id)!, fake().run);
-		expect(out).toEqual({ ok: true, message: "보냈어요" });
+		expect(out).toEqual({ ok: true, message: "보냈어요", sent: "yes" });
 		const got = (globalThis as { __pluginGot?: { attachments: { name: string; path: string; size: number }[] } }).__pluginGot!;
 		expect(got.attachments.map(a => a.name)).toEqual(["점검보고서.pdf", "점수표.csv"]);
 		expect(readFileSync(got.attachments[0]!.path)).toEqual(PDF);

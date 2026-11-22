@@ -1,8 +1,9 @@
 // Real wiring of the KakaoTalk web routes and the live watcher inside the gateway (hub/routes.ts and hub/main.ts import this).
 // Tests build createKakaoWeb / createLive with fakes instead.
+import { useReplies } from "../reply-actions.ts";
 import { hostname } from "node:os";
 import { enableKakaoApp, ensureKakaoVoice } from "../../features/reply-drafts/lib/kakao-voice.ts";
-import { loadStyle, recordCorrection } from "../../features/reply-drafts/lib/settings.ts";
+import { loadStyle } from "../../features/reply-drafts/lib/settings.ts";
 import { cfg, DATA_DIR, log } from "../config.ts";
 import { broadcast, subscriberCount } from "../events.ts";
 import { resolveName } from "../machine-name.ts";
@@ -12,6 +13,8 @@ import { claimLease, postLease } from "../send-lease.ts";
 import { getSecret } from "./creds.ts";
 import { type KakaoDb, sqlcipherDb } from "./db.ts";
 import { callReplyModel } from "../reply-model.ts";
+import { replyLearning } from "../reply-mail.ts";
+import { kakaoAdapter } from "./reply-adapter.ts";
 import { type DraftModel, type StyleHint, type VoiceSource } from "./draft.ts";
 import { createLive } from "./live.ts";
 import { defaultRunner, type KakaoConfig, kakaoPaths } from "./types.ts";
@@ -47,12 +50,13 @@ const learnVoice = async (src: VoiceSource) => {
 	const r = await ensureKakaoVoice(src);
 	if (r.mode) log(`kakao voice ${r.mode} room=${src.chatId} model tokens in=${r.tokens?.in ?? 0} out=${r.tokens?.out ?? 0} profile=${r.profile.length > 0}`);
 };
-const onCorrection = (chatId: string, draft: string, sent: string) => {
-	const cut = (s: string) => (s.length > 70 ? `${s.slice(0, 69)}…` : s);
-	recordCorrection({ app: "kakao", room: chatId }, `초안 "${cut(draft.replace(/\s+/g, " "))}" 대신 "${cut(sent.replace(/\s+/g, " "))}"처럼 씀`, new Date());
-};
 
-const onRevise = (chatId: string, change: string) => recordCorrection({ app: "kakao", room: chatId }, `초안을 고쳐 달라고 함: ${change}`, new Date());
+// A revise that was stored teaches its lesson (never the raw request, never before the new draft exists), then the profile may fold it in.
+const learning = replyLearning();
+const onRevise = (chatId: string, lesson: string) => {
+	const key = { app: "kakao", room: chatId };
+	void learning.record(key, lesson).then(() => learning.refine(key)).catch(e => log(`kakao lesson for ${chatId} not recorded: ${e instanceof Error ? e.message : String(e)}`));
+};
 
 const machine = resolveName(cfg.web?.machine_name, hostname());
 // One sender per room across this owner's computers (docs/peer-monitoring.md): before a send, this gateway claims the room's lease here
@@ -77,15 +81,15 @@ const web = createKakaoWeb({
 	draftModel,
 	draftStyle,
 	learnVoice,
-	onCorrection,
 	onRevise,
+	replies: useReplies,
 });
 
 export const kakaoRoute = web.route;
+// The KakaoTalk adapter of the one reply flow (hub/reply-wire.ts).
+export const kakaoReply = kakaoAdapter(web.replyKit);
 export const kakaoUnreplied = web.unrepliedCount;
 export const kakaoDraftFacts = web.draftFacts;
-export const kakaoPendingDrafts = web.pendingDrafts;
 export const kakaoPendingCount = web.pendingCount;
-export const kakaoDraftSends = web.draftSends;
 export const startKakaoLive = () => void live.sync();
 export const stopKakaoLive = () => live.stop();

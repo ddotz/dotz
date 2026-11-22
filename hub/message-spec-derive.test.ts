@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import { type HubEvent, emit, onEmit } from "./events.ts";
-import { deriveSpec, resolveSpecFence } from "./message-spec-derive.ts";
+import { deriveSpec } from "./message-spec-derive.ts";
+import { resolveSpecFence } from "./message-spec-of.ts";
 import { specOf } from "./message-spec-of.ts";
 import { type SpecElement, specChildren, specOfElements, specPlain, validateSpec, webUrl } from "./message-spec.ts";
 import { ownerText } from "./owner-text.ts";

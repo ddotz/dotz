@@ -3,8 +3,13 @@
 import { now } from "./config.ts";
 import { emit } from "./events.ts";
 import type { Prompt, WorkLink, WorkRow } from "./prompts-model.ts";
+import { splitTone } from "./tone.ts";
 
-const LOUD = /^\s*\[(?:ask|fail)\]/i;
+/** An answer the owner must see even from a quiet check or as the answer to handed text: it opens with an ask or fail marker in any of its spellings ([ask] [결정] [fail] [실패] [warn] [경고]). */
+export const isLoud = (text: string): boolean => {
+	const { tone } = splitTone(text.trimStart());
+	return tone === "ask" || tone === "fail";
+};
 
 /** The handed text as an event of the receiving conversation: the web draws one collapsed row, a messenger gets no post. */
 export function recordHanded(h: { to: string; from: string; text: string; handback?: boolean }): void {
@@ -13,7 +18,7 @@ export function recordHanded(h: { to: string; from: string; text: string; handba
 
 /** An answer to handed text is stored and shown but notifies no one, unless it opens [ask] or [fail] or an owner message still waits behind it. */
 export const hushedAnswer = (p: { handback?: true; bookkeeping?: true; replyTo?: string }, text: string, ownerWaits: (id: string) => boolean): { hushed: true } | undefined =>
-	(p.handback || p.bookkeeping) && !LOUD.test(text) && !(p.replyTo !== undefined && ownerWaits(p.replyTo)) ? { hushed: true } : undefined;
+	(p.handback || p.bookkeeping) && !isLoud(text) && !(p.replyTo !== undefined && ownerWaits(p.replyTo)) ? { hushed: true } : undefined;
 
 /** The workers a request still waits on: each once, none whose result was taken or that already finished. */
 export const waitedOn = (links: readonly WorkLink[], work: readonly WorkRow[]): WorkLink[] => [

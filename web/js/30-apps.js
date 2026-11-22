@@ -72,6 +72,7 @@ function appsPick(id) {
   appsRender();
 }
 const appsHash = () => (APPS.sel && !(appsNarrow() && APPS.list) ? `apps/${enc(APPS.sel)}` : "apps");
+screenHooks("apps", { route: appsOpen, hash: appsHash });
 function appsOpen(tgt) {
   if (tgt && tgt !== "list") { APPS.sel = tgt; APPS.list = false; }
   else APPS.list = appsNarrow();

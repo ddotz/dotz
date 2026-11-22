@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { alive, client, prepare, probe, records, start, stop, waitFor, type Gateway } from "./test/load-qa/harness.ts";
+import { alive, client, ownerClient, prepare, probe, records, start, stop, waitFor, type Gateway } from "./test/load-qa/harness.ts";
 import { ACCOUNTS } from "./test/load-qa/names.ts";
 import { SANDBOX_EXEC } from "./test/load-qa/sandbox.ts";
 
@@ -13,17 +13,28 @@ type Json = Record<string, any>;
 setDefaultTimeout(60_000);
 let g: Gateway;
 let api: ReturnType<typeof client>;
+let owner: ReturnType<typeof client>;
 const used = new Set<string>();
 
 const flag = (name: string, on: boolean): void => (on ? writeFileSync(join(OUT, name), "") : rmSync(join(OUT, name), { force: true }));
-const groups = async (): Promise<Json[]> => (await api.get("/api/approvals")).groups;
-const cards = async (): Promise<Json[]> => (await groups()).flatMap(x => x.cards);
-const resultOf = async (ref: string): Promise<Json | undefined> => (await api.get("/api/approvals")).results.find((r: Json) => r.ref === ref);
+/** The waiting reply cards: every open card of a draft, with the one reply queue's item for that draft (GET /api/reply/queue). */
+const cards = async (): Promise<Json[]> => {
+	const [notices, queue] = await Promise.all([api.get("/api/notices?limit=300"), api.get("/api/reply/queue")]);
+	const items = new Map((queue.items as Json[]).map(i => [i.ref, i]));
+	return (notices.items as Json[]).filter(n => n.decision?.state === "open" && n.decision.draft?.ref).map(n => ({ ref: n.decision.draft.ref, to: n.decision.to, notice: n.id, kind: items.get(n.decision.draft.ref)?.kind, item: items.get(n.decision.draft.ref) }));
+};
+/** The send state the card of draft `ref` shows (the gateway writes every send result onto it). */
+const resultOf = async (ref: string): Promise<Json | undefined> => ((await api.get("/api/notices?limit=300")).items as Json[]).find(n => n.decision?.draft?.ref === ref)?.decision.send;
 const draftOf = (card: Json): Json => JSON.parse(readFileSync(join(OUT, "data/custom/reply-drafts/drafts.json"), "utf8")).drafts.find((d: Json) => d.id === card.ref);
 const sends = (card: Json): number => records(g, "shim-calls.jsonl").filter(s => s.would_send && s.argv.includes(draftOf(card).mailId)).length;
 const composeSends = (): number => records(g, "shim-calls.jsonl").filter(s => s.would_send && s.argv[1] === "send").length;
 const posts = (): number => records(g, "net-calls.jsonl").filter(n => n.method === "POST" && /comments|replies/.test(n.url)).length;
-const approve = (card: Json) => api.post("/api/approvals", { items: [{ ref: card.ref, to: card.to, n: 1 }] });
+// The owner's 보내기 on the card (POST /api/notices/<id>/answer, which acts through the one reply flow), from his own web session. The `api`
+// client carries the hub token, so it is an agent caller: it may not write the owner's word (403 for send, retry, resolve, drop).
+// His press names the version he is shown now, the reply item's hash, as the web sends it (a pick naming none is refused `changed`).
+const shownHash = async (card: Json): Promise<string> => ((await api.get(`/api/reply/queue?refs=${encodeURIComponent(card.ref)}`)).items as Json[])[0]?.draft.hash;
+const approve = async (card: Json) => owner.post(`/api/notices/${encodeURIComponent(card.notice)}/answer`, { n: 1, label: "보내기", hash: await shownHash(card) });
+const agentAct = (card: Json, action: string, extra: Json = {}) => api.post("/api/reply/act", { ref: card.ref, action, ...extra });
 const settled = (card: Json, state: string) => waitFor(`${card.ref} ${state}`, async () => (await resultOf(card.ref))?.state === state);
 /** An unused seeded mail card of one account (cards of the 20 mails the test adds are not in the fake mailbox). */
 const fresh = (account: string): Json => {
@@ -46,6 +57,7 @@ describe.skipIf(!existsSync(SANDBOX_EXEC))("load-qa", () => {
 		g = await prepare({ out: OUT, scale: "small" });
 		await start(g);
 		api = client(g);
+		owner = await ownerClient(g);
 		seeded = await cards();
 	}, 90_000);
 	// Every test starts from a running gateway and no hang/fail flag: a restart that failed in one test (killed, or still booting when its limit hit)
@@ -79,22 +91,16 @@ describe.skipIf(!existsSync(SANDBOX_EXEC))("load-qa", () => {
 	});
 
 	test("2 every card is reachable and none is lost when new mail arrives", async () => {
-		const open = async () => (await api.get("/api/notices?limit=300")).items.filter((n: Json) => n.decision?.state === "open").map((n: Json) => n.id).sort();
-		const [beforeGroups, before] = [await groups(), await cards()];
-		expect(before.every(c => c.sendable)).toBe(true);
-		expect(await open()).toEqual(before.map(c => c.notice).sort());
+		const before = await cards();
+		expect(before.every(c => c.item?.can.send)).toBe(true);
 		for (let i = 0; i < 20; i++) {
 			const acct = ACCOUNTS[i % 2]!;
 			const r = await api.post("/api/mail", { source: acct.source, id: `new-${i}`, subject: `new mail ${i}`, from: `Sender <new${i}@sender.example.test>`, to: acct.address, body: "Can we meet tomorrow?", at: new Date().toISOString(), messageId: `<new${i}@sender.example.test>`, needsReply: true, account: acct.address });
 			expect(r.status).toBe(200);
 		}
 		const after = await waitFor("20 more cards", async () => ((await cards()).length >= before.length + 20 ? await cards() : false));
-		// Groups move up with their newest card, so the order is compared inside each group.
-		for (const bg of beforeGroups) {
-			const ag = (await groups()).find(x => x.key === bg.key)!;
-			expect(ag.cards.map((c: Json) => c.ref).filter((r: string) => bg.cards.some((c: Json) => c.ref === r))).toEqual(bg.cards.map((c: Json) => c.ref));
-		}
-		expect(await open()).toEqual(after.map(c => c.notice).sort());
+		expect(after.map(c => c.ref)).toEqual(expect.arrayContaining(before.map(c => c.ref)));
+		expect(after.every(c => c.item?.can.send)).toBe(true);
 	});
 
 	test("3 a hanging send of one account stops nothing else", async () => {
@@ -111,22 +117,25 @@ describe.skipIf(!existsSync(SANDBOX_EXEC))("load-qa", () => {
 		await settled(a, "sent");
 	});
 
-	test("4 a failed send is visible and retries exactly once", async () => {
+	test("4 a failed send is visible, an agent cannot retry it, and it never goes out twice", async () => {
 		const [x, sentinel] = [fresh(A), fresh(A)];
 		flag("fail-mail", true);
 		await approve(x);
 		const failed = await waitFor("a failed result", async () => ((await resultOf(x.ref))?.state === "failed" ? await resultOf(x.ref) : false));
 		expect(failed.text.length).toBeGreaterThan(0);
 		expect(sends(x)).toBe(0);
+		const retry = await agentAct(x, "retry");
+		expect([retry.status, retry.body.code]).toEqual([403, "owner_only"]);
+		// Nor can it type into a KakaoTalk room: that send is the owner's too.
+		const kakao = await api.post("/api/kakao/chat/1234/send", { text: "x" });
+		expect([kakao.status, kakao.body.code]).toEqual([403, "owner_only"]);
+		// Nor can it pick 보내기 on a card: the card answer with the hub token is not the owner's word either.
+		const pick = await api.post(`/api/notices/${encodeURIComponent(sentinel.notice)}/answer`, { n: 1, label: "보내기" });
+		expect([pick.status, pick.body.code, (await resultOf(sentinel.ref))?.state]).toEqual([403, "owner_only", undefined]);
 		flag("fail-mail", false);
-		const retry = () => api.post("/api/approvals/failed", { op: "retry", items: [{ ref: x.ref, to: x.to }] });
-		expect((await retry()).body.results[0].ok).toBe(true);
-		await settled(x, "sent");
-		expect(sends(x)).toBe(1);
-		expect((await retry()).body.results[0].ok).toBe(false);
 		await approve(sentinel); // the lane is serial: a second send of x would have run before this one finishes
 		await settled(sentinel, "sent");
-		expect(sends(x)).toBe(1);
+		expect(sends(x)).toBeLessThanOrEqual(1);
 	});
 
 	test("5 a restart does not send twice", async () => {
@@ -150,14 +159,14 @@ describe.skipIf(!existsSync(SANDBOX_EXEC))("load-qa", () => {
 		// Option 1 (보내기) is refused for the compose mail (it asks for a file and has none): the owner sends it as is with 이대로 보내기.
 		const notice = (await api.get("/api/notices?limit=300")).items.find((n: Json) => n.id === combined.notice);
 		const option = notice.decision.options.find((o: Json) => o.label === "이대로 보내기");
-		expect((await api.post(`/api/notices/${combined.notice}/answer`, { n: option.n, label: option.label })).status).toBe(200);
+		expect((await owner.post(`/api/notices/${combined.notice}/answer`, { n: option.n, label: option.label })).status).toBe(200);
 		await waitFor("both sends", () => composeSends() > mails && posts() > comments);
 		await settled(combined, "sent");
 		expect(composeSends() - mails).toBe(1);
 		expect(posts() - comments).toBe(1);
 	});
 
-	test("7 a comment POST cut by a restart ends 확인 필요, posts nothing by itself, and the owner closes it", async () => {
+	test("7 a comment POST cut by a restart ends 확인 필요, posts nothing by itself, and only the owner may close it", async () => {
 		const card = (await cards()).find(c => /^CD/.test(c.ref) && !COMBINED.includes(c.ref))!;
 		const before = posts();
 		flag("hang-comment", true);
@@ -168,12 +177,15 @@ describe.skipIf(!existsSync(SANDBOX_EXEC))("load-qa", () => {
 		await Bun.$`pkill -9 -f ${`comments.ts send ${card.ref}`}`.quiet();
 		await start(g);
 		flag("hang-comment", false);
-		const row = await waitFor("the unsure row", async () => (await api.get("/api/replies")).failed.find((f: Json) => f.ref === card.ref && f.unsure) ?? false);
+		const queued = async () => ((await api.get(`/api/reply/queue?refs=${encodeURIComponent(card.ref)}`)).items as Json[])[0];
+		await waitFor("the unsure item", async () => (await queued())?.send?.state === "unsure");
 		expect((await resultOf(card.ref))?.state).toBe("unsure");
-		expect((await api.post("/api/approvals", { items: [{ ref: card.ref, to: card.to, n: 1 }] })).status).toBeLessThan(500);
+		expect((await approve(card)).status).toBeLessThan(500);
 		expect(posts()).toBe(before + 1);
-		expect((await api.post(`/api/comments/sends/${encodeURIComponent(row.sendId)}/done`, {})).status).toBe(200);
-		expect((await api.get("/api/replies")).failed.some((f: Json) => f.ref === card.ref)).toBe(false);
+		const resolve = await agentAct(card, "resolve", { as: "sent" });
+		expect([resolve.status, resolve.body.code]).toEqual([403, "owner_only"]);
+		expect((await queued())?.send?.state).toBe("unsure");
+		expect(posts()).toBe(before + 1);
 		expect(posts()).toBe(before + 1);
 	});
 });

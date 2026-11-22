@@ -3,7 +3,7 @@ import { now } from "./config.ts";
 import { readOf } from "./reads.ts";
 import type { Notice } from "./notices-types.ts";
 import { appBlocked } from "./notices-wiring.ts";
-import { NOTICE_CAP, isOpenDecision, waitsOf } from "./notices-rules.ts";
+import { NOTICE_CAP, hasChoice, isOpenDecision, waitsOf } from "./notices-rules.ts";
 import { channelLanes, laneOfNotice } from "./notices-lanes.ts";
 import { broadcast, readable, withClass } from "./notices-read.ts";
 import { viewers } from "./notices-viewing.ts";
@@ -12,6 +12,7 @@ import { items, markNoticesRead, readConversationNotices, retire, save, unreadCo
 // The alert / message twin of a decision: an [ask] item made by the same asking event, or by a repeat of the same text (a session's mid-turn line and its
 // turn-end report both post it), so it ends with the decision.
 export const laneHasOpenCard = (name: string): boolean => items.some(i => isOpenDecision(i) && i.decision!.to === `lane:${name}`);
+
 const CONV_RE = /^(?:main|quick|alert|worklog|lane:[\w.-]+|ch:\d+|mail:[a-z0-9._-]+|settings:[\w.:-]+|relay:[a-z0-9-]+:\S{1,60})$/;
 // POST /api/viewing: the page says which conversation is on screen ("" when hidden). Looking at a conversation reads its message item.
 export function setViewing(id: unknown, conv: unknown, nowMs = Date.now()): { ok: boolean; unread?: number } {
@@ -53,6 +54,9 @@ const sortedNotices = (): Notice[] => {
 };
 // The same list with no limit: what a lookup or a scan inside the hub reads (a limit would hide a card past it).
 export const allNotices = (): Notice[] => sortedNotices().map(i => withClass(i, readable(i)));
+
+/** The open decisions in the order of allNotices, converted without converting the rest of the list. */
+export const openDecisionNotices = (): Notice[] => sortedNotices().filter(i => i.kind === "decision" && i.decision?.state === "open").map(i => withClass(i, readable(i)));
 
 // `keepOpen` (GET /api/notices): never fewer rows than the open decisions plus 100, so no open card falls off the page.
 export function listNotices(limit = 100, keepOpen = false): { items: Notice[]; unread: number } {

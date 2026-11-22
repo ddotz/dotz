@@ -7,8 +7,9 @@ import { ev, fakeHub, json, on } from "./test-web.ts";
 // parser. Each format is rendered on each surface with the page's real functions and compared with the main chat; a raw mark left on a surface fails, and so
 // does a new caller of mdNode, which is how a surface bypasses the shared path.
 const JS = join(import.meta.dir, "..", "web", "js");
-// Who may draw text without shapes, and how many calls each holds: the owner's own words, a document, a model's thinking, a raw original, a question line.
-const PLAIN_MD = { "15-attachments.js": 2, "17-state-refresh.js": 1, "11-resultcard.js": 1, "12-terminal-view.js": 1, "10-decision-card.js": 5, "11-todo-strip.js": 3, "02-answer-shapes.js": 1 };
+// Who may draw text without shapes, and how many calls each holds: the owner's own words, a document, a model's thinking, a raw original (a mail
+// without a subject line among them), a question line.
+const PLAIN_MD = { "15-attachments.js": 2, "17-state-refresh.js": 1, "11-resultcard.js": 1, "12-terminal-view.js": 1, "10-decision-card.js": 5, "11-todo-strip.js": 4, "02-answer-shapes.js": 1 };
 
 test("mdNode and mdHtml have no new caller: a model's text goes through answerNode", () => {
 	const calls: Record<string, number> = {};
@@ -48,7 +49,7 @@ await view.navigate(`${hub.origin}/`);
 await waitFor(`typeof msgNode === "function" && S`);
 
 const ts = "2026-11-05T01:00:00.000Z";
-const notice = (text: string, kind = "worklog") => `({ id: "n1", kind: ${JSON.stringify(kind)}, title: "작업 기록", tone: "", text: ${JSON.stringify(text)}, src: "worklog", open: "worklog", at: "${ts}", ts: "${ts}", updated: "${ts}" })`;
+const notice = (text: string, kind = "worklog") => `({ id: "n1", kind: ${JSON.stringify(kind)}, title: "작업내역", tone: "", text: ${JSON.stringify(text)}, src: "worklog", open: "worklog", at: "${ts}", ts: "${ts}", updated: "${ts}" })`;
 const out = (text: string, extra = "") => `{ ts: "${ts}", kind: "out", source: "orchestrator", target: "web", text: ${JSON.stringify(text)}${extra} }`;
 // Each surface as the page draws it: an expression that gives the node, or the nodes, of one message.
 const SURFACES: Record<string, (text: string) => string> = {

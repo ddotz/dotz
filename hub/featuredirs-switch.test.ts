@@ -14,6 +14,11 @@ const data = () => {
 };
 const oldCopy = (enabled: boolean, extra = "") => shippedText.replace(/^enabled:\s*\w+\s*$/m, `enabled: ${enabled}${extra}`).replace(/\n---[ \t]*\n[\s\S]*$/, "\n---\n이전 버전의 본문이에요.\n");
 
+test.each(["output-design", "publish-voice"])("%s is a shipped feature and switched on", id => {
+	const f = loadFeatureDirs(mkdtempSync(join(tmpdir(), "dotz-feat-"))).features.find(x => x.id === id);
+	expect(f).toMatchObject({ enabled: true, origin: "shipped" });
+});
+
 test("an old personal copy turns the shipped feature on, and the text is the shipped one of this version", () => {
 	const d = data();
 	writeFileSync(join(d, "features", "kakao", "feature.md"), oldCopy(true));

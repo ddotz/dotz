@@ -9,10 +9,10 @@ import { UPLOAD_MAX_BYTES } from "./files.ts";
 import { dropForLine, forLines } from "./forline.ts";
 import { msg } from "./i18n.ts";
 import { createPeerChats, messageBody, peerReplyPush } from "./jandi-peers.ts";
-import { createSelfChat, MAX_FILES, normalizeSelfChat, type SelfChat, type SelfChatConfig, selfChatReady } from "./jandi-selfchat.ts";
+import { checkStatusRoomOf, createSelfChat, MAX_FILES, normalizeSelfChat, type SelfChat, type SelfChatConfig, selfChatReady } from "./jandi-selfchat.ts";
 import { createSessionMark } from "./jandi-session.ts";
 import { createSnapshotSender, snapshotFileStore } from "./relay-snapshot-send.ts";
-import { type Adapter, type AdapterStatus, type DeliverResult, type DesiredRoom, type MessengerCtx, type OutMsg, type Settings, type SettingsPut, SettingsError, type TestResult } from "./messenger.ts";
+import { type Adapter, type AdapterStatus, type DeliverResult, type DesiredRoom, type MessengerCtx, type OutMsg, type Settings, type SettingsField, type SettingsPut, SettingsError, type TestResult } from "./messenger.ts";
 import type { MessageSpec } from "./message-spec.ts";
 import { specOf } from "./message-spec-of.ts";
 import { sameRoom } from "./messenger-rooms.ts";
@@ -169,6 +169,8 @@ const HELP = [
 	"허용 목록에 말을 걸 수 있는 사람의 이메일이나 이름을 넣어요. 목록에 없는 사람의 말은 무시해요",
 ];
 const WEBHOOK_HINT = "남은 일: JANDI는 웹훅을 API로 만들 수 없어서, 수신 웹훅 URL 하나를 '기본 수신 웹훅 URL'에 한 번 붙여 넣어요";
+const STATUS_ROOM = "상태 방 번호";
+const STATUS_ROOM_HINT = "나만 들어 있는 잔디 비공개 토픽의 번호예요. 웹에서 그 토픽을 열면 주소 끝에 있는 숫자예요. 비워 두면 나와의 대화에 올려요";
 const LISTEN_HINT = "바꾸면 JANDI 연결이 다시 시작돼요. 0.0.0.0은 같은 네트워크의 다른 기기도 접근할 수 있어요";
 const roomErr = (id: string, msg: string) => new SettingsError(`${id}: ${msg}`);
 const newRoomId = (taken: Set<string>): string => {
@@ -202,6 +204,25 @@ function withShare(sc: SelfChatConfig | undefined, on: unknown): SelfChatConfig 
 	if (typeof on !== "boolean") throw new SettingsError("share_status must be true or false");
 	if (!selfChatReady(sc)) throw new SettingsError("share_status needs the JANDI login connection");
 	return normalizeSelfChat({ ...sc, share_status: on })!;
+}
+/** The listener fields of the settings screen, and the status room (`status_room_id`) once the self chat runs. */
+function listenerFields(cfg: JandiConfig): SettingsField[] {
+	const sc = cfg.self_chat;
+	return [
+		{ key: "host", label: "받는 주소", type: "text", value: cfg.listen.host, hint: LISTEN_HINT },
+		{ key: "port", label: "받는 포트", type: "number", value: cfg.listen.port, hint: "0이면 빈 포트를 골라요" },
+		{ key: "incoming_url", label: "기본 수신 웹훅 URL", type: "secret", set: !!cfg.incoming_url, hint: "방마다 따로 정하지 않은 방의 메시지가 모두 이 JANDI 방으로 가요" },
+		...(selfChatReady(sc) ? [{ key: "status_room_id", label: STATUS_ROOM, type: "number" as const, ...(sc.status_room_id ? { value: sc.status_room_id } : {}), hint: STATUS_ROOM_HINT }] : []),
+	];
+}
+/** The self chat with `value` as its status room (unchanged when not given); 0 or "" clears it, so the summary goes to the self chat again. */
+function withStatusRoom(sc: SelfChatConfig | undefined, value: unknown): SelfChatConfig | undefined {
+	if (value === undefined) return sc;
+	const room = typeof value === "string" ? (value.trim() === "" ? 0 : Number(value)) : value;
+	if (typeof room !== "number" || !Number.isInteger(room) || room < 0) throw new SettingsError("status_room_id must be a whole number (0 or empty clears it)");
+	if (!selfChatReady(sc)) throw new SettingsError("status_room_id needs the JANDI login connection");
+	const { status_room_id: _old, ...rest } = sc;
+	return normalizeSelfChat(room ? { ...rest, status_room_id: room } : rest)!;
 }
 /** The self chat with `list` as its peers. A list the config would cut down is refused whole: the owner sees why, and nothing changes. */
 function withRelays(sc: SelfChatConfig | undefined, list: unknown): SelfChatConfig {
@@ -259,11 +280,15 @@ function selfChatBlock(dataDir: string, sc: SelfChatConfig | undefined): Pick<Se
 	return { self_chat: { state: lost ? "lost" : "ok", label: lost ? t.lost.label : t.ok.label, hint: lost ? t.lost.hint : t.ok.hint, connect: t.reconnect } };
 }
 
+const laneReachesOwner = (msg: OutMsg): boolean => {
+	const cls = postClass(msg.target, msg.text);
+	return cls === "result" || cls === "ask" || (cls === "alert" && parseTone(msg.text).tone === "fail");
+};
 /** With no webhook to post to, a reply goes out as a post of the owner's own session in the chat with the JANDI bot, always behind the reply prefix (so it is never read as a command). The worklog stays in the web app. */
 async function viaSession(selfChat: SelfChat | undefined, cfg: JandiConfig, msg: OutMsg, text: string): Promise<DeliverResult> {
 	const sc = cfg.self_chat;
 	const mainHasWebhook = cfg.rooms.some(r => r.kind === "main" && (r.incoming_url || cfg.incoming_url));
-	const wanted = msg.kind !== "worklog" && (msg.kind !== "lane" || ["result", "ask"].includes(postClass(msg.target, msg.text) ?? ""));
+	const wanted = msg.kind !== "worklog" && (msg.kind !== "lane" || laneReachesOwner(msg));
 	if (!selfChat || !selfChatReady(sc) || !wanted || mainHasWebhook) return { delivered: false, reason: "no room" };
 	const prefix = `${sc.reply_prefix || `[${NAME}]`} `;
 	const parts = splitText(text, MAX_PART - prefix.length);
@@ -307,12 +332,16 @@ type StatusShare = ReturnType<typeof createSnapshotSender>;
 /** Starts polling the self chat and, beside it, this computer's status sharing (hub/relay-snapshot-send.ts), which posts through the same session as a reply. */
 function runSelfChat(dataDir: string, sc: SelfChatConfig, chat: SelfChat, log: (m: string) => void): StatusShare {
 	void chat.run();
+	let checked = 0;
 	const sharer = createSnapshotSender({
 		config: () => loadJandiConfig(dataDir).self_chat,
 		// Loaded when it runs: the gateway's state modules (sessions, monitors, projects) are not this adapter's imports.
 		build: async () => (await import("./relay-snapshot-source.ts")).currentSnapshot(Date.now()),
-		post: async text => {
-			await chat.post(`message-api/v3/teams/${sc.team_id}/rooms/${sc.room_id}/messages`, 3, messageBody(text));
+		post: async (text, room) => {
+			// A status room is checked to be the owner's alone before the first post; the self chat (no status room set) is the room the chat already checked.
+			if (room !== sc.room_id && checked !== room) await checkStatusRoomOf(chat.get, sc, room);
+			checked = room;
+			await chat.post(`message-api/v3/teams/${sc.team_id}/rooms/${room}/messages`, 3, messageBody(text));
 			mark("self_chat", { last_out: Date.now() });
 		},
 		now: Date.now,
@@ -424,11 +453,7 @@ export function createJandiAdapter(dataDir: string = DATA_DIR, spec?: (body: str
 		return {
 			enabled: cfg.enabled,
 			help: HELP,
-			fields: [
-				{ key: "host", label: "받는 주소", type: "text", value: cfg.listen.host, hint: LISTEN_HINT },
-				{ key: "port", label: "받는 포트", type: "number", value: cfg.listen.port, hint: "0이면 빈 포트를 골라요" },
-				{ key: "incoming_url", label: "기본 수신 웹훅 URL", type: "secret", set: !!cfg.incoming_url, hint: "방마다 따로 정하지 않은 방의 메시지가 모두 이 JANDI 방으로 가요" },
-			],
+			fields: listenerFields(cfg),
 			allow: { label: "말을 걸 수 있는 사람", hint: "이메일이나 JANDI 이름", items: [...cfg.allow_emails, ...(cfg.allow_names ?? [])] },
 			rooms: {
 				label: "방",
@@ -526,7 +551,8 @@ export function createJandiAdapter(dataDir: string = DATA_DIR, spec?: (body: str
 			}
 			next.rooms = rooms;
 		}
-		next.self_chat = withShare(body.relays === undefined ? next.self_chat : withRelays(cfg.self_chat, body.relays), body.share_status);
+		const relayed = body.relays === undefined ? next.self_chat : withRelays(next.self_chat, body.relays);
+		next.self_chat = withShare(withStatusRoom(relayed, v?.status_room_id), body.share_status);
 		saveJandiConfig(next, dataDir);
 	}
 
@@ -592,7 +618,7 @@ export function createJandiAdapter(dataDir: string = DATA_DIR, spec?: (body: str
 		// A project with no room of its own talks in the main room.
 		if (!dests.length && msg.kind === "project") dests = ready.filter(r => r.room.kind === "main");
 		// JANDI has no lane room: a lane's result or question ([done]/[fail]/[ask]) reaches the owner in the main room; its progress stays in the web.
-		if (!dests.length && msg.kind === "lane" && ["result", "ask"].includes(postClass(msg.target, msg.text) ?? "")) dests = ready.filter(r => r.room.kind === "main");
+		if (!dests.length && msg.kind === "lane" && laneReachesOwner(msg)) dests = ready.filter(r => r.room.kind === "main");
 		dests = dests.filter((d, i) => dests.findIndex(x => x.url === d.url) === i);
 		if (!dests.length) {
 			const r = await viaSession(selfChat, cfg, msg, text);

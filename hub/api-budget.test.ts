@@ -1,6 +1,6 @@
 import { beforeEach, expect, test } from "bun:test";
 import { existsSync, readFileSync, statSync } from "node:fs";
-import { apiBudget, budgetSettings, deleteAdminKey, resetApiBudgetCacheForTest, saveAdminKey, saveMonthlyLimit, sumCostUsd } from "./api-budget.ts";
+import { apiBudget, budgetSettings, deleteAdminKey, saveAdminKey, saveMonthlyLimit, sumCostUsd } from "./api-budget.ts";
 import { CONFIG_FILE } from "./config.ts";
 import { keyPath, resetFallbackState, spendOnKey } from "./fallback.ts";
 
@@ -9,7 +9,6 @@ const REPORT = { data: [{ starting_at: "2026-10-01T00:00:00Z", results: [{ amoun
 const ADMIN = "sk-ant-admin01-testtesttesttest";
 
 beforeEach(() => {
-	resetApiBudgetCacheForTest();
 	resetFallbackState();
 	deleteAdminKey();
 });

@@ -5,10 +5,12 @@ import * as l from "./lanes.ts";
 import type * as Lanes from "./lanes.ts";
 import { cfg, NAME } from "./config.ts";
 import { msg } from "./i18n.ts";
-import { parkIdleLanes, shouldPark } from "./laneidle.ts";
+import { CHECK_MS, parkIdleLanes, remindMainWaits, shouldPark, startLaneIdleStop } from "./laneidle.ts";
+import { createLaneRelay } from "./lanerelay.ts";
+import { setMainWroteHandler } from "./lanestate.ts";
 import { adapters } from "./runtime/index.ts";
 import { omp } from "./runtime/omp.ts";
-import { advance, flush } from "./runtime/test-clock.ts";
+import { advance, clock, flush } from "./runtime/test-clock.ts";
 import type { AgentEvent, AgentProcess, RuntimeAdapter, SpawnOpts } from "./runtime/types.ts";
 
 const DATA = process.env.DOTZ_DIR!;
@@ -108,20 +110,97 @@ test("an idle lane past the period is stopped but stays idle and live; the next 
 	await advance(300);
 });
 
-test("a lane stopped while its last report waits on main tells main once; one waiting on CI does not", async () => {
-	const told: string[] = [];
-	l.setReportHandler((lane, text) => void told.push(`${lane.name}: ${text}`));
-	const onMain = await idleLane("idle-main");
-	writeFileSync(join(DATA, "lanes", "idle-main", "report.md"), `[wait] 전체 시험을 기다려요\n\n${NAME} 몫: e1bec7e8 전체 시험 결과를 주세요\n`);
-	const onCi = await idleLane("idle-ci");
-	writeFileSync(join(DATA, "lanes", "idle-ci", "report.md"), "[wait] Actions 빌드 완료를 기다려요\n");
-	expect(parkIdleLanes(1_000_000 + 25 * MIN, 20)).toEqual(expect.arrayContaining(["idle-main", "idle-ci"]));
-	await advance(300);
-	expect(told).toEqual([`idle-main: ${msg().laneIdleWaitMain("idle-main", 25, `전체 시험을 기다려요\n\n${NAME} 몫: e1bec7e8 전체 시험 결과를 주세요`)}`]);
-	expect(parkIdleLanes(1_000_000 + 60 * MIN, 20)).toEqual([]);
-	expect(told).toHaveLength(1);
+// The lane's report, written at `at` on the test clock (the file system does not follow it).
+function waitReport(name: string, text: string, at: number): void {
+	const file = join(DATA, "lanes", name, "report.md");
+	writeFileSync(file, text);
+	utimesSync(file, at / 1000, at / 1000);
+}
+const WAIT_TEXT = `[wait] 전체 시험을 기다려요\n\n${NAME} 몫: e1bec7e8 전체 시험 결과를 주세요\n`;
+
+test("a lane waiting on main tells main again at 20, 60 and 180 min, then the owner once at 360; one waiting on CI tells no one", async () => {
+	const main: string[] = [];
+	const owner: string[] = [];
+	l.setReportHandler((lane, text) => void main.push(`${lane.name}: ${text}`));
+	l.setNoticeHandler((lane, text) => void owner.push(`${lane.name}: ${text}`));
+	const at = Date.now();
+	const onMain = await idleLane("wait-main");
+	waitReport(onMain.name, WAIT_TEXT, at);
+	const onCi = await idleLane("wait-ci");
+	waitReport(onCi.name, "[wait] Actions 빌드 완료를 기다려요\n", at);
+	const told = (minutes: number) => remindMainWaits(at + minutes * MIN);
+	expect([told(19), told(20), told(21), told(59), told(60), told(179), told(180), told(359), told(360), told(2000)]).toEqual([[], ["wait-main"], [], [], ["wait-main"], [], ["wait-main"], [], ["wait-main"], []]);
+	const said = (minutes: number) => `wait-main: ${msg().laneIdleWaitMain("wait-main", minutes, `전체 시험을 기다려요\n\n${NAME} 몫: e1bec7e8 전체 시험 결과를 주세요`)}`;
+	expect(main).toEqual([said(20), said(60), said(180)]);
+	expect(owner).toEqual([said(360)]);
 	l.setReportHandler(() => {});
+	l.setNoticeHandler(() => {});
 	for (const lane of [onMain, onCi]) l.stopLane(lane.name);
+	await advance(300);
+});
+
+test("the reminder has its own timer: a lane waiting on main that its own shell keeps up tells main, whether the idle stop is off or on", async () => {
+	const saved = cfg.lanes;
+	for (const minutes of [0, 20]) {
+		cfg.lanes = { ...saved, idle_stop_min: minutes };
+		const lane = await idleLane(`wait-held-${minutes}`);
+		const agent = lane.proc as unknown as FakeAgent;
+		lane.lastFrameAt = Date.now() - 25 * MIN;
+		writeFileSync(lane.sessionFile!, `${JSON.stringify({ customType: "session-lifecycle", data: { state: "waiting_background", waitingOn: { background: [{ source: "terminal-background-sessions", activeCount: 1 }] } } })}\n`);
+		waitReport(lane.name, WAIT_TEXT, Date.now() - 20 * MIN);
+		const main: string[] = [];
+		l.setReportHandler((ln, text) => void main.push(`${ln.name}: ${text.split(" ")[0]}`));
+		const stop = startLaneIdleStop();
+		await advance(CHECK_MS);
+		stop();
+		expect(main).toEqual([`${lane.name}: [lane`]);
+		expect(agent.killed).toBe(0);
+		l.setReportHandler(() => {});
+		l.stopLane(lane.name);
+		await advance(300);
+	}
+	cfg.lanes = saved;
+});
+
+test("a gateway restart keeps the reminder count: a lane parked before it goes on with its next step, not the first one again", async () => {
+	const told: string[] = [];
+	l.setReportHandler(lane => void told.push(lane.name));
+	const at = Date.now();
+	const lane = await idleLane("wait-restart");
+	waitReport(lane.name, WAIT_TEXT, at);
+	expect(parkIdleLanes(at + 20 * MIN, 20)).toContain(lane.name);
+	await advance(300);
+	await flush();
+	expect(remindMainWaits(at + 20 * MIN)).toEqual([lane.name]);
+	l.lanes.delete(lane.name);
+	l.restoreLanes();
+	expect(l.lanes.get(lane.name)!.proc).toBeUndefined();
+	expect(remindMainWaits(at + 21 * MIN)).toEqual([]);
+	expect(remindMainWaits(at + 60 * MIN)).toEqual([lane.name]);
+	expect(told).toEqual([lane.name, lane.name]);
+	l.setReportHandler(() => {});
+	l.stopLane(lane.name);
+	await advance(300);
+});
+
+test("a message reaching a waiting lane starts its reminders over; one not from the owner makes the relay take the same [wait] again", async () => {
+	const relay = createLaneRelay({ busy: () => false, deliver: () => {}, lead: () => "" });
+	setMainWroteHandler(relay.forget);
+	const at = Date.now();
+	const lane = await idleLane("wait-answer");
+	waitReport(lane.name, WAIT_TEXT, at);
+	expect(relay.report(lane.name, WAIT_TEXT, "report.md")).toBe("relayed");
+	expect(remindMainWaits(at + 20 * MIN)).toEqual([lane.name]);
+	expect(remindMainWaits(at + 60 * MIN)).toEqual([lane.name]);
+	clock.now = at + 70 * MIN;
+	l.sendToLane(lane.name, "[owner via web] 아직이에요");
+	expect(relay.report(lane.name, WAIT_TEXT, "report.md")).toBe("duplicate");
+	expect(remindMainWaits(at + 89 * MIN)).toEqual([]);
+	expect(remindMainWaits(at + 90 * MIN)).toEqual([lane.name]);
+	l.sendToLane(lane.name, "릴리스는 내일 만들어요", undefined, true);
+	expect(relay.report(lane.name, WAIT_TEXT, "report.md")).toBe("relayed");
+	setMainWroteHandler(() => {});
+	l.stopLane(lane.name);
 	await advance(300);
 });
 

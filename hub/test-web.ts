@@ -5,7 +5,7 @@ import { sseResponse } from "./events.ts";
 import { appAsset, indexPage } from "./webapp.ts";
 
 export type View = InstanceType<typeof Bun.WebView>;
-export type ViewOptions = { width?: number; height?: number; console?: (type: string, ...args: unknown[]) => void };
+export type ViewOptions = { width?: number; height?: number; console?: (type: string, ...args: unknown[]) => void; foldedCards?: boolean };
 // A route for the fake hub: return a Response to answer, or undefined to fall through to the defaults.
 export type Api = (req: Request, url: URL) => Response | Promise<Response | undefined> | undefined;
 
@@ -47,10 +47,17 @@ const SLOW_TIMERS = `(() => { const q = []; let now = 0, seq = 1e9; const rs = s
 	window.__rt = rs;
 	window.__advance = async (ms, quiet) => { const end = now + ms; if (quiet) await settle(); for (;;) { const due = q.filter(t => t.at <= end).sort((x, y) => x.at - y.at)[0]; if (!due) break; now = due.at; if (due.every) due.at += due.every; else q.splice(q.indexOf(due), 1); due.f(); } if (quiet) await settle(); now = end; };
 })();`;
-async function slowIndex(req: Request, head = ""): Promise<Response> {
-	const plain = await indexPage(new Request(req.url));
-	const html = (await plain.text()).replace(/<head[^>]*>/i, m => `${m}<script>${SLOW_TIMERS}${head}</script>`);
-	return new Response(html, { headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" } });
+// why(platform): WebKit run from a launchd job without ProcessType Interactive (launchd.plist(5) man page) nearly stops the timers of a page opened while a smooth scroll still runs.
+const INSTANT_SCROLL = `(() => { const flat = o => o && typeof o === "object" && o.behavior === "smooth" ? { ...o, behavior: "instant" } : o;
+	for (const [t, ks] of [[Element.prototype, ["scrollIntoView", "scroll", "scrollTo", "scrollBy"]], [window, ["scroll", "scrollTo", "scrollBy"]]]) for (const k of ks) { const real = t[k]; t[k] = function (o, ...a) { return real.call(this, flat(o), ...a); }; }
+})();`;
+async function testIndex(req: Request, slow: boolean, head = ""): Promise<Response> {
+	const headers = new Headers(req.headers);
+	headers.delete("accept-encoding");
+	const plain = await indexPage(slow ? new Request(req.url) : new Request(req.url, { method: req.method, headers }));
+	if (!slow && (plain.status !== 200 || req.method === "HEAD")) return plain;
+	const html = (await plain.text()).replace(/<head[^>]*>/i, m => `${m}<script>${INSTANT_SCROLL}${slow ? SLOW_TIMERS + head : ""}</script>`);
+	return new Response(html, { headers: slow ? { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" } : plain.headers });
 }
 
 // A WebView costs ~120 ms to start, a navigation ~20 ms: finished views go back to a process-wide pool (bun runs every test file in one process)
@@ -58,10 +65,12 @@ async function slowIndex(req: Request, head = ""): Promise<Response> {
 const idle: View[] = [];
 const pooled = new WeakSet<View>();
 const pending = new WeakMap<View, number>();   // evaluate() calls still running: a view with one is closed, never reused
+const cardsOpen = new WeakMap<View, boolean>();
+const OPEN_CARDS = `(typeof DC === "undefined" || (DC.fold = new Proxy({}, { get: (o, k) => (k in o ? o[k] : false) })), 0)`;
 async function acquire(o: ViewOptions): Promise<View> {
 	const width = o.width ?? 390, height = o.height ?? 844;
 	const v = o.console ? undefined : idle.pop();
-	if (v) { await v.resize(width, height); return v; }
+	if (v) { await v.resize(width, height); cardsOpen.set(v, !o.foldedCards); return v; }
 	const fresh = new Bun.WebView({ width, height, ...(o.console ? { console: o.console } : {}) } as ConstructorParameters<typeof Bun.WebView>[0]);
 	if (!o.console) pooled.add(fresh);
 	const evaluate = fresh.evaluate.bind(fresh);
@@ -72,6 +81,12 @@ async function acquire(o: ViewOptions): Promise<View> {
 		p.then(done, done);
 		return p;
 	}) as View["evaluate"];
+	cardsOpen.set(fresh, !o.foldedCards);
+	const navigate = fresh.navigate.bind(fresh);
+	fresh.navigate = (async (...a: Parameters<View["navigate"]>) => {
+		await navigate(...a);
+		if (cardsOpen.get(fresh)) await fresh.evaluate(OPEN_CARDS);
+	}) as View["navigate"];
 	return fresh;
 }
 // What a page keeps for its origin (localStorage, the snapshot in indexedDB, caches) outlives the navigation: the next test on this hub would start from it.
@@ -97,7 +112,7 @@ export function fakeHub(opts: HubOptions = {}) {
 		idleTimeout: 0,
 		async fetch(req) {
 			const url = new URL(req.url), p = url.pathname;
-			if (p === "/") return opts.slowTimers ? slowIndex(req, opts.headScript) : indexPage(req);
+			if (p === "/") return testIndex(req, !!opts.slowTimers, opts.headScript);
 			const asset = appAsset(req, p);
 			if (asset) return asset;
 			const own = await opts.api?.(req, url);

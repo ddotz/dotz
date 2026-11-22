@@ -12,6 +12,9 @@ export const QUIET_MS = 2 * 60_000;
 export const RETRY_MS = 15 * 60_000;
 export const MAX_WAKES = 2;
 
+/** What a wake is delivered under: the first open request's target and message, and its hand-over labels, so a request another session handed over is still handed back to that session (2026-11-11 23:00: handed fixes were posted in a lane's conversation). */
+export const wakeReply = (r: OpenRequest) => ({ target: r.target, ...(r.replyTo ? { replyTo: r.replyTo } : {}), ...(r.from ? { from: r.from } : {}), ...(r.handback ? { handback: true as const } : {}), ...(r.bookkeeping ? { bookkeeping: true as const } : {}) });
+
 export type WaitSession = {
 	key: string;
 	open: () => OpenRequest[];

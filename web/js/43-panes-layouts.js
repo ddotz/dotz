@@ -24,7 +24,7 @@ function paneLayoutApply(name) {
   const r = panePrune(paneLayouts()[name]);
   if (!r) { toast(TX("misc.pl.cant_open"), true); return; }
   paneMirrorsClear();
-  PN = { ...r, seq: Math.max(PN.seq, r.seq) };
+  paneTreePut({ ...r, seq: Math.max(PN.seq, r.seq) });
   paneEnter(paneFind(PN.active));
   panePersist();
 }
@@ -40,7 +40,7 @@ function paneLayoutAsk() {
   const d = dialog({ classic: true, title: TX("misc.pl.save"), body: el("div", { class: "col" }, el("div", { class: "sup", text: TX("misc.pl.overwrite") }), inp, err), actions: [{ label: TX("common.save"), kind: "pri", onclick: c => save(c) }] });
   usDirty(d, [inp]);
   inp.addEventListener("input", () => { err.textContent = inp.value.trim() ? "" : TX("misc.pl.need_name"); });
-  inp.addEventListener("keydown", ev => { if (ev.key === "Enter" && !ev.isComposing) { ev.preventDefault(); d.node.querySelector(".dact .btn:last-child").click(); } });
+  inp.addEventListener("keydown", ev => { if (plainEnter(ev)) { ev.preventDefault(); d.node.querySelector(".dact .btn:last-child").click(); } });
   inp.focus();
 }
 // Rows for the command palette; v is the lower-cased query.

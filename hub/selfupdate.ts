@@ -10,7 +10,7 @@
 // watchdog (hub/update-watchdog.ts) that rolls it back when the restarted gateway never comes up healthy (updateBoot clears it). The
 // restart itself is main.ts's restart gate (waits for running turns) or, on the owner's word, an immediate restart.
 // The checks run every 10 minutes (CHECK_EVERY_MS, one timer); a check with nothing new only logs. self_update.auto_apply (default on) sends a new release through the same apply()
-// (ff-only, bun install, tests, revert on failure) and the idle restart gate; a refusal or failure goes to alert with a choice block.
+// (ff-only, bun install, tests, revert on failure) and the idle restart gate, once a night at omp_update.at (nightSlot; until then it is only announced); a refusal or failure goes to alert.
 // Every check and update leaves lines in ~/.dotz/logs/update-YYYYMMDD.log.
 // A tarball install (install.sh without --git: no .git, a .dotz-install stamp with repo, ref, commit sha, source kind and
 // auth) updates the same way: the check asks GitHub for the newest release tag of the stamped repo (an install with no version, or an
@@ -24,9 +24,9 @@ import { join } from "node:path";
 import { installGitHooks } from "./git-hooks.ts";
 import { rewriteNote, rewriteState } from "./history-rewrite.ts";
 import { issueBlock } from "./choices.ts";
-import { CONFIG_FILE, cfg, DATA_DIR, HUB_TOKEN, log, PORT, writeAtomic } from "./config.ts";
+import { CONFIG_FILE, cfg, DATA_DIR, DEFAULTS, HUB_TOKEN, log, PORT, writeAtomic } from "./config.ts";
 import { FORMAT, type Keep, keepLine, openTrial, parseCommits, type Saved, saveLocal, savedNote, splitEquivalent, writeSavedSummary } from "./selfupdate-local.ts";
-import { compareReleases, diskRelease, failedTestNames, failureBlocks, gateIn, parseRelease, releaseTags, testFailure, testSummary } from "./selfupdate-parse.ts";
+import { compareReleases, diskRelease, failedTestNames, failureBlocks, gateIn, nightSlot, parseRelease, releaseTags, testFailure, testSummary } from "./selfupdate-parse.ts";
 import { type SigMode, type Signature, signatureAlert as signatureText, signed, verifyGitTag, wantOf } from "./release-verify.ts";
 import { json } from "./routes-util.ts";
 import { applyTarball, checkTarball, type Kit } from "./selfupdate-tarball.ts";
@@ -368,7 +368,7 @@ let job: Job | undefined;
 // `how.keep`: skip the trial rebase of local commits and save them aside at once (an older client's '보관하고 새 버전 받기'). `how.auto`:
 // the daily auto-apply. Both, like a plain apply, never stop at local work: it is saved and the update goes on.
 // A step that throws (a sync fs call, an injected or spawned exec) ends the job as failed: a job left 'running' would make every later apply return it.
-export async function apply(o: Options, how: { keep?: boolean; auto?: boolean } = {}): Promise<Job> {
+export async function apply(o: Options, how: { keep?: boolean; auto?: boolean; retry?: boolean } = {}): Promise<Job> {
 	if (job?.status === "running") return job;
 	try {
 		return await runApply(o, how);
@@ -387,7 +387,7 @@ export async function apply(o: Options, how: { keep?: boolean; auto?: boolean } 
 	}
 }
 
-async function runApply(o: Options, how: { keep?: boolean; auto?: boolean }): Promise<Job> {
+async function runApply(o: Options, how: { keep?: boolean; auto?: boolean; retry?: boolean }): Promise<Job> {
 	const { dir, remote, branch, exec, testCmd, logDir } = resolve(o);
 	const upstream = `${remote}/${branch}`;
 	const j: Job = { id: ++jobSeq, startedAt: new Date().toISOString(), status: "running", phase: "확인", message: "새 버전을 확인하고 있어요", steps: [] };
@@ -423,8 +423,8 @@ async function runApply(o: Options, how: { keep?: boolean; auto?: boolean }): Pr
 	}
 	if (c.blocked.length) return end("refused", `업데이트하지 않았어요. ${c.blocked.join(" ")}`);
 	if (!updateAvailable(c) || !c.remoteHead) return end("current", `이미 최신이에요 (${v.commit.short}).`);
-	const to = c.remoteHead;
-	j.to = to;
+	const to = (j.to = c.remoteHead);
+	if (!how.retry && readState().autoFailed === to) return end("failed", `같은 커밋(${to.slice(0, 7)})은 이미 확인을 통과하지 못해서 다시 해 보지 않았어요. 쓰던 버전 그대로예요. 새 커밋이 오거나 다시 해 달라고 하시면 다시 해요.`);
 
 	const runTests = async (cwd: string, where: string) => {
 		const gate = gateIn(cwd, testCmd);
@@ -435,7 +435,7 @@ async function runApply(o: Options, how: { keep?: boolean; auto?: boolean }): Pr
 		if (t.code === 0) return { ok: true as const, why: "" };
 		const blocks = failureBlocks(t.out);
 		if (blocks) record(logDir, `update #${j.id}: failed tests\n${blocks}`);
-		record(logDir, `update #${j.id}: test output (tail)\n${t.out.split("\n").slice(-40).join("\n")}`);
+		record(logDir, `update #${j.id}: test output (tail, exit ${t.code})\n${t.out.split("\n").slice(-40).join("\n")}`);
 		const names = failedTestNames(t.out);
 		return { ok: false as const, why: testFailure(t.code, names) };
 	};
@@ -502,6 +502,7 @@ async function runApply(o: Options, how: { keep?: boolean; auto?: boolean }): Pr
 	if (m.code !== 0) return end("failed", `새 버전으로 합칠 수 없어요: ${lastLine(m.out)}`);
 
 	const back = async (why: string, deps: boolean) => {
+		saveState({ ...readState(), autoFailed: to });
 		step("되돌리기", `${why} → ${v.commit.short}로 되돌려요`);
 		// --keep moves HEAD and the files the merge changed only; it refuses rather than overwrite anything else.
 		const r = await exec(["git", "reset", hard ? "--hard" : "--keep", from], dir, 60_000);
@@ -511,7 +512,7 @@ async function runApply(o: Options, how: { keep?: boolean; auto?: boolean }): Pr
 			const i = await exec(["bun", "install"], dir, 10 * 60_000);
 			if (i.code !== 0) step("되돌리기", `이전 의존성 bun install 실패: ${lastLine(i.out)}`);
 		}
-		return end("failed", `${why}. 이전 버전(${v.commit.short})에 그대로 있어요.`);
+		return end("failed", `${why}. 쓰던 버전 그대로예요.`);
 	};
 
 	const changed = await exec(["git", "diff", "--name-only", from, target], dir, 15_000);
@@ -566,7 +567,7 @@ export async function applyAndSave(o: Options = { dir: REPO_DIR }): Promise<Job>
 	return j;
 }
 
-type State = { lastCheck?: CheckResult; notified?: string; autoFailed?: string; autoRefused?: string; signatureNotified?: string };
+type State = { lastCheck?: CheckResult; notified?: string; autoFailed?: string; autoRefused?: string; signatureNotified?: string; night?: string };
 const readState = (): State => {
 	try {
 		return existsSync(STATE_FILE) ? JSON.parse(readFileSync(STATE_FILE, "utf8")) : {};
@@ -608,7 +609,7 @@ function signalSignature(o: Options, c: CheckResult, hooks: Pick<AutoHooks, "ale
 }
 
 const autoChoice = (): string =>
-	issueBlock("dotz 자동 업데이트를 어떻게 할까요?", [
+	issueBlock("원인을 확인할까요, 자동 업데이트를 끌까요?", [
 		{ name: "원인 확인", result: "업데이트 로그와 저장소 상태를 보고 원인과 고칠 방법을 알려드려요." },
 		{ name: "자동 업데이트 끄기", result: "자동 적용을 꺼서 새 버전 알림만 받아요. 설정 → 업데이트에서 직접 적용해요." },
 	]);
@@ -625,7 +626,7 @@ async function autoApply(o: Options, c: CheckResult, s: State, hooks: AutoHooks)
 		record(logDir, `auto-apply: refused ${rel} (${short}): ${c.blocked.join(" ")}`);
 		if (s.autoRefused === remoteHead) return;
 		s.autoRefused = remoteHead;
-		hooks.alert(`dotz 자동 업데이트를 하지 않았어요 (${rel}, ${short}). ${c.blocked.join(" ")}\n${autoChoice()}`);
+		hooks.alert(`dotz 자동 업데이트를 하지 않았어요 (${rel}). ${c.blocked.join(" ")}\n${autoChoice()}`);
 		return;
 	}
 	record(logDir, `auto-apply: applying ${rel} (${short})`);
@@ -644,25 +645,23 @@ async function autoApply(o: Options, c: CheckResult, s: State, hooks: AutoHooks)
 	hooks.alert(`dotz 자동 업데이트를 하지 못했어요 (${rel}): ${j.message}\n${autoChoice()}`);
 }
 
-export async function autoCheck(o: Options, hooks: AutoHooks | undefined = autoHooks): Promise<void> {
+// `install`: false outside the nightly slot (schedule): a new release is announced like auto_apply off, and installed at the slot.
+export async function autoCheck(o: Options, hooks: AutoHooks | undefined = autoHooks, install = true): Promise<CheckResult> {
 	const c = await check(o);
 	signalSignature(o, c, hooks);
 	const s = readState();
 	s.lastCheck = c;
 	settled(c);
-	if (settings().auto_apply && hooks && updateAvailable(c) && c.remoteHead) {
-		await autoApply(o, c, s, hooks);
-		saveState(s);
-		return;
-	}
-	if (updateAvailable(c) && c.remoteHead && s.notified !== c.remoteHead) {
+	if (settings().auto_apply && hooks && install && updateAvailable(c) && c.remoteHead) await autoApply(o, c, s, hooks);
+	else if (updateAvailable(c) && c.remoteHead && s.notified !== c.remoteHead) {
 		s.notified = c.remoteHead;
 		const rel = c.available && "release" in c.version && c.version.release ? `${c.version.release} → ${c.available}` : c.available ?? "";
 		const text = `새 버전이 있어요: ${rel ? `${rel} ` : ""}커밋 ${c.incomingTotal}개 (${c.incoming[0]?.subject.slice(0, 60) ?? ""}). 설정 → 업데이트에서 적용해요.${c.available ? ` 릴리스 노트: https://github.com/ddotz/dotz/releases/tag/v${c.available}` : ""}${c.keep ? ` ${c.keep.line}` : ""}`;
-		record(resolve(o).logDir, `auto-check: notified ${c.remoteHead.slice(0, 7)}`);
+		record(resolve(o).logDir, `auto-check: notified ${c.remoteHead.slice(0, 7)}${settings().auto_apply ? " (auto-apply waits for the nightly slot)" : ""}`);
 		notifyFn?.(text, c.incomingTotal);
 	}
 	saveState(s);
+	return c;
 }
 
 // One timer, rearmed after each check finishes (a slow fetch never overlaps the next one).
@@ -672,7 +671,11 @@ function schedule(o: Options): void {
 	autoTimer = undefined;
 	if (!settings().auto_check) return;
 	autoTimer = setTimeout(async () => {
-		await autoCheck(o).catch(e => log(`self-update auto-check failed: ${e}`));
+		const up: unknown = "omp_update" in cfg ? (cfg as Record<string, unknown>).omp_update : undefined;
+		const at = up && typeof up === "object" && "at" in up && typeof up.at === "string" ? up.at : DEFAULTS.update_at;
+		const night = nightSlot(at, new Date(Date.now())), due = night !== undefined && readState().night !== night;
+		const c = await autoCheck(o, autoHooks, due).catch(e => void log(`self-update auto-check failed: ${e}`));
+		if (due && c?.ok) saveState({ ...readState(), night }); // one install per night: a release found later waits for the next slot
 		schedule(o);
 	}, CHECK_EVERY_MS);
 	trackTimer("self update check", autoTimer);
@@ -787,7 +790,7 @@ if (import.meta.main) {
 	const i = process.argv.indexOf("--dir");
 	const t = process.argv.indexOf("--test-cmd");
 	const o: Options = { dir: i > 0 ? process.argv[i + 1] : REPO_DIR, ...(t > 0 ? { testCmd: ["sh", "-c", process.argv[t + 1]] } : {}) };
-	if (process.argv.includes("--apply")) console.log(JSON.stringify(await apply(o, { keep: process.argv.includes("--keep") }), null, 2));
+	if (process.argv.includes("--apply")) console.log(JSON.stringify(await apply(o, { keep: process.argv.includes("--keep"), retry: true }), null, 2));
 	else if (process.argv.includes("--check")) {
 		const c = await check(o);
 		// The first line is the owner-facing check line; the JSON below keeps every field for scripts.

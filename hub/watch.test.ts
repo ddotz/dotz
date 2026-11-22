@@ -5,6 +5,7 @@ import { readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DATA_DIR, paths } from "./config.ts";
+import { SLOT_SKIPPED_EXIT } from "./release-exit.ts";
 import { advance, clock } from "./runtime/test-clock.ts";
 import type { ReloginOpts, ReloginResult } from "./autologin.ts";
 import { addWatch, allWatches, approveWatch, exec, learnLife, listWatches, patchWatch, putWatchScript, reloadWatches, removeWatch, runWatch, sessionGapMs, setSessionIo, startWatches, wakeTarget, watchScript, watchShell } from "./watch.ts";
@@ -293,6 +294,25 @@ test("a flapping watch tells the owner once per episode; a refail that lasts, or
 	expect(notes.map(n => n.reason)).toEqual(["failed 2 times in a row (exit 1)", "recovered", "failed 3 times in a row (exit 1)", "recovered", "failed 2 times in a row (exit 1)"]);
 });
 
+// A skipped release slot (exit SLOT_SKIPPED_EXIT) fails only the tick that found it: the owner hears of it at once, and the quiet rest of the
+// slot is no recovery news. The next skipped slot is news again.
+test("a skipped release slot alerts on its one failing tick, with no recovery note after, and the next skipped slot alerts again", async () => {
+	const code = join(DATA_DIR, "watch-slot.txt");
+	addWatch({ name: "t-slot", command: `exit $(cat '${code}')`, every_minutes: 1, on: "fail", to: "alert" }, "");
+	const step = async (c: number, minutes = 1) => {
+		writeFileSync(code, String(c));
+		clock.now += minutes * 60_000;
+		await runWatch("t-slot");
+	};
+	await step(SLOT_SKIPPED_EXIT);
+	expect(notes.map(n => n.reason)).toEqual([`failed 1 times in a row (exit ${SLOT_SKIPPED_EXIT})`]);
+	for (let i = 0; i < 5; i++) await step(0);
+	expect(notes).toHaveLength(1);
+	expect(state("t-slot").fails).toBe(0);
+	await step(SLOT_SKIPPED_EXIT, 6 * 60);
+	expect(notes).toHaveLength(2);
+});
+
 // The shape of a one-shot gate: the check fails until its condition holds, then prints one constant line. There is no second, different output
 // to compare with, so the match itself is the event (dotz-rewrite-ready passed for 40 minutes unreported and was never removed).
 test("a once match fires on a constant first success, after failures or at once, beside its recovery note, and is removed", async () => {
@@ -490,4 +510,22 @@ test("a watch made in a conversation session belongs to it; the wake target is c
 	expect(inMain.conv).toBeUndefined();
 	expect([inCh, inMain, named, chan, proj, folder].map(wakeTarget)).toEqual(["ch:7", undefined, "th:4", "ch:9", "ch:3", undefined]);
 	expect(() => addWatch({ name: "t-conv-bad", command: "echo g", conv: "nope" }, "")).toThrow("conv must be a conversation target");
+});
+
+test("a failure that stays tells the owner again after 12 hours, then after 24 hours, then every 3 days", async () => {
+	addWatch({ name: "t-backoff", command: "exit 1", every_minutes: 5, on: "fail", to: "alert" }, "");
+	const told: number[] = [];
+	const after = async (hours: number) => {
+		clock.now += hours * 3600_000;
+		await runWatch("t-backoff");
+		told.push(notes.length);
+	};
+	await after(0);
+	await after(0.1);
+	await after(13);
+	await after(13);
+	await after(12);
+	await after(25);
+	await after(48);
+	expect(told).toEqual([0, 1, 2, 2, 3, 3, 4]);
 });

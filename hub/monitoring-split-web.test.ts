@@ -7,6 +7,7 @@ import { i18nPrelude } from "./web-i18n.ts";
 const src = readFileSync(join(import.meta.dir, "..", "web", "js", "30-monitoring.js"), "utf8");
 const chatSrc = readFileSync(join(import.meta.dir, "..", "web", "js", "30-monitor-chat.js"), "utf8");
 const mailSrc = readFileSync(join(import.meta.dir, "..", "web", "js", "30-monitoring-mail.js"), "utf8");
+const routeSrc = readFileSync(join(import.meta.dir, "..", "web", "js", "30-monitoring-route.js"), "utf8");
 const between = (from: string, to: string) => {
 	const a = src.indexOf(from), b = src.indexOf(to, a);
 	if (a < 0 || b < 0) throw new Error(`markers not found: ${from} .. ${to}`);
@@ -37,7 +38,7 @@ function load(notices: N[], integrations: N[], monitors: N[]) {
 		choiceFree: (s: string) => s,
 		monLastOut: () => "",
 		// One mail app (web/js/30-mailboxes.js): nothing to fold in these stores.
-		mxMerge: () => {}, mxHash: () => "", mxRoute: (t: string) => t, mxKeyOf: (k: string) => `i:${k}`, mxsName: () => "",
+		mxMerge: () => {}, mxKeyOf: (k: string) => `i:${k}`, mxDec: (s: string) => s, mxRouteSet: () => {}, MX: { key: "" }, mxsName: () => "", screenHooks: () => {},
 		// No other computers here (web/js/34-peer-monitoring.js): the local list as is.
 		pqMerge: (items: N[]) => items, rqMonItem: () => null, pqLabel: () => null, pqSig: () => 0, pqOpen: () => {}, pqLink: (p: string) => p, kkItem: () => false, PQ: { of: new Map() },
 		asConv: (a: string) => `settings:${a}`, isSettingsT: (t: string) => t.startsWith("settings:"), monCtx: "", target: "",
@@ -49,9 +50,9 @@ function load(notices: N[], integrations: N[], monitors: N[]) {
 		cardNode: () => { throw new Error("a fact card is not a conversation message"); },
 		ts: () => ({ unread: 0 }), narrowChat: () => false, go: (...a: string[]) => went.push(a), current: "monitoring", enc: encodeURIComponent,
 		api: async () => ({}), homeSoon: () => {}, titles: { monitoring: "모니터링" }, ntIsDec: (n: N) => n.kind === "decision" && !!n.decision, ntNeeds: () => false,
-		ntWithRepeats: (l: unknown[]) => l, noticeOpen: () => {}, asEntry: () => [], kkItem: () => false, KK: {}, asChipTexts: () => [], asAsk: () => {}, nwChangeNode: () => null, nwChangeLine: () => "", asAddHint: () => "", asAddSheet: () => {}, isSettingsT: () => false, settingsApp: () => "", isProjT: (t: string) => /^ch:\d+$/.test(t), S: null, projTargets: () => [], toast: () => {}, openTarget: () => {},
+		ntWithRepeats: (l: unknown[]) => l, noticeOpen: () => {}, asEntry: () => [], kkItem: () => false, KK: {}, asChipTexts: () => [], asAsk: () => {}, nwChangeNode: () => null, nwChangeLine: () => "", asAddHint: () => "", asAddSheet: () => {}, isSettingsT: () => false, settingsApp: () => "", isProjT: (t: string) => /^ch:\d+$/.test(t), S: null, projTargets: () => [], toast: () => {}, openTarget: () => {}, DRAFT_EDIT: "고치기",
 	};
-	const body = `${i18nPrelude()}${chatSrc}\n${mailSrc}\n${between("const NM =", "async function loadMonitors")}\n${between("// Failed ones first", "// The owner is looking at an open item")}
+	const body = `${i18nPrelude()}${chatSrc}\n${mailSrc}\n${routeSrc}\n${between("const NM =", "async function loadMonitors")}\n${between("// Failed ones first", "// The owner is looking at an open item")}
 NM.items = MONS; NM.loaded = true;
 return { MON, monRoute, monItems, monSel, monRows, monTimeline, monHead, monKeyOf };`;
 	const api = new Function(...Object.keys(env), "MONS", body)(...Object.values(env), monitors);
@@ -97,7 +98,7 @@ describe("모니터링 lists only what a watch, a schedule or an integration pro
 	test("a notice tap lands on its watch, else on the monitoring feed", () => {
 		const m = load(store(), integrations, monitors);
 		expect(m.monKeyOf({ kind: "watch", title: "node-security-updates" })).toBe("m:node security updates");
-		expect(m.monKeyOf({ kind: "watch", title: "예약" })).toBe("notice");
+		expect(m.monKeyOf({ kind: "watch", title: "없는 감시" })).toBe("notice");
 	});
 });
 

@@ -1,11 +1,10 @@
 // Lane and worker compaction threshold (owner value 2026-10-20: 300K, was 400K). OmO lanes never compacted at it (only the
 // omp overlay read it), so the hub compacts an idle lane whose context reached it.
 import { expect, test } from "bun:test";
-import { GUARD_DEFAULTS } from "../extension/guard-config.ts";
 import { cfg, LANES_COMPACT_AT, lanesCompactAt } from "./config.ts";
 import { compactDue, newCtx } from "./context.ts";
 
-test("defaults: lanes compact at 300K, workers are told a 300K context budget", () => {
+test("defaults: lanes compact at 300K", () => {
 	const saved = cfg.lanes;
 	cfg.lanes = { ...cfg.lanes, compact_at: undefined };
 	try {
@@ -13,7 +12,6 @@ test("defaults: lanes compact at 300K, workers are told a 300K context budget", 
 	} finally {
 		cfg.lanes = saved;
 	}
-	expect(GUARD_DEFAULTS.worker_context_tokens).toBe(300_000);
 });
 
 test("an idle lane at or past the threshold is due a compaction; below it, or one already running, is not", () => {

@@ -27,6 +27,7 @@ import { FileError, ownerFiles } from "./files.ts";
 import { liveLanes } from "./lanes.ts";
 import { settleHandledDrafts, readConversationNotices, reopenDraftNotices } from "./notices.ts";
 import { out } from "./outbound.ts";
+import { convs } from "./convsessions.ts";
 import { json, body, BodyError } from "./routes-util.ts";
 
 // The pending reply drafts of one mail are dropped (the same store step as 보내지 않기) and their approval cards settled at once.
@@ -42,6 +43,7 @@ const dropMailDrafts = async (key: string) => {
 const removeMailLocal = async (key: string): Promise<boolean> => {
 	if (!deleteMail(key)) return false;
 	await dropMailDrafts(key);
+	await convs.remove(mailTarget(key)).catch(e => log(`mail ${key}: conversation session not deleted: ${(e as Error).message}`));
 	readConversationNotices(mailTarget(key), new Date().toISOString());
 	broadcast({ kind: "mail_unreplied", target: mailTarget(key) });
 	return true;
@@ -214,7 +216,7 @@ export async function routeMail(req: Request, url: URL, { peer, mailDeps, mailRe
 		const target = mailTarget(key);
 		// What the owner typed in the 초안 작성 box (empty: the draft is made on its own).
 		const instruction = String((await body(req).catch(error => { if (error instanceof BodyError) throw error; return {}; }) as { instruction?: unknown }).instruction ?? "").trim().slice(0, 500);
-		void deps.requestDraft({ ...(r.account ? { account: r.account } : {}), key, ...(instruction ? { instruction } : {}), target, ...(r.thread ? { thread: r.thread } : {}), ...(r.msg ? { messageId: r.msg } : {}), source: r.source, id: r.id, subject: r.subject, from: r.from, ...(r.to ? { to: r.to } : {}), ...(r.cc ? { cc: r.cc } : {}), ...(r.summary ? { summary: r.summary } : {}), ...(r.attachments?.some(a => !a.inline) ? { attachments: r.attachments.filter(a => !a.inline).map(a => ({ name: a.name, size: a.size })) } : {}), ...(r.replyFiles ? { replyFiles: r.replyFiles } : {}) })
+		void deps.requestDraft({ ...(r.account ? { account: r.account } : {}), key, ...(instruction ? { instruction } : {}), target, ...(r.thread ? { thread: r.thread } : {}), ...(r.msg ? { messageId: r.msg } : {}), source: r.source, id: r.id, subject: r.subject, from: r.from, ...(r.to ? { to: r.to } : {}), ...(r.cc ? { cc: r.cc } : {}), ...(r.replyTo ? { replyTo: r.replyTo } : {}), ...(r.summary ? { summary: r.summary } : {}), ...(r.attachments?.some(a => !a.inline) ? { attachments: r.attachments.filter(a => !a.inline).map(a => ({ name: a.name, size: a.size })) } : {}), ...(r.replyFiles ? { replyFiles: r.replyFiles } : {}) })
 			.then(res => { if (res !== "offered") return deps.send(target, "답장 초안을 만들지 못했어요. 잠시 뒤 다시 눌러 주세요"); })
 			.catch(e => log(`mail ${key}: requested draft failed: ${(e as Error).message}`));
 		return json({ ok: true, started: true }, 202);

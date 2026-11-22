@@ -57,7 +57,7 @@ test("a session waits on what its harness's latest lifecycle record says: a moni
 	mkdirSync(d, { recursive: true });
 	const f = join(d, "s.jsonl");
 	const life = (state: string, background: unknown[] = [], children = 0) => ({ type: "custom", customType: "session-lifecycle", data: { state, waitingOn: { children, background } } });
-	const mons = (...desc: string[]) => ({ source: "terminal-monitors", activeCount: desc.length, items: desc.map(description => ({ description })) });
+	const mons = (...desc: string[]) => ({ source: "terminal-monitors", activeCount: desc.length, items: desc.map(label => ({ label })) });
 	const shells = (n: number) => ({ source: "terminal-background-sessions", activeCount: n, items: Array.from({ length: n }, () => ({ label: "cd x && omo -p" })) });
 	const write = (rows: unknown[]) => writeFileSync(f, `${rows.map(r => JSON.stringify(r)).join("\n")}\n`);
 	write([life("running", [shells(1), mons("HTML 워커 종료")]), life("waiting_background", [shells(1), mons("HTML 워커 종료")])]);

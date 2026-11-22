@@ -6,18 +6,20 @@ One contract for the comments of every platform, shipped in `hub/comments/`, off
 ## Contract (`hub/comments/contract.ts`)
 
 - Comment id: `cm:<source>:<platform's own comment id>`. The same on every machine; `collector` only says who saw it first.
-  Merging two lists is a union by id (`mergeComments`), the first copy wins.
+  A comment the engine collects twice is stored once, the first copy wins.
 - A source is one account, channel or site: `{key, kind: youtube|instagram|website, label, watch[], autoDraft, autoSend?, everyMin?, site?, autoMail?, mailApp?}`.
   `watch` lists the post ids to follow (`"*"` = all). An empty `watch` reads nothing and costs nothing.
 - An adapter implements `list(src, cursor) -> {comments, cursor}` (comments newer than the adapter's own opaque cursor), `reply(src, comment, text, sendId)`,
   and optionally `posts(src)` (what the owner can choose to follow), `ownReplies(src, limit)` (tone examples) and `history(src, {target, deadline})` (the owner's past replies with the comments they answer, newest first, for the pair file; see below).
   A comment has: stable id, `thread` (the post), `parent` (for a reply), `author`, `text`, `postTitle`, `postLink`, `at`, `mine`.
-- One send gate, `dispatchReply`: it posts only after the owner's `보내기` (route `POST /api/comments/drafts/<code>/send` or a picked
+- One send gate, `dispatchReply`: it posts only after the owner's `보내기` (`POST /api/reply/act {ref: <code>, action: "send"}` or a picked
   `[ask]` checked by `bin/comments.ts send`) or, for a source whose owner turned `autoSend` on, a rule match (regex list, daily cap,
   only clean drafts). A comment gets one reply: a second send is refused while the first is sending or sent; a failed one may be
   retried. State: `보내는 중` -> `보냄` | `실패` + reason (`replies.json`). A reply left `sending` by a restart may or may not be up: it becomes `확인 필요` (`unsure`,
   hub/comments/recover.ts), the gate refuses it, and on boot the platform is read back (`recheck`, or `list` for a site). The owner's reply with the same words proves it `보냄`;
-  without proof only the owner ends it: `POST /api/comments/sends/<id>/retry` or `.../done` (closed as sent, nothing is posted). It is never sent again by itself.
+  without proof only the owner ends it: `POST /api/reply/act` with `action: "resolve"` and `as: "retry"` or `as: "sent"` (closed as sent, nothing is posted). It is never sent again by itself.
+- A draft's own actions (send, revise, edit, drop, restore, retry, resolve, undo) are the one reply flow's for every kind (`GET /api/reply/queue`, `POST /api/reply/act`,
+  hub/reply-actions.ts with hub/comments/reply-adapter.ts); this API has no draft or send action routes of its own.
 
 ## Collecting and drafting
 
@@ -44,8 +46,10 @@ A stored comment must show what the platform shows now, on every read. `engine.r
 - An adapter may implement `recheck(src, open) -> {comments, gone}`: the engine hands it the still-open comments (top-level, waiting for a reply or holding a pending draft; at most 200 per run, oldest first, rotating) and it answers the owner's replies under them (`mine: true`, `parent` = the comment's native) and the natives that no longer exist. A comment found gone gets `gone` (a time, never cleared) and is no longer 미답장.
 - YouTube: `commentThreads.list?id=` (1 unit per 50 ids), `comments.list?parentId=` when a thread has more replies than returned; a thread missing from the answer is deleted. Instagram: the media of open comments are read again (paged); a reply's author comes from one `GET /{reply-id}?fields=username,from` and is kept in `authors.json` for good; replies are keyed by their real id (an old `<comment>.<index>` row is replaced, with its drafts, send record and 답장 안 함 moved along).
 - Website sources: the read output SHOULD include the owner's own replies (`mine: true`, `parent`) of the last 30 days, so answered comments close.
-- Every pending draft whose comment no longer waits (his reply is in the stream, the comment is gone, or 답장 안 함) becomes status `answered` with `closedReason` `answered-on-platform | deleted | dismissed`. A linked mail draft is detached and stays its own pending mail draft; the closed draft gets the note `확인: 댓글은 이미 답했어요. 메일은 따로 확인해 주세요`.
-- `collect()` ends with it (re-checking at most every 30 minutes unless forced), the gateway runs it once at start, and `POST /api/comments/reconcile` runs it now and answers `{answered, gone, draftsClosed, errors?}` (the backfill).
+- Every pending draft whose comment no longer waits (his reply is in the stream, the comment is gone, or 답장 안 함) becomes status `answered` with `closedReason` `answered-on-platform | deleted | dismissed`. A linked mail draft that is still pending is dropped with a `deleted` comment; with `answered-on-platform` it is detached and stays its own pending mail draft that gets a card of its own, and with `dismissed` it is detached without a card; the closed draft gets the note `확인: 댓글은 이미 답했어요. 메일은 따로 확인해 주세요` when the mail was kept.
+- That card: the engine calls `mailOwed(mailId)`; the gateway's engine raises the card at once (hub/reply-wire.ts, the same card a 답글만 보내기 leaves), the watch passes the ids in `POST /api/comments/changed {threads, mails}`, and at gateway start every kept mail of an `answered-on-platform` draft that is still pending and never had a card gets one. A mail that is no longer pending or already has an open card gets none.
+- A draft cannot be edited, revised or dropped while its reply is being posted (edit answers code `already_sending`). A mail revise whose new mail arrives after the reply started posting, after the draft was sent or closed, or after the card's mail changed is refused and the new mail draft is dropped. A revise of the reply that keeps the mail keeps the note `확인: 같은 주소로 이미 메일이 있어요 (<id>)`.
+- `collect()` ends with this close pass (re-checking at most every 30 minutes unless forced), the gateway runs it once at start, and `POST /api/comments/reconcile` runs it now and answers `{answered, gone, draftsClosed, errors?}` (the backfill).
 
 ## Web
 
@@ -53,6 +57,7 @@ A stored comment must show what the platform shows now, on every read. `engine.r
 `GET /api/comments/threads?app=<app instance id>` (youtube, instagram, site, or a site added as its own app: `site-<name>`, custom/apps.json `{"app":"site","filter":{"source":"<name>"}}`; each source lists the instance that owns it as `app`), `GET /api/comments/thread/<source>/<thread>`,
 `POST .../thread/<source>/<thread>/read`, `POST /api/comments/comment/<id>/draft` (no body: the model drafts; `{text, extra?}`: a draft written by a script outside, no model call, answers `{code}`; `extra` is shown to the owner as the note `함께 할 일: ...` so the script knows what else it does once `comment_send` says sent; such a draft is never auto-sent. `extra` may also be `{ note?, mail: { app, to, subject, body, attach?: string[], fromLibrary? } }`: the gateway then records a mail draft (hub/mail-cli.ts compose, not listed in the mail app on its own) and the one approval card shows the reply and then the mail; the owner's 보내기 posts the reply and then sends the mail, and `comment_send` carries `mail: "sent"|"failed"` (+ `mailReason`) once the mail was tried; a failed mail leaves the reply posted. `revise` takes `part: "reply"|"mail"` for such a draft, `drop` drops both, and a reply that carries a mail wakes no 이어서 할 일 rule), `POST /api/comments/drafts/<code>/send|drop|revise`.
 **Linked mail (`autoMail`, off by default).** With `autoMail: true` and `mailApp: "<mail app instance id>"` (e.g. `mail`, `mail-work`; config.json or the PUT above) a reply draft for a comment that asks for a file (`asksForFile`: 문서/음원/보조/음원/파일/PDF…) and writes an e-mail address also gets one compose mail draft (to = the address as written, files picked from the 첨부 파일 폴더 by the post title and the comment words), in the same card; the mail goes out only with the owner's 보내기. Without `mailApp` the card gets `확인: 메일 앱이 정해지지 않아 메일 초안은 만들지 않았어요`; a library miss is a `확인:` line. An install can hold files back from these drafts or narrow the pick with its own `custom/reply-drafts/auto-attach.json` (off without the file; `hub/auto-attach.ts`). `POST /api/comments/link-mail` `{code}` does the same for an existing pending draft (backfill, idempotent) and answers `{ok:true, mail, existing?}` or `{ok:false, skipped:<reason>}`.
+In the one reply queue (`GET /api/reply/queue`) a mail riding on a pending reply is only in that reply's item (hub/reply-mail.ts list); after 답글만 보내기 (or any reply sent without it) the pending mail is listed as its own item, also when it was made on its own with `mail-cli.ts compose --origin comment:<id>`. A reply whose text says the mail was sent (보내드렸습니다, 발송했어요, emailed) while a mail for that comment still waits and does not go with this send is held with `mail_claim_unsent` (engine.ts send); nothing goes until the owner sends both with the one card's 보내기 or rewrites the reply.
 `GET /api/comments/threads` rows sum those marks as `mails: {drafted, sent, failed}` when any comment has one, for the post's row.
 The thread view marks each comment with its linked mail (`comments[].mail = {state: drafted|sent|failed, label}`; label `메일 초안 작성됨` / `메일 보냄` / `메일 실패: <이유>`), also for a comment answered outside the app whose mail draft stays; `GET /api/comments/drafts` and the thread's `drafts[]` carry `mailMark`.
 Events (ids only): `comment`, `comment_draft`, `comment_send`, `comment_sources`.
@@ -94,11 +99,16 @@ on the next poll (`adapter.retitle`); the drafts' [ask] text names the post (`> 
 
 - `mailMatch: true`: before a draft, the owner's mail is searched read-only (zele `mail search`/`mail read`, window +-14 days, `-from:me`) for a mail from the
   commenter (same sender name or the commenter's handle in the mail; a mail that only names the same post is reported as someone else's). The draft gets the
-  notes `메일 대조: 있음|못 찾음|확인 실패 ...`, `근거: ...` and, when that mail is not answered yet, `초안 메모: ...` (`hub/comments/mail-match.ts`).
+  notes `메일 대조: 있음|못 찾음|확인 실패 ...`, `근거: ...` and, when that mail is not answered yet, `초안 메모: ...` (`hub/comments/mail-match.ts`). A found thread is kept on the draft (`mailThread`); a revise searches again unless the owner already answered that thread, so a mail that came later is matched. A search that fails on a revise keeps the `메일 대조: 있음` and `근거:` lines and the `mailThread` found before and adds the `확인 실패` line.
+  Marks between the two (display only, never the reply state, the list or the approved version): a reply posted for a draft with a `mailThread` marks that mail
+  `commentReplyAt` (댓글로 이미 답했어요 on its row, its conversation and its reply draft card; the first mark stays, and a moved mail keeps it). Only the gateway writes it, since it owns the mail
+  list: from its own engine, from a send it ran that ended (a reply that went up counts even when the mail riding on it failed), from `comments.ts send` run outside its queue,
+  and from the watch; the last two list the draft codes whose reply went up in `POST /api/comments/changed {threads, mails, sent}`.
+  A pending draft whose matched mail was answered by mail (`mailThread.answered` when it was drafted, its mail record saying 답장함, or a reply draft of that mail sent) shows 메일로 이미 답했어요, and its card is drawn again when that mail changes.
 - `pastSeed: true`: the 3 stored comments most like this one that the owner answered (his reply under it, or a reply sent through the gate) go into the
   draft prompt; when the model skips or leaves the reply empty, the closest past answer becomes the draft with a `확인 필요:` note (`hub/comments/past.ts`).
-- Sending one part of a reply + mail card: `features/comments/bin/comments.ts send <code> --only reply|mail` (after the owner's 보내기, 답글만/메일만 보내기
-  or own-words pick). `reply` posts the reply and leaves the mail draft as a mail of its own; `mail` sends the mail and leaves the reply draft pending alone.
+- Sending one part of a reply + mail card: the gateway runs `features/comments/bin/comments.ts send <code> --only reply|mail` on the owner's
+  답글만/메일만 보내기 (an agent session is refused that command). `reply` posts the reply and leaves the mail draft as a mail of its own; `mail` sends the mail and leaves the reply draft pending alone.
 
 ## Website DM inbox (`site.dm`, optional)
 

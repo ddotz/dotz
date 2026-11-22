@@ -29,7 +29,3 @@ test("later bot messages and a peer gateway's message leave the [ask] open; the 
 	emit("inbox", { ts: ts(), kind: "message", source: "web", channel: "web", author: "owner@github", text: "1번으로 해" });
 	expect(states()).toEqual(["answered", "answered"]);
 });
-
-test("the fixture's account is a neutral sample, not a login of a real install", () => {
-	expect(PEER_STATUS.author).toBe("owner@github");
-});

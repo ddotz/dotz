@@ -1,11 +1,12 @@
 # Custom plugins
 
-Per-install code that is not part of the product lives in `<DATA_DIR>/custom/plugins/*.ts` (or `*.js`). The gateway, the agent extension and the Claude deny hook import every such file once when they start (`*.test.ts` and `*.d.ts` next to a plugin are ignored), in file-name order. There is no hot reload: restart the gateway after changing a plugin. Types and loader: `hub/plugins.ts`.
+Per-install code that is not part of the product lives in `<DATA_DIR>/custom/plugins/*.ts` (or `*.js`). The gateway, the agent extension and the Claude deny hook import every such file once when they start (`*.test.ts` and `*.d.ts` next to a plugin are ignored), in file-name order. There is no hot reload: restart the gateway after changing a plugin. Types and loader: `hub/plugins.ts`; the runtime helpers a plugin may call: `hub/plugin-api.ts`.
 
 A plugin default-exports an object; every hook is optional:
 
 ```ts
 import type { Plugin } from "<dotz repo>/hub/plugins.ts"; // type only, erased at runtime
+import { draftActionOf, isSealed, readSealKey, sealLine } from "<dotz repo>/hub/plugin-api.ts"; // runtime imports: this file only
 
 export default {
 	name: "example",
@@ -19,6 +20,8 @@ export default {
 } satisfies Plugin;
 ```
 
+Runtime imports from dotz go through `hub/plugin-api.ts` only: it re-exports the helpers a plugin needs to check the owner's send approval (`isSealed`, `readSealKey`, `sealLine`, `draftActionOf`, type `DraftVerdict`), and removing or renaming one there is a breaking change. Every other hub file is internal and may change in any release, so a plugin that imports one can stop loading after an update. Type-only imports from `hub/plugins.ts` are erased at runtime and stay safe.
+
 - `start(ctx)`: `ctx` has `dataDir`, `log`, `postTo(channelId, text)`, `ack(channelId, messageId)`, `ensureWatch(spec)` (a dotz watch; same name and command is kept, another command replaces it) and `approveWatch(name)`.
 - `claim(channelId)`: return `{ raw: (m) => void }` to take the owner's messages in that channel yourself, or `{ thread, parent }` to deliver them as a thread named `thread` under channel `parent`; `undefined` leaves the channel alone.
 - `thread({ thread, text })`: runs for each owner message in a thread; may do side effects and return `{ note, parentName }`: `note` is appended to the orchestrator's inbox turn for that message, `parentName` replaces the parent's name.
@@ -26,7 +29,7 @@ export default {
 
 Claim and thread hooks can run before `start`; keep what they need at module level. The extension and the Claude hook run in separate processes and call only `deny`. `reply` and `repliesWithFiles` also run in the reply-drafts CLI (`features/reply-drafts/bin/draft.ts`), which loads the plugins itself when it starts.
 
-A plugin that fails to load, whose `start` throws (it is dropped for the run), or whose hook throws is logged (`plugin <name>: ...`) and skipped; the hub keeps running. With no plugin installed the hooks return at once, and nothing is added to prompts.
+A plugin that fails to load, whose `start` throws (it is dropped for the run), or whose hook throws is logged (`plugin <name>: ...`) and skipped; the hub keeps running. A file that does not load is also written to `<DATA_DIR>/plugin-failures.json`, and the doctor names it, with the error's first line, in its next morning item. With no plugin installed the hooks return at once, and nothing is added to prompts.
 
 A plugin may also serve as a watch check: `ensureWatch({ command: "bun '<plugin file>' check" })` with `if (import.meta.main)` in the file. Pass `app: "<instance key>"` in the spec when the check serves an app (its mail, files, login): 모니터링 then lists it under that app, not in 일반 모니터링 (`project` / `internal: true` likewise).
 A check that sends its own alerts and exits 0 while its source is logged out should print `DOTZ_DISCONNECTED since=<ISO time>`: the app's 모니터링 row then shows 연결 끊김 with that time (hub/watch-status.ts). Without it the row reads as connected.
@@ -64,6 +67,7 @@ curl -s -X POST http://127.0.0.1:<web.port>/api/mail \
 - Direction: a mail written by the owner is outgoing. Post it with `"direction":"out"`, a sent `folder` (`SENT`, `보낸편지함`) or `labels` containing `SENT`; the gateway also treats a `from` that is one of his own addresses as outgoing (`zele whoami` accounts, `mail.own_addresses` / `zele.aliases` in config.json; plus-tags and Gmail dots are ignored). An outgoing mail is listed under 보낸 메일 and never counts as unread, never wakes the bot and never gets a reply draft; posted for a thread already recorded, it marks that thread 답장함. A sent mail of its own (a sent folder the poster reads) is kept at its `at` (ISO 8601 with a zone, the time it was sent) and marks 답장함 the received mail it answers: the same subject once `Re:` / `Fwd:` / `답장:` prefixes are dropped, received before it, from a sender it went to.
 - `messageId` (optional): names the newest message of the thread. The same id posted again is a repeat. Another id for a known thread is a newer message: the thread becomes a new mail again (any reply state is reset, even 답장함, 답장 안 함 or 답장 불필요), and the wake, notice and reply draft fire for it once. A mail the owner deleted from dotz (the ⋯ menu of its card, `DELETE /api/mail/<key>`) stays gone when the same message is posted again; a post with another `messageId` brings it back as a new mail.
 - `zele.accounts` (config.json, array of addresses, default none = every logged-in zele account; applies on restart, no settings row): when non-empty dotz watches only those accounts for new mail, the sent folder, thread reads, reply examples, calendar alerts and the morning brief. Changing the list makes the next poll a first run: it records what is there and posts nothing. Matching ignores case; a listed address zele is not logged into is logged once and ignored, and if none is logged in dotz acts as with no account (it never falls back to all). Every logged-in account stays the owner's own address.
+- `zele.calendar_accounts` (config.json, array of addresses, default none = the `zele.accounts` ones; applies on restart): the accounts calendar alerts and the morning brief read the calendar from, for mail on an IMAP account (no calendar) with the calendar on a Google one. Changing it makes the next poll a first run, so the newly read events are not each posted as new.
 - The key is `<source>-<id>`, lowercased and limited to `[a-z0-9._-]`. Posting the same key again changes nothing and answers `"duplicate": true`, so a retry is safe.
 - `thread`: the Discord thread id when the poster already put the mail on Discord. The gateway records it and posts nothing; without it the gateway opens the thread itself (Discord on) or keeps the mail web-only.
 - 답장 필요 only when the owner is a main recipient: a mail where his address is only in Cc (참조로 받음), a list or group mail (post `list: true`, `listId` or `listUnsubscribe` when the mail has a List-Id / List-Unsubscribe header; a group To address, an unsubscribe footer or a bulk subject count too: 단체 메일), a machine sender (자동 발송) or one of 3+ To recipients greeting another of them by name (다른 사람 앞) is listed but never 답장 필요, even with `needsReply`; the card's `why` holds the tag.

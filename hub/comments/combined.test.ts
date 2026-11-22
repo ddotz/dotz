@@ -6,14 +6,19 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { run as runComments } from "../../features/comments/bin/comments.ts";
 import { parseDecisions } from "../choices.ts";
-import { LINT_REFUSED, parseDraftApproval } from "../draft-approval.ts";
+import { LINT_REFUSED, PAIR_NOTE, parseDraftApproval } from "../draft-approval.ts";
 import { commentAsk } from "./ask.ts";
 import { type Comment, type CommentAdapter, commentId, type RawComment, type SourceConfig } from "./contract.ts";
-import { createEngine, type MailLink, type MailView } from "./engine.ts";
+import { outcomeOf } from "../approval-send.ts";
+import { createEngine, type Engine, type MailLink, type MailView } from "./engine.ts";
+import { approvalHash } from "../draft-approval.ts";
+import { commentAdapter } from "./reply-adapter.ts";
 import { createCommentsWeb } from "./web.ts";
 import { appendSealed } from "../approval-seal.ts";
+import { reasonOf } from "../reply-reasons.ts";
 
 const NOW = Date.parse("2026-10-23T00:00:00.000Z");
+const shownHash = async (engine: Engine, code: string): Promise<string | undefined> => ((v => v && approvalHash(v))(await commentAdapter(engine).get(code)));
 const raw = (native: string): RawComment => ({ native, thread: "p1", author: "팬", text: "문서 받을 수 있나요? fan@example.com", postTitle: "Post one", at: NOW - 1000 });
 const source: SourceConfig = { key: "youtube", kind: "youtube", label: "유튜브 댓글", watch: ["*"], autoDraft: false };
 const MAIL = { app: "mail", to: "fan@example.com", subject: "문서 보내드립니다", body: "안녕하세요.\n요청하신 문서를 보내드립니다.", attach: ["/files/brief.pdf"] };
@@ -47,6 +52,10 @@ function fakeMail(log: string[], o: { failSend?: string; issues?: string[]; lint
 			log.push(`revise ${id} -> ${next}`);
 			return { ok: true, id: next };
 		},
+		edit: (id, text) => {
+			drafts.get(id)!.body = text;
+			return { ok: true };
+		},
 		view: id => {
 			const v = drafts.get(id);
 			return v && o.issues?.length ? { ...v, attachIssues: o.issues } : v;
@@ -55,7 +64,7 @@ function fakeMail(log: string[], o: { failSend?: string; issues?: string[]; lint
 	return link;
 }
 
-function setup(o: { failSend?: string; issues?: string[]; lint?: string[]; noMail?: boolean; failReply?: string; sub?: string } = {}) {
+function setup(o: { failSend?: string; issues?: string[]; lint?: string[]; noMail?: boolean; failReply?: string; sub?: string; answer?: string } = {}) {
 	const root = o.sub ? join(dir, o.sub) : dir;
 	mkdirSync(root, { recursive: true });
 	writeFileSync(join(root, "config.json"), JSON.stringify({ enabled: true, sources: { youtube: source } }));
@@ -75,7 +84,7 @@ function setup(o: { failSend?: string; issues?: string[]; lint?: string[]; noMai
 		now: () => clock.now,
 		collector: "mac-a",
 		adapters: { youtube: adapter },
-		model: async () => ({ text: reply("고쳐 쓴 답글이에요.") }),
+		model: async () => ({ text: reply(o.answer ?? "고쳐 쓴 답글이에요.") }),
 		broadcast: e => events.push(e),
 		sent: (app, r) => woke.push(`${app}:${r.id}`),
 		...(mail ? { mail } : {}),
@@ -87,13 +96,15 @@ type T = ReturnType<typeof setup>;
 
 async function withMail(t: T) {
 	await t.engine.collect({ force: true });
-	const s = await t.engine.addDraft(t.id, "문서는 메일로 보내 드렸어요", undefined, MAIL);
+	const s = await t.engine.addDraft(t.id, "문서는 메일로 보내 드릴게요", undefined, MAIL);
 	if (!s.ok) throw new Error(s.reason);
 	return s.draft;
 }
-const pick = (t: T, code: string, n: 1 | 2 | 3, ts = NOW + 5000, source = "web") => {
+// A pick names the version the card shows now (hub/reply-actions.ts records its approvalHash): a later change voids it for the CLI.
+const pick = async (t: T, code: string, n: 1 | 2 | 3, ts = NOW + 5000, source = "web") => {
 	const label = ["보내기", "고치기", "보내지 않기"][n - 1]!;
-	appendSealed(t.inbox, { ts: new Date(ts).toISOString(), kind: "message", source, text: `${n}) ${label}`, picks: [{ q: `이 답글을 올리고 메일도 보낼까요? (${code})`, n, label }] });
+	const hash = await shownHash(t.engine, code);
+	appendSealed(t.inbox, { ts: new Date(ts).toISOString(), kind: "message", source, text: `${n}) ${label}`, picks: [{ q: `이 답글을 올리고 메일도 보낼까요? (${code})`, n, label, ...(hash ? { hash } : {}) }] });
 };
 
 describe("the combined card", () => {
@@ -107,7 +118,7 @@ describe("the combined card", () => {
 		expect(block.indexOf("> 대상: 팬 댓글")).toBeLessThan(block.indexOf("> 함께 보낼 메일"));
 		expect(block.indexOf("> 함께 보낼 메일")).toBeLessThan(block.indexOf("> 받는이: fan@example.com"));
 		const card = parseDraftApproval(text);
-		expect(card).toMatchObject({ toLabel: "대상", to: "팬 댓글", body: "문서는 메일로 보내 드렸어요", ref: d.code });
+		expect(card).toMatchObject({ toLabel: "대상", to: "팬 댓글", body: "문서는 메일로 보내 드릴게요", ref: d.code });
 		expect(card?.mail).toMatchObject({ toLabel: "받는이", to: "fan@example.com", subject: "문서 보내드립니다", body: "안녕하세요.\n요청하신 문서를 보내드립니다.", attachments: [{ name: "brief.pdf", size: "2KB" }] });
 		expect(card?.mail?.warning).toBeUndefined();
 		expect(card?.mail?.ref).toBe("M1");   // the mail draft id its files are staged under: the card opens them at /api/drafts/M1/files/<n>
@@ -128,7 +139,7 @@ describe("the combined card", () => {
 	test("보내기 posts the reply and then sends the mail, once", async () => {
 		const t = setup();
 		const d = await withMail(t);
-		pick(t, d.code, 1);
+		await pick(t, d.code, 1);
 		const out = await runComments(["send", d.code], t.engine, t.inbox);
 		expect(out.code).toBe(0);
 		expect(t.log).toEqual(["compose M1", "reply", "send M1"]);
@@ -141,12 +152,12 @@ describe("the combined card", () => {
 		const t = setup();
 		const d = await withMail(t);
 		expect((await runComments(["send", d.code], t.engine, t.inbox)).code).toBe(1);
-		pick(t, "Dother00", 1);
-		pick(t, d.code, 1, NOW + 5000, "lane_message");
-		pick(t, d.code, 3);
+		await pick(t, "Dother00", 1);
+		await pick(t, d.code, 1, NOW + 5000, "lane_message");
+		await pick(t, d.code, 3);
 		expect((await runComments(["send", d.code], t.engine, t.inbox)).code).toBe(1);
 		// a 보내기 given on a card that did not show the mail yet does not approve it
-		pick(t, d.code, 1, NOW - 1000);
+		await pick(t, d.code, 1, NOW - 1000);
 		expect((await runComments(["send", d.code], t.engine, t.inbox)).code).toBe(1);
 		expect(t.log).toEqual(["compose M1"]);
 	});
@@ -154,7 +165,7 @@ describe("the combined card", () => {
 	test("a failed mail says so and leaves the reply posted; a failed reply sends no mail", async () => {
 		const t = setup({ failSend: "SMTP 거부" });
 		const d = await withMail(t);
-		pick(t, d.code, 1);
+		await pick(t, d.code, 1);
 		const out = await runComments(["send", d.code], t.engine, t.inbox);
 		expect(out.code).toBe(1);
 		expect(out.lines[0]).toContain("SMTP 거부");
@@ -165,10 +176,23 @@ describe("the combined card", () => {
 
 		const f = setup({ failReply: "quota", sub: "b" });
 		const d2 = await withMail(f);
-		pick(f, d2.code, 1);
+		await pick(f, d2.code, 1);
 		const out2 = await runComments(["send", d2.code], f.engine, f.inbox);
 		expect(out2.code).toBe(1);
 		expect(f.log).toEqual(["compose M1", "reply"]);
+	});
+
+	test("under the gateway the send prints the mail's own reason, and the queue's outcome carries it (CM-7)", async () => {
+		const t = setup({ failSend: "SMTP 거부" });
+		const d = await withMail(t);
+		await pick(t, d.code, 1);
+		process.env.DOTZ_GATEWAY_SEND = "1";
+		try {
+			const out = await runComments(["send", d.code], t.engine, t.inbox);
+			expect(outcomeOf({ code: out.code, out: out.lines.join("\n") })).toMatchObject({ sent: "partial", rest: "maybe", mail: "SMTP 거부" });
+		} finally {
+			delete process.env.DOTZ_GATEWAY_SEND;
+		}
 	});
 
 	test("a mail whose files disagree with its words is refused before the reply is posted; the card shows why and offers 이대로 보내기", async () => {
@@ -180,7 +204,7 @@ describe("the combined card", () => {
 		expect(parseDraftApproval(text)?.attachIssues).toEqual([why]);
 		expect(parseDecisions(text).blocks[0]!.options.map(o => o.label)).toEqual(["보내기", "고치기", "보내지 않기", "이대로 보내기", "답글만 보내기", "메일만 보내기", "어떻게 보낼지 직접 입력"]);
 
-		pick(t, d.code, 1);
+		await pick(t, d.code, 1);
 		const refused = await runComments(["send", d.code], t.engine, t.inbox);
 		expect(refused.code).toBe(1);
 		expect(refused.lines[0]).toStartWith("첨부를 확인해 주세요:");
@@ -190,7 +214,7 @@ describe("the combined card", () => {
 		expect((await runComments(["send", d.code, "--as-is"], t.engine, t.inbox)).code).toBe(1);
 		expect(t.log).toEqual(["compose M1"]);
 
-		appendSealed(t.inbox, { ts: new Date(NOW + 6000).toISOString(), kind: "message", source: "web", text: "4) 이대로 보내기", picks: [{ q: `이 답글을 올리고 메일도 보낼까요? (${d.code})`, n: 4, label: "이대로 보내기" }] });
+		appendSealed(t.inbox, { ts: new Date(NOW + 6000).toISOString(), kind: "message", source: "web", text: "4) 이대로 보내기", picks: [{ q: `이 답글을 올리고 메일도 보낼까요? (${d.code})`, n: 4, label: "이대로 보내기", hash: await shownHash(t.engine, d.code) }] });
 		const out = await runComments(["send", d.code, "--as-is"], t.engine, t.inbox);
 		expect(out.code).toBe(0);
 		expect(t.log).toEqual(["compose M1", "reply", "send M1 as-is"]);
@@ -199,13 +223,13 @@ describe("the combined card", () => {
 	test("a mail the send-time lint refuses is refused before the reply is posted, also with 이대로 보내기; 답글만 보내기 skips it", async () => {
 		const t = setup({ lint: ["채워 넣지 않은 자리표시가 있어요"] });
 		const d = await withMail(t);
-		pick(t, d.code, 1);
+		await pick(t, d.code, 1);
 		const refused = await runComments(["send", d.code], t.engine, t.inbox);
 		expect(refused.code).toBe(1);
 		expect(refused.lines[0]).toStartWith(LINT_REFUSED);
 		expect(t.log).toEqual(["compose M1"]);   // no "reply": a posted reply beside an unsent mail
 		expect(t.engine.store.drafts()[0]!.status).toBe("pending");
-		appendSealed(t.inbox, { ts: new Date(NOW + 6000).toISOString(), kind: "message", source: "web", text: "4) 이대로 보내기", picks: [{ q: `이 답글을 올리고 메일도 보낼까요? (${d.code})`, n: 4, label: "이대로 보내기" }] });
+		appendSealed(t.inbox, { ts: new Date(NOW + 6000).toISOString(), kind: "message", source: "web", text: "4) 이대로 보내기", picks: [{ q: `이 답글을 올리고 메일도 보낼까요? (${d.code})`, n: 4, label: "이대로 보내기", hash: await shownHash(t.engine, d.code) }] });
 		expect((await runComments(["send", d.code, "--as-is"], t.engine, t.inbox)).code).toBe(1);
 		expect(t.log).toEqual(["compose M1"]);
 		const only = await runComments(["send", d.code, "--only", "reply"], t.engine, t.inbox);
@@ -253,7 +277,7 @@ describe("the combined card", () => {
 		expect(parseDraftApproval(out.lines[0]!)?.mail).toBeUndefined();
 		const next = t.engine.store.drafts().find(x => x.status === "pending")!;
 		expect(next.mail).toBeUndefined();
-		pick(t, next.code, 1);
+		await pick(t, next.code, 1);
 		expect((await runComments(["send", next.code], t.engine, t.inbox)).code).toBe(0);
 		expect(t.log).toEqual(["compose M1", "drop M1", "reply"]);
 	});
@@ -261,17 +285,18 @@ describe("the combined card", () => {
 	test("a mail gone after the pick: nothing is posted, and only a pick made on the card without it posts the reply", async () => {
 		const t = setup();
 		const d = await withMail(t);
-		pick(t, d.code, 1);
+		await pick(t, d.code, 1);
 		t.mail!.drop("M1");
 		t.clock.now = NOW + 9000;
 		const out = await runComments(["send", d.code], t.engine, t.inbox);
 		expect(out.code).toBe(1);
-		expect(out.lines.join("\n")).toContain("답글도 올리지 않았어요");
+		// The pick named the version with the mail: refused `changed`, and the card is the reply alone now.
+		expect(out.lines.join("\n")).toContain(reasonOf("changed").text);
 		expect(t.log).toEqual(["compose M1", "drop M1"]);
 		expect(t.engine.store.drafts().find(x => x.code === d.code)!.mail).toBeUndefined();
 		expect((await runComments(["send", d.code], t.engine, t.inbox)).code).toBe(1);
 		expect(t.log).toEqual(["compose M1", "drop M1"]);
-		pick(t, d.code, 1, NOW + 10000);
+		await pick(t, d.code, 1, NOW + 10000);
 		expect((await runComments(["send", d.code], t.engine, t.inbox)).code).toBe(0);
 		expect(t.log).toEqual(["compose M1", "drop M1", "reply"]);
 	});
@@ -279,7 +304,7 @@ describe("the combined card", () => {
 	test("sending a draft already sent again leaves its record alone", async () => {
 		const t = setup();
 		const d = await withMail(t);
-		pick(t, d.code, 1);
+		await pick(t, d.code, 1);
 		expect((await runComments(["send", d.code], t.engine, t.inbox)).code).toBe(0);
 		t.mail!.drop("M1");
 		expect((await runComments(["send", d.code], t.engine, t.inbox)).lines.join("\n")).not.toContain("메일 초안이 더 이상 없어요");
@@ -309,6 +334,78 @@ describe("the combined card", () => {
 	});
 });
 
+// After either part of the card changes, the reply is checked against the mail (no model call): a disagreement is a "확인:" line, never a refusal.
+describe("the reply and its mail checked against each other", () => {
+	const pairNotes = (t: T) => t.engine.store.drafts().find(x => x.status === "pending")!.notes.filter(n => PAIR_NOTE.test(n));
+	const added = async (t: T, text: string, mail = MAIL) => {
+		await t.engine.collect({ force: true });
+		const s = await t.engine.addDraft(t.id, text, undefined, mail);
+		if (!s.ok) throw new Error(s.reason);
+		return s.draft;
+	};
+
+	test("a consistent pair has no pair-check note", async () => {
+		const t = setup();
+		await added(t, "fan@example.com 으로 brief.pdf 파일을 메일로 보내 드릴게요");
+		expect(pairNotes(t)).toEqual([]);
+	});
+
+	test("a reply that says a file goes while the mail attaches none", async () => {
+		const t = setup();
+		const { attach: _attach, ...bare } = MAIL;
+		const d = await added(t, "메일로 자료 첨부했어요", bare);
+		expect(d.notes.filter(n => PAIR_NOTE.test(n))).toHaveLength(1);
+		expect(d.clean).toBe(false);
+		expect(t.engine.send(d.code, { by: "owner" }).ok).toBe(true);   // a line on the card, never a refusal
+	});
+
+	test("a reply that names another address than the mail's recipient", async () => {
+		const t = setup();
+		await added(t, "other@example.com 으로 문서 보내 드릴게요");
+		expect(pairNotes(t)).toHaveLength(1);
+	});
+
+	test("a reply that names a file the mail does not attach", async () => {
+		const t = setup();
+		await added(t, "brief.pdf와 notes.hwp를 보내 드릴게요");
+		expect(pairNotes(t)).toHaveLength(1);
+	});
+
+	test("a reply revised with --no-mail that still promises a mail; a later reply edit without the promise clears it", async () => {
+		const t = setup({ answer: "메일로 보내드릴게요" });
+		const d = await added(t, "문서는 메일로 보내 드릴게요");
+		const r = await t.engine.revise(d.code, "짧게", "reply", true);
+		if (!r.ok) throw new Error(r.reason);
+		expect(r.draft.mail).toBeUndefined();
+		expect(pairNotes(t)).toHaveLength(1);
+		expect(t.engine.edit(r.draft.code, "댓글 고마워요")).toEqual({ ok: true });
+		expect(pairNotes(t)).toEqual([]);
+	});
+
+	test("a mail-only change re-checks the card, and fixing the mail clears the note", async () => {
+		const t = setup();
+		const d = await added(t, "brief.pdf 보내 드릴게요");
+		expect(pairNotes(t)).toEqual([]);
+		const shown = t.mail!.view("M1")!;
+		const files = shown.attachments;
+		shown.attachments = [];
+		expect(t.engine.edit(d.code, "안녕하세요.", "mail")).toEqual({ ok: true });
+		expect(pairNotes(t)).toHaveLength(1);
+		shown.attachments = files;
+		expect(t.engine.edit(d.code, "안녕하세요!", "mail")).toEqual({ ok: true });
+		expect(pairNotes(t)).toEqual([]);
+	});
+
+	test("a mail revise re-checks the card too", async () => {
+		const t = setup();
+		const d = await added(t, "other@example.com 으로 보내 드릴게요");
+		const r = await t.engine.revise(d.code, "인사 추가", "mail");
+		if (!r.ok) throw new Error(r.reason);
+		expect(r.draft.notes.filter(n => PAIR_NOTE.test(n))).toHaveLength(1);
+		expect(pairNotes(t)).toHaveLength(1);   // replaced, not piled up
+	});
+});
+
 describe("the draft API", () => {
 	const call = async (t: T, path: string, body: object) => {
 		const web = createCommentsWeb({ engine: t.engine, broadcast: () => {} });
@@ -321,7 +418,7 @@ describe("the draft API", () => {
 	test("extra.mail becomes a mail draft on the same card and the thread view shows it", async () => {
 		const t = setup();
 		await t.engine.collect({ force: true });
-		const ok = await call(t, path(t), { text: "문서는 메일로 보내 드렸어요", extra: { note: "문서 메일", mail: MAIL } });
+		const ok = await call(t, path(t), { text: "문서는 메일로 보내 드릴게요", extra: { note: "문서 메일", mail: MAIL } });
 		expect(ok.status).toBe(200);
 		expect(t.engine.store.drafts()[0]).toMatchObject({ code: ok.json.code, mail: "M1", clean: false, notes: [expect.stringContaining("문서 메일")] });
 		const view = t.engine.threadView("youtube", "p1")!;
@@ -343,16 +440,13 @@ describe("the draft API", () => {
 		expect(none.engine.store.drafts()).toHaveLength(0);
 	});
 
-	test("the web 보내기 posts the reply, then sends the mail, and the revise route takes a part", async () => {
+	test("보내기 posts the reply, then sends the mail, and a revise takes a part", async () => {
 		const t = setup();
 		await t.engine.collect({ force: true });
-		const made = await call(t, path(t), { text: "문서는 메일로 보내 드렸어요", extra: { mail: MAIL } });
+		const made = await call(t, path(t), { text: "문서는 메일로 보내 드릴게요", extra: { mail: MAIL } });
 		const code = made.json.code as string;
-		expect((await call(t, `/api/comments/drafts/${code}/revise`, { change: "x", part: "both" })).status).toBe(400);
-		expect((await call(t, `/api/comments/drafts/${code}/revise`, { change: "제목을 바꿔", part: "mail" })).status).toBe(200);
-		const sent = await call(t, `/api/comments/drafts/${code}/send`, {});
-		expect(sent.status).toBe(202);
-		await sent.web.idle();
+		expect((await t.engine.revise(code, "제목을 바꿔", "mail")).ok).toBe(true);
+		expect(t.engine.send(code, { by: "owner" }).ok).toBe(true);
 		await t.engine.idle();
 		expect(t.log).toEqual(["compose M1", "revise M1 -> M2", "reply", "send M2"]);
 		// the mail it carries is part of this card: no 이어서 할 일 rule wakes for a reply that brought its mail
@@ -374,7 +468,7 @@ describe("sending one part of the card (send --only)", () => {
 	test("--only reply posts the reply and leaves the mail draft on its own, unsent", async () => {
 		const t = setup();
 		const d = await withMail(t);
-		pick(t, d.code, 1);
+		await pick(t, d.code, 1);
 		const r = await runComments(["send", d.code, "--only", "reply"], t.engine, t.inbox);
 		expect(r.code).toBe(0);
 		expect(r.lines.join("\n")).toContain("mail-cli.ts ask --draft M1");
@@ -385,7 +479,7 @@ describe("sending one part of the card (send --only)", () => {
 	test("--only mail refused for its files keeps the refusal's first words, the reply and the mail stay pending", async () => {
 		const t = setup({ failSend: "첨부를 확인해 주세요: 본문에 쓴 파일이 안 붙었어요" });
 		const d = await withMail(t);
-		pick(t, d.code, 1);
+		await pick(t, d.code, 1);
 		const r = await runComments(["send", d.code, "--only", "mail"], t.engine, t.inbox);
 		expect(r.code).toBe(1);
 		expect(r.lines[0]).toStartWith("첨부를 확인해 주세요:");
@@ -395,7 +489,7 @@ describe("sending one part of the card (send --only)", () => {
 	test("--only mail sends the mail; the reply waits alone and its card no longer carries the mail", async () => {
 		const t = setup();
 		const d = await withMail(t);
-		pick(t, d.code, 1);
+		await pick(t, d.code, 1);
 		const r = await runComments(["send", d.code, "--only", "mail"], t.engine, t.inbox);
 		expect(r.code).toBe(0);
 		expect(t.log).toEqual(["compose M1", "send M1"]);
@@ -409,7 +503,7 @@ describe("sending one part of the card (send --only)", () => {
 		const o: { failSend?: string } = { failSend: "SMTP 거부" };
 		const t = setup(o);
 		const d = await withMail(t);
-		pick(t, d.code, 1);
+		await pick(t, d.code, 1);
 		expect((await runComments(["send", d.code], t.engine, t.inbox)).code).toBe(1);
 		delete o.failSend;
 		const again = ["send", d.code, "--only", "mail", "--retry"];
@@ -425,7 +519,7 @@ describe("sending one part of the card (send --only)", () => {
 		const o: { failSend?: string } = { failSend: "SMTP 거부" };
 		const t = setup({ ...o, issues: ["본문에 파일을 보낸다고 썼지만 첨부파일이 없어요"] });
 		const d = await withMail(t);
-		appendSealed(t.inbox, { ts: new Date(NOW + 6000).toISOString(), kind: "message", source: "web", text: "4) 이대로 보내기", picks: [{ q: `이 답글을 올리고 메일도 보낼까요? (${d.code})`, n: 4, label: "이대로 보내기" }] });
+		appendSealed(t.inbox, { ts: new Date(NOW + 6000).toISOString(), kind: "message", source: "web", text: "4) 이대로 보내기", picks: [{ q: `이 답글을 올리고 메일도 보낼까요? (${d.code})`, n: 4, label: "이대로 보내기", hash: await shownHash(t.engine, d.code) }] });
 		expect((await runComments(["send", d.code, "--as-is"], t.engine, t.inbox)).code).toBe(1);
 		const r = await runComments(["send", d.code, "--only", "mail", "--retry"], t.engine, t.inbox);
 		expect(r.code).toBe(1);
@@ -435,7 +529,7 @@ describe("sending one part of the card (send --only)", () => {
 	test("a posted reply picked as plain 보내기 whose mail failed: the retry sends without as-is", async () => {
 		const t = setup({ failSend: "SMTP 거부" });
 		const d = await withMail(t);
-		pick(t, d.code, 1);
+		await pick(t, d.code, 1);
 		expect((await runComments(["send", d.code], t.engine, t.inbox)).code).toBe(1);
 		expect((await runComments(["send", d.code, "--only", "mail", "--retry"], t.engine, t.inbox)).code).toBe(1);
 		expect(t.log).toEqual(["compose M1", "reply", "send M1", "send M1 retry"]);
@@ -445,7 +539,7 @@ describe("sending one part of the card (send --only)", () => {
 		const t = setup();
 		const d = await withMail(t);
 		expect((await runComments(["send", d.code, "--only", "mail"], t.engine, t.inbox)).code).toBe(1);
-		pick(t, d.code, 3);
+		await pick(t, d.code, 3);
 		expect((await runComments(["send", d.code, "--only", "reply"], t.engine, t.inbox)).code).toBe(1);
 		expect((await runComments(["send", d.code, "--only", "both"], t.engine, t.inbox)).lines[0]).toBe("--only는 reply 또는 mail이에요");
 		expect(t.log).toEqual(["compose M1"]);

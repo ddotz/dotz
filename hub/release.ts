@@ -458,8 +458,8 @@ function appendHubLog(line: string): void {
 	appendFileSync(join(process.env.DOTZ_DIR ?? join(homedir(), ".dotz"), "hub.log"), `${new Date().toISOString()} ${line}\n`);
 }
 
-// What the watch knows of a release that failed: "failed" (with the line to show) for the rest of the slot, so the watch keeps failing and its own
-// failure alert reaches the owner. A release that went out is forgotten. "running" is what the GitHub-runner flow wrote; nothing writes it now.
+// What the watch knows of a release that failed: "failed" (with the line to show) for the rest of the slot. The tick that found it failed once,
+// which is the owner's one alert; the later ticks of the slot pass with one constant line. A release that went out is forgotten. "running" is what the GitHub-runner flow wrote; nothing writes it now.
 type RunState = { slot: string; startedAt: string; state: "running" | "failed"; message?: string };
 
 // A later tick of the slot reads the failure an earlier tick left. Returns the failure line, if any.
@@ -486,7 +486,8 @@ function settleRun(opts: DispatchOptions, slot: string): string | null {
 // runner (hub/release-gate.ts; a tick only starts it or reads its state, so it ends in seconds) and, when it is green, the same runner releases that
 // commit (signed tag, push, GitHub Release). A red suite skips the slot, and so does a release that failed.
 // Runs only for the repo owner's GitHub login, and only where the signing key is, so a copy of the watch on another install releases nothing.
-// A failed slot fails the tick (exit 1) until the next slot, which is how the owner hears of it.
+// A failed slot fails the one tick that finds it (SLOT_SKIPPED_EXIT: the watch alerts at once); the rest of the slot exits 0 with one constant
+// line, so the watch neither alerts again nor counts every minute as a failure, until the next slot tests again.
 export async function dispatchSlot(opts: DispatchOptions): Promise<number> {
 	const print = opts.print ?? ((line: string) => console.log(line));
 	const exec = opts.exec ?? run;
@@ -495,8 +496,8 @@ export async function dispatchSlot(opts: DispatchOptions): Promise<number> {
 	const stateFile = join(opts.stateDir, "release-slot");
 	const failure = settleRun(opts, slot);
 	if (failure) {
-		print(failure);
-		return SLOT_SKIPPED_EXIT;
+		print(`이 시간대는 이미 건너뛰었고 알렸어요: ${failure}`);
+		return 0;
 	}
 	if (existsSync(stateFile) && readFileSync(stateFile, "utf8").trim() === slot) return 0;
 

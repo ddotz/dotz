@@ -106,7 +106,7 @@ body { font: 400 var(--fs-body)/var(--lh-body) var(--font); font-variant-numeric
    only code and paths may break inside a token. */
 h1, h2, h3, h4, .ttl, figcaption { text-wrap: balance; }
 /* short fixed copy (empty states, notes, card questions, meta lines): balanced, so a phrase never leaves one word on the last line */
-.empty, .hc-none, .cv-empty, .bell-none, .note, .cc-note, .dr-none, .od-note, .mb-note, .sup, .dc-q, .dc-ds, .cc-hd { text-wrap: balance; }
+.empty, .hc-none, .bell-none, .note, .cc-note, .dr-none, .od-note, .mb-note, .sup, .dc-q, .dc-ds, .cc-hd { text-wrap: balance; }
 p, li, blockquote, dd { text-wrap: pretty; }
 code, pre, kbd, samp { word-break: normal; overflow-wrap: anywhere; }
 /* a sentence / clause / phrase chunk of copy text (01-phrase-wrap.js): the line breaks between chunks, inside one only when it is
@@ -243,7 +243,7 @@ button.conn:disabled { cursor: default; }
 @media (max-width: 1099px) and (pointer: coarse) { :root[data-kb] .app:has(.composer textarea:focus) .side { display: none; } }
 /* buttons: one system for every page and card. Kind: primary (accent fill, the default), secondary (.tonal), quiet (.text), danger;
    size: md (default, 40px) and .sm (36px). A touch screen gets a 44px target. Card buttons keep their own class names (.dc-act,
-   .dc-go, .dc-back, .dc-manual) and are aliased here, so the look is defined once. */
+   .dc-go, .dc-back) and are aliased here, so the look is defined once. */
 /* size tiers (docs/ui-spec.md 버튼, tokens in the :root above): 기본 --btn-h 36, 작은 --btn-h-sm 32 (.sm), 행 안 --btn-h-row 28 (.inrow).
    --btn-hit is the touch target, not a tier: a phone raises the box to it, a row button reaches 40px with padding (::after). */
 .bk-l { display: none; }
@@ -258,16 +258,16 @@ button.conn:disabled { cursor: default; }
 .menu .mi.off { color: var(--fg-3); cursor: default; }
 .menu .mi.off:active { background: transparent; } @media (hover: hover) { .menu .mi.off:hover { background: transparent; } }
 .menu .mi.more svg { margin-left: auto; width: 14px; height: 14px; }
-.btn, .dc-act, .dc-go, .dc-back, .dc-manual { display: inline-flex; align-items: center; justify-content: center; gap: var(--sp-15); height: var(--btn-h); padding: 0 var(--sp-4); border: 1px solid transparent; border-radius: var(--r-ctl); color: var(--fg-2); background: transparent; font: 600 14px/20px var(--font); text-decoration: none; white-space: nowrap; max-width: 100%; cursor: pointer; }
+.btn, .dc-act, .dc-go, .dc-back { display: inline-flex; align-items: center; justify-content: center; gap: var(--sp-15); height: var(--btn-h); padding: 0 var(--sp-4); border: 1px solid transparent; border-radius: var(--r-ctl); color: var(--fg-2); background: transparent; font: 600 14px/20px var(--font); text-decoration: none; white-space: nowrap; max-width: 100%; cursor: pointer; }
 .btn, .dc-go, .dc-act.main { background: var(--accent); color: var(--on-accent); }
 .btn.tonal, .btn.outlined, .dc-back, .dc-act.alt { background: var(--layer); color: var(--fg); }
-.btn.text, .dc-act, .dc-manual { background: transparent; color: var(--fg-2); padding: 0 var(--sp-3); }
+.btn.text, .dc-act { background: transparent; color: var(--fg-2); padding: 0 var(--sp-3); }
 .btn.sm { height: var(--btn-h-sm); padding: 0 var(--sp-3); font-size: 13px; }
-.btn, .dc-act, .dc-go, .dc-back, .dc-manual { transition: opacity var(--m-fast) var(--m-ease); }
+.btn, .dc-act, .dc-go, .dc-back { transition: opacity var(--m-fast) var(--m-ease); }
 .btn:active:not(:disabled), .dc-go:active:not(:disabled), .dc-back:active:not(:disabled) { opacity: .7; }
-@media (hover: hover) { .btn:hover, .dc-go:hover, .dc-back:hover, .dc-act:hover, .dc-manual:hover { opacity: .85; } }
+@media (hover: hover) { .btn:hover, .dc-go:hover, .dc-back:hover, .dc-act:hover { opacity: .85; } }
 @media (hover: hover) { .btn.tonal:hover, .btn.outlined:hover, .dc-back:hover, .dc-act.alt:hover { background: var(--hover); opacity: 1; } }
-@media (hover: hover) { .btn.text:hover, .dc-act:not(.main):not(.alt):hover, .dc-manual:hover { background: var(--hover); color: var(--fg); opacity: 1; } }
+@media (hover: hover) { .btn.text:hover, .dc-act:not(.main):not(.alt):hover { background: var(--hover); color: var(--fg); opacity: 1; } }
 .btn.danger { background: transparent; color: var(--err); padding: 0 var(--sp-3); }
 @media (hover: hover) { .btn.danger:hover { background: color-mix(in srgb, var(--err) 12%, transparent); opacity: 1; } }
 .btn.danger.fill { background: var(--err); color: var(--on-err); padding: 0 var(--sp-3); }
@@ -275,7 +275,7 @@ button.conn:disabled { cursor: default; }
 /* 행 안 tier (docs/ui-spec.md 버튼, 설정 행): the button or field in the right slot of a row. 32px high, 13px; on a touch screen the box stays 32px and ::after widens the hit area to 44px. */
 .btn.inrow { position: relative; height: var(--btn-h-row); padding: 0 var(--sp-3); font-size: 13px; }
 .btn.inrow.text, .btn.inrow.danger { padding: 0 var(--sp-2); }
-@media (pointer: coarse), (max-width: 639px) { .ib { width: 36px; height: 36px; } .btn, .dc-act, .dc-go, .dc-back, .dc-manual { height: auto; min-height: var(--btn-hit); } .ni { min-height: 44px; } }
+@media (pointer: coarse), (max-width: 639px) { .ib { width: 36px; height: 36px; } .btn, .dc-act, .dc-go, .dc-back { height: auto; min-height: var(--btn-hit); } .ni { min-height: 44px; } }
 @media (pointer: coarse), (max-width: 639px) { .btn.inrow { height: var(--btn-h-row); min-height: 0; } .btn.inrow::after { content: ""; position: absolute; inset: calc(var(--sp-2) * -1) calc(var(--sp-05) * -1); } }
 /* settings row (docs/ui-spec.md 설정 행): the existing .li (lead icon, .tx = .hd title + .sup one-line description) plus ONE right slot, .li-end,
    vertically centred by .li's align-items. The slot holds one control: a 행 안 button, a .hs-sw switch, a .sel / .fi at a fixed width, or a value.
@@ -308,6 +308,9 @@ code.path-short { display: inline-block; max-width: 100%; vertical-align: bottom
 .muted { color: var(--fg-2); }
 .empty { padding: var(--sp-8) var(--sp-4); text-align: center; color: var(--fg-3); font-size: 12px; }
 .empty > .btn { margin-top: var(--sp-3); }
+/* emptyNode (05-command-palette.js) builds every one: a hint under the sentence, and the tighter line of one section among others */
+.empty > .sup { margin-top: var(--sp-2); }
+.empty.compact { padding: var(--sp-4); }
 .dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--fg-3); }
 .dot.ok { background: var(--ok); } .dot.warn, .dot.att { background: var(--warn); } .dot.err { background: var(--err); }
 .dot.pri { background: var(--accent); }
@@ -976,6 +979,7 @@ details.work.live .wdot { display: block; }
 @container tlcol (max-width: 559.98px) { .um { max-width: 90%; } .bm pre { padding: var(--sp-2) var(--sp-3); } .bm.rep, .bm.alert { padding: var(--sp-2) var(--sp-3) var(--sp-3); } }
 :root { --col: 736px; }
 .composer { flex: none; width: 100%; max-width: var(--col); margin: 0 auto; padding: 0 0 max(var(--sp-4), env(safe-area-inset-bottom)); }
+:root[data-kb] .composer { padding-bottom: var(--sp-4); }
 .composer.tmode { max-width: var(--col); }
 .working { display: flex; align-items: center; gap: var(--sp-2); min-height: 24px; margin-bottom: var(--sp-2); color: var(--fg-3); font-size: 12.5px; line-height: 20px; }
 #working-tx { min-width: 0; }
@@ -1089,14 +1093,11 @@ details.work.live .wdot { display: block; }
 .term .tmore { display: flex; margin: 0 auto var(--sp-3); }
 .term .tdv, .term .lg-note { margin: var(--sp-2) auto; color: var(--fg-3); font-size: 12.5px; line-height: 18px; text-align: center; }/* attachment chips as buttons (md and text open in the reader) and the reader sheet */
 button.fatt { border: 0; font: inherit; text-align: left; cursor: pointer; }
-dialog.tbox { width: min(760px, 100vw); height: min(80dvh, 100dvh); max-width: none; max-height: none; margin: auto; padding: 0; border: 0; border-radius: 20px; background: var(--pop); color: var(--fg); box-shadow: 0 12px 40px rgb(0 0 0 / .22); overflow: hidden; }
-dialog.tbox::backdrop { background: rgb(10 10 12 / .5); }
-.tbox .tv-in { display: grid; grid-template-rows: auto minmax(0, 1fr); height: 100%; }
-.tbox .tv-bar { display: flex; align-items: center; gap: var(--sp-2); padding: var(--sp-3) var(--sp-3) var(--sp-3) var(--sp-5); border-bottom: 1px solid var(--line); font-size: 14px; }
-.tbox .tv-n { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 600; }
-.tbox .tv-bar a, .tbox .tv-bar button { display: inline-flex; align-items: center; justify-content: center; height: 32px; padding: 0 var(--sp-3); border: 0; border-radius: var(--r-ctl); background: var(--active); color: var(--fg-2); font-size: 13px; text-decoration: none; }
-.tbox .tv-bar button.x { width: 32px; padding: 0; }
-.tbox .tv-body { min-height: 0; overflow: auto; padding: var(--sp-4) var(--sp-5) var(--sp-6); font-size: 15px; line-height: 26px; overflow-wrap: anywhere; }
+/* the reader (15-attachments.js viewer): dialog()'s large card. The file name is its title, on one line; the text reads on white on a phone too, where
+   Markdown's grey fills (code, table heads, quotes) would vanish into the sheet's grey */
+.tbox .tv-n { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@media (max-width: 639px) { dialog.dlg.fs-card.tbox[open] { background: var(--pop); } }
+.tbox .tv-body { color: var(--fg); font-size: 15px; line-height: 26px; overflow-wrap: anywhere; }
 .tbox .tv-body:focus { outline: 0; }
 .tbox .tv-body p { margin: 0 0 var(--sp-3); }
 .tbox .tv-body p.h { margin: var(--sp-5) 0 var(--sp-2); font-size: 17px; line-height: 26px; } .tbox .tv-body p.h:first-child { margin-top: 0; }
@@ -1104,7 +1105,6 @@ dialog.tbox::backdrop { background: rgb(10 10 12 / .5); }
 .tbox .tv-body pre { margin: 0; font: 13px/20px var(--mono); white-space: pre-wrap; }
 .tbox .tv-body .md pre, .tbox .tv-body > .md pre { margin: var(--sp-2) 0 var(--sp-3); padding: var(--sp-2) var(--sp-3); border-radius: 10px; background: var(--layer); }
 .tbox .tv-st { color: var(--fg-3); font-size: 13px; line-height: 20px; }
-@media (max-width: 639px) { dialog.tbox { width: 100vw; height: 100dvh; border-radius: 0; } }
 
 /* log: one card per turn - header (dot, what was asked, when, how long), answers as text, tool calls folded into one summary row */
 .lg { margin-bottom: var(--sp-3); --lg-dot: 8px; padding: var(--sp-4); border-radius: var(--r-card); background: var(--card); }
@@ -1224,6 +1224,9 @@ details.think .md { padding: var(--sp-1) var(--sp-2) var(--sp-2) var(--box-ind);
 .hn { border-radius: 0 0 var(--r-card) var(--r-card); background: var(--card); overflow: hidden; }
 /* A one-line state has no row to trim, and its text can sit in the box's rounded corner: nothing clips it. */
 .hn:has(> .hc-none) { overflow: visible; }
+.hn-more { display: block; width: 100%; min-height: var(--row-h); padding: var(--row-py) var(--row-px); border: 0; border-top: 1px solid var(--line); background: transparent; color: var(--fg-2); font: 500 13px/20px var(--font); text-align: left; }
+@media (hover: hover) { .hn-more:hover { background: var(--hover); } }
+.hn-more:active { background: var(--active); }
 /* A home list past six rows scrolls inside its card, with no scrollbar (08-home.js capLists sets the height of six rows); six or fewer change nothing. */
 .list-cap { position: relative; overflow: hidden auto; overscroll-behavior: contain; scrollbar-width: none; }
 .list-cap::-webkit-scrollbar { display: none; }
@@ -1730,8 +1733,7 @@ textarea.hs-ta { resize: none; }
 .au .rem { color: var(--fg-2); font-size: 13px; }
 @media (pointer: coarse), (max-width: 639px) { .au input:not([type=checkbox]) { height: var(--field-h-touch); font-size: 16px; } .au .eye { height: var(--field-h-touch); } }
 /* 확인 카드 (owner 2026-11-03): 머리 한 줄(답 기다림), 카드 제목 크기의 짧은 질문, 작은 답 버튼, 지금보다 눈에 띄게 낮게 */
-/* At most ~40% of the screen (owner 2026-11-04: at 60% a several-draft card hid the conversation above it); its body scrolls inside */
-.dcard { display: flex; flex-direction: column; max-height: max(40dvh, 200px); margin: 0 0 var(--sp-2); border-radius: var(--r-card); background: var(--card); overflow: hidden; }
+.dcard { display: flex; flex-direction: column; max-height: 35dvh; margin: 0 0 var(--sp-2); border-radius: var(--r-card); background: var(--card); overflow: hidden; }
 .dcard[hidden] { display: none; }
 /* a waiting send-approval card that later posts pushed up: one row in the dock that opens it (10-decision-card.js dcPointer) */
 .dc-wait { display: flex; align-items: center; gap: var(--sp-2); width: 100%; min-height: 44px; padding: var(--sp-2) var(--row-px); border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
@@ -1750,9 +1752,11 @@ textarea.hs-ta { resize: none; }
 .dc-decide-k { font-weight: 600; }
 .dc-decide ul { margin: var(--sp-05) 0 0; padding-left: var(--sp-4); }
 .dc-decide li + li { margin-top: var(--sp-05); }
-.dcard.fold .dc-q { display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden; }
-.dcard.fold .dc-hd { padding-bottom: var(--sp-2); }
-.dcard.fold .dc-decide { display: none; }
+.dc-sum { flex: none; color: var(--fg-3); font: 400 13px/20px var(--font); white-space: nowrap; }
+.dcard.fold .dc-tt { display: flex; align-items: baseline; gap: var(--sp-1); cursor: pointer; }
+.dcard.fold .dc-meta, .dcard.fold .dc-decide { display: none; }
+.dcard.fold .dc-q { flex: 0 1 auto; min-width: 0; margin-top: 0; display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden; }
+.dcard.fold .dc-hd { align-items: center; padding-bottom: var(--sp-2); }
 .dc-fold { flex: none; display: grid; place-items: center; width: 24px; height: 24px; padding: 0; border: 0; border-radius: var(--r-ctl); background: transparent; color: var(--fg-3); }
 @media (hover: hover) { .dc-fold:hover { background: var(--hover); } }
 .dc-fold .ic { width: 16px; height: 16px; transition: transform var(--m-fast) var(--m-ease); }
@@ -1944,6 +1948,9 @@ textarea.hs-ta { resize: none; }
 .nsc-r .ln { display: flex; align-items: center; gap: var(--sp-3); min-width: 0; }
 .nsc-r .hd { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 400; color: var(--fg-2); }
 .nsc-r.unread .hd { font-weight: 700; color: var(--fg); }
+.nsc-r .ln .hd.hd-q { display: flex; padding-right: 0; -webkit-mask-image: none; mask-image: none; }
+.nsc-r .hd-q .w { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nsc-r .hd-q .q { flex: none; white-space: nowrap; }
 .nsc-r .t { flex: none; color: var(--fg-3); font: 400 var(--fs-meta)/var(--lh-row) var(--font); }
 .nsc-s { flex: 1; min-width: 0; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg-2); font: 400 var(--fs-meta)/var(--lh-meta) var(--font); }
 .nsc-r .ib, .nsc-tr { position: relative; z-index: 1; flex: none; display: grid; place-items: center; width: var(--btn-h-row); height: var(--btn-h-row); align-self: center; margin-left: calc(var(--sp-1) * -1); color: var(--fg-3); }
@@ -2036,6 +2043,20 @@ textarea.hs-ta { resize: none; }
 .ds-res { display: flex; flex-direction: column; gap: var(--sp-05); padding: var(--sp-3) var(--sp-4); border-radius: var(--r-ctl); background: var(--fs-fill); }
 .ds-rl { color: var(--ok); font: 600 12px/16px var(--font); }
 .ds-ra { font: 600 15px/22px var(--font); overflow-wrap: anywhere; }
+.ds-more > summary { padding: var(--sp-2) 0; color: var(--fg-2); font: 500 14px/20px var(--font); list-style: none; cursor: pointer; }
+.ds-more > summary::-webkit-details-marker { display: none; }
+.ds-more > summary::after { content: "›"; display: inline-block; margin-left: var(--sp-1); transition: transform var(--m-fast) var(--m-ease); }
+.ds-more[open] > summary::after { transform: rotate(90deg); }
+.fs-body.ov { -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - var(--sp-8)), transparent); mask-image: linear-gradient(to bottom, #000 calc(100% - var(--sp-8)), transparent); }
+.ds-hint { position: relative; z-index: 1; flex: none; align-self: center; height: var(--sp-6); margin: calc(var(--sp-6) * -1) 0 0; padding: 0 var(--sp-3); border: 0; border-radius: var(--r-ctl); background: var(--fs-fill); color: var(--fg-2); font: 500 12px/24px var(--font); }
+.al-bar { flex: none; width: 100%; max-width: var(--col); margin: 0 auto; padding: var(--sp-1) var(--row-px) max(var(--sp-4), env(safe-area-inset-bottom)); }
+.al-ask { display: block; min-height: var(--row-h); padding: 0; border: 0; background: none; color: var(--accent); font: 500 14px/20px var(--font); text-align: left; }
+.ds-fixed { display: flex; gap: var(--sp-1); }
+.ds-fixed .ds-direct { flex: 1 1 0; min-width: 0; justify-content: center; padding: var(--sp-2) var(--sp-1); text-align: center; }
+.dc-ask { display: flex; flex-direction: column; gap: var(--sp-1); flex: none; padding: var(--sp-1) var(--sp-3) var(--sp-2); }
+.dc-ask-st { color: var(--fg-3); font-size: 12.5px; line-height: 18px; }
+.dc-fixed { display: flex; flex-wrap: wrap; gap: var(--sp-1); }
+.ask-note { color: var(--fg-3); font: 400 12px/16px var(--font); text-align: right; overflow-wrap: anywhere; }
 
 /* Decision overlay (30-notices.js dkOpen, 10-decision-card.js renderSheet) and draft approval (hub/draft-approval.ts): content only; the frame is 14-overlay.css. */
 .dc-dh { display: flex; align-items: baseline; gap: var(--sp-2); font-size: 14px; line-height: 22px; }
@@ -2051,9 +2072,6 @@ textarea.hs-ta { resize: none; }
 .dc-act.main { order: 0; padding: 0 var(--sp-5); }
 .dc-act.main:active:not(:disabled) { background: color-mix(in srgb, var(--accent) 85%, #000); }
 .dc-act:disabled { opacity: .55; }
-.dc-manual { margin-left: auto; gap: var(--sp-1); padding: 0 var(--sp-1) 0 var(--sp-2); color: var(--fg-3); font-size: 13px; }
-.dc-manual:active { color: var(--fg); }
-.dc-manual .ic { width: 14px; height: 14px; }
 
 /* x (무시): a question that waits on the owner can be waved off. 44px thumb target on every surface, quiet --fg-3 until pressed. */
 button.nt-x { width: 44px; height: 44px; border-radius: var(--r-ctl); color: var(--fg-3); }
@@ -2327,6 +2345,7 @@ button.nt-x:active { background: var(--active); color: var(--fg); }
 /* another computer opened inside the installed app (33-peers.js prGo): the whole screen, the safe areas kept by this frame because a page in an iframe reads them as 0 */
 .pr-frame { position: fixed; inset: 0; z-index: 2000; padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); background: var(--bg); }
 .pr-frame iframe { display: block; width: 100%; height: 100%; border: 0; background: var(--bg); }
+.pr-frame-x { position: absolute; top: calc(env(safe-area-inset-top) + 4px); right: calc(env(safe-area-inset-right) + 4px); z-index: 1; border: 1px solid var(--line); border-radius: 50%; background: var(--bg); box-shadow: var(--shadow-menu); }
 
 /* a relayed computer's chat (42-relay-chat.js): the normal chat view; what its messenger cannot carry is not drawn */
 body.rl :is(#c-attach, #c-own, #c-model, #c-effort, #c-worker, #ctx-ring, #c-pc, #c-api, #c-fb, #working, #runline, #runstate, #pausenote, #dcard, #hints, #atray, #todo, #vtog, #cvmenu, #pjmenu) { display: none !important; }
@@ -2342,12 +2361,10 @@ body.rl :is(#c-attach, #c-own, #c-model, #c-effort, #c-worker, #ctx-ring, #c-pc,
 .rv-head { display: flex; align-items: baseline; gap: var(--sp-2); min-width: 0; margin: 0 var(--sp-1) var(--sp-2); }
 .rv-head .rv-n { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg); font: 600 var(--fs-sec)/var(--lh-sec) var(--font); }
 .rv > .list + .sec, .rv > .pl-list + .rv-foot, .rv > .list + .rv-foot, .rv > .card + .rv-foot { margin-top: var(--sp-6); }
-.rv-empty { padding: var(--sp-4); color: var(--fg-2); }
 .rv-row { cursor: default; }
 .rv .li > .dot { margin-top: 0; }
 .rv-foot { display: flex; flex-direction: column; align-items: flex-start; gap: var(--sp-2); margin-top: var(--sp-6); padding: 0 var(--sp-1); }
 .rv-acts { display: flex; flex-wrap: wrap; justify-content: center; gap: var(--sp-2); margin-top: var(--sp-3); }
-.rv-none .sup { margin-top: var(--sp-2); }
 
 /* ---------- composer above the phone keyboard ----------
    --kb / --vvh come from web/js/34-composer-viewport.js (visualViewport). With interactive-widget=resizes-content the page already shrinks
@@ -2356,7 +2373,7 @@ body.rl :is(#c-attach, #c-own, #c-model, #c-effort, #c-worker, #ctx-ring, #c-pc,
    whole composer (box + chip row + paddings, ~72px), then the box scrolls inside itself. */
 @media (max-width: 639px) {
   .app { height: calc(100dvh - var(--kb, 0px)); }
-  .sendrow textarea { max-height: min(calc(7.5em + 2 * var(--ta-pad)), calc(var(--vvh, 100dvh) * .4 - 72px)); overflow-y: auto; }
+  .sendrow textarea { max-height: max(calc(2.5em + 2 * var(--ta-pad)), min(calc(7.5em + 2 * var(--ta-pad)), calc(var(--vvh, 100dvh) * .4 - 72px))); overflow-y: auto; }
 }
 
 /* code blocks in messages: a bar with copy / run buttons above the code (web/js/35-code-blocks.js); web terminal sheet (36-shell.js) */
@@ -2523,7 +2540,7 @@ dialog.fs-card::backdrop { background: var(--scrim); }
   .fs-bd:has(> .fs-card.mid) { align-items: flex-end; background: var(--scrim); }
   dialog.dlg.fs-card.mid[open] { margin: auto 0 0; }
   /* the sheet is a card, so a field in it takes the fill a field has on a card (on the full screen it sits on --bg) */
-  .fs-card.mid, dialog.dlg.fs-card.mid[open] { --ff-fill: var(--ff-pop); height: fit-content; max-height: min(86dvh, 820px); border-radius: var(--r-sheet) var(--r-sheet) 0 0; background: var(--card); padding-top: 0; }
+  .fs-card.mid, dialog.dlg.fs-card.mid[open] { --ff-fill: var(--ff-pop); height: fit-content; max-height: min(86dvh, 820px, calc(var(--vvh, 100dvh) - var(--sp-2))); border-radius: var(--r-sheet) var(--r-sheet) 0 0; background: var(--card); padding-top: 0; }
 }
 
 /* ---------- 원문 보기 (web/js/10-draft-original.js): the mail or comment a draft answers, as its own panel next to the draft ---------- */
@@ -2631,8 +2648,9 @@ dialog.fs-card::backdrop { background: var(--scrim); }
 .rq-meta .mon-pc { flex: none; white-space: pre; }
 .rq-hd .rc-time { flex: none; }
 .rq-lb { margin-top: var(--sp-2); color: var(--fg-3); font: 500 var(--fs-meta)/var(--lh-meta) var(--font); }
-.rq-to { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; margin-top: var(--sp-2); }
-.rq-to .dr-chip { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rq-rcpt { display: flex; flex-wrap: wrap; gap: var(--sp-05) var(--sp-3); min-width: 0; margin-top: var(--sp-2); }
+.rq-rc { display: inline-flex; gap: var(--sp-1); min-width: 0; max-width: 100%; }
+.rq-rv { min-width: 0; color: var(--fg-2); font-size: var(--fs-meta); line-height: var(--lh-meta); overflow-wrap: anywhere; }
 .rq-sub { margin-top: var(--sp-15); }
 /* 원문: 회색·왼쪽 괘선·두 줄, 길면 원문 보기 (원칙 5: 남의 글은 조용한 인용, 초안과 눈에 띄게 나뉨) */
 .rq-og-wrap { display: flex; flex-direction: column; align-items: flex-start; min-width: 0; max-width: 100%; margin-top: var(--sp-2); }
@@ -2659,7 +2677,12 @@ dialog.fs-card::backdrop { background: var(--scrim); }
 /* 메시지 답글 카드 (소개 페이지 댓글 답글 데모): 남의 글은 조용한 인용, 초안 글이 주인공(원칙 1·5). 게시물 제목과 첨부 안내는 회색으로 물러나요 */
 .rq[data-kind="comment"] .rq-sub { margin-top: var(--sp-15); color: var(--fg-2); font: 500 13px/19px var(--font); }
 .rq-orig .rq-ow { color: var(--fg-2); font-weight: 500; }
-.rq-att[data-k="none"] .dr-none:not(:has(.dr-wn)) { margin-top: var(--sp-2); }
+.rq-att[data-k="none"] .dr-none { margin-top: var(--sp-2); }
+/* the 첨부 줄 of a card that only reads its files (10-reply-card.js rqAttachNode): the count, then one quiet line per file with its size */
+.rq-att[data-k="files"] { display: grid; gap: var(--sp-05); min-width: 0; margin-top: var(--sp-2); }
+.rq-af { display: flex; align-items: center; gap: var(--sp-15); min-width: 0; color: var(--fg-2); font: 400 var(--fs-meta)/var(--lh-meta) var(--font); }
+.rq-af .ic { flex: none; width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.rq-af .rq-afn { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg); }
 /* 보냈어요: 버튼 행과 같은 높이, 그 자리에서 바뀝니다(원칙 6) */
 .rq-sent { display: flex; align-items: center; gap: var(--sp-15); height: var(--btn-h-sm); margin-top: var(--sp-3); color: var(--fg); font: 500 14px/20px var(--font); }
 .rq-sent .ic { flex: none; width: 16px; height: 16px; fill: none; stroke: var(--ok); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
@@ -2678,8 +2701,6 @@ dialog.fs-card::backdrop { background: var(--scrim); }
 .bm.dr.rq-ml { gap: 0; }   /* the parts carry their own margins, as in the sheet */
 .rq.cm.rq-ml .rq-og { padding-left: 0; }
 .rq.cm.rq-ml .dr-files { margin-top: var(--sp-2); }
-.rq-acts .rq-manual { margin-left: auto; gap: var(--sp-1); color: var(--fg-3); }
-.rq-acts .rq-manual .ic { width: 14px; height: 14px; }
 
 /* the queue: one list, newest first, an app filter on top */
 .rq-chips .sel { width: 160px; }
@@ -2701,7 +2722,7 @@ dialog.fs-card::backdrop { background: var(--scrim); }
 .rq-acts .btn.sm { height: var(--btn-h-sm); min-height: 0; padding: 0 var(--sp-3); border-radius: var(--r-ctl); font: 600 13px/20px var(--font); }
 /* the reply draft's small buttons keep the 32px box on a phone too: the box is what the owner reads, the 44px reach is an invisible ::after (ui-spec 버튼).
    The keyboard hint of the quick triage has no keys to name on a touch screen. */
-@media (pointer: coarse), (max-width: 639px) { .rq-acts .btn.sm { position: relative; height: var(--btn-h-sm); min-height: 0; } .rq-acts .btn.sm::after { content: ""; position: absolute; inset: calc(var(--sp-2) * -1) -2px; } .tr-keys { display: none; } }
+@media (pointer: coarse), (max-width: 639px) { .rq-acts .btn.sm { position: relative; height: var(--btn-h-sm); min-height: 0; } .rq-acts .btn.sm::after { content: ""; position: absolute; inset: calc(var(--sp-2) * -1) -2px; } }
 .rq-acts .btn.text.sm { padding: 0 var(--sp-2); }
 .rq-acts.dr-row .dr-send { flex: none; }
 
@@ -2716,20 +2737,14 @@ dialog.fs-card::backdrop { background: var(--scrim); }
 /* the card fits the column the way the sheet fits the window: its head stays and a long draft scrolls in its body */
 #mon-tl:has(> .rq-pane) { display: flex; flex-direction: column; height: 100%; }
 .rq-pane { --ff-fill: var(--layer); display: flex; flex: 0 1 auto; flex-direction: column; min-height: 0; border-radius: var(--r-card); background: var(--card); }
-.rq-empty { display: flex; flex-direction: column; align-items: center; gap: var(--sp-3); padding: var(--sp-8) var(--sp-4); color: var(--fg-3); font-size: var(--fs-meta); line-height: var(--lh-meta); text-align: center; text-wrap: balance; }
 #v-monitoring.rq-on .tl-in { max-width: none; }
-.bm.q-fold .md > :not(:first-child) { display: none; }
+.bm.q-fold .md > :not(:first-child), .bm.q-fold .ra-inl { display: none; }
 .rq-qm .sp { flex: 1; }
 .rq-qm[hidden], .rq-fast[hidden], .rq-chips:empty { display: none; }
 .nsc-fb .n.err { color: var(--err); } .nsc-fb.on .n.err { color: inherit; }
 .rq-ls .sec { margin: var(--sp-6) var(--sp-1) var(--sp-2); } .rq-ls .sec:first-child { margin-top: 0; }
 .rq-r .hd { font-weight: 500; color: var(--fg); } .rq-r.sent .hd { font-weight: 400; color: var(--fg-2); }
 .rq-r .ln .tag { flex: 0 1 auto; min-width: 0; max-width: 60%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.rq-g .rq-retry { position: relative; z-index: 1; flex: none; align-self: center; height: var(--btn-h-sm); min-height: 0; }
-.rq-g .rq-retry:disabled { opacity: .4; pointer-events: none; }
-.rq-g .nsc-tr svg { transition: transform var(--m-fast) var(--m-ease); }
-.rq-g .nsc-tx[aria-expanded="true"] ~ .nsc-tr svg { transform: rotate(180deg); }
-.rq-r[data-kid] { padding-left: calc(var(--row-px) + var(--sp-6)); }
 /* the sheet's body under its fixed head: .fs-card caps the height and clips, so a long draft scrolls here down to its 첨부 줄 */
 .rq-sheet .rq-sb { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 0 var(--sp-4) var(--sp-4); }
 .rq-sheet .rq-why { margin: 0 var(--sp-05) var(--sp-3); font: 400 var(--fs-meta)/var(--lh-meta) var(--font); color: var(--fg-2); }
@@ -2742,6 +2757,40 @@ dialog.fs-card::backdrop { background: var(--scrim); }
 .qline .tx { flex: none; } .qline .tx b { font-weight: 600; color: var(--fg); font-variant-numeric: tabular-nums; }
 .qline .sep { color: var(--fg-3); } .qline .go { font-weight: 600; color: var(--fg); }
 .qline:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* the foot of a card whose send the queue holds (10-reply-actions.js rqSendNode): status colour only under its state class */
+.rq-send { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); margin-top: var(--sp-2); padding: var(--sp-2) var(--sp-3); border-radius: var(--r-ctl); background: var(--layer); color: var(--fg-2); font-size: var(--fs-meta); }
+.rq-send.undo { justify-content: space-between; }
+.rq-send.failed .rq-why { color: var(--err); }
+.rq-send.unsure .rq-why.warn { color: var(--warn); }
+.rq-send .rq-sub2 { width: 100%; color: var(--fg-2); }
+.rq-send .dr-act { width: 100%; }
+/* 고치기 panel (10-reply-actions.js rqFixNodes): every part of the draft is a field in its own place, filled like every field of the card (--ff-fill). The text takes the
+   body's place with 답글 | 메일 above it when a mail rides along, a mail's 제목 its subject line, its 받는이 and 첨부 rows open where they stand; the line to the AI and 반영 · 닫기 are the foot. */
+.ra-editbox { display: flex; flex-direction: column; gap: var(--sp-2); }
+.ra-edit, .ra-sub { display: block; width: 100%; box-sizing: border-box; padding: var(--sp-2) var(--sp-3); border: 0; border-radius: var(--r-ctl); background: var(--ff-fill); color: var(--fg); }
+.ra-edit { min-height: calc(var(--sp-6) * 5); font: inherit; resize: vertical; }
+.ra-sub { min-height: var(--field-h-touch); font: 600 var(--fs-card)/var(--lh-card) var(--font); }
+.ra-edit:focus, .ra-sub:focus { outline: 0; box-shadow: var(--ff-ring); }
+.rq > .ra-sub, .rq > .dr-recv { margin-top: var(--sp-2); }
+.rq-edit .kk-rq { margin: 0; }
+.rq-edit .kk-rv { margin: 0; }
+.ra-lint.err { color: var(--err); font-size: var(--fs-meta); }
+.ra-other { display: flex; flex-direction: column; gap: var(--sp-1); }
+.ra-other .kk-rq { margin: 0; }
+.ra-other-tx { padding: var(--sp-2) var(--sp-3); border-radius: var(--r-ctl); background: var(--ff-fill); color: var(--fg-2); font-size: var(--fs-meta); white-space: pre-wrap; overflow-wrap: anywhere; max-height: calc(var(--sp-6) * 5); overflow: auto; }
+/* AI가 고친 초안 (10-reply-card.js rqDiffBody): the words that came in carry a wash of the text's own ink, the ones that went are struck and quiet. Neutral on purpose:
+   a change is not a state, so no status colour, and the wash reads on the card, on a Messenger bubble and in the dark theme alike. */
+.rq-diff .rq-dl { min-height: 1lh; }
+.rq-diff ins { padding: 0 var(--sp-05); border-radius: 4px; background: color-mix(in srgb, var(--fg) 10%, transparent); font-weight: 500; text-decoration: none; -webkit-box-decoration-break: clone; box-decoration-break: clone; }
+.rq-diff del { color: var(--fg-3); text-decoration: none; background: linear-gradient(transparent calc(55% - 0.06em), var(--fg-2) 0 calc(55% + 0.06em), transparent 0); -webkit-box-decoration-break: clone; box-decoration-break: clone; }   /* the strike is drawn, not a text-decoration: WebKit leaves line-through off Hangul fallback glyphs, so only the gaps between words showed it */
+.rq-diff .rq-dgap { color: var(--fg-3); }
+
+/* 답장 대기 as a queue of cards (design 4.4). One column: at 1280px the queue's column is about 640px wide, too narrow for two cards. */
+.rq-list:has(> .rq-c) { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--sp-3); background: none; overflow: visible; }
+.rq-c { min-width: 0; overflow-wrap: anywhere; }
+.rq-list > .rq-c + .rq-c { border-top: 0; }
+.rq-c { background: var(--card); border-radius: var(--r-card); padding: var(--sp-3); }
 
 /* ---------- reply: quoted message above the composer, the swipe pull and the desktop hover button (web/js/39-reply.js) ---------- */
 [data-rid] { position: relative; touch-action: pan-y; }
@@ -2871,6 +2920,14 @@ dialog.fs-card::backdrop { background: var(--scrim); }
 dialog.dlg .dact .ac-gap { margin-right: auto; }
 /* a dialog's failure note (usErr) takes no room until it has a reason */
 dialog.dlg .dbody .err-t:empty { display: none; }
+/* 전환 규칙 (rulesDialog): a condition is one line (which account, its state, the amount, remove); on a phone the account and remove
+   share the first line, the state and the amount the second. The action and its account sit side by side and wrap. */
+dialog.dlg .rl-cond { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto auto; grid-template-areas: "who st num x"; gap: var(--sp-2); align-items: center; }
+dialog.dlg .rl-cond > .sel { width: auto; min-width: 0; }
+.rl-cond .rl-who { grid-area: who; } .rl-cond .rl-st { grid-area: st; } .rl-cond .rl-num { grid-area: num; display: inline-flex; align-items: center; gap: var(--sp-2); } .rl-cond .rl-x { grid-area: x; }
+.rl-num .fi { width: 96px; flex: none; }
+@media (max-width: 639px) { dialog.dlg .rl-cond { grid-template-columns: minmax(0, 1fr) auto auto; grid-template-areas: "who who x" "st num num"; } .rl-num .fi { width: 72px; } }
+dialog.dlg .rl-do > .sel { flex: 1 1 160px; width: auto; min-width: 0; }
 
 /* Settings sub-screens (설정, 모델·폴백, 공급자, 사용량, 컨텍스트) and the small settings dialogs (dialog.dlg.cl) on a phone.
    Scoped to those surfaces so the rest of the app keeps its compact controls. Loaded last: same-specificity rules here win. */
@@ -2900,9 +2957,8 @@ dialog.dlg .dbody .err-t:empty { display: none; }
   dialog.dlg.cl .rl-days .chip { flex: 1 1 0; min-width: 0; padding: 0; }
 }
 
-/* 빠른 처리 (web/js/30-triage.js): the banner that offers it, and the full view that answers many waiting send approvals of one kind fast.
-   Desktop: a large centered dialog, the item in a readable column, actions on one row with key hints. Phone: the whole screen, three large
-   buttons at the bottom (보내기 the widest, under the thumb), no key hints. Colors are the theme tokens, so dark mode follows. */
+/* 빠른 처리 (web/js/30-triage.js): every waiting reply answered fast, one queue card at a time or as a list of picks.
+   Desktop: a compact centered dialog, or the right column of a wide 모니터링. Phone: the whole screen. Colors are the theme tokens, so dark mode follows. */
 
 /* the prototype's #triage: a compact card that is as tall as its draft, not a screen-high dialog */
 .fs-card.tr { width: min(680px, calc(100% - 48px)); height: auto; max-height: min(92dvh, 820px); }
@@ -2912,87 +2968,41 @@ dialog.dlg .dbody .err-t:empty { display: none; }
 .tr-pane .fs-body { padding: 0 var(--sp-4) var(--sp-4); }
 .tr-pane .fs-ft { padding: var(--sp-3) var(--sp-4) var(--sp-4); }
 .tr .tr-pos, .tr-pane .tr-pos { display: flex; align-items: baseline; gap: var(--sp-05); font-variant-numeric: tabular-nums; }
-.tr .tr-sum, .tr-pane .tr-sum { color: var(--fg-3); font: 500 14px/20px var(--font); }
 .tr-bar { height: 4px; margin-top: var(--sp-15); border-radius: 2px; background: var(--track); overflow: hidden; }
 .tr-bar > span { display: block; height: 100%; background: var(--accent); transition: width var(--m-slow) var(--m-ease); }
 .tr-tog { gap: var(--sp-1); }
 .tr-tog .ic { width: 16px; height: 16px; }
-.tr-body { display: flex; flex-direction: column; gap: var(--sp-3); }
-.tr-body:focus { outline: 0; }
-.tr-q { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; font: 700 16px/24px var(--font); letter-spacing: -.01em; }
-.tr-meta { display: flex; flex-wrap: wrap; gap: var(--sp-15) var(--sp-3); color: var(--fg-2); font-size: 13px; line-height: 20px; }
-.tr-meta b { color: var(--fg-3); font-weight: 600; }
-.tr-rule { color: var(--fg-2); }
 .tr-k { color: var(--fg-3); font: 600 12px/18px var(--font); }
-.tr-org { display: flex; flex-direction: column; gap: var(--sp-1); padding: var(--sp-3) var(--sp-4); border-radius: 12px; background: var(--fs-fill); }
-.tr-org.muted { color: var(--fg-3); font-size: 13px; }
-.tr-who { color: var(--fg-2); font-size: 13px; line-height: 20px; }
-.tr-otx { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 14px; line-height: 22px; max-height: 6lh; overflow-y: auto; }
-.tr-info { margin: 0; padding: 0 0 0 var(--sp-5); color: var(--fg-2); font-size: 13px; line-height: 20px; }
-.tr-warn { padding: var(--sp-2) var(--sp-3); border-radius: 10px; background: color-mix(in srgb, var(--warn) 12%, var(--card)); color: var(--warn); font-size: 13px; line-height: 20px; }
-.tr-ta { width: 100%; min-height: 88px; max-height: 52vh; field-sizing: content; padding: var(--sp-3); border: 0; border-radius: 12px; background: var(--ff-fill); color: var(--fg); font: 400 15px/24px var(--font); resize: none; box-sizing: border-box; }
-.tr-ta:focus { outline: 0; box-shadow: var(--ff-ring); }
-.tr-ta:disabled { opacity: .7; }
-.tr-mail { display: flex; flex-direction: column; gap: var(--sp-2); padding-top: var(--sp-3); border-top: 1px solid var(--line); }
-.tr-files { display: flex; flex-wrap: wrap; gap: var(--sp-15); }
-.tr-file { padding: var(--sp-05) var(--sp-3); border-radius: var(--r-ctl); background: var(--layer); color: var(--fg-2); font-size: 12px; line-height: 20px; }
-.tr-st { --tone: var(--fg-3); display: inline-flex; align-items: center; gap: var(--sp-15); flex: none; color: var(--fg-2); font: 600 12px/22px var(--font); }
-.tr-st.sent { --tone: var(--ok); color: var(--ok); }
-.tr-st.failed, .tr-st.err { --tone: var(--err); color: var(--err); }
-.tr-st.sending, .tr-st.queued, .tr-st.undo { --tone: var(--accent); }
-.tr-ft { gap: var(--sp-2); }
-.tr-acts { display: flex; gap: var(--sp-2); justify-content: flex-start; flex-wrap: wrap; }
-.tr-b { height: 40px; min-width: 0; padding: 0 var(--sp-4); font-size: 15px; }
-.tr-hint, .tr-keys { color: var(--fg-3); font: 400 12px/16px var(--font); }
-.tr-fail { color: var(--err); }
-.tr-why { color: var(--fg-2); font: 400 13px/20px var(--font); overflow-wrap: anywhere; }
-.tr-why[hidden] { display: none; }
-.tr-note { min-height: 84px; }
-.tr-empty { align-items: center; justify-content: center; text-align: center; }
-.tr-done-t { font: 700 20px/28px var(--font); }
-.tr-sumlist { display: flex; flex-direction: column; gap: var(--sp-15); width: min(320px, 100%); margin: var(--sp-2) 0 0; padding: 0; list-style: none; }
-.tr-sumlist li { display: flex; justify-content: space-between; padding: var(--sp-2) var(--sp-4); border-radius: 10px; background: var(--fs-fill); }
-.tr-list { gap: var(--sp-2); }
-.tr-row { display: flex; flex-direction: column; gap: var(--sp-2); padding: var(--sp-3) var(--sp-4); border-radius: 14px; background: var(--fs-fill); }
-.tr-row.locked { opacity: .75; }
-.tr-rh { display: flex; align-items: center; gap: var(--sp-2); width: 100%; padding: 0; border: 0; background: transparent; color: var(--fg); font: 600 14px/20px var(--font); text-align: left; cursor: pointer; }
-.tr-rh:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 6px; }
-.tr-n { flex: none; min-width: 24px; height: 24px; border-radius: 12px; background: var(--card); color: var(--fg-2); font: 600 12px/24px var(--font); text-align: center; }
-.tr-rq { flex: 1; min-width: 0; overflow-wrap: anywhere; }   /* the recipients are what the row is for: a long list wraps, it is not cut */
-.tr-rb { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 4; overflow: hidden; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 14px; line-height: 22px; color: var(--fg); cursor: pointer; }
-.tr-rb.open { display: block; -webkit-line-clamp: none; }
-.tr-rb.mail { padding-top: var(--sp-2); border-top: 1px solid var(--line); color: var(--fg-2); }
-.tr-seg { display: flex; gap: var(--sp-2); align-self: flex-start; }
-.tr-sg { min-height: 40px; padding: 0 var(--sp-4); border: 0; border-radius: var(--r-ctl); background: transparent; box-shadow: inset 0 0 0 1px var(--line); color: var(--fg-2); font: 600 13px/20px var(--font); cursor: pointer; }   /* three equal outlined choices; only a pressed one is filled */
-.tr-sg.on { background: var(--accent); box-shadow: none; color: var(--on-accent); }
-.tr-sg:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
-.tr-rn { min-height: 40px; padding: 0 var(--sp-3); border: 0; border-radius: 10px; background: var(--ff-fill); color: var(--fg); font: 400 14px/20px var(--font); }
-.tr-rn:focus { outline: 0; box-shadow: var(--ff-ring); }
 @media (max-width: 639px) {
   .fs-card.tr { width: 100%; height: 100%; max-height: none; }   /* the whole screen: the desktop's max-height would stop the card short and lift its buttons off the bottom */
-  .tr-keys { display: none; }
-  .tr-b, .tr-go { height: 44px; padding: 0 var(--sp-4); }
-  .tr-list .tr-seg { align-self: stretch; }
-  .tr-sg { flex: 1; min-height: 44px; }
-  .tr-rh, .tr-rn { min-height: 44px; }
 }
-@media (pointer: coarse) { .tr-keys { display: none; } }
-.tr-post { color: var(--fg); font: 600 13px/20px var(--font); }
-.tr-cmt .tr-who { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-05) var(--sp-15); }
-.tr-cmt .tr-who b { color: var(--fg); font-weight: 600; }
-.tr-nav { display: flex; justify-content: space-between; gap: var(--sp-2); }
-/* the four labelled parts of a card (30-triage.js trSec): the reply card's own rows and quote under a label, whatever the kind */
-.tr-sec { display: flex; flex-direction: column; gap: var(--sp-2); min-width: 0; }
-.tr-sec .rq-og-wrap { margin-top: 0; }
-.tr-sec .rq-orig .rq-ot, .tr-row .rq-orig .rq-ot { white-space: pre-wrap; text-wrap: pretty; }   /* pretty keeps a last line from being one word */
-.tr-sec .rq-orig .rq-ot { max-height: 6lh; overflow-y: auto; }
-.tr-sec .rq-to { margin-top: 0; }
-.tr-sec .dr-files { margin-top: 0; }
-.tr-sec .rq-att[data-k="none"] .dr-none:not(:has(.dr-wn)) { margin-top: 0; }
 .tr-none { color: var(--fg-3); font: 400 13px/20px var(--font); }
-.tr-row .rq-og-wrap { margin-top: 0; }
-.tr-row .rq-orig { cursor: pointer; }
-.tr-file { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* 빠른 처리 over the one reply queue (30-triage.js tqOpen): the card, then 진행; the list's compact rows. */
+.tq-body { display: grid; align-content: start; gap: var(--sp-3); flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: var(--sp-3); }   /* the sheet clips (.fs-card, .rq-pane): a long list scrolls here */
+.tq-rail { display: grid; gap: var(--sp-05); }
+@media (max-width: 639px) { .tq-rail { display: none; } }   /* 진행 would list every waiting item under the card; on a phone the head's "i / n" and its bar already say where he is */
+.tq-r { display: flex; justify-content: space-between; gap: var(--sp-2); padding: var(--sp-1) var(--sp-2); border: 0; border-radius: var(--r-ctl); background: none; color: var(--fg-2); font: inherit; font-size: var(--fs-meta); text-align: left; cursor: pointer; }
+.tq-r.on { background: var(--row-sel); color: var(--fg); }
+.tq-st.err { color: var(--err); }
+.tq-who { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tq-st { flex: none; }
+.tq-row { display: grid; gap: var(--sp-1); padding: var(--sp-3); border-radius: var(--r-card); background: var(--card); }
+.tq-line { display: flex; gap: var(--sp-2); align-items: baseline; font-size: var(--fs-meta); color: var(--fg-2); }
+.tq-line .tq-who { color: var(--fg); font-weight: 500; }
+.tq-tx { white-space: pre-wrap; overflow-wrap: anywhere; }
+/* a row shows what its 보내기 sends, compactly (30-triage.js tqRowNode): the original as one quoted line, the 첨부 줄, the mail that rides along as one line with its own 첨부 줄 */
+.tq-og { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tq-ml { display: flex; align-items: center; gap: var(--sp-15); min-width: 0; margin-top: var(--sp-1); color: var(--fg-2); font: 500 var(--fs-meta)/var(--lh-meta) var(--font); }
+.tq-ml .ic { flex: none; width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.tq-ml > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tq-row .rq-att, .tq-row .rq-att .dr-none { margin-top: 0; }
+.tq-row .rq-acts { margin-top: var(--sp-1); }
+.tq-foot { display: flex; justify-content: flex-end; }
+/* the keys of the one-card view (30-triage.js tqKeysNode): one quiet line under the card, each key in the app's own <kbd>. A touch screen has no keys to name. */
+.tq-keys { display: flex; flex-wrap: wrap; gap: var(--sp-1) var(--sp-3); padding: 0 var(--sp-1); color: var(--fg-3); font: 400 var(--fs-meta)/var(--lh-meta) var(--font); }
+.tq-key { display: inline-flex; align-items: center; gap: var(--sp-1); white-space: nowrap; }
+@media (pointer: coarse) { .tq-keys { display: none; } }
 
 /* Assistant answers drawn by their shape (02-answer-shapes.js, prototype answers.css). Rows are the result card's .rc-row; this file only adds the card
    around them, a wider key and the phone stack. Every word is plain selectable text: a selection copies what it covers. */
@@ -3259,7 +3269,7 @@ a.dr-att:active { background: var(--active); }
 .dr-warn > .ic { flex: none; width: 16px; height: 16px; fill: none; stroke: var(--warn); stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; }
 .dr-wt { display: flex; flex-direction: column; gap: var(--sp-05); min-width: 0; }
 .dr-wn { font-weight: 500; color: var(--fg-2); font-size: 12px; line-height: 18px; }
-.dr-files[hidden], .dr-warnbox[hidden] { display: none; }
+.dr-warnbox[hidden] { display: none; }
 .dr-warnbox { display: flex; flex-direction: column; gap: var(--sp-15); margin-bottom: var(--sp-2); }
 .dr-ar { display: flex; align-items: center; gap: var(--sp-15); min-width: 0; }
 .dr-ar > .dr-att { flex: 1; }
@@ -3369,10 +3379,9 @@ a.dr-att:active { background: var(--active); }
 .kk-l1 { display: flex; align-items: baseline; gap: var(--sp-15); min-width: 0; }
 .kk-l1 > .cv-n { flex: 0 1 auto; min-width: 0; }
 .kk-grp { flex: none; color: var(--fg-3); font: 400 12px/16px var(--font); }
-/* 지켜볼 대화방: the .kk-pd sheet (side panel on a desktop, full screen on a phone). The sheet's body is the page canvas, so the head is the sheets' .fs-hd and the
-   search and the rooms are the project list's own .pl-search, .pl-list and .pl-row, the same white on grey as that list. */
-#kk-add .kk-pd-in { background: var(--bg); outline: 0; }
-#kk-add .kk-pd-b { padding: var(--sp-1) var(--sp-6) var(--sp-6); }
+/* 지켜볼 대화방: dialog() worn as the .kk-pd panel (side panel on a desktop, full screen on a phone). Its canvas is the page's, so the search and the
+   rooms are the project list's own .pl-search, .pl-list and .pl-row, the same white on grey as that list. */
+#kk-add { background: var(--bg); }
 .kk-search + .kk-pl { margin-top: var(--sp-3); }
 /* in the sheet the check says "watched"; the grey fill is the selected row of a list, so the sheet's rows keep none */
 #kk-add .kk-pr.on { background: none; }
@@ -3380,8 +3389,7 @@ a.dr-att:active { background: var(--active); }
 .kk-pr:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .kk-ck { flex: none; width: 18px; height: 18px; color: var(--accent); }
 @media (pointer: coarse), (max-width: 639px) { #kk-add .kk-search { height: 40px; font-size: 16px; } }
-@media (max-width: 639px) { #kk-add .kk-pd-in { padding-top: env(safe-area-inset-top); } #kk-add .kk-pd-b { padding-inline: var(--sp-4); } }
-.kk-add .kk-pd-b { padding: var(--sp-2) 0 0; }
+.kk-add .dbody { display: block; }   /* a picker's body is one list: its parts stack by their own margins, and a long list scrolls the body */
 .kk-hint { padding: 0 var(--sp-4) var(--sp-2); color: var(--fg-3); font: 400 12px/16px var(--font); }
 .kk-note + .btn { display: block; margin: calc(var(--sp-3) * -1) auto var(--sp-6); }   /* a failed or empty place: the line, then its one action, centred */
 .kk-note { padding: var(--sp-8) var(--sp-4); color: var(--fg-3); font: 400 12px/16px var(--font); text-align: center; text-wrap: balance; }
@@ -3578,6 +3586,7 @@ a.dr-att:active { background: var(--active); }
 .kk-draft .kk-dh { margin-top: var(--sp-2); }
 .kk-mk { padding: var(--sp-2) var(--sp-4); border-radius: var(--r-card); background: var(--card); color: var(--fg-3); font: 500 13px/18px var(--font); }
 .kk-dh { color: var(--fg-2); font: 600 12px/16px var(--font); }
+.kk-dn { margin: 0 0 var(--sp-2); color: var(--fg-3); font: 400 13px/18px var(--font); }
 .kk-draft .btns { gap: var(--sp-15); }
 .kk-choices { flex-wrap: wrap; }
 .kk-draft .btn { height: var(--btn-h-sm); padding: 0 var(--sp-3); font-size: 13px; }
@@ -3587,31 +3596,20 @@ a.dr-att:active { background: var(--active); }
 #kk-chat .kk-draft { display: flex; flex-direction: column; min-height: 0; max-height: 40dvh; }
 #kk-chat .kk-draft > * { flex: none; }
 #kk-chat .kk-draft > .rq-body { flex: 0 1 auto; min-height: 0; overflow-y: auto; }
-#kk-chat .kk-draft .kk-dt.kk-dps { max-height: none; overflow: visible; }
 .kk-dt { max-height: min(16dvh, 120px); margin: var(--sp-05) 0 var(--sp-2); overflow-y: auto; font: 400 14px/21px var(--font); white-space: pre-wrap; overflow-wrap: anywhere; }
-/* a draft of several messages: one bubble each, in send order (a part already in the room is muted) */
-.kk-dt.kk-dps { display: flex; flex-direction: column; align-items: flex-end; gap: var(--sp-1); max-height: min(28dvh, 220px); white-space: normal; }
-.kk-dp { max-width: 86%; padding: var(--sp-15) var(--sp-3); border-radius: var(--r-ctl); background: var(--kk-own); color: var(--kk-own-fg); white-space: pre-wrap; overflow-wrap: anywhere; }
-.kk-dp.sent { opacity: .55; }
 .kk-rq { margin: var(--sp-05) 0 var(--sp-15); color: var(--fg-2); font: 600 13px/18px var(--font); }
 .kk-rv { width: 100%; box-sizing: border-box; min-height: 40px; margin: 0 0 var(--sp-2); padding: var(--sp-2) var(--sp-3); border: 0; border-radius: var(--r-ctl); background: var(--ff-fill); color: inherit; font: 400 16px/22px var(--font); }
 .kk-rv:focus { outline: 0; box-shadow: var(--ff-ring); }
 .kk-st { color: var(--fg-3); font: 500 12.5px/18px var(--font); }
-.kk-manual { margin-left: auto; display: inline-flex; align-items: center; gap: var(--sp-1); color: var(--fg-2); }
-.kk-manual .ic { width: 14px; height: 14px; }
-.kk-edit { display: flex; align-items: center; gap: var(--sp-2); margin: 0 var(--sp-1) var(--sp-15); color: var(--fg-2); font: 500 12.5px/18px var(--font); }
-.kk-edit .btn { height: var(--btn-h-row); }
 .kk-dbtn { gap: var(--sp-1); }
 .kk-dbtn .ic { width: 14px; height: 14px; }
 .kk-dbtn:disabled { opacity: .6; }
 
-/* 사용자별 분석 (30-kakao.js kkPerson): desktop a side panel, phone a full-screen sheet */
-.kk-pd { border: 0; padding: 0; max-width: none; max-height: none; background: transparent; color: var(--fg); }
-.kk-pd::backdrop { background: rgb(0 0 0 / .3); }
-.kk-pd-in { display: flex; flex-direction: column; width: min(400px, 100vw); max-height: min(680px, 100dvh); margin: auto; border-radius: var(--r-card); background: var(--card); box-shadow: var(--shadow-panel); overflow: hidden; }
-.kk-pd-h { display: flex; align-items: center; gap: var(--sp-2); padding: var(--sp-3) var(--sp-4); border-bottom: 1px solid var(--line); }
-.kk-pd-h .fs-x { margin-left: auto; }
-.kk-pd-b { flex: 1; min-height: 0; overflow-y: auto; padding: var(--sp-2) var(--sp-4) var(--sp-4); }
+/* The .kk-pd windows (사용자별 분석 of 30-kakao.js kkPerson, 지켜볼 대화방, a comment app's 지켜볼 글): dialog() docked as a side panel on a desktop; a phone
+   keeps dialog()'s full-screen sheet */
+@media (min-width: 640px) { dialog.dlg.kk-pd { width: 400px; height: 100dvh; max-height: none; margin: 0 0 0 auto; border-radius: 0; background: var(--card); box-shadow: var(--shadow-panel); } }
+.kk-pd .dbody { color: var(--fg); }
+.kk-pwho { display: flex; align-items: center; gap: var(--sp-2); }
 .kk-psec { padding: var(--sp-2) 0; border-bottom: 1px solid var(--line); }
 .kk-psec:last-child { border-bottom: 0; }
 .kk-prow { display: flex; gap: var(--sp-3); padding: var(--sp-05) 0; font: 400 13px/19px var(--font); }
@@ -3625,8 +3623,6 @@ a.dr-att:active { background: var(--active); }
 .kk-put { font: 400 13px/19px var(--font); overflow-wrap: anywhere; }
 .kk-sum { padding-top: var(--sp-3); }
 .kk-sum .btn { margin-top: var(--sp-2); height: var(--btn-h-sm); }
-@media (min-width: 640px) { .kk-pd { margin: 0 0 0 auto; height: 100dvh; } .kk-pd-in { height: 100dvh; max-height: none; border-radius: 0; } }
-@media (max-width: 639px) { .kk-pd { margin: 0; width: 100vw; height: 100dvh; } .kk-pd-in { width: 100vw; height: 100dvh; max-height: none; border-radius: 0; } }
 
 /* a room row's second line on the right: 미답장 then the unread count, side by side (30-kakao.js kkRow) */
 .kk-row .kk-rmeta { display: inline-flex; align-items: center; justify-content: flex-end; gap: var(--sp-15); }
@@ -3758,6 +3754,7 @@ textarea.as-in.as-ta { padding-top: var(--sp-15); padding-bottom: var(--sp-15); 
 #cm-pick .sec { margin-inline: var(--sp-4); }   /* section names start on the rows' left line */
 #cm-pick .sec + .kk-pick-src { border-top: 0; }
 #cm-pick .fs-hd { padding-left: max(var(--sp-4), env(safe-area-inset-left)); }   /* the head starts on the rows' left line (this sheet's rows sit at --sp-4 at every width) */
+#cm-pick .fs-body { padding-inline: 0; }   /* the rows run edge to edge and bring their own side padding */
 /* 댓글 / DM swap the whole list under them, so they are screen tabs like the mailbox tabs (web/DESIGN.md 화면 탭), not a filter track */
 #cm-rooms .cm-tabs { position: static; flex-wrap: nowrap; margin: 0 var(--sp-4) var(--sp-1); padding: 0; background: none; box-shadow: inset 0 -1px 0 var(--line); }
 #cm-rooms .cm-tabs .mr-f { height: var(--btn-hit); border-radius: 0; background: none; color: var(--fg-2); }
@@ -3894,7 +3891,6 @@ textarea.as-in.as-ta { padding-top: var(--sp-15); padding-bottom: var(--sp-15); 
 .cv-more { display: block; width: 100%; min-height: 44px; padding: var(--sp-2) var(--sp-4); border: 0; border-top: 1px solid var(--line); background: transparent; color: var(--fg-3); font: 500 var(--fs-sec)/var(--lh-sec) var(--font); text-align: center; cursor: pointer; }
 @media (hover: hover) { .cv-more:hover { background: var(--card-hover); color: var(--fg-2); } }
 .cv-more:active { background: var(--row-sel); }
-.cv-empty { padding: var(--sp-8) var(--sp-4); color: var(--fg-3); font-size: 12px; line-height: 16px; text-align: center; }
 @media (prefers-reduced-motion: reduce) { .fr-chev { transition: none; } }
 
 /* 앱 (web/js/30-apps.js): the 모니터링 list's rows on the left and the open app on the right. Below 1100px the list and the app
@@ -3992,7 +3988,7 @@ span.mr-star:not(.on) { opacity: .45; }
 @media (hover: hover) { .mbox-b:hover:not(:disabled) { background: var(--hover); } }
 .mbox-b:disabled { opacity: .45; cursor: not-allowed; }
 .mbox-b .ic { width: 16px; height: 16px; }
-.mbox-b.mbox-ic { width: 32px; padding: 0; justify-content: center; }
+.mbox-b.danger { color: var(--err); }   /* 삭제 keeps the destructive tone of the menus (.mi.danger) */
 .mbox-b.mbox-x { width: 32px; padding: 0; justify-content: center; margin-left: auto; }
 /* the open mail's top bar (30-mail-box.js mailOpenBar): one row of icons on its own tinted strip across the card (prototype #mail/1) that separates
    it from the mail header, sticky while the mail scrolls. The card's padding is a variable so the strip can run edge to edge. */
@@ -4123,11 +4119,11 @@ textarea.mbox-ta { display: block; flex: 1; min-height: 160px; margin: var(--sp-
   .mr-chk, .mbox-all { width: 18px; height: 18px; }
   #back, #as-bar, #as-more-bar { width: 32px; height: 32px; }
   .mbox-bar { gap: var(--sp-05); height: 44px; padding: 0 var(--sp-1) 0 var(--sp-15); }
-  .mbox-bar.on .mbox-b { width: 44px; height: 44px; padding: 0; justify-content: center; border-radius: 22px; background: none; }
+  .mbox-bar.on .mbox-b { position: relative; width: 36px; height: 44px; padding: 0; justify-content: center; border-radius: 18px; background: none; }
+  .mbox-bar.on .mbox-b::after { content: ""; position: absolute; inset: 0 calc(var(--sp-1) * -1); }   /* six or seven icons share a 360px line: each draws 36px wide and is pressed over 44 */
   .mbox-bar.on .mbox-b .ic { width: 20px; height: 20px; }
   .mbox-bar.on .mbox-bt { display: none; }
-  .mbox-bar.on .mbox-b.mbox-w { width: auto; padding: 0 var(--sp-3); background: var(--layer); }   /* 읽음 and 보관 keep their word on a phone */
-  .mbox-bar.on .mbox-w .mbox-bt { display: inline; }
+  .mbox-bar.on:has([data-k="mail-move"]) .mbox-n { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }   /* with 옮기기 too the seven icons need the count's place; the half-ticked box still says a choice is on, and a screen reader still hears the count */
   .mbox-reply { margin: var(--sp-3) 0 var(--sp-4); padding: var(--sp-4); }
   .mbox-in { height: 44px; font-size: 16px; }
   textarea.mbox-ta { font-size: 16px; line-height: 24px; }
@@ -4351,7 +4347,7 @@ textarea.mbox-ta { display: block; flex: 1; min-height: 160px; margin: var(--sp-
 .mx-tab .ic { width: 16px; height: 16px; }
 
 /* the pane: all, then the boxes in one card, then 메일함 추가 */
-.mx-pr { display: flex; align-items: center; gap: var(--sp-3); width: 100%; min-height: calc(var(--row-h) + var(--sp-3)); padding: var(--sp-2) var(--sp-3); border: 0; background: none; color: var(--fg); text-align: left; }
+.mx-pr { display: flex; align-items: center; gap: var(--sp-3); width: 100%; min-height: calc(var(--row-h) + var(--sp-3)); padding: var(--row-py) var(--row-px); border: 0; background: none; color: var(--fg); text-align: left; }
 .mx-pr + .mx-pr { box-shadow: inset 0 1px 0 var(--line); }
 @media (hover: hover) { .mx-pr:hover { background: var(--card-hover); } }
 .mx-pr.on { background: var(--row-sel); } @media (hover: hover) { .mx-pr.on:hover { background: var(--row-sel); } }
@@ -4387,6 +4383,7 @@ textarea.mbox-ta { display: block; flex: 1; min-height: 160px; margin: var(--sp-
 
 /* the account chip of the app bar: only while the mail screen is open */
 .mx-acc { display: none; flex: none; align-items: center; gap: var(--sp-1); height: 28px; margin-right: var(--sp-1); padding: 0 var(--sp-2); border: 0; border-radius: var(--r-ctl); background: var(--card); color: var(--fg-2); font-size: var(--fs-meta); font-weight: 500; white-space: nowrap; }
+@media (pointer: coarse), (max-width: 639px) { .mx-acc { position: relative; } .mx-acc::after { content: ""; position: absolute; inset: calc(var(--sp-2) * -1) 0; } }
 @media (hover: hover) { .mx-acc:hover { background: var(--card-hover); } }
 .mx-acc .ic { width: 14px; height: 14px; }
 /* on a phone the bar also holds back, title, the app buttons, search, bell and usage: the chip gives way (its name ends in …) before the title is squeezed */
@@ -4504,7 +4501,6 @@ body:has(#v-monitoring.mx-on:not([hidden])) .mx-teach { display: block; }
 .mon-ov-n { min-width: 0; font: 600 14px/20px var(--font); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mon-ov-peer { color: var(--fg-3); font: 400 12px/16px var(--font); }
 .mon-ov-s { color: var(--fg-3); font: 400 12px/16px var(--font); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.mon-ov-empty { padding: var(--sp-1); color: var(--fg-3); font-size: 13px; }
 
 /* the top of an older page: the reports above load when this reaches the view (the button under it stays as a fallback) */
 .mon-sentinel { width: 100%; height: 1px; }
@@ -4578,7 +4574,7 @@ body:has(#v-monitoring.mx-on:not([hidden])) .mx-teach { display: block; }
   #v-monitoring.app-two.kk-on > .kk > .kk-chat { grid-column: 2; grid-row: 4; margin-bottom: var(--sp-4); }
   #v-monitoring.app-two.kk-on > .kk.chat-open > .kk-chat { grid-row: 1 / -1; }
   #v-monitoring.app-two.kk-on:has(> .kk.chat-open) > #mon-head { display: none; }
-  #v-monitoring.app-two.kk-on > .kk:not(.chat-open) > .kk-chat { display: flex; align-self: start; background: none; }
+  #v-monitoring.app-two.kk-on:not(.as-on) > .kk:not(.chat-open) > .kk-chat { display: flex; align-self: start; background: none; }
   #v-monitoring.app-two.kk-on > .kk:not(.chat-open) > .kk-chat > :not(.kk-box) { display: none; }
   #v-monitoring.app-two.kk-on > .kk:not(.chat-open) .kk-box { flex: none; min-height: 0; background: none; }
   #v-monitoring.app-two.kk-on > .kk:not(.chat-open) .kk-in > .kk-note { color: var(--fg-3); }
@@ -4674,7 +4670,6 @@ body:has(#v-monitoring.mx-on:not([hidden])) .mx-teach { display: block; }
 .pl-groups .pl-gh { margin-bottom: var(--sp-2); }
 .pl-list { background: var(--card); border-radius: var(--r-card); overflow: hidden; }
 .pl-list > .empty { background: transparent; }
-.pl-empty { padding: var(--sp-8) var(--sp-4); }
 .pl-empty-a { margin-top: var(--sp-3); }
 .pl-row { display: flex; align-items: center; gap: var(--sp-3); width: 100%; min-width: 0; min-height: 48px; margin: 0; padding: var(--sp-2) var(--sp-4); border: 0; background: transparent; color: inherit; text-align: left; }
 .pl-row + .pl-row { border-top: 1px solid var(--line); }
@@ -4865,8 +4860,8 @@ body { display: flow-root; }
   .appbar h1, .appbar:not(.back) h1 { font-size: 20px; line-height: 28px; }
   .appbar .ib { width: 36px; height: 36px; }
 }
-/* The computer beside a title (.mon-pc, convTitle) stays on the title's one line when it fits; when it does not it wraps to a second row, which the bar clips (1lh), so the head never grows a second line. The row is one tap height tall so the clip is clean. */
-.appbar h1:has(> .mon-pc) { display: flex; flex-wrap: wrap; align-items: center; max-height: 1lh; line-height: var(--btn-hit); overflow: hidden; white-space: nowrap; }
+/* The computer beside a title (.mon-pc, convTitle) stays on the title's one line when it fits; when it does not it wraps to a second row, which the bar clips (1lh), so the head never grows a second line. The row is one tap height tall so the clip is clean. The 1lh counts the content alone (content-box): the phone's tap area around the title (h1.pdot border below) would otherwise come out of that one line and cut its letters in half. */
+.appbar h1:has(> .mon-pc) { box-sizing: content-box; display: flex; flex-wrap: wrap; align-items: center; max-height: 1lh; line-height: var(--btn-hit); overflow: hidden; white-space: nowrap; }
 .appbar h1 > .ttx { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 
 
@@ -4951,13 +4946,13 @@ body { display: flow-root; }
   .appbar :is(.ib, .ustrip, .conn)::after { content: ""; position: absolute; left: 50%; top: 50%; width: max(100%, var(--btn-hit)); height: max(100%, var(--btn-hit)); transform: translate(-50%, -50%); }
   .appbar #back::after { left: 0; transform: translateY(-50%); }
   .appbar h1.pdot { padding-block: var(--sp-3); margin-block: calc(var(--sp-3) * -1); }   /* the title clips its overflow (ellipsis), so its area is padding with the same margin back */
-  .appbar.cvconv h1.pdot { padding-block: 0; margin-block: 0; min-height: var(--btn-hit); -webkit-box-pack: center; }   /* a title cut at two lines (-webkit-line-clamp) shows its third line in vertical padding: it keeps the tap height as min-height instead */
+  .appbar.cvconv h1.pdot { padding-block: 0; border-block: var(--sp-3) solid transparent; }   /* a title cut at two lines (-webkit-line-clamp) would show its third line in vertical padding, so the area is a clear border (outside the clip) with the same margin back; its lines stay centred on the bar, which a min-height would not do (-webkit-box-pack is ignored there) */
 }
 
 /* phone / touch: a control in the page body keeps its drawn size and answers a tap over --btn-hit through ::after, like the app bar above (a list row only needs 40). A row that scrolls sideways clips what hangs out above and below it (overflow-x: auto clips y too), so it carries the area as padding and gives the same back as negative margin: nothing moves. Where two areas would share a strip, the line gap or the end of the stack gives way, not the drawn size. */
 @media (pointer: coarse), (max-width: 639px) {
-  :where(.subsum, .mtop-b, .hgreet-more, .hgreet .subline, .board .ch .ib, .ct-file, #c-attach, #send-btn, .cbar .cchip, .mr-f, .nsc-fb, .hm-chip, .pmv-edit, .pmv-more, .dr-rm, .dr-rc-add, .dr-rc-edit .btn, .kk-add-btn, .rq-recv, .rq-og, .rq-manual, .rq-open, .hrx-n) { position: relative; }
-  :where(.subsum, .mtop-b, .hgreet-more, .hgreet .subline, .board .ch .ib, .ct-file, #c-attach, #send-btn, .cbar .cchip, .mr-f, .nsc-fb, .hm-chip, .pmv-edit, .pmv-more, .dr-rm, .dr-rc-add, .dr-rc-edit .btn, .kk-add-btn, .rq-recv, .rq-og, .rq-manual, .rq-open, .hrx-n)::after { content: ""; position: absolute; left: 50%; top: 50%; width: max(100%, var(--btn-hit)); height: max(100%, var(--btn-hit)); transform: translate(-50%, -50%); }
+  :where(.subsum, .mtop-b, .hgreet-more, .hgreet .subline, .board .ch .ib, .ct-file, #c-attach, #send-btn, .cbar .cchip, .mr-f, .nsc-fb, .hm-chip, .pmv-edit, .pmv-more, .dr-rm, .dr-rc-add, .dr-rc-edit .btn, .kk-add-btn, .rq-recv, .rq-og, .rq-pencil, .rq-open, .hrx-n) { position: relative; }
+  :where(.subsum, .mtop-b, .hgreet-more, .hgreet .subline, .board .ch .ib, .ct-file, #c-attach, #send-btn, .cbar .cchip, .mr-f, .nsc-fb, .hm-chip, .pmv-edit, .pmv-more, .dr-rm, .dr-rc-add, .dr-rc-edit .btn, .kk-add-btn, .rq-recv, .rq-og, .rq-open, .hrx-n)::after { content: ""; position: absolute; left: 50%; top: 50%; width: max(100%, var(--btn-hit)); height: max(100%, var(--btn-hit)); transform: translate(-50%, -50%); }
   .subsum { z-index: 1; }
   .subsum::after { top: calc(var(--sp-3) * -1); bottom: calc(var(--sp-1) * -1); height: auto; transform: translateX(-50%); }
   .qd-ln .btn.inrow::after { inset: calc(var(--sp-2) * -1 - 1px) calc(var(--sp-05) * -1); }

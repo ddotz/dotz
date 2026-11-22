@@ -45,7 +45,7 @@ const T0 = Date.now();
 const at = (s: number) => new Date(T0 + s * 1000).toISOString();
 const out = (s: number, target: string, extra: Record<string, unknown> = {}) => ({ ts: at(s), kind: "out", source: "gateway", target, text: `글 ${s}`, ...extra });
 
-describe("알림 and 작업 기록 are conversations of their own", () => {
+describe("알림 and 작업내역 are conversations of their own", () => {
 	test("an alert or worklog post lands in its conversation, never in the main chat; the main chat keeps its own", () => {
 		const p = page();
 		expect(p.isFixedT("alert") && p.isFixedT("worklog") && !p.isFixedT("main")).toBe(true);

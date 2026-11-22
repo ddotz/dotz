@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, utimesSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import type { Database } from "bun:sqlite";
@@ -7,7 +7,8 @@ import { sqliteDb } from "./db.ts";
 import { replySource, replySourceLog } from "./media.ts";
 import { MAX_CHAT_CHARS, MAX_PAIRS, MAX_PROMPT_CHARS, type ModelReply } from "./draft.ts";
 import { addMessage, BASE_LOG, BASE_TIME, bplistOfInts, makeFixtureDb, OWNER, ROOM } from "./fixture.ts";
-import { createDraft, listDrafts } from "./send.ts";
+import { dispatchSend } from "./contract.ts";
+import { createDraft, dropDraft, listDrafts, readDrafts, restoreDraft } from "./send.ts";
 import { type KakaoConfig, kakaoPaths, type Runner } from "./types.ts";
 import { fakeScreen } from "./ui.fixture.ts";
 import { createKakaoWeb, type WebDeps } from "./web.ts";
@@ -45,8 +46,7 @@ function setup(config: Partial<KakaoConfig> = {}, fill?: (w: Database) => void, 
 	const runner: Runner = screen.runner;
 	const calls = screen.sends;
 	const db = sqliteDb(dbPath);
-	const revised: [string, string][] = [];
-	const web = createKakaoWeb({ onRevise: (c, ch) => void revised.push([c, ch]), paths, runner, now: () => NOW, openDb: async () => db, broadcast: e => events.push(e), onWatchChange: () => void state.changes++, collector: "mac-a", lease: async () => (state.leaseRefusal ? { ok: false, reason: state.leaseRefusal } : { ok: true }), draftModel: async (system, user) => (model.calls.push({ system, user }), model.reply()), fetch: (async (input: unknown, init?: RequestInit) => (fetched.push({ url: String(input), init }), upstream.reply(String(input)))) as unknown as typeof fetch, ...extra });
+	const web = createKakaoWeb({ paths, runner, now: () => NOW, openDb: async () => db, broadcast: e => events.push(e), onWatchChange: () => void state.changes++, collector: "mac-a", lease: async () => (state.leaseRefusal ? { ok: false, reason: state.leaseRefusal } : { ok: true }), draftModel: async (system, user) => (model.calls.push({ system, user }), model.reply()), fetch: (async (input: unknown, init?: RequestInit) => (fetched.push({ url: String(input), init }), upstream.reply(String(input)))) as unknown as typeof fetch, ...extra });
 	const call = async (method: string, path: string, body?: unknown) => {
 		const url = new URL(`http://local${path}`);
 		const res = await web.route(new Request(url, { method, ...(body === undefined ? {} : { body: JSON.stringify(body) }) }), url, url.pathname.split("/").filter(Boolean));
@@ -59,7 +59,7 @@ function setup(config: Partial<KakaoConfig> = {}, fill?: (w: Database) => void, 
 	const draft = (over: Partial<{ chatId: string; text: string; basisLogId: string }> = {}) =>
 		createDraft({ chatId: DIRECT, roomName: "Alex", text: "see you", basisLogId: id(3), ...over }, { paths, runner, now: () => NOW });
 	const config$ = () => JSON.parse(readFileSync(paths.config, "utf8")) as KakaoConfig;
-	return { web, revised, call, raw, fetched, upstream, events, calls, state, model, draft, config$, close: () => db.close() };
+	return { web, call, raw, fetched, upstream, events, calls, state, model, draft, config$, close: () => db.close() };
 }
 
 describe("rooms", () => {
@@ -251,133 +251,42 @@ describe("read counters", () => {
 });
 
 describe("typed send", () => {
-	test("goes through the stubbed screen without an approval step: sending -> sent, then listed in the room's sends", async () => {
-		const t = setup();
-		const r = await t.call("POST", `/api/kakao/chat/${DIRECT}/send`, { text: "hello there" });
+	test("with the one reply queue: the typed text becomes the owner's own draft and is handed to the queue's send, nothing pressed here", async () => {
+		const acts: Record<string, unknown>[] = [];
+		// The draft as the reply flow reads it back: the typed words name its version only while it holds exactly them.
+		let held = "내가 직접 쓴 답";
+		const replies = { view: async () => ({ draft: { text: held, hash: "h-own" } }), act: async (input: Record<string, unknown>) => (acts.push(input), { status: 202, body: { ok: true, item: { ref: input.ref, send: { state: "undo" } } } }) };
+		const t = setup({}, undefined, { replies: () => replies as never });
+		const r = await t.call("POST", `/api/kakao/chat/${DIRECT}/send`, { text: "내가 직접 쓴 답" });
 		expect(r.status).toBe(202);
-		expect(r.json.state).toBe("sending");
-		await t.web.idle();
-		expect(t.events.map(e => [e.kind, e.id, e.state])).toEqual([["kakao_send", r.json.id, "sending"], ["kakao_send", r.json.id, "sent"]]);
-		expect(t.calls).toEqual([["ax-send", "Alex", "hello there"]]);
-		const sends = (await t.call("GET", `/api/kakao/chat/${DIRECT}`)).json.sends;
-		expect(sends).toEqual([{ id: r.json.id, text: "hello there", state: "sent", at: NOW, collector: "mac-a" }]);
-		expect(statSync(join(dir, "kakao", "sends.json")).mode & 0o777).toBe(0o600);
-		expect(JSON.stringify(t.events)).not.toContain("hello there");
-		expect(JSON.stringify(t.events)).not.toContain("Alex");
-		t.close();
+		expect(r.json.state).toBe("undo");
+		const own = readDrafts(paths).find(d => d.code === acts[0]!.ref);
+		expect(own).toMatchObject({ chatId: DIRECT, text: "내가 직접 쓴 답", own: true, status: "pending" });
+		expect(acts).toEqual([{ ref: own!.code, action: "send", hash: "h-own" }]);
+		// A draft that no longer holds the typed words is sent naming no version: the flow refuses it `changed`.
+		held = "그사이 바뀐 글";
+		await t.call("POST", `/api/kakao/chat/${DIRECT}/send`, { text: "다시 쓴 답" });
+		expect(acts[1]).toMatchObject({ action: "send", hash: "" });
+		expect(t.calls).toEqual([]);
 	});
 
-	test("a failed send is recorded as failed with a reason and announced", async () => {
+	test("without the one reply queue a typed send is refused (503) and nothing is pressed or recorded", async () => {
 		const t = setup();
-		t.state.failSend = true;
 		const r = await t.call("POST", `/api/kakao/chat/${DIRECT}/send`, { text: "hello there" });
+		expect([r.status, r.json.code]).toEqual([503, "not_wired"]);
 		await t.web.idle();
-		const last = t.events.at(-1)!;
-		expect(last).toMatchObject({ kind: "kakao_send", chatId: DIRECT, id: r.json.id, state: "failed" });
-		expect(typeof last.reason).toBe("string");
-		const sends = (await t.call("GET", `/api/kakao/chat/${DIRECT}`)).json.sends;
-		expect(sends[0]).toMatchObject({ id: r.json.id, state: "failed", reason: last.reason });
+		expect(t.calls).toEqual([]);
+		expect(t.events).toEqual([]);
+		expect(existsSync(join(dir, "kakao", "sends.json"))).toBe(false);
 		t.close();
 	});
 
-	test("KakaoTalk with no window: the send ends failed with the Korean reason and its steps, never left sending", async () => {
-		const screen = fakeScreen([{ id: "chat_alex", title: "Alex", window: { title: "Alex" } }], { listShown: false });
-		const t = setup({}, undefined, { runner: screen.runner });
-		const r = await t.call("POST", `/api/kakao/chat/${DIRECT}/send`, { text: "hello there" });
-		await t.web.idle();
-		expect(t.events.at(-1)).toMatchObject({ kind: "kakao_send", id: r.json.id, state: "failed", reason: "카톡 창이 닫혀 있어요. 카카오톡 창을 열어 주세요" });
-		const stored = JSON.parse(readFileSync(join(dir, "kakao", "sends.json"), "utf8"));
-		expect(stored[0]).toMatchObject({ id: r.json.id, state: "failed", reason: "카톡 창이 닫혀 있어요. 카카오톡 창을 열어 주세요" });
-		expect(stored[0].ax.map((s: { step: string }) => s.step)).toEqual(["rows", "openlist"]);
-		expect(screen.sends).toHaveLength(0);
-		t.close();
-	});
-
-	test("a list opened for the send keeps its focus change on the send record", async () => {
-		const screen = fakeScreen([{ id: "chat_alex", title: "Alex", window: { title: "Alex" } }], { listShown: false, openlist: "ok", front: "com.example.Editor" });
-		const t = setup({}, undefined, { runner: screen.runner });
-		const r = await t.call("POST", `/api/kakao/chat/${DIRECT}/send`, { text: "hello there" });
-		await t.web.idle();
-		const stored = JSON.parse(readFileSync(join(dir, "kakao", "sends.json"), "utf8"));
-		expect(stored[0]).toMatchObject({ id: r.json.id, state: "sent", focus: { from: "com.example.Editor", took: true, restored: true } });
-		t.close();
-	});
-
-	test("deleting a failed send removes it from the room and the store, announces it once, and never retries it", async () => {
+	test("a typed send of before the reply queue that was left sending is listed as failed", async () => {
 		const t = setup();
-		t.state.failSend = true;
-		const r = await t.call("POST", `/api/kakao/chat/${DIRECT}/send`, { text: "hello there" });
-		await t.web.idle();
-		// One failure is one event (no repeat per poll or read of the room).
-		await t.call("GET", `/api/kakao/chat/${DIRECT}`);
-		await t.call("GET", `/api/kakao/chat/${DIRECT}`);
-		expect(t.events.filter(e => e.kind === "kakao_send" && e.state === "failed")).toHaveLength(1);
-		const tries = t.calls.length;
-
-		expect(await t.call("DELETE", `/api/kakao/chat/${DIRECT}/send/${r.json.id}`)).toEqual({ status: 200, json: { ok: true, removed: true } });
-		expect(t.events.at(-1)).toEqual({ kind: "kakao_send", chatId: DIRECT, id: r.json.id, state: "deleted" });
-		expect((await t.call("GET", `/api/kakao/chat/${DIRECT}`)).json.sends).toEqual([]);
-		expect(JSON.parse(readFileSync(join(dir, "kakao", "sends.json"), "utf8"))).toEqual([]);
-		// Deleting again is a no-op, and nothing was sent again.
-		expect((await t.call("DELETE", `/api/kakao/chat/${DIRECT}/send/${r.json.id}`)).json).toEqual({ ok: true, removed: false });
-		await t.web.idle();
-		expect(t.calls.length).toBe(tries);
-		t.close();
-	});
-
-	test("watchdog: a send whose job still runs after 60 s is never reported failed (it may still press); its result lands when it ends", async () => {
-		let clock = NOW;
-		const timers: { fn: () => void; ms: number }[] = [];
-		let release!: () => void;
-		const hold = new Promise<void>(r => (release = r));
-		const screen = fakeScreen([{ id: "chat_alex", title: "Alex", window: { title: "Alex" } }]);
-		const runner: Runner = async (argv, o) => {
-			if (argv[1] === "-l" && JSON.parse(o!.stdin!.trim()).action === "rows") await hold;
-			return screen.runner(argv, o);
-		};
-		const t = setup({}, undefined, { runner, now: () => clock, later: (fn, ms) => void timers.push({ fn, ms }) });
-		const r = await t.call("POST", `/api/kakao/chat/${DIRECT}/send`, { text: "hello there" });
-		expect(timers.map(x => x.ms)).toEqual([60_000]);
-		expect((await t.call("GET", `/api/kakao/chat/${DIRECT}`)).json.sends[0].state).toBe("sending");
-		clock = NOW + 61_000;
-		timers[0]!.fn();
-		// Still running: no failure, and the watchdog looks again later.
-		expect(t.events.filter(e => e.state === "failed")).toHaveLength(0);
-		expect(timers.map(x => x.ms)).toEqual([60_000, 60_000]);
-		expect((await t.call("GET", `/api/kakao/chat/${DIRECT}`)).json.sends[0].state).toBe("sending");
-		release();
-		await t.web.idle();
-		expect(t.events.at(-1)).toMatchObject({ kind: "kakao_send", id: r.json.id, state: "sent" });
-		timers[1]!.fn();
-		expect(t.events.filter(e => e.state === "failed")).toHaveLength(0);
-		expect(JSON.parse(readFileSync(join(dir, "kakao", "sends.json"), "utf8"))[0]).toMatchObject({ id: r.json.id, state: "sent" });
-		t.close();
-	});
-
-	test("a send older than 60 s that is still sending is listed as failed even when no timer ran", async () => {
-		const t = setup();
-		const file = join(dir, "kakao", "sends.json");
-		const probe = await t.call("POST", `/api/kakao/chat/${DIRECT}/send`, { text: "x" });
-		await t.web.idle();
-		writeFileSync(file, JSON.stringify([{ id: "Sold", chatId: DIRECT, text: "old", state: "sending", at: NOW - 61_000 }]));
+		mkdirSync(join(dir, "kakao"), { recursive: true });
+		writeFileSync(join(dir, "kakao", "sends.json"), JSON.stringify([{ id: "Sold", chatId: DIRECT, text: "old", state: "sending", at: NOW - 61_000 }, { id: "Sdone", chatId: DIRECT, text: "done", state: "sent", at: NOW - 30_000 }]));
 		const list = (await t.call("GET", `/api/kakao/chat/${DIRECT}`)).json.sends;
-		expect(list.map((s: any) => [s.id, s.state])).toEqual([["Sold", "failed"]]);
-		expect(probe.status).toBe(202);
-		t.close();
-	});
-
-	test("a lost send (gateway restarted) can be deleted; a sent one or another room's id cannot", async () => {
-		const t = setup();
-		const ok = await t.call("POST", `/api/kakao/chat/${DIRECT}/send`, { text: "done" });
-		await t.web.idle();
-		const file = join(dir, "kakao", "sends.json");
-		const stored = JSON.parse(readFileSync(file, "utf8"));
-		writeFileSync(file, JSON.stringify([...stored, { id: "Slost", chatId: DIRECT, text: "lost", state: "sending", at: NOW }, { id: "Sother", chatId: GROUP, text: "x", state: "failed", at: NOW }]));
-		expect((await t.call("GET", `/api/kakao/chat/${DIRECT}`)).json.sends.map((s: any) => [s.id, s.state])).toEqual([[ok.json.id, "sent"], ["Slost", "failed"]]);
-		expect((await t.call("DELETE", `/api/kakao/chat/${DIRECT}/send/${ok.json.id}`)).status).toBe(409);
-		expect((await t.call("DELETE", `/api/kakao/chat/${DIRECT}/send/Slost`)).json.removed).toBe(true);
-		expect((await t.call("DELETE", `/api/kakao/chat/${DIRECT}/send/Sother`)).json.removed).toBe(false);
-		expect(JSON.parse(readFileSync(file, "utf8")).map((s: any) => s.id)).toEqual([ok.json.id, "Sother"]);
+		expect(list.map((s: any) => [s.id, s.state])).toEqual([["Sold", "failed"], ["Sdone", "sent"]]);
 		t.close();
 	});
 
@@ -388,62 +297,6 @@ describe("typed send", () => {
 		await t.web.idle();
 		expect(t.calls).toEqual([]);
 		expect(t.events).toEqual([]);
-		t.close();
-	});
-});
-
-describe("drafts", () => {
-	test("the click is the approval: a pending draft is sent with no inbox answer, and listed in the room until then", async () => {
-		const t = setup();
-		const d = await t.draft();
-		expect((await t.call("GET", `/api/kakao/chat/${DIRECT}`)).json.drafts).toEqual([{ code: d.code, text: "see you", parts: ["see you"], basisLogId: id(3), created: d.created }]);
-		const r = await t.call("POST", `/api/kakao/drafts/${d.code}/send`, {});
-		expect(r.status).toBe(202);
-		await t.web.idle();
-		expect(t.calls.at(-1)).toEqual(["ax-send", "Alex", "see you"]);
-		expect((await listDrafts({ paths, runner: async () => ({ code: 0, stdout: "", stderr: "" }) }))[0]!.status).toBe("sent");
-		expect(t.events.map(e => e.kind)).toEqual(["kakao_send", "kakao_send", "kakao_draft"]);
-		expect((await t.call("GET", `/api/kakao/chat/${DIRECT}`)).json.drafts).toEqual([]);
-		expect((await t.call("POST", `/api/kakao/drafts/${d.code}/send`, {})).status).toBe(409);
-		t.close();
-	});
-
-	test("an edited text is sent instead of the draft's", async () => {
-		const t = setup();
-		const d = await t.draft();
-		const r = await t.call("POST", `/api/kakao/drafts/${d.code}/send`, { text: "고친 글" });
-		expect(r.status).toBe(202);
-		await t.web.idle();
-		expect(t.calls.at(-1)).toEqual(["ax-send", "Alex", "고친 글"]);
-		expect((await t.call("POST", `/api/kakao/drafts/${(await t.draft()).code}/send`, { text: "  " })).status).toBe(400);
-		t.close();
-	});
-
-	test("a draft that a newer incoming message made stale is refused (409) and nothing is sent", async () => {
-		const t = setup();
-		const d = await t.draft({ basisLogId: id(1) });
-		const r = await t.call("POST", `/api/kakao/drafts/${d.code}/send`, {});
-		expect(r.status).toBe(409);
-		expect(typeof r.json.error).toBe("string");
-		await t.web.idle();
-		expect(t.calls).toEqual([]);
-		expect((await listDrafts({ paths, runner: async () => ({ code: 0, stdout: "", stderr: "" }) }))[0]!.status).toBe("stale");
-		expect(t.events).toEqual([{ kind: "kakao_draft", chatId: DIRECT }]);
-		t.close();
-	});
-
-	test("drop marks the draft dropped and announces it; a second drop, an unknown code and an unwatched room are refused", async () => {
-		const t = setup({ watch_chats: [DIRECT] });
-		const d = await t.draft();
-		expect((await t.call("POST", `/api/kakao/drafts/${d.code}/drop`)).json).toEqual({ ok: true });
-		expect(t.events).toEqual([{ kind: "kakao_draft", chatId: DIRECT }]);
-		expect((await listDrafts({ paths, runner: async () => ({ code: 0, stdout: "", stderr: "" }) }))[0]!.status).toBe("dropped");
-		expect((await t.call("POST", `/api/kakao/drafts/${d.code}/drop`)).status).toBe(409);
-		expect((await t.call("POST", "/api/kakao/drafts/KNOPE/drop")).status).toBe(404);
-		const other = await t.draft({ chatId: GROUP });
-		expect((await t.call("POST", `/api/kakao/drafts/${other.code}/drop`)).status).toBe(403);
-		expect((await t.call("POST", `/api/kakao/drafts/${other.code}/send`, {})).status).toBe(403);
-		expect(t.calls).toEqual([]);
 		t.close();
 	});
 });
@@ -647,15 +500,11 @@ describe("on-demand draft", () => {
 		t.close();
 	});
 
-	test("a change request rewrites the pending draft with one call: the old draft stays until the new one is stored, then goes (stale); the change is recorded", async () => {
+	test("a change request rewrites the pending draft with one call: the old draft stays until the new one is stored, then goes (stale)", async () => {
 		const t = setup();
 		const old = await t.draft({ text: "내일 3시에 봐요" });
 		t.model.reply = async () => ({ text: JSON.stringify({ action: "draft", body: "내일 3시", summary: "약속" }), inputTokens: 500, outputTokens: 10 });
-		expect((await t.call("POST", DRAFT, { revise: { code: "nope", change: "더 짧게" } })).status).toBe(409);
-		expect((await t.call("POST", DRAFT, { revise: { code: old.code, change: "  " } })).status).toBe(400);
-		expect(t.model.calls).toHaveLength(0);
-		expect(await t.call("POST", DRAFT, { revise: { code: old.code, change: "더 짧게" } })).toEqual({ status: 202, json: { state: "drafting" } });
-		await t.web.idle();
+		await t.web.replyKit.revise(DIRECT, { code: old.code, draft: old.text, change: "더 짧게" });
 		expect(t.model.calls).toHaveLength(1);
 		expect(t.model.calls[0]!.user).toContain("내일 3시에 봐요");
 		expect(t.model.calls[0]!.user).toContain("더 짧게");
@@ -663,7 +512,20 @@ describe("on-demand draft", () => {
 		const drafts = await storedDrafts();
 		expect(drafts.filter(d => d.status === "pending").map(d => d.text)).toEqual(["내일 3시"]);
 		expect(drafts.find(d => d.code === old.code)?.status).toBe("stale");
-		expect(t.revised).toEqual([[DIRECT, "더 짧게"]]);
+		t.close();
+	});
+
+	test("a change request for a message the owner asked for is rewritten with the new-message rules, and an authored text stays whole", async () => {
+		const t = setup();
+		const old = await t.draft({ text: "짧은 설명" });
+		const long = Array.from({ length: 7 }, (_, i) => `${i}번 설명 ${"가".repeat(40)}`);
+		t.model.reply = async () => ({ text: JSON.stringify({ action: "draft", mode: "author", parts: long, summary: "" }) });
+		await t.web.replyKit.revise(DIRECT, { code: old.code, draft: old.text, change: "더 자세히", intent: "맥미니 설명자료 만들어" });
+		expect(t.model.calls[0]!.system).toContain("RELAY");
+		expect(t.model.calls[0]!.user).toContain('What the owner asked for (his own words, data): "맥미니 설명자료 만들어"');
+		const next = (await storedDrafts()).find(d => d.status === "pending")!;
+		expect(next.text.replace(/\s/g, "")).toBe(long.join("").replace(/\s/g, ""));
+		expect(next.intent).toBe("맥미니 설명자료 만들어");
 		t.close();
 	});
 
@@ -671,10 +533,23 @@ describe("on-demand draft", () => {
 		const t = setup();
 		const old = await t.draft({ text: "내일 3시에 봐요" });
 		t.model.reply = async () => ({ text: "죄송해요, 못 해요" });
-		await t.call("POST", DRAFT, { revise: { code: old.code, change: "더 짧게" } });
-		await t.web.idle();
+		await t.web.replyKit.revise(DIRECT, { code: old.code, draft: old.text, change: "더 짧게" });
 		expect(t.events.at(-1)).toMatchObject({ kind: "kakao_draft", chatId: DIRECT, error: expect.any(String) });
 		expect((await storedDrafts()).filter(d => d.status === "pending").map(d => d.text)).toEqual(["내일 3시에 봐요"]);
+		t.close();
+	});
+
+	test("a draft that fails the lint is written again once; what still fails is a 확인 note on the stored draft", async () => {
+		const t = setup({}, undefined, { draftStyle: () => ({ rules: [], corrections: [], forbidden: ["무조건"], samples: [] }) });
+		await t.draft({ text: "내일 3시에 봐요" });
+		const replies = ["무조건 3시에 와", "무조건 3시"];
+		t.model.reply = async () => ({ text: JSON.stringify({ action: "draft", body: replies.shift() ?? "3시", summary: "" }) });
+		const old = (await storedDrafts())[0]!;
+		await t.web.replyKit.revise(DIRECT, { code: old.code, draft: old.text, change: "단호하게" });
+		expect(t.model.calls).toHaveLength(2);
+		expect(t.model.calls[1]!.user).toContain("forbidden expression '무조건'");
+		const next = (await storedDrafts()).find(d => d.status === "pending")!;
+		expect([next.text, next.notes]).toEqual(["무조건 3시", ["확인: it uses the forbidden expression '무조건'"]]);
 		t.close();
 	});
 
@@ -698,7 +573,7 @@ describe("on-demand draft", () => {
 		expect(r).toEqual({ status: 202, json: { state: "drafting" } });
 		await t.web.idle();
 		expect(t.model.calls).toHaveLength(1);
-		expect(t.model.calls[0]!.user).toContain('The message the owner wants to send (his own words, data): "내일 7시로 미루자고 정중하게"');
+		expect(t.model.calls[0]!.user).toContain('What the owner asked for (his own words, data): "내일 7시로 미루자고 정중하게"');
 		expect(t.model.calls[0]!.user).toContain("Recent messages in the room (");
 		expect(t.model.calls[0]!.system).toContain("message the owner wants to send");
 		const chat = await t.call("GET", `/api/kakao/chat/${DIRECT}`);
@@ -711,13 +586,106 @@ describe("on-demand draft", () => {
 		t.close();
 	});
 
-	test("a message he asked for is never asked back as a room question: an ask answer fails the compose draft", async () => {
+	const composeAsk = (mode: "author" | "task", question: string) => JSON.stringify({ action: "ask", mode, question, choices: [], body: "", summary: "" });
+	const KNOWN_SENTENCE = "He chose that you write it from what you know";
+	const INTENT = "내가 말한 것 정리해서 보내 줘";
+
+	test("a message he asked for whose material the room lacks comes back as a question card (author), not a failure: no draft, the question and his words are kept", async () => {
 		const t = setup();
-		t.model.reply = async () => ({ text: JSON.stringify({ action: "ask", question: "언제로 미룰까요?", choices: ["내일", "모레"], body: "", summary: "" }) });
-		await t.call("POST", `/api/kakao/chat/${DIRECT}/draft`, { intent: "미루자고 말해 줘" });
+		t.model.reply = async () => ({ text: composeAsk("author", "말씀하신 내용이 대화에 없어요. 무엇을 정리할까요?") });
+		expect(await t.call("POST", DRAFT, { intent: INTENT })).toEqual({ status: 202, json: { state: "drafting" } });
 		await t.web.idle();
-		expect(t.events.filter(e => e.kind === "kakao_draft").at(-1)).toMatchObject({ chatId: DIRECT, error: expect.any(String) });
-		expect((await t.call("GET", `/api/kakao/chat/${DIRECT}`)).json.drafts).toEqual([]);
+		expect(t.events.filter(e => e.kind === "kakao_draft")).toEqual([{ kind: "kakao_draft", chatId: DIRECT }]);
+		const room = (await t.call("GET", `/api/kakao/chat/${DIRECT}`)).json;
+		expect(room.ask).toEqual({ question: "말씀하신 내용이 대화에 없어요. 무엇을 정리할까요?", choices: [], kind: "author" });
+		expect(room.drafts).toEqual([]);
+		expect(await storedDrafts()).toEqual([]);
+		t.close();
+	});
+
+	test("a request for work, not a message, comes back as a task question card", async () => {
+		const t = setup();
+		t.model.reply = async () => ({ text: composeAsk("task", "이건 메시지가 아니라 작업이에요") });
+		await t.call("POST", DRAFT, { intent: "지난 석 달 대화를 다 훑어서 보고서로 만들어 줘" });
+		await t.web.idle();
+		expect(t.events.filter(e => e.kind === "kakao_draft")).toEqual([{ kind: "kakao_draft", chatId: DIRECT }]);
+		expect((await t.call("GET", `/api/kakao/chat/${DIRECT}`)).json.ask).toEqual({ question: "이건 메시지가 아니라 작업이에요", choices: [], kind: "task" });
+		expect(await storedDrafts()).toEqual([]);
+		t.close();
+	});
+
+	test("아는 대로 써 ({ known: true }) rewrites his stored request with the known sentence in the prompt, stores the draft and clears the question", async () => {
+		const t = setup();
+		t.model.reply = async () => ({ text: composeAsk("author", "무엇을 정리할까요?") });
+		await t.call("POST", DRAFT, { intent: INTENT });
+		await t.web.idle();
+		t.model.calls.length = 0;
+		t.events.length = 0;
+		t.model.reply = async () => ({ text: JSON.stringify({ action: "draft", mode: "author", parts: ["제가 아는 대로 정리해 드릴게요"], summary: "" }), inputTokens: 700, outputTokens: 30 });
+		expect(await t.call("POST", DRAFT, { known: true })).toEqual({ status: 202, json: { state: "drafting" } });
+		await t.web.idle();
+		expect(t.model.calls).toHaveLength(1);
+		expect(t.model.calls[0]!.user).toContain(KNOWN_SENTENCE);
+		expect(t.model.calls[0]!.user).toContain(`"${INTENT}"`);
+		expect(t.events).toEqual([{ kind: "kakao_draft", chatId: DIRECT }]);
+		expect(await storedDrafts()).toEqual([expect.objectContaining({ text: "제가 아는 대로 정리해 드릴게요", status: "pending", intent: INTENT })]);
+		expect((await t.call("GET", `/api/kakao/chat/${DIRECT}`)).json.ask).toBeUndefined();
+		t.close();
+	});
+
+	test("a model that asks again after 아는 대로 써 is an error event: no draft and no second question replaces the first", async () => {
+		const t = setup();
+		t.model.reply = async () => ({ text: composeAsk("author", "첫 번째 질문") });
+		await t.call("POST", DRAFT, { intent: INTENT });
+		await t.web.idle();
+		t.events.length = 0;
+		t.model.reply = async () => ({ text: composeAsk("author", "두 번째 질문") });
+		await t.call("POST", DRAFT, { known: true });
+		await t.web.idle();
+		expect(t.events).toEqual([{ kind: "kakao_draft", chatId: DIRECT, error: expect.any(String) }]);
+		expect(await storedDrafts()).toEqual([]);
+		expect((await t.call("GET", `/api/kakao/chat/${DIRECT}`)).json.ask).toMatchObject({ question: "첫 번째 질문", kind: "author" });
+		t.close();
+	});
+
+	test("{ known: true } is refused without an author question of the room (none, a reply question, a task question), and a pick never answers a compose question", async () => {
+		const t = setup();
+		expect((await t.call("POST", DRAFT, { known: true })).status).toBe(409);
+
+		t.model.reply = async () => ({ text: JSON.stringify({ action: "ask", question: "티켓 취소할까?", choices: ["취소해", "다른 날 물어봐"], body: "", summary: "" }) });
+		await t.call("POST", DRAFT);
+		await t.web.idle();
+		expect((await t.call("POST", DRAFT, { known: true })).status).toBe(409);
+
+		t.model.reply = async () => ({ text: composeAsk("task", "작업이에요") });
+		await t.call("POST", `/api/kakao/chat/${DIRECT}/ask/drop`);
+		await t.call("POST", DRAFT, { intent: "조사해 줘" });
+		await t.web.idle();
+		expect((await t.call("POST", DRAFT, { known: true })).status).toBe(409);
+		expect((await t.call("POST", DRAFT, { choice: "취소해" })).status).toBe(409);
+		expect(t.model.calls).toHaveLength(2);
+
+		t.model.reply = async () => ({ text: composeAsk("author", "무엇을요?") });
+		await t.call("POST", `/api/kakao/chat/${DIRECT}/ask/drop`);
+		await t.call("POST", DRAFT, { intent: INTENT });
+		await t.web.idle();
+		expect((await t.call("POST", DRAFT, { choice: "무엇을요?" })).status).toBe(409);
+		expect((await t.call("POST", DRAFT, { known: true, intent: "다른 내용" })).status).toBe(409);
+		expect(t.model.calls).toHaveLength(3);
+		t.close();
+	});
+
+	test("a question stored in today's shape (no kind) still shows as a reply question and answers its choice", async () => {
+		const t = setup();
+		mkdirSync(join(dir, "kakao"), { recursive: true });
+		writeFileSync(join(dir, "kakao", "asks.json"), JSON.stringify({ [DIRECT]: { question: "티켓 취소할까?", choices: ["취소해", "다른 날 물어봐"], basisLogId: id(9999), created: NOW } }));
+		expect((await t.call("GET", `/api/kakao/chat/${DIRECT}`)).json.ask).toEqual({ question: "티켓 취소할까?", choices: ["취소해", "다른 날 물어봐"] });
+		t.model.reply = async () => ({ text: JSON.stringify({ action: "draft", body: "ㅇㅇ 취소하자", summary: "" }) });
+		expect((await t.call("POST", DRAFT, { choice: "취소해" })).status).toBe(202);
+		await t.web.idle();
+		expect(t.model.calls[0]!.user).toContain('"취소해"');
+		expect((await storedDrafts()).map(d => d.text)).toEqual(["ㅇㅇ 취소하자"]);
+		expect((await t.call("GET", `/api/kakao/chat/${DIRECT}`)).json.ask).toBeUndefined();
 		t.close();
 	});
 
@@ -759,23 +727,6 @@ describe("on-demand draft", () => {
 		expect(chatBlock(t.model.calls[0]!.user)).toBe("나: note to self");
 		const [d] = await storedDrafts();
 		expect(d).toMatchObject({ chatId: String(ROOM.self), roomName: "My Memo", basisLogId: id(6) });
-		t.close();
-	});
-});
-
-describe("sends go through dispatchSend", () => {
-	test("a refused lease fails a typed send and a confirmed draft with its reason, and nothing is sent", async () => {
-		const t = setup();
-		t.state.leaseRefusal = "다른 맥이 이 대화방을 맡고 있어요";
-		const typed = await t.call("POST", `/api/kakao/chat/${DIRECT}/send`, { text: "hi" });
-		const d = await t.draft();
-		const confirmed = await t.call("POST", `/api/kakao/drafts/${d.code}/send`, {});
-		expect([typed.status, confirmed.status]).toEqual([202, 202]);
-		await t.web.idle();
-		expect(t.calls).toEqual([]);
-		const sends = (await t.call("GET", `/api/kakao/chat/${DIRECT}`)).json.sends;
-		expect(sends.map((s: any) => [s.state, s.reason])).toEqual([["failed", t.state.leaseRefusal], ["failed", t.state.leaseRefusal]]);
-		expect((await storedDrafts())[0]!.status).toBe("pending");
 		t.close();
 	});
 });
@@ -1118,17 +1069,6 @@ describe("owner voice in the draft prompt", () => {
 		t.close();
 	});
 
-	test("sending an edited draft reports the correction; sending it unchanged does not", async () => {
-		const got: string[][] = [];
-		const t = setup({}, undefined, { onCorrection: (chatId, draft, sent) => void got.push([chatId, draft, sent]) });
-		const a = await t.draft();
-		await t.call("POST", `/api/kakao/drafts/${a.code}/send`, { text: "see you" });
-		const b = await t.draft();
-		await t.call("POST", `/api/kakao/drafts/${b.code}/send`, { text: "고친 글" });
-		await t.web.idle();
-		expect(got).toEqual([[DIRECT, "see you", "고친 글"]]);
-		t.close();
-	});
 });
 
 describe("draft of several messages: 다시 보내기", () => {
@@ -1141,66 +1081,33 @@ describe("draft of several messages: 다시 보내기", () => {
 	};
 	const drafts = () => listDrafts({ paths, runner: async () => ({ code: 0, stdout: "", stderr: "" }) });
 	const okTexts = (screen: ReturnType<typeof fakeScreen>) => screen.sends.map(s => s[2]);
+	// The owner's 보내기 as the one reply flow runs it (hub/kakao/reply-adapter.ts): one dispatch with this surface's own send deps.
+	const sendOnce = async (t: ReturnType<typeof setup>, code: string) => dispatchSend({ kind: "draft", code, ownerApproved: true }, await t.web.replyKit.sendDeps());
 
-	test("after a failed part, 다시 보내기 sends only the parts not yet sent, one message each, and the draft ends sent with every part", async () => {
+	test("an older web's retry (the joined text of a pending draft as a typed send) is the owner's 보내기 through the reply flow, never a direct send", async () => {
 		const { flag, screen } = failingSecond();
-		const t = setup({}, undefined, { runner: screen.runner });
+		const acts: Record<string, unknown>[] = [];
+		const replies = { view: async () => ({ draft: { text: PARTS, hash: "h-parts" } }), act: async (input: Record<string, unknown>) => (acts.push(input), { status: 200, body: { ok: true, item: { ref: input.ref, send: { state: "undo" } } } }) };
+		const t = setup({}, undefined, { runner: screen.runner, replies: () => replies as never });
 		const d = await t.draft({ text: PARTS });
-		const first = await t.call("POST", `/api/kakao/drafts/${d.code}/send`, {});
-		await t.web.idle();
-		const failed = (await t.call("GET", `/api/kakao/chat/${DIRECT}`)).json.sends.find((s: any) => s.id === first.json.id);
-		expect(failed).toMatchObject({ state: "failed", draft: d.code, text: PARTS });
-		expect(failed.reason).toContain("3개 중 1개를 보냈어요");
-		expect((await drafts())[0]).toMatchObject({ status: "pending", sentParts: 1 });
-
+		await sendOnce(t, d.code);
 		flag.failing = false;
-		const before = screen.sends.length;
-		const again = await t.call("POST", `/api/kakao/chat/${DIRECT}/send/${first.json.id}/retry`, {});
-		expect(again.status).toBe(202);
-		await t.web.idle();
-		expect(okTexts(screen).slice(before)).toEqual(["둘째", "셋째"]);
-		expect(okTexts(screen).filter(x => x === "첫째")).toHaveLength(1);
-		expect(okTexts(screen)).not.toContain(PARTS);
-		expect((await drafts())[0]).toMatchObject({ status: "sent", sentParts: 3 });
-		// The room lists the new send only; the failed one stays in the store with its attempts, marked as retried.
-		const listed = (await t.call("GET", `/api/kakao/chat/${DIRECT}`)).json.sends;
-		expect(listed.map((s: any) => [s.id, s.state, s.draft])).toEqual([[again.json.id, "sent", d.code]]);
-		const stored = JSON.parse(readFileSync(join(dir, "kakao", "sends.json"), "utf8"));
-		expect(stored.find((s: any) => s.id === first.json.id)).toMatchObject({ state: "failed", retried: again.json.id });
-		expect(t.events).toContainEqual({ kind: "kakao_send", chatId: DIRECT, id: first.json.id, state: "deleted" });
-		// A second 다시 보내기 of the same failed send does nothing.
-		expect((await t.call("POST", `/api/kakao/chat/${DIRECT}/send/${first.json.id}/retry`, {})).status).toBe(404);
-		t.close();
-	});
-
-	test("an older web's retry (delete, then the joined text as a typed send) still goes out part by part from the first unsent part", async () => {
-		const { flag, screen } = failingSecond();
-		const t = setup({}, undefined, { runner: screen.runner });
-		const d = await t.draft({ text: PARTS });
-		const first = await t.call("POST", `/api/kakao/drafts/${d.code}/send`, {});
-		await t.web.idle();
-		flag.failing = false;
-		await t.call("DELETE", `/api/kakao/chat/${DIRECT}/send/${first.json.id}`);
 		const before = screen.sends.length;
 		const typed = await t.call("POST", `/api/kakao/chat/${DIRECT}/send`, { text: PARTS });
-		expect(typed.status).toBe(202);
+		expect(typed.status).toBe(200);
 		await t.web.idle();
-		expect(okTexts(screen).slice(before)).toEqual(["둘째", "셋째"]);
-		expect((await drafts())[0]).toMatchObject({ status: "sent", sentParts: 3 });
+		expect(acts).toEqual([{ ref: d.code, action: "send", hash: "h-parts" }]);
+		expect(screen.sends.length).toBe(before);
 		t.close();
 	});
 
-	test("a partly sent draft that was dropped is never sent again as one joined message, by retry or as typed text", async () => {
+	test("a partly sent draft that was dropped is never sent again as one joined message as typed text", async () => {
 		const { screen } = failingSecond();
 		const t = setup({}, undefined, { runner: screen.runner });
 		const d = await t.draft({ text: PARTS });
-		const first = await t.call("POST", `/api/kakao/drafts/${d.code}/send`, {});
-		await t.web.idle();
-		await t.call("POST", `/api/kakao/drafts/${d.code}/drop`);
+		await sendOnce(t, d.code);
+		expect(dropDraft(d.code, { paths }).ok).toBe(true);
 		const before = screen.sends.length;
-		const retry = await t.call("POST", `/api/kakao/chat/${DIRECT}/send/${first.json.id}/retry`, {});
-		expect(retry.status).toBe(409);
-		expect(retry.json.error).toContain("3개 중 1개는 이미 보냈어요");
 		const typed = await t.call("POST", `/api/kakao/chat/${DIRECT}/send`, { text: PARTS });
 		expect(typed.status).toBe(409);
 		await t.web.idle();
@@ -1208,23 +1115,10 @@ describe("draft of several messages: 다시 보내기", () => {
 		t.close();
 	});
 
-	test("다시 보내기 of a failed typed send sends that text again as typed", async () => {
-		const t = setup();
-		t.state.failSend = true;
-		const first = await t.call("POST", `/api/kakao/chat/${DIRECT}/send`, { text: "hello there" });
-		await t.web.idle();
-		t.state.failSend = false;
-		const again = await t.call("POST", `/api/kakao/chat/${DIRECT}/send/${first.json.id}/retry`, {});
-		expect(again.status).toBe(202);
-		await t.web.idle();
-		expect(t.calls.at(-1)).toEqual(["ax-send", "Alex", "hello there"]);
-		expect((await t.call("GET", `/api/kakao/chat/${DIRECT}`)).json.sends.map((s: any) => [s.id, s.state])).toEqual([[again.json.id, "sent"]]);
-		t.close();
-	});
 });
 
 describe("pending drafts for the 답장 확인 queue", () => {
-	test("lists the pending drafts of watched rooms with the message each answers, counts them, and a dropped one comes back once", async () => {
+	test("lists the pending drafts of watched rooms with the message each answers and counts them; a dropped one leaves the count and a restored one comes back", async () => {
 		const t = setup({ watch_chats: [DIRECT, GROUP] });
 		const a = await t.draft({ text: "좋아요\n\n내일 봐요" });
 		const g = await createDraft({ chatId: GROUP, roomName: "Study Group", text: "그룹 답", basisLogId: "999999" }, { paths, runner: fakeScreen([]).runner, now: () => NOW });
@@ -1238,13 +1132,10 @@ describe("pending drafts for the 답장 확인 queue", () => {
 		expect(t.web.pendingCount()).toBe(2);
 		expect(t.web.pendingCount(new Set([a.code]))).toBe(1);
 
-		expect((await t.call("POST", `/api/kakao/drafts/${g.code}/restore`)).status).toBe(409);
-		expect((await t.call("POST", `/api/kakao/drafts/${g.code}/drop`)).status).toBe(200);
+		expect(dropDraft(g.code, { paths }).ok).toBe(true);
 		expect(t.web.pendingCount()).toBe(1);
-		expect(await t.call("POST", `/api/kakao/drafts/${g.code}/restore`)).toEqual({ status: 200, json: { ok: true } });
-		expect(t.events.filter(e => e.kind === "kakao_draft").map(e => e.chatId)).toEqual([GROUP, GROUP]);
+		expect(restoreDraft(g.code, { paths }).ok).toBe(true);
 		expect(t.web.pendingCount()).toBe(2);
-		expect((await t.call("POST", `/api/kakao/drafts/${g.code}/restore`)).status).toBe(409);
 		t.close();
 	});
 });

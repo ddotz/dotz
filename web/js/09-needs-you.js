@@ -96,9 +96,8 @@ function paintMonAttn() {
   if (NM.loaded && NT.loaded && INTG.loaded) b.dataset.seen = "1";
   b.parentElement.setAttribute("aria-label", say ? TX("home.attn.mon_aria", { say }) : TX("common.monitoring"));
 }
-// The badge and 답변 필요 read this computer's monitors on every tab: 홈 and 모니터링 refresh them themselves, any other tab here.
 // The other computers' snapshot (pqLoad) is read only by 모니터링.
-setInterval(() => { if (!document.hidden && current !== "home" && current !== "monitoring" && !monCtx) loadMonitors(); }, 60_000);
+setInterval(() => { if (!document.hidden && (current !== "home" || monCtx)) loadMonitors(); }, 60_000);
 // A target that starts needing the owner pops one toast (tap = switch to it): a lane question, a rate limit, or the main chat
 // finishing unseen (a lane's finished turn already has its report toast). On page load only open questions pop, and several of them are
 // one toast with their count that opens 홈 (they are all rows of 답변 필요 there), not a stack of cards over the screen.
@@ -167,16 +166,19 @@ const nyHandled = n => ntNeeds(n) && !ntOpenDec(n) && !ntLinkedDec(n) && !nyOf(n
 // A monitor of this computer that failed NY_FAILS times in a row (about an hour) waits on the owner too: 확인 필요, with the count,
 // opening its row in 모니터링 (an app's watch opens the app). Only here: no push or Discord alert is sent for it.
 const NY_FAILS = 3;
+// Handled: the owner read, dismissed or ignored the watch's alert of this failure streak (sent since its outage began, else since its last good run)
+// in 알림. It stays off 답변 필요 until the watch recovers and a new streak sends a new alert.
+const nyMonSeen = m => { const from = Date.parse(m.since || m.last_ok || "") || 0; return NT.items.some(n => n.kind === "watch" && n.watch === m.watch && ntAt(n) >= from && (n.read || n.dismissed || n.ignored)); };
 function nyMonFails() {
   const out = [];
   for (const i of monItems()) if (!i.pc) for (const m of i.mon ? [i.mon] : i.owned || [])
-    if (!m.paused && (m.fails | 0) >= NY_FAILS) out.push({ m, key: i.key, pc: i.pc || null, rank: 2, crit: false, act: TX("home.attn.check"), at: m.last_run || "" });
+    if (!m.paused && (m.fails | 0) >= NY_FAILS && !nyMonSeen(m)) out.push({ m, key: i.key, pc: i.pc || null, rank: 2, crit: false, act: TX("home.attn.check"), at: m.last_run || "" });
   return out;
 }
 // Only this computer's: another computer's question is listed in 모니터링, and here only the computer chip's dot says it waits (owner 2026-10-31).
 function nyList() {
   const lanes = ((S && S.lanes) || []).filter(laneAlive).map(l => `lane:${l.name}`);
-  const asks = lanes.filter(t => (askOf(t) || attnKind(t) === "ask") && !ntHasDecision(t)).map(t => ({ t, rank: 3, crit: false, act: TX("home.ny.reply"), at: (targetInfo(t).ask || {}).at || "" }));
+  const asks = lanes.filter(t => (askOf(t) || attnKind(t) === "ask") && !ntHasDecision(t) && !ntLaterAt(t, (targetInfo(t).ask || {}).at)).map(t => ({ t, rank: 3, crit: false, act: TX("home.ny.reply"), at: (targetInfo(t).ask || {}).at || "" }));
   const loose = ntLooseAsks().filter(n => !asks.some(x => x.t === (n.src || n.open)));
   const items = [...ntDecisions(), ...loose].map(nyOf).filter(Boolean).concat(asks, nyMonFails());
   const when = x => x.n ? ntAt(x.n) : Date.parse(x.at) || 0;
@@ -188,6 +190,8 @@ function nyRows(items) {
   const mark = (node, it) => {
     if (it.n && it.n.pc) for (const h of node.querySelectorAll(".hrx-m .hn1")) h.append(el("span", { class: "tag mon-pc", text: it.n.pc.name }));   // another computer's question names it
     for (const hs of node.querySelectorAll(".hrx-m .hs")) hs.textContent = it.act;
+    const choices = it.n && it.n.decision && !it.n.decision.to.startsWith("auth:") ? it.n.decision.options.length : 0;
+    if (choices) for (const ha of node.querySelectorAll(".hrx-m .ha")) ha.textContent = [ha.textContent, TX("home.ny.choices", { n: choices })].filter(Boolean).join(" · ");
     for (const b of node.querySelectorAll(".hrx-m")) b.setAttribute("aria-label", b.getAttribute("aria-label").replace(new RegExp(`${TX("common.needs_reply")}$`), it.crit ? TX("home.ny.critical", { act: it.act }) : it.act));
     if (it.crit) { node.classList.add("crit"); if (it.n && it.n.tone === "fail") for (const e of node.querySelectorAll(".hs")) e.classList.add("err"); }   // a login stays orange; only a failure is red
     return nyBare(node);
@@ -208,9 +212,12 @@ const nyLoginLost = n => n.waits === "login" || (!n.read && n.cls === "alert" &&
 function nyLogins() {
   const ns = NT.items.filter(n => n.id && !n.ignored && !n.dismissed && ntHomeAlert(n) && !ntNeeds(n) && nyLoginLost(n)).sort((a, b) => ntAt(b) - ntAt(a));
   const out = ns.map(n => ({ id: n.id, node: nyLoginRow(n) }));
-  for (const i of typeof INTG !== "undefined" ? INTG.items : []) if (i.state === "disconnected" && !ns.some(n => i.label && hcLine(n).includes(i.label))) out.push({ id: `i:${i.key}`, node: nyDownRow(i) });
+  for (const i of typeof INTG !== "undefined" ? INTG.items : []) if (nyLoginGone(i) && !ns.some(n => i.label && hcLine(n).includes(i.label))) out.push({ id: `i:${i.key}`, node: nyDownRow(i) });
   return out;
 }
+// An app's login is gone when a watch it owns lost its login (hub/watch-status.ts reason "login") and the owner has not handled that alert yet;
+// a check that keeps failing (the app is closed) is a failing watch row, not a login.
+const nyLoginGone = i => i.state === "disconnected" && NM.items.some(m => m.connection === "disconnected" && m.conn_reason === "login" && monOwner([i], m) && !nyMonSeen(m));
 function nyLoginRow(n) {
   const node = nyBare(ntHomeRow(n, TX("home.ny.relogin"))), app = (/^(.*?)\s*로그인이 풀렸어요/.exec(hcLine(n)) || [])[1], ha = node.querySelector(".ha");
   if (app && ha) ha.textContent = `${app} · ${ntWhen(n)}`;
@@ -303,7 +310,7 @@ function noteQuota(q) {
 function quotaLive(q) {
   if (!q) return;
   noteQuota(q);
-  HQ = q;
+  putHQ(q);
   if (current === "usage") { if (P) paintQuota(q); else loadQuota(); }   // the pushed read is drawn as it is: a recovery shows now, not after a second fetch
   else if (current === "home") renderHome();
 }
@@ -313,12 +320,17 @@ async function loadStrip() {
   stripAt = Date.now();
   try { noteQuota(await api("/api/quota")); } catch {}
 }
+const stripAsked = () => { stripAt = Date.now(); };   // a quota read is out: loadStrip waits its 3 minutes
+const stripRetry = () => { stripAt = 0; };   // that read failed: the next loadStrip asks again
 
 // Per-target data, shared by both views: conversation events (msgs) and what the agent did (acts).
 const TS = {};
-const ts = t => TS[t] || (TS[t] = { msgs: [], mk: new Set(), acts: [], ak: new Set(), hLoaded: false, aLoaded: false, unread: 0, draft: "", loading: null, ahist: false, amore: false, older: false, cap: 600, gaps: new Set() });
+const ts = t => TS[t] || (TS[t] = { t, msgs: [], mk: new Set(), acts: [], ak: new Set(), hLoaded: false, aLoaded: false, unread: 0, draft: "", ahist: false, amore: false, older: false, cap: 600, gaps: new Set() });
+// Every conversation's history and activity are read again when next opened, except keep (the one being reread now).
+const tsStale = keep => { for (const k of Object.keys(TS)) if (k !== keep) TS[k].hLoaded = TS[k].aLoaded = false; };
 const byTs = (a, b) => a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : 0;
-const msgKey = e => `${e.ts}|${e.kind}|${e.lane ?? ""}|${e.ref ?? ""}${e.state ?? ""}|${String(e.text ?? "").slice(0, 60)}`;
+// The fields an event keeps from the stream to the history (hub/events.ts emit, history): two events of one ms, kind and opening tell apart by these.
+const msgKey = e => `${e.ts}|${e.kind}|${e.lane ?? ""}|${e.target ?? ""}|${e.id ?? ""}|${e.update_key ?? ""}|${e.ref ?? ""}${e.state ?? ""}|${String(e.text ?? "").slice(0, 60)}`;
 const actKey = a => `${a.ts}|${a.type}|${a.call_id ?? ""}|${(a.text ?? "").length}|${(a.text ?? "").slice(0, 40)}`;
 const OWNER = new Set(["message", "lane_message", "_cmd"]);
 const ownerish = e => OWNER.has(e.kind) || e.kind === "_cmdout";
@@ -342,6 +354,7 @@ function eventTarget(e) {
 /* ---------- conversation view (대화) ---------- */
 const timeline = $("#timeline"), tl = $("#tl"), term = $("#term");
 let chatStick = true, termStick = true;
+const putChatStick = v => { chatStick = v; }, putTermStick = v => { termStick = v; };
 timeline.addEventListener("scroll", () => { chatStick = timeline.scrollTop + timeline.clientHeight >= timeline.scrollHeight - 40; $("#chat-jump").hidden = chatStick; convReadSoon(); if (timeline.scrollTop < 80) loadOlderMsgs(); });
 timeline.addEventListener("scroll", () => edgeFade(timeline), { passive: true });
 term.addEventListener("scroll", () => edgeFade(term), { passive: true });
@@ -387,12 +400,34 @@ function fmtDur(ms) {
   if (m < 60) return s % 60 ? TX("home.dur.ms", { m, s: s % 60 }) : TX("home.dur.m", { n: m });
   return m % 60 ? TX("home.dur.hm", { h: Math.floor(m / 60), m: m % 60 }) : TX("home.dur.h", { n: Math.floor(m / 60) });
 }
-let CS = { day: "", group: null, empty: null, prog: new Map(), who: "", whoT: 0 };
+let CS = { day: "", group: null, empty: null, prog: new Map(), who: "", whoT: 0, wake: null };
+// The chat timeline's draw state (11-todo-strip.js chatPush, 13-data.js renderAll) changes only through these.
+const csReset = () => { CS = { day: "", group: null, empty: null, prog: new Map(), who: "", whoT: 0, wake: null }; };
+const csBreak = () => { CS.who = ""; };   // the next message shows its speaker head again
+const csDay = d => { CS.day = d; CS.who = ""; };
+const csWho = (who, t) => { CS.who = who; CS.whoT = t; };
+const csEmptySet = n => { CS.empty = n; };
+const csEmptyDrop = () => { if (CS.empty) { CS.empty.remove(); CS.empty = null; } };
+const csGroupStart = g => { CS.group = g; };
+const csGroupAdd = a => { CS.group.add(a); };
+const csGroupDrop = () => { CS.group = null; };
+const csGroupLive = () => { const g = CS.group; g.live = true; g.node.classList.add("live"); g.update(); };
+const csProgSet = (key, p) => { CS.prog.set(key, p); };
+const csProgDrop = key => { CS.prog.delete(key); };
+const csParked = n => { CS.parked = n; };
+const csParkedDrop = () => { if (!CS.parked.classList.contains("cont")) CS.who = ""; CS.parked.remove(); CS.parked = null; };
+const csWakeSet = w => { CS.wake = w; };
+const csWakeRow = (n, day) => { if (!CS.wake.rows.length) CS.wake.day = day || null; CS.wake.rows.push(n); };
+const csWakeNote = k => { CS.wake[k] = true; };
 // The open conversation's read state (31-conversations.js): key = the target being looked at, div = the read position when it was opened
 // (the "새 메시지" divider goes before the first message after it), divNode = that divider in the timeline.
 // pin = what the view is anchored to while the opening settles (late images, the todo strip, an SSE frame): "div" (the divider at the top),
 // "top" (a mail's start), "bottom", or "" once the owner took over; placed = the opening has been positioned.
-const CV = { key: "", drawn: "", div: "", divNode: null, jump: "", from: "", low: "", seeded: false, loaded: false, captured: false, failed: false, placed: false, full: false, snap: null, pin: "", openAt: 0, gateT: 0 };
+const CV = { key: "", drawn: "", div: "", divNode: null, jump: "", from: "", low: "", seeded: false, loaded: false, captured: false, failed: false, placed: false, full: false, snap: null, pin: "", pinTs: "", pinOff: 0, openAt: 0, gateT: 0 };
 // 31-conversations.js state; declared here because the boot code calls go() before that file has run.
 const CONV = new Map(), READ = {}, convPend = new Map();
+// A row's last-message preview: convNewer keeps the newer one (a row it does not know yet gets null), convLastSet puts it as given.
+const convNewer = (t, last) => { const prev = CONV.get(t); if (last && (!prev || prev.ts <= last.ts)) CONV.set(t, last); else if (!CONV.has(t)) CONV.set(t, null); };
+const convLastSet = (t, last) => { CONV.set(t, last); };
+const convDrop = t => { CONV.delete(t); };
 let convRaf = 0, convSig = "", convHeadSig = "", convRetry = 0, convReadT = 0, convPendT = 0, convReadF = 0;

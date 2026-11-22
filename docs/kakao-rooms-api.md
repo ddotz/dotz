@@ -66,12 +66,11 @@ All routes are under the gateway's normal owner check. Times are epoch milliseco
   files (db and -wal) do not change it is answered from memory (no query). A page showing another computer's room asks it every ~2 s
   through `/api/peer/proxy` (that room's events are not on this computer's stream) and fetches `?after=` only when it moved.
 - `POST /api/kakao/chat/<chatId>/read` body `{ logId }` -> `{ ok: true }` (moves forward only).
-- `POST /api/kakao/chat/<chatId>/send` body `{ text }` -> 202 `{ id, state: "sending" }`. The owner typed it: no approval step.
-  The send runs in the background, one at a time for the whole gateway.
-- `POST /api/kakao/drafts/<code>/send` body `{ text? }` -> 202 `{ id, state: "sending" }`. The click is the owner's explicit
-  approval. `text` given = the owner edited the draft (고치기) and this text is sent instead. Refused (409 `{error}`) when the draft is
-  not pending or a newer incoming message made it stale.
-- `POST /api/kakao/drafts/<code>/drop` -> `{ ok: true }` (버리기).
+- `POST /api/kakao/chat/<chatId>/send` body `{ text }`. The owner typed it: the text becomes his own draft (basis: the room's newest message)
+  and is sent through the one reply flow (`replies.act` `send`), so it gets the queue, the undo window and the database check; the answer is
+  `{ ok, item, state }` like `POST /api/reply/act`. Sends run one at a time for the whole gateway.
+- A draft's own actions (send, with `text` an edit then a send; revise; drop; restore; retry; resolve; undo) are `POST /api/reply/act` with
+  `ref: <code>` (hub/kakao/reply-adapter.ts). Refused (409) when the draft is not pending or a newer incoming message made it stale.
 
 Drafts are made only on demand (owner decision 2026-10-23, token efficiency). Collecting messages of chosen rooms is
 script-only, no model call. Per room `auto_draft` (config `auto_draft_chats: string[]`, default empty) lets the dotz watch wake
@@ -89,7 +88,8 @@ the bot for that room; rooms without it never wake the bot.
   lines only, and an edited send (고치기) is recorded in the room profile. The stored draft records `tokens: { in, out }`.
   Body `{ intent }` (at most 300 characters) asks for a message the owner wants to SEND rather than a reply: the same call writes it in his voice
   from the intent, with the room's recent lines as context only and the room's newest logId as its basis; there is no ask/skip answer. The draft
-  carries `intent`, the web card says 새 메시지 초안, and one 보내기 sends it through the same approval path. `{ intent }` and `{ revise }` together are 400.
+  carries `intent`, the web card says 새 메시지 초안, and one 보내기 sends it through the same approval path. A change request (고치기) of a pending
+  draft is `POST /api/reply/act {ref, action: "revise", change}`, not a body of this route.
 - The same single call first decides whether the last incoming message needs a decision only the owner can make (yes/no, which option,
   a date, cancel or not). If so it returns `{action:"ask", question, choices}` (2-4 short Korean choices) instead of a draft: no draft is
   stored, the room's open question is saved in `<dataDir>/kakao/asks.json`, and the room GET carries `ask: { question, choices }` (dropped
@@ -139,7 +139,8 @@ Server-sent events on `/api/events` (ids only, never bodies or names):
   so while a page is connected the gateway stats the db and -wal files every 500 ms and queries only when they changed.
 - `{ kind: "kakao_read", chatId }` somebody read more in a watched room (its read positions changed): the client refreshes the
   counters with `/reads`. Like `kakao`, it is only looked for while a page is connected.
-- `{ kind: "kakao_send", chatId, id, state, reason? }` a send changed state.
+- `{ kind: "kakao_send", chatId, id, state, reason? }` a send record of the room changed state (the room's send list). A draft's send state is the
+  `reply` event of the one reply flow.
 - `{ kind: "kakao_draft", chatId }` the drafts of a room changed.
 - `{ kind: "kakao_rooms" }` the watched list changed.
 - A `kakao` event for another room makes the web read `/api/kakao/rooms/<chatId>/latest` once (preview, time, unread); the open room's row is updated

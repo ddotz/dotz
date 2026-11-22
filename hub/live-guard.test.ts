@@ -31,6 +31,15 @@ test("a throwaway may not write the live data dir, by tool or by shell; reads an
 	expect(liveWrite({ toolName: "write", input: { path: "/tmp/dotz-x/state.json" } }, [LIVE])).toBeUndefined();
 });
 
+test("a throwaway may not write the live data dir through omp's hashline or apply_patch edit input either", () => {
+	const state = join(LIVE, "state.json");
+	expect(liveWrite({ toolName: "edit", input: { input: `[${state}#1A2B]\nPUT 1.=1:\n+{}` } }, [LIVE])).toContain("live data dir");
+	expect(liveWrite({ toolName: "apply_patch", input: { input: `*** Begin Patch\n*** Update File: ${state}\n@@\n-a\n+b\n*** End Patch` } }, [LIVE])).toContain("live data dir");
+	expect(liveWrite({ toolName: "write", input: { path: "xd://edit", content: JSON.stringify({ input: `[${state}#1A2B]\nPUT 1.=1:\n+{}` }) } }, [LIVE])).toContain("live data dir");
+	expect(liveWrite({ toolName: "edit", input: { input: "[/tmp/dotz-x/state.json#1A2B]\nPUT 1.=1:\n+{}" } }, [LIVE])).toBeUndefined();
+	expect(liveWrite({ toolName: "edit", input: { input: `[/tmp/dotz-x/notes.md#1A2B]\nPUT 1.=1:\n+see ${state}` } }, [LIVE])).toBeUndefined();
+});
+
 test("the live data dir counts as written only as a write target, not as a read source", () => {
 	const sh = (command: string) => liveWrite({ toolName: "bash", input: { command } }, [LIVE]);
 	const ev = (code: string) => liveWrite({ toolName: "eval", input: { code } }, [LIVE]);
@@ -102,5 +111,28 @@ test("sessions of a mkdtemp folder go after an idle hour, other temp folders kee
 		expect(r.removed).toEqual(["a"]);
 	} finally {
 		rmSync(root, { recursive: true, force: true });
+	}
+});
+
+test("a throwaway's ast_edit over a folder, a glob or no paths is refused when the tree holds the live data dir", () => {
+	// A made-up home holding the data dir, so neither the real home nor the cwd of the test run (a worktree may sit inside ~/.dotz) decides.
+	const home = mkdtempSync(join(tmpdir(), "dotz-home-"));
+	const live = join(home, ".dotz");
+	const elsewhere = mkdtempSync(join(tmpdir(), "dotz-x-"));
+	mkdirSync(live);
+	try {
+		const ops = [{ pat: "a", out: "b" }];
+		const edit = (input: Record<string, unknown>, cwd: string) => liveWrite({ toolName: "ast_edit", input }, [live], cwd);
+		expect(edit({ paths: [live], ops }, elsewhere)).toContain("live data dir");
+		expect(edit({ paths: [join(live, "**", "*.json")], ops }, elsewhere)).toContain("live data dir");
+		expect(edit({ paths: [home], ops }, elsewhere)).toContain("live data dir");
+		expect(edit({ ops }, live)).toContain("live data dir");
+		expect(edit({ paths: [], ops }, home)).toContain("live data dir");
+		expect(edit({ paths: ["src/**/*.ts"], ops }, live)).toContain("live data dir");
+		expect(edit({ ops }, elsewhere)).toBeUndefined();
+		expect(edit({ paths: ["src/**/*.ts", elsewhere], ops }, elsewhere)).toBeUndefined();
+	} finally {
+		rmSync(home, { recursive: true, force: true });
+		rmSync(elsewhere, { recursive: true, force: true });
 	}
 });

@@ -17,8 +17,10 @@ import { lanes } from "./lanes.ts";
 import { orch } from "./orchestrator.ts";
 import { enqueue, queueItems, restore, take } from "./queue.ts";
 import { resolveNotices } from "./notices.ts";
-import { AGENT_AUTHOR, tokenOk } from "./entry-check.ts";
-import { queue, bgWork, out, progress } from "./outbound.ts";
+import { ownerOnlyCard } from "./approval-wire.ts";
+import { AGENT_AUTHOR } from "./agent-author.ts";
+import { agentCall, callerLogin } from "./entry-check.ts";
+import { queue, bgWork, out, ownerSaid, progress } from "./outbound.ts";
 import { convs, maxLiveView } from "./convsessions.ts";
 import { repostRefusal } from "./lanewire.ts";
 import { MAIN, primaryTarget, QUICK } from "./session-key.ts";
@@ -31,6 +33,13 @@ import { bannedHits, bannedNote } from "./word-ban.ts";
 
 // Where a forwarded action came from (a machine name), as one short line; the event it makes carries it as `via`.
 export const viaOf = (v: unknown): string | undefined => (typeof v === "string" ? v.replace(/\s+/g, " ").trim().slice(0, 40) || undefined : undefined);
+// A dotz_send that answers an owner message already answered: it lands as a reply to an old message long after it was asked, which the
+// owner reads as an answer that went missing and arrived late (11-18: a 10:47 re-answer to a 08:52 request answered at 09:17).
+// News about that matter goes out as a new message, with no reply_to.
+export function reanswerRefusal(replyTo: unknown, isAnswered: (id: string) => boolean): string | undefined {
+	if (typeof replyTo !== "string" || !replyTo || !isAnswered(replyTo)) return undefined;
+	return `${replyTo} was already answered; a second reply to it reads as a late, lost answer. Send news about it without reply_to, or send nothing if it adds nothing.`;
+}
 // The last web sends by client id, with the answer each got (POST /api/message `cid`). Set before the send so a double tap in flight is a retry too.
 const sentCids = new Map<string, unknown>();
 const rememberCid = (cid: string, answer: unknown): void => {
@@ -59,7 +68,7 @@ export async function routeSend(req: Request, url: URL, parts: string[], { peer 
 		});
 		if (!String(b.text ?? "").trim() && !files.length && !elements.length) return json({ error: "text required" }, 400);
 		const text = String(b.text ?? "");
-		const login = peer === "none" && tokenOk(req) ? AGENT_AUTHOR : (req.headers.get("tailscale-user-login") ?? "local"); // an agent's own post is never the owner's word (hub/model-guard.ts)
+		const login = callerLogin(req, peer);
 		// mode: none (main takes it as the next message, a working lane is steered), "steer" (into the running turn
 		// now), "interrupt" (abort the running turn, then send as a new prompt), "queue" (a working target gets it
 		// when its turn ends, see queue.ts; an idle target gets it now).
@@ -93,8 +102,8 @@ export async function routeSend(req: Request, url: URL, parts: string[], { peer 
 		if (cid) rememberCid(cid, { ok: true });
 		try {
 			// A decision answer from the chat card: the asking message (its ts) and the chosen option per block (intake.ts decisionLines).
-			const picks = Array.isArray(b.picks) ? b.picks.slice(0, 10).flatMap((p: any) => (p && Number.isFinite(Number(p.n)) ? [{ q: String(p.q ?? "").slice(0, 200), n: Number(p.n), label: String(p.label ?? "").slice(0, 120), ...(typeof p.note === "string" && p.note.trim() ? { note: p.note.replace(/\s+/g, " ").trim().slice(0, 500) } : {}) }] : [])) : [];
-			await sendWeb({ lane, project, mail, settings, conv: lane || project || mail || settings ? undefined : conv, channel, text, mode: mode === "queue" ? "default" : mode, login, files, ...(elements.length ? { elements } : {}), ...(turnRefs.length ? { refs: turnRefs } : {}), ...(typeof b.reply_to === "string" && b.reply_to ? { replyTo: b.reply_to.slice(0, 40) } : {}), ...(reply ? { reply } : {}), ...(typeof b.decision === "string" && b.decision ? { decision: b.decision.slice(0, 80) } : {}), ...(picks.length ? { picks } : {}), via: viaOf(b.via) });
+			const picks = login !== AGENT_AUTHOR && Array.isArray(b.picks) ? b.picks.slice(0, 10).flatMap((p: any) => (p && Number.isFinite(Number(p.n)) ? [{ q: String(p.q ?? "").slice(0, 200), n: Number(p.n), label: String(p.label ?? "").slice(0, 120), ...(typeof p.note === "string" && p.note.trim() ? { note: p.note.replace(/\s+/g, " ").trim().slice(0, 500) } : {}) }] : [])) : [];
+			await sendWeb({ lane, project, mail, settings, conv: lane || project || mail || settings ? undefined : conv, channel, text, mode: mode === "queue" ? "default" : mode, login, files, ...(elements.length ? { elements } : {}), ...(turnRefs.length ? { refs: turnRefs } : {}), ...(typeof b.reply_to === "string" && b.reply_to ? { replyTo: b.reply_to.slice(0, 40) } : {}), ...(reply ? { reply } : {}), ...(login !== AGENT_AUTHOR && typeof b.decision === "string" && b.decision ? { decision: b.decision.slice(0, 80) } : {}), ...(picks.length ? { picks } : {}), via: viaOf(b.via) });
 		} catch (error) {
 			sentCids.delete(cid);
 			return json({ error: (error as Error).message }, 409);
@@ -156,6 +165,7 @@ export async function routeSend(req: Request, url: URL, parts: string[], { peer 
 				if (!lane) return json({ error: `unknown session ${from}` }, 400);
 				if (key !== MAIN) return json({ error: `this session may hand work only to ${MAIN}` }, 403);
 				if (lane.handedBack) return json({ error: "handed work: answer it here, do not pass it on" }, 409);
+				lane.mainAskedAt = Date.now();
 				recordHanded({ to: primaryTarget(MAIN), from, text });
 				queue.deliver(`[${from}] ${text}`, { target: from, from });
 				return json({ ok: true, to: MAIN, answers_in: from });
@@ -166,6 +176,7 @@ export async function routeSend(req: Request, url: URL, parts: string[], { peer 
 			const cur = sender.queue.current();
 			if (cur && !cur.done && (cur.from || cur.handback)) return json({ error: "handed work: answer it here, do not pass it on" }, 409);
 			const toMain = from !== MAIN;
+			if (!toMain && !convs.get(key) && convs.keyOf(primaryTarget(key)) === key && historyEvents(primaryTarget(key), 1).length) convs.ensure(key);
 			if (!toMain && !convs.get(key)) return json({ error: `no conversation session ${key}` }, 404);
 			// Into main: its answer goes to the conversation that asked, where its own window shows it.
 			if (toMain) {
@@ -192,10 +203,10 @@ export async function routeSend(req: Request, url: URL, parts: string[], { peer 
 		const session = typeof b.session === "string" && b.session ? b.session : MAIN;
 		if (session !== MAIN && convs.keyOf(target) !== session) return json({ delivered: false, reason: `this session answers only ${primaryTarget(session)}; hand other work to main with dotz_conv send main` }, 403);
 		const sender = convs.get(session)?.queue ?? queue;
-		const refused = session === MAIN && !b.update_key && repostRefusal(target, String(b.text ?? ""));
+		const refused = session === MAIN && !b.update_key && (repostRefusal(target, String(b.text ?? "")) || reanswerRefusal(b.reply_to, id => sender.isAnswered(id)));
 		if (refused) return json({ delivered: false, reason: refused });
 		// `resolves` (text in the title / text of the open questions it settles, or "*" for all): this post says their matter is over.
-		if (typeof b.resolves === "string" && b.resolves.trim()) resolveNotices(b.resolves.trim() === "*" ? { all: true } : { match: b.resolves }, conv => convs.keyOf(conv ?? "") === session);
+		if (typeof b.resolves === "string" && b.resolves.trim()) resolveNotices(b.resolves.trim() === "*" ? { all: true } : { match: b.resolves }, conv => convs.keyOf(conv ?? "") === session, agentCall(req, peer) ? ownerOnlyCard : undefined, ownerSaid(b.reply_to));
 		if (b.update_key) {
 			try {
 				return json(await progress(target, String(b.update_key), String(b.text ?? ""), b.reply_to, session, "dotz_send"));

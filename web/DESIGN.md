@@ -177,5 +177,5 @@ The app is a dense tool, so the small steps carry most of the layout; 6px stays 
 literal where a token exists, is allowed only when the declaration is followed on the same line by `/* nudge: <reason> */` with a reason
 (a 1px line compensation, an optical nudge); a file may carry at most 3 of them. An indent that lines up with something is a sum of tokens or a
 named custom property, so the two stay together; a sum is for that only, not a way around a step. A layout measure (`--view-w`, `--sheet-w`) is not
-spacing and has its own token. The `space` check in `hub/design-rules-web.test.ts` fails on any violation, and reads literal padding, margin and gap
+spacing and has its own token. The `space` check in `bun hub/check.ts` (`hub/design-rules.ts`) fails on any violation, and reads literal padding, margin and gap
 px in strings of `web/js`, `web/custom.js` and `web/index.html` the same way. The mail iframe CSS in `11-mailbody.js` is its own document and is exempt.

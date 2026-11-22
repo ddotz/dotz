@@ -2,19 +2,19 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { draftApprovalBlock } from "./draft-approval.ts";
 import { fakeHub, json, on } from "./test-web.ts";
 
-// The chat with send approvals waiting (web/js/10-decision-card.js dcLine): one card keeps its dock card; 2 or more are ONE line above the composer
+// The chat with send approvals waiting (web/js/10-decision-card.js dcLine): one draft is its queue card in the message, never docked; 2 or more are ONE line above the composer
 // ("답장 초안 N건 기다려요 · 확인하기", N = the 답 필요 count of 답장 대기) that opens 답장 대기, and nothing stacks in the conversation, also when ONE [ask]
 // message carries several draft blocks (their notices are group > 1). A question that is not a draft keeps its dock card. Headless browser, fixture notices.
 const OPTS = [{ n: 1, label: "보내기", desc: "", rec: true }, { n: 2, label: "고치기", desc: "", rec: false, detail: true }, { n: 3, label: "보내지 않기", desc: "", rec: false }];
 const TS = "2026-11-01T08:05:00.000Z";
 let notices: unknown[] = [];
 let history: unknown[] = [];
-let groups: unknown[] = [];
+let queue: unknown[] = [];
 const hub = fakeHub({
 	api: (_req, url) => {
 		if (url.pathname === "/api/state") return json({ name: "땅콩", orchestrator: { status: "idle" }, lanes: [], terminals: {}, channels: { work: [] }, discord: {}, notices_unread: notices.length });
 		if (url.pathname === "/api/history") return json({ target: url.searchParams.get("target"), events: url.searchParams.get("target") === "main" ? history : [] });
-		if (url.pathname === "/api/approvals") return json({ groups, results: [], triageMin: 3 });
+		if (url.pathname === "/api/reply/queue") return json({ items: queue, counts: {}, triageMin: 1, undoSec: 10 });
 		if (url.pathname === "/api/activity") return json({ items: [], more: false, history: false });
 		if (url.pathname === "/api/notices") return json({ items: notices, unread: notices.length });
 	},
@@ -28,6 +28,9 @@ const notice = (ref: string, group: number, at: string) => ({
 	id: `n-${ref}`, ts: at, updated: at, at, kind: "decision", tone: "ask", title: `이 답장 보낼까요? (${ref})`, text: "이 답장 보낼까요?", open: "main", src: "main", read: false,
 	decision: { options: OPTS, to: "main", reply_to: at, group, state: "open", draft: draft(ref) },
 });
+// The draft as an item of the one reply queue (GET /api/reply/queue), in the same conversation.
+const item = (ref: string) => ({ item: `mail:${ref}`, ref, kind: "mail", app: "mail", label: "메일", conv: "main", at: Date.parse(TS), can: { send: true, revise: true, edit: true, drop: true, restore: false },
+	draft: { state: "pending", toLabel: "받는이", to: "kim@example.com", subject: `Re: 견적 ${ref}`, text: `보내 드립니다 ${ref}` } });
 const message = (refs: string[], at: string) => ({
 	ts: at, kind: "out", source: "orchestrator", target: "main",
 	text: `[ask] 답장 초안이에요\n${refs.map(ref => draftApprovalBlock({ ...draft(ref), question: "이 답장 보낼까요?" })).join("\n")}`,
@@ -35,23 +38,23 @@ const message = (refs: string[], at: string) => ({
 const cards = (n: number) => {
 	const refs = Array.from({ length: n }, (_, i) => `R${n}x${i}`);
 	notices = refs.map(ref => notice(ref, n, TS));
-	groups = [];
+	queue = refs.map(item);
 	history = [{ ts: "2026-11-01T08:00:00.000Z", kind: "message", source: "web", channel: "web", text: "초안 만들어 줘" }, message(refs, TS)];
 };
 const open = async () => {
 	await view.navigate(`${hub.origin}/`);
-	await waitFor(`typeof openTarget === "function" && S && NT.loaded && TR.groups !== undefined`);
+	await waitFor(`typeof openTarget === "function" && S && NT.loaded && RA.loaded`);
 	await run(`go("chat", "main")`);
 	await waitFor(`target === "main" && ts("main").msgs.length > 0`);
-	await run(`trLoad().then(paintDecision)`);
+	await run(`raLoad().then(paintDecision)`);
 };
 
 describe("the chat with send approvals waiting", () => {
-	test("one card keeps its dock card and shows no line", async () => {
+	test("one draft is its queue card in the message: no dock card and no line", async () => {
 		cards(1);
 		await open();
-		await waitFor(`DC.cur && !document.querySelector("#dcard").hidden`);
-		expect(await ev<boolean>(`document.querySelector("#qline").hidden`)).toBe(true);
+		await waitFor(`document.querySelector("#timeline .ra-inl .ra-card")`);
+		expect(await ev<boolean[]>(`[document.querySelector("#qline").hidden, document.querySelector("#dcard").hidden]`)).toEqual([true, true]);
 	});
 
 	test("one [ask] message with several draft blocks: one line with the count, no dock card, no pointer, no rows in the conversation; the line opens 답장 대기", async () => {
@@ -65,7 +68,7 @@ describe("the chat with send approvals waiting", () => {
 		expect(got.dock).toBe(false);
 		expect(got.pointer).toBe(false);
 		await run(`document.querySelector("#qline").click()`);
-		await waitFor(`current === "monitoring" && MON.sel === "replies" && document.querySelectorAll("#mon-tl .rq-r.ask").length === 3`);
+		await waitFor(`current === "monitoring" && MON.sel === "replies" && document.querySelectorAll("#mon-tl .rq-c").length === 3`);
 	});
 
 	test("a question that is not a draft keeps its dock card next to the line", async () => {
@@ -77,9 +80,9 @@ describe("the chat with send approvals waiting", () => {
 		expect(await ev<number>(`rqAskCount()`)).toBe(2);
 	});
 
-	test("a held card of GET /api/approvals counts with the open ones", async () => {
+	test("a waiting queue item of this conversation that no notice holds counts with the open ones", async () => {
 		cards(1);
-		groups = [{ key: "mail", label: "메일", count: 1, cards: [{ ref: "H1", to: "main", draft: { toLabel: "받는이", to: "lee@example.com", subject: "보류", body: "보류 초안" }, question: "보낼까요?" }] }];
+		queue = [...queue, item("H1")];
 		await open();
 		await waitFor(`!document.querySelector("#qline").hidden`);
 		expect(await ev<number>(`rqAskCount()`)).toBe(2);

@@ -88,7 +88,7 @@ describe("the 대화 and ⋯ buttons of a monitoring detail sit side by side in 
 				// Exactly one visible control opens the conversation: the labeled button or the icon, never both.
 				expect(await q(v, `return [...document.querySelectorAll("[data-as-open], [data-k='continue']")].filter(b => b.offsetParent && !b.hidden).length`)).toBe(1);
 				// ⋯ sits right beside it and opens the settings screen without the conversation.
-				const m = await q<{ label: string | null; app: string | null; gap: number; icons: number; visible: number }>(v, `const b = document.querySelector(${JSON.stringify(btn)}), m = document.querySelector(${JSON.stringify(moreBtn)}), a = b.getBoundingClientRect(), c = m.getBoundingClientRect(); return { label: m.getAttribute("aria-label"), app: m.dataset.asMore, gap: Math.round(c.left - a.right), icons: document.querySelectorAll("[data-as-open] svg path[d^='M4 7h9']").length, visible: Math.round(c.width) * Math.round(c.height) }`);
+				const m = await q<{ label: string | null; app: string | null; gap: number; visible: number }>(v, `const b = document.querySelector(${JSON.stringify(btn)}), m = document.querySelector(${JSON.stringify(moreBtn)}), a = b.getBoundingClientRect(), c = m.getBoundingClientRect(); return { label: m.getAttribute("aria-label"), app: m.dataset.asMore, gap: Math.round(c.left - a.right), visible: Math.round(c.width) * Math.round(c.height) }`);
 				expect(m.label).toBe("설정");
 				expect(m.app).toBe(k.app);
 				expect(m.visible).toBeGreaterThan(0);
@@ -96,7 +96,6 @@ describe("the 대화 and ⋯ buttons of a monitoring detail sit side by side in 
 					expect(m.gap).toBeGreaterThanOrEqual(0);
 					expect(m.gap).toBeLessThan(16);
 				}
-				expect(m.icons).toBe(0);   // the sliders icon is gone
 				expect(s.visible).toBeGreaterThan(0);
 				if (w >= 1100) expect(s.bar).toBe(true);
 				if (["mail", "kakao room", "general monitor"].includes(k.name)) await shot(v, `settings-header-${k.name.replace(" ", "-")}-${w}.png`);

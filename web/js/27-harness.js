@@ -54,14 +54,20 @@ const H_APPLY = { live: [TX("system.apply.live"), ""], "next-turn": [TX("system.
 const hNode = id => HG && HG.nodes.find(n => n.id === id);
 const hSvg = (tag, attrs) => { const n = document.createElementNS("http://www.w3.org/2000/svg", tag); for (const [k, v] of Object.entries(attrs || {})) n.setAttribute(k, v); return n; };
 
+function harnessEnter() { loadHarness(); }
+function harnessHash() { return hProjId ? `harness/project/${enc(hProjId)}` : ""; }
+screenHooks("harness", { enter: harnessEnter, route: hProjRoute, hash: harnessHash });
 async function loadHarness(quiet) {
   if (hLoading) return;
   hLoading = true;
   try { if (!M) await loadModels(true); [HGB, FC] = await Promise.all([api("/api/harness"), api("/api/features").then(fcSplit).catch(() => FC)]); }
   catch (e) { hLoading = false; if (!quiet && current === "harness") clear($("#harness")).append(emptyNode(TX("system.load_failed"))); return; }
   hLoading = false;
-  if (current === "harness") { renderHarness(); hHead(); }
+  if (current === "harness") { renderHarness(); hHead(); hWantOpen(); }
 }
+let hWant = "";
+function hWantOpen() { const id = hWant; hWant = ""; if (id && hNode(id)) openHSheet(id); }
+function harnessOpenNode(id) { hWant = id; go("harness"); }
 
 // Layered layout: flow nodes sit in the column of their longest path from an input; file and support nodes join the
 // column of the node they attach to. Shared by the simple map (one stage per column) and the full graph.
@@ -152,6 +158,14 @@ function hCard(n, mobile) {
   hNodeEls.set(n.id, b);
   return b;
 }
+// A drawn card (node) and the box its edges attach to (geo); edge refs are what hHot lights. 28-harness-project.js fills them per paint.
+function hMapNode(id, node, geo) { hNodeEls.set(id, node); hGeo.set(id, geo); }
+function hEdgeAdd(ref) { hEdgeRefs.push(ref); }
+// The open project's map: from the address (`project/<id>`) or picked by id ("" = the main map).
+function hProjRoute(tgt) { hProjId = tgt && tgt.startsWith("project/") ? tgt.slice(8) : ""; }
+function hProjPick(id) { hProjId = id; }
+// The signature of the feature list now drawn (29-harness-features.js renderFeatures); "" forces the next paint.
+function fcDrawn(sig) { fcSig = sig; }
 
 function hHot(id) {
   if (hOv) { hOverlay(id); return; }
@@ -166,13 +180,13 @@ function hUse() {
   const p = hPj();
   if (hProjId && HGB && !p) { hProjId = ""; if (current === "harness") routeReplace("harness"); }
   HG = p ? { ...HGB, origin_view: false, nodes: p.map.nodes, edges: p.map.edges } : HGB;
-  if (hSel && !hNode(hSel)) { closeHSheet(); hSel = ""; }
+  if (hSel && !hNode(hSel)) hSelClear();
 }
 
 function renderHarness() {
   const box = $("#harness");
   hUse();
-  hNodeEls = new Map(); hEdgeRefs = []; hGeo = new Map(); hOv = null;
+  hNodeEls = new Map(); hEdgeRefs = []; hGeo = new Map(); hOvDrop();
   if (!HG) { clear(box).append(emptyNode(TX("common.loading"))); return; }
   const mobile = H_MQ.matches, pj = hPj();
   const onlySeg = hOrigin() ? el("div", { class: "seg", role: "group", "aria-label": TX("system.view.scope") }, ...[[false, TX("system.view.all"), TX("system.view.all_tip")], [true, TX("system.view.custom", { n: hCustomCount() }), TX("system.view.custom_tip")]].map(([v, t, tip]) => {

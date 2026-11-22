@@ -110,5 +110,3 @@ export function publishedWeb(repo: string): WebSnapshot | undefined {
 	return st.published;
 }
 
-/** Forget cached state (tests). */
-export const resetPublishedWeb = (): void => states.clear();

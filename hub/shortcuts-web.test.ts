@@ -10,8 +10,7 @@ const state = web("04-state.js"), peers = web("33-peers.js");
 const tabSrc = state.slice(state.indexOf("const isMac ="), state.indexOf("for (const [id, label] of navTabs())"));
 const prOrderSrc = peers.slice(peers.indexOf("function prOrder"), peers.indexOf("const prCached"));
 const gwSrc = prOrderSrc + peers.slice(peers.indexOf("const prKeyHint"), peers.indexOf("// Tapping 홈 again"));
-const navStart = state.indexOf("const NAV =");
-const NAV = new Function(`${i18nPrelude()}${state.slice(navStart, state.indexOf(";\n", navStart) + 1)} return NAV;`)() as [string, string][];
+const NAV = new Function(`${i18nPrelude()}${web("03-screens.js")} return NAV;`)() as [string, string][];
 
 type Handler = (ev: unknown) => void;
 type Key = Partial<{ key: string; code: string; metaKey: boolean; ctrlKey: boolean; altKey: boolean; shiftKey: boolean; isComposing: boolean }>;

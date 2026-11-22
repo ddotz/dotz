@@ -15,11 +15,16 @@ const DATA = process.env.DOTZ_DIR!;
 const REPO = join(import.meta.dir, "..", "..");
 const norm = (s: string) => s.split(DATA).join("<DATA>").split(REPO).join("<REPO>").replace(/dotz-steer:[0-9a-f]+/g, "dotz-steer:<TOKEN>");
 // Long prompts (recall, footer) are compared by shape: paths normalised, digits blanked (the footer carries machine-sized slot counts).
-// Repo text that other work legitimately edits (MODE.md, the shipped feature catalog) is blanked first so only prompt structure is compared.
+// Repo text that other work legitimately edits (MODE.md, the shipped feature catalog) is blanked first so only prompt structure is compared:
+// in a prompt, and in a spawn's system note, which carries MODE where the runtime keeps it there (caps.modeInSystem).
 const volatile = () => [readFileSync(modeFile(), "utf8"), featurePrompt(DATA, "orchestrator", () => {}), featurePrompt(DATA, "lanes", () => {})].filter(Boolean);
-const short = (s: string) => {
+const blank = (s: string) => {
 	let t = norm(s);
 	for (const v of volatile()) t = t.split(norm(v)).join("<volatile>");
+	return t;
+};
+const short = (s: string) => {
+	const t = blank(s);
 	return t.length <= 140 ? t : `#${Bun.hash(t.replace(/\d+/g, "#")).toString(36)} ${t.slice(0, 60).replace(/\d+/g, "#")}…`;
 };
 
@@ -51,7 +56,7 @@ class FakeProc {
 	constructor(args: string[], opts: { cwd?: string; env?: Record<string, string | undefined> }) {
 		FakeProc.all.push(this);
 		const dotz = Object.fromEntries(Object.entries(opts.env ?? {}).filter(([k]) => k.startsWith("DOTZ_") && !["DOTZ_DIR", "DOTZ_OMP", "DOTZ_OMO", "DOTZ_TEST_DIR", "DOTZ_WEB_LIVE"].includes(k)).map(([k, v]) => [k, typeof v === "string" ? norm(v) : v]));
-		T("spawn", this.n, args.slice(NICE.length + 1).map(a => norm(a)), norm(opts.cwd ?? ""), dotz);
+		T("spawn", this.n, args.slice(NICE.length + 1).map(blank), norm(opts.cwd ?? ""), dotz);
 	}
 	kill(sig?: number) {
 		T("kill", this.n, sig ?? "TERM");
@@ -251,18 +256,23 @@ export async function orchestratorScenario(): Promise<Trace> {
 	await advance(1000);
 	snap("after model switch");
 
-	// 10 rotation: past ROTATE_TOKENS at an idle turn (the second or later since start) the process is replaced by a fresh session with a handover.
 	await proc().push(stateResp(session, 2000));
 	await proc().push(agentStart);
 	await proc().push(asstEnd("one", "stop", { usage: { input: 10, cacheRead: 300_000, cacheWrite: 0, output: 20 } }));
 	await proc().push(agentEnd);
+	await advance(300);
+	snap("compacting in place");
+	await proc().push(compactResp);
+	await proc().push(statsResp(1200));
+	snap("compacted in place");
 	await proc().push(agentStart);
 	await proc().push(asstEnd("two", "stop", { usage: { input: 10, cacheRead: 300_000, cacheWrite: 0, output: 20 } }));
 	await proc().push(agentEnd);
+	await proc().push({ type: "response", command: "compact", success: false, error: "compaction failed: boom" });
 	await advance(300);
 	await proc().exit(0);
 	await advance(1000);
-	snap("rotated");
+	snap("rotated after a failed compaction");
 
 	// 11 stop and the activity the web UI saw.
 	o.stop();
@@ -370,9 +380,11 @@ export async function laneScenario(): Promise<Trace> {
 	await advance(500);
 	snap("transient spent");
 
-	// 6 a failed compaction recovers the lane: kill -9, exit, resume the same session with the stopped note.
+	// 6 a failed compaction is retried once; a second failure in a row recovers the lane: kill -9, exit, resume the same session with the compaction note.
 	l.sendToLane("alpha", "compaction trouble");
 	await proc().push(agentStart);
+	await proc().push({ type: "auto_compaction_end", errorMessage: "auto compaction failed: provider error" });
+	snap("compaction retry queued");
 	await proc().push({ type: "auto_compaction_end", errorMessage: "auto compaction failed: provider error" });
 	snap("recovering");
 	await proc().exit(137);
@@ -415,6 +427,8 @@ export async function laneScenario(): Promise<Trace> {
 	await advance(500);
 	snap("silent handover turn");
 	await proc().push(agentStart);
+	await proc().push(asstEnd("", "error", { errorMessage: "Compaction failed while summarising" }));
+	snap("compaction message error retried");
 	await proc().push(asstEnd("", "error", { errorMessage: "Compaction failed while summarising" }));
 	snap("compaction message error");
 	await proc().exit(137);

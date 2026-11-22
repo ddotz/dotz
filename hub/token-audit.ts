@@ -21,7 +21,7 @@ import { addBigContext, addToolCalls, addTurn, addWake, collectSessions, newStre
 const REDUCE_GATE = 500_000;
 // Known causes of a cache break that are not a prompt-prefix change made here: the report names them instead of guessing.
 const CAUSE: Record<string, [string, string]> = {
-	shrink: ["OmO 맥락 축소(창 50% 넘으면 요청마다 비영속 축소)", "한 태스크 컨텍스트를 ~250K 아래로(단계별 워커, MODE 'Lanes and workers')"],
+	shrink: ["OmO 맥락 축소(창 50% 넘으면 요청마다 비영속 축소)", "한 태스크 컨텍스트를 ~250K 아래로(단계별 워커, MODE 'Sessions and subagents')"],
 	repin: ["압축 직후 메모리 projection 재핀", "로컬 조치 없음(OmO 쪽)"],
 	date: ["UTC 날짜 변경(environment-context 재주입)", "로컬 조치 없음(하루 1회)"],
 	idle: ["유휴 뒤 둘째 호출 패턴(기전 미증명)", "미증명이라 고칠 곳을 단정할 수 없음: 재발하면 해당 요청의 프롬프트 차이를 대조"],
@@ -50,13 +50,13 @@ const EFFORT_FLAG_TURNS = 5;
 // Where each warning class already has a rule (MODE.md section names). A class flagged on consecutive days despite its
 // rule is marked 🔁: fix the carrier (the brief, the guard, the section the lane actually sees) instead of adding prose.
 const RULES: Record<string, string> = {
-	"캐시 깨짐": "MODE.md 'Lanes and workers' (한 태스크 ~250K 컨텍스트) · 'Restart and resume'",
+	"캐시 깨짐": "MODE.md 'Sessions and subagents' (한 태스크 ~250K 컨텍스트) · 'Restart and resume'",
 	"헛깨움": "MODE.md 'Inputs' ([keepalive] 턴은 ok만) · 'Monitoring (dotz_watch)'",
 	"에러 연속": "MODE.md 'Restart and resume'",
-	"반복 호출": "MODE.md 'Lanes and workers' (Brief: 폴링 대신 blocking 대기 한 번)",
-	"대형 컨텍스트": "MODE.md 'Lanes and workers' (한 태스크 ~250K 컨텍스트)",
-	"대형 하위에이전트": "MODE.md 'Lanes and workers' (Brief: 단계별 워커, 후속은 새 워커)",
-	"비싼 모델": "MODE.md 'Lanes and workers' (Budget: Fable·max/xhigh는 오너가 요청할 때만)",
+	"반복 호출": "MODE.md 'Sessions and subagents' (Brief: 폴링 대신 blocking 대기 한 번)",
+	"대형 컨텍스트": "MODE.md 'Sessions and subagents' (한 태스크 ~250K 컨텍스트)",
+	"대형 하위에이전트": "MODE.md 'Sessions and subagents' (Brief: 단계별 워커, 후속은 새 워커)",
+	"비싼 모델": "MODE.md 'Sessions and subagents' (Budget: Fable·max/xhigh는 오너가 요청할 때만)",
 };
 
 const kstDate = (ms: number) => new Date(ms + 9 * 3600e3).toISOString().slice(0, 10);

@@ -1,5 +1,5 @@
 // A website's DM inbox (`site.dm`): messages are read with the comments into threads `dm:<room>`, a DM read failure keeps the comments and is
-// reported, a reply goes to the DM post hook and counts only when reading the room back shows it, and an answered room needs no reply.
+// reported, a reply goes to the DM post hook and counts only when reading the room back shows it (else it may have gone: unsure), and an answered room needs no reply.
 import { afterEach, beforeEach, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -84,7 +84,7 @@ test("a DM reply goes to the DM hook and is sent only when reading the room back
 		expect(JSON.parse(s.calls.find(c => c.argv[0] === "post-dm")!.stdin!)).toMatchObject({ room: "r9", text: "Yes, it is updated." });
 		expect(s.calls.some(c => c.argv[0] === "post-comment")).toBe(false);
 		expect(s.calls.at(-1)!.argv).toEqual(["read-dm", "--room", "r9"]);
-		expect(done.state).toBe(landed ? "sent" : "failed");
+		expect(done).toMatchObject(landed ? { state: "sent" } : { state: "unsure", code: "readback_mismatch" });
 	}
 });
 

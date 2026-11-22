@@ -1,27 +1,31 @@
 // The gateway's own send path on the real modules (outbound.out -> queue -> notices -> inbox -> the real draft.ts send CLI): 보내기 on a
 // card shows the next card at once with no model turn, the send runs in the background and its result lands on the card, a failure is one
-// [fail] note, and the batch answer sends the picked cards, hands 고치기 to the bot in one message and leaves the skipped ones waiting.
+// [fail] note, and a session CLI's failed send reported through POST /api/approvals/failed reaches the card.
 // The drafts are mails of a source this machine cannot send from, refused after the approval check, so nothing leaves this machine.
-import { afterAll, beforeEach, expect, test } from "bun:test";
+import { afterAll, beforeEach, expect, spyOn, test } from "bun:test";
 import { realSetTimeout, realClearTimeout } from "./runtime/test-clock.ts";
-import { type HubEvent, onEmit } from "./events.ts";
+import { type HubEvent, onBroadcast, onEmit } from "./events.ts";
 import { draftApprovalBlock } from "./draft-approval.ts";
+import { askText } from "./draft-attach.ts";
 import { ignoreNotice, listNotices } from "./notices.ts";
+import * as outbound from "./outbound.ts";
 import { out } from "./outbound.ts";
+import { withSendState } from "./approval-queue.ts";
 import { approvalRoute, reportSend, sendTargetOf, sender, webAnswer } from "./approval-wire.ts";
 import { commentsDir, createStore } from "./comments/store.ts";
+import { replies } from "./reply-wire.ts";
 import { DATA_DIR, cfg } from "./config.ts";
-import { addDraft, newId } from "../features/reply-drafts/lib/store.ts";
+import { addDraft, getDraft, newId, setStatus } from "../features/reply-drafts/lib/store.ts";
 
 beforeEach(() => void (cfg.web.send_undo_sec = 0));
 const CONV = "mail:aw-test";
-const draft = (body: string) => {
+const draft = (body: string, to = "friend@example.com") => {
 	const id = newId();
-	addDraft({ id, kind: "mail", app: "mail", source: "nowhere", mailId: `m-${id}`, ref: `aw-${id.toLowerCase()}`, to: "friend@example.com", body, status: "pending", created: "2020-01-01T00:00:00.000Z", changes: [], questions: [], item: { kind: "mail", from: "friend@example.com", text: "안녕" } as never });
+	addDraft({ id, kind: "mail", app: "mail", source: "nowhere", mailId: `m-${id}`, ref: `aw-${id.toLowerCase()}`, to, body, status: "pending", created: "2020-01-01T00:00:00.000Z", changes: [], questions: [], item: { kind: "mail", from: "friend@example.com", text: "안녕" } as never });
 	return id;
 };
 const refs = [draft("첫째 답"), draft("둘째 답"), draft("셋째 답"), draft("넷째 답")];
-const card = (ref: string) => `[ask] 답장 초안이에요\n${draftApprovalBlock({ to: "친구", toLabel: "대화방", body: `${ref} 답`, ref, question: "이대로 보낼까요?" })}`;
+const card = (ref: string) => `[ask] 답장 초안이에요\n${draftApprovalBlock({ to: "친구", toLabel: "대화방", body: getDraft(ref)!.body, ref, question: "이대로 보낼까요?" })}`;
 const openCards = () => listNotices(500).items.filter((n: any) => n.decision?.state === "open" && n.decision.to === CONV);
 const outs: HubEvent[] = [];
 onEmit(e => void (e.kind === "out" && e.target === CONV && outs.push(e)));
@@ -36,19 +40,16 @@ const nextCard = (ref: string) =>
 			}
 		});
 	});
-const route = (method: string, path: string, body?: unknown, delivered: string[] = []) =>
-	approvalRoute(new Request(`http://local${path}`, { method, ...(body ? { body: JSON.stringify(body) } : {}) }), new URL(`http://local${path}`), {
-		login: "owner@example.com",
-		triageMin: 3,
-		deliver: async (_to, text) => void delivered.push(text),
-	});
+const route = (method: string, path: string, body?: unknown) =>
+	approvalRoute(new Request(`http://local${path}`, { method, ...(body ? { body: JSON.stringify(body) } : {}) }), new URL(`http://local${path}`));
 
 test("보내기 shows the next card at once with no model turn; the send runs in the background and a failure is one note on the card", async () => {
 	for (const r of refs) await out(CONV, card(r));
 	expect(openCards().map((n: any) => n.decision.draft.ref)).toEqual([refs[0]]);
 	const bot: string[] = [];
 	const next = nextCard(refs[1]!);
-	const r = await webAnswer(openCards()[0].id, { n: 1 }, "owner@example.com", async a => void bot.push(a.text));
+	// The owner presses 보내기 on the version the reply item shows him (its hash, as the web sends it).
+	const r = await webAnswer(openCards()[0].id, { n: 1, hash: (await replies.view(refs[0]!))!.draft.hash }, "owner@example.com", async a => void bot.push(a.text));
 	expect(r.status).toBe(200);
 	// The answer came back while the send was still queued or running: neither it nor the next card waited for the send.
 	expect(sender.results(CONV).find(x => x.ref === refs[0])?.state).not.toBe("failed");
@@ -61,28 +62,6 @@ test("보내기 shows the next card at once with no model turn; the send runs in
 	// The CLI's own approval check saw the pick: the refusal is the sender's, not "아직 보내도 된다는 답을 받지 못했어요".
 	expect(first.decision.send.text).not.toContain("답을 받지 못했어요");
 	expect(outs.filter(e => String(e.text).startsWith("[fail]") && String(e.text).includes(refs[0]!))).toHaveLength(1);
-});
-
-test("the batch answer: picked cards go (sends by the gateway, 고치기 to the bot in one message), the skipped one shows next", async () => {
-	const list = (await (await route("GET", "/api/approvals"))!.json()) as any;
-	const group = list.groups.find((g: any) => g.cards.some((c: any) => c.to === CONV));
-	expect(group.cards.filter((c: any) => c.to === CONV).map((c: any) => [c.ref, !!c.notice, c.sendable])).toEqual([
-		[refs[1], true, true],
-		[refs[2], false, true],
-		[refs[3], false, true],
-	]);
-	const delivered: string[] = [];
-	const next = nextCard(refs[3]!);
-	const res = await route("POST", "/api/approvals", { items: [{ ref: refs[1], to: CONV, n: 1 }, { ref: refs[2], to: CONV, n: 2, note: "더 짧게" }] }, delivered);
-	// The batch answered while its send was still queued or running.
-	expect(sender.results(CONV).find(x => x.ref === refs[1])?.state).not.toBe("failed");
-	expect(await res!.json()).toEqual({ ok: true, sending: 1, toBot: 1 });
-	await next;
-	expect(delivered).toHaveLength(1);
-	expect(delivered[0]).toContain(`(${refs[2]}): 2) 고치기 - 더 짧게`);
-	expect(openCards().map((n: any) => n.decision.draft.ref)).toEqual([refs[3]]);
-	await sender.idle();
-	expect(sender.results(CONV).find(r => r.ref === refs[1])?.state).toBe("failed");
 });
 
 test("a send a session's CLI ran fails: the gateway report reaches the owner where the card is and marks the card failed", async () => {
@@ -106,9 +85,63 @@ test("a send a session's CLI ran fails: the gateway report reaches the owner whe
 	ignoreNotice(shown.id);
 });
 
+// The card as the CLI prints it (askText), posted in a conversation of its own: what the open card holds as its draft.
+const printedCard = async (conv: string, id: string) => {
+	await out(conv, askText(getDraft(id)!, []));
+	const open = listNotices(500).items.filter((n: any) => n.decision?.state === "open" && n.decision.to === conv) as any[];
+	const seen = open.map(n => [n.decision.draft?.ref, n.decision.draft?.to]);
+	for (const n of open) ignoreNotice(n.id);
+	return seen;
+};
+
+test("a mail draft whose recipient has no address: its card shows the sender's address the send will use and keeps its draft", async () => {
+	const id = draft("이름만 아는 답", "친구");
+	expect(await printedCard("mail:aw-name", id)).toEqual([[id, "friend@example.com"]]);
+});
+
+test("a draft longer than the gateway reads of a card keeps its draft: the card shows it whole", async () => {
+	const id = draft("긴 답장의 한 줄이에요.\n".repeat(600));
+	expect(await printedCard("mail:aw-long", id)).toEqual([[id, "friend@example.com"]]);
+});
+
 afterAll(() => {
 	for (const n of openCards()) ignoreNotice(n.id);
 	expect(openCards()).toEqual([]);
+});
+
+test("a failed comment reply's note goes where its card was asked, or to the main conversation when it never had one; never to the store's place (Dggtza6)", async () => {
+	const place = "comment:site-aw";
+	const notes: HubEvent[] = [];
+	onEmit(e => void (e.kind === "out" && String(e.text).startsWith("[fail]") && notes.push(e)));
+	const fail = (ref: string) => reportSend({ ref, conv: place, title: `이 답글 올릴까요? (${ref})`, state: "failed", text: "앱에서 이 글을 받지 않았어요", reason: { code: "rejected", text: "앱에서 이 글을 받지 않았어요" }, safeToAuto: false, at: Date.now() });
+	// A later post to the same place passes the queue after the note, so the note is out by then.
+	const flush = (to: string) => out(to, "정리했어요", undefined, { source: "gateway" });
+
+	fail("DAWNOCARD1");
+	await flush("web");
+	expect(notes.filter(e => String(e.text).includes("DAWNOCARD1")).map(e => e.target)).toEqual(["web"]);
+
+	const asked = "mail:aw-comment-card";
+	// A card is read as a draft's only when it shows the stored draft (card()), so this one has a draft of its own.
+	const carded = draft("카드 답");
+	await out(asked, card(carded));
+	fail(carded);
+	await flush(asked);
+	expect(notes.filter(e => String(e.text).includes(carded)).map(e => e.target)).toEqual([asked]);
+	for (const n of listNotices(500).items.filter((x: any) => x.decision?.draft?.ref === carded)) ignoreNotice(n.id);
+});
+
+// The card's countdown line (a Discord card is edited with it) is drawn from the milliseconds left in the window.
+test("a send in its undo window gives its card a countdown in whole seconds", () => {
+	const shown = spyOn(outbound, "showSendOnCard");
+	try {
+		reportSend({ ref: "DAWCOUNT01", conv: "mail:aw-countdown", title: "이대로 보낼까요? (DAWCOUNT01)", state: "undo", text: "", until: Date.now() + 10_000, at: Date.now() });
+		const left = shown.mock.calls.at(-1)![4]!;
+		expect(Number.isFinite(left)).toBe(true);
+		expect(withSendState("카드", "undo", "", left)).toContain("-# 10초 후 보내요");
+	} finally {
+		shown.mockRestore();
+	}
 });
 
 test("답글만 보내기 through the gateway: the mail draft left behind gets one open card, also when the send is reported twice, and 보내기 on it is a mail send", async () => {
@@ -131,4 +164,35 @@ test("답글만 보내기 through the gateway: the mail draft left behind gets o
 	expect(mailCards()).toHaveLength(1);
 	expect(posts.filter(t => t.includes(`(${mail})`))).toHaveLength(1);
 	expect(sendTargetOf(mail, "send")).toMatchObject({ kind: "mail" });
+});
+
+test("U4-6 보내기 on the card of a mail draft already sent is refused already_sent by the reply flow: nothing queued, the bot not asked", async () => {
+	const conv = "mail:aw-sent";
+	const id = draft("이미 보낸 답");
+	await out(conv, card(id));
+	const shown = listNotices(500).items.find(n => n.decision?.state === "open" && n.decision.to === conv && n.decision.draft?.ref === id)!;
+	const hash = (await replies.view(id))!.draft.hash;
+	setStatus(id, "sent");
+	const bot: string[] = [];
+	const r = await webAnswer(shown.id, { n: 1, hash }, "owner@example.com", async a => void bot.push(a.text));
+	expect(r.status).toBe(409);
+	expect(r.body).toMatchObject({ code: "already_sent" });
+	expect(bot).toEqual([]);
+	expect(sender.results().filter(x => x.ref === id)).toEqual([]);
+	for (const n of listNotices(500).items.filter(x => x.decision?.draft?.ref === id)) ignoreNotice(n.id);
+});
+
+test("a failed send tells every page the item as it is now, so a card redraws with the version the next 보내기 must carry", async () => {
+	const conv = "mail:aw-fresh";
+	const id = draft("새로 그릴 답");
+	await out(conv, card(id));
+	const shown = listNotices(500).items.find(n => n.decision?.state === "open" && n.decision.to === conv && n.decision.draft?.ref === id)!;
+	const items: unknown[] = [];
+	onBroadcast(e => void (e.kind === "reply" && e.ref === id && e.item && items.push(e.item)));
+	const r = await webAnswer(shown.id, { n: 1, hash: (await replies.view(id))!.draft.hash }, "owner@example.com", async () => undefined);
+	expect(r.status).toBe(200);
+	await sender.idle();
+	await new Promise(resolve => realSetTimeout(resolve, 50));
+	expect(items.at(-1)).toMatchObject({ ref: id, send: { state: "failed" }, draft: { hash: (await replies.view(id))!.draft.hash } });
+	for (const n of listNotices(500).items.filter(x => x.decision?.draft?.ref === id)) ignoreNotice(n.id);
 });

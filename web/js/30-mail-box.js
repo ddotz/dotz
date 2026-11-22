@@ -16,6 +16,7 @@ ICONS.mailopen = "M3 10l9-6 9 6v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1zM3 10l9 6 9-6";
 ICONS.replyoff = "M10 7l-5 5 5 5M5 12h9a6 6 0 0 1 6 6M4 4l16 16";
 ICONS.flag = "M6 21V4h12l-2.5 4 2.5 4H6";
 const MBOX = { sel: new Set(), vis: [], boxes: new Map(), cs: null, drawn: 100, fk: "", rows: new Map(), pass: new Set(), held: new Map() };
+const mbUnselect = t => { MBOX.sel.delete(t); }, mbRowsForget = rows => { for (const r of rows) MBOX.rows.delete(r.dataset.t); };
 const mbKey = t => t.slice(5);
 // Whether the mail's mailbox will follow an action. Every action still works in dotz either way: `can` only says what the hub can repeat in the
 // real mailbox (owner 2026-11-02: read/unread must always be there). A card with no `can` at all is an older hub, which knows only the delete route.
@@ -23,7 +24,7 @@ const mailCan = (t, a) => { const m = MAILS.get(t); return !!m && Array.isArray(
 const mailOldHub = t => { const m = MAILS.get(t); return !!m && !Array.isArray(m.can); };
 // Unread: the hub's read flag when the card has one (the real mailbox's, two-way); else dotz's own read position (ts(t).unread). A sent mail is never unread.
 const mailUnread = (t, m = MAILS.get(t)) => !!m && m.dir !== "out" && (typeof m.read === "boolean" ? !m.read : (ts(t).unread | 0) > 0);
-const mbRefresh = () => { MON.sig = ""; MON.side = ""; monSchedule(); mbPaintBar(); };
+const mbRefresh = () => { monDirty(true); mbPaintBar(); };
 // What waits on the hub is kept here by id (the mail, `|`, the button's data-k), not only on its node: a repaint draws the button again and mbHeld puts it back busy;
 // the end clears the node that is on the page then. `keep`: the row is leaving, so the node stays as it is and only the id goes.
 const mbWid = b => { const r = b.closest(".mr[data-t]"); return `${r ? r.dataset.t : ""}|${b.dataset.k}`; };
@@ -32,7 +33,12 @@ function mbHold(id, node, press = pressWait) {
   return keep => { const h = MBOX.held.get(id); MBOX.held.delete(id); if (h && !keep) h.undo(); };
 }
 const mbHeld = (id, node) => { const h = MBOX.held.get(id); if (h) h.undo = h.press(node); return node; };
-const mbWait = btn => (btn && btn.dataset.k ? mbHold(mbWid(btn), btn) : pressWait(btn));
+const mbWait = btn => {
+  if (!btn || !btn.dataset.k) return pressWait(btn);
+  const unwait = mbHold(mbWid(btn), btn), offPage = !btn.isConnected;
+  if (offPage) mbPaintBar();
+  return unwait;
+};
 const mbRowPress = r => { r.setAttribute("aria-busy", "true"); return () => r.removeAttribute("aria-busy"); };
 const mbHeldRow = (t, row) => { if (MBOX.held.size) { for (const b of row.querySelectorAll("button[data-k]")) mbHeld(`${t}|${b.dataset.k}`, b); mbHeld(`${t}|row`, row); } return row; };
 const mbBarHeld = bar => { if (MBOX.held.size) for (const b of bar.querySelectorAll("button[data-k]")) mbHeld(`|${b.dataset.k}`, b); };
@@ -63,7 +69,7 @@ function mbFresh(scope, box) {
 function mbRowsOut(keys) {
   const keep = mailFilterOf()[2], gone = keys.filter(t => !MAILS.has(t) || !keep(MAILS.get(t), t));
   const rows = [...document.querySelectorAll("#mon-tl > .mr[data-t]")].filter(r => gone.includes(r.dataset.t));
-  for (const r of rows) MBOX.rows.delete(r.dataset.t);   // a row that fades out is not kept
+  mbRowsForget(rows);   // a row that fades out is not kept
   return rows.length ? Promise.all(rows.map(r => motionGone(r))) : null;
 }
 // Whether an action takes the mail out of the list that is shown: that row stays, and the button says it waits, until the hub has answered.
@@ -83,8 +89,8 @@ function mbApply(t, a) {
   else if (a === "unread") m.read = false;
   else if (a === "archive" || a === "unarchive") m.archived = a === "archive";
   else if (a === "star" || a === "unstar") m.starred = a === "star";
-  else if (a === "trash") { MAILS.delete(t); CONV.delete(t); MBOX.sel.delete(t); }
-  return () => { Object.assign(m, was); ts(t).unread = unread; if (a === "trash") { MAILS.set(t, m); if (conv) CONV.set(t, conv); } };
+  else if (a === "trash") { mailDrop(t); convDrop(t); MBOX.sel.delete(t); }
+  return () => { Object.assign(m, was); ts(t).unread = unread; if (a === "trash") { mailPut(t, m); if (conv) convLastSet(t, conv); } };
 }
 const MB_DONE = { read: n => (n > 1 ? TX("mail.done_n.read", { n }) : TX("mail.done.read")), unread: n => (n > 1 ? TX("mail.done_n.unread", { n }) : TX("mail.done.unread")), archive: n => (n > 1 ? TX("mail.done_n.archive", { n }) : TX("mail.done.archive")), unarchive: n => (n > 1 ? TX("mail.done_n.unarchive", { n }) : TX("mail.done.unarchive")), trash: n => (n > 1 ? TX("mail.done_n.trash", { n }) : TX("mail.done.trash")), star: n => (n > 1 ? TX("mail.done_n.star", { n }) : TX("mail.done.star")), unstar: n => (n > 1 ? TX("mail.done_n.unstar", { n }) : TX("mail.done.unstar")) };
 const MB_BACK = { archive: "unarchive", unarchive: "archive", read: "unread", unread: "read", star: "unstar", unstar: "star" };
@@ -120,7 +126,7 @@ async function mbRun(keys, action, quiet = false, btn = null) {
   if (!quiet && said) toast(said, res.some(x => x.ok === false));
   else if (!quiet && res.some(x => x.ok === false)) toast(TX("mail.err.failed"), true);
   else if (!quiet && done.length && MB_DONE[action]) toast(MB_DONE[action](done.length), false, MB_BACK[action] && action !== "trash" && !/star$/.test(action) ? { label: TX("common.undo"), onclick: () => mbRun(done, MB_BACK[action]) } : undefined);
-  if (legacy) for (const t of done) PQ.of.delete(t);
+  if (legacy) for (const t of done) pqUnbind(t);
   Promise.allSettled([convLoad(), loadIntegrations()]);
   return done;
 }
@@ -199,7 +205,7 @@ async function mbFyi(keys, on = true, btn = null) {
   if (on && keys.length > MB_FYI_ASK && !await ask(TX("mail.fyi.title"), TX("mail.fyi.ask_n", { n: keys.length }), TX("mail.fyi.go_n", { n: keys.length }))) return [];
   const was = new Map(keys.map(t => { const m = MAILS.get(t); return [t, { reply: m.reply, unreplied: m.unreplied }]; })), byPc = new Map(), mark = { reply: on ? "fyi" : "needs", unreplied: !on }, keep = mailFilterOf()[2];
   // A row that leaves this list stays until the hub said yes; the others change at once.
-  const wait = new Set(keys.filter(t => !keep({ ...MAILS.get(t), ...mark }, t))), put = t => { Object.assign(MAILS.get(t), mark); MBOX.sel.delete(t); };
+  const wait = new Set(keys.filter(t => !keep({ ...MAILS.get(t), ...mark }, t))), put = t => { mailMark(t, mark); MBOX.sel.delete(t); };
   for (const t of keys) {
     if (!wait.has(t)) put(t);
     const pc = pqPc(t), k = pc ? pc.url : "";
@@ -216,7 +222,7 @@ async function mbFyi(keys, on = true, btn = null) {
     } catch (e) { g.keys.forEach(t => bad.add(t)); return e.message; }
   }));
   unwait();
-  for (const t of bad) if (!wait.has(t) && MAILS.has(t)) Object.assign(MAILS.get(t), was.get(t));
+  for (const t of bad) if (!wait.has(t) && MAILS.has(t)) mailMark(t, was.get(t));
   const done = keys.filter(t => !bad.has(t));
   for (const t of done) if (wait.has(t) && MAILS.has(t)) put(t);
   const leaving = mbRowsOut(done.filter(t => wait.has(t)));
@@ -233,7 +239,7 @@ const mbLeave = keys => { if (monCtx && keys.includes(monCtx) && current === "ch
 // `o.short`: the visible word when the full label (kept as aria-label and title) is longer than the button needs.
 // `count` stays beside the icon on the phone, where the label is hidden.
 const mbBtn = (label, ic, onclick, o = {}) => el("button", { class: `mbox-b${o.cls ? ` ${o.cls}` : ""}`, type: "button", "data-k": o.k, title: label, "aria-label": label, onclick }, icon(ic), el("span", { class: "mbox-bt", text: o.short || label }), o.count ? el("span", { text: ` ${o.count}` }) : null);
-const MB_SHORT = { read: TX("mail.read"), unread: TX("common.unread"), archive: TX("mail.archive"), unarchive: TX("mail.inbox") };
+const MB_SHORT = { read: TX("mail.read"), unread: TX("common.unread"), archive: TX("mail.archive"), unarchive: TX("mail.inbox"), trash: TX("common.delete") };
 // Star: always a button (a star works in dotz whatever the mailbox does); the mailbox's refusal comes back as the hub's one line.
 function mbStar(t) {
   const m = MAILS.get(t) || {}, on = !!m.starred;
@@ -250,6 +256,14 @@ function mbLead(t, title) {
 
 /* ---------- the bar above the list: select all, and the actions of the selection. One line of one height in every state, so ticking a mail moves nothing. ---------- */
 const mbBar = () => el("div", { class: "mbox-bar", id: "mbox-bar" });
+// The choice ends: every tick and the select-all box clear and the bar goes back to the count. The × does it, and so does an action on the selection once it
+// went through (owner 11-18, as a mailbox does); an action refused for every mail keeps the choice so it can be tried again.
+function mbSelClear() {
+  MBOX.sel.clear();
+  document.querySelectorAll("#mon-tl .mr.mr-sel").forEach(r => { r.classList.remove("mr-sel"); const c = r.querySelector(".mr-chk"); if (c) c.checked = false; });
+  mbPaintBar();
+}
+const mbSelDone = p => p.then(done => { if (done && done.length) mbSelClear(); else mbPaintBar(); });
 function mbPaintBar() {
   const bar = document.getElementById("mbox-bar");
   if (!bar) return;
@@ -268,15 +282,17 @@ function mbPaintBar() {
     return;
   }
   const arch = mailFilterOf()[0] === "archived";
-  // The two used most stand as words (읽음, 보관); the rest is in the ⋯, so 삭제 is never the button beside the × that clears the choice.
-  const owed = mbOwed(keys).length, run = (a, b) => (a === "trash" ? mbTrash(keys, b) : mbRun(keys, a, false, b)).then(() => mbPaintBar());
-  const btns = [["read", TX("mail.act.read"), "check"], arch ? ["unarchive", TX("mail.act.unarchive"), "inbox"] : ["archive", TX("mail.act.done"), "archive"]].map(([a, label, ic]) => mbBtn(label, ic, ev => run(a, ev.currentTarget), { k: `mail-${a}`, short: MB_SHORT[a], cls: "mbox-w" }));
-  const items = [{ value: "unread", label: TX("mail.act.unread") }, ...(keys.some(mxCanMove) ? [{ value: "move", label: TX("mail.move"), ...(keys.some(pqPc) ? { sub: mxWhy(pqPc(keys.find(pqPc))) } : {}) }] : []), ...(owed ? [{ value: "fyi", label: owed < keys.length ? TX("mail.fyi.label_n", { n: owed }) : TX("mail.fyi.title") }] : []), { value: "trash", label: TX("common.delete"), danger: true }];
-  btns.push(el("button", { class: "mbox-b mbox-ic", type: "button", "data-k": "mail-more", title: TX("mail.more"), "aria-label": TX("mail.more"), "aria-haspopup": "listbox",
-    onclick: ev => { const b = ev.currentTarget; showMenu(b, items, { onPick: v => (v === "move" ? (keys.some(pqPc) ? toast(mxWhy(pqPc(keys.find(pqPc))), true) : mxMoveOpen(b, keys)) : v === "fyi" ? mbFyi(keys, true, b).then(() => mbPaintBar()) : run(v, b)) }); } }, icon("more")));
+  // Every action stands in the bar, none behind a ⋯ (owner 11-18): with its word on a wide screen, as an icon on a phone. 삭제 is never the button beside the × that clears the choice.
+  const owed = mbOwed(keys).length, act = (a, label, ic, onclick, o = {}) => mbBtn(label, ic, ev => mbSelDone(onclick(ev.currentTarget)), { k: `mail-${a}`, short: MB_SHORT[a], ...o });
+  const run = a => b => a === "trash" ? mbTrash(keys, b) : mbRun(keys, a, false, b);
+  const btns = [act("read", TX("mail.act.read"), "check", run("read")), act("unread", TX("mail.act.unread"), "mail", run("unread")),
+    arch ? act("unarchive", TX("mail.act.unarchive"), "inbox", run("unarchive")) : act("archive", TX("mail.act.done"), "archive", run("archive")),
+    act("trash", TX("common.delete"), "trash", run("trash"), { cls: "danger" }),
+    owed ? act("fyi", owed < keys.length ? TX("mail.fyi.label_n", { n: owed }) : TX("mail.fyi.title"), "replyoff", b => mbFyi(keys, true, b)) : null,
+    keys.some(mxCanMove) ? mbBtn(TX("mail.move"), "folder", ev => (keys.some(pqPc) ? toast(mxWhy(pqPc(keys.find(pqPc))), true) : mxMoveOpen(ev.currentTarget, keys)), { k: "mail-move" }) : null].filter(Boolean);
   bar.classList.add("on");
   clear(bar).append(chk, el("span", { class: "mbox-n", "aria-live": "polite", text: TX("mail.selected_n", { n: keys.length }) }), ...btns,
-    el("button", { class: "mbox-b mbox-x", type: "button", "aria-label": TX("mail.deselect"), title: TX("mail.deselect"), onclick: () => { MBOX.sel.clear(); document.querySelectorAll("#mon-tl .mr.mr-sel").forEach(r => { r.classList.remove("mr-sel"); const c = r.querySelector(".mr-chk"); if (c) c.checked = false; }); mbPaintBar(); } }, icon("close")));
+    el("button", { class: "mbox-b mbox-x", type: "button", "aria-label": TX("mail.deselect"), title: TX("mail.deselect"), onclick: mbSelClear }, icon("close")));
   mbBarHeld(bar);
 }
 // The visible mails of the list (select all) and the bar itself, at the head of the rows.
@@ -305,8 +321,8 @@ function mbRowsPrune() {
 // A step draws MB_PAGE more of the loaded mails; when the hub has older ones, the next page is asked for too, and the list draws again when it lands.
 function mbMore() {
   MBOX.drawn += MB_PAGE;
-  if (CVP.more) convMore().then(() => { MON.sig = ""; monSchedule(); });
-  MON.sig = ""; monSchedule();
+  if (CVP.more) convMore().then(() => { monDirty(); });
+  monDirty();
 }
 // After the drawn rows: a sentinel that adds a page when it reaches the viewport, and the plain button for a browser without IntersectionObserver.
 function mbMoreNodes(left) {
@@ -389,18 +405,19 @@ function mbForm(st, host, o) {
   const field = (k, label, ph, extra = {}) => el("label", { class: `mbox-f mbox-f-${k}` }, el("span", { class: "mbox-fk", text: label }),
     el("input", { class: "mbox-in", type: "text", value: st[k], placeholder: ph, "data-k": `mail-${k}`, "aria-label": label, autocomplete: "off", spellcheck: "false", oninput: ev => { st[k] = ev.target.value; }, ...extra }));
   const picker = el("input", { type: "file", multiple: true, hidden: true, "aria-label": TX("decision.file.pick") });
+  const photos = el("input", { type: "file", accept: "image/*", multiple: true, hidden: true, "data-k": "mail-photo", "aria-label": TX("chat.att.photo") });
   const files = el("div", { class: "mbox-fw" });
   const paintFiles = () => clear(files).append(mbChips(st.files, i => { st.files.splice(i, 1); paintFiles(); }, st.up));
   const add = async list => {
     for (const f of list) {
       st.up.push(f.name); paintFiles();
-      try { const u = await uploadFile(f); st.files.push({ name: u.name, ...(u.original ? { original: u.original } : {}), path: u.path, size: u.size, type: u.type }); }
+      try { const u = await uploadFile(await upNamed(f)); st.files.push({ name: u.name, ...(u.original ? { original: u.original } : {}), path: u.path, size: u.size, type: u.type }); }
       catch (e) { toast(e.message || TX("mail.upload_failed"), true); }
       st.up.splice(st.up.indexOf(f.name), 1); paintFiles();
     }
   };
-  picker.onchange = () => { const list = [...picker.files]; picker.value = ""; add(list); };
-  const body = el("textarea", { class: "mbox-ta fi", rows: o.rows || "7", placeholder: o.placeholder || TX("mail.body"), "data-k": "mail-body", "aria-label": TX("mail.body"), oninput: ev => { st.body = ev.target.value; } });
+  for (const input of [picker, photos]) input.onchange = () => { const list = [...input.files]; input.value = ""; add(list); };
+  const body = el("textarea", { class: "mbox-ta fi", rows: o.rows || "7", placeholder: o.placeholder || TX("mail.body"), "data-k": "mail-body", "aria-label": TX("mail.body"), oninput: ev => { st.body = ev.target.value; errs.body.hidden = true; } });
   body.value = st.body;
   const ccRow = field("cc", TX("decision.cc"), TX("mail.many_ph"));
   ccRow.hidden = !st.cc && !st.showCc;
@@ -408,21 +425,32 @@ function mbForm(st, host, o) {
   ccBtn.hidden = !ccRow.hidden;
   const to = field("to", TX("mail.to"), TX("mail.many_ph"));
   to.append(ccBtn);
-  // a missing 받는 사람 is said under its row and stays until something is typed there
-  const err = el("div", { class: "mbox-err", role: "alert", text: TX("mail.need_to"), hidden: true });
-  const toIn = to.querySelector("input");
-  toIn.addEventListener("input", () => { err.hidden = true; });
-  st.needTo = () => { err.hidden = false; toIn.focus(); };
+  const note = k => el("div", { class: "mbox-err", role: "alert", "data-k": `mail-err-${k}`, hidden: true });
+  const errs = { to: note("to"), cc: note("cc"), body: note("body") };
+  const say = (k, text) => { for (const e of Object.values(errs)) e.hidden = true; errs[k].textContent = text; errs[k].hidden = false; };
+  const toIn = to.querySelector("input"), ccIn = ccRow.querySelector("input");
+  toIn.addEventListener("input", () => { errs.to.hidden = true; });
+  ccIn.addEventListener("input", () => { errs.cc.hidden = true; });
+  st.needTo = () => { say("to", TX("mail.need_to")); toIn.focus(); };
+  st.refuse = (k, key) => { say(k, TX(key)); ({ to: toIn, cc: ccIn, body })[k].focus(); };
   paintFiles();
   // append(null) would print the word "null": the quote block is added only when there is an original
-  clear(host).append(to, err, ccRow, field("subject", TX("decision.subject"), TX("decision.subject")), body, files, picker);
+  clear(host).append(to, errs.to, ccRow, errs.cc, field("subject", TX("decision.subject"), TX("decision.subject")), body, errs.body, files, picker, photos);
   if (o.quote) host.insertBefore(o.quote, files);
-  return { pick: () => picker.click(), body, files: paintFiles };
+  return { pick: () => picker.click(), pickPhoto: () => photos.click(), body, files: paintFiles };
 }
+const mbPickers = form => el("span", { class: "mbox-attach" },
+  el("button", { class: "ib", type: "button", "data-k": "mail-attach", "aria-label": TX("mail.attach"), title: TX("mail.attach"), onclick: () => form.pick() }, icon("clip")),
+  el("button", { class: "ib", type: "button", "data-k": "mail-attach-photo", "aria-label": TX("chat.att.photo"), title: TX("chat.att.photo"), onclick: () => form.pickPhoto() }, icon("image")));
+const MB_BODY_MAX = 20000, MB_RCPT_MAX = 500;
+const mbTooLong = st => (st.body.trim().length > MB_BODY_MAX ? ["body", "mail.err.body_long"] : st.to.trim().length > MB_RCPT_MAX ? ["to", "mail.err.to_long"] : st.cc.trim().length > MB_RCPT_MAX ? ["cc", "mail.err.cc_long"] : null);
 const mbPayload = (st, extra = {}) => ({ to: st.to.trim(), cc: st.cc.trim(), subject: st.subject.trim(), body: st.body, attachments: st.files.map(f => ({ name: f.name, path: f.path, size: f.size })), ...extra });
 const mbEmpty = st => !st.to.trim() && !st.cc.trim() && !st.subject.trim() && !st.body.trim() && !st.files.length;
+const mbWriting = () => (!!MBOX.cs && !mbEmpty(MBOX.cs.st)) || [...MBOX.boxes.values()].some(b => b.open && b.st && (b.st.body.trim() || b.st.files.length));
 async function mbSave(st, extra, btn) {
   if (!st.to.trim()) { st.needTo(); return null; }
+  const over = mbTooLong(st);
+  if (over) { st.refuse(...over); return null; }
   if (st.up.length) { toast(TX("mail.uploading_wait"), true); return null; }
   let r = null;
   await busy(btn, async () => {
@@ -452,15 +480,16 @@ function mbCompose(init = {}) {
   const node = el("div", { class: "mbox-sheet", role: "dialog", "aria-label": TX("mail.new_mail") });
   // The sheet fades down and away before it is removed; it is no longer the open one from the first moment.
   const leave = async () => { MBOX.cs = null; refit.disconnect(); node.inert = true; await motionOut(node, "rise"); node.remove(); };
-  const close = async () => { if (!mbEmpty(st) && !await ask(TX("mail.discard.title"), TX("mail.discard.body"), TX("mail.discard.go"), true)) return; leave(); };
-  const save = ev => mbSave(st, {}, ev.currentTarget).then(r => { if (r) leave(); });
+  const done = () => { leave(); keptSave(); };
+  const close = async () => { if (!mbEmpty(st) && !await ask(TX("mail.discard.title"), TX("mail.discard.body"), TX("mail.discard.go"), true)) return; done(); };
+  const save = ev => mbSave(st, {}, ev.currentTarget).then(r => { if (r) done(); });
   node.append(
     el("div", { class: "mbox-sh", onclick: ev => { if (node.classList.contains("min") && !ev.target.closest("button")) mbFold(node, false); } }, el("span", { class: "mbox-st", text: TX("mail.new_mail") }),
       el("button", { class: "ib mbox-min", type: "button", "aria-label": TX("mail.sheet.min"), title: TX("mail.sheet.min"), onclick: () => mbFold(node, !node.classList.contains("min")) }, icon("minus")),
       el("button", { class: "ib mbox-close", type: "button", "aria-label": TX("common.close"), title: TX("common.close"), onclick: close }, icon("close"))),
     host,
     el("div", { class: "mbox-sf" }, el("button", { class: "btn pri mbox-save", type: "button", "data-k": "mail-compose-save", onclick: save }, TX("mail.draft_create")),
-      el("button", { class: "ib mbox-attach", type: "button", "aria-label": TX("mail.attach"), title: TX("mail.attach"), onclick: () => form.pick() }, icon("clip"))));
+      mbPickers(form)));
   document.body.append(node);
   // the tab bar comes and goes with the screen and the window: a folded bar follows it
   const refit = new ResizeObserver(() => { if (node.classList.contains("min")) mbFold(node, true); });
@@ -468,6 +497,28 @@ function mbCompose(init = {}) {
   motionIn(node, "rise", 240);
   MBOX.cs = { node, st };
   node.querySelector(".mbox-in").focus();
+}
+const mbKeepFields = st => ({ to: st.to, cc: st.cc, subject: st.subject, body: st.body, files: st.files, showCc: !!st.showCc });
+const mbKeepCs = () => (MBOX.cs && !mbEmpty(MBOX.cs.st) ? { ...mbKeepFields(MBOX.cs.st), min: MBOX.cs.node.classList.contains("min") } : null);
+const mbKeepBox = b => (b.open && b.st && (b.st.body.trim() || b.st.files.length) ? { mode: b.mode, ...mbKeepFields(b.st) } : null);
+{
+  const openCs = v => { mbCompose({ ...mbKeepFields(v) }); if (v.min && MBOX.cs) mbFold(MBOX.cs.node, true); };
+  const openBox = (t, v) => MBOX.boxes.set(t, { open: true, mode: v.mode, st: { ...mbKeepFields(v), up: [] } });
+  const k = keptMap("mail-write", () => {
+    const o = {}, cs = mbKeepCs();
+    if (cs) o.cs = cs;
+    for (const [t, b] of MBOX.boxes) { const v = mbKeepBox(b); if (v) o[`box:${t}`] = v; }
+    return o;
+  }, (key, v) => {
+    if (!v || typeof v !== "object") return false;
+    if (key === "cs") { if (MBOX.cs) return false; openCs(v); return true; }
+    const t = key.startsWith("box:") ? key.slice(4) : "";
+    if (!t || MBOX.boxes.get(t)?.open) return false;
+    openBox(t, v); mbReplyPaint(true);
+    return true;
+  });
+  for (const [key, b] of Object.entries(k)) if (key.startsWith("box:")) openBox(key.slice(4), b);
+  if (k.cs) setTimeout(() => { openCs(k.cs); keptMark("mail-write"); }, 0);
 }
 
 /* ---------- the inline reply at the bottom of the open mail ---------- */
@@ -519,9 +570,9 @@ function mbReplyPaint(force) {
       el("div", { class: "mbox-modes" }, ...MB_MODES.map(([k, label, ic]) => el("button", { class: `cchip mbox-mode${k === b.mode ? " on" : ""}`, type: "button", "data-mode": k, "aria-pressed": String(k === b.mode), onclick: () => mbOpenReply(t, k) }, icon(ic), label))),
       host,
       el("div", { class: "mbox-sf" },
-        el("button", { class: "btn pri mbox-save", type: "button", "data-k": "mail-reply-save", onclick: ev => mbSave(b.st, { reply_to: mbKey(t), mode: b.mode }, ev.currentTarget).then(r => { if (r) { MBOX.boxes.delete(t); mbReplyPaint(true); } }) }, TX("mail.draft_create")),
-        el("button", { class: "ib mbox-attach", type: "button", "aria-label": TX("mail.attach"), title: TX("mail.attach"), onclick: () => form.pick() }, icon("clip")),
-        el("button", { class: "btn text mbox-cancel", type: "button", onclick: () => { b.open = false; mbReplyPaint(true); } }, TX("mail.reply.fold"))));
+        el("button", { class: "btn pri mbox-save", type: "button", "data-k": "mail-reply-save", onclick: ev => mbSave(b.st, { reply_to: mbKey(t), mode: b.mode }, ev.currentTarget).then(r => { if (r) { MBOX.boxes.delete(t); mbReplyPaint(true); keptSave(); } }) }, TX("mail.draft_create")),
+        mbPickers(form),
+        el("button", { class: "btn text mbox-cancel", type: "button", onclick: () => { b.open = false; mbReplyPaint(true); keptSave(); } }, TX("mail.reply.fold"))));
   }
   tl.append(slot);
 }

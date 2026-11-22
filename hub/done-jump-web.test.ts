@@ -1,7 +1,7 @@
 import { afterAll, describe, expect, test } from "bun:test";
 import { fakeHub, idleState, json, on } from "./test-web.ts";
 
-// A finished job's result sits far back in a long conversation, beyond what the jump pages through (web/js/30-notices.js ntReach): the tap
+// A finished job's result sits far back in a long conversation, beyond what the jump pages through (web/js/30-notices-jump.js ntReach): the tap
 // must still land on that message, and only a message the gateway no longer holds gets the toast.
 const ts = (i: number) => new Date(Date.UTC(2026, 9, 20, 1, 0, i)).toISOString();
 const says = (i: number) => ({ ts: ts(i), kind: "out", source: "orchestrator", target: "main", text: `메시지 ${i}번이에요.` });

@@ -24,5 +24,18 @@
   "notice.worker.many": {
     "one": "{n} worker",
     "other": "{n} workers"
-  }
+  },
+  "notice.push.alert": "{name} · Alert",
+  "notice.push.mail": "{name} · New mail",
+  "notice.push.decision": "Needs your answer",
+  "notice.push.fail": "{name} · Failed",
+  "notice.push.done": "{name} · Done",
+  "notice.push.check": "{name} · Needs a look",
+  "notice.push.question": "{name} · Question",
+  "notice.push.news": "{name} · News",
+  "notice.push.message": "{name} · New message",
+  "notice.push.update": "{name} · New version",
+  "notice.push.schedule": "{name}",
+  "notice.push.test": "{name} test notification",
+  "notice.push.test_body": "Notifications work. Tap to open the chat."
 }

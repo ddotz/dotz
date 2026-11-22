@@ -149,3 +149,26 @@ describe("a 결정 line the parser cannot make a card from", () => {
 		expect(normalizeAsk("[ask] 이거 할까요?")).toBe("[ask] 이거 할까요?");
 	});
 });
+
+describe("a later status marker and a bold yes/no head", () => {
+	test("a marker opening a later line becomes its emoji; line 1 stays the tone", () => {
+		const out = ownerText("[ask] 결정: 할까요?\n**1) 하기**\n**2) 말기**\n\n[done] PR을 반영했어요.");
+		expect(out).not.toContain("[done]");
+		expect(out.split("\n").at(-1)).toBe("✅ PR을 반영했어요.");
+		expect(parseTone(out).tone).toBe("ask");
+		expect(ownerText(out)).toBe(out);
+		expect(ownerText("끝났어요\n[fail] 하나는 안 됐어요")).toBe("끝났어요\n❌ 하나는 안 됐어요");
+	});
+	test("a later marker in front of a 결정 line goes and the card stays", () => {
+		const out = ownerText("보고예요.\n[ask] 결정: 할까요?\n**1) 하기**\n**2) 말기**");
+		expect(out).not.toContain("[ask]");
+		expect(parseDecisions(out).blocks.map(b => b.options.length)).toEqual([2]);
+	});
+	test("a bold yes/no head with no options is a 예/아니요 card, not a broken head", () => {
+		const seen: string[] = [];
+		const out = ownerText("정리했어요.\n\n**결정: 답장 말투 학습 개선은 여기서 닫을까요?**", head => seen.push(head));
+		expect(seen).toEqual([]);
+		expect(parseDecisions(out).blocks.map(b => b.options.map(o => o.label))).toEqual([["예", "아니요"]]);
+		expect(ownerText(out)).toBe(out);
+	});
+});

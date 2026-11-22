@@ -168,7 +168,7 @@ const FRAMES: Frame[] = [
 	{ name: "progress line (update_key) in this conversation", mine: true, run: () => { push({ kind: "out", target: CH, source: "orchestrator", update_key: "progress", text: "진행 중 1", ts: at() }); push({ kind: "out", target: CH, source: "orchestrator", update_key: "progress", text: "진행 중 2", ts: at(1) }); } },
 	{ name: "system line arrives in this conversation", mine: true, run: () => push({ kind: "out", target: CH, source: "gateway", system: true, text: "게이트웨이 알림 줄이에요", ts: at() }) },
 	{ name: "lane report", run: () => push({ kind: "lane_report", lane: "x", text: "서브 작업이 끝났어요", ts: at() }) },
-	{ name: "alert and worklog posts", run: () => { push({ kind: "out", target: "alert", source: "gateway", text: "경고예요", ts: at() }); push({ kind: "out", target: "worklog", source: "gateway", update_key: "w", text: "작업 기록", ts: at() }); } },
+	{ name: "alert and worklog posts", run: () => { push({ kind: "out", target: "alert", source: "gateway", text: "경고예요", ts: at() }); push({ kind: "out", target: "worklog", source: "gateway", update_key: "w", text: "작업내역", ts: at() }); } },
 	// read marks, project info, lanes, misc
 	{ name: "read marks", run: () => { push({ kind: "read", target: "main", ts: at(10) }); push({ kind: "read", target: OTHER, ts: at(10) }); } },
 	{ name: "project_info of this project and another", run: () => { push({ kind: "project_info", key: CH }); push({ kind: "project_info", key: OTHER }); } },

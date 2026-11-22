@@ -3,10 +3,12 @@ import { now } from "./config.ts";
 import { decisionText, hasDecisionHead, parseDecisions } from "./choices.ts";
 import { type DraftApproval, parseDraftApproval, quotedDraft } from "./draft-approval.ts";
 import { askDefaults, askedDraft, asksSendWithoutDraft, DRAFT_OPTIONS, lastQuestion } from "./ask-options.ts";
+import { unreadQuestions } from "./ask-normalize.ts";
 import { eventTarget, historyEvents, type HubEvent } from "./events.ts";
 import { shortTitle } from "./notice-title.ts";
 import { parseTone, stripHandoff } from "./tone.ts";
 import type { DecisionOpt } from "./notices-types.ts";
+import { RUN_DECISION } from "./notices-schedule.ts";
 import { ALERT_ANSWER_WINDOW_MS, ANSWER_WINDOW_MS, TEXT_MAX, authorOf, laneTone, refOf } from "./notices-rules.ts";
 import { say } from "./notices-read.ts";
 
@@ -75,21 +77,25 @@ export function decisionsOf(e: HubEvent): Draft[] {
 	const files = sendDraft || askDraft ? "" : messageFiles(stripHandoff(String(e.text ?? "")));
 	const withFiles = (s: string): string => s.slice(0, Math.max(0, TEXT_MAX - files.length)) + files;
 	const draft = (title: string, given: DecisionOpt[], group: number, idx: number): Draft => ({ title, detail: withFiles(detail), options: askDraft ? DRAFT_OPTIONS.map(o => ({ ...o })) : given, to, replyTo: e.ts, group, ...(by ? { by } : {}), ...(ref ? { ref } : {}), key: `dec:${to}:${hashOf(`${idx}|${title}|${(askDraft ? DRAFT_OPTIONS : given).map(o => o.label).join("/")}${sendDraft ? `|${sendDraft.to}|${sendDraft.subject ?? ""}|${sendDraft.body}` : ""}`)}`, ...(sendDraft ? { draft: sendDraft } : {}) });
+	const unread = askDraft ? [] : unreadQuestions(stripHandoff(String(e.text ?? "")));
 	// No choice block (a plain question, often in a mail or work thread): the budget question's buttons, else yes / no or send defaults (ask-options.ts).
 	if (!pc.blocks.length) {
 		if (to.startsWith("lane:") && /\/budget-ok/.test(body)) return [draft(line || "답변이 필요해요", BUDGET_OPTIONS, 1, 0)];
+		if (unread.length) return unread.map((q, i) => draft(shortTitle(q), [], unread.length, i));
 		const options = askDefaults(body, to.startsWith("mail:"));
 		const asked = lastQuestion(body);
 		return [{ ...draft((asked && shortTitle(asked)) || line || "답변이 필요해요", options, 1, 0), ...(options.length ? { assumed: true as const } : {}) }];
 	}
 	const many = pc.blocks.length > 1;
+	const group = pc.blocks.length + unread.length;
 	// Several decisions are several notices: each carries its own text, so opening one never shows the others under its title.
 	const own = many && pc.blocks.every(b => b.headed);
-	return pc.blocks.map((b, i) => {
+	const cards = pc.blocks.map((b, i) => {
 		const title = b.title || (many ? `결정 ${i + 1}` : pc.question || line);
-		const d = draft(title, b.options.map(o => ({ ...o })), pc.blocks.length, i);
+		const d = draft(title, b.options.map(o => ({ ...o })), group, i);
 		return own ? { ...d, detail: withFiles(decisionText(body, i) || title) } : d;
 	});
+	return [...cards, ...unread.map((q, i) => draft(shortTitle(q), [], group, pc.blocks.length + i))];
 }
 
 export const expiresAtOf = (d: { to: string; by?: string; draft?: DraftApproval }, at: string): string | undefined => {
@@ -97,6 +103,8 @@ export const expiresAtOf = (d: { to: string; by?: string; draft?: DraftApproval 
 	const from = Date.parse(at);
 	return new Date((Number.isNaN(from) ? Date.parse(now()) : from) + (d.by === "gateway" || d.to === "alert" ? ALERT_ANSWER_WINDOW_MS : ANSWER_WINDOW_MS)).toISOString();
 };
+/** A question card that 자세히 / 나중에, the close labels, the half-time reminder and the asker's note apply to: no send approval, login request or schedule run. */
+export const plainCard = (d: { to: string; draft?: DraftApproval }): boolean => !d.draft && !d.to.startsWith("auth:") && !d.to.startsWith(RUN_DECISION);
 
 // The label a button answer shows (the sent text may be longer): set while its message is on the way, since that message settles the notice too.
 export const sending = new Map<string, string>();

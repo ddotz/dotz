@@ -29,8 +29,8 @@ export type MailSuggest = { kind: "reply-draft"; label: string; ref: string; sta
 // `msg` = the id of the newest incoming message the record stands for (MailInput.messageId); a post with another id is a newer message of the
 // same thread and reopens it (postMail). `reopenedAt` = when that happened: a reply draft sent before it answered an older message.
 // `list` = the poster saw a List-Id / List-Unsubscribe header; `account` = the mailbox it came to (zele: the account, for marking it read there).
-export type MailRecord = { /** the mailbox (hub/mailbox.ts) it was placed in or moved to; none = the base mailbox */ mbox?: string; mwhy?: MailboxWhy; /** archived in dotz (hub/mail-sync.ts); a newer message of the thread makes a new record and clears it */ archived?: true; starred?: true; /** the last state the mailbox reported (hub/mail-sync.ts applyMailboxFlags): only a change of it is applied */ box?: { read?: boolean; archived?: boolean; starred?: boolean; trashed?: boolean }; list?: true; account?: string; msg?: string; reopenedAt?: string; key: string; source: string; id: string; subject: string; from: string; to?: string; cc?: string; at: string; thread?: string; summary?: string; /** 할 일 / 직접 답할 것, apart from the summary (hub/mail-lines.ts); an older record has them in its summary */ todo?: string[]; questions?: string[]; preview?: string; attachments?: MailAttachment[]; replyFiles?: ReplyFile[]; html?: true; suggest?: MailSuggest; rule?: string; dir?: "out"; reply?: MailReply; reply_by?: ReplyBy; reply_at?: string; sentAt?: string; needsReply?: true; noReply?: true };
-export type MailInput = { /** Names this message of the thread; the same id again is a repeat, another id is a newer message and a new mail again. */ messageId?: string; /** when the mail was sent (ISO 8601 with a zone); an outgoing mail is kept at that time */ at?: string; source: string; id: string; subject: string; from?: string; to?: string; cc?: string; summary?: string; todo?: string[]; questions?: string[]; body?: string; html?: string; thread?: string; wake?: boolean; needsReply?: boolean; attachments?: AttachmentInput[]; replyFiles?: ReplyFile[]; /** "out" = the owner's own mail; `folder` / `labels` (SENT, 보낸편지함) say the same. */ direction?: "in" | "out"; folder?: string; labels?: string[]; /** a List-Id / List-Unsubscribe header was on the mail (`list: true`, `listId` or `listUnsubscribe`) */ list?: boolean; account?: string };
+export type MailRecord = { /** the mailbox (hub/mailbox.ts) it was placed in or moved to; none = the base mailbox */ mbox?: string; mwhy?: MailboxWhy; /** archived in dotz (hub/mail-sync.ts); a newer message of the thread makes a new record and clears it */ archived?: true; starred?: true; /** the last state the mailbox reported (hub/mail-sync.ts applyMailboxFlags): only a change of it is applied */ box?: { read?: boolean; archived?: boolean; starred?: boolean; trashed?: boolean }; list?: true; account?: string; msg?: string; reopenedAt?: string; key: string; source: string; id: string; subject: string; from: string; to?: string; cc?: string; replyTo?: string; at: string; thread?: string; summary?: string; /** 할 일 / 직접 답할 것, apart from the summary (hub/mail-lines.ts); an older record has them in its summary */ todo?: string[]; questions?: string[]; preview?: string; attachments?: MailAttachment[]; replyFiles?: ReplyFile[]; html?: true; suggest?: MailSuggest; rule?: string; dir?: "out"; reply?: MailReply; reply_by?: ReplyBy; reply_at?: string; sentAt?: string; needsReply?: true; noReply?: true; commentReplyAt?: string };
+export type MailInput = { /** Names this message of the thread; the same id again is a repeat, another id is a newer message and a new mail again. */ messageId?: string; /** when the mail was sent (ISO 8601 with a zone); an outgoing mail is kept at that time */ at?: string; source: string; id: string; subject: string; from?: string; to?: string; cc?: string; replyTo?: string; summary?: string; todo?: string[]; questions?: string[]; body?: string; html?: string; thread?: string; wake?: boolean; needsReply?: boolean; attachments?: AttachmentInput[]; replyFiles?: ReplyFile[]; /** "out" = the owner's own mail; `folder` / `labels` (SENT, 보낸편지함) say the same. */ direction?: "in" | "out"; folder?: string; labels?: string[]; /** a List-Id / List-Unsubscribe header was on the mail (`list: true`, `listId` or `listUnsubscribe`) */ list?: boolean; account?: string };
 export type MailResult = { ok: true; key: string; target: string; thread?: string; duplicate?: boolean; skipped?: true; direction?: "out"; replied?: true; /** a sent mail's body is kept (it opens in full) */ html?: true };
 export type MailDeps = {
 	/** Opens a thread under `parent` (a work channel target `ch:<id>`) from a starter message; discord.ts createThread. */
@@ -48,9 +48,9 @@ export type MailDeps = {
 	/** One orchestrator turn for the mail event, its answer going to `target`. */
 	wake: (event: Record<string, any>, target: string) => void;
 	/** Offered every new mail (never a duplicate), fire-and-forget: a throw is logged and never breaks postMail. features/reply-drafts offers an [ask] reply draft here. */
-	offerDraft?: (m: { account?: string; key: string; target: string; needs?: boolean; thread?: string; messageId?: string; source: string; id: string; subject: string; from?: string; to?: string; cc?: string; summary?: string; body?: string; attachments?: { name: string; size: number }[]; replyFiles?: ReplyFile[] }) => void;
+	offerDraft?: (m: { account?: string; key: string; target: string; needs?: boolean; thread?: string; messageId?: string; source: string; id: string; subject: string; from?: string; to?: string; cc?: string; replyTo?: string; summary?: string; body?: string; attachments?: { name: string; size: number }[]; replyFiles?: ReplyFile[] }) => void;
 	/** 초안 작성: a reply draft the owner asked for on a recorded mail (features/reply-drafts requestMailDraft); resolves with how it went. */
-	requestDraft?: (m: { account?: string; key: string; instruction?: string; headline?: string; body?: string; target: string; thread?: string; messageId?: string; source: string; id: string; subject: string; from?: string; to?: string; cc?: string; summary?: string; attachments?: { name: string; size: number }[]; replyFiles?: ReplyFile[] }) => Promise<string>;
+	requestDraft?: (m: { account?: string; key: string; instruction?: string; headline?: string; body?: string; target: string; thread?: string; messageId?: string; source: string; id: string; subject: string; from?: string; to?: string; cc?: string; replyTo?: string; summary?: string; attachments?: { name: string; size: number }[]; replyFiles?: ReplyFile[] }) => Promise<string>;
 	/** Asked for every new incoming mail that has no usable summary (hub/mail-summary.ts): queues the hub's own summary, never blocks the post. `body` = the text the poster sent. */
 	summarize?: (key: string, hint: { body?: string }) => void;
 	/** Where a new mail goes (hub/routes-mailbox.ts placeMail), asked once per new record; `quiet` / `mute` say which notices to hold back. */ placeMail?: (m: { key: string; source: string; id: string; account?: string; from?: string; to?: string; subject: string; summary?: string; body?: string }) => Placed;
@@ -93,7 +93,8 @@ export function mailKey(source: string, id: string): string {
 	return `${s}-${i}`;
 }
 
-export const mailTarget = (key: string) => `mail:${key}`;
+// A key that already carries the prefix stays one target (outbox 2026-11-07: `mail:mail:<id>` split one mail into two conversations).
+export const mailTarget = (key: string) => `mail:${key.replace(/^(?:mail:)+/, "")}`;
 
 // An unreadable history is moved aside as a .corrupt-<time> file (readJsonOrQuarantine), so the first save cannot overwrite it with the empty list.
 let records: MailRecord[] = readJsonOrQuarantine<MailRecord[]>(FILE, () => [], { keepGood: false });
@@ -102,7 +103,8 @@ for (const r of records) trackBox(r);
 const aliases = cfg as unknown as { mail?: { own_addresses?: unknown }; zele?: { aliases?: unknown } };
 setOwnAddresses("config", [aliases.mail?.own_addresses, aliases.zele?.aliases].flatMap(v => (Array.isArray(v) ? v : [])).filter((v): v is string => typeof v === "string"));
 setToOnlyDir(DATA_DIR);
-if (migrateMails(records as StoredMail[])) writeAtomic(FILE, `${JSON.stringify(records, null, 2)}\n`);
+const saveRecords = (): void => writeAtomic(FILE, `${JSON.stringify(records)}\n`);
+if (migrateMails(records as StoredMail[])) saveRecords();
 
 export const mailByKey = (key: string): MailRecord | undefined => byKey.get(key);
 const cueOf = (r: MailRecord) => ({ source: r.source, account: r.account, from: r.from, to: r.to, cc: r.cc, subject: r.subject, text: mailCueText(r) || r.preview || "", list: r.list });
@@ -191,7 +193,7 @@ export function setMailsFyi(keys: readonly string[], on: boolean, at = new Date(
 	if (!changed.size) return found;
 	for (const [k, r] of changed) byKey.set(k, r);
 	records = records.map(r => changed.get(r.key) ?? r);
-	writeAtomic(FILE, `${JSON.stringify(records, null, 2)}\n`);
+	saveRecords();
 	return found;
 }
 
@@ -216,7 +218,7 @@ export function deleteMail(key: string): boolean {
 	if (!r) return false;
 	byKey.delete(key);
 	records = records.filter(x => x.key !== key);
-	writeAtomic(FILE, `${JSON.stringify(records, null, 2)}\n`);
+	saveRecords();
 	delete deleted[key];
 	deleted[key] = r.msg ?? "";
 	saveDeleted();
@@ -227,7 +229,7 @@ export function deleteMail(key: string): boolean {
 /** The stored mails brought up to the current rules (hub/mail-state.ts migrateMails), saved when anything changed. Safe to run any number of times. */
 export function migrateStoredMails(sentRefs?: ReadonlySet<string>): number {
 	const n = migrateMails(records as StoredMail[], { sentRefs });
-	if (n) writeAtomic(FILE, `${JSON.stringify(records, null, 2)}\n`);
+	if (n) saveRecords();
 	return n;
 }
 /** What a mailbox says now about one of its mails (POST /api/mail/state, the zele poll): `read` = read there (Gmail no UNREAD label, IMAP \Seen,
@@ -279,7 +281,7 @@ function settleNotMine(): string[] {
 		delete r.reply;
 		gone.push(r.key);
 	}
-	if (gone.length) writeAtomic(FILE, `${JSON.stringify(records, null, 2)}\n`);
+	if (gone.length) saveRecords();
 	return gone;
 }
 // The reply states of the mails (the 모니터링 app lines count them: hub/integrations.ts).
@@ -300,7 +302,7 @@ export function recordMail(r: MailRecord): void {
 	while (at > 0 && records[at - 1]!.at.localeCompare(r.at) > 0) at--;
 	records.splice(at, 0, r);
 	records = evictSurplus(records, mailKeep(), KEEP_MAX, k => byKey.delete(k));
-	writeAtomic(FILE, `${JSON.stringify(records, null, 2)}\n`);
+	saveRecords();
 }
 
 // A derived summary is written a moment later, in one write however many mails the start-up fills in.
@@ -309,7 +311,7 @@ function persistSoon(): void {
 	if (flushTimer) return;
 	flushTimer = setTimeout(() => {
 		flushTimer = undefined;
-		writeAtomic(FILE, `${JSON.stringify(records, null, 2)}\n`);
+		saveRecords();
 	}, 200);
 	flushTimer.unref?.();
 }
@@ -356,6 +358,7 @@ export function parseMail(raw: unknown): MailInput {
 		from: str(b.from, "from", 300, false),
 		to: str(b.to, "to", 500, false),
 		cc: str(b.cc, "cc", 500, false),
+		replyTo: str(b.replyTo, "replyTo", 500, false),
 		...parseMailLines(b, str(b.summary, "summary", SUMMARY_MAX, false), m => new MailError(m)),
 		body: str(b.body, "body", BODY_MAX, false),
 		html: str(b.html, "html", MAIL_HTML_MAX, false),
@@ -528,7 +531,7 @@ const whyOf = (m: MailRecord): string | undefined => {
 export const mailDraftBrief = (key: string, m = byKey.get(key)): DraftBrief | undefined => (m ? { ...(m.from ? { from: m.from } : {}), ...mailLinesOf(m, shownSummary) } : undefined);
 /** What the web draws a mail row from (GET /api/conversations `mail`, and a watch report that points at the mail): no stored paths.
  *  `why` = the small reason tag of a mail he is not a main recipient of (참조로 받음, 단체 메일...). */
-export const mailCard = (m: MailRecord, unreplied = false, sent = false, extra: { read?: boolean; can?: string[]; trashOriginal?: boolean; /** the mailbox of the row (hub/routes-mailbox.ts boxPass), one lookup table per pass */ place?: (m: MailRecord) => { box: string; boxWhy?: MailboxWhy } } = {}) => ({ ...mailStateOf(m, sent), ...(extra.place?.(m) ?? {}), ...(extra.read !== undefined ? { read: extra.read } : {}), ...(extra.trashOriginal ? { trashOriginal: true as const } : {}), ...(m.archived ? { archived: true as const } : {}), ...(m.starred ? { starred: true as const } : {}), ...(extra.can ? { can: extra.can } : {}), ...(whyOf(m) ? { why: whyOf(m) } : {}), subject: m.subject, base: baseSubject(m.subject), from: m.from, ...(m.to ? { to: m.to } : {}), ...(m.cc ? { cc: m.cc } : {}), source: m.source, at: m.at, ...mailLinesOf(m, shownSummary), ...(m.preview ? { preview: m.preview } : {}), ...(m.attachments?.length ? { attachments: attachmentList(m) } : {}), ...(m.html ? { html: true as const } : {}), ...(m.suggest ? { suggest: m.suggest } : {}), ...(m.rule ? { rule: m.rule } : {}), ...(unreplied ? { unreplied: true as const } : {}) });
+export const mailCard = (m: MailRecord, unreplied = false, sent = false, extra: { read?: boolean; can?: string[]; trashOriginal?: boolean; /** the mailbox of the row (hub/routes-mailbox.ts boxPass), one lookup table per pass */ place?: (m: MailRecord) => { box: string; boxWhy?: MailboxWhy } } = {}) => ({ ...mailStateOf(m, sent), ...(extra.place?.(m) ?? {}), ...(extra.read !== undefined ? { read: extra.read } : {}), ...(extra.trashOriginal ? { trashOriginal: true as const } : {}), ...(m.archived ? { archived: true as const } : {}), ...(m.starred ? { starred: true as const } : {}), ...(extra.can ? { can: extra.can } : {}), ...(whyOf(m) ? { why: whyOf(m) } : {}), subject: m.subject, base: baseSubject(m.subject), from: m.from, ...(m.to ? { to: m.to } : {}), ...(m.cc ? { cc: m.cc } : {}), source: m.source, at: m.at, ...mailLinesOf(m, shownSummary), ...(m.preview ? { preview: m.preview } : {}), ...(m.attachments?.length ? { attachments: attachmentList(m) } : {}), ...(m.html ? { html: true as const } : {}), ...(m.suggest ? { suggest: m.suggest } : {}), ...(m.rule ? { rule: m.rule } : {}), ...(m.commentReplyAt ? { commentReplyAt: m.commentReplyAt } : {}), ...(unreplied ? { unreplied: true as const } : {}) });
 
 /** GET/HEAD /api/mail/<key>/files/<n>[?dl=1]: main.ts adds the web auth in front. Only files of a known mail, only inside MAIL_FILES. */
 export function mailFileRoute(req: Request, url: URL, key: string, index: string): Response {
@@ -638,6 +641,7 @@ async function completeKnown(known: MailRecord, m: MailInput, now: string): Prom
 	if (m.at && m.at < now && m.at !== known.at) next.at = m.at;
 	if (m.to && !known.to) next.to = m.to;
 	if (m.cc && !known.cc) next.cc = m.cc;
+	if (m.replyTo && !known.replyTo) next.replyTo = m.replyTo;
 	if (m.from && m.from.includes("@") && !known.from.includes("@")) next.from = m.from;
 	const had = known.attachments ?? [];
 	const pics = (m.attachments ?? []).filter(a => a.cid && m.html?.toLowerCase().includes(`cid:${a.cid.toLowerCase()}`));
@@ -779,7 +783,7 @@ async function post(m: MailInput, key: string, target: string, deps: MailDeps, r
 	// Never when he is not a main recipient (only in Cc, a list or group mail, a machine sender) or wrote it himself, whatever the poster says.
 	const cue = { source: m.source, account: m.account, from: m.from, to: m.to, cc: m.cc, subject: m.subject, text: mailCueText(m) || m.body || "", list: m.list };
 	const needs = (m.needsReply && !replyExclusion(cue)) || replyExpected(cue);
-	recordMail({ ...(m.list ? { list: true as const } : {}), ...(m.account ? { account: m.account } : {}), key, source: m.source, id: m.id, subject: m.subject, from: m.from ?? "", ...(m.to ? { to: m.to } : {}), ...(m.cc ? { cc: m.cc } : {}), at, ...(thread ? { thread } : {}), ...(summary ? { summary } : {}), ...(m.todo ? { todo: m.todo } : {}), ...(m.questions ? { questions: m.questions } : {}), ...(preview ? { preview } : {}), ...(attachments.length ? { attachments } : {}), ...(html ? { html: true as const } : {}), ...(needs ? { reply: "needs" as const } : {}), ...(m.messageId ? { msg: m.messageId } : {}), ...(m.replyFiles ? { replyFiles: m.replyFiles } : {}), ...(reopened ? { reopenedAt: now } : {}), ...(place?.box ? { mbox: place.box, ...(place.why ? { mwhy: place.why } : {}) } : {}) });
+	recordMail({ ...(m.list ? { list: true as const } : {}), ...(m.account ? { account: m.account } : {}), key, source: m.source, id: m.id, subject: m.subject, from: m.from ?? "", ...(m.to ? { to: m.to } : {}), ...(m.cc ? { cc: m.cc } : {}), ...(m.replyTo ? { replyTo: m.replyTo } : {}), at, ...(thread ? { thread } : {}), ...(summary ? { summary } : {}), ...(m.todo ? { todo: m.todo } : {}), ...(m.questions ? { questions: m.questions } : {}), ...(preview ? { preview } : {}), ...(attachments.length ? { attachments } : {}), ...(html ? { html: true as const } : {}), ...(needs ? { reply: "needs" as const } : {}), ...(m.messageId ? { msg: m.messageId } : {}), ...(m.replyFiles ? { replyFiles: m.replyFiles } : {}), ...(reopened ? { reopenedAt: now } : {}), ...(place?.box ? { mbox: place.box, ...(place.why ? { mwhy: place.why } : {}) } : {}) });
 	// `incoming`: a mail that came in (not the owner's own draft, composeMail): the bell's 새 소식 and the phone notification for it (hub/notices.ts fromInbox).
 	const event = { ts: at, kind: "mail", ...(place?.quiet || place?.mute ? {} : { incoming: true }), source: m.source, channel: target, conv: target, mail: key, subject: m.subject, from: m.from ?? "", ...(m.to ? { to: m.to } : {}), ...(m.cc ? { cc: m.cc } : {}), ...(thread ? { thread } : {}), ...(parent ? { parent } : {}), ...(summary ? { summary } : {}), ...(m.todo ? { todo: m.todo } : {}), ...(m.questions ? { questions: m.questions } : {}), ...(preview ? { preview } : {}), ...(attachments.length ? { attachments: attachmentList({ attachments }) } : {}), ...(html ? { html: true } : {}), text: mailText(m) };
 	deps.emit(event);
@@ -787,7 +791,7 @@ async function post(m: MailInput, key: string, target: string, deps: MailDeps, r
 	// `needs`: a mail that does not need a reply gets no automatic draft unless one of its app's draft rules is on (features/reply-drafts/lib/offer.ts).
 	// His own mail gets none at all.
 	try {
-		if (!selfSent(cue) && !place?.quiet) deps.offerDraft?.({ ...(m.account ? { account: m.account } : {}), key, target, needs, ...(thread ? { thread } : {}), ...(m.messageId ? { messageId: m.messageId } : {}), source: m.source, id: m.id, subject: m.subject, ...(m.from ? { from: m.from } : {}), ...(m.to ? { to: m.to } : {}), ...(m.cc ? { cc: m.cc } : {}), ...(m.summary ? { summary: m.summary } : {}), ...(m.body ? { body: m.body } : {}), ...(realFiles(attachments).length ? { attachments: realFiles(attachments) } : {}), ...(m.replyFiles ? { replyFiles: m.replyFiles } : {}) });
+		if (!selfSent(cue) && !place?.quiet) deps.offerDraft?.({ ...(m.account ? { account: m.account } : {}), key, target, needs, ...(thread ? { thread } : {}), ...(m.messageId ? { messageId: m.messageId } : {}), source: m.source, id: m.id, subject: m.subject, ...(m.from ? { from: m.from } : {}), ...(m.to ? { to: m.to } : {}), ...(m.cc ? { cc: m.cc } : {}), ...(m.replyTo ? { replyTo: m.replyTo } : {}), ...(m.summary ? { summary: m.summary } : {}), ...(m.body ? { body: m.body } : {}), ...(realFiles(attachments).length ? { attachments: realFiles(attachments) } : {}), ...(m.replyFiles ? { replyFiles: m.replyFiles } : {}) });
 	} catch (error) {
 		log(`mail ${key}: reply draft offer failed: ${(error as Error).message}`);
 	}

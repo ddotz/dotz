@@ -18,6 +18,7 @@
 // `nextReply` is the only place that moves between them.
 import { readAppsFile } from "./integrations.ts";
 import { mailCueText, type MailLines } from "./mail-lines.ts";
+import { automatedSender } from "./reply-draft.ts";
 
 export type MailDirection = "in" | "out";
 export type MailReply = "needs" | "draft" | "replied" | "skipped" | "fyi";
@@ -59,7 +60,6 @@ export function nextReply(cur: MailReply | undefined, ev: MailReplyEvent): MailR
 // name one of the owner's addresses (he is only in CC / BCC, or it went to a group / distribution list) never expects one, nor does a mail he
 // wrote himself, also one addressed to other people as well (owner 2026-11-05: "내가 나한테 보낸거는 답장 필요 안하는걸 디폴트로"); else
 // a request in the subject or the text does (asks, questions, deadlines), and a mail that only delivers an answer does not.
-const MACHINE_SENDER = /no-?reply|do-?not-?reply|mailer-daemon|postmaster|administrator|notification|newsletter|news@|marketing|알림|공지/i;
 const BULK_SUBJECT = /^\s*[[(]?\s*(?:광고|ad|advertisement)\s*[\])]|스팸\s*리포트|spam report|뉴스레터|newsletter|시황|일일\s*(?:보고|리포트)|weekly digest|webinar|웨비나|unsubscribe|수신\s*거부|공지|공고|\bannouncement\b|\bnotice\b|out of office|부재\s*중|자동\s*(?:응답|발송)|auto-?reply/i;
 const BULK_TEXT = /수신\s*거부|unsubscribe|더 이상 받지 않|광고성 정보|this email was sent to/i;
 const ASKS = /요청|부탁|회신\s*(?:바랍|부탁|주|요망|해)|답변\s*(?:바랍|부탁|주|요망|해)|답장\s*(?:바랍|부탁|주)|문의|검토\s*(?:해|부탁|요청|후|바랍)|확인\s*(?:부탁|요청|해\s*주|바랍|하시고)|의견\s*(?:을|주|부탁|바랍)|제출\s*(?:해|부탁|바랍|요망)|견적|주시기\s*바랍|주시면|주세요|해\s*주실|해\s*주시|가능(?:하신지|할까요|한지|하실까요)|어떻게\s*생각|까지\s*(?:회신|제출|송부|보내)|[?？]|please|could you|can you|would you|let me know|request|kindly|asap/i;
@@ -98,7 +98,7 @@ const toOnly = (): boolean => !toOnlyDir || readAppsFile(toOnlyDir).mail?.to_onl
 export function replyExclusion(m: ReplyCue, own: ReadonlySet<string> = ownAddressesFor(m.source)): ReplyExclusion | undefined {
 	if (selfSent(m, own)) return "self";
 	if (m.list) return "list";
-	if (MACHINE_SENDER.test(m.from ?? "")) return "bulk";
+	if (automatedSender(m.from)) return "bulk";
 	const text = (m.text ?? "").slice(0, 4000);
 	if (BULK_SUBJECT.test(m.subject) || BULK_TEXT.test(text)) return "list";
 	if (!own.size || !m.to) return undefined;
@@ -297,7 +297,7 @@ export function evictSurplus<T extends { key: string; reply?: MailReply; suggest
 	if (surplus <= 0) return records;
 	let total = records.length;
 	return records.filter(x => {
-		if (surplus <= 0 || x.reply === "draft" || (!!x.suggest && (x.suggest.state ?? "draft") !== "sent") || (x.reply === "needs" && total <= needsMax)) return true;
+		if (surplus <= 0 || x.reply === "draft" || (!!x.suggest && !["sent", "waiting"].includes(x.suggest.state ?? "draft")) || (x.reply === "needs" && total <= needsMax)) return true;
 		surplus--;
 		total--;
 		onDrop?.(x.key);

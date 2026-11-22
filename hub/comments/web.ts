@@ -14,9 +14,10 @@ const validMail = (m: any): boolean =>
 	&& (m.attach === undefined || (Array.isArray(m.attach) && m.attach.length <= 10 && m.attach.every((p: unknown) => typeof p === "string" && p)))
 	&& (m.fromLibrary === undefined || typeof m.fromLibrary === "string");
 
-export type WebDeps = { engine: Engine; broadcast: (event: Record<string, unknown>) => void };
+/** `posted`: the draft codes whose reply the watch's rule posted in its own process, for the gateway's 댓글로 이미 답했어요 marks (CM-13). */
+export type WebDeps = { engine: Engine; broadcast: (event: Record<string, unknown>) => void; mailOwed?: (mailId: string) => void; posted?: (codes: string[]) => void };
 
-export function createCommentsWeb({ engine, broadcast }: WebDeps) {
+export function createCommentsWeb({ engine, broadcast, mailOwed, posted }: WebDeps) {
 	const drafting = new Set<string>();
 	const pending = new Set<Promise<unknown>>();
 	const track = (p: Promise<unknown>) => {
@@ -35,6 +36,9 @@ export function createCommentsWeb({ engine, broadcast }: WebDeps) {
 		if (area === "changed" && method === "POST") {
 			const b = await body();
 			for (const s of Array.isArray(b.threads) ? b.threads.slice(0, 50) : []) if (typeof s?.source === "string") broadcast({ kind: "comment", source: s.source, thread: String(s.thread ?? "") });
+			for (const id of Array.isArray(b.mails) ? b.mails.slice(0, 50) : []) if (typeof id === "string" && id) mailOwed?.(id);
+			const sent = (Array.isArray(b.sent) ? b.sent.slice(0, 50) : []).filter((c: unknown): c is string => typeof c === "string" && c.length > 0);
+			if (sent.length) posted?.(sent);
 			return json({ ok: true });
 		}
 		// Backfill: re-read the open comments on the platforms and close what is answered or deleted (idempotent; posts nothing). Answers the counts.
@@ -141,38 +145,6 @@ export function createCommentsWeb({ engine, broadcast }: WebDeps) {
 		}
 		// The pending drafts of every source (the 답장 확인 queue across apps).
 		if (area === "drafts" && parts.length === 3 && method === "GET") return json({ items: cfg.enabled ? engine.pendingDrafts() : [] });
-		// A failed reply: 다시 보내기 (the same text through the same gate) or 지우기 (the record goes, the draft stays). An unsure one (recover.ts): 다시 보내기 or 완료 (`done`: closed as sent, nothing is posted).
-		if (area === "sends" && parts.length === 5 && method === "POST" && (parts[4] === "retry" || parts[4] === "dismiss" || parts[4] === "done")) {
-			if (!cfg.enabled) return json(OFF, 409);
-			if (parts[4] !== "retry") {
-				const r = parts[4] === "done" ? engine.markPosted(arg(3)) : engine.dismissSend(arg(3));
-				return r.ok ? json({ ok: true }) : json({ error: r.reason }, 409);
-			}
-			const r = engine.retrySend(arg(3));
-			return r.ok ? json({ id: r.reply.id, state: "sending" }, 202) : json({ error: r.reason }, 409);
-		}
-		if (area === "drafts" && parts.length === 5 && method === "POST") {
-			if (!cfg.enabled) return json(OFF, 409);
-			const code = arg(3);
-			const d = engine.store.drafts().find(x => x.code === code);
-			if (!d) return json({ error: "그 초안을 찾지 못했어요" }, 404);
-			if (parts[4] === "drop" || parts[4] === "restore") {
-				const r = parts[4] === "drop" ? engine.drop(code) : engine.restore(code);
-				return r.ok ? json({ ok: true }) : json({ error: r.reason }, 409);
-			}
-			if (parts[4] === "revise") {
-				const b = await body();
-				if (b.part !== undefined && b.part !== "reply" && b.part !== "mail") return json({ error: "part: reply 또는 mail이어야 해요" }, 400);
-				const step = await engine.revise(code, String(b.change ?? ""), b.part);
-				return step.ok ? json({ ok: true, code: step.draft.code }) : json({ error: step.reason }, 409);
-			}
-			if (parts[4] === "send") {
-				const text = (await body()).text;
-				if (text !== undefined && (typeof text !== "string" || !text.trim() || [...text].length > MAX_TEXT)) return json({ error: `글은 1자에서 ${MAX_TEXT}자 사이여야 해요` }, 400);
-				const r = engine.send(code, { by: "owner", ...(text !== undefined ? { text } : {}) });
-				return r.ok ? json({ id: r.reply.id, state: "sending" }, 202) : json({ error: r.reason }, 409);
-			}
-		}
 		return undefined;
 	}
 

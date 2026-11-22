@@ -1,23 +1,25 @@
 // Web side of the per-room KakaoTalk integration (contract: docs/kakao-rooms-api.md). Only rooms the owner chose (config watch_chats)
 // are readable, sendable and shown. Everything is injected (database, runner, clock, paths, broadcast) so tests run without the app.
 // Events carry ids only: never a body or a room name. Sends go only through send.ts (Accessibility UI automation).
-import { randomBytes } from "node:crypto";
+import type { useReplies } from "../reply-actions.ts";
 import { mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { hostname } from "node:os";
 import { dirname, join } from "node:path";
 import { createLinkPreview, type Resolver } from "../linkpreview.ts";
 import { featureEnabled } from "../app-feature-flags.ts";
-import { addOnce, dispatchSend, type Lease } from "./contract.ts";
+import type { Lease } from "./contract.ts";
 import { writePrivate } from "./creds.ts";
-import { hasWords, type KakaoDb, lastLines, memberLabels, messageById, ownerNames, peopleNames, readText, roomShown, messages, ownTextCounts, ownTexts, roomHead, rooms, sentAtMs, unreadCount, watermarks } from "./db.ts";
-import { basisOf, buildDraftPrompt, chatLines, contextLines, type DraftModel, draftParts, estimateTokens, ownPairs, ownSamples, parseDraftReply, registerOf, type StyleHint, sinceOwnLast, type VoiceSource } from "./draft.ts";
+import { hasWords, type KakaoDb, lastLines, memberLabels, messageById, ownerNames, peopleNames, readText, roomShown, messages, roomHead, rooms, sentAtMs, unreadCount, watermarks } from "./db.ts";
+import { type DraftModel, draftParts, type StyleHint, type VoiceSource } from "./draft.ts";
+import { makeDraft } from "./make-draft.ts";
 import { buildPersonPrompt, personStats, type PersonStats } from "./person.ts";
 import { fetchMedia, mediaTarget, replySource, serveLocalFile } from "./media.ts";
 import { type AxStep, type Focus, sameText } from "./room.ts";
-import { createDraft, draftTextError, dropDraft, type Draft, listDrafts, markStale, newer, readDrafts, restoreDraft, type SendMs, type SendResult } from "./send.ts";
+import { createDraft, type Draft, KAKAO_CODE, listDrafts, newer, readDrafts, type SendMs } from "./send.ts";
 import type { KakaoConfig, KakaoPaths, Room, Runner } from "./types.ts";
 import { chatView, clip, owedRooms, pendingRow, watchLists, withSummary } from "./web-shape.ts";
 import { json } from "../routes-util.ts";
+import { stateIntact } from "../statefile.ts";
 
 export type WebDeps = {
 	paths: KakaoPaths;
@@ -27,23 +29,21 @@ export type WebDeps = {
 	broadcast: (event: Record<string, unknown>) => void;
 	// The watched list changed (live.ts re-reads the config).
 	onWatchChange?: () => void;
-	// How a send watchdog is scheduled (tests pass their own; the default is an unref'd timer).
-	later?: (fn: () => void, ms: number) => void;
 	// This machine's name, stamped on every message and send record (default: the host name).
 	collector?: string;
 	// Whether this machine may send into a chat right now (contract.ts dispatchSend). Default: always.
 	lease?: Lease;
 	// The one cheap model call behind POST /api/kakao/chat/<id>/draft. Without it the route answers 503.
 	draftModel?: DraftModel;
+	// The live reply flow (hub/reply-wire.ts): a typed message becomes the owner's own draft and is sent through it; absent (before the wiring, or a surface built alone in a test) = a typed send is refused 503.
+	replies?: typeof useReplies;
 	// The reply-drafts tone profile of a room (optional extra for the prompt).
 	draftStyle?: (chatId: string) => StyleHint | undefined;
 	// Learns (first draft) or refreshes (every 200 own lines) the owner's voice profile of the room and the global one, before the prompt is built.
 	// It gets the room's messages (read once to write the profile) and counts of the owner's own lines.
 	learnVoice?: (src: VoiceSource) => Promise<void>;
-	// The owner sent a draft with his own edit (고치기): the draft text and the text he sent, for the room's tone profile.
-	onCorrection?: (chatId: string, draft: string, sent: string) => void;
-	// The owner asked for a change of a draft ("더 짧게"): recorded in the room's tone profile (draft.ts correct), the draft is rewritten right away.
-	onRevise?: (chatId: string, change: string) => void;
+	// A revise of a draft ("더 짧게") was stored: what it teaches beyond this draft (the model's lesson) goes into the room's tone profile.
+	onRevise?: (chatId: string, lesson: string) => void;
 	// The fetch behind GET /api/kakao/media/... and GET /api/link-preview (default: the global fetch).
 	fetch?: typeof fetch;
 	// How link previews resolve host names (default: dns.lookup); tests pass their own.
@@ -53,6 +53,8 @@ export type WebDeps = {
 
 // retried: the id of the send that 다시 보내기 started for this failed one (this record is kept for its attempts, no longer listed).
 export type SendRecord = { id: string; chatId: string; text: string; state: "sending" | "sent" | "failed"; reason?: string; at: number; draft?: string; collector?: string; ms?: SendMs; ax?: AxStep[]; focus?: Focus; retried?: string };
+/** A room's open question in asks.json: a reply ask has `choices`; a compose ask (`kind`, with the owner's `intent`) has none. */
+export type StoredAsk = { question: string; choices: string[]; basisLogId: string; created: number; kind?: "author" | "task"; intent?: string };
 
 const ROOMS_TTL_MS = 30_000;
 const CHAT_PAGE = 50;
@@ -61,21 +63,12 @@ const HINT_MAX = 32;
 // A room with no name and no message of anyone else to name it by: what kind of room it is, with its size.
 const fallbackName = (r: Room): string => (r.kind === "direct" ? "1:1 대화방" : r.kind === "open" ? "오픈채팅방" : `단체 대화방${r.members ? ` ${r.members}명` : ""}`);
 const MAX_TEXT = 1000;
-const MAX_SENDS = 200;
 const SEND_WINDOW_MS = 24 * 3600 * 1000;
 const OFF = { error: "카톡 연동이 꺼져 있어요" };
 const LOST = "게이트웨이가 다시 시작돼서 결과를 확인하지 못했어요";
-const REVISE_MAX = 500;
 const INTENT_MAX = 300;
-const STUCK_MS = 60_000;
 // A model error that is the subscription limit (or its 429), shown to the owner as is.
 const LIMIT_ERROR = /구독 한도|구독 계정|limit|quota|429|rate/i;
-const STUCK = "60초가 지나도 끝나지 않아서 실패로 처리했어요";
-const NO_REPLY = "답할 내용이 없어서 초안을 만들지 않았어요";
-const DRAFT_FAILED = "초안을 만들지 못했어요. 잠시 뒤에 다시 눌러 주세요";
-const DRAFT_READ = 300;
-const REGISTER_LINES = 80;
-const VOICE_ROOMS = 8;
 const READS_MAX = 500;
 // A cached room head is trusted this long even when the database files look unchanged.
 const HEAD_TTL_MS = 10_000;
@@ -117,21 +110,21 @@ const readJsonFile = <T>(file: string, fallback: T): T => {
 	}
 };
 
-const readJsonText = (file: string): string | undefined => {
-	try {
-		return readFileSync(file, "utf8");
-	} catch {
-		return undefined;
-	}
-};
 
 const digits = (v: unknown): v is string => typeof v === "string" && /^\d+$/.test(v);
 
 export function createKakaoWeb(deps: WebDeps) {
+	// One answer shape for every route that acts through the one reply flow: the old keys plus the item. `said`: the room's own words, the version
+	// the owner saw: its send names the draft's version only while the draft holds exactly them (else "": refused `changed`, nothing sent).
+	const viaReplies = async (input: Record<string, unknown>, said?: string): Promise<Response | undefined> => {
+		const replies = deps.replies?.();
+		if (!replies) return undefined;
+		const now = said === undefined ? undefined : await replies.view(String(input.ref));
+		const r = await replies.act({ ...input, ...(said === undefined ? {} : { hash: now && sameText(now.draft.text, said) ? now.draft.hash : "" }) } as Parameters<typeof replies.act>[0], { surface: "web" });
+		return r.body.ok ? json({ ok: true, ...(r.body.item ? { item: r.body.item, state: r.body.item.send?.state ?? "drafting" } : {}) }, r.status) : json({ error: r.body.error, code: r.body.code, ...(r.body.lint ? { lint: r.body.lint } : {}) }, r.status);
+	};
 	const { paths, now } = deps;
-	const later = deps.later ?? ((fn: () => void, ms: number) => (setTimeout(fn, ms) as { unref?: () => void }).unref?.());
 	const collector = deps.collector ?? hostname();
-	const summaryFile = (chatId: string) => join(paths.dataDir, "kakao", "summaries", `${chatId}.md`);
 	const drafting = new Set<string>();
 	const sendsFile = join(paths.dataDir, "kakao", "sends.json");
 	const asksFile = join(paths.dataDir, "kakao", "asks.json");
@@ -139,7 +132,6 @@ export function createKakaoWeb(deps: WebDeps) {
 	const personFile = join(paths.dataDir, "kakao", "person-summaries.json");
 	let personCache: { key: string; at: number; stats: PersonStats } | undefined;
 	const pending = new Set<Promise<unknown>>();
-	const inflight = new Set<string>();
 	const linkPreview = createLinkPreview({ dir: paths.dataDir, now, ...(deps.fetch ? { fetch: deps.fetch } : {}), ...(deps.previewResolve ? { resolve: deps.previewResolve } : {}), ...(deps.previewAllowHosts ? { allowHosts: deps.previewAllowHosts } : {}) });
 	let dbCache: { path: string; db: KakaoDb } | undefined;
 	let roomsCache: { at: number; all: Room[]; names: Map<string, string>; hints: Map<string, string> } | undefined;
@@ -191,10 +183,8 @@ export function createKakaoWeb(deps: WebDeps) {
 	const hintOf = (r: Room, hints: Map<string, string>) => clip(hints.get(r.chatId) ?? "", HINT_MAX) || `${r.members ?? 0}명`;
 
 	const storedSends = () => readJsonFile<SendRecord[]>(sendsFile, []);
-	// A "sending" record nobody is working on (the gateway restarted meanwhile) is shown as failed.
-	// A send whose job still runs here stays "sending" however long it takes (its ladder may still press; see the watchdog in start).
-	const sendList = (): SendRecord[] => storedSends().map(s => (s.state !== "sending" || inflight.has(s.id) ? s : { ...s, state: "failed", reason: LOST }));
-	const saveSends = (list: SendRecord[]) => writePrivate(sendsFile, `${JSON.stringify(list.slice(-MAX_SENDS), null, 1)}\n`);
+	// The room's typed sends of before the one reply flow: a record still "sending" has nobody working on it any more and is shown as failed.
+	const sendList = (): SendRecord[] => storedSends().map(s => (s.state !== "sending" ? s : { ...s, state: "failed", reason: LOST }));
 
 	// 미답장 (hub/unreplied.ts): per watched room the logId of the message that waits for the owner (address.ts owedMessage: in a 1:1 room the other
 	// person's newest, in a group or open room only one addressed to him) that no reply followed (his own message in the database, or a send of
@@ -211,6 +201,8 @@ export function createKakaoWeb(deps: WebDeps) {
 	};
 	const draftFacts = {
 		drafts: async () => (await listDrafts({ paths, runner: deps.runner })).map(d => ({ code: d.code, chatId: d.chatId, status: d.status, created: d.created })),
+		idShape: KAKAO_CODE,
+		intact: () => stateIntact(paths.drafts),
 		waiting: async (chatId: string): Promise<boolean | undefined> => {
 			const config = readConfig(paths);
 			if (config?.enabled !== true || !(config.watch_chats ?? []).includes(chatId)) return undefined;
@@ -228,14 +220,6 @@ export function createKakaoWeb(deps: WebDeps) {
 	};
 	/** How many reply drafts wait in the watched rooms (the app row's 답장 확인 count): the drafts file only, no database read. */
 	const pendingCount = (skip?: ReadonlySet<string>): number => pendingOf(readConfig(paths), skip).length;
-	/** The sends that came from a draft (failed ones are the 실패 list, sent ones the 보낸 것 list of GET /api/replies) with the state and room of each draft: two file reads, no database. */
-	const draftSends = () => {
-		const sends = sendList().filter(s => s.draft);
-		const codes = new Set(sends.map(s => s.draft));
-		const drafts: Record<string, { status: string; room: string }> = {};
-		for (const d of readDrafts(paths)) if (codes.has(d.code)) drafts[d.code] = { status: d.status, room: roomsCache?.names.get(d.chatId) ?? d.roomName };
-		return { sends: sends.map(({ id, chatId, text, state, reason, at, draft, retried }) => ({ id, chatId, text, state, ...(reason ? { reason } : {}), at, draft: draft!, ...(retried ? { retried } : {}) })), drafts };
-	};
 	let lastCount = 0;
 	// Only rooms that are still watched count (a room taken off the list mid-cache must not keep the number up).
 	const owedIn = (rooms: Map<string, string>, config: KakaoConfig) => [...rooms.keys()].filter(id => (config.watch_chats ?? []).includes(id)).length;
@@ -255,38 +239,6 @@ export function createKakaoWeb(deps: WebDeps) {
 	const latestIncoming = async (config: KakaoConfig, chatId: string) =>
 		(await messages(await getDb(config), chatId, 50, config.userId ?? "")).findLast(m => hasWords(m) && !m.fromMe)?.logId;
 
-	// Runs a send in the background (the gateway-wide queue lives in send.ts) and records sending -> sent | failed.
-	const start = (rec: SendRecord, job: () => Promise<SendResult>) => {
-		saveSends(addOnce(storedSends(), rec));
-		deps.broadcast({ kind: "kakao_send", chatId: rec.chatId, id: rec.id, state: "sending" });
-		inflight.add(rec.id);
-		// Watchdog: a send still "sending" after STUCK_MS is failed for the owner, but never while its job still runs in this process: a send
-		// whose ladder can still press must not read "failed" (the owner would send again and the message would go twice). It looks again then.
-		const watch = () => {
-			if (storedSends().find(s => s.id === rec.id)?.state !== "sending") return;
-			if (inflight.has(rec.id)) return later(watch, STUCK_MS);
-			saveSends(storedSends().map(s => (s.id === rec.id ? { ...s, state: "failed", reason: STUCK } : s)));
-			deps.broadcast({ kind: "kakao_send", chatId: rec.chatId, id: rec.id, state: "failed", reason: STUCK });
-		};
-		later(watch, STUCK_MS);
-		const run = (async () => {
-			let r: SendResult;
-			try {
-				r = await job();
-			} catch {
-				r = { ok: false, reason: "보내는 중 오류가 났어요" };
-			}
-			inflight.delete(rec.id);
-			const state = r.ok ? "sent" : "failed";
-			const reason = r.ok ? undefined : (r.reason ?? "보내지 못했어요");
-			saveSends(storedSends().map(s => (s.id === rec.id ? { ...s, state, ...(reason ? { reason } : {}), ...(r.ms ? { ms: r.ms } : {}), ...(r.ax ? { ax: r.ax } : {}), ...(r.focus ? { focus: r.focus } : {}) } : s)));
-			deps.broadcast({ kind: "kakao_send", chatId: rec.chatId, id: rec.id, state, ...(reason ? { reason } : {}) });
-			if (rec.draft) deps.broadcast({ kind: "kakao_draft", chatId: rec.chatId });
-		})();
-		pending.add(run);
-		void run.finally(() => pending.delete(run));
-	};
-	const newRecord = (chatId: string, text: string, draft?: string): SendRecord => ({ id: `S${now().toString(36)}${randomBytes(3).toString("hex")}`, chatId, text, state: "sending", at: now(), collector, ...(draft ? { draft } : {}) });
 
 	// The open question of a room (the model found that the last message needs the owner's decision): one per room, shown as choice buttons.
 	const storedAsks = () => readJsonFile<Record<string, StoredAsk>>(asksFile, {});
@@ -300,71 +252,10 @@ export function createKakaoWeb(deps: WebDeps) {
 		if (!a) return undefined;
 		const latest = await latestIncoming(config, chatId).catch(() => undefined);
 		if (latest && newer(latest, a.basisLogId)) return void setAsk(chatId, undefined);
-		return { question: a.question, choices: a.choices };
+		return { question: a.question, choices: a.choices, ...(a.kind ? { kind: a.kind } : {}) };
 	};
 
-	// The one model call of a draft request (never per incoming message). Never rejects: every outcome is a kakao_draft event.
-	// With `choice` (the owner's pick of the room's open question) the call writes the reply for that pick instead of deciding again.
-	// With `revise` (a pending draft and the owner's change request) the call rewrites that draft; createDraft marks the old one stale only when the new one is stored.
-	async function makeDraft(config: KakaoConfig, chatId: string, choice?: string, revise?: { code: string; draft: string; change: string }, intent?: string): Promise<void> {
-		const done = (error?: string) => deps.broadcast({ kind: "kakao_draft", chatId, ...(error ? { error } : {}) });
-		try {
-			const room = eligible((await allRooms(config, true)).all, config).find(r => r.chatId === chatId);
-			if (!room) return done("대화방을 찾지 못했어요");
-			const db = await getDb(config);
-			const recent = await messages(db, chatId, DRAFT_READ, config.userId ?? "");
-			const self = room.kind === "self";
-			const compose = !!intent;
-			const window = compose ? recent : sinceOwnLast(recent, self);
-			// A message of his own has no message to answer: its basis is the room's newest row (nothing older makes it stale).
-			const basis = compose ? (await roomHead(db, chatId)) || "0" : basisOf(window, self);
-			if (!basis) return done(NO_REPLY);
-			if (deps.learnVoice) {
-				try {
-					const db = await getDb(config);
-					const me = config.userId ?? "";
-					const all = (await allRooms(config)).all;
-					const excluded = new Set(config.exclude_chats ?? []);
-					const recentRooms = all.filter(r => (r.kind === "direct" || r.kind === "group") && !excluded.has(r.chatId)).sort((a, b) => b.lastAt - a.lastAt).slice(0, VOICE_ROOMS).map(r => r.chatId);
-					await deps.learnVoice({ chatId, ownCounts: ids => ownTextCounts(db, ids, me), ownTexts: (id, limit) => ownTexts(db, id, me, limit), messages: (id, limit) => messages(db, id, limit, me), ask: deps.draftModel, recentRooms: async () => recentRooms });
-				} catch {}
-			}
-			let style: StyleHint | undefined;
-			try {
-				style = deps.draftStyle?.(chatId);
-			} catch {}
-			// The register from his own last lines of the room, not only those among the last messages: a busy group room has few of them there.
-			const ownLines = await ownTexts(db, chatId, config.userId ?? "", REGISTER_LINES);
-			const context = compose ? [] : contextLines(recent, window);
-			// The pairs come from before the context, so the prompt does not spend its budget on the same lines twice.
-			const pairs = ownPairs(compose ? recent : recent.slice(0, recent.length - window.length - context.length));
-			const group = room.kind === "group" || room.kind === "open";
-			const { system, user } = buildDraftPrompt({ lines: chatLines(window), context, group, summary: readJsonText(summaryFile(chatId)), pairs, samples: ownSamples(recent), register: registerOf(ownLines), style, ...(choice ? { choice } : {}), ...(revise ? { revise: { draft: revise.draft, change: revise.change } } : {}), ...(intent ? { intent } : {}) });
-			const reply = await deps.draftModel!(system, user, chatId);
-			const parsed = parseDraftReply(reply.text);
-			if (!parsed) return done(DRAFT_FAILED);
-			// A message he asked for has no room question and no skip: the call must write it.
-			if (intent && parsed.action !== "draft") return done(DRAFT_FAILED);
-			if (parsed.action === "ask" && !choice && !revise && !intent) {
-				if (parsed.summary) writePrivate(summaryFile(chatId), `${parsed.summary}\n`);
-				setAsk(chatId, { question: parsed.question!, choices: parsed.choices!, basisLogId: basis, created: now() });
-				return done();
-			}
-			if (parsed.action !== "draft" || !parsed.body) return done(parsed.action === "skip" ? NO_REPLY : DRAFT_FAILED);
-			const reported = (reply.inputTokens ?? 0) > 0 || (reply.outputTokens ?? 0) > 0;
-			const tokens = reported ? { in: reply.inputTokens ?? 0, out: reply.outputTokens ?? 0 } : { in: estimateTokens(system.length + user.length), out: estimateTokens(reply.text.length), estimated: true as const };
-			try {
-				await createDraft({ chatId, roomName: room.name, text: parsed.body, basisLogId: basis, tokens, ...(intent ? { intent } : {}) }, { paths, runner: deps.runner, now });
-			} catch (e) {
-				return done(e instanceof Error ? e.message : DRAFT_FAILED);
-			}
-			if (parsed.summary) writePrivate(summaryFile(chatId), `${parsed.summary}\n`);
-			if (storedAsks()[chatId]) setAsk(chatId, undefined);
-			done();
-		} catch {
-			done(DRAFT_FAILED);
-		}
-	}
+	const draftCtx = { deps, paths, now, getDb, allRooms, eligible, setAsk, storedAsks };
 
 	async function route(req: Request, url: URL, parts: string[]): Promise<Response | undefined> {
 		if (parts[0] === "api" && parts[1] === "link-preview") return linkPreview.route(req, url, parts);
@@ -376,45 +267,6 @@ export function createKakaoWeb(deps: WebDeps) {
 		const area = parts[2];
 		const method = req.method;
 		const body = async (): Promise<Record<string, any>> => ((await req.json().catch(() => ({}))) as Record<string, any>) ?? {};
-		// The one way the web sends a draft (its card's 보내기, 다시 보내기 of its failed send, a typed send of exactly its text): part by part from
-		// its first unsent part (send.ts sendClaimed), never as one joined message. `edited`: the owner's edit; `learn`: the edit is a new
-		// correction for the room's tone profile (a retry of an edited send was learned already).
-		const sendDraftNow = async (draft: Draft, edited: string | undefined, learn: boolean, retry = false): Promise<Response> => {
-			if (draft.status !== "pending") return json({ error: draft.status === "sent" ? "이미 보낸 초안이에요" : "이 초안은 더 이상 보낼 수 없어요" }, 409);
-			const bad = edited === undefined ? undefined : draftTextError(edited);
-			if (bad) return json({ error: bad }, 400);
-			let latest: string | undefined;
-			try {
-				latest = await latestIncoming(config!, draft.chatId);
-			} catch {
-				return json({ error: "새 메시지가 왔는지 확인하지 못했어요" }, 502);
-			}
-			if (latest && newer(latest, draft.basisLogId)) {
-				markStale(paths, draft.code);
-				deps.broadcast({ kind: "kakao_draft", chatId: draft.chatId });
-				return json({ error: "그사이 새 메시지가 와서 초안이 낡았어요" }, 409);
-			}
-			if (learn && edited !== undefined && edited.trim() !== draft.text.trim()) {
-				try {
-					deps.onCorrection?.(draft.chatId, draft.text, edited);
-				} catch {}
-			}
-			// Once a part is in the room the text is fixed (send.ts), so the record shows the stored text, not an edit that will not be sent.
-			const rec = newRecord(draft.chatId, draft.sentParts ? draft.text : (edited ?? draft.text), draft.code);
-			start(rec, async () => {
-				const cache = await allRooms(config!, true);
-				return dispatchSend({ kind: "draft", code: draft.code, ownerApproved: true, ...(retry ? { retry: true as const } : {}), ...(edited !== undefined ? { text: edited } : {}) }, {
-					paths,
-					runner: deps.runner,
-					now,
-					lease: deps.lease,
-					latestIncoming: id => latestIncoming(config!, id),
-					roomNames: async () => cache.all.map(({ chatId, name, kind, members }) => ({ chatId, name, kind, members })),
-				});
-			});
-			return json({ id: rec.id, state: "sending" }, 202);
-		};
-
 		if (area === "rooms" && parts.length === 3 && method === "GET") {
 			if (!on) return json({ on: false, rooms: [] });
 			try {
@@ -559,62 +411,30 @@ export function createKakaoWeb(deps: WebDeps) {
 				// repeat them in the room.
 				const drafts = (await listDrafts({ paths, runner: deps.runner })).filter(d => d.chatId === chatId && draftParts(d.text).length > 1 && sameText(d.text, text));
 				const own = drafts.findLast(d => d.status === "pending");
-				if (own) return sendDraftNow(own, undefined, false);
+				// That draft is sent as the owner's 보내기 on its card: through the one reply flow and its approval gate, part by part from its first unsent part.
+				if (own) return (await viaReplies({ ref: own.code, action: "send" }, text)) ?? json({ error: "답장 기능이 아직 준비되지 않았어요" }, 503);
 				const partial = drafts.findLast(d => (d.sentParts ?? 0) > 0);
 				if (partial) return json({ error: `이 글은 초안 ${draftParts(partial.text).length}개 메시지 중 ${partial.sentParts}개를 이미 보낸 글이에요. 통째로 다시 보내면 같은 말이 두 번 가서 보내지 않았어요` }, 409);
 				if (!text.trim() || [...text].length > MAX_TEXT) return json({ error: `글은 1자에서 ${MAX_TEXT}자 사이여야 해요` }, 400);
-				const rec = newRecord(chatId, text);
-				start(rec, async () => {
-					const cache = await allRooms(config!, true);
-					const room = cache.all.find(r => r.chatId === chatId);
-					if (!room) return { ok: false, reason: "대화방을 찾지 못했어요" };
-					return dispatchSend({ kind: "text", chatId, roomName: room.name, text }, { paths, runner: deps.runner, now, lease: deps.lease, roomNames: async () => cache.all.map(({ chatId, name, kind, members }) => ({ chatId, name, kind, members })) });
-				});
-				return json({ id: rec.id, state: "sending" }, 202);
-			}
-
-			// 다시 보내기 of a failed (or lost) send. A draft's send is resumed through its draft (the parts not yet in the room, one message each);
-			// a typed send goes again as typed. The failed record stays in sends.json (its attempts say why it failed), marked as retried and
-			// no longer listed.
-			if (sub === "send" && parts.length === 7 && parts[6] === "retry" && method === "POST") {
-				const sendId = decodeURIComponent(parts[5]!);
-				const rec = sendList().find(s => s.id === sendId && s.chatId === chatId && !s.retried);
-				if (!rec) return json({ error: "다시 보낼 전송을 찾지 못했어요" }, 404);
-				if (rec.state !== "failed") return json({ error: rec.state === "sent" ? "이미 보낸 메시지예요" : "아직 보내는 중이에요" }, 409);
-				let res: Response;
-				if (rec.draft) {
-					const draft = (await listDrafts({ paths, runner: deps.runner })).find(d => d.code === rec.draft);
-					if (!draft) return json({ error: "이 메시지의 초안을 찾지 못해서 다시 보내지 않았어요" }, 409);
-					if (draft.status === "dropped" || draft.status === "stale")
-						return json({ error: `${draft.status === "stale" ? "그사이 새 메시지가 와서 낡은 초안이라" : "보내지 않기로 한 초안이라"} 다시 보내지 않았어요${draft.sentParts ? ` (${draftParts(draft.text).length}개 중 ${draft.sentParts}개는 이미 보냈어요)` : ""}` }, 409);
-					// The edit the owner sent the first time is sent again (send.ts ignores it once a part is in the room).
-					res = await sendDraftNow(draft, sameText(rec.text, draft.text) ? undefined : rec.text, false, true);
-				} else {
-					const room = (await allRooms(config!, true)).all.find(r => r.chatId === chatId);
-					if (!room) return json({ error: "대화방을 찾지 못했어요" }, 404);
-					const again = newRecord(chatId, rec.text);
-					start(again, async () => {
-						const cache = await allRooms(config!, true);
-						return dispatchSend({ kind: "text", chatId, roomName: room.name, text: rec.text }, { paths, runner: deps.runner, now, lease: deps.lease, roomNames: async () => cache.all.map(({ chatId, name, kind, members }) => ({ chatId, name, kind, members })) });
-					});
-					res = json({ id: again.id, state: "sending" }, 202);
+				// The owner's own words become his own draft (own: true, its basis the room's newest message) and go through the one queue like any draft;
+				// without that queue nothing here sends (no direct press past the approval gate).
+				if (!deps.replies?.()) return json({ ok: false, code: "not_wired", error: "답장 기능이 아직 준비되지 않았어요" }, 503);
+				const room = (await allRooms(config!, true)).all.find(r => r.chatId === chatId);
+				if (!room) return json({ error: "대화방을 찾지 못했어요" }, 404);
+				let basis: string | undefined;
+				try {
+					basis = await latestIncoming(config!, chatId);
+				} catch {
+					return json({ error: "새 메시지가 왔는지 확인하지 못했어요" }, 502);
 				}
-				if (res.status !== 202) return res;
-				const next = ((await res.clone().json()) as { id: string }).id;
-				saveSends(storedSends().map(s => (s.id === sendId ? { ...s, ...(s.state === "sending" ? { state: "failed" as const, reason: LOST } : {}), retried: next } : s)));
-				deps.broadcast({ kind: "kakao_send", chatId, id: sendId, state: "deleted" });
-				return res;
-			}
-
-			// The owner's delete of a failed (or lost) send: the record leaves sends.json for good, so the room, every web and every peer stop showing it. A send still running cannot be taken back.
-			if (sub === "send" && parts.length === 6 && method === "DELETE") {
-				const sendId = decodeURIComponent(parts[5]!);
-				const rec = storedSends().find(s => s.id === sendId && s.chatId === chatId);
-				if (!rec) return json({ ok: true, removed: false });
-				if (rec.state === "sent" || inflight.has(rec.id)) return json({ error: "이 메시지는 지울 수 없어요" }, 409);
-				saveSends(storedSends().filter(s => s.id !== sendId));
-				deps.broadcast({ kind: "kakao_send", chatId, id: sendId, state: "deleted" });
-				return json({ ok: true, removed: true });
+				let draft: Draft;
+				try {
+					draft = await createDraft({ chatId, roomName: room.name, text, basisLogId: basis ?? "0", own: true }, { paths, runner: deps.runner, now });
+				} catch (e) {
+					return json({ error: (e as Error).message }, 400);
+				}
+				deps.broadcast({ kind: "kakao_draft", chatId });
+				return (await viaReplies({ ref: draft.code, action: "send" }, text))!;
 			}
 
 			// 직접 쓸게: the owner writes the reply himself, the open question goes away.
@@ -632,31 +452,24 @@ export function createKakaoWeb(deps: WebDeps) {
 				const draftBody = await body();
 				const picked = draftBody.choice;
 				const choice = typeof picked === "string" ? picked.trim() : undefined;
-				if (picked !== undefined && (!choice || !storedAsks()[chatId]?.choices.includes(choice))) return json({ error: "그 선택지는 더 이상 없어요" }, 409);
-				// A change request for a pending draft of this room (web 고치기): { revise: { code, change } }.
-				const rv = draftBody.revise as { code?: unknown; change?: unknown } | undefined;
-				let revise: { code: string; draft: string; change: string } | undefined;
-				if (rv !== undefined) {
-					const change = typeof rv?.change === "string" ? rv.change.replace(/\s+/g, " ").trim().slice(0, REVISE_MAX) : "";
-					if (!change) return json({ error: "무엇을 고칠지 적어 주세요" }, 400);
-					const old = (await listDrafts({ paths, runner: deps.runner })).find(d => d.code === rv?.code);
-					if (!old || old.chatId !== chatId || old.status !== "pending") return json({ error: "고칠 초안을 찾지 못했어요" }, 409);
-					revise = { code: old.code, draft: old.text, change };
-					try {
-						deps.onRevise?.(chatId, change);
-					} catch {}
-				}
+				const stored = storedAsks()[chatId];
+				if (picked !== undefined && (!choice || !stored?.choices.includes(choice))) return json({ error: "그 선택지는 더 이상 없어요" }, 409);
+				const known = draftBody.known === true;
+				if (known && (choice || draftBody.intent !== undefined || stored?.kind !== "author" || !stored.intent)) return json({ error: "그 선택지는 더 이상 없어요" }, 409);
 				// A message the owner wants to send (메시지 만들어 줘): { intent } instead of a reply to the room's last message.
 				const intentRaw = draftBody.intent;
-				let intent: string | undefined;
+				let intent: string | undefined = known ? stored?.intent : undefined;
 				if (intentRaw !== undefined) {
 					if (typeof intentRaw !== "string") return json({ error: "intent must be a string" }, 400);
 					intent = intentRaw.replace(/\s+/g, " ").trim().slice(0, INTENT_MAX);
 					if (!intent) return json({ error: "어떤 메시지를 만들지 적어 주세요" }, 400);
-					if (revise) return json({ error: "만들 메시지와 고칠 초안은 함께 보낼 수 없어요" }, 400);
 				}
 				drafting.add(chatId);
-				const run = makeDraft(config!, chatId, choice, revise, intent).finally(() => drafting.delete(chatId));
+				// A 자동 초안 room (watch.ts asks with { auto: true }): its new draft is announced as a reply item, so the card shows where KakaoTalk cards go.
+				const auto = draftBody.auto === true;
+				const run = makeDraft(draftCtx, config!, chatId, choice, undefined, intent, known ? { known: true } : {})
+					.then(m => (auto && m.ok && m.code && deps.broadcast({ kind: "reply", ref: m.code }), m))
+					.finally(() => drafting.delete(chatId));
 				pending.add(run);
 				void run.finally(() => pending.delete(run));
 				return json({ state: "drafting" }, 202);
@@ -739,34 +552,6 @@ export function createKakaoWeb(deps: WebDeps) {
 			if (!on) return json({ items: [] });
 			return json({ items: await pendingDrafts() });
 		}
-		if (area === "drafts" && parts.length === 5 && method === "POST" && parts[4] === "restore") {
-			if (!on) return json(OFF, 409);
-			const code = decodeURIComponent(parts[3]!);
-			const draft = readDrafts(paths).find(d => d.code === code);
-			if (!draft) return json({ error: "그 초안을 찾지 못했어요" }, 404);
-			if (!watched.has(draft.chatId)) return json({ error: "이 대화방은 보고 있지 않아요" }, 403);
-			const r = restoreDraft(code, { paths });
-			if (!r.ok) return json({ error: r.reason }, 409);
-			deps.broadcast({ kind: "kakao_draft", chatId: draft.chatId });
-			return json({ ok: true });
-		}
-		if (area === "drafts" && parts.length === 5 && method === "POST" && (parts[4] === "send" || parts[4] === "drop")) {
-			if (!on) return json(OFF, 409);
-			const code = decodeURIComponent(parts[3]!);
-			const draft: Draft | undefined = (await listDrafts({ paths, runner: deps.runner })).find(d => d.code === code);
-			if (!draft) return json({ error: "그 초안을 찾지 못했어요" }, 404);
-			if (!watched.has(draft.chatId)) return json({ error: "이 대화방은 보고 있지 않아요" }, 403);
-			if (parts[4] === "drop") {
-				const r = dropDraft(code, { paths });
-				if (!r.ok) return json({ error: r.reason }, 409);
-				deps.broadcast({ kind: "kakao_draft", chatId: draft.chatId });
-				return json({ ok: true });
-			}
-			if (draft.status !== "pending") return json({ error: "이 초안은 더 이상 보낼 수 없어요" }, 409);
-			const edited = (await body()).text;
-			if (edited !== undefined && typeof edited !== "string") return json({ error: "답장 글이 비어 있어요" }, 400);
-			return sendDraftNow(draft, edited, true);
-		}
 		return undefined;
 	}
 
@@ -774,5 +559,26 @@ export function createKakaoWeb(deps: WebDeps) {
 	const idle = async () => {
 		while (pending.size) await Promise.all([...pending]);
 	};
-	return { route, idle, unrepliedCount, draftFacts, pendingDrafts, pendingCount, draftSends };
+	// The kit of the one reply flow's KakaoTalk adapter (hub/kakao/reply-adapter.ts): a revise through this room's model call, and one send's deps.
+	const replyKit = {
+		paths,
+		// The message a draft answers, for the card's quote (the same read as the chat screen's pending row).
+		original: async (d: Draft) => {
+			const config = readConfig(paths);
+			if (!config?.enabled || !d.basisLogId) return undefined;
+			const db = await getDb(config).catch(() => undefined);
+			return db ? (await pendingRow(d, db, config.userId ?? "", d.roomName)).original : undefined;
+		},
+		revise: async (chatId: string, revise: { code: string; draft: string; change: string; intent?: string }) => {
+			const config = readConfig(paths);
+			if (!config?.enabled || !deps.draftModel) return { ok: false as const, error: "카카오톡 초안 만들기를 쓸 수 없어요" };
+			return makeDraft(draftCtx, config, chatId, undefined, revise, revise.intent, { learn: false });
+		},
+		sendDeps: async () => {
+			const config = readConfig(paths)!;
+			const cache = await allRooms(config, true);
+			return { paths, runner: deps.runner, now, lease: deps.lease, latestIncoming: (id: string) => latestIncoming(config, id), roomNames: async () => cache.all.map(({ chatId, name, kind, members }) => ({ chatId, name, kind, members })) };
+		},
+	};
+	return { route, idle, unrepliedCount, draftFacts, pendingDrafts, pendingCount, replyKit };
 }

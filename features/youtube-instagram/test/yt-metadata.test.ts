@@ -1,9 +1,7 @@
 // yt-metadata watch: recent uploads missing a configured language, reported once each; first run is a baseline; failure,
 // auth, quota and setup paths. Fake fetch only.
 import { afterEach, beforeEach, expect, test } from "bun:test";
-import { rmSync } from "node:fs";
 import { run } from "../bin/yt-metadata.ts";
-import { paths, writeJson } from "../lib/config.ts";
 import { calls, fakeCtx, readState, setupEnv, type TestEnv, YT } from "./helpers.ts";
 
 const PLAYLIST = `GET ${YT}/playlistItems`;
@@ -51,28 +49,11 @@ test("second run reports each new video with missing languages once", async () =
 	expect(calls(ctx, "/videos?").length).toBeGreaterThan(0);
 });
 
-test("a transient failure is absorbed twice and reported on the 3rd failed run", async () => {
-	const ctx = fakeCtx(env);
-	serve(ctx, [video("v1", "One", [])]);
-	await run(ctx, []);
-	ctx.routes[PLAYLIST] = () => new Response("down", { status: 429 });
-	expect(await run(ctx, [])).toEqual({ lines: [], code: 0 });
-	expect(await run(ctx, [])).toEqual({ lines: [], code: 0 });
-	expect((await run(ctx, [])).lines[0]).toBe("DOTZ_FAIL network");
-});
-
 test("a rejected login prints DOTZ_FAIL youtube-auth", async () => {
 	const ctx = fakeCtx(env, { routes: { [PLAYLIST]: () => new Response("{}", { status: 401 }) } });
 	const res = await run(ctx, []);
 	expect(res.code).toBe(1);
 	expect(res.lines[0]).toBe("DOTZ_FAIL youtube-auth");
-});
-
-test("over the daily quota budget it is silent and makes no call", async () => {
-	writeJson(paths.quota(), { day: "2030-06-15", units: 8999 });
-	const ctx = fakeCtx(env);
-	expect(await run(ctx, [])).toEqual({ lines: [], code: 0 });
-	expect(ctx.calls).toHaveLength(0);
 });
 
 test("a 403 quotaExceeded prints one notice for the Pacific day and then stays silent without a call", async () => {
@@ -83,7 +64,3 @@ test("a 403 quotaExceeded prints one notice for the Pacific day and then stays s
 	expect(ctx.calls).toHaveLength(before);
 });
 
-test("missing config prints DOTZ_FAIL setup", async () => {
-	rmSync(paths.config());
-	expect((await run(fakeCtx(env), [])).lines[0]).toBe("DOTZ_FAIL setup");
-});

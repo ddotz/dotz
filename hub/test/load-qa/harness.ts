@@ -150,8 +150,29 @@ export async function probe(g: Gateway, ms = 30_000): Promise<{ ok: boolean; tex
 type Json = Record<string, any>;
 
 /** The HTTP client of a started gateway (token header, JSON in and out). */
-export const client = (g: Gateway) => {
-	const headers = { "x-dotz-token": g.token, "content-type": "application/json" };
+export const client = (g: Gateway) => http(g, { "x-dotz-token": g.token });
+
+/** The owner's HTTP client: a web session made the way the `dotz` command makes one (a one-time login link minted with the hub token on this
+ * computer, opened here, then allowed in the desktop dialog: the osascript shim answers 허용, and the cookie comes with the page's status poll),
+ * so the gateway reads its requests as the owner's word. The hub token is an agent's: on a draft's card it may only ask for
+ * a change. The session is kept in the data dir, so it outlives a restart of the gateway. */
+export async function ownerClient(g: Gateway): Promise<ReturnType<typeof client>> {
+	const link = (await (await fetch(`${g.base}/api/web-access/login-link`, { method: "POST", headers: { "x-dotz-token": g.token } })).json()) as Json;
+	const page = await fetch(String(link.url), { redirect: "manual" });
+	const id = /data-id="([^"]*)"/.exec(await page.text())?.[1];
+	if (!id) throw new Error(`no login confirmation from the login link (${page.status})`);
+	const status = () => fetch(`${g.base}/local-login/status?id=${encodeURIComponent(id)}`);
+	const r = await waitFor("the login dialog answered", async () => {
+		const s = await status();
+		return s.headers.get("set-cookie") || ((await s.clone().json().catch(() => ({}))) as Json).state !== "pending" ? s : undefined;
+	}, 15_000);
+	const cookie = r.headers.get("set-cookie")?.split(";")[0];
+	if (!cookie) throw new Error(`no owner session from the login link (${r.status} ${await r.text()})`);
+	return http(g, { cookie });
+}
+
+function http(g: Gateway, auth: Record<string, string>) {
+	const headers = { ...auth, "content-type": "application/json" };
 	return {
 		get: async (path: string): Promise<Json> => (await fetch(g.base + path, { headers })).json() as Promise<Json>,
 		post: async (path: string, body: unknown): Promise<{ status: number; body: Json }> => {

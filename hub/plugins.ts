@@ -1,16 +1,18 @@
 // Custom plugins: <DATA_DIR>/custom/plugins/*.ts|*.js (docs/custom-plugins.md), per-install code that is not part of the
 // product. Loaded when a process starts (the hub, the agent extension, the Claude deny hook, the reply-drafts CLI) and reloaded before a hook
 // runs when a plugin file was edited, added or removed (`refresh`); a plugin that fails to
-// load, to start or inside a hook is logged and skipped, never fatal. Six hook points, nothing else: `start` (hub only),
+// load, to start or inside a hook is logged and skipped, never fatal; one that does not load is also kept in
+// <DATA_DIR>/plugin-failures.json for the doctor (hub/doctor-checks.ts plugins). Six hook points, nothing else: `start` (hub only),
 // `claim` (Discord channels outside the bot's categories), `thread` (an owner message in a thread), `deny` (shell
 // command guard), `reply` and `repliesWithFiles` (sending an approved mail reply with its files). With no plugin installed every call below returns at once. No config.ts import: the command guard
 // loads this too.
-import { readdirSync, statSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import type { Claim } from "./discord.ts";
 import type { SentMail } from "../features/reply-drafts/lib/tone.ts";
+import { withoutRuntimeWarnings } from "./tool-output.ts";
 
 export type { Claim };
 
@@ -77,9 +79,25 @@ let pluginDir = "";
 let seen = new Map<string, number>();
 /** Files whose `start` threw: they stay out until the next loadPlugins, edited or not. */
 let dropped = new Set<string>();
+/** File name -> error of the files that are not running their current code: the import or the default export failed in the last load or reload. */
+let failed = new Map<string, string>();
+let failuresFile = "";
 let note: (line: string) => void = () => undefined;
 let didLoad = false;
 export const pluginsLoaded = (): boolean => didLoad;
+/** Where every loading process writes `failed`, so the doctor's night pass (its own process) can tell the owner which plugin is not loaded. */
+export const pluginFailuresFile = (dataDir: string): string => join(dataDir, "plugin-failures.json");
+
+function saveFailures(): void {
+	const text = `${JSON.stringify(Object.fromEntries(failed), null, 2)}\n`;
+	try {
+		if (existsSync(failuresFile) ? readFileSync(failuresFile, "utf8") === text : !failed.size) return;
+		writeFileSync(`${failuresFile}.tmp`, text);
+		renameSync(`${failuresFile}.tmp`, failuresFile);
+	} catch (error) {
+		note(`plugin failures not saved: ${error}`);
+	}
+}
 
 // *.test.ts and *.d.ts may sit next to a plugin (its own tests) and are not plugins.
 const isPluginFile = (f: string) => /\.(ts|js)$/.test(f) && !/\.(test|d)\.(ts|js)$/.test(f) && !f.startsWith(".");
@@ -92,6 +110,8 @@ export async function loadPlugins(dataDir: string, log: (line: string) => void =
 	pluginDir = join(dataDir, "custom", "plugins");
 	seen = new Map();
 	dropped = new Set();
+	failed = new Map();
+	failuresFile = pluginFailuresFile(dataDir);
 	const files = pluginFiles();
 	for (const [file, mtime] of files) {
 		seen.set(file, mtime);
@@ -99,8 +119,10 @@ export async function loadPlugins(dataDir: string, log: (line: string) => void =
 			loaded.push(asLoaded((await import(pathToFileURL(join(pluginDir, file)).href)).default, file));
 		} catch (error) {
 			log(`plugin ${file} not loaded: ${error}`);
+			failed.set(file, String(error));
 		}
 	}
+	saveFailures();
 	if (loaded.length) log(`plugins: ${loaded.map(l => l.name).join(", ")}`);
 }
 
@@ -146,17 +168,21 @@ function refresh(): void {
 	let next = loaded.filter(l => files.has(l.file));
 	for (const l of loaded) if (!files.has(l.file)) note(`plugin ${l.name} removed`);
 	for (const file of seen.keys()) if (!files.has(file)) seen.delete(file);
+	for (const file of failed.keys()) if (!files.has(file)) failed.delete(file);
 	for (const [file, mtime] of files) {
 		if (seen.get(file) === mtime || dropped.has(file)) continue;
 		seen.set(file, mtime);
 		try {
 			const fresh = asLoaded(nativeRequire(`${join(pluginDir, file)}?v=${mtime}`).default, file);
 			next = next.filter(l => l.file !== file).concat(fresh);
+			failed.delete(file);
 			note(`plugin ${fresh.name} reloaded`);
 		} catch (error) {
 			note(`plugin ${file} not reloaded${next.some(l => l.file === file) ? ", keeping the previous version" : ""}: ${error}`);
+			failed.set(file, String(error));
 		}
 	}
+	saveFailures();
 	loaded = next.sort((a, b) => (a.file < b.file ? -1 : a.file > b.file ? 1 : 0));
 }
 
@@ -206,7 +232,7 @@ export async function pluginReply(draft: MailReply): Promise<MailReplyResult | u
 			if (result) return result;
 		} catch (error) {
 			note(`plugin ${l.name}: reply failed: ${error}`);
-			return { ok: false, message: `플러그인 ${l.name}이(가) 보내지 못했어요: ${String(error).slice(0, 160)}` };
+			return { ok: false, message: `플러그인 ${l.name}이(가) 보내지 못했어요: ${withoutRuntimeWarnings(String(error)).trim().slice(0, 160)}` };
 		}
 	}
 	return undefined;

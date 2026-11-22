@@ -1,5 +1,6 @@
 /* ---------- terminal view (터미널): the same data as a session transcript ---------- */
 let LG = { cur: null, steps: null, calls: new Map(), workers: [] }, termEmpty = null;
+function termNote(text) { termEmpty = term.appendChild(el("div", { class: "a-div", text })); }   // the one line an empty 터미널 shows (13-data.js)
 function resetTerm() { clear(term); LG = { cur: null, steps: null, calls: new Map(), workers: [] }; termEmpty = null; }
 function toggleOpen(n) {
   if (getSelection().toString()) return;

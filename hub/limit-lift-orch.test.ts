@@ -167,6 +167,21 @@ test("a turn that answers on a limit pause (the runtime retried by itself) ends 
 	await advance(300);
 }, 30_000);
 
+test("a turn the runtime retries by itself into a usage limit leaves the pause as it was: still limited, and the held prompt is not sent into the limit", async () => {
+	const o = await pause(RATE_ERR, "retry");
+	expect(o.orch.status).toBe("rate-limited");
+	const until = o.orch.rateLimitedUntil;
+	o.deliver("sent while paused");
+	await started.at(-1)!.push(...failedTurn(RATE_ERR));
+	await advance(500);
+	expect(o.orch.status).toBe("rate-limited");
+	expect(o.orch.rateLimitedUntil).toBe(until);
+	expect(o.main.limitPaused()).toBe(true);
+	expect(sends().some(c => c.includes("sent while paused"))).toBe(false);
+	o.stop();
+	await advance(300);
+}, 30_000);
+
 // A gateway start with a saved usage-limit pause asks the usage report once at once (not after LIMIT_WATCH_MS); the report decides.
 const restored = async (tag: string, report: Awaited<ReturnType<typeof liftEnv.usage>>) => {
 	rmSync(limitAlertsFile(), { force: true });

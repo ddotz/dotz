@@ -3,7 +3,7 @@
 // mxPaint draws what sits outside the timeline (the pane, the account chip), mxTop what sits at its head. The rows stay `.mr` of monConvNode / mbRow, so the
 // partial redraw, the off-screen skipping and the paging of 30-mail-box.js work as before. Data comes with GET /api/integrations (a mail item carries
 // `boxes` and `account`) and `mail.box` / `mail.boxWhy` of the conversation card: nothing here polls or fetches on its own.
-// MX.acct: "all" or an instance; MX.box: "all", a box id or "n:<name>" (the boxes of one name in every account). Both are part of the address (mxHash, mxRoute).
+// MX.acct: "all" or an instance; MX.box: "all", a box id or "n:<name>" (the boxes of one name in every account). Both are part of the address (30-monitoring-route.js monParse, monHashOf).
 // Settings and 메일함 추가 are another screen: the buttons call mxOpenSet(boxId) / mxOpenNew() where those exist.
 ICONS.folder ??= ICONS.projects;
 ICONS.sliders ??= "M4 7h9M17 7h3M4 17h3M11 17h9M13 5v4M9 15v4";
@@ -20,19 +20,15 @@ const mxGroup = id => id.startsWith("n:");
 const mxMail = () => INTG.items.filter(x => x.app === "mail");
 // The one item's key: `i:mail`, or the first mail instance when `mail` is gone. Any mail instance opens it.
 const mxKeyOf = inst => (mxMail().some(x => x.key === inst) ? `i:${(mxMail().find(x => x.key === "mail") || mxMail()[0]).key}` : `i:${inst}`);
-// The address: `monitoring/i%3Amail/<account>/<box>`; the box is encoded twice so a name with a slash stays one part. Without a suffix the item opens as it was.
-const mxHash = sel => (sel === MX.key && (MX.acct !== "all" || MX.box !== "all" || MX.scr) ? `/${enc(MX.acct)}/${enc(enc(MX.box))}${MX.scr ? `/${MX.scr}` : ""}` : "");
-function mxRoute(tgt) {
-  const m = /^(i:[^/]+)(?:\/([^/]*)\/([^/]*)(?:\/([^/]*))?)?$/.exec(tgt || "");
-  if (!m) return tgt;
-  const key = mxKeyOf(m[1].slice(2));
-  MX.scr = m[4] === "set" || m[4] === "new" ? m[4] : "";
-  if (m[2] !== undefined) { MX.acct = mxDec(m[2]); MX.box = mxDec(m[3]); } else if (key !== m[1]) { MX.acct = m[1].slice(2); MX.box = "all"; }
-  return key;
-}
-const mxSync = () => { MON.sig = ""; const box = $("#mon-timeline"); if (box) box.scrollTop = 0; routeReplace(monHash()); monSchedule(); };
+// The address `monitoring/i%3Amail/<account>/<box>` is read and written in 30-monitoring-route.js (monParse, monHashOf); mxRouteSet takes what it names (monApply).
+// mxHash and mxRoute are kept for web/custom.js of other installs (nothing in the app calls them; do not delete as dead code).
+// They are the mail part alone: the suffix of the open state, and an address target read into MX (its item key back).
+const mxRouteSet = x => { MX.scr = x.scr; if (x.acct !== undefined) { MX.acct = x.acct; MX.box = x.box; } };
+const mxHash = sel => (sel === MX.key ? monHashOf({ sel, mx: MX }).slice(`monitoring/${enc(sel)}`.length) : "");
+function mxRoute(tgt) { const r = monParse(tgt); if (!r.mx) return tgt; mxRouteSet(r.mx); return r.sel; }
+const mxSync = () => { monSigReset(); const box = $("#mon-timeline"); if (box) box.scrollTop = 0; routeReplace(monHash()); monSchedule(); };
 // A box picked in the panel beside an open mail (30-mailboxes.js mxTwo) goes back to that box's list; on the list it filters it in place.
-const mxBox = id => { MX.box = id; MX.scr = ""; if (current === "chat") { MON.sig = ""; MON.tlTop = 0; go("monitoring", MON.sel); } else mxSync(); };
+const mxBox = id => { MX.box = id; MX.scr = ""; if (current === "chat") { monFromTop(); go("monitoring", MON.sel); } else mxSync(); };
 const mxPick = a => { MX.acct = a; MX.box = "all"; MX.scr = ""; mxSync(); };
 const mxNew = () => { if (typeof mxOpenNew === "function") mxOpenNew(); };
 const mxSet = id => { if (typeof mxOpenSet === "function") mxOpenSet(id); };
@@ -236,7 +232,7 @@ function mxMoveOpen(anchor, keys) {
 // Rows the move takes out of the list leave first; the rest of the list is drawn again without them.
 function mxRowsOut(keys) {
   const rows = [...document.querySelectorAll("#mon-tl > .mr[data-t]")].filter(r => keys.includes(r.dataset.t) && !mxIn(r.dataset.t));
-  for (const r of rows) MBOX.rows.delete(r.dataset.t);
+  mbRowsForget(rows);
   return rows.length ? Promise.all(rows.map(r => motionGone(r))) : null;
 }
 // POST /api/mailbox/move: the rows say they are busy until the hub answers; then the card changes (box, why) and the rows that leave this box fold away.
@@ -262,7 +258,7 @@ async function mxPut(keys, id) {
   const a = MX.accts.get(MX.of.get(keys[0])), from = keys.every(t => mxBoxOf(t).id === mxBoxOf(keys[0]).id) ? mxBoxOf(keys[0]) : null, who = mxAddr(keys), kw = keys.length === 1 ? mxKw(MAILS.get(keys[0]).subject) : "";
   const r = await mxMove(keys, id);
   if (!r) return;
-  MBOX.sel.clear(); mbPaintBar();
+  mbSelClear();
   MX.teach = { keys, to: a.byId.get(id), from, who, kw, was: r.was || {}, done: "" };
   mxTeachShow();
 }

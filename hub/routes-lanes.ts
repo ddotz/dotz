@@ -10,9 +10,9 @@ import { deferForLimit, limitWaitStarted } from "./limitwait.ts";
 import * as discord from "./discord.ts";
 import { emit } from "./events.ts";
 import { deleteLanes, restoreLanes as restoreTrashedLanes, trashList } from "./lanetrash.ts";
-import { abortLane, BUDGET_WINDOW_HOURS, budgetLine, budgetVerdict, estimateOf, handoverLane, isExpensive, laneJustification, lanes, laneList, launch, restartLane, resumeByName, sendToLane, stopLane, titleProblem, verifyLane } from "./lanes.ts";
+import { abortLane, BUDGET_WINDOW_HOURS, budgetLine, budgetVerdict, estimateOf, handoverLane, isExpensive, laneJustification, lanes, laneList, launch, restartLane, resumeByName, sendToLane, setLaneMode, stopLane, titleProblem, verifyLane } from "./lanes.ts";
 import { anthropicUsage, availableModels } from "./providers.ts";
-import { keepHome, persist } from "./lanestate.ts";
+import { keepHome, parseLaneMode, persist } from "./lanestate.ts";
 import { closeLaneCards, laneVerified } from "./notices.ts";
 import { convs } from "./convsessions.ts";
 import { MAIN, QUICK } from "./session-key.ts";
@@ -21,7 +21,7 @@ import { stripHandoff } from "./tone.ts";
 import { answerMovesToLane, lanePlace, startedIn } from "./threads.ts";
 import { ledger } from "./ledger.ts";
 import { ledgerApi } from "./ledger-api.ts";
-import { addSchedule, checksSharingSlot, listSchedules, patchSchedule, removeSchedule } from "./schedule.ts";
+import { addSchedule, checksSharingSlot, listScheduleRuns, listSchedules, patchSchedule, removeSchedule, runNow } from "./schedule.ts";
 import { clearChannel, endStanding, listSetups, setupChannel, standingLabelKo } from "./workchannels.ts";
 import { readWatchSettings, writeWatchSettings } from "./watch-settings.ts";
 import { readScheduleSettings, writeScheduleSettings } from "./schedule-settings.ts";
@@ -53,6 +53,7 @@ export async function budgetProblem(name: string, est: number, force: boolean): 
 	return { text: r ? `${verdict} (account ${r.account})` : verdict, resetAt: fiveLimit?.window.resetsAt };
 }
 const STATE_FILE = () => join(DATA_DIR, "state.json");
+const BAD_MODE = "mode must be coding or assistant";
 
 // Stronger-model proposals (hub/escalate.ts): the card is the asking session's own message, an approved step goes through the lane launch
 // route below (title, Done-when, budget gate and model rules as any launch), and its report and the gateway's notes reach the asking session.
@@ -99,7 +100,7 @@ const readLastReport = (name: string): string => {
 	}
 };
 
-export async function routeLanes(req: Request, url: URL, parts: string[]): Promise<Response | undefined> {
+export async function routeLanes(req: Request, url: URL, parts: string[], agent = false): Promise<Response | undefined> {
 	if (parts[0] === "api" && parts[1] === "channels") {
 		try {
 			if (req.method === "GET") return json({ work_channels: Object.entries(discord.channels.work).map(([id, name]) => ({ channel: `ch:${id}`, name })), setups: listSetups() });
@@ -182,13 +183,17 @@ export async function routeLanes(req: Request, url: URL, parts: string[]): Promi
 				if (!listSchedules().some(s => s.id === parts[2])) return json({ error: `no schedule ${parts[2]}` }, 404);
 				return json({ key: `s:${parts[2]}`, fields: req.method === "GET" ? readScheduleSettings(parts[2]) : writeScheduleSettings(parts[2], (await body(req)).values) });
 			}
-			if (req.method === "GET") return json(listSchedules());
+			if (req.method === "POST" && parts[2] && parts[3] === "run" && parts.length === 4) {
+				if (!listSchedules().some(s => s.id === parts[2]) && !listScheduleRuns().some(r => r.scheduleId === parts[2])) return json({ error: `no schedule ${parts[2]}` }, 404);
+				return json({ run: runNow(parts[2]) });
+			}
+			if (req.method === "GET") return json({ items: listSchedules(), runs: listScheduleRuns() });
 			if (req.method === "POST") {
 				const schedule = addSchedule(await body(req));
 				// A check fires on the :00 / :30 grid: the answer names its slot and the checks it shares the turn with.
 				return json({ ok: true, schedule, ...(schedule.kind === "check" ? { slot: schedule.at, shares_turn_with: checksSharingSlot(schedule) } : {}) });
 			}
-			if (req.method === "PATCH" && parts[2]) return json(patchSchedule(parts[2], await body(req)));
+			if (req.method === "PATCH" && parts[2]) return json(patchSchedule(parts[2], await body(req), agent));
 			if (req.method === "DELETE" && parts[2]) return json({ ok: removeSchedule(parts[2]) });
 		} catch (error) {
 			return json({ error: (error as Error).message }, 400);
@@ -224,6 +229,8 @@ export async function routeLanes(req: Request, url: URL, parts: string[]): Promi
 			if (req.method === "POST" && parts.length === 2) {
 				const b = await body(req);
 				if (b.session === QUICK) return json({ error: "the quick chat does not launch sessions; hand it to main with dotz_conv send main" }, 403);
+				const mode = parseLaneMode(b.mode);
+				if (b.mode !== undefined && !mode) return json({ error: BAD_MODE }, 400);
 				const asked = Boolean(b.owner_asked_for_fable);
 				const dear = [b.model, b.worker_model].filter(m => m && isExpensive(String(m)));
 				if (dear.length && !asked) return json({ error: `Fable and max/xhigh-effort models (${dear.join(", ")}) run only when the owner explicitly asks for them. Use the defaults, or relaunch with owner_asked_for_fable=true after they ask.` }, 409);
@@ -267,10 +274,13 @@ export async function routeLanes(req: Request, url: URL, parts: string[]): Promi
 				if (home && discord.status.enabled) discord.homeChannel(home);
 				// An approved stronger-model step (hub/escalate.ts) is launched from the owner's card answer, not from the turn running now.
 				// A launch from another computer (peer) belongs to no turn of this gateway, so it never takes over the turn running here.
-				const asking = b.escalation || peer ? undefined : queue.current();
+				// The running turn is the launching session's own (a conversation session's queue, else main's), never another session's.
+				// A session key the registry does not hold has no turn here: main's turn is never taken for it.
+				const turns = typeof b.session === "string" && b.session && b.session !== MAIN ? convs.get(b.session)?.queue : queue;
+				const asking = b.escalation || peer || !turns ? undefined : turns.current();
 				const origin = { home, asking: asking?.target, askingMessage: asking?.replyTo, isWork: (id: string) => Boolean(discord.channels.work[id]), threadParent: (id: string) => discord.channels.threads[id]?.parent };
 				const place = lanePlace({ ...origin, discordForWeb: postSettings().web_lanes });
-				const lane = launch(String(b.name), String(b.cwd), String(b.brief ?? ""), b.model, b.worker_model ? String(b.worker_model) : undefined, asked, String(b.title).trim(), typeof b.session === "string" && b.session && b.session !== MAIN ? b.session : undefined, peer);
+				const lane = launch(String(b.name), String(b.cwd), String(b.brief ?? ""), b.model, b.worker_model ? String(b.worker_model) : undefined, asked, String(b.title).trim(), typeof b.session === "string" && b.session && b.session !== MAIN ? b.session : undefined, peer, mode);
 				// Started from the web: it lives in the web (its session conversation, notices and push), with no Discord channel.
 				if (place.kind === "web") {
 					lane.web = true;
@@ -292,8 +302,10 @@ export async function routeLanes(req: Request, url: URL, parts: string[]): Promi
 					if (homeName) lane.homeName = homeName;
 					persist(lane);
 				}
-				// Work started from a work channel or a thread is answered in the lane's thread, where its reports will come.
-				if (channel && asking?.target && answerMovesToLane(place, asking.target)) queue.retarget(asking.target, `lane:${lane.name}`);
+				// Work the owner started from a work channel or a thread is answered in the lane's thread, where its reports will come.
+				// Work another session handed over (`from`) keeps its target, so its workers and answer go back to that session
+				// (2026-11-11: a conversation session's handed fixes were answered in the new lane's conversation).
+				if (channel && turns && asking?.target && !asking.from && !asking.handback && !asking.bookkeeping && answerMovesToLane(place, asking.target)) turns.retarget(asking.target, `lane:${lane.name}`);
 				log(`lane ${lane.name} why (${b.owner_asked_for_lane ? "owner asked" : `${Number(b.hours)}h`}): ${String(b.why).trim().slice(0, 300)}`);
 				limitWaitStarted(STATE_FILE(), lane.name, lane.title ?? "", progress, log);
 				emit("outbox", { ts: now(), kind: "lane_start", source: "hub", lane: lane.name, ...(lane.title ? { title: lane.title } : {}), text: `lane ${lane.name} started in ${lane.cwd}` });
@@ -310,6 +322,11 @@ export async function routeLanes(req: Request, url: URL, parts: string[]): Promi
 			if (req.method === "POST" && parts[3] === "restart") {
 				await restartLane(parts[2], undefined, true);
 				return json({ ok: true });
+			}
+			if (req.method === "POST" && parts[3] === "mode") {
+				const mode = parseLaneMode((await body(req)).mode);
+				if (!mode) return json({ error: BAD_MODE }, 400);
+				return json({ ok: true, mode, applied: await setLaneMode(parts[2], mode) });
 			}
 			if (req.method === "POST" && parts[3] === "resume") {
 				const text = String((await body(req)).text ?? "").trim();

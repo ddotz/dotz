@@ -8,6 +8,7 @@ import * as discord from "./discord.ts";
 import { DATA_DIR, now, writeAtomic } from "./config.ts";
 import { historyEvents } from "./events.ts";
 import { lanes, laneLive } from "./lanestate.ts";
+import { convs } from "./convsessions.ts";
 import { countChannelNotices, dropChannelNotices } from "./notices.ts";
 import { loadProjectInfo, removeProjectInfo } from "./projectinfo.ts";
 import { loadProjects, removeProject } from "./projects.ts";
@@ -27,6 +28,7 @@ export type DeleteDeps = {
 	// names of the live sessions working in the channel
 	running: (id: string) => string[];
 	removeChannel: (id: string) => Promise<void>;
+	endSession?: (key: string) => Promise<unknown>;
 };
 
 export const defaultDeps: DeleteDeps = {
@@ -35,7 +37,11 @@ export const defaultDeps: DeleteDeps = {
 		const c = discord.channels;
 		return Object.fromEntries(([["chat", c.chat], ["worklog", c.worklog], ["alert", c.alert], ["dm", c.dm], ["brief", c.brief]] as const).filter(([, id]) => id).map(([name, id]) => [id!, name]));
 	},
-	running: id => [...lanes.values()].filter(l => laneLive(l) && homeChannel(l.name, l.home, discord.channels.homes) === id).map(l => l.name),
+	running: id => [
+		...[...lanes.values()].filter(l => laneLive(l) && homeChannel(l.name, l.home, discord.channels.homes) === id).map(l => l.name),
+		...(convs.get(`ch:${id}`)?.o.orch.status === "working" ? [`ch:${id}`] : []),
+	],
+	endSession: key => convs.remove(key),
 	removeChannel: discord.deleteWorkChannel,
 };
 
@@ -98,6 +104,7 @@ export async function deleteProject(key: string, opts: { archive?: boolean } = {
 		writeAtomic(plan.archive, [{ archived: now(), project: { channel: plan.channel, name: plan.name, setup: getSetup(id) ?? null, record: loadProjects()[plan.channel] ?? null, info: loadProjectInfo()[plan.channel] ?? null } }, ...events].map(e => JSON.stringify(e)).join("\n") + "\n");
 		archive = plan.archive;
 	}
+	await deps.endSession?.(plan.channel);
 	clearChannel(id);
 	const notices = dropChannelNotices(plan.channel);
 	removeProject(plan.channel);

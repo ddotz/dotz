@@ -5,7 +5,7 @@ const OB = {};
 const OB_POLL_MS = 1500;
 const OB_AUTO_MS = 4000;
 const OB_AUTO_MAX = 1;
-const obKeyOk = key => key === "web-access" || key === "discord" || key === "jandi" || key === "slack" || key === "telegram";
+const obKeyOk = key => key === "web-access" || MS_IDS.includes(key);
 const obVisible = key => key === "web-access" ? current === "webaccess" : current === key;
 const OB_TONE = { running: "pri", waiting: "warn", done: "ok", failed: "err" };
 const obLine = v => v.state === "waiting" ? TX("connect.onb.waiting") : v.state === "running" ? TX("connect.onb.running") : v.state === "done" ? TX("connect.onb.done") : v.state === "failed" ? TX("connect.onb.failed") : TX("connect.onb.idle");
@@ -57,8 +57,8 @@ function obApply(key, next) {
 }
 // A finished flow reloads the index and the screen it belongs to, so the header and switches show the new state.
 function obAfterDone(key) {
-  loadMessengerIndex();
-  if (key === "web-access") { WA.draft = null; loadWebAccess(); return; }
+  loadMessengerIndex(true);
+  if (key === "web-access") { waReload(); return; }
   if (key === "discord") { loadDiscord(); return; }
   loadMessengerSettings(key);
 }

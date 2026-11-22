@@ -15,9 +15,11 @@ import { runDraft } from "../bin/draft.ts";
 import { paths } from "../lib/settings.ts";
 import { ACCOUNT_HELD } from "../lib/flow.ts";
 import { getDraft, listDrafts } from "../lib/store.ts";
-import { enable, pick, setupEnv } from "./helpers.ts";
+import { commentHash, enable, pick, setupEnv } from "./helpers.ts";
 
 const env = setupEnv();
+// The owner's 1) 보내기 on a comment card names the version that card shows (the reply and its mail).
+const approve = async (code: string, engine: Parameters<typeof commentHash>[0]) => pick(env, code, 1, undefined, "web", await commentHash(engine, code));
 const files = mkdtempSync(join(tmpdir(), "rd-cc-"));
 afterAll(() => {
 	env.cleanup();
@@ -96,7 +98,7 @@ describe("compose --with-comment", () => {
 		const code = await draftReply(t);
 		const out = await compose(t, code);
 		expect(out.lines.join("\n")).toContain(ACCOUNT_HELD);
-		pick(env, code, 1);
+		await approve(code, t.engine);
 		const sent = await runComments(["send", code], t.engine, paths.inbox());
 		expect(sent.code).toBe(1);
 		expect(sent.lines.join("\n")).toContain(ACCOUNT_HELD);
@@ -135,7 +137,7 @@ describe("compose --with-comment", () => {
 		pick(env, mailId, 1);
 		const alone = await runMailCli(["send", "--draft", mailId], "", t.deps);
 		expect(alone.code).toBe(1);
-		expect(alone.lines[0]).toContain(`comments.ts send ${code}`);
+		expect(alone.lines[0]).toContain(`(${code})`);
 		expect((await runDraft(["send", mailId], "", t.deps)).code).toBe(1);
 		expect(t.argvs).toEqual([]);
 		expect((await runMailCli(["ask", "--draft", mailId], "", t.deps)).code).toBe(2);
@@ -149,7 +151,7 @@ describe("compose --with-comment", () => {
 		expect((await runComments(["send", code], t.engine, paths.inbox())).code).toBe(1);
 		expect(t.posted).toEqual([]);
 		expect(t.argvs).toEqual([]);
-		pick(env, code, 1);
+		await approve(code, t.engine);
 		const out = await runComments(["send", code], t.engine, paths.inbox());
 		expect(out.code).toBe(0);
 		expect(t.posted).toEqual(["문서는 메일로 보내 드릴게요"]);
@@ -166,7 +168,7 @@ describe("compose --with-comment", () => {
 		const mailId = listDrafts()[0]!.id;
 		const failing = { ...t.deps, run: async (argv: string[]) => (t.argvs.push(argv), { code: 1, stdout: "", stderr: "smtp refused" }) };
 		const engine = createEngine({ dir: commentsDir(env.dir), now: Date.now, collector: "mac-a", adapters: { youtube: { kind: "youtube", list: async () => ({ comments: [] }), reply: async (_s, _c, text) => (t.posted.push(text), { ok: true }), posts: async () => [] } }, mail: realMailLink(failing) });
-		pick(env, code, 1);
+		await approve(code, engine);
 		const out = await runComments(["send", code], engine, paths.inbox());
 		expect(out.code).toBe(1);
 		expect(t.posted).toHaveLength(1);

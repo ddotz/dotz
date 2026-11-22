@@ -29,7 +29,68 @@ export function pageAssets(html: string): string[] {
 	return [...out].filter(u => u.startsWith("/") && !u.startsWith("//"));
 }
 
-export async function smoke(root: string, o: { startMs?: number } = {}): Promise<SmokeResult> {
+const OMP_SMOKE_MS = 30_000;
+
+type DiskConfig = { runtime?: string; orchestrator?: { runtime?: string }; lanes?: { runtime?: string }; models?: { orchestrator?: { model?: string; thinking?: string } } };
+const readDisk = (dataDir: string): DiskConfig | undefined => {
+	try {
+		return JSON.parse(readFileSync(join(dataDir, "config.json"), "utf8"));
+	} catch {
+		return undefined;
+	}
+};
+
+/** The runtime the owner's config.json runs the assistant or the sessions on, when the smoke has more to check than the gateway: "omp". */
+export function smokeRuntime(dataDir: string): "omp" | undefined {
+	const disk = readDisk(dataDir);
+	if (!disk) return undefined;
+	return [disk.orchestrator?.runtime ?? disk.runtime, disk.lanes?.runtime ?? disk.runtime].includes("omp") ? "omp" : undefined;
+}
+
+/**
+ * The orchestrator model the omp smoke starts omp with, read from the owner's config.json. Not from hub/config.ts: the gate runs under
+ * `bun test`, whose preload points config.ts at a test config with made-up models, and omp refused that model (2026-11-18, every update failed).
+ */
+export async function smokeOmpModel(dataDir: string): Promise<string> {
+	const [{ DEFAULT_MODEL, selectorOf }, { sweetSpot }] = await Promise.all([import("./config.ts"), import("./model-effort.ts")]);
+	const set = readDisk(dataDir)?.models?.orchestrator;
+	const model = set?.model ?? DEFAULT_MODEL.model;
+	return selectorOf({ model, thinking: set?.thinking ?? (set?.model ? sweetSpot(model).effort : DEFAULT_MODEL.thinking) });
+}
+
+async function runBounded(argv: readonly string[], limitMs: number, opts: { cwd?: string; env?: Record<string, string | undefined>; stdin?: string } = {}): Promise<{ code: number; stdout: string; stderr: string; timedOut: boolean }> {
+	let proc: Bun.Subprocess<"pipe", "pipe", "pipe">;
+	try {
+		proc = Bun.spawn([...argv], { cwd: opts.cwd, env: opts.env, stdin: Buffer.from(opts.stdin ?? ""), stdout: "pipe", stderr: "pipe", timeout: limitMs, killSignal: "SIGKILL" });
+	} catch (e) {
+		return { code: 127, stdout: "", stderr: (e as Error).message, timedOut: false };
+	}
+	const [stdout, stderr, code] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text(), proc.exited]);
+	return { code, stdout, stderr, timedOut: proc.signalCode === "SIGKILL" };
+}
+
+// `model`: the owner's orchestrator model (smokeOmpModel); the shipped default without one.
+async function ompSmoke(bin: string | undefined, limitMs: number, model: string | undefined): Promise<string> {
+	if (!bin) throw new Error("the runtime is omp but omp is not on PATH");
+	const [{ omp, ompArgv }, { makeOmpProbes }, { removeSessionsFor }, { DEFAULT_MODEL, selectorOf }] = await Promise.all([
+		import("./runtime/omp.ts"),
+		import("./runtime/omp-probes.ts"),
+		import("./cleanup.ts"),
+		import("./config.ts"),
+	]);
+	const cwd = mkdtempSync(join(tmpdir(), "dotz-smoke-omp-"));
+	try {
+		const probes = makeOmpProbes(omp, { argv: o => [bin, ...ompArgv(o).slice(1)], run: runBounded, forget: removeSessionsFor });
+		const r = await probes.guard_extension!({ cwd, model: model ?? selectorOf(DEFAULT_MODEL), log: () => {}, timeoutMs: limitMs });
+		if (r.result !== "ok") throw new Error(`omp from this version does not load the dotz extension: ${r.note}`);
+		return "omp:guard_extension";
+	} finally {
+		removeSessionsFor(cwd);
+		rmSync(cwd, { recursive: true, force: true });
+	}
+}
+
+export async function smoke(root: string, o: { startMs?: number; runtime?: string; omp?: string; ompModel?: string; ompMs?: number } = {}): Promise<SmokeResult> {
 	const t0 = ms();
 	const tmp = mkdtempSync(join(tmpdir(), "dotz-smoke-"));
 	const home = join(tmp, "home"), data = join(tmp, "data");
@@ -109,6 +170,7 @@ export async function smoke(root: string, o: { startMs?: number } = {}): Promise
 			JSON.parse(text);
 			checked.push(p);
 		}
+		if (o.runtime === "omp") checked.push(await ompSmoke(o.omp, o.ompMs ?? OMP_SMOKE_MS, o.ompModel));
 		if (exited) throw new Error(`the gateway exited during the check (exit ${proc.exitCode})`);
 		return { ok: true, ms: Math.round(ms() - t0), checked };
 	} catch (e) {

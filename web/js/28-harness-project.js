@@ -52,8 +52,8 @@ function hProjHead(p) {
 // Opens a project's own map (or the main map with ""); the hash `#harness/project/<id>` restores it on reload.
 async function hOpenProject(id) {
   if (hDirty && hDirty() && !await ask(TX("system.pj.dirty.title"), TX("system.pj.dirty.body"), TX("system.pj.dirty.ok"), true)) return;
-  closeHSheet(); hSel = "";
-  hProjId = id;
+  hSelClear();
+  hProjPick(id);
   routeReplace(id ? `harness/project/${enc(id)}` : "harness");
   renderHarness();
   $("#views").scrollTop = 0;
@@ -95,7 +95,7 @@ function hCanvas(avail) {
     const label = hSvg("text", { x: r.lx, y: r.ly + 3.5, class: "hm-lb", "text-anchor": "middle" });
     label.textContent = r.e.label;
     svg.append(path); labels.append(label);
-    hEdgeRefs.push({ e: r.e, path, label });
+    hEdgeAdd({ e: r.e, path, label });
   }
   svg.append(labels);
   canvas.append(svg);
@@ -147,7 +147,7 @@ function hStageLabel(a, b) {
 function hChip(n) {
   const b = el("button", { type: "button", class: `hm-chip${hSick(n) ? ` ${n.status}` : n.status === "off" ? " off" : ""}${hOrigin() && hMine(n.id).any ? " mine" : ""}`, "data-id": n.id, title: `${n.label}: ${n.summary}`, "aria-label": `${n.label}: ${n.summary}` },
     el("span", { class: `dot ${H_TONE[n.status] || ""}` }), el("span", { class: "l", text: hShort(n) }), hMark(n.id), fcBadges(n.id, true));
-  hNodeEls.set(n.id, b); hGeo.set(n.id, b);
+  hMapNode(n.id, b, b);
   return b;
 }
 
@@ -180,11 +180,11 @@ function hStageCard(s, i, stages) {
   const head = one ? el("button", { type: "button", class: "hm-sh", "aria-label": `${one.label}: ${one.summary}` }, ...kids) : el("div", { class: "hm-sh" }, ...kids);
   const card = el("div", { class: `hm-st${one ? " one" : ""}${hOrigin() && hMine(ids).any ? " mine" : ""}`, "data-id": one ? one.id : null }, ...hFrom(stages, i), head);
   const list = el("div", { class: "hm-list" });
-  if (one) { hNodeEls.set(one.id, card); hGeo.set(one.id, head); }
+  if (one) hMapNode(one.id, card, head);
   else list.append(el("div", { class: "hm-rows" }, ...s.main.map(n => {
     const r = el("button", { type: "button", class: "hm-row", "data-id": n.id, title: `${n.label}: ${n.summary}`, "aria-label": `${n.label}: ${n.summary}` },
       el("span", { class: `dot ${H_TONE[n.status] || ""}` }), el("span", { class: "tx" }, el("span", { class: "l", text: n.label }), el("span", { class: "s", text: n.summary })), hMark(n.id));
-    hNodeEls.set(n.id, r); hGeo.set(n.id, r);
+    hMapNode(n.id, r, r);
     return r;
   })));
   if (s.chips.length) list.append(el("div", { class: "hm-with" }, el("div", { class: "wl", text: TX("system.with.head", { n: s.chips.length }) }), el("div", { class: "hm-chips" }, ...s.chips.map(hChip))));
@@ -322,19 +322,18 @@ function hReveal(id) {
   else if (r.right + 16 > s.right) sc.scrollLeft += r.right + 16 - s.right;
 }
 
-let hSheetOv = null;
-function closeHSheet() {
-  const s = $("#hsheet");
-  if (!s || s.hidden) return;
-  const ov = hSheetOv; hSheetOv = null; ovDone(ov);
-  s.hidden = true; hSel = ""; hDirty = null; hGoto = null; $("#harness").classList.remove("hs-open"); paintHSel();
-}
+// A card's detail is read in the side drawer (showSheet, 06-subagents.js); hSel is the card it shows, "" when it shows none.
+// The drawer stopped showing it (it closed, or other content took it): the selection, its unsaved-edit check and the room the map made go too.
+function hSheetGone() { hSel = ""; hDirty = null; hGoto = null; $("#harness").classList.remove("hs-open"); paintHSel(); }
+function closeHSheet() { if (hSel) hideSheet(); }
+screenHooks("harness", { away: closeHSheet });   // the node sheet closes on every move to another screen
+function hSelClear() { closeHSheet(); hSel = ""; }
+// The simple view's edge overlay goes with each repaint (27-harness.js renderHarness); hSimple sets the new one.
+function hOvDrop() { hOv = null; }
 
 function hHead() {
   const n = hNode(hSel);
-  if (!n || $("#hsheet").hidden) return;
-  $("#hs-name").textContent = n.label; $("#hs-sub").textContent = n.summary;
-  const t = $("#hs-tag"); t.className = `tag ${H_TONE[n.status] || ""}`; t.textContent = H_STATE[n.status] || "";
+  if (n) sheetHead({ name: n.label, sub: n.summary, tag: H_STATE[n.status] || "", tone: H_TONE[n.status] || "" });
 }
 
 async function openHSheet(id, focus = {}) {
@@ -345,12 +344,10 @@ async function openHSheet(id, focus = {}) {
   hSel = id; hGoto = null; paintHSel();
   const drafts = [];
   hDirty = () => drafts.some(f => f());
-  $("#hsheet").hidden = false;
-  if (!hSheetOv) hSheetOv = ovOpen(closeHSheet);
+  const body = clear(showSheet({ label: TX("shell.sheet.detail"), gone: hSheetGone }));
   $("#harness").classList.add("hs-open");
   hReveal(id);
   hHead();
-  const body = clear($("#hs-body"));
   body.scrollTop = 0;
   const more = n.desc.startsWith(n.summary) ? n.desc.slice(n.summary.length).trim() : n.desc;   // the head already says the summary
   if (more) body.append(el("p", { class: "hs-desc", text: more }));

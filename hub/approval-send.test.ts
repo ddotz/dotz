@@ -1,7 +1,8 @@
 import { describe, expect, test } from "bun:test";
-import { createApprovalSender, refOfQuestion, sendActionOf, sendArgv, type SendResult } from "./approval-send.ts";
-import { answerBatch, batchCard, type BatchCard, type BatchPick } from "./approval-batch.ts";
-import { draftApprovalBlock } from "./draft-approval.ts";
+import { createApprovalSender, outcomeOf, refOfQuestion, runCli, sendActionOf, sendArgv, type SendResult } from "./approval-send.ts";
+import { reasonOf } from "./reply-reasons.ts";
+
+const said = (o: object) => `DOTZ_SEND ${JSON.stringify(o)}`;
 
 // A run whose sends finish only when the test says so, so the order and the overlap are what is asserted, not timing.
 function gatedRun() {
@@ -50,7 +51,7 @@ describe("approval sender", () => {
 		await g.startedCount(2);
 		// The comment site runs D1 alone; the mail account does not wait for it.
 		expect(g.started).toEqual(["D1", "RAAAAAA"]);
-		g.finish("D1", 1, "답글을 올리지 못했어요: 로그인이 풀렸어요");
+		g.finish("D1", 1, `Error: invalid_grant\n    at refresh (x.js:1:1)\n${said({ sent: "no", code: "login_expired" })}`);
 		await g.startedCount(3);
 		expect(g.started).toEqual(["D1", "RAAAAAA", "D2"]);
 		g.finish("RAAAAAA");
@@ -60,7 +61,9 @@ describe("approval sender", () => {
 		await s.idle();
 		const last = new Map(reports.map(r => [r.ref, r]));
 		expect(Object.fromEntries([...last.values()].map(r => [r.ref, r.state]))).toEqual({ D1: "failed", RAAAAAA: "sent", D2: "sent", D3: "sent" });
-		expect(last.get("D1")!.text).toBe("답글을 올리지 못했어요: 로그인이 풀렸어요");
+		// The owner reads the reason's plain text, never the tool's stack line.
+		expect(last.get("D1")!.text).toBe(reasonOf("login_expired").text);
+		expect(last.get("D1")!.reason?.code).toBe("login_expired");
 	});
 
 	test("a second approval of the same draft sends nothing; an unknown ref is left to the bot; a failed one may be approved again", async () => {
@@ -72,7 +75,7 @@ describe("approval sender", () => {
 		// 답글만 / 메일만 belong to a comment card: a mail draft has only the whole send.
 		expect(s.can("RAAAAAA", "send-main")).toBe(false);
 		await g.startedCount(1);
-		g.finish("D1", 1, "실패");
+		g.finish("D1", 1, said({ sent: "no", code: "rejected" }));
 		await s.idle();
 		expect(g.started).toEqual(["D1"]);
 		expect(s.enqueue({ ref: "D1", conv: "c", action: "send", title: "q (D1)" })).toBe(true);
@@ -97,6 +100,96 @@ describe("approval sender", () => {
 		expect(g.started).toHaveLength(251);
 	});
 
+	test("code's repair runs only on the approved version; one that changes it (a Re: subject) sends nothing and takes the pick back, one that keeps it (a re-login) sends", async () => {
+		const world = (o: { rewrites: boolean; changed?: true }) => {
+			const changed = o.changed === true;
+			let subject = "안녕";
+			const runs: string[] = [], repaired: string[] = [], revoked: string[] = [], timers: (() => void)[] = [];
+			let done: (r: SendResult) => void = () => undefined;
+			const ended = new Promise<SendResult>(resolve => (done = resolve));
+			const s = createApprovalSender({
+				kind: () => PLACES.RAAAAAA,
+				fingerprint: async () => subject,
+				run: async () => (runs.push(subject), runs.length === 1 ? { code: 1, out: said({ sent: "no", code: "subject_re" }) } : { code: 0, out: "" }),
+				repair: async () => (repaired.push(subject), o.rewrites && (subject = `Re: ${subject}`), "fixed"),
+				revoke: (_j, why) => void revoked.push(why),
+				after: (_ms, fn) => void timers.push(fn),
+				report: r => void (runs.length && r.state !== "queued" && r.state !== "sending" && !(r.state === "failed" && r.safeToAuto) && done(r)),
+				log: () => undefined,
+			});
+			s.enqueue({ ref: "RAAAAAA", conv: "c", action: "send", title: "q (RAAAAAA)", hash: "안녕", by: "owner" });
+			const retry = async () => {
+				await s.idle();
+				if (changed) subject = "다른 제목";
+				for (const fn of timers.splice(0)) fn();
+				return ended;
+			};
+			return { runs, repaired, revoked, retry };
+		};
+		const relogin = world({ rewrites: false });
+		expect(await relogin.retry()).toMatchObject({ state: "sent" });
+		expect([relogin.runs, relogin.revoked]).toEqual([["안녕", "안녕"], []]);
+		const re = world({ rewrites: true });
+		expect(await re.retry()).toMatchObject({ state: "failed", reason: { code: "changed" } });
+		expect([re.repaired, re.runs, re.revoked]).toEqual([["안녕"], ["안녕"], ["changed"]]);
+		const moved = world({ rewrites: true, changed: true });
+		expect(await moved.retry()).toMatchObject({ state: "failed", reason: { code: "changed" } });
+		expect([moved.repaired, moved.runs, moved.revoked]).toEqual([[], ["안녕"], ["changed"]]);
+	});
+
+	test("the gate's `changed` refusal takes the owner's pick back (no CLI can send on it later), and sends nothing", async () => {
+		const revoked: string[] = [], runs: string[] = [];
+		const s = createApprovalSender({ kind: () => PLACES.RAAAAAA, fingerprint: async () => "v2", run: async a => (runs.push(a[3]!), { code: 0, out: "" }), revoke: (j, why) => void revoked.push(`${j.ref} ${why}`), report: () => undefined, log: () => undefined });
+		s.enqueue({ ref: "RAAAAAA", conv: "c", action: "send", title: "q (RAAAAAA)", hash: "v1", by: "owner" });
+		await s.idle();
+		expect([s.results()[0]?.state, s.results()[0]?.reason?.code, runs, revoked]).toEqual(["failed", "changed", [], ["RAAAAAA changed"]]);
+	});
+
+	test("a CLI's detail (the place's own answer) reaches the log line and the kept result, bounded (Dggtza6)", async () => {
+		const logged: string[] = [];
+		const out = `${said({ sent: "no", code: "rejected", part: "reply", detail: `site said: duplicate text ${"y".repeat(400)}` })}
+답글을 올리지 못했어요: 사이트에서 이 글을 받지 않았어요`;
+		const s = createApprovalSender({ kind: ref => PLACES[ref], run: async () => ({ code: 1, out }), report: () => undefined, log: l => void logged.push(l) });
+		expect(s.enqueue({ ref: "D1", conv: "comment:site-a", action: "send", title: "q (D1)" })).toBe(true);
+		await s.idle();
+		const r = s.results().find(x => x.ref === "D1")!;
+		expect(r).toMatchObject({ state: "failed", reason: { code: "rejected" } });
+		expect(r.detail!.startsWith("site said: duplicate text")).toBe(true);
+		expect(r.detail!.length).toBe(300);
+		expect(logged.filter(l => l.startsWith("approved send D1") && l.includes("site said: duplicate text"))).toHaveLength(1);
+	});
+
+	test("a long error output after the result line keeps the line: surely not sent, not 'may have gone out'", async () => {
+		const script = `console.log(${JSON.stringify(said({ sent: "no", code: "offline" }))}); console.error("w".repeat(6000)); process.exit(1);`;
+		const r = await runCli([process.execPath, "-e", script]);
+		expect(r.out.length).toBeLessThan(4500);
+		expect(outcomeOf(r)).toEqual({ sent: "no", code: "offline" });
+	});
+
+	test("a report that throws is logged and leaves no place stuck sending", async () => {
+		const g = gatedRun();
+		const logs: string[] = [];
+		const s = createApprovalSender({
+			kind: ref => PLACES[ref],
+			run: g.run,
+			report: r => {
+				if (r.state === "sent") throw new Error("EACCES: permission denied");
+			},
+			log: l => void logs.push(l),
+		});
+		expect(s.enqueue({ ref: "D1", conv: "ch:1", action: "send", title: "q (D1)" })).toBe(true);
+		await g.startedCount(1);
+		g.finish("D1");
+		await s.idle();
+		expect(s.results().find(r => r.ref === "D1")?.state).toBe("sent");
+		expect(logs.some(l => l.includes("EACCES"))).toBe(true);
+		expect(s.enqueue({ ref: "D2", conv: "ch:1", action: "send", title: "q (D2)" })).toBe(true);
+		await g.startedCount(2);
+		g.finish("D2");
+		await s.idle();
+		expect(s.results().find(r => r.ref === "D2")?.state).toBe("sent");
+	});
+
 	test("the send commands are the ones the bot runs", () => {
 		expect(sendArgv("comment", "D1", "send-mail", "bun").slice(2)).toEqual(["send", "D1", "--only", "mail"]);
 		expect(sendArgv("comment", "D1", "send-mail", "bun", true)!.slice(2)).toEqual(["send", "D1", "--only", "mail", "--retry"]);
@@ -106,45 +199,18 @@ describe("approval sender", () => {
 		expect(sendActionOf("어떻게 보낼지 직접 입력")).toBeUndefined();
 		expect(refOfQuestion("이대로 보낼까? (D2jwqz9)")).toBe("D2jwqz9");
 	});
-});
 
-const cardText = (ref: string) => `[ask] 댓글 답글\n${draftApprovalBlock({ to: `${ref} 댓글`, toLabel: "대상", body: `${ref} 답글`, ref, question: "이 답글 올릴까요?" })}`;
-
-describe("batch answer", () => {
-	function world(sendable: string[]) {
-		const cards: BatchCard[] = [{ ...batchCard("D1", cardText("D1")), notice: "n1" }, batchCard("D2", cardText("D2")), batchCard("D3", cardText("D3")), batchCard("D4", cardText("D4"))];
-		const log: string[] = [];
-		const recorded: { text: string; picks: BatchPick[]; deliver: boolean; notice?: string }[] = [];
-		const deps = {
-			cards: () => cards,
-			take: (_c: string, refs: string[]) => void log.push(`take ${refs.join(",")}`),
-			record: async (_c: string, text: string, picks: BatchPick[], deliver: boolean, notice?: string) => void recorded.push({ text, picks, deliver, ...(notice ? { notice } : {}) }),
-			settle: (id: string, label: string) => void log.push(`settle ${id} ${label}`),
-			canSend: (ref: string) => sendable.includes(ref),
-			enqueue: (j: { ref: string }) => void log.push(`send ${j.ref}`),
-		};
-		return { deps, log, recorded };
-	}
-
-	test("picked cards are answered, skipped ones stay; the gateway's sends are recorded quietly, the rest go to the bot in one message", async () => {
-		const w = world(["D1", "D2"]);
-		const r = await answerBatch("ch:1", [{ ref: "D1", n: 1 }, { ref: "D2", n: 1 }, { ref: "D3", n: 2, note: "더 짧게" }], w.deps);
-		expect(r.body).toEqual({ ok: true, sending: 2, toBot: 1 });
-		// D4 was not picked: it is not taken, not recorded, not sent.
-		expect(w.log).toEqual(["take D2,D3", "settle n1 1) 보내기", "send D1", "send D2"]);
-		expect(w.recorded.map(x => [x.deliver, x.notice ?? "", x.picks.map(p => `${p.q}=${p.label}`)])).toEqual([
-			[false, "", ["이 답글 올릴까요? (D1)=보내기", "이 답글 올릴까요? (D2)=보내기"]],
-			[true, "", ["이 답글 올릴까요? (D3)=고치기"]],
-		]);
-		expect(w.recorded[1]!.text).toContain("2) 고치기 - 더 짧게");
-	});
-
-	test("nothing is answered when a pick is incomplete or names a card that is gone", async () => {
-		const w = world(["D1"]);
-		expect((await answerBatch("ch:1", [{ ref: "D2", n: 2 }], w.deps)).status).toBe(400);
-		expect((await answerBatch("ch:1", [{ ref: "D9", n: 1 }], w.deps)).status).toBe(409);
-		expect((await answerBatch("ch:1", [], w.deps)).status).toBe(400);
-		expect(w.log).toEqual([]);
-		expect(w.recorded).toEqual([]);
+	test("a reply that went up while its mail failed is told with the mail's own reason (CM-7)", async () => {
+		const out = [said({ sent: "yes", part: "reply" }), said({ sent: "maybe", code: "unknown", part: "mail", detail: "smtp refused" })].join("\n");
+		expect(outcomeOf({ code: 1, out })).toMatchObject({ sent: "partial", done: 1, total: 2, rest: "maybe" });
+		const reports: SendResult[] = [];
+		const s = createApprovalSender({ kind: ref => PLACES[ref], run: async () => ({ code: 1, out }), report: r => void reports.push(r), log: () => undefined });
+		s.enqueue({ ref: "D1", conv: "comment:site-a", action: "send", title: "q (D1)" });
+		await s.idle();
+		expect(reports.at(-1)?.text).toBe("답글은 올렸고 메일은 못 보냈어요: smtp refused");
+		const refused = [said({ sent: "yes", part: "reply" }), said({ sent: "no", code: "attach_mismatch", part: "mail", detail: "첨부를 확인해 주세요: 본문에 쓴 파일이 안 붙었어요" })].join("\n");
+		expect(outcomeOf({ code: 1, out: refused })).toMatchObject({ sent: "partial", rest: "no", code: "attach_mismatch" });
+		expect(outcomeOf({ code: 0, out: [said({ sent: "yes", part: "reply" }), said({ sent: "yes", part: "mail" })].join("\n") })).toEqual({ sent: "yes" });
+		expect(outcomeOf({ code: 1, out: [said({ sent: "no", code: "offline", part: "reply" }), said({ sent: "no", code: "offline", part: "mail" })].join("\n") })).toEqual({ sent: "no", code: "offline" });
 	});
 });

@@ -11,7 +11,8 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import type { DoctorCheck, Finding } from "./doctor-types.ts";
 import { ENFORCED_RULES } from "./enforced-rules.ts";
-import { msg } from "./i18n.ts";
+import { lang, msg } from "./i18n.ts";
+import { languageName } from "./language.ts";
 import { promptGrowth, readState } from "./prompt-health.ts";
 import { recallContract } from "./recall-contract.ts";
 
@@ -44,7 +45,7 @@ export const REVIEW_SYSTEM = "You review the standing instructions of an AI agen
 const REVIEW_TASK = [
 	"Below are (1) CONTRACT: the text the agent re-reads after every compaction and (2) CODE: rules the code already enforces (id: guard).",
 	"Find lines in CONTRACT that: conflict with another line (kind conflict), are outdated or no longer meaningful (kind outdated), or contradict a CODE rule (kind contradicts-code).",
-	'Reply with a JSON array of at most 5 items {"kind": "conflict"|"outdated"|"contradicts-code", "lines": ["<exact quoted line>", ...], "why": "<one sentence>", "proposal": "<one sentence: what to change>"}.',
+	'Reply with a JSON array of at most 5 items {"kind": "conflict"|"outdated"|"contradicts-code", "lines": ["<exact quoted line>", ...], "why": "<one plain sentence>", "proposal": "<one plain sentence: what to change>"}.',
 	"Quote lines exactly. Report only real problems; reply [] if there are none. Output at most 2000 tokens and nothing but the JSON.",
 ].join("\n");
 
@@ -73,9 +74,9 @@ export function reviewDue(state: Pick<ReviewState, "lastReviewAt"> | undefined, 
 }
 
 /** The model call input: the contract text (capped) and the enforced rules as the code side. */
-export function buildReviewPrompt(contract: string): string {
+export function buildReviewPrompt(contract: string, language = languageName(lang())): string {
 	const code = ENFORCED_RULES.map(r => `${r.id}: ${r.guard}`).join("\n");
-	return `${REVIEW_TASK}\n\nCODE:\n${code}\n\nCONTRACT:\n${contract.slice(0, CONTRACT_MAX_CHARS)}`;
+	return `${REVIEW_TASK}\nWrite "why" and "proposal" in ${language}: the owner reads them as written.\n\nCODE:\n${code}\n\nCONTRACT:\n${contract.slice(0, CONTRACT_MAX_CHARS)}`;
 }
 
 /** The ordinary model only: Fable or max/xhigh effort is not used for a background review. */
@@ -116,15 +117,15 @@ const hashOf = (lines: string[]): string => createHash("sha1").update(lines.join
 
 function toFinding(item: Item, tokens: { input: number; output: number }, now: number): Finding {
 	const m = msg();
-	const shown = item.lines[0] ?? "";
+	const shown = item.lines[0] ?? "", quoted = shown.length > 80 ? `${shown.slice(0, 79).trimEnd()}…` : shown;
 	return {
 		key: `prompt:review:${hashOf(item.lines)}`,
 		area: "prompt",
 		what: m.promptReviewWhat[item.kind] ?? m.promptReviewWhat.conflict ?? "",
-		evidence: m.promptReviewEvidence(shown.length > 100 ? `${shown.slice(0, 100)}...` : shown, item.why, tokens.input, tokens.output),
+		evidence: m.promptReviewEvidence(quoted, item.why, tokens.input, tokens.output),
 		since: now,
 		level: item.lines.reduce((n, l) => n + l.length, 0),
-		decide: { question: m.promptReviewAsk, options: [{ name: m.promptReviewApply, result: m.promptReviewApplyResult(item.proposal) }, { name: m.promptReviewLeave, result: m.promptReviewLeaveResult }] },
+		decide: { question: m.promptReviewAsk(quoted, item.why), options: [{ name: m.promptReviewApply, result: m.promptReviewApplyResult(item.proposal) }, { name: m.promptReviewLeave, result: m.promptReviewLeaveResult }] },
 	};
 }
 

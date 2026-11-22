@@ -66,5 +66,5 @@ test("the owner's bubble keeps its list", async () => {
 
 test("a morning briefing keeps its tag and mail chip around the same rows", async () => {
 	expect(await shape(6)).toMatchObject({ cards: 1, rows: 2, lis: 0 });
-	expect(await page<string[]>(`(m => [m.querySelector(".hcb-hd .tag")?.textContent, m.querySelector(".hcb-chip")?.textContent])(${msg(6)})`)).toEqual(["아침 점검", "메일 3통이 왔어요."]);
+	expect(await page<string[]>(`(m => [m.querySelector(".hcb-hd .tag")?.textContent, m.querySelector(".hcb-chip")?.textContent])(${msg(6)})`)).toEqual(["아침 브리핑", "메일 3통이 왔어요."]);
 });

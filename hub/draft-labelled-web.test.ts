@@ -63,25 +63,13 @@ describe("the sheet of a card with no reply-draft record", () => {
 			expect(body).toContain("%LOCALAPPDATA%\\Pilot\\pilot.log");
 		});
 
-	test("보내기, 고치기, 보내지 않기 and 직접 수정 show, because the session takes each of them; 고치기 answers the notice", async () => {
+	test("보내기, 고치기 and 보내지 않기 show, because the session takes each of them, with no field for the owner's own text on a card that is not the queue's; 고치기 answers the notice", async () => {
 		const v = await sheet(390, 844);
-		expect(await texts(v, ".fs-ft button")).toEqual(["보내기", "고치기", "보내지 않기", "직접 수정"]);
+		expect(await v.evaluate(`[...document.querySelectorAll(".fs-ft button")].map(b => b.dataset.n || b.dataset.k || b.className).join()`)).toBe("1,2,3");
 		await v.evaluate(`document.querySelector(".fs-ft .rq-acts .btn.tonal").click()`);
 		await waitFor(v, `document.querySelector(".fs-ft .dc-note")`);
 		await v.evaluate(`(() => { const t = document.querySelector(".fs-ft .dc-note"); t.value = "제목을 줄여 줘"; t.dispatchEvent(new Event("input")); document.querySelector(".fs-ft .dc-go").click(); })()`);
 		expect(await answered.promise).toMatchObject({ n: 2, note: "제목을 줄여 줘", label: "고치기" });
-	});
-
-	test("직접 수정 opens the clean body and goes back to the session as a 고치기", async () => {
-		answered = Promise.withResolvers();
-		const v = await sheet(390, 844);
-		await v.evaluate(`document.querySelector(".fs-ft .rq-manual").click()`);
-		await waitFor(v, `document.querySelector(".fs-ft .dc-note")`);
-		const text = await v.evaluate(`document.querySelector(".fs-ft .dc-note").value`) as string;
-		expect(text.startsWith("PaddleOCR")).toBe(true);
-		expect(text).not.toContain("본문:");
-		await v.evaluate(`(() => { const t = document.querySelector(".fs-ft .dc-note"); t.value = "짧게 고친 본문"; t.dispatchEvent(new Event("input")); document.querySelector(".fs-ft .dc-go").click(); })()`);
-		expect(await answered.promise).toMatchObject({ n: 2, note: "이 내용으로 고쳐 주세요: 짧게 고친 본문", label: "고치기" });
 	});
 
 	test("a session that has ended can take no answer: no buttons, a plain line says so", async () => {
@@ -91,17 +79,7 @@ describe("the sheet of a card with no reply-draft record", () => {
 	});
 });
 
-describe("빠른 처리 and the queue", () => {
-	test("the text box only stands where the words can be changed in place", async () => {
-		const v = await hub.view({ width: 390, height: 844 });
-		await v.navigate(`${hub.origin}/`);
-		await waitFor(v, `typeof trOneView === "function"`);
-		const d = notice(LANE).decision!.draft!;
-		const got = JSON.parse(await v.evaluate(`(() => { const [b] = trOneView({ ref: ${JSON.stringify(d.ref)}, to: "lane:pilot-stage1", question: "q", draft: ${JSON.stringify(d)}, sendable: false, editable: false }); document.body.append(b); return JSON.stringify({ ta: !!b.querySelector("textarea"), code: b.querySelectorAll(".dc-dr-b code").length }); })()`) as string);
-		expect(got.ta).toBe(false);
-		expect(got.code).toBeGreaterThan(3);
-	});
-
+describe("the queue", () => {
 	test("the queue card shows the same fields and rendered body", async () => {
 		const v = await hub.view({ width: 390, height: 844 });
 		await v.navigate(`${hub.origin}/`);

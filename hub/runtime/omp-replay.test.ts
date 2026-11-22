@@ -76,7 +76,8 @@ test("omp frames replayed through the adapter match the pre-adapter golden", asy
 			derived: derive(events),
 		});
 	}
+	const stable = JSON.parse(JSON.stringify(result).replace(/~[0-9a-z]+\.(\d+)/g, "#$1"));
 	// CAPTURE_GOLDEN=1 rewrites the golden instead of comparing (only for a deliberate change), as in scenario.test.ts.
-	if (process.env.CAPTURE_GOLDEN === "1") return void (await Bun.write(join(import.meta.dir, "fixtures", "omp-rpc.golden.json"), `${JSON.stringify(result, null, 1)}\n`));
-	expect(JSON.parse(JSON.stringify(result))).toEqual(golden);
+	if (process.env.CAPTURE_GOLDEN === "1") return void (await Bun.write(join(import.meta.dir, "fixtures", "omp-rpc.golden.json"), `${JSON.stringify(stable, null, 1)}\n`));
+	expect(stable).toEqual(golden);
 });

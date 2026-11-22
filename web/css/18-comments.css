@@ -8,6 +8,7 @@
 #cm-pick .sec { margin-inline: var(--sp-4); }   /* section names start on the rows' left line */
 #cm-pick .sec + .kk-pick-src { border-top: 0; }
 #cm-pick .fs-hd { padding-left: max(var(--sp-4), env(safe-area-inset-left)); }   /* the head starts on the rows' left line (this sheet's rows sit at --sp-4 at every width) */
+#cm-pick .fs-body { padding-inline: 0; }   /* the rows run edge to edge and bring their own side padding */
 /* 댓글 / DM swap the whole list under them, so they are screen tabs like the mailbox tabs (web/DESIGN.md 화면 탭), not a filter track */
 #cm-rooms .cm-tabs { position: static; flex-wrap: nowrap; margin: 0 var(--sp-4) var(--sp-1); padding: 0; background: none; box-shadow: inset 0 -1px 0 var(--line); }
 #cm-rooms .cm-tabs .mr-f { height: var(--btn-hit); border-radius: 0; background: none; color: var(--fg-2); }

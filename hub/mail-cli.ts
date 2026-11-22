@@ -15,7 +15,7 @@ import { type HubLike, notifyGateway, reportSendFailed } from "./followup.ts";
 import { commentAsk } from "./comments/ask.ts";
 import { attachMail, linkedComment, mailPartOf } from "./comments/linked.ts";
 import { commentsDir, createStore } from "./comments/store.ts";
-import { accountHold, askText, draftAttachIssues, realRunner, sendDraft, settleDraft, toneKey, type FlowDeps } from "../features/reply-drafts/lib/flow.ts";
+import { accountHold, askText, draftAttachIssues, realRunner, sendAccountOf, sendDraft, settleDraft, toneKey, type FlowDeps } from "../features/reply-drafts/lib/flow.ts";
 import { webmailSite, zeleLogins } from "../features/reply-drafts/lib/senders.ts";
 import { listLibrary, rankLibrary, LIBRARY_PICK_MAX, MIN_SCORE } from "../features/reply-drafts/lib/library.ts";
 import { addStagedFile, STAGED_MAX } from "../features/reply-drafts/lib/staged.ts";
@@ -140,7 +140,7 @@ export async function runMailCli(args: string[], stdin: string, deps: MailCliDep
 		const id = one("--draft");
 		if (!id) return { lines: [USAGE], code: 2 };
 		const rec = getDraft(id);
-		if (rec && !rec.compose) return { lines: ["이 초안은 받은 메일의 답장이에요. features/reply-drafts/bin/draft.ts send로 보내 주세요"], code: 2 };
+		if (rec && !rec.compose) return { lines: ["이 초안은 받은 메일의 답장이에요. 답장 카드에서 사용자가 보내기를 눌러야 나가요"], code: 2 };
 		const r = await sendDraft(id, deps);
 		if (r.sendFailed && rec) await reportSendFailed(rec, r.text, deps.hub);
 		if (r.ok && rec) await notifyGateway({ path: "/api/mail/compose", body: { ref: rec.id, source: rec.source, state: "sent" } }, deps.hub);
@@ -185,7 +185,7 @@ export async function runMailCli(args: string[], stdin: string, deps: MailCliDep
 	const src = store!.config().sources[linked.source];
 	if (!c || !src) return { lines: ["원댓글을 찾지 못했어요"], code: 2 };
 	const hold = accountHold(made.rec);
-	return { lines: [commentAsk(src, c, linked, "댓글 답글과 이어서 보낼 메일 초안을 만들었어요", { ...mailPartOf(made.rec), attachIssues: draftAttachIssues(made.rec), ...(hold ? { notes: [`확인: ${hold}`] } : {}) })], code: 0, notes: made.notes };
+	return { lines: [commentAsk(src, c, linked, "댓글 답글과 이어서 보낼 메일 초안을 만들었어요", { ...mailPartOf(made.rec, sendAccountOf(made.rec)), attachIssues: draftAttachIssues(made.rec), ...(hold ? { notes: [`확인: ${hold}`] } : {}) })], code: 0, notes: made.notes };
 }
 
 if (import.meta.main) {

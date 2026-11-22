@@ -1,6 +1,6 @@
 import { asideState, installApp, installCli } from "../onboard/aside.ts";
 import { lineRunner } from "./exec.ts";
-import { detectHarnesses, harness } from "../onboard/harness.ts";
+import { detectHarnesses, harness, installBinsOnPath } from "../onboard/harness.ts";
 import { requestPermissions } from "../onboard/permissions.ts";
 import { realHost, realUiBlocked } from "../onboard/selfserve.ts";
 import { installTailscale, type Run, startTailscale, tailscaleState } from "../onboard/tailscale.ts";
@@ -10,7 +10,7 @@ import type { Catalog } from "../hub/i18n-en.ts";
 // The long jobs of the web onboarding: a fixed server-side list (docs/web-onboarding.md "API 계약"), each one an existing onboard/ function run without
 // a terminal. A line reaches the stream only through scrubText; the log (deps.log) gets step names and outcomes, never the lines.
 
-export const JOB_IDS = ["install-omo", "aside-app", "aside-cli", "tailscale", "zele", "tailscale-start", "permissions", "apply"] as const;
+export const JOB_IDS = ["install-omo", "install-omp", "install-claude", "aside-app", "aside-cli", "tailscale", "zele", "tailscale-start", "permissions", "apply"] as const;
 export type JobId = (typeof JOB_IDS)[number];
 export const isJobId = (s: string): s is JobId => (JOB_IDS as readonly string[]).includes(s);
 export type SetupText = Catalog["setup"];
@@ -22,21 +22,20 @@ export type JobFn = (io: JobIO) => Promise<JobResult>;
 export const fill = (template: string, name: string): string => template.replaceAll("{name}", name);
 const MAC = process.platform === "darwin";
 
-// A fresh bun global bin folder is often not on PATH yet (bun add -g only warns about it).
-async function bunGlobalOnPath(): Promise<void> {
-	const globalBin = (await Bun.$`bun pm bin -g`.nothrow().quiet()).stdout.toString().trim();
-	if (globalBin && !(process.env.PATH ?? "").split(":").includes(globalBin)) process.env.PATH = `${globalBin}:${process.env.PATH ?? ""}`;
-}
 const missing = (io: JobIO, what: string): JobResult => ({ ok: false, owner: fill(io.text.owner.missing, what) });
 const sudo = (io: JobIO, cmd: string): JobResult => ({ ok: false, owner: fill(io.text.owner.sudo, cmd) });
 
+async function installHarness(io: JobIO, id: "omo" | "omp" | "claude"): Promise<JobResult> {
+	const h = harness(id);
+	if (!h?.install || !(await io.run(h.install))) return { ok: false, owner: fill(io.text.owner.sudo, h?.installHint ?? id) };
+	await installBinsOnPath();
+	return (await detectHarnesses()).some(d => d.id === id && d.found.installed) ? { ok: true } : missing(io, h.label);
+}
+
 export const DEFAULT_JOBS: Record<Exclude<JobId, "apply">, JobFn> = {
-	"install-omo": async io => {
-		const install = harness("omo")?.install;
-		if (!install || !(await io.run(install))) return { ok: false, owner: fill(io.text.owner.sudo, "bun add -g --trust omo-ai") };
-		await bunGlobalOnPath();
-		return (await detectHarnesses()).some(d => d.id === "omo" && d.found.installed) ? { ok: true } : missing(io, "OmO");
-	},
+	"install-omo": io => installHarness(io, "omo"),
+	"install-omp": io => installHarness(io, "omp"),
+	"install-claude": io => installHarness(io, "claude"),
 	"aside-app": async io => {
 		if (!MAC) return { ok: true, detail: io.text.states.skipped };
 		if (!Bun.which("brew")) return { ok: false, owner: `${io.text.owner.noBrew} ${io.text.owner.asideDownload}` };
@@ -54,7 +53,7 @@ export const DEFAULT_JOBS: Record<Exclude<JobId, "apply">, JobFn> = {
 	},
 	zele: async io => {
 		if (!(await io.run(["bun", "add", "-g", "zele"]))) return sudo(io, "bun add -g zele");
-		await bunGlobalOnPath();
+		await installBinsOnPath();
 		return Bun.which("zele") ? { ok: true } : missing(io, "zele");
 	},
 	"tailscale-start": async io => {

@@ -25,7 +25,7 @@ test("newJob refuses malformed bodies and platforms that are not connected", () 
 	const ctx = fakeCtx(env);
 	expect(() => newJob(ctx, { kind: "upload", upload: { file: "rel.mp4", title: "T" } })).toThrow(/absolute/);
 	expect(() => newJob(ctx, { kind: "upload", upload: { file: "/a.mp4" } })).toThrow(/title/);
-	expect(() => newJob(ctx, { kind: "reply", reply: { platform: "tiktok" as never, comment_id: "c", text: "t" } })).toThrow(/reply needs/);
+	expect(() => newJob(ctx, { kind: "reply" as never })).toThrow(/kind must be upload or metadata/);
 	expect(() => newJob(ctx, { kind: "metadata", metadata: {} })).toThrow(/video_id/);
 	expect(() => newJob(ctx, { kind: "video" as never })).toThrow(/kind/);
 	env.cleanup();

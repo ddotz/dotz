@@ -1,7 +1,7 @@
 // Who a mail reply draft goes to: 답장 (the sender alone) or 전체 답장 (the sender plus the original mail's 받는 사람 and 참조, minus the
 // owner's own addresses). Pure: the caller hands in the original's headers and the owner's addresses (hub/mail-state.ts ownAddresses,
 // which knows the config aliases and each source's account), so nothing here reads a config or a mail store.
-import { addressesOf } from "../../../hub/reply-draft.ts";
+import { addressesOf, usableReplyTo } from "../../../hub/reply-draft.ts";
 
 export type ReplyMode = "reply" | "all";
 export type Recipients = { to: string[]; cc: string[] };
@@ -37,11 +37,13 @@ export function recipientList(s: string | undefined): string[] {
 /** The stored form of a 받는 사람 list: one comma list, which every sender already takes (`--to`). */
 export const recipientText = (list: readonly string[]): string => list.join(", ");
 
-// One mail's two answers: 답장 = the sender alone; 전체 답장 = the sender and the original's 받는 사람, with its 참조 kept in 참조. The owner's own
-// addresses are never a recipient: a mail addressed to several people is delivered to each of them, and no answer goes to oneself.
-export function replyRecipients(m: { sender: string; to?: string; cc?: string; self?: readonly string[] }): { reply: Recipients; all: Recipients } {
+/**
+ * One mail's two answers: 답장 = the Reply-To address when the mail names a usable one (not the owner's own, not an automated sender's), else the
+ * sender alone; 전체 답장 = that address and the original's 받는 사람, with its 참조 kept in 참조. The owner's own addresses are never a recipient.
+ */
+export function replyRecipients(m: { sender: string; replyTo?: string; to?: string; cc?: string; self?: readonly string[] }): { reply: Recipients; all: Recipients } {
 	const own = new Set(m.self?.flatMap(a => addressesOf(a)) ?? []);
-	const reply: Recipients = { to: recipientList(m.sender), cc: [] };
+	const reply: Recipients = { to: recipientList(usableReplyTo(m.replyTo, m.self) ?? m.sender), cc: [] };
 	const to = uniqAddresses([...reply.to, ...addressesOf(m.to)]);
 	const cc = uniqAddresses(addressesOf(m.cc));
 	const all: Recipients = { to: to.filter(a => !own.has(a)), cc: cc.filter(a => !own.has(a) && !to.includes(a)) };

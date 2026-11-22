@@ -194,7 +194,7 @@ ta.addEventListener("focus", () => updateHints());
 ta.addEventListener("blur", () => { const box = $("#hints"); box.hidden = true; });
 // Registered before the send/stop key handler: while the menu is open, arrows move, Tab/Enter pick, Esc closes it.
 ta.addEventListener("keydown", ev => {
-  if ($("#hints").hidden || !SL.items.length || ev.isComposing || ev.keyCode === 229) return;
+  if ($("#hints").hidden || !SL.items.length || imeKey(ev)) return;
   const n = SL.items.length, stop = () => { ev.preventDefault(); ev.stopImmediatePropagation(); };
   if (ev.key === "ArrowDown") { stop(); SL.idx = (SL.idx + 1) % n; slMark(); }
   else if (ev.key === "ArrowUp") { stop(); SL.idx = SL.idx <= 0 ? n - 1 : SL.idx - 1; slMark(); }
@@ -205,8 +205,8 @@ ta.addEventListener("keydown", ev => {
 // While the target works: Enter steers into the running turn, ⌘/Ctrl+Enter queues it for the next turn, ⌥/Alt+Enter stops it and sends, Esc stops it.
 ta.addEventListener("keydown", ev => {
   if (ev.key === "Escape" && isWorking(target) && !document.querySelector("dialog[open]:not([data-leaving])") && !openMenu) { ev.preventDefault(); stopTarget(); return; }
-  if (ev.key !== "Enter" || ev.shiftKey || ev.isComposing || ev.keyCode === 229) return;
-  if (matchMedia("(pointer: coarse)").matches) return;
+  if (ev.key !== "Enter" || ev.shiftKey || imeKey(ev)) return;
+  if (!enterSends()) return;
   ev.preventDefault();
   sendChat(ev.altKey ? "interrupt" : ev.metaKey || ev.ctrlKey ? "queue" : undefined);
 });
@@ -238,7 +238,7 @@ const isSlashCommand = text => SH_CMD.test(text) || SCR_CMD.test(text) || CMDS.s
 async function sendCommand(text) {
   const t = target, lane = isLaneT(t) ? laneOf(t) : "";
   const mk = (kind, extra) => ({ ts: new Date().toISOString(), kind, source: "local", ...(lane ? { lane } : {}), ...extra });
-  chatStick = true; termStick = true;
+  putChatStick(true); putTermStick(true);
   ingestMsg(mk("_cmd", { text }));
   try {
     const r = await api("/api/command", "POST", { text, ...(isConvT(t) ? { from: t } : {}) });
@@ -257,11 +257,11 @@ async function sendChat(how) {
   if (files.length && isCommand) { toast(TX("chat.send.cmd_no_files"), true); return; }
   if (picks.length && isCommand) { toast(TX("chat.send.cmd_no_picks"), true); return; }
   const refs = isCommand ? [] : mnRefs(text), sentMentions = MENTIONS;
-  const sentAtt = ATT, sentPicks = PICK; ATT = []; atkForget(); renderAtt(); pkClear(); MENTIONS = [];
+  const sentAtt = ATT, sentPicks = PICK; putAtt([]); atkForget(); renderAtt(); pkClear(); MENTIONS = [];
   const t = target, lane = isLaneT(t) ? laneOf(t) : "";
   ta.value = ""; ts(t).draft = ""; try { localStorage.removeItem(DRAFT_KEY(t)); } catch {} autosize(); updateHints(); renderWorking();
   if (typeof asTplEnd === "function") asTplEnd();
-  chatStick = true; termStick = true;
+  putChatStick(true); putTermStick(true);
   if (isCommand) {
     if (SCR_CMD.test(text)) {
       if (!(S && S.desk)) { toast(TX("chat.send.no_screen"), true); ta.value = text; autosize(); return; }
@@ -276,7 +276,7 @@ async function sendChat(how) {
     sendCommand(text); return;
   }
   const mode = how || (isWorking(t) ? "steer" : undefined), reply = rpTake();
-  if (isSettingsT(t) && !TURN.has(t)) TURN.set(t, Date.now() - 5000);
+  if (isSettingsT(t) && !TURN.has(t)) turnStart(t, Date.now() - 5000);
   try {
     // One id per send, kept while it fails, so a retry of the same text is the same send to the hub (hub/routes.ts cid).
     if (!sendCid || sendCid.text !== text) sendCid = { text, id: Date.now().toString(36) + Math.random().toString(36).slice(2, 10) };
@@ -287,25 +287,25 @@ async function sendChat(how) {
     if (owner && owner.pc && files.length) body.files = (await pqUpload(owner.pc, sentAtt)).map((f, i) => ({ ...f, label: sentAtt[i].no }));
     const r = await sendMsgOut(t, text, body, owner && owner.pc);   // null: the gateway is unreachable, the message waits in the outbox (14-outbox.js)
     sendCid = null;
-    if (body.computer) { CPC.name = ""; cpcPaint(); }   // the pick was for this one message
+    if (body.computer) cpcPick("");   // the pick was for this one message
     // A peer's conversation is not on this computer's event stream: its history is read again now, so the sent bubble shows at once.
     if (owner && owner.pc) loadTarget(t, true);
     scrollChat(true); scrollTerm(true);
-    if (r && r.queued) { QUEUE = QUEUE.filter(i => i.id !== r.queued.id).concat(r.queued); renderQueue(); toast(TX("chat.send.queued")); }
+    if (r && r.queued) { putQueue(QUEUE.filter(i => i.id !== r.queued.id).concat(r.queued)); renderQueue(); toast(TX("chat.send.queued")); }
     // Steering is the default for a message sent mid-turn, so it gets no toast (owner 2026-10-20); interrupting still does.
   else if (mode === "interrupt" && r !== null) toast(TX("chat.send.interrupted"));
   }
   catch (e) {
     // a failed send goes back to the conversation it came from, even when the owner has moved to another one meanwhile
     if (t !== target) { ts(t).draft = text; ts(t).att = sentAtt.concat(ts(t).att || []); ts(t).pick = sentPicks.concat(ts(t).pick || []); lsSet(DRAFT_KEY(t), text); atkStore(t, ts(t).att); toast(TX("chat.send.kept", { message: e.message }), true); return; }
-    toast(e.message, true); ta.value = text; MENTIONS = sentMentions.concat(MENTIONS); autosize(); ATT = sentAtt.concat(ATT); renderAtt(); pkRestore(sentPicks); rpRestore(reply);
+    toast(e.message, true); ta.value = text; MENTIONS = sentMentions.concat(MENTIONS); autosize(); putAtt(sentAtt.concat(ATT)); renderAtt(); pkRestore(sentPicks); rpRestore(reply);
   }
 }
 // The hint in the message box of conversation t. Only the open composer (open) has a pending decision card (DC.cur) or the activity view's term mode;
 // an inactive pane's mirror asks with open = false and gets its own conversation's hint (43-panes-mirror.js).
 function composerHint(t, open) {
   const info = targetInfo(t), gone = isLaneT(t) && info.known && !info.alive, off = gone && !info.resumable;
-  return off ? TX("chat.ph.ended") : open && DC.cur ? TX("chat.ph.pick_number") : gone ? TX("chat.ph.resume") : open && modeOf() === "term" ? TX("shell.composer.placeholder") : isProjT(t) ? TX("chat.ph.project", { name: targetName(t), bot: botName }) : isMailT(t) ? TX("chat.ph.mail", { bot: botName }) : isSettingsT(t) ? TX("chat.ph.settings", { name: targetName(t), bot: botName }) : TX("chat.ph.target", { name: targetName(t) });
+  return off ? TX("chat.ph.ended") : open && DC.cur ? TX("chat.ph.pick_number") : gone ? TX("chat.ph.resume") : open && modeOf() === "term" ? TX("shell.composer.placeholder") : t === "worklog" ? TX("chat.ph.worklog") : isProjT(t) ? TX("chat.ph.project", { name: targetName(t), bot: botName }) : isMailT(t) ? TX("chat.ph.mail", { bot: botName }) : isSettingsT(t) ? TX("chat.ph.settings", { name: targetName(t), bot: botName }) : TX("chat.ph.target", { name: targetName(t) });
 }
 // The composer follows the selected target and the view mode.
 function updateComposerMeta() {
@@ -376,6 +376,7 @@ function renderWorking() {
 
 /* ---------- queued messages (server queue, sent when the target's turn ends) + context ring ---------- */
 let QUEUE = [];
+const putQueue = v => { QUEUE = v; };
 async function loadQueue() {
   try { QUEUE = (await api("/api/queue")).items || []; } catch { return; }
   renderQueue();

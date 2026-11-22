@@ -3,20 +3,21 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { draftApprovalBlock, NO_ATTACHMENT_WARNING } from "./draft-approval.ts";
-import { draftFileRoute, stageDraftFiles } from "./draft-files.ts";
+import { addStagedFile } from "../features/reply-drafts/lib/staged.ts";
+import { draftFileRoute } from "./draft-files.ts";
 import { emit } from "./events.ts";
 import { listNotices, markNoticesRead, type Notice, resolveNotices, unreadCount } from "./notices.ts";
 import { fakeHub, json, waitFor, type View } from "./test-web.ts";
 
 // The send sheet and the mail draft card show which files go out (web/js/10-decision-card.js draftFilesNode): a row per attachment with a
-// type icon, name and size that opens the staged file, `첨부 없음` when the original's files are not carried, and a warning when the text
+// type icon, name and size that opens the staged file, `첨부 없음` when the draft carries no file, and a warning when the text
 // says it attaches something but no file is set. Headless browser against the real notice store; nothing is sent.
 const root = mkdtempSync(join(tmpdir(), "dotz-draft-atts-"));
 const src = mkdtempSync(join(tmpdir(), "dotz-draft-atts-src-"));
 writeFileSync(join(src, "견적서 최종.pdf"), "%PDF-1.4 fixture-bytes");
 writeFileSync(join(src, "현장사진.jpg"), "jpg-fixture-bytes");
-const staged = stageDraftFiles("RATT0001", [join(src, "견적서 최종.pdf"), join(src, "현장사진.jpg")], root);
-const mailStaged = stageDraftFiles("RMAIL001", [join(src, "견적서 최종.pdf")], root);
+const staged = ["견적서 최종.pdf", "현장사진.jpg"].map(n => addStagedFile("RATT0001", join(src, n), root));
+const mailStaged = [addStagedFile("RMAIL001", join(src, "견적서 최종.pdf"), root)];
 const COMMENT = { kind: "comment", key: "RCMT0001", author: "마피아팬", text: "문서 받을 수 있나요?", post: { title: "마피아 영상", link: "https://example.com/post/1", kind: "website" } };
 
 const hub = fakeHub({
@@ -105,20 +106,20 @@ describe("attachments in the send sheet", () => {
 		const w2 = await open(390, 844);
 		await openSheet(w2, String(find("RATT0003").id));
 		await waitFor(w2, `document.querySelector(".fs-body .dr-files")`);
-		expect(await w2.evaluate(`!!document.querySelector(".fs-body .dr-none")`)).toBe(false);
+		expect(await w2.evaluate(`!!document.querySelector(".fs-body .dr-files [data-k=none]")`)).toBe(true);
 		expect(await w2.evaluate(`!!document.querySelector(".fs-ft .dr-warn")`)).toBe(false);
 	});
 });
 
 describe("attachments in the mail draft card", () => {
-	test("the card shows the same rows, and a mail draft without files has no 첨부 없음 band", async () => {
+	test("the card shows the same rows, and a mail draft without files says so in the same place", async () => {
 		const v = await open(390, 900);
 		await waitFor(v, `typeof draftCardNode === "function" && typeof draftFilesNode === "function"`);
 		const n = find("RATT0001");
 		const html = await v.evaluate(`(() => { const n = ${JSON.stringify(n)}; const c = draftCardNode(n); document.body.append(c); return c.querySelectorAll("a.dr-att").length + "|" + [...c.querySelectorAll(".dr-fn")].map(e => e.textContent).join(",") + "|" + c.querySelector("a.dr-att").getAttribute("href"); })()`);
 		expect(html).toBe("2|견적서 최종.pdf,현장사진.jpg|/api/drafts/RATT0001/files/0");
-		const plain = await v.evaluate(`(() => { const n = ${JSON.stringify({ ...n, decision: { ...n.decision, draft: { toLabel: "받는이", to: "a@b.c", body: "안녕하세요." } } })}; const f = draftFilesNode(n.decision.draft), c = draftCardNode(n).querySelector(".dr-files"); return [f.hidden, c.hidden, c.querySelector(".dr-none")?.textContent].join("|"); })()`);
-		expect(plain).toBe("true|true|");
+		const plain = await v.evaluate(`(() => { const n = ${JSON.stringify({ ...n, decision: { ...n.decision, draft: { toLabel: "받는이", to: "a@b.c", body: "안녕하세요." } } })}; const f = draftFilesNode(n.decision.draft), c = draftCardNode(n).querySelector(".dr-files"); return [f.hidden, c.hidden, !!f.querySelector("[data-k=none]"), !!c.querySelector("[data-k=none]"), f.querySelectorAll(".dr-fn").length].join("|"); })()`);
+		expect(plain).toBe("false|false|true|true|0");
 	});
 });
 
@@ -149,7 +150,7 @@ describe("a comment reply that sends a mail too", () => {
 			expect(href).toBe("/api/drafts/RMAIL001/files/0");
 			expect(await v.evaluate(`fetch(${JSON.stringify(href)}).then(r => r.status + ":" + r.headers.get("content-disposition")?.slice(0, 6))`)).toBe("200:inline");
 			expect(await v.evaluate(`fetch(${JSON.stringify(href)}).then(r => r.text())`)).toBe("%PDF-1.4 fixture-bytes");
-			expect(await texts(v, ".fs-ft .dc-act")).toEqual(["보내기", "고치기", "보내지 않기"]);
+			expect(await v.evaluate(`[...document.querySelectorAll(".fs-ft .dc-act")].map(b => b.dataset.n).join()`)).toBe("1,2,3");
 			const card = (await box(v, ".fs-card"))!, row = (await box(v, ".fs-body .dr-mailpart a.dr-att"))!;
 			expect(row.h).toBeGreaterThanOrEqual(44);
 			expect(row.l).toBeGreaterThanOrEqual(card.l);

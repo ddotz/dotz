@@ -95,6 +95,14 @@ describe("replies through the owner's session", () => {
 		expect(posts).toHaveLength(1);
 	});
 
+	test("a lane's failure, result and question reach the main room as the owner; its progress stays out", async () => {
+		config({ incoming_url: "" });
+		const a = await start();
+		const lane = (text: string) => a.deliver(post({ kind: "lane", target: "lane:x", text }));
+		expect([(await lane("[fail] 못 했어요")).delivered, (await lane("[done] 끝")).delivered, (await lane("[ask] 어느 쪽?")).delivered, (await lane("[run] 하는 중")).delivered]).toEqual([true, true, true, false]);
+		expect(posts).toHaveLength(3);
+	});
+
 	test("a webhook, when there is one, keeps winning", async () => {
 		config({ incoming_url: `http://127.0.0.1:${hookServer.port}/in` });
 		const a = await start();

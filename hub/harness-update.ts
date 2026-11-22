@@ -257,8 +257,6 @@ export async function ensureChecked(t: Tools, force = false): Promise<HarnessSta
 
 const jobs = new Map<string, Job>();
 export const jobOf = (id: string) => jobs.get(id);
-// Between tests and a standalone run: forget in-memory jobs (the cache file under the data dir stays).
-export const resetHarnessJobs = () => void jobs.clear();
 
 let jobSeq = 0;
 

@@ -1,7 +1,8 @@
 // One look at this computer for the web onboarding's first screen (and nothing else): what is installed and signed in, so a step that is
 // already ready is skipped (owner rule 11-02). Read-only; never asks for credentials.
 import { asideState } from "../onboard/aside.ts";
-import { detectHarnesses, loginState } from "../onboard/harness.ts";
+import { detectHarnesses } from "../onboard/harness.ts";
+import { loginOf } from "../hub/runtime/login.ts";
 import { tailscaleState } from "../onboard/tailscale.ts";
 
 const MAC = process.platform === "darwin";
@@ -17,8 +18,8 @@ export async function scanMachine() {
 	const [found, aside, ts, zele] = await Promise.all([detectHarnesses(), asideState(), tailscaleState(), zeleAccounts()]);
 	const harnesses = await Promise.all(
 		found.map(async d => {
-			const login = await loginState(d);
-			return { id: d.id, label: d.label, adapter: d.adapter, installed: d.found.installed, version: d.found.version ?? "", login_checked: login.checked, login_ready: login.ready, accounts: login.accounts };
+			const login = await loginOf(d.id, d.found.path);
+			return { id: d.id, label: d.label, adapter: d.adapter, installed: d.found.installed, version: d.found.version ?? "", login_checked: login.checked, login_ready: login.ready, accounts: login.accounts, install: d.install ? d.installHint : "" };
 		}),
 	);
 	const tailscale = { installed: Boolean(ts.bin), running: ts.running, login: ts.login, host: ts.host };
@@ -31,6 +32,8 @@ export async function scanMachine() {
 		zele: { installed: Boolean(Bun.which("zele")), accounts: zele },
 		ready: {
 			"install-omo": harnesses.some(h => h.id === "omo" && h.installed),
+			"install-omp": harnesses.some(h => h.id === "omp" && h.installed),
+			"install-claude": harnesses.some(h => h.id === "claude" && h.installed),
 			"aside-app": !MAC || aside.app,
 			"aside-cli": !MAC || Boolean(aside.cli),
 			tailscale: tailscale.installed,

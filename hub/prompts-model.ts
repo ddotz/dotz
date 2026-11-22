@@ -1,16 +1,26 @@
 // The prompt queue's shapes and limits: types and constants that capture no state (the queue itself is prompts.ts).
 
-export type Prompt = { key: string; text: string; at: number; target?: string; replyTo?: string; refs?: string[]; sent: { target: string; text: string }[]; done?: boolean; steered?: boolean; noted?: string; seen?: boolean; gathered?: boolean; owner?: boolean; deep?: true; held?: string[]; last?: string; unmatched?: boolean; deferred?: boolean; cancelled?: boolean; told?: string[]; retry?: boolean; from?: string; handback?: true; quiet?: true; bookkeeping?: true; fallback?: string };
+/** The schedule runs a prompt was fired for (hub/schedule-fire.ts): `ids` the run ids (a check group has several), `sk` the schedule's kind. */
+export type RunLabel = { ids: string[]; sk: string };
+/** What became of a run's turn: answered (posted, or kept as a quiet check line), silent (nothing to tell), failed (the turn ended with no text). */
+export type RunOutcome = "answered" | "silent" | "failed";
+export type Prompt = { key: string; text: string; at: number; target?: string; replyTo?: string; refs?: string[]; sent: { target: string; text: string }[]; done?: boolean; steered?: boolean; noted?: string; seen?: boolean; gathered?: boolean; owner?: boolean; deep?: true; held?: string[]; last?: string; unmatched?: boolean; deferred?: boolean; cancelled?: boolean; told?: string[]; retry?: boolean; from?: string; handback?: true; quiet?: true; bookkeeping?: true; fallback?: string; laterRefused?: true; run?: RunLabel };
 /** An owner message the gateway delivered (or, from the inbox log, delivered before this process started). */
 export type OwnerMessage = { target: string; replyTo?: string; at: number; prompt?: Prompt };
-export type Pending = { text: string; at?: number; target?: string; replyTo?: string; refs?: string[]; deferred?: boolean; from?: string; handback?: true; quiet?: true; bookkeeping?: true; fallback?: string };
+export type Pending = { text: string; at?: number; target?: string; replyTo?: string; refs?: string[]; deferred?: boolean; from?: string; handback?: true; quiet?: true; bookkeeping?: true; fallback?: string; run?: RunLabel };
 /** A worker and the request it was spawned for. `also`: follow-ups deferred to it; `receipted`: its line was posted; `delivered`: an answer from its result went out; `read`: its result was read in a run that did not answer it. */
 export type WorkLink = { id: string; target: string; replyTo?: string; at: number; description?: string; also?: string[]; receipted?: boolean; delivered?: boolean; read?: boolean; cancelled?: boolean };
 /** A request waiting on background work, for the gateway's silent-wait check (hub/waitcheck.ts). */
-export type OpenRequest = { target: string; replyTo?: string; at: number; workers: { id: string; description?: string }[] };
+export type OpenRequest = { target: string; replyTo?: string; from?: string; handback?: true; bookkeeping?: true; omp?: true; at: number; workers: { id: string; name?: string; description?: string }[] };
 /** One of this session's background workers, as hub/bgwork.ts lists it (running oldest first, then recently finished newest first). */
 export type WorkRow = { id: string; description?: string; status: "running" | "stalled" | "done" | "failed"; target?: string; replyTo?: string; startedAt: number; endedAt?: number };
-export type Reply = { target: string; replyTo?: string; refs?: string[]; owner?: boolean; deep?: true; from?: string; handback?: true; quiet?: true; bookkeeping?: true; fallback?: string }; // deep: the owner's own words ask for deeper reasoning on this turn (hub/ultrathink.ts); fallback: the answer a rewrite turn replaces, posted as it was if that turn writes nothing; quiet: a system check, see deps.quietNote; refs: every message merged into this prompt
+export type Reply = { target: string; replyTo?: string; refs?: string[]; owner?: boolean; deep?: true; from?: string; handback?: true; quiet?: true; bookkeeping?: true; fallback?: string; run?: RunLabel }; // deep: the owner's own words ask for deeper reasoning on this turn (hub/ultrathink.ts); fallback: the answer a rewrite turn replaces, posted as it was if that turn writes nothing; quiet: a system check, see deps.quietNote; refs: every message merged into this prompt
+/** A worker's result the session was just woken with: `in` is the prompted turn it landed in, `waited` that the run it woke said [later]. */
+export type Woke = { id: string; at: number; in?: Prompt; waited?: boolean };
+/** A turn that ran from a delivered prompt, oldest first: a worker belongs to the turn it was spawned in. */
+export type Turn = { prompt: Prompt; start: number; end?: number };
+/** The hand-over labels a prompt carries through pending.json. */
+export const labels = (p: { from?: string; handback?: true; quiet?: true; bookkeeping?: true; fallback?: string; run?: RunLabel }) => ({ ...(p.bookkeeping ? { bookkeeping: true as const } : {}), ...(p.from ? { from: p.from } : {}), ...(p.handback ? { handback: true as const } : {}), ...(p.quiet ? { quiet: true as const } : {}), ...(p.fallback ? { fallback: p.fallback } : {}), ...(p.run ? { run: p.run } : {}) });
 
 export type PromptDeps = {
 	/** Keeps the answer of a quiet check (a plain one that does not begin with [ask] or [fail]) as one worklog line; it is posted nowhere else and notifies no one. */
@@ -34,8 +44,12 @@ export type PromptDeps = {
 	/** Is this prompt text a gateway note steered into a turn (not a new request)? */
 	isNote: (text: string) => boolean;
 	regenerated?: (text: string) => boolean; // a gateway nudge the silent-wait check (hub/waitcheck.ts) sends again while due: never replayed
-	/** Posts a turn's final answer to the channel that asked. */
-	post: (target: string, text: string, replyTo?: string, opts?: { hushed?: true }) => Promise<{ delivered: boolean }>;
+	answering?: (text: string, replyTo: string | undefined) => void;
+	inProcess?: () => boolean;
+	/** The name the runtime calls a worker by (omp: what `agent://` takes), shown in notes in place of the hub's run key. */
+	nameOf?: (id: string) => string;
+	/** Posts a turn's final answer to the channel that asked; `run` / `sk`: the one schedule run it answers, carried on the out event. */
+	post: (target: string, text: string, replyTo?: string, opts?: { hushed?: true; run?: string; sk?: string }) => Promise<{ delivered: boolean }>;
 	/** A gateway note in a conversation that answers nothing (the deferral acknowledgement must not settle the open prompt). */
 	announce?: (target: string, text: string, worker?: string) => void;
 	interim?: (target: string, text: string) => void | Promise<boolean>;   // what a [later] turn wrote around the word: a message that answers nothing
@@ -60,6 +74,8 @@ export type PromptDeps = {
 	cardsNote?: (target: string) => string | undefined;
 	/** Does this text already carry that note (a restart replay stored it with the prompt)? */
 	hasCardsNote?: (text: string) => boolean;
+	/** The gateway lines the asker of this session's cards still has to hear (hub/asker-notes.ts), taken once by the owner prompt that carries them. */
+	askerNotes?: () => string | undefined;
 	clearProgress: (target: string) => void;
 	/** Writes the open prompts to disk. */
 	persist: (open: Pending[]) => void;
@@ -79,6 +95,12 @@ export type PromptDeps = {
 	answeredSince?: (target: string, at: number) => boolean;
 	/** These messages of `target` were answered by an answer that names another one of the burst. */
 	settled?: (target: string, ids: string[]) => void;
+	/** A turn ended and was settled (`text`: its prompt, none for a run no prompt of ours started); not one a provider error stopped before it answered (that request stays open). */
+	turnEnded?: (text?: string) => void;
+	/** What became of the turn of a prompt fired for schedule runs (its `run` label); `seen`: the answer went out as the owner's own exchange. */
+	ran?: (run: RunLabel, outcome: RunOutcome, seen?: boolean) => void;
+	/** Did these schedule runs already get their own outcome? Settles a stored run prompt on a restart, whatever else was answered in its conversation. */
+	runSettled?: (run: RunLabel) => boolean;
 };
 
 // Near-identical answers: the first NEAR_CHARS letters and digits (lowercased, no spaces or punctuation) match, at least NEAR_MIN long.

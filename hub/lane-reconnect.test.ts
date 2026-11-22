@@ -8,6 +8,7 @@ import { cfg } from "./config.ts";
 import { msg } from "./i18n.ts";
 import { startResumeWatch } from "./orch-error.ts";
 import { adapters } from "./runtime/index.ts";
+import { ompTree } from "./runtime/test-omp-session.ts";
 import { omp } from "./runtime/omp.ts";
 import { advance, flush } from "./runtime/test-clock.ts";
 import type { AgentEvent, AgentProcess, RuntimeAdapter, SpawnOpts } from "./runtime/types.ts";
@@ -239,5 +240,33 @@ test("a lane idle on a worker lost to the network gets one resume, and the same 
 	await ticks();
 	expect(agent.sent.length).toBe(sent + 1);
 	l.stopLane("worker-lost");
+	await advance(300);
+});
+
+test("a lane idle on an omp worker whose model request failed on the network gets one resume, and the same worker does not earn a second one", async () => {
+	reachable = true;
+	const { lane, agent } = await idle("omp-worker-lost");
+	const sent = agent.sent.length;
+	lane.sessionFile = ompTree("failed-dead", join(DATA, "omp-worker-lost-session")).file;
+	await ticks();
+	expect(agent.sent.length).toBe(sent + 1);
+	expect(agent.sent.at(-1)).toStartWith(msg().laneTransient);
+	agent.push({ type: "turn_start" }, OK, { type: "turn_end" });
+	await flush();
+	await ticks();
+	expect(agent.sent.length).toBe(sent + 1);
+	l.stopLane("omp-worker-lost");
+	await advance(300);
+});
+
+test("an omp worker that did not fail on a model request leaves its idle lane alone", async () => {
+	reachable = true;
+	const { lane, agent } = await idle("omp-worker-fine");
+	const sent = agent.sent.length;
+	lane.sessionFile = ompTree("killed", join(DATA, "omp-worker-fine-session")).file;
+	await ticks();
+	expect(agent.sent.length).toBe(sent);
+	expect(lane.interrupted).toBeUndefined();
+	l.stopLane("omp-worker-fine");
 	await advance(300);
 });

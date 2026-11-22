@@ -7,6 +7,7 @@ import { draftLang, parseDraft, saveSecret, savedSecrets, setupText } from "./se
 import { createTerms, type TermId } from "./setup-term.ts";
 import { scanMachine } from "./scan.ts";
 import { tokenFile, peerTokenFile } from "./apply.ts";
+import { harnessInstalled } from "../onboard/harness.ts";
 import { readFileSync } from "node:fs";
 import { bundle } from "../hub/webapp.ts";
 import { localBrowser } from "../hub/web-access.ts";
@@ -28,6 +29,7 @@ export type SetupDeps = {
 	scan?: () => Promise<unknown>;
 	jobs?: Partial<Record<JobId, JobFn>>;
 	terms?: (id: TermId) => string[] | undefined;
+	installed?: (runtime: string) => Promise<boolean>;
 	/** The generator of the app's generated screen-text list; default: the gateway's (hub/web-i18n-boot.ts). */
 	i18n?: Generator;
 };
@@ -90,15 +92,15 @@ export function createSetupGate(deps: SetupDeps) {
 			saveDraft(dir, "apply", {});
 			let outcome: Awaited<ReturnType<typeof runApply>> | undefined;
 			const row = jobs.start("apply", async io => {
-				outcome = await runApply({ dir, home: deps.home ?? homedir(), pkg: deps.pkg ?? PKG, permissionsDone: () => jobs.snapshot().find(r => r.id === "permissions")?.state === "done" }, io);
+				outcome = await runApply({ dir, home: deps.home ?? homedir(), pkg: deps.pkg ?? PKG, permissionsDone: () => jobs.snapshot().find(r => r.id === "permissions")?.state === "done", installed: deps.installed ?? harnessInstalled }, io);
 				return outcome.ok ? { ok: true, owner: outcome.owner, detail: outcome.why } : { ok: false, detail: outcome.error };
 			});
-			applying = row.then(() => outcome!);
+			applying = row.then(() => outcome);
 		}
 		const o = await applying;
-		if (!o.ok) {
+		if (!o?.ok) {
 			applying = undefined;
-			return reply({ ok: false, error: fill(text().errors.applyFailed, o.error) }, 400);
+			return reply({ ok: false, error: fill(text().errors.applyFailed, o?.error ?? jobs.snapshot().find(r => r.id === "apply")?.detail ?? "") }, 400);
 		}
 		const headers = new Headers(SECURE);
 		headers.set("Content-Type", "application/json; charset=utf-8");
@@ -111,7 +113,7 @@ export function createSetupGate(deps: SetupDeps) {
 			deps.log("setup: onboarding done, restarting once");
 			setTimeout(deps.restart, 500);
 		}
-		return new Response(JSON.stringify({ ok: true, access: o.access, url: o.url, why: o.why, owner: o.owner }), { headers });
+		return new Response(JSON.stringify({ ok: true, access: o.access, url: o.url, why: o.why, owner: o.owner, connect: o.connect }), { headers });
 	}
 
 	function stream(): Response {

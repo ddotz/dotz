@@ -105,7 +105,7 @@ function paneAdopt() {
   const a = paneFind(PN.active), h = paneHere();
   if (!a || PN.going || current !== "chat" || (a.kind === h.kind && a.t === h.t)) return;
   const dup = paneOpenIn(h.kind, h.t);
-  if (dup) { PN.active = dup.id; dup.t = h.t; dup.dot = ""; paneForget(dup.id); }
+  if (dup) { paneActiveSet(dup.id); dup.t = h.t; dup.dot = ""; paneForget(dup.id); }
   else Object.assign(a, { kind: h.kind, t: h.t, at: null, stick: true, dot: "" });
   paneForget(a.id);
   panePersist();
@@ -207,8 +207,8 @@ function paneEnter(p) {
 function paneLand(at, stick) {
   if (current !== "chat") return;
   chatUnpin();
-  if (!stick && at) { CV.pinTs = at.ts; CV.pinOff = at.off; chatPin("at"); }
+  if (!stick && at) { cvPinAt(at.ts, at.off); chatPin("at"); }
   else timeline.scrollTop = timeline.scrollHeight;
-  chatStick = timeline.scrollTop + timeline.clientHeight >= timeline.scrollHeight - 40;
+  putChatStick(timeline.scrollTop + timeline.clientHeight >= timeline.scrollHeight - 40);
   $("#chat-jump").hidden = chatStick;
 }

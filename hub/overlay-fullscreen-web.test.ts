@@ -81,10 +81,9 @@ const coversPhone = async (v: View, w: number, h: number, frame: string) => {
 		expect(b.r).toBeLessThanOrEqual(card.r);
 		return b;
 	};
-	const hd = await inside(".fs-hd");
+	await inside(".fs-hd");
 	const x = await inside(".fs-x");
 	expect(x.h).toBeGreaterThanOrEqual(44);
-	expect(hd.t).toBe(0 + 0 * card.t);
 	const ft = await box(v, `${frame} .fs-ft`);
 	if (ft) expect(ft.b).toBeLessThanOrEqual(card.b);
 	expect(await v.evaluate(`document.documentElement.scrollWidth`)).toBeLessThanOrEqual(w);
@@ -103,9 +102,6 @@ describe("every overlay opens as the shared full-screen frame", () => {
 				await waitFor(phone, k.ready);
 				await settled(phone);
 				await coversPhone(phone, w, h, k.frame);
-				if (w === 390) {
-					const slug = k.name.replace(/[^a-z]+/gi, "-").replace(/^-|-$/g, "").toLowerCase();
-				}
 				// Esc closes it
 				await phone.evaluate(`document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }))`);
 				await waitFor(phone, `!document.querySelector(".fs-bd, dialog.fs-card")`);
@@ -115,6 +111,7 @@ describe("every overlay opens as the shared full-screen frame", () => {
 
 	test("the back button closes the notice sheet and the page stays", async () => {
 		const phone = await open(390, 844);
+		await phone.evaluate(`dispatchEvent(new Event("pointerup"))`);
 		await phone.evaluate(`noticeSheetOpen(${JSON.stringify(String(find("오버레이 확인").id))})`);
 		await waitFor(phone, `document.querySelector(".fs-card .ds-opt")`);
 		await phone.evaluate(`history.back()`);

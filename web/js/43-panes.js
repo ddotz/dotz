@@ -167,9 +167,13 @@ function paneRestore() {
   paneSync();
   panePersist();
 }
+const paneAppOff = () => { if (!PN.going) PN.app = false; };
+const paneActiveSet = id => { PN.active = id; };
+const paneTreePut = next => { PN = next; };
 // The chat tab pressed again after another tab: the panes come back as they were, the active one's content opened again.
+// A relayed computer chosen off the chat (44-relay-views.js relayShow) sits in no pane: the tab opens its chat, not what the active pane held.
 function paneReturn() {
-  if (paneCount() < 2 || narrowChat()) return false;
+  if (paneCount() < 2 || narrowChat() || (isRelayT(target) && !paneOpenIn("chat", target))) return false;
   if (!paneTabOk()) paneEnter(paneFind(PN.active));
   return true;
 }
@@ -178,3 +182,4 @@ function paneStash() {
   const p = PNV.el && !PNV.el.hidden && current === "chat" && paneFind(PN.active);
   if (p && p.kind === "chat") { p.at = chatAnchor(); p.stick = chatStick; }
 }
+screenHooks("chat", { leave: paneStash });

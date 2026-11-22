@@ -5,6 +5,8 @@
   "shell.aria.monitoring_list": "Monitoring list",
   "shell.aria.apps_list": "App list",
   "shell.conn.lost": "Offline · reconnecting",
+  "shell.conn.unreachable": "Can't reach this computer · check this device's network or Tailscale",
+  "shell.conn.unreachable_short": "Check network",
   "shell.gban.close": "Dismiss restart notice",
   "shell.oerr.restart": "Restart orchestrator",
   "shell.chat.older": "Show earlier messages",
@@ -30,5 +32,7 @@
   "shell.sw.cleanup_title": "Alerts cleared",
   "shell.sw.cleanup_body": "Cleared the alerts you've handled",
   "shell.sw.reply_sent": "Reply sent",
+  "shell.sw.reply_failed": "Your answer did not go through",
+  "shell.sw.reply_failed_body": "Open the app and press it again",
   "shell.manifest.description": "{name} · your always-on personal assistant"
 }

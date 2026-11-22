@@ -19,11 +19,15 @@ import { join } from "node:path";
 import { PIN_ENV } from "./account-sticky.ts";
 import { withoutApiKeys } from "./apikey-policy.ts";
 import { blockOf, subscriptionAccount } from "./usage-account.ts";
-import { cfg, DATA_DIR, log, TZ } from "./config.ts";
+import { usageLast } from "./usage-last.ts";
+import { cfg, DATA_DIR, log, OMP, TZ, writeAtomic } from "./config.ts";
 import { killAgent, spawnAgent, writeQuietly } from "./runtime/agent-proc.ts";
 import { OMO, recordStarted } from "./runtime/omo-hosts.ts";
 
 export type Reply = { text: string; inputTokens: number; outputTokens: number; ms: number; firstTokenMs?: number };
+/** The runtime a warm process and a one-shot call run on. */
+export type Runtime = "omp" | "omo";
+type OmpLimit = { id?: string; status?: string; amount?: { used?: number; limit?: number }; window?: { resetsAt?: number } };
 
 // Tests swap `spawn` for a fake `omo`; nothing else starts a process.
 export const runnerDeps = {
@@ -33,6 +37,8 @@ export const runnerDeps = {
 	idleMs: 10 * 60_000,
 	// keyed by model + system prompt + account: mail and the three kakao prompt shapes stay warm side by side.
 	maxRunners: 3,
+	which: (bin: string): string | null => Bun.which(bin),
+	usage: usageLast,
 };
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -70,7 +76,6 @@ export class ProviderBlockedError extends Error {
 
 const HEALTH_TTL_MS = 30_000;
 let healthCache: { key: string; at: number; value: Health } | undefined;
-export const resetHealthForTest = (): void => invalidateHealth();
 export function invalidateHealth(): void {
 	healthCache = undefined;
 }
@@ -142,19 +147,90 @@ export function readyAccount(now = runnerDeps.now()): string | undefined {
 	return healthCache.value.ok ? healthCache.value.account : undefined;
 }
 
+/**
+ * Is the Claude subscription omp runs an `anthropic/` model on usable now? omp rotates between the Anthropic logins it holds, so the subscription
+ * is refused only when EVERY login in the usage store (`omp:anthropic:<email|accountId>`, one key per login) has its 5-hour or 7-day window spent
+ * and not yet reset; the reset time reported is when the first login frees (a login with both windows spent frees when the later one does).
+ * A login with no spent window, no stored login, and another provider's model all leave the call to the runtime.
+ */
+export function ensureOmpProvider(model: string, now = runnerDeps.now()): void {
+	if (!model.startsWith("anthropic/")) return;
+	let resetAt: number | undefined;
+	let logins = 0;
+	for (const key of runnerDeps.usage.keys("omp:anthropic:")) {
+		const limits = runnerDeps.usage.get<{ limits?: OmpLimit[] }>(key)?.report.limits ?? [];
+		logins++;
+		let freesAt: number | undefined;
+		for (const l of limits) {
+			if (l.id !== "anthropic:5h" && l.id !== "anthropic:7d") continue;
+			const spent = l.status === "exhausted" || (typeof l.amount?.used === "number" && typeof l.amount?.limit === "number" && l.amount.used >= l.amount.limit);
+			const resets = l.window?.resetsAt;
+			if (!spent || typeof resets !== "number" || resets <= now) continue;
+			freesAt = freesAt === undefined ? resets : Math.max(freesAt, resets);
+		}
+		if (freesAt === undefined) return;
+		resetAt = resetAt === undefined ? freesAt : Math.min(resetAt, freesAt);
+	}
+	if (logins > 0 && resetAt !== undefined) throw new ProviderBlockedError(`구독 한도에 걸렸어요 · ${resetClock(resetAt)}에 풀려요`, resetAt);
+}
+
 // ---------------------------------------------------------------------------------------------------------------
 // The warm process.
 
 export { PIN_ENV };
 
+/**
+ * What every omp one-shot and warm call turns off: session, tools, extensions, skills, rules, context files, LSP and the title
+ * call; the overlay pins memory, advisor, keyword magic, usage-reset waiting, model fallback and the update check off.
+ */
+export const ompFlags = (): string[] => [`--config=${ompOverlay()}`, "--no-session", "--no-tools", "--no-extensions", "--no-skills", "--no-rules", "--no-context-files", "--no-lsp", "--no-title"];
+
+/** What every OmO one-shot and warm call turns off: session, tools, extensions, skills, context files, prompt templates, memory and model fallback. */
+export const OMO_FLAGS = ["--no-session", "--no-tools", "--no-extensions", "--no-skills", "--no-context-files", "--no-prompt-templates", "--omo-senpi-memory-disabled", "--no-model-fallback"];
+
+const OVERLAY_YAML = `memory:
+  backend: "off"
+advisor:
+  enabled: false
+magicKeywords:
+  enabled: false
+retry:
+  waitForUsageReset: false
+  modelFallback: false
+startup:
+  checkUpdate: false
+`;
+
+/** The settings file omp one-shot calls load (DATA_DIR/outlang-overlay.yml), rewritten whenever its content differs from the pins above so an install gets new pins; returns its path. */
+export function ompOverlay(): string {
+	const file = join(DATA_DIR, "outlang-overlay.yml");
+	let current: string | undefined;
+	try {
+		current = readFileSync(file, "utf8");
+	} catch {
+		current = undefined;
+	}
+	if (current !== OVERLAY_YAML) writeAtomic(file, OVERLAY_YAML);
+	return file;
+}
+
 // The rpc form of outlang.ts modelArgv: same limits (no tools, skills, extensions, context files, memory, fallback), but
 // long-lived and fed prompts over stdin.
 export function warmArgv(system: string, model: string, thinking: string): string[] {
-	return [OMO, "--mode", "rpc", "--no-session", "--no-tools", "--no-extensions", "--no-skills", "--no-context-files", "--no-prompt-templates", "--omo-senpi-memory-disabled", "--no-model-fallback", "--thinking", thinking, "--model", model, "--system-prompt", system];
+	return [OMO, "--mode", "rpc", ...OMO_FLAGS, "--thinking", thinking, "--model", model, "--system-prompt", system];
+}
+
+/** The rpc argv of an omp warm process: the one-shot limits of ompFlags, the system prompt and thinking level fixed at launch. */
+export const ompWarmArgv = (system: string, model: string, thinking: string): string[] => [OMP, "--mode", "rpc", ...ompFlags(), "--thinking", thinking, "--model", model, "--system-prompt", system];
+
+function ompErrorText(e: unknown): string | undefined {
+	if (typeof e === "string") return e;
+	if (e && typeof e === "object" && "message" in e && typeof e.message === "string") return e.message;
 }
 
 type Frame = { type?: string; id?: string; command?: string; success?: boolean; message?: Json; assistantMessageEvent?: { type?: string }; errorMessage?: string; [k: string]: unknown };
-const isTextEvent = (f: Frame) => /^(text|thinking)_(start|delta)$/.test(String(f.assistantMessageEvent?.type ?? ""));
+/** Whether an rpc or json event is the model's first text or thinking output of a turn. */
+export const isTextEvent = (f: { assistantMessageEvent?: { type?: string } }): boolean => /^(text|thinking)_(start|delta)$/.test(String(f.assistantMessageEvent?.type ?? ""));
 const textOf = (m: Json): string => (Array.isArray(m?.content) ? m.content.filter((b: Json) => b?.type === "text").map((b: Json) => b.text ?? "").join("") : "").trim();
 
 class WarmRunner {
@@ -181,12 +257,13 @@ class WarmRunner {
 	private readonly proc: any;
 	private readonly exited: Promise<number>;
 
-	constructor(readonly key: string, readonly shape: string, readonly model: string, readonly system: string, private readonly thinking: string, readonly account?: string) {
-		this.proc = runnerDeps.spawn(warmArgv(system, model, thinking), {
+	constructor(readonly key: string, readonly shape: string, readonly model: string, readonly system: string, private readonly thinking: string, readonly account?: string, readonly runtime: Runtime = "omo") {
+		const omp = runtime === "omp";
+		this.proc = runnerDeps.spawn(omp ? ompWarmArgv(system, model, thinking) : warmArgv(system, model, thinking), {
 			cwd: DATA_DIR,
-			env: withoutApiKeys({ ...process.env, PI_CACHE_RETENTION: "long", ...(account ? { [PIN_ENV]: account } : {}) }),
+			env: withoutApiKeys({ ...process.env, PI_CACHE_RETENTION: "long", ...(account && !omp ? { [PIN_ENV]: account } : {}) }),
 		});
-		recordStarted(this.proc.pid);
+		if (!omp) recordStarted(this.proc.pid);
 		this.exited = this.proc.exited;
 		void this.exited.then(code => {
 			pool.delete(this);
@@ -224,8 +301,10 @@ class WarmRunner {
 		}
 	}
 
-	private write(frame: Json): void {
-		writeQuietly(this.proc.stdin, `${JSON.stringify({ id: `d-${++this.seq}`, ...frame })}\n`);
+	private write(frame: Json): string {
+		const id = `d-${++this.seq}`;
+		writeQuietly(this.proc.stdin, `${JSON.stringify({ id, ...frame })}\n`);
+		return id;
 	}
 
 	private armIdle(): void {
@@ -235,11 +314,6 @@ class WarmRunner {
 			this.stop();
 		}, runnerDeps.idleMs);
 		this.timer.unref?.();
-	}
-
-	// The process' own exit, for a test that must know a crash happened before the next call.
-	whenExited(): Promise<number> {
-		return this.exited;
 	}
 
 	// A gateway that exits must leave no warm process behind, and an exit handler cannot wait for a rejection to settle.
@@ -288,6 +362,8 @@ class WarmRunner {
 				reject(new Error(`model call timed out after ${Math.round(timeoutMs / 1000)}s`));
 			}, timeoutMs);
 			let firstTokenMs: number | undefined;
+			let promptId: string | undefined;
+			let last: Json | undefined;
 			const settle = (fn: () => void) => {
 				clearTimeout(timer);
 				this.ready = new Promise<void>(r => (this.resetDone = r));
@@ -295,6 +371,15 @@ class WarmRunner {
 				fn();
 				return true;
 			};
+			const finish = (m: Json | undefined, failure?: string): boolean => {
+				if (failure) return settle(() => reject(new Error(failure)));
+				if (m?.stopReason === "error") return settle(() => reject(new Error(String(m.errorMessage || "model call failed"))));
+				const out = m ? textOf(m) : "";
+				if (!m || !out) return settle(() => reject(new Error("empty reply")));
+				const u = m.usage ?? {};
+				return settle(() => resolve({ text: out, inputTokens: (u.input ?? 0) + (u.cacheRead ?? 0) + (u.cacheWrite ?? 0), outputTokens: u.output ?? 0, ms: runnerDeps.now() - started, ...(firstTokenMs !== undefined ? { firstTokenMs } : {}) }));
+			};
+			const omp = this.runtime === "omp";
 			this.pending = {
 				fail: e => {
 					clearTimeout(timer);
@@ -302,16 +387,19 @@ class WarmRunner {
 				},
 				frame: f => {
 					if (f.type === "message_update" && firstTokenMs === undefined && isTextEvent(f)) firstTokenMs = runnerDeps.now() - started;
-					if (f.type !== "message_end" || f.message?.role !== "assistant") return false;
-					const m = f.message;
-					if (m.stopReason === "error") return settle(() => reject(new Error(String(m.errorMessage || "model call failed"))));
-					const out = textOf(m);
-					if (!out) return settle(() => reject(new Error("empty reply")));
-					const u = m.usage ?? {};
-					return settle(() => resolve({ text: out, inputTokens: (u.input ?? 0) + (u.cacheRead ?? 0) + (u.cacheWrite ?? 0), outputTokens: u.output ?? 0, ms: runnerDeps.now() - started, ...(firstTokenMs !== undefined ? { firstTokenMs } : {}) }));
+					if (f.type === "message_end" && f.message?.role === "assistant") {
+						last = f.message;
+						return omp ? false : finish(f.message);
+					}
+					if (!omp || promptId === undefined || f.id !== promptId) return false;
+					if (f.type === "response" && f.command === "prompt" && f.success === false) return finish(undefined, ompErrorText(f.error) ?? "prompt refused");
+					if (f.type !== "prompt_result") return false;
+					return finish(last, f.status === "error" ? (ompErrorText(f.error) ?? "model call failed") : undefined);
 				},
 			};
-			void this.ready.then(() => this.write({ type: "prompt", message: text }));
+			void this.ready.then(() => {
+				promptId = this.write({ type: "prompt", message: text });
+			});
 		});
 	}
 }
@@ -322,22 +410,8 @@ process.on("exit", () => {
 	for (const r of pool) r.killNow();
 });
 
-export function resetRunnersForTest(): void {
-	for (const r of [...pool]) r.stop();
-	pool.clear();
-}
-
-export function runnerCountForTest(): number {
-	return [...pool].filter(r => r.alive).length;
-}
-
-export function lastRunnerForTest(): { whenExited: () => Promise<number> } | undefined {
-	return [...pool].at(-1);
-}
-
-// The errors of a spent or refused subscription: the process stays pinned to that account, so it is stopped (the next call
-// starts on the account the readiness check moves to).
-const SPENT = /limit|quota|429|\brate|blocked|not_ready|구독/i;
+/** The errors of a spent or refused subscription or provider: a warm process stays pinned to that account, so it is stopped (the next call starts on the account the readiness check moves to). */
+export const LIMIT_ERROR = /\b429\b|rate[ _-]?limit|usage[ _-]?limit|\bquota\b|limit (reached|exceeded)|(account|credential|subscription)\w*\W.{0,60}\bblocked\b|not_ready|구독/i;
 
 // The least recently used idle runner is stopped to make room; a busy one is never stopped (that would fail its call).
 // Returns false when every runner is busy.
@@ -349,9 +423,9 @@ function evictOne(): boolean {
 
 // One call on a warm process, started on first use and reused afterwards. Throws when no warm process can answer; the
 // caller then takes the one-shot spawn path.
-export async function callWarm(system: string, text: string, opts: { model: string; thinking?: string; timeoutMs: number; account?: string }): Promise<Reply> {
+export async function callWarm(system: string, text: string, opts: { model: string; thinking?: string; timeoutMs: number; account?: string; runtime?: Runtime }): Promise<Reply> {
 	const thinking = opts.thinking ?? "off";
-	const shape = `${opts.model}\u0000${thinking}\u0000${system}`;
+	const shape = `${opts.runtime ?? "omo"}\u0000${opts.model}\u0000${thinking}\u0000${system}`;
 	const key = `${shape}\u0000${opts.account ?? ""}`;
 	for (const r of [...pool]) if (!r.alive) pool.delete(r);
 	let warm = [...pool].find(r => r.key === key && !r.busy);
@@ -361,7 +435,7 @@ export async function callWarm(system: string, text: string, opts: { model: stri
 		return await warm.call(text, opts.timeoutMs);
 	} catch (e) {
 		const why = (e as Error).message;
-		if (SPENT.test(why)) {
+		if (LIMIT_ERROR.test(why)) {
 			warm.stop();
 			throw e;
 		}
@@ -373,12 +447,12 @@ export async function callWarm(system: string, text: string, opts: { model: stri
 	}
 }
 
-function start(key: string, shape: string, opts: { model: string; account?: string }, system: string, thinking: string): WarmRunner {
+function start(key: string, shape: string, opts: { model: string; account?: string; runtime?: Runtime }, system: string, thinking: string): WarmRunner {
 	// A process of the same shape pinned to another account is left from before the readiness check moved accounts: stopped
 	// once idle, it would only hold a slot.
 	for (const r of [...pool]) if (r.shape === shape && r.key !== key && !r.busy) r.stop();
 	if (pool.size >= runnerDeps.maxRunners && !evictOne()) throw new Error("warm model processes are all busy");
-	const warm = new WarmRunner(key, shape, opts.model, system, thinking, opts.account);
+	const warm = new WarmRunner(key, shape, opts.model, system, thinking, opts.account, opts.runtime);
 	pool.add(warm);
 	return warm;
 }

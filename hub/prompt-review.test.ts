@@ -2,7 +2,7 @@ import { afterAll, afterEach, beforeEach, describe, expect, test } from "bun:tes
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { buildReviewPrompt, CONTRACT_MAX_CHARS, MAX_OUTPUT_TOKENS, modelRefused, parseReview, promptReviewCheck, readReviewState, reviewDeps, reviewDue, reviewFile, runPromptReview, type ReviewCall, type ReviewContext } from "./prompt-review.ts";
+import { buildReviewPrompt, CONTRACT_MAX_CHARS, MAX_OUTPUT_TOKENS, modelRefused, parseReview, promptReviewCheck, readReviewState, reviewDeps, reviewFile, runPromptReview, type ReviewCall, type ReviewContext } from "./prompt-review.ts";
 
 const root = mkdtempSync(join(tmpdir(), "prompt-review-"));
 afterAll(() => rmSync(root, { recursive: true, force: true }));
@@ -34,21 +34,9 @@ const answer = (text: string, usage = { input: 1234, output: 567 }) => {
 const ctx = (call: ReviewCall, over: Partial<ReviewContext> = {}): ReviewContext => ({ now: NOW, dataDir: dir, call, budgetTight: false, model: undefined, log: () => {}, ...over });
 const GOOD = JSON.stringify([{ kind: "conflict", lines: [LINE_A, LINE_B], why: "they cannot both hold", proposal: "keep the first" }]);
 
-describe("reviewDue", () => {
-	test("first run is due", () => expect(reviewDue(undefined, NOW, false)).toBe(true));
-	test("weekly", () => {
-		expect(reviewDue({ lastReviewAt: NOW - 6 * DAY }, NOW, false)).toBe(false);
-		expect(reviewDue({ lastReviewAt: NOW - 7 * DAY }, NOW, false)).toBe(true);
-	});
-	test("growth is early but not within 3 days", () => {
-		expect(reviewDue({ lastReviewAt: NOW - 2 * DAY }, NOW, true)).toBe(false);
-		expect(reviewDue({ lastReviewAt: NOW - 3 * DAY }, NOW, true)).toBe(true);
-	});
-});
-
 describe("runPromptReview", () => {
 	test("not due: no call", async () => {
-		reviewedAt(NOW - DAY);
+		reviewedAt(NOW - 6 * DAY);
 		const { call, prompts } = answer(GOOD);
 		const r = await runPromptReview(ctx(call));
 		expect(prompts).toHaveLength(0);
@@ -57,7 +45,7 @@ describe("runPromptReview", () => {
 	});
 
 	test("weekly due: exactly one call, and the state records it", async () => {
-		reviewedAt(NOW - 8 * DAY);
+		reviewedAt(NOW - 7 * DAY);
 		const { call, prompts } = answer("[]");
 		const r = await runPromptReview(ctx(call));
 		expect(prompts).toHaveLength(1);
@@ -73,7 +61,7 @@ describe("runPromptReview", () => {
 
 	test("growth starts it early, but not within 3 days", async () => {
 		grown();
-		reviewedAt(NOW - 4 * DAY);
+		reviewedAt(NOW - 3 * DAY);
 		const early = answer("[]");
 		await runPromptReview(ctx(early.call));
 		expect(early.prompts).toHaveLength(1);

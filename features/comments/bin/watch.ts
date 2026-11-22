@@ -1,7 +1,6 @@
-// Watch (dotz_watch script, every few minutes): reads the new comments of the sources the owner chose and stores them. Zero model tokens:
-// it prints nothing unless a source with 자동 초안 on made a draft, and then only that draft's approval [ask].
 import { commentAsk } from "../../../hub/comments/ask.ts";
 import { realEngine } from "../../../hub/comments/real.ts";
+import { noticeBlock } from "../../../hub/comments/news.ts";
 import { createHub } from "../../../hub/kakao/hub.ts";
 import { dataDir } from "../../reply-drafts/lib/settings.ts";
 
@@ -12,21 +11,25 @@ const HARD_STOP_MS = 480_000;
 // Reading a source's past replies (engine.refreshPast, at most one source per run) gets until this long after the start, and begins only while the run is under its budget.
 const HISTORY_MS = 400_000;
 
-export async function run(dir = dataDir(), engine = realEngine(dir), notify: (threads: { source: string; thread: string }[]) => Promise<void> = async t => void (await createHub(dir).post("/api/comments/changed", { threads: t })).status, deadline = Date.now() + RUN_BUDGET_MS): Promise<string[]> {
+const owedMails: string[] = [];
+export async function run(dir = dataDir(), engine = realEngine(dir, { mailOwed: id => void owedMails.push(id) }), notify: (threads: { source: string; thread: string }[], mails: string[], sent: string[]) => Promise<void> = async (t, mails, sent) => void (await createHub(dir).post("/api/comments/changed", { threads: t, mails, sent })).status, deadline = Date.now() + RUN_BUDGET_MS): Promise<string[]> {
 	const r = await engine.collect({ deadline });
 	const touched = [...new Map([...r.added, ...r.drafted.map(d => ({ source: d.source, thread: d.thread }))].map(x => [`${x.source}/${x.thread}`, { source: x.source, thread: x.thread }])).values()];
-	if (touched.length) await notify(touched).catch(() => {});
+	const mails = owedMails.splice(0);
+	const sent = r.sent.map(s => s.draft);
+	if (touched.length || mails.length || sent.length) await notify(touched, mails, sent).catch(e => console.error(`comments: telling the gateway failed: ${e instanceof Error ? e.message : String(e)}`));
 	// A failure here costs nothing: the pair file keeps what it has and a failed read waits a day (`~tried`).
 	await engine.refreshPast({ deadline: deadline - RUN_BUDGET_MS + HISTORY_MS, read: Date.now() < deadline }).catch(() => {});
 	const cfg = engine.store.config();
-	const sentIds = new Set(r.sent.map(s => s.draft));
-	return r.drafted
+	const sentIds = new Set(sent);
+	const cards = r.drafted
 		.filter(d => !sentIds.has(d.code))
 		.flatMap(d => {
 			const c = engine.store.comments().find(x => x.id === d.commentId);
 			const src = cfg.sources[d.source];
 			return c && src ? [commentAsk(src, c, d, undefined, engine.mailView(d))] : [];
 		});
+	return [...r.notices.map(noticeBlock), ...cards];
 }
 
 // Explicit exits: a draft's model call leaves a warm `omo --mode rpc` process (hub/model-runner.ts, idle-killed after 10 min) whose pipes

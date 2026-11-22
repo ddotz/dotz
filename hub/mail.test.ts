@@ -3,7 +3,7 @@
 import { describe, expect, test } from "bun:test";
 import "./conversations.ts"; // listens to the event bus: the first message of a mail conversation gives the mail its summary
 import { emit, eventTarget, type HubEvent } from "./events.ts";
-import { MailError, mailKeep, answeredBy, attachmentList, mailBriefOf, mailDraftBrief, settleMailDrafts, mailByKey, mailByThread, mailCard, mailKey, mailTarget, mailTargets, postMail, setMailSuggest, storedBodyText, type MailDeps } from "./mail.ts";
+import { MailError, mailKeep, answeredBy, attachmentList, mailBriefOf, mailDraftBrief, settleMailDrafts, mailByKey, mailByThread, mailCard, mailKey, mailTarget, mailTargets, postMail, recordMail, setMailSuggest, storedBodyText, type MailDeps } from "./mail.ts";
 import { moveMail } from "./mail-move.ts";
 import { setOwnAddresses } from "./mail-state.ts";
 import { outEvent } from "./projectchat.ts";
@@ -82,6 +82,7 @@ describe("mail key", () => {
 		expect(mailKey("Zele", "18F3a.B_c")).toBe("zele-18f3a.b_c");
 		expect(mailKey("work mail", "<abc@host>")).toBe("work-mail-abc-host");
 		expect(mailTarget("zele-1")).toBe("mail:zele-1");
+		expect(mailTarget("mail:mail:zele-1")).toBe("mail:zele-1");
 	});
 	test("a source or id with nothing usable is rejected", () => {
 		expect(() => mailKey("", "1")).toThrow(MailError);
@@ -124,6 +125,14 @@ describe("moveMail", () => {
 		const first = await postMail({ source: "general", id: uid("mv"), subject: "일정 문의", summary: "회의 일정을 물어요.", todo: ["회의 시간 확인"], questions: ["장소는요?"] }, deps);
 		const moved = await moveMail(first.key, "orders", deps);
 		expect(mailByKey(moved.key)).toMatchObject({ summary: "회의 일정을 물어요.", todo: ["회의 시간 확인"], questions: ["장소는요?"] });
+	});
+
+	test("a moved mail keeps its 댓글로 이미 답했어요 mark", async () => {
+		const { deps } = fakes(false);
+		const first = await postMail({ source: "general", id: uid("mv"), subject: "자료 요청" }, deps);
+		recordMail({ ...mailByKey(first.key)!, commentReplyAt: "2026-11-19T03:04:05.000Z" });
+		const moved = await moveMail(first.key, "orders", deps);
+		expect(mailByKey(moved.key)!.commentReplyAt).toBe("2026-11-19T03:04:05.000Z");
 	});
 
 	test("an unknown mail is refused", async () => {

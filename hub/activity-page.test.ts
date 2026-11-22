@@ -2,7 +2,14 @@ import { expect, test } from "bun:test";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { transcriptPage } from "./activity.ts";
+import { emitEventActivity, transcriptPage } from "./activity.ts";
+import { activityItems } from "./events.ts";
+
+test("a live text frame drops what an answer never shows: the handoff block, a [revise] line, <resolves>, <project-info>", () => {
+	const text = "Ask: x - wanted: y. For you: z. Now: a. Next: b.\n\n본문이에요.\n[revise R1] 고칠게요\n<resolves>질문</resolves>\n<project-info>p</project-info>";
+	emitEventActivity("s9-test", { type: "activity", row: { type: "text", text } });
+	expect(activityItems("s9-test").map(r => r.text)).toEqual(["본문이에요."]);
+});
 
 function transcriptOfSecondlyTexts(n: number): string {
 	const file = join(mkdtempSync(join(tmpdir(), "dotz-page-")), "s.jsonl");

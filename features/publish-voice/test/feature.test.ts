@@ -1,17 +1,10 @@
 import { expect, test } from "bun:test";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { featurePrompt, loadFeatureDirs } from "../../../hub/featuredirs.ts";
+import { featurePrompt } from "../../../hub/featuredirs.ts";
 import { tempDir } from "./synth.ts";
 
 const FEATURE = join(import.meta.dir, "..");
-
-test("배포용 기능으로 로드되고 켜진 채이며 setup이 없어요", () => {
-	const f = loadFeatureDirs(tempDir()).features.find(x => x.id === "publish-voice");
-	expect(f).toMatchObject({ enabled: true, origin: "shipped", trigger: "메시지 도착", stage: "orchestrator", appliesTo: "orchestrator" });
-	expect(f?.setup).toBeUndefined();
-	expect(f?.body).toBeTruthy();
-});
 
 test("feature.md 본문은 400바이트 이내예요", () => {
 	const text = readFileSync(join(FEATURE, "feature.md"), "utf8");

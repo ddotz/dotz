@@ -8,13 +8,13 @@ import { copyFileSync, existsSync, mkdirSync, renameSync, unlinkSync } from "nod
 import { basename, join } from "node:path";
 import type { Config, Ctx } from "../lib/config.ts";
 import { PUBLISH_MISSING_KO, publishState } from "../lib/ig-publish.ts";
-import { PublishPermissionError, publishReel, reply as igReply } from "../lib/instagram.ts";
+import { PublishPermissionError, publishReel } from "../lib/instagram.ts";
 import { dueJobs, getJob, jobFeatureOn, type Job, markDone, markFailed, markNotified, markPosting, recordResult, release, saveUploadIntent, setError, setStudio } from "../lib/jobs.ts";
 import { announceExhausted, COSTS, can, exhaustedLine, isExhausted } from "../lib/quota.ts";
 import { type Aside, realStudioAside, uploadViaStudio } from "../lib/studio.ts";
 import { type TunnelOpts, withTunnel } from "../lib/tunnel.ts";
 import { AuthError, main, oneLine, type Platform, QuotaError, type RunResult, runWatch, TransientError } from "../lib/watchkit.ts";
-import { findUploadByTag, insertVideo, replyToComment, updateVideo, type VideoReader, videosWithLocalizations } from "../lib/youtube.ts";
+import { findUploadByTag, insertVideo, updateVideo, type VideoReader, videosWithLocalizations } from "../lib/youtube.ts";
 
 export const hooks: { reader?: VideoReader; tunnel?: TunnelOpts; aside?: Aside } = {};
 
@@ -44,7 +44,7 @@ async function studioUpload(ctx: Ctx, cfg: Config, job: Job): Promise<{ ref?: st
 
 function youtubeCost(job: Job): number {
 	if (job.kind === "upload") return COSTS.videoInsert;
-	return job.kind === "reply" ? COSTS.insertComment : COSTS.list + COSTS.update;
+	return COSTS.list + COSTS.update;
 }
 
 async function applyMetadata(ctx: Ctx, cfg: Config, job: Job): Promise<string> {
@@ -58,10 +58,8 @@ async function applyMetadata(ctx: Ctx, cfg: Config, job: Job): Promise<string> {
 }
 
 async function publishTarget(ctx: Ctx, cfg: Config, job: Job, platform: Platform): Promise<string> {
-	if (job.kind === "reply") {
-		const r = job.reply as NonNullable<Job["reply"]>;
-		return platform === "youtube" ? replyToComment(ctx, r.comment_id, r.text) : igReply(ctx, r.comment_id, r.text);
-	}
+	// A reply job left from before the comments app took comment replies is never published here (hub/migrations.ts closes it).
+	if ((job.kind as string) === "reply") throw new Error("댓글 답글은 답장 대기에서 보내요");
 	if (job.kind === "metadata") return applyMetadata(ctx, cfg, job);
 	const u = job.upload as NonNullable<Job["upload"]>;
 	if (!existsSync(u.file)) throw new Error("file is missing");

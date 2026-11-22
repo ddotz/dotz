@@ -29,10 +29,9 @@
 .kk-l1 { display: flex; align-items: baseline; gap: var(--sp-15); min-width: 0; }
 .kk-l1 > .cv-n { flex: 0 1 auto; min-width: 0; }
 .kk-grp { flex: none; color: var(--fg-3); font: 400 12px/16px var(--font); }
-/* 지켜볼 대화방: the .kk-pd sheet (side panel on a desktop, full screen on a phone). The sheet's body is the page canvas, so the head is the sheets' .fs-hd and the
-   search and the rooms are the project list's own .pl-search, .pl-list and .pl-row, the same white on grey as that list. */
-#kk-add .kk-pd-in { background: var(--bg); outline: 0; }
-#kk-add .kk-pd-b { padding: var(--sp-1) var(--sp-6) var(--sp-6); }
+/* 지켜볼 대화방: dialog() worn as the .kk-pd panel (side panel on a desktop, full screen on a phone). Its canvas is the page's, so the search and the
+   rooms are the project list's own .pl-search, .pl-list and .pl-row, the same white on grey as that list. */
+#kk-add { background: var(--bg); }
 .kk-search + .kk-pl { margin-top: var(--sp-3); }
 /* in the sheet the check says "watched"; the grey fill is the selected row of a list, so the sheet's rows keep none */
 #kk-add .kk-pr.on { background: none; }
@@ -40,8 +39,7 @@
 .kk-pr:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .kk-ck { flex: none; width: 18px; height: 18px; color: var(--accent); }
 @media (pointer: coarse), (max-width: 639px) { #kk-add .kk-search { height: 40px; font-size: 16px; } }
-@media (max-width: 639px) { #kk-add .kk-pd-in { padding-top: env(safe-area-inset-top); } #kk-add .kk-pd-b { padding-inline: var(--sp-4); } }
-.kk-add .kk-pd-b { padding: var(--sp-2) 0 0; }
+.kk-add .dbody { display: block; }   /* a picker's body is one list: its parts stack by their own margins, and a long list scrolls the body */
 .kk-hint { padding: 0 var(--sp-4) var(--sp-2); color: var(--fg-3); font: 400 12px/16px var(--font); }
 .kk-note + .btn { display: block; margin: calc(var(--sp-3) * -1) auto var(--sp-6); }   /* a failed or empty place: the line, then its one action, centred */
 .kk-note { padding: var(--sp-8) var(--sp-4); color: var(--fg-3); font: 400 12px/16px var(--font); text-align: center; text-wrap: balance; }
@@ -238,6 +236,7 @@
 .kk-draft .kk-dh { margin-top: var(--sp-2); }
 .kk-mk { padding: var(--sp-2) var(--sp-4); border-radius: var(--r-card); background: var(--card); color: var(--fg-3); font: 500 13px/18px var(--font); }
 .kk-dh { color: var(--fg-2); font: 600 12px/16px var(--font); }
+.kk-dn { margin: 0 0 var(--sp-2); color: var(--fg-3); font: 400 13px/18px var(--font); }
 .kk-draft .btns { gap: var(--sp-15); }
 .kk-choices { flex-wrap: wrap; }
 .kk-draft .btn { height: var(--btn-h-sm); padding: 0 var(--sp-3); font-size: 13px; }
@@ -247,31 +246,20 @@
 #kk-chat .kk-draft { display: flex; flex-direction: column; min-height: 0; max-height: 40dvh; }
 #kk-chat .kk-draft > * { flex: none; }
 #kk-chat .kk-draft > .rq-body { flex: 0 1 auto; min-height: 0; overflow-y: auto; }
-#kk-chat .kk-draft .kk-dt.kk-dps { max-height: none; overflow: visible; }
 .kk-dt { max-height: min(16dvh, 120px); margin: var(--sp-05) 0 var(--sp-2); overflow-y: auto; font: 400 14px/21px var(--font); white-space: pre-wrap; overflow-wrap: anywhere; }
-/* a draft of several messages: one bubble each, in send order (a part already in the room is muted) */
-.kk-dt.kk-dps { display: flex; flex-direction: column; align-items: flex-end; gap: var(--sp-1); max-height: min(28dvh, 220px); white-space: normal; }
-.kk-dp { max-width: 86%; padding: var(--sp-15) var(--sp-3); border-radius: var(--r-ctl); background: var(--kk-own); color: var(--kk-own-fg); white-space: pre-wrap; overflow-wrap: anywhere; }
-.kk-dp.sent { opacity: .55; }
 .kk-rq { margin: var(--sp-05) 0 var(--sp-15); color: var(--fg-2); font: 600 13px/18px var(--font); }
 .kk-rv { width: 100%; box-sizing: border-box; min-height: 40px; margin: 0 0 var(--sp-2); padding: var(--sp-2) var(--sp-3); border: 0; border-radius: var(--r-ctl); background: var(--ff-fill); color: inherit; font: 400 16px/22px var(--font); }
 .kk-rv:focus { outline: 0; box-shadow: var(--ff-ring); }
 .kk-st { color: var(--fg-3); font: 500 12.5px/18px var(--font); }
-.kk-manual { margin-left: auto; display: inline-flex; align-items: center; gap: var(--sp-1); color: var(--fg-2); }
-.kk-manual .ic { width: 14px; height: 14px; }
-.kk-edit { display: flex; align-items: center; gap: var(--sp-2); margin: 0 var(--sp-1) var(--sp-15); color: var(--fg-2); font: 500 12.5px/18px var(--font); }
-.kk-edit .btn { height: var(--btn-h-row); }
 .kk-dbtn { gap: var(--sp-1); }
 .kk-dbtn .ic { width: 14px; height: 14px; }
 .kk-dbtn:disabled { opacity: .6; }
 
-/* 사용자별 분석 (30-kakao.js kkPerson): desktop a side panel, phone a full-screen sheet */
-.kk-pd { border: 0; padding: 0; max-width: none; max-height: none; background: transparent; color: var(--fg); }
-.kk-pd::backdrop { background: rgb(0 0 0 / .3); }
-.kk-pd-in { display: flex; flex-direction: column; width: min(400px, 100vw); max-height: min(680px, 100dvh); margin: auto; border-radius: var(--r-card); background: var(--card); box-shadow: var(--shadow-panel); overflow: hidden; }
-.kk-pd-h { display: flex; align-items: center; gap: var(--sp-2); padding: var(--sp-3) var(--sp-4); border-bottom: 1px solid var(--line); }
-.kk-pd-h .fs-x { margin-left: auto; }
-.kk-pd-b { flex: 1; min-height: 0; overflow-y: auto; padding: var(--sp-2) var(--sp-4) var(--sp-4); }
+/* The .kk-pd windows (사용자별 분석 of 30-kakao.js kkPerson, 지켜볼 대화방, a comment app's 지켜볼 글): dialog() docked as a side panel on a desktop; a phone
+   keeps dialog()'s full-screen sheet */
+@media (min-width: 640px) { dialog.dlg.kk-pd { width: 400px; height: 100dvh; max-height: none; margin: 0 0 0 auto; border-radius: 0; background: var(--card); box-shadow: var(--shadow-panel); } }
+.kk-pd .dbody { color: var(--fg); }
+.kk-pwho { display: flex; align-items: center; gap: var(--sp-2); }
 .kk-psec { padding: var(--sp-2) 0; border-bottom: 1px solid var(--line); }
 .kk-psec:last-child { border-bottom: 0; }
 .kk-prow { display: flex; gap: var(--sp-3); padding: var(--sp-05) 0; font: 400 13px/19px var(--font); }
@@ -285,8 +273,6 @@
 .kk-put { font: 400 13px/19px var(--font); overflow-wrap: anywhere; }
 .kk-sum { padding-top: var(--sp-3); }
 .kk-sum .btn { margin-top: var(--sp-2); height: var(--btn-h-sm); }
-@media (min-width: 640px) { .kk-pd { margin: 0 0 0 auto; height: 100dvh; } .kk-pd-in { height: 100dvh; max-height: none; border-radius: 0; } }
-@media (max-width: 639px) { .kk-pd { margin: 0; width: 100vw; height: 100dvh; } .kk-pd-in { width: 100vw; height: 100dvh; max-height: none; border-radius: 0; } }
 
 /* a room row's second line on the right: 미답장 then the unread count, side by side (30-kakao.js kkRow) */
 .kk-row .kk-rmeta { display: inline-flex; align-items: center; justify-content: flex-end; gap: var(--sp-15); }

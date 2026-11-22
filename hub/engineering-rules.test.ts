@@ -1,168 +1,14 @@
 import { describe, expect, test } from "bun:test";
-import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { homedir, tmpdir } from "node:os";
-import { dirname, join, posix } from "node:path";
-import { listLines, PRIVACY_ALLOW } from "./public-scrub.ts";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import {
-	boundaryEdges, ceilingsRaised, cycles, deadExports, deadWebGlobals, duplicateGlobals, freezeReport, helperCopies, hubWebImports, importGraph, isTest, loadTree, longFunctions, metrics,
-	nonAtomicWrites, oversizeFiles, pastedBlocks, prodOf, swallowedErrors, testTiming, unboundedCalls, unmappedModules, webJs, webStaticImports, type Src,
+	boundaryEdges, ceilingsRaised, configImporters, cycles, deadExports, deadWebGlobals, duplicateGlobals, entryModules, freezeReport, helperCopies, hubWebImports, importGraph, longFunctions,
+	nonAtomicWrites, oversizeFiles, pastedBlocks, prodOf, swallowedErrors, testTiming, treeDocs, unboundedCalls, unmappedModules, webJs, webStaticImports, type Src,
 } from "./engineering-rules.ts";
 
-// Repo-wide code health, measured on the real tree. Every ceiling below is what the detectors in engineering-rules.ts measured when the rule landed, so
-// only new violations fail. A fix lowers the number (or removes the entry); never raise one to get a change past this test. A count that has dropped
-// below its ceiling is logged by ratchet() so the ceiling can follow it down.
+// The detectors of hub/engineering-rules.ts proven on seeded violations. The same detectors measure the real tree in `bun hub/check.ts` (ceilings, lists, docs/engineering-standards.md).
 type Counts = Record<string, number>;
-// The ceilings live in hub/engineering-ceilings.json so .githooks/pre-push can read the same file at another commit and refuse a push that raises one. Their
-// per-entry reasons stay as comments here by name where they matter: createPrompts 725 (a woken run's restated worker result stays with the conversation that got
-// the first answer, resultTo); extension->hub 13 (the post-compaction recall renders state.json with the first message's renderState in hub/recall-parts.ts, not a copy).
-const CEILINGS: Record<string, Counts> = JSON.parse(readFileSync(join(import.meta.dir, "engineering-ceilings.json"), "utf8"));
-// The tree and its import graph are read once; rule 15 reuses both.
-const TREE = loadTree(join(import.meta.dir, ".."));
-const GRAPH = importGraph(prodOf(TREE));
-const M = metrics(TREE, GRAPH);
-
-// Files over 800 lines are one reviewer's working memory too many; each is capped at its size rounded up to the next 25, room for a fix, not a feature.
-const FILE_LINE_LIMIT = 800;
-const FILE_LINE_CEILINGS: Counts = CEILINGS.fileLines;
-// A top-level function past 300 lines hides its own seams; same cap rule (next 25 up), key is `file name`.
-const FN_LINE_LIMIT = 300;
-const FN_LINE_CEILINGS: Counts = CEILINGS.functionLines;
-// Modules that import each other cannot be loaded, tested or replaced one by one; these are the cycles that exist today (members, sorted).
-const IMPORT_CYCLES = [
-	"features/youtube-instagram/lib/quota.ts features/youtube-instagram/lib/watchkit.ts",
-	"hub/account-rules.ts hub/account-sticky.ts",
-	"hub/api-budget.ts hub/fallback.ts hub/providers.ts",
-	"hub/app-features.ts hub/monitors.ts hub/watch-scope.ts",
-	"hub/laneevents.ts hub/lanefailover.ts hub/laneprompt.ts hub/lanereport.ts hub/lanerun.ts",
-];
-// Import edges (file to file) that cross a layer: the hub is the core, so a new edge into it from outside, or out of it into a feature, is a new coupling.
-const BOUNDARY_CEILINGS: Counts = CEILINGS.boundaries;
-// A swallowed error is a bug nobody sees. Per top dir: an empty catch or .catch(() => null) with no comment saying why the swallow is fine.
-const SWALLOW_CEILINGS: Counts = CEILINGS.swallowedErrors;
-// State a process can read back mid-write (a crash leaves half a file) must use writeAtomic from hub/config.ts; these are the plain writes left.
-const NON_ATOMIC_WRITE_CEILINGS: Counts = CEILINGS.nonAtomicWrites;
-// A fetch or process call with no timeout or abort can hang its caller for good; the web page is excluded because the browser owns that.
-const UNBOUNDED_CALL_CEILINGS: Counts = CEILINGS.unboundedCalls;
-// Timing assertions flake under load (the machine load average reaches 50 here) and fixed sleeps are luck, so tests wait on events instead.
-const TEST_TIMING_CEILINGS: Counts = CEILINGS.testTiming;
-// Exports nothing refers to, not even their own file or a test; remove the export or the code (the entry is `file name`).
-const DEAD_EXPORTS: string[] = [];
-// Page globals named once in the page, its markup, the hub tests and the site.
-const DEAD_WEB_GLOBALS: string[] = [];
-// docs/ARCHITECTURE.md is how one finds an existing feature before writing a second one; hub/*.ts files it does not name today, by count.
-const UNMAPPED_MODULES = CEILINGS.moduleMap.hub ?? 0;
-// A second private copy of a helper is how two paths drift; files defining each top-level helper today.
-const HELPER_COPY_CEILINGS: Counts = CEILINGS.helperCopies;
-// A 12-line block pasted into two files gets fixed in one of them; blocks that exist today.
-const PASTED_BLOCKS = CEILINGS.pastedBlocks.blocks ?? 0;
-
-// hub/config.ts throws when it is imported under NODE_ENV=test with a real data dir (hub/live-guard.ts testDataRefusal). The suite's bunfig preload sets a temp
-// DOTZ_DIR in process.env, but a child a test starts without an env option gets the environment bun started with: NODE_ENV=test from bun test, no temp data dir.
-// So a module a test file starts that way (by path, or imported by a "-e" script) must not reach hub/config.ts. A spawn with an env option is the test's own choice
-// of environment (process.env carries the temp dir) and is not counted. Entries are found in the test files' spawn calls, not listed by hand.
-const CONFIG_MODULE = "hub/config.ts";
-const SPAWN_CALL = /\b(?:Bun\.)?(?:spawnSync|spawn|execFileSync|execFile|execSync)\(/g;
-const isTestSide = (p: string) => isTest(p) || /\.fixtures?\.ts$/.test(p) || /(?:^|\/)(?:test|fixtures)\//.test(p);
-// End of the bracketed group opening at "from", or of the statement starting there (";" or a line end outside any bracket); quoted text is skipped.
-const endOf = (text: string, from: number, group: boolean): number => {
-	let depth = 0;
-	for (let i = from; i < text.length; i++) {
-		const c = text[i] ?? "";
-		if (c === '"' || c === "'" || c === "`") { for (i++; i < text.length && text[i] !== c; i++) if (text[i] === "\\") i++; continue; }
-		if ("([{".includes(c)) depth++;
-		else if (")]}".includes(c)) { depth--; if (group && depth === 0) return i + 1; }
-		else if (!group && (c === ";" || c === "\n") && depth <= 0) return i;
-	}
-	return text.length;
-};
-const entryModules = (files: readonly Src[]): string[] => {
-	const prod = new Set(prodOf(files).filter(f => f.path.endsWith(".ts")).map(f => f.path));
-	const found = new Set<string>();
-	for (const f of files) {
-		if (!isTestSide(f.path) || !f.path.endsWith(".ts")) continue;
-		const dir = posix.dirname(f.path);
-		// First "const|let id =" of the file per id, indexed once per file instead of one RegExp per identifier per spawn.
-		let defs: Map<string, number> | undefined;
-		const defEnd = (id: string): number | undefined => {
-			if (!defs) {
-				defs = new Map();
-				for (const d of f.text.matchAll(/(?:const|let)\s+([A-Za-z_]\w*)\s*(?::[^=]+)?=/g)) if (!defs.has(d[1] ?? "")) defs.set(d[1] ?? "", d.index + d[0].length);
-			}
-			return defs.get(id);
-		};
-		for (const m of f.text.matchAll(SPAWN_CALL)) {
-			const call = f.text.slice(m.index, endOf(f.text, m.index + m[0].length - 1, true));
-			if (/\benv\b/.test(call)) continue;
-			// A path or a "-e" script held in a variable counts through the variable's own assignment.
-			let text = call;
-			for (const id of new Set(call.match(/\b[A-Za-z_]\w*\b/g))) {
-				const at = defEnd(id);
-				if (at !== undefined) text += "\n" + f.text.slice(at, endOf(f.text, at, false));
-			}
-			for (const j of text.matchAll(/join\(\s*([\w.]+)\s*((?:,\s*"[^"]*")+)\s*\)/g)) {
-				found.add(posix.join(j[1] === "import.meta.dir" ? dir : "", ...[...(j[2] ?? "").matchAll(/"([^"]*)"/g)].map(s => s[1] ?? "")));
-			}
-			for (const s of text.matchAll(/["'`]((?:\.\/)?(?:[\w.-]+\/)*[\w.-]+\.ts)["'`]/g)) { found.add(posix.normalize(s[1] ?? "")); found.add(posix.join(dir, s[1] ?? "")); }
-		}
-	}
-	return [...found].filter(p => prod.has(p) && p !== CONFIG_MODULE).sort();
-};
-const reaches = (graph: Map<string, string[]>, from: string, to: string): boolean => {
-	const seen = new Set([from]), queue = [from];
-	for (let v = queue.shift(); v !== undefined; v = queue.shift()) {
-		if (v === to) return true;
-		for (const w of graph.get(v) ?? []) if (!seen.has(w)) { seen.add(w); queue.push(w); }
-	}
-	return false;
-};
-const configImporters = (files: readonly Src[], graph = importGraph(prodOf(files))): string[] =>
-	entryModules(files).filter(e => reaches(graph, e, CONFIG_MODULE));
-// Child entries that reach hub/config.ts today; fix one by giving the child an env (or dropping the import), then remove it. Never add one to get a change past this test.
-const CONFIG_IMPORTERS: string[] = [];
-
-const ratchet = (what: string, measured: Counts, ceilings: Counts) => {
-	for (const [k, ceil] of Object.entries(ceilings)) if ((measured[k] ?? 0) < ceil) console.info(`ratchet: ${what} ${k} is ${measured[k] ?? 0}, ceiling ${ceil}`);
-};
-const over = (what: string, measured: Counts, ceilings: Counts) =>
-	Object.entries(measured).filter(([k, n]) => n > (ceilings[k] ?? 0)).map(([k, n]) => `${what} ${k} is ${n}, ceiling ${ceilings[k] ?? 0}`);
-const overCeilings = (what: string, measured: Counts, ceilings: Counts): string[] => {
-	ratchet(what, measured, ceilings);
-	return over(what, measured, ceilings);
-};
-// Size rules list only what is over the limit: a listed entry that is no longer over must go. Their ceilings are rounded up, so no ratchet note.
-const sizeErrors = (what: string, measured: Counts, ceilings: Counts, limit: number): string[] => [
-	...over(what, measured, ceilings),
-	...Object.keys(ceilings).filter(k => !(k in measured)).map(k => `${what} ${k} is at or under ${limit} now: remove it from the list`),
-];
-const listErrors = (what: string, measured: string[], frozen: string[]): string[] => [
-	...measured.filter(x => !frozen.includes(x)).map(x => `new ${what}: ${x}`),
-	...frozen.filter(x => !measured.includes(x)).map(x => `${what} is gone, remove it from the list: ${x}`),
-];
-
-describe("engineering rules on the real tree", () => {
-	test("1 file size", () => expect(sizeErrors("file", M.fileLines, FILE_LINE_CEILINGS, FILE_LINE_LIMIT)).toEqual([]));
-	test("2 top-level function size", () => expect(sizeErrors("function", M.longFunctions, FN_LINE_CEILINGS, FN_LINE_LIMIT)).toEqual([]));
-	test("3 import cycles", () => expect(listErrors("cycle", M.importCycles, IMPORT_CYCLES)).toEqual([]));
-	test("4 boundaries", () => {
-		expect(overCeilings("edges", M.boundaries, BOUNDARY_CEILINGS)).toEqual([]);
-		expect(M.webStaticImports).toEqual([]);
-		expect(M.hubWebImports).toEqual([]);
-	});
-	test("5 web/js globals are unique", () => expect(M.webGlobalDuplicates).toEqual([]));
-	test("6 swallowed errors", () => expect(overCeilings("swallowed", M.swallowedErrors, SWALLOW_CEILINGS)).toEqual([]));
-	test("7 non-atomic writes", () => expect(overCeilings("writes", M.nonAtomicWrites, NON_ATOMIC_WRITE_CEILINGS)).toEqual([]));
-	test("8 unbounded external calls", () => expect(overCeilings("calls", M.unboundedCalls, UNBOUNDED_CALL_CEILINGS)).toEqual([]));
-	test("9 test timing", () => expect(overCeilings("tests", M.testTiming, TEST_TIMING_CEILINGS)).toEqual([]));
-	test("10 dead exports", () => expect(listErrors("dead export", M.deadExports, DEAD_EXPORTS)).toEqual([]));
-	test("11 dead web globals", () => expect(listErrors("dead web global", M.deadWebGlobals, DEAD_WEB_GLOBALS)).toEqual([]));
-	test("12 module map", () => expect(overCeilings("unmapped", { hub: M.unmappedModules.length }, { hub: UNMAPPED_MODULES })).toEqual([]));
-	test("13 same-name helpers", () => expect(overCeilings("copies", M.helperCopies, HELPER_COPY_CEILINGS)).toEqual([]));
-	test("14 pasted blocks", () => expect(overCeilings("blocks", { blocks: M.pastedBlocks.length }, { blocks: PASTED_BLOCKS })).toEqual([]));
-	test("15 a module a test starts as a child without an env does not reach hub/config.ts", () => {
-		expect(listErrors("child entry importing hub/config.ts", configImporters(TREE, GRAPH), CONFIG_IMPORTERS)).toEqual([]);
-	});
-});
 
 // Seeded violations: each detector must flag the violation and leave its neighbour alone.
 const src = (text: string, path = "hub/x.ts"): Src[] => [{ path, text }];
@@ -284,31 +130,6 @@ describe("detectors can fail", () => {
 	});
 });
 
-// The repo is public. The owner's personal terms live one per line in an untracked file, so this list stays private; without the file (CI) nothing is checked.
-// A failure names the file and the term's line number, never the term.
-// The markdown files of the tree: the tracked ones in a checkout, every one in an export with no git (the pre-push hook's `git archive` tree).
-function treeDocs(root: string): Src[] {
-	const paths = existsSync(join(root, ".git"))
-		? execFileSync("git", ["ls-files", "*.md"], { cwd: root, encoding: "utf8", timeout: 10_000 }).split("\n").filter(Boolean)
-		: readdirSync(root, { recursive: true, encoding: "utf8" }).filter(p => p.endsWith(".md") && !p.split("/").includes("node_modules"));
-	return paths.map(path => ({ path, text: readFileSync(join(root, path), "utf8") }));
-}
-
-test("no term from the owner's local privacy list is in the tree", () => {
-	const list = process.env.PRIVACY_TERMS_FILE ?? join(homedir(), ".dotz", "secrets", "privacy-terms.txt");
-	if (!existsSync(list)) return;
-	const terms = readFileSync(list, "utf8").toLowerCase().split("\n").map((t, i) => ({ line: i + 1, term: t.trim() })).filter(t => t.term);
-	const allow = listLines(join(dirname(list), PRIVACY_ALLOW)).map(w => w.toLowerCase());
-	const root = join(import.meta.dir, "..");
-	// One pass over a file answers for every term at once; only a file that holds one is then searched term by term, to name the lines.
-	const any = new RegExp(terms.map(t => t.term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|"));
-	const found = [...TREE, ...treeDocs(root)].flatMap(src => {   // TREE is this same root, read once at the top of the file
-		const text = allow.reduce((t, word) => t.replaceAll(word, " "), src.text.toLowerCase());
-		return any.test(text) ? terms.filter(t => text.includes(t.term)).map(t => `${src.path}: term ${t.line}`) : [];
-	});
-	expect(found).toEqual([]);
-});
-
 test("the doc listing works in a tree without git, like the pre-push hook's archive", () => {
 	const root = mkdtempSync(join(tmpdir(), "tree-docs-"));
 	try {
@@ -320,6 +141,7 @@ test("the doc listing works in a tree without git, like the pre-push hook's arch
 		rmSync(root, { recursive: true, force: true });
 	}
 });
+
 
 // The ceilings only go down: a commit that raises one, or adds a key the baseline has no ceiling for, is refused by .githooks/pre-push.
 describe("ceiling freeze", () => {
@@ -340,6 +162,35 @@ describe("ceiling freeze", () => {
 		const r = freezeReport(file({ fileLines: { "hub/a.ts": 900 } }), file({ fileLines: { "hub/a.ts": 925, "hub/b.ts": 850 } }));
 		expect(r.ok).toBe(false);
 		expect(r.lines).toEqual(["ceiling raised fileLines hub/a.ts: 900 -> 925", "ceiling raised fileLines hub/b.ts: none -> 850"]);
+	});
+	test("an allowlist's counts freeze the same way: a number, a map entry or a list entry; reasons and _rule are ignored", () => {
+		const allow = (counts: object, reasons = {}) => JSON.stringify({ _rule: "r", counts, reasons });
+		const base = allow({ goBranches: 48, rawNet: { "a.js": 2 }, overlaySites: ["overlay:x"] });
+		expect(freezeReport(base, allow({ goBranches: 47, rawNet: { "a.js": 2 }, overlaySites: [] }, { "rawNet a.js": "why", "rawNet b.js": "new" })).ok).toBe(true);
+		const r = freezeReport(base, allow({ goBranches: 49, rawNet: { "a.js": 3 }, overlaySites: ["overlay:x", "overlay:y"] }));
+		expect(r.ok).toBe(false);
+		expect(r.lines).toEqual(["ceiling raised goBranches: 48 -> 49", "ceiling raised rawNet a.js: 2 -> 3", "ceiling raised overlaySites overlay:y: none -> 1"]);
+	});
+	test("a new ownerWrites key passes only for an object the baseline owners file does not register", () => {
+		const allow = (ownerWrites: Counts) => JSON.stringify({ _rule: "r", counts: { ownerWrites }, reasons: {} });
+		const owners = JSON.stringify({ objects: { MON: ["30-monitoring.js"] }, lets: { target: ["04-state.js"] } });
+		const base = allow({ "MON|a.js": 2 });
+		expect(freezeReport(base, allow({ "MON|a.js": 2, "NT|b.js": 3 }), "allow", owners)).toEqual({ ok: true, lines: [] });
+		expect(freezeReport(base, allow({ "MON|a.js": 2, "MON|b.js": 1, "target|b.js": 1 }), "allow", owners).lines).toEqual(["ceiling raised ownerWrites MON|b.js: none -> 1", "ceiling raised ownerWrites target|b.js: none -> 1"]);
+		expect(freezeReport(base, allow({ "MON|a.js": 3 }), "allow", owners).lines).toEqual(["ceiling raised ownerWrites MON|a.js: 2 -> 3"]);
+		expect(freezeReport(base, allow({ "MON|a.js": 2, "NT|b.js": 3 }), "allow").lines).toEqual(["ceiling raised ownerWrites NT|b.js: none -> 3"]);
+	});
+	test("an ownerWrites number may rise up to the baseline code recounted by the pushed rule, and no further", () => {
+		const allow = (counts: object) => JSON.stringify({ _rule: "r", counts, reasons: {} });
+		const owners = JSON.stringify({ objects: { MON: ["m.js"] }, lets: { CS: ["c.js"] } });
+		const base = allow({ goBranches: 3, ownerWrites: { "CS|t.js": 1, "MON|a.js": 2 } });
+		const recount = JSON.stringify({ "CS|t.js": 14, "CS|d.js": 4, "MON|a.js": 2 });
+		expect(freezeReport(base, allow({ goBranches: 3, ownerWrites: { "CS|t.js": 14, "CS|d.js": 4, "MON|a.js": 2 } }), "allow", owners, recount))
+			.toEqual({ ok: true, lines: ["recount allowed ownerWrites CS|t.js: 1 -> 14 (recount 14)", "recount allowed ownerWrites CS|d.js: none -> 4 (recount 4)"] });
+		expect(freezeReport(base, allow({ goBranches: 3, ownerWrites: { "CS|t.js": 15, "CS|d.js": 4, "MON|a.js": 3 } }), "allow", owners, recount).lines)
+			.toEqual(["ceiling raised ownerWrites CS|t.js: 1 -> 15", "ceiling raised ownerWrites MON|a.js: 2 -> 3", "recount allowed ownerWrites CS|d.js: none -> 4 (recount 4)"]);
+		expect(freezeReport(base, allow({ goBranches: 3, ownerWrites: { "CS|t.js": 14 } }), "allow", owners).lines).toEqual(["ceiling raised ownerWrites CS|t.js: 1 -> 14"]);
+		expect(freezeReport(base, allow({ goBranches: 4, ownerWrites: { "CS|t.js": 1 } }), "allow", owners, JSON.stringify({ goBranches: 9 })).lines).toEqual(["ceiling raised goBranches: 3 -> 4"]);
 	});
 	test("an unreadable baseline passes with one warning line", () => {
 		for (const unreadable of [undefined, "", "not json", "[1]"]) {

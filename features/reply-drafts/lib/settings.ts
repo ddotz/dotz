@@ -4,14 +4,15 @@
 import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
+import { withLock } from "../../../hub/file-lock.ts";
 import type { ReplyStyle } from "../../../hub/reply-draft.ts";
 
 export const dataDir = () => process.env.DOTZ_DIR ?? join(homedir(), ".dotz");
 export const REPO_FEATURE = join(import.meta.dir, "..");
-const root = () => join(dataDir(), "custom", "reply-drafts");
+const root = (dir = dataDir()) => join(dir, "custom", "reply-drafts");
 
 export const paths = {
-	config: () => join(root(), "config.json"),
+	config: (dir?: string) => join(root(dir), "config.json"),
 	legacyStyle: () => join(root(), "style.md"), // layout of the first version: read as the mail app profile until tone/mail.md exists
 	toneDir: () => join(root(), "tone"),
 	drafts: () => join(root(), "drafts.json"),
@@ -39,11 +40,11 @@ export type Settings = { enabled: boolean; decided: boolean; auto: boolean; apps
 
 const strings = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string" && !!x.trim()).map(x => x.trim()) : []);
 
-// A missing or unreadable config is "off": the feature does nothing until an install turns it on.
-export function loadSettings(): Settings {
+// A missing or unreadable config is "off": the feature does nothing until an install turns it on. `dir`: another data dir than DOTZ_DIR's.
+export function loadSettings(dir?: string): Settings {
 	let raw: Record<string, any> = {};
 	try {
-		raw = JSON.parse(readFileSync(paths.config(), "utf8")) ?? {};
+		raw = JSON.parse(readFileSync(paths.config(dir), "utf8")) ?? {};
 	} catch {
 		return { enabled: false, decided: false, auto: true, apps: {}, senders: { only: [], skip: [] } };
 	}
@@ -79,9 +80,11 @@ export function loadSettings(): Settings {
 }
 
 export function saveSettings(patch: Partial<Settings>): Settings {
-	const { decided: _d, ...base } = { ...loadSettings(), ...patch };
-	writeAtomic(paths.config(), `${JSON.stringify(base, null, 2)}\n`, 0o644);
-	return { ...base, decided: true };
+	return withLock(paths.config(), "답장 설정", () => {
+		const { decided: _d, ...base } = { ...loadSettings(), ...patch };
+		writeAtomic(paths.config(), `${JSON.stringify(base, null, 2)}\n`, 0o644);
+		return { ...base, decided: true };
+	});
 }
 
 const readJson = (file: string): any => {
@@ -94,11 +97,11 @@ const readJson = (file: string): any => {
 
 // Whether the user set up monitoring of this source on this install: mail = zele turned on in config.json or a webmail-no-api site
 // onboarded; youtube / instagram = that platform connected in the SNS feature. That request is the user's opt-in for suggestions.
-export function monitored(app: string): boolean {
-	if (app === "youtube" || app === "instagram") return Boolean(readJson(join(dataDir(), "custom", "sns", "config.json"))?.[app]);
+export function monitored(app: string, dir = dataDir()): boolean {
+	if (app === "youtube" || app === "instagram") return Boolean(readJson(join(dir, "custom", "sns", "config.json"))?.[app]);
 	if (app !== "mail") return false;
-	if (readJson(join(dataDir(), "config.json"))?.zele?.enabled === true) return true;
-	const webmail = join(dataDir(), "custom", "webmail");
+	if (readJson(join(dir, "config.json"))?.zele?.enabled === true) return true;
+	const webmail = join(dir, "custom", "webmail");
 	return existsSync(webmail) && readdirSync(webmail).some(site => existsSync(join(webmail, site, "config.json")));
 }
 
@@ -256,29 +259,35 @@ export function loadStyle(key: ToneKey): LoadedStyle {
 	return { identity, templates: narrowest(HEADINGS.templates), samples, samplesFrom, rules: unique([...merged(HEADINGS.rules, HEADINGS.learned, HEADINGS.profile), ...[install, app, room ?? ""].flatMap(md => unknownSections(md).flatMap(s => s.items))]), corrections: merged(HEADINGS.corrections), forbidden: merged(HEADINGS.forbidden) };
 }
 
+function editProfile(key: ToneKey | "install", edit: (md: string) => string): void {
+	const file = toneFile(key);
+	withLock(file, "말투", () => writeAtomic(file, edit(profile(key))));
+}
+
 // Writes into exactly that profile (a legacy style.md is carried over first when the mail profile is written for the first time).
 export function writeExamples(key: ToneKey | "install", examples: string[]): void {
-	writeAtomic(toneFile(key), setSection(profile(key), HEADINGS.samples, examples));
+	editProfile(key, md => setSection(md, HEADINGS.samples, examples));
 }
 
 // Replaces several sections of exactly that profile at once (every other section stays).
 export function writeSections(key: ToneKey | "install", sections: [heading: string, items: string[]][]): void {
-	writeAtomic(toneFile(key), sections.reduce((md, [heading, items]) => setSection(md, heading, items), profile(key)));
+	editProfile(key, md => sections.reduce((acc, [heading, items]) => setSection(acc, heading, items), md));
 }
 
 export const profileBullets = (key: ToneKey | "install", heading: string): string[] => bullets(profile(key), heading);
 
 export function writeIdentity(key: ToneKey | "install", lines: string[], templates?: string[]): void {
-	const md = setSection(profile(key), HEADINGS.identity, lines);
-	writeAtomic(toneFile(key), templates?.length ? setSection(md, HEADINGS.templates, templates) : md);
+	editProfile(key, md => {
+		const withIdentity = setSection(md, HEADINGS.identity, lines);
+		return templates?.length ? setSection(withIdentity, HEADINGS.templates, templates) : withIdentity;
+	});
 }
 export const templatesOf = (key: ToneKey | "install"): string[] => bullets(profile(key), HEADINGS.templates);
 
 // The user's change request, verbatim and dated, in the profile of the draft that was revised, so every later draft there follows it.
 export function recordCorrection(key: ToneKey, change: string, now: Date): void {
-	const md = profile(key);
 	const line = `${now.toISOString().slice(0, 10)}: ${change.replace(/\s+/g, " ").trim()}`;
-	writeAtomic(toneFile(key), setSection(md, HEADINGS.corrections, [...bullets(md, HEADINGS.corrections), line]));
+	editProfile(key, md => setSection(md, HEADINGS.corrections, [...bullets(md, HEADINGS.corrections), line]));
 }
 
 // Profile files that exist, relative to the tone dir (for `onboard.ts status`).

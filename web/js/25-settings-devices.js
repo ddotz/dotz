@@ -11,6 +11,7 @@ const dvDate = iso => {
 };
 const dvUsed = d => d.last_used ? TX("connect.dev.last_used", { ago: msAgo(Date.parse(d.last_used)) }) : TX("connect.dev.never");
 
+screenHooks("devices", { enter: loadDevices });
 async function loadDevices() {
   DEV.asked = true;
   try { const v = await api("/api/devices"); DEV.items = Array.isArray(v) ? v : null; DEV.fail = ""; } catch (e) { DEV.items = null; DEV.fail = e.message; }

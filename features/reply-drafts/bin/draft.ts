@@ -8,18 +8,21 @@ import { loadPlugins } from "../../../hub/plugins.ts";
 import { type HubLike, mailInstance, notifyGateway, reportSendFailed } from "../../../hub/followup.ts";
 import { addressesOf, type ReplyItem } from "../../../hub/reply-draft.ts";
 import { ensureKakaoRoom, defaultKakaoReader, KAKAO_APP, type OwnerReader } from "../lib/kakao-tone.ts";
-import { askText, attachFolder, buildDraft, candidatesFor, chosenFrom, defaultCall, dropDraft, kindOf, mailAsksFile, realRunner, refineAfterCorrection, reviseDraft, sendDraft, settleDraft, stageForReply, type FlowDeps } from "../lib/flow.ts";
+import { askText, attachFolder, buildDraft, candidatesFor, chosenFrom, dropDraft, kindOf, mailAsksFile, realFlowDeps, refineAfterCorrection, reviseDraft, sendDraft, settleDraft, stageForReply, type FlowDeps, type Outcome } from "../lib/flow.ts";
 import { dataDir, INSTALL, loadSettings, recordCorrection, validApp } from "../lib/settings.ts";
 import { addDraft, type DraftRec, getDraft, listDrafts, patchDraft } from "../lib/store.ts";
 import { listLibrary } from "../lib/library.ts";
 import { canAttach } from "../lib/senders.ts";
-import { removeStagedFile, stagedFiles, stageLibraryFile } from "../lib/staged.ts";
+import { cloudFile, cloudPlaceholder, EVICTED_LATER, isEvicted, removeStagedFile, stagedFiles, stageLibraryFile } from "../lib/staged.ts";
 
 // Exit code of `new --kind chat` when the message needs the owner's own decision: stdout is the choice block to post as an [ask] (hub/choices.ts replyChoiceBlock).
 export const ASK_EXIT = 4;
 const USAGE = "usage: draft.ts new --mail <key> [--app <app>] [--room <id>] [--kind mail|comment|chat] [--from <sender>] [--subject <s>] [--context <c>] [--source <src>] [--id <mail id>] [--choice <the owner's pick>] (text on stdin) | revise <id> --change <text> | send <id> | drop <id> | correct --app <app> [--room <id>] --change <text> | attach <id> <path or file name in the 첨부 파일 폴더> | detach <id> <n or file name> | status\n  attach / detach change the files of a pending mail draft and print the refreshed [ask] (never edit draft-files/ or drafts.json by hand)\n  new --app kakao --room <chat id> --kind chat (recent messages on stdin; --mail optional) prints only the reply text\n  chat exit codes: 0 reply text on stdout | 3 nothing to answer | 4 the owner must choose first: stdout is a 결정 block (post it as an [ask]); after his pick run the same command again with --choice \"<pick>\"\n  --app: mail (default for mail), youtube | instagram for comments, kakao for chats; --room only for messenger rooms";
 
 type Out = { lines: string[]; code: number; notes?: string[] };
+
+// The one stdout line the gateway's send queue reads (hub/approval-send.ts; design 1.11), printed the moment the outcome is known.
+const printOutcome = (o: Outcome): void => console.log(`DOTZ_SEND ${JSON.stringify({ sent: o.sent, ...(o.code ? { code: o.code } : {}), ...(o.vars ? { vars: o.vars } : {}) })}`);
 export type DraftDeps = FlowDeps & { kakaoReader?: (chatId: string) => Promise<OwnerReader>; hub?: HubLike };
 
 export function flag(args: string[], name: string): string | undefined {
@@ -45,9 +48,10 @@ function editable(id: string | undefined): DraftRec | string {
 	if (!canAttach(rec.source)) return "이 메일은 파일을 붙여 보낼 수 없어요";
 	return rec;
 }
-// An absolute path of a file, else a name (or folder-relative path) in the mail app's 첨부 파일 폴더; one match only.
+// An absolute path of a file (one only in iCloud too), else a name (or folder-relative path) in the mail app's 첨부 파일 폴더; one match only.
 async function fileToAttach(rec: DraftRec, what: string): Promise<string | { error: string }> {
-	if (isAbsolute(what) && existsSync(what)) return what;
+	const path = cloudFile(what);
+	if (isAbsolute(path) && (existsSync(path) || existsSync(cloudPlaceholder(path)))) return path;
 	const folder = await attachFolder(rec.ref);
 	if (!folder) return { error: "첨부 파일 폴더가 정해져 있지 않아요. 파일의 전체 경로로 알려 주세요" };
 	const all = listLibrary(folder), exact = all.filter(f => nfc(f.rel) === nfc(what));
@@ -102,18 +106,26 @@ export async function runDraft(args: string[], stdin: string, deps: DraftDeps = 
 		}
 		case "revise": {
 			if (!pos[0]) return { lines: [USAGE], code: 2 };
-			const r = await reviseDraft(pos[0], flag(rest, "--change") ?? "", deps);
-			const rec = r.ok && r.id ? getDraft(r.id) : undefined;
-			// The rewritten mail draft goes to its mail's conversation from here, not through the bot's answer: a second 고치기 changes a word or
-			// two, and the runtime cut the near-identical card off as a repeated reply, so the owner never got it (2026-10-28, RZV7KMZ).
-			if (rec?.kind === "mail" && (await notifyGateway({ path: "/api/send", body: { target: `mail:${rec.ref}`, text: r.text } }, deps.hub)))
-				return { lines: [`고친 초안(${rec.id})을 그 메일 대화에 올렸어요. 초안을 다시 붙이지 말고, 무엇을 고쳤는지 한 줄로만 답하세요.`], code: 0 };
-			return done(r);
+			const change = flag(rest, "--change") ?? "";
+			// With a gateway the change runs through its one reply flow (the card shows the new draft in place, the lesson is stored once); only with
+			// none does this process rewrite the draft itself.
+			if (await notifyGateway({ path: "/api/reply/act", body: { ref: pos[0], action: "revise", change } }, deps.hub))
+				return { lines: [`고치기를 맡겼어요. 고친 초안은 카드(${pos[0]})에 바로 나와요. 초안을 붙이지 말고 무엇을 고쳤는지 한 줄로만 답하세요.`], code: 0 };
+			return done(await reviseDraft(pos[0], change, deps));
 		}
 		case "send": {
 			if (!pos[0]) return { lines: [USAGE], code: 2 };
 			const rec = getDraft(pos[0]);
-			const r = await sendDraft(pos[0], deps, rest.includes("--retry") ? { retry: true } : {});
+			// Run by the gateway (DOTZ_GATEWAY_SEND): where the mail is goes out as a DOTZ_SEND line, from the transport's answer or else from the gate's refusal.
+			const gateway = Boolean(process.env.DOTZ_GATEWAY_SEND);
+			let told = false;
+			const tell = (o: Outcome): void => {
+				told = true;
+				deps.onOutcome?.(o);
+				if (gateway) printOutcome(o);
+			};
+			const r = await sendDraft(pos[0], { ...deps, onOutcome: tell }, rest.includes("--retry") ? { retry: true } : {});
+			if (!told && r.sent) tell({ sent: r.sent, ...(r.code ? { code: r.code } : {}), ...(r.vars ? { vars: r.vars } : {}) });
 			if (r.sendFailed && rec) await reportSendFailed(rec, r.text, deps.hub);
 			// An approved mail reply went out: tell the gateway, which wakes the bot once if the mail app has a 이어서 할 일 rule (hub/followup.ts).
 			if (r.ok && rec?.kind === "mail" && !rec.compose) await notifyGateway({ path: "/api/followup", body: { app: mailInstance(rec.ref), kind: "mail", key: rec.id, ids: { draft: rec.id, mail: rec.ref } } }, deps.hub);
@@ -141,7 +153,11 @@ export async function runDraft(args: string[], stdin: string, deps: DraftDeps = 
 			try {
 				await stageLibraryFile(rec.id, src, deps.stage);
 			} catch (e) {
-				return { lines: [(e as Error).message], code: 1 };
+				if (!isEvicted(e)) return { lines: [(e as Error).message], code: 1 };
+				// Still downloading from iCloud: the draft waits for it (wantFiles) like a library pick; the gateway keeps trying and the send gate takes it.
+				const want = rec.wantFiles ?? [];
+				if (!want.some(w => w.path === src)) patchDraft(rec.id, { wantFiles: [...want, { name: basename(src), path: src }] });
+				return { lines: [askText(getDraft(rec.id)!, [], EVICTED_LATER(basename(src)))], code: 0 };
 			}
 			return { lines: [askText(getDraft(rec.id)!, [], "파일을 붙였어요")], code: 0 };
 		}
@@ -178,7 +194,7 @@ if (import.meta.main) {
 	try {
 		// This process is not the gateway: a plugin source says here whether it sends files (senders.ts canAttach) for every command, the send's file check too.
 		await loadPlugins(dataDir());
-		const out = await runDraft(args, stdin, { analyze: defaultCall(loadSettings().model), run: realRunner });
+		const out = await runDraft(args, stdin, realFlowDeps());
 		// stdout is only ever something to post or pipe on: on a non-zero exit the lines are explanations and go to stderr.
 		for (const l of out.lines) (out.code === 0 || out.code === ASK_EXIT ? console.log : console.error)(l);
 		for (const n of out.notes ?? []) console.error(n);

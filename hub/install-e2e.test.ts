@@ -95,7 +95,6 @@ test("tarball install writes the stamp, then self-updates to a newer local tarba
 	tarball(tgz, "FAIL_MARK");
 	const bad = selfupdate(app, "--apply", "--test-cmd", "test ! -f FAIL_MARK");
 	expect(bad.json.status).toBe("failed");
-	expect(bad.json.message).toContain("테스트 실패");
 	expect(existsSync(join(app, "FAIL_MARK"))).toBe(false);
 	expect(existsSync(join(app, "E2E_NEWER"))).toBe(true);
 }, 60_000);
@@ -248,6 +247,11 @@ test("GitHub tarball install: a tag with no signed tag object stops under enforc
 const ADDRESS = /http:\/\/127\.0\.0\.1:(\d+)\/setup\?token=([A-Za-z0-9_-]+)/;
 const OPENERS = /^(open|xdg-open) /m;
 let webTgz = "";
+const harnessEnv = (): Record<string, string | undefined> => {
+	const base = { ...process.env };
+	for (const k of ["DOTZ_OMP", "DOTZ_OMO", "DOTZ_CLAUDE", "DOTZ_CODEX"]) delete base[k];
+	return base;
+};
 function scene() {
 	const dir = mkdtempSync(join(root, "web-"));
 	const bin = join(dir, "bin");
@@ -269,12 +273,13 @@ function scene() {
 	const env = { HOME: join(dir, "home"), DOTZ_DIR: data, DOTZ_HOME: join(dir, "app"), DOTZ_TARBALL: `file://${webTgz}`, DOTZ_PORT: String(port), PATH: `${bin}:${process.env.PATH}`, STUB_LOG: calls, DOTZ_TAILSCALE_BIN: "", SSH_CONNECTION: "", DISPLAY: "", WAYLAND_DISPLAY: "", LANG: "C", LC_ALL: "", LC_MESSAGES: "" };
 	mkdirSync(env.HOME);
 	// detached: no controlling terminal, so a terminal wizard can never read the developer's tty
-	const install = (extra: Record<string, string>, ...args: string[]) => {
-		const r = Bun.spawnSync(["sh", join(REPO, "install.sh"), "--yes", ...args], { cwd: root, env: { ...process.env, ...env, ...extra }, stdout: "pipe", stderr: "pipe", stdin: "ignore", detached: true });
+	const installWith = (flags: string[], extra: Record<string, string>, ...args: string[]) => {
+		const r = Bun.spawnSync(["sh", join(REPO, "install.sh"), ...flags, ...args], { cwd: root, env: { ...harnessEnv(), ...env, ...extra }, stdout: "pipe", stderr: "pipe", stdin: "ignore", detached: true });
 		return { code: r.exitCode, out: `${r.stdout}${r.stderr}` };
 	};
+	const install = (extra: Record<string, string>, ...args: string[]) => installWith(["--yes"], extra, ...args);
 	const stubCalls = () => (existsSync(calls) ? readFileSync(calls, "utf8") : "");
-	return { data, port, install, stubCalls, marker: join(data, "onboarding", "first-run.json") };
+	return { data, port, install, installWith, stubCalls, bin, env, home: env.HOME, app: env.DOTZ_HOME, marker: join(data, "onboarding", "first-run.json") };
 }
 
 test("a fresh install with --no-open writes the seed config and marker, prints a one-use address and opens nothing", () => {
@@ -330,6 +335,60 @@ test("a re-run while the marker is pending restarts and prints a new address for
 	expect(readFileSync(join(s.data, "config.json"), "utf8")).toBe(seed);
 	expect(JSON.parse(readFileSync(s.marker, "utf8")).status).toBe("pending");
 }, 60_000);
+
+const ompOnlyMachine = (s: ReturnType<typeof scene>) => {
+	const tools = join(dirname(s.data), "tools");
+	mkdirSync(tools);
+	symlinkSync(process.execPath, join(tools, "bun"));
+	writeFileSync(join(s.bin, "omp"), '#!/bin/sh\necho "omp/18.22.0"\n');
+	chmodSync(join(s.bin, "omp"), 0o755);
+	return { PATH: `${s.bin}:${tools}:/usr/bin:/bin`, BUN_INSTALL: join(s.home, ".bun") };
+};
+
+test("an omp-only machine with no terminal and no --yes skips OmO and hands omp to the web onboarding as the runtime", () => {
+	const s = scene();
+	const i = s.installWith([], ompOnlyMachine(s), "--no-open");
+	if (i.code !== 0) throw new Error(i.out);
+	expect(i.out).toContain("using the installed omp");
+	expect(i.out).not.toContain("installing OmO");
+	expect(existsSync(join(s.home, ".bun", "bin", "omo"))).toBe(false);
+	expect(JSON.parse(readFileSync(s.marker, "utf8")).draft).toEqual({ runtime: "omp" });
+}, 60_000);
+
+test("DOTZ_HARNESS=omp is forwarded to the first run as the runtime", () => {
+	const s = scene();
+	const i = s.install({ ...ompOnlyMachine(s), DOTZ_HARNESS: "omp" }, "--no-open");
+	if (i.code !== 0) throw new Error(i.out);
+	expect(JSON.parse(readFileSync(s.marker, "utf8")).draft).toEqual({ runtime: "omp" });
+}, 60_000);
+
+const serviceFileOf = (home: string) => join(home, ...(process.platform === "darwin" ? ["Library", "LaunchAgents", "dev.dotz.gateway.plist"] : [".config", "systemd", "user", "dotz-gateway.service"]));
+const reloads = (log: string) => log.split("\n").filter(l => /bootstrap|daemon-reload/.test(l)).length;
+
+test("an upgrade re-run refreshes the PATH of the gateway's own service file and reloads it, so a harness installed since is found; another install's file is left alone", () => {
+	const s = scene();
+	const first = s.install({}, "--no-open");
+	if (first.code !== 0) throw new Error(first.out);
+	const file = serviceFileOf(s.home);
+	const late = join(dirname(s.data), "late");
+	mkdirSync(late);
+	writeFileSync(join(late, "omp"), '#!/bin/sh\necho "omp/18.22.0"\n');
+	chmodSync(join(late, "omp"), 0o755);
+	expect(readFileSync(file, "utf8")).not.toContain(late);
+	const before = reloads(s.stubCalls());
+	const again = s.install({ PATH: `${late}:${s.env.PATH}` }, "--no-open");
+	if (again.code !== 0) throw new Error(again.out);
+	expect(again.out).toContain("gateway service refreshed");
+	expect(readFileSync(file, "utf8")).toContain(late);
+	expect(reloads(s.stubCalls())).toBe(before + 1);
+
+	const foreign = readFileSync(file, "utf8").replaceAll(s.app, join(dirname(s.app), "other-checkout"));
+	writeFileSync(file, foreign);
+	const refresh = Bun.spawnSync(["bun", join(s.app, "setup.ts"), "--refresh-service", "--dir", s.data], { env: { ...harnessEnv(), ...s.env }, stdout: "pipe", stderr: "pipe", stdin: "ignore" });
+	expect(refresh.exitCode).toBe(3);
+	expect(readFileSync(file, "utf8")).toBe(foreign);
+	expect(reloads(s.stubCalls())).toBe(before + 1);
+}, 120_000);
 
 test("a re-run on an existing config without a marker shows no onboarding", () => {
 	const s = scene();

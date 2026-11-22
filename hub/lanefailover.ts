@@ -26,12 +26,12 @@ async function pauseForRateLimit(lane: Lane, err: string, kind: ProviderErrorKin
 	const lk = limitKind(err, kind);
 	const account = limitAccount(err, lane.model);
 	log(`lane ${lane.name} blocked (${lk}, ${account}): ${err.replace(/\s+/g, " ").slice(0, 300)}`);
-	let note = owner ? noteBlock(agent, account, lk) : undefined;
+	let note = owner ? noteBlock(agent, account, lk, Date.now(), false, providerOf(lane.model)) : undefined;
 	const { ms: wait, reset } = owner ? { ms: ownerRetryMs(note!.failures), reset: false } : await rateLimitDelay(err, lane.model, "lane");
 	lane.pausing = false;
 	const lifted = (): boolean => lane.status !== "rate-limited" || (!owner && !lane.limitPause);
 	if (lifted()) return;
-	note ??= noteBlock(agent, account, lk, Date.now(), true);
+	note ??= noteBlock(agent, account, lk, Date.now(), true, providerOf(lane.model));
 	const at = new Date(Date.now() + wait).toLocaleString("ko-KR", { timeZone: TZ, month: "numeric", day: "numeric", weekday: "short", hour: "2-digit", minute: "2-digit" });
 	if (note.alert) {
 		const text = owner
@@ -72,7 +72,7 @@ export function laneRanOn(lane: Lane): void {
 }
 // A turn that works again ends the lane's blocked episode: the owner hears it once.
 export function laneRecovered(lane: Lane): void {
-	if (noteRecovered(`lane:${lane.name}`)) report(lane, recoveryText(), "pause");
+	if (noteRecovered(`lane:${lane.name}`, providerOf(lane.model))) report(lane, recoveryText(), "pause");
 }
 
 // Overloaded/5xx/network errors: retry the failed turn with backoff, bounded. Returns false once the retries are spent,

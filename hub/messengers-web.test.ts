@@ -4,8 +4,10 @@ import { ev, fakeHub, inbox, json, run, waitFor, type View } from "./test-web.ts
 
 // 설정의 메신저: four rows from the index, one screen per messenger (status + one action + onboarding + 알림 + read-only rooms),
 // and manual fields only in the closed "직접 입력" disclosure. Headless Bun.WebView against a stub gateway.
-const SHOTS = "/tmp/messenger-onboarding";
-mkdirSync(SHOTS, { recursive: true });
+// MESSENGER_SHOTS=<dir> also writes the screenshots of the overflow checks there.
+const SHOTS = process.env.MESSENGER_SHOTS ?? "";
+if (SHOTS) mkdirSync(SHOTS, { recursive: true });
+const shot = async (v: View, name: string) => { if (SHOTS) await Bun.write(`${SHOTS}/${name}.png`, await v.screenshot()); };
 
 const PROJECTS = [{ target: "ch:7", name: "결제" }, { target: "ch:8", name: "정산" }];
 const baseItems = () => [
@@ -378,20 +380,19 @@ describe("메신저 설정", () => {
 		expect(await ev<number>(v, `document.querySelectorAll("#jandi [data-set=incoming_url]").length`)).toBe(1);
 	}, 30_000);
 
-	test("screenshots: settings 1280 light, 390 dark, and each messenger screen", async () => {
+	test("settings 1280 light, 390 dark, and each messenger screen do not overflow", async () => {
 		const desk = await open(1280, 800, "light");
-		await Bun.write(`${SHOTS}/after-1280.png`, await desk.screenshot());
+		await shot(desk, "after-1280");
 		expect(await noOverflow(desk, "#messengers .list")).toBe(true);
 		const phone = await open(390, 844, "dark");
 		await run(phone, `document.querySelector("#messengers [data-ms-row=telegram]").scrollIntoView({ block: "center" })`);
-		await Bun.write(`${SHOTS}/after-390.png`, await phone.screenshot());
+		await shot(phone, "after-390");
 		expect(await noOverflow(phone, "#messengers .list")).toBe(true);
 		for (const id of ["discord", "jandi", "slack", "telegram"]) {
 			const v = await open(1280, 800, "light", id);
 			await waitFor(v, `document.querySelector("#${id} [data-ms-status]")`);
-			await Bun.write(`${SHOTS}/messenger-${id}.png`, await v.screenshot());
+			await shot(v, `messenger-${id}`);
 			expect(await noOverflow(v, `#${id} .list`)).toBe(true);
 		}
-		for (const f of ["after-1280.png", "after-390.png", "messenger-discord.png", "messenger-jandi.png", "messenger-slack.png", "messenger-telegram.png"]) expect(await Bun.file(`${SHOTS}/${f}`).exists()).toBe(true);
 	}, 60_000);
 });

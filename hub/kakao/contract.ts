@@ -6,7 +6,8 @@
 //    addOnce() records a send once per send id.
 // 3. One door out: dispatchSend() is the only function a KakaoTalk send goes through, typed reply and confirmed draft alike.
 //    Its optional `lease` hook says whether THIS machine may send into that chat right now (e.g. the other Mac holds it); a
-//    refused lease is a failed send with that reason and KakaoTalk is never touched.
+//    refused lease is a failed send with that reason and KakaoTalk is never touched. Every refusal here is surely not sent and carries its
+//    reason code (gone, lease_unknown, lease_held, app_not_ready).
 import { createHash } from "node:crypto";
 import { sentAtMs } from "./db.ts";
 import type { RoomFact } from "./room.ts";
@@ -42,12 +43,12 @@ export type DispatchDeps = SendDeps & {
 };
 
 export async function dispatchSend(req: SendRequest, deps: DispatchDeps): Promise<SendResult> {
-	const refuse = (reason: string): SendResult => ({ ok: false, reason });
+	const refuse = (reason: string, code: SendResult["code"]): SendResult => ({ ok: false, reason, sent: "no", code });
 	let chatId: string;
 	if (req.kind === "text") chatId = req.chatId;
 	else {
 		const draft: Draft | undefined = (await listDrafts(deps)).find(d => d.code === req.code);
-		if (!draft) return refuse("그 초안을 찾지 못했어요");
+		if (!draft) return refuse("그 초안을 찾지 못했어요", "gone");
 		chatId = draft.chatId;
 	}
 	if (deps.lease) {
@@ -55,11 +56,11 @@ export async function dispatchSend(req: SendRequest, deps: DispatchDeps): Promis
 		try {
 			verdict = await deps.lease(chatId);
 		} catch {
-			return refuse("이 컴퓨터가 지금 보내도 되는지 확인하지 못해서 보내지 않았어요");
+			return refuse("이 컴퓨터가 지금 보내도 되는지 확인하지 못해서 보내지 않았어요", "lease_unknown");
 		}
-		if (!verdict.ok) return refuse(verdict.reason);
+		if (!verdict.ok) return refuse(verdict.reason, "lease_held");
 	}
 	if (req.kind === "text") return sendText({ chatId, roomName: req.roomName, text: req.text }, deps);
-	if (!deps.latestIncoming) return refuse("새 메시지가 왔는지 확인하지 못해서 보내지 않았어요");
+	if (!deps.latestIncoming) return refuse("새 메시지가 왔는지 확인하지 못해서 보내지 않았어요", "app_not_ready");
 	return sendDraft(req.code, { ...deps, latestIncoming: deps.latestIncoming, ownerApproved: req.ownerApproved, ...(req.retry ? { retry: true } : {}), ...(req.text !== undefined ? { text: req.text } : {}) });
 }

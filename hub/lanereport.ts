@@ -1,15 +1,17 @@
 import { type Lane, pendingFile, ownerNotes, persist, dir, hooks, setStatus } from "./lanestate.ts";
 import { rmSync, writeFileSync, existsSync, readFileSync } from "node:fs";
 import { now, writeAtomic, log } from "./config.ts";
-import { parseTone } from "./tone.ts";
+import { parseTone, stripHandoff } from "./tone.ts";
 import { pendingAskFile } from "./asks.ts";
 import { lastQuestion } from "./ask-options.ts";
-import { bareAsk, normalizeAsk } from "./ask-normalize.ts";
+import { askFault, type AskFault, bareAsk, normalizeAsk, unreadQuestions } from "./ask-normalize.ts";
 import { parseDecisions } from "./choices.ts";
 import { join } from "node:path";
 import { workerCheck } from "./activity.ts";
 import { forLines, mentionsMain, orchestratorOnlyAsk } from "./forline.ts";
-import { msg } from "./i18n.ts";
+import { lang, msg } from "./i18n.ts";
+import { languageName } from "./language.ts";
+import { reportLanguage } from "./outlang.ts";
 import { checkDone, doneChecks, type Check } from "./donesignals.ts";
 import { unlanded } from "./lanetree.ts";
 import { prompt } from "./laneprompt.ts";
@@ -24,6 +26,9 @@ export const INSTEAD_CHECKED = /대신 확인\s*:|instead checked\s*:/i;
 export function bareUnverified(text: string): string[] {
 	return text.split("\n").map(l => l.trim()).filter(l => UNVERIFIED.test(l) && !INSTEAD_CHECKED.test(l));
 }
+
+// The lane handed main its request with dotz_main in this turn (hub/routes-send.ts): a [wait] on main then waits on that request, which main has.
+export const askedMainThisTurn = (lane: Pick<Lane, "mainAskedAt" | "workingSince">): boolean => lane.mainAskedAt !== undefined && lane.mainAskedAt >= (lane.workingSince ?? 0);
 
 export const REPORT_DEBOUNCE_MS = Number(process.env.DOTZ_REPORT_DEBOUNCE_MS ?? 0);
 
@@ -48,6 +53,17 @@ export function nextLastText(lane: Lane, text: string): string {
 	return text;
 }
 
+function faultNote(fault: AskFault, text: string): string {
+	switch (fault.kind) {
+		case "unread":
+			return msg().askUnread(fault.questions, text);
+		case "title":
+			return msg().askTitleRefused(fault.title, text);
+		case "prose":
+			return msg().askProseRefused(fault.line, text);
+	}
+}
+
 // `notice` marks a gateway-written text ([lane error], [lane exited], pause/rate-limit): it is not the lane speaking, so it
 // leaves a pending ask alone. "pause": a usage-limit stop or recovery, which also starts no orchestrator turn (hub/lanerelay.ts).
 export function report(lane: Lane, written: string, notice: boolean | "pause" = false): void {
@@ -64,11 +80,21 @@ export function report(lane: Lane, written: string, notice: boolean | "pause" = 
 			lane.bareAsk = true;
 			persist(lane);
 			log(`lane ${lane.name} [ask] refused (no choice block)`);
-			return prompt(lane, msg().askRefused(parseTone(text).text));
+			const unread = unreadQuestions(text);
+			return prompt(lane, unread.length ? msg().askUnread(unread, parseTone(text).text) : msg().askRefused(parseTone(text).text));
 		}
 		text = parseTone(text).text;
 		lane.bareAsk = true;
-	} else if (!notice) lane.bareAsk = undefined;
+	} else if (!notice) {
+		lane.bareAsk = undefined;
+		const fault = lane.proc && !lane.askRefused ? askFault(text) : undefined;
+		if (fault) {
+			lane.askRefused = true;
+			persist(lane);
+			log(`lane ${lane.name} report refused (${fault.kind}: the owner cannot answer it from a card)`);
+			return prompt(lane, faultNote(fault, parseTone(text).text));
+		}
+	}
 	if (!notice) {
 		const unchecked = bareUnverified(text);
 		if (unchecked.length && lane.proc && !lane.unverifiedRefused) {
@@ -78,6 +104,16 @@ export function report(lane: Lane, written: string, notice: boolean | "pause" = 
 			return prompt(lane, msg().unverifiedRefused(unchecked));
 		}
 		lane.unverifiedRefused = undefined;
+		// In a language with its own script, an English paragraph or text above the status line goes back once (prune-tests 2026-11-18: an
+		// English summary above a Korean [run] line reached the owner twice). The next report goes through; the shared rewrite still takes it.
+		const off = reportLanguage(stripHandoff(text), lang());
+		if (off && lane.proc && !lane.languageRefused) {
+			lane.languageRefused = true;
+			persist(lane);
+			log(`lane ${lane.name} report refused (${off.before ? "text above the status line" : "a paragraph not in the install language"})`);
+			return prompt(lane, msg().languageRefused(off.head, off.before, languageName(lang())));
+		}
+		lane.languageRefused = undefined;
 		const banned = bannedHits(text);
 		if (banned.length && lane.proc && !lane.bannedRefused) {
 			lane.bannedRefused = true;
@@ -87,7 +123,7 @@ export function report(lane: Lane, written: string, notice: boolean | "pause" = 
 		}
 		if (!banned.length) lane.bannedRefused = undefined;
 		// A [wait] on main must say what main is to do: in words alone it reached main only by a guess, and 13 such waits sat unheard (2026-11-06..13).
-		if (parseTone(text).tone === "wait" && !forLines(text) && mentionsMain(text) && lane.proc && !lane.waitMainRefused) {
+		if (parseTone(text).tone === "wait" && !forLines(text) && mentionsMain(text) && lane.proc && !lane.waitMainRefused && !askedMainThisTurn(lane)) {
 			lane.waitMainRefused = true;
 			persist(lane);
 			log(`lane ${lane.name} [wait] refused (waits on main with no for-line)`);
@@ -142,14 +178,25 @@ export function report(lane: Lane, written: string, notice: boolean | "pause" = 
 // with the results; a failure goes straight back to the lane (DONE_BOUNCES times in a row, then to the orchestrator). A
 // plain-text Done-when (owner-asked lanes) is relayed as before and verified by the orchestrator.
 export const DONE_BOUNCES = 2;
+// A brief that keeps the branch unmerged on purpose ("Do not merge. Push nothing. Leave the reviewed branch for me"): its [done] reports the
+// branch head (the footer says so), and the gateway does not check it for landing.
+const NO_MERGE = /\b(?:do not|don't|never|must not)\s+merge\b|\bno-merge\b|(?:머지|병합)\s*(?:하지|는\s*하지)\s*(?:마|말)|(?:머지|병합)\s*금지/i;
+export const keepsUnmerged = (brief: string): boolean => NO_MERGE.test(brief);
+// A check whose own shape failed (the command exited 0 but its stdout~ pattern did not match, empty output included, or the check could not
+// run) says nothing about the work; the bounce lists it apart, so the lane does not bend the work to fit the pattern.
+const SHAPE_FAILED = /^exit 0 but output does not match|^check failed:/;
+export const shapeFailed = (c: Check): boolean => !c.ok && SHAPE_FAILED.test(c.detail);
 async function gatewayCheck(lane: Lane, text: string, answering: boolean): Promise<void> {
 	const claim = lane.claim;
-	const brief = join(dir(lane.name), "brief.md");
-	const signals = claim && existsSync(brief) ? doneChecks(readFileSync(brief, "utf8")) : undefined;
+	const briefFile = join(dir(lane.name), "brief.md");
+	const brief = claim && existsSync(briefFile) ? readFileSync(briefFile, "utf8") : "";
+	const signals = brief ? doneChecks(brief) : undefined;
 	if (!claim || !signals) return hooks.report(lane, text, answering);
 	const checks: Check[] = await checkDone(signals, lane.cwd).catch(e => [{ signal: "Done when", ok: false, detail: `check failed: ${e}` }]);
-	const open = lane.worktree ? unlanded(lane.worktree) : undefined;
-	if (lane.worktree) checks.push({ signal: `landed ${lane.worktree.branch} in ${lane.worktree.base}`, ok: !open, detail: open ?? "merged" });
+	if (lane.worktree && !keepsUnmerged(brief)) {
+		const open = unlanded(lane.worktree);
+		checks.push({ signal: `landed ${lane.worktree.branch} in ${lane.worktree.base}`, ok: !open, detail: open ?? "merged" });
+	}
 	// A newer report replaced this claim while the checks ran: that report has its own check.
 	if (lane.claim !== claim) return log(`lane ${lane.name} Done-when check dropped (a newer report replaced the claim)`);
 	const lines = checks.map(c => `${c.ok ? "ok" : "NOT"} ${c.signal} -> ${c.detail}`);
@@ -171,7 +218,12 @@ async function gatewayCheck(lane: Lane, text: string, answering: boolean): Promi
 		hooks.notice(lane, msg().checkBounced(checks.length, failed.length));
 		lane.claim = undefined;
 		persist(lane);
-		return prompt(lane, `[gateway check] Your [done] is not verified: these Done-when checks fail now:\n- ${failed.join("\n- ")}\nFix them (land the branch if that is what fails) and report [done] again, or report [fail] / [ask] saying why they cannot pass.`);
+		const line = (c: Check) => `${c.signal} -> ${c.detail}`;
+		const real = checks.filter(c => !c.ok && !shapeFailed(c)).map(line);
+		const shape = checks.filter(shapeFailed).map(line);
+		const realText = real.length ? `\nThese Done-when checks fail now:\n- ${real.join("\n- ")}\nFix them (land the branch if that is what fails) and report [done] again, or report [fail] / [ask] saying why they cannot pass.` : "";
+		const shapeText = shape.length ? `\nThese checks could not judge the work (the command passed but its output did not match the brief's pattern, or the check could not run):\n- ${shape.join("\n- ")}\nDo not change the work to fit the pattern: check the result by hand and report [done] again with what you ran and saw, or [fail] if the brief's check is wrong.` : "";
+		return prompt(lane, `[gateway check] Your [done] is not verified.${realText}${shapeText}`);
 	}
 	lane.doneBounces = 0;
 	hooks.report(lane, `${text}\n\n${msg().checkFailed(checks.length, failed.length)}`, answering);

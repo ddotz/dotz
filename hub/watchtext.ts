@@ -3,7 +3,6 @@
 // JSON, a tool's English error): it never goes in the prose. A one-line summary is derived where that is generic (see watchSummary), and
 // the raw text folds under a "원문" fence that the web renders collapsed (web/js/11-watchtext.js mirrors this file, 02-basic-markdown.js
 // folds the fence) and Discord shows as a code block.
-import { homedir } from "node:os";
 import { TZ } from "./config.ts";
 import { msg } from "./i18n.ts";
 import type { NotifyInfo } from "./watch-heal.ts";
@@ -14,7 +13,13 @@ import { SLOT_SKIPPED_EXIT } from "./release-exit.ts";
 export const LOGIN_LOST_KO = "로그인이 풀렸어요";
 export const LOGIN_NO_PASSWORD_KO = "저장된 비밀번호가 없어 다시 로그인하지 못했어요";
 export const LOGIN_SECOND_FACTOR_KO = "2차 인증이 필요해요";
-export const LOGIN_BLOCKED_KO = "모델 제공자 로그인이 풀려서 멈췄어요";
+export const loginBlockedKo = (provider: string): string => `${provider} 로그인이 풀려서 일이 멈췄어요`;
+const LOGIN_BLOCKED_RE = /(?:모델 제공자|\S+) 로그인이 풀려서 (?:일이 )?멈췄어요/;
+const LOGIN_BLOCKED_HEAD = new RegExp(`^${LOGIN_BLOCKED_RE.source}`);
+export const loginBlockedIn = (text: string): boolean => LOGIN_BLOCKED_RE.test(text);
+const LOGIN_BLOCKED_PROVIDER = /(?:^|[\s:])([A-Za-z][\w.-]*) 로그인이 풀려서 (?:일이 )?멈췄어요/;
+/** The provider id a model provider's login stop names ("anthropic 로그인이 풀려서 일이 멈췄어요"), undefined for any other text. */
+export const loginBlockedProvider = (text: string): string | undefined => LOGIN_BLOCKED_PROVIDER.exec(text)?.[1];
 export const PROVIDER_BACK_KO = "모델 제공자가 다시 연결됐어요";
 export const WATCH_UNCHANGED_KO = "내용은 그대로이고 시각 같은 값만 바뀌었어요";
 
@@ -25,7 +30,7 @@ export function watchReasonKo(reason: string): string {
 	if (r === "match" || r.startsWith("matched /")) return "조건에 맞는 결과가 나왔어요";
 	if (r === "fail") return "점검에 실패했어요";
 	if (r === "recovered") return "다시 정상이에요";
-	// The release-slot watch fails every minute of a skipped slot: that is one skipped slot, not that many failed checks.
+	// The release-slot watch's skipped slot: one skipped slot, not a count of failed checks.
 	if (r.endsWith(`(exit ${SLOT_SKIPPED_EXIT})`) && /^failed \d+ times in a row/.test(r)) return "이 시간대의 릴리스를 건너뛰었어요";
 	const fails = /^failed (\d+) times in a row/.exec(r)?.[1];
 	if (fails) return `${fails}번 연속 실패했어요`;
@@ -117,11 +122,13 @@ export const isIssue = (reason: string) => /^(?:fail\b|failed \d+|stopped after|
 // A notice text that says a login was lost, from the words above and nothing broader: the reason line of a stopped check (password, second factor),
 // the provider's own stop, or a failing check whose output named a login kind (the line after the reason is exactly LOGIN_LOST_KO).
 const LEAD = /^[^:\n]{1,60}:\s+/;
+const TAG = /^\s*\[[^\]\n]{1,80}\]\s*/;
+export const BRACKET_CHANNEL_TAG = /^\s*\[(?:ch|th|lane):[^\]\s]+\]\s*/;
 const ISSUE_HEAD = /^(?:\d+번 연속 실패했어요|실패가 이어져 멈췄어요|점검에 실패했어요|승인이 필요해요)/;
 export function loginLost(text: string): boolean {
-	const [first = "", second = ""] = text.split("\n", 2);
+	const [first = "", second = ""] = text.replace(TAG, "").split("\n", 2);
 	const bare = first.replace(LEAD, "");
-	if ([first, bare].some(h => h.startsWith(LOGIN_NO_PASSWORD_KO) || h.startsWith(LOGIN_SECOND_FACTOR_KO) || h.startsWith(LOGIN_BLOCKED_KO))) return true;
+	if ([first, bare].some(h => h.startsWith(LOGIN_NO_PASSWORD_KO) || h.startsWith(LOGIN_SECOND_FACTOR_KO) || LOGIN_BLOCKED_HEAD.test(h))) return true;
 	return second === LOGIN_LOST_KO && ISSUE_HEAD.test(bare);
 }
 // A change report whose only difference was values like times (describeOutput's last words): the line after the reason is exactly WATCH_UNCHANGED_KO.
@@ -234,7 +241,10 @@ export function describeOutput(output: string, opts: DescribeOpts = {}): Describ
 	const fail = /^DOTZ_FAIL[ =:]([a-z0-9-]{1,20})\b/m.exec(out);
 	if (fail) {
 		const said = linesOf(out, opts.now, opts.tz).filter(l => !l.startsWith("DOTZ_") && HANGUL.test(l) && !isMachineOutput(l)).slice(0, 2);
-		return { text: [failKindKo(fail[1]!), ...said.map(l => cut(l, 120))].join("\n"), readable: true };
+		// The rest of the DOTZ_FAIL line is the check's own reason ("not-local 63: a.mp3"); a kind without a phrase keeps its word in front of it.
+		const rest = tidy(out.slice(fail.index + fail[0].length).split("\n", 1)[0]!.replace(/^[\s:=]+/, ""), opts.now, opts.tz);
+		const why = rest && !isMachineOutput(rest) ? cut(FAIL_KO[fail[1]!] ? rest : `${fail[1]} ${rest}`, 120) : "";
+		return { text: [failKindKo(fail[1]!), ...(why ? [why] : []), ...said.map(l => cut(l, 120))].join("\n"), readable: true };
 	}
 	if (/^[{[]/.test(out)) {
 		try {
@@ -300,19 +310,13 @@ export function watchLine(label: string, reason: string, output = "", opts: Line
 	return lines.join("\n");
 }
 
-// The owner's text for a failure, plain: the reason as today, one line of why (by class, or the output's own first line when it is short plain Korean),
-// what a heal tried, and where the output was kept. Never the output body, a fence or a stack.
 const STACKISH = /(?:^|\s)at\s|\b\w*(?:Error|Exception)\b|Traceback|:\d+:\d+|\.(?:ts|js|mjs|py|sh):\d+|node_modules|^\s*[{[]/;
-const homeShown = (path: string): string => {
-	const home = process.env.HOME ?? homedir();
-	return home && path.startsWith(`${home}/`) ? `~${path.slice(home.length)}` : path;
-};
 export function watchIssueLine(label: string, reason: string, info: NotifyInfo | undefined, output = ""): string {
 	const t = msg().watchIssue;
 	const first = output.replace(ANSI, "").split("\n").map(l => l.trim()).find(l => l && !l.startsWith("DOTZ_"));
 	const said = first && HANGUL.test(first) && first.length <= 100 && !STACKISH.test(first) ? first : undefined;
 	const why = said ?? (info ? t.cls[info.cls] : undefined);
-	return [`${humanLabel(label)}: ${watchReasonKo(reason)}`, ...(why ? [why] : []), ...(info?.note ? [t.tried(info.note)] : []), ...(info ? [t.log(homeShown(info.log))] : [])].join("\n");
+	return [`${humanLabel(label)}: ${watchReasonKo(reason)}`, ...(why ? [why] : []), ...(info?.note ? [t.tried(info.note)] : [])].join("\n");
 }
 
 // The key of a watch ("acme-login", "ch-1234-2") as words the owner reads: known English words become Korean, other words (a site, a product)

@@ -5,32 +5,31 @@ import { join } from "node:path";
 import { log, now, paths, writeAtomic } from "./config.ts";
 import type { DraftApproval } from "./draft-approval.ts";
 import { askDefaults } from "./ask-options.ts";
+import { FILLER_QUESTIONS } from "./choices.ts";
 import { alertMatter, quietAlert } from "./alert-gate.ts";
 import { eventTarget, isPeerMessage, type HubEvent } from "./events.ts";
-import { classOfNotice } from "./notice-class.ts";
+import { classOfNotice, noticeClass } from "./notice-class.ts";
+import { kindOf, NOTICE_KINDS, type NoticeKindName } from "./notice-kinds.ts";
 import { dropClaim, isSilent, parkedTone } from "./tone.ts";
-import { describeOutput, humanLabel, isIssue, itemRefOf, LOGIN_BLOCKED_KO, matchItems, matchTitle, PROVIDER_BACK_KO, scheduleLine, sentinelMatch, watchLine, watchReasonKo } from "./watchtext.ts";
+import { BRACKET_CHANNEL_TAG, describeOutput, humanLabel, isIssue, itemRefOf, loginBlockedIn, PROVIDER_BACK_KO, sentinelMatch, watchLine } from "./watchtext.ts";
+import { answerRow, fireRow, restored, runKey, taskRunOf } from "./notices-schedule.ts";
 import { resolveItem, type WatchItem } from "./watchitem.ts";
-import type { Decision, DecisionOpt, Notice, NoticeKind, NoticeTone } from "./notices-types.ts";
-import { appBlocked, appOf, closedHooks, decisionHooks, orchestratorUp, stampApp, summarizeWatch, unreadHooks, watchLabelOf } from "./notices-wiring.ts";
-import { BACKFILL_DAYS, DAY_MS, FOLD_MS, LOUD, MESSAGE_PREVIEW, NOTICE_CAP, REASK_MS, REPEATS_MAX, REPEAT_TEXT, RESTART_PREFIX, answersOption, authorOf, clean, closedInfo, coveredByRead, hasChoice, hasExpired, isAsking, isOpenDecision, keepWatchNewest, laneTone, needsAnswer, originOf, refOf, systemTitle, twinOf, waitKind, waitsOf } from "./notices-rules.ts";
+import type { Closing, Decision, DecisionOpt, Notice, NoticeKind, NoticeTone, OwnerSaid } from "./notices-types.ts";
+import { msg } from "./i18n.ts";
+import { appBlocked, appOf, closedHooks, decisionHooks, repostHooks, orchestratorUp, stampApp, summarizeWatch, unreadHooks, watchLabelOf } from "./notices-wiring.ts";
+import { BACKFILL_DAYS, DAY_MS, FOLD_MS, LOUD, MESSAGE_PREVIEW, NOTICE_CAP, REASK_MS, REPEATS_MAX, REPEAT_TEXT, RESTART_PREFIX, authorOf, clean, closedInfo, repostNote, shownAsStored, unreadDraftRef, coveredByRead, hasChoice, hasExpired, isAsking, isOpenDecision, keepWatchNewest, laneTone, laterOn, needsAnswer, originOf, refOf, systemTitle, twinOf, typedAnswer, waitKind, waitsOf, wordsClose, wordsOf } from "./notices-rules.ts";
 import { GENERIC_TITLES, channelLanes, channelTitle, laneExists, laneOfNotice, laneTitle, launchTitles, noteLaunch, readChannelMap, recordedCwd, stoppedSince } from "./notices-lanes.ts";
 import { snapshotResults } from "./files.ts";
 import { type ResultFile, type ResultLink, resultFiles, resultLinks } from "./result-refs.ts";
 import { broadcast, summary } from "./notices-read.ts";
-import { QUIET_MS, awaitingReply, isViewing, quietReplies, viewers } from "./notices-viewing.ts";
-import { decisionsOf, expiresAtOf, sending } from "./notices-decisions.ts";
+import { QUIET_MS, awaitingReply, isViewing, ownerWroteAt, quietReplies, viewers } from "./notices-viewing.ts";
+import { decisionsOf, expiresAtOf, plainCard, sending } from "./notices-decisions.ts";
+import { askedAgain, optionsOf, sameQuestion, withAskedLine } from "./notices-repeat.ts";
 import { worklogKind } from "./worklog-kind.ts";
+import { en } from "./i18n-en.ts";
+import { ko } from "./i18n-ko.ts";
+import { coalescedWrite } from "./coalesced-write.ts";
 
-// A report stored before a schedule was said by its short name and a match that lists items by its count (2026-11-10) reads as a new one does.
-const MATCHED = `: ${watchReasonKo("matched /./")}`;
-function restored(n: Notice): string {
-	if (n.kind !== "watch") return n.text;
-	if (n.title === "예약") return clean(scheduleLine(n.text, { raw: false })).text;
-	const [head = "", ...rest] = n.text.split("\n");
-	const title = head.endsWith(MATCHED) ? matchTitle(rest.join("\n")) : undefined;
-	return title ? [`${head.slice(0, -MATCHED.length)}: ${title}`, matchItems(rest.join("\n"), title)].join("\n") : n.text;
-}
 const load = (): Notice[] => {
 	if (!existsSync(paths.notices)) return [];
 	try {
@@ -45,10 +44,9 @@ const load = (): Notice[] => {
 export let items: Notice[] = load();
 // True while backfillNotices replays old events: upsert then neither writes the file nor broadcasts per item.
 let replaying = false;
-
 // The file paths on the chips of the stored notices (hub/listed-files.ts).
 export const noticeFilePaths = (): string[] => items.flatMap(n => n.files?.map(f => f.path) ?? []);
-export const save = () => writeAtomic(paths.notices, `${JSON.stringify(items, null, 1)}\n`);
+export const { save, flush: flushNotices } = coalescedWrite(() => writeAtomic(paths.notices, `${JSON.stringify(items, null, 1)}\n`), 200);
 
 // The 알림 screen does not list quiet records (web/js/31-notices-screen.js nscListed), so the count must not hold what the owner cannot read there.
 // A conversation's unread answer (conv) is listed and counted: it is the bell's way to say an answer finished while he was elsewhere.
@@ -72,12 +70,13 @@ const keptByTrim = (i: Notice): boolean => isOpenDecision(i) || (i.decision?.sen
 function trim(): void {
 	const over = items.length - NOTICE_CAP;
 	if (over <= 0) return;
-	const drop = new Set(items.filter(i => !keptByTrim(i)).sort((a, b) => Number(b.read) - Number(a.read) || (a.updated < b.updated ? -1 : a.updated > b.updated ? 1 : 0)).slice(0, over));
+	const records = new Set(items.filter(i => i.kind === "worklog" && !i.decision && unlisted(i)));
+	const drop = new Set(items.filter(i => !keptByTrim(i)).sort((a, b) => Number(records.has(b)) - Number(records.has(a)) || Number(b.read) - Number(a.read) || (a.updated < b.updated ? -1 : a.updated > b.updated ? 1 : 0)).slice(0, over));
 	if (drop.size) items = items.filter(i => !drop.has(i));
 }
 
 // `repeat`: overwrites the alert it repeats (alert-gate), `fold`: a monitor report that joins the watch's newest row; both keep the old text in `repeats`.
-type Input = { kind: NoticeKind; tone: NoticeTone; title: string; text: string; open: string; files?: ResultFile[]; links?: ResultLink[]; key?: string; watch?: string; by?: string; ref?: string; item?: WatchItem; read?: boolean; unread?: boolean; src?: string; at?: string; msg?: string; repeat?: boolean; fold?: boolean; wk?: string; wst?: string };
+type Input = { kind: NoticeKind; tone: NoticeTone; title: string; text: string; open: string; files?: ResultFile[]; links?: ResultLink[]; key?: string; watch?: string; by?: string; ref?: string; item?: WatchItem; read?: boolean; unread?: boolean; src?: string; at?: string; msg?: string; repeat?: boolean; fold?: boolean; wk?: string; wst?: string; nk?: NoticeKindName };
 // The row a monitor report joins: the watch's newest row when it is under a day old, has the same tone and no card on either side, and neither is a
 // report with nothing new (log). One pass over the list.
 function foldTarget(i: Input, at: string): Notice | undefined {
@@ -100,11 +99,13 @@ function closeWaiting(pick: (n: Notice) => boolean, at: string): Notice[] {
 	return hit;
 }
 
+export const ANSWER_REPUSH_MS = 5 * 60_000;
+const answerPushed = new Map<string, number>();
 export function upsert(i: Input): Notice {
 	const at = i.at ?? now();
 	const old = i.key ? items.find(n => n.key === i.key) : i.fold ? foldTarget(i, at) : undefined;
 	const folded = !i.key && i.fold === true && old !== undefined;
-	const wasUnread = old ? !old.read && !old.dismissed : false;
+	const wasUnread = old ? !old.read && !old.dismissed : false, prevAt = old?.at;
 	const quiet = appBlocked({ kind: i.kind, app: i.kind === "watch" ? appOf(i as unknown as Notice) : undefined, ...(i.watch ? { watch: i.watch } : {}), src: i.src ?? i.open, open: i.open });
 	if (quiet && old) return old;
 	let item: Notice;
@@ -150,6 +151,8 @@ export function upsert(i: Input): Notice {
 		}
 	}
 	if (quiet) return item;
+	if (i.nk) item.nk = i.nk;
+	else delete item.nk;
 	if (i.wk) {
 		item.wk = i.wk;
 		if (i.wst) item.wst = i.wst;
@@ -163,7 +166,11 @@ export function upsert(i: Input): Notice {
 		save();
 		broadcast({ ts: at, kind: "notice", source: "gateway", item, unread: unreadCount() });
 		// A folded report is a new matter for the phone even when its row was already unread (hub/push.ts tags it by report time).
-		if ((!wasUnread || folded) && !item.read && !item.dismissed) for (const fn of unreadHooks) fn(item);
+		const again = wasUnread && item.kind === "message" && !!item.key && Date.parse(at) - (answerPushed.get(item.key) ?? Date.parse(prevAt ?? at)) >= ANSWER_REPUSH_MS;
+		if ((!wasUnread || folded || again) && !item.read && !item.dismissed) {
+			if (item.kind === "message" && item.key) answerPushed.set(item.key, Date.parse(at));
+			for (const fn of unreadHooks) fn(item);
+		}
 	}
 	return item;
 }
@@ -188,6 +195,7 @@ function fromOutbox(e: HubEvent, asks = false): void {
 	const { text } = cleaned;
 	const tone = laneTone(e, cleaned.tone, text);
 	if (!text) return;
+	const nk = kindOf(e.nk), named = nk ? { nk } : {};
 	const restart = RESTART_PREFIX.test(text);
 	const by = authorOf(e);
 	const back = e.source === "gateway" ? /^(?:\[([^\]\n]+)\]\s*|([^:\n]{1,60}):\s+)(?:recovered\b|다시 정상이에요)/.exec(text) : null;
@@ -196,28 +204,36 @@ function fromOutbox(e: HubEvent, asks = false): void {
 	if (target === "worklog" || (restart && target === "web" && e.source === "gateway")) {
 		if (key?.startsWith("lane:")) {
 			const name = key.slice(5);
-			return void upsert({ kind: "result", tone, title: laneTitle(name), text, open: key, key, ...(by ? { by } : {}), ...(target === "worklog" ? { msg: target } : {}), ...resultsOf(e.text, name), at: e.ts });
+			return void upsert({ kind: "result", tone, title: laneTitle(name), text, open: key, key, ...(by ? { by } : {}), ...(target === "worklog" ? { msg: target } : {}), ...resultsOf(e.text, name), at: e.ts, ...named });
 		}
 		// The gateway's own status lines there (a restart, a model fallback, an account switch, a harness upgrade) are a record, not news: born read.
 		// A gateway [ask] / [fail] there still waits, and so does a daily digest with its own title (야간 정리, 토큰 점검).
-		const title = systemTitle(text, "작업 기록");
-		const status = e.source === "gateway" && tone !== "ask" && tone !== "fail" && title === "작업 기록";
-		return void upsert({ kind: "worklog", tone, title, text, open: target === "worklog" ? "worklog" : "main", key, read: restart || status, ...resultsOf(e.text), ...worklogKind(e), at: e.ts });
+		const title = systemTitle(text, "작업내역");
+		const status = e.source === "gateway" && tone !== "ask" && tone !== "fail" && title === "작업내역";
+		const record = tone !== "ask" && tone !== "fail" && tone !== "done" && noticeClass({ kind: "worklog", tone, text, nk }).cls === "log";
+		return void upsert({ kind: "worklog", tone, title, text, open: target === "worklog" ? "worklog" : "main", key, read: restart || status || record, ...resultsOf(e.text), ...worklogKind(e), at: e.ts, ...named });
 	}
 	if (target === "alert") {
 		if (asks) return;
+		const body = text.replace(BRACKET_CHANNEL_TAG, "");
 		// An all-clear of the gateway is born read; a repeat (hub/alert-gate.ts) rewrites the alert it repeats, in place and in its read state.
-		const quiet = e.source === "gateway" && quietAlert(text);
-		// The provider is back: the logins it stopped on are over (limit-alert noteRecovered said so once for every agent).
-		if (quiet && text.replace(/^[^:\n]{1,60}:\s+/, "").startsWith(PROVIDER_BACK_KO)) providerBack(e.ts);
-		const prior = e.repeat === true ? items.findLast(n => n.kind === "alert" && !n.dismissed && n.by === by && alertMatter(n.text) === alertMatter(text)) : undefined;
+		const quiet = e.source === "gateway" && quietAlert(body);
+		// The provider is back: the logins it stopped on are over (limit-alert noteRecovered said so once for every agent), and so they are when
+		// the usage limit lifts (hub/limit-lift.ts), which runs the held work on the same provider (2026-11-14: the stop stayed in 답변 필요).
+		const rest = body.replace(/^[^:\n]{1,60}:\s+/, "");
+		if (e.source === "gateway" && ((quiet && rest.startsWith(PROVIDER_BACK_KO)) || LIFTED.some(l => rest.startsWith(l)))) providerBack(e.ts);
+		const prior = e.repeat === true ? items.findLast(n => n.kind === "alert" && !n.dismissed && n.by === by && alertMatter(n.text) === alertMatter(body)) : undefined;
 		if (prior && !prior.key) prior.key = `alert:${prior.id}`;
-		return void upsert({ kind: "alert", tone, title: systemTitle(text, "알림"), text, open: "alert", key: prior?.key ?? key, ...(by ? { by } : {}), ...(refOf(e) ? { ref: refOf(e) } : {}), read: Boolean(recovered) || quiet, ...(prior ? { repeat: true } : {}), at: e.ts });
+		return void upsert({ kind: "alert", tone, title: systemTitle(body, "알림"), text: body, open: "alert", key: prior?.key ?? key, ...(by ? { by } : {}), ...(refOf(e) ? { ref: refOf(e) } : {}), read: Boolean(recovered) || quiet, ...(prior ? { repeat: true } : {}), at: e.ts, ...named });
 	}
+	const row = nk && e.source === "gateway" ? NOTICE_KINDS[nk] : undefined;
 	const watch = /^ch:\d+$/.test(target) && e.source === "gateway" ? /^\[([^\]\n]+)\]\s*/.exec(text) : null;
-	if (watch) {
+	if (watch && row?.cls !== "alert") {
 		const ref = recovered ? undefined : itemRefOf(text);
-		upsert({ kind: "watch", tone, title: watchLabelOf(watch[1]!), text: text.slice(watch[0].length) || text, open: target, key, read: Boolean(recovered), at: e.ts, ...(recovered || key ? {} : { fold: true }), ...(ref ? { item: resolveItem(ref) } : {}) });
+		upsert({ kind: "watch", tone, title: watchLabelOf(watch[1]!), text: text.slice(watch[0].length) || text, open: target, key, read: Boolean(recovered), at: e.ts, ...(recovered || key ? {} : { fold: true }), ...(ref ? { item: resolveItem(ref) } : {}), ...named });
+	} else if (row && !asks && (row.cls === "alert" || nk === "ledger")) {
+		const open = eventTarget(e) ?? "main";
+		upsert({ kind: row.cls === "news" ? "watch" : "alert", tone, title: nk === "ledger" ? "챙길 일" : systemTitle(text, "알림"), text, open, key, by: "gateway", at: e.ts, ...named });
 	}
 }
 
@@ -237,9 +253,11 @@ function fromInbox(e: HubEvent): void {
 		if (recovered) watchRecovered(name, e.ts, label);
 		// The wake event itself is a message of the 알림 conversation (hub/events.ts eventTarget); the bell gets nothing extra when the
 		// orchestrator, which reports in the channel, is up.
-		if (e.to === "orchestrator" && Array.isArray(e.channels) && e.channels.length && orchestratorUp()) return;
+		const failed = kindOf(e.nk) === "alert";
+		if (!failed && e.to === "orchestrator" && Array.isArray(e.channels) && e.channels.length && orchestratorUp()) return;
 		const [head, reason, output] = [label || "모니터링", String(e.reason ?? ""), String(e.text ?? "")];
 		const prev = typeof e.prev === "string" ? e.prev : undefined;
+		if (failed) return void upsert({ kind: "alert", tone: "fail", title: head, text: clean(watchLine(head, reason, output, { prev })).text || "알림이 왔어요", open: "alert", ...(name ? { watch: name } : {}), by: "gateway", at: e.ts, nk: "alert" });
 		const ref = recovered || isIssue(reason) ? undefined : itemRefOf(output);
 		const item = upsert({ kind: "watch", tone: "", title: head, text: clean(watchLine(head, reason, output, { prev })).text || "알림이 왔어요", open: "alert", ...(name ? { watch: name } : {}), read: recovered, at: e.ts, ...(recovered ? {} : { fold: true }), ...(ref ? { item: resolveItem(ref) } : {}) });
 		if (summarizeWatch && !isIssue(reason) && !recovered && !sentinelMatch(reason, output) && !describeOutput(output, { prev }).readable)
@@ -255,24 +273,33 @@ function fromInbox(e: HubEvent): void {
 		const open = typeof e.conv === "string" ? e.conv : `mail:${e.mail}`;
 		return void upsert({ kind: "watch", tone: "", title: name || "새 메일", text: String(e.subject ?? "") || "(제목 없음)", open, key: open, unread: true, at: e.ts });
 	}
-	// the gateway's own wakes (update carry-over, text overrides: main.ts wakeOnce) are instructions to the assistant, not the owner's schedules
-	if (e.kind === "schedule" && e.source !== "gateway") {
-		const ch = typeof e.channel === "string" && /^ch:\d+$/.test(e.channel) ? e.channel : "main";
-		upsert({ kind: "watch", tone: "", title: "예약", text: clean(scheduleLine(String(e.text ?? ""), { raw: false })).text, open: ch, at: e.ts });
+	const run = fireRow(e);
+	if (run) upsert(run);
+}
+
+function fromRunAnswer(e: HubEvent, run: string, loud: boolean): void {
+	const prev = items.find(n => n.key === runKey(run));
+	if (prev?.decision) {
+		settleDecision(prev, "", e.ts, true);
+		delete prev.key;
 	}
+	upsert(answerRow(e, run, prev, loud || ["ask", "fail"].includes(clean(e.text).tone)));
 }
 
 export function feed(e: HubEvent): void {
 	try {
 		resolveByReport(e);
 		if (e.kind === "lane_start") noteLaunch(e);
+		else if (e.kind === "out" && adoptRepost(e)) return;
 		else if (e.kind === "out") {
 			const ds = decisionsOf(e);
 			fromOutbox(e, ds.length > 0);
 			for (const d of ds) putDecision(d, e.ts);
 			// A decision message makes only its decision item; any other answer may become the conversation's unread message item
 			// (not the reply to a button answer: answerReply).
-			if (!answerReply(e) && !ds.length) fromAnswer(e);
+			const run = taskRunOf(e);
+			if (run) fromRunAnswer(e, run, ds.length > 0);
+			else if (!answerReply(e) && !ds.length) fromAnswer(e);
 		} else if (e.kind === "message" || e.kind === "lane_message") {
 			answerReply(e);
 			ownerReplied(e);
@@ -334,7 +361,7 @@ function fromAnswer(e: HubEvent): void {
 	// A closing report (its session already exited) may update the text of a notice the owner has read, but not re-open it.
 	const owner = conv.startsWith("lane:") ? conv.slice(5) : conv.startsWith("ch:") ? channelLanes().get(conv) : undefined;
 	const closing = [owner, lane ? src.slice(5) : undefined].some(name => name !== undefined && stoppedSince(name) !== undefined);
-	const title = conv.startsWith("lane:") ? laneTitle(conv.slice(5)) : conv === "alert" ? "알림" : conv === "worklog" ? "작업 기록" : channelTitle(conv);
+	const title = conv.startsWith("lane:") ? laneTitle(conv.slice(5)) : conv === "alert" ? "알림" : conv === "worklog" ? "작업내역" : channelTitle(conv);
 	upsert({ kind: "message", tone: "", title, text: preview.length > MESSAGE_PREVIEW ? `${preview.slice(0, MESSAGE_PREVIEW - 1)}…` : preview, open: conv, key: `msg:${conv}`, unread: true, src: conv, at: e.ts, read: closing && items.find(n => n.key === `msg:${conv}`)?.read === true });
 }
 
@@ -351,19 +378,36 @@ function closeRepeat(old: Notice, at: string): void {
 	}
 }
 
+// A card posted again at the bottom (a confirm card, hub/notices-drafts.ts repostDraftCard) is the open notice it names, now asked by this post: a
+// web quote of it names the card and it counts as the newest post there. No second notice is made.
+function adoptRepost(e: HubEvent): boolean {
+	const n = typeof e.repost === "string" ? items.find(i => i.id === e.repost && isOpenDecision(i)) : undefined;
+	if (!n) return false;
+	n.decision!.reply_to = e.ts;
+	if (!replaying) save();
+	return true;
+}
+
+function closeCardsWrittenBackTo(to: string, at: string, keep?: Notice): void {
+	const since = ownerWroteAt.get(to);
+	if (since && since <= at) for (const i of items) if (i !== keep && isOpenDecision(i) && hasChoice(i) && !i.decision!.draft && i.decision!.to === to && !laterOn(i.decision) && (i.at ?? i.ts) < since) settleDecision(i, "", at, true);
+}
+
 export function putDecision(d: { key: string; title: string; detail: string; to: string; open?: string; options: DecisionOpt[]; group: number; replyTo?: string; draft?: DraftApproval; by?: string; ref?: string; assumed?: true }, at: string): void {
-	const old = items.find(n => n.key === d.key);
+	const old = items.find(n => n.key === d.key) ?? (d.draft || Object.values(FILLER_QUESTIONS).includes(d.title) ? undefined : items.findLast(n => n.decision?.to === d.to && !n.decision.draft && sameQuestion(n.title, d.title))), asked = askedAgain(old, d, at);
 	if (old?.decision) {
 		// The same ask can arrive twice (a session's mid-turn line and its turn-end report): one notice, and an answered one stays answered.
-		if (isOpenDecision(old)) return;
-		if (Date.parse(at) - Date.parse(old.ignored ?? old.decision.answered_at ?? "") < REASK_MS) return void closeRepeat(old, at);
+		if (isOpenDecision(old) && old.key === d.key && !asked) return;
+		if (!isOpenDecision(old) && Date.parse(at) - Date.parse(old.ignored ?? old.decision.answered_at ?? "") < REASK_MS) return void closeRepeat(old, at);
 	}
-	const open = d.open ?? d.to;
-	const expires_at = expiresAtOf(d, at);
-	const decision: Decision = { options: d.options, to: d.to, ...(d.replyTo ? { reply_to: d.replyTo } : {}), group: d.group, state: "open", ...(expires_at ? { expires_at } : {}), ...(d.draft ? { draft: d.draft } : {}), ...(d.assumed ? { assumed: true as const } : {}) };
+	if (old) old.key = d.key;
+	if (d.options.length && !d.draft) closeCardsWrittenBackTo(d.to, at, old);
+	const open = d.open ?? d.to, expires_at = expiresAtOf(d, at);
+	if (d.draft && !shownAsStored(d.draft)) d = { ...d, draft: undefined };
+	const decision: Decision = { options: optionsOf(d), to: d.to, ...(d.replyTo ? { reply_to: d.replyTo } : {}), group: d.group, state: "open", ...(expires_at ? { expires_at } : {}), ...(d.draft ? { draft: d.draft } : {}), ...(d.assumed ? { assumed: true as const } : {}), ...(asked ? { asked } : {}) };
 	let item: Notice;
 	if (old) {
-		Object.assign(old, { kind: "decision", tone: "ask", title: d.title, text: d.detail, open, src: open, at, updated: at, read: false, decision, ...(d.by ? { by: d.by } : {}), ...(d.ref ? { ref: d.ref } : {}) });
+		Object.assign(old, { kind: "decision", tone: "ask", title: d.title, text: withAskedLine(d.detail, asked), open, src: open, at, updated: at, read: false, decision, ...(d.by ? { by: d.by } : {}), ...(d.ref ? { ref: d.ref } : {}) });
 		delete old.dismissed;
 		delete old.ignored;
 		item = old;
@@ -373,18 +417,30 @@ export function putDecision(d: { key: string; title: string; detail: string; to:
 		trim();
 	}
 	if (replaying) return;
+	// A send card that is not its draft as printed closes at once, saying why, and its session is told to post it again (notices-rules.ts unreadDraftRef);
+	// the card posted again from the draft takes the place of the one closed that way.
+	const note = repostNote(item);
+	if (note) {
+		settleDecision(item, msg().draftCardRedo, at);
+		for (const fn of repostHooks) fn(item, note);
+		return;
+	}
 	save();
 	broadcast({ ts: at, kind: "notice", source: "gateway", item, unread: unreadCount() });
 	for (const fn of decisionHooks) fn(item);
 }
 
-export function settleDecision(item: Notice, answer: string, at = now(), resolved = false): void {
+export function settleDecision(item: Notice, answer: string, at = now(), resolved = false, how?: Closing): void {
 	const d = item.decision;
 	if (!d || d.state !== "open") return;
 	d.state = "answered";
 	// A resolved matter was not answered: it is marked resolved and carries no answer text.
 	if (resolved) d.resolved = true;
 	else d.answer = (sending.get(item.id) ?? answer).slice(0, 200);
+	const closing = how ?? (resolved ? { how: "done" as const } : undefined);
+	if (closing && plainCard(d)) Object.assign(d, closing.how === "words" ? { closed_how: "words", words: closing.words } : { closed_how: closing.how });
+	delete d.judging;
+	delete d.later_until;
 	d.answered_at = at;
 	item.read = true;
 	item.updated = at;
@@ -404,23 +460,14 @@ export function settleDecision(item: Notice, answer: string, at = now(), resolve
 function ownerReplied(e: HubEvent): void {
 	// A peer gateway's line arrives as a web message under the owner's login, but he said nothing (2026-11-05: it answered an [ask] nobody had seen).
 	if (isPeerMessage(e)) return;
-	const to = eventTarget(e) ?? "main";
-	const id = typeof e.decision === "string" ? e.decision : "";
+	const to = eventTarget(e) ?? "main", settles = typedAnswer(e, to);
+	ownerWroteAt.set(to, String(e.ts));
 	const text = String(e.text ?? "").trim();
-	const quoted = (e.reply as { id?: unknown } | undefined)?.id;
-	const quotesAsk = (i: Notice) => typeof quoted === "string" && quoted !== "" && i.decision!.reply_to === quoted && i.decision!.group === 1;
+	const byButton = typeof e.decision === "string" || (Array.isArray(e.picks) && e.picks.length > 0);
+	const words: Closing | undefined = byButton ? undefined : { how: "words", words: wordsOf(text) };
 	// A typed message is not the answer to a waiting send-approval card (2026-10-31: "19번 카드는 위에 있어", "마지막 카드 어디?" closed it):
 	// the card stays open until its buttons answer it or the draft is handled elsewhere (settleHandledDrafts).
-	for (const i of items) if (isOpenDecision(i) && !i.decision!.to.startsWith("auth:") && (id ? i.id === id : i.decision!.to === to && !i.decision!.draft && (!hasChoice(i) || answersOption(i.decision!.options, text) || quotesAsk(i)))) settleDecision(i, text, e.ts);
-}
-
-// The titles of the choice questions still open in conversation `target` (the newest `max` first): what the bot is told with the owner's next message there.
-export function openChoiceTitles(target: string, max = 3): string[] {
-	return items
-		.filter(i => isOpenDecision(i) && hasChoice(i) && !i.decision!.draft && i.decision!.to === target)
-		.sort((a, b) => b.updated.localeCompare(a.updated))
-		.slice(0, max)
-		.map(i => i.title);
+	for (const i of items) if (isOpenDecision(i) && !i.decision!.to.startsWith("auth:") && settles(i)) settleDecision(i, text, e.ts, false, words);
 }
 
 function readIds(ids: string[]): void {
@@ -431,10 +478,10 @@ function readIds(ids: string[]): void {
 
 // Resolves every asking notice that `pick` accepts and that was raised before `at`. Returns how many it closed. Decisions with options (and
 // their alert twins) are skipped unless `named`: the bot named that notice itself.
-export function resolveAsks(pick: (i: Notice) => boolean, at: string, named = false): number {
+export function resolveAsks(pick: (i: Notice) => boolean, at: string, named = false, said?: OwnerSaid): number {
 	const owned = new Set(items.filter(hasChoice).map(d => d.decision!.reply_to));
 	const hit = items.filter(i => isAsking(i) && (i.at ?? i.ts) < at && pick(i) && (named || !(hasChoice(i) || (!i.decision && owned.has(i.at)))));
-	for (const i of hit) if (isOpenDecision(i)) settleDecision(i, "", at, true);
+	for (const i of hit) if (isOpenDecision(i)) settleDecision(i, "", at, true, named ? wordsClose(i, said) : undefined);
 	readIds(hit.filter(i => !i.read).map(i => i.id));
 	return hit.length;
 }
@@ -467,9 +514,10 @@ function watchRecovered(name: string, at: string, label = name): void {
 	readIds(items.filter(i => !i.read && !i.dismissed && i.ts < at && ((i.kind === "watch" && isTitle(i.title)) || failed(i))).map(i => i.id));
 }
 
+const LIFTED = [ko.limitLifted, ko.limitLiftedReset, en.limitLifted, en.limitLiftedReset];
 // Signal 3b: the model provider answers again (limit-alert recoveryText). The login stops it raised are over, read or not.
 function providerBack(at: string): void {
-	const ended = closeWaiting(i => i.kind === "alert" && i.text.includes(LOGIN_BLOCKED_KO), at);
+	const ended = closeWaiting(i => i.kind === "alert" && loginBlockedIn(i.text), at);
 	readIds(ended.filter(i => !i.read).map(i => i.id));
 }
 
@@ -478,7 +526,7 @@ function providerBack(at: string): void {
 export function retire(list: Notice[], at = now()): void {
 	if (!list.length) return;
 	for (const i of list) {
-		if (i.decision?.state === "open") settleDecision(i, "", at, true);
+		if (i.decision?.state === "open") settleDecision(i, "", at, true, { how: "gone" });
 		i.read = true;
 		i.dismissed = true;
 	}
@@ -529,13 +577,14 @@ function rerenderPending(): number {
 			if (!n?.decision) return;
 			const before = was(i);
 			i.title = n.title;
-			i.text = n.text;
+			i.text = withAskedLine(n.text, i.decision!.asked);
 			if (n.key) i.key = n.key;
 			const d = i.decision!;
 			d.options = n.decision.options;
 			d.group = n.decision.group;
 			if (n.decision.draft) d.draft = n.decision.draft;
-			else delete d.draft;
+			// A card read as its draft when it came keeps it: the stored draft may have changed since by the owner's own edit (its text or recipient).
+			else if (d.draft?.ref !== unreadDraftRef(n)) delete d.draft;
 			if (n.decision.assumed) d.assumed = true;
 			else delete d.assumed;
 			if (was(i) !== before) changed++;
@@ -744,7 +793,8 @@ export function resetNoticesForTest(): void {
 	viewers.clear();
 	awaitingReply.clear();
 	quietReplies.clear();
+	ownerWroteAt.clear();
 	sending.clear();
 	orchTurnFrom = undefined;
-	save();
+	flushNotices(true);
 }

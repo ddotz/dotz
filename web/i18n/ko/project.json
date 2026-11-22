@@ -10,6 +10,8 @@
   "project.row.in_project": "프로젝트 {name}",
   "project.open_chat": "대화 열기",
   "project.subs_count": "서브에이전트 {done}/{total}",
+  "project.mode.coding": "코딩",
+  "project.mode.assistant": "비서",
   "project.view.all": "전체",
   "project.paused": "일시 정지",
   "project.word.asks": "답을 기다려요",

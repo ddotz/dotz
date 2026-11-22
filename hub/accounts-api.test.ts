@@ -1,12 +1,13 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
-import { readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { aliasesFile, readAliases, setAlias } from "./account-alias.ts";
 import { decisionsFile, readRules, rulesFile, setOnLimit, setUsage, writeRules } from "./account-rules.ts";
 import { type AccountSwitch, FALLBACK_ENV, PIN_ENV, resetStickyForTest, stickyAccount, stickyEnv, switchesFile } from "./account-sticky.ts";
+import { ownProviderPins, providerPinsFile } from "./accounts-providers.ts";
 import { accountAnswer, accountAsk, accountsBody, KIND_TEXT, accountsRoute, accountText, labeledAccountView, pinnedLimitAlert, pinnedLimitNotice, switchNotice, switchText } from "./accounts-api.ts";
 import { authFile } from "./apikey-policy.ts";
-import { DATA_DIR } from "./config.ts";
+import { cfg, DATA_DIR } from "./config.ts";
 import { parseChoices } from "./choices.ts";
 import { msg } from "./i18n.ts";
 import { limitsCard, runCommand } from "./control.ts";
@@ -16,7 +17,7 @@ import { limitsOf, type AccountReport } from "./usage-account.ts";
 const WED_10 = Date.parse("2026-10-21T10:00:00+09:00");
 const ALIASES = { default: "개인 계정", work: "회사 계정" };
 const poolFile = () => join(process.env.OMO_CODING_AGENT_DIR!, "credential-pool-state.json");
-const files = () => [authFile(), poolFile(), join(DATA_DIR, "account.json"), switchesFile(), rulesFile(), decisionsFile(), aliasesFile()];
+const files = () => [authFile(), poolFile(), join(DATA_DIR, "account.json"), switchesFile(), rulesFile(), decisionsFile(), aliasesFile(), providerPinsFile()];
 
 function writeAuth(names: string[]): void {
 	writeFileSync(authFile(), JSON.stringify({ "anthropic-subscription": { accounts: names.map(name => ({ name, access: "fake" })) } }));
@@ -100,13 +101,37 @@ test("accountsBody carries labels, states, decision, rules as text, manual pick,
 	expect(Object.keys(b.files).sort()).toEqual(["aliases", "decisions", "rules"]);
 	for (const f of Object.values(b.files)) expect(f.startsWith("/")).toBe(true);
 	expect(Array.isArray(b.switches)).toBe(true);
-	expect(Object.keys(b).sort()).toEqual(["accounts", "chosen", "decision", "files", "login_providers", "manual_text", "mode", "providers", "rules", "rules_text", "script", "switches", "used"]);
+	expect(Object.keys(b).sort()).toEqual(["accounts", "chosen", "decision", "files", "login_providers", "manual_text", "mode", "pin_unavailable", "providers", "rules", "rules_text", "script", "switches", "used"]);
+	expect(b.pin_unavailable).toBeNull();
 	// the Claude group mirrors the same accounts, shaped like the other providers' groups
 	expect(b.providers[0]).toMatchObject({ id: "anthropic", name: "Claude 구독", multi: true, can_pin: true, can_delete: true });
 	expect(b.providers[0]!.accounts.map(a => [a.name, a.current, a.pinned, a.label, a.windows.map(w => w.label)])).toEqual([["default", false, false, "개인 계정", ["5시간", "7일"]], ["work", true, false, "회사 계정", []]]);
 	expect(b.providers[0]!.accounts[1]!.blocked_tag).toContain("11:00");
 	expect(b.chosen).toMatchObject({ name: "work", source: "manual", blocked: "rate_limit", used_instead: null });
 	expect(b.chosen!.text).toContain("멈춰 있어요");
+});
+
+test("with no role on OmO the pins and rules say they are unavailable: the routes answer 409, /account and the chat answer why, nothing is written", async () => {
+	const was = cfg.runtime;
+	cfg.runtime = "omp";
+	try {
+		writeAuth(["default", "work"]);
+		const why = accountsBody().pin_unavailable;
+		expect(why).toContain("omp에서는");
+		for (const [method, path] of [["POST", "/api/accounts/use"], ["PUT", "/api/accounts/mode"], ["PUT", "/api/accounts/pin"], ["PUT", "/api/accounts/order"], ["PUT", "/api/accounts/rules"], ["PUT", "/api/accounts/on-limit"]] as const) {
+			const res = await call(method, path, {});
+			expect(res?.status).toBe(409);
+			const body: { error?: string } = await res!.json();
+			expect(body.error).toBe(why!);
+		}
+		expect(await cmdNote("/account")).toBe(why!);
+		expect(await cmdNote("/account work")).toBe(why!);
+		expect(await accountAnswer({ kind: "auto" })).toBe(why!);
+		expect(readRules().manual).toBeUndefined();
+		expect(existsSync(rulesFile())).toBe(false);
+	} finally {
+		cfg.runtime = was;
+	}
 });
 
 test("accountsBody switches carry from_label/to_label/kind_text and labeledAccountView mirrors them", () => {
@@ -550,4 +575,82 @@ test("the Claude group shows every logged-in account's windows from OmO's usage 
 	// the 7d reading of "work" is older than its own reset time, so it is not shown as a number that no longer holds
 	// without rules or a script the legacy numbers come from the same file too
 	expect(b.accounts.map(a => [a.name, a.five_hour_left, a.seven_day_left])).toEqual([["default", 60, 90], ["work", 99, null]]);
+});
+
+// rules.json v2 routes (owner 2026-11-16): every route takes provider (anthropic when absent), the dialog writes rules only, and the hub
+// words and checks a rule for the page (POST /rules/check).
+test("PUT /api/accounts/rules writes the rule list only: an older client's stale order, manual pick and limit answer never come back", async () => {
+	writeAuth(["default", "work"]);
+	// the dialog opened on this copy, then another device moved the order and cleared the pick and the limit answer
+	const stale = { order: ["work", "default"], manual: { account: "work" }, on_limit: "wait", rules: [{ do: { auto: true } }] };
+	writeRules({ order: ["default", "work"] });
+	const old = await call("PUT", "/api/accounts/rules", { rules: { ...stale, rules: [{ name: "밤", when: { from: "22:00", to: "06:00" }, do: { pin: "work" } }] } });
+	expect(old?.status).toBe(200);
+	expect(readRules()).toEqual({ order: ["default", "work"], rules: [{ name: "밤", when: { from: "22:00", to: "06:00" }, do: { pin: "work" } }] });
+	const now = await call("PUT", "/api/accounts/rules", { provider: "anthropic", rules: [] });
+	expect(now?.status).toBe(200);
+	expect(readRules()).toEqual({ order: ["default", "work"] });
+});
+
+test("provider routes: another pool's rules go to its own part, Claude's part keeps its bytes, and Claude-only routes refuse it", async () => {
+	writeMixedAuth();
+	writeRules({ order: ["work", "default"], rules: [{ name: "근무", when: { days: ["mon", "tue", "wed", "thu", "fri"], from: "09:00", to: "18:00" }, do: { pin: "work" } }] });
+	const claudeBytes = () => JSON.stringify(JSON.parse(readFileSync(rulesFile(), "utf8")).providers.anthropic);
+	const before = claudeBytes();
+	setAlias("chatgpt-subscription:login-2", "회사용 GPT");
+	const r = await call("PUT", "/api/accounts/rules", { provider: "chatgpt-subscription", rules: [{ name: "낮", when: { from: "09:00", to: "18:00" }, do: { pin: "login-2" } }] });
+	expect(r?.status).toBe(200);
+	expect(claudeBytes()).toBe(before);
+	expect(readRules("chatgpt-subscription")).toEqual({ rules: [{ name: "낮", when: { from: "09:00", to: "18:00" }, do: { pin: "login-2" } }] });
+	const gpt = ((await r!.json()) as any).providers.find((g: { id: string }) => g.id === "chatgpt-subscription");
+	expect(gpt).toMatchObject({ mode: "pinned", can_rules: true, rules_text: [{ index: 0, text: "09:00-18:00에는 회사용 GPT로 고정" }] });
+	expect((await call("PUT", "/api/accounts/rules", { provider: "chatgpt-subscription", rules: [], script: { path: "/x.sh" } }))?.status).toBe(400);
+	expect((await call("PUT", "/api/accounts/rules", { provider: "nope", rules: [] }))?.status).toBe(404);
+	expect((await call("PUT", "/api/accounts/on-limit", { provider: "chatgpt-subscription", on_limit: "wait" }))?.status).toBe(400);
+	expect((await call("PUT", "/api/accounts/order", { provider: "chatgpt-subscription", order: ["login-2", "default"] }))?.status).toBe(400);
+});
+
+test("POST /api/accounts/rules/check: each rule's sentence by alias, the bad fields by index, and nothing saved", async () => {
+	writeAuth(["default", "work"]);
+	setAlias("default", "개인 계정");
+	setAlias("work", "회사 계정");
+	const r = await call("POST", "/api/accounts/rules/check", { rules: [
+		{ when: { conditions: [{ account: "개인 계정", five_hour_left_below: 20 }] }, do: { pin: "work" } },
+		{ when: { from: "25:00" }, do: { pin: "work" } },
+		{ do: { pin: "ghost" } },
+	] });
+	expect(r?.status).toBe(200);
+	const b = (await r!.json()) as { texts: (string | null)[]; errors: { index: number; field: string; text: string }[] };
+	expect(b.texts).toEqual(["개인 계정의 5시간 한도가 20% 밑이면 회사 계정으로 고정", null, null]);
+	expect(b.errors.map(e => [e.index, e.field])).toEqual([[1, "when.from"], [2, "do.pin"]]);
+	expect(b.errors[1]!.text).toContain("ghost");
+	expect(existsSync(rulesFile())).toBe(false);
+});
+
+test("물어보기 can go back to asking: on_limit null or DELETE clears the saved answer", async () => {
+	setOnLimit("wait");
+	expect(((await (await call("PUT", "/api/accounts/on-limit", { on_limit: null }))!.json()) as any).rules.on_limit).toBeUndefined();
+	setOnLimit("switch");
+	expect((await call("DELETE", "/api/accounts/on-limit"))?.status).toBe(200);
+	expect(readRules().on_limit).toBeUndefined();
+});
+
+test("another provider's 자동 전환 / 고정: 고정 is the owner's own OmO pin and the rules rest; 자동 전환 clears it and a rule picks again", async () => {
+	writeMixedAuth();
+	const auto = await call("PUT", "/api/accounts/mode", { provider: "chatgpt-subscription", mode: "auto" });
+	expect(auto?.status).toBe(200);
+	expect(readAuth()["chatgpt-subscription"].pinned).toBeUndefined();
+	await call("PUT", "/api/accounts/rules", { provider: "chatgpt-subscription", rules: [{ do: { pin: "default" } }] });
+	expect(readAuth()["chatgpt-subscription"].pinned).toBe("default");
+	expect(ownProviderPins()).toEqual({ "chatgpt-subscription": "default" });
+	const g = accountsBody(WED_10, CATALOG).providers.find(x => x.id === "chatgpt-subscription")!;
+	expect(g.mode).toBe("auto");
+	expect(g.accounts.map(a => [a.name, a.pinned, a.picked])).toEqual([["default", false, true], ["login-2", false, false]]);
+	const pinned = await call("PUT", "/api/accounts/mode", { provider: "chatgpt-subscription", mode: "pinned", account: "login-2" });
+	expect(pinned?.status).toBe(200);
+	expect(readAuth()["chatgpt-subscription"].pinned).toBe("login-2");
+	expect(ownProviderPins()).toEqual({});
+	expect(((await pinned!.json()) as any).providers.find((x: { id: string }) => x.id === "chatgpt-subscription").mode).toBe("pinned");
+	// Claude's pin and rules are untouched by all of it
+	expect(readAuth()["anthropic-subscription"].pinned).toBe("work");
 });

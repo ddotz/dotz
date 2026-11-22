@@ -62,3 +62,42 @@ test("edits and writes under the code folder are refused, elsewhere allowed", ()
 	expect(codeLockReason("edit", { path: join(root, "dotz-notes.md") }, other, code)).toBeUndefined();
 	expect(codeLockReason("read", { path: join(code, "MODE.md") }, other, code)).toBeUndefined();
 });
+
+test("omp's own edit shapes name their files too: hashline [PATH#TAG] headers and MV, apply_patch and sloppy file lines, patch-mode rename, xd:// device calls, ast_edit paths", () => {
+	const locked = (tool: string, input: Record<string, unknown>) => codeLockReason(tool, input, other, code);
+	const main = join(code, "hub", "main.ts");
+	expect(locked("edit", { input: `[${main}#1A2B]\nPUT 1.=1:\n+x` })).toBe(CODE_LOCK_REASON);
+	expect(locked("edit", { input: `[${join(other, "a.ts")}#1A2B]\nPUT 1.=1:\n+x\n[${main}#9F00]\nCUT 2.=3` })).toBe(CODE_LOCK_REASON);
+	expect(locked("edit", { input: `[${join(other, "a.ts")}#1A2B]\nMV ${join(code, "moved.ts")}` })).toBe(CODE_LOCK_REASON);
+	expect(locked("edit", { path: join(other, "a.ts"), edits: [{ rename: join(code, "renamed.ts") }] })).toBe(CODE_LOCK_REASON);
+	expect(locked("apply_patch", { input: `*** Begin Patch\n*** Update File: ${main}\n@@\n-a\n+b\n*** End Patch` })).toBe(CODE_LOCK_REASON);
+	expect(locked("apply_patch", { input: `*** Begin Patch\n*** Add File: ${other}/n.ts\n+a\n*** Move to: ${code}/n.ts\n*** End Patch` })).toBe(CODE_LOCK_REASON);
+	expect(locked("write", { path: "xd://edit", content: JSON.stringify({ input: `[${main}#1A2B]\nPUT 1.=1:\n+x` }) })).toBe(CODE_LOCK_REASON);
+	expect(locked("ast_edit", { paths: [join(other, "a.ts"), join(code, "hub")], ops: [] })).toBe(CODE_LOCK_REASON);
+	expect(locked("edit", { input: `[${join(other, "a.ts")}#1A2B]\nPUT 1.=1:\n+x` })).toBeUndefined();
+	expect(locked("edit", { input: `[${join(other, "a.ts")}#1A2B]\nPUT 1.=1:\n+see ${main} for the lock` })).toBeUndefined();
+	expect(locked("write", { path: "xd://edit", content: "not json" })).toBeUndefined();
+	expect(locked("write", { path: "ssh://box/srv/hub/main.ts", content: "x" })).toBeUndefined();
+});
+
+test("ast_edit with a folder, a glob or no paths reaches every file under it: refused when that tree holds the code folder, allowed for a tree that does not", () => {
+	const locked = (input: Record<string, unknown>, cwd = other) => codeLockReason("ast_edit", input, cwd, code);
+	const ops = [{ pat: "a", out: "b" }];
+	expect(locked({ paths: [join(code, "hub")], ops })).toBe(CODE_LOCK_REASON);
+	expect(locked({ paths: [root], ops })).toBe(CODE_LOCK_REASON);
+	expect(locked({ paths: [join(code, "**", "*.ts")], ops })).toBe(CODE_LOCK_REASON);
+	expect(locked({ paths: [join(root, "*", "hub", "*.ts")], ops })).toBe(CODE_LOCK_REASON);
+	expect(locked({ paths: ["../dotz"], ops })).toBe(CODE_LOCK_REASON);
+	expect(locked({ paths: ["**/*.ts"], ops }, root)).toBe(CODE_LOCK_REASON);
+	expect(locked({ ops }, code)).toBe(CODE_LOCK_REASON);
+	expect(locked({ paths: [], ops }, join(code, "hub"))).toBe(CODE_LOCK_REASON);
+	expect(locked({ ops }, root)).toBe(CODE_LOCK_REASON);
+	expect(locked({ paths: [], ops }, root)).toBe(CODE_LOCK_REASON);
+	expect(codeLockReason("write", { path: "xd://ast_edit", content: JSON.stringify({ ops }) }, code, code)).toBe(CODE_LOCK_REASON);
+	expect(codeLockReason("write", { path: "xd://ast_edit", content: JSON.stringify({ paths: [root], ops }) }, other, code)).toBe(CODE_LOCK_REASON);
+	expect(locked({ ops })).toBeUndefined();
+	expect(locked({ paths: [], ops })).toBeUndefined();
+	expect(locked({ paths: ["."], ops })).toBeUndefined();
+	expect(locked({ paths: [other, join(other, "*.ts"), "src/**/*.ts"], ops })).toBeUndefined();
+	expect(locked({ paths: ["skill://x"], ops })).toBeUndefined();
+});

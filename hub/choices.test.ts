@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { clipKeepingAsk, normalizeAsk } from "./ask-normalize.ts";
 import { ASK_A, ASK_B } from "./ask-normalize.fixture.ts";
 import { draftApprovalBlock } from "./draft-approval.ts";
-import { decisionText, hasDecisionHead, parseChoices, parseDecisions, stripRecommendMark } from "./choices.ts";
+import { cleanChoices, decisionText, detailOf, hasDecisionHead, issueBlock, parseChoices, parseDecisions, plainDecisions, replyChoiceBlock, stripRecommendMark, unnumbered } from "./choices.ts";
 
 test("an old message's recommendation mark does not survive parsing or display", () => {
 	const old = "[ask] 배포\n결정: 시점\n**1) 지금** ← 추천\n바로 올려요\n2) 내일 (recommended)\n3) 모레 <- recommended";
@@ -136,4 +136,40 @@ test("a numbered body list above the block does not cost the buttons; a clip kee
 	const cut = clipKeepingAsk(text, 1800);
 	expect(cut.length).toBeLessThanOrEqual(1800);
 	expect(parseChoices(cut).options.map(o => o.label)).toEqual(["반영", "보류"]);
+});
+
+test("a head written twice is one head: no marker and no second label in the title or the question", () => {
+	const text = "결정: [ask] 결정: 남은 디자인 두 가지를 어떻게 할까요?\n**1) 둘 다**\n설명\n**2) 하나만**\n설명";
+	expect(parseDecisions(text).blocks.map(b => b.title)).toEqual(["남은 디자인 두 가지를 어떻게 할까요?"]);
+	expect(parseChoices(text).question).toBe("결정: 남은 디자인 두 가지를 어떻게 할까요?");
+});
+
+test("아니요 and 다른 … answer at once; 안 됨, 고치기 and a marked option ask for text", () => {
+	expect(["아니요", "아냐", "다른 날로", "안 됨", "고치기"].map(label => detailOf({ label }))).toEqual([false, false, false, true, true]);
+	expect(detailOf({ label: "아니요", detail: true })).toBe(true);
+});
+
+test("plainDecisions keeps each question and drops its options and their lines", () => {
+	const text = "README를 올렸어요.\n\n결정: 라이선스를 무엇으로 할까요?\n**1) MIT**\n짧아요\n**2) Apache-2.0**\n특허 조항\n\n- 남은 것: 배지";
+	expect(plainDecisions(text)).toBe("README를 올렸어요.\n\n라이선스를 무엇으로 할까요?\n\n- 남은 것: 배지");
+	expect(plainDecisions("본문\n1) 하나\n2) 둘")).toBe("본문\n1) 하나\n2) 둘");
+});
+
+test("a send card is never cut, however long: the owner approves only a draft he saw whole", () => {
+	const card = `[ask] 초안이에요\n${draftApprovalBlock({ to: "a@example.test", body: "긴 본문이에요.\n".repeat(300), ref: "abc123", question: "보낼까요?" } as Parameters<typeof draftApprovalBlock>[0])}`;
+	expect(card.length).toBeGreaterThan(1800);
+	expect(clipKeepingAsk(card, 1800)).toBe(card);
+});
+
+test("a choice label that already starts with its number is numbered once, whoever wrote the number", () => {
+	const written = "결정: 어디로 받을까요?\n**1) 1) 회사 메일로 받기**\n본사 주소로 와요\n**2) 2. 집 메일로 받기**\n집 주소로 와요";
+	expect(parseDecisions(written).blocks[0]!.options.map(o => `${o.n}) ${o.label}`)).toEqual(["1) 회사 메일로 받기", "2) 집 메일로 받기"]);
+	expect(parseChoices(written).options.map(o => `${o.n}) ${o.label}`)).toEqual(["1) 회사 메일로 받기", "2) 집 메일로 받기"]);
+	const posted = replyChoiceBlock("어디로 받을까요?", cleanChoices(["1) 회사 메일로 받기", "2) 집 메일로 받기"]));
+	expect(posted.split("\n").filter(l => l.startsWith("**"))).toEqual(["**1) 회사 메일로 받기**", "**2) 집 메일로 받기**", "**3) 직접 쓸게 …**"]);
+	expect(issueBlock("어떻게 할까요?", [{ name: "1) 원인 확인", result: "살펴봐요." }, { name: "넘어가요", result: "" }])).toBe("결정: 어떻게 할까요?\n**1) 원인 확인**\n살펴봐요.\n**2) 넘어가요**");
+});
+
+test("a label is cut only at a number the model wrote as a list mark", () => {
+	for (const [label, shown] of [["3개월 보관", "3개월 보관"], ["2.5 버전으로", "2.5 버전으로"], ["10) 열 번째", "열 번째"], ["", ""]] as const) expect(unnumbered(label)).toBe(shown);
 });

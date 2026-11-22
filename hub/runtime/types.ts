@@ -21,13 +21,18 @@ export interface RuntimeCaps {
 	contextLimit?: "compact" | "rotate";
 	extension?: boolean; // dotz's extension runs in the agent process, so its session hooks (the lane's contract re-read after a compaction) fire
 	abortCompact?: boolean; // a running compaction can be cancelled at once without harming the session (OmO abort_compaction)
+	restCompact?: boolean; // cannot abort a compaction, but may start one at rest (an owner message then waits for it to end): omp
+	// The orchestrator's static contract (identity and MODE) goes in the process's system prompt, not its first message: a compaction leaves the system
+	// prompt alone and a resume builds it from the same text, so its prompt cache holds (omp). Without it both stay in the first message (OmO, claude).
+	modeInSystem?: boolean;
+	doneGate?: boolean; // a lane's process loads the harness's done gate beside dotz's extension when SpawnOpts.doneGate names it (hub/done-gate.ts); only omp does
 }
 
 // One row of the terminal view, before the hub stamps time and source on it and scrubs secrets.
 export type ActivityRow = Omit<Activity, "ts" | "kind" | "source">;
 
 // A task worker's state as the runtime reported it, normalised; the hub keeps the list (activity.ts).
-export type SubagentUpdate = { id: string; agent?: string; description?: string; status: "running" | "done" | "failed" | "aborted"; tool?: string; intent?: string; transcript?: string };
+export type SubagentUpdate = { id: string; agent?: string; description?: string; status: "running" | "done" | "failed" | "aborted"; tool?: string; intent?: string; transcript?: string; model?: string; thinking?: string; name?: string };
 
 export type AgentError = {
 	text: string;
@@ -90,6 +95,8 @@ export interface AgentProcess {
 	setModel?(selector: string): void;
 	// Start receiving task-worker updates (subagent events).
 	watchSubagents(): void;
+	awaitingAsync?(): boolean;
+	cancelWorker?(id: string): Promise<{ cancelled: boolean }>;
 	// `force` is the unignorable kill; the hub decides when to escalate.
 	kill(force?: boolean): void;
 }
@@ -105,7 +112,7 @@ export interface SpawnOpts {
 	resume?: string;
 	// Added to the hub's own environment (role markers read by the dotz extension).
 	env: Record<string, string>;
-	// Appended to the system prompt of this process (hub/steer-mark.ts); survives compaction, unlike a prompt.
+	// Appended to the system prompt of this process (the steer-mark rule, hub/steer-mark.ts; with caps.modeInSystem also the orchestrator's identity and MODE); survives compaction, unlike a prompt.
 	systemNote?: string;
 	// Model selectors tried in order after `model` fails at request time; empty/absent = no fallback.
 	fallback?: string[];
@@ -113,6 +120,8 @@ export interface SpawnOpts {
 	hubSwitches?: boolean;
 	// Lane-only: where the runtime may keep per-run files, and the lane's worker/compaction settings.
 	lane?: { name: string; dir: string; workerModel: string; workerFallback?: string[]; compactAt: number; keepRecent: number; workerSlots?: number };
+	// Lane-only, and only where caps.doneGate: the harness's done gate extension file the process loads next to dotz's own. The hub decides (hub/done-gate.ts); any other role or runtime ignores it.
+	doneGate?: string;
 }
 
 // What a runtime's `detect()` finds on this machine; `reason` says why it is not installed.

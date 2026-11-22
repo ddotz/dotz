@@ -4,7 +4,7 @@ import type { Config, Ctx } from "../../../features/youtube-instagram/lib/config
 import { mentions, ownerView, UNKNOWN_USER } from "../../../features/youtube-instagram/lib/ig-owner.ts";
 import type { IgAuthor, IgComment, IgCommentRead, IgMedia } from "../../../features/youtube-instagram/lib/instagram.ts";
 import type { YtComment, YtReply } from "../../../features/youtube-instagram/lib/youtube.ts";
-import { type Comment, type CommentAdapter, FALLBACK_TITLE, type PostInfo, type RawComment } from "../contract.ts";
+import { type Comment, type CommentAdapter, FALLBACK_TITLE, type PostInfo, type RawComment, type ReplyOutcome } from "../contract.ts";
 
 export type YoutubeApi = {
 	channelId: () => string;
@@ -21,6 +21,29 @@ export type YoutubeApi = {
 };
 
 const videoLink = (id: string) => `https://www.youtube.com/watch?v=${id}`;
+
+// What a failed post means (reply design 2.3, comment table). The error classes of features/youtube-instagram/lib are told apart by their
+// constructor name: importing them would add a hub->features edge. A TransientError names its stage: the token and the quota ledger come
+// before the POST (surely not sent); a cut or 5xx during the POST may have posted it.
+function postFailure(e: unknown, app: string): ReplyOutcome {
+	const name = e instanceof Error ? e.constructor.name : "";
+	const detail = e instanceof Error ? e.message : String(e);
+	const no = (code: string, reason: string): ReplyOutcome => ({ ok: false, code, sent: "no", reason, detail });
+	const maybe = (code: string, reason: string): ReplyOutcome => ({ ok: false, code, sent: "maybe", reason, detail });
+	if (name === "AuthError") return no("login_expired", `${app} 로그인이 풀렸어요`);
+	if (name === "QuotaError") return no("quota", `오늘 ${app} 사용 한도를 다 썼어요`);
+	if (name === "TransientError") {
+		const http = Number(/http (\d{3})/.exec(detail)?.[1] ?? 0);
+		if (http && http < 500) return no("rate_limited", `${app}에서 잠시 뒤에 다시 하라고 했어요`);
+		if (/ token network error$/.test(detail)) return no("offline", "인터넷에 연결되지 않았어요");
+		if (/ token http |quota ledger/.test(detail)) return no("tool_before_send", "보내기 전 준비 단계에서 오류가 났어요");
+		if (http >= 500) return maybe("server_error", `${app}에서 오류로 답했어요`);
+		return maybe("net_cut", "보내는 중에 연결이 끊겼어요");
+	}
+	const status = (e as { status?: unknown } | undefined)?.status;
+	if ((name === "YoutubeError" || name === "InstagramError") && typeof status === "number" && status >= 400 && status < 500) return status === 404 ? no("original_gone", "원래 글이 지워졌어요") : no("rejected", `${app}에서 이 글을 받지 않았어요`);
+	return maybe("unknown", "보내다가 문제가 생겼어요");
+}
 
 // A thread as stored rows: the top comment, then the channel's own replies that came with it (its answer is stored next to the comment, so the comment is not open).
 function ytRows(c: YtComment, channelId: string, shown: Pick<RawComment, "postTitle" | "postLink" | "thumb">): RawComment[] {
@@ -78,7 +101,7 @@ export function youtubeAdapter(api: () => YoutubeApi): CommentAdapter {
 			try {
 				return { ok: true, ref: await api().reply(c.native, text) };
 			} catch (e) {
-				return { ok: false, reason: e instanceof Error ? e.message.slice(0, 200) : "유튜브가 답글을 받지 않았어요" };
+				return postFailure(e, "유튜브");
 			}
 		},
 		async posts() {
@@ -275,7 +298,7 @@ export function instagramAdapter(api: () => InstagramApi): CommentAdapter {
 			try {
 				return { ok: true, ref: await api().reply(c.parent ?? c.native, text) };
 			} catch (e) {
-				return { ok: false, reason: e instanceof Error ? e.message.slice(0, 200) : "인스타가 답글을 받지 않았어요" };
+				return postFailure(e, "인스타그램");
 			}
 		},
 		async posts() {

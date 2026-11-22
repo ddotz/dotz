@@ -1,27 +1,32 @@
 /* ---------- settings: the short list and its sub-pages (prototype #settings and #settings/<page>) ---------- */
-// 설정 is a short list of links in four groups; 앱과 알림, 표시, 업데이트 and 실행 하네스 are pages of their own. 04-state.js and
-// 05-command-palette.js know the older views by name, so the pages join them here (the view list, the sub-screen set that keeps
-// the 설정 tab lit and sends 뒤로 to 설정, the title and icon, the empty section) and go() loads their data on entry.
+// 설정 is a short list of links in four groups; 앱과 알림, 표시, 업데이트 and 실행 하네스 are pages of their own. Their rows (title, icon,
+// the sub-screen flag that keeps the 설정 tab lit and sends 뒤로 to 설정) are in 03-screens.js; here is what each page draws and loads on entry.
 const SET_PAGE = {
-  notifications: { title: TX("settings.page.notifications"), ic: "bell", build: () => pushSection() },
-  display: { title: TX("settings.page.display"), ic: "settings", build: () => displayPage() },
-  update: { title: TX("settings.page.update"), ic: "download", build: () => updateSection() },
-  runtime: { title: TX("settings.page.runtime"), ic: "term", build: () => { const s = hvSection(); return s.length ? s : [emptyNode(UPD.info && UPD.info.error ? TX("settings.runtime.check_failed") : TX("settings.runtime.checking"))]; } },
+  notifications: { build: () => pushSection() },
+  display: { build: () => displayPage() },
+  update: { build: () => updateSection() },
+  runtime: { build: () => { const s = hvSection(); return s.length ? s : [emptyNode(UPD.info && UPD.info.error ? TX("settings.runtime.check_failed") : TX("settings.runtime.checking"))]; } },
+  schedules: { build: () => schedPage() },
 };
-for (const [id, p] of Object.entries(SET_PAGE)) {
-  views.push(id); SUB.add(id); titles[id] = p.title; VIEW_ICON[id] = p.ic;
-  $("#views").append(el("section", { class: "view", id: `v-${id}`, hidden: "" }, el("div", { id, class: "st-page" })));
-}
+// A screen without a section in web/index.html gets its empty one here, since go() needs one for every view: a settings page holds its
+// box, and 카드 추가·수정 (web/custom.js cardForm) is filled by the custom layer (the demo's own index.html has no custom layer).
+for (const [id, s] of Object.entries(SCREENS)) if (!s.html)
+  $("#views").append(Object.hasOwn(SET_PAGE, id) ? el("section", { class: "view", id: `v-${id}`, hidden: "" }, el("div", { id, class: "st-page" })) : el("section", { class: "view cu-page", id: `v-${id}`, hidden: true }));
 const inSettings = () => current === "settings" || Object.hasOwn(SET_PAGE, current);
-const goBeforeSettingPages = go;
-go = function (name, tgt) {
-  goBeforeSettingPages(name, tgt);
-  if (current === "settings" && !ACC) loadAccounts();
-  if (!Object.hasOwn(SET_PAGE, current)) return;
-  if (current === "update" || current === "runtime") loadUpdate();
-  if (current === "runtime") loadRuntimes();
-  renderSettings();
-};
+// Opening 설정 draws the list and refreshes what its rows summarise; each page draws its box, 업데이트 and 실행 하네스 asking again first.
+function settingsEnter() {
+  if (!updFresh()) loadUpdate(); renderSettings(); loadMessengerIndex(); if (!provFresh()) loadProviderData().then(() => current === "settings" && renderSettings(), () => {}); loadRuntimes();
+  loadDevices(); loadWebAccess();
+  if (!ACC) loadAccounts();
+}
+function setPageEnter() { renderSettings(); }
+function updateEnter() { loadUpdate(); renderSettings(); }
+function runtimeEnter() { loadUpdate(); loadRuntimes(); renderSettings(); }
+screenHooks("settings", { enter: settingsEnter });
+screenHooks("notifications", { enter: setPageEnter });
+screenHooks("display", { enter: setPageEnter });
+screenHooks("update", { enter: updateEnter });
+screenHooks("runtime", { enter: runtimeEnter });
 
 /* ---------- the rows these pages share ---------- */
 const stSec = title => el("div", { class: "sec", text: title });
@@ -101,6 +106,7 @@ function settingsList(go) {
     ...dskSettings(),
     stSec(TX("common.apps")), stList(
       stRow("bell", TX("settings.page.notifications"), stPushSub(), () => go("notifications")),
+      stRow("list", TX("settings.page.schedules"), TX("settings.row.schedules"), () => go("schedules")),
       navOff("apps") ? null : stRow("apps", TX("settings.row.apps"), "", () => go("apps")),
       stRow("spark", TX("settings.row.intro"), "", () => introOpen()),
       stRow(themeIc(), TX("settings.page.display"), [themeIs() === "dark" ? TX("settings.theme.dark") : TX("settings.theme.light"), chatTabMode() === "main" ? TX("settings.row.chat_tab_main") : TX("settings.row.chat_tab_last")].join(" · "), () => go("display"))),

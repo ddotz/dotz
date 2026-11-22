@@ -187,27 +187,50 @@ function statedTone(text, keepFiles = false) {
 
 /* ---------- api ---------- */
 // index.html starts the first answers (state, history, plan, read positions, activity) in <head>, before this 480KB script is downloaded and parsed; the first api() of that path takes it over.
-// A GET that is already in flight is shared (the same path asked twice at boot is one request); each caller parses its own copy of the text.
-const apiGets = new Map();
+// One run of fn per key at a time, and each caller is answered by the first run that starts after its call: a call while run N is out joins run N+1
+// (one queued run, started with the newest caller's fn when run N ends), and the callers of each run get that run's own answer or error. So no caller is
+// handed an answer asked for before its call, an older answer never lands after a newer one, and a wait is at most two reads however often calls come.
+// api() runs every GET through it by path (each caller parses its own copy of the text); a loader that reads in more than one step or paints once per
+// read (loadTarget, convLoad, ...) runs through it by a key of its own.
+const FLIGHTS = new Map();   // key -> { p: the run out, fn, next: the queued run's promise and its settle functions }
+function latest(key, fn) {
+  const f = FLIGHTS.get(key);
+  if (f) {
+    f.fn = fn;
+    if (!f.next) { const n = {}; n.p = new Promise((ok, no) => { n.ok = ok; n.no = no; }); f.next = n; }
+    return f.next.p;
+  }
+  const g = { fn, next: null };
+  const run = () => {
+    g.p = (async () => g.fn())();
+    g.p.then(after, after);
+    return g.p;
+  };
+  const after = () => {
+    const n = g.next;
+    if (!n) { FLIGHTS.delete(key); return; }
+    g.next = null;
+    run().then(n.ok, n.no);
+  };
+  FLIGHTS.set(key, g);
+  return run();
+}
+const latestOut = key => FLIGHTS.get(key)?.p;   // the run of key on its way (to wait for it without asking for another), else undefined
 // Names this page's event stream to the gateway: every request carries it, so a stream whose page stopped asking (a phone asleep, the network gone) is closed by the gateway (hub/events.ts noteLive).
 const LIVE_TOK = Array.from(crypto.getRandomValues(new Uint8Array(12)), b => b.toString(16).padStart(2, "0")).join("");
-async function api(path, method = "GET", body) {
+const CARD_WAIT_MS = 15000;
+async function api(path, method = "GET", body, limit = 0) {
   [path, method, body] = pqRoute(path, method, body);   // a peer's item is read and acted on through /api/peer/proxy (34-peer-monitoring.js)
-  const go = () => fetch(path, { method, cache: "no-store", headers: { "x-dotz-live": LIVE_TOK, ...(body !== undefined && { "Content-Type": "application/json" }) }, body: body !== undefined ? JSON.stringify(body) : undefined });
+  const stop = limit ? new AbortController() : null, t = stop ? setTimeout(() => stop.abort(new TypeError(TX("chat.upload.lost"))), limit) : 0;
+  const go = () => fetch(path, { method, cache: "no-store", headers: { "x-dotz-live": LIVE_TOK, ...(body !== undefined && { "Content-Type": "application/json" }) }, body: body !== undefined ? JSON.stringify(body) : undefined, ...(stop ? { signal: stop.signal } : {}) });
   const read = async r => ({ ok: r.ok, status: r.status, text: await r.text() });
+  const got = method === "GET" ? latest(path, () => {
+    const early = window.__early && window.__early[path];
+    if (early) delete window.__early[path];
+    return (early ? early.catch(go) : go()).then(read);
+  }) : go().then(read);
   let res;
-  if (method === "GET") {
-    let p = apiGets.get(path);
-    if (!p) {
-      const early = window.__early && window.__early[path];
-      if (early) delete window.__early[path];
-      p = (early ? early.catch(go) : go()).then(read);
-      apiGets.set(path, p);
-      const done = () => { if (apiGets.get(path) === p) apiGets.delete(path); };
-      p.then(done, done);
-    }
-    res = await p;
-  } else res = await read(await go());
+  try { res = await new Promise((ok, no) => { got.then(ok, no); if (stop) stop.signal.addEventListener("abort", () => no(stop.signal.reason)); }); } finally { clearTimeout(t); }
   let data = null;
   try { data = JSON.parse(res.text); } catch {}
   if (!res.ok) throw Object.assign(new Error(res.status === 503 && path.startsWith("/api/peer/proxy") ? (data && data.reason) || TX("base.peer.read_only") : (data && data.error) || `HTTP ${res.status}`), { data, status: res.status });
@@ -325,7 +348,7 @@ function openSheet() {
   const d = document.querySelector("dialog[open]:not([data-leaving]):not(.cf)");
   if (d) return { host: d, onEnd: f => d.addEventListener("close", f, { once: true }) };
   const top = FS[FS.length - 1];
-  return top ? { host: top.box, onEnd: f => top.ends.push(f) } : null;
+  return top ? { host: top.box, onEnd: f => fsOnEnd(top, f) } : null;
 }
 function confirmInSheet({ host, onEnd }, { title, body, actions, onclose }) {
   const sheet = host.classList.contains("fs-card"), from = document.activeElement, kept = [...host.children].map(n => [n, n.hidden]);
@@ -371,7 +394,8 @@ function dialog({ title, body, actions = [], onclose, wide, classic, confirm, mi
     : fsHead([el("h2", { class: "dtitle", text: title })], { close: () => d.close() });
   d.append(head, bodyBox, actBox);
   let downOutside = false;
-  const outside = ev => { const r = d.getBoundingClientRect(); return ev.clientX < r.left || ev.clientX > r.right || ev.clientY < r.top || ev.clientY > r.bottom; };
+  // a menu opened from a control in the box is the box's own, even where it hangs past the box's edge (its option closes the menu before the click lands here)
+  const outside = ev => { if (ev.target instanceof Element && ev.target.closest(".menu")) return false; const r = d.getBoundingClientRect(); return ev.clientX < r.left || ev.clientX > r.right || ev.clientY < r.top || ev.clientY > r.bottom; };
   d.addEventListener("pointerdown", ev => { downOutside = outside(ev); });
   d.addEventListener("click", ev => { if (downOutside && outside(ev) && !openMenu) d.close(); downOutside = false; });
   const h = { node: d, body: bodyBox, close: () => d.close(), setActions };

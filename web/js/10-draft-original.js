@@ -17,7 +17,7 @@ async function orgLoad(ref, t, paint, get) {
   };
   if (s.load === "busy" || s.load === "ok" || s.load === "missing") return;
   s.load = "busy"; go();
-  if (!get) DRF.pc[ref] = t ? pqPc(t) : null;
+  if (!get) drfFrom(ref, t);
   try { s.data = await (get ? get() : api(drfPath(ref, "original"))); s.load = "ok"; }
   catch (e) { s.load = /찾을 수 없|HTTP 404/.test(e.message) ? "missing" : "fail"; }
   go();
@@ -30,8 +30,9 @@ function orgComment(pane, m) {
     orgRow(TX("decision.org.author"), m.author), orgRow(TX("decision.org.time"), m.date ? kstStamp(m.date) : ""),
     m.parent ? el("div", { class: "od-parent" }, el("span", { class: "dc-dr-k", text: TX("decision.org.parent", { author: m.parent.author }) }), el("span", { class: "od-pc", text: m.parent.text })) : null,
     el("div", { class: "od-body od-ct", text: m.text }),
-    p.link ? el("a", { class: "od-open", href: p.link, target: "_blank", rel: "noopener noreferrer" }, icon("open"), TX("decision.org.open_source")) : null].filter(Boolean));
+    orgHref(p.link) ? el("a", { class: "od-open", href: orgHref(p.link), target: "_blank", rel: "noopener noreferrer" }, icon("open"), TX("decision.org.open_source")) : null].filter(Boolean));
 }
+const orgHref = u => (/^(https?|mailto):/i.test(String(u || "").trim()) ? String(u).trim() : "");
 const orgRow = (k, v) => v ? el("div", { class: "dc-dh" }, el("span", { class: "dc-dr-k", text: k }), el("span", { class: "dc-dr-v sub", text: v })) : null;
 // The pane's content for the state it is in: loading, gone, failed (with a retry) or the mail.
 function orgFill(pane, d, t, retry) {
@@ -42,7 +43,7 @@ function orgFill(pane, d, t, retry) {
   if (s.load !== "ok") { note(TX("decision.org.loading")); return; }
   const m = s.data, pc = t ? pqPc(t) : null;
   if (m.kind === "comment") { orgComment(pane, m); return; }
-  if (pc) PQ.of.set(`mail:${m.key}`, { pc, key: m.key });   // its body and files are read from the computer that owns the mail
+  if (pc) pqBind(`mail:${m.key}`, pc, m.key);   // its body and files are read from the computer that owns the mail
   const files = mailRealFiles(m.attachments);   // the body's own pictures are drawn in it, not listed as files
   // 보낸 사람 / 받는 사람 / 참조 come from the mail view's own header (30-mail-thread.js), so every place a mail is read names them the same way
   const pp = mailPeople(m, m.text, m.subject), blank = v => !String(v || "").replace(/[\s\-–—]+/g, "");   // a lone "-" names nobody
@@ -58,7 +59,7 @@ function orgFill(pane, d, t, retry) {
 function orgHas(ref, t, repaint) {
   const st = ref ? DRF.st[ref] : null;
   if (st) return st.original !== false;
-  if (ref) { DRF.pc[ref] = t ? pqPc(t) : null; drfLoad(ref).then(repaint); }
+  if (ref) { drfFrom(ref, t); drfLoad(ref).then(repaint); }
   return false;
 }
 // The comment a combined card (reply + mail) answers, as a compact block at the top of the card: the side panel has no room beside the mail part, so
@@ -84,7 +85,7 @@ async function orgMailOf(t) {
 // 원문 보기 of a mail row (owner 2026-11-04): an item of the row's ⋯ menu (a row keeps no other right-side button, owner 2026-10-27) folds the original open under
 // the summary, without leaving the list. Open rows are kept across repaints; the first open fetches once (orgLoad), and a click inside the original does not open the mail's conversation.
 const MR_OG = new Set();
-const orgMailItem = t => [{ value: "original", label: MR_OG.has(t) ? TX("decision.org.hide") : TX("decision.org.show"), run: () => { if (!MR_OG.delete(t)) MR_OG.add(t); MON.sig = ""; monSchedule(); } }];
+const orgMailItem = t => [{ value: "original", label: MR_OG.has(t) ? TX("decision.org.hide") : TX("decision.org.show"), run: () => { if (!MR_OG.delete(t)) MR_OG.add(t); monDirty(); } }];
 function orgMailRow(t) {
   if (!MR_OG.has(t)) return [];
   const s = orgSt(t), stop = ev => ev.stopPropagation();

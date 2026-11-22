@@ -2,7 +2,7 @@ import { afterEach, beforeEach, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { chooseRow, inputFree, normalizeInput, normalizeTitle, openRoom, REFUSE, rowPreview, sameText, twinsOf, type RoomFact } from "./room.ts";
+import { chooseRow, normalizeInput, normalizeTitle, openRoom, REFUSE, rowPreview, sameText, twinsOf, type RoomFact } from "./room.ts";
 import { sendText } from "./send.ts";
 import { kakaoPaths, type Runner } from "./types.ts";
 import { type FakeRow, fakeScreen, rowTexts } from "./ui.fixture.ts";
@@ -161,10 +161,6 @@ test("KakaoTalk's normalization of the input is not a different text: NFC/NFD, l
 	expect(sameText("안녕\ufe0f", "안녕")).toBe(true);
 	expect(normalizeInput("가\t나")).toBe("가 나");
 	expect(sameText("안녕", "안녕하세요")).toBe(false);
-	expect(inputFree("", "메시지를 입력하세요")).toBe(true);
-	expect(inputFree("메시지를 입력하세요", "메시지를 입력하세요")).toBe(true);
-	expect(inputFree(" \u200b ", undefined)).toBe(true);
-	expect(inputFree("내가 쓰던 글", "메시지를 입력하세요")).toBe(false);
 });
 
 test("a row's title with a trailing member count and the newest-message preview tell same-name rooms apart", () => {

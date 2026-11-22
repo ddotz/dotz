@@ -3,11 +3,12 @@ import { copyFileSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { writeSettings } from "../../../hub/app-settings.ts";
-import { asksForFile, claimsAttachment } from "../../../hub/draft-approval.ts";
+import { claimsAttachment } from "../../../hub/attach-claim.ts";
+import { asksForFile } from "../../../hub/draft-approval.ts";
 import { composeMail } from "../../../hub/mail-cli.ts";
 import { buildPrompt, generateReply, type ReplyItem, type ReplyStyle } from "../../../hub/reply-draft.ts";
 import { advance } from "../../../hub/runtime/test-clock.ts";
-import { candidatesFor, CANDIDATE_MAX, reviseDraft } from "../lib/flow.ts";
+import { candidatesFor, CANDIDATE_MAX, draftAttachIssues, FILE_CHANGE_MISSED, reviseDraft } from "../lib/flow.ts";
 import { matchLibrary } from "../lib/library.ts";
 import { offerMailDraft } from "../lib/offer.ts";
 import { paths } from "../lib/settings.ts";
@@ -52,6 +53,26 @@ describe("(a) the model chooses among the candidates", () => {
 		expect(await chose(["봄노래_문서.pdf", "없는 파일.pdf", "봄노래_문서.pdf"])).toEqual(["봄노래_문서.pdf"]);
 		expect(await chose([])).toEqual([]);
 		expect(await chose()).toBeUndefined();
+	});
+	test("a name the model answers in NFC, or with ' for the \" the prompt rewrote, still names its candidate", async () => {
+		const nfd = "봄노래_문서.pdf".normalize("NFD"), quoted = '봄노래 "단독" 문서.pdf';
+		const item: ReplyItem = { kind: "mail", from: "Kim <kim@example.com>", subject: "봄노래", text: "봄노래 문서 부탁드립니다", candidates: [nfd, quoted] };
+		const style: ReplyStyle = { samples: [], rules: [], corrections: [], forbidden: [] };
+		const chose = async (files: string[]) => (await generateReply(item, style, fakeModel([j(answer({ body: "확인했어요.", files }))]).call)).files;
+		expect(await chose(["봄노래_문서.pdf".normalize("NFC")])).toEqual([nfd]);
+		expect(await chose(["봄노래 '단독' 문서.pdf"])).toEqual([quoted]);
+		expect(await chose([quoted])).toEqual([quoted]);
+	});
+	test("a library file with a decomposed Korean name or a quote in it is staged when the model chooses it", async () => {
+		const odd = mkdtempSync(join(tmpdir(), "rd-choice-odd-"));
+		writeFileSync(join(odd, "봄노래_문서.pdf".normalize("NFD")), "nfd");
+		writeFileSync(join(odd, '봄노래 "단독" 문서.pdf'), "quoted");
+		enable(env, { attachFolders: { mail: odd } });
+		const model = fakeModel([j(answer({ files: ["봄노래_문서.pdf".normalize("NFC"), "봄노래 '단독' 문서.pdf"] }))]);
+		expect(await offerMailDraft(springMail, { send: sink().send, call: model.call })).toBe("offered");
+		expect(model.calls).toHaveLength(1);
+		expect(names(listDrafts()[0]!.id).sort()).toEqual(['봄노래 "단독" 문서.pdf', "봄노래_문서.pdf".normalize("NFC")].sort());
+		rmSync(odd, { recursive: true, force: true });
 	});
 	test("a body that promises a file when none is chosen is rewritten once", async () => {
 		const item: ReplyItem = { kind: "mail", from: "Kim <kim@example.com>", subject: "봄노래", text: "봄노래 문서 부탁드립니다", candidates: ["봄노래_문서.pdf"] };
@@ -144,6 +165,18 @@ describe("(e) 고치기 about the files", () => {
 		const step = await reviseDraft(rec.id, "첨부파일 하나만 보내", { call: fakeModel([j(answer({ body: "문서 보내드립니다.", files: ["봄노래_문서.pdf"] }))]).call });
 		expect(step.ok).toBe(true);
 		expect(names(step.id!)).toEqual(["봄노래_문서.pdf"]);
+		expect(draftAttachIssues(getDraft(step.id!)!)).not.toContain(FILE_CHANGE_MISSED);
+	});
+	test("a change about the files that leaves them as they were says so on the card and in the result, until the files change", async () => {
+		enable(env, { attachFolders: { mail: lib } });
+		const rec = draft();
+		const step = await reviseDraft(rec.id, "곡A 전체 음원 파일로 바꿔 줘", { call: fakeModel([j(answer({ body: "전체 음원은 따로 보내드리겠습니다.", files: ["봄노래_문서.pdf", "봄노래_음원.mp3"] }))]).call });
+		expect(step.ok).toBe(true);
+		expect(names(step.id!)).toEqual(["봄노래_문서.pdf", "봄노래_음원.mp3"]);
+		expect(draftAttachIssues(getDraft(step.id!)!)).toContain(FILE_CHANGE_MISSED);
+		expect(step.text).toContain(FILE_CHANGE_MISSED);
+		addStagedFile(step.id!, join(lib, "여름노래_문서.pdf"));
+		expect(draftAttachIssues(getDraft(step.id!)!)).not.toContain(FILE_CHANGE_MISSED);
 	});
 	test("a change about wording keeps the files whatever the model says", async () => {
 		enable(env, { attachFolders: { mail: lib } });

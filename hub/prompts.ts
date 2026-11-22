@@ -38,12 +38,10 @@
 
 import { createBurst, sameConv } from "./promptburst.ts";
 import { isSilent, laterParts, stripLater } from "./tone.ts";
-import { closeHanded, closeIdless, hushedAnswer, waitedOn } from "./handed.ts";
-import { NEAR_CHARS, NEAR_MIN, head, MAX_PROMPTS, MAX_ANSWERED, REPLAY_MAX_AGE_MS, ORPHAN_MAX_AGE_MS, MAX_RECENT, remember, DEFER_MAX_AGE_MS, DEFER_BLOCKS_RESTART_MS, MAX_TURNS, TURN_SLACK_MS, CANCEL_NOTE_MS, LINK_MAX_AGE_MS, MAX_LINKS, REPORT_NOTE_CHARS, type Prompt, type OwnerMessage, type Pending, type WorkLink, type OpenRequest, type WorkRow, type Reply, type PromptDeps } from "./prompts-model.ts";
+import { closeHanded, closeIdless, hushedAnswer, isLoud, waitedOn } from "./handed.ts";
+import { createAskAgain } from "./prompts-ask.ts";
+import { NEAR_CHARS, NEAR_MIN, head, MAX_PROMPTS, MAX_ANSWERED, REPLAY_MAX_AGE_MS, ORPHAN_MAX_AGE_MS, MAX_RECENT, remember, DEFER_MAX_AGE_MS, DEFER_BLOCKS_RESTART_MS, MAX_TURNS, TURN_SLACK_MS, CANCEL_NOTE_MS, LINK_MAX_AGE_MS, MAX_LINKS, REPORT_NOTE_CHARS, labels, type Prompt, type OwnerMessage, type Pending, type WorkLink, type OpenRequest, type WorkRow, type Reply, type PromptDeps, type Woke, type Turn, type RunLabel } from "./prompts-model.ts";
 export type { Prompt, OwnerMessage, Pending, WorkLink, OpenRequest, WorkRow, Reply, PromptDeps } from "./prompts-model.ts";
-
-/** The hand-over labels a prompt carries through pending.json. */
-const labels = (p: { from?: string; handback?: true; quiet?: true; bookkeeping?: true; fallback?: string }) => ({ ...(p.bookkeeping ? { bookkeeping: true as const } : {}), ...(p.from ? { from: p.from } : {}), ...(p.handback ? { handback: true as const } : {}), ...(p.quiet ? { quiet: true as const } : {}), ...(p.fallback ? { fallback: p.fallback } : {}) });
 
 /**
  * A final answer with a word of the user's 금지 낱말 목록 is held back and its request gets one more prompt: the note, through the queue
@@ -55,7 +53,7 @@ function holdForRewrite(deps: PromptDeps, prompts: Prompt[], deliver: (text: str
 	const note = p.target && !p.fallback && !p.from && !p.handback && !p.quiet && !p.cancelled && !deps.keepalive?.() && !isSilent(text) ? deps.review?.(text) : undefined;
 	if (!note) return false;
 	deps.log(`the answer to ${p.target} holds a word of the user's list; its session is asked to reword it`);
-	deliver(note, { target: p.target!, replyTo, refs, fallback: text });
+	deliver(note, { target: p.target!, replyTo, refs, fallback: text, ...(p.run ? { run: p.run } : {}) });
 	Object.assign(prompts.at(-1)!, { sent: p.sent, held: p.held });
 	p.held = undefined;
 	return true;
@@ -63,8 +61,17 @@ function holdForRewrite(deps: PromptDeps, prompts: Prompt[], deliver: (text: str
 
 /** A rewrite turn that wrote nothing (or only the no-op word) leaves the held answer as its answer. */
 const rewriteText = (p: Prompt, said: string, later: boolean): string => (p.fallback && !later && (!said.trim() || isSilent(said)) ? p.fallback : said);
-/** An answer the owner must see even from a quiet check. */
-const LOUD = /^\s*\[(?:ask|fail)\]/i;
+const postedRun = (run: RunLabel | undefined) => (run?.ids.length === 1 ? { run: run.ids[0], sk: run.sk } : {});
+/** The silent-wait check gave up on `d` (hub/waitcheck.ts): it is closed, and a session that handed it over, still waiting, is told once. */
+function closeDropped(deps: PromptDeps, d: Prompt): void {
+	d.done = true;
+	if (!d.from || !deps.handBack) return;
+	deps.log(`the request handed over by ${d.from} was dropped unanswered; ${d.from} is told`);
+	deps.handBack(d.from, `The request you handed over was closed without an answer: the reminders brought none. Hand it over again if it still matters.\n\n${d.text.slice(0, REPORT_NOTE_CHARS)}`, d.replyTo);
+}
+/** A bare [later] is refused once, as a bare [ask] is (askRefused), when it waits on nothing: no worker of its conversation runs and none started or was messaged since the turn began (`from`). */
+const waitsOnNothing = (p: Prompt, seen: { work: readonly WorkRow[]; spawned: readonly number[]; from: number }): boolean => !p.told?.length && !seen.spawned.some(at => at >= seen.from) && !seen.work.some(w => w.startedAt >= seen.from || ((w.status === "running" || w.status === "stalled") && (!w.target || sameConv(w.target, p.target!))));
+const LATER_REFUSED = "[gateway check] Your last answer was a bare [later], but no background worker of this conversation is running and this turn started none, so nothing would ever answer this request. Do the work now and answer it, or start the worker and then end with [later]; if it cannot be done, say why.";
 
 export function createPrompts(deps: PromptDeps) {
 	const prompts: Prompt[] = [];
@@ -84,8 +91,7 @@ export function createPrompts(deps: PromptDeps) {
 	const askedBack = new Set<string>();
 	// Worker id -> the request it was spawned for (bgwork.ts reads it too), and the workers whose results the session was just woken with, oldest first.
 	const links = new Map((deps.links ?? []).map(l => [l.id, l]));
-	// `in`: the prompted turn it landed in; `waited`: the run it woke said [later].
-	const woke: { id: string; at: number; in?: Prompt; waited?: boolean }[] = [];
+	const woke: Woke[] = [];
 	const saveLinks = () => {
 		for (const [id, l] of links) if (Date.now() - l.at > LINK_MAX_AGE_MS || links.size > MAX_LINKS) links.delete(id);
 		deps.persistLinks?.([...links.values()]);
@@ -99,8 +105,7 @@ export function createPrompts(deps: PromptDeps) {
 		return l;
 	}
 	const linksOf = (p: { target?: string; replyTo?: string }) => [...links.values()].filter(l => (l.target === p.target && l.replyTo === p.replyTo) || (p.replyTo !== undefined && l.also?.includes(p.replyTo)));
-	// Every turn that ran (omp started it from a delivered prompt), oldest first: a worker belongs to the turn it was spawned in.
-	const turns: { prompt: Prompt; start: number; end?: number }[] = [];
+	const turns: Turn[] = [];
 	const closeTurn = () => { const t = turns.at(-1); if (t && t.end === undefined) t.end = Date.now(); };
 	const openDeferred = () => deferred.filter(p => !p.done && !isAnswered(p.replyTo) && Date.now() - p.at <= DEFER_MAX_AGE_MS);
 
@@ -144,12 +149,9 @@ export function createPrompts(deps: PromptDeps) {
 	 * prompt that has not started yet it gathers (hub/promptburst.ts).
 	 */
 	function deliver(text: string, reply?: Reply): boolean {
-		const running = Boolean(!reply?.from && !reply?.handback && !reply?.quiet && !reply?.bookkeeping && current?.target && reply && sameConv(current.target, reply.target) && (!current.done || (reply.owner && !current.cancelled)));
-		// A turn that answers no request of ours (a worker's result woke the session, a session report) takes the owner's message too: as a
-		// followUp it waited behind the engine's own chain of runs (2026-11-11 11:31 UTC, about four minutes). Such a run answers at home, so
-		// only home's messages go in; another conversation's waits for its own turn. A keepalive turn keeps the old way.
-		const unrequested = Boolean(reply?.owner && !reply.from && !reply.handback && !reply.quiet && !current?.target && !deps.keepalive?.() && sameConv(reply.target, home().target));
-		const steered = deps.working() && (running || unrequested);
+		const running = Boolean(!reply?.from && !reply?.handback && !reply?.quiet && !reply?.bookkeeping && !reply?.run && current?.target && reply && sameConv(current.target, reply.target) && (!current.done || (reply.owner && !current.cancelled)));
+		// A turn that answers no request of ours (a woken run, a session report) does not take the owner's message: it waits as its own prompt and gets a turn of its own.
+		const steered = deps.working() && running;
 		const gather = !steered && reply?.owner === true && burst.gathers(reply.target);
 		// A new owner turn for a conversation whose background worker is still running starts with a note naming that worker, so the
 		// orchestrator passes a follow-up to it (task_send) instead of spawning a second worker for the same job (owner 2026-10-30:
@@ -162,6 +164,8 @@ export function createPrompts(deps: PromptDeps) {
 		if (elsewhere?.target) text = `${text}\n\n${deps.foreignNote!(elsewhere, elsewhere.target)}`;
 		const cards = reply?.owner && !gather && !deps.hasCardsNote?.(text) ? deps.cardsNote?.(reply.target) : undefined;
 		if (cards) text = `${cards}\n\n${text}`;
+		const told = reply?.owner && !gather ? deps.askerNotes?.() : undefined;
+		if (told) text = `${told}\n\n${text}`;
 		const prompt: Prompt = { key: text.slice(0, 300), text, at: Date.now(), target: reply?.target, replyTo: reply?.replyTo, ...(reply?.refs?.length ? { refs: reply.refs } : {}), sent: [], steered, ...(reply?.owner ? { owner: true } : {}), ...(reply?.deep ? { deep: true } : {}), ...(gather ? { gathered: true } : {}), ...labels(reply ?? {}) };
 		prompts.push(prompt);
 		if (prompts.length > MAX_PROMPTS) prompts.splice(0, prompts.length - MAX_PROMPTS);
@@ -180,7 +184,6 @@ export function createPrompts(deps: PromptDeps) {
 		const note = deps.note(reply!.target, reply!.replyTo, text);
 		prompt.noted = note.trim();
 		if (deps.steer(note) !== false) {
-			if (unrequested) deps.log(`owner message for ${reply!.target} steered into a turn that answers no request of ours`);
 			// The owner's message is answered in this turn's final answer, so that answer must be posted, not kept as a quiet line.
 			if (current?.quiet) {
 				delete current.quiet;
@@ -340,7 +343,8 @@ export function createPrompts(deps: PromptDeps) {
 		resultTo = undefined;
 		if (!p) {
 			unpairedRun = false;
-			return askLeftover();
+			askLeftover();
+			return deps.turnEnded?.();
 		}
 		// A turn stopped by a provider error before it wrote anything is not answered: its request stays open like a deferred one, so the
 		// run that resumes after the pause answers it in its own conversation and a restart replays it (2026-10-28 13:25Z on the Mac mini:
@@ -367,7 +371,10 @@ export function createPrompts(deps: PromptDeps) {
 			const unanswered = p.replyTo !== undefined && !isAnswered(p.replyTo) && !p.sent.some(s => sameConv(s.target, p.target!)) && !openDeferred().some(d => d.replyTo === p.replyTo);
 			if (p.last || p.held?.length || p.fallback) onAnswer(p.last ?? "");
 			else if (unanswered && deps.noAnswerNote) onAnswer(deps.noAnswerNote());
-			else p.done = true;
+			else {
+				p.done = true;
+				if (p.run) deps.ran?.(p.run, p.sent.length ? "answered" : "failed");
+			}
 		}
 		flushHeld(p);
 		closeTurn();
@@ -375,51 +382,10 @@ export function createPrompts(deps: PromptDeps) {
 		askBack(p.target);
 		askLeftover(p.target);
 		save();
+		deps.turnEnded?.(p.text);
 	}
 
-	/**
-	 * The run ended: a wake still listed was read there and not answered, so it may not pair with the next run. Its request is asked
-	 * again once when it waits on nothing else (a run that said [later] chose to wait; a conversation switch is askBack's).
-	 */
-	function askLeftover(target?: string): void {
-		const work = deps.work?.() ?? [];
-		const live = new Set(work.filter(w => w.status === "running" || w.status === "stalled").map(w => w.id));
-		for (const w of woke.splice(0).filter(w => !w.waited)) {
-			const l = links.get(w.id);
-			if (!l || l.delivered || l.cancelled) continue;
-			l.read = true;
-			saveLinks();
-			const d = tiedOpen(l)[0];
-			if (!d?.target || askedBack.has(l.id) || !deps.readHereNote || (target && !sameConv(target, d.target)) || linksOf(d).some(o => live.has(o.id))) continue;
-			askedBack.add(l.id);
-			deps.log(`the result of ${l.id} was read in a run that did not answer ${d.replyTo ?? "(no id)"}; it is asked again`);
-			deliver(`${deps.readHereNote(l.id)}\n\n${d.text}`, { target: d.target, replyTo: d.replyTo });
-		}
-	}
-
-	/**
-	 * A turn for one conversation ended while a worker of another finished during it: OmO read that result here, but the request it
-	 * answers still waits in its own conversation. Ask that one again with its own text, once per worker, and leave it open.
-	 */
-	function askBack(target: string | undefined): void {
-		const work = deps.work?.();
-		const note = deps.readElsewhereNote;
-		if (!target || !note || !work?.length) return;
-		const turn = turns.at(-1);
-		const from = turn?.start ?? 0;
-		const to = Date.now();
-		for (const w of work) {
-			if (w.status === "running" || w.status === "stalled" || w.endedAt === undefined || w.endedAt < from || w.endedAt > to) continue;
-			if (!w.target || sameConv(w.target, target) || askedBack.has(w.id)) continue;
-			const open = openDeferred().filter(p => p.target === w.target);
-			const d = open.find(p => w.replyTo !== undefined && p.replyTo === w.replyTo) ?? open.at(-1);
-			if (!d) continue;
-			askedBack.add(w.id);
-			if (askedBack.size > MAX_ANSWERED) askedBack.delete(askedBack.values().next().value!);
-			deps.log(`the result of ${w.id} for ${w.target} was read in a turn for ${target}; ${w.target} is asked again`);
-			deliver(`${note(w, target)}\n\n${d.text}`, { target: w.target, replyTo: d.replyTo });
-		}
-	}
+	const { askLeftover, askBack } = createAskAgain({ deps, woke, links, askedBack, turns, saveLinks, tiedOpen, linksOf, openDeferred, deliver });
 
 	/**
 	 * The owner message the turn running at `at` (ms) was answering: a new turn replaces it, a message steered into the turn
@@ -492,10 +458,10 @@ export function createPrompts(deps: PromptDeps) {
 		deps.announce?.(l.target, took ? `백그라운드 작업으로 맡겼어요: ${took}` : "백그라운드 작업으로 맡겼어요", l.id);
 	}
 
+	const turnFrom = (p: Prompt) => (turns.at(-1)?.prompt === p ? turns.at(-1)!.start : p.at) - TURN_SLACK_MS;
 	/** The workers this turn spawned, by the runtime's own spawn event or by the task store's start time, without a line yet. */
 	function newWorkers(p: Prompt): WorkLink[] {
-		const turn = turns.at(-1);
-		const from = (turn?.prompt === p ? turn.start : p.at) - TURN_SLACK_MS;
+		const from = turnFrom(p);
 		for (const w of deps.work?.() ?? [])
 			if ((w.status === "running" || w.status === "stalled") && w.startedAt >= from && (!w.target || sameConv(w.target, p.target!))) link(w.id, { target: p.target!, replyTo: requestOf(p) }, w.description);
 		return linksOf({ target: p.target, replyTo: requestOf(p) }).filter(l => l.at >= from && !receiptedWorker(l));
@@ -516,11 +482,12 @@ export function createPrompts(deps: PromptDeps) {
 			.map(w => links.get(w.id))
 			.find(l => l && !l.delivered && !l.read && requestOpen(l));
 	}
-	/** The request a dotz_send to `target` from a run without a prompt answers: the one of the worker that woke the run. */
+	/** The request a dotz_send to `target` from a run without a prompt answers: the one of the worker that woke it. A request its own turn already
+	 * answered (a side job started there) is not one: news of that work posted as a reply to it reads as a wrong answer (owner 2026-11-19). */
 	function resultFor(target: string): string | undefined {
 		for (const w of woke) {
 			const l = links.get(w.id);
-			if (l && !l.delivered && sameConv(l.target, target)) return tiedOpen(l)[0]?.replyTo ?? l.replyTo;
+			if (l && !l.delivered && sameConv(l.target, target)) return tiedOpen(l)[0]?.replyTo ?? (isAnswered(l.replyTo) ? undefined : l.replyTo);
 		}
 		return undefined;
 	}
@@ -585,11 +552,15 @@ export function createPrompts(deps: PromptDeps) {
 			}
 		};
 		const via = deps.handBack ? to.prompt?.from : undefined;
+		if (!via && rewrite(to.prompt ?? { key: "", text: "", at: Date.now(), target: to.target, replyTo: to.replyTo, sent: [] }, t, to.replyTo, to.prompt?.refs)) return save();
+		deps.answering?.(t, to.replyTo);
 		if (via) return (deps.handBack!(via, t, to.replyTo), settle());
+		const run = to.prompt?.run;
 		void deps
-			.post(to.target, t, to.replyTo, to.prompt && hushedAnswer(to.prompt, t, id => !isAnswered(id)))
+			.post(to.target, t, to.replyTo, { ...(to.prompt && hushedAnswer(to.prompt, t, id => !isAnswered(id))), ...postedRun(run) })
 			.then(r => {
 				if (!r.delivered) return;
+				if (run) deps.ran?.(run, "answered");
 				settle();
 				deps.clearProgress(to.target);
 			})
@@ -607,6 +578,7 @@ export function createPrompts(deps: PromptDeps) {
 		if (rewrite(p, t, replyTo, undefined)) return;
 		const ids = burst.cover(target);
 		save();
+		deps.answering?.(t, replyTo);
 		if (p.sent.some(s => sameConv(s.target, target) && s.text.includes(t))) return burst.close(target, ids);
 		p.sent.push({ target, text: t });
 		void deps
@@ -619,23 +591,20 @@ export function createPrompts(deps: PromptDeps) {
 			.catch(e => deps.log(`reply to ${target} failed: ${e}`));
 	}
 
-	/** A run with no request of ours took an owner message mid-turn and has read it: its stop answers that message (true when it did). */
-	function answerSeen(text: string): boolean {
-		const q = prompts.findLast(x => x.steered && x.seen && x.target);
-		const { later, text: t } = laterParts(text);
-		if (!q?.target || later || isSilent(t) || t.length <= 3 || !burst.seen(q.target).length) return false;
-		return (onContinued(q, text), true);
-	}
-
 	/** An assistant stop: the turn's final answer goes to the channel that asked, once. */
 	function onAnswer(text: string): void {
 		const p = current;
 		// A turn omp continues (steered notes) stops again; the prompt it started with was answered at the first stop.
-		if (!p) return void (answerSeen(text) || onOrphanAnswer(text));
-		if (!p.target && answerSeen(text)) return;
+		if (!p) return onOrphanAnswer(text);
 		if (p.done) return onContinued(p, text);
 		const { later, text: said } = laterParts(text);
 		const t = rewriteText(p, said, later);
+		if (later && !t && p.target && !p.deferred && !p.fallback && !p.laterRefused && deps.work && !deps.regenerated?.(p.text) && waitsOnNothing(p, { work: deps.work(), spawned: [...links.values()].map(l => l.at), from: turnFrom(p) })) {
+			deps.log(`a bare [later] for ${p.target} waits on no worker; its request is asked once more to be finished or answered`);
+			p.done = true;
+			deliver(`${LATER_REFUSED}\n\n${p.text.slice(0, REPORT_NOTE_CHARS)}`, { target: p.target, replyTo: p.replyTo, refs: p.refs, ...labels(p) });
+			return void Object.assign(prompts.at(-1)!, { sent: p.sent, held: p.held, laterRefused: true });
+		}
 		if (later && p.target && !p.deferred) {
 			flushHeld(p, t);
 			// The answer itself waits for the worker, but the conversation must not look silent (owner 2026-10-27: "메일 내 대화에서
@@ -679,13 +648,15 @@ export function createPrompts(deps: PromptDeps) {
 		if (rewrite(p, t, p.replyTo, p.refs)) return;
 		const silent = isSilent(t);
 		// A quiet check that found nothing to decide or report: one worklog line, no post, no push. Text it sent early with dotz_send stays a normal answer.
-		const quiet = Boolean(p.quiet && !silent && t && !LOUD.test(t) && !p.held?.length && deps.quietNote);
+		const quiet = Boolean(p.quiet && !silent && t && !isLoud(t) && !p.held?.length && deps.quietNote);
 		if (quiet && p.target) {
 			deps.log(`a quiet check answer for ${p.target} was kept in the worklog`);
 			deps.quietNote!(p.target, t);
 		}
 		// From here a quiet answer is handled like "-": it posts nothing, and what gathered behind the prompt is released as below.
 		const hush = silent || quiet;
+		if (hush && p.run) deps.ran?.(p.run, quiet ? "answered" : "silent");
+		if (!hush) deps.answering?.(t, p.replyTo);
 		if (silent && t !== "-") deps.log(`a no-op answer for ${p.target ?? "-"} was not posted: ${t.slice(0, 160)}`);
 		if (p.target && !hush) receipted.delete(receiptKey(p.target));
 		if (!hush) closeResults(p.replyTo);
@@ -694,6 +665,7 @@ export function createPrompts(deps: PromptDeps) {
 		// (2026-11-11: usage-limit stops; 2026-11-13: a worker failed at start, and the reminder kept coming). Any other answer with no
 		// message id (another scheduled item, a quiet check) did not do their work, so it leaves them open for the run that resumes them.
 		if (!hush && p.target && !p.replyTo) closeIdless(openDeferred(), p, linksOf, deps.work?.() ?? [], deps.regenerated?.(p.text) === true);
+		const owned = Boolean(p.target && !hush && burst.seen(p.target).some(q => q.owner));
 		const ids = p.target && !hush ? [...(p.refs ?? []), ...burst.cover(p.target)] : [];
 		save();
 		if (!p.target) return;
@@ -701,12 +673,13 @@ export function createPrompts(deps: PromptDeps) {
 		// Parts sent early with dotz_send do not replace the answer; skip it only when it repeats something already sent.
 		const sentHere = p.sent.some(s => s.target === target);
 		const held = p.held ?? []; p.held = undefined;
-		// Also a repeat: the same first NEAR_CHARS normalized characters as something this turn already posted to that conversation
-		// (a schedule text said "tell web" while its final answer goes to "chat", both the main web conversation).
+		// Also a repeat: the same first NEAR_CHARS normalized characters as something this turn already posted to that conversation ("tell web"
+		// vs "chat", both the main web one). Handed work counts its held parts only: its session is still owed the answer that went there.
 		const key = head(t);
 		const prior = [...p.sent.filter(s => sameConv(s.target, target)).map(s => s.text), ...held];
-		const repeat = hush || !t || prior.some(h => h.includes(t) || (key.length >= NEAR_MIN && head(h) === key));
+		const repeat = hush || !t || (p.from && deps.handBack ? held : prior).some(h => h.includes(t) || (key.length >= NEAR_MIN && head(h) === key));
 		if (repeat && !held.length) {
+			if (p.run && !hush) deps.ran?.(p.run, t || sentHere ? "answered" : "silent", owned);
 			if (sentHere) deps.clearProgress(target);
 			return burst.close(target, ids);
 		}
@@ -719,9 +692,10 @@ export function createPrompts(deps: PromptDeps) {
 			return burst.close(target, ids);
 		}
 		void deps
-			.post(target, body, p.replyTo, hushedAnswer(p, body, id => !isAnswered(id)))
+			.post(target, body, p.replyTo, { ...hushedAnswer(p, body, id => !isAnswered(id)), ...(owned ? {} : postedRun(p.run)) })
 			.then(r => {
 				if (!r.delivered) return;
+				if (p.run) deps.ran?.(p.run, "answered", owned);
 				markAnswered(p.replyTo);
 				burst.close(target, ids);
 				deps.clearProgress(target);
@@ -735,16 +709,22 @@ export function createPrompts(deps: PromptDeps) {
 		const fresh = unanswered.filter(p => {
 			if (!p.text || Date.now() - (p.at ?? 0) >= REPLAY_MAX_AGE_MS) return false;
 			if (deps.regenerated?.(p.text)) { deps.log(`not replaying a gateway nudge for ${p.target ?? "-"}: the silent-wait check sends it again if still due`); return false; }
-			const done = isAnswered(p.replyTo) || Boolean(!p.replyTo && p.target && p.at && deps.answeredSince?.(p.target, p.at));
+			const done = isAnswered(p.replyTo) || (p.run ? deps.runSettled?.(p.run) === true : Boolean(!p.replyTo && p.target && p.at && deps.answeredSince?.(p.target, p.at)));
 			if (done) deps.log(`not replaying ${p.target ?? "-"} ${p.replyTo ?? "(no id)"} after the restart: already answered`);
 			return !done;
 		});
 		// A request waiting on a worker keeps waiting: its link says whose result answers it, and running the request again would repeat
 		// that work. If that result never comes, the silent-wait check names the request (hub/waitcheck.ts).
-		const failed = new Set((deps.work?.() ?? []).filter(w => w.status === "failed").map(w => w.id));
-		const waits = (p: Pending) => p.deferred === true && linksOf(p).some(l => !l.delivered && !l.cancelled && !failed.has(l.id));
+		const rows = deps.work?.() ?? [];
+		const failed = new Set(rows.filter(w => w.status === "failed").map(w => w.id));
+		const live = new Set(rows.filter(w => w.status === "running" || w.status === "stalled").map(w => w.id));
+		const inProcess = deps.inProcess?.() === true;
+		const waits = (p: Pending) => p.deferred === true && linksOf(p).some(l => !l.delivered && !l.cancelled && (inProcess ? live.has(l.id) : !failed.has(l.id)));
 		const kept = fresh.filter(waits);
 		const again = fresh.filter(p => !waits(p));
+		const dead = inProcess ? again.flatMap(linksOf).filter(l => !l.delivered && !l.cancelled) : [];
+		for (const l of dead) l.delivered = true;
+		if (dead.length) saveLinks();
 		for (const p of kept) deferred.push({ key: p.text.slice(0, 300), text: p.text, at: p.at ?? Date.now(), target: p.target, replyTo: p.replyTo, ...(p.refs?.length ? { refs: p.refs } : {}), sent: [], deferred: true, ...labels(p) });
 		if (kept.length) { deps.log(`${kept.length} request(s) keep waiting on their workers after the restart`); save(); }
 		if (again.length) deps.log(`replaying ${again.length} unanswered prompt(s) from before the restart`);
@@ -779,12 +759,15 @@ export function createPrompts(deps: PromptDeps) {
 
 	/** The silent-wait check gave up on these after its last reminder (hub/waitcheck.ts): they stop being listed and are not replayed. */
 	function dropOpen(list: { target: string; replyTo?: string; at: number }[]): void {
-		for (const r of list) for (const d of openDeferred()) if (d.target === r.target && d.replyTo === r.replyTo && d.at === r.at) d.done = true;
+		for (const r of list) for (const d of openDeferred()) if (d.target === r.target && d.replyTo === r.replyTo && d.at === r.at) closeDropped(deps, d);
 		save();
 	}
 
 	/** Requests waiting on background work, with the workers linked to them. */
-	const openRequests = (): OpenRequest[] => openDeferred().flatMap(p => (p.target ? [{ target: p.target, ...(p.replyTo ? { replyTo: p.replyTo } : {}), at: p.at, workers: waitedOn(linksOf(p), deps.work?.() ?? []).map(({ id, description }) => ({ id, ...(description ? { description } : {}) })) }] : []));
+	const openRequests = (): OpenRequest[] => {
+		const omp = deps.inProcess?.() === true;
+		return openDeferred().flatMap(p => (p.target ? [{ target: p.target, ...(p.replyTo ? { replyTo: p.replyTo } : {}), ...(p.from ? { from: p.from } : {}), ...(p.handback ? { handback: true as const } : {}), ...(p.bookkeeping ? { bookkeeping: true as const } : {}), ...(omp ? { omp: true as const } : {}), at: p.at, workers: waitedOn(linksOf(p), deps.work?.() ?? []).map(({ id, description }) => ({ id, ...(omp && deps.nameOf ? { name: deps.nameOf(id) } : {}), ...(description ? { description } : {}) })) }] : []));
+	};
 
 	/** Messages of this conversation with a turn of their own still to come: an answer to another message there does not settle them. */
 	const waitingIds = (target: string): string[] => [...openDeferred(), ...prompts.filter(p => !p.seen)].flatMap(p => (p.target && sameConv(p.target, target) ? [...new Set([...(p.refs ?? []), ...(p.replyTo ? [p.replyTo] : [])])] : []));

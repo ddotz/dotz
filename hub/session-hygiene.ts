@@ -12,6 +12,7 @@ import type { Database } from "bun:sqlite";
 import { chmodSync, closeSync, existsSync, openSync, readdirSync, readFileSync, readSync, renameSync, rmSync, statSync, utimesSync, writeSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, join } from "node:path";
+import { ompSessionsDir } from "./omp-dirs.ts";
 import { maskSecrets, secretFileValues } from "./public-scrub.ts";
 import { openRecall, retireFile } from "./recall-index.ts";
 
@@ -217,7 +218,7 @@ function isIndexed(db: Database, file: string, st: { size: number; mtimeMs: numb
 
 export const sessionRoots = (): string[] => [
 	join(process.env.OMO_CODING_AGENT_DIR ?? process.env.PI_AGENT_DIR ?? join(homedir(), ".omo", "agent"), "sessions"),
-	join(homedir(), ".omp", "agent", "sessions"),
+	ompSessionsDir(),
 	// Claude Code keeps <config>/projects/<cwd>/<id>.jsonl (hub/runtime/claude.ts): the same folder/file depth.
 	join(process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), ".claude"), "projects"),
 ];

@@ -1,18 +1,14 @@
-// Output language guard: text that goes to the owner is in the identity's language (hub/i18n.ts `lang()`), even when the
-// agent thought in English right before writing it. Detection is local and free (script ratio, no model call); only a
-// mismatching text is translated, by one minimal omp call (print mode, no tools/skills/extensions/rules/memory, the
-// tiny model role) that sees that one text and nothing else. On any failure or timeout the original text goes out.
-//
 // config.json `output_language`: "rewrite" (default) | "off", or { mode, model, timeout_s }.
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { readFileSync } from "node:fs";
 import { withoutApiKeys } from "./apikey-policy.ts";
 import { cfg, DATA_DIR, DEFAULTS, IDENTITY_FILE, log, OMP, splitThinking } from "./config.ts";
-import { callWarm, ensureProvider, invalidateHealth, readyAccount } from "./model-runner.ts";
+import { runtimeIdOf } from "./runtime/runtime-id.ts";
+import { parseDraftApproval } from "./draft-approval.ts";
+import { callWarm, ensureOmpProvider, ensureProvider, invalidateHealth, isTextEvent, LIMIT_ERROR, OMO_FLAGS, ompFlags, readyAccount, runnerDeps } from "./model-runner.ts";
 import { OMO } from "./runtime/omo-hosts.ts";
 import { lang, msg } from "./i18n.ts";
 import { baseLanguage, languageName } from "./language.ts";
-import { leaksHandoff } from "./tone.ts";
+import { leaksHandoff, statedTone } from "./tone.ts";
 
 type Setting = { mode?: string; model?: string; timeout_s?: number };
 // Optional key outside the Config type (hub/config.ts is not touched for it); a string is the mode alone.
@@ -47,11 +43,12 @@ const MIN_LATIN_WORDS = 8;
 const MIN_LATIN_WORDS_PURE = 3;
 const MAX_NATIVE_SHARE = 0.1;
 
-// What is not prose: code blocks, inline code, URLs, paths, mentions and channel tags, emoji shortcodes.
+// What is not prose: code blocks, inline code, quoted strings, URLs, paths, mentions and channel tags, emoji shortcodes.
 function prose(text: string): string {
 	return text
 		.replace(/```[\s\S]*?(```|$)/g, " ")
 		.replace(/`[^`\n]*`/g, " ")
+		.replace(/"[^"\n]{1,200}"|“[^”\n]{1,200}”|「[^」\n]{1,200}」|(?<![\w'])'[^'\n]{1,200}'(?![\w'])/g, " ")
 		.replace(/<[@#:a][^>\n]*>/g, " ")
 		.replace(/\b[a-z][a-z0-9+.-]*:\/\/\S+/gi, " ")
 		.replace(/(^|\s)@\w+/g, " ")
@@ -64,11 +61,35 @@ const latinWords = (s: string): number => (s.match(/(?<![\w-])[A-Za-z][A-Za-z'�
 // English prose. A 137-char repo list was sent for a rewrite that took 12 s and came back 8x longer (2026-10-28).
 const sentenceWords = (s: string): number => s.split(/[,;|·\n]+/).map(latinWords).filter(n => n >= 2).reduce((a, n) => a + n, 0);
 
-// True when `text` should be in `language` but is mostly Latin-script prose.
+// True when `text` should be in `language` but is mostly Latin-script prose, as a whole or in any one paragraph: an English paragraph above a
+// Korean [run] line made the whole text count as Korean and reached the owner as written (prune-tests, 2026-11-18).
 export function languageMismatch(text: string, language: string): boolean {
 	const script = SCRIPTS[baseLanguage(language)];
-	if (!script) return false;
-	const body = prose(text);
+	return !!script && (latinProse(prose(text), script) || foreignParagraphs(text, script).length > 0);
+}
+
+// The first words of a paragraph, for a note that names it.
+const head = (paragraph: string): string => paragraph.trim().split(/\s+/).slice(0, 6).join(" ").slice(0, 60);
+
+// Paragraphs (blank-line separated, code blocks left out) that are mostly Latin-script prose.
+function foreignParagraphs(text: string, script: RegExp): string[] {
+	return text.replace(/```[\s\S]*?(```|$)/g, "\n\n").split(/\n[ \t]*\n/).filter(p => latinProse(prose(p), script)).map(head);
+}
+
+// What keeps a session's report from the owner in a language with its own script: a paragraph in another language, or text above the
+// status line ([done]/[run]/[wait]/[ask]/[fail] or its emoji). Pure, no model call; undefined when the report is fine or the language is unchecked.
+export function reportLanguage(text: string, language: string): { head: string; before: boolean } | undefined {
+	const script = SCRIPTS[baseLanguage(language)];
+	if (!script) return;
+	const lines = text.split("\n");
+	const at = lines.findIndex(l => statedTone(l.trim()).tone);
+	const above = at > 0 ? lines.slice(0, at).join("\n").trim() : "";
+	if (above) return { head: head(above), before: true };
+	const foreign = foreignParagraphs(text, script)[0];
+	return foreign ? { head: foreign, before: false } : undefined;
+}
+
+function latinProse(body: string, script: RegExp): boolean {
 	const words = latinWords(body);
 	const native = (body.match(script) ?? []).length;
 	if (native === 0) return sentenceWords(body) >= MIN_LATIN_WORDS_PURE;
@@ -77,10 +98,11 @@ export function languageMismatch(text: string, language: string): boolean {
 	return native / (native + latin) < MAX_NATIVE_SHARE;
 }
 
-// Owner-facing text is only mismatched when the identity language has its own script and text was not made by a template.
-function needsRewrite(text: string, source?: string): boolean {
+// Owner-facing text is only mismatched when the identity language has its own script and text was not made by a template. A send card goes out
+// as the draft printed it: the owner approves the mail's own words, never a translation (hub/notices-rules.ts shownAsStored).
+export function needsRewrite(text: string, source?: string): boolean {
 	if (setting().mode === "off" || source === "gateway" || source === "hub") return false;
-	return languageMismatch(text, lang());
+	return languageMismatch(text, lang()) && !parseDraftApproval(text);
 }
 
 // The Tone line of IDENTITY.md ("- Tone: ..."), else identity.tone from config.json.
@@ -90,13 +112,6 @@ export function tone(): string {
 		if (line) return line.replace(/^\s*[-*]?\s*Tone\s*[:：]\s*/i, "").trim().slice(0, 300);
 	} catch {}
 	return (cfg.identity?.tone ?? "").trim().slice(0, 300);
-}
-
-// Memory is off for these calls (no recall/retain around a translation). The real agent dir is used as is: a second dir
-// with symlinked auth databases would save ~900 input tokens per rare rewrite but risks the shared SQLite WAL.
-const OVERLAY = join(DATA_DIR, "outlang-overlay.yml");
-function prepareOverlay(): void {
-	if (!existsSync(OVERLAY)) writeFileSync(OVERLAY, 'memory:\n  backend: "off"\n');
 }
 
 function systemPrompt(language: string): string {
@@ -118,35 +133,99 @@ const OMO_SMALL = "anthropic-subscription/claude-sonnet-5-5";
 // The model of a rewrite or a card summary as its selector (dotz names; the effort, if any, after a colon): the setting, else OMO_SMALL thinking off.
 export const outlangModel = (): string => setting().model ?? OMO_SMALL.replace(/^anthropic-subscription\//, "anthropic/");
 const omoModel = (m: string | undefined) => (!m || m.startsWith("@") ? OMO_SMALL : m.replace(/^anthropic\//, "anthropic-subscription/"));
-// One minimal call on the orchestrator's runtime (OmO by default; omp when config.json names it) with no tools, skills,
-// extensions, rules or memory, `system` as the system prompt and `text` as the only message; throws on any failure.
-// Shared by the translation below and hub/summaries.ts. Both print the same json event stream (message_end).
-// A model given as `<selector>:<effort>` (e.g. anthropic/claude-sonnet-5-5:high) runs at that effort; without a suffix the call thinks off, as before.
-export function modelArgv(system: string, text: string, selector: string | undefined): string[] {
-	const { model, thinking = "off" } = selector ? splitThinking(selector) : { model: undefined };
-	if ((cfg.orchestrator?.runtime ?? cfg.runtime ?? "omo") === "omp") {
-		prepareOverlay();
-		return [OMP, "-p", "--mode", "json", `--config=${OVERLAY}`, "--no-session", "--no-tools", "--no-extensions", "--no-skills", "--no-rules", "--no-lsp", "--no-title", "--thinking", thinking, "--model", model ?? "@tiny", "--system-prompt", system, text];
-	}
-	return [OMO, "-p", "--mode", "json", "--no-session", "--no-tools", "--no-extensions", "--no-skills", "--no-context-files", "--no-prompt-templates", "--omo-senpi-memory-disabled", "--no-model-fallback", "--thinking", thinking, "--model", omoModel(model), "--system-prompt", system, text];
+const ompModel = (m: string | undefined) => (m ? m.replace(/^anthropic-subscription\//, "anthropic/") : splitThinking(outlangModel()).model);
+function oneShotRuntime(): OneShot {
+	const id = runtimeIdOf("orchestrator");
+	if (id === "omp" || id === "omo") return id;
+	if (runnerDeps.which(OMP)) return "omp";
+	if (runnerDeps.which(OMO)) return "omo";
+	throw new Error("no one-shot model runtime");
 }
+
+const shield = (t: string): string => t.replace(/(^|[\s([{<"'`])@/g, "$1@\u200B").replace(/^(\s*)\//, "$1\u200B/");
+const unshield = (t: string): string => t.replace(/@\u200B/g, "@").replace(/^(\s*)\u200B\//, "$1/");
+
+/**
+ * The argv of one minimal call (print mode, json events) with no tools, skills, extensions, rules or memory and `system` as the
+ * system prompt; the one message goes in on stdin, never in the argv. The runtime is the orchestrator's own (OmO unless
+ * config.json names omp); `claude` has no print mode of its own, so it takes omp when installed, else OmO, else the call fails.
+ * A selector `<model>:<effort>` (e.g.
+ * anthropic/claude-sonnet-5-5:high) runs at that effort; without a suffix the call thinks off. omp names the subscription
+ * `anthropic` (OmO: `anthropic-subscription`), takes the rewrite model when none is given, and passes `@role` selectors as they are.
+ * omp inlines every existing `@path` of its input and runs a leading `/` as a command, so its text is shielded with a
+ * zero-width space after each `@` and before a leading `/` (callModel removes it from the reply).
+ * Shared by the translation below and hub/summaries.ts; both read the same json event stream (message_end).
+ */
+export function modelArgv(system: string, selector: string | undefined, runtime: OneShot = oneShotRuntime()): string[] {
+	const { model, thinking = "off" } = selector ? splitThinking(selector) : { model: undefined };
+	if (runtime === "omp") return [OMP, "-p", "--mode", "json", ...ompFlags(), "--thinking", thinking, "--model", ompModel(model), "--system-prompt", system];
+	return [OMO, "-p", "--mode", "json", ...OMO_FLAGS, "--thinking", thinking, "--model", omoModel(model), "--system-prompt", system, "-"];
+}
+
+type OneShot = "omp" | "omo";
+type Assistant = { content?: { type: string; text?: string }[]; usage?: { input?: number; cacheRead?: number; cacheWrite?: number; output?: number }; stopReason?: string; errorMessage?: string };
+type Run = { reply?: Assistant; firstTokenMs?: number; tail: string[] };
+const TAIL_LINES = 8;
+
+async function drain(stream: unknown, onLine: (line: string) => void): Promise<void> {
+	if (!stream) return;
+	const decoder = new TextDecoder();
+	let buf = "";
+	for await (const chunk of stream as AsyncIterable<Uint8Array>) {
+		buf += decoder.decode(chunk, { stream: true });
+		for (let i = buf.indexOf("\n"); i >= 0; i = buf.indexOf("\n")) {
+			onLine(buf.slice(0, i));
+			buf = buf.slice(i + 1);
+		}
+	}
+	buf += decoder.decode();
+	if (buf) onLine(buf);
+}
+
+async function readRun(proc: { stdout?: unknown; stderr?: unknown }, started: number): Promise<Run> {
+	const run: Run = { tail: [] };
+	const note = (line: string) => {
+		run.tail.push(line.slice(0, 300));
+		if (run.tail.length > TAIL_LINES) run.tail.shift();
+	};
+	const onOut = (line: string) => {
+		const t = line.trim();
+		if (!t) return;
+		let event: { type?: string; message?: Assistant & { role?: string }; assistantMessageEvent?: { type?: string } } | null;
+		try {
+			event = JSON.parse(t);
+		} catch {
+			return note(t);
+		}
+		if (event?.type === "message_update" && run.firstTokenMs === undefined && isTextEvent(event)) run.firstTokenMs = Date.now() - started;
+		if (event?.type === "message_end" && event.message?.role === "assistant") run.reply = event.message;
+	};
+	await Promise.all([drain(proc.stdout, onOut), drain(proc.stderr, l => (l.trim() ? note(l.trim()) : undefined))]);
+	return run;
+}
+
+/** One call on the orchestrator's runtime (see modelArgv); `text` is the only message. Throws on any failure: the model's own error, `model call timed out after Ns`, `model call exited N: <last line>` or `empty reply`. */
 export async function callModel(system: string, text: string, opts: { model?: string; timeoutMs?: number } = {}): Promise<Rewrite> {
 	const started = Date.now();
 	const timeout = opts.timeoutMs ?? timeoutMs();
 	const selector = opts.model ?? setting().model;
 	const { model, thinking = "off" } = selector ? splitThinking(selector) : { model: undefined };
-	const omo = (cfg.orchestrator?.runtime ?? cfg.runtime ?? "omo") === "omo";
+	const runtime = oneShotRuntime();
+	const omp = runtime === "omp";
+	const target = omp ? ompModel(model) : omoModel(model);
 	// The subscription account is checked before anything starts: an exhausted one used to hang a draft for its whole
 	// timeout. Thrown here on purpose (not caught below): no runtime call is attempted on a spent account.
-	if (omo) ensureProvider(omoModel(model));
+	if (omp) ensureOmpProvider(target);
+	else ensureProvider(target);
 	// `model_warm: false` in config.json turns the warm process off (a key outside the Config type, like output_language).
-	if (omo && Reflect.get(cfg, "model_warm") !== false) {
+	if (Reflect.get(cfg, "model_warm") !== false && (!omp || runnerDeps.which(OMP))) {
 		try {
-			return logCall(await callWarm(system, text, { model: omoModel(model), thinking, timeoutMs: timeout, account: readyAccount() }), omoModel(model), "warm");
+			const warm = await callWarm(system, omp ? shield(text) : text, { model: target, thinking, timeoutMs: timeout, runtime, ...(omp ? {} : { account: readyAccount() }) });
+			return logCall(omp ? { ...warm, text: unshield(warm.text) } : warm, target, "warm");
 		} catch (e) {
 			const why = (e as Error).message;
 			// A provider that stops answering mid-turn is not retried on the slow path; the next call re-reads the state.
-			if (/limit|quota|429|rate|blocked|not_ready|구독/i.test(why)) {
+			if (LIMIT_ERROR.test(why)) {
 				invalidateHealth();
 				throw e;
 			}
@@ -155,26 +234,17 @@ export async function callModel(system: string, text: string, opts: { model?: st
 			log(`model: warm process failed (${why}); one-shot call`);
 		}
 	}
-	const proc = modelDeps.spawn(modelArgv(system, text, selector), { cwd: DATA_DIR, env: withoutApiKeys({ ...process.env }), stdin: "ignore", stdout: "pipe", stderr: "ignore", timeout });
-	let raw = "";
-	let firstTokenMs: number | undefined;
-	const decoder = new TextDecoder();
-	for await (const chunk of proc.stdout as unknown as AsyncIterable<Uint8Array>) {
-		if (firstTokenMs === undefined) firstTokenMs = Date.now() - started;
-		raw += decoder.decode(chunk, { stream: true });
-	}
+	const stdin = new TextEncoder().encode(omp ? shield(text) : text);
+	const proc = modelDeps.spawn(modelArgv(system, selector, runtime), { cwd: DATA_DIR, env: withoutApiKeys({ ...process.env }), stdin, stdout: "pipe", stderr: "pipe", timeout });
+	const run = await readRun(proc, started);
 	const code = await proc.exited;
-	let reply: { content?: { type: string; text?: string }[]; usage?: { input?: number; cacheRead?: number; cacheWrite?: number; output?: number }; stopReason?: string } | undefined;
-	for (const line of raw.split("\n")) {
-		try {
-			const event = JSON.parse(line);
-			if (event.type === "message_end" && event.message?.role === "assistant") reply = event.message;
-		} catch {}
-	}
+	const reply = run.reply;
+	if (code === 143 && proc.signalCode === "SIGTERM") throw new Error(`model call timed out after ${Math.round(timeout / 1000)}s`);
+	if (reply?.stopReason === "error") throw new Error(reply.errorMessage || "model call failed");
 	const out = (reply?.content ?? []).filter(c => c.type === "text").map(c => c.text ?? "").join("").trim();
-	if (!out || reply?.stopReason === "error") throw new Error(code === 0 ? "empty reply" : `model call exited ${code}`);
+	if (!out) throw new Error(code === 0 ? "empty reply" : `model call exited ${code}${run.tail.length ? `: ${run.tail.at(-1)}` : ""}`);
 	const u = reply?.usage ?? {};
-	return logCall({ text: out, inputTokens: (u.input ?? 0) + (u.cacheRead ?? 0) + (u.cacheWrite ?? 0), outputTokens: u.output ?? 0, ms: Date.now() - started, ...(firstTokenMs !== undefined ? { firstTokenMs } : {}) }, omoModel(model), "one-shot");
+	return logCall({ text: omp ? unshield(out) : out, inputTokens: (u.input ?? 0) + (u.cacheRead ?? 0) + (u.cacheWrite ?? 0), outputTokens: u.output ?? 0, ms: Date.now() - started, ...(run.firstTokenMs !== undefined ? { firstTokenMs: run.firstTokenMs } : {}) }, target, "one-shot");
 }
 
 // Every one-shot call leaves one log line: the first token time says whether a slow draft waited on the runtime or the model.
@@ -183,7 +253,10 @@ function logCall(r: Rewrite, model: string | undefined, via: "warm" | "one-shot"
 	return r;
 }
 
-// One omp call that translates `text`; throws on any failure.
+/**
+ * Output language guard: one minimal model call that translates `text` and sees that one text and nothing else (detection is
+ * local and free, only a mismatching text is translated); throws on any failure, and the caller sends the original then.
+ */
 export const translate = (text: string, language: string, opts: { model?: string; timeoutMs?: number } = {}): Promise<Rewrite> => callModel(systemPrompt(languageName(language)), text, opts);
 
 // Code blocks must survive the rewrite verbatim and the length must stay plausible; otherwise the original is kept.

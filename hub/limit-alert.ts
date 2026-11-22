@@ -9,7 +9,7 @@ import { join } from "node:path";
 import { DATA_DIR, writeAtomic } from "./config.ts";
 import { authFile } from "./apikey-policy.ts";
 import { OWNER_RETRY_MS, type ProviderErrorKind } from "./providers.ts";
-import { LOGIN_BLOCKED_KO, PROVIDER_BACK_KO } from "./watchtext.ts";
+import { loginBlockedKo, PROVIDER_BACK_KO } from "./watchtext.ts";
 
 export type LimitKind = "auth" | "billing" | "limit" | "error";
 const OWNER_RETRY_MAX_MS = 6 * 3600_000;
@@ -17,7 +17,8 @@ export const AUTH_WATCH_MS = 30_000;
 
 // told: the owner was alerted about this episode (false while an error ask is held, hub/orch-error.ts errorAskHold); a missing
 // field (records written before it) counts as told.
-type Episode = { account: string; kind: LimitKind; since: number; sentAt: number; failures: number; told?: boolean };
+type Episode = { account: string; kind: LimitKind; since: number; sentAt: number; failures: number; told?: boolean; provider?: string };
+const sameCause = (e: Episode, provider?: string): boolean => !provider || !e.provider || e.provider === provider;
 export const limitAlertsFile = () => join(DATA_DIR, "limit-alerts.json");
 const read = (): Record<string, Episode> => {
 	try {
@@ -41,23 +42,25 @@ export const providerOf = (model: string): string => model.split("/")[0] || "ant
 // Records one blocked turn. `alert` is true when the owner should be told; `failures` counts the blocked turns of this agent.
 // `hold`: the caller tells the owner later, or not at all when the episode ends first (markTold records the actual send).
 // An episode not told yet alerts again (a held ask lost to a gateway restart); `since` is when the episode began.
-export function noteBlock(agent: string, account: string, kind: LimitKind, at = Date.now(), hold = false): { alert: boolean; failures: number; since: number } {
+export function noteBlock(agent: string, account: string, kind: LimitKind, at = Date.now(), hold = false, provider?: string): { alert: boolean; failures: number; since: number } {
 	const all = read();
 	const prev = all[agent];
 	// One stoppage is one alert until a turn succeeds, even when its cause shows up differently on the way (a limit, then a login
 	// error, then a network error after a manual resume): the owner was told it stopped, and the recovery line says when it is back.
-	if (prev) {
+	if (prev && sameCause(prev, provider)) {
 		if (prev.kind !== kind) prev.failures = 0;
 		prev.failures++;
 		prev.kind = kind;
 		prev.account = account;
+		if (provider) prev.provider = provider;
 		const alert = prev.told === false;
 		if (alert && !hold) prev.told = true;
 		write(all);
 		return { alert, failures: prev.failures, since: prev.since };
 	}
-	const told = Object.entries(all).some(([a, e]) => a !== agent && e.kind === kind && e.told !== false);
+	const told = Object.entries(all).some(([a, e]) => a !== agent && e.kind === kind && e.told !== false && sameCause(e, provider));
 	all[agent] = { account, kind, since: at, sentAt: at, failures: 1, told: !hold };   // told by another agent's alert counts as told
+	if (provider) all[agent]!.provider = provider;
 	write(all);
 	return { alert: !told, failures: 1, since: at };
 }
@@ -74,12 +77,13 @@ export function markTold(agent: string, at = Date.now()): void {
 
 // A turn succeeded: the episode is over for every agent blocked the same way (they share the cause); the caller tells the owner once.
 // Returns the episode only when the owner was told about it: a recovery line without its alert is noise (owner 2026-10-29).
-export function noteRecovered(agent: string): Episode | undefined {
+export function noteRecovered(agent: string, provider?: string): Episode | undefined {
 	const all = read();
 	const prev = all[agent];
 	if (!prev) return undefined;
+	if (provider && prev.provider && prev.provider !== provider) return undefined;
 	let told = false;
-	for (const [a, e] of Object.entries(all)) if (e.kind === prev.kind) {
+	for (const [a, e] of Object.entries(all)) if (e.kind === prev.kind && sameCause(e, provider)) {
 		told ||= e.told !== false;
 		delete all[a];
 	}
@@ -131,6 +135,6 @@ export function blockText(kind: "auth" | "billing", account: string, provider: s
 	const wait = `${hoursText(retryMs)} 뒤에 조용히 다시 시도해요 (로그인 정보가 바뀌면 바로). 같은 문제로는 다시 알리지 않아요.`;
 	const held = "그동안 온 메시지는 모아뒀다가 해결되면 순서대로 처리해요.";
 	if (kind === "billing") return `모델 제공자 결제(크레딧) 문제로 멈췄어요. 계정: ${account}. ${provider} 사이트에서 크레딧을 충전해 주세요. ${held} ${wait}`;
-	return `${LOGIN_BLOCKED_KO}. 계정: ${account}. 이 게이트웨이를 돌리는 컴퓨터에서 /login ${provider} 를 실행해 주세요. ${held} ${wait}`;
+	return `${loginBlockedKo(provider)}.${account === provider ? "" : ` 계정: ${account}.`} 알림의 로그인 열기 버튼이나 설정 > 계정에서 ${provider}에 다시 로그인해 주세요. ${held} ${wait}`;
 }
 export const recoveryText = (): string => `${PROVIDER_BACK_KO}. 멈춰 있던 일을 이어서 처리해요.`;

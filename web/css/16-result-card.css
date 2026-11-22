@@ -208,7 +208,7 @@ a.dr-att:active { background: var(--active); }
 .dr-warn > .ic { flex: none; width: 16px; height: 16px; fill: none; stroke: var(--warn); stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; }
 .dr-wt { display: flex; flex-direction: column; gap: var(--sp-05); min-width: 0; }
 .dr-wn { font-weight: 500; color: var(--fg-2); font-size: 12px; line-height: 18px; }
-.dr-files[hidden], .dr-warnbox[hidden] { display: none; }
+.dr-warnbox[hidden] { display: none; }
 .dr-warnbox { display: flex; flex-direction: column; gap: var(--sp-15); margin-bottom: var(--sp-2); }
 .dr-ar { display: flex; align-items: center; gap: var(--sp-15); min-width: 0; }
 .dr-ar > .dr-att { flex: 1; }

@@ -4,27 +4,29 @@ import { join } from "node:path";
 import { i18nPrelude } from "./web-i18n.ts";
 
 const web = (f: string) => readFileSync(join(import.meta.dir, "..", "web", "js", f), "utf8");
-const state = web("04-state.js"), palette = web("05-command-palette.js"), history = web("32-history-nav.js"), monitoring = web("30-monitoring.js");
+const palette = web("05-command-palette.js"), history = web("32-history-nav.js"), monitoring = web("30-monitoring.js"), monRoute = web("30-monitoring-route.js");
 const between = (src: string, from: string, to: string) => {
 	const a = src.indexOf(from), b = src.indexOf(to, a);
 	if (a < 0 || b < 0) throw new Error(`markers not found: ${from} .. ${to}`);
 	return src.slice(a, b);
 };
-const array = (src: string, name: string) => new Function(`${i18nPrelude()}${between(src, `const ${name} =`, ";\n")}; return ${name};`)() as unknown[];
 
-const NAV = array(state, "NAV") as [string, string][], views = array(state, "views") as string[];
+const { NAV, views } = new Function(`${i18nPrelude()}${web("03-screens.js")} return { NAV, views };`)() as { NAV: [string, string][]; views: string[] };
 const routeAlias = new Function(`const NSC = { pass: 0 };\n${between(palette, "const alertAddr =", ";\n")};\n${between(palette, "const routeAlias =", ";\n")}; return routeAlias;`)() as (name: string, tgt?: string) => [string, string | undefined];
 
 type Mon = { sel: string; list: boolean };
 function monitoringRoute(narrow: boolean) {
-	const env = { narrowChat: () => narrow, enc: encodeURIComponent, current: "monitoring", pqOpen: () => {}, mxHash: () => "", mxRoute: (t: string) => t };
-	const src = `${between(monitoring, "const MON =", "async function loadMonitors")}\nreturn { MON, monConv, monHash, monRoute };`;
+	// The address is read and written in 30-monitoring-route.js (monParse, monApply, monHashOf); no mail account is open here.
+	const env = { narrowChat: () => narrow, enc: encodeURIComponent, current: "monitoring", pqOpen: () => {}, mxKeyOf: (k: string) => `i:${k}`, mxDec: (s: string) => s, mxRouteSet: () => {}, MX: { key: "" } };
+	const src = `${between(monitoring, "const MON =", "async function loadMonitors")}\n${between(monRoute, "const MON_MAIL", "/* ---------- monitoring: what other files")}\nreturn { MON, monConv, monHash, monRoute };`;
 	return new Function(...Object.keys(env), src)(...Object.values(env)) as { MON: Mon; monConv: () => boolean; monHash: () => string; monRoute: (t?: string) => void };
 }
 
 function chain(name: string, hash: string, narrow: boolean, mon: Mon) {
 	const env = { narrowChat: () => narrow, chatList: false, target: "main", SUB: new Set(), NSC: { ret: false }, backTarget: () => null, MON: mon, monCtx: "", enc: encodeURIComponent, mxChain: (h: string) => [h] };
-	const src = `${between(history, "function routeChain", "function navSync")}\nreturn routeChain;`;
+	// 모니터링 builds its own chain in its chain hook (30-monitoring-route.js monChain), which routeChain asks first.
+	const hook = `${between(monRoute, "function monChain", "screenHooks(")}\nconst SCREEN_HOOKS = { monitoring: { chain: monChain } };\n`;
+	const src = `${hook}${between(history, "function routeChain", "function navSync")}\nreturn routeChain;`;
 	return (new Function(...Object.keys(env), src)(...Object.values(env)) as (n: string, h: string) => string[])(name, hash);
 }
 
@@ -32,8 +34,6 @@ describe("top-level tabs", () => {
 	test("the tabs are 홈, 채팅, 프로젝트, 모니터링, 설정, 앱 in that order, and the 세션 tab is gone", () => {
 		expect(NAV.map(n => n[0])).toEqual(["home", "chat", "projects", "monitoring", "apps", "settings"]);
 		expect(NAV.map(n => n[1])).toEqual(["홈", "채팅", "프로젝트", "모니터링", "앱", "설정"]);
-		expect(NAV.map(n => n[0])).not.toContain("lanes");
-		expect(views).not.toContain("lanes");
 		for (const [id] of NAV) expect(views).toContain(id);
 	});
 

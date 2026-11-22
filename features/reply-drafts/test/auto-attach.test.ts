@@ -1,10 +1,11 @@
 import { afterAll, beforeEach, describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { attachIssues } from "../../../hub/attach-check.ts";
 import { realMailLink } from "../../../hub/comments/mail-link.ts";
-import { asksForFile, claimsAttachment } from "../../../hub/draft-approval.ts";
+import { claimsAttachment } from "../../../hub/attach-claim.ts";
+import { asksForFile } from "../../../hub/draft-approval.ts";
 import { keywords } from "../lib/library.ts";
 import { stagedFiles } from "../lib/staged.ts";
 import { enable, setupEnv } from "./helpers.ts";
@@ -123,5 +124,26 @@ describe("the install's own file words", () => {
 		expect(keywords("쿼크본 alpha")).toEqual(["쿼크본", "alpha"]);
 		setRules({ genericWords: ["쿼크본"] });
 		expect(keywords("쿼크본 alpha")).toEqual(["alpha"]);
+	});
+});
+
+// Sends the check refused on a partner install (2026-11-05..13), with that install's own words: each case's draft, files and received mail as they
+// were at the refusal, and the verdict it should have had.
+describe("real refusals of the attach check", () => {
+	const real = JSON.parse(readFileSync(join(import.meta.dir, "attach-refusals.fixture.json"), "utf8")) as { rules: unknown; cases: (Parameters<typeof attachIssues>[0] & { id: string; verdict: string[] })[] };
+	const byId = (id: string) => real.cases.find(c => c.id === id)!;
+
+	for (const c of real.cases)
+		test(`${c.id}: ${c.verdict.join(", ") || "sent"}`, () => {
+			setRules(real.rules);
+			expect(attachIssues(c).map(i => i.kind)).toEqual(c.verdict);
+		});
+
+	test("the same drafts without the file their words promise still refuse", () => {
+		setRules(real.rules);
+		const mr = byId("R4HJZKL"), parts = byId("RPHEZPT");
+		expect(attachIssues({ ...mr, files: mr.files.filter(f => !f.endsWith(".mp3")) }).map(i => i.kind)).toEqual(["partial"]);
+		expect(attachIssues({ ...parts, files: parts.files.filter(f => !f.endsWith(".mp3")) }).map(i => i.kind)).toEqual(["partial"]);
+		expect(attachIssues({ ...parts, files: [...parts.files, "다른곡 배경 MR.mp3"] }).map(i => i.kind)).toEqual(["unrelated"]);
 	});
 });

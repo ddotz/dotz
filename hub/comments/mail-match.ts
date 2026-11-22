@@ -2,6 +2,7 @@
 // read-only (zele `mail search` / `mail read`: never send, never mark) for a mail from the same person around the time of the comment, so the card
 // says whether the commenter already mailed and whether that mail was answered. The lines become notes of the draft (`메일 대조:`, `근거:`, `초안 메모:`).
 import { addressKey, isOwnAddress } from "../mail-state.ts";
+import { ADDRESS } from "./no-mail.ts";
 import { runLimited } from "../run-limited.ts";
 import { parseThread, watchFlags, type ThreadMessage } from "../zele.ts";
 
@@ -15,6 +16,8 @@ export type MailSearch = {
 	/** The owner's own addresses: a message from one of them is his answer. */
 	own: () => Promise<ReadonlySet<string>>;
 };
+/** The mail source whose ids the real search (zeleMailSearch) reports: a matched thread `id` is the mail the gateway recorded from the zele watch under `mailKey(MATCH_SOURCE, id)` (hub/main.ts). */
+export const MATCH_SOURCE = "zele";
 
 const DAY = 864e5;
 export const WINDOW_DAYS = 14;
@@ -30,7 +33,8 @@ export function titleWords(title: string): string[] {
 	return [...new Set(title.split(/[\s|ㅣ()[\]!/#,:-]+/).map(norm).filter(w => (/[가-힣]/.test(w) && w.length >= 2) || w.length >= 4))];
 }
 
-export type Score = { accepted: boolean; byName: boolean; title?: string; reasons: string[] };
+export type Score = { accepted: boolean; byName: boolean; nameOnly: boolean; title?: string; reasons: string[] };
+const NAME_ONLY = "이름만 일치(주소 미확인)";
 // One mail against one comment. Accepted only when the sender is the commenter (the same name, or his handle in the mail); a mail that only
 // names the same post is someone else's and is reported as such, never as a match.
 export function scoreMail(m: MailItem, q: MailQuery): Score {
@@ -39,10 +43,16 @@ export function scoreMail(m: MailItem, q: MailQuery): Score {
 	const hay = norm(`${m.subject} ${m.snippet}`);
 	const reasons: string[] = [];
 	const byName = base.length >= 2 && ((!!name && (name === norm(base) || name.includes(norm(base)) || norm(base).includes(name))) || hay.includes(norm(base)));
+	const given = (q.text.match(new RegExp(ADDRESS, "g")) ?? []).map(addressKey);
+	const byAddress = given.includes(addressKey(m.from));
+	const accepted = given.length ? byAddress : byName;
+	const nameOnly = accepted && !given.length;
+	if (byAddress) reasons.push("보낸 사람 주소가 댓글에 적힌 주소와 같음");
 	if (byName) reasons.push(`보낸 사람 이름이 댓글 작성자(${base})와 같음`);
+	if (nameOnly) reasons.push(NAME_ONLY);
 	const title = titleWords(q.postTitle).find(w => hay.includes(w));
 	if (title) reasons.push(`글 제목 낱말(${title})이 메일에 있음`);
-	return { accepted: byName, byName, ...(title ? { title } : {}), reasons };
+	return { accepted, byName, nameOnly, ...(title ? { title } : {}), reasons };
 }
 
 export type MatchResult =

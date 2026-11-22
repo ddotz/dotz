@@ -19,7 +19,7 @@ import { addSchedule, listSchedules, removeSchedule } from "./schedule.ts";
 const CUSTOM = join(DATA_DIR, "custom");
 const WORK = join(process.env.DOTZ_TEST_DIR!, "custom-work");
 let sent: Array<{ target: string; text: string; login: string }>;
-const deps: CustomDeps = { lanes: () => [], channels: () => ({}), send: async (target, text, login) => void sent.push({ target, text, login }) };
+const deps: CustomDeps = { lanes: () => [], channels: () => ({}), send: async (target, text, login) => void sent.push({ target, text, login }), caller: "local" };
 
 const card = (id: string, spec: unknown) => {
 	mkdirSync(join(CUSTOM, "cards"), { recursive: true });
@@ -509,6 +509,20 @@ test("routine sync adds one entry per scheduled routine with the contract tag, t
 	expect(b.text).toMatch(/^\[routine:poll:[0-9a-f]{6}\] 폴링\n봐줘$/);
 	expect(Date.parse(b.at)).toBe(now + 30 * 60_000);
 	expect(b.every_minutes).toBe(30);
+});
+
+test("a routine's entry carries the routine's name and the task kind; one stored before names gets them at the next sync", () => {
+	pins({ routines: [{ id: "morning", name: "sample-2 점검", prompt: "훑어줘", target: "main", schedule: { at: "09:00" } }] });
+	syncRoutineSchedules();
+	const [entry] = routineEntries();
+	expect(entry).toMatchObject({ name: "sample-2 점검", kind: "task" });
+	const before = addSchedule({ text: entry!.text, at: entry!.at, every_minutes: 1440 });
+	removeSchedule(entry!.id);
+	const legacy = listSchedules().find(s => s.id === before.id)!;
+	delete legacy.name;
+	delete legacy.kind;
+	syncRoutineSchedules();
+	expect(routineEntries()).toEqual([expect.objectContaining({ id: before.id, name: "sample-2 점검", kind: "task" })]);
 });
 
 test("routine sync is idempotent, replaces on a hash change and removes what is no longer wanted", () => {

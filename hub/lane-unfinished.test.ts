@@ -15,6 +15,7 @@ import { dir, persist } from "./lanestate.ts";
 import { laneClosed, RESUME_BACKOFF_MS, saysClosed, unfinishedWork } from "./laneunfinished.ts";
 import { runState, stallStep } from "./runstate.ts";
 import { adapters } from "./runtime/index.ts";
+import { ompTree } from "./runtime/test-omp-session.ts";
 import { omp } from "./runtime/omp.ts";
 import { advance, flush } from "./runtime/test-clock.ts";
 import type { AgentEvent, AgentProcess, RuntimeAdapter, SpawnOpts } from "./runtime/types.ts";
@@ -405,6 +406,16 @@ test("qa-golden replay (2026-11-10): a lane whose last report waits for the gate
 	await clear(lane.name);
 });
 
+test("a [wait] on some other restart (a worker's) is no gateway restart: the lane gets no resume note after one", async () => {
+	const lane = idleLane("uf-worker-restart");
+	session(lane, []);
+	reportFile(lane.name, "[wait] 워커 재시작 결과를 기다려요");
+	await down(lane);
+	await restart(lane.name);
+	expect(await resumeUnfinished()).toEqual([]);
+	await clear(lane.name);
+});
+
 test("ddotz/dotz#44: a gateway nudge leaves the owner's [ask] pending, a stall on it nudges nobody, and his answer wakes the lane once", async () => {
 	const lane = idleLane("uf-44");
 	lane.pendingAsk = { text: "[ask] 보낼까요?", at: "2026-11-06T01:00:00.000Z" };
@@ -423,6 +434,63 @@ test("ddotz/dotz#44: a gateway nudge leaves the owner's [ask] pending, a stall o
 	expect(lane.pendingAsk).toBeUndefined();
 	expect(spawned()).toBe(before + 1);
 	await clear(lane.name);
+});
+
+function ompSession(lane: Lanes.Lane, fixture: string): void {
+	lane.sessionFile = ompTree(fixture, join(DATA, "agent-" + lane.name, "omp")).file;
+	persist(lane);
+}
+
+test("an omp worker cut off by a killed process is named when the sweep brings the parked lane back, once", async () => {
+	const lane = idleLane("uf-omp-killed");
+	ompSession(lane, "killed");
+	await down(lane);
+	const back = await restart(lane.name);
+	expect(unfinishedWork(back)?.workers).toHaveLength(1);
+	expect(unfinishedWork(back)?.workers[0]).toStartWith("Dozer: ");
+	expect(await resumeUnfinished()).toEqual([lane.name]);
+	expect(lastAgent().sent.join("\n")).toContain("Dozer");
+	await down(back);
+	expect(unfinishedWork(back)).toBeUndefined();
+	const before = spawned();
+	expect(await resumeUnfinished({}, Date.now() + 2 * RESUME_BACKOFF_MS)).toEqual([]);
+	expect(spawned()).toBe(before);
+	await clear(lane.name);
+});
+
+test("an omp worker whose result came back or was waited for wakes nobody", async () => {
+	for (const fixture of ["finished", "waited"]) {
+		const lane = idleLane("uf-omp-" + fixture);
+		ompSession(lane, fixture);
+		await down(lane);
+		const back = await restart(lane.name);
+		expect(unfinishedWork(back)).toBeUndefined();
+		const before = spawned();
+		expect(await resumeUnfinished()).toEqual([]);
+		expect(spawned()).toBe(before);
+		await clear(lane.name);
+	}
+});
+
+test("a live lane whose omp worker belonged to an earlier process is woken naming it once; one it spawned itself is not", async () => {
+	const lane = idleLane("uf-omp-live");
+	const agent = lane.proc as unknown as FakeAgent;
+	lane.prompted = undefined;
+	ompSession(lane, "killed");
+	expect(await resumeUnfinished()).toEqual([lane.name]);
+	expect(agent.sent.join("\n")).toContain("Dozer");
+	lane.status = "idle";
+	lane.prompted = undefined;
+	expect(await resumeUnfinished({}, Date.now() + 2 * RESUME_BACKOFF_MS)).toEqual([]);
+	expect(agent.sent.filter(t => t.includes("Dozer"))).toHaveLength(1);
+	await clear(lane.name);
+
+	const own = idleLane("uf-omp-own");
+	own.prompted = undefined;
+	own.spawnedAt = Date.now() - 60 * 60_000;
+	ompSession(own, "killed");
+	expect(await resumeUnfinished()).toEqual([]);
+	await clear(own.name);
 });
 
 // Last: the budget hold is module state, and the first pass here sets it.

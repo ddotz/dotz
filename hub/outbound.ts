@@ -1,5 +1,7 @@
 // Outbound path of the hub: the owner's messages out (out, progress, alert), the send ledger, the prompt queue and the shared delivery state.
 // Split out of main.ts; it owns the one instance of that state and the other hub modules import it.
+import { applyCardMarkers, cardMarkers, draftHead } from "./reply-chat.ts";
+import { openRefsOf, useReplies } from "./reply-actions.ts";
 import { existsSync, readFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { homedir } from "node:os";
@@ -16,13 +18,13 @@ import { normalizeAsk, plainBareAsk } from "./ask-normalize.ts";
 import { stripRecommendMark } from "./choices.ts";
 import { asksLimitStopInChat } from "./limit-ask.ts";
 import { asksPersonalInChat } from "./personal-ask.ts";
-import { answeredIds, answeredSince, broadcast, emit, emitDelivery, eventTarget, type HubEvent, ownerMessage, recentOwnerMessages, tailEvents, workAnswer } from "./events.ts";
+import { answeredIds, answeredSince, broadcast, emit, emitDelivery, eventTarget, type HubEvent, newestOwnerMessage, ownerMessage, recentOwnerMessages, tailEvents, workAnswer } from "./events.ts";
 import { settleWaiting, type Waiting } from "./awaiting.ts";
 import { outEvent } from "./projectchat.ts";
 import { recordProjectInfo } from "./projectinfo.ts";
 import { mailByThread, mailTarget } from "./mail.ts";
 import { allowedRoots } from "./files.ts";
-import { claimPrefix, LaneRuntimeMismatch, lanes, type LaneDelivery, turnHeader } from "./lanes.ts";
+import { claimPrefix, LaneRuntimeMismatch, lanes, type LaneDelivery, sendToLane, turnHeader } from "./lanes.ts";
 import { main, type Orchestrator, steer as steerOrchestrator } from "./orchestrator.ts";
 import { type Conv, convs, setWiring } from "./convsessions.ts";
 import { MAIN, primaryTarget } from "./session-key.ts";
@@ -32,19 +34,27 @@ import { createBgWork, omoWorkById, sessionProjects } from "./bgwork.ts";
 import { createWorkRows } from "./workrows.ts";
 import { digest } from "./convdigest.ts";
 import { createPrompts, type Pending, type Reply, type WorkLink } from "./prompts.ts";
+import { runSettled, scheduleRan } from "./schedule-fire.ts";
 import { recordHanded } from "./handed.ts";
+import { createAskFollowup } from "./ask-followup.ts";
 import { handBackToLane } from "./lane-handback.ts";
 import { createSendLedger } from "./sendlog.ts";
 import { createInflight } from "./inflight.ts";
 import { inOrder, localize } from "./outlang.ts";
 import { answerReview } from "./answer-words.ts";
+import { runtimeFor } from "./runtime/index.ts";
+import { OMO_WORDS, ompWords, runName, type WorkerWords } from "./worker-words.ts";
 import { dropClaim, resolvesOf, splitTone, stripHandoff, stripLater, stripProjectInfo, stripResolves } from "./tone.ts";
 import { isLate, isSnowflake, lateQuote, lateRequestId, replyRef, snowflakeTime, withQuote } from "./threads.ts";
 import { keepBrief } from "./draft-approval.ts";
-import { allNotices, markDraftPosted, onDecisionClosed, onDraftCardRefreshed, openDraftCards, openDraftRefs, openDraftText, orchestratorAnswered, resolveNotices, rewriteOpenDraft } from "./notices.ts";
-import { cardPointer, cardRef, cardTitle, CARDS_LEAD, closedCardText, createApprovalQueue, loadHeld, pendingCardsNote, splitDraftCards } from "./approval-queue.ts";
+import { allNotices, keepOpen, markCardShown, markDraftPosted, markJudging, onDecisionClosed, onDraftCardRefreshed, openDraftCards, openDraftRefs, openDraftText, orchestratorAnswered, resolveNotices, rewriteOpenDraft, SessionEnded, untouchedChoices } from "./notices.ts";
+import type { OwnerSaid } from "./notices-types.ts";
+import { askerLines, askerNotes } from "./asker-notes.ts";
+import { channelTitle, GENERIC_TITLES } from "./notices-lanes.ts";
+import { answeredDraftCard } from "./notices-drafts.ts";
+import { cardPointer, cardRef, cardTitle, CARDS_LEAD, closedCardText, createApprovalQueue, loadHeld, pendingCardsNote, splitDraftCards, withSendState } from "./approval-queue.ts";
 import { mailItemKey, mailKeyOfRef } from "./draft-handled.ts";
-import { draftHeads, listDrafts as listMailDrafts } from "../features/reply-drafts/lib/store.ts";
+import { draftHeads, listDrafts as listMailDrafts, unlessUnreadable } from "../features/reply-drafts/lib/store.ts";
 import { askText } from "../features/reply-drafts/lib/flow.ts";
 import { recheckAnswered } from "./watch-recheck.ts";
 import { route } from "./notify-route.ts";
@@ -65,16 +75,25 @@ try {
 // network outages, sent again after a restart; an answer marks its message answered only once it was delivered.
 const UNSENT = join(DATA_DIR, "unsent.json");
 // A card that went to Discord as one message is edited there too, its buttons with its options (a [file] line would show raw in an edit, so such a card keeps its first text).
-function editCard(target: string, ids: string[] | undefined, ref: string, text: string): void {
+// Only an edit Discord took moves what that message shows (`card`: the card's text then, notices-drafts.ts markCardShown); a skipped or failed one leaves
+// the old text there, and a pick from it is refused (hub/approval-wire.ts).
+function editCard(target: string, ids: string[] | undefined, ref: string, text: string, card?: { to: string; text: string }): void {
 	const id = ids?.length === 1 ? ids[0] : undefined;
-	if (id && !isLocal(target) && route({ target }).messengers.discord && !/^\s*\[file\]\s/m.test(text)) void discord.edit(target, id, text, { buttons: true }).catch(e => log(`approval card ${ref} not edited on Discord: ${e}`));
+	if (!id || isLocal(target) || !route({ target }).messengers.discord || /^\s*\[file\]\s/m.test(text)) return;
+	void discord.edit(target, id, text, { buttons: true }).then(
+		r => (r.delivered ? card && markCardShown(card.to, ref, card.text) : log(`approval card ${ref} not edited on Discord: ${r.reason}`)),
+		e => log(`approval card ${ref} not edited on Discord: ${e}`),
+	);
 }
 export const sends = createSendLedger({
 	file: UNSENT,
 	send: (target, text, ref, opts) => discord.send(target, text, ref, opts),
 	retryable: discord.isRetryable,
 	onDelivered: item => convs.markAnsweredAll(item.answers),
-	onGiveUp: (item, reason) => log(`send to ${item.target} dropped unsent: ${reason} (${item.text.slice(0, 80)})`),
+	onGiveUp: (item, reason) => {
+		log(`send to ${item.target} dropped unsent: ${reason} (${item.text.slice(0, 80)})`);
+		if (item.target !== "alert") alert(`${item.target}로 보낸 답을 전하지 못했어요: ${reason}\n${item.text.slice(0, 80)}`);
+	},
 	persist: items => writeAtomic(UNSENT, `${JSON.stringify(items, null, 2)}\n`),
 	log,
 });
@@ -88,6 +107,8 @@ export const send = (target: string, text: string, ref?: string): Promise<{ deli
 // only go to a message of its own conversation (prompts.ts orphanTarget).
 // The name the owner reads for a conversation: its own name when set, else the target it was opened for.
 const convLabel = (target: string) => convs.forTarget(target)?.meta.name || convs.forTarget(target)?.primary || target;
+const workerName = (o: Orchestrator) => (id: string): string => o.ompWorkers().find(s => s.id === id)?.name ?? runName(id);
+const workerWords = (o: Orchestrator): WorkerWords => (runtimeFor("orchestrator").id === "omp" ? ompWords(workerName(o)) : OMO_WORDS);
 function makeQueue(key: string, o: Orchestrator, pendingFile: string, bg: () => ReturnType<typeof createBgWork> | undefined) {
 	// Which request each worker serves, beside pending.json: read here once, written only when a link changes.
 	const linksFile = pendingFile.replace(/\.json$/, "-links.json");
@@ -111,6 +132,9 @@ function makeQueue(key: string, o: Orchestrator, pendingFile: string, bg: () => 
 		review: answerReview(() => o.orch.status === "idle" || o.orch.status === "working"),
 		isNote: text => isNote(text, "newMessageLead") || isNote(text, "waitedLead") || isNote(text, "laneReportLead"),
 		regenerated: isOpenNudge,
+		answering: orchestratorAnswered,
+		inProcess: () => runtimeFor("orchestrator").id === "omp",
+		nameOf: workerName(o),
 		post: (target, text, replyTo, opts) => out(target, text, replyTo, { auto: true, session: key, ...opts }),
 		// A quiet check's plain answer: one gateway line in the worklog. Its text opens the line, so no tone marker in the answer can make it a result that pushes.
 		quietNote: (_target, text) => void out("worklog", msg().scheduleCheckLine(text.replace(/\s+/g, " ").slice(0, 300)), undefined, { source: "gateway", wk: "check" }).catch(e => log(`quiet check line failed: ${e}`)),
@@ -133,16 +157,16 @@ function makeQueue(key: string, o: Orchestrator, pendingFile: string, bg: () => 
 			const w = bg()?.list().find(w => w.status === "running" && w.target === target);
 			return w && { id: w.id, description: w.description };
 		},
-		joinNote: w => msg().joinWorker(w.id, w.description),
+		joinNote: w => msg().joinWorker(w.id, w.description, workerWords(o)),
 		noAnswerNote: () => msg().turnNoAnswer,
 		hasJoinNote: text => text.split("\n").some(line => isNote(line, "joinLead")),
 		// The session's workers as bgwork lists them (read only at delivery and turn end): another conversation's running worker must
 		// not answer through this conversation's turn, and one that finished elsewhere gets its own request asked again.
 		work: () => (bg()?.list() ?? []).map(w => ({ id: w.id, description: w.description, status: w.status, ...(w.target ? { target: w.target } : {}), ...(w.reply_to ? { replyTo: w.reply_to } : {}), startedAt: w.started_at, ...(w.ended_at !== undefined ? { endedAt: w.ended_at } : {}) })),
-		foreignNote: (w, target) => msg().otherWorker(w.id, convLabel(target), w.replyTo),
+		foreignNote: (w, target) => msg().otherWorker(w.id, convLabel(target), w.replyTo, workerWords(o)),
 		hasForeignNote: text => text.split("\n").some(line => isNote(line, "otherConvLead")),
-		readElsewhereNote: (w, readIn) => msg().workReadElsewhere(w.id, convLabel(w.target ?? readIn), convLabel(readIn)),
-		readHereNote: id => msg().workReadHere(id),
+		readElsewhereNote: (w, readIn) => msg().workReadElsewhere(w.id, convLabel(w.target ?? readIn), convLabel(readIn), workerWords(o)),
+		readHereNote: id => msg().workReadHere(id, workerWords(o)),
 		cardsNote: target => cardsNoteFor(target),
 		hasCardsNote: text => text.startsWith(CARDS_LEAD) || text.includes(`\n${CARDS_LEAD}`),
 		clearProgress: target => void discord.clearProgress(target),
@@ -155,14 +179,18 @@ function makeQueue(key: string, o: Orchestrator, pendingFile: string, bg: () => 
 		pending: sends.pending,
 		recent: () => recentOwnerMessages().filter(m => convs.keyOf(m.target) === key),
 		answeredSince,
+		ran: scheduleRan,
+		runSettled,
 		settled: settleRefs,
+		turnEnded: text => askFollowup.turnEnded(key, text),
+		askerNotes: () => askerLines(askerNotes(to => !to.startsWith("lane:") && convs.keyOf(to) === key)) || undefined,
 	});
 	return q;
 }
 // A failed worker no turn took up is handed back to its own session, answering in the conversation it served (bgwork.ts handover).
 // A stalled worker (still "running" in OmO's store, no longer working) wakes its session once the same way, and is named in
 // the session's usage-limit resume note when the limit held that wake back.
-const sessionBg = (o: Orchestrator, q: ReturnType<typeof createPrompts>) => {
+const sessionBg = (key: string, o: Orchestrator, q: ReturnType<typeof createPrompts>) => {
 	const to = (w: { target?: string; reply_to?: string }) => (w.target ? { target: w.target, ...(w.reply_to ? { replyTo: w.reply_to } : {}) } : undefined);
 	const bg = createBgWork({
 		sessionFile: () => o.orch.sessionFile, deferred: q.deferredOpen, turn: q.turnAt, answer: workAnswer, log,
@@ -171,25 +199,64 @@ const sessionBg = (o: Orchestrator, q: ReturnType<typeof createPrompts>) => {
 		turnEndedAt: () => o.lastTurnEndAt(),
 		busy: () => o.orch.status === "working" || o.orch.status === "starting",
 		paused: () => o.orch.status === "rate-limited",
-		handover: w => void q.deliver(msg().workFailed(w.description, w.id, w.reason || w.error || "이유가 기록되지 않았어요"), to(w)),
-		stalled: w => void q.deliver(msg().workStalled([w]), to(w)),
+		handover: w => void convs.deliverTo(key, msg().workFailed(w.description, w.id, w.reason || w.error || "이유가 기록되지 않았어요"), to(w)),
+		stalled: w => void convs.deliverTo(key, msg().workStalled([w], workerWords(o)), to(w)),
+		source: o.source,
+		ompWorkers: o.ompWorkers,
+		cancelOmpWorker: id => o.cancelWorker(id),
+		ownerStopped: w => void o.tell(msg().ownerStopped(w.name, w.description)),
 	});
 	o.setResumeExtra(() => {
 		const stalled = bg.takeStalled();
-		return stalled.length ? msg().workStalled(stalled) : "";
+		return stalled.length ? msg().workStalled(stalled, workerWords(o)) : "";
 	});
 	return bg;
 };
+/** Asks a session once whether the owner's message its turn just answered answered the open choice questions it went in with, when that turn closed none of them. */
+export const askFollowup = createAskFollowup({
+	untouched: untouchedChoices,
+	waiting: (key, target) => convs.get(key)?.queue.waitingIds(target) ?? [],
+	followUp: (key, target, titles) => {
+		const text = msg().openQuestionsLeft(titles);
+		if (key === MAIN) deliver(text);
+		else convs.deliverTo(key, text, { target });
+		return text;
+	},
+	judging: markJudging,
+	keptOpen: (listed, at) => {
+		const ids = new Set(listed.map(q => q.id));
+		keepOpen(n => ids.has(n.id) && n.decision!.judging!.at === at);
+	},
+	log,
+});
+const WEB_CONVS = ["alert", "worklog", "quick"];
+/** The owner asked the asker of a card in conversation `to` for more (hub/notices-later.ts moreNotice): a gateway turn of the session that asked, or of the session answering that conversation. */
+export function askAsker(to: string, text: string): void {
+	const line = `[dotz gateway] ${text}`;
+	if (!to.startsWith("lane:")) return void deliver(line, { target: to === "main" ? "web" : WEB_CONVS.includes(to) ? `web:${to}` : to });
+	try {
+		sendToLane(to.slice(5), line, undefined, true);
+	} catch (error) {
+		log(`more for ${to} not delivered: ${(error as Error).message}`);
+	}
+}
+/** The owner's own message `id` (a reply_to of an answer), as the words a card it settles was answered with. */
+export function ownerSaid(id: unknown): OwnerSaid | undefined {
+	const m = typeof id === "string" && id ? ownerMessage(id) : undefined;
+	return m && !m.notOwner ? { ts: m.ts, text: m.text } : undefined;
+}
 export const queue = makeQueue(MAIN, main, PENDING, () => bgWork);
 // The orchestrator's background task workers (what a `[later]` turn waits for), read from OmO's task store: /api/workers, /api/state `work`.
-export const bgWork = sessionBg(main, queue);
+export const bgWork = sessionBg(MAIN, main, queue);
 const mainConv = convs.setMain({ key: MAIN, o: main, queue, bg: bgWork });
 // The rows that name a job in every conversation (hub/workrows.ts): any session's job, read from the agent's task store.
 const taskProjects = () => [...new Set([join(process.env.OMO_CODING_AGENT_DIR ?? process.env.PI_AGENT_DIR ?? join(homedir(), ".omo", "agent"), "projects"), ...(main.orch.sessionFile ? [sessionProjects(main.orch.sessionFile)] : [])])].filter(p => existsSync(p));
 export const workRows = createWorkRows({
 	find: id => {
 		const projects = taskProjects();
-		return projects.length ? omoWorkById(id, projects) : null;
+		const omo = projects.length ? omoWorkById(id, projects) : null;
+		if (omo) return omo;
+		return [bgWork, ...convs.conversations().map(c => c.bg)].map(bg => bg.byId(id, [])).find(Boolean) ?? omo;
 	},
 	answer: workAnswer,
 	replyOf: id => [queue, ...convs.conversations().map(c => c.queue)].map(q => q?.linkOf(id)?.replyTo).find(Boolean),
@@ -225,9 +292,9 @@ function noteProjectInfo(target: string, text: string): void {
 }
 // An answer's closing `<resolves>…</resolves>` line closes the open questions it names, exactly as dotz_send's `resolves` does (routes.ts): only those of
 // `session`'s conversations, "*" for every one. A line that names nothing closes nothing and leaves one line in hub.log. The line itself is stripped for the owner (tone.ts).
-function settleResolves(text: string, session: string): void {
+function settleResolves(text: string, session: string, replyTo?: string): void {
 	for (const words of resolvesOf(text)) {
-		const r = resolveNotices(words === "*" ? { all: true } : { match: words }, conv => convs.keyOf(conv ?? "") === session);
+		const r = resolveNotices(words === "*" ? { all: true } : { match: words }, conv => convs.keyOf(conv ?? "") === session, undefined, ownerSaid(replyTo));
 		if (!r.resolved) log(`resolves line of ${session} matched no open question: ${words.slice(0, 80)}`);
 	}
 }
@@ -246,14 +313,19 @@ export const newMid = () => randomUUID().slice(0, 8);
 const webNote = (target: string, text: string, live = false) => emit("outbox", { ts: now(), kind: "out", source: "gateway", target, text, update_key: "progress", ...(live ? { live } : {}) });
 export const receiptNote = (how: LaneDelivery): string | undefined =>
 	how === "steered" ? "📨 받았어요. 하던 작업에 바로 넣었고, 답이 준비되면 여기로 올게요." : how === "held" ? "📨 받았어요. 사용량 한도가 풀리면 바로 전달할게요." : how === "resumed" ? "📨 받았어요. 멈춰 있던 세션을 다시 시작해서 전달했어요." : undefined;
-// An owner message that could not reach its session: the failed state on the message and, in that chat, a gateway message with the way forward.
-export function laneFailed(target: string, lane: string, ref: string | undefined, error: unknown, replyTo?: string): void {
-	const reason = (error as Error).message;
-	emitDelivery(target, ref, "failed", reason.slice(0, 200));
-	log(`lane ${lane}: owner message not delivered: ${reason}`);
-	// A session of another runtime: the refusal itself offers the handover (answer "인계" here).
-	const text = error instanceof LaneRuntimeMismatch ? error.message : `세션 ${lane}을(를) 이어갈 수 없어요 (${reason}). 대화 채널에서 다시 맡겨 주세요. 이전 보고는 ${join(paths.lanes, lane, "report.md")}에 있어요.`;
-	void out(target, text, replyTo, { source: "gateway" }).catch(e => log(`lane failure notice failed: ${e}`));
+function endedOr(lane: string, error: unknown): unknown {
+	const l = lanes.get(lane);
+	const ended = !l || (!l.proc && !l.waiting && (!l.sessionFile || !existsSync(l.sessionFile)));
+	return ended && !(error instanceof LaneRuntimeMismatch) ? new SessionEnded(lane) : error;
+}
+/** An owner message that could not reach its session: the failed state on the message and a gateway message in that chat. The owner reads Korean with no path, the raw reason goes to the log; returns the error the caller ends with. */
+export function laneFailed(target: string, lane: string, ref: string | undefined, error: unknown, replyTo?: string): unknown {
+	const cause = endedOr(lane, error);
+	log(`lane ${lane}: owner message not delivered: ${(error as Error).message}`);
+	const said = cause instanceof LaneRuntimeMismatch ? cause.message : cause instanceof SessionEnded ? `세션 ${lane}은(는) 이미 끝나서 전달하지 못했어요. 이 일은 메인에게 맡겨 주세요.` : `지금은 세션 ${lane}에 전달하지 못했어요. 잠시 뒤에 다시 해 주세요.`;
+	emitDelivery(target, ref, "failed", said.slice(0, 200));
+	void out(target, said, replyTo, { source: "gateway", nk: "undelivered" }).catch(e => log(`lane failure notice failed: ${e}`));
+	return cause;
 }
 type OutJob = { target: string; text: string; replyTo?: string; extra: Record<string, unknown> };
 const jobAnswers = (j: OutJob) => (j.extra.source === undefined || j.extra.source === "orchestrator" ? j.replyTo : undefined);
@@ -336,18 +408,31 @@ export const convOfTarget = (target: string) => eventTarget(outEvent({ ts: "", k
 // Whether the item behind a card was handled elsewhere (hub/main.ts wires the apps' facts, as it does for notices.ts settleHandledDrafts).
 let refHandled: (ref: string, conv: string) => boolean | Promise<boolean> = () => false;
 export const setRefHandled = (fn: typeof refHandled): void => void (refHandled = fn);
+let itemOfDown = false;
 export const approvals = createApprovalQueue({
 	convOf: convOfTarget,
 	openRefs: openDraftRefs,
 	// The bot's `mail:<id>` card and the app's reply draft of that mail are one item.
-	itemOf: (conv, ref) => mailItemKey(ref, conv, draftHeads),
-	handled: (ref, conv) => refHandled(ref, conv),
+	itemOf: (conv, ref) => {
+		const key = unlessUnreadable<string | undefined>(() => mailItemKey(ref, conv, draftHeads), undefined, line => {
+			if (!itemOfDown) log(`approval cards: the reply draft store cannot be read, cards are matched by their own refs until it can (${line})`);
+			itemOfDown = true;
+		});
+		if (key === undefined) return ref;
+		itemOfDown = false;
+		return key;
+	},
+	// A ref whose card is open in another conversation is handled there: a second copy (held here, or posted again) would ask twice.
+	handled: (ref, conv) => openDraftCards().some(c => c.ref === ref && c.to !== conv) || refHandled(ref, conv),
+	// A held card goes out with the text its store holds when it is released (hub/reply-actions.ts ask).
+	fresh: ref => useReplies()?.ask(ref) ?? Promise.resolve(undefined),
 	post: (target, text, extra) => void out(target, text, undefined, { ...extra, queued: true, ...(extra.session ? { cross: "approval" } : {}) }).catch(e => log(`held approval card to ${target} failed: ${e}`)),
 	rewrite: (conv, card, next) => {
 		// A card that replaces the open one keeps what only that one showed (hub/draft-approval.ts keepBrief).
 		const text = keepBrief(openDraftText(conv, card.ref) ?? "", next);
 		rewriteOpenDraft(conv, card.ref, text);
-		editCard(card.target, card.ids, card.ref, text);
+		const shown = openDraftText(conv, card.ref);
+		editCard(card.target, card.ids, card.ref, text, shown === undefined ? undefined : { to: conv, text: shown });
 	},
 	// The web's 빠른 처리 banner counts held cards too (web/js/30-triage.js): it refetches on this.
 	persist: held => {
@@ -387,7 +472,7 @@ export async function reconcileMailCards(): Promise<number> {
 	return replaced;
 }
 // The card of a closed decision shows it on Discord too: first line kept, buttons removed, how it ended (a [file] line would show raw in an edit, so such a text is left).
-function closeDiscordCard(to: string, ref: string | undefined, c: { text: string; how: "answered" | "resolved" | "ignored"; label: string; target?: string; ids?: string[] }): void {
+function closeDiscordCard(to: string, ref: string | undefined, c: { text: string; how: "answered" | "resolved" | "ignored" | "moved"; label: string; target?: string; ids?: string[] }): void {
 	const target = c.target ?? (ref ? approvals.targetOf(to, ref) : undefined);
 	const ids = c.ids?.length ? c.ids : ref ? approvals.idsOf(to, ref) : undefined;
 	if (!target || !ids?.length || isLocal(target) || !route({ target }).messengers.discord) return;
@@ -395,9 +480,25 @@ function closeDiscordCard(to: string, ref: string | undefined, c: { text: string
 	if (/^\s*\[file\]\s/m.test(text)) return;
 	ids.forEach((id, i) => void discord.edit(target, id, i === 0 ? text : text.split("\n").slice(1).join("\n"), { clearComponents: true }).catch(e => log(`approval card ${ref} not closed on Discord: ${e}`)));
 }
+/** The card of draft `ref` was posted again below it (a confirm card, hub/reply-wire.ts): its old Discord message says so, buttons cleared. */
+export const cardMoved = (to: string, ref: string, c: { text: string; target: string; ids: string[] }): void => closeDiscordCard(to, ref, { ...c, how: "moved", label: "" });
+/** A send of draft `ref` changed state (hub/reply-wire.ts reportSend): its Discord card shows it in place, the buttons kept so a failed one can be sent again. */
+export function showSendOnCard(conv: string, ref: string, state: string, why = "", left = 0): void {
+	const target = approvals.targetOf(conv, ref), ids = approvals.idsOf(conv, ref), text = openDraftText(conv, ref);
+	if (text !== undefined) return target && text && state !== "sent" ? editCard(target, ids, ref, withSendState(text, state, why, left), { to: conv, text }) : undefined;
+	const closed = answeredDraftCard(conv, ref);
+	if (!closed || !["undo", "queued", "sending", "sent", "failed", "unsure"].includes(state) || isLocal(closed.target) || !route({ target: closed.target }).messengers.discord) return;
+	const base = closedCardText(closed.text, closed.how, closed.label);
+	const shown = state === "sent" ? `${base}\n-# 보냈어요` : withSendState(base, state, why, left);
+	if (/^\s*\[file\]\s/m.test(shown)) return;
+	void discord.edit(closed.target, closed.ids[0]!, shown, { clearComponents: true }).then(
+		r => r.delivered || log(`approval card ${ref} not edited on Discord: ${r.reason}`),
+		e => log(`approval card ${ref} not edited on Discord: ${e}`),
+	);
+}
 onDraftCardRefreshed(n => {
 	const d = n.decision;
-	if (d?.card && d.draft?.ref) editCard(d.card.target, d.card.ids, d.draft.ref, `[ask] ${n.text}`);
+	if (d?.card && d.draft?.ref) editCard(d.card.target, d.card.ids, d.draft.ref, `[ask] ${n.text}`, { to: d.to, text: n.text });
 });
 onDecisionClosed((to, ref, card) => {
 	if (card) closeDiscordCard(to, ref, card);
@@ -411,15 +512,19 @@ function withCardPointer(target: string, text: string): string {
 	const c = approvals.openCard(convOfTarget(target));
 	return c && c.target === target ? `${text.replace(/\s+$/, "")}\n${cardPointer(c, cardLink(c))}` : text;
 }
-// The bot's turn for an owner message names the cards waiting in that conversation ("마지막 카드 어디?" is answerable from it).
+// A card is the newest post of its conversation while nothing else was posted there after it (a progress line edited in place does not count).
+const newestIn = (conv: string, asked: string | undefined, posts: HubEvent[]): boolean => !!asked && !posts.some(e => e.kind === "out" && !e.update_key && e.ts > asked && eventTarget(e) === conv);
+// The bot's turn for an owner message names the cards waiting in that conversation, whom each goes to, how it starts and whether it is still the
+// newest post there: the bot tells an answer to a card from one to what came after it ("마지막 카드 어디?" is answerable from it too).
 const cardsNoteFor = (target: string): string | undefined => {
-	const conv = convOfTarget(target), shown = approvals.openCard(conv);
-	const cards = openDraftCards(conv).map(c => ({ ref: c.ref, title: cardTitle(c.text) || c.title, notice: c.id, ...(shown?.ref === c.ref ? { progress: shown.progress, link: cardLink(shown) } : {}) }));
+	const conv = convOfTarget(target), shown = approvals.openCard(conv), open = openDraftCards(conv);
+	const posts = open.length ? tailEvents(paths.outbox) : [];
+	const cards = open.map(c => ({ ref: c.ref, title: cardTitle(c.text) || c.title, notice: c.id, to: c.draft.to, head: draftHead(c.draft.body), newest: newestIn(conv, c.asked, posts), ...(useReplies()?.revising(c.ref) ? { revising: true as const } : {}), ...(shown?.ref === c.ref ? { progress: shown.progress, link: cardLink(shown) } : {}) }));
 	return pendingCardsNote(cards, approvals.heldIn(conv).length);
 };
 // A gateway status line (a deferral receipt): `system` on its event makes the web draw a compact system line (opening `worker` with its
 // live state) and Discord a small `-# ` line; it is never unread and never pushed (push.ts classify only pushes orchestrator answers).
-export const systemNote = (target: string, text: string, system: string, worker?: string) => out(target, text, undefined, { source: "gateway", system, ...(worker ? { worker } : {}) });
+export const systemNote = (target: string, text: string, system: string, worker?: string) => out(target, text, undefined, { source: "gateway", nk: "gateway-note", system, ...(worker ? { worker } : {}) });
 // A session's post stays in its own conversation unless it names a reason (hub/conv-guard.ts); a post with no session (the gateway's) is not checked.
 function guarded(session: unknown, target: string, cross?: unknown): string {
 	if (typeof session !== "string") return target;
@@ -433,13 +538,32 @@ export async function out(target: string, text: string, replyTo?: string, extra:
 	if (inHome !== target) [target, replyTo] = [inHome, undefined];
 	// Gateway notices (rate-limit hold, command and limits replies) reply to a message without answering its request.
 	const answersOwner = (extra.source === undefined || extra.source === "orchestrator") && !extra.keepsOpen;
+	// The orchestrator's marker lines for this conversation's open reply cards (hub/reply-chat.ts): acted on by code, not shown. A send or a drop is
+	// the owner's word only in an answer to his message of this conversation; a revise elsewhere is the agent's own.
+	if (extra.source === undefined || extra.source === "orchestrator") {
+		const conv = convOfTarget(target), marks = cardMarkers(text, openRefsOf(conv)), replies = useReplies();
+		if (marks.acts.length || marks.unknown.length) {
+			const asked = answersOwner && !extra.update_key ? (replyTo ?? lateRequest(target)) : undefined;
+			const said = asked ? ownerMessage(asked) : undefined;
+			const owner = asked && said?.conv === conv && !said.notOwner ? { owner: { mid: asked, text: said.text } } : {};
+			const mayDrop = (ref: string) => {
+				const shown = replies?.open(conv).find(c => c.ref === ref)?.shown;
+				return !!asked && !!said && !!shown && newestOwnerMessage(conv)?.id === asked && Date.parse(said.ts) > Date.parse(shown);
+			};
+			if (replies) void applyCardMarkers(marks, { replies, ...owner, mayDrop, tell: line => out(target, line, replyTo, { source: "gateway", nk: "gateway-note" }), log }).catch(e => log(`card markers in ${target} failed: ${(e as Error).message}`));
+			text = marks.rest;
+			// A marker alone still answers the owner's message: it is settled (shown answered, its progress line stopped) as a posted answer is.
+			if (!text) return (settleAnswer({ target, text, replyTo: replyTo ?? lateRequest(target), extra }), { delivered: true });
+		}
+	}
 	const said = stripSteerMark(text);
 	text = stripLater(said);
-	if (typeof extra.session === "string") settleResolves(text, extra.session);
+	if (typeof extra.session === "string") settleResolves(text, extra.session, replyTo);
 	noteProjectInfo(target, text);
 	if (said && !stripProjectInfo(text)) return { delivered: true };
 	// A gateway post to the alert conversation (a failing watch) is gated like alert() below.
 	if (target === "alert" && extra.source === "gateway" && !extra.update_key && repeatAlert(text)) extra = { ...extra, repeat: true };
+	if (target === "alert" && answersOwner && extra.nk === undefined && !["fail", "ask"].includes(splitTone(text).tone)) extra = { ...extra, nk: "answer" };
 	// The assistant's send-approval card waits its turn in its conversation (a held card is posted later by the queue, marked `queued`).
 	const routed = answersOwner && !extra.update_key && !extra.queued;
 	// Every answer and dotz_send of every conversation passes here: a list of options becomes a decision card whoever wrote it (hub/ask-normalize.ts).
@@ -449,11 +573,13 @@ export async function out(target: string, text: string, replyTo?: string, extra:
 	const drafts = routed ? splitDraftCards(body) : undefined;
 	if (drafts) {
 		let last: { delivered: boolean; reason?: string } = { delivered: true };
-		for (const c of drafts) last = await out(target, c, replyTo, extra);
+		for (const c of drafts.cards) last = await out(target, c, replyTo, extra);
+		// The answer written after the last card goes out once, after the cards (it holds no card, so route() never holds it).
+		if (drafts.tail) last = await out(target, drafts.tail, replyTo, extra);
 		return last;
 	}
 	const job: OutJob = { target, text: body, replyTo: replyTo ?? (routed ? lateRequest(target) : undefined), extra };
-	const routing: { card?: ReturnType<typeof approvals.route> } = {};
+	const routing: { card?: Awaited<ReturnType<typeof approvals.route>> } = {};
 	let landed = false;
 	replies.begin(job);
 	let sent: string;
@@ -468,7 +594,7 @@ export async function out(target: string, text: string, replyTo?: string, extra:
 				log(`limit-stop ask in chat to ${target}: the gateway applies the owner's setting at a real limit`);
 				steerOrchestrator(msg().limitStopAskNote);
 			}
-			const card = routed ? approvals.route(target, t, extra) : undefined;
+			const card = routed ? await approvals.route(target, t, extra) : undefined;
 			routing.card = card;
 			if (card?.action === "post") t = card.text ?? withCardPointer(target, t);
 			// False: shutdown already landed this post with the original text.
@@ -518,7 +644,7 @@ export function clearLeftWebProgress(): void {
 // The same alert again (hub/alert-gate.ts) is marked on its event (the bell rewrites the first one, no push) and not posted to Discord again.
 export function alert(text: string): void {
 	const repeat = repeatAlert(text);
-	emit("outbox", { ts: now(), kind: "out", source: "gateway", target: "alert", text, ...(repeat ? { repeat: true } : {}) });
+	emit("outbox", { ts: now(), kind: "out", source: "gateway", target: "alert", text, nk: "alert", ...(repeat ? { repeat: true } : {}) });
 	if (route({ target: "alert", text }).messengers.discord && !repeat) void send("alert", text).catch(e => log(`alert send failed: ${e}`));
 }
 
@@ -544,7 +670,7 @@ export function rateLimitNotice(target: string, replyTo?: string): void {
 	const until = new Date(orch.rateLimitedUntil);
 	const at = Number.isNaN(until.getTime()) ? "한도가 풀리면" : `${until.toLocaleString("ko-KR", { timeZone: TZ, month: "numeric", day: "numeric", weekday: "short", hour: "2-digit", minute: "2-digit" })}쯤`;
 	const text = orch.pauseKind === "owner" ? "지금 모델 제공자 결제/인증 문제로 멈춰 있어요. 해결되면 받은 메시지부터 이어서 처리할게요." : `지금 사용량 한도로 멈춰 있어요. ${at} 이어서 처리할게요.`;
-	void out(target, text, replyTo, { source: "gateway" }).catch(() => undefined);
+	void out(target, text, replyTo, { source: "gateway", nk: "usage-stop" }).catch(() => undefined);
 }
 
 export async function progress(target: string, key: string, text: string, replyTo?: string, session?: string, cross?: string): Promise<{ delivered: boolean; reason?: string; edited?: boolean }> {
@@ -602,7 +728,7 @@ export function cancelOwnerTurn(c: Conv = mainConv): string | undefined {
 	if (!target) return undefined;
 	for (const w of c.bg.list().filter(w => w.status === "running" && w.target === target))
 		void c.bg.cancel(w.id).then(r => (r.ok ? log(`worker ${w.id} cancelled with its request`) : log(`worker ${w.id} not cancelled: ${r.error}`)));
-	void out(target, "중단했어요.", undefined, { source: "gateway" }).catch(() => undefined);
+	void out(target, "중단했어요.", undefined, { source: "gateway", nk: "gateway-note" }).catch(() => undefined);
 	return target;
 }
 
@@ -614,7 +740,7 @@ function wireAnswers(c: Conv): void {
 	c.o.setStuckHandler(minutes => {
 		const target = c.queue.current()?.target ?? (c.key === MAIN ? undefined : c.primary);
 		if (!target) return log(`stuck turn of ${c.key} (${minutes} min): no conversation to tell`);
-		void out(target, `작업이 ${minutes}분 동안 멈춰 있어서 끊고 다시 이어가요.`, undefined, { source: "gateway" }).catch(e => log(`stuck notice to ${target} failed: ${e}`));
+		void out(target, `작업이 ${minutes}분 동안 멈춰 있어서 끊고 다시 이어가요.`, undefined, { source: "gateway", nk: "gateway-note" }).catch(e => log(`stuck notice to ${target} failed: ${e}`));
 	});
 	// An open question to the owner (a decision notice, a dotz_auth wait) is a legitimate wait, not a stall.
 	c.o.setStuckGuard(() => allNotices().some(n => n.kind === "decision" && n.decision?.state === "open" && (n.decision.to === c.primary || (c.key === MAIN && (n.decision.to === "main" || n.decision.to.startsWith("auth:"))))) || pendingWaits().some(w => w.session === c.key));
@@ -624,10 +750,8 @@ function wireAnswers(c: Conv): void {
 		answer => {
 			// Read here too: an answer already sent with dotz_send drops this final text, and `[later]` must arrive bare.
 			noteProjectInfo(c.queue.current()?.target ?? c.primary, answer);
-			settleResolves(answer, c.key);
+			settleResolves(answer, c.key, c.queue.current()?.replyTo);
 			const text = stripProjectInfo(answer) || stripResolves(answer);
-			// The request this answer is for: only a [done] / [fail] to the same request can close an earlier question about it (notices.ts).
-			orchestratorAnswered(text, c.queue.current()?.replyTo);
 			c.queue.onAnswer(text);
 		},
 		c.queue.onText,
@@ -639,7 +763,10 @@ function wireAnswers(c: Conv): void {
 	} else {
 		// What main posted in this conversation reaches the session's next owner prompt (the header is added to owner prompts only: a handed-over prompt carries none, and its answer goes back to the sender anyway).
 		c.o.setTurnHeader(() => digest.takeInto(c.key));
-		c.o.setAlertHandler(text => alert(`[${c.meta.name || c.primary}] ${text}`));
+		c.o.setAlertHandler(text => {
+			const name = c.meta.name?.trim() || channelTitle(c.primary);
+			alert(GENERIC_TITLES.has(name) ? text : `[${name}] ${text}`);
+		});
 	}
 }
 
@@ -652,7 +779,7 @@ export const onConvIdle = (fn: (key: string) => void): void => void (convIdle = 
 setWiring(c => {
 	let bg: ReturnType<typeof createBgWork> | undefined;
 	const q = makeQueue(c.key, c.o, join(c.dir!, "pending.json"), () => bg);
-	bg = sessionBg(c.o, q);
+	bg = sessionBg(c.key, c.o, q);
 	Object.assign(c, { queue: q, bg });
 	wireAnswers(c);
 	c.o.setRestartedHandler(lead => q.reopen(leadWith(replayWrap, lead)));
@@ -661,7 +788,7 @@ setWiring(c => {
 		q.redeliverSteered();
 		convIdle(c.key);
 	});
-	c.o.setErrorHandler(e => void out(c.primary, errorAsk(NAME, e), undefined, { source: "gateway" }).catch(err => log(`error ask to ${c.primary} failed: ${err}`)));
+	c.o.setErrorHandler(e => void out(c.primary, errorAsk(NAME, e), undefined, { source: "gateway", nk: "decision" }).catch(err => log(`error ask to ${c.primary} failed: ${err}`)));
 	return { queue: q, bg };
 });
 

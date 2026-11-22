@@ -4,7 +4,7 @@
 	"boundaries": { "hub->features": 50, "hub->onboard": 6, "hub->extension": 2, "extension->hub": 13, "onboard->hub": 1, "features->onboard": 2, "feature->feature": 18 },
 	"swallowedErrors": { "extension": 11, "features": 27, "hub": 193, "onboard": 4, "setup.ts": 1, "web": 69 },
 	"nonAtomicWrites": { "extension": 3, "features": 8, "hub": 43, "onboard": 1, "setup.ts": 2 },
-	"unboundedCalls": { "extension": 2, "features": 13, "hub": 71, "onboard": 7, "setup.ts": 4 },
+	"unboundedCalls": { "extension": 2, "features": 13, "hub": 71, "onboard": 7, "setup.ts": 0 },
 	"testTiming": { "fixedSleeps": 3, "budgetFiles": 0 },
 	"moduleMap": { "hub": 150 },
 	"helperCopies": { "readJson": 13, "json": 5, "sameOrigin": 3, "git": 6, "shq": 5, "sleep": 3 },

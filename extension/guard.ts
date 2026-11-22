@@ -39,7 +39,11 @@ import { debug } from "./guard-debug.ts";
 import { BUDGET_MARKER, budgetLine as briefBudgetLine, checkOmoTaskInput as briefCheckOmoTask, checkTaskInput as briefCheckTask, checkoutRoots, gitTop, isOmoTaskInput, livePin, LOOKUP_PIN, ownWorkerPin, pinOmoTaskModel, shouldIsolate, addProjectFooter } from "./guard-brief.ts";
 export { addProjectFooter, FOLDER_RULES_MARKER, livePin, LOOKUP_PIN, ownWorkerPin, pinOmoTaskModel, PROJECT_MARKER, projectFooter, relativizeRoots, shouldIsolate } from "./guard-brief.ts";
 import { applyDirsOf, GIT_APPLY, GIT_APPLY_NAMED, GIT_APPLY_RE, patchIsApplied, patchLanded } from "./guard-patches.ts";
-import { detectCycle, REPEAT_ESCALATION_ATTEMPTS, REPEAT_HISTORY, REPEAT_MAX_SESSIONS, REPEAT_MIN_LAPS, REPEAT_WINDOW_MS, repeatArgsDigest, repeatBlockReason, repeatResultDigest, repeatStopReason, repeatSubject, type RepeatCall, type RepeatRow } from "./guard-repeat.ts";
+import { createLongGuard, deletionBlock } from "./guard-long.ts";
+import { createRepeatGuard, type RepeatCtx, type RepeatEvent } from "./guard-repeat.ts";
+import { codeLockReason, scopeReaches, writeScopes, writtenPaths } from "../hub/codeguard.ts";
+import { evalSpawnBlock, evalSpawnProblem, reviveBrief } from "./guard-spawn.ts";
+export { codeLockReason };
 
 // Active configuration: the defaults until installGuard() loads <DOTZ_DIR>/config.json. The exported checks take their
 // limits as a parameter that defaults to it, so tests pass their own.
@@ -83,8 +87,10 @@ export function laneMergeBlock(command: string, lane = process.env.DOTZ_LANE): s
 
 // Per-job estimate in a brief: "Estimate: N%" = share of the 5h window the worker is expected to use (absent -> budget_default_estimate_percent).
 const ESTIMATE_RE = /^\s*Estimate:\s*(\d+(?:\.\d+)?)\s*%?/im;
+const ISOLATION_FAILED = /isolation_unavailable|Isolated subagent execution could not be prepared/;
 const USAGE_CACHE_MS = 120_000;
 const STATE_MAX_AGE_MS = 7 * 24 * 3600_000;
+const RUNNING_MAX_AGE_MS = 6 * 3600_000; // a worker "running" for longer is a stale row, not a reason to refuse sleep
 const SETTLED_MAX_AGE_MS = 30 * 24 * 3600_000;
 const OMP_BIN = /(^|\/)(bun|node)$/.test(process.execPath) ? "omp" : process.execPath;
 
@@ -201,8 +207,75 @@ export function quickChatBlock(tool: string, input: any, conv = process.env.DOTZ
 // a conversation's session hands a change to them to main, and a lane (DOTZ_LANE) puts it in its report's "<bot> 몫:" line
 // (hub/forline.ts), so two sessions never write one at once (2026-11-10: a lane wrote memory/owner.md).
 const SHARED_FILES = ["state.json", "RULES.md", "LESSONS.md"];
-const WRITE_TOOLS = new Set(["write", "edit", "multiedit", "apply_patch", "ast_edit", "notebook_edit"]);
-const SHELL_WRITES = /\b(write(File|FileSync)?|appendFile(Sync)?|Bun\.write|writeAtomic|rename(Sync)?|unlink(Sync)?|rm|mv|cp|tee|sed\s+-i|truncate)\b|>{1,2}/;
+// A shell or eval text writes a shared file only when a write's target is one: a JS/Python write call with it as its target
+// argument, Python open(<it>, "w"|"a"), a shell > / >> right before it, or tee/cp/mv/rm/sed -i/truncate with it as an argument.
+// A bare >, =>, >= or 2>&1 is no write (2026-11-13: 52 of 57 refusals were reads, most of them a lane's first rules read).
+const WRITE_CALLS = /(?<![\w$.])(?:Bun\.write|(?:os\.|fs\.)?(?:write|rename|unlink|remove|open|openSync))\s*\(|(?:(?:writeFile|appendFile)(?:Sync)?|writeAtomic|renameSync|unlinkSync|rmSync)\s*\(/g;
+const SHELL_REDIRECT = /(?:^|[^=<>&\d-])\d?>>?\|?\s*([^\s;&|<>()`]+)/g;
+const SHELL_WRITE_CMDS = /(?:^|[\s;&|(`"'])(tee|cp|mv|rm|truncate|sed)\s+([^;&|\n)`]*)/g;
+
+// The top-level arguments of the call whose "(" ends just before `from`.
+function callArgs(text: string, from: number): string[] {
+	const args: string[] = [];
+	let depth = 0, quote = "", start = from;
+	for (let i = from; i < text.length; i++) {
+		const c = text[i]!;
+		if (quote) {
+			if (c === "\\") i++;
+			else if (c === quote) quote = "";
+		} else if (c === '"' || c === "'" || c === "`") quote = c;
+		else if ("([{".includes(c)) depth++;
+		else if (")]}".includes(c) && depth-- === 0) return [...args, text.slice(start, i)];
+		else if (c === "," && depth === 0) (args.push(text.slice(start, i)), (start = i + 1));
+	}
+	return [...args, text.slice(start)];
+}
+
+// A target named by a variable counts when the text set it to a shared path (not to a read of one), or when a JS/Python write's
+// target is a name the text never set (an earlier cell did).
+function shellWritesShared(text: string, hits: (p: string) => boolean, data: string): boolean {
+	const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+	const dir = `(?:${esc(data)}|\\.dotz)`;
+	const file = /state\.json|RULES\.md|LESSONS\.md|memory\b/;
+	const path = new RegExp(`${dir}[\\s"'\`,+/]*(?:${file.source})`);
+	const dirOnly = new RegExp(`${dir}/?(?:["'\`)\\s]|$)`);
+	const assigned = new Map<string, string>();
+	for (const m of text.matchAll(/(?:^|[\s;,({`"'])(?:(?:const|let|var|export)\s+)?([A-Za-z_$][\w$]*)\s*=(?![=>~])\s*([^;\n]*)/g)) assigned.set(m[1]!, m[2]!);
+	const sharedVars = new Set<string>(), dirVars = new Set<string>();
+	const uses = (t: string, vars: Set<string>) => [...vars].some(v => new RegExp(`(?<![\\w$])${esc(v)}(?![\\w$])`).test(t));
+	const names = (t: string) => path.test(t) || uses(t, sharedVars) || (uses(t, dirVars) && file.test(t));
+	for (let grew = true; grew; ) {
+		grew = false;
+		for (const [v, rhs] of assigned) {
+			const read = /(?:open|read|load|parse|text)\w*\s*\(/i.test(rhs);
+			const set = read ? undefined : names(rhs) ? sharedVars : dirOnly.test(rhs) ? dirVars : undefined;
+			if (set && !set.has(v)) (set.add(v), (grew = true));
+		}
+	}
+	// Quoted text and shell words are literal paths; a bare JS/Python name or a shell $NAME is a variable.
+	const target = (raw: string, shell: boolean) => {
+		const quoted = /^["'`]/.test(raw.trim());
+		const t = raw.trim().replace(/^["'`]|["'`]$/g, "");
+		if (names(t)) return true;
+		const variable = quoted ? null : (shell ? /^\$\{?([A-Za-z_]\w*)\}?$/ : /^([A-Za-z_$][\w$]*)$/).exec(t);
+		if (variable) return !shell && !assigned.has(variable[1]!);
+		return (quoted || shell) && /^[~\w./-]+$/.test(t) && hits(t);
+	};
+	for (const m of text.matchAll(WRITE_CALLS)) {
+		const args = callArgs(text, m.index + m[0].length);
+		if (m[0].includes("open") && !/^\s*(?:mode\s*=\s*)?[rbfu]*["'][rbt]*[wax+]/i.test(args[1] ?? "")) continue;
+		if (args.slice(0, m[0].includes("rename") ? 2 : 1).some(a => target(a, false))) return true;
+	}
+	for (const m of text.matchAll(/([^\n;=]*)\.(?:write_text|write_bytes|unlink)\s*\(/g)) if (names(m[1]!)) return true;
+	for (const m of text.matchAll(SHELL_REDIRECT)) if (target(m[1]!, true)) return true;
+	for (const m of text.matchAll(SHELL_WRITE_CMDS)) {
+		if (m[1] === "sed" && !/(?:^|\s)-[a-zA-Z]*i/.test(m[2]!)) continue;
+		const words = m[2]!.split(/\s+/).filter(w => w && !w.startsWith("-"));
+		if ((m[1] === "cp" ? words.slice(-1) : words).some(w => target(w, true))) return true;
+	}
+	return false;
+}
+
 // A relative path resolves in the session's folder (cwd): a lane's worktree may hold its own RULES.md or state.json.
 export function sharedWriteBlock(tool: string, input: any, data = dataDir(), conv = process.env.DOTZ_CONV, lane = process.env.DOTZ_LANE, cwd = data): string | undefined {
 	if (!conv && !lane) return undefined;
@@ -212,13 +285,17 @@ export function sharedWriteBlock(tool: string, input: any, data = dataDir(), con
 		return shared.some(s => (s.endsWith("/") ? abs.startsWith(s) : abs === s));
 	};
 	let writes = false;
-	if (WRITE_TOOLS.has(tool)) {
-		const paths = [input?.path, input?.file_path, ...(Array.isArray(input?.paths) ? input.paths : [])].filter((p): p is string => typeof p === "string");
-		writes = paths.some(hits) || (tool === "apply_patch" && typeof input?.input === "string" && shared.some(s => input.input.includes(s)));
+	const written = writtenPaths(tool, input);
+	const scopes = writeScopes(tool, input, cwd);
+	if (written.length || scopes.length || tool === "apply_patch") {
+		writes =
+			written.some(hits) ||
+			scopes.some(scope => shared.some(s => scopeReaches(scope, s.replace(/\/$/, "")))) ||
+			(tool === "apply_patch" && typeof input?.input === "string" && shared.some(s => input.input.includes(s)));
 	} else if (tool === "bash" || tool === "eval") {
 		const text = shellText(input);
 		const named = shared.some(s => text.includes(s)) || SHARED_FILES.some(f => text.includes(`.dotz/${f}`)) || text.includes(".dotz/memory/");
-		writes = named && SHELL_WRITES.test(text);
+		writes = named && shellWritesShared(text, hits, data);
 	}
 	if (!writes) return undefined;
 	if (lane) return laneShareReason(data);
@@ -340,14 +417,15 @@ export function settleFromText(state: ProjectState, text: string): boolean {
 	return changed;
 }
 
-// Laps of a `period`-long cycle before stage 1: period 1 -> 8 laps, 2 -> 4, 3 -> 3, 4 -> 3 (8, 8, 9, 12 calls). The laps floor keeps a coincidental A,B,A,B from reading as a loop.
-const requiredLaps = (period: number) => Math.max(REPEAT_MIN_LAPS, Math.ceil(G.repeat_block_threshold / period));
-export function installGuard(pi: any, config: GuardConfig = loadGuardConfig()): void {
-	if (!config.enabled) return;
+export type WorkerRunning = (ctx: unknown, id: string) => boolean;
+
+/** Installs the worker guard and returns whether the guard knows a worker as running (a write to its agent:// steers it, not revives it). Off or deferred to an installed copy, it knows none. */
+export function installGuard(pi: any, config: GuardConfig = loadGuardConfig()): WorkerRunning {
+	if (!config.enabled) return () => false;
 	const installed = config.defer_to_installed ? installedOriginal(pi, "orchestrator-guard") : undefined;
 	if (installed) {
 		logOnce(pi, "guard-deferred", `dotz guard: ${installed} is installed, so dotz's copy of the worker guard stays off (every hook would run twice). Set guard.defer_to_installed to false in <DOTZ_DIR>/config.json to run it anyway.`);
-		return;
+		return () => false;
 	}
 	G = config;
 	host = pi; lookupPin = omoProviderName(loadLookupModel(dataDir(), m => logOnce(pi, "lookup-model", m)));
@@ -398,19 +476,11 @@ export function installGuard(pi: any, config: GuardConfig = loadGuardConfig()): 
 		injectState(ctx, true);
 	});
 
-	const repeatRows = new Map<string, RepeatRow>();
+	const repeat = createRepeatGuard(config);
 	const isolationUnavailable = new Set<string>();
-	const repeatKey = (ctx: any) => String(ctx?.sessionManager?.getSessionId?.() ?? ctx?.agent?.id ?? "");
 
 	pi.on("tool_result", (event: any, ctx: any) => {
-		// Fill in what the call returned, so an identical call whose output changes (a poll) is not counted as a loop. Before the main-only return: workers are guarded too.
-		try {
-			const id = String(event?.toolCallId ?? "");
-			const call = [...(repeatRows.get(repeatKey(ctx))?.calls ?? [])].reverse().find(c => (id ? c.id === id : !c.result && c.tool === event?.toolName && c.args === repeatArgsDigest(c.tool, event?.input)));
-			if (call) call.result = repeatResultDigest(event?.content);
-		} catch (error) {
-			debug({ phase: "repeat-result-error", message: String(error) });
-		}
+		repeat.record(event, ctx);
 		if (!isMain(ctx)) return;
 		const current = projectState(ctx);
 		const text = (event.content ?? []).map((b: { text?: string }) => b?.text ?? "").join("\n");
@@ -427,7 +497,7 @@ export function installGuard(pi: any, config: GuardConfig = loadGuardConfig()): 
 			}
 			if (marked) saveState(current);
 		}
-		if (event.toolName === "task" && /isolation_unavailable/.test(text)) isolationUnavailable.add(current.cwd);
+		if ((event.toolName === "task" || event.toolName === "wait") && ISOLATION_FAILED.test(text)) isolationUnavailable.add(current.cwd);
 		if (event?.isError) return;
 		if (event.toolName === "task") {
 			const fromDetails = (event.details?.progress ?? []).map((p: { id?: string; agentId?: string }) => p?.id ?? p?.agentId).filter(Boolean);
@@ -452,6 +522,8 @@ export function installGuard(pi: any, config: GuardConfig = loadGuardConfig()): 
 		}
 	});
 
+	const longGuard = createLongGuard(pi); // after the first tool_result handler above: tests address it by index
+
 	if (config.budget_gate) {
 		pi.registerCommand("budget-ok", {
 			description: `Allow worker spawns for ${config.override_minutes} minutes despite a low Anthropic quota (guard budget gate).`,
@@ -470,14 +542,14 @@ export function installGuard(pi: any, config: GuardConfig = loadGuardConfig()): 
 				ctx.ui.notify(`orchestrator-guard: expensive-model workers allowed for ${config.override_minutes} minutes.`, "info");
 			},
 		});
-
-		// Dispatch-time check: sees the model the child would really use, whether it came from modelRoles, agentModelOverrides or the call.
-		pi.on("before_subagent_spawn", (event: any) => {
-			const found = fableOk() ? undefined : expensiveModel(event?.patterns);
-			debug({ phase: "spawn-model", agent: event?.agent, patterns: event?.patterns, found });
-			if (found) return { block: true, reason: fableReason(`worker ${event?.agent ?? "task"}`, found) };
-		});
 	}
+	pi.on("before_subagent_spawn", (event: { agent?: unknown; patterns?: unknown }) => {
+		const evalBlock = evalSpawnBlock(event);
+		if (evalBlock) return evalBlock;
+		const found = fableOk() ? undefined : expensiveModel(event?.patterns);
+		debug({ phase: "spawn-model", agent: event?.agent, patterns: event?.patterns, found });
+		if (found) return { block: true, reason: fableReason(`worker ${event?.agent ?? "task"}`, found) };
+	});
 
 	pi.registerCommand("compact-switch", {
 		description: "Compact on the current model first (its cache is still warm), then switch: /compact-switch provider/model[:thinking]",
@@ -537,58 +609,6 @@ export function installGuard(pi: any, config: GuardConfig = loadGuardConfig()): 
 		return dropped ? payload : undefined;
 	});
 
-	// Evaluated after every other block in the tool_call handler so existing blocks win. Blocked calls are never recorded (the history freezes, so ignored blocks are counted instead of laps). Any failure here allows the call: a guard bug must not veto work.
-	const repeatGuard = async (event: any, ctx: any): Promise<{ block: true; reason: string } | undefined> => {
-		try {
-			const tool = String(event?.toolName ?? "");
-			const args = repeatArgsDigest(tool, event?.input);
-			if (!args) return;
-			const now = Date.now();
-			const key = repeatKey(ctx);
-			let row = repeatRows.get(key);
-			// Past the window the session was idle (or the id was reused): a streak that old no longer describes a loop.
-			if (!row || now - row.seen > REPEAT_WINDOW_MS) row = { calls: [], blocked: 0, seen: now };
-			row.seen = now;
-			repeatRows.delete(key);
-			repeatRows.set(key, row);
-			if (repeatRows.size > REPEAT_MAX_SESSIONS) repeatRows.delete(repeatRows.keys().next().value as string);
-			const cand: RepeatCall = { tool, args, result: "", id: String(event?.toolCallId ?? "") };
-			const tentative = [...row.calls, cand];
-			const cycle = detectCycle(tentative);
-			let engaged = row.engaged;
-			if (cycle && cycle[1] >= requiredLaps(cycle[0])) {
-				const [period, laps] = cycle;
-				const elements = tentative.slice(-period);
-				const sig = elements.map(c => `${c.tool}\0${c.args}`).sort().join("\n");
-				if (engaged?.sig !== sig) row.blocked = 0;
-				engaged = row.engaged = { sig, elements, ran: period * laps - 1, compared: tentative.slice(-period * laps, -1).every(c => c.result) };
-			} else if (!engaged?.elements.some(c => c.tool === tool && c.args === args)) {
-				// Not a loop call: it runs, joins the history and leaves no engaged cycle behind it. Another element of a blocked cycle stays blocked: the history did not advance, so it is the same loop one step along.
-				row.calls = tentative.slice(-REPEAT_HISTORY);
-				row.engaged = undefined;
-				row.blocked = 0;
-				return;
-			}
-			if (!engaged) return;
-			const ignored = row.blocked++;
-			debug({ phase: "repeat-block", agent: ctx?.agent?.id, tool, ignored, ran: engaged.ran });
-			if (ignored < REPEAT_ESCALATION_ATTEMPTS) return { block: true, reason: repeatBlockReason(engaged) };
-			// dotz gateway sessions run `omp --mode rpc`: hasUI is true there but nobody answers extension UI requests, so a
-			// confirm would hang the call forever. They (and any session without a UI) get the stop block instead.
-			const headless = !ctx?.hasUI || typeof ctx.ui?.confirm !== "function" || !!process.env.DOTZ_LANE || process.env.DOTZ_ORCHESTRATOR === "1";
-			if (headless) return { block: true, reason: repeatStopReason(engaged, ignored) };
-			// A dialog nobody answers within a minute counts as a deny.
-			const allowed = await ctx.ui.confirm("Repeat guard", `${repeatSubject(engaged.elements, engaged.ran)}, and ${ignored} further attempts were blocked. Allow this call once more? Denying ends the repetition.`, { timeout: 60_000 });
-			if (allowed !== true) return { block: true, reason: `orchestrator-guard repeat guard: the owner denied (or did not answer) this repeated call. ${repeatBlockReason(engaged)}` };
-			// A person said go on: they get a fresh budget of laps rather than a prompt on every call.
-			row.calls = [cand];
-			row.engaged = undefined;
-			row.blocked = 0;
-		} catch (error) {
-			debug({ phase: "repeat-error", message: String(error) });
-		}
-	};
-
 	const guardToolCall = async (event: any, ctx: any): Promise<any> => {
 		const tool = String(event?.toolName ?? "");
 		if (ctx?.agent?.kind === "sub" && compactions >= SUB_COMPACT_STOP) {
@@ -600,6 +620,11 @@ export function installGuard(pi: any, config: GuardConfig = loadGuardConfig()): 
 			debug({ phase: "broad-search-block", agent: ctx?.agent?.id, tool });
 			return { block: true, reason: broad };
 		}
+		const removal = deletionBlock(tool, event?.input, ctx?.cwd);
+		if (removal) {
+			debug({ phase: "deletion-block", agent: ctx?.agent?.id });
+			return { block: true, reason: removal };
+		}
 		if (ctx?.agent?.kind === "sub" && tool === "bash") {
 			const kind = externalAction(expandShellVars(String(event?.input?.command ?? "")));
 			if (kind) {
@@ -607,16 +632,25 @@ export function installGuard(pi: any, config: GuardConfig = loadGuardConfig()): 
 				return { block: true, reason: `orchestrator-guard: workers do not run external-impact commands (${kind}). Finish the rest of the task, and list the exact command under "External actions needed" in your final answer; the orchestrator decides whether to run it.` };
 			}
 		}
-		const shellBlock = (tool === "bash" ? laneMergeBlock(expandShellVars(String(event?.input?.command ?? ""))) : undefined) ?? (tool === "bash" || tool === "eval" ? pipedStatusBlock(shellText(event?.input)) : undefined);
+		const shell = tool === "bash" || tool === "eval" ? shellText(event?.input) : undefined;
+		const shellBlock = shell === undefined ? undefined : (laneMergeBlock(expandShellVars(shell)) ?? pipedStatusBlock(shell));
 		if (shellBlock) return { block: true, reason: shellBlock };
 		const shared = sharedWriteBlock(tool, event?.input, dataDir(), process.env.DOTZ_CONV, process.env.DOTZ_LANE, ctx?.cwd) ?? quickChatBlock(tool, event?.input);
 		if (shared) {
 			debug({ phase: "shared-write-block", tool });
 			return { block: true, reason: shared };
 		}
+		const spawnProblem = evalSpawnProblem(tool, event?.input);
+		if (spawnProblem) return { block: true, reason: spawnProblem };
 		const limitStop = limitStopProblem(tool, event?.input);
 		if (limitStop) return { block: true, reason: limitStop };
 		if (!isMain(ctx)) return;
+		// phase long-bash-block / wait-again-block / polling-block: the orchestrator does not block on long work (guard-long.ts).
+		const blocking = longGuard(tool, event?.input, () => Object.values(projectState(ctx).workers).filter(w => w.status === "running" && Date.now() - w.spawnedAt < RUNNING_MAX_AGE_MS).length);
+		if (blocking) {
+			debug({ phase: blocking.phase, agent: ctx?.agent?.id });
+			return { block: true, reason: blocking.reason };
+		}
 		// A message to a finished worker revives it with its whole history, and it tends to redo its earlier steps.
 		const target = /^agent:\/\/([^/?#]+)/.exec(String(event?.input?.path ?? ""))?.[1];
 		if (tool === "write" && target && target !== "all") {
@@ -624,6 +658,10 @@ export function installGuard(pi: any, config: GuardConfig = loadGuardConfig()): 
 			if (worker && worker.status !== "running") {
 				debug({ phase: "finished-worker-message-block", target, status: worker.status });
 				return { block: true, reason: `orchestrator-guard: worker ${target} already ${worker.status}; a message would revive it and it may redo its earlier work. Spawn a new worker for the follow-up (task) with only the new step.` };
+			}
+			if (worker?.status !== "running") {
+				const brief = reviveBrief(event.input, config);
+				return "reason" in brief ? { block: true, reason: brief.reason } : { input: brief.input };
 			}
 		}
 		if (tool === "task") {
@@ -685,7 +723,7 @@ export function installGuard(pi: any, config: GuardConfig = loadGuardConfig()): 
 	pi.on("tool_call", async (event: any, ctx: any) => {
 		const verdict = await guardToolCall(event, ctx);
 		if (verdict?.block) return verdict;
-		return (await repeatGuard(event, ctx)) ?? verdict;
+		return (await repeat.check(event, ctx)) ?? verdict;
 	});
 
 	pi.on("context", (event: any, ctx: any) => {
@@ -695,6 +733,7 @@ export function installGuard(pi: any, config: GuardConfig = loadGuardConfig()): 
 		for (const m of event.messages) {
 			const text = typeof m?.content === "string" ? m.content : Array.isArray(m?.content) ? m.content.map((b: any) => b?.text ?? "").join("\n") : "";
 			if ((text.includes("<task-result") || text.includes("task completion")) && settleFromText(current, text)) settled = true;
+			if (text.includes("<task-result") && ISOLATION_FAILED.test(text)) isolationUnavailable.add(current.cwd);
 		}
 		if (settled) saveState(current);
 		let trimmed = 0;
@@ -715,5 +754,21 @@ export function installGuard(pi: any, config: GuardConfig = loadGuardConfig()): 
 		});
 		if (trimmed) debug({ phase: "context-trim", trimmed });
 		return trimmed ? { messages } : undefined;
+	});
+	return (ctx, id) => projectState(ctx).workers[id]?.status === "running";
+}
+
+/** The checks of installGuard that bind a task subagent, for a host that runs installGuard for the main agent alone (omp): a broad search, a quick chat's reach and a usage-limit stop line are refused, and a call repeated in a loop is blocked. The compaction wrap-up and stop stay out: the task cap owns a subagent's context. */
+export function installSubagentGuard(pi: { on(name: string, handler: (event: RepeatEvent, ctx: RepeatCtx) => unknown): unknown }, config: GuardConfig = loadGuardConfig()): void {
+	if (!config.enabled || (config.defer_to_installed && installedOriginal(pi, "orchestrator-guard"))) return;
+	const repeat = createRepeatGuard(config);
+	pi.on("tool_result", repeat.record);
+	pi.on("before_subagent_spawn", evalSpawnBlock);
+	pi.on("tool_call", async (event, ctx) => {
+		const tool = String(event?.toolName ?? "");
+		const reason = broadSearchProblem(tool, event?.input) ?? deletionBlock(tool, event?.input, (ctx as { cwd?: string } | undefined)?.cwd) ?? quickChatBlock(tool, event?.input) ?? limitStopProblem(tool, event?.input) ?? evalSpawnProblem(tool, event?.input);
+		if (!reason) return repeat.check(event, ctx);
+		debug({ phase: "sub-check-block", agent: ctx?.agent?.id, tool });
+		return { block: true, reason };
 	});
 }

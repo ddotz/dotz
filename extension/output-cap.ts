@@ -15,8 +15,15 @@ import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, renameSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { isSubagent } from "./guard-config.ts";
 
 export const CAP_CHARS = 20_000;
+// A read gets more room than search and shell output: a spec or source file is judged whole, and 36 of 188 read cuts in
+// 7 days (2026-11-13 diagnosis) were never followed up, so the agent worked from the first 20K chars. A patch or diff gets
+// far more (judging half a patch is worse than the context it costs), still bounded so one huge diff cannot fill the window.
+export const READ_CAP = 60_000;
+export const PATCH_READ_CAP = 200_000;
+const capOf = (tool: string, args: Record<string, unknown>): number => (tool !== "read" ? CAP_CHARS : /\.(patch|diff)$/.test(String(args.path ?? "")) ? PATCH_READ_CAP : READ_CAP);
 export const NOTICE_TYPE = "senpi-codemode:notification";
 // The context hook receives the converted messages (role user, customType gone), so a notice is also known by its opening.
 const NOTICE_OPEN = "<system-reminder>Detached eval cell ";
@@ -77,7 +84,7 @@ function headTail(t: string): string {
 
 function cutText(tool: string, input: Record<string, unknown>, t: string): string {
 	if (SHELL.has(tool)) return headTail(t);
-	const end = lineCut(t, CAP_CHARS);
+	const end = lineCut(t, capOf(tool, input));
 	if (tool === "read") {
 		const shown = t.slice(0, end).split("\n").length;
 		const from = Number(input.offset) > 0 ? Number(input.offset) : 1;
@@ -93,7 +100,7 @@ export function capToolResult(tool: string, input: unknown, content: unknown): B
 	if (tool === "read" && args.limit !== undefined) return undefined;
 	const blocks = content as Block[];
 	const total = blocks.reduce((n, b) => n + (b?.type === "text" && typeof b.text === "string" ? b.text.length : 0), 0);
-	if (total <= CAP_CHARS) return undefined;
+	if (total <= capOf(tool, args)) return undefined;
 	// Text blocks are joined into one (results are almost always a single text block); other blocks keep their place after it.
 	const joined = blocks.filter(b => b?.type === "text" && typeof b.text === "string").map(b => b.text).join("\n");
 	return [{ type: "text", text: cutText(tool, args, joined) }, ...blocks.filter(b => b?.type !== "text")];
@@ -124,9 +131,9 @@ export function capNotices(messages: Msg[]): Msg[] | undefined {
 	return changed ? out : undefined;
 }
 
-export function installOutputCap(pi: { on: (name: string, fn: (event: any) => any, options?: { mutatesMessages?: boolean }) => void }, env: Record<string, string | undefined> = process.env): void {
+export function installOutputCap(pi: { on: (name: string, fn: (event: any) => any, options?: { mutatesMessages?: boolean }) => void }, env: Record<string, string | undefined> = process.env, worker = isSubagent(undefined, env)): void {
 	// The orchestrator itself (DOTZ_ORCHESTRATOR without OMO_SENPI_TASK_DEPTH) stays uncapped.
-	if (!env.DOTZ_LANE && !(env.DOTZ_ORCHESTRATOR === "1" && env.OMO_SENPI_TASK_DEPTH)) return;
+	if (!env.DOTZ_LANE && !(env.DOTZ_ORCHESTRATOR === "1" && worker)) return;
 	pi.on("tool_result", (event: any) => {
 		const content = capToolResult(String(event?.toolName ?? ""), event?.input, event?.content);
 		return content ? { content } : undefined;

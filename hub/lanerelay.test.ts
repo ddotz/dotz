@@ -39,6 +39,24 @@ test("a [wait] on main reaches main; a [wait] on CI, time or workers stays on di
 	expect(sent).toHaveLength(2);
 });
 
+test("a [run] with a real For line reaches main; a [run] with none, or with an empty one, stays on disk", () => {
+	const { r, sent } = relay();
+	expect(r.report("web", `[run] 2 of 5 workers done\n\nFor ${NAME}: please cut release 1.2`, "/f")).toBe("relayed");
+	expect(r.report("api", `[run] 2 of 5 workers done\n\nFor ${NAME}: none`, "/f")).toBe("disk");
+	expect(r.report("api", "[run] 메인에게 물을 건 다 끝나면 정리해요", "/f")).toBe("disk");
+	expect(sent).toHaveLength(1);
+});
+
+test("after main wrote to the lane, the same [wait] again reaches main again", () => {
+	const { r, sent } = relay();
+	const wait = `[wait] release blocked\n\nFor ${NAME}: please cut release 1.2`;
+	expect(r.report("web", wait, "/f")).toBe("relayed");
+	expect(r.report("web", wait, "/f")).toBe("duplicate");
+	r.forget("web");
+	expect(r.report("web", wait, "/f")).toBe("relayed");
+	expect(sent).toHaveLength(2);
+});
+
 test("reports while the orchestrator is busy become one prompt at idle; a lane's newer report replaces its older one, asks stay", () => {
 	const { r, sent, setBusy } = relay();
 	setBusy(true);

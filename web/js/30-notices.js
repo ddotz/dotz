@@ -22,6 +22,7 @@ const ntPlain = s => plainTable(noticeKo(peerMsgLine(s), NK))
 
 // Phone: the count is part of the chat tab badge.
 function ntPaint() {
+  askNotes();
   monAttnSoon();
   convSchedule();
   paintAttn();
@@ -102,7 +103,7 @@ function noticeLive(e) {
     ntHandled(e.id);
     const g = NT.items.find(x => x.id === e.id);
     if (g && g.at && (g.src || g.open) === "alert") NT.gone.add(g.at);
-    NT.items = NT.items.filter(x => x.id !== e.id);
+    ntRemove(e.id);
     NT.mut++;
     ntAlertMarks();
   } else if (e.kind === "notice_read") {
@@ -125,128 +126,20 @@ async function ntMarkRead(body) {
   } catch (err) { toast(err.message, true); loadNotices(); return null; }
 }
 
-/* ---- tap: go to the source message ---- */
-// The conversation holding the notice's message (n.src; older items fall back to n.open) is opened on its chat view, older history
-// is fetched until the message's time is covered, the message is scrolled to the top of the timeline and flashed. A message that is not in that
-// conversation is asked of the gateway (ntLocate: a row stored with the wrong conversation, a session that has ended); a message the gateway does not hold
-// lands on a neighbour only within NT_NEAR_MS, else the conversation stays at its end. Alert and worklog posts are messages of the 알림 / 작업 기록 conversations. Nothing here ever reports an error.
-const NT_NEAR_MS = 60_000;   // the median gap between two messages of the main chat is 44 s (alert 3.8 min, worklog 25 min): a neighbour this close is the same exchange
-const ntRaf = () => new Promise(r => requestAnimationFrame(() => r()));
-function ntGo(t, kept = false) {
-  if (t === "settings") { go("settings"); return ""; }   // the 새 버전 notice: 설정 → 업데이트
-  if (!kept && isLaneT(t) && S && !S.lanes.some(l => `lane:${l.name}` === t)) t = MAIN;   // `kept`: the gateway holds the message in that session's history   // the session is gone: its result card is in the main chat
-  if (t !== MAIN && isProjT(t) && S && !projTargets().includes(t)) { toast(TX("project.not_found")); go("projects"); return ""; }
-  if (!validTarget(t)) { toast(TX("conv.nt.no_screen")); go("home"); return ""; }
-  if (t === "alert") NSC.pass = Date.now() + 1000;   // the one way into the record conversation: a row's source message (#chat/alert alone is the 알림 screen)
-  if (current !== "chat" || target !== t || convListing()) go("chat", t);   // already open (a cold start draws the address first): no second draw
-  return t;
-}
-// The rendered message of an event ts (data-ts is set in chatPush): the exact one, else the nearest in time within NT_NEAR_MS, else none.
-function ntFind(at) {
-  const want = Date.parse(at);
-  let best = null, gap = NT_NEAR_MS + 1;
-  for (const m of tl.querySelectorAll("[data-ts]")) {
-    if (m.dataset.ts === at) return m;
-    const d = Math.abs(Date.parse(m.dataset.ts) - want);
-    if (d < gap) { gap = d; best = m; }
-  }
-  return best;
-}
-// The other conversation the gateway holds the message of `at` in (/api/history?locate=), "" when it holds it nowhere else. Asked only after the exact message was not found.
-async function ntLocate(at, not = "") {
-  try { return ((await api(`/api/history?locate=${enc(at)}`)).convs || []).find(c => c !== not && validTarget(c)) || ""; } catch { return ""; }
-}
-// Older messages, 300 at a time (up to four rounds), until the loaded history reaches back to `at`; a message further back comes in with the page around it
-// (GET /api/history?around=, joined by chatMerge as a quote's original is, rpJump). Only a message the gateway no longer holds is left to the caller's toast.
-async function ntReach(t, at) {
-  const s = ts(t);
-  for (let i = 0; i < 4 && s.msgs.length && s.msgs[0].ts > at; i++) {
-    let r;
-    try { r = await api(`/api/history?target=${enc(t)}&limit=300&before=${enc(s.msgs[0].ts)}`); } catch { return; }
-    const add = (r.events || []).filter(e => !s.mk.has(msgKey(e)));
-    if (!add.length) return;
-    for (const e of add) { s.mk.add(msgKey(e)); s.msgs.push(e); }
-    s.msgs.sort(byTs); s.cap += add.length;
-    if (isFixedT(t)) dedupKeyed(s);
-    if (t === target) renderAll(true);
-  }
-  if (!s.msgs.length || s.msgs.some(e => e.ts === at)) return;
-  try {
-    const r = await api(`/api/history?target=${enc(t)}&limit=150&around=${enc(at)}`);
-    if (!r.at || t !== target) return;
-    chatMerge(s, r);
-    renderAll(true);
-  } catch (e) { console.warn("history around", e); }
-}
-// The element that carries the highlight: the card or bubble inside the message when there is one, else the message itself. Anything that paints
-// its own fill keeps the glow on its own rounded shape; plain text gets the tint alone ("nt-bar"). ~2s soft fade (a brief still tint under reduced motion: 09-notices.css).
-function ntHlHost(node) {
-  const card = node.matches(".um") ? node.querySelector(":scope > .ub") : node.matches(".bm, .cmdbox") ? node.querySelector(":scope > .ccard") : null;
-  return { host: card || node, bar: !card && /(\d, ){3}0\)$/.test(getComputedStyle(node).backgroundColor) };   // alpha 0: no fill of its own
-}
-function ntFlash(node) {
-  const { host, bar } = ntHlHost(node);
-  if (host.classList.contains("nt-hl")) return;   // the first draw lit it and the notice list confirmed it: the glow does not restart
-  for (const x of document.querySelectorAll(".nt-hl")) x.classList.remove("nt-hl", "nt-bar");
-  void host.offsetWidth;
-  host.classList.add("nt-hl");
-  host.classList.toggle("nt-bar", bar);
-  clearTimeout(host._hl);
-  host._hl = setTimeout(() => host.classList.remove("nt-hl", "nt-bar"), 2300);
-}
-let ntJumpSeq = 0;
-let ntKeep = "";   // the session a tapped notice opened: it may end while its report is on screen, and the view then stays (refreshState)
-// `quiet`: a sheet is opening over the conversation and says what the notice is about itself, so a message that is gone needs no toast.
-// `via`: the conversation the gateway said holds the message (the second try, never a third).
-const ntWhere = n => n.msg || n.src || n.open || "main";   // the conversation a notice leads to
-async function ntJump(n, quiet = false, via = "") {
-  const seq = ++ntJumpSeq, at = n.at || n.updated || n.ts, want = via || ntWhere(n), ended = () => isLaneT(want) && S && !S.lanes.some(l => `lane:${l.name}` === want);
-  let open = want, located = !!via;
-  // A session this page has not read yet (it began and ended while the page slept) is not gone: ask the gateway before ntGo sends the tap to the main chat.
-  if (!via && ended()) { await refreshState(); if (seq !== ntJumpSeq) return; }
-  // An ended session keeps its history at the gateway, and its report may have been posted to 작업 기록: open where the message is.
-  if (!via && ended()) { const c = await ntLocate(at); if (seq !== ntJumpSeq) return; if (c) { open = c; located = true; } }
-  const t = ntGo(open, located);
-  if (!t) return "no-conversation";
-  if (isLaneT(open) && t === MAIN) { toast(TX("conv.nt.session_gone")); return "session-gone"; }   // the main chat has no message of it: say so instead of landing on the nearest one
-  chatUnpin();
-  ntKeep = isLaneT(t) ? t : "";
-  CV.jump = at;   // set after ntGo (a new opening resets it): the opening's first draw lands on this message, not on the "새 메시지" divider (chatOpen)
-  try {
-    const s = ts(t), stored = s.msgs.some(e => e.ts === at);
-    if (!(s.hLoaded && s.aLoaded)) { if (stored) loadTarget(t, true).catch(() => {}); else await loadTarget(t); }   // the message is here: land now, refresh behind it
-    await ensureMsg(t, at);   // a stale stream may not have the message yet: fetch it before jumping
-    await ntReach(t, at);
-    for (let i = 0; i < 300 && seq === ntJumpSeq && !CV.placed; i++) await ntRaf();   // the opening's first draw waits for the read position (chatReady)
-    if (seq !== ntJumpSeq || target !== t || current !== "chat") return "moved-on";
-    chatShow(at);
-    let m = ntFind(at), exact = !!m && m.dataset.ts === at;
-    if (!exact && !located) {   // not where the row said: the one place the page asks the gateway, so a tap that finds its message costs nothing extra
-      const c = await ntLocate(at, t);
-      if (seq !== ntJumpSeq) return "moved-on";
-      if (c) return ntJump(n, quiet, c);
-    }
-    if (m) chatJump(m); else chatPin("bottom");   // no message to show: the conversation stays at its end, whatever pages the search loaded meanwhile
-    if (exact) ntFlash(m);
-    else {
-      const unshown = !m && ts(t).msgs.some(e => e.ts === at && cleanRestart(e));   // stored but never drawn (a restart with nothing cut off): not a missing message
-      if (n.at && !quiet) toast(m ? TX("conv.nt.nearby") : unshown ? TX("conv.nt.unshown") : TX("conv.nt.no_msg"));
-      return m ? "near-message" : "no-message";   // what a tap on a push reports to the gateway (23-installable-app-web.js pushTapReport)
-    }
-  } catch {}
-}
-// The conversation behind a sheet (a decision, an [ask], a failure): the same jump, without one for a question that has no conversation (a login request) or lives on another computer.
-const ntUnder = n => { if (!n.pc && !n.decision?.to?.startsWith("auth:") && validTarget(n.src || n.open || "")) ntJump(n, true); };
-
 // A tapped push: open its notice, or its conversation at the message it is about (loaded first when the stream missed it).
 async function pushOpen(hash, at, nid) {
   const p = parseHash(hash), t = p.t || MAIN;
+  if (p.view === "settings" && nid) {
+    if (!ntById(nid)) await loadNotices();
+    const u = ntById(nid);
+    if (u) return noticeOpen(u);
+  }
   if (!at || p.view !== "chat") { go(p.view, p.t); return ""; }
   const find = () => (NT.loaded && ntById(nid)) || ntMsgFor(t, at);
   if (!find()) await loadNotices();   // a cold start, or a page that slept through it: the notice decides where this lands (a monitor's row, a failure's sheet)
   const n = find();
   if (!n && t === "alert") { go("notices"); return "no-notice"; }   // no notice behind it: the 알림 screen, not the record conversation
-  return noticeOpen(n || { kind: "message", tone: "", src: t, open: t, at });
+  return noticeOpen(n && noticeKindAction(n) === "message" ? { ...n, at } : n || { kind: "message", tone: "", src: t, open: t, at });
 }
 
 /* ---- one handler for every notice entry point ---- */
@@ -263,7 +156,8 @@ async function pushOpen(hash, at, nid) {
 function noticeKindAction(n, mons = NM.items) {
   if (ntIsDec(n) || ntTapDec(n)) return "sheet";
   if (n.tone === "ask") return "ask";
-  if (n.kind === "alert" && n.tone === "fail") return "detail";
+  if (n.kind === "alert" && (n.tone === "fail" || ntLoginOf(n))) return "detail";
+  if (ntIsSched(n)) return "schedule";
   if (String(n.src || n.open || "").startsWith("mail:")) return "message";   // a new mail is a watch-kind notice, but it has its own conversation
   if (n.kind === "result" || String(n.src || n.open || "").startsWith("lane:")) return "session";
   if (String(n.src || n.open || "").startsWith("settings:")) return "app";   // a monitor's or app's settings conversation: it lives in 모니터링, not in 채팅
@@ -275,7 +169,7 @@ function noticeKindAction(n, mons = NM.items) {
 async function noticeOpen(n, here = false) {
   if (!n) return;
   const a = noticeKindAction(n);
-  if (a === "detail" || a === "session" || a === "monitor" || a === "settings" || a === "app") ntRead(n);   // no chat view follows these, so nothing else would mark them seen
+  if (a === "detail" || a === "session" || a === "schedule" || a === "monitor" || a === "settings" || a === "app") ntRead(n);   // no chat view follows these, so nothing else would mark them seen
   switch (a) {
     case "sheet": {
       const d = ntTapDec(n) || n;
@@ -290,24 +184,45 @@ async function noticeOpen(n, here = false) {
       if (!here) ntUnder(n);
       return ntDetailOpen(n);
     case "session": return ntJump(n);
+    case "schedule": return ntJump(n);
     case "monitor": return monOpen(n);
     case "app": return ntJump(n);   // a monitor's or app's settings conversation opens inside 모니터링 (go)
-    case "settings": return void go("settings");
+    case "settings": return void go("update");
     default: return ntJump(n);
   }
 }
 // `quiet`: a page load, not a tap, asked (?n=): a stale link just stays on the route it loaded. `hash`, `at`: where its push pointed, the landing when the notice is gone.
-async function noticeOpenId(id, quiet, hash, at) {
+async function noticeOpenId(id, quiet, hash, at, nid = "") {
   let n = ntById(id);
   if (!n) { await loadNotices(); n = ntById(id); }
-  if (!n && at) return pushOpen(hash, at, "");
+  if (!n && at) return pushOpen(hash, at, nid);
   if (!n) { if (!quiet) toast(TX("conv.nt.handled")); return "notice-gone"; }
   return noticeOpen(n);
 }
 function ntRead(n) {
-  if (!n.id || n.read || ntNeeds(n) || !ntById(n.id)) return;
-  n.read = true; NT.unread = Math.max(0, NT.unread - 1); ntPaint(); homeSoon();
+  if (!n.id || n.read || ntNeeds(n) || ntLaterTwin(n) || !ntById(n.id)) return;
+  n.read = true; ntReadDown(1); ntPaint(); homeSoon();
   ntMarkRead({ ids: [n.id] });
+}
+// The unread count: k read here before the hub answers, k put back when that read failed, the hub's own count when its answer carries one.
+const ntReadDown = k => { NT.unread = Math.max(0, NT.unread - k); };
+const ntReadUndo = k => { NT.unread += k; };
+const ntUnreadSet = unread => { if (typeof unread === "number") NT.unread = unread; };
+// The home snapshot's notices (13-snapshot.js), until the list itself arrives.
+const ntSeed = (items, unread) => { NT.items = items; NT.unread = unread; };
+function ntRemove(id, unread) {
+  NT.items = NT.items.filter(x => String(x.id) !== String(id));
+  ntUnreadSet(unread);
+}
+// Dismissed here: its alert message stays out (gone) and a list already on its way is read again (mut).
+function ntDismissed(n, unread) {
+  ntRemove(n.id, unread);
+  NT.mut++;
+  if (n.at) NT.gone.add(n.at);
+}
+function ntUndismissed(n) {
+  NT.mut++;
+  if (n.at) NT.gone.delete(n.at);
 }
 // The stored notice of a message (its decision first), by conversation and event time; a 작업내역 line of a session is stored under the session, so time alone is the fallback.
 const ntMsgFor = (src, at) => NT.items.find(x => ntIsDec(x) && x.decision.to === src && x.decision.reply_to === at)
@@ -330,9 +245,9 @@ async function monOpen(n) {
   await Promise.all([NM.loaded || loadMonitors(), INTG.loaded || loadIntegrations()]);
   if (seq !== ntJumpSeq) return;
   const key = monKeyOf(n);
-  MON.want = String(n.id || ""); MON.filter = "all"; MON.sig = "";
+  monWant(String(n.id || ""), true);
   go("monitoring", key);
-  MON.want = "";
+  monWant("");
   const it = monItems().find(i => i.key === key);
   if (it && kkItem(it)) { if (n.item && n.item.app === "kakao") kkOpen(n.item.id); return; }
   if (it && cmAppOf(key)) return;
@@ -340,7 +255,7 @@ async function monOpen(n) {
   if (!row) { toast(TX("conv.nt.no_news")); return; }
   row.scrollIntoView({ block: "center" });
   ntFlash(row);
-  MON.hl = String(n.id); MON.hlUntil = Date.now() + 2300;
+  monLit(String(n.id), 2300);
 }
 // A message tapped in the 알림 / 작업내역 conversations opens like its notice does (capture phase: the choice rows inside it do not answer in place there).
 // A file row (.fatt, a plain element so its name can be selected: 15-attachments.js fileChipRow) keeps its own job: it opens the file.
@@ -368,7 +283,7 @@ function ntAlertMarks() {
     if (NT.gone.has(row.dataset.ts)) { row.hidden = true; continue; }
   }
 }
-new MutationObserver(ntAlertMarks).observe(tl, { childList: true });
+new MutationObserver(() => { ntAlertMarks(); askNotes(); }).observe(tl, { childList: true });
 
 /* ---- decision sheet: the docked decision card (10-decision-card.js) over the current screen ---- */
 // Same card and same answer path as the one above the composer, for the conversation the notice came from; no navigation, no scroll.
@@ -382,12 +297,13 @@ function dkPaint() {
   let dc = DK.dc;
   if (DK.nid) {   // a draft sheet follows its own notice, whose draft (받는이·참조) may have changed since it opened
     const n = ntById(DK.nid), rv = n ? ntRevising(n) : null;
+    if (n && ntOpenDec(n) && n.decision.draft && RA.items.has(n.decision.draft.ref) && !DC.st[dc.key] && !DC.edit[dc.key]) { dkClose(false); ntDraftSheet(n); return; }   // the queue came to hold this draft after the sheet opened (its first read was on the way): its one card takes the sheet's place, unless he is answering here
     if (n && n.decision?.draft) { DK.dc = { ...DK.dc, draft: n.decision.draft }; dc = DK.dc; }
     if (rv) {   // 고치기 was answered: the sheet keeps the old draft with 고치는 중… until the new one lands, then shows that one
       const nx = ntSuccessor(n);
       if (nx && ntOpenDec(nx)) { ntDraftSheet(nx); return; }
       if (nx) { dkClose(false); return; }
-      if (!DC.picks[dc.key]) { DC.picks[dc.key] = [rv]; DC.st[dc.key] = "sent"; delete DC.edit[dc.key]; }
+      if (!DC.picks[dc.key]) dcMarkSent(dc.key, rv);
     } else if (DC.st[dc.key] !== "undo" && DC.st[dc.key] !== "sending" && (!n || !ntOpenDec(n))) { const answered = !!n && ntIsDec(n) && !ntIgnoredDec(n); dkClose(false); if (answered) dkNext(n); return; }
   } else {
     dc = decisionOf(DK.dc.t);
@@ -397,7 +313,7 @@ function dkPaint() {
   const picks = DC.picks[dc.key] || [], step = DC.step[dc.key] ?? Math.max(0, dc.blocks.findIndex((_, i) => !picks[i]));
   const sig = dcSig(dc, picks, step);
   if (DK.box.dataset.sig !== sig) { DK.box.dataset.key = dc.key; renderDecision(DK.box, DK.dc, picks, step); DK.box.dataset.sig = sig; }
-  if (DC.st[dc.key] === "sent" && !DK.timer && !(dc.draft && dcStText(dc, "sent") === TX("decision.pending.edit"))) DK.timer = setTimeout(() => { dkClose(false); toast(TX("conv.nt.sent")); }, 900);
+  if (DC.st[dc.key] === "sent" && !DK.timer && !(dc.draft && dcStText(dc, "sent") === TX("decision.pending.revise"))) DK.timer = setTimeout(() => { dkClose(false); toast(TX("conv.nt.sent")); }, 900);
 }
 // Several cards in one conversation are answered one after another (2026-10-31: "차례로 보여줘야지", "마지막 카드 어디?"): once a draft card
 // is answered, the next open draft card of the same conversation opens in its place, at once when it is already there, else when it
@@ -444,9 +360,9 @@ async function ntAskSheet(n) {
 }
 // A draft waiting for send approval (hub/draft-approval.ts): the same sheet, built from the notice itself, with the draft above the three choices.
 function ntDraftSheet(n) {
-  // Many waiting cards of this one's kind: it opens in 빠른 처리 (30-triage.js), unless a row asked for its 고치기 field.
-  const tg = n.decision.draft && n.decision.draft.ref && !DC.edit[`dk:${n.id}`] ? trGroupFor(n.decision.draft.ref) : null;
-  if (tg) { trOpen(tg.key, n.decision.draft.ref); return; }
+  // The one queue holds this draft: its one card opens as the sheet (30-replies.js rqSheetOpen).
+  const qi = n.decision.draft && !n.pc ? RA.items.get(n.decision.draft.ref) : null;
+  if (qi) { rqSheetOpen(rqItemRow(qi)); return; }
   const d = n.decision;
   dkOpen({ key: `dk:${n.id}`, t: d.to, sig: `dk:${n.id}`, at: d.reply_to || n.at || "", question: "", blocks: [{ title: n.title, options: d.options }], left: draftProgress(n.text) }, d.draft, String(n.id), n);
 }
@@ -461,7 +377,10 @@ function ntLaneNote(n) {
 // shown on 홈 and cannot be dismissed; tapping it opens a sheet with the whole text and one button per option. A
 // button posts /api/notices/:id/answer: the hub sends the answer to the chat, session or login request the question came from.
 const ntIsDec = n => n.kind === "decision" && !!n.decision;
-const ntOpenDec = n => ntIsDec(n) && n.decision.state === "open";
+const ntOpenDec = n => ntIsDec(n) && n.decision.state === "open" && !ntLater(n);
+const ntLater = n => ntIsDec(n) && n.decision.state === "open" && Date.parse(n.decision.later_until) > Date.now();
+const ntLaterTwin = n => ntLater(n) || (n.tone === "ask" && !!n.at && NT.items.some(d => ntLater(d) && d.decision.to === (n.src || n.open) && d.decision.reply_to === n.at));
+const ntLaterAt = (t, at) => !!at && NT.items.some(d => ntLater(d) && d.decision.to === t && d.decision.reply_to === at);
 // A draft whose 고치기 was answered: its 고치기 option, until the new draft of the same conversation arrives (the successor).
 const ntRevising = n => {
   if (!ntIsDec(n) || !n.decision.draft || n.decision.state !== "answered") return null;
@@ -471,7 +390,7 @@ const ntRevising = n => {
 const ntSuccessor = n => (n.pc ? (((PQ.list.find(p => p && p.url === n.pc.url) || {}).items || {}).notices || []) : NT.items).find(x => x.id !== n.id && ntIsDec(x) && x.decision.draft && x.decision.to === n.decision.to && String(x.ts) > String(n.ts)) || null;
 // Waits on the owner's action: an open decision or an [ask] item (the alert / message twin of one), unread and not ignored. Same rule as
 // hub/notices.ts needsAnswer, which keeps these unread however they are viewed: only an answer, a resolving signal or the x (무시) clears them.
-const ntNeeds = n => !n.read && !n.ignored && !n.dismissed && (ntOpenDec(n) || n.tone === "ask");
+const ntNeeds = n => !n.read && !n.ignored && !n.dismissed && !ntLaterTwin(n) && (ntOpenDec(n) || n.tone === "ask");
 const ntIgnoredDec = n => ntIsDec(n) && n.decision.state === "ignored";
 // The open decision a notice carries or is the twin of: itself, or the one asked in the same conversation at the same time (the [ask] alert twin the hub
 // stores beside it). Rows and counts use this to show a question once.
@@ -498,7 +417,7 @@ const ntDecWhere = (d, pc) => d.to.startsWith("auth:") ? TX("conv.nt.login_req")
 // What a question is about: the project of the session that asks, then the session (or the place it was asked).
 function ntDecCtx(n) {
   const d = n.decision, l = !n.pc && d.to.startsWith("lane:") && S && S.lanes.find(x => `lane:${x.name}` === d.to), proj = l ? laneProject(l) : "";
-  return [proj, ntDecWhere(d, n.pc)].filter(Boolean).join(" · ");
+  return [proj, d.to.startsWith("schedule:") ? pcTargetName(ntWhere(n), n.pc) : ntDecWhere(d, n.pc)].filter(Boolean).join(" · ");
 }
 function ntApply(item, unread) {
   if (item) { const i = NT.items.findIndex(x => x.id === item.id); if (i >= 0) NT.items[i] = item; else NT.items.push(item); }
@@ -512,17 +431,17 @@ function ntApply(item, unread) {
 // Throws with the hub's reason when the answer could not be delivered.
 // `files` (uploads, 10-decision-card.js uploadFile) go with a draft's 직접 수정 answer to the bot; a peer's question takes none.
 // `label` is the button text the owner saw for `num` (default: the option of that number on the card as shown); the hub refuses it when the card's options changed since,
-// and the list is read again so the new options show (the error is thrown to the caller's toast like any other).
+// and the list is read again so the new options show (the error is thrown to the caller's toast like any other). `hash`: the draft version this card shows; a send of another (or of none) is refused `changed` and the list read again.
 const NT_STALE = "카드 선택지가 바뀌었어요. 다시 확인하고 골라 주세요";
 async function ntPost(n, num, note, files, label) {
-  const seen = label || ((n.decision && n.decision.options || []).find(o => o.n === num) || {}).label;
+  const seen = label || ((n.decision && n.decision.options || []).find(o => o.n === num) || {}).label, hash = n.decision && n.decision.hash ? { hash: n.decision.hash } : {};
   try {
-    if (n.pc) { await pqNotice(n, "answer", { id: String(n.id), n: num, ...(seen ? { label: seen } : {}), ...(note ? { note } : {}) }); return; }   // a peer's question: answered on that computer (34-peer-monitoring.js)
-    const r = await api(`/api/notices/${enc(n.id)}/answer`, "POST", { n: num, ...(seen ? { label: seen } : {}), ...(note ? { note } : {}), ...(files && files.length ? { files } : {}) });
+    if (n.pc) { await pqNotice(n, "answer", { id: String(n.id), n: num, ...(seen ? { label: seen } : {}), ...(note ? { note } : {}), ...hash }); return; }   // a peer's question: answered on that computer (34-peer-monitoring.js)
+    const r = await api(`/api/notices/${enc(n.id)}/answer`, "POST", { n: num, ...(seen ? { label: seen } : {}), ...(note ? { note } : {}), ...(files && files.length ? { files } : {}), ...hash });
     ntApply(r.item, r.unread);
     return r.send;   // set while the gateway holds the send for its cancel window (hub/approval-send.ts)
   } catch (e) {
-    if (e && e.message === NT_STALE) await loadNotices();
+    if (e && (e.message === NT_STALE || (e.data && e.data.code === "changed"))) await loadNotices();
     throw e;
   }
 }
@@ -533,7 +452,7 @@ function ntFor(t, at, opt) {
 
 // The x (무시) on a question that waits: off the badge and 답변 필요, kept in the history as 무시함, nothing is sent to the bot. The toast undoes it.
 async function ntIgnore(n, btn) {
-  if (!n || !n.id || !ntNeeds(n)) return;
+  if (!n || !n.id || !(ntNeeds(n) || ntLater(n))) return;
   const id = String(n.id), undo = pressWait(btn);
   try {
     if (n.pc) await pqNotice(n, "notice", { op: "ignore", id });
@@ -597,7 +516,8 @@ function ntHomeRow(n, label = TX("common.needs_reply")) {
 }
 
 /* ---- detail sheet ---- */
-const NS = { id: "", det: null, h: null, node: null, busy: false, edit: null, pn: null, stash: new Map() };   // pn: a peer's notice (it is not in NT; drawn from the snapshot, 34-peer-monitoring.js)   // edit: { id, opt, text, fresh } while the owner writes the detail an option asks for   // det: a notice shown read-only (a failure alert), not looked up by id
+const NS = { id: "", det: null, h: null, node: null, busy: false, edit: null, pn: null, stash: new Map() };
+for (const [id, e] of kept("nt-edit", () => [...NS.stash, ...(NS.edit ? [[NS.edit.id, NS.edit]] : [])]) || []) NS.stash.set(id, { ...e, fresh: true });   // a reason being typed outlives a reload: its sheet opens on it (01-core.js kept)   // pn: a peer's notice (it is not in NT; drawn from the snapshot, 34-peer-monitoring.js)   // edit: { id, opt, text, fresh } while the owner writes the detail an option asks for   // det: a notice shown read-only (a failure alert), not looked up by id
 function ntSheetClose(restore = true) { if (NS.h) NS.h.close(restore); }
 // "직접 답하기": to the asking message in its chat (a login request: its own form), where the composer quotes that message as the answer to this question:
 // what the owner writes next carries the question's id and settles it (hub/notices-store.ts ownerReplied). A send approval stays a plain jump.
@@ -607,7 +527,7 @@ async function ntDirect(n) {
   if (!d.draft && d.state === "open" && !d.to.startsWith("auth:") && !convTakesText(ntWhere(n))) return ntOwnWords(n);   // a peer's question too: it is answered on its computer with the same call
   ntSheetClose(false);
   if (n.pc) { const t = n.decision.to; if (pqPc(t)) go("monitoring", `c:${t}`); else toast(TX("conv.nt.answer_on", { name: n.pc.name })); return; }   // a peer's question: its conversation as this page shows it
-  if (n.decision.to.startsWith("auth:")) { AUTH_HID.clear(); paintAuth(true); const f = document.querySelector(".au input"); if (f) { f.scrollIntoView({ block: "center" }); f.focus(); } else toast(TX("conv.nt.input_closed")); return; }
+  if (n.decision.to.startsWith("auth:")) { authUnhide(); const f = document.querySelector(".au input"); if (f) { f.scrollIntoView({ block: "center" }); f.focus(); } else toast(TX("conv.nt.input_closed")); return; }
   if (await ntJump(n) !== undefined || n.decision.draft || n.decision.state !== "open") return;
   if (!convTakesText(target)) return ntOwnWords(n);   // its message turned out to live in such a conversation
   const m = ntFind(n.at);
@@ -629,7 +549,7 @@ async function ntAnswer(n, opt, note) {
   NS.busy = true; ntSheetPaint();
   let sent = false;
   try { await ntPost(n, opt ? opt.n : undefined, note, undefined, opt ? opt.label : ""); NS.edit = null; sent = true; }
-  catch (err) { toast(err.message, true); }
+  catch (err) { if (!dcGoneFail(n, err, opt, note)) toast(err.message, true); }
   NS.busy = false;
   if (sent && NS.id === String(n.id) && ntAfterAnswer(n)) return;
   ntSheetPaint();
@@ -665,9 +585,9 @@ function ntAfterAnswer(n) {
 }
 function ntEditNode(n, ed) {
   const own = !ed.opt, drf = !own && !!n.decision.draft, dt = drf ? draftNoteText(ed.opt) : null;
-  const ta = el("textarea", { class: "dc-note", rows: "3", maxlength: own ? "1000" : "500", placeholder: own ? TX("conv.nt.own_ph") : drf ? dt.hint : TX("decision.note.reason_ph"), "aria-label": own ? TX("conv.nt.direct") : drf ? dt.aria : TX("decision.note.details"), disabled: NS.busy, oninput: () => { ed.text = ta.value; go.disabled = !ta.value.trim(); } });
+  const ta = el("textarea", { class: "dc-note", rows: "3", maxlength: own ? "1000" : "500", placeholder: own ? TX("conv.nt.own_ph") : drf ? dt.hint : TX("decision.note.reason_ph"), "aria-label": own ? TX("conv.nt.direct") : drf ? dt.aria : TX("decision.note.details"), disabled: NS.busy, oninput: () => { ed.text = ta.value; go.disabled = !ta.value.trim(); }, "data-esc": "field", onkeydown: noteKeys(() => go.click(), () => back.click()) });
   ta.value = ed.text;
-  const go = el("button", { class: "dc-go", type: "button", "data-k": "send", disabled: NS.busy || !ta.value.trim(), onclick: () => { const note = ta.value.trim(); if (note) ntAnswer(n, ed.opt, note); } }, own ? TX("conv.nt.own_go") : noteGoLabel(ed.opt, drf, false));
+  const go = el("button", { class: "dc-go", type: "button", "data-k": "send", disabled: NS.busy || !ta.value.trim(), onclick: () => { const note = ta.value.trim(); if (note) ntAnswer(n, ed.opt, note); } }, own ? TX("conv.nt.own_go") : noteGoLabel(ed.opt, drf));
   const back = el("button", { class: "dc-back", type: "button", "data-k": "back", disabled: NS.busy, onclick: () => { NS.edit = null; ntSheetPaint(); } }, TX("decision.back"));
   return el("div", { class: "dc-edit" }, own ? null : el("div", { class: "dc-ctx" }, el("span", { class: "dc-key", text: String(ed.opt.n) }), el("span", { class: "dc-lb", text: drf ? dt.ask : ed.opt.label })), ta, el("div", { class: "dc-eb" }, back, go));
 }
@@ -703,6 +623,13 @@ function ntDetailOpen(n) {
   ntSheetClose(false);
   ntSheetShow(String(n.id || ""), n);
 }
+const ntLoginOf = n => (n && !n.pc && n.kind === "alert" && n.waits === "login" && n.login) || "";
+async function ntLoginOpen(id) {
+  let data;
+  try { data = await loadProviderData(); } catch (e) { toast(e.message, true); return; }
+  const p = data.providers.find(x => x.id === id);
+  if (p && p.can_login) startLogin(p); else go("accounts", id);
+}
 function ntDetailPaint(n) {
   clear(NS.h.box).append(
     fsHead([el("span", { class: "fs-ey err", text: TX("conv.nt.problem") })], { close: () => ntSheetClose() }),
@@ -711,8 +638,35 @@ function ntDetailPaint(n) {
       el("div", { class: "ds-m", text: ntWhen(n) }),
       ...ntBody(n)),
     el("div", { class: "fs-ft" },
+      ntLoginOf(n) ? el("button", { type: "button", class: "ds-opt rec", "data-k": "login", onclick: () => { ntSheetClose(false); ntLoginOpen(ntLoginOf(n)); }, text: TX("conv.nt.login_open") }) : null,
       el("button", { type: "button", class: "ds-direct", "data-k": "go", onclick: () => { ntSheetClose(false); ntJump(n); }, text: TX("conv.nt.see_in_chat") }),
       el("button", { type: "button", class: "ds-opt rec c", "data-k": "close", onclick: () => ntSheetClose(), text: TX("common.close") })));
+}
+const NT_HEAD_SENTENCES = 3, NT_FOLD_REST = 160, ntMoreOpen = new Set();
+function ntFold(text) {
+  let seen = 0, last = 0, fenced = false;
+  for (const m of text.matchAll(/```|[.!?。？！](?=\s|$)|\n[ \t]*\n/g)) {
+    const end = m.index + m[0].length, item = m[0].length === 1 && /(?:^|\n)[ \t]*\d{1,2}$/.test(text.slice(0, m.index));
+    if (m[0] === "```") { fenced = !fenced; continue; }
+    if (fenced || item) continue;
+    const empty = !text.slice(last, m.index).trim();
+    last = end;
+    if (empty || ++seen < NT_HEAD_SENTENCES) continue;
+    const cut = m[0].length === 1 ? end : m.index, rest = text.slice(cut).trim();
+    return rest.length >= NT_FOLD_REST ? { head: text.slice(0, cut).trim(), rest } : { head: text, rest: "" };
+  }
+  return { head: text, rest: "" };
+}
+function ntOverflow(box) {
+  const body = $(".fs-body", box), hint = $(".ds-hint", box);
+  if (!body || !hint) return;
+  const sync = () => { const below = body.scrollHeight - body.scrollTop - body.clientHeight > 4; body.classList.toggle("ov", below); hint.hidden = !below; };
+  const watch = new ResizeObserver(sync);
+  hint.onclick = () => body.scrollBy({ top: body.clientHeight * 0.8, behavior: "smooth" });
+  body.addEventListener("scroll", sync, { passive: true });
+  watch.observe(body);
+  for (const c of body.children) watch.observe(c);
+  sync();
 }
 function ntSheetPaint() {
   if (!NS.node) return;
@@ -720,27 +674,31 @@ function ntSheetPaint() {
   const n = NS.pn ? pqNoticeNow(NS.pn) : ntById(NS.id);
   if (!n || !ntIsDec(n)) { ntSheetClose(false); return; }
   const d = n.decision, open = d.state === "open", ignd = d.state === "ignored", parts = ntParts(n), sibs = ntSibs(n), keep = NS.node.contains(document.activeElement) ? document.activeElement.dataset.k : "";
+  const fold = d.draft ? { head: parts.rest, rest: "" } : ntFold(d.options.length ? choiceBody(parts.rest, ntPlain(n.title)) : parts.rest);
   const kids = [
     fsHead([el("span", { class: `fs-ey ${open ? "warn" : ignd ? "ign" : "done"}`, text: `${ntDecCtx(n)} · ${open ? TX("common.needs_reply") : ignd ? TX("mon.dr.st.ignored") : d.expired ? TX("misc.nsc.d_expired") : d.resolved ? TX("conv.nt.resolved") : TX("conv.nt.answered")}` }, sibs.length ? el("span", { class: "fs-left", "data-k": "count", text: ` · ${sibs.findIndex(x => x.id === n.id) + 1}/${d.group}` }) : null)],
       { ignore: open ? () => ntIgnore(n) : null, ignoreOff: NS.busy, close: () => ntSheetClose() }),
     el("div", { class: "fs-body" },
       el("h2", { class: "ds-t", id: "ds-t", text: parts.title || TX("decision.needs_reply") }),
-      el("div", { class: "ds-m", text: ntWhen(n) }),
-      // The buttons show the options; a "결정:" line that only repeats the title goes too.
-      ...ntBody(n, d.options.length && !d.draft ? choiceBody(parts.rest, ntPlain(n.title)) : parts.rest))];
+      el("div", { class: "ds-m", text: [ntWhen(n), open ? askLeft(n) : ""].filter(Boolean).join(" · ") }),
+      ...ntBody(n, fold.head),
+      fold.rest ? el("details", { class: "ds-more", open: ntMoreOpen.has(String(n.id)), ontoggle: ev => { if (ev.currentTarget.open) ntMoreOpen.add(String(n.id)); else ntMoreOpen.delete(String(n.id)); } }, el("summary", { text: TX("conv.nt.more") }), ...ntBody(n, fold.rest)) : null),
+    el("button", { type: "button", class: "ds-hint", hidden: true }, TX("conv.nt.more_below"))];
   const foot = el("div", { class: "fs-ft" }), ed = open && NS.edit && NS.edit.id === String(n.id) ? NS.edit : null;
   // Every notice event repaints the open sheet; one that changes nothing it shows leaves it alone, so the reason field being typed in is not
   // replaced (a new field takes the focus and a phone closes and reopens its keyboard).
-  const sig = JSON.stringify([n.title, n.text, d, ntWhen(n), NS.busy, ed ? (ed.opt ? ed.opt.n : -1) : 0, sibs.map(x => [x.id, x.decision.state])]);
+  const sig = JSON.stringify([n.title, n.text, d, ntWhen(n), NS.busy, ed ? (ed.opt ? ed.opt.n : -1) : 0, sibs.map(x => [x.id, x.decision.state]), DCG.get(String(n.id)) || 0, ASK.later === String(n.id), ASK.busy === String(n.id), askLeft(n)]);
   if (NS.h.box.dataset.sig === sig) return;
   NS.h.box.dataset.sig = sig;
   const hadNote = !!NS.node.querySelector(".dc-note:focus");
+  if (open) foot.append(...dcGoneNodes(n));
   if (ed) foot.append(ntEditNode(n, ed));
   else if (open) {
     for (const o of d.options) foot.append(el("button", { type: "button", class: "ds-opt", "data-k": `o${o.n}`, disabled: NS.busy, onclick: () => ntAnswer(n, o) },
-      el("span", { class: "ds-lb" }, o.label),
+      el("span", { class: "ds-lb" }, el("span", { class: "dc-key", text: String(o.n) }), o.label),
       o.desc ? el("span", { class: "ds-ds", text: o.desc }) : null));
-    foot.append(el("button", { type: "button", class: "ds-direct", "data-k": "direct", disabled: NS.busy, onclick: () => ntDirect(n), text: d.to.startsWith("auth:") ? TX("conv.nt.go_input") : TX("conv.nt.direct") }));
+    if (askFixed(n)) foot.append(...askLines(n).map(t => el("div", { class: "ds-st", role: "status", text: t })), askBtns(n, "ds"));
+    else foot.append(el("button", { type: "button", class: "ds-direct", "data-k": "direct", disabled: NS.busy, onclick: () => ntDirect(n), text: d.to.startsWith("auth:") ? TX("conv.nt.go_input") : TX("conv.nt.direct") }));
     const nx = ntNextOpen(n);
     if (nx) foot.append(el("button", { type: "button", class: "ds-direct", "data-k": "next", disabled: NS.busy, onclick: () => ntSheetGo(nx.id), text: TX("conv.nt.next_q") }));
     if (NS.busy) foot.append(el("div", { class: "ds-st", role: "status", text: TX("decision.pending.send") }));
@@ -750,7 +708,9 @@ function ntSheetPaint() {
     if (!d.to.startsWith("auth:")) foot.append(el("button", { type: "button", class: "ds-direct", "data-k": "go", onclick: () => { ntSheetClose(false); ntJump(n); }, text: TX("conv.nt.see_in_chat") }));
     foot.append(el("button", { type: "button", class: "ds-opt rec c", "data-k": "close", onclick: () => ntSheetClose(), text: TX("common.close") }));
   } else {
-    foot.append(el("div", { class: "ds-res", role: "status" }, el("span", { class: "ds-rl", text: d.expired ? TX("misc.nsc.d_expired") : d.resolved ? TX("misc.nsc.d_closed") : TX("conv.nt.you_answered") }), el("span", { class: "ds-ra", text: d.expired ? TX("conv.nt.closed_late") : d.resolved ? TX("conv.nt.closed_done") : ntPlain(d.answer || "") || TX("misc.nsc.d_answered") })));
+    const cl = askClosed(d), ra = cl ? cl.ra : d.expired ? TX("conv.nt.closed_late") : d.resolved ? TX("conv.nt.closed_done") : ntPlain(d.answer || "") || TX("misc.nsc.d_answered");
+    foot.append(el("div", { class: "ds-res", role: "status" }, el("span", { class: "ds-rl", text: cl ? cl.lb : d.expired ? TX("misc.nsc.d_expired") : d.resolved ? TX("misc.nsc.d_closed") : TX("conv.nt.you_answered") }), ra ? el("span", { class: "ds-ra", text: ra }) : null));
+    if (cl && cl.again) foot.append(el("button", { type: "button", class: "ds-direct", "data-k": "again", onclick: async () => { await dcReopen(n); ntSheetPaint(); }, text: TX("decision.closed.again") }));
     if (!d.to.startsWith("auth:")) foot.append(el("button", { type: "button", class: "ds-direct", "data-k": "go", onclick: () => { ntSheetClose(false); ntJump(n); }, text: TX("conv.nt.see_in_chat") }));
     foot.append(el("button", { type: "button", class: "ds-opt rec c", "data-k": "close", onclick: () => ntSheetClose(), text: TX("common.close") }));
   }
@@ -758,6 +718,7 @@ function ntSheetPaint() {
   const box = NS.h.box, top = $(".fs-body", box) ? $(".fs-body", box).scrollTop : 0;
   if (!paintKeep(box, kids, ntSheetPaint)) return;
   $(".fs-body", box).scrollTop = top;
+  ntOverflow(box);
   const again = keep ? box.querySelector(`[data-k="${keep}"]`) : null;
   if (again) again.focus({ preventScroll: true });
   const ta = ed ? box.querySelector(".dc-note") : null;
@@ -775,22 +736,18 @@ async function noticeSheetOpen(id) {
   ntSheetShow(String(n.id), null, pn);
 }
 function ntSheetShow(id, det, pn = null) {
-  NS.id = id; NS.det = det; NS.pn = pn; NS.busy = false;
+  ntMoreOpen.clear();
+  NS.id = id; NS.det = det; NS.pn = pn; NS.busy = false; NS.edit = NS.stash.get(id) || null; NS.stash.delete(id);
   const h = fsOpen({ labelledby: "ds-t", onClose: () => { if (NS.h === h) { NS.h = NS.node = null; NS.id = ""; NS.det = null; NS.edit = null; NS.pn = null; NS.stash.clear(); } } });
   NS.h = h; NS.node = h.node;
   ntSheetPaint();   // fsOpen already put the focus on the sheet itself: no option shows a ring until the keyboard moves to it
 }
 
-// A tapped notification (or an option button on it) asks an open window to show the decision; a cold start carries it as ?n=<id>.
-if ("serviceWorker" in navigator) navigator.serviceWorker.addEventListener("message", ev => { const d = ev.data || {}; if (d.notice) { pushTapGot(ev); ovCloseAll(); noticeOpenId(d.notice, false, new URL(d.open, location.href).hash, d.ts).then(r => pushTapReport(d.tap, r), () => pushTapReport(d.tap, "error")); } });
-{
-  const want = PUSH_FOLLOW ? "" : new URLSearchParams(location.search).get("n") || "";   // a relayed notice's ?n names an item on the other computer (prFollow)
-  if (want) {
-    const u = new URL(location.href);
-    u.searchParams.delete("n");
-    history.replaceState(history.state, "", u.pathname + u.search + u.hash);
-    setTimeout(() => pushTapCold(noticeOpenId(want, true, PUSH_HASH, pushDecisionAt)), 500);
-  }
+if (PUSH_ADDR.dec && !PUSH_FOLLOW) {
+  const u = new URL(location.href);
+  u.searchParams.delete("n");
+  history.replaceState(history.state, "", u.pathname + u.search + u.hash);
+  setTimeout(() => pushLand(PUSH_ADDR, { cold: true }), 500);
 }
 
 ntPaint();

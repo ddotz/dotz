@@ -58,11 +58,11 @@ export const SUB_COMPACT_STOP = 2;
 
 export const GUARD_DEFAULTS: GuardConfig = {
 	enabled: true,
-	max_brief_chars: 8000,
+	max_brief_chars: 16000,
 	max_fence_lines: 40,
 	max_output_chars: 2000,
 	worker_answer_chars: 800,
-	worker_context_tokens: 300_000,
+	worker_context_tokens: 300_000, // the owner's value (2026-10-20, hub/lane-compact-at.test.ts); never below task_compact_tokens, or a worker stops before its context is even compacted
 	budget_gate: true,
 	budget_margin_percent: 10,
 	budget_default_estimate_percent: 15,
@@ -74,11 +74,11 @@ export const GUARD_DEFAULTS: GuardConfig = {
 	expensive_models: [],
 	defer_to_installed: true,
 	harness_tools: true,
-	task_token_cap: 12_000_000,
-	task_compact_tokens: 150_000,
+	task_token_cap: 24_000_000,
+	task_compact_tokens: 300_000, // the owner's lane and worker threshold (2026-10-20); was 150K for workers
 	task_cap_grow: true,
-	task_cap_step: 3_000_000,
-	task_cap_ceiling: 24_000_000,
+	task_cap_step: 6_000_000,
+	task_cap_ceiling: 48_000_000,
 };
 
 export const dataDir = () => process.env.DOTZ_DIR ?? join(homedir(), ".dotz");
@@ -242,3 +242,9 @@ export function blockedBy(command: string, rulesText: string): string | undefine
 // omp marks the session's own agent in ctx.agent (main / sub). OmO has no ctx.agent and runs task workers in its rpc host,
 // which does not load this extension, so there every session that loads it is the main one.
 export const isMain = (ctx: any) => (ctx?.agent ? ctx.agent.kind === "main" : process.env.DOTZ_RUNTIME === "omo");
+
+/** A task subagent: omp says so in ctx.agent (kind "sub"), OmO has no ctx.agent and marks the child process of a task worker with OMO_SENPI_TASK_DEPTH. */
+export const isSubagent = (ctx: unknown, env: Record<string, string | undefined> = process.env): boolean => {
+	const agent = (ctx as { agent?: { kind?: string } } | undefined)?.agent;
+	return agent ? agent.kind === "sub" : Boolean(env.OMO_SENPI_TASK_DEPTH);
+};

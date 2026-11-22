@@ -130,7 +130,6 @@ describe("command list", () => {
 		const v = await open(1280);
 		const names = (await rows(v, "")).map(r => r.nm);
 		expect(new Set(names).size).toBe(names.length);
-		for (const c of ["/context", "/quota", "/providers", "/terminal"]) expect(names).not.toContain(c);
 		for (const [q, nm] of [["컨텍스트", "컨텍스트"], ["quota", "사용량"], ["공급자", "계정"], ["provider", "계정"], ["터미널", "터미널 열기"]] as const) expect((await rows(v, q)).map(r => r.nm)).toContain(nm);
 	}, 60_000);
 

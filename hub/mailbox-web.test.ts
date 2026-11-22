@@ -143,12 +143,10 @@ describe("two accounts", () => {
 
 describe("moving", () => {
 	const pickBox = (v: View, name: string) => run(v, `[...document.querySelectorAll(".menu .mi")].find(b => b.querySelector(".ml").firstChild.textContent === ${JSON.stringify(name)}).click()`);
-	// 옮기기 is an item of the bar's ⋯ menu; picking it opens the boxes menu
+	// 옮기기 stands in the bar; pressing it opens the boxes menu
 	const moveSel = async (v: View) => {
-		await waitFor(v, `document.querySelector('#mbox-bar [data-k="mail-more"]')`);
-		await run(v, `document.querySelector('#mbox-bar [data-k="mail-more"]').click()`);
-		await waitFor(v, `document.querySelector(".menu .mi")`);
-		await pickBox(v, "메일함 옮기기");
+		await waitFor(v, `document.querySelector('#mbox-bar [data-k="mail-move"]')`);
+		await run(v, `document.querySelector('#mbox-bar [data-k="mail-move"]').click()`);
 		await waitFor(v, `document.querySelector(".menu")`);
 	};
 	const openMove = async (v: View, key: string) => { await run(v, `${rowJs(key)}.querySelector('[data-k="mail-move"]').click()`); await waitFor(v, `document.querySelector(".menu")`); };
@@ -209,6 +207,16 @@ describe("moving", () => {
 		await waitForPosts(1);
 		expect(posts[0].body.box).toBe("b-pay");
 		expect([...posts[0].body.keys].sort()).toEqual(["p-1", "p-2"]);
+		// the move went through: the choice clears
+		await waitFor(v, `!document.querySelector("#mon-tl .mr-chk:checked") && !document.querySelector("#mbox-bar.on")`);
+	}, 30_000);
+
+	test("at 360 the selection bar with 옮기기 keeps every action on one line inside the bar", async () => {
+		const v = await open(360);
+		await run(v, `${rowJs("p-1")}.querySelector(".mr-chk").click(); ${rowJs("p-2")}.querySelector(".mr-chk").click()`);
+		await waitFor(v, `document.querySelector('#mbox-bar [data-k="mail-move"]')`);
+		expect(await ev<boolean[]>(v, `(() => { const b = document.querySelector("#mbox-bar"), r = b.getBoundingClientRect(), kids = [...b.querySelectorAll(".mbox-b")].map(c => c.getBoundingClientRect());
+			return [b.scrollWidth <= b.clientWidth, kids.every(q => q.left >= r.left - 0.5 && q.right <= r.right + 0.5), new Set(kids.map(q => Math.round(q.top + q.height / 2))).size === 1]; })()`)).toEqual([true, true, true]);
 	}, 30_000);
 });
 

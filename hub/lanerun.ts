@@ -1,4 +1,4 @@
-import { type Lane, setStatus, dir, laneWorkerModel, ownerNotes, hooks, pendingFile } from "./lanestate.ts";
+import { type Lane, setStatus, dir, laneMode, laneWorkerModel, ownerNotes, hooks, pendingFile } from "./lanestate.ts";
 import { HARNESS_NAMES, runtimeFor } from "./runtime/index.ts";
 import { msg } from "./i18n.ts";
 import { HUB_TOKEN, log, chainAfter, compactAtFor, fallbackChain, parseSelector, lanesCompactAt, lanesKeepRecent } from "./config.ts";
@@ -6,7 +6,8 @@ import { isExpensive } from "./lanegates.ts";
 import { markSteers, steerContract, steerToken } from "./steer-mark.ts";
 import { hubChain, Chain, keyedWorker, Reverter, workerKeyEnv } from "./fallback.ts";
 import { pauseExhausted } from "./lanefailover.ts";
-import { statusActivity, endSubagents, runningSubagents } from "./activity.ts";
+import { statusActivity, endSubagents } from "./activity.ts";
+import { laneLive } from "./lanehold.ts";
 import { createStuckWatch, stuckLine, takeSnapshot } from "./stuck.ts";
 import { readEvents } from "./laneevents.ts";
 import { abandonCompact } from "./context.ts";
@@ -14,6 +15,7 @@ import { report, withHeld } from "./lanereport.ts";
 import { withWorktree } from "./lanetree.ts";
 import { prompt } from "./laneprompt.ts";
 import { writeContract } from "./lanefooter.ts";
+import { gateBootstrap, harnessGate } from "./done-gate.ts";
 import { existsSync, rmSync } from "node:fs";
 import { laneLimits } from "./lanelimits.ts";
 import { unfinishedWork } from "./laneunfinished.ts";
@@ -21,10 +23,8 @@ import { unfinishedWork } from "./laneunfinished.ts";
 export const RECOVERY_MAX = 3;
 export const RECOVERY_WINDOW_MS = 60 * 60_000;
 
-// One stuck-turn watch per lane (hub/stuck.ts): fed by the lane's events (laneevents.ts), it aborts a turn that shows no progress for
-// stuckTurnMs() and recovers the lane on the same session when the abort does not end the turn. Waiting on a subagent, a compaction or
-// an owner question is not a stall. The line goes to the lane's own channel only; past the hourly cap the orchestrator is told once.
 const watches = new WeakMap<Lane, ReturnType<typeof createStuckWatch>>();
+/** One stuck-turn watch per lane (hub/stuck.ts), fed by the lane's events (laneevents.ts): it aborts a turn that shows no progress for stuckTurnMs() and recovers the lane on the same session when the abort does not end the turn. A running subagent excuses a silent turn only while it sits in wait or task; a compaction and an owner question excuse it too. The line goes to the lane's own channel only; past the hourly cap the orchestrator is told once. */
 export function laneStuck(lane: Lane): ReturnType<typeof createStuckWatch> {
 	let w = watches.get(lane);
 	if (!w) {
@@ -32,8 +32,8 @@ export function laneStuck(lane: Lane): ReturnType<typeof createStuckWatch> {
 			key: `lane:${lane.name}`,
 			pid: () => lane.proc?.pid,
 			sessionFile: () => lane.sessionFile,
-			exempt: () => lane.status !== "working" || !lane.proc || runningSubagents(`lane:${lane.name}`) > 0 || lane.ctx.compaction.state === "queued" || lane.ctx.compaction.state === "compacting" || Boolean(lane.pendingAsk),
-			abort: () => lane.proc?.abort(),
+			exempt: () => lane.status !== "working" || !lane.proc || (laneLive(lane) > 0 && w!.waiting()) || lane.ctx.compaction.state === "queued" || lane.ctx.compaction.state === "compacting" || Boolean(lane.pendingAsk),
+			abort: () => lane.proc?.abort(lane.runtime === "omp"),
 			restart: why => recover(lane, `${why} (턴이 끝나지 않았어요)`, true, true),
 			stuck: minutes => hooks.notice(lane, `작업이 ${minutes}분 동안 멈춰 있어서 끊고 다시 이어가요.`),
 			capped: minutes => hooks.report(lane, `[lane stuck] 턴이 ${minutes}분 동안 멈춰 있어요. 한 시간 안에 ${RECOVERY_MAX}번 자동 복구했는데 또 멈춰서 더는 건드리지 않아요. 직접 확인해 주세요.`),
@@ -60,6 +60,7 @@ export const harnessName = (id: string) => HARNESS_NAMES[id] ?? id;
 // at once (gateway-ui, 2026-10-20 17:16), and a resumed foreign session would also lose its prompt cache. The owner is
 // offered a handover instead (handoverLane): the same lane in a fresh session on the current runtime.
 export class LaneRuntimeMismatch extends Error {
+	readonly code = "runtime_mismatch";
 	constructor(readonly lane: string, readonly from: string, readonly to: string) {
 		super(msg().laneRuntimeRefused(lane, harnessName(from), harnessName(to)));
 	}
@@ -124,6 +125,7 @@ export function spawn(lane: Lane, resume: boolean): boolean {
 	const keyedWorkers = keyedWorker(env);
 	const workerModel = keyedWorkers ?? laneWorkerModel(lane);
 	lane.workerSlots = laneLimits(lane).workers;
+	const gate = runtimeFor("lane").caps.doneGate && laneMode(lane) === "coding" ? harnessGate() : undefined;
 	let proc: ReturnType<ReturnType<typeof runtimeFor>["start"]>;
 	try {
 	// posix_spawn with a missing cwd reports ENOENT for the binary (`omo`), which hides the real cause.
@@ -139,6 +141,7 @@ export function spawn(lane: Lane, resume: boolean): boolean {
 		// A plain list cannot bill through a key: those entries are left out (on Claude Code one would repeat the main model).
 		fallback: lane.chain ? [] : entries.filter(e => !e.key_file).map(e => e.model),
 		hubSwitches: Boolean(lane.chain),
+		...(gate ? { doneGate: gate.extension } : {}),
 		resume: resume ? lane.sessionFile : undefined,
 		// The omp-side orchestrator-guard blocks Fable / max-effort worker spawns unless the owner asked for them.
 		env,
@@ -149,6 +152,9 @@ export function spawn(lane: Lane, resume: boolean): boolean {
 		startFailed(lane, (e as Error).message, resume);
 		return false;
 	}
+	// A fresh session, or one resumed right after a switch to coding mode, in a worktree without a gate file waits for the harness's bootstrap there before its first prompt (hub/done-gate.ts).
+	if (gate && (!resume || lane.bootstrapDue)) proc = gateBootstrap(proc, gate, lane);
+	lane.bootstrapDue = undefined;
 	lane.activeModel = spawnModel;
 	lane.contractQueued = undefined; // a new process holds no queued re-read
 	lane.startedModel = spawnModel;
@@ -219,6 +225,9 @@ export function resumeLane(lane: Lane, text: string): void {
 	log(`lane ${lane.name} resumed ${lane.sessionFile}`);
 }
 
+// The reason laneevents.ts recovers a failed compaction with: its revive text names the compaction, not a process that stopped responding.
+export const COMPACTION_FAILED = "컨텍스트 압축이 실패했어요";
+
 // Recovers a lane that cannot go on (a stuck turn that ignored its abort, or a failed compaction) by killing its process,
 // then resumes the same session: a turn that was running is told to continue, an idle lane just comes back idle.
 export function recover(lane: Lane, why: string, wasWorking: boolean, stuck = false): void {
@@ -246,7 +255,8 @@ export function recover(lane: Lane, why: string, wasWorking: boolean, stuck = fa
 	// A stuck recovery opens the revive text with the shape of the call the turn froze in, so it is not repeated.
 	const info = stuck ? laneStuck(lane).info() : undefined;
 	const lead = info ? `${stuckLine(info)}\n\n` : "";
-	lane.revive = { text: wasWorking ? lead + msg().laneStopped + (steered.length ? `\n\n${msg().laneSteered(steered)}` : "") : undefined };
+	const stopped = !stuck && why === COMPACTION_FAILED ? msg().laneCompactFailed : msg().laneStopped;
+	lane.revive = { text: wasWorking ? lead + stopped + (steered.length ? `\n\n${msg().laneSteered(steered)}` : "") : undefined };
 	const p = lane.proc;
 	// A stuck process leaves a diagnostic file first (hub/stuck.ts, a few seconds at most); the kill follows whatever happens to it.
 	if (stuck) void takeSnapshot(`lane:${lane.name}`, p.pid, lane.sessionFile).then(() => lane.proc === p && p.kill(true));

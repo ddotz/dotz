@@ -4,10 +4,12 @@
 // gate before pushing (hub/update-gate-run.ts). Not named *.test.ts, so a plain `bun test` does not run it twice.
 import { expect, test } from "bun:test";
 import { join } from "node:path";
-import { smoke } from "./update-smoke.ts";
+import { defaultDataDir } from "./live-guard.ts";
+import { smoke, smokeOmpModel, smokeRuntime } from "./update-smoke.ts";
 
 test("the gateway of this version starts and serves the app", async () => {
-	const r = await smoke(join(import.meta.dir, ".."));
+	const data = defaultDataDir();
+	const r = await smoke(join(import.meta.dir, ".."), { runtime: smokeRuntime(data), omp: Bun.which("omp") ?? undefined, ompModel: await smokeOmpModel(data) });
 	if (!r.ok) console.log(`update smoke check failed after ${r.ms} ms: ${r.why}\n${r.out}`);
 	else console.log(`update smoke check passed in ${r.ms} ms: ${r.checked.join(" ")}`);
 	expect(r.ok ? "" : r.why).toBe("");

@@ -7,7 +7,6 @@
 // mode is removing the child: the screen's own markup was never touched.
 // Function declarations, not arrows: 33-peers.js, 42-relay-chat.js and the render functions call these before a const of this file exists.
 const RV_POLL_MS = 30_000, RV_FRESH_MS = 10_000;
-const RV_SCREENS = { home: 1, projects: 1, monitoring: 1, settings: 1 };
 const RV = { by: {} };
 
 /** The relay target shown as THE computer right now: its chat on screen, or a snapshot screen opened from it. "" for this computer. */
@@ -26,11 +25,13 @@ async function rvLoad(t, quiet) {
   await c.flight;
   if (relayCur() === t) rvRefresh();
 }
+// How each relay screen (the SCREENS relay column, RELAY_VIEWS) draws itself again; hub/relay-views-web.test.ts keeps the keys equal to that column.
+const rvDraw = () => ({ home: renderHome, projects: renderProjects, monitoring: renderMonitoring, settings: renderSettings, chat: () => { convRepaint(); } });
 function rvRefresh() {
-  const draw = { home: renderHome, projects: renderProjects, monitoring: renderMonitoring, settings: renderSettings }[current];
+  const draw = rvDraw()[current];
   if (draw) draw();
 }
-const rvTick = () => { const t = relayCur(); if (t && !document.hidden && RV_SCREENS[current]) rvLoad(t, true); };
+const rvTick = () => { const t = relayCur(); if (t && !document.hidden && RELAY_VIEWS.has(current)) rvLoad(t, true); };
 setInterval(rvTick, RV_POLL_MS);
 document.addEventListener("visibilitychange", rvTick);
 
@@ -54,11 +55,26 @@ function rvPaint(name) {
   return true;
 }
 
+// The chat list (31-conversations.js convRows: the side list beside a chat, the 채팅 list on a phone) while that computer is chosen: its own chat first, then
+// its live sessions and its projects from its snapshot, each opening its read-only screen. Never this computer's conversations, not even before the snapshot is in.
+function rvConvRows(t) {
+  const c = RV.by[t] || (RV.by[t] = { snap: null, rcv: 0, at: 0, loaded: false, err: "", flight: null });
+  if (!c.flight && Date.now() - c.at > RV_FRESH_MS) rvLoad(t, true);
+  const who = targetName(t), show = view => () => relayShow(t, who, view);
+  const rows = [{ t, name: who, hint: RELAY.note[t] || "", open: () => relayOpenChat(t) }];
+  const s = c.snap;
+  if (!s) return [...rows, { split: true }, { empty: !c.loaded ? TX("relay.loading") : c.err ? TX("relay.failed") : TX("relay.conv_none", { name: who }) }];
+  const av = ic => el("span", { class: "cv-av", "aria-hidden": "true" }, icon(ic));
+  const live = s.sessions.filter(x => x.live);
+  if (live.length) rows.push({ header: TX("home.sys.running"), sec: true }, ...live.map(x => ({ k: `rv:s:${x.name}`, name: x.title || x.name, hint: x.waiting ? "" : x.status, last: x.at ? { ts: x.at } : null, av: av("lanes"), chips: x.waiting ? [[x.status, "warn"]] : undefined, open: show("home") })));
+  if (s.projects.length) rows.push({ header: TX("common.projects"), sec: true }, ...s.projects.map(p => ({ k: `rv:p:${p.key}`, name: p.name, hint: p.note || "", av: av("projects"), chips: p.live > 0 ? [[TX("relay.live", { n: p.live }), "pri"]] : undefined, open: show("projects") })));
+  if (!live.length && !s.projects.length) rows.push({ split: true }, { empty: TX("relay.no_sessions") });
+  return rows;
+}
+
 /** Choose a relay computer from outside its chat (the 프로젝트 list's computer group) and show it on `view`. */
 function relayShow(t, name, view) {
-  RELAY.name[t] = name;
-  if (!isRelayT(target)) RELAY.back = target;
-  RELAY.cur = t;
+  relayPick(t, name);
   if (target !== t) setTarget(t, true);
   go(view);
 }
@@ -78,13 +94,12 @@ const rvDotTone = tone => (/^(ask|warn|need)/.test(tone) ? "warn" : /^(err|fail)
 
 function rvBody(name, t, c) {
   const who = targetName(t);
-  if (name === "settings") return [el("div", { class: "card empty rv-off" }, el("div", { text: TX("relay.settings_off") }),
-    el("div", { class: "rv-acts" },
-      el("button", { class: "btn tonal sm", type: "button", "data-k": "relay-chat", onclick: () => relayOpenChat(t), text: TX("relay.open_chat") }),
-      el("button", { class: "btn text sm", type: "button", "data-k": "relay-leave", onclick: () => relayLeave(), text: TX("relay.back_here") })))];
+  if (name === "settings") return [emptyNode(TX("relay.settings_off"), null, { more: [el("div", { class: "rv-acts" },
+    el("button", { class: "btn tonal sm", type: "button", "data-k": "relay-chat", onclick: () => relayOpenChat(t), text: TX("relay.open_chat") }),
+    el("button", { class: "btn text sm", type: "button", "data-k": "relay-leave", onclick: () => relayLeave(), text: TX("relay.back_here") }))] })];
   if (!c.loaded) return [emptyNode(TX("relay.loading"))];
   if (c.err && !c.snap) return [emptyNode(TX("relay.failed"), () => rvLoad(t))];
-  if (!c.snap) return [el("div", { class: "card empty rv-none" }, el("div", { text: TX("relay.none_title", { name: who }) }), el("div", { class: "sup", text: TX("relay.none_hint") })), rvFoot(t, null)];
+  if (!c.snap) return [emptyNode(TX("relay.none_title", { name: who }), null, { more: [el("div", { class: "sup", text: TX("relay.none_hint") })] }), rvFoot(t, null)];
   const s = c.snap;
   const head = el("div", { class: "rv-head" }, name === "home" ? null : el("span", { class: "rv-n", text: who }), el("span", { class: "sup", text: TX("relay.updated", { when: rvWhen(c) }) }));
   const body = name === "projects" ? rvProjects(s) : name === "monitoring" ? rvMonitors(s) : rvHome(s);
@@ -98,7 +113,6 @@ function rvFoot(t, s) {
     el("button", { class: "btn tonal sm", type: "button", "data-k": "relay-chat", onclick: () => relayOpenChat(t), text: TX("relay.open_chat") }));
 }
 
-const rvLine = text => el("div", { class: "empty rv-empty", text });
 function rvSession(x) {
   const tone = x.waiting ? "warn" : x.live ? "pri" : "", sub = [x.title ? x.name : "", rvTime(x.at)].filter(Boolean).join(" · ");
   return el("div", { class: "hr rv-row" },
@@ -107,12 +121,12 @@ function rvSession(x) {
     x.status ? el("span", { class: `hs ${tone}`, text: x.status }) : null);
 }
 function rvHome(s) {
-  const nodes = [el("div", { class: "sec", text: TX("relay.sessions") }), el("div", { class: "list" }, ...(s.sessions.length ? s.sessions.map(rvSession) : [rvLine(TX("relay.no_sessions"))]))];
+  const nodes = [el("div", { class: "sec", text: TX("relay.sessions") }), s.sessions.length ? el("div", { class: "list" }, ...s.sessions.map(rvSession)) : emptyNode(TX("relay.no_sessions"), null, { compact: true })];
   const todo = s.todos || { open: 0, items: [] }, more = todo.open - todo.items.length;
   nodes.push(el("div", { class: "sec", text: todo.open ? TX("relay.todos", { n: todo.open }) : TX("relay.todos_title") }));
-  nodes.push(el("div", { class: "list" }, ...(todo.items.length || more > 0
-    ? [...todo.items.map(x => el("div", { class: "li" }, el("span", { class: "tx" }, el("div", { class: "hd", text: x })))), more > 0 ? el("div", { class: "li" }, el("span", { class: "tx" }, el("div", { class: "sup", text: TX("relay.todo_more", { n: more }) }))) : null]
-    : [rvLine(TX("relay.no_todos"))])));
+  nodes.push(todo.items.length || more > 0
+    ? el("div", { class: "list" }, ...todo.items.map(x => el("div", { class: "li" }, el("span", { class: "tx" }, el("div", { class: "hd", text: x })))), more > 0 ? el("div", { class: "li" }, el("span", { class: "tx" }, el("div", { class: "sup", text: TX("relay.todo_more", { n: more }) }))) : null)
+    : emptyNode(TX("relay.no_todos"), null, { compact: true }));
   if (s.notices.length) {
     nodes.push(el("div", { class: "sec", text: TX("relay.notices") }));
     nodes.push(el("div", { class: "list" }, ...s.notices.map(n => el("div", { class: "li" },

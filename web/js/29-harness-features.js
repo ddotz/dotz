@@ -163,10 +163,10 @@ function fcBuild(box) {
 function renderFeatures() {
   const box = hFcBox;
   if (!box) return;
-  if (!FC) { clear(box); fcSig = ""; return; }
+  if (!FC) { clear(box); fcDrawn(""); return; }
   const sig = JSON.stringify(FC.features) + (HG ? HG.nodes.map(n => n.label).join("") : "") + (hOrigin() ? "o" : "");
   if (sig === fcSig && box.firstChild) return;
-  fcSig = sig;
+  fcDrawn(sig);
   if (!hOrigin()) fcFilter.origin = "";
   if (fcOrig !== hOrigin()) { fcOrig = hOrigin(); clear(box); }
   if (!box.firstChild) fcBuild(box);
@@ -191,9 +191,6 @@ function fcSheetSection(n, focusId) {
   return [el("div", { class: "sec", text: TX("system.here.sec", { e, a: list.length - e }) }), el("div", { class: "hs-fts" }, ...rows)];
 }
 
-$("#hs-close").append(icon("close"));
-$("#hs-close").onclick = closeHSheet;
-document.addEventListener("keydown", ev => { if (ev.key === "Escape" && !$("#hsheet").hidden && !openMenu && !document.querySelector("dialog[open]:not([data-leaving])")) closeHSheet(); });
 H_MQ.addEventListener("change", () => { if (current === "harness") renderHarness(); });
 let hW = 0;
 window.addEventListener("resize", () => { if (current !== "harness" || H_MQ.matches || !hDetail) return; clearTimeout(hTimer); hTimer = setTimeout(() => { const w = $("#harness").clientWidth; if (Math.abs(w - hW) > 40) { hW = w; renderHarness(); } }, 150); });

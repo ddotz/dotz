@@ -2,7 +2,7 @@
 
 속도, 안정성, 기술부채, 코드 꼬임, 중복을 재는 기준이에요. 값은 2026-11-05에 main(`cd480cec` 기준)에서 잰 수치에서 정했어요. 이 머신은 측정 내내 다른 세션이 돌아 부하 평균이 8-50이었으니, 시간 값은 바쁜 맥북 기준으로 읽어요.
 
-강제 방식은 `hub/design-rules-web.test.ts`와 같아요. 코드로 잴 수 있는 기준은 `hub/engineering-rules.test.ts`가 지켜요. 지금 위반은 개수 상한으로 동결해서 새 위반만 실패해요. 고치면 상한을 내리고, 변경을 통과시키려고 올리지 않아요. 지금 값은 `bun hub/engineering-rules.ts`로 봐요.
+강제 방식은 `bun hub/check.ts`(`bun run check`)예요. 코드로 잴 수 있는 기준은 이 스크립트가 지켜요. 감지기는 `hub/engineering-rules.ts`에 있고, `hub/engineering-rules.test.ts`는 심은 위반으로 감지기가 실제로 실패하는지만 봐요. CSS 검사(`hub/design-rules.ts`, `hub/hover-touch-css.ts`)와 web/js 구조 점검(`hub/web-structure.ts`)도 같은 스크립트에서 돌아요. 푸시 훅은 `--rules`와 `--completeness`를, 릴리스 게이트는 전체를 돌려요. `bun test`는 이 검사를 다시 돌리지 않아요. 지금 위반은 개수 상한으로 동결해서 새 위반만 실패해요. 고치면 상한을 내리고, 변경을 통과시키려고 올리지 않아요. 지금 값은 `bun hub/engineering-rules.ts`로 봐요.
 
 ## 코드 검사로 강제하는 기준
 

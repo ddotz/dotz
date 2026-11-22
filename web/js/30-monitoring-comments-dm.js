@@ -30,12 +30,13 @@ function dmRow(c) {
     el("span", { class: "cv-b" }, el("span", { class: "cv-n", title: c.peer, text: c.peer }), el("span", { class: "cv-p", text: c.last })),
     el("span", { class: "cv-m" }, el("span", { class: "kk-t", text: kkListTime(c.lastAt) })));
 }
+function dmReset(clearView) { DM.open = null; if (clearView) DM.view = null; DM.seq++; }   // the comment pane's tab switch, open and close end an open DM thread here
 function dmPaintRooms() {
   if (!CM.vis) return;
   const top = cmRooms.scrollTop, tabs = cmTabs();
   const sig = JSON.stringify(["dm", DM.perm, DM.line, DM.error, DM.convs, DM.loaded, DM.busy, DM.open && DM.open.id, !!tabs]);
   if (sig === CM.roomsSig) return;
-  CM.roomsSig = sig;
+  cmRoomsSig(sig);
   const bar = el("div", { class: "dm-bar" }, el("span", { class: "dm-note", text: TX("mon.dm.ro") }),
     el("button", { class: "btn text", type: "button", id: "dm-refresh", disabled: DM.busy, text: DM.busy ? TX("common.loading") : TX("settings.refresh"), onclick: dmRefresh }));
   const list = el("section", { class: "kk-watch", "aria-label": TX("mon.dm.aria") });
@@ -43,7 +44,7 @@ function dmPaintRooms() {
   if (DM.perm === "missing") list.append(el("div", { class: "kk-note", id: "dm-perm", role: "status", text: DM.line }));
   else if (DM.error) list.append(el("div", { class: "kk-note", role: "status", text: DM.error }));
   if (DM.convs.length) list.append(...DM.convs.map(dmRow));
-  else if (DM.loaded && DM.perm !== "missing") list.append(el("div", { class: "kk-note", id: "dm-empty", text: TX("mon.dm.empty") }));
+  else if (DM.loaded && DM.perm !== "missing") list.append(emptyNode(TX("mon.dm.empty"), null, { id: "dm-empty" }));
   clear(cmRooms).append(...(tabs ? [tabs] : []), bar, list);
   cmRooms.scrollTop = top;
 }
@@ -78,12 +79,12 @@ function dmPaintChat(stick) {
   dmRo.hidden = !open;
   const sig = open ? `dm/${open.id}/${open.peer}` : "";
   if (sig !== CM.headSig) {
-    CM.headSig = sig; clear(cmHead);
+    cmHeadSig(sig); clear(cmHead);
     if (open) cmHead.append(kkAvatar(open.peer), el("span", { class: "cv-b" }, el("span", { class: "cv-n", text: open.peer })));
   }
   const csig = JSON.stringify(["dm", open, DM.loading, DM.viewErr, v]);
   if (!stick && csig === CM.chatSig) return;
-  CM.chatSig = csig;
+  cmChatSig(csig);
   if (!open) { clear(cmIn).append(el("div", { class: "kk-note", text: TX("mon.dm.pick") })); return; }
   if (DM.loading) { clear(cmIn).append(el("div", { class: "kk-note", text: TX("common.loading") })); return; }
   if (DM.viewErr || !v) { clear(cmIn).append(el("div", { class: "kk-note", role: "status", text: DM.viewErr }), appRetry(() => { DM.loading = true; DM.viewErr = ""; cmPaintChat(false); dmReload(); })); return; }

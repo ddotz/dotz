@@ -1,6 +1,6 @@
 import { parseSelector } from "./config.ts";
 import { keyedSelector } from "./fallback.ts";
-import { laneLive, laneWorkerModel, lanes } from "./lanestate.ts";
+import { laneLive, laneMode, laneWorkerModel, lanes } from "./lanestate.ts";
 import { ctxView } from "./context.ts";
 import { workersOf, kstClock, formatHeader } from "./lanevis.ts";
 import { homeChannel } from "./workchannels.ts";
@@ -20,6 +20,7 @@ export function laneSummary(): Array<Record<string, unknown>> {
 		// the checkout a worktree lane works for (its cwd is ~/.dotz/lanes/<name>/worktree)
 		...(l.worktree ? { repo: l.worktree.repo } : {}),
 		model: l.model,
+		mode: laneMode(l),
 		// the process runs on an API-key fallback entry (the chat bar shows "api사용중")
 		key_fallback: keyedSelector(l.activeModel),
 		// what its task workers run on: the running process's (a keyed copy, a switch made since launch), else the configured one

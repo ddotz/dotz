@@ -130,6 +130,8 @@ function targetEdit(key, title, cur, confirmText, extra = {}) {
   ].filter(Boolean);
   return el("div", { class: "mt-list mt-edit", role: "group", "data-target": key, "aria-label": title }, ...(extra.chain ? [extra.chain(pick, notes)] : [pick, ...notes]));
 }
+function modelsEnter() { renderModels(); loadModels(); loadProviderData().then(() => current === "models" && renderModels(), () => {}); if (!ACC) loadAccounts().then(() => current === "models" && renderModels()); }
+screenHooks("models", { enter: modelsEnter });
 function renderModels() {
   const box = $("#models");
   if (fbDragging) return;

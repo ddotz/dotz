@@ -2,6 +2,7 @@ import { afterAll, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { approvalHash } from "../../../hub/approval-send.ts";
 import { realMailLink } from "../../../hub/comments/mail-link.ts";
 import { parseDraftApproval } from "../../../hub/draft-approval.ts";
 import { saveUpload } from "../../../hub/files.ts";
@@ -15,6 +16,7 @@ import { readArgv, readMailBody, replyArgv, sendArgv, sendReasonKey, sendWith, z
 import { paths } from "../lib/settings.ts";
 import { addStagedFile, stagedFiles, stagedName } from "../lib/staged.ts";
 import { addDraft, answerDrafts, getDraft, listDrafts, type DraftRec } from "../lib/store.ts";
+import { mailHash, mailView } from "../lib/view.ts";
 import type { Runner } from "../lib/tone.ts";
 import { enable, fakeModel, goodReply, j, mailFixture, setupEnv } from "./helpers.ts";
 import { sealLine } from "../../../hub/approval-seal.ts";
@@ -42,7 +44,7 @@ const fake = () => {
 	const run: Runner = async argv => (calls.push(argv), { code: 0, stdout: "ok", stderr: "" });
 	return { calls, run };
 };
-const emitApproval = (id: string) => writeFileSync(paths.inbox(), `${sealLine(paths.inbox(), { ts: new Date(Date.now() + 1000).toISOString(), kind: "message", source: "web", channel: "mail:x", text: "1) 보내기", picks: [{ q: `이 답장 보낼까요? (${id})`, n: 1, label: "보내기" }] })}\n`);
+const emitApproval = (id: string) => writeFileSync(paths.inbox(), `${sealLine(paths.inbox(), { ts: new Date(Date.now() + 1000).toISOString(), kind: "message", source: "web", channel: "mail:x", text: "1) 보내기", picks: [{ q: `이 답장 보낼까요? (${id})`, n: 1, label: "보내기", hash: mailHash(getDraft(id)!) }] })}\n`);
 const sink = () => {
 	const sent: string[] = [];
 	return { sent, send: (_: string, text: string) => void sent.push(text) };
@@ -75,18 +77,44 @@ describe("a mail of an install with several accounts", () => {
 		expect(zeleAccountOf(rec({ compose: true, ref: "compose-x", origin: { kind: "mail", id: "zele-t42", text: "메일 답장에 이어서" } }))).toBe(A2);
 	});
 
-	test("a waiting draft reads the account from the stored mail's recipient, without reading the thread", async () => {
+	test("a waiting draft with no account on record: the account the stored mail was addressed to is recorded and the send is refused `changed` with nothing sent; the next send goes out from it", async () => {
 		stored([{ key: "zele-t42", to: `Owner <${A2}>` }]);
+		const draft = rec();
+		addDraft(draft);
+		const shown = mailView(getDraft(draft.id)!);
 		const f = twoAccounts([A2]);
-		expect((await sendWith(rec(), f.run)).ok).toBe(true);
-		expect(f.calls.map(c => c.slice(1, 3).join(" "))).toEqual(["whoami", "mail read", "mail reply"]);
-		expect(f.calls.slice(1).every(c => c[c.indexOf("--account") + 1] === A2)).toBe(true);
+		expect(await sendWith(getDraft(draft.id)!, f.run)).toMatchObject({ ok: false, sent: "no", code: "changed" });
+		expect(f.calls.some(c => c[2] === "reply")).toBe(false);
+		const card = mailView(getDraft(draft.id)!);
+		expect([shown.draft.account, card.draft.account]).toEqual([undefined, A2]);
+		expect(mailHash(getDraft(draft.id)!)).not.toBe(approvalHash(shown));
+		f.calls.length = 0;
+		expect((await sendWith(getDraft(draft.id)!, f.run)).ok).toBe(true);
+		expect(f.calls.find(c => c[2] === "reply")!.slice(0, 6)).toEqual(["zele", "mail", "reply", "T42", "--account", A2]);
 	});
 
-	test("with nothing stored, the one account that opens the thread sends it", async () => {
+	test("with nothing stored, the one account that opens the thread is recorded and the send is refused `changed`; the next send goes out from it", async () => {
+		const draft = rec({ source: "zele", mailId: "T42" });
+		addDraft(draft);
 		const f = twoAccounts([A2]);
-		expect((await sendWith(rec({ source: "zele", mailId: "T42" }), f.run)).ok).toBe(true);
+		expect(await sendWith(getDraft(draft.id)!, f.run)).toMatchObject({ ok: false, sent: "no", code: "changed" });
+		expect(f.calls.some(c => c[2] === "reply")).toBe(false);
+		expect(mailView(getDraft(draft.id)!).draft.account).toBe(A2);
+		expect((await sendWith(getDraft(draft.id)!, f.run)).ok).toBe(true);
 		expect(f.calls.at(-1)!.slice(0, 6)).toEqual(["zele", "mail", "reply", "T42", "--account", A2]);
+	});
+
+	test("a draft whose account its card showed is sent at once, from that account", async () => {
+		const draft = rec({ account: A2 });
+		addDraft(draft);
+		const f = twoAccounts([A2]);
+		expect((await sendWith(getDraft(draft.id)!, f.run)).ok).toBe(true);
+		expect(f.calls.find(c => c[2] === "reply")!.slice(0, 6)).toEqual(["zele", "mail", "reply", "T42", "--account", A2]);
+	});
+
+	test("the approval text names the account the send goes out from", () => {
+		expect(askText(rec({ account: A2 }), []).split("\n")).toContain(`-# 보내는 계정: ${A2}`);
+		expect(askText(rec({ account: undefined }), []).includes("보내는 계정")).toBe(false);
 	});
 
 	test("no account or both accounts open the thread: nothing is sent and the refusal names the accounts", async () => {
@@ -139,14 +167,26 @@ describe("zele argv with several accounts", () => {
 
 	test("a failed send gives a short reason, not zele's English error or the runtime warning printed before it", async () => {
 		const stderr = "(node:72075) ExperimentalWarning: SQLite is an experimental feature and might change at any time\n(Use `node --trace-warnings ...` to show where the warning was created)\nMultiple accounts matched\n";
-		const out = await sendWith(rec({ compose: true, mailId: "compose-x", ref: "compose-x" }), async () => ({ code: 1, stdout: "", stderr }));
+		const out = await sendWith(rec({ compose: true, mailId: "compose-x", ref: "compose-x" }), async argv => ({ code: argv[1] === "whoami" ? 0 : 1, stdout: "", stderr: argv[1] === "whoami" ? "" : stderr }));
 		expect(out).toMatchObject({ ok: false, message: `보내지 못했어요: ${msg().sendFail.other}` });
+	});
+
+	test("a plugin's failure that wraps its tool's stderr reads as the real error, not the runtime warning before it (RDZ4EAK)", async () => {
+		const said = "보내지 못했어요: (node:8498) ExperimentalWarning: SQLite is an experimental feature and might change at any time\n(Use `node --trace-warnings ...` to show where the warning was created)\nAPI call failed: Error: Invalid ";
+		mkdirSync(join(env.dir, "custom", "plugins"), { recursive: true });
+		const plugin = join(env.dir, "custom", "plugins", "warned.ts");
+		writeFileSync(plugin, `export default { reply: async () => ({ ok: false, message: ${JSON.stringify(said)} }) };`);
+		await loadPlugins(env.dir);
+		const out = await sendWith(rec({ source: "orders", ref: "order-t42" }), fake().run);
+		rmSync(plugin);
+		await loadPlugins(env.dir);
+		expect(out).toEqual({ ok: false, message: "보내지 못했어요: API call failed: Error: Invalid", sent: "maybe", code: "unknown" });
 	});
 
 	test("an expired login or a lost connection is told as its own short reason, never with the tool's stack lines", async () => {
 		const stack = "Error: invalid_grant: Token has been expired or revoked.\n    at refresh (file:///opt/zele/dist/auth.js:88:11)";
-		const out = await sendWith(rec({ compose: true, mailId: "compose-x", ref: "compose-x" }), async () => ({ code: 1, stdout: "", stderr: stack }));
-		expect(out).toEqual({ ok: false, message: `보내지 못했어요: ${msg().sendFail.login}` });
+		const out = await sendWith(rec({ compose: true, mailId: "compose-x", ref: "compose-x" }), async argv => ({ code: argv[1] === "whoami" ? 0 : 1, stdout: "", stderr: argv[1] === "whoami" ? "" : stack }));
+		expect(out).toEqual({ ok: false, message: `보내지 못했어요: ${msg().sendFail.login}`, sent: "no", code: "login_expired" });
 		expect(["Error: invalid_grant: Token expired", "fetch failed", "connect ECONNREFUSED 1.2.3.4:443", "boom"].map(sendReasonKey)).toEqual(["login", "offline", "offline", "other"]);
 	});
 
@@ -387,6 +427,12 @@ describe("the account of a draft is settled when the draft is made", () => {
 	test("the draft records the account its stored mail came to", async () => {
 		stored([{ key: "acct-stored", account: A2 }]);
 		expect((await offer("acct-stored")).made.account).toBe(A2);
+	});
+
+	test("the card names the account the reply goes out from, and a 보내기 approved on one account does not hold for another", () => {
+		const one = rec({ account: A1 }), other = { ...one, account: A2 };
+		expect(mailView(one).draft.account).toBe(A1);
+		expect(mailHash(other)).not.toBe(mailHash(one));
 	});
 
 	test("the draft records the one account that opens the thread, and the card stays quiet", async () => {

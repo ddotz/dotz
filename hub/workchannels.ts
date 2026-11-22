@@ -6,6 +6,7 @@ import { now, paths, writeAtomic } from "./config.ts";
 import { projectInfoContext } from "./projectinfo.ts";
 import { addWatch, allWatches, relabelWatches, removeWatch, setWatchChannels, type Watch } from "./watch.ts";
 import { deriveLabel, humanLabel, isKeyLabel, plainLabel } from "./watchtext.ts";
+import type { NoticeKindName } from "./notice-kinds.ts";
 
 export type Login = { session_url: string; expect?: string; login_url?: string; secret?: string; host?: string; profile?: string };
 export type Monitor = { command: string; every_minutes?: number; on?: "change" | "match" | "fail"; pattern?: string; label?: string };
@@ -151,9 +152,11 @@ export const nameWatches = (): number => relabelWatches(w => setups.find(s => w.
 // only wakes the orchestrator, which reports in words; a failure, or no orchestrator to wake, still reaches the owner.
 export const wakeOnly = (w: Watch, reason: string, orchestratorUp: boolean): boolean => orchestratorUp && w.to === "orchestrator" && !!w.once && /^(?:output changed|matched \/)/.test(reason);
 
+/** The notice kind of a watch report: a script output line starting `[fail] ` (a comment watch's failed auto-send, hub/comments/news.ts noticeBlock) is an alert, any other report news. */
+export const watchNoticeKind = (output: string): Extract<NoticeKindName, "alert" | "watch"> => (/^\[fail\] /m.test(output) ? "alert" : "watch");
 // The inbox event a watch report becomes (hub/notices.ts and the web read label / to to word it).
 export const watchWakeEvent = (w: Watch, reason: string, output: string, prev?: string) =>
-	({ ts: now(), kind: "watch", source: `watch:${w.name}`, watch: w.name, label: watchLabel(w.name), to: w.to, channels: w.channels, reason, text: output, ...(prev ? { prev } : {}) });
+	({ ts: now(), kind: "watch", source: `watch:${w.name}`, watch: w.name, label: watchLabel(w.name), to: w.to, channels: w.channels, reason, text: output, nk: watchNoticeKind(output), ...(prev ? { prev } : {}) });
 
 // The owner edited the project's purpose on its page: the setup (and so the orchestrator prompt) follows. False without a setup.
 export function setSetupPurpose(channel: string, purpose: string): boolean {

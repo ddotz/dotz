@@ -1,7 +1,6 @@
 /* ---------- providers ---------- */
-// Callers that ask while a read is out share it (the page's first read and the home's ask for it at the same time).
-let provFlight = null;
-function loadProviderData() { return provFlight || (provFlight = provFetch().finally(() => { provFlight = null; })); }
+// One read at a time: callers that ask while one is out (the page's first read and the home's ask for it) get the read after it.
+function loadProviderData() { return latest("providers", provFetch); }
 async function provFetch() {
   const r = await api("/api/providers");
   P = { providers: r.providers || [], addable: Array.isArray(r.addable) ? r.addable : null, at: Date.now() };
@@ -51,6 +50,8 @@ function provRow(p, g, own) {
   return el("div", { class: "li prow", "data-prov": own ? null : p.id, "data-prov-conn": p.id },
     slot ? el("button", { class: "acc-main", type: "button", onclick: () => accProviderDialog(g, slot) }, tx) : tx, liEnd(act, rm));
 }
+function accountsEnter() { renderAccounts(); loadProviders(); loadAccounts(); if (!SQ) api("/api/quota").then(q => { noteQuota(q); if (current === "accounts") renderAccounts(); }, () => {}); }
+screenHooks("accounts", { enter: accountsEnter, aim: accFocusAsk });
 // 계정: one screen for what used to be 공급자, each provider's screen and the accounts block. OmO keeps a pool per provider, so the
 // provider is the group: a login provider has its own section with its accounts, and the rest (keys, not set up) share one list.
 function renderAccounts() {
@@ -70,6 +71,8 @@ function renderAccounts() {
   // an old provider address or a home card lands on that provider, once both lists are in
   if (accFocus && ACC) { const n = box.querySelector(`[data-prov="${CSS.escape(accFocus)}"]`); accFocus = ""; if (n) n.scrollIntoView({ block: "start" }); }
 }
+// The provider an old address or a home card asked for; renderAccounts scrolls to it once and clears it.
+function accFocusAsk(prov) { accFocus = prov || ""; }
 function addProviderDialog() {
   const addable = P && P.addable;
   let pick = null, keyIn = null, free = null;
@@ -225,7 +228,7 @@ async function startLogin(p, pending) {
   });
   paintStep(r);
   const first = choosing ? null : openBox.hidden ? code : open; if (first) first.focus({ preventScroll: true });   // not the ✕ in the head
-  code.addEventListener("keydown", ev => { if (ev.key === "Enter" && !ev.isComposing) { ev.preventDefault(); const b = dlg.node.querySelector(".dact .btn:last-child"); if (b) b.click(); } });
+  code.addEventListener("keydown", ev => { if (plainEnter(ev)) { ev.preventDefault(); const b = dlg.node.querySelector(".dact .btn:last-child"); if (b) b.click(); } });
   timer = setTimeout(poll, 2000);
 }
 
@@ -317,6 +320,9 @@ function fixCard(u) {
   return card;
 }
 let quotaDrawn = 0;
+// Opening 사용량 shows the values as they are, no motion.
+function usageEnter() { gaugeForget("usage:"); quotaDrawn = 0; loadQuota(); }
+screenHooks("usage", { enter: usageEnter });
 async function loadQuota(fresh) {
   clearTimeout(quotaTimer);
   const box = $("#usage");

@@ -36,6 +36,19 @@ test("a slot whose holder died is reclaimed at once", async () => {
 	s.release();
 });
 
+test("taking a slot first clears every slot and wait file a dead process left, beyond the free first slot too", async () => {
+	const dead = Bun.spawnSync(["true"]).pid;
+	mkdirSync(dir, { recursive: true });
+	writeFileSync(join(dir, "slot.2"), `${dead} ${Date.now()} x crashed run`);
+	writeFileSync(join(dir, "slot.3"), `${dead} ${Date.now()} x crashed run`);
+	writeFileSync(join(dir, "slot.4"), `${process.pid} ${Date.now()} x live run`);
+	writeFileSync(join(dir, ".gone.tmp"), `${dead} ${Date.now()} x waited and crashed`);
+	writeFileSync(join(dir, ".live.tmp"), `${process.pid} ${Date.now()} x still waiting`);
+	const s = await acquireHeavySlot({ dir, label: "next", slots: 3 });
+	expect(readdirSync(dir).sort()).toEqual([".live.tmp", "slot.1", "slot.4"]);
+	s.release();
+});
+
 test("a wait past its bound gives up and reports it", async () => {
 	const held = await acquireHeavySlot({ dir, label: "long", slots: 1 });
 	const late = acquireHeavySlot({ dir, label: "late", slots: 1, timeoutMs: 60_000 });
@@ -61,4 +74,13 @@ test("the workers of one run share its slot, and another run waits for the whole
 	run.release();
 	(await other).release();
 	expect(readdirSync(dir)).toEqual([]);
+});
+
+test("a live run holding its slot past the hold bound still shares it with its own workers", async () => {
+	mkdirSync(dir, { recursive: true });
+	writeFileSync(join(dir, "slot.1"), `${process.pid} ${Date.now() - 30 * 60_000} x long run`);
+	const worker = await acquireHeavySlot({ dir, label: "worker", slots: 1, pid: process.pid, family: [process.pid] });
+	expect(worker.note).toBeUndefined();
+	worker.release();
+	expect(readFileSync(join(dir, "slot.1"), "utf8")).toContain(" long run");
 });

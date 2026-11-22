@@ -1,7 +1,7 @@
 // Conversation sessions and the orchestrator resume like lanes (hub/sessionresume.ts, hub/laneresume.ts). The registry, the task store reader and
 // the signal are the real ones; only the agent process is a fake. The session rows are OmO's own shapes (2026-11-05, st_01a1abe7), cut to the fields read.
 import { afterEach, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createBgWork } from "./bgwork.ts";
@@ -11,6 +11,7 @@ import { RESUME_BACKOFF_MS } from "./laneunfinished.ts";
 import type { Orchestrator } from "./orchestrator.ts";
 import type { Prompts } from "./prompts.ts";
 import { MAIN } from "./session-key.ts";
+import { ompTree } from "./runtime/test-omp-session.ts";
 import { createSessionResume } from "./sessionresume.ts";
 
 const DEAD_PID = 2 ** 22 + 7;
@@ -46,15 +47,15 @@ function worker(w: World, pid: number, id = "st_a"): void {
 	writeFileSync(join(tasks, `${id}.json`), JSON.stringify({ task_id: id, status: "running", pid, root_session_id: ROOT, description: "메일 첨부 분석", started_at: at, updated_at: at }));
 }
 
-type Agent = { pid?: number; status: string; stoppedBy: string; rateLimitedUntil: string };
+type Agent = { pid?: number; status: string; stoppedBy: string; rateLimitedUntil: string; startedAt: string };
 function boot(w: World, opts: { maxLive?: number; mainFile?: boolean; asked?: boolean } = {}) {
 	const agents = new Map<string, Agent>();
 	const delivered: { key: string; text: string; target?: string }[] = [];
 	const told: { target: string; text: string }[] = [];
 	const agent = (key: string): Orchestrator => {
-		const a: Agent = { status: "stopped", stoppedBy: "", rateLimitedUntil: "" };
+		const a: Agent = { status: "stopped", stoppedBy: "", rateLimitedUntil: "", startedAt: "" };
 		agents.set(key, a);
-		const orch = { get status() { return a.status; }, get stoppedBy() { return a.stoppedBy; }, get rateLimitedUntil() { return a.rateLimitedUntil; }, ctx: { tokens: 0, compaction: { state: "idle" } }, sessionFile: "", activeModel: "m" };
+		const orch = { get status() { return a.status; }, get stoppedBy() { return a.stoppedBy; }, get rateLimitedUntil() { return a.rateLimitedUntil; }, get startedAt() { return a.startedAt; }, ctx: { tokens: 0, compaction: { state: "idle" } }, sessionFile: "", activeModel: "m" };
 		return { orch, orchestratorPid: () => a.pid, heldCount: () => 0, lastTurnEndAt: () => undefined, park: () => true } as unknown as Orchestrator;
 	};
 	const queue = (key: string) =>
@@ -62,6 +63,7 @@ function boot(w: World, opts: { maxLive?: number; mainFile?: boolean; asked?: bo
 			deliver: (text: string, reply?: { target: string }) => {
 				delivered.push({ key, text, target: reply?.target });
 				const a = agents.get(key)!;
+				if (a.pid === undefined) a.startedAt = new Date(Date.now()).toISOString();
 				a.pid ??= 4242;
 				a.status = "working";
 				return false;
@@ -282,4 +284,85 @@ test("a worker the failed-worker handover already brought up gets no second wake
 	b.mainBg.handed.add("st_a");
 	expect(await b.resume.tick()).toEqual([]);
 	expect(b.delivered).toEqual([]);
+});
+
+test("an omp worker cut off by a killed process brings the parked conversation back naming it, and a turn after that never names it again", async () => {
+	const w = world();
+	w.file = ompTree("killed", w.dir).file;
+	const b = restarted(w);
+	expect(await b.resume.tick()).toEqual(["mail:k1"]);
+	expect(b.delivered).toHaveLength(1);
+	expect(b.delivered[0]!.text).toContain("Dozer");
+	const agent = b.agents.get("mail:k1")!;
+	expect(Date.parse(agent.startedAt)).toBeGreaterThan(0);
+	const later = Date.now() + 2 * HOUR;
+	session(w, [], later);
+	agent.status = "idle";
+	expect(await b.resume.tick(undefined, later + HOUR)).toEqual([]);
+	expect(b.delivered).toHaveLength(1);
+});
+
+test("an omp worker that finished or was waited for wakes nobody", async () => {
+	for (const name of ["finished", "waited"]) {
+		const w = world();
+		w.file = ompTree(name, w.dir).file;
+		const b = restarted(w);
+		expect(await b.resume.tick()).toEqual([]);
+		expect(b.delivered).toEqual([]);
+	}
+});
+
+function ompCut(w: World, fixture: string, keep: (row: { type?: string; customType?: string; message?: { role?: string } }) => boolean): void {
+	const { file } = ompTree(fixture, w.dir);
+	const rows = readFileSync(file, "utf8").trimEnd().split("\n");
+	writeFileSync(file, `${rows.slice(0, rows.findLastIndex(r => keep(JSON.parse(r))) + 1).join("\n")}\n`);
+	const at = (Date.now() - 10 * 60_000) / 1000;
+	utimesSync(file, at, at);
+	w.file = file;
+}
+const isResult = (r: { type?: string; customType?: string }) => r.type === "custom_message" && r.customType === "async-result";
+
+test("an omp conversation whose process died mid-turn is brought back once, with no worker to name", async () => {
+	const w = world();
+	ompCut(w, "finished", isResult);
+	const b = restarted(w);
+	expect(await b.resume.tick()).toEqual(["mail:k1"]);
+	expect(b.delivered).toHaveLength(1);
+	expect(b.delivered[0]).toMatchObject({ key: "mail:k1", target: "mail:k1" });
+	expect(await b.resume.tick()).toEqual([]);
+	expect(b.delivered).toHaveLength(1);
+});
+
+test("an omp request nobody answered is resumed even though the answer before it closed its work", async () => {
+	const w = world();
+	ompCut(w, "finished", r => r.type === "message" && r.message?.role === "user");
+	const b = restarted(w);
+	expect(await b.resume.tick()).toEqual(["mail:k1"]);
+});
+
+test("an omp conversation that ended on its answer, or whose cut turn is days old, is left alone", async () => {
+	const done = world();
+	ompCut(done, "finished", r => r.type === "message" && r.message?.role === "assistant");
+	expect(await restarted(done).resume.tick()).toEqual([]);
+	const old = world();
+	ompCut(old, "finished", isResult);
+	const at = (Date.now() - 72 * HOUR) / 1000;
+	utimesSync(old.file, at, at);
+	expect(await restarted(old).resume.tick()).toEqual([]);
+});
+
+test("an omp turn cut again and again is resumed three times, then the owner is told once", async () => {
+	const w = world();
+	ompCut(w, "finished", isResult);
+	const b = restarted(w);
+	let now = Date.now();
+	const woken: string[][] = [];
+	for (let i = 0; i < 4; i++) {
+		woken.push(await b.resume.tick(undefined, now));
+		b.agents.get("mail:k1")!.pid = undefined;
+		b.agents.get("mail:k1")!.status = "stopped";
+		now += 2 * HOUR;
+	}
+	expect(woken.flat()).toHaveLength(3);
+	expect(b.told).toHaveLength(1);
 });

@@ -227,3 +227,49 @@ test("a window that came up untitled is closed, one that was open before is not,
 	expect(jxa.sweepSince(before)).toBe("no_window");
 	expect(kept.clicks).toEqual([]);
 });
+
+// The Return way sends a key to KakaoTalk's pid, which lands on its focused element: in a chat input it could send the owner's typed text.
+// So the key goes out only when the focus is in the list window's list and the one selected row is this room.
+const returnScene = (opts: { focusRole?: string; focusWindow?: string; selected?: string[]; selectable?: boolean } = {}) => {
+	const keys: [number, number, boolean][] = [];
+	const $ = Object.assign(() => null, {
+		CGEventCreateKeyboardEvent: (_src: unknown, code: number, down: boolean) => ({ code, down }),
+		CGEventPostToPid: (pid: number, ev: { code: number; down: boolean }) => keys.push([pid, ev.code, ev.down]),
+	});
+	let selected = false;
+	const attr = (v: unknown) => ({ value: () => v });
+	const win = { attributes: { byName: () => ({ value: () => true }) } };
+	const proc = {
+		unixId: () => 77,
+		windows: { whose: () => () => [win] },
+		attributes: { byName: (n: string) => (n === "AXFocusedUIElement" ? attr({ role: () => opts.focusRole ?? "AXTable" }) : attr({ name: () => opts.focusWindow ?? "카카오톡" })) },
+	};
+	const row = {} as { selected: unknown };
+	Object.defineProperty(row, "selected", {
+		get: () => () => selected,
+		set: () => {
+			if (opts.selectable === false) throw new Error("not settable");
+			selected = true;
+		},
+	});
+	const titles = opts.selected ?? ["가족방"];
+	const table = { rows: Object.assign([row], { whose: () => () => titles.map(t => ({ uiElements: [{ staticTexts: [{ value: () => t }] }] })) }), focused: false };
+	const jxa = loadJxa({ objc: $, systemEvents: { processes: { whose: () => () => [] } } });
+	return { r: jxa.returnOpen({ proc, table }, 0, "가족방"), keys };
+};
+
+test("Return goes to KakaoTalk's pid only when the list has the focus and the one selected row is the room; otherwise no key at all", () => {
+	const ok = returnScene();
+	expect(ok.r).toEqual({ pressed: true });
+	expect(ok.keys).toEqual([[77, 36, true], [77, 36, false]]);
+	for (const [label, scene, why] of [
+		["focus in a chat input", { focusRole: "AXTextArea" }, "focus"],
+		["focus in another window", { focusWindow: "가족방" }, "focus"],
+		["two rows selected", { selected: ["가족방", "회사"] }, "selection"],
+		["another room selected", { selected: ["회사"] }, "selection"],
+		["row cannot be selected", { selectable: false }, "no_select"],
+	] as const) {
+		const s = returnScene(scene);
+		expect([label, s.r.why, s.keys.length]).toEqual([label, why, 0]);
+	}
+});

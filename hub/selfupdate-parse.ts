@@ -3,6 +3,20 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
+// ---- the nightly install slot: checks run every 10 minutes, but a found release is installed by itself only once a night ----
+// The first check inside [at, at + NIGHT_WINDOW_MIN) on the local clock may install; the night it belongs to (the local date the slot
+// opened on, so a slot near midnight is one night) is returned so the caller installs once per night. Outside the window, or with
+// "off" or an unreadable time, undefined: the release waits (the owner's update button still installs at once).
+export const NIGHT_WINDOW_MIN = 60;
+export function nightSlot(at: string, now: Date): string | undefined {
+	const m = /^(\d{1,2}):(\d{2})$/.exec(at.trim());
+	if (!m || Number(m[1]) > 23 || Number(m[2]) > 59) return undefined;
+	const since = (now.getHours() * 60 + now.getMinutes() - Number(m[1]) * 60 - Number(m[2]) + 1440) % 1440;
+	if (since >= NIGHT_WINDOW_MIN) return undefined;
+	const d = new Date(now.getTime() - since * 60_000);
+	return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
 // ---- released versions (docs/releases.md, hub/release.ts): tag v<YYMMDD.N>[.<M>] on main plus VERSION, KST, at most three a day ----
 // A new commit on main is not an update any more; only a new release tag is. Ordering is numeric on (date, N, M), so
 // 261103.1 < 261103.1.1 < 261103.1.2 < 261103.2 (a third part is the forced/emergency track).
@@ -109,11 +123,10 @@ export function failureBlocks(out: string): string {
 	return `${blocks.join("\n--\n")}${failed > blocks.length ? `\n… ${failed - blocks.length} more failure(s) not kept` : ""}`;
 }
 
-// bun's closing counts ("12 pass", "0 fail"): the update log keeps them; owner-facing text never carries them (owner 2026-11-01:
-// "1pass 이거 뜨는거 불필요"). A failure names the failing tests, or the exit code when bun named none.
 export const testSummary = (out: string): string =>
 	out.split("\n").filter(l => /^\s*\d+ (pass|fail)\b/.test(l)).map(l => l.trim()).join(", ");
-export const testFailure = (code: number, names: string[]): string => `테스트 실패${names.length ? `: ${names.join(" / ")}` : ` (exit ${code})`}`;
+export const testFailure = (code: number, names: string[]): string =>
+	names.length ? `테스트 실패: ${names.join(" / ")}` : code === 143 || code === 137 ? "테스트가 제한 시간 안에 끝나지 않았어요" : "테스트가 통과하지 못했어요";
 
 // The names of the failing tests (at most `max`, once each: bun prints every `(fail)` line again in its closing summary), for the
 // owner-facing message; the counts alone do not say what broke.

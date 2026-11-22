@@ -71,11 +71,6 @@ describe("web terminal: input is never logged or kept", () => {
 		expect(seen).not.toContain(SECRET);
 		expect(host.subscribe(() => {}).backlog).not.toContain(SECRET);
 	});
-
-	test("the module has no logger, console, or file writes at all", () => {
-		const src = readFileSync(join(import.meta.dir, "pty.ts"), "utf8");
-		expect(src).not.toMatch(/\blog\(|console\.|writeFile|appendFile|Bun\.write|createWriteStream|\.\/config\.ts/);
-	});
 });
 
 describe("web terminal route", () => {

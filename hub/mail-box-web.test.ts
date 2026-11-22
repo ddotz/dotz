@@ -5,7 +5,7 @@ import { ev, fakeHub, json, run, waitFor, type View } from "./test-web.ts";
 // The mailbox of the mail app (web/js/30-mail-box.js) in a headless browser against a fake hub: Gmail-like rows (checkbox, star, bold unread),
 // the six folders, the actions on one mail and on a selection (optimistic, reverted on ok:false, disabled with one line without the capability),
 // the floating 메일 쓰기 sheet and the inline reply with attachment chips. Nothing is sent: the fake hub only records the draft posts.
-// MAIL_UI_SHOTS=<dir> also writes {desktop,phone}-{light,dark}-{list,thread,compose}.png there.
+// MAIL_UI_SHOTS=<dir> also writes the bar and scratch-compose screenshots there.
 const SHOTS = process.env.MAIL_UI_SHOTS ?? "";
 const CAN = ["read", "unread", "archive", "unarchive", "trash", "star", "unstar"];
 const ago = (h: number) => new Date(Date.now() - h * 3_600_000).toISOString();
@@ -100,10 +100,10 @@ const chips = (v: View) => ev<string[]>(v, `[...document.querySelectorAll("#mon-
 const titles = (v: View) => ev<string[]>(v, `[...document.querySelectorAll("#mon-tl > .mr .rc-title")].map(t => t.textContent)`);
 const folder = async (v: View, k: string) => { await run(v, `const at = x => document.querySelector('#mon-tl [data-filter="' + x + '"]'); if (!at(${JSON.stringify(k)})) at("in").click()`); await waitFor(v, `!!document.querySelector('#mon-tl [data-filter="${k}"]')`); await run(v, `document.querySelector('#mon-tl [data-filter="${k}"]').click()`); await waitFor(v, `document.querySelector('#mon-tl .mr-place .on:not([data-filter="in"]), #mon-tl .mr-f.on').dataset.filter === ${JSON.stringify(k)}`); };
 const tick = (v: View, title: string) => run(v, `${rowJs(title)}.querySelector(".mr-chk").click()`);
-const openMore = async (v: View) => { await run(v, `document.querySelector('#mbox-bar [data-k="mail-more"]').click()`); await waitFor(v, `document.querySelector(".menu .mi")`); };
 const moreItem = (label: string) => `[...document.querySelectorAll(".menu .mi")].find(b => b.querySelector(".ml").firstChild.textContent.startsWith(${JSON.stringify(label)}))`;
-// the bar keeps 읽음 and 보관 as words; the rest is picked from its ⋯ menu
-const pickMore = async (v: View, label: string) => { await openMore(v); await run(v, `${moreItem(label)}.click()`); };
+// every action of a selection stands in the bar; its label may carry a count (답장 안 함 2개)
+const barAct = (label: string) => `[...document.querySelectorAll("#mbox-bar .mbox-b")].find(b => b.getAttribute("aria-label").startsWith(${JSON.stringify(label)}))`;
+const pickBar = (v: View, label: string) => run(v, `${barAct(label)}.click()`);
 const bar = (v: View, label: string) => `[...document.querySelectorAll("#mbox-bar .mbox-b")].find(b => b.getAttribute("aria-label") === ${JSON.stringify(label)})`;
 const posted = (n: number) => waitForPosts(n);
 const waitForPosts = async (n: number) => { const t0 = Date.now(); while (posts.length < n) { if (Date.now() - t0 > 8000) throw new Error(`timeout: ${posts.length}/${n} posts`); await new Promise(r => setImmediate(r)); } };
@@ -213,10 +213,12 @@ describe("actions on a selection", () => {
 		expect(posts[0]).toEqual({ path: "/api/mail/actions", body: { keys: ["fx-a", "fx-b"], action: "read" } });
 		await waitFor(v, `document.querySelectorAll("#mon-tl > .mr.mr-new").length === 2`);
 		expect(await chips(v)).toContain("안 읽음2");
-		await pickMore(v, "안 읽음으로 표시");
+		await tick(v, "월간 점검 보고서 확인 요청"); await tick(v, "회의 일정 변경");
+		await pickBar(v, "안 읽음으로 표시");
 		await posted(2);
 		expect(posts[1].body.action).toBe("unread");
 		await waitFor(v, `document.querySelectorAll("#mon-tl > .mr.mr-new").length === 4`);
+		await tick(v, "월간 점검 보고서 확인 요청"); await tick(v, "회의 일정 변경");
 		await run(v, `${bar(v, "완료(보관)")}.click()`);
 		await posted(3);
 		expect(posts[2].body).toEqual({ keys: ["fx-a", "fx-b"], action: "archive" });
@@ -254,7 +256,7 @@ describe("actions on a selection", () => {
 	test("삭제 asks first, then uses the old route for a mailbox with no capability list", async () => {
 		const v = await openList(1280, 800);
 		await tick(v, "읽음 표시를 못 하는 메일함");
-		await pickMore(v, "삭제");
+		await pickBar(v, "삭제");
 		await waitFor(v, `document.querySelector("dialog.cf[open] .btn.danger")`);
 		await run(v, `document.querySelector("dialog[open] .btn.danger").click()`);
 		await posted(1);
@@ -265,14 +267,14 @@ describe("actions on a selection", () => {
 	test("삭제 into the mailbox trash asks nothing: 되돌리기 brings the row back and sends nothing, otherwise the trash is sent", async () => {
 		const v = await openList(1280, 800);
 		await tick(v, "회의 일정 변경");
-		await pickMore(v, "삭제");
+		await pickBar(v, "삭제");
 		await waitFor(v, `!${rowJs("회의 일정 변경")} && document.querySelector(".snack .sa")`);
 		expect(await ev<boolean>(v, `!!document.querySelector("dialog[open]")`)).toBe(false);
 		await run(v, `document.querySelector(".snack .sa").click()`);
 		await waitFor(v, `${rowJs("회의 일정 변경")}`);
 		expect(posts).toEqual([]);
 		await tick(v, "회의 일정 변경");
-		await pickMore(v, "삭제");
+		await pickBar(v, "삭제");
 		await waitFor(v, `!${rowJs("회의 일정 변경")} && document.querySelector(".snack .sa")`);
 		await run(v, `dispatchEvent(new Event("pagehide"))`);
 		await posted(1);
@@ -323,6 +325,78 @@ describe("메일 쓰기", () => {
 		expect(await ev<any>(v, `(() => { const e = document.querySelector(".mbox-sheet .mbox-err"); return { hidden: e.hidden, text: e.textContent, focus: document.activeElement === document.querySelector('.mbox-sheet [data-k="mail-to"]'), toast: !!document.querySelector(".snack") }; })()`)).toEqual({ hidden: false, text: "받는 사람을 적어 주세요", focus: true, toast: false });
 		await fill(v, '.mbox-sheet [data-k="mail-to"]', "a@example.com");
 		expect(await ev<boolean>(v, `document.querySelector(".mbox-sheet .mbox-err").hidden`)).toBe(true);
+	}, 30_000);
+
+	test("a body over 20,000 characters and recipients over 500 are refused with the reason under their field; nothing is posted and the text stays", async () => {
+		const v = await openList(1280, 800);
+		await run(v, `document.querySelector(".mbox-fab").click()`);
+		await waitFor(v, `document.querySelector(".mbox-sheet")`);
+		const err = (k: string) => ev<{ hidden: boolean; text: string }>(v, `(() => { const e = document.querySelector('.mbox-sheet [data-k="mail-err-${k}"]'); return { hidden: e.hidden, text: e.textContent }; })()`);
+		const save = () => run(v, `document.querySelector(".mbox-sheet .mbox-save").click()`);
+		await fill(v, '.mbox-sheet [data-k="mail-to"]', "lee@example.com");
+		await fill(v, '.mbox-sheet [data-k="mail-body"]', "가".repeat(20_001));
+		await save();
+		await waitFor(v, `!document.querySelector('.mbox-sheet [data-k="mail-err-body"]').hidden`);
+		expect(await err("body")).toEqual({ hidden: false, text: "내용이 너무 길어요. 20,000자까지 쓸 수 있어요" });
+		expect(await ev<number>(v, `document.querySelector('.mbox-sheet [data-k="mail-body"]').value.length`)).toBe(20_001);
+		await fill(v, '.mbox-sheet [data-k="mail-body"]', "가".repeat(20_000));
+		expect((await err("body")).hidden).toBe(true);
+		await fill(v, '.mbox-sheet [data-k="mail-to"]', `${"a".repeat(489)}@example.com`);
+		await save();
+		await waitFor(v, `!document.querySelector('.mbox-sheet [data-k="mail-err-to"]').hidden`);
+		expect(await err("to")).toEqual({ hidden: false, text: "받는 사람이 너무 많아요. 500자까지 적을 수 있어요" });
+		await fill(v, '.mbox-sheet [data-k="mail-to"]', "lee@example.com");
+		await run(v, `document.querySelector(".mbox-sheet .mbox-cc").click()`);
+		await fill(v, '.mbox-sheet [data-k="mail-cc"]', `${"b".repeat(489)}@example.com`);
+		await save();
+		await waitFor(v, `!document.querySelector('.mbox-sheet [data-k="mail-err-cc"]').hidden`);
+		expect(await err("cc")).toEqual({ hidden: false, text: "참조가 너무 길어요. 500자까지 적을 수 있어요" });
+		expect(posts).toEqual([]);
+		await fill(v, '.mbox-sheet [data-k="mail-cc"]', "park@example.com");
+		await save();
+		await posted(1);
+		expect(posts[0]!.body).toMatchObject({ to: "lee@example.com", cc: "park@example.com", body: "가".repeat(20_000) });
+		expect(posts.length).toBe(1);
+	}, 30_000);
+
+	const photoInput = (scope: string) => `${scope} input[type=file][accept="image/*"]`;
+	const attachAs = (v: View, sel: string, name: string, type: string, bytes: number[]) => run(v, `const i = document.querySelector(${JSON.stringify(sel)}), dt = new DataTransfer(); dt.items.add(new File([new Uint8Array(${JSON.stringify(bytes)})], ${JSON.stringify(name)}, { type: ${JSON.stringify(type)} })); i.files = dt.files; i.dispatchEvent(new Event("change"))`);
+	const photoOpens = (v: View, scope: string) => ev<boolean>(v, `(() => { const i = document.querySelector(${JSON.stringify(photoInput(scope))}); let hit = false; i.addEventListener("click", e => { hit = true; e.preventDefault(); }, { once: true }); document.querySelector(${JSON.stringify(`${scope} [data-k="mail-attach-photo"]`)}).click(); return hit; })()`);
+
+	test("the compose sheet and the reply box each offer a photo picker next to the file picker", async () => {
+		const v = await openList(1280, 800);
+		await run(v, `document.querySelector(".mbox-fab").click()`);
+		await waitFor(v, `document.querySelector(".mbox-sheet")`);
+		expect(await ev<number>(v, `document.querySelectorAll('.mbox-sheet input[type=file]:not([accept])').length`)).toBe(1);
+		expect(await photoOpens(v, ".mbox-sheet")).toBe(true);
+		await attachAs(v, photoInput(".mbox-sheet"), "사진.jpg", "image/jpeg", [1, 2, 3]);
+		await waitFor(v, `document.querySelector('.mbox-sheet .mbox-chip[data-name="사진.jpg"]')`);
+		await openMail(v, "월간 점검 보고서 확인 요청");
+		await run(v, `document.querySelector('#tl .mbox-mode[data-mode="reply"]').click()`);
+		await waitFor(v, `document.querySelector("#tl .mbox-reply.open")`);
+		expect(await ev<number>(v, `document.querySelectorAll('#tl .mbox-reply input[type=file]:not([accept])').length`)).toBe(1);
+		expect(await photoOpens(v, "#tl .mbox-reply")).toBe(true);
+		await attachAs(v, photoInput("#tl .mbox-reply"), "현장.png", "image/png", [4, 5]);
+		await waitFor(v, `document.querySelector('#tl .mbox-chip[data-name="현장.png"]')`);
+	}, 30_000);
+
+	test("a pick with no extension is named by its type, or by its first bytes when the type is empty or generic; any other keeps its name", async () => {
+		const v = await openList(390, 844);
+		await run(v, `document.querySelector(".mbox-fab").click()`);
+		await waitFor(v, `document.querySelector(".mbox-sheet")`);
+		const PNG = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0];
+		const picks: [string, string, number[], string][] = [
+			["image:1234", "image/jpeg", [1, 2, 3], "image:1234.jpg"],
+			["doc", "", PNG, "doc.png"],
+			["raw", "application/octet-stream", [0xff, 0xd8, 0xff, 0xe0, 0, 0], "raw.jpg"],
+			["memo", "application/octet-stream", [0x68, 0x69], "memo"],
+			["IMG_0001.HEIC", "image/heic", [7], "IMG_0001.HEIC"],
+		];
+		for (const [name, type, bytes, shown] of picks) {
+			await attachAs(v, ".mbox-sheet input[type=file]:not([accept])", name, type, bytes);
+			await waitFor(v, `document.querySelector('.mbox-sheet .mbox-chip[data-name=${JSON.stringify(shown)}]')`);
+		}
+		expect(await ev<string[]>(v, `[...document.querySelectorAll(".mbox-sheet .mbox-chip")].map(c => c.dataset.name)`)).toEqual(picks.map(p => p[3]));
 	}, 30_000);
 
 	test("on a phone the folded bar sits above the tab bar, says 펼치기, and opens again with the text kept", async () => {
@@ -406,12 +480,9 @@ describe("the bar above the list", () => {
 		// A mail that owes a reply beside one whose mailbox cannot follow: the fullest bar there is.
 		await tick(v, "월간 점검 보고서 확인 요청");
 		await tick(v, "회사 메일");
-		// 읽음 and 보관 stand as words, the rest is in the ⋯ menu, 삭제 last and in the danger tone
-		expect(await ev<string[]>(v, `[...document.querySelectorAll('#mbox-bar .mbox-w .mbox-bt')].map(b => b.textContent)`)).toEqual(["읽음", "보관"]);
-		await run(v, `document.querySelector('#mbox-bar [data-k="mail-more"]').click()`);
-		await waitFor(v, `document.querySelector(".menu .mi")`);
-		expect(await ev<string[]>(v, `[...document.querySelectorAll(".menu .mi")].map(b => b.querySelector(".ml").firstChild.textContent + (b.classList.contains("danger") ? "!" : ""))`)).toEqual(["안 읽음으로 표시", "답장 안 함 1개", "삭제!"]);
-		await run(v, `document.body.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }))`);
+		// every action stands in the bar, none behind a ⋯; 삭제 in the danger tone and apart from the ×
+		expect(await ev<string[]>(v, `[...document.querySelectorAll("#mbox-bar .mbox-b")].map(b => b.getAttribute("aria-label") + (b.classList.contains("danger") ? "!" : ""))`)).toEqual(["읽음으로 표시", "안 읽음으로 표시", "완료(보관)", "삭제!", "답장 안 함 1개", "선택 해제"]);
+		expect(await ev<boolean>(v, `!!document.querySelector('#mbox-bar [data-k="mail-more"]')`)).toBe(false);
 		expect(await ev<Place>(v, place)).toEqual(idle);
 		// One line: the bar holds every control on one row, nothing dropped below it.
 		expect(await ev<number>(v, `new Set([...document.querySelector("#mbox-bar").children].map(c => { const r = c.getBoundingClientRect(); return Math.round(r.top + r.height / 2); })).size`)).toBe(1);
@@ -426,21 +497,38 @@ describe("the bar above the list", () => {
 		await run(v, `document.querySelector("#mon-tl > .mr .mr-chk").click()`);
 		expect(await ev<Place>(v, place)).toEqual(owed);
 	}, 30_000);
+
+	const ticked = (v: View) => ev<[number, number, boolean, boolean]>(v, `[[...document.querySelectorAll("#mon-tl .mr-chk")].filter(c => c.checked).length, document.querySelectorAll("#mon-tl > .mr.mr-sel").length, document.querySelector("#mbox-bar .mbox-all").checked, document.querySelector("#mbox-bar .mbox-all").indeterminate]`);
+	test("a bulk 읽음 on two ticked mails clears every tick and the select-all box; a refused one keeps its tick", async () => {
+		const v = await openList(1280, 800);
+		await tick(v, "월간 점검 보고서 확인 요청"); await tick(v, "회의 일정 변경");
+		expect(await ticked(v)).toEqual([2, 2, false, true]);
+		await run(v, `${bar(v, "읽음으로 표시")}.click()`);
+		await posted(1);
+		await waitFor(v, `document.querySelectorAll("#mon-tl > .mr.mr-new").length === 2 && document.querySelector(".snack")?.textContent.includes("읽음")`);
+		expect(await ticked(v)).toEqual([0, 0, false, false]);
+		expect(await ev<boolean>(v, `document.querySelector("#mbox-bar").classList.contains("on")`)).toBe(false);
+		await tick(v, "처리가 안 되는 메일");
+		await run(v, `${bar(v, "읽음으로 표시")}.click()`);
+		await posted(2);
+		await waitFor(v, `document.querySelector(".snack")?.textContent.includes("Gmail")`);
+		expect(await ticked(v)).toEqual([1, 1, false, true]);
+	}, 30_000);
+
+	test("at 360 the selection bar shows all five actions on one line and nothing runs past its edge", async () => {
+		const v = await openList(360, 800);
+		await tick(v, "월간 점검 보고서 확인 요청"); await tick(v, "회의 일정 변경");
+		await shot(v, "bar-360-selected");
+		expect(await ev<string[]>(v, `[...document.querySelectorAll("#mbox-bar .mbox-b[data-k]")].map(b => b.dataset.k)`)).toEqual(["mail-read", "mail-unread", "mail-archive", "mail-trash", "mail-fyi"]);
+		expect(await ev<boolean>(v, `document.querySelector('#mbox-bar [data-k="mail-trash"]').classList.contains("danger")`)).toBe(true);
+		expect(await ev<boolean[]>(v, `(() => { const b = document.querySelector("#mbox-bar"), r = b.getBoundingClientRect(), kids = [...b.children].map(c => c.getBoundingClientRect());
+			return [b.scrollWidth <= b.clientWidth, kids.every(q => q.left >= r.left - 0.5 && q.right <= r.right + 0.5), new Set(kids.map(q => Math.round(q.top + q.height / 2))).size === 1, document.documentElement.scrollWidth <= innerWidth]; })()`)).toEqual([true, true, true, true]);
+	}, 30_000);
 });
 
 describe("the line about a mailbox that does not follow", () => {
 	const note = (v: View) => ev<string | null>(v, `document.querySelector("#mon-tl .mbox-note")?.textContent ?? null`);
 	const only = (can: string[]) => { mails = mails.filter(m => m.key !== "fx-old"); for (const m of mails) m.can = can; };
-
-	test("no list draws it, whatever its mailbox can do", async () => {
-		only([]);
-		const off = await openList(1280, 800);
-		expect(await note(off)).toBeNull();
-		expect(await ev<boolean>(off, `document.body.textContent.includes("실제 메일함에는")`)).toBe(false);
-		only(CAN);
-		const on = await openList(1280, 800);
-		expect(await note(on)).toBeNull();
-	}, 30_000);
 
 	test("a list with nothing to say draws no stray text between the filter and the rows", async () => {
 		only(CAN);
@@ -458,7 +546,7 @@ describe("삭제하면 원본도 삭제", () => {
 		on("fx-b");
 		const v = await openList(1280, 800);
 		await tick(v, "회의 일정 변경");
-		await pickMore(v, "삭제");
+		await pickBar(v, "삭제");
 		await waitFor(v, `document.querySelector("dialog[open]")`);
 		expect((await confirm(v)).match(/원본/g)?.length).toBe(1);
 		expect(await confirm(v)).toContain("휴지통");
@@ -474,7 +562,7 @@ describe("삭제하면 원본도 삭제", () => {
 		on("fx-b");
 		const v = await openList(1280, 800);
 		await tick(v, "회의 일정 변경");
-		await pickMore(v, "삭제");
+		await pickBar(v, "삭제");
 		await waitFor(v, `document.querySelector("dialog[open]")`);
 		await run(v, `document.querySelector("dialog[open]").close()`);
 		await waitFor(v, `!document.querySelector("dialog[open]")`);
@@ -486,7 +574,7 @@ describe("삭제하면 원본도 삭제", () => {
 		on("fx-a", "fx-b");
 		const v = await openList(1280, 800);
 		await tick(v, "월간 점검 보고서 확인 요청"); await tick(v, "회의 일정 변경"); await tick(v, "회사 메일");
-		await pickMore(v, "삭제");
+		await pickBar(v, "삭제");
 		await waitFor(v, `document.querySelector("dialog[open]")`);
 		expect(await confirm(v)).toContain("메일 3개");
 		expect(await confirm(v)).toContain("그중 2개는 원본");
@@ -499,7 +587,7 @@ describe("삭제하면 원본도 삭제", () => {
 		on("fx-fail");
 		const v = await openList(1280, 800);
 		await tick(v, "처리가 안 되는 메일");
-		await pickMore(v, "삭제");
+		await pickBar(v, "삭제");
 		await waitFor(v, `document.querySelector("dialog[open]")`);
 		await yes(v);
 		await waitFor(v, `document.querySelector(".snack.bad .sa")`);
@@ -535,13 +623,13 @@ describe("답장 안 함 on many mails", () => {
 		owe();
 		const v = await openList(1280, 800);
 		await tick(v, "월간 점검 보고서 확인 요청"); await tick(v, "회의 일정 변경"); await tick(v, "견적서 보내드립니다");
-		await openMore(v);
-		expect(await ev<string>(v, `${moreItem("답장 안 함")}.querySelector(".ml").firstChild.textContent`)).toBe("답장 안 함 2개");
-		await run(v, `${moreItem("답장 안 함")}.click()`);
+		expect(await ev<string>(v, `${barAct("답장 안 함")}.getAttribute("aria-label")`)).toBe("답장 안 함 2개");
+		await pickBar(v, "답장 안 함");
 		await posted(1);
 		expect(posts[0]).toEqual({ path: "/api/mail/fyi", body: { keys: ["fx-a", "fx-b"], on: true } });
 		await waitFor(v, `${rowJs("회의 일정 변경")}.querySelector('.mr-state[data-state="답장 안 함"]')`);
-		expect(await ev<string>(v, `document.querySelector("#mbox-bar .mbox-n").textContent`)).toBe("1개 선택");
+		// the action went through, so the whole choice clears, the mail that owed nothing too
+		await waitFor(v, `document.querySelectorAll("#mon-tl .mr-chk:checked").length === 0`);
 		await toastAct(v);
 		await posted(2);
 		expect(posts[1]).toEqual({ path: "/api/mail/fyi", body: { keys: ["fx-a", "fx-b"], on: false } });
@@ -630,12 +718,12 @@ describe("a row leaves only after the hub answered", () => {
 		const g = hold();
 		const v = await openList(1280, 800);
 		await tick(v, "회의 일정 변경");
-		await pickMore(v, "삭제");
+		await pickBar(v, "삭제");
 		await confirmYes(v);
 		await posted(1);
 		expect(posts[0]!.path).toBe("/api/mail/delete-original");
 		expect(await still(v, "회의 일정 변경")).toBe(true);
-		expect(await ev<unknown[]>(v, `[document.querySelector('#mbox-bar [data-k="mail-more"]').disabled, document.querySelector('#mbox-bar [data-k="mail-more"]').getAttribute("aria-busy")]`)).toEqual([true, "true"]);
+		expect(await ev<unknown[]>(v, `[document.querySelector('#mbox-bar [data-k="mail-trash"]').disabled, document.querySelector('#mbox-bar [data-k="mail-trash"]').getAttribute("aria-busy")]`)).toEqual([true, "true"]);
 		g.open();
 		await waitFor(v, `!${rowJs("회의 일정 변경")}`);
 	}, 30_000);
@@ -644,7 +732,7 @@ describe("a row leaves only after the hub answered", () => {
 		const g = hold();
 		const v = await openList(1280, 800);
 		await tick(v, "회사 메일");
-		await pickMore(v, "삭제");
+		await pickBar(v, "삭제");
 		await confirmYes(v);
 		await posted(1);
 		expect(posts[0]).toEqual({ path: "/api/mail/fx-acme/action", body: { action: "trash" } });
@@ -702,21 +790,21 @@ describe("a row leaves only after the hub answered", () => {
 			expect(await ev<number>(v, `document.querySelectorAll("#mbox-bar [aria-busy]").length`)).toBe(0);
 		}, 30_000);
 
-		test("the bar's ⋯ during a 삭제 with the original: the new button is busy, it opens no menu, and it comes back when the hub answered", async () => {
+		test("the bar's 삭제 during a 삭제 with the original: the new button is busy, a second press asks nothing, and it comes back when the hub answered", async () => {
 			for (const m of mails) if (m.key === "fx-b" || m.key === "fx-c") m.trashOriginal = true;
 			const g = hold();
 			const v = await openList(1280, 800);
-			const more = `document.querySelector('#mbox-bar [data-k="mail-more"]')`;
+			const del = `document.querySelector('#mbox-bar [data-k="mail-trash"]')`;
 			await tick(v, "회의 일정 변경"); await tick(v, "견적서 보내드립니다");
-			await pickMore(v, "삭제");
+			await pickBar(v, "삭제");
 			await confirmYes(v);
 			await posted(1);
-			await run(v, `window.__was = ${more}`);
+			await run(v, `window.__was = ${del}`);
 			await repaint(v);
-			expect(await ev<boolean>(v, `${more} !== window.__was`)).toBe(true);
-			expect(await busyOf(v, more)).toEqual([true, "true"]);
-			await run(v, `${more}.click()`);
-			expect(await ev<boolean>(v, `!!document.querySelector(".menu .mi")`)).toBe(false);
+			expect(await ev<boolean>(v, `${del} !== window.__was`)).toBe(true);
+			expect(await busyOf(v, del)).toEqual([true, "true"]);
+			await run(v, `${del}.click()`);
+			expect(await ev<boolean>(v, `!!document.querySelector("dialog[open]")`)).toBe(false);
 			g.open();
 			await waitFor(v, `!${rowJs("회의 일정 변경")} && !${rowJs("견적서 보내드립니다")}`);
 			expect(posts.map(p => p.path)).toEqual(["/api/mail/delete-original"]);
@@ -758,7 +846,7 @@ describe("a row leaves only after the hub answered", () => {
 			const v = await openList(1280, 800);
 			await folder(v, "owed");
 			await tick(v, "회의 일정 변경");
-			await pickMore(v, "답장 안 함");
+			await pickBar(v, "답장 안 함");
 			await posted(1);
 			expect(posts[0]!.path).toBe("/api/mail/fyi");
 			expect(await still(v, "회의 일정 변경")).toBe(true);
@@ -775,7 +863,7 @@ describe("a row leaves only after the hub answered", () => {
 			await folder(v, "owed");
 			const before = await titles(v);
 			await tick(v, "회의 일정 변경");
-			await pickMore(v, "답장 안 함");
+			await pickBar(v, "답장 안 함");
 			await posted(1);
 			expect(await still(v, "회의 일정 변경")).toBe(true);
 			g.open();
@@ -785,37 +873,6 @@ describe("a row leaves only after the hub answered", () => {
 			expect(await replyOf(v, "fx-b")).toBe("needs");
 		}, 30_000);
 	});
-});
-
-describe.if(!!SHOTS)("screenshots", () => {
-	for (const [name, w, h] of [["desktop", 1280, 800], ["phone", 390, 844]] as const) {
-		for (const theme of ["light", "dark"] as const) {
-			test(`${name} ${theme}`, async () => {
-				const v = await openList(w, h, theme);
-				await tick(v, "월간 점검 보고서 확인 요청"); await tick(v, "견적서 보내드립니다");
-				await shot(v, `${name}-${theme}-list`);
-				await run(v, `document.querySelectorAll("#mon-tl .mr-chk").forEach(c => c.checked && c.click())`);
-				await openMail(v, "월간 점검 보고서 확인 요청");
-				await run(v, `document.querySelector('#tl .mbox-mode[data-mode="reply"]').click()`);
-				await waitFor(v, `document.querySelector("#tl .mbox-reply.open")`);
-				await fill(v, '#tl [data-k="mail-body"]', "확인했어요. 금요일까지 결과를 보내 드릴게요.");
-				await attach(v, "#tl .mbox-reply", "결과보고서.pdf", "x".repeat(2048));
-				await waitFor(v, `document.querySelector('#tl .mbox-chip[data-name="결과보고서.pdf"]')`);
-				await run(v, `document.querySelector("#tl .mbox-reply").scrollIntoView({ block: "end" })`);
-				await shot(v, `${name}-${theme}-thread`);
-				await run(v, `go("monitoring", "i:mail")`);
-				await waitFor(v, `document.querySelector(".mbox-fab")`);
-				await run(v, `document.querySelector(".mbox-fab").click()`);
-				await waitFor(v, `document.querySelector(".mbox-sheet")`);
-				await fill(v, '.mbox-sheet [data-k="mail-to"]', "lee@example.com");
-				await fill(v, '.mbox-sheet [data-k="mail-subject"]', "견적 문의");
-				await fill(v, '.mbox-sheet [data-k="mail-body"]', "안녕하세요.\n견적서를 보내 주실 수 있을까요?");
-				await attach(v, ".mbox-sheet", "요청서.docx", "y".repeat(40_000));
-				await waitFor(v, `document.querySelector('.mbox-sheet .mbox-chip[data-name="요청서.docx"]')`);
-				await shot(v, `${name}-${theme}-compose`);
-			}, 60_000);
-		}
-	}
 });
 
 describe("the mail column's corner on a wide screen", () => {

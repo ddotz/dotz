@@ -3,16 +3,15 @@
 // an @mention of its author under the media: lib/ig-owner.ts) is skipped. The first run records the counts and the time and prints nothing; quiet hours leave the baseline alone so the next run catches up.
 import type { Ctx } from "../lib/config.ts";
 import { SetupError } from "../lib/config.ts";
-import type { CommentDeps } from "../../reply-drafts/lib/comments.ts";
 import { ownerView } from "../lib/ig-owner.ts";
 import { commentsFor, mediaWithCounts } from "../lib/instagram.ts";
-import { realReplyDeps, titleArg, withReplyDrafts } from "../lib/reply-adapter.ts";
+import { titleArg } from "../lib/reply-adapter.ts";
 import { main, oneLine, type RunResult, runWatch } from "../lib/watchkit.ts";
 
 type State = { counts: Record<string, number>; since: string };
 
-// With the reply-drafts switch for instagram on, the comment lines come out as ready approval [ask] messages (reply-drafts/lib/comments.ts).
-export async function run(ctx: Ctx, _args: string[] = [], deps?: CommentDeps): Promise<RunResult> {
+// The comment lines go to the bot as they are; comment replies are drafted and sent by the comments app (hub/comments).
+export async function run(ctx: Ctx, _args: string[] = []): Promise<RunResult> {
 	const res = await runWatch<State>(ctx, {
 		quiet: true,
 		body: async (cfg, prev) => {
@@ -39,7 +38,7 @@ export async function run(ctx: Ctx, _args: string[] = [], deps?: CommentDeps): P
 			return { lines: found.map(f => f.line), state: { counts, since: new Date(newest).toISOString() } };
 		},
 	});
-	return withReplyDrafts(ctx, "instagram", res, deps);
+	return res;
 }
 
-if (import.meta.main) await main((ctx, args) => run(ctx, args, realReplyDeps()));
+if (import.meta.main) await main(run);

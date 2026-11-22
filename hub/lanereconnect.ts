@@ -3,7 +3,7 @@
 // provider error and will not report: both leave nothing that would ever wake it (2026-11-06: note-merge sat parked after the network
 // came back, until a message reached it). The mark is on disk, so a parked lane keeps it through a restart; a turn that gets an
 // answer clears it. The resume is the laneTransient turn on the same session, which carries what the lane already sent.
-import { quietOmoWork } from "./bgwork.ts";
+import { quietOmoWork, quietOmpWork } from "./bgwork.ts";
 import { msg } from "./i18n.ts";
 import { resumeLane } from "./lanerun.ts";
 import { prompt } from "./laneprompt.ts";
@@ -17,7 +17,7 @@ import { classifyProviderError } from "./providers.ts";
 const counted = new Set<string>();
 
 function markStalled(lane: Lane): void {
-	for (const w of quietOmoWork(lane.sessionFile)) {
+	for (const w of [...quietOmoWork(lane.sessionFile), ...quietOmpWork(lane.sessionFile)]) {
 		if (!w.error || counted.has(w.id) || classifyProviderError(w.error) !== "transient") continue;
 		counted.add(w.id);
 		lane.interrupted ??= {};

@@ -63,10 +63,10 @@ test("a fresh data dir: status says off and exits 0, touching nothing", async ()
 	expect(log.hub).toEqual([]);
 });
 
-test("login, read, draft and send refuse with the off line and make zero runner or gateway calls", async () => {
+test("login, read and draft refuse with the off line and make zero runner or gateway calls", async () => {
 	const { ctx, log } = fresh();
-	for (const argv of [["login"], ["read", "--chat", "1"], ["draft", "--chat", "1"], ["send", "--draft", "KABCDE"]]) expect(await run(argv, ctx)).toBe(1);
-	expect(log.out).toEqual(Array(4).fill(OFF_LINE));
+	for (const argv of [["login"], ["read", "--chat", "1"], ["draft", "--chat", "1"]]) expect(await run(argv, ctx)).toBe(1);
+	expect(log.out).toEqual(Array(3).fill(OFF_LINE));
 	expect(log.runs).toEqual([]);
 	expect(log.hub).toEqual([]);
 	expect(log.runs.filter(a => ["osascript", "open", "/bin/ls"].includes(a[0]!))).toEqual([]);

@@ -513,48 +513,5 @@ function deriveSpec(text, bot = "", tone) {
 function deriveBasicSpec(text, relayed = false, bot = "") {
   return specOfElements(parse(String(text ?? ""), false, relayed, bot) ?? []);
 }
-const SPEC_FENCE = /(\n|^)([ \t]{0,3})```([^\n`]*)\n?([\s\S]*?)(?:```[ \t]*(?=\n|$)|$)/g;
-function readable(v, out = []) {
-  if (typeof v === "string") {
-    if (v.trim())
-      out.push(v);
-  } else if (Array.isArray(v))
-    for (const x of v)
-      readable(x, out);
-  else if (v && typeof v === "object")
-    for (const x of Object.values(v))
-      readable(x, out);
-  return out;
-}
-function fenceBody(body) {
-  let json;
-  try {
-    json = JSON.parse(body);
-  } catch {
-    return null;
-  }
-  const ok = validateSpec(json);
-  if (ok.ok)
-    return specPlain(ok.spec);
-  const els = json?.elements;
-  const words = els && typeof els === "object" && !Array.isArray(els) ? Object.values(els).map((e) => readable(e?.props).join(`
-`)).filter(Boolean) : readable(json);
-  return words.length ? words.join(`
-`) : null;
-}
-function resolveSpecFence(text) {
-  if (typeof text !== "string" || !text.includes("dotz-spec"))
-    return text;
-  try {
-    return text.replace(SPEC_FENCE, (all, lead, _indent, lang, body) => {
-      if (lang.trim() !== "dotz-spec")
-        return all;
-      const plain = fenceBody(body);
-      return plain === null ? all : lead + plain;
-    });
-  } catch {
-    return text;
-  }
-}
 return { validateSpec, specChildren, elementPlain, deriveSpec, deriveBasicSpec, CHART_NOTE };
 })();

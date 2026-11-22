@@ -4,8 +4,7 @@ import { join } from "node:path";
 import { parseChoices } from "./choices.ts";
 import type * as Orchestrator from "./orchestrator.ts";
 import { cfg, paths } from "./config.ts";
-import { ERROR_ASK_HOLD_MS, ERROR_ASK_REPEAT_HOLD_MS, errorAnswer, errorAsk, errorAskFile, type OrchError, plainError, startErrorWatch, startResumeWatch, watchSession } from "./orch-error.ts";
-import { createPrompts } from "./prompts.ts";
+import { ERROR_ASK_HOLD_MS, ERROR_ASK_REPEAT_HOLD_MS, errorAnswer, errorAsk, errorAskFile, noteErrorAsked, type OrchError, plainError, startErrorWatch, startResumeWatch, watchSession } from "./orch-error.ts";
 import { adapters } from "./runtime/index.ts";
 import { omp } from "./runtime/omp.ts";
 import { advance, flush } from "./runtime/test-clock.ts";
@@ -137,6 +136,13 @@ test("an episode over inside the hold goes to the worklog with no ask and no rec
 	o.setErrorHandler(e => asked.push(e));
 	o.setAlertHandler(t => alerts.push(t));
 	o.setNoticeHandler(t => notices.push(t));
+	// Its own state, so it passes alone and in any order: a running orchestrator with no error, and an ask sent moments ago.
+	if (started.length === 0) o.start();
+	if (o.orch.error) {
+		started.at(-1)!.push({ type: "assistant", text: "-", stop: "stop" });
+		await flush();
+	}
+	noteErrorAsked();
 	const episode = async () => {
 		for (let i = 0; i < 6; i++) {
 			started.at(-1)!.push(failed("stream start timed out"));
@@ -150,7 +156,7 @@ test("an episode over inside the hold goes to the worklog with no ask and no rec
 		expect(o.orch.error).toBeUndefined();
 	};
 
-	// the ask of the first test was sent moments ago: past the normal hold, still quiet, and over before the longer one
+	// the ask sent moments ago: past the normal hold, still quiet, and over before the longer one
 	await episode();
 	await advance(ERROR_ASK_HOLD_MS + 60_000);
 	expect(asked).toHaveLength(0);
@@ -286,40 +292,6 @@ test("the resume watch probes nothing with nothing interrupted, resumes one entr
 	await tick();
 	clearInterval(t);
 	expect(resumes).toEqual(["x", "x"]);
-});
-
-function queue() {
-	const delivered: string[] = [];
-	const answered: string[] = [];
-	const q = createPrompts({
-		deliver: text => delivered.push(text),
-		steer: () => false,
-		working: () => false,
-		note: (_t, _r, text) => text,
-		isNote: () => false,
-		post: async () => ({ delivered: true }),
-		clearProgress: () => {},
-		persist: () => {},
-		log: () => {},
-		answered,
-	});
-	return { q, delivered };
-}
-
-test("open prompts replay once after a restart, oldest first, without the answered ones", () => {
-	const { q, delivered } = queue();
-	const wrap = (t: string) => (t.startsWith("[gateway restarted]") ? t : `[gateway restarted] ${t}`);
-	q.deliver("second", { target: "chat", replyTo: "m2" });
-	q.deliver("first", { target: "chat", replyTo: "m1" });
-	q.deliver("done", { target: "chat", replyTo: "m3" });
-	q.markAnswered("m3");
-	delivered.length = 0;
-	expect(q.reopen(wrap).replayed).toBe(2);
-	expect(delivered).toEqual(["[gateway restarted] second", "[gateway restarted] first"]);
-	delivered.length = 0;
-	q.markAnswered("m1");
-	expect(q.reopen(wrap).replayed).toBe(1);
-	expect(delivered).toEqual(["[gateway restarted] second"]);
 });
 
 test("the banner shows with the reason, since when and the restart button, and clears when the error is gone", async () => {

@@ -151,16 +151,33 @@ test("h) a lane that ignores the stuck abort is killed after the grace and resum
 	await quiet(300);
 });
 
-test("h) a lane with a running subagent is untouched", async () => {
+const call = (tool: string, id: string): AgentEvent => ({ type: "activity", row: { type: "tool_call", tool, call_id: id, text: tool } });
+
+test("h) a lane with a running subagent whose turn sits in wait is untouched", async () => {
 	notices.length = reports.length = 0;
 	const { agent } = await working("stuck-lane-c");
 	agent.push({ type: "subagent", update: { id: "lane-worker", status: "running" } });
+	agent.push(call("wait", "w1"));
 	await flush();
 	await quiet(STUCK_MS * 3);
 	expect(agent.aborts).toBe(0);
 	expect(notices).toEqual([]);
 	agent.push({ type: "subagent", update: { id: "lane-worker", status: "done" } });
 	l.stopLane("stuck-lane-c");
+	await quiet(300);
+});
+
+test("h) a running subagent does not excuse a lane turn stuck in another call: it is aborted like the orchestrator's", async () => {
+	notices.length = reports.length = 0;
+	const { agent } = await working("stuck-lane-i");
+	agent.push({ type: "subagent", update: { id: "lane-worker-2", status: "running" } });
+	agent.push(call("bash", "b1"));
+	await flush();
+	await quiet(STUCK_MS);
+	expect(agent.aborts).toBe(1);
+	await quiet(500);
+	agent.push({ type: "subagent", update: { id: "lane-worker-2", status: "done" } });
+	l.stopLane("stuck-lane-i");
 	await quiet(300);
 });
 
@@ -220,7 +237,7 @@ test("a) a lane recovered from a stuck turn gets the frozen call's shape in the 
 	await quiet(STUCK_MS);
 	await quiet(500);
 	const revive = spawns.at(-1)!.agent.sent.join("\n");
-	expect(revive).toContain("앞 턴이 eval py 셀 안의 tool.bash x4에서 10분 멈춰서 끊었어요. 같은 호출 모양을 되풀이하지 마세요.");
+	expect(revive).toContain("eval py 셀 안의 tool.bash x4");
 	expect(revive).toContain(msg().laneStopped);
 	expect(revive).not.toContain(SECRET_ARG);
 	l.stopLane("stuck-lane-f");

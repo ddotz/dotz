@@ -82,6 +82,20 @@
 .ds-res { display: flex; flex-direction: column; gap: var(--sp-05); padding: var(--sp-3) var(--sp-4); border-radius: var(--r-ctl); background: var(--fs-fill); }
 .ds-rl { color: var(--ok); font: 600 12px/16px var(--font); }
 .ds-ra { font: 600 15px/22px var(--font); overflow-wrap: anywhere; }
+.ds-more > summary { padding: var(--sp-2) 0; color: var(--fg-2); font: 500 14px/20px var(--font); list-style: none; cursor: pointer; }
+.ds-more > summary::-webkit-details-marker { display: none; }
+.ds-more > summary::after { content: "›"; display: inline-block; margin-left: var(--sp-1); transition: transform var(--m-fast) var(--m-ease); }
+.ds-more[open] > summary::after { transform: rotate(90deg); }
+.fs-body.ov { -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - var(--sp-8)), transparent); mask-image: linear-gradient(to bottom, #000 calc(100% - var(--sp-8)), transparent); }
+.ds-hint { position: relative; z-index: 1; flex: none; align-self: center; height: var(--sp-6); margin: calc(var(--sp-6) * -1) 0 0; padding: 0 var(--sp-3); border: 0; border-radius: var(--r-ctl); background: var(--fs-fill); color: var(--fg-2); font: 500 12px/24px var(--font); }
+.al-bar { flex: none; width: 100%; max-width: var(--col); margin: 0 auto; padding: var(--sp-1) var(--row-px) max(var(--sp-4), env(safe-area-inset-bottom)); }
+.al-ask { display: block; min-height: var(--row-h); padding: 0; border: 0; background: none; color: var(--accent); font: 500 14px/20px var(--font); text-align: left; }
+.ds-fixed { display: flex; gap: var(--sp-1); }
+.ds-fixed .ds-direct { flex: 1 1 0; min-width: 0; justify-content: center; padding: var(--sp-2) var(--sp-1); text-align: center; }
+.dc-ask { display: flex; flex-direction: column; gap: var(--sp-1); flex: none; padding: var(--sp-1) var(--sp-3) var(--sp-2); }
+.dc-ask-st { color: var(--fg-3); font-size: 12.5px; line-height: 18px; }
+.dc-fixed { display: flex; flex-wrap: wrap; gap: var(--sp-1); }
+.ask-note { color: var(--fg-3); font: 400 12px/16px var(--font); text-align: right; overflow-wrap: anywhere; }
 
 /* Decision overlay (30-notices.js dkOpen, 10-decision-card.js renderSheet) and draft approval (hub/draft-approval.ts): content only; the frame is 14-overlay.css. */
 .dc-dh { display: flex; align-items: baseline; gap: var(--sp-2); font-size: 14px; line-height: 22px; }
@@ -97,9 +111,6 @@
 .dc-act.main { order: 0; padding: 0 var(--sp-5); }
 .dc-act.main:active:not(:disabled) { background: color-mix(in srgb, var(--accent) 85%, #000); }
 .dc-act:disabled { opacity: .55; }
-.dc-manual { margin-left: auto; gap: var(--sp-1); padding: 0 var(--sp-1) 0 var(--sp-2); color: var(--fg-3); font-size: 13px; }
-.dc-manual:active { color: var(--fg); }
-.dc-manual .ic { width: 14px; height: 14px; }
 
 /* x (무시): a question that waits on the owner can be waved off. 44px thumb target on every surface, quiet --fg-3 until pressed. */
 button.nt-x { width: 44px; height: 44px; border-radius: var(--r-ctl); color: var(--fg-3); }

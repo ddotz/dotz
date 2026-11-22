@@ -24,6 +24,9 @@ const notices = [
 	{ id: "gw-update", kind: "alert", tone: "ask", by: "gateway", title: "게이트웨이 업데이트", text: "새 버전이 있어요. 업데이트할까요?", open: "alert", src: "alert", at: at(7), ts: at(7), updated: at(7), read: false },
 	{ id: "gw-login", kind: "alert", tone: "ask", by: "gateway", title: "카카오톡 로그인", text: "카카오톡 로그인이 풀렸어요. 다시 로그인해 주세요", open: "alert", src: "alert", at: at(8), ts: at(8), updated: at(8), read: false },
 ];
+// The three send approvals are the reply queue's waiting items (GET /api/reply/queue), of no app: what the 답장 대기 row counts under 기타.
+const queueItem = (ref: string, conv: string, to: string, text: string, at: number) => ({ item: `mail:${ref}`, ref, kind: "mail", app: "", label: "", conv, at, can: { send: true, revise: true, edit: true, drop: true, restore: false }, draft: { state: "pending", toLabel: "받는이", to, text } });
+const QUEUE = notices.filter(n => n.decision && (n.decision as { draft?: { to: string; body: string } }).draft).map(n => { const d = (n.decision as { to: string; draft: { to: string; body: string } }); return queueItem(n.id, d.to, d.draft.to, d.draft.body, Date.parse(n.at)); });
 const lanes = [
 	...["alpha", "beta", "gamma"].map((name, i) => ({ name, status: "idle", live: true, alive: true, pendingAsk: { text: `${name} 세션: 어느 브랜치에 합칠까요?`, at: at(10 + i) } })),
 	{ name: "limited", status: "rate-limited", live: true, alive: true },
@@ -45,6 +48,7 @@ const server = Bun.serve({
 		if (url.pathname === "/api/activity") return json({ items: [], more: false, history: false });
 		if (url.pathname === "/api/conversations") return json({ items: [] });
 		if (url.pathname === "/api/notices") return json({ unread: notices.length, items: notices });
+		if (url.pathname === "/api/reply/queue") return json({ items: QUEUE, counts: {}, triageMin: 1, undoSec: 10 });
 		return url.pathname.startsWith("/api/") ? json({}) : new Response("not found", { status: 404 });
 	},
 });
@@ -79,7 +83,7 @@ for (const [w, h] of [[390, 844], [1280, 900]] as const) {
 			expect(r[3]!.act).toBe("선택");
 			expect(await q(`return ${LIST}.textContent`)).not.toContain("보내기 확인");
 			// the same 3 are the one 답장 초안 확인 row, the last of the list: the count per source under its title and the total at its right
-			expect(await q(`const r = document.querySelector('#home-now .hr[data-k="replies"]'); return [r === ${LIST}.lastElementChild, r.querySelector(".nm").textContent, r.querySelector(".ha").textContent, r.querySelector(".nb").textContent]`)).toEqual([true, "답장 초안 확인", "기타 3", "3"]);   // the fixture's drafts name no app, so they count under 기타
+			expect(await q(`const r = document.querySelector('#home-now .hr[data-k="replies"]'); return [r === [...${LIST}.querySelectorAll(":scope > .hr")].pop(), r.querySelector(".nm").textContent, r.querySelector(".ha").textContent, r.querySelector(".nb").textContent]`)).toEqual([true, "답장 초안 확인", "기타 3", "3"]);   // the fixture's drafts name no app, so they count under 기타
 			expect(await q(`return ${LIST}.querySelectorAll(":scope > .hr").length`)).toBe(8);
 			// no row of the card starts with a dot
 			expect(await q(`return ${LIST}.querySelectorAll(".dot").length`)).toBe(0);
@@ -92,8 +96,8 @@ for (const [w, h] of [[390, 844], [1280, 900]] as const) {
 			if (SHOTS) await Bun.write(join(SHOTS, `B-home-needs-${w}.png`), await view.screenshot());
 		}, 15_000);
 
-		test("a long list holds every row and scrolls past six; the count stays the item count", async () => {
-			expect(await q(`return getComputedStyle(${LIST}).overflowY`)).toBe("auto");
+		test("a long list holds every row, shows four and says how many more; the count stays the item count", async () => {
+			expect(await q(`return [${LIST}.querySelectorAll(":scope > .hr:not([hidden])").length, ${LIST}.querySelector(".hn-more").textContent]`)).toEqual([4, "4개 더 보기"]);
 			const r = await asked();
 			expect(r).toHaveLength(7);
 			expect(r.slice(-4).map(x => x.act)).toEqual(["선택", "답변", "답변", "답변"]);

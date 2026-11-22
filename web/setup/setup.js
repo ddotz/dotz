@@ -3,12 +3,14 @@
 // allow: SIZE_OK — the gate serves exactly one /setup.js and there is no bundler, so the six steps, the two sheets and the glue stay in one file.
 (() => {
   "use strict";
-  const ORDER = ["start", "harness", "tools", "bot", "discord", "web", "review", "done"];
+  const ORDER = ["start", "harness", "tools", "bot", "messengers", "web", "review", "done"];
   const STEPS = ORDER.slice(1, 7);
-  const ID = /^\d{17,20}$/;
+  const CONNECT = ["discord", "slack", "telegram", "jandi"];
+  const HASH = { discord: "discord", slack: "slack", telegram: "telegram", jandi: "jandi", "web-access": "webaccess" };
+  const HOST = /^(?=.{1,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}$/;
   const PICKS = ["character", "tone", "notices"];
   const root = document.getElementById("setup");
-  const V = { view: "start", skipped: {}, lines: {}, log: {}, rows: {}, dcOff: false, botMode: "", custom: {}, tokenEdit: false, peerEdit: false, applying: false, result: null, applyError: "" };
+  const V = { view: "start", skipped: {}, lines: {}, log: {}, rows: {}, custom: {}, peerEdit: false, applying: false, result: null, applyError: "" };
   let S, pending = {}, dirty = false, lib = null;
 
   /* ---------- helpers ---------- */
@@ -18,10 +20,13 @@
   const D = () => S.draft;
   const qs = (s, r = root) => r.querySelector(s);
   const hz = id => S.scan.harnesses.find(z => z.id === id);
+  const defaultRuntime = () => { const ready = S.scan.harnesses.filter(z => z.adapter && z.installed); return (ready.find(z => z.id === "omo") || ready[0])?.id || "omo"; };
   const job = id => S.jobs.find(r => r.id === id) || { id, state: "idle", detail: "", owner: "" };
   const busy = () => S.jobs.some(r => r.state === "running");
-  const furthest = () => Math.max(ORDER.indexOf(S.step === "apply" ? "review" : S.step), 0);
+  const furthest = () => Math.max(ORDER.indexOf(({ apply: "review", discord: "messengers" })[S.step] ?? S.step), 0);
   const webLine = () => { const w = S.web, t = u().webText; return w ? (w.state === "preparing" ? fmt(t.preparing, w) : t[w.state]) : ""; };
+  const accessNow = () => D().access || (S.scan.tailscale.running ? "tailscale" : "local");
+  const cleanHost = s => String(s ?? "").trim().toLowerCase().replace(/^[a-z]+:\/\//, "").replace(/\/+$/, "");
   const css = name => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
   const IC_CHECK = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>';
 
@@ -75,7 +80,7 @@
     const f = await api(`/api/setup/state${all ? "" : "?fresh=1"}`);
     S.scan = f.scan; S.saved = f.saved; S.jobs = f.jobs;
     if (all) Object.assign(S, { text: f.text, lang: f.lang, draft: f.draft, web: f.web });
-    if (["start", "harness", "tools"].includes(V.view)) render();
+    if (["start", "harness", "tools", "web"].includes(V.view)) { if (V.view === "web") Object.assign(S.draft, gather()); render(); }
   }
 
   /* ---------- rows ---------- */
@@ -83,7 +88,10 @@
   const tag = (t, label) => `<span class="tag ${t}">${h(label)}</span>`;
   const btn = (act, label, cls = "tonal inrow", data = "") => `<button class="btn ${cls}" data-act="${act}" ${data}>${h(label)}</button>`;
   const row = ({ lead = "", title, sup = "", end = "", attrs = "" }) => `<div class="li" ${attrs}><span class="lead">${lead}</span><span class="tx"><span class="hd">${h(title)}</span>${sup ? `<span class="sup">${h(sup)}</span>` : ""}</span><span class="li-end">${end}</span></div>`;
-  const pick = ({ k, i, on, title, sup = "", off = false }) => `<button class="li ob-pick${on ? " on" : ""}" role="radio" aria-checked="${on}" data-act="pick" data-k="${k}" data-i="${i}"${off ? " disabled" : ""}><span class="tx"><span class="hd">${h(title)}</span>${sup ? `<span class="sup">${h(sup)}</span>` : ""}</span><span class="li-end">${on ? IC_CHECK : ""}</span></button>`;
+  const pick = ({ k, i, on, title, sup = "", off = false, act = "pick", role = "radio" }) => {
+    const end = role === "checkbox" ? `<span class="ob-box${on ? " on" : ""}">${on ? IC_CHECK : ""}</span>` : on ? IC_CHECK : "";
+    return `<button class="li ob-pick${on ? " on" : ""}" role="${role}" aria-checked="${on}" data-act="${act}" data-k="${k}" data-i="${i}"${off ? " disabled" : ""}><span class="tx"><span class="hd">${h(title)}</span>${sup ? `<span class="sup">${h(sup)}</span>` : ""}</span><span class="li-end">${end}</span></button>`;
+  };
   const field = ({ k, label, val = "", ph = "", hint = "", type = "text", secret = "" }) =>
     `<label class="lbl" for="ob-${k}">${h(label)}</label><input class="fi" id="ob-${k}" data-k="${k}" ${secret ? `data-secret="${secret}" autocomplete="new-password" spellcheck="false"` : 'autocomplete="off"'} type="${type}" placeholder="${h(ph)}" value="${h(val)}">${hint ? `<div class="note">${h(hint)}</div>` : ""}`;
   const seg = (act, items, cur) => `<div class="seg" role="radiogroup">${items.map(([v, l]) => `<button role="radio" aria-checked="${v === cur}" class="${v === cur ? "on" : ""}" data-act="${act}" data-v="${v}">${h(l)}</button>`).join("")}</div>`;
@@ -110,12 +118,12 @@
   /* ---------- the steps ---------- */
   const VIEWS = {
     start() {
-      const x = u(), sc = S.scan, om = hz("omo"), ts = sc.tailscale;
+      const x = u(), sc = S.scan, ts = sc.tailscale;
       const accounts = sc.zele.accounts.join(", ");
       return {
         title: x.titles.start, sup: x.sups.start,
         body: `<div class="sec">${h(x.start.found)}</div><div class="list">` +
-          row({ lead: dot(om?.installed ? "ok" : "warn"), title: "OmO", sup: om?.installed ? x.start.installed : x.start.missing }) +
+          sc.harnesses.filter(z => z.adapter).map(z => row({ lead: dot(z.installed ? "ok" : "warn"), title: z.label, sup: z.installed ? x.start.installed : x.start.missing })).join("") +
           (sc.mac ? row({ lead: dot(sc.aside.app && sc.aside.cli ? "ok" : "warn"), title: "Aside", sup: sc.aside.app && sc.aside.cli ? x.ready : x.start.asideMissing }) : "") +
           row({ lead: dot(ts.running ? "ok" : "warn"), title: "Tailscale", sup: ts.running ? fmt(x.start.signedInAs, { name: ts.login }) : ts.installed ? x.start.notSignedIn : x.start.missing }) +
           row({ lead: dot(sc.zele.installed ? "ok" : "warn"), title: "zele", sup: !sc.zele.installed ? x.start.missing : accounts || x.start.noAccounts }) + "</div>" +
@@ -124,19 +132,19 @@
       };
     },
     harness() {
-      const x = u(), sel = D().runtime || "omo", picked = hz(sel);
-      const list = S.scan.harnesses.map(z => pick({ k: "runtime", i: z.id, on: sel === z.id, off: !z.adapter, title: z.label, sup: !z.adapter ? x.harness.noAdapter : z.installed ? [z.version, z.id === "omo" ? x.harness.defaultTag : ""].filter(Boolean).join(" · ") || x.ready : x.harness.notInstalled })).join("");
+      const x = u(), sel = D().runtime || defaultRuntime(), picked = hz(sel);
+      const list = S.scan.harnesses.map(z => pick({ k: "runtime", i: z.id, on: sel === z.id, off: !z.adapter, title: z.label, sup: !z.adapter ? x.harness.noAdapter : z.installed ? [z.version, z.id === defaultRuntime() ? x.harness.defaultTag : ""].filter(Boolean).join(" · ") || x.ready : x.harness.notInstalled })).join("");
       let more = "";
-      if (picked?.adapter && !picked.installed) more = sel === "omo" ? `<div class="list ob-gap">${actionRow("install-omo", { job: "install-omo", title: S.text.jobs["install-omo"], idle: "bun add -g --trust omo-ai" })}</div>` : `<div class="note ob-gap">${h(fmt(x.harness.installOwn, { name: picked.label }))}</div>`;
+      if (picked?.adapter && !picked.installed) more = picked.install ? `<div class="list ob-gap">${actionRow(`install-${sel}`, { job: `install-${sel}`, title: S.text.jobs[`install-${sel}`], idle: picked.install })}</div>` : `<div class="note ob-gap">${h(fmt(x.harness.installOwn, { name: picked.label }))}</div>`;
       else if (picked?.adapter) {
         const n = Array.isArray(picked.accounts) ? picked.accounts.length : Number(picked.accounts) || 0;
-        const spec = { title: fmt(x.harness.loginTitle, { name: picked.label }), idle: sel === "omo" ? x.harness.loginSupOmo : x.harness.loginSupTerm, ready: picked.login_ready, done: n ? fmt(x.harness.accounts, { n }) : x.ready };
+        const spec = { title: fmt(x.harness.loginTitle, { name: picked.label }), idle: sel === "omo" ? x.harness.loginSupOmo : sel === "claude" ? x.harness.loginSupClaude : x.harness.loginSupTerm, ready: picked.login_ready, done: n ? fmt(x.harness.accounts, { n }) : x.ready };
         more = `<div class="list ob-gap">${actionRow("login", sel === "omo" ? { ...spec, login: true } : { ...spec, term: `${sel}-login` })}</div>`;
       }
       return { title: x.titles.harness, sup: x.sups.harness, body: `<div class="list" role="radiogroup" aria-label="${h(x.steps.harness)}">${list}</div>${more}`, foot: nav("start", "next", x.next) };
     },
     tools() {
-      const x = u(), t = x.tools, sc = S.scan, ts = sc.tailscale, jt = S.text.jobs;
+      const x = u(), t = x.tools, sc = S.scan, jt = S.text.jobs;
       const cliOk = !sc.mac || sc.aside.cli;
       const off = "";
       const aside = sc.mac
@@ -145,13 +153,10 @@
           actionRow("aside-cli", { job: "aside-cli", title: t.asideCli, idle: t.asideCliSup, ready: sc.aside.cli }) +
           actionRow("aside-login", { term: "aside-login", title: t.asideLogin, idle: t.asideLoginSup, ready: sc.aside.signed_in, need: cliOk ? "" : t.needFirst, again: x.login }) + "</div>"
         : off;
-      const tail = `<div class="sec">Tailscale</div><div class="list">` +
-        actionRow("tailscale", { job: "tailscale", title: jt.tailscale, idle: t.tsSup, ready: ts.installed }) +
-        actionRow("tailscale-start", { job: "tailscale-start", title: t.tsLogin, idle: t.tsLoginSup, ready: ts.running, done: ts.login ? fmt(x.start.signedInAs, { name: ts.login }) : x.ready, again: x.login, need: ts.installed ? "" : t.needFirst }) + "</div>";
       const mail = `<div class="sec">${h(t.secMail)}</div><div class="list">` +
         actionRow("zele", { job: "zele", title: jt.zele, idle: t.zeleSup, ready: sc.zele.installed }) +
         actionRow("zele-login", { term: "zele-login", title: t.mailTitle, idle: t.mailSup, ready: sc.zele.accounts.length > 0, done: sc.zele.accounts.join(", "), again: x.connect, need: sc.zele.installed ? "" : t.needFirst }) + "</div>";
-      return { title: x.titles.tools, sup: x.sups.tools, body: aside + tail + mail, foot: nav("harness", "next", x.next) };
+      return { title: x.titles.tools, sup: x.sups.tools, body: aside + mail, foot: nav("harness", "next", x.next) };
     },
     bot() {
       const x = u(), b = x.bot;
@@ -163,57 +168,62 @@
         foot: nav("tools", "next", x.next),
       };
     },
-    discord() {
-      const x = u(), d = x.discord, saved = S.saved["discord-bot-token"];
-      const mode = V.botMode || (saved ? "token" : "auto");
-      if (V.dcOff) return { title: x.titles.discord, sup: x.sups.discord, body: `<div class="list">${row({ lead: dot(""), title: d.offTitle, sup: d.offSup, end: btn("dc-on", d.turnOn) })}</div>`, foot: nav("bot", "next", x.next) };
-      const token = saved && !V.tokenEdit && mode === "token"
-        ? `<div class="list ob-gap">${row({ lead: dot("ok"), title: d.tokenSaved, end: btn("token-edit", d.replace) })}</div>`
-        : mode === "token" ? field({ k: "token", label: d.token, type: "password", secret: "discord-bot-token", hint: d.tokenHint }) : "";
+    messengers() {
+      const x = u(), m = x.messengers, on = D().connect || [];
       return {
-        title: x.titles.discord, sup: x.sups.discord,
-        body: field({ k: "guild", label: d.guild, val: D().guild, ph: d.idPh, hint: d.guildHint }) + field({ k: "owner_id", label: d.owner, val: D().owner_id, ph: d.idPh, hint: d.ownerHint }) +
-          `<div class="sec">${h(d.bot)}</div><div class="list"><div class="li"><span class="tx"><span class="hd">${h(d.botHow)}</span><span class="sup">${h(mode === "token" ? d.tokenSup : d.autoSup)}</span></span><span class="li-end">${seg("bot-mode", [["auto", d.auto], ["token", d.tokenWord]], mode)}</span></div></div>` + token,
-        foot: nav("bot", "next", x.next, btn("dc-off", d.skip, "text")),
+        title: x.titles.messengers, sup: x.sups.messengers,
+        body: `<div class="list" role="group" aria-label="${h(x.steps.messengers)}">${CONNECT.map(k => pick({ k: "connect", i: k, on: on.includes(k), title: m.items[k].t, sup: m.items[k].s, act: "connect", role: "checkbox" })).join("")}</div><div class="note">${h(m.none)}</div>`,
+        foot: nav("bot", "next", x.next),
       };
     },
     web() {
-      const x = u(), w = x.web, ts = S.scan.tailscale;
+      const x = u(), w = x.web, ts = S.scan.tailscale, mode = accessNow();
       const logins = D().allow_logins ?? (ts.running && ts.login ? [ts.login] : []);
       const peer = S.saved["peer-token"] && !V.peerEdit
-        ? `<div class="list ob-gap">${row({ lead: dot("ok"), title: w.peerSaved, end: btn("peer-edit", x.discord.replace) })}</div>`
+        ? `<div class="list ob-gap">${row({ lead: dot("ok"), title: w.peerSaved, end: btn("peer-edit", w.replace) })}</div>`
         : field({ k: "peer", label: w.peer, type: "password", secret: "peer-token", hint: w.peerHint });
+      const panel = mode === "tailscale"
+        ? `<div class="list ob-gap">` +
+          actionRow("tailscale", { job: "tailscale", title: S.text.jobs.tailscale, idle: w.tsSup, ready: ts.installed }) +
+          actionRow("tailscale-start", { job: "tailscale-start", title: w.tsLogin, idle: w.tsLoginSup, ready: ts.running, done: ts.login ? fmt(x.start.signedInAs, { name: ts.login }) : x.ready, again: x.login, need: ts.installed ? "" : x.tools.needFirst }) + "</div>" +
+          field({ k: "allow_logins", label: w.logins, val: logins.join(", "), hint: w.loginsHint })
+        : mode === "cloudflare"
+          ? field({ k: "cloudflare_hostname", label: w.hostname, val: D().cloudflare_hostname ?? "", ph: w.hostnamePh }) + `<div class="note">${h(w.cloudflareNote)}</div>`
+          : `<div class="note">${h(w.localNote)}</div>`;
       return {
         title: x.titles.web, sup: x.sups.web,
-        body: field({ k: "machine_name", label: w.machine, val: D().machine_name ?? (ts.host || "").split(".")[0], hint: w.machineHint }) + field({ k: "allow_logins", label: w.logins, val: logins.join(", "), hint: w.loginsHint }) +
+        body: `<div class="sec">${h(w.access)}</div><div class="ob-access">${seg("access", [["tailscale", "Tailscale"], ["cloudflare", "Cloudflare"], ["local", w.modeLocal]], mode)}</div>` + panel +
+          field({ k: "machine_name", label: w.machine, val: D().machine_name ?? (ts.host || "").split(".")[0], hint: w.machineHint }) +
           `<details class="ob-more"><summary>${h(w.peerMore)}</summary>${peer}</details>` +
           `<details class="ob-more"><summary>${h(w.advanced)}</summary><div class="ob-two">${field({ k: "web_port", label: w.webPort, val: D().web_port ?? "", ph: location.port || w.default, type: "number" })}${field({ k: "tailscale_https_port", label: w.tsPort, val: D().tailscale_https_port ?? "", ph: w.default, type: "number" })}</div>${field({ k: "orchestrator_model", label: w.botModel, val: D().orchestrator_model, ph: w.default })}${field({ k: "lane_model", label: w.laneModel, val: D().lane_model, ph: w.default })}</details>`,
-        foot: nav("discord", "next", x.next),
+        foot: nav("messengers", "next", x.next),
       };
     },
     review() {
       const x = u(), r = x.review, sc = S.scan, d = D();
       if (V.applying) return { title: x.titles.applying, sup: x.sups.applying, body: `<div class="list" data-apply>${applyRows()}</div>`, foot: "" };
       const line = (s, title, sup) => row({ title, sup, end: `<a class="btn text inrow" href="#${s}">${h(x.fix)}</a>` });
-      const hs = hz(d.runtime || "omo");
+      const hs = hz(d.runtime || defaultRuntime());
       const ok = (v, word) => `${word} ${v ? x.ready : r.laterWord}`;
-      const tools = [sc.mac ? ok(sc.aside.app && sc.aside.cli, "Aside") : "", ok(sc.tailscale.running, "Tailscale"), ok(sc.zele.installed, "zele")].filter(Boolean).join(" · ");
-      const dc = d.guild && !V.dcOff ? fmt(r.discordSum, { guild: d.guild, bot: S.saved["discord-bot-token"] || V.botMode === "token" ? r.botTokenWord : r.botAutoWord }) : r.noDiscord;
+      const tools = [sc.mac ? ok(sc.aside.app && sc.aside.cli, "Aside") : "", ok(sc.zele.installed, "zele")].filter(Boolean).join(" · ");
+      const mode = accessNow(), logins = (d.allow_logins || []).join(", ");
+      const via = mode === "tailscale" ? ["Tailscale", logins || r.onlyHere] : mode === "cloudflare" ? ["Cloudflare", cleanHost(d.cloudflare_hostname) || r.hostLater] : [r.onlyHere];
       const err = (d.name || "").length < 2 ? `<div class="note err" role="alert">${h(x.errors.name)}</div>` : V.applyError ? `<div class="note err" role="alert">${h(V.applyError)}</div>` : "";
       return {
         title: x.titles.review, sup: x.sups.review,
-        body: `<div class="list">${line("harness", r.harness, `${hs?.label ?? "OmO"}${hs?.login_ready ? r.loggedIn : r.loginLater}`)}${line("tools", r.tools, tools)}${line("bot", r.bot, `${d.name || r.noName} · ${(d.tone || "").split(/[.,(]/)[0].slice(0, 24)}`)}${line("discord", "Discord", dc)}${line("web", r.web, `${d.machine_name || sc.tailscale.host || "-"} · ${(d.allow_logins || []).join(", ") || r.onlyHere}`)}</div>${err}`,
+        body: `<div class="list">${line("harness", r.harness, `${hs?.label ?? "OmO"}${hs?.login_ready ? r.loggedIn : r.loginLater}`)}${line("tools", r.tools, tools)}${line("bot", r.bot, `${d.name || r.noName} · ${(d.tone || "").split(/[.,(]/)[0].slice(0, 24)}`)}${line("messengers", r.messengers, (d.connect || []).map(k => x.messengers.items[k]?.t).filter(Boolean).join(", ") || r.noMessengers)}${line("web", r.access, [d.machine_name || sc.tailscale.host || "-", ...via].join(" · "))}</div>${err}`,
         foot: nav("web", "apply", x.review.go),
       };
     },
     done() {
-      const x = u(), o = V.result, d = D();
-      const rows = [row({ lead: dot("ok"), title: x.done.here, sup: `http://127.0.0.1:${location.port}/`, end: tag("ok", x.done.open) })];
-      if (o.access === "tailscale") rows.push(row({ lead: dot("ok"), title: x.done.phone, sup: fmt(x.done.phoneSup, { url: o.url }), end: tag("ok", x.done.open) }));
-      else if (o.why) rows.push(row({ lead: dot("warn"), title: x.done.phone, sup: o.why }));
-      if (d.guild) rows.push(row({ lead: dot("ok"), title: "Discord", sup: fmt(x.done.discordSup, { name: d.name || "" }), end: tag("ok", x.done.connected) }));
+      const x = u(), dn = x.done, o = V.result;
+      const rows = [row({ lead: dot("ok"), title: dn.here, sup: `http://127.0.0.1:${location.port}/`, end: tag("ok", dn.open) })];
+      if (o.access === "tailscale") rows.push(row({ lead: dot("ok"), title: dn.phone, sup: fmt(dn.phoneSup, { url: o.url }), end: tag("ok", dn.open) }));
+      else if (o.why) rows.push(row({ lead: dot("warn"), title: dn.phone, sup: o.why }));
+      for (const k of o.connect || []) if (Object.hasOwn(HASH, k)) rows.push(row({ lead: dot("warn"), title: dn.connect[k].t, sup: dn.connect[k].s, end: btn("open-app", dn.go, "tonal inrow", `data-target="${k}"`) }));
+      rows.push(row({ lead: dot(""), title: dn.cli.t, sup: dn.cli.s }));
       if (o.owner) rows.push(row({ lead: dot("warn"), title: o.owner, end: tag("warn", x.yourTurn) }));
-      return { title: fmt(x.titles.done, { name: d.name || "dotz" }), sup: "", body: `<div class="list">${rows.join("")}</div>`, foot: `<span class="ob-sp"></span><button class="btn" data-act="open-app">${h(x.done.openApp)}</button>` };
+      return { title: fmt(x.titles.done, { name: D().name || "dotz" }), sup: "", body: `<div class="list">${rows.join("")}</div>`, foot: `<span class="ob-sp"></span><button class="btn" data-act="open-app">${h(dn.openApp)}</button>` };
     },
   };
   const nav = (back, act, label, extra = "") => `${back ? `<a class="btn text" href="#${back}">${h(u().back)}</a>` : ""}<span class="ob-sp"></span>${extra}<button class="btn" data-act="${act}" data-next>${h(label)}</button>`;
@@ -242,8 +252,16 @@
   }
   function render(opts = {}) {
     const keep = qs(".ob-scroll")?.scrollTop ?? 0;
+    const typed = [...root.querySelectorAll("input[data-secret]")].filter(el => el.value).map(el => [el.dataset.secret, el.value]);
+    const open = [...root.querySelectorAll("details.ob-more")].map(el => el.open);
+    const same = V.rendered === V.view;
     V.rows = {};
     root.innerHTML = shell(V.view, VIEWS[V.view]());
+    V.rendered = V.view;
+    if (same) {
+      for (const [name, value] of typed) { const el = qs(`input[data-secret="${name}"]`); if (el) el.value = value; }
+      root.querySelectorAll("details.ob-more").forEach((el, i) => { if (open[i]) el.open = true; });
+    }
     syncNext();
     if (opts.step) qs("h1").focus({ preventScroll: true });
     else { const s = qs(".ob-scroll"); if (s) s.scrollTop = keep; if (opts.focus) qs(opts.focus)?.focus({ preventScroll: true }); }
@@ -265,15 +283,10 @@
     // the gateway cannot start without its harness, so this one step has no "later"
     if (v === "harness" && !hz(val.runtime)?.installed) return e.harness;
     if ((v === "bot" || v === "review") && (name.length < 2 || name.length > 32)) return e.name;
-    if (v === "discord" && !V.dcOff && val.guild) {
-      if (!ID.test(val.guild)) return e.guild;
-      if (!ID.test(val.owner_id || "")) return e.owner;
-      const typed = qs('[data-secret="discord-bot-token"]')?.value;
-      if ((V.botMode || (S.saved["discord-bot-token"] ? "token" : "auto")) === "token" && !typed && !S.saved["discord-bot-token"]) return e.token;
-    }
     if (v === "web") {
       const peer = qs('[data-secret="peer-token"]')?.value;
       if (peer && (peer.length < 16 || /\s/.test(peer))) return e.peer;
+      if (accessNow() === "cloudflare" && val.cloudflare_hostname && !HOST.test(cleanHost(val.cloudflare_hostname))) return e.host;
       for (const k of ["web_port", "tailscale_https_port"]) if (val[k] !== undefined && !(Number.isInteger(val[k]) && val[k] >= 1 && val[k] <= 65535)) return e.port;
     }
     return "";
@@ -289,26 +302,28 @@
   }
   async function next() {
     const v = V.view, values = gather();
-    if (v === "discord" && V.dcOff) Object.assign(values, { guild: "", owner_id: "" });
-    if (v === "harness") values.runtime = D().runtime || "omo";
+    if (v === "messengers") values.connect = D().connect || [];
+    if (v === "web") values.access = accessNow();
+    if (v === "harness") values.runtime = D().runtime || defaultRuntime();
     if (v === "start") values.lang = S.lang.slice(0, 2);
     const bad = validate(v, values);
     if (bad) { say(bad, true); return; }
     const target = ORDER[ORDER.indexOf(v) + 1];
     try {
-      if (v === "discord") await putSecret("discord-bot-token");
       if (v === "web") await putSecret("peer-token");
       await save(values, target);
     } catch (e) { say(e.message, true); return; }
-    V.tokenEdit = V.peerEdit = false;
+    V.peerEdit = false;
     goto(target);
   }
-  const leave = () => { if (["bot", "discord", "web"].includes(V.view)) { const v = gather(); Object.assign(S.draft, v); save(v).catch(() => {}); } };
+  const leave = () => { if (["bot", "web"].includes(V.view)) { const v = gather(); Object.assign(S.draft, v); save(v).catch(() => {}); } };
 
   /* ---------- apply ---------- */
   async function apply() {
     const bad = validate("review", {});
     if (bad) { say(bad, true); return; }
+    try { if (!D().access) await save({ access: accessNow() }); }
+    catch (e) { say(e.message, true); return; }
     V.applying = true; V.applyError = "";
     render();
     try { V.result = await api("/api/setup/apply", "POST", {}); }
@@ -317,9 +332,8 @@
     history.replaceState(null, "", "#done");
     render({ step: true });
   }
-  async function openApp() {
-    const b = qs('[data-act="open-app"]');
-    b.disabled = true;
+  async function openApp(el) {
+    el.disabled = true;
     say(u().done.opening);
     // the gateway restarts once after the apply; wait until it answers again before leaving
     for (let i = 0; i < 120; i++) {
@@ -327,7 +341,7 @@
       if (up) break;
       await new Promise(r => setTimeout(r, 500));
     }
-    location.href = V.result.access === "tailscale" ? V.result.url : "/";
+    location.href = `${V.result.access === "tailscale" ? V.result.url : "/"}${Object.hasOwn(HASH, el.dataset.target) ? `#${HASH[el.dataset.target]}` : ""}`;
   }
 
   /* ---------- sheets: the terminal and the OmO login ---------- */
@@ -474,10 +488,16 @@
     term: el => openTerm(el.dataset.term),
     login: () => openLogin(),
     later(el) { V.skipped[el.dataset.key] = true; paintJob(V.rows[el.dataset.key]?.job); render(); },
-    "dc-off"() { V.dcOff = true; Object.assign(S.draft, { guild: "", owner_id: "" }); next(); },
-    "dc-on"() { V.dcOff = false; render(); },
-    "bot-mode"(el) { Object.assign(S.draft, gather()); V.botMode = el.dataset.v; render({ focus: `[data-act="bot-mode"][data-v="${el.dataset.v}"]` }); },
-    "token-edit"() { V.tokenEdit = true; render({ focus: "#ob-token" }); },
+    connect(el) {
+      const k = el.dataset.i, on = D().connect || [];
+      save({ connect: on.includes(k) ? on.filter(c => c !== k) : CONNECT.filter(c => c === k || on.includes(c)) }).catch(e => say(e.message, true));
+      render({ focus: `[data-act="connect"][data-i="${k}"]` });
+    },
+    access(el) {
+      Object.assign(S.draft, gather());
+      save({ access: el.dataset.v }).catch(e => say(e.message, true));
+      render({ focus: `[data-act="access"][data-v="${el.dataset.v}"]` });
+    },
     "peer-edit"() { V.peerEdit = true; Object.assign(S.draft, gather()); render({ focus: "#ob-peer" }); },
   };
   document.addEventListener("click", ev => {
@@ -498,7 +518,6 @@
     try { S = await api("/api/setup/state"); }
     catch (e) { root.innerHTML = `<div class="ob ob-dead"><div class="ob-col"><div class="brand"><span class="logo"></span><span>dotz</span></div><h1>${h(e.message)}</h1></div></div>`; return; }
     document.documentElement.lang = S.lang;
-    V.dcOff = furthest() > ORDER.indexOf("discord") && !D().guild;
     V.view = viewFromHash();
     listen();
     render({ step: true });

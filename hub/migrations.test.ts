@@ -6,7 +6,7 @@ import { runOnboard, type Gateway } from "../features/comments/bin/onboard.ts";
 import { createApp } from "./app-off.ts";
 import { createEngine } from "./comments/engine.ts";
 import type { CommentAdapter } from "./comments/contract.ts";
-import { LEGACY_ID, legacyAnswer, MIGRATIONS, MIGRATIONS_FILE, runMigrations, type Migration } from "./migrations.ts";
+import { LEGACY_ID, legacyAnswer, type LegacyComments, MIGRATIONS, MIGRATIONS_FILE, runMigrations, SNS_COMMENTS_ID, type Migration } from "./migrations.ts";
 
 // Temp data dirs only; the token values are placeholders that must never reach a notice, a reply or a log line.
 const VALUE = "placeholder-refresh-token-value";
@@ -179,5 +179,34 @@ describe("legacy YouTube/Instagram tokens", () => {
 		expect(s.asks).toEqual([]);
 		expect(legacyAnswer(dir, "1) 가져오기")).toBeUndefined();
 		expect(legacyAnswer(dir, "안녕")).toBeUndefined();
+	});
+});
+
+describe("sns comment replies move to the comments app", () => {
+	const only = () => MIGRATIONS.filter(m => m.id === SNS_COMMENTS_ID);
+	const fake = (running: ("youtube" | "instagram")[], jobs: number) => {
+		const onboarded: string[] = [];
+		let open = jobs;
+		const comments: LegacyComments = { active: () => running.filter(k => !onboarded.includes(k)), onboard: async k => (onboarded.push(k), true), closeJobs: () => { const n = open; open = 0; return n; } };
+		return { comments, onboarded };
+	};
+	test("an install still on the old watches gets the comments app for each, its open reply jobs closed, once", async () => {
+		const s = spy(), f = fake(["youtube", "instagram"], 2);
+		const r = await runMigrations({ ...s.deps(only()), comments: f.comments });
+		expect(f.onboarded).toEqual(["youtube", "instagram"]);
+		expect(r.ran).toEqual(["유튜브·인스타그램 댓글 답글을 댓글 앱으로 옮김, 예전 답글 작업 2건 닫음"]);
+		expect((await runMigrations({ ...s.deps(only()), comments: f.comments })).ran).toEqual([]);
+	});
+	test("an install already on the comments app changes nothing", async () => {
+		const s = spy(), f = fake([], 0);
+		const r = await runMigrations({ ...s.deps(only()), comments: f.comments });
+		expect(f.onboarded).toEqual([]);
+		expect(r.ran).toEqual([]);
+		expect(s.notes).toEqual([]);
+	});
+	test("without the running gateway (the update smoke check) it waits for the next real start", async () => {
+		const s = spy();
+		expect(await runMigrations(s.deps(only()))).toEqual({ ran: [], failed: [] });
+		expect(existsSync(join(dir, MIGRATIONS_FILE)) ? JSON.parse(readFileSync(join(dir, MIGRATIONS_FILE), "utf8")).done[SNS_COMMENTS_ID] : undefined).toBeUndefined();
 	});
 });

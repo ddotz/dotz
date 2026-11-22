@@ -1,13 +1,13 @@
 // Onboarding on a fresh machine: the harness step defaults to OmO and never lets Codex (no adapter) be picked, the
-// login parsers read readiness without credentials, the service file fits the platform, and a full `setup.ts --answers`
+// the service file fits the platform, and a full `setup.ts --answers`
 // run in a throwaway HOME writes the chosen runtime, links the omp plugin only for omp, and refuses an unknown runtime.
 import { expect, test } from "bun:test";
 import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { priorOf, validateAnswers } from "../firstrun/answers.ts";
+import { priorOf, selectorFor, validateAnswers } from "../firstrun/answers.ts";
 import { writeConfig } from "../firstrun/apply.ts";
-import { defaultHarness, harness, harnessLine, HARNESSES, parseClaudeAuth, parseOmoAuth } from "./harness.ts";
+import { defaultHarness, harness, harnessHint, HARNESSES } from "./harness.ts";
 import { launchdPlist, servicePATH, systemdUnit } from "./service.ts";
 import { parseStatus } from "./tailscale.ts";
 
@@ -22,28 +22,26 @@ test("OmO is the default; a prior runtime dotz can run is kept; codex never beco
 	expect(HARNESSES.map(h => h.id)).toEqual(["omo", "omp", "claude", "codex"]);
 	expect(harness("codex")?.adapter).toBe(false);
 	expect(harness("omo")?.install).toEqual(["bun", "add", "-g", "--trust", "omo-ai"]);
+	expect(defaultHarness(undefined, new Set(["omo", "omp"]))).toBe("omo");
+	expect(defaultHarness(undefined, new Set(["claude", "omp"]))).toBe("omp");
+	expect(defaultHarness(undefined, new Set())).toBe("omo");
+	expect(defaultHarness("claude", new Set(["omo"]))).toBe("claude");
 });
 
-test("menu lines carry label and version when installed, flag the default, and mark a harness without adapter", () => {
+test("picker hints carry version and login state when installed, and say why a harness cannot be picked", () => {
 	const omo = { ...harness("omo")!, found: { installed: true, path: "/x/omo", version: "5.1.38" } };
 	const codex = { ...harness("codex")!, found: { installed: true, path: "/x/codex", version: "0.1.0" } };
 	const omp = { ...harness("omp")!, found: { installed: false, reason: "not found" } };
-	const line = harnessLine(omo, false);
-	expect([line.includes(omo.label), line.includes("5.1.38")]).toEqual([true, true]);
-	expect(harnessLine(omo, true).startsWith(line)).toBe(true);
-	expect(harnessLine(omo, true)).not.toBe(line);
-	expect(harnessLine(omp, false).includes(omp.label)).toBe(true);
-	expect(harnessLine(omp, false)).not.toBe(harnessLine({ ...omp, found: { installed: true, path: "/x/omp" } }, false));
-	expect(harnessLine(codex, false)).not.toBe(harnessLine({ ...codex, adapter: true }, false));
-});
-
-test("login parsers: an account pool counts as signed in, garbage is unchecked", () => {
-	expect(parseOmoAuth('{"status":"not_ready","provider":"anthropic-subscription","reason":"provider_not_found","accounts":[]}')).toEqual({ checked: true, ready: false, accounts: 0 });
-	expect(parseOmoAuth('warn: x\n{"status":"not_ready","accounts":[{"name":"a"},{"name":"b"}]}')).toEqual({ checked: true, ready: true, accounts: 2 });
-	expect(parseOmoAuth('{"status":"ready","accounts":[]}').ready).toBe(true);
-	expect(parseOmoAuth("Error: unknown command").checked).toBe(false);
-	expect(parseClaudeAuth('{\n  "loggedIn": false,\n  "authMethod": "none"\n}')).toEqual({ checked: true, ready: false, accounts: 0 });
-	expect(parseClaudeAuth('{"loggedIn": true}').ready).toBe(true);
+	expect(harnessHint(omo, { checked: true, ready: true, accounts: 1 })).toBe("5.1.38 · 로그인됨");
+	expect(harnessHint(omo, { checked: true, ready: true, accounts: 3 })).toContain("계정 3개");
+	expect(harnessHint(omo, { checked: true, ready: false, accounts: 0 })).toContain("로그인 필요");
+	expect(harnessHint(omo, { checked: false, ready: false, accounts: 0 })).toContain("못 읽었어요");
+	expect(harnessHint(omp)).toContain("설치 안 됨");
+	expect(harnessHint(codex)).toBe(codex.installHint);
+	expect(harness("claude")!.loginHint).toContain("claude auth login");
+	expect(harness("omo")!.accountPoolHint).toBeTruthy();
+	expect(harness("omp")!.accountPoolHint).toBeUndefined();
+	expect(harness("claude")!.accountPoolHint).toBeUndefined();
 });
 
 test("tailscale status: a signed-in node gives its login and host, a stopped one is not running, garbage keeps its first line", () => {
@@ -127,17 +125,20 @@ test("setup --answers on a fresh HOME with OmO installed writes runtime omo, no 
 	}
 }, 60_000);
 
-test("without a Tailscale login setup gives the local address; a rerun keeps the saved way in", async () => {
+test("without a Tailscale login setup gives the local address; a rerun keeps the live cloudflare way in and names its address", async () => {
 	const m = machine({ omo: FAKE_OMO });
 	try {
 		const first = await m.run({ identity, allow_logins: [] });
 		expect(first.out).toContain("웹 앱 주소: http://127.0.0.1:7420/");
+		expect(first.out).toContain("dotz status");
+		expect(first.out).toContain("dotz restart");
 		const file = join(m.home, ".dotz", "config.json");
 		const cfg = JSON.parse(readFileSync(file, "utf8"));
 		const cloudflare = { hostname: "app.example.com", team: "t", aud: "a" };
 		writeFileSync(file, JSON.stringify({ ...cfg, web: { ...cfg.web, access: "cloudflare", cloudflare } }));
 		const again = await m.run({ identity, allow_logins: [] });
 		expect(again.out).not.toContain("http://127.0.0.1:7420/");
+		expect(again.out).toContain("app.example.com");
 		expect(JSON.parse(readFileSync(file, "utf8")).web).toMatchObject({ access: "cloudflare", cloudflare });
 	} finally {
 		m.cleanup();
@@ -165,21 +166,143 @@ test("setup makes a 0600 peer key once, keeps it on a rerun, and takes the other
 	}
 }, 60_000);
 
-test("setup --answers with runtime omp links the omp plugin; a missing OmO is reported, not installed without install_harness", async () => {
+test("setup --answers with runtime omp links the omp plugin and is no longer blocked by OmO being absent", async () => {
 	const m = machine({ omp: FAKE_OMP });
 	try {
 		const omp = await m.run({ identity, runtime: "omp" });
 		expect(omp.code).toBe(0);
 		expect(JSON.parse(readFileSync(join(m.home, ".dotz", "config.json"), "utf8")).lanes.runtime).toBe("omp");
 		expect(lstatSync(join(m.home, ".omp", "agent", "extensions", "dotz")).isSymbolicLink()).toBe(true);
-		const omo = await m.run({ identity, runtime: "omo" });
-		expect(omo.code).toBe(0);
-		expect(omo.out).toContain(harness("omo")!.installHint);
-		expect(JSON.parse(readFileSync(join(m.home, ".dotz", "config.json"), "utf8")).orchestrator.runtime).toBe("omo");
 	} finally {
 		m.cleanup();
 	}
 }, 60_000);
+
+test("setup --answers naming a harness that is not installed stops with exit 1 and the install hint before writing anything", async () => {
+	const m = machine({ omp: FAKE_OMP });
+	try {
+		const omo = await m.run({ identity, runtime: "omo" });
+		expect(omo.code).toBe(1);
+		expect(omo.out).toContain(harness("omo")!.installHint);
+		expect(existsSync(join(m.home, ".dotz", "config.json"))).toBe(false);
+		expect(existsSync(join(m.home, ".dotz", "secrets"))).toBe(false);
+		const claude = await m.run({ identity, runtime: "claude" });
+		expect(claude.code).toBe(1);
+		expect(claude.out).toContain(harness("claude")!.installHint);
+		expect(existsSync(join(m.home, ".dotz", "config.json"))).toBe(false);
+	} finally {
+		m.cleanup();
+	}
+}, 60_000);
+
+test("a rerun of setup keeps every setting setup does not ask for", async () => {
+	const m = machine({ omo: FAKE_OMO });
+	try {
+		expect((await m.run({ identity, allow_logins: [] })).code).toBe(0);
+		const file = join(m.home, ".dotz", "config.json");
+		const cfg = JSON.parse(readFileSync(file, "utf8"));
+		const extra = {
+			runtime: "omo",
+			guard: { allow_api_key: false, no_api_key_accounts: ["a@example.com"] },
+			self_update: { auto: true },
+			omp_update: { at: "04:00" },
+			notify: { quiet: true },
+			sessions: { max: 3 },
+			orchestrator: { ...cfg.orchestrator, rotate_tokens: 123, keep_recent: 7 },
+			lanes: { ...cfg.lanes, max_active: 2, compact_at: 90, keep_recent: 5, nightly_at: "03:00" },
+			discord: { ...cfg.discord, app_id: "1234567890123456789", extra_setting: "x" },
+		};
+		writeFileSync(file, JSON.stringify({ ...cfg, ...extra }));
+		const again = await m.run({ identity: { name: "새이름" }, allow_logins: [] });
+		expect(again.code).toBe(0);
+		const kept = JSON.parse(readFileSync(file, "utf8"));
+		expect(kept).toMatchObject(extra);
+		expect(kept.identity.name).toBe("새이름");
+	} finally {
+		m.cleanup();
+	}
+}, 60_000);
+
+test("writeConfig merges into the config on disk at write time, not into the copy read at the start of the run", () => {
+	const dir = mkdtempSync(join(tmpdir(), "onboard-merge-"));
+	try {
+		const env = { dir, home: dir, pkg: dir, say: () => {} };
+		writeFileSync(join(dir, "config.json"), JSON.stringify({ guard: { allow_api_key: false } }));
+		const prior = priorOf(dir);
+		writeFileSync(join(dir, "config.json"), JSON.stringify({ guard: { allow_api_key: false }, self_update: { auto: true }, lanes: { compact_at: 80 } }));
+		const checked = validateAnswers({ identity: { name: "Dotty", character: "c", tone: "t" }, runtime: "omo" }, prior, dir);
+		if (!checked.ok) throw new Error(checked.errors.join(", "));
+		const written = writeConfig(env, checked.answers, prior);
+		expect(written).toMatchObject({ guard: { allow_api_key: false }, self_update: { auto: true }, lanes: { runtime: "omo", compact_at: 80 } });
+		expect(JSON.parse(readFileSync(join(dir, "config.json"), "utf8"))).toMatchObject({ self_update: { auto: true } });
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+test("a real folder at the omp plugin link is left alone and setup still finishes", async () => {
+	const m = machine({ omp: FAKE_OMP });
+	try {
+		const own = join(m.home, ".omp", "agent", "extensions", "dotz");
+		mkdirSync(own, { recursive: true });
+		writeFileSync(join(own, "index.ts"), "export {};\n");
+		const r = await m.run({ identity, runtime: "omp" });
+		expect(r.code).toBe(0);
+		expect(r.out).toContain("left alone");
+		expect(lstatSync(own).isDirectory()).toBe(true);
+		expect(readFileSync(join(own, "index.ts"), "utf8")).toBe("export {};\n");
+	} finally {
+		m.cleanup();
+	}
+}, 60_000);
+
+const OMP_MODELS = (models: string, level: string, signedModel = "openai/gpt-6-astra") =>
+	`case "$1" in --version) echo "omp/18.12.3";; models) echo '{"models":${models}}';; --mode) read line; echo '{"id":"s","type":"response","data":{"model":{"provider":"${signedModel.split("/")[0]}","id":"${signedModel.split("/")[1]}"},"thinkingLevel":"${level}"}}'; read line;; esac`;
+const CHAT = (id: string, thinking: string) => `{"provider":"${id.split("/")[0]}","kind":"chat","id":"${id.split("/")[1]}","thinking":${thinking}}`;
+
+test("omp signed in to a provider other than Anthropic: the default model is omp's own, with the level clamped to what the model lists", async () => {
+	const m = machine({ omp: OMP_MODELS(`[${CHAT("openai/gpt-6-astra", '["low","medium","high"]')}]`, "xhigh") });
+	try {
+		const r = await m.run({ identity, runtime: "omp" });
+		expect(r.code).toBe(0);
+		const cfg = JSON.parse(readFileSync(join(m.home, ".dotz", "config.json"), "utf8"));
+		expect(cfg.models.orchestrator).toEqual({ model: "openai/gpt-6-astra", thinking: "high" });
+		expect(cfg.models.lanes).toEqual({ model: "openai/gpt-6-astra", thinking: "high" });
+		expect(r.out).toContain("openai/gpt-6-astra:high");
+	} finally {
+		m.cleanup();
+	}
+}, 60_000);
+
+test("omp that lists the Anthropic default keeps it; a model the answers name always wins", async () => {
+	const m = machine({ omp: OMP_MODELS(`[${CHAT("anthropic/claude-opus-5-5", '["low","medium","high"]')},${CHAT("openai/gpt-6-astra", "null")}]`, "high", "openai/gpt-6-astra") });
+	try {
+		expect((await m.run({ identity, runtime: "omp" })).code).toBe(0);
+		const file = join(m.home, ".dotz", "config.json");
+		expect(JSON.parse(readFileSync(file, "utf8")).models.orchestrator).toEqual({ model: "anthropic/claude-opus-5-5", thinking: "medium" });
+		expect((await m.run({ identity, runtime: "omp", orchestrator_model: "openai/gpt-6-astra:low" })).code).toBe(0);
+		expect(JSON.parse(readFileSync(file, "utf8")).models.orchestrator).toEqual({ model: "openai/gpt-6-astra", thinking: "low" });
+	} finally {
+		m.cleanup();
+	}
+}, 60_000);
+
+test("selectorFor: the earlier model while the runtime offers it, else the runtime's default, else the earlier model", () => {
+	const dir = mkdtempSync(join(tmpdir(), "onboard-selector-"));
+	try {
+		writeFileSync(join(dir, "config.json"), JSON.stringify({ models: { orchestrator: { model: "openai/gpt-6-astra", thinking: "high" } } }));
+		const prior = priorOf(dir);
+		const models = { available: new Set(["openai/gpt-6-astra"]), fallback: "openai/gpt-6.1-sol:medium" };
+		expect(selectorFor(prior, "orchestrator", models)).toBe("openai/gpt-6-astra:high");
+		expect(selectorFor(prior, "lanes", models)).toBe("openai/gpt-6.1-sol:medium");
+		expect(selectorFor(prior, "lanes", { available: models.available })).toBe("anthropic/claude-opus-5-5:medium");
+		expect(selectorFor(prior, "lanes")).toBe("anthropic/claude-opus-5-5:medium");
+		const checked = validateAnswers({ identity: { name: "Dotty", character: "c", tone: "t" }, runtime: "omp", lane_model: "x/y:low" }, prior, dir, models);
+		expect(checked.ok && [checked.answers.orchestrator_model, checked.answers.lane_model]).toEqual(["openai/gpt-6-astra:high", "x/y:low"]);
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
 
 test("setup --answers refuses codex (no adapter) and writes nothing", async () => {
 	const m = machine({ codex: 'echo "codex-cli 0.1.0"' });
@@ -192,22 +315,79 @@ test("setup --answers refuses codex (no adapter) and writes nothing", async () =
 	}
 }, 30_000);
 
-test("validateAnswers fills the defaults; writeConfig writes web.access only when it is passed and a rerun keeps it", () => {
+test("validateAnswers fills the defaults; writeConfig derives web.access from the answer, and a rerun keeps a live cloudflare", () => {
 	const dir = mkdtempSync(join(tmpdir(), "onboard-config-"));
 	try {
 		const env = { dir, home: dir, pkg: dir, say: () => {} };
 		const prior = priorOf(dir);
-		const checked = validateAnswers({ identity: { name: "Dotty", character: "c", tone: "t" }, runtime: "omo", web_port: 7777, allow_logins: ["me@example.com"] }, prior, dir);
+		const identityAnswer = { name: "Dotty", character: "c", tone: "t" };
+		const checked = validateAnswers({ identity: identityAnswer, runtime: "omo", web_port: 7777, allow_logins: ["me@example.com"] }, prior, dir);
 		if (!checked.ok) throw new Error(checked.errors.join(", "));
-		expect(checked.answers).toMatchObject({ runtime: "omo", web_port: 7777, tailscale_https_port: 8443, guild: "", allow_logins: ["me@example.com"] });
+		expect(checked.answers).toMatchObject({ runtime: "omo", web_port: 7777, tailscale_https_port: 8443, guild: "", allow_logins: ["me@example.com"], access: "tailscale", connect: [] });
 		const terminal = writeConfig(env, checked.answers, prior);
-		expect(terminal).toMatchObject({ identity: { name: "Dotty" }, orchestrator: { runtime: "omo" }, lanes: { runtime: "omo" }, web: { port: 7777, allow_logins: ["me@example.com"] } });
-		expect(terminal.web).not.toHaveProperty("access");
-		expect(JSON.parse(readFileSync(join(dir, "config.json"), "utf8")).web).not.toHaveProperty("access");
-		expect(writeConfig(env, checked.answers, priorOf(dir), "local").web.access).toBe("local");
-		expect(writeConfig(env, checked.answers, priorOf(dir)).web.access).toBe("local");
+		expect(terminal).toMatchObject({ identity: { name: "Dotty" }, orchestrator: { runtime: "omo" }, lanes: { runtime: "omo" }, web: { port: 7777, allow_logins: ["me@example.com"], access: "tailscale" } });
+		expect(JSON.parse(readFileSync(join(dir, "config.json"), "utf8")).web.access).toBe("tailscale");
+		expect(writeConfig(env, checked.answers, priorOf(dir), "tailscale").web.access).toBe("tailscale");
+		const accessOf = (answers: object) => {
+			const next = validateAnswers({ identity: identityAnswer, runtime: "omo", ...answers }, priorOf(dir), dir);
+			if (!next.ok) throw new Error(next.errors.join(", "));
+			return writeConfig(env, next.answers, priorOf(dir)).web.access;
+		};
+		expect(accessOf({ access: "tailscale" })).toBe("tailscale");
+		expect(accessOf({ access: "cloudflare", cloudflare_hostname: "app.example.com" })).toBe("local");
+		expect(accessOf({ access: "local" })).toBe("local");
+		writeFileSync(join(dir, "config.json"), JSON.stringify({ web: { access: "cloudflare" } }));
+		expect(accessOf({})).toBe("cloudflare");
+		expect(accessOf({ access: "cloudflare" })).toBe("cloudflare");
 		expect(validateAnswers({ identity: { name: "x", character: "", tone: "" } }, prior, dir)).toMatchObject({ ok: false });
+		expect(validateAnswers({ identity: identityAnswer, access: "carrier-pigeon" as never }, prior, dir)).toMatchObject({ ok: false });
 	} finally {
 		rmSync(dir, { recursive: true, force: true });
 	}
 });
+
+test("setup --answers with access cloudflare: web.access stays local, the hostname is seeded for the engine, the leftover connect line is printed, and no gateway is called", async () => {
+	const m = machine({ omo: FAKE_OMO });
+	let calls = 0;
+	const gateway = Bun.serve({ port: 0, fetch: () => (calls++, new Response("{}")) });
+	try {
+		const r = await m.run({ identity, allow_logins: [], web_port: gateway.port, access: "cloudflare", cloudflare_hostname: "https://App.Example.com/", connect: ["slack"] });
+		expect(r.code).toBe(0);
+		const dir = join(m.home, ".dotz");
+		expect(JSON.parse(readFileSync(join(dir, "config.json"), "utf8")).web.access).toBe("local");
+		const input = join(dir, "onboarding", "web-access-input.json");
+		expect(readFileSync(input, "utf8")).toBe(`${JSON.stringify({ hostname: "app.example.com" })}\n`);
+		expect(statSync(input).mode & 0o777).toBe(0o600);
+		expect(r.out).toMatch(/setup\.ts --load/);
+		expect(r.out).toMatch(/connect slack web-access/);
+		expect(r.out).toContain("웹 앱 주소: 아직 없어요 (app.example.com");
+		expect(calls).toBe(0);
+	} finally {
+		await gateway.stop(true);
+		m.cleanup();
+	}
+}, 60_000);
+
+test("setup connect names only known targets and says when the gateway does not answer", async () => {
+	const m = machine({ omo: FAKE_OMO });
+	try {
+		const run = async (...args: string[]) => {
+			const p = Bun.spawn([process.execPath, SETUP, "connect", ...args, "--dir", join(m.home, ".dotz")], { env: { HOME: m.home, PATH: `${join(m.root, "bin")}:/usr/bin:/bin`, LANG: "C", DOTZ_NO_REAL_UI: "1" }, stdin: "ignore", stdout: "pipe", stderr: "pipe" });
+			const [out, err, code] = await Promise.all([new Response(p.stdout).text(), new Response(p.stderr).text(), p.exited]);
+			return { out: out + err, code };
+		};
+		expect((await run()).code).toBe(2);
+		const unknown = await run("whatsapp");
+		expect(unknown.code).toBe(2);
+		expect(unknown.out).toContain("whatsapp");
+		const closed = Bun.serve({ port: 0, fetch: () => new Response("{}") });
+		const port = closed.port;
+		await closed.stop(true);
+		expect((await m.run({ identity, allow_logins: [], web_port: port })).code).toBe(0);
+		const down = await run("slack");
+		expect(down.code).toBe(1);
+		expect(down.out).toContain(String(port));
+	} finally {
+		m.cleanup();
+	}
+}, 60_000);

@@ -9,6 +9,7 @@ import { msg } from "./i18n.ts";
 import { normalizeValue } from "./authfields.ts";
 import { asksPersonalInChat } from "./personal-ask.ts";
 import { readSecretFile, setSecretKey, systemKey } from "./secretbox.ts";
+import { flushNotices } from "./notices-store.ts";
 
 const call = (path: string, method = "GET", body?: unknown) =>
 	authRoute(new Request(`http://local${path}`, { method, body: body === undefined ? undefined : JSON.stringify(body) }), new URL(`http://local${path}`))!;
@@ -107,6 +108,7 @@ test("one-time form: 0600 file under secrets/once, path and field names only, no
 	for (const bit of SECRET_BITS) expect(leaks).not.toContain(bit);
 	expect(SECRET_CVC.test(leaks)).toBe(false);
 	// notices.json is rewritten whole (not appended), so it is read whole; the long values still cannot match by chance.
+	flushNotices();
 	const notices = existsSync(paths.notices) ? readFileSync(paths.notices, "utf8") : "";
 	for (const bit of SECRET_BITS) expect(notices).not.toContain(bit);
 });

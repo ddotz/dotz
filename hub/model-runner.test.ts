@@ -2,12 +2,13 @@
 // it answers `prompt` frames like OmO's rpc mode, answers `new_session`, or exits/hangs on request, and records every
 // spawn (argv, pinned account, commands) so reuse and restart are observable. No real model is ever called.
 import { afterEach, beforeEach, expect, test } from "bun:test";
-import { appendFileSync, mkdtempSync, readFileSync, watch, writeFileSync } from "node:fs";
+import { appendFileSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { modelDeps, callModel } from "./outlang.ts";
-import { callWarm, ensureProvider, resetHealthForTest, resetRunnersForTest, lastRunnerForTest, resetClock, runnerDeps, runnerCountForTest, subscriptionHealth, PIN_ENV } from "./model-runner.ts";
+import { callWarm, ensureProvider, invalidateHealth, resetClock, runnerDeps, subscriptionHealth, PIN_ENV } from "./model-runner.ts";
 import { advance, clock, flush } from "./runtime/test-clock.ts";
+import { fileLogged, liveProcesses } from "./runtime/test-file-log.ts";
 
 const dir = mkdtempSync(join(tmpdir(), "dotz-model-runner-"));
 const fake = join(dir, "fake-omo.ts");
@@ -27,6 +28,7 @@ const args = argv.join(" ");
 if (!args.includes("rpc")) {
 	out({ type: "message_end", message: { role: "assistant", content: [{ type: "text", text: "print 답" }], stopReason: "stop", usage: { input: 7, output: 1 } } });
 } else {
+	process.on("SIGTERM", () => process.exit(0));
 	if (mode === "start-crash") process.exit(3);
 	let n = 0, resetting = false;
 	for await (const line of console) {
@@ -77,22 +79,9 @@ const commands = (): string[] => {
 		return [];
 	}
 };
-// Resolves when the fake has logged `n` commands of `type`. The fake is another process, so how many event-loop turns that takes depends on
-// machine load; the log file's change event is the signal, and the bound only turns a lost command into a clear failure.
-const commandsLogged = async (type: string, n: number, boundMs = 15_000): Promise<void> => {
-	const count = () => commands().filter(c => c === type).length;
-	let watcher: ReturnType<typeof watch> | undefined;
-	const arrived = new Promise<void>(resolve => {
-		watcher = watch(cmdFile, () => count() >= n && resolve());
-		if (count() >= n) resolve();
-	});
-	try {
-		const ok = await Promise.race([arrived.then(() => true), Bun.sleep(boundMs).then(() => false)]);
-		if (!ok) throw new Error(`the fake omo logged ${count()} of ${n} "${type}" commands within ${boundMs} ms`);
-	} finally {
-		watcher?.close();
-	}
-};
+const commandsLogged = (type: string, n: number): Promise<void> => fileLogged(cmdFile, () => commands().filter(c => c === type).length >= n, `the fake omo logging ${n} "${type}" commands`);
+// The warm (rpc) processes the injected spawn started and that have not exited.
+const { track, aliveIs } = liveProcesses("warm processes");
 const account = (name = "default", access = "a") => ({ name, access, refresh: "r", expires: 1 });
 const auth = (accounts: unknown[], pinned = "default") => writeFileSync(join(agent, "auth.json"), JSON.stringify({ "anthropic-subscription": { type: "oauth", pinned, accounts } }));
 const usage = (windows: { usedPercent: number; resetsAt: string }[], name = "default") => {
@@ -111,26 +100,28 @@ beforeEach(() => {
 	writeFileSync(logFile, "");
 	writeFileSync(cmdFile, "");
 	delete process.env.FAKE_OMO_MODE;
-	resetHealthForTest();
-	resetRunnersForTest();
+	invalidateHealth();
 	// same argv, the fake script in place of the omo binary the test preload points at
-	runnerDeps.spawn = (argv, o) => Bun.spawn([process.execPath, fake, ...argv.slice(1)], { cwd: o.cwd, env: o.env, stdin: "pipe", stdout: "pipe", stderr: "ignore" } as never) as never;
+	runnerDeps.spawn = (argv, o) => track(Bun.spawn([process.execPath, fake, ...argv.slice(1)], { cwd: o.cwd, env: o.env, stdin: "pipe", stdout: "pipe", stderr: "ignore" } as never)) as never;
 	modelDeps.spawn = (argv, options) => Bun.spawn([process.execPath, fake, ...argv.slice(1)], options as never) as never;
 });
-afterEach(() => {
-	resetRunnersForTest();
-	resetHealthForTest();
-	runnerDeps.spawn = realSpawn;
-	modelDeps.spawn = realModelSpawn;
-	process.env.OMO_CODING_AGENT_DIR = realAgentDir;
-});
+afterEach(async () => {
+	// the idle window stops what a test left warm, and the next test starts only once every fake process is gone
+	try {
+		await advance(runnerDeps.idleMs + 1);
+		await aliveIs(0);
+	} finally {
+		invalidateHealth();
+		runnerDeps.spawn = realSpawn;
+		modelDeps.spawn = realModelSpawn;
+		process.env.OMO_CODING_AGENT_DIR = realAgentDir;
+	}
+}, 20_000);
 
 test("a spent subscription fails at once with the reset time and starts nothing", async () => {
 	auth([account()]);
 	usage([{ usedPercent: 100, resetsAt: later(3_600_000) }]);
-	const started = Date.now();
 	await expect(callModel("sys", "u", { model: SONNET })).rejects.toThrow(`구독 한도에 걸렸어요 · ${resetClock(clock.now + 3_600_000)}에 풀려요`);
-	expect(Date.now() - started).toBe(0);
 	expect(spawns()).toEqual([]);
 });
 
@@ -154,7 +145,7 @@ test("the first call starts one warm process and later calls reuse it", async ()
 	expect(spawns()).toHaveLength(1);
 	expect(spawns()[0].argv).toContain("rpc");
 	expect(spawns()[0].argv).toContain("--no-tools");
-	expect(runnerCountForTest()).toBe(1);
+	await aliveIs(1);
 	// each answer resets the session, so the next prompt starts without the one before it
 	await commandsLogged("new_session", 2);
 	expect(commands().filter(c => c === "new_session")).toHaveLength(2);
@@ -186,18 +177,18 @@ test("another system prompt or model gets its own warm process", async () => {
 	await callModel("sys b", "u", { model: SONNET });
 	await callModel("sys a", "u", { model: "anthropic/claude-opus-5-5" });
 	expect(spawns()).toHaveLength(3);
-	expect(runnerCountForTest()).toBe(3);
+	await aliveIs(3);
 });
 
 test("a crashed warm process is replaced on the next call", async () => {
 	auth([account()]);
 	process.env.FAKE_OMO_MODE = "crash-after";
 	expect((await callModel("sys", "u", { model: SONNET })).text).toBe("warm 답 1");
-	await lastRunnerForTest()!.whenExited();
+	await aliveIs(0);
 	delete process.env.FAKE_OMO_MODE;
 	expect((await callModel("sys", "u", { model: SONNET })).text).toBe("warm 답 1");
 	expect(spawns()).toHaveLength(2);
-	expect(runnerCountForTest()).toBe(1);
+	await aliveIs(1);
 });
 
 test("a warm process that cannot start falls back to the one-shot spawn path", async () => {
@@ -218,16 +209,15 @@ test("a turn that never answers times out and stops the process", async () => {
 	await flush();
 	await advance(46_000);
 	expect(String(await settled)).toContain("timed out after 45s");
-	await flush();
-	expect(runnerCountForTest()).toBe(0);
+	await aliveIs(0);
 });
 
 test("an idle process is stopped after the idle window", async () => {
 	auth([account()]);
 	await callModel("sys", "u", { model: SONNET });
-	expect(runnerCountForTest()).toBe(1);
+	await aliveIs(1);
 	await advance(runnerDeps.idleMs + 1);
-	expect(runnerCountForTest()).toBe(0);
+	await aliveIs(0);
 });
 
 test("once the usage window resets the account is usable again", () => {
@@ -235,7 +225,7 @@ test("once the usage window resets the account is usable again", () => {
 	usage([{ usedPercent: 100, resetsAt: later(60_000) }]);
 	expect(() => ensureProvider("anthropic-subscription/claude-sonnet-5-5")).toThrow("구독 한도");
 	clock.now += 61_000;
-	resetHealthForTest();
+	invalidateHealth();
 	expect(() => ensureProvider("anthropic-subscription/claude-sonnet-5-5")).not.toThrow();
 });
 
@@ -276,19 +266,18 @@ test("when the pinned account is spent and readiness moves to another, the next 
 	auth([account("default"), account("work", "b")]);
 	expect((await callModel("sys", "u", { model: SONNET })).text).toBe("warm 답 1");
 	usage([{ usedPercent: 100, resetsAt: later(3_600_000) }]);
-	resetHealthForTest();
+	invalidateHealth();
 	expect((await callModel("sys", "u", { model: SONNET })).text).toBe("warm 답 1");
 	expect(spawns().map(s => s.pin)).toEqual(["default", "work"]);
 	// the process pinned to the spent account does not keep a slot
-	expect(runnerCountForTest()).toBe(1);
+	await aliveIs(1);
 });
 
 test("a spent-limit answer stops the process that gave it, so it is never asked again", async () => {
 	auth([account()]);
 	process.env.FAKE_OMO_MODE = "limit";
 	await expect(callWarm("sys", "u", { model: "anthropic-subscription/claude-sonnet-5-5", timeoutMs: 45_000, account: "default" })).rejects.toThrow("rate_limit");
-	await flush();
-	expect(runnerCountForTest()).toBe(0);
+	await aliveIs(0);
 });
 
 test("a warm turn that times out is not followed by a one-shot call that waits the whole bound again", async () => {
@@ -323,7 +312,7 @@ test("a full pool never stops a busy process: a new prompt shape takes the one-s
 		await flush();
 		delete process.env.FAKE_OMO_MODE;
 		expect((await callModel("sys b", "u", { model: SONNET })).text).toBe("print 답");
-		expect(runnerCountForTest()).toBe(1);
+		await aliveIs(1);
 		await advance(46_000);
 		expect(String(await busy)).toContain("timed out");
 	} finally {

@@ -80,9 +80,8 @@ function canvasPick(d) {
   if (PICK.length >= 10) { toast(TX("apps.canvas.pick_max"), true); return; }
   if (PICK.some(p => p.remote && p.id === d.id)) return;
   const frame = $(".cvs-frame", canvasPane);
-  PICK.push({ id: d.id, n: PICK.length + 1, tag: String(d.tag || "div").toLowerCase(), sel: String(d.sel || ""), text: String(d.text || "").slice(0, 200), html: String(d.html || "").slice(0, 600),
+  pkAdd({ id: d.id, n: PICK.length + 1, tag: String(d.tag || "div").toLowerCase(), sel: String(d.sel || ""), text: String(d.text || "").slice(0, 200), html: String(d.html || "").slice(0, 600),
     view: `canvas:${(frame && frame.title) || "html"}`, title: String(d.title || ""), node: null, doc: null, frame: null, remote: true });
-  renderPicks();
 }
 // The page draws the numbered badges, so every change sends it the remote ids in order (15-picker.js renderPicks calls this).
 function pkRemoteSync() {

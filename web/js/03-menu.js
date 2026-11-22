@@ -61,7 +61,12 @@ function showMenu(anchor, items, { value, onPick, sheet, end }) {
     }
     node.style.minWidth = `${Math.max(112, r.width)}px`;
     node.style.maxWidth = `${vw - 16}px`;
-    const below = vh - r.bottom - 12, above = r.top - 12;
+    // inside a window the list stays inside its box (a long account list near the box's foot opens upwards or scrolls), never over the page behind it
+    // (a box too small to hold a usable list on either side lets it use the screen, as outside a window)
+    const hb = host === document.body ? { top: 0, bottom: vh } : host.getBoundingClientRect();
+    const fits = Math.max(Math.min(vh, hb.bottom) - r.bottom, r.top - Math.max(0, hb.top)) - 12 >= 160;
+    const box = fits ? hb : { top: 0, bottom: vh };
+    const below = Math.min(vh, box.bottom) - r.bottom - 12, above = r.top - Math.max(0, box.top) - 12;
     const up = below < 220 && above > below;
     node.style.maxHeight = `${Math.min(400, up ? above : below)}px`;
     const w = node.offsetWidth, h = node.offsetHeight;
@@ -71,6 +76,9 @@ function showMenu(anchor, items, { value, onPick, sheet, end }) {
     node.style.top = `${Math.max(8, up ? r.top - h - 4 : r.bottom + 4)}px`;
   };
   place();
+  // a window still sliding in moves the anchor under the list: place it again once the window's own motion ends
+  const again = () => { if (openMenu && openMenu.node === node) place(); };
+  if (host !== document.body) for (const a of host.getAnimations()) a.finished.then(again, again);
   anchor.setAttribute("aria-expanded", "true");
   const focusAt = i => { const o = opts[Math.max(0, Math.min(opts.length - 1, i))]; if (o) { o.focus(); o.scrollIntoView({ block: "nearest" }); } };
   const start = opts.findIndex(o => o.getAttribute("aria-selected") === "true");

@@ -1,13 +1,16 @@
 // Answering, ignoring and reopening decisions, login requests, expiry. A part of the notice store split out of hub/notices.ts, code unchanged.
-import { now } from "./config.ts";
-import { detailOf } from "./choices.ts";
+import { log, now } from "./config.ts";
+import { detailOf, unnumbered } from "./choices.ts";
 import { DRAFT_BODY_MAX, draftActionOf, draftNeedsText } from "./draft-approval.ts";
 import type { Upload } from "./files.ts";
-import type { DecisionOpt, Notice } from "./notices-types.ts";
-import { closedHooks } from "./notices-wiring.ts";
-import { TEXT_MAX, clean, closedInfo, isOpenDecision, needsAnswer, twinOf } from "./notices-rules.ts";
+import type { Decision, DecisionOpt, Notice, OwnerSaid } from "./notices-types.ts";
+import { msg } from "./i18n.ts";
+import { tellAsker } from "./notices-tell.ts";
+import { closedHooks, decisionHooks } from "./notices-wiring.ts";
+import { TEXT_MAX, clean, closedInfo, isOpenDecision, laterOn, needsAnswer, twinOf } from "./notices-rules.ts";
 import { broadcast } from "./notices-read.ts";
 import { expiresAtOf, sending } from "./notices-decisions.ts";
+import { RUN_DECISION } from "./notices-schedule.ts";
 import { items, orchTurnFrom, putDecision, resolveAsks, save, settleDecision, unreadCount } from "./notices-store.ts";
 
 // A question whose time is up stops waiting on the owner: it is closed as resolved (no answer), marked `expired` so the card reads 기한 지남, read, saved
@@ -17,7 +20,8 @@ export function settleExpiredQuestions(at = now()): number {
 	const hit = items.filter(i => i.decision?.state === "open" && i.decision.expires_at !== undefined && i.decision.expires_at <= stamp);
 	for (const i of hit) {
 		i.decision!.expired = true;
-		settleDecision(i, "", at, true);
+		tellAsker(i, msg().asker.expired(i.title));
+		settleDecision(i, "", at, true, { how: "expired" });
 	}
 	return hit.length;
 }
@@ -28,20 +32,32 @@ export function settleOpenDecision(id: string, label: string): void {
 	if (item && isOpenDecision(item)) settleDecision(item, label);
 }
 const OWN_WORDS_MAX = 1000;
-export type DecisionSend = (a: { to: string; text: string; replyTo?: string; notice: string; action?: string; files?: Upload[]; picks?: { q: string; n: number; label: string; note?: string }[] }) => Promise<void>;
+/** The asking session has ended, so an answer cannot reach it: the card stays open and offers the hand-off to the main conversation. */
+export class SessionEnded extends Error {
+	readonly code = "session_ended";
+	constructor(readonly lane: string) {
+		super("이 세션은 이미 끝나서 전달하지 못했어요");
+	}
+}
+const NOT_DELIVERED = "전달하지 못했어요. 잠시 뒤에 다시 해 주세요";
+export type DecisionSend = (a: { to: string; text: string; replyTo?: string; notice: string; action?: string; files?: Upload[]; picks?: { q: string; n: number; label: string; note?: string; hash?: string }[] }) => Promise<void>;
+const HANDED_OFF = "메인에 넘겼어요";
+const handedOff = (item: Notice, answer: string): string => `세션 ${item.decision!.to.slice(5)}은(는) 이미 끝나서 메인에 대신 전해요.\n질문: ${item.title}\n답: ${answer}`;
 // A button of a decision: `n` is the option's number. The answer goes to the asking chat / session (or the login request) through `send`; only
 // when that worked is the notice answered.
-export async function answerDecision(id: unknown, body: { n?: unknown; note?: unknown; files?: Upload[] }, send: DecisionSend): Promise<{ status: number; body: Record<string, unknown> }> {
+export async function answerDecision(id: unknown, body: { n?: unknown; note?: unknown; files?: Upload[]; handoff?: unknown }, send: DecisionSend): Promise<{ status: number; body: Record<string, unknown> }> {
 	const item = items.find(i => i.id === String(id));
 	const d = item?.decision;
 	if (!item || !d) return { status: 404, body: { error: "unknown decision" } };
 	if (d.state !== "open") return { status: 200, body: { ok: true, already: true, item, unread: unreadCount() } };
 	// a second tap while the first answer is still going out: that one carries it (a double tap never sends the answer twice)
 	if (sending.has(item.id)) return { status: 200, body: { ok: true, already: true, item, unread: unreadCount() } };
-	if (body.n === undefined || body.n === null) return answerInWords(item, String(body.note ?? "").trim().slice(0, OWN_WORDS_MAX), send);
+	const handoff = body.handoff === "main";
+	if (body.handoff !== undefined && (!handoff || !d.to.startsWith("lane:") || d.draft)) return { status: 400, body: { error: "unknown option" } };
+	if (body.n === undefined || body.n === null) return answerInWords(item, String(body.note ?? "").trim().slice(0, OWN_WORDS_MAX), send, handoff);
 	const o = d.options.find(x => x.n === Number(body.n));
 	if (!o || o.action === "form") return { status: 400, body: { error: "unknown option" } };
-	const label = `${o.n}) ${o.label}`;
+	const label = `${o.n}) ${unnumbered(o.label)}`;
 	// 고치기 on a draft carries what to change and needs it. Elsewhere an option that needs detail (choices.ts detailOf: 안 됨 …) needs the owner's written reason too;
 	// a button with its own `say` / `action` (login request, fixed yes / no) never does.
 	const draftEdit = !!d.draft && draftNeedsText(o.label);
@@ -50,7 +66,7 @@ export async function answerDecision(id: unknown, body: { n?: unknown; note?: un
 	if (draftEdit && !note) return { status: 400, body: { error: draftActionOf(o.label) === "own" ? "어떻게 보낼지 적어 주세요" : "무엇을 고칠지 적어 주세요" } };
 	if (asksDetail && !note) return { status: 400, body: { error: "내용을 적어 주세요" } };
 	const text = (o.say ?? (d.group > 1 ? `${item.title}: ${label}` : label)) + (note ? ` - ${note}` : "");
-	return deliverDecision(item, label, { to: d.to, text, notice: item.id, ...(d.to.startsWith("auth:") ? {} : { picks: [{ q: item.title, n: o.n, label: o.label, ...(asksDetail ? { note } : {}) }] }), ...(d.reply_to ? { replyTo: d.reply_to } : {}), ...(o.action ? { action: o.action } : {}), ...(draftEdit && body.files?.length ? { files: body.files } : {}) }, send);   // `picks` carries the question with the chosen option, so the agent gets the context even from another conversation (intake.ts decisionLines); files: what 직접 수정 attached, for the bot to put on the draft
+	return deliverDecision(item, handoff ? `${label} · ${HANDED_OFF}` : label, { to: handoff ? "main" : d.to, text: handoff ? handedOff(item, text) : text, notice: item.id, ...(d.to.startsWith("auth:") ? {} : { picks: [{ q: item.title, n: o.n, label: o.label, ...(asksDetail ? { note } : {}), ...(d.draft && d.hash ? { hash: d.hash } : {}) }] }), ...(d.reply_to && !handoff ? { replyTo: d.reply_to } : {}), ...(o.action ? { action: o.action } : {}), ...(draftEdit && body.files?.length ? { files: body.files } : {}) }, send);   // `picks` carries the question with the chosen option, so the agent gets the context even from another conversation (intake.ts decisionLines); files: what 직접 수정 attached, for the bot to put on the draft
 }
 // Sends the answer, and only when that worked is the notice answered. `label` is what the notice then shows as the answer.
 async function deliverDecision(item: Notice, label: string, payload: Parameters<DecisionSend>[0], send: DecisionSend): Promise<{ status: number; body: Record<string, unknown> }> {
@@ -59,7 +75,11 @@ async function deliverDecision(item: Notice, label: string, payload: Parameters<
 		await send(payload);
 		settleDecision(item, label);
 	} catch (err) {
-		return { status: 409, body: { error: (err as Error).message } };
+		if (err instanceof SessionEnded) return { status: 409, body: { code: err.code, error: err.message } };
+		const said = (err as Error).message;
+		log(`answer of ${item.id} not delivered: ${said}`);
+		if (err instanceof Error && "code" in err && err.code === "runtime_mismatch") return { status: 409, body: { code: "runtime_mismatch", error: said } };
+		return { status: 409, body: { code: "not_delivered", error: /[A-Za-z]{3,}|\//.test(said) ? NOT_DELIVERED : said } };
 	} finally {
 		sending.delete(item.id);
 	}
@@ -70,11 +90,12 @@ async function deliverDecision(item: Notice, label: string, payload: Parameters<
 // text field is the only place to write. It reaches the asking chat / session as an option answer does, with the question (intake.ts decisionLines reads
 // replyTo and the notice); a question of a several-question message, or one with no asking message to point at, carries its title. A send approval and a
 // login request are answered by their buttons only.
-async function answerInWords(item: Notice, said: string, send: DecisionSend): Promise<{ status: number; body: Record<string, unknown> }> {
+async function answerInWords(item: Notice, said: string, send: DecisionSend, handoff: boolean): Promise<{ status: number; body: Record<string, unknown> }> {
 	const d = item.decision!;
-	if (d.draft || d.to.startsWith("auth:")) return { status: 400, body: { error: "unknown option" } };
+	if (d.draft || d.to.startsWith("auth:") || d.to.startsWith(RUN_DECISION)) return { status: 400, body: { error: "unknown option" } };
 	if (!said) return { status: 400, body: { error: "내용을 적어 주세요" } };
-	return deliverDecision(item, said, { to: d.to, text: d.group > 1 || !d.reply_to ? `${item.title}: ${said}` : said, notice: item.id, ...(d.reply_to ? { replyTo: d.reply_to } : {}) }, send);
+	const text = d.group > 1 || !d.reply_to ? `${item.title}: ${said}` : said;
+	return deliverDecision(item, handoff ? `${said} · ${HANDED_OFF}` : said, { to: handoff ? "main" : d.to, text: handoff ? handedOff(item, text) : text, notice: item.id, ...(d.reply_to && !handoff ? { replyTo: d.reply_to } : {}) }, send);
 }
 
 // A login request (dotz_auth) waits on the owner: approve / cancel here, the form for typed values stays the page's own.
@@ -115,14 +136,15 @@ export function orchestratorAnswered(text: string, ref?: string, at = now()): nu
 export const closeLaneCards = (name: string): number => resolveAsks(i => i.decision?.to === `lane:${name}` && !i.decision.draft, now(), true);
 
 // `inSession` limits match / all to the notices of one session's conversations (dotz_send's `resolves` from a conversation session); ids and conv name theirs.
-export function resolveNotices(sel: { ids?: unknown; match?: unknown; conv?: unknown; all?: unknown }, inSession?: (conv: string | undefined) => boolean): { resolved: number; unread: number } {
+export function resolveNotices(sel: { ids?: unknown; match?: unknown; conv?: unknown; all?: unknown }, inSession?: (conv: string | undefined) => boolean, ownerOnly?: (i: Notice) => boolean, said?: OwnerSaid): { resolved: number; unread: number } {
 	const ids = Array.isArray(sel.ids) ? new Set(sel.ids.map(String)) : undefined;
 	const match = typeof sel.match === "string" && sel.match.trim() ? sel.match.trim().toLowerCase() : undefined;
 	const conv = typeof sel.conv === "string" && sel.conv ? sel.conv : undefined;
 	const mine = (i: Notice) => !inSession || (inSession(i.src ?? i.open) && (!i.decision?.to || inSession(i.decision.to)));
-	const pick = (i: Notice) => (ids ? ids.has(i.id) : match ? mine(i) && `${i.title}\n${i.text}`.toLowerCase().includes(match) : conv ? (i.src ?? i.open) === conv || i.decision?.to === conv : sel.all === true && mine(i));
+	const chosen = (i: Notice) => (ids ? ids.has(i.id) : match ? mine(i) && `${i.title}\n${i.text}`.toLowerCase().includes(match) : conv ? (i.src ?? i.open) === conv || i.decision?.to === conv : sel.all === true && mine(i));
+	const pick = (i: Notice) => !ownerOnly?.(i) && chosen(i);
 	// ids / match name notices; conv / all do not, so a decision with options is left for the owner there.
-	return { resolved: resolveAsks(pick, now(), !!(ids || match)), unread: unreadCount() };
+	return { resolved: resolveAsks(pick, now(), !!(ids || match), said), unread: unreadCount() };
 }
 
 // The ask notices that go with `item` (the decision and its alert / message twins, made by one asking message). Ignoring a decision of a message
@@ -145,18 +167,22 @@ export function announce(group: Notice[], at: string): void {
 	for (const n of group) broadcast({ ts: at, kind: "notice", source: "gateway", item: n, unread });
 }
 
-// The x (무시) on a question that waits on the owner: it leaves the badge and 답변 필요, stays in the history marked ignored, answers nothing to
-// the bot, and every open page hears the changed items. An item that is not waiting (answered, resolved, plain info) cannot be ignored.
+/** The x (무시) on a question that waits on the owner: it leaves the badge and 답변 필요, stays in the history marked ignored, its asker hears it with its next prompt
+ * (hub/notices-tell.ts), and every open page hears the changed items. An item that is not waiting (answered, resolved, plain info) cannot be ignored. */
 export function ignoreNotice(id: unknown): { status: number; body: Record<string, unknown> } {
 	const item = items.find(i => i.id === String(id));
 	if (!item) return { status: 404, body: { error: "unknown notice" } };
 	if (item.ignored) return { status: 200, body: { ok: true, already: true, item, unread: unreadCount() } };
-	if (!needsAnswer(item)) return { status: 409, body: { error: "not waiting" } };
+	if (!needsAnswer(item) && !(isOpenDecision(item) && laterOn(item.decision))) return { status: 409, body: { error: "not waiting" } };
 	const at = now(), group = askGroup(item, false);
 	for (const n of group) {
 		n.ignored = at;
 		n.read = true;
-		if (n.decision?.state === "open") n.decision.state = "ignored";
+		if (n.decision?.state !== "open") continue;
+		n.decision.state = "ignored";
+		delete n.decision.judging;
+		delete n.decision.later_until;
+		tellAsker(n, msg().asker.ignored(n.title));
 	}
 	announce(group, at);
 	for (const n of group) if (n.decision?.state === "ignored") for (const fn of closedHooks) fn(n.decision.to, n.decision.draft?.ref, closedInfo(n, "ignored"));
@@ -176,6 +202,8 @@ export function unignoreNotice(id: unknown): { status: number; body: Record<stri
 			n.decision.state = "open";
 			// A question that waits again gets a full window from now, not the one it had before it was waved off.
 			delete n.decision.expired;
+			delete n.decision.half_told;
+			delete n.decision.tell;
 			const exp = expiresAtOf(n.decision, at);
 			if (exp) n.decision.expires_at = exp;
 		}
@@ -186,7 +214,9 @@ export function unignoreNotice(id: unknown): { status: number; body: Record<stri
 
 // Puts questions back that were closed by mistake (a wrong auto-resolve): open, unread, not resolved or ignored, no answer text. Only a decision or an
 // [ask] item can be reopened; the hub does it in its own memory, so no file is edited behind its back.
-export function reopenNotices(ids: unknown): { reopened: string[]; unread: number } {
+const REOPEN_CLEARS = ["closed_how", "words", "judging", "kept_open", "half_told", "later_until", "more_at", "tell"] as const satisfies readonly (keyof Decision)[];
+const pushedFor = new Map<string, string>();
+export function reopenNotices(ids: unknown, because?: string): { reopened: string[]; unread: number } {
 	const want = new Set(Array.isArray(ids) ? ids.map(String) : []);
 	const hit = items.filter(i => want.has(i.id) && (i.decision || i.tone === "ask"));
 	const at = now();
@@ -202,9 +232,18 @@ export function reopenNotices(ids: unknown): { reopened: string[]; unread: numbe
 		delete d.expired;
 		delete d.answer;
 		delete d.answered_at;
+		for (const k of REOPEN_CLEARS) delete d[k];
 		const exp = expiresAtOf(d, at);
 		if (exp) d.expires_at = exp;
 	}
 	if (hit.length) announce(hit, at);
+	if (because !== undefined) {
+		if (pushedFor.size > 200) for (const id of pushedFor.keys()) if (!items.some(i => i.id === id)) pushedFor.delete(id);
+		for (const i of hit) {
+			if (i.decision?.state !== "open" || pushedFor.get(i.id) === because) continue;
+			pushedFor.set(i.id, because);
+			for (const fn of decisionHooks) fn(i);
+		}
+	}
 	return { reopened: hit.map(i => i.id), unread: unreadCount() };
 }

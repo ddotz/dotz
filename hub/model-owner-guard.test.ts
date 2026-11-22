@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { CONFIG_FILE, DATA_DIR, HUB_TOKEN, paths, updateModels } from "./config.ts";
 import { emit, tailEvents } from "./events.ts";
 import type { MailDeps } from "./mail.ts";
-import { AGENT_AUTHOR } from "./entry-check.ts";
+import { AGENT_AUTHOR } from "./agent-author.ts";
 import { activeGrant, noteModelChange, readModelPicks } from "./model-guard.ts";
 import { makeRoute } from "./routes.ts";
 import { routeSettings } from "./routes-settings.ts";

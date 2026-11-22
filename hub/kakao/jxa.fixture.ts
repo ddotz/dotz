@@ -2,6 +2,7 @@
 // (Date.now) is a fake that `delay` advances, so its `until` waits end at once and deterministically. Only pure decisions and the send step
 // against a fake window are exercised; nothing here touches KakaoTalk.
 import attachSrc from "./attach.jxa.js" with { type: "text" };
+import openSrc from "./open.jxa.js" with { type: "text" };
 import src from "./room.jxa.js" with { type: "text" };
 
 export type Jxa = {
@@ -19,6 +20,7 @@ export type Jxa = {
 	axReveal: (list: unknown, index: number) => { moved: boolean; first?: number };
 	axRestore: (list: unknown, rev: { moved: boolean; first?: number }) => void;
 	axScan: (name: string, first: boolean, budgetMs: number, hint?: number, need?: number, memo?: number) => { ok: true; rows: number; scanned: number; hits: { index: number; texts: string[] }[]; stopped: "found" | "budget" | "end"; pages: number } | null;
+	returnOpen: (list: unknown, index: number, name: string) => { pressed?: true; why?: string };
 };
 
 // The KakaoTalk chat list as the AX API in room.jxa.js reads it (axList/axRowTitle/axRowTexts): window "카카오톡" > scroll area > table >
@@ -78,7 +80,7 @@ export function loadJxa(opts: { app?: ReturnType<typeof axList>; msPerRead?: num
 				},
 			}
 		: (opts.objc ?? {});
-	const body = `${src}\n${attachSrc}\nreturn { inputVerdict: inputVerdict, rowStillIs: rowStillIs, sendInto: sendInto, attachFile: attachFile, norm: norm, axListNative: axList, axVisibleRows: axVisibleRows, axReveal: axReveal, axRestore: axRestore, axScan: axScan, setWindowNamed: function (fn) { windowNamed = fn; }, setChatWindows: function (fn) { chatWindows = fn; }, winKey: winKey, sweepSince: sweepSince };`;
+	const body = `${src}\n${attachSrc}\n${openSrc}\nreturn { inputVerdict: inputVerdict, rowStillIs: rowStillIs, sendInto: sendInto, attachFile: attachFile, norm: norm, axListNative: axList, axVisibleRows: axVisibleRows, axReveal: axReveal, axRestore: axRestore, axScan: axScan, returnOpen: returnOpen, setWindowNamed: function (fn) { windowNamed = fn; }, setChatWindows: function (fn) { chatWindows = fn; }, winKey: winKey, sweepSince: sweepSince };`;
 	const application = opts.systemEvents ? () => opts.systemEvents : noApp;
 	return new Function("ObjC", "$", "Application", "delay", "Ref", "Date", body)(objc, $, application, delay, () => [], fakeDate) as Jxa;
 }

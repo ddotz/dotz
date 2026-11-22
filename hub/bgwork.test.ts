@@ -392,3 +392,24 @@ test("a worker OmO holds is queued, never stalled however long it waits, and sto
 	expect(work.queuedWork(session)).toEqual([]);
 	expect(work.list()[0]!.queued).toBeUndefined();
 });
+
+test("a worker that failed before running any tool hands its open request back at once and once, even after a turn that read it without answering", () => {
+	const t0 = Date.now();
+	const at = (ms: number) => iso(t0 + ms);
+	const failed = (id: string, error: string) => record(id, { status: "failed", created_at: at(0), started_at: at(400), updated_at: at(5_000), terminal_at: at(5_000), error_message: error });
+	failed("st_start", "chain_not_held: timeout");
+	failed("st_ran", "Concurrent turn admission");
+	failed("st_answered", "chain_not_held: timeout");
+	taskLog("st_start", [{ type: "task_start_failed", payload: { error_message: "chain_not_held: timeout" } }]);
+	taskLog("st_ran", [ran("bash"), said("고치는 중")]);
+	taskLog("st_answered", [{ type: "task_start_failed", payload: { error_message: "chain_not_held: timeout" } }]);
+	const links: Record<string, { target: string; replyTo: string }> = { st_start: { target: "web", replyTo: "m1" }, st_ran: { target: "web", replyTo: "m2" }, st_answered: { target: "web", replyTo: "m3" } };
+	let t = t0 + 10_000;
+	const handed: string[] = [];
+	const work = createBgWork({ sessionFile: () => session, deferred: () => [{ target: "web", replyTo: "m1", at: t0 }, { target: "web", replyTo: "m2", at: t0 }], now: () => t, turnEndedAt: () => t0 + 8_000, busy: () => false, handover: w => handed.push(w.id), linkOf: id => links[id] });
+	work.list();
+	expect(handed).toEqual(["st_start"]);
+	t += HANDOVER_AFTER_MS * 2;
+	expect(work.list().find(w => w.id === "st_answered")).toMatchObject({ status: "failed", handled: true });
+	expect(handed).toEqual(["st_start"]);
+});

@@ -144,6 +144,7 @@
             <button class="ib pri" type="submit" aria-label="{{common.send}}" id="send-btn"></button>
           </form>
         </div>
+        <div class="al-bar" id="al-bar" hidden><button class="al-ask" id="al-ask" type="button">{{conv.alert_ask}}</button></div>
       </section>
       <section class="view fill" id="v-activity" hidden>
         <div class="subs" hidden></div>
@@ -172,7 +173,7 @@
     </div>
   </div>
 </div>
-<aside class="sheet" id="sheet" role="dialog" aria-label="{{common.subagent}}" hidden>
+<aside class="sheet" id="sheet" role="dialog" hidden>
   <div class="sh-head">
     <button class="ib" id="sh-back" type="button" aria-label="{{shell.sheet.to_list}}" hidden></button>
     <div class="sh-t"><div class="sh-name" id="sh-name"></div><div class="sup" id="sh-sub"></div></div>
@@ -180,14 +181,6 @@
     <button class="ib" id="sh-close" type="button" aria-label="{{common.close}}"></button>
   </div>
   <div class="sh-body" id="sh-body"></div>
-</aside>
-<aside class="sheet" id="hsheet" role="dialog" aria-label="{{shell.sheet.detail}}" hidden>
-  <div class="sh-head">
-    <div class="sh-t"><div class="sh-name" id="hs-name"></div><div class="sup" id="hs-sub"></div></div>
-    <span class="tag" id="hs-tag"></span>
-    <button class="ib" id="hs-close" type="button" aria-label="{{common.close}}"></button>
-  </div>
-  <div class="sh-body" id="hs-body"></div>
 </aside>
 <script src="/app.js"></script>
 </body>

@@ -4,10 +4,9 @@ import { afterAll, beforeEach, expect, test } from "bun:test";
 import { readFileSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { runOnboard } from "../bin/onboard.ts";
-import { type CommentAdapter, draftComments } from "../lib/comments.ts";
 import { ensureKakaoRoom } from "../lib/kakao-tone.ts";
 import { offerMailDraft } from "../lib/offer.ts";
-import { COMMENT_TONE_VERSION, corpusFile, learnFirst, maybeRefine, parseIdentity, REFINE_EVERY } from "../lib/persona.ts";
+import { COMMENT_TONE_VERSION, corpusFile, learnFirst, maybeRefine, REFINE_EVERY } from "../lib/persona.ts";
 import { identityOf, loadStyle, paths, recordCorrection, templatesOf, toneFile, writeAtomic, writeIdentity } from "../lib/settings.ts";
 import { enable, fakeModel, goodReply, j, mailFixture, setupEnv } from "./helpers.ts";
 
@@ -21,12 +20,18 @@ beforeEach(() => {
 const MAIL_ID = ["존댓말(해요체)로 짧게 쓴다", "인사 없이 바로 본론으로 들어간다", "끝은 '확인 부탁드려요.'로 맺는다"];
 const sent = ["To: a@example.com\nSubject: 견적\n\n안녕하세요. 견적서 보내드려요.\n확인 부탁드려요.\n\n> 이전 메일 인용", "자료 첨부했어요. 확인 부탁드려요."];
 
-test("the identity drops what could identify someone and keeps at most 12 lines", () => {
-	const out = parseIdentity(j({ identity: ["해요체를 쓴다", "메일 끝에 kim@example.com을 적는다", "010-1234-5678로 연락을 받는다", "https://x.example 링크를 붙인다", ...Array.from({ length: 20 }, (_, i) => `습관 ${i}`)] }));
+test("the identity drops what could identify someone and keeps at most 12 lines", async () => {
+	const analyze = fakeModel([j({ identity: ["해요체를 쓴다", "메일 끝에 kim@example.com을 적는다", "010-1234-5678로 연락을 받는다", "https://x.example 링크를 붙인다", ...Array.from({ length: 20 }, (_, i) => `습관 ${i}`)] })]);
+	await offerMailDraft(mailFixture, { send: () => {}, call: fakeModel([j(goodReply)]).call, analyze: analyze.call, sentTexts: async () => sent });
+	const out = identityOf({ app: "mail" });
 	expect(out[0]).toBe("해요체를 쓴다");
 	expect(out.some(l => /@|010-|https/.test(l))).toBe(false);
 	expect(out).toHaveLength(12);
-	expect(parseIdentity("not json")).toEqual([]);
+});
+
+test("an analysis that is not JSON leaves no identity", async () => {
+	await offerMailDraft(mailFixture, { send: () => {}, call: fakeModel([j(goodReply)]).call, analyze: fakeModel(["not json"]).call, sentTexts: async () => sent });
+	expect(identityOf({ app: "mail" })).toEqual([]);
 });
 
 test("the first mail reads the sent mailbox once, analyses it into the mail identity, and the draft is written as that person", async () => {
@@ -62,24 +67,6 @@ test("a mailbox with nothing to read yet is asked again with the next mail; a fa
 	const logs: string[] = [];
 	expect(await offerMailDraft({ ...mailFixture, key: "e-3" }, { send: () => {}, call: draft.call, analyze: fakeModel(["x"]).call, sentTexts: failing, log: l => void logs.push(l) })).toBe("offered");
 	expect(logs.join("\n")).toContain("zele down");
-});
-
-test("each comment source learns its own identity from its own past replies", async () => {
-	enable(env, { apps: { youtube: { auto: true }, instagram: { auto: true } } });
-	const adapter = (app: string, texts: string[]): CommentAdapter => ({
-		app,
-		label: app,
-		parse: l => (l.startsWith(`${app}:`) ? { id: l, author: "viewer", text: l.slice(app.length + 1), context: "" } : undefined),
-		stage: async c => `job-${c.id}`,
-		discard: async () => {},
-		ownTexts: async () => texts,
-	});
-	const reply = j({ action: "draft", reason: "r", to: "viewer", body: "고마워요!", questions: [] });
-	await draftComments(adapter("youtube", ["봐 주셔서 고마워요~"]), ["youtube:좋아요"], { call: fakeModel([reply]).call, analyze: fakeModel([j({ identity: ["물결표를 자주 쓴다"] })]).call });
-	await draftComments(adapter("instagram", ["감사합니다."]), ["instagram:예뻐요"], { call: fakeModel([reply]).call, analyze: fakeModel([j({ identity: ["마침표로 짧게 끝낸다"] })]).call });
-	expect(identityOf({ app: "youtube" })).toEqual(["물결표를 자주 쓴다"]);
-	expect(identityOf({ app: "instagram" })).toEqual(["마침표로 짧게 끝낸다"]);
-	expect(loadStyle({ app: "youtube" }).identity).toEqual(["물결표를 자주 쓴다"]);
 });
 
 test("a kakao room is swept from its history into its own identity; another room keeps its own; the app identity is the fallback", async () => {

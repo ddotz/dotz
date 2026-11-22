@@ -6,20 +6,29 @@ import { msg } from "./i18n.ts";
 import { emit, emitDelivery } from "./events.ts";
 import { escalations } from "./escalate.ts";
 import { lanes, sendToLane, setNoticeHandler as setLaneNoticeHandler, setOpenCardCheck, setOwnerNoteHandlers, setProgressHandler, setReportHandler, setVerifiedHandler } from "./lanes.ts";
-import { decisionsOf, laneHasOpenCard, laneVerified } from "./notices.ts";
+import { decisionsOf, laneHasOpenCard, laneVerified, onDraftRepost } from "./notices.ts";
 import { orch, steer as steerOrchestrator } from "./orchestrator.ts";
 import { convs } from "./convsessions.ts";
 import { createLaneRelay, ownerAlone } from "./lanerelay.ts";
 import { workersOf } from "./lanevis.ts";
 import { inOrder, localize, noteHandoffLeak } from "./outlang.ts";
 import { parkedTone, parseTone, stripHandoff } from "./tone.ts";
-import { send, deliver, onConvIdle, out } from "./outbound.ts";
+import { send, deliver, onConvIdle, out, queue } from "./outbound.ts";
 import { MAIN, primaryTarget } from "./session-key.ts";
-import { dropForLine, forLines } from "./forline.ts";
+import { dropForLine, forLines, waitsOnMain } from "./forline.ts";
+import { recordHanded } from "./handed.ts";
+import { type Lane, setMainWroteHandler } from "./lanestate.ts";
+import { askedMainThisTurn } from "./lanereport.ts";
 import { useKeptHooks } from "./agent-tree.ts";
 import { clipKeepingAsk, normalizeAsk, plainBareAsk } from "./ask-normalize.ts";
 import { withDoneLive } from "./done-live-wire.ts";
 import { activeFleetLaunch } from "./fleet-launch.ts";
+import { errorKo } from "./notice.ts";
+
+// A gateway-written [lane error] line carries the provider's or harness's own words ("Provider stream start timed out after 300000ms (raise
+// streamStartTimeoutMs ...)", 2026-11-11): the owner reads them in plain words. The orchestrator and report.md keep the raw report.
+const LANE_ERROR = /^(\[lane error\][ \t]*)(\S.*)$/gm;
+const ownerErrors = (text: string): string => (text.includes("[lane error]") ? text.replace(LANE_ERROR, (_m, head: string, err: string) => head + errorKo(err)) : text);
 
 // A gateway note or a report for a session: main, a conversation session, or a lane (a stronger-model step reports to the lane that
 // asked for it, hub/escalate.ts; sendToLane steers it into a running turn). A lane that cannot take it any more passes it to main.
@@ -33,13 +42,40 @@ export function deliverToSession(key: string, text: string): void {
 	}
 }
 
+// Steers a lane's report into the running turn of its session (`steerOf` finds that session's steer); false leaves the report to the
+// relay, which holds it for the session's idle point (hub/lanerelay.ts flush). Main's turn takes only an [ask]: it multiplexes every
+// conversation, and any report steered into it made it drop the work it was doing (39 such steers 2026-11-06..13; 2026-11-07T06:49Z),
+// but a question waits on main, so it goes in at once (owner 2026-11-13). The tone is read from the relay item's
+// `status=` line (hub/lanerelay.ts relayItem).
+const ASK_ITEM = /^- lane \S+ status=ask\b/m;
+export const reportSteer =
+	(steerOf: (key: string) => ((note: string) => boolean) | undefined) =>
+	(text: string, key: string): boolean =>
+		(key !== MAIN || ASK_ITEM.test(text)) && (steerOf(key)?.(msg().laneReportSteer(text)) ?? false);
+
 // A lane started from a conversation session (or from a lane) reports to that session (its key is the lane's `from`); the rest report to main.
 export const laneRelay = createLaneRelay({
 	busy: key => !key.startsWith("lane:") && (key === MAIN ? orch : convs.get(key)?.o.orch)?.status === "working",
 	deliver: (text, key) => deliverToSession(key, text),
 	lead: n => msg().inboxLaneReports(n),
-	steer: (text, key) => (key === MAIN ? steerOrchestrator(msg().laneReportSteer(text)) : (convs.get(key)?.o.steer(msg().laneReportSteer(text)) ?? false)),
+	steer: reportSteer(key => (key === MAIN ? steerOrchestrator : convs.get(key)?.o.steer)),
 });
+
+// A [wait] on main from a lane main started is main's handed work from that lane, the queue entry its dotz_main request makes
+// (hub/routes-send.ts): main's answer goes back to the lane (hub/prompts.ts handBack). Relayed as a plain report, the answer went to
+// main's own channel and the lane heard nothing until the owner pushed (review-a G9). Not in the turn that answers main's own answer
+// (one round, as dotz_main refuses it); the same wait again is dropped, as the relay drops a repeat. Undefined: not such a wait.
+const handedWaits = new Map<string, string>();
+export function handWaitToMain(lane: Pick<Lane, "name" | "from">, text: string, answeringMain: boolean): "relayed" | "duplicate" | undefined {
+	if (answeringMain || (lane.from ?? MAIN) !== MAIN || parseTone(text).tone !== "wait" || !waitsOnMain(text)) return void handedWaits.delete(lane.name);
+	const key = text.replace(/\s+/g, " ").trim();
+	if (handedWaits.get(lane.name) === key) return "duplicate";
+	handedWaits.set(lane.name, key);
+	const from = `lane:${lane.name}`;
+	recordHanded({ to: primaryTarget(MAIN), from, text });
+	queue.deliver(`[${from}] ${text}`, { target: from, from });
+	return "relayed";
+}
 
 // Why this orchestrator post may not go out, when it would ask a session's open question a second time. A session's [ask] is already in 답변 필요 and the owner's answer
 // there reaches the session, so the turn that heard it makes no card of its own, in any words (2026-11-05 publish-voice: two cards 9 s apart; the same
@@ -56,14 +92,26 @@ export function repostRefusal(target: string, text: string): string | undefined 
 
 export function installLaneHandlers(): void {
 	onConvIdle(key => void laneRelay.flush(key));
+	// Main wrote to the lane: the same [wait] after that is a new wait, handed or relayed again (review-a G7).
+	setMainWroteHandler(name => {
+		handedWaits.delete(name);
+		laneRelay.forget(name);
+	});
+	// A send card closed for not being its draft as printed: the session that posted it is told to post it again (hub/notices-rules.ts repostNote).
+	onDraftRepost((n, note) => deliverToSession(n.by?.startsWith("lane:") ? n.by : convs.keyOf(n.decision!.to), note));
 	setVerifiedHandler((name, text) => laneVerified(name, text));
 	setOpenCardCheck(laneHasOpenCard);
 	setReportHandler((lane, raw, answering, pause) => {
 		noteHandoffLeak(`lane:${lane.name}`, raw);
+		const answeringMain = lane.handedBack === true;
 		lane.handedBack = undefined;
 		const text = stripHandoff(raw);
 		activeFleetLaunch()?.report(lane, text);
-		const how = laneRelay.report(lane.name, raw, join(paths.lanes, lane.name, "report.md"), ownerAlone(lane, pause === true, workersOf(`lane:${lane.name}`).length), lane.from);
+		// A bare [wait] in the turn that already asked main with dotz_main is that request's wait: main has it once already.
+		const askedAlready = parseTone(text).tone === "wait" && !forLines(text) && askedMainThisTurn(lane);
+		const handed = askedAlready ? undefined : handWaitToMain(lane, text, answeringMain);
+		if (handed === "relayed") log(`lane ${lane.name} [wait] on main handed to main as its request; the answer goes back to the lane`);
+		const how = askedAlready ? "disk" : handed ?? laneRelay.report(lane.name, raw, join(paths.lanes, lane.name, "report.md"), ownerAlone(lane, pause === true, workersOf(`lane:${lane.name}`).length), lane.from);
 		if (how === "relayed" || how === "held" || how === "steered") lane.orchAsked = false;
 		if (escalations()?.reported(lane.name, parseTone(text).tone)) log(`lane ${lane.name} ended: its stronger-model step reported back`);
 		if (how === "steered") log(`lane ${lane.name} report steered into the orchestrator's turn`);
@@ -77,10 +125,11 @@ export function installLaneHandlers(): void {
 		// The owner-visible part is localized once, before it is recorded: the web chat, the bell, push and Discord all show that
 		// text (the web showed a lane's English report while only Discord got the rewrite). The orchestrator and report.md keep
 		// the raw report, and the "For <bot>:" line stays as written (notices.ts reads it).
-		const body = dropForLine(text);
+		const shownText = ownerErrors(text);
+		const body = dropForLine(shownText);
 		void inOrder(channel, async () => {
 			const local = await localize(body, channel, "lane");
-			const kept = local === body ? text : [local, forLines(text)].filter(Boolean).join("\n\n");
+			const kept = local === body ? shownText : [local, forLines(text)].filter(Boolean).join("\n\n");
 			// `answering`: the report answers an owner message (the bell and push treat it as the session's answer, hub/notices.ts, hub/push.ts).
 			// An ask's event carries the ask's own time: the docked card (pendingAsk) and the decision notice (this event) must name one message, or an answer on one leaves the other open (pilot-stage1 2026-11-05: tapped twice, 2 ms apart).
 			const ts = lane.pendingAsk?.text === text ? lane.pendingAsk.at : now();
@@ -117,7 +166,7 @@ export function installLaneHandlers(): void {
 	// Mid-turn lane text: an [ask], [fail] or [done] line is something the owner must see and keep, so it is a real message;
 	// anything else edits the lane channel's one progress message.
 	setProgressHandler((lane, raw) => {
-		const text = withDoneLive(plainBareAsk(normalizeAsk(stripHandoff(raw))));
+		const text = ownerErrors(withDoneLive(plainBareAsk(normalizeAsk(stripHandoff(raw)))));
 		const channel = `lane:${lane.name}`;
 		const tone = parseTone(text).tone;
 		const real = tone === "ask" || tone === "fail" || tone === "done";

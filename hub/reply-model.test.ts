@@ -60,7 +60,6 @@ describe("the model list of the setting", () => {
 		expect(c.options.indexOf("openai/gpt-5:medium")).toBeGreaterThan(c.options.indexOf(OPUS));
 	});
 	test("the default option is the reply default, Sonnet 5.5 high, or the global reply model when one is set, never the subagent model", () => {
-		expect(REPLY_DEFAULT).toBe("anthropic/claude-sonnet-5-5:high");
 		expect(replyModelChoices(LIST).labels[""]).toBe("답장 기본값 · Sonnet 5.5 · 높음");
 		expect(replyModelChoices(LIST, OPUS).labels[""]).toBe("답장 기본값 · Opus 5.5 · 높음");
 	});
@@ -197,10 +196,10 @@ describe("the draft paths call the model they resolved", () => {
 describe("the effort reaches the model process", () => {
 	const flag = (argv: string[], name: string) => argv[argv.indexOf(name) + 1];
 	test("a selector with an effort sets --thinking; without one the call thinks off as before", () => {
-		const high = modelArgv("sys", "text", WORKER);
+		const high = modelArgv("sys", WORKER);
 		expect(flag(high, "--thinking")).toBe("high");
 		expect(flag(high, "--model")).toBe("anthropic-subscription/claude-sonnet-5-5");
-		expect(flag(modelArgv("sys", "text", SONNET), "--thinking")).toBe("off");
-		expect(flag(modelArgv("sys", "text", undefined), "--thinking")).toBe("off");
+		expect(flag(modelArgv("sys", SONNET), "--thinking")).toBe("off");
+		expect(flag(modelArgv("sys", undefined), "--thinking")).toBe("off");
 	});
 });

@@ -6,13 +6,23 @@ import { onEmit } from "./events.ts";
 import { ATTACH_REFUSED, draftApprovalBlock } from "./draft-approval.ts";
 import { answerDecision, ignoreNotice, listNotices, markDraftSend } from "./notices.ts";
 import { out } from "./outbound.ts";
-import { pickedSend } from "./reply-outcomes.ts";
+import { sendActionOf, type SendResult } from "./approval-send.ts";
+import { sendOf } from "./reply-actions.ts";
+import { reportSend } from "./reply-wire.ts";
+import { reasonOf } from "./reply-reasons.ts";
+import type { ReasonCode } from "./reply-types.ts";
 
 const CONV = "mail:attach-refused-test";
 const why = "본문에 문서 파일을 보낸다고 썼지만 첨부파일이 없어요";
-const REFS = ["att-refused-1", "att-failed-2"];
+const REFS = ["att-refused-1", "att-failed-2", "att-coded-3", "att-unapproved-4"];
 const card = (ref: string) => `[ask] 답장 초안이에요\n${draftApprovalBlock({ to: "친구", toLabel: "대화방", body: `${ref} 문서 보내드립니다`, ref, question: "이 답장 보낼까요?", attachIssues: [why] })}`;
 const all = () => listNotices(500).items as any[];
+// The send the owner picked, read from the answer the card keeps ("1) 보내기") against the card's own option of that number.
+const pickedSend = (d: { answer?: string; options: { n: number; label: string }[] }) => {
+	const m = /^(\d+)\) (.+)$/.exec(d.answer ?? "");
+	const label = m && d.options.find(o => o.n === Number(m[1]) && o.label === m[2])?.label;
+	return label ? sendActionOf(label) : undefined;
+};
 const cardOf = (ref: string) => all().find(n => n.decision?.to === CONV && n.decision.draft?.ref === ref);
 const seen = new Set<string>();
 const waiting = new Map<string, () => void>();
@@ -55,6 +65,41 @@ test("a send that failed for another reason keeps the card answered", async () =
 	markDraftSend(CONV, REFS[1]!, "failed", "zele: thread changed");
 	expect(cardOf(REFS[1]!).decision.state).toBe("answered");
 	expect(cardOf(REFS[1]!).decision.send).toMatchObject({ state: "failed", text: "zele: thread changed" });
+});
+
+const failedWith = (ref: string, code: ReasonCode, vars?: Record<string, string>): SendResult => {
+	const reason = reasonOf(code, vars);
+	return { ref, conv: CONV, title: `이 답장 보낼까요? (${ref})`, state: "failed", text: reason.text, reason, safeToAuto: false, at: Date.now() };
+};
+
+test("LV-4 a send that ended attach_mismatch opens the card again by its reason code, with the reason, and 이대로 보내기 is a pick the gateway sends", async () => {
+	const posted = shown(REFS[2]!);
+	await out(CONV, card(REFS[2]!));
+	await posted;
+	await answerDecision(cardOf(REFS[2]!).id, { n: 1 }, async () => {});
+	expect(cardOf(REFS[2]!).decision.state).toBe("answered");
+	const r = failedWith(REFS[2]!, "attach_mismatch", { issues: why });
+	expect(r.text.startsWith(ATTACH_REFUSED)).toBe(false);
+	reportSend(r);
+	const again = cardOf(REFS[2]!);
+	expect(again.decision.state).toBe("open");
+	expect(again.decision.send).toMatchObject({ state: "failed", text: expect.stringContaining(why) });
+	await answerDecision(again.id, { n: 4 }, async () => {});
+	expect(pickedSend(cardOf(REFS[2]!).decision)).toBe("send-as-is");
+});
+
+test("LV-6 a not_approved failure offers 보내기 (a fresh pick) instead of 다시 보내기 and opens the card again so the owner picks again", async () => {
+	const posted = shown(REFS[3]!);
+	await out(CONV, card(REFS[3]!));
+	await posted;
+	await answerDecision(cardOf(REFS[3]!).id, { n: 1 }, async () => {});
+	const r = failedWith(REFS[3]!, "not_approved");
+	expect(sendOf(r)).toMatchObject({ state: "failed", reason: { code: "not_approved" } });
+	expect(sendOf(r)!.actions).toEqual(["send"]);
+	expect(sendOf(failedWith(REFS[3]!, "rejected"))!.actions).toContain("retry");
+	reportSend(r);
+	expect(cardOf(REFS[3]!).decision.state).toBe("open");
+	expect(cardOf(REFS[3]!).decision.send).toMatchObject({ state: "failed", text: r.text });
 });
 
 afterAll(() => {

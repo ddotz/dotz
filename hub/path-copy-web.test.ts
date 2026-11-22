@@ -58,6 +58,8 @@ async function open(width: number, lang: string) {
 	// A clipboard stub: copyText uses navigator.clipboard in a secure context (127.0.0.1 is one) and records what it wrote.
 	await v.evaluate(`(Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText: async t => { (window.__copied ||= []).push(t); } } }), 0)`);
 	await v.evaluate(`(openTarget("main", "chat"), 0)`);
+	await waitFor(v, `DC.cur`);
+	await v.evaluate(`(dcUnfold(DC.cur.t), paintDecision(), 0)`);
 	await waitFor(v, `document.querySelectorAll(".fitem .fpath").length === 2 && document.querySelector("#dcard .dc-row")`);
 	return v;
 }
@@ -100,17 +102,16 @@ test("a tap copies the FULL path (not the short line) and says so", async () => 
 	expect(await v.evaluate(`document.querySelector(".snack") && document.querySelector(".snack").textContent`)).toBe("경로를 복사했어요");
 });
 
-test("the decision card's buttons are the one button system: .dc-act, .dc-go and .dc-manual look like .btn", async () => {
+test("the decision card's buttons are the one button system: .dc-act and .dc-back look like .btn", async () => {
 	const v = await open(1280, "1280");
 	const got = JSON.parse(
 		(await v.evaluate(`JSON.stringify((() => {
 			const mk = c => { const b = document.createElement("button"); b.className = c; b.textContent = "가"; document.body.append(b); const s = getComputedStyle(b), r = b.getBoundingClientRect(); const o = { h: Math.round(r.height), radius: s.borderRadius, font: s.fontSize, weight: s.fontWeight }; b.remove(); return o; };
-			return { btn: mk("btn"), act: mk("dc-act"), back: mk("dc-back"), manual: mk("dc-manual"), secondary: mk("btn tonal"), quiet: mk("btn text"), rows: document.querySelectorAll("#dcard .dc-row").length };
+			return { btn: mk("btn"), act: mk("dc-act"), back: mk("dc-back"), secondary: mk("btn tonal"), quiet: mk("btn text"), rows: document.querySelectorAll("#dcard .dc-row").length };
 		})())`)) as string,
 	) as Record<string, { h: number; radius: string; font: string; weight: string } | number>;
 	expect(got.rows).toBe(2);
 	for (const k of ["act", "back", "secondary", "quiet"]) expect(got[k]).toEqual(got.btn);
-	expect(got.manual).toMatchObject({ h: got.btn.h, radius: got.btn.radius, weight: got.btn.weight });
 });
 
 const CARD_DRAW = `(() => {
@@ -134,11 +135,11 @@ for (const [name, width] of [["390", 390], ["1280", 1280]] as const) {
 		await waitFor(v, `document.querySelectorAll(".shot-cards .dr-act .btn").length === 3 && document.querySelectorAll(".shot-cards .cc-act .btn").length === 3`);
 		const got = JSON.parse(
 			(await v.evaluate(`JSON.stringify((() => {
-				const box = b => { const r = b.getBoundingClientRect(), s = getComputedStyle(b); return { label: b.textContent, h: Math.round(r.height), radius: s.borderRadius, bg: s.backgroundColor, color: s.color, weight: s.fontWeight, hit: getComputedStyle(b, "::after").top }; };
+				const box = b => { const r = b.getBoundingClientRect(), s = getComputedStyle(b); return { label: b.textContent, k: b.dataset.k || "", h: Math.round(r.height), radius: s.borderRadius, bg: s.backgroundColor, color: s.color, weight: s.fontWeight, hit: getComputedStyle(b, "::after").top }; };
 				return { draft: [...document.querySelectorAll(".shot-cards .dr-act .btn")].map(box), result: [...document.querySelectorAll(".shot-cards .cc-act .btn")].map(box) };
 			})())`)) as string,
-		) as { draft: { label: string; h: number; radius: string; bg: string; color: string; weight: string; hit: string }[]; result: { label: string; h: number; radius: string; bg: string; color: string; weight: string; hit: string }[] };
-		expect(got.draft.map(b => b.label)).toEqual(["보내기", "고치기", "보내지 않기"]);
+		) as { draft: { label: string; k: string; h: number; radius: string; bg: string; color: string; weight: string; hit: string }[]; result: { label: string; h: number; radius: string; bg: string; color: string; weight: string; hit: string }[] };
+		expect(got.draft.map(b => b.k)).toEqual(["send", "fix", "drop"]);
 		expect(got.result.map(b => b.label)).toEqual(["열기", "나중에", "무시"]);
 		// The draft card's row is the small step at every width; on a phone only its ::after grows the touch area to 44px (ui-spec, 418d545).
 		for (const b of got.draft) {

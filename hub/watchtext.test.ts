@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { i18nPrelude } from "./web-i18n.ts";
-import { clockKo, deriveLabel, describeOutput, humanLabel, isKeyLabel, isMachineOutput, nameKo, plainLabel, rawFence, scheduleLabel, scheduleLine, sentinelMatch, watchLine, watchSummary } from "./watchtext.ts";
+import { clockKo, deriveLabel, describeOutput, failKindKo, humanLabel, isKeyLabel, isMachineOutput, loginLost, nameKo, plainLabel, rawFence, scheduleLabel, scheduleLine, sentinelMatch, watchLine, watchSummary } from "./watchtext.ts";
 
 const KAKAO = "kakao chat=100000000000001 new=1 from=3900000000000000001 to=3900000000000000001 at=2026-10-22T12:26:36.000Z";
 const NOW = Date.parse("2026-10-22T13:00:00.000Z");
@@ -113,11 +113,10 @@ test("a JSON report reads in Korean key words, a long log says its lines and las
 
 test("web/js/11-watchtext.js words the same posts as this module", () => {
 	const src = readFileSync(join(import.meta.dir, "../web/js/11-watchtext.js"), "utf8");
-	const web = new Function(`${i18nPrelude()}${src}; return { watchLine, scheduleLine, humanLabel };`)() as Record<string, (...a: any[]) => string>;
+	const web = new Function(`${i18nPrelude()}${src}; return { watchLine, humanLabel };`)() as Record<string, (...a: unknown[]) => string>;
 	const opts = { now: NOW, tz: TZ };
 	const cases: [string, string, string, string?][] = [["kakao-new", "matched /./", KAKAO], ["재고", "output changed", "새 메일이 1통 왔어요"], ["저장소 감시", "matched /gone/", "sample-repo-gone"], ["저장소 감시", "matched /gone/", "READY\n재고가 들어왔어요"], ["저장소 감시", "output changed", "sample-repo-gone", "sample-repo-here"], ["api-health", "failed 3 times in a row (exit 7)", "curl: (7) boom"], ["x", "recovered", ""], ["x", "recovered", "ok"], ["상태", "output changed", '{"status":"ok","latest":{"at":"2025-01-02T01:00:00Z"}}'], ["로그", "output changed", "2025-01-02T01:10:00Z a=1 b=2\n2025-01-02T01:11:00Z a=1 b=3\n2025-01-02T01:12:00Z a=1 b=4"], ["재고", "output changed", "Item A\nItem C", "Item A\nItem B"], ["재고", "fail", "DOTZ_FAIL login\nx"], ["상태", "output changed", '{"version":"8.2.36","id":"q"}'], ["상태", "output changed", "+ Build 9.1.0\n- Build 9.0.9"], ["sample-items", "match", ITEMS_NOW, ITEMS_PREV]];
 	for (const [l, r, o, prev] of [...cases, ...MATCHES.map(([l, r, o]) => [l, r, o] as [string, string, string])]) expect(web.watchLine!(l, r, o, { ...opts, prev })).toBe(watchLine(l, r, o, { ...opts, prev }));
-	for (const t of ["ch:7 morning brief: summarize", "주간 보고 정리", ...SCHEDULES.map(([t]) => t)]) expect(web.scheduleLine!(t)).toBe(scheduleLine(t));
 	expect(web.humanLabel!("kakao-new")).toBe(humanLabel("kakao-new"));
 });
 
@@ -177,6 +176,17 @@ test("a DOTZ_FAIL kind reads as a Korean phrase", () => {
 	expect(watchLine("샘플 감시", "failed 3 times in a row (exit 1)", "DOTZ_FAIL login")).toBe("샘플 감시: 3번 연속 실패했어요\n로그인이 풀렸어요\n" + rawFence("DOTZ_FAIL login"));
 });
 
+test("a DOTZ_FAIL line keeps the check's own reason, on the web too", () => {
+	const out = "DOTZ_FAIL not-local 63: sample/a.mp3";
+	expect(describeOutput(out, { issue: true }).text.split("\n")).toEqual([failKindKo("not-local"), "not-local 63: sample/a.mp3"]);
+	expect(describeOutput("DOTZ_FAIL fetch: timeout after 30s", { issue: true }).text.split("\n")).toEqual([failKindKo("fetch"), "timeout after 30s"]);
+	expect(describeOutput(`DOTZ_FAIL x ${"y".repeat(300)}`, { issue: true }).text.split("\n")[1]!.length).toBe(120);
+	const src = readFileSync(join(import.meta.dir, "../web/js/11-watchtext.js"), "utf8");
+	const web = new Function(`${i18nPrelude()}${src}; return { watchLine };`)() as Record<string, (...a: any[]) => string>;
+	const opts = { now: NOW, tz: TZ };
+	expect(web.watchLine!("샘플 감시", "failed 3 times in a row (exit 1)", out, opts)).toBe(watchLine("샘플 감시", "failed 3 times in a row (exit 1)", out, opts));
+});
+
 test("JSON output is drawn as key: value lines without ids", () => {
 	const d = describeOutput('{"id":"abc","version":"8.2.36","status":{"state":"ready","at":"2026-10-22T13:18:18Z"},"tags":["a","b"]}');
 	expect(d.readable).toBe(true);
@@ -215,4 +225,14 @@ test("a schedule's name skips a leading channel tag and is never cut inside a br
 	for (const n of names.slice(1)) expect({ n, open: n.replace(/[^("“(\[]/g, "").length > n.replace(/[^)”)\]]/g, "").length || (n.match(/"/g) ?? []).length % 2 === 1 }).toEqual({ n, open: false });
 	expect(names[1]!.startsWith("12:00 릴리스 뒤 Claude 리셋권 표시 확인")).toBe(true);
 	expect(names[2]!.startsWith("답장 파일 재대조")).toBe(true);
+});
+
+test("a lost provider login is recognised with or without a channel tag or a name in front, in the new and the stored wording", () => {
+	const now = "anthropic 로그인이 풀려서 일이 멈췄어요. 이 게이트웨이를 돌리는 컴퓨터에서 /login anthropic 를 실행해 주세요.";
+	const stored = "모델 제공자 로그인이 풀려서 멈췄어요. 계정: anthropic.";
+	for (const body of [now, stored]) {
+		for (const lead of ["", "샘플-2: ", "[ch:1570000000000000001] ", "[ch:1570000000000000001] 샘플-2: ", "[샘플-2] "]) expect({ lead, lost: loginLost(`${lead}${body}`) }).toEqual({ lead, lost: true });
+	}
+	expect(loginLost("[ch:1570000000000000001] 샘플-2: 오늘 점검은 잘 끝났어요")).toBe(false);
+	expect(loginLost("로그인이 풀려서 일이 멈췄어요는 문구를 인용한 글이에요")).toBe(false);
 });

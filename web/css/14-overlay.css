@@ -89,5 +89,5 @@ dialog.fs-card::backdrop { background: var(--scrim); }
   .fs-bd:has(> .fs-card.mid) { align-items: flex-end; background: var(--scrim); }
   dialog.dlg.fs-card.mid[open] { margin: auto 0 0; }
   /* the sheet is a card, so a field in it takes the fill a field has on a card (on the full screen it sits on --bg) */
-  .fs-card.mid, dialog.dlg.fs-card.mid[open] { --ff-fill: var(--ff-pop); height: fit-content; max-height: min(86dvh, 820px); border-radius: var(--r-sheet) var(--r-sheet) 0 0; background: var(--card); padding-top: 0; }
+  .fs-card.mid, dialog.dlg.fs-card.mid[open] { --ff-fill: var(--ff-pop); height: fit-content; max-height: min(86dvh, 820px, calc(var(--vvh, 100dvh) - var(--sp-2))); border-radius: var(--r-sheet) var(--r-sheet) 0 0; background: var(--card); padding-top: 0; }
 }

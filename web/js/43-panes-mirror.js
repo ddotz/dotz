@@ -48,7 +48,7 @@ function paneMirror(p) {
     m.node = el("div", { class: `pane-mir pane-chat${convTakesText(p.t) ? "" : " no-composer"}` }, head, m.todo, el("div", { class: "chatbox" }, m.wrap), paneComposerEl(m));
     if (!TD.by[p.t]) loadTodo(p.t);
   } else {
-    m.node = el("div", { class: "pane-mir" }, head, el("div", { class: "pane-pj" }, snap ? paneBare(snap.n) : el("div", { class: "empty", text: TX("misc.pane.tap_room") })));
+    m.node = el("div", { class: "pane-mir" }, head, el("div", { class: "pane-pj" }, snap ? paneBare(snap.n) : emptyNode(TX("misc.pane.tap_room"))));
   }
   PNM.set(p.id, m);
   if (m.k) paneStrip(m);
@@ -111,14 +111,14 @@ function paneFill(m) {
   clear(m.list);
   m.keys = new Set(s.mk);
   for (const e of s.msgs.slice(-60)) paneAppend(m, e);
-  if (!s.hLoaded && !s.loading) loadTarget(t, true).then(() => { if (PNM.get(m.p.id) === m) { paneFill(m); m.wrap.scrollTop = m.wrap.scrollHeight; } }, () => { /* the pane shows what it has */ });
+  if (!s.hLoaded && !latestOut(targetKey(t))) loadTarget(t, true).then(() => { if (PNM.get(m.p.id) === m) { paneFill(m); m.wrap.scrollTop = m.wrap.scrollHeight; } }, () => { /* the pane shows what it has */ });
 }
 // msgNode reads the global target (a lane report's look), so it is the pane's own for the call.
 function paneAppend(m, e) {
   const was = target;
   let n = null;
-  target = m.p.t;
-  try { n = msgNode(e); } finally { target = was; }
+  putTargetId(m.p.t);
+  try { n = msgNode(e); } finally { putTargetId(was); }
   if (!n) return;
   n.dataset.ts = e.ts;
   const key = e.kind === "out" && e.update_key ? `${e.target ?? ""}|${e.update_key}` : "";

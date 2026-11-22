@@ -1,14 +1,15 @@
 import { type Lane, portOf, pendingFile, setStatus, ownerNotes, persist, hooks } from "./lanestate.ts";
 import { type AgentProcess } from "./runtime/types.ts";
 import { emitEventActivity } from "./activity.ts";
-import { noteEvent, compactDue, requestCompact, flushCompact, requeueRefused } from "./context.ts";
+import { noteEvent, compactDue, requestCompact, flushCompact, requeueRefused, type Ctx } from "./context.ts";
 import { rmSync } from "node:fs";
 import { handleError, laneRanOn, laneRecovered, settleRevert, settleChain } from "./lanefailover.ts";
 import { nextLastText, scheduleReport, REPORT_DEBOUNCE_MS, report } from "./lanereport.ts";
-import { compactAtFor, lanesCompactAt, log } from "./config.ts";
-import { laneStuck, recover } from "./lanerun.ts";
+import { compactAtFor, lanesCompactAt, log, now } from "./config.ts";
+import { COMPACTION_FAILED, laneStuck, recover } from "./lanerun.ts";
 import { prompt } from "./laneprompt.ts";
 import { msg } from "./i18n.ts";
+import { errorKo } from "./notice.ts";
 import { revertWhy } from "./fallback.ts";
 import { noteModelChange } from "./model-guard.ts";
 import { runtimeFor } from "./runtime/index.ts";
@@ -53,6 +54,11 @@ function retryRefused(lane: Lane, text: string): void {
 	} else if (lane.status === "working") lane.refusedTimer = setTimeout(() => retryRefused(lane, text), REFUSED_RETRY_MS);
 	else prompt(lane, text);
 }
+// Lanes whose last compaction failed (any failure requeueRefused does not take), with whether a turn ran at that failure. The first failure
+// since the lane's last finished compaction is queued again for the next idle point; only a second one in a row restarts the lane (recover),
+// as a single failure often clears on its own (provider timeout, a session that changed under the summary).
+const compactFailed = new Map<string, { working: boolean; before: Ctx["compaction"] }>();
+
 function refusedAnswered(lane: Lane): void {
 	if (!lane.refused) return;
 	clearTimeout(lane.refusedTimer);
@@ -94,6 +100,9 @@ export async function readEvents(lane: Lane, proc: AgentProcess): Promise<void> 
 				lane.steered = undefined;
 				laneStuck(lane).begin();
 				break;
+			case "user":
+				if (lane.steered?.length) lane.steered = lane.steered.filter(t => !ev.text.includes(t));
+				break;
 			case "assistant":
 				if (ev.stop === "error" && lane.prompted !== undefined && REFUSED_RE.test(ev.error.text)) {
 					refusedTurn(lane, lane.prompted);
@@ -111,13 +120,17 @@ export async function readEvents(lane: Lane, proc: AgentProcess): Promise<void> 
 					laneRanOn(lane);
 					laneRecovered(lane);
 				}
-				if (ev.text) {
+				if (ev.stop === "error") {
+					clearTimeout(lane.watchdog);
+					lane.startingOn = undefined;
+				}
+				if (ev.stop !== "error" && ev.text) {
 					lane.lastText = nextLastText(lane, ev.text);
 					lane.unreported = true;
 					// A text that ends in a tool call, after an owner message, is the lane's short answer to it (the footer asks for one).
-					if (ev.stop !== "error") ownerNotes.text(lane.name, ev.text, ev.stop !== "other");
+					ownerNotes.text(lane.name, ev.text, ev.stop !== "other");
 				}
-				// A compaction error is recovered by recover() below (restart on the same session), not retried here.
+				// A compaction error is handled at the compaction event below (retried once, then recover()), not retried here.
 				else if (ev.stop === "error" && !ev.error.compaction) {
 					const failed = ev.error;
 					lane.failing = true;
@@ -166,9 +179,23 @@ export async function readEvents(lane: Lane, proc: AgentProcess): Promise<void> 
 			case "compaction":
 				if (ev.state === "error" && requeueRefused(lane.ctx, ev.error)) {
 					log(`lane ${lane.name} compaction refused (${ev.error.slice(0, 120)}); retrying at the next idle point`);
+					// The refusal's own retry is this failure's one retry: a failure of that retry restarts the lane.
+					compactFailed.set(lane.name, { working: wasWorking, before: lane.ctx.compaction });
 					flushCompact(lane.ctx, portOf(lane));
-				} else if (ev.state === "error") recover(lane, "컨텍스트 압축이 실패했어요", wasWorking);
-				else {
+				} else if (ev.state === "error" && !compactFailed.has(lane.name)) {
+					compactFailed.set(lane.name, { working: wasWorking, before: lane.ctx.compaction });
+					lane.ctx.compaction = { state: "queued", at: now() };
+					log(`lane ${lane.name} compaction failed (${ev.error.slice(0, 120)}); retrying once at the next idle point`);
+					flushCompact(lane.ctx, portOf(lane));
+				} else if (ev.state === "error") {
+					// The restart leaves the compaction state as it was before the first failure, not the retry it queued.
+					const first = compactFailed.get(lane.name);
+					compactFailed.delete(lane.name);
+					if (first) lane.ctx.compaction = first.before;
+					recover(lane, COMPACTION_FAILED, wasWorking || Boolean(first?.working));
+				} else {
+					compactFailed.delete(lane.name);
+					lane.ctx.tokens = 0;
 					lane.retainNext = true;
 					// On disk: a restart or a respawn loses the extension's queued re-read, and the next gateway prompt then carries the footer.
 					lane.contractDue = true;
@@ -185,7 +212,7 @@ export async function readEvents(lane: Lane, proc: AgentProcess): Promise<void> 
 				break;
 			case "fallback": {
 				log(`lane ${lane.name} model fallback${ev.worker ? " (task worker)" : ""}: ${ev.from} -> ${ev.to}${ev.reason ? ` (${ev.reason.replace(/\s+/g, " ").slice(0, 200)})` : ""}`);
-				let line = msg().modelFallback(ev.from, ev.to, ev.reason, ev.worker);
+				let line = msg().modelFallback(ev.from, ev.to, ev.reason && errorKo(ev.reason), ev.worker);
 				if (!ev.worker) noteModelChange(`lane:${lane.name}`, ev.from, ev.to, "fallback");
 				if (ev.worker) lane.activeWorkerModel = ev.to;
 				else {

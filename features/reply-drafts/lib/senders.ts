@@ -5,17 +5,25 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { MailSearch } from "../../../hub/comments/mail-match.ts";
 import { log } from "../../../hub/config.ts";
+import { movedOn } from "../../../hub/mail-reconcile.ts";
+import { ownAddresses } from "../../../hub/mail-state.ts";
 import { msg } from "../../../hub/i18n.ts";
 import { type AppRaw, readAppsFile } from "../../../hub/integrations.ts";
 import { addressesOf } from "../../../hub/reply-draft.ts";
 import { loadPlugins, pluginNeedsAccount, pluginReply, pluginRepliesWithFiles, pluginsLoaded, pluginsReply } from "../../../hub/plugins.ts";
+import { withoutRuntimeWarnings } from "../../../hub/tool-output.ts";
+import { parseThread } from "../../../hub/zele.ts";
 import { dataDir } from "./settings.ts";
 import { recipientList } from "./recipients.ts";
 import { stagedFiles } from "./staged.ts";
-import type { DraftRec } from "./store.ts";
-import type { Runner } from "./tone.ts";
+import { patchDraft, type DraftRec } from "./store.ts";
+import type { Runner, RunResult } from "./tone.ts";
 
-export type SendOutcome = { ok: boolean; message: string };
+/** Where a send left the mail: it went out, it surely did not, or it may have (design 1.5). */
+export type Sent = "yes" | "no" | "maybe";
+/** A send's result. `message` is the owner's plain Korean line; `code` the reason code of design 2.2 (hub/reply-reasons.ts) with its `vars`.
+ *  `sent` absent (an injected sender that does not say) reads as "yes" when ok, else "maybe". */
+export type SendOutcome = { ok: boolean; message: string; sent?: Sent; code?: string; vars?: Record<string, string | number> };
 
 const WEBMAIL_MAIL = join(import.meta.dir, "..", "..", "webmail-no-api", "bin", "mail.ts");
 const MANUAL = "이 메일은 여기서 보낼 수 없어서 직접 보내야 해요. 초안은 위에 있는 글을 그대로 쓰면 돼요";
@@ -87,29 +95,42 @@ function addressedLogin(rec: Pick<DraftRec, "ref">, logins: string[]): string | 
 }
 
 const ADDRESS = /[\w.+-]+@[\w-]+\.[\w.-]+/g;
+type Run = { code: number; stdout: string; stderr: string };
+const whoami = (run: Runner): Promise<Run> => run(["zele", "whoami"]).catch(e => ({ code: 1, stdout: "", stderr: String(e) }));
+const loginsIn = (stdout: string): string[] => [...new Set(stdout.match(ADDRESS) ?? [])];
 export const zeleLogins = async (run: Runner): Promise<string[]> => {
-	// No zele at all reads as no accounts.
-	const r = await run(["zele", "whoami"]).catch(e => ({ code: 1, stdout: "", stderr: String(e) }));
-	return r.code === 0 ? [...new Set(r.stdout.match(ADDRESS) ?? [])] : [];
+	const r = await whoami(run);
+	return r.code === 0 ? loginsIn(r.stdout) : [];
 };
 // Category mails are posted as "<thread id>.<message count>"; a source `zele` already posts the thread id.
 export const threadIdOf = (source: string, id: string): string => (source === "zele" ? id : id.replace(/\.\d+$/, ""));
 const threadOf = (rec: DraftRec) => threadIdOf(rec.source, rec.mailId);
 /**
  * The account a send goes through. With several accounts and no record of it: the one account the stored mail was addressed to, else the one
- * account that can open the thread. `several` = they are named and none could be settled; with one account zele needs no choice.
+ * account that can open the thread (`found`: it came from the logins, not from a record, so no card showed it). `several` = they are named and
+ * none could be settled; with one account zele needs no choice.
  */
-export async function settleAccount(rec: DraftRec, run: Runner): Promise<{ account?: string; several?: string[] }> {
+export async function settleAccount(rec: DraftRec, run: Runner): Promise<{ account?: string; found?: true; several?: string[]; blocked?: SendOutcome }> {
 	const known = zeleAccountOf(rec);
 	if (known) return { account: known };
-	const logins = await zeleLogins(run);
+	const asked = await whoami(run);
+	if (asked.code !== 0) return { blocked: told(asked, "메일 계정을 확인하지 못해서 보내지 않았어요: ", beforeReply) };
+	const logins = loginsIn(asked.stdout);
 	if (logins.length < 2) return {};
 	if (rec.compose) return { several: logins };
 	const addressed = addressedLogin(rec, logins);
-	if (addressed) return { account: addressed };
+	if (addressed) return { account: addressed, found: true };
 	const holders: string[] = [];
-	for (const a of logins) if ((await run(readArgv(threadOf(rec), a))).code === 0) holders.push(a);
-	return holders.length === 1 ? { account: holders[0] } : { several: logins };
+	const unread: Run[] = [];
+	for (const a of logins) {
+		const seen = await run(readArgv(threadOf(rec), a));
+		if (seen.code === 0) holders.push(a);
+		else unread.push(seen);
+	}
+	if (holders.length === 1) return { account: holders[0], found: true };
+	const raws = unread.map(r => withoutRuntimeWarnings(r.stderr).trim() || r.stdout.trim());
+	if (!holders.length && raws.every(raw => beforeReply(raw).code === "offline")) return { blocked: told(unread[0]!, "어느 계정 것인지 확인하지 못해서 보내지 않았어요: ", beforeReply) };
+	return { several: logins };
 }
 
 // Whether a mail of this source goes out through a zele account, so several accounts leave a choice: zele itself and a plugin that says so (needsAccount).
@@ -156,55 +177,135 @@ export const zeleHistory = async (address: string, account?: string, thread?: st
 // another source only when its custom plugin says so (hub/plugins.ts repliesWithFiles; docs/custom-plugins.md).
 export const canAttach = (source: string): boolean => source === "zele" || (!webmailSite(source) && pluginRepliesWithFiles(source));
 
-const fail = (message: string): SendOutcome => ({ ok: false, message });
-// Node prints its warnings first on stderr; they must not stand in for the reason the owner reads.
-const NODE_NOISE = /^\(node:\d+\) |^\(Use `node --trace-warnings/;
+type Verdict = { sent: Sent; code: string };
+const fail = (message: string, code: string): SendOutcome => ({ ok: false, message, sent: "no", code });
+const done = (message: string): SendOutcome => ({ ok: true, message, sent: "yes" });
 // The tool's own words (English, often with stack lines) never reach the owner: they go to the log, and the owner reads one short reason.
 const LOGIN_LOST = /invalid_grant|token.*(expired|revoked)|not (logged|signed) in|unauthori[sz]ed|\b401\b|re-?auth/i;
 const OFFLINE = /ENOTFOUND|ECONNREFUSED|ECONNRESET|ETIMEDOUT|EAI_AGAIN|fetch failed|network|socket hang up|offline/i;
 export const sendReasonKey = (raw: string): keyof ReturnType<typeof msg>["sendFail"] => (LOGIN_LOST.test(raw) ? "login" : OFFLINE.test(raw) ? "offline" : "other");
-const tail = (r: { stdout: string; stderr: string }): string => {
-	const raw = (r.stderr.split("\n").filter(l => !NODE_NOISE.test(l)).join("\n").trim() || r.stdout.trim()).slice(0, 2000);
+// A failed tool run: its raw words go to the log, the owner reads `lead` and one short reason, and `judge` says where the mail is.
+function told(r: { stdout: string; stderr: string }, lead: string, judge: (raw: string) => Verdict): SendOutcome {
+	const raw = (withoutRuntimeWarnings(r.stderr).trim() || r.stdout.trim()).slice(0, 2000);
 	if (raw) log(`reply draft: mail tool failed: ${raw}`);
-	return msg().sendFail[sendReasonKey(raw)];
+	return { ok: false, message: `${lead}${msg().sendFail[sendReasonKey(raw)]}`, ...judge(raw) };
+}
+
+// The mail table of design 2.3. Only words that show nothing left are "no"; whatever else a failed `zele mail send|reply` says, the mail may have gone out.
+const NO_CONNECT = /ENOTFOUND|ECONNREFUSED|EAI_AGAIN|ENETUNREACH|Unable to connect/i;
+const CUT = /ECONNRESET|ETIMEDOUT|socket hang up|fetch failed|timed? ?out/i;
+const STALE = /newer message|latest message|new messages? (?:in|on) (?:the|this) thread|read (?:it|the thread) first/i;
+const BAD_RECIPIENT = /recipient|invalid (?:to|address|email)|address.{0,20}invalid/i;
+const REFUSED = /\b4\d\d\b|\bInvalid\b|Bad Request|Forbidden|not allowed|rejected|\b552\b|too (?:large|big)|size (?:exceeds|limit)/i;
+function zeleVerdict(raw: string): Verdict {
+	if (LOGIN_LOST.test(raw)) return { sent: "no", code: "login_expired" };
+	if (NO_CONNECT.test(raw)) return { sent: "no", code: "offline" };
+	if (CUT.test(raw)) return { sent: "maybe", code: "net_cut" };
+	if (STALE.test(raw)) return { sent: "no", code: "stale" };
+	if (BAD_RECIPIENT.test(raw)) return { sent: "no", code: "recipient_invalid" };
+	if (REFUSED.test(raw)) return { sent: "no", code: "rejected" };
+	return { sent: "maybe", code: "unknown" };
+}
+// `zele mail read` before the reply: nothing was sent whatever it says.
+const beforeReply = (raw: string): Verdict => ({ sent: "no", code: LOGIN_LOST.test(raw) ? "login_expired" : NO_CONNECT.test(raw) || CUT.test(raw) ? "offline" : "tool_before_send" });
+const toolBeforeSend = (): Verdict => ({ sent: "no", code: "tool_before_send" });
+
+// `mail.ts send` of a webmail-no-api site: its exit code says where the mail is (0 sent, 1 not sent, 2 not approved, 3 may have been sent, 4 login
+// expired); its `DOTZ_SEND` line names the reason within that class. A line that contradicts the exit code is not believed.
+const WEBMAIL_EXIT: Record<number, Verdict> = { 1: { sent: "no", code: "tool_before_send" }, 2: { sent: "no", code: "not_approved" }, 4: { sent: "no", code: "login_expired" } };
+function webmailVerdict(r: { code: number; stdout: string }): Verdict & { vars?: Record<string, string | number> } {
+	const byExit = WEBMAIL_EXIT[r.code] ?? { sent: "maybe", code: "unknown" };
+	const line = [...r.stdout.matchAll(/^DOTZ_SEND (\{.*\})$/gm)].at(-1)?.[1];
+	try {
+		const said = line ? (JSON.parse(line) as { sent?: unknown; code?: unknown; vars?: Record<string, string | number> }) : undefined;
+		if (said?.sent === byExit.sent && typeof said.code === "string") return { sent: byExit.sent, code: said.code, ...(said.vars ? { vars: said.vars } : {}) };
+	} catch (e) {
+		log(`reply draft: webmail send line not read: ${(e as Error).message}`);
+	}
+	return byExit;
+}
+
+async function discardWebmail(run: Runner, site: string, id: string): Promise<void> {
+	const gone = await run(["bun", WEBMAIL_MAIL, site, "discard", id]);
+	if (gone.code !== 0) log(`reply draft: webmail draft ${id} not discarded: ${(gone.stderr || gone.stdout).trim().slice(0, 500)}`);
+}
+
+const vanishedFile = (files: readonly { name: string; path: string }[]): SendOutcome | undefined => {
+	const gone = files.find(f => !existsSync(f.path));
+	return gone && { ...fail(`첨부 파일 '${gone.name}'이(가) 사라져서 보내지 않았어요. 파일을 다시 붙여 주세요`, "attach_missing"), vars: { name: gone.name } };
 };
 
+/** What a zele reply draft's thread did since the draft was made (batch 1 RS-1, hub/mail-reconcile.ts movedOn): the owner answered it, a newer mail came, or
+ * neither; `unread` carries the read that failed. A send refuses on `moved` and on `unread`; a 되돌리기 refuses on `moved` only. */
+export async function threadMoved(rec: DraftRec, run: Runner, account?: string): Promise<{ moved?: "answered" | "newer"; unread?: RunResult }> {
+	const seen = await run(readArgv(rec.mailId, account));
+	if (seen.code !== 0) return { unread: seen };
+	const thread = parseThread(seen.stdout);
+	if (!thread.length) return {};
+	const moved = movedOn(thread, ownAddresses([...(account ? [account] : []), ...(await zeleLogins(run))]), rec.created);
+	return moved ? { moved } : {};
+}
 export async function sendWith(rec: DraftRec, run: Runner): Promise<SendOutcome> {
-	if (rec.kind !== "mail") return fail(MANUAL);
+	if (rec.kind !== "mail") return fail(MANUAL, "manual_only");
 	const files = stagedFiles(rec.id), cc = rec.cc ?? [];
 	if (rec.source !== "zele" && !webmailSite(rec.source) && !pluginsLoaded()) await loadPlugins(dataDir());
-	if (files.length && !canAttach(rec.source)) return fail("이 메일은 첨부파일을 보낼 수 없어서 보내지 않았어요. 첨부를 빼거나 직접 보내야 해요");
+	if (files.length && !canAttach(rec.source)) return fail("이 메일은 첨부파일을 보낼 수 없어서 보내지 않았어요. 첨부를 빼거나 직접 보내야 해요", "cannot_attach");
 	// This site's adapter saves a text draft with one recipient and no 참조: sending it would drop the rest without a word.
 	if (webmailSite(rec.source) && (cc.length || recipientList(rec.to).length > 1))
-		return fail("이 웹메일은 참조나 여러 받는 사람에게 보낼 수 없어요. 받는 사람을 한 명만 남기고 참조를 비우면 보내요");
+		return fail("이 웹메일은 참조나 여러 받는 사람에게 보낼 수 없어요. 받는 사람을 한 명만 남기고 참조를 비우면 보내요", "webmail_recipients");
 	const settled = (await sendsThroughZele(rec.source)) ? await settleAccount(rec, run) : {};
-	if (settled.several) return fail(`메일 계정이 ${settled.several.join(", ")} 여러 개인데 이 메일이 어느 계정 것인지 알 수 없어서 보내지 않았어요. 초안은 그대로 있어요`);
+	if (settled.blocked) return settled.blocked;
+	if (settled.several) return fail(`메일 계정이 ${settled.several.join(", ")} 여러 개인데 이 메일이 어느 계정 것인지 알 수 없어서 보내지 않았어요. 초안은 그대로 있어요`, "account_needed");
 	const account = settled.account;
+	if (settled.found && account) {
+		patchDraft(rec.id, { account });
+		return fail(`보내는 메일 계정을 ${account}(으)로 정했어요. 카드에서 계정을 확인하고 다시 보내 주세요`, "changed");
+	}
 	if (rec.compose && rec.source === "zele") {
+		const vanished = vanishedFile(files);
+		if (vanished) return vanished;
 		const r = await run(sendArgv(rec.to, rec.subject ?? "", rec.body, files.map(f => f.path), cc, account));
-		return r.code === 0 ? { ok: true, message: `${rec.to}에게 메일을 보냈어요` } : fail(`보내지 못했어요: ${tail(r)}`);
+		return r.code === 0 ? done(`${rec.to}에게 메일을 보냈어요`) : told(r, "보내지 못했어요: ", zeleVerdict);
 	}
 	if (rec.source === "zele") {
-		const seen = await run(readArgv(rec.mailId, account));
-		if (seen.code !== 0) return fail(`보내기 전에 메일을 읽지 못해서 보내지 않았어요: ${tail(seen)}`);
+		const seen = await threadMoved(rec, run, account);
+		if (seen.unread) return told(seen.unread, "보내기 전에 메일을 읽지 못해서 보내지 않았어요: ", beforeReply);
+		if (seen.moved === "answered") return fail("이미 이 메일에 답했어요. 이 초안은 보내지 않았어요", "stale");
+		if (seen.moved === "newer") return fail("그사이 새 메일이 와서 이 초안은 낡았어요. 보내지 않았어요. 다시 초안을 만들어야 해요", "stale");
+		const vanished = vanishedFile(files);
+		if (vanished) return vanished;
 		const r = await run(replyArgv(rec.mailId, rec.to, rec.body, files.map(f => f.path), cc, account));
-		if (r.code === 0) return { ok: true, message: `${rec.to}에게 답장을 보냈어요` };
-		return fail(`보내지 못했어요. 그 사이 새 메일이 왔다면 이 초안은 낡은 거예요. 다시 초안을 만들어야 해요: ${tail(r)}`);
+		if (r.code === 0) return done(`${rec.to}에게 답장을 보냈어요`);
+		return told(r, "보내지 못했어요. 그 사이 새 메일이 왔다면 이 초안은 낡은 거예요. 다시 초안을 만들어야 해요: ", zeleVerdict);
 	}
 	const site = webmailSite(rec.source);
 	if (!site) {
 		// With no plugin that sends replies the answer is the same whoever's mailbox it is: no `zele whoami` (a CLI that can take seconds) to find out.
-		if (rec.compose || !pluginsReply()) return fail(MANUAL);
+		if (rec.compose || !pluginsReply()) return fail(MANUAL, "manual_only");
 		// A plugin that did not ask for an account (needsAccount) may not send through zele at all: it gets what is on record and refuses the rest itself.
 		const mailbox = account ?? zeleAccountOf(rec) ?? addressedLogin(rec, await zeleLogins(run));
+		const vanished = vanishedFile(files);
+		if (vanished) return vanished;
 		const sent = await pluginReply({ source: rec.source, id: rec.mailId, ...(mailbox ? { account: mailbox } : {}), to: rec.to, ...(cc.length ? { cc: cc.join(", ") } : {}), ...(rec.mode === "all" ? { all: true } : {}), ...(rec.subject ? { subject: rec.subject } : {}), body: rec.body, attachments: files.map(f => ({ name: f.name, path: f.path, size: f.size })) });
-		return sent ?? fail(MANUAL);
+		if (!sent) return fail(MANUAL, "manual_only");
+		// A plugin is a third party: only an explicit "sent": "no" says nothing left (design 2.3); any other failure may have gone out.
+		if (sent.ok) return { ...sent, sent: "yes" };
+		// A plugin often words its failure around its tool's stderr ("보내지 못했어요: (node:8498) ExperimentalWarning: ..."): the owner reads it without the warnings.
+		const message = withoutRuntimeWarnings(sent.message).trim();
+		if (message !== sent.message.trim()) log(`reply draft: plugin send failed: ${sent.message}`);
+		return (sent as { sent?: unknown }).sent === "no" ? { ...sent, message, sent: "no", code: "rejected" } : { ...sent, message, sent: "maybe", code: "unknown" };
 	}
 	const saved = await run(["bun", WEBMAIL_MAIL, site, "draft", rec.to, rec.subject ?? "", rec.body]);
 	const id = /초안 저장:\s*(\S+)/.exec(saved.stdout)?.[1];
-	if (saved.code !== 0 || !id) return fail(`웹메일 초안을 만들지 못했어요: ${tail(saved)}`);
-	const approved = await run(["bun", WEBMAIL_MAIL, site, "approve"]);
-	if (approved.code !== 0) return fail(`웹메일 전송 승인을 기록하지 못했어요: ${tail(approved)}`);
+	if (saved.code !== 0 || !id) return told(saved, "웹메일 초안을 만들지 못했어요: ", toolBeforeSend);
+	const approved = await run(["bun", WEBMAIL_MAIL, site, "approve", id]);
+	if (approved.code !== 0) {
+		await discardWebmail(run, site, id);
+		return told(approved, "웹메일 전송 승인을 기록하지 못했어요: ", toolBeforeSend);
+	}
 	const sent = await run(["bun", WEBMAIL_MAIL, site, "send", id]);
-	return sent.code === 0 ? { ok: true, message: `${rec.to}에게 답장을 보냈어요` } : fail(`보내지 못했어요: ${tail(sent)}`);
+	if (sent.code === 0) return done(`${rec.to}에게 답장을 보냈어요`);
+	const outcome = told(sent, "보내지 못했어요: ", () => webmailVerdict(sent));
+	if (outcome.sent === "no") await discardWebmail(run, site, id);
+	return outcome;
 }

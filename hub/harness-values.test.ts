@@ -70,3 +70,11 @@ test("구성 facts follow this install's config: web access, mail off, merge win
 	expect(tailnet.fact("web", N.web.access)).toBe(N.web.accessValue(true, 2));
 	expect(tailnet.fact("guard", N.guard.expensive)).toBe(N.guard.expensiveOff);
 });
+
+test("day_note.model hint names the running harness, OmO text unchanged", () => {
+	for (const c of Object.values(CATALOGS)) {
+		const hint = (c as any).harness.settings["day_note.model"].hint as string;
+		expect(hint).toContain("{harness}");
+		expect(hint.replaceAll("{harness}", "OmO")).toContain("OmO");
+	}
+});

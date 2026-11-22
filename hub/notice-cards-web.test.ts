@@ -3,7 +3,7 @@ import { now } from "./config.ts";
 import { listNotices, NOTICE_CAP } from "./notices.ts";
 import { feed } from "./notices-store.ts";
 import { fakeHub, json } from "./test-web.ts";
-import { watchChoice } from "./watch.ts";
+import { watchChoice } from "./watch-ask.ts";
 import { watchLine } from "./watchtext.ts";
 
 // The other report kinds, as the store makes them from the gateway's events (neutral fixture text): in the 감시 소식 feed a folded row says the
@@ -58,6 +58,6 @@ test("알림 rows say what happened without the name twice (390px)", async () =>
 		["상태 JSON", "결과가 바뀌었어요 · 상태: 정상", "감시"],
 		["사이트 상태 확인: 다시 정상이에요", "점검이 다시 통과했어요", "복구"],
 		["새 메일 확인", "샘플 제목", "메일"],
-		"가격 확인: 2번 연속 실패했어요. 어떻게 할까요?",
+		"가격 확인: 2번 연속 실패했어요. 원인을 확인할까요, 이 모니터링을 꺼 둘까요?",
 	]);
 }, 30_000);

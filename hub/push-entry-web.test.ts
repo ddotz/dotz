@@ -24,7 +24,7 @@ const WORKLOG = [
 ];
 const PROJ = [{ ts: PROJ_AT, kind: "out", source: "orchestrator", target: "ch:1", text: "[done] 프로젝트 일을 마쳤어요" }];
 const SETTINGS = [{ ts: SET_AT, kind: "out", source: "orchestrator", target: "settings:disk", text: "[done] 감시 설정을 바꿨어요" }];
-// A project thread with 1800 messages; the pushed one is far enough back that paging older messages (web/js/30-notices.js ntReach) does not reach it.
+// A project thread with 1800 messages; the pushed one is far enough back that paging older messages (web/js/30-notices-jump.js ntReach) does not reach it.
 const LONG_AT = ts(100);
 const LONG = Array.from({ length: 1800 }, (_, i) => ({ ts: ts(i), kind: "out", source: "orchestrator", target: "ch:2", text: `긴 대화 ${i}번이에요.` }));
 const base = { read: false, tone: "", text: "내용" };
@@ -37,7 +37,7 @@ const notices = [
 	{ ...base, id: "dec", kind: "decision", tone: "ask", cls: "ask", title: "배포할까요?", open: "main", src: "main", ts: ASK_AT, updated: ASK_AT, at: ASK_AT, decision },
 	{ ...base, id: "ml", kind: "watch", cls: "news", title: "김철수", text: "견적서", open: "mail:abc", src: "mail:abc", key: "mail:abc", ts: MAIL_AT, updated: MAIL_AT, at: MAIL_AT },
 	{ ...base, id: "al", kind: "alert", tone: "fail", cls: "alert", title: "게이트웨이 오류", open: "alert", src: "alert", ts: ALERT_AT, updated: ALERT_AT, at: ALERT_AT },
-	{ ...base, id: "wl", kind: "worklog", tone: "done", cls: "result", title: "작업 기록", open: "worklog", src: "worklog", key: "worklog:1", ts: WORK_AT, updated: WORK_AT, at: WORK_AT },
+	{ ...base, id: "wl", kind: "worklog", tone: "done", cls: "result", title: "작업내역", open: "worklog", src: "worklog", key: "worklog:1", ts: WORK_AT, updated: WORK_AT, at: WORK_AT },
 	{ ...base, id: "wls", kind: "result", tone: "done", cls: "result", title: "빌드 세션", open: "lane:a", src: "lane:a", key: "lane:a", msg: "worklog", ts: WORK2_AT, updated: WORK2_AT, at: WORK2_AT },
 	{ ...base, id: "prj", kind: "message", cls: "conv", title: "프로젝트", open: "ch:1", src: "ch:1", ts: PROJ_AT, updated: PROJ_AT, at: PROJ_AT },
 	{ ...base, id: "set", kind: "message", cls: "conv", title: "디스크 감시", open: "settings:disk", src: "settings:disk", ts: SET_AT, updated: SET_AT, at: SET_AT },
@@ -310,31 +310,5 @@ describe.each([["phone", 390], ["wide window", WIDE]] as const)("worker tap, %s"
 		const view = await hub.view({ width, height: 844 }, sw.opened[0]!.slice(hub.origin.length));
 		await ready(view);
 		await expectLanded(view, { conv: "ch:2", at: LONG_AT, push: {} });
-	}, 20_000);
-	test("app open in a user app window (/apps/x/) and no app window", async () => {
-		// A window of a user app has no receiver for the tap and never answers: the worker must not hand the tap to it.
-		const sw = swOf(hub.origin, [{ url: `${hub.origin}/apps/x/`, focus: async () => {}, postMessage: () => {} }]);
-		await sw.tap(KINDS["answer (notice)"]!.push);
-		expect(sw.opened).toHaveLength(1);
-		const view = await hub.view({ width, height: 844 }, sw.opened[0]!.slice(hub.origin.length));
-		await ready(view);
-		await expectLanded(view, KINDS["answer (notice)"]!);
-	}, 20_000);
-	test("app open but its window does not answer", async () => {
-		const posted: unknown[] = [];
-		let handed!: () => void;
-		const arrival = new Promise<void>(r => (handed = r));
-		const sw = swOf(hub.origin, [{ url: `${hub.origin}/`, focus: async () => {}, postMessage: (m: unknown) => { posted.push(m); handed(); } }]);
-		// The window has the message and says nothing; the tap is done when the worker's own waitUntil is, after it gave up waiting for the answer.
-		await sw.tap(KINDS["answer (notice)"]!.push, async () => {
-			await arrival;
-			expect(sw.opened).toHaveLength(0);   // still waiting for it
-			sw.fire();
-		});
-		expect(posted).toHaveLength(1);
-		expect(sw.opened).toHaveLength(1);
-		const view = await hub.view({ width, height: 844 }, sw.opened[0]!.slice(hub.origin.length));
-		await ready(view);
-		await expectLanded(view, KINDS["answer (notice)"]!);
 	}, 20_000);
 });

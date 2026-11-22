@@ -110,7 +110,7 @@ describe("senders", () => {
 	test("a webmail-no-api site refuses 참조 and several 받는 사람 with a Korean line instead of dropping them", async () => {
 		const f = fake();
 		const cc = await sendWith(rec({ source: "webmail:corp", cc: ["park@example.com"] }), f.run);
-		expect(cc).toEqual({ ok: false, message: "이 웹메일은 참조나 여러 받는 사람에게 보낼 수 없어요. 받는 사람을 한 명만 남기고 참조를 비우면 보내요" });
+		expect(cc).toEqual({ ok: false, message: "이 웹메일은 참조나 여러 받는 사람에게 보낼 수 없어요. 받는 사람을 한 명만 남기고 참조를 비우면 보내요", sent: "no", code: "webmail_recipients" });
 		const many = await sendWith(rec({ source: "webmail:corp", to: "kim@example.com, lee@example.com" }), f.run);
 		expect(many.ok).toBe(false);
 		expect(f.calls).toEqual([]);

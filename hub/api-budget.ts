@@ -73,7 +73,6 @@ async function monthCost(key: string, fetcher: typeof fetch, now: number): Promi
 
 type Cached = { at: number; key: string; result: { usd: number } | { error: string } };
 let cache: Cached | undefined;
-export const resetApiBudgetCacheForTest = () => { cache = undefined; };
 
 export type Deps = { fetcher?: typeof fetch; now?: number; adminKey?: string; limitUsd?: number | null };
 

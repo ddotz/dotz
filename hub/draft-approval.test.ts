@@ -6,15 +6,17 @@ import { askComponentsFor, askInteraction, ASK_PREFIX } from "./askbuttons.ts";
 import { parseDecisions } from "./choices.ts";
 import { buildPayloads } from "./discord-format.ts";
 import { paths } from "./config.ts";
-import { briefLines, draftActionOf, draftApprovalBlock, draftVerdict, keepBrief, parseDraftApproval, textVerdict } from "./draft-approval.ts";
+import { approvalHash, briefLines, draftActionOf, draftApprovalBlock, draftVerdict, keepBrief, parseDraftApproval } from "./draft-approval.ts";
+import { AGENT_AUTHOR } from "./agent-author.ts";
 import { emit } from "./events.ts";
 import { inboxText } from "./intake.ts";
-import { approval, createDraft, draftBlock } from "./kakao/send.ts";
+import { approval, createDraft, draftBlock, kakaoView, readDrafts } from "./kakao/send.ts";
 import { kakaoPaths, type Runner } from "./kakao/types.ts";
-import { answerDecision, type DecisionSend, type Notice } from "./notices.ts";
+import { answerDecision, setCardFingerprint, stampDraftCard, type DecisionSend, type Notice } from "./notices.ts";
+import { flushNotices } from "./notices-store.ts";
 
 const ts = () => new Date().toISOString();
-const stored = (): Notice[] => JSON.parse(readFileSync(paths.notices, "utf8"));
+const stored = (): Notice[] => (flushNotices(), JSON.parse(readFileSync(paths.notices, "utf8")));
 const ask = (text: string) => emit("outbox", { ts: ts(), kind: "out", source: "orchestrator", target: "main", text: `[ask] ${text}` });
 const noticeFor = (needle: string) => stored().find(n => n.kind === "decision" && n.title.includes(needle))!;
 // What the gateway's web send (hub/intake.ts sendWeb) writes to inbox.jsonl for a decision answer.
@@ -43,7 +45,8 @@ for (const target of ["chat", "th:111", "ch:222"]) for (const preface of ["", "�
 			},
 		});
 
-		expect(draftVerdict(paths.inbox, ref, since)).toEqual({ verdict: "send" });
+		// The pick names the card's ref; a hand-written card shows no stored version, so its 보내기 lets no CLI send.
+		expect(draftVerdict(paths.inbox, ref, since, "h-any")).toEqual({ verdict: "changed" });
 	});
 }
 
@@ -99,11 +102,16 @@ test("직접 입력 needs the owner's words; they go out with the answer and dra
 	ask(draftApprovalBlock(card));
 	const n = noticeFor("직접 입력 카드");
 	expect(n.decision!.draft).toMatchObject({ ref: "DOWN1" });
+	// The card shows the store's version: its answer carries that version's hash, which is what lets a CLI act on it.
+	setCardFingerprint(async () => ({ hash: "h-own", text: n.text }));
+	await stampDraftCard(n.id);
+	setCardFingerprint(async () => undefined);
 	const sent: Parameters<DecisionSend>[0][] = [];
 	const send: DecisionSend = async a => void sent.push(a);
 	expect((await answerDecision(n.id, { n: 6 }, send)).status).toBe(400);
 	expect((await answerDecision(n.id, { n: 6, note: "메일 먼저, 답글은 내일" }, web)).status).toBe(200);
-	expect(draftVerdict(paths.inbox, "DOWN1", since)).toEqual({ verdict: "own", detail: "메일 먼저, 답글은 내일" });
+	expect(draftVerdict(paths.inbox, "DOWN1", since, "h-own")).toMatchObject({ verdict: "own", detail: "메일 먼저, 답글은 내일" });
+	expect(draftVerdict(paths.inbox, "DOWN1", since, "h-later")).toEqual({ verdict: "changed" });
 });
 
 test("a long draft stays whole in the notice's draft and the notice is a normal open decision", () => {
@@ -149,133 +157,53 @@ test("draftVerdict: the owner's latest pick for one ref after the cutoff; sessio
 	const refs = ["RAAAAAA", "RBBBBBB", "RCCCCCC", "RDDDDDD"];
 	for (const ref of refs) ask(draftApprovalBlock({ ...mail, ref, question: `답장 보낼까요? #${ref}` }));
 	const key = (ref: string) => noticeFor(`#${ref}`).id;
-	expect(draftVerdict(paths.inbox, refs[0]!, since)).toEqual({ verdict: "none" });
-	await answerDecision(key(refs[0]!), { n: 1 }, web);
+	const v = (ref: string, at = since) => draftVerdict(paths.inbox, ref, at, `h-${ref}`);
+	expect(v(refs[0]!)).toEqual({ verdict: "none" });
+	emit("inbox", { ts: ts(), kind: "message", source: "web", text: "1) 보내기", picks: [{ q: `답장 보낼까요? #${refs[0]} (${refs[0]})`, n: 1, label: "보내기", hash: `h-${refs[0]}` }] });
 	await answerDecision(key(refs[1]!), { n: 2, note: "3시 말고 4시 - 하이픈으로" }, web);
 	await answerDecision(key(refs[2]!), { n: 3 }, web);
 	const lane: DecisionSend = async a => void emit("inbox", { ts: ts(), kind: "lane_message", source: "web", lane: "x", text: a.text, picks: a.picks });
 	await answerDecision(key(refs[3]!), { n: 1 }, lane);
-	expect(draftVerdict(paths.inbox, refs[0]!, since)).toEqual({ verdict: "send" });
-	expect(draftVerdict(paths.inbox, refs[1]!, since)).toEqual({ verdict: "edit", detail: "3시 말고 4시 - 하이픈으로" });
-	expect(draftVerdict(paths.inbox, refs[2]!, since)).toEqual({ verdict: "drop" });
-	expect(draftVerdict(paths.inbox, refs[3]!, since)).toEqual({ verdict: "none" });
-	expect(draftVerdict(paths.inbox, refs[0]!, Date.parse(ts()) + 60_000)).toEqual({ verdict: "none" });
+	expect(v(refs[0]!)).toMatchObject({ verdict: "send" });
+	expect(v(refs[1]!)).toEqual({ verdict: "edit", detail: "3시 말고 4시 - 하이픈으로" });
+	expect(v(refs[2]!)).toEqual({ verdict: "drop" });
+	expect(v(refs[3]!)).toEqual({ verdict: "none" });
+	expect(v(refs[0]!, Date.parse(ts()) + 60_000)).toEqual({ verdict: "none" });
 	emit("inbox", { ts: ts(), kind: "message", source: "terminal", text: "3) 보내지 않기", picks: [{ q: `답장 보낼까요? #${refs[0]} (${refs[0]})`, n: 3, label: "보내지 않기" }] });
-	expect(draftVerdict(paths.inbox, refs[0]!, since)).toEqual({ verdict: "drop" });
+	expect(v(refs[0]!)).toEqual({ verdict: "drop" });
 });
 
-test("textVerdict: a typed yes or send verb approves, a negative refuses, anything else says nothing", () => {
-	for (const t of ["보내", "보내기", "보내자", "보내줘", "ㅇㅇ", "ㅇㅇㅇ 메일 보내", "아잇 보내라고", "이걸로 다시 보내놔", "보내자. 그리고 이거 리뷰 요청 화면도 고쳐줘", "응 답장 보내줘~"]) expect([t, textVerdict(t)]).toEqual([t, "send"]);
-	for (const t of ["보내지 마", "안 보내", "메일 안 보내도 돼", "ㄴㄴ", "보내지 말고 고쳐"]) expect([t, textVerdict(t)]).toEqual([t, "drop"]);
-	for (const t of ["보내기 전에 제목 바꿔", "파일 하나 더 붙여서 보내줘", "보내?", "정산표 기준이 필요함", "메일"]) expect([t, textVerdict(t)]).toEqual([t, undefined]);
+// H1 (qa-clean-3): a 보내기 counts for a CLI only on the version it named. The store moving on, a pick that names none, and the gateway's
+// 보내기 취소 after a `changed` refusal all leave nothing a CLI may send, even once the text is back to the approved one.
+test("draftVerdict: a send pick counts only with the current version's hash, and a later 보내기 취소 voids it", () => {
+	const since = Date.parse(ts()) - 1000;
+	const ref = "RHASH01", q = `이 답장 보낼까요? (${ref})`;
+	const pick = (label: string, hash?: string) => emit("inbox", { ts: ts(), kind: "message", source: "web", text: label, picks: [{ q, n: 1, label, ...(hash ? { hash } : {}) }] });
+	pick("보내기");
+	expect(draftVerdict(paths.inbox, ref, since, "v1")).toEqual({ verdict: "changed" });
+	pick("보내기", "v1");
+	expect(["v1", "v2", undefined].map(h => draftVerdict(paths.inbox, ref, since, h).verdict)).toEqual(["send", "changed", "changed"]);
+	pick("이대로 보내기", "v2");
+	expect(draftVerdict(paths.inbox, ref, since, "v2")).toMatchObject({ verdict: "send-as-is" });
+	pick("보내기 취소");
+	expect(draftVerdict(paths.inbox, ref, since, "v2")).toEqual({ verdict: "undo" });
 });
 
-test("textVerdict: an 이대로 보내 sentence of its own and a card's option typed out approve; a question, a refusal or a change does not", () => {
-	for (const t of ["첨부 확인했어. 이대로 보내.", "첨부 확인했어. 이대로 보내. (참고)", "첨부 확인했어, 그대로 보내줘", "수정할 거 없어. 이대로 보내", "1) 보내기", "4) 이대로 보내기"]) expect([t, textVerdict(t)]).toEqual([t, "send"]);
-	expect(textVerdict("3) 보내지 않기")).toBe("drop");
-	for (const t of ["첨부 확인했어. 이대로 보내기 전에 확인해줘", "첨부 확인했어. 그대로 보내면 안 돼", "첨부 확인했어. 이대로 보내?", "제목 바꿔. 이대로 보내", "첨부 확인했어. 보내", "2) 보내기", "1) 이대로 보내기", "2) 고치기", "첨부 확인했어", "제목 변경해. 이대로 보내", "파일 삭제해, 그대로 보내", "제목 바꾸고, 그대로 보내", "첨부 맞으면, 그대로 보내", "내일 아침에, 이대로 보내", "첨부 확인 안 했어. 이대로 보내", "첨부 확인했어. 이대로 보내. (근데 제목 바꿔)", "첨부 확인했어. 이대로 보내. (맞으면)", "4) 이대로 보내기\n근데 제목 바꿔", "1) 보내기\n2) 고치기\n3) 보내지 않기"]) expect([t, textVerdict(t)]).toEqual([t, undefined]);
-});
-
-test("textVerdict: the 이대로 보내 typed back with the quotes the refusal showed it in still approves; a quote of someone else's words does not", () => {
-	for (const t of ["'이대로 보내'", '"이대로 보내"', "‘이대로 보내’", "“이대로 보내”", "'이대로 보내기'", "첨부 확인했어. '이대로 보내'"]) expect([t, textVerdict(t)]).toEqual([t, "send"]);
-	for (const t of ['홍길동이 "이대로 보내"라고 했어', "첨부 확인했어. '이대로 보내' 전에 제목 바꿔", "'이대로 보내?'"]) expect([t, textVerdict(t)]).toEqual([t, undefined]);
-});
-
-test("draftVerdict: 이대로 is read from the sentence that sends, not from the rest of the message", () => {
-	const since = Date.parse(ts()) - 1000, conv = "mail:acme-RASIS01";
-	const say = (text: string) => emit("inbox", { ts: ts(), kind: "message", source: "web", channel: "th:9", conv, text });
-	say("첨부 확인했어. 이대로 보내. (참고)");
-	expect(draftVerdict(paths.inbox, "RASIS01", since, { conv })).toEqual({ verdict: "send-as-is" });
-	say("4) 이대로 보내기");
-	expect(draftVerdict(paths.inbox, "RASIS01", since, { conv })).toEqual({ verdict: "send-as-is" });
-	say("보내. 파일은 그대로 둬");
-	expect(draftVerdict(paths.inbox, "RASIS01", since, { conv })).toEqual({ verdict: "send" });
-});
-
-test("draftVerdict: a typed answer under the card in a work channel counts for that card alone", () => {
-	const at = "ch:700000000000000001", since = Date.parse(ts()) - 1000, conv = "mail:acme-RCH01";
-	let clock = since + 1000;
-	const tick = () => new Date((clock += 5)).toISOString();
-	const card = (ref: string, target = at) => emit("outbox", { ts: tick(), kind: "out", source: "orchestrator", target, text: `[ask] 새 메일 초안을 만들었어요\n> 받는이: a@b.c\n>\n> 본문\n결정: 이 메일 보낼까요? (${ref})\n**1) 보내기**\n**2) 고치기 …**\n**3) 보내지 않기**` });
-	const say = (text: string, channel = at) => emit("inbox", { ts: tick(), kind: "message", source: "discord", channel, text });
-	const verdict = (ref: string) => draftVerdict(paths.inbox, ref, since, { conv }).verdict;
-	say("보내");
-	expect(verdict("RCH01")).toBe("none"); // before the card
-	card("RCH01");
-	expect(verdict("RCH01")).toBe("none"); // the card alone is no answer
-	say("이 카드 언제 올렸어");
-	say("보내", "ch:700000000000000002");
-	expect(verdict("RCH01")).toBe("none");
-	say("1) 보내기");
-	expect(verdict("RCH01")).toBe("send");
-	say("보내지 마");
-	expect(verdict("RCH01")).toBe("drop");
-	// The next card after a typed answer: the same word is its answer, not the first card's.
-	card("RCH02");
-	say("보내");
-	expect(verdict("RCH01")).toBe("drop");
-	expect(verdict("RCH02")).toBe("send");
-	// Two waiting cards: nothing says which he means, and a tap on one later does not make the old word an answer to the other.
-	const two = "ch:700000000000000005";
-	card("RCH05", two);
-	card("RCH06", two);
-	say("보내", two);
-	expect([verdict("RCH05"), verdict("RCH06")]).toEqual(["none", "none"]);
-	emit("inbox", { ts: tick(), kind: "message", source: "discord", channel: two, text: "1) 보내기", picks: [{ q: "이 메일 보낼까요? (RCH06)", n: 1, label: "보내기" }] });
-	expect(verdict("RCH05")).toBe("none");
-	emit("outbox", { ts: tick(), kind: "out", source: "orchestrator", target: "th:700000000000000006", channel: "ch:700000000000000006", text: "[ask] 결정: 이 메일 보낼까요? (RCH07)\n**1) 보내기**\n**3) 보내지 않기**" });
-	say("보내", "ch:700000000000000006"); // the thread's parent channel is another conversation
-	expect(verdict("RCH07")).toBe("none");
-	// A decision with no draft ref, or a numbered one, is the newest card there all the same.
-	for (const head of ["결정: 이건 어떨까요?", "결정 1: 어느 쪽인가요? (RCH09)"]) {
-		const place = `ch:70000000000000001${head.length}`;
-		card("RCH08", place);
-		emit("outbox", { ts: tick(), kind: "out", source: "orchestrator", target: place, text: `[ask] ${head}\n**1) 하나**\n**2) 둘**` });
-		say("보내", place);
-		expect(verdict("RCH08")).toBe("none");
-	}
-	// A bare yes can answer whatever was said after the card; a word that names sending cannot.
-	card("RCH03", "ch:700000000000000003");
-	emit("outbox", { ts: tick(), kind: "out", source: "orchestrator", target: "ch:700000000000000003", text: "제목도 이렇게 바꿀까요?" });
-	say("응", "ch:700000000000000003");
-	expect(verdict("RCH03")).toBe("none");
-	say("메일 보내", "ch:700000000000000003");
-	expect(verdict("RCH03")).toBe("send");
-	// A long run of cards answered in turn in one channel is worked out without going back over each pair.
-	const run = "ch:700000000000000020";
-	for (let i = 0; i < 40; i++) {
-		card(`RUN${i}`, run);
-		say("보내", run);
-	}
-	expect(verdict("RUN39")).toBe("send");
-	// The same millisecond as his message: the card may not have been up yet.
-	const now = tick();
-	emit("outbox", { ts: now, kind: "out", source: "orchestrator", target: "ch:700000000000000004", text: "[ask] 결정: 이 메일 보낼까요? (RCH04)\n**1) 보내기**\n**3) 보내지 않기**" });
-	emit("inbox", { ts: now, kind: "message", source: "discord", channel: "ch:700000000000000004", text: "보내" });
-	expect(verdict("RCH04")).toBe("none");
-});
-
-test("draftVerdict: a typed reply in the draft's conversation counts, the latest word wins, other conversations do not", () => {
+// Typed chat is the model's to read (the reply intent design, 2026-11-16): the gate counts sealed picks only, so a sentence typed after a 보내기
+// ("회의 취소됐어", local 2026-11-12) no longer takes back the send the owner approved, and a typed "보내자" alone approves nothing.
+test("draftVerdict: only sealed picks count; typed lines after them change nothing and a typed yes alone is no approval", () => {
 	const since = Date.parse(ts()) - 1000;
 	const ref = "RTEXT01", conv = "mail:acme-RTEXT01";
 	const say = (text: string, extra: Record<string, unknown> = {}) => emit("inbox", { ts: ts(), kind: "message", source: "web", channel: "th:1", conv, text, ...extra });
-	say("3) 보내지 않기", { picks: [{ q: `이 답장을 보낼까요? (${ref})`, n: 3, label: "보내지 않기" }] });
-	expect(draftVerdict(paths.inbox, ref, since)).toEqual({ verdict: "drop" });
-	say("보내자. 그리고 화면도 고쳐 줘");
-	// the conversation is the one the pick came from, or the one the caller names
-	expect(draftVerdict(paths.inbox, ref, since)).toEqual({ verdict: "send" });
-	expect(draftVerdict(paths.inbox, "RTEXT02", since, { conv })).toEqual({ verdict: "send" });
-	expect(draftVerdict(paths.inbox, "RTEXT03", since)).toEqual({ verdict: "none" });
-	say("아니 보내지 마");
-	expect(draftVerdict(paths.inbox, ref, since)).toEqual({ verdict: "drop" });
-	say("정산표 기준도 봐줘");
-	expect(draftVerdict(paths.inbox, ref, since)).toEqual({ verdict: "drop" });
-	emit("inbox", { ts: ts(), kind: "message", source: "web", channel: "th:2", conv: "mail:other", text: "보내" });
-	expect(draftVerdict(paths.inbox, ref, since)).toEqual({ verdict: "drop" });
-	emit("inbox", { ts: ts(), kind: "lane_message", source: "web", conv, text: "보내" });
-	expect(draftVerdict(paths.inbox, ref, since)).toEqual({ verdict: "drop" });
-	say("ㅇㅇㅇ 메일 보내");
-	expect(draftVerdict(paths.inbox, ref, since)).toEqual({ verdict: "send" });
+	const pick = (n: number, label: string) => say(`${n}) ${label}`, { picks: [{ q: `이 답장을 보낼까요? (${ref})`, n, label, hash: "h1" }] });
+	pick(1, "보내기");
+	say("회의 취소됐어");
+	say("보내지 마");
+	expect(draftVerdict(paths.inbox, ref, since, "h1")).toMatchObject({ verdict: "send" });
+	pick(3, "보내지 않기");
+	expect(draftVerdict(paths.inbox, ref, since, "h1")).toEqual({ verdict: "drop" });
+	emit("inbox", { ts: ts(), kind: "message", source: "web", channel: "th:1", conv: "mail:acme-RTEXT02", text: "보내자" });
+	expect(draftVerdict(paths.inbox, "RTEXT02", since, "h1")).toEqual({ verdict: "none" });
 });
 
 test("kakao: the web sheet's 보내기 is an owner message the approval check accepts; 보내지 않기 and a session's answer are not", async () => {
@@ -288,6 +216,10 @@ test("kakao: the web sheet's 보내기 is an owner message the approval check ac
 		const d2 = await createDraft({ chatId: "11", roomName: "가족방", text: "저녁 먹어요", basisLogId: "1" }, deps);
 		const d3 = await createDraft({ chatId: "12", roomName: "동호회", text: "참석해요", basisLogId: "1" }, deps);
 		for (const d of [d1, d2, d3]) ask(draftBlock(d));
+		// Each card shows the store's version, so its answer carries that version's hash (hub/reply-wire.ts stamps cards the same way).
+		setCardFingerprint(async ref => (k => k && { hash: approvalHash(kakaoView(k, readDrafts(kp))), text: noticeFor(ref).text })(readDrafts(kp).find(x => x.code === ref)));
+		for (const d of [d1, d2, d3]) await stampDraftCard(noticeFor(d.code).id);
+		setCardFingerprint(async () => undefined);
 		expect(await approval(d1.code, deps)).toBe(false);
 		await answerDecision(noticeFor(d1.code).id, { n: 1 }, web);
 		await answerDecision(noticeFor(d2.code).id, { n: 3 }, web);
@@ -345,4 +277,41 @@ test("a draft that replaces the mail's open card keeps the lines only that card 
 	const own = `[ask] 답장 초안을 만들었어요\n${briefLines({ from: "Lee", summary: "새 요약" }).join("\n")}\n${block}`;
 	expect(parseDraftApproval(keepBrief(old, own))?.brief).toEqual({ from: "Lee", summary: "새 요약", todo: ["시간 확인"], questions: ["인원은요?", "장소는요?"] });
 	expect(keepBrief("", own)).toBe(own);
+});
+
+test("the approval text of a mail names the account it goes out from, or says none is chosen yet; the pick is tied to that account", () => {
+	const lines = (o: object) => draftApprovalBlock({ to: "kim@example.com", toLabel: "받는이", body: "안녕하세요.", ref: "D777", ...o }).split("\n");
+	expect(lines({ account: "me@example.net" })).toContain("-# 보내는 계정: me@example.net");
+	expect(lines({ accountHeld: true })).toContain("-# 보내는 계정: 계정이 아직 정해지지 않았어요");
+	expect(lines({}).some(l => l.includes("보내는 계정"))).toBe(false);
+	const view = (account?: string) => ({ item: "mail:k", ref: "D777", kind: "mail", app: "mail", label: "메일", conv: "mail:k", at: 0, can: { send: true, revise: true, edit: true, drop: true, restore: false }, draft: { state: "pending", toLabel: "받는이", to: "kim@example.com", text: "안녕하세요.", ...(account ? { account } : {}) } }) as never;
+	expect(approvalHash(view("a@example.net"))).not.toBe(approvalHash(view("b@example.net")));
+});
+
+const pickLine = (author: string, q: string, label: string) => emit("inbox", { ts: ts(), kind: "message", source: "web", channel: "web", author, text: label, picks: [{ q, n: 3, label }] });
+
+test("a pick line an agent wrote is no verdict; the same line from the owner is", () => {
+	const since = Date.parse(ts()) - 1;
+	pickLine(AGENT_AUTHOR, "이 답장 보낼까요? (RAGENT1)", "보내지 않기");
+	expect(draftVerdict(paths.inbox, "RAGENT1", since, "h1")).toEqual({ verdict: "none" });
+	pickLine("owner", "이 답장 보낼까요? (RAGENT1)", "보내지 않기");
+	expect(draftVerdict(paths.inbox, "RAGENT1", since, "h1")).toEqual({ verdict: "drop" });
+});
+
+test("a question that names another draft's ref is that other draft's choice only", () => {
+	const since = Date.parse(ts()) - 1;
+	pickLine("owner", "이 답장 보낼까요? Re: 견적 (RREFAAA) (RREFBBB)", "보내지 않기");
+	expect(draftVerdict(paths.inbox, "RREFAAA", since, "h1")).toEqual({ verdict: "none" });
+	expect(draftVerdict(paths.inbox, "RREFBBB", since, "h1")).toEqual({ verdict: "drop" });
+});
+
+test("a question that closes with its ref before the question mark is that draft's choice, and only that draft's", () => {
+	const since = Date.parse(ts()) - 1;
+	pickLine("owner", "이 답장 보낼까요 (RQMARK1)?", "보내지 않기");
+	expect(draftVerdict(paths.inbox, "RQMARK1", since, "h1")).toEqual({ verdict: "drop" });
+	pickLine("owner", "이 답장 보낼까요 (RQMARK2) ？ ", "보내지 않기");
+	expect(draftVerdict(paths.inbox, "RQMARK2", since, "h1")).toEqual({ verdict: "drop" });
+	pickLine("owner", "이 답장 보낼까요 (XRQMARK3)?", "보내지 않기");
+	pickLine("owner", "이 답장 보낼까요 (RQMARK3)? 그리고 하나 더", "보내지 않기");
+	expect(draftVerdict(paths.inbox, "RQMARK3", since, "h1")).toEqual({ verdict: "none" });
 });

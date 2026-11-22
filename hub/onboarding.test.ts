@@ -336,6 +336,17 @@ describe("first-run setup gate", () => {
 		expect(state.draft).toEqual({ name: "Dotty" });
 	});
 
+	test("the draft takes the access, the Cloudflare hostname and the messenger picks, and refuses an unknown one", async () => {
+		const { call, login } = open();
+		const cookie = await login();
+		const put = (values: Record<string, unknown>) => call("/api/setup/draft", json({ step: "web", values }, cookie, "PUT"));
+		expect((await put({ access: "cloudflare", cloudflare_hostname: "dotz.example.com", connect: ["slack", "discord", "slack"] })).status).toBe(200);
+		const state = (await (await call("/api/setup/state", { cookie })).json()) as { draft: Record<string, unknown> };
+		expect(state.draft).toEqual({ access: "cloudflare", cloudflare_hostname: "dotz.example.com", connect: ["discord", "slack"] });
+		expect((await put({ access: "tailscale", connect: [] })).status).toBe(200);
+		for (const bad of [{ access: "wifi" }, { access: 1 }, { connect: ["slack", "signal"] }, { connect: "slack" }, { connect: [1] }, { cloudflare_hostname: 5 }, { cloudflare_hostname: "a".repeat(254) }]) expect((await put(bad)).status).toBe(400);
+	});
+
 	test("a secret lands in secrets/ only: not in first-run.json, the log or the state body", async () => {
 		const { dir, logs, call, login } = open({ jobs: { tailscale: async io => (io.line(TOKEN), { ok: true, detail: TOKEN }) } });
 		const cookie = await login();
@@ -393,7 +404,7 @@ describe("first-run setup gate", () => {
 		};
 		const gen = make(() => draftLang(readFirstRun(gateDir)?.draft ?? {}));
 		let signedIn = false;
-		const gate = open({ i18n: gen, scan: async () => ({ harnesses: [{ login_ready: signedIn }] }), jobs: { permissions: async () => ({ ok: true }) } });
+		const gate = open({ i18n: gen, scan: async () => ({ harnesses: [{ login_ready: signedIn }] }), jobs: { permissions: async () => ({ ok: true }) }, installed: async () => true });
 		gateDir = gate.dir;
 		try {
 			const cookie = await gate.login();
@@ -427,6 +438,36 @@ describe("first-run setup gate", () => {
 			setCatalogProvider(undefined);
 			setAppLang("ko");
 		}
+	});
+
+	test("the apply refuses a harness that is not installed and writes nothing; installed, it goes through", async () => {
+		let there = false;
+		const { dir, call, login } = open({ installed: async () => there, jobs: { permissions: async () => ({ ok: true }) } });
+		const cookie = await login();
+		expect((await call("/api/setup/draft", json({ step: "review", values: { runtime: "omp", name: "Dotty" } }, cookie, "PUT"))).status).toBe(200);
+		expect((await call("/api/setup/run/permissions", json({}, cookie))).status).toBe(202);
+		const refused = await call("/api/setup/apply", json({}, cookie));
+		expect(refused.status).toBe(400);
+		expect(((await refused.json()) as { error: string }).error).toContain("omp (oh-my-pi)");
+		expect(existsSync(join(dir, "config.json"))).toBe(false);
+		expect(existsSync(join(dir, "secrets"))).toBe(false);
+		there = true;
+		expect((await call("/api/setup/apply", json({}, cookie))).status).toBe(200);
+		expect(JSON.parse(readFileSync(join(dir, "config.json"), "utf8")).orchestrator.runtime).toBe("omp");
+	});
+
+	test("the apply of a Cloudflare and Slack draft stays on this computer and hands both connections to the page", async () => {
+		const { dir, call, login } = open({ installed: async () => true, jobs: { permissions: async () => ({ ok: true }) } });
+		const cookie = await login();
+		const values = { runtime: "omp", name: "Dotty", access: "cloudflare", cloudflare_hostname: "dotz.example.com", connect: ["slack"] };
+		expect((await call("/api/setup/draft", json({ step: "review", values }, cookie, "PUT"))).status).toBe(200);
+		expect((await call("/api/setup/run/permissions", json({}, cookie))).status).toBe(202);
+		const done = await call("/api/setup/apply", json({}, cookie));
+		expect(done.status).toBe(200);
+		const outcome = (await done.json()) as { access: string; url: string; connect: string[] };
+		expect(outcome).toMatchObject({ access: "local", connect: ["slack", "web-access"] });
+		expect(outcome.url).toStartWith("http://127.0.0.1:");
+		expect(JSON.parse(readFileSync(join(dir, "config.json"), "utf8")).web.access).toBe("local");
 	});
 });
 

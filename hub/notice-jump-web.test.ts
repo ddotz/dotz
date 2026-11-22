@@ -27,10 +27,11 @@ const notices = [
 	{ ...base, id: "dec", kind: "decision", tone: "ask", cls: "ask", title: "배포할까요?", open: "main", src: "main", ts: ASK_AT, updated: ASK_AT, at: ASK_AT, decision },
 	{ ...base, id: "ml", kind: "watch", cls: "news", title: "김철수", text: "견적서", open: "mail:abc", src: "mail:abc", key: "mail:abc", ts: MAIL_AT, updated: MAIL_AT, at: MAIL_AT },
 	{ ...base, id: "old", kind: "message", cls: "conv", title: "땃쥐", open: "main", src: "main", ts: OLD_AT, updated: OLD_AT, at: OLD_AT },
+	{ ...base, id: "newest", kind: "message", cls: "conv", title: "땃쥐", open: "main", src: "main", ts: ts(415), updated: ts(415), at: ts(415) },
 	{ ...base, id: "gap", kind: "message", cls: "conv", title: "지워진 메시지", open: "main", src: "main", ts: GAP_AT, updated: GAP_AT, at: GAP_AT },
-	{ ...base, id: "wl", kind: "worklog", cls: "news", title: "작업 기록", open: "main", src: "main", ts: WL_AT, updated: WL_AT, at: WL_AT },
+	{ ...base, id: "wl", kind: "worklog", cls: "news", title: "작업내역", open: "main", src: "main", ts: WL_AT, updated: WL_AT, at: WL_AT },
 	{ ...base, id: "oldlane", kind: "result", tone: "done", cls: "result", title: "옛 세션", open: "lane:old", src: "lane:old", key: "lane:old", ts: OLD_LANE_AT, updated: OLD_LANE_AT, at: OLD_LANE_AT },
-	{ ...base, id: "restart", kind: "worklog", cls: "news", title: "작업 기록", open: "worklog", src: "worklog", ts: RESTART_AT, updated: RESTART_AT, at: RESTART_AT },
+	{ ...base, id: "restart", kind: "worklog", cls: "news", title: "작업내역", open: "worklog", src: "worklog", ts: RESTART_AT, updated: RESTART_AT, at: RESTART_AT },
 	{ ...base, id: "far", kind: "message", cls: "conv", title: "멀리 지워진 메시지", open: "main", src: "main", ts: FAR_AT, updated: FAR_AT, at: FAR_AT },
 	{ ...base, id: "lost", kind: "message", cls: "conv", title: "없는 메일", open: "mail:lost", src: "mail:lost", ts: MAIL_AT, updated: MAIL_AT, at: "2026-10-20T02:00:00.000Z" },
 	{ ...base, id: "al", kind: "alert", tone: "fail", cls: "alert", title: "게이트웨이 오류", open: "alert", src: "alert", ts: ALERT_AT, updated: ALERT_AT, at: ALERT_AT },
@@ -189,7 +190,7 @@ describe.each([["phone", 390], ["desktop", 1280]] as const)("%s", (_name, width)
 	test("a push tapped with the app open lands on the message", async () => {
 		const view = await open(width), posted: unknown[] = [];
 		await swOf([OPEN_WINDOW(view, posted)]).tap(pushOf("rep"));
-		expect(posted).toEqual([{ open: `${hub.origin}/#chat/lane:a`, ts: LANE_AT, nid: "rep", tap: { path: "open-window", tag: "" } }]);
+		expect(posted).toEqual([{ open: `${hub.origin}/?m=${encodeURIComponent(LANE_AT)}&i=rep#chat/lane:a`, ts: LANE_AT, nid: "rep", tap: { path: "open-window", tag: "" } }]);
 		await deliver(view, posted[0]);
 		expect(await landed(view)).toEqual({ t: "lane:a", at: LANE_AT, seen: true });
 	});
@@ -200,6 +201,16 @@ describe.each([["phone", 390], ["desktop", 1280]] as const)("%s", (_name, width)
 		const view = await open(width, sw.opened[0]!.slice(hub.origin.length));
 		expect(await landed(view)).toEqual({ t: "lane:a", at: LANE_AT, seen: true });
 		expect(await on(view).ev(`location.search`)).toBe("");
+	});
+
+	test("a message notice's push lands on the message it carried, not on the conversation's newest reply, open or cold", async () => {
+		const earlier = { ...pushOf("newest"), ts: ts(8) };
+		const view = await open(width);
+		await tapOpen(view, earlier);
+		expect(await landed(view)).toEqual({ t: "main", at: ts(8), seen: true });
+		const sw = swOf([]);
+		await sw.tap(earlier);
+		expect(await landed(await open(width, sw.opened[0]!.slice(hub.origin.length)))).toEqual({ t: "main", at: ts(8), seen: true });
 	});
 
 	test("a monitor's push opens its row, not the 알림 conversation", async () => {

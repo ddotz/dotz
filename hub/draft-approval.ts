@@ -25,11 +25,14 @@
 // The answer comes back as the owner's own inbox message with picks [{q: "<question> (<ref>)", n, label}] (hub/notices.ts answerDecision),
 // which is what the per-feature approval checks read (hub/kakao/send.ts verdict, orchestrator turn "결정 답: ... → 1) 보내기").
 import { isSealed, readSealKey } from "./approval-seal.ts";
+import { AGENT_AUTHOR } from "./agent-author.ts";
 import { withFileWords } from "./auto-attach.ts";
+import { claimsAttachment, ownClaimText, ENGLISH_NOUN, FILE_NOUN, NO_CLAIM } from "./attach-claim.ts";
 import { mailLineText, type DraftBrief } from "./mail-lines.ts";
 import { closeSync, existsSync, openSync, readSync, statSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { createHash } from "node:crypto";
 import { DECISION_HEAD, issueBlock, parseDecisions } from "./choices.ts";
+import type { DraftView, FileShown } from "./reply-types.ts";
 
 export const DRAFT_SEND = "보내기";
 export const DRAFT_EDIT = "고치기";
@@ -44,7 +47,11 @@ export const DRAFT_OWN = "어떻게 보낼지 직접 입력";
 export const DRAFT_AS_IS = "이대로 보내기";
 /** Recorded by the gateway when the owner cancels inside the send window: the latest word, so the old 보내기 no longer lets a CLI send. */
 export const DRAFT_UNDO = "보내기 취소";
+/** Recorded by the gateway when the owner saves his own text (직접 고치기): a change like 고치기, so an older 보내기 no longer lets a CLI send. Not a card option. */
+export const DRAFT_HAND_EDIT = "직접 고치기";
 export const ATTACH_MARK = "-# ⚠️ 첨부 확인: ";
+export const ACCOUNT_MARK = "-# 보내는 계정: ";
+export const NO_SEND_MARK = "-# 보내기 없음: ";
 export const ATTACH_REFUSED = "첨부를 확인해 주세요:";
 // The send-time lint (placeholder, forbidden expression, recipient) refused the mail; the findings follow.
 export const LINT_REFUSED = "보내기 직전 검사에서 걸려서 보내지 않았어요:";
@@ -162,9 +169,9 @@ export function withRecipientMark(text: string): string {
 	return lines.join("\n");
 }
 // One part of a card: the reply (or the mail) with its recipient line, files and body.
-export type DraftPart = { /** The mail draft id its files are staged under: the "함께 보낼 메일 (<id>)" line, so the card can open them. */ id?: string; origin?: DraftOrigin; rule?: string; to: string; toLabel?: DraftToLabel; cc?: string[]; subject?: string; body: string; attachments?: DraftFileIn[]; attachmentsNone?: boolean; asksFile?: boolean; libraryMiss?: boolean; /** The source cannot send files: the names of the files staged for it (they do not go out), [] when none. */ cannotAttach?: string[]; /** Where this part's words and files disagree (flow.ts draftAttachIssues): the card's `첨부 확인` line and its 4th option. */ attachIssues?: string[] };
+export type DraftPart = { /** The mail draft id its files are staged under: the "함께 보낼 메일 (<id>)" line, so the card can open them. */ id?: string; origin?: DraftOrigin; rule?: string; to: string; toLabel?: DraftToLabel; cc?: string[]; account?: string; accountHeld?: true; subject?: string; body: string; attachments?: DraftFileIn[]; attachmentsNone?: boolean; asksFile?: boolean; libraryMiss?: boolean; /** The source cannot send files: the names of the files staged for it (they do not go out), [] when none. */ cannotAttach?: string[]; /** Where this part's words and files disagree (flow.ts draftAttachIssues): the card's `첨부 확인` line and its 4th option. */ attachIssues?: string[] };
 // `mail`: the mail that goes out right after this comment reply, shown below it in the same card (hub/comments).
-export type DraftInput = DraftPart & { ref: string; question?: string; /** What only the owner can decide: a "정할 것:" list above the 결정 line, one "- " line each. */ decide?: string[]; sendResult?: string; mail?: DraftPart; sendModes?: boolean };
+export type DraftInput = DraftPart & { ref: string; noSend?: string; question?: string; /** What only the owner can decide: a "정할 것:" list above the 결정 line, one "- " line each. */ decide?: string[]; sendResult?: string; mail?: DraftPart; sendModes?: boolean };
 export const MAIL_MARK = "함께 보낼 메일";
 const MAIL_ID = /^[A-Za-z0-9][A-Za-z0-9_.-]{1,63}$/;
 const MAIL_LINE = /^함께 보낼 메일(?: \(([A-Za-z0-9][A-Za-z0-9_.-]{1,63})\))?$/;
@@ -173,21 +180,32 @@ export function fileSizeText(b: number): string {
 	return b >= 1073741824 ? `${(b / 1073741824).toFixed(1)}GB` : b >= 1048576 ? `${(b / 1048576).toFixed(1)}MB` : b >= 1024 ? `${Math.round(b / 1024)}KB` : `${Math.max(0, Math.round(b))}B`;
 }
 
-// The draft says it attaches something ("첨부합니다", "attached"). A refusal ("첨부하지 못", "첨부 없음") is not a claim.
-const CLAIM = /첨부\s*(?:파일|자료|문서|서류)?\s*(?:을|를|은|는)?\s*(?:합니다|했습니다|했어요|해요|드립니다|드려요|드릴게요|해\s*드립니다|해\s*드려요|해\s*드릴게요|하였습니다)|첨부(?:파일|자료|문서|서류)?\s*(?:을|를)?\s*(?:보내|함께)|\b(?:attached|attaching)\b|\bI(?:'ve| have)?\s+attach|\bplease\s+find\b.*\battach/i;
-const NO_CLAIM = /첨부\s*(?:파일)?\s*(?:은|는|이|가)?\s*(?:없|못|불가)|첨부(?:하지|할 수 없)|not\s+attach|no\s+attach|보내\s*(?:드리지|지)\s*못|못\s*보내|보내\s*드릴 수 없|보낼 수 없/i;
-// Nouns that name a file when a draft says it sends one or a mail asks for one.
-const FILE_NOUN = "파일|자료|문서|견적서|청구서|계약서|제안서|보고서|이력서|영수증|사진|이미지|영상|음원|녹음|양식|서식|신청서|스캔본|스캔|첨부|pdf|hwpx?|docx?|xlsx?|pptx?|zip";
-const SENDS = "보내\\s*드(?:립니다|려요|릴게요|릴께요|리겠습니다|렸습니다|렸어요|립니다만)|보냅니다|보내요|보낼게요|보냈(?:습니다|어요)";
-// "달빛정원 문서 보내드립니다", "보내드린 문서는": the draft says it sends a file-like thing.
-const ENGLISH_NOUN = "file|pdf|document|photo|invoice|quote";
 const fileWords = withFileWords(({ document, audio, english: own }) => {
 	const noun = `${FILE_NOUN}${document}${audio}`;
 	const english = `${ENGLISH_NOUN}${own}`;
-	return { noun: new RegExp(noun, "i"), askEn: new RegExp(`\\b(?:please|could you|can you|would you)\\b[^.\\n]{0,40}\\b(?:send|share|attach|forward)\\b[^.\\n]{0,40}\\b(?:${english}|copy)s?\\b`, "i"), sends: new RegExp(`(?:${noun})[가-힣]{0,2}\\s*(?:을|를|은|는|도|만)?\\s*(?:[가-힣A-Za-z0-9]+\\s+){0,2}(?:${SENDS})|(?:보내\\s*드린|보낸)\\s*(?:${noun})|\\b(?:I'm sending|I'll send|I sent|I've sent|sending you|here is|here's)\\b[^.\\n]{0,40}\\b(?:${english})s?\\b`, "i") };
+	return { noun: new RegExp(noun, "i"), askEn: new RegExp(`\\b(?:please|could you|can you|would you)\\b[^.\\n]{0,40}\\b(?:send|share|attach|forward)\\b[^.\\n]{0,40}\\b(?:${english}|copy)s?\\b`, "i") };
 });
 const ASK = /요청|신청(?!서)|받을 수|받고 싶|부탁|보내\s*주|보내\s*줘|보내\s*달|(?:공유|전달)\s*해?\s*(?:주|달)|주세요|주시면|주실 수|주실래/;
-export const claimsAttachment = (text: string): boolean => (CLAIM.test(text) || fileWords().sends.test(text)) && !NO_CLAIM.test(text);
+
+// A comment reply and the mail that rides on its card (hub/comments/engine.ts) are checked against each other after either one changes, without a
+// model: what the reply says about the mail (a file goes, an address, a file name, a mail at all) must be what the mail does. Each finding is one
+// "확인:" line naming the side to look at; PAIR_NOTE finds the lines of an earlier check so a re-check replaces them. Never a refusal.
+export const PAIR_NOTE = /^확인: 답글과 메일이 달라요 - /;
+export const MAIL_PROMISE = /(?:메일|e-?mail)[^.!?\n]{0,20}(?:보내|보냈|발송|전달|드릴|드렸|드려)|\be-?mail(?:ed|ing)?\b[^.!?\n]{0,20}\b(?:send|sent)\b|\b(?:send|sent)\b[^.!?\n]{0,20}\be-?mail\b/i;
+const FILE_NAMED = /[^\s"'`“”‘’「」『』<>()[\]@,]+\.(?:pdf|hwpx?|docx?|xlsx?|pptx?|zip|txt|csv|jpe?g|png|mp3|mp4|wav)\b/gi;
+/** `mail`: the linked mail as it is now, undefined when the card has none; `hadMail`: the card carried one (so a reply still promising it is off). */
+export function pairCheck(reply: string, mail: { to: string; attachments: { name: string }[] } | undefined, hadMail = false): string[] {
+	const note = (s: string) => `확인: 답글과 메일이 달라요 - ${s}`;
+	if (!mail) return hadMail && (MAIL_PROMISE.test(reply) || claimsAttachment(reply)) && !NO_CLAIM.test(reply) ? [note("답글은 메일을 보낸다고 하는데 함께 보낼 메일이 없으니 답글을 고쳐 주세요")] : [];
+	const names = mail.attachments.map(f => f.name.toLowerCase());
+	const others = addressesIn(reply).filter(a => a !== mail.to.trim().toLowerCase());
+	const unknown = [...new Set((reply.match(FILE_NAMED) ?? []).map(n => n.split("/").pop()!))].filter(n => !names.some(a => a === n.toLowerCase() || a.endsWith(n.toLowerCase())));
+	return [
+		...(!names.length && claimsAttachment(reply) ? [note("답글은 파일을 보낸다고 하는데 메일에 첨부가 없으니 메일 첨부를 확인해 주세요")] : []),
+		...(others.length ? [note(`답글에 적힌 주소 ${others.join(", ")}가 메일 받는이 ${mail.to}와 달라서 받는이나 답글을 확인해 주세요`)] : []),
+		...(names.length && unknown.length ? [note(`답글에 적힌 파일 ${unknown.join(", ")}이 메일 첨부에 없으니 메일 첨부를 확인해 주세요`)] : []),
+	];
+}
 // The mail being answered asks for a file ("문서 부탁드립니다", "견적서 보내주세요").
 export const asksForFile = (text: string): boolean =>
 	fileWords().askEn.test(text) || text.split(/[.!?\n]+/).some(sentence => fileWords().noun.test(sentence) && ASK.test(sentence));
@@ -198,7 +216,7 @@ const fileLine = (f: DraftFileIn) => `> 첨부: ${f.name.replace(/\s+/g, " ").tr
 
 function partLines(d: DraftPart): string[] {
 	const files = (d.attachments ?? []).map(fileLine);
-	const note = files.length ? "" : (d.toLabel ?? "받는이") !== "받는이" ? "" : claimsAttachment(`${d.subject ?? ""}\n${d.body}`) ? NOTE_BODY : d.asksFile ? NOTE_ASKED : "";
+	const note = files.length ? "" : (d.toLabel ?? "받는이") !== "받는이" ? "" : claimsAttachment(ownClaimText(d.subject, d.body)) ? NOTE_BODY : d.asksFile ? NOTE_ASKED : "";
 	// A mail always says what goes with it, files or 없음, so a missing file is seen before 보내기 (owner 2026-10-26).
 	const mail = (d.toLabel ?? "받는이") === "받는이";
 	const left = (d.cannotAttach ?? []).map(n => n.replace(/\s+/g, " ").trim());
@@ -212,10 +230,10 @@ function partLines(d: DraftPart): string[] {
 export function draftApprovalBlock(d: DraftInput): string {
 	const issues = [...(d.attachIssues ?? []), ...(d.mail?.attachIssues ?? [])].map(s => s.replace(/\s+/g, " ").trim()).filter(Boolean);
 	const options = [
-		{ name: DRAFT_SEND, result: `${d.sendResult ?? `${d.to.replace(/\s+/g, " ").trim()}에 이 글을 그대로 보내요`}${issues.length ? ATTACH_HELD : ""}` },
+		...(d.noSend ? [] : [{ name: DRAFT_SEND, result: `${d.sendResult ?? `${d.to.replace(/\s+/g, " ").trim()}에 이 글을 그대로 보내요`}${issues.length ? ATTACH_HELD : ""}` }]),
 		{ name: `${DRAFT_EDIT} …`, result: d.mail ? "답글과 메일 중 어느 쪽을 어떻게 고칠지 알려 주면 고쳐서 다시 물어봐요" : "어떻게 고칠지 알려 주면 고쳐서 다시 물어봐요" },
 		{ name: DRAFT_DROP, result: d.mail ? "답글과 메일을 모두 버려요" : "" },
-		...(issues.length ? [{ name: DRAFT_AS_IS, result: asIsResult(!!d.mail) }] : []),
+		...(issues.length && !d.noSend ? [{ name: DRAFT_AS_IS, result: asIsResult(!!d.mail) }] : []),
 		...(d.sendModes && d.mail
 			? [
 					{ name: DRAFT_ONLY_MAIN, result: "답글만 올리고 메일은 보내지 않아요" },
@@ -226,7 +244,8 @@ export function draftApprovalBlock(d: DraftInput): string {
 	];
 	const mail = d.mail ? [">", `> ${MAIL_MARK}${d.mail.id && MAIL_ID.test(d.mail.id) ? ` (${d.mail.id})` : ""}`, ...partLines({ ...d.mail, toLabel: "받는이" })] : [];
 	const decide = (d.decide ?? []).map(oneLine).filter(Boolean);
-	return [...(issues.length ? [`${ATTACH_MARK}${issues.join(" · ")}`] : []), ...partLines(d), ...mail, ...(decide.length ? [DECIDE_MARK, ...decide.map(q => `- ${q}`)] : []), issueBlock(`${d.question ?? "보낼까요?"} (${d.ref})`, options)].join("\n");
+	const account = (p: DraftPart, label: string): string[] => (p.accountHeld ? [`${ACCOUNT_MARK}${label}계정이 아직 정해지지 않았어요`] : p.account ? [`${ACCOUNT_MARK}${label}${p.account}`] : []);
+	return [...(issues.length ? [`${ATTACH_MARK}${issues.join(" · ")}`] : []), ...account(d, ""), ...(d.mail ? account(d.mail, "함께 보낼 메일은 ") : []), ...(d.noSend ? [`${NO_SEND_MARK}${oneLine(d.noSend)}`] : []), ...partLines(d), ...mail, ...(decide.length ? [DECIDE_MARK, ...decide.map(q => `- ${q}`)] : []), issueBlock(`${d.question ?? "보낼까요?"} (${d.ref})`, options)].join("\n");
 }
 
 // The points only the owner can decide sit on their own lines above the 결정 line, so the question stays one short line (its "(<ref>)" is what
@@ -309,7 +328,7 @@ export function withStagedFiles(text: string, files: DraftFileIn[], part: "main"
 		if (old.every(l => /^\s*>\s?첨부\s*[:：]\s*없음/.test(l))) return text;
 		const d = parseQuotedDraft(text);
 		const p = part === "main" ? d : d?.mail;
-		next = [p && p.toLabel === "받는이" && claimsAttachment(`${p.subject ?? ""}\n${p.body}`) ? `> 첨부: 없음 (${NOTE_BODY})` : "> 첨부: 없음"];
+		next = [p && p.toLabel === "받는이" && claimsAttachment(ownClaimText(p.subject, p.body)) ? `> 첨부: 없음 (${NOTE_BODY})` : "> 첨부: 없음"];
 	}
 	if (next.join("\n") === old.join("\n")) return text;
 	const place = rows[0] ?? (at >= 0 ? at : end);
@@ -368,7 +387,12 @@ const RULE = /^규칙\s*[:：]\s*(.+)$/;
 const NONE_NOTE = /^없음\s*\((.+)\)$/;
 // "a.pdf (352KB)", also with a note after the size as a session writes it by hand ("a.pdf (352KB, 3쪽)").
 const FILE_SIZE = /^(.*\S)\s+\((\d+(?:\.\d+)?(?:B|KB|MB|GB))(?:\s*[,·][^()]*)?\)$/;
-const REF = /\(([A-Za-z0-9][A-Za-z0-9_.:-]{1,63})\)\s*$/;
+/** A draft ref as a card's question names it ("RAAAAAA", "mail:<id>", "indi:57259637"). */
+export const REF_ID = "[A-Za-z0-9][A-Za-z0-9_.:-]{1,63}";
+const REF = new RegExp(`\\((${REF_ID})\\)\\s*$`);
+const QUESTION_REF = new RegExp(`\\((${REF_ID})\\)\\s*[?？]?\\s*$`);
+/** The draft ref a card's question closes with: "(<ref>)", a question mark after it allowed (hub/ask-options.ts REF_END reads the same). */
+export const questionRef = (question: string): string | undefined => QUESTION_REF.exec(question)?.[1];
 
 const DRAFT_MODES = new Set([DRAFT_AS_IS, DRAFT_ONLY_MAIN, DRAFT_ONLY_MAIL, DRAFT_OWN]);
 const ATTACH_LINE = /^\s*-#\s*⚠️\s*첨부 확인\s*[:：]\s*(.+?)\s*$/m;
@@ -378,17 +402,25 @@ export function parseDraftApproval(text: string): DraftApproval | undefined {
 	const pc = parseDecisions(text);
 	const block = pc.blocks.length === 1 ? pc.blocks[0]! : undefined;
 	const labels = block?.options.map(o => o.label) ?? [];
-	if (!block || labels.slice(0, 3).join("|") !== [DRAFT_SEND, DRAFT_EDIT, DRAFT_DROP].join("|") || !labels.slice(3).every(l => DRAFT_MODES.has(l))) return undefined;
+	const noSend = text.split("\n").some(l => l.trim().startsWith(NO_SEND_MARK.trim()));
+	const lead = noSend ? [DRAFT_EDIT, DRAFT_DROP] : [DRAFT_SEND, DRAFT_EDIT, DRAFT_DROP];
+	if (!block || labels.slice(0, lead.length).join("|") !== lead.join("|") || !labels.slice(lead.length).every(l => DRAFT_MODES.has(l))) return undefined;
 	const draft = parseQuotedDraft(text);
 	const ref = REF.exec(block.title)?.[1];
 	return draft && ref ? { ...draft, ref } : draft;
+}
+/** Whether two cards show the same draft going out: recipients, subject, body, files and the bundled mail's, as their texts show them. */
+export function sameDraft(a: DraftApproval, b: DraftApproval): boolean {
+	const key = (d: DraftApproval | undefined): unknown[] => (d ? [d.to, [...(d.cc ?? [])].sort(), d.subject ?? "", d.body.trim(), (d.attachments ?? []).map(f => `${f.name} ${f.size ?? ""}`), key(d.mail)] : []);
+	return JSON.stringify(key(a)) === JSON.stringify(key(b));
 }
 
 // One block of a message that asks about several drafts at once ("<question> (<ref>)" over 보내기 / 고치기 / 보내지 않기): its notice carries no
 // `draft` (parseDraftApproval reads a one-block message only), yet the draft behind it can be sent or dropped elsewhere (the 모니터링 queue),
 // so hub/notices.ts settleHandledDrafts asks for it by this ref.
 export function blockDraftRef(title: string, labels: string[]): string | undefined {
-	if (labels.slice(0, 3).join("|") !== [DRAFT_SEND, DRAFT_EDIT, DRAFT_DROP].join("|") || !labels.slice(3).every(l => DRAFT_MODES.has(l))) return undefined;
+	const noSend = labels.join("|") === [DRAFT_EDIT, DRAFT_DROP].join("|");
+	if (!noSend && (labels.slice(0, 3).join("|") !== [DRAFT_SEND, DRAFT_EDIT, DRAFT_DROP].join("|") || !labels.slice(3).every(l => DRAFT_MODES.has(l)))) return undefined;
 	return REF.exec(title)?.[1];
 }
 
@@ -523,7 +555,7 @@ function parseDraftLines(quoted: string[]): DraftApproval | undefined {
 	const body = lines.join("\n").replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n").replace(/^\n+|\s+$/g, "");
 	if (!body) return undefined;
 	const clipped = body.slice(0, DRAFT_BODY_MAX);
-	const warn = toLabel === "받는이" && !attachments.length && (!!note || claimsAttachment(`${subject ?? ""}\n${clipped}`));
+	const warn = toLabel === "받는이" && !attachments.length && (!!note || claimsAttachment(ownClaimText(subject, clipped)));
 	return { toLabel, to, ...(cc.length ? { cc } : {}), ...(subject ? { subject } : {}), body: clipped, ...(attachments.length ? { attachments } : none || toLabel === "받는이" ? { noAttachments: true as const } : {}), ...(warn ? { warning: note?.startsWith(CANNOT_ATTACH) ? CANNOT_ATTACH_WARNING : NO_ATTACHMENT_WARNING } : {}), ...(note ? { note } : {}), ...(origin ? { origin } : {}), ...(rule ? { rule } : {}) };
 }
 
@@ -545,7 +577,7 @@ export function quotedDraft(text: string): string | undefined {
 	return out?.join("\n").replace(/(?:\n>)+$/, "");
 }
 
-const ACTIONS: Record<string, DraftAction> = { [DRAFT_SEND]: "send", [DRAFT_EDIT]: "edit", [DRAFT_DROP]: "drop", [DRAFT_ONLY_MAIN]: "send-main", [DRAFT_ONLY_MAIL]: "send-mail", [DRAFT_OWN]: "own", [DRAFT_AS_IS]: "send-as-is", [DRAFT_UNDO]: "undo" };
+const ACTIONS: Record<string, DraftAction> = { [DRAFT_SEND]: "send", [DRAFT_EDIT]: "edit", [DRAFT_DROP]: "drop", [DRAFT_ONLY_MAIN]: "send-main", [DRAFT_ONLY_MAIL]: "send-mail", [DRAFT_OWN]: "own", [DRAFT_AS_IS]: "send-as-is", [DRAFT_UNDO]: "undo", [DRAFT_HAND_EDIT]: "edit" };
 // What a picked label means; anything else (a label outside the three and the send modes) is not a draft answer.
 export function draftActionOf(label: string): DraftAction | undefined {
 	return Object.hasOwn(ACTIONS, label) ? ACTIONS[label] : undefined;
@@ -556,51 +588,32 @@ export const draftNeedsText = (label: string): boolean => {
 	return a === "edit" || a === "own";
 };
 
-export type DraftVerdict = { verdict: DraftAction | "none"; detail?: string };
+/** The fingerprint of what a send would carry: recipients, the account it goes out from, subject, text, parts, files (name, size and, for a file held locally, its content) and a
+ * bundled mail (with the account that mail goes out from). Display fields (labels, notes, state) are not in it. The one definition: the gateway's gate (hub/approval-send.ts), every act's
+ * pick and the CLIs' draftVerdict all compare this. Kept here, beside draftVerdict, so a CLI computes it without loading the gateway. */
+export function approvalHash(view: DraftView): string {
+	const d = view.draft;
+	const files = (list?: FileShown[]) => (list ?? []).map(f => `${f.name}\n${f.size ?? ""}\n${f.digest ?? ""}`).sort();
+	const mail = d.mail ? { to: d.mail.to, ...(d.mail.account ? { account: d.mail.account } : {}), subject: d.mail.subject ?? "", text: d.mail.text, attachments: files(d.mail.attachments) } : null;
+	const body = { to: d.to, cc: [...(d.cc ?? [])].sort(), ...(d.account ? { account: d.account } : {}), subject: d.subject ?? "", text: d.text, parts: d.parts ?? [], attachments: files(d.attachments), mail };
+	return createHash("sha256").update(JSON.stringify(body)).digest("hex").slice(0, 16);
+}
+
+/** `changed`: the owner's latest word is a send, but of another version than the store holds now (or a pick that names none). `waiting`: his
+ * 보내기 is held by the gateway and its sender has not started it (inside the undo window, or the gateway is down). `spent`: the gateway already
+ * tried that 보내기 and it did not go out; only his 다시 보내기 (a new pick) sends again. Every CLI refuses all three. `token`: the seal of the
+ * line that lets a send through (the gateway's `go` mark, or a pick held by no gateway), so a CLI lets one run through per approval; `go`: it is a mark. */
+export type DraftVerdict = { verdict: DraftAction | "none" | "changed" | "waiting" | "spent"; detail?: string; token?: string; go?: true };
+/** The CLIs' lines for a `waiting` and a `spent` verdict. */
+export const WAITING_REFUSED = "사용자가 보내기를 눌렀지만 게이트웨이가 아직 보내기 시작하지 않아서(되돌리기 시간 중이거나 게이트웨이가 꺼져 있어요) 보내지 않았어요. 게이트웨이가 보내요. 직접 보내지 마세요";
+export const SPENT_REFUSED = "이 보내기로 보낸 시도가 이미 끝났고 나가지 않았어요. 다시 보내려면 사용자가 카드에서 다시 보내기를 눌러야 해요";
+/** The inbox kind of the gateway sender's marks on a 보내기 (hub/approval-send.ts `mark`): `go` right before its sender runs it, `spent` after a
+ * run of it did not go out. */
+export const SEND_GATE = "send_gate";
+// The picks that let a CLI send: each must name the version it approved (its approvalHash).
+const SENDING = new Set<DraftAction>(["send", "send-main", "send-mail", "send-as-is", "own"]);
 const OWNER_SOURCES = new Set(["web", "discord", "terminal"]);
 const TAIL_BYTES = 2 * 1024 * 1024;
-
-// The owner's own words about a waiting draft, typed instead of a tap: "보내자", "ㅇㅇㅇ 메일 보내", "아잇 보내라고" approve, "보내지 마", "안 보내",
-// "ㄴㄴ" refuse. Only the first clause counts ("보내자. 그리고 화면도 고쳐" approves), and it approves only when it is nothing but a yes or a send
-// verb with filler words, so "파일 하나 더 붙여서 보내줘" or "보내기 전에 제목 바꿔" says nothing (the draft is not what he asked for). A question says nothing.
-const TEXT_NO = /보내지\s*(?:마|말|않)|안\s*보내|보내면\s*안|ㄴㄴ|보류|취소|그만/;
-const TEXT_YES = /^(?:ㅇ{2,}|ㅇㅋ|응|네|넵|예|ok|okay|오케이|좋아|좋아요|그래|ㄱ|ㄱㄱ|고|고고)$/i;
-const TEXT_SEND = /^(?:보내(?:기|자|줘|줘요|주세요|요|라|라고|라니까|놔|놔라|버려|도)?|(?:전송|발송)(?:해|해줘|해요|하자|하라고)?)$/;
-const TEXT_AS_IS = /이대로|그대로/;
-// What may stand before an "이대로 보내" of its own: a plain "I checked". Anything else ("제목 바꿔", "첨부 맞으면", "내일 아침에") may take it back, so it says nothing.
-const TEXT_CHECKED = /^(?:(?:첨부파일|첨부|파일|내용|본문|메일|답장|다|전부|모두)(?:은|는|도|이|가)?\s+)*(?:확인\s*(?:했어|했음|함|했습니다|완료)|봤어|봤음|맞아|맞음|맞습니다|괜찮아|문제\s*없어|수정할?\s*(?:거|것|게)?\s*없어)요?$/;
-// A note in brackets after it is his aside ("이대로 보내. (참고)") unless it reads as a change or a condition.
-const TEXT_NOTE = /^(.*?)[\s.!]*\(([^()]*)\)[\s.!]*$/s;
-const TEXT_CHANGE = /\?|바꾸|바꿔|변경|고치|고쳐|수정|삭제|빼|추가|붙이|붙여|넣|다시|말고|전에|(?:으|하|되)면/;
-const TEXT_PICK = /^(\d)\)\s*(.+)$/;
-const TEXT_FILLER = /^(?:아|아잇|아니|그냥|빨리|얼른|어서|이제|그럼|일단|좀|메일|답장|회신|답글|댓글|이거|그거|이걸로|그걸로|이대로|그대로|다시|바로|지금|돼|됨)$/;
-// A card's option typed out counts when number and name agree: "1) 보내기", "4) 이대로 보내기".
-// After the first clause only a last "이대로 보내" sentence of its own counts, after nothing but "I checked" ("첨부 확인했어. 이대로 보내").
-const isSend = (clause: string): boolean => {
-	const words = clause.split(/[\s,~ㅎ]+/).filter(Boolean);
-	return words.some(w => TEXT_YES.test(w) || TEXT_SEND.test(w)) && words.every(w => TEXT_YES.test(w) || TEXT_SEND.test(w) || TEXT_FILLER.test(w));
-};
-// Quotes (straight or curly) around the phrase, as the refusal shows it ('이대로 보내'), are not part of the answer; a quote of someone else's words stays
-// a longer sentence with other words in it, so it still says nothing.
-const QUOTES = /['"‘’“”]/g;
-function textAnswer(typed: string): { said?: "send" | "drop"; clause?: string } {
-	const text = typed.replace(QUOTES, "");
-	const m = /^\s*([^.!?\n]*)([.!?\n]?)/.exec(text);
-	const first = (m?.[1] ?? "").trim();
-	if (!first || m?.[2] === "?") return {};
-	const pick = TEXT_PICK.exec(first);
-	if (text.trim().replace(/[.!\s]+$/, "") === first && (pick && Number(pick[1]) >= 4 && pick[2] === DRAFT_AS_IS || pick?.[1] === "1" && pick[2] === DRAFT_SEND)) return { said: "send", clause: first };
-	if (TEXT_NO.test(first)) return { said: "drop" };
-	if (isSend(first)) return { said: "send", clause: first };
-	const note = TEXT_NOTE.exec(text.trim());
-	if (note && (TEXT_CHANGE.test(note[2]!) || TEXT_NO.test(note[2]!))) return {};
-	const clauses = (note?.[1] ?? text).split(/(?<=[.!?,\n])/).map(c => c.trim()).filter(Boolean);
-	if (clauses.some(c => c.endsWith("?"))) return {};
-	const bare = clauses.map(c => c.replace(/[.!,\s]+$/, ""));
-	const clause = bare.pop();
-	return clause && TEXT_AS_IS.test(clause) && isSend(clause) && !TEXT_NO.test(clause) && bare.every(c => TEXT_CHECKED.test(c)) ? { said: "send", clause } : {};
-}
-export const textVerdict = (text: string): "send" | "drop" | undefined => textAnswer(text).said;
 
 function tailLines(path: string): string[] {
 	if (!existsSync(path)) return [];
@@ -625,81 +638,44 @@ const parsedLine = <T>(line: string): T | undefined => {
 	}
 };
 
-// The assistant's posts from the outbox log, each with the refs of the cards it carries. The CLI that sends runs outside the gateway, so the log is the one record it shares.
-type Post = { at: number; place?: string; refs: string[]; gateway: boolean };
-type Typed = { at: number; places: (string | undefined)[]; named: boolean };
-// The owner's main conversation is one place whichever surface he types on.
-const placeOf = (v: unknown): string | undefined => (typeof v !== "string" || !v ? undefined : v === "web" || v === "chat" || v === "terminal" ? "main" : v);
-function postsIn(outboxPath: string): Post[] {
-	return tailLines(outboxPath).flatMap(line => {
-		const e = parsedLine<{ ts?: unknown; kind?: unknown; source?: unknown; text?: unknown; update_key?: unknown; target?: unknown }>(line);
-		if (e?.kind !== "out" || e.update_key || typeof e.ts !== "string" || typeof e.text !== "string") return [];
-		// Every decision counts, also one with no draft ref ("" here): it stands between him and an older card all the same.
-		const refs = parseDecisions(e.text).blocks.filter(b => b.headed || b.options.length).map(b => /\(([^()\s]+)\)[\s*]*$/.exec(b.title)?.[1] ?? "");
-		return [{ at: Date.parse(e.ts), place: placeOf(e.target), refs, gateway: e.source === "gateway" }];
-	});
-}
-// Is the owner's message `m` an answer to the card of `ref` posted where he wrote? That card must be the newest card there, with no other card since the draft was made that
-// he had not answered by then (two waiting cards: nothing says which one he means). A bare "응" also needs the card to be the last thing said there, since it can answer
-// whatever came after; a word that names sending does not.
-function answersCard(posts: Post[], ref: string, sinceMs: number, m: Typed, answered: (ref: string, before: number) => boolean): boolean {
-	const said = posts.filter(p => p.at <= m.at && !p.gateway && p.place !== undefined && m.places.includes(p.place));
-	const cards = said.filter(p => p.refs.length);
-	const last = cards.at(-1);
-	// Two logs and a clock: a post in the same millisecond may be on either side of his message, so it counts against the answer in both places.
-	if (last?.refs.length !== 1 || last.refs[0] !== ref || last.at >= m.at) return false;
-	if (cards.some(p => p.at > sinceMs && p.refs.some(r => r !== ref && !answered(r, m.at)))) return false;
-	return m.named || said.at(-1) === last;
-}
-
-// What the owner decided for the draft `ref` (the id in the question's trailing "(<ref>)") after `sinceMs`, read from the inbox log.
-// Only the owner's own messages count (web, discord, terminal; not a session's lane_message) and the latest word wins: a pick on the card,
-// or a typed reply (textVerdict) in the conversation the draft was asked in (`conv`, the one a pick for this ref came from, or the one its card was posted to: answersCard). For 고치기 the
-// detail is the change the owner typed ("2) 고치기 - <change>"), for 직접 입력 how to send it.
-export function draftVerdict(inboxPath: string, ref: string, sinceMs: number, opts: { conv?: string } = {}): DraftVerdict {
-	const lines = tailLines(inboxPath);
-	const tag = `(${ref})`;
-	type Entry = { ts?: unknown; kind?: unknown; source?: unknown; text?: unknown; picks?: unknown; conv?: unknown; channel?: unknown };
-	const owned: Entry[] = [];
+// What the owner decided for the draft `ref` (the id in the question's trailing "(<ref>)") after `sinceMs`, read from the inbox log: his latest pick
+// on its card wins. Only a line the gateway sealed counts, from the owner's own surfaces (web, discord, terminal; not a session's lane_message). Typed
+// chat is never read here (the reply intent design, 2026-11-16): the model reads it, and every send the hub queues follows a pick it sealed. For
+// 고치기 the detail is the change the owner typed ("2) 고치기 - <change>"), for 직접 입력 how to send it.
+// `current`: the approvalHash of the draft as its store holds it now, computed by the caller from the same view the gateway reads. A send pick
+// counts only when it carries that very hash (owner rule 2026-11-16: what goes out is the version he saw when he pressed 보내기); a pick with
+// another hash, or none, is `changed`. A send the gateway refused `changed` or he took back is followed by 보내기 취소 (undo), so it never counts again.
+// The gateway's own start (qa-clean-7 N13, qa-clean-8 N14/N15): a 보내기 the gateway holds carries the end of its undo window (`until`), and it
+// is `waiting` until the gateway's sender seals a `go` mark right before it runs the job: not the clock, so a gateway that is down across the
+// window's end lets no CLI send (its restart takes the job back, as it always did). After a run failed (or may have gone out) the sender seals
+// `spent`; each later run of the gateway (다시 보내기, code's own retry) seals a new `go` first. Both marks are sealed lines in this one inbox, so
+// every process reads one record; the `token` (the granting line's seal) lets a CLI hold one approval to one run (features/reply-drafts/lib/flow.ts).
+export function draftVerdict(inboxPath: string, ref: string, sinceMs: number, current: string | undefined): DraftVerdict {
+	type Entry = { ts?: unknown; kind?: unknown; source?: unknown; author?: unknown; text?: unknown; picks?: unknown; ref?: unknown; mark?: unknown; action?: unknown; hash?: unknown; seal?: unknown };
 	// Only a line the gateway sealed (hub/approval-seal.ts) is the owner's word: a line appended to the file by another process is not.
 	const key = readSealKey(inboxPath);
-	for (const line of lines) {
-		const e = parsedLine<Entry>(line);
-		if (!e || e.kind !== "message" || typeof e.source !== "string" || !OWNER_SOURCES.has(e.source) || typeof e.ts !== "string" || !(Date.parse(e.ts) > sinceMs) || !isSealed(key, e)) continue;
-		owned.push(e);
-	}
-	const picksOf = (e: Entry) => (Array.isArray(e.picks) ? (e.picks as { q?: unknown; label?: unknown }[]) : []).filter(p => typeof p?.q === "string" && p.q.includes(tag) && typeof p.label === "string" && !!draftActionOf(p.label));
-	const where = new Set<string>(opts.conv ? [opts.conv] : []);
-	for (const e of owned) if (picksOf(e).length) for (const c of [e.conv, e.channel]) if (typeof c === "string" && c) where.add(c);
-	const atOf = (e: Entry) => Date.parse(e.ts as string);
-	const typedOf = (e: Entry): Typed => ({ at: atOf(e), places: [placeOf(e.conv), placeOf(e.channel)], named: /보내|전송|발송/.test(e.text as string) });
-	const typed = owned.filter(e => !Array.isArray(e.picks) && typeof e.text === "string" && textAnswer(e.text).said).map(typedOf);
-	const pickedRef = (r: string, before: number) => owned.some(e => atOf(e) < before && Array.isArray(e.picks) && (e.picks as { q?: unknown }[]).some(p => typeof p?.q === "string" && p.q.includes(`(${r})`)));
-	let posts: Post[] | undefined;
-	// `before` falls at every step, so this ends, and each pair is worked out once. A typed answer that went to another card settled that card as a tap would have.
-	const known = new Map<string, boolean>();
-	const underCard = (r: string, m: Typed): boolean => {
-		const key = `${r}@${m.at}`;
-		const hit = known.get(key);
-		if (hit !== undefined) return hit;
-		const found = answersCard((posts ??= postsIn(join(dirname(inboxPath), "outbox.jsonl"))), r, sinceMs, m, (other, before) => pickedRef(other, before) || typed.some(t => t.at < before && underCard(other, t)));
-		known.set(key, found);
-		return found;
-	};
 	let out: DraftVerdict = { verdict: "none" };
-	for (const e of owned) {
-		const picks = picksOf(e);
-		for (const p of picks) {
-			const verdict = draftActionOf(p.label as string)!;
-			const detail = draftNeedsText(p.label as string) && typeof e.text === "string" ? e.text.split(" - ").slice(1).join(" - ").trim() : "";
-			out = { verdict, ...(detail ? { detail } : {}) };
+	for (const line of tailLines(inboxPath)) {
+		const e = parsedLine<Entry>(line);
+		if (e?.kind === SEND_GATE && e.ref === ref && typeof e.ts === "string" && Date.parse(e.ts) > sinceMs && isSealed(key, e)) {
+			if (e.mark === "spent" && (out.verdict === "waiting" || SENDING.has(out.verdict as DraftAction))) out = { verdict: "spent" };
+			else if (e.mark === "go" && typeof e.action === "string" && SENDING.has(e.action as DraftAction)) out = current && e.hash === current ? { verdict: e.action as DraftAction, token: String(e.seal), go: true } : { verdict: "changed" };
+			continue;
 		}
-		// A typed reply: a message without picks, in the draft's own conversation or under its card.
-		if (picks.length || Array.isArray(e.picks) || typeof e.text !== "string") continue;
-		const { said, clause } = textAnswer(e.text);
-		if (!said) continue;
-		if (![e.conv, e.channel].some(c => typeof c === "string" && where.has(c)) && !underCard(ref, typedOf(e))) continue;
-		out = { verdict: said === "send" && TEXT_AS_IS.test(clause ?? "") ? "send-as-is" : said };
+		if (!e || e.kind !== "message" || typeof e.source !== "string" || !OWNER_SOURCES.has(e.source) || typeof e.ts !== "string" || !(Date.parse(e.ts) > sinceMs) || !Array.isArray(e.picks) || e.author === AGENT_AUTHOR || !isSealed(key, e)) continue;
+		for (const p of e.picks as { q?: unknown; label?: unknown; hash?: unknown; until?: unknown }[]) {
+			if (typeof p?.q !== "string" || questionRef(p.q) !== ref || typeof p.label !== "string" || !draftActionOf(p.label)) continue;
+			if (SENDING.has(draftActionOf(p.label)!) && (!current || p.hash !== current)) {
+				out = { verdict: "changed" };
+				continue;
+			}
+			if (SENDING.has(draftActionOf(p.label)!) && typeof p.until === "number") {
+				out = { verdict: "waiting" };
+				continue;
+			}
+			const detail = draftNeedsText(p.label) && typeof e.text === "string" ? e.text.split(" - ").slice(1).join(" - ").trim() : "";
+			out = { verdict: draftActionOf(p.label)!, ...(detail ? { detail } : {}), ...(SENDING.has(draftActionOf(p.label)!) ? { token: String(e.seal) } : {}) };
+		}
 	}
 	return out;
 }

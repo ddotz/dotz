@@ -69,8 +69,7 @@
 .au .rem { color: var(--fg-2); font-size: 13px; }
 @media (pointer: coarse), (max-width: 639px) { .au input:not([type=checkbox]) { height: var(--field-h-touch); font-size: 16px; } .au .eye { height: var(--field-h-touch); } }
 /* 확인 카드 (owner 2026-11-03): 머리 한 줄(답 기다림), 카드 제목 크기의 짧은 질문, 작은 답 버튼, 지금보다 눈에 띄게 낮게 */
-/* At most ~40% of the screen (owner 2026-11-04: at 60% a several-draft card hid the conversation above it); its body scrolls inside */
-.dcard { display: flex; flex-direction: column; max-height: max(40dvh, 200px); margin: 0 0 var(--sp-2); border-radius: var(--r-card); background: var(--card); overflow: hidden; }
+.dcard { display: flex; flex-direction: column; max-height: 35dvh; margin: 0 0 var(--sp-2); border-radius: var(--r-card); background: var(--card); overflow: hidden; }
 .dcard[hidden] { display: none; }
 /* a waiting send-approval card that later posts pushed up: one row in the dock that opens it (10-decision-card.js dcPointer) */
 .dc-wait { display: flex; align-items: center; gap: var(--sp-2); width: 100%; min-height: 44px; padding: var(--sp-2) var(--row-px); border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
@@ -89,9 +88,11 @@
 .dc-decide-k { font-weight: 600; }
 .dc-decide ul { margin: var(--sp-05) 0 0; padding-left: var(--sp-4); }
 .dc-decide li + li { margin-top: var(--sp-05); }
-.dcard.fold .dc-q { display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden; }
-.dcard.fold .dc-hd { padding-bottom: var(--sp-2); }
-.dcard.fold .dc-decide { display: none; }
+.dc-sum { flex: none; color: var(--fg-3); font: 400 13px/20px var(--font); white-space: nowrap; }
+.dcard.fold .dc-tt { display: flex; align-items: baseline; gap: var(--sp-1); cursor: pointer; }
+.dcard.fold .dc-meta, .dcard.fold .dc-decide { display: none; }
+.dcard.fold .dc-q { flex: 0 1 auto; min-width: 0; margin-top: 0; display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden; }
+.dcard.fold .dc-hd { align-items: center; padding-bottom: var(--sp-2); }
 .dc-fold { flex: none; display: grid; place-items: center; width: 24px; height: 24px; padding: 0; border: 0; border-radius: var(--r-ctl); background: transparent; color: var(--fg-3); }
 @media (hover: hover) { .dc-fold:hover { background: var(--hover); } }
 .dc-fold .ic { width: 16px; height: 16px; transition: transform var(--m-fast) var(--m-ease); }

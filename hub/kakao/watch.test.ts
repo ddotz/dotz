@@ -43,13 +43,26 @@ function setup(over: Partial<KakaoConfig> = {}) {
 		},
 		touch: () => writeFileSync(sigFile, `${readFileSync(sigFile, "utf8")}x`),
 		add: (n: number, chat: number, author: number, type = 1, sentAt = BASE_TIME + n * 10) => addMessage(w, { logId: BASE_LOG + BigInt(n), chatId: chat, authorId: author, message: BODY, type, sentAt }),
-		run: (opts: { config?: KakaoConfig | undefined; replyDraftOff?: boolean } = {}) =>
-			runWatch({ db, config: "config" in opts ? opts.config : config, stateDir, now: () => clock, dbFiles: [sigFile], ...(opts.replyDraftOff ? { replyDraftOff: true } : {}) }),
+		run: (opts: { config?: KakaoConfig | undefined; replyDraftOff?: boolean; draft?: (chatId: string) => Promise<boolean> } = {}) =>
+			runWatch({ db, config: "config" in opts ? opts.config : config, stateDir, now: () => clock, dbFiles: [sigFile], ...(opts.replyDraftOff ? { replyDraftOff: true } : {}), ...(opts.draft ? { draft: opts.draft } : {}) }),
 		state: (name: string) => readFileSync(join(stateDir, name), "utf8"),
 	};
 }
 
 describe("runWatch", () => {
+	test("with the gateway: a settled 자동 초안 room is asked of the gateway and prints no line for the bot; a room it did not take waits for the next run", async () => {
+		const t = setup();
+		await t.run();
+		t.add(9, ROOM.direct, 2001);
+		t.add(13, ROOM.group, 2002);
+		t.touch();
+		const asked: string[] = [];
+		const out = await t.run({ draft: async chatId => (asked.push(chatId), chatId === String(ROOM.direct)) });
+		expect(out).toEqual({ lines: [], code: 0 });
+		expect(asked).toEqual([String(ROOM.direct), String(ROOM.group)]);
+		expect(Object.keys(JSON.parse(t.state("held.json")))).toEqual([String(ROOM.group)]);
+	});
+
 	test("off: a missing config or enabled false reports DOTZ_FAIL off and never touches the db", async () => {
 		const t = setup();
 		for (const config of [undefined, { enabled: false }]) {

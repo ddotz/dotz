@@ -77,15 +77,15 @@ test("automated senders, own address and an already drafted mail are skipped wit
 	expect(out.sent).toHaveLength(1);
 });
 
-test("a model skip, a failing model and a failing send never throw and leave no pending draft", async () => {
+test("a model skip and a failing model never throw and leave no draft; a failing card post keeps the stored draft waiting", async () => {
 	enable(env);
 	const out = sink();
 	expect(await offerMailDraft({ ...mailFixture, key: "s-1" }, { send: out.send, call: fakeModel([j({ action: "skip", reason: "newsletter" })]).call })).toBe("skipped");
 	const log = () => {};
 	expect(await offerMailDraft({ ...mailFixture, key: "s-2" }, { send: out.send, call: async () => Promise.reject(new Error("down")), log })).toBe("failed");
-	expect(await offerMailDraft({ ...mailFixture, key: "s-3" }, { send: () => Promise.reject(new Error("post failed")), call: fakeModel([j(goodReply)]).call, log })).toBe("failed");
+	expect(await offerMailDraft({ ...mailFixture, key: "s-3" }, { send: () => Promise.reject(new Error("post failed")), call: fakeModel([j(goodReply)]).call, log })).toBe("offered");
 	expect(out.sent).toEqual([]);
-	expect(listDrafts()).toEqual([]);
+	expect(listDrafts().map(d => [d.ref, d.status])).toEqual([["s-3", "pending"]]);
 });
 
 test("send refuses without a pick, with a pick for another id, and after 보내지 않기", async () => {
@@ -151,7 +151,7 @@ test("webmail source: draft, approve and send of that feature, in that order", a
 	const argvs: string[][] = [];
 	const run: Runner = async argv => (argv[1] === "whoami" || argvs.push(argv), { code: 0, stdout: argv[3] === "draft" ? "초안 저장: d-1\n" : "ok\n", stderr: "" });
 	expect((await sendWith({ ...rec!, source: "webmail:work" }, run)).ok).toBe(true);
-	expect(argvs.map(a => a.slice(3, 5))).toEqual([["draft", "kim@example.com"], ["approve"], ["send", "d-1"]]);
+	expect(argvs.map(a => a.slice(3, 5))).toEqual([["draft", "kim@example.com"], ["approve", "d-1"], ["send", "d-1"]]);
 	expect(argvs.every(a => a[2] === "work")).toBe(true);
 });
 
@@ -177,20 +177,18 @@ test("고치기 round trip: pick with the change, revise makes a new id, the old
 	expect((await reviseDraft(next.id, "x", { call: model.call })).ok).toBe(false);
 });
 
-test("draft.ts revise posts the rewritten mail card to the mail's conversation itself and gives the bot one short line; without the gateway it prints the card", async () => {
-	const { rec, model } = await offered(fakeModel([j(goodReply), j({ ...goodReply, body: "곧 알려 드릴게요." }), j({ ...goodReply, body: "내일 알려 드릴게요." })]));
+test("draft.ts revise hands the change to the gateway's one reply flow and rewrites nothing itself; without the gateway it rewrites and prints the card", async () => {
+	const { rec, model } = await offered(fakeModel([j(goodReply), j({ ...goodReply, body: "내일 알려 드릴게요." })]));
 	const posts: { path: string; body: any }[] = [];
 	const hub = { post: async (path: string, body?: unknown) => (posts.push({ path, body }), { status: 200 }) };
 	const out = await runDraft(["revise", rec!.id, "--change", "더 짧게"], "", { call: model.call, hub });
-	const next = listDrafts().find(d => d.status === "pending")!;
 	expect(out.code).toBe(0);
-	expect(posts.map(p => [p.path, p.body.target])).toEqual([["/api/send", "mail:m-1"]]);
-	expect(parseDraftApproval(posts[0]!.body.text)).toMatchObject({ ref: next.id, body: "곧 알려 드릴게요." });
+	expect(posts).toEqual([{ path: "/api/reply/act", body: { ref: rec!.id, action: "revise", change: "더 짧게" } }]);
+	expect(listDrafts().filter(d => d.status === "pending").map(d => d.id)).toEqual([rec!.id]);
 	expect(parseDraftApproval(out.lines.join("\n"))).toBeUndefined();
-	expect(out.lines.join("\n")).toContain(next.id);
 
 	const down = { post: async () => ({ status: 503 }) };
-	const again = await runDraft(["revise", next.id, "--change", "하루 늦게"], "", { call: model.call, hub: down });
+	const again = await runDraft(["revise", rec!.id, "--change", "하루 늦게"], "", { call: model.call, hub: down });
 	expect(parseDraftApproval(again.lines.join("\n"))).toMatchObject({ body: "내일 알려 드릴게요." });
 });
 

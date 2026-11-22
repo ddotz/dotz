@@ -42,17 +42,25 @@ export function lastAnswerAt(file: string, tailBytes = 512 * 1024): number | und
 	return undefined;
 }
 
-// `light` is the quick chat's start prompt: the contract cut to quickMode, and neither the channel setups nor state.json (hub/quick-chat.ts).
-export function recallText(scope: string, ledger = "", light = false): string {
+// The static part of the contract: the owner's identity and MODE (no mail section while zele is off; cut to quickMode for the quick chat, `light`). It reads
+// files and config only, no time, state or ledger, so it is the same at every spawn of a session until MODE.md, IDENTITY.md or the zele setting is edited:
+// a runtime that keeps it in its system prompt (caps.modeInSystem) then reads it from the prompt cache on every turn, after a compaction and after a resume.
+// A resume after such an edit writes the prompt cache anew once, as after a change of a tool text (tools sit before the system prompt in the same prefix).
+export function modeContract(light = false): string {
 	// The mail and calendar section is only useful while zele runs (zele.enabled defaults to on, as in zele.ts).
 	const zeleOn = (cfg as { zele?: { enabled?: boolean } }).zele?.enabled !== false;
 	const modeText = readFileSync(modeFile(), "utf8");
 	const full = zeleOn ? modeText : dropSection(modeText, "## Mail and calendar");
-	const mode = light ? quickMode(full) : full;
-	const stateFile = join(DATA_DIR, "state.json");
-	const state = existsSync(stateFile) ? renderState(readFileSync(stateFile, "utf8"), stateFile) : "{}";
 	const id = cfg.identity;
 	const identity = existsSync(IDENTITY_FILE) ? readFileSync(IDENTITY_FILE, "utf8").slice(0, 3000) : msg().identityFallback(id?.character ?? "", id?.tone ?? "");
+	return msg().contract({ identity, mode: light ? quickMode(full) : full });
+}
+
+// The first prompt. `light` is the quick chat's: the contract cut to quickMode, and neither the channel setups nor state.json (hub/quick-chat.ts).
+// `modeInSystem`: identity and MODE are in the system note (modeContract), so the prompt leaves them out and says where they are.
+export function recallText(scope: string, ledger = "", light = false, modeInSystem = false): string {
+	const stateFile = join(DATA_DIR, "state.json");
+	const state = existsSync(stateFile) ? renderState(readFileSync(stateFile, "utf8"), stateFile) : "{}";
 	// A cut file says so: RULES.md outgrew the old 6000-character cap and silently lost its last lines (blocked commands).
 	const whole = (p: string) => (existsSync(p) ? readFileSync(p, "utf8") : "");
 	const file = (p: string, max: number) => {
@@ -60,7 +68,7 @@ export function recallText(scope: string, ledger = "", light = false): string {
 		return t.length > max ? `${t.slice(0, max)}\n[... cut at ${max} characters; read ${p} for the rest]` : t;
 	};
 	const features = featurePrompt(DATA_DIR, "orchestrator", log);
-	const text = withReplyLine(msg().recall({ mode, identity, rules: file(paths.rules, 12000) + (features ? `\n\n${features}` : ""), lessons: file(paths.lessons, LESSONS_MAX_BYTES), memory: `${newestLines(whole(paths.owner), paths.owner)}\n${whole(paths.boundaries)}`, ...(light ? {} : { setups: setupsSummary(), state }) }) + (ledger ? `\n\n${ledger}` : "") + (scope ? `\n\n${scope}` : ""));
+	const text = withReplyLine(msg().recall({ contract: modeInSystem ? undefined : modeContract(light), rules: file(paths.rules, 12000) + (features ? `\n\n${features}` : ""), lessons: file(paths.lessons, LESSONS_MAX_BYTES), memory: `${newestLines(whole(paths.owner), paths.owner)}\n${whole(paths.boundaries)}`, ...(light ? {} : { setups: setupsSummary(), state }) }) + (ledger ? `\n\n${ledger}` : "") + (scope ? `\n\n${scope}` : ""));
 	const note = yesterdayNote();
 	return note ? `${text}\n${msg().dayNote.line(note)}` : text;
 }
@@ -79,6 +87,12 @@ export function handover(runtime: RuntimeAdapter, previous: string): string {
 	const turn = newest.indexOf("\n\n");
 	return msg().handover(previous, turn >= 0 ? newest.slice(turn + 2) : newest, summary);
 }
+
+/**
+ * Where in the owner prompts sent to a process the one that `seen` (a user message the session recorded) carries sits; -1 when it carries none.
+ * Compared trimmed: the runtime's user text is trimmed, so a prompt ending in a newline would never match and stay owed, keeping the session from parking.
+ */
+export const startedIndex = (unstarted: { text: string }[], seen: string): number => unstarted.findIndex(u => u.text.trim() !== "" && seen.includes(u.text.trim()));
 
 export const newOrchState = () => ({
 	status: "stopped" as "stopped" | "starting" | "idle" | "working" | "rate-limited",

@@ -5,7 +5,8 @@
 // by a plain claim, only by a caller that says the owner retried on purpose (`takeOver`). The claim holds the pid and that process's start time, so a pid the system gave
 // to another process does not count as the sender. No clock and no config import (the CLIs use it).
 import { execFileSync } from "node:child_process";
-import { closeSync, mkdirSync, openSync, readFileSync, rmSync, writeSync } from "node:fs";
+import { createHash, randomUUID } from "node:crypto";
+import { closeSync, linkSync, mkdirSync, openSync, readFileSync, renameSync, rmSync, writeFileSync, writeSync } from "node:fs";
 import { dirname } from "node:path";
 
 const alive = (pid: number): boolean => {
@@ -33,12 +34,12 @@ const ownClaim = (): string => {
 
 /** Who holds the claim: nobody, a sender still running, or one that died without releasing it (the send may have gone out). */
 export function claimHolder(file: string): "none" | "live" | "dead" {
-	let claim: string;
-	try {
-		claim = readFileSync(file, "utf8").trim();
-	} catch {
-		return "none";
-	}
+	const claim = contentOf(file);
+	return claim === undefined ? "none" : holderOf(claim);
+}
+
+function holderOf(content: string): "live" | "dead" {
+	const claim = content.split("\n", 1)[0]!.trim();
 	const id = claim.split(" ", 1)[0]!, holder = Number(id), started = claim.slice(id.length + 1);
 	if (!Number.isInteger(holder) || holder <= 0) return "live";
 	if (!alive(holder)) return "dead";
@@ -46,25 +47,88 @@ export function claimHolder(file: string): "none" | "live" | "dead" {
 	return now && now !== started ? "dead" : "live";
 }
 
-// The release function when this caller holds the claim now, undefined when another sender holds it (or died holding it and `takeOver` is not set).
+// The approval a run of this claim went under (hub/draft-approval.ts DraftVerdict `token`: the gateway's sealed `go`, or a pick no gateway holds), kept
+// beside the claim and not removed with it: one approval lets one run through, and a sender killed mid-send leaves it behind, so a takeover cannot
+// reuse it (qa-clean-8 N15).
+export function claimToken(file: string): string | undefined {
+	try {
+		return readFileSync(`${file}.token`, "utf8").trim() || undefined;
+	} catch {
+		return undefined; // none kept: no run went under a token yet
+	}
+}
+export function keepClaimToken(file: string, token: string): void {
+	const tmp = `${file}.token.${process.pid}.tmp`;
+	writeFileSync(tmp, token, { mode: 0o600 });
+	renameSync(tmp, `${file}.token`);
+}
+
+function contentOf(file: string): string | undefined {
+	try {
+		return readFileSync(file, "utf8");
+	} catch {
+		return undefined;
+	}
+}
+
+/** The takeover lock for one dead claim: named after what the dead claim holds, so takers of that one claim queue on it and a later claim gets its own. */
+export const takeoverLock = (file: string, dead: string): string => `${file}.takeover.${tagOf(dead)}`;
+const tagOf = (s: string): string => createHash("sha256").update(s).digest("hex").slice(0, 12);
+
+function enterLock(lock: string, passed: readonly string[] = []): string[] | undefined {
+	const tmp = `${lock}.${process.pid}.${randomUUID()}`;
+	writeFileSync(tmp, ownClaim(), { mode: 0o600 });
+	try {
+		linkSync(tmp, lock);
+		return [...passed, lock];
+	} catch (e) {
+		if ((e as NodeJS.ErrnoException).code !== "EEXIST") throw e;
+	} finally {
+		rmSync(tmp, { force: true });
+	}
+	const holder = contentOf(lock);
+	return holder !== undefined && holderOf(holder) === "dead" ? enterLock(`${lock}.${tagOf(holder)}`, [...passed, lock]) : undefined;
+}
+
+function retireDead(file: string, dead: string, mine: string): boolean {
+	const held = enterLock(takeoverLock(file, dead));
+	if (!held) return false;
+	try {
+		if (contentOf(file) !== dead) return false;
+		const next = `${file}.${process.pid}.${randomUUID()}.tmp`;
+		writeFileSync(next, mine, { mode: 0o600 });
+		renameSync(next, file);
+		return true;
+	} finally {
+		for (const lock of held) rmSync(lock, { force: true });
+	}
+}
+
+/** The release function when this caller holds the claim now, undefined when another sender holds it (or died holding it and `takeOver` is not set).
+ * A dead claim is replaced in place under the takeover lock (rename over it, after checking it still holds what was seen dead), so the file never
+ * goes missing in between and a plain `wx` claim cannot slip in next to the taker. */
 export function claimSend(file: string, takeOver = false): (() => void) | undefined {
 	mkdirSync(dirname(file), { recursive: true });
+	const mine = `${ownClaim()}\n${randomUUID()}`;
+	const release = () => {
+		if (contentOf(file) === mine) rmSync(file, { force: true });
+	};
 	for (let attempt = 0; attempt < 2; attempt++) {
 		try {
 			const fd = openSync(file, "wx", 0o600);
 			try {
-				writeSync(fd, ownClaim());
+				writeSync(fd, mine);
 			} finally {
 				closeSync(fd);
 			}
-			return () => rmSync(file, { force: true });
+			return release;
 		} catch (e) {
 			if ((e as NodeJS.ErrnoException).code !== "EEXIST") throw e;
 		}
-		const who = claimHolder(file);
-		if (who === "none") continue;
-		if (who === "live" || !takeOver) return undefined;
-		rmSync(file, { force: true });
+		const seen = contentOf(file);
+		if (seen === undefined) continue;
+		if (holderOf(seen) === "live" || !takeOver) return undefined;
+		return retireDead(file, seen, mine) ? release : undefined;
 	}
 	return undefined;
 }

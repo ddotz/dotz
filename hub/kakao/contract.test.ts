@@ -80,9 +80,9 @@ describe("dispatchSend", () => {
 
 	test("a refused lease, or one that cannot be checked, is a failed send and KakaoTalk is never touched", async () => {
 		const r = rig();
-		expect(await dispatchSend({ kind: "text", chatId: "101", roomName: "Alex", text: "hello" }, r.deps(refuse))).toMatchObject({ ok: false, reason: "다른 맥이 이 대화방을 맡고 있어요" });
+		expect(await dispatchSend({ kind: "text", chatId: "101", roomName: "Alex", text: "hello" }, r.deps(refuse))).toMatchObject({ ok: false, reason: "다른 맥이 이 대화방을 맡고 있어요", sent: "no", code: "lease_held" });
 		const broken = await dispatchSend({ kind: "text", chatId: "101", roomName: "Alex", text: "hello" }, r.deps(async () => Promise.reject(new Error("net"))));
-		expect(broken.ok).toBe(false);
+		expect(broken).toMatchObject({ ok: false, sent: "no", code: "lease_unknown" });
 		expect(typeof broken.reason).toBe("string");
 		expect(r.calls).toEqual([]);
 	});
@@ -106,8 +106,16 @@ describe("dispatchSend", () => {
 		const r = rig();
 		let asked = false;
 		const result = await dispatchSend({ kind: "draft", code: "KNOPE", ownerApproved: true }, r.deps(async () => ((asked = true), { ok: true })));
-		expect(result.ok).toBe(false);
+		expect(result).toMatchObject({ ok: false, sent: "no", code: "gone" });
 		expect(asked).toBe(false);
+		expect(r.calls).toEqual([]);
+	});
+
+	test("a draft send without a way to read the newest incoming message is refused as app_not_ready and touches nothing", async () => {
+		const r = rig();
+		const d = await createDraft({ chatId: "101", roomName: "Alex", text: "hello", basisLogId: "5" }, { paths, runner: r.deps().runner });
+		const { latestIncoming: _, ...blind } = r.deps(allow);
+		expect(await dispatchSend({ kind: "draft", code: d.code, ownerApproved: true }, blind)).toMatchObject({ ok: false, sent: "no", code: "app_not_ready" });
 		expect(r.calls).toEqual([]);
 	});
 });

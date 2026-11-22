@@ -20,7 +20,8 @@
     const w = root.clientWidth, seen = vv.height * vv.scale;
     if (w !== tallW) { tallW = w; tall = 0; }
     tall = Math.max(tall, seen);
-    const up = tall - seen > 150;
+    const ae = document.activeElement, typing = !!ae && ae.matches("input, textarea, [contenteditable]");
+    const up = tall - seen > 150 || (typing && (tall - seen > 100 || kb > 100));
     if (h !== lastH) { lastH = h; root.style.setProperty("--vvh", h + "px"); }
     if (kb !== lastKb) { lastKb = kb; root.style.setProperty("--kb", kb + "px"); }
     if (up !== lastUp) { lastUp = up; root.toggleAttribute("data-kb", up); }
@@ -28,5 +29,7 @@
   const queue = () => { if (!raf) raf = requestAnimationFrame(apply); };
   vv.addEventListener("resize", queue);
   vv.addEventListener("scroll", queue);
+  document.addEventListener("focusin", queue);
+  document.addEventListener("focusout", queue);
   apply();
 })();

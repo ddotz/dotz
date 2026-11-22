@@ -2,7 +2,9 @@
 // website): list the new ones since a cursor, post a reply. A platform is an adapter; nothing else in the engine knows a platform.
 // Identity: commentId() is built from the platform's own comment id, so it is the same on every machine that collects it (`collector`
 // only says who saw it first). One door out: dispatchReply() is the only function a reply is posted through (owner's 보내기 or an
-// owner-enabled rule), a reply is posted at most once per comment, and the record goes sending -> sent | failed(+reason); one cut off by a restart goes to unsure (recover.ts).
+// owner-enabled rule), a reply is posted at most once per comment, and the record goes sending -> sent | failed | unsure (+reason, code); one cut off by a restart goes to unsure (recover.ts).
+// `failed` means surely not posted, `unsure` means it may have gone up: only the owner sends an unsure reply again.
+import { maskSecrets } from "../public-scrub.ts";
 import { type Draft, type Reply, type Store } from "./store.ts";
 
 export type SourceKind = "youtube" | "instagram" | "website";
@@ -29,7 +31,9 @@ export const FALLBACK_TITLE = { youtube: "유튜브 영상", instagram: "인스�
 export const isUntitled = (c: { postTitle: string }): boolean => !c.postTitle || c.postTitle === FALLBACK_TITLE.youtube || c.postTitle === FALLBACK_TITLE.instagram;
 export type PostInfo = { title: string; link?: string; thumb?: string };
 
-export type ReplyOutcome = { ok: true; ref?: string } | { ok: false; reason: string };
+// A failed post: `code` is a reason code of hub/reply-reasons.ts, `sent` says whether it may still have gone up. An adapter that does not say
+// `sent: "no"` is treated as "maybe" (a double post is worse than a question). `reason` is plain Korean; `detail` is raw tool text, for the log only.
+export type ReplyOutcome = { ok: true; ref?: string } | { ok: false; reason: string; code?: string; sent?: "no" | "maybe"; detail?: string };
 export type CommentAdapter = {
 	kind: SourceKind;
 	// Comments newer than `cursor` (the adapter's own opaque string) and the next cursor. Throws on an API failure.
@@ -55,17 +59,15 @@ export type CommentAdapter = {
 
 // Sites rewrite line breaks (one forum stores \n as \r\n), so a read-back compares only the words: a false "not sent" invites a duplicate.
 export const sameWords = (a: string, b: string): boolean => a.replace(/\s+/g, " ").trim() === b.replace(/\s+/g, " ").trim();
+/** Whether the owner's own row among `rows` carries `text` under `comment` (a private message: in its room, not older than it): the proof that a reply went up. */
+export const repliedWith = (rows: RawComment[], comment: Pick<Comment, "thread" | "parent" | "native" | "at">, text: string): boolean => {
+	const under = comment.thread.startsWith(DM_THREAD) ? (x: RawComment) => x.thread === comment.thread && x.at >= comment.at : (x: RawComment) => x.parent === (comment.parent ?? comment.native);
+	return rows.some(x => x.mine === true && under(x) && sameWords(x.text, text));
+};
 export const commentId = (source: string, native: string): string => `cm:${source}:${native}`;
 export const threadKey = (source: string, thread: string): string => `${source}/${thread}`;
 export const DM_THREAD = "dm:";
 export const watches = (src: SourceConfig, thread: string): boolean => src.watch.includes("*") || src.watch.includes(thread) || (thread.startsWith(DM_THREAD) && !!src.site?.dm && src.watch.length > 0);
-
-// Union by id, idempotent: the same id twice is one comment (the first collector is kept). Oldest first.
-export function mergeComments(...lists: Comment[][]): Comment[] {
-	const seen = new Map<string, Comment>();
-	for (const list of lists) for (const c of list) if (!seen.has(c.id)) seen.set(c.id, c);
-	return [...seen.values()].sort((a, b) => a.at - b.at || (a.id < b.id ? -1 : 1));
-}
 
 export function toComment(src: SourceConfig, r: RawComment, collector: string): Comment {
 	const { native, mine, ...rest } = r;
@@ -75,8 +77,14 @@ export function toComment(src: SourceConfig, r: RawComment, collector: string): 
 export type Approval = { by: "owner" } | { by: "rule" };
 /** `resend`: the owner's 다시 보내기 of a reply nobody can say went up, the only send that passes an unsure record. */
 export type ReplyRequest = { code: string; approval: Approval; text?: string; resend?: true };
-export type GateDeps = { store: Store; adapters: Partial<Record<SourceKind, CommentAdapter>>; now: () => number; collector: string; inflight: Set<string>; onState?: (r: Reply) => void };
-export type GateResult = { ok: true; reply: Reply; done: Promise<Reply> } | { ok: false; reason: string };
+export type GateDeps = { store: Store; adapters: Partial<Record<SourceKind, CommentAdapter>>; now: () => number; collector: string; inflight: Set<string>; onState?: (r: Reply) => void; log?: (line: string) => void };
+/** A refusal carries the reason code of hub/reply-reasons.ts when the gate gave it. */
+export type GateResult = { ok: true; reply: Reply; done: Promise<Posted> } | { ok: false; reason: string; code?: string };
+/** A finished send: the stored record, plus `detail`, what the place itself answered when it refused (a site's own words; masked and bounded).
+ * The CLI hands it to the gateway for its log and its send record; it is never stored here and never shown on a card. A crash's text is not the place's answer: log only. */
+type Posted = Reply & { detail?: string };
+const UNKNOWN_REASON = "보내다가 문제가 생겼어요";
+const DETAIL_MAX = 300;
 
 const DAY = 24 * 3600 * 1000;
 export const ruleAllows = (src: SourceConfig, text: string): boolean => {
@@ -92,7 +100,7 @@ export const ruleAllows = (src: SourceConfig, text: string): boolean => {
 };
 
 // Why an enabled auto-send rule does not send this draft (the reasons dispatchReply gives for by: "rule"), or undefined when the rule would send it.
-// One source of truth: the gate refuses with it, and the review queue (hub/reply-outcomes.ts) reads it for every pending draft.
+// One source of truth: the gate refuses with it.
 export function ruleRefusal(src: SourceConfig, commentText: string, draft: Pick<Draft, "clean">, replies: Reply[], at: number): string | undefined {
 	if (!ruleAllows(src, commentText)) return "자동 보내기 규칙에 맞지 않아요";
 	if (!draft.clean) return "확인할 점이 있는 초안은 자동으로 보내지 않아요";
@@ -101,48 +109,100 @@ export function ruleRefusal(src: SourceConfig, commentText: string, draft: Pick<
 	return undefined;
 }
 
+const GONE_REASON = "원댓글이 지워졌어요";
+const ANSWERED_REASON = "이미 답했어요";
+function answeredStored(store: Store, comment: Comment, adapter: CommentAdapter): boolean {
+	const top = comment.parent ?? comment.native;
+	const mine = store.comments().filter(x => x.mine && x.source === comment.source && x.thread === comment.thread);
+	return mine.some(x => (x.native === top || x.parent === top) && x.at >= comment.at) || (adapter.answered?.(comment, mine) ?? false);
+}
+async function platformStop(p: { adapter: CommentAdapter; src: SourceConfig; comment: Comment; store: Store; now: () => number; log?: (line: string) => void; sendId: string; proves?: string }): Promise<{ reason: string; code: string; proved?: true } | undefined> {
+	if (!p.adapter.recheck) return undefined;
+	const { comment } = p;
+	let read: { comments: RawComment[]; gone: string[] };
+	try {
+		read = await p.adapter.recheck(p.src, [comment]);
+	} catch (e) {
+		p.log?.(`comments: ${p.sendId} recheck failed, posting anyway: ${e instanceof Error ? e.message : String(e)}`);
+		return undefined;
+	}
+	if (read.gone.includes(comment.native)) {
+		p.store.patchComments({ [comment.id]: { gone: p.now() } });
+		return { reason: GONE_REASON, code: "original_gone" };
+	}
+	const top = comment.parent ?? comment.native;
+	if (!read.comments.some(r => r.mine && r.parent === top && r.at >= comment.at)) return undefined;
+	return { reason: ANSWERED_REASON, code: "stale", ...(p.proves !== undefined && repliedWith(read.comments, comment, p.proves) ? { proved: true as const } : {}) };
+}
+
 // The one send gate. Refuses without the owner's explicit pick (approval "owner", set only by the owner's 보내기 route or an
 // approved ask) or an enabled per-source rule that matches; refuses a second send of the same comment unless the first one failed.
 export function dispatchReply(req: ReplyRequest, deps: GateDeps): GateResult {
 	const { store, now } = deps;
-	const refuse = (reason: string): GateResult => ({ ok: false, reason });
+	const refuse = (reason: string, code: string): GateResult => ({ ok: false, reason, code });
 	const draft: Draft | undefined = store.drafts().find(d => d.code === req.code);
-	if (!draft) return refuse("그 초안을 찾지 못했어요");
-	if (draft.status !== "pending") return refuse("이 초안은 더 이상 보낼 수 없어요");
+	if (!draft) return refuse("그 초안을 찾지 못했어요", "gone");
+	if (draft.status !== "pending") return refuse("이 초안은 더 이상 보낼 수 없어요", "gone");
 	const cfg = store.config();
 	const src = cfg.sources[draft.source];
-	if (!cfg.enabled || !src) return refuse("이 댓글 연동은 꺼져 있어요");
+	if (!cfg.enabled || !src) return refuse("이 댓글 연동은 꺼져 있어요", "app_off");
 	const comment = store.comments().find(c => c.id === draft.commentId);
-	if (!comment) return refuse("원댓글을 찾지 못했어요");
+	if (!comment) return refuse("원댓글을 찾지 못했어요", "original_gone");
 	const text = (req.text ?? draft.text).trim();
-	if (!text) return refuse("보낼 글이 비어 있어요");
+	if (!text) return refuse("보낼 글이 비어 있어요", "empty");
 	if (req.approval.by === "rule") {
 		const why = ruleRefusal(src, comment.text, draft, store.replies(), now());
-		if (why) return refuse(why);
-	} else if (req.approval.by !== "owner") return refuse("보내기 승인이 없어요");
+		if (why) return refuse(why, "not_approved");
+	} else if (req.approval.by !== "owner") return refuse("보내기 승인이 없어요", "not_approved");
 	const sendId = `send:${comment.id}`;
 	const prior = store.replies().find(r => r.id === sendId);
-	if (prior?.state === "unsure" && !(req.resend && req.approval.by === "owner")) return refuse("이 답글은 올라갔는지 확인이 필요해요. 다시 보내기나 완료를 골라 주세요");
-	if (deps.inflight.has(sendId) || prior?.state === "sending" || prior?.state === "sent") return refuse(prior?.state === "sent" ? "이미 답글을 보냈어요" : "이미 보내는 중이에요");
+	if (prior?.state === "unsure" && !(req.resend && req.approval.by === "owner")) return refuse("이 답글은 올라갔는지 확인이 필요해요. 다시 보내기나 완료를 골라 주세요", "needs_resolve");
+	if (deps.inflight.has(sendId) || prior?.state === "sending" || prior?.state === "sent") return prior?.state === "sent" ? refuse("이미 답글을 보냈어요", "already_sent") : refuse("이미 보내는 중이에요", "already_sending");
 	const adapter = deps.adapters[src.kind];
-	if (!adapter) return refuse("이 댓글 종류를 보낼 수 없어요");
+	if (!adapter) return refuse("이 댓글 종류를 보낼 수 없어요", "config");
+	if (comment.gone) return refuse(GONE_REASON, "original_gone");
+	if (answeredStored(store, comment, adapter)) return refuse(ANSWERED_REASON, "stale");
 	const record: Reply = { id: sendId, commentId: comment.id, source: src.key, thread: comment.thread, text, state: "sending", at: now(), draft: draft.code, via: req.approval.by, collector: deps.collector, ...(prior?.state === "failed" || prior?.state === "unsure" ? { attempts: (prior.attempts ?? 1) + 1 } : {}) };
 	deps.inflight.add(sendId);
-	store.putReply(record);
-	deps.onState?.(record);
-	const done = (async (): Promise<Reply> => {
-		let outcome: ReplyOutcome;
+	const done = (async (): Promise<Posted> => {
 		try {
-			outcome = await adapter.reply(src, comment, text, sendId);
-		} catch (e) {
-			outcome = { ok: false, reason: e instanceof Error && e.message ? e.message.slice(0, 200) : "보내는 중 오류가 났어요" };
+			const stop = adapter.recheck ? await platformStop({ adapter, src, comment, store, now, ...(deps.log ? { log: deps.log } : {}), sendId, ...(prior?.state === "unsure" ? { proves: prior.text } : {}) }) : undefined;
+			if (stop && prior?.state === "unsure") {
+				if (!stop.proved) return { ...prior, reason: stop.reason, code: stop.code };
+				const { reason: _reason, code: _code, ...up } = prior;
+				const sent: Reply = { ...up, state: "sent" };
+				store.putReply(sent);
+				store.setDraftStatus(draft.code, "sent");
+				deps.onState?.(sent);
+				return sent;
+			}
+			if (stop) {
+				const failed: Reply = { ...record, state: "failed", reason: stop.reason, code: stop.code };
+				store.putReply(failed);
+				deps.onState?.(failed);
+				return failed;
+			}
+			store.putReply(record);
+			deps.onState?.(record);
+			let outcome: ReplyOutcome;
+			let crashed = false;
+			try {
+				outcome = await adapter.reply(src, comment, text, sendId);
+			} catch (e) {
+				// A throw says nothing about whether the POST reached the platform.
+				crashed = true;
+				outcome = { ok: false, reason: UNKNOWN_REASON, code: "unknown", sent: "maybe", detail: e instanceof Error ? e.message : String(e) };
+			}
+			const detail = !outcome.ok && outcome.detail ? maskSecrets(outcome.detail.trim()).text.slice(0, DETAIL_MAX) : undefined;
+			if (!outcome.ok && detail) deps.log?.(`comments: ${sendId} post failed (${outcome.code ?? "unknown"}): ${detail}`);
+			const final: Reply = outcome.ok ? { ...record, state: "sent", ...(outcome.ref ? { ref: outcome.ref } : {}) } : { ...record, state: outcome.sent === "no" ? "failed" : "unsure", reason: outcome.reason, code: outcome.code ?? "unknown" };
+			store.putReply(final);
+			if (outcome.ok) store.setDraftStatus(draft.code, "sent");
+			deps.onState?.(final);
+			return detail && !crashed ? { ...final, detail } : final;
+		} finally {
+			deps.inflight.delete(sendId);
 		}
-		deps.inflight.delete(sendId);
-		const final: Reply = outcome.ok ? { ...record, state: "sent", ...(outcome.ref ? { ref: outcome.ref } : {}) } : { ...record, state: "failed", reason: outcome.reason };
-		store.putReply(final);
-		if (outcome.ok) store.setDraftStatus(draft.code, "sent");
-		deps.onState?.(final);
-		return final;
 	})();
 	return { ok: true, reply: record, done };
 }

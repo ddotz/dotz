@@ -7,6 +7,7 @@ import { homedir } from "node:os";
 import { join, relative, resolve } from "node:path";
 import { bunBin, embedPending, loadEmbedder, MODEL_NAME, modelReady, notReadyReason, provision, vectorCount } from "./recall-embed.ts";
 import { daysDir } from "./day-note-format.ts";
+import { ompSessionsDir } from "./omp-dirs.ts";
 import { secretFileValues } from "./public-scrub.ts";
 import { forget, indexPath, ingest, openRecall } from "./recall-index.ts";
 import { provisionRerank, rerankHits, rerankReady, RERANK_NAME, RERANK_POOL } from "./recall-rerank.ts";
@@ -16,7 +17,7 @@ const REPO = resolve(import.meta.dir, "..");
 const DATA_DIR = process.env.DOTZ_DIR ?? join(homedir(), ".dotz");
 const sessionDirs = (): string[] => [
 	join(process.env.OMO_CODING_AGENT_DIR ?? process.env.PI_AGENT_DIR ?? join(homedir(), ".omo", "agent"), "sessions"),
-	join(homedir(), ".omp", "agent", "sessions"),
+	ompSessionsDir(),
 ];
 const fail = (msg: string): never => {
 	console.error(`recall: ${msg}`);

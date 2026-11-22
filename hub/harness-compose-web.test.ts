@@ -150,7 +150,7 @@ test("1280px: opening an item's drawer lies over the flow and leaves the cards a
 	const widths = `return [...$("#harness").querySelectorAll(".hm-simple > .hm-st")].map(c => Math.round(c.getBoundingClientRect().width))`;
 	const before = await q<number[]>(v, widths);
 	await run(v, `openHSheet("gateway")`);
-	await waitFor(v, `!$("#hsheet").hidden && $("#harness").classList.contains("hs-open")`);
+	await waitFor(v, `!$("#sheet").hidden && $("#harness").classList.contains("hs-open")`);
 	expect(await q<number[]>(v, widths)).toEqual(before);
 	v.close();
 });

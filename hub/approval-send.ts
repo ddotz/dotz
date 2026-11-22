@@ -14,25 +14,53 @@
 // Cancel window: unless the window is 0 (web.send_undo_sec), an approved send waits that long as `undo` before it is queued. The job is kept (approved at, window) in the same
 // file; `cancel` inside the window never runs the send, `revoke` writes the owner's cancel into the inbox (the CLIs' own gate then refuses the old 보내기) and the card is
 // back to waiting for approval. A restart inside the window never sends by itself: the job comes back as `back` (told once, on the card) and waits for a new 보내기.
-// Only a send that starts here is delayed: a CLI an agent runs by hand after the owner's approval does not pass through this file.
+// A CLI run by hand cannot cut the window short either (qa-clean-7 N13), nor send while this gateway is down across its end (qa-clean-8 N14): `enqueue`
+// hands its caller the window's end before anything is queued, his pick carries it (`until`), and the CLIs' gate (hub/draft-approval.ts draftVerdict)
+// answers `waiting` for such a pick until `mark` seals `go`, which this sender does right before each run it starts, never by the clock alone.
 //
-// Refs the gateway does not know (a card the bot wrote by hand, a KakaoTalk draft, a 직접 입력 pick) still go to the bot as before.
+// One go, one run (qa-clean-7 N13, qa-clean-8 N15): a run that ends failed or unsure seals `spent`, so no CLI can send on it again; each later run here
+// (the owner's 다시 보내기, code's own retry) seals a new `go`; and the mail CLI keeps the `go` its run went under beside its claim, so a run killed
+// mid-send leaves no `go` a takeover (`--retry`) can use again (features/reply-drafts/lib/flow.ts). The marks are sealed inbox lines, not state of this
+// process, because the CLIs that must honour them run in other processes and read only the inbox.
+//
+// Refs the gateway does not know (a card the bot wrote by hand, a 직접 입력 pick) still go to the bot as before.
+//
+// How a send ended (the reply unification design, 1.5 and 1.11): `sent`, `failed` (surely not sent, with a reason code) or `unsure` (may have
+// gone out). A CLI says it with one `DOTZ_SEND {...}` stdout line, printed right after the transport answered; without one, exit 0 is sent and any
+// other exit may have gone out. The last stderr line is never shown: the owner reads the reason's plain text (hub/reply-reasons.ts). Every send
+// that is not finished stays in the file, `failed` and `unsure` too, so a restart forgets none and a second approval of an unsure one sends
+// nothing. Code retries a `failed` send by itself only as its reason's policy allows (section 2.4); it never sends an `unsure` one again:
+// only the owner's `force` (다시 보내기 after 확인 필요) does.
+//
+// The one approval gate (owner rule 2026-11-16: what goes out is exactly the version he saw when he pressed 보내기): every job carries the
+// `approvalHash` of the draft as his act read it, and immediately before any run (the first, code's own retry, his 다시 보내기, a force) the draft
+// is read again; a different version ends `failed` with `changed`, nothing sent and no retry by code, and his pick is taken back (`revoke`), so no
+// CLI run can send on it either. Code's own repair (a "Re:" subject) that changes the version ends the same way: he approves the repaired one.
 import { join } from "node:path";
-import { draftActionOf } from "./draft-approval.ts";
+import { approvalHash, draftActionOf } from "./draft-approval.ts";
+import { isReasonCode, partialReason, policyOf, reasonOf } from "./reply-reasons.ts";
+import type { Reason, ReasonCode, ReplyAdapter, SendOutcome } from "./reply-types.ts";
 import { runLimited } from "./run-limited.ts";
 
-export type SendKind = "comment" | "mail";
+export type SendKind = "comment" | "mail" | "kakao";
 /** What the gateway knows of a ref: which CLI sends it, and the place it goes to (sends to one place stay in order). */
 export type SendTarget = { kind: SendKind; lane: string };
 export type SendAction = "send" | "send-main" | "send-mail" | "send-as-is";
-/** `retry`: the owner pressed 다시 보내기 (the mail CLI then takes over a claim a dead sender left, features/reply-drafts/lib/flow.ts sendDraft). */
-export type SendJob = { ref: string; conv: string; action: SendAction; title: string; retry?: true };
+/** `retry`: the owner pressed 다시 보내기 on a failed send (no cancel window). `force`: his 다시 보내기 after 확인 필요: it may send an unsure one again and the mail CLI takes over a claim a dead sender left (features/reply-drafts/lib/flow.ts sendDraft). */
+/** `hash`: the approvalHash of the version the owner approved. `by`: his own act, or code's retry of one; nothing else may queue a send. */
+export type SendJob = { ref: string; conv: string; action: SendAction; title: string; retry?: true; force?: true; hash?: string; by?: "owner" | "auto" };
 /** What is known of a job that was sending when the gateway stopped. */
 export type SendLook = { state: "sent" } | { state: "alive" } | { state: "failed" | "unsure"; text: string };
 type Hold = { approvedAt: number; wait: number };
-type Kept = SendJob & { state: "queued" | "sending" | "undo" } & Partial<Hold>;
-/** `undo`: approved, inside the cancel window (`until`); `back`: not sent, the draft waits for approval again (cancelled, or the gateway restarted in the window). */
-export type SendResult = { ref: string; conv: string; title: string; state: "undo" | "queued" | "sending" | "sent" | "failed" | "unsure" | "back"; text: string; at: number; until?: number };
+/** Code's own next attempt of a failed send: which one, of how many, and when. */
+const PROVE_EVERY_MS = 10 * 60_000;
+export type AutoRetry = { attempt: number; max: number; nextAt: number };
+/** `detail`: what the place itself answered to the last try (hub/reply-types.ts SendOutcome), kept with the job, never shown on a card. */
+type Ended = { reason?: Reason; safeToAuto?: boolean; auto?: AutoRetry; attempts?: number; detail?: string; cause?: "cancel" | "restart" };
+type Kept = SendJob & { state: "queued" | "sending" | "undo" | "failed" | "unsure" } & Partial<Hold> & Ended;
+/** `undo`: approved, inside the cancel window (`until`); `back`: not sent, the draft waits for approval again (cancelled, or the gateway restarted in the window).
+ * `failed` is surely not sent, `unsure` may have gone out; both carry `reason`, and `text` is its plain Korean for today's readers. */
+export type SendResult = { ref: string; conv: string; title: string; state: "undo" | "queued" | "sending" | "sent" | "failed" | "unsure" | "back"; text: string; at: number; until?: number } & Ended;
 export const UNDONE = "보내기를 취소했어요. 보내려면 다시 보내기를 눌러 주세요";
 export const RETURNED_ON_RESTART = "게이트웨이가 다시 시작돼서 보내지 않았어요. 보내려면 다시 보내기를 눌러 주세요";
 
@@ -43,6 +71,9 @@ export function sendActionOf(label: string): SendAction | undefined {
 	const a = draftActionOf(label);
 	return a === "send" || a === "send-main" || a === "send-mail" || a === "send-as-is" ? a : undefined;
 }
+
+/** The one fingerprint (hub/draft-approval.ts approvalHash), for the gateway's modules that read it with the queue. */
+export { approvalHash };
 
 /** The ref in a decision question's trailing "(<ref>)". */
 export const refOfQuestion = (q: string): string | undefined => /\(([A-Za-z0-9][A-Za-z0-9_.:-]{1,63})\)\s*$/.exec(q)?.[1];
@@ -55,6 +86,14 @@ export function sendArgv(kind: SendKind, ref: string, action: SendAction, bun = 
 }
 
 export type SenderDeps = {
+	/** An in-process sender for `job` (used before the CLI; a kind with no CLI, KakaoTalk, needs one). */
+	runJob?: (job: SendJob & { kind: SendKind }) => ReturnType<NonNullable<ReplyAdapter["run"]>> | undefined;
+	/** The approvalHash of draft `ref` as its store holds it now (undefined: no store knows it). Absent: no approval gate (tests of the queue alone). */
+	fingerprint?: (ref: string) => Promise<string | undefined>;
+	/** Code repair before an automatic retry whose policy asks for one (a background re-login). Absent: such a reason is never retried by code. */
+	repair?: (job: SendJob, code: ReasonCode) => Promise<"fixed" | "needs_owner" | "failed">;
+	/** Proof read back for an unsure send: it can say "sent", never "not sent". */
+	prove?: (job: SendJob) => Promise<"sent" | "unknown">;
 	/** Which store knows `ref` (undefined = the gateway cannot send it). */
 	kind: (ref: string, action?: SendAction) => SendTarget | undefined;
 	/** `timedOut`: the command was killed at its limit, so it may have sent before that (the job ends `unsure`, never `failed`). */
@@ -65,14 +104,16 @@ export type SenderDeps = {
 	now?: () => number;
 	/** Where the queued and sending jobs are kept between runs (a JSON array); without it a restart forgets them. */
 	store?: { load: () => unknown[]; save: (body: string) => void };
-	/** Judges a job that was sending when the gateway stopped (default: it may have gone out). */
+	/** Judges a job that was sending when the gateway stopped (default: unsure, it may have gone out). */
 	look?: (j: SendJob) => SendLook;
 	/** The cancel window in ms, read when a send is approved (0 or absent = off: the send starts at once). */
 	undoMs?: () => number;
 	/** Calls `fn` after `ms` (default: a timer that does not keep the process alive). */
 	after?: (ms: number, fn: () => void) => void;
-	/** A job in the window is not going out (cancelled, or the gateway restarted): take back the owner's 보내기 so nothing can send it until he approves again. */
-	revoke?: (j: SendJob, why: "cancel" | "restart") => void;
+	/** A job is not going out (cancelled or restarted in the window, or refused `changed`): take back the owner's 보내기 so nothing can send it until he approves again. */
+	revoke?: (j: SendJob, why: "cancel" | "restart" | "changed") => void;
+	/** Seals a mark on the job's pick for the CLIs' gate: `go` right before each run, `spent` once a run ended failed or unsure. */
+	mark?: (j: SendJob, mark: "spent" | "go") => void;
 };
 
 const timerAfter = (ms: number, fn: () => void): void => void (setTimeout(fn, ms) as { unref?: () => void }).unref?.();
@@ -81,8 +122,6 @@ export const MAY_HAVE_GONE_OUT = "게이트웨이가 멈추면서 보내던 중�
 
 // Killing a send in the middle is worse than waiting (it may have gone out already): this only catches a sender that hangs for good.
 export const SEND_CLI_MS = 15 * 60_000;
-/** The reason of a send that was stopped at SEND_CLI_MS (the minutes come from the constant). */
-export const sendTimedOut = (): string => `보내는 데 ${SEND_CLI_MS / 60_000}분이 넘어 멈췄어요. 이미 나갔을 수 있으니 보낸 것을 확인한 뒤, 안 나갔을 때만 다시 보내기를 눌러 주세요`;
 
 const KEEP = 200;
 
@@ -107,39 +146,46 @@ export function createApprovalSender(deps: SenderDeps) {
 	};
 	// Jobs left sending by an earlier run whose sender may still be running: checked again by `recheck`.
 	const orphans = new Map<string, SendJob>();
-	const set = (j: SendJob, state: SendResult["state"], text = "", hold?: Hold) => {
-		if (state === "queued" || state === "sending" || state === "undo") kept.set(j.ref, { ref: j.ref, conv: j.conv, action: j.action, title: j.title, ...(j.retry ? { retry: true as const } : {}), state, ...(hold ?? {}) });
+	// `gone`: the draft is no longer pending, so there is nothing left to resolve and the file does not keep it.
+	const set = (j: SendJob, state: SendResult["state"], text = "", hold?: Hold, ended: Ended = {}, quiet = false) => {
+		if ((state === "failed" || state === "unsure") && !spentAlready(kept.get(j.ref)?.state)) gateMark(deps, j, "spent");
+		const keep = state === "queued" || state === "sending" || state === "undo" || ((state === "failed" || state === "unsure") && ended.reason?.code !== "gone");
+		if (keep) kept.set(j.ref, { ref: j.ref, conv: j.conv, action: j.action, title: j.title, ...(j.retry ? { retry: true as const } : {}), ...(j.force ? { force: true as const } : {}), ...(j.hash ? { hash: j.hash } : {}), ...(j.by ? { by: j.by } : {}), state, ...(hold ?? {}), ...ended });
 		else kept.delete(j.ref);
 		persist();
-		const r: SendResult = { ref: j.ref, conv: j.conv, title: j.title, state, text, at: now(), ...(hold ? { until: hold.approvedAt + hold.wait } : {}) };
+		const r: SendResult = { ref: j.ref, conv: j.conv, title: j.title, state, text, at: now(), ...(hold ? { until: hold.approvedAt + hold.wait } : {}), ...ended };
 		results.delete(j.ref);
 		results.set(j.ref, r);
-		// The oldest finished result goes: a queued, sending or undo one is what stops a second approval (enqueue), so it stays however many wait.
-		if (results.size > KEEP) for (const [ref, old] of results) if (old.state !== "queued" && old.state !== "sending" && old.state !== "undo") { results.delete(ref); break; }
-		deps.report(r);
+		// The oldest finished result goes: one the file still keeps (waiting, sending, failed, unsure) is what a second approval is checked against, so it stays however many wait.
+		if (results.size > KEEP) for (const [ref, old] of results) if (!kept.has(ref)) { results.delete(ref); break; }
+		if (!quiet) tell(deps, r);
 	};
+	const attempts = (ref: string): number => kept.get(ref)?.attempts ?? 0;
 
 	/** Can the gateway send this pick itself? */
 	const can = (ref: string, action: SendAction | undefined): boolean => {
 		const t = action ? deps.kind(ref, action) : undefined;
-		return !!t && !!sendArgv(t.kind, ref, action!);
+		return !!t && (!!sendArgv(t.kind, ref, action!) || (!!deps.runJob && t.kind === "kakao"));
 	};
 
 	// Approved sends inside the cancel window, by draft ref.
 	const pending = new Map<string, { j: SendJob; t: SendTarget; until: number }>();
 
-	/** Queues one approved send (after the cancel window, unless `hold` is false or it is a 다시 보내기); false when the gateway cannot send it; a draft already in the window, queued, sending or sent sends nothing more. */
-	function enqueue(j: SendJob, o: { hold?: false } = {}): boolean {
-		const t = deps.kind(j.ref, j.action);
-		if (!t || !sendArgv(t.kind, j.ref, j.action)) return false;
-		const st = results.get(j.ref)?.state;
-		if (st === "undo" || st === "queued" || st === "sending" || st === "sent" || st === "unsure") {
+	/** Queues one approved send (after the cancel window, unless `hold` is false or it is a 다시 보내기), first handing `approved` its start (the window's end, or now); false when the gateway cannot send it; a draft already in the window, queued, sending or sent sends nothing more. */
+	function enqueue(j: SendJob, o: { hold?: false } = {}, approved?: (until: number) => void): boolean {
+		if (!can(j.ref, j.action)) return false;
+		const t = deps.kind(j.ref, j.action)!;
+		// The file, not memory, says what is unfinished: an unsure send survives a restart and only the owner's force sends it again.
+		const st = kept.get(j.ref)?.state ?? results.get(j.ref)?.state;
+		if (st === "undo" || st === "queued" || st === "sending" || st === "sent" || (st === "unsure" && !j.force)) {
 			deps.log(`approved send ${j.ref} in ${j.conv} is already ${st}; the second approval sends nothing`);
 			return true;
 		}
-		const wait = o.hold === false || j.retry ? 0 : Math.max(0, deps.undoMs?.() ?? 0);
+		autoAt.delete(j.ref);
+		const wait = o.hold === false || j.retry || j.force ? 0 : Math.max(0, deps.undoMs?.() ?? 0);
+		const approvedAt = now();
+		approved?.(approvedAt + wait);
 		if (wait > 0) {
-			const approvedAt = now();
 			pending.set(j.ref, { j, t, until: approvedAt + wait });
 			set(j, "undo", "", { approvedAt, wait });
 			(deps.after ?? timerAfter)(wait, tick);
@@ -160,16 +206,19 @@ export function createApprovalSender(deps: SenderDeps) {
 
 	/** A job in the window will not be sent: the owner's pick is taken back, then the card waits for approval again. */
 	function back(j: SendJob, why: "cancel" | "restart"): void {
-		try {
-			deps.revoke?.(j, why);
-		} catch (e) {
-			deps.log(`approved send ${j.ref}: the cancel was not written to the inbox: ${(e as Error).message}`);
-		}
-		set(j, "back", why === "cancel" ? UNDONE : RETURNED_ON_RESTART);
+		takeBack(deps, j, why);
+		set(j, "back", why === "cancel" ? UNDONE : RETURNED_ON_RESTART, undefined, { cause: why });
+	}
+	/** The gate refused `j` before it ran: nothing sent, no retry by code; a `changed` one also loses the pick it was approved with. */
+	function refuse(j: SendJob, code: ReasonCode, tries: number | undefined): void {
+		const reason = reasonOf(code);
+		deps.log(`approved send ${j.ref} in ${j.conv}: not sent, ${code}`);
+		if (code === "changed") takeBack(deps, j, "changed");
+		set(j, "failed", reason.text, undefined, { reason, safeToAuto: false, attempts: tries });
 	}
 
-	function start(j: SendJob, t: SendTarget): void {
-		set(j, "queued");
+	function start(j: SendJob, t: SendTarget, ended: Ended = {}): void {
+		set(j, "queued", "", undefined, { attempts: ended.attempts ?? attempts(j.ref) });
 		const lane = lanes.get(t.lane);
 		if (lane) lane.jobs.push({ ...j, kind: t.kind });
 		else {
@@ -177,50 +226,133 @@ export function createApprovalSender(deps: SenderDeps) {
 			lanes.set(t.lane, l);
 			l.run = drain(t.lane, l.jobs);
 		}
-		return true;
 	}
 
 	// The lane is dropped in the same tick its last job is taken, so a job queued later always starts a new runner.
-	async function drain(key: string, jobs: (SendJob & { kind: SendKind })[]): Promise<void> {
+	async function drainJobs(key: string, jobs: (SendJob & { kind: SendKind })[]): Promise<void> {
 		for (let j = jobs.shift(); j; j = jobs.shift() ?? (lanes.delete(key), undefined)) {
-			const argv = sendArgv(j.kind, j.ref, j.action, process.execPath, j.retry === true)!;
-			set(j, "sending");
-			let r: { code: number; out: string; timedOut?: boolean };
-			try {
-				r = await deps.run(argv);
-			} catch (e) {
-				r = { code: 1, out: (e as Error).message };
+			const refusal = deps.fingerprint ? await unapproved(deps, j) : undefined;
+			if (refusal) {
+				refuse(j, refusal, attempts(j.ref));
+				continue;
 			}
-			const line = r.out.trim().split("\n").filter(Boolean).slice(-1)[0] ?? "";
-			deps.log(`approved send ${j.ref} in ${j.conv}: exit ${r.code}${line ? ` (${line.slice(0, 200)})` : ""}`);
-			if (r.timedOut) set(j, "unsure", sendTimedOut());
-			else set(j, r.code === 0 ? "sent" : "failed", line.slice(0, 500));
+			const tries = attempts(j.ref) + 1;
+			const auto = kept.get(j.ref)?.auto;
+			set(j, "sending", "", undefined, { attempts: tries, ...(auto ? { auto } : {}) });
+			gateMark(deps, j, "go");
+			let o: SendOutcome | MailLeft;
+			try {
+				o = await runOne(j);
+			} catch (e) {
+				// The sender itself broke: nobody can say the send did not leave.
+				deps.log(`approved send ${j.ref} in ${j.conv} threw: ${(e as Error).stack ?? (e as Error).message}`);
+				o = { sent: "maybe", code: "unknown" };
+			}
+			ended(j, o, tries);
+		}
+	}
+	const drain = (key: string, jobs: (SendJob & { kind: SendKind })[]): Promise<void> =>
+		drainJobs(key, jobs)
+			.catch(e => deps.log(`approved sends in ${key}: the queue stopped: ${(e as Error).stack ?? (e as Error).message}`))
+			.finally(() => lanes.get(key)?.jobs === jobs && lanes.delete(key));
+
+	async function runOne(j: SendJob & { kind: SendKind }): Promise<SendOutcome | MailLeft> {
+		const inProcess = deps.runJob?.(j);
+		if (inProcess) return inProcess;
+		const argv = sendArgv(j.kind, j.ref, j.action, process.execPath, j.force === true);
+		if (!argv) return { sent: "no", code: "not_supported" };
+		const r = await deps.run(argv);
+		const o = outcomeOf(r);
+		deps.log(`approved send ${j.ref} in ${j.conv}: exit ${r.code}, ${o.sent}${"code" in o ? ` ${o.code}` : ""}${r.code !== 0 ? ` (${lastLine(r.out).slice(0, 200)})` : ""}${"detail" in o && o.detail ? `; it said: ${o.detail}` : ""}`);
+		return o;
+	}
+
+	// One send ended: sent, surely not sent (retried by code when its policy allows) or may have gone out.
+	function ended(j: SendJob, o: SendOutcome | MailLeft, tries: number): void {
+		if (o.sent === "yes") return set(j, "sent");
+		const reason = o.sent === "partial" ? ("mail" in o ? { code: o.code, text: `답글은 올렸고 메일은 못 보냈어요: ${o.mail}` } : partialReason(o)) : reasonOf(o.code, o.sent === "no" ? o.vars : {});
+		const said = "detail" in o && o.detail ? { detail: o.detail } : {};
+		if (o.sent === "maybe" || (o.sent === "partial" && o.rest === "maybe")) return set(j, "unsure", reason.text, undefined, { reason, attempts: tries, ...said });
+		const p = policyOf(reason.code).auto;
+		const auto = p && (!p.repair || deps.repair) && !j.force ? p : undefined;
+		const done = j.retry || j.force ? 0 : (kept.get(j.ref)?.auto?.attempt ?? 0);
+		if (!auto || done >= auto.max) return set(j, "failed", reason.text, undefined, { reason, safeToAuto: false, attempts: tries, ...said });
+		const next: AutoRetry = { attempt: done + 1, max: auto.max, nextAt: now() + (auto.waits[done] ?? auto.waits.at(-1) ?? 0) };
+		set(j, "failed", reason.text, undefined, { reason, safeToAuto: true, auto: next, attempts: tries, ...said });
+		schedule(j, next);
+	}
+
+	// An automatic attempt: after its wait, the repair its reason asks for (a failed repair ends it for the owner), then the whole send again
+	// with no cancel window and no new approval. The lane is not held while it waits.
+	const autoAt = new Map<string, number>();
+	// A channel is read back for an unsure send at most once in PROVE_EVERY_MS (the sweep runs far more often).
+	const provedAt = new Map<string, number>();
+	function schedule(j: SendJob, next: AutoRetry): void {
+		autoAt.set(j.ref, next.nextAt);
+		(deps.after ?? timerAfter)(Math.max(0, next.nextAt - now()), () => void retryNow(j, next));
+	}
+	async function retryNow(j: SendJob, next: AutoRetry): Promise<void> {
+		const k = kept.get(j.ref);
+		if (autoAt.get(j.ref) !== next.nextAt || k?.state !== "failed" || !k.reason) return;
+		autoAt.delete(j.ref);
+		const t = deps.kind(j.ref, j.action);
+		if (!t) return set(j, "failed", k.reason.text, undefined, { reason: k.reason, safeToAuto: false, attempts: k.attempts });
+		if (policyOf(k.reason.code).auto?.repair) {
+			// A draft changed since the owner's 보내기 is not repaired into a send.
+			const refusal = await unapproved(deps, j);
+			if (refusal) return refuse(j, refusal, k.attempts);
+			let fixed: "fixed" | "needs_owner" | "failed";
+			try {
+				fixed = (await deps.repair?.(j, k.reason.code)) ?? "failed";
+			} catch (e) {
+				deps.log(`approved send ${j.ref}: repair for ${k.reason.code} threw: ${(e as Error).message}`);
+				fixed = "failed";
+			}
+			if (fixed !== "fixed") return set(j, "failed", k.reason.text, undefined, { reason: k.reason, safeToAuto: false, attempts: k.attempts });
+			// A repair that left the approved version as it was (a re-login) goes on; one that changed it (a "Re:" subject) is a version the owner
+			// never saw: nothing is sent and he approves the repaired one (the gate below would refuse it too; this says so before queueing).
+			const after = await unapproved(deps, j);
+			if (after) return refuse(j, after, k.attempts);
+		}
+		const { retry: _r, force: _f, ...rest } = j;
+		const plain: SendJob = { ...rest, by: "auto" };
+		set(plain, "queued", "", undefined, { attempts: k.attempts, auto: next });
+		const lane = lanes.get(t.lane);
+		if (lane) lane.jobs.push({ ...plain, kind: t.kind });
+		else {
+			const l = { jobs: [{ ...plain, kind: t.kind }], run: Promise.resolve() };
+			lanes.set(t.lane, l);
+			l.run = drain(t.lane, l.jobs);
 		}
 	}
 
-	const look = (j: SendJob): SendLook => deps.look?.(j) ?? { state: "failed", text: MAY_HAVE_GONE_OUT };
+	const look = (j: SendJob): SendLook => deps.look?.(j) ?? { state: "unsure", text: MAY_HAVE_GONE_OUT };
 	function settleLeft(j: SendJob): void {
 		const l = look(j);
 		if (l.state === "alive") {
 			orphans.set(j.ref, j);
-			set(j, "sending");
+			set(j, "sending", "", undefined, { attempts: attempts(j.ref) });
 		} else {
 			orphans.delete(j.ref);
-			set(j, l.state, l.state === "sent" ? "" : l.text);
+			if (l.state === "sent") set(j, "sent");
+			else {
+				const reason: Reason = { code: l.state === "unsure" ? "interrupted" : "tool_before_send", text: l.text };
+				set(j, l.state, l.text, undefined, { reason, attempts: attempts(j.ref), ...(l.state === "failed" ? { safeToAuto: false } : {}) });
+			}
 		}
 	}
 	let recovered = false;
 
 	return {
 		can,
-		enqueue: (j: SendJob) => enqueue(j),
+		enqueue: (j: SendJob, approved?: (until: number) => void) => enqueue(j, {}, approved),
 		/** Once, on boot: takes up the jobs the file kept (see the top of this file). */
 		recover: () => {
 			if (recovered || !deps.store) return;
 			recovered = true;
 			let left: Kept[];
 			try {
-				left = deps.store.load().filter((x): x is Kept => !!x && typeof x === "object" && typeof (x as Kept).ref === "string" && typeof (x as Kept).conv === "string" && typeof (x as Kept).title === "string" && ["send", "send-main", "send-mail", "send-as-is"].includes((x as Kept).action) && ((x as Kept).state === "queued" || (x as Kept).state === "sending" || (x as Kept).state === "undo"));
+				left = deps.store.load().filter((x): x is Kept => !!x && typeof x === "object" && typeof (x as Kept).ref === "string" && typeof (x as Kept).conv === "string" && typeof (x as Kept).title === "string" && ["send", "send-main", "send-mail", "send-as-is"].includes((x as Kept).action) && ["queued", "sending", "undo", "failed", "unsure"].includes((x as Kept).state));
 			} catch (e) {
 				deps.log(`approved sends: the job file is unreadable: ${(e as Error).message}`);
 				return;
@@ -228,17 +360,39 @@ export function createApprovalSender(deps: SenderDeps) {
 			// All of them stay in the file until each is settled, so a stop in the middle of this loop loses none.
 			for (const k of left) kept.set(k.ref, k);
 			saved = JSON.stringify(left);
-			for (const { state, approvedAt: _a, wait: _w, ...j } of left) {
-				if (state === "undo") back(j, "restart");
+			persist();
+			for (const { state, approvedAt: _a, wait: _w, reason, safeToAuto, auto, attempts: tries, detail, ...j } of left) {
+				// A failed or unsure send is shown again as it was; a failed one's automatic attempt keeps its schedule.
+				if ((state === "failed" || state === "unsure") && reason && isReasonCode(reason.code)) {
+					set(j, state, reason.text, undefined, { reason, attempts: tries ?? 0, ...(detail ? { detail } : {}), ...(state === "failed" ? { safeToAuto: safeToAuto === true, ...(auto ? { auto } : {}) } : {}) }, true);
+					if (state === "failed" && safeToAuto && auto) schedule(j, auto);
+				} else if (state === "failed" || state === "unsure") kept.delete(j.ref);
+				else if (state === "undo") back(j, "restart");
 				else if (state === "sending") settleLeft(j);
 				else if (look(j).state === "sent") set(j, "sent");
-				else if (!enqueue(j, { hold: false })) set(j, "failed", "보내기로 한 초안을 더 이상 보낼 수 없어요. 이미 처리됐는지 확인해 주세요");
+				else {
+					// Queued again as a fresh job: its own kept row must not read as a second approval.
+					kept.delete(j.ref);
+					if (!enqueue(j, { hold: false })) {
+						const reason = reasonOf("gone");
+						set(j, "failed", reason.text, undefined, { reason, safeToAuto: false, attempts: tries ?? 0 });
+					}
+				}
 			}
 		},
 		/** Checks again the jobs a boot found still running. */
 		recheck: () => {
 			tick();
 			for (const j of [...orphans.values()]) settleLeft(j);
+			// An unsure send proved by reading the channel back is sent; proof never says "not sent".
+			if (deps.prove) for (const k of [...kept.values()].filter(x => x.state === "unsure" && now() - (provedAt.get(x.ref) ?? -Infinity) >= PROVE_EVERY_MS)) {
+				provedAt.set(k.ref, now());
+				const j: SendJob = { ref: k.ref, conv: k.conv, action: k.action, title: k.title };
+				void deps.prove(j).then(
+					p => void (p === "sent" && kept.get(k.ref)?.state === "unsure" && set(j, "sent")),
+					e => deps.log(`approved send ${k.ref}: read-back failed: ${(e as Error).message}`),
+				);
+			}
 		},
 		/** The owner's cancel: "cancelled" while the job is inside its window (the send function is never called), "late" once it started or went out, "none" for a draft this sender does not hold. */
 		cancel: (ref: string): "cancelled" | "late" | "none" => {
@@ -253,7 +407,16 @@ export function createApprovalSender(deps: SenderDeps) {
 			return "cancelled";
 		},
 		/** An unsure job got its answer (proof read back, the owner's pick, its old sender finished). */
-		settle: (j: SendJob, state: "sent" | "failed", text = "") => set(j, state, text),
+		settle: (j: SendJob, state: "sent" | "failed", text = "") => (state === "sent" ? set(j, "sent") : set(j, "failed", text, undefined, { reason: { code: "tool_before_send", text }, safeToAuto: false, attempts: attempts(j.ref) })),
+		forget: (ref: string): boolean => {
+			const st = kept.get(ref)?.state ?? results.get(ref)?.state;
+			if (st !== "failed" && st !== "unsure") return false;
+			autoAt.delete(ref);
+			kept.delete(ref);
+			results.delete(ref);
+			persist();
+			return true;
+		},
 		/** The latest state of each recent job (in `conv`, or everywhere), oldest first. */
 		results: (conv?: string) => [...results.values()].filter(r => conv === undefined || r.conv === conv),
 		/** Resolves when every queued send is done (tests, shutdown). */
@@ -263,10 +426,104 @@ export function createApprovalSender(deps: SenderDeps) {
 	};
 }
 
+function tell(deps: Pick<SenderDeps, "report" | "log">, r: SendResult): void {
+	try {
+		deps.report(r);
+	} catch (e) {
+		deps.log(`approved send ${r.ref} in ${r.conv}: the ${r.state} report was not written: ${(e as Error).message}`);
+	}
+}
+// The owner's 보내기 of a job that will not go out is taken back in the inbox, so no CLI can send on it either.
+function takeBack(deps: Pick<SenderDeps, "revoke" | "log">, j: SendJob, why: "cancel" | "restart" | "changed"): void {
+	try {
+		deps.revoke?.(j, why);
+	} catch (e) {
+		deps.log(`approved send ${j.ref}: the cancel was not written to the inbox: ${(e as Error).message}`);
+	}
+}
+// A job that ends failed or unsure spends its pick once: one shown again in that state (a boot, a settle) was marked when it first ended there.
+const spentAlready = (was: string | undefined): boolean => was === "failed" || was === "unsure";
+// Every run of this sender is marked `go` right before it starts (the CLI gate counts a held pick only from then on, so a gateway that is down
+// lets no CLI send on it); a run that ends failed or unsure marks it `spent`.
+function gateMark(deps: Pick<SenderDeps, "mark" | "log">, j: SendJob, mark: "spent" | "go"): void {
+	try {
+		deps.mark?.(j, mark);
+	} catch (e) {
+		deps.log(`approved send ${j.ref}: the ${mark} mark was not written to the inbox: ${(e as Error).message}`);
+	}
+}
+// The draft's fingerprint as its store holds it now; undefined when no store knows it (or there is no gate), null when it could not be read.
+async function current(deps: Pick<SenderDeps, "fingerprint" | "log">, ref: string): Promise<string | undefined | null> {
+	try {
+		return await deps.fingerprint?.(ref);
+	} catch (e) {
+		deps.log(`approved send ${ref}: its draft could not be read: ${(e as Error).message}`);
+		return null;
+	}
+}
+/** Why `j` must not run now (the one gate, see the top of this file), or undefined when it carries the version the store holds. */
+async function unapproved(deps: Pick<SenderDeps, "fingerprint" | "log">, j: SendJob): Promise<ReasonCode | undefined> {
+	if (!deps.fingerprint) return undefined;
+	const now = await current(deps, j.ref);
+	if (now === null) return "tool_before_send";
+	if (now === undefined) return "gone";
+	return now === j.hash ? undefined : "changed";
+}
+
+const lastLine = (out: string): string => out.trim().split("\n").filter(Boolean).slice(-1)[0] ?? "";
+// A CLI's `detail` is another process's text: bounded here, whatever it printed.
+const DETAIL_MAX = 300;
+const OUT_TAIL = 4000;
+const SENT = new Set(["yes", "no", "maybe"]);
+
+/** A comment reply that went up while its mail did not: `mail` is the mail's own reason, as the CLI printed it. */
+export type MailLeft = Extract<SendOutcome, { sent: "partial" }> & { mail: string };
+type SendLine = { sent?: unknown; code?: unknown; vars?: unknown; detail?: unknown; part?: unknown };
+
+function sendLines(out: string): SendLine[] {
+	const said: SendLine[] = [];
+	for (const l of out.split("\n").filter(x => x.startsWith("DOTZ_SEND "))) {
+		let v: SendLine | null;
+		try {
+			v = JSON.parse(l.slice("DOTZ_SEND ".length)) as SendLine | null;
+		} catch {
+			v = null;
+		}
+		if (v && typeof v === "object") said.push(v);
+	}
+	return said;
+}
+const detailOf = (said: SendLine): string | undefined => (typeof said.detail === "string" && said.detail.trim() ? said.detail.trim().slice(0, DETAIL_MAX) : undefined);
+
+/** How a CLI send ended (design 1.11): timed out is unsure; the `DOTZ_SEND` lines decide (the last one, but a reply line "yes" followed by a mail line that is not "yes" is a reply posted and a mail left, with the mail's reason; a "yes" wins over a non-zero exit); without one, exit 0 is sent and anything else may have gone out. */
+export function outcomeOf(r: { code: number; out: string; timedOut?: boolean }): SendOutcome | MailLeft {
+	if (r.timedOut) return { sent: "maybe", code: "timeout" };
+	const lines = sendLines(r.out).filter(x => SENT.has(String(x.sent)));
+	const mail = lines.find(x => x.part === "mail" && x.sent !== "yes");
+	if (mail && lines.some(x => x.part === "reply" && x.sent === "yes")) {
+		const code = isReasonCode(mail.code) ? mail.code : "unknown";
+		const why = detailOf(mail) ?? reasonOf(code).text;
+		return { sent: "partial", done: 1, total: 2, code, rest: mail.sent === "maybe" || code === "unknown" ? "maybe" : "no", mail: why };
+	}
+	const said = lines.at(-1);
+	if (said) {
+		if (said.sent === "yes") return { sent: "yes" };
+		const code = isReasonCode(said.code) ? said.code : "unknown";
+		const detail = detailOf(said);
+		if (said.sent === "maybe" || code === "unknown") return { sent: "maybe", code, ...(detail ? { detail } : {}) };
+		const vars = said.vars && typeof said.vars === "object" ? (said.vars as Record<string, string | number>) : undefined;
+		return { sent: "no", code, ...(vars ? { vars } : {}), ...(detail ? { detail } : {}) };
+	}
+	return r.code === 0 ? { sent: "yes" } : { sent: "maybe", code: "unknown" };
+}
+
 /** Runs one CLI with the gateway's environment; stdout and stderr together, bounded. */
 export async function runCli(argv: string[]): Promise<{ code: number; out: string; timedOut?: boolean }> {
 	// `env` is passed on purpose: without it Bun hands the child the environment the process started with, not process.env as it is now
 	// (the data folder a test or the gateway set at run time would be lost, and the CLI would read another install's drafts).
 	const r = await runLimited(argv, SEND_CLI_MS, { env: { ...process.env, DOTZ_GATEWAY_SEND: "1" } });
-	return { code: r.code, out: `${r.stdout}\n${r.timedOut ? "timed out" : r.stderr}`.slice(-4000), ...(r.timedOut ? { timedOut: true } : {}) };
+	const full = `${r.stdout}\n${r.timedOut ? "timed out" : r.stderr}`;
+	const tail = full.slice(-OUT_TAIL);
+	const line = full.split("\n").filter(l => l.startsWith("DOTZ_SEND ")).at(-1);
+	return { code: r.code, out: line && !tail.includes(line) && line.length <= OUT_TAIL ? `${tail}\n${line}` : tail, ...(r.timedOut ? { timedOut: true } : {}) };
 }

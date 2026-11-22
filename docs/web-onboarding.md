@@ -8,7 +8,7 @@
 - 게이트웨이는 `config.json`이 없으면 뜨지 못해요. `hub/config.ts`가 import될 때 바로 읽어요.
 - `web.access` 기본값은 Tailscale 로그인이 없으면 `local`, 있으면 `tailscale`이에요(`hub/web-access.ts`). `tailscale` 모드에서는 127.0.0.1로 연 브라우저가 들어오지 못해요.
 - `/manifest.webmanifest` 같은 설치 파일 말고는 전부 owner 확인 뒤에 있어요. `/app.js`, `/app.css`, 첫 화면도 마찬가지라 온보딩 경로는 따로 열어야 해요.
-- 웹 앱에는 번역 장치가 없어요. `hub/i18n*.ts`는 에이전트에게 주는 지시문용이고 화면 글은 한국어로 박혀 있어요.
+- 웹 앱 화면 글은 한국어와 영어가 `hub/i18n-ko.ts`, `hub/i18n-en.ts`에 있고, 그 밖의 언어는 모델이 연결된 뒤 `hub/web-i18n-gen.ts`가 앱 화면 글을 만들어요.
 - 재사용할 것: 메신저 연결 엔진(`hub/onboarding.ts`, 단계 저장·재개·주인 할 일 하나·오류 가리기), Discord 흐름(`hub/onboarding-discord.ts`), 공급자 로그인(`/api/providers/<id>/login`), `localBrowser()`(`hub/web-access.ts`), 로컬 로그인 쿠키(`hub/local-login.ts`), 웹 터미널(`web/js/36-shell.js`, `/api/pty/*`).
 
 ## 터미널 마법사의 모든 단계 (setup.ts)
@@ -17,14 +17,14 @@
 
 | # | 터미널 마법사 | 입력과 규칙 | 건너뛰기 | 웹 온보딩 |
 |---|---|---|---|---|
-| 1 | 하네스 고르기 | omo / omp / claude, codex는 어댑터 없어서 고를 수 없음 | 기본값 OmO | 1. 하네스 |
-| 2 | 하네스 설치 | OmO만 설치(`bun add -g --trust omo-ai`), 나머지는 안내 | 설치 거절 가능 | 웹에서는 설치해야 넘어가요. 게이트웨이가 하네스 없이는 뜨지 못해서 앱이 안 열려요. 1. 하네스, 진행 상황 실시간 |
-| 3 | 하네스 로그인 확인 | omo는 계정 풀, claude는 상태 확인, 미로그인이면 반복 | `s`로 나중에 | 1. 하네스, OmO는 공급자 로그인 시트 |
+| 1 | 하네스 고르기 | omo / omp / claude, codex는 어댑터 없어서 고를 수 없음 | 기본값 OmO, OmO가 없으면 설치돼 있는 하네스 | 1. 하네스 |
+| 2 | 하네스 설치 | OmO(`bun add -g --trust omo-ai`)와 omp(`bun add -g @oh-my-pi/pi-coding-agent`)를 설치, 나머지는 안내 | 설치 거절 가능 | 웹에서는 설치해야 넘어가요. 게이트웨이가 하네스 없이는 뜨지 못해서 앱이 안 열려요. 1. 하네스, 진행 상황 실시간 |
+| 3 | 하네스 로그인 확인 | omo는 계정 풀, claude는 상태 확인, omp는 `omp auth export`의 자격 증명 개수(내용은 읽자마자 버리고 개수만 남김), 미로그인이면 반복 | `s`로 나중에 | 1. 하네스, OmO는 공급자 로그인 시트 |
 | 4 | Aside 앱 | macOS만. brew cask 또는 다운로드 페이지, 앱 열기, 로그인 대기 | 거절 가능, Linux는 자동 건너뜀 | 2. 도구 |
 | 5 | Aside CLI | `releases.aside.com/install.sh` | 거절 가능 | 2. 도구 |
 | 6 | Aside CLI 로그인 | 기기 코드를 앱에서 승인 | 나중에 | 2. 도구 (결정 2) |
-| 7 | Tailscale 설치 | brew 또는 공식 스크립트, 다운로드 페이지 | 거절 가능 | 2. 도구 |
-| 8 | Tailscale 로그인 | 앱 열기, Linux는 `sudo tailscale up` | `s`로 나중에 | 2. 도구, Linux는 터미널 명령 안내 |
+| 7 | Tailscale 설치 | brew 또는 공식 스크립트, 다운로드 페이지 | 거절 가능 | 5. 웹 접속, Tailscale을 고를 때만 |
+| 8 | Tailscale 로그인 | 앱 열기, Linux는 `sudo tailscale up` | `s`로 나중에 | 5. 웹 접속, Linux는 터미널 명령 안내 |
 | 9 | zele 설치 | `bun add -g zele` | 거절 가능 | 2. 도구 |
 | 10 | 메일·일정 계정 연결 | `zele login` 반복, 여러 계정 | 거절 가능 | 2. 도구 (결정 2) |
 | 11 | 봇 이름 | 2~32자, 필수 | 불가 | 3. 봇 |
@@ -33,27 +33,27 @@
 | 14 | 알림 문체 | 일상·간결·STE + 직접 입력 | 첫 보기가 기본 | 3. 봇 |
 | 15 | 호칭 | 자유 입력 | 비워 둘 수 있음 | 3. 봇 |
 | 16 | 프로필 이미지 | png/jpg 파일 경로 | 비워 둘 수 있음 | 3. 봇, 파일 고르기로 바꿈 |
-| 17 | Discord 서버 ID | 17~20자리 숫자 | 비우면 Discord 없이 | 4. Discord |
-| 18 | 내 Discord ID | 서버 ID가 있으면 필수 | 조건부 | 4. Discord |
-| 19 | 봇 토큰 | 붙여넣기(가림) 또는 Aside 자동 생성, 저장된 토큰 유지 | 자동 생성이 기본 | 4. Discord |
-| 20 | 컴퓨터 이름 | 필수, 기본은 호스트 이름 | 기본값 | 5. 웹 앱 |
-| 21 | 공유 키 | 16자 이상, 없으면 새로 만듦 | 비워 둘 수 있음 | 5. 웹 앱, 접힌 칸 |
-| 22 | 들어올 수 있는 Tailscale 로그인 | 쉼표로 여러 개 | 비워 둘 수 있음 | 5. 웹 앱 |
-| 23 | 고급: 포트 2개, 모델 2개 | 로컬 포트, 테일넷 포트, 봇·세션 모델:강도 | 기본값 | 5. 웹 앱, 접힌 칸 |
+| 17 | Discord 서버 ID | 17~20자리 숫자 | 비우면 Discord 없이 | 4. 메신저, 웹에서는 ID를 받지 않고 설정이 끝난 뒤 앱의 Discord 화면에서 연결 |
+| 18 | 내 Discord ID | 서버 ID가 있으면 필수 | 조건부 | 4. 메신저, 같음 |
+| 19 | 봇 토큰 | 붙여넣기(가림) 또는 Aside 자동 생성, 저장된 토큰 유지 | 자동 생성이 기본 | 4. 메신저, 같음. 토큰은 웹 온보딩에서 받지 않아요 |
+| 20 | 컴퓨터 이름 | 필수, 기본은 호스트 이름 | 기본값 | 5. 웹 접속 |
+| 21 | 공유 키 | 16자 이상, 없으면 새로 만듦 | 비워 둘 수 있음 | 5. 웹 접속, 접힌 칸 |
+| 22 | 들어올 수 있는 Tailscale 로그인 | 쉼표로 여러 개 | 비워 둘 수 있음 | 5. 웹 접속, Tailscale을 고를 때 |
+| 23 | 고급: 포트 2개, 모델 2개 | 로컬 포트, 테일넷 포트, 봇·세션 모델:강도 | 기본값 | 5. 웹 접속, 접힌 칸 |
 | 24 | 정리해서 보여 주고 확인 | 취소 가능 | 없음 | 6. 확인 |
 | 25 | 저장 | secrets, config, state, IDENTITY.md, 언어 감지 | 없음 | 6. 적용 |
 | 26 | omp 플러그인 연결 | omp가 있을 때만 | 자동 | 6. 적용 |
 | 27 | 서비스 파일과 시작 | launchd 또는 systemd | `--no-service` | 설치 때 이미 끝남, 6. 적용에서 다시 시작 |
 | 28 | 테일넷 공개 | `tailscale serve` | 로그인이 없으면 안 함 | 6. 적용 |
 | 29 | macOS 권한 | 스위치까지 직접 켜고 사람 몫 한 단계만 남김 | 나중에 | 6. 적용 |
-| 30 | Discord 봇 만들기·초대·관리자 권한 | Aside로 진행, 2차 인증만 사람 | 실패해도 계속 | 6. 적용, 주인 할 일 하나 |
+| 30 | Discord 봇 만들기·초대·관리자 권한 | Aside로 진행, 2차 인증만 사람 | 실패해도 계속 | 적용에서 하지 않아요. 끝 화면의 `#discord` 링크로 앱에서 이어요 |
 | 31 | 끝, 웹 주소 안내, 브라우저 열기 | 테일넷 주소, 휴대폰 안내 | 없음 | 6. 끝 화면, 그다음 화면 안내 |
 
-Slack, JANDI, Telegram과 Cloudflare 접속은 터미널 마법사에도 없어요. 대화에서 봇에게 말하거나 일반 채팅으로 부탁하거나 설정에서 누르거나, 어느 쪽으로 시작해도 같은 흐름이 돌아요.
+Slack, JANDI, Telegram과 Cloudflare 접속도 같은 연결 엔진(`hub/onboarding.ts`)이 해요. 웹 온보딩은 무엇을 연결할지만 고르고, 끝 화면이 고른 것마다 `#discord`, `#slack`, `#telegram`, `#jandi`, `#webaccess` 링크로 앱의 그 화면을 열어 줘요. 연결은 거기서 시작해요.
 
 ## 흐름
 
-1. `install.sh`는 bun, 하네스, 코드, 의존성, 데이터 폴더, 서비스까지 묻지 않고 끝내요. 묻는 것은 지금처럼 다른 하네스가 있을 때 OmO를 설치할지뿐이에요.
+1. `install.sh`는 bun, 하네스, 코드, 의존성, 데이터 폴더, 서비스까지 묻지 않고 끝내요. 묻는 것은 다른 하네스가 있을 때 OmO를 설치할지뿐이고, 터미널이 없고 `--yes`도 없고 `DOTZ_HARNESS`도 안 줬으면 묻지 않고 OmO를 건너뛰어 설치돼 있는 하네스를 써요. 그렇게 정해진 하네스(`DOTZ_HARNESS=omp|claude` 포함)는 `setup.ts --first-run --runtime <하네스>`로 넘어가 초안의 `runtime`이 돼요.
 2. `bun setup.ts --first-run --port <p>`가 씨앗 `config.json`과 `onboarding/first-run.json`을 쓰고 일회용 토큰을 만들어요. 포트가 차 있으면 다음 빈 포트를 써요.
 3. 게이트웨이가 뜨면 설치 스크립트가 `/api/peer-info` 응답을 기다린 뒤 기본 브라우저로 토큰 주소를 열어요.
 4. 웹에서 1~6단계를 끝내면 게이트웨이가 한 번 다시 뜨고 첫 실행 상태가 닫혀요.
@@ -69,6 +69,7 @@ Slack, JANDI, Telegram과 Cloudflare 접속은 터미널 마법사에도 없어�
 | `--setup` | 지금과 같이 터미널 마법사 |
 | `--no-service` | 서비스를 안 띄우니 지금과 같이 터미널 마법사 |
 | `--no-setup` | 지금과 같음 |
+| 업그레이드 재실행 | 이 설치의 서비스 파일이면 `setup.ts --refresh-service`가 PATH를 새로 써서(그사이 설치한 하네스가 잡혀요) 다시 불러와요. 다른 설치의 서비스 파일이면 건드리지 않고, 실패하면 그냥 재시작 |
 | `config.json` 있고 첫 실행 표시 없음 | 지금과 같음. 온보딩은 절대 안 뜸 |
 | 첫 실행 표시가 `pending` | 코드만 바꾸고 새 토큰 주소로 이어서 열기 |
 
@@ -88,6 +89,7 @@ Linux의 화면 판별은 `DISPLAY` 또는 `WAYLAND_DISPLAY`, SSH 판별은 `SSH
 
 - 각 단계의 값은 다음으로 넘어갈 때 `first-run.json`의 `draft`에 저장돼요. 새로고침하면 `step`에서 이어져요.
 - 비밀값(봇 토큰, 공유 키)은 받자마자 `secrets/`에 0600으로 쓰고 `draft`에는 저장 여부만 남겨요. 입력칸은 요청이 나가기 전에 비워요.
+- 초안에는 정해진 필드만 들어가요: `access`(`tailscale`, `cloudflare`, `local` 중 하나), `cloudflare_hostname`(문자열), `connect`(`discord`, `slack`, `telegram`, `jandi` 중에서 고른 배열), 그리고 이름·성격·말투·컴퓨터 이름·포트·모델 같은 기존 값이에요. 그 밖의 값이나 모르는 이름은 400이에요.
 - 설치·연결처럼 오래 걸리는 일은 `/api/setup/stream`(SSE)으로 한 줄씩 받아요. 줄은 `scrubText`를 지나고 로그에는 단계 이름과 결과만 남아요.
 - 오류는 그 행에서 바뀌어요. 이유 한 줄, 주인이 할 일 하나, 다시 시도 버튼이에요.
 - 뒤로 가도 값은 남아요. 1~5단계는 다시 고칠 수 있고, 적용이 시작되면 끝날 때까지 뒤로 갈 수 없어요.
@@ -101,11 +103,11 @@ Linux의 화면 판별은 `DISPLAY` 또는 `WAYLAND_DISPLAY`, SSH 판별은 `SSH
 - 토큰은 32바이트 난수이고 파일에는 sha256만 저장해요. 설치 스크립트가 여는 주소에서 한 번 쓰이면 지워지고, `HttpOnly; SameSite=Strict; Path=/` 쿠키로 바뀌어요. 그다음 토큰 없는 `/setup`으로 넘겨서 주소창과 기록에 남지 않게 해요. 유효 시간은 24시간이고, 설치를 다시 돌리거나 `bun setup.ts --web-link`로 새로 받아요.
 - `/setup` 응답은 `no-store`, `Referrer-Policy: no-referrer`에 `default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; form-action 'none'; base-uri 'none'; frame-ancestors 'none'`이에요.
 - 끝나면 쿠키와 토큰 해시를 지우고 경로는 404가 돼요. `dotz_local` 쿠키, 기기 세션, peer 인증, 앱 쪽 로직은 바꾸지 않아요.
-- Discord 토큰과 공유 키는 기존 secrets 저장 경로로만 가요.
+- 공유 키는 기존 secrets 저장 경로로만 가요. 웹 온보딩은 Discord 토큰을 받지 않아요.
 
 ### 끝난 뒤 로그인
 
-`web.access`가 `local`로 끝나면 기존 일회용 로그인 링크와 같은 경로로 `dotz_local` 쿠키를 받아서 바로 메인으로 가요. Tailscale 로그인을 넣었고 `tailscale serve`가 성공하면 끝 화면에서 테일넷 주소로 보내요. serve가 실패하면 `local`로 남겨서 잠기지 않게 하고, 이유를 끝 화면에 적어요.
+`access`에 따라 달라요. `local`이면 기존 일회용 로그인 링크와 같은 경로로 `dotz_local` 쿠키를 받아서 바로 메인으로 가요. `tailscale`이고 로그인을 넣었고 `tailscale serve`가 성공하면 끝 화면에서 테일넷 주소로 보내요. serve가 실패하면 `local`로 남겨서 잠기지 않게 하고, 이유를 끝 화면에 적어요. `cloudflare`면 `web.access`는 `local`로 시작해서(이미 Cloudflare로 열려 있던 설치는 그대로) 같은 쿠키로 메인에 가고, 주소를 적었으면 `onboarding/web-access-input.json`에 미리 저장해요. 터널과 승인은 끝난 뒤 앱의 웹 접속 화면(`#webaccess`)에서 이어져요. 끝 화면은 이 컴퓨터에서 `dotz`를 치면 로그인된 채로 앱이 열리고, 문제가 있으면 `dotz status`를 보라고 알려 줘요.
 
 ## 오너 결정
 
@@ -127,7 +129,7 @@ Linux의 화면 판별은 `DISPLAY` 또는 `WAYLAND_DISPLAY`, SSH 판별은 `SSH
 | `POST /api/setup/run/<job>` | 고정 목록의 설치·연결 작업 시작 |
 | `GET /api/setup/stream` | SSE: 작업 줄, 상태, 주인 할 일 |
 | `POST /api/setup/term/<id>` | 고정 목록의 로그인 명령을 PTY로 시작. 입력·크기는 `/api/setup/term/<id>/input`, `/resize`, 출력은 스트림 |
-| `POST /api/setup/apply` | 저장과 적용 시작, 끝나면 게이트웨이 재시작 |
+| `POST /api/setup/apply` | 저장과 적용 시작, 끝나면 게이트웨이 재시작. 응답은 `{ ok, access, url, why, owner, connect }`이고 `connect`는 고른 메신저 키에 Cloudflare면 `web-access`를 더한 목록 |
 | `GET /api/intro`, `POST /api/intro` | 일반 owner 인증. 안내를 봤는지 읽고 쓰기 |
 
 터미널 명령은 서버의 표 하나로만 정해요: `aside-login`, `zele-login`, `claude-login`, `omp-login`. 요청에서 argv, 경로, 환경 변수를 받지 않아요. 명령이 끝나면 PTY가 닫히고 셸로 떨어지지 않아요. 터미널 출력은 로그에 남기지 않아요.
@@ -179,7 +181,7 @@ Linux의 화면 판별은 `DISPLAY` 또는 `WAYLAND_DISPLAY`, SSH 판별은 `SSH
 
 ## 언어
 
-웹에 번역 장치가 없어서 온보딩과 화면 안내만 `hub/i18n-ko.ts`, `hub/i18n-en.ts`의 `setup` 묶음으로 넣어요. 게이트웨이가 `/setup` 화면에 언어에 맞는 글을 내려 줘요. 기본 언어는 시스템 언어이고 첫 화면에서 바꿀 수 있어요. 여기서 고른 값이 `identity.language`가 돼요. 영어를 고르면 봇은 영어로 말하지만, 앱의 나머지 화면은 아직 한국어예요.
+온보딩과 화면 안내의 글은 `hub/i18n-ko.ts`, `hub/i18n-en.ts`의 `setup` 묶음에서 와요. 게이트웨이가 `/setup` 화면에 언어에 맞는 글을 내려 줘요. 기본 언어는 시스템 언어이고 첫 화면에서 바꿀 수 있어요. 여기서 고른 값이 `identity.language`가 돼요. 앱의 나머지 화면은 한국어와 영어가 들어 있고, 그 밖의 언어는 모델을 연결하면 앱 화면 글이 만들어져요. 그동안은 아래 줄이 진행을 보여 줘요.
 
 ## 메모리, 토큰, 속도
 
@@ -191,6 +193,6 @@ Linux의 화면 판별은 `DISPLAY` 또는 `WAYLAND_DISPLAY`, SSH 판별은 `SSH
 ## 테스트
 
 - `hub/install-e2e.test.ts`: 새 설치의 씨앗과 표시 파일, 재설치에서 온보딩이 안 뜨는지, `--no-open` 출력.
-- `hub/onboarding.test.ts`: 토큰 한 번만 쓰임, 만료, 쿠키 없으면 404, 프록시 헤더가 있으면 404, 끝난 뒤 404, 재개, 비밀값이 파일과 로그에 안 남음.
+- `hub/onboarding.test.ts`: 토큰 한 번만 쓰임, 만료, 쿠키 없으면 404, 프록시 헤더가 있으면 404, 끝난 뒤 404, 재개, 비밀값이 파일과 로그에 안 남음, 초안이 `access`·`cloudflare_hostname`·`connect`를 받고 모르는 값은 거절, Cloudflare와 Slack 초안의 적용 결과가 `connect`를 돌려줌.
 - `onboard/onboard.test.ts`: 씨앗 설정, `--first-run`, 기존 플래그.
 - 화면: 임시 `DOTZ_DIR`과 다른 포트, headless `Bun.WebView`로 412·1280, 라이트·다크. 진짜 새 컴퓨터 설치는 따로 확인이 필요해요.

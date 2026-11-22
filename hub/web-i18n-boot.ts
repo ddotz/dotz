@@ -5,10 +5,11 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { authFile } from "./apikey-policy.ts";
-import { cfg, DATA_DIR, log } from "./config.ts";
+import { DATA_DIR, log } from "./config.ts";
 import { lang as installLang } from "./i18n.ts";
 import { callModel } from "./outlang.ts";
 import { omoAuthInfos } from "./providers.ts";
+import { runtimeIdOf } from "./runtime/runtime-id.ts";
 import { webWords } from "./texts.ts";
 import { setAppLang, webSources } from "./webapp.ts";
 import { setOwnerWords } from "./web-i18n.ts";
@@ -18,7 +19,7 @@ const LANGUAGE_CHECK_MS = 60_000;
 
 /** A stored OmO account, or the omp runtime (whose accounts omp keeps; a call without one fails and backs off). */
 const connected = (): boolean => {
-	if ((cfg.orchestrator?.runtime ?? cfg.runtime ?? "omo") === "omp") return true;
+	if (runtimeIdOf("orchestrator") === "omp") return true;
 	try {
 		return omoAuthInfos(JSON.parse(readFileSync(authFile(), "utf8")) as Record<string, unknown>).length > 0;
 	} catch {

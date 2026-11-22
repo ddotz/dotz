@@ -4,7 +4,7 @@
 import { chmodSync, mkdirSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { log } from "../config.ts";
-import { readState } from "../statefile.ts";
+import { readState, stateIntact } from "../statefile.ts";
 import type { Comment, CommentsConfig, SourceConfig } from "./contract.ts";
 
 // "answered": the comment stopped waiting without this draft (the owner answered on the platform, it was deleted, 답장 안 함); see closedReason.
@@ -16,13 +16,21 @@ export type Tokens = { in: number; out: number; estimated?: true };
 // `mailAt`: when it was attached, so a pick made on a card that did not show the mail does not approve it. Such a draft is never clean (no rule sends it).
 export type Draft = { code: string; commentId: string; source: string; thread: string; text: string; status: DraftStatus; created: number; changes: string[]; clean: boolean; notes: string[]; tokens?: Tokens; mail?: string; mailAt?: number; closedReason?: ClosedReason;
 	/** The mail draft that was linked to this draft and left on its own (the reply was answered elsewhere, or 메일만 보내기 sent it): the comment keeps showing its state. */
-	mailKept?: string };
+	mailKept?: string;
+	mailThread?: { id: string; answered?: boolean };
+	mailCarded?: true;
+	/** The draft code this draft replaced (set by revise). */
+	replaces?: string;
+	/** The model's text before the owner's first direct edit (set by edit, never overwritten). */
+	editedFrom?: string };
 export type MailOutcome = { state: "sent" | "failed"; text: string };
 export type Reply = { id: string; commentId: string; source: string; thread: string; text: string; state: "sending" | "sent" | "failed" | "unsure"; reason?: string; at: number; draft: string; via: "owner" | "rule"; collector: string; ref?: string; mail?: MailOutcome;
 	/** Which try this is, set when a failed send is sent again (absent = the first). */
-	attempts?: number };
-// `queue`: ids of new comments waiting for an auto-draft (engine.ts collect), left for the next run when one run's cap or budget is reached.
-export type Cursor = { cursor?: string; ranAt?: number; error?: string; queue?: string[] };
+	attempts?: number;
+	/** Why it is failed or unsure: a reason code of hub/reply-reasons.ts. */
+	code?: string };
+/** `queue`: ids of new comments waiting for an auto-draft (engine.ts collect), left for the next run when one run's cap or budget is reached. `tries`: failed draft attempts per queued id (auto-queue.ts). */
+export type Cursor = { cursor?: string; ranAt?: number; error?: string; queue?: string[]; tries?: Record<string, number> };
 
 const MAX_COMMENTS = 3000;
 const MAX_DRAFTS = 300;
@@ -150,6 +158,7 @@ export function createStore(dir: string) {
 			writeAtomic(f("comments.json"), have.map(c => (c.source === source && c.thread === thread ? { ...c, postTitle: p.postTitle, ...(p.postLink ? { postLink: p.postLink } : {}), ...(p.thumb ? { thumb: p.thumb } : {}) } : c)));
 		},
 		drafts,
+		draftsIntact: () => stateIntact(f("drafts.json")),
 		putDraft: (d: Draft) => writeAtomic(f("drafts.json"), upsert(drafts(), d, "code", MAX_DRAFTS, x => x.status === "pending")),
 		patchDraft: (code: string, patch: Partial<Draft>) => writeAtomic(f("drafts.json"), drafts().map(d => (d.code === code ? { ...d, ...patch } : d))),
 		setDraftStatus: (code: string, status: DraftStatus) => writeAtomic(f("drafts.json"), drafts().map(d => (d.code === code ? { ...d, status } : d))),
