@@ -1,0 +1,15 @@
+{
+  "compilerOptions": {
+    "strict": true,
+    "noEmit": true,
+    "target": "esnext",
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "types": ["bun"],
+    "skipLibCheck": true,
+    "allowImportingTsExtensions": true,
+    "resolveJsonModule": true
+  },
+  "include": ["../extensions/*.ts", "../skills/ulw/scripts/**/*.ts", "guard/**/*.ts", "tests/**/*.ts", "checks/**/*.ts", "evals/**/*.ts", "*.ts"],
+  "exclude": ["node_modules"]
+}

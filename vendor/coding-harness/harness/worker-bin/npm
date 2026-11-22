@@ -1,0 +1,4 @@
+#!/bin/sh
+. "${0%/*}/../worker-shim.sh"
+og_publish_guard npm "$@"
+og_exec npm "$@"

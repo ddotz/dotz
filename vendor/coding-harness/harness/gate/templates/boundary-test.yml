@@ -1,0 +1,7 @@
+id: example-boundary
+valid:
+  - import { listUsers } from "../services/users";
+invalid:
+  - import { query } from "../db/client";
+  - import type { Row } from "../../db/rows";
+  - import "../db/migrate";

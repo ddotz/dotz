@@ -25,7 +25,8 @@ export interface RuntimeCaps {
 	// The orchestrator's static contract (identity and MODE) goes in the process's system prompt, not its first message: a compaction leaves the system
 	// prompt alone and a resume builds it from the same text, so its prompt cache holds (omp). Without it both stay in the first message (OmO, claude).
 	modeInSystem?: boolean;
-	doneGate?: boolean; // a lane's process loads the harness's done gate beside dotz's extension when SpawnOpts.doneGate names it (hub/done-gate.ts); only omp does
+	/** The process can load the coding harness payload when SpawnOpts.codingHarness names it, and the orchestrator's task workers can run the payload's done gate (hub/done-gate.ts); only omp does. */
+	doneGate?: boolean;
 }
 
 // One row of the terminal view, before the hub stamps time and source on it and scrubs secrets.
@@ -120,8 +121,8 @@ export interface SpawnOpts {
 	hubSwitches?: boolean;
 	// Lane-only: where the runtime may keep per-run files, and the lane's worker/compaction settings.
 	lane?: { name: string; dir: string; workerModel: string; workerFallback?: string[]; compactAt: number; keepRecent: number; workerSlots?: number };
-	// Lane-only, and only where caps.doneGate: the harness's done gate extension file the process loads next to dotz's own. The hub decides (hub/done-gate.ts); any other role or runtime ignores it.
-	doneGate?: string;
+	/** The coding harness payload folder this process loads (`CodingHarness` in hub/done-gate.ts), any role. The hub hands it to a coding-mode lane and to nothing else. */
+	codingHarness?: string;
 }
 
 // What a runtime's `detect()` finds on this machine; `reason` says why it is not installed.

@@ -7,6 +7,7 @@ import { join } from "node:path";
 import { type Block, blocks, failedCall, joined, ownIntent, summary } from "../activity.ts";
 import { withoutApiKeys } from "../apikey-policy.ts";
 import { OMP, splitThinking } from "../config.ts";
+import { codingHarnessEnv, codingHarnessFiles, withoutPayloadEnv } from "../done-gate.ts";
 import { ownerView } from "../gateway-added.ts";
 import { isNote } from "../i18n.ts";
 import { classifyProviderError } from "../providers.ts";
@@ -442,11 +443,15 @@ export function recentExchanges(sessionFile: string): string | undefined {
  * The whole argv of one omp process, binary first; calling it writes the session's overlay file that `--config=` names.
  * An API-key entry's provider only exists once the dotz extension has registered it (hub/fallback.ts keyEnv): the process
  * starts on the entry's own model and is switched to the key provider's copy before the first prompt (RPC commands run in order).
- * A lane that names `doneGate` loads that file beside the dotz extension, the only other extension (hub/done-gate.ts).
+ * A process that names `codingHarness` (any role) loads that payload's extension files after the dotz extension, then the payload folder itself,
+ * which is what makes omp read its rules and agents (hub/done-gate.ts); a payload that is not usable throws.
  */
 export function ompArgv(o: SpawnOpts): string[] {
 	if (o.role === "lane" && !o.lane) throw new Error("a lane needs its lane options");
-	return [OMP, "--mode", "rpc", "--model", startModelOf(o), "--no-extensions", "--extension", EXTENSION, ...(o.role === "lane" && o.doneGate ? ["--extension", o.doneGate] : []), `--config=${writeOverlay(o)}`, ...(o.systemNote ? ["--append-system-prompt", o.systemNote] : []), ...(o.resume ? ["--resume", o.resume] : [])];
+	const coding = o.codingHarness ? codingHarnessFiles(o.codingHarness) : undefined;
+	if (o.codingHarness && !coding) throw new Error(`the coding harness ${o.codingHarness} is not an absolute folder holding extensions/done-gate.ts and harness/gate/bootstrap.ts`);
+	const loaded = coding ? [...coding.extensions.flatMap(file => ["--extension", file]), "--extension", coding.dir] : [];
+	return [OMP, "--mode", "rpc", "--model", startModelOf(o), "--no-extensions", "--extension", EXTENSION, ...loaded, `--config=${writeOverlay(o, coding)}`, ...(o.systemNote ? ["--append-system-prompt", o.systemNote] : []), ...(o.resume ? ["--resume", o.resume] : [])];
 }
 
 export const omp: RuntimeAdapter = {
@@ -457,7 +462,7 @@ export const omp: RuntimeAdapter = {
 		const key = keyProviderOf(o);
 		const proc = spawnAgent(ompArgv(o), {
 			cwd: o.cwd,
-			env: withoutApiKeys({ PI_CACHE_RETENTION: "long", ...process.env, ...o.env, DOTZ_RUNTIME: "omp" }),
+			env: withoutApiKeys({ PI_CACHE_RETENTION: "long", ...withoutPayloadEnv(process.env), ...o.env, ...(o.codingHarness ? codingHarnessEnv(o.codingHarness) : {}), DOTZ_RUNTIME: "omp" }),
 		});
 		const agent = new OmpRuntimeProcess(proc, o.role === "orchestrator" ? "o" : "h");
 		if (key) agent.setModel(`${key.id}/${key.models[0].id}`);

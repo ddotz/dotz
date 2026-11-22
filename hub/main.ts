@@ -98,6 +98,7 @@ import { setFollowupWake } from "./followup.ts";
 import { startHostSweep } from "./runtime/omo-hosts.ts";
 import { telemetryOff } from "./runtime/omo.ts";
 import { installDotzCommand } from "./dotz-command.ts";
+import { ensureCodingHarness } from "./coding-harness-install.ts";
 import { compressResponse } from "./compress.ts";
 import { sends, send, queue, deliver, deliverNow, lastOwner, receiptNote, laneFailed, out, alert, fileRoots, replayPending, replayOpen, installDelivery, clearLeftWebProgress, replies, bgWork, workRows, approvals, convOfTarget, setRefHandled, reconcileMailCards } from "./outbound.ts";
 import { laneBusyLines, sessionBusyLines } from "./busy-lines.ts";
@@ -478,6 +479,7 @@ setUpdateNow(createUpdateNow({
 	current: diskCommit,
 	log,
 }));
+if (activeHarness().ids.includes("omp")) for (const l of await ensureCodingHarness(DATA_DIR).catch(e => [`coding harness install failed: ${e}`])) log(l);
 let replayed = 0;
 if (process.env.DOTZ_NO_ORCHESTRATOR !== "1") {
 	// OmO updated on disk under the running gateway: restart at the next idle point (hub/runtime/omo-engine-watch.ts, #26).

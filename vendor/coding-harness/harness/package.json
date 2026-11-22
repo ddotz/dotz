@@ -1,0 +1,22 @@
+{
+  "name": "omp-harness",
+  "private": true,
+  "scripts": {
+    "typecheck": "tsc --noEmit -p .",
+    "lint": "bun run checks/ratchet.ts && bun checks/comments.ts",
+    "test": "bun test tests/",
+    "test:fast": "bun test $(ls tests/*.test.ts | grep -vE '/(gate-bootstrap|gate-forms|escape|done-gate-(lifecycle|floor|bootstrap|defects|base|patch-writes|stages|moves-compound|inputs)|done-gate|gate-property|gate-boundaries|guard-shell-oracle|guard-inline-code|guard-hook)[.]test[.]ts$')",
+    "test:statechart": "cd ../skills/statechart/scripts && bun install --frozen-lockfile && TMPDIR=$(realpath ${TMPDIR:-/tmp}) node --disable-warning=ExperimentalWarning --test test/*.test.ts",
+    "check": "bun run typecheck && bun run lint && bun run test"
+  },
+  "devDependencies": {
+    "@ast-grep/cli": "^0.51.3",
+    "@types/bun": "^1.4.4",
+    "fast-check": "^4.10.2",
+    "oxlint": "^1.94.0",
+    "typescript": "^7.0.2"
+  },
+  "trustedDependencies": [
+    "@ast-grep/cli"
+  ]
+}

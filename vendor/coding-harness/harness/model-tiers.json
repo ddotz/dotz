@@ -1,0 +1,119 @@
+{
+	"$comment": "Source of truth for automatic model-role selection (extensions/model-tiers.ts). Tiers: worker = Sonnet-class implementation workers and the fast slot; base = Opus-class main session; deep = Fable-class planning, hardest work and advisor; light = Haiku-class session titles only. Each role runs on the newest available model of its tier at that model's benchmark sweet spot plus `step` levels (or a fixed `effort`). A newer model is adopted only after its sweet spot is recorded here (model_tiers tool, action record). Roles in pinnedRoles are never touched.",
+	"primaryProvider": "anthropic",
+	"ignoredProviders": [
+		"apple"
+	],
+	"pinnedRoles": [],
+	"families": [
+		{
+			"provider": "anthropic",
+			"tier": "worker",
+			"pattern": "^claude-sonnet-(\\d+)(?:-(\\d+))?$"
+		},
+		{
+			"provider": "anthropic",
+			"tier": "base",
+			"pattern": "^claude-opus-(\\d+)(?:-(\\d+))?$"
+		},
+		{
+			"provider": "anthropic",
+			"tier": "deep",
+			"pattern": "^claude-fable-(\\d+)(?:-(\\d+))?$"
+		},
+		{
+			"provider": "anthropic",
+			"tier": "light",
+			"pattern": "^claude-haiku-(\\d+)(?:-(\\d+))?$"
+		}
+	],
+	"roles": {
+		"default": {
+			"tier": "base",
+			"step": 0
+		},
+		"slow": {
+			"tier": "base",
+			"step": 1
+		},
+		"task": {
+			"tier": "worker",
+			"step": 0
+		},
+		"smol": {
+			"tier": "worker",
+			"step": 0
+		},
+		"commit": {
+			"tier": "worker",
+			"effort": "medium"
+		},
+		"memory": {
+			"tier": "worker",
+			"effort": "medium"
+		},
+		"judge": {
+			"tier": "worker",
+			"effort": "low"
+		},
+		"plan": {
+			"tier": "deep",
+			"step": 0
+		},
+		"deep": {
+			"tier": "deep",
+			"step": 1
+		},
+		"advisor": {
+			"tier": "deep",
+			"step": 0
+		},
+		"tiny": {
+			"tier": "light",
+			"effort": "low"
+		}
+	},
+	"sweetSpots": {
+		"anthropic/claude-opus-5-5": {
+			"effort": "medium",
+			"confidence": "High",
+			"basis": "Artificial Analysis Intelligence Index (2026-09-29): low 42 / $0.55, medium 51 / $1.34, high 54 / $1.82, xhigh 56 / $3.46, max 58 / $5.98 per task; low->medium is the largest gain per dollar. Re-run 2026-11-10: medium 48 / $2.45, high 52 / $3.46. Anthropic API default is medium.",
+			"sources": [
+				"https://www.beri.net/article/claude-sonnet-5-5-vs-opus-5-5-cost-per-task-matched-score-effort-between-tools-migration",
+				"https://atomicagent.io/blog/claude-fable-5-2",
+				"https://platform.claude.com/docs/en/build-with-claude/effort"
+			],
+			"checked": "2026-11-16"
+		},
+		"anthropic/claude-sonnet-5-5": {
+			"effort": "high",
+			"confidence": "Medium",
+			"basis": "Artificial Analysis Intelligence Index (2026-09-29): low 36 / $0.41, medium 41 / $0.59, high 47 / $1.08, xhigh 52 / $2.74, max 56 / $7.60. Medium is dominated by Opus 5.5 low (42 / $0.55); high is a point no Opus setting reaches at its price; xhigh is dominated by Opus 5.5 high. Anthropic: medium for well-specified agentic coding, high for harder or longer tasks. Terminal-Bench 4.0 (AA): Sonnet 64% vs Opus 60%.",
+			"sources": [
+				"https://www.beri.net/article/claude-sonnet-5-5-vs-opus-5-5-cost-per-task-matched-score-effort-between-tools-migration",
+				"https://platform.claude.com/docs/en/build-with-claude/effort"
+			],
+			"checked": "2026-11-16"
+		},
+		"anthropic/claude-fable-5-2": {
+			"effort": "high",
+			"confidence": "High",
+			"basis": "Artificial Analysis Intelligence Index (2026-11-10): low 54 / $3.10, medium 56 / $3.80, high 62 / $9.08, xhigh 62 / $14.83, max 65 / $26.54. High equals xhigh at 61% of the cost. Anthropic: start with high, most of the capability gain is already present at high; xhigh for the hardest long-running work.",
+			"sources": [
+				"https://atomicagent.io/blog/claude-fable-5-2",
+				"https://platform.claude.com/docs/en/build-with-claude/effort"
+			],
+			"checked": "2026-11-16"
+		},
+		"anthropic/claude-haiku-5-5": {
+			"effort": "medium",
+			"confidence": "Medium",
+			"basis": "Artificial Analysis Intelligence Index v4.3.2 (2026-10): low 29 / $0.02, medium 34 / $0.05, high 38 / $0.08, xhigh 41 / $0.12, max 43 / $0.21. FrontierCode 1.1: low 34.8%, medium 41.6%, high 41.9%. Low->medium is the cheapest step; Anthropic default medium; low stops early in long agent prompts.",
+			"sources": [
+				"https://aihubmix.com/blog/claude-haiku-5-5-effort-levels-medium-is-the-default-low-is-often-enough",
+				"https://platform.claude.com/docs/en/build-with-claude/effort"
+			],
+			"checked": "2026-11-16"
+		}
+	}
+}

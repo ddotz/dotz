@@ -364,7 +364,7 @@ export async function setLaneModel(name: string, selector: string): Promise<"liv
 export async function setLaneMode(name: string, mode: LaneMode): Promise<"unchanged" | "next-start" | "restarting"> {
 	const lane = known(name);
 	const runtime = runtimeFor("lane");
-	if (!runtime.caps.doneGate) throw new Error(`lane ${name} runs on ${harnessName(runtime.id)}, not omp: a mode only decides whether the harness done gate loads, and only omp can load it`);
+	if (!runtime.caps.doneGate) throw new Error(`lane ${name} runs on ${harnessName(runtime.id)}, not omp: a mode only decides whether the coding harness loads, and only omp can load it`);
 	const was = lane.mode;
 	if (laneMode(lane) === mode) return "unchanged";
 	lane.mode = mode;

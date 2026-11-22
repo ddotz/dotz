@@ -1,0 +1,4 @@
+#!/bin/sh
+. "${0%/*}/../worker-shim.sh"
+og_publish_guard yarn "$@"
+og_exec yarn "$@"

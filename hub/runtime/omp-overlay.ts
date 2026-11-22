@@ -3,6 +3,7 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { apiKeyBan } from "../apikey-policy.ts";
 import { chainAfter, DATA_DIR, fallbackChain, lanesMaxWorkers, parseSelector, selectorOf, workerIdleMin, writeAtomic } from "../config.ts";
+import type { CodingHarness } from "../done-gate.ts";
 import { keyedWorker } from "../fallback.ts";
 import { lookupModel, workersOf } from "../lanegates.ts";
 import { safeDir } from "../session-key.ts";
@@ -37,17 +38,18 @@ function ruleNames(dir: string): string[] {
 
 const quoted = (items: string[], indent: string): string => items.map(i => `${indent}- ${JSON.stringify(i)}\n`).join("");
 
-function isolationYaml(cwd: string): string {
+function isolationYaml(cwd: string, coding?: CodingHarness): string {
 	const ownOmp = new Set(ruleNames(join(cwd, ".omp", "rules")));
 	const ownAgents = new Set([".agent", ".agents"].flatMap(d => ruleNames(join(cwd, d, "rules"))));
 	const [agentDirRules, ...homeRuleDirs] = userRuleDirs();
 	const fromAgentDir = ruleNames(agentDirRules!).filter(n => !ownOmp.has(n));
 	const fromHome = homeRuleDirs.flatMap(ruleNames).filter(n => !ownOmp.has(n) && !ownAgents.has(n));
-	const userRules = [...new Set([...fromAgentDir, ...fromHome])].sort();
+	const payloadRules = new Set(coding?.rules ? ruleNames(coding.rules) : []);
+	const userRules = [...new Set([...fromAgentDir, ...fromHome])].filter(n => !payloadRules.has(n)).sort();
 	const off = ["context-file:user:AGENTS.md", "rule:RULES", ...userRules.map(n => `rule:${n}`)];
 	const userSkills = ["enablePiUser", "enableAgentsUser", "enableClaudeUser", "enableCodexUser"].map(k => `  ${k}: false\n`).join("");
 	const userCommands = ["enableClaudeUser", "enableOpencodeUser"].map(k => `  ${k}: false\n`).join("");
-	return `advisor:\n  enabled: false\nmemory:\n  backend: "off"\nenabledProviders: []\nskills:\n${userSkills}  customDirectories: []\ncommands:\n${userCommands}disabledExtensions:\n${quoted(off, "  ")}`;
+	return `advisor:\n  enabled: false\nmemory:\n  backend: "off"\nenabledProviders: []\nskills:\n${userSkills}  customDirectories:${coding?.skills ? `\n${quoted([coding.skills], "    ")}` : " []\n"}commands:\n${userCommands}disabledExtensions:\n${quoted(off, "  ")}${coding?.context ? `workspace:\n  additionalDirectories:\n${quoted([coding.dir], "    ")}` : ""}`;
 }
 
 function retryYaml(chains: Chains): string {
@@ -75,8 +77,8 @@ function orchestratorWorkers(o: SpawnOpts): Workers {
 	return { task, lookup, chains: [["task", after], ["lookup", lookupChain]] };
 }
 
-const userAgents = (cwd: string): string[] => {
-	const own = new Set(ruleNames(join(cwd, ".omp", "agents")));
+const userAgents = (cwd: string, coding?: CodingHarness): string[] => {
+	const own = new Set([...ruleNames(join(cwd, ".omp", "agents")), ...(coding?.agents ? ruleNames(coding.agents) : [])]);
 	return [...new Set(ruleNames(join(ompAgentDir(), "agents")))].filter(n => !own.has(n)).sort();
 };
 
@@ -86,11 +88,11 @@ function processChainKey(o: SpawnOpts, w: Workers): string {
 	return worker.model === own.model && worker.thinking !== own.thinking ? selectorOf(own) : own.model;
 }
 
-function workersYaml(w: Workers, cwd: string): string {
+function workersYaml(w: Workers, cwd: string, coding?: CodingHarness): string {
 	const agents = [["task", "@task"], ...LOOKUP_AGENTS.map(agent => [agent, w.lookup ? "@lookup" : "@task"])];
 	const overrides = agents.map(([agent, role]) => `    ${agent}: ${JSON.stringify(role)}\n`).join("");
 	const roles = `  task: ${JSON.stringify(w.task)}\n${w.lookup ? `  lookup: ${JSON.stringify(w.lookup)}\n` : ""}`;
-	const disabled = userAgents(cwd);
+	const disabled = userAgents(cwd, coding);
 	return `modelRoles:\n${roles}task:\n  agentModelOverrides:\n${overrides}  maxRecursionDepth: ${WORKER_MAX_DEPTH}\n  agentIdleTtlMs: ${workerIdleMin() * 60_000}\n${w.limit ? `  maxConcurrency: ${w.limit}\n` : ""}${TASK_PINS}${disabled.length ? `  disabledAgents:\n${quoted(disabled, "    ")}` : ""}`;
 }
 
@@ -132,12 +134,16 @@ function sessionOf(o: SpawnOpts): { file: string; who: string } {
  * idle worker is parked after lanes.worker_idle_min, a lane runs at most its worker slots at once, and a compacted
  * orchestrator keeps orchestrator.keep_recent. omp has no setting for OmO's child-process runner and execution mode, nor for
  * a rule appended to every worker's prompt.
+ * With a coding harness payload (hub/done-gate.ts) the overlay also adds the payload's skills folder to `skills.customDirectories`
+ * and the payload folder to `workspace.additionalDirectories` when it holds an AGENTS.md, and leaves the payload's rule and agent names out of
+ * the disabled lists, so they stay available; the owner's same-named rule or agent then wins over the payload's (a known limit). `rule:RULES`
+ * and the owner's user-level AGENTS.md stay disabled.
  */
-export function writeOverlay(o: SpawnOpts): string {
+export function writeOverlay(o: SpawnOpts, coding?: CodingHarness): string {
 	const { file, who } = sessionOf(o);
 	const workers: Workers = o.lane ? { task: o.lane.workerModel, chains: [["task", o.lane.workerFallback ?? []]], limit: o.lane.workerSlots ?? lanesMaxWorkers() } : orchestratorWorkers(o);
 	const chains: Chains = [[processChainKey(o, workers), nativeChain(o)], ...workers.chains];
 	mkdirSync(dirname(file), { recursive: true });
-	writeAtomic(file, `# Written by the dotz gateway each time ${who} starts; passed to omp as --config.\n${isolationYaml(o.cwd)}${PINS}${workersYaml(workers, o.cwd)}${compactionYaml(o)}${retryYaml(chains)}`);
+	writeAtomic(file, `# Written by the dotz gateway each time ${who} starts; passed to omp as --config.\n${isolationYaml(o.cwd, coding)}${PINS}${workersYaml(workers, o.cwd, coding)}${compactionYaml(o)}${retryYaml(chains)}`);
 	return file;
 }

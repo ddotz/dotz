@@ -306,8 +306,8 @@ export const lanesMaxActive = () => cap(cfg.lanes?.max_active);
 export const lanesMaxWorkers = () => cap(cfg.lanes?.max_workers);
 // Free space (GB) the data dir and a lane's working volume keep before new lanes wait (hub/diskguard.ts); 0 turns the guard off.
 export const lanesMinFreeDiskGb = () => (typeof cfg.lanes?.min_free_disk_gb === "number" && cfg.lanes.min_free_disk_gb >= 0 ? cfg.lanes.min_free_disk_gb : 10);
-// On unless `lanes.harness_gate` is false (2026-11-18): an omp lane in coding mode (hub/lanestate.ts laneMode) loads the harness's done gate next to dotz's extension, and the harness
-// prepares the lane's fresh worktree before its first prompt (hub/done-gate.ts). Task workers follow `workers.harness_gate` the same way. A harness that is not installed here makes it do nothing.
+/** On unless `lanes.harness_gate` is false (2026-11-18): an omp lane in coding mode (hub/lanestate.ts laneMode) loads the whole coding harness dotz installed in its data dir (done gate, guard, rules, skills; hub/done-gate.ts), never the owner's omp agent folder.
+ * Task workers of the orchestrator and conversation sessions follow `workers.harness_gate` the same way (the done gate only). A payload that is not installed makes both do nothing. */
 export const lanesHarnessGate = () => cfg.lanes?.harness_gate !== false;
 export const workersHarnessGate = () => cfg.workers?.harness_gate !== false;
 // On unless set to false (2026-11-01): with one shared session, an owner message that came while that session ran another
