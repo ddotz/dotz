@@ -330,10 +330,10 @@ test("an English conventional prefix is refused, except 내부 정리: and relea
 });
 
 test("a plain declarative ending is refused, the polite endings are not", () => {
-	for (const subject of ["omp 작업자도 done gate를 싣는다", "메일 답장을 남기지 않는다.", "화면이 바뀐다"]) {
+	for (const subject of ["omp 작업자도 done gate를 싣는다", "메일 답장을 남기지 않는다.", "화면이 바뀐다", "이 변경은 정답이 아니다", "오래된 파일을 지니다"]) {
 		expect(subjectRules(subject, BODY), subject).toEqual(["ending"]);
 	}
-	for (const subject of ["답이 사라지지 않습니다", "답이 사라지지 않아요", "창이 열려요", "목록이 보내져요", "알림이 나와요.", "문서로 옮김", "이름을 바로잡음"]) {
+	for (const subject of ["답이 사라지지 않습니다", "이 변경은 정답이 아닙니다", "답이 사라지지 않아요", "창이 열려요", "목록이 보내져요", "알림이 나와요.", "문서로 옮김", "이름을 바로잡음"]) {
 		expect(subjectRules(subject, BODY), subject).toEqual([]);
 	}
 });

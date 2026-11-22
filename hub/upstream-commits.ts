@@ -67,7 +67,14 @@ export function contentFindings(dir: string, revs: readonly string[], refs: read
 export type SubjectFinding = { sha: string; subject: string; rules: string[] };
 
 const CONVENTIONAL_PREFIX = /^[A-Za-z][\w()/-]*:\s/;
-const PLAIN_ENDING = /(?<!니)다\.?$/;
+const isPlainEnding = (subject: string): boolean => {
+	const s = subject.trim().replace(/\.$/, "");
+	if (!s.endsWith("다")) return false;
+	if (!s.endsWith("니다")) return true;
+	const ch = s[s.length - 3];
+	const code = ch ? ch.charCodeAt(0) : -1;
+	return ch !== "습" && (code < 0xac00 || code > 0xd7a3 || (code - 0xac00) % 28 !== 17);
+};
 const REASON_LABEL = /^[ \t]*(?:왜|어떻게)[ \t]*:/m;
 const SUBJECT_RULE_TEXT = {
 	prefix: "제목은 `omp:`나 `feat(x):` 같은 영어 접두어 없이 사용자에게 바뀐 점을 한 문장으로 써요(`내부 정리:`와 `release:`만 허용돼요)",
@@ -80,7 +87,7 @@ export function subjectRules(subject: string, body: string): (keyof typeof SUBJE
 	if (/^release:/.test(subject)) return [];
 	const rules: (keyof typeof SUBJECT_RULE_TEXT)[] = [];
 	if (CONVENTIONAL_PREFIX.test(subject)) rules.push("prefix");
-	if (PLAIN_ENDING.test(subject.trim())) rules.push("ending");
+	if (isPlainEnding(subject)) rules.push("ending");
 	if (!REASON_LABEL.test(body)) rules.push("body");
 	return rules;
 }
