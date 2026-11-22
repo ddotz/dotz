@@ -133,7 +133,7 @@ test("the layout survives a reload; a narrow window shows the one section again"
 	await split(v, "lane:가나");
 	await v.navigate(`${hub.origin}/?again#chat`);
 	await waitFor(v, `paneCount() === 2 && document.querySelectorAll("#split .pane").length === 2`);
-	await v.resize(800, 800);
+	await v.resize(1100, 800);
 	await waitFor(v, `!document.querySelector("#split") && $("#views").contains($("#v-chat"))`);
 	await v.resize(1280, 800);
 	await waitFor(v, `document.querySelectorAll("#split .pane").length === 2`);

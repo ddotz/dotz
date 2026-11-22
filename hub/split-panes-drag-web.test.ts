@@ -312,8 +312,7 @@ test("a layout saved with four panes, two above two, opens as its first two side
 	expect(await ev(v, `[paneList().map(p => p.t + (p.active ? "*" : "")), PN.root.dir, PN.root.r, !!$("#split .pane-col")]`)).toEqual([["main*", "lane:가나"], "row", 0.3, false]);
 });
 
-// The chat list stays beside the panes while split, so the fixed rows (홈키핑 and 작업내역) can be pulled from it onto a pane in both directions.
-test("with the panes split the chat list stays beside them and 홈키핑 and 작업내역 swap between panes from its rows", async () => {
+test("with the panes split the chat list stays beside them and main and 작업내역 swap between panes from its rows", async () => {
 	const v = await open();
 	await drag(v, ROW("lane:가나"), ONE, 0.97, 0.5);
 	await waitFor(v, `paneCount() === 2 && document.querySelectorAll("#split .pane").length === 2`);

@@ -70,7 +70,7 @@ new ResizeObserver(cnvFoldSync).observe($("#v-chat"));
 function paneSync() { paneSyncRun(); cnvFoldSync(); }
 function paneSyncRun() {
   if (!PNV.el && paneCount() < 2) return;
-  if (paneCount() < 2 || narrowChat()) { paneTeardown(); return; }
+  if (paneCount() < 2 || paneNarrow()) { paneTeardown(); return; }
   const show = paneTabOk();
   if (show) paneAdopt();
   paneRoot().hidden = !show;
@@ -91,7 +91,7 @@ function paneHeadSync() {
   const a = paneFind(PN.active), n = PNV.el && a.kind === "app" && PNV.el.querySelector(".pane.on > .pane-hd .cv-hd-t"), name = n && paneName(a);
   if (n && n.lastChild.textContent !== name) { n.lastChild.textContent = name; n.title = name; }
 }
-matchMedia("(max-width: 1099px)").addEventListener("change", paneSync);
+matchMedia("(max-width: 1219px)").addEventListener("change", paneSync);
 
 // The tab that is lit while 모니터링's screen sits in an app pane: 채팅 (go() in 05-command-palette.js).
 const paneLit = name => name === "monitoring" && !!PNV.el && !PNV.el.hidden && paneTabOk();
