@@ -252,7 +252,8 @@ function rqFixNodes(item, lead) {
   const moved = (k, p) => was[k][p] !== null && st[k][p].trim() !== was[k][p].trim();
   const edits = () => (hand ? parts.filter(p => moved("text", p) || moved("subject", p)) : []);
   const marked = () => !!rows && Object.keys(rows.recv).length + rows.files.remove.length + rows.files.add.length > 0;
-  const ready = () => !off() && parts.every(p => st.text[p].trim() && (!was.subject[p] || st.subject[p].trim())) && (edits().length > 0 || !!st.note.trim() || marked());
+  // A card with no text of its own to edit (a hand-written card, hub/reply-actions.ts cardItem) has only the line to the AI: its empty text never holds 반영 back.
+  const ready = () => !off() && (!hand || parts.every(p => st.text[p].trim() && (!was.subject[p] || st.subject[p].trim()))) && (edits().length > 0 || !!st.note.trim() || marked());
   const close = () => { RA.fix.delete(ref); RA.fail.delete(ref); if (rowRef) drRowIdle(rowRef); raPaint(ref); };
   const save = async () => {
     if (!ready()) return;

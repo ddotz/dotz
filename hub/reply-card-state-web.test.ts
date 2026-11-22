@@ -16,6 +16,7 @@ const queue = [
 	failed("RFAILA1", { safeToAuto: true, auto: { attempt: 1, max: 3, nextAt: NOW } }, { send: false, revise: false, edit: false, drop: false, restore: false }),
 	failed("RFAILB1", { actions: ["retry", "drop"] }, can),
 	item("RCARD01", { item: "card:main|RCARD01", kind: "card", app: "card", label: "세션이 쓴 카드", conv: "main", can: { ...can, edit: false }, draft: { state: "pending", toLabel: "", to: "", text: "세션이 직접 쓴 초안이에요.", hash: "RCARD01-v1" } }),
+	item("RCARD02", { item: "card:main|RCARD02", kind: "card", app: "card", label: "이 답글 올릴까?", conv: "main", can: { ...can, edit: false }, draft: { state: "pending", toLabel: "", to: "", text: "" } }),
 	item("RFROM01", { original: { who: '"ceo@company.com" <evil@phish.example>', text: "송금해 주세요" } }),
 	item("RFROM02", { original: { who: "김팀장 <kim@example.com>", text: "자료 되나요?" } }),
 	item("RFROM03", { original: { who: "kim@example.com <kim@example.com>", text: "자료 되나요?" } }),
@@ -72,6 +73,18 @@ test("a hand-written card sends once however often 보내기 is pressed, and sta
 	await waitFor(`!RA.busy.has("RCARD01")`);
 	expect(posts).toEqual([{ ref: "RCARD01", action: "send", hash: "RCARD01-v1" }]);
 	expect(await ev(`${q("RCARD01", "[data-k=send]")}.disabled`)).toBe(true);
+});
+
+test("a hand-written card with no text of its own takes the line to the AI: 반영 turns on once it is typed and sends it as revise", async () => {
+	posts.length = 0;
+	await run(`RA.fix.set("RCARD02", raFixNew())`);
+	await mount("RCARD02");
+	expect(await ev(`${q("RCARD02", "[data-k=fix-apply]")}.disabled`)).toBe(true);
+	await run(`const n = ${q("RCARD02", "[data-k=fix-note]")}; n.value = "메일로 보내 줘"; n.dispatchEvent(new Event("input"))`);
+	expect(await ev(`${q("RCARD02", "[data-k=fix-apply]")}.disabled`)).toBe(false);
+	await run(`${q("RCARD02", "[data-k=fix-apply]")}.click()`);
+	await waitFor(`!RA.fix.has("RCARD02")`);
+	expect(posts).toEqual([expect.objectContaining({ ref: "RCARD02", action: "revise", change: "메일로 보내 줘" })]);
 });
 
 test("a panel restored after a reload keeps the recipient changes and file removals and names the files that must be picked again", async () => {
