@@ -1,6 +1,5 @@
 /* ---------- 분할 창: the screen (docs/split-panes.md) ----------
-   #split sits in #views from the second pane on, on a wide screen and the chat tab only: the tree of panes takes the whole width (the list column is folded,
-   owner 8f7c8c3d), and the chat list (convSide) lies over the panes from the left when the active pane's 목록 button asks for it. The active pane holds the
+   #split sits in #views from the second pane on, on a wide screen and the chat tab only: the chat list (convSide) keeps its column at the left, so a row can be pulled onto a pane, and the tree of panes takes the rest. The active pane holds the
    real #v-chat (go() finds the sections by id). Another tab, back to one pane or a narrow window: every node goes where it was (the tab, #split hidden
    with the panes kept) or #split goes (one pane, narrow). */
 let PNV = { el: null, side: null, tree: null, sig: "", order: null, cmp: null, open: false };
@@ -15,13 +14,13 @@ function paneRoot() {
   return PNV.el;
 }
 
-// The chat list over the panes (the 목록 button of the active pane): it lies from the left edge at its own width, so neither pane moves. It closes on a pick,
-// a press outside it and Esc. It comes in the way a sheet does (280ms, the motion curve) and instantly under reduced motion.
-// The same fold holds for the conversation with a 캔버스 open (cnvFoldSync below): there #v-chat is the host, and its own 목록 button is this one.
-const paneHost = () => (PNV.el && !PNV.el.hidden ? PNV.el : $("#v-chat").classList.contains("cnv-fold") ? $("#v-chat") : null);
+// The chat list over the conversation with a 캔버스 open (cnvFoldSync below), when the window has no room for it as a column: #v-chat is the host, and its 목록 button
+// brings the list in from the left edge at its own width, so nothing moves. It closes on a pick, a press outside it and Esc. It comes in the way a sheet does
+// (280ms, the motion curve) and instantly under reduced motion.
+const paneHost = () => ($("#v-chat").classList.contains("cnv-fold") ? $("#v-chat") : null);
 const paneListOutside = ev => { if (!ev.target.closest("#chat-convo, .pane-ls")) paneListShut(); };
 const paneListKey = ev => { if (ev.key === "Escape") paneListShut(); };
-// a row of the list that lies over the panes (or the 캔버스 chat) is a pick: the list closes (the row itself opens in the active pane, 31-conversations.js)
+// a row of the list that lies over the 캔버스 chat is a pick: the list closes
 convSide.addEventListener("click", ev => { if (PNV.open && ev.target.closest(".cv-row")) paneListShut(); });
 function paneListMark() {
   const b = document.querySelector(".pane-ls");
@@ -38,7 +37,7 @@ function paneListOpen() {
   document.addEventListener("pointerdown", paneListOutside, true);
   document.addEventListener("keydown", paneListKey, true);
 }
-const paneListGone = () => { for (const n of [PNV.el, $("#v-chat")]) if (n) n.classList.remove("ls-open"); convSide.getAnimations().forEach(a => a.cancel()); };
+const paneListGone = () => { $("#v-chat").classList.remove("ls-open"); convSide.getAnimations().forEach(a => a.cancel()); };
 function paneListShut(now) {
   if (!PNV.open) return;
   PNV.open = false;
@@ -48,9 +47,9 @@ function paneListShut(now) {
   if (now) paneListGone();
   else motionOut(convSide, "fade", M_MS.fast).then(() => { if (!PNV.open) paneListGone(); });
 }
-// The 목록 button of the pane that is open (also the one the conversation shows beside a 캔버스 that has no room for the list column).
+// The 목록 button the conversation shows beside a 캔버스 that has no room for the list column.
 const paneLsBtn = () => el("button", { class: "ib pane-ls", type: "button", "aria-label": TX("misc.pane.list"), "aria-expanded": String(PNV.open), title: TX("misc.pane.list"), onclick: () => (PNV.open ? paneListShut() : paneListOpen()) }, icon("list"));
-// With a 캔버스 open in the conversation, the list column folds exactly as in split panes when the window cannot give the canvas cnv-min wide next to the
+// With a 캔버스 open in the conversation, the list column folds when the window cannot give the canvas cnv-min wide next to the
 // conversation's own minimum (the width a split pane keeps, 20-canvas.css): the list lies over the conversation from the 목록 button, and comes back as a column when the canvas closes.
 function cnvNeed(c) {
   const cs = getComputedStyle(c), n = p => parseFloat(cs.getPropertyValue(p)) || 0;
@@ -86,7 +85,6 @@ function paneAway() {
   if (!PNV.sig) return;
   paneRelease();
   PNV.sig = "";
-  paneListShut();
 }
 // The active screen's head follows the screen without a redraw (the KakaoTalk room open inside it).
 function paneHeadSync() {
@@ -130,7 +128,6 @@ function paneTeardown() {
   if (!PNV.el) return;
   const chat = current === "chat", at = chat ? chatAnchor() : null, stick = chatStick;
   paneRelease();
-  paneListShut();
   PNV.el.remove(); PNV.el = PNV.side = PNV.tree = null; PNV.sig = "";
   paneMirrorsClear();
   if (chat) paneLand(at, stick);
@@ -164,9 +161,7 @@ function paneShare(n, box) {
 function paneLeafEl(p, sec) {
   const on = p.id === PN.active;
   const x = el("button", { class: "ib pane-x", type: "button", "aria-label": TX("misc.pane.close"), title: TX("misc.pane.close"), onclick: () => paneClose(p.id) }, icon("close"));
-  // the active pane's 목록 button sits at its head's left, over the head (the head leaves room for it, 26-panes.css)
-  const ls = on && paneLsBtn();
-  const kids = !on ? (p.kind === "chat" ? [paneMirror(p), x] : [paneMirror(p)]) : p.kind === "app" ? [paneHeadEl(p).head, sec, ls] : [sec, x, ls];
+  const kids = !on ? (p.kind === "chat" ? [paneMirror(p), x] : [paneMirror(p)]) : p.kind === "app" ? [paneHeadEl(p).head, sec] : [sec, x];
   const box = el("div", { class: `pane${on ? " on" : ""}`, "data-id": p.id, "data-kind": p.kind }, ...kids);
   box.addEventListener("pointerdown", ev => {
     if (ev.button !== 0 || p.id === PN.active || ev.target.closest(".pane-x")) return;

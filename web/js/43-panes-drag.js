@@ -143,7 +143,6 @@ const PD_EVENTS = [["pointermove", paneDragMove], ["pointerup", paneDragUp], ["p
 function paneDrop(src, { id, side }) {
   if (src.pane) { paneMove(src.pane, id, side); return; }
   const { kind, t } = src;
-  paneListShut();
   if (paneCount() > 1) {
     const dup = paneOpenIn(kind, t);
     if (dup) paneFocus(dup.id);

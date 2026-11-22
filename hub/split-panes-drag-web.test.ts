@@ -311,3 +311,20 @@ test("a layout saved with four panes, two above two, opens as its first two side
 	await waitFor(v, `paneCount() === 2 && document.querySelectorAll("#split .pane").length === 2 && CV.placed`);
 	expect(await ev(v, `[paneList().map(p => p.t + (p.active ? "*" : "")), PN.root.dir, PN.root.r, !!$("#split .pane-col")]`)).toEqual([["main*", "lane:가나"], "row", 0.3, false]);
 });
+
+// The chat list stays beside the panes while split, so the fixed rows (홈키핑 and 작업내역) can be pulled from it onto a pane in both directions.
+test("with the panes split the chat list stays beside them and 홈키핑 and 작업내역 swap between panes from its rows", async () => {
+	const v = await open();
+	await drag(v, ROW("lane:가나"), ONE, 0.97, 0.5);
+	await waitFor(v, `paneCount() === 2 && document.querySelectorAll("#split .pane").length === 2`);
+	await waitFor(v, SETTLED);
+	const reachable = (t: string) => ev(v, `(() => { const r = document.querySelector(${JSON.stringify(ROW(t))}).getBoundingClientRect(); const hit = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2); return r.width > 0 && !!hit && hit.closest(".cv-row") === document.querySelector(${JSON.stringify(ROW(t))}); })()`);
+	expect(await reachable("worklog")).toBe(true);
+	expect(await reachable("main")).toBe(true);
+	await drag(v, ROW("worklog"), PANE("main"), 0.5, 0.5);
+	await waitFor(v, `paneList().map(p => p.t).join() === "worklog,lane:가나"`);
+	await waitFor(v, SETTLED);
+	expect(await reachable("main")).toBe(true);
+	await drag(v, ROW("main"), PANE("worklog"), 0.5, 0.5);
+	await waitFor(v, `paneList().map(p => p.t).join() === "main,lane:가나"`);
+});
