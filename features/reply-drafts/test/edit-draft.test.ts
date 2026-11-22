@@ -58,7 +58,7 @@ test("an edited body longer than the style's limit still passes the send-time li
 test("a revise whose new draft could not be stored records no lesson", async () => {
 	addDraft(rec());
 	const m = fakeModel([j({ ...goodReply, body: "목요일까지 보내드릴게요.", lesson: "마감은 넉넉히 잡아서 쓴다" })]);
-	const write = spyOn(store, "addDraft").mockImplementation(() => { throw new Error("disk full"); });
+	const write = spyOn(store, "addRevision").mockImplementation(() => { throw new Error("disk full"); });
 	try {
 		await expect(reviseDraft("REDIT1", "마감을 목요일로", { call: m.call })).rejects.toThrow("disk full");
 	} finally {

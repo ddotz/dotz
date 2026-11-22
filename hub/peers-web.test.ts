@@ -63,17 +63,17 @@ describe("computer chip after coming back from the other computer", () => {
 // computer opens in a full-screen frame inside it; a browser tab still goes to the other address.
 const embed = src.slice(src.indexOf("// The installed app (iPhone"), src.indexOf("function prPick(p, o = {}) {"));
 function shell(standalone: boolean) {
-	const appended: any[] = [], listeners: Record<string, (ev: unknown) => void> = {}, loc = { href: "https://mac:8443/", replace(h: string) { loc.href = h; } };
-	let open = 0;
+	const appended: any[] = [], listeners: Record<string, (ev: unknown) => void> = {}, loc = { href: "https://mac:8443/", replaced: 0, replace(h: string) { loc.href = h; loc.replaced++; } };
+	let open = 0, entries = 0;
 	const win: any = { addEventListener: (k: string, fn: (ev: unknown) => void) => void (listeners[k] = fn) };
 	win.top = win; win.self = win;
-	const el = (tag: string, props: Record<string, unknown>, ...kids: any[]) => { const n: any = { tag, ...props, firstElementChild: kids[0], removed: false, remove() { n.removed = true; } }; return n; };
+	const el = (tag: string, props: Record<string, unknown>, ...kids: any[]) => { const n: any = { tag, ...props, firstElementChild: kids[0], kids, removed: false, remove() { n.removed = true; } }; return n; };
 	const env: Record<string, unknown> = {
 		isStandalone: () => standalone, window: win, location: loc, document: { body: { append: (n: unknown) => appended.push(n) } }, el,
-		ovOpen: () => ({ n: ++open }), ovDone: () => {}, prLoad: () => {}, PR: { list: [MAC, MINI] }, prUrl: (p: Peer, x = "") => `${p.url}/${x}`, enc: encodeURIComponent, DEVICE_ID: "d1",
+		ovOpen: () => { entries++; return { n: ++open }; }, ovDone: () => { entries--; }, prLoad: () => {}, icon: () => null, PR: { list: [MAC, MINI] }, prUrl: (p: Peer, x = "") => `${p.url}/${x}`, enc: encodeURIComponent, DEVICE_ID: "d1",
 	};
-	const api = new Function(...Object.keys(env), `${i18nPrelude()}${embed}\nreturn { prGo, PRF };`)(...Object.values(env)) as { prGo: (h: string) => void; PRF: { node: any } };
-	return { ...api, appended, loc, message: (origin: string, data: unknown) => listeners.message!({ origin, data }) };
+	const api = new Function(...Object.keys(env), `${i18nPrelude()}${embed}\nreturn { prGo, PRF };`)(...Object.values(env)) as { prGo: (h: string, auto?: boolean) => void; PRF: { node: any } };
+	return { ...api, appended, loc, entries: () => entries, message: (origin: string, data: unknown) => listeners.message!({ origin, data }) };
 }
 
 describe("switching computers in the installed app", () => {
@@ -95,6 +95,36 @@ describe("switching computers in the installed app", () => {
 		s.prGo("https://mini:8445/?did=d1");
 		expect(s.loc.href).toBe("https://mini:8445/?did=d1");
 		expect(s.appended.length).toBe(0);
+	});
+
+	test("a hand-over opens the frame without a history entry, and its close button closes it", () => {
+		const s = shell(true);
+		s.prGo("https://mini:8445/?did=d1&hop=1", true);
+		expect(s.entries()).toBe(0);
+		expect(s.appended[0].firstElementChild.src).toBe("https://mini:8445/?did=d1&hop=1");
+		const close = s.appended[0].kids[1];
+		expect(close.class).toContain("pr-frame-x");
+		expect(close["aria-label"]).toBe("닫기");
+		close.onclick();
+		expect(s.PRF.node).toBeNull();
+		expect(s.appended[0].removed).toBe(true);
+		expect(s.entries()).toBe(0);
+	});
+
+	test("a switch the owner pressed keeps its history entry and has no close button", () => {
+		const s = shell(true);
+		s.prGo("https://mini:8445/?did=d1");
+		expect(s.entries()).toBe(1);
+		expect(s.appended[0].kids[1]).toBeNull();
+		s.message(MINI.url, { dotz: "peer-pick", url: MAC.url });
+		expect(s.entries()).toBe(0);
+	});
+
+	test("a hand-over in a browser tab replaces the tapped address", () => {
+		const s = shell(false);
+		s.prGo("https://mini:8445/?did=d1", true);
+		expect(s.loc.replaced).toBe(1);
+		expect(s.loc.href).toBe("https://mini:8445/?did=d1");
 	});
 });
 

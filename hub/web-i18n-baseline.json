@@ -61,7 +61,7 @@
       "why": "server value comparison"
     },
     "web/js/11-watchtext.js": {
-      "count": 24,
+      "count": 8,
       "why": "Korean text handling"
     },
     "web/js/12-terminal-view.js": {

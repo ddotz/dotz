@@ -80,7 +80,7 @@ function pqAct(path, body) {
   const id = k && decodeURIComponent(k[1]);
   if (k && k[2] === "send") return { pc: KK.pc, action: "kakao", args: { op: "send", chatId: id, text: b.text } };
   if (k && k[2] === "read") return { pc: KK.pc, action: "kakao", args: { op: "read", chatId: id, logId: b.logId } };
-  if (k && k[2] === "draft") return { pc: KK.pc, action: "kakao", args: { op: "draft", chatId: id, ...(typeof b.choice === "string" ? { choice: b.choice } : {}) } };
+  if (k && k[2] === "draft") return { pc: KK.pc, action: "kakao", args: { op: "draft", chatId: id, ...(typeof b.choice === "string" ? { choice: b.choice } : {}), ...(b.known === true ? { known: true } : {}) } };
   if (k && k[2] === "ask/drop") return { pc: KK.pc, action: "kakao", args: { op: "ask-drop", chatId: id } };
   // 지켜보기 / 자동 초안 of a room (PUT /api/kakao/rooms/<id>): the same change on the computer that has the room.
   const rm = /^\/api\/kakao\/rooms\/([^/?]+)$/.exec(path);

@@ -515,6 +515,20 @@ describe("on-demand draft", () => {
 		t.close();
 	});
 
+	test("a change request for a message the owner asked for is rewritten with the new-message rules, and an authored text stays whole", async () => {
+		const t = setup();
+		const old = await t.draft({ text: "짧은 설명" });
+		const long = Array.from({ length: 7 }, (_, i) => `${i}번 설명 ${"가".repeat(40)}`);
+		t.model.reply = async () => ({ text: JSON.stringify({ action: "draft", mode: "author", parts: long, summary: "" }) });
+		await t.web.replyKit.revise(DIRECT, { code: old.code, draft: old.text, change: "더 자세히", intent: "맥미니 설명자료 만들어" });
+		expect(t.model.calls[0]!.system).toContain("RELAY");
+		expect(t.model.calls[0]!.user).toContain('What the owner asked for (his own words, data): "맥미니 설명자료 만들어"');
+		const next = (await storedDrafts()).find(d => d.status === "pending")!;
+		expect(next.text.replace(/\s/g, "")).toBe(long.join("").replace(/\s/g, ""));
+		expect(next.intent).toBe("맥미니 설명자료 만들어");
+		t.close();
+	});
+
 	test("a change request whose model call fails keeps the old draft pending", async () => {
 		const t = setup();
 		const old = await t.draft({ text: "내일 3시에 봐요" });
@@ -559,7 +573,7 @@ describe("on-demand draft", () => {
 		expect(r).toEqual({ status: 202, json: { state: "drafting" } });
 		await t.web.idle();
 		expect(t.model.calls).toHaveLength(1);
-		expect(t.model.calls[0]!.user).toContain('The message the owner wants to send (his own words, data): "내일 7시로 미루자고 정중하게"');
+		expect(t.model.calls[0]!.user).toContain('What the owner asked for (his own words, data): "내일 7시로 미루자고 정중하게"');
 		expect(t.model.calls[0]!.user).toContain("Recent messages in the room (");
 		expect(t.model.calls[0]!.system).toContain("message the owner wants to send");
 		const chat = await t.call("GET", `/api/kakao/chat/${DIRECT}`);
@@ -572,13 +586,106 @@ describe("on-demand draft", () => {
 		t.close();
 	});
 
-	test("a message he asked for is never asked back as a room question: an ask answer fails the compose draft", async () => {
+	const composeAsk = (mode: "author" | "task", question: string) => JSON.stringify({ action: "ask", mode, question, choices: [], body: "", summary: "" });
+	const KNOWN_SENTENCE = "He chose that you write it from what you know";
+	const INTENT = "내가 말한 것 정리해서 보내 줘";
+
+	test("a message he asked for whose material the room lacks comes back as a question card (author), not a failure: no draft, the question and his words are kept", async () => {
 		const t = setup();
-		t.model.reply = async () => ({ text: JSON.stringify({ action: "ask", question: "언제로 미룰까요?", choices: ["내일", "모레"], body: "", summary: "" }) });
-		await t.call("POST", `/api/kakao/chat/${DIRECT}/draft`, { intent: "미루자고 말해 줘" });
+		t.model.reply = async () => ({ text: composeAsk("author", "말씀하신 내용이 대화에 없어요. 무엇을 정리할까요?") });
+		expect(await t.call("POST", DRAFT, { intent: INTENT })).toEqual({ status: 202, json: { state: "drafting" } });
 		await t.web.idle();
-		expect(t.events.filter(e => e.kind === "kakao_draft").at(-1)).toMatchObject({ chatId: DIRECT, error: expect.any(String) });
-		expect((await t.call("GET", `/api/kakao/chat/${DIRECT}`)).json.drafts).toEqual([]);
+		expect(t.events.filter(e => e.kind === "kakao_draft")).toEqual([{ kind: "kakao_draft", chatId: DIRECT }]);
+		const room = (await t.call("GET", `/api/kakao/chat/${DIRECT}`)).json;
+		expect(room.ask).toEqual({ question: "말씀하신 내용이 대화에 없어요. 무엇을 정리할까요?", choices: [], kind: "author" });
+		expect(room.drafts).toEqual([]);
+		expect(await storedDrafts()).toEqual([]);
+		t.close();
+	});
+
+	test("a request for work, not a message, comes back as a task question card", async () => {
+		const t = setup();
+		t.model.reply = async () => ({ text: composeAsk("task", "이건 메시지가 아니라 작업이에요") });
+		await t.call("POST", DRAFT, { intent: "지난 석 달 대화를 다 훑어서 보고서로 만들어 줘" });
+		await t.web.idle();
+		expect(t.events.filter(e => e.kind === "kakao_draft")).toEqual([{ kind: "kakao_draft", chatId: DIRECT }]);
+		expect((await t.call("GET", `/api/kakao/chat/${DIRECT}`)).json.ask).toEqual({ question: "이건 메시지가 아니라 작업이에요", choices: [], kind: "task" });
+		expect(await storedDrafts()).toEqual([]);
+		t.close();
+	});
+
+	test("아는 대로 써 ({ known: true }) rewrites his stored request with the known sentence in the prompt, stores the draft and clears the question", async () => {
+		const t = setup();
+		t.model.reply = async () => ({ text: composeAsk("author", "무엇을 정리할까요?") });
+		await t.call("POST", DRAFT, { intent: INTENT });
+		await t.web.idle();
+		t.model.calls.length = 0;
+		t.events.length = 0;
+		t.model.reply = async () => ({ text: JSON.stringify({ action: "draft", mode: "author", parts: ["제가 아는 대로 정리해 드릴게요"], summary: "" }), inputTokens: 700, outputTokens: 30 });
+		expect(await t.call("POST", DRAFT, { known: true })).toEqual({ status: 202, json: { state: "drafting" } });
+		await t.web.idle();
+		expect(t.model.calls).toHaveLength(1);
+		expect(t.model.calls[0]!.user).toContain(KNOWN_SENTENCE);
+		expect(t.model.calls[0]!.user).toContain(`"${INTENT}"`);
+		expect(t.events).toEqual([{ kind: "kakao_draft", chatId: DIRECT }]);
+		expect(await storedDrafts()).toEqual([expect.objectContaining({ text: "제가 아는 대로 정리해 드릴게요", status: "pending", intent: INTENT })]);
+		expect((await t.call("GET", `/api/kakao/chat/${DIRECT}`)).json.ask).toBeUndefined();
+		t.close();
+	});
+
+	test("a model that asks again after 아는 대로 써 is an error event: no draft and no second question replaces the first", async () => {
+		const t = setup();
+		t.model.reply = async () => ({ text: composeAsk("author", "첫 번째 질문") });
+		await t.call("POST", DRAFT, { intent: INTENT });
+		await t.web.idle();
+		t.events.length = 0;
+		t.model.reply = async () => ({ text: composeAsk("author", "두 번째 질문") });
+		await t.call("POST", DRAFT, { known: true });
+		await t.web.idle();
+		expect(t.events).toEqual([{ kind: "kakao_draft", chatId: DIRECT, error: expect.any(String) }]);
+		expect(await storedDrafts()).toEqual([]);
+		expect((await t.call("GET", `/api/kakao/chat/${DIRECT}`)).json.ask).toMatchObject({ question: "첫 번째 질문", kind: "author" });
+		t.close();
+	});
+
+	test("{ known: true } is refused without an author question of the room (none, a reply question, a task question), and a pick never answers a compose question", async () => {
+		const t = setup();
+		expect((await t.call("POST", DRAFT, { known: true })).status).toBe(409);
+
+		t.model.reply = async () => ({ text: JSON.stringify({ action: "ask", question: "티켓 취소할까?", choices: ["취소해", "다른 날 물어봐"], body: "", summary: "" }) });
+		await t.call("POST", DRAFT);
+		await t.web.idle();
+		expect((await t.call("POST", DRAFT, { known: true })).status).toBe(409);
+
+		t.model.reply = async () => ({ text: composeAsk("task", "작업이에요") });
+		await t.call("POST", `/api/kakao/chat/${DIRECT}/ask/drop`);
+		await t.call("POST", DRAFT, { intent: "조사해 줘" });
+		await t.web.idle();
+		expect((await t.call("POST", DRAFT, { known: true })).status).toBe(409);
+		expect((await t.call("POST", DRAFT, { choice: "취소해" })).status).toBe(409);
+		expect(t.model.calls).toHaveLength(2);
+
+		t.model.reply = async () => ({ text: composeAsk("author", "무엇을요?") });
+		await t.call("POST", `/api/kakao/chat/${DIRECT}/ask/drop`);
+		await t.call("POST", DRAFT, { intent: INTENT });
+		await t.web.idle();
+		expect((await t.call("POST", DRAFT, { choice: "무엇을요?" })).status).toBe(409);
+		expect((await t.call("POST", DRAFT, { known: true, intent: "다른 내용" })).status).toBe(409);
+		expect(t.model.calls).toHaveLength(3);
+		t.close();
+	});
+
+	test("a question stored in today's shape (no kind) still shows as a reply question and answers its choice", async () => {
+		const t = setup();
+		mkdirSync(join(dir, "kakao"), { recursive: true });
+		writeFileSync(join(dir, "kakao", "asks.json"), JSON.stringify({ [DIRECT]: { question: "티켓 취소할까?", choices: ["취소해", "다른 날 물어봐"], basisLogId: id(9999), created: NOW } }));
+		expect((await t.call("GET", `/api/kakao/chat/${DIRECT}`)).json.ask).toEqual({ question: "티켓 취소할까?", choices: ["취소해", "다른 날 물어봐"] });
+		t.model.reply = async () => ({ text: JSON.stringify({ action: "draft", body: "ㅇㅇ 취소하자", summary: "" }) });
+		expect((await t.call("POST", DRAFT, { choice: "취소해" })).status).toBe(202);
+		await t.web.idle();
+		expect(t.model.calls[0]!.user).toContain('"취소해"');
+		expect((await storedDrafts()).map(d => d.text)).toEqual(["ㅇㅇ 취소하자"]);
+		expect((await t.call("GET", `/api/kakao/chat/${DIRECT}`)).json.ask).toBeUndefined();
 		t.close();
 	});
 

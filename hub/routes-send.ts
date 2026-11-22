@@ -17,8 +17,10 @@ import { lanes } from "./lanes.ts";
 import { orch } from "./orchestrator.ts";
 import { enqueue, queueItems, restore, take } from "./queue.ts";
 import { resolveNotices } from "./notices.ts";
-import { AGENT_AUTHOR, agentCall } from "./entry-check.ts";
-import { queue, bgWork, out, progress } from "./outbound.ts";
+import { ownerOnlyCard } from "./approval-wire.ts";
+import { AGENT_AUTHOR } from "./agent-author.ts";
+import { agentCall, callerLogin } from "./entry-check.ts";
+import { queue, bgWork, out, ownerSaid, progress } from "./outbound.ts";
 import { convs, maxLiveView } from "./convsessions.ts";
 import { repostRefusal } from "./lanewire.ts";
 import { MAIN, primaryTarget, QUICK } from "./session-key.ts";
@@ -66,7 +68,7 @@ export async function routeSend(req: Request, url: URL, parts: string[], { peer 
 		});
 		if (!String(b.text ?? "").trim() && !files.length && !elements.length) return json({ error: "text required" }, 400);
 		const text = String(b.text ?? "");
-		const login = agentCall(req, peer) ? AGENT_AUTHOR : (req.headers.get("tailscale-user-login") ?? "local"); // an agent's own post is never the owner's word (hub/model-guard.ts); his forward from his other computer is
+		const login = callerLogin(req, peer);
 		// mode: none (main takes it as the next message, a working lane is steered), "steer" (into the running turn
 		// now), "interrupt" (abort the running turn, then send as a new prompt), "queue" (a working target gets it
 		// when its turn ends, see queue.ts; an idle target gets it now).
@@ -100,8 +102,8 @@ export async function routeSend(req: Request, url: URL, parts: string[], { peer 
 		if (cid) rememberCid(cid, { ok: true });
 		try {
 			// A decision answer from the chat card: the asking message (its ts) and the chosen option per block (intake.ts decisionLines).
-			const picks = Array.isArray(b.picks) ? b.picks.slice(0, 10).flatMap((p: any) => (p && Number.isFinite(Number(p.n)) ? [{ q: String(p.q ?? "").slice(0, 200), n: Number(p.n), label: String(p.label ?? "").slice(0, 120), ...(typeof p.note === "string" && p.note.trim() ? { note: p.note.replace(/\s+/g, " ").trim().slice(0, 500) } : {}) }] : [])) : [];
-			await sendWeb({ lane, project, mail, settings, conv: lane || project || mail || settings ? undefined : conv, channel, text, mode: mode === "queue" ? "default" : mode, login, files, ...(elements.length ? { elements } : {}), ...(turnRefs.length ? { refs: turnRefs } : {}), ...(typeof b.reply_to === "string" && b.reply_to ? { replyTo: b.reply_to.slice(0, 40) } : {}), ...(reply ? { reply } : {}), ...(typeof b.decision === "string" && b.decision ? { decision: b.decision.slice(0, 80) } : {}), ...(picks.length ? { picks } : {}), via: viaOf(b.via) });
+			const picks = login !== AGENT_AUTHOR && Array.isArray(b.picks) ? b.picks.slice(0, 10).flatMap((p: any) => (p && Number.isFinite(Number(p.n)) ? [{ q: String(p.q ?? "").slice(0, 200), n: Number(p.n), label: String(p.label ?? "").slice(0, 120), ...(typeof p.note === "string" && p.note.trim() ? { note: p.note.replace(/\s+/g, " ").trim().slice(0, 500) } : {}) }] : [])) : [];
+			await sendWeb({ lane, project, mail, settings, conv: lane || project || mail || settings ? undefined : conv, channel, text, mode: mode === "queue" ? "default" : mode, login, files, ...(elements.length ? { elements } : {}), ...(turnRefs.length ? { refs: turnRefs } : {}), ...(typeof b.reply_to === "string" && b.reply_to ? { replyTo: b.reply_to.slice(0, 40) } : {}), ...(reply ? { reply } : {}), ...(login !== AGENT_AUTHOR && typeof b.decision === "string" && b.decision ? { decision: b.decision.slice(0, 80) } : {}), ...(picks.length ? { picks } : {}), via: viaOf(b.via) });
 		} catch (error) {
 			sentCids.delete(cid);
 			return json({ error: (error as Error).message }, 409);
@@ -204,7 +206,7 @@ export async function routeSend(req: Request, url: URL, parts: string[], { peer 
 		const refused = session === MAIN && !b.update_key && (repostRefusal(target, String(b.text ?? "")) || reanswerRefusal(b.reply_to, id => sender.isAnswered(id)));
 		if (refused) return json({ delivered: false, reason: refused });
 		// `resolves` (text in the title / text of the open questions it settles, or "*" for all): this post says their matter is over.
-		if (typeof b.resolves === "string" && b.resolves.trim()) resolveNotices(b.resolves.trim() === "*" ? { all: true } : { match: b.resolves }, conv => convs.keyOf(conv ?? "") === session);
+		if (typeof b.resolves === "string" && b.resolves.trim()) resolveNotices(b.resolves.trim() === "*" ? { all: true } : { match: b.resolves }, conv => convs.keyOf(conv ?? "") === session, agentCall(req, peer) ? ownerOnlyCard : undefined, ownerSaid(b.reply_to));
 		if (b.update_key) {
 			try {
 				return json(await progress(target, String(b.update_key), String(b.text ?? ""), b.reply_to, session, "dotz_send"));

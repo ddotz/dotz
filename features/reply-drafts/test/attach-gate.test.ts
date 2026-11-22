@@ -4,8 +4,11 @@ import { afterAll, beforeEach, describe, expect, test } from "bun:test";
 import { appendFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { claimsAttachment } from "../../../hub/attach-claim.ts";
+import { attachIssues } from "../../../hub/attach-check.ts";
 import { parseDecisions } from "../../../hub/choices.ts";
 import { ATTACH_REFUSED, parseDraftApproval } from "../../../hub/draft-approval.ts";
+import { generateReply, type ModelCall, type ReplyStyle } from "../../../hub/reply-draft.ts";
 import { runDraft } from "../bin/draft.ts";
 import { askText, draftAttachIssues, sendDraft } from "../lib/flow.ts";
 import { paths } from "../lib/settings.ts";
@@ -50,7 +53,7 @@ describe("sendDraft with a card posted in a work channel", () => {
 	const posted = (rec: DraftRec) => log("outbox.jsonl", { kind: "out", source: "orchestrator", target: at, text: askText(rec, []) }, 1000);
 	// Typed chat is the model's to read (the reply intent design, 2026-11-16): the gate counts the owner's pick only.
 	test("the card alone and his typed answer under it send nothing; his pick sends once", async () => {
-		const rec = draft("확인했습니다.");
+		const rec = draft("확인했습니다.", { item: { kind: "mail", from: "teacher@example.com", text: "안부 인사드립니다" } as never });
 		posted(rec);
 		const f = fakeSend();
 		expect((await sendDraft(rec.id, f)).ok).toBe(false);
@@ -142,6 +145,136 @@ describe("sendDraft with a mail whose files disagree with its words", () => {
 	test("a source that cannot carry files, and a chat draft, have nothing to check", () => {
 		expect(draftAttachIssues(draft(PROMISE, { source: "webmail:site-one" }))).toEqual([]);
 		expect(draftAttachIssues(draft(PROMISE, { kind: "comment" }))).toEqual([]);
+	});
+});
+
+const FILE_CLAIMS: [string, boolean][] = [
+	["견적서 보내드립니다.", true],
+	["견적서를 첨부합니다.", true],
+	["견적서를 첨부했습니다.", true],
+	["견적서 첨부드립니다.", true],
+	["견적서 보내드렸습니다.", true],
+	["견적서는 아래와 같이 보냈습니다.", true],
+	["견적서 첨부해서 보냅니다", true],
+	["PDF로 보내드릴게요", true],
+	["Please find the attached quote.", true],
+	["I've attached the quote.", true],
+	["See attached.", true],
+	["Attached is the quote.", true],
+	["I'll send the PDF tomorrow.", true],
+	["Here is the invoice you asked for.", true],
+	["계약 서류 보내드립니다.", true],
+	["요청하신 wav 보내드립니다.", true],
+	["견적서 송부드립니다.", true],
+	["견적서를 송부합니다.", true],
+	["견적서를 송부했습니다.", true],
+	["견적서 첨부드렸습니다.", true],
+	["견적서를 첨부해 드렸습니다.", true],
+	["견적서를 발송했습니다.", true],
+	["견적서를 발송합니다.", true],
+	["자료 공유드립니다.", true],
+	["I have enclosed the quote.", true],
+	["Enclosed is the quote.", true],
+	["Please see the attachment.", true],
+	["Thanks for the attached file.", false],
+	["I received the attached quote.", false],
+	["In the attached file you sent, row 3 is wrong.", false],
+	["Regarding the file you attached, thanks.", false],
+	["I will not be attaching anything.", false],
+	["견적서를 첨부하지 못했어요.", false],
+	["첨부 파일은 없습니다.", false],
+	["이름을 알려 주시면 보내드리겠습니다.", false],
+	["견적서입니다.", false],
+	["아래 파일 확인해 주세요.", false],
+];
+
+describe("a draft with no file: the gate refuses what the card warns about", () => {
+	test("attachIssues reports a missing file for exactly the phrases the card calls a claim", () => {
+		for (const [body, claimed] of FILE_CLAIMS) {
+			expect([body, claimsAttachment(body)]).toEqual([body, claimed]);
+			expect([body, attachIssues({ body, files: [], request: "안부 인사드립니다" }).some(i => i.kind === "missing")]).toEqual([body, claimed]);
+		}
+	});
+
+	test.each(["견적서를 첨부했습니다.", "견적서 보내드렸습니다.", "Please find the attached quote.", "I've attached the quote."])("%s: 1) 보내기 is refused, 이대로 보내기 sends", async body => {
+		const rec = draft(body, { item: { kind: "mail", from: "teacher@example.com", text: "안부 인사드립니다" } as never });
+		choose(rec.id, 1, "보내기");
+		const s = fakeSend();
+		const refused = await sendDraft(rec.id, { send: s.send });
+		expect([refused.ok, refused.code, s.sent, getDraft(rec.id)!.status]).toEqual([false, "attach_mismatch", [], "pending"]);
+		expect((await sendDraft(rec.id, { send: s.send }, { withReply: true, asIs: true })).ok).toBe(true);
+		expect(s.sent).toEqual([rec.id]);
+	});
+
+	test("a reply's echoed subject is the received mail's words, not a claim; a subject the draft wrote is", () => {
+		const body = "확인했습니다. 곧 연락드릴게요.";
+		for (const subject of ["Re: 견적서 첨부합니다", "RE: Fwd: Please find the attached quote", "회신: 견적서 보내드립니다"]) expect([subject, attachIssues({ subject, body, files: [], request: "안부 인사드립니다" })]).toEqual([subject, []]);
+		expect(attachIssues({ subject: "견적서 첨부합니다", body, files: [], request: "안부 인사드립니다" }).map(i => i.kind)).toEqual(["missing"]);
+	});
+
+	test("a subject that echoes the received mail behind a tag or a reply word is not a claim of the draft", () => {
+		const body = "확인했습니다. 곧 연락드릴게요.";
+		for (const subject of ["[External] Re: 견적서 첨부합니다", "[Re] 견적서 첨부합니다", "Reply: 견적서 보내드립니다", "[External] [Ext] RE: Fwd: Please find the attached quote"]) expect([subject, attachIssues({ subject, body, files: [], request: "안부 인사드립니다" })]).toEqual([subject, []]);
+		for (const subject of ["[견적] 견적서 첨부합니다", "[External] 견적서 첨부합니다"]) expect([subject, attachIssues({ subject, body, files: [], request: "안부 인사드립니다" }).map(i => i.kind)]).toEqual([subject, ["missing"]]);
+	});
+
+	test("a phrase that refers back to an earlier mail's file is noted on the card but holds no send", () => {
+		for (const body of ["보내드린 문서는 출처를 표기해 주세요.", "보낸 PDF는 확인해 주세요"]) {
+			expect([body, claimsAttachment(body)]).toEqual([body, true]);
+			expect([body, attachIssues({ body, files: [], request: "안부 인사드립니다" })]).toEqual([body, []]);
+		}
+		expect(attachIssues({ body: "보내드린 견적서 외에 계약서도 첨부합니다.", files: [], request: "안부 인사드립니다" }).map(i => i.kind)).toEqual(["missing"]);
+	});
+});
+
+describe("a mail that asks for a file, answered with a draft that has none", () => {
+	const asking = "alpha-song 문서 보내주세요. 부탁드립니다.";
+	const item = { kind: "mail", from: "teacher@example.com", text: asking } as never;
+
+	test("a neutral body is a skipped issue naming the kind asked for", () => {
+		expect(attachIssues({ subject: "견적서 요청", body: "확인했습니다. 곧 연락드릴게요.", files: [], request: "견적서 보내주세요. 부탁드립니다." })).toEqual([{ kind: "skipped", text: "받은 메일이 요청한 문서 파일이 안 붙었어요" }]);
+	});
+
+	test("a body that says it will send later, or a mail that asks for nothing, has no issue", () => {
+		expect(attachIssues({ body: "이름을 알려 주시면 보내드리겠습니다.", files: [], request: asking })).toEqual([]);
+		expect(attachIssues({ body: "확인했습니다. 곧 연락드릴게요.", files: [], request: "안부 인사드립니다" })).toEqual([]);
+	});
+
+	test("a mail that asks to look at a file it attached, or a subject alone, does not ask for one back", () => {
+		const body = "확인했습니다. 감사합니다.";
+		for (const request of ["첨부한 계약서 확인 부탁드립니다.", "계약서에 서명 후 회신 부탁드립니다.", "Please review the attached PDF.", "문서 내용 확인 부탁드립니다.", "청구서 확인해 주세요."]) expect([request, attachIssues({ subject: "Re: 문의", body, files: [], request })]).toEqual([request, []]);
+		for (const subject of ["Re: 견적서 검토 요청", "Re: 사진 보내주세요"]) expect([subject, attachIssues({ subject, body, files: [], request: "안녕하세요. 내일 뵙겠습니다." })]).toEqual([subject, []]);
+		for (const request of ["견적서 보내 주세요.", "계약서 송부 부탁드립니다.", "음원 공유해 주세요.", "견적서를 받을 수 있을까요?", "Please send me the PDF."]) expect([request, attachIssues({ subject: "Re: 문의", body, files: [], request }).map(i => i.kind)]).toEqual([request, ["skipped"]]);
+	});
+
+	test("only a sentence that talks about sending and says later or if exempts: an unrelated closer or a price note does not", () => {
+		const request = "견적서 보내주세요. 부탁드립니다.";
+		for (const body of ["I will send the file later.", "Will send the quote separately.", "견적서는 내일 따로 보내드리겠습니다.", "확인했습니다. 나중에 보내드릴게요."]) expect([body, attachIssues({ body, files: [], request })]).toEqual([body, []]);
+		for (const body of ["확인했습니다. 더 필요하시면 말씀해 주세요.", "확인했습니다. 문의 사항 있으시면 연락 주세요.", "판매 가격은 별도입니다. 확인했습니다.", "괜찮으면 내일 통화해요. 확인했습니다.", "견적서를 따로 첨부했습니다."]) expect([body, attachIssues({ body, files: [], request }).map(i => i.kind)]).toEqual([body, [body.includes("첨부했") ? "missing" : "skipped"]]);
+		expect(attachIssues({ body: "서류는 내일 따로 보내드리겠습니다.", files: [], request: "안부 인사드립니다" })).toEqual([]);
+		expect(attachIssues({ body: "견적서 보내드립니다. 나머지는 내일 따로 보내드리겠습니다.", files: [], request: "안부 인사드립니다" }).map(i => i.kind)).toEqual(["missing"]);
+	});
+
+	test("draft generation does not call the model a second time for a file the draft deliberately left off", async () => {
+		let calls = 0;
+		const call: ModelCall = async () => {
+			calls++;
+			return `\`\`\`json\n${JSON.stringify({ action: "draft", reason: "asks a file", to: "kim@example.com", subject: "Re: 문의", body: "어떤 곡인지 알려 주세요.", questions: [], files: [] })}\n\`\`\``;
+		};
+		const style: ReplyStyle = { samples: ["확인해 보고 말씀드릴게요."], rules: [], corrections: [], forbidden: [] };
+		const r = await generateReply({ kind: "mail", from: "Kim <kim@example.com>", self: ["me@example.net"], subject: "문의", text: "견적서 보내주세요. 부탁드립니다.", candidates: ["봄노래 문서.pdf"] }, style, call);
+		expect([calls, r.tries, r.action === "draft" && r.draft.body]).toEqual([1, 1, "어떤 곡인지 알려 주세요."]);
+	});
+
+	test("1) 보내기 is refused, 이대로 보내기 sends", async () => {
+		const rec = draft("확인했습니다. 곧 연락드릴게요.", { item });
+		choose(rec.id, 1, "보내기");
+		const s = fakeSend();
+		const refused = await sendDraft(rec.id, { send: s.send });
+		expect([refused.ok, refused.code, s.sent]).toEqual([false, "attach_mismatch", []]);
+		expect(refused.text).toContain("받은 메일이 요청한 문서 파일이 안 붙었어요");
+		expect((await sendDraft(rec.id, { send: s.send }, { withReply: true, asIs: true })).ok).toBe(true);
+		expect(s.sent).toEqual([rec.id]);
 	});
 });
 

@@ -3,10 +3,12 @@ import { createHash } from "node:crypto";
 import { log, now } from "./config.ts";
 import { parseDecisions } from "./choices.ts";
 import { ATTACH_REFUSED, blockDraftRef, type DraftApproval, type DraftFileIn, parseDraftApproval, refreshDraft, rewriteDraftTo, sameDraft, withAttachIssues, withStagedFiles } from "./draft-approval.ts";
+import { policyOf } from "./reply-reasons.ts";
+import type { ReasonCode } from "./reply-types.ts";
 import { parseTone, stripHandoff } from "./tone.ts";
 import type { Decision, DecisionOpt, Notice } from "./notices-types.ts";
-import { appLabelOf, appOf, draftHandled } from "./notices-wiring.ts";
-import { TEXT_MAX, isOpenDecision } from "./notices-rules.ts";
+import { appLabelOf, appOf, type ClosedCard, draftHandled } from "./notices-wiring.ts";
+import { TEXT_MAX, closedInfo, isOpenDecision } from "./notices-rules.ts";
 import { items, save, settleDecision } from "./notices-store.ts";
 import { refreshNoticeDrafts, retitleDraftCard } from "./notices-stored.ts";
 import { announce, reopenNotices } from "./notices-answers.ts";
@@ -110,12 +112,21 @@ const discordHash = (i: Notice): string | undefined => (i.decision!.card?.shows 
 export const stampDraftCard = (id: string): Promise<void> => stamp(items.filter(i => i.id === id && isOpenDecision(i)));
 export const openDraftRefs = (to: string): string[] => items.flatMap(i => (isOpenDecision(i) && i.decision!.to === to && i.decision!.draft?.ref ? [i.decision!.draft.ref] : []));
 /** The open send-approval cards (of one conversation, or all): notice id, conversation, draft ref, question and draft (hub/approval-wire.ts);
- * `hash`: the version the card shows, `discord`: the one its Discord message shows; `asked`: the ts of the post that asked it, `posts`: its Discord message ids. */
-export const openDraftCards = (to?: string): { id: string; to: string; ref: string; title: string; draft: DraftApproval; at: string; text: string; hash?: string; discord?: string; asked?: string; posts?: string[] }[] =>
-	items.flatMap(i => (isOpenDecision(i) && (to === undefined || i.decision!.to === to) && i.decision!.draft?.ref ? [{ id: i.id, to: i.decision!.to, ref: i.decision!.draft.ref, title: i.title, draft: i.decision!.draft, at: i.at ?? i.ts, text: i.text, ...(i.decision!.hash ? { hash: i.decision!.hash } : {}), ...(discordHash(i) ? { discord: discordHash(i) } : {}), ...(i.decision!.reply_to ? { asked: i.decision!.reply_to } : {}), ...(i.decision!.card?.ids.length ? { posts: i.decision!.card.ids } : {}) }] : []));
+ * `hash`: the version the card shows, `discord`: the one its Discord message shows; `asked`: the ts of the post that asked it, `posts`: its Discord message ids;
+ * `shown`: when the card was last drawn as it reads now. */
+export const openDraftCards = (to?: string): { id: string; to: string; ref: string; title: string; draft: DraftApproval; at: string; shown: string; text: string; hash?: string; discord?: string; asked?: string; posts?: string[] }[] =>
+	items.flatMap(i => (isOpenDecision(i) && (to === undefined || i.decision!.to === to) && i.decision!.draft?.ref ? [{ id: i.id, to: i.decision!.to, ref: i.decision!.draft.ref, title: i.title, draft: i.decision!.draft, at: i.at ?? i.ts, shown: i.updated, text: i.text, ...(i.decision!.hash ? { hash: i.decision!.hash } : {}), ...(discordHash(i) ? { discord: discordHash(i) } : {}), ...(i.decision!.reply_to ? { asked: i.decision!.reply_to } : {}), ...(i.decision!.card?.ids.length ? { posts: i.decision!.card.ids } : {}) }] : []));
+/** The newest card of draft `ref`, open or answered, in the order the cards were made (not the screen's order, which lists open and unread ones first). */
+export const newestDraftCard = (ref: string): Notice | undefined => items.findLast(i => i.decision && (openDraftRef(i) === ref || i.title.endsWith(`(${ref})`)));
+/** The newest card of draft `ref` in `to` the owner already answered, as it closed, with the Discord message it was posted as (undefined: none, or never on Discord). */
+export function answeredDraftCard(to: string, ref: string): (ClosedCard & { target: string; ids: string[] }) | undefined {
+	const n = items.findLast(i => i.decision?.state === "answered" && i.decision.to === to && openDraftRef(i) === ref);
+	const c = n && closedInfo(n, n.decision!.resolved ? "resolved" : "answered");
+	return c?.target && c.ids?.length ? { ...c, target: c.target, ids: c.ids } : undefined;
+}
 /** The newest card of draft `ref` in `to` shows how the gateway's send of it went. */
-export function markDraftSend(to: string, ref: string, state: NonNullable<Decision["send"]>["state"], text = "", until?: number): void {
-	const n = items.findLast(i => i.decision?.to === to && openDraftRef(i) === ref);
+export function markDraftSend(to: string, ref: string, state: NonNullable<Decision["send"]>["state"], text = "", until?: number, code?: ReasonCode): void {
+	const n = items.findLast(i => i.decision?.to === to && openDraftRef(i) === ref) ?? newestDraftCard(ref);
 	if (!n) return;
 	const at = now();
 	const prev = n.decision!.send;
@@ -123,7 +134,8 @@ export function markDraftSend(to: string, ref: string, state: NonNullable<Decisi
 	n.decision!.send = { state, ...(text ? { text: text.slice(0, 300) } : {}), at, ...(attempts ? { attempts } : {}), ...(until ? { until } : {}) };
 	// A send refused for its files leaves the draft pending: its card opens again with the reason, so it can be answered (이대로 보내기) or the files fixed.
 	// A send taken back (cancelled in its window, or the gateway restarted in it) leaves the draft pending: the card opens again with the reason, once, on the card.
-	if (((state === "failed" && text.startsWith(ATTACH_REFUSED)) || state === "back") && n.decision!.state !== "open") reopenNotices([n.id]);
+	const refused = state === "failed" && (code ? policyOf(code).reopen === true : text.startsWith(ATTACH_REFUSED));
+	if ((refused || state === "back") && n.decision!.state !== "open") reopenNotices([n.id], `${state}:${code ?? text}`);
 	else announce([n], at);
 }
 // The bot posted the open card of draft `ref` again with changes (or the queue changed its "남은 N건" line): the open card shows the new text in place.
@@ -179,15 +191,30 @@ function rewriteCards(hit: Notice[], text: string, newRef?: string): number {
 }
 
 const openDraftRef = (i: Notice): string | undefined => i.decision!.draft?.ref ?? blockDraftRef(i.title, i.decision!.options.map(o => o.label));
+let sendOwed: (ref: string) => Promise<boolean> = async () => false;
+export const setSendOwed = (fn: typeof sendOwed): void => void (sendOwed = fn);
 export async function settleHandledDrafts(at = now()): Promise<number> {
 	const open = items.flatMap(i => {
 		const ref = isOpenDecision(i) && !i.decision!.to.startsWith("auth:") ? openDraftRef(i) : undefined;
 		return ref ? [{ i, ref }] : [];
 	});
+	const marked = items.flatMap(i => {
+		const d = i.decision, state = d?.send?.state;
+		const ref = d && d.state !== "open" && (state === "failed" || state === "unsure") && !d.to.startsWith("auth:") && typeof i.handled !== "string" && !i.dismissed ? openDraftRef(i) : undefined;
+		return ref ? [{ i, ref }] : [];
+	});
 	const hit: Notice[] = [];
 	for (const { i, ref } of open)
 		if (await (async () => draftHandled(i.decision!, i, ref))().catch(() => false)) hit.push(i);
+	const ended: Notice[] = [];
+	for (const { i, ref } of marked)
+		if ((await (async () => draftHandled(i.decision!, i, ref))().catch(() => false)) && !(await sendOwed(ref).catch(() => true))) ended.push(i);
 	for (const i of hit) if (isOpenDecision(i)) settleDecision(i, "", at, true);
+	for (const i of ended) {
+		i.handled = at;
+		i.read = true;
+	}
+	if (ended.length) announce(ended, at);
 	return hit.length;
 }
 // The one-time card audit (hub/migrations.ts): the send-approval cards of this install, open or closed, and those still open.

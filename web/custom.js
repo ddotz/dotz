@@ -4,7 +4,7 @@
 (() => {
   "use strict";
 
-  const CSS = `
+  const STYLE = `
 .cu-r { display: flex; align-items: center; gap: var(--sp-3); width: 100%; min-height: 48px; padding: var(--row-py) var(--row-px); border: 0; border-radius: 0; background: var(--card); color: var(--fg); font: 500 15px/22px var(--font); text-align: left; text-decoration: none; }
 button.cu-r, a.cu-r { cursor: pointer; }
 button.cu-r:hover, a.cu-r:hover { background: var(--card-hover); }
@@ -186,7 +186,7 @@ button.pv-res:hover { background: var(--card-hover); }
   .pv-lane > .pv-acts:empty { display: none; }
 }
 `;
-  document.head.append(el("style", { text: CSS }));
+  document.head.append(el("style", { text: STYLE }));
 
   let DATA = null, loadedAt = 0, flight = null, projKey = "";
   const str = v => v == null ? "" : typeof v === "string" ? v : typeof v === "object" ? JSON.stringify(v) : String(v);

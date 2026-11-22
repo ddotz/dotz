@@ -25,7 +25,7 @@
   "conv.nt.no_msg": "그 메시지를 찾을 수 없어요",
   "conv.nt.handled": "이 알림은 이미 처리됐어요",
   "conv.nt.ignore_aria": "{title} 무시",
-  "conv.worklog": "작업 기록",
+  "conv.worklog": "작업내역",
   "conv.session_named": "세션 {name}",
   "conv.nt.no_news": "그 소식을 찾을 수 없어요",
   "conv.nt.sent": "답을 보냈어요",
@@ -38,6 +38,7 @@
   "conv.nt.input_closed": "입력 창이 이미 닫혔어요",
   "conv.nt.sent_next_q": "답을 보냈어요 · 다음 질문이에요",
   "conv.nt.problem": "문제가 생겼어요",
+  "conv.nt.login_open": "로그인 열기",
   "conv.nt.see_in_chat": "대화에서 보기",
   "conv.nt.resolved": "해결됨",
   "conv.nt.answered": "답변함",
@@ -49,5 +50,8 @@
   "conv.nt.skipped": "답하지 않고 넘겼어요",
   "conv.nt.you_answered": "이렇게 답했어요",
   "conv.nt.closed_late": "답할 시간이 지나 닫혔어요",
-  "conv.nt.closed_done": "일이 끝나서 닫혔어요"
+  "conv.nt.closed_done": "일이 끝나서 닫혔어요",
+  "conv.nt.more": "자세히 보기",
+  "conv.nt.more_below": "더 있어요 ↓",
+  "conv.alert_ask": "이 알림에 대해 메인에서 묻기 ›"
 }

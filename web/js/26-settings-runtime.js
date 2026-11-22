@@ -9,11 +9,13 @@ async function loadRuntimes(refresh) {
 }
 function rtSection() {
   if (!RT) return [];
-  // Only the running harness is listed (two rows when the assistant and the sessions run on different ones); tapping a row opens the
+  // Only the chosen harness is listed (two rows when the assistant and the sessions run on different ones); tapping a row opens the
   // shared menu with the other installed harnesses, and picking one starts the existing compatibility-check + switch flow.
+  // A saved switch shows the new harness at once, marked as switching until the gateway restart applies it (owner 11-19: "omo라고 한동안 보여서 헷갈렸어").
   const others = RT.runtimes.filter(r => r.installed).map(r => ({ value: r.id, label: r.label, sub: [r.version ? `v${r.version}` : "", r.roles.length ? TX("connect.rt.current") : ""].filter(Boolean).join(" · ") || undefined }));
-  const rows = RT.runtimes.filter(r => r.roles.length > 0).map(r => {
-    const sub = [r.version ? `v${r.version}` : "", r.roles.length === 2 ? TX("settings.fb.in_use") : TX("settings.upd.roles_in_use", { roles: r.roles.map(k => RT_ROLE[k]).join("·") })].filter(Boolean).join(" · ");
+  const rows = RT.runtimes.filter(r => (r.pending_roles || r.roles).length > 0).map(r => {
+    const want = r.pending_roles || r.roles, live = want.every(k => r.roles.includes(k));
+    const sub = [r.version ? `v${r.version}` : "", !live ? TX("connect.rt.switching") : want.length === 2 ? TX("settings.fb.in_use") : TX("settings.upd.roles_in_use", { roles: want.map(k => RT_ROLE[k]).join("·") })].filter(Boolean).join(" · ");
     const b = el("button", { class: "li tap", type: "button", "data-runtime": r.id, "aria-haspopup": "listbox", "aria-expanded": "false", "aria-label": TX("connect.rt.row_aria", { name: r.label }) },
       el("span", { class: "lead" }, icon(RT_ICON[r.id] || "harness")), el("span", { class: "tx" }, el("div", { class: "hd", text: r.label }), el("div", { class: "sup", text: sub })), icon("drop"));
     b.addEventListener("click", () => showMenu(b, others.filter(o => o.value !== r.id), { onPick: id => rtFlow(RT.runtimes.find(x => x.id === id)) }));

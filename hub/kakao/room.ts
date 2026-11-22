@@ -1,16 +1,18 @@
-// Exact room open for a KakaoTalk send, by Accessibility only (room.jxa.js): KakaoTalk is never brought to the front (except the last rung of
-// send.ts's ladder), no key is sent and nothing is searched, so the owner sees no right-click scan.
+// Exact room open for a KakaoTalk send, by Accessibility (room.jxa.js): KakaoTalk is never brought to the front (except the last rung of
+// send.ts's ladder), nothing is searched, and the only key is one Return sent to KakaoTalk's pid on its own selected list row.
 // 1. The chat list rows are read (no click): the row whose title equals the database room name, normalized (NFC, invisible marks, whitespace,
 //    a trailing member count), is the one. Same-name rooms are told apart by the member count the row shows (groups) against the database
 //    count, and when that is not enough by the newest message the list shows under the name against the database preview. The whole list is
 //    read with the AX API inside room.jxa.js (~20 ms a row; 290 rows ≈ 4 s), starting at the row the database order predicts, and the read
 //    stops at the first name hit or the budget ({ok:false} reason says the list end was reached or the time ran out).
-// 2. Only that row is opened: its context menu once, then "채팅방 열기" (AXPress).
+// 2. Only that row is opened: selected, then one Return to KakaoTalk's pid (no context menu, so the list window stays behind the owner's
+//    window); when that is not safe or opens nothing, its context menu once, then "채팅방 열기" (AXPress).
 // 3. The open window is checked against the database room (title, member count where the window shows it). A window that is not the room
 //    is closed and the send is refused.
 // Every step is timed and named, so a failed send says which step failed (AxStep, kept on the send record).
-// Open limits (seen 2026-10): list rows expose only AXShowMenu, and the search button has no AX action, so the room cannot be reached
-// without that one menu; reading all 290 rows takes 20 s, so only the first rows are read, within a time box.
+// Open limits (seen 2026-10): list rows have no AXPress/AXOpen and the search button has no AX action, so the room is reached by the row's
+// Return or its one menu.
+import openJxa from "./open.jxa.js" with { type: "text" };
 import jxa from "./room.jxa.js" with { type: "text" };
 import type { Room, Runner } from "./types.ts";
 
@@ -34,7 +36,8 @@ const OPEN_CAP_MS = COVER_MS + 3_000;
 const ROWS_BUDGET_MS = 3_500;
 const DEEP_BUDGET_MS = 6_000;
 
-const osascript = (runner: Runner, req: object, timeoutMs = 30_000) => runner(["osascript", "-l", "JavaScript", "-e", jxa], { stdin: `${JSON.stringify(req)}\n`, timeoutMs });
+// open.jxa.js (the Return way of open) runs appended to room.jxa.js.
+const osascript = (runner: Runner, req: object, timeoutMs = 30_000) => runner(["osascript", "-l", "JavaScript", "-e", jxa, "-e", openJxa], { stdin: `${JSON.stringify(req)}\n`, timeoutMs });
 
 // The core of each refusal; openRoom adds the room name and what was read (refusal()), so the owner sees which room and how far it got.
 export const REFUSE = {
@@ -199,7 +202,8 @@ export async function axSend(name: string, text: string, runner: Runner, opts: {
 // pressed. The send then asks the database and never types or presses again (exactly once beats delivery).
 const UNCERTAIN: SendOut = { ok: false, pressed: true, why: "uncertain" };
 
-type Out = { focus?: { from?: unknown; took?: unknown; restored?: unknown }; ok?: boolean; opened?: boolean; rows?: unknown; hits?: unknown; scanned?: number; pages?: number; stopped?: string; step?: string; why?: string; err?: string; ms?: Record<string, number> };
+// how/returnSkipped: which way the open went (the row's Return, or the menu and why Return was not used).
+type Out = { focus?: { from?: unknown; took?: unknown; restored?: unknown }; ok?: boolean; opened?: boolean; rows?: unknown; hits?: unknown; scanned?: number; pages?: number; stopped?: string; step?: string; why?: string; err?: string; ms?: Record<string, number>; how?: unknown; returnSkipped?: unknown };
 
 async function call(runner: Runner, req: object, timeoutMs: number): Promise<{ out: Out; ms: number; timedOut: boolean }> {
 	const t = performance.now();
@@ -219,9 +223,8 @@ const DEEP_ROWS = 120;
 // Opens the one list row that is this database room and checks its window. `all` lists every database room (same-name detection). Nothing
 // is typed. `hint`: the row the database order predicts (the list is newest first); the scan starts there, so a room far down costs one row
 // read instead of hundreds. `deep`: scan without the hint and with the whole budget (the order assumption was wrong). The open phase (rows
-// read + row open) is capped at OPEN_CAP_MS; every outcome other than ok leaves no window of ours open. `stayBehind`: a closed list window is
-// reported instead of opened, because KakaoTalk comes to the front when it shows.
-export async function openRoom(room: RoomFact, all: RoomFact[], runner: Runner, opts: { deep?: boolean; hint?: number; memo?: number; stayBehind?: boolean; reuse?: FoundRow } = {}): Promise<Opened> {
+// read + row open) is capped at OPEN_CAP_MS; every outcome other than ok leaves no window of ours open.
+export async function openRoom(room: RoomFact, all: RoomFact[], runner: Runner, opts: { deep?: boolean; hint?: number; memo?: number; reuse?: FoundRow } = {}): Promise<Opened> {
 	const steps: AxStep[] = [];
 	const t0 = performance.now();
 	const left = () => cap - (performance.now() - t0);
@@ -252,7 +255,7 @@ export async function openRoom(room: RoomFact, all: RoomFact[], runner: Runner, 
 	let listed = opts.reuse ? { out: { ok: true, scanned: 1, stopped: "found", hits: [{ index: opts.reuse.row, texts: opts.reuse.texts }] } as Out, ms: 0, timedOut: false } : await call(runner, rowsReq, Math.min(left(), rowsCallMs));
 	// No list window (KakaoTalk runs from the menu bar): open it once through its menu 창 > 채팅. KakaoTalk then comes to the front for
 	// a moment; the app in front before is put back inside that call, and the change is kept on the send record.
-	if (listed.out.ok !== true && listed.out.why === "no_list" && opts.stayBehind !== true) {
+	if (listed.out.ok !== true && listed.out.why === "no_list") {
 		steps.push({ step: "rows", ms: listed.ms, ok: false, why: "no_list" });
 		const opening = await call(runner, { action: "openlist" }, Math.min(Math.max(1_500, left()), 4_000));
 		const f = opening.out.focus;
@@ -292,7 +295,8 @@ export async function openRoom(room: RoomFact, all: RoomFact[], runner: Runner, 
 		const chosen = { row: choice.index, texts: rows[choice.index]! };
 		const row = await call(runner, { action: "open", name: room.name, row: choice.index, ...(expect ? { expect } : {}) }, Math.max(1_500, left()));
 		const phases = Object.entries(row.out.ms ?? {}).map(([k, v]) => `${k}=${v}`).join(",");
-		steps.push({ step: row.out.step ?? "open", ms: row.ms, ok: row.out.ok === true, why: row.out.ok === true ? phases : `${row.timedOut ? "timeout" : failWhy(row.out)}${phases ? `:${phases}` : ""}` });
+		const how = typeof row.out.how === "string" ? `how=${row.out.how}${typeof row.out.returnSkipped === "string" ? `(${row.out.returnSkipped})` : ""},` : "";
+		steps.push({ step: row.out.step ?? "open", ms: row.ms, ok: row.out.ok === true, why: row.out.ok === true ? how + phases : `${row.timedOut ? "timeout" : failWhy(row.out)}${phases ? `:${phases}` : ""}` });
 		if (row.out.ok !== true) {
 			// The reused row is gone or moved: the list is read again, as if it was the first try.
 			if (opts.reuse && (row.out.step === "list" || row.out.step === "recheck")) {

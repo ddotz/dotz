@@ -12,7 +12,7 @@ import { cfg, DATA_DIR, expand, HOME, log, paths, TEMPLATES, TZ, writeAtomic } f
 import { loadFeatureDirs } from "./featuredirs.ts";
 import { loadProjectInfo, type ProjectInfo } from "./projectinfo.ts";
 import { loadProjects, type ProjectRecord } from "./projects.ts";
-import { addSchedule, listSchedules, removeSchedule, type Schedule } from "./schedule.ts";
+import { addSchedule, listSchedules, patchSchedule, removeSchedule, type Schedule } from "./schedule.ts";
 import { type GitState, gitState, type ReceiptIn, readReceipts, readReport } from "./custom-detail-data.ts";
 import { newestRules, reportHead, ruleTitle } from "./custom-text.ts";
 import { repoOfCached } from "./fleet-launch.ts";
@@ -38,6 +38,7 @@ export type CustomDeps = {
 	/** The main assistant's background work (hub/bgwork.ts); a project page lists what is tied to it. */
 	work?: () => BgWork[];
 	send: (target: "main" | `lane:${string}`, text: string, login: string) => Promise<void>;
+	caller: string;
 	machine?: () => string; // this gateway's machine name (hub/machine-name.ts), the computer its projects belong to
 	peerProjects?: () => Promise<PeerProjects[]>; // the other computers with their projects (hub/peer-projects.ts)
 };
@@ -453,14 +454,16 @@ function syncRoutines(routines: Routine[]): void {
 			if (!s.text.startsWith("[routine:")) continue;
 			const m = ROUTINE_TAG.exec(s.text);
 			const r = m ? wanted.get(m[1]) : undefined;
-			if (m && r && m[2] === hashOf(r) && !kept.has(r.id)) kept.add(r.id);
-			else removeSchedule(s.id);
+			if (m && r && m[2] === hashOf(r) && !kept.has(r.id)) {
+				kept.add(r.id);
+				if (!s.name) patchSchedule(s.id, { name: r.name.trim() || r.id, kind: "task" });
+			} else removeSchedule(s.id);
 		}
 		for (const r of wanted.values()) {
 			if (kept.has(r.id)) continue;
-			const text = `[routine:${r.id}:${hashOf(r)}] ${r.name}\n${r.prompt}`;
-			if ("at" in r.schedule!) addSchedule({ text, at: new Date(nextAt(r.schedule.at)).toISOString(), every_minutes: 1440 });
-			else addSchedule({ text, at: new Date(Date.now() + r.schedule!.every_minutes * 60_000).toISOString(), every_minutes: r.schedule!.every_minutes });
+			const text = `[routine:${r.id}:${hashOf(r)}] ${r.name}\n${r.prompt}`, named = { name: r.name.trim() || r.id, kind: "task" };
+			if ("at" in r.schedule!) addSchedule({ ...named, text, at: new Date(nextAt(r.schedule.at)).toISOString(), every_minutes: 1440 });
+			else addSchedule({ ...named, text, at: new Date(Date.now() + r.schedule!.every_minutes * 60_000).toISOString(), every_minutes: r.schedule!.every_minutes });
 		}
 	} catch (e) {
 		log(`custom: routine schedule sync failed: ${msg(e)}`);
@@ -841,10 +844,9 @@ export async function customRoute(req: Request, url: URL, deps: CustomDeps): Pro
 		if (!c) return jsonOf({ error: `card ${id} not found` }, 404);
 		return jsonOf("error" in c ? { id: c.id, file: c.file, error: c.error } : await cardView(c, true));
 	}
-	const login = req.headers.get("tailscale-user-login") ?? "local";
 	const sent = async (target: "main" | `lane:${string}`, text: string) => {
 		try {
-			await deps.send(target, text, login);
+			await deps.send(target, text, deps.caller);
 		} catch (e) {
 			return jsonOf({ error: msg(e) }, 409);
 		}

@@ -9,6 +9,7 @@ import { approvalHash, type SendJob, type SendResult } from "./approval-send.ts"
 import { DRAFT_HAND_EDIT } from "./draft-approval.ts";
 import { draftHead } from "./reply-chat.ts";
 import { policyOf, reasonOf } from "./reply-reasons.ts";
+import { sinceMidnight } from "./reply-route.ts";
 import type { DraftView, Lesson, OwnerAction, Part, Reason, ReasonCode, ReplyAdapter, ReplyItem, ReplyKind, SendState } from "./reply-types.ts";
 
 /** `owner`: the owner's chat message the model read this act from (its marker line); his pick then names that message. */
@@ -25,8 +26,9 @@ type Sender = {
 	results: () => SendResult[];
 };
 /** An open send-approval card (a notice) that shows draft `ref` in conversation `conv`; `hash`: the version it was last drawn with; `discord`: the
- * version its Discord message shows; `asked`: the ts of the post that asked it (a web quote names it); `posts`: its Discord message ids (a Discord reply names one). */
-export type OpenCard = { ref: string; conv: string; notice: string; title: string; hash?: string; discord?: string; asked?: string; posts?: string[] };
+ * version its Discord message shows; `asked`: the ts of the post that asked it (a web quote names it); `posts`: its Discord message ids (a Discord reply names one);
+ * `shown`: when the card was last drawn as it reads now (made, revised, reopened). */
+export type OpenCard = { ref: string; conv: string; notice: string; title: string; hash?: string; discord?: string; asked?: string; posts?: string[]; shown?: string };
 export type ReplyDeps = {
 	adapters: ReplyAdapter[];
 	sender: Sender;
@@ -35,6 +37,7 @@ export type ReplyDeps = {
 	recordPick: (p: { surface: ActCtx["surface"]; conv: string; q: string; n: number; label: string; note?: string; hash?: string; until?: number; from?: ActCtx["owner"] }) => void;
 	/** A plain line from the owner in the card's conversation (나갔어요), no pick. */
 	recordText?: (conv: string, text: string) => void;
+	say?: (conv: string, ref: string, text: string) => void;
 	learning: { record: (key: Lesson["key"], line: string) => Promise<void>; refine: (key: Lesson["key"]) => Promise<void> };
 	/** `rewrite` and `replace` draw a card anew (every surface, Discord included) and store `hash`, the version it now shows. `repost` posts the open card
 	 * of `ref` again at the bottom of its conversation (the same notice; `text` and `hash` when given), its old post marked moved. */
@@ -42,9 +45,11 @@ export type ReplyDeps = {
 		/** The conversation of the newest card of `ref`, open or already answered. */
 		convOf?: (ref: string) => string | undefined };
 	/** A card a session wrote by hand (kind `card`): its answer goes to the bot as one message per conversation. */
-	toBot: (conv: string, text: string) => Promise<void>;
+	toBot: (conv: string, text: string, agent: boolean) => Promise<void>;
 	emit: (e: { kind: "reply"; ref: string; item?: ReplyItem; next?: string; revising?: true; why?: string }) => void;
 	log: (line: string) => void;
+	/** One settle pass (hub/reply-wire.ts: the handled-draft sweep and `settleOwed`): list() asks for it when an open card shows a draft that waits no more, or a failed or unsure send is owed to a draft that was closed. */
+	settle?: () => void;
 	now?: () => number;
 };
 
@@ -55,16 +60,16 @@ const refused = (status: number, code: ReasonCode, vars?: Record<string, string 
 const LIVE = new Set(["undo", "queued", "sending"]);
 
 /** The send state the queue holds for `ref`, as every surface reads it, with the owner's buttons for one that needs him. */
-export function sendOf(r: SendResult | undefined): (SendState & { actions: OwnerAction[] }) | undefined {
+export function sendOf(r: SendResult | undefined, now: number = Date.now()): (SendState & { actions: OwnerAction[] }) | undefined {
 	if (!r || r.state === "back") return undefined;
 	const n = r.attempts ?? 0;
 	if (r.state === "undo") return { state: "undo", at: r.at, until: r.until ?? r.at, actions: [] };
 	if (r.state === "queued" || r.state === "sending") return { state: r.state, at: r.at, attempt: n, actions: [] };
-	if (r.state === "sent") return { state: "sent", at: r.at, how: "owner", actions: [] };
+	if (r.state === "sent") return { state: "sent", at: r.at, how: "owner", today: sinceMidnight(r.at, now), actions: [] };
 	const reason: Reason = r.reason ?? { code: r.state === "unsure" ? "unknown" : "tool_before_send", text: r.text };
-	const actions = policyOf(reason.code).actions;
+	const { actions, reopen } = policyOf(reason.code);
 	if (r.state === "unsure") return { state: "unsure", at: r.at, reason, attempts: n, actions };
-	return { state: "failed", at: r.at, reason, safeToAuto: r.safeToAuto === true, attempts: n, ...(r.auto ? { auto: r.auto } : {}), actions: actions.includes("retry") ? actions : ["retry", ...actions] };
+	return { state: "failed", at: r.at, reason, safeToAuto: r.safeToAuto === true, attempts: n, ...(r.auto ? { auto: r.auto } : {}), actions: actions.includes("retry") || reopen ? actions : ["retry", ...actions] };
 }
 
 const SENDS = new Set(["send", "retry", "resolve"]);
@@ -102,20 +107,22 @@ export function createReplyActions(deps: ReplyDeps) {
 	const running = new Set<Promise<void>>();
 	const ledger = (ref: string) => deps.sender.results().findLast(r => r.ref === ref);
 
-	/** The adapter that knows `ref` and its current view; `card` when only an open card names it. */
-	async function resolve(ref: string): Promise<Resolved | undefined> {
+	async function known(ref: string): Promise<{ adapter: ReplyAdapter; view: DraftView } | undefined> {
 		for (const adapter of deps.adapters) {
 			const view = await adapter.get(ref);
 			if (view) return { adapter, view };
 		}
+		return undefined;
+	}
+	/** The adapter that knows `ref` and its current view; `card` when only an open card names it. */
+	async function resolve(ref: string): Promise<Resolved | undefined> {
+		const found = await known(ref);
+		if (found) return found;
 		const card = deps.cards.open().find(c => c.ref === ref);
 		return card ? { card } : undefined;
 	}
 
-	const itemOf = (view: DraftView): ReplyItem => {
-		const send = sendOf(ledger(view.ref));
-		return { ...view, draft: { ...view.draft, hash: approvalHash(view), ...(revising.has(view.ref) ? { revising: true as const } : {}) }, ...(send ? { send, why: "reason" in send ? send.reason.text : view.why } : {}) };
-	};
+	const itemOf = (view: DraftView): ReplyItem => itemFor(view, ledger(view.ref), revising.has(view.ref), deps.now?.() ?? Date.now());
 	/** A send or an edit whose `hash` names another version than the store holds: refused with the fresh item, nothing queued or saved, and its
 	 * cards redrawn and every surface told (another device repaints too). */
 	const stale = async (a: ReplyAdapter, view: DraftView, input: ActInput): Promise<ActResult | undefined> => {
@@ -160,8 +167,8 @@ export function createReplyActions(deps: ReplyDeps) {
 	function retry(ctx: ActCtx, a: ReplyAdapter, view: DraftView, input: ActInput): ActResult {
 		const last = ledger(view.ref);
 		if (last?.state !== "failed") return refused(409, "not_pending");
+		if (view.draft.state !== "pending") return refused(409, view.draft.state === "sent" ? "already_sent" : "not_pending");
 		if (last.reason && policyOf(last.reason.code).reapprove) {
-			if (view.draft.state !== "pending") return refused(409, "not_pending");
 			const action = sendAction(input);
 			return sendPicked(ctx, a, view, action === "send-as-is" ? 4 : 1, SEND_LABEL[action], job(a, view, action));
 		}
@@ -178,7 +185,7 @@ export function createReplyActions(deps: ReplyDeps) {
 		// Code's own retry of an earlier failed send would send the text this changes.
 		deps.sender.forget(view.ref);
 		deps.emit({ kind: "reply", ref: view.ref, revising: true, item: itemOf(view) });
-		const run = runRevise(a, view, change, input.part).finally(() => {
+		const run = runRevise(a, view, change, input.part, ctx.surface).finally(() => {
 			revising.delete(view.ref);
 			running.delete(run);
 		});
@@ -188,7 +195,8 @@ export function createReplyActions(deps: ReplyDeps) {
 
 	// The adapter stores the new draft (the success point), the cards move to it, one event names it, then learning. The new ref is
 	// `revising` until its cards moved, so nothing sends a draft the owner has not been shown yet.
-	async function runRevise(a: ReplyAdapter, view: DraftView, change: string, part?: Part): Promise<void> {
+	async function runRevise(a: ReplyAdapter, view: DraftView, change: string, part: Part | undefined, surface: ActCtx["surface"]): Promise<void> {
+		const tell = (why: string) => void (surface === "discord" && deps.say?.(view.conv, view.ref, `${why} (${view.ref})`));
 		let r: Awaited<ReturnType<ReplyAdapter["revise"]>>;
 		try {
 			r = await a.revise(view.ref, change, part);
@@ -203,6 +211,7 @@ export function createReplyActions(deps: ReplyDeps) {
 		}
 		if (!r.ok) {
 			deps.emit({ kind: "reply", ref: view.ref, why: `고치지 못했어요 - ${r.reason.text}`, item: itemOf(view) });
+			tell(`고치지 못했어요 - ${r.reason.text}`);
 			return;
 		}
 		const moved = r.ref !== view.ref;
@@ -216,6 +225,7 @@ export function createReplyActions(deps: ReplyDeps) {
 			// The new draft is stored but its cards could not be drawn: every surface leaves 고치는 중 and says so.
 			deps.log(`reply ${view.ref}: card of the revised draft ${r.ref} not drawn: ${(e as Error).stack ?? (e as Error).message}`);
 			deps.emit({ kind: "reply", ref: view.ref, ...(moved ? { next: r.ref } : {}), why: "고친 초안을 카드에 올리지 못했어요", ...(next ? { item: itemOf(next) } : {}) });
+			tell("고친 초안을 카드에 올리지 못했어요");
 			return;
 		} finally {
 			if (moved) revising.delete(r.ref);
@@ -275,6 +285,10 @@ export function createReplyActions(deps: ReplyDeps) {
 	async function resolveSend(ctx: ActCtx, a: ReplyAdapter, view: DraftView, as: ActInput["as"]): Promise<ActResult> {
 		if (ledger(view.ref)?.state !== "unsure") return refused(409, "not_pending");
 		if (as === "sent") {
+			if (view.draft.state !== "pending") {
+				deps.sender.forget(view.ref), deps.cards.close(view.ref);
+				return { status: 200, body: { ok: true, item: itemOf((await announce(a, view.ref)) ?? view) } };
+			}
 			const r = await a.markSent(view.ref);
 			if (!r.ok) return fail(409, r.reason.code, r.reason.text);
 			deps.sender.settle(job(a, view, "send"), "sent");
@@ -284,6 +298,7 @@ export function createReplyActions(deps: ReplyDeps) {
 		}
 		if (as !== "retry") return fail(400, "bad_request", "as는 sent 또는 retry여야 해요");
 		// The owner decided again after 확인 필요: a fresh 보내기, and the send may go out again (force).
+		if (view.draft.state !== "pending") return refused(409, view.draft.state === "sent" ? "already_sent" : "not_pending");
 		return sendPicked(ctx, a, view, 1, SEND_LABEL.send, job(a, view, "send", { force: true }));
 	}
 
@@ -329,7 +344,7 @@ export function createReplyActions(deps: ReplyDeps) {
 		if (ctx.agent && input.action !== "revise") return refused(403, "owner_only");
 		const line = cardAnswer(card, input);
 		if (!line) return refused(409, "not_supported");
-		await deps.toBot(card.conv, line);
+		await deps.toBot(card.conv, line, ctx.agent === true);
 		return { status: 200, body: { ok: true } };
 	}
 
@@ -372,21 +387,13 @@ export function createReplyActions(deps: ReplyDeps) {
 				const r = await act(it, ctx);
 				results.push(r.body.ok ? { ref: it.ref, ok: true, ...(r.body.item ? { item: r.body.item } : {}) } : { ref: it.ref, ok: false, code: r.body.code, error: r.body.error });
 			}
-			for (const [conv, lines] of forBot) await deps.toBot(conv, lines.join("\n"));
+			for (const [conv, lines] of forBot) await deps.toBot(conv, lines.join("\n"), ctx.agent === true);
 			return { status: 200, body: { results } };
 		},
 		/** Every reply every surface shows: the adapters' drafts with their sends, then the hand-written cards. A draft with an open card is in the
 		 * card's conversation and names its notice (as `act` places its pick), so a typed answer or the model's marker there finds it. */
-		async list(): Promise<ReplyItem[]> {
-			const views = (await Promise.all(deps.adapters.map(a => a.list().catch(e => (deps.log(`reply list of ${a.kind} failed: ${(e as Error).message}`), [] as DraftView[]))))).flat();
-			const open = deps.cards.open();
-			const known = new Set(views.map(v => v.ref));
-			const shown = views.map(v => {
-				const card = open.find(c => c.ref === v.ref);
-				return card ? { ...itemOf({ ...v, conv: card.conv }), notice: card.notice } : itemOf(v);
-			});
-			return [...shown, ...open.filter(c => !known.has(c.ref)).map(c => cardItem(c, deps.now?.() ?? Date.now()))];
-		},
+		list: (): Promise<ReplyItem[]> => listAll({ deps, known, itemOf, ledger }),
+		settleOwed: (): Promise<number> => settleOwed({ deps, known, ledger, revising }),
 		/** The open cards of conversation `conv`, as stored (no list needed): what a typed answer and the model's marker there may name. */
 		open: (conv: string): OpenCard[] => deps.cards.open().filter(c => c.conv === conv),
 		/** Resolves when every running revise has finished (tests, shutdown). */
@@ -397,6 +404,48 @@ export function createReplyActions(deps: ReplyDeps) {
 }
 
 type Resolved = { adapter: ReplyAdapter; view: DraftView } | { card: OpenCard };
+const OWED = new Set(["failed", "unsure"]);
+const owes = (v: DraftView): boolean => v.draft.state === "pending" || v.mailLeft === true;
+function itemFor(v: DraftView, last: SendResult | undefined, revising: boolean, now: number): ReplyItem {
+	const { sent, mailLeft: _m, ...view } = v;
+	const held = sendOf(!owes(v) && OWED.has(last?.state ?? "") ? undefined : last, now);
+	const send = (held && v.draft.state !== "pending" && (held.state === "failed" || held.state === "unsure") ? { ...held, actions: [] } : held) ?? (sent && { state: "sent" as const, at: sent.at, how: sent.how, today: sinceMidnight(sent.at, now), actions: [] });
+	const back = last?.state === "back" && last.cause === "restart" && v.draft.state === "pending" ? { at: last.at, cause: "restart" as const } : undefined;
+	return { ...view, draft: { ...view.draft, hash: approvalHash(view), ...(revising ? { revising: true as const } : {}) }, ...(send ? { send, why: "reason" in send ? send.reason.text : view.why } : {}), ...(back && !send ? { back } : {}) };
+}
+type Settler = { deps: ReplyDeps; known: (ref: string) => Promise<{ view: DraftView } | undefined>; ledger: (ref: string) => SendResult | undefined; revising: Set<string> };
+async function settleOwed(c: Settler): Promise<number> {
+	let n = 0;
+	for (const ref of new Set(c.deps.sender.results().map(r => r.ref))) {
+		if (!OWED.has(c.ledger(ref)?.state ?? "") || c.revising.has(ref)) continue;
+		const found = await c.known(ref).catch(e => (c.deps.log(`reply settle of ${ref} failed: ${(e as Error).message}`), undefined));
+		if (found && !owes(found.view) && c.deps.sender.forget(ref)) n++;
+	}
+	return n;
+}
+type Lister = { deps: ReplyDeps; known: (ref: string) => Promise<{ view: DraftView } | undefined>; itemOf: (v: DraftView) => ReplyItem; ledger: (ref: string) => SendResult | undefined };
+async function listAll(c: Lister): Promise<ReplyItem[]> {
+	const { deps } = c, now = deps.now?.() ?? Date.now();
+	const views = (await Promise.all(deps.adapters.map(a => a.list().catch(e => (deps.log(`reply list of ${a.kind} failed: ${(e as Error).message}`), [] as DraftView[]))))).flat();
+	const open = deps.cards.open();
+	const listed = new Set(views.map(v => v.ref));
+	const owed = deps.sender.results().filter(r => OWED.has(c.ledger(r.ref)?.state ?? "")).map(r => r.ref);
+	const more = [...new Set([...owed, ...open.map(x => x.ref)])].filter(ref => !listed.has(ref));
+	const landed = deps.sender.results().filter(r => r.state === "sent" && sinceMidnight(r.at, now)).map(r => r.ref).filter(ref => !listed.has(ref) && !more.includes(ref));
+	const viewOf = (ref: string) => c.known(ref).then(k => k?.view, e => (deps.log(`reply view of ${ref} failed: ${(e as Error).message}`), undefined));
+	const extra = await Promise.all(more.map(viewOf));
+	const back = (await Promise.all(landed.map(viewOf))).filter(v => v?.draft.state === "sent");
+	const found = [...views, ...extra.flatMap(v => v ?? []), ...back.flatMap(v => v ?? [])];
+	const left = found.filter(v => !owes(v) && OWED.has(c.ledger(v.ref)?.state ?? ""));
+	const all = found.filter(v => !left.includes(v) || v.sent !== undefined || open.some(x => x.ref === v.ref));
+	const known = new Set(all.map(v => v.ref));
+	if (left.length || all.some(v => v.draft.state !== "pending" && open.some(x => x.ref === v.ref))) deps.settle?.();
+	const shown = all.map(v => {
+		const card = open.find(x => x.ref === v.ref);
+		return card ? { ...c.itemOf({ ...v, conv: card.conv }), notice: card.notice } : c.itemOf(v);
+	});
+	return [...shown.filter(i => i.notice !== undefined || i.send?.state !== "sent" || i.send.today), ...open.filter(x => !known.has(x.ref)).map(x => cardItem(x, now))];
+}
 const confirmHead = (v: DraftView): string => `보낼까요? → ${v.draft.toLabel} ${v.draft.to}: "${draftHead(v.draft.text)}"`;
 /** A send the model read from the owner's words sends nothing (the reply intent design, 4.3): the draft's card is drawn again from its store at the
  * bottom of its conversation, headed 보낼까요? with the recipient and the start of the text and bound to the version it shows. Its 보내기 is the owner's,

@@ -89,6 +89,7 @@ async function trace(width: number, s: Surface): Promise<Trace> {
 	const v = await hub.view({ width, height: width < 600 ? 844 : 800, console: () => {} }, `/?golden=${s.id}-${width}#home`);
 	try {
 		await waitFor(v, BOOT);
+		await v.evaluate(`(dispatchEvent(new Event("pointerup")), 0)`);
 		await settle(v);
 		await ev(v, `__golden.take()`);
 		const len0 = await ev<number>(v, `history.length`);

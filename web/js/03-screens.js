@@ -36,6 +36,7 @@ const SCREENS = {
   display: { tab: "settings", sub: true, title: TX("settings.page.display"), ic: "settings" },
   update: { tab: "settings", sub: true, title: TX("settings.page.update"), ic: "download" },
   runtime: { tab: "settings", sub: true, title: TX("settings.page.runtime"), ic: "term" },
+  schedules: { tab: "settings", sub: true, title: TX("settings.page.schedules"), ic: "list" },
 };
 // The lists the rest of the app reads, all made from the table (web/custom.js and the tests read them by these names).
 const views = Object.keys(SCREENS);

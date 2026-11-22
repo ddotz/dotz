@@ -1,7 +1,8 @@
 // Mail reconcile (hub/mail-reconcile.ts): a mail that waits and was answered outside dotz becomes 답장함 and its drafts close; zele is never really called.
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mailDraftHandled } from "./draft-handled.ts";
-import { createReconciler, reconcileMails, resetReconcile, type ReconcileDeps, type ReconcileMail } from "./mail-reconcile.ts";
+import { createReconciler, movedOn, reconcileMails, reconcileSummary, resetReconcile, type ReconcileDeps, type ReconcileMail } from "./mail-reconcile.ts";
+import { threadDate } from "./zele.ts";
 import { resetOwnAddresses, setOwnAddresses } from "./mail-state.ts";
 import { mailByKey, postMail, setMailReply, type MailDeps } from "./mail.ts";
 import { HUB_TOKEN } from "./config.ts";
@@ -45,16 +46,57 @@ const mail = (id: string, over: Partial<Mem> = {}): Mem => ({ key: `zele-${id}`,
 const pluginMail = (id: string, over: Partial<Mem> = {}): Mem => mail(id, { key: `work-${id}`, source: "work", account: undefined, ...over });
 const gmailReply = thread([KIM, "2026-10-30T00:59:00Z"], [`Me <${ME}>`, "2026-10-30T05:00:00Z"]);
 
+describe("threadDate: the earliest time a zele Date: text can mean", () => {
+	const NOW = Date.parse("2026-11-19T12:00:00Z");
+	const MIN = 60_000;
+	test.each([
+		["just now", NOW - MIN],
+		["1m ago", NOW - 2 * MIN],
+		["5m ago", NOW - 6 * MIN],
+		["59m ago", NOW - 60 * MIN],
+		["2h ago", NOW - 3 * 60 * MIN],
+		["23h ago", NOW - 24 * 60 * MIN],
+		["3d ago", NOW - 4 * 24 * 60 * MIN],
+		["6d ago", NOW - 7 * 24 * 60 * MIN],
+		["Wed, 21 Oct 2026 07:28:00 GMT", Date.parse("2026-10-21T07:28:00Z")],
+		["2026-10-21T07:28:00Z", Date.parse("2026-10-21T07:28:00Z")],
+		["Oct 21, 2024", new Date("Oct 21, 2024").getTime()],
+		["2024. 10. 21.", new Date(2024, 9, 21).getTime()],
+		["2024년 10월 21일", new Date(2024, 9, 21).getTime()],
+	])("%s", (text, expected) => expect(threadDate(text, NOW)).toBe(expected));
+
+	test.each(["Oct 21", "Nov 3", "11월 21일", "10. 21.", "", "yesterday", "zele printed something else"])("%p cannot be placed in time", text =>
+		expect(threadDate(text, NOW)).toBeNaN(),
+	);
+
+	test("a longer time ago is never a later time", () => {
+		for (const unit of ["m ago", "h ago", "d ago"]) {
+			const times = Array.from({ length: 6 }, (_, i) => threadDate(`${i + 1}${unit}`, NOW));
+			expect(times).toEqual([...times].sort((a, b) => b - a));
+			expect(times.every(t => t < NOW)).toBe(true);
+		}
+	});
+});
+
+describe("movedOn with the dates zele prints", () => {
+	const own = new Set([ME]);
+	const created = new Date(Date.now() - 60 * 60_000).toISOString();
+	const ago = (from: string, date: string) => ({ from, to: "x", date, body: "" });
+	test("a message 5m ago is newer than a draft made an hour ago", () => expect(movedOn([ago(KIM, "2h ago"), ago(KIM, "5m ago")], own, created)).toBe("newer"));
+	test("a message 2h ago is not newer than a draft made an hour ago", () => expect(movedOn([ago(KIM, "2h ago")], own, created)).toBeUndefined());
+	test("a yearless date is not newer", () => expect(movedOn([ago(KIM, "Oct 21")], own, created)).toBeUndefined());
+});
+
 beforeEach(resetReconcile);
 
 describe("reconcile", () => {
 	test("a mail answered from Gmail becomes replied; the second run changes nothing and reads nothing", async () => {
 		const mails = [mail("T1")];
 		const s = setup(mails, { threads: { T1: gmailReply } });
-		expect(await reconcileMails(s.deps, { limit: 10 })).toEqual({ checked: 1, replied: 1, notChecked: 0, skipped: 0 });
+		expect(await reconcileMails(s.deps, { limit: 10 })).toEqual({ checked: 1, replied: 1, notChecked: 0, skipped: 0, skippedBySource: {} });
 		expect(mails[0]!.reply).toBe("replied");
 		expect(s.answered).toEqual(["zele-T1"]);
-		expect(await reconcileMails(s.deps, { limit: 10 })).toEqual({ checked: 0, replied: 0, notChecked: 0, skipped: 0 });
+		expect(await reconcileMails(s.deps, { limit: 10 })).toEqual({ checked: 0, replied: 0, notChecked: 0, skipped: 0, skippedBySource: {} });
 		expect(s.reads).toEqual([["T1", A1]]);
 	});
 
@@ -66,10 +108,10 @@ describe("reconcile", () => {
 
 	test("a mail with no recorded account uses the install's only account; with several accounts it is not guessed", async () => {
 		const one = setup([mail("T1", { account: undefined })], { accounts: [A1] });
-		expect(await reconcileMails(one.deps, { limit: 10 })).toEqual({ checked: 1, replied: 0, notChecked: 0, skipped: 0 });
+		expect(await reconcileMails(one.deps, { limit: 10 })).toEqual({ checked: 1, replied: 0, notChecked: 0, skipped: 0, skippedBySource: {} });
 		expect(one.reads).toEqual([["T1", A1]]);
 		const two = setup([mail("T2", { account: undefined })], { accounts: [A1, A2] });
-		expect(await reconcileMails(two.deps, { limit: 10 })).toEqual({ checked: 0, replied: 0, notChecked: 1, skipped: 0 });
+		expect(await reconcileMails(two.deps, { limit: 10 })).toEqual({ checked: 0, replied: 0, notChecked: 1, skipped: 0, skippedBySource: {} });
 		expect(two.reads).toEqual([]);
 	});
 
@@ -78,19 +120,19 @@ describe("reconcile", () => {
 		s.deps.read = async () => {
 			throw new Error("Multiple accounts matched");
 		};
-		expect(await reconcileMails(s.deps, { limit: 10 })).toEqual({ checked: 0, replied: 0, notChecked: 1, skipped: 0 });
+		expect(await reconcileMails(s.deps, { limit: 10 })).toEqual({ checked: 0, replied: 0, notChecked: 1, skipped: 0, skippedBySource: {} });
 	});
 
 	test("only an answer after the incoming message counts: someone else's message, or his reply before a newer incoming one, does not", async () => {
 		const others = thread([KIM, "2026-10-30T00:59:00Z"], ["Lee <lee@example.com>", "2026-10-30T05:00:00Z"]);
 		const reopened = thread([KIM, "2026-10-29T00:00:00Z"], [`Me <${ME}>`, "2026-10-29T05:00:00Z"], [KIM, "2026-10-30T00:59:00Z"]);
 		const s = setup([mail("T1"), mail("T2")], { threads: { T1: others, T2: reopened } });
-		expect(await reconcileMails(s.deps, { limit: 10 })).toEqual({ checked: 2, replied: 0, notChecked: 0, skipped: 0 });
+		expect(await reconcileMails(s.deps, { limit: 10 })).toEqual({ checked: 2, replied: 0, notChecked: 0, skipped: 0, skippedBySource: {} });
 	});
 
 	test("a replied mail is never reopened; its waiting draft is closed without reading the thread", async () => {
 		const s = setup([mail("T1", { reply: "replied" })], { drafts: ["zele-T1"] });
-		expect(await reconcileMails(s.deps, { limit: 10 })).toEqual({ checked: 0, replied: 0, notChecked: 0, skipped: 0 });
+		expect(await reconcileMails(s.deps, { limit: 10 })).toEqual({ checked: 0, replied: 0, notChecked: 0, skipped: 0, skippedBySource: {} });
 		expect(s.answered).toEqual(["zele-T1"]);
 		expect(s.reads).toEqual([]);
 	});
@@ -126,10 +168,10 @@ describe("reconcile of a plugin's mail", () => {
 		s.deps.accounts = async () => {
 			throw new Error("zele must not run for a plugin's mail");
 		};
-		expect(await reconcileMails(s.deps, { limit: 10 })).toEqual({ checked: 1, replied: 1, notChecked: 0, skipped: 0 });
+		expect(await reconcileMails(s.deps, { limit: 10 })).toEqual({ checked: 1, replied: 1, notChecked: 0, skipped: 0, skippedBySource: {} });
 		expect(mails[0]!.reply).toBe("replied");
 		expect(s.answered).toEqual(["work-P1"]);
-		expect(await reconcileMails(s.deps, { limit: 10 })).toEqual({ checked: 0, replied: 0, notChecked: 0, skipped: 0 });
+		expect(await reconcileMails(s.deps, { limit: 10 })).toEqual({ checked: 0, replied: 0, notChecked: 0, skipped: 0, skippedBySource: {} });
 		expect(s.asked).toEqual(["P1"]);
 		expect(s.reads).toEqual([]);
 	});
@@ -137,14 +179,14 @@ describe("reconcile of a plugin's mail", () => {
 	test("a thread whose last word is not the owner's stays waiting", async () => {
 		const mails = [pluginMail("P1")];
 		const s = setup(mails, { pluginThreads: { work: { P1: [{ from: KIM, date: "2026-10-30T00:59:00Z" }] } } });
-		expect(await reconcileMails(s.deps, { limit: 10 })).toEqual({ checked: 1, replied: 0, notChecked: 0, skipped: 0 });
+		expect(await reconcileMails(s.deps, { limit: 10 })).toEqual({ checked: 1, replied: 0, notChecked: 0, skipped: 0, skippedBySource: {} });
 		expect(mails[0]!.reply).toBe("needs");
 	});
 
 	test("a source no plugin reads is skipped: asked once a round, counted, and it takes no read from the zele mails behind it", async () => {
 		const mails = [pluginMail("P1", { at: "2026-10-30T01:00:00.000Z" }), pluginMail("P2", { at: "2026-10-30T02:00:00.000Z" }), mail("T1", { at: "2026-10-30T03:00:00.000Z" })];
 		const s = setup(mails, { threads: { T1: gmailReply } });
-		expect(await reconcileMails(s.deps, { limit: 1 })).toEqual({ checked: 1, replied: 1, notChecked: 0, skipped: 2 });
+		expect(await reconcileMails(s.deps, { limit: 1 })).toEqual({ checked: 1, replied: 1, notChecked: 0, skipped: 2, skippedBySource: { work: 2 } });
 		expect(s.asked).toEqual(["P1"]);
 		expect(s.reads).toEqual([["T1", A1]]);
 	});
@@ -153,8 +195,26 @@ describe("reconcile of a plugin's mail", () => {
 		const s = setup([pluginMail("P1")]);
 		let zele = 0;
 		s.deps.accounts = async () => (zele++, []);
-		expect(await reconcileMails(s.deps, { limit: 10 })).toEqual({ checked: 0, replied: 0, notChecked: 0, skipped: 1 });
+		expect(await reconcileMails(s.deps, { limit: 10 })).toEqual({ checked: 0, replied: 0, notChecked: 0, skipped: 1, skippedBySource: { work: 1 } });
 		expect(zele).toBe(0);
+	});
+
+	test("a store with a zele draft and a draft of a source no plugin reads: the round names the one skipped source and its count, and the log line says it once", async () => {
+		const mails = [mail("T1"), pluginMail("P1", { source: "score", key: "score-P1" }), mail("T2")];
+		const s = setup(mails, { drafts: ["zele-T1", "score-P1"], threads: { T1: gmailReply } });
+		const result = await reconcileMails(s.deps, { limit: 10 });
+		expect(result.skipped).toBe(1);
+		expect(result.skippedBySource).toEqual({ score: 1 });
+		expect(mails[0]!.reply).toBe("replied");
+		expect(mails[1]!.reply).toBe("needs");
+		expect(reconcileSummary(result)).toBe("mail reconcile: 2 threads checked, 1 answered elsewhere, 0 not checked, 1 skipped because no plugin reads the source (score 1)");
+	});
+
+	test("several skipped mails of two sources are one line with one count per source; nothing skipped adds no skipped part and nothing at all is no line", async () => {
+		const s = setup([pluginMail("P1"), pluginMail("P2"), pluginMail("G1", { source: "general", key: "general-G1" })]);
+		expect(reconcileSummary(await reconcileMails(s.deps, { limit: 10 }))).toBe("mail reconcile: 0 threads checked, 0 answered elsewhere, 0 not checked, 3 skipped because no plugin reads the source (work 2, general 1)");
+		expect(reconcileSummary({ checked: 1, replied: 0, notChecked: 0, skipped: 0, skippedBySource: {} })).toBe("mail reconcile: 1 threads checked, 0 answered elsewhere, 0 not checked");
+		expect(reconcileSummary({ checked: 0, replied: 0, notChecked: 0, skipped: 0, skippedBySource: {} })).toBeUndefined();
 	});
 
 	test("a plugin that fails, or no address known as the owner's, is not checked and changes nothing", async () => {
@@ -162,10 +222,10 @@ describe("reconcile of a plugin's mail", () => {
 		failing.deps.pluginThread = async () => {
 			throw new Error("mailbox down");
 		};
-		expect(await reconcileMails(failing.deps, { limit: 10 })).toEqual({ checked: 0, replied: 0, notChecked: 1, skipped: 0 });
+		expect(await reconcileMails(failing.deps, { limit: 10 })).toEqual({ checked: 0, replied: 0, notChecked: 1, skipped: 0, skippedBySource: {} });
 		const mails = [pluginMail("P1")];
 		const nobody = setup(mails, { owner: [], pluginThreads: { work: { P1: answered } } });
-		expect(await reconcileMails(nobody.deps, { limit: 10 })).toEqual({ checked: 0, replied: 0, notChecked: 1, skipped: 0 });
+		expect(await reconcileMails(nobody.deps, { limit: 10 })).toEqual({ checked: 0, replied: 0, notChecked: 1, skipped: 0, skippedBySource: {} });
 		expect(mails[0]!.reply).toBe("needs");
 	});
 
@@ -185,7 +245,7 @@ describe("reconcile of a plugin's mail", () => {
 			if (m.id === "P1") return "not a thread" as unknown as [];
 			return answered;
 		};
-		expect(await reconcileMails(s.deps, { limit: 10 })).toEqual({ checked: 0, replied: 0, notChecked: 2, skipped: 0 });
+		expect(await reconcileMails(s.deps, { limit: 10 })).toEqual({ checked: 0, replied: 0, notChecked: 2, skipped: 0, skippedBySource: {} });
 		expect(asked).toEqual(["P1"]);
 		expect(await reconcileMails(s.deps, { limit: 10 })).toMatchObject({ checked: 1, replied: 1 });
 		expect(asked).toEqual(["P1", "P2", "P1"]);
@@ -222,14 +282,14 @@ describe("with the real stores", () => {
 			markReplied: (k, at) => setMailReply(k, "sent", at),
 			answerDrafts,
 		};
-		expect(await reconcileMails(real, { limit: 10 })).toEqual({ checked: 1, replied: 1, notChecked: 0, skipped: 0 });
+		expect(await reconcileMails(real, { limit: 10 })).toEqual({ checked: 1, replied: 1, notChecked: 0, skipped: 0, skippedBySource: {} });
 		expect(read).toEqual([`${id} ${A1}`]);
 		expect(mailByKey(key)!.reply).toBe("replied");
 		expect(getDraft("RAAAAAAA")!.status).toBe("answered");
 		const facts = { drafts: listDrafts, record: mailByKey };
 		expect(mailDraftHandled("RAAAAAAA", facts)).toBe(true);
 		const before = JSON.stringify(mailByKey(key));
-		expect(await reconcileMails(real, { limit: 10 })).toEqual({ checked: 0, replied: 0, notChecked: 0, skipped: 0 });
+		expect(await reconcileMails(real, { limit: 10 })).toEqual({ checked: 0, replied: 0, notChecked: 0, skipped: 0, skippedBySource: {} });
 		expect(JSON.stringify(mailByKey(key))).toBe(before);
 	});
 });

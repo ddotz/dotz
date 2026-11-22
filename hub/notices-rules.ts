@@ -1,11 +1,13 @@
 // Limits and the plain questions asked of one notice (open, waiting, expired, who raised it). A part of the notice store split out of hub/notices.ts, code unchanged.
 import { now } from "./config.ts";
+import { AGENT_AUTHOR } from "./agent-author.ts";
 import type { HubEvent } from "./events.ts";
 import { classOfNotice, isLoginLost } from "./notice-class.ts";
 import { readOf } from "./reads.ts";
 import { orchestratorOnlyAsk } from "./forline.ts";
+import { numberLedQuestion } from "./ask-normalize.ts";
 import { dropClaim, parseTone, stripHandoff } from "./tone.ts";
-import type { Decision, Notice, NoticeTone } from "./notices-types.ts";
+import type { Closing, Decision, Notice, NoticeTone, OwnerSaid } from "./notices-types.ts";
 import type { ClosedCard } from "./notices-wiring.ts";
 import { addressesIn, blockDraftRef, DRAFT_BODY_MAX, type DraftApproval } from "./draft-approval.ts";
 import { storedDraftOf } from "./notices-wiring.ts";
@@ -18,6 +20,15 @@ export const RESTART_PREFIX = /^게이트웨이(?: 재시작했어요|를 다시
 // A question whose time is up is no longer open on any surface, even before the sweep reaches it (settleExpiredQuestions): the badge,
 // 답변 필요, push re-asks and the approval queue all read this one check. Stored times are the hub's clock (now()), compared as ISO strings.
 export const hasExpired = (d: Decision | undefined, nowIso = now()): boolean => !!d?.expires_at && d.expires_at <= nowIso;
+/** A card the owner put off (Decision.later_until) and whose time has not come: read, off the model's open questions, never pushed. */
+export const laterOn = (d: Decision | undefined, nowIso = now()): boolean => !!d?.later_until && d.later_until > nowIso;
+/** The owner's message as a card's `words` / `judging` text: one line, trimmed, at most 80 characters. */
+export const wordsOf = (text: string): string => text.replace(/\s+/g, " ").trim().slice(0, 80);
+/** A card the bot named as settled (resolveAsks `named`) after an owner message: the message it was listed with (`judging`), else `said` when it came after the card. */
+export function wordsClose(i: Notice, said?: OwnerSaid): Closing | undefined {
+	const text = i.decision?.judging?.text ?? (said && said.ts > (i.at ?? i.ts) ? said.text : undefined);
+	return text?.trim() ? { how: "words", words: wordsOf(text) } : undefined;
+}
 // The 감시 소식 feed stays small: each watch keeps its newest WATCH_KEEP reports and none older than WATCH_DAYS, dropped when a report is written and
 // when the file loads, so notices.json and the payload never grow with the age of the install. An open decision is never dropped.
 export const WATCH_KEEP = 50;
@@ -118,6 +129,7 @@ export const hasChoice = (i: Notice) => !!i.decision && i.decision.options.lengt
 const NUMBER_REF = /(?<![\d.,:/-])(\d+)(?:\s*-\s*(\d+))?(?=번|으로|로|이요|요|\)|\]|\.(?!\d)|[,!?~]|\s+(?![시분초일월년개명원통건회%])|$)/gu;
 const bare = (s: string) => s.replace(/\s*…\s*$/, "").trim().toLowerCase();
 export function answersOption(options: { n: number; label: string; say?: string }[], text: string): boolean {
+	if (numberLedQuestion(text)) return false;
 	const t = text.trim().toLowerCase();
 	for (const m of t.matchAll(NUMBER_REF)) if (options.some(o => o.n === Number(m[1]) || (m[2] !== undefined && o.n === Number(m[2])))) return true;
 	return options.some(o => [o.label, o.say ?? ""].some(w => bare(w) && (t === bare(w) || (t.startsWith(bare(w)) && /^[,.!~)]/.test(t.slice(bare(w).length))))));
@@ -129,6 +141,17 @@ export function authorOf(e: HubEvent): string | undefined {
 	const src = String(e.source ?? "");
 	return src.startsWith("lane:") || src === "orchestrator" || src === "gateway" ? src : undefined;
 }
+/** Which open decisions in conversation `to` message `e` answers by its words. An agent's post (AGENT_AUTHOR, the owner's terminal included) answers only an option of a card with options, never a send-approval card, and naming the card or quoting its question gives it no more. */
+export const typedAnswer = (e: HubEvent, to: string) => {
+	const agent = e.author === AGENT_AUTHOR;
+	const id = typeof e.decision === "string" ? e.decision : "";
+	const text = String(e.text ?? "").trim();
+	const quoted = (e.reply as { id?: unknown } | undefined)?.id;
+	const quotesAsk = (i: Notice) => typeof quoted === "string" && quoted !== "" && i.decision!.reply_to === quoted && i.decision!.group === 1;
+	const answers = (i: Notice) => answersOption(i.decision!.options, text);
+	return (i: Notice): boolean =>
+		agent ? i.decision!.to === to && !i.decision!.draft && hasChoice(i) && answers(i) && (!id || i.id === id) : id ? i.id === id : i.decision!.to === to && !i.decision!.draft && (!hasChoice(i) || answers(i) || quotesAsk(i));
+};
 // Older items carry no `by`: a session's question shows in its decision target or lane key.
 export const originOf = (i: Notice): string | undefined => i.by ?? (i.decision?.to.startsWith("lane:") ? i.decision.to : i.key?.startsWith("lane:") ? i.key : undefined);
 export const isAsking = (i: Notice) => !i.dismissed && !i.decision?.to.startsWith("auth:") && (isOpenDecision(i) || (i.tone === "ask" && !i.read));

@@ -6,26 +6,27 @@ import { linkedComment } from "../../../hub/comments/linked.ts";
 import { claimHolder, claimSend, claimToken, keepClaimToken } from "../../../hub/draft-claim.ts";
 import { attachIssues, ownWords, withoutKindWords } from "../../../hub/attach-check.ts";
 import { withFileWords } from "../../../hub/auto-attach.ts";
-import { ATTACH_AS_IS_HINT, ATTACH_REFUSED, LINT_REFUSED, asksForFile, briefLines, claimsAttachment, draftApprovalBlock, draftVerdict, type DraftVerdict, SPENT_REFUSED, WAITING_REFUSED } from "../../../hub/draft-approval.ts";
+import { claimsAttachment, ownClaimText } from "../../../hub/attach-claim.ts";
+import { ATTACH_AS_IS_HINT, ATTACH_REFUSED, LINT_REFUSED, asksForFile, briefLines, draftApprovalBlock, draftVerdict, type DraftVerdict, SPENT_REFUSED, WAITING_REFUSED } from "../../../hub/draft-approval.ts";
 import type { ReplyCall } from "../../../hub/reply-model.ts";
-import { addressesOf, editLesson, generateChatReply, lintReply, lessonOf, NO_RECIPIENT, ownerLint, RECIPIENT_FAILURE, reviseReply, SENT_CLAIM_FAILURE, withSenderAddress, type ModelCall, type Recipient, type ReplyItem, type ReplyKind, type ReplyStyle } from "../../../hub/reply-draft.ts";
+import { addressesOf, editLesson, fileNameKey, generateChatReply, lintReply, lessonOf, NO_RECIPIENT, ownerLint, RECIPIENT_FAILURE, reviseReply, SENT_CLAIM_FAILURE, withSenderAddress, type ModelCall, type Recipient, type ReplyItem, type ReplyKind, type ReplyStyle } from "../../../hub/reply-draft.ts";
 import { listLibrary, matchLibrary, MIN_SCORE, rankLibrary, type LibraryFile } from "./library.ts";
 import { basename } from "node:path";
 import { ruleFilePath } from "./rules.ts";
-import { canAttach, sendsThroughZele, sendWith, settleAccount, webmailSite, zeleAccountOf, type Sent, type SendOutcome } from "./senders.ts";
+import { canAttach, sendsThroughZele, sendWith, settleAccount, threadMoved, webmailSite, zeleAccountOf, type Sent, type SendOutcome } from "./senders.ts";
 import { carryStagedFiles, removeStagedFile, stagedFiles, stagedName, stageFiles, stageWanted, type StageOpts, type Want } from "./staged.ts";
 import { dataDir, loadSettings, loadStyle, paths, recordCorrection, toneFile, validApp, type ToneKey } from "./settings.ts";
 import { banWarnings, boxById } from "./box.ts";
 import { maybeRefine } from "./persona.ts";
 import { addPair, styleFrom, styleWithExamples } from "./pairs.ts";
-import { addDraft, claimFile, getDraft, listDrafts, newId, patchDraft, setStatus, type DraftRec } from "./store.ts";
+import { addRevision, claimFile, getDraft, listDrafts, newId, patchDraft, type RevisionConflict, setStatus, type DraftRec } from "./store.ts";
 import { realRunner, type Runner } from "./tone.ts";
-import { mailHash, mailView, type MailOf } from "./view.ts";
+import { mailHash, mailView, sendAccountOf, type MailOf } from "./view.ts";
 import { reasonOf } from "../../../hub/reply-reasons.ts";
 
 export { realRunner };
 // What hub/reply-mail.ts (the hub's single door into this feature) needs beside the flow itself.
-export { mailView, recordCorrection, webmailSite, type MailOf };
+export { mailView, recordCorrection, sendAccountOf, webmailSite, type MailOf };
 
 // `analyze` = the model call of the identity sweep and its refinement (persona.ts); absent, no identity is analysed or refined.
 export type FlowDeps = { /** Chooses among tied library files by name (stageForReply); the default is one short model call. */ pick?: (names: string[]) => Promise<string[]>; call?: ModelCall; /** The model calls of one draft and its overall budget (draftTrace); buildDraft makes one when absent. */ trace?: DraftTrace; analyze?: ModelCall; run?: Runner; now?: () => Date; send?: (rec: DraftRec) => Promise<SendOutcome>; /** How library files are copied onto a draft (tests). */ stage?: StageOpts; /** Told where an approved send left the mail, right after the transport answered and before any bookkeeping write (bin/draft.ts prints its DOTZ_SEND line). */ onOutcome?: (o: Outcome) => void };
@@ -113,7 +114,8 @@ function tracedCall(deps: FlowDeps, item: ReplyItem, conv: string | undefined, t
 	};
 }
 
-export const callOf = (deps: FlowDeps, item: ReplyItem, conv?: string, what = "draft"): ModelCall => (deps.trace ? tracedCall(deps, item, conv, deps.trace, what) : deps.call ?? replyCall(item.app ?? "mail", conv));
+const modelConv = (item: ReplyItem, conv: string | undefined): string | undefined => (conv && item.kind === "mail" ? `mail:${conv.replace(/^(?:mail:)+/, "")}` : conv);
+export const callOf = (deps: FlowDeps, item: ReplyItem, conv?: string, what = "draft"): ModelCall => (deps.trace ? tracedCall(deps, item, modelConv(item, conv), deps.trace, what) : deps.call ?? replyCall(item.app ?? "mail", modelConv(item, conv)));
 const nowOf = (deps: FlowDeps) => (deps.now ?? (() => new Date()))();
 /** The style of a mail written outside a draft (examples of the same sender first), or undefined when the mail profile has no samples and no identity yet.
  *  Every mail app instance shares the `mail` profile and its pairs, as offered drafts do. */
@@ -137,7 +139,7 @@ function toRec(item: ReplyItem, meta: Meta, r: { draft: { to: string; subject?: 
 	// The candidates were for this one model call; a later revision builds its own.
 	const { candidates: _candidates, ...kept } = item;
 	const account = item.kind === "mail" ? meta.account || zeleAccountOf({ ...meta, app: item.app ?? "mail" }) : undefined;
-	return { id: newId(), ...(r.recipient ? { recipient: r.recipient } : {}), kind: item.kind, app: item.app ?? "mail", ...(item.room !== undefined ? { room: item.room } : {}), ...(item.profile ? { profile: item.profile } : {}), ...meta, ...(account ? { account } : {}), to: r.draft.to, ...(r.draft.subject ? { subject: r.draft.subject } : {}), body: r.draft.body, status: "pending", created: nowOf(deps).toISOString(), changes, questions: r.questions, item: kept };
+	return { id: newId(), ...(r.recipient ? { recipient: r.recipient } : {}), kind: item.kind, app: item.app ?? "mail", ...(item.room !== undefined ? { room: item.room } : {}), ...(item.profile ? { profile: item.profile } : {}), ...meta, ...(account ? { account } : {}), to: stripControl(r.draft.to), ...(r.draft.subject ? { subject: stripControl(r.draft.subject) } : {}), body: stripControl(r.draft.body), status: "pending", created: nowOf(deps).toISOString(), changes, questions: r.questions, item: kept };
 }
 
 // The owner is asked once, with a complete draft (owner 2026-10-26): the one draft call already settles every open point it can from what it
@@ -164,7 +166,10 @@ export function withRecipient(rec: DraftRec): DraftRec {
 	const questions = (rec.questions ?? []).filter(q => !ADDRESS_ASK.test(q));
 	return { ...rec, to: from, item: { ...rec.item, from }, questions };
 }
-const ADDRESS_ASK = /e-?mail address|recipient|address|주소|받는\s*(?:사람|분|이)|수신자/i;
+const ADDRESS_ASK = /e-?mail address|(?:이)?메일\s*주소|recipient|받는\s*(?:사람|분|이)|수신자/i;
+const CONTROL = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F\u200B\u200E\u200F\u202A-\u202E\u2060\u2066-\u2069\uFEFF]/g;
+/** `text` without control characters (all of C0 but tab, newline and carriage return), bidi marks, overrides and isolates, and zero-width spaces: none of them may reach a saved draft or a send. The zero-width joiner and non-joiner stay: emoji sequences and scripts are built with them. */
+export const stripControl = (text: string): string => text.replace(CONTROL, "");
 
 // A question the model wrote because it could not see any file to attach ("첨부 폴더를 볼 수 없어 파일을 붙이지 못했습니다"). Once files are on the draft it is false and only confuses the card.
 const FILE_WORD = "파일|첨부|attach|file";
@@ -215,9 +220,9 @@ export const FILE_CHANGE_MISSED = "고쳐 달라고 한 파일을 첨부 파일 
 export function draftAttachIssues(rec: DraftRec): string[] {
 	if (rec.kind !== "mail" || !canAttach(rec.source)) return [];
 	const files = stagedFiles(rec.id).map(f => f.name);
-	const found = attachIssues({ subject: rec.subject, body: rec.body, files, request: rec.compose ? undefined : rec.item.text }).map(i => i.text);
-	if (rec.fileChangeMissed && sortedNames(rec.fileChangeMissed) === sortedNames(files)) found.push(FILE_CHANGE_MISSED);
 	const want = notYetStaged(rec);
+	const found = files.length || !want.length ? attachIssues({ subject: rec.subject, body: rec.body, files, request: rec.compose ? undefined : rec.item.text }).map(i => i.text) : [];
+	if (rec.fileChangeMissed && sortedNames(rec.fileChangeMissed) === sortedNames(files)) found.push(FILE_CHANGE_MISSED);
 	return want.length ? [...found, `아직 못 붙인 파일: ${want.join(", ")}`] : found;
 }
 const sortedNames = (names: readonly string[]): string => [...names].sort().join("\n");
@@ -230,7 +235,7 @@ const notYetStaged = (rec: DraftRec): string[] => {
 };
 
 // The send-time lint of a draft, in the lint's own words. A text the owner wrote himself (editedFrom) gets the owner-text lint: his length is not the style's.
-const draftLint = (d: DraftRec): string[] => (d.editedFrom !== undefined ? ownerLint : lintReply)({ to: d.to, subject: d.subject, body: d.body }, d.item, loadStyle(toneKey(d)), { anyRecipient: d.ownerRecipients === true });
+const draftLint = (d: DraftRec): string[] => (d.editedFrom !== undefined ? ownerLint : lintReply)({ to: d.to, cc: d.cc, subject: d.subject, body: d.body }, d.item, loadStyle(toneKey(d)), { anyRecipient: d.ownerRecipients === true });
 // The same as the owner reads it. The comment engine runs it before a combined card's reply is posted (hub/comments/engine.ts), so a hit never leaves a posted reply beside an unsent mail.
 export const draftLintFailures = (d: DraftRec): string[] => draftLint(d).map(ownerWarning);
 
@@ -254,14 +259,14 @@ export function editDraft(id: string, text: string, subject?: string): Step & { 
 	const d = getDraft(id);
 	if (!d) return { ok: false, text: `초안 ${id}을(를) 찾지 못했어요`, code: "gone" };
 	if (d.status !== "pending") return { ok: false, text: `초안 ${id}은(는) 이미 ${d.status} 상태라 고칠 수 없어요`, code: "not_pending" };
-	const body = text.replace(/\r\n?/g, "\n").trim();
-	const subj = subject === undefined ? d.subject : subject.replace(/\s+/g, " ").trim();
-	const found = ownerLint({ to: d.to, subject: subj, body }, d.item, loadStyle(toneKey(d)), { anyRecipient: d.ownerRecipients === true });
+	const body = stripControl(text).replace(/\r\n?/g, "\n").trim();
+	const subj = subject === undefined ? d.subject : stripControl(subject).replace(/\s+/g, " ").trim();
+	const found = ownerLint({ to: d.to, cc: d.cc, subject: subj, body }, d.item, loadStyle(toneKey(d)), { anyRecipient: d.ownerRecipients === true });
 	if (found.length) {
 		const lint = found.map(ownerWarning);
 		return { ok: false, text: `${LINT_REFUSED} ${lint.join(" · ")}`, ...lintCode(found[0]!), lint };
 	}
-	if (body !== d.body || subj !== d.subject) patchDraft(id, { ...(subj !== d.subject ? { subject: subj } : {}), ...(body !== d.body ? { body, ...(d.editedFrom === undefined ? { editedFrom: d.body } : {}) } : {}) });
+	if (body !== d.body || subj !== d.subject) patchDraft(id, { ...(subj !== d.subject ? { subject: subj, subjectEdited: true as const } : {}), ...(body !== d.body ? { body, questions: [], ...(d.editedFrom === undefined ? { editedFrom: d.body } : {}) } : {}) });
 	const issues = draftAttachIssues({ ...d, body });
 	return { ok: true, text: `초안 ${id}을(를) 고친 글 그대로 저장했어요${issues.length ? `. 확인: ${issues.join(" · ")}` : ""}` };
 }
@@ -299,7 +304,9 @@ export function askText(draft: DraftRec, warnings: string[], headline = draft.co
 	const attachments = noFiles ? [] : staged;
 	const issues = draftAttachIssues(rec);
 	const keptBack = noFiles && staged.length ? { sendResult: "파일이 붙어 있어 보내지 않아요. 파일을 빼면 본문만 보내요" } : {};
-	const block = draftApprovalBlock({ to: rec.to, toLabel: "받는이", ...(rec.cc?.length ? { cc: rec.cc } : {}), ...(rec.subject ? { subject: rec.subject } : {}), body: rec.body, ref: rec.id, question: rec.compose ? "이 메일 보낼까요?" : "이 답장 보낼까요?", decide: withoutNoFileClaims(rec), ...(rec.compose ? { sendResult: `${rec.to}에게 이 메일을 보내요` } : {}), ...keptBack, ...(hold ? { sendResult: ACCOUNT_HELD } : {}), ...(noFiles ? { cannotAttach: staged.map(f => f.name) } : {}), ...(rec.origin ? { origin: { text: rec.origin.text, ...(rec.origin.link ? { link: rec.origin.link } : {}) } } : {}), ...(attachments.length ? { attachments } : {}), ...((rec.origAttachments ?? 0) > 0 ? { attachmentsNone: true } : {}), ...(rec.asksFile ? { asksFile: true } : {}), ...(rec.libraryMiss ? { libraryMiss: true } : {}), ...(rec.rule ? { rule: rec.rule.name } : {}), ...(issues.length ? { attachIssues: issues } : {}) });
+	const from = sendAccountOf(rec);
+	const empty = !rec.body.trim();
+	const block = draftApprovalBlock({ to: rec.to, toLabel: "받는이", ...(rec.cc?.length ? { cc: rec.cc } : {}), ...(from.account ? { account: from.account } : {}), ...(from.held ? { accountHeld: true as const } : {}), ...(rec.subject ? { subject: rec.subject } : {}), body: rec.body, ref: rec.id, question: empty ? "이 초안을 어떻게 할까요?" : rec.compose ? "이 메일 보낼까요?" : "이 답장 보낼까요?", ...(empty ? { noSend: "본문이 비어 있어서 보낼 수 없어요. 고치기로 내용을 알려 주세요" } : {}), decide: withoutNoFileClaims(rec), ...(rec.compose ? { sendResult: `${rec.to}에게 이 메일을 보내요` } : {}), ...keptBack, ...(hold ? { sendResult: ACCOUNT_HELD } : {}), ...(noFiles ? { cannotAttach: staged.map(f => f.name) } : {}), ...(rec.origin ? { origin: { text: rec.origin.text, ...(rec.origin.link ? { link: rec.origin.link } : {}) } } : {}), ...(attachments.length ? { attachments } : {}), ...((rec.origAttachments ?? 0) > 0 ? { attachmentsNone: true } : {}), ...(rec.asksFile ? { asksFile: true } : {}), ...(rec.libraryMiss ? { libraryMiss: true } : {}), ...(rec.rule ? { rule: rec.rule.name } : {}), ...(issues.length ? { attachIssues: issues } : {}) });
 	return [`[ask] ${headline}`, ...briefLines(rec.brief), ...(notes ? [`-# ${notes}`] : []), block].join("\n");
 }
 
@@ -362,7 +369,7 @@ export async function candidatesFor(item: ReplyItem, meta: { source: string; ref
 }
 
 // What the model chose among the candidates (ReplyResult.files); undefined = it made no choice, so the caller keeps today's matching.
-export const chosenFrom = (c: Candidates | undefined, names: string[] | undefined): LibraryFile[] | undefined => (c ? (c.files.length ? (names ? c.files.filter(f => names.includes(f.rel)) : undefined) : []) : undefined);
+export const chosenFrom = (c: Candidates | undefined, names: string[] | undefined): LibraryFile[] | undefined => (c ? (c.files.length ? (names ? c.files.filter(f => names.some(n => fileNameKey(n) === fileNameKey(f.rel))) : undefined) : []) : undefined);
 
 // Whether the mail asks for a file: the ask is often in its subject alone ("문서 요청드립니다", then "1탄, 2탄 다 받을 수 있을까요?").
 export const mailAsksFile = (item: Pick<ReplyItem, "subject" | "text">): boolean => asksForFile(`${item.subject ?? ""}\n${item.text}`);
@@ -375,7 +382,7 @@ export const mailAsksFile = (item: Pick<ReplyItem, "subject" | "text">): boolean
 export async function stageForReply(rec: DraftRec, deps: FlowDeps, files?: Promise<LibraryFile[] | undefined>): Promise<string[]> {
 	if (rec.kind !== "mail") return [];
 	rec.asksFile = mailAsksFile(rec.item) || undefined;
-	const wants = !!rec.asksFile || claimsAttachment(`${rec.subject ?? ""}\n${rec.body}`);
+	const wants = !!rec.asksFile || claimsAttachment(ownClaimText(rec.subject, rec.body));
 	const found = files ? await files : wants ? await libraryFor(rec.item, rec, deps) : undefined;
 	if (!found || (!found.length && !wants)) return [];
 	if (!found.length) rec.libraryMiss = true;
@@ -413,7 +420,7 @@ async function restageForRevision(rec: DraftRec, change: string, deps: FlowDeps,
 	const have = () => new Set(stagedFiles(rec.id).map(f => f.name));
 	const named = await matchLibrary(folder, { subject: change, text: change });
 	let found = named.filter(f => !have().has(stagedName(basename(f.path))));
-	const wants = asksForFile(rec.item.text) || claimsAttachment(`${rec.subject ?? ""}\n${rec.body}`);
+	const wants = asksForFile(rec.item.text) || claimsAttachment(ownClaimText(rec.subject, rec.body));
 	let missed = false;
 	if (!named.length && !have().size && wants) {
 		found = (await libraryFor(rec.item, rec, deps)) ?? [];
@@ -437,7 +444,7 @@ export type Step = { ok: boolean; text: string; /** The id of the draft a revisi
 // the change itself when the model left it out; nothing when the change was only about this draft) is recorded in the tone profile of that draft (its room, else its app).
 // The change stays verbatim in the draft's own `changes`.
 // `learn: false`: the caller records the returned lesson itself (hub/reply-actions.ts, so every kind learns in one place).
-export async function reviseDraft(id: string, change: string, deps: FlowDeps, opts: { learn?: false } = {}): Promise<Step> {
+async function reviseClaimed(id: string, change: string, deps: FlowDeps, opts: { learn?: false }): Promise<Step> {
 	const found = getDraft(id);
 	const old = found && withRecipient(found);
 	if (!old) return { ok: false, text: `초안 ${id}을(를) 찾지 못했어요` };
@@ -452,13 +459,19 @@ export async function reviseDraft(id: string, change: string, deps: FlowDeps, op
 	if (r.action === "skip") return { ok: false, text: `고친 초안을 만들지 못했어요: ${r.reason}` };
 	const banned = old.box && old.instance ? banWarnings(boxById(old.instance, old.box), r.draft) : [];
 	const rec = toRec(old.item, { ...(old.box && old.instance ? { box: old.box, instance: old.instance } : {}), source: old.source, mailId: old.mailId, ref: old.ref, ...(old.account ? { account: old.account } : {}), ...(old.origAttachments ? { origAttachments: old.origAttachments } : {}) }, r, [...old.changes, change], deps);
+	if (old.subjectEdited) {
+		rec.subjectEdited = true;
+		if (old.subject !== undefined) rec.subject = old.subject;
+	}
 	// The recipients the owner set on the card stay: a rewrite of the words is not a reason to send it to somebody else.
-	rec.to = old.to;
+	const edited = getDraft(id);
+	const kept = edited?.status === "pending" ? withRecipient(edited) : old;
+	rec.to = kept.to;
 	rec.replaces = old.id;
 	if (old.brief) rec.brief = old.brief;
-	if (old.cc?.length) rec.cc = old.cc;
-	if (old.mode) rec.mode = old.mode;
-	if (old.ownerRecipients) rec.ownerRecipients = true;
+	if (kept.cc?.length) rec.cc = kept.cc;
+	if (kept.mode) rec.mode = kept.mode;
+	if (kept.ownerRecipients) rec.ownerRecipients = true;
 	if (old.asksFile) rec.asksFile = true;
 	if (old.wantFiles?.length) rec.wantFiles = old.wantFiles;
 	if (old.libraryMiss) rec.libraryMiss = true;
@@ -470,12 +483,31 @@ export async function reviseDraft(id: string, change: string, deps: FlowDeps, op
 	const notStaged = await restageForRevision(rec, change, deps, rev && r.files ? { rev, chosen: r.files } : undefined).catch(e => [(e as Error).message]);
 	// The change asked for other files and none came: the card says so instead of a rewritten body that only promises them.
 	if (rec.kind === "mail" && canAttach(rec.source) && fileChange().test(change) && heldAndWanted(rec) === before) rec.fileChangeMissed = stagedFiles(rec.id).map(f => f.name);
-	addDraft(rec);
+	const conflict = addRevision(rec, old.id);
+	if (conflict) {
+		for (let n = stagedFiles(rec.id).length; n > 0; n--) removeStagedFile(rec.id, n - 1);
+		return { ok: false, text: revisionRefused(id, conflict) };
+	}
 	// Learned only once the new draft is stored: a revise that failed teaches nothing.
 	const lesson = lessonOf(r, change);
 	if (lesson && opts.learn !== false) await recordLesson(toneKey(old), lesson, deps);
 	return { ok: true, text: askText(rec, [...r.warnings, ...banned, ...notStaged], "답장 초안을 고쳤어요"), id: rec.id, replaces: old.id, ...(lesson ? { lesson: { key: toneKey(old), line: lesson } } : {}) };
 }
+
+export async function reviseDraft(id: string, change: string, deps: FlowDeps, opts: { learn?: false } = {}): Promise<Step> {
+	const release = claimSend(`${claimFile(id)}.revise`, true);
+	if (!release) return { ok: false, text: `초안 ${id}은(는) 지금 고치는 중이라 한 번 더 고치지 않았어요` };
+	try {
+		return await reviseClaimed(id, change, deps, opts);
+	} finally {
+		release();
+	}
+}
+
+const revisionRefused = (id: string, c: RevisionConflict): string => {
+	const why = c.kind === "gone" ? `초안 ${id}이(가) 고치는 동안 사라졌어요` : c.kind === "closed" ? `초안 ${id}은(는) 고치는 동안 ${c.status} 상태가 되었어요` : `이 메일에 더 새 초안 ${c.id}이(가) 기다리고 있어요`;
+	return `${why}. 고친 초안은 저장하지 않았어요`;
+};
 
 export function dropDraft(id: string): Step {
 	const d = getDraft(id);
@@ -485,14 +517,22 @@ export function dropDraft(id: string): Step {
 	return { ok: true, text: `초안 ${id}을(를) 버렸어요` };
 }
 
-// 되돌리기 after the owner's 보내지 기: a dropped draft waits for approval again. A sent or replaced (stale) draft stays as it is, and so does one
-// whose mail already has a newer draft waiting, so a mail never has two drafts pending.
-export function restoreDraft(ref: string): { ok: boolean; text: string } {
+/** 되돌리기 after the owner's 보내지 기: a dropped draft waits for approval again. A sent or replaced (stale) draft stays as it is, and so does one
+ * whose mail already has a newer draft waiting, so a mail never has two drafts pending. With `deps.run` a zele reply's thread is read as a send reads
+ * it (senders.ts threadMoved): answered outside dotz or followed by a newer mail stays dropped; a thread that cannot be read does not block it. */
+export async function restoreDraft(ref: string, deps: Pick<FlowDeps, "run"> = {}): Promise<{ ok: boolean; text: string; code?: "stale" }> {
 	const d = getDraft(ref);
 	if (!d) return { ok: false, text: `초안 ${ref}을(를) 찾지 못했어요` };
 	if (d.status === "pending") return { ok: true, text: `초안 ${ref}은(는) 이미 기다리는 중이에요` };
 	if (d.status !== "dropped") return { ok: false, text: `초안 ${ref}은(는) 이미 ${d.status} 상태라 되돌릴 수 없어요` };
 	if (listDrafts().some(x => x.id !== d.id && x.ref === d.ref && x.status === "pending")) return { ok: false, text: `같은 메일에 새 초안이 있어서 초안 ${ref}은(는) 되돌리지 않았어요` };
+	if (listDrafts().some(x => x.id !== d.id && x.ref === d.ref && x.created > d.created && (x.status === "sent" || x.status === "answered"))) return { ok: false, text: `이미 답한 메일이라 초안 ${ref}은(는) 되돌리지 않았어요` };
+	if (deps.run && d.source === "zele" && !d.compose) {
+		const seen = await threadMoved(d, deps.run, zeleAccountOf(d));
+		if (seen.unread) console.error(`reply draft: ${ref} restored without reading its thread: ${seen.unread.stderr.trim() || `exit ${seen.unread.code}`}`);
+		if (seen.moved === "answered") return { ok: false, code: "stale", text: `이미 이 메일에 답했어요. 초안 ${ref}은(는) 되돌리지 않았어요` };
+		if (seen.moved === "newer") return { ok: false, code: "stale", text: `그사이 새 메일이 와서 초안 ${ref}은(는) 낡았어요. 되돌리지 않았어요` };
+	}
 	setStatus(ref, "pending");
 	return { ok: true, text: `초안 ${ref}을(를) 되돌렸어요` };
 }
@@ -508,7 +548,6 @@ export function restoreDraft(ref: string): { ok: boolean; text: string } {
 export async function sendDraft(id: string, deps: FlowDeps, opts: { withReply?: true; asIs?: true; retry?: true } = {}): Promise<Step> {
 	const stored = getDraft(id);
 	const d = stored && withRecipient(stored);
-	if (stored && d && d !== stored && stored.status === "pending") patchDraft(id, { to: d.to, item: d.item, questions: d.questions });
 	if (!d) return { ok: false, text: `초안 ${id}을(를) 찾지 못했어요`, sent: "no", code: "gone" };
 	if (d.status !== "pending") return { ok: false, text: `초안 ${id}은(는) 이미 ${d.status} 상태라 보내지 않았어요`, sent: "no", code: "gone" };
 	const card = opts.withReply ? undefined : linkedComment(id);
@@ -534,16 +573,16 @@ export async function sendDraft(id: string, deps: FlowDeps, opts: { withReply?: 
 	if (v.token && (v.go || opts.retry) && claimToken(claimFile(id)) === v.token) return { ok: false, text: SPENT_REFUSED, sent: "no", code: "not_approved" };
 	// A second send of the same draft (a double tap, a replayed answer, the CLI beside the gateway) waits for no one: it is refused.
 	if (!opts.retry && claimHolder(claimFile(id)) === "dead") return { ok: false, text: `초안 ${id}은(는) 지난번에 보내다가 멈춰서 메일이 이미 나갔을 수 있어요. 보낸편지함을 확인하고, 안 나갔을 때만 다시 보내기를 눌러 주세요`, sent: "maybe", code: "interrupted" };
-	// Another sender holds the claim and may still send it: no outcome of this run (design 2.3, the queue keeps it `sending`).
 	const release = claimSend(claimFile(id), opts.retry === true);
-	if (!release) return { ok: false, text: `초안 ${id}은(는) 지금 보내는 중이라 한 번 더 보내지 않았어요` };
+	if (!release) return { ok: false, text: `초안 ${id}은(는) 지금 보내는 중이라 한 번 더 보내지 않았어요`, sent: "no", code: "already_sending" };
 	if (v.token) keepClaimToken(claimFile(id), v.token);
+	let keepClaim = false;
 	try {
 		const now = getDraft(id);
 		if (now?.status !== "pending") return { ok: false, text: `초안 ${id}은(는) 이미 ${now?.status ?? "없는"} 상태라 보내지 않았어요`, sent: "no", code: "gone" };
 		let out: SendOutcome;
 		try {
-			out = await (deps.send ?? (rec => sendWith(rec, deps.run ?? realRunner)))(now);
+			out = await (deps.send ?? (rec => sendWith(rec, deps.run ?? realRunner)))(withRecipient(now));
 		} catch (e) {
 			console.error(`reply draft: sending ${id} threw: ${(e as Error).stack ?? (e as Error).message}`);
 			out = { ok: false, message: `보내지 못했어요: ${(e as Error).message}`, sent: "maybe", code: "unknown" };
@@ -553,7 +592,21 @@ export async function sendDraft(id: string, deps: FlowDeps, opts: { withReply?: 
 		const where: Outcome = out.ok ? { sent: out.sent ?? "yes" } : { sent: out.sent ?? "maybe", code: out.code ?? "unknown", ...(out.vars ? { vars: out.vars } : {}) };
 		deps.onOutcome?.(where);
 		if (!out.ok) return { ok: false, text: out.message, sendFailed: true, sent: where.sent === "no" ? "no" : "maybe", code: where.code, ...(where.vars ? { vars: where.vars } : {}) };
-		setStatus(id, "sent");
+		try {
+			setStatus(id, "sent");
+		} catch (e) {
+			keepClaim = true;
+			console.error(`reply draft: ${id} went out but its status was not saved: ${(e as Error).message}`);
+			return { ok: true, text: `${out.message} 다만 초안 상태를 저장하지 못해서 초안이 아직 대기 중으로 보일 수 있어요. 다시 보내지는 않아요` };
+		}
+		const filled = withRecipient(now);
+		if (filled !== now) {
+			try {
+				patchDraft(id, { to: filled.to, item: filled.item, questions: filled.questions });
+			} catch (e) {
+				console.error(`reply draft: the address filled in for ${id} was not saved: ${(e as Error).message}`);
+			}
+		}
 		// A text the owner wrote himself (직접 수정) teaches what he changed, in the profile of that draft, once it went out (design 3.4).
 		const taught = now.editedFrom !== undefined ? editLesson(now.editedFrom, now.body) : undefined;
 		if (taught) await recordLesson(toneKey(now), taught, deps).catch(e => console.error(`reply draft: what the edit of ${id} teaches was not recorded: ${(e as Error).message}`));
@@ -568,7 +621,7 @@ export async function sendDraft(id: string, deps: FlowDeps, opts: { withReply?: 
 		}
 		return { ok: true, text: out.message };
 	} finally {
-		release();
+		if (!keepClaim) release();
 	}
 }
 

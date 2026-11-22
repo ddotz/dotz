@@ -143,7 +143,7 @@ const hmState = () => (S && !S.seeded ? "" : selfDown ? TX("common.load_failed")
 const hcCard = (open, ...kids) => { const c = tapCard(open, ...kids); c.classList.add("hc"); return c; };
 const hcDot = tone => el("span", { class: `nt-dot tone-${tone || "none"}`, "aria-hidden": "true" });
 // A generic title (작업 기록, 알림) says nothing in a card's row: the row shows the entry's first line instead.
-const hcLine = n => { if (wlNotice(n)) { const w = wlTitle(n); if (w) return w; } const t = ntPlain(n.title); return !t || t === "작업 기록" || t === "작업내역" || t === "알림" || t === TX("common.worklog") || t === TX("common.alerts") ? ntPlain(String(n.text || "").split("\n")[0]) || t || TX("common.alerts") : t; };
+const hcLine = n => { if (wlNotice(n)) { const w = wlTitle(n); if (w) return w; } const t = ntPlain(n.title); if (n.decision && n.decision.draft && n.decision.draft.ref && t.endsWith(`(${n.decision.draft.ref})`)) return TX("home.replies.title"); return !t || t === "작업 기록" || t === "작업내역" || t === "알림" || t === TX("common.worklog") || t === TX("common.alerts") ? ntPlain(String(n.text || "").split("\n")[0]) || t || TX("common.alerts") : t; };
 // Each row opens its own item by kind (30-notices.js noticeOpen); a tap beside the rows still opens the card's conversation.
 // The dot is the 알림 screen's (31-notices-screen.js nscTone): a login that waits or a warning is orange, not red.
 const hcNotices = (list, cap) => el("div", { class: "hc-list", "data-cap": cap }, ...list.map(n => el("div", { class: "hc-row", role: "link", tabindex: "0", onclick: ev => { ev.stopPropagation(); noticeOpen(n); }, onkeydown: ev => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); ev.stopPropagation(); noticeOpen(n); } } }, hcDot(wlNotice(n) ? wlDot(n) : n.waits === "login" || n.tone === "warn" ? "ask" : n.tone), el("span", { class: "tb" }, el("span", { class: "t", text: hcLine(n) }), ntLaneNote(n) ? el("span", { class: "n", text: ntLaneNote(n) }) : null), ...resultMarker(`n:${n.id}`, resultChips(n)), el("span", { class: "m", text: ntWhen(n) }), ntNeeds(n) ? ntIgnoreBtn(n) : null)));
@@ -151,7 +151,7 @@ const hcNotices = (list, cap) => el("div", { class: "hc-list", "data-cap": cap }
 const hcRecent = pick => NT.items.filter(n => pick(n) && !/^게이트웨이(?: 재시작했어요|를 다시 시작했어요)/.test(String(n.text || ""))).sort((a, b) => ntAt(b) - ntAt(a));
 // Only what is news: a question that waits is a row of 답변 필요 above, so it is not counted or listed here a second time; a gateway question it
 // handles itself is not asked there (09-needs-you.js nyHandled), so it is news here.
-const hcFyi = n => !n.read && ntHomeAlert(n) && (!ntNeeds(n) || nyHandled(n));
+const hcFyi = n => !n.read && ntHomeAlert(n) && !ntLaterTwin(n) && (!ntNeeds(n) || nyHandled(n));
 // One head for every home card: [status dot] title, an optional count, an optional grey note, in the quiet head step (.ch.lo) so 답변 필요 above is the one card title that leads. An empty card keeps the head and says why under it (hcNone); what is absent leaves no slot (docs/ui-principles.md 13).
 const hcHead = (title, o = {}) => el("div", { class: "ch lo" }, o.dot ? el("span", { class: `dot ${o.dot}` }) : null, el("h3", { text: title }),
   o.n ? el("span", { class: "hc-n" }, ...[].concat(o.n)) : null, o.note ? el("span", { class: "hc-n", text: o.note }) : null, o.menu ? menuBtn(o.menu) : null);
@@ -159,16 +159,33 @@ const hcNone = text => el("div", { class: "hc-none", text });
 // One rule for every list on 홈: a list marked data-cap holds all its rows, shows LIST_CAP of them and scrolls inside its card (.list-cap, 05-log.css).
 // The height is read from the sixth row, since rows differ per list and per item. A refresh rebuilds the lists: capPlaces reads each one's place and
 // focused row before that, and capLists hands them to the new list.
-const LIST_CAP = 6, CAP_FOCUS = "button, [tabindex]";
+const LIST_CAP = 6, ROWS_CAP = { needs: 4 }, CAP_FOCUS = "button, [tabindex]", capOpen = new Set();
 function capPlaces() {
   const kept = new Map(), act = document.activeElement;
   for (const l of document.querySelectorAll("#v-home [data-cap]")) if (l.scrollTop || l.contains(act)) kept.set(l.dataset.cap, [l.scrollTop, [...l.querySelectorAll(CAP_FOCUS)].indexOf(act)]);
   return kept;
 }
+function capRows(l, cap) {
+  for (const old of l.querySelectorAll(":scope > .hn-more")) old.remove();
+  const rows = [...l.children], extra = rows.length - cap, key = l.dataset.cap;
+  if (extra <= 0) return;
+  const more = el("button", { class: "hn-more", type: "button", "data-k": "more" });
+  const paint = () => {
+    const open = capOpen.has(key);
+    rows.forEach((r, i) => { r.hidden = !open && i >= cap; });
+    more.textContent = open ? TX("home.card.rows_less") : TX("home.card.rows_more", { n: extra });
+    more.setAttribute("aria-expanded", String(open));
+  };
+  more.onclick = ev => { ev.stopPropagation(); if (!capOpen.delete(key)) capOpen.add(key); paint(); };
+  l.append(more);
+  paint();
+}
 function capLists(root, kept) {
-  const lists = [...root.querySelectorAll("[data-cap]")], long = lists.filter(l => l.classList.toggle("list-cap", l.childElementCount > LIST_CAP));
+  const lists = [...root.querySelectorAll("[data-cap]")], rowCapped = lists.filter(l => ROWS_CAP[l.dataset.cap]);
+  const long = lists.filter(l => !rowCapped.includes(l) && l.classList.toggle("list-cap", l.childElementCount > LIST_CAP));
   const heights = long.map(l => { const r = l.children[LIST_CAP - 1]; return r.offsetTop + r.offsetHeight; });   // every read before any write: one layout, however many lists
   long.forEach((l, i) => { if (heights[i]) l.style.maxHeight = `${heights[i]}px`; });
+  for (const l of rowCapped) capRows(l, ROWS_CAP[l.dataset.cap]);
   for (const l of kept ? lists : []) {
     const place = kept.get(l.dataset.cap);
     if (!place) continue;
@@ -415,11 +432,13 @@ const homeGreetWord = () => { const h = new Date().getHours(); return h < 5 ? TX
 function homeRunning() {
   if (S && S.seeded) return { all: [], runT: [], waitT: [], convWork: [], runW: [], n: 0, ask: false };
   const laneT = l => `lane:${l.name}`, now = sessionsNow(), waitT = now.wait.map(laneT);
-  const all = [MAIN, ...((S && S.lanes) || []).filter(laneAlive).map(laneT)], runT = [...(targetState(MAIN)[1] === "pri" ? [MAIN] : []), ...now.run.map(laneT)];
   // A conversation's own workers are listed under its row; a mail with no session whose worker is the assistant's (S.work) is that worker's row alone.
   const runW = workRunning(), mainBg = new Set(runW.map(w => w.id)), convs = (S && S.convs) || [];
+  // The worker a conversation's own row already names (its run waits on it): that worker gets no second row.
+  const awaitedWorker = t => { const r = runOf(t); return (r && r.kind === "waiting" && r.reason === "work" && r.work) || ""; };
+  const all = [MAIN, ...((S && S.lanes) || []).filter(laneAlive).map(laneT)], runT = [...(targetState(MAIN)[1] === "pri" && !mainBg.has(awaitedWorker(MAIN)) ? [MAIN] : []), ...now.run.map(laneT)];
   const convT = convs.filter(c => validTarget(convWebT(c.target)) && convRunning(c) && !(runOf(c.target).work && mainBg.has(runOf(c.target).work)));
-  const convWork = convT.flatMap(c => [c, ...(c.work || []).filter(w => !w.queued).map(w => ({ ...w, target: convWebT(c.target), conv: true }))]);
+  const convWork = convT.flatMap(c => [c, ...(c.work || []).filter(w => !w.queued && w.id !== awaitedWorker(c.target)).map(w => ({ ...w, target: convWebT(c.target), conv: true }))]);
   const asks = t => { const r = runOf(t); return !!r && waitsOnOwner(r); };
   return { all, runT, waitT, convWork, runW, n: runT.length + convWork.length + runW.length, ask: all.some(t => targetInfo(t).ask || asks(t)) || convs.some(c => asks(c.target)) };
 }
@@ -505,7 +524,7 @@ function renderHomeNowRaw() {
   // card (the drafts to check, the comments not answered), each with a count per source; every row still opens its own item.
   const running = el("div", { class: "hn", "data-k": "running", "data-cap": "running" }, ...waitT.map(t => homeNowRow(t, SESSION_WORD.wait[0], "att", true)), ...runT.map(t => homeNowRow(t, targetState(t)[0], "", true, homeSince(t))), ...convWork.map(x => x.conv ? workRow(x) : homeConvRow(x)), ...bg.map(workRow),
     ...(working || waitT.length || bg.length ? [] : [hcNone(hmState() || TX("home.card.nothing_running"))]));
-  clear(now).append(homeGreeting(h), ...[acctConnectRow()].filter(Boolean),
+  clear(now).append(homeGreeting(h), ...[pushOffRow(), acctConnectRow()].filter(Boolean),
     el("div", { class: "hneeds" },
       el("div", { class: "hn-h hneeds-h" }, el("h2", { text: TX("common.needs_reply") }), waiting ? el("span", { class: "sup", text: `${waiting}` }) : null, crit ? el("span", { class: "tag warn", text: TX("home.card.critical_n", { n: crit }) }) : null),
       list));

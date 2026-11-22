@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { offerMailDraft } from "../features/reply-drafts/lib/offer.ts";
 import { paths } from "../features/reply-drafts/lib/settings.ts";
 import { listDrafts } from "../features/reply-drafts/lib/store.ts";
+import { stagedFiles } from "../features/reply-drafts/lib/staged.ts";
 import { draftAttachRoute } from "./draft-attach.ts";
 import { draftFileRoute } from "./draft-files.ts";
 import { emit } from "./events.ts";
@@ -101,6 +102,15 @@ describe("files in the send sheet at 390px", () => {
 		}
 	});
 
+	test("the file row offers 사진 추가 next to 파일 추가, which opens a picker that accepts images", async () => {
+		const v = await open(390, 844);
+		await openSheet(v, drafts.match!);
+		await waitFor(v, `document.querySelector(".fs-body .dr-photo")`);
+		expect(await texts(v, ".fs-body .dr-photo")).toEqual(["사진 추가"]);
+		expect(await v.evaluate(`document.querySelectorAll('.fs-body input[type=file]:not([accept])').length`)).toBe(1);
+		expect(await v.evaluate(`(() => { const i = document.querySelector('.fs-body input[type=file][accept="image/*"]'); let hit = false; i.addEventListener("click", e => { hit = true; e.preventDefault(); }, { once: true }); document.querySelector(".fs-body .dr-photo").click(); return hit; })()`)).toBe(true);
+	});
+
 	test("no match: the amber warning sits above 보내기; 파일 추가 from the folder clears it, x brings it back", async () => {
 		const ref = drafts.miss!;
 		const d = find(ref).decision!.draft!;
@@ -142,5 +152,105 @@ describe("files in the send sheet at 390px", () => {
 		expect(await texts(v, ".fs-card .dtitle")).toEqual(["첨부 없이 보낼까요?"]);
 		expect(await v.evaluate(`!!document.querySelector("dialog[open]")`)).toBe(false);
 		expect(await v.evaluate(`!!document.querySelector(".fs-ft .dc-st")`)).toBe(false);
+	});
+
+	test("x on a list another device changed meanwhile takes nothing off; the sheet reads the files again", async () => {
+		const ref = drafts.miss!;
+		const post = (body: object) => fetch(`${base}api/drafts/${ref}/files`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+		for (const name of ["a.pdf", "b.pdf", "c.pdf"]) await post({ name, data: Buffer.from(name).toString("base64") });
+		const v = await open(390, 844);
+		await openSheet(v, ref);
+		await waitFor(v, `document.querySelectorAll(".fs-body .dr-ar").length === 3`);
+		await post({ remove: 0 });
+		await click(v, `.fs-body .dr-x[aria-label="b.pdf 빼기"]`);
+		await waitFor(v, `document.querySelectorAll(".fs-body .dr-ar").length !== 3 && !document.querySelector(".fs-body .dr-add[disabled]")`);
+		expect(stagedFiles(ref).map(f => f.name)).toEqual(["b.pdf", "c.pdf"]);
+		expect(await texts(v, ".fs-body .dr-fn")).toEqual(["b.pdf", "c.pdf"]);
+	});
+
+	test("a marked removal gone stale is re-mapped by name: 반영 takes off the marked file in one go, a file gone elsewhere drops its mark, and the panel hides the marked file", async () => {
+		const ref = drafts.miss!;
+		const post = (body: object) => fetch(`${base}api/drafts/${ref}/files`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+		while (stagedFiles(ref).length) await post({ remove: 0 });
+		for (const name of ["a.pdf", "b.pdf", "c.pdf"]) await post({ name, data: Buffer.from(name).toString("base64") });
+		const v = await open(390, 844);
+		await waitFor(v, `typeof raRowsApply === "function" && typeof drfLoad === "function"`);
+		const run = async (marks: string, others: number[]) => JSON.parse(await v.evaluate(`(async () => {
+			const ref = ${JSON.stringify(ref)};
+			drfStale(ref); await drfLoad(ref);
+			const rows = { recv: {}, files: { remove: ${marks}, add: [] } };
+			for (const n of ${JSON.stringify(others)}) await fetch("/api/drafts/" + ref + "/files", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ remove: n }) });
+			const out = [];
+			try { await raRowsApply(ref, rows); out.push("ok"); } catch (e) { out.push(e.status + " " + e.message); }
+			return JSON.stringify({ out, marks: rows.files.remove });
+		})()`)) as { out: string[]; marks: unknown[] };
+		expect(await run(`[{ at: 1, name: "b.pdf", size: 5 }]`, [0])).toEqual({ out: ["ok"], marks: [] });
+		expect(stagedFiles(ref).map(f => f.name)).toEqual(["c.pdf"]);
+		await post({ name: "d.pdf", data: Buffer.from("d").toString("base64") });
+		expect(await run(`[{ at: 1, name: "d.pdf", size: 1 }]`, [1])).toEqual({ out: ["ok"], marks: [] });
+		expect(stagedFiles(ref).map(f => f.name)).toEqual(["c.pdf"]);
+		await post({ name: "e.pdf", data: Buffer.from("e").toString("base64") });
+		const shown = await v.evaluate(`(async () => {
+			drfStale(${JSON.stringify(ref)}); await drfLoad(${JSON.stringify(ref)});
+			const node = draftFilesNode({ ref: ${JSON.stringify(ref)}, toLabel: "받는이", attachments: [] }, { t: "", stage: { remove: [{ at: 0, name: "e.pdf", size: 1 }], add: [] }, onstage() {} });
+			return JSON.stringify([...node.querySelectorAll(".dr-fn")].map(n => n.textContent));
+		})()`);
+		expect(JSON.parse(shown)).toEqual(["c.pdf"]);
+	});
+
+	test("a removal marked on one file carries its size: a same-named replacement another device put in the slot is not taken off", async () => {
+		const ref = drafts.miss!;
+		const post = (body: object) => fetch(`${base}api/drafts/${ref}/files`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+		while (stagedFiles(ref).length) await post({ remove: 0 });
+		await post({ name: "x.pdf", data: Buffer.from("XX").toString("base64") });
+		await post({ name: "a.pdf", data: Buffer.from("AAAA").toString("base64") });
+		const v = await open(390, 844);
+		await waitFor(v, `typeof raRowsApply === "function" && typeof draftFilesNode === "function"`);
+		const marked = JSON.parse(await v.evaluate(`(async () => {
+			const ref = ${JSON.stringify(ref)};
+			drfStale(ref); await drfLoad(ref);
+			const stage = { remove: [], add: [] };
+			const node = draftFilesNode({ ref, toLabel: "받는이", attachments: [] }, { t: "", stage, onstage() {} });
+			document.body.append(node);
+			node.querySelector('.dr-x[aria-label="a.pdf 빼기"]').click();
+			node.remove();
+			window.__stage = stage;
+			return JSON.stringify(stage.remove);
+		})()`)) as unknown[];
+		expect(marked).toEqual([{ at: 1, name: "a.pdf", size: 4 }]);
+		await post({ remove: 1 });
+		await post({ name: "a.pdf", data: Buffer.from("BBBBBBBB").toString("base64") });
+		const out = JSON.parse(await v.evaluate(`(async () => {
+			const ref = ${JSON.stringify(ref)}, rows = { recv: {}, files: { remove: window.__stage.remove, add: [] } };
+			let res = "ok";
+			try { await raRowsApply(ref, rows); } catch (e) { res = e.status + " " + e.message; }
+			return JSON.stringify({ res, marks: rows.files.remove });
+		})()`)) as { res: string; marks: unknown[] };
+		expect(out).toEqual({ res: "ok", marks: [] });
+		expect(stagedFiles(ref).map(f => `${f.name}:${f.size}`)).toEqual(["x.pdf:2", "a.pdf:8"]);
+	});
+
+	test("the immediate x (no panel) sends the size too: a stale button on a replaced file refuses and takes nothing off", async () => {
+		const ref = drafts.miss!;
+		const post = (body: object) => fetch(`${base}api/drafts/${ref}/files`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+		while (stagedFiles(ref).length) await post({ remove: 0 });
+		await post({ name: "a.pdf", data: Buffer.from("AAAA").toString("base64") });
+		const v = await open(390, 844);
+		await waitFor(v, `typeof drfWrite === "function" && typeof draftFilesNode === "function"`);
+		await v.evaluate(`(async () => {
+			const ref = ${JSON.stringify(ref)};
+			drfStale(ref); await drfLoad(ref);
+			const real = window.fetch, bodies = window.__bodies = [];
+			window.fetch = (u, o) => { if (o && o.method === "POST" && /\\/files$/.test(String(u))) bodies.push(JSON.parse(o.body)); return real(u, o); };
+			const node = draftFilesNode({ ref, toLabel: "받는이", attachments: [] }, { t: "" });
+			document.body.append(node);
+			await fetch("/api/drafts/" + ref + "/files", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ remove: 0 }) });
+			await fetch("/api/drafts/" + ref + "/files", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: "a.pdf", data: "QkJCQkJCQkI=" }) });
+			node.querySelector('.dr-x[aria-label="a.pdf 빼기"]').click();
+		})()`);
+		await waitFor(v, `window.__bodies.some(b => b.remove !== undefined && b.name) && !DRF.busy[${JSON.stringify(ref)}]`);
+		const sent = JSON.parse(await v.evaluate(`JSON.stringify(window.__bodies)`)) as { remove?: number; name?: string; size?: number }[];
+		expect(sent.find(b => b.remove !== undefined && b.name)).toEqual({ remove: 0, name: "a.pdf", size: 4 });
+		expect(stagedFiles(ref).map(f => `${f.name}:${f.size}`)).toEqual(["a.pdf:8"]);
 	});
 });

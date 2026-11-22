@@ -10,7 +10,7 @@ import { createNightly } from "./nightly-fresh.ts";
 import { emitEventActivity, endSubagents, statusActivity } from "./activity.ts";
 import { pendingAsksBlock } from "./asks.ts";
 import { workersOf } from "./lanegates.ts";
-import { cfg, chainAfter, compactAtFor, DATA_DIR, DEFAULTS, fallbackChain, HUB_TOKEN, log, NAME, now, orchestratorModel, parseSelector, selectorOf, TZ, tzLabel, writeAtomic } from "./config.ts";
+import { cfg, chainAfter, compactAtFor, DATA_DIR, DEFAULTS, fallbackChain, HUB_TOKEN, log, now, orchestratorModel, parseSelector, selectorOf, TZ, tzLabel, writeAtomic } from "./config.ts";
 import { workerGateEnv } from "./done-gate.ts";
 import { isNote, msg } from "./i18n.ts";
 import { markSteers, steerContract, steerToken } from "./steer-mark.ts";
@@ -118,7 +118,7 @@ export function createOrchestrator(opts: OrchOpts) {
 		return went;
 	}
 	// A turn with no progress for stuckTurnMs() is aborted (its request stays open), then restarted when the abort does not end it (hub/stuck.ts).
-	const stuck = orchStuck({ key: opts.key, pid: orchestratorPid, sessionFile: () => orch.sessionFile, working: () => orch.status === "working", busy: () => workerCount() > 0, abort: () => ((turnFailed = true), proc?.abort()), restart: why => restart(why, true), alert: text => onAlert(`${NAME}: ${text}`) });
+	const stuck = orchStuck({ key: opts.key, pid: orchestratorPid, sessionFile: () => orch.sessionFile, working: () => orch.status === "working", busy: () => workerCount() > 0, abort: () => ((turnFailed = true), proc?.abort()), restart: why => restart(why, true), alert: text => onAlert(text) });
 	let stopping = false;
 	let rotating = false;
 	let restarting = false;
@@ -185,7 +185,7 @@ export function createOrchestrator(opts: OrchOpts) {
 		orch.activeModel = to;
 		const line = msg().modelReverted(parseSelector(to).model);
 		log(`${who} ${line}`);
-		onAlert(`${NAME}: ${line}`);
+		onAlert(line);
 	}
 	// One line for the worklog when the runtime moves the orchestrator (or one of its task workers) to the next model of a fallback chain.
 	let onNotice: (text: string) => void = () => {};
@@ -304,12 +304,12 @@ export function createOrchestrator(opts: OrchOpts) {
 			const line = msg().fallbackMove(chain.label(move.from), chain.label(move.to), move.why, back);
 			log(`${who} ${line}`);
 			onNotice(line);
-			if (!chain.list[move.to].key_file && !saved().apiSince && (move.why === "quota" || move.why === "error")) onAlert(`${NAME}: ${line}`);
+			if (!chain.list[move.to].key_file && !saved().apiSince && (move.why === "quota" || move.why === "error")) onAlert(line);
 		}
 		const keyed = Boolean(chain.list[move.to].key_file);
 		if (keyed && !saved().apiSince) {
 			save({ apiSince: now() });
-			onAlert(`${NAME}: ${msg().apiStart(chain.label(move.to))}`);
+			onAlert(msg().apiStart(chain.label(move.to)));
 		}
 		freshSwitch = { again };
 		continueAfterSwitch = again;
@@ -342,7 +342,7 @@ export function createOrchestrator(opts: OrchOpts) {
 		const line = msg().fallbackExhausted(c.label(c.active), at);
 		log(`${who} ${line}`);
 		onNotice(line);
-		if (noteBlock("orchestrator", c.label(c.active), "limit").alert) onAlert(`${NAME}: ${line}`);
+		if (noteBlock("orchestrator", c.label(c.active), "limit").alert) onAlert(line);
 		pauseAlerted = true;
 		lp.clear();
 		clearTimeout(resumeTimer);
@@ -437,7 +437,7 @@ export function createOrchestrator(opts: OrchOpts) {
 					}
 					if (ev.stop !== "error" && ev.text && chain && !chain.list[chain.active].key_file && saved().apiSince) {
 						save({ apiSince: undefined });
-						onAlert(`${NAME}: ${msg().apiEnd(chain.label(chain.active))}`);
+						onAlert(msg().apiEnd(chain.label(chain.active)));
 					}
 					if (ev.stop === "error" && !inKeepalive) turnFailed = true;
 					if (ev.stop !== "error") {
@@ -446,7 +446,7 @@ export function createOrchestrator(opts: OrchOpts) {
 						errorStreak.ok();
 						streakAlerted = false;
 						clearError();
-						if (noteRecovered("orchestrator")) onAlert(`${NAME}: ${recoveryText()}`);
+						if (noteRecovered("orchestrator", providerOf(limitModel()))) onAlert(recoveryText());
 					} else if (inKeepalive && keepaliveErrorDropped(ev.error.kind)) {
 						log(`keepalive failed (${ev.error.text.replace(/\s+/g, " ").slice(0, 120)}); not retried, the next message is the next try`);
 					} else if (ev.error.kind !== "rate" && ev.error.kind !== "owner" && errorStreak.fail() !== "go") {
@@ -502,7 +502,7 @@ export function createOrchestrator(opts: OrchOpts) {
 					else {
 						// A silent switch to a weaker model went unnoticed for 50 minutes: the owner hears about it where alerts go.
 						if (p.setModel) reverter.note(startedModel, revertWhy(ev.reason ?? "", adapter?.classifyError(ev.reason ?? "")), ev.from, ev.reason ?? "");
-						onAlert(`${NAME}: ${line}${p.setModel ? "" : ` ${msg().modelNoRevert}`}`);
+						onAlert(`${line}${p.setModel ? "" : ` ${msg().modelNoRevert}`}`);
 					}
 					break;
 				}
@@ -555,11 +555,12 @@ export function createOrchestrator(opts: OrchOpts) {
 			const owner = kind === "owner";
 			const lk = limitKind(err, kind);
 			const account = limitAccount(err, currentModel);
+			const provider = providerOf(limitModel());
 			log(`${who} blocked (${lk}, ${account}): ${err.replace(/\s+/g, " ").slice(0, 300)}`);
-			let note = owner ? noteBlock("orchestrator", account, lk) : undefined;
+			let note = owner ? noteBlock("orchestrator", account, lk, Date.now(), false, provider) : undefined;
 			const { ms: retry, reset } = owner ? { ms: ownerRetryMs(note!.failures), reset: false } : await rateLimitDelay(err, currentModel);
 			if (holdId !== id || orch.status !== "rate-limited") return;
-			note ??= noteBlock("orchestrator", account, lk, Date.now(), true);
+			note ??= noteBlock("orchestrator", account, lk, Date.now(), true, provider);
 			const until = new Date(Date.now() + retry);
 			orch.rateLimitedUntil = until.toISOString();
 			const at = until.toLocaleString("ko-KR", { timeZone: TZ, month: "numeric", day: "numeric", weekday: "short", hour: "2-digit", minute: "2-digit" });
@@ -567,11 +568,11 @@ export function createOrchestrator(opts: OrchOpts) {
 			const authSince = authStamp();
 			save({ pausedUntil: orch.rateLimitedUntil, pausedKind: owner ? "owner" : undefined, pausedAuth: owner ? authSince : undefined });
 			if (note.alert) {
-				if (owner) onAlert(`${NAME}: ${blockText(lk as "auth" | "billing", account, providerOf(currentModel), retry)}`);
+				if (owner) onAlert(blockText(lk as "auth" | "billing", account, provider, retry));
 				else {
 					const pinned = await pinnedLimitNotice(until.getTime());
 					if (holdId !== id || orch.status !== "rate-limited") return;
-					onAlert(`${NAME}: ${pinned ?? `사용량 한도에 걸려서 멈췄어요. ${reset ? `한도 리셋 직후인 ${at}` : `${at}쯤`}부터 다시 시도하고, 그동안 온 메시지는 모아뒀다가 순서대로 처리해요.`}`);
+					onAlert(pinned ?? `사용량 한도에 걸려서 멈췄어요. ${reset ? `한도 리셋 직후인 ${at}` : `${at}쯤`}부터 다시 시도하고, 그동안 온 메시지는 모아뒀다가 순서대로 처리해요.`);
 				}
 			}
 			markTold("orchestrator");

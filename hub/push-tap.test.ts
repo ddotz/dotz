@@ -10,7 +10,7 @@ import { fakeHub, inbox, json, on } from "./test-web.ts";
 import { b64u } from "./webpush.ts";
 
 const ORIGIN = "https://dotz.test";
-type Win = { url: string; focused?: boolean; visibilityState?: string; focus: () => Promise<void>; postMessage: (m: Record<string, unknown>, ports?: MessagePort[]) => void };
+type Win = { url: string; focused?: boolean; visibilityState?: string; frameType?: string; focus: () => Promise<void>; postMessage: (m: Record<string, unknown>, ports?: MessagePort[]) => void };
 
 // web/sw.js as shipped with its platform stubbed and a fake clock: the timer the worker sets for a window's answer is fired by the test.
 function worker(wins: Win[]) {
@@ -78,6 +78,50 @@ describe("the worker hands a tap to the app's own window", () => {
 		await sw.tap(data);
 		expect(sw.kept[0]).toMatchObject({ path: "new-window", why: "focus-refused" });
 	});
+
+	test("a tap goes to the installed app's window, not a browser tab listed before it", async () => {
+		const installedGot: Array<Record<string, unknown>> = [];
+		const tab = win(`${ORIGIN}/#home`, true), installed = win(`${ORIGIN}/#home`, true, {
+			postMessage: (m, ports) => { installedGot.push(m); ports?.[0]?.postMessage(m.probe ? { standalone: true } : 1); },
+		});
+		const sw = worker([tab.w, installed.w]);
+		await sw.tap(data);
+		expect(installedGot.filter(m => !m.probe)).toMatchObject([{ open: `${ORIGIN}/#chat/main`, ts: data.ts, nid: "n1", tap: { path: "open-window" } }]);
+		expect(tab.got.filter(m => !m.probe)).toEqual([]);
+		expect(sw.opened).toEqual([]);
+	});
+
+	test("a frame of the app nested in another window never gets the tap: the app's own window does, or one opens", async () => {
+		const framed = win(`${ORIGIN}/#home`, true, { focused: true, frameType: "nested" }), app = win(`${ORIGIN}/#home`, true);
+		const sw = worker([framed.w, app.w]);
+		await sw.tap(data);
+		expect(framed.got).toEqual([]);
+		expect(app.got.filter(m => !m.probe)).toMatchObject([{ open: `${ORIGIN}/#chat/main`, nid: "n1" }]);
+		const alone = worker([win(`${ORIGIN}/#home`, true, { frameType: "nested" }).w]);
+		await alone.tap(data);
+		expect(alone.opened).toEqual([COLD]);
+	});
+
+	test.each([
+		["an absolute address of another origin", "https://evil.example/#chat/main", `${ORIGIN}/`],
+		["a protocol-relative address of another origin", "//evil.example/x?y=1#z", `${ORIGIN}/`],
+		["an absolute address of this origin keeps its path, query and hash", `${ORIGIN}/a?b=1#c`, `${ORIGIN}/a?b=1#c`],
+	])("%s: the tap opens only this origin", async (_name, url, want) => {
+		const sw = worker([]);
+		await sw.tap({ url });
+		expect(sw.opened).toEqual([want]);
+	});
+
+	test("windows that do not say they are installed (an older page, a browser tab) keep the usual choice: the focused one", async () => {
+		const older = win(`${ORIGIN}/#home`, false), tab = win(`${ORIGIN}/#home`, true, { focused: true });
+		const sw = worker([older.w, tab.w]);
+		await sw.tap(data, async () => {
+			await older.arrival;
+			sw.fire();
+		});
+		expect(tab.got.filter(m => !m.probe)).toMatchObject([{ open: `${ORIGIN}/#chat/main`, nid: "n1" }]);
+		expect(sw.opened).toEqual([]);
+	});
 });
 
 describe("the gateway log", () => {
@@ -110,6 +154,12 @@ describe("the gateway log", () => {
 		const got = lines("answer:tap-log-b");
 		expect(got).toHaveLength(1);
 		expect(got[0]).toMatch(/push: tap tag=answer:tap-log-b path=new-window via=no-ack screen=chat:main reason=no-message$/);
+	});
+
+	test("a decision button pressed on a notification leaves one line with whether its answer was taken", async () => {
+		const post = (b: object) => pushRoute(new Request("http://x/api/push/tap", { method: "POST", body: JSON.stringify(b) }), new URL("http://x/api/push/tap"));
+		expect((await post({ tag: "decision:tap-log-c", path: "action", why: "failed", reason: "503" }))!.status).toBe(200);
+		expect(lines("decision:tap-log-c")[0]).toMatch(/push: tap tag=decision:tap-log-c path=action via=failed reason=503$/);
 	});
 });
 

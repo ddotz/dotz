@@ -1,13 +1,18 @@
 // The comment engine: collect (script only, no model), draft (a model call only on request or per-source auto-draft), send (only through
 // the gate in contract.ts). Everything is injected (adapters, model, clock, tone, broadcast) so tests run without a network.
+import { editFollower } from "./edited.ts";
 import { editLesson, ownerLint, type ReplyStyle } from "../reply-draft.ts";
 import { absorbComments, mergeIgTwins } from "./absorb.ts";
-import { createDraftRun } from "./draft-run.ts";
+import { failAuto, leaveQueue } from "./auto-queue.ts";
+import { createDraftRun, earlierMailTo, MAIL_SAME_ADDRESS_NOTE, mailJson, POSTING_REASON, reviseMail, tokenStats } from "./draft-run.ts";
 import { createSendRecovery } from "./recover.ts";
+import { replyPosted } from "./posted.ts";
 import { type Comment, type CommentAdapter, dispatchReply, type GateResult, isUntitled, type Post, ruleAllows, type SourceConfig, type SourceKind, threadKey, watches } from "./contract.ts";
 import { UNKNOWN_USER } from "../../features/youtube-instagram/lib/ig-owner.ts";
-import { ATTACH_AS_IS_HINT, ATTACH_REFUSED, LINT_REFUSED, asksForFile, fileSizeText, recipientCheck } from "../draft-approval.ts";
+import { ATTACH_AS_IS_HINT, ATTACH_REFUSED, LINT_REFUSED, PAIR_NOTE, asksForFile, pairCheck, recipientCheck } from "../draft-approval.ts";
+import { ADDRESS, checkNoMail, EXTRA_NOTE, MAIL_FAILED_NOTE, MAIL_NO_APP_NOTE, mailPlanned, NO_MAIL_REFUSED, promisesMail } from "./no-mail.ts";
 import { type ClosedReason, createStore, type Draft, type MailOutcome, type Reply, type Store } from "./store.ts";
+import { type CommentNotice, sendFailedNotice, waitingNotice } from "./news.ts";
 import { unrepliedFresh } from "../unreplied.ts";
 import type { MailQuery } from "./mail-match.ts";
 import { createPastRefresh, type PastDeps } from "./past-refresh.ts";
@@ -16,7 +21,7 @@ import { createPastRefresh, type PastDeps } from "./past-refresh.ts";
 // after the reply is posted, revised or dropped with it.
 // `request`: the writer's own words, for the install's narrow rule (hub/auto-attach.ts; see hub/mail-cli.ts composeMail).
 export type MailSpec = { app: string; to: string; subject: string; body: string; attach?: string[]; fromLibrary?: string; request?: string };
-export type MailView = { id: string; to: string; subject?: string; body: string; attachments: { name: string; size?: number; digest?: string }[]; asksFile?: boolean; libraryMiss?: boolean; /** Warnings the owner reads before approving, shown with the mail. */ notes?: string[]; /** Where the mail's words and files disagree (flow.ts draftAttachIssues): the card's `첨부 확인` line. */ attachIssues?: string[] };
+export type MailView = { id: string; to: string; account?: string; accountHeld?: true; subject?: string; body: string; attachments: { name: string; size?: number; digest?: string }[]; asksFile?: boolean; libraryMiss?: boolean; /** Warnings the owner reads before approving, shown with the mail. */ notes?: string[]; /** Where the mail's words and files disagree (flow.ts draftAttachIssues): the card's `첨부 확인` line. */ attachIssues?: string[] };
 /** What the mail text is written from: the comment, its author and post, the mail app of the source and the address the mail goes to. */
 export type MailWrite = { app: string; to: string; author: string; text: string; postTitle: string };
 export type MailLink = {
@@ -26,6 +31,8 @@ export type MailLink = {
 	compose: (spec: MailSpec) => Promise<{ ok: true; id: string; notes?: string[]; libraryMiss?: boolean } | { ok: false; reason: string }>;
 	/** The status of a mail draft whatever it is ("pending", "sent", ...); missing = only pending drafts are known (`view`). */
 	state?: (id: string) => string | undefined;
+	/** The mail draft whatever its state, sent included (`view` knows pending ones only): a sent reply's row shows the mail that went with it. Missing = none is known. */
+	record?: (id: string) => MailView | undefined;
 	/** A pending mail draft made for the comment `commentId` on its own (compose --origin comment:<id>). Missing = none is known. */
 	pendingFor?: (commentId: string) => string | undefined;
 	/** Sends the mail draft; the reply was just posted by the owner's pick, so no second pick is asked. A mail whose files disagree with its words is refused unless `asIs` (the owner picked 이대로 보내기). */
@@ -38,6 +45,7 @@ export type MailLink = {
 	revise: (id: string, change: string) => Promise<{ ok: true; id: string } | { ok: false; reason: string }>;
 	/** The owner's own text for the mail, saved as written (직접 수정); refused with the lint's lines. Missing = the mail cannot be edited here. */
 	edit?: (id: string, text: string, subject?: string) => { ok: true } | { ok: false; reason: string; code?: string; lint?: string[] };
+	retarget?: (id: string, to: string) => void;
 	view: (id: string) => MailView | undefined;
 };
 export type ModelReply = { text: string; inputTokens?: number; outputTokens?: number };
@@ -61,6 +69,8 @@ export type EngineDeps = {
 	mail?: MailLink;
 	/** Comment <-> mail matching for sources with `mailMatch` on (hub/comments/mail-match.ts): card lines `메일 대조:` / `근거:` / `초안 메모:`. Missing = no matching. */
 	mailMatch?: (q: MailQuery) => Promise<string[]>;
+	mailOwed?: (mailId: string) => void;
+	answeredMailThread?: (mailThreadId: string, at: number) => void;
 } & PastDeps;
 
 export const appOf = (src: Pick<SourceConfig, "kind">): string => (src.kind === "website" ? "site" : src.kind);
@@ -86,14 +96,28 @@ const MAIL_SENT_CLAIM = /(메일|e-?mail)[^.!?\n]{0,15}(보내\s?드렸|보냈|�
 function mailClaimRefusal(text: string, mailId: string | undefined): GateResult | undefined {
 	return mailId && MAIL_SENT_CLAIM.test(text) ? { ok: false, code: "mail_claim_unsent", reason: `답글에 메일을 보냈다고 썼는데 그 메일(${mailId})은 아직 나가지 않았어요. 답글도 올리지 않았어요. 답글과 메일을 함께 보내려면 한 카드에서 1) 보내기를, 답글만 올리려면 답글을 고쳐 주세요.` } : undefined;
 }
+// After either part of a reply + mail card changed: the pair-check lines (draft-approval.ts pairCheck) of the draft `code` are replaced by fresh ones, so
+// they never pile up and go once both agree. `hadMail`: the card carried a mail before this change (a line of an earlier check says so too).
+function recheckPair(store: Store, view: (d: Draft) => MailView | undefined, emit: (e: Record<string, unknown>) => void, code: string, hadMail = false): Draft | undefined {
+	const d = store.drafts().find(x => x.code === code && x.status === "pending");
+	if (!d) return undefined;
+	const kept = d.notes.filter(n => !PAIR_NOTE.test(n));
+	const mail = view(d);
+	const had = hadMail || !!d.mail || kept.length < d.notes.length;
+	const found = mail || promisesMail(d.text) ? pairCheck(d.text, mail, had) : [];
+	if ([...kept, ...found].join("\n") === d.notes.join("\n")) return d;
+	const next: Draft = { ...d, notes: [...kept, ...found], ...(found.length ? { clean: false } : {}) };
+	store.putDraft(next);
+	emit({ kind: "comment_draft", source: d.source, thread: d.thread });
+	return next;
+}
 export const OFF_REASON = "댓글 답글이 꺼져 있어요. 앱 설정에서 켜 주세요";
 const MAX_AUTO_PER_RUN = 5;
 const RECHECK_CAP = 200;
 const RECHECK_EVERY_MS = 30 * 60_000;
 export const MAIL_KEPT_NOTE = "확인: 댓글은 이미 답했어요. 메일은 따로 확인해 주세요";
-export const MAIL_NO_APP_NOTE = "확인: 메일 앱이 정해지지 않아 메일 초안은 만들지 않았어요";
 const LIBRARY_MISS_NOTE = "확인: 첨부 파일 폴더에서 맞는 파일을 찾지 못했어요";
-const ADDRESS = /[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+/;
+const MAIL_REVISING_REASON = "메일을 고치는 중이에요. 끝난 뒤에 다시 보내 주세요";
 /** The linked mail of a comment as the item shows it: 메일 초안 작성됨 / 메일 보냄 / 메일 실패: <이유>. */
 export type MailMark = { state: "drafted" | "sent" | "failed"; label: string };
 // `merged`: Instagram reply rows stored twice that became one (issue #31); only when there were any.
@@ -103,6 +127,15 @@ const SAMPLES = 5;
 const CONTEXT_COMMENTS = 6;
 const CLIP = 240;
 const BASE32 = "abcdefghjkmnpqrstvwxyz23456789";
+/** A new draft code, none of `taken`. */
+export function newCommentCode(taken: ReadonlySet<string>): string {
+	for (;;) {
+		const c = `D${Array.from({ length: 6 }, () => BASE32[Math.floor(Math.random() * BASE32.length)]).join("")}`;
+		if (!taken.has(c)) return c;
+	}
+}
+/** The shape of a draft code newCommentCode() makes. */
+export const COMMENT_CODE = new RegExp(`^D[${BASE32}]{6}$`);
 const clip = (s: string, n = CLIP) => s.replace(/\s+/g, " ").trim().slice(0, n);
 
 // Only comments that ever carried a mail are looked up: a thread list runs on every comment watched.
@@ -115,7 +148,8 @@ function threadMailCounts(replies: Reply[], drafts: Draft[], stateOf: (commentId
 	};
 }
 
-export type Step = { ok: true; draft: Draft } | { ok: false; reason: string };
+/** `permanent`: asking again changes nothing (comment gone or mine, source off, the model chose to skip). */
+export type Step = { ok: true; draft: Draft } | { ok: false; reason: string; permanent?: true };
 
 // The options MailLink.send gets: only what is set, so a plain send stays a plain call.
 const sendOpts = (o: { retry?: true; asIs?: true }): { asIs?: true; retry?: true } | undefined => (o.asIs || o.retry ? { ...(o.asIs ? { asIs: true as const } : {}), ...(o.retry ? { retry: true as const } : {}) } : undefined);
@@ -146,7 +180,7 @@ export function createEngine(deps: EngineDeps) {
 		emit({ kind: "comment_send", source: r.source, thread: r.thread, id: r.id, state: r.state, ...(r.reason ? { reason: r.reason } : {}) });
 		const src = store.config().sources[r.source];
 		// A reply that carries a mail wakes no 이어서 할 일 rule: the mail it would draft is already in the card.
-		if (r.state === "sent" && src && !store.drafts().find(d => d.code === r.draft)?.mail) deps.sent?.(ownerOf(src), r);
+		if (r.state === "sent") replyPosted(deps, store, r, src && ownerOf(src));
 	} };
 
 	const ownerOf = (src: SourceConfig): string => deps.owner?.(src) ?? appOf(src);
@@ -156,6 +190,9 @@ export function createEngine(deps: EngineDeps) {
 		const top = c.parent ?? c.native;
 		return store.comments().filter(x => x.source === c.source && x.thread === c.thread && (x.native === top || x.parent === top));
 	};
+	const posting = (commentId: string): boolean => inflight.has(`send:${commentId}`) || store.replies().some(r => r.commentId === commentId && r.state === "sending");
+	const revisingMail = new Map<string, number>();
+	const mailRevising = (code: string): boolean => store.drafts().some(x => x.code === code && x.status === "pending" && revisingMail.has(x.commentId));
 	const answeredOnPlatform = (c: Comment): boolean => {
 		const src = sourceOf(c.source);
 		const check = src && deps.adapters[src.kind]?.answered;
@@ -179,26 +216,22 @@ export function createEngine(deps: EngineDeps) {
 		const s = deps.style?.(src) ?? { rules: [], corrections: [], forbidden: [], samples: [] };
 		return { ...s, samples: s.samples.slice(0, SAMPLES) };
 	};
-	const code = (): string => {
-		const taken = new Set(store.drafts().map(d => d.code));
-		for (;;) {
-			const c = `D${Array.from({ length: 6 }, () => BASE32[Math.floor(Math.random() * BASE32.length)]).join("")}`;
-			if (!taken.has(c)) return c;
-		}
-	};
+	const code = (): string => newCommentCode(new Set(store.drafts().map(d => d.code)));
 
-	const run = createDraftRun({ deps, store, ownerOf, styleOf, contextOf, code, emit, mailView: d => mailView(d) });
+	const run = createDraftRun({ deps, store, ownerOf, styleOf, contextOf, code, emit, mailView: d => mailView(d), mailPlanned: (c, src) => mailPlanned(c, src, !!deps.mail), posting });
+	const noMailChecked = (code: string) => checkNoMail({ store, emit, find, sourceOf, covered: mailCovered, mailOn: !!deps.mail }, code);
+	const paired = (code: string, hadMail = false) => noMailChecked(recheckPair(store, mailView, emit, code, hadMail)?.code ?? code);
 
 	function makeDraft(commentId: string): Promise<Step> {
 		const c = find(commentId);
 		const src = c && sourceOf(c.source);
-		if (!c || !src) return Promise.resolve({ ok: false, reason: "원댓글을 찾지 못했어요" });
-		if (!replyOn(src)) return Promise.resolve({ ok: false, reason: OFF_REASON });
-		if (c.mine) return Promise.resolve({ ok: false, reason: "내가 쓴 댓글에는 답글 초안을 만들지 않아요" });
+		if (!c || !src) return Promise.resolve({ ok: false, reason: "원댓글을 찾지 못했어요", permanent: true });
+		if (!replyOn(src)) return Promise.resolve({ ok: false, reason: OFF_REASON, permanent: true });
+		if (c.mine) return Promise.resolve({ ok: false, reason: "내가 쓴 댓글에는 답글 초안을 만들지 않아요", permanent: true });
 		return run(c, src).then(async (step): Promise<Step> => {
-			if (!step.ok || !src.autoMail) return step;
-			await linkMail(step.draft.code);
-			return { ok: true, draft: store.drafts().find(d => d.code === step.draft.code) ?? step.draft };
+			if (!step.ok) return step;
+			if (src.autoMail) await linkMail(step.draft.code);
+			return { ok: true, draft: noMailChecked(step.draft.code) ?? step.draft };
 		}).catch(e => ({ ok: false as const, reason: e instanceof Error && e.message ? clip(e.message, 160) : "초안을 만들지 못했어요. 잠시 뒤에 다시 눌러 주세요" }));
 	}
 
@@ -239,7 +272,7 @@ export function createEngine(deps: EngineDeps) {
 				request: c.text,
 			}).catch((e): { ok: false; reason: string } => ({ ok: false, reason: e instanceof Error && e.message ? clip(e.message, 160) : "메일 초안을 만들지 못했어요" }));
 			if (!made.ok) {
-				addNote(`확인: 메일 초안을 만들지 못했어요 - ${made.reason}`);
+				addNote(`${MAIL_FAILED_NOTE} - ${made.reason}`);
 				return { ok: false, reason: made.reason };
 			}
 			// The draft may have changed while the mail was written (revised, dropped): the mail rides on the draft as it is now, or is dropped again.
@@ -250,10 +283,12 @@ export function createEngine(deps: EngineDeps) {
 			}
 			if (cur.mail && cur.mail !== made.id) deps.mail.drop(cur.mail);
 			const check = recipientCheck(to, c.text);
-			const found = [...(made.notes ?? []), ...(made.libraryMiss && !made.notes?.some(n => n.includes("찾지 못했어요")) ? [LIBRARY_MISS_NOTE] : []), ...(check ? [`확인: ${check}`] : [])];
+			const earlier = earlierMailTo({ store, mail: deps.mail, now: deps.now(), to, commentId: c.id, mailId: made.id });
+			const found = [...(made.notes ?? []), ...(made.libraryMiss && !made.notes?.some(n => n.includes("찾지 못했어요")) ? [LIBRARY_MISS_NOTE] : []), ...(check ? [`확인: ${check}`] : []), ...(earlier ? [`${MAIL_SAME_ADDRESS_NOTE} (${earlier})`] : [])];
 			const notes = [...cur.notes.filter(n => n !== MAIL_NO_APP_NOTE), ...found.filter((n, i) => !cur.notes.includes(n) && found.indexOf(n) === i)];
 			store.putDraft({ ...cur, mail: made.id, mailAt: deps.now(), clean: false, notes });
 			emit({ kind: "comment_draft", source: d.source, thread: d.thread });
+			paired(code);
 			return { ok: true, mail: made.id };
 		} finally {
 			linking.delete(code);
@@ -273,12 +308,12 @@ export function createEngine(deps: EngineDeps) {
 		if (made && !made.ok) return { ok: false, reason: made.reason };
 		// The mail goes to the address the comment wrote, as written: one that differs (or looks like the writer's typo) is a line on the card.
 		const toCheck = mail ? recipientCheck(mail.to, c.text) : undefined;
-		const notes = [...(extra ? [`함께 할 일: ${extra}`] : []), ...(toCheck ? [`확인: ${toCheck}`] : [])];
+		const notes = [...(extra ? [`${EXTRA_NOTE}${extra}`] : []), ...(toCheck ? [`확인: ${toCheck}`] : [])];
 		for (const d of store.drafts()) if (d.commentId === c.id && d.status === "pending") store.setDraftStatus(d.code, "stale");
 		const draft: Draft = { code: code(), commentId: c.id, source: src.key, thread: c.thread, text, status: "pending", created: deps.now(), changes: [], clean: !notes.length && !made, notes, ...(made ? { mail: made.id, mailAt: deps.now() } : {}) };
 		store.putDraft(draft);
 		emit({ kind: "comment_draft", source: src.key, thread: c.thread });
-		return { ok: true, draft };
+		return { ok: true, draft: (made ? paired : noMailChecked)(draft.code) ?? draft };
 	}
 
 	// The reply goes through the gate (contract.ts); only when it was posted does the mail of the same card go out, so a refused or failed reply
@@ -286,6 +321,7 @@ export function createEngine(deps: EngineDeps) {
 	// `only: "reply"` posts the reply and leaves the mail draft on its own (no longer linked once the reply draft is sent, so it is asked and sent
 	// by itself: hub/mail-cli.ts ask/send).
 	function send(codeOrId: string, opts: { text?: string; by: "owner" | "rule"; only?: "reply"; asIs?: true; resend?: true }): GateResult {
+		if (mailRevising(codeOrId)) return { ok: false, code: "already_sending", reason: MAIL_REVISING_REASON };
 		const linked = opts.by === "owner" && opts.only !== "reply" ? store.drafts().find(d => d.code === codeOrId) : undefined;
 		if (linked?.status === "pending" && linked.mail && !mailView(linked)) return mailGoneRefusal(store, linked, deps.now());
 		const mailId = linked?.mail;
@@ -294,6 +330,7 @@ export function createEngine(deps: EngineDeps) {
 		const owed = d && !mailId ? (d.mail && mailView(d) ? d.mail : deps.mail?.pendingFor?.(d.commentId)) : undefined;
 		const held = d && mailClaimRefusal(opts.text ?? d.text, owed);
 		if (held) return held;
+		if (d && !mailCovered(d) && (opts.by === "rule" || !opts.asIs) && promisesMail(opts.text ?? d.text)) return opts.by === "rule" ? { ok: false, code: "not_approved", reason: `${NO_MAIL_REFUSED}. 자동으로는 올리지 않아요` } : { ok: false, code: "attach_mismatch", reason: `${ATTACH_REFUSED} ${NO_MAIL_REFUSED}. 답글도 올리지 않았어요. ${ATTACH_AS_IS_HINT}` };
 		const r = (mailId ? mailLintRefusal(deps.mail, mailId) : undefined) ?? (mailId && !opts.asIs ? mailRefusal(deps.mail, mailId) : undefined) ?? dispatchReply({ code: codeOrId, approval: { by: opts.by }, ...(opts.text !== undefined ? { text: opts.text } : {}), ...(opts.resend ? { resend: true as const } : {}) }, gate);
 		if (!r.ok) return r;
 		const done = mailId ? r.done.then(rep => sendMail(rep, mailId, opts.asIs)) : r.done;
@@ -321,6 +358,7 @@ export function createEngine(deps: EngineDeps) {
 	async function sendMailOnly(draftCode: string, opts: { retry?: true; asIs?: true } = {}): Promise<{ ok: boolean; text: string }> {
 		const d = store.drafts().find(x => x.code === draftCode);
 		if (!d || d.status !== "pending") return d?.status === "sent" ? resendPostedMail(store, deps.mail, d, opts, emit) : { ok: false, text: "그 초안을 찾지 못했거나 이미 처리됐어요" };
+		if (mailRevising(draftCode)) return { ok: false, text: MAIL_REVISING_REASON };
 		if (!d.mail || !deps.mail) return { ok: false, text: "이 초안에는 함께 보낼 메일이 없어요" };
 		const m = await deps.mail.send(d.mail, sendOpts(opts)).catch(e => ({ ok: false, text: e instanceof Error && e.message ? clip(e.message, 160) : "메일을 보내는 중 오류가 났어요" }));
 		if (m.ok) {
@@ -332,6 +370,8 @@ export function createEngine(deps: EngineDeps) {
 	}
 
 	const mailView = (d: Draft): MailView | undefined => (d.mail ? deps.mail?.view(d.mail) : undefined);
+	const mailRecord = (d: Draft): MailView | undefined => (d.mail ? deps.mail?.record?.(d.mail) : undefined);
+	const mailCovered = (d: Draft): boolean => !!mailView(d) || d.mailAt !== undefined || d.mailKept !== undefined || d.notes.some(n => n.startsWith(EXTRA_NOTE)) || !!deps.mail?.pendingFor?.(d.commentId);
 
 	// The linked mail of a comment, from the send record (the mail went out or failed after the reply) or from its draft: the mail draft that rides on a
 	// pending reply, or one left on its own (reply answered elsewhere, 답글만/메일만 보내기). A mail draft that is gone shows nothing.
@@ -368,7 +408,11 @@ export function createEngine(deps: EngineDeps) {
 			const reason = closing(c, replies, dismissed);
 			if (!reason) continue;
 			const { mail, mailAt: _mailAt, ...rest } = d;
-			store.putDraft({ ...rest, status: "answered", closedReason: reason, ...(mail ? { notes: [...rest.notes, MAIL_KEPT_NOTE], mailKept: mail } : {}) });
+			const pendingMail = mail && mailView(d) ? mail : undefined;
+			const dropMail = reason === "deleted" ? pendingMail : undefined;
+			if (dropMail) deps.mail?.drop(dropMail);
+			store.putDraft({ ...rest, status: "answered", closedReason: reason, ...(mail && !dropMail ? { notes: [...rest.notes, MAIL_KEPT_NOTE], mailKept: mail } : {}) });
+			if (pendingMail && reason === "answered-on-platform") deps.mailOwed?.(pendingMail);
 			emit({ kind: "comment_draft", source: d.source, thread: d.thread });
 			closed++;
 		}
@@ -413,7 +457,7 @@ export function createEngine(deps: EngineDeps) {
 				const waiting = batch.filter(c => !c.parent && !c.mine && !answeredBy(c, replies));
 				try {
 					const res = await adapter.recheck(src, batch);
-					absorbComments(store, deps.collector, UNKNOWN_USER, src, res.comments);
+					absorbComments(store, deps.collector, UNKNOWN_USER, src, res.comments, editFollower(store, deps.mail, emit));
 					const at = deps.now();
 					const gone = new Set(res.gone);
 					if (orphans.length) store.setCursor(parentsKey, { ranAt: at });
@@ -436,8 +480,8 @@ export function createEngine(deps: EngineDeps) {
 	// MAX_AUTO_PER_RUN of them and starts nothing after `deadline` (the watch's run budget), so the rest waits for the next run. A comment
 	// leaves the queue only after its draft is stored, and one that already has a draft is skipped: a run killed mid-draft loses nothing and
 	// drafts nothing twice.
-	async function collect(opts: { force?: boolean; deadline?: number } = {}): Promise<{ added: Comment[]; drafted: Draft[]; sent: Reply[]; errors: Record<string, string> }> {
-		const out = { added: [] as Comment[], drafted: [] as Draft[], sent: [] as Reply[], errors: {} as Record<string, string> };
+	async function collect(opts: { force?: boolean; deadline?: number } = {}): Promise<{ added: Comment[]; drafted: Draft[]; sent: Reply[]; notices: CommentNotice[]; errors: Record<string, string> }> {
+		const out = { added: [] as Comment[], drafted: [] as Draft[], sent: [] as Reply[], notices: [] as CommentNotice[], errors: {} as Record<string, string> };
 		const cfg = store.config();
 		if (!cfg.enabled) return out;
 		const late = () => opts.deadline !== undefined && deps.now() >= opts.deadline;
@@ -456,11 +500,11 @@ export function createEngine(deps: EngineDeps) {
 				// A time after the read (a source's clock or a misparsed stamp, issue #31) is the read time: a comment from the future would sort above
 				// everything that comes later and never age out of the unreplied list.
 				const now = deps.now();
-				fresh = absorbComments(store, deps.collector, UNKNOWN_USER, src, res.comments.map(r => (r.at > now ? { ...r, at: now } : r)));
+				fresh = absorbComments(store, deps.collector, UNKNOWN_USER, src, res.comments.map(r => (r.at > now ? { ...r, at: now } : r)), editFollower(store, deps.mail, emit));
 				const wanted = src.autoDraft && replyOn(src) ? fresh.filter(c => c.at >= (src.autoSince ?? 0) && needsReply(c)).map(c => c.id) : [];
 				// Not capped: a waiting comment is never dropped silently. It is bounded anyway: only stored comments (MAX_COMMENTS) are queued, and a queue entry whose comment is gone or answered is settled without a model call.
 				const queue = [...new Set([...(prior.queue ?? []), ...wanted])];
-				store.setCursor(src.key, { cursor: res.cursor ?? prior.cursor, ranAt: deps.now(), ...(res.error ? { error: clip(res.error, 160) } : {}), ...(queue.length ? { queue } : {}) });
+				store.setCursor(src.key, { cursor: res.cursor ?? prior.cursor, ranAt: deps.now(), ...(res.error ? { error: clip(res.error, 160) } : {}), ...(queue.length ? { queue } : {}), ...(prior.tries ? { tries: prior.tries } : {}) });
 				if (res.error) out.errors[src.key] = clip(res.error, 160);
 			} catch (e) {
 				const reason = e instanceof Error ? clip(e.message, 160) : "읽지 못했어요";
@@ -472,6 +516,9 @@ export function createEngine(deps: EngineDeps) {
 			out.added.push(...fresh);
 			for (const t of new Set(fresh.map(c => c.thread))) emit({ kind: "comment", source: src.key, thread: t });
 			await autoDrafts(src, out, late);
+			const queued = new Set(store.cursors()[src.key]?.queue), carded = new Set(store.drafts().map(d => d.commentId));
+			const waiting = prior.ranAt && replyOn(src) ? waitingNotice(src, fresh.filter(c => needsReply(c) && !queued.has(c.id) && !carded.has(c.id))) : undefined;
+			if (waiting) out.notices.push(waiting);
 		}
 		// Settle what the reads showed; the slow part (re-reading open comments on the platforms) runs at most every RECHECK_EVERY_MS unless forced.
 		const last = store.cursors().reconcile?.ranAt ?? 0;
@@ -482,30 +529,32 @@ export function createEngine(deps: EngineDeps) {
 		return out;
 	}
 
-	async function autoDrafts(src: SourceConfig, out: { drafted: Draft[]; sent: Reply[] }, late: () => boolean): Promise<void> {
+	async function autoDrafts(src: SourceConfig, out: { drafted: Draft[]; sent: Reply[]; notices: CommentNotice[]; errors: Record<string, string> }, late: () => boolean): Promise<void> {
 		if (!src.autoDraft || !replyOn(src)) return;
-		const done = (id: string) => {
-			const cur = store.cursors()[src.key] ?? {};
-			const queue = (cur.queue ?? []).filter(x => x !== id);
-			const { queue: _q, ...rest } = cur;
-			store.setCursor(src.key, { ...rest, ...(queue.length ? { queue } : {}) });
-		};
 		let made = 0;
 		for (const id of store.cursors()[src.key]?.queue ?? []) {
 			if (made >= MAX_AUTO_PER_RUN || late()) break;
 			const c = find(id);
 			if (!c || store.drafts().some(d => d.commentId === id) || !needsReply(c)) {
-				done(id);
+				leaveQueue(store, src.key, id);
 				continue;
 			}
 			made++;
 			const step = await makeDraft(c.id);
-			done(id);
-			if (!step.ok) continue;
+			if (!step.ok) {
+				if (step.permanent) leaveQueue(store, src.key, id);
+				else failAuto(store, src.key, id, step.reason, out.errors);
+				continue;
+			}
+			leaveQueue(store, src.key, id);
 			out.drafted.push(step.draft);
 			if (ruleAllows(src, c.text)) {
 				const r = send(step.draft.code, { by: "rule" });
-				if (r.ok) out.sent.push(await r.done);
+				if (r.ok) {
+					const rep = await r.done;
+					if (rep.state === "sent") out.sent.push(rep);
+					else out.notices.push(sendFailedNotice(src, c, rep));
+				}
 			}
 		}
 	}
@@ -524,6 +573,7 @@ export function createEngine(deps: EngineDeps) {
 		const d = store.drafts().find(x => x.code === draftCode);
 		if (!d) return { ok: false, reason: "그 초안을 찾지 못했어요" };
 		if (d.status !== "pending") return { ok: false, reason: "이 초안은 이미 처리됐어요" };
+		if (posting(d.commentId)) return { ok: false, reason: POSTING_REASON };
 		store.setDraftStatus(draftCode, "dropped");
 		if (d.mail) deps.mail?.drop(d.mail);
 		emit({ kind: "comment_draft", source: d.source, thread: d.thread });
@@ -570,7 +620,7 @@ export function createEngine(deps: EngineDeps) {
 			// A comment reply goes out as text only, so its card always says so (첨부: 없음 · 파일을 붙일 수 없는 곳): a file goes only with the mail that rides along,
 			// and those files are the mail's own (mailJson).
 			return { code: d.code, app: ownerOf(src), kind: src.kind, source: src.key, sourceLabel: src.label, thread: d.thread, commentId: d.commentId, title: c?.postTitle ?? "", link: c?.postLink ?? null, to: c?.author ?? "", text: d.text, notes: d.notes, created: d.created, attachmentsNone: true, cannotAttach: [],
-				...(c ? { original: { who: c.author, text: clip(c.text, 200), at: c.at } } : {}), ...mailJson(d), ...(d.mail && mailView(d) ? { mailMark: mailMarkOf(d.commentId, replies, all) } : {}) };
+				...(c ? { original: { who: c.author, text: clip(c.text, 200), at: c.at } } : {}), ...mailJson(d, mailView), ...(d.mail && mailView(d) ? { mailMark: mailMarkOf(d.commentId, replies, all) } : {}) };
 		});
 	}
 
@@ -583,21 +633,23 @@ export function createEngine(deps: EngineDeps) {
 		if (!d || !c || !src) return { ok: false, reason: "그 초안을 찾지 못했어요" };
 		if (!replyOn(src)) return { ok: false, reason: OFF_REASON };
 		if (d.status !== "pending") return { ok: false, reason: "이 초안은 이미 처리됐어요" };
+		if (posting(d.commentId)) return { ok: false, reason: POSTING_REASON };
 		if (!change.trim()) return { ok: false, reason: "무엇을 고칠지 적어 주세요" };
 		if (part === "mail") {
 			if (!d.mail || !deps.mail) return { ok: false, reason: "이 초안에는 함께 보낼 메일이 없어요" };
-			const m = await deps.mail.revise(d.mail, change.trim()).catch((e): { ok: false; reason: string } => ({ ok: false, reason: e instanceof Error && e.message ? clip(e.message, 160) : "고친 메일을 만들지 못했어요" }));
-			if (!m.ok) return { ok: false, reason: m.reason };
-			const next: Draft = { ...d, mail: m.id, mailAt: deps.now(), changes: [...d.changes, `메일: ${change.trim()}`] };
-			store.putDraft(next);
-			emit({ kind: "comment_draft", source: d.source, thread: d.thread });
-			return { ok: true, draft: next };
+			revisingMail.set(d.commentId, (revisingMail.get(d.commentId) ?? 0) + 1);
+			const r = await reviseMail({ store, mail: deps.mail, now: deps.now, posting, emit, draft: d, mailId: d.mail, change: change.trim() }).finally(() => {
+				const left = (revisingMail.get(d.commentId) ?? 1) - 1;
+				if (left) revisingMail.set(d.commentId, left);
+				else revisingMail.delete(d.commentId);
+			});
+			return r.ok ? { ok: true, draft: paired(r.draft.code) ?? r.draft } : r;
 		}
 		const { mail: _mail, mailAt: _mailAt, ...replyOnly } = d;
 		return run(c, src, noMail ? replyOnly : d, change.trim(), opts)
 			.then(step => {
 				if (step.ok && noMail && d.mail) deps.mail?.drop(d.mail);
-				return step;
+				return step.ok ? { ...step, draft: paired(step.draft.code, !!d.mail || d.notes.some(n => PAIR_NOTE.test(n))) ?? step.draft } : step;
 			})
 			.catch(e => ({ ok: false as const, reason: e instanceof Error && e.message ? clip(e.message, 160) : "고친 초안을 만들지 못했어요" }));
 	}
@@ -608,12 +660,18 @@ export function createEngine(deps: EngineDeps) {
 		const src = d && sourceOf(d.source);
 		if (!d || !src) return { ok: false, reason: "그 초안을 찾지 못했어요", code: "gone" };
 		if (d.status !== "pending") return { ok: false, reason: "이 초안은 이미 처리됐어요", code: "not_pending" };
-		if (part === "mail") return d.mail && deps.mail?.edit ? deps.mail.edit(d.mail, text, subject) : { ok: false, reason: "이 초안에는 함께 보낼 메일이 없어요", code: "not_supported" };
+		if (posting(d.commentId)) return { ok: false, reason: POSTING_REASON, code: "already_sending" };
+		if (part === "mail") {
+			const r = d.mail && deps.mail?.edit ? deps.mail.edit(d.mail, text, subject) : { ok: false as const, reason: "이 초안에는 함께 보낼 메일이 없어요", code: "not_supported" };
+			if (r.ok) paired(d.code);
+			return r;
+		}
 		const body = text.replace(/\r\n?/g, "\n").trim();
 		const found = ownerLint({ body }, { kind: "comment", app: src.key, from: find(d.commentId)?.author ?? "", text: "" }, styleOf(src));
 		if (found.length) return { ok: false, reason: `${LINT_REFUSED} ${found.join(" · ")}`, code: found[0]!.startsWith("it uses the forbidden") ? "forbidden_word" : found[0]!.startsWith("the body is empty") ? "empty" : found[0]!.startsWith("the body is") ? "too_long" : "placeholder", lint: found };
 		store.putDraft({ ...d, text: body, clean: false, ...(d.editedFrom === undefined ? { editedFrom: d.text } : {}) });
 		emit({ kind: "comment_draft", source: d.source, thread: d.thread });
+		paired(d.code);
 		return { ok: true };
 	}
 	// What a sent draft the owner edited teaches (design 3.4): his text against the model's, in the source's profile; nothing before it went out.
@@ -679,15 +737,9 @@ export function createEngine(deps: EngineDeps) {
 			thread: { id: thread, title: list[list.length - 1]!.postTitle, link: list[list.length - 1]!.postLink ?? first.postLink ?? null, thumb: list[list.length - 1]!.thumb ?? first.thumb ?? null },
 			comments: list.map(c => ({ id: c.id, parent: c.parent ?? null, author: c.author, text: c.text, at: c.at, mine: c.mine, ...(c.gone ? { gone: true } : {}), needsReply: needsReply(c), unreplied: unreplied(c), ...(mailMarks.get(c.id) ? { mail: mailMarks.get(c.id) } : {}) })),
 			read: store.reads()[threadKey(source, thread)] ?? null,
-			drafts: store.drafts().filter(d => d.source === source && d.thread === thread && d.status === "pending").map(d => ({ code: d.code, commentId: d.commentId, text: d.text, notes: d.notes, clean: d.clean, created: d.created, ...(d.tokens ? { tokens: d.tokens } : {}), ...mailJson(d), ...(mailMarks.get(d.commentId) ? { mailMark: mailMarks.get(d.commentId) } : {}) })),
+			drafts: store.drafts().filter(d => d.source === source && d.thread === thread && d.status === "pending").map(d => ({ code: d.code, commentId: d.commentId, text: d.text, notes: d.notes, clean: d.clean, created: d.created, ...(d.tokens ? { tokens: d.tokens } : {}), ...mailJson(d, mailView), ...(mailMarks.get(d.commentId) ? { mailMark: mailMarks.get(d.commentId) } : {}) })),
 			sends: replies.filter(r => r.source === source && r.thread === thread && r.at >= since).map(({ id, commentId, text, state, reason, at, via, mail }) => ({ id, commentId, text, state, ...(reason ? { reason } : {}), at, via, ...(mail ? { mail } : {}) })),
 		};
-	}
-
-	// The mail of a draft as the web sheet shows it (sizes as text, like the files of a mail card).
-	function mailJson(d: Draft): { mail?: { id: string; to: string; subject?: string; body: string; attachments: { name: string; size?: string }[]; notes?: string[] } } {
-		const m = mailView(d);
-		return m ? { mail: { id: m.id, to: m.to, ...(m.subject ? { subject: m.subject } : {}), body: m.body, attachments: m.attachments.map(f => ({ name: f.name, ...(f.size !== undefined ? { size: fileSizeText(f.size) } : {}) })), ...(m.notes?.length ? { notes: m.notes } : {}) } } : {};
 	}
 
 	function markRead(source: string, thread: string): void {
@@ -728,12 +780,6 @@ export function createEngine(deps: EngineDeps) {
 		return true;
 	}
 
-	function tokenStats(): { drafts: number; avgIn: number; avgOut: number } {
-		const measured = store.drafts().filter(d => d.tokens);
-		const n = measured.length || 1;
-		return { drafts: measured.length, avgIn: Math.round(measured.reduce((s, d) => s + d.tokens!.in, 0) / n), avgOut: Math.round(measured.reduce((s, d) => s + d.tokens!.out, 0) / n) };
-	}
-
 	const posts = async (key: string): Promise<Post[]> => {
 		const src = sourceOf(key);
 		const adapter = src && deps.adapters[src.kind];
@@ -747,6 +793,6 @@ export function createEngine(deps: EngineDeps) {
 	const idle = async () => {
 		while (pending.size) await Promise.all([...pending]);
 	};
-	return { store, ownerOf, ...createSendRecovery({ store, adapters: deps.adapters, onState: gate.onState }), collect, refreshPast: createPastRefresh(store, deps, ownerOf), reconcile, makeDraft, revise, edit, learned, drop, restore, retrySend, dismissSend, pendingDrafts, send, sendMailOnly, update, threads, threadView, markRead, addDraft, linkMail, mailView, mailMarkOf, needs, noReply, unreplied, tokenStats, posts, ownReplies, idle, needsReply };
+	return { store, ownerOf, ...createSendRecovery({ store, adapters: deps.adapters, onState: gate.onState, now: deps.now, inflight }), collect, refreshPast: createPastRefresh(store, deps, ownerOf), reconcile, makeDraft, revise, edit, learned, drop, restore, retrySend, dismissSend, pendingDrafts, send, sendMailOnly, update, threads, threadView, markRead, addDraft, linkMail, mailView, mailRecord, mailMarkOf, needs, noReply, unreplied, tokenStats: () => tokenStats(store), posts, ownReplies, idle, needsReply };
 }
 export type Engine = ReturnType<typeof createEngine>;

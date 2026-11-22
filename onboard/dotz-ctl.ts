@@ -10,7 +10,8 @@ import { callEnv, forceCall, serviceState, startCall, type Exec, type ServiceEnv
 export const EXIT = { ok: 0, failed: 1, usage: 2, notRunning: 3, notAnswering: 4, waitedOut: 5, forceRefused: 6 } as const;
 export const CONFIRM_WORD = "restart";
 export const USAGE = [
-	"사용법: dotz [--print|last|status|restart]",
+	"사용법: dotz [--print|last|doctor|status|restart]",
+	"  doctor [--json]    지금 점검하고 결과 보기 (보내거나 저장하지 않아요)",
 	"  status             게이트웨이 상태 보기 (모델·로그인 필요 없음)",
 	"  restart [--force]  게이트웨이 재시작 (돌던 일은 끊지 않고 끝나길 기다려요)",
 	"  종료 코드: 0 정상 · 3 실행 중이 아님 · 4 떠 있지만 응답 없음 · 5 재시작 기다리다 시간 초과 · 6 --force 거절",

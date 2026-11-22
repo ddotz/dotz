@@ -786,16 +786,87 @@
     { id: "said", label: "비서 설정", empty: "아직 정한 게 없어요", items: [{ title: "이름", line: "dotz" }, { title: "말투", line: "편한 해요체" }] },
   ] };
   const onboard = key => ({ key, state: key === "slack" ? "idle" : "done", step: null, owner: null, error: null, url: null, updated_at: new Date().toISOString() });
+  const todoOf = t => t === "main" ? json(F.todo)
+    : t === "quick" || /^ch:\d+$/.test(t) ? json({ phases: [] })
+    : t.startsWith("lane:") ? (F.state.lanes.some(l => l.name === t.slice(5)) ? json({ phases: [] }) : json({ error: `no lane ${t.slice(5)}` }, 404))
+    : json({ error: "target must be main, quick, lane:<name> or ch:<id>" }, 400);
+
+  const owns = (app, t) => (app.conv || []).some(p => t.startsWith(p)) && !(app.convNot || []).some(p => t.startsWith(p));
+  const mailApps = () => F.integrations.filter(i => i.app === "mail");
+  const mailAppOf = k => mailApps().find(i => owns(i, `mail:${k}`));
+  const boxOf = (appKey, id) => { const a = mailApps().find(i => i.key === appKey); return a && a.boxes.find(b => b.id === id); };
+  const voiceOf = (appKey, id) => ({ state: mailApps().find(i => i.key === appKey).boxes.length < 2 ? "single" : "few", count: F.mails.filter(m => m.dir === "out" && mailAppOf(m.key).key === appKey && (m.box || "base") === id).length, need: 20 });
+  const putMail = (m, patch) => { Object.assign(m, patch); const c = conv(`mail:${m.key}`); if (c && c.mail) Object.assign(c.mail, patch); };
+  const setBox = (m, id) => { putMail(m, id === "base" ? { box: undefined, boxWhy: undefined } : { box: id, boxWhy: { kind: "moved" } }); };
+  const dropMail = k => { F.mails.splice(F.mails.findIndex(m => m.key === k), 1); F.conversations.splice(F.conversations.findIndex(c => c.target === `mail:${k}`), 1); };
+  const bad = (error, status = 400) => json({ error }, status);
+  function mailRoute(method, u, b) {
+    const route = `${method} ${u.pathname}`, q = k => u.searchParams.get(k) || "";
+    if (route === "POST /api/mailbox/move") {
+      const picked = [...new Set(b.keys || [])].map(mail);
+      if (!picked.length || picked.some(m => !m)) return bad("메일을 찾을 수 없어요", 404);
+      const apps = new Set(picked.map(m => mailAppOf(m.key)));
+      if (apps.size !== 1) return bad("다른 계정의 메일은 한 번에 옮길 수 없어요");
+      if (!boxOf([...apps][0].key, b.box)) return bad("이 계정에 없는 메일함이에요");
+      const was = Object.fromEntries(picked.map(m => [m.key, m.box || "base"]));
+      for (const m of picked) setBox(m, b.box);
+      return json({ ok: true, moved: picked.map(m => m.key), was });
+    }
+    if (route === "POST /api/mailbox/learn") {
+      const box = mailApps().flatMap(a => a.boxes).find(x => x.id === b.box && !x.base);
+      if (!box) return bad("메일함을 찾을 수 없어요", 404);
+      const list = b.kind === "not" ? box.not.from : box.conds[b.kind];
+      const added = !!list && !list.includes(b.value);
+      if (added) list.push(b.value);
+      return json({ ok: true, added });
+    }
+    if (route === "PUT /api/mailbox/box") {
+      const app = mailApps().find(i => i.key === b.app);
+      if (!app) return bad("메일 계정을 찾을 수 없어요", 404);
+      if (!b.box || !String(b.box.name || "").trim()) return bad("name is required");
+      const box = { icon: "mail", notify: true, conds: { from: [], subj: [], body: [], src: [] }, not: { from: [] }, judge: { on: false, text: "" }, how: "", greets: [], folders: [], bans: [], rules: [], ...b.box, id: b.box.id || `b-${Math.random().toString(36).slice(2, 10)}` };
+      const at = app.boxes.findIndex(x => x.id === box.id);
+      if (at >= 0) app.boxes[at] = box; else app.boxes.push(box);
+      return json({ ok: true, box });
+    }
+    if (route === "DELETE /api/mailbox/box") {
+      if (b.id === "base") return bad("일반 메일함은 지울 수 없어요");
+      const app = mailApps().find(i => i.key === b.app);
+      if (!app || !app.boxes.some(x => x.id === b.id)) return bad("메일함을 찾을 수 없어요", 404);
+      app.boxes = app.boxes.filter(x => x.id !== b.id);
+      for (const m of F.mails) if (m.box === b.id && mailAppOf(m.key) === app) putMail(m, { box: undefined, boxWhy: undefined });
+      return json({ ok: true });
+    }
+    if (route === "GET /api/mailbox/tone") return boxOf(q("app"), q("box")) ? json({ ok: true, own: false, summary: "편한 해요체로 짧게 답해요.", corrections: [], voice: voiceOf(q("app"), q("box")) }) : bad("메일함을 찾을 수 없어요", 404);
+    if (route === "POST /api/mailbox/relearn") return boxOf(b.app, b.box) ? json({ ok: true, result: "few", voice: voiceOf(b.app, b.box) }) : bad("메일함을 찾을 수 없어요", 404);
+    if (route === "GET /api/mailbox/examples") return boxOf(q("app"), q("box")) ? json({ ok: true, examples: [] }) : bad("메일함을 찾을 수 없어요", 404);
+    if (route === "GET /api/mailbox/suggest") {
+      if (!mailApps().some(i => i.key === q("app"))) return bad("메일 계정을 찾을 수 없어요", 404);
+      const by = new Map();
+      for (const m of F.mails) {
+        const domain = m.dir === "in" && !m.box && mailAppOf(m.key).key === q("app") && (/@([^>\s]+)/.exec(m.from) || [])[1];
+        if (domain) by.set(domain, [...(by.get(domain) || []), m]);
+      }
+      return json({ ok: true, groups: [...by].filter(([, l]) => l.length >= 2).map(([domain, l]) => ({ domain: `@${domain}`, label: domain.split(".")[0], count: l.length, senders: [...new Set(l.map(m => m.name))].slice(0, 3), keys: l.map(m => m.key) })) });
+    }
+    const one = /^\/api\/mail\/([^/]+)(\/fyi)?$/.exec(u.pathname), m = one && mail(one[1]);
+    if (one && one[2] && (method === "POST" || method === "DELETE")) { if (!m) return bad("메일을 찾을 수 없어요", 404); putMail(m, { reply: method === "POST" ? "fyi" : "needs" }); return json({ ok: true }); }
+    if (route === "POST /api/mail/fyi") return json({ ok: true, results: (b.keys || []).map(key => { const x = mail(key); if (x) putMail(x, { reply: b.on ? "fyi" : "needs" }); return { key, ok: !!x }; }) });
+    if (one && !one[2] && method === "DELETE") { if (!m) return bad("메일을 찾을 수 없어요", 404); dropMail(m.key); return json({ ok: true }); }
+    if (route === "POST /api/mail/delete-original") return json({ ok: true, results: (b.keys || []).map(key => { const x = mail(key); if (x) dropMail(key); return { key, ok: !!x, synced: !!x }; }) });
+    return null;
+  }
   function get(u) {
     const p = u.pathname;
     if (p === "/api/state") return json({ ...F.state, work_now: Date.now(), notices_unread: unread() });
     if (p === "/api/update") return json({ boot: "demo", running: updVersion, disk: updVersion, lastCheck: upd.lastCheck, job: null, flow: null, busy: [], settings: upd.settings });
     if (p === "/api/history") return json({ target: u.searchParams.get("target") || "main", events: F.histories[u.searchParams.get("target")] || [] });
-    if (p === "/api/todo") return json(F.todo);
+    if (p === "/api/todo") return todoOf(u.searchParams.get("target") || "main");
     if (p === "/api/queue") return json(F.queue);
     if (p === "/api/subagents") return json(F.subagents);
     if (p === "/api/conversations") return json({ items: F.conversations });
-    if (p === "/api/integrations") return json({ items: [...F.integrations, ...cmDemo.integrations].map(i => ({ ...i, needs: cmDemo.needs[i.key] || { drafts: 0, unread: F.mails.filter(m => m.dir === "in" && !m.read).length, unreplied: 0, sentToday: 0 } })), available: [{ key: "naver-blog", label: "네이버 블로그", icon: "image" }] });
+    if (p.startsWith("/api/mailbox/")) return mailRoute("GET", u, {}) || bad("not found", 404);
+    if (p === "/api/integrations") return json({ items: [...F.integrations, ...cmDemo.integrations].map(i => ({ ...i, needs: cmDemo.needs[i.key] || { drafts: 0, unread: F.mails.filter(m => m.dir === "in" && !m.read && owns(i, `mail:${m.key}`)).length, unreplied: 0, sentToday: 0 } })), available: [{ key: "naver-blog", label: "네이버 블로그", icon: "image" }] });
     if (p === "/api/apps") return json({ items: F.apps, errors: [] });
     // 댓글 (유튜브 · 인스타그램 · 웹사이트) and 인스타그램 DM: fixtures.js cmDemo
     if (p === "/api/comments/sources") return json({ on: true, sources: cmDemo.sources });
@@ -828,9 +899,11 @@
     return json({});
   }
 
-  function postApi(u, body) {
+  function postApi(u, body, method) {
     const p = u.pathname;
     log.posts.push(p);
+    const mailAnswer = mailRoute(method, u, body);
+    if (mailAnswer) return mailAnswer;
     const ob = /^\/api\/onboarding\/([^/]+)\//.exec(p);
     if (ob) return json(onboard(ob[1]));
     if (/^\/api\/comments\/drafts\/[^/]+\/send$/.test(p)) return json({ ok: true });
@@ -893,7 +966,7 @@
     let body;
     if (typeof init.body === "string") { try { body = JSON.parse(init.body); } catch { body = {}; } }
     if (method === "GET") return get(url);
-    if (method === "POST" || method === "PUT" || method === "DELETE" || method === "PATCH") return postApi(url, body || {});
+    if (method === "POST" || method === "PUT" || method === "DELETE" || method === "PATCH") return postApi(url, body || {}, method);
     return json({});
   };
 

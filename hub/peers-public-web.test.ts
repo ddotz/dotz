@@ -22,17 +22,15 @@ describe("a public computer on the web side", () => {
 		expect(draw(DIRECT)).not.toBeNull();
 	});
 
-	test("following a link never sends the device id to a public row, and still sends it to a direct one", () => {
-		const follow = between(peers, "function prTryFollow", 'if ("serviceWorker"');
-		const go = (p: unknown): string[] => {
-			const calls: string[] = [];
-			const env: Record<string, unknown> = { PR: { list: [SELF, p], fresh: true }, toast: () => {}, history: { state: null, replaceState: () => {} }, location: { href: "https://mac:8443/", pathname: "/" }, DEVICE_ID: "d1", prGo: (h: string) => calls.push(h) };
-			const href = `/?pc=${encodeURIComponent((p as { url: string }).url)}&n=1#chat/main`;
-			new Function(...Object.keys(env), `let prFollowHref = ${JSON.stringify(href)};\n${others}\n${follow}\nprTryFollow();`)(...Object.values(env));
-			return calls;
+	test("following a link never sends the device id to a public row, and still sends it to a direct one", async () => {
+		const follow = between(peers, "const PR_FRESH_MS", "// Frames this gateway forwards");
+		const go = async (p: { url: string }): Promise<string | undefined> => {
+			const env: Record<string, unknown> = { PR: { list: [SELF, p], fresh: true }, toast: () => {}, history: { state: null, replaceState: () => {} }, location: { href: "https://mac:8443/", pathname: "/", hash: "" }, DEVICE_ID: "d1" };
+			const hop = await new Function(...Object.keys(env), `${others}\n${follow}\nreturn prHandOver({ pc: ${JSON.stringify(p.url)}, hash: "#chat/main", at: "", nid: "", dec: "1" });`)(...Object.values(env)) as { href?: string };
+			return hop.href;
 		};
-		expect(go(PUBLIC)).toEqual(["https://pub.example/?n=1#chat/main"]);
-		expect(go(DIRECT)).toEqual(["https://mini:8445/?did=d1&n=1#chat/main"]);
+		expect(await go(PUBLIC)).toBe("https://pub.example/?n=1&hop=1#chat/main");
+		expect(await go(DIRECT)).toBe("https://mini:8445/?did=d1&n=1&hop=1#chat/main");
 	});
 
 	test("switching away from a down gateway skips relay and public rows", () => {

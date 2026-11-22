@@ -368,7 +368,7 @@ class Machine {
 			if (!hinted && missing.includes("fda") && this.d.now() - start >= FDA_HINT_MS) {
 				hinted = true;
 				// A grant made while the gateway runs reaches it only after a restart; the setup process is detached and resumes.
-				const r = await this.d.hub.post("/api/gateway/restart", {}).catch(() => ({ status: 0 }));
+				const r = await this.d.hub.post("/api/gateway/restart", { now: true }).catch(() => ({ status: 0 }));
 				if (r.status >= 300 || r.status === 0) this.todo.set("restart", "전체 디스크 접근을 이미 켰는데도 이 안내가 계속되면 게이트웨이를 한 번 다시 시작해 주세요");
 			}
 			await this.wait("permissions", PERM_NAME[first]);

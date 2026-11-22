@@ -8,8 +8,9 @@
 .rq-meta .mon-pc { flex: none; white-space: pre; }
 .rq-hd .rc-time { flex: none; }
 .rq-lb { margin-top: var(--sp-2); color: var(--fg-3); font: 500 var(--fs-meta)/var(--lh-meta) var(--font); }
-.rq-to { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; margin-top: var(--sp-2); }
-.rq-to .dr-chip { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rq-rcpt { display: flex; flex-wrap: wrap; gap: var(--sp-05) var(--sp-3); min-width: 0; margin-top: var(--sp-2); }
+.rq-rc { display: inline-flex; gap: var(--sp-1); min-width: 0; max-width: 100%; }
+.rq-rv { min-width: 0; color: var(--fg-2); font-size: var(--fs-meta); line-height: var(--lh-meta); overflow-wrap: anywhere; }
 .rq-sub { margin-top: var(--sp-15); }
 /* 원문: 회색·왼쪽 괘선·두 줄, 길면 원문 보기 (원칙 5: 남의 글은 조용한 인용, 초안과 눈에 띄게 나뉨) */
 .rq-og-wrap { display: flex; flex-direction: column; align-items: flex-start; min-width: 0; max-width: 100%; margin-top: var(--sp-2); }
@@ -135,6 +136,9 @@
 .rq-edit .kk-rq { margin: 0; }
 .rq-edit .kk-rv { margin: 0; }
 .ra-lint.err { color: var(--err); font-size: var(--fs-meta); }
+.ra-other { display: flex; flex-direction: column; gap: var(--sp-1); }
+.ra-other .kk-rq { margin: 0; }
+.ra-other-tx { padding: var(--sp-2) var(--sp-3); border-radius: var(--r-ctl); background: var(--ff-fill); color: var(--fg-2); font-size: var(--fs-meta); white-space: pre-wrap; overflow-wrap: anywhere; max-height: calc(var(--sp-6) * 5); overflow: auto; }
 /* AI가 고친 초안 (10-reply-card.js rqDiffBody): the words that came in carry a wash of the text's own ink, the ones that went are struck and quiet. Neutral on purpose:
    a change is not a state, so no status colour, and the wash reads on the card, on a KakaoTalk bubble and in the dark theme alike. */
 .rq-diff .rq-dl { min-height: 1lh; }

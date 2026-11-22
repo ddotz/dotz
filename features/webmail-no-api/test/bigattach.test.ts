@@ -32,7 +32,7 @@ test("a 5MB file uploads from disk in 1MB parts with exact lengths, then the sen
 	const f = bigFile("report.bin");
 	const { draft } = runDraft(SITE, Date.now(), { to: "a@b.test", subject: "big", body: "x", files: [f.path] });
 	expect(statSync(draftPath(SITE, draft.id)).size).toBeLessThan(1024);
-	approveSend(SITE, Date.now());
+	approveSend(SITE, Date.now(), draft.id);
 	const before = srv.uploads.length;
 	const out = await runSend(ctx, noLarge, SITE, draft.id, Date.now());
 	expect(out.code).toBe(0);
@@ -48,7 +48,7 @@ test("a refused part or a not-ok status blocks the send and keeps the draft and 
 	await Bun.write(small, "hello");
 	const f = bigFile("refused.bin", 3 << 20);
 	const { draft } = runDraft(SITE, Date.now(), { to: "a@b.test", subject: "half", body: "x", files: [small, f.path] });
-	approveSend(SITE, Date.now());
+	approveSend(SITE, Date.now(), draft.id);
 	const sentBefore = srv.sent.length;
 	srv.failPart(2);
 	try {
@@ -80,7 +80,7 @@ test("a file over the large threshold goes to the big-attachment endpoint and is
 	await Bun.write(small, "tiny");
 	const f = bigFile("video.bin");
 	const { draft } = runDraft(SITE, Date.now(), { to: "a@b.test", subject: "link", body: "x", files: [small, f.path] });
-	approveSend(SITE, Date.now());
+	approveSend(SITE, Date.now(), draft.id);
 	const before = srv.uploads.length;
 	const out = await runSend(ctx, srv.spec, SITE, draft.id, Date.now());
 	expect(out.code).toBe(0);

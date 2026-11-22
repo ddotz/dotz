@@ -99,6 +99,7 @@ function convApply(items) {
     else READ[t] = it.read || null;
     ts(t).unread = unread;
   }
+  mailCmtSync();
 }
 async function convLoadNow() {
   clearTimeout(convRetry);
@@ -514,11 +515,20 @@ function convPaint() {
   monChatTop.hidden = !mit;
   if (topSig !== monChatTop.dataset.sig) { monChatTop.dataset.sig = topSig; clear(monChatTop); if (mit) monChatTop.append(...monChatTopNodes(mit).filter(Boolean)); }
   $("#v-chat").classList.toggle("no-composer", !convTakesText(target));
+  $("#al-bar").hidden = convTakesText(target);
   convPaintHead();
   paneHeads();
 }
 // Whether the owner can type into conversation t. The 알림 record is read-only (no composer): a question asked there is answered in its sheet (30-notices.js ntDirect).
 const convTakesText = t => t !== "alert";
+function convAlertAsk() {
+  const edge = $("#timeline").getBoundingClientRect().bottom, rows = [...$("#tl").querySelectorAll("[data-ts]")].filter(r => r.getBoundingClientRect().top < edge), row = rows[rows.length - 1];
+  const e = row && ts("alert").msgs.find(m => m.ts === row.dataset.ts);
+  if (e) rpStart(row, "", MAIN, e);
+  go("chat", MAIN);
+  rpPaint();
+  $("#text").focus({ preventScroll: true });
+}
 function convSchedule() { if (!convRaf) convRaf = requestAnimationFrame(convPaint); }
 
 /* ---- app bar ---- */
@@ -570,3 +580,4 @@ convLoad();
 $("#bell").prepend(icon("bell"));
 $("#bell").title = TX("conv.bell_title", { key: isMac ? "⌘/" : "Ctrl+/" });
 $("#bell").onclick = nscGo;
+$("#al-ask").onclick = convAlertAsk;

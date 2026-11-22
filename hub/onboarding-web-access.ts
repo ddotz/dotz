@@ -1,8 +1,8 @@
-import { chmodSync, existsSync, mkdirSync, rmSync } from "node:fs";
+import { existsSync, rmSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { writeAtomic } from "./config.ts";
 import type { OnboardFlow, OnboardFlowContext, OnboardOwnerStep } from "./onboarding.ts";
+import { webAccessInputPath } from "./web-access-input.ts";
 
 // Web access through a Cloudflare tunnel (설정 → 웹 접속 → Cloudflare): the flow installs cloudflared, waits for the owner's one login
 // approval, reuses the `dotz` tunnel, routes dotz.<zone> to it, and hands the tunnel token to hub/web-access.ts. The token is written only to
@@ -24,7 +24,6 @@ const VERIFY_OWNER: OnboardOwnerStep = { label: "Cloudflare 연결 확인", hint
 const homeOf = (ctx: OnboardFlowContext): string => ctx.deps.home ?? homedir();
 const certPath = (ctx: OnboardFlowContext): string => join(homeOf(ctx), ".cloudflared", "cert.pem");
 const hasCert = (ctx: OnboardFlowContext): boolean => existsSync(certPath(ctx));
-const inputPath = (dir: string): string => join(dir, "onboarding", "web-access-input.json");
 
 const cleanHostname = (value: unknown): string => {
 	const s = typeof value === "string" ? value.trim().toLowerCase().replace(/^https?:\/\//, "").replace(/\/+$/, "") : "";
@@ -70,13 +69,6 @@ async function cloudflaredPath(ctx: OnboardFlowContext): Promise<string> {
 	} catch {
 		return "";
 	}
-}
-
-/** Stores the hostname a POST /api/web-access/onboard body chose, for the flow's hostname step. Never a secret. */
-export function saveWebAccessInput(dir: string, input: { hostname?: string }): void {
-	mkdirSync(join(dir, "onboarding"), { recursive: true, mode: 0o700 });
-	writeAtomic(inputPath(dir), `${JSON.stringify(input)}\n`, 0o600);
-	chmodSync(inputPath(dir), 0o600);
 }
 
 export const webAccessFlow: OnboardFlow = {
@@ -184,7 +176,7 @@ export const webAccessFlow: OnboardFlow = {
 				await ctx.deps.applyWebAccess({ mode: "cloudflare", hostname, token });
 				ctx.memo.set("hostname", hostname);
 				try {
-					rmSync(inputPath(ctx.dir), { force: true });
+					rmSync(webAccessInputPath(ctx.dir), { force: true });
 				} catch {}
 				ctx.changed();
 				return { done: true };

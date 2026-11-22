@@ -2,38 +2,51 @@
 // implementation ("record, then refine"). It is the hub's single door into the reply-drafts feature: it imports exactly flow.ts and store.ts,
 // and re-exports what the gateway's other modules read of it, so no other hub file needs a feature edge for them.
 import { askText, defaultCall, dropDraft, editDraft, mailView, realFlowDeps, recordCorrection, refineAfterCorrection, restoreDraft, reviseDraft, type FlowDeps, type MailOf, webmailSite } from "../features/reply-drafts/lib/flow.ts";
-import { claimFile, getDraft, listDrafts, patchDraft, setStatus, type DraftRec } from "../features/reply-drafts/lib/store.ts";
-import { ridingMails } from "./comments/linked.ts";
+import { claimFile, DRAFT_ID, draftStoreIntact, getDraft, listDrafts, patchDraft, setStatus, unlessUnreadable, type DraftRec } from "../features/reply-drafts/lib/store.ts";
+import { pairedMails, ridingMails } from "./comments/linked.ts";
+import { sinceMidnight } from "./reply-route.ts";
 import { reasonOf } from "./reply-reasons.ts";
-import type { Lesson, ReasonCode, ReplyAdapter } from "./reply-types.ts";
+import type { DraftView, Lesson, ReasonCode, ReplyAdapter } from "./reply-types.ts";
 
-export { claimFile, defaultCall, getDraft, patchDraft };
+export { claimFile, defaultCall, DRAFT_ID, draftStoreIntact, getDraft, listDrafts, patchDraft, unlessUnreadable };
 
 const known = (ref: string): DraftRec | undefined => {
 	const rec = getDraft(ref);
 	return rec?.kind === "mail" ? rec : undefined;
 };
 const done = (r: { ok: boolean; text: string }, code: ReasonCode = "not_pending") => (r.ok ? { ok: true as const } : { ok: false as const, reason: { code, text: r.text } });
+/** The lane a pending mail draft is sent in: a webmail site's own, else its source and sending account. */
+export const mailLane = (rec: DraftRec): string => {
+	const site = webmailSite(rec.source);
+	return site ? `mail:${site}` : `mail:${rec.source}:${rec.account ?? ""}`;
+};
+const sentAtOf = (rec: DraftRec): number | undefined => {
+	const at = rec.status === "sent" && rec.sentAt ? Date.parse(rec.sentAt) : Number.NaN;
+	return Number.isFinite(at) ? at : undefined;
+};
 
 /** The mail and webmail adapter over the reply-drafts store; `deps` gives the model and tool runner of a revise (the real ones by default), `mailOf` the mail records. */
 export function mailAdapter(deps: () => FlowDeps = realFlowDeps, mailOf: MailOf = () => undefined): ReplyAdapter {
+	const viewOf = (rec: DraftRec): DraftView => {
+		const at = sentAtOf(rec);
+		return at === undefined ? mailView(rec, mailOf) : { ...mailView(rec, mailOf), sent: { at, how: "owner" } };
+	};
 	return {
 		kind: "mail",
 		get: async ref => {
 			const rec = known(ref);
 			// The same view the send CLI's gate hashes (features/reply-drafts/lib/view.ts).
-			return rec ? mailView(rec, mailOf) : undefined;
+			return rec ? viewOf(rec) : undefined;
 		},
 		// A mail riding on a waiting comment reply is part of that reply's card (one item, one 보내기); once the reply is gone it is listed on its own.
 		list: async () => {
-			const riding = ridingMails();
-			return listDrafts().filter(d => d.kind === "mail" && d.status === "pending" && !riding.has(d.id)).map(d => mailView(d, mailOf));
+			const riding = ridingMails(), paired = pairedMails();
+			return listDrafts().filter(d => d.kind === "mail" && ((d.status === "pending" && !riding.has(d.id)) || (!paired.has(d.id) && sinceMidnight(sentAtOf(d) ?? Number.NEGATIVE_INFINITY)))).map(viewOf);
 		},
 		target: ref => {
 			const rec = known(ref);
 			if (!rec) return undefined;
-			const site = webmailSite(rec.source);
-			return { kind: "mail", lane: site ? `mail:${site}` : `mail:${rec.source}:${rec.account ?? ""}` };
+			return { kind: "mail", lane: mailLane(rec) };
 		},
 		revise: async (ref, change) => {
 			const r = await reviseDraft(ref, change, deps(), { learn: false });
@@ -46,11 +59,15 @@ export function mailAdapter(deps: () => FlowDeps = realFlowDeps, mailOf: MailOf 
 			return { ok: false, reason: { code: (r.code as ReasonCode | undefined) ?? "not_pending", text: r.text }, ...(r.lint ? { lint: r.lint } : {}) };
 		},
 		drop: async ref => done(dropDraft(ref)),
-		restore: async ref => done(restoreDraft(ref)),
+		restore: async ref => {
+			const r = await restoreDraft(ref, deps());
+			return done(r, r.code ?? "not_pending");
+		},
 		markSent: async ref => {
 			const rec = known(ref);
 			if (!rec) return { ok: false, reason: reasonOf("gone") };
-			if (rec.status !== "sent") setStatus(ref, "sent");
+			if (rec.status === "pending") setStatus(ref, "sent");
+			else if (rec.status !== "sent") return { ok: false, reason: reasonOf("not_pending") };
 			return { ok: true };
 		},
 		// Proof can say "sent", never "not sent": the draft itself, or the mail answered since.

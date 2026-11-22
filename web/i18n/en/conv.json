@@ -34,7 +34,7 @@
   "conv.nt.no_msg": "Can't find that message",
   "conv.nt.handled": "This alert was already handled",
   "conv.nt.ignore_aria": "Ignore {title}",
-  "conv.worklog": "Work log",
+  "conv.worklog": "Worklog",
   "conv.session_named": "Session {name}",
   "conv.nt.no_news": "Can't find that update",
   "conv.nt.sent": "Answer sent",
@@ -47,6 +47,7 @@
   "conv.nt.input_closed": "The input box is already closed",
   "conv.nt.sent_next_q": "Answer sent · next question",
   "conv.nt.problem": "Something went wrong",
+  "conv.nt.login_open": "Open sign-in",
   "conv.nt.see_in_chat": "View in chat",
   "conv.nt.resolved": "Resolved",
   "conv.nt.answered": "Answered",
@@ -58,5 +59,8 @@
   "conv.nt.skipped": "Skipped without answering",
   "conv.nt.you_answered": "Your answer",
   "conv.nt.closed_late": "Closed after the time to answer passed",
-  "conv.nt.closed_done": "Closed because the work finished"
+  "conv.nt.closed_done": "Closed because the work finished",
+  "conv.nt.more": "Show the rest",
+  "conv.nt.more_below": "There's more ↓",
+  "conv.alert_ask": "Ask main about this alert ›"
 }

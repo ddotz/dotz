@@ -6,8 +6,9 @@ import { paths } from "./config.ts";
 import { draftApprovalBlock } from "./draft-approval.ts";
 import { emit } from "./events.ts";
 import { markDraftSend, type Notice, onDraftCardRefreshed, redrawDraftCards, resetNoticesForTest } from "./notices.ts";
+import { flushNotices } from "./notices-store.ts";
 
-const stored = (): Notice[] => JSON.parse(readFileSync(paths.notices, "utf8"));
+const stored = (): Notice[] => (flushNotices(), JSON.parse(readFileSync(paths.notices, "utf8")));
 const card = (ref: string, body: string) => `[ask] 답장 초안을 만들었어요\n${draftApprovalBlock({ to: "kim@example.com", body, ref, question: "이 답장 보낼까요?" })}`;
 const refreshed: { id: string; text: string; hash?: string }[] = [];
 onDraftCardRefreshed(n => void refreshed.push({ id: n.id, text: n.text, ...(n.decision?.hash ? { hash: n.decision.hash } : {}) }));

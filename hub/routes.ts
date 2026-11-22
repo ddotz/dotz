@@ -21,8 +21,9 @@ import * as discord from "./discord.ts";
 import { authRoute, pendingAuth } from "./auth.ts";
 import { pushRoute } from "./push.ts";
 import { INTEGRATIONS } from "./integrations.ts";
-import { allWatches, approveWatch, runWatch } from "./watch.ts";
-import { watchConnection } from "./watch-status.ts";
+import { allWatches } from "./watch.ts";
+import { RECONNECT_ACTION } from "./watch-ask.ts";
+import { reconnectFromCard, reconnectWatch } from "./watch-reconnect.ts";
 import { isSettingsTarget } from "./app-settings.ts";
 import { markRead } from "./reads.ts";
 import { shownEvent } from "./owner-text.ts";
@@ -39,10 +40,12 @@ import { laneCapacity, laneClosed, lanes, laneSummary, laneWatching } from "./la
 import { withHomes } from "./laneviews.ts";
 import { main as mainOrch, orch } from "./orchestrator.ts";
 import { listMonitors } from "./monitors.ts";
-import { type DecisionSend, type Notice, allNotices, listNotices, dismissedAlertAts, readConversationNotices, unreadCount } from "./notices.ts";
+import { type DecisionSend, type Notice, openDecisionNotices, listNotices, dismissedAlertAts, readConversationNotices, unreadCount } from "./notices.ts";
 import { loadProjects, saveProject } from "./projects.ts";
 import { deleteProject, planDelete, ProjectDeleteError } from "./projectdelete.ts";
 import { listSchedules } from "./schedule.ts";
+import { answerRunDecision } from "./schedule-fire.ts";
+import { RUN_DECISION } from "./notices-schedule.ts";
 import { laneTodo, openMonitor, readTodo } from "./todo.ts";
 import { customRoute, ownFolders } from "./custom.ts";
 import { activateFleetLaunch, activeFleetLaunch, createFleetLaunch } from "./fleet-launch.ts";
@@ -53,7 +56,8 @@ import { updateNow } from "./update-now.ts";
 import { harnessUpdateRoute } from "./harness-update.ts";
 import { appAsset, committedText, indexPage, manifestI18n, setAppLang, setAppName, swScript, webBuild } from "./webapp.ts";
 import { forgetRoute, listPeers, ownLogin } from "./peers.ts";
-import { actSurface, AGENT_AUTHOR, agentCall, ambientWrite, entryHost, ownTailnetName, refuse, tokenOk } from "./entry-check.ts";
+import { AGENT_AUTHOR } from "./agent-author.ts";
+import { actSurface, agentCall, ambientWrite, callerLogin, entryHost, ownTailnetName, refuse, tokenOk } from "./entry-check.ts";
 import { peerProjects } from "./peer-projects.ts";
 import { relayRoute, relayRows } from "./relay-route.ts";
 import { handlePair, PAIR_PATH } from "./peer-pair.ts";
@@ -61,6 +65,7 @@ import { checkPeer } from "./peer-auth.ts";
 import { activatePeerMonitor, createPeerMonitor } from "./peer-monitor.ts";
 import { activateFleet, createFleet, loadCore } from "./fleet.ts";
 import { peerLimitNotice } from "./limit-peer.ts";
+import { mailCodeRoute } from "./mail-otp.ts";
 import { handleLease, type LeaseReq } from "./send-lease.ts";
 import { cleanName, friendlyName, resolveName } from "./machine-name.ts";
 import { machineHost } from "./hostname.ts";
@@ -75,6 +80,7 @@ import { listedFileRoute } from "./listed-files.ts";
 import { routeApps } from "./routes-apps.ts";
 import { routeLanes } from "./routes-lanes.ts";
 import { escalations } from "./escalate.ts";
+import { isDoctorLeave } from "./doctor-text.ts";
 import { routeNotices } from "./routes-notices.ts";
 import { addInputDiag } from "./input-diag.ts";
 import { routeSettings } from "./routes-settings.ts";
@@ -86,7 +92,7 @@ import { proxyMatch, proxyRequest } from "./app-proxy.ts";
 import { igDmRoute } from "./ig-dm-gateway.ts";
 import { kakaoRoute } from "./kakao/gateway.ts";
 import { defaultOnboardDeps, onboardingService, setOnboardDeps } from "./onboarding.ts";
-import { saveWebAccessInput } from "./onboarding-web-access.ts";
+import { saveWebAccessInput } from "./web-access-input.ts";
 import { createSetupGate } from "../firstrun/setup-gate.ts";
 import { chartRoute } from "./chart.ts";
 
@@ -165,8 +171,7 @@ function stateRuns(): Record<string, RunState> {
 	const works = bgWork.list();
 	const running = works.filter(w => w.status === "running");
 	const deferred = queue.deferredOpen();
-	const asks = allNotices()
-		.filter(n => n.kind === "decision" && n.decision?.state === "open")
+	const asks = openDecisionNotices()
 		.sort((a, b) => String(a.at ?? "").localeCompare(String(b.at ?? "")));
 	const askFor = (target: string) => {
 		const n = asks.find(x => { const to = x.decision!.to; return to === target || (target === "main" && to.startsWith("auth:")); });
@@ -297,13 +302,20 @@ const lastTurnStart = (items: ReturnType<typeof activityItems>): string | undefi
 const runningChildren = (source: string) =>
 	(subagentLists()[source] || []).filter(s => s.status === "running").map(s => ({ name: s.id, description: s.description || s.agent }));
 
-type RestartHooks = { /** This node's tailnet name (tests); default `tailscale status`. */ tailnetName?: () => Promise<string | undefined>; busyNow: () => string[]; restartGateway: () => string; restartGatewayNow: () => string; mailDeps?: () => MailDeps; /** One mail reconcile round of at most `limit` mails (hub/mail-reconcile.ts); absent = not wired in this process. */ mailReconcile?: (limit: number) => Promise<{ checked: number; replied: number; notChecked: number; skipped: number }> };
+type RestartHooks = { /** This node's tailnet name (tests); default `tailscale status`. */ tailnetName?: () => Promise<string | undefined>; busyNow: () => string[]; restartGateway: (o?: { auto?: boolean }) => string; restartGatewayNow: () => string; mailDeps?: () => MailDeps; /** One mail reconcile round of at most `limit` mails (hub/mail-reconcile.ts); absent = not wired in this process. */ mailReconcile?: (limit: number) => Promise<{ checked: number; replied: number; notChecked: number; skipped: number }> };
 // A card's answer to where its question came from (chat, session, project chat, mail or login request): the bot's turn.
 export async function deliverAnswer(a: Parameters<DecisionSend>[0] & { login: string; via?: ReturnType<typeof viaOf> }): Promise<void> {
+	if (a.to.startsWith(RUN_DECISION)) return void answerRunDecision(a.to.slice(RUN_DECISION.length), a.action);
+	if (a.to === "alert" && a.action === RECONNECT_ACTION) return reconnectFromCard(a.picks?.[0]?.q ?? "");
 	if (a.to.startsWith("auth:")) {
 		const path = `/api/auth/${a.to.slice(5)}`;
 		const res = await authRoute(new Request(`http://local${path}`, { method: "POST", body: JSON.stringify({ action: a.action }) }), new URL(`http://local${path}`));
 		if (!res?.ok) throw new Error("로그인 요청을 처리하지 못했어요");
+		return;
+	}
+	const pick = a.picks?.length === 1 ? a.picks[0]! : undefined;
+	if (a.to === "alert" && pick && a.login !== AGENT_AUTHOR && isDoctorLeave(pick.q, pick.label)) {
+		log(`doctor: left as it is, no turn: ${pick.q}`);
 		return;
 	}
 	const lane = a.to.startsWith("lane:") ? a.to.slice(5) : undefined;
@@ -312,18 +324,17 @@ export async function deliverAnswer(a: Parameters<DecisionSend>[0] & { login: st
 	const mail = a.to.startsWith("mail:") ? mailByKey(a.to.slice(5)) : undefined;
 	if (a.to.startsWith("mail:") && !mail) throw new Error("이 메일 대화를 찾을 수 없어요");
 	// The owner's answer to a stronger-model card (hub/escalate.ts) is acted on here, then reaches the asking session like any answer.
-	if (a.picks?.length === 1) await escalations()?.answer({ to: a.to, label: a.picks[0]!.label }).catch(e => log(`stronger-model answer failed: ${(e as Error).message}`));
+	if (a.picks?.length === 1 && a.login !== AGENT_AUTHOR) await escalations()?.answer({ to: a.to, label: a.picks[0]!.label }).catch(e => log(`stronger-model answer failed: ${(e as Error).message}`));
 	await sendWeb({ lane, project, mail, conv, channel: "web", text: a.text, mode: "default", login: a.login, replyTo: a.replyTo, decision: a.notice, picks: a.picks, files: a.files, via: a.via });
 }
 
 export { applyMailStates, mailOriginal, mailSyncDeps } from "./routes-mail.ts";
 
 // A hand-written card's answer (kind `card`) is one owner message to the bot, as its own numbered answer would be.
-setReplyBot((to, text) => deliverAnswer({ to, text, picks: [], notice: "", login: "local" }));
+setReplyBot((to, text, agent) => deliverAnswer({ to, text, picks: [], notice: "", login: agent ? AGENT_AUTHOR : "local" }));
 
-// An agent's own call never sends into a KakaoTalk room: that send is the owner's (hub/reply-actions.ts owner_only).
-const agentKakaoSend = (req: Request, url: URL, peer: string): Response | undefined =>
-	req.method === "POST" && /^\/api\/kakao\/chat\/[^/]+\/send$/.test(url.pathname) && agentCall(req, peer) ? json({ ok: false, code: "owner_only", error: "보내기는 오너만 할 수 있어요" }, 403) : undefined;
+const agentKakaoOwnerOnly = (req: Request, url: URL, peer: string): Response | undefined =>
+	req.method === "POST" && /^\/api\/kakao\/chat\/[^/]+\/(send|ask\/drop)$/.test(url.pathname) && agentCall(req, peer) ? json({ ok: false, code: "owner_only", error: "오너만 할 수 있어요" }, 403) : undefined;
 
 export function makeRoute({ tailnetName = ownTailnetName, busyNow, restartGateway, restartGatewayNow, mailDeps, mailReconcile }: RestartHooks): (req: Request, srv?: Server<unknown>) => Promise<Response> {
 	const setupGate = createSetupGate({ dir: DATA_DIR, localHeaders: () => localLogin.sessionHeaders(), restart: () => void restartGatewayNow(), providers: routeSettings, log });
@@ -409,7 +420,8 @@ export function makeRoute({ tailnetName = ownTailnetName, busyNow, restartGatewa
 			return (await proxyRequest(req, url, app, proxied, srv)) as Response;
 		}
 		const parts = url.pathname.split("/").filter(Boolean);
-		const authResponse = authRoute(req, url);
+		const mailCode = mailCodeRoute(req, url.pathname, { peer, hubToken: tokenOk(req) }); if (mailCode) return mailCode;
+		const authResponse = authRoute(req, url, agentCall(req, peer));
 		if (authResponse) return authResponse;
 		const ptyResponse = await ptyRoute(req, url);
 		if (ptyResponse) return ptyResponse;
@@ -429,7 +441,7 @@ export function makeRoute({ tailnetName = ownTailnetName, busyNow, restartGatewa
 		// Settings → 업데이트 → 실행 하네스 (hub/harness-update.ts): the harness binary itself, from the package registry.
 		const harnessUpdateResponse = await harnessUpdateRoute(req, url, { busy: busyNow, restartIdle: restartGateway });
 		if (harnessUpdateResponse) return harnessUpdateResponse;
-		const customResponse = await customRoute(req, url, { lanes: () => withHomes(laneSummary(), discord.channels), channels: () => discord.channels, work: () => bgWork.list(), send: (target, text, login) => sendWeb({ ...(target === "main" ? {} : { lane: target.slice(5) }), channel: "web", text, mode: "default", login }), machine: () => resolveName(cfg.web?.machine_name, machineHost()), peerProjects });
+		const customResponse = await customRoute(req, url, { lanes: () => withHomes(laneSummary(), discord.channels), channels: () => discord.channels, work: () => bgWork.list(), send: (target, text, login) => sendWeb({ ...(target === "main" ? {} : { lane: target.slice(5) }), channel: "web", text, mode: "default", login }), caller: callerLogin(req, peer), machine: () => resolveName(cfg.web?.machine_name, machineHost()), peerProjects });
 		if (customResponse) return customResponse;
 		// Project records (hub/projects.ts) and the todo strip (hub/todo.ts), docs/layers.md §4.
 		if (url.pathname === "/api/projects" && req.method === "PUT") {
@@ -503,13 +515,13 @@ export function makeRoute({ tailnetName = ownTailnetName, busyNow, restartGatewa
 			const mail = to.startsWith("mail:") ? mailByKey(to.slice(5)) : undefined;
 			try {
 				const project = to.startsWith("ch:") ? projectTarget(to, discord.channels.work) : undefined;
-				await sendWeb({ mail, project, settings: to.startsWith("settings:") ? to.slice(9) : undefined, channel: "web", text: retryText(w, w.reply_to ? ownerMessage(w.reply_to)?.text : undefined), mode: "default", login: req.headers.get("tailscale-user-login") ?? "local" });
+				await sendWeb({ mail, project, settings: to.startsWith("settings:") ? to.slice(9) : undefined, channel: "web", text: retryText(w, w.reply_to ? ownerMessage(w.reply_to)?.text : undefined), mode: "default", login: callerLogin(req, peer) });
 			} catch (error) {
 				return json({ error: (error as Error).message }, 409);
 			}
 			return json({ ok: true, to });
 		}
-		if (req.method === "POST" && url.pathname === "/api/gateway/restart") return json({ ok: true, output: restartGateway() });
+		if (req.method === "POST" && url.pathname === "/api/gateway/restart") return json({ ok: true, output: restartGateway({ auto: (await body(req)).now !== true }) });
 		if (url.pathname === "/api/state")
 			return json({ name: NAME, address: ADDRESS, upload_max: UPLOAD_MAX_BYTES, discord: discord.status, channels: discord.channels, orchestrator: { ...orch, lastText: orch.lastText.slice(0, 600), key_fallback: keyedSelector(orch.activeModel) }, terminals: Object.fromEntries(terminals), lanes: withHomes(laneSummary(), discord.channels), runs: stateRuns(), capacity: laneCapacity(), schedules: listSchedules(), auth: pendingAuth(), events: recentEvents(Number(url.searchParams.get("limit") ?? 100)).map(shownEvent), notices_unread: unreadCount(), work: bgWork.list(), convs: stateConvs(), waitlist: stateWaitlist(), work_now: Date.now(), web_build: webBuild(), desk: desk.summary() });
 		if (req.method === "GET" && url.pathname === "/api/notices") syncCardFiles();
@@ -523,31 +535,27 @@ export function makeRoute({ tailnetName = ownTailnetName, busyNow, restartGatewa
 			if (!w) return json({ error: `no watch ${name}` }, 404);
 			// A disconnected watch behind an approval gate (a login that sends a push to the owner's phone) reconnects only with his yes; the tap
 			// on 다시 연결 is that yes, so it is approved (approveWatch runs it) instead of a plain run that would only report it still waits.
-			if (w.approval_minutes && watchConnection(w).state === "disconnected") {
-				approveWatch(w.id);
-				const item = listMonitors().find(m => m.kind === "watch" && m.watch === name);
-				return json({ ok: true, approved: true, ...(item ? { item } : {}) });
-			}
-			await runWatch(name);
+			const { approved, done } = reconnectWatch(w);
+			await done;
 			const item = listMonitors().find(m => m.kind === "watch" && m.watch === name);
-			return json({ ok: true, ...(item ? { item } : {}) });
+			return json({ ok: true, ...(approved ? { approved } : {}), ...(item ? { item } : {}) });
 		}
 		const appsResponse = await routeApps(req, url, unrepliedMailList);
 		if (appsResponse) return appsResponse;
-		const noticesResponse = await routeNotices(req, url);
+		const noticesResponse = await routeNotices(req, url, agentCall(req, peer));
 		if (noticesResponse) return noticesResponse;
 		// The phone's input diagnostic reports itself here (web/js/34-input-diag.js): known fields only, into a capped file under the data dir.
 		if (req.method === "POST" && url.pathname === "/api/input-diag") return json({ ok: true, kept: addInputDiag(await body(req)) }, 201);
 		// The one reply flow (hub/reply-route.ts) and a session CLI's failed-send report (hub/approval-wire.ts).
 		if (url.pathname.startsWith("/api/reply/") || url.pathname === "/api/approvals/failed") {
-			const login = agentCall(req, peer) ? AGENT_AUTHOR : (req.headers.get("tailscale-user-login") ?? "local"); // an agent's own call is never the owner's word; his forward from his other computer is (hub/entry-check.ts)
+			const login = callerLogin(req, peer);
 			const res = (await replyRoute(req, url, { replies, login, agent: login === AGENT_AUTHOR, triageMin: 1, undoSec: cfg.web.send_undo_sec ?? 10, surface: actSurface(req, peer) })) ?? (await approvalRoute(req, url));
 			if (res) return res;
 		}
 		// A button of a decision notice: the answer goes where the question came from (chat, session, project chat or login request).
 		const decide = req.method === "POST" ? /^\/api\/notices\/([^/]+)\/answer$/.exec(url.pathname) : null;
 		if (decide) {
-			const login = req.headers.get("tailscale-user-login") ?? "local";
+			const login = callerLogin(req, peer);
 			const answer = await body(req);
 			const via = viaOf(answer.via);
 			let files: ReturnType<typeof ownerFiles>;
@@ -635,11 +643,11 @@ export function makeRoute({ tailnetName = ownTailnetName, busyNow, restartGatewa
 		if (commentsResponse) return commentsResponse;
 		const igDmResponse = await igDmRoute(req, url, parts);
 		if (igDmResponse) return igDmResponse;
-		const kakaoResponse = agentKakaoSend(req, url, peer) ?? (await kakaoRoute(req, url, parts));
+		const kakaoResponse = agentKakaoOwnerOnly(req, url, peer) ?? (await kakaoRoute(req, url, parts));
 		if (kakaoResponse) return kakaoResponse;
 		const settingsResponse = await routeSettings(req, url, parts);
 		if (settingsResponse) return settingsResponse;
-		const laneResponse = await routeLanes(req, url, parts);
+		const laneResponse = await routeLanes(req, url, parts, agentCall(req, peer));
 		if (laneResponse) return laneResponse;
 		return new Response("not found", { status: 404 });
 	};

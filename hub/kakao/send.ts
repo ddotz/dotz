@@ -54,10 +54,12 @@ const MAX_TEXT = 1000;
 const MAX_DRAFT_TEXT = 3000;
 // Why a draft text cannot be sent (empty, a part over MAX_TEXT, the whole over MAX_DRAFT_TEXT), else undefined.
 export const draftTextError = (text: string): string | undefined =>
-	!text.trim() ? "답장 글이 비어 있어요" : [...text].length > MAX_DRAFT_TEXT ? `답장은 모두 합쳡 ${MAX_DRAFT_TEXT}자까지예요` : draftParts(text).some(p => [...p].length > MAX_TEXT) ? `메시지 하나는 ${MAX_TEXT}자까지예요` : undefined;
+	!text.trim() ? "답장 글이 비어 있어요" : [...text].length > MAX_DRAFT_TEXT ? `답장은 모두 합쳐 ${MAX_DRAFT_TEXT}자까지예요` : draftParts(text).some(p => [...p].length > MAX_TEXT) ? `메시지 하나는 ${MAX_TEXT}자까지예요` : undefined;
 const textCode = (text: string): SendCode => (text.trim() ? "too_long" : "empty");
 const MAX_DRAFTS = 200;
 const ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+/** The shape of a draft code newCode() makes. */
+export const KAKAO_CODE = new RegExp(`^K[${ALPHABET}]{4}$`);
 
 const nowMs = (d: SendDeps) => (d.now ?? Date.now)();
 

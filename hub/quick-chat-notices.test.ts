@@ -3,9 +3,10 @@ import { readFileSync } from "node:fs";
 import { paths } from "./config.ts";
 import { emit } from "./events.ts";
 import { type Notice, readConversationNotices, resetNoticesForTest, setViewing } from "./notices.ts";
+import { flushNotices } from "./notices-store.ts";
 import { markRead } from "./reads.ts";
 
-const stored = (): Notice[] => JSON.parse(readFileSync(paths.notices, "utf8"));
+const stored = (): Notice[] => (flushNotices(), JSON.parse(readFileSync(paths.notices, "utf8")));
 const post = (text: string) => emit("outbox", { ts: new Date().toISOString(), kind: "out", source: "orchestrator", target: "web:quick", text });
 const mine = () => stored().find(n => n.key === "msg:quick")!;
 

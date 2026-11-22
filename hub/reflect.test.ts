@@ -267,16 +267,19 @@ test("the digest counts the owner's messages, not a peer gateway's", () => {
 	}
 });
 
-test("the nightly data lists schedules only when two or more are live, each in one short line", () => {
+test("the nightly data lists schedules only when two or more are live, each in one short line with its kind and name", () => {
 	const now = Date.parse("2026-11-11T00:00:00Z");
 	const mk = (id: string, extra: Partial<Schedule> = {}): Schedule => ({ id, text: "점검".repeat(60), at: "2026-11-11T03:30:00.000Z", created: "2026-11-08T00:00:00.000Z", ...extra });
 	expect(scheduleBlock([], now)).toEqual([]);
 	expect(scheduleBlock([mk("a")], now)).toEqual([]);
-	const block = scheduleBlock([mk("a", { kind: "check" }), mk("b", { every_minutes: 60 })], now);
-	expect(block[0]).toBe("schedules (2):");
-	expect(block[1]).toBe(`- a check next 2026-11-11 03:30Z once age 3d: ${"점검".repeat(40)}`);
-	expect(block[2]).toContain("- b owner next");
+	const later: Schedule = JSON.parse(JSON.stringify({ ...mk("d"), kind: "later-kind" }));
+	const block = scheduleBlock([mk("a", { kind: "check" }), mk("b", { every_minutes: 60 }), mk("c", { kind: "task", name: "sample-2 보고" }), later], now);
+	expect(block[0]).toBe("schedules (4):");
+	expect(block[1]).toBe(`- a check "" next 2026-11-11 03:30Z once age 3d: ${"점검".repeat(40)}`);
+	expect(block[2]).toContain("- b owner \"\" next");
 	expect(block[2]).toContain("every 60m");
+	expect(block[3]).toContain('- c task "sample-2 보고" next');
+	expect(block[4]).toContain('- d owner "" next');
 });
 
 test("yesterday's day note is named by one more last line only when the feature is on and the file exists", () => {

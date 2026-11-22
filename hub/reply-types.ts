@@ -17,13 +17,13 @@ export type ReasonCode =
 
 /** `text` is plain Korean; raw tool output never leaves hub.log. */
 export type Reason = { code: ReasonCode; text: string };
-export type SentHow = "owner" | "retry" | "auto" | "confirmed" | "proved";
+export type SentHow = "owner" | "rule" | "retry" | "auto" | "confirmed" | "proved";
 /** `failed` always means surely not sent; `unsure` always means it may have gone out. There is no third bucket. */
 export type SendState =
 	| { state: "undo"; at: number; until: number }
 	| { state: "queued"; at: number; attempt: number }
 	| { state: "sending"; at: number; attempt: number }
-	| { state: "sent"; at: number; how: SentHow }
+	| { state: "sent"; at: number; how: SentHow; today?: boolean }
 	| { state: "failed"; at: number; reason: Reason; safeToAuto: boolean; attempts: number; auto?: { attempt: number; max: number; nextAt: number } }
 	| { state: "unsure"; at: number; reason: Reason; attempts: number };
 
@@ -36,7 +36,7 @@ export type Done = { ok: true } | { ok: false; reason: Reason };
 /** A file a draft carries: `digest` is the content fingerprint of a file the store holds locally (staged files), so a same-named swap is a new version. */
 export type FileShown = { name: string; size?: string; digest?: string };
 
-export type OwnerAction = "retry" | "resolve_sent" | "resolve_retry" | "open_channel" | "relogin" | "fix_recipient" | "pick_file" | "pick_account" | "redraft" | "drop" | "send_as_is";
+export type OwnerAction = "retry" | "resolve_sent" | "resolve_retry" | "open_channel" | "relogin" | "fix_recipient" | "pick_file" | "pick_account" | "redraft" | "drop" | "send_as_is" | "send";
 
 /** What every surface shows of one reply (GET /api/reply/queue, the `reply` event). */
 export type ReplyItem = {
@@ -56,11 +56,13 @@ export type ReplyItem = {
 		toLabel: string;
 		to: string;
 		cc?: string[];
+		account?: string;
+		accountHeld?: true;
 		subject?: string;
 		text: string;
 		parts?: string[];
 		sentParts?: number;
-		mail?: { ref: string; to: string; subject?: string; text: string; attachments?: FileShown[] };
+		mail?: { ref: string; to: string; account?: string; accountHeld?: true; subject?: string; text: string; attachments?: FileShown[] };
 		attachments?: FileShown[];
 		notes?: string[];
 		decide?: string[];
@@ -75,11 +77,18 @@ export type ReplyItem = {
 	original?: { who: string; text: string; at?: number; subject?: string; post?: string; cut?: true };
 	/** Absent: it waits for the owner. */
 	send?: SendState & { actions: OwnerAction[] };
+	back?: { at: number; cause: "restart" };
+	/** CM-13: the same person was already answered the other way (a comment reply posted to a mail's sender, or a mail reply sent to a commenter), and when, if known. Shown only; no part of the approvalHash. */
+	answeredElsewhere?: { via: "comment" | "mail"; at?: number };
 	/** One plain line for the tag: a failure reason, or why a rule did not send it. */
 	why?: string;
 };
-/** What an adapter knows of a draft: the item without the send, which the ledger adds. */
-export type DraftView = Omit<ReplyItem, "send">;
+/** What an adapter knows of a draft: the item without the send, which the ledger adds. `sent`: when and how it went out, read from the store
+ * (the ledger's record is in memory only); it shows as the item's send when the ledger has none, and is no part of its approvalHash. */
+export type DraftView = Omit<ReplyItem, "send" | "back"> & {
+	sent?: { at: number; how: SentHow };
+	mailLeft?: true;
+};
 
 /** How one send ended, said by the place that knows (an in-process runner, or a CLI's `DOTZ_SEND` line). `detail`: the place's own answer (masked,
  * bounded), for hub.log and the send queue's record only. */

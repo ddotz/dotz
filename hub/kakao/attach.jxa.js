@@ -1,15 +1,17 @@
 // attach (the owner's own 나와의 채팅 only, hub/kakao/sendfile.ts) pastes ONE file into the one window titled `name`. It runs appended to
 // room.jxa.js (a second osascript -e) and uses its helpers. The general pasteboard gets the file URL, the input is focused, and KakaoTalk's
 // own menu item 편집 > 붙여넣기 is pressed (AXPress, no key event); KakaoTalk then shows its file send dialog, whose 전송 is pressed.
-// KakaoTalk stays where it is: no activation, no frontmost, no AXRaise (the owner's rule, and a text send does the same). A paste it does not
-// answer in the background ends as no_dialog, never as a raised window.
+// KakaoTalk first stays where it is: no activation, no frontmost, no AXRaise (a text send does the same). KakaoTalk 26.9 does not answer a
+// paste in the background (measured 2026-11-19: no dialog), so a paste it ignored is tried once more with the self window raised and
+// KakaoTalk in front (the owner's choice, web ee435345), and the app in front before is put back as soon as the send is pressed or refused.
 // The menu item reaches whatever KakaoTalk has focused, so selfGate runs right before the paste and again right before the press: the self
-// window must be the only chat window and must show the words 나와의 채팅. A press of the dialog is refused otherwise and the dialog cancelled.
+// window must be the only chat window and must show no member count. KakaoTalk 26.9 no longer shows the words 나와의 채팅 in that window
+// (measured 2026-11-19, 213 nodes walked), so the words cannot be required; sendfile.ts already refuses when another database room has the
+// self room's name, and openRoom checked the window title. A press of the dialog is refused otherwise and the dialog cancelled.
 // A new window that has a message input is another chat, never the dialog: its own 전송 would send what the owner typed there.
 // The owner's pasteboard is saved before and restored after, whatever happened, unless the owner copied something newer meanwhile. An input
 // holding the owner's text is never touched. Prints {ok:true, pressed:true} once the dialog closed after the press, or {ok:false, why,
 // pressed?, seen?}: seen names the windows and buttons that were there instead of the dialog. clipboard:false: not fully restored.
-var GATE_MS = 4000;
 
 function pasteMenuItem(proc) {
 	var bar = proc.menuBars[0].menuBarItems();
@@ -64,15 +66,14 @@ function press(el) {
 	}
 }
 
-// "" when the self window of `name` is the only chat window besides `dialogs` new windows and shows that it is the 나와의 채팅.
+// "" when the self window of `name` is the only chat window besides `dialogs` new windows and shows no member count (a group shows one).
 function selfGate(name, before, dialogs) {
 	var wins = chatWindows();
 	var kept = wins.filter(function (x) {
 		return before.indexOf(windowKey(x)) !== -1;
 	});
 	if (kept.length !== 1 || wins.length - kept.length !== dialogs || !sameTitle(attr(kept[0], "name"), name)) return "other_window";
-	var f = facts(kept[0], true, GATE_MS);
-	return f.self === true && !(f.members > 1) ? "" : "not_self";
+	return facts(kept[0], false).members > 1 ? "not_self" : "";
 }
 
 // A send button of a sheet of the chat window, or of a window that was not there before the paste and is not a chat.
@@ -90,7 +91,8 @@ function dialogButton(proc, w, before) {
 	}
 	for (var p = 0; p < places.length; p++) {
 		var btns = batch(places[p].el, "buttons");
-		for (var b = 0; b < btns.length; b++) if (/^(전송|보내기|Send)$/.test(attr(btns[b], "name"))) return { place: places[p], button: btns[b] };
+		// KakaoTalk 26.9 names it after the file count ("1개 전송", measured 2026-11-19); one file is pasted, so only 1 is taken.
+		for (var b = 0; b < btns.length; b++) if (/^(1개 )?(전송|보내기)$|^Send$/.test(attr(btns[b], "name"))) return { place: places[p], button: btns[b] };
 	}
 	return null;
 }
@@ -111,17 +113,69 @@ function seenNow(proc, w) {
 	return out.join(" | ").slice(0, 400);
 }
 
-// From a clipboard that holds the file to the press of the dialog; the caller restores the clipboard.
-function pasteAndPress(proc, w, input, item, name, before, state) {
+// The app in front now (bundle id), then KakaoTalk in front with the self window raised; took: KakaoTalk is the front app.
+function bringFront(proc, w) {
+	var se = Application("System Events");
+	var from = "";
+	var failed = [];
 	try {
-		input.focused = true;
+		from = String(se.processes.whose({ frontmost: true })()[0].bundleIdentifier());
 	} catch (e) {
-		// The same best effort as a text send; the dialog decides below.
+		failed.push("from: " + String(e).slice(0, 120));
 	}
-	if (!press(item)) return { ok: false, why: "paste_error" };
-	var hit = until(function () {
-		return dialogButton(proc, w, before);
-	}, 4);
+	try {
+		proc.frontmost = true;
+		w.actions.byName("AXRaise").perform();
+	} catch (e) {
+		failed.push("raise: " + String(e).slice(0, 120));
+	}
+	var took = until(function () {
+		try {
+			return proc.frontmost() === true;
+		} catch (e) {
+			return false;
+		}
+	}, 1);
+	return { from: from, took: took === true, restored: false, failed: failed };
+}
+
+// Puts back the app that was in front, only while KakaoTalk is still the front app (the owner may have switched meanwhile).
+function restoreFront(proc, front) {
+	if (!front || !front.took || !front.from || front.from === BUNDLE) return;
+	try {
+		if (proc.frontmost() !== true) return;
+		Application("System Events").processes.whose({ bundleIdentifier: front.from })()[0].frontmost = true;
+		front.restored = true;
+	} catch (e) {
+		front.failed.push("restore: " + String(e).slice(0, 120));
+	}
+}
+
+// From a clipboard that holds the file to the press of the dialog; the caller restores the clipboard and the front app (state.front).
+function pasteAndPress(proc, w, input, item, name, before, state) {
+	var pressFailed = false;
+	var paste = function () {
+		try {
+			input.focused = true;
+		} catch (e) {
+			// The same best effort as a text send; the dialog decides below.
+		}
+		if (!press(item)) return (pressFailed = true), null;
+		return until(function () {
+			return dialogButton(proc, w, before);
+		}, 4);
+	};
+	var hit = paste();
+	if (pressFailed) return { ok: false, why: "paste_error" };
+	if (!hit && freeValue(attr(input, "value"), attr(input, "placeholderValue"))) {
+		// Ignored in the background: once more with KakaoTalk in front. A refused selfGate still comes first (another window could have
+		// opened during the wait).
+		var again = selfGate(name, before, 0);
+		if (again) return { ok: false, why: again };
+		state.front = bringFront(proc, w);
+		if (state.front.took) hit = paste();
+		if (pressFailed) return { ok: false, why: "paste_error" };
+	}
 	if (!hit) {
 		// The paste went in as text (a path, a name): put the input back as it was; nothing was sent.
 		var free = freeValue(attr(input, "value"), attr(input, "placeholderValue"));
@@ -161,12 +215,16 @@ function attachFile(name, path) {
 	pb.clearContents;
 	var wrote = pb.writeObjects(urls) === true;
 	var ours = pb.changeCount;
-	var state = { pressed: false };
+	var state = { pressed: false, front: null };
 	var out;
 	try {
 		out = wrote ? pasteAndPress(proc, w, input, item, name, before, state) : { ok: false, why: "pasteboard" };
 	} catch (e) {
 		out = { ok: false, why: "error", pressed: state.pressed, err: String(e).slice(0, 100) };
+	}
+	if (state.front) {
+		restoreFront(proc, state.front);
+		out.front = state.front;
 	}
 	if (!restoreClipboard(pb, saved, ours)) out.clipboard = false;
 	return out;

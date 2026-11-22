@@ -11,7 +11,7 @@ import { yesterdayNote } from "./day-note-format.ts";
 import { msg, withReplyLine } from "./i18n.ts";
 import { LESSONS_MAX_BYTES } from "./prompt-budget.ts";
 import { trackTimer } from "./shutdown.ts";
-import { listSchedules, type Schedule } from "./schedule.ts";
+import { listSchedules, type Schedule, scheduleKind } from "./schedule.ts";
 import { runLimited } from "./run-limited.ts";
 import { auditSummaryLine } from "./token-audit.ts";
 
@@ -83,7 +83,7 @@ export function correctionBlock(entries: readonly Correction[]): string[] {
 /** The live schedules for the nightly tidy (merge overlapping ones, drop finished ones); nothing when fewer than two exist. */
 export function scheduleBlock(items: Schedule[], now: number): string[] {
 	if (items.length < 2) return [];
-	const line = (s: Schedule) => `- ${s.id} ${s.kind ?? "owner"} next ${s.at.slice(0, 16).replace("T", " ")}Z ${s.every_minutes ? `every ${s.every_minutes}m` : "once"} age ${Math.max(0, Math.floor((now - Date.parse(s.created)) / DAY))}d: ${s.text.replace(/\s+/g, " ").slice(0, 80)}`;
+	const line = (s: Schedule) => `- ${s.id} ${scheduleKind(s)} "${s.name ?? ""}" next ${s.at.slice(0, 16).replace("T", " ")}Z ${s.every_minutes ? `every ${s.every_minutes}m` : "once"} age ${Math.max(0, Math.floor((now - Date.parse(s.created)) / DAY))}d: ${s.text.replace(/\s+/g, " ").slice(0, 80)}`;
 	return [`schedules (${items.length}):`, ...items.map(line)];
 }
 

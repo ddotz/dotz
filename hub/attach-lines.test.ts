@@ -1,7 +1,7 @@
 // A send approval a session wrote itself (its own tool sends the mail): each `> 첨부:` file needs a `[file] /absolute/path` line, or the owner's
 // send sheet cannot show it. The post goes back to its author once, naming the files with no line; the same ref posted again goes out as written.
 import { afterAll, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { answerReview } from "./answer-words.ts";
@@ -34,6 +34,26 @@ test("a card whose [file] lines cover every named file is not returned, and the 
 	emit("outbox", { ts: new Date().toISOString(), kind: "out", source: "orchestrator", target: "th:1", text });
 	expect(askedFiles(ref)?.map(f => f.name)).toEqual(["build.zip", "checklist.txt"]);
 	expect(askedFile(ref, 1)).toBeDefined();
+});
+
+const sameName = (ref: string, lines: string[]) =>
+	`[ask] 답장을 채워 뒀어요.\n\n> 받는이: 김 (kim@example.com)\n> 제목: RE: 파일\n> 첨부: same.txt (1KB)\n> 첨부: same.txt (1KB)\n> 안녕하세요.\n\n결정: 이 답장을 보낼까요? (${ref})\n**1) 보내기**\n보내요\n**2) 고치기 …**\n고쳐요\n**3) 보내지 않기**\n안 보내요\n\n${lines.join("\n")}`;
+const twins = ["one", "two"].map(d => {
+	mkdirSync(join(dir, d), { recursive: true });
+	writeFileSync(join(dir, d, "same.txt"), d);
+	return join(dir, d, "same.txt");
+});
+
+test("two attachments of the same name open their own files, not the first one twice", () => {
+	const ref = nextRef();
+	emit("outbox", { ts: new Date().toISOString(), kind: "out", source: "orchestrator", target: "th:1", text: sameName(ref, twins.map(p => `[file] ${p}`)) });
+	expect(askedFiles(ref)?.map(f => f.path)).toEqual(twins.map(p => realpathSync(p)));
+});
+
+test("two attachments of the same name with a single [file] line are not both mapped to it", () => {
+	const ref = nextRef();
+	emit("outbox", { ts: new Date().toISOString(), kind: "out", source: "orchestrator", target: "th:1", text: sameName(ref, [`[file] ${twins[0]}`]) });
+	expect(askedFiles(ref)).toBeUndefined();
 });
 
 test("a card with a file named and no [file] line for it is returned once naming that file; the same ref again passes", () => {

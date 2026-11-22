@@ -5,7 +5,7 @@
 // queue); a sent one (today) is a row that opens the same card in ONE sheet. The stop reason of a failed row is the send's own reason, never invented.
 // rqWaiting() (답 필요 + 실패) is the ONE number: #nav-mon, the tab counts, the list row and 홈 read it.
 // Reached from 홈 답장 대기, the app rows' 답장 대기 button, the chat's 답장 초안 line and the list row itself; the row shows only while something waits (or it is open).
-const RQ = { loaded: false, app: "", tab: "all", cur: "", sheet: null, shSig: "", rows: null, top: null, mark: "", err: "", t: 0, lim: {}, reset: false };
+const RQ = { loaded: false, app: "", tab: "all", cur: "", sheet: null, shSig: "", rows: null, top: null, mark: "", err: "", t: 0, mid: 0, lim: {}, reset: false };
 const RQ_KEY = "replies";
 
 async function rqLoad() {
@@ -13,6 +13,8 @@ async function rqLoad() {
   RQ.err = RA.err ? appFail(RA.err, TX("triage.rq.load_fail")) : "";
   RQ.loaded = true;
   monSchedule(); homeSoon(); rqSheetPaint(); paintDecision();
+  clearTimeout(RQ.mid);
+  const at = new Date(); RQ.mid = setTimeout(rqLoad, new Date(at.getFullYear(), at.getMonth(), at.getDate() + 1).getTime() - at.getTime() + 1000);
 }
 const rqSoon = () => { clearTimeout(RQ.t); RQ.t = setTimeout(rqLoad, 400); };
 
@@ -24,9 +26,9 @@ const RQ_SENT = { owner: TX("triage.sent.owner"), rule: TX("triage.sent.rule"), 
 const RQ_TONE = { ask: "warn", fail: "err", sent: "ok" };
 // Every row of the screen, from the one queue of every computer: failed / unsure first, then what waits (newest first), then what went out today.
 function rqRows() {
-  const byAt = (a, b) => (b.at || 0) - (a.at || 0), all = raItems(), today = new Date().setHours(0, 0, 0, 0);
+  const byAt = (a, b) => (b.at || 0) - (a.at || 0), all = raItems(), day = new Date().setHours(0, 0, 0, 0);
   const items = all.filter(i => i.draft.state === "pending" || (i.send && i.send.state !== "sent"));
-  const sent = all.filter(i => i.send && i.send.state === "sent" && (i.send.at || 0) >= today).map(i => ({ ...rqItemRow(i), state: "sent", at: i.send.at, why: RQ_SENT[i.send.how] || "" }));
+  const sent = all.filter(i => i.send && i.send.state === "sent" && (i.send.today !== undefined ? i.send.today : (i.send.at || 0) >= day)).map(i => ({ ...rqItemRow(i), state: "sent", at: i.send.at, why: RQ_SENT[i.send.how] || "" }));
   return [...items.map(rqItemRow).sort((a, b) => (a.state === b.state ? byAt(a, b) : a.state === "fail" ? -1 : 1)), ...sent.sort(byAt)];
 }
 // One queue item as a row of the screen: failed and unsure are 실패, the rest waits.
@@ -118,9 +120,15 @@ function rqSync(box, descs) {
   const have = new Map([...box.children].map(n => [n.dataset.rk, n]));
   listPlace(box, descs.map(d => {
     let n = have.get(d.key);
+    if (n && n._sig !== d.sig && n.contains(typingIn())) { rqHold(n); return n; }
     if (!n || n._sig !== d.sig) { n = d.make(); n._sig = d.sig; n.dataset.rk = d.key; }
     return n;
   }));
+}
+function rqHold(n) {
+  if (n._held) return;
+  n._held = true;
+  n.addEventListener("focusout", () => afterTap(() => { n._held = false; if (n.contains(typingIn())) rqHold(n); else monDirty(); }), { once: true });
 }
 // Puts `nodes` in `box` in that order: a child no longer wanted is removed, one already in place stays, the rest is inserted.
 function listPlace(box, nodes) {
@@ -197,7 +205,7 @@ function rqScreen(qSel, box, tl) {
     if (!pane) RQ.top = null;
     monDrawn(sig, qSel.key);
     clear($("#mon-head")).append(...monHead(qSel));
-    if (!(pane && tl.firstElementChild === RQ.sheet.box)) clear(tl).append(...(pane ? [RQ.sheet.box] : rqNodes()));   // an open pane already stands there: drawn again it would lose the focus
+    if (!(pane && tl.firstElementChild === RQ.sheet.box)) listPlace(tl, pane ? [RQ.sheet.box] : rqNodes());
     box.scrollTop = keep;
     rowHold(anchor);
     edgeFade(box);

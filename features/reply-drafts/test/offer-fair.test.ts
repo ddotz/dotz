@@ -85,4 +85,21 @@ describe("the mail draft queue is fair across mail apps", () => {
 		expect(reads).toBe(400);
 		expect(peak).toBeLessThanOrEqual(8);
 	});
+
+	test("a second mail of a thread replaces the first one still waiting: one model call for the thread", async () => {
+		const model = gatedModel();
+		const deps = { send: () => {}, call: model.call, log: () => {} };
+		const inThread = (key: string): OfferMail => ({ ...mail(key, "a@example.com"), id: "thread-9", messageId: `msg-${key}` });
+		const done = [offerMailDraft(mail("a-0", "a@example.com"), deps), offerMailDraft(inThread("t-1"), deps), offerMailDraft(inThread("t-2"), deps)];
+		expect(await model.drain(Promise.all(done))).toEqual(["skipped", "skipped", "skipped"]);
+		expect(model.arrivals).toEqual(["a-0", "t-2"]);
+	});
+
+	test("mails of different threads are each drafted", async () => {
+		const model = gatedModel();
+		const deps = { send: () => {}, call: model.call, log: () => {} };
+		const done = ["a-0", "t-1", "t-2"].map(k => offerMailDraft(mail(k, "a@example.com"), deps));
+		await model.drain(Promise.all(done));
+		expect(model.arrivals).toEqual(["a-0", "t-1", "t-2"]);
+	});
 });

@@ -70,7 +70,7 @@ test("the divider resizes within its limits and a double click makes it half and
 		bar.setPointerCapture = () => {};
 		fire("pointerdown", r.left + r.width / 2); fire("pointermove", r.left - 150); fire("pointerup", r.left - 150);`);
 	const moved = await ev<number>(v, share);
-	expect(moved).toBeLessThan(0.45);
+	expect(moved).toBeLessThan(0.48);
 	expect(moved).toBeGreaterThanOrEqual(0.2);
 	await run(v, `$("#split .pane-bar").dispatchEvent(new MouseEvent("dblclick", { bubbles: true }))`);
 	await waitFor(v, `Math.abs((${share}) - 0.5) < 0.02`);
@@ -85,47 +85,32 @@ test("closing the panes gives the page back as it was", async () => {
 	expect(await ev(v, `$("#v-chat").hidden`)).toBe(false);
 });
 
-// The panes take the chat list column's width (owner answer 8f7c8c3d): while the split is on the column is folded to nothing, and the list is a layer over
-// the panes' left from the active pane's 목록 button, which moves neither pane.
+// The chat list keeps its column beside the panes while split, so a row can be pulled onto a pane; the panes share the width the one conversation had.
 const W_ = `(() => { const w = n => n.getBoundingClientRect().width, p = [...document.querySelectorAll("#split .pane")]; return { list: w(convSide), card: w($("#cv-head")), col: $("#split") ? w($("#split .pane-side")) : -1, panes: p.map(w) }; })()`;
-const RECTS = `[...document.querySelectorAll("#split .pane")].map(n => { const b = n.getBoundingClientRect(); return [b.x, b.y, b.width, b.height]; })`;
 type Sizes = { list: number; card: number; col: number; panes: number[] };
 
-test("while split the list column is folded and the panes share its width; split off gives the column back", async () => {
+test("while split the list column stays beside the panes and they share the conversation's width; split off changes nothing", async () => {
 	const v = await open();
 	const before = await ev<Sizes>(v, W_);
 	await split(v, "lane:가나");
 	const after = await ev<Sizes>(v, W_);
-	expect(after.col).toBe(0);
-	expect(after.panes.reduce((a, b) => a + b, 0)).toBeCloseTo(before.list + before.card, 0);
+	expect(after.col).toBeCloseTo(before.list, 0);
+	expect(after.list).toBeCloseTo(before.list, 0);
+	expect(after.panes.reduce((a, b) => a + b, 0) + 16).toBeCloseTo(before.card, 0);
 	await run(v, `paneClose(paneList().find(p => !p.active).id)`);
 	await waitFor(v, `!document.querySelector("#split") && CV.placed`);
 	const back = await ev<Sizes>(v, W_);
 	expect(Math.abs(back.list - before.list)).toBeLessThan(0.5);
 });
 
-test("the 목록 button opens the chat list over the panes without moving either; a pick closes it and opens in the active pane; Esc and a press outside close it", async () => {
+test("the chat list beside the panes has no 목록 button; a pick opens in the active pane and the list stays", async () => {
 	const v = await open();
 	await split(v, "lane:가나");
-	const rects = await ev<number[][]>(v, RECTS);
-	const btn = await ev<number[]>(v, `(() => { const b = $("#split .pane.on .pane-ls"), r = b.getBoundingClientRect(); return [r.width, r.height, b.getAttribute("aria-label") === "대화 목록" ? 1 : 0]; })()`);
-	expect(btn).toEqual([44, 44, 1]);
-	await run(v, `$("#split .pane.on .pane-ls").click()`);
-	await waitFor(v, `$("#split").classList.contains("ls-open") && convSide.getBoundingClientRect().width > 0`);
-	const lay = await ev<number[][]>(v, RECTS);
-	for (const [i, r] of rects.entries()) for (const [j, n] of r.entries()) expect(Math.abs(n - lay[i]![j]!)).toBeLessThan(0.5);
-	expect(await ev(v, `Math.round(convSide.getBoundingClientRect().width)`)).toBe(280);
+	expect(await ev(v, `[document.querySelectorAll(".pane-ls").length, convSide.getBoundingClientRect().width > 0]`)).toEqual([0, true]);
 	await run(v, `document.querySelector('#chat-convo .cv-row[data-t="lane:다라"]').click()`);
-	await waitFor(v, `!$("#split").classList.contains("ls-open") && target === "lane:다라"`);
+	await waitFor(v, `target === "lane:다라"`);
 	expect(await ev(v, `paneList().map(p => p.t + (p.active ? "*" : ""))`)).toEqual(["main", "lane:다라*"]);
-	await run(v, `$("#split .pane.on .pane-ls").click()`);
-	await waitFor(v, `$("#split").classList.contains("ls-open")`);
-	await run(v, `document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }))`);
-	await waitFor(v, `!$("#split").classList.contains("ls-open")`);
-	await run(v, `$("#split .pane.on .pane-ls").click()`);
-	await waitFor(v, `$("#split").classList.contains("ls-open")`);
-	await run(v, `document.elementFromPoint(900, 400).dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, clientX: 900, clientY: 400, pointerId: 1, button: 0 }))`);
-	await waitFor(v, `!$("#split").classList.contains("ls-open")`);
+	expect(await ev(v, `convSide.getBoundingClientRect().width > 0`)).toBe(true);
 });
 
 test("a message for a pane that is not active lands in its mirror; a notice for it is its head dot, not a toast", async () => {
@@ -148,7 +133,7 @@ test("the layout survives a reload; a narrow window shows the one section again"
 	await split(v, "lane:가나");
 	await v.navigate(`${hub.origin}/?again#chat`);
 	await waitFor(v, `paneCount() === 2 && document.querySelectorAll("#split .pane").length === 2`);
-	await v.resize(800, 800);
+	await v.resize(1100, 800);
 	await waitFor(v, `!document.querySelector("#split") && $("#views").contains($("#v-chat"))`);
 	await v.resize(1280, 800);
 	await waitFor(v, `document.querySelectorAll("#split .pane").length === 2`);

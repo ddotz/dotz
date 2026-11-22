@@ -90,7 +90,7 @@ for (const width of [390, 1280]) {
 	test(`${width}px: 홈's card line and the bell list still say what a doctor item is`, async () => {
 		const n = await page<{ alertLine: string; worklogLine: string }>(`({
 			alertLine: hcLine({ kind: "alert", title: "닥터 점검", text: ${JSON.stringify(DOCTOR)}, ts: "${T.doctor}" }),
-			worklogLine: hcLine({ kind: "worklog", wk: "doctor", title: "작업 기록", text: ${JSON.stringify("스스로 고친 것: 모니터링 가격 확인.")}, ts: "${T.doctor}" }) })`);
+			worklogLine: hcLine({ kind: "worklog", wk: "doctor", title: "작업내역", text: ${JSON.stringify("스스로 고친 것: 모니터링 가격 확인.")}, ts: "${T.doctor}" }) })`);
 		expect(n.alertLine).toContain("닥터 점검");
 		expect(n.worklogLine).toContain("스스로 고친 것");
 	});

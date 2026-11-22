@@ -112,3 +112,17 @@ test("a file named by a short shared title and a variant marker is on topic when
 	expect(kinds({ subject: "별빛", body: "별빛 문서 보내드립니다.", files: ["홍길동 별빛.pdf", "홍길동 새벽.pdf"] })).toEqual(["unrelated"]);
 	expect(attachIssues({ subject: "별빛", body: "별빛 문서 보내드립니다.", files: ["홍길동 별빛.pdf", "홍길동.pdf"] })[0]!.text).toContain("홍길동.pdf");
 });
+
+test("a body that sends a file by any word the gate knows, in the verbs a mail uses, is missing it; the other side's attachment is no promise", () => {
+	const none = (body: string) => attachIssues({ body, files: [], request: "안부 인사드립니다" }).map(i => i.kind);
+	for (const body of ["계약 서류 보내드립니다.", "요청하신 wav 보내드립니다.", "견적서 송부드립니다.", "견적서를 송부했습니다.", "견적서 첨부드렸습니다.", "견적서를 첨부해 드렸습니다.", "견적서를 발송합니다.", "자료 공유드립니다.", "I have enclosed the quote.", "Enclosed are the files.", "Please see the attachment."]) expect([body, none(body)]).toEqual([body, ["missing"]]);
+	for (const body of ["Thanks for the attached file.", "I received the attached quote.", "In the attached file you sent, row 3 is wrong.", "Regarding the file you attached, thanks.", "I will not be attaching anything.", "첨부된 견적서 확인 부탁드립니다."]) expect([body, none(body)]).toEqual([body, []]);
+});
+
+test("a file the mail asked for and the draft leaves off is skipped, a kind of its own that draft generation does not retry on", () => {
+	expect(attachIssues({ body: "확인했습니다.", files: [], request: "계약서 보내 주세요." }).map(i => i.kind)).toEqual(["skipped"]);
+});
+
+test("a numbers, key, pages, rtf, odt, rar or 7z file counts as the document the draft promises", () => {
+	for (const ext of ["numbers", "key", "pages", "rtf", "odt", "rar", "7z"]) expect([ext, kinds({ subject: "Re: 견적", body: "견적 문서 보내드립니다.", files: [`견적서.${ext}`] })]).toEqual([ext, []]);
+});

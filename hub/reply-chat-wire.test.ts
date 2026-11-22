@@ -11,7 +11,7 @@ import { awaiting, convOfTarget, out, queue } from "./outbound.ts";
 
 type Replies = ReturnType<typeof createReplyActions>;
 const iso = (ms: number) => new Date(ms).toISOString();
-const openIn = (ref: string, conv: string, asked = iso(0)): OpenCard[] => [{ ref, conv, notice: `n-${ref}`, title: `이 답장 보낼까요? (${ref})`, asked }];
+const openIn = (ref: string, conv: string, asked = iso(0)): OpenCard[] => [{ ref, conv, notice: `n-${ref}`, title: `이 답장 보낼까요? (${ref})`, asked, shown: iso(0) }];
 const item = (ref: string, conv: string, at: number) => ({ item: `mail:${ref}`, ref, kind: "mail", app: "mail", label: "메일", conv, at, can: { send: true, revise: true, edit: true, drop: true, restore: false }, draft: { state: "pending", toLabel: "", to: "", text: "x" } });
 
 // A fake reply flow over the cards the test gives: each act and confirm is kept with its context. The typed path never lists replies.

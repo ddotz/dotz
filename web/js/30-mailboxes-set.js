@@ -69,7 +69,7 @@ function mxsTiles(cur, pick) {
 function mxsChips(o, path, add, ph, apply) {
   const l = mxsList(o, path), more = MXS.more.has(path), shown = more ? l : l.slice(0, MXS_CAP);
   const input = () => el("input", { class: "fi mxs-ci", "data-mxs-add": path, placeholder: ph, "aria-label": add, onkeydown: ev => {
-    if (ev.key === "Escape") { MXS.add = ""; mxsPaint(); } else if (ev.key === "Enter") { ev.preventDefault(); mxsChipAdd(path, ev.target.value, apply); }
+    if (ev.key === "Escape") { MXS.add = ""; mxsPaint(); } else if (plainEnter(ev)) { ev.preventDefault(); mxsChipAdd(path, ev.target.value, apply); }
   } });
   return el("div", { class: "mxs-chips" }, ...shown.map(v => el("span", { class: "chip mxs-c" }, el("span", { class: "tx", text: v }), el("button", { class: "mxs-cx", type: "button", "aria-label": TX("mail.remove_named", { name: v }), onclick: () => apply(x => { const q = mxsList(x, path), at = q.indexOf(v); if (at >= 0) q.splice(at, 1); }) }, icon("close")))),
     l.length > shown.length ? el("button", { class: "chip", type: "button", onclick: () => { MXS.more.add(path); mxsPaint(); } }, TX("mail.more_n", { n: l.length - shown.length })) : null,

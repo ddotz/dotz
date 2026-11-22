@@ -15,7 +15,7 @@ const hub = fakeHub({
 			return Response.json({ ok: true }, { status: 201 });
 		}
 		if (!off || !(url.pathname.startsWith("/api/") || url.pathname === "/custom.js")) return undefined;
-		reached();
+		if (url.pathname === "/api/state") reached();
 		return new Promise<Response>(() => {});
 	},
 });
@@ -33,7 +33,7 @@ async function openOff(path: string) {
 	off = true;
 	const hung = new Promise<void>(res => { reached = res; });
 	void v.navigate(`${hub.origin}${path}`).catch(() => {});
-	await hung;   // the new page's first request reached the gateway that does not answer
+	await hung;
 	await waitFor(v, `document.readyState === "complete" && typeof go === "function"`);
 	await run(v, "window.prGo = h => { window.__went = h; }");
 	await advanceTimers(v, 4000);

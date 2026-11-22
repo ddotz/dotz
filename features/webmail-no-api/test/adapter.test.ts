@@ -1,10 +1,10 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { mkdtempSync } from "node:fs";
+import { existsSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { list, read, search, makeDraft } from "../lib/adapter.ts";
-import { runSend, runDraft, approveSend, sendApproved, draftPath } from "../bin/mail.ts";
-import { type Ctx } from "../lib/config.ts";
+import { runSend, runDraft, approveSend, sendApproved, discardDraft, draftPath } from "../bin/mail.ts";
+import { paths, type Ctx } from "../lib/config.ts";
 import { startFakeServer, mkMail } from "./fakeserver.ts";
 
 process.env.DOTZ_DIR = mkdtempSync(join(tmpdir(), "wm-adapter-"));
@@ -53,8 +53,28 @@ test("send is refused without the owner's approval marker, allowed with it", asy
 	const refused = await runSend(ctx, srv.spec, site, draft.id, Date.now());
 	expect(refused.code).toBe(2);
 
-	approveSend(site, Date.now());
-	expect(sendApproved(site, Date.now())).toBe(true);
+	approveSend(site, Date.now(), draft.id);
+	expect(sendApproved(site, Date.now(), draft.id)).toBe(true);
 	const ok = await runSend(ctx, srv.spec, site, draft.id, Date.now());
 	expect(ok.code).toBe(0);
+});
+
+test("the approval names one draft: another draft of the site is not sent on it", async () => {
+	const site = "fake";
+	const mine = runDraft(site, 1_700_000_000_000, { to: "a@b.test", subject: "hi", body: "x" }).draft;
+	const other = runDraft(site, 1_700_000_000_000, { to: "c@d.test", subject: "yo", body: "y" }).draft;
+	approveSend(site, Date.now(), mine.id);
+	expect(sendApproved(site, Date.now(), other.id)).toBe(false);
+	expect((await runSend(ctx, srv.spec, site, other.id, Date.now())).code).toBe(2);
+	discardDraft(site, other.id);
+	expect(existsSync(draftPath(site, other.id))).toBe(false);
+	expect(sendApproved(site, Date.now(), mine.id)).toBe(true);
+});
+
+test("discard removes the draft and its own approval", () => {
+	const site = "fake";
+	const { draft } = runDraft(site, 1_700_000_000_000, { to: "a@b.test", subject: "hi", body: "x" });
+	approveSend(site, Date.now(), draft.id);
+	discardDraft(site, draft.id);
+	expect([existsSync(draftPath(site, draft.id)), existsSync(paths.approval(site))]).toEqual([false, false]);
 });

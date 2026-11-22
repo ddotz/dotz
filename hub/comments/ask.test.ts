@@ -19,3 +19,11 @@ test("a long comment is clipped to 200 characters", () => {
 	const quote = commentAsk(src, comment("가".repeat(500)), draft).split("\n").find(l => l.startsWith("> 원댓글"))!;
 	expect(quote.endsWith(`${"가".repeat(200)}…`)).toBe(true);
 });
+
+test("a card that carries a mail names the account the mail goes out from, or says none is chosen yet", () => {
+	const mail = { to: "kim@example.com", subject: "자료", body: "보내드려요", id: "RMAIL01" };
+	const lines = (m: object) => commentAsk(src, comment("자료 주세요"), draft, undefined, m as never).split("\n");
+	expect(lines({ ...mail, account: "me@example.net" })).toContain("-# 보내는 계정: 함께 보낼 메일은 me@example.net");
+	expect(lines({ ...mail, accountHeld: true })).toContain("-# 보내는 계정: 함께 보낼 메일은 계정이 아직 정해지지 않았어요");
+	expect(lines(mail).some(l => l.includes("보내는 계정"))).toBe(false);
+});

@@ -4,14 +4,19 @@
 //
 //   undefined = the app does not know this draft (another app's ref, or its store is unreadable): the notice stays as it is.
 
+/**
+ * What every app's facts also say about its store: `idShape` = the shape of the ids its generator makes; `intact` = whether the store can say a draft is gone,
+ * read without side effects (no damaged file moved aside), false while the store or a set-aside copy of it is damaged.
+ */
+export type StoreFacts = { idShape: RegExp; intact: () => boolean };
 /** A reply draft of the mail app (features/reply-drafts): `ref` is the mail key the draft answers. */
 export type MailDraftLike = { id: string; ref: string; status: string; created: string };
-export type MailFacts = {
+export type MailFacts = StoreFacts & {
 	drafts: () => readonly MailDraftLike[];
 	/** The stored mail: reply skipped / fyi (or the older noReply flag) = no reply wanted, suggest.state = the reply state ("sent" = a reply went out, also when sent from his own client). Missing = deleted at the source. */
 	record: (key: string) => { reply?: string; noReply?: boolean; suggest?: { state?: string } } | undefined;
 };
-export function mailDraftHandled(code: string, f: MailFacts): boolean | undefined {
+export function mailDraftHandled(code: string, f: Omit<MailFacts, keyof StoreFacts>): boolean | undefined {
 	const all = f.drafts();
 	const d = all.find(x => x.id === code);
 	if (!d) return undefined;
@@ -34,7 +39,7 @@ export function mailKeyOfRef(ref: string, conv: string | undefined): string | un
  * A pending app draft of the same mail does not make it handled (that draft's own card is the same item, see mailItemKey).
  * The conversation carries the key, so the check never guesses a key from the id alone: a conversation that is not that mail's is unknown (undefined).
  */
-export function mailRefHandled(ref: string, conv: string | undefined, f: MailFacts): boolean | undefined {
+export function mailRefHandled(ref: string, conv: string | undefined, f: Omit<MailFacts, keyof StoreFacts>): boolean | undefined {
 	const key = mailKeyOfRef(ref, conv);
 	if (!key) return undefined;
 	const m = f.record(key);
@@ -52,12 +57,12 @@ export function mailItemKey(ref: string, conv: string, drafts: () => readonly Ma
 
 /** A reply draft of a comment source (hub/comments): handled when the comment no longer waits (reply sent, answered on the platform, 답장 안 함, deleted). */
 export type CommentDraftLike = { code: string; commentId: string; status: string; created: number };
-export type CommentFacts = {
+export type CommentFacts = StoreFacts & {
 	drafts: () => CommentDraftLike[];
 	/** undefined = the comment is gone; else whether it still waits for a reply. */
 	waiting: (commentId: string) => boolean | undefined;
 };
-export function commentDraftHandled(code: string, f: CommentFacts): boolean | undefined {
+export function commentDraftHandled(code: string, f: Omit<CommentFacts, keyof StoreFacts>): boolean | undefined {
 	const all = f.drafts();
 	const d = all.find(x => x.code === code);
 	if (!d) return undefined;
@@ -68,12 +73,12 @@ export function commentDraftHandled(code: string, f: CommentFacts): boolean | un
 
 /** A KakaoTalk reply draft: handled when the room no longer waits (his own message in the room, a finished send, 답장 안 함). */
 export type KakaoDraftLike = { code: string; chatId: string; status: string; created: string };
-export type KakaoFacts = {
+export type KakaoFacts = StoreFacts & {
 	drafts: () => Promise<KakaoDraftLike[]>;
 	/** undefined = the room is not watched or the database cannot be read; else whether the room still waits for a reply. */
 	waiting: (chatId: string) => Promise<boolean | undefined>;
 };
-export async function kakaoDraftHandled(code: string, f: KakaoFacts): Promise<boolean | undefined> {
+export async function kakaoDraftHandled(code: string, f: Omit<KakaoFacts, keyof StoreFacts>): Promise<boolean | undefined> {
 	const all = await f.drafts();
 	const d = all.find(x => x.code === code);
 	if (!d) return undefined;
@@ -84,8 +89,17 @@ export async function kakaoDraftHandled(code: string, f: KakaoFacts): Promise<bo
 }
 
 export type AllFacts = { mail: MailFacts; comment: CommentFacts; kakao: KakaoFacts };
-/** The ref of a send approval is a draft id (mail), a draft code (comment, kakao). The first app that knows it answers. */
+/**
+ * The ref of a send approval is a draft id (mail), a draft code (comment, kakao). A ref shaped like one app's id is asked of that app alone and is
+ * handled when that app's store was read, is intact (no damaged or set-aside copy that may still hold the draft) and lacks it; a store's `drafts()`
+ * throws when it cannot be read, which keeps the card open (the caller's catch). Any other ref is asked of every app, and the first that knows it
+ * answers; none knowing it keeps the card open.
+ */
 export async function draftHandled(ref: string, facts: AllFacts, conv?: string): Promise<boolean> {
 	if (ref.startsWith("mail:")) return mailRefHandled(ref, conv, facts.mail) ?? false;
+	const owner = (["mail", "kakao", "comment"] as const).find(app => facts[app].idShape.test(ref));
+	if (owner === "mail") return mailDraftHandled(ref, facts.mail) ?? facts.mail.intact();
+	if (owner === "comment") return commentDraftHandled(ref, facts.comment) ?? facts.comment.intact();
+	if (owner === "kakao") return (await kakaoDraftHandled(ref, facts.kakao)) ?? facts.kakao.intact();
 	return mailDraftHandled(ref, facts.mail) ?? commentDraftHandled(ref, facts.comment) ?? (await kakaoDraftHandled(ref, facts.kakao)) ?? false;
 }

@@ -7,11 +7,11 @@ import { paths } from "./config.ts";
 import { emit } from "./events.ts";
 import { flush, inboxText, sendWeb } from "./intake.ts";
 import { answerDecision, type DecisionSend, resetNoticesForTest, type Notice } from "./notices.ts";
-import { putDecision } from "./notices-store.ts";
+import { flushNotices, putDecision } from "./notices-store.ts";
 import { orch } from "./orchestrator.ts";
 import { setUpdateNow, type UpdateNow } from "./update-now.ts";
 
-const stored = (): Notice[] => JSON.parse(readFileSync(paths.notices, "utf8"));
+const stored = (): Notice[] => (flushNotices(), JSON.parse(readFileSync(paths.notices, "utf8")));
 const decisions = () => stored().filter(n => n.kind === "decision");
 const byTitle = (title: string) => decisions().find(n => n.title === title)!.decision!;
 // An hour ago, not a fixed day: a question older than its answer window (ANSWER_WINDOW_MS, 72 h) is expired and nothing answers it. On the clock

@@ -83,7 +83,7 @@ for (const [w, h] of [[390, 844], [1280, 900]] as const) {
 			expect(r[3]!.act).toBe("선택");
 			expect(await q(`return ${LIST}.textContent`)).not.toContain("보내기 확인");
 			// the same 3 are the one 답장 초안 확인 row, the last of the list: the count per source under its title and the total at its right
-			expect(await q(`const r = document.querySelector('#home-now .hr[data-k="replies"]'); return [r === ${LIST}.lastElementChild, r.querySelector(".nm").textContent, r.querySelector(".ha").textContent, r.querySelector(".nb").textContent]`)).toEqual([true, "답장 초안 확인", "기타 3", "3"]);   // the fixture's drafts name no app, so they count under 기타
+			expect(await q(`const r = document.querySelector('#home-now .hr[data-k="replies"]'); return [r === [...${LIST}.querySelectorAll(":scope > .hr")].pop(), r.querySelector(".nm").textContent, r.querySelector(".ha").textContent, r.querySelector(".nb").textContent]`)).toEqual([true, "답장 초안 확인", "기타 3", "3"]);   // the fixture's drafts name no app, so they count under 기타
 			expect(await q(`return ${LIST}.querySelectorAll(":scope > .hr").length`)).toBe(8);
 			// no row of the card starts with a dot
 			expect(await q(`return ${LIST}.querySelectorAll(".dot").length`)).toBe(0);
@@ -96,8 +96,8 @@ for (const [w, h] of [[390, 844], [1280, 900]] as const) {
 			if (SHOTS) await Bun.write(join(SHOTS, `B-home-needs-${w}.png`), await view.screenshot());
 		}, 15_000);
 
-		test("a long list holds every row and scrolls past six; the count stays the item count", async () => {
-			expect(await q(`return getComputedStyle(${LIST}).overflowY`)).toBe("auto");
+		test("a long list holds every row, shows four and says how many more; the count stays the item count", async () => {
+			expect(await q(`return [${LIST}.querySelectorAll(":scope > .hr:not([hidden])").length, ${LIST}.querySelector(".hn-more").textContent]`)).toEqual([4, "4개 더 보기"]);
 			const r = await asked();
 			expect(r).toHaveLength(7);
 			expect(r.slice(-4).map(x => x.act)).toEqual(["선택", "답변", "답변", "답변"]);

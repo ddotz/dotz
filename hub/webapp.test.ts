@@ -142,12 +142,12 @@ describe("shell update", () => {
 		let swMsg: ((ev: unknown) => void) | undefined, reloads = 0, now = 1_000_000;
 		const posted: unknown[] = [];
 		const doc = { visibilityState: "visible", body: { append: (n: { onclick: () => void }) => chips.push(n) }, querySelector: (s: string) => (s === ".shell-chip" ? chips[0] ?? null : null), addEventListener: (t: string, h: () => void) => { docH[t] = h; } };
-		const ui = { ta: { value: "" }, ATT: [] as unknown[], OV: [] as unknown[], NT: { open: false }, SUBD: null as unknown };
+		const ui = { ta: { value: "" }, ATT: [] as unknown[], OV: [] as unknown[], NT: { open: false }, SUBD: null as unknown, RA: { fix: new Map<string, unknown>() }, writing: false };
 		const nav = { serviceWorker: { addEventListener: (_t: string, h: (ev: unknown) => void) => { swMsg = h; }, controller: { postMessage: (m: unknown) => posted.push(m) } } };
 		const loc = { hash: "#chat/main", reload: () => { reloads++; } };
-		new Function("sessionStorage", "location", "Date", "ta", "ATT", "OV", "NT", "SUBD", "document", "el", "$", "current", "target", "chatStick", "chatAnchor", "convListing", "navigator", "PWA", "homeTop", `${i18nPrelude()}${block}`)(
+		new Function("sessionStorage", "location", "Date", "ta", "ATT", "OV", "NT", "SUBD", "document", "el", "$", "current", "target", "chatStick", "chatAnchor", "convListing", "navigator", "PWA", "homeTop", "raWriting", "mbWriting", `${i18nPrelude()}${block}`)(
 			{ getItem: (k: string) => mem.get(k) ?? null, setItem: (k: string, v: string) => mem.set(k, v) }, loc, { now: () => now },
-			ui.ta, ui.ATT, ui.OV, ui.NT, ui.SUBD, doc, (_t: string, p: { onclick: () => void }) => p, () => ({ scrollTop: 42 }), "chat", "main", false, () => ({ ts: "2026-10-21T06:00:00Z", off: 7 }), () => false, nav, { reg: null }, () => {});
+			ui.ta, ui.ATT, ui.OV, ui.NT, ui.SUBD, doc, (_t: string, p: { onclick: () => void }) => p, () => ({ scrollTop: 42 }), "chat", "main", false, () => ({ ts: "2026-10-21T06:00:00Z", off: 7 }), () => false, nav, { reg: null }, () => {}, () => ui.RA.fix.size > 0, () => ui.writing);
 		const post = () => swMsg!({ data: { type: "shell-updated" } });
 
 		swMsg!({ data: { type: "something-else" } });
@@ -178,6 +178,14 @@ describe("shell update", () => {
 		post();
 		expect(reloads).toBe(2);
 		ui.ATT.length = 0;
+		ui.writing = true;
+		post();
+		expect(reloads).toBe(2);
+		ui.writing = false;
+		ui.RA.fix.set("R1", {});
+		post();
+		expect(reloads).toBe(2);
+		ui.RA.fix.clear();
 		post();
 		expect(reloads).toBe(3);
 

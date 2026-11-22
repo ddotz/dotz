@@ -3,10 +3,10 @@
 The full install, command, screen and API reference. Start at the [README](../README.md).
 
 dotz is a personal assistant that stays on, on your own machine. It runs a headless OmO orchestrator behind a gateway
-(launchd `dev.dotz.gateway`), so nothing has to stay open on your desktop. You talk to it in Discord or in a tailnet-only
-web app, and it does the work in project sessions.
+(launchd `dev.dotz.gateway`), so nothing has to stay open on your desktop. You talk to it in Discord or in the web
+app, and it does the work in project sessions.
 
-- Always on. Reach it from your phone in Discord, or from the web app on your tailnet.
+- Always on. Reach it from your phone in Discord, or from the web app (over Tailscale, a Cloudflare address or on this computer only).
 - One session per project. Every project folder gets its own session and its own channel.
 - It asks first. Anything that leaves the machine waits for your approval.
 - It watches. Mail, calendar and comments are checked and reported back to you.
@@ -22,8 +22,9 @@ curl -fsSL https://raw.githubusercontent.com/ddotz/dotz/main/install.sh | sh    
 curl -fsSL https://raw.githubusercontent.com/ddotz/dotz/main/install.sh | sh -s -- --service  # also start the gateway
 ```
 
-The wizard asks for the bot's name and tone, the Discord bot token (with the MESSAGE CONTENT intent enabled), whether to
-use Tailscale for the web app, and on macOS the permissions dotz needs. Then:
+The wizard asks for the bot's name and tone, which messengers to connect (Discord, Slack, Telegram, JANDI), how to reach the web app
+(Tailscale, Cloudflare or this computer only), and on macOS the permissions dotz needs. It asks for no Discord IDs or token: the
+connection flow of each chosen messenger finds them. Then:
 
 1. Install. The command puts bun, OmO and dotz in place (`~/.local/share/dotz`) and creates `~/.dotz`.
 2. Run the wizard. It writes `~/.dotz/config.json` and the identity, and starts the gateway.
@@ -41,7 +42,7 @@ forked"). Fork only if you want to change dotz's own code, then install with
 **Runtime.** Every role (orchestrator, sessions and their task subagents) runs on OmO (`omo`, package `omo-ai`) unless
 `config.json` names another runtime (`runtime`, `orchestrator.runtime`, `lanes.runtime`). Setup writes `"omo"` for both
 roles, an unknown name falls back to OmO, and the gateway's small model calls (translation, card summaries) use OmO
-too. omp (oh-my-pi) and Claude Code are explicit opt-ins; what changes then is in "Runtime differences".
+too. omp (oh-my-pi) and Claude Code can be picked in the wizard instead; what changes then is in "Runtime differences".
 
 ## Install and onboard
 
@@ -72,29 +73,28 @@ calendar; `bun add -g zele`, accounts through zele's own login). Tailscale on ma
 `tailscale` is not on PATH. A missing tool is skipped with a note; Aside is not asked on Linux.
 
 The wizard's first step is the harness: it lists OmO, omp, Claude Code and Codex with their install state, takes OmO
-by default (Codex is listed but has no adapter yet), installs OmO with bun when it is the pick and missing, and checks
+by default (Codex is listed but has no adapter yet), installs the pick when it is missing (OmO and omp with bun, Claude Code with its own installer `curl -fsSL https://claude.ai/install.sh | bash` into `~/.local/bin`), and checks
 the login without reading credentials (`omo auth check --json`: an account pool with at least one account counts as
 signed in; `claude auth status`; `omp auth export`, parsed in memory: a store with a credential counts as signed in). Sign-in itself
 happens in the harness (`omo`, then `/login`; another `/login` adds an account to the pool; `omp login`). The pick is written to `orchestrator.runtime` and `lanes.runtime`; `--answers` takes `runtime`
-(`omo` | `omp` | `claude`) and `install_harness: true` (OmO and omp install with bun; a harness that is not installed stops the run with
-exit 1 before anything is written). With omp the default model is omp's own when the Anthropic default is not in `omp models --json`. Tailscale is optional: without it the web app stays off and
-Discord works. On Linux setup writes a systemd user unit (`~/.config/systemd/user/dotz-gateway.service`)
+(`omo` | `omp` | `claude`) and `install_harness: true` (each of the three installs as above, in the web onboarding too; a harness that is not installed stops the run with
+exit 1 before anything is written). With omp the default model is omp's own when the Anthropic default is not in `omp models --json`. Web access (`web.access`: `tailscale`, `cloudflare` or `local`) defaults to Tailscale only when the install has a Tailscale login; otherwise it starts on this computer only, and the gateway and Discord work either way. On Linux setup writes a systemd user unit (`~/.config/systemd/user/dotz-gateway.service`)
 instead of the launchd plist and skips the Aside and macOS-permission steps.
 
 The wizard (Korean) then asks for the bot's name, character and tone (presets or your own line; Enter takes the default,
 a short casual-polite tone), the notice style, what the bot calls you (optional; empty = no
-title at all) and an optional avatar, then Discord and web access. The identity
+title at all) and an optional avatar, then the messengers to connect and the web access. The identity
 lands in `~/.dotz/identity/IDENTITY.md` and drives everything: how the bot talks, its Discord username/avatar, the
 category names (`<name>`, `<name> 작업`), and the terminal phrase
 "<name>모드 켜" (omp only). Re-run setup any time to change it; existing answers are the defaults.
 
 Setup writes `~/.dotz/config.json` (no secrets, `runtime: "omo"` for the orchestrator and sessions), keeps the bot token in
 `~/.dotz/secrets/` (0600), generates and (with `--load`) starts the gateway service, and runs `tailscale serve` for
-the web app on the tailnet only: an interactive run with web logins does it itself, an `--answers` run only with
+the web app on the tailnet (only when web access is Tailscale): an interactive run with web logins does it itself, an `--answers` run only with
 `--tailscale`. The gateway re-checks on every start: with web logins set and no proxy on `web.tailscale_https_port`, it
 runs the same `tailscale serve` (a port another service already serves is left alone and logged). OmO processes get the dotz extension from the gateway (`--extension`); nothing is installed into OmO's
 agent directory. Only when omp is installed is the extension also linked into omp (`~/.omp/agent/extensions/dotz`) for
-terminal mode. Setup prints the bot invite link, then the web address as the last block (`웹 앱 주소: https://...`,
+terminal mode. Setup drives the connection flow of each chosen messenger, then prints the web address as the last block (`웹 앱 주소: https://...`,
 plus a line on opening it from another device). With `--load` it first waits until the gateway (40 s) and the
 tailnet serve (15 s) answer; `--open` opens the browser only once both did.
 
@@ -152,7 +152,7 @@ gateway after a restart (`/restart gateway`).
 
 Discord: create a dedicated bot in the Developer Portal, enable the MESSAGE CONTENT intent, give its token to setup,
 and invite it with the printed link. The gateway creates two categories named after the bot, e.g. "땃쥐" (the main
-channels 대화, 알림, 작업로그) and "땃쥐 작업" (one channel per project, topic or session, named plainly with no emoji). Every text channel in these two categories
+channels 대화, 알림, 작업내역) and "땃쥐 작업" (one channel per project, topic or session, named plainly with no emoji). Every text channel in these two categories
 is a work channel; threads in them are sub-items. It listens to nothing else, and only the configured owner id can
 command it.
 
@@ -331,7 +331,7 @@ conversation every night whatever its size, with the open-request list, a handov
 only; a session file over `rotate_mb` starts fresh in both cases, and conversation sessions always follow the size rule.
 The start waits until the session is at rest (no turn, held or unstarted prompt, running worker, open or deferred request,
 queued or running compaction, armed usage-limit resume timer, pending restart or model switch, error or error streak, and quiet for
-10 minutes), asking again every minute for two hours after `nightly_at`; then the night is skipped with one hub-log line. When the session has a real exchange after its last compaction summary (OmO only, read from the session file), it is compacted first through the compaction ahead of time (an owner message aborts it) and starts fresh once that has ended, so the handover carries a fresh summary; at most two such compactions a night, then the night is skipped with the same line. The last run date is kept
+10 minutes), asking again every minute for two hours after `nightly_at`; then the night is skipped with one hub-log line. When the session has a real exchange after its last compaction summary (OmO only, read from the session file), it is compacted first through the compaction ahead of time (an owner message aborts it) and starts fresh once that has ended, so the handover carries a fresh summary; at most two such compactions a night, then the night is skipped with the same line. A compaction ahead of time (at rest or for the night) is skipped when the session's last compaction ended less than 2 hours ago or it would remove under 40K tokens (the context minus what the last compaction left); the night's skip writes one hub-log line and the night then starts fresh without it. The owner's `/compact` and the compaction at the compaction point always run. The last run date is kept
 in `~/.dotz/lane-hygiene.json`; a run missed while the gateway was down is made up a minute after the next start.
 Settings apply when a session starts or resumes.
 `orchestrator.keep_recent` (default `10000`, minimum `5000`, in OmO's own estimate of 4 characters per token, so `10000` keeps about 40,000 characters) is how much recent conversation the main session and the conversation sessions keep word for word at a compaction; the gateway writes it to `<data folder>/.omo/settings.json` (only `compaction.keepRecentTokens`, other keys of that file stay) when it starts one, and starts them with `--approve`, which OmO needs to read a project settings file and which leaves the folder as trusted as it is without the file. Lanes are not affected.
@@ -386,13 +386,17 @@ and at which level, and the baselines the checks compare with).
   at least 1M tokens or 10 more occurrences) against a baseline kept in the doctor's file; tokens: one finding per token-audit warning class (the audit still writes its report `~/.dotz/logs/token-audit-YYYYMMDD.md` and
   14 days of totals in `~/.dotz/token-audit.json`; the reflection digest cites them).
 - *Telling.* A finding is told when it is new, when its level reached 1.5x the level last told, or 7 days after it was last told while still present; a resolved one is dropped (back again = new). Nothing
-  notable: one log line, nothing posted anywhere. Self-fixed things are one line together. A choice block appears only for a finding with a decision. The item is an alert when anything in it is not fixed;
+  notable: one log line, nothing posted anywhere. Self-fixed things are one line together. Each open problem is one line with what to do (failure classes share one line, token classes another;
+  a step several lines share is said once after them), then the count of things told before and still there and the checks that found nothing; a re-told problem says since when it lasts.
+  Anything the owner may answer is a decision card at the end of the message (the alert conversation has no composer and no buttons, so no line asks a question): a finding with its own question
+  (`decide`) is one card, and a finding that offers a look at its cause (`ask`) is one card titled `<what happened> · 원인을 찾아볼까요?` with `찾아봐요` (the answer goes to the model like any card answer) and `이번엔 둬요` (closes the card, starts no turn); findings said together on one line share one card. The item is an alert when anything in it is not fixed;
   when dotz fixed everything itself it is a worklog entry only. The night pass runs in its own process (`bun hub/doctor.ts --night`): reading a week of session logs
   peaks at several hundred MB on a busy install, and the gateway's heap never holds it. Prompt health (`hub/prompt-health.ts`) is one of the checks, and so is the one check that calls a model, the prompt review
   (`hub/prompt-review.ts`): weekly, or after 3 days when prompt health saw real growth; the install's ordinary model, never Fable or max/xhigh effort, skipped while the
   usage window is tight; about 23K input tokens for a 26K-character contract (Korean text is about 1.1 characters a token; at the 40K-character cap about 36K) and at most 2K output tokens a run, the cost written into each of its findings. It proposes only: a line changes after the owner picks it.
 - *Now vs. morning.* The immediate alerts stay as they were: gateway down, a login lost, a watch failing twice, an update failure, usage limits. The doctor only adds the morning "still" and trend items.
-- *Try it.* `bun hub/doctor.ts --dry` runs every check on the real data dir, writes nothing, prints the findings and the notice it would post, and ends with `RESULT {ms, peakRssMb, findings}`.
+- *Try it.* `bun hub/doctor.ts --dry` runs every check on the real data dir, writes nothing, prints every finding in the owner's language in the morning notice's layout, then what the morning notice would carry (only what is new or grew), the check time in the owner's time zone, and ends with `RESULT {ms, peakRssMb, findings}`.
+  `dotz doctor` is the same run from the owner's terminal (`hub/doctor-cli.ts`): the report without the RESULT line; `dotz doctor --json` prints only the RESULT object. Nothing is posted or saved.
   `bun hub/token-audit.ts --dry [--hours N]` and `bun hub/failure-report.ts [--days 7] [--json | --md <path> | --check --state <file>]` stay as command-line tools (the latter prints one line per class whose
   share grew since the baseline in the state file); neither has a timer of its own any more.
 
@@ -470,7 +474,7 @@ prints what is pending without installing.
 
 ## Web app screens
 
-The web app (tailnet only) is a phone-first messenger plus status screens.
+The web app is a phone-first messenger plus status screens.
 
 - *Chat*: a chat list (the orchestrator first, then projects by latest message). Read positions live on the server, unread
   counts and a "새 메시지" divider come from them. A setting picks what the chat tab opens on return (last conversation,
@@ -596,7 +600,7 @@ All behind the same auth as the rest of `/api`.
   conversations, so without `real: true` it answers 400 with the last report; probe processes outside a check need `DOTZ_E2E=1`; 202, poll the
   GET; progress also streams as `{kind: "runtime_check"}` on `/api/events`); `POST /api/runtimes/<id>/use {roles?: ["orchestrator","lanes"]}`
   writes `orchestrator.runtime` / `lanes.runtime` to `config.json` and answers 409 with `{error}` when the runtime is not installed or has no
-  dotz adapter, is not signed in (`login.checked && !login.ready`; read fresh with `omo auth check`, `omp auth export` or `claude auth status`, never printed or stored), has no report, its verdict is `blocked`, or the report was made for another version. `omo` (the default) needs no check report but needs its login, and `omp` (opt-in) needs a passing real check like the others (a report with a `blocked` verdict, or one made for another version, refuses it). `current` is what the running gateway's processes use, `pending` what `config.json` names (the switch writes only the file): the change applies when the gateway restarts (`POST /api/update/restart`), `restart_needed` says they differ.
+  dotz adapter, is not signed in (`login.checked && !login.ready`; read fresh with `omo auth check`, `omp auth export` or `claude auth status`, never printed or stored), has no report, its verdict is `blocked`, or the report was made for another version. `omo` (the default) needs no check report but needs its login, and `omp` needs a passing real check like the others (a report with a `blocked` verdict, or one made for another version, refuses it). `current` is what the running gateway's processes use, `pending` what `config.json` names (the switch writes only the file): the change applies when the gateway restarts (`POST /api/update/restart`), `restart_needed` says they differ.
   `GET /api/runtimes/<id>/login` -> `{id, checked, ready, accounts, command}` (a fresh read; `command` is what signs in, to type in the terminal), and `POST .../verify` answers 409 `{login_required: true, error, command}` before any paid session starts when the runtime is signed out. `limits` are the bounds the check runs with: `items` probes, `item_s` seconds each (`DOTZ_VERIFY_TIMEOUT_MS`, default 90 s), `worker_s` for the `workers_*` items, `max_min` minutes in all in the worst case.
   The check (`hub/runtime/verify.ts`) runs the adapter's probes for 14 items (15 on omp, which adds `user_isolation`; core: `turn`, `model_effort`, `resume`, `usage_report`,
   `deny_lines`); a failing core item blocks the switch, a failing non-core item is `adapted` (the hub substitutes, e.g. handover from the
@@ -780,7 +784,9 @@ changes go back on top as a local patch when they still apply and the tests stil
 clean and the patch stays in the backup, which the bot carries over to the custom layer (docs/customization.md, Surviving updates).
 An update is otherwise fast-forward, runs `bun install` when needed and the tests, and returns to the old commit if they fail. With
 `self_update.auto_apply: true` (default off) the daily check applies it itself, the same way, and restarts through the idle gate.
-A failure alerts with a choice block.
+A failure alerts with a choice block. A commit whose `bun install` or tests failed, or that the rollback watchdog undid, is not tried
+again (top bar, settings or the daily check) until a newer commit arrives; `bun hub/selfupdate.ts --apply` (what the bot runs when you
+ask) tries it again.
 
 **Setup steps after an update** (`hub/migrations.ts`). A feature that needs a one-time step for existing installs ships it as a migration: the gateway runs every migration it has not run yet at start (so after the restart that applies an update), records the id in `<data dir>/migrations.json`, logs one line each, and posts one line listing what changed. A migration is idempotent, never deletes user data, and on failure posts a Korean notice and is retried at the next start. Today: `site-comment-apps` (an app instance in `custom/apps.json` for every website comment source that has none, the same as `features/comments/bin/onboard.ts on --app site --name X`) and `legacy-sns-tokens` (finding the earlier YouTube/Instagram login asks the owner once, `1) 가져오기` / `2) 안 가져오기`; only yes copies, 0600, values never printed) and `card-audit` (once, after the start's own card passes: closes the send-approval cards the send records prove went out, refreshes stale refs, then gives the install's orchestrator one turn to compare every app with the send records and summarize for the owner; it never sends, resends, approves or discards, a card nothing proves stays open, an install with no card gets no turn, and a gateway with no orchestrator leaves it for a later start). The `onboard.ts` commands stay for manual use.
 
@@ -795,7 +801,13 @@ through to the next one. Files you changed inside the code folder are not carrie
 
 The launchd job keeps the old code until it is restarted. Restart it from the gateway (`/restart gateway` or
 `POST /api/gateway/restart`): it waits until the orchestrator and every session are idle (at most 20 min), then exits and
-launchd starts the new code. `launchctl kickstart -k gui/$(id -u)/dev.dotz.gateway` restarts at once and cuts running
+launchd starts the new code. A restart the gateway asks for by itself (the omp update) or an agent asks for (`POST
+/api/gateway/restart` without `{"now": true}`) that would change the prompt head (the main session's MODE and identity note, the
+dotz extension sources or the omp binary) waits, holding no work, until the main context is at most 60K tokens (right after a
+compaction or the nightly fresh start), at most once a day (`<data dir>/restart-head`) and never more than 24 h. It goes at once
+when the gateway's own code (`hub/`, `features/`) changed since it started, and so does one that changes no prompt head, the
+daily auto-apply, the OmO engine watch, `{"now": true}` and every restart the owner asks for (the web buttons, `/restart gateway`).
+`launchctl kickstart -k gui/$(id -u)/dev.dotz.gateway` restarts at once and cuts running
 turns short.
 
 Nothing is lost either way: a message counts as handled when it is answered, not when it arrives. Unanswered prompts

@@ -6,6 +6,7 @@ const SET_PAGE = {
   display: { build: () => displayPage() },
   update: { build: () => updateSection() },
   runtime: { build: () => { const s = hvSection(); return s.length ? s : [emptyNode(UPD.info && UPD.info.error ? TX("settings.runtime.check_failed") : TX("settings.runtime.checking"))]; } },
+  schedules: { build: () => schedPage() },
 };
 // A screen without a section in web/index.html gets its empty one here, since go() needs one for every view: a settings page holds its
 // box, and 카드 추가·수정 (web/custom.js cardForm) is filled by the custom layer (the demo's own index.html has no custom layer).
@@ -105,6 +106,7 @@ function settingsList(go) {
     ...dskSettings(),
     stSec(TX("common.apps")), stList(
       stRow("bell", TX("settings.page.notifications"), stPushSub(), () => go("notifications")),
+      stRow("list", TX("settings.page.schedules"), TX("settings.row.schedules"), () => go("schedules")),
       navOff("apps") ? null : stRow("apps", TX("settings.row.apps"), "", () => go("apps")),
       stRow("spark", TX("settings.row.intro"), "", () => introOpen()),
       stRow(themeIc(), TX("settings.page.display"), [themeIs() === "dark" ? TX("settings.theme.dark") : TX("settings.theme.light"), chatTabMode() === "main" ? TX("settings.row.chat_tab_main") : TX("settings.row.chat_tab_last")].join(" · "), () => go("display"))),

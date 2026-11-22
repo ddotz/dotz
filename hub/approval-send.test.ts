@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { createApprovalSender, refOfQuestion, sendActionOf, sendArgv, type SendResult } from "./approval-send.ts";
+import { createApprovalSender, outcomeOf, refOfQuestion, runCli, sendActionOf, sendArgv, type SendResult } from "./approval-send.ts";
 import { reasonOf } from "./reply-reasons.ts";
 
 const said = (o: object) => `DOTZ_SEND ${JSON.stringify(o)}`;
@@ -159,6 +159,37 @@ describe("approval sender", () => {
 		expect(logged.filter(l => l.startsWith("approved send D1") && l.includes("site said: duplicate text"))).toHaveLength(1);
 	});
 
+	test("a long error output after the result line keeps the line: surely not sent, not 'may have gone out'", async () => {
+		const script = `console.log(${JSON.stringify(said({ sent: "no", code: "offline" }))}); console.error("w".repeat(6000)); process.exit(1);`;
+		const r = await runCli([process.execPath, "-e", script]);
+		expect(r.out.length).toBeLessThan(4500);
+		expect(outcomeOf(r)).toEqual({ sent: "no", code: "offline" });
+	});
+
+	test("a report that throws is logged and leaves no place stuck sending", async () => {
+		const g = gatedRun();
+		const logs: string[] = [];
+		const s = createApprovalSender({
+			kind: ref => PLACES[ref],
+			run: g.run,
+			report: r => {
+				if (r.state === "sent") throw new Error("EACCES: permission denied");
+			},
+			log: l => void logs.push(l),
+		});
+		expect(s.enqueue({ ref: "D1", conv: "ch:1", action: "send", title: "q (D1)" })).toBe(true);
+		await g.startedCount(1);
+		g.finish("D1");
+		await s.idle();
+		expect(s.results().find(r => r.ref === "D1")?.state).toBe("sent");
+		expect(logs.some(l => l.includes("EACCES"))).toBe(true);
+		expect(s.enqueue({ ref: "D2", conv: "ch:1", action: "send", title: "q (D2)" })).toBe(true);
+		await g.startedCount(2);
+		g.finish("D2");
+		await s.idle();
+		expect(s.results().find(r => r.ref === "D2")?.state).toBe("sent");
+	});
+
 	test("the send commands are the ones the bot runs", () => {
 		expect(sendArgv("comment", "D1", "send-mail", "bun").slice(2)).toEqual(["send", "D1", "--only", "mail"]);
 		expect(sendArgv("comment", "D1", "send-mail", "bun", true)!.slice(2)).toEqual(["send", "D1", "--only", "mail", "--retry"]);
@@ -167,5 +198,19 @@ describe("approval sender", () => {
 		expect(sendActionOf("고치기")).toBeUndefined();
 		expect(sendActionOf("어떻게 보낼지 직접 입력")).toBeUndefined();
 		expect(refOfQuestion("이대로 보낼까? (D2jwqz9)")).toBe("D2jwqz9");
+	});
+
+	test("a reply that went up while its mail failed is told with the mail's own reason (CM-7)", async () => {
+		const out = [said({ sent: "yes", part: "reply" }), said({ sent: "maybe", code: "unknown", part: "mail", detail: "smtp refused" })].join("\n");
+		expect(outcomeOf({ code: 1, out })).toMatchObject({ sent: "partial", done: 1, total: 2, rest: "maybe" });
+		const reports: SendResult[] = [];
+		const s = createApprovalSender({ kind: ref => PLACES[ref], run: async () => ({ code: 1, out }), report: r => void reports.push(r), log: () => undefined });
+		s.enqueue({ ref: "D1", conv: "comment:site-a", action: "send", title: "q (D1)" });
+		await s.idle();
+		expect(reports.at(-1)?.text).toBe("답글은 올렸고 메일은 못 보냈어요: smtp refused");
+		const refused = [said({ sent: "yes", part: "reply" }), said({ sent: "no", code: "attach_mismatch", part: "mail", detail: "첨부를 확인해 주세요: 본문에 쓴 파일이 안 붙었어요" })].join("\n");
+		expect(outcomeOf({ code: 1, out: refused })).toMatchObject({ sent: "partial", rest: "no", code: "attach_mismatch" });
+		expect(outcomeOf({ code: 0, out: [said({ sent: "yes", part: "reply" }), said({ sent: "yes", part: "mail" })].join("\n") })).toEqual({ sent: "yes" });
+		expect(outcomeOf({ code: 1, out: [said({ sent: "no", code: "offline", part: "reply" }), said({ sent: "no", code: "offline", part: "mail" })].join("\n") })).toEqual({ sent: "no", code: "offline" });
 	});
 });

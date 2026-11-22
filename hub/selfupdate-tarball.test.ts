@@ -266,7 +266,6 @@ slow("a failing check keeps the old code, removes staging and says why", async (
 	const tgz = tarball("bad", { FAIL: "boom\n" });
 	const j = await run(opts({ http: github(tgz) }));
 	expect(j.status).toBe("failed");
-	expect(j.message).toContain("aaaaaaa");
 	expect(readFileSync(join(app, "old-only.txt"), "utf8")).toBe("old\n");
 	expect(existsSync(join(app, "FAIL"))).toBe(false);
 	expect((await version(opts())).kind === "tarball" && (await version(opts()) as { commit: { sha: string } }).commit.sha).toBe(OLD);

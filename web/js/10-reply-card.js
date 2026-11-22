@@ -151,36 +151,47 @@ function rqOrigNode(key, o) {
 // the time), the mail it answers as a quote, the subject, the 받는이 line folded to one button (draftRecvFold, below) and the 첨부 줄.
 // o: { t (the mail's conversation), at, edit (the 받는이 and 첨부 rows can change), pc, tail (nodes at the head's end), warn (a box for the 첨부 warnings),
 // seen (the brief lines were shown already: 11-mailtext.js mailLinesOpen), src (the head's source word; "" inside the 메일 screen, where it says nothing new) }
-const rqRcptName = s => { const a = String(s || "").split(/\s*,\s*/)[0].trim(), m = /^"?([^"<]*?)"?\s*<([^>]*)>$/.exec(a); return m ? m[1].trim() || m[2] : a; };
+const RQ_HIDDEN = "[\\u200b-\\u200f\\u202a-\\u202e\\u2060-\\u2064\\u2066-\\u2069\\ufeff]";
+const RQ_HIDDEN_ANY = new RegExp(RQ_HIDDEN), RQ_HIDDEN_ALL = new RegExp(RQ_HIDDEN, "g");
+const rqClean = s => String(s || "").replace(RQ_HIDDEN_ALL, "");
+const rqWho = s => {
+  const a = rqClean(s).trim(), m = /^"?([^"<]*?)"?\s*<([^>]*)>$/.exec(a);
+  if (!m) return a;
+  const name = m[1].trim(), addr = m[2].trim();
+  return !name ? addr : name.includes("@") && name.toLowerCase() !== addr.toLowerCase() ? `${name} <${addr}>` : name;
+};
+const rqRcptName = s => rqWho(String(s || "").split(/\s*,\s*/)[0]);
 function rqMailOriginal(dr, t) {
   const m = String(t || "").startsWith("mail:") ? MAILS.get(t) : null, src = { ref: dr.ref, t };   // ref: 원문 보기 loads the full original
-  if (m) return { who: mailSender(m.from), text: m.subject || mailBrief(m, t), ...src };
+  if (m) return { who: rqWho(m.from) || String(m.from || ""), text: m.subject || mailBrief(m, t), ...src };
   if (dr.origin && dr.origin.text) return { who: "", text: dr.origin.text, ...src };
   // The mail is not on this page: 원문 보기 alone loads it. The draft's own subject ("Re: …") is not what the other side wrote, so it never stands as the quote.
   return dr.ref ? { who: "", text: "", ...src } : null;
 }
 function rqMailParts(dr, o) {
-  const m = String(o.t || "").startsWith("mail:") ? MAILS.get(o.t) : null, b = dr.brief || {}, who = (m && mailSender(m.from)) || rqRcptName(dr.to);
+  const m = String(o.t || "").startsWith("mail:") ? MAILS.get(o.t) : null, b = dr.brief || {}, who = (m && rqWho(m.from)) || rqRcptName(dr.to);
   return { cls: "rq-ml", head: { app: "mail", who, src: o.src ?? TX("common.mail"), ic: "mail", pc: o.pc || "", at: o.at || null, tail: o.tail || [] }, original: rqMailOriginal(dr, o.t),
     brief: b.summary || (!o.seen && (b.todo || b.questions)) ? el("div", { class: "rq-brief" }, b.summary ? el("div", { class: "rq-sumline", text: b.summary }) : null, o.seen ? null : mailLinesNode(b.todo, b.questions)) : null, recv: draftRecvFold(dr, { t: o.t, edit: o.edit, hold: o.hold }), subject: dr.subject,
     attach: draftFilesNode(dr, { t: o.t, edit: o.edit, warn: o.warn, hold: o.hold }) };
 }
-// The card. c: { key, cls, attrs, head (rqHeadNode), label + labelCls (a sub-head such as "답장 초안 · 메시지 2개"), to: [label, value],
-// recv (a mail draft's own 받는이·참조 rows, 10-decision-card.js draftToNode; given instead of `to`), subject (its text, or the field that stands there in the 고치기 panel),
+// The card. c: { key, cls, attrs, head (rqHeadNode), label + labelCls (a sub-head such as "답장 초안 · 메시지 2개"),
 // original: {who, text, ref} (what the draft answers) or its node, body, attach (the draft's attachments [{ name, size }], or the caller's own files node),
 // extra (nodes under the body: the mail that goes along), then one of: sent (보냈어요 at sentAt), acts (rqActsNode: { send, fix, drop, busy, press, quiet }),
 // fail (rqFailNode: the line above the buttons after a failed action), foot (a node that stands in the foot instead: 10-reply-actions.js rqSendNode, or the
 // AI line and 반영 / 닫기 of rqFixNodes) }.
+const rqRcptNode = r => el("div", { class: "rq-rcpt", "data-k": "rcpt" },
+  ...[[r.label, rqClean(r.to) || "-"], ...(r.mail ? [[TX("decision.cc"), (r.cc || []).map(rqClean).join(", ") || TX("reply.rcpt.none")], [TX("reply.rcpt.account"), r.accountHeld ? TX("reply.rcpt.account_held") : r.account || TX("reply.rcpt.account_default")]] : [])]
+    .map(([k, v]) => el("span", { class: "rq-rc" }, el("span", { class: "dr-k", text: k }), el("span", { class: "rq-rv", text: v }))));
 function rqCard(c) {
   const foot = c.foot ? c.foot : c.sent ? rqSentNode(c.sentAt) : c.acts ? rqActsNode(c.acts) : null;
   const att = c.attach && c.attach.nodeType ? c.attach : rqAttachNode(c.attach);
   const cm = !!(c.head && c.head.who);   // a comment card: its text quoted under the head, the post title a grey hint, the draft as the body
   return el("div", { class: `rq${cm ? " cm" : ""}${c.cls ? ` ${c.cls}` : ""}`, ...(c.attrs || {}) },
-    c.bare ? null : rqHeadNode(c.head),
+    c.bare ? null : rqHeadNode(c.head), c.rcpt ? rqRcptNode(c.rcpt) : null,
     c.bare || !c.original ? null : c.original.nodeType ? c.original : c.original.text || c.original.ref ? rqOrigNode(c.key, c.original) : null,   // a node: the caller's own block
     c.brief || null,
     c.label ? el("div", { class: c.labelCls || "rq-lb", text: c.label }) : null,
-    c.to ? (cm ? null : el("div", { class: "rq-to dr-to" }, el("span", { class: "dr-k", text: c.to[0] }), el("span", { class: "dr-chip", text: c.to[1] || "-" }))) : c.recv || null,   // a mail keeps its 받는이 rows
+    c.recv || null,
     c.subject && c.subject.nodeType ? c.subject : c.subject ? el("div", { class: "dr-sub rq-sub", text: c.subject }) : null,
     rqBodyNode(c.key, c.body), att, ...(c.extra || []).filter(Boolean),
     c.fail ? rqFailNode(c.fail) : null, foot);
@@ -190,7 +201,7 @@ const rqSentNode = (at = TX("decision.just_now")) => el("div", { class: "rq-sent
 // The 받는이 of a mail draft, folded to one text button under the body ("받는이 한서윤 · 답장"); it opens the rows of draftToNode in place. A draft with nobody to send to,
 // or an address that is not one, stands open from the start. Once the owner presses the button, that choice stays.
 const DR_ADDR = /^[^\s<>@,]+@[^\s<>@,]+\.[^\s<>@,]+$/;
-const draftAddr = a => DR_ADDR.test(String(a).replace(/^.*<([^>]*)>\s*$/, "$1").trim());
+const draftAddr = a => { const v = String(a).replace(/^.*<([^>]*)>\s*$/, "$1").trim(); return !RQ_HIDDEN_ANY.test(v) && DR_ADDR.test(v); };
 function draftRecvFold(d, o = {}) {
   let open = null, bad = false, panel = null;   // open: null until the owner presses the button
   const text = el("span", { class: "rq-rs" }), btn = el("button", { class: "btn text sm rq-recv", type: "button", "aria-expanded": "false", onclick: () => { open = !(open ?? bad); sync(); } }, text, icon("drop"));

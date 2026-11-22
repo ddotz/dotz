@@ -116,6 +116,9 @@ details.think .md { padding: var(--sp-1) var(--sp-2) var(--sp-2) var(--box-ind);
 .hn { border-radius: 0 0 var(--r-card) var(--r-card); background: var(--card); overflow: hidden; }
 /* A one-line state has no row to trim, and its text can sit in the box's rounded corner: nothing clips it. */
 .hn:has(> .hc-none) { overflow: visible; }
+.hn-more { display: block; width: 100%; min-height: var(--row-h); padding: var(--row-py) var(--row-px); border: 0; border-top: 1px solid var(--line); background: transparent; color: var(--fg-2); font: 500 13px/20px var(--font); text-align: left; }
+@media (hover: hover) { .hn-more:hover { background: var(--hover); } }
+.hn-more:active { background: var(--active); }
 /* A home list past six rows scrolls inside its card, with no scrollbar (08-home.js capLists sets the height of six rows); six or fewer change nothing. */
 .list-cap { position: relative; overflow: hidden auto; overscroll-behavior: contain; scrollbar-width: none; }
 .list-cap::-webkit-scrollbar { display: none; }

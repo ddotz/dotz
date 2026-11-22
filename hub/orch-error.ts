@@ -22,7 +22,7 @@ const hm = (iso: string) => new Date(iso).toLocaleTimeString("ko-KR", { timeZone
 
 // The one [ask] per error episode: Discord shows buttons for the choice block, the web a decision card, push the ask kind.
 export const errorAsk = (name: string, e: OrchError): string =>
-	`[ask] ${name}: ${e.text}. ${hm(e.since)}부터 오케스트레이터가 멈춰 있어요.\n${issueBlock("오케스트레이터를 어떻게 할까요?", [
+	`[ask] ${name}: ${e.text}. ${hm(e.since)}부터 오케스트레이터가 멈춰 있어요.\n${issueBlock("지금 다시 시작할까요, 연결이 돌아올 때까지 기다릴까요?", [
 		{ name: "다시 시작", result: "오케스트레이터만 다시 시작하고, 답하지 못한 요청을 오래된 것부터 한 번씩 다시 처리해요." },
 		{ name: "기다리기", result: "연결이 돌아오면 한 번 자동으로 다시 시도해요." },
 	])}`;

@@ -69,7 +69,7 @@ describe.each([[412], [1280]])("a lane question at %ipx", width => {
 		expect(await ev<string>(v, `document.querySelector('#v-notices .nsc-s').textContent`)).toContain("dotz 웹앱 · 외부 접속 웹앱 전환");
 		expect(await ev<string>(v, `document.querySelector(".fs-ey").textContent`)).toBe("dotz 웹앱 · 외부 접속 웹앱 전환 · 답변 필요");
 		expect(await ev<string>(v, `document.querySelector("#ds-t").textContent`)).toContain("어떻게 열까요");
-		expect(await ev<string[]>(v, `[...document.querySelectorAll(".ds-opt .ds-lb")].map(x => x.textContent)`)).toEqual(["그 주소의 웹앱으로 이동", "평소 채팅 화면에서 중계"]);
+		expect(await ev<string[]>(v, `[...document.querySelectorAll(".ds-opt .ds-lb")].map(x => x.textContent)`)).toEqual(["1그 주소의 웹앱으로 이동", "2평소 채팅 화면에서 중계"]);
 		expect(await ev<number>(v, `document.querySelectorAll(".ds-opt .ds-ds").length`)).toBe(2);
 		const wrap = await ev<{ lines: number; need: number; boxes: number }>(v, LINES);
 		expect(wrap.boxes).toBe(0);

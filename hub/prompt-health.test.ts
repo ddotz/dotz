@@ -5,6 +5,7 @@ import { join } from "node:path";
 import type { Finding } from "./doctor-types.ts";
 import { ENFORCED_RULES } from "./enforced-rules.ts";
 import { LESSONS_MAX_BYTES } from "./prompt-budget.ts";
+import { msg } from "./i18n.ts";
 import { promptGrowth, promptHealth, readState, RULES_MAX_CHARS } from "./prompt-health.ts";
 
 const root = mkdtempSync(join(tmpdir(), "prompt-health-"));
@@ -69,25 +70,46 @@ test("a shrink moves the baseline down without a finding, and later growth count
 	expect(sizeKeys(run(2))).toContain("prompt:size:rules");
 });
 
-test("a rule that code enforces is reported while a line writes it out, and not after the line is removed", () => {
+test("a rule that code enforces is reported by file:line while a line writes it out, and not after the line is removed", () => {
 	setRules("- keep replies short\n- never run launchctl kickstart on the gateway\n");
 	run(0);
 	const found = run(1);
 	const hit = found.find(f => f.key === "prompt:enforced:gateway-restart");
-	expect(hit?.decide?.options).toHaveLength(2);
+	expect(hit?.decide?.question).toContain("RULES.md:2");
+	expect(hit?.decide?.question).toContain("hub/systemdeny.ts");
+	expect(hit?.decide?.options.map(o => o.name)).toEqual([msg().promptRemove, msg().promptKeep]);
 	expect(keys(found).filter(k => k.startsWith("prompt:enforced:"))).toEqual(["prompt:enforced:gateway-restart"]);
 	setRules("- keep replies short\n");
 	expect(keys(run(2)).filter(k => k.startsWith("prompt:enforced:"))).toEqual([]);
 });
 
-test("a blocked-command entry is the guard itself and is never proposed for removal; the evidence shows the whole line", () => {
+test("a blocked-command entry is the guard itself and is never proposed for removal; a long line is quoted short", () => {
 	const entry = "## Blocked commands\n- deny: some-cli --big | fable only when the owner asked\n";
 	setRules(`## Rules\n- fable only when the owner asked; ${"x".repeat(120)} tail-marker\n\n${entry}`);
 	run(0);
 	const hit = run(1).find(f => f.key === "prompt:enforced:expensive-model");
-	expect(hit?.evidence).toContain("tail-marker");
+	expect(hit?.evidence).toContain("RULES.md:2");
+	expect(hit?.evidence).not.toContain("tail-marker");
+	expect(hit?.decide?.question).toMatch(/fable only when the owner asked; x+…/);
+	expect(hit?.evidence.length).toBeLessThanOrEqual("RULES.md:2: ''".length + 80);
 	setRules(entry);
 	expect(keys(run(2)).filter(k => k.startsWith("prompt:enforced:"))).toEqual([]);
+});
+
+test("a feature body line is named by its feature.md and line", () => {
+	setRules("- keep replies short\n");
+	mkdirSync(join(dir, "features", "gw"), { recursive: true });
+	writeFileSync(join(dir, "features", "gw", "feature.md"), "---\nname: gw\nwhat: gateway care\ntrigger: 메시지 도착\nstage: s\n---\nNever run launchctl kickstart on the gateway.\n");
+	run(0);
+	expect(run(1).find(f => f.key === "prompt:enforced:gateway-restart")?.decide?.question).toContain("features/gw/feature.md:7");
+});
+
+test("an open task in state.json is not a rule: its words never raise an enforced-rule finding", () => {
+	setRules("- keep replies short\n");
+	const next = "다음에 한도로 멈추고 형이 한쪽에서 리셋권을 쓰면 다른 쪽 hub.log에 'usage limit lifted'가 찍히는지 확인";
+	writeFileSync(join(dir, "state.json"), JSON.stringify({ open_tasks: [{ id: "limit-roundtrip-check", what: "한도 왕복 확인", next }] }));
+	run(0);
+	expect(keys(run(1)).filter(k => k.startsWith("prompt:enforced:"))).toEqual([]);
 });
 
 test("a prompt file over its cap is reported once per file", () => {

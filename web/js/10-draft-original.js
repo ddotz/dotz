@@ -30,8 +30,9 @@ function orgComment(pane, m) {
     orgRow(TX("decision.org.author"), m.author), orgRow(TX("decision.org.time"), m.date ? kstStamp(m.date) : ""),
     m.parent ? el("div", { class: "od-parent" }, el("span", { class: "dc-dr-k", text: TX("decision.org.parent", { author: m.parent.author }) }), el("span", { class: "od-pc", text: m.parent.text })) : null,
     el("div", { class: "od-body od-ct", text: m.text }),
-    p.link ? el("a", { class: "od-open", href: p.link, target: "_blank", rel: "noopener noreferrer" }, icon("open"), TX("decision.org.open_source")) : null].filter(Boolean));
+    orgHref(p.link) ? el("a", { class: "od-open", href: orgHref(p.link), target: "_blank", rel: "noopener noreferrer" }, icon("open"), TX("decision.org.open_source")) : null].filter(Boolean));
 }
+const orgHref = u => (/^(https?|mailto):/i.test(String(u || "").trim()) ? String(u).trim() : "");
 const orgRow = (k, v) => v ? el("div", { class: "dc-dh" }, el("span", { class: "dc-dr-k", text: k }), el("span", { class: "dc-dr-v sub", text: v })) : null;
 // The pane's content for the state it is in: loading, gone, failed (with a retry) or the mail.
 function orgFill(pane, d, t, retry) {

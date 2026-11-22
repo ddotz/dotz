@@ -9,7 +9,7 @@ import { parseCommand, setGatewayRestart } from "./control.ts";
 import * as discord from "./discord.ts";
 import * as livestatus from "./livestatus.ts";
 import { setAskAnswer } from "./askbuttons.ts";
-import { discordGatewayAnswer, settleSends, webAnswer } from "./approval-wire.ts";
+import { discordDoctorLeave, discordGatewayAnswer, settleSends, webAnswer } from "./approval-wire.ts";
 import { installFanout, makeCtx, register, setAskApplier, startAll } from "./messenger.ts";
 import { setProjectSource, syncAllRooms } from "./messenger-rooms.ts";
 import { discordAdapter } from "./messenger-discord.ts";
@@ -50,17 +50,20 @@ import { restGuard } from "./context.ts";
 import { errorAsk, startResumeWatch, watchSession } from "./orch-error.ts";
 import { interruptedLanes } from "./lanereconnect.ts";
 import { queuedTargets } from "./queue.ts";
-import { createRestartGate, markRestartPending, RESTART_NOTICE_MS, restartCapText, takeRestartHeld } from "./restart.ts";
+import { createRestartGate, gatewayCodeChanged, markRestartPending, promptHeadChanged, RESTART_NOTICE_MS, restartCapText, takeRestartHeld } from "./restart.ts";
+import { modeContract } from "./orchestrator-parts.ts";
 import { createWaitCheck, wakeReply } from "./waitcheck.ts";
 import { ownerMessage } from "./events.ts";
 import { forgetAccountUsage, onQuota, QUOTA_REFRESH_MS, refreshQuota, usageSnapshot } from "./providers.ts";
 import { sealPlainSecrets } from "./secretbox.ts";
-import { allNotices, backfillNotices, draftCardCounts, dropChannelNotices, refreshStoredDrafts, setAppLabelResolver, setDraftHandled, settleExpiredQuestions, settleHandledDrafts, setConvNameResolver, setLaneTitleResolver, setAppBlocker, setAppResolver, setOrchestratorAvailable, setWatchLabelResolver, setWatchSummarizer, tagStoredApps, updateAvailable, updateResolved } from "./notices.ts";
+import { allNotices, backfillNotices, draftCardCounts, dropChannelNotices, flushNotices, refreshStoredDrafts, setAppLabelResolver, setDraftHandled, settleHandledDrafts, setConvNameResolver, setLaneTitleResolver, setAppBlocker, setAppResolver, setOrchestratorAvailable, setWatchLabelResolver, setWatchSummarizer, sweepQuestions, tagStoredApps, updateAvailable, updateResolved } from "./notices.ts";
+import { channelTitle, laneTitle } from "./notices-lanes.ts";
 import { startDayNote } from "./day-note.ts";
 import { startReflection } from "./reflect.ts";
 import { recipeBlock } from "./recipes.ts";
 import { syncFeatureWatches } from "./features.ts";
-import { scheduleTarget, startSchedules, stopSchedules } from "./schedule.ts";
+import { startSchedules, stopSchedules } from "./schedule.ts";
+import { fireSchedule, namingDeps, startRunWatch } from "./schedule-fire.ts";
 import { syncRoutineSchedules } from "./custom.ts";
 import { startHarnessUpdate } from "./update.ts";
 import { startOmoEngineWatch } from "./runtime/omo-engine-watch.ts";
@@ -68,24 +71,25 @@ import { CARD_AUDIT_ID, type CardAudit, legacyComments, runMigrations } from "./
 import { applyAndSave, defaultExec, onUpdateResolved, startSelfUpdate, updateBoot, diskCommit } from "./selfupdate.ts";
 import { createUpdateNow, setUpdateNow, updateNow } from "./update-now.ts";
 import { pendingBackups } from "./carryover.ts";
-import { clearChannel, endStanding, lapseStandings, nameWatches, setupChannel, wakeOnly, watchLabel, watchWakeEvent } from "./workchannels.ts";
+import { clearChannel, endStanding, lapseStandings, nameWatches, setupChannel, wakeOnly, watchLabel, watchNoticeKind, watchWakeEvent } from "./workchannels.ts";
 import { watchIssueLine, watchLine } from "./watchtext.ts";
 import { createWatchSummarizer } from "./watchsummary.ts";
 import { clearTrackedTimers, runShutdown } from "./shutdown.ts";
-import { addWatch, allWatches, approveWatch, isWatchIssue, setHealedHandler, setHealHandler, setWatchGate, startWatches, stopWatches, type Watch, wakeTarget, watchChoice } from "./watch.ts";
+import { addWatch, allWatches, approveWatch, isWatchIssue, setHealedHandler, setHealHandler, setWatchGate, startWatches, stopWatches, type Watch, wakeTarget } from "./watch.ts";
+import { watchIssueText } from "./watch-ask.ts";
 import { watchOwner } from "./app-features.ts";
 import { blockedByOff, newsMuted, watchOff } from "./app-off.ts";
 import { loadPlugins, pluginClaim, pluginMailThread, pluginThread, startPlugins } from "./plugins.ts";
 import { startDoctor } from "./doctor.ts";
-import { startZele, zeleAccounts, zeleRead, zeleState } from "./zele.ts";
-import { createReconciler } from "./mail-reconcile.ts";
+import { startZele, zeleAccounts, zeleRead, zeleReplyTo, zeleState } from "./zele.ts";
+import { createReconciler, reconcileSummary, type ReconcileResult } from "./mail-reconcile.ts";
 import { createUnansweredWatch } from "./mail-unanswered.ts";
 import { backfillMailSummaries, mailSummarizer } from "./mail-summary-live.ts";
 import { placeMail } from "./routes-mailbox.ts";
 import { mailByKey, mailDraftBrief, mailByThread, mailRecords, mailTarget, migrateStoredMails, postMail, sentReplyRefs, setMailReadOut, setMailReply, setMailSuggest, storedBodyText, type MailDeps } from "./mail.ts";
 import { ownAddresses, ownAddressesFor, replyExpected } from "./mail-state.ts";
-import { offerMailDraft, requestMailDraft } from "../features/reply-drafts/lib/offer.ts";
-import { listDrafts } from "../features/reply-drafts/lib/store.ts";
+import { offerMailDraft, requestMailDraft, resumeOffers, type OfferDeps } from "../features/reply-drafts/lib/offer.ts";
+import { DRAFT_ID, draftStoreIntact, listDrafts, unlessUnreadable } from "../features/reply-drafts/lib/store.ts";
 import { readMailBody, zeleHistory } from "../features/reply-drafts/lib/senders.ts";
 import { installSentMail, realRunner, refreshPairs } from "../features/reply-drafts/lib/tone.ts";
 import { defaultCall } from "./reply-mail.ts";
@@ -176,7 +180,7 @@ tagStoredApps();
 const cardFilesChanged = () => void syncCardFiles();
 setAppLabelResolver(key => appEntries(DATA_DIR).find(e => e.key === key)?.label ?? key);
 // One answer for the notices and the approval queue: is the item behind this send-approval ref (in this conversation) already handled?
-const refHandled = (ref: string, conv: string) => draftHandled(ref, { mail: { drafts: draftHeads, record: mailByKey }, comment: commentDraftFacts, kakao: kakaoDraftFacts }, conv);
+const refHandled = (ref: string, conv: string) => draftHandled(ref, { mail: { drafts: draftHeads, record: mailByKey, idShape: DRAFT_ID, intact: draftStoreIntact }, comment: commentDraftFacts, kakao: kakaoDraftFacts }, conv);
 setDraftHandled((d, _n, ref) => refHandled(ref, d.to));
 setRefHandled(refHandled);
 // Mails that wait are checked against their real thread (zele or a plugin's mailThread, read-only): an answer sent from Gmail or another script makes the mail 답장함 and closes its cards
@@ -212,12 +216,15 @@ const unansweredWatch = createUnansweredWatch({
 	target: mailTarget,
 	log,
 }, { file: join(DATA_DIR, "mail-unanswered.json"), everyMs: MAIL_RECONCILE_EVERY_MS });
-const reconcileLog = (r: { checked: number; replied: number; notChecked: number } | undefined) => void (r && (r.checked || r.notChecked) && log(`mail reconcile: ${r.checked} threads checked, ${r.replied} answered elsewhere, ${r.notChecked} not checked`));
+const reconcileLog = (r: ReconcileResult | undefined) => {
+	const line = r && reconcileSummary(r);
+	if (line) log(line);
+};
 const reconcileMails = (limit: number) => mailReconciler.run(limit).then(r => (reconcileLog(r), r));
 const settleSweep = () => {
 	settleSends();
 	// Questions past their answer time close here, in the pass that already settles handled drafts: no timer of their own.
-	const expired = settleExpiredQuestions();
+	const expired = sweepQuestions();
 	if (expired) log(`notices: ${expired} questions past their answer time closed`);
 	return settleHandledDrafts().then(n => (n && log(`notices: ${n} send approvals closed, their drafts were handled elsewhere`), n), e => (log(`handled-draft sweep failed: ${(e as Error).message}`), 0));
 };
@@ -244,7 +251,7 @@ setAuthOpened((w, discordPosted) => {
 	const same = convs.keyOf(w.target) === w.session;
 	const to = same ? w.target : primaryTarget(w.session);
 	const base = getWebBase();
-	void out(to, openedText(w, base ? `${base}/` : undefined), undefined, { source: "gateway", ...(discordPosted && same ? { discord_route: false } : {}) }).catch(e => log(`auth open notice to ${to} failed: ${e}`));
+	void out(to, openedText(w, base ? `${base}/` : undefined), undefined, { source: "gateway", nk: "gateway-note", ...(discordPosted && same ? { discord_route: false } : {}) }).catch(e => log(`auth open notice to ${to} failed: ${e}`));
 });
 discord.setFileLink(p => webLink(`/api/file?path=${encodeURIComponent(p)}&dl=1`));
 // Apple's push service rejects a VAPID subject it cannot parse as a contact: the app's own https URL is one.
@@ -316,7 +323,7 @@ void discord.clearLeftProgress().catch(e => log(`left progress messages not clea
 // A click on a decision button (hub/askbuttons.ts) is the owner typing the answer in that channel: the same inbound path.
 setAskAnswer(async (target, content, picks, edit) => {
 	// A pick on a draft the reply flow knows (send, 고치기 with the owner's text and words, drop) runs there with no model turn (hub/approval-wire.ts).
-	const acted = await discordGatewayAnswer(target, convOfTarget(target), content, picks, edit); if (acted) return acted.error;
+	const acted = (await discordGatewayAnswer(target, convOfTarget(target), content, picks, edit)) ?? ((await discordDoctorLeave(target, picks, a => deliverAnswer({ ...a, login: "owner" }))) ? {} : undefined); if (acted) return acted.error;
 	const id = target.slice(target.indexOf(":") + 1);
 	const channel = target.startsWith("lane:") ? { lane: id } : target.startsWith("ch:") ? { work: id, name: discord.channels.work[id] ?? id, first: false } : target.startsWith("th:") ? { thread: id, name: discord.channels.threads[id]?.name ?? id } : (target as "chat");
 	onOwner({ id: "", channelId: "", ackChannelId: "", channel, author: "owner", content, attachments: [], picks });
@@ -351,6 +358,7 @@ void discord.syncProfile().catch(e => log(`syncProfile failed: ${e}`));
 // Each mail is a conversation (hub/mail.ts): zele here and outside posters through POST /api/mail (hub/routes.ts) share these.
 let mailChannelId: string | undefined;
 setDiscordProbe(() => discord.status.enabled, () => postSettings().news);
+const draftDeps = (): OfferDeps => ({ brief: mailDraftBrief, stage: { changed: cardFilesChanged }, send: (target, text) => out(target, text), replyTo: m => zeleReplyTo(m.id, m.account ?? ""), run: realRunner, history: zeleHistory, refreshPairs: () => refreshPairs(realRunner), readBody: (source, id, account) => readMailBody(source, id, realRunner, account), log, suggest: (key, s) => void setMailSuggest(key, s), analyze: defaultCall(loadSettings().model), sentTexts: () => installSentMail(realRunner), own: source => [...ownAddressesFor(source)] });
 const mailDeps = (): MailDeps => ({
 	createThread: discord.createThread,
 	send: (target, text) => discord.send(target, text),
@@ -371,21 +379,21 @@ const mailDeps = (): MailDeps => ({
 	newMailOn: (_source, key) => mailFeatureOn(DATA_DIR, key, "new_mail"),
 	emit: event => emit("inbox", event as Parameters<typeof emit>[1]),
 	wake: (event, target) => deliver(inboxText(event), { target }),
-	offerDraft: m =>
-		void offerMailDraft(m, { brief: mailDraftBrief, stage: { changed: cardFilesChanged }, send: (target, text) => out(target, text), run: realRunner, history: zeleHistory, refreshPairs: () => refreshPairs(realRunner), readBody: (source, id, account) => readMailBody(source, id, realRunner, account), log, suggest: (key, s) => void setMailSuggest(key, s), analyze: defaultCall(loadSettings().model), sentTexts: () => installSentMail(realRunner), own: source => [...ownAddressesFor(source)] }).then(r => r === "failed" && log(`mail ${m.key}: reply draft not offered`)),
-	requestDraft: m => requestMailDraft(m, { brief: mailDraftBrief, stage: { changed: cardFilesChanged }, send: (target, text) => out(target, text), run: realRunner, history: zeleHistory, refreshPairs: () => refreshPairs(realRunner), readBody: (source, id, account) => readMailBody(source, id, realRunner, account), log, suggest: (key, s) => void setMailSuggest(key, s), analyze: defaultCall(loadSettings().model), sentTexts: () => installSentMail(realRunner), own: source => [...ownAddressesFor(source)] }),
+	offerDraft: m => void offerMailDraft(m, draftDeps()).then(r => r === "failed" && log(`mail ${m.key}: reply draft not offered`)),
+	requestDraft: m => requestMailDraft(m, draftDeps()),
 });
 
 function classifyStoredMails(): void {
-	const n = migrateStoredMails(sentReplyRefs(listDrafts()));
+	const refs = unlessUnreadable(() => sentReplyRefs(listDrafts()), undefined, line => log(`mail: stored mails not classified: ${line}`));
+	const n = refs ? migrateStoredMails(refs) : 0;
 	if (n) log(`mail: ${n} stored mails classified`);
 }
 classifyStoredMails();
 backfillMailSummaries();
-
+void resumeOffers(draftDeps()).then(results => results.length && log(`mail: ${results.length} reply draft offers resumed from the queue file`));
 // A mail he opened in dotz is read in its mailbox too (zele: `mail read-mark`, a plugin: its mailAction): hub/mail-sync.ts, mailbox side only.
 setMailReadOut(r => void mailAction(r.key, "read", mailSyncDeps, { providerOnly: true }));
-recoverOriginalDeletes(mailOriginal.pending, text => out("alert", text, undefined, { source: "gateway" }));
+recoverOriginalDeletes(mailOriginal.pending, text => out("alert", text, undefined, { source: "gateway", nk: "alert" }));
 
 void startZele({
 	alert,
@@ -406,7 +414,7 @@ void startZele({
 	accounts: classifyStoredMails,
 	brief: text => {
 		const target = !discord.status.enabled ? "web" : discord.channels.brief ? "brief" : "chat";
-		const event = { ts: now(), kind: "schedule", source: "zele", id: "zele", channel: target, text };
+		const event = { ts: now(), kind: "schedule", source: "zele", id: "zele", channel: target, name: "아침 브리핑", text };
 		emit("inbox", event);
 		deliver(inboxText(event), { target });
 	},
@@ -502,16 +510,16 @@ for (const name of resumedLanes) void send(`lane:${name}`, "게이트웨이가 �
 // flooded worklog (owner 2026-10-20). Failures to start go to alert elsewhere.
 if (restarted) {
 	const at = new Date().toLocaleTimeString("ko-KR", { timeZone: TZ, hour: "2-digit", minute: "2-digit" });
-	if (replayed || resumedLanes.length) void out(discord.status.enabled ? "worklog" : "web", msg().gatewayRestart(replayed, resumedLanes), undefined, { source: "gateway", update_key: "gateway-restart", wk: "system" }).catch(e => log(`restart notice failed: ${e}`));
+	if (replayed || resumedLanes.length) void out(discord.status.enabled ? "worklog" : "web", msg().gatewayRestart(replayed, resumedLanes.map(laneTitle)), undefined, { source: "gateway", update_key: "gateway-restart", wk: "system" }).catch(e => log(`restart notice failed: ${e}`));
 	else log(`restart at ${at}: nothing interrupted, worklog notice skipped`);
 }
 // After an update and restart: local changes the updater backed up (dotz-local/<stamp>) and text overrides that no longer fit this version
 // each wake the orchestrator once (hub/carryover.ts, hub/texts.ts), so the bot ports them to the custom layer.
-function wakeOnce(id: string, text: string) {
+function wakeOnce(id: string, text: string, quiet?: true) {
 	const channel = discord.status.enabled ? "chat" : "web";
 	const event = { ts: now(), kind: "schedule", source: "gateway", channel, id, text };
 	emit("inbox", event);
-	deliver(inboxText(event), { target: channel });
+	deliver(inboxText(event), { target: channel, quiet });
 }
 if (process.env.DOTZ_NO_ORCHESTRATOR !== "1") {
 	startWebI18n();
@@ -550,9 +558,9 @@ startDataCleanup();
 startEffortLearning({ enabled: () => cfg.orchestrator?.effort_learn !== false, say: (model, effort, evidence) => void out(discord.status.enabled ? "worklog" : "web", msg().effortLearned(model, effort, evidence), undefined, { source: "gateway", wk: "system" }).catch(e => log(`effort notice failed: ${e}`)) });
 startRecallIndexing({ busy: busyNow });
 startMemoryGuard((key, text) => {
-	if (key === "orchestrator") return alert(`${NAME}: ${text}`);
+	if (key === "orchestrator") return alert(text);
 	// A conversation session's notice goes into its own conversation.
-	if (key.startsWith("conv:")) return void out(convs.get(key.slice(5))?.primary ?? "alert", text, undefined, { source: "gateway" }).catch(e => log(`memory guard notice to ${key} failed: ${e}`));
+	if (key.startsWith("conv:")) return void out(convs.get(key.slice(5))?.primary ?? "alert", text, undefined, { source: "gateway", nk: "alert" }).catch(e => log(`memory guard notice to ${key} failed: ${e}`));
 	void send(key, text).catch(e => log(`memory guard notice to ${key} failed: ${e}`));
 });
 startLaneIdleStop();
@@ -568,30 +576,21 @@ startStallSweep((conversation, r) => {
 startOrphanReaper();
 startAgentTrees();
 startHostSweep();
-startSchedules((s, group) => {
-	const channel = scheduleTarget(s, discord.status.enabled ? "chat" : "web");
-	// A check is the assistant's own: its turn is quiet (hub/prompts.ts quiet). Checks due together arrive as one numbered turn.
-	if (s.kind === "check") {
-		const all = group ?? [s];
-		const text = all.length > 1 ? all.map((x, i) => `${i + 1}) [${x.id}] ${x.text}`).join("\n") : s.text;
-		// source "gateway" like wakeOnce: no 예약 notice in the bell and no card in the chat, the turn is the assistant's own
-		const event = { ts: now(), kind: "schedule", source: "gateway", channel, id: all.map(x => x.id).join(","), ids: all.map(x => x.id), quiet: true, text };
-		emit("inbox", event);
-		return void deliver(inboxText(event), { target: channel, quiet: true });
-	}
-	const event = { ts: now(), kind: "schedule", source: "schedule", channel, id: s.id, every: s.every_minutes, text: s.text };
-	emit("inbox", event);
-	deliver(inboxText(event), { target: channel });
-});
+const scheduleChannel = () => (discord.status.enabled ? "chat" : "web");
+startSchedules((s, group, runs) => fireSchedule(s, group, runs, { emit, deliver, inboxText, fallback: scheduleChannel }), process.env.DOTZ_NO_ORCHESTRATOR === "1" ? undefined : namingDeps({ wake: wakeOnce, out, fallback: scheduleChannel }));
+startRunWatch(target => {
+	const o = (convs.forTarget(target)?.o ?? mainOrch).orch;
+	return o.status === "rate-limited" && o.pauseKind === "rate";
+}, scheduleChannel);
 syncRoutineSchedules();
-startReflection(text => deliver(text), () => orch.sessionFile, text => out("alert", text, undefined, { source: "gateway" }), text => void steerOrchestrator(text), recipeBlock);
+startReflection(text => deliver(text), () => orch.sessionFile, text => out("alert", text, undefined, { source: "gateway", nk: "alert" }), text => void steerOrchestrator(text), recipeBlock);
 startDayNote();
 for (const l of telemetryOff()) log(l);
 for (const l of installDotzCommand({ dir: DATA_DIR, pkg: join(import.meta.dir, ".."), bun: Bun.which("bun") ?? process.execPath, home: HOME, expose: DATA_DIR === join(HOME, ".dotz"), shell: process.env.SHELL })) log(l);
-startHarnessUpdate(text => void out("worklog", text, undefined, { source: "gateway", wk: "update" }).catch(e => log(`harness update post failed: ${e}`)), restartGateway, alert);
+startHarnessUpdate(text => void out("worklog", text, undefined, { source: "gateway", wk: "update" }).catch(e => log(`harness update post failed: ${e}`)), () => restartGateway({ auto: true }), alert);
 // The hidden doctor (hub/doctor.ts): one night run, at most one morning item: an alert when something is not fixed (a choice block when he must decide),
 // a work log entry when dotz fixed everything itself. The ledger's day-before notices (hub/ledger-tick.ts) start with it and go out as news.
-startDoctor((text, _decision, open) => out(open ? "alert" : "worklog", text, undefined, { source: "gateway", wk: "doctor" }), log, () => (zeleState() === "on" ? Number(cfg.zele?.brief_hour ?? DEFAULTS.zele_brief_hour) : undefined), { send: (text, project) => out(project ?? (discord.status.enabled ? "chat" : "web"), text, undefined, { source: "gateway", news: true }), waiting: () => draftCardCounts().open + approvals.held().length });
+startDoctor((text, _decision, open) => out(open ? "alert" : "worklog", text, undefined, { source: "gateway", wk: "doctor" }), log, () => (zeleState() === "on" ? Number(cfg.zele?.brief_hour ?? DEFAULTS.zele_brief_hour) : undefined), { send: (text, project) => out(project ?? (discord.status.enabled ? "chat" : "web"), text, undefined, { source: "gateway", nk: "ledger", news: true }), waiting: () => draftCardCounts().open + approvals.held().length });
 // Settings → 업데이트: the daily check announces a new dotz version (push + a toast on open pages + one bell item); with self_update.auto_apply
 // on it applies it instead (worklog on success, alert with a choice block otherwise) and restarts through the idle restart gate.
 onUpdateResolved(updateResolved);
@@ -604,7 +603,6 @@ setFollowupWake(text => {
 });
 void startSelfUpdate(text => {
 	updateAvailable(text);
-	pushNotify({ kind: "update", title: `${NAME} 업데이트`, body: text, url: "/#settings", tag: "update" });
 	broadcast({ ts: now(), kind: "update_available", source: "gateway", text });
 }, undefined, {
 	worklog: text => void out("worklog", text, undefined, { source: "gateway", wk: "update" }).catch(e => log(`self-update worklog post failed: ${e}`)),
@@ -645,13 +643,13 @@ startWatches((w, reason, output, prev, info) => {
 		if (!w.channels?.length) return deliver(wake, target ? { target } : undefined);
 		const [first, ...others] = w.channels;
 		endStanding(first, "once");
-		if (!quiet) for (const c of others) void out(`ch:${c}`, (isWatchIssue(reason) ? watchIssueLine(event.label, reason, info, output) : watchLine(event.label, reason, output, { note: `(처리는 #${discord.channels.work[first] ?? first}에서)`, prev })).slice(0, 1900), undefined, { source: "gateway", news: true, ...watchRoute(w) }).catch(() => undefined);
+		if (!quiet) for (const c of others) void out(`ch:${c}`, (isWatchIssue(reason) ? watchIssueLine(event.label, reason, info, output) : watchLine(event.label, reason, output, { note: `(처리는 #${discord.channels.work[first] ?? first}에서)`, prev })).slice(0, 1900), undefined, { source: "gateway", nk: "watch", news: true, ...watchRoute(w) }).catch(() => undefined);
 		return deliver(wake, { target: target ?? `ch:${first}` });
 	}
 	// A failing, stopped or unapproved check is an issue: it goes to alert with a choice block, whatever `to` the watch has.
 	const issue = isWatchIssue(reason);
 	const label = watchLabel(w.name);
-	void out(issue ? "alert" : w.to, (issue ? watchIssueLine(label, reason, info, output) : watchLine(label, reason, output, { prev })).slice(0, issue ? 1500 : 1900) + (issue ? `\n${watchChoice(label, reason)}` : ""), undefined, { source: "gateway", news: true, ...(issue ? {} : watchRoute(w)) }).catch(e => log(`watch ${w.name} send failed: ${e}`));
+	void out(issue ? "alert" : w.to, issue ? watchIssueText(w, label, reason, info, output) : watchLine(label, reason, output, { prev }).slice(0, 1900), undefined, { source: "gateway", nk: issue ? "alert" : watchNoticeKind(output), news: true, ...(issue ? {} : watchRoute(w)) }).catch(e => log(`watch ${w.name} send failed: ${e}`));
 });
 // A watch whose check script broke (hub/watch.ts): the fix turn goes quietly to the watch's conversation (or main), and a fix that held is one worklog line.
 setHealHandler((w, turn) => {
@@ -659,7 +657,7 @@ setHealHandler((w, turn) => {
 	deliver(turn, target ? { target } : undefined);
 });
 setHealedHandler((w, note) => void out(discord.status.enabled ? "worklog" : "web", `스스로 고쳤어요: ${watchLabel(w.name)}${note ? `: ${note}` : ""}`, undefined, { source: "gateway", wk: "system" }).catch(e => log(`watch ${w.name} heal notice failed: ${e}`)));
-setInterval(() => lapseStandings(s => void out(`ch:${s.channel}`, `이 채널의 자동 처리 기한이 끝났어요: ${s.standing}\n모니터링은 계속 돌아요. 앞으로 깨어나면 먼저 여쭤볼게요.`, undefined, { source: "gateway", news: true }).catch(e => log(`standing notice failed: ${e}`))), 60_000);
+setInterval(() => lapseStandings(s => void out(`ch:${s.channel}`, `이 채널의 자동 처리 기한이 끝났어요: ${s.standing}\n모니터링은 계속 돌아요. 앞으로 깨어나면 먼저 여쭤볼게요.`, undefined, { source: "gateway", nk: "watch", news: true }).catch(e => log(`standing notice failed: ${e}`))), 60_000);
 syncFeatureWatches();
 startKakaoLive();
 startPlugins({
@@ -700,7 +698,7 @@ function shutdown(): Promise<never> {
 		{ name: "discord connection", run: () => discord.disconnect() },
 		{ name: "watch and schedule timers", run: () => (stopWatches(), stopSchedules(), stopKakaoLive(), clearTrackedTimers()) },
 		{ name: "cloudflare tunnel", run: () => webAccess.stop() },
-		{ name: "others", run: () => void 0 },
+		{ name: "notices", run: () => flushNotices() },
 	], 10_000 + (replies.size() ? outlangTimeoutMs() + 2000 : 0));
 }
 
@@ -760,8 +758,12 @@ const restartGate = createRestartGate({
 	notice: text => void out(discord.status.enabled ? "worklog" : "web", text, undefined, { source: "gateway", wk: "system" }).catch(e => log(`restart wait notice failed: ${e}`)),
 	hold: () => markRestartPending(DATA_DIR, true),
 	capAfterMs: restartCapMs(),
-	cap: (busy, min) => alert(restartCapText(busy, min)),
+	cap: (busy, min) => alert(restartCapText(busy, min, (kind, key) => (kind === "lane" ? laneTitle(key) : convs.get(key)?.meta.name?.trim() || channelTitle(convs.get(key)?.primary ?? key)))),
 	log,
+	headChanged: promptHeadChanged(modeContract),
+	codeChanged: gatewayCodeChanged([import.meta.dir, join(import.meta.dir, "..", "features")]),
+	contextTokens: () => orch.ctx.tokens,
+	headFile: join(DATA_DIR, "restart-head"),
 	exit: () => {
 		updateNow()?.restarting();
 		void shutdown();
@@ -774,12 +776,12 @@ const sessionResume = createSessionResume({
 	sessions: () =>
 		convs.resumeSessions(
 			c => allNotices().some(n => n.kind === "decision" && n.decision?.state === "open" && (n.decision.to === c.primary || (c.key === MAIN && (n.decision.to === "main" || n.decision.to.startsWith("auth:"))))),
-			(target, text) => void out(target, text, undefined, { source: "gateway" }).catch(e => log(`session resume notice to ${target} failed: ${e}`)),
+			(target, text) => void out(target, text, undefined, { source: "gateway", nk: "gateway-note" }).catch(e => log(`session resume notice to ${target} failed: ${e}`)),
 		),
 });
 startLaneResumeSweep({ budget: name => budgetProblem(name, estimateOf(undefined, ""), false), restarting: () => restartGate.waiting(), sessions: sessionResume.tick });
-function restartGateway(): string {
-	return restartGate.request();
+function restartGateway(o: { auto?: boolean } = {}): string {
+	return restartGate.request(o);
 }
 // The owner chose '지금 재시작' in settings → 업데이트: running turns are cut (unanswered prompts replay on the next start).
 // The short delay lets the HTTP answer reach the page first.

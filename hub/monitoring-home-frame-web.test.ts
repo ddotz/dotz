@@ -8,7 +8,7 @@ const at = (d: number, h: number, m: number) => Date.UTC(2026, 9, d, h, m);
 // The reply queue (GET /api/reply/queue): two replies sent today (rows that open their card) and one failed send (a card in the list).
 const qItem = (n: number, send: object) => ({ item: `kakao:R${n}`, ref: `R${n}`, kind: "chat", app: "kakao", label: "카카오톡", conv: "i:kakao", at: Date.now() - n * 6e4, can: { send: false, revise: true, edit: true, drop: true, restore: false },
 	draft: { state: "pending", toLabel: "대화방", to: `가나${n}`, text: `답장 ${n}` }, original: { who: `가나${n}`, text: "대화방" }, send });
-const QUEUE = [qItem(1, { state: "sent", at: Date.now() - 6e4, how: "owner", actions: [] }), qItem(2, { state: "sent", at: Date.now() - 12e4, how: "owner", actions: [] }), qItem(3, { state: "failed", at: Date.now() - 18e4, reason: { code: "offline", text: "연결이 끊겼어요" }, actions: ["retry"] })];
+const QUEUE = [qItem(1, { state: "sent", at: Date.now() - 6e4, how: "owner", today: true, actions: [] }), qItem(2, { state: "sent", at: Date.now() - 12e4, how: "owner", today: true, actions: [] }), qItem(3, { state: "failed", at: Date.now() - 18e4, reason: { code: "offline", text: "연결이 끊겼어요" }, actions: ["retry"] })];
 const ROOMS = [{ chatId: "100", name: "가나다 모임", kind: "group", watched: true, autoDraft: false, unread: 0, lastAt: at(22, 1, 29) }];
 let hits: Record<string, number> = {};
 let repliesFail = false;

@@ -228,7 +228,7 @@ async function startLogin(p, pending) {
   });
   paintStep(r);
   const first = choosing ? null : openBox.hidden ? code : open; if (first) first.focus({ preventScroll: true });   // not the ✕ in the head
-  code.addEventListener("keydown", ev => { if (ev.key === "Enter" && !ev.isComposing) { ev.preventDefault(); const b = dlg.node.querySelector(".dact .btn:last-child"); if (b) b.click(); } });
+  code.addEventListener("keydown", ev => { if (plainEnter(ev)) { ev.preventDefault(); const b = dlg.node.querySelector(".dact .btn:last-child"); if (b) b.click(); } });
   timer = setTimeout(poll, 2000);
 }
 

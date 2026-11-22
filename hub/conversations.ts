@@ -52,14 +52,21 @@ export function previewOf(raw: string): string {
 	return "";
 }
 
+const fromOf = (e: HubEvent): ConversationLast["from"] => (OWNER_KINDS.has(e.kind) ? "owner" : e.kind === "lane_report" || (typeof e.source === "string" && e.source.startsWith("lane:")) ? "session" : "bot");
+
 function lastOf(e: HubEvent): ConversationLast | undefined {
 	if (!isRealMessage(e) || gatewayWake(e)) return undefined;
 	const card = e.card && typeof e.card === "object" ? (e.card as { title?: unknown }).title : undefined;
 	const hasFiles = Array.isArray(e.files) && e.files.length > 0;
 	const text = previewOf(String(e.text ?? "")) || previewOf(typeof card === "string" ? card : "") || (hasFiles ? "파일" : "");
 	if (!text) return undefined;
-	const from = OWNER_KINDS.has(e.kind) ? "owner" : e.kind === "lane_report" || (typeof e.source === "string" && e.source.startsWith("lane:")) ? "session" : "bot";
-	return { ts: e.ts, text, from };
+	return { ts: e.ts, text, from: fromOf(e) };
+}
+
+const tailLast = new WeakMap<HubEvent, ConversationLast | null>();
+function lastOfTail(e: HubEvent): ConversationLast | undefined {
+	if (!tailLast.has(e)) tailLast.set(e, lastOf(e) ?? null);
+	return tailLast.get(e) ?? undefined;
 }
 
 const known = new Map<string, ConversationLast | null>([["main", null], ["alert", null], ["worklog", null]]);
@@ -70,19 +77,60 @@ let sorted: { target: string; last: ConversationLast | null }[] | undefined;
 // same message meet here, so the key keeps it counted once.
 const UNREAD_KEEP = 500;
 const incoming = new Map<string, Map<string, string>>();
+type Pending = { key: string; ts: string; e?: HubEvent };
+const pending = new Map<string, { ops: Pending[]; limit: number }>();
 // The gateway's own wake for a check (hub/main.ts wakeOnce) is an instruction to the assistant: the chat draws no card for it, so it is no message (web/js/11-todo-strip.js gatewayWake).
 const gatewayWake = (e: HubEvent) => e.kind === "schedule" && e.source === "gateway";
 const cleanRestart = (e: HubEvent) => e.kind === "out" && e.source === "gateway" && /^게이트웨이(?: 재시작했어요|를 다시 시작했어요)/.test(String(e.text ?? "")) && /끊긴 작업은 없어요/.test(String(e.text ?? ""));
+const countable = (e: HubEvent, from: ConversationLast["from"]) => from !== "owner" && !cleanRestart(e) && !e.system;
+const incomingKey = (e: HubEvent) => (e.kind === "out" && typeof e.update_key === "string" && e.update_key ? `key|${e.update_key}` : `${e.ts}|${e.kind}|${String(e.text ?? "").slice(0, 60)}`);
+const counts = (op: Pending) => !op.e || lastOfTail(op.e) !== undefined;
+
+function keep(bucket: Map<string, string>, key: string, ts: string): void {
+	bucket.set(key, ts);
+	if (bucket.size > UNREAD_KEEP) bucket.delete(bucket.keys().next().value as string);
+}
 
 function countIncoming(target: string, e: HubEvent, last: ConversationLast): void {
 	// A gateway system line (`system`, e.g. a deferral receipt) is a status, not a message to read.
-	if (last.from === "owner" || cleanRestart(e) || e.system) return;
+	if (!countable(e, last.from)) return;
+	const lazy = pending.get(target);
+	if (lazy) {
+		lazy.ops.push({ key: incomingKey(e), ts: e.ts });
+		if (lazy.ops.length > lazy.limit) settled(target);
+		return;
+	}
 	let bucket = incoming.get(target);
 	if (!bucket) incoming.set(target, (bucket = new Map()));
 	// An edited post counts once, at its newest version.
-	const key = e.kind === "out" && typeof e.update_key === "string" && e.update_key ? `key|${e.update_key}` : `${e.ts}|${e.kind}|${String(e.text ?? "").slice(0, 60)}`;
-	bucket.set(key, e.ts);
-	if (bucket.size > UNREAD_KEEP) bucket.delete(bucket.keys().next().value as string);
+	keep(bucket, incomingKey(e), e.ts);
+}
+
+function settled(target: string): Map<string, string> | undefined {
+	const lazy = pending.get(target);
+	if (!lazy) return incoming.get(target);
+	pending.delete(target);
+	const bucket = new Map<string, string>();
+	for (const op of lazy.ops) if (counts(op)) keep(bucket, op.key, op.ts);
+	incoming.set(target, bucket);
+	return bucket;
+}
+
+function pendingCount(ops: readonly Pending[], read: string | null): number | undefined {
+	const fresh = new Set<string>();
+	for (const op of ops) if (!read || op.ts > read) fresh.add(op.key);
+	if (!fresh.size) return 0;
+	const from = ops.findIndex(op => fresh.has(op.key));
+	if (new Set(ops.slice(from).map(op => op.key)).size > UNREAD_KEEP) return undefined;
+	const seen = new Set<string>();
+	let n = 0;
+	for (let i = ops.length - 1; i >= from; i--) {
+		const op = ops[i]!;
+		if (!fresh.has(op.key) || seen.has(op.key) || !counts(op)) continue;
+		seen.add(op.key);
+		if (!read || op.ts > read) n++;
+	}
+	return n;
 }
 
 export function unreadOf(target: string): number {
@@ -92,10 +140,12 @@ export function unreadOf(target: string): number {
 	const lane = target.startsWith("lane:") ? lanes.get(target.slice(5)) : undefined;
 	if (lane && !laneLive(lane)) return 0;
 	const read = [unreadFrom(target), lane?.endedAt].reduce<string | null>((a, b) => (b && (!a || b > a) ? b : a), null);
-	let n = 0;
-	for (const ts of incoming.get(target)?.values() ?? []) if (!read || ts > read) n++;
+	const lazy = pending.get(target);
+	const quick = lazy && pendingCount(lazy.ops, read);
+	let n = quick ?? 0;
+	if (quick === undefined) for (const ts of settled(target)?.values() ?? []) if (!read || ts > read) n++;
 	// An old mail whose message is no longer in the log tail has nothing to count; 안 읽음 on it (hub/reads.ts markUnread) put the owner's own position before it, and that counts it once.
-	if (!n && target.startsWith("mail:") && !incoming.get(target)?.size) {
+	if (!n && target.startsWith("mail:") && !(lazy ? lazy.ops.findLast(counts) : incoming.get(target)?.size)) {
 		const own = readOf(target), m = mailByKey(target.slice(5));
 		if (own && m && m.dir !== "out" && m.at > own) n = 1;
 	}
@@ -122,7 +172,50 @@ function load(): void {
 	if (loaded) return;
 	loaded = true;
 	// Oldest first, so the tail never overwrites a newer live event already noted.
-	for (const e of [...tailEvents(paths.inbox), ...tailEvents(paths.outbox)].sort((a, b) => String(a.ts).localeCompare(String(b.ts)))) note(e);
+	const tail = [...tailEvents(paths.inbox), ...tailEvents(paths.outbox)].sort((a, b) => String(a.ts).localeCompare(String(b.ts)));
+	const byTarget = new Map<string, HubEvent[]>();
+	const firstAt = new Map<HubEvent, number>();
+	tail.forEach((e, i) => {
+		const target = typeof e.ts === "string" && isRealMessage(e) && !gatewayWake(e) ? eventTarget(e) : undefined;
+		if (!target) return;
+		const events = byTarget.get(target);
+		if (events) events.push(e);
+		else byTarget.set(target, [e]);
+		firstAt.set(e, i);
+	});
+	const added: { target: string; last: ConversationLast; at: number }[] = [];
+	for (const [target, events] of byTarget) {
+		if (target.startsWith("mail:")) briefFromTail(target.slice(5), events);
+		deferIncoming(target, events);
+		let i = events.length;
+		let last: ConversationLast | undefined;
+		while (!last && i > 0) last = lastOfTail(events[--i]!);
+		if (!last) continue;
+		const newest = last.ts;
+		if (events.slice(0, i).some(e => e.ts > newest)) last = events.reduce<ConversationLast | undefined>((cur, e) => { const l = lastOfTail(e); return l && !(cur && cur.ts > l.ts) ? l : cur; }, undefined)!;
+		const prev = known.get(target);
+		if (prev && prev.ts > last.ts) continue;
+		if (known.has(target)) known.set(target, last);
+		else added.push({ target, last, at: firstAt.get(events.find(e => lastOfTail(e))!)! });
+	}
+	for (const a of added.sort((x, y) => x.at - y.at)) known.set(a.target, a.last);
+	sorted = undefined;
+}
+
+function briefFromTail(key: string, events: readonly HubEvent[]): void {
+	for (const e of events) {
+		const mail = mailByKey(key);
+		if (!mail || mail.summary || mail.preview) return;
+		if (!OWNER_KINDS.has(e.kind) && lastOfTail(e)) briefMail(key, String(e.text ?? ""));
+	}
+}
+
+function deferIncoming(target: string, events: readonly HubEvent[]): void {
+	const ops: Pending[] = [...(incoming.get(target) ?? [])].map(([key, ts]) => ({ key, ts }));
+	for (const e of events) if (countable(e, fromOf(e))) ops.push({ key: incomingKey(e), ts: e.ts, e });
+	if (!ops.length) return;
+	incoming.delete(target);
+	pending.set(target, { ops, limit: ops.length + UNREAD_KEEP });
 }
 
 // `live`: the targets that exist right now (live sessions, project channels); they are listed even before their first message.

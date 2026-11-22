@@ -29,7 +29,10 @@
 //
 // Everything outside (zele, plugins, the read position, deleting) is injected (SyncDeps), so the tests run it with fakes.
 import { mailByKey, recordMail, type MailRecord, type MailSourceState } from "./mail.ts";
+import { mapLimit } from "./map-limit.ts";
 import { runLimited } from "./run-limited.ts";
+
+const MAIL_ACTIONS_AT_ONCE = 3;
 
 export const MAIL_ACTIONS = ["read", "unread", "archive", "unarchive", "trash", "star", "unstar"] as const;
 export type MailAction = (typeof MAIL_ACTIONS)[number];
@@ -117,8 +120,12 @@ export async function mailAction(key: string, action: MailAction, d: SyncDeps, o
 
 /** POST /api/mail/actions: the same action on many mails, in order. */
 export async function mailActions(keys: readonly string[], action: MailAction, d: SyncDeps): Promise<Array<ActionResult & { key: string }>> {
-	const results: Array<ActionResult & { key: string }> = [];
-	for (const key of keys) results.push({ key, ...(await mailAction(key, action, d)) });
+	const results = new Array<ActionResult & { key: string }>(keys.length);
+	const positions = new Map<string, number[]>();
+	for (const [i, key] of keys.entries()) positions.set(key, [...(positions.get(key) ?? []), i]);
+	await mapLimit([...positions], MAIL_ACTIONS_AT_ONCE, async ([key, at]) => {
+		for (const i of at) results[i] = { key, ...(await mailAction(key, action, d)) };
+	});
 	return results;
 }
 

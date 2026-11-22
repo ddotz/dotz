@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createEscalations, escalations, setEscalationsForTest } from "./escalate.ts";
 import { ASK_PREFIX, askComponents, askComponentsFor, askInteraction, parseAskId } from "./askbuttons.ts";
+import { msg } from "./i18n.ts";
 import type { Interaction } from "./discord.ts";
 import { buildPayloads } from "./discord-format.ts";
 import { draftApprovalBlock } from "./draft-approval.ts";
@@ -12,13 +13,35 @@ import { setReplies } from "./reply-actions.ts";
 
 const ASK = "[ask] 시작 설정\n\n**1) 지금 고치기**\n재부팅 뒤에도 켜져요\n**2) 그대로 두기**\n다음 재부팅까지는 괜찮아요";
 
-test("one button per option, all secondary", () => {
+test("one button per option, all secondary, and a row of 자세히 알려 주세요 · 나중에 under them", () => {
 	const rows = askComponentsFor("lane:fix", ASK) as { type: number; components: { style: number; label: string; custom_id: string; disabled: boolean }[] }[];
-	expect(rows).toHaveLength(1);
+	expect(rows).toHaveLength(2);
 	expect(rows[0]!.components.map(c => [c.label, c.style, c.custom_id, c.disabled])).toEqual([
 		["지금 고치기", 2, `${ASK_PREFIX}:lane:fix:1`, false],
 		["그대로 두기", 2, `${ASK_PREFIX}:lane:fix:2`, false],
 	]);
+	expect(rows[1]!.components.map(c => [c.label, c.style, c.custom_id])).toEqual([
+		["자세히 알려 주세요", 2, `${ASK_PREFIX}:lane:fix:more`],
+		["나중에 (1시간 뒤)", 2, `${ASK_PREFIX}:lane:fix:later`],
+	]);
+});
+
+test("nine options still fit: two rows of options and the 자세히 · 나중에 row, three of Discord's five", () => {
+	const nine = `[ask] 무엇부터 할까요?\n\n${Array.from({ length: 9 }, (_, i) => `**${i + 1}) 할 일 ${i + 1}**`).join("\n")}`;
+	const rows = askComponentsFor("chat", nine) as { components: { custom_id: string }[] }[];
+	expect(rows.map(r => r.components.length)).toEqual([5, 4, 2]);
+	expect(rows[2]!.components.map(c => c.custom_id)).toEqual([`${ASK_PREFIX}:chat:more`, `${ASK_PREFIX}:chat:later`]);
+});
+
+test("자세히 · 나중에 run the hub's handler for the owner only and leave the card's buttons as they are", async () => {
+	const calls: [string, string, string][] = [];
+	const replies: { type: number; data?: unknown }[] = [];
+	const run = (d: Interaction) => askInteraction(d, { owner: "owner-1", reply: async (_d, type, data) => void replies.push({ type, data }), answer: () => void calls.push(["answer", "", ""]), extra: (target, question, act) => (calls.push([target, question, act]), `${act} ok`) });
+	await run(click("owner-1", `${ASK_PREFIX}:lane:fix:later`));
+	await run(click("someone", `${ASK_PREFIX}:lane:fix:more`));
+	expect(calls).toEqual([["lane:fix", "시작 설정", "later"]]);
+	const quiet = (content: string) => ({ type: 4, data: { content, flags: 64, allowed_mentions: { parse: [] } } });
+	expect(replies).toEqual([quiet("later ok"), quiet(msg().auth.notOwner)]);
 });
 
 test("rows of 5, label cut to 80, at most 25 buttons", () => {
@@ -163,6 +186,12 @@ describe("a reply draft's 고치기 form", () => {
 	test("the buttons are 보내기 · 고치기 · 보내지 않기", () => {
 		const rows = askComponentsFor("chat", CARD) as { components: { label: string }[] }[];
 		expect(rows[0]!.components.map(c => c.label)).toEqual(["보내기", "고치기", "보내지 않기"]);
+	});
+
+	test("a send approval gets no 자세히 · 나중에 buttons", () => {
+		const rows = askComponentsFor("chat", CARD) as { components: { label?: string; custom_id?: string }[] }[];
+		expect(rows.flatMap(r => r.components.map(c => c.custom_id ?? ""))).not.toContain(`${ASK_PREFIX}:chat:later`);
+		expect(rows.flatMap(r => r.components.map(c => c.label))).not.toContain("자세히 알려 주세요");
 	});
 
 	test("고치기 opens the form: the draft's text prefilled, then optional words; a text over 4000 characters leaves only the words", async () => {

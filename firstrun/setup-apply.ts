@@ -1,6 +1,6 @@
-import { type Answers, priorOf } from "./answers.ts";
+import { ACCESS_MODES, type Answers, CONNECT_KEYS, priorOf } from "./answers.ts";
 import { validateWithModels } from "./models.ts";
-import { linkOmp, serveTailnet, setupDiscord, type Env, writeConfig, writeSecrets } from "./apply.ts";
+import { linkOmp, serveTailnet, type Env, writeConfig, writeSecrets } from "./apply.ts";
 import { harness } from "../onboard/harness.ts";
 import { requestPermissions } from "../onboard/permissions.ts";
 import { realHost, realUiBlocked } from "../onboard/selfserve.ts";
@@ -11,7 +11,7 @@ import { fill, type JobIO } from "./setup-jobs.ts";
 // so the draft never held them; what is left here is the shared firstrun/apply.ts code with its lines going to the scrubbed stream.
 
 export type ApplyDeps = { dir: string; home: string; pkg: string; permissionsDone: () => boolean; installed: (runtime: string) => Promise<boolean> };
-export type ApplyOutcome = { ok: true; access: "local" | "tailscale"; url: string; why: string; owner: string } | { ok: false; error: string };
+export type ApplyOutcome = { ok: true; access: "local" | "tailscale"; url: string; why: string; owner: string; connect: string[] } | { ok: false; error: string };
 
 const MAC = process.platform === "darwin";
 const str = (v: unknown): string => (typeof v === "string" ? v.trim() : "");
@@ -21,9 +21,13 @@ const present = <T extends object>(o: T): Partial<T> => Object.fromEntries(Objec
 /** The draft of the wizard as answers; what the owner left empty takes the earlier run's value or the default (firstrun/answers.ts). */
 export function draftAnswers(draft: Record<string, unknown>): Partial<Answers> {
 	const identity = present({ name: str(draft.name), character: str(draft.character), tone: str(draft.tone), notices: str(draft.notices), address: str(draft.address), avatar: str(draft.avatar), language: str(draft.lang) });
+	const access = ACCESS_MODES.find(m => m === draft.access);
+	const asked: unknown[] = Array.isArray(draft.connect) ? draft.connect : [];
 	return {
-		...present({ runtime: str(draft.runtime), guild: str(draft.guild), owner_id: str(draft.owner_id), machine_name: str(draft.machine_name), orchestrator_model: str(draft.orchestrator_model), lane_model: str(draft.lane_model) }),
+		...present({ runtime: str(draft.runtime), machine_name: str(draft.machine_name), orchestrator_model: str(draft.orchestrator_model), lane_model: str(draft.lane_model), cloudflare_hostname: access === "cloudflare" ? str(draft.cloudflare_hostname) : "" }),
 		identity: identity as Answers["identity"],
+		...(access ? { access } : {}),
+		...(Array.isArray(draft.connect) ? { connect: CONNECT_KEYS.filter(k => asked.includes(k)) } : {}),
 		...(Array.isArray(draft.allow_logins) ? { allow_logins: draft.allow_logins.map(str).filter(Boolean) } : {}),
 		...(num(draft.web_port) ? { web_port: num(draft.web_port)! } : {}),
 		...(num(draft.tailscale_https_port) ? { tailscale_https_port: num(draft.tailscale_https_port)! } : {}),
@@ -42,14 +46,14 @@ export async function runApply(d: ApplyDeps, io: JobIO): Promise<ApplyOutcome> {
 	io.line(text.steps.secrets);
 	writeSecrets(env, a);
 	if (a.runtime === "omp") io.line(`${a.orchestrator_model} / ${a.lane_model}`);
-	const wantServe = a.allow_logins.length > 0;
+	const wantServe = a.access === "tailscale" && a.allow_logins.length > 0;
 	if (wantServe) io.line(text.steps.tailnet);
 	const serve = await serveTailnet(env, a, wantServe);
-	const access = serve.ok ? "tailscale" : "local";
-	const why = wantServe && !serve.ok ? fill(text.notes.stayLocal, serve.reason) : "";
+	const access = a.access === "tailscale" && serve.ok ? "tailscale" : "local";
+	const why = a.access === "tailscale" && !a.allow_logins.length ? text.notes.noLogins : wantServe && !serve.ok ? fill(text.notes.stayLocal, serve.reason) : "";
 	if (why) io.line(why);
 	io.line(text.steps.config);
-	const config = writeConfig(env, a, prior, access);
+	writeConfig(env, a, prior, a.access === "cloudflare" ? undefined : access);
 	if (await linkOmp(env)) io.line(text.steps.plugin);
 
 	let owner = "";
@@ -59,12 +63,9 @@ export async function runApply(d: ApplyDeps, io: JobIO): Promise<ApplyOutcome> {
 		const left = await requestPermissions(process.execPath, () => "", realHost, false, (line, ownerStep) => (ownerStep ? steps.push(line) : io.line(line)));
 		if (left.length) owner = steps[0] ?? "";
 	}
-	if (a.guild) {
-		io.line(text.steps.discord);
-		await setupDiscord(env, { a, config, prior, auto: Boolean(Bun.which("aside")), ownerStep: () => io.owner(text.owner.discord2fa) });
-	}
 	io.line(text.steps.finish);
 	const host = serve.tsNow?.host;
 	const url = access === "tailscale" && host ? `https://${host}${a.tailscale_https_port === 443 ? "" : `:${a.tailscale_https_port}`}/` : `http://127.0.0.1:${a.web_port}/`;
-	return { ok: true, access, url, why, owner };
+	const connect: string[] = [...a.connect, ...(a.access === "cloudflare" ? ["web-access"] : [])];
+	return { ok: true, access, url, why, owner, connect };
 }

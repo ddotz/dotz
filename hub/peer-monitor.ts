@@ -399,7 +399,7 @@ export function createPeerMonitor(deps: MonitorDeps): PeerMonitor {
 				if (!id) return bad("chatId required");
 				if (a.op === "send" && a.chatId) return ask("POST", `/api/kakao/chat/${id}/send`, { text: a.text }, login, owner);
 				if (a.op === "read" && a.chatId) return ask("POST", `/api/kakao/chat/${id}/read`, { logId: a.logId }, login, owner);
-				if (a.op === "draft" && a.chatId) return ask("POST", `/api/kakao/chat/${id}/draft`, typeof a.choice === "string" ? { choice: a.choice } : {}, login, owner);
+				if (a.op === "draft" && a.chatId) return ask("POST", `/api/kakao/chat/${id}/draft`, typeof a.choice === "string" ? { choice: a.choice } : a.known === true ? { known: true } : {}, login, owner);
 				if (a.op === "ask-drop" && a.chatId) return ask("POST", `/api/kakao/chat/${id}/ask/drop`, {}, login, owner);
 				// 지켜보기 / 자동 초안 of a room, switched from the other computer: the owner's own room PUT, which checks the values.
 				if (a.op === "room" && a.chatId) return ask("PUT", `/api/kakao/rooms/${id}`, { watched: a.watched, autoDraft: a.autoDraft }, login, owner);
@@ -437,7 +437,7 @@ export function createPeerMonitor(deps: MonitorDeps): PeerMonitor {
 			case "draft-files": {
 				const ref = encodeURIComponent(String(a.ref ?? ""));
 				if (!a.ref) return bad("ref required");
-				return ask("POST", `/api/drafts/${ref}/files`, Number.isInteger(a.remove) ? { remove: a.remove } : typeof a.library === "string" ? { library: a.library } : { name: a.name, data: a.data }, login, owner);
+				return ask("POST", `/api/drafts/${ref}/files`, Number.isInteger(a.remove) ? { remove: a.remove, ...(typeof a.name === "string" ? { name: a.name } : {}), ...(typeof a.size === "number" ? { size: a.size } : {}) } : typeof a.library === "string" ? { library: a.library } : { name: a.name, data: a.data }, login, owner);
 			}
 			// The 받는 사람·참조 and 답장 | 전체 답장 of a mail reply draft (hub/draft-recipients.ts), changed on the computer that owns the draft.
 			case "draft-recipients": {

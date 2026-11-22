@@ -98,7 +98,7 @@ describe("모니터링 lists only what a watch, a schedule or an integration pro
 	test("a notice tap lands on its watch, else on the monitoring feed", () => {
 		const m = load(store(), integrations, monitors);
 		expect(m.monKeyOf({ kind: "watch", title: "node-security-updates" })).toBe("m:node security updates");
-		expect(m.monKeyOf({ kind: "watch", title: "예약" })).toBe("notice");
+		expect(m.monKeyOf({ kind: "watch", title: "없는 감시" })).toBe("notice");
 	});
 });
 

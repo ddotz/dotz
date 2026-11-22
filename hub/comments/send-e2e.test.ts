@@ -49,7 +49,7 @@ function world(o: { replyFails?: string; zeleFails?: boolean } = {}) {
 	const zele: string[][] = [];
 	let replyFails = o.replyFails;
 	let zeleFails = o.zeleFails;
-	const run: Runner = async argv => (zele.push(argv), zeleFails ? { code: 1, stdout: "", stderr: "smtp refused" } : { code: 0, stdout: "", stderr: "" });
+	const run: Runner = async argv => (zele.push(argv), zeleFails && argv[1] !== "whoami" ? { code: 1, stdout: "", stderr: "smtp refused" } : { code: 0, stdout: "", stderr: "" });
 	const adapter: CommentAdapter = {
 		kind: "youtube",
 		list: async () => ({ comments: [{ native: "c1", thread: "v1", author: "팬", text: "캐논 문서 받을 수 있나요? fan@example.com", postTitle: "캐논 연주", at: NOW - 1000 }], cursor: "1" }),
@@ -89,7 +89,7 @@ describe("comment reply + mail: 1) 보내기 -> reply posted -> mail sent with t
 		expect(w.posted).toEqual([]);
 		expect(w.mailSends()).toEqual([]);
 		await w.pick(d.code);
-		expect(await runComments(["send", d.code], w.engine, w.inbox)).toEqual({ lines: [`답글을 올리고 메일을 보냈어요 (${d.code})`], code: 0 });
+		expect(await runComments(["send", d.code], w.engine, w.inbox)).toEqual({ lines: [`답글을 올리고 메일을 보냈어요 (${d.code})`], code: 0, posted: d.code });
 		expect(w.posted).toEqual(["문서는 메일로 보내 드렸어요"]);
 		expect(w.mailSends()).toEqual([["zele", "mail", "send", "--to", "fan@example.com", "--subject", "캐논 문서 보내드립니다", "--body", "요청하신 캐논 문서 보내드립니다.", "--attach", stagedFiles(mailId)[0]!.path]]);
 		expect(w.engine.store.drafts()[0]!.status).toBe("sent");

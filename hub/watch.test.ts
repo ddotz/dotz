@@ -511,3 +511,21 @@ test("a watch made in a conversation session belongs to it; the wake target is c
 	expect([inCh, inMain, named, chan, proj, folder].map(wakeTarget)).toEqual(["ch:7", undefined, "th:4", "ch:9", "ch:3", undefined]);
 	expect(() => addWatch({ name: "t-conv-bad", command: "echo g", conv: "nope" }, "")).toThrow("conv must be a conversation target");
 });
+
+test("a failure that stays tells the owner again after 12 hours, then after 24 hours, then every 3 days", async () => {
+	addWatch({ name: "t-backoff", command: "exit 1", every_minutes: 5, on: "fail", to: "alert" }, "");
+	const told: number[] = [];
+	const after = async (hours: number) => {
+		clock.now += hours * 3600_000;
+		await runWatch("t-backoff");
+		told.push(notes.length);
+	};
+	await after(0);
+	await after(0.1);
+	await after(13);
+	await after(13);
+	await after(12);
+	await after(25);
+	await after(48);
+	expect(told).toEqual([0, 1, 2, 2, 3, 3, 4]);
+});

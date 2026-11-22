@@ -172,7 +172,7 @@ test("an unsure send survives a restart; a second approval sends nothing; only t
 	expect(left(m)).toEqual(["RAAAAAA:unsure"]);
 	const second = boot(m);
 	second.s.recover();
-	expect(second.reports.at(-1)).toMatchObject({ state: "unsure", reason: { code: "net_cut" } });
+	expect(second.s.results().at(-1)).toMatchObject({ state: "unsure", reason: { code: "net_cut" } });
 	expect(second.s.enqueue(job("RAAAAAA"))).toBe(true);
 	expect(second.s.enqueue({ ...job("RAAAAAA"), retry: true })).toBe(true);
 	await second.s.idle();
@@ -183,6 +183,27 @@ test("an unsure send survives a restart; a second approval sends nothing; only t
 	expect(second.ran[0]!.at(-1)).toBe("--retry");
 	expect(second.reports.at(-1)).toMatchObject({ state: "sent" });
 	expect(left(m)).toEqual([]);
+});
+
+test("LV-1 a restart holds the failed and unsure jobs the file kept without a report; a failure that happens afterwards is reported once", async () => {
+	const m = memoryStore();
+	const first = boot(m, { run: async argv => ({ code: 1, out: line(argv.at(-1) === "RAAAAAA" ? { sent: "no", code: "rejected" } : { sent: "maybe", code: "net_cut" }) }) });
+	first.s.enqueue(job("RAAAAAA"));
+	first.s.enqueue(job("RBBBBBB"));
+	await first.s.idle();
+	expect(left(m)).toEqual(["RAAAAAA:failed", "RBBBBBB:unsure"]);
+	expect(first.reports.filter(r => r.state === "failed" || r.state === "unsure")).toHaveLength(2);
+
+	const second = boot(m, { run: async () => ({ code: 1, out: line({ sent: "no", code: "rejected" }) }) });
+	second.s.recover();
+	expect(second.reports).toEqual([]);
+	expect(second.s.results().map(r => `${r.ref}:${r.state}`).sort()).toEqual(["RAAAAAA:failed", "RBBBBBB:unsure"]);
+	expect(left(m)).toEqual(["RAAAAAA:failed", "RBBBBBB:unsure"]);
+
+	expect(second.s.enqueue({ ...job("RAAAAAA"), retry: true })).toBe(true);
+	await second.s.idle();
+	expect(second.reports.filter(r => r.state === "failed")).toHaveLength(1);
+	expect(second.reports.filter(r => r.state === "failed")[0]).toMatchObject({ ref: "RAAAAAA", reason: { code: "rejected" } });
 });
 
 // A clock and a timer queue the test moves by hand: an automatic attempt runs when its time comes, never before.

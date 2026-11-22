@@ -1,12 +1,13 @@
 import { afterAll, beforeEach, describe, expect, test } from "bun:test";
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { draftAttachRoute } from "../../../hub/draft-attach.ts";
-import { ATTACH_REFUSED, asksForFile, claimsAttachment, LIBRARY_MISS, NO_ATTACHMENT_WARNING, parseDraftApproval } from "../../../hub/draft-approval.ts";
+import { claimsAttachment } from "../../../hub/attach-claim.ts";
+import { ATTACH_REFUSED, asksForFile, LIBRARY_MISS, NO_ATTACHMENT_WARNING, parseDraftApproval } from "../../../hub/draft-approval.ts";
 import { loadPlugins } from "../../../hub/plugins.ts";
 import { reviseDraft } from "../lib/flow.ts";
-import { matchLibrary } from "../lib/library.ts";
+import { listLibrary, matchLibrary } from "../lib/library.ts";
 import { offerMailDraft } from "../lib/offer.ts";
 import { canAttach, sendWith } from "../lib/senders.ts";
 import { addStagedFile, EVICTED, EVICTED_LATER, removeStagedFile, stagedFiles } from "../lib/staged.ts";
@@ -72,6 +73,20 @@ describe("the 첨부 파일 폴더", () => {
 		const found = await matchLibrary(lib, { subject: "달빛정원 ost 문서", text: "" });
 		expect(found.map(f => f.rel)).toEqual(["달빛정원_공유용.pdf"]);
 		expect((await matchLibrary(lib, { subject: TEACHER_SUBJECT, text: "" })).map(f => f.rel)).toEqual(["달빛정원_공유용.pdf"]);
+	});
+	test("a link whose real path is outside the folder is skipped; a link to a file inside stays", () => {
+		const root = mkdtempSync(join(tmpdir(), "rd-link-")), outside = mkdtempSync(join(tmpdir(), "rd-link-out-"));
+		writeFileSync(join(root, "안쪽.pdf"), "in");
+		writeFileSync(join(outside, "바깥.pdf"), "out");
+		mkdirSync(join(outside, "폴더"));
+		writeFileSync(join(outside, "폴더", "깊은.pdf"), "deep");
+		symlinkSync(join(outside, "바깥.pdf"), join(root, "바깥-링크.pdf"));
+		symlinkSync(join(outside, "폴더"), join(root, "폴더-링크"));
+		symlinkSync(join(root, "안쪽.pdf"), join(root, "안쪽-링크.pdf"));
+		symlinkSync(join(root, "없는.pdf"), join(root, "끊긴-링크.pdf"));
+		expect(listLibrary(root).map(f => f.rel)).toEqual(["안쪽-링크.pdf", "안쪽.pdf"]);
+		rmSync(root, { recursive: true, force: true });
+		rmSync(outside, { recursive: true, force: true });
 	});
 	test("a mail that names nothing in the folder matches nothing (a generic 문서 alone is not enough)", async () => {
 		expect(await matchLibrary(lib, { subject: "문서 부탁드립니다", text: "문서 보내주세요" })).toEqual([]);
@@ -288,13 +303,39 @@ describe("adding and removing files of a draft (the send sheet's routes)", () =>
 		expect(listed.map(i => i.rel)).toContain("문서/기타/캐논.pdf");
 		expect((await call("GET", ref, "library", undefined, "?q=캐논")).body.items.map((i: { rel: string }) => i.rel)).toEqual(["문서/기타/캐논.pdf"]);
 		const added = await call("POST", ref, "files", { library: "문서/기타/캐논.pdf" });
-		expect(added.body.files).toEqual([{ name: "캐논.pdf", size: "33B" }]);
+		expect(added.body.files).toEqual([{ name: "캐논.pdf", size: "33B", bytes: 33 }]);
 		const bytes = await call("POST", ref, "files", { name: "../../메모.txt", data: Buffer.from("hello").toString("base64") });
 		expect(bytes.body.files.map((f: { name: string }) => f.name)).toEqual(["캐논.pdf", "메모.txt"]);
 		const removed = await call("POST", ref, "files", { remove: 0 });
-		expect(removed.body.files).toEqual([{ name: "메모.txt", size: "5B" }]);
+		expect(removed.body.files).toEqual([{ name: "메모.txt", size: "5B", bytes: 5 }]);
 		expect(stagedFiles(ref).map(f => f.name)).toEqual(["메모.txt"]);
 		expect((await call("POST", ref, "files", { remove: 5 })).status).toBe(404);
+	});
+	test("x on a list another device changed meanwhile: the file at that place has another name, so nothing is taken off and the list comes back with 409", async () => {
+		const ref = await draft();
+		for (const name of ["a.pdf", "b.pdf", "c.pdf"]) await call("POST", ref, "files", { name, data: Buffer.from(name).toString("base64") });
+		expect((await call("POST", ref, "files", { remove: 0, name: "a.pdf" })).status).toBe(200);
+		const stale = await call("POST", ref, "files", { remove: 1, name: "b.pdf" });
+		expect(stale.status).toBe(409);
+		expect(stale.body).toMatchObject({ code: "changed", files: [{ name: "b.pdf" }, { name: "c.pdf" }] });
+		expect(stagedFiles(ref).map(f => f.name)).toEqual(["b.pdf", "c.pdf"]);
+		expect((await call("POST", ref, "files", { remove: 0, name: "b.pdf" })).body.files.map((f: { name: string }) => f.name)).toEqual(["c.pdf"]);
+	});
+	test("x on a file another device replaced by a same-named one of another size: nothing is taken off and the list comes back with 409; the size it was shown with takes it off", async () => {
+		const ref = await draft();
+		const put = (name: string, text: string) => call("POST", ref, "files", { name, data: Buffer.from(text).toString("base64") });
+		await put("x.pdf", "XX");
+		await put("a.pdf", "AAAA");
+		const shown = (await call("GET", ref, "files")).body.files as { name: string; bytes: number }[];
+		expect(shown.map(f => [f.name, f.bytes])).toEqual([["x.pdf", 2], ["a.pdf", 4]]);
+		await call("POST", ref, "files", { remove: 1 });
+		await put("a.pdf", "BBBBBBBB");
+		const stale = await call("POST", ref, "files", { remove: 1, name: "a.pdf", size: 4 });
+		expect(stale.status).toBe(409);
+		expect(stale.body).toMatchObject({ code: "changed", files: [{ name: "x.pdf" }, { name: "a.pdf", bytes: 8 }] });
+		expect(stagedFiles(ref).map(f => `${f.name}:${f.size}`)).toEqual(["x.pdf:2", "a.pdf:8"]);
+		expect((await call("POST", ref, "files", { remove: 1, name: "a.pdf", size: 8 })).status).toBe(200);
+		expect(stagedFiles(ref).map(f => f.name)).toEqual(["x.pdf"]);
 	});
 	test("a path outside the folder, an unknown draft and a sent draft change nothing", async () => {
 		const ref = await draft();

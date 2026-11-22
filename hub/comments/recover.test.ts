@@ -3,8 +3,9 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { CommentAdapter, RawComment, SourceConfig, SourceKind } from "./contract.ts";
+import type { CommentAdapter, GateResult, RawComment, SourceConfig, SourceKind } from "./contract.ts";
 import { createEngine } from "./engine.ts";
+import { STALE_SENDING_MS } from "./recover.ts";
 import type { Reply } from "./store.ts";
 
 const NOW = Date.parse("2026-11-05T00:00:00.000Z");
@@ -125,3 +126,72 @@ test("the record cannot be wiped: 지우기 would open the gate for a second pos
 	expect(w.reply().state).toBe("unsure");
 });
 
+describe("다시 보내기 of a reply that may already be up", () => {
+	const resend = (w: { engine: { retrySend: (id: string) => GateResult } }) => {
+		const r = w.engine.retrySend(ID);
+		if (!r.ok) throw new Error(r.reason);
+		return r.done;
+	};
+
+	test("the platform shows this very reply: it is recorded sent and nothing is posted again", async () => {
+		const w = world("youtube", { recheck: async () => ({ comments: [own()], gone: [] }) }, { state: "unsure" });
+		expect(await resend(w)).toMatchObject({ state: "sent" });
+		expect(w.posted).toEqual([]);
+		expect(w.reply().state).toBe("sent");
+		expect(w.reply().reason).toBeUndefined();
+		expect(w.reply().code).toBeUndefined();
+		expect(w.draft().status).toBe("sent");
+	});
+
+	test("the platform shows another reply of the owner: refused as already answered, nothing is posted, and the record stays unsure", async () => {
+		const w = world("youtube", { recheck: async () => ({ comments: [own({ text: "다른 답" })], gone: [] }) }, { state: "unsure" });
+		const before = w.reply();
+		const done = await resend(w);
+		expect(done.state).not.toBe("failed");
+		expect(done.reason).toBe("이미 답했어요");
+		expect(w.posted).toEqual([]);
+		expect(w.reply()).toEqual(before);
+		expect(w.draft().status).toBe("pending");
+	});
+});
+
+
+describe("a sender that died outside a boot", () => {
+	const older = (w: ReturnType<typeof world>, ms: number) => w.engine.store.putReply({ ...w.reply(), at: NOW - ms });
+	const dead = () => false;
+
+	test("the sweep leaves a stale sending record unsure, and then 다시 보내기 and 완료 work", async () => {
+		const w = world("youtube", {});
+		older(w, STALE_SENDING_MS + 1);
+		expect(w.engine.send("D1", { by: "owner" })).toMatchObject({ ok: false, code: "already_sending" });
+		expect(w.engine.retrySend(ID)).toMatchObject({ ok: false });
+		expect(w.engine.leaveUnsure({ live: dead })).toBe(1);
+		expect(w.reply()).toMatchObject({ state: "unsure", code: "interrupted" });
+		const r = w.engine.retrySend(ID);
+		if (!r.ok) throw new Error(r.reason);
+		expect(await r.done).toMatchObject({ state: "sent" });
+		expect(w.posted).toEqual(["고마워요 또 오세요"]);
+	});
+
+	test("a record younger than the limit, a live claim and an in-flight send are left alone", () => {
+		const fresh = world("youtube", {});
+		older(fresh, STALE_SENDING_MS - 1000);
+		expect(fresh.engine.leaveUnsure({ live: dead })).toBe(0);
+		expect(fresh.reply().state).toBe("sending");
+		const claimed = world("youtube", {});
+		older(claimed, STALE_SENDING_MS + 1);
+		expect(claimed.engine.leaveUnsure({ live: () => true })).toBe(0);
+		expect(claimed.reply().state).toBe("sending");
+	});
+
+	test("완료 closes a stale sending record as sent and refuses a fresh one", () => {
+		const stale = world("youtube", {});
+		older(stale, STALE_SENDING_MS + 1);
+		expect(stale.engine.markPosted(ID)).toEqual({ ok: true });
+		expect(stale.reply().state).toBe("sent");
+		expect(stale.draft().status).toBe("sent");
+		const fresh = world("youtube", {});
+		expect(fresh.engine.markPosted(ID)).toMatchObject({ ok: false });
+		expect(fresh.reply().state).toBe("sending");
+	});
+});

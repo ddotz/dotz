@@ -4,7 +4,7 @@ import { now, writeAtomic, log } from "./config.ts";
 import { parseTone, stripHandoff } from "./tone.ts";
 import { pendingAskFile } from "./asks.ts";
 import { lastQuestion } from "./ask-options.ts";
-import { bareAsk, normalizeAsk } from "./ask-normalize.ts";
+import { askFault, type AskFault, bareAsk, normalizeAsk, unreadQuestions } from "./ask-normalize.ts";
 import { parseDecisions } from "./choices.ts";
 import { join } from "node:path";
 import { workerCheck } from "./activity.ts";
@@ -53,6 +53,17 @@ export function nextLastText(lane: Lane, text: string): string {
 	return text;
 }
 
+function faultNote(fault: AskFault, text: string): string {
+	switch (fault.kind) {
+		case "unread":
+			return msg().askUnread(fault.questions, text);
+		case "title":
+			return msg().askTitleRefused(fault.title, text);
+		case "prose":
+			return msg().askProseRefused(fault.line, text);
+	}
+}
+
 // `notice` marks a gateway-written text ([lane error], [lane exited], pause/rate-limit): it is not the lane speaking, so it
 // leaves a pending ask alone. "pause": a usage-limit stop or recovery, which also starts no orchestrator turn (hub/lanerelay.ts).
 export function report(lane: Lane, written: string, notice: boolean | "pause" = false): void {
@@ -69,11 +80,21 @@ export function report(lane: Lane, written: string, notice: boolean | "pause" = 
 			lane.bareAsk = true;
 			persist(lane);
 			log(`lane ${lane.name} [ask] refused (no choice block)`);
-			return prompt(lane, msg().askRefused(parseTone(text).text));
+			const unread = unreadQuestions(text);
+			return prompt(lane, unread.length ? msg().askUnread(unread, parseTone(text).text) : msg().askRefused(parseTone(text).text));
 		}
 		text = parseTone(text).text;
 		lane.bareAsk = true;
-	} else if (!notice) lane.bareAsk = undefined;
+	} else if (!notice) {
+		lane.bareAsk = undefined;
+		const fault = lane.proc && !lane.askRefused ? askFault(text) : undefined;
+		if (fault) {
+			lane.askRefused = true;
+			persist(lane);
+			log(`lane ${lane.name} report refused (${fault.kind}: the owner cannot answer it from a card)`);
+			return prompt(lane, faultNote(fault, parseTone(text).text));
+		}
+	}
 	if (!notice) {
 		const unchecked = bareUnverified(text);
 		if (unchecked.length && lane.proc && !lane.unverifiedRefused) {

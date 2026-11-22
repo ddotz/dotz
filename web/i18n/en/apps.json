@@ -189,6 +189,11 @@
   "apps.kk.peer_revise": "On another computer's chat, make a draft first, then ask for changes",
   "apps.kk.choose_first": "Choose before replying",
   "apps.kk.write_own": "I'll write it",
+  "apps.kk.ask_author": "Tell me before I write",
+  "apps.kk.ask_task": "This request can't be a message",
+  "apps.kk.ask_task_note": "This is a task, not a message. Ask the assistant in the chat",
+  "apps.kk.ask_known": "Write from what you know",
+  "apps.kk.ask_stop": "Never mind",
   "apps.kk.making_reply": "Making the reply draft…",
   "apps.kk.making": "Drafting…",
   "apps.kk.draft_late": "The draft hasn't arrived yet"

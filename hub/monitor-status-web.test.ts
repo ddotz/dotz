@@ -36,6 +36,13 @@ describe("monStatus: connection > paused > fail > late > changed > ok > not run"
 		expect(key({ last_run: past, last_result: "ok", next_run: soon })).toBe("ok");
 		expect(monStatus({ next_run: soon }, NOW)).toEqual({ key: "need", text: "확인 필요", tone: "warn" });
 	});
+	test("a schedule not run yet waits in grey; one held by a usage limit is late; a failed run fails", () => {
+		expect(monStatus({ kind: "schedule", next_run: soon }, NOW)).toEqual({ key: "wait", text: "대기 중", tone: "off" });
+		expect(key({ kind: "schedule", next_run: past })).toBe("late");
+		expect(key({ kind: "schedule", last_run: past, last_result: "ok", run_state: "held", next_run: soon })).toBe("late");
+		expect(key({ kind: "schedule", last_run: past, last_result: "fail", run_state: "failed", next_run: soon })).toBe("fail");
+		expect(key({ kind: "schedule", last_run: past, last_result: "ok", run_state: "answered", next_run: soon })).toBe("ok");
+	});
 });
 
 describe("monNeedLine: sent today only; drafts, 미답장 and 안 읽음 are the row's own counts", () => {

@@ -405,18 +405,19 @@ function mbForm(st, host, o) {
   const field = (k, label, ph, extra = {}) => el("label", { class: `mbox-f mbox-f-${k}` }, el("span", { class: "mbox-fk", text: label }),
     el("input", { class: "mbox-in", type: "text", value: st[k], placeholder: ph, "data-k": `mail-${k}`, "aria-label": label, autocomplete: "off", spellcheck: "false", oninput: ev => { st[k] = ev.target.value; }, ...extra }));
   const picker = el("input", { type: "file", multiple: true, hidden: true, "aria-label": TX("decision.file.pick") });
+  const photos = el("input", { type: "file", accept: "image/*", multiple: true, hidden: true, "data-k": "mail-photo", "aria-label": TX("chat.att.photo") });
   const files = el("div", { class: "mbox-fw" });
   const paintFiles = () => clear(files).append(mbChips(st.files, i => { st.files.splice(i, 1); paintFiles(); }, st.up));
   const add = async list => {
     for (const f of list) {
       st.up.push(f.name); paintFiles();
-      try { const u = await uploadFile(f); st.files.push({ name: u.name, ...(u.original ? { original: u.original } : {}), path: u.path, size: u.size, type: u.type }); }
+      try { const u = await uploadFile(await upNamed(f)); st.files.push({ name: u.name, ...(u.original ? { original: u.original } : {}), path: u.path, size: u.size, type: u.type }); }
       catch (e) { toast(e.message || TX("mail.upload_failed"), true); }
       st.up.splice(st.up.indexOf(f.name), 1); paintFiles();
     }
   };
-  picker.onchange = () => { const list = [...picker.files]; picker.value = ""; add(list); };
-  const body = el("textarea", { class: "mbox-ta fi", rows: o.rows || "7", placeholder: o.placeholder || TX("mail.body"), "data-k": "mail-body", "aria-label": TX("mail.body"), oninput: ev => { st.body = ev.target.value; } });
+  for (const input of [picker, photos]) input.onchange = () => { const list = [...input.files]; input.value = ""; add(list); };
+  const body = el("textarea", { class: "mbox-ta fi", rows: o.rows || "7", placeholder: o.placeholder || TX("mail.body"), "data-k": "mail-body", "aria-label": TX("mail.body"), oninput: ev => { st.body = ev.target.value; errs.body.hidden = true; } });
   body.value = st.body;
   const ccRow = field("cc", TX("decision.cc"), TX("mail.many_ph"));
   ccRow.hidden = !st.cc && !st.showCc;
@@ -424,21 +425,32 @@ function mbForm(st, host, o) {
   ccBtn.hidden = !ccRow.hidden;
   const to = field("to", TX("mail.to"), TX("mail.many_ph"));
   to.append(ccBtn);
-  // a missing 받는 사람 is said under its row and stays until something is typed there
-  const err = el("div", { class: "mbox-err", role: "alert", text: TX("mail.need_to"), hidden: true });
-  const toIn = to.querySelector("input");
-  toIn.addEventListener("input", () => { err.hidden = true; });
-  st.needTo = () => { err.hidden = false; toIn.focus(); };
+  const note = k => el("div", { class: "mbox-err", role: "alert", "data-k": `mail-err-${k}`, hidden: true });
+  const errs = { to: note("to"), cc: note("cc"), body: note("body") };
+  const say = (k, text) => { for (const e of Object.values(errs)) e.hidden = true; errs[k].textContent = text; errs[k].hidden = false; };
+  const toIn = to.querySelector("input"), ccIn = ccRow.querySelector("input");
+  toIn.addEventListener("input", () => { errs.to.hidden = true; });
+  ccIn.addEventListener("input", () => { errs.cc.hidden = true; });
+  st.needTo = () => { say("to", TX("mail.need_to")); toIn.focus(); };
+  st.refuse = (k, key) => { say(k, TX(key)); ({ to: toIn, cc: ccIn, body })[k].focus(); };
   paintFiles();
   // append(null) would print the word "null": the quote block is added only when there is an original
-  clear(host).append(to, err, ccRow, field("subject", TX("decision.subject"), TX("decision.subject")), body, files, picker);
+  clear(host).append(to, errs.to, ccRow, errs.cc, field("subject", TX("decision.subject"), TX("decision.subject")), body, errs.body, files, picker, photos);
   if (o.quote) host.insertBefore(o.quote, files);
-  return { pick: () => picker.click(), body, files: paintFiles };
+  return { pick: () => picker.click(), pickPhoto: () => photos.click(), body, files: paintFiles };
 }
+const mbPickers = form => el("span", { class: "mbox-attach" },
+  el("button", { class: "ib", type: "button", "data-k": "mail-attach", "aria-label": TX("mail.attach"), title: TX("mail.attach"), onclick: () => form.pick() }, icon("clip")),
+  el("button", { class: "ib", type: "button", "data-k": "mail-attach-photo", "aria-label": TX("chat.att.photo"), title: TX("chat.att.photo"), onclick: () => form.pickPhoto() }, icon("image")));
+const MB_BODY_MAX = 20000, MB_RCPT_MAX = 500;
+const mbTooLong = st => (st.body.trim().length > MB_BODY_MAX ? ["body", "mail.err.body_long"] : st.to.trim().length > MB_RCPT_MAX ? ["to", "mail.err.to_long"] : st.cc.trim().length > MB_RCPT_MAX ? ["cc", "mail.err.cc_long"] : null);
 const mbPayload = (st, extra = {}) => ({ to: st.to.trim(), cc: st.cc.trim(), subject: st.subject.trim(), body: st.body, attachments: st.files.map(f => ({ name: f.name, path: f.path, size: f.size })), ...extra });
 const mbEmpty = st => !st.to.trim() && !st.cc.trim() && !st.subject.trim() && !st.body.trim() && !st.files.length;
+const mbWriting = () => (!!MBOX.cs && !mbEmpty(MBOX.cs.st)) || [...MBOX.boxes.values()].some(b => b.open && b.st && (b.st.body.trim() || b.st.files.length));
 async function mbSave(st, extra, btn) {
   if (!st.to.trim()) { st.needTo(); return null; }
+  const over = mbTooLong(st);
+  if (over) { st.refuse(...over); return null; }
   if (st.up.length) { toast(TX("mail.uploading_wait"), true); return null; }
   let r = null;
   await busy(btn, async () => {
@@ -468,15 +480,16 @@ function mbCompose(init = {}) {
   const node = el("div", { class: "mbox-sheet", role: "dialog", "aria-label": TX("mail.new_mail") });
   // The sheet fades down and away before it is removed; it is no longer the open one from the first moment.
   const leave = async () => { MBOX.cs = null; refit.disconnect(); node.inert = true; await motionOut(node, "rise"); node.remove(); };
-  const close = async () => { if (!mbEmpty(st) && !await ask(TX("mail.discard.title"), TX("mail.discard.body"), TX("mail.discard.go"), true)) return; leave(); };
-  const save = ev => mbSave(st, {}, ev.currentTarget).then(r => { if (r) leave(); });
+  const done = () => { leave(); keptSave(); };
+  const close = async () => { if (!mbEmpty(st) && !await ask(TX("mail.discard.title"), TX("mail.discard.body"), TX("mail.discard.go"), true)) return; done(); };
+  const save = ev => mbSave(st, {}, ev.currentTarget).then(r => { if (r) done(); });
   node.append(
     el("div", { class: "mbox-sh", onclick: ev => { if (node.classList.contains("min") && !ev.target.closest("button")) mbFold(node, false); } }, el("span", { class: "mbox-st", text: TX("mail.new_mail") }),
       el("button", { class: "ib mbox-min", type: "button", "aria-label": TX("mail.sheet.min"), title: TX("mail.sheet.min"), onclick: () => mbFold(node, !node.classList.contains("min")) }, icon("minus")),
       el("button", { class: "ib mbox-close", type: "button", "aria-label": TX("common.close"), title: TX("common.close"), onclick: close }, icon("close"))),
     host,
     el("div", { class: "mbox-sf" }, el("button", { class: "btn pri mbox-save", type: "button", "data-k": "mail-compose-save", onclick: save }, TX("mail.draft_create")),
-      el("button", { class: "ib mbox-attach", type: "button", "aria-label": TX("mail.attach"), title: TX("mail.attach"), onclick: () => form.pick() }, icon("clip"))));
+      mbPickers(form)));
   document.body.append(node);
   // the tab bar comes and goes with the screen and the window: a folded bar follows it
   const refit = new ResizeObserver(() => { if (node.classList.contains("min")) mbFold(node, true); });
@@ -484,6 +497,28 @@ function mbCompose(init = {}) {
   motionIn(node, "rise", 240);
   MBOX.cs = { node, st };
   node.querySelector(".mbox-in").focus();
+}
+const mbKeepFields = st => ({ to: st.to, cc: st.cc, subject: st.subject, body: st.body, files: st.files, showCc: !!st.showCc });
+const mbKeepCs = () => (MBOX.cs && !mbEmpty(MBOX.cs.st) ? { ...mbKeepFields(MBOX.cs.st), min: MBOX.cs.node.classList.contains("min") } : null);
+const mbKeepBox = b => (b.open && b.st && (b.st.body.trim() || b.st.files.length) ? { mode: b.mode, ...mbKeepFields(b.st) } : null);
+{
+  const openCs = v => { mbCompose({ ...mbKeepFields(v) }); if (v.min && MBOX.cs) mbFold(MBOX.cs.node, true); };
+  const openBox = (t, v) => MBOX.boxes.set(t, { open: true, mode: v.mode, st: { ...mbKeepFields(v), up: [] } });
+  const k = keptMap("mail-write", () => {
+    const o = {}, cs = mbKeepCs();
+    if (cs) o.cs = cs;
+    for (const [t, b] of MBOX.boxes) { const v = mbKeepBox(b); if (v) o[`box:${t}`] = v; }
+    return o;
+  }, (key, v) => {
+    if (!v || typeof v !== "object") return false;
+    if (key === "cs") { if (MBOX.cs) return false; openCs(v); return true; }
+    const t = key.startsWith("box:") ? key.slice(4) : "";
+    if (!t || MBOX.boxes.get(t)?.open) return false;
+    openBox(t, v); mbReplyPaint(true);
+    return true;
+  });
+  for (const [key, b] of Object.entries(k)) if (key.startsWith("box:")) openBox(key.slice(4), b);
+  if (k.cs) setTimeout(() => { openCs(k.cs); keptMark("mail-write"); }, 0);
 }
 
 /* ---------- the inline reply at the bottom of the open mail ---------- */
@@ -535,9 +570,9 @@ function mbReplyPaint(force) {
       el("div", { class: "mbox-modes" }, ...MB_MODES.map(([k, label, ic]) => el("button", { class: `cchip mbox-mode${k === b.mode ? " on" : ""}`, type: "button", "data-mode": k, "aria-pressed": String(k === b.mode), onclick: () => mbOpenReply(t, k) }, icon(ic), label))),
       host,
       el("div", { class: "mbox-sf" },
-        el("button", { class: "btn pri mbox-save", type: "button", "data-k": "mail-reply-save", onclick: ev => mbSave(b.st, { reply_to: mbKey(t), mode: b.mode }, ev.currentTarget).then(r => { if (r) { MBOX.boxes.delete(t); mbReplyPaint(true); } }) }, TX("mail.draft_create")),
-        el("button", { class: "ib mbox-attach", type: "button", "aria-label": TX("mail.attach"), title: TX("mail.attach"), onclick: () => form.pick() }, icon("clip")),
-        el("button", { class: "btn text mbox-cancel", type: "button", onclick: () => { b.open = false; mbReplyPaint(true); } }, TX("mail.reply.fold"))));
+        el("button", { class: "btn pri mbox-save", type: "button", "data-k": "mail-reply-save", onclick: ev => mbSave(b.st, { reply_to: mbKey(t), mode: b.mode }, ev.currentTarget).then(r => { if (r) { MBOX.boxes.delete(t); mbReplyPaint(true); keptSave(); } }) }, TX("mail.draft_create")),
+        mbPickers(form),
+        el("button", { class: "btn text mbox-cancel", type: "button", onclick: () => { b.open = false; mbReplyPaint(true); keptSave(); } }, TX("mail.reply.fold"))));
   }
   tl.append(slot);
 }

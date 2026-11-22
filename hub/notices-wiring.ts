@@ -36,6 +36,9 @@ export const setConvNameResolver = (fn: (conv: string) => string | undefined) =>
 export const decisionHooks: Array<(n: Notice) => void> = [];
 // Called once for every new (or re-asked) open decision, never while the old history is replayed.
 export const onDecision = (fn: (n: Notice) => void): void => void decisionHooks.push(fn);
+export const halfHooks: Array<(n: Notice) => void> = [];
+/** Called once when half of an open card's answer time has gone (hub/notices-later.ts): hub/push.ts sends its reminder. */
+export const onHalfTime = (fn: (n: Notice) => void): void => void halfHooks.push(fn);
 // A send-approval card closed because it is not its draft as printed (notices-rules.ts unreadDraftRef): `note` goes to the session that posted it.
 export const repostHooks: Array<(n: Notice, note: string) => void> = [];
 export const onDraftRepost = (fn: (n: Notice, note: string) => void): void => void repostHooks.push(fn);

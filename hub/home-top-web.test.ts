@@ -55,6 +55,7 @@ for (const [w, h] of [[344, 740], [390, 844], [1100, 800]] as const) {
 			await view.evaluate(`($("#views").scrollTop = 300, go("projects"), go("home"), 0)`);
 			expect(await settled()).toBe(0);
 			// the browser's back to 홈 too: other screens get their scroll back (32-history-nav.js), 홈 opens at its top
+			await view.evaluate(`(dispatchEvent(new Event("pointerup")), 0)`);
 			await view.evaluate(`($("#views").scrollTop = 300, go("settings"), 0)`);
 			await waitFor(`current === "settings" && history.state.c.length === 2`);
 			await view.evaluate(`new Promise((res, rej) => { const t = setTimeout(() => rej(new Error("no popstate")), 8000); addEventListener("popstate", () => { clearTimeout(t); res(0); }, { once: true }); history.back(); })`);

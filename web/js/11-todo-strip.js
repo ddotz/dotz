@@ -53,7 +53,7 @@ function paintOlderTop() {
 }
 if (TL_MORE_BTN) TL_MORE_BTN.onclick = () => loadOlderMsgs();
 function resetChat() { clear(tl); cvForget(); if (TL_TOP_NODE) tl.append(TL_TOP_NODE); csReset(); paintOlderTop(); }
-function dayDiv(t) { const d = kstDay(t); if (d && d !== CS.day) { csDay(d); tl.append(el("div", { class: "a-div", text: dayLabel(t) })); } }
+function dayDiv(t) { const d = kstDay(t); if (!d || d === CS.day) return null; csDay(d); return tl.appendChild(el("div", { class: "a-div", text: dayLabel(t) })); }
 // Who said a message, for the meta line: shown once per run of messages from the same speaker (a gap over 10 minutes starts a new run).
 function speakerOf(e) {
   const peer = peerMsgOf(e);
@@ -70,6 +70,50 @@ const isRestart = e => e.kind === "out" && e.source === "gateway" && /^게이트
 const cleanRestart = e => isRestart(e) && /끊긴 작업은 없어요/.test(String(e.text ?? ""));
 // The gateway's own wake for a check is an instruction to the assistant: no card, so no message and never unread (hub/conversations.ts gatewayWake).
 const gatewayWake = e => e.kind === "schedule" && e.source === "gateway";
+const handedTitle = text => { const line = text.split("\n")[0].trim(); return WT_HANGUL.test(line) && line.length <= 40 ? line : ""; };
+const wakeLead = (src, text) => [src, handedTitle(text)].filter(Boolean).join(" · ");
+function wakeOf(e) {
+  const text = String(e.text ?? "").trim();
+  if (e.kind === "handed") return { lead: wakeLead(targetName(e.from), text), raw: text, ts: e.ts, from: e.from };
+  if (e.kind !== "schedule") return null;
+  if (gatewayWake(e)) return { lead: "", raw: "", ts: e.ts, from: "" };
+  const name = typeof e.name === "string" ? e.name.trim() : "";
+  return { lead: name || SYS_LABEL.schedule, raw: text.replace(/^(?:(?:ch|lane|th):\S+\s*)+/, ""), ts: e.ts, from: "", sched: String(e.id ?? "") };
+}
+function gatewayTurnStart(a) {
+  if (a.type !== "status" || !/^>\s/.test(a.text ?? "") || !promptOf(a.text).dim) return false;
+  const A = ts(target).acts;
+  return A[A.lastIndexOf(a) - 1]?.type === "turn_start";
+}
+const WAKE_ANSWER_WAIT_MS = 3000;
+function wakeQuiet() {
+  const w = CS.wake;
+  if (!w) return;
+  csWakeSet(null);
+  for (const n of w.rows) { if (CS.group && CS.group.node === n) csGroupDrop(); n.remove(); }
+  if (w.day && w.day.isConnected && (w.day.hidden || !w.day.nextElementSibling)) { w.day.remove(); csDay(""); }
+}
+function wakeShow(w, shown) {
+  for (const n of w.rows) n.hidden = !shown;
+  let after = w.day && w.day.nextElementSibling;
+  while (after && after.hidden) after = after.nextElementSibling;
+  if (w.day) w.day.hidden = !shown && !after;
+}
+function wakeEnded(w, bulk) {
+  csWakeNote("ended");
+  if (CS.group && w.rows.includes(CS.group.node)) { workDone(CS.group); csGroupDrop(); }
+  if (bulk) wakeShow(w, false);
+  else setTimeout(() => { if (CS.wake === w) wakeShow(w, false); }, WAKE_ANSWER_WAIT_MS);
+}
+function wakeAnswered(n, at) {
+  const w = CS.wake, mt = w.from && n.querySelector(":scope > .mt");
+  csWakeSet(null);
+  wakeShow(w, true);
+  for (const r of w.rows) if (r.matches("details.work")) r.dataset.answer = at;
+  if (!mt) return;
+  const open = () => openTarget(w.from, "chat");
+  mt.append(" · ", el("span", { class: "wl-sess", role: "link", tabindex: "0", text: TX("home.handed.from", { name: targetName(w.from) }), onclick: ev => { ev.stopPropagation(); open(); }, onkeydown: ev => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); open(); } } }));
+}
 const BAN_KEY = "dotz-restart-seen";
 function paintRestartBanner() {
   const today = kstDay(Date.now()), list = ts(MAIN).msgs.filter(e => isRestart(e) && kstDay(e.ts) === today);
@@ -317,16 +361,8 @@ function msgNode(e, inRow) {
       // a mail without a subject (hub/mail.ts accepts one) shows as plain text
       return mdNode(text);
     }
-    // Text one session handed to another (hub/handed.ts): the schedule start's card, the sender in the header, the text behind 원문 보기.
-    case "handed":
-      return resultCard({ src: targetName(e.from), at: e.ts, title: TX(e.handback ? "home.handed.back" : "home.handed.sent"), raw: text });
-    case "schedule": case "watch": {
-      // the gateway's own wake (hub/main.ts wakeOnce: update carry-over, text overrides) is an instruction to the assistant: no card
-      if (gatewayWake(e)) return null;
-      // Same card as any other assistant message: who, when, then the plain line; the raw output folds under 원문.
-      const body = e.kind === "watch" ? watchLine(e.label || e.watch, e.reason, text, { prev: e.prev }) : scheduleLine(text);
-      return resultCard({ src: e.kind === "watch" ? humanLabel(e.label || e.watch) : SYS_LABEL[e.kind], at: e.ts, text: e.kind === "watch" ? body : body.replace(/^[^\n]*\n?/, ""), title: e.kind === "watch" ? undefined : body.split("\n")[0] });
-    }
+    case "handed": case "schedule": { const w = wakeOf(e); return w.lead ? newGroup(w).node : null; }
+    case "watch": return resultCard({ src: humanLabel(e.label || e.watch), at: e.ts, text: watchLine(e.label || e.watch, e.reason, text, { prev: e.prev }) });
     default: {
       const fromLane = typeof e.source === "string" && e.source.startsWith("lane:");
       // A session's report or answer is a full message; its mid-turn progress line (update_key), new or stored, reads as the live status.
@@ -387,19 +423,20 @@ function liveNode(body, tone, tap) {
 // A progress note as rows: no file line, code fence, table rule, small-line or quote mark of a full message.
 const noteText = t => fileLines(t).text.split("\n").filter(l => !/^\s*```/.test(l) && !isSep(l)).map(l => l.replace(/^\s*(?:-#|>)\s+/, "")).join("\n");
 const WORK = new Set(["tool_call", "tool_result", "thinking", "text", "error"]);
-function newGroup(a) {
+function newGroup(wake) {
   const wsum = el("span", { class: "wsum" }), body = el("div", { class: "wbody" });
   // A fold's rows are built when it opens: a conversation holds hundreds of them and drawing them took most of a chat switch. Its summary counts stay live.
-  const waiting = [];
-  const fill = () => { for (const w of waiting.splice(0)) { const n = actNode(w, g.ctx); if (n) g.body.append(n); } };
+  const waiting = wake && wake.raw && !wake.sched ? [{ type: "text", ts: wake.ts, text: wake.raw }] : [];
+  let head = wake && wake.sched ? () => schedWakeNode(wake, node) : null;
+  const fill = () => { if (head) { g.body.append(head()); head = null; } for (const w of waiting.splice(0)) { const n = actNode(w, g.ctx); if (n) g.body.append(n); } };
   const node = el("details", { class: "work" }, el("summary", { onclick: () => fill() }, el("span", { class: "wdot" }), wsum), body);
-  const g = { node, body, ctx: { calls: new Map() }, kinds: new Map(), tools: 0, think: 0, errs: 0, t0: Date.parse(a.ts), t1: Date.parse(a.ts), live: false };
+  const g = { node, body, ctx: { calls: new Map() }, kinds: new Map(), tools: 0, think: 0, errs: 0, acts: 0, t0: 0, t1: 0, live: false, lead: wake ? wake.lead : "" };
   g.update = () => {
     const parts = [g.t1 - g.t0 >= 1000 ? TX("home.work.dur", { dur: fmtDur(g.t1 - g.t0) }) : g.tools ? TX("home.work.work") : g.think ? TX("home.work.think") : TX("home.work.work")];
-    if (g.live) { const d = Math.max(g.t1, Date.now()) - g.t0; parts[0] = `${TX("common.status.working")}${d >= 1000 ? ` ${fmtDur(d)}` : ""}`; }
+    if (g.live) { const d = g.acts ? Math.max(g.t1, Date.now()) - g.t0 : 0; parts[0] = `${TX("common.status.working")}${d >= 1000 ? ` ${fmtDur(d)}` : ""}`; }
     for (const [k, v] of g.kinds) parts.push(`${({ 명령: TX("home.kind.cmd"), 읽기: TX("home.kind.read"), 수정: TX("home.kind.edit"), 검색: TX("home.kind.search"), 서브에이전트: TX("home.kind.subagent"), 웹: TX("home.kind.web"), 기록: TX("home.kind.notes"), 도구: TX("home.kind.tool") })[k] || k} ${v}`);
     if (g.errs) parts.push(TX("home.work.errs", { n: g.errs }));
-    wsum.textContent = parts.join(" · ");
+    wsum.textContent = !g.lead ? parts.join(" · ") : g.acts || g.live ? `${g.lead} → ${parts.join(" · ")}` : g.lead;
     node.classList.toggle("bad", g.errs > 0);
   };
   g.add = a => {
@@ -409,9 +446,10 @@ function newGroup(a) {
     else if (a.type === "thinking") g.think++;
     if (a.type === "error" || (a.type === "tool_result" && a.is_error)) g.errs++;
     const t = Date.parse(a.ts);
-    if (t > g.t1) g.t1 = t;
+    if (!g.acts++) g.t0 = g.t1 = t; else if (t > g.t1) g.t1 = t;
     g.update();
   };
+  g.update();
   return g;
 }
 function dropProgress(key) { const p = CS.prog.get(key); if (p) { const home = p.node.parentNode; p.node.remove(); wlTidy(home); csProgDrop(key); } }
@@ -424,7 +462,8 @@ function chatPush(en, bulk) {
     if (cleanRestart(en.m)) return;
     if (CS.group) workDone(CS.group);
     csGroupDrop();
-    const e = en.m;
+    const e = en.m, wake = wakeOf(e);
+    if (wake || OWNER.has(e.kind)) wakeQuiet();
     if (isSettingsT(target) && eventTarget(e) === target) { if (e.kind === "message") turnStart(target, Date.parse(e.ts) || Date.now()); else if (e.kind === "out" && !e.update_key) turnEnd(target); }
     const pkey = e.kind === "out" && e.update_key ? `${e.target ?? ""}|${e.update_key}` : "";
     const et = eventTarget(e) || "", laneT = isLaneT(et) ? et : "";
@@ -440,9 +479,12 @@ function chatPush(en, bulk) {
     // Repeated [run]/[wait] reports are one message, as on Discord (hub/lanewire.ts): the newest takes the place of the one before it, until another message stands between.
     const parked = e.kind === "lane_report" && !e.answering && parkedTone(statedTone(noHandoff(String(e.text ?? ""))).tone);
     if (parked && CS.parked) csParkedDrop();
-    const n = wlIs(e) ? wlNode(e) : msgNode(e);
+    const g = wake && wake.lead ? newGroup(wake) : null, n = g ? g.node : wake ? null : wlIs(e) ? wlNode(e) : msgNode(e);
+    if (wake) csWakeSet({ ts: e.ts, from: wake.from, rows: [], day: null, began: false, ended: false });
     if (n) {
-      dayDiv(e.ts);   // only above a drawn row: a conversation of rows that draw nothing keeps its empty state
+      const day = dayDiv(e.ts);   // only above a drawn row: a conversation of rows that draw nothing keeps its empty state
+      if (g) { csGroupStart(g); csWakeRow(n, day); }
+      else if (CS.wake && !OWNER.has(e.kind) && !pkey && !e.live) wakeAnswered(n, e.ts);
       if (!pkey) csParked(parked ? n : null);
       n.dataset.ts = e.ts;   // the notice jump finds its source message by this (30-notices.js ntFind)
       if (!n.classList.contains("wl-row")) rpMark(n, e);
@@ -457,9 +499,22 @@ function chatPush(en, bulk) {
       if (pkey) csProgSet(pkey, { node: n, target: laneT || String(e.target ?? "") });
     }
   } else {
-    if (!WORK.has(en.a.type) || isMailT(target) || (isSettingsT(target) && !(TURN.get(target) <= (Date.parse(en.a.ts) || 0)))) return;
-    if (!CS.group) { dayDiv(en.a.ts); csGroupStart(newGroup(en.a)); tl.append(CS.group.node); }
-    csGroupAdd(en.a);
+    const a = en.a, w = CS.wake;
+    if (w && !w.ended && a.ts >= w.ts && a.type === "turn_start") csWakeNote("began");
+    else if (w && w.began && !w.ended && a.type === "turn_end") wakeEnded(w, bulk);
+    else if (!(w && !w.ended) && gatewayTurnStart(a)) {
+      if (CS.group) workDone(CS.group);
+      csGroupDrop(); wakeQuiet();
+      csWakeSet({ ts: a.ts, from: "", rows: [], day: null, began: true, ended: false });
+    }
+    if (!WORK.has(a.type) || isMailT(target) || (isSettingsT(target) && !(TURN.get(target) <= (Date.parse(a.ts) || 0)))) return;
+    if (!CS.group) {
+      if (CS.wake && CS.wake.ended) wakeQuiet();
+      const day = dayDiv(a.ts);
+      csGroupStart(newGroup()); tl.append(CS.group.node);
+      if (CS.wake) csWakeRow(CS.group.node, day);
+    }
+    csGroupAdd(a);
   }
   if (!bulk) syncLiveTags();
   const fixed = TL_TOP_NODE && TL_TOP_NODE.parentNode === tl ? 1 : 0;

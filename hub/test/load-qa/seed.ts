@@ -294,7 +294,7 @@ export async function seed(dirArg: string, scale: Scale, opts: { realMail?: "all
 			if (!ids.has(id)) return ids.add(id), id;
 		}
 	};
-	const asks = ["내일 오후에 가능하세요?", "확인했습니다. 곧 안내드릴게요.", "일정은 금요일로 잡아 두었어요.", "말씀하신 자료는 첨부했습니다."];
+	const asks = ["내일 오후에 가능하세요?", "확인했습니다. 곧 안내드릴게요.", "일정은 금요일로 잡아 두었어요.", "말씀하신 내용은 잘 확인했습니다."];
 	const recs: import("../../../features/reply-drafts/lib/store.ts").DraftRec[] = [];
 	const created = (at: number): string => iso(Math.min(base - 30_000, at + 60_000 * (5 + r.int(600))));
 	const wantedFor = (inst: string, i: number) => (inst === "mail-beta" && libs.library.wanted.length && i % 5 === 0 ? { wantFiles: [libs.library.wanted[i % libs.library.wanted.length]!] } : {});
@@ -399,6 +399,7 @@ export async function seed(dirArg: string, scale: Scale, opts: { realMail?: "all
 	if (made.length !== size.notices) throw new Error(`seed: the feed made ${made.length} notices, wanted ${size.notices}`);
 	const kept = Notices.items.length;
 	for (const [i, n] of made.entries()) n.id = i.toString(16).padStart(8, "0");
+	Notices.flushNotices();
 	await timed("notices.direct", () => Cfg.writeAtomic(Cfg.paths.notices, `${JSON.stringify(made, null, 1)}\n`));
 
 	const total = Object.values(timings).reduce((a, b) => a + b, 0);

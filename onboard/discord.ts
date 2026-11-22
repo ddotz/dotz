@@ -47,19 +47,6 @@ export class AsideRepl {
 const CLICK = `globalThis.clickText = async (labels, ms = 12000) => { for (let t = 0; t < ms; t += 500) { const hit = await page.evaluate(ls => { const b = [...document.querySelectorAll('button')].find(x => ls.includes(x.innerText.trim())); if (b && !b.disabled) { b.click(); return b.innerText.trim(); } return ''; }, labels); if (hit) return hit; await new Promise(r => setTimeout(r, 500)); } return ''; };`;
 const READ_TOKEN = `{ const t = await page.evaluate(() => document.body.innerText + ' ' + [...document.querySelectorAll('input,textarea')].map(x => x.value).join(' ')); const m = t.match(${TOKEN_RE}); if (m) console.log('TOKEN_FOUND ' + m[0]); else console.log('WAITING'); }`;
 
-export async function createApp(name: string): Promise<string> {
-	const task = `In the Discord Developer Portal (https://discord.com/developers/applications), logged in as the current user:
-1. If an application named "${name}" exists, open it; otherwise create it with "New Application" (accept the terms; solve a captcha if one appears).
-2. Bot tab: turn ON "MESSAGE CONTENT INTENT" and save.
-3. Installation tab: set the install link to "None" and save; then Bot tab: turn OFF "Public Bot" and save.
-4. Do NOT reset or reveal the token. Do NOT invite the bot anywhere.
-5. End your reply with one line exactly: APP_ID=<the application id>`;
-	const out = (await Bun.$`aside ${task}`.nothrow().quiet()).stdout.toString();
-	const id = out.match(/APP_ID=(\d{15,25})/)?.[1];
-	if (!id) throw new Error("could not create or find the Discord application (see the Aside session)");
-	return id;
-}
-
 export async function resetToken(repl: AsideRepl, appId: string, notify: (msg: string) => void, timeoutMs = 300_000): Promise<string> {
 	const bot = `https://discord.com/developers/applications/${appId}/bot`;
 	const urlOf = async () => (await repl.run("console.log('URL ' + page.url());")).match(/URL (\S+)/)?.[1] ?? "";
@@ -80,32 +67,4 @@ await new Promise(r => setTimeout(r, 2000)); console.log('STEPS ' + [a, b].map(B
 		if (token) return token;
 	}
 	throw new Error("timed out waiting for the Discord verification");
-}
-
-export async function invite(repl: AsideRepl, appId: string, guild: string, token: string, notify: (msg: string) => void, timeoutMs = 180_000): Promise<void> {
-	const inGuild = async () => {
-		const r = await fetch("https://discord.com/api/v10/users/@me/guilds", { headers: { Authorization: `Bot ${token}` } });
-		return r.ok && ((await r.json()) as { id: string }[]).some(g => g.id === guild);
-	};
-	if ((await inGuild()) && (await isAdmin(token, guild))) return;
-	const url = `https://discord.com/oauth2/authorize?client_id=${appId}&scope=bot&permissions=${PERMISSIONS}&guild_id=${guild}&disable_guild_select=true`;
-	await repl.run(`await openTab('${url}'); ${CLICK} await clickText(['계속하기', '계속', 'Continue'], 15000); await clickText(['승인', 'Authorize'], 15000); console.log('CLICKED');`);
-	for (const deadline = Date.now() + timeoutMs; Date.now() < deadline; await wait(5000)) {
-		if ((await inGuild()) && (await isAdmin(token, guild))) return;
-		notify("봇 초대(관리자 권한)를 기다리는 중입니다. Aside 창에 캡차가 보이면 풀어 주세요.");
-	}
-	throw new Error("bot was not added to the server with administrator rights in time");
-}
-
-export async function isAdmin(token: string, guild: string): Promise<boolean> {
-	const get = async (path: string) => {
-		const r = await fetch(`https://discord.com/api/v10${path}`, { headers: { Authorization: `Bot ${token}` } });
-		return r.ok ? r.json() : undefined;
-	};
-	const me = (await get("/users/@me")) as { id: string } | undefined;
-	const member = me && ((await get(`/guilds/${guild}/members/${me.id}`)) as { roles: string[] } | undefined);
-	const roles = member && ((await get(`/guilds/${guild}/roles`)) as { id: string; permissions: string }[] | undefined);
-	if (!roles) return false;
-	const mine = new Set([...member.roles, guild]);
-	return roles.some(r => mine.has(r.id) && (BigInt(r.permissions) & 8n) === 8n);
 }

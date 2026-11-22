@@ -35,6 +35,21 @@ test("a mail is the same person only by name; one that only names the post is so
 	expect(other.title).toBe("moonlight");
 });
 
+test("a comment that holds an address accepts only a mail from that address; one without an address is marked name-only (CM-8)", async () => {
+	const withAddr = { ...q, text: "could I get the score? alice.real@example.com" };
+	expect(scoreMail({ id: "t1", from: "Alice <someone.else@corp.com>", subject: "score please", snippet: "" }, withAddr).accepted).toBe(false);
+	const same = scoreMail({ id: "t2", from: "Alice <Alice.Real@example.com>", subject: "score please", snippet: "" }, withAddr);
+	expect(same.accepted).toBe(true);
+	expect(same.reasons.join(" ")).not.toContain("주소 미확인");
+	const nameOnly = scoreMail({ id: "t3", from: "Alice <a@example.com>", subject: "score please", snippet: "" }, q);
+	expect(nameOnly.accepted).toBe(true);
+	expect(nameOnly.reasons).toContain("이름만 일치(주소 미확인)");
+	const stranger = mailbox([{ id: "t1", from: "Alice <someone.else@corp.com>", subject: "Moonlight score", snippet: "" }]);
+	expect(matchLines(await findMail(withAddr, stranger, NOW))[0]).toBe("메일 대조: 못 찾음");
+	const unverified = matchLines(await findMail(q, mailbox([{ id: "t3", from: "Alice <a@example.com>", subject: "Moonlight score", snippet: "" }]), NOW));
+	expect(unverified[1]).toContain("이름만 일치(주소 미확인)");
+});
+
 test("found and not answered: the card says so and asks for both replies", async () => {
 	const box = mailbox([{ id: "t1", from: "Alice <a@example.com>", subject: "Moonlight score", snippet: "" }], { t1: ["Alice <a@example.com>"] });
 	const lines = matchLines(await findMail(q, box, NOW));

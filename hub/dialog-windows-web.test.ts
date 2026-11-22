@@ -50,6 +50,7 @@ const CASES: Case[] = [
 for (const width of [390, 1280]) for (const c of CASES)
 	test(`${width}px ${c.name}: the shared window, one step on the overlay stack, one window after a second open, and closing takes the step off`, async () => {
 		const v = await page(width), under = c.under?.(width) ?? 0;
+		await run(v, `dispatchEvent(new Event("pointerup"))`);
 		await c.setup(v);
 		expect(await q(v, `return OV.length`)).toBe(under);
 		await run(v, c.open);

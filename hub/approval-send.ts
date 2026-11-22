@@ -56,7 +56,7 @@ type Hold = { approvedAt: number; wait: number };
 const PROVE_EVERY_MS = 10 * 60_000;
 export type AutoRetry = { attempt: number; max: number; nextAt: number };
 /** `detail`: what the place itself answered to the last try (hub/reply-types.ts SendOutcome), kept with the job, never shown on a card. */
-type Ended = { reason?: Reason; safeToAuto?: boolean; auto?: AutoRetry; attempts?: number; detail?: string };
+type Ended = { reason?: Reason; safeToAuto?: boolean; auto?: AutoRetry; attempts?: number; detail?: string; cause?: "cancel" | "restart" };
 type Kept = SendJob & { state: "queued" | "sending" | "undo" | "failed" | "unsure" } & Partial<Hold> & Ended;
 /** `undo`: approved, inside the cancel window (`until`); `back`: not sent, the draft waits for approval again (cancelled, or the gateway restarted in the window).
  * `failed` is surely not sent, `unsure` may have gone out; both carry `reason`, and `text` is its plain Korean for today's readers. */
@@ -147,7 +147,7 @@ export function createApprovalSender(deps: SenderDeps) {
 	// Jobs left sending by an earlier run whose sender may still be running: checked again by `recheck`.
 	const orphans = new Map<string, SendJob>();
 	// `gone`: the draft is no longer pending, so there is nothing left to resolve and the file does not keep it.
-	const set = (j: SendJob, state: SendResult["state"], text = "", hold?: Hold, ended: Ended = {}) => {
+	const set = (j: SendJob, state: SendResult["state"], text = "", hold?: Hold, ended: Ended = {}, quiet = false) => {
 		if ((state === "failed" || state === "unsure") && !spentAlready(kept.get(j.ref)?.state)) gateMark(deps, j, "spent");
 		const keep = state === "queued" || state === "sending" || state === "undo" || ((state === "failed" || state === "unsure") && ended.reason?.code !== "gone");
 		if (keep) kept.set(j.ref, { ref: j.ref, conv: j.conv, action: j.action, title: j.title, ...(j.retry ? { retry: true as const } : {}), ...(j.force ? { force: true as const } : {}), ...(j.hash ? { hash: j.hash } : {}), ...(j.by ? { by: j.by } : {}), state, ...(hold ?? {}), ...ended });
@@ -158,7 +158,7 @@ export function createApprovalSender(deps: SenderDeps) {
 		results.set(j.ref, r);
 		// The oldest finished result goes: one the file still keeps (waiting, sending, failed, unsure) is what a second approval is checked against, so it stays however many wait.
 		if (results.size > KEEP) for (const [ref, old] of results) if (!kept.has(ref)) { results.delete(ref); break; }
-		deps.report(r);
+		if (!quiet) tell(deps, r);
 	};
 	const attempts = (ref: string): number => kept.get(ref)?.attempts ?? 0;
 
@@ -207,7 +207,7 @@ export function createApprovalSender(deps: SenderDeps) {
 	/** A job in the window will not be sent: the owner's pick is taken back, then the card waits for approval again. */
 	function back(j: SendJob, why: "cancel" | "restart"): void {
 		takeBack(deps, j, why);
-		set(j, "back", why === "cancel" ? UNDONE : RETURNED_ON_RESTART);
+		set(j, "back", why === "cancel" ? UNDONE : RETURNED_ON_RESTART, undefined, { cause: why });
 	}
 	/** The gate refused `j` before it ran: nothing sent, no retry by code; a `changed` one also loses the pick it was approved with. */
 	function refuse(j: SendJob, code: ReasonCode, tries: number | undefined): void {
@@ -226,11 +226,10 @@ export function createApprovalSender(deps: SenderDeps) {
 			lanes.set(t.lane, l);
 			l.run = drain(t.lane, l.jobs);
 		}
-		return true;
 	}
 
 	// The lane is dropped in the same tick its last job is taken, so a job queued later always starts a new runner.
-	async function drain(key: string, jobs: (SendJob & { kind: SendKind })[]): Promise<void> {
+	async function drainJobs(key: string, jobs: (SendJob & { kind: SendKind })[]): Promise<void> {
 		for (let j = jobs.shift(); j; j = jobs.shift() ?? (lanes.delete(key), undefined)) {
 			const refusal = deps.fingerprint ? await unapproved(deps, j) : undefined;
 			if (refusal) {
@@ -241,7 +240,7 @@ export function createApprovalSender(deps: SenderDeps) {
 			const auto = kept.get(j.ref)?.auto;
 			set(j, "sending", "", undefined, { attempts: tries, ...(auto ? { auto } : {}) });
 			gateMark(deps, j, "go");
-			let o: SendOutcome;
+			let o: SendOutcome | MailLeft;
 			try {
 				o = await runOne(j);
 			} catch (e) {
@@ -252,8 +251,12 @@ export function createApprovalSender(deps: SenderDeps) {
 			ended(j, o, tries);
 		}
 	}
+	const drain = (key: string, jobs: (SendJob & { kind: SendKind })[]): Promise<void> =>
+		drainJobs(key, jobs)
+			.catch(e => deps.log(`approved sends in ${key}: the queue stopped: ${(e as Error).stack ?? (e as Error).message}`))
+			.finally(() => lanes.get(key)?.jobs === jobs && lanes.delete(key));
 
-	async function runOne(j: SendJob & { kind: SendKind }): Promise<SendOutcome> {
+	async function runOne(j: SendJob & { kind: SendKind }): Promise<SendOutcome | MailLeft> {
 		const inProcess = deps.runJob?.(j);
 		if (inProcess) return inProcess;
 		const argv = sendArgv(j.kind, j.ref, j.action, process.execPath, j.force === true);
@@ -265,9 +268,9 @@ export function createApprovalSender(deps: SenderDeps) {
 	}
 
 	// One send ended: sent, surely not sent (retried by code when its policy allows) or may have gone out.
-	function ended(j: SendJob, o: SendOutcome, tries: number): void {
+	function ended(j: SendJob, o: SendOutcome | MailLeft, tries: number): void {
 		if (o.sent === "yes") return set(j, "sent");
-		const reason = o.sent === "partial" ? partialReason(o) : reasonOf(o.code, o.sent === "no" ? o.vars : {});
+		const reason = o.sent === "partial" ? ("mail" in o ? { code: o.code, text: `답글은 올렸고 메일은 못 보냈어요: ${o.mail}` } : partialReason(o)) : reasonOf(o.code, o.sent === "no" ? o.vars : {});
 		const said = "detail" in o && o.detail ? { detail: o.detail } : {};
 		if (o.sent === "maybe" || (o.sent === "partial" && o.rest === "maybe")) return set(j, "unsure", reason.text, undefined, { reason, attempts: tries, ...said });
 		const p = policyOf(reason.code).auto;
@@ -361,7 +364,7 @@ export function createApprovalSender(deps: SenderDeps) {
 			for (const { state, approvedAt: _a, wait: _w, reason, safeToAuto, auto, attempts: tries, detail, ...j } of left) {
 				// A failed or unsure send is shown again as it was; a failed one's automatic attempt keeps its schedule.
 				if ((state === "failed" || state === "unsure") && reason && isReasonCode(reason.code)) {
-					set(j, state, reason.text, undefined, { reason, attempts: tries ?? 0, ...(detail ? { detail } : {}), ...(state === "failed" ? { safeToAuto: safeToAuto === true, ...(auto ? { auto } : {}) } : {}) });
+					set(j, state, reason.text, undefined, { reason, attempts: tries ?? 0, ...(detail ? { detail } : {}), ...(state === "failed" ? { safeToAuto: safeToAuto === true, ...(auto ? { auto } : {}) } : {}) }, true);
 					if (state === "failed" && safeToAuto && auto) schedule(j, auto);
 				} else if (state === "failed" || state === "unsure") kept.delete(j.ref);
 				else if (state === "undo") back(j, "restart");
@@ -405,10 +408,9 @@ export function createApprovalSender(deps: SenderDeps) {
 		},
 		/** An unsure job got its answer (proof read back, the owner's pick, its old sender finished). */
 		settle: (j: SendJob, state: "sent" | "failed", text = "") => (state === "sent" ? set(j, "sent") : set(j, "failed", text, undefined, { reason: { code: "tool_before_send", text }, safeToAuto: false, attempts: attempts(j.ref) })),
-		/** A failed or unsure send the owner cleared (its draft waits again, or it was dropped): the file and the list forget it; nothing is sent. */
 		forget: (ref: string): boolean => {
-			const k = kept.get(ref);
-			if (k?.state !== "failed" && k?.state !== "unsure") return false;
+			const st = kept.get(ref)?.state ?? results.get(ref)?.state;
+			if (st !== "failed" && st !== "unsure") return false;
 			autoAt.delete(ref);
 			kept.delete(ref);
 			results.delete(ref);
@@ -424,6 +426,13 @@ export function createApprovalSender(deps: SenderDeps) {
 	};
 }
 
+function tell(deps: Pick<SenderDeps, "report" | "log">, r: SendResult): void {
+	try {
+		deps.report(r);
+	} catch (e) {
+		deps.log(`approved send ${r.ref} in ${r.conv}: the ${r.state} report was not written: ${(e as Error).message}`);
+	}
+}
 // The owner's 보내기 of a job that will not go out is taken back in the inbox, so no CLI can send on it either.
 function takeBack(deps: Pick<SenderDeps, "revoke" | "log">, j: SendJob, why: "cancel" | "restart" | "changed"): void {
 	try {
@@ -464,25 +473,46 @@ async function unapproved(deps: Pick<SenderDeps, "fingerprint" | "log">, j: Send
 const lastLine = (out: string): string => out.trim().split("\n").filter(Boolean).slice(-1)[0] ?? "";
 // A CLI's `detail` is another process's text: bounded here, whatever it printed.
 const DETAIL_MAX = 300;
+const OUT_TAIL = 4000;
 const SENT = new Set(["yes", "no", "maybe"]);
 
-/** How a CLI send ended (design 1.11): timed out is unsure; the last `DOTZ_SEND` line decides (a "yes" wins over a non-zero exit); without one, exit 0 is sent and anything else may have gone out. */
-export function outcomeOf(r: { code: number; out: string; timedOut?: boolean }): SendOutcome {
-	if (r.timedOut) return { sent: "maybe", code: "timeout" };
-	const line = r.out.split("\n").filter(l => l.startsWith("DOTZ_SEND ")).at(-1);
-	let said: { sent?: unknown; code?: unknown; vars?: unknown; detail?: unknown } | undefined;
-	try {
-		said = line ? JSON.parse(line.slice("DOTZ_SEND ".length)) : undefined;
-	} catch {
-		said = undefined; // a broken line says nothing: the exit code decides below
+/** A comment reply that went up while its mail did not: `mail` is the mail's own reason, as the CLI printed it. */
+export type MailLeft = Extract<SendOutcome, { sent: "partial" }> & { mail: string };
+type SendLine = { sent?: unknown; code?: unknown; vars?: unknown; detail?: unknown; part?: unknown };
+
+function sendLines(out: string): SendLine[] {
+	const said: SendLine[] = [];
+	for (const l of out.split("\n").filter(x => x.startsWith("DOTZ_SEND "))) {
+		let v: SendLine | null;
+		try {
+			v = JSON.parse(l.slice("DOTZ_SEND ".length)) as SendLine | null;
+		} catch {
+			v = null;
+		}
+		if (v && typeof v === "object") said.push(v);
 	}
-	if (said && SENT.has(String(said.sent))) {
+	return said;
+}
+const detailOf = (said: SendLine): string | undefined => (typeof said.detail === "string" && said.detail.trim() ? said.detail.trim().slice(0, DETAIL_MAX) : undefined);
+
+/** How a CLI send ended (design 1.11): timed out is unsure; the `DOTZ_SEND` lines decide (the last one, but a reply line "yes" followed by a mail line that is not "yes" is a reply posted and a mail left, with the mail's reason; a "yes" wins over a non-zero exit); without one, exit 0 is sent and anything else may have gone out. */
+export function outcomeOf(r: { code: number; out: string; timedOut?: boolean }): SendOutcome | MailLeft {
+	if (r.timedOut) return { sent: "maybe", code: "timeout" };
+	const lines = sendLines(r.out).filter(x => SENT.has(String(x.sent)));
+	const mail = lines.find(x => x.part === "mail" && x.sent !== "yes");
+	if (mail && lines.some(x => x.part === "reply" && x.sent === "yes")) {
+		const code = isReasonCode(mail.code) ? mail.code : "unknown";
+		const why = detailOf(mail) ?? reasonOf(code).text;
+		return { sent: "partial", done: 1, total: 2, code, rest: mail.sent === "maybe" || code === "unknown" ? "maybe" : "no", mail: why };
+	}
+	const said = lines.at(-1);
+	if (said) {
 		if (said.sent === "yes") return { sent: "yes" };
 		const code = isReasonCode(said.code) ? said.code : "unknown";
-		const detail = typeof said.detail === "string" && said.detail.trim() ? { detail: said.detail.trim().slice(0, DETAIL_MAX) } : {};
-		if (said.sent === "maybe" || code === "unknown") return { sent: "maybe", code, ...detail };
+		const detail = detailOf(said);
+		if (said.sent === "maybe" || code === "unknown") return { sent: "maybe", code, ...(detail ? { detail } : {}) };
 		const vars = said.vars && typeof said.vars === "object" ? (said.vars as Record<string, string | number>) : undefined;
-		return { sent: "no", code, ...(vars ? { vars } : {}), ...detail };
+		return { sent: "no", code, ...(vars ? { vars } : {}), ...(detail ? { detail } : {}) };
 	}
 	return r.code === 0 ? { sent: "yes" } : { sent: "maybe", code: "unknown" };
 }
@@ -492,5 +522,8 @@ export async function runCli(argv: string[]): Promise<{ code: number; out: strin
 	// `env` is passed on purpose: without it Bun hands the child the environment the process started with, not process.env as it is now
 	// (the data folder a test or the gateway set at run time would be lost, and the CLI would read another install's drafts).
 	const r = await runLimited(argv, SEND_CLI_MS, { env: { ...process.env, DOTZ_GATEWAY_SEND: "1" } });
-	return { code: r.code, out: `${r.stdout}\n${r.timedOut ? "timed out" : r.stderr}`.slice(-4000), ...(r.timedOut ? { timedOut: true } : {}) };
+	const full = `${r.stdout}\n${r.timedOut ? "timed out" : r.stderr}`;
+	const tail = full.slice(-OUT_TAIL);
+	const line = full.split("\n").filter(l => l.startsWith("DOTZ_SEND ")).at(-1);
+	return { code: r.code, out: line && !tail.includes(line) && line.length <= OUT_TAIL ? `${tail}\n${line}` : tail, ...(r.timedOut ? { timedOut: true } : {}) };
 }

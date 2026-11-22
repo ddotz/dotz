@@ -16,7 +16,7 @@ import { out } from "./outbound.ts";
 
 const openFor = (to: string) => listNotices(500).items.filter((n: any) => n.decision?.state === "open" && n.decision.to === to);
 const labels = (n: any) => n.decision.options.map((o: any) => o.label);
-const buttons = (text: string) => (askComponentsFor("t", text) as { components: { label: string }[] }[]).flatMap(r => r.components.map(c => c.label));
+const buttons = (text: string) => (askComponentsFor("t", text) as { components: { label: string; custom_id: string }[] }[]).flatMap(r => r.components.filter(c => /:\d+$/.test(c.custom_id)).map(c => c.label));
 const posted = (target: string) =>
 	new Promise<HubEvent>((resolve, reject) => {
 		const timer = realSetTimeout(() => reject(new Error(`nothing posted to ${target}`)), 5000);

@@ -152,4 +152,57 @@ describe("upload chip", () => {
 		await waitFor(v, `ATT[0].file`);
 		expect(await ev(v, asks)).toBe(false);
 	});
+
+	describe("uploads cut while the page was away", () => {
+		const away = (v: View) => run(v, `Object.defineProperty(document, "visibilityState", { configurable: true, get: () => "hidden" }); document.dispatchEvent(new Event("visibilitychange"))`);
+		const back = (v: View) => run(v, `Object.defineProperty(document, "visibilityState", { configurable: true, get: () => "visible" }); document.dispatchEvent(new Event("visibilitychange"))`);
+		const snack = `[...document.querySelectorAll(".snack")].find(s => s.textContent.includes("a.zip") && s.textContent.includes("끊겼어요"))`;
+
+		test("a request that fails while hidden is told on return, with a button that uploads the file again", async () => {
+			const v = await fresh();
+			await run(v, add("a.zip", 40 * MB));
+			await waitFor(v, `XHRS.length === 1`);
+			await away(v);
+			await run(v, `XHRS[0].onerror()`);
+			expect(await ev(v, `!!(${snack})`)).toBe(false);
+			await back(v);
+			await waitFor(v, `!!(${snack}) && !!(${snack}).querySelector(".sa")`, 3000);
+			await run(v, `(${snack}).querySelector(".sa").click()`);
+			await waitFor(v, `XHRS.length === 2`);
+			await run(v, answer(1, "a.zip", 40 * MB));
+			await waitFor(v, `ATT[0].file`);
+			expect(await ev(v, `UPS[target]`)).toEqual({});
+		});
+
+		test("a request that failed while the page stayed in view is not counted among the cut ones", async () => {
+			const v = await fresh();
+			await run(v, `${add("a.zip", 40 * MB)} ${add("b.zip", 40 * MB)}`);
+			await waitFor(v, `XHRS.length === 2`);
+			await run(v, `XHRS[0].onerror()`);
+			await waitFor(v, `document.querySelector("#atray .up-retry")`);
+			await away(v);
+			await run(v, `XHRS[1].onerror()`);
+			await back(v);
+			await waitFor(v, `[...document.querySelectorAll(".snack")].some(s => s.textContent.includes("b.zip") && s.textContent.includes("끊겼어요"))`, 3000);
+		});
+
+		test("a request that went silent while hidden is ended on return and told as cut", async () => {
+			const v = await fresh();
+			await run(v, add("a.zip", 40 * MB));
+			await waitFor(v, `XHRS.length === 1`);
+			await away(v);
+			await run(v, `Date.now = (now => () => now() + 31000)(Date.now)`);
+			await back(v);
+			await waitFor(v, `!!(${snack})`, 3000);
+			expect(await ev(v, `XHRS[0].aborted`)).toBe(true);
+		});
+
+		test("on iPhone, where the page is frozen with pagehide and no beforeunload, a cut upload is told when the page is shown again", async () => {
+			const v = await fresh();
+			await run(v, add("a.zip", 40 * MB));
+			await waitFor(v, `XHRS.length === 1`);
+			await run(v, `dispatchEvent(new Event("pagehide")); XHRS[0].onerror(); dispatchEvent(new Event("pageshow"))`);
+			await waitFor(v, `!!(${snack})`, 3000);
+		});
+	});
 });

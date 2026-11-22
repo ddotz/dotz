@@ -22,7 +22,7 @@ flowchart LR
     o_chat_overlay["overlay (1)"]
     o_chat_rawdialog["rawdialog (1)"]
     o_chat_reveal["reveal (3)"]
-    o_chat_toast["toast (48)"]
+    o_chat_toast["toast (55)"]
   end
   subgraph a_comments["comments"]
     c_comments(["comments code"])
@@ -32,7 +32,7 @@ flowchart LR
   subgraph a_core["core"]
     c_core(["core code"])
     s_accounts["accounts: 계정"]
-    s_activity["activity: 채팅 작업 기록"]
+    s_activity["activity: 채팅 작업내역"]
     s_apps["apps: 앱"]
     s_cardform["cardform: 카드 양식"]
     s_chat["chat: 채팅"]
@@ -51,6 +51,7 @@ flowchart LR
     s_project["project: 프로젝트 상세"]
     s_projects["projects: 프로젝트 목록"]
     s_runtime["runtime: 실행 하네스"]
+    s_schedules["schedules: 예약한 일"]
     s_settings["settings: 설정"]
     s_slack["slack: Slack 연결"]
     s_telegram["telegram: Telegram 연결"]
@@ -85,7 +86,7 @@ flowchart LR
     c_kakao(["kakao code"])
     o_kakao_dialog["dialog (2)"]
     o_kakao_rawdialog["rawdialog (1)"]
-    o_kakao_toast["toast (18)"]
+    o_kakao_toast["toast (16)"]
   end
   subgraph a_mail["mail"]
     c_mail(["mail code"])
@@ -104,12 +105,12 @@ flowchart LR
     o_monitoring_menu["menu (1)"]
     o_monitoring_overlay["overlay (1)"]
     o_monitoring_select["select (1)"]
-    o_monitoring_toast["toast (32)"]
+    o_monitoring_toast["toast (35)"]
   end
   subgraph a_notices["notices"]
     c_notices(["notices code"])
     o_notices_fsOpen["fsOpen (2)"]
-    o_notices_toast["toast (26)"]
+    o_notices_toast["toast (27)"]
   end
   subgraph a_panes["panes"]
     c_panes(["panes code"])
@@ -124,7 +125,7 @@ flowchart LR
     o_peers_float["float (2)"]
     o_peers_menu["menu (1)"]
     o_peers_overlay["overlay (2)"]
-    o_peers_toast["toast (8)"]
+    o_peers_toast["toast (9)"]
   end
   subgraph a_projects["projects"]
     c_projects(["projects code"])
@@ -161,7 +162,7 @@ flowchart LR
   c_boot -->|"go (1)"| s_home
   c_boot -->|"go (1)"| s_usage
   c_chat -->|"go (5)"| s_any
-  c_chat -->|"go (3)"| s_chat
+  c_chat -->|"go (4)"| s_chat
   c_chat -->|"go (1)"| s_context
   c_chat -->|"go (1)"| s_home
   c_chat -->|"go (6)"| s_monitoring
@@ -172,6 +173,7 @@ flowchart LR
   c_core -->|"go (1)"| s_monitoring
   c_custom -->|"go (2)"| s_cardform
   c_custom -->|"go (3)"| s_home
+  c_harness -->|"go (1)"| s_harness
   c_home -->|"go (2)"| s_any
   c_home -->|"go (4)"| s_accounts
   c_home -->|"go (2)"| s_chat
@@ -185,12 +187,13 @@ flowchart LR
   c_monitoring -->|"go (3)"| s_chat
   c_monitoring -->|"go (11)"| s_monitoring
   c_notices -->|"go (1)"| s_any
+  c_notices -->|"go (1)"| s_accounts
   c_notices -->|"go (1)"| s_chat
   c_notices -->|"go (1)"| s_home
   c_notices -->|"go (2)"| s_monitoring
   c_notices -->|"go (3)"| s_notices
   c_notices -->|"go (1)"| s_projects
-  c_notices -->|"go (2)"| s_settings
+  c_notices -->|"go (2)"| s_update
   c_panes -->|"go (2)"| s_chat
   c_panes -->|"go (2)"| s_monitoring
   c_peers -->|"go (2)"| s_any
@@ -212,8 +215,9 @@ flowchart LR
   c_settings -->|"go (1)"| s_harness
   c_settings -->|"go (1)"| s_messengers
   c_settings -->|"go (1)"| s_models
-  c_settings -->|"go (1)"| s_notifications
+  c_settings -->|"go (2)"| s_notifications
   c_settings -->|"go (1)"| s_runtime
+  c_settings -->|"go (1)"| s_schedules
   c_settings -->|"go (1)"| s_update
   c_settings -->|"go (1)"| s_usage
   c_settings -->|"go (1)"| s_webaccess

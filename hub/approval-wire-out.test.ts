@@ -4,7 +4,7 @@
 // The drafts are mails of a source this machine cannot send from, refused after the approval check, so nothing leaves this machine.
 import { afterAll, beforeEach, expect, spyOn, test } from "bun:test";
 import { realSetTimeout, realClearTimeout } from "./runtime/test-clock.ts";
-import { type HubEvent, onEmit } from "./events.ts";
+import { type HubEvent, onBroadcast, onEmit } from "./events.ts";
 import { draftApprovalBlock } from "./draft-approval.ts";
 import { askText } from "./draft-attach.ts";
 import { ignoreNotice, listNotices } from "./notices.ts";
@@ -15,7 +15,7 @@ import { approvalRoute, reportSend, sendTargetOf, sender, webAnswer } from "./ap
 import { commentsDir, createStore } from "./comments/store.ts";
 import { replies } from "./reply-wire.ts";
 import { DATA_DIR, cfg } from "./config.ts";
-import { addDraft, getDraft, newId } from "../features/reply-drafts/lib/store.ts";
+import { addDraft, getDraft, newId, setStatus } from "../features/reply-drafts/lib/store.ts";
 
 beforeEach(() => void (cfg.web.send_undo_sec = 0));
 const CONV = "mail:aw-test";
@@ -164,4 +164,35 @@ test("답글만 보내기 through the gateway: the mail draft left behind gets o
 	expect(mailCards()).toHaveLength(1);
 	expect(posts.filter(t => t.includes(`(${mail})`))).toHaveLength(1);
 	expect(sendTargetOf(mail, "send")).toMatchObject({ kind: "mail" });
+});
+
+test("U4-6 보내기 on the card of a mail draft already sent is refused already_sent by the reply flow: nothing queued, the bot not asked", async () => {
+	const conv = "mail:aw-sent";
+	const id = draft("이미 보낸 답");
+	await out(conv, card(id));
+	const shown = listNotices(500).items.find(n => n.decision?.state === "open" && n.decision.to === conv && n.decision.draft?.ref === id)!;
+	const hash = (await replies.view(id))!.draft.hash;
+	setStatus(id, "sent");
+	const bot: string[] = [];
+	const r = await webAnswer(shown.id, { n: 1, hash }, "owner@example.com", async a => void bot.push(a.text));
+	expect(r.status).toBe(409);
+	expect(r.body).toMatchObject({ code: "already_sent" });
+	expect(bot).toEqual([]);
+	expect(sender.results().filter(x => x.ref === id)).toEqual([]);
+	for (const n of listNotices(500).items.filter(x => x.decision?.draft?.ref === id)) ignoreNotice(n.id);
+});
+
+test("a failed send tells every page the item as it is now, so a card redraws with the version the next 보내기 must carry", async () => {
+	const conv = "mail:aw-fresh";
+	const id = draft("새로 그릴 답");
+	await out(conv, card(id));
+	const shown = listNotices(500).items.find(n => n.decision?.state === "open" && n.decision.to === conv && n.decision.draft?.ref === id)!;
+	const items: unknown[] = [];
+	onBroadcast(e => void (e.kind === "reply" && e.ref === id && e.item && items.push(e.item)));
+	const r = await webAnswer(shown.id, { n: 1, hash: (await replies.view(id))!.draft.hash }, "owner@example.com", async () => undefined);
+	expect(r.status).toBe(200);
+	await sender.idle();
+	await new Promise(resolve => realSetTimeout(resolve, 50));
+	expect(items.at(-1)).toMatchObject({ ref: id, send: { state: "failed" }, draft: { hash: (await replies.view(id))!.draft.hash } });
+	for (const n of listNotices(500).items.filter(x => x.decision?.draft?.ref === id)) ignoreNotice(n.id);
 });

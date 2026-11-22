@@ -3,7 +3,8 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { draftApprovalBlock, NO_ATTACHMENT_WARNING } from "./draft-approval.ts";
-import { draftFileRoute, stageDraftFiles } from "./draft-files.ts";
+import { addStagedFile } from "../features/reply-drafts/lib/staged.ts";
+import { draftFileRoute } from "./draft-files.ts";
 import { emit } from "./events.ts";
 import { listNotices, markNoticesRead, type Notice, resolveNotices, unreadCount } from "./notices.ts";
 import { fakeHub, json, waitFor, type View } from "./test-web.ts";
@@ -15,8 +16,8 @@ const root = mkdtempSync(join(tmpdir(), "dotz-draft-atts-"));
 const src = mkdtempSync(join(tmpdir(), "dotz-draft-atts-src-"));
 writeFileSync(join(src, "견적서 최종.pdf"), "%PDF-1.4 fixture-bytes");
 writeFileSync(join(src, "현장사진.jpg"), "jpg-fixture-bytes");
-const staged = stageDraftFiles("RATT0001", [join(src, "견적서 최종.pdf"), join(src, "현장사진.jpg")], root);
-const mailStaged = stageDraftFiles("RMAIL001", [join(src, "견적서 최종.pdf")], root);
+const staged = ["견적서 최종.pdf", "현장사진.jpg"].map(n => addStagedFile("RATT0001", join(src, n), root));
+const mailStaged = [addStagedFile("RMAIL001", join(src, "견적서 최종.pdf"), root)];
 const COMMENT = { kind: "comment", key: "RCMT0001", author: "마피아팬", text: "문서 받을 수 있나요?", post: { title: "마피아 영상", link: "https://example.com/post/1", kind: "website" } };
 
 const hub = fakeHub({

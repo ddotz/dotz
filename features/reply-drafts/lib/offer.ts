@@ -1,25 +1,26 @@
 // The gateway's hook for a new mail: when this install turned the feature on (and auto), a mail that warrants a reply gets a draft in
 // the user's tone, offered as a send-approval [ask] (hub/draft-approval.ts). Never throws; nothing is sent from here.
-import { addressesOf, precheck, withSenderAddress, type ReplyItem } from "../../../hub/reply-draft.ts";
+import { addressesOf, precheck, usableReplyTo, withSenderAddress, type ReplyItem } from "../../../hub/reply-draft.ts";
 import type { ModelCall } from "../../../hub/reply-draft.ts";
 import type { DraftBrief } from "../../../hub/mail-lines.ts";
 import { hasBoxes } from "../../../hub/mailbox.ts";
-import { threadText } from "../../../hub/zele.ts";
+import { threadText, type RawReplyTo } from "../../../hub/zele.ts";
 import { ownAddresses } from "../../../hub/mail-state.ts";
 import { threadIdOf, webmailSite } from "./senders.ts";
-import { basename } from "node:path";
+import { existsSync, readFileSync, renameSync } from "node:fs";
+import { basename, join } from "node:path";
 import { retryWanted, stagedName, stageFiles, type StageOpts, type Want } from "./staged.ts";
 import { askText, attachFolder, buildDraft, callOf, candidatesFor, chosenFrom, draftTrace, mailAsksFile, settleDraft, stageForReply, traceLine, type DraftTrace } from "./flow.ts";
-import { anyRuleOn, mailInstanceOf, matchMail, ruleFileMissing, ruleInstruction, rulesOf, stageRuleFiles } from "./rules.ts";
+import { anyRuleOn, mailInstanceOf, matchMail, ruleFileMissing, ruleInstruction, rulesOf, stageRuleFiles, type MailMatch } from "./rules.ts";
 import { banWarnings, boxFolders, boxLines, boxRules, noAutoDraft } from "./box.ts";
 import { boxCtx, moveByJudge, type BoxDeps } from "./box-place.ts";
 import { learnFirst, MAIL_TONE_VERSION } from "./persona.ts";
-import { appOn, dataDir, ensureSwitch, hasOwnTone, loadSettings } from "./settings.ts";
-import { addDraft, isDrafted, markDrafted } from "./store.ts";
+import { appOn, dataDir, ensureSwitch, hasOwnTone, loadSettings, writeAtomic } from "./settings.ts";
+import { addDraft, draftHeads, isDrafted, markDrafted } from "./store.ts";
 import { FairQueue } from "./fair-queue.ts";
 import type { Runner } from "./tone.ts";
 
-export type OfferMail = { account?: string; key: string; /** The card's first line instead of the usual one (hub/mail-unanswered.ts). */ headline?: string; /** false: the gateway judged the mail needs no reply (hub/mail.ts); only a draft rule drafts it then */ needs?: boolean; instruction?: string; messageId?: string; target: string; thread?: string; source: string; id: string; subject: string; from?: string; to?: string; cc?: string; summary?: string; body?: string; attachments?: { name: string; size?: number }[]; /** files the poster already chose for the reply (hub/mail.ts reply_files) */ replyFiles?: { path: string }[] };
+export type OfferMail = { account?: string; key: string; /** The card's first line instead of the usual one (hub/mail-unanswered.ts). */ headline?: string; /** false: the gateway judged the mail needs no reply (hub/mail.ts); only a draft rule drafts it then */ needs?: boolean; instruction?: string; messageId?: string; target: string; thread?: string; source: string; id: string; subject: string; from?: string; to?: string; cc?: string; replyTo?: string; summary?: string; body?: string; attachments?: { name: string; size?: number }[]; /** files the poster already chose for the reply (hub/mail.ts reply_files) */ replyFiles?: { path: string }[] };
 export type OfferDeps = BoxDeps & {
 	send: (target: string, text: string) => unknown;
 	call?: ModelCall;
@@ -41,9 +42,10 @@ export type OfferDeps = BoxDeps & {
 	run?: Runner;
 	log?: (line: string) => void;
 	/** Records the suggested action on the mail (hub/mail.ts setMailSuggest), for the web's suggestion slot of that mail. */
-	suggest?: (key: string, s: { kind: "reply-draft"; label: string; ref: string; rule?: string }) => void;
+	suggest?: (key: string, s: { kind: "reply-draft"; label: string; ref: string; rule?: string; state?: "waiting" }) => void;
 	/** The owner's own addresses for a mail source (hub/mail-state.ts ownAddressesFor in the gateway): never a recipient of 전체 답장, and a mail from one gets no draft. Absent = the mail's 받는 사람. */
 	own?: (source: string) => string[];
+	replyTo?: (m: OfferMail) => Promise<RawReplyTo | undefined>;
 };
 
 // The text a model call sees is capped; a long thread's tail (quoted history) adds tokens and nothing for the reply.
@@ -113,26 +115,103 @@ function mayDraft(m: OfferMail, instance: string, deps: OfferDeps): boolean {
 const rulesAllowed = (s: ReturnType<typeof loadSettings>) => !(s.decided && !s.enabled);
 
 type OfferResult = "offered" | "skipped" | "off" | "failed";
-type Reads = { body: Promise<string | undefined>; history: Promise<string[]> };
-type Job = { m: OfferMail; deps: OfferDeps; queued: number; instance: string; requested: boolean; reads?: Reads; counted?: boolean; done: (r: OfferResult) => void };
+type Reads = { body: Promise<string | undefined>; history: Promise<string[]>; replyTo: Promise<RawReplyTo | undefined> };
+type Job = { m: OfferMail; deps: OfferDeps; queued: number; instance: string; requested: boolean; thread: string; reads?: Reads; counted?: boolean; done: ((r: OfferResult) => void)[] };
 
 // Offers run one at a time (a burst of new mail never starts many model calls at once), but not in arrival order: each mail app instance is a lane and
 // the lanes take turns, so one app's backlog never holds another app's mail, and an owner's request goes before every automatic offer.
 const urgent = new FairQueue<Job>(), waiting = new FairQueue<Job>();
+const waitingByThread = new Map<string, Job>();
 let busy = false;
 // The body and history reads (a mail CLI child each) start only for the first few automatic offers in line, while the one before them is in its model
 // call: at most this many offers have reads started and not yet begun, whatever the burst size. An owner's request reads at once (one per click).
 const READ_AHEAD = 2;
 let readingAhead = 0;
 
+const SUBJECT_ONLY = "본문을 읽지 못해 제목만 보고 썼어요";
+const OFFER_TRIES = 3;
+type Queued = { mail: OfferMail; tries: number };
+type QueueFile = Record<string, Queued>;
+const logOf = (deps: OfferDeps): ((line: string) => void) => deps.log ?? console.error;
+const queueFile = (): string => join(dataDir(), "custom", "reply-drafts", "offer-queue.json");
+const lookedOf = (m: OfferMail): string => (m.messageId ? `${m.key}#${m.messageId}` : m.key);
+
+function isQueued(value: unknown): value is Queued {
+	if (typeof value !== "object" || value === null) return false;
+	const { mail, tries } = value as { mail?: unknown; tries?: unknown };
+	if (typeof tries !== "number" || typeof mail !== "object" || mail === null) return false;
+	const fields = mail as Record<string, unknown>;
+	return ["key", "target", "source", "id", "subject"].every(k => typeof fields[k] === "string");
+}
+
+function readQueue(log: (line: string) => void): QueueFile {
+	const file = queueFile();
+	if (!existsSync(file)) return {};
+	let parsed: unknown;
+	try {
+		parsed = JSON.parse(readFileSync(file, "utf8"));
+	} catch (e) {
+		const moved = `${file}.corrupt-${Date.now()}`;
+		renameSync(file, moved);
+		log(`reply draft: offer queue file did not parse (${(e as Error).message}); kept as ${moved}`);
+		return {};
+	}
+	if (typeof parsed !== "object" || parsed === null) return {};
+	return Object.fromEntries(Object.entries(parsed).filter((entry): entry is [string, Queued] => isQueued(entry[1])));
+}
+
+function changeQueue(log: (line: string) => void, change: (queue: QueueFile) => void): void {
+	try {
+		const queue = readQueue(log);
+		change(queue);
+		writeAtomic(queueFile(), `${JSON.stringify(queue, null, 1)}\n`);
+	} catch (e) {
+		log(`reply draft: offer queue file not updated: ${(e as Error).message}`);
+	}
+}
+
+function keepQueued(thread: string, m: OfferMail, deps: OfferDeps): void {
+	changeQueue(logOf(deps), queue => {
+		const before = queue[thread];
+		queue[thread] = { mail: { ...m, ...(m.body ? { body: m.body.slice(0, BODY_MAX) } : {}) }, tries: before && lookedOf(before.mail) === lookedOf(m) ? before.tries : 0 };
+	});
+}
+
+function markFailed(m: OfferMail, deps: OfferDeps): void {
+	try {
+		if (m.needs !== true || !deps.suggest || draftHeads().some(d => d.ref === m.key && d.status === "pending")) return;
+		deps.suggest(m.key, { kind: "reply-draft", label: "답장 초안", ref: "", state: "waiting" });
+	} catch (e) {
+		logOf(deps)(`reply draft: mail ${m.key} not marked as failed: ${(e as Error).message}`);
+	}
+}
+
+function settleQueued(j: Job, result: OfferResult): void {
+	changeQueue(logOf(j.deps), queue => {
+		const entry = queue[j.thread];
+		if (!entry || waitingByThread.has(j.thread)) return;
+		if (result === "failed" && entry.tries + 1 < OFFER_TRIES) entry.tries++;
+		else delete queue[j.thread];
+	});
+	if (result === "failed") markFailed(j.m, j.deps);
+}
+
+function lookupReplyTo(m: OfferMail, deps: OfferDeps): Promise<RawReplyTo | undefined> {
+	if (m.replyTo || m.source !== "zele" || !deps.replyTo || !m.messageId?.startsWith("1|")) return Promise.resolve(undefined);
+	const late = Promise.withResolvers<undefined>();
+	const timer = setTimeout(() => late.resolve(undefined), HISTORY_WAIT_MS);
+	const read = deps.replyTo(m).catch(error => ((deps.log ?? console.error)(`mail ${m.key}: Reply-To not read: ${(error as Error).message}`), undefined));
+	return Promise.race([read, late.promise]).finally(() => clearTimeout(timer));
+}
+
 function startReads(j: Job): Reads {
 	if (j.reads) return j.reads;
 	try {
 		const may = j.requested || mayDraft(j.m, j.instance, j.deps);
-		return (j.reads = { body: may ? fullBody(j.m, j.deps) : Promise.resolve(j.m.body), history: may ? startHistory(j.m, j.deps) : Promise.resolve([]) });
+		return (j.reads = { body: may ? fullBody(j.m, j.deps) : Promise.resolve(j.m.body), history: may ? startHistory(j.m, j.deps) : Promise.resolve([]), replyTo: may ? lookupReplyTo(j.m, j.deps) : Promise.resolve(undefined) });
 	} catch (e) {
 		(j.deps.log ?? console.error)(`reply draft: mail ${j.m.key} reads not started: ${(e as Error).message}`);
-		return (j.reads = { body: Promise.resolve(j.m.body), history: Promise.resolve([]) });
+		return (j.reads = { body: Promise.resolve(j.m.body), history: Promise.resolve([]), replyTo: Promise.resolve(undefined) });
 	}
 }
 
@@ -141,10 +220,12 @@ function pump(): void {
 		const j = urgent.shift() ?? waiting.shift();
 		if (j) {
 			busy = true;
+			if (waitingByThread.get(j.thread) === j) waitingByThread.delete(j.thread);
 			if (j.counted) readingAhead--;
 			offerOne(j.m, j.deps, startReads(j), j.queued, j.instance, j.requested).catch(() => "failed" as const).then(r => {
 				busy = false;
-				j.done(r);
+				if (!j.requested) settleQueued(j, r);
+				for (const done of j.done) done(r);
 				pump();
 			});
 		}
@@ -162,8 +243,25 @@ function pump(): void {
 async function enqueue(m: OfferMail, deps: OfferDeps, requested: boolean): Promise<OfferResult> {
 	const queued = Date.now();
 	const instance = await mailInstanceOf(m.key);
+	const thread = `${m.source}\0${accountOf(m) ?? ""}\0${threadIdOf(m.source, m.id)}`;
 	return new Promise<OfferResult>(done => {
-		const job: Job = { m, deps, queued, instance, requested, done };
+		const older = requested ? undefined : waitingByThread.get(thread);
+		if (older) {
+			older.m = m;
+			older.deps = deps;
+			older.done.push(done);
+			if (older.counted) readingAhead--;
+			older.reads = undefined;
+			older.counted = false;
+			keepQueued(thread, m, deps);
+			pump();
+			return;
+		}
+		const job: Job = { m, deps, queued, instance, requested, thread, done: [done] };
+		if (!requested) {
+			waitingByThread.set(thread, job);
+			keepQueued(thread, m, deps);
+		}
 		(requested ? urgent : waiting).push(instance !== "mail" ? instance : accountOf(m) || m.source, job);
 		if (requested) startReads(job);
 		pump();
@@ -176,7 +274,10 @@ async function enqueue(m: OfferMail, deps: OfferDeps, requested: boolean): Promi
 export const requestMailDraft = (m: OfferMail, deps: OfferDeps): Promise<OfferResult> => enqueue(m, deps, true);
 export const offerMailDraft = (m: OfferMail, deps: OfferDeps): Promise<OfferResult> => (readOnArrival(deps), enqueue(m, deps, false));
 
-async function offerOne(m: OfferMail, deps: OfferDeps, { body, history }: Reads, queued: number, instance: string, requested: boolean): Promise<OfferResult> {
+/** At start: puts back the automatic offers the file `custom/reply-drafts/offer-queue.json` still holds, and nothing else. */
+export const resumeOffers = (deps: OfferDeps): Promise<OfferResult[]> => Promise.all(Object.values(readQueue(logOf(deps))).map(entry => enqueue(entry.mail, deps, false)));
+
+async function offerOne(m: OfferMail, deps: OfferDeps, { body, history, replyTo }: Reads, queued: number, instance: string, requested: boolean): Promise<OfferResult> {
 	const log = deps.log ?? ((line: string) => console.error(line));
 	const started = Date.now();
 	let trace: DraftTrace | undefined;
@@ -208,6 +309,7 @@ async function offerOne(m: OfferMail, deps: OfferDeps, { body, history }: Reads,
 		// A thread read: the newest message of the sender is the text, the earlier ones the context. Any other text is the text. A read with no text of its own
 		// (a mail of html or images only) leaves what the poster gave.
 		const thread = threadText((await body) ?? m.summary ?? "", ownAddresses(item.self));
+		const subjectOnly = !(thread.text.trim() || m.body?.trim() || m.summary?.trim());
 		item.text = (thread.text.trim() || m.body?.trim() || m.summary?.trim() || "").slice(0, BODY_MAX) || m.subject;
 		const earlier = await history;
 		const context = [thread.context, ...(earlier.length ? ["Earlier mail from this sender:", ...earlier] : [])].filter(Boolean).join("\n");
@@ -218,11 +320,22 @@ async function offerOne(m: OfferMail, deps: OfferDeps, { body, history }: Reads,
 			markDrafted(looked);
 			return "skipped";
 		}
+		const found = await replyTo;
+		const named = m.replyTo ?? (found?.from && addressesOf(found.from)[0] === addressesOf(item.from)[0] ? found.replyTo : undefined);
+		if (usableReplyTo(named, item.self)) item.replyTo = named;
 		// One budget for every model call of this draft: the rule match, the draft call and the file tie-break.
 		trace = draftTrace();
 		// A short wait for an iCloud file to come back (the offer queue waits on this draft); what is still away is retried in the background (wantFiles).
 		const flow = { call: deps.call, pick: deps.pick, trace, stage: { tries: 5, ...deps.stage } };
-		const hit = rules.length || judges.length ? await matchMail({ from: item.from, subject: item.subject, text: item.text }, rules, judges.map(b => b.judge.text), callOf(flow, item, m.key, "rule")).catch(e => (log(`reply draft: rules for mail ${m.key} not matched: ${(e as Error).message}`), {} as Awaited<ReturnType<typeof matchMail>>)) : {};
+		let hit: MailMatch = {};
+		if (rules.length || judges.length) {
+			try {
+				hit = await matchMail({ from: item.from, subject: item.subject, text: item.text }, rules, judges.map(b => b.judge.text), callOf(flow, item, m.key, "rule"));
+			} catch (e) {
+				log(`reply draft: rules for mail ${m.key} not matched: ${(e as Error).message}`);
+				if (!requested && !auto) return "failed";
+			}
+		}
 		const rule = hit.rule;
 		if (hit.judge !== undefined) {
 			// The mail moves to the box the judge chose, and that box's mode applies; no second call.
@@ -272,7 +385,7 @@ async function offerOne(m: OfferMail, deps: OfferDeps, { body, history }: Reads,
 		built.rec.mode = "reply";
 		ensureSwitch();
 		if (rule) built.rec.rule = { id: rule.id, name: rule.name };
-		const warnings = [...built.warnings, ...banWarnings(box, built.rec)];
+		const warnings = [...built.warnings, ...banWarnings(box, built.rec), ...(subjectOnly ? [SUBJECT_ONLY] : [])];
 		const chosen = chosenFrom(cands, built.files);
 		const notStaged = (e: Error): string[] => (log(`reply draft: files for mail ${m.key} not staged: ${e.message}`), []);
 		if (given.length) {
@@ -292,11 +405,15 @@ async function offerOne(m: OfferMail, deps: OfferDeps, { body, history }: Reads,
 			if (missing.length) warnings.push(ruleFileMissing(missing));
 		} else warnings.push(...(await stageForReply(built.rec, flow).catch(notStaged)));
 		await settleDraft(built.rec, deps.run);
-		await deps.send(m.thread ? `th:${m.thread}` : m.target, askText(built.rec, warnings, m.headline));
 		addDraft(built.rec);
-		if (built.rec.wantFiles?.length) retryWanted(built.rec.id, flow.stage);
 		markDrafted(looked);
+		if (built.rec.wantFiles?.length) retryWanted(built.rec.id, flow.stage);
 		deps.suggest?.(m.key, { kind: "reply-draft", label: "답장 초안", ref: built.rec.id, ...(rule ? { rule: rule.name } : {}) });
+		try {
+			await deps.send(m.thread ? `th:${m.thread}` : m.target, askText(built.rec, warnings, m.headline));
+		} catch (e) {
+			log(`reply draft: card of draft ${built.rec.id} (mail ${m.key}) not posted, the draft waits in the queue: ${(e as Error).message}`);
+		}
 		// Where the time went, so a slow draft can be traced: queue wait, body read, identity sweep (first draft only), the draft model call and the rest.
 		log(`reply draft: mail ${m.key} offered in ${Date.now() - queued}ms (queue ${started - queued}, body ${read - started}, identity ${learned - read}, draft+files ${Date.now() - learned})`);
 		return "offered";

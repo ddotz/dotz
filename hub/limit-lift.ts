@@ -12,7 +12,7 @@
 // A try that fails anyway is not repeated for the same episode: the session pauses again for the time the server names.
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { DATA_DIR, log, NAME, writeAtomic } from "./config.ts";
+import { DATA_DIR, log, writeAtomic } from "./config.ts";
 import { convs } from "./convsessions.ts";
 import { liftQuotaBlocks } from "./fallback.ts";
 import { msg } from "./i18n.ts";
@@ -57,7 +57,7 @@ export const liftEnv = {
 	tell: (agent: string, text: string): void => {
 		const lane = agent.startsWith("lane:") ? lanes.get(agent.slice(5)) : undefined;
 		if (lane) report(lane, text, "pause");
-		else alert(`${NAME}: ${text}`);
+		else alert(text);
 	},
 	refresh: (account?: string): void => {
 		if (account) forgetAccountUsage(account);

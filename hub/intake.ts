@@ -1,6 +1,7 @@
 // Inbound path of the hub: inbox text, burst coalescing (intake/flush), web sends and the queued-message sweep. Split out of main.ts.
 import { BURST_GAP_MS, BURST_WAIT_MS, cfg, COALESCE_MAX_MS, DATA_DIR, DEFAULTS, log, now } from "./config.ts";
-import { limitsCard, parseCommand, runCommand } from "./control.ts";
+import { commandGate, limitsCard, parseCommand, refusedCard, runCommand } from "./control.ts";
+import { reasonOf } from "./reply-reasons.ts";
 import * as discord from "./discord.ts";
 import * as livestatus from "./livestatus.ts";
 import { msg } from "./i18n.ts";
@@ -8,7 +9,7 @@ import { recordCorrection } from "./corrections.ts";
 import { coalesceFor } from "./quick-chat.ts";
 import { recipeAnswer } from "./recipes.ts";
 import { askedText, emit, emitDelivery, eventTarget, isPeerMessage, onEmit, type HubEvent } from "./events.ts";
-import { openChoiceTitles } from "./notices.ts";
+import { markJudging, openChoices, type ListedChoice } from "./notices.ts";
 import { attachmentLine, attachmentLines, type Upload } from "./files.ts";
 import { pickedLines, type Picked } from "./picked.ts";
 import { abortLane, approvesBudget, lanes, ownerNotes, sendToLane } from "./lanes.ts";
@@ -26,10 +27,10 @@ import { withTurnLanguage } from "./outlang.ts";
 import { MAIL_TURN_MARK } from "./systemdeny.ts";
 import { channelContext, listSetups } from "./workchannels.ts";
 import { updateNow } from "./update-now.ts";
-import { deliver, awaiting, convOfTarget, lastOwner, refOf, newMid, laneFailed, out, expectReply, rateLimitNotice, turnSource } from "./outbound.ts";
+import { askFollowup, deliver, awaiting, convOfTarget, lastOwner, refOf, newMid, laneFailed, out, expectReply, rateLimitNotice, turnSource } from "./outbound.ts";
 import { mailTarget, type MailRecord } from "./mail.ts";
 import { cardLine, ownerIntent, ownerPick } from "./reply-chat.ts";
-import { AGENT_AUTHOR } from "./entry-check.ts";
+import { AGENT_AUTHOR } from "./agent-author.ts";
 import { useReplies } from "./reply-actions.ts";
 import { memoryNote, settingsTarget } from "./app-settings.ts";
 import { appEntries } from "./integrations.ts";
@@ -89,11 +90,8 @@ function decisionLines(p: Record<string, any>): string[] {
 }
 
 // The owner's message holds no answer by itself when it lands in a conversation with open choice questions: the bot is told which, judges whether the message answers one, and closes it at once with `resolves` or a closing `<resolves>` line.
-const TITLE_MAX = 60;
-const openQuestionLines = (target: string): string[] => {
-	const titles = openChoiceTitles(target).map(t => t.slice(0, TITLE_MAX));
-	return titles.length ? [msg().openQuestions(titles)] : [];
-};
+const openQuestionLines = (listed: ListedChoice[]): string[] => (listed.length ? [msg().openQuestions(listed.map(q => q.title))] : []);
+const askedIn = (e: HubEvent): ListedChoice[] => (e.kind === "message" && !isPeerMessage(e) ? openChoices(eventTarget(e) ?? "main") : []);
 
 function inboxBody(e: Record<string, any>): string {
 	const m = msg();
@@ -123,7 +121,7 @@ function inboxBody(e: Record<string, any>): string {
 		if (p.refs?.length) lines.push(...p.refs);
 		lines.push(...decisionLines(p));
 	}
-	if (e.kind === "message" && !isPeerMessage(e as HubEvent)) lines.push(...openQuestionLines(eventTarget(e as HubEvent) ?? "main"));
+	lines.push(...openQuestionLines(askedIn(e as HubEvent)));
 	if (e.plugin_note) lines.push(e.plugin_note);
 	const home = e.parent?.startsWith("ch:") ? e.parent : e.channel;
 	const ctx = home?.startsWith("ch:") ? channelContext(home.slice(3)) : "";
@@ -178,6 +176,7 @@ export function dropPending(target: string): number {
 		clearTimeout(b.timer);
 		bursts.delete(target);
 	}
+	askFollowup.forget(target);
 	const n = (b?.events.length ?? 0) + drain(target).length;
 	if (n) log(`${n} message(s) for ${target} not delivered: the owner cancelled`);
 	return n;
@@ -190,7 +189,7 @@ const authWait: WaitDeps = {
 	sessionOf: target => convs.keyOf(target),
 	busy: target => convs.forTarget(target)?.o.orch.status === "working",
 	cancel: cancelAuth,
-	post: (to, text, replyTo) => void out(to, text, replyTo, { source: "gateway" }).catch(e => log(`auth wait reply to ${to} failed: ${e}`)),
+	post: (to, text, replyTo) => void out(to, text, replyTo, { source: "gateway", nk: "gateway-note" }).catch(e => log(`auth wait reply to ${to} failed: ${e}`)),
 };
 // Every surface hands intake the owner's messages only (discord.ts OWNER, each messenger's allow list), as deliver's owner: true below says.
 // The owner's own typed words ask for a deeper turn (hub/ultrathink.ts): judged on each message's raw text, never the wrapped prompt, a quote or an attachment.
@@ -219,7 +218,7 @@ async function cardChatAnswer(target: string, b: Burst): Promise<void> {
 	const seen = head.source === "discord" ? { hash: cards.find(c => c.ref === intent.ref)?.discord ?? "" } : {};
 	const r = await replies.act(intent.act === "revise" ? { ref: intent.ref, action: "revise", change: intent.change } : { ref: intent.ref, action: intent.act, ...(intent.act === "send" && intent.asIs ? { asIs: true } : {}), ...(intent.act === "send" ? seen : {}) }, { surface: "chat" }).catch(e => ({ body: { ok: false as const, error: (e as Error).message } }));
 	const line = r.body.ok ? cardLine(intent.act, r.body.item, Date.now()) : `답장 카드에 반영하지 못했어요: ${(r.body as { error?: string }).error ?? "알 수 없는 이유"}`;
-	await out(target, line, b.replyTo, { source: "gateway" }).catch(e => log(`card chat reply failed: ${e}`));
+	await out(target, line, b.replyTo, { source: "gateway", nk: "gateway-note" }).catch(e => log(`card chat reply failed: ${e}`));
 }
 
 export function flush(target: string): void {
@@ -238,12 +237,12 @@ export function flush(target: string): void {
 	const errAnswer = session?.orch.error && b.events.length === 1 ? errorAnswer(String(head.text ?? "")) : undefined;
 	if (errAnswer) return void answerOrchError(target, errAnswer, session!, b.replyTo);
 	const legacy = b.events.length === 1 ? legacyAnswer(DATA_DIR, String(head.text ?? "")) : undefined;
-	if (legacy) return void out(target, legacy, b.replyTo, { source: "gateway" }).catch(e => log(`legacy import reply failed: ${e}`));
+	if (legacy) return void out(target, legacy, b.replyTo, { source: "gateway", nk: "gateway-note" }).catch(e => log(`legacy import reply failed: ${e}`));
 	if (b.events.length === 1 && LIMITS_ASK.test(String(head.text)) && !head.attachments?.length) return void limitsAnswer(target, b.replyTo);
 	const ask = b.events.length === 1 && !head.attachments?.length ? accountAsk(String(head.text ?? ""), readPool()?.names ?? [], readAliases()) : undefined;
 	if (ask) return void accountChatAnswer(target, ask, b.replyTo);
 	const recipe = b.events.length === 1 && !head.attachments?.length ? recipeAnswer(String(head.text ?? "")) : undefined;
-	if (recipe) return void out(target, recipe, b.replyTo, { source: "gateway" }).catch(e => log(`recipe reply failed: ${e}`));
+	if (recipe) return void out(target, recipe, b.replyTo, { source: "gateway", nk: "gateway-note" }).catch(e => log(`recipe reply failed: ${e}`));
 	rateLimitNotice(target, b.replyTo);
 	const merged = b.events.length > 1 ? { ...head, message_id: refOf(b.events.at(-1)!), parts: b.events } : head;
 	const was = convs.stateOf(target);
@@ -253,6 +252,7 @@ export function flush(target: string): void {
 	if (updateNow()?.hold(inboxText(merged), { target, replyTo: b.replyTo, owner: true }, heldRefs)) return heldForUpdate(target, heldRefs, b.replyTo);
 	waitNotice(inbound, authWait);
 	const steered = deliver(inboxText(merged), { target, replyTo: b.replyTo, refs: heldRefs, owner: true, ...deepOf(b.events) });
+	askFollowup.asked(target, { key: convs.keyOf(target), refs: [...heldRefs, ...(b.replyTo ? [b.replyTo] : [])], listed: askedIn(merged as HubEvent), said: { ts: String(b.events.at(-1)!.ts), text: b.events.map(e => String(e.text ?? "")).join(" ") } });
 	// Another conversation's message waits for the running turn to end and goes in as its own turn (prompts.ts deliver); a parked
 	// conversation session was started again for it.
 	const status = convs.forTarget(target)?.o.orch.status;
@@ -268,9 +268,10 @@ export function flush(target: string): void {
 }
 
 // Slash/bang commands (/model, /restart, ...) are answered by the gateway itself, never by the orchestrator.
-export async function answerCommand(target: string, text: string, replyTo?: string): Promise<void> {
-	const card = await runCommand(text, target);
-	await out(target, card.text, replyTo, { source: "gateway", card }).catch(e => log(`command reply to ${target} failed: ${e}`));
+export async function answerCommand(target: string, text: string, replyTo?: string, agent = false): Promise<void> {
+	const gate = commandGate(text, target, agent, undefined);
+	const card = "denied" in gate ? refusedCard(reasonOf("owner_only").text) : await runCommand(text, target, gate.by);
+	await out(target, card.text, replyTo, { source: "gateway", nk: "gateway-note", card }).catch(e => log(`command reply to ${target} failed: ${e}`));
 }
 
 // The owner's answer to the orchestrator-error ask (orch-error.ts): handled here because the orchestrator cannot read it.
@@ -279,7 +280,7 @@ async function answerOrchError(target: string, answer: "restart" | "wait", sessi
 	if (answer === "restart") session.resumeNow("owner's 다시 시작 on the error card");
 	else if (session.orch.error) session.orch.error.waiting = true;
 	const text = answer === "restart" ? "오케스트레이터만 다시 시작하고 답하지 못한 요청을 다시 처리해요." : "연결이 돌아오면 한 번 자동으로 다시 시도해요.";
-	await out(target, text, replyTo, { source: "gateway" }).catch(e => log(`orchestrator error reply failed: ${e}`));
+	await out(target, text, replyTo, { source: "gateway", nk: "orch-error" }).catch(e => log(`orchestrator error reply failed: ${e}`));
 }
 
 // "한도" is answered by the gateway without waking the orchestrator, from the account the orchestrator really runs on
@@ -289,13 +290,13 @@ async function limitsAnswer(target: string, replyTo?: string): Promise<void> {
 	const r = await anthropicUsage("orchestrator").catch(() => undefined);
 	const last = accountView(1).switches[0];
 	const card = limitsCard(r, last);
-	await out(target, card.text, replyTo, { source: "gateway", card }).catch(e => log(`limits reply failed: ${e}`));
+	await out(target, card.text, replyTo, { source: "gateway", nk: "gateway-note", card }).catch(e => log(`limits reply failed: ${e}`));
 }
 
 // "계정 바꿔줘", "회사 계정으로", "지금 무슨 계정이야?": answered here too (hub/accounts-api.ts accountAsk), never by the orchestrator.
 async function accountChatAnswer(target: string, ask: Parameters<typeof accountAnswer>[0], replyTo?: string): Promise<void> {
 	const text = await accountAnswer(ask).catch(e => (e as Error).message);
-	await out(target, text, replyTo, { source: "gateway" }).catch(e => log(`account reply failed: ${e}`));
+	await out(target, text, replyTo, { source: "gateway", nk: "gateway-note" }).catch(e => log(`account reply failed: ${e}`));
 }
 
 // Sends one web message the way the composer's modes mean it. "default" (no mode): the main assistant takes it as the next
@@ -313,7 +314,8 @@ export async function sendWeb(s: WebSend): Promise<void> {
 	if (s.lane) {
 		const name = s.lane;
 		const channel = `lane:${name}`;
-		emit("inbox", { ts: now(), kind: "lane_message", source: s.source ?? "web", author: s.login, lane: name, text: s.text, ...extra });
+		const heard = { ts: now(), kind: "lane_message", source: s.source ?? "web", author: s.login, lane: name, text: s.text, ...extra };
+		if (!s.decision) emit("inbox", heard);
 		if (s.mode === "interrupt" && lanes.get(name)?.status === "working") {
 			abortLane(name);
 			// Let the aborted turn end first, or the message would be steered into it.
@@ -322,14 +324,17 @@ export async function sendWeb(s: WebSend): Promise<void> {
 		// The state of this message shows in its meta line at once (hub/events.ts emitDelivery); a refusal comes back as a
 		// gateway message in the session's chat, not only as the request's error.
 		try {
-			if (approvesBudget(name, s.text)) sendToLane(name, "/budget-ok");
-			const how = sendToLane(name, [`[owner via web] ${s.text}`, ...(s.picks?.length || s.decision ? decisionLines({ picks: s.picks, reply_to: s.replyTo, decision: s.decision }) : []), ...openQuestionLines(channel), s.reply ? replyLine(s.reply) : "", s.files?.length ? attachmentLines(s.files) : "", s.elements?.length ? pickedLines(s.elements) : "", ...(s.refs ?? [])].filter(Boolean).join("\n"), mid, false, ownerWantsUltrathink(s.text));
+			const byOwner = s.login !== AGENT_AUTHOR;
+			if (byOwner && approvesBudget(name, s.text)) sendToLane(name, "/budget-ok");
+			const listed = openChoices(channel).filter(q => q.id !== s.decision);
+			const how = sendToLane(name, [`${byOwner ? "[owner via web]" : "[agent via web]"} ${s.text}`, ...(s.picks?.length || s.decision ? decisionLines({ picks: s.picks, reply_to: s.replyTo, decision: s.decision }) : []), ...openQuestionLines(listed), s.reply ? replyLine(s.reply) : "", s.files?.length ? attachmentLines(s.files) : "", s.elements?.length ? pickedLines(s.elements) : "", ...(s.refs ?? [])].filter(Boolean).join("\n"), mid, false, ownerWantsUltrathink(s.text));
+			if (s.decision) emit("inbox", heard);
+			else if (byOwner && listed.length) markJudging(listed, { ts: heard.ts, text: s.text });
 			emitDelivery(channel, mid, how);
 			// The web shows the receipt as the message's delivery state only (no canned receipt message, owner 2026-10-17).
 			livestatus.begin(channel, channel, true);
 		} catch (error) {
-			laneFailed(channel, name, mid, error);
-			throw error;
+			throw laneFailed(channel, name, mid, error);
 		}
 		return;
 	}
@@ -348,7 +353,7 @@ export async function sendWeb(s: WebSend): Promise<void> {
 	const turn = note ? { ...event, plugin_note: note } : event;
 	// The session that answers `to` (main with conversation sessions off): steer and interrupt act on its turn only.
 	const session = convs.forTarget(to)?.o;
-	if (parseCommand(event.text)) void answerCommand(to, event.text);
+	if (parseCommand(event.text)) void answerCommand(to, event.text, undefined, s.login === AGENT_AUTHOR);
 	else if (s.mode === "steer" && s.sendNow && session?.orch.status === "working" && !updateNow()?.holding()) {
 		// Through the prompt queue, which steers it in as a note now: raw inbox text admitted mid-turn read as a new prompt
 		// and unpaired the running turn, so its answer went nowhere (2026-10-20 19:43 KST, the 19:36 and 19:38 web messages).
@@ -357,12 +362,16 @@ export async function sendWeb(s: WebSend): Promise<void> {
 		if (cancelReply(inbound, authWait)) return;
 		waitNotice(inbound, authWait);
 		const steered = deliver(inboxText(turn), { target: to, replyTo: mid, owner: true, ...deepOf([turn]) });
+		askFollowup.asked(to, { key: convs.keyOf(to), refs: [mid], listed: askedIn(turn), said: { ts: event.ts, text: s.text } });
 		expectReply(to);
 		emitDelivery(to, mid, steered ? "steered" : "queued");
 		awaiting.set(to, [...(awaiting.get(to) ?? []), { ref: mid, by: mid }]);
 		lastOwner.set(to, mid);
 	} else {
-		if (s.mode === "interrupt" && session?.orch.status === "working") session.abort();
+		if (s.mode === "interrupt" && session?.orch.status === "working") {
+			askFollowup.forget(to);
+			session.abort();
+		}
 		intake(turn, to, mid);
 	}
 }
@@ -376,7 +385,7 @@ export function flushQueue(target: string): void {
 	const status = lane ? lanes.get(lane)?.status : orch.status;
 	if (lane && !lanes.has(lane)) {
 		const gone = drain(target);
-		void out("web", `세션 ${lane}이(가) 없어서 대기 중이던 메시지 ${gone.length}개를 전달하지 못했어요:\n${gone.map(i => i.text).join("\n---\n")}`, undefined, { source: "gateway" }).catch(() => undefined);
+		void out("web", `세션 ${lane}이(가) 없어서 대기 중이던 메시지 ${gone.length}개를 전달하지 못했어요:\n${gone.map(i => i.text).join("\n---\n")}`, undefined, { source: "gateway", nk: "undelivered" }).catch(() => undefined);
 		return;
 	}
 	if (status !== "idle" && status !== (lane ? "exited" : "stopped")) return;
@@ -384,8 +393,9 @@ export function flushQueue(target: string): void {
 	if (!items.length) return;
 	try {
 		if (lane) {
-			for (const i of items) if (approvesBudget(lane, i.text)) sendToLane(lane, "/budget-ok");
-			const how = sendToLane(lane, `[owner via web] ${items.map(i => i.text).join("\n\n")}`, items[0].id, false, items.some(i => ownerWantsUltrathink(i.text)));
+			const byOwner = items.every(i => i.author !== AGENT_AUTHOR);
+			for (const i of items) if (i.author !== AGENT_AUTHOR && approvesBudget(lane, i.text)) sendToLane(lane, "/budget-ok");
+			const how = sendToLane(lane, `${byOwner ? "[owner via web]" : "[agent via web]"} ${items.map(i => i.text).join("\n\n")}`, items[0].id, false, items.some(i => ownerWantsUltrathink(i.text)));
 			for (const i of items.slice(1)) ownerNotes.asked(lane, i.id);
 			// The messages waited for the session's turn to end and went in as one: "queued" unless the stopped session had to be resumed.
 			for (const i of items) {

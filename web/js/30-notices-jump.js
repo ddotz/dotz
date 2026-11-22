@@ -6,7 +6,7 @@
 const NT_NEAR_MS = 60_000;   // the median gap between two messages of the main chat is 44 s (alert 3.8 min, worklog 25 min): a neighbour this close is the same exchange
 const ntRaf = () => new Promise(r => requestAnimationFrame(() => r()));
 function ntGo(t, kept = false) {
-  if (t === "settings") { go("settings"); return ""; }   // the 새 버전 notice: 설정 → 업데이트
+  if (t === "settings") { go("update"); return ""; }   // the 새 버전 notice: 설정 → 업데이트
   if (!kept && isLaneT(t) && S && !S.lanes.some(l => `lane:${l.name}` === t)) t = MAIN;   // `kept`: the gateway holds the message in that session's history   // the session is gone: its result card is in the main chat
   if (t !== MAIN && isProjT(t) && S && !projTargets().includes(t)) { toast(TX("project.not_found")); go("projects"); return ""; }
   if (!validTarget(t)) { toast(TX("conv.nt.no_screen")); go("home"); return ""; }
@@ -99,6 +99,7 @@ async function ntJump(n, quiet = false, via = "") {
       if (seq !== ntJumpSeq) return "moved-on";
       if (c) return ntJump(n, quiet, c);
     }
+    if (exact && m.matches(".wl-row[role=button][aria-expanded=false]")) { m.click(); m = ntFind(at); }
     if (m) chatJump(m); else chatPin("bottom");   // no message to show: the conversation stays at its end, whatever pages the search loaded meanwhile
     if (exact) ntFlash(m);
     else {

@@ -15,10 +15,11 @@ import { makeDraft } from "./make-draft.ts";
 import { buildPersonPrompt, personStats, type PersonStats } from "./person.ts";
 import { fetchMedia, mediaTarget, replySource, serveLocalFile } from "./media.ts";
 import { type AxStep, type Focus, sameText } from "./room.ts";
-import { createDraft, type Draft, listDrafts, newer, readDrafts, type SendMs } from "./send.ts";
+import { createDraft, type Draft, KAKAO_CODE, listDrafts, newer, readDrafts, type SendMs } from "./send.ts";
 import type { KakaoConfig, KakaoPaths, Room, Runner } from "./types.ts";
 import { chatView, clip, owedRooms, pendingRow, watchLists, withSummary } from "./web-shape.ts";
 import { json } from "../routes-util.ts";
+import { stateIntact } from "../statefile.ts";
 
 export type WebDeps = {
 	paths: KakaoPaths;
@@ -52,6 +53,8 @@ export type WebDeps = {
 
 // retried: the id of the send that 다시 보내기 started for this failed one (this record is kept for its attempts, no longer listed).
 export type SendRecord = { id: string; chatId: string; text: string; state: "sending" | "sent" | "failed"; reason?: string; at: number; draft?: string; collector?: string; ms?: SendMs; ax?: AxStep[]; focus?: Focus; retried?: string };
+/** A room's open question in asks.json: a reply ask has `choices`; a compose ask (`kind`, with the owner's `intent`) has none. */
+export type StoredAsk = { question: string; choices: string[]; basisLogId: string; created: number; kind?: "author" | "task"; intent?: string };
 
 const ROOMS_TTL_MS = 30_000;
 const CHAT_PAGE = 50;
@@ -198,6 +201,8 @@ export function createKakaoWeb(deps: WebDeps) {
 	};
 	const draftFacts = {
 		drafts: async () => (await listDrafts({ paths, runner: deps.runner })).map(d => ({ code: d.code, chatId: d.chatId, status: d.status, created: d.created })),
+		idShape: KAKAO_CODE,
+		intact: () => stateIntact(paths.drafts),
 		waiting: async (chatId: string): Promise<boolean | undefined> => {
 			const config = readConfig(paths);
 			if (config?.enabled !== true || !(config.watch_chats ?? []).includes(chatId)) return undefined;
@@ -247,7 +252,7 @@ export function createKakaoWeb(deps: WebDeps) {
 		if (!a) return undefined;
 		const latest = await latestIncoming(config, chatId).catch(() => undefined);
 		if (latest && newer(latest, a.basisLogId)) return void setAsk(chatId, undefined);
-		return { question: a.question, choices: a.choices };
+		return { question: a.question, choices: a.choices, ...(a.kind ? { kind: a.kind } : {}) };
 	};
 
 	const draftCtx = { deps, paths, now, getDb, allRooms, eligible, setAsk, storedAsks };
@@ -447,10 +452,13 @@ export function createKakaoWeb(deps: WebDeps) {
 				const draftBody = await body();
 				const picked = draftBody.choice;
 				const choice = typeof picked === "string" ? picked.trim() : undefined;
-				if (picked !== undefined && (!choice || !storedAsks()[chatId]?.choices.includes(choice))) return json({ error: "그 선택지는 더 이상 없어요" }, 409);
+				const stored = storedAsks()[chatId];
+				if (picked !== undefined && (!choice || !stored?.choices.includes(choice))) return json({ error: "그 선택지는 더 이상 없어요" }, 409);
+				const known = draftBody.known === true;
+				if (known && (choice || draftBody.intent !== undefined || stored?.kind !== "author" || !stored.intent)) return json({ error: "그 선택지는 더 이상 없어요" }, 409);
 				// A message the owner wants to send (메시지 만들어 줘): { intent } instead of a reply to the room's last message.
 				const intentRaw = draftBody.intent;
-				let intent: string | undefined;
+				let intent: string | undefined = known ? stored?.intent : undefined;
 				if (intentRaw !== undefined) {
 					if (typeof intentRaw !== "string") return json({ error: "intent must be a string" }, 400);
 					intent = intentRaw.replace(/\s+/g, " ").trim().slice(0, INTENT_MAX);
@@ -459,7 +467,7 @@ export function createKakaoWeb(deps: WebDeps) {
 				drafting.add(chatId);
 				// A 자동 초안 room (watch.ts asks with { auto: true }): its new draft is announced as a reply item, so the card shows where KakaoTalk cards go.
 				const auto = draftBody.auto === true;
-				const run = makeDraft(draftCtx, config!, chatId, choice, undefined, intent)
+				const run = makeDraft(draftCtx, config!, chatId, choice, undefined, intent, known ? { known: true } : {})
 					.then(m => (auto && m.ok && m.code && deps.broadcast({ kind: "reply", ref: m.code }), m))
 					.finally(() => drafting.delete(chatId));
 				pending.add(run);
@@ -561,10 +569,10 @@ export function createKakaoWeb(deps: WebDeps) {
 			const db = await getDb(config).catch(() => undefined);
 			return db ? (await pendingRow(d, db, config.userId ?? "", d.roomName)).original : undefined;
 		},
-		revise: async (chatId: string, revise: { code: string; draft: string; change: string }) => {
+		revise: async (chatId: string, revise: { code: string; draft: string; change: string; intent?: string }) => {
 			const config = readConfig(paths);
 			if (!config?.enabled || !deps.draftModel) return { ok: false as const, error: "카카오톡 초안 만들기를 쓸 수 없어요" };
-			return makeDraft(draftCtx, config, chatId, undefined, revise, undefined, { learn: false });
+			return makeDraft(draftCtx, config, chatId, undefined, revise, revise.intent, { learn: false });
 		},
 		sendDeps: async () => {
 			const config = readConfig(paths)!;

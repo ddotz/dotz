@@ -1,6 +1,6 @@
 // HTTP routes of models, runtimes, accounts, providers, activity and commands (the middle part of the route chain). Split out of main.ts.
 import { ContextLimitError, DATA_DIR, log } from "./config.ts";
-import { compactTarget, ControlError, contextView, modelCommandChange, parseCommand, setContextModel, ForceRequired, modelsView, providersView, runCommand, setFallback, setModel } from "./control.ts";
+import { commandGate, compactTarget, ControlError, contextView, setContextModel, ForceRequired, modelsView, providersView, requestGatewayRestart, runCommand, setFallback, setModel } from "./control.ts";
 import { subagentDetail, subagentLists, transcriptPage } from "./activity.ts";
 import { activityItems } from "./events.ts";
 import { msg } from "./i18n.ts";
@@ -28,7 +28,7 @@ import { discordConnectionRoute } from "./discord-connection.ts";
 import { messengersRoute } from "./messengers-api.ts";
 import { onboardingRoute } from "./onboarding.ts";
 import { introOf, setIntro } from "../firstrun/first-run.ts";
-import { convOfTarget, grantExpensive, isGrantKey, ownerGate } from "./model-guard.ts";
+import { convOfTarget, grantExpensive, isAgentRequest, isGrantKey, ownerGate } from "./model-guard.ts";
 import { applyFix } from "./usage-fix.ts";
 
 export async function routeSettings(req: Request, url: URL, parts: string[]): Promise<Response | undefined> {
@@ -75,7 +75,7 @@ export async function routeSettings(req: Request, url: URL, parts: string[]): Pr
 			const target = String(b.target ?? "");
 			// 답장 기본값 (hub/reply-model-choices.ts): the global reply-drafts model, not a process.
 			if (target === "replies") return json(await (await import("./reply-model-choices.ts")).setReplyDefault(String(b.model ?? "")));
-			const gate = b.model || b.thinking ? ownerGate(req, { conv: convOfTarget(target), model: b.model ? String(b.model) : undefined, thinking: b.thinking ? String(b.thinking) : undefined }, b.owner_message) : undefined;
+			const gate = b.model || b.thinking ? ownerGate(isAgentRequest(req), { conv: convOfTarget(target), model: b.model ? String(b.model) : undefined, thinking: b.thinking ? String(b.thinking) : undefined }, b.owner_message) : undefined;
 			if (gate && "denied" in gate) return json({ error: gate.denied, owner_message_required: true }, 403);
 			const changed = b.model || b.thinking ? await setModel(target, b.model ? String(b.model) : undefined, b.thinking ? String(b.thinking) : undefined, b.force === true, gate && "by" in gate ? gate.by : undefined) : undefined;
 			const fb = Array.isArray(b.fallback) ? await setFallback(target, b.fallback) : undefined;
@@ -114,7 +114,9 @@ export async function routeSettings(req: Request, url: URL, parts: string[]): Pr
 			try {
 				const done = await useRuntime(id, roles);
 				log(`runtime ${id} selected for ${done.join(", ")}`);
-				return json({ ok: true, runtime: id, roles: done, applies: "게이트웨이를 다시 시작하면 적용돼요. 지금 실행 중인 어시스턴트와 세션은 그대로예요." });
+				// A switch takes effect only in new processes: the gateway restarts as soon as nothing is busy, so the owner's pick applies without a second step.
+				requestGatewayRestart();
+				return json({ ok: true, runtime: id, roles: done, applies: "하던 일이 끝나는 대로 게이트웨이를 다시 시작해서 바로 적용해요. 이 화면은 자동으로 다시 연결돼요." });
 			} catch (error) {
 				if (error instanceof UseRefused) return json({ error: error.message, runtime: id }, 409);
 				throw error;
@@ -230,11 +232,9 @@ export async function routeSettings(req: Request, url: URL, parts: string[]): Pr
 		if (!text) return json({ error: "text required" }, 400);
 		try {
 			const line = /^[/!]/.test(text) ? text : `/${text}`, from = typeof b.from === "string" ? b.from : undefined;
-			const change = modelCommandChange(line, from);
-			const wantsGrant = parseCommand(line)?.name === "fable-ok";
-			const gate = change || wantsGrant ? ownerGate(req, change ? { conv: convOfTarget(change.target), model: change.model, thinking: change.thinking } : { conv: from && /^(?:ch:\d+|lane:.+)$/.test(from) ? from : undefined, expensive: true }, b.owner_message) : undefined;
-			if (gate && "denied" in gate) return json({ error: gate.denied, owner_message_required: true }, 403);
-			const card = await runCommand(line, from, gate && "by" in gate ? gate.by : undefined);
+			const gate = commandGate(line, from, isAgentRequest(req), b.owner_message);
+			if ("denied" in gate) return json({ error: gate.denied, owner_message_required: true }, 403);
+			const card = await runCommand(line, from, gate.by);
 			return card.tone === "err" ? json({ error: card.note ?? card.title, output: card.text, card }, 400) : json({ ok: true, output: card.text, card });
 		} catch (error) {
 			return fail(error);
@@ -243,7 +243,7 @@ export async function routeSettings(req: Request, url: URL, parts: string[]): Pr
 	if (req.method === "POST" && url.pathname === "/api/expensive-grant") {
 		const b = await body(req), conversation = String(b.conversation ?? "main");
 		if (!isGrantKey(conversation)) return json({ error: "conversation must be main, ch:<id> or lane:<name>" }, 400);
-		const gate = ownerGate(req, { conv: convOfTarget(conversation), expensive: true }, b.owner_message);
+		const gate = ownerGate(isAgentRequest(req), { conv: convOfTarget(conversation), expensive: true }, b.owner_message);
 		if ("denied" in gate) return json({ error: gate.denied, owner_message_required: true }, 403);
 		return json({ ok: true, conversation, ...grantExpensive(conversation, gate.by) });
 	}

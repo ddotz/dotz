@@ -59,6 +59,11 @@ export type CommentAdapter = {
 
 // Sites rewrite line breaks (one forum stores \n as \r\n), so a read-back compares only the words: a false "not sent" invites a duplicate.
 export const sameWords = (a: string, b: string): boolean => a.replace(/\s+/g, " ").trim() === b.replace(/\s+/g, " ").trim();
+/** Whether the owner's own row among `rows` carries `text` under `comment` (a private message: in its room, not older than it): the proof that a reply went up. */
+export const repliedWith = (rows: RawComment[], comment: Pick<Comment, "thread" | "parent" | "native" | "at">, text: string): boolean => {
+	const under = comment.thread.startsWith(DM_THREAD) ? (x: RawComment) => x.thread === comment.thread && x.at >= comment.at : (x: RawComment) => x.parent === (comment.parent ?? comment.native);
+	return rows.some(x => x.mine === true && under(x) && sameWords(x.text, text));
+};
 export const commentId = (source: string, native: string): string => `cm:${source}:${native}`;
 export const threadKey = (source: string, thread: string): string => `${source}/${thread}`;
 export const DM_THREAD = "dm:";
@@ -104,6 +109,32 @@ export function ruleRefusal(src: SourceConfig, commentText: string, draft: Pick<
 	return undefined;
 }
 
+const GONE_REASON = "원댓글이 지워졌어요";
+const ANSWERED_REASON = "이미 답했어요";
+function answeredStored(store: Store, comment: Comment, adapter: CommentAdapter): boolean {
+	const top = comment.parent ?? comment.native;
+	const mine = store.comments().filter(x => x.mine && x.source === comment.source && x.thread === comment.thread);
+	return mine.some(x => (x.native === top || x.parent === top) && x.at >= comment.at) || (adapter.answered?.(comment, mine) ?? false);
+}
+async function platformStop(p: { adapter: CommentAdapter; src: SourceConfig; comment: Comment; store: Store; now: () => number; log?: (line: string) => void; sendId: string; proves?: string }): Promise<{ reason: string; code: string; proved?: true } | undefined> {
+	if (!p.adapter.recheck) return undefined;
+	const { comment } = p;
+	let read: { comments: RawComment[]; gone: string[] };
+	try {
+		read = await p.adapter.recheck(p.src, [comment]);
+	} catch (e) {
+		p.log?.(`comments: ${p.sendId} recheck failed, posting anyway: ${e instanceof Error ? e.message : String(e)}`);
+		return undefined;
+	}
+	if (read.gone.includes(comment.native)) {
+		p.store.patchComments({ [comment.id]: { gone: p.now() } });
+		return { reason: GONE_REASON, code: "original_gone" };
+	}
+	const top = comment.parent ?? comment.native;
+	if (!read.comments.some(r => r.mine && r.parent === top && r.at >= comment.at)) return undefined;
+	return { reason: ANSWERED_REASON, code: "stale", ...(p.proves !== undefined && repliedWith(read.comments, comment, p.proves) ? { proved: true as const } : {}) };
+}
+
 // The one send gate. Refuses without the owner's explicit pick (approval "owner", set only by the owner's 보내기 route or an
 // approved ask) or an enabled per-source rule that matches; refuses a second send of the same comment unless the first one failed.
 export function dispatchReply(req: ReplyRequest, deps: GateDeps): GateResult {
@@ -129,28 +160,49 @@ export function dispatchReply(req: ReplyRequest, deps: GateDeps): GateResult {
 	if (deps.inflight.has(sendId) || prior?.state === "sending" || prior?.state === "sent") return prior?.state === "sent" ? refuse("이미 답글을 보냈어요", "already_sent") : refuse("이미 보내는 중이에요", "already_sending");
 	const adapter = deps.adapters[src.kind];
 	if (!adapter) return refuse("이 댓글 종류를 보낼 수 없어요", "config");
+	if (comment.gone) return refuse(GONE_REASON, "original_gone");
+	if (answeredStored(store, comment, adapter)) return refuse(ANSWERED_REASON, "stale");
 	const record: Reply = { id: sendId, commentId: comment.id, source: src.key, thread: comment.thread, text, state: "sending", at: now(), draft: draft.code, via: req.approval.by, collector: deps.collector, ...(prior?.state === "failed" || prior?.state === "unsure" ? { attempts: (prior.attempts ?? 1) + 1 } : {}) };
 	deps.inflight.add(sendId);
-	store.putReply(record);
-	deps.onState?.(record);
 	const done = (async (): Promise<Posted> => {
-		let outcome: ReplyOutcome;
-		let crashed = false;
 		try {
-			outcome = await adapter.reply(src, comment, text, sendId);
-		} catch (e) {
-			// A throw says nothing about whether the POST reached the platform.
-			crashed = true;
-			outcome = { ok: false, reason: UNKNOWN_REASON, code: "unknown", sent: "maybe", detail: e instanceof Error ? e.message : String(e) };
+			const stop = adapter.recheck ? await platformStop({ adapter, src, comment, store, now, ...(deps.log ? { log: deps.log } : {}), sendId, ...(prior?.state === "unsure" ? { proves: prior.text } : {}) }) : undefined;
+			if (stop && prior?.state === "unsure") {
+				if (!stop.proved) return { ...prior, reason: stop.reason, code: stop.code };
+				const { reason: _reason, code: _code, ...up } = prior;
+				const sent: Reply = { ...up, state: "sent" };
+				store.putReply(sent);
+				store.setDraftStatus(draft.code, "sent");
+				deps.onState?.(sent);
+				return sent;
+			}
+			if (stop) {
+				const failed: Reply = { ...record, state: "failed", reason: stop.reason, code: stop.code };
+				store.putReply(failed);
+				deps.onState?.(failed);
+				return failed;
+			}
+			store.putReply(record);
+			deps.onState?.(record);
+			let outcome: ReplyOutcome;
+			let crashed = false;
+			try {
+				outcome = await adapter.reply(src, comment, text, sendId);
+			} catch (e) {
+				// A throw says nothing about whether the POST reached the platform.
+				crashed = true;
+				outcome = { ok: false, reason: UNKNOWN_REASON, code: "unknown", sent: "maybe", detail: e instanceof Error ? e.message : String(e) };
+			}
+			const detail = !outcome.ok && outcome.detail ? maskSecrets(outcome.detail.trim()).text.slice(0, DETAIL_MAX) : undefined;
+			if (!outcome.ok && detail) deps.log?.(`comments: ${sendId} post failed (${outcome.code ?? "unknown"}): ${detail}`);
+			const final: Reply = outcome.ok ? { ...record, state: "sent", ...(outcome.ref ? { ref: outcome.ref } : {}) } : { ...record, state: outcome.sent === "no" ? "failed" : "unsure", reason: outcome.reason, code: outcome.code ?? "unknown" };
+			store.putReply(final);
+			if (outcome.ok) store.setDraftStatus(draft.code, "sent");
+			deps.onState?.(final);
+			return detail && !crashed ? { ...final, detail } : final;
+		} finally {
+			deps.inflight.delete(sendId);
 		}
-		deps.inflight.delete(sendId);
-		const detail = !outcome.ok && outcome.detail ? maskSecrets(outcome.detail.trim()).text.slice(0, DETAIL_MAX) : undefined;
-		if (!outcome.ok && detail) deps.log?.(`comments: ${sendId} post failed (${outcome.code ?? "unknown"}): ${detail}`);
-		const final: Reply = outcome.ok ? { ...record, state: "sent", ...(outcome.ref ? { ref: outcome.ref } : {}) } : { ...record, state: outcome.sent === "no" ? "failed" : "unsure", reason: outcome.reason, code: outcome.code ?? "unknown" };
-		store.putReply(final);
-		if (outcome.ok) store.setDraftStatus(draft.code, "sent");
-		deps.onState?.(final);
-		return detail && !crashed ? { ...final, detail } : final;
 	})();
 	return { ok: true, reply: record, done };
 }

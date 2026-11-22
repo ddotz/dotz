@@ -6,9 +6,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { run as runComments } from "../../features/comments/bin/comments.ts";
 import { parseDecisions } from "../choices.ts";
-import { LINT_REFUSED, parseDraftApproval } from "../draft-approval.ts";
+import { LINT_REFUSED, PAIR_NOTE, parseDraftApproval } from "../draft-approval.ts";
 import { commentAsk } from "./ask.ts";
 import { type Comment, type CommentAdapter, commentId, type RawComment, type SourceConfig } from "./contract.ts";
+import { outcomeOf } from "../approval-send.ts";
 import { createEngine, type Engine, type MailLink, type MailView } from "./engine.ts";
 import { approvalHash } from "../draft-approval.ts";
 import { commentAdapter } from "./reply-adapter.ts";
@@ -51,6 +52,10 @@ function fakeMail(log: string[], o: { failSend?: string; issues?: string[]; lint
 			log.push(`revise ${id} -> ${next}`);
 			return { ok: true, id: next };
 		},
+		edit: (id, text) => {
+			drafts.get(id)!.body = text;
+			return { ok: true };
+		},
 		view: id => {
 			const v = drafts.get(id);
 			return v && o.issues?.length ? { ...v, attachIssues: o.issues } : v;
@@ -59,7 +64,7 @@ function fakeMail(log: string[], o: { failSend?: string; issues?: string[]; lint
 	return link;
 }
 
-function setup(o: { failSend?: string; issues?: string[]; lint?: string[]; noMail?: boolean; failReply?: string; sub?: string } = {}) {
+function setup(o: { failSend?: string; issues?: string[]; lint?: string[]; noMail?: boolean; failReply?: string; sub?: string; answer?: string } = {}) {
 	const root = o.sub ? join(dir, o.sub) : dir;
 	mkdirSync(root, { recursive: true });
 	writeFileSync(join(root, "config.json"), JSON.stringify({ enabled: true, sources: { youtube: source } }));
@@ -79,7 +84,7 @@ function setup(o: { failSend?: string; issues?: string[]; lint?: string[]; noMai
 		now: () => clock.now,
 		collector: "mac-a",
 		adapters: { youtube: adapter },
-		model: async () => ({ text: reply("고쳐 쓴 답글이에요.") }),
+		model: async () => ({ text: reply(o.answer ?? "고쳐 쓴 답글이에요.") }),
 		broadcast: e => events.push(e),
 		sent: (app, r) => woke.push(`${app}:${r.id}`),
 		...(mail ? { mail } : {}),
@@ -175,6 +180,19 @@ describe("the combined card", () => {
 		const out2 = await runComments(["send", d2.code], f.engine, f.inbox);
 		expect(out2.code).toBe(1);
 		expect(f.log).toEqual(["compose M1", "reply"]);
+	});
+
+	test("under the gateway the send prints the mail's own reason, and the queue's outcome carries it (CM-7)", async () => {
+		const t = setup({ failSend: "SMTP 거부" });
+		const d = await withMail(t);
+		await pick(t, d.code, 1);
+		process.env.DOTZ_GATEWAY_SEND = "1";
+		try {
+			const out = await runComments(["send", d.code], t.engine, t.inbox);
+			expect(outcomeOf({ code: out.code, out: out.lines.join("\n") })).toMatchObject({ sent: "partial", rest: "maybe", mail: "SMTP 거부" });
+		} finally {
+			delete process.env.DOTZ_GATEWAY_SEND;
+		}
 	});
 
 	test("a mail whose files disagree with its words is refused before the reply is posted; the card shows why and offers 이대로 보내기", async () => {
@@ -313,6 +331,78 @@ describe("the combined card", () => {
 		expect(t.engine.store.drafts()[0]!.status).toBe("dropped");
 		expect(t.engine.send(d.code, { by: "owner" })).toMatchObject({ ok: false });
 		expect(t.log.filter(l => l.startsWith("send"))).toEqual([]);
+	});
+});
+
+// After either part of the card changes, the reply is checked against the mail (no model call): a disagreement is a "확인:" line, never a refusal.
+describe("the reply and its mail checked against each other", () => {
+	const pairNotes = (t: T) => t.engine.store.drafts().find(x => x.status === "pending")!.notes.filter(n => PAIR_NOTE.test(n));
+	const added = async (t: T, text: string, mail = MAIL) => {
+		await t.engine.collect({ force: true });
+		const s = await t.engine.addDraft(t.id, text, undefined, mail);
+		if (!s.ok) throw new Error(s.reason);
+		return s.draft;
+	};
+
+	test("a consistent pair has no pair-check note", async () => {
+		const t = setup();
+		await added(t, "fan@example.com 으로 brief.pdf 파일을 메일로 보내 드릴게요");
+		expect(pairNotes(t)).toEqual([]);
+	});
+
+	test("a reply that says a file goes while the mail attaches none", async () => {
+		const t = setup();
+		const { attach: _attach, ...bare } = MAIL;
+		const d = await added(t, "메일로 자료 첨부했어요", bare);
+		expect(d.notes.filter(n => PAIR_NOTE.test(n))).toHaveLength(1);
+		expect(d.clean).toBe(false);
+		expect(t.engine.send(d.code, { by: "owner" }).ok).toBe(true);   // a line on the card, never a refusal
+	});
+
+	test("a reply that names another address than the mail's recipient", async () => {
+		const t = setup();
+		await added(t, "other@example.com 으로 문서 보내 드릴게요");
+		expect(pairNotes(t)).toHaveLength(1);
+	});
+
+	test("a reply that names a file the mail does not attach", async () => {
+		const t = setup();
+		await added(t, "brief.pdf와 notes.hwp를 보내 드릴게요");
+		expect(pairNotes(t)).toHaveLength(1);
+	});
+
+	test("a reply revised with --no-mail that still promises a mail; a later reply edit without the promise clears it", async () => {
+		const t = setup({ answer: "메일로 보내드릴게요" });
+		const d = await added(t, "문서는 메일로 보내 드릴게요");
+		const r = await t.engine.revise(d.code, "짧게", "reply", true);
+		if (!r.ok) throw new Error(r.reason);
+		expect(r.draft.mail).toBeUndefined();
+		expect(pairNotes(t)).toHaveLength(1);
+		expect(t.engine.edit(r.draft.code, "댓글 고마워요")).toEqual({ ok: true });
+		expect(pairNotes(t)).toEqual([]);
+	});
+
+	test("a mail-only change re-checks the card, and fixing the mail clears the note", async () => {
+		const t = setup();
+		const d = await added(t, "brief.pdf 보내 드릴게요");
+		expect(pairNotes(t)).toEqual([]);
+		const shown = t.mail!.view("M1")!;
+		const files = shown.attachments;
+		shown.attachments = [];
+		expect(t.engine.edit(d.code, "안녕하세요.", "mail")).toEqual({ ok: true });
+		expect(pairNotes(t)).toHaveLength(1);
+		shown.attachments = files;
+		expect(t.engine.edit(d.code, "안녕하세요!", "mail")).toEqual({ ok: true });
+		expect(pairNotes(t)).toEqual([]);
+	});
+
+	test("a mail revise re-checks the card too", async () => {
+		const t = setup();
+		const d = await added(t, "other@example.com 으로 보내 드릴게요");
+		const r = await t.engine.revise(d.code, "인사 추가", "mail");
+		if (!r.ok) throw new Error(r.reason);
+		expect(r.draft.notes.filter(n => PAIR_NOTE.test(n))).toHaveLength(1);
+		expect(pairNotes(t)).toHaveLength(1);   // replaced, not piled up
 	});
 });
 

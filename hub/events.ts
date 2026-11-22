@@ -11,6 +11,7 @@ import { hangUp } from "./routes-util.ts";
 import { withWorklogKind } from "./worklog-kind.ts";
 import { maskSecrets } from "./public-scrub.ts";
 import { dropClaim, statedTone, stripHandoff } from "./tone.ts";
+import { AGENT_AUTHOR } from "./agent-author.ts";
 
 export type HubEvent = { ts: string; kind: string; source: string; text: string; [key: string]: unknown };
 
@@ -22,6 +23,9 @@ const isAnswer = (e: HubEvent): boolean =>
  * message or decision answer from the other computer's page carries it too. Both arrive as web messages under the owner's login, so only this tells them apart. */
 export const isPeerMessage = (e: HubEvent): boolean =>
 	!!e.via && (e.kind === "message" || e.kind === "lane_message") && !e.decision && !e.picks && !/^(?:mail|th|settings):/.test(String(e.conv || e.channel || ""));
+
+/** Whether the owner wrote this inbox message himself: not the gateway's, not an agent's with the hub token (hub/agent-author.ts), not a peer gateway's. */
+export const ownerWrote = (e: HubEvent): boolean => e.source !== "gateway" && e.author !== AGENT_AUTHOR && !isPeerMessage(e);
 
 /** What goes into inbox/outbox: a secret pasted into a message is masked in the file (hub/public-scrub.ts maskSecrets), in the text, its parts and every string of
  * its spec (a page drawn after a reload reads the spec from the file); the live event, its ids and its replies are untouched. */
@@ -268,7 +272,8 @@ export function eventTarget(e: HubEvent): string | undefined {
 // the bytes appended since are read (the logs only grow by appendFileSync; a smaller size or another inode is a rewrite: read afresh).
 // Each kept line remembers its byte offset, so the window moves exactly as a fresh read of the last HISTORY_TAIL bytes would.
 const HISTORY_TAIL = 4 * 1024 * 1024;
-type Tail = { ino: number; size: number; mtime: number; lines: { start: number; event: HubEvent }[] };
+type Line = { start: number; event: HubEvent; conv?: string };
+type Tail = { ino: number; size: number; mtime: number; lines: Line[]; byConv: Map<string, HubEvent[]> };
 const tails = new Map<string, Tail>();
 const parsed = (text: string): HubEvent | undefined => {
 	try {
@@ -277,17 +282,36 @@ const parsed = (text: string): HubEvent | undefined => {
 		return undefined;
 	}
 };
-export function tailEvents(file: string): HubEvent[] {
+function insertSorted(list: HubEvent[], event: HubEvent): void {
+	let at = list.length;
+	while (at > 0 && list[at - 1]!.ts.localeCompare(event.ts) > 0) at--;
+	list.splice(at, 0, event);
+}
+function indexLine(tail: Tail, line: Line): void {
+	const conv = typeof line.event.ts === "string" ? eventTarget(line.event) : undefined;
+	if (conv === undefined) return;
+	line.conv = conv;
+	const list = tail.byConv.get(conv);
+	if (list) insertSorted(list, line.event);
+	else tail.byConv.set(conv, [line.event]);
+}
+function unindexLine(tail: Tail, line: Line): void {
+	if (line.conv === undefined) return;
+	const list = tail.byConv.get(line.conv)!;
+	list.splice(list.indexOf(line.event), 1);
+	if (!list.length) tail.byConv.delete(line.conv);
+}
+function syncTail(file: string): { tail?: Tail; partial?: HubEvent } {
 	if (!existsSync(file)) {
 		tails.delete(file);
-		return [];
+		return {};
 	}
 	const { size, ino, mtimeMs } = statSync(file);
 	const windowStart = Math.max(0, size - HISTORY_TAIL);
 	const kept = (start: number) => windowStart === 0 || start > windowStart;
 	let tail = tails.get(file);
 	const rewritten = tail && (tail.ino !== ino || size < tail.size || (size === tail.size && mtimeMs !== tail.mtime));
-	if (!tail || rewritten || tail.size < windowStart) tail = { ino, size: windowStart, mtime: mtimeMs, lines: [] };
+	if (!tail || rewritten || tail.size < windowStart) tail = { ino, size: windowStart, mtime: mtimeMs, lines: [], byConv: new Map() };
 	tail.mtime = mtimeMs;
 	tails.set(file, tail);
 	let partial: HubEvent | undefined;
@@ -304,14 +328,21 @@ export function tailEvents(file: string): HubEvent[] {
 		for (let nl = buf.indexOf(10); nl !== -1; at = nl + 1, nl = buf.indexOf(10, at)) {
 			if (!kept(from + at)) continue;
 			const event = parsed(buf.toString("utf8", at, nl));
-			if (event) tail.lines.push({ start: from + at, event });
+			if (!event) continue;
+			const line: Line = { start: from + at, event };
+			tail.lines.push(line);
+			indexLine(tail, line);
 		}
-		// A line still being written is not kept (its end may not be there yet); it is read again once its newline lands.
 		tail.size = from + at;
 		if (at < buf.length && kept(from + at)) partial = parsed(buf.toString("utf8", at));
 	}
 	const drop = tail.lines.findIndex(l => kept(l.start));
-	if (drop !== 0) tail.lines.splice(0, drop === -1 ? tail.lines.length : drop);
+	if (drop !== 0) for (const line of tail.lines.splice(0, drop === -1 ? tail.lines.length : drop)) unindexLine(tail, line);
+	return { tail, partial };
+}
+export function tailEvents(file: string): HubEvent[] {
+	const { tail, partial } = syncTail(file);
+	if (!tail) return [];
 	const out = tail.lines.map(l => l.event);
 	if (partial) out.push(partial);
 	return out;
@@ -329,10 +360,16 @@ export function answeredIds(): string[] {
 
 // The owner message with this id (a web `mid` or a Discord message id): the live ring first, then the inbox tail. A reply_to
 // names it, so a late answer can quote it (hub/outbound.ts). `conv`: the conversation it was written in.
-export function ownerMessage(id: string): { text: string; ts: string; author?: string; conv: string } | undefined {
+export function ownerMessage(id: string): { text: string; ts: string; author?: string; conv: string; notOwner?: true } | undefined {
 	const is = (e: HubEvent) => (e.kind === "message" || e.kind === "lane_message") && (e.mid === id || e.message_id === id);
 	const e = recent.findLast(is) ?? tailEvents(paths.inbox).findLast(is);
-	return e ? { text: String(e.text ?? ""), ts: e.ts, ...(typeof e.author === "string" ? { author: e.author } : {}), conv: eventTarget(e) ?? "main" } : undefined;
+	return e ? { text: String(e.text ?? ""), ts: e.ts, ...(typeof e.author === "string" ? { author: e.author } : {}), conv: eventTarget(e) ?? "main", ...(ownerWrote(e) ? {} : { notOwner: true as const }) } : undefined;
+}
+/** The id and time of the newest message the owner himself wrote in conversation `conv` (the live ring and the inbox tail; another computer's or an agent's do not count). */
+export function newestOwnerMessage(conv: string): { id: string; ts: string } | undefined {
+	const is = (e: HubEvent) => (e.kind === "message" || e.kind === "lane_message") && (typeof e.mid === "string" || typeof e.message_id === "string") && ownerWrote(e) && (eventTarget(e) ?? "main") === conv;
+	const e = [recent.findLast(is), tailEvents(paths.inbox).findLast(is)].filter((x): x is HubEvent => !!x).sort((a, b) => Date.parse(b.ts) - Date.parse(a.ts))[0];
+	return e ? { id: String(e.mid ?? e.message_id), ts: e.ts } : undefined;
 }
 
 // Did the orchestrator answer in `target` after `at` (ms)? A stored prompt without a message id counts as answered then.
@@ -363,8 +400,15 @@ export function sentFiles(): ReadonlySet<string> {
 }
 
 function conversationEvents(target: string, before?: string): HubEvent[] {
-	let all = [...tailEvents(paths.inbox), ...tailEvents(paths.outbox)].filter(e => typeof e.ts === "string" && eventTarget(e) === target && (!before || e.ts < before));
-	all.sort((a, b) => a.ts.localeCompare(b.ts));
+	const side = (file: string): HubEvent[] => {
+		const { tail, partial } = syncTail(file);
+		let list = tail?.byConv.get(target) ?? [];
+		if (partial && typeof partial.ts === "string" && eventTarget(partial) === target) insertSorted((list = [...list]), partial);
+		return before ? list.filter(e => e.ts < before) : list;
+	};
+	const inbox = side(paths.inbox), outbox = side(paths.outbox);
+	let all: HubEvent[] = [];
+	for (let i = 0, j = 0; i < inbox.length || j < outbox.length; ) all.push(j >= outbox.length || (i < inbox.length && inbox[i]!.ts.localeCompare(outbox[j]!.ts) <= 0) ? inbox[i++]! : outbox[j++]!);
 	// A post edited in place (update_key, e.g. a lane's worklog line) shows once, as its newest version.
 	if (target === "alert" || target === "worklog") {
 		const last = new Map<string, HubEvent>();

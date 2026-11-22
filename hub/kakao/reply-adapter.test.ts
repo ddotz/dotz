@@ -3,6 +3,7 @@ import { afterAll, beforeEach, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { localMidnight } from "../reply-route.ts";
 import { kakaoAdapter, outcomeOf } from "./reply-adapter.ts";
 import { createDraft, readDrafts } from "./send.ts";
 import { kakaoPaths } from "./types.ts";
@@ -11,11 +12,11 @@ const dir = mkdtempSync(join(tmpdir(), "kakao-adapter-"));
 afterAll(() => rmSync(dir, { recursive: true, force: true }));
 const paths = kakaoPaths(dir, dir);
 const runner = async () => ({ code: 0, stdout: "", stderr: "" });
-let revised: { chatId: string; change: string }[] = [];
+let revised: { chatId: string; change: string; intent?: string }[] = [];
 const kit = {
 	paths,
-	revise: async (chatId: string, r: { code: string; change: string }) => {
-		revised.push({ chatId, change: r.change });
+	revise: async (chatId: string, r: { code: string; change: string; intent?: string }) => {
+		revised.push({ chatId, change: r.change, ...(r.intent ? { intent: r.intent } : {}) });
 		const d = await createDraft({ chatId, roomName: "Alex", text: "3시", basisLogId: "9", replaces: r.code }, { paths, runner });
 		return { ok: true as const, code: d.code, lesson: "짧게 쓴다" };
 	},
@@ -36,6 +37,15 @@ test("a pending draft is the one view; another kind's ref is not this adapter's"
 	expect(a.target(d.code)).toEqual({ kind: "kakao", lane: "kakao" });
 	expect(a.question(d.code)).toBe(`카톡 답장 보낼까요? (${d.code})`);
 	expect(await a.ask(d.code)).toContain(`(${d.code})`);
+});
+
+test("a change to a message the owner asked for carries his request, so it is rewritten as that message; a reply's change has none", async () => {
+	const a = kakaoAdapter(kit);
+	const asked = await createDraft({ chatId: "1", roomName: "Alex", text: "짧은 설명", basisLogId: "9", intent: "맥미니 설명자료 만들어" }, { paths, runner });
+	await a.revise(asked.code, "더 자세히");
+	const reply = await draft();
+	await a.revise(reply.code, "더 짧게");
+	expect(revised).toEqual([{ chatId: "1", change: "더 자세히", intent: "맥미니 설명자료 만들어" }, { chatId: "1", change: "더 짧게" }]);
 });
 
 test("a send job that is not the owner's act (or code's retry of one) is refused before KakaoTalk is touched", async () => {
@@ -90,4 +100,16 @@ test("a draft sent but unconfirmed is still open until the owner says it went ou
 	expect(await a.prove!(d.code)).toBe("unknown");
 	expect(await a.markSent(d.code)).toEqual({ ok: true });
 	expect(await a.prove!(d.code)).toBe("sent");
+});
+
+test("U4-7 a draft sent today is listed as sent with its time; one sent before midnight, an unconfirmed one and one with no time are not", async () => {
+	const a = kakaoAdapter(kit);
+	const made = [await draft(), await draft(), await draft(), await draft()].map(d => d.code);
+	const today = Date.now(), yesterday = localMidnight() - 3_600_000;
+	const sent: Record<string, object> = { [made[0]!]: { sentAt: new Date(today).toISOString() }, [made[1]!]: { sentAt: new Date(yesterday).toISOString() }, [made[2]!]: { sentAt: new Date(today).toISOString(), unconfirmed: true }, [made[3]!]: {} };
+	await Bun.write(join(dir, "kakao", "drafts.json"), JSON.stringify(readDrafts(paths).map(x => ({ ...x, status: "sent", ...sent[x.code] }))));
+	expect((await a.list()).map(v => v.ref)).toEqual([made[0]]);
+	expect(await a.get(made[0]!)).toMatchObject({ draft: { state: "sent" }, can: { send: false }, sent: { at: today, how: "owner" } });
+	expect((await a.get(made[1]!))!.sent).toEqual({ at: yesterday, how: "owner" });
+	expect((await a.get(made[2]!))!.sent).toBeUndefined();
 });

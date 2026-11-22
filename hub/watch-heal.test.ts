@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { cfg, DATA_DIR } from "./config.ts";
 import { type FailClass, type NotifyInfo, classifyFailure, healTarget } from "./watch-heal.ts";
-import { addWatch, allWatches, removeWatch, runWatch, setHealedHandler, setHealHandler, startWatches, type Watch } from "./watch.ts";
+import { addWatch, allWatches, listWatches, removeWatch, runWatch, setHealedHandler, setHealHandler, startWatches, type Watch } from "./watch.ts";
 import { watchIssueLine } from "./watchtext.ts";
 import { advance, realSetTimeout } from "./runtime/test-clock.ts";
 
@@ -79,7 +79,7 @@ test("watchIssueLine keeps a short plain first line but never a stack fragment f
 	const mixed = watchIssueLine("메일", "failed 2 times in a row (exit 1)", info, "로그인 실패: 탭 준비 실패:   at <anonymous>:1:204\nError: TypeError: x");
 	expect(mixed).not.toContain("<anonymous>");
 	expect(mixed).not.toContain("TypeError");
-	expect(mixed).toContain("/tmp/x/last-fail.log");
+	expect(mixed).not.toContain("last-fail.log");
 });
 
 type Notice = { reason: string; output: string; info?: NotifyInfo };
@@ -150,7 +150,7 @@ test("a script error is fixed by the heal turn: one 'fixed' line, no alert, no r
 	expect(readdirSync(join(DATA_DIR, "watches", w.id, "heal"))).toHaveLength(1);
 });
 
-test("a fix that does not work gets two turns in a day, then one plain alert with the log path and no stack", async () => {
+test("a fix that does not work gets two turns in a day, then one plain alert with no log path and no stack; the watch list names the log", async () => {
 	const { w } = brokenWatch("heal-bad");
 	const alerted = next(r => (onNotice = r));
 	setHealHandler((watch, turn) => {
@@ -169,7 +169,8 @@ test("a fix that does not work gets two turns in a day, then one plain alert wit
 	expect(n!.reason).toMatch(/^failed \d+ times in a row/);
 	expect(n!.info).toMatchObject({ cls: "script", note: "try 2: changed nothing useful" });
 	const text = watchIssueLine("heal bad", n!.reason, n!.info, n!.output);
-	expect(text).toContain(n!.info!.log);
+	expect(text).not.toContain(n!.info!.log);
+	expect(listWatches().find(x => x.name === "heal-bad")?.lastFailLog).toBe(n!.info!.log);
 	expect(text).not.toContain("    at ");
 	expect(text).not.toContain("```");
 	expect(state("heal-bad").healing).toBeUndefined();

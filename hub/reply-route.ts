@@ -3,6 +3,11 @@
 import type { createReplyActions } from "./reply-actions.ts";
 import { body, json } from "./routes-util.ts";
 
+/** The ms of the gateway's local midnight that began the day of `now`: the one "today" of the reply queue (the adapters' sent rows and counts.sentToday). */
+export const localMidnight = (now: number = Date.now()): number => new Date(now).setHours(0, 0, 0, 0);
+/** True when `at` (ms) is on the gateway's local day of `now`, or later. */
+export const sinceMidnight = (at: number, now: number = Date.now()): boolean => at >= localMidnight(now);
+
 type Replies = ReturnType<typeof createReplyActions>;
 export type ReplyRouteDeps = { replies: Replies | undefined; login: string; agent?: boolean; triageMin?: number; undoSec?: number; surface?: "web" | "peer" };
 
@@ -18,8 +23,7 @@ export async function replyRoute(req: Request, url: URL, deps: ReplyRouteDeps): 
 		const all = await deps.replies.list();
 		const items = refs ? all.filter(i => refs.includes(i.ref)) : all;
 		const st = (s: string) => items.filter(i => i.send?.state === s).length;
-		const midnight = new Date().setHours(0, 0, 0, 0);
-		const counts = { waiting: items.filter(i => i.draft.state === "pending" && !i.send).length, failed: st("failed"), unsure: st("unsure"), sending: st("undo") + st("queued") + st("sending"), sentToday: items.filter(i => i.send?.state === "sent" && i.send.at >= midnight).length };
+		const counts = { waiting: items.filter(i => i.draft.state === "pending" && !i.send).length, failed: st("failed"), unsure: st("unsure"), sending: st("undo") + st("queued") + st("sending"), sentToday: items.filter(i => i.send?.state === "sent" && i.send.today).length };
 		return json({ items, counts, triageMin: deps.triageMin ?? 1, undoSec: deps.undoSec ?? 10 });
 	}
 	const b = await body(req);

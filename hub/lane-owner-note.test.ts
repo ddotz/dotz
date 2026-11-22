@@ -164,12 +164,12 @@ test("a [wait] final after a mid-turn note is the answer to the owner; the next 
 	agent.push({ type: "assistant", text: "나눠서 보낼게요.", stop: "other" });
 	await flush();
 	expect(shown).toHaveLength(1);
-	agent.push({ type: "assistant", text: "[wait] 시험판을 세 통으로 나눠 보냈어요. 받으면 알려 주세요.", stop: "stop" });
+	agent.push({ type: "assistant", text: "[wait] 시험판을 세 통으로 나눠 보냈어요. 받아 보시는 동안 기다릴게요.", stop: "stop" });
 	agent.push({ type: "turn_end" });
 	await flush();
 	await advance(1000);
 	await flush();
-	expect(reports.at(-1)).toEqual({ text: "[wait] 시험판을 세 통으로 나눠 보냈어요. 받으면 알려 주세요.", answering: true });
+	expect(reports.at(-1)).toEqual({ text: "[wait] 시험판을 세 통으로 나눠 보냈어요. 받아 보시는 동안 기다릴게요.", answering: true });
 	agent.push({ type: "turn_start" });
 	agent.push({ type: "assistant", text: "[wait] 회사 PC 시험 결과를 기다려요.", stop: "stop" });
 	agent.push({ type: "turn_end" });
@@ -200,7 +200,7 @@ test("owner message -> note -> [run] -> [wait] result -> [wait] repeat: only the
 	await flush();
 	expect(shown).toHaveLength(1);
 	expect(await reportTurn(agent, "[run] 메일 세 통을 차례로 보내고 있어요")).toBe(false);
-	expect(await reportTurn(agent, "[wait] 시험판을 세 통으로 나눠 보냈어요. 받으면 알려 주세요.")).toBe(true);
+	expect(await reportTurn(agent, "[wait] 시험판을 세 통으로 나눠 보냈어요. 받아 보시는 동안 기다릴게요.")).toBe(true);
 	expect(await reportTurn(agent, "[wait] 회사 PC 시험 결과를 기다리고 있어요.")).toBe(false);
 	l.stopLane("note-run-wait");
 	await advance(300);
@@ -210,7 +210,7 @@ test("owner message -> [run] -> [wait] result -> [wait] repeat: the [run] answer
 	const { agent } = await working("note-run-open");
 	l.sendToLane("note-run-open", "[owner via Discord] 메일 보내", "m8");
 	expect(await reportTurn(agent, "[run] 메일 세 통을 차례로 보내고 있어요")).toBe(true);
-	expect(await reportTurn(agent, "[wait] 시험판을 세 통으로 나눠 보냈어요. 받으면 알려 주세요.")).toBe(true);
+	expect(await reportTurn(agent, "[wait] 시험판을 세 통으로 나눠 보냈어요. 받아 보시는 동안 기다릴게요.")).toBe(true);
 	expect(await reportTurn(agent, "[wait] 회사 PC 시험 결과를 기다리고 있어요.")).toBe(false);
 	l.stopLane("note-run-open");
 	await advance(300);

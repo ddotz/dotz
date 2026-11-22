@@ -27,7 +27,6 @@ import { attachmentList, mailByKey } from "./mail.ts";
 import { sendHold } from "./draft-recipients.ts";
 import { json } from "./routes-util.ts";
 
-const FILE_MAX = 25 * 1024 * 1024;
 const LIBRARY_LIST_MAX = 100;
 
 // A send approval dotz did not make (a block a session wrote, sent by its own tool with the file, e.g. acme-mail-act.ts --att-file): its
@@ -42,11 +41,12 @@ export function askedFiles(ref: string): { name: string; size: string; path: str
 		if ((e.kind !== "out" && e.kind !== "lane_report") || typeof e.text !== "string" || !e.text.includes(tag) || !e.text.includes("[file]")) continue;
 		const draft = parseDraftApproval(e.text);
 		if (draft?.ref !== ref) continue;
-		const lines = fileLinePaths(e.text);
+		const lines = [...fileLinePaths(e.text)];
 		const out: { name: string; size: string; path: string }[] = [];
 		for (const a of draft.attachments ?? []) {
-			const p = lines.find(l => nfc(basename(l)) === nfc(a.name));
-			if (!p) return undefined;
+			const at = lines.findIndex(l => nfc(basename(l)) === nfc(a.name));
+			if (at < 0) return undefined;
+			const p = lines.splice(at, 1)[0]!;
 			try {
 				const real = resolveAllowed(p, [], sentFiles());
 				out.push({ name: a.name, size: fileSizeText(statSync(real).size), path: real });
@@ -83,7 +83,7 @@ async function view(rec: DraftRec | undefined, ref: string) {
 	const editable = !!rec && rec.kind === "mail" && rec.status === "pending";
 	const asked = rec ? undefined : askedFiles(ref);
 	return {
-		files: asked ? asked.map(f => ({ name: f.name, size: f.size })) : stagedFiles(rec?.id ?? ref).map(f => ({ name: f.name, size: fileSizeText(f.size) })),
+		files: asked ? asked.map(f => ({ name: f.name, size: f.size })) : stagedFiles(rec?.id ?? ref).map(f => ({ name: f.name, size: fileSizeText(f.size), bytes: f.size })),
 		canAttach: !!rec && canAttach(rec.source),
 		library: editable && !!(await attachFolder(rec.ref)),
 		editable,
@@ -147,6 +147,8 @@ export async function draftAttachRoute(req: Request, url: URL, ref: string, tail
 			if (hold) return hold;
 			const b = (await req.json().catch(() => ({}))) as Record<string, any>;
 			if (Number.isInteger(b.remove)) {
+				const marked = typeof b.name === "string" ? stagedFiles(rec.id)[b.remove] : undefined;
+				if (typeof b.name === "string" && (marked?.name !== b.name || (typeof b.size === "number" && marked?.size !== b.size))) return json({ error: "첨부 파일이 바뀌었어요. 목록을 다시 불러왔어요", code: "changed", ...(await view(rec, ref)) }, 409);
 				if (!removeStagedFile(rec.id, b.remove)) return json({ error: "그런 첨부파일이 없어요" }, 404);
 			} else if (typeof b.library === "string") {
 				const folder = await attachFolder(rec.ref);
@@ -159,9 +161,7 @@ export async function draftAttachRoute(req: Request, url: URL, ref: string, tail
 				// Not the stored file's own name: that has the timestamp in front and the safe spelling of what he picked.
 				addStagedBytes(rec.id, up.original ?? up.name, readFileSync(up.path));
 			} else if (typeof b.name === "string" && typeof b.data === "string") {
-				const bytes = Buffer.from(b.data, "base64");
-				if (!bytes.length || bytes.length > FILE_MAX) return json({ error: "파일은 25MB 이하여야 해요" }, 413);
-				addStagedBytes(rec.id, b.name, bytes);
+				addStagedBytes(rec.id, b.name, Buffer.from(b.data, "base64"));
 			} else return json({ error: "upload, library, or name and data required" }, 400);
 			syncCardFiles();
 			return json({ ok: true, ...(await view(rec, ref)) });

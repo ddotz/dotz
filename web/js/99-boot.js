@@ -10,9 +10,10 @@
   if (document.readyState === "complete") custom(); else addEventListener("load", custom, { once: true });
   pushTapCheck();
   await snapHomeSeed();
-  let h = parseHash();
+  let h = PUSH_FOLLOW ? { view: "home", t: "" } : parseHash();
   if (pushOpenTs && h.view === "chat" && h.t === "alert") h = { view: "notices", t: "" };   // #chat/alert is the 알림 screen: drawn first, then pushOpen lands on the item
   go(h.view || "home", h.t);
+  if (PUSH_FOLLOW) pushLand(PUSH_ADDR, { cold: true });
   if (pushOpenTs && h.view === "chat") cvJump(pushOpenTs);   // the first draw lands on the tapped message (chatOpen); 30-notices.js pushOpen finishes by its kind
   // The first paint needs the history and the plan, not the state: ask for all of them at once instead of state first (the state
   // is the biggest answer and nothing the conversation draws waits for it; a lane that is gone is switched away from inside refreshState).
@@ -28,8 +29,8 @@
   if (h.view !== "notices") setTimeout(() => { for (const t of ["worklog"]) if (t !== target && !ts(t).hLoaded) loadTarget(t, true).catch(() => {}); }, 1500);
   await state;
   paneRestore();
-  if (pushOpenTs) { const at = pushOpenTs; pushOpenTs = ""; pushTapCold(pushOpen(PUSH_HASH, at, pushOpenNid)); }   // the app was started by a tap on a push
-  else if (!pushQ.has("n")) pushTapCold();   // a decision (?n=) reports when its sheet is open (30-notices.js)
+  if (pushOpenTs) { pushOpenTs = ""; pushLand(PUSH_ADDR, { cold: true }); }
+  else if (!pushQ.has("n") && !PUSH_FOLLOW) pushTapCold();
   introStart();   // the screen tour (42-intro.js) asks the gateway after a pause; nothing here waits for it
   loadModels(true);
   loadProviderData().then(() => { if (current === "home") renderHome(); }, () => {});
@@ -50,7 +51,7 @@
     // The drawn conversation stays as it is: loadTarget redraws it only when the read brought something new.
     // The first reset reads the open conversation again too when its history already came: what was sent between that answer and this stream is in neither.
     const reread = opened || ts(target).hLoaded;
-    if (opened) { refreshState(); tsStale(); loadSubs(); loadQueue(); laneTailsStale(); kkResync(); }
+    if (opened) { refreshState(); tsStale(); loadSubs(); loadQueue(); laneTailsStale(); kkResync(); if (RT && RT.restart_needed) loadRuntimes(); }   // a harness switch applies on this restart: its "switching" row turns into "in use"
     if (reread) { loadTarget(target, hasCached(ts(target))); convLoad(); }
     opened = true;
   });

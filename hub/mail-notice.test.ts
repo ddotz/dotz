@@ -48,7 +48,7 @@ test("a new mail from the webmail source or zele makes an unread bell item and a
 		[`mail:${zele.key}`, "lee@example.com", "회의 일정", false],
 	]);
 	expect(unread.map(n => n.open)).toEqual([`mail:${web.key}`, `mail:${zele.key}`]);
-	expect(noticePush(unread[0]!)).toMatchObject({ kind: "news", title: "김철수 · 새 메일", body: "견적 문의", url: `/#chat/mail:${web.key}`, tag: `watch:mail:${web.key}`, app: "mail" });
+	expect(noticePush(unread[0]!)).toMatchObject({ kind: "news", title: "김철수 · 새 메일", body: "견적 문의", url: `/?m=${encodeURIComponent(String(unread[0]!.at))}&i=${unread[0]!.id}#chat/mail:${web.key}`, tag: `watch:mail:${web.key}`, app: "mail" });
 	// the owner's own draft (composeMail) is no news
 	emit("inbox", { ts: new Date().toISOString(), kind: "mail", source: "web", channel: "mail:own", conv: "mail:own", mail: "own", subject: "내 초안", from: "me", text: "" });
 	expect(mailNotices()).toHaveLength(2);

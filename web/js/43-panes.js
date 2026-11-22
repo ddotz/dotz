@@ -5,6 +5,7 @@
    at most two, left and right only, owner 950d715f);
    one is active and holds the real section. The screen is 43-panes-view.js, the inactive panes are 43-panes-mirror.js. With one pane (or none) nothing here touches the page. */
 const PANE_KEY = "dotz-panes", PANE_MAX = 2;
+const paneNarrow = () => matchMedia("(max-width: 1219px)").matches;
 let PN = { root: null, active: "", seq: 0 };
 const paneLeaf = n => !n.dir;
 function paneLeaves(n = PN.root) { return !n ? [] : paneLeaf(n) ? [n] : [...paneLeaves(n.a), ...paneLeaves(n.b)]; }
@@ -42,7 +43,7 @@ function paneRowOpen(kind, t) {
   return true;
 }
 // go() keeps a mail a pane shows in the chat view (the chat tab lit, the chat list), where a mail opened by itself belongs to 모니터링.
-const paneKeeps = t => !!PN.going || (paneCount() > 1 && !narrowChat() && !!paneOpenIn("chat", t));
+const paneKeeps = t => !!PN.going || (paneCount() > 1 && !paneNarrow() && !!paneOpenIn("chat", t));
 // A conversation is opened by the pane machinery, so go() keeps the chat tab and the chat list even for a mail (05-command-palette.js).
 function paneGo(kind, t) {
   if (kind === "app") { paneGoApp(t); return; }
@@ -173,7 +174,7 @@ const paneTreePut = next => { PN = next; };
 // The chat tab pressed again after another tab: the panes come back as they were, the active one's content opened again.
 // A relayed computer chosen off the chat (44-relay-views.js relayShow) sits in no pane: the tab opens its chat, not what the active pane held.
 function paneReturn() {
-  if (paneCount() < 2 || narrowChat() || (isRelayT(target) && !paneOpenIn("chat", target))) return false;
+  if (paneCount() < 2 || paneNarrow() || (isRelayT(target) && !paneOpenIn("chat", target))) return false;
   if (!paneTabOk()) paneEnter(paneFind(PN.active));
   return true;
 }

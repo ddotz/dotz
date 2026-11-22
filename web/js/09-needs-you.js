@@ -96,9 +96,8 @@ function paintMonAttn() {
   if (NM.loaded && NT.loaded && INTG.loaded) b.dataset.seen = "1";
   b.parentElement.setAttribute("aria-label", say ? TX("home.attn.mon_aria", { say }) : TX("common.monitoring"));
 }
-// The badge and 답변 필요 read this computer's monitors on every tab: 홈 and 모니터링 refresh them themselves, any other tab here.
 // The other computers' snapshot (pqLoad) is read only by 모니터링.
-setInterval(() => { if (!document.hidden && current !== "home" && current !== "monitoring" && !monCtx) loadMonitors(); }, 60_000);
+setInterval(() => { if (!document.hidden && (current !== "home" || monCtx)) loadMonitors(); }, 60_000);
 // A target that starts needing the owner pops one toast (tap = switch to it): a lane question, a rate limit, or the main chat
 // finishing unseen (a lane's finished turn already has its report toast). On page load only open questions pop, and several of them are
 // one toast with their count that opens 홈 (they are all rows of 답변 필요 there), not a stack of cards over the screen.
@@ -179,7 +178,7 @@ function nyMonFails() {
 // Only this computer's: another computer's question is listed in 모니터링, and here only the computer chip's dot says it waits (owner 2026-10-31).
 function nyList() {
   const lanes = ((S && S.lanes) || []).filter(laneAlive).map(l => `lane:${l.name}`);
-  const asks = lanes.filter(t => (askOf(t) || attnKind(t) === "ask") && !ntHasDecision(t)).map(t => ({ t, rank: 3, crit: false, act: TX("home.ny.reply"), at: (targetInfo(t).ask || {}).at || "" }));
+  const asks = lanes.filter(t => (askOf(t) || attnKind(t) === "ask") && !ntHasDecision(t) && !ntLaterAt(t, (targetInfo(t).ask || {}).at)).map(t => ({ t, rank: 3, crit: false, act: TX("home.ny.reply"), at: (targetInfo(t).ask || {}).at || "" }));
   const loose = ntLooseAsks().filter(n => !asks.some(x => x.t === (n.src || n.open)));
   const items = [...ntDecisions(), ...loose].map(nyOf).filter(Boolean).concat(asks, nyMonFails());
   const when = x => x.n ? ntAt(x.n) : Date.parse(x.at) || 0;
@@ -191,6 +190,8 @@ function nyRows(items) {
   const mark = (node, it) => {
     if (it.n && it.n.pc) for (const h of node.querySelectorAll(".hrx-m .hn1")) h.append(el("span", { class: "tag mon-pc", text: it.n.pc.name }));   // another computer's question names it
     for (const hs of node.querySelectorAll(".hrx-m .hs")) hs.textContent = it.act;
+    const choices = it.n && it.n.decision && !it.n.decision.to.startsWith("auth:") ? it.n.decision.options.length : 0;
+    if (choices) for (const ha of node.querySelectorAll(".hrx-m .ha")) ha.textContent = [ha.textContent, TX("home.ny.choices", { n: choices })].filter(Boolean).join(" · ");
     for (const b of node.querySelectorAll(".hrx-m")) b.setAttribute("aria-label", b.getAttribute("aria-label").replace(new RegExp(`${TX("common.needs_reply")}$`), it.crit ? TX("home.ny.critical", { act: it.act }) : it.act));
     if (it.crit) { node.classList.add("crit"); if (it.n && it.n.tone === "fail") for (const e of node.querySelectorAll(".hs")) e.classList.add("err"); }   // a login stays orange; only a failure is red
     return nyBare(node);
@@ -399,9 +400,9 @@ function fmtDur(ms) {
   if (m < 60) return s % 60 ? TX("home.dur.ms", { m, s: s % 60 }) : TX("home.dur.m", { n: m });
   return m % 60 ? TX("home.dur.hm", { h: Math.floor(m / 60), m: m % 60 }) : TX("home.dur.h", { n: Math.floor(m / 60) });
 }
-let CS = { day: "", group: null, empty: null, prog: new Map(), who: "", whoT: 0 };
+let CS = { day: "", group: null, empty: null, prog: new Map(), who: "", whoT: 0, wake: null };
 // The chat timeline's draw state (11-todo-strip.js chatPush, 13-data.js renderAll) changes only through these.
-const csReset = () => { CS = { day: "", group: null, empty: null, prog: new Map(), who: "", whoT: 0 }; };
+const csReset = () => { CS = { day: "", group: null, empty: null, prog: new Map(), who: "", whoT: 0, wake: null }; };
 const csBreak = () => { CS.who = ""; };   // the next message shows its speaker head again
 const csDay = d => { CS.day = d; CS.who = ""; };
 const csWho = (who, t) => { CS.who = who; CS.whoT = t; };
@@ -415,6 +416,9 @@ const csProgSet = (key, p) => { CS.prog.set(key, p); };
 const csProgDrop = key => { CS.prog.delete(key); };
 const csParked = n => { CS.parked = n; };
 const csParkedDrop = () => { if (!CS.parked.classList.contains("cont")) CS.who = ""; CS.parked.remove(); CS.parked = null; };
+const csWakeSet = w => { CS.wake = w; };
+const csWakeRow = (n, day) => { if (!CS.wake.rows.length) CS.wake.day = day || null; CS.wake.rows.push(n); };
+const csWakeNote = k => { CS.wake[k] = true; };
 // The open conversation's read state (31-conversations.js): key = the target being looked at, div = the read position when it was opened
 // (the "새 메시지" divider goes before the first message after it), divNode = that divider in the timeline.
 // pin = what the view is anchored to while the opening settles (late images, the todo strip, an SSE frame): "div" (the divider at the top),

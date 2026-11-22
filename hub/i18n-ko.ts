@@ -1,6 +1,7 @@
 // Korean message catalog (see hub/i18n.ts). Moved out of i18n.ts unchanged.
 import { join } from "node:path";
 import { ADDRESS, NAME, paths, tzLabel } from "./config.ts";
+import { doctorKo } from "./doctor-text.ts";
 import { LESSONS_MAX_BYTES } from "./prompt-budget.ts";
 import type { Catalog, Leads } from "./i18n-en.ts";
 import { OMO_WORDS } from "./worker-words.ts";
@@ -39,7 +40,6 @@ const koLeads: Leads = {
 const koRetainNudge = "이어가기 전에, 지금까지의 대화에서 나온 오너·프로젝트·선호 중 오래 남길 사실이 아직 저장되지 않았으면 dotz 데이터 폴더에 저장하세요(오너 사실은 memory/owner.md, 오너가 한 '하지 마' 원문은 memory/boundaries.md, 규칙은 RULES.md, 교훈은 LESSONS.md, 진행 중인 일은 state.json). 없으면 건너뛰세요.";
 
 export const NIGHT_LEAD = "야간 정리:";
-export const DOCTOR_LEAD = "닥터 점검:";
 export const SCHEDULE_CHECK_LEAD = "예약 점검:";
 
 export const ko: Catalog = {
@@ -48,7 +48,7 @@ export const ko: Catalog = {
 	// 고정한 계정이 한도에 걸렸을 때 (hub/accounts-api.ts): 한 번만 묻는 질문, 저장한 답, 그리고 선택지 없는 안내.
 	accountLimit: {
 		question: (account, at) => `고정한 계정 ${account} 한도에 걸려서 ${at}까지 멈춰요. 고정했으니 다른 계정으로 넘어가지 않아요.`,
-		questionTitle: "어떻게 할까요?",
+		questionTitle: "자동 전환으로 바꿀까요, 한도가 풀릴 때까지 기다릴까요?",
 		switchChoice: "자동 전환으로 바꾸기",
 		switchChoiceNote: "한도에 걸리면 다른 계정으로 넘어가 바로 이어서 해요",
 		waitChoice: "그대로 기다리기",
@@ -261,6 +261,9 @@ export const ko: Catalog = {
 	checkPassed: (n, landed) => `확인 통과: 확인 항목 ${n}개가 모두 통과했어요${landed ? ", 작업 브랜치도 main에 반영됐어요" : ""}`,
 	waitMainRefused: `[게이트웨이 확인] 방금 [wait]는 아무에게도 가지 않았어요. 메인(${NAME})을 기다린다면 메인이 할 일을 "${NAME} 몫:" 줄에 쓰거나 dotz_main으로 보낸 뒤 다시 보고하세요. 메인이 아니라 CI·시간·워커를 기다리는 거면 그렇게 적어 다시 보고하세요.`,
 	askRefused: text => `[게이트웨이 확인] 방금 [ask]는 오너에게 가지 않았어요. 선택지가 없으면 오너가 그 자리에서 답할 수 없어요. 무슨 일인지 프로젝트·작업을 한 줄로 쓰고, \`결정: <쉬운 말 질문 한 줄>\` 블록에 선택지 2~4개와 각 선택의 결과를 적어 다시 [ask]로 보내세요. 물을 게 없이 기다리는 중이면 [ask]로 보내지 마세요: 오너나 메인만 다음으로 움직일 수 있으면 한 줄짜리 [wait] 보고로 턴을 끝내고, 직접 돌린 실행을 기다리는 거라면 턴을 끝내지 말고 한 번의 blocking 호출 안에서 기다리세요.\n\n돌려보낸 글:\n${text}`,
+	askUnread: (questions, text) => `[게이트웨이 확인] 방금 보고는 오너에게 가지 않았어요. 아래 질문은 밑에 목록이 있지만 카드가 되지 않아서, 오너에게는 목록이 글로만 보여요:\n- ${questions.join("\n- ")}\n질문마다 \`결정: <주제가 든 질문>\` 블록 하나에 선택지 2~4개(\`**1) 이름**\`과 결과 한 줄)를 적어 다시 보내세요.\n\n돌려보낸 글:\n${text}`,
+	askTitleRefused: (title, text) => `[게이트웨이 확인] 방금 보고는 오너에게 가지 않았어요. 카드 질문${title ? `("${title}")` : ""}에 무엇에 대한 건지가 없어요. 오너는 휴대폰에서 그 한 줄만 봐요. \`결정:\` 줄에 주제를 넣어(\`SSH 복구 명령을 만들까요?\`처럼, \`어떻게 할까요?\`는 안 돼요) 다시 보내세요.\n\n돌려보낸 글:\n${text}`,
+	askProseRefused: (line, text) => `[게이트웨이 확인] 방금 보고는 오너에게 가지 않았어요. 끝에서 오너에게 글로만 부탁했어요("${line}"). 글로만 한 부탁은 카드가 없어서 놓치기 쉬워요. [ask]와 \`결정: <주제가 든 질문>\` 블록에 선택지 2~4개로 물어보세요. 오너가 글을 써야 답할 수 있는 선택지는 이름 끝에 \` …\`를 붙이세요. 제안일 뿐이면 "원하면 …"처럼 제안으로 쓰거나 빼세요.\n\n돌려보낸 글:\n${text}`,
 	languageRefused: (head, before) => `[게이트웨이 확인] 방금 보고는 오너에게 가지 않았어요. ${before ? `상태 줄보다 앞에 글이 있어요("${head}...")` : `"${head}..."로 시작하는 문단이 한국어가 아니에요`}. 상태 줄([done]·[run]·[wait]·[ask]·[fail])로 시작하고 모든 문단을 한국어로 써서 다시 보내세요. 코드, 경로, id와 red test·HEAD 같은 개발 용어는 그대로 둬도 돼요.`,
 	unverifiedRefused: lines => `[게이트웨이 확인] 방금 보고는 오너에게 가지 않았어요. 아래 줄은 확인하지 않은 것을 이유 없이 적었어요:\n- ${lines.join("\n- ")}\n먼저 이 컴퓨터에서 확인할 수 있는 건 전부 확인하세요(실행, 헤드리스 화면, 다시 읽기). 그래도 여기서 확인할 수 없는 것은 그 줄에 이유를 쓰고 \`대신 확인:\` 뒤에 대신 확인한 것을 적어 다시 보고하세요.`,
 	checkBounced: (n, failed) => `아직 통과 못 한 확인 항목이 있어서 세션에 다시 맡겼어요 (확인 ${n}개 중 ${failed}개)`,
@@ -279,7 +282,7 @@ export const ko: Catalog = {
 	laneRotated: (why, cwd, brief, lastReport) => `[dotz gateway] 컨텍스트를 작게 유지하려고 대화 기록을 새로 바꿨어요 (${why}). 폴더(${cwd}), 모델, 목표는 그대로예요. 브리프(${brief})와 마지막 보고(${lastReport})를 읽고, 작업의 현재 상태(git status, 브리프가 가리키는 파일)를 확인한 뒤 거기서 이어가세요. 새 작업을 시작하거나 보고하지 마세요. 열려 있는 일이 없으면 "ready" 한 단어로만 답하세요.`,
 	heldMessages: (text, held) => `${text}\n\n멈춰 있는 동안 오너 메시지 ${held.length}건이 도착했어요. 오래된 순으로 각각 처리하세요:\n\n${held.join("\n\n---\n\n")}`,
 
-	footer: a => `\n\n---\n[dotz lane ${a.lane}] ${koLaneLanguage} 당신은 ${NAME}의 세션이에요: 목표가 하나인 이 폴더 전용 ${a.harness ?? "OmO"} 오케스트레이터예요. 턴은 목표를 끝냈거나, 실패했거나, 오너가 필요하거나, 당신이 띄운 task 워커가 돌고 있을 때만 끝내고, 그 턴의 마지막 메시지가 보고예요. 보고는 게이트웨이가 ${NAME}의 이름으로 전달하고, 오너는 세션 채널에서 읽어요. 보고는 800자 안팎으로, ${a.mode}(Reporting)의 보고 형식대로 쓰세요: 첫 줄은 결론(맨 앞에 상태 표식 [done]/[run]/[wait]/[ask]/[fail]). [ask]는 오너에게 선택지 블록으로 물을 때만 쓰세요(선택지 없는 [ask]는 게이트웨이가 돌려보내요. 답을 기다린다는 말은 [ask]로 다시 보내지 마세요). ${NAME}에게 할 요청은 [ask]가 아니라 [done]/[run]/[wait]/[fail] 보고에 "${NAME} 몫:" 줄로 쓰세요. ${NAME}(메인)을 기다리며 [wait]로 끝낼 때는 dotz_main으로 보내거나 그 줄에 메인이 할 일을 쓰세요(둘 다 없으면 게이트웨이가 한 번 돌려보내요). 오너가 답해야 할 게 있을 때만 그다음 문단에 선택지 블록: \`결정: <질문>\` 줄, 이어서 \`**1) 이름**\`과 결과 한 줄씩 2~4개(결정마다 한 블록). 이어서 바뀐 것과 확인한 것 최대 3-4줄(경로, 직접 돌린 Done-when 확인, 머지 커밋). 마지막에 ${NAME}가 처리할 것은 "${NAME} 몫:" 한 줄로 쓰고, 오너 질문과 섞지 마세요. 오너가 당신에게 직접 쓸 수도 있어요. 직접 돌린 백그라운드 실행(영상, 빌드, 테스트, 모니터)을 기다리려고 턴을 끝내지 마세요: 한 번의 blocking 호출 안에서 끝날 때까지 기다리세요. 띄운 task 워커가 도는 동안 턴을 끝낼 때는 표식 없는 보고가 아니라 한 줄짜리 [run] 보고로 끝내세요: [run]은 세션 채널에만 남고 ${NAME}을 깨우지 않아요. [wait]는 할 일을 다 끝냈고 오너나 ${NAME}(메인)만 다음으로 움직일 수 있을 때만 한 줄로 쓰세요: 깨우는 것도 재촉받는 것도 없고, 오너에게는 답을 기다린다고 보여요. Discord나 다른 사람에게 직접 메시지를 보내지 말고, 보고에 비밀값을 절대 넣지 마세요. ${NAME}만 할 수 있는 일(재시작, 릴리스, 다른 기기, 다른 프로젝트)은 dotz_main으로 바로 요청하세요. 답은 메시지로 돌아오고, 보고는 결과를 위한 거예요. 오너 메시지("[owner via web]" / "[owner via Discord]")가 턴 중간에 들어오면, 최종 보고까지 기다리지 말고 다음 도구 호출 직전에 짧은 한마디(무엇을 언제 하겠다는 것)로 답하세요. 게이트웨이가 그 한마디를 오너가 쓴 곳에 바로 보여줘요. 시작하기 전에 ${a.mode}(Sessions and subagents, Browser and testing, Reporting 섹션), 오너의 상시 규칙 ${paths.rules}(기본 동작보다 우선해요)를 읽고 따르세요.${a.identity ? " 정체성(호칭과 말투)은 아래 같은 이름의 항목에 있으니 그대로 따르세요." : ""} 계획과 리뷰는 직접 하고, 구현과 반복 작업은 task 서브에이전트로 돌리세요(서브에이전트 모델 ${a.workerModel}, modelRoles.task 경유. 오너가 바꾸면 \`bun ${import.meta.dir}/lane-cli.ts worker <모델:강도> --owner-message <그렇게 하라고 한 오너 메시지의 mid>\`로 기록하세요. 그 메시지가 없으면 게이트웨이가 거절해요). 서브에이전트의 diff는 적용하거나 머지하기 전에 직접 리뷰하세요. 서로 독립적인 조각을 한 서브에이전트 뒤에 줄 세우지 마세요: 이 머신은 task 서브에이전트를 최대 ${a.slots}개 동시에 돌리니, 독립적인 조각(다른 파일, 또는 하나씩 머지할 수 있는 분리된 섹션)은 한 번에 나눠 띄우고, 서브에이전트 하나는 순서대로 해야 하는 일에만 쓰세요. 시작할 때 작업을 한 번 분류하세요(무거움: 새 모듈, 보안·권한, 외부 연동, DB 스키마, 동시성, 도메인을 넘는 리팩터. 애매하면 무거움, 내리지 않기): 가벼움은 성공 기준 1-2개와 증거 1개, 무거움은 3개 이상(정상·경계·회귀)과 기준마다 증거, 리뷰어 통과까지. 테스트 통과만으로는 완료가 아니에요: 바뀐 동작을 실제 표면(명령, 화면, API)에서 돌려 증명하세요. 보고 전에 이 컴퓨터에서 확인할 수 있는 건 전부 확인하세요(실행, 헤드리스 화면, 다시 읽기). 남은 항목을 보고에 쓸 때는 여기서 왜 확인할 수 없는지와 \`대신 확인:\` 뒤에 대신 확인한 것을 같은 줄에 쓰세요. 이유 없는 "미확인" 줄은 게이트웨이가 한 번 돌려보내요. 전체 테스트는 머지 직전에 한 번만 돌리세요. 실패하면 그 파일만 다시 돌리고, 브랜치와 무관한 실패가 혼자 돌려 통과하면 쫓지 말고 보고하세요. 되돌릴 수 있고 요청 범위와 예산 안이면 추천안을 직접 골라 진행하고 보고에 적으세요. 오너에게는 확인 게이트(비밀, 결제, 외부 영향, 파괴적 작업)나 취향만 물으세요. 이 컴퓨터의 조작(권한, 설정 스위치, 허용 팝업, 앱 재시작)은 당신 몫이에요(${a.mode}, Browser and testing): 먼저 해 보고, 사람이 해야 하는 것만 한 번 넘기세요. 도구 호출 intent는 한국어 2-6단어로 쓰고, 서브에이전트 brief에도 같은 지시를 넣으세요. 그림으로 보면 쉬운 숫자(추이, 비율)는 \`\`\`chart 블록에 ztd-charts JSON으로 써도 돼요. 웹과 Discord에는 그려진 차트로 보여요. 할 일 목록은 진행에 맞춰 바로 고치세요: 끝난 일은 그 즉시 완료로, 다음 일은 시작으로, 바뀐 일은 빼거나 고쳐 쓰세요. 오너는 그 목록을 당신의 진행 상황으로 봐요.${a.worktree}${a.identity ? `\n\n정체성(호칭과 말투):\n${a.identity}` : ""}`,
+	footer: a => `\n\n---\n[dotz lane ${a.lane}] ${koLaneLanguage} 당신은 ${NAME}의 세션이에요: 목표가 하나인 이 폴더 전용 ${a.harness ?? "OmO"} 오케스트레이터예요. 턴은 목표를 끝냈거나, 실패했거나, 오너가 필요하거나, 당신이 띄운 task 워커가 돌고 있을 때만 끝내고, 그 턴의 마지막 메시지가 보고예요. 보고는 게이트웨이가 ${NAME}의 이름으로 전달하고, 오너는 세션 채널에서 읽어요. 보고는 800자 안팎으로, ${a.mode}(Reporting)의 보고 형식대로 쓰세요: 첫 줄은 결론(맨 앞에 상태 표식 [done]/[run]/[wait]/[ask]/[fail]). [ask]는 오너에게 선택지 블록으로 물을 때만 쓰세요(선택지 없는 [ask]는 게이트웨이가 돌려보내요. 답을 기다린다는 말은 [ask]로 다시 보내지 마세요). 오너에게 글로만 부탁하지 말고 늘 카드로 물으세요: "…알려 주세요"로 끝나고 카드가 없는 보고, 목록이 카드가 되지 않은 질문, 주제 없는 카드 질문(\`어떻게 할까요?\`)은 게이트웨이가 한 번 돌려보내요. 카드 질문에는 주제를 넣고(\`SSH 복구 명령을 만들까요?\`), 오너가 더 알려 달라고 하면 같은 카드를 무엇이 바뀌는지 전 → 후와 함께 다시 올리세요. ${NAME}에게 할 요청은 [ask]가 아니라 [done]/[run]/[wait]/[fail] 보고에 "${NAME} 몫:" 줄로 쓰세요. ${NAME}(메인)을 기다리며 [wait]로 끝낼 때는 dotz_main으로 보내거나 그 줄에 메인이 할 일을 쓰세요(둘 다 없으면 게이트웨이가 한 번 돌려보내요). 오너가 답해야 할 게 있을 때만 그다음 문단에 선택지 블록: \`결정: <질문>\` 줄, 이어서 \`**1) 이름**\`과 결과 한 줄씩 2~4개(결정마다 한 블록). 이어서 바뀐 것 최대 3-4줄(경로), 직접 돌린 Done-when 확인과 머지 커밋은 \`근거:\` 한 줄(테스트는 \`테스트 N개 통과\`처럼 우리말로, pass·fail 없이). 마지막에 ${NAME}가 처리할 것은 "${NAME} 몫:" 한 줄로 쓰고, 오너 질문과 섞지 마세요. 오너가 당신에게 직접 쓸 수도 있어요. 직접 돌린 백그라운드 실행(영상, 빌드, 테스트, 모니터)을 기다리려고 턴을 끝내지 마세요: 한 번의 blocking 호출 안에서 끝날 때까지 기다리세요. 띄운 task 워커가 도는 동안 턴을 끝낼 때는 표식 없는 보고가 아니라 한 줄짜리 [run] 보고로 끝내세요: [run]은 세션 채널에만 남고 ${NAME}을 깨우지 않아요. [wait]는 할 일을 다 끝냈고 오너나 ${NAME}(메인)만 다음으로 움직일 수 있을 때만 한 줄로 쓰세요: 깨우는 것도 재촉받는 것도 없고, 오너에게는 답을 기다린다고 보여요. Discord나 다른 사람에게 직접 메시지를 보내지 말고, 보고에 비밀값을 절대 넣지 마세요. ${NAME}만 할 수 있는 일(재시작, 릴리스, 다른 기기, 다른 프로젝트)은 dotz_main으로 바로 요청하세요. 답은 메시지로 돌아오고, 보고는 결과를 위한 거예요. 오너 메시지("[owner via web]" / "[owner via Discord]")가 턴 중간에 들어오면, 최종 보고까지 기다리지 말고 다음 도구 호출 직전에 짧은 한마디(무엇을 언제 하겠다는 것)로 답하세요. 게이트웨이가 그 한마디를 오너가 쓴 곳에 바로 보여줘요. 시작하기 전에 ${a.mode}(Sessions and subagents, Browser and testing, Reporting 섹션), 오너의 상시 규칙 ${paths.rules}(기본 동작보다 우선해요)를 읽고 따르세요.${a.identity ? " 정체성(호칭과 말투)은 아래 같은 이름의 항목에 있으니 그대로 따르세요." : ""} 계획과 리뷰는 직접 하고, 구현과 반복 작업은 task 서브에이전트로 돌리세요(서브에이전트 모델 ${a.workerModel}, modelRoles.task 경유. 오너가 바꾸면 \`bun ${import.meta.dir}/lane-cli.ts worker <모델:강도> --owner-message <그렇게 하라고 한 오너 메시지의 mid>\`로 기록하세요. 그 메시지가 없으면 게이트웨이가 거절해요). 서브에이전트의 diff는 적용하거나 머지하기 전에 직접 리뷰하세요. 서로 독립적인 조각을 한 서브에이전트 뒤에 줄 세우지 마세요: 이 머신은 task 서브에이전트를 최대 ${a.slots}개 동시에 돌리니, 독립적인 조각(다른 파일, 또는 하나씩 머지할 수 있는 분리된 섹션)은 한 번에 나눠 띄우고, 서브에이전트 하나는 순서대로 해야 하는 일에만 쓰세요. 시작할 때 작업을 한 번 분류하세요(무거움: 새 모듈, 보안·권한, 외부 연동, DB 스키마, 동시성, 도메인을 넘는 리팩터. 애매하면 무거움, 내리지 않기): 가벼움은 성공 기준 1-2개와 증거 1개, 무거움은 3개 이상(정상·경계·회귀)과 기준마다 증거, 리뷰어 통과까지. 테스트 통과만으로는 완료가 아니에요: 바뀐 동작을 실제 표면(명령, 화면, API)에서 돌려 증명하세요. 보고 전에 이 컴퓨터에서 확인할 수 있는 건 전부 확인하세요(실행, 헤드리스 화면, 다시 읽기). 남은 항목을 보고에 쓸 때는 여기서 왜 확인할 수 없는지와 \`대신 확인:\` 뒤에 대신 확인한 것을 같은 줄에 쓰세요. 이유 없는 "미확인" 줄은 게이트웨이가 한 번 돌려보내요. 전체 테스트는 머지 직전에 한 번만 돌리세요. 실패하면 그 파일만 다시 돌리고, 브랜치와 무관한 실패가 혼자 돌려 통과하면 쫓지 말고 보고하세요. 되돌릴 수 있고 요청 범위와 예산 안이면 추천안을 직접 골라 진행하고 보고에 적으세요. 오너에게는 확인 게이트(비밀, 결제, 외부 영향, 파괴적 작업)나 취향만 물으세요. 이 컴퓨터의 조작(권한, 설정 스위치, 허용 팝업, 앱 재시작)은 당신 몫이에요(${a.mode}, Browser and testing): 먼저 해 보고, 사람이 해야 하는 것만 한 번 넘기세요. 도구 호출 intent는 한국어 2-6단어로 쓰고, 서브에이전트 brief에도 같은 지시를 넣으세요. 그림으로 보면 쉬운 숫자(추이, 비율)는 \`\`\`chart 블록에 ztd-charts JSON으로 써도 돼요. 웹과 Discord에는 그려진 차트로 보여요. 할 일 목록은 진행에 맞춰 바로 고치세요: 끝난 일은 그 즉시 완료로, 다음 일은 시작으로, 바뀐 일은 빼거나 고쳐 쓰세요. 오너는 그 목록을 당신의 진행 상황으로 봐요.${a.worktree}${a.identity ? `\n\n정체성(호칭과 말투):\n${a.identity}` : ""}`,
 	worktree: w => `\n\n당신은 자신만의 git worktree ${w.path}(브랜치 ${w.branch})에서 일해요. ${w.repo}(${w.base})에서 갈라져 나온 거예요. 브리프에 나온 ${w.repo} 아래 경로는 ${w.path} 아래의 같은 파일을 뜻해요. 서브에이전트 brief에는 저장소 파일을 worktree 기준 상대 경로로 쓰세요: isolated 서브에이전트는 자기 사본에서 일하는데, ${w.repo}나 ${w.path} 절대 경로를 주면 실제 checkout을 고쳐요. 다른 세션과 오너는 ${w.repo}에서 일하니, 거기 파일은 절대 수정하지 마세요. 작업은 진행하면서 ${w.branch}에 커밋하세요. 추적되지 않는 설정(node_modules, .env, 빌드 결과물)은 worktree에 없으니 필요한 것은 설치하거나 링크하세요. Done-when 확인이 통과하면 이 프로젝트가 작업을 반영하는 방식대로 반영하세요(PR을 쓰는 프로젝트면 PR). 아니면 ${w.base} 위로 rebase(\`git rebase ${w.base}\`)한 뒤 \`git -C ${w.repo} merge --ff-only ${w.branch}\`를 하세요. 충돌이 나면 worktree에서 해결하고 다시 시도하세요. 강제로 밀지 말고 ${w.repo}를 reset하지 마세요. 머지한 커밋을 보고하세요. 브리프가 머지하지 말라고 하면 머지하지 말고 브랜치 헤드 커밋과 함께 [done]으로 보고하세요. 머지 후 세션을 닫으면 게이트웨이가 worktree를 지워요.`,
 	noGit: `\n\n이 폴더는 git 저장소가 아니라서 격리(isolated) 서브에이전트가 뜨지 않아요. 서브에이전트는 격리 없이 띄우세요(읽기만 하는 일은 격리가 필요 없어요). 파일을 고치는 서브에이전트라면 다른 서브에이전트와 겹치지 않는 파일만 맡기세요.`,
 
@@ -330,12 +333,11 @@ export const ko: Catalog = {
 	mailNote: (source, id, subject) => `(이 대화는 메일 한 통이에요: ${source} ${id}, "${subject}". 답장·보내기·전달·삭제는 먼저 발송 승인 블록(1) 보내기 / 2) 고치기 / 3) 보내지 않기)으로 초안을 보여 주고, 여기서 오너가 분명히 OK한 뒤에만 하세요.)`,
 	textsReport: lines => `[dotz gateway] 이 설치의 문구 고침(<데이터 폴더>/custom/texts.json) 중 새 버전과 맞지 않는 것이 있어요:\n${lines}\n새 기본 문구(bun hub/texts-cli.ts show <키>)와 비교해서 다시 확인하고, \`bun hub/texts-cli.ts set <키> --file <파일>\`로 다시 쓰거나 항목을 지우세요. 이 안내는 문제마다 한 번만 와요. 무엇을 고쳤는지 오너에게 한 줄로 알리세요.`,
 	restartHeldResume: "[dotz gateway] 게이트웨이가 재시작됐어요. 재시작 대기 중에 막혔던 워커나 세션 시작이 있어요. state.json open_tasks에서 재시작 뒤로 미룬 일을 찾아 지금 이어서 하세요. 이미 시작했으면 아무것도 하지 마세요.",
-	carryOver: (where, read, stat, files) => `[dotz 업데이트] 이 설치에서 dotz 코드를 직접 고친 내용이 업데이트 전에 보관됐어요(보관본마다 이 안내는 한 번만 와요). 보관: ${where}\n변경: ${stat}\n${files}\n해 주세요: 1) \`${read}\`로 diff를 읽으세요. 2) 각 변경을 가능하면 사용자 층으로 옮기세요: 문구는 <데이터 폴더>/custom/texts.json(bun hub/texts-cli.ts), 기능은 <데이터 폴더>/features, 규칙은 RULES.md. 3) dotz 코어에서만 의미가 있는 변경은 dotz 관리자에게 보낼 한국어 보고를 작업로그에 남기고(개인정보와 민감한 내용은 모두 빼서 비식별화·일반화하되 증상, 재현 순서, 기대 결과, 실제 결과, 버전은 상세하게), ddotz/dotz에 GitHub 이슈로 열지 오너에게 물으세요. 4) 마지막으로 오너에게 한 번에, 무엇을 옮겼고 무엇을 못 옮겼는지 알리세요. dotz 코드는 고치지 마세요.`,
+	carryOver: (where, read, stat, files) => `[dotz 업데이트] 이 설치에서 dotz 코드를 직접 고친 내용이 업데이트 전에 보관됐어요(보관본마다 이 안내는 한 번만 와요). 보관: ${where}\n변경: ${stat}\n${files}\n해 주세요: 1) \`${read}\`로 diff를 읽으세요. 2) 각 변경을 가능하면 사용자 층으로 옮기세요: 문구는 <데이터 폴더>/custom/texts.json(bun hub/texts-cli.ts), 기능은 <데이터 폴더>/features, 규칙은 RULES.md. 3) dotz 코어에서만 의미가 있는 변경은 dotz 관리자에게 보낼 한국어 보고를 작업내역에 남기고(개인정보와 민감한 내용은 모두 빼서 비식별화·일반화하되 증상, 재현 순서, 기대 결과, 실제 결과, 버전은 상세하게), ddotz/dotz에 GitHub 이슈로 열지 오너에게 물으세요. 4) 마지막으로 오너에게 한 번에, 무엇을 옮겼고 무엇을 못 옮겼는지 알리세요. dotz 코드는 고치지 마세요.`,
 	cardAudit: (closed, refreshed, open) => `[dotz 업데이트] 이번 업데이트에서 이 설치의 카드를 한 번 전역 점검해요. 게이트웨이가 전송 기록으로 보낸 카드 ${closed}장을 닫았고 ${refreshed}장을 새로 고쳤어요. 열린 카드는 ${open}장이에요.\n메일, 답장 초안, 댓글, 쪽지, 카톡, sns 작업, 승인 대기, 알림을 모두 읽고 전송 기록과 맞춰 보세요. 읽는 길은 features/<앱>/feature.md에 있고, 카드는 GET /api/notices와 GET /api/reply/queue로 읽어요.\n- 외부로 아무것도 보내지 않아요. 다시 보내기, 승인, 버리기를 하지 않아요. 보내기 명령은 실행하지 않아요.\n- 전송 기록으로 보낸 것이 증명된 카드만 닫아요(POST /api/notices/resolve의 ids).\n- 증명하지 못한 카드는 열어 둬요. 초안과 어긋나면 보내기가 되도록 카드만 새로 고쳐요.\n- 끝나면 이 대화에 오너에게 짧게 요약해요: 닫은 카드, 남은 카드, 오너가 볼 것. 이 점검은 다시 오지 않아요.`,
 	watchIssue: {
 		cls: { script: "확인 스크립트에 오류가 있어요", outside: "바깥 서비스(네트워크·서버) 문제예요", owner: "로그인이나 승인이 필요해요", unknown: "원인을 알 수 없어요" },
 		tried: note => `스스로 고쳐 보려 했지만 안 됐어요: ${note}`,
-		log: path => `기록: ${path}`,
 	},
 	selfHealTurn: a => {
 		const fence = (text: string) => `\`\`\`\n${text.replace(/```/g, "'''")}\n\`\`\``;
@@ -343,7 +345,10 @@ export const ko: Catalog = {
 		return `[dotz 모니터링 고치기] 모니터링 "${a.label}"의 확인 스크립트가 실패했어요 (종료 코드 ${a.code}, 분류 ${a.cls}). 이번이 오늘 ${a.attempt}번째 시도예요 (하루 ${a.max}번까지).\n고칠 파일: ${a.file}\n백업: ${a.backup}\n마지막 출력 끝부분:\n${fence(a.tail)}\n마지막 성공: ${a.lastOk ?? "기록 없음"}.${edited}${a.okLines ? `\n그때 출력의 첫 줄들:\n${fence(a.okLines)}` : ""}${a.tried ? `\n지난번에 해 본 것: ${a.tried}` : ""}\n- 이 파일만 고쳐요.\n- 비밀 폴더나 비밀값을 읽거나 적지 않아요.\n- 메일·메시지·게시처럼 남에게 나가는 동작과 로그인·2차 인증 시도는 하지 않아요.\n- 스크립트를 직접 돌리지 않아요. 게이트웨이가 다시 돌려요. 문법 검사(bash -n, bun build --no-bundle 같은 것)는 괜찮아요.\n- 하위 작업이나 [later] 없이 이 턴에서 끝내요.\n- 원인이 스크립트가 아니면 아무것도 바꾸지 않고, 이유를 노트에 써요.\n끝내는 법: ${a.notePath} 에 "무엇을, 왜"를 한 줄로 쓰고, 최종 답은 "-" 한 글자만 보내요.`;
 	},
 	inboxSchedule: (id, every, channel) => `[dotz inbox] 예약 항목 (${id}${every ? `, ${every}분마다` : ""}) - 지금 처리하세요. 최종 답은 ${channel}로 가요:`,
-	inboxCheck: (ids, channel) => `[dotz inbox] 조용한 점검 (${ids.join(", ")}) - 오너가 시킨 일이 아니라 내가 걸어 둔 시스템 점검${ids.length > 1 ? `이에요. ${ids.length}개가 같은 시각이라 한 번에 와요: 번호 순서대로 보고 답은 하나로 쓰세요` : "이에요"}. 모두 정상이면 평범한 한 줄로만 답하세요(조용히 작업로그에만 남아요). 오너가 정해야 하거나 꼭 알아야 할 때만 답을 [ask] 또는 [fail]로 시작하세요. 할 말이 없으면 \"-\" 한 글자만 답하세요. 최종 답은 ${channel}로 가요:`,
+	inboxCheck: (ids, channel) => `[dotz inbox] 조용한 점검 (${ids.join(", ")}) - 오너가 시킨 일이 아니라 내가 걸어 둔 시스템 점검${ids.length > 1 ? `이에요. ${ids.length}개가 같은 시각이라 한 번에 와요: 번호 순서대로 보고 답은 하나로 쓰세요` : "이에요"}. 모두 정상이면 평범한 한 줄로만 답하세요(조용히 작업내역에만 남아요). 오너가 정해야 하거나 꼭 알아야 할 때만 답을 [ask] 또는 [fail]로 시작하세요. 할 말이 없으면 \"-\" 한 글자만 답하세요. 최종 답은 ${channel}로 가요:`,
+	scheduleNaming: items => `[dotz gateway] 이름과 작업 종류가 생기기 전에 만든 예약에 이름을 한 번 붙여요. 아래 id마다 dotz_schedule action=edit {id, name, kind}를 부르세요. name: 그것이 무엇인지 말하는 오너의 언어로 된 짧은 제목이에요(40자까지, 언제인지가 아니라 무엇인지, 예: "피드백 일일 보고"). kind: 글이 그 시각에 오너에게 전할 말이면(예: "3시에 회의 알려줘") "owner", 당신이 할 일이면(보고, 찾아보기, 명령 실행) "task"예요. [task]나 [check]가 붙은 id는 그 종류 그대로 두고 이름만 주세요. 다른 것은 바꾸지 마세요. 모두 마치면 "-" 하나만 답하세요.\n${items.map(i => `- ${i.id}${i.fixed ? ` [${i.fixed}]` : ""}${i.conv ? ` (${i.conv})` : ""}: ${i.text.replace(/\s+/g, " ").slice(0, 300)}`).join("\n")}`,
+	scheduleNamed: list => `예약에 이름과 종류를 붙였어요: ${list.map(s => `${s.name}(${({ owner: "알림", task: "작업", check: "조용한 점검" })[s.kind]})`).join(", ")}. 바꾸려면 모니터링의 예약 줄 ⋯이나 설정의 예약한 일에서 고칠 수 있어요.`,
+	scheduleRun: { running: "돌아가는 중이에요", nothing: "알릴 게 없었어요", posted: "결과를 대화에 올렸어요", held: name => `${name}: 모델 사용량 한도로 기다리는 중이에요. 풀리면 바로 시작해요.`, failed: name => `${name}을(를) 못 했어요 · 지금 다시 실행할까요?`, rerun: "다시 실행", stop: "그만두기" },
 	scheduleCheckLine: text => `${SCHEDULE_CHECK_LEAD} ${text}`,
 	inboxThread: (thread, parent) => ` (#${parent}의 스레드 "${thread}". 답은 스레드로 가요)`,
 	inboxFirst: channel => `(새 작업 채널 #${channel}: 오너는 채널 단위로 일을 맡겨요. 이 채널의 작업과 보고는 여기에 두세요. 이 채널의 일에 로그인 유지나 시간이 지나며 확인할 것이 필요하면 직접 dotz_channel setup으로 이 채널에 설정하세요.)`,
@@ -352,8 +357,10 @@ export const ko: Catalog = {
 	decisionAnswer: picks => `결정 답: ${picks.map((p, i) => `${picks.length > 1 ? `${i + 1}) ` : ""}${p.q || "-"} → ${p.n}) ${p.label}${p.note ? ` - ${p.note}` : ""}`).join("; ")}`,
 	decisionAsked: quote => `(당신이 한 이 질문에 대한 답이에요: "${quote}")`,
 	openQuestions: titles => `(이 대화에 아직 열린 질문: ${titles.map(t => `"${t}"`).join(", ")}. 이 글이 그 답인지 먼저 판단하세요. 답이면(일부여도) 처음 보내는 글에서 바로 dotz_send의 resolves로 닫고, 최종 답뿐이면 끝에 <resolves>질문 제목의 단어</resolves> 줄을 붙이세요. 다른 얘기면 질문은 두고 그 얘기를 하세요.)`,
+	openQuestionsLeft: titles => `[dotz gateway] 오너의 마지막 메시지에 이 열린 질문들이 함께 갔는데, 그 턴이 하나도 닫지 않고 끝났어요: ${titles.map(t => `"${t}"`).join(", ")}. 그 메시지가 질문의 답이었으면(일부여도) 답한 질문마다 <resolves>질문 제목의 단어</resolves> 한 줄씩만 쓰고, 다른 얘기였으면 - 한 글자만 답하세요. 다른 말은 덧붙이지 말고 다른 일도 하지 마세요. 두 답 모두 오너에게는 보이지 않아요.`,
+	asker: { more: title => `오너가 "${title}"에 대해 더 알려 달라고 했어요. 같은 카드를 무엇이 바뀌는지 전 → 후와 함께 다시 올려 주세요.`, later: (title, at) => `오너가 "${title}"을(를) ${at}에 다시 볼게요. 기다리지 마세요.`, ignored: title => `오너가 "${title}" 질문에 답하지 않고 넘겼어요. 기다리지 마세요.`, expired: title => `"${title}" 질문은 답 없이 기한이 지나 닫혔어요. 기다리지 마세요.`, half: title => `${title} · 답할 시간이 절반 남았어요`, askedMore: at => `더 알려 달라고 했어요 · ${at}`, putOff: at => `나중에 볼게요 · ${at}에 다시 알려요` },
 	workChannels: list => `(작업 채널 목록, 이 메시지의 채널은 아님: ${list.length ? list.join("; ") : "아직 없음"})`,
-	channelNames: { chat: "대화", alert: "알림", worklog: "작업로그", mail: "메일", workCategory: name => `${name} 작업` },
+	channelNames: { chat: "대화", alert: "알림", worklog: "작업내역", mail: "메일", workCategory: name => `${name} 작업` },
 	threadDone: "작업을 마쳤어요. 이 스레드는 1시간 뒤 보관할게요.",
 	laneParked: "멈췄어요. 여기에 쓰면 하던 데서부터 이어서 해요.",
 	laneLanguage: () => `(${koLaneLanguage})`,
@@ -371,7 +378,7 @@ export const ko: Catalog = {
 2. 진짜 교훈마다 ${lessons}에 날짜가 붙은 줄을 하나 추가하거나 고치세요(파일은 ${LESSONS_MAX_BYTES}바이트 안으로 유지하고(넘는 줄은 게이트웨이가 거절해요), 더 이상 맞지 않거나 규칙이 이미 다루는 교훈은 지우세요). 위 오너의 정정이나 반응마다 ${paths.observations}에 출처가 붙은 줄을 하나 남기세요. 오래 갈 오너의 선호나 맥락(분명히 말했거나 거기서 두 번 보인 것)은 ${paths.owner}로, 오너가 직접 한 '하지 마'는 원문 그대로 출처와 함께 ${paths.boundaries}로 옮기세요. 오너가 말하거나 한 것만 적고, 다른 사람에 대해서는 여기에 쓰지 마세요.
 3. 문제가 있으면(실패, 이상, 되풀이된 실수, 토큰 누수, RULES.md나 LESSONS.md가 이미 다루는데도 되풀이된 일) alert로 한 번만 ${koIssue}
 4. 여기서 RULES.md는 절대 수정하지 마세요. 규칙 변경은 선택지로 올리고 답을 기다리세요.
-5. 위 예약이 서로 겹치면 합치고(dotz_schedule remove 후 add), 할 일이 끝난 예약은 지우세요.
+5. 위 예약이 서로 겹치면 합치고(dotz_schedule remove 후 같은 이름과 종류로 add), 할 일이 끝난 예약은 지우세요.
 6. 마지막으로 dotz_send worklog에 한 줄만 올리세요(identity의 Notices 문체, "${NIGHT_LEAD} ..."로 시작). 문제가 없었다면 이 한 줄이 전부예요. alert에는 아무것도 보내지 마세요.`,
 
 	lessonRepeats: (rows, today) => `\n\n아직 지키게 하는 장치가 없는 교훈이에요. 오늘의 정정과 맞춰 봤어요. 단어가 아니라 뜻으로 판단하세요: 점수는 정정이 교훈의 단어를 얼마나 되풀이했는지일 뿐이고("likely" = 0.4 이상), "broken N"은 이미 어긴 것으로 확인된 밤의 수예요. 오늘 정말 어긴 교훈마다: 그 줄의 "(broken: ...)" 목록에 ${today}를 더하고(없으면 새로), 되는 가장 높은 단계에서 고치세요: 코드나 이 계약에서 원인을 없애고, 안 되면 바른 방법을 알려 주는 가드나 검사, 그다음 테스트예요. 판단이 필요한 것만 문장을 고치고 실패 예를 붙이세요. 구조로 고친 뒤 줄 끝에 "(enforced: <가드·검사·테스트>)"를 붙이고, 실수가 더는 일어날 수 없으면 교훈을 지우세요. 두 밤 이상 어긴 교훈은 문장을 또 고치지 말고 지금 구조로 고치세요. 나머지는 그대로 두세요:\n${rows.map(r => `${r.line}${r.broken ? ` [broken ${r.broken}]` : ""}${r.likely ? ` [likely ${r.score}]` : ""}`).join("\n")}`,
@@ -386,27 +393,27 @@ export const ko: Catalog = {
 	recipeSaved: (name, dir) => `레시피를 저장했어요: ${name} (${dir})`,
 	recipeSkipped: name => `건너뛰었어요. 같은 일은 다시 제안하지 않아요: ${name}`,
 	recipeFailed: why => `레시피를 저장하지 못했어요: ${why}`,
-	repeatAlertQuestion: "교훈을 더 쓰는 대신 구조 수정을 열까요?",
-	promptPartLabels: { total: "압축 뒤 다시 읽는 글 전체", mode: "모드 글", rules: "RULES.md", lessons: "LESSONS.md", identity: "정체성 글", features: "기능 본문", setups: "채널 설정", state: "state 발췌", rest: "그 밖의 틀" },
-	promptGrew: label => `압축 뒤마다 다시 읽는 글에서 ${label} 부분이 평소보다 많이 커졌어요.`,
-	promptSizeEvidence: (from, to, date) => `${from}자 -> ${to}자 (기준 ${date})`,
-	promptEnforced: guard => `다시 읽는 글에 적힌 규칙을 코드가 이미 지켜요 (${guard}).`,
-	promptEnforcedEvidence: (guard, line) => `${guard}: "${line}"`,
-	promptEnforcedAsk: "이 줄을 두거나 다시 읽는 글에서 뺄까요?",
-	promptKeep: "그대로 둬요",
-	promptKeepResult: "줄이 남고, 다시 읽을 때마다 그 길이만큼 들어가요.",
-	promptRemove: "빼요",
-	promptRemoveResult: "줄이 빠지고, 규칙은 코드가 계속 지켜요.",
-	promptCapOver: file => `${file} 크기가 한도를 넘었어요. 끝부분이 잘리거나 빠질 수 있어요.`,
-	promptCapEvidence: (size, cap, unit) => `${size}${unit} > 한도 ${cap}${unit}`,
+	repeatAlertQuestion: "같은 지적이 또 나오지 않게 가드·검사·테스트를 만들까요, 이번 주는 그냥 둘까요?",
+	promptPartLabels: { mode: "모드 글", rules: "RULES.md", lessons: "LESSONS.md", identity: "정체성 글", features: "기능 본문", setups: "채널 설정", state: "state 발췌", rest: "그 밖의 틀" },
+	promptGrew: (label, from, to, date) => `압축 뒤 다시 읽는 글${label ? `(${label})` : ""}이 ${date} 이후 ${from.toLocaleString("ko-KR")}자에서 ${to.toLocaleString("ko-KR")}자로 늘었어요.`,
+	promptSizeEvidence: (from, to, date) => `${from}자 → ${to}자 (기준 ${date})`,
+	promptEnforced: (where, guard) => `${where} 줄은 ${guard}가 이미 막는 규칙이에요.`,
+	promptEnforcedEvidence: (where, line) => `${where}: '${line}'`,
+	promptEnforcedAsk: (where, line, guard) => `${where}의 '${line}' 줄을 지울까요? 같은 규칙을 ${guard}가 이미 막아요.`,
+	promptKeep: "그대로 두기",
+	promptKeepResult: "줄이 남아요. 압축 뒤 다시 읽을 때마다 이 줄만큼 글이 길어져요.",
+	promptRemove: "지우기",
+	promptRemoveResult: "답을 받은 dotz가 그 파일에서 이 줄을 지워요. 규칙은 코드가 계속 막아요.",
+	promptCapOver: (file, size, cap, unit) => `${file} 길이가 한도를 넘었어요(${size.toLocaleString("ko-KR")}${unit === "bytes" ? "바이트" : "자"}, 한도 ${cap.toLocaleString("ko-KR")}). 넘는 끝부분은 빠질 수 있어요.`,
+	promptCapEvidence: (size, cap, unit) => `${size} > 한도 ${cap} (${unit === "bytes" ? "바이트" : "자"})`,
 	promptReviewWhat: { conflict: "다시 읽는 글의 두 줄이 서로 맞지 않아요.", outdated: "다시 읽는 글의 한 줄이 낡은 것 같아요.", "contradicts-code": "다시 읽는 글의 한 줄이 코드가 하는 일과 달라요." },
 	promptReviewEvidence: (line, why, input, output) => `"${line}" - ${why} (이번 검토에 입력 ${input}, 출력 ${output} 토큰을 썼어요)`,
-	promptReviewAsk: "제안한 대로 글을 고칠까요, 그대로 둘까요?",
+	promptReviewAsk: (line, why) => `${why} '${line}' 줄을 제안대로 고칠까요?`,
 	promptReviewApply: "고쳐요",
 	promptReviewApplyResult: proposal => `제안한 대로 글을 고쳐요: ${proposal}`,
 	promptReviewLeave: "그대로 둬요",
 	promptReviewLeaveResult: "글은 지금 그대로 남아요.",
-	repeatAlertOptions: [{ name: "구조 수정 열기", result: "되풀이를 막는 가드·검사·테스트를 만들어요. 이 답을 받은 뒤에만 시작해요." }, { name: "이번 주는 두기", result: "7일 동안 이 주제로 카드를 올리지 않아요." }],
+	repeatAlertOptions: [{ name: "막는 장치 만들기", result: "되풀이를 막는 가드·검사·테스트를 만들어요. 이 답을 받은 뒤에만 시작해요." }, { name: "이번 주는 그냥 두기", result: "7일 동안 이 주제로 카드를 올리지 않아요." }],
 	lessonCandidates: (stale, duplicates, over) => `\n\n코드가 고른 LESSONS.md 정리 후보예요. 지울지 합칠지는 직접 판단하세요(합칠 때는 더 최근이거나 구체적인 문장을 남기세요):${over ? `\n- ${over}` : ""}${stale.length ? `\n- 90일 넘은 줄:\n${stale.join("\n")}` : ""}${duplicates.length ? `\n- 거의 같은 줄(단어 겹침 0.6 이상):\n${duplicates.join("\n")}` : ""}`,
 
 	auth: {
@@ -460,29 +467,7 @@ export const ko: Catalog = {
 			[`목표: 세션 ${a.asker}이 넘긴 단계 하나를 ${a.offer}로 하세요. 그 단계만 해요.`, `단계: ${a.step}`, `넘긴 이유: ${a.reason}`, `인계: 먼저 넘긴 세션의 브리프(${a.brief ?? "없음"})와 최근 보고(${a.report ?? "없음"})를 읽으세요. 이 폴더는 그 세션의 작업에서 시작해요.`, "[done]이나 [fail] 보고 하나로 끝내세요: 무엇을 어디서 바꿨고 어떻게 확인했는지. 게이트웨이가 그 보고를 넘긴 세션에 전하고 이 세션을 닫아요.", `Done when: 위 단계를 마치고, footer대로 반영하고, 보고했다.`, `Estimate: ${a.est}%`].join("\n"),
 	},
 
-	doctor: {
-		head: (n: number) => `${DOCTOR_LEAD} 살펴볼 것이 ${n}가지 있어요`,
-		fixedLine: (items: string) => `스스로 고친 것: ${items}.`,
-		restarts: (n: number) => `게이트웨이가 하루 새 ${n}번 다시 시작했어요.`,
-		crashes: (n: number) => `지난 점검 뒤로 게이트웨이가 ${n}번 비정상 종료했어요 (오류 로그에 스택 기록이 있어요).`,
-		sessionsStuck: (names: string, n: number, hours: number) => `일하는 세션 ${n}개가 ${hours}시간 넘게 진전이 없어요: ${names}.`,
-		sessionsError: (names: string, n: number, hours: number) => `오류로 멈춘 뒤 ${hours}시간 넘게 닫히지 않은 세션이 ${n}개 있어요: ${names}.`,
-		loginLost: (name: string, hours: number) => `${name} 로그인이 아직 풀린 채예요 (${hours}시간째).`,
-		watchFailing: (name: string, hours: number, fails: number) => `모니터링 '${name}'가 계속 실패하고 있어요 (연속 ${fails}번, ${hours}시간째).`,
-		watchFixed: (name: string) => `모니터링 ${name}`,
-		disk: (freeGb: number, pct: number) => `디스크가 차고 있어요. 남은 공간 ${freeGb}GB (${pct}%).`,
-		diskQuestion: "디스크가 거의 찼어요. 오래된 세션 기록을 정리할까요?",
-		diskCleanName: "오래된 세션 기록 정리",
-		diskCleanResult: "보관 기간(기본 90일)이 지난 세션 기록을 야간 정리와 같은 방식으로 지워요. 고르기 전에는 아무것도 지우지 않아요.",
-		diskKeepName: "이번엔 둬요",
-		diskKeepResult: "일주일 뒤에 다시 볼게요.",
-		updateFailed: (what: string) => `${what} 업데이트가 마지막에 실패했고 그 뒤로 성공한 적이 없어요.`,
-		failuresGrew: (line: string) => `반복·실패 작업이 늘었어요: ${line}`,
-		tokens: (kind: string, n: number) => `토큰 낭비(${kind}): 지난 하루 ${n}개 세션이 걸렸어요.`,
-		ownerExpensive: (n: number, cost: string) => `직접 고른 비싼 모델: 세션 ${n}개, ${cost}. 요청하신 것이라 경고에서 뺐어요.`,
-		selfUpdate: "게이트웨이",
-		pluginNotLoaded: (file: string, error: string) => `플러그인 ${file}을(를) 불러오지 못해서 꺼져 있어요: ${error}`,
-	},
+	doctor: doctorKo,
 	harness: {
 		locale: "ko-KR",
 		common: { state: "상태", disabled: "꺼져 있어요", off: "꺼짐", set: "설정됨", none: "없음", count: n => `${n}개`, daily: time => `매일 ${time}`, na: "해당 없음", unit: { s: n => `${n}초`, min: n => `${n}분`, h: n => `${n}시간` } },
@@ -562,7 +547,7 @@ export const ko: Catalog = {
 			},
 			watch: {
 				label: "모니터링", summary: (n, failing) => `모니터링 ${n}개${failing ? ` · 연속 실패 ${failing}개` : ""}`, none: "모니터링 없음",
-				desc: (after, every) => `모델을 호출하지 않고 정해진 간격으로 확인 스크립트를 실행해서, 값이 바뀌었거나 조건에 맞거나 실패했을 때만 알려요. 로그인 유지(만료 확인)도 여기서 해요. ${after}번 연속 실패하면 ${every}에 한 번만 알리고, 복구되면 한 번 알려요.`,
+				desc: (after, every, next, last) => `모델을 호출하지 않고 정해진 간격으로 확인 스크립트를 실행해서, 값이 바뀌었거나 조건에 맞거나 실패했을 때만 알려요. 로그인 유지(만료 확인)도 여기서 해요. ${after}번 연속 실패하면 알리고, 그대로면 ${every} 뒤, ${next} 뒤, 그다음부터 ${last}마다 다시 알려요. 복구되면 한 번 알려요.`,
 				watches: "모니터링", setups: "작업 채널별 설정", failing: "연속 실패 중",
 			},
 			mail: {
@@ -620,7 +605,7 @@ export const ko: Catalog = {
 			},
 			update: {
 				label: "실행 하네스 업데이트", install: "자동 설치", check: "새 버전만 알림", na: h => `해당 없음 · 지금 런타임은 ${h}`,
-				desc: "매일 새벽 실행 하네스(OmO 또는 omp)에 새 버전이 있는지 확인해요. '자동 설치'(기본)면 설치하고 모두 한가해질 때 게이트웨이를 재시작하고, '새 버전만 알림'이면 작업 기록 채널에 알리기만 해요.",
+				desc: "매일 새벽 실행 하네스(OmO 또는 omp)에 새 버전이 있는지 확인해요. '자동 설치'(기본)면 설치하고 모두 한가해질 때 게이트웨이를 재시작하고, '새 버전만 알림'이면 작업내역 채널에 알리기만 해요.",
 			},
 			doctor: {
 				label: "닥터 점검",
@@ -708,10 +693,10 @@ export const ko: Catalog = {
 	},
 	// Texts the gateway sends to the web onboarding (firstrun/setup-*.ts): job rows, owner steps, errors. {name} marks a value filled in on the server.
 	setup: {
-		jobs: { "install-omo": "OmO 설치", "install-omp": "omp 설치", "aside-app": "Aside 앱 설치", "aside-cli": "Aside CLI 설치", tailscale: "Tailscale 설치", zele: "메일·일정 도구(zele) 설치", "tailscale-start": "Tailscale 열기", permissions: "macOS 권한", apply: "저장하고 적용" },
+		jobs: { "install-omo": "OmO 설치", "install-omp": "omp 설치", "install-claude": "Claude Code 설치", "aside-app": "Aside 앱 설치", "aside-cli": "Aside CLI 설치", tailscale: "Tailscale 설치", zele: "메일·일정 도구(zele) 설치", "tailscale-start": "Tailscale 열기", permissions: "macOS 권한", apply: "저장하고 적용" },
 		terms: { "aside-login": "Aside 로그인", "zele-login": "메일·일정 계정 연결", "claude-login": "Claude Code 로그인", "omp-login": "omp 로그인" },
 		states: { done: "끝났어요", skipped: "이 컴퓨터에서는 필요 없어서 넘어갔어요", failed: "끝내지 못했어요", running: "하는 중이에요" },
-		steps: { secrets: "비밀값을 저장하고 있어요", tailnet: "Tailscale로 웹 앱을 열고 있어요", config: "설정과 정체성을 쓰고 있어요", plugin: "omp 플러그인을 연결했어요", permissions: "macOS 권한을 확인하고 있어요", discord: "Discord 봇을 준비하고 있어요", finish: "마무리하고 있어요" },
+		steps: { secrets: "비밀값을 저장하고 있어요", tailnet: "Tailscale로 웹 앱을 열고 있어요", config: "설정과 정체성을 쓰고 있어요", plugin: "omp 플러그인을 연결했어요", permissions: "macOS 권한을 확인하고 있어요", finish: "마무리하고 있어요" },
 		owner: {
 			noBrew: "Homebrew가 없어요. brew.sh 에서 설치한 뒤 다시 눌러 주세요.",
 			sudo: "관리자 암호가 필요해서 여기서는 끝낼 수 없어요. 터미널에서 {name} 을 직접 실행해 주세요.",
@@ -719,24 +704,22 @@ export const ko: Catalog = {
 			tailscaleDownload: "tailscale.com/download 에서 Tailscale을 받아 설치해 주세요.",
 			tailscaleUp: "터미널에서 sudo tailscale up 을 실행해 로그인해 주세요.",
 			tailscaleLogin: "열린 Tailscale 창에서 로그인한 뒤 다시 눌러 주세요.",
-			discord2fa: "휴대폰에서 Discord 2단계 인증 요청을 승인해 주세요.",
 			missing: "{name} 이(가) 아직 없어요. 먼저 설치해 주세요.",
 		},
-		notes: { stayLocal: "Tailscale로 열지 못해서 이 컴퓨터에서만 열어 뒀어요. {name}", planned: "{name}" },
+		notes: { stayLocal: "Tailscale로 열지 못해서 이 컴퓨터에서만 열어 뒀어요. {name}", noLogins: "Tailscale 로그인을 정하지 않아서 이 컴퓨터에서만 열어 뒀어요. 앱의 설정 > 웹 접속에서 정하면 휴대폰에서도 열려요." },
 		errors: { unknownJob: "알 수 없는 작업이에요", unknownTerm: "알 수 없는 로그인이에요", termBody: "이 요청에는 크기(cols, rows)만 보낼 수 있어요", termNotRunning: "터미널이 실행 중이 아니에요", badSecret: "저장할 수 없는 비밀값이에요", badDraft: "입력한 값을 확인해 주세요", applyFailed: "적용하지 못했어요. {name}", busy: "이미 하고 있어요" },
-		// The screens of the web onboarding (web/setup/setup.js); {name}, {n}, {url}, {guild}, {bot}, {v} are filled in by the page.
 		ui: {
 			wait: "컴퓨터를 살펴보고 있어요",
-			steps: { harness: "작업 프로그램", tools: "도구", bot: "봇", discord: "Discord", web: "웹 앱", review: "확인" },
-			titles: { start: "dotz를 설정할게요", harness: "봇이 쓸 작업 프로그램을 골라요", tools: "봇이 쓸 도구를 준비해요", bot: "봇을 소개해 주세요", discord: "Discord를 연결해요", web: "웹 앱을 정리해요", review: "이대로 설정할까요", applying: "설정하고 있어요", done: "{name} 준비가 끝났어요" },
-			sups: { start: "준비된 것은 건너뛰고 필요한 것만 물어볼게요.", harness: "봇과 세션이 이 프로그램으로 일해요.", tools: "없는 것만 설치해요. 지금 안 해도 나중에 설정에서 할 수 있어요.", bot: "Discord, 웹, 터미널 어디서나 이렇게 말해요.", discord: "밖에서 Discord로 말을 걸 수 있어요.", web: "", review: "", applying: "끝날 때까지 이 페이지를 열어 두세요." },
+			steps: { harness: "작업 프로그램", tools: "도구", bot: "봇", messengers: "메신저", web: "웹 접속", review: "확인" },
+			titles: { start: "dotz를 설정할게요", harness: "봇이 쓸 작업 프로그램을 골라요", tools: "봇이 쓸 도구를 준비해요", bot: "봇을 소개해 주세요", messengers: "연결할 메신저를 골라요", web: "웹 앱을 어디서 열지 정해요", review: "이대로 설정할까요", applying: "설정하고 있어요", done: "{name} 준비가 끝났어요" },
+			sups: { start: "준비된 것은 건너뛰고 필요한 것만 물어볼게요.", harness: "봇과 세션이 이 프로그램으로 일해요.", tools: "없는 것만 설치해요. 지금 안 해도 나중에 설정에서 할 수 있어요.", bot: "메신저, 웹, 터미널 어디서나 이렇게 말해요.", messengers: "고른 메신저는 설정이 끝난 뒤 앱에서 하나씩 이어 가요.", web: "이 컴퓨터 밖에서도 열 건지 골라요.", review: "", applying: "끝날 때까지 이 페이지를 열어 두세요." },
 			nav: "온보딩 단계", next: "다음", back: "이전", close: "닫기", fix: "고치기", later: "나중에", retry: "다시 시도", install: "설치", login: "로그인", connect: "연결", running: "진행 중", ready: "준비됨", yourTurn: "내가 할 일",
 			webText: { waiting: "모델을 연결하면 앱 화면이 내 언어로 저절로 바뀌어요. 그때까지는 영어로 보여요.", preparing: "앱 화면을 내 언어로 준비하고 있어요… {done}/{total}", ready: "앱 화면이 내 언어로 준비됐어요.", failed: "앱 화면을 아직 준비하지 못했어요. 저절로 다시 시도해요." },
 			start: { found: "이 컴퓨터에서 찾은 것", installed: "설치돼 있어요", missing: "설치돼 있지 않아요", asideMissing: "앱이나 명령어가 없어요", signedInAs: "{name} 으로 로그인돼 있어요", notSignedIn: "로그인하지 않았어요", noAccounts: "연결된 계정이 없어요", language: "언어", languageHint: "화면과 봇이 쓸 언어", go: "시작하기" },
-			harness: { noAdapter: "아직 dotz에서 쓸 수 없어요", defaultTag: "기본", notInstalled: "설치돼 있지 않아요", installOwn: "{name}은(는) 터미널에서 먼저 설치해 주세요. 설치한 뒤 이 페이지를 새로 고치면 돼요.", loginTitle: "{name} 로그인", loginSupOmo: "봇이 이 계정으로 일해요", loginSupTerm: "터미널 창에서 로그인해요", accounts: "계정 {n}개가 연결됐어요" },
-			tools: { secAside: "Aside 브라우저", secMail: "메일과 일정", asideApp: "Aside 앱", asideAppSup: "로그인 유지와 웹 작업에 써요", asideCli: "Aside 명령어", asideCliSup: "봇이 브라우저를 다룰 때 써요", asideLogin: "Aside 로그인", asideLoginSup: "코드를 앱에서 승인하면 돼요", tsSup: "휴대폰에서 웹 앱을 열 때 써요", tsLogin: "Tailscale 로그인", tsLoginSup: "열린 창에서 로그인해요", zeleSup: "메일과 캘린더를 읽는 도구예요", mailTitle: "메일·일정 계정 연결", mailSup: "Google, Outlook, 네이버 같은 IMAP", needFirst: "먼저 위의 설치를 끝내 주세요" },
+			harness: { noAdapter: "아직 dotz에서 쓸 수 없어요", defaultTag: "기본", notInstalled: "설치돼 있지 않아요", installOwn: "{name}은(는) 터미널에서 먼저 설치해 주세요. 설치한 뒤 이 페이지를 새로 고치면 돼요.", loginTitle: "{name} 로그인", loginSupOmo: "봇이 이 계정으로 일해요", loginSupTerm: "터미널 창에서 로그인해요", loginSupClaude: "터미널 창에서 claude auth login 으로 로그인해요", accounts: "계정 {n}개가 연결됐어요" },
+			tools: { secAside: "Aside 브라우저", secMail: "메일과 일정", asideApp: "Aside 앱", asideAppSup: "로그인 유지, 웹 작업, 메신저와 Cloudflare 연결에 써요", asideCli: "Aside 명령어", asideCliSup: "봇이 브라우저를 다룰 때 써요", asideLogin: "Aside 로그인", asideLoginSup: "코드를 앱에서 승인하면 돼요", zeleSup: "메일과 캘린더를 읽는 도구예요", mailTitle: "메일·일정 계정 연결", mailSup: "Google, Outlook, 네이버 같은 IMAP", needFirst: "먼저 위의 설치를 끝내 주세요" },
 			bot: {
-				name: "이름", namePh: "루미, 모모, 비서", nameHint: "2~32자예요. Discord 봇 이름과 카테고리도 이 이름을 써요.", character: "성격", tone: "말투", notices: "작업 기록과 알림 문체", custom: "직접 쓰기", customPh: "원하는 대로 적어 주세요", later: "나중에 대화에서 바꿀 수 있어요.",
+				name: "이름", namePh: "루미, 모모, 비서", nameHint: "2~32자예요. Discord 봇 이름과 카테고리도 이 이름을 써요.", character: "성격", tone: "말투", notices: "작업내역과 알림 문체", custom: "직접 쓰기", customPh: "원하는 대로 적어 주세요", later: "나중에 대화에서 바꿀 수 있어요.",
 				address: "나를 부르는 말", addressPh: "형, 대표님, 이름", addressHint: "비워 두면 호칭 없이 말해요.", avatar: "프로필 이미지", avatarPh: "/Users/me/Pictures/bot.png", avatarHint: "png나 jpg 파일 경로를 적어요. 비워 두면 이미지 없이 시작해요.",
 				// v is the text kept in the identity (the same lists as firstrun/answers.ts); t and s are what the page shows.
 				opts: {
@@ -758,13 +741,31 @@ export const ko: Catalog = {
 					],
 				},
 			},
-			discord: { offTitle: "Discord 없이 써요", offSup: "웹과 터미널로 쓸 수 있어요. 나중에 설정에서 연결하면 돼요.", turnOn: "다시 켜기", tokenSaved: "봇 토큰이 저장돼 있어요", replace: "바꾸기", token: "봇 토큰", tokenHint: "화면에도 기록에도 남지 않아요. 비밀 저장소로 바로 들어가요.", guild: "서버 ID", idPh: "17~20자리 숫자", guildHint: "Discord 설정 > 고급 > 개발자 모드를 켜고, 서버 이름을 우클릭해 ID 복사를 눌러요. 비워 두면 Discord 없이 써요.", owner: "내 Discord ID", ownerHint: "이 계정의 말만 명령으로 들어요. 내 프로필을 우클릭해 복사해요.", bot: "봇", botHow: "봇을 어떻게 만들까요", tokenSup: "개발자 포털에서 만든 토큰을 붙여넣어요", autoSup: "Aside로 만들어요. 2단계 인증만 승인해 주세요", auto: "자동", tokenWord: "토큰", skip: "Discord 없이 쓰기" },
-			web: { peerSaved: "공유 키가 저장돼 있어요", peer: "공유 키", peerHint: "다른 컴퓨터의 공유 키를 붙여넣어요. 처음이면 비워 두세요.", machine: "이 컴퓨터 이름", machineHint: "웹 앱의 컴퓨터 목록에 이 이름으로 보여요.", logins: "들어올 수 있는 Tailscale 로그인", loginsHint: "쉼표로 여러 개 적을 수 있어요. 비우면 이 컴퓨터에서만 열려요.", peerMore: "다른 컴퓨터와 함께 보기", advanced: "포트와 모델", webPort: "로컬 포트", tsPort: "테일넷 포트", botModel: "봇 모델", laneModel: "세션 모델", default: "기본값" },
-			review: { harness: "작업 프로그램", tools: "도구", bot: "봇", web: "웹 앱", loggedIn: " · 로그인됨", loginLater: " · 나중에 로그인", laterWord: "나중에", noName: "이름 없음", discordSum: "서버 {guild} · 봇 {bot}", botTokenWord: "붙여넣은 토큰", botAutoWord: "자동으로 만들기", noDiscord: "쓰지 않음", onlyHere: "이 컴퓨터에서만", go: "설정하기" },
-			errors: { harness: "고른 작업 프로그램을 설치해야 넘어갈 수 있어요", name: "봇 이름을 2자에서 32자 사이로 적어 주세요", guild: "서버 ID는 17~20자리 숫자예요", owner: "내 Discord ID는 17~20자리 숫자예요", token: "봇 토큰을 붙여넣어 주세요", peer: "공유 키는 공백 없이 16자 이상이어야 해요", port: "포트는 1에서 65535 사이 숫자예요", waitJob: "하는 중인 일이 끝나면 넘어갈 수 있어요", closed: "설정이 끝났거나 주소가 만료됐어요. 새 주소는 터미널에서 bun setup.ts --web-link 로 받아요." },
+			messengers: {
+				items: {
+					discord: { t: "Discord", s: "캡차를 풀고 서버 초대를 승인하는 것만 직접 해요" },
+					slack: { t: "Slack", s: "워크스페이스 동의 화면에서 허용만 눌러요" },
+					telegram: { t: "Telegram", s: "BotFather에서 봇을 받고 봇에서 Start를 눌러요" },
+					jandi: { t: "JANDI", s: "JANDI 로그인만 직접 해요" },
+				},
+				none: "아무것도 고르지 않으면 웹과 터미널에서만 써요. 나중에 앱에서 연결할 수 있어요.",
+			},
+			web: { access: "접속 방법", modeLocal: "이 컴퓨터만", tsSup: "휴대폰에서 웹 앱을 열 때 써요", tsLogin: "Tailscale 로그인", tsLoginSup: "열린 창에서 로그인해요", hostname: "Cloudflare 주소 (선택)", hostnamePh: "dotz.example.com", cloudflareNote: "터널과 승인은 설정이 끝난 뒤 앱의 웹 접속 화면에서 이어져요. macOS, Aside, Homebrew가 필요해요.", localNote: "이 컴퓨터의 터미널에서 dotz 를 치면 로그인된 채로 앱이 열려요.", replace: "바꾸기", peerSaved: "공유 키가 저장돼 있어요", peer: "공유 키", peerHint: "다른 컴퓨터의 공유 키를 붙여넣어요. 처음이면 비워 두세요.", machine: "이 컴퓨터 이름", machineHint: "웹 앱의 컴퓨터 목록에 이 이름으로 보여요.", logins: "들어올 수 있는 Tailscale 로그인", loginsHint: "쉼표로 여러 개 적을 수 있어요. 비우면 이 컴퓨터에서만 열려요.", peerMore: "다른 컴퓨터와 함께 보기", advanced: "포트와 모델", webPort: "로컬 포트", tsPort: "테일넷 포트", botModel: "봇 모델", laneModel: "세션 모델", default: "기본값" },
+			review: { harness: "작업 프로그램", tools: "도구", bot: "봇", messengers: "메신저", access: "웹 접속", loggedIn: " · 로그인됨", loginLater: " · 나중에 로그인", laterWord: "나중에", noName: "이름 없음", noMessengers: "쓰지 않음 (웹과 터미널만)", hostLater: "주소는 나중에 정해요", onlyHere: "이 컴퓨터에서만", go: "설정하기" },
+			errors: { harness: "고른 작업 프로그램을 설치해야 넘어갈 수 있어요", name: "봇 이름을 2자에서 32자 사이로 적어 주세요", host: "Cloudflare 주소는 dotz.example.com 같은 도메인으로 적어 주세요", peer: "공유 키는 공백 없이 16자 이상이어야 해요", port: "포트는 1에서 65535 사이 숫자예요", waitJob: "하는 중인 일이 끝나면 넘어갈 수 있어요", closed: "설정이 끝났거나 주소가 만료됐어요. 새 주소는 터미널에서 bun setup.ts --web-link 로 받아요." },
 			term: { lib: "터미널 구성요소를 불러오지 못했어요", sub: "정해진 명령 하나만 도는 창이에요. 끝나면 알려 드려요.", starting: "여는 중이에요", live: "연결됐어요", done: "끝났어요. 닫으면 돼요", lost: "연결이 끊겼어요" },
 			loginSheet: { title: "Claude 구독 로그인", intro: "새 탭에서 로그인하고, 나온 코드를 붙여넣어 주세요.", open: "로그인 페이지 열기", code: "코드 또는 주소", go: "완료", empty: "코드나 주소를 붙여 넣어 주세요", fail: "로그인에 실패했어요" },
-			done: { here: "이 컴퓨터", open: "열림", phone: "휴대폰이나 다른 컴퓨터", phoneSup: "{url} · 같은 Tailscale 계정으로 로그인해서 열어요", connected: "연결됨", discordSup: "{name} 카테고리의 대화 채널에 말을 걸면 돼요", openApp: "웹 앱 열기", opening: "웹 앱을 여는 중이에요" },
+			done: {
+				here: "이 컴퓨터", open: "열림", phone: "휴대폰이나 다른 컴퓨터", phoneSup: "{url} · 같은 Tailscale 계정으로 로그인해서 열어요", openApp: "웹 앱 열기", opening: "웹 앱을 여는 중이에요", go: "이어서 하기",
+				connect: {
+					discord: { t: "Discord 연결", s: "앱의 Discord 화면에서 연결 시작을 눌러요. 캡차와 초대 승인만 직접 하면 돼요" },
+					slack: { t: "Slack 연결", s: "앱의 Slack 화면에서 연결 시작을 눌러요. 워크스페이스 동의만 직접 하면 돼요" },
+					telegram: { t: "Telegram 연결", s: "앱의 Telegram 화면에서 연결 시작을 눌러요. BotFather와 Start만 직접 하면 돼요" },
+					jandi: { t: "JANDI 연결", s: "앱의 JANDI 화면에서 연결 시작을 눌러요. 로그인만 직접 하면 돼요" },
+					"web-access": { t: "Cloudflare 웹 접속", s: "앱의 웹 접속 화면에서 연결을 눌러요. 터널과 승인이 이어져요" },
+				},
+				cli: { t: "이 컴퓨터의 터미널", s: "dotz 를 치면 로그인된 채로 앱이 열려요. 안 되면 dotz status 를 쳐서 확인해요" },
+			},
 		},
 	},
 	// Refusals of the routes the web calls (status codes and the `error` field stay; only the words follow the install language).

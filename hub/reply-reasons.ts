@@ -7,8 +7,8 @@ import type { OwnerAction, Reason, ReasonCode } from "./reply-types.ts";
 export type ReasonClass = "no" | "maybe" | "action";
 /** Code's own retry of a `failed` send: `repair` runs the adapter's repair first; `waits[i]` is the wait in ms before attempt i + 1. */
 export type AutoPolicy = { max: number; waits: number[]; repair?: true };
-/** `reapprove`: the failure voids the owner's earlier pick, so pressing send again writes a new one instead of retrying on the old. */
-export type ReasonPolicy = { class: ReasonClass; auto?: AutoPolicy; actions: OwnerAction[]; reapprove?: true };
+/** `reapprove`: the failure voids the owner's earlier pick, so pressing send again writes a new one instead of retrying on the old. `reopen`: the draft is still pending and the owner must choose again, so its card opens again with the reason and no 다시 보내기 is added. */
+export type ReasonPolicy = { class: ReasonClass; auto?: AutoPolicy; actions: OwnerAction[]; reapprove?: true; reopen?: true };
 type Entry = ReasonPolicy & { ko: string; en: string };
 
 const S = 1000, M = 60 * S;
@@ -33,7 +33,7 @@ const TABLE: Record<ReasonCode, Entry> = {
 	forbidden_word: no("쓰지 않기로 한 표현이 들어 있어요 ('{word}')", "The text has a phrase you chose not to use ('{word}')", []),
 	too_long: no("글이 너무 길어요 ({n}자, {max}자까지)", "The text is too long ({n} characters, up to {max})", []),
 	empty: no("보낼 글이 비어 있어요", "There is no text to send", []),
-	attach_mismatch: no("첨부가 글과 맞지 않아요 ({issues})", "The attachments do not match the text ({issues})", ["pick_file", "send_as_is"]),
+	attach_mismatch: { ...no("첨부가 글과 맞지 않아요 ({issues})", "The attachments do not match the text ({issues})", ["pick_file", "send_as_is"]), reopen: true },
 	attach_missing: no("첨부 파일 '{name}'를 찾지 못했어요", "The attachment '{name}' was not found", ["pick_file"]),
 	attach_upload: no("첨부 파일을 올리지 못했어요", "The attachment could not be uploaded", ["retry"], auto(1, [30 * S])),
 	file_pending: no("첨부 파일을 아직 내려받는 중이에요", "The attachment is still downloading", ["retry"], auto(5, [M, M, M, M, M])),
@@ -52,7 +52,7 @@ const TABLE: Record<ReasonCode, Entry> = {
 	app_not_ready: no("카카오톡 창을 준비하지 못했어요", "The KakaoTalk window could not be made ready", ["retry"], auto(2, [M, M], true)),
 	input_busy: no("카카오톡 입력창에 쓰던 글이 있어요", "The KakaoTalk input box has text you were writing", ["open_channel", "retry"]),
 	room_unknown: no("대화방을 찾지 못했어요", "The chat room was not found", ["drop"]),
-	not_approved: { ...no("보내기로 고른 기록이 없어요", "There is no record that you chose to send this", []), reapprove: true },
+	not_approved: { ...no("보내기로 고른 기록이 없어요", "There is no record that you chose to send this", ["send"]), reapprove: true, reopen: true },
 	// The draft is not the version the owner saw when he pressed 보내기 (hub/approval-send.ts approvalHash): never sent by code, his 다시 보내기 approves the new one.
 	changed: no("보내기를 고른 뒤 초안이 바뀌었어요. 다시 확인하고 보내 주세요", "The draft changed after you chose to send it. Check it and send it again", ["retry", "redraft", "drop"]),
 	tool_before_send: no("보내기 전 준비 단계에서 오류가 났어요", "Something failed while getting ready to send", ["retry"], auto(1, [30 * S])),
@@ -83,8 +83,8 @@ export const isReasonCode = (s: unknown): s is ReasonCode => typeof s === "strin
 
 /** The class, the automatic retry (absent: never by code) and the owner's buttons of `code`. */
 export function policyOf(code: ReasonCode): ReasonPolicy {
-	const { class: c, auto: a, actions, reapprove } = TABLE[code];
-	return { class: c, actions, ...(a ? { auto: a } : {}), ...(reapprove ? { reapprove } : {}) };
+	const { class: c, auto: a, actions, reapprove, reopen } = TABLE[code];
+	return { class: c, actions, ...(a ? { auto: a } : {}), ...(reapprove ? { reapprove } : {}), ...(reopen ? { reopen } : {}) };
 }
 
 // A value the caller did not give: the app and the computer get a plain word, any other one drops with the "( ... )" or '...' around it.

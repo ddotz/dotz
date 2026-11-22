@@ -1,7 +1,7 @@
 // The readers of the owner's typed chat and of the model's marker lines (the reply intent design, 2026-11-16), as tables of real lines.
 import { expect, test } from "bun:test";
 import { ownerText } from "./owner-text.ts";
-import { cardLine, cardMarkers, ownerIntent, ownerPick } from "./reply-chat.ts";
+import { applyCardMarkers, cardLine, cardMarkers, ownerIntent, ownerPick } from "./reply-chat.ts";
 
 const one = { cards: [{ ref: "RAAAAAA" }] };
 const read = (text: string, o: Parameters<typeof ownerIntent>[1] = one) => ownerIntent({ text }, o);
@@ -59,4 +59,25 @@ test("a marker line no open card took never reaches the owner; one inside a sent
 	expect(ownerText("[drop mail:abc]\n나머지")).toBe("나머지");
 	expect(ownerText("답이에요\n[revise X1] 짧게")).toBe("답이에요");
 	expect(ownerText("그래서 [send R1] 할게요")).toBe("그래서 [send R1] 할게요");
+});
+
+test("two revise markers for one card are one revision with both changes; a contradicting pair acts on nothing and the owner is told once", async () => {
+	const joined = cardMarkers("고칠게요\n[revise RAAAAAA] 인사 빼고\n[revise RAAAAAA] 더 짧게", ["RAAAAAA"]);
+	expect(joined.acts).toEqual([{ act: "revise", ref: "RAAAAAA", change: "인사 빼고; 더 짧게" }]);
+	expect(joined.unknown).toEqual([]);
+
+	const told: string[] = [], acted: string[] = [];
+	const done = { status: 200, body: { ok: true as const } };
+	const replies = { act: async (i: { ref: string; action: string; change?: string }) => (acted.push(`${i.action} ${i.change ?? ""}`.trim()), done), confirm: async () => done };
+	const deps = { replies, owner: { mid: "m1", text: "고쳐 줘" }, tell: async (line: string) => told.push(line), log: () => {} };
+	await applyCardMarkers(joined, deps);
+	expect(acted).toEqual(["revise 인사 빼고; 더 짧게"]);
+	expect(told).toEqual(["고쳐서 카드에 다시 올릴게요"]);
+
+	told.length = acted.length = 0;
+	await applyCardMarkers(cardMarkers("[send RAAAAAA]\n[drop RAAAAAA]\n[revise RAAAAAA] 짧게", ["RAAAAAA"]), deps);
+	expect(acted).toEqual([]);
+	expect(told).toHaveLength(1);
+	expect(told[0]).toContain("RAAAAAA");
+	expect(told[0]).not.toContain("보낼 카드를 찾지 못했어요");
 });

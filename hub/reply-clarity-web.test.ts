@@ -72,6 +72,8 @@ const queue: Item[] = [
 	mail("RFAS01", 29_000, "첨부한 3부 자료 확인해 주세요.", { send: failed("attach_mismatch", "글에서 말한 파일과 붙인 파일이 달라요", ["send_as_is", "redraft", "drop"]) }),
 	mail("RFRT03", 30_000, "내일 오전에 다시 보내 드릴게요.", { send: failed("offline", "인터넷에 연결되지 않았어요", ["retry", "drop"]) }),
 	mail("RUNS01", 31_000, "방금 보낸 메일 확인 부탁드려요.", { send: { state: "unsure", at: NOW, reason: { code: "net_cut", text: "보내는 중에 연결이 끊겼어요" }, attempts: 1, actions: ["resolve_sent", "open_channel", "resolve_retry"] } }),
+	mail("RNAP01", 32_000, "내일 다시 연락드릴게요.", { send: failed("not_approved", "보내기로 고른 기록이 없어요", ["send"]) }),
+	mail("RBCK01", 32_500, "다시 보내려던 답장이에요.", { back: { at: NOW, cause: "restart" } }),
 ];
 const notice = (id: string, ref: string, labels: string[]) => ({ id, kind: "decision", title: `이 답장 보낼까요? (${ref})`, ts: new Date(NOW).toISOString(), text: "",
 	decision: { to: `mail:${ref}`, state: "open", options: labels.map((label, i) => ({ n: i + 1, label })), draft: { ref, toLabel: "받는이", to: "kim@example.com", body: "다음 주 일정을 보내 드립니다." } } });
@@ -233,6 +235,12 @@ test("Ctrl+Enter is 반영, and so is Enter in the line to the AI; Esc closes an
 
 	await fix("RKEY01");
 	await type(`${card("RKEY01")} [data-k=fix-note]`, "한 문장으로");
+	await key(`${card("RKEY01")} [data-k=fix-note]`, { key: "Enter", isComposing: true });
+	await key(`${card("RKEY01")} [data-k=fix-note]`, { key: "Enter", keyCode: 229 });
+	await run(`document.querySelector(${q(`${card("RKEY01")} [data-k=fix-note]`)}).dispatchEvent(new CompositionEvent("compositionend", { bubbles: true }))`);
+	await key(`${card("RKEY01")} [data-k=fix-note]`, { key: "Enter", keyCode: 229 });
+	await view.evaluate(`new Promise(r => setTimeout(() => r(0), 80))`);
+	expect(of("RKEY01")).toEqual([]);
 	await key(`${card("RKEY01")} [data-k=fix-note]`, { key: "Enter" });
 	expect(await acted("RKEY01", "revise")).toEqual([{ ref: "RKEY01", action: "revise", change: "한 문장으로" }]);
 	await fixed("RKEY01");
@@ -323,7 +331,7 @@ test("반영 checks the version with edit first, then writes the marked rows, th
 	expect(writesInOrder.filter(l => l.path.includes("RROW02") || l.path === "/api/upload" || l.body.ref === "RROW02")).toEqual([
 		{ path: "/api/reply/act", body: { ref: "RROW02", action: "edit", hash: "RROW02-v1", text: "일정표를 붙여 보내 드려요." } },
 		{ path: "/api/drafts/RROW02/recipients", body: { cc: ["lee@example.com"] } },
-		{ path: "/api/drafts/RROW02/files", body: { remove: 0 } },
+		{ path: "/api/drafts/RROW02/files", body: { remove: 0, name: "견적서.pdf" } },
 		{ path: "/api/upload", body: { name: "일정표.pdf" } },
 		{ path: "/api/drafts/RROW02/files", body: { upload: { path: "/uploads/일정표.pdf", name: "일정표.pdf" } } },
 		{ path: "/api/reply/act", body: { ref: "RROW02", action: "revise", change: "더 정중하게" } },
@@ -346,7 +354,7 @@ test("반영 writes no row when the version moved or the edit is refused; the ma
 	expect(rows()).toEqual([]);
 	await click(`${c} [data-k=fix-apply]`);
 	await fixed("RROW05");
-	expect(rows()).toEqual([{ path: "/api/drafts/RROW05/files", body: { remove: 0 } }]);
+	expect(rows()).toEqual([{ path: "/api/drafts/RROW05/files", body: { remove: 0, name: "견적서.pdf" } }]);
 
 	await fix("RROW05");
 	await waitFor(`!!document.querySelector(${q(`${c} .dr-files input[type=file]`)})`);
@@ -367,7 +375,7 @@ test("반영 of rows alone writes them, and the next 보내기 goes with the ver
 	await click(`${c} .dr-files .dr-x`);
 	await click(`${c} [data-k=fix-apply]`);
 	await fixed("RROW04");
-	expect(writesInOrder.filter(l => l.path.includes("RROW04"))).toEqual([{ path: "/api/drafts/RROW04/files", body: { remove: 0 } }]);
+	expect(writesInOrder.filter(l => l.path.includes("RROW04"))).toEqual([{ path: "/api/drafts/RROW04/files", body: { remove: 0, name: "견적서.pdf" } }]);
 	expect(await has(`${c} .dr-files [data-k=none]`)).toBe(true);
 	await click(`${c} [data-k=send]`);
 	expect(await acted("RROW04", "send")).toEqual([{ ref: "RROW04", action: "send", hash: "RROW04-v2" }]);
@@ -431,6 +439,9 @@ test("every act that sends carries the hash of the version its card showed; a fa
 	expect(await keys(`${card("RFRT01")} .rq-send`)).toEqual(["retry", "fix", "drop"]);
 	expect(await keys(`${card("RFAS01")} .rq-send`)).toEqual(["send-as-is", "fix", "drop"]);
 	expect(await keys(`${card("RUNS01")} .rq-send`)).toEqual(["resolve-sent", "open", "resolve-retry"]);
+	expect(await keys(`${card("RNAP01")} .rq-send`)).toEqual(["send", "fix", "drop"]);
+	await click(`${card("RNAP01")} [data-k=send]`);
+	expect(await acted("RNAP01", "send")).toEqual([{ ref: "RNAP01", action: "send", hash: "RNAP01-v1" }]);
 	await centre(view, card("RFRT03"));
 	await shot(view, "06-failed-1280.png");
 	await click(`${card("RSND01")} [data-k=send]`);
@@ -550,4 +561,12 @@ test("on a phone the three actions stay on one line and 고치기 opens the same
 	expect(await p.ev(`(() => { const c = document.querySelector(${q(card("RROW03"))}); return c.scrollWidth > c.clientWidth; })()`)).toBe(false);
 	await centre(v, card("RROW03"));
 	await shot(v, "04-fix-panel-mail-390.png");
+});
+
+test("a draft the gateway took back on a restart says why on its card and keeps its three actions", async () => {
+	const c = card("RBCK01");
+	await waitFor(`!!document.querySelector(${q(`${c} .rq-fail[data-code=back]`)})`);
+	expect(await texts(`${c} .rq-fail`)).toEqual(["게이트웨이가 다시 시작돼서 보내지 않았어요. 보내려면 보내기를 눌러 주세요"]);
+	expect(await keys(`${c} .rq-acts`)).toEqual(["send", "fix", "drop"]);
+	expect(await has(`${card("RPEN01")} .rq-fail`)).toBe(false);
 });

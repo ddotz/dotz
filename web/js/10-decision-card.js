@@ -12,6 +12,7 @@ const CH_CLOSE = /번호(?:로|를).*(?:답|알려)/;
 // (stripped from the label), or it is guessed from a negative / edit label or a description that asks for text. Mirrors hub/choices.ts detailOf.
 const DETAIL_MARK = /\s*…\s*$/, DETAIL_LABEL = /^(?:안\s*됨|안\s*돼|고치기|수정)/, DETAIL_DESC = /(?:적어|알려|써|말해)\s*(?:주|줘|달라|세요)|내용.*(?:적|알려|써)/;
 const detailOf = o => !!o.detail || DETAIL_LABEL.test(o.label) || DETAIL_DESC.test(o.desc || "");
+const unnumbered = l => l.replace(/^(?:\d{1,2}[).]\s+)+/, "").trim() || l;
 const CH_FENCE = /^\s*```/;
 const isDescLine = nx => nx !== undefined && !!nx.trim() && !/^\s*\[file\]\s+\S/.test(nx) && !CH_OPT.test(nx) && !CH_HEAD.test(nx) && !CH_CLOSE.test(nx) && !CH_FENCE.test(nx);
 // The message text without its option lines (and their description lines): the buttons show them, so the body must not repeat them.
@@ -67,7 +68,7 @@ function parseChoices(text) {
     const nx = lines[i + 1];
     if (isDescLine(nx)) { desc = nx.trim(); i++; }
     const raw = m[2].replace(/^\*+|\*+$/g, "").trim();
-    cur.options.push({ n, label: raw.replace(DETAIL_MARK, "").trim(), desc, ...(DETAIL_MARK.test(raw) ? { detail: true } : {}) });
+    cur.options.push({ n, label: unnumbered(raw.replace(DETAIL_MARK, "").trim()), desc, ...(DETAIL_MARK.test(raw) ? { detail: true } : {}) });
   }
   // Only a block a "결정:" line opened holds options (mirrors hub/choices.ts parseDecisions): a numbered or bold list in the body is text.
   return { question, blocks: blocks.filter(b => b.headed && b.options.length) };
@@ -116,7 +117,7 @@ function decisionOne(t) {
   const info = targetInfo(t), s = ts(t);
   if (dcGone(t)) return null;
   let raw = "", at = "";
-  if (info.ask) { raw = String(info.ask.text); at = info.ask.at || ""; }
+  if (info.ask) { if (ntLaterAt(t, info.ask.at)) return null; raw = String(info.ask.text); at = info.ask.at || ""; }
   else {
     for (let k = s.msgs.length - 1; k >= 0; k--) {
       const e = s.msgs[k];
@@ -152,9 +153,9 @@ const dcSettledAt = (t, at) => {
 async function answerDecision(dc, text, opt, note) {
   const t = dc.t, lane = isLaneT(t) ? laneOf(t) : "";   // the card's own conversation: the notice sheet may answer for one that is not on screen
   DC.st[dc.key] = "sending"; paintDecision();
+  const nd = opt && dc.blocks.length === 1 ? ntFor(t, dc.at, opt) : null;
   try {
     // A card with one block whose question is a decision notice answers through the notice path (30-notices.js), so both stay in step.
-    const nd = opt && dc.blocks.length === 1 ? ntFor(t, dc.at, opt) : null;
     const held = nd ? await ntPost(nd, opt.n, note, undefined, opt.label) : null;
     // The agent gets the question with each chosen option and the asking message (hub/intake.ts decisionLines); the bubble stays short.
     const pk = DC.picks[dc.key] || [], picks = dc.blocks.flatMap((b, i) => (pk[i] ? [{ q: b.title || dc.question || "", n: pk[i].n, label: pk[i].label, ...(pk[i].note && !dc.draft ? { note: pk[i].note } : {}) }] : []));
@@ -162,13 +163,14 @@ async function answerDecision(dc, text, opt, note) {
     if (r && r.queued) { putQueue(QUEUE.filter(i => i.id !== r.queued.id).concat(r.queued)); renderQueue(); }
     DC.st[dc.key] = "sent"; delete DC.edit[dc.key]; delete DC.note[dc.key];
     if (t === target) { putChatStick(true); scrollChat(true); }
-  } catch (e) { delete DC.st[dc.key]; if (dc.blocks.length === 1) delete DC.picks[dc.key]; if (note) DC.edit[dc.key] = { bi: 0, opt }; toast(e.message, true); }   // a refused reason opens again with its text (DC.note); a lone question lets go of the chosen row; several keep their picks, so a retry does not start the card over
+  } catch (e) { delete DC.st[dc.key]; if (dc.blocks.length === 1) delete DC.picks[dc.key]; if (note) DC.edit[dc.key] = { bi: 0, opt }; if (!dcGoneFail(nd, e, opt, note)) toast(e.message, true); }
   paintDecision();
 }
 const needsNote = (dc, opt) => (dc.draft ? draftAsksText(opt) : detailOf(opt));
 const pickSay = o => `${o.n}) ${o.label}${o.note ? ` - ${o.note}` : ""}`;
 function pickOption(dc, bi, opt, note, typed) {
   if (DC.st[dc.key]) return;
+  if (dc.draft && (DRAFT_ACTS[opt.label] || [])[0] === "send" && drfUploading(dc.draft)) { toast(TX("chat.send.uploading")); return; }
   // A mail whose files disagree with its words is not sent by 보내기: the owner is shown what is off and 이대로 보내기 is the pick that sends it (cancel keeps the card).
   const asIs = dc.draft && (dc.draft.attachIssues || []).length && dc.blocks[bi] && dc.blocks[bi].options.find(o => o.label === "이대로 보내기");
   if (asIs && opt.label === "보내기" && !opt.sure) { ask(TX("decision.attach.check_title"), (dc.draft.to ? TX("decision.attach.asis_to", { to: dc.draft.to, issues: dc.draft.attachIssues.join(". ") }) : TX("decision.attach.asis", { issues: dc.draft.attachIssues.join(". ") })), TX("decision.send_anyway")).then(ok => { if (ok) pickOption(dc, bi, { ...asIs, sure: true }, note); }); return; }
@@ -187,7 +189,7 @@ function pickOption(dc, bi, opt, note, typed) {
 }
 async function answerEach(dc, bi, opt, note) {
   DC.st[dc.key] = "sending"; paintDecision();
-  try { await ntPost(dc.blocks[bi].nd, opt.n, note, undefined, opt.label); delete DC.note[dc.key]; } catch (e) { if (note) DC.edit[dc.key] = { bi, opt }; toast(e.message, true); }
+  try { await ntPost(dc.blocks[bi].nd, opt.n, note, undefined, opt.label); delete DC.note[dc.key]; } catch (e) { if (note) DC.edit[dc.key] = { bi, opt }; if (!dcGoneFail(dc.blocks[bi].nd, e, opt, note)) toast(e.message, true); }
   delete DC.picks[dc.key]; delete DC.step[dc.key];
   // The last question of the card answered: it leaves through dcLeave (fades, then goes) like any answered card; the others still wait on the card.
   if (decisionOf(dc.t)) delete DC.st[dc.key]; else DC.st[dc.key] = "sent";
@@ -210,34 +212,28 @@ function multiNodes(dc, picks, st) {
 // A mail reply draft of reply-drafts can change its files here (hub/draft-attach.ts): 파일 추가 = a file of this device or of the mail
 // app's 첨부 파일 폴더, x = take one off. The live list (DRF.st) replaces the one written in the message. o.t = the draft's conversation
 // (a peer's draft is changed on its own computer), o.edit false = read only, o.warn = a box the warning is drawn into instead of under the files.
-// o.stage (the 고치기 panel, 10-reply-actions.js rqFixNodes) = { remove: [place], add: [{ name, size, file | library }] }: a change only marks it (o.onstage is told);
-// nothing is written until 반영 (raRowsApply), and 닫기 forgets it.
 const DR_IMG = /\.(png|jpe?g|gif|webp|avif|heic)$/i;
-const DRF = { st: {}, pc: {}, menu: {}, lib: {}, busy: {}, wait: {} };
+const DRF = { st: {}, pc: {}, menu: {}, lib: {}, busy: {}, wait: {}, again: {}, hash: {}, gen: {} };
+const drfUploading = d => [d.ref, d.mail && d.mail.ref].some(r => r && DRF.busy[r]);
+function drForget(ref) { drfStale(ref); delete DRF.lib[ref]; delete DRR.st[ref]; }
+function drSeen(ref, hash) { if (!ref || !hash || DRF.hash[ref] === hash) return; drForget(ref); DRF.hash[ref] = hash; }
 function drfFrom(ref, t) { DRF.pc[ref] = t ? pqPc(t) : null; }   // the computer a draft's files are read from: none is this one
 const DRF_WIRE_MAX = 10 * 1024 * 1024;
 const drfPath = (ref, tail) => `/api/drafts/${enc(ref)}/${tail}`;
 const drfNone = { files: [], canAttach: false, library: false, editable: false, failed: true };
+function drfStale(ref) { DRF.gen[ref] = (DRF.gen[ref] || 0) + 1; delete DRF.st[ref]; delete DRF.wait[ref]; }
 function drfLoad(ref) {
-  return DRF.wait[ref] ||= api(drfPath(ref, "files")).then(r => { DRF.st[ref] = r && Array.isArray(r.files) ? r : drfNone; }, () => { DRF.st[ref] = drfNone; }).finally(() => { delete DRF.wait[ref]; });
+  if (DRF.wait[ref]) return DRF.wait[ref];
+  const gen = DRF.gen[ref] || 0, keep = v => { if ((DRF.gen[ref] || 0) === gen) DRF.st[ref] = v; };
+  const p = api(drfPath(ref, "files")).then(r => keep(r && Array.isArray(r.files) ? r : drfNone), () => keep(drfNone)).finally(() => { if (DRF.wait[ref] === p) delete DRF.wait[ref]; });
+  return (DRF.wait[ref] = p);
 }
 async function drfWrite(ref, body) {
-  const r = await api(drfPath(ref, "files"), "POST", body);
+  const r = await api(drfPath(ref, "files"), "POST", body, body.data ? 0 : CARD_WAIT_MS).catch(async e => { if (e && e.status === 409) { drfStale(ref); await drfLoad(ref); } throw e; });
+  drfStale(ref);
   DRF.st[ref] = { files: r.files, canAttach: r.canAttach, library: r.library, editable: r.editable, attachIssues: r.attachIssues };
 }
-const drfBase64 = f => new Promise((ok, no) => { const r = new FileReader(); r.onload = () => ok(String(r.result).split(",")[1] || ""); r.onerror = () => no(r.error); r.readAsDataURL(f); });
-async function drfUpload(ref, f) {
-  if (DRF.pc[ref]) {
-    if (f.size > DRF_WIRE_MAX) throw new Error(TX("decision.file.peer_max"));
-    return drfWrite(ref, { name: f.name, data: await drfBase64(f) });
-  }
-  return drfWrite(ref, { upload: await uploadFile(f) });
-}
-// One file to this gateway's uploads (hub/files.ts): the record that a draft's 첨부 or a message's `files` names.
-async function uploadFile(f) {
-  if (upTooBig(f.size)) throw new Error(upTooBig(f.size));
-  return uploadXhr(f, f.name).done;
-}
+async function drfHold(ref, job) { DRF.busy[ref] = true; try { return await job(); } finally { DRF.busy[ref] = false; } }
 // 보내기 on a draft whose mail account cannot send files: the owner is asked once more (resolves true to go on).
 async function drfSure(d, t) {
   const ref = d.ref;
@@ -249,16 +245,17 @@ async function drfSure(d, t) {
 }
 function draftFilesNode(d, o = {}) {
   const ref = d.ref, sg = o.stage, box = el("div", { class: "dr-files" });
-  if (ref) DRF.pc[ref] = o.t ? pqPc(o.t) : null;
+  if (ref) { DRF.pc[ref] = o.t ? pqPc(o.t) : null; drSeen(ref, d.hash); }
   const pickers = el("input", { type: "file", multiple: true, hidden: true, "aria-label": TX("decision.file.pick") });
-  const run = async job => {
-    DRF.busy[ref] = true; paint();
-    try { await job(); } catch (e) { toast(e instanceof TypeError ? TX("decision.err.offline_act") : e.message, true); }
+  const photos = el("input", { type: "file", accept: "image/*", multiple: true, hidden: true, "data-k": "photo-pick", "aria-label": TX("decision.file.photo") });
+  const run = async (job, again) => {
+    DRF.busy[ref] = true; delete DRF.again[ref]; paint();
+    try { await job(); } catch (e) { if (again) DRF.again[ref] = again; toast(e instanceof TypeError ? TX("decision.err.offline_act") : e.message, true); }
     DRF.busy[ref] = false; paint();
   };
-  const put = (mark, job) => { if (!sg) return run(job); mark(); DRF.menu[ref] = ""; paint(); o.onstage(); };   // one change: marked on the stage, or written at once
-  const addAll = list => put(() => sg.add.push(...list.map(f => ({ name: f.name, size: mailSize(f.size), file: f }))), async () => { for (const f of list) await drfUpload(ref, f); DRF.menu[ref] = ""; });
-  pickers.onchange = () => { const list = [...pickers.files]; pickers.value = ""; addAll(list); };
+  const put = (mark, job, again) => { if (!sg) return run(job, again); mark(); DRF.menu[ref] = ""; paint(); o.onstage(); };   // one change: marked on the stage, or written at once
+  const addAll = list => put(() => sg.add.push(...list.map(f => ({ name: f.name, size: mailSize(f.size), file: f }))), async () => { for (; list.length; list.shift()) await drfUpload(ref, list[0]); DRF.menu[ref] = ""; }, () => addAll(list));
+  for (const input of [pickers, photos]) input.onchange = async () => { const list = [...input.files]; input.value = ""; try { addAll(await Promise.all(list.map(upNamed))); } catch (e) { toast(e.message, true); } };
   const openLib = async () => {
     DRF.menu[ref] = DRF.menu[ref] === "lib" ? "" : "lib"; paint();
     if (DRF.menu[ref] !== "lib" || DRF.lib[ref]) return;
@@ -270,7 +267,7 @@ function draftFilesNode(d, o = {}) {
     // Files named in the message that dotz did not stage itself: the names stand, with a plain line saying the session attaches them.
     const named = !!st && st.tracked === false && Array.isArray(d.attachments) && d.attachments.length > 0;
     // at: a file's place on the draft. A file the panel only marked (sg.add) has none yet, and the ones it marked as taken off are left out.
-    const fl = (live ? st.files : Array.isArray(d.attachments) ? d.attachments : []).map((f, at) => ({ ...f, at })).filter(f => !sg || !sg.remove.includes(f.at)).concat(sg ? sg.add : []);
+    const fl = (live ? st.files : Array.isArray(d.attachments) ? d.attachments : []).map((f, at) => ({ ...f, at })).filter(f => !sg || !sg.remove.some(r => r.name === f.name)).concat(sg ? sg.add : []);
     const can = live && st.editable && o.edit !== false, busy = !!DRF.busy[ref] || !!o.hold;   // o.hold: the sheet is sending; the rows stay, off
     const warn = d.warning && !fl.length;
     const noSend = live && st.editable && !st.canAttach && (fl.length || d.warning);
@@ -283,7 +280,7 @@ function draftFilesNode(d, o = {}) {
       const ext = (String(f.name).match(/\.([A-Za-z0-9]{1,5})$/) || [0, ""])[1].toUpperCase(), meta = [ext, f.size].filter(Boolean).join(" · ");
       const kids = [el("span", { class: "dr-fi" }, icon(DR_IMG.test(f.name) ? "image" : "file")), el("span", { class: "dr-fn", text: f.name }), meta ? el("span", { class: "dr-fm", text: meta }) : null];
       const link = ref && !named && f.at !== undefined ? el("a", { class: "dr-att", href: pqLink(drfPath(ref, `files/${f.at}`)), target: "_blank", rel: "noopener", title: TX("decision.file.open", { name: f.name }), "aria-label": f.size ? TX("decision.file.open_size", { name: f.name, size: f.size }) : TX("decision.file.open", { name: f.name }) }, ...kids, icon("open")) : el("div", { class: "dr-att" }, ...kids);
-      return can ? el("div", { class: "dr-ar" }, link, el("button", { class: "dr-x", type: "button", disabled: busy, title: TX("decision.file.detach"), "aria-label": TX("decision.remove_named", { name: f.name }), onclick: () => put(() => (f.at === undefined ? sg.add.splice(sg.add.indexOf(f), 1) : sg.remove.push(f.at)), () => drfWrite(ref, { remove: f.at })) }, icon("close"))) : link;
+      return can ? el("div", { class: "dr-ar" }, link, el("button", { class: "dr-x", type: "button", disabled: busy, title: TX("decision.file.detach"), "aria-label": TX("decision.remove_named", { name: f.name }), onclick: () => put(() => (f.at === undefined ? sg.add.splice(sg.add.indexOf(f), 1) : sg.remove.push({ at: f.at, name: f.name, size: f.bytes })), () => drfWrite(ref, { remove: f.at, name: f.name, size: f.bytes })) }, icon("close"))) : link;
     });
     const items = DRF.lib[ref] || [];
     const lib = can && DRF.menu[ref] === "lib" ? el("div", { class: "dr-lib", role: "list" }, ...(items.length ? items.map(it => el("button", { class: "dr-li", type: "button", role: "listitem", disabled: busy, title: it.rel, onclick: () => put(() => sg.add.push({ name: it.name || it.rel, size: it.size, library: it.rel }), async () => { await drfWrite(ref, { library: it.rel }); DRF.menu[ref] = ""; }) },
@@ -292,13 +289,15 @@ function draftFilesNode(d, o = {}) {
       el("button", { class: "btn tonal", type: "button", onclick: () => pickers.click() }, TX("decision.file.from_device")),
       st.library ? el("button", { class: "btn tonal", type: "button", onclick: openLib }, TX("decision.file.from_folder")) : null) : null;
     const add = can && st.canAttach ? el("button", { class: "dr-add", type: "button", disabled: busy, "aria-expanded": String(!!DRF.menu[ref]), onclick: () => { if (!st.library) pickers.click(); else { DRF.menu[ref] = DRF.menu[ref] ? "" : "menu"; paint(); } } }, icon("clip"), el("span", { text: busy ? TX("decision.file.attaching") : TX("decision.file.add") })) : null;
+    const photo = add ? el("button", { class: "btn tonal sm dr-photo", type: "button", "data-k": "photo-add", disabled: busy, text: TX("decision.file.photo"), onclick: () => photos.click() }) : null;
+    const again = DRF.again[ref] && !busy ? el("button", { class: "btn tonal sm dr-again", type: "button", "data-k": "upload-again", text: TX("chat.upload.retry"), onclick: DRF.again[ref] }) : null;
     if (o.warn) { clear(o.warn).append(...warns.filter(Boolean)); o.warn.hidden = !warns.some(Boolean); }
     // The line is always there: the files, or 첨부 없음 (a mail draft too, owner 2026-11-16). o.live (the mail of a combined card, read only): the list is read from
     // the staged files, so a ✓ says they are on the mail.
     const on = o.live && live && !sg;
     clear(box).append(...[fl.length ? el("div", { class: on ? "dr-fh ok" : "dr-fh", text: on ? TX("decision.attach.attached", { n: fl.length }) : TX("decision.attach.count", { n: fl.length }) }) : el("div", { class: "dr-none", "data-k": "none" }, icon("clip"), el("span", { text: TX("decision.attach.none") })), ...rows,
       named ? el("div", { class: "dr-note", text: TX("decision.file.locked") }) : null,
-      add, menu, lib, ...(o.warn ? [] : warns), pickers].filter(Boolean));
+      add, photo, again, menu, lib, ...(o.warn ? [] : warns), pickers, photos].filter(Boolean));
   }
   paint();
   if (ref && (o.edit !== false || o.live || (d.attachments || []).length) && d.toLabel === "받는이" && !DRF.st[ref]) drfLoad(ref).then(paint);
@@ -318,13 +317,14 @@ const drrPath = ref => `/api/drafts/${enc(ref)}/recipients`;
 const drrSplit = s => String(s || "").split(/\s*,\s*/).map(a => a.trim()).filter(Boolean);
 async function drrLoad(ref) { try { const r = await api(drrPath(ref)); DRR.st[ref] = r && Array.isArray(r.to) ? r : DRR_NONE; } catch { DRR.st[ref] = DRR_NONE; } }
 async function drrWrite(ref, body) {
-  const r = await api(drrPath(ref), "POST", body);
+  const r = await api(drrPath(ref), "POST", body, CARD_WAIT_MS).catch(async e => { if (e && e.status === 409) await drrLoad(ref); throw e; });
   DRR.st[ref] = { to: r.to || [], cc: r.cc || [], mode: r.mode || "reply", editable: !!r.editable, reply: !!r.reply };
   DRR.add[ref] = ""; DRR.edit[ref] = "";
   return DRR.st[ref];
 }
 function draftToNode(d, o = {}) {
   const ref = d.ref, sg = o.stage;
+  drSeen(ref, d.hash);
   let base = null;   // the lists as the hub holds them (paint)
   // Which computer holds the draft: a peer's rows change there (the same map the 첨부 줄 uses for its own requests).
   if (ref && o.t !== undefined) DRF.pc[ref] = DRR.pc[ref] = o.t ? pqPc(o.t) : null;
@@ -348,7 +348,7 @@ function draftToNode(d, o = {}) {
     const i = el("input", { class: "dr-rc-in", type: "email", inputmode: "email", autocomplete: "off", placeholder: label, "aria-label": label, disabled: busy() });
     i.value = value || "";
     const go = () => { const v = i.value.trim(); if (v) done(v); };
-    i.onkeydown = ev => { if (ev.key === "Enter" && !ev.isComposing) { ev.preventDefault(); go(); } };
+    i.onkeydown = ev => { if (plainEnter(ev)) { ev.preventDefault(); go(); } };
     return { i, go };
   };
   const editor = (label, value, done) => {
@@ -361,8 +361,8 @@ function draftToNode(d, o = {}) {
     const chips = list.map((a, i) => (editing === `${name}:${i}`
       ? editor(name === "to" ? TX("decision.rc.to_addr") : TX("decision.rc.cc_addr"), a, v => change(name, list.map((x, n) => (n === i ? v : x))))
       : el("span", { class: "dr-chip dr-rc" },
-        editable ? el("button", { class: "dr-rc-t", type: "button", title: TX("decision.rc.edit"), "aria-label": TX("decision.edit_named", { name: a }), disabled: busy(), text: a, onclick: () => { DRR.add[ref] = ""; DRR.edit[ref] = `${name}:${i}`; paint(); } }) : el("span", { class: "dr-rc-t", text: a }),
-        editable ? el("button", { class: "dr-rc-x", type: "button", title: TX("decision.remove"), "aria-label": TX("decision.remove_named", { name: a }), disabled: busy(), onclick: () => change(name, list.filter((_, n) => n !== i)) }, icon("close")) : null)));
+        editable ? el("button", { class: "dr-rc-t", type: "button", title: TX("decision.rc.edit"), "aria-label": TX("decision.edit_named", { name: rqClean(a) }), disabled: busy(), text: rqClean(a), onclick: () => { DRR.add[ref] = ""; DRR.edit[ref] = `${name}:${i}`; paint(); } }) : el("span", { class: "dr-rc-t", text: rqClean(a) }),
+        editable ? el("button", { class: "dr-rc-x", type: "button", title: TX("decision.remove"), "aria-label": TX("decision.remove_named", { name: rqClean(a) }), disabled: busy(), onclick: () => change(name, list.filter((_, n) => n !== i)) }, icon("close")) : null)));
     if (editable && DRR.add[ref] === name) chips.push(editor(name === "to" ? TX("decision.rc.add_to") : TX("decision.rc.add_cc"), "", v => change(name, [...list, v])));
     else if (editable) chips.push(el("button", { class: "dr-rc-add", type: "button", "aria-label": TX("decision.add_named", { name: label }), disabled: busy(), onclick: () => { DRR.edit[ref] = ""; DRR.add[ref] = name; paint(); } }, icon("add"), el("span", { text: TX("decision.add") })));
     return el("div", { class: "dr-to dr-rcrow", "data-row": name }, el("span", { class: "dr-k", text: label }), chips.length ? el("div", { class: "dr-rc-list" }, ...chips) : el("span", { class: "dr-k", text: "-" }));
@@ -404,6 +404,7 @@ function draftMailNode(m, o = {}) {
   return el("div", { class: "dr-mailpart" },
     el("div", { class: "dr-mh" }, icon("mail"), el("span", { text: TX("decision.mail.along") })),
     fx && fx.recv ? draftToNode(part, { t: o.t, edit: true, always: true, stage: fx.recv, onstage: fx.onstage }) : row(m.toLabel || TX("decision.to"), m.to || "-"),
+    m.accountHeld ? row(TX("reply.rcpt.account"), TX("reply.rcpt.account_held")) : m.account ? row(TX("reply.rcpt.account"), m.account) : null,
     fx ? fx.subject : m.subject ? row(TX("decision.subject"), m.subject, " sub") : null,
     fx ? null : draftBodyNode(m.body, "dc-dr-b", { tabindex: "0", role: "region", "aria-label": TX("decision.mail.along_body") }),
     draftFilesNode(part, { edit: !!(fx && fx.files), live: !!ref, t: o.t, stage: fx && fx.files, onstage: fx && fx.onstage }));
@@ -445,7 +446,7 @@ const OWN_HINT = TX("decision.hint.own");
 const draftQ = t => String(t || "").replace(/\s*\([^()]*\)\s*$/, "").replace(/\s*정할 것\s*[:：][\s\S]*$/, "");
 const decideNode = d => (d && d.decide && d.decide.length ? el("div", { class: "dc-decide" }, el("div", { class: "dc-decide-k", text: TX("decision.decide") }), el("ul", {}, ...d.decide.map(q => el("li", { text: q })))) : null);
 // A note field's keys: Cmd/Ctrl+Enter is its button, Esc closes the field only (the field carries data-esc, so the sheet around the card stays open: 38-overlay.js).
-const noteKeys = (go, back) => ev => { if (ev.isComposing) return; if (ev.key === "Enter" && (ev.metaKey || ev.ctrlKey)) { ev.preventDefault(); go(); } else if (ev.key === "Escape") { ev.preventDefault(); ev.stopPropagation(); back(); } };
+const noteKeys = (go, back) => ev => { if (imeKey(ev)) return; if (ev.key === "Enter" && (ev.metaKey || ev.ctrlKey)) { ev.preventDefault(); go(); } else if (ev.key === "Escape") { ev.preventDefault(); ev.stopPropagation(); back(); } };
 const draftNoteText = opt => (opt.label === DRAFT_OWN ? { hint: OWN_HINT, aria: TX("decision.own.aria"), ask: TX("decision.own.ask") } : { hint: DRAFT_HINT, aria: TX("decision.revise.what"), ask: TX("decision.revise.ask") });
 function editNode(dc, ed, st) {
   const opt = ed.opt, drf = !!dc.draft;
@@ -536,14 +537,14 @@ function renderDecision(box, dc, picks, step) {
   if (dc.close) { renderSheet(box, dc, picks, step); return; }
   // Folded per conversation, not per question (owner 2026-11-04: the arrow did not lower it): the bot re-asks what is left as a new
   // message, and a fold kept on the old question let the next one cover the conversation again.
-  const st = DC.st[dc.key] || "", fold = !!DC.fold[dc.t], old = $(".dc-body", box), top = old && box.dataset.key === dc.key ? old.scrollTop : 0;
+  const st = DC.st[dc.key] || "", fold = dcFolded(dc.t) && !DC.edit[dc.key], old = $(".dc-body", box), top = old && box.dataset.key === dc.key ? old.scrollTop : 0;
   dcHold(box, !!st);
   // A draft message starts with its quoted draft, so the question is the block's own title without the draft's id.
   const qText = dc.draft ? draftQ(dc.blocks[0] && dc.blocks[0].title) : dc.question;
   // ONE tight header (owner 2026-11-03): the status 답 기다림 on one line, then the short question as the card's one lead (a 확인 필요 label said it twice); the card asks only what it must.
-  const head = el("div", { class: "dc-hd" }, el("div", { class: "dc-tt" },
+  const head = el("div", { class: "dc-hd" }, el("div", { class: "dc-tt", onclick: fold ? () => { DC.fold[dc.t] = false; paintDecision(); } : null },
     el("div", { class: "dc-meta" }, el("span", { class: "tag warn dc-wt", text: TX("decision.waiting_tag") })),
-    qText ? mdNode(qText, "md dc-q") : null, decideNode(dc.draft)),
+    qText ? mdNode(qText, "md dc-q") : null, fold ? el("span", { class: "dc-sum", text: dcFoldSum(dc) }) : null, decideNode(dc.draft)),
     el("div", { class: "dc-hb" },
       el("button", { class: "dc-fold", type: "button", "aria-expanded": String(!fold), "aria-label": fold ? TX("decision.more") : TX("decision.less"), onclick: () => { DC.fold[dc.t] = !fold; paintDecision(); } }, icon("drop"))));
   const kids = [head];
@@ -564,7 +565,7 @@ function renderDecision(box, dc, picks, step) {
     kids.push(body);
     }
   }
-  const sn = dcStNode(dc, st); if (sn) kids.push(sn);
+  const goneN = dcGoneNotice(dc), sn = dcStNode(dc, st), ax = fold || st ? null : askCardNode(dc); if (ax) kids.push(ax); if (goneN) kids.push(el("div", { class: "dc-gonebox" }, ...dcGoneNodes(goneN, true))); if (sn) kids.push(sn);
   if (!paintKeep(box, kids, dcAgain(box))) return;
   box.classList.toggle("fold", fold);
   const nb = $(".dc-body", box); if (nb) nb.scrollTop = top;
@@ -600,7 +601,7 @@ async function answerInline(nd, opt) {
   }
   const fk = rqNtKey(nd), act = opt.label === "보내기" ? "send" : opt.label === DRAFT_EDIT ? "fix" : "drop";
   dcSending.add(nd.id); rqFail.delete(fk); rqPress.set(fk, act); syncInlineChoices(); let ok = true;
-  try { dcAnswerToast(nd, opt, await ntPost(nd, opt.n, undefined, undefined, opt.label)); } catch (e) { ok = false; if (nd.decision.draft) rqFail.set(fk, rqFailOf(e, act)); else toast(e.message, true); }
+  try { dcAnswerToast(nd, opt, await ntPost(nd, opt.n, undefined, undefined, opt.label)); } catch (e) { ok = false; dcGoneFail(nd, e, opt); if (nd.decision.draft) rqFail.set(fk, rqFailOf(e, act)); else toast(e.message, true); }
   dcSending.delete(nd.id); rqPress.delete(fk); syncInlineChoices();
   return ok;
 }
@@ -780,7 +781,7 @@ function dcPointer(box, n) {
 // a phone the keyboard closes and reopens while the owner types (owner 2026-10-22), so a live update that changes none of it leaves the card alone.
 function dcSig(dc, picks, step) {
   const dr = dc.draft ? [dc.draft.to, (dc.draft.cc || []).join(","), dc.draft.mode || ""] : 0;
-  return JSON.stringify([dc.key, dc.question, dc.each ? dc.blocks.map(b => b.nd.id) : 0, picks.map(o => o && o.n), step, !!DC.fold[dc.t], DC.st[dc.key] || "", DC.edit[dc.key] ? DC.edit[dc.key].opt.n : 0, dr]);
+  return JSON.stringify([dc.key, dc.question, dc.each ? dc.blocks.map(b => b.nd.id) : 0, picks.map(o => o && o.n), step, dcFolded(dc.t), DC.st[dc.key] || "", DC.edit[dc.key] ? DC.edit[dc.key].opt.n : 0, dr, dcGoneKey(), askSig(dc)]);
 }
 // What was decided stays in the conversation once the card is gone (owner 2026-11-03): the owner's answer message already carries the
 // question and the chosen option (hub/intake.ts decisionLines, `picks`), so the record is drawn from it here and from history after a

@@ -1,8 +1,8 @@
 import { afterAll, expect, test } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { claimHolder, claimSend } from "./draft-claim.ts";
+import { claimHolder, claimSend, takeoverLock } from "./draft-claim.ts";
 
 const dir = mkdtempSync(join(tmpdir(), "claim-"));
 afterAll(() => rmSync(dir, { recursive: true, force: true }));
@@ -68,3 +68,50 @@ test("a claim path that cannot be read as a claim is left alone even when the ca
 	expect(claimSend(f, true)).toBeUndefined();
 	expect(existsSync(join(f, "inner"))).toBe(true);
 });
+
+test("a sender judged dead that finishes late releases nothing of the taker's claim", () => {
+	const f = join(dir, "sending", "R7");
+	const first = claimSend(f)!;
+	writeFileSync(f, "999999");
+	const taker = claimSend(f, true)!;
+	expect(taker).toBeDefined();
+	first();
+	expect(claimHolder(f)).toBe("live");
+	expect(claimSend(f)).toBeUndefined();
+	taker();
+	expect(existsSync(f)).toBe(false);
+});
+
+const raceDeadClaim = async (name: string, deadTaker: boolean) => {
+	const gone = Bun.spawn([process.execPath, "-e", "0"]);
+	await gone.exited;
+	const script = `import { existsSync, renameSync, writeFileSync } from "node:fs";
+import { claimSend } from ${JSON.stringify(join(import.meta.dir, "draft-claim.ts"))};
+const [file, go] = process.argv.slice(1);
+writeFileSync(go + "." + process.pid, "");
+while (!existsSync(go));
+writeFileSync(go + ".said." + process.pid + ".tmp", claimSend(file, true) ? "won" : "lost");
+renameSync(go + ".said." + process.pid + ".tmp", go + ".said." + process.pid);
+while (!existsSync(go + ".end"));`;
+	mkdirSync(join(dir, "sending"), { recursive: true });
+	for (let round = 0; round < 10; round++) {
+		const f = join(dir, "sending", `${name}-${round}`);
+		writeFileSync(f, String(gone.pid));
+		if (deadTaker) writeFileSync(takeoverLock(f, String(gone.pid)), String(gone.pid));
+		const go = join(dir, `${name}-go-${round}`);
+		const runs = Array.from({ length: 6 }, () => Bun.spawn([process.execPath, "-e", script, f, go], { stdout: "ignore", stderr: "inherit" }));
+		const marks = (kind: string) => readdirSync(dir).filter(n => new RegExp(`^${name}-go-${round}\\.${kind}\\d+$`).test(n));
+		while (marks("").length < runs.length) await Bun.sleep(0);
+		writeFileSync(go, "");
+		while (marks("said\\.").length < runs.length) await Bun.sleep(0);
+		const said = marks("said\\.").map(n => readFileSync(join(dir, n), "utf8"));
+		const held = claimHolder(f);
+		writeFileSync(`${go}.end`, "");
+		await Promise.all(runs.map(r => r.exited));
+		expect([said.filter(x => x === "won").length, held], `round ${round}`).toEqual([1, "live"]);
+	}
+};
+
+test("several takers of one dead claim at once: exactly one wins", () => raceDeadClaim("R8", false), 30_000);
+
+test("a taker that died holding the takeover lock: one of the next takers still wins, only one", () => raceDeadClaim("R9", true), 30_000);

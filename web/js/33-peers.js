@@ -21,6 +21,7 @@ const prText = p => [p.need > 0 ? TX("misc.pr.need", { n: p.need }) : "", p.unre
 async function prLoad() {
   try {
     const r = await api("/api/peers"); PR.list = Array.isArray(r) ? prOrder(r) : []; PR.tries = 0; PR.fresh = true;
+    for (const wake of PR_WAIT.splice(0)) wake();
     try { localStorage.setItem("dotz-peers", JSON.stringify(PR.list.map(({ name, url, self, online, via, key, note, public: open }) => ({ name, url, self, online, via, key, note, public: open })))); } catch {}
   } catch {
     clearTimeout(PR.timer);
@@ -31,23 +32,20 @@ async function prLoad() {
   if (typeof paintPause === "function") paintPause();   // the pause line names this computer, which the list gives
 }
 
-// A tapped notice relayed from another computer arrives as ?pc=<that computer's origin>[&n=<decision id>|&m=<message ts>]#<route> (cold start:
-// PUSH_FOLLOW in 23-installable-app-web.js; open app: a {follow} message from sw.js). Only an origin in this gateway's own computer list is followed
-// (never a free URL); the page then continues on that computer at the item. Unknown after a fresh list, or offline: it stays here.
-let prFollowHref = typeof PUSH_FOLLOW === "string" ? PUSH_FOLLOW : "";
-function prTryFollow() {
-  if (!prFollowHref) return;
-  let u; try { u = new URL(prFollowHref, location.href); } catch { prFollowHref = ""; return; }
-  const p = prOthers().find(x => x.url === u.searchParams.get("pc"));
-  if (!p && !PR.fresh) return;   // the cached list may predate this computer; wait for the fresh one
-  prFollowHref = "";
-  if (!p || !p.online) { toast(p ? TX("misc.pr.cant_reach", { name: p.name }) : TX("misc.pr.not_found"), true); history.replaceState(history.state, "", location.pathname + location.hash); return; }
-  const q = new URLSearchParams(p.public ? {} : { did: DEVICE_ID });   // a public computer is its own web app: no device id goes to it
-  for (const k of ["n", "m"]) if (u.searchParams.has(k)) q.set(k, u.searchParams.get(k));
-  prGo(`${p.url}/${q.size ? `?${q}` : ""}${u.hash}`, true);
+const PR_FRESH_MS = 8000;
+const PR_WAIT = [];
+const prFresh = () => (PR.fresh ? Promise.resolve() : new Promise(res => { PR_WAIT.push(res); setTimeout(res, PR_FRESH_MS); }));
+async function prHandOver(addr, pressed = false) {
+  await prFresh();
+  history.replaceState(history.state, "", location.pathname + location.hash);
+  const p = prOthers().find(x => x.url === addr.pc);
+  if (!p) { toast(TX("misc.pr.not_found"), true); return { reason: "unknown-computer" }; }
+  if (!p.online && !selfDown) { toast(TX("misc.pr.cant_reach", { name: p.name }), true); return { reason: "refused" }; }
+  const q = new URLSearchParams(p.public ? {} : { did: DEVICE_ID });
+  for (const [k, v] of [["m", addr.at], ["i", addr.nid], ["n", addr.dec]]) if (v) q.set(k, v);
+  if (!pressed) q.set("hop", "1");
+  return { reason: "handed-over", href: `${p.url}/?${q}${addr.hash}` };
 }
-
-if ("serviceWorker" in navigator) navigator.serviceWorker.addEventListener("message", ev => { const d = ev.data || {}; if (typeof d.follow === "string") { pushTapGot(ev); prFollowHref = d.follow; prTryFollow(); pushTapReport(d.tap, "follow"); } });
 
 // Frames this gateway forwards from the other computers' event streams (hub/peer-stream.ts), so the page hears them without leaving its own origin:
 // peer_counts updates that computer's numbers (and the bot name's dot) at once; peer_notice is a new notice there. It toasts (tap = that computer, at the item, like a
@@ -84,11 +82,7 @@ function prLive(e) {
   const s = document.querySelector(".snack:last-of-type");
   if (s) s.dataset.peerNid = String(e.id);
 }
-// The same hand-over as a tapped push: ?pc= names the computer, ?n= the notice, which opens there by its kind (a decision opens its sheet).
-function prOpenItem(p, id) {
-  prFollowHref = `${location.origin}/?pc=${enc(p.url)}&n=${enc(id)}`;
-  prTryFollow();
-}
+function prOpenItem(p, id) { pushLand({ pc: p.url, hash: "", at: "", nid: "", dec: String(id) }, { pressed: true }); }
 
 const prTrig = () => !!prSelf() && PR.list.length >= 2;
 // The phone's bottom tab bar carries the same dot on its Home icon, from the same "more" / "need" as the bot name's (the page title's dot is gone on a conversation and on
@@ -100,7 +94,6 @@ function prHomeDot(more, need) {
   d.parentElement.setAttribute("aria-label", more ? TX("misc.pr.home_more") : TX("common.home"));
 }
 function prPaint() {
-  prTryFollow();
   relayNames();
   relayPaint();   // a chat opened by address before the list came: the note line and the title wait for its names
   const me = prSelf(), on = prTrig(), chev = $("#brand-c"), names = [chev, $("#title")], brand = $("#brand"), title = $("#title");
@@ -138,14 +131,17 @@ function prUrl(p, extra = "") {
 const PR_EMBED = () => typeof isStandalone === "function" && isStandalone() && window.top === window.self;
 const prEmbedded = window.top !== window.self;
 const PRF = { node: null, ov: null };
-function prGo(href, replace = false) {
-  if (!PR_EMBED()) { if (replace) location.replace(href); else location.href = href; return; }
-  if (!PRF.node) {
-    PRF.node = el("div", { class: "pr-frame" }, el("iframe", { title: TX("misc.pr.other"), allow: "clipboard-write; fullscreen" }));
-    document.body.append(PRF.node);
-    PRF.ov = ovOpen(() => prFrameClose(false));
+function prGo(href, auto = false) {
+  if (!PR_EMBED()) { if (auto) location.replace(href); else location.href = href; return; }
+  const fresh = !PRF.node;
+  if (fresh) {
+    const shut = el("button", { class: "ib pr-frame-x", type: "button", "aria-label": TX("common.close"), onclick: () => prFrameClose() }, icon("close"));
+    PRF.node = el("div", { class: "pr-frame" }, el("iframe", { title: TX("misc.pr.other"), allow: "clipboard-write; fullscreen" }), auto ? shut : null);
   }
   PRF.node.firstElementChild.src = href;
+  if (!fresh) return;
+  document.body.append(PRF.node);
+  if (!auto) PRF.ov = ovOpen(() => prFrameClose(false));
 }
 function prFrameClose(viaHistory = true) {
   if (!PRF.node) return;
@@ -307,7 +303,7 @@ function mnDialog() {
   const d = dialog({ title: TX("misc.pr.this_name"), mid: true, body: el("div", { class: "col" }, inp), actions: [
     i.custom ? { label: TX("misc.pr.name_default"), kind: "text", onclick: (c, b) => save("", TX("misc.pr.name_reset"))(b, c) } : null,
     { label: TX("common.save"), kind: "pri", onclick: (c, b) => save(inp.value.trim(), TX("misc.pr.name_saved"))(b, c) }].filter(Boolean) });
-  inp.addEventListener("keydown", ev => { if (ev.key === "Enter" && !ev.isComposing) { ev.preventDefault(); d.node.querySelector(".dact .btn:last-child").click(); } });
+  inp.addEventListener("keydown", ev => { if (plainEnter(ev)) { ev.preventDefault(); d.node.querySelector(".dact .btn:last-child").click(); } });
   inp.focus();
 }
 const mnRow = () => MN.info && el("button", { class: "li tap", type: "button", onclick: mnDialog },
@@ -332,7 +328,7 @@ $("#c-pc").onclick = cpcMenu;
 // The phone's page title, on a page without a back arrow (there the title names the conversation or sub-page and the arrow leads back).
 const prTitleTap = () => { if (prTrig() && !$("#appbar").classList.contains("back")) prOpen(); };
 $("#title").addEventListener("click", prTitleTap);
-$("#title").addEventListener("keydown", ev => { if ((ev.key === "Enter" || ev.key === " ") && !ev.isComposing) { ev.preventDefault(); prTitleTap(); } });
+$("#title").addEventListener("keydown", ev => { if ((ev.key === "Enter" || ev.key === " ") && !imeKey(ev)) { ev.preventDefault(); prTitleTap(); } });
 // ⌘` (Ctrl+` elsewhere) goes straight to the next computer in the sheet's order, wrapping round, skipping ones that are offline, with no sheet;
 // with Shift it goes the other way. macOS keeps ⌘` for cycling an app's windows, so Ctrl+` also works on a Mac.
 const prKeyHint = isMac ? "⌘` · Ctrl+`" : "Ctrl+`";

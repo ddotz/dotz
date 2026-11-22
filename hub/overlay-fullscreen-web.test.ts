@@ -111,6 +111,7 @@ describe("every overlay opens as the shared full-screen frame", () => {
 
 	test("the back button closes the notice sheet and the page stays", async () => {
 		const phone = await open(390, 844);
+		await phone.evaluate(`dispatchEvent(new Event("pointerup"))`);
 		await phone.evaluate(`noticeSheetOpen(${JSON.stringify(String(find("오버레이 확인").id))})`);
 		await waitFor(phone, `document.querySelector(".fs-card .ds-opt")`);
 		await phone.evaluate(`history.back()`);

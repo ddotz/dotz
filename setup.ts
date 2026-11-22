@@ -2,37 +2,31 @@
 // Dotz onboarding wizard (Korean, step by step), modeled on the omonyang ~/.ddotz/setup.ts and the dori-kit setup.ts.
 // 1) harness: the coding-agent CLI the orchestrator and lanes run on (onboard/harness.ts; OmO by default, installed with
 //    bun when missing; omp and Claude Code selectable; Codex listed, no adapter yet) and its login state
-// 2) tools: Aside, Tailscale (onboard/tailscale.ts) and zele. 3) bot identity: name, character, tone, notices, how to address the owner, optional avatar
-//    -> ~/.dotz/identity/IDENTITY.md (the orchestrator talks this way)
-// 4) Discord: owner id, server id; the bot itself is provisioned through the Aside browser (onboard/discord.ts) unless a
-//    token is pasted; the owner only approves Discord's 2FA prompt. 5) web app access (Tailscale, optional). Advanced: ports and models.
-// Writes ~/.dotz/config.json (no secrets), secrets/ (0600), links the plugin into omp only when omp is installed (OmO gets
-// the extension from the gateway with --extension), writes the service file (launchd plist on macOS, systemd user unit on
-// Linux; onboard/service.ts); starts it only with --load, runs tailscale serve only with --tailscale, opens the web app
-// only with --open. An interactive run with web logins also runs tailscale serve. Re-running keeps every answer as the default.
-//   bun setup.ts [--answers answers.json] [--load] [--tailscale] [--open] [--no-discord-auto] [--dir ~/.dotz]
 // Onboarding ends with the macOS permissions step (onboard/permissions.ts): bun is what launchd runs, so the prompts and
 // the Settings entries are for bun. Interactive runs and `permissions` turn what they can on themselves (prompts, panes, switches);
 // only a step macOS keeps for a person is printed, once. --answers runs only print the state. Standalone, safe to rerun:
 //   bun setup.ts permissions [--check]     (--check only prints the state, never raises a dialog; exit 3 = an owner step is left)
 import { chmodSync, existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
-import { homedir, hostname } from "node:os";
+import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { asideState, installApp, installCli, loginCli, openApp } from "./onboard/aside.ts";
-import { type Answers, CHARACTERS, NOTICES, priorOf, selectorFor, stripExample, TONES, validateAnswers, SNOWFLAKE, type Identity } from "./firstrun/answers.ts";
-import { type Env, linkOmp, peerTokenFile, serveTailnet, setupDiscord, tokenFile, writeConfig, writeSecrets } from "./firstrun/apply.ts";
-import { defaultHarness, detectHarnesses, type Detected, harness, harnessLine } from "./onboard/harness.ts";
-import { loginOf } from "./hub/runtime/login.ts";
+import { type Answers, type AccessMode, CHARACTERS, CONNECT_KEYS, type ConnectKey, cleanHostname, NOTICES, priorOf, selectorFor, SNOWFLAKE, stripExample, TONES, validateAnswers, type Identity } from "./firstrun/answers.ts";
+import { type Env, linkOmp, peerTokenFile, serveTailnet, tokenFile, writeConfig, writeSecrets } from "./firstrun/apply.ts";
+import { type ConnectTarget, type ConnectUI, connectAll, gatewayUp, switchAccess } from "./firstrun/connect.ts";
+import { defaultHarness, detectHarnesses, type Detected, harness, harnessHint, installBinsOnPath } from "./onboard/harness.ts";
+import { type LoginState, loginOf } from "./hub/runtime/login.ts";
 import { runtimeModels, validateWithModels } from "./firstrun/models.ts";
 import { checkPermissions, printPermissions, requestPermissions } from "./onboard/permissions.ts";
+import { realUiBlocked } from "./onboard/selfserve.ts";
 import { zeleAccounts } from "./firstrun/scan.ts";
-import { installTailscale, startTailscale, tailscaleState } from "./onboard/tailscale.ts";
+import { installTailscale, startTailscale, tailscaleState, type TailscaleState } from "./onboard/tailscale.ts";
 import { openerCommand, windowsToolDirs } from "./hub/opener.ts";
 import { LABEL, serviceFile, servicePath, UNIT } from "./onboard/service.ts";
 import { firstRunPending, issueToken, markTerminalDone, saveDraft } from "./firstrun/first-run.ts";
 import { cleanName, MAX_NAME } from "./hub/machine-name.ts";
 import { installDotzCommand } from "./hub/dotz-command.ts";
+import { ask, askSecret, bail, type Choice, fit, hinted, intro, makeOut, note, outro, pick, pickMany, setCancelText, stepHeader, whileWorking, type Working, working, yesNo } from "./onboard/tui.ts";
 
 const HOME = homedir();
 const PKG = import.meta.dir;
@@ -53,51 +47,31 @@ const priorMachineName = P.machineName;
 const priorIdentity: Identity = P.identity;
 const priorRuntime = P.runtime;
 
-function ask(q: string, def = "", required = true): string {
-	for (;;) {
-		const v = (prompt(`  ${q}${def ? ` [${def}]` : ""}:`) ?? "").trim() || def;
-		if (v || !required) return v;
-		console.log("    (꼭 필요한 값이에요)");
-	}
+const answersFile = opt("--answers");
+const subcommand = args[0] === "permissions" || args[0] === "connect" || ["--first-run", "--web-link", "--refresh-service"].some(flag);
+const FANCY = Boolean(process.stdin.isTTY) && !answersFile && (!subcommand || (args[0] === "connect" && Boolean(process.stdout.isTTY)));
+const out = makeOut(!FANCY);
+const readLine = (q: string): string => (prompt(`  ${q}:`) ?? "").trim();
+const SPAWN_TIMEOUT_MS = 30 * 60_000;
+const TOTAL = 6;
+const defaultDir = DIR === join(HOME, ".dotz");
+const dirArg = defaultDir ? "" : ` --dir ${DIR}`;
+
+async function runCmd(cmd: string[]): Promise<boolean> {
+	return (await Bun.spawn(cmd, { stdin: "inherit", stdout: "inherit", stderr: "inherit", timeout: SPAWN_TIMEOUT_MS, killSignal: "SIGKILL" }).exited) === 0;
 }
 
-function askValid(q: string, def: string, ok: (v: string) => boolean, hint: string, required = true): string {
-	for (;;) {
-		const v = ask(q, def, required);
-		if ((!v && !required) || ok(v)) return v;
-		console.log(`    ${hint}`);
+async function installQuiet(label: string, cmd: string[]): Promise<boolean> {
+	if (!FANCY) return runCmd(cmd);
+	const w = working(`${label} 설치하는 중...`);
+	const proc = Bun.spawn(cmd, { stdin: "ignore", stdout: "pipe", stderr: "pipe", timeout: SPAWN_TIMEOUT_MS, killSignal: "SIGKILL" });
+	const [stdout, stderr, code] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text(), proc.exited]);
+	if (code === 0) w.done(`${label} 설치했어요`);
+	else {
+		w.fail(`${label} 설치에 실패했어요 (${cmd.join(" ")})`);
+		out.dim((stderr || stdout).trim().split("\n").slice(-4).join("\n"));
 	}
-}
-
-function choose(q: string, options: string[], current: string): string {
-	console.log(`  ${q}`);
-	options.forEach((o, i) => console.log(`    ${i + 1}) ${o}`));
-	console.log(`    ${options.length + 1}) 직접 입력`);
-	const strip = (o: string) => o.replace(/\s*\(예:.*\)$/, "");
-	const keep = current && !options.map(strip).includes(current) ? current : "";
-	const def = keep || current || strip(options[0]);
-	console.log(`    Enter) ${keep ? `지금 값 유지: ${keep}` : current ? "지금 값 유지" : "1번 (기본)"}`);
-	for (;;) {
-		const v = (prompt("  번호 (Enter = 기본/유지):") ?? "").trim();
-		if (!v) return def;
-		const n = Number(v);
-		if (n >= 1 && n <= options.length) return strip(options[n - 1]);
-		if (n === options.length + 1) return ask("한 줄로 적어 주세요");
-		console.log(`    1~${options.length + 1} 중에서 골라 주세요`);
-	}
-}
-
-function secret(q: string): string {
-	const tty = process.stdin.isTTY;
-	if (tty) Bun.spawnSync(["stty", "-echo"], { stdin: "inherit" });
-	try {
-		return (prompt(`  ${q}:`) ?? "").trim();
-	} finally {
-		if (tty) {
-			Bun.spawnSync(["stty", "echo"], { stdin: "inherit" });
-			console.log("");
-		}
-	}
+	return code === 0;
 }
 
 async function tailnetUrl(port: number): Promise<string> {
@@ -105,179 +79,261 @@ async function tailnetUrl(port: number): Promise<string> {
 	return host ? `https://${host}${port === 443 ? "" : `:${port}`}/` : "";
 }
 
-// Step 2 with Aside: install Tailscale when missing and get it signed in, so step 5 finds the login and the web app opens.
-async function prepareTailscale(interactiveRun: boolean): Promise<void> {
-	let s = await tailscaleState();
+async function prepareTailscale(): Promise<TailscaleState> {
+	let s = await whileWorking("Tailscale 상태를 확인하는 중...", tailscaleState);
 	if (!s.bin) {
-		console.log("  Tailscale 이 없어요. 휴대폰이나 다른 컴퓨터에서 웹 앱을 열 때 Tailscale 을 써요.");
-		if (interactiveRun && !/^n/i.test(ask(`  지금 설치할까요? (${MAC ? "Homebrew: brew install --cask tailscale-app" : "tailscale.com/install.sh"}) Y/n`, "y"))) {
-			if (!(await installTailscale())) ask("  브라우저에서 tailscale.com/download 를 열었어요. 설치를 마치면 Enter", "", false);
+		out.warn("Tailscale 이 없어요. 휴대폰이나 다른 컴퓨터에서 웹 앱을 열 때 Tailscale 을 써요.");
+		if (await yesNo("지금 설치할까요?")) {
+			out.dim(MAC ? "Homebrew: brew install --cask tailscale-app (설치 로그가 아래에 나와요)" : "tailscale.com/install.sh (설치 로그가 아래에 나와요)");
+			if (!(await installTailscale())) await yesNo("브라우저에서 tailscale.com/download 를 열었어요. 설치를 마쳤나요?", true, ["마쳤어요", "나중에 할게요"]);
 			s = await tailscaleState();
 		}
 	}
-	while (interactiveRun && s.bin && !s.running) {
-		console.log("  Tailscale 에 로그인이 안 돼 있어요. Tailscale 을 열 테니 로그인해 주세요 (휴대폰에서도 같은 계정으로 로그인하면 웹 앱을 열 수 있어요).");
+	while (s.bin && !s.running) {
+		out.warn("Tailscale 에 로그인이 안 돼 있어요. Tailscale 을 열 테니 로그인해 주세요. 휴대폰에서도 같은 계정으로 로그인하면 웹 앱을 열 수 있어요.");
 		await startTailscale(s.bin);
-		if (ask("  로그인을 마치면 Enter, 나중에 하려면 s", "", false).toLowerCase() === "s") break;
-		s = await tailscaleState();
+		if (!(await yesNo("로그인을 마쳤나요?", true, ["마쳤어요", "나중에 할게요"]))) break;
+		s = await whileWorking("Tailscale 상태를 확인하는 중...", tailscaleState);
 	}
-	if (s.running) console.log(`  Tailscale 준비 완료: ${s.login} (${s.host})`);
-	else if (s.bin) console.log(`  Tailscale 이 아직 로그인 전이에요${s.error ? ` (${s.error})` : ""}. 로그인 후 setup 을 다시 실행하면 웹 앱이 켜져요.`);
-	else console.log("  Tailscale 없이 진행해요. 웹 앱은 이 컴퓨터(127.0.0.1)에서만 열려요.");
+	if (s.running) out.ok(`Tailscale 준비 완료: ${s.login} (${s.host})`);
+	else if (s.bin) out.warn(`Tailscale 이 아직 로그인 전이에요${s.error ? ` (${s.error})` : ""}. 로그인 후 setup 을 다시 실행하면 웹 앱이 켜져요.`);
+	else out.warn("Tailscale 없이 진행해요. 설치한 뒤 setup 을 다시 실행하면 다른 기기에서도 열려요.");
+	return s;
 }
 
-// Step 1 of the wizard: the Aside app, its CLI and the CLI sign-in. Interactive runs ask before installing; --answers
-// runs install only with install_aside: true and otherwise print what is missing (sign-in always needs the owner).
-async function prepareAside(interactiveRun: boolean, autoInstall = false): Promise<void> {
-	let s = await asideState();
-	const yes = (q: string) => interactiveRun ? !/^n/i.test(ask(`${q} Y/n`, "y")) : autoInstall;
+async function prepareAside(autoInstall = false) {
+	let s = await (FANCY ? whileWorking("Aside 상태를 확인하는 중...", asideState) : asideState());
+	const yes = (q: string) => (FANCY ? yesNo(q) : Promise.resolve(autoInstall));
 	if (!s.app) {
-		console.log("  Aside 앱이 없어요. 봇 자동 생성, 로그인 유지, 웹 작업을 모두 Aside로 해요.");
-		if (yes("  지금 설치할까요? (Homebrew: brew install --cask aside)")) {
-			if (!(await installApp()) && interactiveRun) ask("  브라우저에서 aside.com/download 을 열었어요. 설치를 마치면 Enter", "", false);
+		out.warn("Aside 앱이 없어요. 봇 자동 연결, 로그인 유지, 웹 작업을 모두 Aside로 해요.");
+		if (await yes("지금 설치할까요?")) {
+			if (FANCY) out.dim("Homebrew: brew install --cask aside (설치 로그가 아래에 나와요)");
+			if (!(await installApp()) && FANCY) await yesNo("브라우저에서 aside.com/download 를 열었어요. 설치를 마쳤나요?", true, ["마쳤어요", "나중에 할게요"]);
 		}
 	}
 	if ((await asideState()).app) {
 		await openApp();
-		if (interactiveRun && !s.app) ask("  Aside 앱이 열렸어요. 계정으로 로그인하고 쓰는 사이트에 로그인해 두면 Enter", "", false);
+		if (FANCY && !s.app) await yesNo("Aside 앱이 열렸어요. 계정으로 로그인하고, 쓰는 사이트에 로그인해 두었나요?", true, ["마쳤어요", "나중에 할게요"]);
 	}
 	s = await asideState();
-	if (!s.cli && yes("  Aside CLI(aside 명령)가 없어요. 지금 설치할까요? (curl -fsSL https://releases.aside.com/install.sh | bash)")) await installCli();
+	if (!s.cli && (await yes("Aside CLI(aside 명령)가 없어요. 지금 설치할까요?"))) {
+		if (FANCY) out.dim("curl -fsSL https://releases.aside.com/install.sh | bash");
+		await installCli();
+	}
 	s = await asideState();
 	if (s.cli && !s.signedIn) {
-		if (interactiveRun && yes("  Aside CLI 로그인이 필요해요. 지금 할까요?")) {
-			console.log("  Aside CLI 로그인: 아래에 나오는 코드를 Aside 앱 설정 > 계정 > 기기에서 승인해 주세요.");
+		if (FANCY && (await yes("Aside CLI 로그인이 필요해요. 지금 할까요?"))) {
+			out.info("아래에 나오는 코드를 Aside 앱 설정 > 계정 > 기기에서 승인해 주세요.");
 			await loginCli(s.cli);
-		} else if (interactiveRun) console.log(`  나중에 ${s.cli} login 으로 로그인하면 돼요.`); else console.log(`  Aside CLI 로그인이 필요해요: ${s.cli} login (Aside 앱 설정 > 계정 > 기기에서 승인)`);
+		} else if (FANCY) out.dim(`나중에 ${s.cli} login 으로 로그인하면 돼요.`);
+		else console.log(`Aside CLI 로그인이 필요해요: ${s.cli} login (Aside 앱 설정 > 계정 > 기기에서 승인)`);
 		s = await asideState();
 	}
 	const missing = [!s.app && "Aside 앱 (brew install --cask aside 또는 aside.com/download)", !s.cli && "Aside CLI (curl -fsSL https://releases.aside.com/install.sh | bash)", s.cli && !s.signedIn && "CLI 로그인 (aside login)"].filter(Boolean);
-	if (missing.length) console.log(`  아직 없는 것: ${missing.join(", ")}. 봇 자동 생성과 로그인 유지는 준비되면 동작해요. 설치 후 setup 을 다시 실행하면 이어서 해요.`);
-	else console.log(`  Aside 준비 완료: 앱, CLI (${s.cli}), 로그인 ${s.account}`);
+	if (missing.length) out.warn(`아직 없는 것: ${missing.join(", ")}. 메신저 자동 연결과 로그인 유지는 준비되면 동작해요. 설치 후 setup 을 다시 실행하면 이어서 해요.`);
+	else out.ok(`Aside 준비 완료: 앱, CLI (${s.cli}), 로그인 ${s.account}`);
+	return s;
 }
 
 // Mail and calendar run through zele (long-lived Gmail/IMAP/Calendar tokens). Install with bun; connecting an account is
 // zele's own login flow, which the owner approves in the browser (Google/Outlook) or with an app password (IMAP).
-async function prepareZele(interactiveRun: boolean, autoInstall = false): Promise<void> {
-	const run = async (cmd: string[]) => (await Bun.spawn(cmd, { stdin: "inherit", stdout: "inherit", stderr: "inherit" }).exited) === 0;
-	const yes = (q: string, def = "y") => (interactiveRun ? !/^n/i.test(ask(`${q} ${def === "y" ? "Y/n" : "y/N"}`, def)) : autoInstall);
-	if (!Bun.which("zele") && yes("  메일·일정 도구 zele 가 없어요. 지금 설치할까요? (bun add -g zele)")) await run(["bun", "add", "-g", "zele"]);
-	if (!Bun.which("zele")) return void console.log("  zele 없이 진행해요. 메일·일정 감시는 꺼져 있어요 (나중에 bun add -g zele).");
+async function prepareZele(autoInstall = false): Promise<void> {
+	const yes = (q: string, def = true) => (FANCY ? yesNo(q, def) : Promise.resolve(autoInstall));
+	if (!Bun.which("zele") && (await yes("메일·일정 도구 zele 가 없어요. 지금 설치할까요?"))) await installQuiet("zele", ["bun", "add", "-g", "zele"]);
+	if (!Bun.which("zele")) return void out.info("zele 없이 진행해요. 메일·일정 감시는 꺼져 있어요 (나중에 bun add -g zele).");
 	let accounts = await zeleAccounts();
-	console.log(`  zele 계정: ${accounts.join(", ") || "없음"}`);
-	while (interactiveRun && yes(accounts.length ? "  메일·캘린더 계정을 하나 더 연결할까요? (Google·Outlook·네이버 등 IMAP)" : "  메일·캘린더 계정을 연결할까요? (Google·Outlook·네이버 등 IMAP)", accounts.length ? "n" : "y")) {
-		console.log("  zele login 을 시작해요. Google·Outlook 은 브라우저에서 승인, 네이버 같은 IMAP 은 메일 설정의 앱 비밀번호를 써요.");
-		await run(["zele", "login"]);
+	out.info(`zele 계정: ${accounts.join(", ") || "없음"}`);
+	while (FANCY && (await yes(accounts.length ? "메일·캘린더 계정을 하나 더 연결할까요?" : "메일·캘린더 계정을 연결할까요?", !accounts.length))) {
+		out.dim("zele login 을 시작해요. Google·Outlook 은 브라우저에서 승인, 네이버 같은 IMAP 은 메일 설정의 앱 비밀번호를 써요.");
+		await runCmd(["zele", "login"]);
 		accounts = await zeleAccounts();
-		console.log(`  zele 계정: ${accounts.join(", ") || "없음"}`);
+		out.info(`zele 계정: ${accounts.join(", ") || "없음"}`);
 	}
-	if (!interactiveRun && !accounts.length) console.log("  zele 계정이 없어요: zele login 으로 연결하면 게이트웨이가 다음 재시작부터 메일·일정을 봐요.");
+	if (!FANCY && !accounts.length) console.log("zele 계정이 없어요: zele login 으로 연결하면 게이트웨이가 다음 재시작부터 메일·일정을 봐요.");
 }
 
+function reportHarness(d: Detected, login: LoginState): void {
+	const pool = d.accountPoolHint && login.checked && login.ready ? ` ${d.accountPoolHint}` : "";
+	const text = `하네스: ${d.label} ${d.found.version ?? ""} (${d.found.path})${login.checked ? (login.ready ? `, 로그인된 계정 ${login.accounts}개.` : `, 로그인 필요: ${d.loginHint}`) : `. 로그인이 안 돼 있으면: ${d.loginHint}`}`;
+	if (login.checked && !login.ready) out.warn(text);
+	else out.ok(`${text}${pool}`);
+}
 
-async function prepareHarness(interactiveRun: boolean, pick?: string, autoInstall = false): Promise<string> {
-	let found = await detectHarnesses();
-	const def = defaultHarness(pick ?? priorRuntime);
-	let id = def;
-	if (interactiveRun) {
-		console.log("  봇의 오케스트레이터와 세션(프로젝트 작업)이 돌아갈 코딩 에이전트예요. 기본은 OmO 예요.");
-		found.forEach((d, i) => console.log(`    ${i + 1}) ${harnessLine(d, d.id === def)}`));
-	}
-	const chosen = () => found.find(d => d.id === id) as Detected;
+async function chooseHarness(wanted?: string): Promise<string> {
 	for (;;) {
-		while (interactiveRun) {
-			const v = (prompt("  번호 (Enter = 기본):") ?? "").trim();
-			const d = v ? found[Number(v) - 1] : harness(def);
-			if (d?.adapter) {
-				id = d.id as typeof id;
-				break;
+		const { found, logins } = await whileWorking(
+			"설치된 하네스를 찾는 중...",
+			async () => {
+				const list = await detectHarnesses();
+				return { found: list, logins: await Promise.all(list.map(d => (d.found.installed && d.adapter ? loginOf(d.id, d.found.path) : undefined))) };
+			},
+			r => `설치된 하네스: ${r.found.filter(d => d.found.installed).map(d => d.label.split(" ")[0]).join(", ") || "없음"}`,
+		);
+		const installed = new Set(found.filter(d => d.found.installed).map(d => d.id));
+		const id = await pick({
+			message: "어떤 하네스로 돌릴까요?",
+			initial: defaultHarness(wanted ?? priorRuntime, installed),
+			options: hinted(found.map((d, i) => ({ value: d.id, label: d.label, hint: harnessHint(d, logins[i]), disabled: !d.adapter }))),
+		});
+		let d = found.find(x => x.id === id) as Detected;
+		if (!d.found.installed) {
+			if (d.install && (await yesNo(`${d.label} 가 없어요. 지금 설치할까요?`))) {
+				out.dim(d.installHint);
+				await installQuiet(d.label, d.install);
+				await installBinsOnPath(HOME);
+				d = (await detectHarnesses()).find(x => x.id === id) as Detected;
 			}
-			console.log(d ? `    ${d.label}: ${d.installHint}. 다른 번호를 골라 주세요.` : `    1~${found.length} 중에서 골라 주세요`);
-		}
-		if (!chosen().found.installed) {
-			const h = chosen();
-			const yes = h.install && (interactiveRun ? !/^n/i.test(ask(`  ${h.label} 가 없어요. 지금 설치할까요? (${h.installHint}) Y/n`, "y")) : autoInstall);
-			if (yes && h.install) {
-				await Bun.spawn(h.install, { stdin: "inherit", stdout: "inherit", stderr: "inherit" }).exited;
-				const freshBunGlobalBin = (await Bun.$`bun pm bin -g`.nothrow().quiet()).stdout.toString().trim();
-				if (freshBunGlobalBin && !(process.env.PATH ?? "").split(":").includes(freshBunGlobalBin)) process.env.PATH = `${freshBunGlobalBin}:${process.env.PATH ?? ""}`;
-				found = await detectHarnesses();
+			if (!d.found.installed) {
+				out.warn(`${d.label} 가 아직 없어요: ${d.installHint}`);
+				out.dim("다른 터미널에서 설치한 뒤 다시 고르거나, 다른 하네스를 골라요.");
+				continue;
 			}
 		}
-		if (chosen().found.installed) break;
-		const h = chosen();
-		if (!interactiveRun) {
-			console.error(`${h.label} 가 설치돼 있지 않아요: ${h.installHint}. 설치한 뒤 다시 실행하세요 (answers 에 install_harness: true 를 넣으면 setup 이 설치해요). 아무것도 쓰지 않았어요.`);
-			process.exit(1);
+		let login = await whileWorking("로그인 상태를 확인하는 중...", () => loginOf(d.id, d.found.path));
+		while (login.checked && !login.ready) {
+			out.warn(`${d.label} 에 로그인된 계정이 없어요.`);
+			note(`${d.loginHint}\n명령을 못 찾으면 전체 경로로: ${d.found.path}`, `${d.label} 로그인`);
+			if (!(await yesNo("로그인을 마쳤나요?", true, ["마쳤어요, 다시 확인", "나중에 할게요"]))) break;
+			login = await whileWorking("로그인 상태를 확인하는 중...", () => loginOf(d.id, d.found.path));
 		}
-		console.log(`  ${h.label} 가 아직 없어요: ${h.installHint}. 다른 번호를 고르거나, 다른 터미널에서 설치한 뒤 그 번호를 다시 골라 주세요.`);
+		reportHarness(d, login);
+		return id;
 	}
-	const d = chosen();
-	let login = await loginOf(d.id, d.found.path);
-	while (interactiveRun && login.checked && !login.ready) {
-		console.log(`  ${d.label} 에 로그인된 계정이 없어요. ${d.loginHint} (명령을 못 찾으면 전체 경로로: ${d.found.path})`);
-		if (ask("  다른 터미널에서 로그인한 다음 Enter, 나중에 하려면 s", "", false).toLowerCase() === "s") break;
-		login = await loginOf(d.id, d.found.path);
-	}
-	console.log(`  하네스: ${d.label} ${d.found.version ?? ""} (${d.found.path})${login.checked ? (login.ready ? `, 로그인된 계정 ${login.accounts}개` : `, 로그인 필요: ${d.loginHint}`) : `. 로그인이 안 돼 있으면: ${d.loginHint}`}`);
-	return id;
 }
 
-async function interactive(): Promise<Answers> {
-	console.log("\n봇 온보딩을 시작합니다. 대괄호 [ ] 안의 값은 Enter로 그대로 쓸 수 있어요.\n");
-	console.log("1/5 하네스");
-	const runtime = await prepareHarness(true, opt("--runtime"));
-	const models = await runtimeModels(runtime);
-	if (selectorFor(P, "orchestrator", models) !== P.selector("orchestrator")) console.log(`  이 하네스에 로그인된 계정이 쓸 수 있는 모델로 맞췄어요: ${selectorFor(P, "orchestrator", models)}`);
-	console.log("\n2/5 도구 준비: 봇이 쓰는 Aside 브라우저, 웹 앱 접속용 Tailscale, 메일·일정 도구(zele)를 확인하고, 없으면 설치해요.");
-	if (MAC) await prepareAside(true);
-	else console.log("  Aside 는 macOS 앱이라 건너뛰어요. 봇 자동 생성 대신 디스코드 봇 토큰을 붙여넣어 주세요.");
-	await prepareTailscale(true);
-	await prepareZele(true);
+async function ensureHarness(id: string, autoInstall: boolean): Promise<void> {
+	let d = (await detectHarnesses()).find(x => x.id === id) as Detected;
+	if (!d.found.installed && autoInstall && d.install) {
+		await installQuiet(d.label, d.install);
+		await installBinsOnPath(HOME);
+		d = (await detectHarnesses()).find(x => x.id === id) as Detected;
+	}
+	if (!d.found.installed) {
+		console.error(`${d.label} 가 설치돼 있지 않아요: ${d.installHint}. 설치한 뒤 다시 실행하세요 (answers 에 install_harness: true 를 넣으면 setup 이 설치해요). 아무것도 쓰지 않았어요.`);
+		process.exit(1);
+	}
+	reportHarness(d, await loginOf(d.id, d.found.path));
+}
 
-	console.log("\n3/5 봇 정체성: 이름, 성격, 말투, 호칭. 봇은 디스코드, 웹, 터미널 어디서나 이 성격과 말투로 대답해요.");
-	if (!priorIdentity.name) console.log("  먼저 봇의 이름을 지어 주세요. 디스코드 봇 이름, 카테고리, '<이름>모드 켜' 문구가 모두 이 이름을 써요.");
-	const name = askValid("봇 이름 (2~32자, 예: 루미, 모모, 비서)", priorIdentity.name, v => v.length >= 2 && v.length <= 32, "2~32자로 적어 주세요");
-	const character = choose("성격을 골라 주세요", CHARACTERS, priorIdentity.character);
-	const tone = choose("말투를 골라 주세요", TONES, priorIdentity.tone);
-	const notices = choose("작업로그·알림 문체를 골라 주세요 (나중에 대화에서 '알림 문체 STE로'처럼 바꿀 수 있어요)", NOTICES, priorIdentity.notices ?? "");
-	const address = ask("봇이 주인을 부르는 호칭 (예: 형, 대표님, 이름. 없으면 Enter: 호칭 없이 말해요)", priorIdentity.address ?? "", false);
-	const avatar = askValid("프로필 이미지 파일 경로 (png/jpg, 없으면 Enter)", priorIdentity.avatar ?? "", v => existsSync(expandHome(v)), "그 경로에 파일이 없어요", false);
+async function chooseLine(message: string, list: readonly string[], current: string): Promise<string> {
+	const plain = list.map(stripExample);
+	const keep = current && !plain.includes(current) ? current : "";
+	const options: Choice<string>[] = list.map((o, i) => {
+		const [sentence, ...rest] = plain[i].split(". ");
+		const first = fit(sentence, 36) === sentence ? sentence : sentence.split(/, |\(/)[0];
+		const example = o.match(/\(예:\s*(.*)\)$/)?.[1]?.replace(/^"|"$/g, "");
+		const hint = example ?? (rest.join(". ") || undefined);
+		return { value: plain[i], label: fit(first, 36), ...(hint ? { hint: fit(hint, 24) } : {}) };
+	});
+	if (keep) options.unshift({ value: keep, label: fit(keep, 36), hint: "지금 값 유지" });
+	options.push({ value: "\u0000custom", label: "직접 입력", hint: "한 줄로 적어요" });
+	const chosen = await pick({ message, options, initial: keep || (plain.includes(current) ? current : plain[0]) });
+	return chosen === "\u0000custom" ? ask({ message: "한 줄로 적어 주세요" }) : chosen;
+}
 
-	console.log("\n4/5 디스코드. ID는 디스코드 설정 > 고급 > 개발자 모드를 켠 뒤, 내 프로필이나 서버 이름을 우클릭 > 'ID 복사'로 얻어요.");
-	const guild = askValid("봇이 들어갈 서버 ID (디스코드 없이 웹/터미널만 쓰려면 Enter)", prior.discord?.guild ?? "", v => SNOWFLAKE.test(v), "17~20자리 숫자여야 해요", false);
-	const owner_id = guild ? askValid("내 디스코드 사용자 ID (이 계정의 말만 명령으로 들어요)", prior.discord?.owner_id ?? "", v => SNOWFLAKE.test(v), "17~20자리 숫자여야 해요") : "";
+const MESSENGERS: Choice<ConnectKey>[] = [
+	{ value: "discord", label: "디스코드", hint: "캡차 한 번 풀고 초대 승인" },
+	{ value: "slack", label: "슬랙", hint: "워크스페이스 허용 동의 한 번" },
+	{ value: "telegram", label: "텔레그램", hint: "BotFather 에서 봇 만들고 Start 누르기" },
+	{ value: "jandi", label: "잔디", hint: "잔디 로그인 한 번" },
+];
+const TITLE: Record<ConnectTarget, string> = { discord: "디스코드", slack: "슬랙", telegram: "텔레그램", jandi: "잔디", "web-access": "Cloudflare 웹 접속" };
+const ACCESS_CHOICES: Choice<AccessMode>[] = [
+	{ value: "tailscale", label: "Tailscale", hint: "같은 계정의 휴대폰·컴퓨터에서 열려요" },
+	{ value: "cloudflare", label: "Cloudflare", hint: "내 도메인 주소로 열려요" },
+	{ value: "local", label: "이 컴퓨터만", hint: "이 컴퓨터의 브라우저에서만 열려요" },
+];
+const hostProblem = (v: string) => (cleanHostname(v) ? undefined : "app.example.com 같은 주소로 적어 주세요");
+const portProblem = (v: string) => (Number.isInteger(Number(v)) && Number(v) > 0 && Number(v) < 65536 ? undefined : "1~65535 사이 숫자로 적어 주세요");
+
+async function interactive(): Promise<Partial<Answers>> {
+	intro("dotz 온보딩");
+	out.dim("여섯 단계예요. 방향키로 고르고 Enter 로 확인해요. Ctrl+C 로 언제든 나갈 수 있고, 다시 실행하면 지금 값이 기본값이에요.");
+
+	stepHeader(1, TOTAL, "하네스", "봇과 프로젝트 세션이 돌아갈 코딩 에이전트예요. 기본은 OmO 예요.");
+	const runtime = await chooseHarness(opt("--runtime"));
+	const models = runtime === "omp" ? await whileWorking("omp 모델 목록을 읽는 중...", () => runtimeModels(runtime)) : await runtimeModels(runtime);
+	if (selectorFor(P, "orchestrator", models) !== P.selector("orchestrator")) out.info(`이 하네스에 로그인된 계정이 쓸 수 있는 모델로 맞췄어요: ${selectorFor(P, "orchestrator", models)}`);
+
+	stepHeader(2, TOTAL, "도구", "Aside 는 봇의 브라우저예요. 메신저와 Cloudflare 연결도 Aside 로 해요. 메일·일정은 zele 가 읽어요.");
+	const aside = MAC ? await prepareAside() : undefined;
+	if (!MAC) out.info("Aside 는 macOS 앱이라 건너뛰어요. 메신저는 설정 > 메신저 > 직접 입력 으로 연결해요.");
+	await prepareZele();
+
+	stepHeader(3, TOTAL, "봇", "봇은 메신저, 웹, 터미널 어디서나 이 이름과 성격, 말투로 대답해요.");
+	if (!priorIdentity.name) out.dim("먼저 이름을 지어 주세요. 메신저 봇 이름과 '<이름>모드 켜' 문구가 모두 이 이름을 써요.");
+	const name = await ask({ message: "봇 이름 (2~32자, 예: 루미, 모모, 비서)", def: priorIdentity.name, check: v => (v.length >= 2 && v.length <= 32 ? undefined : "2~32자로 적어 주세요") });
+	const character = await chooseLine("성격을 골라 주세요", CHARACTERS, priorIdentity.character);
+	const tone = await chooseLine("말투를 골라 주세요", TONES, priorIdentity.tone);
+	const notices = await chooseLine("작업내역·알림 문체를 골라 주세요", NOTICES, priorIdentity.notices ?? "");
+	out.dim("알림 문체는 나중에 대화에서 '알림 문체 STE로'처럼 바꿀 수 있어요.");
+	const address = await ask({ message: "봇이 나를 부르는 호칭 (예: 형, 대표님, 이름. 비우면 호칭 없이 말해요)", def: priorIdentity.address ?? "", required: false });
+	const avatar = await ask({ message: "프로필 이미지 파일 경로 (png/jpg, 없으면 Enter)", def: priorIdentity.avatar ?? "", required: false, check: v => (existsSync(expandHome(v)) ? undefined : "그 경로에 파일이 없어요") });
+
+	stepHeader(4, TOTAL, "메신저", "봇과 대화할 곳이에요. 웹과 터미널은 항상 돼요. 고른 곳은 설정이 끝난 뒤 하나씩 연결해요.");
+	let connect: ConnectKey[] = [];
 	let bot_token = "";
-	if (guild && !existsSync(TOKEN_FILE)) {
-		console.log("  봇은 Aside 브라우저로 자동으로 만들어요 (디스코드 2단계 인증 승인만 해 주시면 돼요).");
-		bot_token = secret("이미 만든 봇 토큰이 있으면 붙여넣기 (화면에 안 보여요, 자동 생성은 Enter)");
-	} else if (guild) console.log("  저장된 봇 토큰을 그대로 써요.");
+	let guild: string = prior.discord?.guild ?? "";
+	let owner_id: string = prior.discord?.owner_id ?? "";
+	if (aside?.cli) {
+		if (await yesNo("메신저에서도 대화할까요? (아니요면 웹·터미널만)", false)) connect = await pickMany({ message: "어디서 대화할까요?", options: MESSENGERS });
+	} else {
+		out.warn("Aside CLI 가 없어서 메신저 자동 연결은 못 해요. 슬랙·텔레그램·잔디는 설정 > 메신저 > 직접 입력 으로 연결해요.");
+		if (existsSync(TOKEN_FILE)) out.info("저장된 디스코드 봇 토큰을 그대로 써요.");
+		else if (await yesNo("디스코드 봇 토큰이 있으면 지금 붙여넣을까요?", false)) {
+			bot_token = await askSecret("디스코드 봇 토큰 (화면에 안 보여요)");
+			out.dim("ID는 디스코드 설정 > 고급 > 개발자 모드를 켠 뒤 서버 이름이나 내 프로필을 우클릭 > 'ID 복사'로 얻어요.");
+			const snowflake = (v: string) => (SNOWFLAKE.test(v) ? undefined : "17~20자리 숫자여야 해요");
+			guild = await ask({ message: "봇이 들어갈 서버 ID", def: guild, check: snowflake });
+			owner_id = await ask({ message: "내 디스코드 사용자 ID (이 계정의 말만 명령으로 들어요)", def: owner_id, check: snowflake });
+		}
+	}
 
-	console.log("\n5/5 웹 앱 (테일넷 안에서만 열려요).");
-	const ts = await tailscaleState();
-	const login = (prior.web?.allow_logins ?? [])[0] ?? ts.login;
-	if (!ts.bin && !login) console.log("  Tailscale 이 없어서 웹 앱은 이 컴퓨터에서만 열려요. Tailscale 을 설치한 뒤 setup 을 다시 실행하면 다른 기기에서도 열려요.");
-	else if (login) console.log("  아래 로그인으로 들어오면 웹 앱이 열려요. 설정이 끝나면 테일넷에 바로 열어 둘게요.");
-	const machine_name = askValid(`이 컴퓨터 이름 (웹 앱의 컴퓨터 목록에 이 이름으로 보여요, ${MAX_NAME}자까지)`, priorMachineName || defaultMachineName, v => cleanName(v).length > 0, "이름을 적어 주세요");
+	stepHeader(5, TOTAL, "웹 접속", "웹 앱을 어디서 열지 정해요. 터미널에 dotz 를 치면 어느 방식이든 이 컴퓨터에서 로그인된 채로 열려요.");
+	const access = await pick({ message: "웹 앱에 어떻게 들어올까요?", options: hinted(ACCESS_CHOICES), initial: P.access === "local" && P.cloudflareHost ? "cloudflare" : P.access });
+	let allow_logins: string[] = prior.web?.allow_logins ?? [];
+	let cloudflare_hostname = "";
+	if (access === "tailscale") {
+		const ts = await prepareTailscale();
+		const login = (prior.web?.allow_logins ?? [])[0] ?? ts.login;
+		allow_logins = (await ask({ message: "웹 앱에 들어올 수 있는 Tailscale 로그인 (쉼표로 여러 개)", def: login, required: false })).split(",").map(s => s.trim()).filter(Boolean);
+		if (!allow_logins.length) out.warn("로그인을 비워 두면 테일넷에서 들어올 수 없어요. 나중에 설정 > 웹 접속에서 정해요.");
+	} else if (access === "cloudflare") {
+		out.info("Cloudflare 승인은 게이트웨이를 시작한 뒤 한 번 해요. 자동 연결은 macOS + Aside + Homebrew 가 있어야 해요.");
+		if (!(MAC && aside?.cli && Bun.which("brew"))) out.warn("이 컴퓨터는 자동 연결 조건이 안 돼요. 설정 > 웹 접속 > 직접 입력 으로 이어서 해요.");
+		cloudflare_hostname = cleanHostname(await ask({ message: "열 주소 (예: app.example.com, 아직 몰라도 Enter)", def: P.cloudflareHost, required: false, check: hostProblem }));
+	} else out.info("이 컴퓨터의 브라우저에서만 열려요. 터미널에 dotz 를 치면 로그인된 채로 열려요.");
+	const machine_name = await ask({ message: `이 컴퓨터 이름 (웹 앱의 컴퓨터 목록에 보여요, ${MAX_NAME}자까지)`, def: priorMachineName || defaultMachineName, check: v => (cleanName(v).length > 0 ? undefined : "이름을 적어 주세요") });
 	let peer_token = "";
 	if (!existsSync(PEER_TOKEN_FILE)) {
-		for (;;) {
-			peer_token = secret("다른 컴퓨터의 dotz와 모니터링을 함께 보려면 그 컴퓨터의 공유 키를 붙여넣기 (화면에 안 보여요, 이 컴퓨터가 처음이면 Enter)").trim();
-			if (!peer_token || peer_token.length >= 16) break;
-			console.log("  공유 키는 16자 이상이에요. 다른 컴퓨터의 ~/.dotz/secrets/peer-token 내용을 그대로 붙여넣으세요.");
-		}
+		out.dim("같은 Tailscale 로그인의 컴퓨터는 모니터링이 저절로 짝이 맺어져요. 다른 계정의 컴퓨터와 합칠 때만 공유 키가 필요해요.");
+		if (await yesNo("다른 컴퓨터의 공유 키를 붙여넣을까요?", false)) peer_token = await askSecret("다른 컴퓨터의 공유 키 (16자 이상, 화면에 안 보여요)", v => (v.length >= 16 ? undefined : "공유 키는 16자 이상이에요. ~/.dotz/secrets/peer-token 내용을 그대로 붙여넣으세요."));
 	}
-	const allow_logins = (ts.bin || login ? ask("웹 앱에 들어올 수 있는 Tailscale 로그인 (쉼표로 여러 개, 없으면 Enter)", login, false) : "").split(",").map(s => s.trim()).filter(Boolean);
 
+	stepHeader(6, TOTAL, "확인", "고른 것을 정리했어요. 맞으면 저장하고 서비스를 설치해요.");
 	const defaults = {
 		web_port: Number(prior.web?.port ?? 7420),
 		tailscale_https_port: Number(prior.web?.tailscale_https_port ?? 8443),
 		orchestrator_model: selectorFor(P, "orchestrator", models),
 		lane_model: selectorFor(P, "lanes", models),
 	};
-	const port = (v: string) => Number.isInteger(Number(v)) && Number(v) > 0 && Number(v) < 65536;
-	const advanced = /^y/i.test(ask("포트나 모델도 바꿀까요? y/N", "n"));
-	const a: Answers = {
+	const advanced = await yesNo("포트나 모델도 바꿀까요?", false);
+	const settings = advanced
+		? {
+				web_port: Number(await ask({ message: "로컬 포트", def: String(defaults.web_port), check: portProblem })),
+				tailscale_https_port: Number(await ask({ message: "테일넷 HTTPS 포트", def: String(defaults.tailscale_https_port), check: portProblem })),
+				orchestrator_model: await ask({ message: `${name} 모델:thinking`, def: defaults.orchestrator_model }),
+				lane_model: await ask({ message: "세션(프로젝트 작업) 모델:thinking", def: defaults.lane_model }),
+			}
+		: defaults;
+	const webLine = access === "tailscale" ? `Tailscale (${allow_logins.join(", ") || "로그인 없음"}), 포트 ${settings.web_port} -> ${settings.tailscale_https_port}` : access === "cloudflare" ? `Cloudflare (${cloudflare_hostname || "주소는 연결할 때 정해요"})` : `이 컴퓨터만, 포트 ${settings.web_port}`;
+	const messengerLine = connect.length ? connect.map(k => TITLE[k]).join(", ") : bot_token ? "디스코드 봇 토큰 저장 (나머지는 설정에서)" : "웹·터미널만";
+	note(
+		[`하네스: ${harness(runtime)?.label ?? runtime}`, `봇: ${name}`, `성격: ${fit(character, 40)}`, `말투: ${fit(tone, 40)}`, `알림 문체: ${fit(notices, 40)}`, `호칭: ${address || "없음"}${avatar ? ` · 프로필 ${fit(avatar, 30)}` : ""}`, `메신저: ${messengerLine}`, `웹 접속: ${webLine}`, `이 컴퓨터: ${cleanName(machine_name)}`].join("\n"),
+		"정리하면",
+	);
+	if (!(await yesNo("이대로 진행할까요?"))) bail();
+	return {
 		runtime,
 		identity: { name, character, tone, notices, ...(address ? { address } : {}), ...(avatar ? { avatar } : {}) },
 		owner_id,
@@ -286,31 +342,11 @@ async function interactive(): Promise<Answers> {
 		allow_logins,
 		machine_name: cleanName(machine_name),
 		...(peer_token ? { peer_token } : {}),
-		...defaults,
-		...(advanced
-			? {
-					web_port: Number(askValid("로컬 포트", String(defaults.web_port), port, "1~65535")),
-					tailscale_https_port: Number(askValid("테일넷 HTTPS 포트", String(defaults.tailscale_https_port), port, "1~65535")),
-					orchestrator_model: ask(`${name} 모델:thinking`, defaults.orchestrator_model),
-					lane_model: ask("세션(프로젝트 작업) 모델:thinking", defaults.lane_model),
-				}
-			: {}),
+		...settings,
+		access,
+		...(cloudflare_hostname ? { cloudflare_hostname } : {}),
+		connect,
 	};
-
-	console.log(`\n정리하면:
-  하네스 ${harness(runtime)?.label ?? runtime}
-  이름 ${name} / 성격 ${character}
-  말투 ${tone}
-  알림 문체 ${notices}
-  호칭 ${address || "(없음)"}${avatar ? `\n  프로필 이미지 ${avatar}` : ""}
-  디스코드 ${guild ? `서버 ${guild}, 주인 ${owner_id}, 봇 ${existsSync(TOKEN_FILE) ? "저장된 토큰" : bot_token ? "붙여넣은 토큰" : "자동 생성"}` : "사용 안 함"}
-  이 컴퓨터 이름 ${machine_name}
-  웹 ${allow_logins.length ? `${allow_logins.join(", ")}, 포트 ${a.web_port} -> ${a.tailscale_https_port}` : "이 컴퓨터에서만 (Tailscale 로그인 없음)"}`);
-	if (/^n/i.test(ask("이대로 진행할까요? Y/n", "y"))) {
-		console.log("취소했어요. 다시 실행하면 방금 값은 저장되지 않은 상태로 시작해요.");
-		process.exit(1);
-	}
-	return a;
 }
 
 const runtimeOpt = opt("--runtime");
@@ -338,7 +374,8 @@ function isThisInstallsService(file: string): boolean {
 async function loadService(): Promise<void> {
 	if (!MAC) {
 		const r = await Bun.$`systemctl --user daemon-reload && systemctl --user enable --now ${UNIT} && systemctl --user restart ${UNIT}`.nothrow().quiet();
-		console.log(r.exitCode === 0 ? "systemd: gateway started (loginctl enable-linger $USER keeps it running after logout)" : `systemd: start failed: ${r.stderr.toString().trim()}`);
+		if (r.exitCode === 0) out.ok("systemd: gateway started (loginctl enable-linger $USER keeps it running after logout)");
+		else out.warn(`systemd: start failed: ${r.stderr.toString().trim()}`);
 		return;
 	}
 	const uid = process.getuid?.() ?? 501;
@@ -349,7 +386,8 @@ async function loadService(): Promise<void> {
 		await Bun.sleep(1000);
 		r = await Bun.$`launchctl bootstrap gui/${uid} ${PLIST}`.nothrow().quiet();
 	}
-	console.log(r.exitCode === 0 ? "launchd: gateway loaded" : `launchd: bootstrap failed: ${r.stderr.toString().trim()}`);
+	if (r.exitCode === 0) out.ok("launchd: gateway loaded");
+	else out.warn(`launchd: bootstrap failed: ${r.stderr.toString().trim()}`);
 }
 
 // The service file (launchd plist or systemd unit) and, with --load, its start. Returns the bun the service runs.
@@ -365,9 +403,9 @@ async function installService(load: boolean): Promise<string> {
 	mkdirSync(dirname(plistOut), { recursive: true });
 	writeFileSync(plistOut, plist);
 	const note = load ? "" : plistOut !== PLIST ? " (existing service kept; re-run with --load to install this one)" : ours ? " (PATH refreshed; the running gateway reads it at its next load: --refresh-service)" : " (not loaded; re-run with --load)";
-	console.log(`${kind}: ${plistOut}${note}`);
+	out.tight(`${kind}: ${plistOut}${note}`);
 	if (load) {
-		for (const l of installDotzCommand({ dir: DIR, pkg: PKG, bun, home: HOME, expose: true, shell: process.env.SHELL })) console.log(l);
+		for (const l of installDotzCommand({ dir: DIR, pkg: PKG, bun, home: HOME, expose: true, shell: process.env.SHELL })) out.tight(l);
 		await loadService();
 	}
 	return bun;
@@ -387,8 +425,91 @@ if (args[0] === "permissions") {
 	const probeBun = process.execPath;
 	if (flag("--check")) printPermissions(probeBun, await checkPermissions(probeBun));
 	// Exit 3: a step macOS keeps for a person is left; its one exact step was printed (the bot asks it once).
-	else if ((await requestPermissions(probeBun, q => ask(q, "", false))).length) process.exit(3);
+	else if ((await requestPermissions(probeBun, readLine)).length) process.exit(3);
 	process.exit(0);
+}
+
+type Settled = "done" | "later" | "failed";
+const failedSeen = new Set<ConnectTarget>();
+const settledOf = (results: Partial<Record<ConnectTarget, Settled>>, t: ConnectTarget): Settled => (results[t] === "done" ? "done" : failedSeen.has(t) ? "failed" : (results[t] ?? "later"));
+
+function connectUi(doneUrl: Partial<Record<ConnectTarget, string>>): ConnectUI {
+	let spinner: Working | undefined;
+	const settle = () => {
+		spinner?.clear();
+		spinner = undefined;
+	};
+	if (!FANCY) {
+		return {
+			step: (t, title, detail) => console.log(`${TITLE[t]}: ${title} ${detail}`),
+			waiting: async (t, owner) => {
+				console.log(`${TITLE[t]}: 내가 할 일: ${owner.label} ${owner.hint}`);
+				return { action: "later" };
+			},
+			done: (t, url) => {
+				if (url) doneUrl[t] = url;
+				console.log(`${TITLE[t]}: 연결했어요${url ? ` (${url})` : ""}`);
+			},
+			failed: async (t, error) => {
+				failedSeen.add(t);
+				console.log(`${TITLE[t]}: 안 됐어요: ${error}`);
+				return "later";
+			},
+		};
+	}
+	return {
+		step: (t, title) => {
+			if (spinner) spinner.update(`${TITLE[t]}: ${title}`);
+			else spinner = working(`${TITLE[t]}: ${title}`);
+		},
+		waiting: async (t, owner, choices) => {
+			settle();
+			note(`${owner.label}\n${owner.hint}`, `${TITLE[t]}: 내가 할 일`);
+			if (choices?.length) {
+				const picked = await pick({ message: "고르면 계속해요", options: [...choices.map(c => ({ value: c.id, label: c.label })), { value: "\u0000later", label: "나중에 할게요" }] });
+				return picked !== "\u0000later" ? { action: "continue", choice: picked } : { action: "later" };
+			}
+			const next = await pick({ message: "끝났으면 계속해요", options: [{ value: "continue", label: "끝냈어요, 계속해요" }, { value: "later", label: "나중에 할게요" }] });
+			return next === "continue" ? { action: "continue" } : { action: "later" };
+		},
+		done: (t, url) => {
+			settle();
+			if (url) doneUrl[t] = url;
+			out.ok(`${TITLE[t]}: 연결했어요${url ? ` ${url}` : ""}`);
+		},
+		failed: async (t, error, owner) => {
+			failedSeen.add(t);
+			settle();
+			out.warn(`${TITLE[t]}: 안 됐어요. ${error}`);
+			if (owner) note(`${owner.label}\n${owner.hint}`, `${TITLE[t]}: 내가 할 일`);
+			return (await pick({ message: "어떻게 할까요?", options: [{ value: "retry", label: "다시 해 볼게요" }, { value: "later", label: "나중에 할게요" }] })) === "retry" ? "retry" : "later";
+		},
+	};
+}
+
+const CONNECT_TARGETS: readonly ConnectTarget[] = [...CONNECT_KEYS, "web-access"];
+const resultLine = (t: ConnectTarget, r: Settled) => `${TITLE[t]}: ${r === "done" ? "연결했어요" : r === "later" ? "나중에 해요" : "안 됐어요"}`;
+const connectCommand = (left: ConnectTarget[]) => `bun ${join(PKG, "setup.ts")} connect ${left.join(" ")}${dirArg}`;
+
+if (args[0] === "connect") {
+	const wanted = args.slice(1).filter((x, i, all) => !x.startsWith("-") && all[i - 1] !== "--dir");
+	const bad = wanted.filter(x => !CONNECT_TARGETS.includes(x as ConnectTarget));
+	if (!wanted.length || bad.length) {
+		console.error(`사용법: bun setup.ts connect <${CONNECT_TARGETS.join("|")}> ... [--dir 폴더]${bad.length ? `\n알 수 없는 이름: ${bad.join(", ")}` : ""}`);
+		process.exit(2);
+	}
+	const port = Number(prior.web?.port ?? 7420);
+	if (!(await gatewayUp({ port, seconds: 3 }))) {
+		console.error(`게이트웨이가 ${port} 포트에서 답하지 않아요. 먼저 시작해 주세요: bun ${join(PKG, "setup.ts")} --load${dirArg}`);
+		process.exit(1);
+	}
+	if (FANCY) intro("메신저·웹 접속 연결");
+	setCancelText("연결을 멈췄어요. 저장한 설정은 그대로예요. 이어서 하려면 같은 명령을 다시 실행해요.");
+	const results = await connectAll({ dir: DIR, port, targets: wanted as ConnectTarget[], ui: connectUi({}) });
+	const settled = (wanted as ConnectTarget[]).map(t => [t, settledOf(results, t)]) as [ConnectTarget, Settled][];
+	if (FANCY) outro(settled.map(([t, r]) => resultLine(t, r)).join(" · "));
+	else for (const [t, r] of settled) console.log(resultLine(t, r));
+	process.exit(settled.some(([, r]) => r === "failed") ? 1 : 0);
 }
 
 // Web onboarding (docs/web-onboarding.md). --first-run writes the seed config.json and the first-run marker and prints the one-time address; --web-link
@@ -429,57 +550,50 @@ if (flag("--first-run")) {
 	process.exit(0);
 }
 
-const answersFile = opt("--answers");
+if (!answersFile && !process.stdin.isTTY) {
+	console.error("대화형 설정은 터미널에서만 해요. 스크립트에서는 --answers answers.json 을 쓰세요.");
+	process.exit(2);
+}
 const given: Partial<Answers> = answersFile ? { ...(runtimeOpt ? { runtime: runtimeOpt } : {}), ...JSON.parse(readFileSync(answersFile, "utf8")) } : await interactive();
 const early = validate(given);
 if (answersFile) {
-	await prepareHarness(false, early.runtime, early.install_harness === true);
-	if (MAC) await prepareAside(false, early.install_aside === true);
-	await prepareZele(false, early.install_aside === true);
+	await ensureHarness(early.runtime, early.install_harness === true);
+	if (MAC) await prepareAside(early.install_aside === true);
+	await prepareZele(early.install_aside === true);
 }
 const checked = answersFile ? await validateWithModels(given, P, HOME) : undefined;
 const a = !checked ? early : checked.ok ? checked.answers : fail(checked.errors);
-const env: Env = { dir: DIR, home: HOME, pkg: PKG, say: line => console.log(line) };
+const env: Env = { dir: DIR, home: HOME, pkg: PKG, say: line => out.tight(line) };
+const cloudflareLive = a.access === "cloudflare" && P.access === "cloudflare" && (!a.cloudflare_hostname || a.cloudflare_hostname === P.cloudflareHost);
+const targets: ConnectTarget[] = [...a.connect, ...(a.access === "cloudflare" && !cloudflareLive ? (["web-access"] as const) : [])];
+setCancelText(`중단했어요. 저장한 설정은 그대로예요.${targets.length ? ` 남은 연결은 ${connectCommand(targets)} 로 이어서 해요.` : ""}`);
+if (FANCY) out.info("저장하고 서비스를 준비해요.");
 writeSecrets(env, a);
-if (a.runtime === "omp") console.log(`omp 모델: ${a.orchestrator_model} (봇), ${a.lane_model} (세션)`);
-const config = writeConfig(env, a, P);
+if (a.runtime === "omp") out.tight(`omp 모델: ${a.orchestrator_model} (봇), ${a.lane_model} (세션)`);
+writeConfig(env, a, P);
 markTerminalDone(DIR, Object.keys(prior).length === 0);
 
-// The hub loads the dotz extension into its own OmO processes (--extension); nothing is installed into OmO's agent
-// directory. omp is an opt-in runtime: its terminals get the plugin only when omp is installed here.
 const ompInstalled = await linkOmp(env);
 
 const bun = await installService(flag("--load"));
 
-// Interactive runs open the web app on the tailnet as soon as logins are set; --answers runs (tests, scripted installs)
-// only with --tailscale, so they never change a live machine's serve config by accident.
-const wantServe = flag("--tailscale") || (!answersFile && a.allow_logins.length > 0);
+const wantServe = a.access === "tailscale" && (flag("--tailscale") || !answersFile);
 const { tsNow } = await serveTailnet(env, a, wantServe);
+if (answersFile && a.access === "tailscale" && !a.allow_logins.length) out.warn("allow_logins 가 비어 있어서 테일넷에서는 아무도 들어올 수 없어요. 웹 앱은 이 컴퓨터에서만 열려요.");
 
 if (MAC && answersFile) {
 	console.log("macOS 권한 상태 (bun 이 launchd 로 도는 프로그램이라 bun 앞으로 묻고 허용돼요):");
 	printPermissions(bun, await checkPermissions(bun));
 	console.log("빠진 권한은 bun setup.ts permissions 로 켜요: 창을 열고 스위치와 허용까지 직접 눌러요 (종료 코드 3이면 사람이 할 한 단계만 남은 거예요).");
+} else if (MAC && realUiBlocked()) {
+	out.info("macOS 권한 상태 (이 환경에서는 창을 열지 않고 상태만 봐요):");
+	printPermissions(bun, await checkPermissions(bun), line => out.tight(line));
 } else if (MAC) {
-	console.log("\nmacOS 권한. 게이트웨이가 쓰는 권한을 지금 한 번에 허용해요 (나중에 bun setup.ts permissions 로 다시 할 수 있어요).");
-	await requestPermissions(bun, q => ask(q, "", false));
+	out.info("macOS 권한. 게이트웨이가 쓰는 권한을 지금 한 번에 허용해요 (나중에 bun setup.ts permissions 로 다시 할 수 있어요).");
+	await requestPermissions(bun, readLine, undefined, undefined, line => out.tight(line));
 }
 
-// Bot provisioning drives the Aside browser; without the Aside CLI the owner pastes a token instead.
-const discordAuto = !flag("--no-discord-auto") && Boolean(Bun.which("aside", { PATH: process.env.PATH }));
-const provisioned = await setupDiscord(env, { a, config, prior: P, auto: discordAuto });
-if (flag("--load") && provisioned) {
-	if (MAC) await Bun.$`launchctl kickstart -k gui/${process.getuid?.() ?? 501}/${LABEL}`.nothrow().quiet();
-	else await Bun.$`systemctl --user restart ${UNIT}`.nothrow().quiet();
-}
-
-const webUrl = a.allow_logins.length ? await tailnetUrl(a.tailscale_https_port) : "";
-if (!flag("--load")) console.log(`게이트웨이 시작: bun ${join(PKG, "setup.ts")} --load (또는 지금 창에서 ${DIR === join(HOME, ".dotz") ? "" : `DOTZ_DIR=${DIR} `}bun ${join(PKG, "hub", "main.ts")})`);
-const runtimeLabel = harness(a.runtime)?.label ?? a.runtime;
-console.log(`\n끝! ${a.identity.name}는 ${runtimeLabel}로 돌아가요.${a.guild ? ` 디스코드에서는 ${a.identity.name} 카테고리의 대화 채널에 말을 걸면 돼요.` : ""}${ompInstalled ? ` omp 터미널에서도 "${a.identity.name}모드 켜"라고 하면 그 터미널이 ${a.identity.name}와(과) 연결돼요.` : ""}`);
-// The web address goes last, once the gateway and the tailnet proxy answer: a freshly loaded service needs a few
-// seconds, and opening the browser before that showed an error page instead of the app.
-const answers = async (url: string, seconds: number) => {
+const waitFor = async (url: string, seconds: number) => {
 	for (let i = 0; i < seconds; i++) {
 		const r = await fetch(url, { signal: AbortSignal.timeout(2000) }).catch(() => undefined);
 		if (r && r.status < 500) return true;
@@ -487,16 +601,60 @@ const answers = async (url: string, seconds: number) => {
 	}
 	return false;
 };
-if (webUrl) {
-	const served = Boolean(tsNow?.running);
-	if (served && flag("--load")) console.log("\n웹 앱이 뜨길 기다리는 중...");
-	const up = served && flag("--load") && (await answers(`http://127.0.0.1:${a.web_port}/`, 40)) && (await answers(webUrl, 15));
-	const why = !served ? (wantServe ? "Tailscale 을 켜고 bun setup.ts --tailscale 을 실행하면 열려요" : "bun setup.ts --tailscale 로 테일넷에 열어요") : !flag("--load") ? "게이트웨이를 시작하면 열려요" : up ? "" : "게이트웨이가 아직 뜨는 중이에요. 1분쯤 뒤에 열어 보세요";
-	console.log(`\n웹 앱 주소: ${webUrl}${why ? `  (${why})` : ""}`);
-	console.log(`  휴대폰이나 다른 컴퓨터에서는 같은 Tailscale 계정(${a.allow_logins[0]})으로 로그인한 뒤 이 주소를 열면 돼요.`);
-	if (flag("--open") && up) await Bun.$`${openerCommand(webUrl)}`.nothrow().quiet();
-} else if (!a.allow_logins.length && (prior.web?.access ?? "local") === "local") {
-	const localUrl = `http://127.0.0.1:${a.web_port}/`;
-	console.log(`\n웹 앱 주소: ${localUrl}\n  이 컴퓨터의 브라우저에서 열고 로그인 버튼을 누르면 돼요.`);
-	if (flag("--open") && flag("--load") && (await answers(localUrl, 40))) await Bun.$`${openerCommand(localUrl)}`.nothrow().quiet();
+
+const doneUrl: Partial<Record<ConnectTarget, string>> = {};
+let results: Partial<Record<ConnectTarget, Settled>> = {};
+let gatewayRunning = false;
+if (flag("--load")) {
+	gatewayRunning = FANCY ? await whileWorking("게이트웨이가 뜨길 기다리는 중...", () => gatewayUp({ port: a.web_port, seconds: 40 })) : await gatewayUp({ port: a.web_port, seconds: 40 });
+	if (!gatewayRunning) out.warn("게이트웨이가 아직 안 떴어요. 1분쯤 뒤에 아래 명령으로 연결을 이어서 해요.");
+	else {
+		if (a.access !== "cloudflare" && a.access !== P.access) {
+			const switched = await switchAccess({ dir: DIR, port: a.web_port, mode: a.access });
+			if (!switched.ok) out.warn(`웹 접속을 ${a.access === "tailscale" ? "Tailscale" : "이 컴퓨터만"}로 바꾸지 못했어요: ${switched.error ?? "알 수 없는 오류"}. 설정 > 웹 접속에서 바꿔 주세요.`);
+		}
+		if (targets.length) results = await connectAll({ dir: DIR, port: a.web_port, targets, ...(a.cloudflare_hostname ? { hostname: a.cloudflare_hostname } : {}), ui: connectUi(doneUrl) });
+	}
 }
+if (P.access === "cloudflare" && a.access !== "cloudflare" && !gatewayRunning) out.warn(`지금 열려 있는 웹 접속은 아직 Cloudflare 예요. 게이트웨이를 켠 뒤 설정 > 웹 접속에서 ${a.access === "tailscale" ? "Tailscale" : "이 컴퓨터만"}으로 바꿔요.`);
+
+const localUrl = `http://127.0.0.1:${a.web_port}/`;
+const webUrl = a.access === "tailscale" ? await tailnetUrl(a.tailscale_https_port) : "";
+const left = targets.filter(t => results[t] !== "done");
+const runtimeLabel = harness(a.runtime)?.label ?? a.runtime;
+const discordDone = results.discord === "done";
+const closing = [`${a.identity.name} 준비가 끝났어요. ${runtimeLabel}로 돌아가요.${discordDone ? ` 디스코드에서는 ${a.identity.name} 카테고리의 대화 채널에 말을 걸면 돼요.` : ""}${ompInstalled ? ` omp 터미널에서도 "${a.identity.name}모드 켜"라고 하면 그 터미널이 ${a.identity.name}와(과) 연결돼요.` : ""}`];
+
+let openUrl = "";
+const where: string[] = [];
+if (a.access === "tailscale") {
+	const served = Boolean(tsNow?.running);
+	const up = served && flag("--load") && gatewayRunning && (await waitFor(localUrl, 40)) && webUrl !== "" && (await waitFor(webUrl, 15));
+	const why = !served ? (wantServe ? "Tailscale 을 켜고 bun setup.ts --tailscale 을 실행하면 열려요" : "bun setup.ts --tailscale 로 테일넷에 열어요") : !flag("--load") ? "게이트웨이를 시작하면 열려요" : up ? "" : "게이트웨이가 아직 뜨는 중이에요. 1분쯤 뒤에 열어 보세요";
+	where.push(`웹 앱 주소: ${webUrl || "Tailscale 주소를 아직 못 읽었어요"}${why ? `  (${why})` : ""}`);
+	if (a.allow_logins[0]) where.push(`휴대폰이나 다른 컴퓨터에서는 같은 Tailscale 계정(${a.allow_logins[0]})으로 로그인한 뒤 이 주소를 열어요.`);
+	if (up) openUrl = webUrl;
+} else if (a.access === "cloudflare") {
+	const host = a.cloudflare_hostname || P.cloudflareHost;
+	const live = results["web-access"] === "done" ? (doneUrl["web-access"] ?? `https://${host}`) : cloudflareLive && host ? `https://${host}` : "";
+	where.push(live ? `웹 앱 주소: ${live}` : `웹 앱 주소: 아직 없어요${host ? ` (${host} 연결을 마치면 열려요)` : " (Cloudflare 연결을 마치면 열려요)"}`);
+	if (live) openUrl = live;
+} else {
+	where.push(`웹 앱 주소: ${localUrl}`);
+	if (flag("--load") && gatewayRunning && (await waitFor(localUrl, 40))) openUrl = localUrl;
+}
+where.push(`이 컴퓨터에서는 터미널에 dotz 를 치면 로그인된 채로 열려요${flag("--load") ? "" : " (게이트웨이를 시작하면 생겨요)"}.`);
+where.push("문제가 있으면 dotz status 로 상태를 보고, dotz restart 로 다시 시작해요.");
+const connections = targets.map(t => resultLine(t, settledOf(results, t)));
+const nextSteps = [...(flag("--load") ? [] : [`게이트웨이 시작: bun ${join(PKG, "setup.ts")} --load${dirArg}`]), ...(left.length ? [`이어서 연결: ${connectCommand(left)}`] : [])];
+if (FANCY) {
+	note([...where, ...(connections.length ? ["", ...connections] : []), ...(nextSteps.length ? ["", ...nextSteps] : [])].join("\n"), "이제 이렇게 열어요");
+	outro(closing[0]);
+} else {
+	for (const l of nextSteps) console.log(l);
+	console.log(`\n끝! ${closing[0]}`);
+	for (const l of connections) console.log(l);
+	console.log("");
+	for (const l of where) console.log(l);
+}
+if (flag("--open") && openUrl) await Bun.$`${openerCommand(openUrl)}`.nothrow().quiet();

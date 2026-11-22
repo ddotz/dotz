@@ -17,15 +17,14 @@ import { dirname, join } from "node:path";
 import { blockedBy } from "./lanegates.ts";
 import { ensureAside, replInTab } from "./aside.ts";
 import { type Relogin, relogin } from "./autologin.ts";
-import { josa } from "./account-rules.ts";
-import { issueBlock } from "./choices.ts";
+import { failAlertGapMs, markFailAlert } from "./watch-backoff.ts";
 import { cfg, DATA_DIR, log, now, paths, readJsonOrQuarantine, TZ, writeAtomic } from "./config.ts";
 import { blockedByFeatures } from "./featuredirs.ts";
 import { msg } from "./i18n.ts";
 import { convTargetOf } from "./session-key.ts";
 import { backupFile, classifyFailure, type FailClass, healTarget, type NotifyInfo, readHealNote } from "./watch-heal.ts";
 import { SLOT_SKIPPED_EXIT } from "./release-exit.ts";
-import { deriveLabel, isKeyLabel, plainLabel, watchReasonKo } from "./watchtext.ts";
+import { deriveLabel, isKeyLabel, plainLabel } from "./watchtext.ts";
 
 export type WatchOwner = { app?: string; project?: string; internal?: true };
 export type Watch = {
@@ -57,7 +56,7 @@ export type Watch = {
 	push?: false;
 	discord?: boolean;
 	state: {
-		hash?: string; last?: string; fails: number; failAlertAt?: number; failSince?: number; recoveredAt?: number; lastRun?: string; lastOk?: string; lastChanged?: boolean; refreshedAt?: number;
+		hash?: string; last?: string; fails: number; failAlertAt?: number; failAlerts?: number; failSince?: number; recoveredAt?: number; lastRun?: string; lastOk?: string; lastChanged?: boolean; refreshedAt?: number;
 		kind?: string; kindFails?: number; nextAt?: number; paused?: string; approvalAskedAt?: number;
 		reloginAt?: number; lifeMs?: number; // the last sign-in the gateway did itself, and the shortest session it has seen live
 		rejected?: number; // sign-ins the site rejected since the login last held: after 2 the gateway never types it again (accounts lock)
@@ -72,7 +71,6 @@ const RUN_TIMEOUT_MS = 120_000;
 export const watchShell = (has: (path: string) => boolean = existsSync): string => ["/bin/zsh", "/bin/bash"].find(has) ?? "/bin/sh";
 const WATCH_SHELL = watchShell();
 const READ_GRACE_MS = 2_000;
-export const FAIL_ALERT_EVERY_MS = 12 * 3600_000;
 // A watch failing this long in a row, in at least this many runs, stops until the owner approves it (a day: a 1-minute watch reaches any count fast).
 const FAIL_PAUSE_AFTER_MS = 24 * 3600_000;
 const FAIL_PAUSE_RUNS = 10;
@@ -85,9 +83,6 @@ const toldDown = (s: Watch["state"]) => s.failAlertAt !== undefined && !(s.recov
 // A notify reason that is an issue the owner decides on: repeated failures, a stopped watch, one waiting for approval. Output changes,
 // matches and "recovered" are not.
 export const isWatchIssue = (reason: string): boolean => /^(?:failed \d+ times|stopped after|needs the owner)/.test(reason);
-// The question says what happened when the reason is given (가격 확인: 2번 연속 실패했어요), so the 알림 row reads without opening it.
-export const watchChoice = (name: string, reason = ""): string =>
-	issueBlock(reason ? `${name}: ${watchReasonKo(reason).split(". ")[0]}. 어떻게 할까요?` : `모니터링 ${name}${/[가-힣]$/.test(name) ? josa(name, "을", "를") : "을(를)"} 어떻게 할까요?`, [{ name: "원인 확인", result: "출력을 보고 원인과 고칠 방법을 알려드려요." }, { name: "모니터링 끄기", result: "고칠 때까지 이 모니터링을 멈춰 둬요." }]);
 const loadItems = (): Watch[] => readJsonOrQuarantine<Watch[]>(paths.watches, () => []);
 const items: Watch[] = loadItems();
 // A kept login signs itself in again (sessionRun), so it has the gate for the one human step: a second factor waits for the owner's yes
@@ -102,7 +97,7 @@ const loginGate = (w: Watch): boolean => {
 if (items.map(loginGate).some(Boolean)) writeAtomic(paths.watches, `${JSON.stringify(items, null, 2)}\n`);
 const SCRIPT_MAX_BYTES = 64 * 1024;
 const LAST_MAX = 2000; // the last output is kept so the next change can be told as what was added or gone
-const stateDir = (w: Watch) => join(DATA_DIR, "watches", w.id);
+const stateDir = (w: Pick<Watch, "id">) => join(DATA_DIR, "watches", w.id);
 const timers = new Map<string, ReturnType<typeof setTimeout>>();
 const running = new Map<string, Promise<void>>();
 // The process group of a running check (approveWatch kills it to start over) and the runs cancelled that way (their result is not counted).
@@ -131,7 +126,7 @@ const healWatchers = new Map<string, FSWatcher>();
 const healNotes = new Map<string, string>();
 const healChecking = new Set<string>();
 const notePath = (w: Watch) => join(stateDir(w), "heal-note.txt");
-const failLog = (w: Watch) => join(stateDir(w), "last-fail.log");
+const failLog = (w: Pick<Watch, "id">) => join(stateDir(w), "last-fail.log");
 const today = () => new Date(Date.now()).toLocaleDateString("en-CA", { timeZone: TZ });
 const healTriesToday = (w: Watch) => (w.state.healDay === today() ? (w.state.healN ?? 0) : 0);
 // Read at use, so a changed setting applies to the next failure.
@@ -441,7 +436,7 @@ async function runOnce(w: Watch): Promise<void> {
 				w.state.healing = undefined;
 				if (cls === "script" && startHeal(w, output, code, cls, note)) return;
 				log(`watch ${w.name} self-heal: the check still fails, telling the owner`);
-				w.state.failAlertAt = Date.now();
+				markFailAlert(w.state);
 				notify(w, `failed ${w.state.fails} times in a row (exit ${code})`, output, undefined, { ...info, ...(note ? { note } : {}) });
 				return;
 			}
@@ -467,10 +462,10 @@ async function runOnce(w: Watch): Promise<void> {
 			if (wait) w.state.nextAt = Date.now() + wait[Math.min(wait.length, w.state.kindFails) - 1] * 60_000;
 			const since = w.state.failSince ?? Date.now();
 			const flapping = w.state.recoveredAt !== undefined && since - w.state.recoveredAt < flapWindow(w);
-			const due = toldDown(w.state) ? Date.now() - w.state.failAlertAt! > FAIL_ALERT_EVERY_MS : !flapping || Date.now() - since >= flapWindow(w);
+			const due = toldDown(w.state) ? Date.now() - w.state.failAlertAt! > failAlertGapMs(w.state.failAlerts) : !flapping || Date.now() - since >= flapWindow(w);
 			if ((skipped || w.state.fails >= FAIL_ALERT_AFTER) && due) {
 				if (cls === "script" && !skipped && startHeal(w, output, code, cls, "")) return;
-				w.state.failAlertAt = Date.now();
+				markFailAlert(w.state);
 				if (skipped) w.state.recoveredAt = w.state.failAlertAt;
 				notify(w, `failed ${w.state.fails} times in a row (exit ${code})`, output, undefined, info);
 			}
@@ -482,7 +477,7 @@ async function runOnce(w: Watch): Promise<void> {
 		if (w.state.fails && w.state.failAlertAt !== undefined) w.state.recoveredAt = Date.now();
 		w.state.fails = 0;
 		w.state.failSince = undefined;
-		w.state.kind = w.state.kindFails = w.state.approvalAskedAt = undefined;
+		w.state.kind = w.state.kindFails = w.state.approvalAskedAt = w.state.failAlerts = undefined;
 		w.state.lastOk = now();
 		if (healedBy !== undefined) {
 			w.state.healing = undefined;
@@ -795,6 +790,6 @@ export function setWatchChannels(id: string, channels: string[]): void {
 }
 
 // `paused` is the failure kind that stopped the watch until approval, or true when the owner paused it.
-const watchView = ({ state, paused, ...w }: Watch) => ({ ...w, fails: state.fails, lastRun: state.lastRun, lastOk: state.lastOk, ...(state.kind ? { kind: state.kind } : {}), ...(state.nextAt ? { nextAt: new Date(state.nextAt).toISOString() } : {}), ...(state.paused || paused ? { paused: state.paused ?? true } : {}), ...(state.approvalAskedAt ? { awaitingApproval: true } : {}) });
+const watchView = ({ state, paused, ...w }: Watch) => ({ ...w, fails: state.fails, lastRun: state.lastRun, lastOk: state.lastOk, ...(state.kind ? { kind: state.kind } : {}), ...(state.nextAt ? { nextAt: new Date(state.nextAt).toISOString() } : {}), ...(state.paused || paused ? { paused: state.paused ?? true } : {}), ...(state.approvalAskedAt ? { awaitingApproval: true } : {}), ...(state.fails && existsSync(failLog(w)) ? { lastFailLog: failLog(w) } : {}) });
 
 export const listWatches = () => items.map(watchView);

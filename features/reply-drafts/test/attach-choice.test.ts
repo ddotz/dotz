@@ -3,7 +3,8 @@ import { copyFileSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { writeSettings } from "../../../hub/app-settings.ts";
-import { asksForFile, claimsAttachment } from "../../../hub/draft-approval.ts";
+import { claimsAttachment } from "../../../hub/attach-claim.ts";
+import { asksForFile } from "../../../hub/draft-approval.ts";
 import { composeMail } from "../../../hub/mail-cli.ts";
 import { buildPrompt, generateReply, type ReplyItem, type ReplyStyle } from "../../../hub/reply-draft.ts";
 import { advance } from "../../../hub/runtime/test-clock.ts";
@@ -52,6 +53,26 @@ describe("(a) the model chooses among the candidates", () => {
 		expect(await chose(["봄노래_문서.pdf", "없는 파일.pdf", "봄노래_문서.pdf"])).toEqual(["봄노래_문서.pdf"]);
 		expect(await chose([])).toEqual([]);
 		expect(await chose()).toBeUndefined();
+	});
+	test("a name the model answers in NFC, or with ' for the \" the prompt rewrote, still names its candidate", async () => {
+		const nfd = "봄노래_문서.pdf".normalize("NFD"), quoted = '봄노래 "단독" 문서.pdf';
+		const item: ReplyItem = { kind: "mail", from: "Kim <kim@example.com>", subject: "봄노래", text: "봄노래 문서 부탁드립니다", candidates: [nfd, quoted] };
+		const style: ReplyStyle = { samples: [], rules: [], corrections: [], forbidden: [] };
+		const chose = async (files: string[]) => (await generateReply(item, style, fakeModel([j(answer({ body: "확인했어요.", files }))]).call)).files;
+		expect(await chose(["봄노래_문서.pdf".normalize("NFC")])).toEqual([nfd]);
+		expect(await chose(["봄노래 '단독' 문서.pdf"])).toEqual([quoted]);
+		expect(await chose([quoted])).toEqual([quoted]);
+	});
+	test("a library file with a decomposed Korean name or a quote in it is staged when the model chooses it", async () => {
+		const odd = mkdtempSync(join(tmpdir(), "rd-choice-odd-"));
+		writeFileSync(join(odd, "봄노래_문서.pdf".normalize("NFD")), "nfd");
+		writeFileSync(join(odd, '봄노래 "단독" 문서.pdf'), "quoted");
+		enable(env, { attachFolders: { mail: odd } });
+		const model = fakeModel([j(answer({ files: ["봄노래_문서.pdf".normalize("NFC"), "봄노래 '단독' 문서.pdf"] }))]);
+		expect(await offerMailDraft(springMail, { send: sink().send, call: model.call })).toBe("offered");
+		expect(model.calls).toHaveLength(1);
+		expect(names(listDrafts()[0]!.id).sort()).toEqual(['봄노래 "단독" 문서.pdf', "봄노래_문서.pdf".normalize("NFC")].sort());
+		rmSync(odd, { recursive: true, force: true });
 	});
 	test("a body that promises a file when none is chosen is rewritten once", async () => {
 		const item: ReplyItem = { kind: "mail", from: "Kim <kim@example.com>", subject: "봄노래", text: "봄노래 문서 부탁드립니다", candidates: ["봄노래_문서.pdf"] };
