@@ -99,7 +99,9 @@ async function modelProblem(input: string, deps: CreateDeps): Promise<string | u
 	}
 }
 
-const nameKey = (s: string): string => s.replace(/[\s-]+/g, "").toLowerCase();
+const INVISIBLE = /[\u200B-\u200D\u2060\uFEFF\u3164\u115F\u1160]/g;
+const nameKey = (s: string): string => s.normalize("NFKC").replace(INVISIBLE, "").replace(/[\s-]+/g, "").toLowerCase();
+const creating = new Set<string>();
 
 /**
  * A new project, the way `dotz_channel create` makes one: a work channel (a web-only local one with Discord off), its setup (so the purpose reaches the
@@ -110,9 +112,20 @@ export async function createProject(input: Record<string, unknown>, deps: Create
 	const title = field(input.title, "이름", MAX_TITLE);
 	if (!title) throw new ProjectCreateError(400, "프로젝트 이름을 적어 주세요");
 	if (byAgent && titleProblem(title)) throw new ProjectCreateError(400, "이름이 코드명 같아요. 하려는 일을 쉬운 말 2~4개로 적어 주세요 (예: 디스코드 설정)");
-	const records = loadProjects();
-	const taken = Object.entries(discord.channels.work).some(([id, name]) => [name, records[`ch:${id}`]?.title ?? ""].some(n => nameKey(n) === nameKey(title)));
+	const records = loadProjects(), wanted = nameKey(title);
+	if (!wanted) throw new ProjectCreateError(400, "프로젝트 이름을 적어 주세요");
+	const names = (id: string, name: string): string[] => (discord.isLocalChannel(id) ? [records[`ch:${id}`]?.title || name] : [name, records[`ch:${id}`]?.title ?? ""]);
+	const taken = creating.has(wanted) || Object.entries(discord.channels.work).some(([id, name]) => names(id, name).some(n => nameKey(n) === wanted));
 	if (taken) throw new ProjectCreateError(409, "같은 이름의 프로젝트가 이미 있어요. 다른 이름을 적어 주세요");
+	creating.add(wanted);
+	try {
+		return await createChecked(input, title, deps);
+	} finally {
+		creating.delete(wanted);
+	}
+}
+
+async function createChecked(input: Record<string, unknown>, title: string, deps: CreateDeps): Promise<{ key: string; title: string }> {
 	const purpose = field(input.purpose, "목적", MAX_PURPOSE);
 	const model = field(input.model, "모델", 200);
 	if (discord.status.enabled && !discord.channels.workCategory) throw new ProjectCreateError(409, "디스코드 작업 카테고리가 아직 없어요. 설정에서 디스코드 연결을 마치거나, 디스코드를 끄고 다시 만들어 주세요");

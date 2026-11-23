@@ -169,7 +169,13 @@ window.addEventListener("popstate", ev => {
   } finally { H.hold--; }
   const W = S.w || S.c, hash = W[W.length - 1];
   H.fromHist = W;
-  if (hash !== H.hash) { const p = hash === "projects" ? { view: "projects", t: "" } : parseHash(`#${hash}`); go(p.view, p.t); }
+  if (hash !== H.hash) {
+    const p = hash === "projects" ? { view: "projects", t: "" } : parseHash(`#${hash}`), alias = routeAlias(p.view, p.t)[0] !== hash.split("/")[0];
+    if (alias) H.hold++;
+    try { go(p.view, p.t); } finally {
+      if (alias) { H.hold--; if (H.hash !== hash) history.replaceState(hstate([...S.c.slice(0, -1), H.hash], 0, H.want), "", hurl(H.want)); }
+    }
+  }
   else H.want = W;
   H.fromHist = null;
   histSync();

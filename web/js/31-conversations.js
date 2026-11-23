@@ -356,7 +356,7 @@ function convRows() {
   const mk = t => { const last = CONV.get(t) || null; return { t, last, name: targetName(t), hint: last ? convPreview(last.text) : "", unread: ts(t).unread, need: convNeeds(t) }; };
   const all = (S && S.lanes) || [], own = new Set(projects), laneT = l => `lane:${l.name}`;
   const sess = l => { const t = laneT(l); const m = mk(t); const badge = sessionState(l); return { ...m, badge: badge === SESSION_WORD.run ? null : badge, hint: convPreview(l.lastText) || m.hint || homeRunLine(t) }; };
-  const rank = l => { const s = sessionState(l); return s === SESSION_WORD.wait ? 0 : s === SESSION_WORD.run ? 1 : s === SESSION_WORD.done ? 3 : 2; };
+  const rank = l => { const s = sessionState(l); return s === SESSION_WORD.wait || convNeeds(laneT(l)) ? 0 : s === SESSION_WORD.run ? 1 : s === SESSION_WORD.done ? 3 : 2; };
   const byStart = (a, b) => String(a.startedAt || "").localeCompare(String(b.startedAt || ""));
   const live = all.filter(laneAlive).sort(byStart), home = new Map(live.map(l => [l, laneChat(l)]));
   const kids = t => live.filter(l => home.get(l) === t).sort((a, b) => rank(a) - rank(b));

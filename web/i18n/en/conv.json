@@ -69,6 +69,7 @@
     "other": "{n} sessions"
   },
   "conv.np.made": "Created the project '{name}'",
+  "conv.np.failed": "Couldn't create the project '{name}': {why}",
   "conv.np.title": "New project",
   "conv.np.name": "Name",
   "conv.np.name_ph": "e.g. Price research",

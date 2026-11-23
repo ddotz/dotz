@@ -16,7 +16,10 @@ function npOpen() {
     if (!title) { err.textContent = TX("conv.np.need_name"); name.focus(); return; }
     const aim = purpose.value.trim();
     return usRun(btn, err, async () => {
-      const r = await api("/api/projects", "POST", { title, ...(aim ? { purpose: aim } : {}), ...(model ? { model } : {}) });
+      const r = await api("/api/projects", "POST", { title, ...(aim ? { purpose: aim } : {}), ...(model ? { model } : {}) }).catch(e => {
+        if (shut) toast(TX("conv.np.failed", { name: title, why: noticeKo(String(e.message ?? e), { ...NK, error: true }) }), true);
+        throw e;
+      });
       await Promise.all([refreshState(), prjLoad(true)]);
       if (shut) { toast(TX("conv.np.made", { name: title }), false, { label: TX("project.open_chat"), onclick: () => go("chat", r.key) }); return; }
       made = r.key;

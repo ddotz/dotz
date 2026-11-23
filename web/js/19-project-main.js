@@ -272,7 +272,9 @@ async function pmDeleteAsk(q) {
       h.close(false);
       toast(r && r.discord && !r.discord.ok ? TX("project.del.partial", { error: r.discord.error }) : TX("project.del.done", { name: (r && r.name) || p.name }), !!(r && r.discord && !r.discord.ok));
       PM = pmReset();
-      if (fromChat) { pvClose(); pickTarget(MAIN); } else go("projects");
+      if (!fromChat) go("projects");
+      else if (narrowChat()) { pvClose(); setTarget(MAIN, true); go("chat", "list"); }
+      else { pvClose(); pickTarget(MAIN); }
       refreshState(); prjLoad(true);
     } catch (e) { err.textContent = e.message || TX("project.del.failed"); st.busy = false; go1.disabled = false; }
   } }, TX("common.delete"));

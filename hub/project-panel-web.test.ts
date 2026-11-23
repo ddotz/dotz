@@ -297,3 +297,77 @@ test("REQ6: 삭제 from the chat head with the panel open lands on the main chat
 	await waitFor(v, `!document.querySelector('#chat-convo .cv-row[data-t="ch:7001"]')`, 2000);
 	expect(await ev(v, `!!document.querySelector('#chat-convo .cv-row[data-t="ch:7002"]')`)).toBe(true);
 });
+
+test("390px: 삭제 from 현황 lands on the chat list, and the browser's back goes to 홈, never to the deleted project", async () => {
+	const v = await boot(390);
+	deletes.length = 0;
+	await run(v, `go("chat", "list")`);
+	await waitFor(v, `convListing() && document.querySelector('#chat-convo .cv-row[data-t="ch:7001"]')`);
+	await touch(v);
+	await run(v, `document.querySelector('#chat-convo .cv-row[data-t="ch:7001"]').click()`);
+	await waitFor(v, `target === "ch:7001" && convOnPhone()`);
+	await run(v, `document.querySelector('.pv-seg [data-k="overview"]').click()`);
+	await waitFor(v, `${PANEL} && location.hash === "#project/ch%3A7001" && !document.querySelector("#pjmenu").hidden`);
+	await run(v, `document.querySelector("#pjmenu").click()`);
+	await waitFor(v, `document.querySelector(".menu .mi")`);
+	await run(v, `[...document.querySelectorAll(".menu .mi")].find(m => m.textContent.includes("삭제")).click()`);
+	await waitFor(v, `document.querySelector('.fs-ft [data-k="delete"]')`);
+	await run(v, `document.querySelector('.fs-ft [data-k="delete"]').click()`);
+	await waitFor(v, `!document.querySelector(".fs-card") && target === "main" && !S.channels.work["7001"] && !H.moving && !H.hold`);
+	await settle(v);
+	const where = `[location.hash, current, convListing(), ${PANEL}, !!document.querySelector('#chat-convo .cv-row[data-t="ch:7001"]')]`;
+	expect(deletes).toEqual(["/api/projects/ch%3A7001"]);
+	expect(await ev(v, where)).toEqual(["#chat/list", "chat", true, false, false]);
+	await back(v);
+	await waitFor(v, `!H.moving && !H.hold`);
+	await settle(v);
+	expect(await ev(v, where)).toEqual(["#home", "home", false, false, false]);
+});
+
+test("a drawer opened at 1280px and carried to 390px: 대화 leaves no 현황 entry behind, so back from the list never reopens it", async () => {
+	const v = await boot(1280);
+	await touch(v);
+	await run(v, `go("chat", "ch:7001")`);
+	await waitFor(v, `target === "ch:7001" && ${TOG}`);
+	await run(v, `document.querySelector(".cv-head .pv-tog").click()`);
+	await waitFor(v, `${PANEL} && location.hash === "#project/ch%3A7001"`);
+	await v.resize(390, 844);
+	await waitFor(v, `narrowChat() && !document.querySelector(".pv-seg").hidden`);
+	await settle(v);
+	const where = `[location.hash, convListing(), ${PANEL}]`;
+	await run(v, `document.querySelector('.pv-seg [data-k="chat"]').click()`);
+	await waitFor(v, `${CLOSED} && !H.moving`);
+	await settle(v);
+	expect(await ev(v, where)).toEqual(["#chat/ch:7001", false, false]);
+	await run(v, `$("#back").click()`);
+	await waitFor(v, `convListing() && !H.moving`);
+	await settle(v);
+	const seen: unknown[] = [];
+	for (let i = 0; i < 3 && (await ev(v, `current`)) !== "home"; i++) {
+		await back(v);
+		await waitFor(v, `!H.moving && !H.hold`);
+		await settle(v);
+		seen.push(await ev(v, where));
+	}
+	expect(seen.filter(s => (s as [string, boolean, boolean])[2] || (s as [string])[0].startsWith("#project/"))).toEqual([]);
+	expect(seen.at(-1)).toEqual(["#home", false, false]);
+});
+
+for (const w of [390, 1280]) {
+	test(`${w}px: back onto a history entry stacked as #project/builtin%3Acustom opens 내 규칙·커스텀 in that entry, and the next back leaves it for 홈`, async () => {
+		const v = await boot(w, "#home");
+		await touch(v);
+		await waitFor(v, `history.state && history.state.dz && current === "home"`);
+		await run(v, `history.pushState({ dz: 1, c: ["home", "project/builtin%3Acustom"], ov: 0, w: ["home", "project/builtin%3Acustom"] }, "", "#project/builtin%3Acustom"); history.pushState({ dz: 1, c: ["home", "project/builtin%3Acustom", "settings"], ov: 0, w: ["home", "settings"] }, "", "#settings"); H.hash = "settings"; H.want = ["home", "settings"]; go("settings")`);
+		await waitFor(v, `current === "settings" && !H.moving`);
+		const len0 = await ev<number>(v, `history.length`);
+		const seen: unknown[] = [];
+		for (let i = 0; i < 4 && (await ev(v, `current`)) !== "home"; i++) {
+			await back(v);
+			await waitFor(v, `!H.moving && !H.hold`);
+			await settle(v);
+			seen.push(await ev(v, `[current, location.hash, history.length - ${len0}]`));
+		}
+		expect(seen).toEqual([["custom", "#custom", 0], ["home", "#home", 0]]);
+	});
+}

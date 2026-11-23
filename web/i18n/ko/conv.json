@@ -57,6 +57,7 @@
   "conv.pj.none": "아직 프로젝트가 없어요",
   "conv.pj.sessions": "세션 {n}개",
   "conv.np.made": "'{name}' 프로젝트를 만들었어요",
+  "conv.np.failed": "'{name}' 프로젝트를 만들지 못했어요: {why}",
   "conv.np.title": "새 프로젝트",
   "conv.np.name": "이름",
   "conv.np.name_ph": "예: 가격 조사",

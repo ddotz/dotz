@@ -50,7 +50,7 @@ const mix = {
 	runs: { "lane:m-done": { kind: "done", since: at(7) }, "lane:m-run": { kind: "working" }, "lane:m-ask": { kind: "waiting", reason: "ask" }, "lane:m-free": { kind: "working" } },
 };
 const posts: Record<string, unknown>[] = [];
-let empty = false, mode: "base" | "many" | "mix" = "base", hold: Promise<void> | null = null;
+let empty = false, mode: "base" | "many" | "mix" = "base", hold: Promise<void> | null = null, notices: unknown[] = [];
 const hub = fakeHub({
 	stream: "fake",
 	state: () => idleState({ channels: { work: empty ? {} : mode === "many" ? many.work : work }, lanes: empty ? [] : mode === "many" ? many.lanes : mode === "mix" ? mix.lanes : lanes, runs: empty ? {} : mode === "many" ? many.runs : mode === "mix" ? mix.runs : runs, discord: { enabled: true } }),
@@ -71,11 +71,11 @@ const hub = fakeHub({
 		if (p === "/api/activity") return json({ items: [], more: false, history: false });
 		if (p === "/api/conversations") return json({ items: empty ? [] : mode === "many" ? many.conversations : conversations });
 		if (p === "/api/monitors") return json({ items: [] });
-		if (p === "/api/notices") return json({ unread: 0, items: [] });
+		if (p === "/api/notices") return json({ unread: notices.length, items: notices });
 		return undefined;
 	},
 });
-afterEach(() => { hub.release(); empty = false; mode = "base"; hold = null; posts.length = 0; delete work["7009"]; });
+afterEach(() => { hub.release(); empty = false; mode = "base"; hold = null; notices = []; posts.length = 0; delete work["7009"]; });
 
 const open = async (width: number, path = "/#chat/list") => {
 	const v = await hub.view({ width, height: 900 }, path);
@@ -228,6 +228,17 @@ test("S6: every live session of a project stays under it, waiting, running, 한�
 	expect(await ev<boolean>(v, `!!${fold("ch:7001")}`)).toBe(false);
 });
 
+test("S6: a folded project keeps the session whose open decision waits on the owner, and the project counts as waiting", async () => {
+	mode = "mix";
+	notices = [{ id: "n-dec", kind: "decision", title: "어느 가격표로 할까요?", ts: at(8), text: "", read: false, decision: { state: "open", to: "lane:m-done", options: [{ n: 1, label: "A" }, { n: 2, label: "B" }] } }];
+	const v = await open(1280);
+	await waitFor(v, `NT.items.length > 0 && ${shown("lane:m-done")} && convNeeds("lane:m-done")`);
+	await run(v, `${fold("ch:7001")}.click()`);
+	await waitFor(v, `!${shown("lane:m-run")}`);
+	expect(await ev(v, `[${["m-ask", "m-run", "m-held", "m-done"].map(n => shown(`lane:${n}`)).join(", ")}]`)).toEqual([true, false, false, true]);
+	await run(v, `localStorage.removeItem("dotz-pj-fold")`);
+});
+
 test("S6: a nested session row opens that session's chat and is the marked row", async () => {
 	const v = await open(1280, "/#chat/main");
 	await run(v, `document.querySelector('#chat-convo .cv-row[data-t="lane:ask"]').click()`);
@@ -300,6 +311,21 @@ test("S6: a new-project sheet closed while the project is being made says once i
 	expect(await ev(v, `[(document.querySelector(".snack.act span") || {}).textContent || "", (document.querySelector(".snack.act .sa") || {}).textContent || "", location.hash]`)).toEqual(["'느린 프로젝트' 프로젝트를 만들었어요", "대화 열기", "#chat/main"]);
 	await run(v, `document.querySelector(".snack.act .sa").click()`);
 	await waitFor(v, `location.hash === "#chat/ch:7009" && target === "ch:7009"`);
+});
+
+test("S6: a new-project sheet closed while the project is being made says so when the server refuses it", async () => {
+	const gate = Promise.withResolvers<void>();
+	hold = gate.promise;
+	const v = await open(1280, "/#chat/main");
+	await waitFor(v, `target === "main"`);
+	await openSheet(v);
+	await run(v, `${sheet}.querySelector('[data-np="name"]').value = "가"; ${createBtn}.click()`);
+	await waitFor(v, `${createBtn}.disabled`);
+	await run(v, `${sheet}.dispatchEvent(new Event("cancel")); ${sheet}.close()`);
+	await waitFor(v, `!document.querySelector("dialog[open]")`);
+	gate.resolve();
+	await v.evaluate(`new Promise(res => { let frames = 0; const tick = () => (document.querySelector(".snack") || ++frames > 180 ? res(0) : requestAnimationFrame(tick)); tick(); })`);
+	expect(await ev(v, `[(document.querySelector(".snack") || {}).textContent || "", location.hash]`)).toEqual(["'가' 프로젝트를 만들지 못했어요: 이름은 두 글자 이상이어야 해요", "#chat/main"]);
 });
 
 test("S6: a saved pane state or named layout holding a mail or KakaoTalk pane loads without it and without an error", async () => {

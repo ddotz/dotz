@@ -23,7 +23,7 @@ flowchart LR
     o_chat_rawdialog["rawdialog (1)"]
     o_chat_reveal["reveal (3)"]
     o_chat_select["select (1)"]
-    o_chat_toast["toast (56)"]
+    o_chat_toast["toast (57)"]
   end
   subgraph a_comments["comments"]
     c_comments(["comments code"])
@@ -200,6 +200,7 @@ flowchart LR
   c_peers -->|"go (3)"| s_chat
   c_peers -->|"go (2)"| s_home
   c_peers -->|"go (1)"| s_settings
+  c_projects -->|"go (1)"| s_chat
   c_projects -->|"go (1)"| s_monitoring
   c_projects -->|"go (4)"| s_project
   c_projects -->|"go (1)"| s_projects

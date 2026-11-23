@@ -70,6 +70,47 @@ test("a name an existing project already has answers 409 and makes no second pro
 	expect((await post({ title: "가격 조사 둘째" })).status).toBe(200);
 });
 
+test("two creates of one name at the same moment make one project and the other answers 409, with a model to check first or a channel Discord makes", async () => {
+	const deps = (createChannel: CreateDeps["createChannel"]): CreateDeps => ({ createChannel, removeChannel: async () => {}, models: async () => [], resolveModel: m => m, applyModel: async () => ({}) });
+	const outcome = (r: PromiseSettledResult<{ key: string }>) => (r.status === "fulfilled" ? 200 : r.reason instanceof ProjectCreateError ? r.reason.status : 500);
+	const local = deps(discord.createWorkChannel);
+	const first = await Promise.allSettled([createProject({ title: "가격 조사", model: "anthropic/x" }, local, false), createProject({ title: "가격 조사", model: "anthropic/x" }, local, false)]);
+	expect([first.map(outcome).sort(), Object.values(discord.channels.work)]).toEqual([[200, 409], ["가격 조사"]]);
+	await reset();
+	discord.status.enabled = true;
+	let n = 900;
+	const remote = deps(async name => {
+		await Promise.resolve();
+		const id = String(++n);
+		discord.channels.work[id] = name;
+		return { id, name };
+	});
+	const second = await Promise.allSettled([createProject({ title: "가격 조사" }, remote, false), createProject({ title: "가격 조사" }, remote, false)]);
+	expect([second.map(outcome).sort(), Object.values(discord.channels.work)]).toEqual([[200, 409], ["가격 조사"]]);
+	expect((await Promise.allSettled([createProject({ title: "가격 조사 둘째" }, remote, false)])).map(outcome)).toEqual([200]);
+});
+
+test("a name of only invisible characters is refused as empty, and a name that only looks different is the same name", async () => {
+	for (const title of ["\u200B", "\u3164", " \u200B\uFEFF "]) {
+		const r = await post({ title });
+		expect([title, r.status]).toEqual([title, 400]);
+	}
+	nothingMade();
+	expect((await post({ title: "가격 조사 Notes" })).status).toBe(200);
+	for (const title of ["가격 조사 Notes".normalize("NFD"), "가격 조사 Ｎｏｔｅｓ", "가격 조사 Notes\u200B"]) {
+		const r = await post({ title });
+		expect([title, r.status]).toEqual([title, 409]);
+	}
+	expect(Object.keys(loadProjects())).toEqual(["ch:1"]);
+});
+
+test("a renamed web-only project frees its old name and holds its new one", async () => {
+	expect((await post({ title: "가격 조사" })).status).toBe(200);
+	expect((await call("PUT", "/api/projects", { key: "ch:1", title: "시장 분석" })).status).toBe(200);
+	expect((await post({ title: "시장 분석" })).status).toBe(409);
+	expect((await post({ title: "가격 조사" })).status).toBe(200);
+});
+
 test("a bad title, purpose or field type answers 400 with a Korean reason and creates nothing", async () => {
 	const bad: unknown[] = [
 		{},

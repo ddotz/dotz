@@ -246,7 +246,6 @@
   "home.status.fallback": "Switched to another model",
   "home.card.no_alerts": "No new alerts",
   "home.card.no_worklog": "No worklog yet",
-  "home.card.no_monitors": "Nothing is being monitored",
   "home.card.more_n": "{n} more",
   "home.later": "Working in the background",
   "home.subs.title": "Finished / total subagents",

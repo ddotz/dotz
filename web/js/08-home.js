@@ -208,10 +208,10 @@ function homeWorklogCard() {
 }
 function homeMonitorCard() {
   const list = ntMons().filter(m => !["ok", "off", "wait"].includes(monStatus(m).key));
-  const state = NM.loaded ? "" : NM.failed ? TX("common.load_failed") : TX("common.loading"), none = !!state || !list.length;
-  if (!state && !list.length && !homeEdit) return null;
+  const state = NM.loaded ? "" : NM.failed ? TX("common.load_failed") : TX("common.loading");
+  if (!state && !list.length) return null;
   return hcCard(() => go("monitoring"), hcHead(TX("common.monitoring"), { menu: "notices:watch", n: !state && list.length ? String(list.length) : null }),
-    none ? hcNone(state || TX("home.card.no_monitors")) : el("div", { class: "hc-list", "data-cap": "watch" }, ...list.map(m => {
+    state ? hcNone(state) : el("div", { class: "hc-list", "data-cap": "watch" }, ...list.map(m => {
       // The same status the 모니터링 row shows (30-monitoring.js monStatus); the dot's colour classes are the notice tones.
       const st = monStatus(m);
       return el("div", { class: "hc-mon", "data-status": st.key }, hcDot({ ok: "done", warn: "ask", err: "fail" }[st.tone]), el("div", { class: "b" }, el("span", { class: "n", text: monTitle(m) }),

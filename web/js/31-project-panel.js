@@ -23,8 +23,8 @@ function pvSet(on) {
   if (!pvKey() || PV.on === on) return;
   const wide = !narrowChat(), at = wide && !chatStick ? chatAnchor() : null;
   PV.on = on;
-  const hash = pvHash() || `chat/${target}`;
-  if (wide) routeReplace(hash); else navSync("chat", hash);
+  const hash = pvHash() || `chat/${target}`, S = history.state, w = S && S.dz ? S.w || S.c : null;
+  if (wide || (!on && w && w[w.length - 2] !== hash)) routeReplace(hash); else navSync("chat", hash);
   pvSync();
   if (at) { cvPinAt(at.ts, at.off); chatPin("at"); }
   else if (wide) chatPin("bottom");
