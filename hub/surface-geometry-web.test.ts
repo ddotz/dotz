@@ -230,7 +230,8 @@ test("390px: the kakao hour and weekday axes use a listed size and a readable li
 	await typeOk(k, ".kk-hax span");
 });
 test("390px: the reply card's avatar letter and 초안 tag use a listed size and a readable line", async () => {
-	const v = await page(390, "light", `go("monitoring", "i:mail")`, `NM.loaded && MON.sel === "i:mail"`);
+	const v = await page(390, "light", `go("monitoring", "i:mail")`, `NM.loaded && MON.sel === "i:mail" && !!document.querySelector("#mon-tl [data-k='mail-pending']")`);
+	await v.evaluate(`void document.querySelector("#mon-tl [data-k='mail-pending']").click()`);
 	await waitFor(v, `!!document.querySelector(".rq-who .dr-st")`);
 	// a mail draft's head carries the app's icon; a comment reply's head carries its writer's letter: the same head, drawn into this card to be measured
 	await v.evaluate(`void document.querySelector("#mon-tl .rq.cm").prepend(rqHeadNode({ app: "youtube", who: "한서윤" }))`);
