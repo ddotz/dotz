@@ -20,17 +20,22 @@ const BODY = [
 	"감사합니다",
 ];
 const OPTS = [{ n: 1, label: "보내기", desc: "", rec: true }, { n: 2, label: "고치기", desc: "", rec: false, detail: true }, { n: 3, label: "보내지 않기", desc: "", rec: false }];
-const draft = { toLabel: "받는이", to: "Kim <kim@example.com>", subject: "RE: 제목A" };
+const SUBJECT = "RE: 제목A 자료를 전달드립니다. 둘째 문장도 길게 이어서 붙였습니다, 셋째 구절까지 확인 부탁드립니다";
+const draft = { toLabel: "받는이", to: "Kim <kim@example.com>", subject: SUBJECT };
 const notice = { id: "n-layout-1", ts: NOW, updated: NOW, kind: "decision", tone: "ask", title: `메일 보낼까요? (${REF})`, text: `${BODY.map(l => `> ${l}`).join("\n")}\n메일 보낼까요? (${REF})`, open: "web", src: "web", at: NOW, read: false,
 	decision: { options: OPTS, to: "web", reply_to: NOW, group: 1, state: "open", draft: { ...draft, body: BODY.join("\n"), ref: REF } } };
 const queueItem = { item: `card:web|${REF}`, ref: REF, kind: "card", app: "card", label: "메일 보낼까요?", conv: "web", notice: notice.id, at: Date.now(), can: { send: true, revise: true, edit: false, drop: true, restore: false },
 	draft: { state: "pending", ...draft, text: BODY.join("\n") } };
+const ELSEWHERE = [...BODY, "추신: 다른 기기에서 한 줄 더 썼습니다."];
+const mailItem = { item: "mail:RLAYOUT1", ref: "RLAYOUT1", kind: "mail", app: "mail", label: "메일", conv: "mail:RLAYOUT1", at: Date.now(), can: { send: true, revise: true, edit: true, drop: true, restore: false },
+	draft: { state: "pending", ...draft, text: BODY.join("\n"), hash: "h-1" }, original: { who: "Kim", text: "자료 보내드립니다." } };
 
 const held = { queue: [queueItem] as object[] };
 const hub = fakeHub({
-	api: (_req, url) => {
+	api: (req, url) => {
 		if (url.pathname === "/api/notices") return json({ items: [notice], unread: 1 });
 		if (url.pathname === "/api/reply/queue") return json({ items: held.queue, counts: {}, triageMin: 3, undoSec: 10 });
+		if (url.pathname === "/api/reply/act" && req.method === "POST") return json({ ok: false, code: "changed", error: "changed", item: { ...mailItem, draft: { ...mailItem.draft, text: ELSEWHERE.join("\n"), hash: "h-2" } } }, 409);
 	},
 });
 afterAll(() => hub.stop());
@@ -69,31 +74,39 @@ const LAYOUT = `(sel => {
 })`;
 
 const CARD = `Object.assign(draftCardNode(NT.items[0]), { id: "layout-card" })`;
-const SURFACES = {
-	"답장 확인 창 of a card the queue holds, opened again after 펼치기": { queue: [queueItem], sel: ".rq-sheet .rq-text", open: `ntDraftSheet(NT.items[0])`, again: `ntDraftSheet(NT.items[0])` },
-	"답장 확인 창 of a card only its notice holds": { queue: [], sel: ".fs-body .dc-dr-b", open: `ntDraftSheet(NT.items[0])`, again: "" },
-	"the 모니터링 card of a draft the queue holds, drawn again after 펼치기": { queue: [queueItem], sel: "#layout-card .rq-text", open: `document.body.append(${CARD})`, again: `document.getElementById("layout-card").replaceWith(${CARD})` },
-	"the 모니터링 card of a draft only its notice holds, drawn again after 펼치기": { queue: [], sel: "#layout-card .dr-body", open: `document.body.append(${CARD})`, again: `document.getElementById("layout-card").replaceWith(${CARD})` },
+const REDRAW = `document.getElementById("layout-card").replaceWith(${CARD})`;
+const EDIT = `(() => { const t = document.querySelector(".tq-body [data-k=fix-text]"); t.value = "직접 고친 글"; t.dispatchEvent(new Event("input", { bubbles: true })); document.querySelector(".tq-body [data-k=fix-apply]").click(); })()`;
+const SURFACES: Record<string, { queue: object[]; open: string; then: string[]; parts: Record<string, string[]> }> = {
+	"답장 확인 창 of a card the queue holds, opened again after 펼치기": { queue: [queueItem], open: `ntDraftSheet(NT.items[0])`, then: [`ntDraftSheet(NT.items[0])`], parts: { ".rq-sheet .rq-text": BODY, ".rq-sheet .dr-sub": [SUBJECT] } },
+	"답장 확인 창 of a card only its notice holds": { queue: [], open: `ntDraftSheet(NT.items[0])`, then: [], parts: { ".fs-body .dc-dr-b": BODY, ".fs-body .dr-sub": [SUBJECT] } },
+	"the 모니터링 card of a draft the queue holds, drawn again after 펼치기": { queue: [queueItem], open: `document.body.append(${CARD})`, then: [REDRAW], parts: { "#layout-card .rq-text": BODY, "#layout-card .dr-sub": [SUBJECT] } },
+	"the 모니터링 card of a draft only its notice holds, drawn again after 펼치기": { queue: [], open: `document.body.append(${CARD})`, then: [REDRAW], parts: { "#layout-card .dr-body": BODY, "#layout-card .dr-sub": [SUBJECT] } },
+	"the 빠른 처리 list": { queue: [mailItem], open: `tqOpen(); document.querySelector(".tr-tog").click()`, then: [], parts: { ".tq-row .tq-tx": BODY } },
+	"고치기 in 빠른 처리 after the draft changed elsewhere": { queue: [mailItem], open: `tqOpen(); document.querySelector(".tq-body [data-k=fix]").click()`, then: [EDIT], parts: { ".tq-body .ra-other-tx": ELSEWHERE } },
 };
 
 for (const [name, s] of Object.entries(SURFACES)) {
 	for (const [width, height] of [[1280, 900], [390, 844]] as const) {
-		test(`${name}, ${width} wide: every line of the draft starts at the left edge, in order, on rows of its own, and folds only where the width ends`, async () => {
+		test(`${name}, ${width} wide: every line that goes out starts at the left edge, in order, on rows of its own, and folds only where the width ends`, async () => {
 			held.queue = s.queue;
 			const view = await hub.view({ width, height, console: () => undefined });
 			try {
 				const { waitFor, ev, run } = on(view);
+				const sels = Object.keys(s.parts), drawn = (sel: string) => `document.querySelectorAll(${JSON.stringify(sel)}).length === 1`;
 				await view.navigate(`${hub.origin}/`);
 				await waitFor(`typeof ntDraftSheet === "function" && RA.loaded && NT.loaded && NT.items.length === 1`);
 				await run(s.open);
-				await waitFor(`!!document.querySelector(${JSON.stringify(s.sel)})`);
 				await run(`document.querySelectorAll("[data-k=more][aria-expanded=false]").forEach(b => b.click())`);
-				if (s.again) await run(s.again);
-				await waitFor(`document.querySelectorAll(${JSON.stringify(s.sel)}).length === 1 && document.getAnimations().every(a => a.playState !== "running")`);
-				const got = await ev<Layout>(`${LAYOUT}(${JSON.stringify(s.sel)})`);
-				expect(got.text).toEqual(BODY);
-				expect({ notAtLeft: got.notAtLeft, sharesRow: got.sharesRow, outOfOrder: got.outOfOrder, earlyBreak: got.earlyBreak }).toEqual({ notAtLeft: [], sharesRow: [], outOfOrder: [], earlyBreak: [] });
-				if (width === 390) expect(got.wrapped).toBeGreaterThan(0);
+				for (const step of s.then) await run(step);
+				await waitFor(`${sels.map(drawn).join(" && ")} && document.getAnimations().every(a => a.playState !== "running")`);
+				let wrapped = 0;
+				for (const [sel, lines] of Object.entries(s.parts)) {
+					const got = await ev<Layout>(`${LAYOUT}(${JSON.stringify(sel)})`);
+					expect(got.text).toEqual(lines);
+					expect({ sel, notAtLeft: got.notAtLeft, sharesRow: got.sharesRow, outOfOrder: got.outOfOrder, earlyBreak: got.earlyBreak }).toEqual({ sel, notAtLeft: [], sharesRow: [], outOfOrder: [], earlyBreak: [] });
+					wrapped += got.wrapped;
+				}
+				if (width === 390) expect(wrapped).toBeGreaterThan(0);
 			} finally {
 				view.close();
 			}
