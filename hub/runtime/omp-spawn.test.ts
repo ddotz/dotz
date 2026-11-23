@@ -153,6 +153,7 @@ test("the orchestrator's overlay switches the owner's advisor, memory, user cont
 			'    sonic: "@lookup"',
 			"  maxRecursionDepth: 2",
 			"  agentIdleTtlMs: 300000",
+			"  maxEffort: high",
 			...TASK_PINS,
 			"compaction:",
 			"  idleEnabled: false",
@@ -182,7 +183,7 @@ test("a lane's overlay keeps its worker model and compaction settings and gets t
 	omp.start(lane("beta", {}, ["anthropic/worker-fb"]));
 	const body = [
 		'modelRoles:\n  task: "anthropic/test-worker:high"',
-		`task:\n  agentModelOverrides:\n    task: "@task"\n    scout: "@task"\n    sonic: "@task"\n  maxRecursionDepth: 2\n  agentIdleTtlMs: 300000\n${TASK_PINS.join("\n")}`,
+		`task:\n  agentModelOverrides:\n    task: "@task"\n    scout: "@task"\n    sonic: "@task"\n  maxRecursionDepth: 2\n  agentIdleTtlMs: 300000\n  maxEffort: high\n${TASK_PINS.join("\n")}`,
 		'compaction:\n  idleEnabled: false\n  modelThresholds:\n    "anthropic/test-lane": "f300000"\n    "anthropic/test-worker": "f300000"\n  keepRecentTokens: 30000',
 	].join("\n");
 	const overlay = (name: string, chains: string[]) =>

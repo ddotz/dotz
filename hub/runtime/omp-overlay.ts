@@ -19,6 +19,13 @@ const TASK_SOFT_REQUEST_BUDGET = 200;
 const TASK_MAX_RUNTIME_MS = 0;
 const PINS = ["startup:\n  checkUpdate: false\n", "magicKeywords:\n  enabled: false\n", "github:\n  enabled: false\n", "async:\n  enabled: true\n  widgets: false\n", "secrets:\n  enabled: true\n"].join("");
 const TASK_PINS = `  isolation:\n    enabled: true\n    apply: false\n    merge: patch\n  maxRuntimeMs: ${TASK_MAX_RUNTIME_MS}\n  softRequestBudget: ${TASK_SOFT_REQUEST_BUDGET}\n`;
+const EFFORT_RANK = ["minimal", "low", "medium", "high", "xhigh", "max"];
+const WORKER_EFFORT_CEILING = "high";
+
+function maxEffortOf(w: Workers): string {
+	const levels = [w.task, w.lookup].filter((s): s is string => s !== undefined).map(s => parseSelector(s).thinking);
+	return levels.reduce((top, level) => (EFFORT_RANK.indexOf(level) > EFFORT_RANK.indexOf(top) ? level : top), WORKER_EFFORT_CEILING);
+}
 
 /** The home omp resolves user-level folders from: env HOME first. */
 export const homeDir = (): string => process.env.HOME ?? homedir();
@@ -93,7 +100,7 @@ function workersYaml(w: Workers, cwd: string, coding?: CodingHarness): string {
 	const overrides = agents.map(([agent, role]) => `    ${agent}: ${JSON.stringify(role)}\n`).join("");
 	const roles = `  task: ${JSON.stringify(w.task)}\n${w.lookup ? `  lookup: ${JSON.stringify(w.lookup)}\n` : ""}`;
 	const disabled = userAgents(cwd, coding);
-	return `modelRoles:\n${roles}task:\n  agentModelOverrides:\n${overrides}  maxRecursionDepth: ${WORKER_MAX_DEPTH}\n  agentIdleTtlMs: ${workerIdleMin() * 60_000}\n${w.limit ? `  maxConcurrency: ${w.limit}\n` : ""}${TASK_PINS}${disabled.length ? `  disabledAgents:\n${quoted(disabled, "    ")}` : ""}`;
+	return `modelRoles:\n${roles}task:\n  agentModelOverrides:\n${overrides}  maxRecursionDepth: ${WORKER_MAX_DEPTH}\n  agentIdleTtlMs: ${workerIdleMin() * 60_000}\n  maxEffort: ${maxEffortOf(w)}\n${w.limit ? `  maxConcurrency: ${w.limit}\n` : ""}${TASK_PINS}${disabled.length ? `  disabledAgents:\n${quoted(disabled, "    ")}` : ""}`;
 }
 
 function compactionYaml(o: SpawnOpts): string {

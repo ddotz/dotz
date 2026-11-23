@@ -7,7 +7,7 @@ import { writeOverlay } from "./omp-overlay.ts";
 import type { SpawnOpts } from "./types.ts";
 
 type Overlay = {
-	task?: { isolation?: Record<string, unknown>; maxRuntimeMs?: number; softRequestBudget?: number };
+	task?: { isolation?: Record<string, unknown>; maxRuntimeMs?: number; softRequestBudget?: number; maxEffort?: string };
 	compaction?: { idleEnabled?: boolean };
 	async?: { enabled?: boolean; widgets?: boolean };
 	startup?: { checkUpdate?: boolean };
@@ -37,12 +37,12 @@ afterEach(() => {
 
 const orchestrator = (): SpawnOpts => ({ role: "orchestrator", cwd: DATA_DIR, model: "anthropic/test-orch:low", env: { DOTZ_ORCHESTRATOR: "1" } });
 const conversation = (): SpawnOpts => ({ ...orchestrator(), env: { DOTZ_ORCHESTRATOR: "1", DOTZ_CONV: "th:7" } });
-const lane = (model = "anthropic/test-lane:medium"): SpawnOpts => ({
+const lane = (model = "anthropic/test-lane:medium", workerModel = "anthropic/test-worker:high"): SpawnOpts => ({
 	role: "lane",
 	cwd: join(root, "work"),
 	model,
 	env: { DOTZ_LANE: "alpha" },
-	lane: { name: "alpha", dir: join(DATA_DIR, "lanes", "alpha"), workerModel: "anthropic/test-worker:high", compactAt: 300_000, keepRecent: 30_000 },
+	lane: { name: "alpha", dir: join(DATA_DIR, "lanes", "alpha"), workerModel, compactAt: 300_000, keepRecent: 30_000 },
 });
 const overlayOf = (opts: SpawnOpts): Overlay => Bun.YAML.parse(readFileSync(writeOverlay(opts), "utf8")) as Overlay;
 
@@ -66,4 +66,10 @@ test("workers on the process's own model at another thinking level get the task 
 	expect(chains(lane("anthropic/test-worker:low"))).toEqual(["anthropic/test-worker:low", "task"]);
 	expect(chains(lane("anthropic/test-worker:high"))).toEqual(["anthropic/test-worker", "task"]);
 	expect(chains(lane())).toEqual(["anthropic/test-lane", "task"]);
+});
+
+test("a worker spawned with effort hi stops at high instead of the model's max, unless the owner configured a worker role higher", () => {
+	expect(overlayOf(orchestrator()).task?.maxEffort).toBe("high");
+	expect(overlayOf(lane()).task?.maxEffort).toBe("high");
+	expect(overlayOf(lane(undefined, "anthropic/test-worker:xhigh")).task?.maxEffort).toBe("xhigh");
 });
