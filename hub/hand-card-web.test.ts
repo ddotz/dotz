@@ -1,4 +1,5 @@
 import { afterAll, expect, test } from "bun:test";
+import { draftApprovalBlock } from "./draft-approval.ts";
 import { fakeHub, json, on } from "./test-web.ts";
 
 const NOW = new Date().toISOString();
@@ -120,4 +121,30 @@ test("a quoted draft keeps the indentation of every line and no line is added", 
 		return out;
 	})()`);
 	expect(lines).toEqual(src.split("\n").map(l => l.slice(2)));
+});
+
+test("a hand-written card whose ref has dashes is the reply card in its chat message, not a past decision", async () => {
+	const ref = "hand-reply-20261123-4";
+	const draft = { toLabel: "받는이", to: "Kim <kim@example.com>", subject: "RE: 제목A" };
+	const message = { ts: NOW, kind: "out", source: "orchestrator", target: "web", text: `[ask] 초안을 고쳤어요.\n${draftApprovalBlock({ ...draft, body: BODY1.join("\n"), ref, question: "메일 보낼까요?" })}` };
+	const item = { ...queueItem(), item: `card:web|${ref}`, ref, draft: { state: "pending", ...draft, text: BODY1.join("\n") } };
+	const chat = fakeHub({
+		api: (_req, url) => {
+			if (url.pathname === "/api/reply/queue") return json({ items: [item], counts: {}, triageMin: 3, undoSec: 10 });
+			if (url.pathname === "/api/history") return json({ target: url.searchParams.get("target"), events: url.searchParams.get("target") === "main" ? [message] : [] });
+		},
+	});
+	try {
+		const page = await chat.view({ width: 1280, height: 900, console: () => undefined });
+		const at = on(page);
+		await page.navigate(`${chat.origin}/`);
+		await at.waitFor(`typeof openTarget === "function" && S && RA.loaded`);
+		await at.run(`openTarget("main", "chat")`);
+		await at.waitFor(`!!document.querySelector("#timeline .ra-inl .ra-card, #timeline .dc-inl")`);
+		expect(await at.ev(`document.querySelector("#timeline .ra-inl .ra-card")?.dataset.ref ?? null`)).toBe(ref);
+		expect(await at.ev(`document.querySelectorAll("#timeline .dc-inl").length`)).toBe(0);
+		expect(await at.ev(`[...document.querySelectorAll("#timeline .ra-inl .rq-acts [data-k]")].map(b => b.dataset.k)`)).toEqual(["send", "fix", "drop"]);
+	} finally {
+		chat.stop();
+	}
 });
