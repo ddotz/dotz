@@ -140,6 +140,7 @@
   "home.sys.open_file": "{name} · 열기",
   "home.sys.bg": "백그라운드 작업",
   "home.msg.cmd": "명령",
+  "home.msg.by_agent": "봇이 카드에 남긴 답 · {text}",
   "home.msg.terminal": "터미널",
   "home.msg.more": "더 보기",
   "home.lane.open": "세션 열기",

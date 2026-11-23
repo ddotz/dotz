@@ -295,6 +295,19 @@ export type StuckWatchOpts = {
 
 const WAIT_TOOL = /^(?:wait|task)$/;
 const WAIT_CELL = /\btool\.(?:wait|task)\b/;
+/** The longest own `timeout` of a tool call that still counts as a wait (a cell polling a build quietly with timeout 1900 s is not stuck). */
+const OWN_TIMEOUT_MAX_S = 3600;
+
+/** When the call's own `timeout` argument (seconds) runs out, from its start; undefined without one. */
+export function ownDeadline(args: string | undefined, start: number): number | undefined {
+	if (!args) return undefined;
+	try {
+		const t = (JSON.parse(args) as Record<string, unknown>)?.timeout;
+		return typeof t === "number" && t > 0 ? start + Math.min(t, OWN_TIMEOUT_MAX_S) * 1000 : undefined;
+	} catch {
+		return undefined;
+	}
+}
 
 export function createStuckWatch(o: StuckWatchOpts) {
 	const s: StuckState = { lastAt: Date.now(), recoveries: [], capped: false };
@@ -306,7 +319,7 @@ export function createStuckWatch(o: StuckWatchOpts) {
 	let busy = false;
 	let abortedAfter = 0;
 	// Tool calls started and not yet answered, in start order: the last one is what a stuck turn was inside.
-	const open = new Map<string, { tool?: string; shape: string }>();
+	const open = new Map<string, { tool?: string; shape: string; until?: number }>();
 	let openSeq = 0;
 	let info: StuckInfo | undefined;
 
@@ -314,7 +327,8 @@ export function createStuckWatch(o: StuckWatchOpts) {
 		s.lastAt = Date.now();
 		last = signal;
 		if (ev?.type === "turn_start") open.clear();
-		else if (ev?.type === "activity" && ev.row.type === "tool_call") open.set(ev.row.call_id ?? `#${++openSeq}`, { tool: ev.row.tool, shape: callShape(ev.row.tool, ev.row.args) });
+		else if (ev?.type === "activity" && ev.row.type === "tool_call")
+			open.set(ev.row.call_id ?? `#${++openSeq}`, { tool: ev.row.tool, shape: callShape(ev.row.tool, ev.row.args), until: ownDeadline(ev.row.args, Date.now()) });
 		else if (ev?.type === "activity" && ev.row.type === "tool_result") {
 			const id = ev.row.call_id ?? [...open].reverse().find(([, c]) => c.tool === ev.row.tool)?.[0];
 			if (id !== undefined) open.delete(id);
@@ -404,12 +418,18 @@ export function createStuckWatch(o: StuckWatchOpts) {
 			s.sampledAt = Date.now(); // after a slow sampler, so its own time is not taken for a sleep
 		}
 	}
+	/** The open call waits for workers. */
 	function waiting(): boolean {
 		const call = [...open.values()].at(-1);
 		return call !== undefined && (WAIT_TOOL.test(call.tool ?? "") || WAIT_CELL.test(call.shape));
 	}
+	/** The open call is still inside the timeout it set itself (a quiet poll), workers or not. */
+	function inOwnTimeout(): boolean {
+		const until = [...open.values()].at(-1)?.until;
+		return until !== undefined && Date.now() < until;
+	}
 	/** What the last abort found: the open tool call's shape and the minutes of silence; kept until the next turn starts. */
-	return { progress, begin, end, reset: stop, tick, waiting, info: (): StuckInfo | undefined => info };
+	return { progress, begin, end, reset: stop, tick, waiting, inOwnTimeout, info: (): StuckInfo | undefined => info };
 }
 
 export type OrchStuckHost = {
@@ -444,7 +464,7 @@ export function orchStuck(h: OrchStuckHost) {
 		key: h.key,
 		pid: h.pid,
 		sessionFile: h.sessionFile,
-		exempt: () => !h.working() || (h.busy() && watch.waiting()) || guard(),
+		exempt: () => !h.working() || (h.busy() && watch.waiting()) || watch.inOwnTimeout() || guard(),
 		abort: h.abort,
 		restart: why => stuckRestart(`stuck turn: ${why}`),
 		stuck: minutes => onStuck(minutes),

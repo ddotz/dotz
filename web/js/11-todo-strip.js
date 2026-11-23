@@ -58,6 +58,7 @@ function dayDiv(t) { const d = kstDay(t); if (!d || d === CS.day) return null; c
 function speakerOf(e) {
   const peer = peerMsgOf(e);
   if (peer) return `peer|${peer.from}`;
+  if (agentWrote(e)) return "bot";
   if (e.kind === "message" || e.kind === "lane_message" || e.kind === "_cmd") return `owner|${e.kind === "_cmd" ? "cmd" : e.source ?? ""}`;
   if (e.kind === "lane_report") return `lane|${e.lane ?? ""}`;
   if (e.kind === "out" && (e.target === "alert" || e.target === "worklog")) return e.target;
@@ -72,26 +73,57 @@ const cleanRestart = e => isRestart(e) && /끊긴 작업은 없어요/.test(Stri
 const gatewayWake = e => e.kind === "schedule" && e.source === "gateway";
 const handedTitle = text => { const line = text.split("\n")[0].trim(); return WT_HANGUL.test(line) && line.length <= 40 ? line : ""; };
 const wakeLead = (src, text) => [src, handedTitle(text)].filter(Boolean).join(" · ");
+const promptKey = text => text.replace(/^(?:(?:ch|lane|th):\S+\s*)+/, "").split("\n")[0].replace(/\s+/g, " ").trim().slice(0, 40);
 function wakeOf(e) {
   const text = String(e.text ?? "").trim();
-  if (e.kind === "handed") return { lead: wakeLead(targetName(e.from), text), raw: text, ts: e.ts, from: e.from };
+  if (e.kind === "handed") return { lead: wakeLead(targetName(e.from), text), raw: text, ts: e.ts, from: e.from, key: promptKey(text) };
   if (e.kind !== "schedule") return null;
-  if (gatewayWake(e)) return { lead: "", raw: "", ts: e.ts, from: "" };
+  if (gatewayWake(e)) return { lead: "", raw: "", ts: e.ts, from: "", key: promptKey(text) };
   const name = typeof e.name === "string" ? e.name.trim() : "";
-  return { lead: name || SYS_LABEL.schedule, raw: text.replace(/^(?:(?:ch|lane|th):\S+\s*)+/, ""), ts: e.ts, from: "", sched: String(e.id ?? "") };
-}
-function gatewayTurnStart(a) {
-  if (a.type !== "status" || !/^>\s/.test(a.text ?? "") || !promptOf(a.text).dim) return false;
-  const A = ts(target).acts;
-  return A[A.lastIndexOf(a) - 1]?.type === "turn_start";
+  return { lead: name || SYS_LABEL.schedule, raw: text.replace(/^(?:(?:ch|lane|th):\S+\s*)+/, ""), ts: e.ts, from: "", sched: String(e.id ?? ""), key: promptKey(text) };
 }
 const WAKE_ANSWER_WAIT_MS = 3000;
 function wakeQuiet() {
   const w = CS.wake;
   if (!w) return;
   csWakeSet(null);
+  if (w.meta && !w.seen) csWakeQueue(w.meta);
   for (const n of w.rows) { if (CS.group && CS.group.node === n) csGroupDrop(); n.remove(); }
   if (w.day && w.day.isConnected && (w.day.hidden || !w.day.nextElementSibling)) { w.day.remove(); csDay(""); }
+}
+const segWake = ts => { wakeQuiet(); csWakeSet({ ts, from: "", rows: [], day: null, began: true, ended: false }); };
+function wakeBegin(m, at) {
+  wakeQuiet();
+  csWakeSet({ ts: at, from: m.from, rows: [], day: null, began: true, ended: false, seen: true, meta: m });
+  if (!m.lead) return;
+  const g = newGroup(m), day = dayDiv(at);
+  g.node.dataset.ts = m.ts;
+  csGroupStart(g); tl.append(g.node); csWakeRow(g.node, day);
+}
+function turnBegin(a) {
+  const w = CS.wake;
+  if (w && !w.began && !w.ended && a.ts >= w.ts) { csWakeNote("began"); csSeg("wake", true); return; }
+  if (isLaneT(target)) return;
+  if (CS.group) workDone(CS.group);
+  csGroupDrop();
+  if (CS.asked) { wakeQuiet(); csSeg("owner", true); } else { segWake(a.ts); csSeg("gw", true); }
+}
+function promptBegin(a, bulk) {
+  const said = String(a.text ?? "").replace(/^>\s*/, "").replace(/^\[conversation \S+\]\s*/, "").replace(/\s+/g, " ");
+  const hit = k => !!k && said.includes(k), w = CS.wake;
+  if (w && !w.ended && w.meta && hit(w.meta.key)) { csWakeNote("seen"); csWakeNote("began"); csSeg("wake", false); return; }
+  if (!CS.fresh) { if (w && w.began && !w.ended) wakeEnded(w, bulk); if (CS.group) workDone(CS.group); csGroupDrop(); }
+  const i = CS.wakes.findIndex(m => hit(m.key));
+  if (i >= 0) { wakeBegin(csWakeTake(i), a.ts); csSeg("wake", false); }
+  else if (CS.asked && !promptOf(a.text).dim && (CS.asked === "*" || said.includes(CS.asked))) { wakeQuiet(); csAsk(""); csSeg("owner", false); }
+  else { segWake(a.ts); csSeg("gw", false); }
+}
+function promptSilent(bulk) {
+  const w = CS.wake;
+  if (w && !w.ended) wakeEnded(w, bulk);
+  if (CS.group) workDone(CS.group);
+  csGroupDrop();
+  csSeg("gw", false);
 }
 function wakeShow(w, shown) {
   for (const n of w.rows) n.hidden = !shown;
@@ -300,6 +332,8 @@ function msgNode(e, inRow) {
   if (e.kind === "out" && e.system) return sysLine(e, text.trim(), hm);
   const peer = peerMsgOf(e);
   if (peer) return peerMsgCard(e, peer, hm);
+  // A line an agent posted with the hub token (a card marker's answer, hub/reply-actions.ts toBot) is the bot's, never a bubble the owner wrote.
+  if (agentWrote(e)) return sysLine(e, TX("home.msg.by_agent", { text: text.trim().split("\n")[0] }), hm);
   switch (e.kind) {
     case "message": case "lane_message": case "_cmd": {
       const via = e.kind === "_cmd" ? TX("home.msg.cmd") : e.source === "discord" ? "Discord" : e.source === "terminal" ? TX("home.msg.terminal") : "";
@@ -460,10 +494,12 @@ function chatPush(en, bulk) {
   csEmptyDrop();
   if (en.m) {
     if (cleanRestart(en.m)) return;
+    const e = en.m, wake = wakeOf(e);
+    if (wake && CS.seg) { csWakeQueue(wake); return; }
     if (CS.group) workDone(CS.group);
     csGroupDrop();
-    const e = en.m, wake = wakeOf(e);
     if (wake || OWNER.has(e.kind)) wakeQuiet();
+    if (e.kind === "message" || e.kind === "lane_message") csAsk(promptKey(String(e.text ?? "")) || "*");
     if (isSettingsT(target) && eventTarget(e) === target) { if (e.kind === "message") turnStart(target, Date.parse(e.ts) || Date.now()); else if (e.kind === "out" && !e.update_key) turnEnd(target); }
     const pkey = e.kind === "out" && e.update_key ? `${e.target ?? ""}|${e.update_key}` : "";
     const et = eventTarget(e) || "", laneT = isLaneT(et) ? et : "";
@@ -480,11 +516,11 @@ function chatPush(en, bulk) {
     const parked = e.kind === "lane_report" && !e.answering && parkedTone(statedTone(noHandoff(String(e.text ?? ""))).tone);
     if (parked && CS.parked) csParkedDrop();
     const g = wake && wake.lead ? newGroup(wake) : null, n = g ? g.node : wake ? null : wlIs(e) ? wlNode(e) : msgNode(e);
-    if (wake) csWakeSet({ ts: e.ts, from: wake.from, rows: [], day: null, began: false, ended: false });
+    if (wake) csWakeSet({ ts: e.ts, from: wake.from, rows: [], day: null, began: false, ended: false, meta: wake });
     if (n) {
       const day = dayDiv(e.ts);   // only above a drawn row: a conversation of rows that draw nothing keeps its empty state
       if (g) { csGroupStart(g); csWakeRow(n, day); }
-      else if (CS.wake && !OWNER.has(e.kind) && !pkey && !e.live) wakeAnswered(n, e.ts);
+      else if (CS.wake && !OWNER.has(e.kind) && !pkey && !e.live && e.ts >= CS.wake.ts) wakeAnswered(n, e.ts);
       if (!pkey) csParked(parked ? n : null);
       n.dataset.ts = e.ts;   // the notice jump finds its source message by this (30-notices.js ntFind)
       if (!n.classList.contains("wl-row")) rpMark(n, e);
@@ -499,22 +535,21 @@ function chatPush(en, bulk) {
       if (pkey) csProgSet(pkey, { node: n, target: laneT || String(e.target ?? "") });
     }
   } else {
-    const a = en.a, w = CS.wake;
-    if (w && !w.ended && a.ts >= w.ts && a.type === "turn_start") csWakeNote("began");
-    else if (w && w.began && !w.ended && a.type === "turn_end") wakeEnded(w, bulk);
-    else if (!(w && !w.ended) && gatewayTurnStart(a)) {
-      if (CS.group) workDone(CS.group);
-      csGroupDrop(); wakeQuiet();
-      csWakeSet({ ts: a.ts, from: "", rows: [], day: null, began: true, ended: false });
-    }
+    const a = en.a;
+    if (a.type === "turn_start") turnBegin(a);
+    else if (a.type === "turn_end") { const w = CS.wake; if (w && w.began && !w.ended) wakeEnded(w, bulk); csSeg("", false); }
+    else if (a.type === "status" && /^>\s/.test(a.text ?? "") && !isLaneT(target)) promptBegin(a, bulk);
     if (!WORK.has(a.type) || isMailT(target) || (isSettingsT(target) && !(TURN.get(target) <= (Date.parse(a.ts) || 0)))) return;
     if (!CS.group) {
       if (CS.wake && CS.wake.ended) wakeQuiet();
+      if (!CS.wake && CS.seg === "gw") segWake(a.ts);
       const day = dayDiv(a.ts);
       csGroupStart(newGroup()); tl.append(CS.group.node);
       if (CS.wake) csWakeRow(CS.group.node, day);
     }
     csGroupAdd(a);
+    if (CS.fresh) csSeg(CS.seg, false);
+    if (a.type === "text" && String(a.text ?? "").trim() === "-" && !isLaneT(target)) promptSilent(bulk);
   }
   if (!bulk) syncLiveTags();
   const fixed = TL_TOP_NODE && TL_TOP_NODE.parentNode === tl ? 1 : 0;

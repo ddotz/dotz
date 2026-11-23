@@ -351,14 +351,51 @@ test("an agent caller may only revise: it writes no pick, and send and everythin
 	expect(w.linesOf("pick")).toEqual([]);
 });
 
-test("a hand-written card goes to the bot as its numbered answer; a batch sends one message per conversation", async () => {
+test("a hand-written card goes to the bot as its numbered answer and closes on 보내기 or 보내지 않기, not on 고치기; a batch sends one message per conversation", async () => {
 	const w = world();
-	const cards = [{ ref: "X1", conv: "ch:1", notice: "n1", title: "이 답글 올릴까요? (X1)" }, { ref: "X2", conv: "ch:1", notice: "n2", title: "이 답글 올릴까요? (X2)" }];
+	let cards = [{ ref: "X1", conv: "ch:1", notice: "n1", title: "이 답글 올릴까요? (X1)" }, { ref: "X2", conv: "ch:1", notice: "n2", title: "이 답글 올릴까요? (X2)" }, { ref: "X3", conv: "ch:1", notice: "n3", title: "이 답장 보낼까요? (X3)" }];
 	const log: string[] = [];
-	const replies = createReplyActions({ adapters: [], sender: w.sender, recordPick: () => undefined, learning: { record: async () => "correction" as const, refine: async () => undefined, forbid: async () => undefined }, cards: { open: () => cards, replace: () => undefined, rewrite: () => undefined, close: () => undefined }, toBot: async (c, t) => void log.push(`${c}|${t}`), emit: () => undefined, log: () => undefined });
+	const close = (ref: string) => void (log.push(`close ${ref}`), (cards = cards.filter(c => c.ref !== ref)));
+	const replies = createReplyActions({ adapters: [], sender: w.sender, recordPick: () => undefined, learning: { record: async () => "correction" as const, refine: async () => undefined, forbid: async () => undefined }, cards: { open: () => cards, replace: () => undefined, rewrite: () => undefined, close }, toBot: async (c, t) => void log.push(`${c}|${t}`), emit: () => undefined, log: () => undefined });
 	const r = await replies.batch([{ ref: "X1", action: "send" }, { ref: "X2", action: "revise", change: "더 짧게" }, { ref: "NOPE", action: "send" }], owner);
 	expect(r.body).toMatchObject({ results: [{ ref: "X1", ok: true }, { ref: "X2", ok: true }, { ref: "NOPE", ok: false, code: "unknown_ref" }] });
-	expect(log).toEqual(["ch:1|결정 답: 이 답글 올릴까요? (X1) → 1) 보내기\n결정 답: 이 답글 올릴까요? (X2) → 2) 고치기 - 더 짧게"]);
+	expect(log).toEqual(["ch:1|결정 답: 이 답글 올릴까요? (X1) → 1) 보내기\n결정 답: 이 답글 올릴까요? (X2) → 2) 고치기 - 더 짧게", "close X1"]);
+	// The owner's 보내지 않기 closes the card: the model's marker on it again reaches the bot no more (one card once went to the bot three times).
+	log.length = 0;
+	expect((await replies.act({ ref: "X3", action: "drop" }, owner)).status).toBe(200);
+	expect((await replies.act({ ref: "X3", action: "drop" }, owner)).body).toMatchObject({ ok: false, code: "unknown_ref" });
+	expect(log).toEqual(["ch:1|결정 답: 이 답장 보낼까요? (X3) → 3) 보내지 않기", "close X3"]);
+	expect(replies.open("ch:1").map(c => c.ref)).toEqual(["X2"]);
+});
+
+test("the model's own [drop] marker on a hand-written card, carrying the owner's words, closes the card and sends the bot no 결정 답 line to read as his press again", async () => {
+	const w = world();
+	let cards = [{ ref: "X1", conv: "ch:1", notice: "n1", title: "이 답장 보낼까요? (X1)" }];
+	const log: string[] = [];
+	const close = (ref: string) => void (log.push(`close ${ref}`), (cards = cards.filter(c => c.ref !== ref)));
+	const replies = createReplyActions({ adapters: [], sender: w.sender, recordPick: () => undefined, learning: { record: async () => undefined, refine: async () => undefined }, cards: { open: () => cards, replace: () => undefined, rewrite: () => undefined, close }, toBot: async (c, t) => void log.push(`${c}|${t}`), emit: () => undefined, log: () => undefined });
+	expect((await replies.act({ ref: "X1", action: "drop" }, { surface: "chat", owner: { mid: "m1", text: "그건 보내지 마" } })).status).toBe(200);
+	expect(log).toEqual(["close X1"]);
+});
+
+test("the model's own [revise] marker on a hand-written card reaches the bot as the agent's line, so the page never shows it as the owner's message", async () => {
+	const w = world();
+	const cards = [{ ref: "X1", conv: "ch:1", notice: "n1", title: "이 답장 보낼까요? (X1)" }];
+	const sent: [string, boolean][] = [];
+	const replies = createReplyActions({ adapters: [], sender: w.sender, recordPick: () => undefined, learning: { record: async () => undefined, refine: async () => undefined }, cards: { open: () => cards, replace: () => undefined, rewrite: () => undefined, close: () => undefined }, toBot: async (_c, t, agent) => void sent.push([t, agent]), emit: () => undefined, log: () => undefined });
+	expect((await replies.act({ ref: "X1", action: "revise", change: "더 짧게" }, { surface: "chat", owner: { mid: "m1", text: "더 짧게 고쳐" } })).status).toBe(200);
+	expect((await replies.act({ ref: "X1", action: "revise", change: "존댓말로" }, owner)).status).toBe(200);
+	expect(sent).toEqual([["결정 답: 이 답장 보낼까요? (X1) → 2) 고치기 - 더 짧게", true], ["결정 답: 이 답장 보낼까요? (X1) → 2) 고치기 - 존댓말로", false]]);
+});
+
+test("a hand-written send card lists with the recipient, subject, body and files its own lines carry, so the 답장 확인 sheet shows what 보내기 sends", async () => {
+	const w = world();
+	const draft = { toLabel: "받는이", to: "A <a@example.com>", subject: "제목A", body: "본문A", attachments: [{ name: "파일A.xlsx", size: "12 KB" }] };
+	const cards = [{ ref: "X1", conv: "ch:1", notice: "n1", title: "이 답장 보낼까요? (X1)", draft }, { ref: "X2", conv: "ch:1", notice: "n2", title: "이 답글 올릴까요? (X2)" }];
+	const replies = createReplyActions({ adapters: [], sender: w.sender, recordPick: () => undefined, learning: { record: async () => undefined, refine: async () => undefined }, cards: { open: () => cards, replace: () => undefined, rewrite: () => undefined, close: () => undefined }, toBot: async () => undefined, emit: () => undefined, log: () => undefined });
+	const items = await replies.list();
+	expect(items.find(i => i.ref === "X1")?.draft).toEqual({ state: "pending", toLabel: "받는이", to: "A <a@example.com>", subject: "제목A", text: "본문A", attachments: [{ name: "파일A.xlsx", size: "12 KB" }] });
+	expect(items.find(i => i.ref === "X2")?.draft).toEqual({ state: "pending", toLabel: "", to: "", text: "" });
 });
 
 test("D7: a send names the version it showed; another one is refused `changed` with the fresh item, nothing picked or queued, and the cards redrawn", async () => {

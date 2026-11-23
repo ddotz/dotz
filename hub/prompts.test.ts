@@ -1786,3 +1786,12 @@ test("a bare [later] that waits on no worker is refused once, then taken; one wi
 	expect(q.deferredOpen().map(d => d.replyTo)).toEqual(["a1", "b1"]);
 	expect(state.posts).toEqual([]);
 });
+
+test("handed work from a conversation is its own request: the owner message it came from was answered meanwhile, yet main's answer still goes back", async () => {
+	const t = handedSetup();
+	t.q.markAnswered("m1"); // the conversation's own final answer to the owner's message, while main was busy
+	t.startTurn("[conversation ch:A] fix Z", { ...handed, replyTo: "m1" });
+	endTurn(t, "Z 고쳤어요");
+	await Promise.all(t.state.settling);
+	expect(t.back).toEqual([{ from: "ch:A", text: "Z 고쳤어요", replyTo: "m1" }]);
+});

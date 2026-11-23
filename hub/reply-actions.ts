@@ -10,7 +10,7 @@ import { DRAFT_HAND_EDIT } from "./draft-approval.ts";
 import { draftHead } from "./reply-chat.ts";
 import { lessonNote, policyOf, reasonOf } from "./reply-reasons.ts";
 import { sinceMidnight } from "./reply-route.ts";
-import type { DraftView, Lesson, OwnerAction, Part, Reason, ReasonCode, ReplyAdapter, ReplyItem, ReplyKind, SendState } from "./reply-types.ts";
+import type { DraftView, FileShown, Lesson, OwnerAction, Part, Reason, ReasonCode, ReplyAdapter, ReplyItem, ReplyKind, SendState } from "./reply-types.ts";
 
 /** `owner`: the owner's chat message the model read this act from (its marker line); his pick then names that message. */
 export type ActCtx = { surface: "web" | "discord" | "chat" | "peer" | "cli"; login?: string; agent?: boolean; owner?: { mid: string; text: string } };
@@ -27,8 +27,10 @@ type Sender = {
 };
 /** An open send-approval card (a notice) that shows draft `ref` in conversation `conv`; `hash`: the version it was last drawn with; `discord`: the
  * version its Discord message shows; `asked`: the ts of the post that asked it (a web quote names it); `posts`: its Discord message ids (a Discord reply names one);
- * `shown`: when the card was last drawn as it reads now (made, revised, reopened). */
-export type OpenCard = { ref: string; conv: string; notice: string; title: string; hash?: string; discord?: string; asked?: string; posts?: string[]; shown?: string };
+ * `shown`: when the card was last drawn as it reads now (made, revised, reopened); `draft`: what the card's own lines say it sends (notices
+ * decision.draft), which a hand-written card's item shows since no store holds it. */
+export type OpenCard = { ref: string; conv: string; notice: string; title: string; hash?: string; discord?: string; asked?: string; posts?: string[]; shown?: string; draft?: CardDraft };
+type CardDraft = { toLabel: string; to: string; cc?: string[]; subject?: string; body: string; attachments?: FileShown[] };
 export type ReplyDeps = {
 	adapters: ReplyAdapter[];
 	sender: Sender;
@@ -336,7 +338,7 @@ export function createReplyActions(deps: ReplyDeps) {
 		if (ctx.agent && input.action !== "revise") return refused(403, "owner_only");
 		const found = await resolve(input.ref);
 		if (!found) return fail(404, "unknown_ref", "그 초안을 찾지 못했어요");
-		if ("card" in found) return toBot(ctx, found.card, input);
+		if ("card" in found) return toBot(deps, ctx, found.card, input);
 		// The pick, the send and its card state belong where the draft's card was asked, when it has one (a 다시 보내기 comes after the card
 		// was answered, so an answered card counts too); the store's own place otherwise.
 		const card = deps.cards.open().find(c => c.ref === input.ref);
@@ -359,16 +361,6 @@ export function createReplyActions(deps: ReplyDeps) {
 		}
 	}
 
-	// A hand-written card has no store here: its answer is one message to the bot, as the card's own numbered answer would be. The model's own
-	// revise marker on such a card goes the same way, as its 2) 고치기 line.
-	async function toBot(ctx: ActCtx, card: OpenCard, input: ActInput): Promise<ActResult> {
-		if (ctx.agent && input.action !== "revise") return refused(403, "owner_only");
-		const line = cardAnswer(card, input);
-		if (!line) return refused(409, "not_supported");
-		await deps.toBot(card.conv, line, ctx.agent === true);
-		return { status: 200, body: { ok: true } };
-	}
-
 	return {
 		act,
 		held,
@@ -387,6 +379,7 @@ export function createReplyActions(deps: ReplyDeps) {
 			const found = await resolve(ref);
 			return found && "view" in found ? found.adapter.ask(ref) : undefined;
 		},
+		knows: (ref: string): boolean => deps.adapters.some(a => a.target(ref)),
 		/** One reply as every surface shows it (Discord's 고치기 form reads its text), or undefined when no store knows `ref`. */
 		async view(ref: string): Promise<ReplyItem | undefined> {
 			const found = await resolve(ref);
@@ -396,12 +389,13 @@ export function createReplyActions(deps: ReplyDeps) {
 		async batch(items: ActInput[], ctx: ActCtx) {
 			if (!Array.isArray(items) || !items.length || items.length > 100) return { status: 400, body: { ok: false, code: "bad_request", error: "items는 1개에서 100개 사이여야 해요" } };
 			const results: { ref: string; ok: boolean; code?: string; error?: string; item?: ReplyItem }[] = [];
-			const forBot = new Map<string, string[]>();
+			const forBot = new Map<string, string[]>(), closing: string[] = [];
 			for (const it of items) {
 				const found = typeof it?.ref === "string" && !ctx.agent ? await resolve(it.ref) : undefined;
 				const line = found && "card" in found ? cardAnswer(found.card, it) : undefined;
 				if (found && "card" in found && line) {
 					forBot.set(found.card.conv, [...(forBot.get(found.card.conv) ?? []), line]);
+					if (answers(it)) closing.push(found.card.ref);
 					results.push({ ref: it.ref, ok: true });
 					continue;
 				}
@@ -409,6 +403,7 @@ export function createReplyActions(deps: ReplyDeps) {
 				results.push(r.body.ok ? { ref: it.ref, ok: true, ...(r.body.item ? { item: r.body.item } : {}) } : { ref: it.ref, ok: false, code: r.body.code, error: r.body.error });
 			}
 			for (const [conv, lines] of forBot) await deps.toBot(conv, lines.join("\n"), ctx.agent === true);
+			for (const ref of closing) deps.cards.close(ref);
 			return { status: 200, body: { results } };
 		},
 		/** Every reply every surface shows: the adapters' drafts with their sends, then the hand-written cards. A draft with an open card is in the
@@ -422,6 +417,22 @@ export function createReplyActions(deps: ReplyDeps) {
 			while (running.size) await Promise.all([...running]);
 		},
 	};
+}
+
+// A hand-written card has no store here: its answer is one message to the bot, as the card's own numbered answer would be. The model's own
+// revise marker on such a card goes the same way, as its 2) 고치기 line. The owner's 보내기 or 보내지 않기 answers it: the card closes, so the
+// conversation's held approval card comes up. The model's own markers (surface chat) are never the owner's word on the page: its [drop] only
+// closes the card (echoed back as a 결정 답 line it read as the owner's press and dropped the card again, six times in one conversation,
+// 2026-11-23), and its [revise] goes to the bot as the agent's line, shown as the bot's and not as a message the owner wrote.
+const answers = (input: ActInput): boolean => input.action === "send" || input.action === "drop";
+async function toBot(deps: ReplyDeps, ctx: ActCtx, card: OpenCard, input: ActInput): Promise<ActResult> {
+	if (ctx.agent && input.action !== "revise") return refused(403, "owner_only");
+	const line = cardAnswer(card, input);
+	if (!line) return refused(409, "not_supported");
+	const marker = ctx.surface === "chat";
+	if (!(marker && input.action === "drop")) await deps.toBot(card.conv, line, ctx.agent === true || marker);
+	if (answers(input)) deps.cards.close(card.ref);
+	return { status: 200, body: { ok: true } };
 }
 
 type Resolved = { adapter: ReplyAdapter; view: DraftView } | { card: OpenCard };
@@ -503,7 +514,9 @@ function cardAnswer(card: OpenCard, input: ActInput): string | undefined {
 
 function cardItem(c: OpenCard, at: number): ReplyItem {
 	const kind: ReplyKind = "card";
-	return { item: `card:${c.conv}|${c.ref}`, ref: c.ref, kind, app: "card", label: c.title, conv: c.conv, notice: c.notice, at, can: { send: true, revise: true, edit: false, drop: true, restore: false }, draft: { state: "pending", toLabel: "", to: "", text: "" } };
+	const d = c.draft;
+	const draft = d ? { toLabel: d.toLabel, to: d.to, ...(d.cc?.length ? { cc: d.cc } : {}), ...(d.subject ? { subject: d.subject } : {}), text: d.body, ...(d.attachments?.length ? { attachments: d.attachments.map(f => ({ name: f.name, ...(f.size ? { size: f.size } : {}) })) } : {}) } : { toLabel: "", to: "", text: "" };
+	return { item: `card:${c.conv}|${c.ref}`, ref: c.ref, kind, app: "card", label: c.title, conv: c.conv, notice: c.notice, at, can: { send: true, revise: true, edit: false, drop: true, restore: false }, draft: { state: "pending", ...draft } };
 }
 
 let live: ReturnType<typeof createReplyActions> | undefined;

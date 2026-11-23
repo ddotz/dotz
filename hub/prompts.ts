@@ -320,7 +320,9 @@ export function createPrompts(deps: PromptDeps) {
 		}
 		// A prompt redelivered at idle waits in the runtime's queue and cannot be taken back; if a dotz_send answered its message
 		// meanwhile (2026-10-22 00:32, web 3e7dd934), it still starts as a turn, but that turn's own answer would only repeat the first.
-		if (current && isAnswered(current.replyTo)) {
+		// Work another session handed over (dotz_conv send main) carries that session's owner message only as its place: the session's own
+		// answer to the owner does not answer the handed request (2026-11-23: four of main's answers to one conversation were dropped).
+		if (current && !current.from && isAnswered(current.replyTo)) {
 			current.done = true;
 			deps.log(`the prompt for ${current.target ?? "-"} was already answered by a dotz_send; this turn's answer is dropped`);
 		}

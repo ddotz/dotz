@@ -133,3 +133,9 @@ test("a mail card quotes its original with 원문 보기 and lists the files sta
 	expect(await ev(`document.querySelector("#ra-test [data-ref=RFILES1] .rq-ot").textContent`)).toBe("견적서 보내주세요");
 	expect(await ev(`!!document.querySelector("#ra-test [data-ref=RFILES1] .rq-og")`)).toBe(true);
 });
+
+test("a draft's body shows line for line as it goes out: numbered items keep their numbers and the dash and dot lines stay as written", async () => {
+	const body = "안녕하세요.\n\n1. 첫 항목\n - 첫 줄\n  · 세부 줄\n\n2. 둘째 항목\n - 둘째 줄";
+	await mount(`box.append(draftBodyNode(${JSON.stringify(body)}, "dc-dr-b"))`);
+	expect(await ev(`(n => [n.textContent, n.querySelectorAll("ol, ul, li").length, getComputedStyle(n).whiteSpace])(document.querySelector("#ra-test .dc-dr-b"))`)).toEqual([body, 0, "pre-wrap"]);
+});

@@ -376,6 +376,19 @@ test("f) a [later] wait, running workers while the turn waits for them and an op
 	await quiet(1000);
 });
 
+test("f) a quiet call inside its own timeout is left alone; past the timeout the silence counts again", async () => {
+	const s = session("main");
+	const t = await turn(s, "poll the build", chat("chat", "m9"));
+	const args = JSON.stringify({ language: "py", code: "poll()", timeout: 1900 });
+	await t.push({ type: "activity", row: { type: "tool_call", tool: "eval", call_id: "poll1", text: "eval", args } });
+	await quiet(STUCK_MS * 3);
+	expect(t.aborts).toBe(0);
+	await quiet(1900_000 - STUCK_MS * 3 + STUCK_MS + 60_000);
+	expect(t.aborts).toBeGreaterThan(0);
+	s.o.stop();
+	await quiet(1000);
+});
+
 test("g) the fourth stuck turn in an hour is alerted once and not restarted a fourth time", async () => {
 	const s = session("main");
 	let agent = await turn(s, "again and again", chat("chat", "m11"));

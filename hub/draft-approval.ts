@@ -414,6 +414,14 @@ export function sameDraft(a: DraftApproval, b: DraftApproval): boolean {
 	const key = (d: DraftApproval | undefined): unknown[] => (d ? [d.to, [...(d.cc ?? [])].sort(), d.subject ?? "", d.body.trim(), (d.attachments ?? []).map(f => `${f.name} ${f.size ?? ""}`), key(d.mail)] : []);
 	return JSON.stringify(key(a)) === JSON.stringify(key(b));
 }
+/** The mail a hand-written card is about, one key for every card of it: its conversation, label, the set of addresses in `to` (the trimmed `to` when it has
+ * none) and its subject. Undefined when the card has no subject, so it is no mail's. */
+export function handMailKey(conv: string, d: DraftApproval | undefined): string | undefined {
+	const subject = d?.subject?.trim();
+	if (!d || !subject) return undefined;
+	const to = addressesIn(d.to).sort();
+	return JSON.stringify([conv, d.toLabel, to.length ? to : d.to.trim(), subject]);
+}
 
 // One block of a message that asks about several drafts at once ("<question> (<ref>)" over 보내기 / 고치기 / 보내지 않기): its notice carries no
 // `draft` (parseDraftApproval reads a one-block message only), yet the draft behind it can be sent or dropped elsewhere (the 모니터링 queue),

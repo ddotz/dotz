@@ -197,6 +197,7 @@
   "home.sys.open_file": "Open {name}",
   "home.sys.bg": "Background task",
   "home.msg.cmd": "Command",
+  "home.msg.by_agent": "Bot's card answer · {text}",
   "home.msg.terminal": "Terminal",
   "home.msg.more": "Show more",
   "home.lane.open": "Open session",

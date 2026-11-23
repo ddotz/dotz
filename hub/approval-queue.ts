@@ -13,15 +13,17 @@
 // load/sweep path too), and a held card whose item was handled meanwhile (deps.handled) is dropped instead of being shown.
 // The version the owner reads (2026-11-16 audit S6/S7): a card whose item is handled already is not posted at all, a held card is shown with the text
 // its store holds when it is released (deps.fresh), and one ref waits in one conversation only (the newest card of it).
-import { D_CLOSE, D_OPT, DECISION_HEAD } from "./choices.ts";
-import { keepBrief, parseDraftApproval, withRecipientMark } from "./draft-approval.ts";
+import { D_CLOSE, D_OPT, DECISION_HEAD, parseDecisions } from "./choices.ts";
+import { type DraftApproval, keepBrief, parseDraftApproval, REF_ID, sameDraft, withRecipientMark } from "./draft-approval.ts";
 import { readState } from "./statefile.ts";
 import { parseTone, stripHandoff } from "./tone.ts";
 
 export type Held = { ref: string; target: string; text: string; extra: Record<string, unknown> };
 type Shown = { ref: string; target: string; text: string; ids?: string[]; pending?: boolean };
+/** The open card a revision took over: its notice (which keeps its id and now shows the revision), the ref and text it had, and the Discord message it was out as. */
+export type Reposted = { id: string; ref: string; was: string; card?: { target: string; ids: string[] } };
 // `text`: the card as it goes out, with its progress line ("남은 N건 (k/T)" / "마지막 카드예요"), when that differs from what was routed.
-export type Route = { action: "post"; text?: string } | { action: "hold"; left: number } | { action: "same" } | { action: "update" };
+export type Route = { action: "post"; text?: string; repost?: Reposted } | { action: "hold"; left: number } | { action: "same" } | { action: "update" };
 
 export type ApprovalQueueDeps = {
 	/** The conversation a target's posts belong to (notices.ts decision.to). */
@@ -37,17 +39,22 @@ export type ApprovalQueueDeps = {
 	/** What a previous process left held. */
 	load?: () => Held[];
 	/** The item a card is about (default: its ref): cards of one item never wait behind each other. */
-	itemOf?: (conv: string, ref: string) => string;
+	itemOf?: (conv: string, ref: string, text?: string) => string;
 	/** Whether the item behind a ref was handled elsewhere (sent, dropped, answered by the owner himself): such a card is not posted, a held one is dropped. */
 	handled?: (ref: string, conv: string) => boolean | Promise<boolean>;
 	/** The card text of `ref` as its store holds it now: a held card is shown with it, not with the text it was held with (undefined: the held text). */
 	fresh?: (ref: string) => Promise<string | undefined>;
+	handWritten?: (ref: string) => boolean;
+	/** Whether a card for `ref` is open in another conversation: such a card is not posted here, so it replaces nothing here. */
+	openElsewhere?: (ref: string, conv: string) => boolean;
+	openText?: (conv: string, ref: string) => string | undefined;
+	repost?: (conv: string, ref: string, text: string) => Omit<Reposted, "ref"> | undefined;
 };
 
 /** The closed form of a send-approval card on Discord: its first line kept, then how it ended (the buttons are removed by the caller); `moved`: the card
  * was posted again below it (a confirm card). */
 export function closedCardText(text: string, how: "answered" | "resolved" | "ignored" | "moved", label = ""): string {
-	const first = (parseTone(stripHandoff(text)).text.trim().split("\n", 1)[0] ?? "").trim();
+	const first = cardHead(text).trim();
 	const note = how === "moved" ? "-# 아래 확인 카드로 옮겼어요" : how === "resolved" ? "-# 다른 곳에서 처리됐어요" : `-# 처리됨: ${label.replace(/\s+/g, " ").trim().slice(0, 80) || (how === "ignored" ? "무시" : "답변")}`;
 	return first ? `${first}\n${note}` : note;
 }
@@ -59,10 +66,18 @@ export function withSendState(text: string, state: string, why = "", left = 0): 
 	return line ? `${base.replace(/\s+$/, "")}\n${line}` : base;
 }
 
+const REF_TAG = new RegExp(`\\s*\\(${REF_ID}\\)\\s*$`);
+const cardHead = (text: string): string => {
+	const body = parseTone(stripHandoff(text)).text.trim();
+	const first = body.split("\n", 1)[0] ?? "";
+	const prose = first.trim() && !/^\[file\](?:\s|$)/i.test(first) && !first.startsWith(">") && !first.startsWith("-#");
+	return (prose ? undefined : parseDecisions(body).blocks[0]?.title.replace(REF_TAG, "").trim()) || first;
+};
+
+/** The draft a post asks approval for, or undefined when it is no send-approval card. */
+export const cardDraft = (text: string): DraftApproval | undefined => parseDraftApproval(parseTone(stripHandoff(text)).text.trim());
 /** The draft ref a post asks approval for, or undefined when it is no send-approval card. */
-export function cardRef(text: string): string | undefined {
-	return parseDraftApproval(parseTone(stripHandoff(text)).text.trim())?.ref;
-}
+export const cardRef = (text: string): string | undefined => cardDraft(text)?.ref;
 
 const FENCE_LINE = /^\s*```/;
 // The last line of the decision block in lines[from, to): its last option (with the line under it that describes it) or a "번호로 답해" line after them.
@@ -166,11 +181,11 @@ export function numberedOf(text: string): CardPos | undefined {
 	return m && k >= 1 && k <= total ? { k, total } : undefined;
 }
 
-/** The card's first line without its tone tag: what a pointer to it or the bot's list of waiting cards names it by. */
-export const cardTitle = (text: string): string => (parseTone(stripHandoff(text)).text.trim().split("\n", 1)[0] ?? "").replace(/\s+/g, " ").slice(0, 120);
+/** The card's name: its first line without its tone tag, or its decision question (without the ref tag) when that line is no prose (a `[file]` line, a quote, a note): what a pointer to it or the bot's list of waiting cards names it by. */
+export const cardTitle = (text: string): string => cardHead(text).replace(/\s+/g, " ").slice(0, 120);
 
 export function createApprovalQueue(deps: ApprovalQueueDeps) {
-	const itemOf = (conv: string, ref: string) => deps.itemOf?.(conv, ref) ?? ref;
+	const itemOf = (conv: string, ref: string, text?: string) => deps.itemOf?.(conv, ref, text) ?? ref;
 	let held: Held[] = deps.load?.() ?? [];
 	const shown = new Map<string, Shown>();
 	// The place of the shown card in its conversation's current run of cards (1 = the first shown since nothing waited there).
@@ -206,6 +221,29 @@ export function createApprovalQueue(deps: ApprovalQueueDeps) {
 		deps.rewrite(conv, s, next);
 	};
 
+	type Item = { ref: string; text?: string };
+	const sameItem = (conv: string, a: Item, b: Item) => a.ref === b.ref || itemOf(conv, a.ref, a.text) === itemOf(conv, b.ref, b.text);
+	const openMatch = (conv: string, mine: Item) => {
+		const s = shown.get(conv);
+		const sameShown = !!s && sameItem(conv, s, mine) && waiting(conv) && !(s.pending && s.ref !== mine.ref);
+		const openRef = deps.openRefs(conv).find(r => sameItem(conv, { ref: r }, mine));
+		return { s, sameShown, openRef };
+	};
+	const revisedRef = (conv: string, mine: Item): string | undefined => {
+		const { s, sameShown, openRef } = openMatch(conv, mine);
+		const old = sameShown ? s!.ref : openRef;
+		if (old === undefined || !deps.openRefs(conv).includes(old) || !deps.handWritten?.(mine.ref) || !deps.handWritten(old)) return undefined;
+		if (held.some(x => deps.convOf(x.target) === conv && sameItem(conv, x, mine))) return undefined;
+		if (old !== mine.ref) return old;
+		const was = deps.openText?.(conv, old) ?? s?.text;
+		const before = was ? cardDraft(was) : undefined, after = mine.text ? cardDraft(mine.text) : undefined;
+		return before && after && !sameDraft(before, after) ? old : undefined;
+	};
+	const replaces = (target: string, text: string): string | undefined => {
+		const ref = cardRef(text), conv = deps.convOf(target);
+		return ref && !deps.openElsewhere?.(ref, conv) ? revisedRef(conv, { ref, text: splitCardLead(text)?.card ?? text }) : undefined;
+	};
+
 	async function route(target: string, text: string, extra: Record<string, unknown> = {}): Promise<Route> {
 		const ref = cardRef(text);
 		if (!ref) return { action: "post" };
@@ -219,8 +257,8 @@ export function createApprovalQueue(deps: ApprovalQueueDeps) {
 		// One ref waits in one conversation only: the newest card of it wins, an older held copy elsewhere is dropped.
 		const elsewhere = held.filter(x => x.ref === ref && deps.convOf(x.target) !== conv);
 		for (const c of new Set(elsewhere.map(x => deps.convOf(x.target)))) drop(c, elsewhere.filter(x => deps.convOf(x.target) === c), `a newer card of it came in ${conv}`);
-		const item = itemOf(conv, ref);
-		const h = held.find(x => itemOf(conv, x.ref) === item && deps.convOf(x.target) === conv);
+		const mine = { ref, text: parts?.card ?? text };
+		const h = held.find(x => deps.convOf(x.target) === conv && sameItem(conv, x, mine));
 		if (h) {
 			if (h.ref !== ref) Object.assign(h, { ref, target, extra });
 			h.text = keepBrief(h.text, parts?.card ?? text);
@@ -228,13 +266,19 @@ export function createApprovalQueue(deps: ApprovalQueueDeps) {
 			deps.log(`approval card ${ref} in ${conv} is already held (as one item); its text is replaced`);
 			return parts ? { action: "post", text: parts.lead } : { action: "same" };
 		}
-		const s = shown.get(conv);
 		// A card still on its way (no notice yet) cannot be rewritten into another ref: that newer card waits like any other.
-		const sameShown = !!s && itemOf(conv, s.ref) === item && waiting(conv) && !(s.pending && s.ref !== ref);
-		const openRef = deps.openRefs(conv).find(r => itemOf(conv, r) === item);
+		const { s, sameShown, openRef } = openMatch(conv, mine);
 		if (sameShown || openRef !== undefined) {
 			const now = marked(conv, text);
 			if (sameShown && s!.ref === ref && withLeft(s!.text, 0) === withLeft(text, 0)) return { action: "same" };
+			const old = revisedRef(conv, mine);
+			const taken = old === undefined ? undefined : deps.repost?.(conv, old, now);
+			if (old !== undefined && taken) {
+				const moved = { ...taken, ref: old };
+				shown.set(conv, { ref, target, text: now, pending: true });
+				deps.log(`approval card ${ref} in ${conv} revises the open card ${old}; it is posted again as the same notice`);
+				return now === text ? { action: "post", repost: moved } : { action: "post", text: now, repost: moved };
+			}
 			// The card as it was out (its old ref finds the open notice), then the shown card follows the newer ref.
 			const at = sameShown ? { ...s! } : { ref: openRef!, target };
 			if (sameShown) Object.assign(s!, { ref, text: now });
@@ -298,18 +342,17 @@ export function createApprovalQueue(deps: ApprovalQueueDeps) {
 		for (const conv of heldConvs()) {
 			const list = heldIn(conv);
 			const older = list.filter((h, i) => {
-				const newer = list.find((o, j) => j > i && itemOf(conv, o.ref) === itemOf(conv, h.ref));
+				const newer = list.find((o, j) => j > i && sameItem(conv, o, h));
 				if (newer) newer.text = keepBrief(h.text, newer.text);
 				return !!newer;
 			});
 			drop(conv, older, "a newer card of the same item is held");
 			for (const h of heldIn(conv)) {
-				const item = itemOf(conv, h.ref);
 				const s = shown.get(conv);
 				// A card still on its way (no notice yet) cannot be rewritten into another ref: the held card waits, as route() holds it.
-				if (s?.pending && itemOf(conv, s.ref) === item) continue;
-				const sameShown = !!s && waiting(conv) && itemOf(conv, s.ref) === item;
-				const openRef = deps.openRefs(conv).find(r => itemOf(conv, r) === item);
+				if (s?.pending && sameItem(conv, s, h)) continue;
+				const sameShown = !!s && waiting(conv) && sameItem(conv, s, h);
+				const openRef = deps.openRefs(conv).find(r => sameItem(conv, { ref: r }, h));
 				if (!sameShown && openRef === undefined) continue;
 				// The held card is newer than the open one: the open card shows its text, and the shown card follows its ref (as in route()).
 				held = held.filter(x => x !== h);
@@ -416,7 +459,7 @@ export function createApprovalQueue(deps: ApprovalQueueDeps) {
 	/** The Discord message ids of the visible card `ref` in `conv`, while this process knows them. */
 	const idsOf = (conv: string, ref: string): string[] | undefined => (shown.get(conv)?.ref === ref ? shown.get(conv)!.ids : undefined);
 
-	return { route, posted, closed, releaseAll, purge, take, targetOf, openCard, idsOf, held: () => held.slice(), heldIn };
+	return { route, replaces, posted, closed, releaseAll, purge, take, targetOf, openCard, idsOf, held: () => held.slice(), heldIn };
 }
 
 /** The line a later post in the conversation ends with while a card waits above it. */

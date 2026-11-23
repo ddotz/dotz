@@ -411,8 +411,9 @@ function draftMailNode(m, o = {}) {
 }
 // A combined card (comment reply + mail): the comment it answers on top, then 내 답글, then the mail (draftMailNode).
 const replyHead = () => el("div", { class: "dr-mh" }, icon("chat"), el("span", { text: TX("decision.my_reply") }));
-// The body of a draft, drawn as chat draws a message (relayed: words to read, no run button or settings card on what someone else may have written).
-const draftBodyNode = (text, cls, attrs = {}) => el("div", { ...attrs, class: `md ${cls}`, safeHtml: mdHtml(text, true) });
+// The body of a draft, line for line as it goes out: only inline marks (`code`, **bold**, links) are drawn, never blocks, so "1." items, " - " and
+// "  · " lines stay as written (as markdown, separate numbered items all read 1. and the dashes turned into bullets). The classes keep pre-wrap.
+const draftBodyNode = (text, cls, attrs = {}) => el("div", { ...attrs, class: cls, safeHtml: String(text ?? "").split("\n").map(inline).join("\n") });
 // The mail a draft answers, above the draft (hub/draft-approval.ts DraftBrief): the draft is added to the card and never stands in for it.
 function draftBriefNode(b, seen) {
   if (!b) return null;
@@ -645,7 +646,7 @@ function dcInline(e, body, pc) {
 }
 const SEND_LABELS = /^보내기\|고치기\|보내지 않기/;
 // The draft a send approval block asks about (its question's trailing "(<ref>)"), or "" for any other block.
-const dcSendRef = b => ((SEND_LABELS.test(b.options.map(o => o.label).join("|")) && /\(([A-Za-z0-9]{2,16})\)\s*$/.exec(b.title || "")) || [])[1] || "";
+const dcSendRef = b => ((SEND_LABELS.test(b.options.map(o => o.label).join("|")) && /\(([A-Za-z0-9][A-Za-z0-9_.:-]{1,63})\)\s*$/.exec(b.title || "")) || [])[1] || "";
 function inlineDc(i, live) {
   const sig = hashOf(i.body), at = i.e.ts, s = ts(i.t);
   if (live && live.t === i.t && (live.sig === sig || live.at === at)) return live;

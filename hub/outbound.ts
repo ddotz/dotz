@@ -46,16 +46,15 @@ import { runtimeFor } from "./runtime/index.ts";
 import { OMO_WORDS, ompWords, runName, type WorkerWords } from "./worker-words.ts";
 import { dropClaim, resolvesOf, splitTone, stripHandoff, stripLater, stripProjectInfo, stripResolves } from "./tone.ts";
 import { isLate, isSnowflake, lateQuote, lateRequestId, replyRef, snowflakeTime, withQuote } from "./threads.ts";
-import { keepBrief } from "./draft-approval.ts";
-import { allNotices, keepOpen, markCardShown, markDraftPosted, markJudging, onDecisionClosed, onDraftCardRefreshed, openDraftCards, openDraftRefs, openDraftText, orchestratorAnswered, resolveNotices, rewriteOpenDraft, SessionEnded, untouchedChoices } from "./notices.ts";
+import { handMailKey, keepBrief } from "./draft-approval.ts";
+import { allNotices, keepOpen, markCardShown, markDraftPosted, markJudging, onDecisionClosed, onDraftCardRefreshed, openDraftCards, openDraftRefs, openDraftText, orchestratorAnswered, resolveNotices, reviseDraftCard, rewriteOpenDraft, SessionEnded, untouchedChoices } from "./notices.ts";
 import type { OwnerSaid } from "./notices-types.ts";
 import { askerLines, askerNotes } from "./asker-notes.ts";
 import { channelTitle, GENERIC_TITLES } from "./notices-lanes.ts";
 import { answeredDraftCard } from "./notices-drafts.ts";
-import { cardPointer, cardRef, cardTitle, CARDS_LEAD, closedCardText, createApprovalQueue, loadHeld, pendingCardsNote, splitDraftCards, withSendState } from "./approval-queue.ts";
-import { mailItemKey, mailKeyOfRef } from "./draft-handled.ts";
-import { draftHeads, listDrafts as listMailDrafts, unlessUnreadable } from "../features/reply-drafts/lib/store.ts";
-import { askText } from "../features/reply-drafts/lib/flow.ts";
+import { cardDraft, cardPointer, cardRef, cardTitle, CARDS_LEAD, closedCardText, createApprovalQueue, loadHeld, pendingCardsNote, splitDraftCards, withSendState } from "./approval-queue.ts";
+import { mailItemKey } from "./draft-handled.ts";
+import { draftHeads, unlessUnreadable } from "../features/reply-drafts/lib/store.ts";
 import { recheckAnswered } from "./watch-recheck.ts";
 import { route } from "./notify-route.ts";
 import { isWebLane } from "./discord-post.ts";
@@ -410,21 +409,29 @@ export const convOfTarget = (target: string) => eventTarget(outEvent({ ts: "", k
 let refHandled: (ref: string, conv: string) => boolean | Promise<boolean> = () => false;
 export const setRefHandled = (fn: typeof refHandled): void => void (refHandled = fn);
 let itemOfDown = false;
+const storeDown = (line: string): void => {
+	if (!itemOfDown) log(`approval cards: the reply draft store cannot be read, cards are matched by their own refs until it can (${line})`);
+	itemOfDown = true;
+};
+const handWritten = (ref: string): boolean => !ref.startsWith("mail:") && unlessUnreadable(() => useReplies()?.knows(ref) === false, false, storeDown);
+const openElsewhere = (ref: string, conv: string): boolean => openDraftCards().some(c => c.ref === ref && c.to !== conv);
 export const approvals = createApprovalQueue({
 	convOf: convOfTarget,
 	openRefs: openDraftRefs,
 	// The bot's `mail:<id>` card and the app's reply draft of that mail are one item.
-	itemOf: (conv, ref) => {
-		const key = unlessUnreadable<string | undefined>(() => mailItemKey(ref, conv, draftHeads), undefined, line => {
-			if (!itemOfDown) log(`approval cards: the reply draft store cannot be read, cards are matched by their own refs until it can (${line})`);
-			itemOfDown = true;
-		});
+	itemOf: (conv, ref, text) => {
+		const key = unlessUnreadable<string | undefined>(() => mailItemKey(ref, conv, draftHeads), undefined, storeDown);
 		if (key === undefined) return ref;
 		itemOfDown = false;
-		return key;
+		if (key !== ref || !handWritten(ref)) return key;
+		return handMailKey(conv, text ? cardDraft(text) : openDraftCards(conv).find(c => c.ref === ref)?.draft) ?? ref;
 	},
+	handWritten,
+	openElsewhere,
+	openText: openDraftText,
+	repost: reviseDraftCard,
 	// A ref whose card is open in another conversation is handled there: a second copy (held here, or posted again) would ask twice.
-	handled: (ref, conv) => openDraftCards().some(c => c.ref === ref && c.to !== conv) || refHandled(ref, conv),
+	handled: (ref, conv) => openElsewhere(ref, conv) || refHandled(ref, conv),
 	// A held card goes out with the text its store holds when it is released (hub/reply-actions.ts ask).
 	fresh: ref => useReplies()?.ask(ref) ?? Promise.resolve(undefined),
 	post: (target, text, extra) => void out(target, text, undefined, { ...extra, queued: true, ...(extra.session ? { cross: "approval" } : {}) }).catch(e => log(`held approval card to ${target} failed: ${e}`)),
@@ -443,35 +450,6 @@ export const approvals = createApprovalQueue({
 	log,
 	load: () => loadHeld(HELD, log),
 });
-/**
- * Start-up reconcile for installs where the bot's own mail card (`mail:<mailId>`) took the item and the app's reply draft of that mail lost its card
- * (2026-11-02: a held draft card was dropped as redundant, so the bot card stayed open with no staged files and the draft waited with no card).
- * The app draft's card goes back through out(), so route() finds the open bot card as the same item and rewrites it in place to the draft's ref and
- * its staged files. Idempotent: the rewritten card's ref is the draft code (not `mail:`), so a second pass has nothing to replace.
- */
-export async function reconcileMailCards(): Promise<number> {
-	const waiting = new Map<string, ReturnType<typeof listMailDrafts>[number]>();
-	for (const d of listMailDrafts()) {
-		if (d.status !== "pending") continue;
-		// 고치기 keeps the older pending draft as handled; the newest pending one of a mail is the card to rescue.
-		const seen = waiting.get(d.ref);
-		if (!seen || seen.created < d.created) waiting.set(d.ref, d);
-	}
-	let replaced = 0;
-	for (const c of openDraftCards()) {
-		if (!c.ref.startsWith("mail:")) continue;
-		const key = mailKeyOfRef(c.ref, c.to);
-		const draft = key ? waiting.get(key) : undefined;
-		if (!key || !draft) continue;
-		try {
-			await out(mailTarget(key), askText(draft, []));
-			replaced++;
-		} catch (e) {
-			log(`approval card ${c.ref} in ${c.to} not replaced by its draft ${draft.id}: ${(e as Error).message}`);
-		}
-	}
-	return replaced;
-}
 // The card of a closed decision shows it on Discord too: first line kept, buttons removed, how it ended (a [file] line would show raw in an edit, so such a text is left).
 function closeDiscordCard(to: string, ref: string | undefined, c: { text: string; how: "answered" | "resolved" | "ignored" | "moved"; label: string; target?: string; ids?: string[] }): void {
 	const target = c.target ?? (ref ? approvals.targetOf(to, ref) : undefined);
@@ -551,7 +529,9 @@ export async function out(target: string, text: string, replyTo?: string, extra:
 				const shown = replies?.open(conv).find(c => c.ref === ref)?.shown;
 				return !!asked && !!said && !!shown && newestOwnerMessage(conv)?.id === asked && Date.parse(said.ts) > Date.parse(shown);
 			};
-			if (replies) void applyCardMarkers(marks, { replies, ...owner, mayDrop, tell: line => out(target, line, replyTo, { source: "gateway", nk: "gateway-note" }), log }).catch(e => log(`card markers in ${target} failed: ${(e as Error).message}`));
+			const revised = answersOwner && !extra.update_key && !extra.queued ? (splitDraftCards(marks.rest)?.cards ?? [marks.rest]).map(c => approvals.replaces(target, c)) : [];
+			const acts = marks.acts.filter(m => !(m.act === "drop" && revised.includes(m.ref)));
+			if (replies) void applyCardMarkers({ ...marks, acts }, { replies, ...owner, mayDrop, tell: line => out(target, line, replyTo, { source: "gateway", nk: "gateway-note" }), log }).catch(e => log(`card markers in ${target} failed: ${(e as Error).message}`));
 			text = marks.rest;
 			// A marker alone still answers the owner's message: it is settled (shown answered, its progress line stopped) as a posted answer is.
 			if (!text) return (settleAnswer({ target, text, replyTo: replyTo ?? lateRequest(target), extra }), { delivered: true });
@@ -598,6 +578,7 @@ export async function out(target: string, text: string, replyTo?: string, extra:
 			const card = routed ? await approvals.route(target, t, extra) : undefined;
 			routing.card = card;
 			if (card?.action === "post") t = card.text ?? withCardPointer(target, t);
+			if (card?.action === "post" && card.repost) job.extra = { ...job.extra, repost: card.repost.id };
 			// False: shutdown already landed this post with the original text.
 			landed = replies.end(job);
 			if (landed && (!card || card.action === "post")) emitOut(job, t);
@@ -614,6 +595,7 @@ export async function out(target: string, text: string, replyTo?: string, extra:
 	}
 	const r = await handOver(job, sent);
 	if (card || extra.queued) approvals.posted(target, sent, r.ids);
+	if (r.delivered && card?.repost?.card) cardMoved(convOfTarget(target), card.repost.ref, { ...card.repost.card, text: card.repost.was });
 	const cardOf = r.ids?.length ? cardRef(sent) : undefined;
 	if (cardOf && r.ids) markDraftPosted(convOfTarget(target), cardOf, target, r.ids);
 	return r;

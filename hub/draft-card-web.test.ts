@@ -76,7 +76,7 @@ for (const width of [1440, 390]) {
 			const row = document.querySelector("#mon-tl > .bm.mr");
 			return { n: cards.length, states: cards.map(x => x.querySelector(".dr-st, .rq-sent").dataset.state), badge: cards.map(x => txt(x.querySelector(".dr-st, .rq-sent"))),   // a sent draft says 보냈어요 in its foot
 				questions: cards.map(x => x.querySelectorAll(".rq-hd").length), chip: txt(c.querySelector(".dr-chip")), subject: txt(c.querySelector(".dr-sub")),
-				subjectWeight: Number(getComputedStyle(c.querySelector(".dr-sub")).fontWeight), paras: [...c.querySelectorAll(".dr-body p")].map(txt),
+				subjectWeight: Number(getComputedStyle(c.querySelector(".dr-sub")).fontWeight), paras: c.querySelector(".dr-body").textContent.split("\\n").filter(Boolean),
 				orig: !!c.querySelector(".rq-orig"), buttons: cards.map(x => [...x.querySelectorAll("button:not(.dr-rm):not(.rq-more):not(.rq-recv)")].map(b => b.dataset.k)), more: cards.map(x => x.querySelectorAll(".rq-more").length), rm: cards.map(x => x.querySelectorAll(".dr-rm").length), rowCount: document.querySelectorAll("#mon-tl > .bm.dr .dcm-row").length,
 				over: document.documentElement.scrollWidth > innerWidth, w: c.getBoundingClientRect().width,
 				rowRole: [row.getAttribute("role"), row.tabIndex], rowButtons: [...row.querySelectorAll("button")].map(b => b.dataset.k) };
