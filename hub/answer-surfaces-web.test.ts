@@ -9,7 +9,7 @@ import { ev, fakeHub, json, on } from "./test-web.ts";
 const JS = join(import.meta.dir, "..", "web", "js");
 // Who may draw text without shapes, and how many calls each holds: the owner's own words, a document, a model's thinking, a raw original (a mail
 // without a subject line among them), a question line.
-const PLAIN_MD = { "15-attachments.js": 2, "17-state-refresh.js": 1, "11-resultcard.js": 1, "12-terminal-view.js": 1, "10-decision-card.js": 5, "11-todo-strip.js": 4, "02-answer-shapes.js": 1 };
+const PLAIN_MD = { "15-attachments.js": 2, "17-state-refresh.js": 1, "11-resultcard.js": 1, "12-terminal-view.js": 1, "10-decision-card.js": 4, "11-todo-strip.js": 4, "02-answer-shapes.js": 1 };
 
 test("mdNode and mdHtml have no new caller: a model's text goes through answerNode", () => {
 	const calls: Record<string, number> = {};
