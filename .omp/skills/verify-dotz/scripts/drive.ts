@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "
 import { homedir } from "node:os";
 import { join, relative } from "node:path";
 import { REPO, type Run, alive, call, readRun } from "./lib.ts";
-import { appShellScript, autoReplyColdScript, autoReplyScript, fallbackKeysOffScript, fallbackKeysOnScript, fallbackUndoScript, fourTabAddressScript, fourTabAppsScript, mailAppColdScript, mailAppNoneScript, mailAppPickScript, seenResultsScript } from "./browser.ts";
+import { appShellScript, autoReplyColdScript, autoReplyScript, fallbackKeysOffScript, fallbackKeysOnScript, fallbackUndoScript, fourTabAddressScript, fourTabAppsScript, fourTabCreateScript, fourTabDeleteScript, mailAppColdScript, mailAppNoneScript, mailAppPickScript, seenResultsScript } from "./browser.ts";
 
 const [feature, runId] = process.argv.slice(2);
 const FEATURES = ["auto-reply", "app-shell", "comments-mail-app", "fallback-keys", "seen-results", "four-tab"];
@@ -266,6 +266,23 @@ if (feature === "auto-reply") {
 	note("addresses: #projects, #project/builtin:custom, #monitoring/replies, #apps, #apps/<id>, #apps/<missing> opened cold at 390 and 1280 and lit the tab listed in addresses.log");
 	artifacts.push(...browser("browser-apps", fourTabAppsScript(browserRun, APP, LABEL, PAGE)));
 	note("apps: 승인 대기 is the first row at 390 with nothing waiting; the web app opened in the pane right of the list at 1280 and full width at 390; 상단 고정 put it first and a reload kept it; 고정 해제 put it back (apps.log)");
+	const NAME = "검증 프로젝트";
+	const onDisk = (file: string): unknown => (existsSync(join(run.data, file)) ? JSON.parse(readFileSync(join(run.data, file), "utf8")) : {});
+	const part = (v: unknown, k: string): unknown => (typeof v === "object" && v !== null ? new Map(Object.entries(v)).get(k) : undefined);
+	const workNames = (): string[] => Object.values(part(onDisk("channels.json"), "work") ?? {}).map(String);
+	if (workNames().includes(NAME)) fail(`arrange: channels.json already names a project ${NAME}`);
+	artifacts.push(...browser("browser-create", fourTabCreateScript(browserRun, NAME)));
+	const key = /^@@KEY (ch:\d+)$/m.exec(readFileSync(join(out, "browser-create.log"), "utf8"))?.[1];
+	if (!key) fail("the create step printed no project key");
+	const id = String(key).slice(3);
+	const made = [part(part(onDisk("channels.json"), "work"), id), part(part(part(onDisk("projects.json"), "projects"), String(key)), "title"), part(part(part(onDisk("projects.json"), "projects"), String(key)), "purpose")];
+	if (made[0] !== NAME || made[1] !== NAME || !made[2]) fail(`after 만들기 the data dir holds ${JSON.stringify(made)} for ${key}`);
+	if (workNames().filter(n => n === NAME).length !== 1) fail(`the refused second 만들기 left ${JSON.stringify(workNames())} in channels.json`);
+	note(`create: + 새 프로젝트 at 390 refused an empty name, made ${key} and opened its chat; channels.json work[${id}] and projects.json ${key} hold the name and purpose; the same name again was refused in the sheet and made no second project (create.log)`);
+	artifacts.push(...browser("browser-delete", fourTabDeleteScript(browserRun, String(key), NAME)));
+	const gone = [part(part(onDisk("channels.json"), "work"), id), part(part(onDisk("projects.json"), "projects"), String(key))];
+	if (gone[0] !== undefined || gone[1] !== undefined) fail(`after 삭제 the data dir still holds ${JSON.stringify(gone)} for ${key}`);
+	note(`delete: ⋯ → 프로젝트 삭제 from the project's chat head landed on #chat/main; channels.json and projects.json no longer hold ${key} (delete.log)`);
 	noExternalNetwork("after");
 } else {
 	artifacts.push(...browser("browser-shell", appShellScript(browserRun)));

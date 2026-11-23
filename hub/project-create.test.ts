@@ -58,6 +58,18 @@ test("a project with no purpose gets a record and a channel but no setup", async
 	expect(getSetup("1")).toBeUndefined();
 });
 
+test("a name an existing project already has answers 409 and makes no second project, also when only spacing, hyphens or case differ", async () => {
+	expect((await post({ title: "가격 조사 Notes" })).status).toBe(200);
+	for (const title of ["가격 조사 Notes", "가격조사 notes", " 가격-조사-NOTES "]) {
+		const r = await post({ title });
+		expect(r.status).toBe(409);
+		expect(((await r.json()) as { error: string }).error).toMatch(/같은 이름/);
+	}
+	expect(Object.keys(discord.channels.work)).toEqual(["1"]);
+	expect(Object.keys(loadProjects())).toEqual(["ch:1"]);
+	expect((await post({ title: "가격 조사 둘째" })).status).toBe(200);
+});
+
 test("a bad title, purpose or field type answers 400 with a Korean reason and creates nothing", async () => {
 	const bad: unknown[] = [
 		{},

@@ -99,6 +99,8 @@ async function modelProblem(input: string, deps: CreateDeps): Promise<string | u
 	}
 }
 
+const nameKey = (s: string): string => s.replace(/[\s-]+/g, "").toLowerCase();
+
 /**
  * A new project, the way `dotz_channel create` makes one: a work channel (a web-only local one with Discord off), its setup (so the purpose reaches the
  * project's conversation) and its record. Everything is checked before the channel exists; the model, applied last, is undone with the rest if it fails.
@@ -108,6 +110,9 @@ export async function createProject(input: Record<string, unknown>, deps: Create
 	const title = field(input.title, "이름", MAX_TITLE);
 	if (!title) throw new ProjectCreateError(400, "프로젝트 이름을 적어 주세요");
 	if (byAgent && titleProblem(title)) throw new ProjectCreateError(400, "이름이 코드명 같아요. 하려는 일을 쉬운 말 2~4개로 적어 주세요 (예: 디스코드 설정)");
+	const records = loadProjects();
+	const taken = Object.entries(discord.channels.work).some(([id, name]) => [name, records[`ch:${id}`]?.title ?? ""].some(n => nameKey(n) === nameKey(title)));
+	if (taken) throw new ProjectCreateError(409, "같은 이름의 프로젝트가 이미 있어요. 다른 이름을 적어 주세요");
 	const purpose = field(input.purpose, "목적", MAX_PURPOSE);
 	const model = field(input.model, "모델", 200);
 	if (discord.status.enabled && !discord.channels.workCategory) throw new ProjectCreateError(409, "디스코드 작업 카테고리가 아직 없어요. 설정에서 디스코드 연결을 마치거나, 디스코드를 끄고 다시 만들어 주세요");

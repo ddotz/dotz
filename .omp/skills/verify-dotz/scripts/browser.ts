@@ -363,7 +363,7 @@ console.log('seen-results browser step done');
 `;
 
 const fourTabPrelude = `
-const lit = p => p.evaluate(() => { const b = document.querySelector('#nav .ni[aria-current="page"], #nav .ni[aria-current="true"]') || document.querySelector('#nav .ni.on'); return b ? b.textContent.trim() : ''; });
+const lit = p => p.evaluate(() => { const b = document.querySelector('#nav .ni.on'); return b ? b.getAttribute('aria-label') : ''; });
 const appRows = p => p.evaluate(() => [...document.querySelectorAll('#mon-side [data-k]')].map(n => n.dataset.k).filter(k => /^[ix]:/.test(k)));
 const settle = async (p, want, ms) => {
   const end = Date.now() + ms;
@@ -440,22 +440,24 @@ try {
   await sleep(600);
   const pinned = await appRows(p);
   if (pinned[0] !== KEY) failNow('after 상단 고정 the first app is ' + pinned[0]);
-  await p.goto('about:blank');
-  await p.goto(ORIGIN + '/#monitoring');
-  await until(p, LABEL, 15000);
-  const reloaded = await appRows(p);
-  if (reloaded[0] !== KEY) failNow('after a reload the first app is ' + reloaded[0]);
-  seen.push('1280 after 상단 고정: ' + pinned.join(', ') + '; after a reload: ' + reloaded.join(', '));
-  await shot(p, 'apps-pinned-1280.png');
-  await p.locator('#mon-side').getByRole('button', { name: new RegExp(LABEL) }).click();
-  await settle(p, h => h === '#monitoring/' + encodeURIComponent(KEY), 8000);
-  await p.getByRole('button', { name: '앱 메뉴' }).click();
-  await p.getByText('고정 해제', { exact: true }).click();
+  await closeTab(p);
+  const r = await openTab('about:blank');
+  await r.setViewportSize({ width: 1280, height: heights[1280] });
+  await r.goto(ORIGIN + '/#monitoring');
+  await until(r, LABEL, 15000);
+  const reloaded = await appRows(r);
+  if (reloaded[0] !== KEY) failNow('in a fresh tab the first app is ' + reloaded[0]);
+  seen.push('1280 after 상단 고정: ' + pinned.join(', ') + '; in a fresh tab: ' + reloaded.join(', '));
+  await shot(r, 'apps-pinned-1280.png');
+  await r.locator('#mon-side').getByRole('button', { name: new RegExp(LABEL) }).click();
+  await settle(r, h => h === '#monitoring/' + encodeURIComponent(KEY), 8000);
+  await r.getByRole('button', { name: '앱 메뉴' }).click();
+  await r.getByText('고정 해제', { exact: true }).click();
   await sleep(600);
-  const unpinned = await appRows(p);
+  const unpinned = await appRows(r);
   if (unpinned.join() !== before.join()) failNow('after 고정 해제 the apps are ' + unpinned.join(', ') + ', expected ' + before.join(', '));
   seen.push('1280 after 고정 해제: ' + unpinned.join(', '));
-  await closeTab(p);
+  await closeTab(r);
 
   const q = await openTab('about:blank');
   await q.setViewportSize({ width: 390, height: heights[390] });
@@ -484,4 +486,145 @@ try {
   await logout();
 }
 console.log('four-tab apps step done');
+`;
+
+export const fourTabCreateScript = (run: Pick<Run, "port" | "loginCookie">, name: string): string => `${prelude(run)}${fourTabPrelude}
+await login();
+try {
+  const NAME = ${JSON.stringify(name)};
+  const seen = [];
+  const p = await openTab('about:blank');
+  await p.setViewportSize({ width: 390, height: heights[390] });
+  await p.goto(ORIGIN + '/#chat/list');
+  await until(p, '새 프로젝트', 15000);
+  await shot(p, 'project-list-before-390.png');
+  await p.getByRole('button', { name: /새 프로젝트/ }).click();
+  await until(p, '만들기', 5000);
+  await p.getByRole('button', { name: '만들기', exact: true }).click();
+  await until(p, '이름을 적어 주세요', 5000);
+  seen.push('390 empty name: the sheet says 이름을 적어 주세요 and stays open at ' + (await p.evaluate(() => location.hash)));
+  await shot(p, 'project-sheet-empty-390.png');
+  await p.getByPlaceholder('예: 가격 조사').fill(NAME);
+  await p.getByPlaceholder('이 프로젝트에서 무엇을 할지 적어 주세요').fill('네 탭 검증용 프로젝트예요');
+  await shot(p, 'project-sheet-filled-390.png');
+  await p.getByRole('button', { name: '만들기', exact: true }).click();
+  const at = await settle(p, h => /^#chat\\/ch(:|%3A)\\d+$/.test(h), 15000);
+  await until(p, NAME, 5000);
+  await sleep(600);
+  seen.push('390 created: ' + at + ', title ' + JSON.stringify(await p.evaluate(() => document.querySelector('#title').textContent.trim())) + ', lit ' + (await lit(p)));
+  art('project-created.aria.txt', (await snapshot(p)).tree);
+  await shot(p, 'project-chat-390.png');
+  await p.goto(ORIGIN + '/#chat/list');
+  await until(p, NAME, 10000);
+  await shot(p, 'project-list-after-390.png');
+  await p.getByRole('button', { name: /새 프로젝트/ }).click();
+  await until(p, '만들기', 5000);
+  await p.getByPlaceholder('예: 가격 조사').fill(NAME);
+  await p.getByRole('button', { name: '만들기', exact: true }).click();
+  await until(p, '같은 이름의 프로젝트가 이미 있어요', 8000);
+  const again = await p.evaluate(() => [location.hash, !!document.querySelector('[data-np="name"]'), document.querySelector('[data-np="name"]').value]);
+  if (again[0] !== '#chat/list' || !again[1]) failNow('after the refused name the app is at ' + JSON.stringify(again));
+  seen.push('390 same name again: the sheet says 같은 이름의 프로젝트가 이미 있어요, stays open with ' + JSON.stringify(again[2]) + ' at ' + again[0]);
+  await shot(p, 'project-sheet-again-390.png');
+  await closeTab(p);
+  art('create.log', seen.join('\\n') + '\\n');
+  console.log('@@KEY ' + decodeURIComponent(at.slice('#chat/'.length)));
+} finally {
+  await logout();
+}
+console.log('four-tab create step done');
+`;
+
+export const fourTabPanelScript = (run: Pick<Run, "port" | "loginCookie">, key: string, name: string): string => `${prelude(run)}${fourTabPrelude}
+await login();
+try {
+  const KEY = ${JSON.stringify(key)}, NAME = ${JSON.stringify(name)}, DRAFT = '보내기 전 초안';
+  const CHAT = '#chat/' + KEY, OPEN = h => decodeURIComponent(h) === '#project/' + KEY, SHUT = h => decodeURIComponent(h) === CHAT;
+  const seen = [];
+  const panel = p => p.evaluate(() => { const n = document.querySelector('#pv-panel'); return n ? Math.round(n.getBoundingClientRect().width) : 0; });
+  const p = await openTab('about:blank');
+  await p.setViewportSize({ width: 1280, height: heights[1280] });
+  await p.goto(ORIGIN + '/' + CHAT);
+  await until(p, NAME, 15000);
+  await p.locator('#text').fill(DRAFT);
+  const len0 = await p.evaluate(() => history.length);
+  await shot(p, 'panel-closed-1280.png');
+  await p.getByRole('button', { name: '현황', exact: true }).click();
+  await settle(p, OPEN, 8000);
+  await sleep(600);
+  const open = [await panel(p), await p.evaluate(() => document.querySelector('#text').value), await p.evaluate(() => history.length)];
+  if (!(open[0] > 200) || open[1] !== DRAFT) failNow('after 현황 at 1280 the panel is ' + open[0] + 'px wide and the composer holds ' + JSON.stringify(open[1]));
+  seen.push('1280 현황 open: ' + (await p.evaluate(() => location.hash)) + ', panel ' + open[0] + 'px, composer ' + JSON.stringify(open[1]) + ', history ' + len0 + ' -> ' + open[2]);
+  art('panel-open.aria.txt', (await snapshot(p)).tree);
+  await shot(p, 'panel-open-1280.png');
+  await p.getByRole('button', { name: '현황', exact: true }).click();
+  await settle(p, SHUT, 8000);
+  await sleep(400);
+  const shut = [await panel(p), await p.evaluate(() => document.querySelector('#text').value)];
+  if (shut[0] || shut[1] !== DRAFT) failNow('after closing 현황 the panel is ' + shut[0] + 'px wide and the composer holds ' + JSON.stringify(shut[1]));
+  seen.push('1280 현황 closed: panel 0px, composer ' + JSON.stringify(shut[1]));
+  await closeTab(p);
+
+  for (const w of [390, 1280]) {
+    const c = await openTab('about:blank');
+    await c.setViewportSize({ width: w, height: heights[w] });
+    await c.goto(ORIGIN + '/#project/' + encodeURIComponent(KEY));
+    await until(c, NAME, 15000);
+    await settle(c, OPEN, 8000);
+    await sleep(700);
+    const cold = [await panel(c), await lit(c), await c.evaluate(() => current)];
+    if (!(cold[0] > 200) || !cold[1].startsWith('채팅') || cold[2] !== 'chat') failNow('cold #project/' + KEY + ' at ' + w + ' gave ' + JSON.stringify(cold));
+    seen.push(w + ' cold #project/' + KEY + ': screen ' + cold[2] + ', lit ' + cold[1] + ', panel ' + cold[0] + 'px');
+    await shot(c, 'panel-cold-' + w + '.png');
+    if (w === 390) {
+      await c.evaluate(() => history.back());
+      await settle(c, SHUT, 8000);
+      await sleep(500);
+      const talk = [await panel(c), await c.evaluate(() => { const t = document.querySelector('#text'); return !!t && t.getBoundingClientRect().height > 0; })];
+      if (talk[0] || !talk[1]) failNow('뒤로 from 현황 at 390 gave panel ' + talk[0] + 'px, composer shown ' + talk[1]);
+      seen.push('390 뒤로 from 현황: ' + (await c.evaluate(() => location.hash)) + ', composer shown');
+      await shot(c, 'panel-back-390.png');
+      await c.getByRole('tab', { name: '현황', exact: true }).click();
+      await settle(c, OPEN, 8000);
+      seen.push('390 현황 tab: ' + (await c.evaluate(() => location.hash)));
+    }
+    await closeTab(c);
+  }
+  art('panel.log', seen.join('\\n') + '\\n');
+} finally {
+  await logout();
+}
+console.log('four-tab panel step done');
+`;
+
+export const fourTabDeleteScript = (run: Pick<Run, "port" | "loginCookie">, key: string, name: string): string => `${prelude(run)}${fourTabPrelude}
+await login();
+try {
+  const KEY = ${JSON.stringify(key)}, NAME = ${JSON.stringify(name)};
+  const seen = [];
+  const p = await openTab('about:blank');
+  await p.setViewportSize({ width: 1280, height: heights[1280] });
+  await p.goto(ORIGIN + '/#chat/' + KEY);
+  await until(p, NAME, 15000);
+  await p.getByRole('button', { name: '프로젝트 메뉴' }).first().click();
+  await p.getByText('프로젝트 삭제', { exact: true }).click();
+  await until(p, NAME + ' 프로젝트를 삭제할까요?', 8000);
+  await shot(p, 'project-delete-ask-1280.png');
+  await p.locator('[data-k="delete"]').click();
+  const at = await settle(p, h => h === '#chat/main', 15000);
+  await sleep(800);
+  const left = await p.evaluate(k => !!document.querySelector('#chat-convo .cv-row[data-t="' + k + '"]'), KEY);
+  if (left) failNow('the deleted project still has a row in the chat list');
+  seen.push('1280 삭제: ' + at + ', lit ' + (await lit(p)) + ', no row for ' + KEY);
+  await shot(p, 'project-deleted-1280.png');
+  await p.goto(ORIGIN + '/#project/' + encodeURIComponent(KEY));
+  await sleep(2500);
+  seen.push('1280 cold #project/' + KEY + ' after the delete: ' + (await p.evaluate(() => [location.hash, current].join(' | '))) + ', lit ' + (await lit(p)));
+  await shot(p, 'project-gone-1280.png');
+  await closeTab(p);
+  art('delete.log', seen.join('\\n') + '\\n');
+} finally {
+  await logout();
+}
+console.log('four-tab delete step done');
 `;

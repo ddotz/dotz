@@ -26,7 +26,8 @@ Each feature file starts with `last-proven: <commit>`, then an H1, one paragraph
 ## Features
 
 - [Auto-reply](./auto-reply.md): a received mail's reply draft card, 보내기 with its undo window, the send, and the sent state.
-- [App shell](./app-shell.md): the home screen and the five bottom tabs.
+- [App shell](./app-shell.md): the home screen and the four tabs.
 - [Comments mail app](./comments-mail-app.md): the 메일 앱 choice beside 파일 요청 메일 초안 in the 지켜볼 글 sheet, disabled with a hint while no mail app is connected.
 - [Fallback keys](./fallback-keys.md): the API 키 사용 master switch with its confirm, the step tag that opens it, and 삭제 with 되돌리기 on a fallback step.
 - [Seen results](./seen-results.md): a session result notice stays unread until its own 작업내역 row is scrolled into view, then reads.
+- [Four tabs](./four-tab.md): old addresses, the 앱 tab list with a pinned web app, `+ 새 프로젝트`, 현황 inside a project chat, and 프로젝트 삭제.
