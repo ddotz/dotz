@@ -6,7 +6,7 @@
 // hub/orchestrator.ts switchTo); a chain of bare models stays with omp (hub/runtime/omp.ts). Usage and limit state persists in <data dir>/fallback-usage.json.
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { basename, join } from "node:path";
-import { cfg, DATA_DIR, entryId, entryOn, type FallbackEntry, isPlain, OMP, parseSelector, writeAtomic } from "./config.ts";
+import { cfg, DATA_DIR, entryId, entryOn, type FallbackEntry, fallbackChain, isPlain, log, OMP, parseSelector, readJsonOrQuarantine, writeAtomic } from "./config.ts";
 import { API_KEY_OFF, apiKeyBan } from "./apikey-policy.ts";
 import { rateLimitDelay } from "./providers.ts";
 
@@ -34,9 +34,10 @@ let state: State | undefined;
 function load(): State {
 	if (state) return state;
 	try {
-		const j = JSON.parse(readFileSync(FILE, "utf8")) as Partial<State>;
-		state = { pools: j.pools ?? {}, blocked: j.blocked ?? {} };
-	} catch {
+		const j = readJsonOrQuarantine<Partial<State> | null>(FILE, () => ({ pools: {}, blocked: {} }), { keepGood: false });
+		state = { pools: j?.pools ?? {}, blocked: j?.blocked ?? {} };
+	} catch (e) {
+		log(`fallback usage file not read: ${e}`);
 		state = { pools: {}, blocked: {} };
 	}
 	return state;
@@ -46,6 +47,10 @@ const save = () => writeAtomic(FILE, `${JSON.stringify(load(), null, 1)}\n`);
 export function resetFallbackState(): void {
 	state = { pools: {}, blocked: {} };
 	save();
+}
+/** Tests: the next load() reads the usage file again. */
+export function forgetFallbackState(): void {
+	state = undefined;
 }
 
 // The provider's usage report says a subscription's usage limit is over (or a 리셋권 was just spent): ends the recorded quota blocks of the
@@ -127,15 +132,26 @@ export const keyProviderOk = (e: FallbackEntry) => Boolean(e.key_file) && Boolea
 
 type ModelDef = { id?: string; name?: string; provider?: string; reasoning?: boolean; input?: string[]; contextWindow?: number; maxTokens?: number; cost?: Record<string, number> };
 let defs: Map<string, ModelDef> | undefined;
+/** The `omp models --json` process: `read` blocks the caller, `readAsync` is the background warm-up's. Tests replace both. */
+export const modelList = {
+	read: (): string => Bun.spawnSync([OMP, "models", "--json"], { stdout: "pipe", stderr: "ignore", timeout: 15_000 }).stdout.toString(),
+	readAsync: async (): Promise<string> => {
+		const p = Bun.spawn([OMP, "models", "--json"], { stdout: "pipe", stderr: "ignore", timeout: 15_000 });
+		const text = await new Response(p.stdout).text();
+		await p.exited;
+		return text;
+	},
+};
+const parseModelList = (text: string) => new Map(((JSON.parse(text).models ?? []) as Array<ModelDef & { selector: string }>).map(m => [m.selector, m]));
 // The catalog row of a model (omp lists it with its prices), read once with a blocking call: spawning a process is synchronous.
 // Bounded to 15 s; a failed read is remembered (the entry then runs with default limits) so it is not retried at every spawn.
 function modelDef(selector: string): ModelDef | undefined {
 	if (!defs) {
-		defs = new Map();
 		try {
-			const r = Bun.spawnSync([OMP, "models", "--json"], { stdout: "pipe", stderr: "ignore", timeout: 15_000 });
-			for (const m of (JSON.parse(r.stdout.toString()).models ?? []) as Array<ModelDef & { selector: string }>) defs.set(m.selector, m);
-		} catch {}
+			defs = parseModelList(modelList.read());
+		} catch {
+			defs = new Map();
+		}
 	}
 	if (!defs.has(selector)) defs.set(selector, modelsDevDef(selector));
 	return defs.get(selector);
@@ -150,21 +166,29 @@ export const modelsDev = {
 		const r = Bun.spawnSync(["curl", "-sf", "--max-time", "5", "https://models.dev/api.json"], { stdout: "pipe", stderr: "ignore", timeout: 10_000 /* curl stops itself at 5 s */ });
 		return r.success ? r.stdout.toString() : undefined;
 	},
+	fetchAsync: async (): Promise<string | undefined> => {
+		const p = Bun.spawn(["curl", "-sf", "--max-time", "5", "https://models.dev/api.json"], { stdout: "pipe", stderr: "ignore", timeout: 10_000 });
+		const text = await new Response(p.stdout).text();
+		return (await p.exited) === 0 ? text : undefined;
+	},
 };
+const devCacheFresh = () => existsSync(modelsDev.file) && Date.now() - statSync(modelsDev.file).mtimeMs < 86_400_000;
 type DevModel = { name?: string; reasoning?: boolean; modalities?: { input?: string[] }; limit?: { context?: number; output?: number }; cost?: { input?: number; output?: number; cache_read?: number; cache_write?: number } };
-let devCatalog: Record<string, { models?: Record<string, DevModel> }> | undefined;
+type DevCatalog = Record<string, { models?: Record<string, DevModel> }>;
+let devCatalog: DevCatalog | undefined;
 function modelsDevDef(selector: string): ModelDef | undefined {
 	if (!devCatalog) {
 		devCatalog = {};
 		try {
-			const { file } = modelsDev;
-			const fresh = existsSync(file) && Date.now() - statSync(file).mtimeMs < 86_400_000;
-			const text = fresh ? readFileSync(file, "utf8") : modelsDev.fetch();
+			const fresh = devCacheFresh();
+			const text = fresh ? readFileSync(modelsDev.file, "utf8") : modelsDev.fetch();
 			if (text) {
 				devCatalog = JSON.parse(text);
-				if (!fresh) writeAtomic(file, text);
+				if (!fresh) writeAtomic(modelsDev.file, text);
 			}
-		} catch {}
+		} catch (e) {
+			log(`models.dev catalog not read: ${e}`);
+		}
 	}
 	const [provider, ...rest] = selector.split("/");
 	const m = devCatalog[provider]?.models?.[rest.join("/")];
@@ -178,6 +202,51 @@ function modelsDevDef(selector: string): ModelDef | undefined {
 		maxTokens: m.limit.output,
 		...(c ? { cost: { input: c.input ?? 0, output: c.output ?? 0, cacheRead: c.cache_read ?? 0, cacheWrite: c.cache_write ?? 0 } } : {}),
 	};
+}
+
+let warming: Promise<void> | undefined;
+async function warmDefs(): Promise<void> {
+	if (defs) return;
+	try {
+		const read = parseModelList(await modelList.readAsync());
+		defs ??= read;
+	} catch (e) {
+		log(`omp model list not warmed: ${e}`);
+	}
+}
+async function warmDevCatalog(): Promise<void> {
+	if (devCatalog) return;
+	try {
+		const fresh = devCacheFresh();
+		const text = fresh ? readFileSync(modelsDev.file, "utf8") : await modelsDev.fetchAsync();
+		if (!text) return;
+		const read = JSON.parse(text) as DevCatalog;
+		if (!fresh) writeAtomic(modelsDev.file, text);
+		devCatalog ??= read;
+	} catch (e) {
+		log(`models.dev catalog not warmed: ${e}`);
+	}
+}
+/** Fills both model catalogs in the background, so the first keyEnv call does not block on a spawn; a failed read stays unset and the blocking path tries again. */
+export function warmModelCatalogs(): Promise<void> {
+	warming ??= Promise.all([warmDefs(), warmDevCatalog()]).then(() => {
+		warming = undefined;
+	});
+	return warming;
+}
+/** Warms the catalogs when `entries` (a chain being started or saved) hold an API-key entry, the only reader of them. */
+export function warmKeyedCatalogs(entries: FallbackEntry[]): void {
+	if (entries.some(e => e.key_file)) void warmModelCatalogs();
+}
+/** Boot: reads the usage file now, so a damaged one is raised with the other recovered files, and warms the catalogs for the saved chains. */
+export function bootFallback(): void {
+	load();
+	for (const target of ["orchestrator", "lanes", "workers"] as const) warmKeyedCatalogs(fallbackChain(target));
+}
+/** Tests: forget both catalogs so the next keyEnv reads them again. */
+export function resetModelCatalogs(): void {
+	defs = undefined;
+	devCatalog = undefined;
 }
 
 // An entry with a key runs as its own provider ("<provider>-apikey"), because omp prefers a stored login over an API key for

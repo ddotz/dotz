@@ -3,7 +3,7 @@
 import { cfg, compactAtFor, CONTEXT_LIMITS, CONTEXT_RESERVE, contextLimitsOf, DEFAULTS, lanesCompactAt, setContextLimits, DEFAULT_WORKER_MODEL, entryId, NAME, entryOf, FALLBACK_MAX, type FallbackEntry, type FallbackTarget, fallbackChain, isPlain, lanesModel, log, orchestratorModel, parseSelector, selectorOf, setFallbackChain, splitThinking, THINKING_LEVELS, TZ, updateModels, workerModel } from "./config.ts";
 import { label, readAliases } from "./account-alias.ts";
 import { AccountsError, accountCommand } from "./accounts-api.ts";
-import { entryView, hubChain, keyFileOk, keyProviderOk } from "./fallback.ts";
+import { entryView, hubChain, keyFileOk, keyProviderOk, warmKeyedCatalogs } from "./fallback.ts";
 import { HARNESS_NAMES, runtimeFor } from "./runtime/index.ts";
 import { liveModelsInUse } from "./models-in-use.ts";
 import { homedir } from "node:os";
@@ -428,6 +428,7 @@ export async function setFallback(target: string, chain: unknown[]) {
 	}
 	const changed = JSON.stringify(fallbackChain(target as FallbackTarget)) !== JSON.stringify(clean);
 	setFallbackChain(target as FallbackTarget, clean);
+	warmKeyedCatalogs(clean);
 	// Running processes take the new chain now (an API key added while the subscription is out must work on the next turn).
 	const applied = !changed || target === "workers" ? "next-start" : target === "orchestrator" ? applyOrchestratorChain() : (applyLaneChain(), "updated");
 	return { ok: true, target, chain: clean.map(entryView), applied, note: FALLBACK_NOTE };

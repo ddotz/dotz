@@ -1,11 +1,11 @@
 // The hub-driven chain's decisions on their own (no process): where a spent cap goes, when every entry is out, and which
 // failures move the chain at all.
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test } from "bun:test";
-import { cfg, chainAfter, DATA_DIR, entryOf } from "./config.ts";
-import { atTime, Chain, failsOver, failureReason, hubChain, keyedWorker, keyHostOk, keyProviderOk, modelsDev, resetFallbackState, spendOnKey, workerKeyEnv } from "./fallback.ts";
+import { cfg, chainAfter, DATA_DIR, entryOf, takeRecoveries } from "./config.ts";
+import { atTime, Chain, failsOver, failureReason, forgetFallbackState, hubChain, keyedWorker, keyHostOk, keyProviderOk, modelList, modelsDev, resetFallbackState, resetModelCatalogs, spendOnKey, warmModelCatalogs, workerKeyEnv } from "./fallback.ts";
 import { writeWorkerProfile } from "./runtime/omo.ts";
 import { classifyProviderError, poolRetryAt } from "./providers.ts";
 
@@ -239,5 +239,89 @@ test("a worker's spend on the key counts against the entry's cap, shared with th
 test("a pinned account's limit names when it ends, and the pause waits for exactly that", () => {
 	expect(poolRetryAt("Claude account 'default' for anthropic-subscription is blocked (rate limit) until 2026-10-26T11:20:00.000Z, and account fallback is off, so no other account is tried.")).toBe(Date.parse("2026-10-26T11:20:00.000Z"));
 	expect(poolRetryAt("All Claude accounts for anthropic-subscription are currently blocked (rate limit). Soonest automatic retry: 2026-10-26T11:20:00.000Z.")).toBe(Date.parse("2026-10-26T11:20:00.000Z"));
+});
+
+const usageFile = join(DATA_DIR, "fallback-usage.json");
+const keptUsage = () => readdirSync(DATA_DIR).filter(n => n.startsWith("fallback-usage.json.corrupt-"));
+
+test("a damaged usage file is kept as .corrupt, the owner is told, and the chain starts from empty usage", () => {
+	takeRecoveries();
+	const damaged = '{"pools": {"key:anthropic-api-key": {"month": ';
+	writeFileSync(usageFile, damaged);
+	forgetFallbackState();
+	try {
+		const c = new Chain("anthropic/sub:low", [{ model: "openai/x" }], "low");
+		expect(c.down(0)).toBeUndefined();
+		expect(c.down(1)).toBeUndefined();
+		const kept = keptUsage();
+		expect(kept).toHaveLength(1);
+		expect(readFileSync(join(DATA_DIR, kept[0]), "utf8")).toBe(damaged);
+		expect(takeRecoveries()).toMatchObject([{ file: usageFile, restored: false }]);
+		expect(JSON.parse(readFileSync(usageFile, "utf8"))).toEqual({ pools: {}, blocked: {} });
+	} finally {
+		for (const n of keptUsage()) rmSync(join(DATA_DIR, n), { force: true });
+		resetFallbackState();
+	}
+});
+
+test("a missing or intact usage file is read without a quarantine or an alert", () => {
+	takeRecoveries();
+	const at = Date.UTC(2026, 9, 10, 3);
+	rmSync(usageFile, { force: true });
+	forgetFallbackState();
+	try {
+		expect(new Chain("anthropic/sub:low", [{ model: "openai/x" }], "low").down(0, at)).toBeUndefined();
+		const blocker = new Chain("anthropic/sub:low", [{ model: "openai/x" }], "low");
+		blocker.active = 0;
+		blocker.fail("quota", at + 2 * HOUR, at);
+		forgetFallbackState();
+		expect(new Chain("anthropic/sub:low", [{ model: "openai/x" }], "low").down(0, at)?.why).toBe("quota");
+		expect(keptUsage()).toEqual([]);
+		expect(takeRecoveries()).toEqual([]);
+	} finally {
+		resetFallbackState();
+	}
+});
+
+test("after the background warm-up, the first API-key process start does not spawn anything blocking", async () => {
+	resetFallbackState();
+	writeFileSync(join(DATA_DIR, "secrets", "anthropic-api-key"), "sk-ant-test-key");
+	const saved = { read: modelList.read, readAsync: modelList.readAsync, fetch: modelsDev.fetch, fetchAsync: modelsDev.fetchAsync, file: modelsDev.file };
+	let blocking = 0;
+	let background = 0;
+	modelList.read = () => {
+		blocking++;
+		return "{}";
+	};
+	modelsDev.fetch = () => {
+		blocking++;
+		return undefined;
+	};
+	modelList.readAsync = async () => {
+		background++;
+		return JSON.stringify({ models: [{ selector: "anthropic/claude-opus-5-5", name: "Warm Opus", contextWindow: 777_000, maxTokens: 64_000, reasoning: true, input: ["text"] }] });
+	};
+	modelsDev.fetchAsync = async () => {
+		background++;
+		return "{}";
+	};
+	modelsDev.file = join(mkdtempSync(join(tmpdir(), "dotz-models-dev-warm-")), "models-dev.json");
+	resetModelCatalogs();
+	try {
+		await warmModelCatalogs();
+		expect(background).toBe(2);
+		const env = new Chain("anthropic/claude-opus-5-5:medium", [{ model: "anthropic/claude-opus-5-5", key_file: "anthropic-api-key" }], "medium").env(1);
+		expect(blocking).toBe(0);
+		expect(JSON.parse(env.DOTZ_KEY_PROVIDER).models[0]).toMatchObject({ name: "Warm Opus (API key)", contextWindow: 777_000, maxTokens: 64_000 });
+		resetModelCatalogs();
+		rmSync(modelsDev.file, { force: true });
+		new Chain("anthropic/claude-opus-5-5:medium", [{ model: "anthropic/claude-opus-5-5", key_file: "anthropic-api-key" }], "medium").env(1);
+		expect(blocking).toBe(2);
+	} finally {
+		Object.assign(modelList, { read: saved.read, readAsync: saved.readAsync });
+		Object.assign(modelsDev, { fetch: saved.fetch, fetchAsync: saved.fetchAsync, file: saved.file });
+		resetModelCatalogs();
+		rmSync(join(DATA_DIR, "secrets", "anthropic-api-key"), { force: true });
+	}
 });
 

@@ -6,6 +6,7 @@ import { cfg, DATA_DIR, DEFAULTS, HOME, HOST, log, NAME, now, paths, PORT, resta
 import "./lock.ts"; // must stay right after config.ts: takes the single-instance lock before the other modules load
 import "../firstrun/first-run-boot.ts"; // a seed install still in its web onboarding serves only that and never gets past this line (firstrun/first-run-boot.ts)
 import { parseCommand, setGatewayRestart } from "./control.ts";
+import { bootFallback } from "./fallback.ts";
 import * as discord from "./discord.ts";
 import * as livestatus from "./livestatus.ts";
 import { setAskAnswer } from "./askbuttons.ts";
@@ -622,6 +623,7 @@ const cards: CardAudit = {
 	open: () => draftCardCounts().open,
 	turn: c => wakeOnce(CARD_AUDIT_ID, msg().cardAudit(c.closed, c.refreshed, c.open)),
 };
+bootFallback();
 // A state file that did not parse at load (hub/config.ts readJsonOrQuarantine) was set aside; tell the owner what the gateway started from.
 for (const r of takeRecoveries()) void out(discord.status.enabled ? "worklog" : "web", msg().fileRecovered(basename(r.file), r.restored), undefined, { source: "gateway", wk: "system" }).catch(e => log(`recovery notice failed: ${e}`));
 void runMigrations({ ...(process.env.DOTZ_NO_ORCHESTRATOR === "1" ? {} : { cards, comments: legacyComments() }), dataDir: DATA_DIR, ask: alert, notify: text => void out(discord.status.enabled ? "worklog" : "web", text, undefined, { source: "gateway", wk: "system" }).catch(e => log(`migration notice failed: ${e}`)) }).catch(e => log(`migrations failed: ${e}`));
