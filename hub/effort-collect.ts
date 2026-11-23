@@ -1,7 +1,4 @@
-// The collector behind hub/effort-learn.ts: the published per-effort results of one model, read by code from a fixed public page.
-// Artificial Analysis' leaderboard page carries one table row per model and effort ("Claude Sonnet 5.5 (high)") with the intelligence index,
-// the cost per task and the time per task. Code fetches the page (timeout, size cap), finds the rows of the model by its id and keeps only
-// numbers and an effort from the fixed list. The page is untrusted: no part of it is run, written or passed on except those numbers.
+// why(vendor): the page https://artificialanalysis.ai/leaderboards/models embeds one JSON record per model and effort in script strings with escaped quotes; code reads only numbers and an effort from the fixed list, and runs, writes or passes on nothing else of the untrusted page.
 import type { Collected } from "./effort-learn.ts";
 import type { Effort } from "./model-effort.ts";
 
@@ -31,33 +28,37 @@ export async function fetchCapped(url: string, fetchFn: Fetch = fetch as Fetch, 
 	return new TextDecoder().decode(Buffer.concat(parts));
 }
 
-const cellsOf = (tr: string): string[] => [...tr.matchAll(/<t[dh][^>]*>([\s\S]*?)<\/t[dh]>/g)].map(m => m[1]!.replace(/<[^>]*>/g, " ").replace(/&[a-z#0-9]+;/gi, " ").replace(/\s+/g, " ").trim());
 const tokens = (s: string): string[] => s.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
-const number = (s: string | undefined): number | undefined => {
-	const m = /^\$?\s*(\d[\d,]*(?:\.\d+)?|\.\d+)$/.exec(s ?? "");
-	return m ? Number(m[1]!.replace(/,/g, "")) : undefined;
-};
 const sameModel = (id: string[], name: string[]): boolean => {
 	const want = id.length > 1 && /^\d{8}$/.test(id[id.length - 1]!) ? id.slice(0, -1) : id;
 	const base = name.length > want.length && /^\d{3,4}$/.test(name[name.length - 1]!) ? name.slice(0, -1) : name;
 	return want.length > 0 && base.length === want.length && base.every((t, i) => t === want[i]);
 };
 
-/** The rows of one model from the leaderboard page: one per effort the page lists for it. */
-export function boardRows(html: string, id: string): Array<{ effort: Effort; score: number; cost: number; minutes?: number }> {
-	const table = [...html.matchAll(/<tr[\s\S]*?<\/tr>/g)].map(m => cellsOf(m[0]));
-	const head = table.find(r => r[0] === "Model");
-	const at = (re: RegExp): number => head?.findIndex(c => re.test(c)) ?? -1;
-	const [iScore, iCost, iTime] = [at(/Intelligence Index/i), at(/Cost per Task/i), at(/Time per Task/i)];
-	if (iScore < 0 || iCost < 0) return [];
+const RECORD_HEAD = /"name":"([^"]*)","shortName"/g;
+const RECORD_NAME = /^(.*?)\s*\(([^()]*)\)$/;
+const RECORD_LIMIT = 8_000;
+const field = (record: string, key: string): number | undefined => {
+	const m = new RegExp(`"${key}":(-?\\d+(?:\\.\\d+)?(?:[eE][+-]?\\d+)?)[,}]`).exec(record);
+	return m ? Number(m[1]) : undefined;
+};
+
+type BoardRow = { effort: Effort; score: number; cost: number; minutes?: number };
+
+/** The rows of one model from the leaderboard page: one per effort record the page embeds for it. */
+export function boardRows(html: string, id: string): BoardRow[] {
+	const text = html.replaceAll('\\"', '"');
+	const heads = [...text.matchAll(RECORD_HEAD)];
 	const want = tokens(id);
-	const out: Array<{ effort: Effort; score: number; cost: number; minutes?: number }> = [];
-	for (const r of table) {
-		const m = /^(.*?)\s*\(([^()]*)\)$/.exec(r[0] ?? "");
-		const effort = m ? KIND[m[2]!.trim().toLowerCase()] : undefined;
-		const [score, cost, minutes] = [number(r[iScore]), number(r[iCost]), iTime >= 0 ? number(r[iTime]) : undefined];
-		if (effort && m && sameModel(want, tokens(m[1]!)) && score !== undefined && cost !== undefined) out.push({ effort, score, cost, ...(minutes !== undefined ? { minutes } : {}) });
-	}
+	const out: BoardRow[] = [];
+	heads.forEach((head, i) => {
+		const name = RECORD_NAME.exec(head[1]!);
+		const effort = name ? KIND[name[2]!.split(",")[0]!.trim().toLowerCase()] : undefined;
+		if (!effort || !name || !sameModel(want, tokens(name[1]!))) return;
+		const record = text.slice(head.index, Math.min(heads[i + 1]?.index ?? text.length, head.index + RECORD_LIMIT));
+		const [score, cost, seconds] = [field(record, "intelligenceIndex"), field(record, "intelligenceIndexCostPerTask"), field(record, "intelligenceIndexTimePerTask")];
+		if (score !== undefined && cost !== undefined) out.push({ effort, score, cost, ...(seconds !== undefined ? { minutes: seconds / 60 } : {}) });
+	});
 	return out;
 }
 
