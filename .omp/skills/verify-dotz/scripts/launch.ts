@@ -62,6 +62,7 @@ writeFileSync(
 	{ mode: 0o600 },
 );
 writeFileSync(join(data, "custom", "reply-drafts", "config.json"), JSON.stringify({ enabled: true, apps: { mail: { auto: false } } }));
+writeFileSync(join(data, "models-dev.json"), "{}");
 
 const record = (name: string): string => `printf '%s\\t%s\\n' "$(date -u +%FT%TZ)" "${name} $*" >> '${outbound}/calls.log'`;
 const zele = [
