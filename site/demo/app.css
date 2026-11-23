@@ -438,6 +438,10 @@ button.cchip.mr-draft .ic { width: 14px; height: 14px; stroke-width: 2; }
   .mt-use-row .tag { max-width: 260px; }
   .mt-use-end { margin-left: auto; }
 }
+.fb-keys-row { display: flex; align-items: center; gap: var(--sp-3); min-height: var(--btn-hit); padding: var(--sp-15) var(--row-px); }
+.fb-keys-row .mt-use-tx { flex: 1 1 0; }
+.fb-keys-row .fb-sw { display: inline-flex; align-items: center; gap: var(--sp-15); }
+.fb-keyoff { border: 0; text-decoration: underline dotted; text-underline-offset: 3px; cursor: pointer; }
 .mt-head { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; }
 .mt-head .t { min-width: 0; font: 700 17px/24px var(--font); overflow-wrap: anywhere; }
 .mt-head .sup { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -3753,6 +3757,9 @@ textarea.as-in.as-ta { padding-top: var(--sp-15); padding-bottom: var(--sp-15); 
 .kk-pick-src > .kk-pr + .li { border-top: 1px solid var(--line); }
 #cm-pick .sec { margin-inline: var(--sp-4); }   /* section names start on the rows' left line */
 #cm-pick .sec + .kk-pick-src { border-top: 0; }
+#cm-pick [data-setting="mail-app"] .sel { flex: none; width: 160px; }
+#cm-pick [data-setting="mail-app"] .kk-note { padding: var(--sp-1) var(--sp-4) var(--sp-3); text-align: left; }
+#cm-pick .kk-pr + [data-setting="mail-app"], #cm-pick [data-setting="mail-app"] + .kk-pr { border-top: 1px solid var(--line); }
 #cm-pick .fs-hd { padding-left: max(var(--sp-4), env(safe-area-inset-left)); }   /* the head starts on the rows' left line (this sheet's rows sit at --sp-4 at every width) */
 #cm-pick .fs-body { padding-inline: 0; }   /* the rows run edge to edge and bring their own side padding */
 /* 댓글 / DM swap the whole list under them, so they are screen tabs like the mailbox tabs (web/DESIGN.md 화면 탭), not a filter track */
@@ -5079,6 +5086,8 @@ body { display: flow-root; }
 /* the copy in an inactive pane has no ids, so what #v-monitoring.kk-on hides on the real screen is hidden here by class */
 .pane-pj > .view.kk-on > .chatbox { display: none; }
 #split .view.in-pane:not(#v-chat) { flex: 1; min-height: 0; height: auto; max-width: none; margin: 0; padding: var(--sp-4); overflow-y: auto; }
+#split #v-monitoring.in-pane { grid-template-columns: minmax(0, 1fr); }
+#split #v-monitoring.in-pane > * { grid-column: 1; }
 
 .pane-mir { flex: 1; display: flex; flex-direction: column; min-height: 0; }
 .pane-hd { flex: none; display: flex; align-items: center; gap: var(--sp-2); min-width: 0; padding: var(--sp-3) var(--sp-4); }
