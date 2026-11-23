@@ -3,7 +3,7 @@
 // conversation the common settings are switches that PATCH /api/integrations/<app>/settings straight away (no model call). The owner's words
 // go to the orchestrator, which answers with a ```dotz-settings block; it is drawn as a change card (before -> after) and only 적용 sends the same PATCH.
 const AS_KEY = "dotz.settings.cards";
-const AS = { by: {}, none: {}, load: {}, busy: {}, rm: {}, feat: {}, done: lsJson(AS_KEY, null) || {},
+const AS = { by: {}, none: {}, load: {}, busy: {}, turn: {}, rm: {}, feat: {}, done: lsJson(AS_KEY, null) || {},
   lines: lsJson(`${AS_KEY}.lines`, null) || {} };   // lines[card id][key] = {label, text, old}: an applied card keeps the words it showed and the values to put back
 const asSave = () => { try { localStorage.setItem(AS_KEY, JSON.stringify(AS.done)); localStorage.setItem(`${AS_KEY}.lines`, JSON.stringify(AS.lines)); } catch { /* storage full or blocked: the card state lasts until reload */ } };
 
@@ -30,19 +30,25 @@ async function asFeatLoad(app) {
   asPaint();
 }
 const asFeatSave = (app, v) => { if (v && Array.isArray(v.features) && Array.isArray(v.internal) && Array.isArray(v.approvals)) AS.feat[app] = v; };
-async function asFeatSet(app, id, on) {
-  if (AS.busy[app]) return;
+function asTurn(app, key, job) {
+  const t = AS.turn[app] || (AS.turn[app] = { last: Promise.resolve(), keys: new Set() });
+  if (t.keys.has(key)) return t.last;
+  t.keys.add(key);
   AS.busy[app] = true;
+  return t.last = t.last.then(job).catch(e => toast(e.message || TX("appset.set.fail"), true)).then(() => {
+    t.keys.delete(key);
+    AS.busy[app] = t.keys.size > 0;
+    asPaint();
+  });
+}
+const asFeatSet = (app, id, on) => asTurn(app, `feat:${id}=${on}`, async () => {
   try { asFeatSave(app, await api(asFeatUrl(app, "features"), "PATCH", { id, on })); asLoad(app, true); } catch (e) { toast(e.message || TX("appset.feat.fail"), true); }
-  AS.busy[app] = false; asPaint();
-}
+});
 // A row that is logged out (i.down) asks to reconnect: the hub approves a gated login, which may send a push to the owner's phone.
-async function asRetry(app, watch, down) {
-  if (AS.busy[app]) return;
-  AS.busy[app] = true;
+const asRetry = (app, watch, down) => asTurn(app, `retry:${watch}`, async () => {
   try { asFeatSave(app, await api(asFeatUrl(app, "retry"), "POST", { watch })); toast(down ? MON_RECONNECT : TX("appset.retry.done")); } catch (e) { toast(e.message || TX("appset.retry.fail"), true); }
-  AS.busy[app] = false; monDirty(); asPaint();
-}
+  monDirty();
+});
 // 승인 대기 is one row: the count and a chevron that opens 답장 대기 (30-replies.js rqOpen) on this app's own drafts. The answers live there, not in a settings screen.
 function asWaitRow(app, n) {
   const pe = PQ.of.get(`settings:${app}`);
@@ -54,11 +60,10 @@ function asWaitRow(app, n) {
 async function asEvery(app, i, v) {
   const n = Math.round(Number(v));
   if (!(n >= 1 && n <= 10080)) { toast(TX("appset.every.range"), true); asPaint(); return; }
-  if (AS.busy[app]) return;
-  AS.busy[app] = true;
-  try { await api(`/api/watches/${enc(i.id)}/settings`, "PATCH", { values: { every_minutes: n } }); await asFeatLoad(app); toast(TX("appset.every.done")); }
-  catch (e) { toast(e.message || TX("appset.every.fail"), true); }
-  AS.busy[app] = false; asPaint();
+  return asTurn(app, `every:${i.id}=${n}`, async () => {
+    try { await api(`/api/watches/${enc(i.id)}/settings`, "PATCH", { values: { every_minutes: n } }); await asFeatLoad(app); toast(TX("appset.every.done")); }
+    catch (e) { toast(e.message || TX("appset.every.fail"), true); }
+  });
 }
 // A watch's last output in the facts of its status: a raw command never shows, in the detail row or a settings panel alike.
 const monLastOut = m => m.last_output && !MON_CMD.test(m.last_output) ? TX("appset.last.out", { text: m.last_output }) : "";
@@ -115,9 +120,7 @@ async function asPatch(app, values) {
 /* ---- 감시 삭제: a monitor's settings screen deletes the watch for good (DELETE /api/watches/<name>, on the computer that owns it); a schedule's
    the same way through DELETE /api/schedules/<id> (예약 삭제) ---- */
 const asSched = app => app.startsWith("s:");
-async function asWatchRmGo(app) {
-  if (AS.busy[app]) return;
-  AS.busy[app] = true;
+const asWatchRmGo = app => asTurn(app, "rm", async () => {
   const name = monSettingsName(`settings:${app}`), peer = !!pqPc(`settings:${app}`);
   try {
     await api(`/api/${asSched(app) ? "schedules" : "watches"}/${enc(app.slice(2))}`, "DELETE");
@@ -130,8 +133,7 @@ async function asWatchRmGo(app) {
     // A watch a project's work channel set up comes back from that setup (hub/workchannels.ts), so the hub refuses it (409).
     toast(/work channel/.test(e.message || "") ? TX("appset.rm.bound") : e.message || TX("appset.delete.fail"), true);
   }
-  AS.busy[app] = false; asPaint();
-}
+});
 function asWatchRmNode(app) {
   const sc = asSched(app);
   if (!AS.rm[app]) return el("div", { class: "as-row" }, el("span", { class: "as-b" }, el("span", { class: "as-n", text: TX(sc ? "appset.rm.title_sched" : "appset.rm.title_watch") }), el("span", { class: "as-h", text: TX(sc ? "appset.rm.hint_sched" : "appset.rm.hint_watch") })), el("button", { class: "btn danger inrow", type: "button", "data-as-rm": "ask", onclick: () => { AS.rm[app] = { watch: true }; asPaint(); } }, TX("common.delete")));
@@ -150,16 +152,16 @@ async function asRemoveAsk(app) {
   try { AS.rm[app] = { plan: app.includes("~") ? null : await api(`/api/integrations/${enc(app)}/remove`), del: false }; } catch (e) { return toast(e.message || TX("appset.remove.read_fail"), true); }
   asPaint();
 }
-async function asRemoveGo(app, btn) {
+function asRemoveGo(app, btn) {
   const rm = AS.rm[app];
-  if (!rm || AS.busy[app]) return;
-  AS.busy[app] = true;
+  if (!rm) return;
   if (btn) btn.disabled = true;
   // 제거 can be taken back: the toast's 되돌리기 switches the app on again (asAdd), on the computer it was removed from.
   const pc = app.includes("~") ? pqPc(`settings:${app}`) : null, back = app.includes("~") && !pc ? null : { label: TX("common.undo"), onclick: () => asAdd(app.split("~")[0], pc) };
-  try { await api(`/api/integrations/${enc(app)}/remove`, "POST", { deleteData: rm.del }); toast(TX(rm.plan ? "appset.removed_here" : "appset.removed_there", { label: rm.plan ? rm.plan.label : monSettingsName(`settings:${app}`) }), false, back, back ? 6000 : undefined); AS.rm[app] = null; AS.load[app] = null; if (app.includes("~")) await pqLoad(); else await loadIntegrations(); if (ASC.h) ASC.h.close(false); go("monitoring"); }
-  catch (e) { toast(e.message || TX("appset.remove.fail"), true); }
-  AS.busy[app] = false; asPaint();
+  return asTurn(app, "rm", async () => {
+    try { await api(`/api/integrations/${enc(app)}/remove`, "POST", { deleteData: rm.del }); toast(TX(rm.plan ? "appset.removed_here" : "appset.removed_there", { label: rm.plan ? rm.plan.label : monSettingsName(`settings:${app}`) }), false, back, back ? 6000 : undefined); AS.rm[app] = null; AS.load[app] = null; if (app.includes("~")) await pqLoad(); else await loadIntegrations(); if (ASC.h) ASC.h.close(false); go("monitoring"); }
+    catch (e) { toast(e.message || TX("appset.remove.fail"), true); }
+  });
 }
 function asRemoveNode(app) {
   const rm = AS.rm[app];
@@ -367,49 +369,46 @@ const AR_PH = {
   files: TX("appset.rule.ph_files"),
 };
 const AR = { edit: {} };   // app -> { id: rule id or "" for a new rule, v: { name, when, how, files } }
-async function arSave(app, list, done) {
-  if (AS.busy[app]) return;
-  AS.busy[app] = true;
-  try { await asPatch(app, { draft_rules: list }); if (done) done(); } catch (e) { toast(e.message || TX("appset.rule.save_fail"), true); }
-  AS.busy[app] = false; asPaint();
-}
+const arSave = (app, key, edit, done) => asTurn(app, key, async () => {
+  const f = (AS.by[app] || []).find(x => x.key === "draft_rules");
+  try { await asPatch(app, { draft_rules: edit(f && Array.isArray(f.value) ? f.value : []) }); if (done) done(); } catch (e) { toast(e.message || TX("appset.rule.save_fail"), true); }
+});
 const arFiles = s => String(s || "").split(/[,\n]/).map(x => x.trim()).filter(Boolean);
-function arForm(app, rules, ed) {
+function arForm(app, ed) {
   const v = ed.v, box = (k, tag, extra) => { const c = el(tag, { class: `fi as-in as-ta`, "data-k": `rule-${k}`, placeholder: AR_PH[k], "aria-label": AR_PH[k].split(":")[0], ...extra, oninput: () => { v[k] = c.value; } }); c.value = v[k] || ""; return el("label", { class: "as-rl" }, el("span", { class: "as-h", text: AR_PH[k].split(":")[0] }), c); };   // the box's name stays above it once the greyed text is gone
   const save = () => {
     const name = (v.name || "").trim(), when = (v.when || "").trim();
     if (!name || !when) return toast(TX("appset.rule.need"), true);
     const rule = { name, when, how: (v.how || "").trim(), files: arFiles(v.files) };
-    const list = ed.id ? rules.map(r => r.id === ed.id ? { ...r, ...rule } : r) : [...rules, { ...rule, on: true }];
-    arSave(app, list, () => { delete AR.edit[app]; });
+    arSave(app, `rule-save:${ed.id}=${JSON.stringify(rule)}`, cur => ed.id ? cur.map(r => r.id === ed.id ? { ...r, ...rule } : r) : [...cur, { ...rule, on: true }], () => { delete AR.edit[app]; });
   };
   return el("div", { class: "as-row as-col as-rform", "data-rule-form": ed.id || "new" },
     box("name", "input", { type: "text", maxlength: 20 }), box("when", "textarea", { rows: 2, maxlength: 300 }), box("how", "textarea", { rows: 3, maxlength: 1000 }), box("files", "input", { type: "text" }),
-    el("div", { class: "as-act" }, el("button", { class: "btn sm", type: "button", "data-k": "rule-save", disabled: !!AS.busy[app], onclick: save }, TX("common.save")),
+    el("div", { class: "as-act" }, el("button", { class: "btn sm", type: "button", "data-k": "rule-save", onclick: save }, TX("common.save")),
       el("button", { class: "btn tonal sm", type: "button", "data-k": "rule-cancel", onclick: () => { delete AR.edit[app]; asPaint(); } }, TX("common.cancel"))));
 }
-function arRow(app, rules, r) {
+function arRow(app, r) {
   const files = (r.files || []).length ? TX("appset.rule.files", { files: r.files.join(", ") }) : "";
   return el("div", { class: "as-row as-rule", "data-rule": r.id },
     el("span", { class: "as-b" }, el("span", { class: "as-n" }, draftRuleTag(r.name, "as-rtag")), el("span", { class: "as-h", text: TX("appset.rule.when", { text: r.when }) }),
       r.how ? el("span", { class: "as-h", text: TX("appset.rule.how", { text: r.how }) }) : null, files ? el("span", { class: "as-h", text: files }) : null),
     el("span", { class: "as-btns" },
-      kkSwitch(r.on, r.name, `rule:${r.id}`, on => arSave(app, rules.map(x => x.id === r.id ? { ...x, on } : x))),
+      kkSwitch(r.on, r.name, `rule:${r.id}`, on => arSave(app, `rule:${r.id}=${on}`, cur => cur.map(x => x.id === r.id ? { ...x, on } : x))),
       el("button", { class: "btn text inrow", type: "button", "data-k": `rule-edit:${r.id}`, onclick: () => { AR.edit[app] = { id: r.id, v: { name: r.name, when: r.when, how: r.how, files: (r.files || []).join(", ") } }; asPaint(); } }, TX("appset.rule.edit")),
-      el("button", { class: "btn text inrow", type: "button", "data-k": `rule-del:${r.id}`, onclick: () => arSave(app, rules.filter(x => x.id !== r.id), () => toast(TX("appset.rule.deleted", { name: r.name }))) }, TX("appset.rule.del"))));
+      el("button", { class: "btn text inrow", type: "button", "data-k": `rule-del:${r.id}`, onclick: () => arSave(app, `rule-del:${r.id}`, cur => cur.filter(x => x.id !== r.id), () => toast(TX("appset.rule.deleted", { name: r.name }))) }, TX("appset.rule.del"))));
 }
 // The rows of the section, in order: heading, what rules do, the 기본 규칙 box, each rule (or its form), then 규칙 추가 (or the new rule's form).
 function arNodes(app, fRules, fDef) {
   const rules = Array.isArray(fRules.value) ? fRules.value : [], ed = AR.edit[app];
   const def = el("textarea", { class: "fi as-in as-ta", rows: 2, maxlength: fDef.max || 1000, "data-k": "draft_default", placeholder: fDef.placeholder || "", "aria-label": fDef.label,
-    onchange: async () => { if (AS.busy[app]) return; AS.busy[app] = true; try { await asPatch(app, { draft_default: def.value.trim() }); toast(TX("appset.rule.default_saved")); } catch (e) { toast(e.message || TX("appset.rule.default_fail"), true); } AS.busy[app] = false; asPaint(); } });
+    onchange: () => { const v = def.value.trim(); asTurn(app, `draft_default=${v}`, async () => { try { await asPatch(app, { draft_default: v }); toast(TX("appset.rule.default_saved")); } catch (e) { toast(e.message || TX("appset.rule.default_fail"), true); } }); } });
   def.value = fDef.value || "";
   return [
     el("div", { class: "as-sub", "data-sub": "rules", text: fRules.label }),
     el("div", { class: "as-row", "data-setting": "draft_rules" }, el("span", { class: "as-b" }, el("span", { class: "as-h", text: fRules.help }))),
     el("div", { class: "as-row as-col", "data-setting": "draft_default" }, el("span", { class: "as-b" }, el("span", { class: "as-n", text: fDef.label }), el("span", { class: "as-h", text: fDef.help })), def),
-    ...rules.map(r => ed && ed.id === r.id ? arForm(app, rules, ed) : arRow(app, rules, r)),
-    ed && !ed.id ? arForm(app, rules, ed) : el("div", { class: "as-row" }, el("button", { class: "btn tonal inrow", type: "button", "data-k": "rule-add", disabled: rules.length >= 20, onclick: () => { AR.edit[app] = { id: "", v: {} }; asPaint(); } }, TX("appset.rule.add"))),
+    ...rules.map(r => ed && ed.id === r.id ? arForm(app, ed) : arRow(app, r)),
+    ed && !ed.id ? arForm(app, ed) : el("div", { class: "as-row" }, el("button", { class: "btn tonal inrow", type: "button", "data-k": "rule-add", disabled: rules.length >= 20, onclick: () => { AR.edit[app] = { id: "", v: {} }; asPaint(); } }, TX("appset.rule.add"))),
   ];
 }
 // The sections of the settings screen in the order the owner reads them (hub/app-settings.ts SettingSection); a row is drawn once, under one heading.
@@ -443,12 +442,10 @@ function asSettingRow(app, f, feat, box) {
   return el("div", { class: f.lines ? "as-row as-col" : "as-row", "data-setting": f.key },
     el("span", { class: "as-b" }, el("span", { class: "as-n", text: f.type === "number" && !f.blocked ? f.label.replace(/\s*\([^)]+\)\s*$/, "") : f.label }), f.blocked || (f.help && !asEcho(f.label, f.help)) ? el("span", { class: "as-h", text: f.blocked || f.help }) : null, wait ? el("span", { class: "as-h", "data-wait": "1", text: wait }) : null),
     // A list is edited in the conversation (a change card); here it only says how many.
-    f.type === "list" ? el("span", { class: "as-v", text: asFmt(f, f.value) }) : f.blocked ? Object.assign(kkSwitch(false, f.label, f.key, () => {}), { disabled: true }) : asControl(f, async v => {
-      if (AS.busy[app]) return;
-      AS.busy[app] = true;
+    f.type === "list" ? el("span", { class: "as-v", text: asFmt(f, f.value) }) : f.blocked ? Object.assign(kkSwitch(false, f.label, f.key, () => {}), { disabled: true }) : asControl(f, v => asTurn(app, `${f.key}=${JSON.stringify(v)}`, async () => {
       try { await asPatch(app, { [f.key]: v }); } catch (e) { toast(e.message || TX("appset.set.fail")); }
-      AS.busy[app] = false; delete box.dataset.sig; asPaint();
-    }));
+      delete box.dataset.sig;
+    })));
 }
 // The options and the status of the settings screen (asScreen) - never of the conversation, which is chat only.
 function asPaint() {

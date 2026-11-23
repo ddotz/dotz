@@ -107,7 +107,7 @@ flowchart LR
     o_monitoring_menu["menu (1)"]
     o_monitoring_overlay["overlay (1)"]
     o_monitoring_select["select (1)"]
-    o_monitoring_toast["toast (35)"]
+    o_monitoring_toast["toast (36)"]
   end
   subgraph a_notices["notices"]
     c_notices(["notices code"])

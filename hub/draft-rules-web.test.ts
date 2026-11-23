@@ -13,6 +13,8 @@ if (SHOTS) mkdirSync(SHOTS, { recursive: true });
 const data = mkdtempSync(join(tmpdir(), "rules-web-"));
 const config = () => JSON.parse(readFileSync(join(data, "custom/reply-drafts/config.json"), "utf8"));
 const patches = inbox<Record<string, unknown>>();
+let held: { gate: Promise<void>; fail: boolean } | null = null;
+const holdNext = (fail = false) => { const { promise, resolve } = Promise.withResolvers<void>(); held = { gate: promise, fail }; return resolve; };
 const hub = fakeHub({
 	stream: "fake",
 	api: async (req, url) => {
@@ -29,6 +31,12 @@ const hub = fakeHub({
 				if (req.method === "PATCH") {
 					const b = (await req.json()) as { values: unknown };
 					patches.push({ app: m[1], values: b.values });
+					const h = held;
+					held = null;
+					if (h) {
+						await h.gate;
+						if (h.fail) return json({ error: "저장 공간이 가득 찼어요" }, 500);
+					}
 					return json({ key: m[1], fields: writeSettings(data, m[1]!, b.values) });
 				}
 				return json({ key: m[1], fields: readSettings(data, m[1]!) });
@@ -103,6 +111,55 @@ describe("자동 초안 규칙 in the mail settings screen", async () => {
 		await run(v, `document.querySelector('[data-k="rule-del:r1"]').click()`);
 		await waitFor(v, `!document.querySelector('#app-sw [data-rule="r1"]')`);
 		expect(config().draftRules.mail).toEqual([]);
+	}, 20_000);
+
+	const seed = async (on: boolean) => {
+		writeSettings(data, "mail", { draft_rules: [{ name: "자료 요청", when: "신청서를 보내 달라는 메일", how: "", files: [], on }] });
+		await run(v, `asLoad("mail", true)`);
+		await waitFor(v, `!AS.busy.mail && document.querySelector('#app-sw [data-k="rule:r1"]')?.getAttribute("aria-checked") === "${on}"`);
+	};
+	const setDefault = (text: string) => `{ const d = document.querySelector('[data-k="draft_default"]'); d.value = ${JSON.stringify(text)}; d.dispatchEvent(new Event("change")); }`;
+
+	test("삭제 pressed while the 기본 규칙 save is still out runs after it, and the row goes", async () => {
+		await seed(true);
+		const base = patches.length, release = holdNext();
+		await run(v, [setDefault("짧게"), `document.querySelector('[data-k="rule-del:r1"]').click()`].join("\n"));
+		await nth(base + 1);
+		release();
+		expect(await nth(base + 2)).toEqual({ app: "mail", values: { draft_rules: [] } });
+		expect(patches[base]).toEqual({ app: "mail", values: { draft_default: "짧게" } });
+		await waitFor(v, `!AS.busy.mail && !document.querySelector('#app-sw [data-rule="r1"]')`);
+		expect(config().draftRules.mail).toEqual([]);
+		expect(config().draftDefaults.mail).toBe("짧게");
+	}, 20_000);
+
+	test("two quick presses of the same switch send one draft_rules request, queued or in flight", async () => {
+		await seed(true);
+		const base = patches.length, releaseDefault = holdNext();
+		await run(v, [setDefault("정중하게"), `document.querySelector('[data-k="rule:r1"]').click()`, `document.querySelector('[data-k="rule:r1"]').click()`].join("\n"));
+		await nth(base + 1);
+		const releaseRule = holdNext();
+		releaseDefault();
+		expect(await nth(base + 2)).toMatchObject({ values: { draft_rules: [{ id: "r1", on: false }] } });
+		await run(v, `document.querySelector('[data-k="rule:r1"]').click()`);
+		releaseRule();
+		await waitFor(v, `!AS.busy.mail && document.querySelector('[data-k="rule:r1"]').getAttribute("aria-checked") === "false"`);
+		expect(patches.slice(base).map(p => Object.keys(p.values as object)[0])).toEqual(["draft_default", "draft_rules"]);
+		expect(config().draftRules.mail[0].on).toBe(false);
+	}, 20_000);
+
+	test("a failed 기본 규칙 save shows its error and the switch pressed behind it still saves", async () => {
+		await seed(true);
+		await run(v, `window.__snacks = []; new MutationObserver(ms => ms.forEach(m => m.addedNodes.forEach(n => n.classList && n.classList.contains("snack") && __snacks.push([n.textContent, n.classList.contains("bad")])))).observe(document.body, { childList: true, subtree: true })`);
+		const base = patches.length, release = holdNext(true);
+		await run(v, [setDefault("실패할 말"), `document.querySelector('[data-k="rule:r1"]').click()`].join("\n"));
+		await nth(base + 1);
+		release();
+		expect(await nth(base + 2)).toMatchObject({ values: { draft_rules: [{ id: "r1", on: false }] } });
+		await waitFor(v, `!AS.busy.mail && document.querySelector('[data-k="rule:r1"]').getAttribute("aria-checked") === "false"`);
+		expect(await q<[string, boolean][]>(v, `return __snacks`)).toContainEqual(["저장 공간이 가득 찼어요", true]);
+		expect(config().draftDefaults.mail).toBe("정중하게");
+		expect(config().draftRules.mail[0].on).toBe(false);
 	}, 20_000);
 });
 
