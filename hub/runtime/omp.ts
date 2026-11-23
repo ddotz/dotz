@@ -16,7 +16,7 @@ import { killAgent, spawnAgent, writeQuietly } from "./agent-proc.ts";
 import { detectBinary } from "./detect.ts";
 import { touchedPath, withTouchedFiles } from "./handover-files.ts";
 import { lastCompactionSummary, summaryStale } from "./omo-summary.ts";
-import { keyProviderOf, startModelOf, writeOverlay } from "./omp-overlay.ts";
+import { keyProviderOf, routesFileOf, startModelOf, writeOverlay } from "./omp-overlay.ts";
 import { RunKeys } from "./omp-runs.ts";
 import { RetryGate } from "./omp-retry.ts";
 import { realTurn, type SessionMessage } from "./real-turn.ts";
@@ -462,7 +462,7 @@ export const omp: RuntimeAdapter = {
 		const key = keyProviderOf(o);
 		const proc = spawnAgent(ompArgv(o), {
 			cwd: o.cwd,
-			env: withoutApiKeys({ PI_CACHE_RETENTION: "long", ...withoutPayloadEnv(process.env), ...o.env, ...(o.codingHarness ? codingHarnessEnv(o.codingHarness) : {}), DOTZ_RUNTIME: "omp" }),
+			env: withoutApiKeys({ PI_CACHE_RETENTION: "long", ...withoutPayloadEnv(process.env), ...o.env, ...(o.codingHarness ? codingHarnessEnv(o.codingHarness) : {}), DOTZ_RUNTIME: "omp", DOTZ_WORKER_ROUTES_FILE: routesFileOf(o) }),
 		});
 		const agent = new OmpRuntimeProcess(proc, o.role === "orchestrator" ? "o" : "h");
 		if (key) agent.setModel(`${key.id}/${key.models[0].id}`);

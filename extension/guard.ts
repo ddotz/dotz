@@ -40,6 +40,7 @@ import { applyDirsOf, GIT_APPLY, GIT_APPLY_NAMED, GIT_APPLY_RE, patchIsApplied, 
 import { createLongGuard, deletionBlock } from "./guard-long.ts";
 import { createRepeatGuard, type RepeatCtx, type RepeatEvent } from "./guard-repeat.ts";
 import { dotzCallBlock, installDotzGate, installDotzRules, subagentCallBlock, type WorkerRunning } from "./guard-dotz.ts";
+import { assignRoutes, readRoutes, sessionFileOf } from "./worker-route.ts";
 import { evalSpawnBlock, reviveBrief } from "./guard-spawn.ts";
 export { codeLockReason, laneMergeBlock, quickChatBlock, sharedWriteBlock } from "./guard-dotz.ts";
 export type { WorkerRunning } from "./guard-dotz.ts";
@@ -300,9 +301,14 @@ export function settleFromText(state: ProjectState, text: string): boolean {
 	return changed;
 }
 
+function stripEffort(pi: { on(name: string, handler: (event: RepeatEvent) => unknown): unknown }): WorkerRunning {
+	pi.on("tool_call", event => (event?.toolName === "task" ? { input: assignRoutes(event.input, undefined) } : undefined));
+	return () => false;
+}
+
 /** Installs the worker guard and returns whether the guard knows a worker as running (a write to its agent:// steers it, not revives it). Off or deferred to an installed copy, it knows none. The payload of a coding lane (DOTZ_CODING_HARNESS) is the exception: its own orchestrator-guard covers the generic checks, so dotz keeps only the rules it lacks (guard-dotz.ts) and reads the payload's worker state. */
 export function installGuard(pi: any, config: GuardConfig = loadGuardConfig()): WorkerRunning {
-	if (!config.enabled) return () => false;
+	if (!config.enabled) return stripEffort(pi);
 	const installed = config.defer_to_installed ? installedOriginal(pi, "orchestrator-guard") : undefined;
 	if (installed) {
 		const payload = payloadHolding("orchestrator-guard");
@@ -539,7 +545,7 @@ export function installGuard(pi: any, config: GuardConfig = loadGuardConfig()): 
 				if (problem)
 					return { block: true, reason: `orchestrator-guard budget gate: ${problem}. Stop and ask the user, showing the 5h and 7d remaining %, whether to run now, wait for the reset, or shrink the job: "run now" -> they run /budget-ok (${config.override_minutes} min); "shrink" -> fewer workers or a smaller "Estimate: N%" line.` };
 			}
-			return { input: verdict.input };
+			return { input: assignRoutes(verdict.input, readRoutes(), sessionFileOf(ctx)) };
 		}
 		// One key per patch file however it was named: quotes, a read selector (x.patch:1-200), ~/ or a relative path.
 		const patchKey = (raw: string, base = ".") => {
@@ -604,7 +610,10 @@ export function installGuard(pi: any, config: GuardConfig = loadGuardConfig()): 
 
 /** The checks of installGuard that bind a task subagent, for a host that runs installGuard for the main agent alone (omp): a broad search, a quick chat's reach and a usage-limit stop line are refused, and a call repeated in a loop is blocked. The compaction wrap-up and stop stay out: the task cap owns a subagent's context. Under a coding lane's payload, whose orchestrator-guard runs the broad-search, deletion and repeat checks, only the quick chat, usage-limit stop line and eval-started worker rules stay. */
 export function installSubagentGuard(pi: { on(name: string, handler: (event: RepeatEvent, ctx: RepeatCtx) => unknown): unknown }, config: GuardConfig = loadGuardConfig()): void {
-	if (!config.enabled) return;
+	if (!config.enabled) {
+		stripEffort(pi);
+		return;
+	}
 	const installed = config.defer_to_installed ? installedOriginal(pi, "orchestrator-guard") : undefined;
 	if (installed && !payloadHolding("orchestrator-guard")) return;
 	const repeat = installed ? undefined : createRepeatGuard(config);
@@ -614,7 +623,7 @@ export function installSubagentGuard(pi: { on(name: string, handler: (event: Rep
 		const tool = String(event?.toolName ?? "");
 		const generic = repeat ? (broadSearchProblem(tool, event?.input) ?? deletionBlock(tool, event?.input, (ctx as { cwd?: string } | undefined)?.cwd)) : undefined;
 		const reason = generic ?? subagentCallBlock(tool, event?.input);
-		if (!reason) return repeat?.check(event, ctx);
+		if (!reason) return (await repeat?.check(event, ctx)) ?? (tool === "task" ? { input: assignRoutes(event?.input, undefined) } : undefined);
 		debug({ phase: "sub-check-block", agent: ctx?.agent?.id, tool });
 		return { block: true, reason };
 	});

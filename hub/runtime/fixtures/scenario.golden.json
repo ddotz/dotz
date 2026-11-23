@@ -19,7 +19,8 @@
    {
     "DOTZ_ORCHESTRATOR": "1",
     "DOTZ_MODE_IN_SYSTEM": "1",
-    "DOTZ_RUNTIME": "omp"
+    "DOTZ_RUNTIME": "omp",
+    "DOTZ_WORKER_ROUTES_FILE": "<DATA>/omp-routes.json"
    }
   ],
   [
@@ -634,7 +635,8 @@
    {
     "DOTZ_ORCHESTRATOR": "1",
     "DOTZ_MODE_IN_SYSTEM": "1",
-    "DOTZ_RUNTIME": "omp"
+    "DOTZ_RUNTIME": "omp",
+    "DOTZ_WORKER_ROUTES_FILE": "<DATA>/omp-routes.json"
    }
   ],
   [
@@ -828,7 +830,8 @@
    {
     "DOTZ_ORCHESTRATOR": "1",
     "DOTZ_MODE_IN_SYSTEM": "1",
-    "DOTZ_RUNTIME": "omp"
+    "DOTZ_RUNTIME": "omp",
+    "DOTZ_WORKER_ROUTES_FILE": "<DATA>/omp-routes.json"
    }
   ],
   [
@@ -1272,7 +1275,8 @@
     "DOTZ_LANE": "alpha",
     "DOTZ_OWNER_ASKED_FABLE": "1",
     "DOTZ_LANE_CONTRACT": "<DATA>/lanes/alpha/contract.md",
-    "DOTZ_RUNTIME": "omp"
+    "DOTZ_RUNTIME": "omp",
+    "DOTZ_WORKER_ROUTES_FILE": "<DATA>/lanes/alpha/omp-routes.json"
    }
   ],
   [
@@ -1293,7 +1297,7 @@
   ],
   [
    "overlay",
-   "# Written by the dotz gateway each time lane alpha starts; passed to omp as --config.\nadvisor:\n  enabled: false\nmemory:\n  backend: \"off\"\nenabledProviders: []\nskills:\n  enablePiUser: false\n  enableAgentsUser: false\n  enableClaudeUser: false\n  enableCodexUser: false\n  customDirectories: []\ncommands:\n  enableClaudeUser: false\n  enableOpencodeUser: false\ndisabledExtensions:\n  - \"context-file:user:AGENTS.md\"\n  - \"rule:RULES\"\nstartup:\n  checkUpdate: false\nmagicKeywords:\n  enabled: false\ngithub:\n  enabled: false\nasync:\n  enabled: true\n  widgets: false\nsecrets:\n  enabled: true\nmodelRoles:\n  task: \"anthropic/test-worker:high\"\ntask:\n  agentModelOverrides:\n    task: \"@task\"\n    scout: \"@task\"\n    sonic: \"@task\"\n  maxRecursionDepth: 2\n  agentIdleTtlMs: 300000\n  maxEffort: high\n  maxConcurrency: 1\n  isolation:\n    enabled: true\n    apply: false\n    merge: patch\n  maxRuntimeMs: 0\n  softRequestBudget: 200\ncompaction:\n  idleEnabled: false\n  modelThresholds:\n    \"anthropic/test-lane\": \"f300000\"\n    \"anthropic/test-worker\": \"f300000\"\n  keepRecentTokens: 30000\nretry:\n  waitForUsageReset: false\n  modelFallback: true\n  fallbackChains:\n    \"anthropic/test-lane\": []\n    \"task\": []\n"
+   "# Written by the dotz gateway each time lane alpha starts; passed to omp as --config.\nadvisor:\n  enabled: false\nmemory:\n  backend: \"off\"\nenabledProviders: []\nskills:\n  enablePiUser: false\n  enableAgentsUser: false\n  enableClaudeUser: false\n  enableCodexUser: false\n  customDirectories: []\ncommands:\n  enableClaudeUser: false\n  enableOpencodeUser: false\ndisabledExtensions:\n  - \"context-file:user:AGENTS.md\"\n  - \"rule:RULES\"\nstartup:\n  checkUpdate: false\nmagicKeywords:\n  enabled: false\ngithub:\n  enabled: false\nasync:\n  enabled: true\n  widgets: false\nsecrets:\n  enabled: true\nmodelRoles:\n  task: \"anthropic/test-worker:high\"\ntask:\n  agentModelOverrides:\n    task: \"@task\"\n    scout: \"@task\"\n    sonic: \"@task\"\n  maxRecursionDepth: 2\n  agentIdleTtlMs: 300000\n  maxEffort: high\n  maxConcurrency: 1\n  isolation:\n    enabled: true\n    apply: false\n    merge: patch\n  enableEffort: true\n  maxRuntimeMs: 0\n  softRequestBudget: 200\ncompaction:\n  idleEnabled: false\n  modelThresholds:\n    \"anthropic/test-lane\": \"f300000\"\n    \"anthropic/test-worker\": \"f300000\"\n  keepRecentTokens: 30000\nretry:\n  waitForUsageReset: false\n  modelFallback: true\n  fallbackChains:\n    \"anthropic/test-lane\": []\n    \"task\": []\n"
   ],
   [
    "snap",
@@ -1813,7 +1817,8 @@
     "DOTZ_LANE": "alpha",
     "DOTZ_OWNER_ASKED_FABLE": "1",
     "DOTZ_LANE_CONTRACT": "<DATA>/lanes/alpha/contract.md",
-    "DOTZ_RUNTIME": "omp"
+    "DOTZ_RUNTIME": "omp",
+    "DOTZ_WORKER_ROUTES_FILE": "<DATA>/lanes/alpha/omp-routes.json"
    }
   ],
   [
@@ -1932,7 +1937,8 @@
     "DOTZ_LANE": "alpha",
     "DOTZ_OWNER_ASKED_FABLE": "1",
     "DOTZ_LANE_CONTRACT": "<DATA>/lanes/alpha/contract.md",
-    "DOTZ_RUNTIME": "omp"
+    "DOTZ_RUNTIME": "omp",
+    "DOTZ_WORKER_ROUTES_FILE": "<DATA>/lanes/alpha/omp-routes.json"
    }
   ],
   [
@@ -2006,7 +2012,8 @@
     "DOTZ_LANE": "alpha",
     "DOTZ_OWNER_ASKED_FABLE": "1",
     "DOTZ_LANE_CONTRACT": "<DATA>/lanes/alpha/contract.md",
-    "DOTZ_RUNTIME": "omp"
+    "DOTZ_RUNTIME": "omp",
+    "DOTZ_WORKER_ROUTES_FILE": "<DATA>/lanes/alpha/omp-routes.json"
    }
   ],
   [
@@ -2072,7 +2079,8 @@
     "DOTZ_LANE": "alpha",
     "DOTZ_OWNER_ASKED_FABLE": "1",
     "DOTZ_LANE_CONTRACT": "<DATA>/lanes/alpha/contract.md",
-    "DOTZ_RUNTIME": "omp"
+    "DOTZ_RUNTIME": "omp",
+    "DOTZ_WORKER_ROUTES_FILE": "<DATA>/lanes/alpha/omp-routes.json"
    }
   ],
   [
@@ -2213,7 +2221,8 @@
     "DOTZ_LANE": "alpha",
     "DOTZ_OWNER_ASKED_FABLE": "1",
     "DOTZ_LANE_CONTRACT": "<DATA>/lanes/alpha/contract.md",
-    "DOTZ_RUNTIME": "omp"
+    "DOTZ_RUNTIME": "omp",
+    "DOTZ_WORKER_ROUTES_FILE": "<DATA>/lanes/alpha/omp-routes.json"
    }
   ],
   [

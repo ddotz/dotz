@@ -266,10 +266,10 @@ test("state: a worker lost with the previous session comes with its session file
 	expect(text).toContain("spawn a new worker");
 });
 
-test("install: enabled=false registers nothing; an installed original defers this copy and logs once", () => {
+test("install: enabled=false registers only the effort strip; an installed original defers this copy and logs once", () => {
 	const off = fakePi(join(dir, "agent-empty"));
 	installGuard(off.pi, { ...GUARD_DEFAULTS, enabled: false });
-	expect(Object.keys(off.handlers)).toEqual([]);
+	expect(Object.keys(off.handlers)).toEqual(["tool_call"]);
 
 	const agent = join(dir, "agent-with-original");
 	mkdirSync(join(agent, "extensions"), { recursive: true });

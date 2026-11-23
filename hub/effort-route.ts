@@ -11,7 +11,7 @@ export const ROUTE_MIN_GAIN = 1;
 const LADDER: readonly Effort[] = ["low", "medium", "high", "xhigh", "max"];
 const isLevel = (v: string): boolean => (EFFORT_ORDER as readonly string[]).includes(v) || v === "none" || v === "auto";
 
-type Point = { model: string; selector: string; effort: Effort; score: number; cost: number };
+type Point = { model: string; selector: string; effort: Effort; score: number; cost: number; minutes?: number };
 type Anchor = { selector: string; model: string; level: string };
 type Better = (a: Point, b: Point) => number;
 
@@ -28,7 +28,8 @@ const first = (points: readonly Point[], better: Better): Point | undefined => p
 /**
  * Routes a task subagent by difficulty. Standard is the configured worker selector verbatim. Hard and light move to the allowed
  * benchmark point with the best price-performance trade above or below the anchor; without a row for the anchor they step one
- * level up or down the same model. Candidates are `provider/id` selectors: the same id under two providers is two models.
+ * level up or down the same model. A light point that takes longer than the anchor (both times known) is not allowed. Candidates are
+ * `provider/id` selectors: the same id under two providers is two models.
  */
 export function workerRoutes(i: {
 	anchor: string;
@@ -56,7 +57,7 @@ export function workerRoutes(i: {
 
 	const models = new Set([anchor.model, ...i.candidates.map(c => splitSelector(c).model)]);
 	const points: Point[] = [...models].flatMap(model =>
-		cleanRows(i.rowsOf(model)).flatMap(r => (LADDER.includes(r.effort) && open(model, r.effort) ? [{ model, selector: `${model}:${r.effort}`, effort: r.effort, score: r.score, cost: r.cost }] : [])),
+		cleanRows(i.rowsOf(model)).flatMap(r => (LADDER.includes(r.effort) && open(model, r.effort) ? [{ model, selector: `${model}:${r.effort}`, effort: r.effort, score: r.score, cost: r.cost, ...(r.minutes !== undefined ? { minutes: r.minutes } : {}) }] : [])),
 	).sort(bySelector);
 
 	const route = (p: Point | undefined): Route => {
@@ -72,6 +73,7 @@ export function workerRoutes(i: {
 	const hard = free.length
 		? first(free, (a, b) => descending(a.score, b.score) || cheaper(a, b))
 		: first(above, (a, b) => descending(gain(a), gain(b)) || cheaper(a, b));
-	const light = first(points.filter(p => p.cost < anchorRow.cost), (a, b) => descending(saving(a), saving(b)) || descending(a.score, b.score) || bySelector(a, b));
+	const slower = (p: Point): boolean => p.minutes !== undefined && anchorRow.minutes !== undefined && p.minutes > anchorRow.minutes;
+	const light = first(points.filter(p => p.cost < anchorRow.cost && !slower(p)), (a, b) => descending(saving(a), saving(b)) || descending(a.score, b.score) || bySelector(a, b));
 	return { light: route(light), standard, hard: route(hard) };
 }

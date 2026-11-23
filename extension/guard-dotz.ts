@@ -9,12 +9,13 @@ import { limitStopProblem } from "./guard-limit.ts";
 import { pipedStatusBlock } from "./guard-pipe.ts";
 import { expandShellVars, shellText } from "./guard-shell.ts";
 import { evalSpawnBlock, evalSpawnProblem } from "./guard-spawn.ts";
+import { assignRoutes, readRoutes, routeSpawn, sessionFileOf, takeDifficulty } from "./worker-route.ts";
 export { codeLockReason };
 
 /** Whether the guard knows worker `id` of the session `ctx` as running: a write to its agent:// steers it, where one to a finished worker would revive it. */
 export type WorkerRunning = (ctx: unknown, id: string) => boolean;
 
-type Event = { toolName?: unknown; input?: unknown; agent?: unknown; patterns?: unknown; payload?: { model?: unknown } };
+type Event = { toolName?: unknown; input?: unknown; agent?: unknown; patterns?: unknown; spawnKey?: unknown; invocationKind?: unknown; payload?: { model?: unknown } };
 type Ctx = { cwd?: string; agent?: { kind?: string }; ui?: { notify?: (message: string, level: string) => unknown } };
 type Command = { description: string; handler: (args: unknown, ctx: { ui: { notify(message: string, level: string): unknown } }) => unknown };
 
@@ -176,11 +177,14 @@ export function installDotzGate(pi: RuleHost, config: GuardConfig) {
 		});
 	}
 	pi.on("before_subagent_spawn", event => {
+		const difficulty = takeDifficulty(event);
 		const evalBlock = evalSpawnBlock(event);
 		if (evalBlock) return evalBlock;
-		const found = ok() ? undefined : expensiveMatch(event?.patterns, config);
+		const allowed = ok();
+		const found = allowed ? undefined : expensiveMatch(event?.patterns, config);
 		debug({ phase: "spawn-model", agent: event?.agent, patterns: event?.patterns, found });
 		if (found) return { block: true, reason: reason(`worker ${event?.agent ?? "task"}`, found) };
+		return routeSpawn(difficulty, readRoutes(), selector => !allowed && Boolean(expensiveMatch(selector, config)));
 	});
 	const flag = (event: Event, ctx: Ctx) => {
 		if (!isMain(ctx) || flagged || ok()) return;
@@ -207,8 +211,10 @@ export function installDotzRules(pi: RuleHost, config: GuardConfig, payload: str
 	const gate = installDotzGate(pi, config);
 	if (gate.gated) pi.on("before_provider_request", gate.flag);
 	pi.on("tool_call", (event, ctx) => {
-		const reason = dotzCallBlock(String(event?.toolName ?? ""), event?.input, ctx?.cwd);
-		return reason ? { block: true, reason } : undefined;
+		const tool = String(event?.toolName ?? "");
+		const reason = dotzCallBlock(tool, event?.input, ctx?.cwd);
+		if (reason) return { block: true, reason };
+		return tool === "task" ? { input: assignRoutes(event?.input, isMain(ctx) ? readRoutes() : undefined, sessionFileOf(ctx)) } : undefined;
 	});
 	return payloadWorkerRunning(payload);
 }

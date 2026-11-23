@@ -298,13 +298,13 @@ test("a subagent registers the API-key provider from the secrets folder when the
 	expect([held.main.hooks.before_subagent_spawn, held.sub.hooks.before_subagent_spawn]).toEqual([4, 3]);
 });
 
-test("installSubagentGuard installs nothing while the guard is off", () => {
+test("installSubagentGuard installs only the effort strip while the guard is off", () => {
 	const names: string[] = [];
 	const pi = { on: (name: string) => void names.push(name) };
 	installSubagentGuard(pi, { ...GUARD_DEFAULTS, enabled: false });
-	expect(names).toEqual([]);
+	expect(names).toEqual(["tool_call"]);
 	installSubagentGuard(pi, { ...GUARD_DEFAULTS, defer_to_installed: false });
-	expect(names).toEqual(["tool_result", "before_subagent_spawn", "tool_call"]);
+	expect(names).toEqual(["tool_call", "tool_result", "before_subagent_spawn", "tool_call"]);
 });
 
 const GATE_EVENTS = ["agent_end", "agent_start", "assistant_message", "before_agent_start", "session_branch", "session_shutdown", "session_switch", "tool_call", "tool_result"];

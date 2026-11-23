@@ -1,13 +1,15 @@
-import { mkdirSync, readdirSync } from "node:fs";
+import { mkdirSync, readdirSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { apiKeyBan } from "../apikey-policy.ts";
-import { chainAfter, DATA_DIR, fallbackChain, lanesMaxWorkers, parseSelector, selectorOf, workerIdleMin, writeAtomic } from "../config.ts";
+import { chainAfter, DATA_DIR, fallbackChain, lanesMaxWorkers, log, parseSelector, selectorOf, workerIdleMin, writeAtomic } from "../config.ts";
 import type { CodingHarness } from "../done-gate.ts";
 import { keyedWorker } from "../fallback.ts";
 import { lookupModel, workersOf } from "../lanegates.ts";
 import { safeDir } from "../session-key.ts";
 import { orchestratorKeepRecent } from "./omo-settings.ts";
+import { heldModels, onModelsLoaded } from "../providers.ts";
+import { workerRoutesOf } from "../worker-routes.ts";
 import type { SpawnOpts } from "./types.ts";
 
 type Chains = Array<[key: string, models: string[]]>;
@@ -18,7 +20,7 @@ const LOOKUP_AGENTS = ["scout", "sonic"];
 const TASK_SOFT_REQUEST_BUDGET = 200;
 const TASK_MAX_RUNTIME_MS = 0;
 const PINS = ["startup:\n  checkUpdate: false\n", "magicKeywords:\n  enabled: false\n", "github:\n  enabled: false\n", "async:\n  enabled: true\n  widgets: false\n", "secrets:\n  enabled: true\n"].join("");
-const TASK_PINS = `  isolation:\n    enabled: true\n    apply: false\n    merge: patch\n  maxRuntimeMs: ${TASK_MAX_RUNTIME_MS}\n  softRequestBudget: ${TASK_SOFT_REQUEST_BUDGET}\n`;
+const TASK_PINS = `  isolation:\n    enabled: true\n    apply: false\n    merge: patch\n  enableEffort: true\n  maxRuntimeMs: ${TASK_MAX_RUNTIME_MS}\n  softRequestBudget: ${TASK_SOFT_REQUEST_BUDGET}\n`;
 const EFFORT_RANK = ["minimal", "low", "medium", "high", "xhigh", "max"];
 const WORKER_EFFORT_CEILING = "high";
 
@@ -117,6 +119,9 @@ function sessionOf(o: SpawnOpts): { file: string; who: string } {
 	return { file: join(DATA_DIR, "omp-orchestrator-overlay.yml"), who: "the orchestrator" };
 }
 
+/** The file of one omp process's worker routes (light, standard, hard), beside that session's overlay file; the process gets its path as DOTZ_WORKER_ROUTES_FILE. */
+export const routesFileOf = (o: SpawnOpts): string => join(dirname(sessionOf(o).file), "omp-routes.json");
+
 /**
  * Writes the `--config` overlay of one omp process and returns its path. Every session (the orchestrator, each conversation
  * session, each lane) has a file of its own, replaced atomically at each spawn, so no start reads a file another one rewrites
@@ -133,7 +138,8 @@ function sessionOf(o: SpawnOpts): { file: string; who: string } {
  * through to the `task` chain, and the process keeps its own (a level change at run time still reaches it, as the weakest
  * match). Workers at the process's own level cannot be told apart from it and walk its chain.
  * Over the owner's settings it also pins what dotz depends on: update check, magic keywords, the github tool and idle
- * compaction off, async jobs and secret redaction on, task isolation on with patch review (`apply: false`), and omp's own
+ * compaction off, async jobs and secret redaction on, task isolation on with patch review (`apply: false`), the per-spawn `effort`
+ * of the task tool on (`task.enableEffort`: the orchestrator states a worker's difficulty with it, whatever the owner's own setting), and omp's own
  * soft request budget and run time limit instead of the owner's (the token cap of extension/task-cap.ts is the budget).
  * Task workers get what OmO's worker profiles give them (runtime/omo.ts): the task role is a lane's worker model, or the
  * orchestrator's `workers` (the model it runs on unless that is an expensive one), the scout and sonic agents run the
@@ -141,6 +147,10 @@ function sessionOf(o: SpawnOpts): { file: string; who: string } {
  * idle worker is parked after lanes.worker_idle_min, a lane runs at most its worker slots at once, and a compacted
  * orchestrator keeps orchestrator.keep_recent. omp has no setting for OmO's child-process runner and execution mode, nor for
  * a rule appended to every worker's prompt.
+ * Beside the overlay it writes `omp-routes.json` (replaced atomically at each spawn too): the light, standard and hard routes of the task
+ * role's selector (hub/worker-routes.ts), which extension/worker-route.ts reads through DOTZ_WORKER_ROUTES_FILE (`routesFileOf`) to give each
+ * task worker the model and level of its difficulty. `task.maxEffort` stays as the backstop for spawns that hook does not see. While the
+ * gateway holds no model list yet the routes come from the role models alone; once the list has loaded the file is written again when the routes differ.
  * With a coding harness payload (hub/done-gate.ts) the overlay also adds the payload's skills folder to `skills.customDirectories`
  * and the payload folder to `workspace.additionalDirectories` when it holds an AGENTS.md, and leaves the payload's rule and agent names out of
  * the disabled lists, so they stay available; the owner's same-named rule or agent then wins over the payload's (a known limit). `rule:RULES`
@@ -152,5 +162,19 @@ export function writeOverlay(o: SpawnOpts, coding?: CodingHarness): string {
 	const chains: Chains = [[processChainKey(o, workers), nativeChain(o)], ...workers.chains];
 	mkdirSync(dirname(file), { recursive: true });
 	writeAtomic(file, `# Written by the dotz gateway each time ${who} starts; passed to omp as --config.\n${isolationYaml(o.cwd, coding)}${PINS}${workersYaml(workers, o.cwd, coding)}${compactionYaml(o)}${retryYaml(chains)}`);
+	const routes = routesFileOf(o);
+	const routesText = (): string => `${JSON.stringify(workerRoutesOf(workers.task), null, 2)}\n`;
+	const written = routesText();
+	writeAtomic(routes, written);
+	if (!heldModels()) {
+		onModelsLoaded(routes, () => {
+			try {
+				const listed = routesText();
+				if (listed !== written && readFileSync(routes, "utf8") === written) writeAtomic(routes, listed);
+			} catch (error) {
+				log(`dotz: ${routes} was not refreshed after the model list loaded: ${String(error)}`);
+			}
+		});
+	}
 	return file;
 }

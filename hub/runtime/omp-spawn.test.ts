@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { cfg, DATA_DIR, DEFAULTS } from "../config.ts";
 import { DEFAULT_LOOKUP_MODEL } from "../lanegates.ts";
 import { NICE } from "./agent-proc.ts";
@@ -93,7 +93,7 @@ const ISOLATION = [
 ];
 
 const PINS = ["startup:", "  checkUpdate: false", "magicKeywords:", "  enabled: false", "github:", "  enabled: false", "async:", "  enabled: true", "  widgets: false", "secrets:", "  enabled: true"];
-const TASK_PINS = ["  isolation:", "    enabled: true", "    apply: false", "    merge: patch", "  maxRuntimeMs: 0", "  softRequestBudget: 200"];
+const TASK_PINS = ["  isolation:", "    enabled: true", "    apply: false", "    merge: patch", "  enableEffort: true", "  maxRuntimeMs: 0", "  softRequestBudget: 200"];
 
 test("every omp agent loads only the dotz extension: --no-extensions, then one --extension, for the orchestrator, a conversation session and a lane", () => {
 	omp.start(orchestrator());
@@ -105,6 +105,18 @@ test("every omp agent loads only the dotz extension: --no-extensions, then one -
 		expect(argv.filter(a => a === "--extension")).toHaveLength(1);
 		expect(argv).toHaveLength(9);
 	}
+});
+
+test("every omp process gets the path of its routes file, written beside its overlay, in DOTZ_WORKER_ROUTES_FILE", () => {
+	omp.start(orchestrator());
+	omp.start(conversation("mail:acme-1"));
+	omp.start(lane("alpha"));
+	for (const { argv, env } of started) {
+		const file = env.DOTZ_WORKER_ROUTES_FILE ?? "";
+		expect(file).toBe(join(dirname(configOf(argv)), "omp-routes.json"));
+		expect(Object.keys(JSON.parse(readFileSync(file, "utf8"))).sort()).toEqual(["hard", "light", "standard"]);
+	}
+	expect(new Set(started.map(s => s.env.DOTZ_WORKER_ROUTES_FILE)).size).toBe(3);
 });
 
 test("the system note and the session to resume still follow the overlay in the argv", () => {

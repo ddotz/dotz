@@ -90,6 +90,23 @@ describe("routes on the shipped rows", () => {
 		expect(workerRoutes({ ...shipped, anchor: `${OPUS}:medium`, candidates: [OPUS, HAIKU] }).light.selector).toBe(`${HAIKU}:high`);
 	});
 
+	test("a light point that takes longer than the anchor is not allowed when both times are known; an unknown time is allowed", () => {
+		const rows = (slowMinutes: number | undefined): Record<string, EffortRow[]> => ({
+			"p/a": [{ effort: "medium", score: 50, cost: 5, minutes: 5 }],
+			"p/b": [{ effort: "low", score: 40, cost: 1, ...(slowMinutes !== undefined ? { minutes: slowMinutes } : {}) }],
+			"p/c": [{ effort: "low", score: 30, cost: 3, minutes: 4 }],
+		});
+		const route = (table: Record<string, EffortRow[]>) => workerRoutes({ rowsOf: m => table[m] ?? [], ownerOnly: () => undefined, anchor: "p/a:medium", candidates: ["p/b", "p/c"] }).light.selector;
+		expect(route(rows(9))).toBe("p/c:low");
+		expect(route(rows(5))).toBe("p/b:low");
+		expect(route(rows(undefined))).toBe("p/b:low");
+	});
+
+	test("an anchor row without a time lets a slower light point through", () => {
+		const rows: Record<string, EffortRow[]> = { "p/a": [{ effort: "medium", score: 50, cost: 5 }], "p/b": [{ effort: "low", score: 40, cost: 1, minutes: 99 }] };
+		expect(workerRoutes({ rowsOf: m => rows[m] ?? [], ownerOnly: () => undefined, anchor: "p/a:medium", candidates: ["p/b"] }).light.selector).toBe("p/b:low");
+	});
+
 	test("off and minimal rows never route", () => {
 		const rowsOf = (model: string): readonly EffortRow[] => (model === "p/a" ? [{ effort: "medium", score: 50, cost: 5 }] : [{ effort: "off", score: 90, cost: 0.1 }, { effort: "minimal", score: 90, cost: 0.1 }]);
 		const r = workerRoutes({ rowsOf, ownerOnly: () => undefined, anchor: "p/a:medium", candidates: ["p/b"] });

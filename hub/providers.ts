@@ -100,6 +100,11 @@ const loading = new Map<keyof typeof cache, Promise<unknown>>();
 function invalidate(): void {
 	cache = {}; loading.clear();
 }
+/** Forgets every cached read, the model list included, as a login does. */
+export const forgetProviderReads = invalidate;
+const modelsListeners = new Map<string, () => void>();
+/** Runs `listener` once, right after the next model list read that gave a list; a second call under the same `id` replaces the first. It never starts a read. */
+export const onModelsLoaded = (id: string, listener: () => void): void => void modelsListeners.set(id, listener);
 async function cached<K extends keyof typeof cache>(key: K, load: () => Promise<NonNullable<(typeof cache)[K]>["value"] | undefined>): Promise<NonNullable<(typeof cache)[K]>["value"] | undefined> {
 	type V = NonNullable<(typeof cache)[K]>["value"] | undefined;
 	const stamp = key === "models" ? modelsStamp() : key === "auth" ? authStamp() : undefined;
@@ -109,7 +114,10 @@ async function cached<K extends keyof typeof cache>(key: K, load: () => Promise<
 	if (pending) return pending as Promise<V>;
 	const run = (async (): Promise<V> => {
 		const value = await load();
-		if (value !== undefined && loading.get(key) === run) cache = { ...cache, [key]: { at: Date.now(), value, stamp } };
+		if (value !== undefined && loading.get(key) === run) {
+			cache = { ...cache, [key]: { at: Date.now(), value, stamp } };
+			if (key === "models") for (const [id, listener] of modelsListeners) { modelsListeners.delete(id); listener(); }
+		}
 		return value;
 	})().finally(() => {
 		if (loading.get(key) === run) loading.delete(key);
@@ -189,13 +197,24 @@ const ompModels = async (): Promise<ModelInfo[] | undefined> => {
 			})
 		: undefined;
 };
+let listFailureLogged = false;
 export const availableModels = async (): Promise<ModelInfo[]> =>
 	(await cached("models", async () => {
 		const [omo, omp] = await Promise.all([usesOmo() ? cliText(OMO, ["--list-models"]).then(t => (t === undefined ? undefined : omoModels(t, omoAuth(), process.env))) : [], usesOmp() ? ompModels() : []]);
+		const failed = [usesOmo() && omo === undefined ? "omo" : "", usesOmp() && omp === undefined ? "omp" : ""].filter(Boolean);
+		if (failed.length && !listFailureLogged) log(`dotz: the model list could not be read from ${failed.join(" and ")}`);
+		listFailureLogged = failed.length > 0;
 		if (omo === undefined && omp === undefined) return undefined;
-		const seen = new Set<string>();
-		return [...(omo ?? []), ...(omp ?? [])].filter(m => !seen.has(m.selector) && seen.add(m.selector));
+		const merged = new Map<string, ModelInfo>();
+		for (const m of [...(omo ?? []), ...(omp ?? [])]) {
+			const kept = merged.get(m.selector) ?? m;
+			merged.set(m.selector, kept.thinking || !m.thinking ? kept : { ...kept, thinking: m.thinking });
+		}
+		return [...merged.values()];
 	})) ?? [];
+
+/** The model list the gateway holds right now, whatever its age: undefined before the first read. It never starts a read. */
+export const heldModels = (): readonly ModelInfo[] | undefined => cache.models?.value;
 
 // What omp itself has stored (`omp auth export`): only provider ids, credential types and masked key tails are kept.
 type AuthInfo = { provider: string; type: string; label?: string; masked?: string; accounts?: number; pool?: boolean };
