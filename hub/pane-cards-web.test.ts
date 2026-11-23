@@ -2,8 +2,6 @@ import { afterAll, expect, test } from "bun:test";
 import { ev, fakeHub, run, waitFor, type View } from "./test-web.ts";
 import { cardHub } from "./test-pane-cards.ts";
 
-// The cards of a conversation (web/css, @container tlcol) fold by the width of the column they are drawn in, not the window's: the same conversation
-// in a 390px window and in a 390px pane of a 1280px window lays each card kind out the same, and no pane width down to 280px pushes anything past the pane's edge.
 const hub = fakeHub(cardHub);
 afterAll(() => hub.stop());
 
@@ -52,8 +50,10 @@ const measureIn = (v: View, tl: string): Promise<Measured> => ev<Measured>(v, `(
 	return { cards, over };
 })()`);
 
-test("the same conversation lays each card kind out alike in a 390 window and in a 390 pane, real or mirror", async () => {
-	const alone = await measureIn(await phone(390), `document.querySelector("#timeline")`);
+test("the same conversation lays each card kind out alike in a phone card and in a pane of the same width, real or mirror", async () => {
+	const margins = 390 - (await ev<number>(await phone(390), `document.querySelector("#v-chat").getBoundingClientRect().width`));
+	expect(margins).toBeGreaterThan(0);
+	const alone = await measureIn(await phone(390 + margins), `document.querySelector("#timeline")`);
 	const real = await measureIn(await panes(390, 0), paneTl(0));
 	const mirror = await measureIn(await panes(390, 1), paneTl(0));
 	for (const [name, base] of Object.entries(alone.cards)) {
