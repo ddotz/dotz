@@ -189,12 +189,13 @@ describe("moving", () => {
 		expect(posts[1]).toEqual({ path: "/api/mailbox/learn", body: { box: "b-pay", kind: "from", value: "lee@example.com" } });
 	}, 30_000);
 
-	test("a selection of mails from two accounts has no box to move to", async () => {
+	test("a selection of mails from two accounts has no box to move to: 옮기기 says so and opens nothing", async () => {
 		const v = await open();
 		await run(v, `${rowJs("p-2")}.querySelector(".mr-chk").click(); ${rowJs("w-2")}.querySelector(".mr-chk").click()`);
-		await moveSel(v);
-		await waitFor(v, `document.querySelector(".menu")`);
-		expect(await ev<number>(v, `document.querySelectorAll(".menu .mi").length`)).toBe(0);
+		await waitFor(v, `document.querySelector('#mbox-bar [data-k="mail-move"]')`);
+		await run(v, `document.querySelector('#mbox-bar [data-k="mail-move"]').click()`);
+		await waitFor(v, `document.querySelector(".snack")?.textContent === "한 계정의 메일만 골라야 옮길 수 있어요"`);
+		expect(await ev<boolean>(v, `!!document.querySelector(".menu, .msheet")`)).toBe(false);
 		expect(posts).toEqual([]);
 	}, 30_000);
 

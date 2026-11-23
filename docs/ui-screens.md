@@ -94,7 +94,7 @@ flowchart LR
     o_mail_dialog["dialog (1)"]
     o_mail_float["float (2)"]
     o_mail_fsOpen["fsOpen (1)"]
-    o_mail_menu["menu (4)"]
+    o_mail_menu["menu (3)"]
     o_mail_toast["toast (35)"]
   end
   subgraph a_monitoring["monitoring"]

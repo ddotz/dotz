@@ -133,7 +133,7 @@
   "mon.mail.state.replied": "답장함",
   "mon.mail.state.out": "내가 보냄",
   "mon.mail.pending": "확인 대기",
-  "mon.mail.archive": "보관함",
+  "mon.mail.archive": "보관",
   "mon.mail.sent": "보낸 메일",
   "mon.mail.inbox": "받은 메일",
   "mon.mail.empty.pending": "확인할 초안이 없어요",

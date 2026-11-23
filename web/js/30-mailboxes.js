@@ -223,9 +223,7 @@ const mxKw = s => (String(s || "").match(/[\p{L}\p{N}]+/gu) || []).filter(w => (
 function mxMoveOpen(anchor, keys) {
   keys = keys.filter(t => MAILS.has(t) && MX.of.has(t));
   if (!keys.length) return;
-  const accts = [...new Set(keys.map(t => MX.of.get(t)))], sheet = matchMedia("(max-width: 639px)").matches;
-  if (accts.length > 1) { showMenu(anchor, [{ header: TX("mail.move.mixed") }, { header: TX("mail.move.mixed_hint") }], { onPick: () => {}, sheet }); return; }
-  const a = MX.accts.get(accts[0]), froms = new Set(keys.map(t => mxBoxOf(t).id));
+  const a = MX.accts.get(MX.of.get(keys[0])), froms = new Set(keys.map(t => mxBoxOf(t).id)), sheet = matchMedia("(max-width: 639px)").matches;
   showMenu(anchor, [{ header: TX("mail.move.ask") }, ...(MX.accts.size > 1 ? [{ header: TX("mail.move.within", { name: a.label }) }] : []),
     ...a.boxes.filter(b => froms.size > 1 || !froms.has(b.id)).map(b => ({ value: b.id, label: b.name, sub: mxModeOf(b) }))], { onPick: id => mxPut(keys, id), sheet });
 }

@@ -94,7 +94,7 @@ describe("되돌리기 of an action on several mails", () => {
 	for (const [width, height] of SIZES) test(`3개를 보관했어요 · 되돌리기 sends 받은편지함으로 for all three and brings them back at ${width}`, async () => {
 		const v = await openList(width, height);
 		for (const t of ["sample-1 보고서", "sample-2 일정", "sample-3 견적"]) await tick(v, t);
-		await pickBar(v, "완료(보관)");
+		await pickBar(v, "보관");
 		await snackSays(v, "3개를 보관했어요");
 		await waitFor(v, `!${rowJs("sample-1 보고서")} && !${rowJs("sample-3 견적")}`);
 		expect((await snack(v))!.act).toBe("되돌리기");
@@ -168,7 +168,7 @@ describe("a mailbox that did not follow keeps 되돌리기", () => {
 		unsynced = new Set(["fx-b"]);
 		const v = await openList(width, height);
 		for (const t of ["sample-1 보고서", "sample-2 일정", "sample-3 견적"]) await tick(v, t);
-		await pickBar(v, "완료(보관)");
+		await pickBar(v, "보관");
 		await snackSays(v, "3개 중 1개는 메일함에 반영하지 못했어요");
 		expect((await snack(v))!.act).toBe("되돌리기");
 		await shot(v, `archive-unsynced-undo-${width}`);

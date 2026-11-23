@@ -255,9 +255,9 @@ const mbLeave = keys => { if (monCtx && keys.includes(monCtx) && current === "ch
 
 /* ---------- the row: checkbox, star, the bold of an unread mail ---------- */
 // `o.short`: the visible word when the full label (kept as aria-label and title) is longer than the button needs.
-// `count` stays beside the icon on the phone, where the label is hidden.
-const mbBtn = (label, ic, onclick, o = {}) => el("button", { class: `mbox-b${o.cls ? ` ${o.cls}` : ""}`, type: "button", "data-k": o.k, title: label, "aria-label": label, onclick }, icon(ic), el("span", { class: "mbox-bt", text: o.short || label }), o.count ? el("span", { text: ` ${o.count}` }) : null);
-const MB_SHORT = { read: TX("mail.read"), unread: TX("common.unread"), archive: TX("mail.archive"), unarchive: TX("mail.inbox"), trash: TX("common.delete") };
+const mbBtn = (label, ic, onclick, o = {}) => el("button", { class: `mbox-b${o.cls ? ` ${o.cls}` : ""}${o.why ? " off" : ""}`, type: "button", "data-k": o.k, title: o.why || label, "aria-label": label, "aria-disabled": o.why ? "true" : null, onclick: o.why ? () => toast(o.why) : onclick }, icon(ic), el("span", { class: "mbox-bt", text: o.short || label }));
+const MB_SLOT = { read: [TX("mail.act.read"), "mailopen", TX("mail.read")], unread: [TX("mail.act.unread"), "mail", TX("common.unread")], archive: [TX("mail.archive"), "archive", TX("mail.archive")], unarchive: [TX("mail.act.unarchive"), "inbox", TX("mail.act.unarchive")],
+  fyi: [TX("mail.fyi.title"), "replyoff", TX("mail.fyi.short")], move: [TX("mail.move"), "folder", TX("mail.move.short")], trash: [TX("common.delete"), "trash", TX("common.delete")] };
 // Star: always a button (a star works in dotz whatever the mailbox does); the mailbox's refusal comes back as the hub's one line.
 function mbStar(t) {
   const m = MAILS.get(t) || {}, on = !!m.starred;
@@ -299,18 +299,18 @@ function mbPaintBar() {
     mbBarHeld(bar);
     return;
   }
-  const arch = mailFilterOf()[0] === "archived";
+  const arch = mailFilterOf()[0] === "archived", sent = keys.every(t => MAILS.get(t).dir === "out"), sentWhy = sent ? TX("mail.why.sent_read") : "", pc = keys.map(t => pqPc(t)).find(Boolean);
+  const why = { read: sentWhy || (keys.some(t => mailUnread(t)) ? "" : TX("mail.why.read")), unread: sentWhy, archive: sent ? TX("mail.why.sent_archive") : "", fyi: mbOwed(keys).length ? "" : TX("mail.why.fyi"),
+    move: new Set(keys.map(t => MX.of.get(t))).size > 1 ? TX("mail.move.one_account") : !mxCanMove(keys[0]) ? TX("mail.move.one_box") : pc ? mxWhy(pc) : "" };
   // Every action stands in the bar, none behind a ⋯ (owner 11-18): with its word on a wide screen, as an icon on a phone. 삭제 is never the button beside the × that clears the choice.
-  const owed = mbOwed(keys).length, act = (a, label, ic, onclick, o = {}) => mbBtn(label, ic, ev => mbSelDone(onclick(ev.currentTarget)), { k: `mail-${a}`, short: MB_SHORT[a], ...o });
-  const run = a => b => a === "trash" ? mbTrash(keys, b) : mbRun(keys, a, false, b);
-  const btns = [act("read", TX("mail.act.read"), "check", run("read")), act("unread", TX("mail.act.unread"), "mail", run("unread")),
-    arch ? act("unarchive", TX("mail.act.unarchive"), "inbox", run("unarchive")) : act("archive", TX("mail.act.done"), "archive", run("archive")),
-    act("trash", TX("common.delete"), "trash", run("trash"), { cls: "danger" }),
-    owed ? act("fyi", owed < keys.length ? TX("mail.fyi.label_n", { n: owed }) : TX("mail.fyi.title"), "replyoff", b => mbFyi(keys, true, b)) : null,
-    keys.some(mxCanMove) ? mbBtn(TX("mail.move"), "folder", ev => (keys.some(pqPc) ? toast(mxWhy(pqPc(keys.find(pqPc))), true) : mxMoveOpen(ev.currentTarget, keys)), { k: "mail-move" }) : null].filter(Boolean);
+  const run = a => b => a === "trash" ? mbTrash(keys, b) : a === "fyi" ? mbFyi(keys, true, b) : mbRun(keys, a, false, b);
+  const btns = ["read", "unread", arch ? "unarchive" : "archive", "fyi", "move", "trash"].map(a => {
+    const [label, ic, short] = MB_SLOT[a];
+    return mbBtn(label, ic, a === "move" ? ev => mxMoveOpen(ev.currentTarget, keys) : ev => mbSelDone(run(a)(ev.currentTarget)), { k: `mail-${a}`, short, why: why[a], cls: a === "trash" ? "danger" : "" });
+  });
   bar.classList.add("on");
-  clear(bar).append(chk, el("span", { class: "mbox-n", "aria-live": "polite", text: TX("mail.selected_n", { n: keys.length }) }), ...btns,
-    el("button", { class: "mbox-b mbox-x", type: "button", "aria-label": TX("mail.deselect"), title: TX("mail.deselect"), onclick: mbSelClear }, icon("close")));
+  clear(bar).append(chk, el("span", { class: "mbox-n", "aria-live": "polite", text: TX("mail.selected_n", { n: keys.length }) }),
+    el("button", { class: "mbox-b mbox-x", type: "button", "aria-label": TX("mail.deselect"), title: TX("mail.deselect"), onclick: mbSelClear }, icon("close")), ...btns);
   mbBarHeld(bar);
 }
 // The visible mails of the list (select all) and the bar itself, at the head of the rows.
@@ -392,8 +392,8 @@ function mailRawBtn(d) {
 function mailOpenBar(t, card) {
   const m = MAILS.get(t) || {}, unread = mailUnread(t, m), arch = !!m.archived, out = m.dir === "out";
   // 삭제 is the last button of the bar, away from the ones used most.
-  const acts = [arch ? ["unarchive", TX("mail.act.unarchive"), "inbox"] : ["archive", TX("mail.archive"), "archive"], out ? null : unread ? ["read", TX("mail.act.read"), "mailopen"] : ["unread", TX("mail.act.unread"), "mail"]].filter(Boolean);
-  const act = ([a, label, ic]) => mbIco(label, ic, ev => busy(ev.currentTarget, async () => {
+  const acts = [arch ? "unarchive" : "archive", out ? null : unread ? "read" : "unread"].filter(Boolean);
+  const act = a => mbIco(MB_SLOT[a][0], MB_SLOT[a][1], ev => busy(ev.currentTarget, async () => {
     const done = a === "trash" ? await mbTrash([t]) : await mbRun([t], a);
     if (done.length && a !== "trash" && a !== "read") { MBOX.sel.delete(t); if (monCtx === t && current === "chat") go("monitoring", MON.sel); }
   }), `mail-open-${a}`);
@@ -405,7 +405,7 @@ function mailOpenBar(t, card) {
     out ? null : mailDraftButton(t, "ib mtop-b mr-draft"),
     out ? null : mailFyiBtn(t),
     raw ? mailRawBtn(raw) : null,
-    act(["trash", TX("common.delete"), "trash"]));
+    act("trash"));
 }
 
 /* ---------- 메일 쓰기: the floating button and its sheet ---------- */

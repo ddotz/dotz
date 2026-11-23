@@ -101,7 +101,6 @@ const titles = (v: View) => ev<string[]>(v, `[...document.querySelectorAll("#mon
 const folder = async (v: View, k: string) => { await run(v, `const at = x => document.querySelector('#mon-tl [data-filter="' + x + '"]'); if (!at(${JSON.stringify(k)})) at("in").click()`); await waitFor(v, `!!document.querySelector('#mon-tl [data-filter="${k}"]')`); await run(v, `document.querySelector('#mon-tl [data-filter="${k}"]').click()`); await waitFor(v, `document.querySelector('#mon-tl .mr-place .on:not([data-filter="in"]), #mon-tl .mr-f.on').dataset.filter === ${JSON.stringify(k)}`); };
 const tick = (v: View, title: string) => run(v, `${rowJs(title)}.querySelector(".mr-chk").click()`);
 const moreItem = (label: string) => `[...document.querySelectorAll(".menu .mi")].find(b => b.querySelector(".ml").firstChild.textContent.startsWith(${JSON.stringify(label)}))`;
-// every action of a selection stands in the bar; its label may carry a count (답장 안 함 2개)
 const barAct = (label: string) => `[...document.querySelectorAll("#mbox-bar .mbox-b")].find(b => b.getAttribute("aria-label").startsWith(${JSON.stringify(label)}))`;
 const pickBar = (v: View, label: string) => run(v, `${barAct(label)}.click()`);
 const bar = (v: View, label: string) => `[...document.querySelectorAll("#mbox-bar .mbox-b")].find(b => b.getAttribute("aria-label") === ${JSON.stringify(label)})`;
@@ -207,7 +206,7 @@ describe("actions on a selection", () => {
 	test("읽음 / 안읽음 / 완료 post one bulk action and move the rows at once", async () => {
 		const v = await openList(1280, 800);
 		await tick(v, "월간 점검 보고서 확인 요청"); await tick(v, "회의 일정 변경");
-		expect(await ev<string>(v, `document.querySelector("#mbox-bar .mbox-n").textContent`)).toBe("2개 선택");
+		expect(await ev<string>(v, `document.querySelector("#mbox-bar .mbox-n").textContent`)).toBe("2개");
 		await run(v, `${bar(v, "읽음으로 표시")}.click()`);
 		await posted(1);
 		expect(posts[0]).toEqual({ path: "/api/mail/actions", body: { keys: ["fx-a", "fx-b"], action: "read" } });
@@ -219,7 +218,7 @@ describe("actions on a selection", () => {
 		expect(posts[1].body.action).toBe("unread");
 		await waitFor(v, `document.querySelectorAll("#mon-tl > .mr.mr-new").length === 4`);
 		await tick(v, "월간 점검 보고서 확인 요청"); await tick(v, "회의 일정 변경");
-		await run(v, `${bar(v, "완료(보관)")}.click()`);
+		await run(v, `${bar(v, "보관")}.click()`);
 		await posted(3);
 		expect(posts[2].body).toEqual({ keys: ["fx-a", "fx-b"], action: "archive" });
 		await waitFor(v, `document.querySelectorAll("#mon-tl > .mr").length === 4`);
@@ -244,8 +243,8 @@ describe("actions on a selection", () => {
 		await tick(v, "회사 메일");
 		// acme, a webmail site: the card says can: [], so the hub cannot follow, but the action still happens here. The action still lands in dotz and the hub answers synced:false with no note, so the usual done toast shows.
 		expect(await ev<boolean>(v, `${bar(v, "읽음으로 표시")}.disabled`)).toBe(false);
-		expect(await ev<boolean>(v, `${bar(v, "완료(보관)")}.disabled`)).toBe(false);
-		await run(v, `${bar(v, "완료(보관)")}.click()`);
+		expect(await ev<boolean>(v, `${bar(v, "보관")}.disabled`)).toBe(false);
+		await run(v, `${bar(v, "보관")}.click()`);
 		await posted(1);
 		expect(posts[0]).toEqual({ path: "/api/mail/fx-acme/action", body: { action: "archive" } });
 		await waitFor(v, `!${rowJs("회사 메일")}`);
@@ -458,7 +457,7 @@ describe("the open mail", () => {
 		expect(await ev<string>(v, `document.querySelector('#tl [data-k="mail-to"]').value`)).toBe("");
 	}, 30_000);
 
-	test("완료(보관) in the open mail posts one action and goes back to the list", async () => {
+	test("보관 in the open mail posts one action and goes back to the list", async () => {
 		const v = await openList(1280, 800);
 		await openMail(v, "월간 점검 보고서 확인 요청");
 		await run(v, `document.querySelector('#tl [data-k="mail-open-archive"]').click()`);
@@ -481,7 +480,7 @@ describe("the bar above the list", () => {
 		await tick(v, "월간 점검 보고서 확인 요청");
 		await tick(v, "회사 메일");
 		// every action stands in the bar, none behind a ⋯; 삭제 in the danger tone and apart from the ×
-		expect(await ev<string[]>(v, `[...document.querySelectorAll("#mbox-bar .mbox-b")].map(b => b.getAttribute("aria-label") + (b.classList.contains("danger") ? "!" : ""))`)).toEqual(["읽음으로 표시", "안 읽음으로 표시", "완료(보관)", "삭제!", "답장 안 함 1개", "선택 해제"]);
+		expect(await ev<string[]>(v, `[...document.querySelectorAll("#mbox-bar .mbox-b")].map(b => b.getAttribute("aria-label") + (b.classList.contains("danger") ? "!" : ""))`)).toEqual(["선택 해제", "읽음으로 표시", "안 읽음으로 표시", "보관", "답장 안 함", "메일함 옮기기", "삭제!"]);
 		expect(await ev<boolean>(v, `!!document.querySelector('#mbox-bar [data-k="mail-more"]')`)).toBe(false);
 		expect(await ev<Place>(v, place)).toEqual(idle);
 		// One line: the bar holds every control on one row, nothing dropped below it.
@@ -515,11 +514,11 @@ describe("the bar above the list", () => {
 		expect(await ticked(v)).toEqual([1, 1, false, true]);
 	}, 30_000);
 
-	test("at 360 the selection bar shows all five actions on one line and nothing runs past its edge", async () => {
+	test("at 360 the selection bar shows all six slots on one line and nothing runs past its edge", async () => {
 		const v = await openList(360, 800);
 		await tick(v, "월간 점검 보고서 확인 요청"); await tick(v, "회의 일정 변경");
 		await shot(v, "bar-360-selected");
-		expect(await ev<string[]>(v, `[...document.querySelectorAll("#mbox-bar .mbox-b[data-k]")].map(b => b.dataset.k)`)).toEqual(["mail-read", "mail-unread", "mail-archive", "mail-trash", "mail-fyi"]);
+		expect(await ev<string[]>(v, `[...document.querySelectorAll("#mbox-bar .mbox-b[data-k]")].map(b => b.dataset.k)`)).toEqual(["mail-read", "mail-unread", "mail-archive", "mail-fyi", "mail-move", "mail-trash"]);
 		expect(await ev<boolean>(v, `document.querySelector('#mbox-bar [data-k="mail-trash"]').classList.contains("danger")`)).toBe(true);
 		expect(await ev<boolean[]>(v, `(() => { const b = document.querySelector("#mbox-bar"), r = b.getBoundingClientRect(), kids = [...b.children].map(c => c.getBoundingClientRect());
 			return [b.scrollWidth <= b.clientWidth, kids.every(q => q.left >= r.left - 0.5 && q.right <= r.right + 0.5), new Set(kids.map(q => Math.round(q.top + q.height / 2))).size === 1, document.documentElement.scrollWidth <= innerWidth]; })()`)).toEqual([true, true, true, true]);
@@ -623,8 +622,8 @@ describe("답장 안 함 on many mails", () => {
 		owe();
 		const v = await openList(1280, 800);
 		await tick(v, "월간 점검 보고서 확인 요청"); await tick(v, "회의 일정 변경"); await tick(v, "견적서 보내드립니다");
-		expect(await ev<string>(v, `${barAct("답장 안 함")}.getAttribute("aria-label")`)).toBe("답장 안 함 2개");
 		await pickBar(v, "답장 안 함");
+		await waitFor(v, `document.querySelector(".snack")?.textContent.startsWith("2개를")`);
 		await posted(1);
 		expect(posts[0]).toEqual({ path: "/api/mail/fyi", body: { keys: ["fx-a", "fx-b"], on: true } });
 		await waitFor(v, `${rowJs("회의 일정 변경")}.querySelector('.mr-state[data-state="답장 안 함"]')`);
@@ -667,30 +666,30 @@ describe("a row leaves only after the hub answered", () => {
 	const archivedOf = (v: View, key: string) => ev<boolean | null>(v, `MAILS.has("mail:${key}") ? !!MAILS.get("mail:${key}").archived : null`);
 	const confirmYes = async (v: View) => { await waitFor(v, `document.querySelector("dialog[open] .btn.danger")`); await run(v, `document.querySelector("dialog[open] .btn.danger").click()`); };
 
-	test("완료(보관): the row stays, the button waits, nothing is changed until the hub answers; then the row folds away", async () => {
+	test("보관: the row stays, the button waits, nothing is changed until the hub answers; then the row folds away", async () => {
 		const g = hold();
 		const v = await openList(1280, 800);
 		await tick(v, "회의 일정 변경");
-		await run(v, `${bar(v, "완료(보관)")}.click()`);
+		await run(v, `${bar(v, "보관")}.click()`);
 		await posted(1);
 		expect(await still(v, "회의 일정 변경")).toBe(true);
 		expect(await archivedOf(v, "fx-b")).toBe(false);
-		expect(await ev<unknown[]>(v, `[${bar(v, "완료(보관)")}.disabled, ${bar(v, "완료(보관)")}.getAttribute("aria-busy")]`)).toEqual([true, "true"]);
+		expect(await ev<unknown[]>(v, `[${bar(v, "보관")}.disabled, ${bar(v, "보관")}.getAttribute("aria-busy")]`)).toEqual([true, "true"]);
 		g.open();
 		await waitFor(v, `!${rowJs("회의 일정 변경")}`);
 		expect(await archivedOf(v, "fx-b")).toBe(true);
 	}, 30_000);
 
-	test("a refused 완료(보관) keeps the row and loses none, the button comes back, the note shows once", async () => {
+	test("a refused 보관 keeps the row and loses none, the button comes back, the note shows once", async () => {
 		const g = hold();
 		const v = await openList(1280, 800), before = await titles(v);
 		await tick(v, "처리가 안 되는 메일");
-		await run(v, `${bar(v, "완료(보관)")}.click()`);
+		await run(v, `${bar(v, "보관")}.click()`);
 		await posted(1);
 		expect(await still(v, "처리가 안 되는 메일")).toBe(true);
 		g.open();
 		await waitFor(v, `document.querySelector(".snack.bad")?.textContent.includes("Gmail에 반영하지 못했어요")`);
-		await waitFor(v, `!${bar(v, "완료(보관)")}.disabled`);
+		await waitFor(v, `!${bar(v, "보관")}.disabled`);
 		expect(await still(v, "처리가 안 되는 메일")).toBe(true);
 		expect(await titles(v)).toEqual(before);
 		expect(await archivedOf(v, "fx-fail")).toBe(false);
@@ -700,7 +699,7 @@ describe("a row leaves only after the hub answered", () => {
 		const g = hold();
 		const v = await openList(1280, 800), before = await titles(v);
 		await tick(v, "회의 일정 변경"); await tick(v, "처리가 안 되는 메일");
-		await run(v, `${bar(v, "완료(보관)")}.click()`);
+		await run(v, `${bar(v, "보관")}.click()`);
 		await posted(1);
 		expect(posts[0]!.path).toBe("/api/mail/actions");
 		expect(await still(v, "회의 일정 변경")).toBe(true);
@@ -771,18 +770,18 @@ describe("a row leaves only after the hub answered", () => {
 		const writes = (v: View) => ev<number>(v, `window.__writes`);
 		const busyOf = (v: View, js: string) => ev<unknown[]>(v, `[${js}.disabled, ${js}.getAttribute("aria-busy")]`);
 
-		test("the bar's 완료(보관): the list draws again, the new button is busy too, a second press sends nothing", async () => {
+		test("the bar's 보관: the list draws again, the new button is busy too, a second press sends nothing", async () => {
 			const g = hold();
 			const v = await openList(1280, 800);
 			await tick(v, "회의 일정 변경");
 			await countWrites(v);
-			await run(v, `${bar(v, "완료(보관)")}.click()`);
+			await run(v, `${bar(v, "보관")}.click()`);
 			await posted(1);
-			await run(v, `window.__was = ${bar(v, "완료(보관)")}`);
+			await run(v, `window.__was = ${bar(v, "보관")}`);
 			await repaint(v);
-			expect(await ev<boolean>(v, `${bar(v, "완료(보관)")} !== window.__was`)).toBe(true);
-			expect(await busyOf(v, bar(v, "완료(보관)"))).toEqual([true, "true"]);
-			await run(v, `${bar(v, "완료(보관)")}.click()`);
+			expect(await ev<boolean>(v, `${bar(v, "보관")} !== window.__was`)).toBe(true);
+			expect(await busyOf(v, bar(v, "보관"))).toEqual([true, "true"]);
+			await run(v, `${bar(v, "보관")}.click()`);
 			expect(await writes(v)).toBe(1);
 			g.open();
 			await waitFor(v, `!${rowJs("회의 일정 변경")}`);
