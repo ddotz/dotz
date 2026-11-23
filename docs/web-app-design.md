@@ -714,9 +714,9 @@ dotz 웹앱의 화면은 `web/js/03-screens.js`의 `SCREENS` 표에 한 줄씩 �
 
 ### 깨움 줄 (예약 실행, 다른 대화가 넘긴 일)
 - 목적: 예약이 돌거나 다른 대화가 일을 넘기면 카드 없이 그 턴의 작업 줄 앞에 이유를 붙여 한 줄로 보여요.
-- 구성: 작업 줄 `details.work`의 `.wsum`이 `<예약 이름> → 20초 작업 · 명령 3`, `<보낸 대화> · <넘긴 일> → …`이에요. 예약 이름은 이벤트의 `name`이고 이름이 없는 예전 이벤트는 `예약`이에요. 넘긴 일은 넘긴 글의 첫 줄이 한글이고 40자 안일 때만 붙어요. 예약 줄을 펼치면 `다음 실행 <시각>`(예약이 아직 있을 때), `결과 보기`, 접힌 `지시 내용 보기`(메일 주소는 가려요)가 나오고, 넘긴 일은 맨 위에 넘긴 글이 나와요. 넘긴 일에 대한 첫 답 머리 줄 끝에 `<보낸 대화>에서`(`.wl-sess`, 누르면 그 대화로)가 붙어요.
+- 구성: 작업 줄 `details.work`의 `.wsum`이 `<예약 이름> → 20초 작업 · 명령 3`, `<보낸 대화> · <넘긴 일> → …`이에요. 예약 이름은 이벤트의 `name`이고 이름이 없는 예전 이벤트는 `예약`이에요. 넘긴 일은 넘긴 글의 첫 줄이 한글이고 40자 안일 때만 붙어요. 예약 줄을 펼치면 `다음 실행 <시각>`(예약이 아직 있을 때), `결과 보기`, 접힌 `지시 내용 보기`(메일 주소는 가려요)가 나오고, 넘긴 일은 맨 위에 넘긴 글이 나와요. 넘긴 일에 대한 첫 답 머리 줄 끝에 `<보낸 대화>에서`(`.wl-sess`, 누르면 그 대화로)가 붙어요. 그 답은 넘긴 글과 같은 `handed_id`를 지닌 답뿐이에요(`hub/handed.ts` `recordHanded`가 id를 만들고, 그 글로 시작한 프롬프트의 답이 같은 id를 지녀요). 같은 대화의 다른 턴 답이나, 넘긴 일의 답이 보낸 대화로 돌아간 뒤 이 대화에 온 답에는 붙지 않아요.
 - 상태: 작업 줄은 턴이 아니라 프롬프트마다 나뉘어요. 게이트웨이는 밀린 프롬프트(한도가 풀린 뒤의 예약, 브리핑, 넘긴 일)를 한 턴(`turn_start`…`turn_end`) 안에서 차례로 보내기 때문에, 활동 기록의 프롬프트 줄(`> …`), `turn_start`, 답 `-`가 앞 프롬프트를 닫아요. 주인 메시지에서 시작한 프롬프트가 아니면(첫 줄이 그 메시지와 같지 않으면) 깨움으로 보고, 이 대화에 보낸 것이 없으면 그 줄을 숨기며(실시간은 3초 기다린 뒤), 그 뒤 답이 오면 다시 보여요. 프롬프트가 도는 동안 온 깨움(예약, 넘긴 일)은 줄을 바로 만들지 않고 기다렸다가, 첫 줄이 같은 프롬프트가 시작될 때 그 자리에 줄을 만들어요. 그래서 넘긴 일의 줄과 `<보낸 대화>에서`는 그 프롬프트의 작업과 답에만 붙어요. 다음 깨움, 주인 메시지, 다른 프롬프트의 작업이 오면 숨긴 줄을 지워요. 게이트웨이 자신의 깨움(`source: gateway`)과 `[keepalive]`, `[dotz reflect]` 같은 게이트웨이 프롬프트는 이유 없이 같은 규칙을 따라요. 작업내역과 활동 기록에는 그대로 남아요.
-- 근거: web/js/11-todo-strip.js `wakeOf`, `turnBegin`, `promptBegin`, `promptSilent`, `wakeBegin`, `wakeEnded`, `wakeAnswered`, `wakeQuiet`, `newGroup`, `chatPush`; web/js/09-needs-you.js `CS.wake`, `CS.wakes`, `CS.seg`, `CS.asked`; hub/wake-rows-web.test.ts, hub/quiet-turns-web.test.ts, hub/queued-prompts-web.test.ts.
+- 근거: web/js/11-todo-strip.js `wakeOf`, `turnBegin`, `promptBegin`, `promptSilent`, `wakeBegin`, `wakeEnded`, `wakeAnswered`, `answerWake`, `handedMark`, `wakeQuiet`, `newGroup`, `chatPush`; web/js/09-needs-you.js `CS.wake`, `CS.wakes`, `CS.seg`, `CS.asked`; hub/wake-rows-web.test.ts, hub/quiet-turns-web.test.ts, hub/queued-prompts-web.test.ts, hub/handed-label-web.test.ts.
 
 ### 아침 점검 브리핑 카드
 - 목적: 봇의 아침 브리핑 형태 답(`- 10:00 제목` 줄 묶음 + 개수/메일 줄)을 행과 칩으로 그려요.

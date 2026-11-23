@@ -11,9 +11,11 @@ export const isLoud = (text: string): boolean => {
 	return tone === "ask" || tone === "fail";
 };
 
-/** The handed text as an event of the receiving conversation: the web draws one collapsed row, a messenger gets no post. */
-export function recordHanded(h: { to: string; from: string; text: string; handback?: boolean }): void {
-	emit("inbox", { ts: now(), kind: "handed", source: "session", channel: h.to, from: h.from, text: h.text, ...(h.handback ? { handback: true } : {}) });
+/** The handed text as an event of the receiving conversation: the web draws one collapsed row, a messenger gets no post. Returns its id, which the prompt it starts carries to its answer (handed_id). */
+export function recordHanded(h: { to: string; from: string; text: string; handback?: boolean }): string {
+	const handed_id = crypto.randomUUID().slice(0, 8);
+	emit("inbox", { ts: now(), kind: "handed", source: "session", channel: h.to, from: h.from, text: h.text, handed_id, ...(h.handback ? { handback: true } : {}) });
+	return handed_id;
 }
 
 /** An answer to handed text is stored and shown but notifies no one, unless it opens [ask] or [fail] or an owner message still waits behind it. */

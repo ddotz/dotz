@@ -186,8 +186,8 @@ export async function routeSend(req: Request, url: URL, parts: string[], { peer 
 			}
 			const c = convs.get(key)!;
 			// Main's request is that conversation's next turn with no reply_to: its answer is posted there; only back:true marks it handed work, answered to main (handBack).
-			recordHanded({ to: c.primary, from: MAIN, text });
-			convs.deliverTo(key, `[main session] ${text}`, { target: c.primary, ...(b.back === true ? { from: MAIN } : {}), ...(b.quiet === true ? { bookkeeping: true as const } : {}) });
+			const handedId = recordHanded({ to: c.primary, from: MAIN, text });
+			convs.deliverTo(key, `[main session] ${text}`, { target: c.primary, handedId, ...(b.back === true ? { from: MAIN } : {}), ...(b.quiet === true ? { bookkeeping: true as const } : {}) });
 			return json({ ok: true, to: key, answers_in: b.back === true ? MAIN : c.primary });
 		}
 	}

@@ -76,7 +76,7 @@ const wakeLead = (src, text) => [src, handedTitle(text)].filter(Boolean).join(" 
 const promptKey = text => text.replace(/^(?:(?:ch|lane|th):\S+\s*)+/, "").split("\n")[0].replace(/\s+/g, " ").trim().slice(0, 40);
 function wakeOf(e) {
   const text = String(e.text ?? "").trim();
-  if (e.kind === "handed") return { lead: wakeLead(targetName(e.from), text), raw: text, ts: e.ts, from: e.from, key: promptKey(text) };
+  if (e.kind === "handed") return { lead: wakeLead(targetName(e.from), text), raw: text, ts: e.ts, from: e.from, key: promptKey(text), hid: String(e.handed_id ?? "") };
   if (e.kind !== "schedule") return null;
   if (gatewayWake(e)) return { lead: "", raw: "", ts: e.ts, from: "", key: promptKey(text) };
   const name = typeof e.name === "string" ? e.name.trim() : "";
@@ -138,13 +138,24 @@ function wakeEnded(w, bulk) {
   else setTimeout(() => { if (CS.wake === w) wakeShow(w, false); }, WAKE_ANSWER_WAIT_MS);
 }
 function wakeAnswered(n, at) {
-  const w = CS.wake, mt = w.from && n.querySelector(":scope > .mt");
+  const w = CS.wake;
   csWakeSet(null);
   wakeShow(w, true);
   for (const r of w.rows) if (r.matches("details.work")) r.dataset.answer = at;
+  if (w.from) handedMark(n, w.from);
+}
+function answerWake(n, e) {
+  const w = CS.wake;
+  if (!e.handed_id) { if (w && !w.from && e.ts >= w.ts) wakeAnswered(n, e.ts); return; }
+  if (w && w.meta && w.meta.hid === e.handed_id) return wakeAnswered(n, e.ts);
+  const i = CS.wakes.findIndex(m => m.hid === e.handed_id);
+  if (i >= 0) handedMark(n, csWakeTake(i).from);
+}
+function handedMark(n, from) {
+  const mt = n.querySelector(":scope > .mt");
   if (!mt) return;
-  const open = () => openTarget(w.from, "chat");
-  mt.append(" · ", el("span", { class: "wl-sess", role: "link", tabindex: "0", text: TX("home.handed.from", { name: targetName(w.from) }), onclick: ev => { ev.stopPropagation(); open(); }, onkeydown: ev => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); open(); } } }));
+  const open = () => openTarget(from, "chat");
+  mt.append(" · ", el("span", { class: "wl-sess", role: "link", tabindex: "0", text: TX("home.handed.from", { name: targetName(from) }), onclick: ev => { ev.stopPropagation(); open(); }, onkeydown: ev => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); open(); } } }));
 }
 const BAN_KEY = "dotz-restart-seen";
 function paintRestartBanner() {
@@ -520,7 +531,7 @@ function chatPush(en, bulk) {
     if (n) {
       const day = dayDiv(e.ts);   // only above a drawn row: a conversation of rows that draw nothing keeps its empty state
       if (g) { csGroupStart(g); csWakeRow(n, day); }
-      else if (CS.wake && !OWNER.has(e.kind) && !pkey && !e.live && e.ts >= CS.wake.ts) wakeAnswered(n, e.ts);
+      else if (!OWNER.has(e.kind) && !pkey && !e.live) answerWake(n, e);
       if (!pkey) csParked(parked ? n : null);
       n.dataset.ts = e.ts;   // the notice jump finds its source message by this (30-notices.js ntFind)
       if (!n.classList.contains("wl-row")) rpMark(n, e);

@@ -142,8 +142,8 @@ function makeQueue(key: string, o: Orchestrator, pendingFile: string, bg: () => 
 		handBack: (from, text, replyTo) => {
 			if (from.startsWith("lane:")) return handBackToLane(from.slice(5), key, text);
 			const to = convs.get(from)?.primary ?? primaryTarget(from);
-			recordHanded({ to, from: key, text, handback: true });
-			convs.deliverTo(from, `${msg().handbackLead} ${text}`, { target: to, replyTo, handback: true });
+			const handedId = recordHanded({ to, from: key, text, handback: true });
+			convs.deliverTo(from, `${msg().handbackLead} ${text}`, { target: to, replyTo, handback: true, handedId });
 		},
 		// The deferral acknowledgement is the gateway speaking, not the answer: it must leave the deferred prompt open.
 		announce: (target, text, worker) => void systemNote(target, text, "deferred", worker).catch(e => log(`deferral note to ${target} failed: ${e}`)),

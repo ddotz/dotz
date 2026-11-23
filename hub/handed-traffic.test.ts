@@ -171,3 +171,31 @@ test("a handback closes the handed request it answers, whose workers are finishe
 	expect(s.state.back).toMatchObject([{ from: "ch:1", text: "the whole report" }]);
 	expect(s.q.openRequests()).toEqual([]);
 });
+
+test("handed text carries an id, and the prompt it starts in the receiving conversation carries the same id", async () => {
+	convs.ensure("ch:94");
+	await send("ch:94", { text: "look at the third item" });
+	const sent = handed("ch:94")[0]!;
+	expect(sent.handed_id).toEqual(expect.any(String));
+	expect(convs.get("ch:94")!.queue.queued().at(-1)).toMatchObject({ handedId: sent.handed_id });
+
+	convs.ensure("ch:95");
+	await send(MAIN, { text: "please check this", from: "ch:95" });
+	queue.onPrompt("[conversation ch:95] please check this");
+	queue.onAnswer("checked, all fine");
+	const back = handed("ch:95")[0]!;
+	expect(back).toMatchObject({ handback: true, handed_id: expect.any(String) });
+	expect(convs.get("ch:95")!.queue.queued().at(-1)).toMatchObject({ handback: true, handedId: back.handed_id });
+});
+
+test("only the answer to a handed prompt names that handed text; the next turn's answer in the same conversation does not", () => {
+	const s = prompts();
+	s.turn("[handback] result", { target: "ch:1", handback: true, handedId: "h1" });
+	s.q.onAnswer("noted, nothing changed");
+	s.state.working = false;
+	s.q.settleTurn();
+	s.turn("a gateway check", { target: "ch:1" });
+	s.q.onAnswer("unrelated report");
+	expect(s.state.posts).toMatchObject([{ text: "noted, nothing changed", handed_id: "h1" }, { text: "unrelated report" }]);
+	expect(s.state.posts[1]).not.toHaveProperty("handed_id");
+});

@@ -559,7 +559,7 @@ export function createPrompts(deps: PromptDeps) {
 		if (via) return (deps.handBack!(via, t, to.replyTo), settle());
 		const run = to.prompt?.run;
 		void deps
-			.post(to.target, t, to.replyTo, { ...(to.prompt && hushedAnswer(to.prompt, t, id => !isAnswered(id))), ...postedRun(run) })
+			.post(to.target, t, to.replyTo, { ...(to.prompt && hushedAnswer(to.prompt, t, id => !isAnswered(id))), ...postedRun(run), ...(to.prompt?.handedId ? { handed_id: to.prompt.handedId } : {}) })
 			.then(r => {
 				if (!r.delivered) return;
 				if (run) deps.ran?.(run, "answered");
@@ -694,7 +694,7 @@ export function createPrompts(deps: PromptDeps) {
 			return burst.close(target, ids);
 		}
 		void deps
-			.post(target, body, p.replyTo, { ...hushedAnswer(p, body, id => !isAnswered(id)), ...(owned ? {} : postedRun(p.run)) })
+			.post(target, body, p.replyTo, { ...hushedAnswer(p, body, id => !isAnswered(id)), ...(owned ? {} : postedRun(p.run)), ...(p.handedId ? { handed_id: p.handedId } : {}) })
 			.then(r => {
 				if (!r.delivered) return;
 				if (p.run) deps.ran?.(p.run, "answered", owned);
