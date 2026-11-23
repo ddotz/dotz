@@ -98,7 +98,7 @@ describe("자동 초안 규칙 in the mail settings screen", async () => {
 		expect(config().draftRules.mail[0]).toMatchObject({ id: "r1", name: "양식 요청", on: false });
 		await run(v, `{ const d = document.querySelector('[data-k="draft_default"]'); d.value = "존댓말로 짧게"; d.dispatchEvent(new Event("change")); }`);
 		expect(await nth(4)).toEqual({ app: "mail", values: { draft_default: "존댓말로 짧게" } });
-		await waitFor(v, `document.querySelector('[data-k="draft_default"]').value === "존댓말로 짧게"`);
+		await waitFor(v, `document.querySelector(".snack span")?.textContent === "기본 규칙을 저장했어요" && document.querySelector('[data-k="draft_default"]').value === "존댓말로 짧게"`);
 		expect(config().draftDefaults.mail).toBe("존댓말로 짧게");
 		await run(v, `document.querySelector('[data-k="rule-del:r1"]').click()`);
 		await waitFor(v, `!document.querySelector('#app-sw [data-rule="r1"]')`);
