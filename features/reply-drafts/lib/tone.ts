@@ -23,7 +23,7 @@ const MIN_LEN = 3;
 const MAX_LEN = 120;
 
 export const realRunner: Runner = async (argv, ms = 90_000) => {
-	const p = Bun.spawn(argv, { stdout: "pipe", stderr: "pipe", stdin: "ignore" });
+	const p = Bun.spawn(argv, { env: process.env, stdout: "pipe", stderr: "pipe", stdin: "ignore" });
 	const t = setTimeout(() => p.kill("SIGKILL"), ms);
 	const [stdout, stderr] = await Promise.all([new Response(p.stdout).text(), new Response(p.stderr).text()]);
 	const code = await p.exited;
