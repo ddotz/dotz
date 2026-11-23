@@ -45,6 +45,8 @@ export type ApprovalQueueDeps = {
 	/** The card text of `ref` as its store holds it now: a held card is shown with it, not with the text it was held with (undefined: the held text). */
 	fresh?: (ref: string) => Promise<string | undefined>;
 	handWritten?: (ref: string) => boolean;
+	/** Whether a card for `ref` is open in another conversation: such a card is not posted here, so it replaces nothing here. */
+	openElsewhere?: (ref: string, conv: string) => boolean;
 	openText?: (conv: string, ref: string) => string | undefined;
 	repost?: (conv: string, ref: string, text: string) => Omit<Reposted, "ref"> | undefined;
 };
@@ -238,8 +240,8 @@ export function createApprovalQueue(deps: ApprovalQueueDeps) {
 		return before && after && !sameDraft(before, after) ? old : undefined;
 	};
 	const replaces = (target: string, text: string): string | undefined => {
-		const ref = cardRef(text);
-		return ref ? revisedRef(deps.convOf(target), { ref, text: splitCardLead(text)?.card ?? text }) : undefined;
+		const ref = cardRef(text), conv = deps.convOf(target);
+		return ref && !deps.openElsewhere?.(ref, conv) ? revisedRef(conv, { ref, text: splitCardLead(text)?.card ?? text }) : undefined;
 	};
 
 	async function route(target: string, text: string, extra: Record<string, unknown> = {}): Promise<Route> {

@@ -413,6 +413,7 @@ const storeDown = (line: string): void => {
 	itemOfDown = true;
 };
 const handWritten = (ref: string): boolean => !ref.startsWith("mail:") && unlessUnreadable(() => useReplies()?.knows(ref) === false, false, storeDown);
+const openElsewhere = (ref: string, conv: string): boolean => openDraftCards().some(c => c.ref === ref && c.to !== conv);
 export const approvals = createApprovalQueue({
 	convOf: convOfTarget,
 	openRefs: openDraftRefs,
@@ -425,10 +426,11 @@ export const approvals = createApprovalQueue({
 		return handMailKey(conv, text ? cardDraft(text) : openDraftCards(conv).find(c => c.ref === ref)?.draft) ?? ref;
 	},
 	handWritten,
+	openElsewhere,
 	openText: openDraftText,
 	repost: reviseDraftCard,
 	// A ref whose card is open in another conversation is handled there: a second copy (held here, or posted again) would ask twice.
-	handled: (ref, conv) => openDraftCards().some(c => c.ref === ref && c.to !== conv) || refHandled(ref, conv),
+	handled: (ref, conv) => openElsewhere(ref, conv) || refHandled(ref, conv),
 	// A held card goes out with the text its store holds when it is released (hub/reply-actions.ts ask).
 	fresh: ref => useReplies()?.ask(ref) ?? Promise.resolve(undefined),
 	post: (target, text, extra) => void out(target, text, undefined, { ...extra, queued: true, ...(extra.session ? { cross: "approval" } : {}) }).catch(e => log(`held approval card to ${target} failed: ${e}`)),
