@@ -112,3 +112,84 @@ try {
 }
 console.log('app-shell browser step done');
 `;
+
+const openMailAppSheet = `
+const openSheet = async p => {
+  await p.goto(ORIGIN + '/#monitoring');
+  await until(p, '유튜브', 15000);
+  await p.getByRole('button', { name: /^유튜브/ }).click();
+  await until(p, '지켜볼 글 고르기', 10000);
+  await p.getByRole('button', { name: '지켜볼 글 고르기' }).click();
+  await until(p, '메일 앱', 10000);
+};
+const mailAppButton = p => p.evaluate(() => { const b = document.querySelector('#cm-pick [data-setting="mail-app"] button.sel'); return b ? { disabled: b.disabled, label: b.getAttribute('aria-label') } : null; });
+`;
+
+export const mailAppNoneScript = (run: Pick<Run, "port" | "loginCookie">): string => `${prelude(run)}${openMailAppSheet}
+await login();
+try {
+  const p = await openTab('about:blank');
+  await p.setViewportSize({ width: 390, height: heights[390] });
+  await openSheet(p);
+  const b = await mailAppButton(p);
+  if (!b || !b.disabled) failNow('the 메일 앱 choice is not disabled while no mail app is connected: ' + JSON.stringify(b));
+  const text = await textOf(p);
+  if (!text.includes('연결된 메일 앱이 없어요')) failNow('the hint 연결된 메일 앱이 없어요 is not shown');
+  art('sheet-none.aria.txt', (await snapshot(p)).tree);
+  await shot(p, 'sheet-none-390.png');
+  await closeTab(p);
+} finally {
+  await logout();
+}
+console.log('mail-app none step done');
+`;
+
+export const mailAppPickScript = (run: Pick<Run, "port" | "loginCookie">): string => `${prelude(run)}${openMailAppSheet}
+await login();
+try {
+  const p = await openTab('about:blank');
+  await p.setViewportSize({ width: 390, height: heights[390] });
+  await openSheet(p);
+  const b = await mailAppButton(p);
+  if (!b || b.disabled) failNow('the 메일 앱 choice is disabled although a mail app is connected: ' + JSON.stringify(b));
+  const s0 = await snapshot(p);
+  art('sheet-before.aria.txt', s0.tree);
+  await shot(p, 'sheet-before-390.png');
+  await p.getByRole('button', { name: /^메일 앱:/ }).click();
+  await until(p, '회사 메일', 5000);
+  const s1 = await snapshot(p);
+  art('menu-open.aria.diff', s1.diff);
+  await shot(p, 'menu-open-390.png');
+  await p.getByRole('option', { name: '회사 메일' }).click();
+  for (let i = 0; i < 20; i++) { const x = await mailAppButton(p); if (x && x.label === '메일 앱: 회사 메일') break; await sleep(250); }
+  const picked = await mailAppButton(p);
+  if (!picked || picked.label !== '메일 앱: 회사 메일') failNow('after the pick the choice is ' + JSON.stringify(picked));
+  await sleep(800);
+  const s2 = await snapshot(p);
+  art('sheet-after.aria.diff', s2.diff);
+  await shot(p, 'sheet-after-390.png');
+  await closeTab(p);
+} finally {
+  await logout();
+}
+console.log('mail-app pick step done');
+`;
+
+export const mailAppColdScript = (run: Pick<Run, "port" | "loginCookie">): string => `${prelude(run)}${openMailAppSheet}
+await login();
+try {
+  for (const w of [390, 1280]) {
+    const p = await openTab('about:blank');
+    await p.setViewportSize({ width: w, height: heights[w] });
+    await openSheet(p);
+    const b = await mailAppButton(p);
+    if (!b || b.disabled || b.label !== '메일 앱: 회사 메일') failNow('cold at ' + w + ': the choice is ' + JSON.stringify(b) + ', expected 메일 앱: 회사 메일');
+    art('cold-sheet-' + w + '.aria.txt', (await snapshot(p)).tree);
+    await shot(p, 'cold-sheet-' + w + '.png');
+    await closeTab(p);
+  }
+} finally {
+  await logout();
+}
+console.log('mail-app cold step done');
+`;

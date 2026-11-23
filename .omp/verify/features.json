@@ -19,5 +19,10 @@
 		"id": "app-shell",
 		"paths": ["web/index.html", "web/custom.js", "web/sw.js", "web/manifest.webmanifest", "web/js/**", "web/css/**", "web/i18n/**"],
 		"proof": "screenshot"
+	},
+	{
+		"id": "comments-mail-app",
+		"paths": ["web/js/30-monitoring-comments.js", "web/i18n/*/mon.json", "hub/comments/web.ts", "hub/comments/engine.ts"],
+		"proof": "screenshot"
 	}
 ]

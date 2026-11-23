@@ -27,6 +27,7 @@ flowchart LR
   subgraph a_comments["comments"]
     c_comments(["comments code"])
     o_comments_dialog["dialog (1)"]
+    o_comments_select["select (1)"]
     o_comments_toast["toast (6)"]
   end
   subgraph a_core["core"]

@@ -95,6 +95,14 @@ async function cmPosts(s) {
   } catch (e) { CM.posts.set(s.key, { list: [], error: e.message }); }
   cmPickPaint();
 }
+const cmMailApps = () => INTG.items.filter(i => i.app === "mail" && i.state !== "disconnected");
+function cmMailAppSelect(s) {
+  const apps = cmMailApps(), saved = s.mailApp || "";
+  const items = [{ value: "", label: TX("settings.none") }, ...apps.map(i => ({ value: i.key, label: i.label })), ...(saved && !apps.some(i => i.key === saved) ? [{ value: saved, label: saved }] : [])];
+  const b = selectButton({ label: TX("mon.cm.mailapp"), items, value: saved, onPick: v => cmUpdate(s, { mailApp: v }) });
+  b.disabled = !apps.length;
+  return b;
+}
 function cmSourceNode(s) {
   const watch = s.watch || [], all = watch.includes("*"), p = CM.posts.get(s.key);
   const node = el("div", { class: "kk-pick-src", "data-src": s.key },
@@ -103,7 +111,9 @@ function cmSourceNode(s) {
     el("div", { class: "sec", text: TX("common.settings") }),
     el("div", { class: "kk-pr" }, el("span", { class: "cv-b" }, el("span", { class: "cv-n", text: TX("mon.cm.auto") })),
       kkSwitch(!!s.autoDraft, TX("mon.cm.auto_aria", { label: s.label }), "auto", v => cmUpdate(s, { autoDraft: v }), true)),
-    // Config-only: the mail app (`mailApp`) is set in the source config (docs/comments-api.md); without it the card says no mail was made.
+    CM.pc ? null : el("div", { "data-setting": "mail-app" },
+      el("div", { class: "kk-pr" }, el("span", { class: "cv-b" }, el("span", { class: "cv-n", text: TX("mon.cm.mailapp") })), cmMailAppSelect(s)),
+      cmMailApps().length ? null : el("div", { class: "kk-note", role: "status", text: TX("mon.cm.mailapp_none") })),
     el("div", { class: "kk-pr" }, el("span", { class: "cv-b" }, el("span", { class: "cv-n", text: TX("mon.cm.filemail") })),
       kkSwitch(!!s.autoMail, TX("mon.cm.filemail_aria", { label: s.label }), "mail", v => cmUpdate(s, { autoMail: v }), true)),
     el("button", { class: "li tap", type: "button", "data-k": "posts", onclick: () => cmPosts(s) }, el("span", { class: "tx" }, el("div", { class: "hd", text: TX("mon.cm.pick") })), el("span", { class: "li-end" }, icon("chev", "chev"))));

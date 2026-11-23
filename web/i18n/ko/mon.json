@@ -222,5 +222,7 @@
   "mon.cm.reply_draft": "답글 초안",
   "mon.cm.pick_post": "글을 골라 주세요",
   "mon.cm.draft_late": "초안이 아직 오지 않았어요",
-  "mon.cm.part": "고칠 곳"
+  "mon.cm.part": "고칠 곳",
+  "mon.cm.mailapp": "메일 앱",
+  "mon.cm.mailapp_none": "연결된 메일 앱이 없어요. 메일 앱을 먼저 연결해 주세요."
 }

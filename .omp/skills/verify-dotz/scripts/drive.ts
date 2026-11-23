@@ -2,10 +2,10 @@ import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "
 import { homedir } from "node:os";
 import { join, relative } from "node:path";
 import { REPO, type Run, alive, call, readRun } from "./lib.ts";
-import { appShellScript, autoReplyColdScript, autoReplyScript } from "./browser.ts";
+import { appShellScript, autoReplyColdScript, autoReplyScript, mailAppColdScript, mailAppNoneScript, mailAppPickScript } from "./browser.ts";
 
 const [feature, runId] = process.argv.slice(2);
-const FEATURES = ["auto-reply", "app-shell"];
+const FEATURES = ["auto-reply", "app-shell", "comments-mail-app"];
 if (!feature || !runId || !FEATURES.includes(feature)) {
 	console.error(`usage: bun .omp/skills/verify-dotz/scripts/drive.ts <${FEATURES.join("|")}> <run-id>`);
 	process.exit(2);
@@ -152,12 +152,44 @@ if (feature === "auto-reply") {
 	noExternalNetwork("after");
 	artifacts.push(...browser("browser-cold", autoReplyColdScript(browserRun, posted.target)));
 	note("cold: the mail conversation shows 보낸 답장 at 390 and 1280; 답장 대기 lists the sent mail (sender@example.invalid) under 보낸 것 after a reload");
+} else if (feature === "comments-mail-app") {
+	const json = async (path: string): Promise<any> => (await call(run, path, { as: "owner" })).json();
+	const config = join(run.data, "custom", "comments", "config.json");
+	mkdirSync(join(run.data, "custom", "sns"), { recursive: true });
+	mkdirSync(join(run.data, "custom", "comments"), { recursive: true });
+	writeFileSync(join(run.data, "custom", "sns", "config.json"), `${JSON.stringify({ youtube: {} })}\n`);
+	writeFileSync(config, `${JSON.stringify({ enabled: true, sources: { youtube: { key: "youtube", kind: "youtube", label: "유튜브 댓글", watch: [], autoDraft: false, autoMail: true } } })}\n`);
+	const none = await json("/api/integrations");
+	const mailsNone = (none.items as { app: string }[]).filter(i => i.app === "mail");
+	if (!(none.items as { key: string }[]).some(i => i.key === "youtube") || mailsNone.length) fail(`arrange: expected the youtube app and no mail app, got ${JSON.stringify(none.items.map((i: { key: string }) => i.key))}`);
+	note("arrange: custom/sns/config.json + custom/comments/config.json (the owner's own config files) give a YouTube comment source with autoMail on and no mail app; /api/integrations lists no mail app");
+	noExternalNetwork("before");
+	artifacts.push(...browser("browser-none", mailAppNoneScript(browserRun)));
+	note("none: the 메일 앱 choice is disabled and the sheet says 연결된 메일 앱이 없어요 (sheet-none-390.png)");
+
+	writeFileSync(join(run.data, "custom", "apps.json"), `${JSON.stringify({ "mail-work": { label: "회사 메일" } })}\n`);
+	const connected = await json("/api/integrations");
+	if (!(connected.items as { key: string; app: string }[]).some(i => i.key === "mail-work" && i.app === "mail")) fail(`arrange: /api/integrations lists no mail-work instance: ${JSON.stringify(connected.items)}`);
+	const sourceBefore = (await json("/api/comments/sources")).sources[0];
+	if (sourceBefore.mailApp !== null) fail(`mailApp is ${sourceBefore.mailApp} before the pick, expected null`);
+	note("arrange: custom/apps.json adds the mail instance 회사 메일 (mail-work); before: /api/comments/sources mailApp null");
+	artifacts.push(...browser("browser-pick", mailAppPickScript(browserRun)));
+	const saved = JSON.parse(readFileSync(config, "utf8")).sources.youtube;
+	if (saved.mailApp !== "mail-work" || saved.autoMail !== true) fail(`after the pick custom/comments/config.json holds ${JSON.stringify(saved)}, expected mailApp mail-work and autoMail true`);
+	const sourceAfter = (await json("/api/comments/sources")).sources[0];
+	if (sourceAfter.mailApp !== "mail-work") fail(`/api/comments/sources answers mailApp ${sourceAfter.mailApp} after the pick`);
+	note(`after: custom/comments/config.json youtube source has mailApp mail-work, autoMail true; /api/comments/sources answers mailApp mail-work`);
+	if (/zele mail (send|reply)/.test(calls())) fail("a zele send reached the stub during a settings change");
+	note("after: no zele send in outbound/calls.log");
+	noExternalNetwork("after");
+	artifacts.push(...browser("browser-cold", mailAppColdScript(browserRun)));
+	note("cold: fresh tabs at 390 and 1280 open the sheet and show 메일 앱: 회사 메일, enabled");
 } else {
 	artifacts.push(...browser("browser-shell", appShellScript(browserRun)));
 	noExternalNetwork("after");
 }
 
-artifacts.push("network-after.txt", ...(feature === "auto-reply" ? ["network-before.txt"] : []));
+artifacts.push("network-after.txt", ...(feature === "app-shell" ? [] : ["network-before.txt"]));
 writeFileSync(join(out, "checks.log"), `${notes.join("\n")}\n`);
 artifacts.push("checks.log");
 const kinds = artifacts.map(a => `${a}:${a.endsWith(".png") ? "screenshot" : "log"}`);

@@ -261,5 +261,7 @@
   "mon.cm.reply_draft": "Reply draft",
   "mon.cm.pick_post": "Choose a post",
   "mon.cm.draft_late": "The draft hasn't arrived yet",
-  "mon.cm.part": "Part to change"
+  "mon.cm.part": "Part to change",
+  "mon.cm.mailapp": "Mail app",
+  "mon.cm.mailapp_none": "No mail app is connected. Connect a mail app first."
 }

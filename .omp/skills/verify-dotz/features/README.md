@@ -27,3 +27,4 @@ Each feature file starts with `last-proven: <commit>`, then an H1, one paragraph
 
 - [Auto-reply](./auto-reply.md): a received mail's reply draft card, 보내기 with its undo window, the send, and the sent state.
 - [App shell](./app-shell.md): the home screen and the five bottom tabs.
+- [Comments mail app](./comments-mail-app.md): the 메일 앱 choice beside 파일 요청 메일 초안 in the 지켜볼 글 sheet, disabled with a hint while no mail app is connected.
