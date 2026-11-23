@@ -11,7 +11,7 @@ import { orch, steer as steerOrchestrator } from "./orchestrator.ts";
 import { convs } from "./convsessions.ts";
 import { createLaneRelay, ownerAlone } from "./lanerelay.ts";
 import { workersOf } from "./lanevis.ts";
-import { inOrder, localize, noteHandoffLeak } from "./outlang.ts";
+import { inOrder, localize, localizeOrSkip, noteHandoffLeak } from "./outlang.ts";
 import { parkedTone, parseTone, stripHandoff } from "./tone.ts";
 import { send, deliver, onConvIdle, out, queue } from "./outbound.ts";
 import { MAIN, primaryTarget } from "./session-key.ts";
@@ -172,17 +172,13 @@ export function installLaneHandlers(): void {
 		const real = tone === "ask" || tone === "fail" || tone === "done";
 		void inOrder(channel, async () => {
 			const clipped = clipKeepingAsk(dropForLine(text), real ? 1800 : 900);
-			const row = (t: string) => {
-				const shown = real || parkedTone(tone) ? t : `[run] ${t}`;
-				emit("outbox", { ts: now(), kind: "out", source: channel, target: channel, text: shown, ...(real ? {} : { update_key: "progress" }) });
-				return shown;
-			};
-			// A progress line is replaced by the next one on the web: the original shows at once and its rewrite takes its place.
-			let first: string | undefined;
-			const local = await localize(clipped, channel, "lane", real ? undefined : t => void (first = row(t)));
-			return first !== undefined && local === clipped ? first : row(local);
+			const local = real ? await localize(clipped, channel, "lane") : await localizeOrSkip(clipped, channel, "lane");
+			if (local === undefined) return undefined;
+			const shown = real || parkedTone(tone) ? local : `[run] ${local}`;
+			emit("outbox", { ts: now(), kind: "out", source: channel, target: channel, text: shown, ...(real ? {} : { update_key: "progress" }) });
+			return shown;
 		})
-			.then(shown => (real ? send(channel, shown) : discord.progress(channel, "progress", shown)))
+			.then(shown => (shown === undefined ? undefined : real ? send(channel, shown) : discord.progress(channel, "progress", shown)))
 			.catch(e => log(`lane progress send failed: ${e}`));
 	});
 

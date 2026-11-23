@@ -294,13 +294,9 @@ export function withTurnLanguage(body: string): string {
 	return `${body}\n${line}${handoffNote("orchestrator")}`;
 }
 
-// The text to send: the original unless it is not in the owner's language and the rewrite succeeded.
-// `early`: for a line the next one replaces (a progress line); it is called with the original before the rewrite starts, so the owner reads
-// it at once instead of after the rewrite (median 4.6 s), and the rewrite takes its place.
-export async function localize(text: string, target: string, source?: string, early?: (original: string) => void): Promise<string> {
+export async function localizeOrSkip(text: string, target: string, source?: string): Promise<string | undefined> {
 	if (!needsRewrite(text, source)) return text;
 	if (source === "orchestrator") drifted = true;
-	early?.(text);
 	try {
 		const r = await translate(text, lang());
 		const bad = sane(text, r.text);
@@ -308,7 +304,9 @@ export async function localize(text: string, target: string, source?: string, ea
 		log(`output language: rewrote ${target} (${text.length} chars, ${r.inputTokens} in/${r.outputTokens} out tokens, ${r.ms}ms)`);
 		return r.text;
 	} catch (e) {
-		log(`output language: kept original for ${target} (${text.length} chars): ${(e as Error).message}`);
-		return text;
+		log(`output language: rewrite failed for ${target} (${text.length} chars): ${(e as Error).message}`);
+		return undefined;
 	}
 }
+
+export const localize = async (text: string, target: string, source?: string): Promise<string> => (await localizeOrSkip(text, target, source)) ?? text;
