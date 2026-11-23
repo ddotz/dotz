@@ -107,7 +107,7 @@ async function ntJump(n, quiet = false, via = "") {
       if (n.at && !quiet) toast(m ? TX("conv.nt.nearby") : unshown ? TX("conv.nt.unshown") : TX("conv.nt.no_msg"));
       return m ? "near-message" : "no-message";   // what a tap on a push reports to the gateway (23-installable-app-web.js pushTapReport)
     }
-  } catch {}
+  } catch (e) { console.warn("notice jump", e); return "error"; }
 }
 // The conversation behind a sheet (a decision, an [ask], a failure): the same jump, without one for a question that has no conversation (a login request) or lives on another computer.
 const ntUnder = n => { if (!n.pc && !n.decision?.to?.startsWith("auth:") && validTarget(n.src || n.open || "")) ntJump(n, true); };

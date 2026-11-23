@@ -2,7 +2,7 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { noticePush } from "./push.ts";
-import { fakeHub, idleState, json, on, type View } from "./test-web.ts";
+import { fakeHub, idleState, inbox, json, on, type View } from "./test-web.ts";
 import type { Notice } from "./notices.ts";
 
 // A tapped notice ends on the exact message or row that caused it (web/js/30-notices.js noticeOpen), in a headless browser against fixture
@@ -48,9 +48,11 @@ notices.push(
 	{ ...base, id: "ghost", kind: "result", tone: "done", cls: "result", title: "지워진 세션", open: "lane:ghost", src: "lane:ghost", key: "lane:ghost", ts: LATE_AT, updated: LATE_AT, at: LATE_AT },
 );
 
+const taps = inbox<Record<string, string>>();
 const hub = fakeHub({
 	state: () => ({ ...idleState(), lanes: lateKnown ? [lane, late] : [lane], notices_unread: notices.length }),
-	api: (_req, url) => {
+	api: async (req, url) => {
+		if (url.pathname === "/api/push/tap") { taps.push(await req.json() as Record<string, string>); return json({ ok: true }); }
 		if (url.pathname === "/api/history") {
 			const at = url.searchParams.get("locate");
 			if (at) return json({ convs: CONVS.filter(([, l]) => l.some(e => e.ts === at)).map(([t]) => t) });   // hub/events.ts locateMessage
@@ -382,6 +384,26 @@ describe.each([["phone", 390], ["desktop", 1280]] as const)("%s", (_name, width)
 		await tapOpen(view, pushOf("ghost"));
 		await waitFor(`$(".snack")`);
 		expect(await ev(`[target, $(".snack").textContent, !!tl.querySelector(".nt-hl")]`)).toEqual(["main", "이 세션은 이미 지워졌어요", false]);
+	});
+
+	test("a jump that throws is warned about and its push tap is not reported as landed", async () => {
+		const view = await open(width);
+		const { run, ev } = on(view);
+		await run(`window.__warns = []; console.warn = (...a) => window.__warns.push(String(a[0])); chatShow = () => { throw new Error("boom"); };`);
+		taps.length = 0;
+		await tapOpen(view, pushOf("old"));
+		await taps.until(t => t.length > 0, 4_000, "push tap report");
+		expect(taps.map(t => t.reason)).toEqual(["error"]);
+		expect(await ev<string[]>(`window.__warns`)).toContain("notice jump");
+		expect(await ev(`!!tl.querySelector(".nt-hl")`)).toBe(false);
+	});
+
+	test("a direct answer whose jump throws does not quote the question as if the owner had landed on it", async () => {
+		const view = await open(width);
+		const { run, ev } = on(view);
+		await run(`window.__quoted = []; rpStart = (...a) => window.__quoted.push(String(a[1])); console.warn = () => {}; chatShow = () => { throw new Error("boom"); };`);
+		await view.evaluate(`ntDirect(ntById("dec")).then(() => 0)`);
+		expect(await ev(`window.__quoted`)).toEqual([]);
 	});
 
 	test("a mail that is gone, and a report that is gone, say so", async () => {
