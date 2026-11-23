@@ -173,6 +173,20 @@ export function repostDraftCard(ref: string, text: string | undefined, hash: str
 	save();
 	return { id: n.id, to: n.decision!.to, text: text ?? `[ask] ${n.text}`, ...(card ? { card } : {}) };
 }
+/** A hand-written card revised (hub/approval-queue.ts): the open card of `ref` in `to` becomes the card `text` shows (text, draft, ref and its question as the title)
+ * and keeps its id, and forgets its old Discord place until the new post lands (hub/outbound.ts markDraftPosted); the post carries `repost: <id>`, so the notice
+ * adopts it (notices-store.ts) instead of a second one being made. Returns the notice, the text it showed and where it was out; undefined when no card of `ref` is open there. */
+export function reviseDraftCard(to: string, ref: string, text: string): { id: string; was: string; card?: { target: string; ids: string[] } } | undefined {
+	const n = items.findLast(i => isOpenDecision(i) && i.decision!.to === to && i.decision!.draft?.ref === ref);
+	if (!n) return undefined;
+	const was = n.text, card = n.decision!.card;
+	const body = cardBody(text), question = parseDecisions(body).blocks[0]?.title, next = parseDraftApproval(body)?.ref;
+	delete n.decision!.card;
+	delete n.decision!.hash;
+	if (question) n.title = question;
+	rewriteCards([n], text, next !== ref ? next : undefined);
+	return { id: n.id, was, ...(card ? { card: { target: card.target, ids: card.ids } } : {}) };
+}
 function rewriteCards(hit: Notice[], text: string, newRef?: string): number {
 	if (!hit.length) return 0;
 	const body = cardBody(text);

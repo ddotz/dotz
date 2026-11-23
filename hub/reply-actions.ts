@@ -358,6 +358,7 @@ export function createReplyActions(deps: ReplyDeps) {
 			const found = await resolve(ref);
 			return found && "view" in found ? found.adapter.ask(ref) : undefined;
 		},
+		knows: (ref: string): boolean => deps.adapters.some(a => a.target(ref)),
 		/** One reply as every surface shows it (Discord's 고치기 form reads its text), or undefined when no store knows `ref`. */
 		async view(ref: string): Promise<ReplyItem | undefined> {
 			const found = await resolve(ref);
