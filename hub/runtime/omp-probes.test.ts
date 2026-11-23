@@ -87,6 +87,13 @@ test("guard_extension: a process started by omp.ts's argv with only the dotz ext
 	expect(call!.stdin).toContain('"get_state"');
 });
 
+test("guard_extension: passes when omp 19 lists the guard tool as an on-demand command in backticks", async () => {
+	const loaded = jsonl({ tools: [] }).replace("base prompt", "## More commands (help on demand)\\n- `harness_doctor` — Health check of this omp session");
+	expect((await run(probesFor(loaded), "guard_extension")).result).toBe("ok");
+	const unquoted = jsonl({ tools: [] }).replace("base prompt", "- `harness_doctor — not a tool line");
+	expect((await run(probesFor(unquoted), "guard_extension")).result).toBe("fail");
+});
+
 test("guard_extension: fails when the guard tool is missing, the extension reports an error, omp times out or answers nothing", async () => {
 	const missing = await run(probesFor({ tools: DOTZ_TOOLS }), "guard_extension");
 	expect(missing).toMatchObject({ result: "fail" });

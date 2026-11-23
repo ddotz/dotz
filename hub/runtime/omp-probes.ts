@@ -117,7 +117,8 @@ async function snapshot(ctx: ProbeCtx, deps: OmpProbeDeps, name: string): Promis
 	const state = frames.find(f => f.type === "response" && f.id === "state");
 	if (!state?.success) throw new Error(`omp did not answer get_state (exit ${r.code}): ${(state?.error ?? (r.stderr || r.stdout)).trim().slice(0, 160)}`);
 	const prompt = ([] as string[]).concat(state.data?.systemPrompt ?? []).join("\n");
-	const tools = new Set<string>([...(state.data?.dumpTools ?? []).map(t => t.name), ...[...prompt.matchAll(/^- ([a-z][a-z0-9_]*)(?: —|:)/gm)].map(m => m[1]!)]);
+	// omp 19 lists extension tools it loads on demand as "- `name` — …" under "More commands", not in dumpTools.
+	const tools = new Set<string>([...(state.data?.dumpTools ?? []).map(t => t.name), ...[...prompt.matchAll(/^- (`?)([a-z][a-z0-9_]*)\1(?: —|:)/gm)].map(m => m[2]!)]);
 	const commands = (frames.find(f => f.type === "response" && f.id === "commands")?.data?.commands ?? []).map(c => c.name);
 	const errors = frames.filter(f => f.type === "extension_error").map(f => `${f.extensionPath}: ${f.error}`);
 	return { argv, tools, prompt, commands, errors };
