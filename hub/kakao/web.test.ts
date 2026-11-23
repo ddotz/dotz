@@ -1069,6 +1069,25 @@ describe("owner voice in the draft prompt", () => {
 		t.close();
 	});
 
+	test("what a draft request swallowed is logged with its cause, and the owner still gets the same answer", async () => {
+		const lines: string[] = [];
+		const t = setup({}, undefined, { log: line => lines.push(line), learnVoice: async () => Promise.reject(new Error("voice store down")), draftStyle: () => { throw new Error("style file unreadable"); } });
+		await t.call("POST", DRAFT);
+		await t.web.idle();
+		expect(t.events.map(e => e.error)).toEqual([undefined]);
+		expect(lines.some(l => l.includes(DIRECT) && l.includes("voice store down"))).toBe(true);
+		expect(lines.some(l => l.includes(DIRECT) && l.includes("style file unreadable"))).toBe(true);
+		t.model.reply = async () => Promise.reject(new Error("model call exited 7"));
+		t.events.length = 0;
+		await t.call("POST", DRAFT);
+		await t.web.idle();
+		expect(t.events).toHaveLength(1);
+		expect(typeof t.events[0]!.error).toBe("string");
+		expect(JSON.stringify(t.events)).not.toContain("exited 7");
+		expect(lines.some(l => l.includes(DIRECT) && l.includes("model call exited 7"))).toBe(true);
+		t.close();
+	});
+
 });
 
 describe("draft of several messages: 다시 보내기", () => {

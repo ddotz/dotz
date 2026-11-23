@@ -39,6 +39,7 @@ export type WebDeps = {
 	replies?: typeof useReplies;
 	// The reply-drafts tone profile of a room (optional extra for the prompt).
 	draftStyle?: (chatId: string) => StyleHint | undefined;
+	log?: (line: string) => void;
 	// Learns (first draft) or refreshes (every 200 own lines) the owner's voice profile of the room and the global one, before the prompt is built.
 	// It gets the room's messages (read once to write the profile) and counts of the owner's own lines.
 	learnVoice?: (src: VoiceSource) => Promise<void>;

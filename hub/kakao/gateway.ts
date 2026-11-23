@@ -81,6 +81,7 @@ const web = createKakaoWeb({
 	draftModel,
 	draftStyle,
 	learnVoice,
+	log,
 	onRevise,
 	replies: useReplies,
 });

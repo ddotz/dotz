@@ -47,6 +47,7 @@ export function kakaoLint(text: string, style: StyleHint | undefined): string[] 
 // With `revise` (a pending draft and the owner's change request) the call rewrites that draft; createDraft marks the old one stale only when the new one is stored.
 export async function makeDraft(ctx: MakeDraftCtx, config: KakaoConfig, chatId: string, choice?: string, revise?: { code: string; draft: string; change: string }, intent?: string, opts: { learn?: false; known?: true } = {}): Promise<Made> {
 const { deps, paths, now, getDb, allRooms, eligible, setAsk, storedAsks } = ctx;
+const noted = (what: string, e: unknown) => deps.log?.(`kakao draft ${chatId}: ${what} (${(e instanceof Error ? e.message : String(e)).slice(0, 200)})`);
 const summaryFile = (id: string) => join(paths.dataDir, "kakao", "summaries", `${id}.md`);
 const done = (error?: string, made?: { code: string; lesson?: string }): Made => {
 	deps.broadcast({ kind: "kakao_draft", chatId, ...(error ? { error } : {}) });
@@ -71,12 +72,16 @@ const done = (error?: string, made?: { code: string; lesson?: string }): Made =>
 				const excluded = new Set(config.exclude_chats ?? []);
 				const recentRooms = all.filter(r => (r.kind === "direct" || r.kind === "group") && !excluded.has(r.chatId)).sort((a, b) => b.lastAt - a.lastAt).slice(0, VOICE_ROOMS).map(r => r.chatId);
 				await deps.learnVoice({ chatId, ownCounts: ids => ownTextCounts(db, ids, me), ownTexts: (id, limit) => ownTexts(db, id, me, limit), messages: (id, limit) => messages(db, id, limit, me), ask: deps.draftModel, recentRooms: async () => recentRooms });
-			} catch {}
+			} catch (e) {
+				noted("voice learning failed", e);
+			}
 		}
 		let style: StyleHint | undefined;
 		try {
 			style = deps.draftStyle?.(chatId);
-		} catch {}
+		} catch (e) {
+			noted("room style unreadable", e);
+		}
 		// The register from his own last lines of the room, not only those among the last messages: a busy group room has few of them there.
 		const ownLines = await ownTexts(db, chatId, config.userId ?? "", REGISTER_LINES);
 		const context = compose ? [] : contextLines(recent, window);
@@ -121,7 +126,8 @@ const done = (error?: string, made?: { code: string; lesson?: string }): Made =>
 		if (parsed.summary) writePrivate(summaryFile(chatId), `${parsed.summary}\n`);
 		if (storedAsks()[chatId]) setAsk(chatId, undefined);
 		return done(undefined, { code: made.code, ...(lesson ? { lesson } : {}) });
-	} catch {
+	} catch (e) {
+		noted("draft failed", e);
 		return done(DRAFT_FAILED);
 	}
 }
