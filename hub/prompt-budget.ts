@@ -25,7 +25,8 @@ export const MODE_KO_MD_MAX_BYTES = 35300;
 // The quick chat's start prompt carries the contract cut to quickMode (hub/quick-chat.ts), not the whole file: measured 8119 / 10178 bytes (en / ko) of 19859 / 25433.
 // 2026-11-19: the 근거 line format (test counts in the owner's language, `테스트 N개 통과`, never pass/fail) in MODE.ko.md's message layout: +81 bytes
 // (ko quick cut 10576 -> 10657), cap raised by exactly that (rounded up to 10).
-export const QUICK_MODE_MAX_BYTES = 10690;
+// 2026-11-24: peer handoff turns named as instructions in the Inputs line (doctor prompt review): +25 bytes (ko quick cut -> 10715).
+export const QUICK_MODE_MAX_BYTES = 10720;
 export const RULES_TEMPLATE_MAX_BYTES = 780; // measured 703
 export const LESSONS_TEMPLATE_MAX_BYTES = 170; // measured 153
 // The owner card and boundaries go into the orchestrator's start prompt (observations.md does not).
