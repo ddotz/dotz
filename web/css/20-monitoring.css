@@ -92,8 +92,6 @@
 :is(#mon-side, #chat-convo.mon-side) .mon-sec-go { width: calc(100% - 2 * var(--sp-1)); min-height: var(--btn-hit); margin-top: var(--sp-2); margin-bottom: 0; padding: 0 calc(var(--sp-4) - var(--sp-1)) 0 0; border: 0; background: transparent; text-align: left; cursor: pointer; }
 :is(#mon-side, #chat-convo.mon-side) .mon-sec-go::after { margin-left: auto; }
 :is(#mon-side, #chat-convo.mon-side) .mon-sec-go.on { color: var(--fg); }
-:is(#mon-side, #chat-convo.mon-side) .cv-row.mon-fold::after { transform: rotate(45deg); }
-:is(#mon-side, #chat-convo.mon-side) .cv-row.mon-fold[aria-expanded="true"]::after { transform: rotate(-135deg); }
 /* one panel width in every 모니터링 state (list, app, mail, watch): the open mail conversation draws the same column (owner 2026-11-04) */
 /* a conversation opened from 모니터링 keeps 채팅's own two columns: the 모니터링 list (#chat-convo.mon-side) or the app's panel (.app-two) at the left, the conversation at
    채팅's content box, the column the item's own screen used (the app frame, owner 2026-11-11; it replaces the lone centred conversation of 2026-11-06) */

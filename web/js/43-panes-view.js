@@ -78,7 +78,6 @@ function paneSyncRun() {
   $("#views").classList.remove("pp");
   const sig = paneSig();
   if (sig !== PNV.sig) { PNV.sig = sig; paneDraw(); }
-  paneHeadSync();
 }
 // Not on the chat tab: the panes wait (targets, places, the active one and the mirrors are kept) and every section is where it belongs on its own screen.
 function paneAway() {
@@ -86,17 +85,7 @@ function paneAway() {
   paneRelease();
   PNV.sig = "";
 }
-// The active screen's head follows the screen without a redraw (the KakaoTalk room open inside it).
-function paneHeadSync() {
-  const a = paneFind(PN.active), n = PNV.el && a.kind === "app" && PNV.el.querySelector(".pane.on > .pane-hd .cv-hd-t"), name = n && paneName(a);
-  if (n && n.lastChild.textContent !== name) { n.lastChild.textContent = name; n.title = name; }
-}
 matchMedia("(max-width: 1219px)").addEventListener("change", paneSync);
-
-// The tab that is lit while 모니터링's screen sits in an app pane: 채팅 (go() in 05-command-palette.js).
-const paneLit = name => name === "monitoring" && !!PNV.el && !PNV.el.hidden && paneTabOk();
-// The real 모니터링 screen sits in a pane: as narrow as a phone's column, so its back arrow closes an open room first (30-kakao.js kkBack).
-const paneMonIn = () => $("#v-monitoring").classList.contains("in-pane");
 
 // What the active pane shows is whatever the page shows: go() and openTarget() change its content (a target open in another pane activates that pane instead).
 function paneAdopt() {
@@ -118,10 +107,9 @@ function paneHome(n) {
   views.insertBefore(n, next || null);
 }
 function paneRelease() {
-  for (const n of [$("#v-chat"), $("#v-monitoring")]) {
-    n.classList.remove("in-pane");
-    if (n.parentNode !== $("#views")) paneHome(n);
-  }
+  const chat = $("#v-chat");
+  chat.classList.remove("in-pane");
+  if (chat.parentNode !== $("#views")) paneHome(chat);
   if (convSide.parentNode !== $("#v-chat")) paneHome(convSide);
 }
 function paneTeardown() {
@@ -136,7 +124,7 @@ function paneDraw() {
   const chat = current === "chat", at = chat ? chatAnchor() : null, stick = chatStick;
   paneRelease();
   PNV.cmp = $("#composer");   // the open pane's section leaves the document while its pane is built, so the mirrors take the composer from here
-  const kind = paneFind(PN.active).kind, sec = $(kind === "app" ? "#v-monitoring" : "#v-chat");
+  const sec = $("#v-chat");
   sec.classList.add("in-pane");
   PNV.side.replaceChildren(convSide);
   PNV.tree.replaceChildren(paneNode(PN.root, sec));
@@ -161,7 +149,7 @@ function paneShare(n, box) {
 function paneLeafEl(p, sec) {
   const on = p.id === PN.active;
   const x = el("button", { class: "ib pane-x", type: "button", "aria-label": TX("misc.pane.close"), title: TX("misc.pane.close"), onclick: () => paneClose(p.id) }, icon("close"));
-  const kids = !on ? (p.kind === "chat" ? [paneMirror(p), x] : [paneMirror(p)]) : p.kind === "app" ? [paneHeadEl(p).head, sec] : [sec, x];
+  const kids = on ? [sec, x] : [paneMirror(p), x];
   const box = el("div", { class: `pane${on ? " on" : ""}`, "data-id": p.id, "data-kind": p.kind }, ...kids);
   box.addEventListener("pointerdown", ev => {
     if (ev.button !== 0 || p.id === PN.active || ev.target.closest(".pane-x")) return;
@@ -193,8 +181,8 @@ function paneDrag(ev, n, box, bar) {
 
 // Goes to the pane's content (the page follows the active pane: address, back button) and puts the reader back where this pane was left.
 function paneEnter(p) {
-  const h = paneHere(), on = h.kind === p.kind && h.t === p.t && (p.kind !== "chat" || current === "chat");
-  if (!on) paneGo(p.kind, p.t);
+  const on = current === "chat" && paneHere().t === p.t;
+  if (!on) paneGo(p.t);
   else paneSync();
   paneLand(p.at, p.stick);
 }

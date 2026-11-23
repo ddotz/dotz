@@ -72,8 +72,8 @@ const openScreen = async (v: View) => {
 };
 const rowNames = async (v: View) => {
 	await waitFor(v, `document.querySelector('#mon-side [data-k^="p:"]')`);
-	await run(v, `for (const f of document.querySelectorAll('#mon-side .mon-fold[aria-expanded="false"]')) f.click()`);
-	await waitFor(v, `!document.querySelector('#mon-side .mon-fold[aria-expanded="false"]')`);
+	await run(v, `for (const f of document.querySelectorAll('#mon-side .cv-fold[aria-expanded="false"]')) f.click()`);
+	await waitFor(v, `!document.querySelector('#mon-side .cv-fold[aria-expanded="false"]')`);
 	return q<string[]>(v, `return [...document.querySelectorAll("#mon-side .cv-row .cv-n")].map(n => n.textContent)`);
 };
 

@@ -28,31 +28,11 @@
 #split :is(#v-chat.in-pane, .pane-chat)::before { display: none; }
 #split :is(#v-chat.in-pane, .pane-chat) > * { grid-column: 1; }
 #split :is(#cv-head, .pane-chat > .cv-head) { padding-right: calc(var(--sp-8) + var(--sp-4)); }
-/* 모니터링 in a pane scrolls inside its card. A pane is as narrow as the phone's column: an open room, thread or DM takes the whole pane the way it does
-   below 1100px (17-kakao.css), and the app bar's back closes it (30-kakao.js kkBack, 30-monitoring-comments.js cmBack). */
-#split .pane .kk.chat-open .kk-rooms { display: none; }
-/* the room's request bar sits on the pane's floor however long the chat is (docs/split-panes.md 입력창): the reply cards move above it and scroll on
-   their own, the chat window keeps 40% of the column and gives way first; the full screen scrolls the whole column with the cards under the bar */
-#split .pane .kk-chat { overflow: hidden; }
-#split .pane .kk-chat > .kk-box { flex: 1 1 0; min-height: 40%; }
-#split .pane .kk-chat > .kk-composer { flex: 0 1 auto; display: flex; flex-direction: column; min-height: 0; }
-#split .pane .kk-composer > * { flex: none; }
-#split .pane .kk-composer > .kk-drafts { order: -1; flex: 0 1 auto; min-height: 0; margin: 0 0 var(--sp-2); overflow-y: auto; }
-/* 메일 쓰기 floats over its pane's corner, not the window's (20-mail-box.css .mbox-fab is fixed to the window) */
-#split .pane .mbox-fab { position: absolute; right: var(--sp-4); bottom: var(--sp-4); }
-/* the copy in an inactive pane has no ids, so what #v-monitoring.kk-on hides on the real screen is hidden here by class */
-.pane-pj > .view.kk-on > .chatbox { display: none; }
-#split .view.in-pane:not(#v-chat) { flex: 1; min-height: 0; height: auto; max-width: none; margin: 0; padding: var(--sp-4); overflow-y: auto; }
-#split #v-monitoring.in-pane { grid-template-columns: minmax(0, 1fr); }
-#split #v-monitoring.in-pane > * { grid-column: 1; }
 
 .pane-mir { flex: 1; display: flex; flex-direction: column; min-height: 0; }
 .pane-hd { flex: none; display: flex; align-items: center; gap: var(--sp-2); min-width: 0; padding: var(--sp-3) var(--sp-4); }
-.pane-hd .pane-x { margin-left: auto; }
 /* the open pane is told by its head: the title of the others is quieter (the state line is --fg-3 already) */
 .pane:not(.on) .pane-hd .cv-hd-t { color: var(--fg-3); }
-.pane-pj { flex: 1; min-height: 0; overflow-y: auto; }
-.pane-pj > .view { max-width: none; margin: 0; padding: var(--sp-4); }
 
 /* dragging a tab, a row or a pane head (43-panes-drag.js): a ghost of the title at the pointer with what letting go does under it, the row it came from
    in its hover look, the hovered zone drawn over its pane like the file drop (accent fill, --ff-ring edge). A row a pane cannot show: a muted ghost, no zone. */

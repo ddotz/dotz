@@ -19,7 +19,6 @@ type Row = { target: string; unread: number; last: { ts: string } | null; mail?:
 type Answer = { items: Row[]; page?: { limit: number; more: boolean; next?: string }; counts?: { rows: number; mail: { total: number; unread: number; filters: Record<string, number>; sources: Record<string, { total: number; unread: number }> } }; error?: string };
 const list = async (query = ""): Promise<Answer> => (await call("GET", `/api/conversations${query}`)).json() as Promise<Answer>;
 const isMail = (r: Row) => r.target.startsWith("mail:");
-// What the web's 메일 · 카카오톡 card keeps (web/js/31-conversations.js convWaiting).
 const owes = (r: Row) => r.mail?.dir !== "out" && !r.mail?.archived && (r.mail?.reply === "draft" || r.mail?.unreplied === true);
 
 const MAILS = 130, T0 = Date.now() + 3_600_000;

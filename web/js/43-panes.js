@@ -1,9 +1,3 @@
-/* ---------- 분할 창 (docs/split-panes.md): the model ----------
-   A split exists only on the chat tab, and a pane holds only what a row of the chat list opens (owner 8f7c8c3d): a conversation, or a KakaoTalk room of the
-   chat list's 메일 · 카카오톡 card. Panes are leaves {id, kind: "chat"|"app", t, at, stick, dot} (an app pane is that KakaoTalk room in 모니터링's own screen:
-   t is "i:kakao#kk:<room>") of a tree: one pane, or two side by side as {dir: "row", a, b, r} (r = a's share, 0.2..0.8;
-   at most two, left and right only, owner 950d715f);
-   one is active and holds the real section. The screen is 43-panes-view.js, the inactive panes are 43-panes-mirror.js. With one pane (or none) nothing here touches the page. */
 const PANE_KEY = "dotz-panes", PANE_MAX = 2;
 const paneNarrow = () => matchMedia("(max-width: 1219px)").matches;
 let PN = { root: null, active: "", seq: 0 };
@@ -14,39 +8,13 @@ function paneList() { return paneLeaves().map(p => ({ id: p.id, kind: p.kind, t:
 const paneFind = id => paneLeaves().find(p => p.id === id) || null;
 const paneOpenIn = (kind, t) => paneLeaves().find(p => p.kind === kind && p.t === t) || null;
 const paneNew = (kind, t) => ({ id: `p${++PN.seq}`, kind, t, at: null, stick: true, dot: "" });
-// The KakaoTalk room of an app pane: t is "i:kakao#kk:<room>". Nothing else of 모니터링 is a pane.
-const paneKkT = id => `${KK_KEY}#kk:${enc(id)}`;
-const paneKkId = t => (String(t).startsWith(`${KK_KEY}#kk:`) ? decodeURIComponent(String(t).slice(KK_KEY.length + 4)) : "");
-// What a pane can hold: a conversation, or a KakaoTalk room.
-const paneCanHold = (kind, t) => (kind === "chat" ? validTarget(t) : kind === "app" && !!paneKkId(t));
-// The chat tab is lit: the conversation view (not a mail opened from 모니터링), or 모니터링's screen lent to an app pane (PN.app, set by paneGoApp,
-// cleared by the next go() that does not come from a pane).
-const paneTabOk = () => (current === "chat" && !monCtx) || (current === "monitoring" && !!PN.app && paneCount() > 1 && paneFind(PN.active).kind === "app");
-// Opens a KakaoTalk room's app pane: 모니터링 on 카카오톡 with that room, and the tab stays 채팅 (43-panes-view.js paneLit).
-function paneGoApp(t) {
-  const id = paneKkId(t);
-  PN.going = true; PN.app = true;
-  try {
-    go("monitoring", KK_KEY);
-    if (id) kkOpen(id);
-  } finally { PN.going = false; }
-  const p = paneFind(PN.active);
-  if (p && p.kind === "app") { p.t = paneKkT(id); paneHeadSync(); panePersist(); }
-}
+const paneCanHold = (kind, t) => kind === "chat" && validTarget(t) && !isMailT(t);
+const paneTabOk = () => current === "chat" && !monCtx;
 // What the page shows now, as a pane's content.
-const paneHere = () => (current === "monitoring" ? { kind: "app", t: KK.open ? paneKkT(KK.open) : (paneFind(PN.active) || {}).t || "" } : { kind: "chat", t: target });
-// A row of the chat list pressed while the panes are shown opens in the active pane (a pane that already shows it only takes the focus), and the tab stays 채팅.
-function paneRowOpen(kind, t) {
-  if (paneCount() < 2 || !paneTabOk() || !PNV.el || PNV.el.hidden) return false;
-  const dup = paneOpenIn(kind, t);
-  if (dup) paneFocus(dup.id); else paneReplace(PN.active, t, kind);
-  return true;
-}
-// go() keeps a mail a pane shows in the chat view (the chat tab lit, the chat list), where a mail opened by itself belongs to 모니터링.
+const paneHere = () => ({ kind: "chat", t: target });
 const paneKeeps = t => !!PN.going || (paneCount() > 1 && !paneNarrow() && !!paneOpenIn("chat", t));
 // A conversation is opened by the pane machinery, so go() keeps the chat tab and the chat list even for a mail (05-command-palette.js).
-function paneGo(kind, t) {
-  if (kind === "app") { paneGoApp(t); return; }
+function paneGo(t) {
   PN.going = true;
   try { go("chat", t); } finally { PN.going = false; }
 }
@@ -168,7 +136,6 @@ function paneRestore() {
   paneSync();
   panePersist();
 }
-const paneAppOff = () => { if (!PN.going) PN.app = false; };
 const paneActiveSet = id => { PN.active = id; };
 const paneTreePut = next => { PN = next; };
 // The chat tab pressed again after another tab: the panes come back as they were, the active one's content opened again.

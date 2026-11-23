@@ -34,5 +34,10 @@
 		"id": "seen-results",
 		"paths": ["hub/notices-bell.ts", "hub/notices-rules.ts", "hub/routes-notices.ts", "web/js/30-notices.js", "web/js/31-conversations.js"],
 		"proof": "screenshot"
+	},
+	{
+		"id": "four-tab",
+		"paths": ["hub/projects.ts", "web/js/03-screens.js", "web/js/05-command-palette.js", "web/js/19-project-main.js", "web/js/30-apps.js", "web/js/30-monitoring-list.js", "web/js/31-conversations.js", "web/js/31-new-project.js", "web/js/31-project-panel.js"],
+		"proof": "screenshot"
 	}
 ]

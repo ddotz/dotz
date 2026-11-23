@@ -73,14 +73,15 @@ test("감시 소식's 읽음 처리 reads the plain reports only; what waits sta
 	expect(await ev<string>(`document.querySelector('#mon-tl .mr-f[data-filter="need"]').textContent`)).toBe("답 필요3");
 });
 
-test("the chat list has no filter chips and no 알림 row, and draws the projects a page at a time", async () => {
+test("S6: the chat list has no filter chips and no 알림 row, and draws the projects a page at a time with their sessions under them", async () => {
 	await open("#chat/list", chatReady);
 	expect(await ev<number>(`document.querySelectorAll("#chat-convo .mr-f, #chat-convo .cv-tabs").length`)).toBe(0);
 	const projects = `[...document.querySelectorAll("#chat-convo .cv-row")].filter(r => (r.dataset.t || "").startsWith("ch:")).length`;
 	expect(await ev<number>(projects)).toBe(40);
-	// 땅콩 and 작업내역 on top, then 진행 중, 프로젝트 with its 더 보기, and the resting sessions that still hold unread: each kind of row collapsed to one entry
-	const order = `[...document.querySelectorAll("#chat-convo .cv-sec, #chat-convo .cv-row, #chat-convo .cv-more")].map(n => n.matches(".cv-sec") ? n.textContent : n.matches(".cv-more") ? "more" : n.dataset.t.replace(/^(lane|ch):.*/, "$1")).filter((s, i, a) => s !== a[i - 1])`;
-	expect((await ev<string[]>(order)).slice(0, 8)).toEqual(["main", "worklog", "진행 중", "lane", "프로젝트", "ch", "more", "lane"]);
+	const order = `[...document.querySelectorAll("#chat-convo .cv-sec, #chat-convo .cv-row[data-t], #chat-convo .cv-more")].map(n => n.matches(".cv-sec") ? n.firstChild.textContent : n.matches(".cv-more") ? "more" : n.dataset.t.replace(/^(lane|ch):.*/, "$1")).filter((s, i, a) => s !== a[i - 1])`;
+	const seen = await ev<string[]>(order);
+	expect(seen.slice(0, 5)).toEqual(["main", "worklog", "프로젝트", "ch", "lane"]);
+	expect(seen.at(-1)).toBe("more");
 	expect(await ev<boolean>(`!!document.querySelector('#chat-convo .cv-card > .cv-more:last-child')`)).toBe(true);
 	await ev(`(document.querySelector('#chat-convo .cv-more').click(), 0)`);
 	await wait(`${projects} === 80`, "next page");

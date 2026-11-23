@@ -246,9 +246,12 @@ const prjGroups = rows => [[TX("project.group.pinned"), rows.filter(r => r.p.pin
 // With two or more computers: one folding header per computer (이 컴퓨터 first), its rows pinned first. Another computer's project opens
 // that computer's own web app at the project page; an offline computer keeps its header, marked 연결 안 됨, like the computer switcher.
 const PJ_FOLD = new Set((() => { const l = lsJson("dotz-pj-fold", []); return Array.isArray(l) ? l : []; })());
-function pcFold(name) {
+function pjFoldFlip(name) {
   if (PJ_FOLD.has(name)) PJ_FOLD.delete(name); else PJ_FOLD.add(name);
   try { localStorage.setItem("dotz-pj-fold", JSON.stringify([...PJ_FOLD])); } catch { /* private mode: the fold lasts until reload */ }
+}
+function pcFold(name) {
+  pjFoldFlip(name);
   pjPaintRows();
 }
 function pcHead(g, n) {

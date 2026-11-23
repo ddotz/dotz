@@ -363,7 +363,7 @@ console.log('seen-results browser step done');
 `;
 
 const fourTabPrelude = `
-const lit = p => p.evaluate(() => { const b = document.querySelector('#nav .ni[aria-current]'); return b ? b.textContent.trim() : ''; });
+const lit = p => p.evaluate(() => { const b = document.querySelector('#nav .ni[aria-current="page"], #nav .ni[aria-current="true"]') || document.querySelector('#nav .ni.on'); return b ? b.textContent.trim() : ''; });
 const appRows = p => p.evaluate(() => [...document.querySelectorAll('#mon-side [data-k]')].map(n => n.dataset.k).filter(k => /^[ix]:/.test(k)));
 const settle = async (p, want, ms) => {
   const end = Date.now() + ms;
@@ -384,7 +384,7 @@ try {
     ['#monitoring/replies', h => h === '#monitoring/replies', '앱'],
     ['#apps', h => h === '#monitoring', '앱'],
     ['#apps/' + APP, h => h === '#monitoring/x%3A' + APP, '앱'],
-    ['#apps/no-such-app', h => h === '#monitoring', '앱'],
+    ['#apps/no-such-app', h => h === '#monitoring/x%3Ano-such-app', '앱'],
   ];
   const seen = [];
   for (const w of [390, 1280]) {
@@ -397,8 +397,10 @@ try {
       const at = await settle(p, want, 8000);
       await sleep(700);
       const tabNow = await lit(p);
-      seen.push(w + ' ' + from + ' -> ' + at + ' | ' + tabNow);
+      const pane = await p.evaluate(() => { const a = document.querySelector('#mon-app'); return a ? a.offsetWidth : 0; });
+      seen.push(w + ' ' + from + ' -> ' + at + ' | ' + tabNow + (from.startsWith('#apps') ? ' | web app pane ' + pane + 'px' : ''));
       if (!tabNow.startsWith(tab)) failNow(from + ' at ' + w + ' lit ' + JSON.stringify(tabNow) + ', expected ' + tab);
+      if (from === '#apps/no-such-app' && pane) failNow('an address naming no installed app opened a pane ' + pane + 'px wide');
       await shot(p, 'addr-' + from.replace(/[^a-z]+/g, '-').replace(/^-|-$/g, '') + '-' + w + '.png');
       await closeTab(p);
     }

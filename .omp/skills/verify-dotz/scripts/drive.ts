@@ -2,10 +2,10 @@ import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "
 import { homedir } from "node:os";
 import { join, relative } from "node:path";
 import { REPO, type Run, alive, call, readRun } from "./lib.ts";
-import { appShellScript, autoReplyColdScript, autoReplyScript, fallbackKeysOffScript, fallbackKeysOnScript, fallbackUndoScript, mailAppColdScript, mailAppNoneScript, mailAppPickScript, seenResultsScript } from "./browser.ts";
+import { appShellScript, autoReplyColdScript, autoReplyScript, fallbackKeysOffScript, fallbackKeysOnScript, fallbackUndoScript, fourTabAddressScript, fourTabAppsScript, mailAppColdScript, mailAppNoneScript, mailAppPickScript, seenResultsScript } from "./browser.ts";
 
 const [feature, runId] = process.argv.slice(2);
-const FEATURES = ["auto-reply", "app-shell", "comments-mail-app", "fallback-keys", "seen-results"];
+const FEATURES = ["auto-reply", "app-shell", "comments-mail-app", "fallback-keys", "seen-results", "four-tab"];
 if (!feature || !runId || !FEATURES.includes(feature)) {
 	console.error(`usage: bun .omp/skills/verify-dotz/scripts/drive.ts <${FEATURES.join("|")}> <run-id>`);
 	process.exit(2);
@@ -245,6 +245,27 @@ if (feature === "auto-reply") {
 	const after = await notice();
 	if (after?.read !== true) fail(`the result notice is not read after its row was seen: ${JSON.stringify(after)}`);
 	note(`after: GET /api/notices lists ${after.id} read=true; the browser step recorded it unread after opening lane:${lane} and after opening 작업내역 with the row off screen (browser-seen.log)`);
+	noExternalNetwork("after");
+} else if (feature === "four-tab") {
+	const APP = "verify-tool", LABEL = "검증 도구", PAGE = "verify tool page";
+	const toolSrc = `const s = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: () => new Response("<!doctype html><title>verify tool</title><h1>${PAGE}</h1>", { headers: { "content-type": "text/html; charset=utf-8" } }) }); console.log(s.port);`;
+	const tool = Bun.spawn(["bun", "-e", toolSrc], { stdout: "pipe", stderr: "inherit" });
+	process.on("exit", () => tool.kill());
+	const toolPort = Number(new TextDecoder().decode((await tool.stdout.getReader().read()).value).trim());
+	if (!(toolPort > 0)) fail("the stand-in web app did not start");
+	mkdirSync(join(run.data, "custom", "apps", APP), { recursive: true });
+	writeFileSync(join(run.data, "custom", "apps", APP, "app.json"), `${JSON.stringify({ label: LABEL, kind: "tool", web: { url: `http://127.0.0.1:${toolPort}`, path: "/", mode: "rewrite" }, health: "/" })}\n`);
+	const body: unknown = await (await call(run, "/api/apps", { as: "owner" })).json();
+	const listedApps: unknown[] = typeof body === "object" && body !== null && "items" in body && Array.isArray(body.items) ? body.items : [];
+	const listed = listedApps.find(a => typeof a === "object" && a !== null && "id" in a && a.id === APP);
+	const status = typeof listed === "object" && listed !== null && "status" in listed ? listed.status : undefined;
+	if (status !== "running") fail(`arrange: GET /api/apps lists ${APP} as ${JSON.stringify(listed)}, expected running`);
+	note(`arrange: custom/apps/${APP}/app.json (the owner's own manifest) points at a stand-in page on 127.0.0.1:${toolPort}; GET /api/apps lists it running`);
+	noExternalNetwork("before");
+	artifacts.push(...browser("browser-addresses", fourTabAddressScript(browserRun, APP)));
+	note("addresses: #projects, #project/builtin:custom, #monitoring/replies, #apps, #apps/<id>, #apps/<missing> opened cold at 390 and 1280 and lit the tab listed in addresses.log");
+	artifacts.push(...browser("browser-apps", fourTabAppsScript(browserRun, APP, LABEL, PAGE)));
+	note("apps: 승인 대기 is the first row at 390 with nothing waiting; the web app opened in the pane right of the list at 1280 and full width at 390; 상단 고정 put it first and a reload kept it; 고정 해제 put it back (apps.log)");
 	noExternalNetwork("after");
 } else {
 	artifacts.push(...browser("browser-shell", appShellScript(browserRun)));

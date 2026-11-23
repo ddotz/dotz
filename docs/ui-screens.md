@@ -15,14 +15,15 @@ flowchart LR
   subgraph a_chat["chat"]
     c_chat(["chat code"])
     o_chat_ask["ask (5)"]
-    o_chat_dialog["dialog (1)"]
+    o_chat_dialog["dialog (2)"]
     o_chat_float["float (1)"]
     o_chat_fsOpen["fsOpen (1)"]
     o_chat_menu["menu (7)"]
     o_chat_overlay["overlay (1)"]
     o_chat_rawdialog["rawdialog (1)"]
     o_chat_reveal["reveal (3)"]
-    o_chat_toast["toast (55)"]
+    o_chat_select["select (1)"]
+    o_chat_toast["toast (56)"]
   end
   subgraph a_comments["comments"]
     c_comments(["comments code"])
@@ -163,10 +164,10 @@ flowchart LR
   c_boot -->|"go (1)"| s_home
   c_boot -->|"go (1)"| s_usage
   c_chat -->|"go (5)"| s_any
-  c_chat -->|"go (4)"| s_chat
+  c_chat -->|"go (6)"| s_chat
   c_chat -->|"go (1)"| s_context
   c_chat -->|"go (1)"| s_home
-  c_chat -->|"go (6)"| s_monitoring
+  c_chat -->|"go (4)"| s_monitoring
   c_chat -->|"go (1)"| s_usage
   c_core -->|"go (9)"| s_any
   c_core -->|"go (2)"| s_chat
@@ -195,7 +196,6 @@ flowchart LR
   c_notices -->|"go (1)"| s_projects
   c_notices -->|"go (2)"| s_update
   c_panes -->|"go (2)"| s_chat
-  c_panes -->|"go (2)"| s_monitoring
   c_peers -->|"go (2)"| s_any
   c_peers -->|"go (3)"| s_chat
   c_peers -->|"go (2)"| s_home

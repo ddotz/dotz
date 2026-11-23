@@ -182,7 +182,7 @@ describe("the list in pages", () => {
 		} finally { pageOf = 0; }
 	}, 30_000);
 
-	test("a mail that owes a reply and is older than the first page is in the 메일 · 카카오톡 card before any later page arrives, and shows once after the later page sends it again", async () => {
+	test("S6: a mail that owes a reply and is older than the first page is under the mail app's 답장 필요 filter before any later page arrives, and shows once after the later page sends it again", async () => {
 		mails.push({ key: "fx-owed", subject: "오래된 답장 대기 메일", from: "Han <han@example.com>", at: ago(200), summary: "견적 답을 기다려요.", read: true, can: CAN, reply: "needs", unreplied: true });
 		pageOf = 3; conversationAsks.length = 0; delivered.length = 0;
 		let release!: () => void;
@@ -190,9 +190,12 @@ describe("the list in pages", () => {
 		try {
 			const v = await openList(1280, 800);
 			await waitFor(v, `CONV.has("mail:fx-owed")`);
-			expect(await ev<string[]>(v, `convWaiting().map(r => r.name)`)).toContain("오래된 답장 대기 메일");
+			await folder(v, "owed");
+			await waitFor(v, `[...document.querySelectorAll("#mon-tl > .mr .rc-title")].some(n => n.textContent === "오래된 답장 대기 메일")`);
+			expect(await titles(v)).toContain("오래된 답장 대기 메일");
 			await ev<boolean>(v, `CVP.more === true`).then(more => expect(more).toBe(true));
 			release();
+			await folder(v, "all");
 			await waitFor(v, `CVP.more === false && document.querySelectorAll("#mon-tl > .mr").length === 7`);
 			expect(delivered.filter(t => t === "mail:fx-owed").length).toBeGreaterThanOrEqual(2);   // the first page's extra, and its own later page
 			const shown = await titles(v);

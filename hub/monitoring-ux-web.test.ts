@@ -85,10 +85,10 @@ describe("a monitor row and its conversation", () => {
   test("a monitor row is a title and one sub line as tall as an app row, with each result as a tag; the bar lives in the monitor's own screen", async () => {
     apps = [{ key: "instagram", label: "인스타그램", icon: "instagram", kind: "app", conv: [], notices: [], unread: 0, needs: { drafts: 0, unread: 0, sentToday: 0 } }];
     const v = await boot(1280, 900);
-    await waitFor(v, `document.querySelector('#mon-side .mon-fold[aria-expanded="false"]') && document.querySelector('${row("실패 감시")}') && document.querySelector('#mon-side [data-k^="i:"]')`);
+    await waitFor(v, `document.querySelector('#mon-side .cv-fold[aria-expanded="false"]') && document.querySelector('${row("실패 감시")}') && document.querySelector('#mon-side [data-k^="i:"]')`);
     expect(await q(v, `return document.querySelector('${row("절반 감시")}')`)).toBe(null);
-    await run(v, `document.querySelector('#mon-side .mon-fold').click()`);
-    await waitFor(v, `document.querySelector('${row("절반 감시")}') && document.querySelector('#mon-side .mon-fold').getAttribute("aria-expanded") === "true"`);
+    await run(v, `document.querySelector('#mon-side .cv-fold').click()`);
+    await waitFor(v, `document.querySelector('${row("절반 감시")}') && document.querySelector('#mon-side .cv-fold').getAttribute("aria-expanded") === "true"`);
     expect(await q(v, `return document.querySelectorAll("#mon-side .mon-prog-wrap, #mon-side .has-mon-prog, #mon-side .mon-row-status").length`)).toBe(0);
     const heights = await q<number[]>(v, `return [...document.querySelectorAll('#mon-side [data-k^="m:"], #mon-side [data-k^="i:"]')].map(r => r.offsetHeight)`);
     expect(heights.length).toBe(6);
@@ -132,8 +132,8 @@ describe("a monitor row and its conversation", () => {
 
   test("a phone puts the same bar, banner and 지금 확인 at the top of the conversation", async () => {
     const v = await boot(390, 844);
-    await waitFor(v, `document.querySelector('#mon-side .mon-fold')`);
-    await run(v, `document.querySelector('#mon-side .mon-fold').click()`);
+    await waitFor(v, `document.querySelector('#mon-side .cv-fold')`);
+    await run(v, `document.querySelector('#mon-side .cv-fold').click()`);
     await waitFor(v, `document.querySelector('${row("절반 감시")} .cv-p')`);
     const fit = await q<boolean>(v, `const t = document.querySelector('${row("절반 감시")} .cv-p'); return t.scrollWidth <= t.clientWidth + 1 && !document.querySelector('${row("절반 감시")} .mon-prog-wrap')`);
     expect(fit).toBe(true);
@@ -292,8 +292,8 @@ describe("a peer monitor in the overview", () => {
 			],
 			notices: [], integrations: [], conversations: [] } });
 		const v = await boot(1280, 900);
-		await waitFor(v, `PQ.loaded && PQ.list.length === 1 && monItems().some(i => i.key === "p:http://mini.test|m:맥미니 알림") && [...document.querySelectorAll('#mon-side .mon-fold')].some(f => f.textContent.includes("맥미니"))`);
-		await run(v, `[...document.querySelectorAll('#mon-side .mon-fold')].find(f => f.textContent.includes("맥미니")).click()`);
+		await waitFor(v, `PQ.loaded && PQ.list.length === 1 && monItems().some(i => i.key === "p:http://mini.test|m:맥미니 알림") && [...document.querySelectorAll('#mon-side .cv-fold')].some(f => f.textContent.includes("맥미니"))`);
+		await run(v, `[...document.querySelectorAll('#mon-side .cv-fold')].find(f => f.textContent.includes("맥미니")).click()`);
 		await waitFor(v, `[...document.querySelectorAll("#mon-side .cv-row")].some(r => r.textContent.includes("맥미니 알림"))`);
 		const fit = await q<boolean>(v, `const r = [...document.querySelectorAll("#mon-side .cv-row")].find(r => r.textContent.includes("맥미니 알림")), t = r.querySelector(".cv-p"); return t.scrollWidth <= t.clientWidth + 1 && !r.querySelector(".mon-prog-wrap")`);
 		expect(fit).toBe(true);

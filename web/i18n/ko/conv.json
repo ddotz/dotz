@@ -1,8 +1,6 @@
 {
   "conv.unread_from": "여기부터 읽지 않은 메시지",
   "conv.read_to": "여기까지 읽음",
-  "conv.draft_waits": "답장 초안이 기다려요",
-  "conv.unreplied": "미답장",
   "conv.load_failed": "대화 목록을 불러오지 못했어요",
   "conv.fixed.alert": "경고와 결정 요청",
   "conv.fixed.worklog": "야간 정리와 세션 진행 기록",
@@ -53,5 +51,21 @@
   "conv.nt.closed_done": "일이 끝나서 닫혔어요",
   "conv.nt.more": "자세히 보기",
   "conv.nt.more_below": "더 있어요 ↓",
-  "conv.alert_ask": "이 알림에 대해 메인에서 묻기 ›"
+  "conv.alert_ask": "이 알림에 대해 메인에서 묻기 ›",
+  "conv.sec.other": "기타 진행 중",
+  "conv.pj.new": "새 프로젝트",
+  "conv.pj.none": "아직 프로젝트가 없어요",
+  "conv.pj.sessions": "세션 {n}개",
+  "conv.np.made": "'{name}' 프로젝트를 만들었어요",
+  "conv.np.title": "새 프로젝트",
+  "conv.np.name": "이름",
+  "conv.np.name_ph": "예: 가격 조사",
+  "conv.np.purpose": "목적 (선택)",
+  "conv.np.purpose_ph": "이 프로젝트에서 무엇을 할지 적어 주세요",
+  "conv.np.model": "모델 (선택)",
+  "conv.np.model_default": "기본 모델",
+  "conv.np.discord": "디스코드에도 같은 이름의 채널이 생겨요",
+  "conv.np.need_name": "이름을 적어 주세요",
+  "conv.np.create": "만들기",
+  "conv.np.models_failed": "모델 목록을 불러오지 못했어요: {why}"
 }

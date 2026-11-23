@@ -143,7 +143,7 @@ describe("the 앱 tab list (S8)", () => {
 		monitors = [watch("서버 응답"), watch("디스크 점검")];
 		notices = []; queue = [];
 		const v = await boot(1280);
-		const fold = `document.querySelector('#mon-side .cv-row.mon-fold')`;
+		const fold = `document.querySelector('#mon-side .cv-row.cv-fold')`;
 		await waitFor(v, fold);
 		expect(await ev<[string, string, boolean]>(v, `[${fold}.querySelector(".cv-n").textContent, ${fold}.getAttribute("aria-expanded"), !!document.querySelector('#mon-side [data-k^="m:"]')]`)).toEqual(["모두 정상 · 마지막 확인 5분 전", "false", false]);
 		await run(v, `${fold}.click()`);
@@ -171,14 +171,14 @@ describe("the 앱 tab list (S8)", () => {
 		await frame(wide);
 		expect(await ev<string[]>(wide, `${side}.map(r => r.dataset.k)`)).toEqual(["replies", "m:백업 확인", "m:서버 응답", "fold:일반 모니터링"]);
 		expect(await ev<string>(wide, `document.querySelector("#mon-side .cv-row.on").dataset.k`)).toBe("m:서버 응답");
-		expect(await ev<string>(wide, `document.querySelector("#mon-side .cv-row.mon-fold .cv-p").textContent`)).toBe("모니터 1개");
+		expect(await ev<string>(wide, `document.querySelector("#mon-side .cv-row.cv-fold .cv-p").textContent`)).toBe("모니터 1개");
 		const phone = await boot(390);
 		await run(phone, `location.hash = "#monitoring/" + encodeURIComponent("m:서버 응답")`);
 		await waitFor(phone, `MON.sel === "m:서버 응답" && !MON.list`);
 		await run(phone, `history.back()`);
 		await waitFor(phone, `MON.list && document.querySelector("#mon-side").offsetWidth > 0`);
 		expect(await ev<string[]>(phone, `${side}.map(r => r.dataset.k).filter(k => /^(m:|fold:)/.test(k))`)).toEqual(["m:백업 확인", "m:서버 응답", "fold:일반 모니터링"]);
-		expect(await ev<string>(phone, `document.querySelector("#mon-side .cv-row.mon-fold .cv-p").textContent`)).toBe("모니터 1개");
+		expect(await ev<string>(phone, `document.querySelector("#mon-side .cv-row.cv-fold .cv-p").textContent`)).toBe("모니터 1개");
 	}, 30_000);
 
 	test("fine watches fold per computer: this computer's in its own row, the Mac mini's in a row of its own, and each lists only its own watches when unfolded (S8)", async () => {
@@ -188,7 +188,7 @@ describe("the 앱 tab list (S8)", () => {
 		const v = await boot(1280);
 		await waitFor(v, `PQ.loaded && PQ.list.length`);
 		await frame(v);
-		const folds = `[...document.querySelectorAll("#mon-side .cv-row.mon-fold")]`;
+		const folds = `[...document.querySelectorAll("#mon-side .cv-row.cv-fold")]`;
 		expect(await ev<string[]>(v, `${folds}.map(f => f.querySelector(".cv-p").textContent)`)).toEqual(["모니터 1개", "맥미니에서 돌아요 · 모니터 2개"]);
 		const mons = `[...document.querySelectorAll('#mon-side .cv-row[data-k*="m:"]')].map(r => r.dataset.k)`;
 		expect(await ev<string[]>(v, mons)).toEqual([]);

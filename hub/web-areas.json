@@ -85,6 +85,7 @@
   "30-schedules.js": "monitoring",
   "30-triage.js": "reply",
   "31-conversations.js": "chat",
+  "31-new-project.js": "chat",
   "31-notices-screen.js": "notices",
   "32-app-settings.js": "monitoring",
   "32-history-nav.js": "core",

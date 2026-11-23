@@ -11,17 +11,14 @@ function paneForget(id) { PNM.delete(id); PNS.delete(id); }
 function paneMirrorsClear() { PNM.clear(); PNS.clear(); paneDirty.clear(); }
 function paneLeave(p) {
   PNM.delete(p.id);
-  if (p.kind === "chat" && current === "chat" && target === p.t) {
+  if (current === "chat" && target === p.t) {
     p.at = chatAnchor(); p.stick = chatStick;
     PNS.set(p.id, { n: tl.cloneNode(true), keys: new Set(ts(p.t).mk) });
-  } else if (p.kind === "app" && current === "monitoring") PNS.set(p.id, { n: $("#v-monitoring").cloneNode(true) });
-  else PNS.delete(p.id);
+  } else PNS.delete(p.id);
 }
 
-// An app pane is a KakaoTalk room: named by it, the state line says where it is from.
-const paneName = p => (p.kind === "app" ? (KK.rooms.find(r => r.chatId === paneKkId(p.t)) || {}).name || TX("misc.pane.room") : targetName(p.t));
+const paneName = p => targetName(p.t);
 function paneState(p) {
-  if (p.kind === "app") return TX("decision.app.kakao");
   const i = targetInfo(p.t);
   return isRelayT(p.t) ? RELAY.note[p.t] || "" : isRowT(p.t) ? FIXED_DESC[p.t] : i.alive ? statusKo(i.status) : TX("common.status.ended");
 }
@@ -39,17 +36,13 @@ function paneMirror(p) {
   PNS.delete(p.id);
   const { head, dot, state } = paneHeadEl(p);
   const m = { p, dot, state, keys: new Set(), q: [] };
-  if (p.kind === "chat") {
-    m.list = snap ? paneBare(snap.n) : el("div", { class: "tl-in" });
-    m.wrap = el("div", { class: "timeline pane-tl" }, m.list);
-    m.wrap.addEventListener("scroll", () => edgeFade(m.wrap), { passive: true });
-    if (snap) m.keys = snap.keys; else paneFill(m);
-    m.todo = el("div", { class: "todo", hidden: true });
-    m.node = el("div", { class: `pane-mir pane-chat${convTakesText(p.t) ? "" : " no-composer"}` }, head, m.todo, el("div", { class: "chatbox" }, m.wrap), paneComposerEl(m));
-    if (!TD.by[p.t]) loadTodo(p.t);
-  } else {
-    m.node = el("div", { class: "pane-mir" }, head, el("div", { class: "pane-pj" }, snap ? paneBare(snap.n) : emptyNode(TX("misc.pane.tap_room"))));
-  }
+  m.list = snap ? paneBare(snap.n) : el("div", { class: "tl-in" });
+  m.wrap = el("div", { class: "timeline pane-tl" }, m.list);
+  m.wrap.addEventListener("scroll", () => edgeFade(m.wrap), { passive: true });
+  if (snap) m.keys = snap.keys; else paneFill(m);
+  m.todo = el("div", { class: "todo", hidden: true });
+  m.node = el("div", { class: `pane-mir pane-chat${convTakesText(p.t) ? "" : " no-composer"}` }, head, m.todo, el("div", { class: "chatbox" }, m.wrap), paneComposerEl(m));
+  if (!TD.by[p.t]) loadTodo(p.t);
   PNM.set(p.id, m);
   if (m.k) paneStrip(m);
   return m.node;
@@ -96,14 +89,12 @@ function paneTodoTouch(own) {
     m.todoTimer = setTimeout(() => loadTodo(m.p.t), 250);
   }
 }
-// The head of a mirror, and of the active pane when it holds a screen (which has no head of its own): name, state line, close.
 // A chat pane's head is the chat head (.cv-head) with its ⋯ in the same place; its close button sits on the pane itself, like the open pane's.
 function paneHeadEl(p) {
-  const name = paneName(p), s = paneState(p), dot = el("span", { class: `dot ${p.dot}` }), state = el("span", { class: "cv-hd-s", text: s }), chat = p.kind === "chat";
+  const name = paneName(p), s = paneState(p), dot = el("span", { class: `dot ${p.dot}` }), state = el("span", { class: "cv-hd-s", text: s });
   dot.hidden = !p.dot;
-  const x = chat ? null : el("button", { class: "ib pane-x", type: "button", "aria-label": TX("misc.pane.close"), title: TX("misc.pane.close"), onclick: () => paneClose(p.id) }, icon("close"));
-  const acts = chat && (isLaneT(p.t) || (isProjT(p.t) && pmOfTarget(p.t))) ? el("span", { class: "cv-hd-a" }, el("button", { class: "ib cvmenu", type: "button", tabindex: "-1", "aria-label": TX("misc.pane.menu") }, icon("more"))) : null;
-  return { head: el("div", { class: chat ? "cv-head pane-hd" : "pane-hd" }, el("span", { class: "cv-hd-b" }, el("span", { class: "cv-hd-t", title: name }, dot, name), state), acts, x), dot, state };
+  const acts = isLaneT(p.t) || (isProjT(p.t) && pmOfTarget(p.t)) ? el("span", { class: "cv-hd-a" }, el("button", { class: "ib cvmenu", type: "button", tabindex: "-1", "aria-label": TX("misc.pane.menu") }, icon("more"))) : null;
+  return { head: el("div", { class: "cv-head pane-hd" }, el("span", { class: "cv-hd-b" }, el("span", { class: "cv-hd-t", title: name }, dot, name), state), acts), dot, state };
 }
 // A mirror without a copy (the page was reloaded, or the pane lost its screen to another pane): drawn from the messages the page holds.
 function paneFill(m) {
@@ -131,7 +122,6 @@ function paneAppend(m, e) {
 }
 function paneMirrorsPlace() {
   for (const m of PNM.values()) {
-    if (!m.wrap) continue;
     const box = m.k && m.k.ta;
     if (box) { box.style.height = "auto"; box.style.height = `${Math.max(taFloor(), Math.min(box.scrollHeight, 140))}px`; }   // autosize(), for the draft
     const at = m.p.stick ? null : m.p.at, n = at && [...m.list.querySelectorAll("[data-ts]")].find(x => x.dataset.ts === at.ts);
@@ -147,7 +137,7 @@ function paneEvent(e) {
   if (!t) return;
   const k = msgKey(e);
   for (const m of PNM.values()) {
-    if (m.p.kind !== "chat" || m.p.t !== t || !ts(t).mk.has(k) || m.keys.has(k)) continue;
+    if (m.p.t !== t || !ts(t).mk.has(k) || m.keys.has(k)) continue;
     m.keys.add(k); m.q.push(e); paneDirty.add(m);
   }
   if (paneDirty.size && !paneRaf) paneRaf = requestAnimationFrame(paneFlush);

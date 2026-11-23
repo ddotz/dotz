@@ -2,11 +2,9 @@ import type { Conversation } from "./conversations.ts";
 
 // One page of GET /api/conversations (docs/web-app-design.md 대화 목록). The sessions and project channels (few) always come with the first page;
 // the mail rows (thousands) come `limit` at a time in the list's order, newest message first, and `next` is the cursor of the older ones.
-// The first page also carries the newest few mails that owe a reply or hold a draft and are older than it (the 메일 · 카카오톡 card is drawn from them,
-// web/js/31-conversations.js convWaiting). The later pages are the plain cursor walk, so such a row may come twice; the web keys rows by target (convApply).
 export const CONV_PAGE = 100;
 export const CONV_PAGE_MAX = 500;
-/** How many owed mails older than the first page ride along with it: the card shows 5 rows at most (convWaiting ends with `.slice(0, 5)`), so more would never be drawn. */
+/** How many owed mails (incoming, not archived, with a draft or a reply owed) older than the first page ride along with it, newest first. */
 export const CONV_OWED_EXTRA = 5;
 
 type MailCard = { dir?: string; archived?: true; read?: boolean; reply?: string; unreplied?: true; source?: string };
@@ -18,7 +16,6 @@ const stamp = (r: ConvRow): string => r.last?.ts ?? "";
 // The order of the list, made total: newest first, equal stamps by target.
 const order = (a: ConvRow, b: ConvRow): number => (stamp(a) < stamp(b) ? 1 : stamp(a) > stamp(b) ? -1 : a.target < b.target ? -1 : a.target > b.target ? 1 : 0);
 const cursorOf = (r: ConvRow): string => `${stamp(r)}|${r.target}`;
-// The rows convWaiting keeps: an incoming, not archived mail with a draft or a reply owed.
 const owes = (r: ConvRow): boolean => !!r.mail && r.mail.dir !== "out" && !r.mail.archived && (r.mail.reply === "draft" || r.mail.unreplied === true);
 const olderThan = (cursor: string) => (r: ConvRow): boolean => {
 	const at = cursor.indexOf("|"), ts = cursor.slice(0, at), target = cursor.slice(at + 1);

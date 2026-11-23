@@ -71,8 +71,8 @@ describe("schedules say facts, are listed in settings and open to their result",
 		test(`the monitoring rows say the latest run, wait in grey, repeat in words and run now at ${width}px, once the fine ones are unfolded (S8)`, async () => {
 			const v = await boot(width, height);
 			await run(v, `go("monitoring")`);
-			await waitFor(v, `document.querySelector('#mon-side .cv-row.mon-fold')`);
-			await run(v, `document.querySelector('#mon-side .cv-row.mon-fold').click()`);
+			await waitFor(v, `document.querySelector('#mon-side .cv-row.cv-fold')`);
+			await run(v, `document.querySelector('#mon-side .cv-row.cv-fold').click()`);
 			await waitFor(v, `document.querySelector('${row("sample-3 회의 알림")} .cv-p')`);
 			const line = (name: string) => q<{ tag: string; tone: string; hint: string }>(v, `const r = document.querySelector('${row(name)}'), t = r.querySelector(".cv-m .tag"); return { tag: t.textContent, tone: t.className, hint: r.querySelector(".cv-p").textContent }`);
 			const done = await line("sample-2 일일 보고");

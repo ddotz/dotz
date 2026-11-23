@@ -246,8 +246,6 @@
   "misc.pl.open": "Layout: {name}",
   "misc.pl.drop": "Delete layout: {name}",
   "misc.pl.dropped": "Deleted layout '{name}'",
-  "misc.pane.room": "Chat room",
-  "misc.pane.tap_room": "Tap this pane to open the chat room",
   "misc.pane.stop_tip": "Stop what's running",
   "misc.pane.close": "Close pane",
   "misc.pane.menu": "Session menu",

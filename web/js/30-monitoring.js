@@ -840,7 +840,7 @@ function renderMonitoring() {
   if (RQ.sheet && RQ.sheet.pane) RQ.sheet.close();   // the card of a queue row stays with the queue
   if (!sel || web) { MON.sig = ""; MON.shown = ""; convTitle(); return; }
   if (kakao || cm) {   // 30-kakao.js / 30-monitoring-comments.js draw this item's pane (rooms and chat); only the head is the usual one
-    $("#v-monitoring").classList.toggle("app-two", !MON.list && !narrowChat() && !paneMonIn());   // wide: the app frame (20-monitoring.css), the rooms or posts are its panel; after mxPaint, which clears it for any item but a mailbox
+    $("#v-monitoring").classList.toggle("app-two", !MON.list && !narrowChat());   // wide: the app frame (20-monitoring.css), the rooms or posts are its panel; after mxPaint, which clears it for any item but a mailbox
     const head = JSON.stringify([sel.name, monState(sel), sel.unreplied | 0, sel.drafts | 0, !!AS.by[monSettingsApp(sel)], !!KK.open, pqSig(sel)]);
     if (head !== MON.kkHead) { MON.kkHead = head; clear($("#mon-head")).append(...monHead(sel)); }
     MON.sig = ""; MON.shown = sel.key;
@@ -880,7 +880,7 @@ function monSideNodes(rows) {
     if (r.header) { out.push(r.open ? monSecBtn(r) : el("div", { class: "mon-sec", role: "presentation", text: r.header })); list = null; continue; }
     if (r.state) { out.push(emptyNode(r.hint, r.state === "failed" ? () => loadMonitors() : null)); list = null; continue; }
     if (!list || r.split) { list = el("div", { class: "mon-grp" }); out.push(list); }
-    list.append(monListRow(r));
+    list.append(convRow(r));
   }
   return out;
 }

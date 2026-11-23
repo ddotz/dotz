@@ -45,8 +45,3 @@ function monRows(items, sel) {
     ...projects.flatMap(g => [{ header: g }, ...group(g)])];
 }
 const monSecBtn = r => el("button", { class: `mon-sec mon-sec-go${r.sel ? " on" : ""}`, type: "button", "data-k": r.k, "aria-current": r.sel ? "true" : null, onclick: r.open }, el("span", { class: "mon-sec-t", text: r.header }));
-function monListRow(r) {
-  const n = convRow(r);
-  if (r.fold) { n.classList.add("mon-fold"); n.setAttribute("aria-expanded", String(!!r.expanded)); }
-  return n;
-}

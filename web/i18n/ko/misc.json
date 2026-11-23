@@ -234,8 +234,6 @@
   "misc.pl.open": "배치: {name}",
   "misc.pl.drop": "배치 지우기: {name}",
   "misc.pl.dropped": "'{name}' 배치를 지웠어요",
-  "misc.pane.room": "대화방",
-  "misc.pane.tap_room": "이 창을 누르면 대화방이 열려요",
   "misc.pane.stop_tip": "지금 하는 일 중단",
   "misc.pane.close": "창 닫기",
   "misc.pane.menu": "세션 메뉴",

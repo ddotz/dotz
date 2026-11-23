@@ -5,13 +5,9 @@
 const PD_MOVE = 6;
 let PD = null;   // {src, x, y, on, dead, ghost, zone, hit, from}
 
-// What a row of the chat list opens: its conversation (data-t, a mail w:<target>) or a KakaoTalk room (w:kk:<room>, an app pane). null for a row a pane cannot hold.
 function paneRowItem(row) {
-  const { t, k = "" } = row.dataset;
-  if (t) return validTarget(t) ? { kind: "chat", t } : null;
-  if (k.startsWith("w:kk:")) return { kind: "app", t: paneKkT(k.slice(5)) };
-  if (k.startsWith("w:")) return validTarget(k.slice(2)) ? { kind: "chat", t: k.slice(2) } : null;
-  return null;
+  const { t } = row.dataset;
+  return t && paneCanHold("chat", t) ? { kind: "chat", t } : null;
 }
 const paneRowLabel = row => (row.querySelector(".cv-n, .pl-n") || {}).textContent || (row.getAttribute("aria-label") || row.textContent).split(" · ")[0].trim();
 // What a pressed row would put in a pane: {kind, t, label}, {no: true, label} when a pane cannot hold it (off: true when the tab is not 채팅), null when it is not a row.
@@ -153,6 +149,5 @@ function paneDrop(src, { id, side }) {
   const here = paneHere();
   if (here.kind === kind && here.t === t) return;
   if (side !== "center") paneSplit(t, kind, side);
-  else if (kind === "app") { go("monitoring", KK_KEY); kkOpen(paneKkId(t)); }   // one pane: the row opens as a click on it does
   else go("chat", t);
 }

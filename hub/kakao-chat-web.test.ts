@@ -1246,32 +1246,3 @@ for (const [w, h] of [[390, 844], [1280, 800]] as const)
 			await light(v);
 		});
 	});
-
-// A room in a split pane (docs/split-panes.md 입력창): the request bar stays wholly inside the pane, on its floor and uncovered, with the chat and the reply
-// cards scrolled to their ends, both while the pane is active and in its copy while another pane is.
-describe("카카오톡 in a split pane (1280x800)", async () => {
-	const v = await open(1280, 800);
-	const bar = (scope: string) => q<Record<string, unknown>>(v, `const p = document.querySelector(${JSON.stringify(scope)}), f = p.querySelector(".kk-composer form"), pr = p.getBoundingClientRect();
-		for (const e of p.querySelectorAll("*")) if (/(auto|scroll)/.test(getComputedStyle(e).overflowY)) e.scrollTop = 1e9;
-		const r = f.getBoundingClientRect(), hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
-		return { inside: r.top >= pr.top && r.bottom <= pr.bottom, floor: pr.bottom - r.bottom <= 24, below: [...p.querySelectorAll(".kk-chat > *")].some(x => x.getBoundingClientRect().height > 0 && x.getBoundingClientRect().top >= r.bottom), shown: !!hit && f.contains(hit) }`);
-	test("the request bar stays on the pane's floor, active and inactive", async () => {
-		await boot(v);
-		await openRoom(v);
-		// a split is the chat tab's (owner 8f7c8c3d): the room goes into a pane from there, the way its row of the chat list does
-		await run(v, `go("chat", "main")`);
-		await waitFor(v, `current === "chat" && target === "main" && CV.placed`);
-		await run(v, `paneSplit(paneKkT("100"), "app", "right")`);
-		await waitFor(v, `paneCount() === 2 && paneList().some(p => p.kind === "app" && p.active)`);
-		try {
-			await waitFor(v, `current === "monitoring" && KK.open === "100" && KK.placed && document.querySelector(".kk-drafts .ra-card")`);
-			expect(await bar("#split .pane.on")).toEqual({ inside: true, floor: true, below: false, shown: true });
-			await run(v, `paneFocus(paneList().find(p => p.kind === "chat").id)`);
-			await waitFor(v, `current === "chat" && document.querySelector("#split .pane:not(.on) .kk-composer form")`);
-			expect(await bar("#split .pane:not(.on)")).toEqual({ inside: true, floor: true, below: false, shown: true });
-			await shot(v, "21-split-pane.png");
-		} finally {
-			await run(v, `paneClose(paneList().find(p => p.kind === "app").id)`);
-		}
-	});
-});

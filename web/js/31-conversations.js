@@ -348,43 +348,50 @@ addEventListener("pagehide", () => viewReport(true));
 setInterval(viewReport, 2000);
 
 /* ---- the list ---- */
-// The main assistant and 작업내역 on top, then 진행 중 while a session runs or waits on the owner (sessionsNow, the 홈 card's own list; no header when none does),
-// the projects by their newest message (silent ones after, in project order). A session out of 진행 중 keeps a row only while it is open or still
-// has something unread or asked; the ended ones fold into one group after that, and the mails and rooms that wait on the owner close the list. 모니터링 has its
-// own tab (30-monitoring.js) and uses this same row.
 function convRows() {
   if (relayCur()) return rvConvRows(relayCur());   // another computer is the chosen one: its list, from what it sent (44-relay-views.js)
   const at = t => (CONV.get(t) || {}).ts || "";
-  const projects = projTargets().map((t, i) => ({ t, i })).sort((a, b) => at(b.t).localeCompare(at(a.t)) || a.i - b.i).map(x => x.t);
+  const prow = t => ((PRJ && PRJ.projects) || []).find(p => !p.builtin && prjChat(p) === t) || null, pinned = t => (prow(t) || {}).pinned ? 0 : 1;
+  const projects = projTargets().map((t, i) => ({ t, i })).sort((a, b) => pinned(a.t) - pinned(b.t) || at(b.t).localeCompare(at(a.t)) || a.i - b.i).map(x => x.t);
   const mk = t => { const last = CONV.get(t) || null; return { t, last, name: targetName(t), hint: last ? convPreview(last.text) : "", unread: ts(t).unread, need: convNeeds(t) }; };
-  const all = (S && S.lanes) || [];
-  const { wait, run } = sessionsNow(), now = [...wait, ...run];
-  // A running session under 진행 중 carries no mark at its end (the header says it runs; a blue mark here means unread); a waiting one keeps its word.
-  const sess = l => { const t = `lane:${l.name}`; const m = mk(t); const badge = sessionState(l); return { ...m, badge: badge === SESSION_WORD.run ? null : badge, hint: convPreview(l.lastText) || m.hint || homeRunLine(t) }; };
-  // A card per group, and last the 메일 · 카카오톡 card of what waits there.
-  const projs = projects.map(mk), page = projs.filter((r, i) => i < CVF.more || r.t === target);
+  const all = (S && S.lanes) || [], own = new Set(projects), laneT = l => `lane:${l.name}`;
+  const sess = l => { const t = laneT(l); const m = mk(t); const badge = sessionState(l); return { ...m, badge: badge === SESSION_WORD.run ? null : badge, hint: convPreview(l.lastText) || m.hint || homeRunLine(t) }; };
+  const rank = l => { const s = sessionState(l); return s === SESSION_WORD.wait ? 0 : s === SESSION_WORD.run ? 1 : s === SESSION_WORD.done ? 3 : 2; };
+  const byStart = (a, b) => String(a.startedAt || "").localeCompare(String(b.startedAt || ""));
+  const live = all.filter(laneAlive).sort(byStart), home = new Map(live.map(l => [l, laneChat(l)]));
+  const kids = t => live.filter(l => home.get(l) === t).sort((a, b) => rank(a) - rank(b));
+  const project = t => {
+    const ls = kids(t), st = prjState({ ...(prow(t) || {}), key: t, lanes: ls.map(l => ({ ...l, live: true, waiting: rank(l) === 0 })) });
+    return { ...mk(t), kids: ls, pj: { tone: st.tone === "att" ? "warn" : st.tone, word: st.k === "idle" && ls.length ? SESSION_WORD.done[0] : st.word, folded: PJ_FOLD.has(t) } };
+  };
+  const projs = projects.map(project), opened = r => r.t === target || r.kids.some(l => laneT(l) === target), busy = r => r.kids.some(l => rank(l) < 2);
+  const page = projs.filter((r, i) => i < CVF.more || opened(r) || busy(r));
+  const nest = r => {
+    if (!r.kids.length) return [];
+    const shown = r.pj.folded ? r.kids.filter(l => rank(l) === 0 || laneT(l) === target) : r.kids, hid = r.kids.filter(l => !shown.includes(l));
+    const words = r.kids.map(l => sessionState(l)[0]), parts = [...new Set(words)].map(w => `${w} ${words.filter(x => x === w).length}`);
+    const fold = { k: `fold:${r.t}`, of: r.t, fold: true, expanded: !r.pj.folded, sub: true, name: TX("conv.pj.sessions", { n: r.kids.length }), hint: parts.join(" · "), av: el("span", { class: "cv-av", "aria-hidden": "true" }, icon("lanes")), unread: hid.reduce((n, l) => n + ts(laneT(l)).unread, 0), sel: false, open: () => cvFold(r.t) };
+    return [fold, ...shown.map(l => ({ ...sess(l), name: l.title || l.name, sub: true, of: r.t }))];
+  };
   const out = [MAIN, ...(quickOn() ? ["quick"] : []), "worklog"].map(mk);
-  if (now.length) out.push({ header: TX("home.sys.running"), sec: true }, ...now.map(l => ({ ...sess(l), name: sessionHead(l) })), { split: true });
-  if (page.length) out.push({ header: TX("common.projects"), sec: true }, ...page);
+  out.push({ header: TX("common.projects"), sec: true, add: true });
+  if (!projs.length && CV.loaded) out.push({ empty: TX("conv.pj.none") });
+  for (const r of page) out.push(r, ...nest(r));
   if (projs.length > page.length) out.push({ more: projs.length - page.length });
-  const listed = new Set(now);
-  out.push(...all.filter(l => { const t = `lane:${l.name}`; return !listed.has(l) && (t === target || (laneAlive(l) && (ts(t).unread || convNeeds(t)))); }).map(sess));
+  out.push({ split: true });
+  const { wait, run } = sessionsNow(), free = l => !own.has(home.get(l)), now = [...wait, ...run].filter(free);
+  const rest = all.filter(l => { const t = laneT(l); return free(l) && !now.includes(l) && (t === target || (laneAlive(l) && (ts(t).unread || convNeeds(t)))); });
+  if (now.length) out.push({ header: TX("conv.sec.other"), sec: true }, ...now.map(l => ({ ...sess(l), name: sessionHead(l) })));
+  if (rest.length) out.push({ split: true }, ...rest.map(sess));
   const ended = endedLanes();
-  if (ended.length) out.push({ ended: true, key: `${ended.map(l => { const m = endedMark(l); return `${l.name}:${m.unread}:${m.need ? 1 : 0}`; }).join("|")}|${endedOpen}` });
-  const waits = convWaiting();
-  if (waits.length) out.push({ header: [TX("common.mail"), TX("decision.app.kakao")].join(" · "), sec: true }, ...waits);
+  if (ended.length) out.push({ split: true }, { ended: true, key: `${ended.map(l => { const m = endedMark(l); return `${l.name}:${m.unread}:${m.need ? 1 : 0}`; }).join("|")}|${endedOpen}` });
   out.push({ read: true });
   return out;
 }
-// The 메일 · 카카오톡 card: this computer's mails with a draft or a reply owed and the watched rooms that owe one, newest first; a tap opens them in 모니터링.
-function convWaiting() {
-  const letter = name => el("span", { class: "cv-av", "aria-hidden": "true", text: [...String(name || "?").trim()][0] || "?" });
-  const mails = [...MAILS].filter(([t, m]) => !PQ.of.has(t) && m.dir !== "out" && !m.archived && (m.reply === "draft" || m.unreplied)).map(([t, m]) => {
-    const who = mailSender(m.from), owed = !!m.unreplied;
-    return { at: Date.parse(m.at) || 0, k: `w:${t}`, name: m.subject || TX("mail.no_subject"), hint: m.reply === "draft" ? `${who} · ${TX("conv.draft_waits")}` : who, last: { ts: m.at }, bold: mailUnread(t, m), need: true, sel: current === "chat" && target === t, av: letter(who), chips: owed ? [[TX("conv.unreplied"), "unreplied"]] : undefined, open: () => paneRowOpen("chat", t) || go("monitoring", `c:${t}`) };
-  });
-  const rooms = KK.rooms.filter(r => r.watched && r.unreplied).map(r => ({ at: r.lastAt || 0, k: `w:kk:${r.chatId}`, name: r.name, hint: kkSubLine(r), last: r.lastAt ? { ts: new Date(r.lastAt).toISOString() } : null, bold: r.unread > 0, need: true, av: letter(r.name), chips: [[TX("conv.unreplied"), "unreplied"]], open: () => { if (paneRowOpen("app", paneKkT(r.chatId))) return; go("monitoring", "i:kakao"); kkOpen(r.chatId); } }));
-  return [...mails, ...rooms].sort((a, b) => b.at - a.at).slice(0, 5);
+function cvFold(t) {
+  pjFoldFlip(t); convSig = ""; convPaint();
+  const row = convSide.querySelector(`.cv-row.cv-fold[data-k="${CSS.escape(`fold:${t}`)}"]`);
+  if (row) row.focus();
 }
 // Rows in their cards: a section label stands on the page, every run of rows between them is one card.
 function convCards(rows) {
@@ -393,7 +400,7 @@ function convCards(rows) {
   for (const r of rows) {
     if (r.read) { const b = convReadBtn(); if (b) nodes.push(b); continue; }
     if (r.split) { box = null; continue; }
-    if (r.header) { nodes.push(el("div", { class: "cv-sec", role: "presentation", text: r.header })); box = null; continue; }
+    if (r.header) { nodes.push(r.add ? el("div", { class: "cv-sec sec sec-act" }, el("span", { text: r.header }), el("button", { class: "btn text sm", type: "button", "data-k": "new-project", onclick: npOpen }, icon("add"), TX("conv.pj.new"))) : el("div", { class: "cv-sec", role: "presentation", text: r.header })); box = null; continue; }
     if (!box) nodes.push(box = el("div", { class: "cv-card" }));
     box.append(convRow(r));
     if (r.more) box = null; // 더 보기 is its card's last line: rows after it start their own card
@@ -449,10 +456,10 @@ function convRow(r) {
   const sel = r.sel !== undefined ? r.sel : r.t === target && current === "chat";
   // 채팅 목록은 시제품의 채팅 행 (proto .li): 아이콘, 제목·미리보기, 오른쪽에 시각과 대기 표시. 모니터링 목록은 시각 없이 그대로예요.
   const when = !monCtx && r.last && r.last.ts ? prjAgo(Date.parse(r.last.ts)) : "";
-  return el("button", { class: `cv-row${r.sub ? " sub" : ""}${r.hint ? " pv" : ""}${r.unread || r.bold ? " unread" : ""}${sel ? " on" : ""}${r.last || r.hint ? "" : " none"}`, type: "button", "data-t": r.t || null, "data-k": r.k || null, "aria-current": sel ? "true" : null, onclick: r.open || (() => go("chat", r.t)) },
+  return el("button", { class: `cv-row${r.sub ? " sub" : ""}${r.hint ? " pv" : ""}${r.unread || r.bold ? " unread" : ""}${sel ? " on" : ""}${r.last || r.hint ? "" : " none"}${r.fold ? " cv-fold" : ""}`, type: "button", "data-t": r.t || null, "data-k": r.k || null, "data-of": r.of || null, "aria-current": sel ? "true" : null, "aria-expanded": r.fold ? String(!!r.expanded) : null, onclick: r.open || (() => go("chat", r.t)) },
     r.av || convAvatar(r.t),
     el("span", { class: "cv-b" }, el("span", { class: "cv-n", title: r.name, text: r.name }), r.hint ? el("span", { class: "cv-p", text: r.hint }) : null),
-    el("span", { class: "cv-m" }, when ? el("span", { class: "cv-t", text: when }) : null, el("span", { class: "cv-m2" }, r.need && !r.chips && !r.k && !r.badge ? el("span", { class: "dot warn", role: "img", "aria-label": TX("common.needs_reply") }) : null, ...(r.chips || []).map(c => el("span", { class: `tag ${c[1]}`, text: c[0] })), cntSpan(`cv-row:${r.t || r.k || r.name}`, "nb", r.unread, { "aria-label": TX("conv.unread_n", { n: r.unread }) }), r.unreplied ? unrepCount(r.unreplied) : null, r.badge ? el("span", { class: `tag ${r.badge[1]}`, text: r.badge[0] }) : null)));
+    el("span", { class: "cv-m" }, when ? el("span", { class: "cv-t", text: when }) : null, el("span", { class: "cv-m2" }, r.pj ? el("span", { class: `dot ${r.need ? "warn" : r.pj.tone}`, role: "img", "aria-label": r.need ? TX("common.needs_reply") : r.pj.word }) : r.need && !r.chips && !r.k && !r.badge ? el("span", { class: "dot warn", role: "img", "aria-label": TX("common.needs_reply") }) : null, ...(r.chips || []).map(c => el("span", { class: `tag ${c[1]}`, text: c[0] })), cntSpan(`cv-row:${r.t || r.k || r.name}`, "nb", r.unread, { "aria-label": TX("conv.unread_n", { n: r.unread }) }), r.unreplied ? unrepCount(r.unreplied) : null, r.badge ? el("span", { class: `tag ${r.badge[1]}`, text: r.badge[0] }) : null)));
 }
 const convSide = el("aside", { id: "chat-convo", class: "cv-side", "aria-label": TX("conv.list_aria") });
 // Wide screens: the name and state of the open conversation above its timeline (phones put the name in the app bar).
@@ -486,16 +493,31 @@ const pjAppMenu = pmMenuButton(() => pmOfTarget(target), "cvmenu");
 pjAppMenu.id = "pjmenu"; pjAppMenu.hidden = true;
 cvAppMenu.before(pjAppMenu);
 // The rows of 진행 중 and the card they stand in; a group that is gone with its last session leaves whole (header and card), so the rows below do not jump.
-const cvRunHead = () => [...convSide.querySelectorAll(".cv-sec")].find(s => s.textContent === TX("home.sys.running"));
+const cvRunHead = () => [...convSide.querySelectorAll(".cv-sec")].find(s => s.textContent === TX("conv.sec.other"));
 const cvRunRows = () => [...((cvRunHead() || {}).nextElementSibling || document.createElement("i")).querySelectorAll(":scope > .cv-row")];
 function cvRunSlot() {
   const head = cvRunHead();
   if (head) return head.nextElementSibling;
-  const top = convSide.querySelector('.cv-row[data-t="worklog"]'), card = top && top.closest(".cv-card");
-  if (!card) return null;
-  const unit = el("div", { class: "cv-grp" }, el("div", { class: "cv-sec", role: "presentation", text: TX("home.sys.running") }), el("div", { class: "cv-card" }));
-  card.after(unit);
+  const pj = convSide.querySelector(".cv-sec.sec-act"), n = pj && pj.nextElementSibling, last = n && n.matches(".cv-card") ? n : pj;
+  if (!last) return null;
+  const unit = el("div", { class: "cv-grp" }, el("div", { class: "cv-sec", role: "presentation", text: TX("conv.sec.other") }), el("div", { class: "cv-card" }));
+  last.after(unit);
   return { parent: unit.lastElementChild, unit };
+}
+const cvKeyed = () => [...convSide.querySelectorAll(".cv-row[data-t], .cv-row[data-k]")];
+const cvRowKey = n => n.dataset.t || n.dataset.k;
+function cvAnchor() {
+  const top = convSide.getBoundingClientRect().top, n = cvKeyed().find(r => r.getBoundingClientRect().bottom > top);
+  return n ? { k: cvRowKey(n), y: n.getBoundingClientRect().top } : null;
+}
+function cvAnchorBack(pin, top) {
+  const n = pin && cvKeyed().find(r => cvRowKey(r) === pin.k);
+  convSide.scrollTop = top && (n ? Math.round(top + n.getBoundingClientRect().top - pin.y) : top);
+}
+const cvNestSlot = of => (PJ_FOLD.has(of) ? null : (cvKeyed().find(r => r.dataset.t === of) || {}).parentElement || null);
+function cvLeaveKeep() {
+  const nest = new Map(cvKeyed().filter(r => r.dataset.of).map(r => [cvRowKey(r), r.dataset.of])), run = new Set(cvRunRows().map(cvRowKey));
+  return motionKeep(cvKeyed, cvRowKey, k => (nest.has(k) ? cvNestSlot(nest.get(k)) : run.has(k) ? cvRunSlot() : null));
 }
 function convPaint() {
   convRaf = 0;
@@ -504,21 +526,17 @@ function convPaint() {
   mailSentPaint();
   mbReplyPaint();
   if (monCtx && isSettingsT(target)) monSelSet(monItemOf(target) || MON.sel);   // the monitor list may have loaded after this conversation opened
-  const two = mxTwo(), items = monCtx ? monItems() : null, rows = items ? monListRows(items, items.find(i => i.key === MON.sel) || null) : convRows(), sig = JSON.stringify([rows.map(r => [r.t, r.k, r.key, r.name, r.last, r.unread, r.badge, r.dotOnly, r.header, r.hint, r.sel, r.need, r.more, r.empty]), target, current, !!monCtx, CV.loaded, CV.failed, two ? [two.esig, MX.box] : 0]);
-  if (!monCtx && !KK.loaded && !KK.asked && typeof INTG !== "undefined" && INTG.items.some(i => i.key === "kakao")) kkRoomsAsk();
+  const two = mxTwo(), items = monCtx ? monItems() : null, rows = items ? monListRows(items, items.find(i => i.key === MON.sel) || null) : convRows(), sig = JSON.stringify([rows.map(r => [r.t, r.k, r.key, r.name, r.last, r.unread, r.badge, r.dotOnly, r.header, r.hint, r.sel, r.need, r.more, r.empty, r.pj, r.sub, r.expanded]), target, current, !!monCtx, CV.loaded, CV.failed, two ? [two.esig, MX.box] : 0]);
   if (sig !== convSig && motionAfter(convSide, convPaint)) return;   // a session leaves 진행 중 right now: the list is drawn once it is gone
   if (sig !== convSig) {
     convSig = sig;
-    const keep = !monCtx && !two && CV.loaded && convSide.offsetParent ? motionKeep(cvRunRows, r => r.dataset.t, cvRunSlot) : () => {};
+    const keep = !monCtx && !two && CV.loaded && convSide.offsetParent ? cvLeaveKeep() : () => {};
     convSide.setAttribute("aria-label", two ? TX("common.mailbox") : monCtx ? TX("shell.aria.monitoring_list") : TX("conv.list_aria"));
-    // 진행 중 grows and shrinks under 작업내역: a list read further down stays where it is when a session starts or ends, held by where 진행 중 (or, without it, 작업내역) ends.
-    // Measured in fractions and rounded once at the end: offsetTop rounds each place and scrollTop truncates, which moved the list by a pixel or more.
-    const end = () => { const n = ([...convSide.querySelectorAll(".cv-sec")].find(s => s.textContent === TX("home.sys.running")) || {}).nextElementSibling || convSide.querySelector('.cv-row[data-t="worklog"]'); return n ? n.getBoundingClientRect().bottom + convSide.scrollTop : 0; };
-    const top = convSide.scrollTop, was = end();
+    const top = convSide.scrollTop, pin = top ? cvAnchor() : null;
     // A conversation opened from 모니터링 keeps 모니터링's own panel (sections, cards, bars: 30-monitoring.js), never the chat list's rows.
     clear(convSide).append(...(two ? mxPaneNodes(two) : monCtx ? monSideNodes(rows) : [...convCards(rows), cvState()].filter(Boolean)));
     if (monCtx) monDecorateRows(convSide, items);
-    convSide.scrollTop = top && Math.round(top + end() - was);
+    cvAnchorBack(pin, top);
     keep();
   }
   convSide.classList.toggle("mon-side", !!monCtx && !two);

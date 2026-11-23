@@ -1,8 +1,6 @@
 {
   "conv.unread_from": "Unread from here",
   "conv.read_to": "Read up to here",
-  "conv.draft_waits": "Reply draft waiting",
-  "conv.unreplied": "Unanswered",
   "conv.load_failed": "Couldn't load chats",
   "conv.fixed.alert": "Warnings and decision requests",
   "conv.fixed.worklog": "Nightly cleanup and session progress",
@@ -62,5 +60,24 @@
   "conv.nt.closed_done": "Closed because the work finished",
   "conv.nt.more": "Show the rest",
   "conv.nt.more_below": "There's more ↓",
-  "conv.alert_ask": "Ask main about this alert ›"
+  "conv.alert_ask": "Ask main about this alert ›",
+  "conv.sec.other": "Other sessions",
+  "conv.pj.new": "New project",
+  "conv.pj.none": "No projects yet",
+  "conv.pj.sessions": {
+    "one": "{n} session",
+    "other": "{n} sessions"
+  },
+  "conv.np.made": "Created the project '{name}'",
+  "conv.np.title": "New project",
+  "conv.np.name": "Name",
+  "conv.np.name_ph": "e.g. Price research",
+  "conv.np.purpose": "Purpose (optional)",
+  "conv.np.purpose_ph": "What this project is for",
+  "conv.np.model": "Model (optional)",
+  "conv.np.model_default": "Default model",
+  "conv.np.discord": "A Discord channel with the same name is made too",
+  "conv.np.need_name": "Add a name",
+  "conv.np.create": "Create",
+  "conv.np.models_failed": "Couldn't load the model list: {why}"
 }
