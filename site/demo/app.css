@@ -3983,13 +3983,20 @@ span.mr-star:not(.on) { opacity: .45; }
 .mbox-bar.on { position: sticky; top: 40px; z-index: 2; background: var(--bg); }
 .mbox-all:disabled { visibility: hidden; }
 .mbox-n { margin-right: auto; font-variant-numeric: tabular-nums; }
+.mbox-bar.on { gap: var(--sp-1); }
 .mbox-bar.on .mbox-n { margin-right: var(--sp-1); color: var(--fg); font-weight: 600; }
+.mbox-bar.on .mbox-b { padding: 0 var(--sp-2); }
 .mbox-b { display: inline-flex; align-items: center; gap: var(--sp-15); height: 32px; padding: 0 var(--sp-3); border: 0; border-radius: var(--r-ctl); background: var(--layer); color: var(--fg); font: inherit; font-size: 13px; line-height: 20px; font-weight: 600; cursor: pointer; white-space: nowrap; }
-@media (hover: hover) { .mbox-b:hover:not(:disabled) { background: var(--hover); } }
-.mbox-b:disabled { opacity: .45; cursor: not-allowed; }
+@media (hover: hover) { .mbox-b:hover:not(:disabled, .off) { background: var(--hover); } }
+.mbox-b:disabled { opacity: .6; color: var(--accent); cursor: progress; }
+.mbox-b.off { opacity: .5; background: none; color: var(--fg-3); cursor: default; }
 .mbox-b .ic { width: 16px; height: 16px; }
 .mbox-b.danger { color: var(--err); }   /* 삭제 keeps the destructive tone of the menus (.mi.danger) */
-.mbox-b.mbox-x { width: 32px; padding: 0; justify-content: center; margin-left: auto; }
+.mbox-b.mbox-x { width: 32px; padding: 0; justify-content: center; margin-right: var(--sp-1); }
+.mbox-bt[data-alt] { display: inline-flex; flex-direction: column; }
+.mbox-bt[data-alt]::after { content: attr(data-alt); height: 0; overflow: hidden; visibility: hidden; }
+@container tlcol (max-width: 593.98px) { .mbox-bar.on .mbox-b { width: 32px; padding: 0; justify-content: center; } .mbox-bar.on .mbox-bt { display: none; } }
+@container tlcol (max-width: 639.98px) { .mbox-bar.on:not(:lang(ko)) .mbox-b { width: 32px; padding: 0; justify-content: center; } .mbox-bar.on:not(:lang(ko)) .mbox-bt { display: none; } }
 /* the open mail's top bar (30-mail-box.js mailOpenBar): one row of icons on its own tinted strip across the card (prototype #mail/1) that separates
    it from the mail header, sticky while the mail scrolls. The card's padding is a variable so the strip can run edge to edge. */
 .tl-in > .bm.rc.mopen { --mpx: 18px; gap: var(--sp-1); padding: 0 var(--mpx) var(--sp-4); }
@@ -4118,12 +4125,11 @@ textarea.mbox-ta { display: block; flex: 1; min-height: 160px; margin: var(--sp-
   .mr-star { width: 28px; height: 28px; }
   .mr-chk, .mbox-all { width: 18px; height: 18px; }
   #back, #as-bar, #as-more-bar { width: 32px; height: 32px; }
-  .mbox-bar { gap: var(--sp-05); height: 44px; padding: 0 var(--sp-1) 0 var(--sp-15); }
+  .mbox-bar, .mbox-bar.on { gap: var(--sp-05); height: 44px; padding: 0 var(--sp-1) 0 var(--sp-15); }
   .mbox-bar.on .mbox-b { position: relative; width: 36px; height: 44px; padding: 0; justify-content: center; border-radius: 18px; background: none; }
   .mbox-bar.on .mbox-b::after { content: ""; position: absolute; inset: 0 calc(var(--sp-1) * -1); }   /* six or seven icons share a 360px line: each draws 36px wide and is pressed over 44 */
   .mbox-bar.on .mbox-b .ic { width: 20px; height: 20px; }
   .mbox-bar.on .mbox-bt { display: none; }
-  .mbox-bar.on:has([data-k="mail-move"]) .mbox-n { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }   /* with 옮기기 too the seven icons need the count's place; the half-ticked box still says a choice is on, and a screen reader still hears the count */
   .mbox-reply { margin: var(--sp-3) 0 var(--sp-4); padding: var(--sp-4); }
   .mbox-in { height: 44px; font-size: 16px; }
   textarea.mbox-ta { font-size: 16px; line-height: 24px; }
@@ -5028,13 +5034,14 @@ body { display: flow-root; }
   mask-image: linear-gradient(to right, #000 calc(100% - var(--sp-5)), transparent);
 }
 
-/* 분할 창 (web/js/43-panes*.js): from the second pane on, #split takes the place of the one section on a wide screen and the chat tab - [list column, folded to nothing][tree of panes].
+/* 분할 창 (web/js/43-panes*.js): from the second pane on, #split takes the place of the one section on a wide screen and the chat tab - [chat list column][tree of panes].
    A pane is a card like the conversation card; the active one carries the real section (.in-pane), the others are mirrors (.pane-mir). The active one is told by its head (the others' title is quieter), not by a line around it.
-   The panes take the list column's width (owner 8f7c8c3d); the chat list comes back as a layer over the panes' left (.ls-open) without moving either of them. */
-#split { --cv-w: 280px; display: grid; grid-template-columns: 0 minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); column-gap: 0; max-width: none; margin: 0; padding-left: var(--edge); padding-right: var(--edge); }
+   The chat list keeps its column beside the panes, so a row can still be pulled onto a pane. */
+#split { --cv-w: var(--frame-list-w); display: grid; grid-template-columns: var(--cv-w) minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); column-gap: var(--frame-gap); max-width: none; margin: 0; padding-left: var(--edge); padding-right: var(--edge); }
 #split > .pane-side { grid-column: 1; position: relative; min-width: 0; min-height: 0; margin-bottom: var(--sp-4); }
-:is(#split > .pane-side, #v-chat.cnv-fold) > .cv-side { display: none; position: absolute; z-index: 5; top: 0; bottom: calc(var(--sp-4) * -1); left: 0; width: var(--cv-w); padding: 0; border-radius: var(--r-card); background: var(--card); overflow-y: auto; box-shadow: var(--float); }
-:is(#split.ls-open > .pane-side, #v-chat.cnv-fold.ls-open) > .cv-side { display: block; }
+#split > .pane-side > .cv-side { display: block; height: 100%; }
+#v-chat.cnv-fold > .cv-side { display: none; position: absolute; z-index: 5; top: 0; bottom: calc(var(--sp-4) * -1); left: 0; width: var(--cv-w); padding: 0; border-radius: var(--r-card); background: var(--card); overflow-y: auto; box-shadow: var(--float); }
+#v-chat.cnv-fold.ls-open > .cv-side { display: block; }
 #split > .pane-tree { grid-column: 2; display: flex; min-width: 0; min-height: 0; }
 
 .pane, .pane-row, .pane-col { flex: 1 1 0; display: flex; min-width: 0; min-height: 0; }
@@ -5042,8 +5049,8 @@ body { display: flow-root; }
 .pane-col, .pane { flex-direction: column; }
 .pane { position: relative; border-radius: var(--r-card); background: var(--card); overflow: hidden; }
 .pane > .pane-x { position: absolute; top: var(--sp-4); right: var(--sp-3); z-index: 3; }
-/* the active pane's 목록 button: at its head's left, a full touch target; the heads leave it room so a title starts at the same place in both panes */
-:is(.pane, #v-chat.cnv-fold) > .pane-ls { position: absolute; top: var(--sp-2); left: var(--sp-2); z-index: 3; width: 44px; height: 44px; border-radius: var(--r-ctl); }
+/* the 목록 button of the conversation beside a 캔버스 that folds the list: at its head's left, a full touch target */
+#v-chat.cnv-fold > .pane-ls { position: absolute; top: var(--sp-2); left: var(--sp-2); z-index: 3; width: 44px; height: 44px; border-radius: var(--r-ctl); }
 
 .pane-bar { position: relative; flex: none; touch-action: none; }
 .pane-row > .pane-bar { width: var(--sp-4); cursor: col-resize; }
@@ -5057,7 +5064,6 @@ body { display: flow-root; }
 #split :is(#v-chat.in-pane, .pane-chat)::before { display: none; }
 #split :is(#v-chat.in-pane, .pane-chat) > * { grid-column: 1; }
 #split :is(#cv-head, .pane-chat > .cv-head) { padding-right: calc(var(--sp-8) + var(--sp-4)); }
-#split :is(#cv-head, .pane-hd) { padding-left: calc(var(--sp-12) + var(--sp-4)); }
 /* 모니터링 in a pane scrolls inside its card. A pane is as narrow as the phone's column: an open room, thread or DM takes the whole pane the way it does
    below 1100px (17-kakao.css), and the app bar's back closes it (30-kakao.js kkBack, 30-monitoring-comments.js cmBack). */
 #split .pane .kk.chat-open .kk-rooms { display: none; }
