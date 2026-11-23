@@ -519,26 +519,27 @@ const RUNTIME = `typeof S !== "undefined" && S && typeof target === "string" && 
 // scope: where the checks look (default: the shown view), e.g. the dialog.
 const SHOWN_ADD = `[...document.querySelectorAll(".dr-rc-add")].find(b => b.getBoundingClientRect().width > 0)`;
 const SHOWN_FIX = `[...document.querySelectorAll("[data-k=fix]")].find(b => b.getBoundingClientRect().width > 0)`;
+const NO_CHAT = "dir:~/Code/notes";
+const NO_CHAT_OPEN = `(async () => { const F = DEMO_FIXTURES, at = new Date(Date.now() - 3_600_000).toISOString(); if (!F.projects.some(p => p.key === "${NO_CHAT}")) F.projects.push({ key: "${NO_CHAT}", name: "메모 정리", pinned: false, recordKey: "${NO_CHAT}", record: { title: "메모 정리", purpose: "회의 메모를 주제별로 모아 두는 폴더예요", updated: at, milestones: [{ text: "폴더 정리", done: true }, { text: "주제별 묶기", done: false }] }, lanes: [], work: [{ id: "w-m1", status: "done", description: "지난주 메모 모으기", started_at: Date.now() - 7_200_000, ended_at: Date.now() - 3_600_000 }], results: [{ kind: "report", title: "메모 34건을 주제별로 나눴어요", verified: true, at: Date.now() - 3_600_000 }], monitors: [], summary: { lastActivity: at } }); await prjLoad(true); go("project", "${NO_CHAT}"); })()`;
 export type Screen = { name: string; call: string; view: string; ready: string; scope?: string; open?: { call: string; ready: string }; close?: string };
 // How each screen is reached: go(view, target) as the page's own links do (web/js/05-command-palette.js), so the address follows.
 //   chat      go("chat","list"): the phone's chat list; on a wide screen the chat itself (list + conversation side by side)
 //   chat-open go("chat","main"): an open conversation on every width
 //   mail      go("monitoring","i:mail"), kakao go("monitoring","i:kakao"): the monitoring item (30-monitoring.js MON.sel "i:<integration>")
-//   project   go("project","ch:5"): the demo's first project (site/demo/demo-api.js); wide screens show it beside the project list
-//   projects  go("projects"): the project list; a wide screen turns it into the first project's page (go() does that itself), so either view counts
 export const SCREENS: Screen[] = [
 	{ name: "home", call: `go("home")`, view: "home", ready: `!!document.querySelector("#home-cards > *")` },
 	{ name: "chat", call: `go("chat", "list")`, view: "chat", ready: `CV.loaded` },
 	{ name: "chat-open", call: `go("chat", "main")`, view: "chat", ready: `target === "main" && CV.placed && tl.querySelectorAll(".um, .bm, .cv-sys").length >= 1` },
 	{ name: "projects", call: `go("projects")`, view: "projects,project", ready: `!!document.querySelector("#v-projects > *, #v-project > *")` },
-	{ name: "project", call: `go("project", "ch:5")`, view: "project", ready: `!!document.querySelector("#v-project > *")` },
+	{ name: "project", call: NO_CHAT_OPEN, view: "project", ready: `PM.key === "${NO_CHAT}" && !!document.querySelector("#v-project .pm-o")` },
+	{ name: "project-panel", call: `go("project", "ch:5")`, view: "chat", ready: `location.hash === "#project/ch%3A5" && pvShown() && !!document.querySelector("#pv-panel .pm-o")` },
 	{ name: "monitoring", call: `go("monitoring")`, view: "monitoring", ready: `NM.loaded` },
-	{ name: "mail", call: `go("monitoring", "i:mail")`, view: "monitoring", ready: `NM.loaded && MON.sel === "i:mail"` },
+	{ name: "mail", call: `(go("monitoring", "i:mail"), monMailFilter("pending"), monDirty())`, view: "monitoring", ready: `NM.loaded && MON.sel === "i:mail" && !!document.querySelector(".rq-recv")` },
 	// mail-recipient: the draft card's 고치기 pressed (받는이 rows are edited only there), its 받는이 fold (button.rq-recv) opened, then 받는 사람 추가 opened:
 	// an address field + 확인 button in the row
-	{ name: "mail-recipient", call: `go("monitoring", "i:mail")`, view: "monitoring", ready: `NM.loaded && MON.sel === "i:mail" && !!document.querySelector(".rq-recv")`,
+	{ name: "mail-recipient", call: `(go("monitoring", "i:mail"), monMailFilter("pending"), monDirty())`, view: "monitoring", ready: `NM.loaded && MON.sel === "i:mail" && !!document.querySelector(".rq-recv")`,
 		open: { call: `(${SHOWN_FIX}.click(), new Promise(r => { const t = () => (document.querySelector(".rq-recvbox .dr-rc-add") ? r(0) : requestAnimationFrame(t)); t(); })
-			.then(() => (document.querySelectorAll('.rq-recv[aria-expanded="false"]').forEach(b => b.click()), ${SHOWN_ADD}.click())))`, ready: `!!document.querySelector(".dr-rc-edit .dr-rc-in")` }, close: `document.querySelectorAll(".dr-rc-edit .btn.text:not(.dr-rc-go)").forEach(b => b.click())` },
+			.then(() => (document.querySelectorAll('.rq-recv[aria-expanded="false"]').forEach(b => b.click()), ${SHOWN_ADD}.click())))`, ready: `!!document.querySelector(".dr-rc-edit .dr-rc-in")` }, close: `(document.querySelectorAll(".dr-rc-edit .btn.text:not(.dr-rc-go)").forEach(b => b.click()), monMailFilter("all"), monDirty())` },
 	{ name: "notices", call: `go("notices")`, view: "notices", ready: `NT.loaded && !!document.querySelector("#v-notices > *")` },
 	{ name: "settings", call: `go("settings")`, view: "settings", ready: `!!document.querySelector("#settings > *")` },
 	{ name: "kakao", call: `go("monitoring", "i:kakao")`, view: "monitoring", ready: `NM.loaded && MON.sel === "i:kakao" && KK.loaded && KK.rooms.length === 5` },

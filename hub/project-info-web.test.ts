@@ -44,7 +44,7 @@ pref: 답은 결론부터 짧게
 </project-info>`;
 
 const shot = async (v: View, name: string) => { if (SHOTS) await Bun.write(join(SHOTS, name), await v.screenshot()); };
-const text = (v: View) => ev<string>(v, `document.querySelector("#v-project").innerText`);
+const text = (v: View) => ev<string>(v, `document.querySelector("#pv-panel").innerText`);
 
 for (const [width, id] of [[390, "7001"], [1280, "7002"]] as const)
 	test(`a chat turn in the project changes its page at once (${width}px)`, async () => {
@@ -56,14 +56,14 @@ for (const [width, id] of [[390, "7001"], [1280, "7002"]] as const)
 		await opened;
 		await waitFor(v, `typeof S !== "undefined" && S && typeof PRJ !== "undefined"`);
 		await run(v, `if (dotzTheme.get() === "dark") dotzTheme.toggle(); go("project", ${JSON.stringify(key)})`);
-		await waitFor(v, `current === "project" && PM.D && document.querySelector("#v-project .pm-o")`);
+		await waitFor(v, `current === "chat" && pvShown() && PM.D && document.querySelector("#pv-panel .pm-o")`);
 		expect(await text(v)).not.toContain("PC 안에서 끝낸다");
 
 		await out(key, TURN);
 		await shot(v, `${SHOTS_TAG}-${width}.png`);
 		// What the owner reads is the answer alone, and everything the page got came down the stream.
 		expect(String(sent.find(e => e.target === key)?.text)).toBe("레지스트리에 없는 키는 빼고, OCR은 PC 안에서 끝내기로 정리했어요.");
-		await waitFor(v, `document.querySelector("#v-project").innerText.includes("PC 안에서 끝낸다")`);
+		await waitFor(v, `document.querySelector("#pv-panel").innerText.includes("PC 안에서 끝낸다")`);
 		await waitFor(v, `document.getAnimations().every(a => a.playState !== "running")`);
 		await shot(v, `${SHOTS_TAG}-${width}.png`);
 		const shown = await text(v);

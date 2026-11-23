@@ -4,9 +4,9 @@
 const pmReset = () => ({ key: "", D: null, fail: false, open: 0, sheets: new Set() });
 let PM = pmReset();
 // A project opens beside the list on a wide screen (ppWide), so the list is drawn and read first.
-function projectEnter(key) { if (ppWide()) projectsEnter(); pmOpen(key); }
+function projectEnter(key) { pvWant(""); if (ppWide()) projectsEnter(); pmOpen(key); }
 // go() opening a project: without a key the list opens instead; the key is the open project (ppCur) and its address.
-function projectAim(key) { if (!key) return ["projects", key]; ppCur = key; }
+function projectAim(key) { if (!key) return ["projects", key]; const c = pvChatOf(key); if (c) { pvWant(c); return ["chat", c]; } ppCur = key; }
 function projectHash(key) { return key ? `project/${enc(key)}` : ""; }
 function projectBeside() { return ppWide() ? "projects" : ""; }
 screenHooks("project", { enter: projectEnter, aim: projectAim, hash: projectHash, beside: projectBeside });
@@ -22,12 +22,12 @@ function pmLoad() {
 }
 // A project turn changed this project's info (hub/outbound.ts noteProjectInfo): pmLoad reads after a fetch already out, which may predate it.
 function pmLive(e) {
-  if (current !== "project" || (e.key !== PM.key && e.key !== (pmProject() || {}).recordKey)) return;
+  if (!pmShown() || (e.key !== PM.key && e.key !== (pmProject() || {}).recordKey)) return;
   pmLoad();
 }
 // After a write: fetch again and repaint from what the gateway kept (the page never shows the typed value as saved).
 async function pmReload() {
-  const root = $("#v-project");
+  const root = pmRoot();
   if (root) delete root.dataset.sig;
   PM.open = 0;
   await Promise.all([pmLoad(), prjLoad(true)]);
@@ -66,21 +66,23 @@ function pmSessionRank(r) {
 }
 // Level 2: the essentials only. Each section is one tappable summary row that opens its own page (level 3, pmSheet).
 function pmPaint() {
-  if (current !== "project" || PM.open > 0) return;
-  const root = $("#v-project"), D = PM.D, p = pmProject();
+  const root = pmRoot(), alone = current === "project";
+  if (!root || PM.open > 0) return;
+  if (alone && pvChatOf(PM.key)) { go("project", PM.key); return; }
+  const D = PM.D, p = pmProject();
   // The name stays in the app bar when the project cannot be read now: the last one seen, or the chat channel's own name.
-  if (!p) { if (!ppWide()) $("#title").textContent = pmNames[PM.key] || (isProjT(PM.key) ? targetName(PM.key) : TX("common.projects")); delete root.dataset.sig; clear(root).append(emptyNode(PM.fail || PRJ_FAIL ? TX("project.one.load_failed") : TX("common.loading"), PM.fail || PRJ_FAIL ? () => Promise.all([pmLoad(), prjLoad()]) : null)); return; }
+  if (!p) { if (alone && !ppWide()) $("#title").textContent = pmNames[PM.key] || (isProjT(PM.key) ? targetName(PM.key) : TX("common.projects")); delete root.dataset.sig; clear(root).append(emptyNode(PM.fail || PRJ_FAIL ? TX("project.one.load_failed") : TX("common.loading"), PM.fail || PRJ_FAIL ? () => Promise.all([pmLoad(), prjLoad()]) : null)); return; }
   const q = { ...p, record: (D && D.record) || p.record }, rows = pmSessionRows(p, D);
   pmNames[PM.key] = prjTitle(q);
   // A phone shows one screen at a time, so its app bar carries the project's name (the prototype's detail); wide keeps the list beside it under "프로젝트".
-  $("#title").textContent = ppWide() ? TX("common.projects") : prjTitle(q);
+  if (alone) $("#title").textContent = ppWide() ? TX("common.projects") : prjTitle(q);
   const sig = JSON.stringify([q, D, rows, botName, PM.fail]);
   if (root.dataset.sig === sig) return;
   root.dataset.sig = sig;
   // Not read yet is not empty: what is already known (확인 필요, the sessions) shows, and under it a pending load says so, a failed one offers 다시 시도.
   const o = pmOverview(q, D, rows);
   if (!D) o.append(emptyNode(PM.fail ? TX("project.rest_failed") : TX("common.loading"), PM.fail ? () => { PM.fail = false; pmPaint(); pmLoad(); } : null));
-  clear(root).append(pmHead(q), o);
+  clear(root).append(pmHead(q, !alone), o);
   pmSheetsPaint();
 }
 // An open drill-in page follows the detail: a save or a 20 s refresh repaints it from the re-fetched data, never under a field being typed in.
@@ -113,15 +115,14 @@ function pmWatchRow(x) {
 }
 function pmOverview(q, D, rows) {
   const work = (D && D.work) || [], results = (D && D.results) || [], items = pmRoutineItems(D);
-  const works = [...work.filter(w => w.status === "running"), ...work.filter(w => w.status !== "running")];
+  const doing = [...rows.filter(r => r.live).map(pmLaneRow), ...work.filter(w => w.status === "running").map(pmWorkRow), ...rows.filter(r => !r.live).map(pmLaneRow), ...work.filter(w => w.status !== "running").map(pmWorkRow)];
   const info = (D && D.info) || {}, files = info.files || [];
   // A section with nothing in it is left out, title and all.
   const parts = [
     pmPrimary(rows),
     pmSection({ kind: "info", label: TX("project.sec.info"), count: "", action: D && D.info ? TX("project.sec.all") : "", head: info.summary ? el("div", { class: "pm-goal sup", text: info.summary }) : null,
       nodes: pmInfoRows(info) }),
-    pmSection({ kind: "sessions", label: TX("project.sec.sessions"), count: rows.length, action: rows.length ? TX("project.sec.all") : "", nodes: rows.slice(0, 5).map(pmLaneRow) }),
-    pmSection({ kind: "sessions", label: TX("home.work.work"), count: work.length, nodes: works.slice(0, 4).map(pmWorkRow) }),
+    pmSection({ kind: "sessions", label: TX("project.sec.sessions"), count: doing.length, action: doing.length ? TX("project.sec.all") : "", nodes: doing.slice(0, 6) }),
     pmSection({ kind: "results", label: TX("project.sec.results"), count: results.length, action: results.length ? TX("project.sec.all") : "", nodes: results.slice(0, 4).map(pmResultRow) }),
     files.length ? pmSection({ kind: "info", label: TX("project.sec.files"), count: files.length, action: files.length > 3 ? TX("project.sec.all") : "", nodes: files.slice(-3).toReversed().map(pmFileRow) }) : null,
     pmSection({ kind: "routines", label: TX("project.sec.watch"), count: items.length, action: items.length ? TX("project.sec.all") : "", nodes: items.slice(0, 4).map(pmWatchRow) })].filter(Boolean);
@@ -209,8 +210,8 @@ function pmEditable({ value, shown = value, placeholder = TX("project.edit.empty
 }
 
 // The prototype's project header card: name + state tag + last activity, the purpose under it.
-function pmHead(q) {
-  const chat = prjChat(q), can = !!chat && validTarget(chat), st = prjState(q), tone = st.tone === "att" ? "warn" : st.tone, at = prjLastAt(q);
+function pmHead(q, inChat) {
+  const chat = inChat ? "" : prjChat(q), can = !!chat && validTarget(chat), st = prjState(q), tone = st.tone === "att" ? "warn" : st.tone, at = prjLastAt(q);
   return el("div", { class: "pmv-head" },
     el("div", { class: "pmv-hmain" },
       el("div", { class: "pmv-htop" },
@@ -225,11 +226,11 @@ function pmHead(q) {
 }
 // The project a chat target (ch:<id>) belongs to, from the list the 프로젝트 tab shows (null until it has loaded or once it is gone).
 const pmOfTarget = t => ((PRJ && PRJ.projects) || []).find(x => !x.builtin && prjChat(x) === t) || null;
+const pmRoot = () => current === "project" ? $("#v-project") : pvShown() ? pvBox : null;
+const pmShown = () => !!pmRoot();
 
 // 프로젝트 삭제 (hub/projectdelete.ts): the ⋯ menu opens a sheet that lists what goes; 삭제 sends DELETE /api/projects/<ch:id>,
 // or POST /api/peer/act {action:"project"} for a project of another computer (q.pc = {name, url}).
-// The ⋯ menu (수정 / 삭제) is shared: the project page and a project's chat header (31-conversations.js) both build it here. `q` is a project or a
-// function that returns it; 수정 opens that project's page in the 프로젝트 tab (on the page itself it starts editing the name).
 function pmMenuButton(q, cls = "pmv-more") {
   const b = el("button", { class: `ib ${cls}`, type: "button", "aria-label": TX("project.menu"), title: TX("project.menu"), "aria-haspopup": "listbox", "aria-expanded": "false" }, icon("more"));
   b.addEventListener("click", () => {
@@ -237,7 +238,7 @@ function pmMenuButton(q, cls = "pmv-more") {
     if (!p) return toast(TX("project.not_found"));
     showMenu(b, [{ value: "edit", label: TX("project.edit.title") }, { value: "delete", label: TX("project.del.title"), danger: true }], { onPick: v => {
       if (v === "delete") return pmDeleteAsk(p);
-      if (current === "project" && PM.key === p.key) { const t = $("#v-project .pmv-title"); if (t) t.click(); } else go("project", p.key);
+      if (pmShown() && PM.key === p.key) { const t = pmRoot().querySelector(".pmv-title"); if (t) t.click(); } else go("project", p.key);
     } });
   });
   return b;
@@ -271,8 +272,8 @@ async function pmDeleteAsk(q) {
       h.close(false);
       toast(r && r.discord && !r.discord.ok ? TX("project.del.partial", { error: r.discord.error }) : TX("project.del.done", { name: (r && r.name) || p.name }), !!(r && r.discord && !r.discord.ok));
       PM = pmReset();
-      if (fromChat) pickTarget(MAIN); else go("projects");
-      prjLoad(true);
+      if (fromChat) { pvClose(); pickTarget(MAIN); } else go("projects");
+      refreshState(); prjLoad(true);
     } catch (e) { err.textContent = e.message || TX("project.del.failed"); st.busy = false; go1.disabled = false; }
   } }, TX("common.delete"));
   clear(h.box).append(
@@ -519,7 +520,7 @@ function cuPage() {
 setInterval(() => {
   if (document.hidden) return;
   if (current === "projects") prjLoad();
-  else if (current === "project" && !PM.open) { pmLoad(); prjLoad(); }
+  else if (pmShown() && !PM.open) { pmLoad(); prjLoad(); }
   else if (current === "custom") cuLoad();
 }, 20000);
 

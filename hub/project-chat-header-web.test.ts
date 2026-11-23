@@ -80,14 +80,14 @@ for (const w of [390, 1280] as const) {
 	});
 }
 
-test("수정 opens that project's page in the 프로젝트 tab", async () => {
+test("S2: 수정 opens that project's overview in its chat (#project/<key>)", async () => {
 	const v = await boot(390, "ch:7001");
 	await waitFor(v, `document.querySelector("#pjmenu:not([hidden])")`);
 	await run(v, `document.querySelector("#pjmenu").click()`);
 	await waitFor(v, `document.querySelector(".menu .mi")`);
 	await pick(v, "수정");
-	await waitFor(v, `current === "project" && ppCur === "ch:7001" && document.querySelector(".pmv-title")`);
-	expect(await q(v, `return document.querySelector(".pmv-title").textContent`)).toBe("유튜브");
+	await waitFor(v, `current === "chat" && target === "ch:7001" && pvShown() && document.querySelector("#pv-panel .pmv-title")`);
+	expect(await q(v, `return [document.querySelector("#pv-panel .pmv-title").textContent, location.hash]`)).toEqual(["유튜브", "#project/ch%3A7001"]);
 	await shot(v, "03-edit-opens-project-390.png");
 });
 

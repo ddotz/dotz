@@ -472,11 +472,11 @@ convHead.after(monChatTop);
 function convPaintHead() {
   asSync();
   if (isProjT(target) && !PRJ && !PRJ_FAIL) prjLoad().then(convSchedule);
-  const i = targetInfo(target), state = isRelayT(target) ? RELAY.note[target] || "" : isRowT(target) ? FIXED_DESC[target] : isMailT(target) ? mailSender((MAILS.get(target) || {}).from) || TX("common.mail") : isSettingsT(target) ? TX("conv.settings_hint") : targetState(target)[0], k = monCtx && !isSettingsT(target) ? monItemOf(target) : "", app = k ? monSettingsApp(monItems().find(x => x.key === k)) : "", sig = `${target}|${targetName(target)}|${state}|${monCtx ? pqSelf() : ""}|${!!pjMenuOn()}|${app}|${!!AS.by[app]}|${monCtx ? MON.sel : ""}`;
+  const i = targetInfo(target), state = isRelayT(target) ? RELAY.note[target] || "" : isRowT(target) ? FIXED_DESC[target] : isMailT(target) ? mailSender((MAILS.get(target) || {}).from) || TX("common.mail") : isSettingsT(target) ? TX("conv.settings_hint") : targetState(target)[0], k = monCtx && !isSettingsT(target) ? monItemOf(target) : "", app = k ? monSettingsApp(monItems().find(x => x.key === k)) : "", pv = pvTogBtn(), sig = `${target}|${targetName(target)}|${state}|${monCtx ? pqSelf() : ""}|${!!pjMenuOn()}|${app}|${!!AS.by[app]}|${monCtx ? MON.sel : ""}|${!!pv}`;
   if (sig === convHeadSig) return;
   convHeadSig = sig;
   // 시제품의 대화 머리 (proto .cv-hd): 제목 16/22 600 한 줄, 그 아래 상태 한 줄, 오른쪽에 그 대화의 동작.
-  const acts = [isLaneT(target) ? cvMenuBtn() : null, pjMenuOn() ? pmMenuButton(() => pmOfTarget(target), "cvmenu") : null, isSettingsT(target) ? asMoreBtn(settingsApp(target)) : null, ...asEntry(app)].filter(Boolean);
+  const acts = [pv, isLaneT(target) ? cvMenuBtn() : null, pjMenuOn() ? pmMenuButton(() => pmOfTarget(target), "cvmenu") : null, isSettingsT(target) ? asMoreBtn(settingsApp(target)) : null, ...asEntry(app)].filter(Boolean);
   // 모니터링에서 연 대화(메일·설정)는 그 목록의 머리 그대로 아바타와 이름·상태 줄을 둬요.
   if (monCtx) clear(convHead).append(...[convAvatar(target), el("span", { class: "cv-b" }, el("span", { class: "cv-n" }, targetName(target), pqLabel({ pc: pqPc(target) })), el("span", { class: "cv-p", text: state })), ...acts].filter(Boolean));
   else clear(convHead).append(...[el("span", { class: "cv-hd-b" }, el("span", { class: "cv-hd-t", title: targetName(target) }, targetName(target)), el("span", { class: "cv-hd-s", text: state })),
@@ -550,6 +550,7 @@ function convPaint() {
   $("#v-chat").classList.toggle("no-composer", !convTakesText(target));
   $("#al-bar").hidden = convTakesText(target);
   convPaintHead();
+  pvSync(); pvAddr();
   paneHeads();
 }
 // Whether the owner can type into conversation t. The 알림 record is read-only (no composer): a question asked there is answered in its sheet (30-notices.js ntDirect).

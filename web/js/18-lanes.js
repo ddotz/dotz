@@ -107,7 +107,7 @@ function prjLoad(again) {
   return (!again && latestOut("prj")) || latest("prj", () => api("/api/custom").then(d => { PRJ = d; PRJ_FAIL = false; PRJ_AT = Date.now(); }, () => { if (!PRJ) PRJ_FAIL = true; }).then(() => {
     prjRev++;
     prjPcLoad();
-    if (current === "project") { if (ppWide()) renderProjects(); pmPaint(); }
+    if (pmShown()) { if (current === "project" && ppWide()) renderProjects(); pmPaint(); }
     else if (current === "projects") renderProjects();
     else if (current === "home") homeSoon();   // a 진행 중 row names the session's project
   }));
@@ -338,14 +338,14 @@ function pjPaintRows() {
   clear(box).append(...nodes);
 }
 function projectsEnter() { renderProjects(); prjLoad(); }
-// From 1100px 프로젝트 opens on a project with the list beside it: the open one while it still exists, else the first (19-project-main.js projectAim).
 function projectsAim() {
   if (!ppWide() || relayCur()) return;
   const key = ppCur && (!PRJ || PRJ.projects.some(p => p.key === ppCur)) ? ppCur : prjFirst();
   if (!key) {
-    if (!PRJ) prjLoad().then(() => { if (current === "projects" && ppWide() && prjFirst()) { histAuto(); go("project", prjFirst()); } });
+    if (!PRJ) prjLoad().then(() => { if (current === "projects" && ppWide() && prjFirst() && !pvChatOf(prjFirst())) { histAuto(); go("project", prjFirst()); } });
     return;
   }
+  if (pvChatOf(key)) return;
   histAuto();
   projectAim(key);
   return ["project", key];

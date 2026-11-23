@@ -292,6 +292,7 @@ function chatEnter() {
 // on a wide screen too (owner 2026-10-27); on a phone the conversation list sits between 홈 and the conversation.
 function convChain(hash) {
   if (monCtx) return MON.sel && !monChatIt() ? ["home", "monitoring", `monitoring/${enc(MON.sel)}`, hash] : ["home", "monitoring", hash];
+  if (narrowChat() && pvShown()) return ["home", "chat/list", `chat/${target}`, hash];
   return narrowChat() ? (chatList ? ["home", hash] : ["home", "chat/list", hash]) : ["home", hash];
 }
 // go() opening 채팅: "chat/list" is the phone's chat list (the third element, which go() keeps in chatList); any other way in opens a conversation.

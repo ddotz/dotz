@@ -177,6 +177,7 @@ body { display: flow-root; }
 /* phone / touch: an app bar control (icon button, usage strip, offline pill) keeps its drawn size and answers a tap over --btn-hit (the back arrow, 4px from the screen edge, grows inward). Neighbouring targets must not share a strip, so icon buttons sit 44px center to center: search and bell (36px each) 8px apart, the 대화 and ⋯ buttons of a mail or kakao title bar (32px each) 12px and 10px apart; the usage strip, wider than 44px, only keeps 2px off the bell so a fractional edge does not hand the bell's last pixel to it */
 @media (pointer: coarse), (max-width: 639px) {
   .appbar .cmdk { margin-right: var(--sp-1); }
+  .appbar :is(#pjmenu, #cvmenu) { margin-right: var(--sp-1); }
   .appbar .ustrip { margin-left: var(--sp-05); }
   .appbar #as-bar { margin-right: var(--sp-2); }
   .appbar #as-more-bar { margin-right: var(--sp-15); }

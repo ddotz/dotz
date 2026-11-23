@@ -169,7 +169,7 @@ window.addEventListener("popstate", ev => {
   } finally { H.hold--; }
   const W = S.w || S.c, hash = W[W.length - 1];
   H.fromHist = W;
-  if (hash !== H.hash) { const p = parseHash(`#${hash}`); go(p.view, p.t); }
+  if (hash !== H.hash) { const p = hash === "projects" ? { view: "projects", t: "" } : parseHash(`#${hash}`); go(p.view, p.t); }
   else H.want = W;
   H.fromHist = null;
   histSync();

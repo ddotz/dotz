@@ -87,6 +87,7 @@
   "31-conversations.js": "chat",
   "31-new-project.js": "chat",
   "31-notices-screen.js": "notices",
+  "31-project-panel.js": "projects",
   "32-app-settings.js": "monitoring",
   "32-history-nav.js": "core",
   "33-peers.js": "peers",

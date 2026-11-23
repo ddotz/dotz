@@ -156,7 +156,7 @@ function go(name, tgt) {
   SCREEN_HOOKS[name]?.route?.(tgt);
   if (convSync()) renderAll();
   const tv = SCREENS[name].tab === "chat";
-  const hash = tv ? (chatList ? "chat/list" : mc ? `monitoring/c:${enc(target)}` : `${name}/${target}`) : SCREEN_HOOKS[name]?.hash?.(tgt) || name;
+  const hash = tv ? (chatList ? "chat/list" : mc ? `monitoring/c:${enc(target)}` : SCREEN_HOOKS[name]?.hash?.(tgt) || `${name}/${target}`) : SCREEN_HOOKS[name]?.hash?.(tgt) || name;
   navSync(name, hash);
   const beside = SCREEN_HOOKS[name]?.beside?.() || "";   // a view shown beside this one (19-project-main.js projectBeside)
   for (const v of views) $(`#v-${v}`).hidden = v !== name && v !== beside;

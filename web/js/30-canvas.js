@@ -50,6 +50,7 @@ function canvasOpen(path, name) {
   CVS.path = path; CVS.name = name || path.split("/").pop() || path; CVS.scripted = false;
   canvasPane.hidden = false;
   $("#v-chat").classList.add("canvas-open");
+  convSchedule();
   if (same) return;
   clear(canvasPane);
   canvasHead();
@@ -71,6 +72,7 @@ function canvasClose() {
   CVS.path = ""; CVS.name = "";
   canvasPane.hidden = true;
   $("#v-chat").classList.remove("canvas-open");
+  convSchedule();
   clear(canvasPane);
 }
 // A scripted page's bridge (hub/files.ts PICK_BRIDGE) sends its picks here; the page stays opaque, so only a pick's fields arrive.

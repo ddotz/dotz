@@ -108,7 +108,7 @@ async function refreshState() {
     if (endedNow(target)) endedLeave();
     noteStatus(); paintAuth(); paintDecision(); paintOrchError(); paintPause(); paintRunState();
     renderBars(); renderWorking(); paintSysLines(); updateComposerMeta(); dskPaint();
-    if (current === "project") pmPaint();
+    if (pmShown()) pmPaint();
     if (current === "home") renderHome();
     if (current === "settings") renderSettings();
     loadContext(true);

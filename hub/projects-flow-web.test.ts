@@ -168,8 +168,8 @@ test("프로젝트 더 보기 is the last line of the last group's card and draw
 test("a row opens the overview; every section opens its own page and 뒤로 or the browser back returns", async () => {
 	const v = await boot(390, 844);
 	await run(v, `document.querySelectorAll("#pl-list .pl-row")[0].click()`);
-	await waitFor(v, `document.querySelectorAll(".pm-sec").length === 4`);
-	expect(await q<string[]>(v, `return [...document.querySelectorAll(".pm-sec > span")].map(n => n.textContent)`)).toEqual(["세션 1", "작업 1", "결과 3", "감시 3"]);
+	await waitFor(v, `document.querySelectorAll(".pm-sec").length === 3`);
+	expect(await q<string[]>(v, `return [...document.querySelectorAll(".pm-sec > span")].map(n => n.textContent)`)).toEqual(["세션과 작업 2", "결과 3", "감시 3"]);
 	// 확인 필요 is the primary action, and it is a single tap into the waiting session's chat
 	expect(await q(v, `return document.querySelector(".pm-need-t").textContent`)).toBe("질문 세션 1");
 	expect(await q(v, `return document.querySelector('.pm-need [data-k="answer"]').textContent`)).toBe("대화에서 답하기");
@@ -191,13 +191,13 @@ test("a row opens the overview; every section opens its own page and 뒤로 or t
 	await waitFor(v, `!!document.querySelector(".pdv")`);
 	await run(v, `history.back()`);
 	await waitFor(v, `!document.querySelector(".pdv")`);
-	expect(await q(v, `return !document.querySelector("#v-project").hidden && document.querySelectorAll(".pm-sec").length`)).toBe(4);
+	expect(await q(v, `return !document.querySelector("#v-project").hidden && document.querySelectorAll(".pm-sec").length`)).toBe(3);
 	// a write goes through the project's record key
 	await v.evaluate(`pmWrite({ title: "프로젝트 1" }).then(() => 0)`);
 	expect(writes.at(-1)!.body.key).toBe("ch:8000");
 });
 
-test("a project with nothing in it draws no section, only one empty line; a filled one draws its four", async () => {
+test("a project with nothing in it draws no section, only one empty line; a filled one draws its three", async () => {
 	const v = await boot(390, 844);
 	detailEmpty = true;
 	try {
@@ -208,7 +208,7 @@ test("a project with nothing in it draws no section, only one empty line; a fill
 		detailEmpty = false;
 	}
 	await run(v, `go("project", "ch:8000")`);
-	await waitFor(v, `document.querySelectorAll(".pm-sec").length === 4`);
+	await waitFor(v, `document.querySelectorAll(".pm-sec").length === 3`);
 	expect(await q(v, `return document.querySelectorAll(".pm-o .empty").length`)).toBe(0);
 });
 
@@ -218,19 +218,19 @@ test("a detail that fails to load keeps 확인 필요 and the sessions, says so 
 	try {
 		await run(v, `document.querySelectorAll("#pl-list .pl-row")[0].click()`);
 		await waitFor(v, `!!document.querySelector('#v-project .empty [data-k="retry"]')`);
-		expect(await q<string[]>(v, `return [...document.querySelectorAll(".pm-sec > span")].map(n => n.textContent)`)).toEqual(["세션 1"]);
+		expect(await q<string[]>(v, `return [...document.querySelectorAll(".pm-sec > span")].map(n => n.textContent)`)).toEqual(["세션과 작업 1"]);
 		expect(await q(v, `return !!document.querySelector('.pm-need [data-k="answer"]')`)).toBe(true);
 	} finally {
 		detailDown = false;
 	}
 	await run(v, `document.querySelector('#v-project .empty [data-k="retry"]').click()`);
-	await waitFor(v, `document.querySelectorAll(".pm-sec").length === 4 && !document.querySelector("#v-project .empty")`);
+	await waitFor(v, `document.querySelectorAll(".pm-sec").length === 3 && !document.querySelector("#v-project .empty")`);
 });
 
 test("from 1100px the list sits beside the overview, and a section page opens over both", async () => {
 	const v = await boot(1280, 900);
 	await run(v, `document.querySelectorAll("#pl-list .pl-row")[0].click()`);
-	await waitFor(v, `document.querySelectorAll(".pl-row").length > 0 && document.querySelectorAll(".pm-sec").length === 4`);
+	await waitFor(v, `document.querySelectorAll(".pl-row").length > 0 && document.querySelectorAll(".pm-sec").length === 3`);
 	expect(await q(v, `return !document.querySelector("#v-projects").hidden && document.querySelector(".views").classList.contains("pp")`)).toBe(true);
 	// the open project is the selected row, and the chips stay on one line
 	expect(await q(v, `return document.querySelector("#pl-list .pl-row.on .pl-n").textContent`)).toBe("프로젝트 1");

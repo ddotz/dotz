@@ -98,3 +98,24 @@
   .fs-bd:has(> .fs-card.pdv) { align-items: stretch; justify-content: flex-start; padding: var(--frame-top) var(--edge) var(--sp-4) var(--frame-x); }
   .fs-card.pdv { width: 100%; height: auto; max-height: none; }
 }
+
+.pv-panel .pmv-head { padding: var(--sp-5); border-radius: var(--r-card); background: var(--card); }
+.pv-tog[aria-pressed="true"] { background: var(--row-sel); color: var(--fg); }
+@media (max-width: 1099px) {
+  #v-chat > .pv-seg { order: 0; flex: none; padding-left: var(--sp-2); }
+  #v-chat > .pv-panel { position: absolute; inset: var(--btn-hit) 0 0; z-index: 2; padding: var(--sp-3) var(--sp-3) var(--sp-6); background: var(--bg); overflow-y: auto; }
+  #v-chat.pv-on > :is(.todo, .chatbox, .composer, .al-bar) { visibility: hidden; }
+}
+@media (min-width: 1100px) {
+  #v-chat { --pv-w: 320px; }
+  #v-chat > .pv-panel { min-height: 0; overflow-y: auto; }
+  #v-chat > .pv-panel > .pm-o { margin-bottom: var(--sp-4); }
+}
+@media (min-width: 1100px) and (max-width: 1439px) {
+  #v-chat > .pv-panel { grid-column: 2; grid-row: 2 / 5; justify-self: end; width: var(--pv-w); z-index: 2; margin-right: var(--sp-3); padding: var(--sp-3); border-radius: calc(var(--r-card) + var(--sp-3)); background: var(--bg); box-shadow: var(--float); }
+  #v-chat.pv-on > .chatbox > .jump { left: calc((100% - var(--pv-w) - var(--sp-3)) / 2); }
+}
+@media (min-width: 1440px) {
+  #v-chat.pv-on { grid-template-columns: var(--cv-w) minmax(0, 1fr) var(--pv-w); }
+  #v-chat > .pv-panel { grid-column: 3; grid-row: 1 / -1; margin-bottom: var(--sp-4); }
+}
