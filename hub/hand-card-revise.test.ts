@@ -12,7 +12,9 @@ import "./reply-wire.ts";
 const CONV = "mail:hc-test";
 const MULTI = "mail:hc-multi";
 const UNREADABLE = "mail:hc-unreadable";
-const CONVS = [CONV, MULTI, UNREADABLE];
+const ELSEWHERE = "mail:hc-elsewhere";
+const OTHER = "mail:hc-other";
+const CONVS = [CONV, MULTI, UNREADABLE, ELSEWHERE, OTHER];
 const events: HubEvent[] = [];
 onEmit(e => void (e.kind === "out" && e.target === CONV && events.push(e)));
 const openIn = (conv: string) => listNotices(500).items.filter((n) => n.decision?.state === "open" && n.decision.to === conv);
@@ -114,6 +116,18 @@ test("a post with several cards, one of them a revision of the open card: the bo
 	expect(openIn(MULTI).map(n => [n.id, n.decision?.draft?.ref, n.decision?.draft?.body])).toEqual([[first!.id, "hand-23", body4]]);
 	expect(approvals.heldIn(MULTI).map(h => h.ref)).toEqual(["hand-29"]);
 	expect(notes.filter(e => String(e.text).includes("반영하지 못했어요"))).toEqual([]);
+});
+
+test("a card whose ref is open in another conversation replaces nothing here: the [drop] of the open card is still acted on", async () => {
+	const notes: HubEvent[] = [];
+	onEmit(e => void (e.kind === "out" && e.target === ELSEWHERE && e.source === "gateway" && notes.push(e)));
+	await out(OTHER, hand("hand-9", { lead: "다른 방의 초안이에요.", subject: "RE: 제목B", body: body3, question: "이 메일 보낼까요?" }));
+	await out(ELSEWHERE, hand("hand-8", { lead: "초안을 만들었어요.", body: body3, question: "이 메일 보낼까요?" }));
+	expect(openIn(ELSEWHERE).map(n => n.decision?.draft?.ref)).toEqual(["hand-8"]);
+
+	await out(ELSEWHERE, hand("hand-9", { lead: "표 숫자를 고쳤어요.", body: body4, question: "고친 메일 보낼까요?", mark: "[drop hand-8]" }));
+	await until("the refusal of the bot's own drop", () => notes.some(e => String(e.text).includes("반영하지 못했어요")));
+	expect(openIn(ELSEWHERE).map(n => [n.decision?.draft?.ref, n.decision?.draft?.body])).toEqual([["hand-8", body3]]);
 });
 
 test("a revision while the reply-draft store cannot be read still replaces the open card", async () => {

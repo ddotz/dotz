@@ -646,7 +646,7 @@ function dcInline(e, body, pc) {
 }
 const SEND_LABELS = /^보내기\|고치기\|보내지 않기/;
 // The draft a send approval block asks about (its question's trailing "(<ref>)"), or "" for any other block.
-const dcSendRef = b => ((SEND_LABELS.test(b.options.map(o => o.label).join("|")) && /\(([A-Za-z0-9]{2,16})\)\s*$/.exec(b.title || "")) || [])[1] || "";
+const dcSendRef = b => ((SEND_LABELS.test(b.options.map(o => o.label).join("|")) && /\(([A-Za-z0-9][A-Za-z0-9_.:-]{1,63})\)\s*$/.exec(b.title || "")) || [])[1] || "";
 function inlineDc(i, live) {
   const sig = hashOf(i.body), at = i.e.ts, s = ts(i.t);
   if (live && live.t === i.t && (live.sig === sig || live.at === at)) return live;
