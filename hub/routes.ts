@@ -16,7 +16,8 @@ import { lang, msg } from "./i18n.ts";
 import { limitWaits } from "./limitwait.ts";
 import { buildWaitlist } from "./waitlist.ts";
 import { keyedSelector } from "./fallback.ts";
-import { changeTarget, ControlError, targetView, ForceRequired } from "./control.ts";
+import { changeTarget, ControlError, resolveModel, targetView, ForceRequired } from "./control.ts";
+import { isAgentRequest } from "./model-guard.ts";
 import * as discord from "./discord.ts";
 import { authRoute, pendingAuth } from "./auth.ts";
 import { pushRoute } from "./push.ts";
@@ -41,7 +42,7 @@ import { withHomes } from "./laneviews.ts";
 import { main as mainOrch, orch } from "./orchestrator.ts";
 import { listMonitors } from "./monitors.ts";
 import { type DecisionSend, type Notice, openDecisionNotices, listNotices, dismissedAlertAts, readConversationNotices, unreadCount } from "./notices.ts";
-import { loadProjects, saveProject } from "./projects.ts";
+import { createDeps, createProject, loadProjects, ProjectCreateError, saveProject } from "./projects.ts";
 import { deleteProject, planDelete, ProjectDeleteError } from "./projectdelete.ts";
 import { listSchedules } from "./schedule.ts";
 import { answerRunDecision } from "./schedule-fire.ts";
@@ -444,11 +445,12 @@ export function makeRoute({ tailnetName = ownTailnetName, busyNow, restartGatewa
 		const customResponse = await customRoute(req, url, { lanes: () => withHomes(laneSummary(), discord.channels), channels: () => discord.channels, work: () => bgWork.list(), send: (target, text, login) => sendWeb({ ...(target === "main" ? {} : { lane: target.slice(5) }), channel: "web", text, mode: "default", login }), caller: callerLogin(req, peer), machine: () => resolveName(cfg.web?.machine_name, machineHost()), peerProjects });
 		if (customResponse) return customResponse;
 		// Project records (hub/projects.ts) and the todo strip (hub/todo.ts), docs/layers.md §4.
-		if (url.pathname === "/api/projects" && req.method === "PUT") {
+		if (url.pathname === "/api/projects" && (req.method === "PUT" || req.method === "POST")) {
 			try {
-				return json(saveProject(await body(req)).record);
+				const b = await body(req);
+				return json(req.method === "PUT" ? saveProject(b).record : await createProject(b, createDeps((key, model) => changeTarget(key, { req, model, ownerMessage: b.owner_message }), resolveModel), isAgentRequest(req)));
 			} catch (error) {
-				return json({ error: (error as Error).message }, 400);
+				return json({ error: (error as Error).message }, error instanceof ProjectCreateError || error instanceof ControlError ? error.status : 400);
 			}
 		}
 		if (url.pathname === "/api/projects" && req.method === "GET") return json({ projects: loadProjects() });

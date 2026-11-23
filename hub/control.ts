@@ -286,7 +286,7 @@ async function setLaneWorker(target: string, input: string, byLane: boolean) {
 export const providersView = async () => listProviders(providersInUse());
 
 // Exact selector first; otherwise one unique substring match on selector or display name ("opus", "gpt-5").
-function resolveModel(input: string, available: ModelInfo[]): string {
+export function resolveModel(input: string, available: ModelInfo[]): string {
 	const q = input.trim().toLowerCase();
 	if (!available.length) return input.trim();
 	const exact = available.find(m => m.selector.toLowerCase() === q);
