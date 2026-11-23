@@ -66,6 +66,22 @@ describe("buildSnapshot", () => {
 		expect(text.length).toBeLessThanOrEqual(MAX_SNAPSHOT_CHARS);
 		expect(decodeSnapshot(text.slice("[b] ".length))!.cut).toBe(true);
 	});
+
+	test("too long with every project's note: the last notes go, never a project, and the first keeps its note", () => {
+		const note = "설명".repeat(55);
+		const snap = buildSnapshot(sources({
+			projects: Array.from({ length: 20 }, (_, i) => ({ key: `ch:${i}`, name: `프로젝트${i}`, note })),
+			notices: Array.from({ length: 5 }, () => ({ updated: "2026-01-01T00:00:00Z", tone: "ok", title: note })),
+		}), 1);
+		expect(`${SNAPSHOT_MARK} ${JSON.stringify(normalizeSnapshot(snap))}`.length).toBeGreaterThan(MAX_SNAPSHOT_CHARS);
+		const text = encodeSnapshot("[b]", snap)!;
+		expect(text.length).toBeLessThanOrEqual(MAX_SNAPSHOT_CHARS);
+		const got = decodeSnapshot(text.slice("[b] ".length))!;
+		expect(got.projects.map(p => p.name)).toEqual(snap.projects.map(p => p.name));
+		expect(got.projects[0]!.note).toBe(note);
+		expect(got.projects[19]!.note).toBeUndefined();
+		expect(got.cut).toBe(true);
+	});
 });
 
 describe("share_status in the self chat config", () => {
