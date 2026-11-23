@@ -129,13 +129,12 @@ async function mbRun(keys, action, quiet = false, btn = null, held = null) {
   const leaving = mbRowsOut(done.filter(t => wait.has(t)));
   if (leaving) leaving.then(mbRefresh); else mbRefresh();
   const refused = res.filter(x => x.ok === false), unsynced = res.filter(x => x.ok !== false && x.note);
-  const stayed = action === "trash" ? 0 : res.filter(x => x.ok !== false && x.synced === false && !x.note).length;
   const back = MB_BACK[action] && done.length ? { label: TX("common.undo"), onclick: () => mbRun(done, MB_BACK[action]) } : undefined;
   const failed = [...refused, ...((held && held.failed) || [])];
   if (action === "trash" && failed.length && (!quiet || held)) mbTrashSay(failed, !!held);
   else if (!quiet && refused.length) toast((refused.find(x => x.note) || {}).note || TX("mail.err.failed"), true);
   else if (!quiet && unsynced.length) toast(res.length < 2 ? unsynced[0].note : unsynced.length === res.length ? TX("mail.unsynced_all_n", { n: res.length }) : TX("mail.unsynced_n", { total: res.length, n: unsynced.length }), false, back);
-  else if (!quiet && done.length && MB_DONE[action]) toast(MB_DONE[action](done.length) + (stayed ? ` · ${stayed === done.length ? TX("mail.stayed") : TX("mail.stayed_n", { n: stayed })}` : ""), false, back);
+  else if (!quiet && done.length && MB_DONE[action]) toast(MB_DONE[action](done.length), false, back);
   if (legacy) for (const t of done) pqUnbind(t);
   const listed = convLoad();
   if (held) Promise.allSettled([listed, loadNotices()]).then(() => { for (const t of done) if (held.of.has(t) && MBOX.gone.get(t) === held.of.get(t).m.mark) MBOX.gone.delete(t); });

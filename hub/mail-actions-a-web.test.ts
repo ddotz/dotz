@@ -186,13 +186,12 @@ describe("a mailbox that did not follow keeps 되돌리기", () => {
 		expect((await snack(v))!.act).toBe("되돌리기");
 	}, 30_000);
 
-	for (const [width, height] of SIZES) test(`a mailbox with no actions of its own: 2개를 보관했어요 · 1개는 메일함 그대로예요 on one line at ${width}`, async () => {
+	for (const [width, height] of SIZES) test(`a mailbox with no actions of its own: 2개를 보관했어요 and no mailbox note at ${width}`, async () => {
 		const v = await openList(width, height);
 		await tick(v, "sample-1 보고서"); await tick(v, "sample-5 회사");
 		await pickBar(v, "보관");
-		await snackSays(v, "2개를 보관했어요 · 1개는 메일함 그대로예요");
+		await snackSays(v, "2개를 보관했어요");
 		expect((await snack(v))!.act).toBe("되돌리기");
-		expect(await ev<number>(v, `(() => { const r = document.createRange(); r.selectNodeContents(document.querySelector(".snack span")); return new Set([...r.getClientRects()].map(x => Math.round(x.top))).size; })()`)).toBe(1);
 		await shot(v, `archive-stayed-${width}`);
 		await noSnack(v);
 		await tick(v, "sample-2 일정");
@@ -200,11 +199,11 @@ describe("a mailbox that did not follow keeps 되돌리기", () => {
 		await snackSays(v, "보관했어요");
 	}, 30_000);
 
-	test("one mail whose mailbox has no actions: 안 읽음으로 표시했어요 · 메일함은 그대로예요", async () => {
+	test("one mail whose mailbox has no actions: 안 읽음으로 표시했어요 and no mailbox note", async () => {
 		const v = await openList(1280, 800);
 		await tick(v, "sample-5 회사");
 		await pickBar(v, "안 읽음으로 표시");
-		await snackSays(v, "안 읽음으로 표시했어요 · 메일함은 그대로예요");
+		await snackSays(v, "안 읽음으로 표시했어요");
 		expect((await snack(v))!.act).toBe("되돌리기");
 	}, 30_000);
 });
