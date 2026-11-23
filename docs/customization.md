@@ -171,10 +171,12 @@ check command (`bun features/output-design/bin/check.ts <url|file.html>`) that m
   read at `GET /api/peer/projects` with the peer token (`docs/peer-monitoring.md`); it answers `{ name, projects }` with its
   own projects only, by key, name and purpose, and no folder, channel or session detail. A computer that cannot be read (an
   older gateway, no token) shows its header without rows. The answers are kept for a minute.
-- The 프로젝트 list draws one folding header per computer only when there are two or more groups. A single computer with no
-  pin naming another looks as before (고정 / 전체). Under a computer's header its rows come pinned first; the filters and the
-  search apply to all of them, and other computers' rows show only under 전체. A tap on another computer's project opens
-  that computer's web app at `#project/<key>`.
+- The stand-alone 프로젝트 list screen draws one folding header per computer only when there are two or more groups. It has no
+  tab button (`SCREENS.projects` has no `nav` in `web/js/03-screens.js`; the 채팅 list nests the projects that have a chat), and it
+  is what a project without a chat, or another computer's project, opens beside (`web/js/19-project-main.js` `projectBeside`).
+  A single computer with no pin naming another looks as before (고정 / 전체). Under a computer's header its rows come pinned
+  first; the filters and the search apply to all of them, and other computers' rows show only under 전체. A tap on another
+  computer's project opens that computer's web app at `#project/<key>`.
 - An offline computer keeps its header, greyed and marked 연결 안 됨, with no rows: the computer switcher lists it the same
   way, and its projects would be stale.
 
@@ -184,8 +186,10 @@ outlives a gateway restart), finished time, verified or reported-only, resume an
 `[done]`/`[fail]` reports, the folder's verification receipts, the newest commits, newest first); for a git folder the
 branch, uncommitted file count, last 5 commits and `lane/*` branches not merged into main; the open tasks of
 `state.json` that name the project (in the gateway's own checkout, also those that name no other project), a tap sends
-one as a request; and the work channel, threads, session channels, routines, schedules and watches tied to it. Two
-columns from 1100px, one on a phone. The request box sends to the orchestrator (prefixed
+one as a request; and the work channel, threads, session channels, routines, schedules and watches tied to it. The web draws
+it as one scrolling overview (`pmOverview`: 확인 필요 when a session waits, 지금 상황, one merged 세션과 작업 section, 결과, 파일,
+감시); a project that has a chat shows the same overview as the chat's 현황 panel (`web/js/31-project-panel.js`) and
+`#project/<key>` opens that chat with the panel. The request box sends to the orchestrator (prefixed
 `[프로젝트 <name> · <path>]`), to a running session of the project, or asks the orchestrator for a new session.
 
 ### Routines

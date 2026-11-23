@@ -1,6 +1,6 @@
 # User apps (`~/.dotz/custom/apps`)
 
-An app of the owner's own, beside the shipped ones (메일, 카카오톡, … in 모니터링) and beside custom cards. It is data only:
+An app of the owner's own, beside the shipped ones (메일, 카카오톡, … in the 앱 tab) and beside custom cards. It is data only:
 one manifest per app under the data folder, no dotz source change, no restart. The gateway lists it in the web's 앱 tab,
 checks its health, and -- for an app with its own web UI -- serves that UI at `/apps/<id>/` with the same auth as the API.
 
@@ -17,7 +17,7 @@ Reference implementation: `hub/user-apps.ts` (manifest), `hub/app-proxy.ts` (pro
   it, and a manifest that reuses a shipped app's id is an error. An update replaces `hub/` and `web/` only, so it can never
   remove or break another install's `custom/apps/`.
 - **`GET /api/apps` beside `GET /api/integrations`, not inside it.** The monitoring list (`30-monitoring.js`) keeps reading
-  `/api/integrations` unchanged. The 앱 tab reads `/api/apps`, which returns both the on 모니터링 apps (`source: "registry"`)
+  `/api/integrations` unchanged. The 앱 tab reads `/api/apps`, which returns both the apps shipped with dotz (`source: "registry"`)
   and the manifests (`source: "manifest"`), so one list shows every app. `appsMonItems()` (bottom of `web/js/30-apps.js`) hands the
   tool apps to `monItems()`, so each is a row of the 앱 tab list. One web app frame is alive at a time: opening another web app
   discards the first one's frame; returning from mail, KakaoTalk, comments or another tab keeps it.

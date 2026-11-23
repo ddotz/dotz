@@ -122,14 +122,14 @@ API (all behind the hub token, JSON):
 
 ## 5. Screens
 
-NAV: 홈, 채팅, 프로젝트, 세션, 설정. 구성 (the harness map) is a row under 설정 and opens as a sub-view; old `#harness`
+NAV: 홈, 채팅, 앱, 설정. 프로젝트 and 세션 are no tabs: projects sit in the 채팅 list, with their sessions nested. 구성 (the harness map) is a row under 설정 and opens as a sub-view; old `#harness`
 links still open it.
 
-- 프로젝트 list: one card per project: title, purpose line, status dot, counts (sessions, monitors).
+- 프로젝트 rows in the 채팅 list: one row per project with status dot, unread badge and its sessions nested (`세션 N개` fold); `+ 새 프로젝트` creates a work channel (`POST /api/projects`).
 - 프로젝트 main: header (title, purpose; tap to edit in place) and an "프로젝트 채팅" button that opens the project
-  orchestrator chat. Then: 루틴과 모니터링 (each row:
-  name, interval, last / next run, health; edit interval / pattern, pause / resume), 세션 (rows with status, opens the
-  session), 최근 결과.
+  orchestrator chat. Then: 지금 상황, 세션과 작업 (one merged section: rows with status, opens the session), 결과, 파일,
+  루틴과 모니터링 (each row: name, interval, last / next run, health). A project with a chat shows this as the 현황 panel beside
+  its chat; a project without a chat keeps the stand-alone screen.
 - 세션: running sessions as a list of cards (title, project, status, waiting question, subagents n/m), ended ones folded.
 - 채팅: target switcher groups 채팅 / 프로젝트 / 세션; the header names the layer. A todo strip sits above the timeline
   (current item + done/total, tap to open the phased list, hidden when empty or all done; reference: herdr-web-ui's
@@ -142,7 +142,7 @@ links still open it.
   data (an app instance, a queue), never from app names or a person, and the switch point is a setting with a sane default.
   First user: reply drafts (hub/reply-actions.ts, the one queue of every channel): every surface reads `GET /api/reply/queue`, draws an
   item with the same card (rqItemCard) and acts through `POST /api/reply/act` (raAct; another computer's item through its own queue).
-  The 답장 대기 screen's head opens 빠른 처리 once the queue's `triageMin` items wait. One item fills the view as that card, with a
+  The 승인 대기 screen's head opens 빠른 처리 once the queue's `triageMin` items wait. One item fills the view as that card, with a
   progress rail of every item's live state, keys on desktop, auto-advance after 보내기 (the send waits its undo window in the common
   queue), and a list where each row shows what its 보내기 sends and is picked (보내기 / 건너뛰기) before 고른 것 처리, while its 고치기 opens
   the item's panel in the row. Each item still needs its own pick.
