@@ -105,6 +105,7 @@ for (const [width, height] of [[390, 844], [1280, 900]] as const) {
 			expect(await landed(v)).toBe("all");
 			await waitFor(v, `document.querySelectorAll("#mon-tl .mr").length > 0`);
 			expect(await banner(v)).toBe("확인 대기 초안 2건 · 바로 보기");
+			if (width === 390) expect(await q<number>(v, `return document.querySelector("#mon-tl [data-k='mail-pending']").getBoundingClientRect().height`)).toBeGreaterThanOrEqual(44);
 			const all = await seen(v);
 			expect(all.chips).toEqual(["전체", "안 읽음", "답장 필요2", "확인 대기2", "답장함1"]);
 			expect(all.cards).toEqual([]);   // a sent draft is folded inside its mail's conversation (30-mail-sent.js); nothing waiting shows under 전체
