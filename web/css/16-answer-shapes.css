@@ -51,4 +51,5 @@
   .ans-wordy.ans-keys { display: flex; }
   .ans-wordy .rc-row { display: block; }
   .ans-wordy .rc-k { display: block; width: auto; line-height: var(--lh-sec); }
+  .ans-wordy .rc-w { display: block; }
 }
