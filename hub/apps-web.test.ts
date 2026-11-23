@@ -104,7 +104,7 @@ describe("앱 tab at 390px", () => {
 		expect(card).toContain("/tmp/custom/apps/broken");
 		expect(await view.evaluate(`(() => $("#mon-app .apps-err .btn").textContent)()`)).toBe("다시 확인");
 		await view.evaluate(`(() => { window.__reads = 0; const ask = api; api = (...a) => { if (String(a[0]).startsWith("/api/apps")) window.__reads++; return ask(...a); }; $("#mon-app .apps-err .btn").click(); return 0; })()`);
-		await waitFor(`window.__reads > 0`);
+		await waitFor(`window.__reads > 0 && !$("#mon-app .apps-err .btn").disabled`);
 		expect(await view.evaluate(`(() => !!$("#mon-app .apps-err"))()`)).toBe(true);
 	}, 25_000);
 
