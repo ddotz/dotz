@@ -70,7 +70,7 @@ function openPalette() {
       else if (!spaced) for (const x of hintList) if (x.c.startsWith(v)) items.push(palCmd(x));
     } else {
       for (const x of hintList) if (!x.dup && (!v || x.c.includes(v))) items.push(palCmd(x));
-      for (const id of views) if (SCREENS[id].palette !== false && !navOff(id) && (!v || titles[id].toLowerCase().includes(v) || id.includes(v) || (PAL_WORDS[id] || "").includes(v))) items.push({ kind: "nav", ic: VIEW_ICON[id], label: titles[id], desc: navKeyHint(id), go: id === "chat" ? lastChatView() : id });
+      for (const id of views) if (SCREENS[id].palette !== false && (!v || titles[id].toLowerCase().includes(v) || id.includes(v) || (PAL_WORDS[id] || "").includes(v))) items.push({ kind: "nav", ic: VIEW_ICON[id], label: titles[id], desc: navKeyHint(id), go: id === "chat" ? lastChatView() : id });
       // Ended lanes stay folded: one row without a query, each lane once the query names it (or "종료").
       const ended = endedLanes();
       if (ended.length && !v) items.push({ kind: "act", ic: "lanes", label: TX("base.ended.label", { n: ended.length }), act: () => { putEndedOpen(true); go("chat", "list"); } });
@@ -122,7 +122,7 @@ function parseHash(hash = location.hash) {
   let t = i < 0 ? "" : h.slice(i + 1);
   try { t = decodeURIComponent(t); } catch {}
   const view = i < 0 ? h : h.slice(0, i);
-  return view === "projects" ? { view: "chat", t: "list" } : view === "apps" && !APPS_ON ? { view: "monitoring", t: t && `x:${t}` } : { view, t };
+  return view === "projects" ? { view: "chat", t: "list" } : view === "apps" ? { view: "monitoring", t: t && `x:${t}` } : { view, t };
 }
 // The 세션 tab is gone: an old #lanes address opens the chat (its list on a phone), where running sessions sit under 진행 중.
 // #chat/alert is the 알림 screen now; only ntGo (a row's way to its source message) sets NSC.pass, which lets one go() open the record conversation.
@@ -144,7 +144,7 @@ function go(name, tgt) {
   else if (inChat && !tgt && monCtx && target === monCtx && !paneKeeps(target)) mc = true;
   monCtx = mc ? tgt || target : "";
   if (mc) monConvIn(tgt || target);
-  if (!views.includes(name) || navOff(name)) name = "home";
+  if (!views.includes(name)) name = "home";
   const aim = SCREEN_HOOKS[name]?.aim?.(tgt);   // before current changes: the screen reads the target, or opens another screen or target instead
   if (aim) [name, tgt] = aim;
   chatList = !!aim?.[2];   // the phone's chat list (13-data.js chatAim)
@@ -154,7 +154,7 @@ function go(name, tgt) {
   current = name;
   bkKkSync(); bkCmSync();   // leaving 모니터링 (or its item list) releases an open room's or post's history step before the new view stacks
   relayPaint();
-  SCREEN_HOOKS[name]?.route?.(tgt);   // after current is set, before the address is built: 앱's appsOpen draws only the shown tab and names it for appsHash
+  SCREEN_HOOKS[name]?.route?.(tgt);
   if (convSync()) renderAll();
   const tv = SCREENS[name].tab === "chat";
   const hash = tv ? (chatList ? "chat/list" : mc ? `monitoring/c:${enc(target)}` : `${name}/${target}`) : SCREEN_HOOKS[name]?.hash?.(tgt) || name;

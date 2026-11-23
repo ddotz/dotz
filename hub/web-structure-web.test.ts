@@ -79,9 +79,9 @@ const inGo = (line: string) => ({ "05-command-palette.js": files["05-command-pal
 
 test("planted B: each test of a screen name inside go() counts, whatever its form", () => {
   expect(delta(inGo("if (name === \"notices\") return;"))).toEqual({ goBranches: 1 });
-  expect(delta(inGo("if (\"usage\" !== current || prevView == \"apps\" || tgt.view != 'models') return;"))).toEqual({ goBranches: 3 });
+  expect(delta(inGo("if (\"usage\" !== current || prevView == \"display\" || tgt.view != 'models') return;"))).toEqual({ goBranches: 3 });
   expect(delta(inGo("switch (name) { case \"devices\": return; case \"zz\": break; }"))).toEqual({ goBranches: 1 });
-  expect(delta(inGo("if ([\"models\", \"usage\"].includes(name) || new Set([\"apps\"]).has(current)) return;"))).toEqual({ goBranches: 3 });
+  expect(delta(inGo("if ([\"models\", \"usage\"].includes(name) || new Set([\"display\"]).has(current)) return;"))).toEqual({ goBranches: 3 });
   expect(delta(inGo("if (name.startsWith(\"monitoring\") || current.indexOf(\"monitoring/c:\") === 0 || routeName(tgt) === \"chat\") return;"))).toEqual({ goBranches: 3 });
 });
 
@@ -90,7 +90,7 @@ test("planted B: a screen name written, a row field tested, a non-screen literal
   expect(delta(inGo("if (SCREENS[name]?.tab === \"chat\" || \"settings\" !== SCREENS[name].tab || [\"chat\"].includes(SCREENS[name].tab)) tgt = SCREENS[\"chat\"];"))).toEqual({});
   expect(delta(inGo("switch (SCREENS[name].tab) { case \"chat\": break; }"))).toEqual({});
   expect(delta(inGo("if (tgt === \"list\" || name === \"zz\" || $(\"#v-chat\") || localStorage.getItem(\"chat\")) return; // name === \"notices\""))).toEqual({});
-  expect(delta(mailBox("function zzNm(name) { return name === \"notices\" || [\"apps\"].includes(name); }"))).toEqual({});
+  expect(delta(mailBox("function zzNm(name) { return name === \"notices\" || [\"display\"].includes(name); }"))).toEqual({});
 });
 
 test("planted B: a top-level function reassignment counts", () => {

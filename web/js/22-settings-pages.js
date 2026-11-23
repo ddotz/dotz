@@ -111,7 +111,6 @@ function settingsList(go) {
       stRow("bell", TX("settings.page.notifications"), stPushSub(), () => go("notifications")),
       stRow("list", TX("settings.page.schedules"), TX("settings.row.schedules"), () => go("schedules")),
       stRow("pencil", TX("settings.page.custom"), TX("project.custom_sub"), () => go("custom")),
-      navOff("apps") ? null : stRow("apps", TX("settings.row.apps"), "", () => go("apps")),
       stRow("spark", TX("settings.row.intro"), "", () => introOpen()),
       stRow(themeIc(), TX("settings.page.display"), [themeIs() === "dark" ? TX("settings.theme.dark") : TX("settings.theme.light"), chatTabMode() === "main" ? TX("settings.row.chat_tab_main") : TX("settings.row.chat_tab_last")].join(" · "), () => go("display"))),
     stSec(TX("settings.sec.system")), stList(

@@ -5,9 +5,6 @@ import { sseResponse } from "./events.ts";
 import { appAsset, indexPage } from "./webapp.ts";
 import { i18nPrelude } from "./web-i18n.ts";
 
-// One status per monitor everywhere (web/js/30-monitoring.js monStatus), the app row's need line (monNeedLine), the 모니터링 nav badge
-// (09-needs-you.js paintMonAttn), the monitors failing again and again in 홈 답변 필요 (nyList, this computer's only), a peer item's bot name, and the
-// hidden 앱 tab (04-state.js navTabs). Pure rules run on the source text; the screens run headless (Bun.WebView) against a small fake hub.
 const web = (f: string) => readFileSync(join(import.meta.dir, "..", "web", "js", f), "utf8");
 const monitoring = web("30-monitoring.js");
 const between = (src: string, from: string, to: string) => {
@@ -286,12 +283,10 @@ describe("screens", () => {
 		for (const h of got) expect(h).not.toContain("98번");
 	});
 
-	test("the tab bar has four tabs, and switching APPS_ON on adds none", async () => {
+	test("the tab bar has four tabs and none of them is a separate apps tab", async () => {
 		const v = await open();
-		const got = await q<{ apps: boolean; tabs: string[]; on: string[] }>(v, `const tabs = [...document.querySelectorAll("#nav .ni")].map(b => b.dataset.view), apps = !!document.querySelector('#nav [data-view="apps"]');
-			APPS_ON = true; const on = navTabs().map(n => n[0]); APPS_ON = false; return { apps, tabs, on };`);
+		const got = await q<{ apps: boolean; tabs: string[] }>(v, `return { tabs: [...document.querySelectorAll("#nav .ni")].map(b => b.dataset.view), apps: !!document.querySelector('#nav [data-view="apps"]') };`);
 		expect(got.apps).toBe(false);
 		expect(got.tabs).toEqual(["home", "chat", "monitoring", "settings"]);
-		expect(got.on).toEqual(["home", "chat", "monitoring", "settings"]);
 	});
 });

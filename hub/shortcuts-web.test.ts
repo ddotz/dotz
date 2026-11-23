@@ -7,7 +7,7 @@ import { i18nPrelude } from "./web-i18n.ts";
 // next computer without the sheet (web/js/33-peers.js prNext). Only the page around the handlers is faked.
 const web = (f: string) => readFileSync(join(import.meta.dir, "..", "web", "js", f), "utf8");
 const state = web("04-state.js"), peers = web("33-peers.js");
-const tabSrc = state.slice(state.indexOf("const isMac ="), state.indexOf("for (const [id, label] of navTabs())"));
+const tabSrc = state.slice(state.indexOf("const isMac ="), state.indexOf("for (const [id, label] of NAV)"));
 const prOrderSrc = peers.slice(peers.indexOf("function prOrder"), peers.indexOf("const prCached"));
 const gwSrc = prOrderSrc + peers.slice(peers.indexOf("const prKeyHint"), peers.indexOf("// Tapping 홈 again"));
 const NAV = new Function(`${i18nPrelude()}${web("03-screens.js")} return NAV;`)() as [string, string][];
@@ -26,7 +26,7 @@ function fire(handlers: Handler[], k: Key) {
 function tabs(platform: string, o: { current?: string; dialog?: boolean; sheet?: boolean } = {}) {
 	const handlers: Handler[] = [], log: string[] = [];
 	const env: Record<string, unknown> = {
-		navigator: { platform }, NAV, navOff: (id: string) => id === "apps", monCtx: "", current: o.current ?? "home", PR: { node: o.sheet ? {} : null },
+		navigator: { platform }, NAV, monCtx: "", current: o.current ?? "home", PR: { node: o.sheet ? {} : null },
 		document: { addEventListener: (_: string, h: Handler) => handlers.push(h), querySelector: () => (o.dialog ? {} : null) },
 		go: (v: string) => log.push(`go:${v}`), prClose: () => log.push("prClose"), lastChatView: () => "chat", chatTabEnter: () => log.push("chatEnter"),
 	};

@@ -29,7 +29,6 @@ const SCREENS = {
   project: { tab: "projects", title: TX("common.project"), ic: "projects", html: true, palette: false, keyed: true },
   projects: { tab: "projects", title: TX("common.projects"), ic: "projects", html: true, relay: true },
   monitoring: { tab: "monitoring", nav: 3, title: TX("common.apps"), ic: "apps", html: true, relay: true },
-  apps: { tab: "monitoring", title: TX("common.apps"), ic: "apps", html: true },
   notices: { up: "home", title: TX("common.alerts"), ic: "bell", html: true },
   cardform: { tab: "home", up: "home", title: TX("base.title.cardform"), palette: false, keyed: true },
   notifications: { tab: "settings", sub: true, title: TX("settings.page.notifications"), ic: "bell" },

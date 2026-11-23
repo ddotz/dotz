@@ -17,10 +17,6 @@ const convListing = () => current === "chat" && chatList && narrowChat();
 // A conversation opened from 모니터링 (a mail, a monitor's project chat) is drawn by the chat view but belongs to the 모니터링 tab: its tab stays lit,
 // its list is 모니터링's list and its address is #monitoring/c:<target> (go() in 05-command-palette.js sets it; 30-monitoring.js monOwned).
 let monCtx = "";
-// 앱 (user apps, 30-apps.js): the tab is hidden until user apps ship (owner 2026-10-27; the code stays); every way into it (shortcut, palette,
-// address) goes home instead. true shows the tab and opens it (the 앱 tests switch it on).
-let APPS_ON = false;
-const navOff = id => id === "apps" && !APPS_ON;
 const CHAT_MODE_KEY = "dotz-chat-mode";
 // 로그 보기 (the "activity" view): kept in the code, off in the app. false hides the 대화/로그 toggle and sends every way into the log view
 // (an old #activity address, a saved choice, a subagent row) to 대화 instead; true brings the toggle back.
@@ -173,11 +169,8 @@ const chatTabModeSet = v => lsSet(CHAT_TAB_KEY, v);
 const chatTabEnter = () => { if (paneReturn()) return; if ((chatTabMode() === "main" && !isRelayT(target)) || monOwned(target)) setTarget(MAIN); go(lastChatView()); };
 const chatTabTap = () => (monCtx ? chatTabEnter() : convListing() ? closeChatList() : narrowChat() && !isRelayT(target) && (current === "chat" || current === "activity") ? openChatList() : current === "chat" || current === "activity" ? go(lastChatView()) : chatTabEnter());
 const isMac = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent || "");
-// ⌘/Ctrl+1..6 open the shown tabs in NAV order (a hidden tab has no number); the browser may keep ⌘1..9 for its own tabs in a normal tab (it reaches the page in an installed app window).
-const navTabs = () => NAV.filter(n => !navOff(n[0]));
-const navKeyHint = id => { const i = navTabs().findIndex(n => n[0] === id); return i < 0 ? "" : isMac ? `⌘${i + 1}` : `Ctrl+${i + 1}`; };
+const navKeyHint = id => { const i = NAV.findIndex(n => n[0] === id); return i < 0 ? "" : isMac ? `⌘${i + 1}` : `Ctrl+${i + 1}`; };
 function navShortcut(id) {
-  if (navOff(id)) return;
   if (id !== "home" && PR.node) prClose(false);
   if (id === "chat") !monCtx && (current === "chat" || current === "activity") ? go(lastChatView()) : chatTabEnter();
   else go(id);
@@ -207,13 +200,13 @@ document.addEventListener("keydown", ev => {
     if (modKeyWide(mk)) { ev.preventDefault(); mk.run(); }
     return;
   }
-  const n = /^Digit([1-6])$/.exec(ev.code || "")?.[1] || (/^[1-6]$/.test(ev.key) ? ev.key : ""), tab = n && navTabs()[n - 1];
+  const n = /^Digit([1-6])$/.exec(ev.code || "")?.[1] || (/^[1-6]$/.test(ev.key) ? ev.key : ""), tab = n && NAV[n - 1];
   if (!tab) return;
   ev.preventDefault();
   navShortcut(tab[0]);
 });
 // 모니터링's badge (#nav-mon) counts what waits there (09-needs-you.js paintMonAttn).
-for (const [id, label] of navTabs()) $("#nav").append(el("button", { class: "ni", type: "button", "data-view": id, title: `${label} (${navKeyHint(id)})`, "aria-label": label, onclick: () => { if (id !== "home" && PR.node) prClose(false); id === "chat" ? chatTabTap() : id === "home" ? homeTabTap() : go(id); } }, icon(VIEW_ICON[id] || id), el("span", { class: "nl", text: label }), id === "chat" ? el("span", { class: "nb nnb", id: "nav-att", hidden: true }) : id === "home" ? el("span", { class: "nb nub pc", id: "nav-pc", hidden: true }) : id === "monitoring" ? el("span", { class: "nb nnb att", id: "nav-mon", hidden: true }) : id === "settings" ? el("span", { class: "nb nub att", id: "nav-upd", hidden: true, text: TX("base.update.badge"), title: TX("base.update.title") }) : null));
+for (const [id, label] of NAV) $("#nav").append(el("button", { class: "ni", type: "button", "data-view": id, title: `${label} (${navKeyHint(id)})`, "aria-label": label, onclick: () => { if (id !== "home" && PR.node) prClose(false); id === "chat" ? chatTabTap() : id === "home" ? homeTabTap() : go(id); } }, icon(VIEW_ICON[id] || id), el("span", { class: "nl", text: label }), id === "chat" ? el("span", { class: "nb nnb", id: "nav-att", hidden: true }) : id === "home" ? el("span", { class: "nb nub pc", id: "nav-pc", hidden: true }) : id === "monitoring" ? el("span", { class: "nb nnb att", id: "nav-mon", hidden: true }) : id === "settings" ? el("span", { class: "nb nub att", id: "nav-upd", hidden: true, text: TX("base.update.badge"), title: TX("base.update.title") }) : null));
 $("#side-tog").append(icon("side"));
 $("#side-tog").onclick = sideToggle;
 sideSync();

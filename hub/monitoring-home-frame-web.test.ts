@@ -1,8 +1,6 @@
 import { afterAll, describe, expect, test } from "bun:test";
 import { ev, fakeHub, json, run, waitFor, type View } from "./test-web.ts";
 
-// The frame of 모니터링's own screens (docs/web-app-design.md 앱 틀; web/css/10-conversations.css, 20-monitoring.css, 20-apps.css) in a headless browser against a fake hub: on a wide window the
-// home (item list + 답장 대기), an open reply card, a watch feed, an app's settings and the #apps view stand in the 채팅 tab's list box and content box, measured in the same run.
 // Names and texts are placeholders.
 const at = (d: number, h: number, m: number) => Date.UTC(2026, 9, d, h, m);
 // The reply queue (GET /api/reply/queue): two replies sent today (rows that open their card) and one failed send (a card in the list).
@@ -12,6 +10,7 @@ const QUEUE = [qItem(1, { state: "sent", at: Date.now() - 6e4, how: "owner", tod
 const ROOMS = [{ chatId: "100", name: "가나다 모임", kind: "group", watched: true, autoDraft: false, unread: 0, lastAt: at(22, 1, 29) }];
 let hits: Record<string, number> = {};
 let repliesFail = false;
+let webApps = false;
 
 const hub = fakeHub({
 	stream: "fake",
@@ -27,7 +26,8 @@ const hub = fakeHub({
 		if (p === "/api/kakao/rooms") return json({ on: true, rooms: ROOMS });
 		if (p === "/api/integrations/kakao/settings") return json({ key: "kakao", fields: [] });
 		if (p === "/api/reply/queue") return repliesFail ? json({ error: "no" }, 500) : json({ items: QUEUE, counts: {}, triageMin: 1, undoSec: 10 });
-		if (p === "/api/apps") return json({ items: [{ id: "memo", label: "메모", icon: "file", source: "manifest", status: "ok", kind: "tool" }, { id: "todo", label: "할 일", icon: "file", source: "manifest", status: "ok", kind: "tool" }], errors: [] });
+		if (p === "/api/apps") return json({ items: ["memo:메모", "todo:할 일"].map(s => { const [id, label] = s.split(":"); return { id, label, icon: "file", source: "manifest", status: "ok", kind: "tool", ...(webApps ? { web: { href: `/apps/${id}/`, url: "http://127.0.0.1:4500", path: "/", mode: "rewrite" } } : {}) }; }), errors: [] });
+		if (p.startsWith("/apps/")) return new Response(`<!doctype html><title>app</title><p>${p}</p>`, { headers: { "Content-Type": "text/html; charset=utf-8" } });
 		return undefined;
 	},
 });
@@ -118,23 +118,21 @@ describe.each([1280, 1920])("모니터링 at %d", width => {
 		await waitFor(v, `!document.querySelector("#as-pane .as-card") && current === "monitoring" && !MON.list`);
 	}, 40_000);
 
-	test("#apps: the list at the chat list's box, the app at the chat content box, and a pick does not stack history", async () => {
-		const v = await boot(width);
-		const chat = await chatBoxes(v);
-		await run(v, `APPS_ON = true; go("apps")`);
-		await waitFor(v, `current === "apps" && APPS.loaded && document.querySelector("#apps-side .cv-row")`);
-		await still(v);
-		sameList(await box(v, "#apps-side"), chat.list);
-		sameMain(await box(v, "#apps-pane"), chat.main);
-		const rows = await ev<number>(v, `document.querySelectorAll("#apps-side .cv-row").length`);
-		expect(rows).toBeGreaterThan(1);
-		await run(v, `document.querySelectorAll("#apps-side .cv-row")[0].click()`);
-		await waitFor(v, `location.hash.startsWith("#apps/")`);
-		const len = await ev<number>(v, `history.length`);
-		await run(v, `document.querySelectorAll("#apps-side .cv-row")[1].click()`);
-		await waitFor(v, `location.hash.startsWith("#apps/") && APPS.sel`);
-		expect(await ev<number>(v, `history.length`)).toBe(len);
-		sameMain(await box(v, "#apps-pane"), chat.main);
+	test("an open web app: the list at the chat list's box, the app at the chat content box", async () => {
+		webApps = true;
+		try {
+			const v = await boot(width);
+			const chat = await chatBoxes(v);
+			await run(v, `go("monitoring", "x:memo")`);
+			await waitFor(v, `current === "monitoring" && MON.sel === "x:memo" && document.querySelector("#mon-app .apps-frame") && $("#mon-app").offsetWidth > 0`);
+			await still(v);
+			sameList(await box(v, "#v-monitoring > .cv-side"), chat.list);
+			sameMain(await box(v, "#mon-app"), chat.main);
+			expect(await ev<number>(v, `document.querySelectorAll('#mon-side .cv-row[data-k^="x:"]').length`)).toBe(2);
+			await run(v, `document.querySelector('#mon-side .cv-row[data-k="x:todo"]').click()`);
+			await waitFor(v, `MON.sel === "x:todo" && document.querySelector("#mon-app .apps-n").textContent === "할 일"`);
+			sameMain(await box(v, "#mon-app"), chat.main);
+		} finally { webApps = false; }
 	}, 40_000);
 });
 

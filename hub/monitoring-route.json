@@ -1337,5 +1337,65 @@
 			"box": "all",
 			"scr": ""
 		}
+	},
+	{
+		"in": "\"xe:bad\"",
+		"out": {
+			"hash": "#monitoring/xe%3Abad",
+			"want": [
+				"home",
+				"monitoring",
+				"monitoring/xe%3Abad"
+			],
+			"current": "monitoring",
+			"ctx": "",
+			"sel": "xe:bad",
+			"list": false,
+			"filter": "all",
+			"miss": false,
+			"acct": "all",
+			"box": "all",
+			"scr": ""
+		}
+	},
+	{
+		"in": "\"xe:nope\"",
+		"out": {
+			"hash": "#monitoring/xe%3Anope",
+			"want": [
+				"home",
+				"monitoring",
+				"monitoring/xe%3Anope"
+			],
+			"current": "monitoring",
+			"ctx": "",
+			"sel": "xe:nope",
+			"list": true,
+			"filter": "all",
+			"miss": true,
+			"acct": "all",
+			"box": "all",
+			"scr": ""
+		}
+	},
+	{
+		"in": "\"#monitoring/xe%3Abad\"",
+		"out": {
+			"hash": "#monitoring/xe%3Abad",
+			"want": [
+				"home",
+				"monitoring",
+				"monitoring/xe%3Abad"
+			],
+			"current": "monitoring",
+			"ctx": "",
+			"sel": "xe:bad",
+			"list": false,
+			"filter": "all",
+			"miss": false,
+			"acct": "all",
+			"box": "all",
+			"scr": ""
+		}
 	}
 ]

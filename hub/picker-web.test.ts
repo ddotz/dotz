@@ -44,7 +44,7 @@ const waitOn = (v: InstanceType<typeof Bun.WebView>, expr: string, ms = 10_000) 
 	v.evaluate(`new Promise((res, rej) => { const t = setTimeout(() => rej(new Error("timeout: " + ${JSON.stringify(expr)})), ${ms}); const tick = () => { let ok = false; try { ok = !!(${expr}); } catch {} if (ok) { clearTimeout(t); res(true); } else requestAnimationFrame(tick); }; tick(); })`);
 const get = async (v: InstanceType<typeof Bun.WebView>, body: string) => JSON.parse(await v.evaluate(`JSON.stringify((() => { ${body} })())`) as string);
 // The frame's document and a point inside one of its elements, in the frame's own coordinates.
-const FD = `const f = document.querySelector("#apps-pane .apps-frame"), d = f.contentDocument, w = d.defaultView;`;
+const FD = `const f = document.querySelector("#mon-app .apps-frame"), d = f.contentDocument, w = d.defaultView;`;
 const AT = `const at = id => { const r = d.getElementById(id).getBoundingClientRect(); return { clientX: r.left + 8, clientY: r.top + 8, bubbles: true, cancelable: true, composed: true }; };`;
 
 // touch: the page reports a phone (no hover, a coarse pointer) before the header is drawn.
@@ -54,8 +54,8 @@ async function open(width: number, height: number, touch = false) {
 	await v.navigate(`http://127.0.0.1:${server.port}/`);
 	await waitOn(v, `typeof APPS !== "undefined" && APPS.loaded && S`);
 	if (touch) await v.evaluate(`(() => { const mm = matchMedia.bind(window); window.matchMedia = q => /hover: none|pointer: coarse/.test(q) ? { matches: true, media: q, addEventListener() {}, removeEventListener() {} } : mm(q); return 0; })()`);
-	await v.evaluate(`(APPS_ON = true, go("apps", "mydocs"), 0)`);
-	await waitOn(v, `(() => { try { const d = document.querySelector("#apps-pane .apps-frame").contentDocument; return d.body.innerText.includes("가짜 문서 앱") && d.__pkBound; } catch { return false; } })()`);
+	await v.evaluate(`(go("monitoring", "x:mydocs"), 0)`);
+	await waitOn(v, `(() => { try { const d = document.querySelector("#mon-app .apps-frame").contentDocument; return d.body.innerText.includes("가짜 문서 앱") && d.__pkBound; } catch { return false; } })()`);
 	return v;
 }
 
@@ -70,7 +70,7 @@ async function chipsInChat(v: InstanceType<typeof Bun.WebView>, shot: string) {
 describe("element picker at 1280px", () => {
 	test("Cmd held outlines, Cmd+click picks without the element's handler, Cmd up hides, a plain click is the app's", async () => {
 		const v = await open(1280, 900);
-		const head = await get(v, `return { hint: $("#apps-pane .pk-hint").textContent, button: document.querySelectorAll(".pk-toggle, #pick-pill, [aria-label='요소 고르기']").length };`);
+		const head = await get(v, `return { hint: $("#mon-app .pk-hint").textContent, button: document.querySelectorAll(".pk-toggle, #pick-pill, [aria-label='요소 고르기']").length };`);
 		expect(head).toEqual({ hint: "⌘+클릭으로 요소 고르기", button: 0 });
 
 		// Cmd down with the mouse over 저장: the outline sits on 저장 and says what it is.
@@ -97,7 +97,7 @@ describe("element picker at 1280px", () => {
 		expect(ui).toEqual({ marks: ["1", "2"], chips: ["저장", "도움말"] });
 		await Bun.write(join(SHOTS, "picker-two-picks-1280.png"), await v.screenshot());
 		expect(await chipsInChat(v, "picker-chips-1280.png")).toEqual(["1 저장", "2 도움말"]);
-		await v.evaluate(`(go("apps", "mydocs"), 0)`);
+		await v.evaluate(`(go("monitoring", "x:mydocs"), 0)`);
 		await waitOn(v, `document.querySelectorAll("#pick-marks .pk-mark:not([hidden])").length === 2`);
 
 		// Cmd up hides the outline; a plain click then runs the app's own handler and picks nothing.
@@ -113,7 +113,7 @@ describe("element picker at 1280px", () => {
 describe("element picker at 390px (a phone)", () => {
 	test("the hint says the long press; a short tap is the app's, a long press picks", async () => {
 		const v = await open(390, 844, true);
-		const head = await get(v, `const h = $("#apps-pane .pk-hint"), r = h.getBoundingClientRect(); return { hint: h.textContent, inView: r.width > 0 && r.right <= innerWidth && r.left >= 0, cut: h.scrollWidth > h.clientWidth + 1, button: document.querySelectorAll(".pk-toggle, #pick-pill").length };`);
+		const head = await get(v, `const h = $("#mon-app .pk-hint"), r = h.getBoundingClientRect(); return { hint: h.textContent, inView: r.width > 0 && r.right <= innerWidth && r.left >= 0, cut: h.scrollWidth > h.clientWidth + 1, button: document.querySelectorAll(".pk-toggle, #pick-pill").length };`);
 		expect(head).toEqual({ hint: "길게 눌러 요소 고르기", inView: true, cut: false, button: 0 });
 		await Bun.write(join(SHOTS, "picker-hint-390.png"), await v.screenshot());
 

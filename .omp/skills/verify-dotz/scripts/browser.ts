@@ -361,3 +361,125 @@ try {
 }
 console.log('seen-results browser step done');
 `;
+
+const fourTabPrelude = `
+const lit = p => p.evaluate(() => { const b = document.querySelector('#nav .ni[aria-current]'); return b ? b.textContent.trim() : ''; });
+const appRows = p => p.evaluate(() => [...document.querySelectorAll('#mon-side [data-k]')].map(n => n.dataset.k).filter(k => /^[ix]:/.test(k)));
+const settle = async (p, want, ms) => {
+  const end = Date.now() + ms;
+  let at = '';
+  while (Date.now() < end) { at = await p.evaluate(() => location.hash); if (want(at)) return at; await sleep(250); }
+  await shot(p, 'failed.png');
+  failNow('the address settled on ' + at + ' (failed.png)');
+};
+`;
+
+export const fourTabAddressScript = (run: Pick<Run, "port" | "loginCookie">, app: string): string => `${prelude(run)}${fourTabPrelude}
+await login();
+try {
+  const APP = ${JSON.stringify(app)};
+  const cases = [
+    ['#projects', h => h.startsWith('#chat'), '채팅'],
+    ['#project/builtin:custom', h => h === '#custom', '설정'],
+    ['#monitoring/replies', h => h === '#monitoring/replies', '앱'],
+    ['#apps', h => h === '#monitoring', '앱'],
+    ['#apps/' + APP, h => h === '#monitoring/x%3A' + APP, '앱'],
+    ['#apps/no-such-app', h => h === '#monitoring', '앱'],
+  ];
+  const seen = [];
+  for (const w of [390, 1280]) {
+    for (const [from, want, tab] of cases) {
+      const p = await openTab('about:blank');
+      await p.setViewportSize({ width: w, height: heights[w] });
+      await p.goto(ORIGIN + '/' + from);
+      const end = Date.now() + 15000;
+      while (Date.now() < end && !(await lit(p))) await sleep(250);
+      const at = await settle(p, want, 8000);
+      await sleep(700);
+      const tabNow = await lit(p);
+      seen.push(w + ' ' + from + ' -> ' + at + ' | ' + tabNow);
+      if (!tabNow.startsWith(tab)) failNow(from + ' at ' + w + ' lit ' + JSON.stringify(tabNow) + ', expected ' + tab);
+      await shot(p, 'addr-' + from.replace(/[^a-z]+/g, '-').replace(/^-|-$/g, '') + '-' + w + '.png');
+      await closeTab(p);
+    }
+  }
+  art('addresses.log', seen.join('\\n') + '\\n');
+} finally {
+  await logout();
+}
+console.log('four-tab address step done');
+`;
+
+export const fourTabAppsScript = (run: Pick<Run, "port" | "loginCookie">, app: string, label: string, page: string): string => `${prelude(run)}${fourTabPrelude}
+await login();
+try {
+  const KEY = 'x:' + ${JSON.stringify(app)}, LABEL = ${JSON.stringify(label)}, PAGE = ${JSON.stringify(page)};
+  const seen = [];
+  const p = await openTab('about:blank');
+  await p.setViewportSize({ width: 1280, height: heights[1280] });
+  await p.goto(ORIGIN + '/#monitoring');
+  await until(p, LABEL, 15000);
+  await until(p, '승인 대기', 5000);
+  const before = await appRows(p);
+  seen.push('1280 apps before the pin: ' + before.join(', '));
+  await shot(p, 'apps-list-1280.png');
+  await p.locator('#mon-side').getByRole('button', { name: new RegExp(LABEL) }).click();
+  await settle(p, h => h === '#monitoring/' + encodeURIComponent(KEY), 8000);
+  const frameText = async () => p.evaluate(() => { const f = document.querySelector('#mon-app iframe'); return f && f.contentDocument && f.contentDocument.body ? f.contentDocument.body.innerText : ''; });
+  const end = Date.now() + 10000;
+  while (Date.now() < end && !(await frameText()).includes(PAGE)) await sleep(250);
+  if (!(await frameText()).includes(PAGE)) failNow('the web app frame does not show its page: ' + JSON.stringify(await frameText()));
+  const box = await p.evaluate(() => { const a = document.querySelector('#mon-app').getBoundingClientRect(), s = document.querySelector('#mon-side').getBoundingClientRect(); return [Math.round(s.right), Math.round(a.left), Math.round(a.width)]; });
+  if (!(box[1] >= box[0] && box[2] > 300)) failNow('the web app pane is not to the right of the list: ' + JSON.stringify(box));
+  seen.push('1280 web app open: ' + (await p.evaluate(() => location.hash)) + ', frame text ' + JSON.stringify(await frameText()) + ', list right ' + box[0] + ' pane left ' + box[1] + ' width ' + box[2]);
+  await shot(p, 'apps-webapp-1280.png');
+  await p.getByRole('button', { name: '앱 메뉴' }).click();
+  await p.getByText('상단 고정', { exact: true }).click();
+  await sleep(600);
+  const pinned = await appRows(p);
+  if (pinned[0] !== KEY) failNow('after 상단 고정 the first app is ' + pinned[0]);
+  await p.goto('about:blank');
+  await p.goto(ORIGIN + '/#monitoring');
+  await until(p, LABEL, 15000);
+  const reloaded = await appRows(p);
+  if (reloaded[0] !== KEY) failNow('after a reload the first app is ' + reloaded[0]);
+  seen.push('1280 after 상단 고정: ' + pinned.join(', ') + '; after a reload: ' + reloaded.join(', '));
+  await shot(p, 'apps-pinned-1280.png');
+  await p.locator('#mon-side').getByRole('button', { name: new RegExp(LABEL) }).click();
+  await settle(p, h => h === '#monitoring/' + encodeURIComponent(KEY), 8000);
+  await p.getByRole('button', { name: '앱 메뉴' }).click();
+  await p.getByText('고정 해제', { exact: true }).click();
+  await sleep(600);
+  const unpinned = await appRows(p);
+  if (unpinned.join() !== before.join()) failNow('after 고정 해제 the apps are ' + unpinned.join(', ') + ', expected ' + before.join(', '));
+  seen.push('1280 after 고정 해제: ' + unpinned.join(', '));
+  await closeTab(p);
+
+  const q = await openTab('about:blank');
+  await q.setViewportSize({ width: 390, height: heights[390] });
+  await q.goto(ORIGIN + '/#monitoring');
+  await until(q, '승인 대기', 15000);
+  await until(q, '모니터링', 5000);
+  const first = await q.evaluate(() => { const r = document.querySelector('#mon-side [data-k]'); return [r.dataset.k, r.innerText.replace(/\\s+/g, ' ').trim()]; });
+  if (first[0] !== 'replies') failNow('the first row at 390 is ' + JSON.stringify(first));
+  seen.push('390 first row: ' + first.join(' | '));
+  await shot(q, 'apps-list-390.png');
+  await q.locator('#mon-side').getByRole('button', { name: /승인 대기/ }).click();
+  await settle(q, h => h === '#monitoring/replies', 8000);
+  await until(q, '보낸 것', 5000);
+  await shot(q, 'apps-queue-390.png');
+  await q.goto(ORIGIN + '/#monitoring/' + encodeURIComponent(KEY));
+  const end2 = Date.now() + 10000;
+  const frame390 = () => q.evaluate(() => { const f = document.querySelector('#mon-app iframe'); return f && f.contentDocument && f.contentDocument.body ? [f.contentDocument.body.innerText, Math.round(f.getBoundingClientRect().width)] : ['', 0]; });
+  while (Date.now() < end2 && !(await frame390())[0].includes(PAGE)) await sleep(250);
+  const f390 = await frame390();
+  if (!f390[0].includes(PAGE) || f390[1] < 300) failNow('at 390 the web app frame is ' + JSON.stringify(f390));
+  seen.push('390 web app: frame text ' + JSON.stringify(f390[0]) + ', width ' + f390[1]);
+  await shot(q, 'apps-webapp-390.png');
+  await closeTab(q);
+  art('apps.log', seen.join('\\n') + '\\n');
+} finally {
+  await logout();
+}
+console.log('four-tab apps step done');
+`;

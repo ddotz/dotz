@@ -196,7 +196,6 @@ dotz 웹앱의 화면은 `web/js/03-screens.js`의 `SCREENS` 표에 한 줄씩 �
 | `project` | `#project/<프로젝트 키>` | `#v-project` | `프로젝트` | 폰: `projects`. 1100px 이상: 없음(목록이 옆에 같이 떠 있음) | 19-project-main.js(pmOpen) | 08-project-sessions.css, 20-projects.css, 14-overlay.css |
 | `projects` | `#projects` (1100px 이상이면 `project`로 바뀌어 열림) | `#v-projects` | `프로젝트` | 탭 루트 | 18-lanes.js(renderProjects, prjLoad) | 20-projects.css, 08-project-sessions.css |
 | `monitoring` | `#monitoring`, `#monitoring/m:<이름>`, `#monitoring/i:<앱>`, `#monitoring/c:<대화 키>` | `#v-monitoring` (`#mon-side`, `#mon-head`, `#mon-tl`) | `모니터링` | `c:` 대화에서 뒤로는 `monitoring`(폰은 선택 항목 유지) | 30-monitoring.js, 30-integrations.js, 30-monitoring-comments.js, 30-monitoring-comments-dm.js, 30-mail-box.js, 30-mail-thread.js, 30-mail-sent.js, 30-replies.js, 30-triage.js, 30-kakao.js, 34-peer-monitoring.js | 20-monitoring.css, 10-conversations.css, 19-volume.css, 20-mail-box.css, 20-mail-thread.css, 17-kakao.css, 18-comments.css, 15-triage.css, 15-reply-card.css |
-| `apps` | `appsHash()` 결과 (`APPS_ON=false`라 `home`으로 바뀜) | `#v-apps` (`#apps-side`, `#apps-pane`) | `앱` | 탭 루트 | 30-apps.js, 23-installable-app-web.js(설치 안내만) | 20-apps.css, 10-conversations.css |
 | `notices` | `#notices` (`#chat/alert`, `#activity/alert`도 여기로) | `#v-notices` | `알림` | `NSC.ret`이면 `notices`로 돌아옴, 새로 열면 `nscBack` | 31-notices-screen.js, 30-notices.js, 01-notice-ko.js | 09-notices-screen.css, 09-notices.css |
 | `cardform` | `#cardform/<id>` | `#v-cardform` (`22-settings-pages.js`에서 만든 빈 section) | `카드 추가` | `home` | web/custom.js(cardForm) | web/custom.js 안의 `CSS` 문자열(`.cu-*`, `.pv-*`) |
 | `notifications` | `#notifications` | `#v-notifications` > `#notifications.st-page` | `앱과 알림` | `settings` | 22-settings-pages.js, 23-installable-app-web.js(pushSection) | 15-settings-pages.css, 06-harness.css |
@@ -223,7 +222,7 @@ dotz 웹앱의 화면은 `web/js/03-screens.js`의 `SCREENS` 표에 한 줄씩 �
 - 모니터링에서 연 대화(앱 틀이 없는 항목의 메일, 감시의 대화): 채팅 탭의 두 단 그대로예요. 왼쪽은 모니터링 목록(`#chat-convo.mon-side`), 대화는 채팅 내용 상자라서 항목 화면에서 연 대화로 가도 칸이 움직이지 않아요. 가운데 한 단으로 혼자 서던 대화(2026-11-06)는 이 틀로 바뀌었어요.
 - 다른 컴퓨터의 앱: 같은 그리기 함수와 같은 틀이에요(메일은 `mxPeerMerge`로 그 컴퓨터 계정이 메일함 칸이 돼요). 그 컴퓨터에서만 할 수 있는 동작(메일함 추가·설정·옮기기)은 같은 자리에 꺼진 채 이유(`title`)를 달아요. 인스타 DM은 이 컴퓨터 것만 있어서 다른 컴퓨터 인스타에는 DM 탭이 없어요. `hub/peer-apps-frame-web.test.ts`가 두 컴퓨터의 상자를 서로 비교해요.
 - 앱 설정 · 메일함 설정: 넓은 화면에서는 항목의 왼쪽 칸(앱의 칸) 옆 오른쪽 칸에 열려요(`as-pane`, `mx-scr`). 가운데 720 창이나 864 칸은 쓰지 않아요. 폰은 지금처럼 시트예요.
-- 앱 화면(`#v-apps`): 목록은 채팅 목록 x에 340px, 앱은 채팅 내용 x에 서요. 넓은 화면에서 행을 고르면 주소만 바꾸고(`appsPick`) 이력을 쌓지 않아서 뒤로 가기가 화면을 벗어나지 않아요.
+- 앱 탭에서 연 웹 앱(`#mon-app`): 목록은 채팅 목록 x에, 앱은 채팅 내용 x에 서요(`hub/monitoring-home-frame-web.test.ts`).
 
 ### 주소 별칭과 보조 주소
 | 입력 | 실제로 여는 곳 | 근거 |
@@ -237,9 +236,11 @@ dotz 웹앱의 화면은 `web/js/03-screens.js`의 `SCREENS` 표에 한 줄씩 �
 | `#projects` (넓은 화면에서 `go("projects")`) | `project/<ppCur 또는 첫 프로젝트>`. 프로젝트가 없으면 목록 그대로 | 18-lanes.js projectsAim |
 | `#project` (대상 없음), `#provider` (대상 없음) | 각각 `projects`, `providers` | 05-command-palette.js |
 | `#project/builtin%3Acustom`, `go("project", "builtin:custom")` | `custom`(설정 › 내 규칙·커스텀), 주소는 `#custom` | 05-command-palette.js routeAlias |
-| 모르는 뷰, 꺼진 앱 탭 | `home` | 05-command-palette.js |
+| `#apps` | `monitoring`(앱 탭 목록) | 05-command-palette.js parseHash |
+| `#apps/<id>` | `monitoring/x:<id>`(웹 앱을 오른쪽 칸에). 설치돼 있지 않은 id면 아무것도 고르지 않은 목록 | 05-command-palette.js parseHash, 30-monitoring.js |
+| 모르는 뷰 | `home` | 05-command-palette.js |
 
-탭(NAV, `03-screens.js`)은 `home`, `chat`, `projects`, `monitoring`, `apps`(숨김), `settings`예요. `activity`는 `chat`, `project`는 `projects`, `cardform`은 `home` 탭이 켜져요(`navView`, `04-state.js`). SUB 화면은 `settings` 탭이 켜져요(`05-command-palette.js`).
+탭(NAV, `03-screens.js`)은 `home`, `chat`, `projects`, `monitoring`, `settings`예요. `activity`는 `chat`, `project`는 `projects`, `cardform`은 `home` 탭이 켜져요(`navView`, `04-state.js`). SUB 화면은 `settings` 탭이 켜져요(`05-command-palette.js`).
 
 ## 화면별 명세
 
@@ -1060,20 +1061,18 @@ dotz 웹앱의 화면은 `web/js/03-screens.js`의 `SCREENS` 표에 한 줄씩 �
 - 근거: `web/js/29-harness-features.js` `fcSwitch`, `fcCanToggle`, `fcScopeOf`.
 - css: `06-harness.css`(`.fc-sw`, `.hs-sw`).
 
-### 앱 화면 (`#v-apps`, 뷰 `apps`, `APPS_ON` 플래그)
-- 목적: 오너의 앱(매니페스트)과 기본 모니터링 앱을 한곳에서 열어요.
-- 구성: `#v-apps` 안에 왼쪽 목록 `#apps-side`(`.cv-side`)와 오른쪽 `#apps-pane`(`.apps-pane`). 목록은 `convRow`로 그린 줄들(`.cv-av.app-av` 아바타 + 상태 점 `.app-dot`), 상세는 머리 `.apps-hd` + 본문.
-- 기능: 줄을 누르면 `go("apps", id)`(사용자 앱), `go("monitoring","i:<id>")`(모니터링 앱), 오류 줄은 대화상자, 빈 줄은 `go("chat")`. 폰에서는 목록이 한 화면(`cv-listing`), 앱을 고르면 상세, 머리 뒤로 버튼(aria/title `앱 목록`)으로 돌아옴. 데스크톱은 첫 도구 앱이 기본 선택.
+### 앱 탭의 웹 앱 (`#mon-app`, `appsMonPaint`)
+- 목적: 오너의 웹 앱(매니페스트)을 앱 탭(`monitoring`) 오른쪽 칸에서 열어요. 
+- 구성: `#v-monitoring` 안 `div#mon-app.apps-pane.mon-app`. 머리 `.apps-hd`(아바타, 이름 `.apps-n`, 상태 줄 `.apps-p`, 새 탭 링크, ⋯ 메뉴) + 본문. 폰에서는 이름과 아바타를 빼고 앱바 제목이 이름을 말해요. 목록 줄은 모니터링 목록의 줄이에요(`appsMonItems()`, `30-apps.js`).
+- 기능: 줄 `x:<id>`를 누르면 `go("monitoring", "x:<id>")`. 옛 주소 `#apps`는 `#monitoring`, `#apps/<id>`는 `#monitoring/x:<id>`로 열려요. 불러오지 못한 앱은 줄 `xe:<id>`(배지 `오류`, 줄 힌트는 사유)로 나오고 누르면 같은 칸에 `앱을 불러오지 못했어요`, 사유, 폴더 경로, `다시 확인`이 떠요. 앱 제거 뒤에는 앱 탭 목록으로 가요.
 - 상태:
-  - **플래그**: `APPS_ON = false`가 기본이라 탭이 안 보이고 `go()`가 `navOff`에서 `home`으로 보내요(`04-state.js` `APPS_ON`, `navOff`, `05-command-palette.js`). 코드에서 `APPS_ON`을 true로 바꾸는 곳은 찾지 못했어요(`grep APPS_ON js/*.js index.html`: 선언과 `navOff`뿐).
-  - 목록 머리 `사용자 앱`, `모니터링 앱`, `불러오지 못한 앱`. 로딩 `앱 불러오는 중…`, 실패 `앱을 불러오지 못했어요`(머리글 줄로 표시). 사용자 앱이 없으면 줄 `아직 내 앱이 없어요` + 힌트 `채팅에서 앱을 추가해 달라고 하면 돼요`.
-  - 상태 단어(`APP_STATUS`) `실행 중`/`응답 없음`/`상태 모름`/`꺼짐`. 상태는 오른쪽 배지 한 번만(점 + 단어, `appsBadge`; 아바타 모서리 점은 없어요, 아이콘이 비면 `file` 아이콘). 줄 힌트는 정상·꺼짐이면 비고, 끊기면 `a.hint`, 응답 없음이면 사유(`a.reason`), 모니터링형 `상태만 확인하는 앱이에요`.
-  - 상세 본문: 정상 도구 앱은 `<iframe class="apps-frame" src=a.web.href>`(상태가 같으면 프레임 유지). 꺼진 앱 `꺼 둔 앱이에요. 켜면 화면이 다시 열려요.` + `켜기`. 응답 없음 `<이름>이(가) 응답하지 않아요 (<사유>).` + (시작 명령이 있으면) `앱이 떠 있는지 확인해 주세요.` + `다시 확인`. 화면 없는 앱 `이 앱은 모니터링에서 소식을 모아 보여 줘요.`/`이 앱은 자체 화면이 없어요.`(+ 모니터링 앱은 `모니터링에서 열기`). 선택 없음 머리 `앱`/`내 앱을 한곳에서 열어요`, 본문 `왼쪽에서 앱을 골라 주세요.`.
-  - 머리 버튼: `새 탭에서 열기`(도구 앱이고 꺼지지 않았을 때), `앱 메뉴`(⋯: `설정`, 내 앱만 `끄기`/`켜기`, `제거`). 상단 상태 줄 `<상태> · <사유>`. 폰에서는 선택 힌트(`pkHint`)가 이름 아래 줄.
-  - 30초마다 `loadApps`(화면이 열려 있고 숨김 아닐 때), 표시 중인 탭만 그림.
-- 데이터: `GET /api/apps`(`items`, `errors`), `PATCH /api/apps/<id> {off}`, `DELETE /api/apps/<id>`, iframe `/apps/<id>/`. 앱 탭 목록으로 가는 연결은 `appsMonItems()`(`30-apps.js`, `monItems()`가 불러요). 웹 앱 프레임은 한 번에 하나만 살아 있어요: 다른 웹 앱을 열면 앞 앱의 프레임은 버려지고, 메일·카카오톡·댓글이나 다른 탭에서 돌아오면 그대로 남아 있어요. SSE는 코드에서 확인 못 함.
-- 근거: `web/js/30-apps.js` `appsRender`, `appsRows`, `appsHeader`, `appsBody`, `appsPicked`, `appsOpen`, `loadApps`, `APP_STATUS`; `index.html`; 진입 `30-apps.js`.
-- css: `web/css/20-apps.css`(`.apps-*`, `.app-av`), `10-conversations.css`(`.cv-*`). 미디어쿼리 `20-apps.css`(min 1100: 목록 + 상세 2열 격자).
+  - 상태 단어(`APP_STATUS`) `실행 중`/`응답 없음`/`상태 모름`/`꺼짐`. 상태는 오른쪽 배지 한 번만(점 + 단어, `appsBadge`; 아바타 모서리 점은 없어요, 아이콘이 비면 `file` 아이콘). 줄 힌트는 정상·꺼짐이면 비고, 응답 없음이면 사유(`a.reason`).
+  - 본문: 정상 도구 앱은 `<iframe class="apps-frame" src=a.web.href>`(상태가 같으면 프레임 유지). 꺼진 앱 `꺼 둔 앱이에요. 켜면 화면이 다시 열려요.` + `켜기`. 응답 없음 `<이름>이(가) 응답하지 않아요 (<사유>).` + (시작 명령이 있으면) `앱이 떠 있는지 확인해 주세요.` + `다시 확인`. 프레임이 평문 페이지를 받으면 `<이름> 앱이 열리지 않아요…` 안내와 다시 열기.
+  - 머리 버튼: `새 탭에서 열기`(꺼지지 않았을 때), `앱 메뉴`(⋯: `설정`, `상단 고정`/`고정 해제`, `끄기`/`켜기`, `제거`). 상단 상태 줄 `<상태> · <사유>`. 폰에서는 선택 힌트(`pkHint`)가 상태 아래 줄.
+  - 30초마다 `loadApps`(앱 탭이 열려 있고 숨김 아닐 때).
+- 데이터: `GET /api/apps`(`items`, `errors`), `PATCH /api/apps/<id> {off}`, `DELETE /api/apps/<id>`, iframe `/apps/<id>/`. 웹 앱 프레임은 앱 탭이 열려 있는 동안 남아 있고, 다른 항목을 열었다 돌아와도 같은 프레임이에요. SSE는 코드에서 확인 못 함.
+- 근거: `web/js/30-apps.js` `appsMonPaint`, `appsMonItems`, `appsHeader`, `appsBody`, `appsFailBody`, `loadApps`, `APP_STATUS`.
+- css: `web/css/20-apps.css`(`.apps-*`, `#mon-app`), `10-conversations.css`(`.cv-*`). 미디어쿼리 `20-apps.css`(min 1100: 앱 칸이 목록 오른쪽).
 
 ### 앱 설정 대화상자와 제거 확인 (`appsSettings`, `appsRemove`)
 - 목적: 앱의 주소, 상태, 실행 명령, 감시, 설정 값을 읽기 전용으로 보여 주고, 제거를 확인받아요.
@@ -1748,8 +1747,8 @@ dotz 웹앱의 화면은 `web/js/03-screens.js`의 `SCREENS` 표에 한 줄씩 �
 ### 설정 목록 (`#v-settings`, `settingsList`)
 - 목적: 설정 화면들의 입구예요. 네 묶음(모델, 연결, 앱, 시스템)의 링크 행과 한 줄 요약을 보여 줘요.
 - 구성: `#v-settings > #settings` 안에 `div.set-col` 둘(`settingsCols`, 22-settings-pages.js)이 있어요. 왼쪽 상자에는 `앱`과 `시스템`이 아닌 묶음(`모델` `연결` `화면 공유`), 오른쪽 상자에는 `앱`과 `시스템`이 들어가요. 창 폭 1100px부터는 `#settings`가 두 칸 격자(칸 사이 `--sp-6`, 위 맞춤)가 되어 두 상자가 나란히 서고(18-app-settings.css), 그 아래에서는 한 단으로 쌓여 예전 한 단 때와 같아요. 상자 안에서 위아래로 `.sec` `모델` + 목록(`공급자`, `모델 · 폴백`, `계정`, `사용량과 월 한도`, `컨텍스트`), `.sec` `연결` + 목록(`메신저`, `웹 접속`, `연결된 기기`, `이 컴퓨터 이름`은 `MN.info`가 있을 때만), `화면 공유` 묶음(`dskSettings`, 이 컴퓨터에 `S.desk`가 있을 때만), `.sec` `앱` + 목록(`앱과 알림`, `앱 관리`, `표시`), `.sec` `시스템` + 목록(`업데이트`, `실행 하네스`, `구성`).
-- 기능: 행을 누르면 `go("providers")`, `openModels("orchestrator")`(모델 · 폴백), `go("provider","anthropic")`(계정), `go("usage")`, `go("context")`, `go("messengers")`, `go("webaccess")`, `go("devices")`, `mnDialog`(컴퓨터 이름 바꾸기 대화창, 33-peers.js), `go("notifications")`, `go("apps")`, `go("display")`, `go("update")`, `go("runtime")`, `go("harness")`로 가요. 화면 공유 묶음에는 스위치 `화면 공유`, `조작 허용`(켜져 있을 때), 읽기 전용 행 `지금 보는 사람`, `공개 주소`(Cloudflare 모드이고 상태를 읽었을 때)가 있어요(37-remote-desktop.js).
-- 상태: 행의 오른쪽 한 줄 요약은 코드가 채워요. `공급자`는 `{n}개 연결`(`P` 로드 전에는 빈 줄), `모델 · 폴백`은 `{모델 이름} · {추론 강도}`, `계정` 행은 `ACC.accounts`가 1개 이상일 때만 나오고 `{라벨} 사용 중`, `사용량과 월 한도`는 가장 낮게 남은 한도 `{한도 이름} {퍼센트}` + `월 $N`, `메신저`는 `{첫 연결 이름} 외 {n}개 연결됨` 또는 `설정 안 됨`, `웹 접속`은 `Tailscale` `Cloudflare` `이 컴퓨터만`, `연결된 기기`는 `{n}대`(Cloudflare 모드에서 `/api/devices`가 답할 때만 행이 생겨요, 아니면 행 자체가 없어요), `앱과 알림`은 `푸시 알림 켬` `푸시 알림 꺼짐` `이 브라우저는 알림을 지원하지 않아요`, `앱 관리` 행은 `navOff("apps")`(앱 기능이 꺼짐)이면 숨겨요, `표시`는 `다크 · 대화 탭 메인` 같은 조합, `업데이트`는 `stUpdateSub` 문구와 오른쪽 태그 `재시작 필요` `새 버전` `업데이트`(하네스만 새 버전일 때), `실행 하네스`는 역할을 맡은 하네스 이름들을 ` · `로 이어 붙인 줄과 태그 `새 버전`, `구성`과 `화면 안내 다시 보기`는 값이 없어서 둘째 줄이 없어요(행 이름만 가운데). 폰 vs 데스크톱: 목록 구조는 같고, 639px 이하 또는 터치 포인터에서 `.ib`와 스위치 터치 영역이 커져요(15-settings-phone.css). 설정 탭에 들어올 때 `go`가 `loadUpdate`, `loadMessengerIndex`, `loadProviderData`, `loadRuntimes`, `loadDevices`, `loadWebAccess`, `loadAccounts`(ACC 없을 때)를 한꺼번에 불러요.
+- 기능: 행을 누르면 `go("providers")`, `openModels("orchestrator")`(모델 · 폴백), `go("provider","anthropic")`(계정), `go("usage")`, `go("context")`, `go("messengers")`, `go("webaccess")`, `go("devices")`, `mnDialog`(컴퓨터 이름 바꾸기 대화창, 33-peers.js), `go("notifications")`, `go("display")`, `go("update")`, `go("runtime")`, `go("harness")`로 가요. 화면 공유 묶음에는 스위치 `화면 공유`, `조작 허용`(켜져 있을 때), 읽기 전용 행 `지금 보는 사람`, `공개 주소`(Cloudflare 모드이고 상태를 읽었을 때)가 있어요(37-remote-desktop.js).
+- 상태: 행의 오른쪽 한 줄 요약은 코드가 채워요. `공급자`는 `{n}개 연결`(`P` 로드 전에는 빈 줄), `모델 · 폴백`은 `{모델 이름} · {추론 강도}`, `계정` 행은 `ACC.accounts`가 1개 이상일 때만 나오고 `{라벨} 사용 중`, `사용량과 월 한도`는 가장 낮게 남은 한도 `{한도 이름} {퍼센트}` + `월 $N`, `메신저`는 `{첫 연결 이름} 외 {n}개 연결됨` 또는 `설정 안 됨`, `웹 접속`은 `Tailscale` `Cloudflare` `이 컴퓨터만`, `연결된 기기`는 `{n}대`(Cloudflare 모드에서 `/api/devices`가 답할 때만 행이 생겨요, 아니면 행 자체가 없어요), `앱과 알림`은 `푸시 알림 켬` `푸시 알림 꺼짐` `이 브라우저는 알림을 지원하지 않아요`, `표시`는 `다크 · 대화 탭 메인` 같은 조합, `업데이트`는 `stUpdateSub` 문구와 오른쪽 태그 `재시작 필요` `새 버전` `업데이트`(하네스만 새 버전일 때), `실행 하네스`는 역할을 맡은 하네스 이름들을 ` · `로 이어 붙인 줄과 태그 `새 버전`, `구성`과 `화면 안내 다시 보기`는 값이 없어서 둘째 줄이 없어요(행 이름만 가운데). 폰 vs 데스크톱: 목록 구조는 같고, 639px 이하 또는 터치 포인터에서 `.ib`와 스위치 터치 영역이 커져요(15-settings-phone.css). 설정 탭에 들어올 때 `go`가 `loadUpdate`, `loadMessengerIndex`, `loadProviderData`, `loadRuntimes`, `loadDevices`, `loadWebAccess`, `loadAccounts`(ACC 없을 때)를 한꺼번에 불러요.
 - 데이터: `GET /api/update`, `/api/harness/update`, `/api/messengers`, `/api/providers`, `/api/runtimes`, `/api/devices`, `/api/web-access`, `/api/accounts`, `/api/api-budget`, `/api/quota`(`SQ`), `/api/push*`. SSE는 이 화면 전용이 없어요. 전역 SSE `update_available`이 `loadUpdate`를 불러 이 화면의 업데이트 요약을 바꿔요(99-boot.js). 화면을 열 때 `/api/update`와 `/api/harness/update`는 마지막으로 읽은 지 5분(부팅이 쓰는 주기, `updFresh`)이, `/api/providers`는 1분(`provFresh`)이 안 됐으면 다시 읽지 않고 가진 값으로 그려요.
 - 근거: web/js/22-settings-pages.js `settingsList`, 요약 함수들(`stUsageSub` `stAccountSub` `stUpdateSub` `stRuntimeSub` `stPushSub`), `settingsEnter`, `screenHooks`, web/js/24-settings-update.js `renderSettings`, web/js/05-command-palette.js `go` (`go`가 `enter` 훅을 불러요), web/js/03-screens.js (`views` `SUB` `titles`).
 - css: 02-cards-lists-tags.css(`.li` `.tap` `.sec` `.list` `.tag`), 15-settings-pages.css, 15-settings-phone.css(`@media (max-width: 639px), (pointer: coarse)` 터치 크기), 06-harness.css(`.hs-sw`).
@@ -2090,7 +2089,7 @@ dotz 웹앱의 화면은 `web/js/03-screens.js`의 `SCREENS` 표에 한 줄씩 �
 - css: 18-app-settings.css(`.as-card` `.as-cr` `.as-old` `.as-now`).
 
 ### 앱 관리 시트 (`asAddSheet`)
-- 목적: 꺼 둔 앱을 다시 켜거나 지우고, 새 앱을 연결해 달라는 요청을 메인 대화에 보내요. 설정 목록의 `앱 관리` 행(`go("apps")`)과 별개로 모니터링 쪽에서 열려요.
+- 목적: 꺼 둔 앱을 다시 켜거나 지우고, 새 앱을 연결해 달라는 요청을 메인 대화에 보내요. 모니터링 목록의 `앱 관리` 행에서 열려요.
 - 구성: 중간 시트(`fsOpen` `mid`, 폰은 아래에서 올라오는 시트): 머리 `앱 관리`, 본문 상단 `.as-sec` `새 앱 추가` 아래 입력 상자(크기 조절 손잡이 없음, placeholder `어떤 앱을 연결하거나 만들까요?`), `.as-sec` `꺼 둔 앱` 행(아이콘, 이름, `{컴퓨터}`(다른 컴퓨터의 앱일 때만, 구역 이름이 이미 꺼 둔 앱이라 "꺼져 있어요"는 쓰지 않아요), `다시 켜기`, `삭제`), 삭제 확인 블록, 하단 `취소` / `맡기기`.
 - 기능: `맡기기`(Enter, Shift+Enter 줄바꿈) = 메인 대화로 `연결할 앱: {입력}`을 보내요(`asNewSend`). `다시 켜기`(`asAdd` -> `POST /api/integrations/{key}/add`, 다른 컴퓨터는 `POST /api/peer/act`), `삭제`(`asDelAsk` -> 확인 -> `DELETE /api/apps/{key}[?data=1]`).
 - 상태: 입력이 비어 있으면 `맡기기`는 꺼 두고(Enter는 입력 상자로 포커스만), `삭제`는 지우는 줄 단추(`btn danger`)예요. 삭제 확인: `{컴퓨터에서 }{라벨} 앱을 완전히 지워요. 되돌릴 수 없어요` / `이름과 설정을 지우고, 앱 목록에서 빠져요` / `감시 {n}개를 지워요: ...` 또는 `지울 감시는 없어요`, 체크박스 `저장된 데이터(...)도 지우기. 체크하지 않으면 남겨요`, 버튼 `삭제 확인`(지우는 동작용 `btn danger fill`) / `취소`. 다시 켜기 토스트 `{라벨}을(를) 다시 켰어요` / `{컴퓨터}에서 {라벨}을(를) 다시 켰어요` / 재연결 필요 `{라벨}을(를) 켰어요. 다시 연결할 내용을 채워 두었어요`(그 앱 요청 템플릿을 채팅 입력에 채워 줘요), 실패 `앱을 추가하지 못했어요`, 템플릿 못 읽음 `템플릿을 불러오지 못했어요`. 채팅 입력 위 줄 안내 `{{ }} 칸은 그대로 보내도 돼요. 보내면 보안 입력 양식으로 물어봐요`(닫기 버튼 `앱 추가 닫기`). 설정 목록의 `앱 관리` 행 부제는 `asAddHint`(`꺼 둔 앱 ... · 새로 추가` 또는 `새로 추가하기`)지만, 설정 목록 쪽은 `stRow("apps","앱 관리","", ...)`로 부제를 비워 둬요.
@@ -2119,7 +2118,7 @@ dotz 웹앱의 화면은 `web/js/03-screens.js`의 `SCREENS` 표에 한 줄씩 �
 ### 앱 셸 프레임 (사이드바, 하단 탭바, 화면 영역)
 - 목적: 모든 화면을 담는 바깥 틀. 넓은 화면은 왼쪽 사이드바, 좁은 화면은 같은 `#nav`가 하단 탭바가 돼요.
 - 구성: `.app#app` 안에 `aside.side`(`button.brand#brand` 로고+`#brand-name`+`#brand-c` 쉐브론, `nav.rail#nav` 탭 버튼들, `.sfoot` 안 `button.sf-row#sf-usage`), `button.side-tog#side-tog`(접기 단추), `.main`(`header.appbar#appbar`, `#gban`, `#oerr`, `.views#views`). `.views` 안에 화면별 `section.view#v-<이름>` 23개(`v-home`, `v-chat`, `v-monitoring`, `v-settings`, `v-webaccess` 등)와 22-settings-pages.js가 만드는 `#v-cardform`. 본문 밖에 옆 서랍 `aside.sheet#sheet` 하나가 있어요(서브에이전트와 구성 상세가 여기 열려요).
-- 기능: 탭 전환 `go(id)`, 채팅 탭 재탭 `chatTabTap`(좁은 화면에서 대화 열려 있으면 `openChatList`, 목록이 열려 있으면 `closeChatList`), 홈 탭 재탭 `homeTabTap`(컴퓨터가 2대 이상이면 전환 시트), 사이드바 접기 `sideToggle`(`localStorage dotz-side=min`, 첫 페인트 전에 index.html이 `side-min` 클래스를 먼저 붙여요), 브랜드 클릭 `#brand.onclick`(컴퓨터 2대 이상이면 `prOpen`, 아니면 `go("home")`). 탭 목록 `NAV`는 홈, 채팅, 프로젝트, 모니터링, 앱, 설정이고 앱 탭은 `APPS_ON=false`라 숨겨져요(`navOff`).
+- 기능: 탭 전환 `go(id)`, 채팅 탭 재탭 `chatTabTap`(좁은 화면에서 대화 열려 있으면 `openChatList`, 목록이 열려 있으면 `closeChatList`), 홈 탭 재탭 `homeTabTap`(컴퓨터가 2대 이상이면 전환 시트), 사이드바 접기 `sideToggle`(`localStorage dotz-side=min`, 첫 페인트 전에 index.html이 `side-min` 클래스를 먼저 붙여요), 브랜드 클릭 `#brand.onclick`(컴퓨터 2대 이상이면 `prOpen`, 아니면 `go("home")`). 탭 목록 `NAV`는 홈, 채팅, 앱(`monitoring`), 설정이에요.
 - 상태: 사이드바 폭 232px, 접으면 60px 아이콘 레일(`:root.side-min`). 접기 단추 `aria-label`은 `사이드바 접기` 또는 `사이드바 펼치기`, title에 단축키(`⌘\` 또는 `Ctrl+\`). 탭 배지: `#nav-att`(채팅, 숫자, title `읽지 않은 대화 n개`), `#nav-mon`(모니터링, 숫자 title `확인할 것 n개`, 숫자 없고 새 소식만 있으면 점과 title `새 소식`), `#nav-upd`(설정, 텍스트 `새 버전`, `업데이트 n`, `재시작 필요`). 99+는 `99+`로 표시해요. 탭 title은 `홈 (⌘1)` 꼴. 1024px 이상에서 배지는 글자 오른쪽 아래 6px 점이고 숫자는 `aria-label`로만 읽혀요(22-shell.css). 폰(1023px 이하)은 탭 높이 56px, `.sfoot` 숨김. 채팅 목록 전환 기준은 1099px(`narrowChat`, 04-state.js), 프로젝트 목록 병렬 표시도 같은 기준(`ppWide`).
 - 데이터: `/api/state`(botName 등), 배지는 알림, 모니터링, 업데이트 상태에서 와요(`paintAttn`, `paintMonAttn`, `paintUpdBadge`). 주소 해시 라우팅은 `go()`, `parseHash`, `routeAlias`(`#lanes`는 `#chat/list`, `#accounts`는 `#provider/anthropic`, `#chat/alert`는 `#notices`).
 - 근거: web/index.html, web/js/03-screens.js, web/js/04-state.js, web/js/05-command-palette.js `go`, web/js/09-needs-you.js, web/js/24-settings-update.js.
@@ -2446,8 +2445,8 @@ dotz 웹앱의 화면은 `web/js/03-screens.js`의 `SCREENS` 표에 한 줄씩 �
 - **`#sessions`, 세션 탭**: 세션 탭은 없어요. `#lanes`는 `chat/list`로 바뀌어요(`web/js/05-command-palette.js`).
 - **`#settings/accounts`**: `provider/anthropic`으로 바뀌어요(`web/js/05-command-palette.js`).
 - **대화/터미널 전환과 터미널 보기**: `LOG_VIEW = false`라 토글(`#vtog`)이 숨고 `activity`는 항상 `chat`이 돼요(`web/js/04-state.js` `LOG_VIEW`, `05-command-palette.js`).
-- **앱 탭**: `APPS_ON = false`라 탭이 없고 모든 진입이 홈으로 가요(`web/js/04-state.js`, `05-command-palette.js`). `APPS_ON`을 true로 바꾸는 코드는 못 찾았어요(C 조사).
-- **단축키 개수**: 코드는 `Digit1`부터 `Digit6`까지 보이는 탭 수만큼 받아요(`web/js/04-state.js`). 앱 탭이 숨겨진 지금은 5개예요.
+- **옛 `#apps` 주소**: `#apps`는 `#monitoring`, `#apps/<id>`는 `#monitoring/x:<id>`로 열려요(`web/js/05-command-palette.js` `parseHash`). 따로 열리는 앱 화면은 없어요.
+- **단축키 개수**: 코드는 `Digit1`부터 `Digit6`까지 탭 수만큼 받아요(`web/js/04-state.js`). 지금은 4개예요.
 
 ### 인벤토리에 없는데 코드에 있는 것
 사이드바 접기(`⌘/Ctrl+\`), 전역 단축키(`⌘/Ctrl+/` 알림, `+.` 메인 대화, `+1..6` 탭), 컨텍스트 화면(`web/js/19-project-main.js`), 화면 공유(`37-remote-desktop.js`), 재시작 알림줄 `#gban`, 오케스트레이터 멈춤 배너 `#oerr`, 새 버전 칩과 셸 자동 갱신, 서비스 워커 셸 캐시와 공유 대상, 대화 스냅샷, 설치형 앱 종료 가드(`web/js/32-history-nav.js`), 모션 시스템, `/pair`와 `/jandi-peer/<keyword>` 단독 페이지(F 조사).

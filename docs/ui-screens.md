@@ -34,7 +34,6 @@ flowchart LR
     c_core(["core code"])
     s_accounts["accounts: 계정"]
     s_activity["activity: 채팅 작업내역"]
-    s_apps["apps: 앱"]
     s_cardform["cardform: 카드 양식"]
     s_chat["chat: 채팅"]
     s_context["context: 컨텍스트"]
@@ -102,7 +101,7 @@ flowchart LR
   subgraph a_monitoring["monitoring"]
     c_monitoring(["monitoring code"])
     o_monitoring_ask["ask (1)"]
-    o_monitoring_dialog["dialog (2)"]
+    o_monitoring_dialog["dialog (1)"]
     o_monitoring_fsOpen["fsOpen (2)"]
     o_monitoring_menu["menu (1)"]
     o_monitoring_overlay["overlay (1)"]
@@ -185,9 +184,8 @@ flowchart LR
   c_kakao -->|"go (4)"| s_any
   c_mail -->|"go (2)"| s_any
   c_mail -->|"go (6)"| s_monitoring
-  c_monitoring -->|"go (2)"| s_apps
-  c_monitoring -->|"go (3)"| s_chat
-  c_monitoring -->|"go (13)"| s_monitoring
+  c_monitoring -->|"go (2)"| s_chat
+  c_monitoring -->|"go (12)"| s_monitoring
   c_notices -->|"go (1)"| s_any
   c_notices -->|"go (1)"| s_accounts
   c_notices -->|"go (1)"| s_chat
@@ -209,7 +207,6 @@ flowchart LR
   c_reply -->|"go (3)"| s_monitoring
   c_settings -->|"go (2)"| s_any
   c_settings -->|"go (1)"| s_accounts
-  c_settings -->|"go (1)"| s_apps
   c_settings -->|"go (1)"| s_chat
   c_settings -->|"go (1)"| s_context
   c_settings -->|"go (1)"| s_custom

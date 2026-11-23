@@ -212,13 +212,11 @@ const typeBad = (v: View, sel: string) => q<{ n: number; bad: string[] }>(v, `
 		return ((fs >= 11 && fs <= 16) || (fs >= 20 && fs <= 22)) && ratio >= 1.295 ? "" : e.tagName + "." + e.className + " " + fs + "px x" + Math.round(ratio * 100) / 100; }).filter(Boolean);
 	return { n: els.length, bad };`);
 const typeOk = async (v: View, sel: string) => { const r = await typeBad(v, sel); expect(r.n).toBeGreaterThan(0); expect(r.bad).toEqual([]); };
-for (const w of [390, 1280]) {
-	test(`${w}px: the apps tab title is a 20px title line, not 18px`, async () => {
-		const v = await page(w, "light", `void (APPS_ON = true, go("apps", "memo"))`, `current === "apps" && !!document.querySelector("#v-apps .apps-n")`);
-		await shot(v, `8-apps-title-${w}`);
-		await typeOk(v, ".apps-n");
-	});
-}
+test("1280px: the open web app's title in the 앱 tab is a 20px title line, not 18px", async () => {
+	const v = await page(1280, "light", `void go("monitoring", "x:memo")`, `current === "monitoring" && !!document.querySelector("#mon-app .apps-n")`);
+	await shot(v, "8-apps-title-1280");
+	await typeOk(v, ".apps-n");
+});
 test("390px: the terminal's 더 보기 button uses a listed size and a readable line", async () => {
 	const v = await page(390, "light", `openShell()`, `!!document.querySelector(".sh-more")`);
 	await shot(v, "8-shell-more");

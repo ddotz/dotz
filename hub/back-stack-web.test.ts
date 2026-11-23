@@ -384,8 +384,8 @@ test("390: an old #apps address opens the 앱 tab, #apps/<id> opens it on that a
 	await until(v, `current === "monitoring" && MON.list && location.hash === "#monitoring"`, "#apps did not open the 앱 tab");
 	expect(await ev(v, `({ tabs: [...document.querySelectorAll("#nav .ni")].map(b => b.dataset.view), title: document.querySelector("#title").textContent })`)).toEqual({ tabs: ["home", "chat", "monitoring", "settings"], title: "앱" });
 	expect(await lit(v)).toEqual(["monitoring"]);
-	expect(await ev(v, `[parseHash("#apps/mydocs"), parseHash("#apps/a%20b"), (APPS_ON = true, parseHash("#apps/mydocs"))]`)).toEqual([{ view: "monitoring", t: "x:mydocs" }, { view: "monitoring", t: "x:a b" }, { view: "apps", t: "mydocs" }]);
-	await v.evaluate(`(APPS_ON = false, go("home"), location.hash = "#apps/mydocs", true)`);
+	expect(await ev(v, `[parseHash("#apps"), parseHash("#apps/mydocs"), parseHash("#apps/a%20b")]`)).toEqual([{ view: "monitoring", t: "" }, { view: "monitoring", t: "x:mydocs" }, { view: "monitoring", t: "x:a b" }]);
+	await v.evaluate(`(go("home"), location.hash = "#apps/mydocs", true)`);
 	await until(v, `current === "monitoring"`, "#apps/<id> did not open the 앱 tab");
 	expect(await lit(v)).toEqual(["monitoring"]);
 });

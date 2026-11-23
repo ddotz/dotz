@@ -68,7 +68,7 @@ Never put a password, token or account in a manifest: it is plain text in the da
 `~/.dotz/secrets` and stay in the app's own config.
 
 The 앱 tab's row shows the icon, the name, a status dot (running / 응답 없음 / 꺼 둠) and one line of state; opening it shows
-the app's page in a frame under a dotz header (back, name, status, 새 탭, ⋯). ⋯ has 설정, 끄기 (or 켜기), 제거; 제거 moves the
+the app's page in a frame under a dotz header (name, status, 새 탭, ⋯). ⋯ has 설정, 끄기 (or 켜기), 제거; 제거 moves the
 folder to `custom/apps-removed/<stamp>-<id>/` so nothing is lost.
 
 API, all with the usual hub auth:

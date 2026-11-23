@@ -14,7 +14,7 @@ const introStops = () => {
 };
 // The keys come from the code that handles them: the palette button, MOD_KEYS and the tab numbers (04-state.js), the pane keys (43-panes-keys.js).
 const introKeys = () => {
-  const mod = isMac ? "⌘" : "Ctrl+", tabs = navTabs();
+  const mod = isMac ? "⌘" : "Ctrl+", tabs = NAV;
   return [[$("#cmdk kbd").textContent, TX("misc.intro.key_cmdk")], ...MOD_KEYS.filter(modKeyWide).map(k => [mod + k.key, k.label]), [`${navKeyHint(tabs[0][0])} ~ ${navKeyHint(tabs.at(-1)[0])}`, TX("misc.intro.key_tabs")], ...paneTourKeys()];
 };
 let introEl = null, introAt = 0, introFrom = null;
