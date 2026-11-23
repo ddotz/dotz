@@ -1,9 +1,6 @@
 import type { EffortRow } from "./effort-knee.ts";
 import { bareId, isId } from "./model-effort.ts";
 
-/** Where the shipped per-effort rows were read: the Artificial Analysis leaderboard page, on this date. */
-export const POINTS_SOURCE = { url: "https://artificialanalysis.ai/leaderboards/models", read: "2026-11-23" } as const;
-
 const POINTS: ReadonlyArray<readonly [id: string, rows: EffortRow[]]> = [
 	["claude-fable-5-2", [
 		{ effort: "low", score: 53.92, cost: 3.1, minutes: 5.5 },
