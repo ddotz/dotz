@@ -10,7 +10,7 @@ import { DRAFT_HAND_EDIT } from "./draft-approval.ts";
 import { draftHead } from "./reply-chat.ts";
 import { policyOf, reasonOf } from "./reply-reasons.ts";
 import { sinceMidnight } from "./reply-route.ts";
-import type { DraftView, Lesson, OwnerAction, Part, Reason, ReasonCode, ReplyAdapter, ReplyItem, ReplyKind, SendState } from "./reply-types.ts";
+import type { DraftView, FileShown, Lesson, OwnerAction, Part, Reason, ReasonCode, ReplyAdapter, ReplyItem, ReplyKind, SendState } from "./reply-types.ts";
 
 /** `owner`: the owner's chat message the model read this act from (its marker line); his pick then names that message. */
 export type ActCtx = { surface: "web" | "discord" | "chat" | "peer" | "cli"; login?: string; agent?: boolean; owner?: { mid: string; text: string } };
@@ -27,8 +27,10 @@ type Sender = {
 };
 /** An open send-approval card (a notice) that shows draft `ref` in conversation `conv`; `hash`: the version it was last drawn with; `discord`: the
  * version its Discord message shows; `asked`: the ts of the post that asked it (a web quote names it); `posts`: its Discord message ids (a Discord reply names one);
- * `shown`: when the card was last drawn as it reads now (made, revised, reopened). */
-export type OpenCard = { ref: string; conv: string; notice: string; title: string; hash?: string; discord?: string; asked?: string; posts?: string[]; shown?: string };
+ * `shown`: when the card was last drawn as it reads now (made, revised, reopened); `draft`: what the card's own lines say it sends (notices
+ * decision.draft), which a hand-written card's item shows since no store holds it. */
+export type OpenCard = { ref: string; conv: string; notice: string; title: string; hash?: string; discord?: string; asked?: string; posts?: string[]; shown?: string; draft?: CardDraft };
+type CardDraft = { toLabel: string; to: string; cc?: string[]; subject?: string; body: string; attachments?: FileShown[] };
 export type ReplyDeps = {
 	adapters: ReplyAdapter[];
 	sender: Sender;
@@ -488,7 +490,9 @@ function cardAnswer(card: OpenCard, input: ActInput): string | undefined {
 
 function cardItem(c: OpenCard, at: number): ReplyItem {
 	const kind: ReplyKind = "card";
-	return { item: `card:${c.conv}|${c.ref}`, ref: c.ref, kind, app: "card", label: c.title, conv: c.conv, notice: c.notice, at, can: { send: true, revise: true, edit: false, drop: true, restore: false }, draft: { state: "pending", toLabel: "", to: "", text: "" } };
+	const d = c.draft;
+	const draft = d ? { toLabel: d.toLabel, to: d.to, ...(d.cc?.length ? { cc: d.cc } : {}), ...(d.subject ? { subject: d.subject } : {}), text: d.body, ...(d.attachments?.length ? { attachments: d.attachments.map(f => ({ name: f.name, ...(f.size ? { size: f.size } : {}) })) } : {}) } : { toLabel: "", to: "", text: "" };
+	return { item: `card:${c.conv}|${c.ref}`, ref: c.ref, kind, app: "card", label: c.title, conv: c.conv, notice: c.notice, at, can: { send: true, revise: true, edit: false, drop: true, restore: false }, draft: { state: "pending", ...draft } };
 }
 
 let live: ReturnType<typeof createReplyActions> | undefined;

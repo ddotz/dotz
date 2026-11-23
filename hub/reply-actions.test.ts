@@ -340,6 +340,16 @@ test("the model's own [drop] marker on a hand-written card, carrying the owner's
 	expect(log).toEqual(["close X1"]);
 });
 
+test("a hand-written send card lists with the recipient, subject, body and files its own lines carry, so the 답장 확인 sheet shows what 보내기 sends", async () => {
+	const w = world();
+	const draft = { toLabel: "받는이", to: "A <a@example.com>", subject: "제목A", body: "본문A", attachments: [{ name: "파일A.xlsx", size: "12 KB" }] };
+	const cards = [{ ref: "X1", conv: "ch:1", notice: "n1", title: "이 답장 보낼까요? (X1)", draft }, { ref: "X2", conv: "ch:1", notice: "n2", title: "이 답글 올릴까요? (X2)" }];
+	const replies = createReplyActions({ adapters: [], sender: w.sender, recordPick: () => undefined, learning: { record: async () => undefined, refine: async () => undefined }, cards: { open: () => cards, replace: () => undefined, rewrite: () => undefined, close: () => undefined }, toBot: async () => undefined, emit: () => undefined, log: () => undefined });
+	const items = await replies.list();
+	expect(items.find(i => i.ref === "X1")?.draft).toEqual({ state: "pending", toLabel: "받는이", to: "A <a@example.com>", subject: "제목A", text: "본문A", attachments: [{ name: "파일A.xlsx", size: "12 KB" }] });
+	expect(items.find(i => i.ref === "X2")?.draft).toEqual({ state: "pending", toLabel: "", to: "", text: "" });
+});
+
 test("D7: a send names the version it showed; another one is refused `changed` with the fresh item, nothing picked or queued, and the cards redrawn", async () => {
 	const w = world();
 	const shown = (await w.replies.list())[0]!;
