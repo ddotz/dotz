@@ -1,6 +1,6 @@
 // A model-written chat message that stops to ask the owner whether to go on because the remaining usage limit is low is caught
 // (hub/limit-ask.ts) and the orchestrator is steered, on the same send path as the personal-data ask. Nothing leaves the test data folder.
-import { afterEach, expect, spyOn, test } from "bun:test";
+import { afterAll, afterEach, expect, spyOn, test } from "bun:test";
 import { msg } from "./i18n.ts";
 import { asksLimitStopInChat } from "./limit-ask.ts";
 import * as orchestrator from "./orchestrator.ts";
@@ -29,6 +29,7 @@ test("a question about continuing or stopping at a low usage limit matches; repo
 
 const steered = spyOn(orchestrator, "steer").mockImplementation(() => true);
 afterEach(() => steered.mockClear());
+afterAll(() => steered.mockRestore());
 
 test("out(): a model-written low-limit question steers the orchestrator; a gateway post and a plain report do not", async () => {
 	await out("web", "The weekly limit is at 12%. Should I keep going or stop here?");

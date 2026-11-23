@@ -79,8 +79,12 @@ let sampler: CpuSampler = async pid => {
 		return undefined;
 	}
 };
-/** Tests replace the CPU sampling. */
-export const setCpuSampler = (fn: CpuSampler): void => void (sampler = fn);
+/** Tests replace the CPU sampling; the sampler it replaces comes back. */
+export const setCpuSampler = (fn: CpuSampler): CpuSampler => {
+	const was = sampler;
+	sampler = fn;
+	return was;
+};
 
 const NAME_RE = /^[\w.:-]{1,40}$/;
 const stringsOf = (v: unknown, out: string[] = []): string[] => {
@@ -226,8 +230,12 @@ let snapshotRunner: SnapshotRunner = async (cmd, timeoutMs) => {
 		return undefined;
 	}
 };
-/** Tests replace the commands a snapshot runs (ps, sample). */
-export const setSnapshotRunner = (fn: SnapshotRunner): void => void (snapshotRunner = fn);
+/** Tests replace the commands a snapshot runs (ps, sample); the runner it replaces comes back. */
+export const setSnapshotRunner = (fn: SnapshotRunner): SnapshotRunner => {
+	const was = snapshotRunner;
+	snapshotRunner = fn;
+	return was;
+};
 
 /**
  * Writes a diagnostic file about a process about to be killed: `<DATA_DIR>/stuck/<ISO time>-<key>.txt` with its masked process tree, the

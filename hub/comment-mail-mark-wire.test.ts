@@ -1,14 +1,14 @@
-import { afterEach, beforeEach, expect, test } from "bun:test";
-import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { afterAll, afterEach, beforeEach, expect, test } from "bun:test";
+import { chmodSync, existsSync, mkdtempSync, rmSync, statSync, truncateSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { run as runWatch } from "../features/comments/bin/watch.ts";
 import { paths } from "../features/reply-drafts/lib/settings.ts";
 import { addDraft, newId, type DraftRec } from "../features/reply-drafts/lib/store.ts";
-import { DATA_DIR } from "./config.ts";
+import { DATA_DIR, paths as hubPaths } from "./config.ts";
 import { broadcast, onBroadcast } from "./events.ts";
 import { resetOwnAddresses, setOwnAddresses } from "./mail-state.ts";
-import { mailByKey, mailCard, mailTarget, postMail, setMailReply, type MailDeps } from "./mail.ts";
+import { deleteMail, mailByKey, mailCard, mailTarget, postMail, setMailReply, type MailDeps } from "./mail.ts";
 import { commentReply, commentsRoute } from "./comments/gateway.ts";
 import { type Comment, commentId, type CommentAdapter, type RawComment, type ReplyOutcome, type SourceConfig } from "./comments/contract.ts";
 import { createEngine } from "./comments/engine.ts";
@@ -31,11 +31,18 @@ beforeEach(() => {
 	items.length = 0;
 });
 afterEach(() => resetOwnAddresses());
+const mailKeys: string[] = [];
+const logSizes = [hubPaths.inbox, hubPaths.outbox].map(file => [file, existsSync(file) ? statSync(file).size : 0] as const);
+afterAll(() => {
+	for (const key of mailKeys) deleteMail(key);
+	for (const [file, size] of logSizes) if (existsSync(file)) truncateSync(file, size);
+});
 
 async function owedMail() {
 	const id = uid();
 	const { key } = await postMail({ source: "zele", id, messageId: `m-${id}`, from: "Fan <fan@example.com>", to: "Me <me@example.com>", subject: "자료 요청", body: "자료를 보내 주실 수 있나요?" }, deps);
 	setMailReply(key, "need");
+	mailKeys.push(key);
 	return { id, key };
 }
 const comment = (native: string): Comment => ({ id: commentId("youtube", native), source: "youtube", native, thread: "p1", author: "팬", text: "자료 부탁드려요", postTitle: "영상", at: 1_000, mine: false, collector: "t" });

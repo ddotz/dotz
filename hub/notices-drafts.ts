@@ -205,8 +205,13 @@ function rewriteCards(hit: Notice[], text: string, newRef?: string): number {
 }
 
 const openDraftRef = (i: Notice): string | undefined => i.decision!.draft?.ref ?? blockDraftRef(i.title, i.decision!.options.map(o => o.label));
-let sendOwed: (ref: string) => Promise<boolean> = async () => false;
-export const setSendOwed = (fn: typeof sendOwed): void => void (sendOwed = fn);
+export type SendOwed = (ref: string) => Promise<boolean>;
+let sendOwed: SendOwed = async () => false;
+export const setSendOwed = (fn: SendOwed): SendOwed => {
+	const was = sendOwed;
+	sendOwed = fn;
+	return was;
+};
 export async function settleHandledDrafts(at = now()): Promise<number> {
 	const open = items.flatMap(i => {
 		const ref = isOpenDecision(i) && !i.decision!.to.startsWith("auth:") ? openDraftRef(i) : undefined;

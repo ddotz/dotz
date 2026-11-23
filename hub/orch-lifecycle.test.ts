@@ -13,7 +13,7 @@ import { advance, flush } from "./runtime/test-clock.ts";
 import type { AgentEvent, AgentProcess, RuntimeAdapter, SendMode } from "./runtime/types.ts";
 import { clearTrackedTimers } from "./shutdown.ts";
 import { setCpuSampler } from "./stuck.ts";
-setCpuSampler(async () => undefined);
+const realSampler = setCpuSampler(async () => undefined);
 
 const mod: typeof Orchestrator = await import("./orchestrator.ts?lifecycle");
 
@@ -108,6 +108,7 @@ afterEach(() => {
 afterAll(() => {
 	delete adapters.lifecycle;
 	Object.assign(cfg, savedCfg);
+	setCpuSampler(realSampler);
 });
 
 let seq = 0;

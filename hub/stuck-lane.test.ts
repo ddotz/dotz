@@ -77,13 +77,14 @@ const fake: RuntimeAdapter = {
 	detect: async () => ({ installed: true }),
 };
 const savedCfg = { lanes: cfg.lanes };
+let realSampler: stuck.CpuSampler, realSnapshot: stuck.SnapshotRunner;
 const reports: string[] = [];
 const notices: string[] = [];
 beforeAll(() => {
 	adapters.fakeomo = fake;
 	cfg.lanes = { ...cfg.lanes, runtime: "fakeomo" };
-	stuck.setCpuSampler(async () => undefined);
-	stuck.setSnapshotRunner(async cmd => {
+	realSampler = stuck.setCpuSampler(async () => undefined);
+	realSnapshot = stuck.setSnapshotRunner(async cmd => {
 		order.push(`snap:${cmd[0]!.split("/").pop()}`);
 		return cmd[0] === "/bin/ps" ? "  7600     1  05:00 0:01.00 omo --token SECRETVALUE" : "sample line";
 	});
@@ -95,6 +96,8 @@ afterAll(() => {
 	delete process.env.DOTZ_STUCK_MS;
 	delete adapters.fakeomo;
 	Object.assign(cfg, savedCfg);
+	stuck.setCpuSampler(realSampler);
+	stuck.setSnapshotRunner(realSnapshot);
 });
 
 async function working(name: string): Promise<{ lane: Lanes.Lane; agent: FakeAgent }> {

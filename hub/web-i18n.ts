@@ -91,10 +91,15 @@ export function formatter(view: View): Fns {
 	if (!f) { f = new Function(`${injectedConsts(view)}\n${i18nSource()}\nreturn { TX, txInLang };`)() as Fns; fns.set(view, f); }
 	return f;
 }
-let appView: (() => View) | undefined;
+export type WebViewSource = () => View;
+let appView: WebViewSource | undefined;
 let fallback: View | undefined;
-/** The view `webText` uses when none is passed; hub/webapp.ts points it at the language the page is served in. */
-export const setWebView = (fn: (() => View) | undefined): void => { appView = fn; };
+/** The view `webText` uses when none is passed; hub/webapp.ts points it at the language the page is served in. Returns the one it replaces. */
+export const setWebView = (fn: WebViewSource | undefined): WebViewSource | undefined => {
+	const was = appView;
+	appView = fn;
+	return was;
+};
 /** The view the page is served in right now; undefined before hub/webapp.ts has pointed it (callers then treat the install as ko). */
 export const webView = (): View | undefined => appView?.();
 export const webText = (key: string, vars?: Record<string, unknown>, view?: View): string =>

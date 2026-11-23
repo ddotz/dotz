@@ -5,16 +5,19 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { clock } from "./runtime/test-clock.ts";
 import { publishedWeb } from "./web-committed.ts";
+import { setWebView, type WebViewSource } from "./web-i18n.ts";
 
 const sh = (cwd: string, ...args: string[]) => execFileSync("git", args, { cwd, stdio: "pipe" });
 const saved = { live: process.env.DOTZ_WEB_LIVE, debounce: process.env.DOTZ_WEB_DEBOUNCE_MS, dir: process.env.DOTZ_WEB_DIR };
 let repo = "";
+let view: WebViewSource | undefined;
 let n = 0;
 const write = (rel: string, text: string) => writeFileSync(join(repo, "web", rel), text);
 const commit = (js: string) => { write("js/01-app.js", `"use strict";\n${js}\n`); sh(repo, "commit", "-qam", js); };
 const tick = (ms = 5000) => { clock.now += ms; };
 
 beforeAll(() => {
+	view = setWebView(undefined);
 	repo = mkdtempSync(join(tmpdir(), "dotz-web-committed-"));
 	mkdirSync(join(repo, "web", "js"), { recursive: true });
 	mkdirSync(join(repo, "web", "css"));
@@ -32,6 +35,7 @@ beforeAll(() => {
 });
 afterAll(() => {
 	for (const [k, v] of [["DOTZ_WEB_LIVE", saved.live], ["DOTZ_WEB_DEBOUNCE_MS", saved.debounce], ["DOTZ_WEB_DIR", saved.dir]] as const) { if (v === undefined) delete process.env[k]; else process.env[k] = v; }
+	setWebView(view);
 	rmSync(repo, { recursive: true, force: true });
 });
 

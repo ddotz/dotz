@@ -83,11 +83,12 @@ const fake: RuntimeAdapter = {
 
 let cpu: number | undefined;
 const savedCfg = { orchestrator: cfg.orchestrator };
+let realSampler: stuck.CpuSampler, realSnapshot: stuck.SnapshotRunner;
 beforeAll(() => {
 	adapters.fake = fake;
 	cfg.orchestrator = { ...cfg.orchestrator, runtime: "fake" };
-	stuck.setCpuSampler(async () => cpu);
-	stuck.setSnapshotRunner(async cmd => {
+	realSampler = stuck.setCpuSampler(async () => cpu);
+	realSnapshot = stuck.setSnapshotRunner(async cmd => {
 		order.push(`snap:${cmd[0]!.split("/").pop()}`);
 		return cmd[0] === "/bin/ps" ? psOut : "sample line";
 	});
@@ -96,6 +97,8 @@ afterAll(() => {
 	delete process.env.DOTZ_STUCK_MS;
 	delete adapters.fake;
 	Object.assign(cfg, savedCfg);
+	stuck.setCpuSampler(realSampler);
+	stuck.setSnapshotRunner(realSnapshot);
 });
 
 let seq = 0;

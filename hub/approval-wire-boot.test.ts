@@ -10,7 +10,7 @@ import { type HubEvent, onEmit } from "./events.ts";
 import { draftApprovalBlock } from "./draft-approval.ts";
 import { ignoreNotice, listNotices, markDraftSend } from "./notices.ts";
 import { out } from "./outbound.ts";
-import { replies } from "./reply-wire.ts";
+import { replies, resetSendsBootForTest } from "./reply-wire.ts";
 import { advance, flush } from "./runtime/test-clock.ts";
 import { addDraft, claimFile, getDraft, newId, setStatus } from "../features/reply-drafts/lib/store.ts";
 
@@ -46,6 +46,7 @@ beforeAll(async () => {
 });
 afterAll(() => {
 	for (const n of listNotices(500).items.filter(i => i.decision?.to === CONV && i.decision.state === "open")) ignoreNotice(n.id);
+	resetSendsBootForTest();
 });
 
 test("on boot the file's jobs are taken up: a running one is judged and never re-run, a queued one runs again, a sent draft is marked sent", async () => {

@@ -1,4 +1,4 @@
-import { beforeEach, expect, test } from "bun:test";
+import { afterAll, beforeEach, expect, test } from "bun:test";
 import { chmodSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -91,6 +91,8 @@ const ask = (to: string, ref: string, who: string) => `[ask] 답장 초안을 �
 const post = (to: string, ref: string, who: string) => emit("outbox", { ts: new Date().toISOString(), kind: "out", source: "orchestrator", target: to, text: ask(to, ref, who) });
 const open = () => listNotices(100).items.filter(i => i.decision?.state === "open" && i.decision.draft);
 const handled = new Set<string>();
+const wiredHandled = setDraftHandled(() => false);
+afterAll(() => setDraftHandled(wiredHandled));
 
 beforeEach(() => {
 	resetNoticesForTest();

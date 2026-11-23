@@ -1,8 +1,12 @@
 import { afterAll, afterEach, expect, spyOn, test } from "bun:test";
-import { cfg, DEFAULT_MODEL, DEFAULT_WORKER_MODEL, lanesModel, orchestratorModel, parseSelector, splitThinking, workerModel } from "./config.ts";
+import { readFileSync, writeFileSync } from "node:fs";
+import { CONFIG_FILE, cfg, DEFAULT_MODEL, DEFAULT_WORKER_MODEL, lanesModel, orchestratorModel, parseSelector, splitThinking, workerModel } from "./config.ts";
 import { targetView, setModel } from "./control.ts";
 import { clampEffort, sweetSpot, useLearned } from "./model-effort.ts";
 import "./outbound.ts";
+
+const savedConfig = readFileSync(CONFIG_FILE, "utf8");
+afterAll(() => writeFileSync(CONFIG_FILE, savedConfig));
 
 test("every table row gives its effort, with or without a provider prefix and an effort suffix", () => {
 	const rows: [string, string][] = [

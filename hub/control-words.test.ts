@@ -1,6 +1,8 @@
 // A control word acts by where it stands, not by matching a whole message: every way out of the gateway reads it the same, and a sentence about it stays
 // (owner 2026-11-05: "`[later]` 연도(2026)와 회차 제목을 확인했어요..." came through as a code chip; the check was `t === "[later]"`).
-import { expect, test } from "bun:test";
+import { afterAll, expect, test } from "bun:test";
+import { existsSync, statSync, truncateSync } from "node:fs";
+import { paths } from "./config.ts";
 import { emitEventActivity } from "./activity.ts";
 import { previewOf } from "./conversations.ts";
 import { buildPayloads } from "./discord-format.ts";
@@ -10,6 +12,11 @@ import { noticeKo } from "./notice-ko.ts";
 import { ownerText, shownEvent } from "./owner-text.ts";
 import { classify } from "./push.ts";
 import { isLater, laterParts, stripLater, stripMarkers } from "./tone.ts";
+
+const logSizes = [paths.inbox, paths.outbox].map(file => [file, existsSync(file) ? statSync(file).size : 0] as const);
+afterAll(() => {
+	for (const [file, size] of logSizes) if (existsSync(file)) truncateSync(file, size);
+});
 
 const PROSE = "이동이 끝나면 등록할게요.";
 export const LATER_SHAPES = [

@@ -73,7 +73,7 @@ test("a notice that changed is converted again, and only that one", () => {
 	const list = allNotices();
 	expect(list.find(n => n.key === "lane:x")?.text).toBe("바뀐 첫 줄이에요");
 	expect(list.find(n => n.key === "lane:y")?.text).toBe("다른 줄이에요");
-	expect(words.mock.calls.length).toBeLessThanOrEqual(2);
+	expect(words.mock.calls.filter(([, opts]) => opts?.keepFiles).length).toBeLessThanOrEqual(2);
 });
 
 test("reading or dismissing a notice shows at once, with no new conversion", () => {
@@ -101,12 +101,12 @@ test("a notice is worded again when the page language changes", () => {
 	post("alert", "[done] 작업이 끝났어요 watch 감시 cron");
 	const ko = JSON.stringify(allNotices());
 	expect(ko).toContain("감시 예약");
-	setWebView(() => resolveView("en", diskReader()));
+	const prev = setWebView(() => resolveView("en", diskReader()));
 	try {
 		const en = JSON.stringify(allNotices());
 		expect(en).not.toBe(ko);
 	} finally {
-		setWebView(undefined);
+		setWebView(prev);
 	}
 	expect(JSON.stringify(allNotices())).toBe(ko);
 });

@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, expect, spyOn, test } from "bun:test";
+import { afterAll, afterEach, beforeEach, expect, spyOn, test } from "bun:test";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -12,6 +12,8 @@ const audit = MIGRATIONS.filter(m => m.id === CARD_AUDIT_ID);
 const sent = new Set<string>();
 let dir: string;
 let turns: { closed: number; refreshed: number; open: number }[];
+const wiredHandled = setDraftHandled(() => false);
+afterAll(() => setDraftHandled(wiredHandled));
 beforeEach(() => {
 	resetNoticesForTest();
 	sent.clear();

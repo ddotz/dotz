@@ -1,11 +1,16 @@
-import { appendFileSync } from "node:fs";
-import { expect, spyOn, test } from "bun:test";
+import { appendFileSync, existsSync, statSync, truncateSync } from "node:fs";
+import { afterAll, expect, spyOn, test } from "bun:test";
 import { paths } from "./config.ts";
 import { emit } from "./events.ts";
-import { mailByKey, recordMail } from "./mail.ts";
+import { deleteMail, mailByKey, recordMail } from "./mail.ts";
 import * as noticeWords from "./notice.ts";
 import { markRead } from "./reads.ts";
 
+const logSizes = [paths.inbox, paths.outbox].map(file => [file, existsSync(file) ? statSync(file).size : 0] as const);
+afterAll(() => {
+	deleteMail("fl-mail");
+	for (const [file, size] of logSizes) if (existsSync(file)) truncateSync(file, size);
+});
 const line = (e: object) => `${JSON.stringify(e)}\n`;
 const stamp = (start: number, i: number) => new Date(start + i * 1000).toISOString();
 const post = (ts: string, target: string, text: string, extra: object = {}) => line({ ts, kind: "out", source: "orchestrator", target, text, ...extra });

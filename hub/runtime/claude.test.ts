@@ -162,14 +162,14 @@ test("the deny hook blocks Bash commands with the RULES.md deny lines and the fe
 	writeFileSync(join(data, "RULES.md"), "## Rules\n- be nice\n\n## Blocked commands\n- deny: git\\s+push | pushing is an external action\n- deny: ( | broken regex is skipped\n\n## Later\n- deny: rm | not in the section\n");
 	mkdirSync(join(data, "features", "no-drop"), { recursive: true });
 	writeFileSync(join(data, "features", "no-drop", "feature.md"), "---\nname: No drop\nwhat: refuses DROP TABLE\ntrigger: 도구 실행 직전\nstage: tools\ndeny:\n  - DROP\\s+TABLE | tables are not dropped\n---\nbody\n");
-	expect(denyReason("git push origin main", data)).toContain("pushing is an external action");
-	expect(denyReason("echo ( ok", data)).toBeUndefined();
-	expect(denyReason("rm -rf x", data)).toBeUndefined();
-	expect(denyReason("psql -c 'drop table users'", data)).toContain("tables are not dropped");
+	expect(denyReason("git push origin main", data, data)).toContain("pushing is an external action");
+	expect(denyReason("echo ( ok", data, data)).toBeUndefined();
+	expect(denyReason("rm -rf x", data, data)).toBeUndefined();
+	expect(denyReason("psql -c 'drop table users'", data, data)).toContain("tables are not dropped");
 
 	// The hook as Claude Code runs it: JSON on stdin, exit code 2 and the reason on stderr to block.
 	const run = async (payload: unknown) => {
-		const proc = Bun.spawn([process.execPath, join(import.meta.dir, "claude-deny-hook.ts")], { stdin: "pipe", stdout: "pipe", stderr: "pipe", env: { ...process.env, DOTZ_DIR: data } });
+		const proc = Bun.spawn([process.execPath, join(import.meta.dir, "claude-deny-hook.ts")], { cwd: data, stdin: "pipe", stdout: "pipe", stderr: "pipe", env: { ...process.env, DOTZ_DIR: data } });
 		proc.stdin.write(JSON.stringify(payload));
 		proc.stdin.end();
 		return { code: await proc.exited, err: await new Response(proc.stderr).text() };

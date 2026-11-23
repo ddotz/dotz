@@ -1,15 +1,24 @@
 // An install's rule (config guard.no_api_key_accounts): while one of those subscription accounts is pinned in OmO, no API key may be used.
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { expect, test } from "bun:test";
+import { afterAll, expect, test } from "bun:test";
 import { API_KEY_OFF, allowFile, apiKeyBan, withoutApiKeys } from "./apikey-policy.ts";
 import { cfg, DATA_DIR } from "./config.ts";
 import { Chain, entryView, resetFallbackState } from "./fallback.ts";
 
 const pin = (account: string) =>
-	writeFileSync(join(process.env.OMO_CODING_AGENT_DIR!, "auth.json"), JSON.stringify({ "anthropic-subscription": { type: "oauth", pinned: account, accounts: {} }, anthropic: { type: "api_key", key: "sk-test" } }));
+	writeFileSync(AUTH, JSON.stringify({ "anthropic-subscription": { type: "oauth", pinned: account, accounts: {} }, anthropic: { type: "api_key", key: "sk-test" } }));
 
 const CONFIG = join(DATA_DIR, "config.json");
+const AUTH = join(process.env.OMO_CODING_AGENT_DIR!, "auth.json");
+const KEY = join(DATA_DIR, "secrets", "anthropic-api-key");
+const before = [CONFIG, AUTH, KEY].map(file => [file, existsSync(file) ? readFileSync(file, "utf8") : undefined] as const);
+afterAll(() => {
+	for (const [file, text] of before) {
+		if (text === undefined) rmSync(file, { force: true });
+		else writeFileSync(file, text);
+	}
+});
 const setBan = (names: string[] | undefined) => {
 	const c = existsSync(CONFIG) ? JSON.parse(readFileSync(CONFIG, "utf8")) : {};
 	c.guard = { ...(c.guard ?? {}), no_api_key_accounts: names };
@@ -26,7 +35,7 @@ test("no account is banned unless the install's config names it: the shipped cod
 });
 
 mkdirSync(join(DATA_DIR, "secrets"), { recursive: true });
-writeFileSync(join(DATA_DIR, "secrets", "anthropic-api-key"), "sk-ant-test\n");
+writeFileSync(KEY, "sk-ant-test\n");
 
 test("API keys are off unless guard.allow_api_key is true: no entry moves onto a key, no key reaches a process", () => {
 	const setAllow = (v: unknown) => {

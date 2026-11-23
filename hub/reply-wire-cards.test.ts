@@ -55,13 +55,17 @@ test("the settle pass keeps the failed-send mark of a KakaoTalk draft that is on
 	const unconfirmed = await make("확인 안 됨"), plain = await make("나갔어요");
 	const list = JSON.parse(readFileSync(kpaths.drafts, "utf8")) as { code: string }[];
 	writeFileSync(kpaths.drafts, JSON.stringify(list.map(d => (d.code === unconfirmed ? { ...d, status: "sent", unconfirmed: true } : d.code === plain ? { ...d, status: "sent" } : d))));
-	setDraftHandled(() => true);
-	for (const ref of [unconfirmed, plain]) {
-		post(`kakao:settle-${ref}`, ref);
-		settleOpenDecision(listNotices(100).items.find(i => i.decision?.state === "open" && i.decision.draft?.ref === ref)!.id, "1) 보내기");
-		markDraftSend(`kakao:settle-${ref}`, ref, "unsure", "확인하지 못했어요");
+	const wired = setDraftHandled(() => true);
+	try {
+		for (const ref of [unconfirmed, plain]) {
+			post(`kakao:settle-${ref}`, ref);
+			settleOpenDecision(listNotices(100).items.find(i => i.decision?.state === "open" && i.decision.draft?.ref === ref)!.id, "1) 보내기");
+			markDraftSend(`kakao:settle-${ref}`, ref, "unsure", "확인하지 못했어요");
+		}
+		await settleHandledDrafts();
+		const handled = (ref: string) => typeof listNotices(100).items.find(i => i.decision?.draft?.ref === ref)?.handled === "string";
+		expect([handled(unconfirmed), handled(plain)]).toEqual([false, true]);
+	} finally {
+		setDraftHandled(wired);
 	}
-	await settleHandledDrafts();
-	const handled = (ref: string) => typeof listNotices(100).items.find(i => i.decision?.draft?.ref === ref)?.handled === "string";
-	expect([handled(unconfirmed), handled(plain)]).toEqual([false, true]);
 });

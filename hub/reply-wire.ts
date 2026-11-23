@@ -248,7 +248,10 @@ onBroadcast(e => {
 	for (const code of commentDraftsOnMail(e.target.slice("mail:".length))) showReplyItem(code, "its writer's mail changed");
 });
 
-let sendsBooted = false;
+let sendsBooted = false, boots = 0;
+export function resetSendsBootForTest(): void {
+	sendsBooted = false;
+}
 // A card left 확인 필요 follows the comment's record: proof read back, the owner's 완료 or 다시 보내기, or the old sender that finished after all.
 function settleUnsureCards(): void {
 	for (const n of allNotices()) {
@@ -274,7 +277,7 @@ export function settleSends(): void {
 		sendsBooted = true;
 		commentSettleSending();
 		for (const k of commentKeptMails()) if (!newestDraftCard(k.mail)) cardKeptMail(k.mail);
-		sender.recover();
+		sender.recover(boots++ > 0);
 		sender.recheck();
 		void settleOwedSends().then(() => {
 			proveSends();

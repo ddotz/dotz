@@ -347,8 +347,8 @@ export function createApprovalSender(deps: SenderDeps) {
 		can,
 		enqueue: (j: SendJob, approved?: (until: number) => void) => enqueue(j, {}, approved),
 		/** Once, on boot: takes up the jobs the file kept (see the top of this file). */
-		recover: () => {
-			if (recovered || !deps.store) return;
+		recover: (again = false) => {
+			if ((recovered && !again) || !deps.store) return;
 			recovered = true;
 			let left: Kept[];
 			try {

@@ -17,6 +17,8 @@ import { makeRoute } from "./routes.ts";
 // and forwarded from another computer through /api/peer/act.
 const env = setupEnv();
 afterAll(env.cleanup);
+const wiredHandled = setDraftHandled(() => false);
+afterAll(() => setDraftHandled(wiredHandled));
 const route = makeRoute({ busyNow: () => [], restartGateway: () => "", restartGatewayNow: () => "" });
 const call = (method: string, path: string) => route(new Request(`http://hub.test${path}`, { method, headers: { "x-dotz-token": HUB_TOKEN, "content-type": "application/json" }, ...(method === "POST" ? { body: "{}" } : {}) }));
 

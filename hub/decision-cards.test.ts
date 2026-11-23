@@ -1,7 +1,14 @@
-import { beforeEach, expect, test } from "bun:test";
+import { afterAll, beforeEach, expect, test } from "bun:test";
+import { existsSync, statSync, truncateSync } from "node:fs";
+import { paths } from "./config.ts";
 import { emit } from "./events.ts";
 import { listNotices, resetNoticesForTest } from "./notices.ts";
 import { brokenCount, ownerText } from "./owner-text.ts";
+
+const outboxSize = existsSync(paths.outbox) ? statSync(paths.outbox).size : 0;
+afterAll(() => {
+	if (existsSync(paths.outbox)) truncateSync(paths.outbox, outboxSize);
+});
 
 // An [ask] the orchestrator writes in the shapes the model really uses: bold and numbered "결정:" headings, context under the heading, options as list
 // items with a bold name. Each "결정:" block is one decision with its own title and exactly its written options.

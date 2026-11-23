@@ -47,19 +47,22 @@ test("a lane report with a listed word goes back to the session once, then passe
 	mkdirSync(join(paths.lanes, name), { recursive: true });
 	const lane = { name, cwd: "/tmp", model: "m", status: "idle", startedAt: "", reports: 0, lastText: "", ctx: { compaction: { state: "idle" } }, proc: { send: (t: string) => sent.push(t) } } as unknown as Lane;
 	lanes.set(name, lane);
+	try {
+		report(lane, "[run] 빨간 시험은 이제 통과해요");
+		expect(reports).toEqual([]);
+		expect(sent).toHaveLength(1);
+		expect(sent[0]).toContain("빨간 시험");
+		expect(lane.bannedRefused).toBe(true);
 
-	report(lane, "[run] 빨간 시험은 이제 통과해요");
-	expect(reports).toEqual([]);
-	expect(sent).toHaveLength(1);
-	expect(sent[0]).toContain("빨간 시험");
-	expect(lane.bannedRefused).toBe(true);
+		report(lane, "[run] 빨간   시험은 이제 통과해요");
+		expect(sent).toHaveLength(1);
+		expect(reports).toEqual(["[run] 빨간   시험은 이제 통과해요"]);
 
-	report(lane, "[run] 빨간   시험은 이제 통과해요");
-	expect(sent).toHaveLength(1);
-	expect(reports).toEqual(["[run] 빨간   시험은 이제 통과해요"]);
-
-	report(lane, "[run] 다 끝났어요");
-	expect(reports).toHaveLength(2);
-	expect(lane.bannedRefused).toBeUndefined();
-	lanes.delete(name);
+		report(lane, "[run] 다 끝났어요");
+		expect(reports).toHaveLength(2);
+		expect(lane.bannedRefused).toBeUndefined();
+	} finally {
+		clearTimeout(lane.watchdog);
+		lanes.delete(name);
+	}
 });

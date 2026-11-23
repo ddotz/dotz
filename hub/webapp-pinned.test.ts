@@ -1,12 +1,17 @@
-import { afterAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { setWebView, type WebViewSource } from "./web-i18n.ts";
 
 // A release folder without git: the web files and VERSION sit side by side, and an update replaces them under a running process.
 const saved = { live: process.env.DOTZ_WEB_LIVE, dir: process.env.DOTZ_WEB_DIR };
 const roots: string[] = [];
 let n = 0;
+let view: WebViewSource | undefined;
+beforeAll(() => {
+	view = setWebView(undefined);
+});
 const put = (root: string, rel: string, text: string) => writeFileSync(join(root, rel), text);
 const site = (root: string, version: string, js: string, html: string) => {
 	put(root, "VERSION", `${version}\n`);
@@ -32,6 +37,7 @@ async function start(version: string, js: string, html: string) {
 }
 afterAll(() => {
 	for (const [k, v] of [["DOTZ_WEB_LIVE", saved.live], ["DOTZ_WEB_DIR", saved.dir]] as const) { if (v === undefined) delete process.env[k]; else process.env[k] = v; }
+	setWebView(view);
 	for (const r of roots) rmSync(r, { recursive: true, force: true });
 });
 

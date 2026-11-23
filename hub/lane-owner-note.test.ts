@@ -79,7 +79,9 @@ beforeAll(() => {
 		lost: (lane, refs) => void lost.push({ lane, refs }),
 	});
 });
-afterAll(() => {
+afterAll(async () => {
+	for (const { opts } of spawns) if (opts.lane && l.lanes.get(opts.lane.name)?.proc) l.stopLane(opts.lane.name);
+	await advance(300);
 	delete adapters.fakeomo;
 	Object.assign(cfg, savedCfg);
 });

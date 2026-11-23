@@ -131,6 +131,7 @@ test("a lane's report with the card goes back to the lane once, then is reported
 		expect(sent).toHaveLength(1);
 		expect(reports).toHaveLength(1);
 	} finally {
+		clearTimeout(lane.watchdog);
 		hooks.report = saved;
 		lanes.delete(name);
 	}

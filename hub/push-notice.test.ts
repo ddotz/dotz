@@ -8,7 +8,7 @@ import { emit } from "./events.ts";
 import { type Notice, onNoticeUnread } from "./notices.ts";
 import { classify, convOfUrl, decisionPush, noticePush, presenceQuiets, pushRoute, resetPushDedupeForTest, shouldNotify } from "./push.ts";
 import { b64u } from "./webpush.ts";
-import { diskReader, HANGUL, resolveView, setWebView, webView } from "./web-i18n.ts";
+import { diskReader, HANGUL, resolveView, setWebView } from "./web-i18n.ts";
 
 const notice = (n: Partial<Notice>): Notice => ({ id: "n1", ts: "2026-11-01T00:00:00Z", updated: "2026-11-01T00:00:00Z", kind: "message", tone: "", title: "제목", text: "본문", open: "main", at: "2026-11-01T00:00:00Z", read: false, ...n });
 
@@ -189,8 +189,7 @@ test("two different alerts within two minutes both notify, each under its own ta
 });
 
 test("push titles are in the install's language: an English install gets no Korean word in any of them", () => {
-	const prev = webView();
-	setWebView(() => resolveView("en", diskReader()));
+	const prev = setWebView(() => resolveView("en", diskReader()));
 	try {
 		const ev = (e: Record<string, unknown>) => classify({ ts: "2026-11-19T00:00:00Z", kind: "out", source: "orchestrator", text: "", ...e }, 5 * 60_000)!;
 		const dec = notice({ kind: "decision", tone: "ask", decision: { options: [], to: "main", group: 1, state: "open" } });
@@ -211,7 +210,7 @@ test("push titles are in the install's language: an English install gets no Kore
 		expect(titles.filter(s => HANGUL.test(s.replace(NAME, "")))).toEqual([]);
 		expect(titles).toEqual([`${NAME} · Alert`, `${NAME} · Needs a look`, `${NAME} · Done`, `${NAME} · Failed`, "lane · Question", "Kim · New mail", "Feed · News", "Proj · New message", "ui · Done", "ui · Failed", `${NAME} · New version`, "Needs your answer"]);
 	} finally {
-		setWebView(prev ? () => prev : undefined);
+		setWebView(prev);
 	}
 });
 

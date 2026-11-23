@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { afterAll, expect, test } from "bun:test";
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { DATA_DIR } from "./config.ts";
@@ -7,12 +7,13 @@ import { type HubEvent, onEmit } from "./events.ts";
 import { draftApprovalBlock } from "./draft-approval.ts";
 import { answerDecision, listNotices, onDecision } from "./notices.ts";
 import { out } from "./outbound.ts";
-import { replies } from "./reply-wire.ts";
+import { replies, resetSendsBootForTest } from "./reply-wire.ts";
 import { flush } from "./runtime/test-clock.ts";
 import { addDraft, getDraft, newId } from "../features/reply-drafts/lib/store.ts";
 
 const CONV = "mail:restart-back-test";
 const JOBS = join(DATA_DIR, "approval-sends.json");
+afterAll(resetSendsBootForTest);
 const id = newId();
 addDraft({ id, kind: "mail", app: "mail", source: "nowhere", mailId: `m-${id}`, ref: `rb-${id.toLowerCase()}`, to: "friend@example.com", body: "답", status: "pending", created: "2020-01-01T00:00:00.000Z", changes: [], questions: [], item: { kind: "mail", text: "", from: "" } } as never);
 const cardOf = () => {
@@ -51,5 +52,5 @@ test("a send cancelled by a restart inside its window tells the owner once, reop
 	await flush();
 	expect(notes).toHaveLength(1);
 	expect(pushed.length - pushedBefore).toBe(1);
-	expect(JSON.parse(await Bun.file(JOBS).text())).toEqual([]);
+	expect((JSON.parse(await Bun.file(JOBS).text()) as { ref: string }[]).filter(j => j.ref === id)).toEqual([]);
 });

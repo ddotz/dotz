@@ -1,9 +1,9 @@
-import { expect, test } from "bun:test";
+import { afterAll, expect, test } from "bun:test";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { DATA_DIR } from "./config.ts";
 import { claimSend } from "./draft-claim.ts";
-import { sender, settleSends } from "./reply-wire.ts";
+import { resetSendsBootForTest, sender, settleSends } from "./reply-wire.ts";
 import { createDraft } from "./kakao/send.ts";
 import { kakaoPaths } from "./kakao/types.ts";
 
@@ -17,6 +17,7 @@ const patch = (code: string, change: Record<string, unknown>) => {
 	writeFileSync(kpaths.drafts, JSON.stringify(list.map(d => (d.code === code ? { ...d, ...change } : d))));
 };
 const seen = (ref: string) => sender.results(CONV).find(r => r.ref === ref);
+afterAll(resetSendsBootForTest);
 
 test("a KakaoTalk send that was running at a restart: sent is sent, pressed-but-unconfirmed is unsure, a live sender is still sending", async () => {
 	const done = await make("보냈어요");

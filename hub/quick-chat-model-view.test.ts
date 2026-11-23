@@ -5,13 +5,19 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { cfg, DATA_DIR } from "./config.ts";
 import { changeTarget, modelsView, sessionModel, targetView } from "./control.ts";
-import { convs } from "./convsessions.ts";
+import { convs, resetConvSwitchesForTest } from "./convsessions.ts";
 import "./outbound.ts";
 import { QUICK, safeDir } from "./session-key.ts";
 
 const spy = spyOn(Bun, "spawn").mockImplementation((() => ({ stdout: new Response("").body, exited: Promise.resolve(0), kill() {} })) as unknown as typeof Bun.spawn);
-afterAll(() => spy.mockRestore());
+const savedConversations = cfg.conversations;
+afterAll(() => {
+	spy.mockRestore();
+	cfg.conversations = savedConversations;
+	resetConvSwitchesForTest();
+});
 cfg.conversations = { ...cfg.conversations, quick_chat: true };
+resetConvSwitchesForTest();
 
 const OPUS = "anthropic/claude-opus-5-5";
 const stateFile = join(DATA_DIR, "conv-sessions", safeDir(QUICK), "state.json");

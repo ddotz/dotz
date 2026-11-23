@@ -78,7 +78,7 @@ test("a history call sorts nothing once the logs are read: an appended event cos
 	const compares = spyOn(String.prototype, "localeCompare");
 	try {
 		pageOf("lane:a");
-		emit("outbox", { ts: "2026-11-19T01:00:00.000Z", kind: "out", source: "orchestrator", target: "lane:a", text: "newest" });
+		appendFileSync(paths.outbox, `${JSON.stringify({ ts: "2026-11-19T01:00:00.000Z", kind: "out", source: "orchestrator", target: "lane:a", text: "newest" })}\n`);
 		const page = pageOf("lane:a");
 		expect(page.at(-1)?.text).toBe("newest");
 		expect(sorts).not.toHaveBeenCalled();

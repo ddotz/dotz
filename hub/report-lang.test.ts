@@ -1,6 +1,6 @@
 // A report, progress line or owner message in a ko install that carries an English paragraph: the lane report goes back to the session once,
 // then through; every outbound text with such a paragraph counts as off-language, so the rewrite (hub/outlang.ts localize) takes it.
-import { afterAll, beforeAll, expect, test } from "bun:test";
+import { afterAll, afterEach, beforeAll, expect, test } from "bun:test";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { cfg, paths } from "./config.ts";
@@ -16,6 +16,13 @@ const KOREAN_DEV =
 const savedReport = hooks.report;
 const savedIdentity = cfg.identity;
 let tick = 0;
+const made: Lane[] = [];
+afterEach(() => {
+	for (const lane of made.splice(0)) {
+		clearTimeout(lane.watchdog);
+		lanes.delete(lane.name);
+	}
+});
 beforeAll(() => {
 	cfg.identity = { ...cfg.identity, language: "ko" };
 });
@@ -32,6 +39,7 @@ function fakeLane(): { lane: Lane; sent: string[]; reports: string[] } {
 	mkdirSync(join(paths.lanes, name), { recursive: true });
 	const lane = { name, cwd: "/tmp", model: "m", status: "idle", startedAt: "", reports: 0, lastText: "", ctx: { compaction: { state: "idle" } }, proc: { send: (t: string) => sent.push(t) } } as unknown as Lane;
 	lanes.set(name, lane);
+	made.push(lane);
 	return { lane, sent, reports };
 }
 

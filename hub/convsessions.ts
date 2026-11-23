@@ -400,6 +400,10 @@ export function createConvSessions(d: ConvDeps) {
 
 let on: boolean | undefined;
 let quickOn: boolean | undefined;
+export const resetConvSwitchesForTest = (): void => {
+	on = undefined;
+	quickOn = undefined;
+};
 let wiring: ((c: Conv) => { queue: Prompts; bg: BgWork }) | undefined;
 /** outbound.ts builds each instance's prompt queue and background-work view (it owns the delivery state they use). */
 export const setWiring = (fn: (c: Conv) => { queue: Prompts; bg: BgWork }): void => {

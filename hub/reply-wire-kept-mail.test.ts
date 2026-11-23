@@ -1,11 +1,11 @@
-import { afterEach, expect, test } from "bun:test";
+import { afterAll, afterEach, expect, test } from "bun:test";
 import { DATA_DIR } from "./config.ts";
 import { ignoreNotice, listNotices, resetNoticesForTest } from "./notices.ts";
 import { out } from "./outbound.ts";
 import { commentsRoute } from "./comments/gateway.ts";
 import { type Comment, commentId } from "./comments/contract.ts";
 import { commentsDir, createStore, type Draft } from "./comments/store.ts";
-import { settleSends } from "./reply-wire.ts";
+import { resetSendsBootForTest, settleSends } from "./reply-wire.ts";
 import { addDraft, getDraft, newId } from "../features/reply-drafts/lib/store.ts";
 
 const store = createStore(commentsDir(DATA_DIR));
@@ -25,6 +25,7 @@ const reconcile = () => commentsRoute(new Request("http://local/api/comments/rec
 afterEach(() => {
 	for (const n of listNotices(500).items.filter(x => x.decision?.state === "open")) ignoreNotice(n.id);
 });
+afterAll(resetSendsBootForTest);
 
 test("boot: a comment closed answered on the platform raises one card for its still-pending mail; a 답장 안 함 close and a sent mail raise none", async () => {
 	const kept = mailDraft("부팅 때 남은 메일"), dismissed = mailDraft("답장 안 함 메일"), sent = mailDraft("이미 보낸 메일");

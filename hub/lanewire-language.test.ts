@@ -8,6 +8,7 @@ import { cfg, NAME, paths } from "./config.ts";
 import { type HubEvent, onEmit } from "./events.ts";
 import { hooks, type Lane } from "./lanestate.ts";
 import { installLaneHandlers } from "./lanewire.ts";
+import { stop as stopMain } from "./orchestrator.ts";
 import { modelDeps } from "./outlang.ts";
 
 const KO = "시제품 빌드가 이제 통과해요. 테스트 12개가 모두 초록이에요.";
@@ -33,6 +34,7 @@ beforeAll(() => {
 	installLaneHandlers();
 });
 afterAll(() => {
+	stopMain();
 	modelDeps.spawn = saved.spawn;
 	cfg.identity = saved.identity;
 	Reflect.set(cfg, "runtime", saved.runtime);

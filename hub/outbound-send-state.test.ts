@@ -1,4 +1,4 @@
-import { afterEach, expect, spyOn, test } from "bun:test";
+import { afterAll, afterEach, expect, spyOn, test } from "bun:test";
 import * as discord from "./discord.ts";
 import { draftApprovalBlock } from "./draft-approval.ts";
 import { listNotices, markDraftPosted, settleOpenDecision } from "./notices.ts";
@@ -11,6 +11,7 @@ const ref = "os-send-state";
 const card = `[ask] 댓글 답글 초안이에요\n${draftApprovalBlock({ to: "친구 댓글", toLabel: "대상", body: "답글이에요", ref, question: "이 답글 올릴까요?" })}`;
 const edit = spyOn(discord, "edit").mockImplementation(async () => ({ delivered: true }));
 afterEach(() => edit.mockClear());
+afterAll(() => edit.mockRestore());
 
 const report = (state: "undo" | "queued" | "sending" | "sent" | "failed" | "unsure", text = "") => reportSend({ ref, conv: CONV, title: `이 답글 올릴까요? (${ref})`, state, text, at: Date.now(), ...(state === "undo" ? { until: Date.now() + 10_000 } : {}) });
 const lastEdit = () => {

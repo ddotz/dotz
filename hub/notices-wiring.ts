@@ -53,8 +53,13 @@ export const onDecisionClosed = (fn: (to: string, ref: string | undefined, card?
 // itself can be over: sent from the app or by the owner's own client, dropped, replaced by a revision, marked 답장 안 함, answered on the platform,
 // deleted at the source, or handled on another computer. The apps know it (hub/draft-handled.ts); this settles the notice as resolved.
 // A message asking about several drafts at once has one notice per draft without `draft`: its block title still names the ref (blockDraftRef).
-export let draftHandled: (d: Decision, n: Notice, ref: string) => Promise<boolean> | boolean = () => false;
-export const setDraftHandled = (fn: typeof draftHandled) => void (draftHandled = fn);
+export type DraftHandled = (d: Decision, n: Notice, ref: string) => Promise<boolean> | boolean;
+export let draftHandled: DraftHandled = () => false;
+export const setDraftHandled = (fn: DraftHandled): DraftHandled => {
+	const was = draftHandled;
+	draftHandled = fn;
+	return was;
+};
 // The stored draft behind a card's ref (hub/reply-wire.ts reads the mail drafts): a card that shows other words or another recipient keeps no draft.
 export let storedDraftOf: (ref: string) => { to: string; body: string } | undefined = () => undefined;
 export const setStoredDraft = (fn: typeof storedDraftOf) => void (storedDraftOf = fn);

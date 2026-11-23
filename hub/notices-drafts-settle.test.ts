@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, expect, test } from "bun:test";
+import { afterAll, afterEach, beforeEach, expect, test } from "bun:test";
 import { chmodSync, rmSync } from "node:fs";
 import { paths } from "../features/reply-drafts/lib/settings.ts";
 import { addDraft, DRAFT_ID, draftHeads, draftStoreIntact, newId, type DraftRec } from "../features/reply-drafts/lib/store.ts";
@@ -8,12 +8,19 @@ import { emit } from "./events.ts";
 import { COMMENT_CODE } from "./comments/engine.ts";
 import { KAKAO_CODE } from "./kakao/send.ts";
 import { listNotices, markDraftSend, resetNoticesForTest, setDraftHandled, settleHandledDrafts, settleOpenDecision } from "./notices.ts";
+import { setSendOwed } from "./notices-drafts.ts";
 
 const records = new Map<string, { reply?: string }>();
 const facts = () => ({
 	mail: { drafts: draftHeads, record: (key: string) => records.get(key), idShape: DRAFT_ID, intact: draftStoreIntact },
 	comment: { drafts: () => [], waiting: () => undefined, idShape: COMMENT_CODE, intact: () => true },
 	kakao: { drafts: async () => [], waiting: async () => undefined, idShape: KAKAO_CODE, intact: () => true },
+});
+const wiredSendOwed = setSendOwed(async () => false);
+const wiredHandled = setDraftHandled(() => false);
+afterAll(() => {
+	setSendOwed(wiredSendOwed);
+	setDraftHandled(wiredHandled);
 });
 beforeEach(() => {
 	resetNoticesForTest();
@@ -28,7 +35,7 @@ afterEach(() => {
 
 const mailDraft = (id: string, mailRef: string, status: string, created = "2026-11-01T00:00:00.000Z") =>
 	addDraft({ id, kind: "mail", app: "mail", source: "zele", mailId: `m-${id}`, ref: mailRef, to: "a@example.com", body: "답", status, created, changes: [], questions: [], item: { kind: "mail", from: "a@example.com", text: "안녕" } } as DraftRec);
-const ask = (ref: string) => `[ask] 답장 초안을 만들었어요\n${draftApprovalBlock({ to: "a@example.com", toLabel: "받는이", subject: "Re: 샘플", body: `답 ${ref}`, ref, question: "이 답장 보낼까요?" })}`;
+const ask = (ref: string) => `[ask] 답장 초안을 만들었어요\n${draftApprovalBlock({ to: "a@example.com", toLabel: "받는이", subject: "Re: 샘플", body: "답", ref, question: "이 답장 보낼까요?" })}`;
 const failedCard = (ref: string, state: "failed" | "unsure" = "failed") => {
 	const conv = `mail:settle-${ref}`;
 	emit("outbox", { ts: new Date().toISOString(), kind: "out", source: "orchestrator", target: conv, text: ask(ref) });
