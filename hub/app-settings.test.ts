@@ -175,3 +175,24 @@ describe("자동 초안 switch", () => {
 		expect(json("custom/reply-drafts/config.json").apps.mail.auto).toBe(false);
 	});
 });
+
+describe("a store that does not parse", () => {
+	test("a write throws and leaves the file byte for byte, whether it is an app's own store or custom/apps.json", () => {
+		const cases: [string, string, Record<string, unknown>][] = [
+			["custom/kakao/config.json", "kakao", { enabled: true }],
+			["custom/apps.json", "mail", { notify: false }],
+		];
+		for (const [rel, app, values] of cases) {
+			const corrupt = '{"keep":"me","enabled":false,';
+			mkdirSync(dirname(file(rel)), { recursive: true });
+			writeFileSync(file(rel), corrupt);
+			expect(() => writeSettings(dir, app, values)).toThrow(SettingsError);
+			expect(readFileSync(file(rel), "utf8")).toBe(corrupt);
+		}
+	});
+
+	test("a missing store starts empty", () => {
+		writeSettings(dir, "kakao", { enabled: true });
+		expect(json("custom/kakao/config.json")).toEqual({ enabled: true });
+	});
+});

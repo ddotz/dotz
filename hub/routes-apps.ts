@@ -1,5 +1,6 @@
 // HTTP routes of the apps and integrations (list, switches, features, settings). Split out of routes.ts, called there at the same place of the chain.
 import { cfg, DATA_DIR } from "./config.ts";
+import { UnreadableFileError } from "./json-update.ts";
 import { convs } from "./convsessions.ts";
 import { unreadOf } from "./conversations.ts";
 import { appEntries, INTEGRATIONS, integrationAvailable, integrationContext, integrationItems, withConnection, withStoreDrafts } from "./integrations.ts";
@@ -47,7 +48,12 @@ export async function routeApps(req: Request, url: URL, unrepliedMailList: () =>
 	const userAppRoute = /^\/api\/apps\/([a-z0-9-]+)$/.exec(url.pathname);
 	if (userAppRoute && req.method === "PATCH") {
 		if (!userApp(DATA_DIR, userAppRoute[1]!, INTEGRATIONS.map(i => i.key))) return json({ error: "알 수 없는 앱이에요" }, 404);
-		setUserAppOff(DATA_DIR, userAppRoute[1]!, (await body(req)).off !== false);
+		try {
+			setUserAppOff(DATA_DIR, userAppRoute[1]!, (await body(req)).off !== false);
+		} catch (error) {
+			if (error instanceof UnreadableFileError) return json({ error: error.message }, 500);
+			throw error;
+		}
 		return json({ ok: true });
 	}
 	// The 새로 추가하기 prompts (hub/app-templates.ts): shipped ones, replaced or extended by custom/app-templates.json; ?key= also finds an unlisted one.
@@ -81,7 +87,7 @@ export async function routeApps(req: Request, url: URL, unrepliedMailList: () =>
 		}
 			return json({ ok: true, ...createApp(DATA_DIR, await body(req)) });
 		} catch (error) {
-			return json({ error: (error as Error).message }, error instanceof SettingsError ? error.status : 400);
+			return json({ error: (error as Error).message }, error instanceof SettingsError ? error.status : error instanceof UnreadableFileError ? 500 : 400);
 		}
 	}
 	// An app's features, internal functions (login keeper, sync) and approvals (hub/app-features.ts); 다시 시도 runs one owned watch now.

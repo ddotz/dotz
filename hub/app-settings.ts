@@ -6,6 +6,7 @@
 // request, so a peer gateway can be handed the same plain HTTP call. Pure fs: no import of hub/config.ts, the data dir is a parameter.
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { readObjectForUpdate, UnreadableFileError } from "./json-update.ts";
 import { appEntries, INTEGRATIONS, readAppsFile } from "./integrations.ts";
 import type { UnansweredSettings } from "./mail-unanswered.ts";
 import { autoDraftOn, instanceOf } from "./reply-model.ts";
@@ -173,6 +174,15 @@ const readJson = (file: string): Record<string, any> => {
 		return {};
 	}
 };
+/** A store file for a write: a missing one starts empty, one that does not parse is a 500 SettingsError and stays as it is. */
+export function readStoreForUpdate<T extends object = Record<string, unknown>>(file: string): T {
+	try {
+		return readObjectForUpdate<T>(file);
+	} catch (e) {
+		if (e instanceof UnreadableFileError) throw new SettingsError(e.message, 500);
+		throw e;
+	}
+}
 const getPath = (obj: Record<string, any>, path: string): unknown => path.split(".").reduce<any>((o, k) => (o && typeof o === "object" ? o[k] : undefined), obj);
 function setPath(obj: Record<string, any>, path: string, value: unknown): void {
 	const keys = path.split(".");
@@ -281,7 +291,7 @@ export function writeSettings(dataDir: string, app: string, values: unknown): Se
 		const f = fieldsOf(app).find(x => x.key === k)!;
 		const blocked = v === true ? f.blocked?.(app) : undefined;
 		if (blocked) throw new SettingsError(blocked);
-		if (!byStore.has(f.store)) byStore.set(f.store, readJson(join(dataDir, f.store)));
+		if (!byStore.has(f.store)) byStore.set(f.store, readStoreForUpdate(join(dataDir, f.store)));
 		const doc = byStore.get(f.store)!;
 		setPath(doc, f.path, f.invert ? !v : v);
 		if (v === true) for (const p of f.alsoOn ?? []) setPath(doc, p, true);

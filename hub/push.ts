@@ -6,6 +6,7 @@ import { createHash } from "node:crypto";
 import { chmodSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { cfg, DATA_DIR, log, NAME, updateNotifyPush, writeAtomic } from "./config.ts";
+import { UnreadableFileError } from "./json-update.ts";
 import { classOfNotice, NOTICE_CLASSES, type NoticeClass, noticeClass } from "./notice-class.ts";
 import { type KindItem, kindOf, NOTICE_KINDS, type NoticeKindName, pushTitle } from "./notice-kinds.ts";
 import { clean, laterOn } from "./notices-rules.ts";
@@ -727,7 +728,12 @@ export async function pushRoute(req: Request, url: URL): Promise<Response | unde
 		if (req.method === "PUT") {
 			const v = b.classes as Record<string, unknown> | undefined;
 			if (!v || typeof v !== "object" || Object.entries(v).some(([k, x]) => !(PUSH_KINDS as readonly string[]).includes(k) || typeof x !== "boolean")) return json({ error: "classes: { <class>: boolean }" }, 400);
-			updateNotifyPush(v as Record<string, boolean>);
+			try {
+				updateNotifyPush(v as Record<string, boolean>);
+			} catch (error) {
+				if (error instanceof UnreadableFileError) return json({ error: error.message }, 500);
+				throw error;
+			}
 		}
 		return json({ classes: pushClasses() });
 	}

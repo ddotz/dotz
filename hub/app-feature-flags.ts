@@ -61,7 +61,7 @@ export const APP_FEATURES: Record<string, AppDecl> = {
 	},
 };
 
-export function readApps(dataDir: string): Record<string, any> {
+function readApps(dataDir: string): Record<string, any> {
 	try {
 		const v = JSON.parse(readFileSync(join(dataDir, APPS_FILE), "utf8"));
 		return v && typeof v === "object" && !Array.isArray(v) ? v : {};

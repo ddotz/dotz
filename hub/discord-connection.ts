@@ -8,6 +8,7 @@ import { dirname, join } from "node:path";
 import { PERMISSIONS } from "../onboard/discord.ts";
 import { cfg, CONFIG_FILE, DATA_DIR, expand, log, writeAtomic } from "./config.ts";
 import { status } from "./discord.ts";
+import { readObjectForUpdate, UnreadableFileError } from "./json-update.ts";
 import { body, json } from "./routes-util.ts";
 
 export type DiscordFetch = (url: string, init: { headers: Record<string, string> }) => Promise<Response>;
@@ -49,10 +50,7 @@ function view() {
 
 // Edits config.json's discord block (re-read from disk) and mirrors it into `cfg`, like updateNotifyPush.
 function updateDiscord(values: Record<string, string>): void {
-	let disk: Record<string, any> = {};
-	try {
-		disk = JSON.parse(readFileSync(CONFIG_FILE, "utf8"));
-	} catch {}
+	const disk = readObjectForUpdate<Record<string, any>>(CONFIG_FILE);
 	disk.discord = { ...disk.discord, ...values };
 	writeAtomic(CONFIG_FILE, `${JSON.stringify(disk, null, 2)}\n`);
 	cfg.discord = { ...cfg.discord, ...values };
@@ -146,6 +144,7 @@ export function createDiscordStore(dir?: string): DiscordStore {
 		const before = config();
 		const changed = given !== undefined || Object.entries(values).some(([k, v]) => (before as Record<string, string>)[k] !== v);
 		// Validated as a whole above; the writes follow.
+		if (!dir) readObjectForUpdate(CONFIG_FILE);
 		if (given !== undefined) storeToken(given);
 		if (Object.keys(values).length) writeDiscordConfig(dir, values);
 		if (changed && !dir) restartNeeded = true;
@@ -188,7 +187,7 @@ export async function checkConnection(token: string, stored: boolean, doFetch: D
 		}
 		return out;
 	} catch (error) {
-		return { ok: false, error: error instanceof Bad ? error.message : "디스코드에 연결하지 못했어요", intent_note: INTENT_NOTE };
+		return { ok: false, error: error instanceof Bad || error instanceof UnreadableFileError ? error.message : "디스코드에 연결하지 못했어요", intent_note: INTENT_NOTE };
 	}
 }
 
@@ -200,6 +199,7 @@ export async function discordConnectionRoute(req: Request, url: URL, doFetch: Di
 				saveDiscordConnection(await body(req));
 			} catch (error) {
 				if (error instanceof Bad) return json({ error: error.message }, 400);
+				if (error instanceof UnreadableFileError) return json({ error: error.message }, 500);
 				throw error;
 			}
 			return json(view());

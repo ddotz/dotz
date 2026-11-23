@@ -26,6 +26,7 @@
 // instances use; this module only reads the ids of manifests). 제거 moves the folder to custom/apps-removed/ (recoverable).
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { readObjectForUpdate } from "./json-update.ts";
 import { readAppsFile } from "./integrations.ts";
 
 export type UserAppKind = "monitor" | "tool";
@@ -192,11 +193,7 @@ export const userApp = (dataDir: string, id: string, registryIds: readonly strin
 /** 끄기/켜기: custom/apps.json {"<id>":{"off":true}} (the same file app instances keep their state in). */
 export function setUserAppOff(dataDir: string, id: string, off: boolean): void {
 	const file = join(dataDir, "custom/apps.json");
-	let doc: Record<string, unknown> = {};
-	try {
-		const v = JSON.parse(readFileSync(file, "utf8"));
-		if (isObj(v)) doc = v;
-	} catch {}
+	const doc = readObjectForUpdate(file);
 	const mine = isObj(doc[id]) ? (doc[id] as Record<string, unknown>) : {};
 	if (off) doc[id] = { ...mine, off: true };
 	else {
@@ -214,13 +211,12 @@ export function setUserAppOff(dataDir: string, id: string, off: boolean): void {
 export function removeUserApp(dataDir: string, id: string, registryIds: readonly string[] = []): { removed: string; kept: string } | undefined {
 	const app = userApp(dataDir, id, registryIds);
 	if (!app) return undefined;
+	readObjectForUpdate(join(dataDir, "custom/apps.json"));
 	const stamp = new Date().toISOString().replace(/[-:]/g, "").replace(/\..*$/, "");
 	const kept = join(dataDir, REMOVED_DIR, `${stamp}-${id}`);
 	mkdirSync(dirname(kept), { recursive: true });
 	renameSync(app.dir, kept);
-	try {
-		setUserAppOff(dataDir, id, false);
-	} catch {}
+	setUserAppOff(dataDir, id, false);
 	healthCache.delete(id);
 	return { removed: app.dir, kept };
 }

@@ -236,3 +236,21 @@ describe("a peer approval is answered with the peer's own decision", () => {
 		expect(seen).toEqual([{ path: "/api/notices/read", body: { ids: ["n1", "2"] } }, { path: "/api/notices/n3/ignore", body: {} }, { path: "/api/notices/n3/unignore", body: {} }]);
 	});
 });
+
+describe("a feature switch on an apps.json that does not parse", () => {
+	test("throws and leaves the file byte for byte; a missing file starts empty", () => {
+		const d = mkdtempSync(join(tmpdir(), "app-features-bad-"));
+		try {
+			mkdirSync(join(d, "custom"), { recursive: true });
+			const corrupt = '{"mail-2":{"app":"mail","label":"회사",';
+			writeFileSync(join(d, "custom/apps.json"), corrupt);
+			expect(() => setFeature(d, "site", "comment_reply", false)).toThrow();
+			expect(readFileSync(join(d, "custom/apps.json"), "utf8")).toBe(corrupt);
+			rmSync(join(d, "custom/apps.json"));
+			setFeature(d, "site", "comment_reply", false);
+			expect(JSON.parse(readFileSync(join(d, "custom/apps.json"), "utf8"))).toEqual({ site: { features: { comment_reply: false } } });
+		} finally {
+			rmSync(d, { recursive: true, force: true });
+		}
+	});
+});

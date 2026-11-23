@@ -2,7 +2,7 @@
 // prefix modes, the auth of the API, an app that is off, and a websocket bridged to the app's own server.
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { realSetTimeout, realClearTimeout } from "./runtime/test-clock.ts";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { appProxySocket } from "./app-proxy.ts";
 import { HUB_TOKEN } from "./config.ts";
@@ -145,5 +145,20 @@ describe("the proxied page", () => {
 		});
 		expect(got).toBe("echo:hello");
 		ws.close();
+	});
+
+	test("끄기 on an apps.json that does not parse answers an error and leaves the file as it was", async () => {
+		put("brk", { label: "깨진 설정 앱", kind: "tool", web: { url: `http://127.0.0.1:${port}` } });
+		const file = join(DATA, "custom/apps.json");
+		const corrupt = '{"mail":{"off":true},';
+		writeFileSync(file, corrupt);
+		try {
+			const r = await callAs("/api/apps/brk", { method: "PATCH", body: JSON.stringify({ off: true }), headers: { "x-dotz-token": HUB_TOKEN, "content-type": "application/json" } });
+			expect(r.status).toBeGreaterThanOrEqual(400);
+			expect(await r.json()).toMatchObject({ error: expect.any(String) });
+			expect(readFileSync(file, "utf8")).toBe(corrupt);
+		} finally {
+			rmSync(file, { force: true });
+		}
 	});
 });

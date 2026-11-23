@@ -8,7 +8,7 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { type WatchLike, watchOwner } from "./app-features.ts";
-import { SettingsError, writeSettings } from "./app-settings.ts";
+import { readStoreForUpdate, SettingsError, writeSettings } from "./app-settings.ts";
 import { loadFeatureDirs } from "./featuredirs.ts";
 import { type AppFilter, type AppRaw, APPS_FILE, appEntries, appLabel, type IntegrationEntry, inConv, INTEGRATIONS, owns, readAppOff, readAppsFile, srcKey, whereOf } from "./integrations.ts";
 
@@ -103,7 +103,7 @@ export function removeApp(dataDir: string, app: string, opts: { deleteStored?: b
 	return plan;
 }
 
-const appsDoc = (dataDir: string): Record<string, AppRaw | undefined> => ({ ...readAppsFile(dataDir) });
+const appsDoc = (dataDir: string): Record<string, AppRaw | undefined> => readStoreForUpdate<Record<string, AppRaw | undefined>>(join(dataDir, APPS_FILE));
 const writeApps = (dataDir: string, doc: Record<string, AppRaw | undefined>) => writeJson(join(dataDir, APPS_FILE), Object.fromEntries(Object.entries(doc).filter(([, v]) => v !== undefined)));
 
 /** Delete an instance for good: only one that is off. The removal of 제거 runs first (watches, features, data when asked), then its entry goes. */

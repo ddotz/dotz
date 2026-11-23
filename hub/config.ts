@@ -4,6 +4,7 @@ import { appendFileSync, chmodSync, existsSync, mkdirSync, readFileSync, renameS
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { testDataRefusal } from "./live-guard.ts";
+import { readObjectForUpdate } from "./json-update.ts";
 import { sweetSpot } from "./model-effort.ts";
 
 export const HOME = homedir();
@@ -198,10 +199,7 @@ export function updateModels(target: FallbackTarget, values: TargetModels): void
 }
 // Edits config.json's notify.push (re-read from disk) and mirrors it into `cfg`.
 export function updateNotifyPush(values: Record<string, boolean>): void {
-	let disk: Record<string, any> = {};
-	try {
-		disk = JSON.parse(readFileSync(CONFIG_FILE, "utf8"));
-	} catch {}
+	const disk = readObjectForUpdate<Record<string, any>>(CONFIG_FILE);
 	disk.notify = { ...disk.notify, push: { ...disk.notify?.push, ...values } };
 	writeAtomic(CONFIG_FILE, `${JSON.stringify(disk, null, 2)}\n`);
 	cfg.notify = { ...cfg.notify, push: { ...cfg.notify?.push, ...values } };

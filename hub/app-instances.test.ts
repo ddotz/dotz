@@ -224,4 +224,19 @@ describe("the hub routes", () => {
 		expect((await call("GET", "/api/integrations/mail-9/remove")).status).toBe(404);
 		expect((await call("POST", "/api/apps", { app: "nope" })).status).toBe(400);
 	});
+
+	test("an apps.json that does not parse is never rewritten: create, settings and the feature switch answer an error", async () => {
+		const corrupt = '{"mail-2":{"app":"mail","label":"개인 메일",';
+		const file = join(DATA_DIR, "custom/apps.json");
+		mkdirSync(join(DATA_DIR, "custom"), { recursive: true });
+		writeFileSync(file, corrupt);
+		const created = await call("POST", "/api/apps", { app: "mail", label: "새 메일" });
+		const renamed = await call("PATCH", "/api/integrations/mail/settings", { values: { label: "이름" } });
+		const feature = await call("PATCH", "/api/integrations/site/features", { id: "comment_reply", on: false });
+		for (const r of [created, renamed, feature]) {
+			expect(r.status).toBeGreaterThanOrEqual(400);
+			expect(await r.json()).toMatchObject({ error: expect.any(String) });
+		}
+		expect(readFileSync(file, "utf8")).toBe(corrupt);
+	});
 });

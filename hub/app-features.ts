@@ -10,8 +10,8 @@
 //   POST  /api/integrations/<app>/retry           -> {watch}: runs one owned watch now (다시 시도)
 import { existsSync, mkdirSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { readSettings, SettingsError, writeSettings, type SettingSection } from "./app-settings.ts";
-import { APP_FEATURES, declOf, type FeatureDecl, featureOn, readApps } from "./app-feature-flags.ts";
+import { readSettings, readStoreForUpdate, SettingsError, writeSettings, type SettingSection } from "./app-settings.ts";
+import { APP_FEATURES, declOf, type FeatureDecl, featureOn } from "./app-feature-flags.ts";
 import { APPS_FILE, appBase, appEntries, belongsTo, type IntegrationEntry, named } from "./integrations.ts";
 import { watchFacts } from "./monitors.ts";
 import type { Watch, WatchOwner } from "./watch.ts";
@@ -152,12 +152,12 @@ export function setFeature(dataDir: string, app: string, id: unknown, on: unknow
 		writeSettings(dataDir, app, { [f.setting]: on });
 		return;
 	}
-	const doc = readApps(dataDir), mine = doc[app] && typeof doc[app] === "object" ? doc[app] : (doc[app] = {});
+	const file = join(dataDir, APPS_FILE), doc = readStoreForUpdate<Record<string, { features?: Record<string, false> }>>(file), mine = doc[app] && typeof doc[app] === "object" ? doc[app] : (doc[app] = {});
 	const flags = mine.features && typeof mine.features === "object" ? mine.features : (mine.features = {});
 	if (on) delete flags[f.id];
 	else flags[f.id] = false;
 	if (!Object.keys(flags).length) delete mine.features;
-	const file = join(dataDir, APPS_FILE), tmp = `${file}.${process.pid}.tmp`;
+	const tmp = `${file}.${process.pid}.tmp`;
 	mkdirSync(dirname(file), { recursive: true });
 	writeFileSync(tmp, `${JSON.stringify(doc, null, 2)}\n`, { mode: 0o644 });
 	renameSync(tmp, file);

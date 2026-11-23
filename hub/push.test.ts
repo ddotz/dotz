@@ -1,8 +1,8 @@
 // Which hub events become a phone notification, and where a tap on it leads.
 import { expect, test } from "bun:test";
 import { createECDH } from "node:crypto";
-import { readFileSync } from "node:fs";
-import { NAME, paths } from "./config.ts";
+import { readFileSync, writeFileSync } from "node:fs";
+import { CONFIG_FILE, NAME, paths } from "./config.ts";
 import { emit, lastEventId, recentEvents, replayAfter } from "./events.ts";
 import { type Notice, onDecision, setWatchLabelResolver } from "./notices.ts";
 import { type RouteInput, route } from "./notify-route.ts";
@@ -257,4 +257,19 @@ test("a recall push (it only closes a notification) goes with Urgency low and TT
 		await call("/api/push/unsubscribe", "POST", { endpoint });
 	}
 	expect(heads).toEqual([["high", "3600"], ["low", "300"]]);
+});
+
+test("PUT /api/push/classes answers an error and leaves a corrupt config.json untouched", async () => {
+	const corrupt = '{"notify":{"push":{"ask":false},';
+	const saved = readFileSync(CONFIG_FILE, "utf8");
+	try {
+		writeFileSync(CONFIG_FILE, corrupt);
+		const url = new URL("http://x/api/push/classes");
+		const r = await pushRoute(new Request(url, { method: "PUT", body: JSON.stringify({ classes: { news: false } }) }), url);
+		expect(r!.status).toBeGreaterThanOrEqual(400);
+		expect(await r!.json()).toMatchObject({ error: expect.any(String) });
+		expect(readFileSync(CONFIG_FILE, "utf8")).toBe(corrupt);
+	} finally {
+		writeFileSync(CONFIG_FILE, saved);
+	}
 });

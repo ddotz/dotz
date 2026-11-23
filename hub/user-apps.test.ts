@@ -110,6 +110,28 @@ describe("switch and removal", () => {
 		expect(JSON.parse(readFileSync(join(d, "custom/apps.json"), "utf8"))).toEqual({});
 		expect(removeUserApp(d, "mydocs")).toBeUndefined();
 	});
+
+	test("끄기 on an apps.json that does not parse throws and leaves the file byte for byte; a missing file starts empty", () => {
+		const d = manifest(fresh(), "mydocs", { label: "문서 도구", kind: "tool", web: { url: "http://127.0.0.1:4417" } });
+		mkdirSync(join(d, "custom"), { recursive: true });
+		for (const corrupt of ['{"mail":{"off":true,"filter":{"source":"work"}},', "[1,2]", "null"]) {
+			writeFileSync(join(d, "custom/apps.json"), corrupt);
+			expect(() => setUserAppOff(d, "mydocs", true)).toThrow();
+			expect(readFileSync(join(d, "custom/apps.json"), "utf8")).toBe(corrupt);
+		}
+		rmSync(join(d, "custom/apps.json"));
+		setUserAppOff(d, "mydocs", true);
+		expect(JSON.parse(readFileSync(join(d, "custom/apps.json"), "utf8"))).toEqual({ mydocs: { off: true } });
+	});
+
+	test("제거 with an apps.json that does not parse throws before the folder moves, and leaves both as they were", () => {
+		const d = manifest(fresh(), "mydocs", { label: "문서 도구", kind: "tool", web: { url: "http://127.0.0.1:4417" } });
+		const corrupt = '{"mydocs":{"off":true},';
+		writeFileSync(join(d, "custom/apps.json"), corrupt);
+		expect(() => removeUserApp(d, "mydocs")).toThrow();
+		expect(existsSync(join(d, "custom/apps/mydocs/app.json"))).toBe(true);
+		expect(readFileSync(join(d, "custom/apps.json"), "utf8")).toBe(corrupt);
+	});
 });
 
 describe("health", () => {

@@ -159,4 +159,37 @@ describe("discord connection", () => {
 		await call("PUT", "/api/discord/connection", { owner_id: OWNER });
 		expect((await call("GET", "/api/discord/connection")).json.restart_needed).toBe(true);
 	});
+
+	test("PUT on a config.json that does not parse answers an error, stores no token and leaves the file byte for byte", async () => {
+		const corrupt = '{"identity":{"name":"tester"},"discord":{"guild":"1",';
+		writeFileSync(CONFIG_FILE, corrupt);
+		for (const payload of [{ guild: GUILD }, { token: TOKEN, guild: GUILD }]) {
+			const r = await call("PUT", "/api/discord/connection", payload);
+			expect(r.status).toBeGreaterThanOrEqual(400);
+			expect(typeof r.json.error).toBe("string");
+			expect(readFileSync(CONFIG_FILE, "utf8")).toBe(corrupt);
+		}
+		expect(existsSync(TOKEN_FILE)).toBe(false);
+		expect(existsSync(DEFAULT_FILE)).toBe(false);
+		expect(cfg.discord.guild).toBe("1");
+	});
+
+	test("check on a config.json that does not parse reports failure and leaves the file as it was", async () => {
+		writeFileSync(CONFIG_FILE, JSON.stringify({ ...BASE_CONFIG, discord: { ...BASE_CONFIG.discord, token_file: "" } }));
+		cfg.discord = { ...cfg.discord, token_file: "" };
+		await call("PUT", "/api/discord/connection", { token: TOKEN });
+		expect(readFileSync(DEFAULT_FILE, "utf8").trim()).toBe(TOKEN);
+		const corrupt = '{"discord":{"guild":"1",';
+		writeFileSync(CONFIG_FILE, corrupt);
+		const r = await call("POST", "/api/discord/connection/check", undefined, discordApi({ admin: true }));
+		expect(r.json.ok).toBe(false);
+		expect(readFileSync(CONFIG_FILE, "utf8")).toBe(corrupt);
+	});
+
+	test("PUT with no config.json starts from an empty one", async () => {
+		rmSync(CONFIG_FILE);
+		const r = await call("PUT", "/api/discord/connection", { guild: GUILD });
+		expect(r.status).toBe(200);
+		expect(JSON.parse(readFileSync(CONFIG_FILE, "utf8"))).toEqual({ discord: { guild: GUILD } });
+	});
 });
