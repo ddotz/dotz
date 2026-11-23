@@ -4,7 +4,7 @@
   "triage.head.list": "목록 {n}건",
   "triage.tog.one": "한 장씩",
   "triage.tog.list": "목록",
-  "triage.rq.load_fail": "답장 대기를 불러오지 못했어요",
+  "triage.rq.load_fail": "승인 대기를 불러오지 못했어요",
   "triage.sent.owner": "확인 후 발송",
   "triage.sent.rule": "자동 발송",
   "triage.sent.retry": "다시 보냄",

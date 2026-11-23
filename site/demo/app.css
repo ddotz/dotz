@@ -4149,6 +4149,7 @@ textarea.mbox-ta { display: block; flex: 1; min-height: 160px; margin: var(--sp-
 #mon-tl:has(> .bm.rc.mr) > :not(.mr, .mr-filter, .mbox-bar) { margin: var(--sp-2) 0; }
 #mon-tl > .mr-filter { padding-bottom: var(--sp-3); }
 #mon-tl > button.mx-note { width: 100%; border: 0; text-align: left; }
+@media (pointer: coarse), (max-width: 639px) { #mon-tl > button.mx-note { min-height: var(--btn-hit); } }
 #mon-tl > .bm.rc.mr { position: relative; flex-flow: row wrap; align-items: center; column-gap: var(--sp-15); row-gap: var(--sp-05); padding: var(--sp-2) var(--sp-4); border-radius: 0; border-bottom: 1px solid var(--line); background: color-mix(in srgb, var(--card) 55%, var(--bg)); }
 #mon-tl > :not(.mr) + .bm.rc.mr { border-top-left-radius: 12px; border-top-right-radius: 12px; }
 #mon-tl > .bm.rc.mr:not(:has(+ .bm.rc.mr)) { border-bottom: 0; border-bottom-left-radius: 12px; border-bottom-right-radius: 12px; }
@@ -4754,6 +4755,27 @@ body:has(#v-monitoring.mx-on:not([hidden])) .mx-teach { display: block; }
   .fs-card.pdv { width: 100%; height: auto; max-height: none; }
 }
 
+.pv-panel .pmv-head { padding: var(--sp-5); border-radius: var(--r-card); background: var(--card); }
+.pv-tog[aria-pressed="true"] { background: var(--row-sel); color: var(--fg); }
+@media (max-width: 1099px) {
+  #v-chat > .pv-seg { order: 0; flex: none; padding-left: var(--sp-2); }
+  #v-chat > .pv-panel { position: absolute; inset: var(--btn-hit) 0 0; z-index: 2; padding: var(--sp-3) var(--sp-3) var(--sp-6); background: var(--bg); overflow-y: auto; }
+  #v-chat.pv-on > :is(.todo, .chatbox, .composer, .al-bar) { visibility: hidden; }
+}
+@media (min-width: 1100px) {
+  #v-chat { --pv-w: 320px; }
+  #v-chat > .pv-panel { min-height: 0; overflow-y: auto; }
+  #v-chat > .pv-panel > .pm-o { margin-bottom: var(--sp-4); }
+}
+@media (min-width: 1100px) and (max-width: 1439px) {
+  #v-chat > .pv-panel { grid-column: 2; grid-row: 2 / 5; justify-self: end; width: var(--pv-w); z-index: 2; margin-right: var(--sp-3); padding: var(--sp-3); border-radius: calc(var(--r-card) + var(--sp-3)); background: var(--bg); box-shadow: var(--float); }
+  #v-chat.pv-on > .chatbox > .jump { left: calc((100% - var(--pv-w) - var(--sp-3)) / 2); }
+}
+@media (min-width: 1440px) {
+  #v-chat.pv-on { grid-template-columns: var(--cv-w) minmax(0, 1fr) var(--pv-w); }
+  #v-chat > .pv-panel { grid-column: 3; grid-row: 1 / -1; margin-bottom: var(--sp-4); }
+}
+
 /* ---------- element picker (web/js/15-picker.js): the app header's hint, hover box, numbered markers, composer chips ---------- */
 .pk-hint { flex: none; color: var(--fg-3); font: 400 12px/16px var(--font); white-space: nowrap; }
 .apps-hb .pk-hint { display: block; margin-top: var(--sp-05); overflow: hidden; text-overflow: ellipsis; }
@@ -4954,6 +4976,7 @@ body { display: flow-root; }
 /* phone / touch: an app bar control (icon button, usage strip, offline pill) keeps its drawn size and answers a tap over --btn-hit (the back arrow, 4px from the screen edge, grows inward). Neighbouring targets must not share a strip, so icon buttons sit 44px center to center: search and bell (36px each) 8px apart, the 대화 and ⋯ buttons of a mail or kakao title bar (32px each) 12px and 10px apart; the usage strip, wider than 44px, only keeps 2px off the bell so a fractional edge does not hand the bell's last pixel to it */
 @media (pointer: coarse), (max-width: 639px) {
   .appbar .cmdk { margin-right: var(--sp-1); }
+  .appbar :is(#pjmenu, #cvmenu) { margin-right: var(--sp-1); }
   .appbar .ustrip { margin-left: var(--sp-05); }
   .appbar #as-bar { margin-right: var(--sp-2); }
   .appbar #as-more-bar { margin-right: var(--sp-15); }

@@ -7,7 +7,7 @@
   },
   "triage.tog.one": "One by one",
   "triage.tog.list": "List",
-  "triage.rq.load_fail": "Couldn't load waiting replies",
+  "triage.rq.load_fail": "Couldn't load approvals",
   "triage.sent.owner": "Sent after your OK",
   "triage.sent.rule": "Sent automatically",
   "triage.sent.retry": "Sent again",

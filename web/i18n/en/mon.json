@@ -147,7 +147,7 @@
     "one": "Failed {n} time in a row",
     "other": "Failed {n} times in a row"
   },
-  "mon.rq_btn": "Replies {n}",
+  "mon.rq_btn": "Approvals {n}",
   "mon.mail.files": {
     "one": "{n} attachment",
     "other": "{n} attachments"

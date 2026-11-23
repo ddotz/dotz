@@ -123,7 +123,7 @@
   "mon.recheck_btn": "지금 다시 확인",
   "mon.reconnect": "다시 연결",
   "mon.fail_streak": "{n}번 연속 실패했어요",
-  "mon.rq_btn": "답장 대기 {n}",
+  "mon.rq_btn": "승인 대기 {n}",
   "mon.mail.files": "첨부 {n}개",
   "mon.mail.clip": "첨부파일 {n}개",
   "mon.mail.download": "{name} 내려받기",
