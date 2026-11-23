@@ -925,7 +925,7 @@ dotz 웹앱의 화면은 `web/js/03-screens.js`의 `SCREENS` 표에 한 줄씩 �
 ### 프로젝트 삭제 시트 (`pmDeleteAsk`)
 - 목적: 프로젝트를 지우기 전에 무엇이 같이 지워지는지 보여 주고 확인받아요.
 - 구성: `fsOpen` 시트. 머리 제목 `<이름> 프로젝트를 삭제할까요?`, 본문(`.pmd`): 실행 중 경고 노트, 목록 `.as-rml`(줄: `#<이름> 채널을 Discord에서 지워요`, 모니터링 N개는 따로 남겨요, 로그인 유지 N개도 남겨요, `자동 처리 설정을 지워요: …`, `알림 N개를 치워요`, `대화 N개는 보관 파일로 남겨요`), 설정과 같은 스위치 줄 `보관 파일도 같이 지워요`(줄 전체가 탭 영역, 꺼짐이 기본), 오류 줄. 푸터는 같은 폭 두 단추 `취소`, `삭제`(danger).
-- 기능: `삭제`는 `pmDeleteCall(q,"delete",{archive: !스위치})`. 성공하면 시트를 닫고 토스트 `<이름> 프로젝트를 지웠어요`(Discord 실패면 `프로젝트는 지웠지만 Discord 채널은 남아 있어요 · <오류>`), 프로젝트 채팅에서 지웠으면 `pickTarget(MAIN)`, 아니면 `go("projects")`.
+- 기능: `삭제`는 `pmDeleteCall(q,"delete",{archive: !스위치})`. 성공하면 시트를 닫고 토스트 `<이름> 프로젝트를 지웠어요`(Discord 실패면 `프로젝트는 지웠지만 Discord 채널은 남아 있어요 · <오류>`), 프로젝트 채팅에서 지웠으면 넓은 화면은 메인 대화(`pickTarget(MAIN)`), 폰은 채팅 목록(`go("chat","list")`, 지운 대화와 현황 기록 위로 올라가요), 아니면 `go("projects")`.
 - 상태: 계획을 못 읽으면 토스트 `<메시지>` 또는 `지울 내용을 읽지 못했어요`. 실행 중인 세션이 있으면 `실행 중인 세션이 있어서 지울 수 없어요: <목록>` 노트 + `삭제` 버튼 disabled. 삭제 실패는 오류 줄에 `<메시지>` 또는 `지우지 못했어요`. 다른 컴퓨터 프로젝트(`q.pc`)는 상대 게이트웨이로 보내요.
 - 데이터: `GET /api/projects/<ch:id>/delete-plan`, `DELETE /api/projects/<ch:id>`, 다른 컴퓨터는 `POST <pqProxy>/api/peer/act {action:"project", args:{op,key,...}}`.
 - 근거: `web/js/19-project-main.js` `pmDeleteAsk`, `pmDeleteCall`, `pmDeleteLines`.
