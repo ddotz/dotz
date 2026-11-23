@@ -1288,12 +1288,12 @@
    0,
    {
     "type": "prompt",
-    "message": "#21qqp48tuspcy Build the thing.\nDone when: tests pass\n\n---\n[dotz lane alpha…"
+    "message": "#fild3trab1c3 Build the thing.\nDone when: tests pass\n\n---\n[dotz lane alpha…"
    }
   ],
   [
    "overlay",
-   "# Written by the dotz gateway each time lane alpha starts; passed to omp as --config.\nadvisor:\n  enabled: false\nmemory:\n  backend: \"off\"\nenabledProviders: []\nskills:\n  enablePiUser: false\n  enableAgentsUser: false\n  enableClaudeUser: false\n  enableCodexUser: false\n  customDirectories: []\ncommands:\n  enableClaudeUser: false\n  enableOpencodeUser: false\ndisabledExtensions:\n  - \"context-file:user:AGENTS.md\"\n  - \"rule:RULES\"\nstartup:\n  checkUpdate: false\nmagicKeywords:\n  enabled: false\ngithub:\n  enabled: false\nasync:\n  enabled: true\n  widgets: false\nsecrets:\n  enabled: true\nmodelRoles:\n  task: \"anthropic/test-worker:high\"\ntask:\n  agentModelOverrides:\n    task: \"@task\"\n    scout: \"@task\"\n    sonic: \"@task\"\n  maxRecursionDepth: 2\n  agentIdleTtlMs: 300000\n  maxConcurrency: 1\n  isolation:\n    enabled: true\n    apply: false\n    merge: patch\n  maxRuntimeMs: 0\n  softRequestBudget: 200\ncompaction:\n  idleEnabled: false\n  modelThresholds:\n    \"anthropic/test-lane\": \"f300000\"\n    \"anthropic/test-worker\": \"f300000\"\n  keepRecentTokens: 30000\nretry:\n  waitForUsageReset: false\n  modelFallback: true\n  fallbackChains:\n    \"anthropic/test-lane\": []\n    \"task\": []\n"
+   "# Written by the dotz gateway each time lane alpha starts; passed to omp as --config.\nadvisor:\n  enabled: false\nmemory:\n  backend: \"off\"\nenabledProviders: []\nskills:\n  enablePiUser: false\n  enableAgentsUser: false\n  enableClaudeUser: false\n  enableCodexUser: false\n  customDirectories: []\ncommands:\n  enableClaudeUser: false\n  enableOpencodeUser: false\ndisabledExtensions:\n  - \"context-file:user:AGENTS.md\"\n  - \"rule:RULES\"\nstartup:\n  checkUpdate: false\nmagicKeywords:\n  enabled: false\ngithub:\n  enabled: false\nasync:\n  enabled: true\n  widgets: false\nsecrets:\n  enabled: true\nmodelRoles:\n  task: \"anthropic/test-worker:high\"\ntask:\n  agentModelOverrides:\n    task: \"@task\"\n    scout: \"@task\"\n    sonic: \"@task\"\n  maxRecursionDepth: 2\n  agentIdleTtlMs: 300000\n  maxEffort: high\n  maxConcurrency: 1\n  isolation:\n    enabled: true\n    apply: false\n    merge: patch\n  maxRuntimeMs: 0\n  softRequestBudget: 200\ncompaction:\n  idleEnabled: false\n  modelThresholds:\n    \"anthropic/test-lane\": \"f300000\"\n    \"anthropic/test-worker\": \"f300000\"\n  keepRecentTokens: 30000\nretry:\n  waitForUsageReset: false\n  modelFallback: true\n  fallbackChains:\n    \"anthropic/test-lane\": []\n    \"task\": []\n"
   ],
   [
    "snap",
@@ -1403,7 +1403,7 @@
    0,
    {
     "type": "prompt",
-    "message": "#1tan09nyzcsy0 next please\n(Write every report, progress note, todo item an…"
+    "message": "#1kkos1w4uo55u next please\n(Write every report, progress note, todo item an…"
    }
   ],
   [
@@ -1411,7 +1411,7 @@
    0,
    {
     "type": "steer",
-    "message": "#3e06flqyemog4 also this\n(Write every report, progress note, todo item and …"
+    "message": "#tvum66ljuqqe also this\n(Write every report, progress note, todo item and …"
    }
   ],
   [
@@ -1469,7 +1469,7 @@
    0,
    {
     "type": "prompt",
-    "message": "#1olpux01hjote during compaction\n\n# owner message(s) arrived while you were…"
+    "message": "#2xmbw3a43d9iv during compaction\n\n# owner message(s) arrived while you were…"
    }
   ],
   [
@@ -1506,7 +1506,7 @@
    0,
    {
     "type": "prompt",
-    "message": "#ck32m647sm8b go on\n(Write every report, progress note, todo item and tool…"
+    "message": "#1n5td6cokty2z go on\n(Write every report, progress note, todo item and tool…"
    }
   ],
   [
@@ -1557,7 +1557,7 @@
    0,
    {
     "type": "prompt",
-    "message": "#2kss00i4dcra1 [dotz gateway] The rate limit has passed. Continue the work …"
+    "message": "#3m4c7vdj2rvyy [dotz gateway] The rate limit has passed. Continue the work …"
    }
   ],
   [
@@ -1624,7 +1624,7 @@
    0,
    {
     "type": "prompt",
-    "message": "#2igxfnlmpgczj flaky\n(Write every report, progress note, todo item and tool…"
+    "message": "#3y33eyzoccvf flaky\n(Write every report, progress note, todo item and tool…"
    }
   ],
   [
@@ -1643,7 +1643,7 @@
    0,
    {
     "type": "prompt",
-    "message": "#2c47fy9878g21 [dotz gateway] The provider had a temporary error (overloade…"
+    "message": "#27yxlqvlcuwkq [dotz gateway] The provider had a temporary error (overloade…"
    }
   ],
   [
@@ -1662,7 +1662,7 @@
    0,
    {
     "type": "prompt",
-    "message": "#2c47fy9878g21 [dotz gateway] The provider had a temporary error (overloade…"
+    "message": "#27yxlqvlcuwkq [dotz gateway] The provider had a temporary error (overloade…"
    }
   ],
   [
@@ -1681,7 +1681,7 @@
    0,
    {
     "type": "prompt",
-    "message": "#2c47fy9878g21 [dotz gateway] The provider had a temporary error (overloade…"
+    "message": "#27yxlqvlcuwkq [dotz gateway] The provider had a temporary error (overloade…"
    }
   ],
   [
@@ -1700,7 +1700,7 @@
    0,
    {
     "type": "prompt",
-    "message": "#2c47fy9878g21 [dotz gateway] The provider had a temporary error (overloade…"
+    "message": "#27yxlqvlcuwkq [dotz gateway] The provider had a temporary error (overloade…"
    }
   ],
   [
@@ -1742,7 +1742,7 @@
    0,
    {
     "type": "prompt",
-    "message": "#t010r7ao7k2h compaction trouble\n(Write every report, progress note, todo …"
+    "message": "#3gpis8mypegax compaction trouble\n(Write every report, progress note, todo …"
    }
   ],
   [
@@ -1829,7 +1829,7 @@
    1,
    {
     "type": "prompt",
-    "message": "#1j2aln6e6089g [dotz gateway] Your context compaction failed, so the gatewa…"
+    "message": "#8lkcz8kgjzjk [dotz gateway] Your context compaction failed, so the gatewa…"
    }
   ],
   [
@@ -1948,7 +1948,7 @@
    2,
    {
     "type": "prompt",
-    "message": "#svgsqi22m8qw 앞 턴이 도구 호출 없이 #분 멈춰서 끊었어요.\n\n[dotz gateway] Your process was…"
+    "message": "#1lzpbz9rajuf2 앞 턴이 도구 호출 없이 #분 멈춰서 끊었어요.\n\n[dotz gateway] Your process was…"
    }
   ],
   [
@@ -2088,7 +2088,7 @@
    4,
    {
     "type": "prompt",
-    "message": "#1e30yhsebc481 [dotz gateway] Your conversation was rotated to a fresh one …"
+    "message": "#306g6xi0zu7nc [dotz gateway] Your conversation was rotated to a fresh one …"
    }
   ],
   [
@@ -2229,7 +2229,7 @@
    5,
    {
     "type": "prompt",
-    "message": "#1j2aln6e6089g [dotz gateway] Your context compaction failed, so the gatewa…"
+    "message": "#8lkcz8kgjzjk [dotz gateway] Your context compaction failed, so the gatewa…"
    }
   ],
   [
