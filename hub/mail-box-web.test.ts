@@ -709,6 +709,7 @@ describe("a row leaves only after the hub answered", () => {
 		g.open();
 		await waitFor(v, `!${rowJs("회의 일정 변경")}`);
 		await waitFor(v, `document.querySelector(".snack.bad")`);
+		await waitFor(v, `!document.getAnimations().some(a => a.playState === "running" && a.effect.getTiming().iterations !== Infinity)`);
 		expect(await titles(v)).toEqual(before.filter(t => t !== "회의 일정 변경"));
 		expect(await still(v, "처리가 안 되는 메일")).toBe(true);
 	}, 30_000);

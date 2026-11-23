@@ -264,6 +264,7 @@ function toast(msg, bad, action, ms) {
   toastNew = n; queueMicrotask(() => { if (toastNew === n) toastNew = null; });
   motionIn(n, "rise");
   toastTimer = setTimeout(() => toastGone(n), ms || (bad || action ? 6000 : 3500));
+  return n;
 }
 
 /* ---------- floating notices: top-right cards that leave ~4s after the owner has seen them ---------- */

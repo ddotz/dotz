@@ -129,6 +129,12 @@ export async function mailActions(keys: readonly string[], action: MailAction, d
 	return results;
 }
 
+/** The hub log's one line for a delete request: the route, how many keys it asked for, how many went, and the keys on each side. Never a subject or an address. */
+export function deleteLine(route: "one" | "bulk" | "legacy" | "original", results: readonly { key: string; ok: boolean }[]): string {
+	const went = results.filter(r => r.ok).map(r => r.key), kept = results.filter(r => !r.ok).map(r => r.key);
+	return `mail delete ${route}: ${results.length} asked, ${went.length} deleted, ${kept.length} not${went.length ? ` · deleted ${JSON.stringify(went)}` : ""}${kept.length ? ` · not ${JSON.stringify(kept)}` : ""}`;
+}
+
 type Box = NonNullable<MailRecord["box"]>;
 const readOf = (it: MailSourceState): boolean | undefined => (it.read !== undefined ? it.read : it.unread !== undefined ? !it.unread : undefined);
 

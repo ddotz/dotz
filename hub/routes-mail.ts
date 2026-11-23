@@ -16,7 +16,7 @@ import { draftRecipientsRoute } from "./draft-recipients.ts";
 import { stagedFiles } from "../features/reply-drafts/lib/staged.ts";
 import { composeMail, deleteMail, mailTargets, sentReplyRefs, unrepliedMails, mailKey, recordSentByDotz, MailError, syncMailStates, type MailSourceState, mailBodyRoute, settleMailDrafts, mailStateOf, mailByKey, mailFileRoute, mailTarget, postMail, setMailFyi, setMailNoReply, setMailsFyi, mailKeep, setMailSuggest, setMailReply, type MailDeps } from "./mail.ts";
 import { moveMailRoute } from "./mail-move.ts";
-import { applyMailboxFlags, isMailAction, mailAction, mailActions, spawnExec, type SyncDeps } from "./mail-sync.ts";
+import { applyMailboxFlags, deleteLine, isMailAction, mailAction, mailActions, spawnExec, type SyncDeps } from "./mail-sync.ts";
 import { originalDeleteRoute, originalDeps } from "./mail-delete.ts";
 import { manualDraft } from "./mail-manual.ts";
 import { askText } from "../features/reply-drafts/lib/flow.ts";
@@ -191,20 +191,24 @@ export async function routeMail(req: Request, url: URL, { peer, mailDeps, mailRe
 		const b = await body(req).catch(error => { if (error instanceof BodyError) throw error; return {}; }) as { keys?: unknown; action?: unknown };
 		if (!isMailAction(b.action)) return json({ error: "action must be read, unread, archive, unarchive, trash, star or unstar" }, 400);
 		if (!Array.isArray(b.keys) || b.keys.some(k => typeof k !== "string")) return json({ error: "keys must be an array of mail keys" }, 400);
-		return json({ ok: true, results: await mailActions((b.keys as string[]).slice(0, 200), b.action, mailSyncDeps) });
+		const results = await mailActions((b.keys as string[]).slice(0, 200), b.action, mailSyncDeps);
+		if (b.action === "trash") log(deleteLine("bulk", results));
+		return json({ ok: true, results });
 	}
 	const mailActOne = req.method === "POST" && /^\/api\/mail\/([a-z0-9._-]+)\/action$/.exec(url.pathname);
 	if (mailActOne) {
 		const b = await body(req).catch(error => { if (error instanceof BodyError) throw error; return {}; }) as { action?: unknown };
 		if (!isMailAction(b.action)) return json({ error: "action must be read, unread, archive, unarchive, trash, star or unstar" }, 400);
-		const res = await mailAction(mailActOne[1]!, b.action, mailSyncDeps);
+		const key = mailActOne[1]!, res = await mailAction(key, b.action, mailSyncDeps);
+		if (b.action === "trash") log(deleteLine("one", [{ key, ok: res.ok }]));
 		return res.ok ? json(res) : json({ error: res.note }, 404);
 	}
 	// 삭제 on a mail card: the mail leaves dotz (record, list entry, counts, its notices and pending drafts); the real mailbox is not touched.
 	const mailDelete = req.method === "DELETE" && /^\/api\/mail\/([a-z0-9._-]+)$/.exec(url.pathname);
 	if (mailDelete) {
-		if (!(await removeMailLocal(mailDelete[1]!))) return json({ error: "이 메일을 찾지 못했어요" }, 404);
-		return json({ ok: true });
+		const key = mailDelete[1]!, ok = await removeMailLocal(key);
+		log(deleteLine("legacy", [{ key, ok }]));
+		return ok ? json({ ok: true }) : json({ error: "이 메일을 찾지 못했어요" }, 404);
 	}
 	// 초안 작성 on a mail: the owner asks for a reply draft himself. It is made behind the request (a model call takes a while, and a peer's
 	// forwarded act has a short timeout); the draft lands as the send-approval card in the mail's conversation, a failure as a line there.

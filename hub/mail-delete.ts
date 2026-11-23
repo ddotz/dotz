@@ -19,7 +19,7 @@ import { mailOriginalOn, setMailTrashProbe } from "./app-settings.ts";
 import { log, writeAtomic } from "./config.ts";
 import { appEntries } from "./integrations.ts";
 import { isOwnAddress, ownAddresses } from "./mail-state.ts";
-import { canOf, type SyncDeps } from "./mail-sync.ts";
+import { canOf, deleteLine, type SyncDeps } from "./mail-sync.ts";
 import { mailByKey, mailRecords, type MailRecord } from "./mail.ts";
 import { instanceOf } from "./reply-model.ts";
 import { parseThread, zeleRead, type ThreadMessage } from "./zele.ts";
@@ -123,7 +123,9 @@ export const ownerClick = (req: Request, peer: string): boolean => peer === "non
 export async function originalDeleteRoute(req: Request, peer: string, b: { keys?: unknown }, d: OriginalDeps): Promise<Response> {
 	if (!ownerClick(req, peer)) return Response.json({ error: "원본 삭제는 웹앱에서 직접 눌러야 해요" }, { status: 403 });
 	if (!Array.isArray(b.keys) || b.keys.some(k => typeof k !== "string")) return Response.json({ error: "keys must be an array of mail keys" }, { status: 400 });
-	return Response.json({ ok: true, results: await deleteOriginals((b.keys as string[]).slice(0, KEYS_MAX), d) });
+	const results = await deleteOriginals((b.keys as string[]).slice(0, KEYS_MAX), d);
+	log(deleteLine("original", results));
+	return Response.json({ ok: true, results });
 }
 
 /** Boot: what was in flight when the gateway stopped is told once, and never called again. */

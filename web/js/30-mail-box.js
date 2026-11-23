@@ -80,20 +80,21 @@ function mbWillLeave(t, a) {
   return gone;
 }
 
+const MB_FIELD = { read: "read", unread: "read", archive: "archived", unarchive: "archived", star: "starred", unstar: "starred" };
 // The change an action makes to the page's copy of the mail; the returned function puts it back.
 function mbApply(t, a) {
   const m = MAILS.get(t);
   if (!m) return () => {};
-  const was = { read: m.read, archived: m.archived, starred: m.starred }, unread = ts(t).unread, conv = CONV.get(t);
-  if (a === "read") { m.read = true; ts(t).unread = 0; }
-  else if (a === "unread") m.read = false;
-  else if (a === "archive" || a === "unarchive") m.archived = a === "archive";
-  else if (a === "star" || a === "unstar") m.starred = a === "star";
-  else if (a === "trash") { mailDrop(t); convDrop(t); MBOX.sel.delete(t); }
-  return () => { Object.assign(m, was); ts(t).unread = unread; if (a === "trash") { mailPut(t, m); if (conv) convLastSet(t, conv); } };
+  const unread = ts(t).unread, conv = CONV.get(t), f = MB_FIELD[a];
+  if (a === "trash") { mailDrop(t); convDrop(t); MBOX.sel.delete(t); return () => { ts(t).unread = unread; mailPut(t, m); if (conv) convLastSet(t, conv); }; }
+  if (!f) return () => {};
+  const was = m[f];
+  m[f] = a === "read" || a === "archive" || a === "star";
+  if (a === "read") ts(t).unread = 0;
+  return () => { m[f] = was; if (f === "read") ts(t).unread = unread; };
 }
-const MB_DONE = { read: n => (n > 1 ? TX("mail.done_n.read", { n }) : TX("mail.done.read")), unread: n => (n > 1 ? TX("mail.done_n.unread", { n }) : TX("mail.done.unread")), archive: n => (n > 1 ? TX("mail.done_n.archive", { n }) : TX("mail.done.archive")), unarchive: n => (n > 1 ? TX("mail.done_n.unarchive", { n }) : TX("mail.done.unarchive")), trash: n => (n > 1 ? TX("mail.done_n.trash", { n }) : TX("mail.done.trash")), star: n => (n > 1 ? TX("mail.done_n.star", { n }) : TX("mail.done.star")), unstar: n => (n > 1 ? TX("mail.done_n.unstar", { n }) : TX("mail.done.unstar")) };
-const MB_BACK = { archive: "unarchive", unarchive: "archive", read: "unread", unread: "read", star: "unstar", unstar: "star" };
+const MB_DONE = { read: n => (n > 1 ? TX("mail.done_n.read", { n }) : TX("mail.done.read")), unread: n => (n > 1 ? TX("mail.done_n.unread", { n }) : TX("mail.done.unread")), archive: n => (n > 1 ? TX("mail.done_n.archive", { n }) : TX("mail.done.archive")), unarchive: n => (n > 1 ? TX("mail.done_n.unarchive", { n }) : TX("mail.done.unarchive")), trash: n => (n > 1 ? TX("mail.done_n.trash", { n }) : TX("mail.done.trash")) };
+const MB_BACK = { archive: "unarchive", unarchive: "archive", read: "unread", unread: "read" };
 // Runs one action on `keys` (mail targets). Resolves the keys that went through.
 async function mbRun(keys, action, quiet = false, btn = null) {
   keys = keys.filter(t => MAILS.has(t));
@@ -113,7 +114,7 @@ async function mbRun(keys, action, quiet = false, btn = null) {
     else {
       const r = await api("/api/mail/actions", "POST", { keys: todo.map(mbKey), action });
       const by = new Map((r && r.results || []).map(x => [String(x.key).startsWith("mail:") ? x.key : `mail:${x.key}`, x]));
-      res = todo.map(t => by.get(t) || { key: t, ok: !!(r && r.ok !== false) });
+      res = todo.map(t => ({ ok: !!(r && r.ok !== false), ...by.get(t), key: t }));
     }
   } catch (e) { res = todo.map(t => ({ key: t, ok: false, note: (e && e.data && e.data.error) || (e && /^HTTP 404/.test(e.message) ? TX("mail.err.unsupported") : (e && e.message) || TX("mail.err.failed")) })); }
   unwait();
@@ -122,10 +123,11 @@ async function mbRun(keys, action, quiet = false, btn = null) {
   for (const t of done) if (wait.has(t)) mbApply(t, action);
   const leaving = mbRowsOut(done.filter(t => wait.has(t)));
   if (leaving) leaving.then(mbRefresh); else mbRefresh();
-  const said = (res.find(x => x.ok === false && x.note) || res.find(x => x.note) || {}).note;
-  if (!quiet && said) toast(said, res.some(x => x.ok === false));
-  else if (!quiet && res.some(x => x.ok === false)) toast(TX("mail.err.failed"), true);
-  else if (!quiet && done.length && MB_DONE[action]) toast(MB_DONE[action](done.length), false, MB_BACK[action] && action !== "trash" && !/star$/.test(action) ? { label: TX("common.undo"), onclick: () => mbRun(done, MB_BACK[action]) } : undefined);
+  const refused = res.filter(x => x.ok === false), unsynced = res.filter(x => x.ok !== false && x.note);
+  const back = MB_BACK[action] && done.length ? { label: TX("common.undo"), onclick: () => mbRun(done, MB_BACK[action]) } : undefined;
+  if (!quiet && refused.length) toast((refused.find(x => x.note) || {}).note || TX("mail.err.failed"), true);
+  else if (!quiet && unsynced.length) toast(res.length < 2 ? unsynced[0].note : unsynced.length === res.length ? TX("mail.unsynced_all_n", { n: res.length }) : TX("mail.unsynced_n", { total: res.length, n: unsynced.length }), false, back);
+  else if (!quiet && done.length && MB_DONE[action]) toast(MB_DONE[action](done.length), false, back);
   if (legacy) for (const t of done) pqUnbind(t);
   Promise.allSettled([convLoad(), loadIntegrations()]);
   return done;
@@ -163,7 +165,8 @@ const MB_UNDO_MS = 6000;
 // The one sentence under both 삭제 confirms (a row's ⋯ and an open mail): dotz drops the mail from its list. One mail that its mailbox will not trash stays there, so the box says so plainly;
 // of several, the ones a mailbox can trash go and the rest stay.
 // The answer to a 삭제 confirm can take a moment (the mailbox is asked): say at once that it is going on; the toast of the result replaces this one.
-const mbDeleting = () => toast(TX("mail.trash.deleting"));
+const MB_HUB_MS = 60000;
+const mbDeleting = () => { const n = toast(TX("mail.trash.deleting"), false, undefined, MB_HUB_MS); return () => toastGone(n); };
 const mailStays = n => n > 1 ? TX("mail.trash.stay_some") : TX("mail.trash.stay_one");
 async function mbTrash(keys, btn = null) {
   keys = keys.filter(t => MAILS.has(t));
@@ -172,27 +175,42 @@ async function mbTrash(keys, btn = null) {
   if (orig.length) return mbTrashOriginal(keys, orig, btn);
   if (!keys.every(t => mailCan(t, "trash"))) {
     if (!await ask(TX("mail.trash.title"), `${keys.length > 1 ? TX("mail.trash.list_n", { n: keys.length }) : TX("mail.trash.list_one")} ${mailStays(keys.length)}`, TX("common.delete"), true)) return [];
-    mbDeleting();
-    const done = await mbRun(keys, "trash", false, btn);
+    const off = mbDeleting(), done = await mbRun(keys, "trash", false, btn);
+    off();
     mbLeave(keys);
     return done;
   }
-  const back = keys.map(t => mbApply(t, "trash"));
+  const done = mbTrashLater(keys);
   const leaving = mbRowsOut(keys);
   if (leaving) leaving.then(mbRefresh); else mbRefresh();
   mbPaintBar();
   mbLeave(keys);
-  const undone = await new Promise(res => {
-    const end = v => { clearTimeout(timer); removeEventListener("pagehide", send); res(v); };
-    const send = () => end(false), timer = setTimeout(send, MB_UNDO_MS);
-    addEventListener("pagehide", send);
-    toast(MB_DONE.trash(keys.length), false, { label: TX("common.undo"), onclick: () => end(true) }, MB_UNDO_MS);
-  });
-  for (const f of back) f();
-  if (undone) { mbRefresh(); mbPaintBar(); return []; }
-  const done = await mbRun(keys, "trash", true);
-  if (done.length < keys.length) toast(TX("mail.err.failed"), true);
   return done;
+}
+let mbPend = null;
+function mbTrashLater(keys) {
+  const p = mbPend || (mbPend = mbPendNew());
+  p.keys.push(...keys);
+  p.back.push(...keys.map(t => mbApply(t, "trash")));
+  clearTimeout(p.timer);
+  p.timer = setTimeout(p.send, MB_UNDO_MS);
+  toast(MB_DONE.trash(p.keys.length), false, { label: TX("common.undo"), onclick: () => p.end(true) }, MB_UNDO_MS);
+  return p.done;
+}
+function mbPendNew() {
+  const p = { keys: [], back: [], timer: 0 };
+  const undone = new Promise(res => { p.end = v => { clearTimeout(p.timer); removeEventListener("pagehide", p.send); if (mbPend === p) mbPend = null; res(v); }; });
+  p.send = () => p.end(false);
+  addEventListener("pagehide", p.send);
+  p.done = undone.then(async back => {
+    for (const f of p.back) f();
+    if (back) { mbRefresh(); mbPaintBar(); return []; }
+    const off = mbDeleting(), done = await mbRun(p.keys, "trash", true);
+    off();
+    if (done.length < p.keys.length) toast(TX("mail.err.failed"), true);
+    return done;
+  });
+  return p;
 }
 // 답장 안 함 on a selection or on the whole 답장 필요 list: mailSetFyi for many mails, one POST /api/mail/fyi {keys, on} per computer (a peer's mails go to
 // the computer that holds them). It stays in dotz: nothing is sent, the read state and the mailbox do not change. Only mails that owe a reply are marked, so
@@ -245,7 +263,7 @@ function mbStar(t) {
   const m = MAILS.get(t) || {}, on = !!m.starred;
   const mark = icon("star", on ? "on" : "");
   return el("button", { class: `mr-star${on ? " on" : ""}`, type: "button", "data-k": "mail-star", "aria-pressed": String(on), "aria-label": on ? TX("mail.star.remove") : TX("mail.star.add"), title: on ? TX("mail.star.remove") : TX("mail.star.add"),
-    onclick: ev => { ev.stopPropagation(); mbRun([t], on ? "unstar" : "star", true, ev.currentTarget).then(() => {}); }, onkeydown: ev => ev.stopPropagation() }, mark);
+    onclick: ev => { ev.stopPropagation(); mbRun([t], on ? "unstar" : "star", false, ev.currentTarget).then(() => {}); }, onkeydown: ev => ev.stopPropagation() }, mark);
 }
 // The leading cells of a mail row's header: ☐ and ☆. Ticking a row repaints the bar only, never the list.
 function mbLead(t, title) {
