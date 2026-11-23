@@ -349,3 +349,84 @@ test("installed app 390: the other computer's view closed by a tap landing here 
 	await back(v);
 	await until(v, `current === "home" && history.state.c.length === 1`, "one back did not leave the settings view");
 });
+
+async function openAt(width: number, hash: string) {
+	const v = await hub.view({ width, height: 900 });
+	await v.navigate(`${hub.origin}/`);
+	await v.evaluate(`(localStorage.setItem("dotz-theme", "light"), true)`);
+	await v.navigate(`${hub.origin}/?light#${hash}`);
+	await until(v, `typeof go === "function" && typeof INTG !== "undefined" && CV.loaded && !!current`, "page not ready");
+	return v;
+}
+const lit = (v: V) => ev<string[]>(v, `[...document.querySelectorAll("#nav .ni")].filter(b => b.getAttribute("aria-current") === "page").map(b => b.dataset.view)`);
+
+test("390: an old #projects address opens the chat list under the lit 채팅 tab, and back leaves it for 홈", async () => {
+	const v = await openAt(390, "projects");
+	await until(v, `current === "chat" && chatList && location.hash === "#chat/list"`, "#projects did not open the chat list");
+	expect(await lit(v)).toEqual(["chat"]);
+	await touch(v);
+	await back(v);
+	await until(v, `current === "home"`, "back from the chat list did not reach 홈");
+});
+
+for (const width of [390, 1280]) {
+	test(`${width}: a #projects address typed into the running page opens the chat, not the project list`, async () => {
+		const v = await open(width);
+		await v.evaluate(`(location.hash = "#projects", true)`);
+		await until(v, `current === "chat" && location.hash === ${JSON.stringify(width === 390 ? "#chat/list" : "#chat/main")}`, "typed #projects did not open the chat list");
+		expect(await ev(v, `({ list: chatList, shown: [...document.querySelectorAll("#views > .view:not([hidden])")].map(s => s.id) })`)).toEqual({ list: width === 390, shown: ["v-chat"] });
+		expect(await lit(v)).toEqual(["chat"]);
+	});
+}
+
+test("390: an old #apps address opens the 앱 tab, #apps/<id> opens it on that app, and the bar has four tabs", async () => {
+	const v = await openAt(390, "apps");
+	await until(v, `current === "monitoring" && MON.list && location.hash === "#monitoring"`, "#apps did not open the 앱 tab");
+	expect(await ev(v, `({ tabs: [...document.querySelectorAll("#nav .ni")].map(b => b.dataset.view), title: document.querySelector("#title").textContent })`)).toEqual({ tabs: ["home", "chat", "monitoring", "settings"], title: "앱" });
+	expect(await lit(v)).toEqual(["monitoring"]);
+	expect(await ev(v, `[parseHash("#apps/mydocs"), parseHash("#apps/a%20b"), (APPS_ON = true, parseHash("#apps/mydocs"))]`)).toEqual([{ view: "monitoring", t: "x:mydocs" }, { view: "monitoring", t: "x:a b" }, { view: "apps", t: "mydocs" }]);
+	await v.evaluate(`(APPS_ON = false, go("home"), location.hash = "#apps/mydocs", true)`);
+	await until(v, `current === "monitoring"`, "#apps/<id> did not open the 앱 tab");
+	expect(await lit(v)).toEqual(["monitoring"]);
+});
+
+test("390: go('projects') from code opens the list as a screen without a tab: 채팅 is lit but no conversation view is on, and 뒤로 goes to the chat list", async () => {
+	const v = await open(390);
+	await v.evaluate(`(go("projects"), true)`);
+	await until(v, `current === "projects"`, "the project list did not open");
+	expect(await lit(v)).toEqual(["chat"]);
+	expect(await ev(v, `({ thead: document.querySelector("#thead").hidden, tv: document.querySelector("#appbar").classList.contains("tv"), conv: !document.querySelector("#v-chat").hidden })`)).toEqual({ thead: true, tv: false, conv: false });
+	await v.evaluate(`document.querySelector("#back").click()`);
+	await until(v, `current === "chat" && chatList && location.hash === "#chat/list"`, "뒤로 did not lead to the chat list");
+});
+
+for (const width of [390, 1280]) {
+	test(`${width}: go('project', key) from code lights 채팅 and keeps the conversation view off`, async () => {
+		const v = await open(width);
+		await v.evaluate(`(go("project", "dir:/tmp/nowhere"), true)`);
+		await until(v, `current === "project"`, "the project overview did not open");
+		expect(await lit(v)).toEqual(["chat"]);
+		expect(await ev(v, `({ thead: document.querySelector("#thead").hidden, chatShown: !document.querySelector("#v-chat").hidden })`)).toEqual({ thead: true, chatShown: false });
+	});
+}
+
+test("390: 뒤로 from a project overview returns to the project list as before", async () => {
+	const v = await open(390);
+	await v.evaluate(`(go("project", "dir:/tmp/nowhere"), true)`);
+	await until(v, `current === "project"`, "the project overview did not open");
+	await v.evaluate(`document.querySelector("#back").click()`);
+	await until(v, `current === "projects"`, "뒤로 did not lead to the project list");
+});
+
+for (const [name, open] of [["the project list", `go("projects")`], ["a project overview", `go("project", "dir:/tmp/nowhere")`]] as const) {
+	test(`390: the browser's back from ${name} opened by code leads to the chat list, then 홈`, async () => {
+		const v = await openAt(390, "home");
+		await touch(v);
+		await v.evaluate(`(${open}, true)`);
+		await until(v, `current === ${JSON.stringify(open.startsWith('go("projects")') ? "projects" : "project")}`, "the screen did not open");
+		await back(v);
+		await until(v, `current === "chat" && chatList && location.hash === "#chat/list"`, "back did not lead to the chat list");
+		await back(v);
+		await until(v, `current === "home"`, "back did not reach 홈");
+	});
+}

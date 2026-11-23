@@ -4,13 +4,11 @@
 const INTRO_SEEN = "dotz-intro-seen";
 const introTouch = () => matchMedia("(hover: none) and (pointer: coarse)").matches;
 const introStops = () => {
-  const apps = navTabs().some(n => n[0] === "apps");
   const stops = [
     { tab: "home", t: TX("misc.intro.home_t"), b: TX("misc.intro.home_b") },
     { tab: "chat", t: TX("misc.intro.chat_t"), b: TX("misc.intro.chat_b") },
-    { tab: "projects", t: TX("misc.intro.proj_t"), b: TX("misc.intro.proj_b") },
     { tab: "monitoring", t: TX("misc.intro.mon_t"), b: TX("misc.intro.mon_b") },
-    { tab: "settings", t: TX("misc.intro.set_t"), b: TX(apps ? "misc.intro.set_b_apps" : "misc.intro.set_b") },
+    { tab: "settings", t: TX("misc.intro.set_t"), b: TX("misc.intro.set_b") },
   ];
   return introTouch() ? stops : [...stops, { keys: true, t: TX("misc.intro.keys_t") }];
 };

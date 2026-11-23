@@ -56,7 +56,7 @@ const expectScreen = (s: Seen, width: number, what: string) => {
 
 // Old and unknown addresses, and the screen each must land on. A view not named here is covered by the palette walk.
 const ROUTES: [string, string][] = [
-	["", "home"], ["nosuch", "home"], ["nosuch/x", "home"], ["%E0%A4%A", "home"], ["__proto__", "home"], ["apps", "home"],
+	["", "home"], ["nosuch", "home"], ["nosuch/x", "home"], ["%E0%A4%A", "home"], ["__proto__", "home"], ["apps", "monitoring"], ["apps/mydocs", "monitoring"], ["projects", "chat"], ["projects/x", "chat"],
 	["providers", "accounts"], ["provider", "accounts"], ["provider/anthropic", "accounts"], ["settings/accounts", "accounts"], ["accounts/nope", "accounts"],
 	["lanes", "chat"], ["activity", "chat"], ["chat/nope", "chat"], ["chat/alert", "notices"], ["activity/alert", "notices"],
 	["monitoring/nope", "monitoring"], ["monitoring/c:nope", "monitoring"], ["monitoring/i:kakao", "monitoring"],

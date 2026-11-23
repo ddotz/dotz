@@ -26,7 +26,7 @@ const CHAT_MODE_KEY = "dotz-chat-mode";
 // (an old #activity address, a saved choice, a subagent row) to 대화 instead; true brings the toggle back.
 const LOG_VIEW = false;
 // The tab a screen lights: its row's tab (채팅's 터미널 view, a project, the card form); a settings page and a screen without a tab name themselves.
-const navView = v => (SCREENS[v] && !SUB.has(v) && SCREENS[v].tab) || v;
+const navView = v => { const t = SCREENS[v] && !SUB.has(v) && SCREENS[v].tab; return t ? (NAV.some(n => n[0] === t) ? t : "chat") : v; };
 // 대화 or 로그 for a target: the main chat and projects share one global choice; a session (lane:<name>) remembers its own and starts in 대화.
 const viewFor = t => { if (!LOG_VIEW || t === "alert" || t === "worklog") return "chat"; try { return localStorage.getItem(t && t.startsWith("lane:") ? `dotz-lane-view:${t}` : CHAT_MODE_KEY) === "activity" ? "activity" : "chat"; } catch { return "chat"; } };
 const lastChatView = () => viewFor(target);
@@ -230,4 +230,4 @@ $("#back").append(icon("back"), el("span", { class: "bk-l", text: titles.monitor
 // 뒤로's screen: the card form goes to its fixed parent even when opened from 알림, any other screen opened from 알림 returns there, then the
 // fixed parent of the table (SCREENS up), then the cases that depend on state (a settings page returns to the screen that opened it).
 const backTarget = () => current === "cardform" ? SCREENS.cardform.up : NSC.ret && current !== "home" ? "notices" : SCREENS[current]?.up || (SUB.has(current) ? (prevView && !SUB.has(prevView) && prevView !== current ? prevView : SCREENS[current].under || "settings") : current === "project" ? (ppWide() ? null : "projects") : monConv() || (monCtx && current === "chat") ? "monitoring" : null);
-$("#back").onclick = () => (nscBack() || SCREEN_HOOKS[current]?.back?.() ? 0 : monCtx && current === "chat" ? go("monitoring", (narrowChat() ? !monChatIt() : !isSettingsT(target)) ? MON.sel : undefined) : convOnPhone() ? openChatList() : go(backTarget() || "home"));
+$("#back").onclick = () => (nscBack() || SCREEN_HOOKS[current]?.back?.() ? 0 : monCtx && current === "chat" ? go("monitoring", (narrowChat() ? !monChatIt() : !isSettingsT(target)) ? MON.sel : undefined) : convOnPhone() || (current === "projects" && narrowChat() && !isRelayT(target)) ? openChatList() : go(backTarget() || "home"));

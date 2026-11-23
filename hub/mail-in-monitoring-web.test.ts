@@ -66,7 +66,7 @@ for (const width of [1440, 390]) {
 		expect(s.side).not.toContain("main");
 		expect(s.sideLabel).toBe("모니터링 목록");
 		if (width === 390) expect([s.title, s.back]).toEqual(["월간 점검 보고서", true]);
-		else expect([s.title, s.sideSel]).toEqual(["모니터링", ["i:mail"]]);
+		else expect([s.title, s.sideSel]).toEqual(["앱", ["i:mail"]]);
 
 		await v.evaluate(until(`(document.querySelector("#tl iframe.mb-frame")?.style.height || "") !== ""`, "frame height not measured"));
 		const f = await ev(v, `(() => { const fr = document.querySelector("#tl iframe.mb-frame"), d = fr.srcdoc; return { sandbox: fr.getAttribute("sandbox"), h: parseFloat(fr.style.height), w: fr.getBoundingClientRect().width,

@@ -194,14 +194,14 @@ describe("screens", () => {
 		await v.evaluate(`pqLoad()`);
 		await v.evaluate(until(`PQ.loaded && RQ.loaded && document.querySelector("#nav-mon").textContent === "1" && !document.querySelector("#nav-mon").hidden`, "badge not 1"));
 		expect(await q<number[]>(v, `return [rqWaiting(), monAttnCount([{ apps: INTG.items, mons: NM.items }])]`)).toEqual([1, 2]);
-		expect((await v.evaluate(`document.querySelector('#nav [data-view="monitoring"]').getAttribute("aria-label")`)) as string).toBe("모니터링, 확인할 것 1개");
+		expect((await v.evaluate(`document.querySelector('#nav [data-view="monitoring"]').getAttribute("aria-label")`)) as string).toBe("앱, 확인할 것 1개");
 		// the draft leaves: the number is 0 and the two faults show as the dot titled 확인할 것 2개
 		localReplies = [];
 		await v.evaluate(`(rqLoad(), 0)`);
 		await v.evaluate(until(`(b => b && !b.hidden && b.classList.contains("nub") && b.title === "확인할 것 2개" && b.textContent === "")(document.querySelector("#nav-mon"))`, "dot not 2"));
 		await v.evaluate(`(NM.items.find(x => x.name === "flaky").last_result = "ok", monSchedule(), 0)`);
 		await v.evaluate(until(`document.querySelector("#nav-mon").title === "확인할 것 1개"`, "dot did not drop to 1"));
-		expect((await v.evaluate(`document.querySelector('#nav [data-view="monitoring"]').getAttribute("aria-label")`)) as string).toBe("모니터링, 확인할 것 1개");
+		expect((await v.evaluate(`document.querySelector('#nav [data-view="monitoring"]').getAttribute("aria-label")`)) as string).toBe("앱, 확인할 것 1개");
 	});
 
 	test("with nothing to count, an unread watch report puts the small dot on 모니터링 at the label's bottom-right corner, and reading it clears the dot", async () => {
@@ -286,12 +286,12 @@ describe("screens", () => {
 		for (const h of got) expect(h).not.toContain("98번");
 	});
 
-	test("the 앱 tab is not in the nav until APPS_ON is switched on", async () => {
+	test("the tab bar has four tabs, and switching APPS_ON on adds none", async () => {
 		const v = await open();
 		const got = await q<{ apps: boolean; tabs: string[]; on: string[] }>(v, `const tabs = [...document.querySelectorAll("#nav .ni")].map(b => b.dataset.view), apps = !!document.querySelector('#nav [data-view="apps"]');
 			APPS_ON = true; const on = navTabs().map(n => n[0]); APPS_ON = false; return { apps, tabs, on };`);
 		expect(got.apps).toBe(false);
-		expect(got.tabs).toEqual(["home", "chat", "projects", "monitoring", "settings"]);
-		expect(got.on).toContain("apps");
+		expect(got.tabs).toEqual(["home", "chat", "monitoring", "settings"]);
+		expect(got.on).toEqual(["home", "chat", "monitoring", "settings"]);
 	});
 });

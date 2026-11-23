@@ -121,7 +121,7 @@
     "other": "{n} to check"
   },
   "home.attn.news": "New",
-  "home.attn.mon_aria": "Monitoring, {say}",
+  "home.attn.mon_aria": "Apps, {say}",
   "home.attn.needs_n": {
     "one": "{n} needs a reply",
     "other": "{n} need a reply"

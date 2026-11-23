@@ -45,12 +45,12 @@ function gateways(platform: string, list: Peer[], o: { dialog?: boolean } = {}) 
 	return { handlers, log };
 }
 
-describe("Cmd/Ctrl+1..6 tab shortcuts", () => {
-	test("on a Mac Cmd+1..5 open 홈, 채팅, 프로젝트, 모니터링, 설정 in tab order; the hidden 앱 has no number, so Cmd+6 is left alone", () => {
+describe("Cmd/Ctrl+1..4 tab shortcuts", () => {
+	test("on a Mac Cmd+1..4 open 홈, 채팅, 앱, 설정 in tab order; Cmd+5 and Cmd+6 are left alone", () => {
 		const t = tabs("MacIntel", { current: "settings" });
-		for (const n of [1, 2, 3, 4, 5]) expect(fire(t.handlers, { key: String(n), code: `Digit${n}`, metaKey: true })).toBe(true);
-		expect(fire(t.handlers, { key: "6", code: "Digit6", metaKey: true })).toBe(false);
-		expect(t.log).toEqual(["go:home", "chatEnter", "go:projects", "go:monitoring", "go:settings"]);
+		for (const n of [1, 2, 3, 4]) expect(fire(t.handlers, { key: String(n), code: `Digit${n}`, metaKey: true })).toBe(true);
+		for (const n of [5, 6]) expect(fire(t.handlers, { key: String(n), code: `Digit${n}`, metaKey: true })).toBe(false);
+		expect(t.log).toEqual(["go:home", "chatEnter", "go:monitoring", "go:settings"]);
 	});
 
 	test("Ctrl+1 does nothing on a Mac and Cmd+1 does nothing elsewhere; Ctrl+3 works elsewhere", () => {
@@ -58,7 +58,7 @@ describe("Cmd/Ctrl+1..6 tab shortcuts", () => {
 		const win = tabs("Win32");
 		expect(fire(win.handlers, { key: "1", code: "Digit1", metaKey: true })).toBe(false);
 		expect(fire(win.handlers, { key: "3", code: "Digit3", ctrlKey: true })).toBe(true);
-		expect(win.log).toEqual(["go:projects"]);
+		expect(win.log).toEqual(["go:monitoring"]);
 	});
 
 	test("the key alone, 7, shift/alt, IME composition and an open dialog are left alone", () => {
@@ -78,8 +78,9 @@ describe("Cmd/Ctrl+1..6 tab shortcuts", () => {
 	});
 
 	test("tooltips name the shortcut", () => {
-		expect(tabs("MacIntel").navKeyHint("monitoring")).toBe("⌘4");
-		expect(tabs("Win32").navKeyHint("settings")).toBe("Ctrl+5");
+		expect(tabs("MacIntel").navKeyHint("monitoring")).toBe("⌘3");
+		expect(tabs("Win32").navKeyHint("settings")).toBe("Ctrl+4");
+		expect(tabs("MacIntel").navKeyHint("projects")).toBe("");
 		expect(tabs("MacIntel").navKeyHint("apps")).toBe("");
 		expect(tabs("Win32").navKeyHint("models")).toBe("");
 	});

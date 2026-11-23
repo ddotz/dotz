@@ -94,7 +94,7 @@ function paintMonAttn() {
   if (n) rollCount(b, n > 99 ? "99+" : String(n)); else b.textContent = "";
   if (rise) motionPop(b);
   if (NM.loaded && NT.loaded && INTG.loaded) b.dataset.seen = "1";
-  b.parentElement.setAttribute("aria-label", say ? TX("home.attn.mon_aria", { say }) : TX("common.monitoring"));
+  b.parentElement.setAttribute("aria-label", say ? TX("home.attn.mon_aria", { say }) : TX("common.apps"));
 }
 // The other computers' snapshot (pqLoad) is read only by 모니터링.
 setInterval(() => { if (!document.hidden && (current !== "home" || monCtx)) loadMonitors(); }, 60_000);

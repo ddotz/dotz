@@ -280,7 +280,7 @@ test("opening 프로젝트 from 1100px lands on the top project, not on 커스�
 	// so the first project pressed takes its entry instead of stacking on it
 	await run(v, `PRJ = null; ppCur = ""; go("home")`);
 	await waitFor(v, `current === "home"`);
-	await run(v, `document.querySelector('#nav .ni[data-view="projects"]').click()`);
+	await run(v, `window.dispatchEvent(new Event("pointerup")); go("projects")`);
 	await waitFor(v, `current === "project" && !!PRJ && ppCur === "ch:8000" && location.hash === "#project/ch%3A8000"`);
 	expect(await q(v, `return [history.state.a, history.state.w]`)).toEqual([1, ["home", "project/ch%3A8000"]]);
 });
@@ -296,7 +296,7 @@ test("from 1100px, back after pressing another project returns to the one presse
 		await waitFor(v, `document.querySelector("#pl-list .pl-row.on .pl-n")?.textContent === ${JSON.stringify(name)}`);
 	};
 	const back = (go: "back" | "forward") => run(v, `window.__popped = new Promise(res => addEventListener("popstate", () => res(true), { once: true })); history.${go}()`);
-	await run(v, `document.querySelector('#nav .ni[data-view="projects"]').click()`);
+	await run(v, `window.dispatchEvent(new Event("pointerup")); go("projects")`);
 	await waitFor(v, `current === "project" && document.querySelector("#pl-list .pl-row.on")`);
 	await press(1, "프로젝트 2");
 	const first = await sel();

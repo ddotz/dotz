@@ -55,13 +55,13 @@ test("several computers: the row opens the list under it with the current one ma
 test("the sidebar folds to an icon rail and back: the toggle, the shortcut and a reload keep it, names stay readable, dots stay on the icons", async () => {
 	const rail = () => ev<{ side: number; tog: string; pressed: string; label: string | null; text: number; saved: string | null; early: boolean }>(v, `(() => ({
 		side: document.querySelector("#brand").parentElement.offsetWidth, tog: document.querySelector("#side-tog").title, pressed: document.querySelector("#side-tog").getAttribute("aria-expanded"),
-		label: document.querySelector('.ni[data-view="projects"]').getAttribute("aria-label"), text: document.querySelector('.ni[data-view="projects"] .nl').offsetWidth,
+		label: document.querySelector('.ni[data-view="monitoring"]').getAttribute("aria-label"), text: document.querySelector('.ni[data-view="monitoring"] .nl').offsetWidth,
 		saved: localStorage.getItem("dotz-side"), early: document.documentElement.classList.contains("side-min") }))()`);
 	await load([self, other], "PR.list.length === 2");
 	expect((await rail()).side).toBe(232);
 	await run(v, `document.querySelector("#side-tog").click()`);
 	const min = await rail();
-	expect(min).toMatchObject({ side: 60, pressed: "false", label: "프로젝트", text: 0, saved: "min" });
+	expect(min).toMatchObject({ side: 60, pressed: "false", label: "앱", text: 0, saved: "min" });
 	expect(min.tog).toContain("펼치기");
 	expect(min.tog).toContain("\\");
 	await run(v, `ts(MAIN).unread = 3; paintAttn(); PR.list.find(p => p.name === "맥북").unread = 2; prPaint()`);

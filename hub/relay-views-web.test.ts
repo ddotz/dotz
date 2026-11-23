@@ -141,7 +141,9 @@ describe("a relayed computer chosen, read-only screens", () => {
 			{ name: "맥미니", self: true, online: true, keys: ["dir:~/Code/own"], remote: [] },
 			{ name: "work", self: false, online: true, relay: "relay:jandi:work", status_at: Date.now() - 60_000, keys: [], remote: [{ key: "dir:~/Code/site", name: "회사 사이트", note: "홈페이지를 고쳐요" }] },
 		];
-		await open("#projects");
+		await open();
+		await waitFor(`typeof S !== "undefined" && S`);
+		await run(`go("projects")`);
 		await waitFor(`document.querySelector("#pl-list .pl-pc")`);
 		await waitFor(`[...document.querySelectorAll("#pl-list .pl-row .pl-n")].some(n => n.textContent === "회사 사이트")`);
 		await run(`[...document.querySelectorAll("#pl-list .pl-row")].find(r => r.querySelector(".pl-n")?.textContent === "회사 사이트").click()`);

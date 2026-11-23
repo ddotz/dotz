@@ -85,7 +85,7 @@
   "home.attn.chat_aria": "채팅, {say}",
   "home.attn.to_check": "확인할 것 {n}개",
   "home.attn.news": "새 소식",
-  "home.attn.mon_aria": "모니터링, {say}",
+  "home.attn.mon_aria": "앱, {say}",
   "home.attn.needs_n": "답변 필요 {n}개",
   "home.attn.waiting": "{names}가 답을 기다려요",
   "home.attn.waiting_more": "{names} 외 {n}개가 답을 기다려요",

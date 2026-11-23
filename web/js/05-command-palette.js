@@ -121,7 +121,8 @@ function parseHash(hash = location.hash) {
   const h = hash.slice(1), i = h.indexOf("/");
   let t = i < 0 ? "" : h.slice(i + 1);
   try { t = decodeURIComponent(t); } catch {}
-  return { view: i < 0 ? h : h.slice(0, i), t };
+  const view = i < 0 ? h : h.slice(0, i);
+  return view === "projects" ? { view: "chat", t: "list" } : view === "apps" && !APPS_ON ? { view: "monitoring", t: t && `x:${t}` } : { view, t };
 }
 // The 세션 tab is gone: an old #lanes address opens the chat (its list on a phone), where running sessions sit under 진행 중.
 // #chat/alert is the 알림 screen now; only ntGo (a row's way to its source message) sets NSC.pass, which lets one go() open the record conversation.

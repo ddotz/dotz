@@ -31,10 +31,11 @@ function chain(name: string, hash: string, narrow: boolean, mon: Mon) {
 }
 
 describe("top-level tabs", () => {
-	test("the tabs are 홈, 채팅, 프로젝트, 모니터링, 설정, 앱 in that order, and the 세션 tab is gone", () => {
-		expect(NAV.map(n => n[0])).toEqual(["home", "chat", "projects", "monitoring", "apps", "settings"]);
-		expect(NAV.map(n => n[1])).toEqual(["홈", "채팅", "프로젝트", "모니터링", "앱", "설정"]);
+	test("the tabs are 홈, 채팅, 앱, 설정 in that order: 프로젝트 and the hidden 앱 screen have no tab, and the 세션 tab is gone", () => {
+		expect(NAV.map(n => n[0])).toEqual(["home", "chat", "monitoring", "settings"]);
+		expect(NAV.map(n => n[1])).toEqual(["홈", "채팅", "앱", "설정"]);
 		for (const [id] of NAV) expect(views).toContain(id);
+		for (const id of ["projects", "project", "apps"]) expect(views).toContain(id);
 	});
 
 	test("an old #lanes address opens the chat list; every other route is untouched", () => {

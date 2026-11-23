@@ -22,14 +22,15 @@ function routeChain(name, hash) {
   if (NSC.ret && name !== "notices") return ["home", "notices", hash];
   const own = SCREEN_HOOKS[name]?.chain?.(hash);
   if (own) return own;
-  if (name === "project") return ppWide() ? ["home", hash] : ["home", "projects", hash];   // wide: the list sits beside the pane, it is not a screen of its own
+  if (name === "project") return ppWide() ? ["home", hash] : ["home", "chat/list", hash];   // wide: the list sits beside the pane, it is not a screen of its own
+  if (name === "projects" && !ppWide() && !isRelayT(target)) return ["home", "chat/list", hash];
   if (SUB.has(name)) {   // backTarget reads a fixed up first (시스템 -> 설정), then the screen it was opened from
     const conv = n => narrowChat() ? ["home", "chat/list", `${n}/${target}`] : ["home", `${n}/${target}`];
     const bt = backTarget();
     if (bt === "home") return ["home", hash];
     if (views.some(id => SCREENS[id].under === bt)) return ["home", SCREENS[bt].tab, bt, hash];   // a page other screens sit under (메신저) is itself in its tab
     if (bt === "chat" || bt === "activity") return [...conv(bt), hash];
-    return ["home", bt === "project" ? "projects" : bt, hash];
+    return ["home", bt === "project" ? "chat/list" : bt, hash];
   }
   const up = SCREENS[name].up;
   return up && up !== "home" ? ["home", up, hash] : ["home", hash];
