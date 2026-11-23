@@ -173,6 +173,7 @@ describe("the bar fits", () => {
 				for (const w of SWEEP) {
 					await v.resize(w, 800);
 					await waitFor(v, `window.innerWidth === ${w}`);
+					await ev(v, `new Promise(r => requestAnimationFrame(() => requestAnimationFrame(() => r(true))))`);
 					const got = await fits(v), words = await ev<boolean>(v, `[...document.querySelectorAll("#mbox-bar .mbox-b[data-k] .mbox-bt")].every(t => t.getBoundingClientRect().width > 0)`);
 					seen.push(`${w}:${got.barW}/${got.usedW}${words ? "w" : ""}`);
 					if (![got.inside, got.oneLine, got.noScroll, got.countShown, got.xShown].every(Boolean) || words !== got.barW >= WORDS_FROM[lang]) bad.push(`${w}: bar ${got.barW}px, used ${got.usedW}px, words ${words}, inside ${got.inside}, scroll ${!got.noScroll}`);
