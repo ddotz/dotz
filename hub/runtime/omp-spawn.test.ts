@@ -394,3 +394,20 @@ test("OmO's spawn arguments are what they were: its own extension flag and fallb
 		"--exclude-tools", "create_goal,get_goal,update_goal,show_html_page",
 	]);
 });
+
+test("every omp agent finds /sbin tools: launchd's PATH without /usr/sbin and /sbin gets both appended after the owner's own folders (an isolated worker's ovnfs runs mount_nfs from /sbin)", () => {
+	const savedPath = process.env.PATH;
+	try {
+		process.env.PATH = "/opt/homebrew/bin:/usr/bin:/bin";
+		omp.start(orchestrator());
+		omp.start(conversation("ch:1"));
+		omp.start(lane("alpha"));
+		expect(started.map(s => s.env.PATH)).toEqual(Array(3).fill("/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin"));
+		started = [];
+		process.env.PATH = "/sbin:/usr/bin:/usr/sbin";
+		omp.start(orchestrator());
+		expect(started[0]!.env.PATH).toBe("/sbin:/usr/bin:/usr/sbin");
+	} finally {
+		process.env.PATH = savedPath;
+	}
+});

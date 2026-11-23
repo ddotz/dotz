@@ -10,6 +10,8 @@
 //    (never in the group: omp starts each command in a group of its own, OmO and claude under a shell in the task host's or its own)
 //    and is useful stays (hub/kept-procs.ts). The runtime's own helpers do not.
 //  - a write to a stdin whose process is gone never takes the gateway down (writeQuietly, also exported by omp.ts).
+//  - PATH holds /usr/sbin and /sbin: launchd's PATH may lack them, and an isolated omp worker's `ovnfs serve` runs mount_nfs
+//    from /sbin (without it every isolated worker failed at once).
 import type { Subprocess } from "bun";
 import { agentEnded, trackAgent } from "../agent-tree.ts";
 
@@ -42,9 +44,18 @@ process.on("exit", () => {
 // The session an agent works for, from the environment the gateway gives it (lanerun.ts, convsessions.ts).
 const ownerOf = (env?: Record<string, string | undefined>): string | undefined => (env?.DOTZ_LANE ? `lane:${env.DOTZ_LANE}` : env?.DOTZ_CONV || undefined);
 
+const SYSTEM_BINS = ["/usr/sbin", "/sbin"];
+/** The agent's PATH with the system admin folders appended when missing; the owner's own order stays first. */
+export function withSystemBins(path: string | undefined): string {
+	const parts = (path ?? "").split(":").filter(Boolean);
+	return [...parts, ...SYSTEM_BINS.filter(dir => !parts.includes(dir))].join(":");
+}
+
 /** Bun.spawn for an agent: nice 10, its own process group, and the group ended when the agent is. */
 export function spawnAgent<const T extends "pipe" | "ignore" = "pipe">(argv: string[], o: { cwd?: string; env?: Record<string, string | undefined>; stderr?: T }): Subprocess<"pipe", "pipe", T> {
-	const proc = Bun.spawn([...NICE, ...argv], { cwd: o.cwd, env: o.env, stdin: "pipe", stdout: "pipe", stderr: o.stderr ?? "pipe", detached: true });
+	const env = { ...(o.env ?? process.env) };
+	env.PATH = withSystemBins(env.PATH);
+	const proc = Bun.spawn([...NICE, ...argv], { cwd: o.cwd, env, stdin: "pipe", stdout: "pipe", stderr: o.stderr ?? "pipe", detached: true });
 	// A stand-in process of a test has no exit state and no group of its own: its made-up pid must never be signalled.
 	if ("exitCode" in proc) {
 		live.add(proc.pid);
