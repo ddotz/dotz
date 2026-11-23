@@ -3914,6 +3914,9 @@ textarea.as-in.as-ta { padding-top: var(--sp-15); padding-bottom: var(--sp-15); 
 #v-apps:not(.cv-listing) > .apps-pane { display: flex; }
 #v-apps > .cv-side { display: none; }
 
+#v-monitoring > .mon-app { display: none; flex: 1; min-height: 0; }
+#v-monitoring.x-on:not(.cv-listing) > .mon-app { display: flex; }
+#v-monitoring.x-on > :is(.cv-head, .chatbox) { display: none; }
 
 .apps-pane { flex-direction: column; min-width: 0; min-height: 0; }
 .apps-hd { display: flex; flex: none; align-items: center; gap: var(--sp-2); min-height: 56px; padding: var(--sp-2) var(--sp-1) var(--sp-3); }
@@ -3944,6 +3947,8 @@ textarea.as-in.as-ta { padding-top: var(--sp-15); padding-bottom: var(--sp-15); 
   #v-apps.cv-listing > .cv-side, #v-apps > .apps-pane, #v-apps:not(.cv-listing) > .apps-pane { display: flex; }
   #v-apps > .apps-pane { grid-column: 2; grid-row: 1; min-height: 0; margin-bottom: var(--sp-4); }
   #v-apps > .apps-pane:not(:has(.apps-frame)) { display: block; }
+  #v-monitoring > .mon-app { grid-column: 2; grid-row: 1 / -1; margin-bottom: var(--sp-4); }
+  #v-monitoring.x-on:not(.cv-listing) > .mon-app:not(:has(.apps-frame)) { display: block; }
 }
 
 /* 캔버스 (web/js/30-canvas.js): the 앱 screen's header and frame (20-apps.css) for an HTML page the bot made. From 1100px a third
@@ -4554,7 +4559,13 @@ body:has(#v-monitoring.mx-on:not([hidden])) .mx-teach { display: block; }
 :is(#mon-side, #chat-convo.mon-side) .cv-row[data-k^="p:"] .cv-p { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; white-space: normal; }
 :is(#mon-side, #chat-convo.mon-side) .cv-row .cv-m { gap: var(--sp-15); }
 /* the row's way in: a small chevron at the right edge, after its tags (the prototype's .li .end chev) */
-:is(#mon-side, #chat-convo.mon-side) .cv-row::after { align-self: center; content: ""; flex: none; width: 6px; height: 6px; margin-left: var(--sp-05); border-right: 1.5px solid var(--fg-3); border-bottom: 1.5px solid var(--fg-3); transform: rotate(-45deg); }
+:is(#mon-side, #chat-convo.mon-side) :is(.cv-row, .mon-sec-go)::after { align-self: center; content: ""; flex: none; width: 6px; height: 6px; margin-left: var(--sp-05); border-right: 1.5px solid var(--fg-3); border-bottom: 1.5px solid var(--fg-3); transform: rotate(-45deg); }
+:is(#mon-side, #chat-convo.mon-side) .mon-grp + .mon-grp { margin-top: var(--sp-3); }
+:is(#mon-side, #chat-convo.mon-side) .mon-sec-go { width: calc(100% - 2 * var(--sp-1)); min-height: var(--btn-hit); margin-top: var(--sp-2); margin-bottom: 0; padding: 0 calc(var(--sp-4) - var(--sp-1)) 0 0; border: 0; background: transparent; text-align: left; cursor: pointer; }
+:is(#mon-side, #chat-convo.mon-side) .mon-sec-go::after { margin-left: auto; }
+:is(#mon-side, #chat-convo.mon-side) .mon-sec-go.on { color: var(--fg); }
+:is(#mon-side, #chat-convo.mon-side) .cv-row.mon-fold::after { transform: rotate(45deg); }
+:is(#mon-side, #chat-convo.mon-side) .cv-row.mon-fold[aria-expanded="true"]::after { transform: rotate(-135deg); }
 /* one panel width in every 모니터링 state (list, app, mail, watch): the open mail conversation draws the same column (owner 2026-11-04) */
 /* a conversation opened from 모니터링 keeps 채팅's own two columns: the 모니터링 list (#chat-convo.mon-side) or the app's panel (.app-two) at the left, the conversation at
    채팅's content box, the column the item's own screen used (the app frame, owner 2026-11-11; it replaces the lone centred conversation of 2026-11-06) */
