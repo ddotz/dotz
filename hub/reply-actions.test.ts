@@ -330,6 +330,16 @@ test("a hand-written card goes to the bot as its numbered answer and closes on �
 	expect(replies.open("ch:1").map(c => c.ref)).toEqual(["X2"]);
 });
 
+test("the model's own [drop] marker on a hand-written card, carrying the owner's words, closes the card and sends the bot no 결정 답 line to read as his press again", async () => {
+	const w = world();
+	let cards = [{ ref: "X1", conv: "ch:1", notice: "n1", title: "이 답장 보낼까요? (X1)" }];
+	const log: string[] = [];
+	const close = (ref: string) => void (log.push(`close ${ref}`), (cards = cards.filter(c => c.ref !== ref)));
+	const replies = createReplyActions({ adapters: [], sender: w.sender, recordPick: () => undefined, learning: { record: async () => undefined, refine: async () => undefined }, cards: { open: () => cards, replace: () => undefined, rewrite: () => undefined, close }, toBot: async (c, t) => void log.push(`${c}|${t}`), emit: () => undefined, log: () => undefined });
+	expect((await replies.act({ ref: "X1", action: "drop" }, { surface: "chat", owner: { mid: "m1", text: "그건 보내지 마" } })).status).toBe(200);
+	expect(log).toEqual(["close X1"]);
+});
+
 test("D7: a send names the version it showed; another one is refused `changed` with the fresh item, nothing picked or queued, and the cards redrawn", async () => {
 	const w = world();
 	const shown = (await w.replies.list())[0]!;

@@ -397,13 +397,14 @@ export function createReplyActions(deps: ReplyDeps) {
 
 // A hand-written card has no store here: its answer is one message to the bot, as the card's own numbered answer would be. The model's own
 // revise marker on such a card goes the same way, as its 2) 고치기 line. The owner's 보내기 or 보내지 않기 answers it: the card closes, so the
-// conversation's held approval card comes up and the model's next marker on it finds no open card (it once dropped one card three times).
+// conversation's held approval card comes up. The model's own [drop] marker (surface chat, carrying the owner's words) only closes the card:
+// echoed back as a 결정 답 line it read as the owner's press and the model dropped the card again, six times in one conversation (2026-11-23).
 const answers = (input: ActInput): boolean => input.action === "send" || input.action === "drop";
 async function toBot(deps: ReplyDeps, ctx: ActCtx, card: OpenCard, input: ActInput): Promise<ActResult> {
 	if (ctx.agent && input.action !== "revise") return refused(403, "owner_only");
 	const line = cardAnswer(card, input);
 	if (!line) return refused(409, "not_supported");
-	await deps.toBot(card.conv, line, ctx.agent === true);
+	if (!(ctx.surface === "chat" && input.action === "drop")) await deps.toBot(card.conv, line, ctx.agent === true);
 	if (answers(input)) deps.cards.close(card.ref);
 	return { status: 200, body: { ok: true } };
 }
