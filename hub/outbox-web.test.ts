@@ -5,7 +5,7 @@ import { advanceTimers, ev, fakeHub, inbox, json, on, run } from "./test-web.ts"
 // so only the page's own check of the history can keep a message whose answer was lost from going out twice.
 type Mode = "ok" | "down" | "lose" | "refuse";
 let mode: Mode = "ok";
-const stored: { ts: string; kind: string; source: string; target: string; mid: string; text: string }[] = [];
+const stored: { ts: string; kind: string; source: string; target: string; mid: string; text: string; cid: string }[] = [];
 const posts = inbox<{ cid: string; text: string; reply_to?: string }>();
 const checks = inbox<number>();
 
@@ -17,7 +17,7 @@ const hub = fakeHub({
 			posts.push(b);
 			if (mode === "down") return new Response("bad gateway", { status: 502 });
 			if (mode === "refuse") return json({ error: "text required" }, 400);
-			stored.push({ ts: new Date().toISOString(), kind: "message", source: "web", target: "web", mid: `m${stored.length}`, text: b.text });
+			stored.push({ ts: new Date().toISOString(), kind: "message", source: "web", target: "web", mid: `m${stored.length}`, text: b.text, cid: b.cid });
 			return mode === "lose" ? new Response("bad gateway", { status: 502 }) : json({ ok: true });
 		}
 		if (url.pathname === "/api/history") {
@@ -115,4 +115,49 @@ test("a refusal from a reachable gateway stays an error and the text goes back t
 	await waitFor(`document.querySelectorAll(".snack").length === 1`);
 	expect(await look()).toEqual({ bubbles: [], toasts: 1, box: "보낼 말" });
 	expect(posts.length).toBe(1);
+}, 40_000);
+
+test("two identical messages queued in one outage both arrive", async () => {
+	await ready();
+	mode = "down";
+	await send("응");
+	await waitFor(`OUTBOX.length === 1`);
+	await send("응");
+	await waitFor(`OUTBOX.length === 2`);
+	expect(new Set(posts.map(p => p.cid)).size).toBe(2);
+	mode = "ok";
+	await advanceTimers(view, 2_000);
+	await waitFor(`OUTBOX.length === 0`);
+	expect(stored.map(m => m.text)).toEqual(["응", "응"]);
+	expect(new Set(stored.map(m => m.cid)).size).toBe(2);
+	expect((await look()).toasts).toBe(0);
+}, 40_000);
+
+test("a flush the gateway refuses keeps the text in the draft, after what the owner typed meanwhile", async () => {
+	await ready();
+	mode = "down";
+	await send("보낼 말");
+	await waitFor(`OUTBOX.length === 1`);
+	await run(view, `ta.value = "그 사이에 쓴 글"; saveDraft()`);
+	mode = "refuse";
+	await advanceTimers(view, 2_000);
+	await waitFor(`OUTBOX.length === 0`);
+	expect(await look()).toEqual({ bubbles: [], toasts: 1, box: "그 사이에 쓴 글\n보낼 말" });
+	expect(await ev(view, `localStorage.getItem(DRAFT_KEY("main"))`)).toBe("그 사이에 쓴 글\n보낼 말");
+	expect(stored.length).toBe(0);
+}, 40_000);
+
+test("a flush the gateway refuses puts the text back into the draft of the conversation it was sent from", async () => {
+	await ready();
+	mode = "down";
+	await send("다른 방에서 보낸 말");
+	await waitFor(`OUTBOX.length === 1`);
+	await run(view, `openTarget("alert", "chat")`);
+	await waitFor(`target === "alert"`);
+	mode = "refuse";
+	await advanceTimers(view, 2_000);
+	await waitFor(`OUTBOX.length === 0`);
+	expect((await look()).box).toBe("");
+	expect(await ev(view, `ts("main").draft`)).toBe("다른 방에서 보낸 말");
+	expect(await ev(view, `localStorage.getItem(DRAFT_KEY("main"))`)).toBe("다른 방에서 보낸 말");
 }, 40_000);

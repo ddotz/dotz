@@ -12,6 +12,9 @@ import { emit, tailEvents } from "./events.ts";
 import { listNotices, resetNoticesForTest } from "./notices.ts";
 import { deliverAnswer, makeRoute } from "./routes.ts";
 import { routeSend } from "./routes-send.ts";
+import { dropPending, flushQueue } from "./intake.ts";
+import { orch } from "./orchestrator.ts";
+import { queueItems } from "./queue.ts";
 
 // POST /api/message: what the composer sends is stored once, and nothing is stored for an empty message.
 const env = setupEnv();
@@ -34,6 +37,23 @@ describe("POST /api/message", () => {
 		expect(await lines("중복 시험")).toBe(1);
 		await call("POST", "/api/message", { text: "중복 시험", cid: "c-2" });
 		expect(await lines("중복 시험")).toBe(2);
+	});
+	test("the stored event carries the client id, on the direct path and on the queue path", async () => {
+		await call("POST", "/api/message", { text: "직접 보낸 글", cid: "c-direct" });
+		const direct = tailEvents(paths.inbox).findLast(e => e.text === "직접 보낸 글")!;
+		expect(direct.cid).toBe("c-direct");
+		const was = orch.status;
+		orch.status = "working";
+		try {
+			const queued = (await (await call("POST", "/api/message", { text: "기다리는 글", cid: "c-queued", mode: "queue" })).json()) as { queued: { id: string } };
+			expect(queueItems().find(i => i.id === queued.queued.id)?.cid).toBe("c-queued");
+			orch.status = "stopped";
+			flushQueue("main");
+			expect(tailEvents(paths.inbox).findLast(e => e.text === "기다리는 글")?.cid).toBe("c-queued");
+		} finally {
+			orch.status = was;
+			dropPending("web");
+		}
 	});
 	test("a typed message that names a decision settles that decision with its text and no other", async () => {
 		resetNoticesForTest();
