@@ -121,7 +121,7 @@ describe("slack onboarding", () => {
 		const b = browser();
 		const net = slackFetch();
 		mkdirSync(join(dir, "messengers"), { recursive: true });
-		writeFileSync(join(dir, "messengers", "slack.json"), `${JSON.stringify({ enabled: false, token: SLACK, channels: [], allow: [] })}\n`, { mode: 0o600 });
+		writeFileSync(join(dir, "messengers", "slack.json"), `${JSON.stringify({ enabled: false, token: SLACK, channels: [] })}\n`, { mode: 0o600 });
 		const svc = service(dir, b, net.fetch);
 		const done = await start(svc, "slack");
 		expect(done.state).toBe("done");
@@ -135,7 +135,7 @@ describe("slack channels", () => {
 	const withToken = (net: ReturnType<typeof slackFetch>) => {
 		const dir = temp();
 		mkdirSync(join(dir, "messengers"), { recursive: true });
-		writeFileSync(join(dir, "messengers", "slack.json"), `${JSON.stringify({ enabled: false, token: SLACK, channels: [], allow: [] })}\n`, { mode: 0o600 });
+		writeFileSync(join(dir, "messengers", "slack.json"), `${JSON.stringify({ enabled: false, token: SLACK, channels: [] })}\n`, { mode: 0o600 });
 		return { dir, svc: service(dir, browser(), net.fetch) };
 	};
 	const saved = (dir: string) => JSON.parse(readFileSync(join(dir, "messengers", "slack.json"), "utf8"));

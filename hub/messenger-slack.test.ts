@@ -37,7 +37,7 @@ const ctx = () => ({ receive: () => {}, log: () => {} });
 
 function setup(dir: string, values: Record<string, string> = {}, fake: Fake = slackFetch()) {
 	const a = createSlackAdapter(dir, { fetch: fake.fetch });
-	a.saveSettings!({ enabled: true, values: { token: TOKEN, main: "C0MAIN1234", alert: "C0ALERT123", ...values }, allow: ["U1"] });
+	a.saveSettings!({ enabled: true, values: { token: TOKEN, main: "C0MAIN1234", alert: "C0ALERT123", ...values } });
 	return { a, fake };
 }
 
@@ -49,16 +49,17 @@ describe("slack messenger", () => {
 	test("the config is written 0600 and the settings show the token only as set", () => {
 		const dir = tempDir();
 		const a = createSlackAdapter(dir, { fetch: slackFetch().fetch });
-		const seen = a.saveSettings!({ enabled: true, values: { token: TOKEN, main: "C0MAIN1234" }, allow: ["U1", "U1"] }) as Settings;
+		const seen = a.saveSettings!({ enabled: true, values: { token: TOKEN, main: "C0MAIN1234" } }) as Settings;
 		expect(statSync(slackConfigPath(dir)).mode & 0o777).toBe(0o600);
-		expect(loadSlackConfig(dir)).toMatchObject({ enabled: true, token: TOKEN, allow: ["U1"] });
+		expect(loadSlackConfig(dir)).toMatchObject({ enabled: true, token: TOKEN });
+		expect(JSON.parse(readFileSync(slackConfigPath(dir), "utf8"))).not.toHaveProperty("allow");
 		expect(JSON.parse(readFileSync(slackConfigPath(dir), "utf8")).token).toBe(TOKEN);
 		expect(JSON.stringify(seen)).not.toContain(TOKEN);
 		const token = seen.fields.find(f => f.key === "token")!;
 		expect(token).toMatchObject({ type: "secret", set: true });
 		expect(token).not.toHaveProperty("value");
 		expect(seen.help.join(" ")).toContain("chat:write");
-		expect(seen.allow!.items).toEqual(["U1"]);
+		expect(seen).not.toHaveProperty("allow");
 		expect(a.configured!()).toBe(true);
 	});
 
@@ -96,7 +97,6 @@ describe("slack messenger", () => {
 					{ id: "C0ALERT123", name: "dotz-알림", kind: "alert" },
 					{ id: "C0PROJ1234", name: "dotz-site", kind: "project", project: "ch:9" },
 				],
-				allow: [],
 			},
 			dir,
 		);
@@ -148,7 +148,7 @@ describe("slack messenger", () => {
 		const dir = tempDir();
 		const { a } = setup(dir);
 		const before = readFileSync(slackConfigPath(dir), "utf8");
-		for (const bad of [{ values: { token: "nope" } }, { values: { main: "bad id!" } }, { values: { nope: "x" } }, { allow: [1] }, { enabled: "yes" }]) {
+		for (const bad of [{ values: { token: "nope" } }, { values: { main: "bad id!" } }, { values: { nope: "x" } }, { allow: ["U1"] }, { enabled: "yes" }]) {
 			expect(() => a.saveSettings!(bad as never)).toThrow();
 		}
 		expect(readFileSync(slackConfigPath(dir), "utf8")).toBe(before);
@@ -177,7 +177,7 @@ describe("slack spec answers", () => {
 	const make = (spec: (body: string) => MessageSpec | null) => {
 		const fake = slackFetch();
 		const a = createSlackAdapter(tempDir(), { fetch: fake.fetch, spec });
-		a.saveSettings!({ enabled: true, values: { token: TOKEN, main: "C0MAIN1234" }, allow: [] });
+		a.saveSettings!({ enabled: true, values: { token: TOKEN, main: "C0MAIN1234" } });
 		return { a, fake };
 	};
 	test("blocks go beside the shown text, with the tone emoji, the web link and no marker", async () => {

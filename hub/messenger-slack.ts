@@ -14,7 +14,7 @@ import { parseTone, TONE_EMOJI, toneText } from "./tone.ts";
 
 export type SlackKind = "main" | "project" | "alert" | "worklog";
 export type SlackChannel = { id: string; name: string; kind: SlackKind; project?: string };
-export type SlackConfig = { enabled: boolean; token: string; channels: SlackChannel[]; allow: string[] };
+export type SlackConfig = { enabled: boolean; token: string; channels: SlackChannel[] };
 
 export const slackConfigPath = (dataDir: string = DATA_DIR) => join(dataDir, "messengers", "slack.json");
 export const SLACK_SCOPES = "chat:write, channels:read, users:read";
@@ -29,8 +29,6 @@ const HELP = [
 	"채널 ID는 Slack 채널 링크의 마지막 C… 값이에요. 없으면 메인 채널로 보내요",
 ];
 
-const strings = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string" && x.trim() !== "").map(x => x.trim()) : []);
-
 function normalize(raw: unknown): SlackConfig {
 	const o = (raw && typeof raw === "object" ? raw : {}) as Record<string, any>;
 	const channels: SlackChannel[] = [];
@@ -42,7 +40,7 @@ function normalize(raw: unknown): SlackConfig {
 		seen.add(c.id);
 		channels.push({ id: c.id, name: typeof c.name === "string" && c.name ? c.name : c.id, kind: c.kind as SlackKind, ...(project ? { project } : {}) });
 	}
-	return { enabled: o.enabled === true, token: typeof o.token === "string" ? o.token.trim() : "", channels, allow: [...new Set(strings(o.allow))] };
+	return { enabled: o.enabled === true, token: typeof o.token === "string" ? o.token.trim() : "", channels };
 }
 
 /** The config; a missing or broken file is a disabled, unconfigured Slack. */
@@ -133,7 +131,6 @@ export function createSlackAdapter(dataDir: string = DATA_DIR, opts: { fetch?: t
 				{ key: "alert", label: "알림 채널 ID", type: "text", value: idOf("alert"), hint: "비우면 메인 채널은 그대로예요" },
 				{ key: "worklog", label: "작업내역 채널 ID", type: "text", value: idOf("worklog") },
 			],
-			allow: { label: "말을 걸 수 있는 사람", hint: "Slack 멤버 ID(U…)", items: s.allow },
 			projects: [],
 		};
 	}
@@ -141,7 +138,7 @@ export function createSlackAdapter(dataDir: string = DATA_DIR, opts: { fetch?: t
 	/** Validates the whole body first, then writes once: a refused body changes nothing. */
 	function apply(body: SettingsPut): void {
 		const s = cfg();
-		const next: SlackConfig = { enabled: s.enabled, token: s.token, channels: s.channels.map(ch => ({ ...ch })), allow: [...s.allow] };
+		const next: SlackConfig = { enabled: s.enabled, token: s.token, channels: s.channels.map(ch => ({ ...ch })) };
 		if (body.enabled !== undefined) {
 			if (typeof body.enabled !== "boolean") throw new SettingsError("enabled must be true or false");
 			next.enabled = body.enabled;
@@ -167,10 +164,7 @@ export function createSlackAdapter(dataDir: string = DATA_DIR, opts: { fetch?: t
 		setChannel("main", v.main);
 		setChannel("alert", v.alert);
 		setChannel("worklog", v.worklog);
-		if (body.allow !== undefined) {
-			if (!Array.isArray(body.allow) || body.allow.some(x => typeof x !== "string")) throw new SettingsError("allow must be a list of strings");
-			next.allow = [...new Set(strings(body.allow))];
-		}
+		if (body.allow !== undefined) throw new SettingsError("allow is not a Slack setting");
 		saveSlackConfig(next, dataDir);
 	}
 
