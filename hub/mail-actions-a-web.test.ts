@@ -193,7 +193,7 @@ describe("삭제", () => {
 		await tick(v, "sample-1 보고서"); await pickBar(v, "삭제");
 		await waitFor(v, `!${rowJs("sample-1 보고서")}`);
 		await tick(v, "sample-2 일정"); await pickBar(v, "삭제");
-		await snackSays(v, "2개를 삭제했어요");
+		await snackSays(v, "2개를 목록에서 지웠어요 · 원본은 그대로예요");
 		expect((await snack(v))!.act).toBe("되돌리기");
 		expect(await ev<number>(v, `document.querySelectorAll(".snack").length`)).toBe(1);
 		await shot(v, `delete-merged-${width}`);
@@ -204,7 +204,7 @@ describe("삭제", () => {
 		await tick(v, "sample-1 보고서"); await pickBar(v, "삭제");
 		await waitFor(v, `!${rowJs("sample-1 보고서")}`);
 		await tick(v, "sample-2 일정"); await pickBar(v, "삭제");
-		await snackSays(v, "2개를 삭제했어요");
+		await snackSays(v, "2개를 목록에서 지웠어요 · 원본은 그대로예요");
 		await advanceTimers(v, 6000);
 		await sent(1, "the trash request");
 		await advanceTimers(v, 6000);
@@ -215,7 +215,7 @@ describe("삭제", () => {
 	for (const [width, height] of SIZES) test(`삭제하는 중이에요 stays after the 되돌리기 time while the hub has not answered at ${width}`, async () => {
 		const v = await openList(width, height);
 		await tick(v, "sample-1 보고서"); await pickBar(v, "삭제");
-		await snackSays(v, "삭제했어요");
+		await snackSays(v, "목록에서 지웠어요 · 원본은 그대로예요");
 		gate = gateOf();
 		await advanceTimers(v, 6000);
 		await sent(1, "the trash request");
@@ -240,6 +240,6 @@ describe("삭제", () => {
 		await settled(v);
 		expect((await snack(v))?.text).toBe("삭제하는 중이에요");
 		gate.open();
-		await snackSays(v, "삭제했어요");
+		await snackSays(v, "목록에서 지웠어요 · 원본은 그대로예요");
 	}, 30_000);
 });

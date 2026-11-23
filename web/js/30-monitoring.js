@@ -370,7 +370,7 @@ function monNoticeNode(n, names = []) {
 // shows the subject and sender the check printed, and a report with nothing to show is a plain report.
 function monItemNode(n) {
   const it = n.item, t = it && it.app === "mail" && it.key ? `mail:${it.key}` : "", c = it && it.card;
-  if (t && !MAILS.has(t) && c && c.source) mailPut(t, c);
+  if (t && !MAILS.has(t) && c && c.source && !mbGone(t)) mailPut(t, c);
   const node = t && MAILS.has(t) ? monConvNode(t, TX("common.mail")) : c && (c.subject || c.from) ? resultCard({ src: mailSender(c.from), at: n.updated || n.ts, title: c.subject }) : null;
   const raw = node ? rcSplit(n.text).raw : "";
   if (raw) { const d = rcRawFold(raw); d.addEventListener("click", e => e.stopPropagation()); node.append(d); }

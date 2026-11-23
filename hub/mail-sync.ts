@@ -37,7 +37,10 @@ const MAIL_ACTIONS_AT_ONCE = 3;
 export const MAIL_ACTIONS = ["read", "unread", "archive", "unarchive", "trash", "star", "unstar"] as const;
 export type MailAction = (typeof MAIL_ACTIONS)[number];
 export const isMailAction = (v: unknown): v is MailAction => typeof v === "string" && (MAIL_ACTIONS as readonly string[]).includes(v);
-export type ActionResult = { ok: boolean; synced: boolean; note?: string };
+export type ActionResult = { ok: boolean; synced: boolean; note?: string; gone?: true; newer?: true };
+/** Names the newest incoming message a mail record stands for (its message id, empty for a record kept without ids): the `mark` of its list card, which a trash request sends back. */
+export const messageMark = (r: MailRecord): string => r.msg ?? "";
+const NEWER_REPLY = "새 답장이 와서 이 메일은 지우지 않았어요";
 
 export type SyncDeps = {
 	/** Runs a command (zele); the code and stderr are all that is looked at. */
@@ -98,11 +101,13 @@ const patch = (r: MailRecord, change: Partial<MailRecord>, drop: (keyof MailReco
 
 /**
  * One action on one mail: dotz changes at once, then the mailbox. `providerOnly` = dotz already did it (the owner opened the mail, POST /api/read):
- * only the mailbox is told. ok is false only when the mail is not in dotz.
+ * only the mailbox is told. `mark` (trash only) = the messageMark the page saw: a mail that has another one now got a newer message and stays (newer).
+ * ok is false only when the mail is not in dotz (gone) or a trash met a newer message.
  */
-export async function mailAction(key: string, action: MailAction, d: SyncDeps, opts: { providerOnly?: boolean } = {}): Promise<ActionResult> {
+export async function mailAction(key: string, action: MailAction, d: SyncDeps, opts: { providerOnly?: boolean; mark?: string } = {}): Promise<ActionResult> {
 	const r = mailByKey(key);
-	if (!r) return { ok: false, synced: false, note: "이 메일을 찾지 못했어요" };
+	if (!r) return { ok: false, synced: false, note: "이 메일을 찾지 못했어요", gone: true };
+	if (action === "trash" && opts.mark !== undefined && opts.mark !== messageMark(r)) return { ok: false, synced: false, note: NEWER_REPLY, newer: true };
 	const target = `mail:${key}`;
 	if (!opts.providerOnly) {
 		if (action === "read") d.setRead(target, r.at, "read");
@@ -118,13 +123,13 @@ export async function mailAction(key: string, action: MailAction, d: SyncDeps, o
 	return result;
 }
 
-/** POST /api/mail/actions: the same action on many mails, in order. */
-export async function mailActions(keys: readonly string[], action: MailAction, d: SyncDeps): Promise<Array<ActionResult & { key: string }>> {
+/** POST /api/mail/actions: the same action on many mails, in order. `marks` = the messageMark the page saw per key, for trash (see mailAction). */
+export async function mailActions(keys: readonly string[], action: MailAction, d: SyncDeps, marks: Readonly<Record<string, string>> = {}): Promise<Array<ActionResult & { key: string }>> {
 	const results = new Array<ActionResult & { key: string }>(keys.length);
 	const positions = new Map<string, number[]>();
 	for (const [i, key] of keys.entries()) positions.set(key, [...(positions.get(key) ?? []), i]);
 	await mapLimit([...positions], MAIL_ACTIONS_AT_ONCE, async ([key, at]) => {
-		for (const i of at) results[i] = { key, ...(await mailAction(key, action, d)) };
+		for (const i of at) results[i] = { key, ...(await mailAction(key, action, d, Object.hasOwn(marks, key) ? { mark: marks[key] } : {})) };
 	});
 	return results;
 }

@@ -153,7 +153,7 @@ describe("the routes", () => {
 		expect((await call("POST", "/api/mail/fx-nope/action", { action: "read" })).status).toBe(404);
 		await call("POST", `/api/mail/${key}/action`, { action: "archive" });
 		const batch = await (await call("POST", "/api/mail/actions", { keys: [key, "fx-nope"], action: "unread" })).json() as { ok: boolean; results: unknown[] };
-		expect(batch.results).toEqual([{ key, ok: true, synced: false }, { key: "fx-nope", ok: false, synced: false, note: "이 메일을 찾지 못했어요" }]);
+		expect(batch.results).toEqual([{ key, ok: true, synced: false }, { key: "fx-nope", ok: false, synced: false, note: "이 메일을 찾지 못했어요", gone: true }]);
 		const card = ((await (await call("GET", "/api/conversations?all=1")).json()) as { items: Array<{ target: string; mail?: Record<string, any> }> }).items.find(i => i.target === `mail:${key}`)!.mail!;
 		expect(card).toMatchObject({ read: false, archived: true, starred: true, can: [] });
 		expect(typeof card.base).toBe("string");

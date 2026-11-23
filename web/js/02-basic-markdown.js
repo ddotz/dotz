@@ -219,10 +219,10 @@ const latestOut = key => FLIGHTS.get(key)?.p;   // the run of key on its way (to
 // Names this page's event stream to the gateway: every request carries it, so a stream whose page stopped asking (a phone asleep, the network gone) is closed by the gateway (hub/events.ts noteLive).
 const LIVE_TOK = Array.from(crypto.getRandomValues(new Uint8Array(12)), b => b.toString(16).padStart(2, "0")).join("");
 const CARD_WAIT_MS = 15000;
-async function api(path, method = "GET", body, limit = 0) {
+async function api(path, method = "GET", body, limit = 0, keep = false) {
   [path, method, body] = pqRoute(path, method, body);   // a peer's item is read and acted on through /api/peer/proxy (34-peer-monitoring.js)
   const stop = limit ? new AbortController() : null, t = stop ? setTimeout(() => stop.abort(new TypeError(TX("chat.upload.lost"))), limit) : 0;
-  const go = () => fetch(path, { method, cache: "no-store", headers: { "x-dotz-live": LIVE_TOK, ...(body !== undefined && { "Content-Type": "application/json" }) }, body: body !== undefined ? JSON.stringify(body) : undefined, ...(stop ? { signal: stop.signal } : {}) });
+  const go = () => fetch(path, { method, cache: "no-store", headers: { ...(!keep && { "x-dotz-live": LIVE_TOK }), ...(body !== undefined && { "Content-Type": "application/json" }) }, body: body !== undefined ? JSON.stringify(body) : undefined, ...(stop ? { signal: stop.signal } : {}), ...(keep && { keepalive: true }) });
   const read = async r => ({ ok: r.ok, status: r.status, text: await r.text() });
   const got = method === "GET" ? latest(path, () => {
     const early = window.__early && window.__early[path];

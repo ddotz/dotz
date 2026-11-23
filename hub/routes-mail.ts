@@ -73,6 +73,12 @@ const keyOfSource = (source: string, id: string): string | undefined => {
 		return undefined;
 	}
 };
+const markMap = (raw: unknown): Record<string, string> | undefined => {
+	if (raw === undefined) return {};
+	if (!raw || typeof raw !== "object" || Array.isArray(raw)) return undefined;
+	const entries = Object.entries(raw);
+	return entries.every(([, v]) => typeof v === "string") ? Object.fromEntries(entries) : undefined;
+};
 
 // POST /api/mail/compose without a ref: the draft he wrote in the mail app (web/js/30-mail-box.js), its uploads staged for it, and the
 // send-approval card posted to the conversation of the mail it answers (or the new mail's own row gains one). Nothing is sent here.
@@ -188,20 +194,23 @@ export async function routeMail(req: Request, url: URL, { peer, mailDeps, mailRe
 	if (req.method === "POST" && url.pathname === "/api/mail/delete-original") return originalDeleteRoute(req, peer, await body(req), mailOriginal);   // the owner's 삭제 with the switch on
 	// 읽음 / 안 읽음 / 보관 / 별표 on a mail: dotz changes at once and the real mailbox follows; 휴지통 stays in dotz (hub/mail-sync.ts has the contract).
 	if (req.method === "POST" && url.pathname === "/api/mail/actions") {
-		const b = await body(req).catch(error => { if (error instanceof BodyError) throw error; return {}; }) as { keys?: unknown; action?: unknown };
+		const b = await body(req).catch(error => { if (error instanceof BodyError) throw error; return {}; }) as { keys?: unknown; action?: unknown; marks?: unknown };
 		if (!isMailAction(b.action)) return json({ error: "action must be read, unread, archive, unarchive, trash, star or unstar" }, 400);
 		if (!Array.isArray(b.keys) || b.keys.some(k => typeof k !== "string")) return json({ error: "keys must be an array of mail keys" }, 400);
-		const results = await mailActions((b.keys as string[]).slice(0, 200), b.action, mailSyncDeps);
+		const marks = markMap(b.marks);
+		if (!marks) return json({ error: "marks must map mail keys to the marks of their cards" }, 400);
+		const results = await mailActions((b.keys as string[]).slice(0, 200), b.action, mailSyncDeps, marks);
 		if (b.action === "trash") log(deleteLine("bulk", results));
 		return json({ ok: true, results });
 	}
 	const mailActOne = req.method === "POST" && /^\/api\/mail\/([a-z0-9._-]+)\/action$/.exec(url.pathname);
 	if (mailActOne) {
-		const b = await body(req).catch(error => { if (error instanceof BodyError) throw error; return {}; }) as { action?: unknown };
+		const b = await body(req).catch(error => { if (error instanceof BodyError) throw error; return {}; }) as { action?: unknown; mark?: unknown };
 		if (!isMailAction(b.action)) return json({ error: "action must be read, unread, archive, unarchive, trash, star or unstar" }, 400);
-		const key = mailActOne[1]!, res = await mailAction(key, b.action, mailSyncDeps);
+		if (b.mark !== undefined && typeof b.mark !== "string") return json({ error: "mark must be the mark of the mail's card" }, 400);
+		const key = mailActOne[1]!, res = await mailAction(key, b.action, mailSyncDeps, typeof b.mark === "string" ? { mark: b.mark } : {});
 		if (b.action === "trash") log(deleteLine("one", [{ key, ok: res.ok }]));
-		return res.ok ? json(res) : json({ error: res.note }, 404);
+		return res.ok ? json(res) : json({ error: res.note, ...(res.gone ? { gone: true } : {}), ...(res.newer ? { newer: true } : {}) }, res.newer ? 409 : 404);
 	}
 	// 삭제 on a mail card: the mail leaves dotz (record, list entry, counts, its notices and pending drafts); the real mailbox is not touched.
 	const mailDelete = req.method === "DELETE" && /^\/api\/mail\/([a-z0-9._-]+)$/.exec(url.pathname);

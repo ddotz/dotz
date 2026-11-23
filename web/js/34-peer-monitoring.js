@@ -190,6 +190,7 @@ function pqMail(c, pc, itemKey) {
   const t = String(c.target);
   if (!PQ.of.has(t) && CONV.has(t) && !intgHidden(t)) return null;
   PQ.of.set(t, { pc, key: itemKey });
+  if (mbGone(t, c.mail)) return null;
   if (c.mail) mailPut(t, c.mail);
   if (c.last) convLastSet(t, c.last);
   const sig = `${c.unread | 0}|${c.read || ""}`;
