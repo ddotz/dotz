@@ -179,7 +179,7 @@ function sessionRow(l, o = {}) {
 const prjFirst = () => { const r = projRows((PRJ && PRJ.projects) || []); return ((r.find(x => x.p.pinned) || r[0] || {}).p || {}).key || ""; };
 /* ---------- 프로젝트 level 1: a compact list (name, one status line, last activity), filtered and paged ----------
    Rows sort by what needs the owner, then what runs, then the most recent. A row opens the project's overview (level 2); the overview's
-   sections open one drill-in page each (level 3). The built-in 커스텀 project is a settings page, so it sits at the end, outside the filters. */
+   sections open one drill-in page each (level 3). */
 const PJ_PAGE = 12, PJ_VIEWS = [["all", TX("project.view.all")], ["run", TX("home.sys.running")], ["need", TX("home.attn.check")]];
 const PJ = { view: "all", q: "", more: PJ_PAGE };
 // What the owner should do with a project now: a waiting session first, then work running, then a resting one.
@@ -308,10 +308,9 @@ function pjPaintRows() {
   const box = $("#pl-list");
   if (!box) return;
   const rows = pjFiltered(), page = rows.slice(0, PJ.more), rest = rows.length - page.length;
-  const builtin = ((PRJ && PRJ.projects) || []).find(p => p.builtin), searching = !!PJ.q.trim();
-  const showBuiltin = !!builtin && PJ.view === "all" && (!searching || TX("project.custom").toLowerCase().includes(PJ.q.trim().toLowerCase()));
+  const searching = !!PJ.q.trim();
   const pcs = PRJ_PC && PRJ_PC.length > 1 ? PRJ_PC : null;
-  const sig = JSON.stringify([rows.map(r => [r.p.key, r.st.k, r.st.word, r.st.lane && r.st.lane.name, prjLastAt(r.p), prjChat(r.p) ? ts(prjChat(r.p)).unread : 0]), PJ.more, PJ.view, PJ.q, current === "project" ? ppCur : "", showBuiltin, pcs, pcs ? [...PJ_FOLD] : 0]);
+  const sig = JSON.stringify([rows.map(r => [r.p.key, r.st.k, r.st.word, r.st.lane && r.st.lane.name, prjLastAt(r.p), prjChat(r.p) ? ts(prjChat(r.p)).unread : 0]), PJ.more, PJ.view, PJ.q, current === "project" ? ppCur : "", pcs, pcs ? [...PJ_FOLD] : 0]);
   if (box.dataset.sig === sig) return;
   box.dataset.sig = sig;
   // Section headers and one card per group, as the prototype's 프로젝트 list; a group with no row after the filter is left out.
@@ -333,24 +332,18 @@ function pjPaintRows() {
   }
   if (rest > 0 && card) card.append(moreRow(TX("project.more_n", { n: rest }), () => { PJ.more += PJ_PAGE; pjPaintRows(); }));
   if (!rows.length && !(pcs && nodes.length)) nodes.push(emptyNode(searching ? TX("project.empty.search") : PJ.view === "need" ? TX("project.empty.need") : PJ.view === "run" ? TX("project.empty.run") : PJ.view === "done" ? TX("project.empty.done") : TX("project.empty.none")));
-  // The built-in 커스텀 page is the owner's settings list: always reachable, never part of the filters.
-  if (showBuiltin) {
-    nodes.push(el("div", { class: "sec pl-sec pl-gh", role: "presentation", text: TX("project.my_settings") }));
-    nodes.push(el("div", { class: "pl-list" },
-      el("button", { class: `pl-row sub${current === "project" && ppCur === builtin.key ? " on" : ""}`, type: "button", "data-key": builtin.key, onclick: () => go("project", builtin.key) },
-        el("span", { class: "ico" }, icon("projects")),
-        el("span", { class: "pl-b" }, el("span", { class: "pl-1" }, el("span", { class: "pl-n", text: builtin.name })), el("span", { class: "pl-s" }, el("span", { class: "pl-sw", text: TX("project.custom_sub") }))),
-        el("span", { class: "li-end" }, icon("chev", "chev")))));
-  }
   clear(box).append(...nodes);
 }
 function projectsEnter() { renderProjects(); prjLoad(); }
 // From 1100px 프로젝트 opens on a project with the list beside it: the open one while it still exists, else the first (19-project-main.js projectAim).
 function projectsAim() {
   if (!ppWide() || relayCur()) return;
+  const key = ppCur && (!PRJ || PRJ.projects.some(p => p.key === ppCur)) ? ppCur : prjFirst();
+  if (!key) {
+    if (!PRJ) prjLoad().then(() => { if (current === "projects" && ppWide() && prjFirst()) { histAuto(); go("project", prjFirst()); } });
+    return;
+  }
   histAuto();
-  const key = ppCur && (!PRJ || PRJ.projects.some(p => p.key === ppCur)) ? ppCur : prjFirst() || "builtin:custom";
-  if (!PRJ) prjLoad().then(() => { if (current === "project" && ppCur === "builtin:custom" && prjFirst()) { histAuto(); go("project", prjFirst()); } });
   projectAim(key);
   return ["project", key];
 }
@@ -359,7 +352,7 @@ function renderProjects() {
   if (rvPaint("projects")) return;   // a messenger-only computer is chosen: its projects, read-only (44-relay-views.js)
   const box = $("#v-projects");
   if (!PRJ) { delete box.dataset.sig; clear(box).append(emptyNode(PRJ_FAIL ? TX("project.load_failed") : TX("common.loading"), PRJ_FAIL ? () => prjLoad() : null)); return; }
-  const list = PRJ.projects || [];
+  const list = (PRJ.projects || []).filter(p => !p.builtin);
   if (!list.length) {
     delete box.dataset.sig;
     const none = emptyNode(TX("project.empty.first"));

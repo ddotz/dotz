@@ -181,6 +181,7 @@
   "settings.page.update": "Updates",
   "settings.page.runtime": "Runtimes",
   "settings.page.schedules": "Schedules",
+  "settings.page.custom": "Rules and customizing",
   "settings.runtime.check_failed": "Couldn't check runtimes",
   "settings.runtime.checking": "Checking runtimes…",
   "settings.row.account_in_use": "{name} in use",

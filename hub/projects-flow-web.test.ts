@@ -27,7 +27,7 @@ const projects = Array.from({ length: 30 }, (_, i) => {
 });
 const builtin = { key: "builtin:custom", name: "커스텀", note: "내 취향대로 바꾼 것", pinned: true, builtin: true, lanes: [] };
 const writes: { path: string; body: any }[] = [];
-let detailDown = false, detailEmpty = false;
+let detailDown = false, detailEmpty = false, noProjects = false;
 
 const detailOf = (key: string) => {
 	const p = projects.find(x => x.key === key), rec = records[key];
@@ -70,9 +70,8 @@ const server = Bun.serve({
 			return new Response(body, { headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache" } });
 		}
 		if (p === "/api/state") return json({ name: "dotz", orchestrator: { status: "idle" }, lanes: projects.flatMap(x => x.lanes.map((l: any) => ({ ...l, pendingAsk: l.waiting, cwd: `/tmp/${x.key}`, home: x.key }))), terminals: {}, channels: { work: {}, homes: {}, lanes: {}, threads: {} }, discord: {}, notices_unread: 0 });
-		if (p === "/api/custom") return json({ dir: "~/.dotz/custom", cards: [], projects: [builtin, ...projects], routines: [], links: [] });
+		if (p === "/api/custom") return json({ dir: "~/.dotz/custom", cards: [], projects: [builtin, ...(noProjects ? [] : projects)], routines: [], links: [] });
 		if (p === "/api/custom/project") {
-			if (url.searchParams.get("key") === "builtin:custom") return json({ groups: [{ id: "rules", label: "내 규칙", empty: "없어요", items: ["하나", "둘", "셋", "넷", "다섯", "여섯", "일곱"].map(n => ({ title: `규칙 ${n}`, full: `[11-01] 규칙 ${n}의 원문` })) }] });
 			if (detailDown) return json({ error: "down" }, 500);
 			const d = detailOf(url.searchParams.get("key") || "");
 			return d ? json(d[0]) : json({ error: "not found" }, 404);
@@ -108,7 +107,7 @@ const run = (v: View, code: string) => v.evaluate(`(() => { ${code} })(), 0`);
 const moreBox = (v: View, card: string) => q(v, `const c = document.querySelector(${JSON.stringify(card)}), m = c.querySelector(".cv-more").getBoundingClientRect(); return { whole: m.width === c.clientWidth, tall: m.height >= 44 }`);
 const shot = async (v: View, name: string) => { if (SHOTS) { await waitFor(v, `document.getAnimations().every(a => a.playState !== "running" || (a.effect && a.effect.getTiming().iterations === Infinity))`); await Bun.write(join(SHOTS, name), await v.screenshot()); } };
 
-async function boot(width: number, height: number): Promise<View> {
+async function boot(width: number, height: number, ready = `document.querySelector(".pl-row")`): Promise<View> {
 	const v = new Bun.WebView({ width, height });
 	views.push(v);
 	const opened = new Promise<void>(r => streamWaiters.push(r));
@@ -117,13 +116,13 @@ async function boot(width: number, height: number): Promise<View> {
 	await waitFor(v, `typeof S !== "undefined" && S`);
 	await run(v, `if (dotzTheme.get() === "dark") dotzTheme.toggle()`);
 	await run(v, `go("projects")`);
-	await waitFor(v, `document.querySelector(".pl-row")`);
+	await waitFor(v, ready);
 	return v;
 }
 
 test("the list pages 12 projects at a time, filters by need/running and searches", async () => {
 	const v = await boot(390, 844);
-	const rows = `[...document.querySelectorAll('#pl-list .pl-row:not(.sub):not([data-k="sessions"])')]`;
+	const rows = `[...document.querySelectorAll('#pl-list .pl-row:not([data-k="sessions"])')]`;
 	expect(await q<string[]>(v, `return ${rows}.slice(0, 3).map(r => r.querySelector(".li-end .tag").textContent)`).then(s => s.every(t => t.includes("답을 기다려요")))).toBe(true);
 	expect(await q<number>(v, `return ${rows}.length`)).toBe(12);
 	expect(await q(v, `return document.querySelector('#pl-list [data-k="more"]').textContent`)).toBe("프로젝트 18개 더 보기");
@@ -133,32 +132,28 @@ test("the list pages 12 projects at a time, filters by need/running and searches
 	expect(await q<number>(v, `return Math.round(document.querySelector(".pl-search").getBoundingClientRect().width)`)).toBe(366);
 	await shot(v, "01-list-390.png");
 	await run(v, `document.querySelector('#pl-list [data-k="more"]').click()`);
-	await waitFor(v, `document.querySelectorAll("#pl-list .pl-row:not(.sub):not([data-k='sessions'])").length === 24`);
+	await waitFor(v, `document.querySelectorAll("#pl-list .pl-row:not([data-k='sessions'])").length === 24`);
 	await run(v, `document.querySelector('#pl-list [data-k="more"]').click()`);
-	await waitFor(v, `document.querySelectorAll("#pl-list .pl-row:not(.sub):not([data-k='sessions'])").length === 30`);
+	await waitFor(v, `document.querySelectorAll("#pl-list .pl-row:not([data-k='sessions'])").length === 30`);
 	expect(await q(v, `return !!document.querySelector('#pl-list [data-k="more"]')`)).toBe(false);
 	// chips: need -> running -> all (paging starts again)
 	expect(await q<string[]>(v, `return [...document.querySelectorAll(".pl-chips .mr-f")].map(b => b.dataset.view)`)).toEqual(["all", "run", "need"]);
 	await run(v, `document.querySelector('.pl-chips [data-view="need"]').click()`);
-	await waitFor(v, `document.querySelectorAll("#pl-list .pl-row:not(.sub):not([data-k='sessions'])").length === 4`);
+	await waitFor(v, `document.querySelectorAll("#pl-list .pl-row:not([data-k='sessions'])").length === 4`);
 	await run(v, `document.querySelector('.pl-chips [data-view="run"]').click()`);
-	await waitFor(v, `document.querySelectorAll("#pl-list .pl-row:not(.sub):not([data-k='sessions'])").length === 6`);
-	expect(await q<string[]>(v, `return [...document.querySelectorAll("#pl-list .pl-row:not(.sub) .li-end .tag")].map(n => n.textContent)`).then(s => s.every(t => t.includes("진행 중")))).toBe(true);
+	await waitFor(v, `document.querySelectorAll("#pl-list .pl-row:not([data-k='sessions'])").length === 6`);
+	expect(await q<string[]>(v, `return [...document.querySelectorAll("#pl-list .pl-row .li-end .tag")].map(n => n.textContent)`).then(s => s.every(t => t.includes("진행 중")))).toBe(true);
 	await run(v, `document.querySelector('.pl-chips [data-view="all"]').click()`);
-	await waitFor(v, `document.querySelectorAll("#pl-list .pl-row:not(.sub):not([data-k='sessions'])").length === 12`);
+	await waitFor(v, `document.querySelectorAll("#pl-list .pl-row:not([data-k='sessions'])").length === 12`);
 	// search narrows to the typed name
 	await run(v, `const i = document.querySelector("#pl-q"); i.value = "프로젝트 17"; i.dispatchEvent(new Event("input", { bubbles: true }))`);
-	await waitFor(v, `document.querySelectorAll("#pl-list .pl-row:not(.sub):not([data-k='sessions'])").length === 1`);
+	await waitFor(v, `document.querySelectorAll("#pl-list .pl-row:not([data-k='sessions'])").length === 1`);
 	expect(await q(v, `return document.querySelector("#pl-list .pl-row .pl-n").textContent`)).toBe("프로젝트 17");
 	// every milestone of this stored record is ticked, and that no longer makes the project finished
 	expect(await q(v, `return document.querySelector("#pl-list .pl-row .li-end .tag").textContent`)).toBe("세션 없음");
-	// the built-in 커스텀 page stays reachable at the end of 전체
 	await run(v, `const i = document.querySelector("#pl-q"); i.value = ""; i.dispatchEvent(new Event("input", { bubbles: true }))`);
-	await waitFor(v, `document.querySelector("#pl-list .pl-row.sub")`);
-	expect(await q(v, `return document.querySelector("#pl-list .pl-gh").textContent`)).toBe("내 설정");
-	await run(v, `document.querySelector("#pl-list .pl-row.sub").click()`);
-	await waitFor(v, `document.querySelector("#v-project .pmv-title")`);
-	expect(await q(v, `return document.querySelector("#v-project .pmv-title").textContent`)).toBe("커스텀");
+	await waitFor(v, `document.querySelectorAll("#pl-list .pl-row").length === 12`);
+	expect(await q(v, `return [document.querySelectorAll("#pl-list .pl-gh").length, document.querySelectorAll('#pl-list [data-key="builtin:custom"]').length, [...document.querySelectorAll("#pl-list .sec")].map(s => s.textContent).includes("내 설정")]`)).toEqual([0, 0, false]);
 });
 
 test("프로젝트 더 보기 is the last line of the last group's card and draws the next page", async () => {
@@ -168,24 +163,6 @@ test("프로젝트 더 보기 is the last line of the last group's card and draw
 	expect(await q(v, `return document.querySelector(".pl-list > .cv-more").textContent`)).toBe("프로젝트 18개 더 보기");
 	await run(v, `document.querySelector(".pl-list > .cv-more").click()`);
 	await waitFor(v, `document.querySelector(".pl-list > .cv-more")?.textContent === "프로젝트 6개 더 보기"`);
-});
-
-test("커스텀 내 규칙: five rows and 더 보기 as the card's last line, a searchable full list, and a row opens the chat draft with the full text", async () => {
-	const v = await boot(390, 844);
-	await waitFor(v, `document.querySelector("#pl-list .pl-row.sub")`);
-	await run(v, `document.querySelector("#pl-list .pl-row.sub").click()`);
-	await waitFor(v, `document.querySelector("#v-project .list > .cv-more:last-child")`);
-	expect(await moreBox(v, "#v-project .list")).toEqual({ whole: true, tall: true });
-	expect(await q(v, `return [...document.querySelectorAll("#v-project .list > .li")].map(e => e.textContent)`)).toEqual(["규칙 하나", "규칙 둘", "규칙 셋", "규칙 넷", "규칙 다섯"]);
-	expect(await q(v, `return document.querySelector("#v-project .cv-more").textContent`)).toBe("규칙 2개 더 보기");
-	expect(await q(v, `return document.querySelectorAll("#v-project .list .btn").length`)).toBe(0);
-	await run(v, `document.querySelector("#v-project .cv-more").click()`);
-	await waitFor(v, `document.querySelector(".pdv-body #cm-q")`);
-	expect(await q(v, `return document.querySelectorAll(".pdv-body .li").length`)).toBe(7);
-	await run(v, `const i = document.querySelector("#cm-q"); i.value = "여섯의 원문"; i.dispatchEvent(new Event("input", { bubbles: true }))`);
-	expect(await q(v, `return [...document.querySelectorAll(".pdv-body .li")].map(e => e.textContent)`)).toEqual(["규칙 여섯"]);
-	await run(v, `document.querySelector(".pdv-body .li").click()`);
-	await waitFor(v, `!document.querySelector(".fs-card.pdv:not([aria-hidden])") && ta.value.includes("[11-01] 규칙 여섯의 원문")`);
 });
 
 test("a row opens the overview; every section opens its own page and 뒤로 or the browser back returns", async () => {
@@ -272,18 +249,30 @@ test("from 1100px the list sits beside the overview, and a section page opens ov
 	await shot(v, "07-list-1280-dark.png");
 });
 
-test("opening 프로젝트 from 1100px lands on the top project, not on 커스텀", async () => {
+test("S4: opening 프로젝트 from 1100px lands on the top project, also when the list arrives after the tab opened", async () => {
 	const v = await boot(1280, 900);
 	await waitFor(v, `current === "project" && !!document.querySelector("#pl-list .pl-row.on") && !!document.querySelector("#v-project .pm-sec")`);
 	expect(await q(v, `return [document.querySelector("#pl-list .pl-row.on").dataset.key, ppCur]`)).toEqual(["ch:8000", "ch:8000"]);
-	// the list had not arrived when the tab opened (커스텀 held the pane first): the project the app moved to is still not one the owner chose,
-	// so the first project pressed takes its entry instead of stacking on it
 	await run(v, `PRJ = null; ppCur = ""; go("home")`);
 	await waitFor(v, `current === "home"`);
 	await run(v, `window.dispatchEvent(new Event("pointerup")); go("projects")`);
 	await waitFor(v, `current === "project" && !!PRJ && ppCur === "ch:8000" && location.hash === "#project/ch%3A8000"`);
 	expect(await q(v, `return [history.state.a, history.state.w]`)).toEqual([1, ["home", "project/ch%3A8000"]]);
 });
+
+for (const [w, h] of [[390, 844], [1280, 900]] as const) {
+	test(`S4: at ${w}px with no real project the list shows its empty state, no 커스텀 row, and stays the open screen`, async () => {
+		noProjects = true;
+		try {
+			const v = await boot(w, h, `document.querySelector("#v-projects .empty")`);
+			await shot(v, `08-empty-${w}.png`);
+			expect(await q(v, `return [current, document.querySelector("#v-projects .empty").textContent.includes("아직 프로젝트가 없어요"), document.querySelectorAll("#v-projects .pl-row").length, location.hash]`)).toEqual(["projects", true, 0, "#projects"]);
+			expect(await q(v, `return [document.querySelector("#v-project")?.hidden, !!document.querySelector('[data-key="builtin:custom"]')]`)).toEqual([true, false]);
+		} finally {
+			noProjects = false;
+		}
+	});
+}
 
 test("from 1100px, back after pressing another project returns to the one pressed before and the app never calls history.go", async () => {
 	const v = await boot(1280, 900);
@@ -292,7 +281,7 @@ test("from 1100px, back after pressing another project returns to the one presse
 	await run(v, `window.__goCalls = 0; const g = history.go.bind(history); history.go = n => { window.__goCalls++; return g(n); }`);
 	const sel = () => q<[string, string]>(v, `return [document.querySelector("#pl-list .pl-row.on .pl-n")?.textContent ?? "", location.hash]`);
 	const press = async (i: number, name: string) => {
-		await run(v, `document.querySelectorAll("#pl-list .pl-row:not(.sub):not([data-k='sessions'])")[${i}].click()`);
+		await run(v, `document.querySelectorAll("#pl-list .pl-row:not([data-k='sessions'])")[${i}].click()`);
 		await waitFor(v, `document.querySelector("#pl-list .pl-row.on .pl-n")?.textContent === ${JSON.stringify(name)}`);
 	};
 	const back = (go: "back" | "forward") => run(v, `window.__popped = new Promise(res => addEventListener("popstate", () => res(true), { once: true })); history.${go}()`);

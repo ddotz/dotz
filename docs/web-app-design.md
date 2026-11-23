@@ -234,8 +234,9 @@ dotz 웹앱의 화면은 `web/js/03-screens.js`의 `SCREENS` 표에 한 줄씩 �
 | `#accounts`, `#settings/accounts` | `provider/anthropic` | 05-command-palette.js |
 | `#monitoring/c:<키>`, 모니터링 소유 대화 | 대화 화면을 그리되 탭, 목록, 주소는 모니터링 쪽 | 30-monitoring-route.js monConvOf, 05-command-palette.js |
 | `#chat/list` | 폰(1099px 이하)에서만 대화 목록, 넓은 화면은 대화 | 13-data.js chatAim |
-| `#projects` (1100px 이상) | `project/<ppCur 또는 builtin:custom>` | 18-lanes.js projectsAim |
+| `#projects` (넓은 화면에서 `go("projects")`) | `project/<ppCur 또는 첫 프로젝트>`. 프로젝트가 없으면 목록 그대로 | 18-lanes.js projectsAim |
 | `#project` (대상 없음), `#provider` (대상 없음) | 각각 `projects`, `providers` | 05-command-palette.js |
+| `#project/builtin%3Acustom`, `go("project", "builtin:custom")` | `custom`(설정 › 내 규칙·커스텀), 주소는 `#custom` | 05-command-palette.js routeAlias |
 | 모르는 뷰, 꺼진 앱 탭 | `home` | 05-command-palette.js |
 
 탭(NAV, `03-screens.js`)은 `home`, `chat`, `projects`, `monitoring`, `apps`(숨김), `settings`예요. `activity`는 `chat`, `project`는 `projects`, `cardform`은 `home` 탭이 켜져요(`navView`, `04-state.js`). SUB 화면은 `settings` 탭이 켜져요(`05-command-palette.js`).
@@ -371,8 +372,8 @@ dotz 웹앱의 화면은 `web/js/03-screens.js`의 `SCREENS` 표에 한 줄씩 �
 
 ### 프로젝트 목록 (`#v-projects`, 18-lanes.js)
 - 목적: 프로젝트를 상태 순서로 훑고 열어요. 파일은 세션 쪽 18-lanes.js에 있지만 프로젝트 화면 담당과 겹치므로 요약만 적어요.
-- 구성: `#pl-shell` 안에 검색 `#pl-q`(placeholder `프로젝트 검색`), 칩 `전체`/`진행 중`/`확인 필요`/`끝남`(탭, 개수 표시), 목록 `#pl-list`(섹션 `고정`, `프로젝트`, 맨 뒤 `세션`, 있으면 `내 설정`).
-- 기능: 행 탭은 `go("project", key)`. `프로젝트 {n}개 더 보기`(12개씩, `PJ_PAGE`). `세션과 채널` 행은 `go("chat","list")`, 부제 `일하는 세션 {n}개 · 작업 채널 {n}개`. 내 설정 행 부제 `내가 바꾼 것을 봐요`.
+- 구성: `#pl-shell` 안에 검색 `#pl-q`(placeholder `프로젝트 검색`), 칩 `전체`/`진행 중`/`확인 필요`/`끝남`(탭, 개수 표시), 목록 `#pl-list`(섹션 `고정`, `프로젝트`, 맨 뒤 `세션`).
+- 기능: 행 탭은 `go("project", key)`. `프로젝트 {n}개 더 보기`(12개씩, `PJ_PAGE`). `세션과 채널` 행은 `go("chat","list")`, 부제 `일하는 세션 {n}개 · 작업 채널 {n}개`.
 - 상태: 프로젝트 상태 태그 `일시 정지`, `답을 기다려요`, `끝남`, `쉬는 중`, `세션 없음` 또는 세션 상태 단어. 로드 전 `불러오는 중…`, 실패 `프로젝트를 불러오지 못했어요`. 프로젝트가 없으면 `아직 프로젝트가 없어요. 채팅에서 오래 걸리는 작업을 맡기면 여기에 생겨요` + `채팅 열기` 버튼. 필터 결과 없음: `찾는 프로젝트가 없어요`, `확인할 프로젝트가 없어요`, `지금 진행 중인 프로젝트가 없어요`, `끝낸 프로젝트가 없어요`, `아직 프로젝트가 없어요`. 읽지 않은 수 배지(`읽지 않은 메시지 {n}개`).
 - 데이터: `GET /api/custom`(`PRJ`), `S.lanes`.
 - 근거: web/js/18-lanes.js `prjLoad`, `prjState`, `prjRow`, `pjPaintRows`, `renderProjects`.
@@ -857,15 +858,15 @@ dotz 웹앱의 화면은 `web/js/03-screens.js`의 `SCREENS` 표에 한 줄씩 �
 
 ### 프로젝트 목록 (`#v-projects`, 뷰 `projects`)
 - 목적: 프로젝트를 확인 필요, 진행 중, 최근 순으로 훑고 눌러서 개요로 가요.
-- 구성: `#pl-shell` 안에 `.pl-top`(검색 `#pl-q` `.pl-search`, 필터 칩 `#pl-chips` `.pl-chips`)과 `#pl-list` `.pl-groups`. 목록은 `.sec.pl-sec` 머리글(`고정`, `프로젝트`) 아래 `.pl-list` 카드 안의 `.pl-row`(폴더 아이콘 `.ico`, 이름 `.pl-n`, 한 줄 `.pl-sw`, 안 읽음 `.pl-nb`, 상태 태그). 맨 아래에 `더 보기` 줄 `.cv-more`, `세션` 섹션의 행 1개(`세션과 채널`), `내 설정` 섹션의 행 1개(내장 커스텀 프로젝트).
-- 기능: 검색 입력은 `pjSearch`의 oninput이 `PJ.q`를 바꾸고 `pjPaintRows`로 다시 그려요. 칩 4개 `전체 / 진행 중 / 확인 필요 / 끝남`(`PJ_VIEWS`)은 `pjChips`가 만들고 누르면 `PJ.view`를 바꾸고 12개씩 보이도록(`PJ_PAGE`) 되돌려요. 행을 누르면 `go("project", key)`. `프로젝트 N개 더 보기`는 `PJ.more`를 12 늘려요. `세션과 채널` 행은 `go("chat","list")`, `내 설정` 행은 `go("project", builtin.key)`. 빈 목록의 `채팅 열기`는 `openTarget(MAIN, lastChatView())`.
+- 구성: `#pl-shell` 안에 `.pl-top`(검색 `#pl-q` `.pl-search`, 필터 칩 `#pl-chips` `.pl-chips`)과 `#pl-list` `.pl-groups`. 목록은 `.sec.pl-sec` 머리글(`고정`, `프로젝트`) 아래 `.pl-list` 카드 안의 `.pl-row`(폴더 아이콘 `.ico`, 이름 `.pl-n`, 한 줄 `.pl-sw`, 안 읽음 `.pl-nb`, 상태 태그). 맨 아래에 `더 보기` 줄 `.cv-more`, `세션` 섹션의 행 1개(`세션과 채널`).
+- 기능: 검색 입력은 `pjSearch`의 oninput이 `PJ.q`를 바꾸고 `pjPaintRows`로 다시 그려요. 칩 4개 `전체 / 진행 중 / 확인 필요 / 끝남`(`PJ_VIEWS`)은 `pjChips`가 만들고 누르면 `PJ.view`를 바꾸고 12개씩 보이도록(`PJ_PAGE`) 되돌려요. 행을 누르면 `go("project", key)`. `프로젝트 N개 더 보기`는 `PJ.more`를 12 늘려요. `세션과 채널` 행은 `go("chat","list")`. 빈 목록의 `채팅 열기`는 `openTarget(MAIN, lastChatView())`. 내장 커스텀 항목(`builtin:custom`)은 서버 목록에 와도 `renderProjects`가 거르고, 그 화면은 설정 › 내 규칙·커스텀이에요.
 - 상태:
   - 불러오는 중: `불러오는 중…`. 실패(첫 로드): `프로젝트를 불러오지 못했어요`.
   - 프로젝트 0개: `아직 프로젝트가 없어요. 채팅에서 오래 걸리는 작업을 맡기면 여기에 생겨요` + 버튼 `채팅 열기`.
   - 필터 결과 없음: 검색 중 `찾는 프로젝트가 없어요`, 확인 필요 `확인할 프로젝트가 없어요`, 진행 중 `지금 진행 중인 프로젝트가 없어요`, 끝남 `끝낸 프로젝트가 없어요`, 전체 `아직 프로젝트가 없어요`.
   - 행 상태 태그(`prjState`): `일시 정지`, `답을 기다려요`, 세션 상태 단어(`runStatus`가 주는 단어), `끝남`, `쉬는 중`, `세션 없음`. 정렬은 확인 필요, 진행 중, 최근 활동 순이고 `pinned`는 `고정` 그룹으로 먼저 나와요.
   - 안 읽음 배지 aria `읽지 않은 메시지 N개`, 99 넘으면 `99+`. 현재 보는 프로젝트 행은 `.on`.
-  - `세션` 섹션은 칩이 `전체`이고 검색어가 없을 때만, `내 설정` 행은 `전체`이면서 검색어가 없거나 `커스텀`에 포함될 때만 나와요. 줄은 `일하는 세션 N개 · 작업 채널 N개`와 `내가 바꾼 것을 봐요`.
+  - `세션` 섹션은 칩이 `전체`이고 검색어가 없을 때만 나와요. 줄은 `일하는 세션 N개 · 작업 채널 N개`예요.
   - 폰 vs 데스크톱: 폭 1100px 이상(`ppWide`=`!narrowChat`, `04-state.js` `narrowChat`, `ppWide`)에서는 `go("projects")`가 곧바로 `project`로 바뀌고 목록은 왼쪽 칸(채팅 목록과 같은 `--frame-list-w` 340px, 틀은 `01-tokens.css`)에 남고 열린 프로젝트 본문은 채팅 본문 칸과 같은 상자(같은 x, 폭, 오른쪽 여백 `--edge`)예요. 1099px 이하(폰)에서는 목록이 한 화면이에요.
   - 20초마다 `prjLoad`로 새로고침(`19-project-main.js`).
 - 데이터: `GET /api/custom`(`prjLoad`), 상태 `S.lanes`, 채널별 안 읽음 `ts(chat).unread`. SSE는 이 화면 코드에서 확인 못 함.
@@ -892,7 +893,6 @@ dotz 웹앱의 화면은 `web/js/03-screens.js`의 `SCREENS` 표에 한 줄씩 �
   - 작업 줄 단어 `진행 중`/`멈춤`/`완료`/`중단됨`/`이어서`/`실패`, 부제 `작업 중 · <경과>`, `멈춤 · <사유 또는 활동이 없어요>`, `끝남`, `중단됨`, `이어서 처리 중`, `실패 · 이어서 처리함`.
   - 감시 줄 부제는 `매 N분`/`매 N시간` · `일시 정지` 또는 상태 사유 또는 `마지막 <시각>`, 오른쪽 태그 `모니터링`/`루틴`/`예약`. 건강 점 `ok`/`err`(`pmHealth`).
   - 필드를 편집 중(`PM.open>0`)이면 다시 그리지 않아요. 데이터 시그니처가 같으면 그대로 둬요. 20초마다 `pmLoad`+`prjLoad`(편집 중 제외).
-  - 내장 `builtin:custom`이면 이 화면 대신 `cmPaint`(아래 `내 설정` 항목).
 - 데이터: `GET /api/custom/project?key=`(`pmLoad`), `GET /api/custom`(`prjLoad`), `PUT /api/projects`. 쓰기 뒤에는 둘 다 다시 읽어서 서버가 보관한 값으로 그려요(`pmReload`). SSE는 코드에서 확인 못 함.
 - 근거: `web/js/19-project-main.js` `pmPaint`, `pmOverview`, `pmSection`, `pmHead`, `pmEditable`, `pmPrimary`, `pmWatchRow`, `pmLaneRow`, `pmWorkRow`, `pmOpen`, `pmReload`; 진입 `web/js/19-project-main.js`.
 - css: `web/css/08-project-sessions.css`(`.pmv-*`), `web/css/20-projects.css`(`.pm-*`, 목록 열). 미디어쿼리 `08-project-sessions.css`(max 639: 머리 패딩), 08-project-sessions.css(max 479: 진행 막대 순서), 08-project-sessions.css(min 640), 08-project-sessions.css(coarse 또는 max 639: 단계 추가 입력 높이), `08-project-sessions.css`와 `20-projects.css`(max 1099: 머리와 `.pm-o` 최대 760px, 1100px 이상에서는 최대 폭 없이 본문 칸을 채움).
@@ -951,14 +951,14 @@ dotz 웹앱의 화면은 `web/js/03-screens.js`의 `SCREENS` 표에 한 줄씩 �
 - 근거: `web/js/19-project-main.js` `pmRoutines`, `pmRoutine`, `pmHealth`, `pmRoutineItems`, `PM_KIND`.
 - css: `08-project-sessions.css`(`.pmv-rt*`, `.pmv-fld`, `.pmv-code`).
 
-### 내 설정 (내장 프로젝트 `builtin:custom`, `cmPaint`)
+### 내 규칙·커스텀 (설정 하위 화면 `custom`, `cuPage`)
 - 목적: 오너가 바꾼 설정(규칙, 기능 등)을 읽기 전용으로 모아 보고, 변경은 채팅으로 부탁해요.
-- 구성: 앱바 제목 `프로젝트`. 머리(`.pmv-head`: 이름, 태그 `내 설정`, 설명 `p.note`), 그 아래 2열 `.pmv-cols`(그룹 앞 3개 / 나머지). 그룹 `.pmv-sec`: 머리글 + `추가` 버튼, 행 `.li`(제목 `.pmv-clamp`, 한 줄, 태그 `확인 필요`, `수정`).
-- 기능: `추가`는 `cmAsk("[프로젝트 커스텀 · 개인 설정] <그룹>: ")`, `수정`은 `cmAsk('… <그룹> "<제목>": ')`: 메인 채팅을 열고 입력창에 초안만 채워요(보내지 않음). 규칙 행은 눌러서 전체 글 펼침(`aria-expanded`, Enter/Space).
-- 상태: 로드 전 `불러오는 중…`, 실패 `불러오지 못했어요`. 그룹이 비면 서버가 준 `g.empty` 문구(리터럴은 코드에서 확인 못 함). 일부만 보이면 `그 밖에 N개가 더 있어요`. 편집/프로젝트 채팅 없음.
+- 구성: 설정 목록의 행 `내 규칙·커스텀`(부제 `내가 바꾼 것을 봐요`)이 `go("custom")`으로 열어요. 앱바 제목 `내 규칙·커스텀`, 뒤로는 설정, 아래 탭은 설정이 켜져 있어요. 640px 이상에서 2열 `.pmv-cols`(그룹 앞 3개 / 나머지). 그룹 `.pmv-sec`: 머리글 + `추가` 버튼, 행 `.li`(제목, 한 줄, 태그 `확인 필요`, `수정`). 내 규칙 그룹은 행 5개 + `규칙 N개 더 보기`.
+- 기능: `추가`는 `cuAsk("[프로젝트 커스텀 · 개인 설정] <그룹>: ")`, `수정`은 `cuAsk('… <그룹> "<제목>": ')`: 메인 채팅을 열고 입력창에 초안만 채워요(보내지 않음). 규칙 행은 누르면 그 원문을 담은 초안이 열려요. `규칙 N개 더 보기`는 검색 `#cm-q`가 있는 전체 목록 시트(`cuRulesOpen`)를 열어요. 옛 주소 `#project/builtin%3Acustom`과 `go("project", "builtin:custom")`는 `routeAlias`가 이 화면으로 보내요.
+- 상태: 로드 전 `불러오는 중…`, 실패 `불러오지 못했어요` + `다시 시도`(`cuRetry`). 그룹이 비면 서버가 준 `g.empty` 문구(리터럴은 코드에서 확인 못 함). 20초마다 `cuLoad`로 다시 읽고, 내용이 같으면 다시 그리지 않아요. 시트의 검색 입력에 커서가 있는 동안은 시트를 다시 그리지 않아요. 편집/프로젝트 채팅 없음.
 - 데이터: `GET /api/custom/project?key=builtin:custom`(`D.groups`).
-- 근거: `web/js/19-project-main.js` `cmPaint`, `cmAsk`, `cmText`, `CM_TAG`.
-- css: `08-project-sessions.css`(`.pmv-cols/.pmv-col/.pmv-sec`).
+- 근거: `web/js/19-project-main.js` `cuPage`, `cuLoad`, `cuRulesOpen`, `cuAsk`, `cuText`, `CU_TAG`, `web/js/22-settings-pages.js` `SET_PAGE.custom`.
+- css: `08-project-sessions.css`(`.pmv-cols/.pmv-col/.pmv-sec`), `15-settings-pages.css`(`#custom`).
 
 ### 구성 화면 (`#v-harness`, 뷰 `harness`, 설정 하위)
 - 목적: 메시지가 흐르는 길(입력, 게이트웨이, 어시스턴트, 세션, 서브에이전트)과 각 단계의 상태, 설정, 기능을 보고, 수정은 어시스턴트에게 요청으로 보내요.

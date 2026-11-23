@@ -4,6 +4,8 @@
 :is(#settings, #notifications, #display, #update, #runtime) > .sec:first-child, #settings > .set-col:first-child > .sec:first-child { margin-top: var(--sp-2); }
 :is(#settings, #notifications, #display, #update, #runtime) > .list + .list { margin-top: var(--sp-3); }
 :is(#settings, #notifications, #display, #update, #runtime) > .list:first-child { margin-top: var(--sp-2); }
+#custom .pmv-col:first-child > .pmv-sec:first-child { margin-top: var(--sp-2); }
+@media (min-width: 640px) { #custom .pmv-col + .pmv-col > .pmv-sec:first-child { margin-top: var(--sp-2); } }
 :is(#settings, #notifications, #display, #update, #runtime, #models, #accounts, #usage, #context, #messengers, #discord, #jandi, #slack, #telegram, #devices, #webaccess) .li > .lead:has(> .ic) {
   display: grid; place-items: center; width: 32px; height: 32px; border-radius: 9px; background: var(--layer); color: var(--fg-2);
 }

@@ -46,7 +46,7 @@ function pmProject() {
   const found = ((PRJ && PRJ.projects) || []).find(x => x.key === PM.key || x.recordKey === PM.key);
   if (found) return found;
   const D = PM.D;
-  return D ? { key: PM.key, name: (D.record && D.record.title) || (PM.key === "builtin:custom" ? TX("project.custom") : PM.key), lanes: D.lanes || [], record: D.record } : null;
+  return D ? { key: PM.key, name: (D.record && D.record.title) || PM.key, lanes: D.lanes || [], record: D.record } : null;
 }
 function pmSessionRows(p, D) {
   const dl = (D && D.lanes) || [], all = (S && S.lanes) || [], names = new Set([...dl.map(l => l.name), ...(p.lanes || []).map(l => l.name)]);
@@ -70,7 +70,6 @@ function pmPaint() {
   const root = $("#v-project"), D = PM.D, p = pmProject();
   // The name stays in the app bar when the project cannot be read now: the last one seen, or the chat channel's own name.
   if (!p) { if (!ppWide()) $("#title").textContent = pmNames[PM.key] || (isProjT(PM.key) ? targetName(PM.key) : TX("common.projects")); delete root.dataset.sig; clear(root).append(emptyNode(PM.fail || PRJ_FAIL ? TX("project.one.load_failed") : TX("common.loading"), PM.fail || PRJ_FAIL ? () => Promise.all([pmLoad(), prjLoad()]) : null)); return; }
-  if (p.builtin) { cmPaint(root, p, D); return; }
   const q = { ...p, record: (D && D.record) || p.record }, rows = pmSessionRows(p, D);
   pmNames[PM.key] = prjTitle(q);
   // A phone shows one screen at a time, so its app bar carries the project's name (the prototype's detail); wide keeps the list beside it under "프로젝트".
@@ -157,7 +156,7 @@ function pmSection({ kind, label, count, action, head, nodes }) {
 }
 // Level 3: one section page over the overview. It is an overlay, so 32-history-nav gives it its own history entry: the back arrow
 // (or the browser's back) returns to the overview. Every function of the old one-page layout lives here, unchanged.
-const PM_PAGE = { info: [TX("project.sec.info"), TX("project.page.info_sub")], rules: [TX("project.page.rules"), TX("project.page.rules_sub")], sessions: [TX("project.page.sessions"), TX("project.page.sessions_sub")], results: [TX("project.page.results"), TX("project.page.results_sub")], routines: [TX("project.page.routines"), TX("project.page.routines_sub")] };
+const PM_PAGE = { info: [TX("project.sec.info"), TX("project.page.info_sub")], sessions: [TX("project.page.sessions"), TX("project.page.sessions_sub")], results: [TX("project.page.results"), TX("project.page.results_sub")], routines: [TX("project.page.routines"), TX("project.page.routines_sub")] };
 function pmSheet(kind) {
   const [title, ey] = PM_PAGE[kind] || [TX("common.projects"), ""];
   let entry;
@@ -166,7 +165,7 @@ function pmSheet(kind) {
     const p = pmProject();
     if (!p) { clear(h.box).append(el("div", { class: "fs-body pdv-body" }, emptyNode(TX("common.loading")))); return; }
     const rows = pmSessionRows(p, PM.D);
-    const body = kind === "info" ? pmInfoBody(PM.D) : kind === "rules" ? cmRulesBody() : kind === "sessions" ? pmSessions(PM.D, rows) : kind === "results" ? pmResults(PM.D) : pmRoutines(PM.D);
+    const body = kind === "info" ? pmInfoBody(PM.D) : kind === "sessions" ? pmSessions(PM.D, rows) : kind === "results" ? pmResults(PM.D) : pmRoutines(PM.D);
     clear(h.box).append(
       el("div", { class: "pdv-hd" },
         el("button", { class: "ib pdv-back", type: "button", "data-k": "back", "aria-label": TX("common.back"), title: TX("project.back_to"), onclick: () => h.close() }, icon("back")),
@@ -450,54 +449,78 @@ function pmResults(D) {
 // The built-in 커스텀 project (hub/custom.ts builtinDetail): what the owner has customized, each item with a plain line and a
 // way to ask for a change. Asking opens the main chat with a draft tagged [프로젝트 커스텀 ...]; the orchestrator keeps those
 // personal (MODE.md, Customization). No edit-in-place, no project chat: there is no channel behind it.
-const CM_TAG = "[프로젝트 커스텀 · 개인 설정]";
-function cmAsk(text) {
+const CU_TAG = "[프로젝트 커스텀 · 개인 설정]";
+const CU_KEY = "builtin:custom";
+const CU = { D: null, fail: false, sig: "", sheet: null };
+function cuAsk(text) {
   openTarget(MAIN, lastChatView());
   ta.value = text; autosize(); saveDraft(); updateHints(); ta.focus();
 }
-const cmText = i => el("span", { class: "tx" }, el("div", { class: "hd", title: i.title, text: i.title }), i.line ? el("div", { class: "sup", text: i.line }) : null);
+const cuText = i => el("span", { class: "tx" }, el("div", { class: "hd", title: i.title, text: i.title }), i.line ? el("div", { class: "sup", text: i.line }) : null);
 // 내 규칙: the newest few here, every rule behind the list's 더 보기 (hub/custom.ts newestRules sets the order). A row is one short title; a tap
 // opens the same chat draft as the other groups' 수정, carrying the rule's full text, and hover shows that text too.
-const CM_RULES_SHOWN = 5;
-let cmRuleQ = "";
-const cmRuleRow = i => el("button", { class: "li tap", type: "button", title: i.full, "aria-label": TX("project.edit.named", { name: i.title }),
-  onclick: () => { pmSheetsClose(); cmAsk(`${CM_TAG} ${TX("project.page.rules")} "${i.full || i.title}": `); } }, el("span", { class: "tx" }, el("div", { class: "hd", text: i.title })));
-const cmRulesCard = g => [el("div", { class: "list" }, ...g.items.slice(0, CM_RULES_SHOWN).map(cmRuleRow),
-  g.items.length > CM_RULES_SHOWN ? moreRow(TX("project.rules.more_n", { n: g.items.length - CM_RULES_SHOWN }), () => { cmRuleQ = ""; pmSheet("rules"); }) : null)];
-function cmRulesBody() {
-  const items = ((PM.D && PM.D.groups) || []).find(g => g.id === "rules")?.items || [], found = el("div");
+const CU_RULES_SHOWN = 5;
+let cuRuleQ = "";
+const cuRuleRow = i => el("button", { class: "li tap", type: "button", title: i.full, "aria-label": TX("project.edit.named", { name: i.title }),
+  onclick: () => { cuSheetClose(); cuAsk(`${CU_TAG} ${TX("project.page.rules")} "${i.full || i.title}": `); } }, el("span", { class: "tx" }, el("div", { class: "hd", text: i.title })));
+const cuRulesCard = g => [el("div", { class: "list" }, ...g.items.slice(0, CU_RULES_SHOWN).map(cuRuleRow),
+  g.items.length > CU_RULES_SHOWN ? moreRow(TX("project.rules.more_n", { n: g.items.length - CU_RULES_SHOWN }), () => { cuRuleQ = ""; cuRulesOpen(); }) : null)];
+function cuRulesBody() {
+  const items = ((CU.D && CU.D.groups) || []).find(g => g.id === "rules")?.items || [], found = el("div");
   const fill = () => {
-    const q = cmRuleQ.trim().toLowerCase(), hit = items.filter(i => `${i.title} ${i.full}`.toLowerCase().includes(q));
-    clear(found).append(hit.length ? el("div", { class: "list" }, ...hit.map(cmRuleRow)) : emptyNode(TX("project.rules.none")));
+    const q = cuRuleQ.trim().toLowerCase(), hit = items.filter(i => `${i.title} ${i.full}`.toLowerCase().includes(q));
+    clear(found).append(hit.length ? el("div", { class: "list" }, ...hit.map(cuRuleRow)) : emptyNode(TX("project.rules.none")));
   };
   fill();
   return [el("label", { class: "pl-search cm-rule-q" }, icon("search"),
-    el("input", { id: "cm-q", type: "search", placeholder: TX("project.rules.search"), "aria-label": TX("project.rules.search"), autocomplete: "off", value: cmRuleQ, oninput: ev => { cmRuleQ = ev.target.value; fill(); } })), found];
+    el("input", { id: "cm-q", type: "search", placeholder: TX("project.rules.search"), "aria-label": TX("project.rules.search"), autocomplete: "off", value: cuRuleQ, oninput: ev => { cuRuleQ = ev.target.value; fill(); } })), found];
 }
-function cmPaint(root, p, D) {
-  const sig = JSON.stringify([p, D]);
-  if (root.dataset.sig === sig) return;
-  root.dataset.sig = sig;
-  $("#title").textContent = TX("common.projects");
-  const ask = (label, text) => el("button", { class: "btn tonal inrow", type: "button", "aria-label": TX("project.edit.named", { name: label }), onclick: () => cmAsk(text), text: TX("project.edit.go") });
+function cuRulesOpen() {
+  let entry;
+  const h = fsOpen({ cls: "pdv", labelledby: "pdv-t", onClose: () => { if (CU.sheet === entry) CU.sheet = null; } });
+  entry = { h, paint: () => clear(h.box).append(
+    el("div", { class: "pdv-hd" },
+      el("button", { class: "ib pdv-back", type: "button", "data-k": "back", "aria-label": TX("common.back"), title: TX("settings.page.custom"), onclick: () => h.close() }, icon("back")),
+      el("div", { class: "pdv-tt" }, el("h2", { class: "pdv-t", id: "pdv-t", text: TX("project.page.rules") }), el("div", { class: "pdv-ey", text: TX("project.page.rules_sub") }))),
+    el("div", { class: "fs-body pdv-body" }, ...cuRulesBody())) };
+  CU.sheet = entry;
+  entry.paint();
+}
+const cuSheetClose = () => { if (CU.sheet) CU.sheet.h.close(); };
+function cuSheetPaint() {
+  const s = CU.sheet;
+  if (s && !(s.h.box.contains(document.activeElement) && document.activeElement.matches("input, textarea"))) s.paint();
+}
+function cuLoad() {
+  return latest("custom:page", () => api(`/api/custom/project?key=${enc(CU_KEY)}`).then(d => { CU.D = d; CU.fail = false; }, () => { if (!CU.D) CU.fail = true; })
+    .then(() => {
+      const sig = JSON.stringify([CU.D, CU.fail]);
+      if (sig === CU.sig) return;
+      CU.sig = sig;
+      if (current === "custom") renderSettings();
+      cuSheetPaint();
+    }));
+}
+function cuRetry() { CU.fail = false; CU.sig = ""; renderSettings(); cuLoad(); }
+function cuPage() {
+  const D = CU.D;
+  if (!D || !D.groups) return [CU.fail ? emptyNode(TX("common.load_failed"), cuRetry) : emptyNode(TX("common.loading"))];
+  const edit = (label, text) => el("button", { class: "btn tonal inrow", type: "button", "aria-label": TX("project.edit.named", { name: label }), onclick: () => cuAsk(text), text: TX("project.edit.go") });
   const group = g => el("section", { class: "pmv-sec" },
-    el("div", { class: "sec sec-act" }, el("span", { text: g.label }), el("button", { class: "btn text sm", type: "button", onclick: () => cmAsk(`${CM_TAG} ${g.label}: `), text: TX("decision.add") })),
-    ...(!g.items.length ? [emptyNode(g.empty)] : g.id === "rules" ? cmRulesCard(g)
+    el("div", { class: "sec sec-act" }, el("span", { text: g.label }), el("button", { class: "btn text sm", type: "button", onclick: () => cuAsk(`${CU_TAG} ${g.label}: `), text: TX("decision.add") })),
+    ...(!g.items.length ? [emptyNode(g.empty)] : g.id === "rules" ? cuRulesCard(g)
     : [el("div", { class: "list" }, ...g.items.map(i => el("div", { class: "li" },
-      cmText(i),
+      cuText(i),
       i.bad ? el("span", { class: "tag warn", text: TX("home.attn.check") }) : null,
-      el("span", { class: "li-end" }, ask(g.label, `${CM_TAG} ${g.label} "${i.title}": `)))))]));
-  clear(root).append(
-    el("div", { class: "pmv-head" }, el("div", { class: "pmv-hmain" },
-      el("div", { class: "pmv-htop" }, el("div", { class: "pmv-title", text: p.name }), el("span", { class: "pmv-upd", text: TX("project.my_settings") })),
-      el("div", { class: "pmv-purpose", text: p.note || "" }))),
-    D && D.groups ? el("div", { class: "pmv-cols" }, el("div", { class: "pmv-col" }, ...D.groups.slice(0, 3).map(group)), el("div", { class: "pmv-col" }, ...D.groups.slice(3).map(group))) : emptyNode(PM.fail ? TX("common.load_failed") : TX("common.loading")));
+      el("span", { class: "li-end" }, edit(g.label, `${CU_TAG} ${g.label} "${i.title}": `)))))]));
+  return [el("div", { class: "pmv-cols" }, el("div", { class: "pmv-col" }, ...D.groups.slice(0, 3).map(group)), el("div", { class: "pmv-col" }, ...D.groups.slice(3).map(group)))];
 }
 
 setInterval(() => {
   if (document.hidden) return;
   if (current === "projects") prjLoad();
   else if (current === "project" && !PM.open) { pmLoad(); prjLoad(); }
+  else if (current === "custom") cuLoad();
 }, 20000);
 
 /* ---------- context ---------- */

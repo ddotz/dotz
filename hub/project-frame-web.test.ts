@@ -24,7 +24,6 @@ const hub = fakeHub({
 		if (p === "/api/state") return json({ name: "dotz", orchestrator: { status: "idle" }, lanes: projects.flatMap(x => x.lanes.map(l => ({ ...l, cwd: `/tmp/${x.key}`, home: x.key }))), terminals: {}, channels: { work: {}, homes: {}, lanes: {}, threads: {} }, discord: {}, notices_unread: 0 });
 		if (p === "/api/custom") return json({ dir: "~/.dotz/custom", cards: [], projects: [builtin, ...projects], routines: [], links: [] });
 		if (p === "/api/custom/project") {
-			if (url.searchParams.get("key") === builtin.key) return json({ groups: [{ id: "rules", label: "내 규칙", empty: "없어요", items: ["하나", "둘"].map(n => ({ title: `규칙 ${n}`, full: `규칙 ${n}의 원문` })) }] });
 			const x = projects.find(q => q.key === url.searchParams.get("key"));
 			return x ? json(detail(x)) : json({ error: "not found" }, 404);
 		}
@@ -88,22 +87,15 @@ for (const width of [1280, 1920]) {
 		expect(project.right).toBe(chat.right);
 	});
 
-	test(`at ${width}px a project's drill-in page and the 커스텀 page sit in the same content box`, async () => {
+	test(`at ${width}px S4: a project's drill-in page sits in the content box of 채팅`, async () => {
 		const v = await boot(views[width]);
 		const chat = await chatFrame(v);
-		const project = await projectFrame(v);
+		await projectFrame(v);
 		await run(v, `document.querySelector('.pm-sec [data-k="sessions"]').click()`);
 		await waitFor(v, `document.querySelector(".fs-card.pdv:not([aria-hidden]) .srows")`);
 		const drill = await frame(v, "#v-projects", ".fs-card.pdv");
 		expect(drill.content).toEqual(chat.content);
 		expect(drill.right).toBe(chat.right);
-		await run(v, `document.querySelector(".pdv .pdv-back").click()`);
-		await waitFor(v, `!document.querySelector(".pdv")`);
-		await run(v, `go("project", "builtin:custom")`);
-		await waitFor(v, `document.querySelector("#v-project .pmv-title")?.textContent === "커스텀"`);
-		const custom = await frame(v, "#v-projects", "#v-project");
-		expect(custom.left).toEqual(project.left);
-		expect(custom.content).toEqual(project.content);
 	});
 }
 

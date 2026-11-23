@@ -13,7 +13,7 @@ const CALLS: { kind: string; re: RegExp; arg?: "title" | "first" | "label" | "go
 	{ kind: "go", re: /(?<![\w.$])go\(/g, arg: "go", own: ["go", "api", "pendingLoginAsk", "noteKeys"] },
 	{ kind: "dialog", re: /(?<![\w.$])dialog\(/g, arg: "title", own: ["dialog", "ask"] },
 	{ kind: "fsOpen", re: /(?<![\w.$])fsOpen\(/g, arg: "label" },
-	{ kind: "ask", re: /(?<![\w.$])ask\(/g, arg: "first", own: ["cmPaint"] },
+	{ kind: "ask", re: /(?<![\w.$])ask\(/g, arg: "first" },
 	{ kind: "menu", re: /(?<![\w.$])showMenu\(/g, own: ["selectButton"] },
 	{ kind: "select", re: /(?<![\w.$])selectButton\(/g, arg: "label", own: ["selectField"] },
 	{ kind: "select", re: /(?<![\w.$])selectField\(/g, arg: "first" },

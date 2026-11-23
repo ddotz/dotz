@@ -38,6 +38,7 @@ flowchart LR
     s_cardform["cardform: 카드 양식"]
     s_chat["chat: 채팅"]
     s_context["context: 컨텍스트"]
+    s_custom["custom: 내 규칙·커스텀"]
     s_devices["devices: 연결된 기기"]
     s_discord["discord: Discord 연결"]
     s_display["display: 표시 설정"]
@@ -131,7 +132,7 @@ flowchart LR
   subgraph a_projects["projects"]
     c_projects(["projects code"])
     o_projects_dialog["dialog (1)"]
-    o_projects_fsOpen["fsOpen (2)"]
+    o_projects_fsOpen["fsOpen (3)"]
     o_projects_menu["menu (1)"]
     o_projects_toast["toast (7)"]
   end
@@ -202,7 +203,7 @@ flowchart LR
   c_peers -->|"go (2)"| s_home
   c_peers -->|"go (1)"| s_settings
   c_projects -->|"go (1)"| s_monitoring
-  c_projects -->|"go (4)"| s_project
+  c_projects -->|"go (3)"| s_project
   c_projects -->|"go (1)"| s_projects
   c_reply -->|"go (2)"| s_any
   c_reply -->|"go (3)"| s_monitoring
@@ -211,6 +212,7 @@ flowchart LR
   c_settings -->|"go (1)"| s_apps
   c_settings -->|"go (1)"| s_chat
   c_settings -->|"go (1)"| s_context
+  c_settings -->|"go (1)"| s_custom
   c_settings -->|"go (2)"| s_devices
   c_settings -->|"go (1)"| s_display
   c_settings -->|"go (1)"| s_harness

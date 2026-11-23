@@ -128,7 +128,7 @@ test("a menu tab is only pressed, never dragged; `앱 관리` says a pane cannot
 	expect(await ev(v, `[paneCount(), current]`)).toEqual([0, "chat"]);
 
 	// 모니터링's screen and a project are not what a chat list row opens: no pane, split or replaced
-	expect(await ev(v, `[paneSplit("list", "app", "right"), paneSplit("i:kakao", "app", "right"), paneSplit("builtin:custom", "project", "right"), paneCount()]`)).toEqual(["", "", "", 0]);
+	expect(await ev(v, `[paneSplit("list", "app", "right"), paneSplit("i:kakao", "app", "right"), paneSplit("ch:8000", "project", "right"), paneCount()]`)).toEqual(["", "", "", 0]);
 });
 
 test("off the chat tab nothing makes a pane: the key, a dragged row and a split call all do nothing, and the drag says why", async () => {

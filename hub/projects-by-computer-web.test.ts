@@ -63,7 +63,7 @@ const q = async <T = unknown>(v: View, code: string): Promise<T> => JSON.parse((
 const run = (v: View, code: string) => v.evaluate(`(() => { ${code} })(), 0`);
 const shot = async (v: View, name: string) => { if (SHOTS) { await waitFor(v, `document.getAnimations().every(a => a.playState !== "running" || (a.effect && a.effect.getTiming().iterations === Infinity))`); await Bun.write(join(SHOTS, name), await v.screenshot()); } };
 const heads = `[...document.querySelectorAll("#pl-list .sec")].map(h => h.textContent)`;
-const names = `[...document.querySelectorAll("#pl-list .pl-row:not([data-key='builtin:custom']) .pl-n")].map(n => n.textContent)`;
+const names = `[...document.querySelectorAll("#pl-list .pl-row .pl-n")].map(n => n.textContent)`;
 
 async function boot(width: number, height: number, ready: string): Promise<View> {
 	const v = new Bun.WebView({ width, height });
@@ -79,12 +79,12 @@ async function boot(width: number, height: number, ready: string): Promise<View>
 }
 
 for (const [w, h] of [[390, 844], [1280, 800]] as const) {
-	test(`at ${w}px one computer keeps the list as it was: 고정, 프로젝트 and 내 설정, no computer headers`, async () => {
+	test(`at ${w}px S4: one computer keeps the list as it was: 고정 and 프로젝트, no 내 설정 and no computer headers`, async () => {
 		computers = SINGLE;
 		listed = projects.slice(0, 2);
 		const v = await boot(w, h, `document.querySelector(".pl-row") && typeof PRJ_PC !== "undefined" && PRJ_PC`);
 		await shot(v, `single-${w}.png`);
-		expect(await q(v, `return ${heads}`)).toEqual(["고정", "프로젝트", "내 설정"]);
+		expect(await q(v, `return ${heads}`)).toEqual(["고정", "프로젝트"]);
 		expect(await q(v, `return document.querySelectorAll(".pl-pc").length`)).toBe(0);
 	});
 

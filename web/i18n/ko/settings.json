@@ -161,6 +161,7 @@
   "settings.page.update": "업데이트",
   "settings.page.runtime": "작업 프로그램",
   "settings.page.schedules": "예약한 일",
+  "settings.page.custom": "내 규칙·커스텀",
   "settings.runtime.check_failed": "작업 프로그램을 확인하지 못했어요",
   "settings.runtime.checking": "작업 프로그램을 확인하는 중이에요",
   "settings.row.account_in_use": "{name} 사용 중",

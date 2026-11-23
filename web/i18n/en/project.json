@@ -37,7 +37,6 @@
   "project.pc.switch": "Switching to {name}",
   "project.search": "Search projects",
   "project.view.aria": "Project filter",
-  "project.custom": "Custom",
   "project.more_n": {
     "one": "Show {n} more project",
     "other": "Show {n} more projects"
@@ -47,7 +46,6 @@
   "project.empty.run": "No projects in progress",
   "project.empty.done": "No finished projects",
   "project.empty.none": "No projects yet",
-  "project.my_settings": "My settings",
   "project.custom_sub": "See what you've changed",
   "project.load_failed": "Couldn't load projects",
   "project.empty.first": "No projects yet. Hand off a long task in chat and it shows up here",

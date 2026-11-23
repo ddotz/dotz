@@ -7,6 +7,7 @@ const SET_PAGE = {
   update: { build: () => updateSection() },
   runtime: { build: () => { const s = hvSection(); return s.length ? s : [emptyNode(UPD.info && UPD.info.error ? TX("settings.runtime.check_failed") : TX("settings.runtime.checking"))]; } },
   schedules: { build: () => schedPage() },
+  custom: { build: () => cuPage() },
 };
 // A screen without a section in web/index.html gets its empty one here, since go() needs one for every view: a settings page holds its
 // box, and 카드 추가·수정 (web/custom.js cardForm) is filled by the custom layer (the demo's own index.html has no custom layer).
@@ -22,11 +23,13 @@ function settingsEnter() {
 function setPageEnter() { renderSettings(); }
 function updateEnter() { loadUpdate(); renderSettings(); }
 function runtimeEnter() { loadUpdate(); loadRuntimes(); renderSettings(); }
+function customEnter() { renderSettings(); cuLoad(); }
 screenHooks("settings", { enter: settingsEnter });
 screenHooks("notifications", { enter: setPageEnter });
 screenHooks("display", { enter: setPageEnter });
 screenHooks("update", { enter: updateEnter });
 screenHooks("runtime", { enter: runtimeEnter });
+screenHooks("custom", { enter: customEnter });
 
 /* ---------- the rows these pages share ---------- */
 const stSec = title => el("div", { class: "sec", text: title });
@@ -107,6 +110,7 @@ function settingsList(go) {
     stSec(TX("common.apps")), stList(
       stRow("bell", TX("settings.page.notifications"), stPushSub(), () => go("notifications")),
       stRow("list", TX("settings.page.schedules"), TX("settings.row.schedules"), () => go("schedules")),
+      stRow("pencil", TX("settings.page.custom"), TX("project.custom_sub"), () => go("custom")),
       navOff("apps") ? null : stRow("apps", TX("settings.row.apps"), "", () => go("apps")),
       stRow("spark", TX("settings.row.intro"), "", () => introOpen()),
       stRow(themeIc(), TX("settings.page.display"), [themeIs() === "dark" ? TX("settings.theme.dark") : TX("settings.theme.light"), chatTabMode() === "main" ? TX("settings.row.chat_tab_main") : TX("settings.row.chat_tab_last")].join(" · "), () => go("display"))),
