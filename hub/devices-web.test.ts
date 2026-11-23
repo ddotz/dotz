@@ -73,7 +73,7 @@ describe("연결된 기기 설정 화면", () => {
 	test("on a phone each device's line under the name stays on one line", async () => {
 		devices = initial();
 		const v = await open(390, 844);
-		expect(await ev<number[]>(v, `[...document.querySelectorAll("#devices [data-dev] .sup")].map(s => { const r = document.createRange(); r.selectNodeContents(s); return new Set([...r.getClientRects()].map(x => Math.round(x.top))).size; })`)).toEqual([1, 1, 1]);
+		expect(await ev<number[]>(v, `[...document.querySelectorAll("#devices [data-dev] .sup")].map(s => { const r = document.createRange(); r.selectNodeContents(s); return new Set([...r.getClientRects()].map(x => Math.round((x.top + x.bottom) / 2))).size; })`)).toEqual([1, 1, 1]);
 	});
 
 	test("the list shows each device with its dates, and 이 기기 on the current one", async () => {

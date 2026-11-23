@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { fakeHub, json, run, waitFor, type View } from "./test-web.ts";
+import { fakeHub, fixPageNow, json, run, waitFor, type View } from "./test-web.ts";
 
 // The project screen's head card (web/css/08-project-sessions.css, pmHead): on a phone the app bar already shows the project name, so the card
 // does not write it again as a title block, and the content under it starts higher. Renaming stays one tap away (the ⋯ menu's 수정). At 1280 the
@@ -51,6 +51,7 @@ const open = async (v: View): Promise<View> => {
 	await v.navigate(`${hub.origin}/`);
 	await opened;
 	await waitFor(v, `typeof S !== "undefined" && S`);
+	await fixPageNow(v, AT_MS + 3 * 86_400_000);
 	await run(v, `go("project", "${project.key}")`);
 	await waitFor(v, `document.querySelector("#v-project .pmv-head") && document.querySelectorAll("#v-project .pm-sec").length >= 2`);
 	await waitFor(v, `document.getAnimations().every(a => a.playState !== "running" || (a.effect && a.effect.getTiming().iterations === Infinity))`);
@@ -58,7 +59,7 @@ const open = async (v: View): Promise<View> => {
 };
 
 // Measured on origin/main (the fixture above): the card at 1280.
-const WIDE_1280 = {"head":{"x":616,"y":68,"w":636,"h":100},"hmain":{"x":636,"y":88,"w":422,"h":60},"htop":{"x":636,"y":88,"w":422,"h":32},"title":{"x":628,"y":88,"w":246,"h":32},"purpose":{"x":628,"y":124,"w":438,"h":24},"hact":{"x":1074,"y":88,"w":158,"h":40},"chat":{"x":1074,"y":90,"w":110,"h":36},"more":{"x":1192,"y":88,"w":40,"h":40},"tag":{"x":874,"y":94,"w":43.5,"h":20},"upd":{"x":925.5,"y":96,"w":132.5,"h":16},"first":{"x":616,"y":184,"w":636,"h":96}};
+const WIDE_1280 = {"head":{"x":616,"y":68,"w":636,"h":100},"hmain":{"x":636,"y":88,"w":422,"h":60},"htop":{"x":636,"y":88,"w":422,"h":32},"title":{"x":628,"y":88,"w":290,"h":32},"purpose":{"x":628,"y":124,"w":438,"h":24},"hact":{"x":1074,"y":88,"w":158,"h":40},"chat":{"x":1074,"y":90,"w":110,"h":36},"more":{"x":1192,"y":88,"w":40,"h":40},"tag":{"x":918,"y":94,"w":43,"h":20},"upd":{"x":969,"y":96,"w":89,"h":16},"first":{"x":616,"y":184,"w":636,"h":140}};
 
 // The WebViews are started in the describe body (collection time, on no test's clock): the first start of a process is the slow one. The two phone
 // tests share one view, each navigates it again (a navigation resets the page); 1280 is its own view because the viewport differs.
