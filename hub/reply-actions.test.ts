@@ -313,14 +313,21 @@ test("an agent caller may only revise: it writes no pick, and send and everythin
 	expect(w.linesOf("pick")).toEqual([]);
 });
 
-test("a hand-written card goes to the bot as its numbered answer; a batch sends one message per conversation", async () => {
+test("a hand-written card goes to the bot as its numbered answer and closes on 보내기 or 보내지 않기, not on 고치기; a batch sends one message per conversation", async () => {
 	const w = world();
-	const cards = [{ ref: "X1", conv: "ch:1", notice: "n1", title: "이 답글 올릴까요? (X1)" }, { ref: "X2", conv: "ch:1", notice: "n2", title: "이 답글 올릴까요? (X2)" }];
+	let cards = [{ ref: "X1", conv: "ch:1", notice: "n1", title: "이 답글 올릴까요? (X1)" }, { ref: "X2", conv: "ch:1", notice: "n2", title: "이 답글 올릴까요? (X2)" }, { ref: "X3", conv: "ch:1", notice: "n3", title: "이 답장 보낼까요? (X3)" }];
 	const log: string[] = [];
-	const replies = createReplyActions({ adapters: [], sender: w.sender, recordPick: () => undefined, learning: { record: async () => undefined, refine: async () => undefined }, cards: { open: () => cards, replace: () => undefined, rewrite: () => undefined, close: () => undefined }, toBot: async (c, t) => void log.push(`${c}|${t}`), emit: () => undefined, log: () => undefined });
+	const close = (ref: string) => void (log.push(`close ${ref}`), (cards = cards.filter(c => c.ref !== ref)));
+	const replies = createReplyActions({ adapters: [], sender: w.sender, recordPick: () => undefined, learning: { record: async () => undefined, refine: async () => undefined }, cards: { open: () => cards, replace: () => undefined, rewrite: () => undefined, close }, toBot: async (c, t) => void log.push(`${c}|${t}`), emit: () => undefined, log: () => undefined });
 	const r = await replies.batch([{ ref: "X1", action: "send" }, { ref: "X2", action: "revise", change: "더 짧게" }, { ref: "NOPE", action: "send" }], owner);
 	expect(r.body).toMatchObject({ results: [{ ref: "X1", ok: true }, { ref: "X2", ok: true }, { ref: "NOPE", ok: false, code: "unknown_ref" }] });
-	expect(log).toEqual(["ch:1|결정 답: 이 답글 올릴까요? (X1) → 1) 보내기\n결정 답: 이 답글 올릴까요? (X2) → 2) 고치기 - 더 짧게"]);
+	expect(log).toEqual(["ch:1|결정 답: 이 답글 올릴까요? (X1) → 1) 보내기\n결정 답: 이 답글 올릴까요? (X2) → 2) 고치기 - 더 짧게", "close X1"]);
+	// The owner's 보내지 않기 closes the card: the model's marker on it again reaches the bot no more (one card once went to the bot three times).
+	log.length = 0;
+	expect((await replies.act({ ref: "X3", action: "drop" }, owner)).status).toBe(200);
+	expect((await replies.act({ ref: "X3", action: "drop" }, owner)).body).toMatchObject({ ok: false, code: "unknown_ref" });
+	expect(log).toEqual(["ch:1|결정 답: 이 답장 보낼까요? (X3) → 3) 보내지 않기", "close X3"]);
+	expect(replies.open("ch:1").map(c => c.ref)).toEqual(["X2"]);
 });
 
 test("D7: a send names the version it showed; another one is refused `changed` with the fresh item, nothing picked or queued, and the cards redrawn", async () => {

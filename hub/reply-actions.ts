@@ -315,7 +315,7 @@ export function createReplyActions(deps: ReplyDeps) {
 		if (ctx.agent && input.action !== "revise") return refused(403, "owner_only");
 		const found = await resolve(input.ref);
 		if (!found) return fail(404, "unknown_ref", "그 초안을 찾지 못했어요");
-		if ("card" in found) return toBot(ctx, found.card, input);
+		if ("card" in found) return toBot(deps, ctx, found.card, input);
 		// The pick, the send and its card state belong where the draft's card was asked, when it has one (a 다시 보내기 comes after the card
 		// was answered, so an answered card counts too); the store's own place otherwise.
 		const card = deps.cards.open().find(c => c.ref === input.ref);
@@ -336,16 +336,6 @@ export function createReplyActions(deps: ReplyDeps) {
 			case "resolve": return resolveSend(ctx, a, view, input.as);
 			default: return undo(view);
 		}
-	}
-
-	// A hand-written card has no store here: its answer is one message to the bot, as the card's own numbered answer would be. The model's own
-	// revise marker on such a card goes the same way, as its 2) 고치기 line.
-	async function toBot(ctx: ActCtx, card: OpenCard, input: ActInput): Promise<ActResult> {
-		if (ctx.agent && input.action !== "revise") return refused(403, "owner_only");
-		const line = cardAnswer(card, input);
-		if (!line) return refused(409, "not_supported");
-		await deps.toBot(card.conv, line, ctx.agent === true);
-		return { status: 200, body: { ok: true } };
 	}
 
 	return {
@@ -375,12 +365,13 @@ export function createReplyActions(deps: ReplyDeps) {
 		async batch(items: ActInput[], ctx: ActCtx) {
 			if (!Array.isArray(items) || !items.length || items.length > 100) return { status: 400, body: { ok: false, code: "bad_request", error: "items는 1개에서 100개 사이여야 해요" } };
 			const results: { ref: string; ok: boolean; code?: string; error?: string; item?: ReplyItem }[] = [];
-			const forBot = new Map<string, string[]>();
+			const forBot = new Map<string, string[]>(), closing: string[] = [];
 			for (const it of items) {
 				const found = typeof it?.ref === "string" && !ctx.agent ? await resolve(it.ref) : undefined;
 				const line = found && "card" in found ? cardAnswer(found.card, it) : undefined;
 				if (found && "card" in found && line) {
 					forBot.set(found.card.conv, [...(forBot.get(found.card.conv) ?? []), line]);
+					if (answers(it)) closing.push(found.card.ref);
 					results.push({ ref: it.ref, ok: true });
 					continue;
 				}
@@ -388,6 +379,7 @@ export function createReplyActions(deps: ReplyDeps) {
 				results.push(r.body.ok ? { ref: it.ref, ok: true, ...(r.body.item ? { item: r.body.item } : {}) } : { ref: it.ref, ok: false, code: r.body.code, error: r.body.error });
 			}
 			for (const [conv, lines] of forBot) await deps.toBot(conv, lines.join("\n"), ctx.agent === true);
+			for (const ref of closing) deps.cards.close(ref);
 			return { status: 200, body: { results } };
 		},
 		/** Every reply every surface shows: the adapters' drafts with their sends, then the hand-written cards. A draft with an open card is in the
@@ -401,6 +393,19 @@ export function createReplyActions(deps: ReplyDeps) {
 			while (running.size) await Promise.all([...running]);
 		},
 	};
+}
+
+// A hand-written card has no store here: its answer is one message to the bot, as the card's own numbered answer would be. The model's own
+// revise marker on such a card goes the same way, as its 2) 고치기 line. The owner's 보내기 or 보내지 않기 answers it: the card closes, so the
+// conversation's held approval card comes up and the model's next marker on it finds no open card (it once dropped one card three times).
+const answers = (input: ActInput): boolean => input.action === "send" || input.action === "drop";
+async function toBot(deps: ReplyDeps, ctx: ActCtx, card: OpenCard, input: ActInput): Promise<ActResult> {
+	if (ctx.agent && input.action !== "revise") return refused(403, "owner_only");
+	const line = cardAnswer(card, input);
+	if (!line) return refused(409, "not_supported");
+	await deps.toBot(card.conv, line, ctx.agent === true);
+	if (answers(input)) deps.cards.close(card.ref);
+	return { status: 200, body: { ok: true } };
 }
 
 type Resolved = { adapter: ReplyAdapter; view: DraftView } | { card: OpenCard };
