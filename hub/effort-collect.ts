@@ -37,17 +37,53 @@ const sameModel = (id: string[], name: string[]): boolean => {
 
 const RECORD_HEAD = /"name":"([^"]*)","shortName"/g;
 const RECORD_NAME = /^(.*?)\s*\(([^()]*)\)$/;
-const RECORD_LIMIT = 8_000;
-const field = (record: string, key: string): number | undefined => {
-	const m = new RegExp(`"${key}":(-?\\d+(?:\\.\\d+)?(?:[eE][+-]?\\d+)?)[,}]`).exec(record);
-	return m ? Number(m[1]) : undefined;
+const RECORD_LIMIT = 16_000;
+const OPEN = 123, CLOSE = 125, QUOTE = 34, BACKSLASH = 92;
+
+const objectStart = (text: string, head: number, floor: number): number | undefined => {
+	let depth = 0;
+	for (let i = head - 1; i >= floor; i--) {
+		const c = text.charCodeAt(i);
+		if (c === CLOSE) depth++;
+		else if (c === OPEN && depth-- === 0) return i;
+	}
+	return undefined;
+};
+
+const objectEnd = (text: string, open: number, limit: number): number | undefined => {
+	let depth = 0, inString = false;
+	for (let i = open; i < limit; i++) {
+		const c = text.charCodeAt(i);
+		if (inString) {
+			if (c === BACKSLASH) i++;
+			else if (c === QUOTE) inString = false;
+		} else if (c === QUOTE) inString = true;
+		else if (c === OPEN) depth++;
+		else if (c === CLOSE && --depth === 0) return i + 1;
+	}
+	return undefined;
+};
+
+const parseObject = (json: string): object | undefined => {
+	try {
+		const value: unknown = JSON.parse(json);
+		return typeof value === "object" && value !== null && !Array.isArray(value) ? value : undefined;
+	} catch (e) {
+		if (e instanceof SyntaxError) return undefined;
+		throw e;
+	}
+};
+const own = (o: object, key: string): unknown => Object.getOwnPropertyDescriptor(o, key)?.value;
+const num = (o: object, key: string): number | undefined => {
+	const v = own(o, key);
+	return typeof v === "number" && Number.isFinite(v) ? v : undefined;
 };
 
 type BoardRow = { effort: Effort; score: number; cost: number; minutes?: number };
 
 /** The rows of one model from the leaderboard page: one per effort record the page embeds for it. */
 export function boardRows(html: string, id: string): BoardRow[] {
-	const text = html.replaceAll('\\"', '"');
+	const text = html.replace(/\\(["\\])/g, "$1");
 	const heads = [...text.matchAll(RECORD_HEAD)];
 	const want = tokens(id);
 	const out: BoardRow[] = [];
@@ -55,8 +91,14 @@ export function boardRows(html: string, id: string): BoardRow[] {
 		const name = RECORD_NAME.exec(head[1]!);
 		const effort = name ? KIND[name[2]!.split(",")[0]!.trim().toLowerCase()] : undefined;
 		if (!effort || !name || !sameModel(want, tokens(name[1]!))) return;
-		const record = text.slice(head.index, Math.min(heads[i + 1]?.index ?? text.length, head.index + RECORD_LIMIT));
-		const [score, cost, seconds] = [field(record, "intelligenceIndex"), field(record, "intelligenceIndexCostPerTask"), field(record, "intelligenceIndexTimePerTask")];
+		const prev = heads[i - 1], next = heads[i + 1];
+		const open = objectStart(text, head.index, Math.max(head.index - RECORD_LIMIT, prev ? prev.index + prev[0].length : 0));
+		if (open === undefined) return;
+		const end = objectEnd(text, open, Math.min(open + RECORD_LIMIT, next?.index ?? text.length));
+		if (end === undefined || end <= head.index) return;
+		const record = parseObject(text.slice(open, end));
+		if (!record || own(record, "name") !== head[1]) return;
+		const [score, cost, seconds] = [num(record, "intelligenceIndex"), num(record, "intelligenceIndexCostPerTask"), num(record, "intelligenceIndexTimePerTask")];
 		if (score !== undefined && cost !== undefined) out.push({ effort, score, cost, ...(seconds !== undefined ? { minutes: seconds / 60 } : {}) });
 	});
 	return out;
