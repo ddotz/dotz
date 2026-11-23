@@ -73,14 +73,14 @@ const LAYOUT = `(sel => {
   return out;
 })`;
 
-const CARD = `Object.assign(draftCardNode(NT.items[0]), { id: "layout-card" })`;
-const REDRAW = `document.getElementById("layout-card").replaceWith(${CARD})`;
+const CARD = `draftCardNode(NT.items[0])`;
+const REDRAW = `document.getElementById("layout-card").replaceChildren(${CARD})`;
 const EDIT = `(() => { const t = document.querySelector(".tq-body [data-k=fix-text]"); t.value = "직접 고친 글"; t.dispatchEvent(new Event("input", { bubbles: true })); document.querySelector(".tq-body [data-k=fix-apply]").click(); })()`;
 const SURFACES: Record<string, { queue: object[]; open: string; then: string[]; parts: Record<string, string[]> }> = {
 	"답장 확인 창 of a card the queue holds, opened again after 펼치기": { queue: [queueItem], open: `ntDraftSheet(NT.items[0])`, then: [`ntDraftSheet(NT.items[0])`], parts: { ".rq-sheet .rq-text": BODY, ".rq-sheet .dr-sub": [SUBJECT] } },
 	"답장 확인 창 of a card only its notice holds": { queue: [], open: `ntDraftSheet(NT.items[0])`, then: [], parts: { ".fs-body .dc-dr-b": BODY, ".fs-body .dr-sub": [SUBJECT] } },
-	"the 모니터링 card of a draft the queue holds, drawn again after 펼치기": { queue: [queueItem], open: `document.body.append(${CARD})`, then: [REDRAW], parts: { "#layout-card .rq-text": BODY, "#layout-card .dr-sub": [SUBJECT] } },
-	"the 모니터링 card of a draft only its notice holds, drawn again after 펼치기": { queue: [], open: `document.body.append(${CARD})`, then: [REDRAW], parts: { "#layout-card .dr-body": BODY, "#layout-card .dr-sub": [SUBJECT] } },
+	"the 모니터링 card of a draft the queue holds, drawn again after 펼치기": { queue: [queueItem], open: `document.body.append(el("div", { id: "layout-card" }, ${CARD}))`, then: [REDRAW], parts: { "#layout-card .rq-text": BODY, "#layout-card .dr-sub": [SUBJECT] } },
+	"the 모니터링 card of a draft only its notice holds, drawn again after 펼치기": { queue: [], open: `document.body.append(el("div", { id: "layout-card" }, ${CARD}))`, then: [REDRAW], parts: { "#layout-card .dr-body": BODY, "#layout-card .dr-sub": [SUBJECT] } },
 	"the docked card of a draft only its notice holds": { queue: [], open: `document.body.append(el("div", { class: "dc-body", id: "layout-dock" }, draftNode(NT.items[0].decision.draft, { t: "web", edit: false })))`, then: [], parts: { "#layout-dock .dc-dr-b": BODY, "#layout-dock .dc-dr-h > .dc-dr-v": [SUBJECT] } },
 	"the 빠른 처리 list": { queue: [mailItem], open: `tqOpen(); document.querySelector(".tr-tog").click()`, then: [], parts: { ".tq-row .tq-tx": BODY } },
 	"고치기 in 빠른 처리 after the draft changed elsewhere": { queue: [mailItem], open: `tqOpen(); document.querySelector(".tq-body [data-k=fix]").click()`, then: [EDIT], parts: { ".tq-body .ra-other-tx": ELSEWHERE } },
