@@ -60,7 +60,8 @@ let learnedNow: () => ReadonlyMap<string, Learned> | undefined = () => undefined
 export const useLearned = (read: () => ReadonlyMap<string, Learned> | undefined): void => {
 	learnedNow = read;
 };
-const isId = (bare: string, id: string): boolean => bare === id || bare.startsWith(`${id}-`);
+/** Whether a bare id is this table id or a dated or suffixed version of it (`claude-opus-5-5-20261001` is `claude-opus-5-5`). */
+export const isId = (bare: string, id: string): boolean => bare === id || bare.startsWith(`${id}-`);
 const benchmarked = (): [string, Effort][] => [...(learnedNow() ?? [])].filter(([id, l]) => l.status === "benchmark" && !ROWS.some(r => r.id === id)).map(([id, l]) => [id, l.effort]);
 const learnedRows = (): Row[] => benchmarked().flatMap(([id, effort]) => {
 	const fam = familyOf(id);
