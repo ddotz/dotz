@@ -340,6 +340,16 @@ test("the model's own [drop] marker on a hand-written card, carrying the owner's
 	expect(log).toEqual(["close X1"]);
 });
 
+test("the model's own [revise] marker on a hand-written card reaches the bot as the agent's line, so the page never shows it as the owner's message", async () => {
+	const w = world();
+	const cards = [{ ref: "X1", conv: "ch:1", notice: "n1", title: "이 답장 보낼까요? (X1)" }];
+	const sent: [string, boolean][] = [];
+	const replies = createReplyActions({ adapters: [], sender: w.sender, recordPick: () => undefined, learning: { record: async () => undefined, refine: async () => undefined }, cards: { open: () => cards, replace: () => undefined, rewrite: () => undefined, close: () => undefined }, toBot: async (_c, t, agent) => void sent.push([t, agent]), emit: () => undefined, log: () => undefined });
+	expect((await replies.act({ ref: "X1", action: "revise", change: "더 짧게" }, { surface: "chat", owner: { mid: "m1", text: "더 짧게 고쳐" } })).status).toBe(200);
+	expect((await replies.act({ ref: "X1", action: "revise", change: "존댓말로" }, owner)).status).toBe(200);
+	expect(sent).toEqual([["결정 답: 이 답장 보낼까요? (X1) → 2) 고치기 - 더 짧게", true], ["결정 답: 이 답장 보낼까요? (X1) → 2) 고치기 - 존댓말로", false]]);
+});
+
 test("a hand-written send card lists with the recipient, subject, body and files its own lines carry, so the 답장 확인 sheet shows what 보내기 sends", async () => {
 	const w = world();
 	const draft = { toLabel: "받는이", to: "A <a@example.com>", subject: "제목A", body: "본문A", attachments: [{ name: "파일A.xlsx", size: "12 KB" }] };

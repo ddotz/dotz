@@ -58,6 +58,7 @@ function dayDiv(t) { const d = kstDay(t); if (!d || d === CS.day) return null; c
 function speakerOf(e) {
   const peer = peerMsgOf(e);
   if (peer) return `peer|${peer.from}`;
+  if (agentWrote(e)) return "bot";
   if (e.kind === "message" || e.kind === "lane_message" || e.kind === "_cmd") return `owner|${e.kind === "_cmd" ? "cmd" : e.source ?? ""}`;
   if (e.kind === "lane_report") return `lane|${e.lane ?? ""}`;
   if (e.kind === "out" && (e.target === "alert" || e.target === "worklog")) return e.target;
@@ -331,6 +332,8 @@ function msgNode(e, inRow) {
   if (e.kind === "out" && e.system) return sysLine(e, text.trim(), hm);
   const peer = peerMsgOf(e);
   if (peer) return peerMsgCard(e, peer, hm);
+  // A line an agent posted with the hub token (a card marker's answer, hub/reply-actions.ts toBot) is the bot's, never a bubble the owner wrote.
+  if (agentWrote(e)) return sysLine(e, TX("home.msg.by_agent", { text: text.trim().split("\n")[0] }), hm);
   switch (e.kind) {
     case "message": case "lane_message": case "_cmd": {
       const via = e.kind === "_cmd" ? TX("home.msg.cmd") : e.source === "discord" ? "Discord" : e.source === "terminal" ? TX("home.msg.terminal") : "";

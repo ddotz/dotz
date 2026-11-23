@@ -15,6 +15,7 @@ const events = [
 	{ ts: ts(3), kind: "message", source: "web", channel: "web", mid: "b1", text: "[중요] 오늘 일정 알려 줘" },
 	{ ts: ts(4), kind: "message", source: "web", channel: "web", mid: "b2", text: handoff },
 	{ ts: ts(5), kind: "out", source: "orchestrator", target: "chat", text: "✅ 끝났어요" },
+	{ ts: ts(6), kind: "message", source: "web", channel: "web", mid: "a1", author: "hub-token", text: "결정 답: 이 답장 보낼까요? (R1) → 2) 고치기 - 더 짧게" },
 ];
 const hub = fakeHub({
 	api: (_req, url) => {
@@ -57,6 +58,12 @@ describe("peer message card", () => {
 	test("the owner's own message forwarded from the other computer's page stays his: a mail or settings conversation, or a decision answer", async () => {
 		const asks = [{ channel: "mail:x" }, { conv: "mail:x" }, { channel: "settings:kakao" }, { channel: "th:1" }, { channel: "web", decision: "n1" }, { channel: "web", picks: [{ q: "q", n: 1 }] }];
 		expect(await ev(`${JSON.stringify(asks)}.map(a => peerMsgOf({ kind: "message", via: "맥미니", text: "보내 주세요", ...a }))`)).toEqual(asks.map(() => null));
+	});
+});
+
+describe("an agent's message", () => {
+	test("a line an agent posted with the hub token (a card marker's answer) is a system line of the bot, not a bubble the owner wrote", async () => {
+		expect(await ev(`[${row(ts(6))}.className, ${row(ts(6))}.querySelector(".cv-sys-tx").textContent, !!${row(ts(6))}.querySelector(".ub")]`)).toEqual(["cv-sys", "봇이 카드에 남긴 답 · 결정 답: 이 답장 보낼까요? (R1) → 2) 고치기 - 더 짧게", false]);
 	});
 });
 

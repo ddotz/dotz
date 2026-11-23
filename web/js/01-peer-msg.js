@@ -23,6 +23,8 @@ function peerMsgOf(e) {
   if (n >= 0) return { ...h, words: text.slice(w + PEER_WORDS.length, n).trim(), note: text.slice(n + PEER_NOTE.length).trim() };
   return { kind: "message", from: e.via, words: text };
 }
+// A message an agent posted with the hub token (hub/agent-author.ts AGENT_AUTHOR; hub/events.ts ownerWrote): not the owner's words. A peer's is drawn as a peer message first.
+const agentWrote = e => (e.kind === "message" || e.kind === "lane_message") && e.author === "hub-token" && !peerMsgOf(e);
 // One line for a preview, a notice row or a quote; any other text comes back unchanged. A send is already plain text.
 function peerMsgLine(raw) {
   const s = String(raw ?? ""), h = peerMsgHead(s);
