@@ -33,6 +33,10 @@ async function raLoad() {
   paintDecision();   // a send approval the queue now holds leaves the dock for its card (10-decision-card.js dcQueued)
 }
 const raSoon = () => { clearTimeout(RA.t); RA.t = setTimeout(raLoad, 300); };
+function raCardNotice(n) {
+  const d = n.decision && n.decision.draft;
+  if ([...RA.items.values()].some(i => i.kind === "card" && i.notice === n.id) || (ntOpenDec(n) && d && d.ref && !RA.items.has(d.ref))) rqSoon();
+}
 
 const raFixNew = () => ({ part: "reply", text: {}, subject: {}, note: "", rows: {}, repick: [] });
 const raWriting = () => [...RA.fix].some(([ref, st]) => !RA.loaded || RA.items.has(ref) || !!st.note.trim() || ["text", "subject"].some(k => Object.entries(st[k]).some(([p, v]) => v != null && v.trim() !== String(st.was?.[k]?.[p] ?? "").trim())));

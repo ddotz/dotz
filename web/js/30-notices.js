@@ -84,6 +84,7 @@ function closePushTags(tags) {
 function noticeLive(e) {
   if (e.kind === "notice" && e.item && e.item.id != null) {
     ntClean(e.item);
+    raCardNotice(e.item);
     const i = NT.items.findIndex(x => x.id === e.item.id);
     if (e.item.dismissed) { if (i >= 0) NT.items.splice(i, 1); }
     else if (i < 0) NT.items.push(e.item); else NT.items[i] = e.item;
