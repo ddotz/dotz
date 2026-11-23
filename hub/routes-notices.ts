@@ -28,6 +28,7 @@ const OWNER_ONLY = { code: "owner_only", error: reasonOf("owner_only").text };
 setAskExtra((target, question, act) => {
 	const id = cardAsked(convOfTarget(target), question);
 	const r = act === "more" ? moreNotice(id, askAsker) : laterNotice(id, { for: "hour" });
+	if (r.status === 502) return r.body.error;
 	if (r.status !== 200) return msg().auth.finished;
 	const d = r.body.item.decision!;
 	return act === "more" ? msg().asker.askedMore(clockText(Date.parse(d.more_at ?? ""))) : msg().asker.putOff(clockText(Date.parse(d.later_until ?? "")));

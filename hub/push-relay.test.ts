@@ -5,6 +5,7 @@ import { afterEach, beforeEach, expect, test } from "bun:test";
 import { createDecipheriv, createECDH, createHmac } from "node:crypto";
 import { rmSync } from "node:fs";
 import { join } from "node:path";
+import { now } from "./config.ts";
 import { resetNoticesForTest, type Notice } from "./notices.ts";
 import { upsert } from "./notices-store.ts";
 import { b64u } from "./webpush.ts";
@@ -406,6 +407,24 @@ test("what makes a notification stale: a decision answered or dismissed, a conve
 	expect(staleTags({ kind: "read", target: "ch:5" })).toEqual(["answer:ch:5", "ask:ch:5"]);
 	expect(staleTags({ kind: "notice", item: { id: 3, decision: { state: "open", options: [], to: "web" } } })).toEqual([]);
 	expect(staleTags({ kind: "notice", item: { id: 3, decision: { state: "answered", options: [], to: "web" } } })).toEqual(["decision:3"]);
+});
+
+test("a snoozed decision takes its notification back on every device, and the wake push an hour later still goes out", async () => {
+	const { staleTags } = inst.alpha;
+	const open = { state: "open", options: [], to: "web" };
+	const hour = 3_600_000;
+	const snoozed = { kind: "notice", item: { id: 4, decision: { ...open, later_until: new Date(Date.parse(now()) + hour).toISOString() } } };
+	expect(staleTags(snoozed)).toEqual(["decision:4"]);
+	expect(staleTags({ kind: "notice", item: { id: 4, decision: { ...open, later_until: new Date(Date.parse(now()) - hour).toISOString() } } })).toEqual([]);
+	expect(staleTags({ kind: "notice", item: { id: 4, decision: { ...open } } })).toEqual([]);
+
+	const d = await devices();
+	const card = inst.alpha.decisionPush(bell({ id: `dc${++seq}`, kind: "decision", tone: "ask", title: `미룰 질문 ${seq}`, open: "main", decision: { options: [], to: "main", group: 1, state: "open" } }));
+	await send("alpha", card);
+	expect(d.laptop.got().map(x => x.kind)).toEqual(["ask"]);
+	await inst.alpha.withdraw(staleTags({ kind: "notice", item: { id: card.id, decision: { ...open, later_until: new Date(Date.parse(now()) + hour).toISOString() } } }));
+	expect(d.laptop.got().at(-1)).toMatchObject({ kind: "withdraw", withdraw: [`${GW.alpha.url.replace("https://", "")}:${card.tag}`] });
+	expect(inst.alpha.shouldNotify(card, Date.now() + hour, () => false, () => true)).toBe(true);
 });
 
 test("reading the alert conversation closes an alert another computer's app showed (its tag is per alert, so it is remembered when sent, not only when shown here)", async () => {

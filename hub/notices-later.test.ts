@@ -5,7 +5,7 @@ import { emit, onBroadcast } from "./events.ts";
 import { msg } from "./i18n.ts";
 import { flush, sendWeb } from "./intake.ts";
 import { ASK_PREFIX, askInteraction } from "./askbuttons.ts";
-import { ANSWER_WINDOW_MS, allNotices, answerDecision, clockText, dropLaneNotices, flushNotices, ignoreNotice, needsAnswer, nextMorning, onDecision, onHalfTime, reopenNotices, resetNoticesForTest, resolveNotices, sweepQuestions, unreadCount, type Notice } from "./notices.ts";
+import { ANSWER_WINDOW_MS, allNotices, answerDecision, clockText, dropLaneNotices, flushNotices, ignoreNotice, moreNotice, needsAnswer, nextMorning, onDecision, onHalfTime, reopenNotices, resetNoticesForTest, resolveNotices, sweepQuestions, unreadCount, type Notice } from "./notices.ts";
 import { queue } from "./outbound.ts";
 import { halfTimePush } from "./push.ts";
 import { routeNotices } from "./routes-notices.ts";
@@ -80,6 +80,35 @@ test("자세히 알려 주세요 keeps the card open with more_at and starts one
 	queue.settleTurn();
 	expect(await post(id, "later", { for: "hour" }, true)).toMatchObject({ status: 403, body: { code: "owner_only" } });
 	expect(card().decision!.later_until).toBeUndefined();
+});
+
+test("자세히 알려 주세요 to an asker that cannot be reached stamps nothing and answers 502, on the web and on Discord; the button works again, and once delivered it is one-shot", async () => {
+	askLane("gone-asker", "끝난 세션에게 물을까요?");
+	const id = card("끝난 세션에게 물을까요?").id;
+	const before = queue.queued().length;
+	const r = await post(id, "more");
+	expect(r).toMatchObject({ status: 502, body: { error: msg().asker.moreFailed } });
+	expect(card("끝난 세션에게 물을까요?").decision!.more_at).toBeUndefined();
+	expect(queue.queued().length).toBe(before);
+	const replies: unknown[] = [];
+	await askInteraction({ id: "i1", token: "t", type: 3, member: { user: { id: "owner-1" } }, message: { content: "[ask] 끝난 세션에게 물을까요?\n결정: 끝난 세션에게 물을까요?\n**1) 예**\n**2) 아니요**" }, data: { custom_id: `${ASK_PREFIX}:lane:gone-asker:more` } }, { owner: "owner-1", reply: async (_d, _type, data) => void replies.push(data) });
+	expect(replies).toEqual([{ content: msg().asker.moreFailed, flags: 64, allowed_mentions: { parse: [] } }]);
+	expect(card("끝난 세션에게 물을까요?").decision!.more_at).toBeUndefined();
+
+	const sent: string[] = [];
+	const down = () => {
+		throw new Error("lane gone-asker does not exist");
+	};
+	expect(moreNotice(id, down).status).toBe(502);
+	expect(card("끝난 세션에게 물을까요?").decision!.more_at).toBeUndefined();
+	const ok = moreNotice(id, (_to, text) => void sent.push(text));
+	expect(ok.status).toBe(200);
+	const stamped = card("끝난 세션에게 물을까요?").decision!.more_at;
+	expect(typeof stamped).toBe("string");
+	expect(moreNotice(id, down).status).toBe(200);
+	expect(moreNotice(id, (_to, text) => void sent.push(text)).status).toBe(200);
+	expect(sent).toEqual([msg().asker.more("끝난 세션에게 물을까요?")]);
+	expect(card("끝난 세션에게 물을까요?").decision!.more_at).toBe(stamped);
 });
 
 test("나중에 takes the card off the open lists until later_until, tells the asker once with its next prompt and starts no turn; at that time it comes back once with one push, also after a restart", async () => {

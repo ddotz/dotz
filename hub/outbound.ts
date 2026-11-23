@@ -230,7 +230,7 @@ export const askFollowup = createAskFollowup({
 	log,
 });
 const WEB_CONVS = ["alert", "worklog", "quick"];
-/** The owner asked the asker of a card in conversation `to` for more (hub/notices-later.ts moreNotice): a gateway turn of the session that asked, or of the session answering that conversation. */
+/** The owner asked the asker of a card in conversation `to` for more (hub/notices-later.ts moreNotice): a gateway turn of the session that asked, or of the session answering that conversation. Throws when a lane asker could not be reached. */
 export function askAsker(to: string, text: string): void {
 	const line = `[dotz gateway] ${text}`;
 	if (!to.startsWith("lane:")) return void deliver(line, { target: to === "main" ? "web" : WEB_CONVS.includes(to) ? `web:${to}` : to });
@@ -238,6 +238,7 @@ export function askAsker(to: string, text: string): void {
 		sendToLane(to.slice(5), line, undefined, true);
 	} catch (error) {
 		log(`more for ${to} not delivered: ${(error as Error).message}`);
+		throw error;
 	}
 }
 /** The owner's own message `id` (a reply_to of an answer), as the words a card it settles was answered with. */

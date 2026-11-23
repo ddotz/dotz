@@ -11,7 +11,7 @@ import type { Notice } from "./notices-types.ts";
 import { decisionHooks, halfHooks } from "./notices-wiring.ts";
 
 /** What 자세히 / 나중에 answer: the card as it is now, or why nothing changed. */
-export type CardReply = { status: 200; body: { ok: true; item: Notice } } | { status: 400 | 404 | 409; body: { error: string } };
+export type CardReply = { status: 200; body: { ok: true; item: Notice } } | { status: 400 | 404 | 409 | 502; body: { error: string } };
 type Refused = Exclude<CardReply, { status: 200 }>;
 type Waiting = { item: Notice } | { refused: Refused };
 
@@ -30,16 +30,20 @@ function announce(list: Notice[], at: string): void {
 	for (const n of list) broadcast({ ts: at, kind: "notice", source: "gateway", item: n, unread });
 }
 
-/** The owner's 자세히 알려 주세요 on an open card: it stays open with `more_at`, and its asker is asked once (`ask` starts its turn) to post the card again with before → after. */
+/** The owner's 자세히 알려 주세요 on an open card: its asker is asked once (`ask` starts its turn, and throws when it could not be reached) to post the card again with before → after; the card stays open and takes `more_at` only once the ask was delivered, so a failed ask answers 502 and the button works again. */
 export function moreNotice(id: unknown, ask: (to: string, text: string) => void): CardReply {
 	const w = waitingCard(id);
 	if ("refused" in w) return w.refused;
 	const { item } = w, d = item.decision!;
 	if (d.more_at) return { status: 200, body: { ok: true, item } };
+	try {
+		ask(d.to, msg().asker.more(item.title));
+	} catch {
+		return { status: 502, body: { error: msg().asker.moreFailed } };
+	}
 	const at = now();
 	d.more_at = at;
 	announce([item], at);
-	ask(d.to, msg().asker.more(item.title));
 	return { status: 200, body: { ok: true, item } };
 }
 

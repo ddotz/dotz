@@ -8,7 +8,7 @@ import { join } from "node:path";
 import { cfg, DATA_DIR, log, NAME, updateNotifyPush, writeAtomic } from "./config.ts";
 import { classOfNotice, NOTICE_CLASSES, type NoticeClass, noticeClass } from "./notice-class.ts";
 import { type KindItem, kindOf, NOTICE_KINDS, type NoticeKindName, pushTitle } from "./notice-kinds.ts";
-import { clean } from "./notices-rules.ts";
+import { clean, laterOn } from "./notices-rules.ts";
 import { RUN_DECISION, taskRunOf } from "./notices-schedule.ts";
 import { pushClasses, route } from "./notify-route.ts";
 import { eventTarget, type HubEvent, onBroadcast, onEmit } from "./events.ts";
@@ -293,7 +293,8 @@ export function staleTags(e: Record<string, unknown>): string[] {
 	if (e.kind === "notice_dismiss" && e.id != null) return [`decision:${e.id}`];
 	if (e.kind === "notice") {
 		const n = e.item as Notice | undefined;
-		if (!n?.decision || (n.decision.state === "open" && !n.dismissed)) return [];
+		if (!n?.decision) return [];
+		if (n.decision.state === "open" && !n.dismissed && !laterOn(n.decision)) return [];
 		// Its app's grouped notification goes too once no approval of that app is open (the group is asked as if this one were still open; it is not counted).
 		const group = n.decision.draft ? confirmGroup({ ...n, decision: { ...n.decision, state: "open" } }) : undefined;
 		return [`decision:${n.id}`, ...(group && group.count === 0 ? [`decision-group:${group.key}`] : [])];
