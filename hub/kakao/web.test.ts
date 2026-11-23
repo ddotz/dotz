@@ -8,6 +8,8 @@ import { replySource, replySourceLog } from "./media.ts";
 import { MAX_CHAT_CHARS, MAX_PAIRS, MAX_PROMPT_CHARS, type ModelReply } from "./draft.ts";
 import { addMessage, BASE_LOG, BASE_TIME, bplistOfInts, makeFixtureDb, OWNER, ROOM } from "./fixture.ts";
 import { dispatchSend } from "./contract.ts";
+import { makeDraft } from "./make-draft.ts";
+import { kakaoAdapter } from "./reply-adapter.ts";
 import { createDraft, dropDraft, listDrafts, readDrafts, restoreDraft } from "./send.ts";
 import { type KakaoConfig, kakaoPaths, type Runner } from "./types.ts";
 import { fakeScreen } from "./ui.fixture.ts";
@@ -59,7 +61,7 @@ function setup(config: Partial<KakaoConfig> = {}, fill?: (w: Database) => void, 
 	const draft = (over: Partial<{ chatId: string; text: string; basisLogId: string }> = {}) =>
 		createDraft({ chatId: DIRECT, roomName: "Alex", text: "see you", basisLogId: id(3), ...over }, { paths, runner, now: () => NOW });
 	const config$ = () => JSON.parse(readFileSync(paths.config, "utf8")) as KakaoConfig;
-	return { web, call, raw, fetched, upstream, events, calls, state, model, draft, config$, close: () => db.close() };
+	return { web, db, call, raw, fetched, upstream, events, calls, state, model, draft, config$, close: () => db.close() };
 }
 
 describe("rooms", () => {
@@ -550,6 +552,56 @@ describe("on-demand draft", () => {
 		expect(t.model.calls[1]!.user).toContain("forbidden expression '무조건'");
 		const next = (await storedDrafts()).find(d => d.status === "pending")!;
 		expect([next.text, next.notes]).toEqual(["무조건 3시", ["확인: it uses the forbidden expression '무조건'"]]);
+		t.close();
+	});
+
+	test("a forbidden wording far down a long ban list still fails the lint and triggers the one rewrite, whatever the prompt list shows", async () => {
+		const forbidden = [...Array.from({ length: 29 }, (_, i) => `금지어${i}`), "편안한 하루 되세요"];
+		const t = setup({}, undefined, { draftStyle: () => ({ rules: [], corrections: [], forbidden, samples: [] }) });
+		await t.draft({ text: "내일 3시에 봐요" });
+		const replies = ["편안한 하루 되세요", "3시에 봐요"];
+		t.model.reply = async () => ({ text: JSON.stringify({ action: "draft", body: replies.shift() ?? "3시", summary: "" }) });
+		const old = (await storedDrafts())[0]!;
+		await t.web.replyKit.revise(DIRECT, { code: old.code, draft: old.text, change: "인사 넣어" });
+		expect(t.model.calls).toHaveLength(2);
+		expect(t.model.calls[0]!.user).not.toContain("금지어29");
+		expect(t.model.calls[1]!.user).toContain("forbidden expression '편안한 하루 되세요'");
+		expect((await storedDrafts()).find(d => d.status === "pending")!.text).toBe("3시에 봐요");
+		t.close();
+	});
+
+	test("a revise that bans a wording quoted in the change hands the learner the line, the wordings and whether it holds everywhere; a wording the change never said is dropped", async () => {
+		const learned: { chatId: string; line: string; forbid: string[]; everywhere: boolean }[] = [];
+		const t = setup();
+		const quiet = async () => ({ code: 0, stdout: "", stderr: "" });
+		const config = t.config$();
+		const room = { chatId: DIRECT, name: "Alex", type: 1, kind: "direct" as const, unread: 0, lastAt: 1 };
+		const draftModel = () => t.model.reply();
+		const ctx = { deps: { paths, runner: quiet, now: () => NOW, openDb: async () => t.db, broadcast: () => {}, draftModel, onRevise: (chatId: string, l: { line: string; forbid: string[]; everywhere: boolean }) => void learned.push({ chatId, ...l }) }, paths, now: () => NOW, getDb: async () => t.db, allRooms: async () => ({ all: [room] }), eligible: (rooms: (typeof room)[]) => rooms, setAsk: () => {}, storedAsks: () => ({}) };
+		const answer = (everywhere: boolean) => ({ text: JSON.stringify({ action: "draft", body: "잘 다녀와", summary: "", lesson: "인사에 되세요를 쓰지 않는다", forbid: ["편안한 하루 되세요", "지어낸 표현"], everywhere }) });
+		for (const everywhere of [true, false]) {
+			t.model.reply = async () => answer(everywhere);
+			const old = await t.draft({ text: "편안한 하루 되세요" });
+			await makeDraft(ctx, config, DIRECT, undefined, { code: old.code, draft: old.text, change: "편안한 하루 되세요는 비문이야, 이 말 빼줘" });
+		}
+		const line = "인사에 되세요를 쓰지 않는다", forbid = ["편안한 하루 되세요"];
+		expect(learned).toEqual([{ chatId: DIRECT, line, forbid, everywhere: true }, { chatId: DIRECT, line, forbid, everywhere: false }]);
+		t.close();
+	});
+
+	test("a revise through the reply flow returns its lesson under the room key, or under the install key when the owner said it holds everywhere, without recording it itself", async () => {
+		const learned: unknown[] = [];
+		const t = setup({}, undefined, { onRevise: (...args) => void learned.push(args) });
+		const change = "편안한 하루 되세요는 비문이야, 이 말 빼줘";
+		const ask = async (everywhere: boolean) => {
+			t.model.reply = async () => ({ text: JSON.stringify({ action: "draft", body: "잘 다녀와", summary: "", lesson: "인사에 되세요를 쓰지 않는다", forbid: ["편안한 하루 되세요", "지어낸 표현"], everywhere }) });
+			const d = await t.draft({ text: "편안한 하루 되세요" });
+			return kakaoAdapter(t.web.replyKit).revise(d.code, change);
+		};
+		const expected = { line: "인사에 되세요를 쓰지 않는다", forbid: ["편안한 하루 되세요"] };
+		expect(await ask(true)).toMatchObject({ ok: true, lesson: { key: { app: "install" }, ...expected } });
+		expect(await ask(false)).toMatchObject({ ok: true, lesson: { key: { app: "kakao", room: DIRECT }, ...expected } });
+		expect(learned).toEqual([]);
 		t.close();
 	});
 

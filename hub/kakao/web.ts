@@ -2,6 +2,7 @@
 // are readable, sendable and shown. Everything is injected (database, runner, clock, paths, broadcast) so tests run without the app.
 // Events carry ids only: never a body or a room name. Sends go only through send.ts (Accessibility UI automation).
 import type { useReplies } from "../reply-actions.ts";
+import type { Learned } from "../reply-draft.ts";
 import { mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { hostname } from "node:os";
 import { dirname, join } from "node:path";
@@ -44,7 +45,7 @@ export type WebDeps = {
 	// It gets the room's messages (read once to write the profile) and counts of the owner's own lines.
 	learnVoice?: (src: VoiceSource) => Promise<void>;
 	// A revise of a draft ("더 짧게") was stored: what it teaches beyond this draft (the model's lesson) goes into the room's tone profile.
-	onRevise?: (chatId: string, lesson: string) => void;
+	onRevise?: (chatId: string, learned: Learned) => void;
 	// The fetch behind GET /api/kakao/media/... and GET /api/link-preview (default: the global fetch).
 	fetch?: typeof fetch;
 	// How link previews resolve host names (default: dns.lookup); tests pass their own.

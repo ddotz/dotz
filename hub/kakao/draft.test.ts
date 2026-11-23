@@ -267,3 +267,68 @@ test("a revise answer carries its lesson; an answer without the key has none, an
 	const { system } = buildDraftPrompt({ lines: ["상대: 몇 시?"], revise: { draft: "3시에 봐요", change: "더 짧게" } });
 	expect(system).toContain('"lesson"');
 });
+
+describe("the owner's standing words in the prompt", () => {
+	const dated = (i: number, pad = "") => `2026-11-${String(i).padStart(2, "0")}: c${i}${pad}`;
+
+	test("every one of 10 dated corrections is in the prompt, newest first", () => {
+		const corrections = Array.from({ length: 10 }, (_, i) => dated(i + 1));
+		const { user } = buildDraftPrompt({ lines: ["Alex: 내일 가능하신가요?"], style: { rules: [], corrections, forbidden: [], samples: [] } });
+		const at = corrections.map(c => user.indexOf(c));
+		expect(at.every(i => i >= 0)).toBe(true);
+		expect([...at].sort((a, b) => b - a)).toEqual(at);
+	});
+
+	test("30 oversized corrections keep the prompt inside its budget and keep the newest", () => {
+		const corrections = Array.from({ length: 30 }, (_, i) => dated(i + 1, "가".repeat(290)));
+		const { system, user } = buildDraftPrompt({ lines: ["Alex: 내일 가능하신가요?"], style: { rules: [], corrections, forbidden: [], samples: [] } });
+		expect(system.length + user.length).toBeLessThanOrEqual(MAX_PROMPT_CHARS);
+		expect(user).toContain("c30");
+		expect(user).not.toContain("c1가");
+	});
+
+	test("when the budget forces a cut, the oldest corrections go before the owner's rules do", () => {
+		const corrections = Array.from({ length: 6 }, (_, i) => dated(i + 1, "나".repeat(280)));
+		const rules = Array.from({ length: 14 }, (_, i) => `rule-${i} ${"다".repeat(50)}`);
+		const pairs = Array.from({ length: 6 }, (_, i) => ({ other: [`q${i}`], own: [`a${i} ${"라".repeat(150)}`] }));
+		const { system, user } = buildDraftPrompt({ lines: ["Alex: 내일 가능하신가요?"], pairs, style: { rules, corrections, forbidden: [], samples: [] } });
+		expect(system.length + user.length).toBeLessThanOrEqual(MAX_PROMPT_CHARS);
+		expect(user).toContain("c6");
+		expect(user).not.toContain("c5");
+		expect(user.match(/rule-\d+ /g)).toHaveLength(14);
+	});
+
+	test("a sample, a pair, a profile line and a matched line of his that hold a forbidden wording are left out; the others stay", () => {
+		const forbidden = ["편안한 하루 되세요", "/수고하셨(어요|습니다)/"];
+		const { user } = buildDraftPrompt({
+			lines: ["Alex: 주말 어땠어?"],
+			intent: "주말 후기 알려줘",
+			pairs: [{ other: ["주말 잘 보냈어요?"], own: ["네 편안한 하루 되세요"] }, { other: ["오늘 어땠어요?"], own: ["좋았어요 감사해요"] }],
+			style: { rules: [], corrections: [], forbidden, samples: ["수고하셨습니다 오늘도", "프로필 줄 하나"] },
+			match: () => ["나: 편안한 하루 되세요 라고 했어", "나: 주말 좋았어", "Alex: 편안한 하루 되세요"],
+		});
+		for (const gone of ["편안한 하루 되세요 라고", "네 편안한 하루 되세요", "수고하셨습니다"]) expect(user).not.toContain(gone);
+		for (const kept of ["좋았어요 감사해요", "프로필 줄 하나", "나: 주말 좋았어", "Alex: 편안한 하루 되세요"]) expect(user).toContain(kept);
+		const only = buildDraftPrompt({ lines: ["Alex: x"], samples: ["편안한 하루 되세요", "괜찮아요"], style: { rules: [], corrections: [], forbidden, samples: [] } }).user;
+		expect(only.split("편안한 하루 되세요")).toHaveLength(2);
+		expect(only).toContain("- 괜찮아요");
+	});
+
+	test("the owner's rules and corrections beat the measured register in every prompt kind", () => {
+		const reply = buildDraftPrompt({ lines: ["Alex: 몇 시?"] }).system;
+		const picked = buildDraftPrompt({ lines: ["Alex: 몇 시?"], choice: "3시" }).system;
+		const compose = buildDraftPrompt({ lines: ["Alex: 몇 시?"], intent: "3시라고 해" }).system;
+		const revise = buildDraftPrompt({ lines: ["Alex: 몇 시?"], revise: { draft: "3시", change: "존댓말로" } }).system;
+		for (const system of [reply, picked, compose, revise]) expect(system).toContain("beat the measured register");
+	});
+
+	test("a revise answer carries the wordings the owner banned and whether the change holds everywhere", () => {
+		const r = parseDraftReply(JSON.stringify({ action: "draft", parts: ["3시"], summary: "", lesson: "존댓말", forbid: [" 하루 되세요 ", "", 3], everywhere: true }));
+		expect([r?.forbid, r?.everywhere]).toEqual([["하루 되세요"], true]);
+		const plain = parseDraftReply(JSON.stringify({ action: "draft", parts: ["3시"], summary: "" }));
+		expect([plain?.forbid, plain?.everywhere]).toEqual([undefined, undefined]);
+		const { system } = buildDraftPrompt({ lines: ["상대: 몇 시?"], revise: { draft: "3시에 봐요", change: "더 짧게" } });
+		expect(system).toContain('"forbid"');
+		expect(system).toContain('"everywhere"');
+	});
+});

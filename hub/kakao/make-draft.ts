@@ -3,7 +3,7 @@
 // (hub/kakao/web.ts), which hands it its room and database helpers.
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { ownerLint } from "../reply-draft.ts";
+import { type Learned, learnedOf, ownerLint } from "../reply-draft.ts";
 import { writePrivate } from "./creds.ts";
 import { type KakaoDb, messages, ownTextCounts, ownTexts, roomHead } from "./db.ts";
 import { basisOf, buildDraftPrompt, chatLines, contextLines, estimateTokens, matchLines, ownPairs, ownSamples, parseDraftReply, registerOf, type StyleHint, sinceOwnLast } from "./draft.ts";
@@ -34,8 +34,8 @@ export type MakeDraftCtx = {
 	setAsk: (chatId: string, ask: StoredAsk | undefined) => void;
 	storedAsks: () => Record<string, unknown>;
 };
-/** `code`: the stored draft (absent when the call asked the owner a question instead). */
-export type Made = { ok: true; code?: string; lesson?: string } | { ok: false; error: string };
+/** `code`: the stored draft (absent when the call asked the owner a question instead). `learned`: what a revise teaches, absent when it taught nothing. */
+export type Made = { ok: true; code?: string; learned?: Learned } | { ok: false; error: string };
 
 /** What a KakaoTalk text fails before it is stored: empty, a blank left to fill, a phrase the room's profile forbids, or over 3000 characters. */
 export function kakaoLint(text: string, style: StyleHint | undefined): string[] {
@@ -49,7 +49,7 @@ export async function makeDraft(ctx: MakeDraftCtx, config: KakaoConfig, chatId: 
 const { deps, paths, now, getDb, allRooms, eligible, setAsk, storedAsks } = ctx;
 const noted = (what: string, e: unknown) => deps.log?.(`kakao draft ${chatId}: ${what} (${(e instanceof Error ? e.message : String(e)).slice(0, 200)})`);
 const summaryFile = (id: string) => join(paths.dataDir, "kakao", "summaries", `${id}.md`);
-const done = (error?: string, made?: { code: string; lesson?: string }): Made => {
+const done = (error?: string, made?: { code: string; learned?: Learned }): Made => {
 	deps.broadcast({ kind: "kakao_draft", chatId, ...(error ? { error } : {}) });
 	return error ? { ok: false, error } : made ? { ok: true, ...made } : { ok: true };
 };
@@ -120,12 +120,12 @@ const done = (error?: string, made?: { code: string; lesson?: string }): Made =>
 		} catch (e) {
 			return done(e instanceof Error ? e.message : DRAFT_FAILED);
 		}
-		// Learned only once the new draft is stored, and only what lasts: a one-off change (lesson "") teaches nothing.
-		const lesson = revise ? (parsed.lesson ?? revise.change).trim() : "";
-		if (lesson && opts.learn !== false) deps.onRevise?.(chatId, lesson);
+		const learned = revise ? learnedOf(parsed, revise.change) : undefined;
+		const taught = learned && (learned.line.trim() || learned.forbid.length) ? { ...learned, line: learned.line.trim() } : undefined;
+		if (taught && opts.learn !== false) deps.onRevise?.(chatId, taught);
 		if (parsed.summary) writePrivate(summaryFile(chatId), `${parsed.summary}\n`);
 		if (storedAsks()[chatId]) setAsk(chatId, undefined);
-		return done(undefined, { code: made.code, ...(lesson ? { lesson } : {}) });
+		return done(undefined, { code: made.code, ...(taught ? { learned: taught } : {}) });
 	} catch (e) {
 		noted("draft failed", e);
 		return done(DRAFT_FAILED);

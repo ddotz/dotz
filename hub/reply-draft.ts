@@ -308,7 +308,8 @@ const PLACEHOLDER = /\[(?:이름|성함|name|날짜|시간|회사|받는\s*분|�
 
 const REGEX_ENTRY = /^\/(.+)\/([a-z]*)$/;
 
-function forbiddenHit(body: string, entry: string): boolean {
+/** Whether `body` uses a forbidden entry: a `/regex/flags` entry is tested as a pattern (an invalid one never hits), any other as a case-insensitive substring. */
+export function forbiddenHit(body: string, entry: string): boolean {
 	const re = REGEX_ENTRY.exec(entry);
 	if (re) {
 		try {

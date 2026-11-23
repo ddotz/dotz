@@ -3,7 +3,7 @@
 import { useReplies } from "../reply-actions.ts";
 import { hostname } from "node:os";
 import { enableKakaoApp, ensureKakaoVoice } from "../../features/reply-drafts/lib/kakao-voice.ts";
-import { loadStyle } from "../../features/reply-drafts/lib/settings.ts";
+import { loadStyle, recordForbidden } from "../../features/reply-drafts/lib/settings.ts";
 import { cfg, DATA_DIR, log } from "../config.ts";
 import { broadcast, subscriberCount } from "../events.ts";
 import { resolveName } from "../machine-name.ts";
@@ -13,6 +13,7 @@ import { claimLease, postLease } from "../send-lease.ts";
 import { getSecret } from "./creds.ts";
 import { type KakaoDb, sqlcipherDb } from "./db.ts";
 import { callReplyModel } from "../reply-model.ts";
+import type { Learned } from "../reply-draft.ts";
 import { replyLearning } from "../reply-mail.ts";
 import { kakaoAdapter } from "./reply-adapter.ts";
 import { type DraftModel, type StyleHint, type VoiceSource } from "./draft.ts";
@@ -53,9 +54,16 @@ const learnVoice = async (src: VoiceSource) => {
 
 // A revise that was stored teaches its lesson (never the raw request, never before the new draft exists), then the profile may fold it in.
 const learning = replyLearning();
-const onRevise = (chatId: string, lesson: string) => {
-	const key = { app: "kakao", room: chatId };
-	void learning.record(key, lesson).then(() => learning.refine(key)).catch(e => log(`kakao lesson for ${chatId} not recorded: ${e instanceof Error ? e.message : String(e)}`));
+const onRevise = (chatId: string, learned: Learned) => {
+	const key = learned.everywhere ? { app: "install" } : { app: "kakao", room: chatId };
+	if (learned.forbid.length) {
+		try {
+			recordForbidden(key, learned.forbid);
+		} catch (e) {
+			log(`kakao ban for ${chatId} not recorded: ${e instanceof Error ? e.message : String(e)}`);
+		}
+	}
+	if (learned.line) void learning.record(key, learned.line).then(() => learning.refine(key)).catch(e => log(`kakao lesson for ${chatId} not recorded: ${e instanceof Error ? e.message : String(e)}`));
 };
 
 const machine = resolveName(cfg.web?.machine_name, hostname());

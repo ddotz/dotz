@@ -13,18 +13,20 @@ afterAll(() => rmSync(dir, { recursive: true, force: true }));
 const paths = kakaoPaths(dir, dir);
 const runner = async () => ({ code: 0, stdout: "", stderr: "" });
 let revised: { chatId: string; change: string; intent?: string }[] = [];
+let taught: { line: string; forbid: string[]; everywhere: boolean } = { line: "짧게 쓴다", forbid: [], everywhere: false };
 const kit = {
 	paths,
 	revise: async (chatId: string, r: { code: string; change: string; intent?: string }) => {
 		revised.push({ chatId, change: r.change, ...(r.intent ? { intent: r.intent } : {}) });
 		const d = await createDraft({ chatId, roomName: "Alex", text: "3시", basisLogId: "9", replaces: r.code }, { paths, runner });
-		return { ok: true as const, code: d.code, lesson: "짧게 쓴다" };
+		return { ok: true as const, code: d.code, learned: taught };
 	},
 	sendDeps: async () => ({ paths, runner }),
 };
 beforeEach(() => {
 	rmSync(join(dir, "kakao"), { recursive: true, force: true });
 	revised = [];
+	taught = { line: "짧게 쓴다", forbid: [], everywhere: false };
 });
 const draft = () => createDraft({ chatId: "1", roomName: "Alex", text: "내일 3시에 봐요", basisLogId: "9" }, { paths, runner });
 
@@ -79,6 +81,16 @@ test("revise returns the new code with what it replaced and the room's lesson; e
 	expect(await a.drop(next)).toEqual({ ok: true });
 	expect(await a.restore(next)).toEqual({ ok: true });
 	expect(readDrafts(paths).find(x => x.code === next)!.status).toBe("pending");
+});
+
+test("a revise that holds everywhere returns its lesson under the install key with the banned wordings; one that bans only a wording in the room keeps the room key", async () => {
+	const a = kakaoAdapter(kit);
+	const d = await draft();
+	taught = { line: "존댓말로 쓴다", forbid: ["편안한 하루 되세요"], everywhere: true };
+	expect(await a.revise(d.code, "편안한 하루 되세요는 비문이야, 항상 존댓말로")).toMatchObject({ ok: true, lesson: { key: { app: "install" }, line: "존댓말로 쓴다", forbid: ["편안한 하루 되세요"] } });
+	const room = await draft();
+	taught = { line: "", forbid: ["ㅋㅋㅋ"], everywhere: false };
+	expect(await a.revise(room.code, "ㅋㅋㅋ 쓰지 마")).toMatchObject({ ok: true, lesson: { key: { app: "kakao", room: "1" }, line: "", forbid: ["ㅋㅋㅋ"] } });
 });
 
 test("every send result reads as sent, surely not sent, may be in the room, or some parts in", () => {
