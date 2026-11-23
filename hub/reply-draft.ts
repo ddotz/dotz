@@ -457,18 +457,14 @@ export const generateReply = (item: ReplyItem, style: ReplyStyle, call: ModelCal
 // A chat message: the same single call may return an ask (the message needs the user's own decision) instead of a draft; with `item.choice` it always drafts.
 export const generateChatReply = (item: ReplyItem, style: ReplyStyle, call: ModelCall): Promise<ReplyResult | AskResult> => run(item, style, call, {});
 
-// What a revision teaches the tone profile: the model's lasting lesson, the change itself when the model left the field out, nothing ("") when the change
-// was only about that one draft.
-export const lessonOf = (r: { lesson?: string }, change: string): string => (r.lesson === undefined ? change : r.lesson);
-
-/** What a revision teaches, checked: `line` as `lessonOf`; `forbid` only wordings the user's own change text holds; `everywhere` only when something was learned. */
+/** What a revision teaches, checked: `line` is the model's lesson, the change itself when the model left it out, "" for a one-off; `forbid` only wordings the user's own change text holds; `everywhere` only when something was learned. */
 export type Learned = { line: string; forbid: string[]; everywhere: boolean };
 const BAN_CHARS = { min: 2, max: 40 };
 const BANS_MAX = 5;
 
 /** The lesson of a revision with the wordings it bans: the model's `forbid` entries that occur verbatim in `change` (whitespace and case aside), 2 to 40 characters, no `/regex/`, at most 5. */
 export function learnedOf(r: { lesson?: string; forbid?: string[]; everywhere?: boolean }, change: string): Learned {
-	const line = lessonOf(r, change);
+	const line = r.lesson === undefined ? change : r.lesson;
 	const said = change.replace(/\s+/g, " ").toLowerCase();
 	const forbid: string[] = [];
 	for (const entry of r.forbid ?? []) {

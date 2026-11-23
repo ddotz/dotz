@@ -8,7 +8,7 @@
 import { approvalHash, type SendJob, type SendResult } from "./approval-send.ts";
 import { DRAFT_HAND_EDIT } from "./draft-approval.ts";
 import { draftHead } from "./reply-chat.ts";
-import { policyOf, reasonOf } from "./reply-reasons.ts";
+import { lessonNote, policyOf, reasonOf } from "./reply-reasons.ts";
 import { sinceMidnight } from "./reply-route.ts";
 import type { DraftView, Lesson, OwnerAction, Part, Reason, ReasonCode, ReplyAdapter, ReplyItem, ReplyKind, SendState } from "./reply-types.ts";
 
@@ -38,7 +38,7 @@ export type ReplyDeps = {
 	/** A plain line from the owner in the card's conversation (나갔어요), no pick. */
 	recordText?: (conv: string, text: string) => void;
 	say?: (conv: string, ref: string, text: string) => void;
-	learning: { record: (key: Lesson["key"], line: string) => Promise<void>; refine: (key: Lesson["key"]) => Promise<void> };
+	learning: { record: (key: Lesson["key"], line: string) => Promise<void>; refine: (key: Lesson["key"]) => Promise<void>; forbid: (key: Lesson["key"], words: string[]) => Promise<void> };
 	/** `rewrite` and `replace` draw a card anew (every surface, Discord included) and store `hash`, the version it now shows. `repost` posts the open card
 	 * of `ref` again at the bottom of its conversation (the same notice; `text` and `hash` when given), its old post marked moved. */
 	cards: { open: () => OpenCard[]; replace: (oldRef: string, newRef: string, text: string, hash: string | undefined) => void; rewrite: (ref: string, text: string, hash: string | undefined) => void; repost: (ref: string, text: string | undefined, hash: string | undefined) => Promise<void>; close: (ref: string) => void;
@@ -82,14 +82,37 @@ function sendAction(input: ActInput): keyof typeof SEND_LABEL {
 	return input.asIs ? "send-as-is" : "send";
 }
 
-async function learn(deps: ReplyDeps, lesson: Lesson | undefined): Promise<void> {
-	if (!lesson?.line) return;
-	try {
-		await deps.learning.record(lesson.key, lesson.line);
-		await deps.learning.refine(lesson.key);
-	} catch (e) {
-		deps.log(`reply learning for ${lesson.key.app}${lesson.key.room ? `/${lesson.key.room}` : ""} failed: ${(e as Error).message}`);
+async function learn(deps: ReplyDeps, lesson: Lesson | undefined): Promise<{ said: string; refine: () => Promise<void> }> {
+	if (!lesson) return { said: "", refine: async () => undefined };
+	const where = `${lesson.key.app}${lesson.key.room ? `/${lesson.key.room}` : ""}`;
+	const words = lesson.forbid ?? [];
+	let line = false;
+	let banned = false;
+	if (lesson.line.trim()) {
+		try {
+			await deps.learning.record(lesson.key, lesson.line);
+			line = true;
+		} catch (e) {
+			deps.log(`reply learning for ${where} failed: ${(e as Error).message}`);
+		}
 	}
+	if (words.length) {
+		try {
+			await deps.learning.forbid(lesson.key, words);
+			banned = true;
+		} catch (e) {
+			deps.log(`reply forbidden wordings for ${where} failed: ${(e as Error).message}`);
+		}
+	}
+	const refine = async () => {
+		if (!line) return;
+		try {
+			await deps.learning.refine(lesson.key);
+		} catch (e) {
+			deps.log(`reply learning for ${where} failed: ${(e as Error).message}`);
+		}
+	};
+	return { said: lessonNote({ key: lesson.key, line: line ? lesson.line : "", forbid: banned ? words : [] }), refine };
 }
 
 /** The cards of `ref` show the version the store holds now, and keep its hash (a pick from one of them is checked against it). */
@@ -216,9 +239,9 @@ export function createReplyActions(deps: ReplyDeps) {
 		}
 		const moved = r.ref !== view.ref;
 		if (moved) revising.add(r.ref);
-		const next = await a.get(r.ref);
+		const [next, taught] = await Promise.all([a.get(r.ref), learn(deps, r.lesson)]);
 		try {
-			const text = await a.ask(r.ref);
+			const text = await a.ask(r.ref, taught.said ? `고친 초안이에요. ${taught.said}` : undefined);
 			if (text && !moved) deps.cards.rewrite(view.ref, text, next && approvalHash(next));
 			else if (text) deps.cards.replace(view.ref, r.ref, text, next && approvalHash(next));
 		} catch (e) {
@@ -231,7 +254,7 @@ export function createReplyActions(deps: ReplyDeps) {
 			if (moved) revising.delete(r.ref);
 		}
 		deps.emit({ kind: "reply", ref: view.ref, ...(moved ? { next: r.ref } : {}), ...(next ? { item: itemOf(next) } : {}) });
-		await learn(deps, r.lesson);
+		await taught.refine();
 	}
 
 	/** A draft that can still change: no revise replacing it, pending, with no send waiting, running or unsure. */

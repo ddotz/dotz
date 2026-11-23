@@ -87,8 +87,7 @@ export function commentAdapter(engine: Engine, mailAnswered: () => (thread: stri
 		revise: async (ref, change, part) => {
 			const r = await engine.revise(ref, change, part ?? "reply", false, { learn: false });
 			if (!r.ok) return { ok: false, reason: reason(r.reason, "revise_failed") };
-			const src = engine.store.config().sources[r.draft.source];
-			return { ok: true, ref: r.draft.code, replaces: ref, ...(r.lesson && src ? { lesson: { key: { app: src.key }, line: r.lesson } } : {}) };
+			return { ok: true, ref: r.draft.code, replaces: ref, ...(r.lesson ? { lesson: r.lesson } : {}) };
 		},
 		edit: async (ref, text, part, subject) => {
 			const r = engine.edit(ref, text, part ?? "reply", subject);

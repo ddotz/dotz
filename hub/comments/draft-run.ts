@@ -1,7 +1,8 @@
 // One model call for a comment's reply draft or its revision, and the stored draft: what the comment engine runs on request, by its
 // auto-draft rule and for a 고치기. Split out of createEngine (hub/comments/engine.ts), which hands it the store and its helpers.
 import { fileSizeText } from "../draft-approval.ts";
-import { generateReply, lessonOf, reviseReply, type ReplyItem, type ReplyStyle } from "../reply-draft.ts";
+import { editLesson, generateReply, learnedOf, reviseReply, type ReplyItem, type ReplyStyle } from "../reply-draft.ts";
+import type { Lesson } from "../reply-types.ts";
 import type { Comment, SourceConfig } from "./contract.ts";
 import type { DraftModel, EngineDeps, MailLink, MailView, Step } from "./engine.ts";
 import { EXAMPLES, mergePast, SEEDED_NOTE, similarPairs, withExamples } from "./past.ts";
@@ -18,6 +19,13 @@ const MAIL_MOVED_REASON = "그사이 이 카드의 메일이 바뀌었어요. �
 const CLIP = 240;
 const clip = (s: string, n = CLIP) => s.replace(/\s+/g, " ").trim().slice(0, n);
 const MAIL_REPEAT_MS = 14 * 24 * 3600_000;
+
+/** What a sent comment draft the owner edited teaches (design 3.4): his text against the model's, in the source's profile; nothing before it went out. */
+export function editedLesson(store: Store, draftCode: string): Lesson | undefined {
+	const d = store.drafts().find(x => x.code === draftCode);
+	const line = d?.status === "sent" && d.editedFrom !== undefined ? editLesson(d.editedFrom, d.text) : undefined;
+	return d && line ? { key: { app: d.source }, line } : undefined;
+}
 
 export function earlierMailTo({ store, mail, now, to, commentId, mailId }: { store: Store; mail: MailLink | undefined; now: number; to: string; commentId: string; mailId: string }): string | undefined {
 	const key = to.toLowerCase();
@@ -74,7 +82,7 @@ export type DraftRunCtx = {
 };
 
 export function createDraftRun({ deps, store, ownerOf, styleOf, contextOf, code, emit, mailView, mailPlanned, posting }: DraftRunCtx) {
-	return async function run(c: Comment, src: SourceConfig, previous?: Draft, change?: string, opts: { learn?: false } = {}): Promise<Step & { lesson?: string }> {
+	return async function run(c: Comment, src: SourceConfig, previous?: Draft, change?: string, opts: { learn?: false } = {}): Promise<Step & { lesson?: Lesson }> {
 		if (!deps.model) return { ok: false, reason: "초안 만들기를 쓸 수 없어요" };
 		const tokens = { in: 0, out: 0, reported: false, chars: 0, outChars: 0 };
 		const call = async (system: string, user: string): Promise<string> => {
@@ -125,8 +133,9 @@ export function createDraftRun({ deps, store, ownerOf, styleOf, contextOf, code,
 		store.putDraft(draft);
 		emit({ kind: "comment_draft", source: src.key, thread: c.thread });
 		// Learned only once the new draft is stored (design 3.1); `learn: false` hands the lesson to the caller (hub/reply-actions.ts) instead.
-		const lesson = previous && change !== undefined && r.action === "draft" ? lessonOf(r, change) : "";
-		if (lesson && opts.learn !== false) deps.learn?.(src, lesson);
+		const learnt = previous && change !== undefined && r.action === "draft" ? learnedOf(r, change) : undefined;
+		const lesson: Lesson | undefined = learnt && (learnt.line.trim() || learnt.forbid.length) ? { key: { app: learnt.everywhere ? "install" : src.key }, line: learnt.line, forbid: learnt.forbid } : undefined;
+		if (lesson && opts.learn !== false) deps.learn?.(lesson);
 		return { ok: true, draft, ...(lesson ? { lesson } : {}) };
 	};
 

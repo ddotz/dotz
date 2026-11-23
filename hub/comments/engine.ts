@@ -1,10 +1,11 @@
 // The comment engine: collect (script only, no model), draft (a model call only on request or per-source auto-draft), send (only through
 // the gate in contract.ts). Everything is injected (adapters, model, clock, tone, broadcast) so tests run without a network.
 import { editFollower } from "./edited.ts";
-import { editLesson, ownerLint, type ReplyStyle } from "../reply-draft.ts";
+import { ownerLint, type ReplyStyle } from "../reply-draft.ts";
+import type { Lesson } from "../reply-types.ts";
 import { absorbComments, mergeIgTwins } from "./absorb.ts";
 import { failAuto, leaveQueue } from "./auto-queue.ts";
-import { createDraftRun, earlierMailTo, MAIL_SAME_ADDRESS_NOTE, mailJson, POSTING_REASON, reviseMail, tokenStats } from "./draft-run.ts";
+import { createDraftRun, earlierMailTo, editedLesson, MAIL_SAME_ADDRESS_NOTE, mailJson, POSTING_REASON, reviseMail, tokenStats } from "./draft-run.ts";
 import { createSendRecovery } from "./recover.ts";
 import { replyPosted } from "./posted.ts";
 import { type Comment, type CommentAdapter, dispatchReply, type GateResult, isUntitled, type Post, ruleAllows, type SourceConfig, type SourceKind, threadKey, watches } from "./contract.ts";
@@ -57,7 +58,7 @@ export type EngineDeps = {
 	adapters: Partial<Record<SourceKind, CommentAdapter>>;
 	model?: DraftModel;
 	style?: (src: SourceConfig) => ReplyStyle;
-	learn?: (src: SourceConfig, change: string) => void;
+	learn?: (lesson: Lesson) => void;
 	broadcast?: (event: Record<string, unknown>) => void;
 	/** A reply was posted (owner's 보내기 or an owner-enabled rule): the app instance and the send record. hub/followup.ts wakes the bot from here. */
 	sent?: (app: string, reply: Reply) => void;
@@ -180,7 +181,11 @@ export function createEngine(deps: EngineDeps) {
 		emit({ kind: "comment_send", source: r.source, thread: r.thread, id: r.id, state: r.state, ...(r.reason ? { reason: r.reason } : {}) });
 		const src = store.config().sources[r.source];
 		// A reply that carries a mail wakes no 이어서 할 일 rule: the mail it would draft is already in the card.
-		if (r.state === "sent") replyPosted(deps, store, r, src && ownerOf(src));
+		if (r.state === "sent") {
+			replyPosted(deps, store, r, src && ownerOf(src));
+			const taught = learned(r.draft);
+			if (taught) deps.learn?.(taught);
+		}
 	} };
 
 	const ownerOf = (src: SourceConfig): string => deps.owner?.(src) ?? appOf(src);
@@ -626,7 +631,7 @@ export function createEngine(deps: EngineDeps) {
 
 	// `part` "mail" changes only the mail of the card (the reply stays, same code); "reply" (default) rewrites the reply and the mail stays attached,
 	// or with `noMail` is dropped once the new reply draft exists, so the card is the reply alone.
-	async function revise(draftCode: string, change: string, part: "reply" | "mail" = "reply", noMail = false, opts: { learn?: false } = {}): Promise<Step & { lesson?: string }> {
+	async function revise(draftCode: string, change: string, part: "reply" | "mail" = "reply", noMail = false, opts: { learn?: false } = {}): Promise<Step & { lesson?: Lesson }> {
 		const d = store.drafts().find(x => x.code === draftCode);
 		const c = d && find(d.commentId);
 		const src = d && sourceOf(d.source);
@@ -674,13 +679,7 @@ export function createEngine(deps: EngineDeps) {
 		paired(d.code);
 		return { ok: true };
 	}
-	// What a sent draft the owner edited teaches (design 3.4): his text against the model's, in the source's profile; nothing before it went out.
-	function learned(draftCode: string): { key: { app: string }; line: string } | undefined {
-		const d = store.drafts().find(x => x.code === draftCode);
-		if (d?.status !== "sent" || d.editedFrom === undefined) return undefined;
-		const line = editLesson(d.editedFrom, d.text);
-		return line ? { key: { app: d.source }, line } : undefined;
-	}
+	const learned = (draftCode: string): Lesson | undefined => editedLesson(store, draftCode);
 
 	function update(key: string, patch: { watch?: string[]; autoDraft?: boolean; autoSend?: SourceConfig["autoSend"]; autoMail?: boolean; mailApp?: string }): SourceConfig | undefined {
 		const src = sourceOf(key);

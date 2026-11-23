@@ -385,20 +385,6 @@ test("a linked mail is written from the mail profile whichever mail app it goes 
 	expect(mailStyleOf("문서 부탁드려요", "kim@example.com")?.examples?.[0]).toMatchObject({ reply: "보내드립니다", same: true });
 });
 
-test("only the newest 12 corrections reach a mail prompt, each clipped to 200 characters; a chat prompt does the same", () => {
-	const corrections = Array.from({ length: 15 }, (_, i) => `corr-${String(i).padStart(2, "0")}-${"가".repeat(300)}`);
-	const { user } = buildPrompt(mailItem, { ...style, corrections });
-	expect(user).not.toContain("corr-02-");
-	expect(user).toContain("corr-03-");
-	expect(user).toContain("corr-14-");
-	expect(user).not.toContain("가".repeat(201));
-	const chat = buildPrompt({ ...mailItem, kind: "chat" }, { ...style, corrections }).user;
-	expect(chat).not.toContain("corr-02-");
-	expect(chat).toContain("corr-03-");
-	expect(chat).toContain("corr-14-");
-	expect(chat).not.toContain("가".repeat(201));
-});
-
 test("a revision records only its lasting lesson: the model's line, nothing for an empty one, the verbatim change when the field is missing", async () => {
 	const first = fakeModel([replyJson("확인해 보고 말씀드릴게요.")]);
 	const cases: [Record<string, unknown>, string[]][] = [

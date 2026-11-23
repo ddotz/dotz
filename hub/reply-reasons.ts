@@ -1,7 +1,7 @@
 // Every reason a reply send or action can end with (the reply unification design, section 2): its class (surely not sent, may have gone
 // out, or not a send failure), its plain Korean and English text, what code may retry by itself (section 2.4) and the buttons the owner gets.
 // The text is the cause only; a card builds its line around it. Raw tool output never comes here: it goes to hub.log.
-import type { OwnerAction, Reason, ReasonCode } from "./reply-types.ts";
+import type { Lesson, OwnerAction, Reason, ReasonCode } from "./reply-types.ts";
 
 /** `no`: surely not sent. `maybe`: may have gone out (확인 필요; code never sends it again). `action`: an action was refused or a revise failed. */
 export type ReasonClass = "no" | "maybe" | "action";
@@ -105,4 +105,13 @@ export function reasonOf(code: ReasonCode, vars: Record<string, string | number>
 export function partialReason(p: { done: number; total: number; code: ReasonCode; vars?: Record<string, string | number> }, lang: "ko" | "en" = "ko"): Reason {
 	const head = lang === "ko" ? `${p.total}개 중 ${p.done}개만 보냈어요` : `Only ${p.done} of ${p.total} parts were sent`;
 	return { code: p.code, text: `${head}. ${reasonOf(p.code, p.vars, lang).text}` };
+}
+
+/** The Korean sentence that tells the owner what a revise stored in the tone profile ("" when it stored nothing): where it holds (every reply, this KakaoTalk room, this mailbox or this app), the lesson line and the banned wordings. */
+export function lessonNote(lesson: Pick<Lesson, "key" | "line" | "forbid">): string {
+	const where = lesson.key.app === "install" ? "모든 답장" : lesson.key.room === undefined ? "이 앱 답장" : lesson.key.app === "kakao" ? "이 대화방 답장" : "이 메일함 답장";
+	const line = [...lesson.line.replace(/\s+/g, " ").trim()];
+	const shown = line.length > 100 ? `${line.slice(0, 100).join("")}…` : line.join("");
+	const words = (lesson.forbid ?? []).map(w => `'${w}'`).join(", ");
+	return [...(shown ? [`앞으로 ${where}에 반영해요: ${shown}`] : []), ...(words ? [`앞으로 ${where}에서 쓰지 않을 표현: ${words}`] : [])].join(" · ");
 }

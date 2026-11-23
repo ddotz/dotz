@@ -9,24 +9,24 @@ import { withFileWords } from "../../../hub/auto-attach.ts";
 import { claimsAttachment, ownClaimText } from "../../../hub/attach-claim.ts";
 import { ATTACH_AS_IS_HINT, ATTACH_REFUSED, LINT_REFUSED, asksForFile, briefLines, draftApprovalBlock, draftVerdict, type DraftVerdict, SPENT_REFUSED, WAITING_REFUSED } from "../../../hub/draft-approval.ts";
 import type { ReplyCall } from "../../../hub/reply-model.ts";
-import { addressesOf, editLesson, fileNameKey, generateChatReply, lintReply, lessonOf, NO_RECIPIENT, ownerLint, RECIPIENT_FAILURE, reviseReply, SENT_CLAIM_FAILURE, withSenderAddress, type ModelCall, type Recipient, type ReplyItem, type ReplyKind, type ReplyStyle } from "../../../hub/reply-draft.ts";
+import { addressesOf, editLesson, fileNameKey, generateChatReply, learnedOf, lintReply, NO_RECIPIENT, ownerLint, RECIPIENT_FAILURE, reviseReply, SENT_CLAIM_FAILURE, withSenderAddress, type ModelCall, type Recipient, type ReplyItem, type ReplyKind, type ReplyStyle } from "../../../hub/reply-draft.ts";
 import { listLibrary, matchLibrary, MIN_SCORE, rankLibrary, type LibraryFile } from "./library.ts";
 import { basename } from "node:path";
 import { ruleFilePath } from "./rules.ts";
 import { canAttach, sendsThroughZele, sendWith, settleAccount, threadMoved, webmailSite, zeleAccountOf, type Sent, type SendOutcome } from "./senders.ts";
 import { carryStagedFiles, removeStagedFile, stagedFiles, stagedName, stageFiles, stageWanted, type StageOpts, type Want } from "./staged.ts";
-import { dataDir, loadSettings, loadStyle, paths, recordCorrection, toneFile, validApp, type ToneKey } from "./settings.ts";
+import { dataDir, INSTALL, loadSettings, loadStyle, paths, recordCorrection, recordForbidden, toneFile, validApp, type ToneKey } from "./settings.ts";
 import { banWarnings, boxById } from "./box.ts";
 import { maybeRefine } from "./persona.ts";
 import { addPair, styleFrom, styleWithExamples } from "./pairs.ts";
 import { addRevision, claimFile, getDraft, listDrafts, newId, patchDraft, type RevisionConflict, setStatus, type DraftRec } from "./store.ts";
 import { realRunner, type Runner } from "./tone.ts";
 import { mailHash, mailView, sendAccountOf, type MailOf } from "./view.ts";
-import { reasonOf } from "../../../hub/reply-reasons.ts";
+import { lessonNote, reasonOf } from "../../../hub/reply-reasons.ts";
 
 export { realRunner };
 // What hub/reply-mail.ts (the hub's single door into this feature) needs beside the flow itself.
-export { mailView, recordCorrection, sendAccountOf, webmailSite, type MailOf };
+export { mailView, recordCorrection, recordForbidden, sendAccountOf, webmailSite, type MailOf };
 
 // `analyze` = the model call of the identity sweep and its refinement (persona.ts); absent, no identity is analysed or refined.
 export type FlowDeps = { /** Chooses among tied library files by name (stageForReply); the default is one short model call. */ pick?: (names: string[]) => Promise<string[]>; call?: ModelCall; /** The model calls of one draft and its overall budget (draftTrace); buildDraft makes one when absent. */ trace?: DraftTrace; analyze?: ModelCall; run?: Runner; now?: () => Date; send?: (rec: DraftRec) => Promise<SendOutcome>; /** How library files are copied onto a draft (tests). */ stage?: StageOpts; /** Told where an approved send left the mail, right after the transport answered and before any bookkeeping write (bin/draft.ts prints its DOTZ_SEND line). */ onOutcome?: (o: Outcome) => void };
@@ -46,6 +46,29 @@ export async function refineAfterCorrection(key: ToneKey, deps: FlowDeps): Promi
 export async function recordLesson(key: ToneKey, line: string, deps: FlowDeps): Promise<void> {
 	recordCorrection(key, line, nowOf(deps));
 	await refineAfterCorrection(key, deps);
+}
+
+type Taught = { line: string; forbid: string[] };
+
+async function teach(key: ToneKey, lesson: Taught, deps: FlowDeps): Promise<Taught> {
+	const stored: Taught = { line: "", forbid: [] };
+	if (lesson.line.trim()) {
+		try {
+			await recordLesson(key, lesson.line, deps);
+			stored.line = lesson.line;
+		} catch (e) {
+			console.error(`reply draft: lesson of ${key.app} not recorded: ${(e as Error).message}`);
+		}
+	}
+	if (lesson.forbid.length) {
+		try {
+			recordForbidden(key, lesson.forbid);
+			stored.forbid = lesson.forbid;
+		} catch (e) {
+			console.error(`reply draft: forbidden wordings of ${key.app} not recorded: ${(e as Error).message}`);
+		}
+	}
+	return stored;
 }
 
 // The tone profile an item or draft belongs to: its room when it has one, else its own profile (a mail app instance's), else its app (mail unless the item says otherwise).
@@ -438,7 +461,7 @@ async function restageForRevision(rec: DraftRec, change: string, deps: FlowDeps,
 
 export type Step = { ok: boolean; text: string; /** The id of the draft a revision made. */ id?: string; /** The approved send itself failed (not the approval gate): the owner has to hear it. */ sendFailed?: true;
 	/** A send that did not go out: whether it surely did not or may have, and the reason code (absent on success, where the mail went out). */ sent?: Exclude<Sent, "yes">; code?: string; vars?: Record<string, string | number>;
-	/** A revision: the draft it replaced, and the lesson it recorded (none when the change was only about that draft). */ replaces?: string; lesson?: { key: ToneKey; line: string } };
+	/** A revision: the draft it replaced, and the lesson it recorded (none when the change was only about that draft). */ replaces?: string; lesson?: { key: ToneKey; line: string; forbid: string[] } };
 
 // The user picked 2) 고치기 (or the CLI is asked to): the draft is regenerated, and once that worked the lasting preference the change shows (the model's `lesson`;
 // the change itself when the model left it out; nothing when the change was only about this draft) is recorded in the tone profile of that draft (its room, else its app).
@@ -489,9 +512,12 @@ async function reviseClaimed(id: string, change: string, deps: FlowDeps, opts: {
 		return { ok: false, text: revisionRefused(id, conflict) };
 	}
 	// Learned only once the new draft is stored: a revise that failed teaches nothing.
-	const lesson = lessonOf(r, change);
-	if (lesson && opts.learn !== false) await recordLesson(toneKey(old), lesson, deps);
-	return { ok: true, text: askText(rec, [...r.warnings, ...banned, ...notStaged], "답장 초안을 고쳤어요"), id: rec.id, replaces: old.id, ...(lesson ? { lesson: { key: toneKey(old), line: lesson } } : {}) };
+	const learnt = learnedOf(r, change);
+	const lessonKey: ToneKey = learnt.everywhere ? { app: INSTALL } : toneKey(old);
+	const taught = learnt.line.trim() || learnt.forbid.length ? { key: lessonKey, line: learnt.line, forbid: learnt.forbid } : undefined;
+	const stored = taught && opts.learn !== false ? await teach(taught.key, taught, deps) : taught;
+	const said = taught && stored ? lessonNote({ key: taught.key, ...stored }) : "";
+	return { ok: true, text: askText(rec, [...r.warnings, ...banned, ...notStaged], said ? `답장 초안을 고쳤어요. ${said}` : "답장 초안을 고쳤어요"), id: rec.id, replaces: old.id, ...(taught ? { lesson: taught } : {}) };
 }
 
 export async function reviseDraft(id: string, change: string, deps: FlowDeps, opts: { learn?: false } = {}): Promise<Step> {

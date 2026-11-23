@@ -1,6 +1,6 @@
 // The comment adapter of the one reply flow (design 1.8 column 3) over a real engine with an injected platform, model and mail link.
 import { afterEach, beforeEach, expect, test } from "bun:test";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { CommentAdapter, RawComment, ReplyOutcome, SourceConfig } from "./contract.ts";
@@ -10,11 +10,15 @@ import { commentAdapter } from "./reply-adapter.ts";
 import { realMailLink } from "./mail-link.ts";
 import { approvalHash } from "../approval-send.ts";
 import { addDraft, getDraft, setStatus, type DraftRec } from "../../features/reply-drafts/lib/store.ts";
+import { HEADINGS, loadStyle, paths, profileBullets } from "../../features/reply-drafts/lib/settings.ts";
+import { generateReply } from "../reply-draft.ts";
+import { replyLearning } from "../reply-mail.ts";
+import type { Lesson } from "../reply-types.ts";
 
 const NOW = Date.parse("2026-11-13T00:00:00.000Z");
 const source: SourceConfig = { key: "youtube", kind: "youtube", label: "유튜브 댓글", watch: ["*"], autoDraft: false };
 const raw: RawComment = { native: "c1", thread: "p1", author: "팬", text: "다음 편 언제 올라와요?", postTitle: "Post one", at: NOW - 1000 };
-const reply = (body: string, lesson = "") => `\`\`\`json\n${JSON.stringify({ action: "draft", reason: "asks", to: "", body, questions: [], lesson })}\n\`\`\``;
+const reply = (body: string, lesson = "", extra: object = {}) => `\`\`\`json\n${JSON.stringify({ action: "draft", reason: "asks", to: "", body, questions: [], lesson, ...extra })}\n\`\`\``;
 let dir: string;
 const savedDir = process.env.DOTZ_DIR;
 beforeEach(() => {
@@ -27,7 +31,7 @@ afterEach(() => {
 	else process.env.DOTZ_DIR = savedDir;
 });
 
-function setup(o: { model?: string[]; learn?: string[]; files?: MailView["attachments"]; now?: number; mail?: MailLink; posts?: ReplyOutcome[]; answered?: { thread: string; at: number }[] } = {}) {
+function setup(o: { model?: string[]; learn?: string[]; taught?: Lesson[]; prompts?: string[]; tone?: true; files?: MailView["attachments"]; now?: number; mail?: MailLink; posts?: ReplyOutcome[]; answered?: { thread: string; at: number }[] } = {}) {
 	writeFileSync(join(dir, "config.json"), JSON.stringify({ enabled: true, sources: { youtube: source } }));
 	const posts = [...(o.posts ?? [])];
 	const platform: CommentAdapter = { kind: "youtube", list: async () => ({ comments: [raw], cursor: "1" }), reply: async () => posts.shift() ?? { ok: true, ref: "r1" }, posts: async () => [] };
@@ -35,7 +39,7 @@ function setup(o: { model?: string[]; learn?: string[]; files?: MailView["attach
 	const mail: MailLink = o.mail ?? { compose: async () => ({ ok: false, reason: "x" }), send: async () => ({ ok: true, text: "" }), drop: () => undefined, revise: async () => ({ ok: false, reason: "x" }), view: id => mails.get(id), edit: (id, text, subject) => (mails.set(id, { ...mails.get(id)!, body: text, ...(subject !== undefined ? { subject } : {}) }), { ok: true }) };
 	let n = 0;
 	const outs = o.model ?? [reply("이번 주말이에요!")];
-	const engine = createEngine({ dir, now: () => o.now ?? NOW, collector: "mac", adapters: { youtube: platform }, model: async () => ({ text: outs[Math.min(n++, outs.length - 1)]! }), mail, learn: (_s, line) => void o.learn?.push(line), style: () => ({ rules: [], corrections: [], forbidden: ["무조건"], samples: [] }), answeredMailThread: (thread, at) => void o.answered?.push({ thread, at }) });
+	const engine = createEngine({ dir, now: () => o.now ?? NOW, collector: "mac", adapters: { youtube: platform }, model: async (system, user) => (o.prompts?.push(`${system}\n${user}`), { text: outs[Math.min(n++, outs.length - 1)]! }), mail, learn: lesson => void (o.learn?.push(lesson.line), o.taught?.push(lesson)), style: o.tone ? src => loadStyle({ app: src.key }) : () => ({ rules: [], corrections: [], forbidden: ["무조건"], samples: [] }), answeredMailThread: (thread, at) => void o.answered?.push({ thread, at }) });
 	return { engine, a: commentAdapter(engine) };
 }
 async function drafted(engine: ReturnType<typeof createEngine>): Promise<string> {
@@ -258,4 +262,91 @@ test("CM-13 a pending comment draft says 메일로 이미 답했어요 once its 
 	expect((await a.list()).find(v => v.ref === code)?.answeredElsewhere).toEqual({ via: "mail" });
 	engine.store.setDraftStatus(code, "sent");
 	expect((await a.get(code))!.answeredElsewhere).toBeUndefined();
+});
+
+const BAN = "행복한 하루 되세요";
+const CHANGE = `마무리에 "${BAN}"는 쓰지 말고 짧게 끝내 줘`;
+const LESSON = "마무리 인사는 짧게 한다";
+
+async function store(l: Lesson | undefined): Promise<void> {
+	if (!l) throw new Error("no lesson");
+	const learning = replyLearning(() => ({}));
+	await learning.record(l.key, l.line);
+	await learning.forbid(l.key, l.forbid ?? []);
+}
+
+test("K1 a comment revise that quotes a wording leaves the ban and the lesson in the source's own profile, and the next draft's prompt carries both", async () => {
+	const prompts: string[] = [];
+	const { engine, a } = setup({ tone: true, prompts, model: [reply("이번 주말이에요!"), reply("토요일에 올라가요", LESSON, { forbid: [BAN], everywhere: false }), reply("토요일 저녁이에요")] });
+	const code = await drafted(engine);
+	const r = await a.revise(code, CHANGE);
+	expect(r).toMatchObject({ ok: true, lesson: { key: { app: "youtube" }, line: LESSON, forbid: [BAN] } });
+	await store(r.ok ? r.lesson : undefined);
+	expect(profileBullets({ app: "youtube" }, HEADINGS.forbidden)).toEqual([BAN]);
+	expect(profileBullets({ app: "youtube" }, HEADINGS.corrections).join("\n")).toContain(LESSON);
+	expect(profileBullets("install", HEADINGS.forbidden)).toEqual([]);
+	if (!r.ok) throw new Error("revise failed");
+	prompts.length = 0;
+	expect((await a.revise(r.ref, "더 짧게")).ok).toBe(true);
+	expect(prompts[0]).toContain(BAN);
+	expect(prompts[0]).toContain(LESSON);
+});
+
+test("K1 a comment revise the model says holds everywhere is stored in install.md and a draft of another app carries it", async () => {
+	const { engine, a } = setup({ tone: true, model: [reply("이번 주말이에요!"), reply("토요일에 올라가요", LESSON, { forbid: [BAN], everywhere: true })] });
+	const code = await drafted(engine);
+	const r = await a.revise(code, CHANGE);
+	expect(r).toMatchObject({ ok: true, lesson: { key: { app: "install" }, line: LESSON, forbid: [BAN] } });
+	await store(r.ok ? r.lesson : undefined);
+	expect(profileBullets("install", HEADINGS.forbidden)).toEqual([BAN]);
+	expect(profileBullets("install", HEADINGS.corrections).join("\n")).toContain(LESSON);
+	expect(profileBullets({ app: "youtube" }, HEADINGS.forbidden)).toEqual([]);
+	let seen = "";
+	await generateReply({ kind: "comment", app: "instagram", from: "팬", text: "언제 올라와요?", context: "" }, loadStyle({ app: "instagram" }), async (system, user) => ((seen = `${system}\n${user}`), reply("토요일이에요")));
+	expect(seen).toContain(BAN);
+	expect(seen).toContain(LESSON);
+});
+
+test("K3 a one-off comment change returns no lesson and writes no tone file; K4 a wording the change text does not hold is not a ban", async () => {
+	const taught: Lesson[] = [];
+	const { engine, a } = setup({ tone: true, taught, model: [reply("이번 주말이에요!"), reply("토요일이에요", "", { forbid: [], everywhere: true }), reply("토요일 밤이에요", "", { forbid: ["받은 댓글에 있던 말"] })] });
+	const code = await drafted(engine);
+	const one = await a.revise(code, "토요일로만");
+	expect(one.ok && one.lesson).toBeFalsy();
+	const next = one.ok ? await a.revise(one.ref, "밤으로만") : one;
+	expect(next.ok && next.lesson).toBeFalsy();
+	expect(taught).toEqual([]);
+	expect(existsSync(paths.toneDir())).toBe(false);
+});
+
+test("an edited comment reply teaches what he changed once it went up, not before and not when the post failed", async () => {
+	const taught: Lesson[] = [];
+	const failed = setup({ taught, posts: [{ ok: false, reason: "x", code: "rejected", sent: "no" }] });
+	const lost = await drafted(failed.engine);
+	expect(await failed.a.edit(lost, "토요일에 올릴게요 :)")).toEqual({ ok: true });
+	const bad = failed.engine.send(lost, { by: "owner" });
+	if (!bad.ok) throw new Error(bad.reason);
+	await bad.done;
+	expect(taught).toEqual([]);
+
+	const { engine, a } = setup({ taught });
+	const code = await drafted(engine);
+	expect(await a.edit(code, "토요일에 올릴게요 :)")).toEqual({ ok: true });
+	expect(taught).toEqual([]);
+	const r = engine.send(code, { by: "owner" });
+	if (!r.ok) throw new Error(r.reason);
+	await r.done;
+	expect(taught).toHaveLength(1);
+	expect(taught[0]).toMatchObject({ key: { app: "youtube" } });
+	expect(taught[0]!.line).toContain("토요일에 올릴게요");
+});
+
+test("a comment reply posted as the model wrote it teaches nothing", async () => {
+	const taught: Lesson[] = [];
+	const { engine } = setup({ taught });
+	const code = await drafted(engine);
+	const p = engine.send(code, { by: "owner" });
+	if (!p.ok) throw new Error(p.reason);
+	await p.done;
+	expect(taught).toEqual([]);
 });

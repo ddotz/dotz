@@ -49,7 +49,7 @@ function world(w: World) {
 		sender,
 		recordPick: () => undefined,
 		recordText: () => undefined,
-		learning: { record: async () => undefined, refine: async () => undefined },
+		learning: { record: async () => undefined, refine: async () => undefined, forbid: async () => undefined },
 		cards: { open: () => w.cards ?? [], convOf: () => undefined, replace: () => undefined, rewrite: () => undefined, repost: async () => undefined, close: () => undefined },
 		toBot: async () => undefined,
 		emit: () => undefined,
