@@ -631,9 +631,11 @@ export function compareBaseline(items: Item[], baseline: string[], ran: { screen
 }
 export const BASELINE_FILE = join(import.meta.dir, "layout-baseline.json");
 
+const FIXED_PAGE_CLOCK = Date.UTC(2026, 10, 9, 3);
+
 // The whole run: one server, one page per width, every screen visited in turn. A screen the page cannot show is listed in unreached, not skipped silently.
 export async function measureScreens(names: string[], widths: number[]) {
-	const server = startDemoServer();
+	const server = startDemoServer({ now: FIXED_PAGE_CLOCK });
 	const items: Item[] = [], unreached: { screen: string; width: number; reason: string }[] = [], perScreen: Record<string, number> = {};
 	try {
 		for (const width of widths) {
