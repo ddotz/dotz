@@ -8,6 +8,7 @@ const src = readFileSync(join(import.meta.dir, "..", "web", "js", "30-monitoring
 const chatSrc = readFileSync(join(import.meta.dir, "..", "web", "js", "30-monitor-chat.js"), "utf8");
 const mailSrc = readFileSync(join(import.meta.dir, "..", "web", "js", "30-monitoring-mail.js"), "utf8");
 const routeSrc = readFileSync(join(import.meta.dir, "..", "web", "js", "30-monitoring-route.js"), "utf8");
+const listSrc = readFileSync(join(import.meta.dir, "..", "web", "js", "30-monitoring-list.js"), "utf8");
 const between = (from: string, to: string) => {
 	const a = src.indexOf(from), b = src.indexOf(to, a);
 	if (a < 0 || b < 0) throw new Error(`markers not found: ${from} .. ${to}`);
@@ -40,9 +41,10 @@ function load(notices: N[], integrations: N[], monitors: N[]) {
 		// One mail app (web/js/30-mailboxes.js): nothing to fold in these stores.
 		mxMerge: () => {}, mxKeyOf: (k: string) => `i:${k}`, mxDec: (s: string) => s, mxRouteSet: () => {}, MX: { key: "" }, mxsName: () => "", screenHooks: () => {},
 		// No other computers here (web/js/34-peer-monitoring.js): the local list as is.
-		pqMerge: (items: N[]) => items, rqMonItem: () => null, pqLabel: () => null, pqSig: () => 0, pqOpen: () => {}, pqLink: (p: string) => p, kkItem: () => false, PQ: { of: new Map() },
+		pqMerge: (items: N[]) => items, rqMonItem: () => ({ key: "replies", group: "", name: "승인 대기", rq: true, notices: [], mails: [], unread: 0, hint: "대기 중인 항목 없음" }), pqLabel: () => null, pqSig: () => 0, pqOpen: () => {}, pqLink: (p: string) => p, kkItem: () => false, PQ: { of: new Map() },
+		lsJson: (_k: string, fb: unknown) => fb, lsSet: () => {}, APPS: { loaded: true }, appsMonItems: () => [],
 		asConv: (a: string) => `settings:${a}`, isSettingsT: (t: string) => t.startsWith("settings:"), monCtx: "", target: "",
-		intgWatch: () => {}, intgHas: (it: N, t: unknown) => ((it.conv as string[]) || []).some(p => String(t).startsWith(p)), INTG: { items: integrations, available: [] }, NT: { items: notices, loaded: true }, CONV: new Map(), MAILS: new Map(),
+		intgWatch: () => {}, intgHas: (it: N, t: unknown) => ((it.conv as string[]) || []).some(p => String(t).startsWith(p)), INTG: { items: integrations, available: [], loaded: true }, NT: { items: notices, loaded: true }, CONV: new Map(), MAILS: new Map(),
 		ntById: (id: string) => notices.find(n => n.id === id), ntAt: (n: N) => Date.parse(String(n.updated || n.ts)), ntPlain: (s: unknown) => String(s ?? ""),
 		KST: {}, kstDay: (t: string) => String(t).slice(0, 10), kstHM: (t: string) => String(t).slice(11, 16), dayLabel: () => "어제", ntTime: (t: string) => String(t).slice(11, 16),
 		convPreview: (s: string) => String(s ?? "").split("\n")[0], el, icon: (k: string) => el("i", { class: `ic ${k}` }),
@@ -52,7 +54,7 @@ function load(notices: N[], integrations: N[], monitors: N[]) {
 		api: async () => ({}), homeSoon: () => {}, titles: { monitoring: "모니터링" }, ntIsDec: (n: N) => n.kind === "decision" && !!n.decision, ntNeeds: () => false,
 		ntWithRepeats: (l: unknown[]) => l, noticeOpen: () => {}, asEntry: () => [], kkItem: () => false, KK: {}, asChipTexts: () => [], asAsk: () => {}, nwChangeNode: () => null, nwChangeLine: () => "", asAddHint: () => "", asAddSheet: () => {}, isSettingsT: () => false, settingsApp: () => "", isProjT: (t: string) => /^ch:\d+$/.test(t), S: null, projTargets: () => [], toast: () => {}, openTarget: () => {}, DRAFT_EDIT: "고치기",
 	};
-	const body = `${i18nPrelude()}${chatSrc}\n${mailSrc}\n${routeSrc}\n${between("const NM =", "async function loadMonitors")}\n${between("// Failed ones first", "// The owner is looking at an open item")}
+	const body = `${i18nPrelude()}${chatSrc}\n${mailSrc}\n${routeSrc}\n${listSrc}\n${between("const NM =", "async function loadMonitors")}\n${between("// Failed ones first", "// The owner is looking at an open item")}
 NM.items = MONS; NM.loaded = true;
 return { MON, monRoute, monItems, monSel, monRows, monTimeline, monHead, monKeyOf };`;
 	const api = new Function(...Object.keys(env), "MONS", body)(...Object.values(env), monitors);
@@ -102,16 +104,23 @@ describe("모니터링 lists only what a watch, a schedule or an integration pro
 	});
 });
 
-describe("모니터링 list order", () => {
-	test("감시 소식 first, then the 앱 group (the integrations, 앱 추가 last), then the 일반 모니터링 group (the monitors)", () => {
+describe("앱 tab list order (S8)", () => {
+	test("승인 대기 first, then the apps with 앱 관리 last and no header, then 모니터링: a failed watch as its row and 기타 감시 기록 for a report no row owns", () => {
 		const m = load(store(), integrations, monitors), rows = m.monRows(m.monItems(), null);
 		const order = rows.map(r => (r.header ? `#${r.header}` : String(r.k)));
-		expect(order).toEqual(["notice", "#앱", "i:mail", "i:kakao", "add-app", "#일반 모니터링", "m:node security updates"]);
+		expect(order).toEqual(["replies", "i:mail", "i:kakao", "add-app", "#모니터링", "m:node security updates", "notice"]);
+		expect(rows.find(r => !r.header && r.k === "notice")!.name).toBe("기타 감시 기록");
 	});
 
-	test("an integration without a kind is an app; 앱 추가 alone under the 앱 header when none is enabled", () => {
+	test("with no app and no report outside a row: 승인 대기, 앱 관리, then the 모니터링 header over its watch, and no 기타 감시 기록", () => {
 		const m = load([], [], monitors);
-		expect(m.monRows(m.monItems(), null).map(r => (r.header ? `#${r.header}` : String(r.k)))).toEqual(["notice", "#앱", "add-app", "#일반 모니터링", "m:node security updates"]);
+		expect(m.monRows(m.monItems(), null).map(r => (r.header ? `#${r.header}` : String(r.k)))).toEqual(["replies", "add-app", "#모니터링", "m:node security updates"]);
+	});
+
+	test("the 모니터링 header opens what the 감시 소식 row opened", () => {
+		const m = load([], [], monitors), head = m.monRows(m.monItems(), null).find(r => r.header === "모니터링")!;
+		head.open!();
+		expect(m.went).toEqual([["monitoring", "notice"]]);
 	});
 });
 

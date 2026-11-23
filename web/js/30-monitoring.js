@@ -10,7 +10,6 @@ const NM = { items: [], loaded: false, failed: false, at: 0 };
 // Opening the monitoring screen reads the list again only when the last read is older than the 60 s refresh below (watch notices refresh it sooner).
 const NM_FRESH_MS = 60000;
 const monitorsFresh = () => NM.loaded && Date.now() - NM.at < NM_FRESH_MS;
-// The list's groups after 감시 소식: app-type integrations (hub/integrations.ts kind "app"), then the plain monitors.
 const MON_GROUP = { app: TX("common.apps"), plain: TX("mon.group.plain") };
 // sel: the open item's key ("notice", "i:<integration>", "m:<monitor name>"); list: the list is on screen instead of the item, on every width. An app's item has the whole column; a monitor opens beside the list of monitors (monListRows).
 // filter: 전체 / 답 필요 / 실패 of the open item; open: the rows unfolded ("g:<source>", "n:<notice id>"); more: pages shown per list; grew: older reports were just added above.
@@ -163,8 +162,6 @@ const monLine = n => convPreview(n.text) || ntPlain(n.title);
 const monIcon = ic => el("span", { class: "cv-av nt", "aria-hidden": "true" }, icon(ic));
 const monUnread = list => list.reduce((c, n) => c + (n.read ? 0 : 1), 0);
 
-// What is watched, in list order: 감시 소식 (reports no row below owns), then the 앱 group (the integrations), then the 일반 모니터링 group (the monitors). Each item carries what
-// its row and its conversation show.
 const MON_FEED = TX("mon.feed");
 // An app's row says what waits on the owner, never the latest item's title. `needs` = {drafts, unread, sentToday, unreplied} from GET /api/integrations (hub/integrations.ts):
 // the line says what was sent today; the counts that wait on him (drafts, 미답장, 안 읽음) are the row's own, at its right (31-conversations.js), so the line never says them again (owner 2026-11-10).
@@ -180,8 +177,6 @@ function monNeedLine(n, down, when) {
 const monNamed = (list, w) => (list || []).some(x => x.endsWith("-") ? w.startsWith(x) : w === x);
 // `own` = the watch names the hub resolved for the app (names, instance filters and the site a login keeper keeps, hub/app-features.ts); the name rules answer for an older hub.
 const monOwner = (apps, m) => m.kind === "watch" && m.watch ? apps.find(a => Array.isArray(a.own) ? a.own.includes(m.watch) : monNamed(a.watches, m.watch) && !monNamed(a.watchesNot, m.watch)) || (m.scope === "app" ? apps.find(a => a.key === m.app) : undefined) : undefined;
-// The rest of the monitors by the hub's `scope` (hub/watch-scope.ts): a project's own go in a 프로젝트 · <이름> group between 앱 and 일반 모니터링, the gateway's own
-// housekeeping stays out of sight while it is fine (a failing or disconnected one is listed in 일반 모니터링). A hub that sends no `scope` lists every monitor as plain.
 const monProject = m => m.scope === "project" && m.project;
 const monGroupOf = m => (monProject(m) ? TX("mon.group.project", { name: m.project_title || TX("common.project") }) : MON_GROUP.plain);
 const monHidden = m => m.scope === "internal" && m.last_result !== "fail" && m.connection !== "disconnected";
@@ -214,14 +209,12 @@ function monItems() {
       msig: [m.last_run, m.next_run, m.last_result, m.paused, m.connection, running].join("|"),
       badge: (st => [st.text, st.tone])(monStatus(m)) });
   }
-  mxMerge(items); items.push(...monGrouped(proj, plain));
+  mxMerge(items); items.splice(0, items.length, ...appsOrder([...items, ...appsMonItems()]), ...monGrouped(proj, plain));
   // A report the hub marked as an app's (n.app, hub/notices.ts) is never here, even before the app list below has loaded.
   const feed = ntWithRepeats(NT.items).filter(n => n.kind === "watch" && !n.app && !shown.has(n.id)), need = feed.filter(monNeed).length;
   // The feed's row: what waits on the owner as its chip (counted apart from the plain reports, like an app row), the head line under the name (monFeedHead).
   items.unshift({ key: "notice", group: "", name: MON_FEED, ic: "list", notices: feed, mails: [], unread: monUnread(feed), need, chips: monNeedChips(need), ...monFeedHead(feed) });
-  // 답장 대기 (30-replies.js): every reply that waits on the owner, of every app and computer, right under 감시 소식.
-  const rq = rqMonItem();
-  if (rq) items.splice(1, 0, rq);
+  items.splice(1, 0, rqMonItem());
   return pqMerge(items);
 }
 // The 감시 소식 row's line never passes an old report off as the current state: the newest UNREAD report (another computer's with its name),
@@ -252,24 +245,6 @@ function monState(it) {
   if (it.rq) return it.unread ? TX("mon.state.rq", { n: it.unread }) : it.hint;
   if (it.key === "notice") return [it.need ? TX("mon.state.need", { n: it.need }) : "", it.unread ? TX("mon.state.unread", { n: it.unread }) : ""].filter(Boolean).join(" · ") || TX("mon.state.results");
   return it.app ? it.mxLine || it.hint : it.unread ? TX("mon.state.unread", { n: it.unread }) : TX("mon.state.connected");
-}
-
-/* ---- the list ---- */
-function monRows(items, sel) {
-  const rows = [];
-  let group = null, added = false;
-  // 앱 추가 is the last row of the 앱 group, right under the apps; with no app yet it is the group's only row.
-  const addRow = () => { added = true; rows.push({ k: "add-app", name: TX("mon.manage_apps"), av: monIcon("add"), hint: asAddHint(), sel: false, open: () => asAddSheet() }); };
-  for (const it of items) {
-    if (group === MON_GROUP.app && it.group !== group && !added) addRow();
-    if ((it.group === MON_GROUP.plain || it.proj) && !added) { rows.push({ header: MON_GROUP.app }); addRow(); }
-    if (it.group && it.group !== group) rows.push({ header: it.group });
-    group = it.group;
-    rows.push({ k: it.key, name: it.name, av: monIcon(it.ic), hint: it.hint, unread: it.unread, unreplied: it.unreplied | 0, badge: it.badge || null, chips: it.chips, sel: !!sel && it.key === sel.key && !MON.list, open: () => go("monitoring", monRowGo(it)) });
-  }
-  if (!added) { if (group !== MON_GROUP.app) rows.push({ header: MON_GROUP.app }); addRow(); }
-  if (!NM.loaded) rows.push({ k: "state", state: NM.failed ? "failed" : "loading", hint: NM.failed ? TX("mon.load_failed") : TX("common.loading") });
-  return rows;
 }
 
 /* ---- the conversation ---- */
@@ -684,7 +659,7 @@ function monOverview(it) {
   const sorted = list.slice().sort((a, b) => rank(a) - rank(b) || (Date.parse(a.mon.next_run) || Infinity) - (Date.parse(b.mon.next_run) || Infinity));
   // A monitor that is fine (정상, 꺼짐) folds under ONE summary row: how many, all normal, the latest check. One that is down, failed, late, changed or not run yet
   // always stands in its own row above it, so a card of fine monitors is one row (the same fold row as the project list's computer heads, 18-lanes.js pcHead).
-  const fine = i => { const k = monStatus(i.mon, now).key; return k === "ok" || k === "off" || k === "wait"; };
+  const fine = i => monCalm(i, now);
   const loud = sorted.filter(i => !fine(i)), calm = sorted.filter(fine), open = !!MON.ovOpen;
   const row = i => {
     const m = i.mon, peerBar = i.pc && !m.paused && !(Date.parse(m.next_run) > 0);   // a paused peer monitor draws the grey 꺼짐 bar like a local one
@@ -695,8 +670,7 @@ function monOverview(it) {
   };
   let head = null;
   if (calm.length) {
-    const off = calm.filter(i => i.mon.paused).length, latest = Math.max(0, ...calm.map(i => Date.parse(i.mon.last_run) || 0));
-    const sum = [off ? TX("mon.ov.sum_off", { n: calm.length - off, off }) : TX("mon.ov.all_ok"), latest ? TX("mon.ov.last", { t: monRel(now - latest, true) }) : ""].filter(Boolean).join(" · "), ht = loud.length ? TX("mon.ov.rest", { n: calm.length }) : TX("mon.ov.count", { n: calm.length });
+    const sum = monFineSum(calm, now), ht = loud.length ? TX("mon.ov.rest", { n: calm.length }) : TX("mon.ov.count", { n: calm.length });
     head = el("button", { class: "mon-ov-h", type: "button", "aria-expanded": String(open), "aria-label": `${ht} · ${sum} · ${open ? TX("mon.fold") : TX("mon.unfold")}`, onclick: () => { MON.ovOpen = !open; MON.sig = ""; monSchedule(); } },
       el("span", { class: "mon-ov-ht", text: ht }), el("span", { class: "mon-ov-sum", text: sum }), icon("chev", "chev"));
   }
@@ -854,17 +828,17 @@ function renderMonitoring() {
   const kakao = kkItem(sel);
   const cm = !kakao && sel ? cmAppOf(sel.key) : "";
   kkMode(kakao, kakao && !MON.list, kakao ? sel.pc : null);
-  cmMode(cm, !!cm && !MON.list, cm ? sel.pc : null);
+  cmMode(cm, !!cm && !MON.list, cm ? sel.pc : null); const web = appsMonPaint(sel);
   mailLand(sel); mxPaint(sel);
   asPaneSync();
   // The wide home (the list, nothing opened): the item list at the left and the 답장 대기 queue at the right (10-conversations.css, the frame); the address stays 모니터링.
-  const homeQ = MON.list && !narrowChat(), qSel = sel && sel.rq ? sel : homeQ ? rqMonItem(true) : null;
+  const homeQ = MON.list && !narrowChat(), qSel = sel && sel.rq ? sel : homeQ ? rqMonItem() : null;
   $("#v-monitoring").classList.toggle("mon-home", homeQ);
   $("#v-monitoring").classList.toggle("rq-on", !!qSel);   // the screen's own head is its tabs: no item head above them (the prototype's #queue)
   if (qSel) { rqScreen(qSel, box, tl); return; }   // 답장 대기: the queue, or the open row's card (30-replies.js)
   rqMarkClear();
   if (RQ.sheet && RQ.sheet.pane) RQ.sheet.close();   // the card of a queue row stays with the queue
-  if (!sel) { MON.sig = ""; MON.shown = ""; convTitle(); return; }
+  if (!sel || web) { MON.sig = ""; MON.shown = ""; convTitle(); return; }
   if (kakao || cm) {   // 30-kakao.js / 30-monitoring-comments.js draw this item's pane (rooms and chat); only the head is the usual one
     $("#v-monitoring").classList.toggle("app-two", !MON.list && !narrowChat() && !paneMonIn());   // wide: the app frame (20-monitoring.css), the rooms or posts are its panel; after mxPaint, which clears it for any item but a mailbox
     const head = JSON.stringify([sel.name, monState(sel), sel.unreplied | 0, sel.drafts | 0, !!AS.by[monSettingsApp(sel)], !!KK.open, pqSig(sel)]);
@@ -899,15 +873,14 @@ function renderMonitoring() {
   monSeen();
 }
 // The list column as the prototype draws it (#monitoring): section labels sit between one card per section, never inside one long card.
-// The first rows (감시 소식, 답장 대기) have no label and stand as their own cards; 앱 / 일반 모니터링 / 프로젝트·… each open a labeled card.
 function monSideNodes(rows) {
   const out = [];
   let list = null;
   for (const r of rows) {
-    if (r.header) { out.push(el("div", { class: "mon-sec", role: "presentation", text: r.header })); list = null; continue; }
+    if (r.header) { out.push(r.open ? monSecBtn(r) : el("div", { class: "mon-sec", role: "presentation", text: r.header })); list = null; continue; }
     if (r.state) { out.push(emptyNode(r.hint, r.state === "failed" ? () => loadMonitors() : null)); list = null; continue; }
-    if (!list) { list = el("div", { class: "mon-grp" }); out.push(list); }
-    list.append(convRow(r));
+    if (!list || r.split) { list = el("div", { class: "mon-grp" }); out.push(list); }
+    list.append(monListRow(r));
   }
   return out;
 }

@@ -180,12 +180,12 @@ describe("screens", () => {
 		expect(got.text).toBe(false);
 	});
 
-	test("app rows leave every count to the row's number (a line without a time is empty) and say 연결 끊김 for a disconnected app; 확인할 것 없어요 only for a connected one with nothing", async () => {
+	test("app rows leave every count to the row's number (a line without a time is empty) and say 연결 끊김 for a disconnected app; 확인할 것 없어요 only for a connected one with nothing; this computer's apps by name (S8), then the other computer's", async () => {
 		const v = await open();
 		await v.evaluate(`(go("monitoring"), 0)`);
 		await v.evaluate(until(`PQ.loaded && monItems().some(i => i.pc)`, "peer rows not merged"));
 		const rows = await q<[string, string][]>(v, `return monRows(monItems(), null).filter(r => r.k && /^(i:|p:.*[|]i:)/.test(r.k)).map(r => [r.k, r.hint]);`);
-		expect(rows).toEqual([["i:mail", ""], ["i:kakao", "연결 끊김"], ["i:youtube", "확인할 것 없어요"], ["p:http://peer-b.invalid|i:mail", "peer-b에서 돌아요"]]);
+		expect(rows).toEqual([["i:mail", ""], ["i:youtube", "확인할 것 없어요"], ["i:kakao", "연결 끊김"], ["p:http://peer-b.invalid|i:mail", "peer-b에서 돌아요"]]);
 	});
 
 	test("the 모니터링 nav badge is the one 답장 대기 number (rqWaiting); failing and disconnected rows are not in it but show as the small dot while it is 0", async () => {

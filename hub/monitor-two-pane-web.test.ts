@@ -66,7 +66,7 @@ test("wide: a monitor has 채팅's list and conversation columns, a row switches
 	await openRow(v, "m:가격 감시");
 	await waitFor(v, `target === "settings:w:price" && (${lastText} || "").includes("settings:w:price 대화예요")`);
 	await waitFor(v, `document.querySelector('#chat-convo .cv-row.on[data-k="m:가격 감시"]')`);
-	expect(await ev(v, `[...document.querySelectorAll("#chat-convo .cv-row[data-k]")].map(r => r.dataset.k)`)).toEqual(["m:배포 상태", "m:가격 감시", "m:주간 정리"]);
+	expect(await ev(v, `[...document.querySelectorAll("#chat-convo .cv-row[data-k]")].map(r => r.dataset.k)`)).toEqual(["replies", "m:가격 감시", "m:주간 정리", "m:배포 상태"]);
 	expect(await ev(v, box("#chat-convo"))).toEqual(chat.list);
 	expect(await ev(v, box("#timeline"))).toEqual(chat.conv);
 	await shot(v, "monitoring-1280.png");

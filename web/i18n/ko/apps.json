@@ -17,6 +17,8 @@
   "apps.list": "앱 목록",
   "apps.open_tab": "새 탭에서 열기",
   "apps.menu": "앱 메뉴",
+  "apps.pin": "상단 고정",
+  "apps.unpin": "고정 해제",
   "apps.title": "앱",
   "apps.subtitle": "내 앱을 한곳에서 열어요",
   "apps.pick": "앱을 골라 주세요.",

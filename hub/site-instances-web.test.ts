@@ -72,10 +72,10 @@ const boot = async (): Promise<View> => {
 const threads = (v: View) => q<string[]>(v, `return [...document.querySelectorAll("#cm-rooms .kk-row .cv-n")].map(n => n.textContent)`);
 
 describe("웹사이트 댓글 앱 인스턴스 at 390px", () => {
-	test("the app list shows each site as its own app and the default site app for the rest", async () => {
+	test("the app list shows each site as its own app and the default site app for the rest, in the S8 order (pinned, then waiting, then by name)", async () => {
 		const v = await boot();
 		const names = await q<string[]>(v, `return [...document.querySelectorAll("#mon-side .cv-row")].filter(r => /^i:site/.test(r.dataset.k)).map(r => r.dataset.k + "=" + r.querySelector(".cv-n").textContent)`);
-		expect(names).toEqual(["i:site=웹사이트 댓글", "i:site-mapia=마피아", "i:site-forum=커뮤니티"]);
+		expect(names).toEqual(["i:site-mapia=마피아", "i:site=웹사이트 댓글", "i:site-forum=커뮤니티"]);
 		await shot(v, "01-site-apps-list.png");
 	}, 20_000);
 

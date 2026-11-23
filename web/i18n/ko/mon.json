@@ -43,6 +43,7 @@
   "mon.run.unchecked": "아직 확인 전이에요",
   "mon.run.checked": "확인했어요",
   "mon.feed": "감시 소식",
+  "mon.other_log": "기타 감시 기록",
   "mon.group.project": "프로젝트 · {name}",
   "mon.need.sent_today": "오늘 자동 답장 {n}건 보냄",
   "mon.last_news": "마지막 소식 {t}",

@@ -432,6 +432,11 @@ function asConnNode(app) {
     el("span", { class: `as-dot ${off ? "fail" : it ? "ok" : "idle"}`, "aria-hidden": "true" }),
     el("span", { class: "as-b" }, el("span", { class: "as-n", text: off ? TX("appset.conn.off") : it ? TX("appset.conn.on") : TX("appset.conn.checking") }), sub ? el("span", { class: "as-h", text: sub }) : null));
 }
+function asPinRow(app) {
+  if (asOwn(app) || asConnItem(app).pc || !INTG.items.some(x => x.key === app)) return null;
+  const k = mxKeyOf(app);
+  return el("div", { class: "as-row", "data-setting": "pin" }, el("span", { class: "as-b" }, el("span", { class: "as-n", text: TX("appset.pin") })), kkSwitch(appPinned(k), TX("appset.pin"), "pin", on => { appPinSet(k, on); asPaint(); }));
+}
 // One settings row. A feature whose switch IS this setting is not drawn again under 기능; only its waiting count rides along here.
 function asSettingRow(app, f, feat, box) {
   const bound = feat && feat.features.find(x => x.setting === f.key), wait = bound && /승인 대기/.test(bound.status) ? bound.status : "";
@@ -459,7 +464,7 @@ function asPaint() {
   const feat = asOwn(app) ? null : AS.feat[app] || null;
   // The watch status rows and the connection row are drawn from the monitor and integration data, so their changes repaint too.
   const statSig = asOwn(app) ? [asMon(app)] : [monStatMons(app), (({ it }) => it ? [it.state, it.since, it.hint] : null)(asConnItem(app))];
-  const sig = JSON.stringify([app, fields.map(f => f.value), AS.busy[app], !!AS.rm[app], feat, statSig, AR.edit[app] ? AR.edit[app].id || "new" : null, cmSrcOf(app).length && cmWatchWord(cmSrcOf(app))]);
+  const sig = JSON.stringify([app, fields.map(f => f.value), AS.busy[app], !!AS.rm[app], feat, statSig, AR.edit[app] ? AR.edit[app].id || "new" : null, cmSrcOf(app).length && cmWatchWord(cmSrcOf(app)), appPinned(mxKeyOf(app))]);
   if (box.dataset.sig === sig) return;
   box.dataset.sig = sig;
   // Within a section: the switch that turns the feature on, then the feature rows, then the other values, then the lists, then what waits or runs.
@@ -482,6 +487,8 @@ function asPaint() {
   for (const m of statMons) if (!drawn.has(m)) put("watch", 5, asStatRow(app, m, null));
   const pick = asPickRow(app);
   if (pick) put("watch", 0, pick);
+  const pin = asPinRow(app);
+  if (pin) put("advanced", 1, pin);
   const mem = fields.filter(f => f.memory);
   if (mem.length) put("advanced", 6, el("div", { class: "as-row as-mem", "data-setting": "memory" },
     el("span", { class: "as-b" }, el("span", { class: "as-n", text: TX("appset.mem.title") }),

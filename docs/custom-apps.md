@@ -18,8 +18,9 @@ Reference implementation: `hub/user-apps.ts` (manifest), `hub/app-proxy.ts` (pro
   remove or break another install's `custom/apps/`.
 - **`GET /api/apps` beside `GET /api/integrations`, not inside it.** The monitoring list (`30-monitoring.js`) keeps reading
   `/api/integrations` unchanged. The 앱 tab reads `/api/apps`, which returns both the on 모니터링 apps (`source: "registry"`)
-  and the manifests (`source: "manifest"`), so one list shows every app. `window.appsMonItems()` is the one hook if
-  모니터링 ever wants the tool apps in its 앱 group (see the bottom of `web/js/30-apps.js`).
+  and the manifests (`source: "manifest"`), so one list shows every app. `appsMonItems()` (bottom of `web/js/30-apps.js`) hands the
+  tool apps to `monItems()`, so each is a row of the 앱 tab list. One web app frame is alive at a time: opening another web app
+  discards the first one's frame; returning from mail, KakaoTalk, comments or another tab keeps it.
 - **One origin: the gateway proxies, apps stay on loopback.** A user app's server binds `127.0.0.1`. The web app is reached
   through `tailscale serve` over HTTPS, so a frame pointing straight at `http://127.0.0.1:<port>` would be mixed content and
   a phone could not reach it at all. `/apps/<id>/` keeps one origin, one identity check, and no new port to expose. A

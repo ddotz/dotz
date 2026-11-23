@@ -1237,5 +1237,105 @@
 			"box": "all",
 			"scr": ""
 		}
+	},
+	{
+		"in": "\"x:docs\"",
+		"out": {
+			"hash": "#monitoring/x%3Adocs",
+			"want": [
+				"home",
+				"monitoring",
+				"monitoring/x%3Adocs"
+			],
+			"current": "monitoring",
+			"ctx": "",
+			"sel": "x:docs",
+			"list": false,
+			"filter": "all",
+			"miss": false,
+			"acct": "all",
+			"box": "all",
+			"scr": ""
+		}
+	},
+	{
+		"in": "\"x:nope\"",
+		"out": {
+			"hash": "#monitoring/x%3Anope",
+			"want": [
+				"home",
+				"monitoring",
+				"monitoring/x%3Anope"
+			],
+			"current": "monitoring",
+			"ctx": "",
+			"sel": "x:nope",
+			"list": true,
+			"filter": "all",
+			"miss": true,
+			"acct": "all",
+			"box": "all",
+			"scr": ""
+		}
+	},
+	{
+		"in": "\"#monitoring/x%3Adocs\"",
+		"out": {
+			"hash": "#monitoring/x%3Adocs",
+			"want": [
+				"home",
+				"monitoring",
+				"monitoring/x%3Adocs"
+			],
+			"current": "monitoring",
+			"ctx": "",
+			"sel": "x:docs",
+			"list": false,
+			"filter": "all",
+			"miss": false,
+			"acct": "all",
+			"box": "all",
+			"scr": ""
+		}
+	},
+	{
+		"in": "\"#monitoring/x:docs\"",
+		"out": {
+			"hash": "#monitoring/x%3Adocs",
+			"want": [
+				"home",
+				"monitoring",
+				"monitoring/x%3Adocs"
+			],
+			"current": "monitoring",
+			"ctx": "",
+			"sel": "x:docs",
+			"list": false,
+			"filter": "all",
+			"miss": false,
+			"acct": "all",
+			"box": "all",
+			"scr": ""
+		}
+	},
+	{
+		"in": "\"x:docs\" > \"i:mail\" > \"x:docs\"",
+		"out": {
+			"hash": "#monitoring/x%3Adocs",
+			"want": [
+				"home",
+				"monitoring",
+				"monitoring/x%3Adocs"
+			],
+			"current": "monitoring",
+			"ctx": "",
+			"sel": "x:docs",
+			"list": false,
+			"filter": "all",
+			"miss": false,
+			"acct": "all",
+			"box": "all",
+			"scr": ""
+		}
 	}
 ]

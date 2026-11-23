@@ -23,14 +23,14 @@ afterAll(() => hub.stop());
 const until = (cond: string, what: string) => `new Promise((res, rej) => { const t0 = Date.now(); const tick = () => { let ok = false; try { ok = (${cond}); } catch {} if (ok) res(true); else if (Date.now() - t0 > 10000) rej(new Error(${JSON.stringify(what)})); else requestAnimationFrame(tick); }; tick(); })`;
 
 for (const width of [1440, 390]) {
-	test(`app rows at ${width}px: the action line and the waiting badge, no item title`, async () => {
+	test(`app rows at ${width}px: the action line and the waiting badge, no item title; waiting apps first, then by name (S8)`, async () => {
 		const v = await hub.view({ width, height: 900 });
 		await v.navigate(`${hub.origin}/`);
 		await v.evaluate(`(localStorage.setItem("dotz-theme", "light"), true)`);
 		await v.navigate(`${hub.origin}/?light#monitoring`);
 		await v.evaluate(until(`current === "monitoring" && INTG.items.length === 3 && CV.loaded && document.querySelectorAll("#mon-side .cv-row, #mon-list .cv-row").length >= 3`, "rows not drawn"));
 		const got = JSON.parse((await v.evaluate(`JSON.stringify(monRows(monItems(), null).filter(r => r.k && r.k.startsWith("i:")).map(r => [r.k, r.hint, r.unread]))`)) as string) as [string, string, number][];
-		expect(got.map(([k, , unread]) => [k, unread])).toEqual([["i:mail", 2], ["i:kakao", 0], ["i:youtube", 2]]);
+		expect(got.map(([k, , unread]) => [k, unread])).toEqual([["i:mail", 2], ["i:youtube", 2], ["i:kakao", 0]]);
 		// the line carries the counts of `needs` other than the row's own unread count (2 drafts, 4 sent for mail), never the latest item's title
 		expect(got[0]![1]).toBe("오늘 자동 답장 4건 보냄");
 		expect(got.every(([, hint]) => !hint.includes("안 읽음"))).toBe(true);

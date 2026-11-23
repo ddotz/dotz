@@ -101,6 +101,7 @@
   "appset.sec.draft": "자동 초안과 승인",
   "appset.sec.watch": "감시",
   "appset.sec.more": "기타 기능",
+  "appset.pin": "목록 맨 위에 고정",
   "appset.sec.advanced": "고급",
   "appset.conn.since": "{at}부터 연결이 끊겼어요",
   "appset.conn.relogin": "다시 로그인해 주세요",

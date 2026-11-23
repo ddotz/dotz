@@ -4,7 +4,6 @@
 // and the others' snapshots): a waiting or failed item is its card (rqItemCard) right in the list, acted on with raAct (another computer's through its own
 // queue); a sent one (today) is a row that opens the same card in ONE sheet. The stop reason of a failed row is the send's own reason, never invented.
 // rqWaiting() (답 필요 + 실패) is the ONE number: #nav-mon, the tab counts, the list row and 홈 read it.
-// Reached from 홈 답장 대기, the app rows' 답장 대기 button, the chat's 답장 초안 line and the list row itself; the row shows only while something waits (or it is open).
 const RQ = { loaded: false, app: "", tab: "all", cur: "", sheet: null, shSig: "", rows: null, top: null, mark: "", err: "", t: 0, mid: 0, lim: {}, reset: false };
 const RQ_KEY = "replies";
 
@@ -40,15 +39,13 @@ function rqItemRow(i) {
 const rqWaiting = () => rqRows().filter(r => r.state !== "sent").length;
 const rqAskCount = () => rqRows().filter(r => r.state === "ask").length;
 
-// The 모니터링 list row (monItems, 30-monitoring.js): under 감시 소식, only while something waits or the queue is open.
-function rqMonItem(home) {   // home: the wide home shows the queue also while nothing waits
-  const rows = rqRows().filter(r => r.state !== "sent"), n = rows.length;
-  if (!n && MON.sel !== RQ_KEY && !home) return null;
+function rqMonItem() {
+  const all = rqRows(), rows = all.filter(r => r.state !== "sent"), n = rows.length, sent = all.length - n;
   // the line under the name is the home row's (08-home.js homeRepliesRow): the count per source, the total at the row's right
   const by = new Map(), at = Math.max(0, ...rows.map(r => r.at || 0));
   for (const r of rows) { const k = r.app || TX("home.replies.other"); by.set(k, (by.get(k) || 0) + 1); }
   return { key: RQ_KEY, group: "", name: TX("triage.rq.name"), ic: "send", notices: [], mails: [], unread: n, rq: true,
-    hint: n ? countsLine(by) : TX("triage.empty.all"), at: at ? new Date(at).toISOString() : "" };
+    hint: n ? countsLine(by) : sent ? TX("triage.rq.sent_today", { n: sent }) : TX("triage.rq.none"), at: at ? new Date(at).toISOString() : "" };
 }
 // Opens the queue, filtered to one app of one computer when given (an app's own 답장 대기 button).
 function rqOpen(inst, pc) { RQ.app = inst ? rqFilterKey(pc || null, inst) : ""; monSigReset(); go("monitoring", RQ_KEY); }

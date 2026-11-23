@@ -116,6 +116,7 @@
   "appset.sec.draft": "Auto drafts and approval",
   "appset.sec.watch": "Watches",
   "appset.sec.more": "Other features",
+  "appset.pin": "Pin to top of list",
   "appset.sec.advanced": "Advanced",
   "appset.conn.since": "Disconnected since {at}",
   "appset.conn.relogin": "Sign in again",

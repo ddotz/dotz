@@ -29,6 +29,8 @@ const hub = fakeHub({
 		if (p === "/api/monitors") return json({ items: [{ name: "서버 디스크", watch: "disk", kind: "watch", every: "1h" }] });
 		if (p === "/api/integrations") return json({ items: [mail("mail"), mail("mail-2"), { key: "kakao", app: "kakao", label: "카카오톡", icon: "chat", kind: "app", conv: [], state: "connected", notices: [] }], available: [] });
 		if (p === "/api/conversations") return json({ items: [["p-1", "문서 부탁", "b-score"], ["w-1", "업무 보고", "b-work"]].map(([k, s, b]) => ({ target: `mail:${k}`, unread: 1, read: null, mail: card(s!, b!), last: { ts: at, text: s, from: "bot" } })) });
+		if (p === "/api/apps") return json({ items: [{ id: "docs", label: "문서", icon: "file", kind: "tool", source: "manifest", status: "running", web: { href: "/apps/docs/", url: "http://127.0.0.1:4500", path: "/", mode: "rewrite" } }], errors: [] });
+		if (p.startsWith("/apps/")) return new Response("<!doctype html><title>app</title>", { headers: { "Content-Type": "text/html; charset=utf-8" } });
 		return undefined;
 	},
 });
@@ -52,6 +54,7 @@ const CASES: Step[][] = [
 	["#monitoring/i%3Amail/mail/b-score"], ["#monitoring/i%3Amail/mail/b-score/set"], ["#monitoring/i%3Amail/mail/base/set"], ["#monitoring/i%3Amail/mail/all/new"],
 	["#monitoring/i%3Amail/all/all/new"], ["#monitoring/i%3Amail/mail-2/b-work"], ["#monitoring/i%3Amail-2"], [`#monitoring/i%3Amail/all/${n2}`], [`#monitoring/i%3Amail/mail/${n2}`],
 	["#monitoring/c:mail%3Ap-1"], ["#monitoring/c:mail%3Afx-1"], ["#monitoring/c%3Abogus"], ["#monitoring/m%3A%EC%84%9C%EB%B2%84%20%EB%94%94%EC%8A%A4%ED%81%AC"],
+	["x:docs"], ["x:nope"], ["#monitoring/x%3Adocs"], ["#monitoring/x:docs"], ["x:docs", "i:mail", "x:docs"],
 ];
 const label = (c: Step[]) => c.map(s => (s === null ? "(none)" : JSON.stringify(s))).join(" > ");
 // What a route leaves, read in the same task as the go() that made it: the wide layout moves the history in place, so the address is final here.
@@ -65,7 +68,7 @@ let v: View;
 async function fresh(v: View, i: number) {
 	await run(v, `localStorage.clear(); sessionStorage.clear()`).catch(() => undefined);
 	await v.navigate(`${hub.origin}/?case=${i}`);
-	await waitFor(v, `NT.loaded && NM.loaded && INTG.items.length === 3 && CONV.has("mail:p-1")`);
+	await waitFor(v, `NT.loaded && NM.loaded && APPS.loaded && INTG.items.length === 3 && CONV.has("mail:p-1")`);
 	await run(v, `go("monitoring")`);
 	await waitFor(v, `MX.key === "i:mail" && MX.accts.size === 2 && document.querySelector('#mon-side .cv-row[data-k="i:mail"]')`);
 }

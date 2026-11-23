@@ -221,9 +221,33 @@ describe("이 기기에서 쓰기, 제거 and 앱 추가 at phone width (390x844
 		expect(await q(v, `const kids = [...document.querySelector("#app-sw").children]; return { first: kids[0].className, pairs: kids.slice(1).every((e, i) => e.classList.contains(i % 2 ? "list" : "sec")), secs: kids.filter(e => e.classList.contains("sec")).length, back: !!document.querySelector(".as-screen .as-back") }`)).toEqual({ first: "list", pairs: true, secs: 3, back: true });
 		// 앱 제거 is reachable by scrolling, and nothing runs past the screen's width
 		expect(await q(v, `const sc = document.querySelector(".as-screen .fs-body"); sc.scrollTop = sc.scrollHeight; const r = document.querySelector('#app-sw [data-as-rm="ask"]').getBoundingClientRect(), s = sc.getBoundingClientRect(); return { reach: r.top >= s.top && r.bottom <= s.bottom + 1, wide: sc.scrollWidth > sc.clientWidth }`)).toEqual({ reach: true, wide: false });
-		expect(await q(v, `return [...document.querySelectorAll("#app-sw [data-sec='draft'] ~ .list [data-setting]")].map(e => e.dataset.setting)`)).toEqual(["auto_draft", "to_only", "unanswered_days", "skip_senders", "only_senders", "draft_rules", "draft_default", "use_here", "label", "delete_original", "reply_model", "conv_model", "memory"]);
+		expect(await q(v, `return [...document.querySelectorAll("#app-sw [data-sec='draft'] ~ .list [data-setting]")].map(e => e.dataset.setting)`)).toEqual(["auto_draft", "to_only", "unanswered_days", "skip_senders", "only_senders", "draft_rules", "draft_default", "use_here", "label", "delete_original", "pin", "reply_model", "conv_model", "memory"]);
 		await shot(v, "05-phone-switch-and-remove.png");
 		await closeScreen(v);
+	});
+
+	test("목록 맨 위에 고정 (S8) puts the app first in the app list, keeps it there over a reload, and off puts it back by name", async () => {
+		const appKeys = () => q<string[]>(v, `return monRows(monItems(), null).filter(r => !r.header && /^i:/.test(r.k)).map(r => r.k)`);
+		const pinSwitch = async (want: string) => {
+			await run(v, `go("monitoring", "c:settings:kakao")`);
+			await waitFor(v, `target === "settings:kakao"`);
+			await openScreen(v, "kakao");
+			await waitFor(v, `document.querySelector('#app-sw [data-k="pin"]')`);
+			await run(v, `document.querySelector('#app-sw [data-k="pin"]').click()`);
+			await waitFor(v, `document.querySelector('#app-sw [data-k="pin"]').getAttribute("aria-checked") === ${JSON.stringify(want)}`);
+			await closeScreen(v);
+		};
+		await boot(v, "list");
+		await run(v, `localStorage.removeItem("dotz-app-pins")`);
+		await waitFor(v, `INTG.loaded && monItems().some(i => i.key === "i:kakao")`);
+		expect(await appKeys()).toEqual(["i:mail", "i:youtube", "i:kakao"]);
+		await pinSwitch("true");
+		expect(await appKeys()).toEqual(["i:kakao", "i:mail", "i:youtube"]);
+		await boot(v, "list");
+		await waitFor(v, `INTG.loaded && monItems().some(i => i.key === "i:kakao")`);
+		expect(await appKeys()).toEqual(["i:kakao", "i:mail", "i:youtube"]);
+		await pinSwitch("false");
+		expect(await appKeys()).toEqual(["i:mail", "i:youtube", "i:kakao"]);
 	});
 
 	test("제거 shows plainly what goes, with the data kept by default, before anything is removed", async () => {
@@ -264,13 +288,12 @@ describe("이 기기에서 쓰기, 제거 and 앱 추가 at phone width (390x844
 	// 새로 추가 asks one plain question; the app templates stay in docs/app-templates for the bot to read when the owner names an app (owner 2026-10-26).
 	const NEW_DRAFT = "연결할 앱: ";
 
-	test("앱 추가 is the last row of the 앱 group, right under the apps", async () => {
+	test("앱 관리 (S8) is the last row of the app block, right under the apps, with no 앱 header and 모니터링 after it", async () => {
 		await run(v, `go("monitoring")`);
 		await waitFor(v, `document.querySelector('#mon-side [data-k="add-app"]')`);
 		expect(await q(v, `return document.querySelector('#mon-side [data-k="i:kakao"]')`)).toBe(null);
 		const keys = await q<string[]>(v, `return monRows(monItems(), null).map(r => r.header ? "#" + r.header : r.k)`);
-		expect(keys.slice(-3)).toEqual(["i:mail", "i:youtube", "add-app"]);
-		expect(keys.indexOf("#앱")).toBeLessThan(keys.indexOf("add-app"));
+		expect(keys.slice(0, keys.indexOf("#모니터링"))).toEqual(["replies", "i:mail", "i:youtube", "add-app"]);
 		await shot(v, "07-phone-add-app-row.png");
 	});
 

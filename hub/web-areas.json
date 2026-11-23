@@ -75,6 +75,7 @@
   "30-monitor-chat.js": "monitoring",
   "30-monitoring-comments-dm.js": "comments",
   "30-monitoring-comments.js": "comments",
+  "30-monitoring-list.js": "monitoring",
   "30-monitoring-mail.js": "mail",
   "30-monitoring-route.js": "monitoring",
   "30-monitoring.js": "monitoring",

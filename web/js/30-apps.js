@@ -3,7 +3,6 @@
 // "running"|"unreachable"|"unknown"|"off", reason?, off?, web?: {href, url, path, mode}, health, watches, settings, start?}],
 // errors: [{id, dir, reason}]}. A tool app's own page is served by the gateway at /apps/<id>/ (hub/app-proxy.ts) and shown in
 // the frame under the standard header: back, name, status, 새 탭, ⋯ (설정 / 끄기 / 제거). The rows are the 모니터링 list's rows.
-// window.appsMonItems() lets 30-monitoring.js (not ours) add the tool apps to its 앱 group; nothing here edits that file.
 const APPS = { items: [], errors: [], loaded: false, failed: false, sel: "", list: true, sig: "", timer: 0 };
 const APP_STATUS = { running: [TX("apps.status.running"), "ok"], unreachable: [TX("apps.status.unreachable"), "err"], unknown: [TX("apps.status.unknown"), ""], off: [TX("apps.status.off"), ""] };
 const appsNarrow = () => narrowChat();
@@ -20,7 +19,7 @@ async function loadApps() {
     APPS.loaded = true; APPS.failed = false;
   } catch { APPS.failed = !APPS.loaded; }
   appsLoadIcons();
-  appsSchedule();
+  appsSchedule(); monDirty();
 }
 // An app's icon: a name the icon set does not know (an app that sent none) takes the app list's file icon, never an empty box.
 const appsAv = ic => el("span", { class: "cv-av app-av", "aria-hidden": "true" }, icon(ICONS[ic] ? ic : "file"));
@@ -80,13 +79,13 @@ function appsOpen(tgt) {
   if (appsNarrow() && !APPS.list) $("#apps-pane").scrollTop = 0;
 }
 
-function appsHeader(a) {
+function appsHeader(a, inMon) {
   const st = a.off ? APP_STATUS.off : APP_STATUS[a.status] || APP_STATUS.unknown;
   const hint = appsTool(a) && !a.off && a.status !== "unreachable" ? pkHint() : null;   // a phone: a line under the status, the title keeps its width
   return el("header", { class: "apps-hd" },
-    appsNarrow() ? el("button", { class: "ib", type: "button", "aria-label": TX("apps.list"), title: TX("apps.list"), onclick: () => go("apps") }, icon("back")) : null,
-    appsAv(a.icon),
-    el("div", { class: "apps-hb" }, el("h2", { class: "apps-n", text: a.label }), el("p", { class: "apps-p" }, st[0], a.reason && !a.off ? ` · ${a.reason}` : ""), appsNarrow() ? hint : null),
+    appsNarrow() && !inMon ? el("button", { class: "ib", type: "button", "aria-label": TX("apps.list"), title: TX("apps.list"), onclick: () => go("apps") }, icon("back")) : null,
+    inMon && appsNarrow() ? null : appsAv(a.icon),
+    el("div", { class: "apps-hb" }, inMon && appsNarrow() ? null : el("h2", { class: "apps-n", text: a.label }), el("p", { class: "apps-p" }, st[0], a.reason && !a.off ? ` · ${a.reason}` : ""), appsNarrow() ? hint : null),
     appsNarrow() ? null : hint,
     appsTool(a) && !a.off ? el("a", { class: "ib", href: a.web.href, target: "_blank", rel: "noopener", "aria-label": TX("apps.open_tab"), title: TX("apps.open_tab") }, icon("open")) : null,
     el("button", { class: "ib", type: "button", "aria-label": TX("apps.menu"), title: TX("apps.menu"), "aria-haspopup": "listbox", "aria-expanded": "false", onclick: ev => appsMenu(ev.currentTarget, a) }, icon("more")));
@@ -102,9 +101,9 @@ function appsSettings(a) {
   dialog({ title: TX("apps.set.title", { label: a.label }), body, mid: true });
 }
 function appsMenu(anchor, a) {
-  const own = a.source === "manifest";
-  const items = [{ value: "settings", label: TX("common.settings") }, ...(own ? [{ value: "off", label: a.off ? TX("apps.on") : TX("apps.off") }] : []), ...(own ? [{ value: "remove", label: TX("apps.remove"), danger: true }] : [])];
-  showMenu(anchor, items, { onPick: v => { if (v === "settings") appsSettings(a); else if (v === "off") appsToggle(a); else if (v === "remove") appsRemove(a); } });
+  const own = a.source === "manifest", pin = `x:${a.id}`;
+  const items = [{ value: "settings", label: TX("common.settings") }, ...(appsTool(a) ? [{ value: "pin", label: appPinned(pin) ? TX("apps.unpin") : TX("apps.pin") }] : []), ...(own ? [{ value: "off", label: a.off ? TX("apps.on") : TX("apps.off") }] : []), ...(own ? [{ value: "remove", label: TX("apps.remove"), danger: true }] : [])];
+  showMenu(anchor, items, { onPick: v => { if (v === "settings") appsSettings(a); else if (v === "pin") appPinSet(pin, !appPinned(pin)); else if (v === "off") appsToggle(a); else if (v === "remove") appsRemove(a); } });
 }
 async function appsToggle(a) {
   try {
@@ -120,7 +119,8 @@ async function appsRemove(a) {
     await api(`/api/apps/${enc(a.id)}`, "DELETE");
     APPS.sel = ""; APPS.list = true;
     toast(TX("apps.toast.removed", { label: a.label }));
-    navSync("apps", "apps");
+    appPinSet(`x:${a.id}`, false);
+    if (current === "monitoring") { monSelSet(""); go("monitoring"); } else navSync("apps", "apps");
     await loadApps();
   } catch (e) { toast(e.message, true); }
 }
@@ -147,7 +147,7 @@ function appsFrameCheck(frame, a) {
   let plain = false;
   try { plain = frame.contentDocument.contentType === "text/plain"; } catch { return; }
   if (!plain) return;
-  frame.replaceWith(emptyNode(TX("apps.body.wont_open", { label: a.label }), async () => { await loadApps(); APPS.sig = ""; $("#apps-pane").dataset.key = ""; appsRender(); }));
+  frame.replaceWith(emptyNode(TX("apps.body.wont_open", { label: a.label }), async () => { await loadApps(); APPS.sig = ""; $("#apps-pane").dataset.key = ""; monApp.dataset.key = ""; appsRender(); monDirty(); }));
 }
 
 let appsRaf = 0;
@@ -174,14 +174,23 @@ function appsRender() {
     clear(pane).append(head, a ? appsBody(a) : el("div", { class: "apps-card" }, el("p", { class: "apps-note", text: TX("apps.pick") })));
   }
 }
-
-// The hook for 30-monitoring.js (that file is not ours): its 앱 group can show the tool apps as rows of its own shape.
-//   in monItems(), after the INTG.items loop:  for (const a of (window.appsMonItems ? appsMonItems() : [])) items.push(a);
-//   in monRows(), the row's opener:            open: () => it.tool ? go("apps", it.id) : go("monitoring", it.key)
-window.appsMonItems = () => APPS.items.filter(a => a.source === "manifest" && a.kind === "tool").map(a => ({
-  key: `x:${a.id}`, id: a.id, tool: true, group: MON_GROUP.app, name: a.label, ic: a.icon, notices: [], mails: [], app: true, unread: 0, unreplied: 0,
-  hint: appsStatusLine(a), badge: appsBadge(a), at: "",
-}));
+const monApp = el("div", { class: "apps-pane mon-app", id: "mon-app" });
+$("#v-monitoring").append(monApp);
+function appsMonPaint(sel) {
+  const a = sel && sel.tool && !MON.list ? APPS.items.find(x => `x:${x.id}` === sel.key) : null;
+  $("#v-monitoring").classList.toggle("x-on", !!a);
+  if (!a) return false;
+  const key = `${a.id}:${a.off}:${a.status}:${a.reason || ""}`, hk = JSON.stringify([key, a.label, appsNarrow()]);
+  if (monApp.dataset.key !== key || !monApp.firstChild) { monApp.dataset.key = key; monApp.dataset.head = hk; clear(monApp).append(appsHeader(a, true), appsBody(a)); }
+  else if (monApp.dataset.head !== hk) { monApp.dataset.head = hk; monApp.firstChild.replaceWith(appsHeader(a, true)); }
+  return true;
+}
+function appsMonItems() {
+  return APPS.items.filter(a => appsTool(a)).map(a => ({
+    key: `x:${a.id}`, id: a.id, tool: true, group: MON_GROUP.app, name: a.label, ic: ICONS[a.icon] ? a.icon : "file", notices: [], mails: [], unread: 0, unreplied: 0,
+    hint: appsStatusLine(a), badge: appsBadge(a), at: "",
+  }));
+}
 
 loadApps();
-setInterval(() => { if (current === "apps" && !document.hidden) loadApps(); }, 30000);
+setInterval(() => { if ((current === "apps" || current === "monitoring") && !document.hidden) loadApps(); }, 30000);

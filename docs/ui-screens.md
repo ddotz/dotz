@@ -187,7 +187,7 @@ flowchart LR
   c_mail -->|"go (6)"| s_monitoring
   c_monitoring -->|"go (2)"| s_apps
   c_monitoring -->|"go (3)"| s_chat
-  c_monitoring -->|"go (11)"| s_monitoring
+  c_monitoring -->|"go (13)"| s_monitoring
   c_notices -->|"go (1)"| s_any
   c_notices -->|"go (1)"| s_accounts
   c_notices -->|"go (1)"| s_chat

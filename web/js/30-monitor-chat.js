@@ -8,7 +8,6 @@ const monChatOf = it => {
 const monRowGo = it => { const c = monChatOf(it); return c ? `c:${c}` : it.key; };
 // The monitor whose conversation is open now.
 const monChatIt = (items = monItems()) => { if (!monCtx || !isSettingsT(target)) return null; const it = items.find(i => i.key === MON.sel); return it && monChatOf(it) === target ? it : null; };
-// The left column beside a monitor: the rows of monitors under their own group names, without the feed, the apps and 앱 관리.
 function monListRows(items, sel) {
   const rows = monRows(items, sel);
   if (!sel || !sel.mon || MON.list) return rows;
@@ -16,7 +15,8 @@ function monListRows(items, sel) {
   let head = null;
   for (const r of rows) {
     if (r.header) { head = r; continue; }
-    if (!(items.find(i => i.key === r.k) || {}).mon) continue;
+    const it = items.find(i => i.key === r.k) || {};
+    if (!it.mon && !it.rq && !r.fold) continue;
     if (head) { out.push(head); head = null; }
     out.push(r);
   }

@@ -43,6 +43,7 @@
   "mon.run.unchecked": "Not checked yet",
   "mon.run.checked": "Checked",
   "mon.feed": "Watch updates",
+  "mon.other_log": "Other watch log",
   "mon.group.project": "Project · {name}",
   "mon.need.sent_today": {
     "one": "{n} auto-reply today",

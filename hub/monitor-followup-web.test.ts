@@ -70,11 +70,16 @@ const openScreen = async (v: View) => {
 	await run(v, `${MORE}.click()`);
 	await waitFor(v, `document.querySelector("#app-sw .as-row")`);
 };
-const rowNames = async (v: View) => { await waitFor(v, `document.querySelector('#mon-side [data-k^="p:"]')`); return q<string[]>(v, `return [...document.querySelectorAll("#mon-side .cv-row .cv-n")].map(n => n.textContent)`); };
+const rowNames = async (v: View) => {
+	await waitFor(v, `document.querySelector('#mon-side [data-k^="p:"]')`);
+	await run(v, `for (const f of document.querySelectorAll('#mon-side .mon-fold[aria-expanded="false"]')) f.click()`);
+	await waitFor(v, `!document.querySelector('#mon-side .mon-fold[aria-expanded="false"]')`);
+	return q<string[]>(v, `return [...document.querySelectorAll("#mon-side .cv-row .cv-n")].map(n => n.textContent)`);
+};
 
 describe("a watch an app owns belongs to the app", () => {
 	for (const [label, w, h] of [["desktop", 1280, 800], ["phone", 390, 844]] as const) {
-		test(`${label}: no row in 일반 모니터링, the app row fails, the panel has its status (local)`, async () => {
+		test(`${label}: no row in 일반 모니터링, the app row fails, the panel has its status (local); the fine watches read once unfolded (S8)`, async () => {
 			const v = await boot(w, h);
 			if (w < 1100) await run(v, `go("monitoring", "list")`);
 			const names = await rowNames(v);
