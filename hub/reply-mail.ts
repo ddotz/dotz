@@ -1,7 +1,7 @@
 // The mail and webmail adapter of the one reply flow (the reply unification design, 1.8 columns 1 and 2) and the one learning
 // implementation ("record, then refine"). It is the hub's single door into the reply-drafts feature: it imports exactly flow.ts and store.ts,
 // and re-exports what the gateway's other modules read of it, so no other hub file needs a feature edge for them.
-import { askText, defaultCall, dropDraft, editDraft, mailView, realFlowDeps, recordCorrection, recordForbidden, refineAfterCorrection, restoreDraft, reviseDraft, type FlowDeps, type MailOf, webmailSite } from "../features/reply-drafts/lib/flow.ts";
+import { askText, defaultCall, dropDraft, editDraft, mailView, realFlowDeps, recordForbidden, recordLearned, refineAfterCorrection, restoreDraft, reviseDraft, type FlowDeps, type MailOf, webmailSite } from "../features/reply-drafts/lib/flow.ts";
 import { claimFile, DRAFT_ID, draftStoreIntact, getDraft, listDrafts, patchDraft, setStatus, unlessUnreadable, type DraftRec } from "../features/reply-drafts/lib/store.ts";
 import { pairedMails, ridingMails } from "./comments/linked.ts";
 import { sinceMidnight } from "./reply-route.ts";
@@ -93,7 +93,7 @@ export function mailAdapter(deps: () => FlowDeps = realFlowDeps, mailOf: MailOf 
 /** The one "record, then refine" of every kind (design 3.4): a lesson line enters its tone profile, and every few fold into the identity. */
 export function replyLearning(deps: () => FlowDeps = realFlowDeps) {
 	return {
-		record: async (key: Lesson["key"], line: string) => recordCorrection(key, line, new Date()),
+		record: async (key: Lesson["key"], line: string) => recordLearned(key, line, new Date()),
 		refine: (key: Lesson["key"]) => refineAfterCorrection(key, deps()),
 		forbid: async (key: Lesson["key"], words: string[]) => recordForbidden(key, words),
 	};

@@ -9,7 +9,7 @@ import { runOnboard } from "../bin/onboard.ts";
 import { dropDraft, reviseDraft, sendDraft } from "../lib/flow.ts";
 import { offerMailDraft } from "../lib/offer.ts";
 import { sendWith } from "../lib/senders.ts";
-import { HEADINGS, loadStyle, paths, profileBullets, toneFile } from "../lib/settings.ts";
+import { HEADINGS, loadStyle, paths, profileBullets, recordCorrection, toneFile } from "../lib/settings.ts";
 import { getDraft, listDrafts } from "../lib/store.ts";
 import { learnTone, type Runner } from "../lib/tone.ts";
 import { enable, fakeModel, goodReply, j, mailFixture, pick, setupEnv } from "./helpers.ts";
@@ -202,13 +202,17 @@ test("K1 a mail revise that quotes a wording stores the ban and the lesson in th
 	expect(prompt).toContain(LESSON);
 });
 
-test("K1 a mail revise the model says holds everywhere is stored in install.md, not in the mail profile, and a draft of another app carries it", async () => {
-	const { step } = await revisedWith({ lesson: LESSON, forbid: [BAN], everywhere: true });
+test("K1 a mail revise the model says holds everywhere is a standing rule of install.md, not a dated correction, and holds in a later draft of the app after 60 newer corrections and in a draft of another app", async () => {
+	const { model, step } = await revisedWith({ lesson: LESSON, forbid: [BAN], everywhere: true });
 	expect(step).toMatchObject({ ok: true, lesson: { key: { app: "install" }, line: LESSON, forbid: [BAN] } });
 	expect(profileBullets("install", HEADINGS.forbidden)).toEqual([BAN]);
-	expect(profileBullets("install", HEADINGS.corrections).join("\n")).toContain(LESSON);
+	expect(profileBullets("install", HEADINGS.rules)).toEqual([LESSON]);
+	expect(profileBullets("install", HEADINGS.corrections)).toEqual([]);
 	expect(existsSync(toneFile({ app: "mail" }))).toBe(false);
 	expect(step.text).toContain("모든 답장");
+	for (let i = 0; i < 60; i++) recordCorrection({ app: "mail" }, `고친 점 ${i} ${"가".repeat(200)}`.slice(0, 200), new Date(Date.UTC(2030, 0, 1 + i)));
+	await offerMailDraft({ ...mailFixture, key: "m-2", id: "msg-2" }, { send: () => undefined, call: model.call });
+	expect(`${model.calls[2]!.system}\n${model.calls[2]!.user}`).toContain(LESSON);
 	let seen = "";
 	await generateReply({ kind: "comment", app: "youtube", from: "팬", text: "언제요?", context: "" }, loadStyle({ app: "youtube" }), async (system, user) => ((seen = `${system}\n${user}`), j({ ...goodReply, body: "토요일이에요" })));
 	expect(seen).toContain(BAN);

@@ -76,7 +76,7 @@ function world(o: { outcome?: string; reviseFails?: boolean; lesson?: string; fo
 		recordPick: p => void (picks.push(p), log.push(`pick ${p.label}${p.note ? ` - ${p.note}` : ""}`)),
 		recordText: (_c, t) => void log.push(`text ${t}`),
 		say: (conv, ref, text) => void log.push(`say ${conv} ${ref} ${text}`),
-		learning: { record: async (k, line) => void log.push(`learn ${k.app} ${line}`), refine: async () => void log.push("refine"), forbid: async (k, words) => (o.forbidFails ? Promise.reject(new Error("disk full")) : void log.push(`forbid ${k.app} ${words.join("|")}`)) },
+		learning: { record: async (k, line) => (log.push(`learn ${k.app} ${line}`), k.app === "install" ? "rule" : "correction"), refine: async () => void log.push("refine"), forbid: async (k, words) => (o.forbidFails ? Promise.reject(new Error("disk full")) : void log.push(`forbid ${k.app} ${words.join("|")}`)) },
 		cards: { open: () => o.cards ?? [], convOf: () => o.cardConv, replace: (a, b, text, hash) => void (drawn.push([b, hash]), log.push(`cards ${a}->${b}`), texts.push(text)), rewrite: (ref, _t, hash) => void (drawn.push([ref, hash]), log.push(`rewrite ${ref}`)), repost: async (ref, text, hash) => void reposts.push([ref, text, hash]), close: ref => void log.push(`close ${ref}`) },
 		toBot: async (conv, text) => void log.push(`bot ${conv} ${text}`),
 		emit: e => void log.push(`event ${e.ref}${e.next ? `->${e.next}` : ""}${e.revising ? " revising" : ""}${e.why ? ` ${e.why}` : ""}`),
@@ -151,7 +151,7 @@ test("revise: 202 at once; the model runs, the new draft is stored, then the les
 	expect(w.log).toEqual(["pick 고치기 - 마감을 목요일로", "event RAAAAAA revising", "model 마감을 목요일로", "stored RBBBBBB", "learn mail 마감은 넉넉히 잡아서 쓴다", "cards RAAAAAA->RBBBBBB", "event RAAAAAA->RBBBBBB", "refine"]);
 });
 
-test("revise: the line and the banned wordings are each recorded once, in the profile the lesson names, and the new card tells the owner what was stored", async () => {
+test("revise: the line and the banned wordings are each recorded once, in the profile the lesson names, the new card tells the owner what was stored, and only a correction refines the identity", async () => {
 	for (const [everywhere, where] of [[false, "이 앱 답장"], [true, "모든 답장"]] as const) {
 		const w = world({ lesson: "끝인사는 짧게", forbid: ["행복한 하루 되세요"], everywhere });
 		await w.replies.act({ ref: "RAAAAAA", action: "revise", change: "행복한 하루 되세요는 쓰지 말고 끝인사는 짧게" }, owner);
@@ -159,7 +159,7 @@ test("revise: the line and the banned wordings are each recorded once, in the pr
 		const app = everywhere ? "install" : "mail";
 		expect(w.linesOf("learn")).toEqual([`learn ${app} 끝인사는 짧게`]);
 		expect(w.linesOf("forbid")).toEqual([`forbid ${app} 행복한 하루 되세요`]);
-		expect(w.linesOf("refine")).toEqual(["refine"]);
+		expect(w.linesOf("refine")).toEqual(everywhere ? [] : ["refine"]);
 		expect(w.texts).toHaveLength(1);
 		expect(w.texts[0]).toContain(`앞으로 ${where}에 반영해요: 끝인사는 짧게`);
 		expect(w.texts[0]).toContain(`앞으로 ${where}에서 쓰지 않을 표현: '행복한 하루 되세요'`);
@@ -328,7 +328,7 @@ test("unsure: a second send answers needs_resolve; 나갔어요 closes it as sen
 test("undo inside the window cancels the send; drop and restore move the draft and close the card", async () => {
 	const w = world();
 	const sender = createApprovalSender({ kind: () => ({ kind: "mail", lane: "m" }), run: async () => ({ code: 0, out: "" }), report: () => undefined, log: () => undefined, undoMs: () => 10_000, after: () => undefined });
-	const replies = createReplyActions({ adapters: [], sender, recordPick: () => undefined, learning: { record: async () => undefined, refine: async () => undefined, forbid: async () => undefined }, cards: { open: () => [], replace: () => undefined, rewrite: () => undefined, close: () => undefined }, toBot: async () => undefined, emit: () => undefined, log: () => undefined });
+	const replies = createReplyActions({ adapters: [], sender, recordPick: () => undefined, learning: { record: async () => "correction" as const, refine: async () => undefined, forbid: async () => undefined }, cards: { open: () => [], replace: () => undefined, rewrite: () => undefined, close: () => undefined }, toBot: async () => undefined, emit: () => undefined, log: () => undefined });
 	expect((await replies.act({ ref: "RAAAAAA", action: "undo" }, owner)).status).toBe(404);
 	const job: SendJob = { ref: "RAAAAAA", conv: "c", action: "send", title: "q (RAAAAAA)" };
 	sender.enqueue(job);
@@ -355,7 +355,7 @@ test("a hand-written card goes to the bot as its numbered answer; a batch sends 
 	const w = world();
 	const cards = [{ ref: "X1", conv: "ch:1", notice: "n1", title: "이 답글 올릴까요? (X1)" }, { ref: "X2", conv: "ch:1", notice: "n2", title: "이 답글 올릴까요? (X2)" }];
 	const log: string[] = [];
-	const replies = createReplyActions({ adapters: [], sender: w.sender, recordPick: () => undefined, learning: { record: async () => undefined, refine: async () => undefined, forbid: async () => undefined }, cards: { open: () => cards, replace: () => undefined, rewrite: () => undefined, close: () => undefined }, toBot: async (c, t) => void log.push(`${c}|${t}`), emit: () => undefined, log: () => undefined });
+	const replies = createReplyActions({ adapters: [], sender: w.sender, recordPick: () => undefined, learning: { record: async () => "correction" as const, refine: async () => undefined, forbid: async () => undefined }, cards: { open: () => cards, replace: () => undefined, rewrite: () => undefined, close: () => undefined }, toBot: async (c, t) => void log.push(`${c}|${t}`), emit: () => undefined, log: () => undefined });
 	const r = await replies.batch([{ ref: "X1", action: "send" }, { ref: "X2", action: "revise", change: "더 짧게" }, { ref: "NOPE", action: "send" }], owner);
 	expect(r.body).toMatchObject({ results: [{ ref: "X1", ok: true }, { ref: "X2", ok: true }, { ref: "NOPE", ok: false, code: "unknown_ref" }] });
 	expect(log).toEqual(["ch:1|결정 답: 이 답글 올릴까요? (X1) → 1) 보내기\n결정 답: 이 답글 올릴까요? (X2) → 2) 고치기 - 더 짧게"]);
@@ -454,6 +454,14 @@ test("A7: a revised draft whose card cannot be drawn ends 고치는 중 with a r
 	expect(w.linesOf("event").at(-1)).toStartWith("event RAAAAAA->RBBBBBB ");
 	expect((await w.replies.view("RBBBBBB"))!.draft.revising).toBeUndefined();
 	expect((await w.replies.act({ ref: "RBBBBBB", action: "drop" }, owner)).status).toBe(200);
+});
+
+test("revise: a lesson recorded before the card failed to draw still refines the identity once", async () => {
+	const w = world({ lesson: "끝인사는 짧게", askThrows: true });
+	await w.replies.act({ ref: "RAAAAAA", action: "revise", change: "끝인사는 짧게" }, owner);
+	await w.replies.idle();
+	expect(w.linesOf("learn")).toEqual(["learn mail 끝인사는 짧게"]);
+	expect(w.linesOf("refine")).toEqual(["refine"]);
 });
 
 test("edit with a subject saves it on a mail draft and redraws the cards with the saved version's hash; a subject on a KakaoTalk draft is 400", async () => {

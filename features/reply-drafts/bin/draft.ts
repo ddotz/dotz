@@ -9,7 +9,7 @@ import { type HubLike, mailInstance, notifyGateway, reportSendFailed } from "../
 import { addressesOf, type ReplyItem } from "../../../hub/reply-draft.ts";
 import { ensureKakaoRoom, defaultKakaoReader, KAKAO_APP, type OwnerReader } from "../lib/kakao-tone.ts";
 import { askText, attachFolder, buildDraft, candidatesFor, chosenFrom, dropDraft, kindOf, mailAsksFile, realFlowDeps, refineAfterCorrection, reviseDraft, sendDraft, settleDraft, stageForReply, type FlowDeps, type Outcome } from "../lib/flow.ts";
-import { dataDir, HEADINGS, INSTALL, loadSettings, profileBullets, recordCorrection, recordForbidden, removeCorrection, removeForbidden, validApp, type ToneKey } from "../lib/settings.ts";
+import { dataDir, HEADINGS, INSTALL, loadSettings, profileBullets, recordCorrection, recordForbidden, recordRule, removeCorrection, removeForbidden, removeRule, validApp, type ToneKey } from "../lib/settings.ts";
 import { addDraft, type DraftRec, getDraft, listDrafts, patchDraft } from "../lib/store.ts";
 import { listLibrary } from "../lib/library.ts";
 import { canAttach } from "../lib/senders.ts";
@@ -17,7 +17,7 @@ import { cloudFile, cloudPlaceholder, EVICTED_LATER, isEvicted, removeStagedFile
 
 // Exit code of `new --kind chat` when the message needs the owner's own decision: stdout is the choice block to post as an [ask] (hub/choices.ts replyChoiceBlock).
 export const ASK_EXIT = 4;
-const USAGE = "usage: draft.ts new --mail <key> [--app <app>] [--room <id>] [--kind mail|comment|chat] [--from <sender>] [--subject <s>] [--context <c>] [--source <src>] [--id <mail id>] [--choice <the owner's pick>] (text on stdin) | revise <id> --change <text> | send <id> | drop <id> | correct --app <app|install> [--room <id>] [--change <lesson>] [--forbid <wording>]... [--allow <wording>]... [--forget <text>]... | tone --app <app|install> [--room <id>] | attach <id> <path or file name in the 첨부 파일 폴더> | detach <id> <n or file name> | status\n  correct stores a standing request in exactly one tone profile (--app install = every reply; --room only with a messenger app); at least one of --change --forbid --allow --forget\n  --forbid never use this wording again (2-40 characters, not a /regex/) | --allow takes a forbidden wording back | --forget removes the 고친 점 lines that contain the text\n  tone prints what a draft there follows (말투, 고친 점, 금지) with the level of each line\n  attach / detach change the files of a pending mail draft and print the refreshed [ask] (never edit draft-files/ or drafts.json by hand)\n  new --app kakao --room <chat id> --kind chat (recent messages on stdin; --mail optional) prints only the reply text\n  chat exit codes: 0 reply text on stdout | 3 nothing to answer | 4 the owner must choose first: stdout is a 결정 block (post it as an [ask]); after his pick run the same command again with --choice \"<pick>\"\n  --app: mail (default for mail), youtube | instagram for comments, kakao for chats; --room only for messenger rooms";
+const USAGE = "usage: draft.ts new --mail <key> [--app <app>] [--room <id>] [--kind mail|comment|chat] [--from <sender>] [--subject <s>] [--context <c>] [--source <src>] [--id <mail id>] [--choice <the owner's pick>] (text on stdin) | revise <id> --change <text> | send <id> | drop <id> | correct --app <app|install> [--room <id>] [--rule <standing rule>]... [--change <lesson>] [--forbid <wording>]... [--allow <wording>]... [--forget <text>]... | tone --app <app|install> [--room <id>] | attach <id> <path or file name in the 첨부 파일 폴더> | detach <id> <n or file name> | status\n  correct stores what the owner asked in exactly one tone profile (--app install = every reply; --room only with a messenger app); at least one of --rule --change --forbid --allow --forget\n  --rule a standing request the owner made in chat (always, never, from now on): kept undated under 말투, never pushed out by later lessons | --change what one corrected draft showed, a dated 고친 점 line\n  --forbid never use this wording again (2-40 characters, not a /regex/; the owner's quoted wording) | --allow takes a forbidden wording back | --forget removes the 말투 and 고친 점 lines that contain the text\n  tone prints what a draft there follows (말투, 고친 점, 금지) with the level of each line\n  attach / detach change the files of a pending mail draft and print the refreshed [ask] (never edit draft-files/ or drafts.json by hand)\n  new --app kakao --room <chat id> --kind chat (recent messages on stdin; --mail optional) prints only the reply text\n  chat exit codes: 0 reply text on stdout | 3 nothing to answer | 4 the owner must choose first: stdout is a 결정 block (post it as an [ask]); after his pick run the same command again with --choice \"<pick>\"\n  --app: mail (default for mail), youtube | instagram for comments, kakao for chats; --room only for messenger rooms";
 
 type Out = { lines: string[]; code: number; notes?: string[] };
 
@@ -148,7 +148,8 @@ export async function runDraft(args: string[], stdin: string, deps: DraftDeps = 
 			const forbid = flagValues(rest, "--forbid");
 			const allow = flagValues(rest, "--allow");
 			const forget = flagValues(rest, "--forget");
-			if (!app || !validApp(app) || (!change && !forbid.length && !allow.length && !forget.length)) return { lines: [USAGE], code: 2 };
+			const rules = flagValues(rest, "--rule").map(r => r.replace(/\s+/g, " ").trim()).filter(Boolean);
+			if (!app || !validApp(app) || (!change && !rules.length && !forbid.length && !allow.length && !forget.length)) return { lines: [USAGE], code: 2 };
 			if (app === INSTALL && room !== undefined) return { lines: ["--app install은 모든 답장에 적용돼서 --room과 같이 쓸 수 없어요"], code: 2 };
 			const bad = forbid.find(w => !bannable(w));
 			if (bad !== undefined) return { lines: [`금지할 표현은 2~40자의 글자여야 하고 /정규식/은 쓸 수 없어요: ${bad}`], code: 1 };
@@ -156,6 +157,10 @@ export async function runDraft(args: string[], stdin: string, deps: DraftDeps = 
 			const target = app === INSTALL ? INSTALL : key;
 			const where = levelName(key);
 			const lines: string[] = [];
+			if (rules.length) {
+				for (const r of rules) recordRule(target, r);
+				lines.push(`${where} 말투에 늘 지킬 규칙으로 기록했어요: ${rules.map(r => `"${r}"`).join(", ")}`);
+			}
 			if (change) {
 				recordCorrection(key, change, (deps.now ?? (() => new Date()))());
 				lines.push(`고친 점을 ${where} 말투에 기록했어요: ${change}`);
@@ -166,8 +171,8 @@ export async function runDraft(args: string[], stdin: string, deps: DraftDeps = 
 			}
 			for (const w of allow) lines.push(removeForbidden(target, w) ? `${where}의 금지 표현에서 뺐어요: "${w.trim()}"` : `${where}의 금지 표현에 "${w.trim()}"이(가) 없어서 바꾼 게 없어요`);
 			for (const t of forget) {
-				const gone = removeCorrection(target, t);
-				lines.push(gone.length ? `${where}의 고친 점에서 ${gone.length}줄을 지웠어요:\n${gone.map(l => `- ${l}`).join("\n")}` : `${where}의 고친 점에 "${t.trim()}"이(가) 든 줄이 없어서 바꾼 게 없어요`);
+				const gone = [...removeRule(target, t).map(l => `- [말투] ${l}`), ...removeCorrection(target, t).map(l => `- [고친 점] ${l}`)];
+				lines.push(gone.length ? `${where}에서 ${gone.length}줄을 지웠어요:\n${gone.join("\n")}` : `${where}의 말투와 고친 점에 "${t.trim()}"이(가) 든 줄이 없어서 바꾼 게 없어요`);
 			}
 			if (change) await refineAfterCorrection(key, deps);
 			return { lines, code: 0 };

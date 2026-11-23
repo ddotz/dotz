@@ -15,7 +15,7 @@ import { basename } from "node:path";
 import { ruleFilePath } from "./rules.ts";
 import { canAttach, sendsThroughZele, sendWith, settleAccount, threadMoved, webmailSite, zeleAccountOf, type Sent, type SendOutcome } from "./senders.ts";
 import { carryStagedFiles, removeStagedFile, stagedFiles, stagedName, stageFiles, stageWanted, type StageOpts, type Want } from "./staged.ts";
-import { dataDir, INSTALL, loadSettings, loadStyle, paths, recordCorrection, recordForbidden, toneFile, validApp, type ToneKey } from "./settings.ts";
+import { dataDir, INSTALL, loadSettings, loadStyle, paths, recordForbidden, recordLearned, toneFile, validApp, type ToneKey } from "./settings.ts";
 import { banWarnings, boxById } from "./box.ts";
 import { maybeRefine } from "./persona.ts";
 import { addPair, styleFrom, styleWithExamples } from "./pairs.ts";
@@ -26,7 +26,7 @@ import { lessonNote, reasonOf } from "../../../hub/reply-reasons.ts";
 
 export { realRunner };
 // What hub/reply-mail.ts (the hub's single door into this feature) needs beside the flow itself.
-export { mailView, recordCorrection, recordForbidden, sendAccountOf, webmailSite, type MailOf };
+export { mailView, recordForbidden, recordLearned, sendAccountOf, webmailSite, type MailOf };
 
 // `analyze` = the model call of the identity sweep and its refinement (persona.ts); absent, no identity is analysed or refined.
 export type FlowDeps = { /** Chooses among tied library files by name (stageForReply); the default is one short model call. */ pick?: (names: string[]) => Promise<string[]>; call?: ModelCall; /** The model calls of one draft and its overall budget (draftTrace); buildDraft makes one when absent. */ trace?: DraftTrace; analyze?: ModelCall; run?: Runner; now?: () => Date; send?: (rec: DraftRec) => Promise<SendOutcome>; /** How library files are copied onto a draft (tests). */ stage?: StageOpts; /** Told where an approved send left the mail, right after the transport answered and before any bookkeeping write (bin/draft.ts prints its DOTZ_SEND line). */ onOutcome?: (o: Outcome) => void };
@@ -42,10 +42,9 @@ export async function refineAfterCorrection(key: ToneKey, deps: FlowDeps): Promi
 	await maybeRefine(key, deps.analyze).catch(e => console.error(`reply draft: identity of ${key.app} not refined: ${(e as Error).message}`));
 }
 
-/** The one "record, then refine" (design 3.4): a lesson line enters the tone profile, and every few fold into its identity. */
+/** The one "record, then refine" (design 3.4): a lesson line enters the tone profile (recordLearned), and every few corrections fold into its identity; a standing rule refines nothing. */
 export async function recordLesson(key: ToneKey, line: string, deps: FlowDeps): Promise<void> {
-	recordCorrection(key, line, nowOf(deps));
-	await refineAfterCorrection(key, deps);
+	if (recordLearned(key, line, nowOf(deps)) === "correction") await refineAfterCorrection(key, deps);
 }
 
 type Taught = { line: string; forbid: string[] };
@@ -463,8 +462,6 @@ export type Step = { ok: boolean; text: string; /** The id of the draft a revisi
 	/** A send that did not go out: whether it surely did not or may have, and the reason code (absent on success, where the mail went out). */ sent?: Exclude<Sent, "yes">; code?: string; vars?: Record<string, string | number>;
 	/** A revision: the draft it replaced, and the lesson it recorded (none when the change was only about that draft). */ replaces?: string; lesson?: { key: ToneKey; line: string; forbid: string[] } };
 
-// The user picked 2) 고치기 (or the CLI is asked to): the draft is regenerated, and once that worked the lasting preference the change shows (the model's `lesson`;
-// the change itself when the model left it out; nothing when the change was only about this draft) is recorded in the tone profile of that draft (its room, else its app).
 // The change stays verbatim in the draft's own `changes`.
 // `learn: false`: the caller records the returned lesson itself (hub/reply-actions.ts, so every kind learns in one place).
 async function reviseClaimed(id: string, change: string, deps: FlowDeps, opts: { learn?: false }): Promise<Step> {

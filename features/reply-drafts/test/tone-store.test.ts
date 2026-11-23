@@ -9,7 +9,7 @@ import { buildDraft, reviseDraft } from "../lib/flow.ts";
 import { learnKakaoRoom, type OwnerReader } from "../lib/kakao-tone.ts";
 import { offerMailDraft } from "../lib/offer.ts";
 import { readMailBody, sendWith } from "../lib/senders.ts";
-import { HEADINGS, loadStyle, paths, profileBullets, recordCorrection, recordForbidden, removeForbidden, roomFile, toneFile, writeExamples } from "../lib/settings.ts";
+import { HEADINGS, loadStyle, paths, profileBullets, recordCorrection, recordForbidden, recordLearned, recordRule, removeForbidden, removeRule, roomFile, toneFile, writeExamples } from "../lib/settings.ts";
 import { addDraft, getDraft, listDrafts } from "../lib/store.ts";
 import { learnTone, zeleEnabled, type Runner } from "../lib/tone.ts";
 import { enable, fakeModel, goodReply, j, mailFixture, setupEnv } from "./helpers.ts";
@@ -304,6 +304,38 @@ test("recordForbidden stores a wording once in that profile's 금지, merged wit
 	expect(readFileSync(toneFile("install"), "utf8")).toBe("## 금지\n\n- install-ban\n");
 });
 
+test("recordRule stores a standing rule once, undated, in that profile's 말투 and leaves the other sections alone; removeRule returns what it took out", () => {
+	mkdirSync(paths.toneDir(), { recursive: true });
+	writeFileSync(toneFile("install"), "## 고친 점\n\n- 2030-01-01: 존댓말로\n");
+	recordRule("install", "  끝인사는   짧게 한다 ");
+	recordRule("install", "끝인사는 짧게 한다");
+	recordRule("install", "끝인사는 짧게 한다".toUpperCase());
+	expect(profileBullets("install", HEADINGS.rules)).toEqual(["끝인사는 짧게 한다"]);
+	expect(profileBullets("install", HEADINGS.corrections)).toEqual(["2030-01-01: 존댓말로"]);
+	expect(removeRule("install", "짧게")).toEqual(["끝인사는 짧게 한다"]);
+	expect(removeRule("install", "짧게")).toEqual([]);
+	expect(profileBullets("install", HEADINGS.rules)).toEqual([]);
+	expect(profileBullets("install", HEADINGS.corrections)).toEqual(["2030-01-01: 존댓말로"]);
+});
+
+test("recordLearned keeps a line of the install key as a standing rule and any other key's as a dated correction of that profile", () => {
+	const at = new Date("2030-02-03T00:00:00Z");
+	expect(recordLearned({ app: "install" }, "어디서나 존댓말", at)).toBe("rule");
+	expect(recordLearned({ app: "kakao", room: "r1" }, "이 방은 반말", at)).toBe("correction");
+	expect([profileBullets("install", HEADINGS.rules), profileBullets("install", HEADINGS.corrections)]).toEqual([["어디서나 존댓말"], []]);
+	expect(profileBullets({ app: "kakao", room: "r1" }, HEADINGS.corrections)).toEqual(["2030-02-03: 이 방은 반말"]);
+});
+
+test("standing holds the 말투 lines of install, app and room and the hand-added sections, install first, without the learned voice notes", () => {
+	mkdirSync(join(paths.toneDir(), "kakao"), { recursive: true });
+	writeFileSync(toneFile("install"), "## 말투\n\n- 어디서나 존댓말\n\n## 학습한 말투\n\n- 설치 측정\n");
+	writeFileSync(toneFile({ app: "kakao" }), "## 학습한 말투\n\n- 짧게 끊어 쓴다\n\n## 호칭\n\n- 형이라고 부른다\n");
+	writeFileSync(toneFile({ app: "kakao", room: "r1" }), "## 말투\n\n- 이모지 없이\n\n## 대화 이해\n\n- 동아리 방\n");
+	const s = loadStyle({ app: "kakao", room: "r1" });
+	expect(s.standing).toEqual(["어디서나 존댓말", "이모지 없이", "형이라고 부른다"]);
+	expect(s.rules).toEqual(["어디서나 존댓말", "설치 측정", "짧게 끊어 쓴다", "이모지 없이", "동아리 방", "형이라고 부른다"]);
+});
+
 const correct = (...args: string[]) => runDraft(["correct", ...args], "", { now: () => new Date("2030-03-04T00:00:00Z") });
 
 test("correct --forbid stores a wording once at install level, --allow takes it back", async () => {
@@ -356,6 +388,27 @@ test("correct needs one of the four and exits 2 with the usage; install takes no
 	}
 	expect((await correct("--app", "youtube")).lines[0]).toContain("usage:");
 	expect(existsSync(paths.toneDir())).toBe(false);
+});
+
+test("correct --rule stores a standing rule at the chosen level, tone lists it under 말투, and --forget takes it out naming its section", async () => {
+	const r = await correct("--app", "install", "--rule", "끝인사는 짧게", "--rule", "이모지는 쓰지 않는다");
+	expect(r.code).toBe(0);
+	expect(r.lines.join("\n")).toContain("모든 답장");
+	await correct("--app", "install", "--rule", " 끝인사는  짧게 ");
+	expect(profileBullets("install", HEADINGS.rules)).toEqual(["끝인사는 짧게", "이모지는 쓰지 않는다"]);
+	expect(profileBullets("install", HEADINGS.corrections)).toEqual([]);
+	await correct("--app", "kakao", "--room", "r1", "--rule", "이 방은 반말");
+	expect(profileBullets({ app: "kakao", room: "r1" }, HEADINGS.rules)).toEqual(["이 방은 반말"]);
+	const tone = (await runDraft(["tone", "--app", "youtube"], "")).lines.join("\n");
+	expect(tone.slice(tone.indexOf("말투:"), tone.indexOf("고친 점:"))).toContain("- [install] 끝인사는 짧게");
+	await correct("--app", "install", "--change", "끝인사 다시 보기");
+	const gone = await correct("--app", "install", "--forget", "끝인사");
+	expect(gone.code).toBe(0);
+	const said = gone.lines.join("\n");
+	expect(said).toContain("[말투] 끝인사는 짧게");
+	expect(said).toContain("[고친 점] 2030-03-04: 끝인사 다시 보기");
+	expect(profileBullets("install", HEADINGS.rules)).toEqual(["이모지는 쓰지 않는다"]);
+	expect(profileBullets("install", HEADINGS.corrections)).toEqual([]);
 });
 
 test("tone lists each line with the level it comes from and writes nothing", async () => {

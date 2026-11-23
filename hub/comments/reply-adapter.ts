@@ -109,7 +109,6 @@ export function commentAdapter(engine: Engine, mailAnswered: () => (thread: stri
 			await engine.proveSends();
 			return draftOf(ref)?.status === "sent" ? "sent" : "unknown";
 		},
-		learned: async ref => engine.learned(ref),
 		ask: async (ref, headline) => {
 			const d = draftOf(ref);
 			const src = d && engine.store.config().sources[d.source];

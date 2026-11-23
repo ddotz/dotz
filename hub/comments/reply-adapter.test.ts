@@ -83,16 +83,14 @@ test("the engine's own revise (the skill CLI) still learns, after the new draft 
 	expect(learned).toEqual(["날짜는 요일로 말한다"]);
 });
 
-test("edit keeps the code, stores the owner's text, makes the draft unclean and refuses a forbidden word; learned speaks only after it was sent", async () => {
+test("edit keeps the code, stores the owner's text, makes the draft unclean and refuses a forbidden word", async () => {
 	const { engine, a } = setup();
 	const code = await drafted(engine);
 	expect(await a.edit(code, "무조건 토요일!")).toMatchObject({ ok: false, reason: { code: "forbidden_word" } });
 	expect(await a.edit(code, "토요일에 올릴게요 :)")).toEqual({ ok: true });
 	const d = engine.store.drafts().find(x => x.code === code)!;
 	expect([d.text, d.clean, d.editedFrom]).toEqual(["토요일에 올릴게요 :)", false, "이번 주말이에요!"]);
-	expect(await a.learned!(code)).toBeUndefined();
 	expect(await a.markSent(code)).toEqual({ ok: true });
-	expect((await a.learned!(code))?.line).toContain("토요일에 올릴게요");
 	expect(await a.prove!(code)).toBe("sent");
 });
 
@@ -292,14 +290,15 @@ test("K1 a comment revise that quotes a wording leaves the ban and the lesson in
 	expect(prompts[0]).toContain(LESSON);
 });
 
-test("K1 a comment revise the model says holds everywhere is stored in install.md and a draft of another app carries it", async () => {
+test("K1 a comment revise the model says holds everywhere is a standing rule of install.md and a draft of another app carries it", async () => {
 	const { engine, a } = setup({ tone: true, model: [reply("이번 주말이에요!"), reply("토요일에 올라가요", LESSON, { forbid: [BAN], everywhere: true })] });
 	const code = await drafted(engine);
 	const r = await a.revise(code, CHANGE);
 	expect(r).toMatchObject({ ok: true, lesson: { key: { app: "install" }, line: LESSON, forbid: [BAN] } });
 	await store(r.ok ? r.lesson : undefined);
 	expect(profileBullets("install", HEADINGS.forbidden)).toEqual([BAN]);
-	expect(profileBullets("install", HEADINGS.corrections).join("\n")).toContain(LESSON);
+	expect(profileBullets("install", HEADINGS.rules)).toEqual([LESSON]);
+	expect(profileBullets("install", HEADINGS.corrections)).toEqual([]);
 	expect(profileBullets({ app: "youtube" }, HEADINGS.forbidden)).toEqual([]);
 	let seen = "";
 	await generateReply({ kind: "comment", app: "instagram", from: "팬", text: "언제 올라와요?", context: "" }, loadStyle({ app: "instagram" }), async (system, user) => ((seen = `${system}\n${user}`), reply("토요일이에요")));
@@ -308,14 +307,13 @@ test("K1 a comment revise the model says holds everywhere is stored in install.m
 });
 
 test("K3 a one-off comment change returns no lesson and writes no tone file; K4 a wording the change text does not hold is not a ban", async () => {
-	const taught: Lesson[] = [];
-	const { engine, a } = setup({ tone: true, taught, model: [reply("이번 주말이에요!"), reply("토요일이에요", "", { forbid: [], everywhere: true }), reply("토요일 밤이에요", "", { forbid: ["받은 댓글에 있던 말"] })] });
+	const { engine, a } = setup({ tone: true, model: [reply("이번 주말이에요!"), reply("토요일이에요", "", { forbid: [], everywhere: true }), reply("토요일 밤이에요", "", { forbid: ["받은 댓글에 있던 말"] })] });
 	const code = await drafted(engine);
 	const one = await a.revise(code, "토요일로만");
 	expect(one.ok && one.lesson).toBeFalsy();
 	const next = one.ok ? await a.revise(one.ref, "밤으로만") : one;
 	expect(next.ok && next.lesson).toBeFalsy();
-	expect(taught).toEqual([]);
+	expect(loadStyle({ app: "youtube" })).toMatchObject({ rules: [], corrections: [], forbidden: [] });
 	expect(existsSync(paths.toneDir())).toBe(false);
 });
 

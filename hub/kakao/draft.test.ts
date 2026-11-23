@@ -298,6 +298,32 @@ describe("the owner's standing words in the prompt", () => {
 		expect(user.match(/rule-\d+ /g)).toHaveLength(14);
 	});
 
+	const STANDING = "Owner's standing rules";
+	const listUnder = (user: string, title: string): string[] => {
+		const rest = user.split("\n").slice(user.split("\n").findIndex(l => l.startsWith(title)) + 1);
+		return rest.slice(0, rest.findIndex(l => !l.startsWith("- ")));
+	};
+
+	test("two standing rules stay under their own title when 30 oversized learned notes and everything else crowd the budget", () => {
+		const big = (c: string) => c.repeat(300);
+		const standing = ["끝인사는 짧게 한다", "이모지는 쓰지 않는다"];
+		const { system, user } = buildDraftPrompt({
+			lines: Array.from({ length: 30 }, (_, i) => `Alex: line-${i}-${big("라")}`),
+			context: Array.from({ length: 4 }, () => big("마")),
+			summary: big("바"),
+			pairs: Array.from({ length: MAX_PAIRS }, (_, i) => ({ other: [big("가")], own: [`own-${i}-${big("다")}`] })),
+			style: { standing, rules: Array.from({ length: 30 }, (_, i) => `note-${i} ${big("사")}`), corrections: Array.from({ length: 30 }, (_, i) => dated(i + 1, big("아"))), forbidden: [], samples: [] },
+		});
+		expect(system.length + user.length).toBeLessThanOrEqual(MAX_PROMPT_CHARS);
+		expect(listUnder(user, STANDING)).toEqual(standing.map(s => `- ${s}`));
+	});
+
+	test("every standing rule is shown however many there are; without any the prompt has no standing title", () => {
+		const standing = Array.from({ length: 20 }, (_, i) => `standing-${i}`);
+		expect(listUnder(buildDraftPrompt({ lines: ["Alex: 내일?"], style: { standing, rules: [], corrections: [], forbidden: [], samples: [] } }).user, STANDING)).toEqual(standing.map(s => `- ${s}`));
+		for (const style of [{ rules: ["note"], corrections: [], forbidden: [], samples: [] }, { standing: [], rules: ["note"], corrections: [], forbidden: [], samples: [] }]) expect(buildDraftPrompt({ lines: ["Alex: 내일?"], style }).user).not.toContain(STANDING);
+	});
+
 	test("a sample, a pair, a profile line and a matched line of his that hold a forbidden wording are left out; the others stay", () => {
 		const forbidden = ["편안한 하루 되세요", "/수고하셨(어요|습니다)/"];
 		const { user } = buildDraftPrompt({

@@ -121,8 +121,6 @@ export type ReplyAdapter = {
 	prove?(ref: string): Promise<"sent" | "unknown">;
 	/** Code repair before an auto retry (a background re-login). */
 	repair?(ref: string, code: ReasonCode): Promise<"fixed" | "needs_owner" | "failed">;
-	/** After `sent`: what an edited draft teaches (before and after), or undefined. */
-	learned?(ref: string): Promise<Lesson | undefined>;
 	/** The card text for a conversation or Discord, built from the store, never by patching an old card. */
 	ask(ref: string, headline?: string): Promise<string | undefined>;
 	/** "<question> (<ref>)": what a pick is recorded under. */

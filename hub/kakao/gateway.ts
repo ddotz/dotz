@@ -43,7 +43,8 @@ const draftModel: DraftModel = async (system, user, chatId) => {
 };
 const draftStyle = (chatId: string): StyleHint => {
 	const s = loadStyle({ app: "kakao", room: chatId });
-	return { rules: s.rules, corrections: s.corrections, forbidden: s.forbidden, samples: s.samples };
+	const standing = new Set(s.standing);
+	return { standing: s.standing, rules: s.rules.filter(r => !standing.has(r)), corrections: s.corrections, forbidden: s.forbidden, samples: s.samples };
 };
 
 const learnVoice = async (src: VoiceSource) => {
@@ -63,7 +64,7 @@ const onRevise = (chatId: string, learned: Learned) => {
 			log(`kakao ban for ${chatId} not recorded: ${e instanceof Error ? e.message : String(e)}`);
 		}
 	}
-	if (learned.line) void learning.record(key, learned.line).then(() => learning.refine(key)).catch(e => log(`kakao lesson for ${chatId} not recorded: ${e instanceof Error ? e.message : String(e)}`));
+	if (learned.line) void learning.record(key, learned.line).then(kind => (kind === "correction" ? learning.refine(key) : undefined)).catch(e => log(`kakao lesson for ${chatId} not recorded: ${e instanceof Error ? e.message : String(e)}`));
 };
 
 const machine = resolveName(cfg.web?.machine_name, hostname());

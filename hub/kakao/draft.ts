@@ -42,8 +42,8 @@ const MAX_RECENT_OWN = 12;
 
 export type ModelReply = { text: string; inputTokens?: number; outputTokens?: number };
 export type DraftModel = (system: string, user: string, chatId?: string) => Promise<ModelReply>;
-// Optional help from the reply-drafts feature (its tone profile for app kakao / this room).
-export type StyleHint = { rules: string[]; corrections: string[]; forbidden: string[]; samples: string[] };
+/** Optional help from the reply-drafts feature (its tone profile for app kakao / this room). `standing`: the owner's standing rules (install first), kept out of `rules`, the learned voice notes. */
+export type StyleHint = { standing?: string[]; rules: string[]; corrections: string[]; forbidden: string[]; samples: string[] };
 export type DraftMode = "relay" | "author" | "task";
 // "ask": the last incoming message needs a decision only the owner can make; `question` + 2-4 short `choices` come back instead of a draft.
 export type DraftReply = { action: "skip" | "draft" | "ask"; body: string; summary: string; question?: string; choices?: string[]; /** A revise's lesson (LESSON_KEY); absent when the model left the key out. */ lesson?: string; forbid?: string[]; everywhere?: boolean; mode?: DraftMode };
@@ -264,6 +264,7 @@ export function buildDraftPrompt(input: PromptInput): { system: string; user: st
 	const inPairs = new Set(pairs.flatMap(p => p.own));
 	const recentOwn = pairs.length ? (style?.samples ?? []).filter(allowed).map(s => clip(s, MAX_SAMPLE_CHARS)).filter(s => !inPairs.has(s)).slice(0, MAX_RECENT_OWN).reverse() : [];
 	const context = [...(input.context ?? [])];
+	const standing = [...(style?.standing ?? [])];
 	const rules = (style?.rules ?? []).slice(0, MAX_RULES);
 	const corrections = promptCorrections(style?.corrections ?? [], CORRECTIONS_BUDGET);
 	const forbidden = bans.slice(0, MAX_FORBIDDEN);
@@ -276,6 +277,7 @@ export function buildDraftPrompt(input: PromptInput): { system: string; user: st
 			registerText(input.register),
 			...(input.group ? [GROUP_NOTE] : []),
 			"",
+			...bulletList("Owner's standing rules (he set these himself; they always hold and beat every voice note, correction and example below):", standing, CORRECTION_CHARS),
 			...bulletList("Owner's voice notes (learned from his own messages):", rules),
 			...bulletList("Owner's corrections of earlier drafts (newest first; when two disagree, the newer one wins):", corrections, CORRECTION_CHARS),
 			...bulletList("Never use:", forbidden),
@@ -321,6 +323,7 @@ export function buildDraftPrompt(input: PromptInput): { system: string; user: st
 		else if (context.length) context.shift();
 		else if (forbidden.length) forbidden.pop();
 		else if (summary !== "(none)") summary = "(none)";
+		else if (standing.length) standing.pop();
 		else break;
 	}
 	return { system, user: assemble() };

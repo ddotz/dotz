@@ -38,7 +38,7 @@ export type ReplyDeps = {
 	/** A plain line from the owner in the card's conversation (나갔어요), no pick. */
 	recordText?: (conv: string, text: string) => void;
 	say?: (conv: string, ref: string, text: string) => void;
-	learning: { record: (key: Lesson["key"], line: string) => Promise<void>; refine: (key: Lesson["key"]) => Promise<void>; forbid: (key: Lesson["key"], words: string[]) => Promise<void> };
+	learning: { record: (key: Lesson["key"], line: string) => Promise<"rule" | "correction">; refine: (key: Lesson["key"]) => Promise<void>; forbid: (key: Lesson["key"], words: string[]) => Promise<void> };
 	/** `rewrite` and `replace` draw a card anew (every surface, Discord included) and store `hash`, the version it now shows. `repost` posts the open card
 	 * of `ref` again at the bottom of its conversation (the same notice; `text` and `hash` when given), its old post marked moved. */
 	cards: { open: () => OpenCard[]; replace: (oldRef: string, newRef: string, text: string, hash: string | undefined) => void; rewrite: (ref: string, text: string, hash: string | undefined) => void; repost: (ref: string, text: string | undefined, hash: string | undefined) => Promise<void>; close: (ref: string) => void;
@@ -86,12 +86,11 @@ async function learn(deps: ReplyDeps, lesson: Lesson | undefined): Promise<{ sai
 	if (!lesson) return { said: "", refine: async () => undefined };
 	const where = `${lesson.key.app}${lesson.key.room ? `/${lesson.key.room}` : ""}`;
 	const words = lesson.forbid ?? [];
-	let line = false;
+	let kind: "rule" | "correction" | undefined;
 	let banned = false;
 	if (lesson.line.trim()) {
 		try {
-			await deps.learning.record(lesson.key, lesson.line);
-			line = true;
+			kind = await deps.learning.record(lesson.key, lesson.line);
 		} catch (e) {
 			deps.log(`reply learning for ${where} failed: ${(e as Error).message}`);
 		}
@@ -105,14 +104,14 @@ async function learn(deps: ReplyDeps, lesson: Lesson | undefined): Promise<{ sai
 		}
 	}
 	const refine = async () => {
-		if (!line) return;
+		if (kind !== "correction") return;
 		try {
 			await deps.learning.refine(lesson.key);
 		} catch (e) {
 			deps.log(`reply learning for ${where} failed: ${(e as Error).message}`);
 		}
 	};
-	return { said: lessonNote({ key: lesson.key, line: line ? lesson.line : "", forbid: banned ? words : [] }), refine };
+	return { said: lessonNote({ key: lesson.key, line: kind ? lesson.line : "", forbid: banned ? words : [] }), refine };
 }
 
 /** The cards of `ref` show the version the store holds now, and keep its hash (a pick from one of them is checked against it). */
@@ -216,8 +215,6 @@ export function createReplyActions(deps: ReplyDeps) {
 		return { status: 202, body: { ok: true, item: itemOf(view) } };
 	}
 
-	// The adapter stores the new draft (the success point), the cards move to it, one event names it, then learning. The new ref is
-	// `revising` until its cards moved, so nothing sends a draft the owner has not been shown yet.
 	async function runRevise(a: ReplyAdapter, view: DraftView, change: string, part: Part | undefined, surface: ActCtx["surface"]): Promise<void> {
 		const tell = (why: string) => void (surface === "discord" && deps.say?.(view.conv, view.ref, `${why} (${view.ref})`));
 		let r: Awaited<ReturnType<ReplyAdapter["revise"]>>;
@@ -240,20 +237,21 @@ export function createReplyActions(deps: ReplyDeps) {
 		const moved = r.ref !== view.ref;
 		if (moved) revising.add(r.ref);
 		const [next, taught] = await Promise.all([a.get(r.ref), learn(deps, r.lesson)]);
+		let drawn = true;
 		try {
 			const text = await a.ask(r.ref, taught.said ? `고친 초안이에요. ${taught.said}` : undefined);
 			if (text && !moved) deps.cards.rewrite(view.ref, text, next && approvalHash(next));
 			else if (text) deps.cards.replace(view.ref, r.ref, text, next && approvalHash(next));
 		} catch (e) {
 			// The new draft is stored but its cards could not be drawn: every surface leaves 고치는 중 and says so.
+			drawn = false;
 			deps.log(`reply ${view.ref}: card of the revised draft ${r.ref} not drawn: ${(e as Error).stack ?? (e as Error).message}`);
 			deps.emit({ kind: "reply", ref: view.ref, ...(moved ? { next: r.ref } : {}), why: "고친 초안을 카드에 올리지 못했어요", ...(next ? { item: itemOf(next) } : {}) });
 			tell("고친 초안을 카드에 올리지 못했어요");
-			return;
 		} finally {
 			if (moved) revising.delete(r.ref);
 		}
-		deps.emit({ kind: "reply", ref: view.ref, ...(moved ? { next: r.ref } : {}), ...(next ? { item: itemOf(next) } : {}) });
+		if (drawn) deps.emit({ kind: "reply", ref: view.ref, ...(moved ? { next: r.ref } : {}), ...(next ? { item: itemOf(next) } : {}) });
 		await taught.refine();
 	}
 

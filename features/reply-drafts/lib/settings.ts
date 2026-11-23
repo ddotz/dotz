@@ -165,7 +165,8 @@ export function setSection(existing: string, heading: string, items: string[]): 
 // `base`: the app whose profile stands in at the app level when `app` has none (a mailbox's tone of a mail app instance without a profile of its own).
 export type ToneKey = { app: string; room?: string; base?: string };
 export type ToneLevel = "room" | "app" | "install";
-export type LoadedStyle = ReplyStyle & { samplesFrom: ToneLevel | "legacy" | "none" };
+/** `standing`: the owner's standing rules (the `## 말투` lines and the hand-added sections of install, app and room, install first), also part of `rules`. */
+export type LoadedStyle = ReplyStyle & { samplesFrom: ToneLevel | "legacy" | "none"; standing: string[] };
 
 export const INSTALL = "install";
 const APP_ID = /^[a-z0-9-]+$/;
@@ -253,10 +254,11 @@ export function loadStyle(key: ToneKey): LoadedStyle {
 		}
 	}
 	const merged = (...headings: string[]) => unique([install, app, room ?? ""].flatMap(md => headings.flatMap(h => bullets(md, h))));
+	const handAdded = [install, app, room ?? ""].flatMap(md => unknownSections(md).flatMap(s => s.items));
 	// The identity (who the user is as a writer) comes from the narrowest profile that has one, like the samples.
 	const narrowest = (heading: string) => [room, app, install].map(md => (md === undefined ? [] : bullets(md, heading))).find(xs => xs.length) ?? [];
 	const identity = narrowest(HEADINGS.identity);
-	return { identity, templates: narrowest(HEADINGS.templates), samples, samplesFrom, rules: unique([...merged(HEADINGS.rules, HEADINGS.learned, HEADINGS.profile), ...[install, app, room ?? ""].flatMap(md => unknownSections(md).flatMap(s => s.items))]), corrections: merged(HEADINGS.corrections), forbidden: merged(HEADINGS.forbidden) };
+	return { identity, templates: narrowest(HEADINGS.templates), samples, samplesFrom, rules: unique([...merged(HEADINGS.rules, HEADINGS.learned, HEADINGS.profile), ...handAdded]), standing: unique([...merged(HEADINGS.rules), ...handAdded]), corrections: merged(HEADINGS.corrections), forbidden: merged(HEADINGS.forbidden) };
 }
 
 function editProfile(key: ToneKey | "install", edit: (md: string) => string | undefined): void {
@@ -294,15 +296,40 @@ export function recordCorrection(key: ToneKey, change: string, now: Date): void 
 }
 
 /** Takes every `## 고친 점` line of exactly that profile that contains the text (trimmed, case aside) out; returns the removed lines. */
-export function removeCorrection(key: ToneKey | "install", text: string): string[] {
+export const removeCorrection = (key: ToneKey | "install", text: string): string[] => removeLines(key, HEADINGS.corrections, text);
+
+/** Takes every `## 말투` line of exactly that profile that contains the text (trimmed, case aside) out; returns the removed lines. */
+export const removeRule = (key: ToneKey | "install", text: string): string[] => removeLines(key, HEADINGS.rules, text);
+
+function removeLines(key: ToneKey | "install", heading: string, text: string): string[] {
 	const needle = banKey(text);
 	let removed: string[] = [];
 	editProfile(key, md => {
-		const have = bullets(md, HEADINGS.corrections);
+		const have = bullets(md, heading);
 		removed = needle ? have.filter(l => l.toLowerCase().includes(needle)) : [];
-		return removed.length ? setSection(md, HEADINGS.corrections, have.filter(l => !removed.includes(l))) : undefined;
+		return removed.length ? setSection(md, heading, have.filter(l => !removed.includes(l))) : undefined;
 	});
 	return removed;
+}
+
+/** Adds a standing rule, undated and whitespace-normalised, to the `## 말투` section of exactly that profile; a line equal apart from case and whitespace is not added again. */
+export function recordRule(key: ToneKey | "install", line: string): void {
+	const rule = line.replace(/\s+/g, " ").trim();
+	if (!rule) return;
+	editProfile(key, md => {
+		const have = bullets(md, HEADINGS.rules);
+		return have.some(h => normText(h) === normText(rule)) ? undefined : setSection(md, HEADINGS.rules, [...have, rule]);
+	});
+}
+
+/** Where a learned line goes: under the install key (the user said it holds always or everywhere) a standing rule of install.md, which no later lesson pushes out of a prompt; under any other key a dated correction of that profile. */
+export function recordLearned(key: ToneKey, line: string, now: Date): "rule" | "correction" {
+	if (key.app === INSTALL) {
+		recordRule(INSTALL, line);
+		return "rule";
+	}
+	recordCorrection(key, line, now);
+	return "correction";
 }
 
 const banKey = (word: string) => word.trim().toLowerCase();
