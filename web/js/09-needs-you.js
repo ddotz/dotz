@@ -400,9 +400,10 @@ function fmtDur(ms) {
   if (m < 60) return s % 60 ? TX("home.dur.ms", { m, s: s % 60 }) : TX("home.dur.m", { n: m });
   return m % 60 ? TX("home.dur.hm", { h: Math.floor(m / 60), m: m % 60 }) : TX("home.dur.h", { n: Math.floor(m / 60) });
 }
-let CS = { day: "", group: null, empty: null, prog: new Map(), who: "", whoT: 0, wake: null };
+const csBlank = () => ({ day: "", group: null, empty: null, prog: new Map(), who: "", whoT: 0, wake: null, wakes: [], seg: "", fresh: false, asked: "" });
+let CS = csBlank();
 // The chat timeline's draw state (11-todo-strip.js chatPush, 13-data.js renderAll) changes only through these.
-const csReset = () => { CS = { day: "", group: null, empty: null, prog: new Map(), who: "", whoT: 0, wake: null }; };
+const csReset = () => { CS = csBlank(); };
 const csBreak = () => { CS.who = ""; };   // the next message shows its speaker head again
 const csDay = d => { CS.day = d; CS.who = ""; };
 const csWho = (who, t) => { CS.who = who; CS.whoT = t; };
@@ -419,6 +420,10 @@ const csParkedDrop = () => { if (!CS.parked.classList.contains("cont")) CS.who =
 const csWakeSet = w => { CS.wake = w; };
 const csWakeRow = (n, day) => { if (!CS.wake.rows.length) CS.wake.day = day || null; CS.wake.rows.push(n); };
 const csWakeNote = k => { CS.wake[k] = true; };
+const csWakeQueue = m => { CS.wakes.push(m); if (CS.wakes.length > 12) CS.wakes.shift(); };
+const csWakeTake = i => CS.wakes.splice(i, 1)[0];
+const csSeg = (seg, fresh) => { CS.seg = seg; CS.fresh = fresh; };
+const csAsk = key => { CS.asked = key; };
 // The open conversation's read state (31-conversations.js): key = the target being looked at, div = the read position when it was opened
 // (the "새 메시지" divider goes before the first message after it), divNode = that divider in the timeline.
 // pin = what the view is anchored to while the opening settles (late images, the todo strip, an SSE frame): "div" (the divider at the top),
