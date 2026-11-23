@@ -43,6 +43,8 @@
 /* the copy in an inactive pane has no ids, so what #v-monitoring.kk-on hides on the real screen is hidden here by class */
 .pane-pj > .view.kk-on > .chatbox { display: none; }
 #split .view.in-pane:not(#v-chat) { flex: 1; min-height: 0; height: auto; max-width: none; margin: 0; padding: var(--sp-4); overflow-y: auto; }
+#split #v-monitoring.in-pane { grid-template-columns: minmax(0, 1fr); }
+#split #v-monitoring.in-pane > * { grid-column: 1; }
 
 .pane-mir { flex: 1; display: flex; flex-direction: column; min-height: 0; }
 .pane-hd { flex: none; display: flex; align-items: center; gap: var(--sp-2); min-width: 0; padding: var(--sp-3) var(--sp-4); }
