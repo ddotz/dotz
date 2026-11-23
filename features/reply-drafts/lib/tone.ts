@@ -97,7 +97,7 @@ const FWD_SUBJECT = /^\s*(fwd?|전달)\s*:/i;
 // An own message that answers the nearest earlier message of someone else, sent to that sender, is also kept as a reply pair; forwards,
 // automated senders, long texts and bot drafts sent unchanged (`ownerDrafts`: their bodies) are not pairs.
 // `account`: one zele account (a mail app names it); without one zele lists every account, and each read uses the listed mail's own account.
-export async function sentMail(run: Runner, limit = MAX_EXAMPLES, ownerDrafts: string[] = [], account?: string, enough = Infinity): Promise<{ texts: string[]; pairs: Pair[] }> {
+export async function sentMail(run: Runner, limit = MAX_EXAMPLES, ownerDrafts: string[] = [], account?: string, enough = Infinity): Promise<{ texts: string[]; ats: number[]; pairs: Pair[] }> {
 	const listed = await run(["zele", "mail", "list", "--folder", "sent", "--limit", String(limit), ...(account ? ["--account", account] : [])]);
 	if (listed.code !== 0) throw new Error(`보낸 메일 목록을 못 읽었어요: ${(listed.stderr || listed.stdout).trim().slice(0, 160)}`);
 	const items = ((Bun.YAML.parse(listed.stdout) as { items?: Record<string, unknown>[] } | null)?.items ?? []).slice(0, limit);
@@ -107,6 +107,7 @@ export async function sentMail(run: Runner, limit = MAX_EXAMPLES, ownerDrafts: s
 	// zele names each mail's account only when it lists several: one account leaves the field out, and without an address no thread can be read as the user's.
 	const sole = account ?? (items.some(m => !m.account) ? addressesOf((await run(["zele", "whoami"])).stdout)[0] : undefined);
 	const texts: string[] = [];
+	const ats: number[] = [];
 	const pairs: Pair[] = [];
 	const now = Date.now();
 	for (const [n, m] of items.entries()) {
@@ -120,13 +121,20 @@ export async function sentMail(run: Runner, limit = MAX_EXAMPLES, ownerDrafts: s
 		const own = (x: { from: string }) => addressesOf(x.from).includes(me!);
 		if (!thread.some(own)) {
 			const text = read || String(m.snippet ?? "");
-			if (text.trim()) texts.push(text);
+			if (text.trim()) {
+				texts.push(text);
+				ats.push(now - n);
+			}
 			continue;
 		}
 		const paired = new Set<number>();
 		for (const [i, msg] of thread.entries()) {
 			if (!own(msg)) continue;
-			if (msg.body.trim()) texts.push(msg.body);
+			if (msg.body.trim()) {
+				texts.push(msg.body);
+				const stamp = Date.parse(msg.date);
+				ats.push(Number.isFinite(stamp) ? stamp : now - n);
+			}
 			const mine = ownText(msg.body).trim();
 			if (!mine || mine.length > SIDE_MAX || FORWARD.test(msg.body) || FORWARD.test(mine) || FWD_SUBJECT.test(String(m.subject ?? "")) || bots.some(b => normText(mine).startsWith(b))) continue;
 			const at = thread.findLastIndex((x, j) => j < i && !own(x));
@@ -140,7 +148,7 @@ export async function sentMail(run: Runner, limit = MAX_EXAMPLES, ownerDrafts: s
 			pairs.push({ received, reply: mine, at: Number.isFinite(stamp) ? stamp : now - n, from: sender, ...(id ? { conv: id } : {}), ...(m.subject ? { subj: String(m.subject) } : {}), ...(me ? { account: me } : {}) });
 		}
 	}
-	return { texts, pairs };
+	return { texts, ats, pairs };
 }
 
 // Reply pairs from a sent folder a site or plugin read: the same rules as sentMail (no forwards, automated receivers, long texts or bot drafts), the answered
@@ -161,14 +169,16 @@ export function sentPairs(items: SentMail[], source: string, ownerDrafts: string
 // Bodies of the drafts the user sent without changing a word: not his own wording, so they make no pair.
 export const botDrafts = (): string[] => listDrafts().filter(d => d.status === "sent" && !d.changes.length).map(d => d.body);
 
+type DatedText = { text: string; at: number };
+
 // The sent mail is also kept as reply pairs for the prompt's examples (lib/pairs.ts), merged with the ones already stored.
-async function learnSentMail(run: Runner, accounts: (string | undefined)[]): Promise<string[]> {
+async function learnSentMail(run: Runner, accounts: (string | undefined)[]): Promise<DatedText[]> {
 	const bots = botDrafts();
-	const texts: string[] = [];
+	const texts: DatedText[] = [];
 	const pairs: Pair[] = [];
 	for (const account of accounts) {
 		const r = await sentMail(run, SWEEP_LIMIT, bots, account);
-		texts.push(...r.texts);
+		texts.push(...r.texts.map((text, i) => ({ text, at: r.ats[i]! })));
 		pairs.push(...r.pairs);
 	}
 	if (pairs.length) savePairs("mail", [...loadPairs("mail"), ...pairs]);
@@ -203,10 +213,43 @@ export function sentAccounts(config: Record<string, any> | undefined): (string |
 	return [...new Set(named.filter((a): a is string => !!a))];
 }
 
-// The install's sent mail for the identity sweep, from the accounts sentAccounts names.
-export async function installSentMail(run: Runner): Promise<string[]> {
+/** Reports one source of the identity sweep: its name and how many sent texts it gave. */
+export type OnSentRead = (source: string, count: number) => void;
+
+/**
+ * The user's own sent texts of every source this install has: the zele accounts sentAccounts names, each mail site with a sent folder and each mail plugin with
+ * `sentMail`. Newest first, at most SWEEP_LIMIT in all; a site's or plugin's text is reduced to the user's own words (ownText). A source that fails is logged and
+ * the others still count; `onRead` hears each source that was read.
+ */
+export async function installSentMail(run: Runner, plugins: PluginSent = pluginsSent, onRead: OnSentRead = () => {}): Promise<string[]> {
+	const found: DatedText[] = [];
+	const got = (source: string, texts: DatedText[]): void => {
+		found.push(...texts);
+		onRead(source, texts.length);
+	};
+	const own = (items: SentMail[]): DatedText[] => {
+		const out: DatedText[] = [];
+		for (const m of items) {
+			const text = ownText(m.body).trim();
+			if (text && !FWD_SUBJECT.test(m.subject ?? "")) out.push({ text, at: m.at });
+		}
+		return out;
+	};
 	const accounts = sentAccounts(installConfig());
-	return accounts.length ? learnSentMail(run, accounts) : [];
+	const sources: [string, () => Promise<void>][] = [];
+	if (accounts.length) sources.push(["zele", async () => got("zele", await learnSentMail(run, accounts))]);
+	for (const site of sentSites()) sources.push([site, async () => got(site, own(await siteSent(run, site, SWEEP_LIMIT)))]);
+	sources.push(["plugins", async () => {
+		for (const p of await plugins(() => SWEEP_LIMIT)) got(p.plugin, own(p.items));
+	}]);
+	for (const [source, read] of sources) {
+		try {
+			await read();
+		} catch (e) {
+			console.error(`reply draft: sent mail of ${source} not read for the identity: ${(e as Error).message}`);
+		}
+	}
+	return found.sort((a, b) => b.at - a.at).slice(0, SWEEP_LIMIT).map(d => d.text);
 }
 
 export const PAIR_SWEEP = 3000; // newest first: past this, closer examples stop paying off for the read it costs
@@ -324,7 +367,7 @@ export async function learnTone(key: ToneKey | "install", opts: LearnOpts): Prom
 	const accounts = opts.accounts ?? (opts.zeleOn ? [undefined] : []);
 	if (accounts.length && opts.run && key !== "install" && key.app === "mail" && key.room === undefined) {
 		try {
-			const mails = await learnSentMail(opts.run, accounts);
+			const mails = (await learnSentMail(opts.run, accounts)).map(d => d.text);
 			texts.push(...mails);
 			if (mails.length) from.push(`보낸 메일 ${mails.length}통`);
 		} catch (e) {

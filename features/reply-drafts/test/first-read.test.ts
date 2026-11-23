@@ -1,5 +1,3 @@
-// The first read of the past reply pairs (lib/offer.ts readOnArrival, lib/tone.ts refreshPairs): a mail coming in starts it on an install that drafts nothing
-// on its own, each source reads once, nothing calls a model, and an explicit off stays off, also for a draft the owner asks for.
 import { afterAll, beforeEach, expect, test } from "bun:test";
 import { rmSync } from "node:fs";
 import { runOnboard } from "../bin/onboard.ts";
@@ -60,11 +58,8 @@ test("a first read with no session stays open and takes the whole folder again t
 	expect(readLearned()["pairs-plugin-intra@1"]).toBeTruthy();
 });
 
-test.each([
-	["the whole feature off", ["off"]],
-	["mail off", ["off", "--app", "mail"]],
-])("%s: neither a new mail nor a draft he asks for reads anything", async (_name, args) => {
-	await runOnboard(args);
+test("the whole feature off: neither a new mail nor a draft he asks for reads anything", async () => {
+	await runOnboard(["off"]);
 	const p = plugin([[SENT]]);
 	expect(await p.arrive(START)).toEqual({ r: "off", asked: 0 });
 	expect((await p.arrive(START + 1, requestMailDraft)).asked).toBe(0);
@@ -72,6 +67,19 @@ test.each([
 	expect(p.toneReads.n).toBe(0);
 	expect(p.analyze.calls).toEqual([]);
 	expect(loadPairs("mail")).toEqual([]);
+});
+
+test("mail's 자동 초안 off: a draft he asks for reads the sent folder and learns from it, and a later mail reads again with no model call", async () => {
+	await runOnboard(["off", "--app", "mail"]);
+	const p = plugin([[SENT], [SENT]]);
+	expect((await p.arrive(START, requestMailDraft)).asked).toBe(1);
+	expect(p.limits).toEqual([3000]);
+	expect(p.toneReads.n).toBe(1);
+	expect(loadPairs("mail")).toMatchObject([{ reply: "네 확인했습니다", source: "intra" }]);
+	const analysed = p.analyze.calls.length;
+	expect(await p.arrive(START + DAY)).toEqual({ r: "off", asked: 1 });
+	expect(p.limits).toEqual([3000, 40]);
+	expect(p.analyze.calls.length).toBe(analysed);
 });
 
 test("a draft on an install that turned mail on still reads, once for both the arrival and the draft", async () => {

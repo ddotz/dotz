@@ -361,7 +361,7 @@ void discord.syncProfile().catch(e => log(`syncProfile failed: ${e}`));
 // Each mail is a conversation (hub/mail.ts): zele here and outside posters through POST /api/mail (hub/routes.ts) share these.
 let mailChannelId: string | undefined;
 setDiscordProbe(() => discord.status.enabled, () => postSettings().news);
-const draftDeps = (): OfferDeps => ({ brief: mailDraftBrief, stage: { changed: cardFilesChanged }, send: (target, text) => out(target, text), replyTo: m => zeleReplyTo(m.id, m.account ?? ""), run: realRunner, history: zeleHistory, refreshPairs: () => refreshPairs(realRunner), readBody: (source, id, account) => readMailBody(source, id, realRunner, account), log, suggest: (key, s) => void setMailSuggest(key, s), analyze: defaultCall(loadSettings().model), sentTexts: () => installSentMail(realRunner), own: source => [...ownAddressesFor(source)] });
+const draftDeps = (): OfferDeps => ({ brief: mailDraftBrief, stage: { changed: cardFilesChanged }, send: (target, text) => out(target, text), replyTo: m => zeleReplyTo(m.id, m.account ?? ""), run: realRunner, history: zeleHistory, refreshPairs: () => refreshPairs(realRunner), readBody: (source, id, account) => readMailBody(source, id, realRunner, account), log, suggest: (key, s) => void setMailSuggest(key, s), analyze: defaultCall(loadSettings().model), sentTexts: onRead => installSentMail(realRunner, undefined, onRead), own: source => [...ownAddressesFor(source)] });
 const mailDeps = (): MailDeps => ({
 	createThread: discord.createThread,
 	send: (target, text) => discord.send(target, text),

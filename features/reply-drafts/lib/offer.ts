@@ -15,10 +15,10 @@ import { anyRuleOn, mailInstanceOf, matchMail, ruleFileMissing, ruleInstruction,
 import { banWarnings, boxFolders, boxLines, boxRules, noAutoDraft } from "./box.ts";
 import { boxCtx, moveByJudge, type BoxDeps } from "./box-place.ts";
 import { learnFirst, MAIL_TONE_VERSION } from "./persona.ts";
-import { appOn, dataDir, ensureSwitch, hasOwnTone, loadSettings, writeAtomic } from "./settings.ts";
+import { appOn, dataDir, ensureSwitch, hasOwnTone, loadSettings, markLearned, readLearned, writeAtomic } from "./settings.ts";
 import { addDraft, draftHeads, isDrafted, markDrafted } from "./store.ts";
 import { FairQueue } from "./fair-queue.ts";
-import type { Runner } from "./tone.ts";
+import type { OnSentRead, Runner } from "./tone.ts";
 
 export type OfferMail = { account?: string; key: string; /** The card's first line instead of the usual one (hub/mail-unanswered.ts). */ headline?: string; /** false: the gateway judged the mail needs no reply (hub/mail.ts); only a draft rule drafts it then */ needs?: boolean; instruction?: string; messageId?: string; target: string; thread?: string; source: string; id: string; subject: string; from?: string; to?: string; cc?: string; replyTo?: string; summary?: string; body?: string; attachments?: { name: string; size?: number }[]; /** files the poster already chose for the reply (hub/mail.ts reply_files) */ replyFiles?: { path: string }[] };
 export type OfferDeps = BoxDeps & {
@@ -32,7 +32,7 @@ export type OfferDeps = BoxDeps & {
 	stage?: StageOpts;
 	/** The identity sweep: the model call, and the user's sent mail (persona.ts learnFirst), run once before the first draft. */
 	analyze?: ModelCall;
-	sentTexts?: () => Promise<string[]>;
+	sentTexts?: (onRead: OnSentRead) => Promise<string[]>;
 	readBody?: (source: string, id: string, account?: string) => Promise<string | undefined>;
 	/** Lines `<date> <subject>: <snippet>` of earlier mail from one sender, the current thread left out (senders.ts senderHistory); started beside the body read. */
 	history?: (address: string, account?: string, thread?: string) => Promise<string[]>;
@@ -60,18 +60,31 @@ function fullBody(m: OfferMail, deps: OfferDeps): Promise<string | undefined> {
 	return deps.readBody(m.source, m.id, accountOf(m)).then(t => t ?? m.body, e => ((deps.log ?? console.error)(`reply draft: mail ${m.key} body not read: ${(e as Error).message}`), m.body));
 }
 
-// Whether this install's mail sent folders may be read: not after an explicit off (onboard.ts off, the app's switch), which beats the absence of monitoring that keeps drafts off.
-const readsMail = (s: ReturnType<typeof loadSettings>) => appOn(s, "mail", () => true);
-
 // One pair read at a time, shared by a mail's arrival and its draft; it never delays or fails a draft.
 let reading: Promise<void> | undefined;
 const readPairs = (run: () => Promise<void>, log: (line: string) => void): Promise<void> =>
 	(reading ??= run().catch(e => log(`reply draft: past mail pairs not refreshed: ${(e as Error).message}`)).finally(() => void (reading = undefined)));
 
-// A mail coming in is the source in use, drafted or not: the owner's words tie reading the sent folder to connecting a mail, not to monitoring being on, and a draft he asks
-// for later needs the examples ready. The read is local and calls no model, so nothing here touches the mailboxes' voices.
 function readOnArrival(deps: OfferDeps): void {
-	if (deps.refreshPairs && readsMail(loadSettings())) void readPairs(deps.refreshPairs, deps.log ?? console.error);
+	if (deps.refreshPairs && rulesAllowed(loadSettings())) void readPairs(deps.refreshPairs, deps.log ?? console.error);
+}
+
+const DAY = 24 * 60 * 60 * 1000;
+const EMPTY_LOG = "mail~empty-logged";
+
+async function learnMailIdentity(analyze: ModelCall, sentTexts: NonNullable<OfferDeps["sentTexts"]>, log: (line: string) => void): Promise<void> {
+	const read: string[] = [];
+	let found = 0;
+	const source = async (): Promise<string[]> => {
+		const texts = await sentTexts((name, count) => void read.push(`${name} ${count}`));
+		found = texts.length;
+		return texts;
+	};
+	const result = await learnFirst({ app: "mail" }, source, "메일 (보낸 메일함)", analyze, undefined, MAIL_TONE_VERSION).catch(e => (log(`reply draft: mail identity not learned: ${(e as Error).message}`), undefined));
+	const now = new Date();
+	if (result !== "empty" || now.getTime() - Date.parse(readLearned()[EMPTY_LOG] ?? "") < DAY) return;
+	markLearned([EMPTY_LOG], now);
+	log(`reply draft: mail identity not learned: ${found ? `${found} sent texts read, the analysis gave no identity` : "no sent text found"} (sources read: ${read.join(", ") || "none"})`);
 }
 
 // A draft keeps the pairs current too, and the mailboxes' voices are learned from what they kept; only an account with mailboxes loads that code.
@@ -358,10 +371,8 @@ async function offerOne(m: OfferMail, deps: OfferDeps, { body, history, replyTo 
 		const instruction = ruleInstruction(box?.alone ? "" : own?.base ?? "", rule, requested ? m.instruction?.trim().slice(0, 500) : undefined, boxLines(box, item.from));
 		if (instruction) item.instruction = instruction;
 		const read = Date.now();
-		// A rule or mailbox that drafts is its own opt-in; a draft asked for by hand on an install that said off reads nothing.
-		const reads = readsMail(settings) || (allowed && !requested);
-		if (reads) refreshPairs(deps, log, instance);
-		if (reads && deps.analyze && deps.sentTexts) await learnFirst({ app: "mail" }, deps.sentTexts, "메일 (보낸 메일함)", deps.analyze, undefined, MAIL_TONE_VERSION).catch(e => log(`reply draft: mail identity not learned: ${(e as Error).message}`));
+		if (allowed) refreshPairs(deps, log, instance);
+		if (allowed && deps.analyze && deps.sentTexts) await learnMailIdentity(deps.analyze, deps.sentTexts, log);
 		const learned = Date.now();
 		// The files are picked BEFORE the words are written, so the draft is told which files ride on it (and that none fits) and its text agrees
 		// with the attachments. A rule that names its files stages those instead.
