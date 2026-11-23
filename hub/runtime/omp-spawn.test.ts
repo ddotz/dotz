@@ -93,7 +93,7 @@ const ISOLATION = [
 ];
 
 const PINS = ["startup:", "  checkUpdate: false", "magicKeywords:", "  enabled: false", "github:", "  enabled: false", "async:", "  enabled: true", "  widgets: false", "secrets:", "  enabled: true"];
-const TASK_PINS = ["  isolation:", "    enabled: true", "    apply: false", "    merge: patch", "  maxRuntimeMs: 0", "  softRequestBudget: 200"];
+const TASK_PINS = ["  isolation:", "    enabled: true", "    apply: false", "    merge: patch", "  maxRuntimeMs: 0", "  softRequestBudget: 200", "  maxEffort: high"];
 
 test("every omp agent loads only the dotz extension: --no-extensions, then one --extension, for the orchestrator, a conversation session and a lane", () => {
 	omp.start(orchestrator());

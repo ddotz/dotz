@@ -18,7 +18,8 @@ const LOOKUP_AGENTS = ["scout", "sonic"];
 const TASK_SOFT_REQUEST_BUDGET = 200;
 const TASK_MAX_RUNTIME_MS = 0;
 const PINS = ["startup:\n  checkUpdate: false\n", "magicKeywords:\n  enabled: false\n", "github:\n  enabled: false\n", "async:\n  enabled: true\n  widgets: false\n", "secrets:\n  enabled: true\n"].join("");
-const TASK_PINS = `  isolation:\n    enabled: true\n    apply: false\n    merge: patch\n  maxRuntimeMs: ${TASK_MAX_RUNTIME_MS}\n  softRequestBudget: ${TASK_SOFT_REQUEST_BUDGET}\n`;
+// maxEffort caps a spawn's effort hint: an "hi" hint otherwise starts the worker at max thinking, which only the owner picks.
+const TASK_PINS = `  isolation:\n    enabled: true\n    apply: false\n    merge: patch\n  maxRuntimeMs: ${TASK_MAX_RUNTIME_MS}\n  softRequestBudget: ${TASK_SOFT_REQUEST_BUDGET}\n  maxEffort: high\n`;
 
 /** The home omp resolves user-level folders from: env HOME first. */
 export const homeDir = (): string => process.env.HOME ?? homedir();

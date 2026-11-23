@@ -7,7 +7,7 @@ import { writeOverlay } from "./omp-overlay.ts";
 import type { SpawnOpts } from "./types.ts";
 
 type Overlay = {
-	task?: { isolation?: Record<string, unknown>; maxRuntimeMs?: number; softRequestBudget?: number };
+	task?: { isolation?: Record<string, unknown>; maxRuntimeMs?: number; softRequestBudget?: number; maxEffort?: string };
 	compaction?: { idleEnabled?: boolean };
 	async?: { enabled?: boolean; widgets?: boolean };
 	startup?: { checkUpdate?: boolean };
@@ -58,6 +58,8 @@ for (const [name, opts] of [["the orchestrator", orchestrator], ["a conversation
 		expect(overlay.github?.enabled).toBe(false);
 		expect(overlay.secrets?.enabled).toBe(true);
 		expect([overlay.task?.maxRuntimeMs, overlay.task?.softRequestBudget]).toEqual([0, 200]);
+		// a spawn's effort hint ("hi") stops at high: max or xhigh only where the owner picked it as a role's thinking level
+		expect(overlay.task?.maxEffort).toBe("high");
 	});
 }
 
