@@ -56,12 +56,15 @@ describe("a card marker answering a message (P1-1)", () => {
 		expect((await revised).author).toBe(AGENT_AUTHOR);
 	});
 
-	test("[drop] answering the owner's own web message drops it as his word", async () => {
+	// A [drop] the owner asked for closes the card and sends the bot no 결정 답 line: echoed back, that line read as his press (2026-11-23).
+	test("[drop] answering the owner's own web message drops the card, with no echo line to the bot", async () => {
 		draftCard("RAGT003", { ts: new Date().getTime() - 1000 });
 		await owner({ text: "그 답장 버려 (형)" });
-		const dropped = inboxLine("(RAGT003) → 3) 보내지 않기");
+		const told = gatewayLine();
 		await agent("POST", "/api/send", { target: "web", text: "[drop RAGT003]", reply_to: midOf("그 답장 버려 (형)") });
-		expect((await dropped).author).toBe("local");
+		await told;
+		expect(openDraftCards("main").map(c => c.ref)).toEqual([]);
+		expect(tailEvents(paths.inbox).some(e => String(e.text).includes("(RAGT003) → 3) 보내지 않기"))).toBe(false);
 	});
 
 	test("[drop] answering an older owner message, when he wrote again after it, drops nothing and says to use the card", async () => {
@@ -85,13 +88,15 @@ describe("a card marker answering a message (P1-1)", () => {
 		expect(openDraftCards("main").map(c => c.ref)).toEqual(["RAGT005"]);
 	});
 
-	test("[drop] answering the owner's newest message after the card drops it", async () => {
+	test("[drop] answering the owner's newest message after the card drops the card, with no echo line to the bot", async () => {
 		const t = new Date().getTime() - 60_000;
 		draftCard("RAGT006", { ts: t });
 		ownerSaid("m-after-1", t + 1000);
-		const dropped = inboxLine("(RAGT006) → 3) 보내지 않기");
+		const told = gatewayLine();
 		await agent("POST", "/api/send", { target: "web", text: "[drop RAGT006]", reply_to: "m-after-1" });
-		expect((await dropped).author).toBe("local");
+		await told;
+		expect(openDraftCards("main").map(c => c.ref)).toEqual([]);
+		expect(tailEvents(paths.inbox).some(e => String(e.text).includes("(RAGT006) → 3) 보내지 않기"))).toBe(false);
 	});
 
 	test("in a mail's conversation too, a [drop] answering an owner message older than his newest drops nothing", async () => {
