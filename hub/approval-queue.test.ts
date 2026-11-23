@@ -1,8 +1,9 @@
 // One send-approval card at a time per conversation: the rest wait behind it ("남은 N건") and come one by one as each closes; the same
 // card again updates the open one instead of a second post.
 import { describe, expect, test } from "bun:test";
-import { type ApprovalQueueDeps, cardRef, CARDS_LEAD, closedCardText, createApprovalQueue, type Held, pendingCardsNote, splitCardLead, splitDraftCards, withLeft , withSendState } from "./approval-queue.ts";
-import { draftApprovalBlock } from "./draft-approval.ts";
+import { type ApprovalQueueDeps, cardPointer, cardRef, cardTitle, CARDS_LEAD, closedCardText, createApprovalQueue, type Held, pendingCardsNote, splitCardLead, splitDraftCards, withLeft , withSendState } from "./approval-queue.ts";
+import { draftApprovalBlock, parseDraftApproval } from "./draft-approval.ts";
+import { parseTone, stripHandoff } from "./tone.ts";
 
 // Draft refs are 2+ characters (draft-approval.ts REF): "A" stands for the draft "cm-A".
 const card = (ref: string, body = `답글 ${ref}`) => `[ask] 댓글 답글 초안이에요\n${draftApprovalBlock({ to: `${ref} 댓글`, toLabel: "대상", body, ref: `cm-${ref}`, question: "이 답글 올릴까요?" })}`;
@@ -357,6 +358,120 @@ describe("the version the owner reads (audit S6, S7)", () => {
 		await r.q.releaseAll();
 		expect(r.posts.map(p => [p.target, cardRef(p.text)])).toEqual([["ch:2", "cm-B"]]);
 		expect(r.disk()).toEqual([]);
+	});
+});
+
+describe("a hand-written card (no store knows its ref)", () => {
+	const hand = (ref: string, o: Partial<Parameters<typeof draftApprovalBlock>[0]> = {}) =>
+		`[ask] [file] /tmp/fileA.xlsx\n\n${draftApprovalBlock({ to: "Kim <kim@example.com>", toLabel: "받는이", subject: "RE: 제목A", body: `본문 ${ref}`, ref, question: "이 메일 보낼까요?", ...o })}`;
+	const asDraft = (text: string) => parseDraftApproval(parseTone(stripHandoff(text)).text.trim());
+	const mailItems = () => {
+		const texts = new Map<string, string>();
+		const calls: { ref: string; text?: string }[] = [];
+		const itemOf = (conv: string, ref: string, text?: string) => {
+			calls.push({ ref, text });
+			const d = asDraft(text ?? texts.get(ref) ?? "");
+			return d?.subject ? `${conv}|${d.to}|${d.subject}` : ref;
+		};
+		const open = (text: string) => (texts.set(cardRef(text)!, text), text);
+		return { itemOf, open, calls };
+	};
+
+	test("a card with no prose head line is named by its question, without the ref tag", () => {
+		const q = "이 메일 보낼까요?";
+		expect(cardTitle(hand("hand-3"))).toBe(q);
+		expect(cardTitle(withLeft(hand("hand-3"), 0, { k: 2, total: 2 }))).toBe(q);
+		expect(cardTitle(hand("hand-3").replace("[ask] [file] /tmp/fileA.xlsx\n\n", ""))).toBe(q);
+		expect(cardTitle(`[ask] 첨부를 확인해 주세요\n\n${hand("hand-3")}`)).toBe("첨부를 확인해 주세요");
+		expect(cardTitle(card("A"))).toBe("댓글 답글 초안이에요");
+	});
+
+	test("a card held and then released is named by its question where it is pointed to, listed and closed", async () => {
+		const q = "이 메일 보낼까요?";
+		const t = setup();
+		await t.q.route("ch:1", card("A"));
+		t.show("ch:1", card("A"));
+		expect((await t.q.route("ch:1", hand("hand-3"))).action).toBe("hold");
+		t.close("ch:1", "cm-A");
+		const released = t.posts[0]!.text;
+		t.show("ch:1", released);
+		const open = t.q.openCard("ch:1")!;
+		expect(open.title).toBe(q);
+		expect(cardPointer(open)).toBe(`-# ↑ 답을 기다리는 카드: ${q} · ${open.progress}`.replace(/ · $/, ""));
+		const noticeText = hand("hand-3").split("\n\n").slice(1).join("\n\n");
+		const note = pendingCardsNote([{ ref: "hand-3", title: cardTitle(noticeText) || "x", notice: "n1" }], 0)!;
+		expect(note.split("\n")[1]!.startsWith(`- ${q} (hand-3)`)).toBe(true);
+		expect(closedCardText(released, "answered").split("\n")[0]).toBe(q);
+	});
+
+	test("a card of the same mail under a new ref is one item with the open card; another subject or recipient waits", async () => {
+		const m = mailItems();
+		const t = setup([], { itemOf: m.itemOf });
+		await t.q.route("ch:1", hand("hand-3"));
+		t.show("ch:1", m.open(hand("hand-3")));
+		m.calls.length = 0;
+		expect((await t.q.route("ch:1", hand("hand-4"))).action).toBe("update");
+		expect(m.calls.some(c => c.ref === "hand-4" && c.text?.includes("(hand-4)"))).toBe(true);
+		expect(m.calls.some(c => c.ref === "hand-3" && c.text?.includes("(hand-3)"))).toBe(true);
+		expect(t.disk()).toEqual([]);
+		m.open(hand("hand-4"));
+		expect((await t.q.route("ch:1", hand("hand-5", { subject: "RE: 제목B" }))).action).toBe("hold");
+		expect((await t.q.route("ch:1", hand("hand-6", { to: "Lee <lee@example.com>" }))).action).toBe("hold");
+		expect(t.disk().map(h => h.ref)).toEqual(["hand-5", "hand-6"]);
+	});
+
+	test("a revision held behind another mail's open card replaces the held card: only the newest is released", async () => {
+		const m = mailItems();
+		const t = setup([], { itemOf: m.itemOf });
+		await t.q.route("ch:1", card("A"));
+		t.show("ch:1", card("A"));
+		expect(await t.q.route("ch:1", hand("hand-3"))).toEqual({ action: "hold", left: 1 });
+		const lead = "표를 고쳤어요.";
+		expect(await t.q.route("ch:1", `${lead}\n\n${hand("hand-4")}`)).toEqual({ action: "post", text: lead });
+		expect(t.disk().map(h => h.ref)).toEqual(["hand-4"]);
+		t.close("ch:1", "cm-A");
+		expect(t.posts.map(p => cardRef(p.text))).toEqual(["hand-4"]);
+		expect(t.disk()).toEqual([]);
+	});
+
+	test("a store-backed card (the reply store knows its ref) is replaced in place as before", async () => {
+		const m = mailItems();
+		const reposts: string[] = [];
+		const t = setup([], { itemOf: m.itemOf, handWritten: () => false, repost: (_c, ref) => (reposts.push(ref), undefined) });
+		await t.q.route("ch:1", hand("hand-3"));
+		t.show("ch:1", m.open(hand("hand-3")));
+		expect((await t.q.route("ch:1", hand("hand-4"))).action).toBe("update");
+		expect(reposts).toEqual([]);
+		expect(t.rewrites.at(-1)).toMatchObject({ conv: "ch:1", ref: "hand-3" });
+		expect(t.posts).toEqual([]);
+	});
+
+	test("a hand-written revision of the open card is posted again: the notice is handed over, the shown card follows the new ref", async () => {
+		const m = mailItems();
+		const taken: { ref: string; text: string }[] = [];
+		const was = hand("hand-3");
+		const t = setup([], {
+			itemOf: m.itemOf,
+			handWritten: ref => ref.startsWith("hand-"),
+			openText: (_c, ref) => (ref === "hand-3" ? was : undefined),
+			repost: (_c, ref, text) => (taken.push({ ref, text }), { id: "n1", was, card: { target: "ch:1", ids: ["m1"] } }),
+		});
+		await t.q.route("ch:1", was);
+		t.show("ch:1", m.open(was));
+		const lead = "표를 고쳤어요.";
+		const next = `${lead}\n\n${hand("hand-4", { body: "고친 본문" })}`;
+		expect(t.q.replaces("ch:1", next)).toBe("hand-3");
+		const r = await t.q.route("ch:1", next);
+		expect(r).toEqual({ action: "post", repost: { id: "n1", ref: "hand-3", was, card: { target: "ch:1", ids: ["m1"] } } });
+		expect(taken).toEqual([{ ref: "hand-3", text: next }]);
+		expect(t.rewrites).toEqual([]);
+		expect(t.disk()).toEqual([]);
+		t.open.set("ch:1", [cardRef(m.open(next))!]);
+		t.q.posted("ch:1", next, ["m2"]);
+		expect(t.q.openCard("ch:1")).toMatchObject({ ref: "hand-4", ids: ["m2"], held: 0 });
+		expect(t.q.replaces("ch:1", hand("hand-4", { body: "또 고친 본문" }))).toBe("hand-4");
+		expect(t.q.replaces("ch:1", hand("hand-4", { body: "고친 본문" }))).toBeUndefined();
+		expect((await t.q.route("ch:1", hand("hand-4", { body: "고친 본문" }))).action).toBe("update");
 	});
 });
 
