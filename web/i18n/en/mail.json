@@ -246,6 +246,8 @@
   "mail.done_n.trash": "{n} deleted",
   "mail.unsynced_n": "{n} of {total} weren't changed in the mailbox",
   "mail.unsynced_all_n": "None of the {n} were changed in the mailbox",
+  "mail.stayed": "The mailbox is unchanged",
+  "mail.stayed_n": "{n} unchanged in the mailbox",
   "mail.err.unsupported": "The server doesn't support this yet",
   "mail.err.failed": "Couldn't do that",
   "mail.trash.ask_n": "Delete {n} emails? The originals move to the mailbox's trash too. You can restore them from there.",

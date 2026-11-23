@@ -201,6 +201,8 @@
   "mail.done_n.trash": "{n}개를 삭제했어요",
   "mail.unsynced_n": "{total}개 중 {n}개는 메일함에 반영하지 못했어요",
   "mail.unsynced_all_n": "{n}개 모두 메일함에 반영하지 못했어요",
+  "mail.stayed": "메일함은 그대로예요",
+  "mail.stayed_n": "{n}개는 메일함 그대로예요",
   "mail.err.unsupported": "서버가 아직 이 작업을 지원하지 않아요",
   "mail.err.failed": "처리하지 못했어요",
   "mail.trash.ask_n": "메일 {n}개를 삭제할까요? 원본도 메일함 휴지통으로 옮겨요. 휴지통에서 되살릴 수 있어요",
