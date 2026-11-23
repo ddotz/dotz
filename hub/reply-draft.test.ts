@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { ADAPT, addressesOf, automatedSender, buildPrompt, examplesUse, FAMILIAR_AT, generateReply, lintReply, NO_RECIPIENT, parseResult, precheck, reviseReply, usableReplyTo, type ModelCall, type ReplyItem, type ReplyStyle } from "./reply-draft.ts";
+import { ADAPT, addressesOf, automatedSender, buildPrompt, examplesUse, FAMILIAR_AT, generateReply, learnedOf, lintReply, NO_RECIPIENT, parseResult, precheck, promptCorrections, reviseReply, usableReplyTo, type ModelCall, type ReplyItem, type ReplyStyle } from "./reply-draft.ts";
 import { replyExclusion } from "./mail-state.ts";
 
 const item: ReplyItem = { kind: "mail", from: "Kim <kim@example.com>", self: ["me@example.net"], subject: "회의 일정 문의", text: "다음 주 회의 일정을 알려 주실 수 있을까요?" };
@@ -145,18 +145,71 @@ test("the prompt keeps received text as data and carries the user's samples, cor
 	expect(addressesOf("Kim <KIM@example.com>, lee@example.com")).toEqual(["kim@example.com", "lee@example.com"]);
 });
 
-test("mail and comment prompts list the newest 12 corrections newest first; the chat prompt lists the newest 12 in their order", () => {
-	const corrections = Array.from({ length: 15 }, (_, i) => `c${String(i).padStart(2, "0")}`);
-	const listed = (user: string) => [...user.matchAll(/^- (c\d\d)$/gm)].map(m => m[1]);
-	expect(listed(buildPrompt(item, { ...style, corrections }).user)).toEqual(corrections.slice(-12).reverse());
-	expect(listed(buildPrompt({ ...item, kind: "comment", from: "viewer" }, { ...style, corrections }).user)).toEqual(corrections.slice(-12).reverse());
-	expect(listed(buildPrompt({ ...item, kind: "chat" }, { ...style, corrections }).user)).toEqual(corrections.slice(-12));
+test("every correction within the budget reaches the prompt newest date first, though the install level comes first in the merged list", () => {
+	const install = Array.from({ length: 4 }, (_, i) => `2030-02-1${i}: 설치 고친 점 ${i}`);
+	const app = Array.from({ length: 12 }, (_, i) => `2030-01-${10 + i}: 앱 고친 점 ${i}`);
+	const corrections = [...install, ...app];
+	const newestFirst = [...install].reverse().concat([...app].reverse());
+	const listed = (user: string) => [...user.matchAll(/^- (2030-\d\d-\d\d: .+)$/gm)].map(m => m[1]);
+	expect(listed(buildPrompt(item, { ...style, corrections }).user)).toEqual(newestFirst);
+	expect(listed(buildPrompt({ ...item, kind: "comment", from: "viewer" }, { ...style, corrections }).user)).toEqual(newestFirst);
+	expect(listed(buildPrompt({ ...item, kind: "chat" }, { ...style, corrections }).user)).toEqual([...newestFirst].reverse());
 });
 
-test("the chat prompt cuts each correction to 200 characters like the mail prompt", () => {
-	const long = `x${"가".repeat(500)}`;
-	expect(buildPrompt({ ...item, kind: "chat" }, { ...style, corrections: [long] }).user).not.toContain("가".repeat(200));
-	expect(buildPrompt({ ...item, kind: "mail" }, { ...style, corrections: [long] }).user).not.toContain("가".repeat(200));
+test("promptCorrections: newest date first, undated as oldest, the later of one date newer, duplicates once, each cut to 300, the oldest dropped past the budget", () => {
+	const newest = "2030-03-01: 최신";
+	const oldest = "2030-01-01: 오래됨";
+	const middle = "2030-02-01: 중간";
+	const undated = "날짜 없는 고친 점";
+	expect(promptCorrections([newest, oldest, undated, middle, newest], 4000)).toEqual([newest, middle, oldest, undated]);
+	expect(promptCorrections([newest, oldest, middle], newest.length + middle.length)).toEqual([newest, middle]);
+	expect(promptCorrections(["2030-01-01: 먼저", "2030-01-01: 나중"], 4000)).toEqual(["2030-01-01: 나중", "2030-01-01: 먼저"]);
+	expect(promptCorrections([`2030-01-01: ${"가".repeat(500)}`], 4000)[0]).toHaveLength(300);
+});
+
+test("wording the user banned never reaches the prompt as a past reply, a sample or a pattern; his identity and rules keep it", () => {
+	const ban = "행복한 하루 되세요";
+	const examples = [{ received: "오늘 잘 할게요", reply: `네 ${ban}~` }, { received: "언제 와요?", reply: "내일 갈게요." }];
+	const banned: ReplyStyle = { ...style, forbidden: [ban], identity: [`'${ban}'라고 쓰지 않는 사람`], rules: [`${ban}는 비문이라 쓰지 않는다`], samples: ["확인해 보고 말씀드릴게요.", `오늘도 ${ban}!`], templates: [`공연 문의 => 감사합니다 | ${ban}`], examples, closest: 0.9 };
+	const p = buildPrompt(item, banned).user;
+	for (const gone of [`네 ${ban}~`, `오늘도 ${ban}!`, "공연 문의 =>"]) expect(p).not.toContain(gone);
+	for (const kept of [`'${ban}'라고 쓰지 않는 사람`, `${ban}는 비문이라 쓰지 않는다`, "내일 갈게요.", "확인해 보고 말씀드릴게요."]) expect(p).toContain(kept);
+	expect(buildPrompt(item, { ...banned, forbidden: ["/하루\\s*되세요/"] }).user).not.toContain(`네 ${ban}~`);
+	const free = buildPrompt(item, { ...banned, forbidden: [] }).user;
+	expect(free.split("<<<REPLY").length - 1).toBe(2);
+	expect(free).toContain(`<<<REPLY\n네 ${ban}~\nREPLY>>>`);
+	const allBanned = buildPrompt(item, { ...banned, examples: [examples[0]!] });
+	expect(allBanned.user).not.toContain("<<<REPLY");
+	expect(allBanned.system).not.toContain(ADAPT);
+});
+
+test("whenever past replies, patterns or samples are shown, the system text says the user's rules and corrections beat them", () => {
+	const ranks = (s: ReplyStyle) => buildPrompt(item, s).system.includes("beat any past reply");
+	expect(ranks(style)).toBe(true);
+	expect(ranks({ ...style, samples: [], templates: ["문의 => 네"] })).toBe(true);
+	expect(ranks({ ...style, samples: [], examples: [{ received: "질문", reply: "답" }], closest: 0.1 })).toBe(true);
+	expect(ranks({ ...style, samples: [] })).toBe(false);
+});
+
+test("learnedOf bans only wording the user himself wrote in the change, at most five, and is everywhere only when something was learned", () => {
+	const change = "앞으로 '행복한  하루 되세요'랑 thanks, /하루/ 같은 건 쓰지 마. 가 나다 라마 바사 아자 도 빼고, 이것도: " + "길".repeat(41);
+	const forbid = ["행복한 하루 되세요", "받은 메일에 있던 말", "가", "/하루/", "Thanks", "행복한 하루 되세요 ", "길".repeat(41), "나다", "라마", "바사", "아자"];
+	expect(learnedOf({ lesson: "끝인사는 '좋은 하루 보내세요'로", forbid, everywhere: true }, change)).toEqual({ line: "끝인사는 '좋은 하루 보내세요'로", forbid: ["행복한 하루 되세요", "Thanks", "나다", "라마", "바사"], everywhere: true });
+	expect(learnedOf({ lesson: "", forbid: ["받은 메일에 있던 말"], everywhere: true }, change)).toEqual({ line: "", forbid: [], everywhere: false });
+	expect(learnedOf({}, "더 짧게")).toEqual({ line: "더 짧게", forbid: [], everywhere: false });
+});
+
+test("a revise asks what the change bans, rewrites a draft that uses a banned wording once with the finding listed, and returns the ban", async () => {
+	const ban = "행복한 하루 되세요";
+	const learned = { lesson: "끝인사는 '좋은 하루 보내세요'로", forbid: [ban], everywhere: true };
+	const m = fake([j({ ...good, body: `네 ${ban}!`, ...learned }), j({ ...good, body: "네 좋은 하루 보내세요!", ...learned })]);
+	const r = await reviseReply(item, { ...style, forbidden: [ban] }, { to: "kim@example.com", subject: "Re: 회의 일정 문의", body: `${ban}!` }, `${ban}는 비문이니 앞으로 쓰지 마`, m.call);
+	expect(m.calls).toHaveLength(2);
+	expect(m.calls[0]!.user).toContain('"forbid"');
+	expect(m.calls[1]!.user).toContain(`it uses the forbidden expression '${ban}'`);
+	expect(r).toMatchObject({ action: "draft", tries: 2, warnings: [], draft: { body: "네 좋은 하루 보내세요!" }, ...learned });
+	expect(parseResult(j({ ...good, forbid: "x", everywhere: "yes" }))).not.toHaveProperty("forbid");
+	expect(parseResult(j({ ...good, forbid: "x", everywhere: "yes" }))).not.toHaveProperty("everywhere");
 });
 
 test("a subject enters the prompt at 200 characters and a 고치기 memo at 2,000", () => {
@@ -179,10 +232,11 @@ test("a reply the user asked for himself (초안 작성) is never a skip: the pr
 
 test("초안 작성 with text: the owner's instruction is in the prompt as his words; without it there is no such line", () => {
 	const base = { kind: "mail" as const, from: "Kim <kim@example.com>", subject: "견적", text: "견적 부탁드립니다", requested: true };
-	const withIt = buildPrompt({ ...base, instruction: '금요일까지 보낸다고 "꼭" 써 줘' }, { identity: "", templates: "", samples: [], rules: "", corrections: [], forbidden: [] } as never);
+	const empty: ReplyStyle = { identity: [], templates: [], samples: [], rules: [], corrections: [], forbidden: [] };
+	const withIt = buildPrompt({ ...base, instruction: '금요일까지 보낸다고 "꼭" 써 줘' }, empty);
 	expect(withIt.user).toContain("The user's instruction for this reply");
 	expect(withIt.user).toContain("금요일까지 보낸다고 '꼭' 써 줘");
-	const without = buildPrompt(base, { identity: "", templates: "", samples: [], rules: "", corrections: [], forbidden: [] } as never);
+	const without = buildPrompt(base, empty);
 	expect(without.user).not.toContain("The user's instruction for this reply");
 });
 

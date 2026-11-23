@@ -48,14 +48,14 @@ export type DraftOut = { to: string; cc?: readonly string[]; subject?: string; b
 /** Who wrote to the user, as the model judged it (mail and comment): `evidence` = the sender's own words that show it. */
 export type Recipient = { who: string; evidence: string };
 export type ReplyResult =
-	| { action: "draft"; draft: DraftOut; questions: string[]; warnings: string[]; tries: number; recipient?: Recipient; /** Revise mode: the lasting preference the change shows ("" = only about this message); absent = the model did not say. */ lesson?: string; /** The candidates the model chose (exact names); [] = none, absent = it gave no "files" or the item had no candidates. */ files?: string[] }
+	| { action: "draft"; draft: DraftOut; questions: string[]; warnings: string[]; tries: number; recipient?: Recipient; /** Revise mode: the lasting preference the change shows ("" = only about this message); absent = the model did not say. */ lesson?: string; forbid?: string[]; everywhere?: boolean; /** The candidates the model chose (exact names); [] = none, absent = it gave no "files" or the item had no candidates. */ files?: string[] }
 	| { action: "skip"; reason: string };
 // chat only (generateChatReply): the message needs a decision only the user can make; 2-4 short choices come back instead of a draft
 export type AskResult = { action: "ask"; question: string; choices: string[] };
 
 export type SenderFilter = { only: string[]; skip: string[] };
 export type PromptExtras = { previous?: DraftOut; change?: string; failures?: string[] };
-export type ModelJson = { recipient?: Recipient; lesson?: string; action: "skip" | "draft" | "ask"; reason: string; to: string; subject?: string; body: string; questions: string[]; question?: string; choices?: string[]; /** Absent key = undefined, [] = the model chose none. */ files?: string[] };
+export type ModelJson = { recipient?: Recipient; lesson?: string; forbid?: string[]; everywhere?: boolean; action: "skip" | "draft" | "ask"; reason: string; to: string; subject?: string; body: string; questions: string[]; question?: string; choices?: string[]; /** Absent key = undefined, [] = the model chose none. */ files?: string[] };
 
 const DEFAULT_MAX: Record<ReplyKind, number> = { mail: 1200, comment: 300, chat: 300 };
 export const AUTOMATED = /^(no[-_.]?reply|do[-_.]?not[-_.]?reply|mailer[-_.]?daemon|postmaster|bounces?|notifications?|notify|alerts?|auto[-_.]?(reply|mailer|confirm)|newsletter)([-_.+].*)?$/i;
@@ -167,8 +167,29 @@ const forRecipient = (s: string): string =>
 		.replace('{"action":"skip"|"draft"', () => '{"recipient":{"who":"...","evidence":"..."},"action":"skip"|"draft"')
 		.replace("Output exactly one JSON", () => `${RECIPIENT}\nOutput exactly one JSON`);
 // Revise mode (mail and comment): what the change teaches, so only a lasting preference enters the profile.
-const LESSON = 'Also add to the JSON object "lesson": the lasting preference this change shows, one short line in the user\'s language with its condition (when ... then ...), in the user\'s own words where possible; "" when the change is only about this message, its file, its song or its exact text.';
+const LESSON = 'Also add to the JSON object "lesson": the lasting preference this change shows, one short line in the user\'s language with its condition (when ... then ...), in the user\'s own words where possible; "" when the change is only about this message, its file, its song or its exact text. Add "forbid": the exact wordings, as they would appear in a reply, that the user says must not be used again ([] when the change bans none or is only about this message). Add "everywhere": true only when the user says the change holds always or everywhere, or rejects the wording itself as wrong (grammar, spelling, a habit of language); false when it is about this kind of message or this channel.';
 const CORRECTIONS = "The user's past corrections, newest first; when two disagree, the newer one wins. Each was about one draft: carry over the preference it shows to the same kind of situation, never its specific words, songs, files or names; skip one that only rewrites a single draft:";
+/** The characters of the user's corrections a mail, comment or chat prompt carries (KakaoTalk's own prompt carries 1200). */
+export const CORRECTIONS_BUDGET = 4000;
+const CORRECTION_MAX = 300;
+const DATED = /^\s*(\d{4}-\d{2}-\d{2})/;
+
+/** The corrections a prompt shows: newest first by each line's leading date (undated = oldest; of one date the later line is newer), duplicates once, each cut to 300 characters, as many as fit in `budget` characters. */
+export function promptCorrections(corrections: string[], budget: number): string[] {
+	const newestFirst = corrections
+		.map((line, at) => ({ line, at, date: DATED.exec(line)?.[1] ?? "" }))
+		.sort((a, b) => (a.date === b.date ? b.at - a.at : a.date < b.date ? 1 : -1));
+	const out: string[] = [];
+	let total = 0;
+	for (const { line } of newestFirst) {
+		const cut = line.slice(0, CORRECTION_MAX);
+		if (out.includes(cut)) continue;
+		if (total + cut.length > budget) break;
+		out.push(cut);
+		total += cut.length;
+	}
+	return out;
+}
 
 // Chat only. The same single model call first decides whether the message needs the user's own decision.
 const CHAT_ASK = `
@@ -178,7 +199,8 @@ The user has ALREADY decided what to answer (his pick is given below). Write the
 
 // Only with past replies to show (style.examples): the user's own past replies decide the shape of the reply.
 const EGO = "Answer as this person, not as an assistant writing for them: read the message the way they would, decide what they would actually do here, then write only what they would type. If they would write one plain line, write one plain line. Their real quirks beat correct or polished writing. Nothing they would not bother to say.";
-export const ADAPT = "The past replies below are the user's own. Find the one closest in situation to this message and write this reply in its shape: the same opening, the same order, about the same length, the same closing, reusing its sentences word for word wherever they fit, and changing only what this message needs. A short thank-you gets as little as they gave. Names, songs, files and dates come from this message only, never from an example.";
+export const ADAPT = "The past replies below are the user's own. Find the one closest in situation to this message and write this reply in its shape: the same opening, the same order, about the same length, the same closing, reusing its sentences word for word wherever they fit and no rule or correction of the user rejects their wording, and changing only what this message needs. A short thank-you gets as little as they gave. Names, songs, files and dates come from this message only, never from an example.";
+const RANK = "The user's rules, corrections and forbidden list beat any past reply, pattern or sample: where an example words something the way a rule or correction rejects, use the rule's wording.";
 const PLAIN = "A greeting, a thank-you line, a name or a signature goes in only if that closest past reply has it. If it is one line, this is one line.";
 // A message the user has not met: the same one call writes it in his voice instead of reshaping a reply to something else.
 const FRESH = "None of the past replies below is close to this message: this situation is new to the user. Read them only for how this person sounds (tone, register, length, habits), never for what to say. Work out what THIS message actually asks and answer that in new sentences of your own, in this voice. New sentences bring no new facts: say only what this message, its context and the user's rules show, and when that is little, write little. Do not lift a sentence or a long phrase from a past reply, a pattern or a sample; only a fixed formula they use everywhere, such as their usual greeting or sign-off, may stay. Names, songs, files and dates come from this message only, never from an example.";
@@ -198,7 +220,12 @@ const SUBJECT_MAX = 200;
 const CHANGE_MAX = 2000;
 
 export function buildPrompt(item: ReplyItem, style: ReplyStyle, extra: PromptExtras = {}): { system: string; user: string } {
-	const fresh = !!style.examples?.length && examplesUse(item.kind, style.closest) === "voice";
+	const allowed = (text: string) => !style.forbidden.some(f => forbiddenHit(text, f));
+	const examples = style.examples?.filter(e => allowed(e.reply)) ?? [];
+	const templates = (style.templates ?? []).filter(allowed);
+	const samples = style.samples.filter(allowed);
+	const corrections = promptCorrections(style.corrections, CORRECTIONS_BUDGET);
+	const fresh = !!examples.length && examplesUse(item.kind, style.closest) === "voice";
 	const head = [
 		`Kind: ${item.kind}`,
 		`From: ${item.from}`,
@@ -217,18 +244,18 @@ export function buildPrompt(item: ReplyItem, style: ReplyStyle, extra: PromptExt
 		"",
 		list("Who the user is (write as this person):", style.identity ?? [], "(not analysed yet: follow the samples)"),
 		"",
-		list("The user's reply patterns (situation => their sentences, in order):", style.templates ?? [], "(none)"),
+		list("The user's reply patterns (situation => their sentences, in order):", templates, "(none)"),
 		"",
-		list("The user's own sentences (their voice):", style.samples, "(none yet: use a neutral, polite register)"),
+		list("The user's own sentences (their voice):", samples, "(none yet: use a neutral, polite register)"),
 		"",
 		list("The user's rules:", style.rules, "(none)"),
 		"",
-		item.kind === "chat" ? list("The user's past corrections (follow them):", style.corrections.slice(-12).map(c => c.slice(0, 200)), "(none)") : list(CORRECTIONS, style.corrections.slice(-12).reverse().map(c => c.slice(0, 200)), "(none)"),
+		item.kind === "chat" ? list("The user's past corrections (follow them):", [...corrections].reverse(), "(none)") : list(CORRECTIONS, corrections, "(none)"),
 		"",
 		list("Forbidden expressions:", style.forbidden, "(none)"),
 		"",
 		...(item.kind === "chat" && item.choice ? [`The user's decision (his own words, data): "${item.choice.replace(/\s+/g, " ").trim().slice(0, 60).replace(/"/g, "'")}"`, ""] : []),
-		...(style.examples?.length ? [fresh ? "The user's real past replies to other kinds of message (for their voice only; none of them answers this one):" : "The user's real past replies to the most similar received messages (verbatim, their exact wording; use them for voice and for how this kind of message is answered; facts must still fit THIS message):", ...(fresh ? style.examples.slice(0, FRESH_EXAMPLES) : style.examples).map(e => `<<<RECEIVED\n${e.same ? "(this same sender)\n" : ""}${defang(e.received)}\nRECEIVED>>>\n<<<REPLY\n${defang(e.reply)}\nREPLY>>>`), ""] : []),
+		...(examples.length ? [fresh ? "The user's real past replies to other kinds of message (for their voice only; none of them answers this one):" : "The user's real past replies to the most similar received messages (verbatim, their exact wording; use them for voice and for how this kind of message is answered; facts must still fit THIS message):", ...(fresh ? examples.slice(0, FRESH_EXAMPLES) : examples).map(e => `<<<RECEIVED\n${e.same ? "(this same sender)\n" : ""}${defang(e.received)}\nRECEIVED>>>\n<<<REPLY\n${defang(e.reply)}\nREPLY>>>`), ""] : []),
 		...(style.habits?.length ? [list("The user's measured habits. Keep these as they are; never normalise, correct or beautify spelling, spacing or punctuation:", style.habits, ""), ""] : []),
 		`Keep the body within ${style.maxChars ?? DEFAULT_MAX[item.kind]} characters.`,
 		...(item.requested ? ["", 'The user asked for a reply to this message himself: action must be "draft", never "skip".'] : []),
@@ -242,7 +269,8 @@ export function buildPrompt(item: ReplyItem, style: ReplyStyle, extra: PromptExt
 	if (extra.change && item.kind !== "chat") parts.push("", LESSON);
 	if (extra.failures?.length) parts.push("", "Your last output failed these checks; fix every one:", ...extra.failures.map(f => `- ${f}`));
 	const base = item.kind === "chat" ? SYSTEM + (item.choice ? CHAT_PICK : CHAT_ASK) : forRecipient(SYSTEM);
-	const system = fresh ? `${base.replace(PATTERNS, () => FRESH_PATTERNS)}\n${EGO}\n${FRESH}` : base + (style.examples?.length ? `\n${EGO}\n${ADAPT}\n${PLAIN}` : "");
+	const voice = fresh ? `${base.replace(PATTERNS, () => FRESH_PATTERNS)}\n${EGO}\n${FRESH}` : base + (examples.length ? `\n${EGO}\n${ADAPT}\n${PLAIN}` : "");
+	const system = examples.length || templates.length || samples.length ? `${voice}\n${RANK}` : voice;
 	return { system, user: parts.join("\n") };
 }
 
@@ -262,7 +290,7 @@ function toJson(raw: string): ModelJson | undefined {
 	const r = o.recipient as Record<string, unknown> | null | undefined;
 	const recipient = r && typeof r === "object" && typeof r.who === "string" && typeof r.evidence === "string" ? { who: r.who.trim(), evidence: r.evidence.trim() } : undefined;
 	const ask = o.action === "ask" ? { question: cleanQuestion(o.question), choices: cleanChoices(o.choices) } : undefined;
-	return { ...(recipient ? { recipient } : {}), ...(typeof o.lesson === "string" ? { lesson: o.lesson.trim() } : {}), action: o.action, reason: str(o.reason).trim(), ...(Array.isArray(o.files) ? { files: strings(o.files) } : {}), ...(ask ? { question: ask.question, choices: ask.choices } : {}), to: str(o.to).trim(), ...(str(o.subject).trim() ? { subject: str(o.subject).trim() } : {}), body: str(o.body).trim(), questions: strings(o.questions) };
+	return { ...(recipient ? { recipient } : {}), ...(typeof o.lesson === "string" ? { lesson: o.lesson.trim() } : {}), ...(Array.isArray(o.forbid) ? { forbid: strings(o.forbid) } : {}), ...(typeof o.everywhere === "boolean" ? { everywhere: o.everywhere } : {}), action: o.action, reason: str(o.reason).trim(), ...(Array.isArray(o.files) ? { files: strings(o.files) } : {}), ...(ask ? { question: ask.question, choices: ask.choices } : {}), to: str(o.to).trim(), ...(str(o.subject).trim() ? { subject: str(o.subject).trim() } : {}), body: str(o.body).trim(), questions: strings(o.questions) };
 }
 
 // The model's one JSON object: the last ```json block, else the last line that is a {...} object, else the whole text.
@@ -278,8 +306,10 @@ export function parseResult(text: string): ModelJson | undefined {
 
 const PLACEHOLDER = /\[(?:이름|성함|name|날짜|시간|회사|받는\s*분|수신자)[^\]\n]*\]|\{\{[^}\n]*\}\}|\bO{3,}\b|\bX{3,}\b|\bTODO\b|[○◯]{2,}/i;
 
+const REGEX_ENTRY = /^\/(.+)\/([a-z]*)$/;
+
 function forbiddenHit(body: string, entry: string): boolean {
-	const re = /^\/(.+)\/([a-z]*)$/.exec(entry);
+	const re = REGEX_ENTRY.exec(entry);
 	if (re) {
 		try {
 			return new RegExp(re[1]!, re[2]).test(body);
@@ -372,7 +402,7 @@ const subjectOf = (subject: string | undefined, item: ReplyItem): string | undef
 
 async function run(item: ReplyItem, style: ReplyStyle, call: ModelCall, base: PromptExtras): Promise<ReplyResult | AskResult> {
 	let failures: string[] | undefined;
-	let first: { draft: DraftOut; questions: string[]; warnings: string[]; recipient?: Recipient; lesson?: string; files?: string[] } | undefined;
+	let first: Omit<Extract<ReplyResult, { action: "draft" }>, "action" | "tries"> | undefined;
 	for (let tries = 1; tries <= 2; tries++) {
 		const p = buildPrompt(item, style, { ...base, ...(failures ? { failures } : {}) });
 		let out: string;
@@ -406,7 +436,7 @@ async function run(item: ReplyItem, style: ReplyStyle, call: ModelCall, base: Pr
 		const files = item.candidates?.length && parsed.files ? [...new Set(parsed.files.flatMap(f => item.candidates!.find(c => fileNameKey(c) === fileNameKey(f)) ?? []))] : undefined;
 		const attach = files ? attachIssues({ subject: draft.subject, body: draft.body, files, request: item.text }).flatMap(i => ATTACH_FAILURE[i.kind] ?? []) : [];
 		const fixable = [...rewritable(found), ...attach];
-		const who = { ...(parsed.recipient ? { recipient: parsed.recipient } : {}), ...(parsed.lesson !== undefined ? { lesson: parsed.lesson } : {}), ...(files ? { files } : {}) };
+		const who = { ...(parsed.recipient ? { recipient: parsed.recipient } : {}), ...(parsed.lesson !== undefined ? { lesson: parsed.lesson } : {}), ...(parsed.forbid ? { forbid: parsed.forbid } : {}), ...(parsed.everywhere !== undefined ? { everywhere: parsed.everywhere } : {}), ...(files ? { files } : {}) };
 		if (!fixable.length || tries === 2) return { action: "draft", draft, questions: parsed.questions, warnings: found, tries, ...who };
 		first ??= { draft, questions: parsed.questions, warnings: found, ...who };
 		failures = fixable;
@@ -429,6 +459,27 @@ export const generateChatReply = (item: ReplyItem, style: ReplyStyle, call: Mode
 // What a revision teaches the tone profile: the model's lasting lesson, the change itself when the model left the field out, nothing ("") when the change
 // was only about that one draft.
 export const lessonOf = (r: { lesson?: string }, change: string): string => (r.lesson === undefined ? change : r.lesson);
+
+/** What a revision teaches, checked: `line` as `lessonOf`; `forbid` only wordings the user's own change text holds; `everywhere` only when something was learned. */
+export type Learned = { line: string; forbid: string[]; everywhere: boolean };
+const BAN_CHARS = { min: 2, max: 40 };
+const BANS_MAX = 5;
+
+/** The lesson of a revision with the wordings it bans: the model's `forbid` entries that occur verbatim in `change` (whitespace and case aside), 2 to 40 characters, no `/regex/`, at most 5. */
+export function learnedOf(r: { lesson?: string; forbid?: string[]; everywhere?: boolean }, change: string): Learned {
+	const line = lessonOf(r, change);
+	const said = change.replace(/\s+/g, " ").toLowerCase();
+	const forbid: string[] = [];
+	for (const entry of r.forbid ?? []) {
+		const trimmed = entry.trim();
+		const word = trimmed.replace(/\s+/g, " ");
+		const chars = [...trimmed].length;
+		if (chars < BAN_CHARS.min || chars > BAN_CHARS.max || REGEX_ENTRY.test(trimmed) || !said.includes(word.toLowerCase()) || forbid.some(f => f.toLowerCase() === word.toLowerCase())) continue;
+		forbid.push(word);
+		if (forbid.length === BANS_MAX) break;
+	}
+	return { line, forbid, everywhere: r.everywhere === true && (!!line.trim() || forbid.length > 0) };
+}
 
 // The same, applying the user's requested change to a previous draft.
 export const reviseReply = (item: ReplyItem, style: ReplyStyle, previous: DraftOut, change: string, call: ModelCall): Promise<ReplyResult> => noAsk(run(item, style, call, { previous, change }));

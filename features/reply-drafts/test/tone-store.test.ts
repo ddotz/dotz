@@ -9,7 +9,7 @@ import { buildDraft, reviseDraft } from "../lib/flow.ts";
 import { learnKakaoRoom, type OwnerReader } from "../lib/kakao-tone.ts";
 import { offerMailDraft } from "../lib/offer.ts";
 import { readMailBody, sendWith } from "../lib/senders.ts";
-import { loadStyle, paths, recordCorrection, roomFile, toneFile, writeExamples } from "../lib/settings.ts";
+import { HEADINGS, loadStyle, paths, profileBullets, recordCorrection, recordForbidden, removeForbidden, roomFile, toneFile, writeExamples } from "../lib/settings.ts";
 import { addDraft, getDraft, listDrafts } from "../lib/store.ts";
 import { learnTone, zeleEnabled, type Runner } from "../lib/tone.ts";
 import { enable, fakeModel, goodReply, j, mailFixture, setupEnv } from "./helpers.ts";
@@ -283,4 +283,23 @@ test("a section the code does not know reaches the rules, after the known rule s
 	writeFileSync(toneFile("install"), "## 말투\n\n- 존댓말\n\n## 설치 메모\n\n- 설치 줄\n");
 	writeFileSync(toneFile({ app: "mail" }), "## 보낸 사람 신분별\n\n- 학부모에게는 선생님 호칭\n\n## 말투\n\n- 짧게\n");
 	expect(loadStyle({ app: "mail" }).rules).toEqual(["존댓말", "짧게", "설치 줄", "학부모에게는 선생님 호칭"]);
+});
+
+test("recordForbidden stores a wording once in that profile's 금지, merged with the install level; removeForbidden takes it out once", () => {
+	mkdirSync(paths.toneDir(), { recursive: true });
+	writeFileSync(toneFile("install"), "## 금지\n\n- install-ban\n");
+	writeFileSync(toneFile({ app: "youtube" }), "## 말투\n\n- 짧게\n\n## 고친 점\n\n- 2030-01-01: 존댓말로\n");
+	recordForbidden({ app: "youtube" }, ["행복한 하루 되세요"]);
+	recordForbidden({ app: "youtube" }, [" 행복한 하루 되세요 ", "Thanks"]);
+	recordForbidden({ app: "youtube" }, ["thanks"]);
+	expect(profileBullets({ app: "youtube" }, HEADINGS.forbidden)).toEqual(["행복한 하루 되세요", "Thanks"]);
+	const s = loadStyle({ app: "youtube" });
+	expect(s.forbidden).toEqual(["install-ban", "행복한 하루 되세요", "Thanks"]);
+	expect(s.rules).toEqual(["짧게"]);
+	expect(s.corrections).toEqual(["2030-01-01: 존댓말로"]);
+	expect(removeForbidden({ app: "youtube" }, " THANKS")).toBe(true);
+	expect(removeForbidden({ app: "youtube" }, "thanks")).toBe(false);
+	expect(loadStyle({ app: "youtube" }).forbidden).toEqual(["install-ban", "행복한 하루 되세요"]);
+	expect(removeForbidden("install", "없는 말")).toBe(false);
+	expect(readFileSync(toneFile("install"), "utf8")).toBe("## 금지\n\n- install-ban\n");
 });

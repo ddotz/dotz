@@ -259,9 +259,12 @@ export function loadStyle(key: ToneKey): LoadedStyle {
 	return { identity, templates: narrowest(HEADINGS.templates), samples, samplesFrom, rules: unique([...merged(HEADINGS.rules, HEADINGS.learned, HEADINGS.profile), ...[install, app, room ?? ""].flatMap(md => unknownSections(md).flatMap(s => s.items))]), corrections: merged(HEADINGS.corrections), forbidden: merged(HEADINGS.forbidden) };
 }
 
-function editProfile(key: ToneKey | "install", edit: (md: string) => string): void {
+function editProfile(key: ToneKey | "install", edit: (md: string) => string | undefined): void {
 	const file = toneFile(key);
-	withLock(file, "말투", () => writeAtomic(file, edit(profile(key))));
+	withLock(file, "말투", () => {
+		const next = edit(profile(key));
+		if (next !== undefined) writeAtomic(file, next);
+	});
 }
 
 // Writes into exactly that profile (a legacy style.md is carried over first when the mail profile is written for the first time).
@@ -288,6 +291,30 @@ export const templatesOf = (key: ToneKey | "install"): string[] => bullets(profi
 export function recordCorrection(key: ToneKey, change: string, now: Date): void {
 	const line = `${now.toISOString().slice(0, 10)}: ${change.replace(/\s+/g, " ").trim()}`;
 	editProfile(key, md => setSection(md, HEADINGS.corrections, [...bullets(md, HEADINGS.corrections), line]));
+}
+
+const banKey = (word: string) => word.trim().toLowerCase();
+
+/** Adds wordings the user banned to the `## 금지` section of exactly that profile; one already there (trimmed, case aside) is not added again. */
+export function recordForbidden(key: ToneKey | "install", words: string[]): void {
+	editProfile(key, md => {
+		const have = bullets(md, HEADINGS.forbidden);
+		const next = [...have];
+		for (const word of words) if (word.trim() && !next.some(h => banKey(h) === banKey(word))) next.push(word.trim());
+		return next.length > have.length ? setSection(md, HEADINGS.forbidden, next) : undefined;
+	});
+}
+
+/** Takes a wording out of the `## 금지` section of exactly that profile (trimmed, case aside); false when it was not there. */
+export function removeForbidden(key: ToneKey | "install", word: string): boolean {
+	let removed = false;
+	editProfile(key, md => {
+		const have = bullets(md, HEADINGS.forbidden);
+		const next = have.filter(h => banKey(h) !== banKey(word));
+		removed = next.length < have.length;
+		return removed ? setSection(md, HEADINGS.forbidden, next) : undefined;
+	});
+	return removed;
 }
 
 // Profile files that exist, relative to the tone dir (for `onboard.ts status`).
