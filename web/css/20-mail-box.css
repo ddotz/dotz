@@ -35,7 +35,10 @@ span.mr-star:not(.on) { opacity: .45; }
 .mbox-b .ic { width: 16px; height: 16px; }
 .mbox-b.danger { color: var(--err); }   /* 삭제 keeps the destructive tone of the menus (.mi.danger) */
 .mbox-b.mbox-x { width: 32px; padding: 0; justify-content: center; margin-right: var(--sp-1); }
-@container tlcol (max-width: 559.98px) { .mbox-bar.on .mbox-b { width: 32px; padding: 0; justify-content: center; } .mbox-bar.on .mbox-bt { display: none; } }
+.mbox-bt[data-alt] { display: inline-flex; flex-direction: column; }
+.mbox-bt[data-alt]::after { content: attr(data-alt); height: 0; overflow: hidden; visibility: hidden; }
+@container tlcol (max-width: 593.98px) { .mbox-bar.on .mbox-b { width: 32px; padding: 0; justify-content: center; } .mbox-bar.on .mbox-bt { display: none; } }
+@container tlcol (max-width: 639.98px) { .mbox-bar.on:not(:lang(ko)) .mbox-b { width: 32px; padding: 0; justify-content: center; } .mbox-bar.on:not(:lang(ko)) .mbox-bt { display: none; } }
 /* the open mail's top bar (30-mail-box.js mailOpenBar): one row of icons on its own tinted strip across the card (prototype #mail/1) that separates
    it from the mail header, sticky while the mail scrolls. The card's padding is a variable so the strip can run edge to edge. */
 .tl-in > .bm.rc.mopen { --mpx: 18px; gap: var(--sp-1); padding: 0 var(--mpx) var(--sp-4); }

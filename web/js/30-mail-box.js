@@ -255,7 +255,7 @@ const mbLeave = keys => { if (monCtx && keys.includes(monCtx) && current === "ch
 
 /* ---------- the row: checkbox, star, the bold of an unread mail ---------- */
 // `o.short`: the visible word when the full label (kept as aria-label and title) is longer than the button needs.
-const mbBtn = (label, ic, onclick, o = {}) => el("button", { class: `mbox-b${o.cls ? ` ${o.cls}` : ""}${o.why ? " off" : ""}`, type: "button", "data-k": o.k, title: o.why || label, "aria-label": label, "aria-disabled": o.why ? "true" : null, onclick: o.why ? () => toast(o.why) : onclick }, icon(ic), el("span", { class: "mbox-bt", text: o.short || label }));
+const mbBtn = (label, ic, onclick, o = {}) => el("button", { class: `mbox-b${o.cls ? ` ${o.cls}` : ""}${o.why ? " off" : ""}`, type: "button", "data-k": o.k, title: o.why || label, "aria-label": label, "aria-disabled": o.why ? "true" : null, onclick: o.why ? () => toast(o.why) : onclick }, icon(ic), el("span", { class: "mbox-bt", "data-alt": o.alt, text: o.short || label }));
 const MB_SLOT = { read: [TX("mail.act.read"), "mailopen", TX("mail.read")], unread: [TX("mail.act.unread"), "mail", TX("common.unread")], archive: [TX("mail.archive"), "archive", TX("mail.archive")], unarchive: [TX("mail.act.unarchive"), "inbox", TX("mail.act.unarchive")],
   fyi: [TX("mail.fyi.title"), "replyoff", TX("mail.fyi.short")], move: [TX("mail.move"), "folder", TX("mail.move.short")], trash: [TX("common.delete"), "trash", TX("common.delete")] };
 // Star: always a button (a star works in dotz whatever the mailbox does); the mailbox's refusal comes back as the hub's one line.
@@ -306,7 +306,7 @@ function mbPaintBar() {
   const run = a => b => a === "trash" ? mbTrash(keys, b) : a === "fyi" ? mbFyi(keys, true, b) : mbRun(keys, a, false, b);
   const btns = ["read", "unread", arch ? "unarchive" : "archive", "fyi", "move", "trash"].map(a => {
     const [label, ic, short] = MB_SLOT[a];
-    return mbBtn(label, ic, a === "move" ? ev => mxMoveOpen(ev.currentTarget, keys) : ev => mbSelDone(run(a)(ev.currentTarget)), { k: `mail-${a}`, short, why: why[a], cls: a === "trash" ? "danger" : "" });
+    return mbBtn(label, ic, a === "move" ? ev => mxMoveOpen(ev.currentTarget, keys) : ev => mbSelDone(run(a)(ev.currentTarget)), { k: `mail-${a}`, short, alt: MB_SLOT[{ archive: "unarchive", unarchive: "archive" }[a]]?.[2], why: why[a], cls: a === "trash" ? "danger" : "" });
   });
   bar.classList.add("on");
   clear(bar).append(chk, el("span", { class: "mbox-n", "aria-live": "polite", text: TX("mail.selected_n", { n: keys.length }) }),

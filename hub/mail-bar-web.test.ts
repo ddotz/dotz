@@ -1,6 +1,7 @@
-import { afterAll, beforeEach, describe, expect, test } from "bun:test";
+import { afterAll, afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync } from "node:fs";
 import { ev, fakeHub, json, run, waitFor, type View } from "./test-web.ts";
+import { setAppLang } from "./webapp.ts";
 
 const SHOTS = process.env.MAIL_UI_SHOTS ?? "";
 const CAN = ["read", "unread", "archive", "unarchive", "trash", "star", "unstar"];
@@ -47,6 +48,7 @@ const hub = fakeHub({
 	},
 });
 afterAll(() => hub.stop());
+afterEach(() => setAppLang("ko"));
 beforeEach(() => { gate?.open(); gate = null; mails = fresh(); posts = []; });
 
 const rowJs = (key: string) => `document.querySelector('#mon-tl > .mr[data-t="mail:${key}"]')`;
@@ -98,16 +100,18 @@ describe("one bar for every account", () => {
 		}, 60_000);
 	}
 
-	test("at 390 in 보관 the 보관 slot gives the mail back in the same place", async () => {
-		const v = await open(390, 844);
-		await only(v, ["p-2"]);
-		const inbox = await slots(v);
-		await place(v, "archived");
-		await only(v, ["p-arch"]);
-		const archived = await slots(v);
-		expect(archived.map(x => x[0])).toEqual(SIX.map(k => (k === "mail-archive" ? "mail-unarchive" : k)));
-		expect(archived.map(x => x[1])).toEqual(inbox.map(x => x[1]));
-	}, 30_000);
+	for (const [width, height] of [[390, 844], [1280, 800]] as const) {
+		test(`at ${width} in 보관 the 보관 slot gives the mail back and every slot after it stays where it was in the inbox`, async () => {
+			const v = await open(width, height);
+			await only(v, ["p-2"]);
+			const inbox = await slots(v);
+			await place(v, "archived");
+			await only(v, ["p-arch"]);
+			const archived = await slots(v);
+			expect(archived.map(x => x[0])).toEqual(SIX.map(k => (k === "mail-archive" ? "mail-unarchive" : k)));
+			expect(archived.map(x => x[1])).toEqual(inbox.map(x => x[1]));
+		}, 30_000);
+	}
 });
 
 describe("a slot that cannot act", () => {
@@ -153,7 +157,33 @@ describe("a slot that cannot act", () => {
 	}, 30_000);
 });
 
+const SWEEP = [1180, 1190, 1200, 1210, 1220, 1230, 1237, 1238, 1240, 1250, 1260, 1270, 1280, 1283, 1284, 1290];
+const WORDS_FROM = { ko: 594, en: 640 };
+
 describe("the bar fits", () => {
+	for (const lang of ["ko", "en"] as const) {
+		for (const tab of ["all", "archived"] as const) {
+			test(`${lang}, ${tab} tab: at every window from ${SWEEP[0]} to ${SWEEP[SWEEP.length - 1]} the bar is on one line with nothing cut or scrolled, and the words show once the list is ${WORDS_FROM[lang]}px wide`, async () => {
+				setAppLang(lang);
+				const v = await open(1280, 800);
+				if (tab === "archived") await place(v, "archived");
+				await run(v, `document.querySelector("#mbox-bar .mbox-all").click()`);
+				await waitFor(v, `document.querySelector("#mbox-bar.on")`);
+				const bad: string[] = [], seen: string[] = [];
+				for (const w of SWEEP) {
+					await v.resize(w, 800);
+					await waitFor(v, `window.innerWidth === ${w}`);
+					const got = await fits(v), words = await ev<boolean>(v, `[...document.querySelectorAll("#mbox-bar .mbox-b[data-k] .mbox-bt")].every(t => t.getBoundingClientRect().width > 0)`);
+					seen.push(`${w}:${got.barW}/${got.usedW}${words ? "w" : ""}`);
+					if (![got.inside, got.oneLine, got.noScroll, got.countShown, got.xShown].every(Boolean) || words !== got.barW >= WORDS_FROM[lang]) bad.push(`${w}: bar ${got.barW}px, used ${got.usedW}px, words ${words}, inside ${got.inside}, scroll ${!got.noScroll}`);
+					if ([1238, 1280, 1284].includes(w)) await shot(v, `bar-${lang}-${tab}-${w}`);
+				}
+				console.info(`${lang} ${tab}: ${seen.join(" ")}`);
+				expect(bad).toEqual([]);
+			}, 60_000);
+		}
+	}
+
 	for (const width of [360, 390]) {
 		test(`at ${width} the ×, the six icons and the count stand on one line inside the bar`, async () => {
 			const v = await open(width, 844);
@@ -178,13 +208,13 @@ describe("the bar fits", () => {
 	}, 30_000);
 
 	for (const width of [640, 760, 900, 1024, 1100, 1180]) {
-		test(`at ${width} the words show only on a list 560px or wider, and either way nothing is cut`, async () => {
+		test(`at ${width} the words show only on a list ${WORDS_FROM.ko}px or wider, and either way nothing is cut`, async () => {
 			const v = await open(width, 800);
 			await run(v, `document.querySelector("#mbox-bar .mbox-all").click()`);
 			await waitFor(v, `document.querySelector("#mbox-bar.on")`);
 			const got = await fits(v), words = await ev<boolean>(v, `[...document.querySelectorAll("#mbox-bar .mbox-b[data-k] .mbox-bt")].every(t => t.getBoundingClientRect().width > 0)`);
 			console.info(`bar at ${width}: ${got.usedW}px used of ${got.barW}px, words ${words}`);
-			expect([got.inside, got.oneLine, got.noScroll, got.countShown, got.xShown, words]).toEqual([true, true, true, true, true, got.barW >= 560]);
+			expect([got.inside, got.oneLine, got.noScroll, got.countShown, got.xShown, words]).toEqual([true, true, true, true, true, got.barW >= WORDS_FROM.ko]);
 		}, 30_000);
 	}
 });
