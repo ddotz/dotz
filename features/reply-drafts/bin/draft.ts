@@ -9,7 +9,7 @@ import { type HubLike, mailInstance, notifyGateway, reportSendFailed } from "../
 import { addressesOf, type ReplyItem } from "../../../hub/reply-draft.ts";
 import { ensureKakaoRoom, defaultKakaoReader, KAKAO_APP, type OwnerReader } from "../lib/kakao-tone.ts";
 import { askText, attachFolder, buildDraft, candidatesFor, chosenFrom, dropDraft, kindOf, mailAsksFile, realFlowDeps, refineAfterCorrection, reviseDraft, sendDraft, settleDraft, stageForReply, type FlowDeps, type Outcome } from "../lib/flow.ts";
-import { dataDir, INSTALL, loadSettings, recordCorrection, validApp } from "../lib/settings.ts";
+import { dataDir, HEADINGS, INSTALL, loadSettings, profileBullets, recordCorrection, recordForbidden, removeCorrection, removeForbidden, validApp, type ToneKey } from "../lib/settings.ts";
 import { addDraft, type DraftRec, getDraft, listDrafts, patchDraft } from "../lib/store.ts";
 import { listLibrary } from "../lib/library.ts";
 import { canAttach } from "../lib/senders.ts";
@@ -17,7 +17,7 @@ import { cloudFile, cloudPlaceholder, EVICTED_LATER, isEvicted, removeStagedFile
 
 // Exit code of `new --kind chat` when the message needs the owner's own decision: stdout is the choice block to post as an [ask] (hub/choices.ts replyChoiceBlock).
 export const ASK_EXIT = 4;
-const USAGE = "usage: draft.ts new --mail <key> [--app <app>] [--room <id>] [--kind mail|comment|chat] [--from <sender>] [--subject <s>] [--context <c>] [--source <src>] [--id <mail id>] [--choice <the owner's pick>] (text on stdin) | revise <id> --change <text> | send <id> | drop <id> | correct --app <app> [--room <id>] --change <text> | attach <id> <path or file name in the 첨부 파일 폴더> | detach <id> <n or file name> | status\n  attach / detach change the files of a pending mail draft and print the refreshed [ask] (never edit draft-files/ or drafts.json by hand)\n  new --app kakao --room <chat id> --kind chat (recent messages on stdin; --mail optional) prints only the reply text\n  chat exit codes: 0 reply text on stdout | 3 nothing to answer | 4 the owner must choose first: stdout is a 결정 block (post it as an [ask]); after his pick run the same command again with --choice \"<pick>\"\n  --app: mail (default for mail), youtube | instagram for comments, kakao for chats; --room only for messenger rooms";
+const USAGE = "usage: draft.ts new --mail <key> [--app <app>] [--room <id>] [--kind mail|comment|chat] [--from <sender>] [--subject <s>] [--context <c>] [--source <src>] [--id <mail id>] [--choice <the owner's pick>] (text on stdin) | revise <id> --change <text> | send <id> | drop <id> | correct --app <app|install> [--room <id>] [--change <lesson>] [--forbid <wording>]... [--allow <wording>]... [--forget <text>]... | tone --app <app|install> [--room <id>] | attach <id> <path or file name in the 첨부 파일 폴더> | detach <id> <n or file name> | status\n  correct stores a standing request in exactly one tone profile (--app install = every reply; --room only with a messenger app); at least one of --change --forbid --allow --forget\n  --forbid never use this wording again (2-40 characters, not a /regex/) | --allow takes a forbidden wording back | --forget removes the 고친 점 lines that contain the text\n  tone prints what a draft there follows (말투, 고친 점, 금지) with the level of each line\n  attach / detach change the files of a pending mail draft and print the refreshed [ask] (never edit draft-files/ or drafts.json by hand)\n  new --app kakao --room <chat id> --kind chat (recent messages on stdin; --mail optional) prints only the reply text\n  chat exit codes: 0 reply text on stdout | 3 nothing to answer | 4 the owner must choose first: stdout is a 결정 block (post it as an [ask]); after his pick run the same command again with --choice \"<pick>\"\n  --app: mail (default for mail), youtube | instagram for comments, kakao for chats; --room only for messenger rooms";
 
 type Out = { lines: string[]; code: number; notes?: string[] };
 
@@ -29,6 +29,14 @@ export function flag(args: string[], name: string): string | undefined {
 	const i = args.indexOf(name);
 	return i >= 0 ? args[i + 1] : undefined;
 }
+
+const flagValues = (args: string[], name: string): string[] => args.flatMap((a, i) => (a === name && args[i + 1] !== undefined ? [args[i + 1]!] : []));
+const REGEX_WORDING = /^\/.+\/[a-z]*$/;
+const bannable = (word: string): boolean => {
+	const w = word.trim();
+	return [...w].length >= 2 && [...w].length <= 40 && !REGEX_WORDING.test(w);
+};
+const levelName = (key: ToneKey): string => (key.app === INSTALL ? "모든 답장" : key.room !== undefined ? `${key.app} 대화방` : key.app);
 
 const positionals = (args: string[]): string[] => {
 	const out: string[] = [];
@@ -133,15 +141,53 @@ export async function runDraft(args: string[], stdin: string, deps: DraftDeps = 
 			if (r.ok && rec?.kind === "mail" && rec.compose) await notifyGateway({ path: "/api/mail/compose", body: { ref: rec.id, source: rec.source, state: "sent" } }, deps.hub);
 			return done(r);
 		}
-		// A change request of a draft that is not stored here (a KakaoTalk reply): recorded in that room's (else that app's) profile.
 		case "correct": {
 			const app = flag(rest, "--app");
 			const change = flag(rest, "--change")?.trim();
 			const room = flag(rest, "--room");
-			if (!app || !change || !validApp(app)) return { lines: [USAGE], code: 2 };
-			recordCorrection({ app, ...(room !== undefined ? { room } : {}) }, change, (deps.now ?? (() => new Date()))());
-			await refineAfterCorrection({ app, ...(room !== undefined ? { room } : {}) }, deps);
-			return { lines: [`고친 점을 ${room !== undefined ? `${app} 대화방` : app} 말투에 기록했어요`], code: 0 };
+			const forbid = flagValues(rest, "--forbid");
+			const allow = flagValues(rest, "--allow");
+			const forget = flagValues(rest, "--forget");
+			if (!app || !validApp(app) || (!change && !forbid.length && !allow.length && !forget.length)) return { lines: [USAGE], code: 2 };
+			if (app === INSTALL && room !== undefined) return { lines: ["--app install은 모든 답장에 적용돼서 --room과 같이 쓸 수 없어요"], code: 2 };
+			const bad = forbid.find(w => !bannable(w));
+			if (bad !== undefined) return { lines: [`금지할 표현은 2~40자의 글자여야 하고 /정규식/은 쓸 수 없어요: ${bad}`], code: 1 };
+			const key: ToneKey = { app, ...(room !== undefined ? { room } : {}) };
+			const target = app === INSTALL ? INSTALL : key;
+			const where = levelName(key);
+			const lines: string[] = [];
+			if (change) {
+				recordCorrection(key, change, (deps.now ?? (() => new Date()))());
+				lines.push(`고친 점을 ${where} 말투에 기록했어요: ${change}`);
+			}
+			if (forbid.length) {
+				recordForbidden(target, forbid);
+				lines.push(`${where}에서 쓰지 않을 표현으로 기록했어요: ${forbid.map(w => `"${w.trim()}"`).join(", ")}`);
+			}
+			for (const w of allow) lines.push(removeForbidden(target, w) ? `${where}의 금지 표현에서 뺐어요: "${w.trim()}"` : `${where}의 금지 표현에 "${w.trim()}"이(가) 없어서 바꾼 게 없어요`);
+			for (const t of forget) {
+				const gone = removeCorrection(target, t);
+				lines.push(gone.length ? `${where}의 고친 점에서 ${gone.length}줄을 지웠어요:\n${gone.map(l => `- ${l}`).join("\n")}` : `${where}의 고친 점에 "${t.trim()}"이(가) 든 줄이 없어서 바꾼 게 없어요`);
+			}
+			if (change) await refineAfterCorrection(key, deps);
+			return { lines, code: 0 };
+		}
+		case "tone": {
+			const app = flag(rest, "--app");
+			const room = flag(rest, "--room");
+			if (!app || !validApp(app)) return { lines: [USAGE], code: 2 };
+			if (app === INSTALL && room !== undefined) return { lines: ["--app install은 --room과 같이 쓸 수 없어요"], code: 2 };
+			const levels: [string, ToneKey | "install"][] = [["install", INSTALL]];
+			if (app !== INSTALL) levels.push(["app", { app }]);
+			if (app !== INSTALL && room !== undefined) levels.push(["room", { app, room }]);
+			const sections: [string, string][] = [["말투", HEADINGS.rules], ["고친 점", HEADINGS.corrections], ["금지", HEADINGS.forbidden]];
+			const lines = [`${levelName({ app, ...(room !== undefined ? { room } : {}) })} 답장이 따르는 것`];
+			for (const [title, heading] of sections) {
+				lines.push(`${title}:`);
+				const rows = levels.flatMap(([level, k]) => profileBullets(k, heading).map(l => `- [${level}] ${l}`));
+				lines.push(...(rows.length ? rows : ["- 없음"]));
+			}
+			return { lines, code: 0 };
 		}
 		// The files of a pending mail draft: the owner's card follows them (its 첨부 확인 line too), and the refreshed [ask] is printed.
 		case "attach": {

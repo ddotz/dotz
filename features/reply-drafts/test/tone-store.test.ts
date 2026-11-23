@@ -303,3 +303,74 @@ test("recordForbidden stores a wording once in that profile's 금지, merged wit
 	expect(removeForbidden("install", "없는 말")).toBe(false);
 	expect(readFileSync(toneFile("install"), "utf8")).toBe("## 금지\n\n- install-ban\n");
 });
+
+const correct = (...args: string[]) => runDraft(["correct", ...args], "", { now: () => new Date("2030-03-04T00:00:00Z") });
+
+test("correct --forbid stores a wording once at install level, --allow takes it back", async () => {
+	const first = await correct("--app", "install", "--forbid", "되세요");
+	expect(first).toMatchObject({ code: 0 });
+	expect(first.lines.join("\n")).toContain("모든 답장");
+	expect(loadStyle({ app: "youtube" }).forbidden).toEqual(["되세요"]);
+	await correct("--app", "install", "--forbid", "되세요", "--forbid", " 되세요 ");
+	expect(profileBullets("install", HEADINGS.forbidden)).toEqual(["되세요"]);
+	const gone = await correct("--app", "install", "--allow", "되세요");
+	expect(gone.code).toBe(0);
+	expect(loadStyle({ app: "youtube" }).forbidden).toEqual([]);
+	const none = await correct("--app", "install", "--allow", "되세요");
+	expect(none).toMatchObject({ code: 0 });
+	expect(none.lines.join("\n")).toContain("없어서");
+});
+
+test("correct refuses a one-character wording and a /regex/ and writes nothing", async () => {
+	for (const bad of ["a", " 요 ", "/되세요/", "/x+/i", "가".repeat(41)]) {
+		const r = await correct("--app", "youtube", "--change", "존댓말로", "--forbid", "좋은말", "--forbid", bad);
+		expect(r.code).toBe(1);
+	}
+	expect(existsSync(paths.toneDir())).toBe(false);
+});
+
+test("correct --forget removes the matching correction lines of that profile only and prints them", async () => {
+	recordCorrection({ app: "youtube" }, "즐거운 하루 되세요는 비문", new Date("2030-01-01T00:00:00Z"));
+	recordCorrection({ app: "youtube" }, "이모지 쓰지 마", new Date("2030-01-02T00:00:00Z"));
+	recordCorrection({ app: "instagram" }, "하루 되세요 얘기 금지", new Date("2030-01-03T00:00:00Z"));
+	const r = await correct("--app", "youtube", "--forget", "되세요");
+	expect(r.code).toBe(0);
+	expect(r.lines.join("\n")).toContain("2030-01-01: 즐거운 하루 되세요는 비문");
+	expect(profileBullets({ app: "youtube" }, HEADINGS.corrections)).toEqual(["2030-01-02: 이모지 쓰지 마"]);
+	expect(profileBullets({ app: "instagram" }, HEADINGS.corrections)).toHaveLength(1);
+	const miss = await correct("--app", "youtube", "--forget", "없는 말");
+	expect(miss.code).toBe(0);
+	expect(miss.lines.join("\n")).toContain("없어서");
+});
+
+test("correct --change alone still records a dated line in the room profile", async () => {
+	const r = await correct("--app", "kakao", "--room", "r1", "--change", "반말로");
+	expect(r.code).toBe(0);
+	expect(r.lines.join("\n")).toContain("kakao 대화방");
+	expect(profileBullets({ app: "kakao", room: "r1" }, HEADINGS.corrections)).toEqual(["2030-03-04: 반말로"]);
+});
+
+test("correct needs one of the four and exits 2 with the usage; install takes no room", async () => {
+	for (const args of [["--app", "youtube"], ["--app", "youtube", "--room", "r"], ["--change", "x"], ["--app", "install", "--room", "r", "--forbid", "되세요"]]) {
+		expect((await correct(...args)).code).toBe(2);
+	}
+	expect((await correct("--app", "youtube")).lines[0]).toContain("usage:");
+	expect(existsSync(paths.toneDir())).toBe(false);
+});
+
+test("tone lists each line with the level it comes from and writes nothing", async () => {
+	await correct("--app", "install", "--forbid", "되세요");
+	await correct("--app", "youtube", "--change", "이모지 쓰지 마");
+	await correct("--app", "youtube", "--room", "c1", "--change", "방 전용");
+	const before = readdirSync(paths.toneDir(), { recursive: true }).sort();
+	const r = await runDraft(["tone", "--app", "youtube"], "");
+	expect(r.code).toBe(0);
+	const text = r.lines.join("\n");
+	expect(text).toContain("- [install] 되세요");
+	expect(text).toContain("- [app] 2030-03-04: 이모지 쓰지 마");
+	expect(text).not.toContain("방 전용");
+	expect(text.indexOf("고친 점:")).toBeLessThan(text.indexOf("금지:"));
+	expect((await runDraft(["tone", "--app", "youtube", "--room", "c1"], "")).lines.join("\n")).toContain("- [room] 2030-03-04: 방 전용");
+	expect((await runDraft(["tone"], "")).code).toBe(2);
+	expect(readdirSync(paths.toneDir(), { recursive: true }).sort()).toEqual(before);
+});

@@ -293,6 +293,18 @@ export function recordCorrection(key: ToneKey, change: string, now: Date): void 
 	editProfile(key, md => setSection(md, HEADINGS.corrections, [...bullets(md, HEADINGS.corrections), line]));
 }
 
+/** Takes every `## 고친 점` line of exactly that profile that contains the text (trimmed, case aside) out; returns the removed lines. */
+export function removeCorrection(key: ToneKey | "install", text: string): string[] {
+	const needle = banKey(text);
+	let removed: string[] = [];
+	editProfile(key, md => {
+		const have = bullets(md, HEADINGS.corrections);
+		removed = needle ? have.filter(l => l.toLowerCase().includes(needle)) : [];
+		return removed.length ? setSection(md, HEADINGS.corrections, have.filter(l => !removed.includes(l))) : undefined;
+	});
+	return removed;
+}
+
 const banKey = (word: string) => word.trim().toLowerCase();
 
 /** Adds wordings the user banned to the `## 금지` section of exactly that profile; one already there (trimmed, case aside) is not added again. */
