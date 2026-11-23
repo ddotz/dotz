@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
+import fc from "fast-check";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -296,3 +297,86 @@ test("a resumed session: a name its earlier run left on disk is renamed like any
 	expect(spawn("task", "Fix-2")?.model).toBe("anthropic/claude-opus-5-5:high");
 	expect(spawn("task", "Fix-3")?.model).toBe("anthropic/claude-sonnet-5-5:high");
 });
+
+class OmpIds {
+	private readonly ids: Set<string>;
+	constructor(onDisk: string[]) {
+		this.ids = new Set(["__advisor", ...onDisk]);
+	}
+	allocate(name: string): string {
+		let id = name;
+		for (let n = 2; this.ids.has(id); n++) id = `${name}-${n}`;
+		this.ids.add(id);
+		return id;
+	}
+}
+
+type Effort = "lo" | "hi" | undefined;
+type Planned = { name: string | undefined; agent: "task" | "scout"; effort: Effort };
+type Scenario = { disk: string[]; calls: Planned[][]; after: { spawns: number; pick: number }[] };
+
+const EXPECTED_MODEL: Record<"lo" | "hi", string> = { lo: ROUTES.light.selector, hi: ROUTES.hard.selector };
+let scenarioRuns = 0;
+
+async function runScenario({ disk, calls, after }: Scenario) {
+	forgetRoutes();
+	writeRoutes();
+	const sessionFile = join(dir, `session-${scenarioRuns++}.jsonl`);
+	const folder = sessionFile.replace(/\.jsonl$/, "");
+	mkdirSync(folder, { recursive: true });
+	for (const file of disk) writeFileSync(join(folder, file), "");
+	const omp = new OmpIds(disk.map(file => file.replace(/\.(?:md|jsonl)$/, "")));
+	const { task, spawn } = setup(undefined, sessionFile);
+	const queues: { planned: Planned; name: string }[][] = [];
+	const cursor: number[] = [];
+	const verify = (queue: number) => {
+		const next = queues[queue]![cursor[queue]!++]!;
+		const id = omp.allocate(next.name.trim());
+		expect(id).toBe(next.name.trim());
+		const got = spawn(next.planned.agent, id);
+		if (next.planned.agent === "task" && next.planned.effort) expect(got?.model).toBe(EXPECTED_MODEL[next.planned.effort]);
+		else expect(got).toBeUndefined();
+	};
+	const waiting = () => queues.flatMap((queue, at) => (cursor[at]! < queue.length ? [at] : []));
+	for (const [at, planned] of calls.entries()) {
+		const out = await task(
+			call(
+				...planned.map(p => item({ agent: p.agent, ...(p.name === undefined ? {} : { name: p.name }), ...(p.effort ? { effort: p.effort } : {}) })),
+			),
+		);
+		const names: unknown[] = out.tasks.map((t: { name?: unknown }) => t.name);
+		expect(names.every(n => typeof n === "string" && n.trim() !== "")).toBe(true);
+		queues.push(planned.map((p, i) => ({ planned: p, name: names[i] as string })));
+		cursor.push(0);
+		const step = after[at];
+		for (let k = 0; step && k < step.spawns; k++) {
+			const ready = waiting();
+			if (ready.length) verify(ready[(step.pick + k) % ready.length]!);
+		}
+	}
+	for (let ready = waiting(); ready.length; ready = waiting()) verify(ready[0]!);
+	const delivered = queues.flat().map(q => q.name.trim().toLowerCase());
+	expect(new Set(delivered).size).toBe(delivered.length);
+}
+
+const NAMES = ["A", "Fix", "Fix-2", "fix"];
+const plannedArb: fc.Arbitrary<Planned> = fc.record({
+	name: fc.option(fc.tuple(fc.constantFrom("", " ", "  "), fc.constantFrom(...NAMES, ""), fc.constantFrom("", " ")).map(([a, n, b]) => `${a}${n}${b}`), { nil: undefined }),
+	agent: fc.constantFrom("task", "scout"),
+	effort: fc.constantFrom<Effort>("lo", "hi", undefined),
+});
+const scenarioArb: fc.Arbitrary<Scenario> = fc.record({
+	disk: fc.uniqueArray(fc.tuple(fc.constantFrom(...NAMES), fc.constantFrom(".md", ".jsonl")).map(([n, e]) => `${n}${e}`), { maxLength: 6, selector: file => file.toLowerCase() }),
+	calls: fc.array(fc.array(plannedArb, { minLength: 1, maxLength: 4 }), { minLength: 1, maxLength: 4 }),
+	after: fc.array(fc.record({ spawns: fc.nat(4), pick: fc.nat(8) }), { maxLength: 4 }),
+});
+
+test("resumed session fixed cases: every name dotz lets through is the id omp allocates, and the spawn takes its own difficulty", async () => {
+	await runScenario({ disk: ["Fix.md"], calls: [[{ name: "Fix", agent: "task", effort: "hi" }, { name: "Fix", agent: "task", effort: "lo" }]], after: [] });
+	await runScenario({ disk: ["Fix.md"], calls: [[{ name: "Fix", agent: "task", effort: "hi" }], [{ name: "Fix", agent: "task", effort: "lo" }]], after: [{ spawns: 0, pick: 0 }] });
+	await runScenario({ disk: ["Fix.md"], calls: [[{ name: "Fix", agent: "task", effort: "lo" }, { name: "Fix-2", agent: "task", effort: "hi" }]], after: [] });
+});
+
+test("property: with ids on disk, interleaved calls and spawns, dotz's names are omp's allocated ids and each task spawn gets its own route", async () => {
+	await fc.assert(fc.asyncProperty(scenarioArb, runScenario), { numRuns: 100 });
+}, 60_000);
