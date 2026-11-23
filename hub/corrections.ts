@@ -1,17 +1,15 @@
-// The correction ledger (corrections.jsonl): every owner message that reads like a correction, kept at arrival with what the nightly review
-// otherwise cannot see (the whole text, attachment paths, the answer it reacts to, the conversation, a topic). This runs on every inbox event,
-// so it is one regex, a read of the live event ring and one append: no model, no file read. hygiene.ts rotates the file.
 import { appendFileSync } from "node:fs";
 import { paths } from "./config.ts";
-import { eventTarget, isPeerMessage, recentEvents, type HubEvent } from "./events.ts";
+import { eventTarget, historyEvents, isPeerMessage, type HubEvent } from "./events.ts";
 
 export const SCAN_CHARS = 400;   // a long message is a brief: a correction says so at its start, and a word deep in a brief is not one
+const BRIEF_CHARS = 300;
 const TEXT_MAX = 8000;
 const PREVIOUS_MAX = 300;
 
 // Tuned on a week of owner messages read and labeled by hand (hub/corrections.fixture.json, anonymized): recall 75%, precision 63%. Plain owner
 // corrections read "여전히 안되네", "너무 ~함", "이거 왜 이래", so a word list of refusals alone misses most of them.
-export const CORRECTION = /아니|말고|하지\s*마|왜|틀렸|잘못|여전히|아직|안\s*(?:돼|되|됨|됐|뜨|떠|보|나오|나와|나옴|맞|오|왔|와|했|함|나가)|이상(?:해|함|하|한)|너무|없애|맞(?:냐|음|아|나)|된거|되었나|되었는|중복|깨지|깨져|어긋|멈(?:춰|췄|추|춤)|죽은|필요 없|합쳐|그대로|계속해|부실|별로|똑같|ai\s*티|ai 같|slop|no,|don't|\bstop\b|\bwrong\b|\bstill\b|not working|\bbroken\b|\bagain\b/i;
+export const CORRECTION = /아니(?!냐)|말고|하지\s*마|^[^\n]{0,24}왜|틀렸|잘못|여전히|아직|안\s*(?:돼|되|된|됨|됐|뜨|떠|보|나오|나와|나옴|맞|오|왔|와|했|함|나가|고친|고쳐|고쳤)|이상(?:해|함|하|한)|너무|없애|맞(?:냐|음|아|나)|되었나|되었는|(?:적용|반영|구현|패치|수정)\s*(?:된거|됐|되었)|중복|깨지|깨져|어긋|멈(?:춰|췄|추|춤)|죽은|필요 없|합쳐|그대로|계속해|또\s*(?:그러|이러|저러|그래|안|나오|깨|틀|멈)|자꾸|부실(?:해|하|함|한)|별로|똑같|ai\s*티|ai 같|slop|no,|don't|\bstop\b|\bwrong\b|\bstill\b|not working|\bbroken\b|\bagain\b/i;
 // A gateway's handover (peer-monitor.ts) and other machine-written briefs open with a [tag]; they quote old complaints without being one.
 const HANDOVER = /^\s*\[[^\]\n]{1,60}\]|handoff|handover|인계/i;
 const COMMAND = /^\s*[/!]\S/;
@@ -38,7 +36,10 @@ export function topicOf(text: string): Topic {
 	return TOPICS.find(([, re]) => re.test(head))?.[0] ?? "other";
 }
 
-export const isCorrectionText = (text: string): boolean => !HANDOVER.test(text) && !COMMAND.test(text) && CORRECTION.test(text.slice(0, SCAN_CHARS));
+export function isCorrectionText(text: string): boolean {
+	if (HANDOVER.test(text) || COMMAND.test(text)) return false;
+	return CORRECTION.test(text.length > BRIEF_CHARS ? text.split(/\n|(?<=[.?!])\s/)[0]! : text);
+}
 
 /** An owner's own typed message that reads like a correction; a button choice (picks, decision) answers a question and is none. */
 export function isCorrection(e: HubEvent): boolean {
@@ -49,7 +50,7 @@ export function isCorrection(e: HubEvent): boolean {
 export type Correction = { ts: string; topic: Topic; conv: string; text: string; attachments: string[]; previous: string; message_id?: string };
 
 function previousAnswer(conv: string, events: readonly HubEvent[]): string {
-	const answer = events.findLast(o => o.kind === "out" && !o.update_key && eventTarget(o) === conv);
+	const answer = events.findLast(o => (o.kind === "out" || o.kind === "lane_report") && !o.update_key && !o.system && eventTarget(o) === conv);
 	return answer ? String(answer.text ?? "").replace(/\s+/g, " ").slice(0, PREVIOUS_MAX) : "";
 }
 
@@ -63,5 +64,5 @@ export function correctionEntry(e: HubEvent, events: readonly HubEvent[]): Corre
 
 /** One write of one line, so a line is never interleaved or half there. */
 export function recordCorrection(e: HubEvent, file = paths.corrections): void {
-	if (isCorrection(e)) appendFileSync(file, `${JSON.stringify(correctionEntry(e, recentEvents(300)))}\n`);
+	if (isCorrection(e)) appendFileSync(file, `${JSON.stringify(correctionEntry(e, historyEvents(eventTarget(e) ?? "main", 40)))}\n`);
 }
