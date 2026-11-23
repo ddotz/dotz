@@ -1,9 +1,10 @@
 // The mail and webmail adapter on a temp data dir (design 1.8): the store's statuses as the one view, and every action over the real flow.
-import { afterAll, beforeEach, expect, test } from "bun:test";
+import { afterAll, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { addDraft, getDraft, setStatus, type DraftRec } from "../features/reply-drafts/lib/store.ts";
+import type { Runner } from "../features/reply-drafts/lib/tone.ts";
 import { mailAdapter } from "./reply-mail.ts";
 
 const dir = mkdtempSync(join(tmpdir(), "reply-mail-"));
@@ -48,7 +49,7 @@ test("revise stores a new draft that names the one it replaced and returns the l
 });
 
 test("edit stores the owner's text as written; drop then restore; markSent; prove says sent only for a sent or answered draft", async () => {
-	const a = mailAdapter();
+	const a = mailAdapter(() => ({ run: async () => ({ code: 0, stdout: "", stderr: "" }) }));
 	addDraft(rec());
 	expect(await a.edit("RMAILAA", "제가 쓴 그대로예요 :)")).toEqual({ ok: true });
 	expect((await a.get("RMAILAA"))!.draft).toMatchObject({ text: "제가 쓴 그대로예요 :)", edited: true });
@@ -61,6 +62,37 @@ test("edit stores the owner's text as written; drop then restore; markSent; prov
 	addDraft(rec({ id: "RMAILCC" }));
 	setStatus("RMAILCC", "answered");
 	expect(await a.prove!("RMAILCC")).toBe("sent");
+});
+
+describe("restore reads the mail's thread through the runner it was given", () => {
+	const minutesAgo = (n: number) => new Date(Date.now() - n * 60_000).toUTCString();
+	const block = (from: string, ago: number) => `From: ${from}\nTo: someone@example.org\nDate: ${minutesAgo(ago)}\n\n본문\n`;
+	const thread = (...blocks: string[]) => `Thread: 문의\n${blocks.join("────────────\n")}`;
+	const dropped = async (stdout: string) => {
+		const reads: string[][] = [];
+		const run: Runner = async argv => {
+			if (argv[1] === "whoami") return { code: 0, stdout: "me@example.net\n", stderr: "" };
+			if (argv[2] === "read") reads.push(argv);
+			return { code: 0, stdout, stderr: "" };
+		};
+		addDraft(rec({ created: new Date(Date.now() - 60 * 60_000).toISOString() }));
+		const a = mailAdapter(() => ({ run }));
+		expect(await a.drop("RMAILAA")).toEqual({ ok: true });
+		return { a, reads };
+	};
+
+	test("a mail nobody answered since: its thread is read for the draft's own account and the draft comes back", async () => {
+		const { a, reads } = await dropped(thread(block("Kim <kim@example.com>", 120)));
+		expect(await a.restore("RMAILAA")).toEqual({ ok: true });
+		expect(reads).toEqual([["zele", "mail", "read", "m1", "--account", "me@example.net"]]);
+		expect(getDraft("RMAILAA")?.status).toBe("pending");
+	});
+
+	test("the owner answered the mail outside dotz: the draft stays dropped and the refusal is the stale one", async () => {
+		const { a } = await dropped(thread(block("Kim <kim@example.com>", 120), block("Me <me@example.net>", 30)));
+		expect(await a.restore("RMAILAA")).toMatchObject({ ok: false, reason: { code: "stale" } });
+		expect(getDraft("RMAILAA")?.status).toBe("dropped");
+	});
 });
 
 test("repair adds Re: to a subject without it and leaves a login to the owner; the card question names the ref", async () => {

@@ -83,6 +83,10 @@ writeFileSync(join(data, "models-dev.json"), "{}");
 process.env.DOTZ_DIR = data;
 process.env.DOTZ_OMP = join(dir, "no-such-omp");
 process.env.DOTZ_OMO = join(dir, "no-such-omo");
+const blocked = join(dir, "bin");
+mkdirSync(blocked, { recursive: true });
+writeFileSync(join(blocked, "zele"), '#!/bin/sh\necho "zele: blocked in tests: a test that reaches the mail CLI puts a fake zele ahead of this one on PATH" >&2\nexit 127\n', { mode: 0o755 });
+process.env.PATH = `${blocked}:${process.env.PATH ?? ""}`;
 // OmO's agent dir (auth.json pin, rpc hosts) is a throwaway one too, so the machine's real login state cannot change a test.
 process.env.OMO_CODING_AGENT_DIR = join(dir, "omo-agent");
 delete process.env.PI_AGENT_DIR;
