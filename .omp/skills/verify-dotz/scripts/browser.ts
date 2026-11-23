@@ -309,3 +309,55 @@ try {
 }
 console.log('fallback-keys undo step done');
 `;
+
+export const seenResultsScript = (run: Pick<Run, "port" | "loginCookie">, lane: string, at: string, last: string): string => `${prelude(run)}
+const AT = ${JSON.stringify(at)}, KEY = ${JSON.stringify(`lane:${lane}`)};
+const readState = async p => (await p.evaluate(async k => ((await (await fetch('/api/notices?limit=300')).json()).items.find(n => n.key === k) || {}).read, KEY));
+const rowBox = p => p.evaluate(at => {
+  const m = [...document.querySelectorAll('#tl [data-ts]')].find(x => x.dataset.ts === at), t = document.querySelector('#timeline');
+  if (!m) return null;
+  const r = m.getBoundingClientRect(), a = t.getBoundingClientRect();
+  return { top: Math.round(r.top - a.top), bottom: Math.round(r.bottom - a.top), view: Math.round(a.height), shown: r.bottom > a.top && r.top < a.bottom };
+}, AT);
+await login();
+try {
+  const p = await openTab('about:blank');
+  await p.setViewportSize({ width: 390, height: heights[390] });
+  await p.goto(ORIGIN + '/#chat/' + KEY);
+  await sleep(2500);
+  const s0 = await snapshot(p);
+  art('lane-open.aria.txt', s0.tree);
+  await shot(p, 'lane-open-390.png');
+  const laneRead = await readState(p);
+  console.log('lane opened (' + KEY + '): notice read = ' + laneRead + ', the result row in this conversation = ' + JSON.stringify(await rowBox(p)));
+  if (laneRead !== false) failNow('the result notice is not unread after opening its lane: ' + laneRead);
+  await p.goto(ORIGIN + '/#chat/worklog');
+  await until(p, ${JSON.stringify(last)}, 15000);
+  await sleep(2500);
+  const away = await rowBox(p);
+  const awayRead = await readState(p);
+  const s1 = await snapshot(p);
+  art('worklog-away.aria.txt', s1.tree);
+  await shot(p, 'worklog-away-390.png');
+  console.log('작업내역 opened at the bottom: result row ' + JSON.stringify(away) + ', notice read = ' + awayRead);
+  if (!away || away.shown) failNow('the result row is not scrolled away on opening 작업내역: ' + JSON.stringify(away));
+  if (awayRead !== false) failNow('the result notice is not unread with its row off screen: ' + awayRead);
+  await p.mouse.move(195, 420);
+  let box = away;
+  for (let i = 0; i < 40 && !(box && box.shown && box.top >= 0 && box.bottom <= box.view); i++) { await p.mouse.wheel(0, -250); await sleep(200); box = await rowBox(p); }
+  console.log('after wheel scrolling: result row ' + JSON.stringify(box));
+  if (!box || !box.shown) failNow('the result row never came into view by scrolling');
+  let seenRead = await readState(p);
+  for (let i = 0; i < 20 && seenRead !== true; i++) { await sleep(250); seenRead = await readState(p); }
+  console.log('result row on screen: notice read = ' + seenRead);
+  if (seenRead !== true) failNow('the result notice is still unread with its row on screen');
+  const s2 = await snapshot(p);
+  art('worklog-seen.aria.diff', s2.diff);
+  await shot(p, 'worklog-seen-390.png');
+  await closeTab(p);
+  for (const w of [390, 1280]) await cold('#chat/worklog', w, 'cold-worklog', ${JSON.stringify(last)});
+} finally {
+  await logout();
+}
+console.log('seen-results browser step done');
+`;

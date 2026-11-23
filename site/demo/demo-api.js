@@ -918,6 +918,7 @@
     if (p === "/api/command") return json({ output: "데모에서는 명령을 실행하지 않아요." });
     if (p === "/api/read") { const c = conv(body.target); if (c) c.unread = 0; return json({}); }
     if (p === "/api/notices/read") { for (const n of F.notices.items) if (!body.ids || body.ids.includes(String(n.id))) n.read = true; F.state.notices_unread = unread(); return json({ unread: unread() }); }
+    if (p === "/api/notices/seen") { let read = 0; for (const n of F.notices.items) if (!n.read && n.at === body.ts && n.tone !== "ask" && (n.kind === "result" || n.kind === "worklog") && [n.msg, n.src, n.open].includes(body.target)) { n.read = true; read++; } F.state.notices_unread = unread(); return json({ ok: true, read, unread: unread() }); }
     if (p === "/api/notices/reopen") return json({ unread: unread() });
     if (/^\/api\/mail\/[^/]+\/action$/.test(p)) { const m = mail(p.split("/")[3]); if (m && body.action === "read") m.read = true; if (m && body.action === "unread") m.read = false; return json({ ok: true, synced: true }); }
     if (p === "/api/mail/actions") return json({ ok: true, results: (body.keys || []).map(key => ({ key, ok: true, synced: true })) });

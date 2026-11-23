@@ -278,6 +278,7 @@ for (const ev of ["wheel", "touchstart", "pointerdown", "keydown"]) timeline.add
 function convMaybeRead() {
   const t = CV.key;
   if (!t || t !== target || isRelayT(t) || !CV.placed || document.visibilityState !== "visible") return;
+  convSeenResults(t);
   const mail = isMailT(t);
   if (!mail && !CV.captured) return;
   const s = ts(t), last = s.hLoaded && s.msgs.findLast(convReal);
@@ -291,6 +292,18 @@ function convMaybeRead() {
   if (!convPendT) convPendT = setTimeout(convFlush, 150);
   renderBars();
   if (mail) mailReadPainted();
+}
+function convSeenResults(t) {
+  const list = ntSeenUnread(t);
+  if (!list.length || !timeline.clientHeight) return;
+  const box = timeline.getBoundingClientRect(), top = Math.max(box.top, $("#appbar").getBoundingClientRect().bottom), room = box.bottom - top;
+  const nodes = [...tl.querySelectorAll("[data-ts]")];
+  for (const n of list) {
+    const m = nodes.find(x => x.dataset.ts === n.at);
+    if (!m) continue;
+    const r = m.getBoundingClientRect(), shown = Math.min(r.bottom, box.bottom) - Math.max(r.top, top);
+    if (r.height && shown >= Math.min(r.height, room / 2)) ntSeen(n, t);
+  }
 }
 // A mail read on the page moves its row, the app's badge and the 안 읽음 filter now; once the hub holds the position its app counts raise
 // (needs.unread, GET /api/integrations), and a peer's mail has its snapshot read again (34-peer-monitoring.js).

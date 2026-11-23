@@ -3,7 +3,7 @@ import { now } from "./config.ts";
 import { readOf } from "./reads.ts";
 import type { Notice } from "./notices-types.ts";
 import { appBlocked } from "./notices-wiring.ts";
-import { NOTICE_CAP, hasChoice, isOpenDecision, waitsOf } from "./notices-rules.ts";
+import { NOTICE_CAP, hasChoice, isOpenDecision, shownBy, waitsOf } from "./notices-rules.ts";
 import { channelLanes, laneOfNotice } from "./notices-lanes.ts";
 import { broadcast, readable, withClass } from "./notices-read.ts";
 import { viewers } from "./notices-viewing.ts";
@@ -25,6 +25,14 @@ export function setViewing(id: unknown, conv: unknown, nowMs = Date.now()): { ok
 	const seen = conv ? readOf(conv) : null;
 	if (seen) readConversationNotices(conv, seen, "viewed");
 	return { ok: true, unread: unreadCount() };
+}
+
+/** POST /api/notices/seen: the owner's page had the message `at` of conversation `conv` on screen. The session result or 작업내역 notice whose own message that is gets read (shownBy); nothing else is read by a seen message. */
+export function readSeenMessage(conv: unknown, at: unknown): { ok: boolean; read?: number; unread?: number } {
+	if (typeof conv !== "string" || !CONV_RE.test(conv) || typeof at !== "string" || !at || at.length > 40) return { ok: false };
+	const ids = items.filter(i => shownBy(i, conv, at)).map(i => i.id);
+	if (ids.length) markNoticesRead({ ids });
+	return { ok: true, read: ids.length, unread: unreadCount() };
 }
 
 // Called when a session is deleted (hub/lanetrash.ts): its notices go with it. Returns how many were retired.

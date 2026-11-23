@@ -3,7 +3,7 @@ import { log } from "./config.ts";
 import { draftActionOf } from "./draft-approval.ts";
 import { replies } from "./reply-wire.ts";
 import { viewConversation } from "./push.ts";
-import { type Notice, allNotices, cardAsked, clockText, dismissNotice, handledNotice, ignoreNotice, laterNotice, moreNotice, undismissNotice, markNoticesRead, reopenNotices, resolveNotices, unignoreNotice } from "./notices.ts";
+import { type Notice, allNotices, cardAsked, clockText, dismissNotice, handledNotice, ignoreNotice, laterNotice, moreNotice, undismissNotice, markNoticesRead, readSeenMessage, reopenNotices, resolveNotices, unignoreNotice } from "./notices.ts";
 import { askAsker, convOfTarget } from "./outbound.ts";
 import { setAskExtra } from "./askbuttons.ts";
 import { msg } from "./i18n.ts";
@@ -55,6 +55,12 @@ export async function routeNotices(req: Request, url: URL, agent = false): Promi
 	if (req.method === "POST" && url.pathname === "/api/viewing") {
 		const b = await body(req);
 		const r = viewConversation(b.id, b.conv);
+		return json(r, r.ok ? 200 : 400);
+	}
+	if (req.method === "POST" && url.pathname === "/api/notices/seen") {
+		if (agent) return json(OWNER_ONLY, 403);
+		const b = await body(req);
+		const r = readSeenMessage(b.target, b.ts);
 		return json(r, r.ok ? 200 : 400);
 	}
 	const dismiss = req.method === "POST" ? /^\/api\/notices\/([^/]+)\/dismiss$/.exec(url.pathname) : null;

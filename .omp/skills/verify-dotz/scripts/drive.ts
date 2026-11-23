@@ -2,10 +2,10 @@ import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "
 import { homedir } from "node:os";
 import { join, relative } from "node:path";
 import { REPO, type Run, alive, call, readRun } from "./lib.ts";
-import { appShellScript, autoReplyColdScript, autoReplyScript, fallbackKeysOffScript, fallbackKeysOnScript, fallbackUndoScript, mailAppColdScript, mailAppNoneScript, mailAppPickScript } from "./browser.ts";
+import { appShellScript, autoReplyColdScript, autoReplyScript, fallbackKeysOffScript, fallbackKeysOnScript, fallbackUndoScript, mailAppColdScript, mailAppNoneScript, mailAppPickScript, seenResultsScript } from "./browser.ts";
 
 const [feature, runId] = process.argv.slice(2);
-const FEATURES = ["auto-reply", "app-shell", "comments-mail-app", "fallback-keys"];
+const FEATURES = ["auto-reply", "app-shell", "comments-mail-app", "fallback-keys", "seen-results"];
 if (!feature || !runId || !FEATURES.includes(feature)) {
 	console.error(`usage: bun .omp/skills/verify-dotz/scripts/drive.ts <${FEATURES.join("|")}> <run-id>`);
 	process.exit(2);
@@ -215,6 +215,28 @@ if (feature === "auto-reply") {
 	const restored = await chainNow();
 	if (JSON.stringify(restored.map(e => [e.model, e.key_file ?? ""])) !== JSON.stringify(arranged.map(e => [e.model, e.key_file ?? ""]))) fail(`after 되돌리기 the chain is ${JSON.stringify(restored)}`);
 	note("undo: 삭제 saved the chain without the first step and raised 되돌리기 with no dialog; 되돌리기 saved the previous chain again (read back from /api/models)");
+	noExternalNetwork("after");
+} else if (feature === "seen-results") {
+	const lane = "verify-n13";
+	const send = async (body: Record<string, unknown>): Promise<void> => {
+		const r = (await (await call(run, "/api/send", { as: "agent", method: "POST", body: JSON.stringify(body) })).json()) as { delivered?: boolean; reason?: string; error?: string };
+		if (!r.delivered) fail(`POST /api/send ${JSON.stringify(body)}: ${JSON.stringify(r)}`);
+	};
+	type Listed = { id: string; key?: string; kind: string; msg?: string; src?: string; at?: string; read: boolean };
+	const notice = async (): Promise<Listed | undefined> => ((await (await call(run, "/api/notices?limit=300", { as: "owner" })).json()) as { items: Listed[] }).items.find(n => n.key === `lane:${lane}`);
+	await send({ target: "worklog", update_key: `lane:${lane}`, text: "[done] 검증용 세션의 빌드가 끝났어요" });
+	const fillers = 40;
+	for (let i = 1; i <= fillers; i++) await send({ target: "worklog", text: `검증용 기록 ${i}번째 줄이에요` });
+	const last = `검증용 기록 ${fillers}번째 줄이에요`;
+	const before = await notice();
+	if (!before?.at || before.read !== false || before.kind !== "result") fail(`the session result notice is not an unread result after arranging: ${JSON.stringify(before)}`);
+	note(`arrange: a session's line posted to 작업내역 through POST /api/send (update_key lane:${lane}) made result notice ${before.id} (src ${before.src}, msg ${before.msg}, at ${before.at}), then ${fillers} later 작업내역 lines`);
+	note(`before: GET /api/notices lists ${before.id} read=false`);
+	noExternalNetwork("before");
+	artifacts.push(...browser("browser-seen", seenResultsScript(browserRun, lane, before.at, last)));
+	const after = await notice();
+	if (after?.read !== true) fail(`the result notice is not read after its row was seen: ${JSON.stringify(after)}`);
+	note(`after: GET /api/notices lists ${after.id} read=true; the browser step recorded it unread after opening lane:${lane} and after opening 작업내역 with the row off screen (browser-seen.log)`);
 	noExternalNetwork("after");
 } else {
 	artifacts.push(...browser("browser-shell", appShellScript(browserRun)));

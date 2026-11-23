@@ -29,5 +29,10 @@
 		"id": "fallback-keys",
 		"paths": ["hub/apikey-policy.ts", "hub/routes-settings.ts", "web/js/20-models.js", "web/js/22-settings.js", "web/css/03-base.css", "web/i18n/*/settings.json"],
 		"proof": "screenshot"
+	},
+	{
+		"id": "seen-results",
+		"paths": ["hub/notices-bell.ts", "hub/notices-rules.ts", "hub/routes-notices.ts", "web/js/30-notices.js", "web/js/31-conversations.js"],
+		"proof": "screenshot"
 	}
 ]

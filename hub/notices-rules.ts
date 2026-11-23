@@ -71,6 +71,9 @@ export function coveredByRead(i: Notice): boolean {
 	const seen = readOf(i.src ?? i.open);
 	return !!seen && seen >= (i.at ?? i.ts);
 }
+/** Whether `i` is the session result or 작업내역 notice whose own message is `at` in conversation `conv` (drawn where its `msg`, `src` or `open` says), so seeing that message on screen reads it. Alerts, monitor reports and what waits on the owner are never read by a seen message. */
+export const shownBy = (i: Notice, conv: string, at: string): boolean =>
+	(i.kind === "result" || i.kind === "worklog") && !i.read && !i.dismissed && !needsAnswer(i) && i.at === at && (i.msg === conv || i.src === conv || i.open === conv);
 
 export const clean = (raw: unknown) => {
 	const p = parseTone(stripHandoff(String(raw ?? "")));

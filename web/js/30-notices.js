@@ -59,6 +59,7 @@ async function loadNotices() {
   syncInlineChoices();
   snapHomeSoon();
   ntAlertMarks();
+  convReadSoon();
 }
 
 // 모니터링 opened again soon after: the list (300 notices, about 300 KB) stands; the stream keeps it live and ntSync catches a missed frame.
@@ -99,6 +100,7 @@ function noticeLive(e) {
     // a block of a several-draft card settles without `draft` when its draft is sent from 모니터링, and the docked card drops it here.
     if (ntIsDec(e.item) && e.item.decision.to === target && !DK.h) paintDecision();
     if (e.item.kind === "watch") monitorsLive();
+    convReadSoon();
   } else if (e.kind === "notice_dismiss") {
     ntHandled(e.id);
     const g = NT.items.find(x => x.id === e.id);
@@ -203,6 +205,15 @@ function ntRead(n) {
   if (!n.id || n.read || ntNeeds(n) || ntLaterTwin(n) || !ntById(n.id)) return;
   n.read = true; ntReadDown(1); ntPaint(); homeSoon();
   ntMarkRead({ ids: [n.id] });
+}
+const ntSeenUnread = t => NT.items.filter(n => !!n.id && !n.pc && !n.read && !n.dismissed && !!n.at && (n.kind === "result" || n.kind === "worklog") && !ntNeeds(n) && (n.msg === t || n.src === t || n.open === t));
+const NT_SEEN_SENT = new Set();
+function ntSeen(n, t) {
+  const k = `${n.id}|${n.at}`;
+  if (NT_SEEN_SENT.has(k)) return;
+  NT_SEEN_SENT.add(k);
+  n.read = true; ntReadDown(1); ntPaint(); homeSoon();
+  api("/api/notices/seen", "POST", { target: t, ts: n.at }).then(r => { ntUnreadSet(r && r.unread); if (!r || !r.read) loadNotices(); }, () => loadNotices());
 }
 // The unread count: k read here before the hub answers, k put back when that read failed, the hub's own count when its answer carries one.
 const ntReadDown = k => { NT.unread = Math.max(0, NT.unread - k); };

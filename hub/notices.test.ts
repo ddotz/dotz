@@ -14,10 +14,11 @@ import { blockText, recoveryText } from "./limit-alert.ts";
 import { en } from "./i18n-en.ts";
 import { ko } from "./i18n-ko.ts";
 import { watchLine } from "./watchtext.ts";
-import { allNotices, answerDecision, answerReply, authRequested, authSettled, type DecisionSend, dismissNotice, dropChannelNotices, dropLaneNotices, handledNotice, ignoreNotice, laneVerified, listNotices, markDraftSend, markNoticesRead, NOTICE_CAP, needsAnswer, type Notice, onDecision, orchestratorAnswered, orchestratorTurnStarted, resolveNotices, readConversationNotices, reopenNotices, rewriteOpenDraft, setConvNameResolver, setLaneTitleResolver, setViewing, setWatchLabelResolver, ANSWER_WINDOW_MS, ALERT_ANSWER_WINDOW_MS, settleExpiredQuestions, UPDATE_NOTICE_KEY, undismissNotice, unignoreNotice, unreadCount, updateAvailable, updateResolved } from "./notices.ts";
+import { allNotices, answerDecision, answerReply, authRequested, authSettled, type DecisionSend, dismissNotice, dropChannelNotices, dropLaneNotices, handledNotice, ignoreNotice, laneVerified, listNotices, markDraftSend, markNoticesRead, NOTICE_CAP, needsAnswer, type Notice, onDecision, orchestratorAnswered, orchestratorTurnStarted, resolveNotices, readConversationNotices, readSeenMessage, reopenNotices, rewriteOpenDraft, setConvNameResolver, setLaneTitleResolver, setViewing, setWatchLabelResolver, ANSWER_WINDOW_MS, ALERT_ANSWER_WINDOW_MS, settleExpiredQuestions, UPDATE_NOTICE_KEY, undismissNotice, unignoreNotice, unreadCount, updateAvailable, updateResolved } from "./notices.ts";
 import { sealLine } from "./approval-seal.ts";
 import { brokenCount } from "./owner-text.ts";
 import { flushNotices } from "./notices-store.ts";
+import { routeNotices } from "./routes-notices.ts";
 
 const ts = () => new Date().toISOString();
 const stored = (): Notice[] => (flushNotices(), JSON.parse(readFileSync(paths.notices, "utf8")));
@@ -1026,7 +1027,7 @@ test("a viewed conversation makes no message item; looking at one reads its item
 	expect(setViewing("tab-b", "nope")).toEqual({ ok: false });
 });
 
-test("looking at a conversation reads its unread answer and a mail's notice, never a result, alert or monitor report; a tap reads those", () => {
+test("looking at a conversation reads its unread answer and a mail's notice, never a result, alert or monitor report; a tap, or seeing a result's own message, reads a result", () => {
 	const mine = (key: string) => stored().find(n => n.key === key)!;
 	// a session result whose card lives in lane:seen1: reading that conversation (POST /api/read, scope viewed) leaves the result unread
 	emit("outbox", { ts: "2026-10-22T01:00:00.000Z", kind: "out", source: "lane:seen1", target: "worklog", text: "[done] 읽지 않은 결과", update_key: "lane:seen1" });
@@ -1037,8 +1038,11 @@ test("looking at a conversation reads its unread answer and a mail's notice, nev
 	markRead({ target: "lane:seen1", ts: "2026-10-22T03:00:00.000Z" });
 	setViewing("tab-seen", "lane:seen1", Date.now());
 	expect(mine("lane:seen1").read).toBe(false);
-	markNoticesRead({ ids: [mine("lane:seen1").id] });
+	expect(readSeenMessage("lane:seen1", "2026-10-22T01:00:00.000Z")).toMatchObject({ ok: true });
 	expect(mine("lane:seen1").read).toBe(true);
+	emit("outbox", { ts: "2026-10-22T02:00:00.000Z", kind: "out", source: "lane:seen2", target: "worklog", text: "[done] 눌러서 읽을 결과", update_key: "lane:seen2" });
+	markNoticesRead({ ids: [mine("lane:seen2").id] });
+	expect(mine("lane:seen2").read).toBe(true);
 	// the conversation's unread answer is read by the read position, and by viewing it
 	emit("outbox", { ts: "2026-10-22T04:00:00.000Z", kind: "out", source: "orchestrator", target: "ch:9411", text: "보일 답이에요" });
 	emit("outbox", { ts: "2026-10-22T04:00:00.000Z", kind: "out", source: "orchestrator", target: "ch:9412", text: "보일 답이에요 둘" });
@@ -1050,6 +1054,71 @@ test("looking at a conversation reads its unread answer and a mail's notice, nev
 	setViewing("tab-seen", "ch:9412", Date.now());
 	expect(mine("msg:ch:9412").read).toBe(true);
 	setViewing("tab-seen", "", Date.now());
+});
+
+test("a session result is read only by the seen signal of its own message: opening the lane, another message or another conversation leaves it unread", () => {
+	const at = "2026-10-23T01:00:00.000Z", later = "2026-10-23T01:05:00.000Z";
+	emit("inbox", { ts: at, kind: "lane_report", source: "lane:sn1", lane: "sn1", text: "[done] 화면에 보일 결과" });
+	const res = () => stored().find(n => n.key === "lane:sn1")!;
+	expect(res()).toMatchObject({ kind: "result", at, read: false });
+	const unread = unreadCount();
+	const r = markRead({ target: "lane:sn1", ts: later });
+	if (r.ok) readConversationNotices(r.target, r.ts, "viewed");
+	setViewing("tab-sn", "lane:sn1", Date.now());
+	expect(res().read).toBe(false);
+	expect(readSeenMessage("lane:sn1", later)).toEqual({ ok: true, read: 0, unread });
+	readSeenMessage("lane:sn2", at);
+	readSeenMessage("main", at);
+	expect(res().read).toBe(false);
+	expect(readSeenMessage("lane:sn1", at)).toEqual({ ok: true, read: 1, unread: unread - 1 });
+	expect(res().read).toBe(true);
+	expect(readSeenMessage("nope", at)).toEqual({ ok: false });
+	expect(readSeenMessage("lane:sn1", 5)).toEqual({ ok: false });
+	setViewing("tab-sn", "", Date.now());
+});
+
+test("a 작업내역 line is read when it is seen where it is drawn: a session's line in 작업내역 or in its session, a plain worklog [done] in 작업내역", () => {
+	const a = "2026-10-23T02:00:00.000Z", b = "2026-10-23T02:01:00.000Z", c = "2026-10-23T02:02:00.000Z";
+	emit("outbox", { ts: a, kind: "out", source: "orchestrator", target: "worklog", text: "[done] 기록에 남은 세션 줄", update_key: "lane:sn3" });
+	emit("outbox", { ts: b, kind: "out", source: "lane:sn4", target: "worklog", text: "[done] 세션이 남긴 줄", update_key: "lane:sn4" });
+	post("worklog", "[done] 작업내역의 끝난 일", { ts: c });
+	const line = byText("기록에 남은 세션 줄")[0]!, own = byText("세션이 남긴 줄")[0]!, done = byText("작업내역의 끝난 일")[0]!;
+	expect(line).toMatchObject({ kind: "result", src: "lane:sn3", msg: "worklog", read: false });
+	expect(own).toMatchObject({ kind: "result", src: "lane:sn4", read: false });
+	expect(done).toMatchObject({ kind: "worklog", open: "worklog", read: false });
+	readSeenMessage("worklog", a);
+	readSeenMessage("lane:sn4", b);
+	readSeenMessage("worklog", c);
+	expect(byText("기록에 남은 세션 줄")[0]!.read).toBe(true);
+	expect(byText("세션이 남긴 줄")[0]!.read).toBe(true);
+	expect(byText("작업내역의 끝난 일")[0]!.read).toBe(true);
+});
+
+test("a seen signal never reads an alert, a monitor report or a result that asks the owner", () => {
+	const t0 = Date.now(), at = new Date(t0).toISOString(), wake = new Date(t0 + 1).toISOString(), asked = new Date(t0 + 2).toISOString();
+	emit("outbox", { ts: at, kind: "out", source: "gateway", target: "alert", text: "[fail] 디스크가 거의 찼어요" });
+	emit("inbox", { ts: wake, kind: "watch", watch: "sn-watch", label: "가격 감시", reason: "changed", text: "가격이 바뀌었어요" });
+	emit("outbox", { ts: asked, kind: "out", source: "orchestrator", target: "worklog", text: "[ask] 이어서 할까요?", update_key: "lane:sn5" });
+	const alert = stored().find(n => n.kind === "alert" && n.at === at)!, report = stored().find(n => n.kind === "watch" && n.at === wake)!, ask = stored().find(n => n.key === "lane:sn5")!;
+	expect([alert.read, report.read, ask.read]).toEqual([false, false, false]);
+	expect(ask).toMatchObject({ kind: "result", tone: "ask" });
+	readSeenMessage("alert", at);
+	readSeenMessage("alert", wake);
+	readSeenMessage("worklog", asked);
+	readSeenMessage("lane:sn5", asked);
+	const after = (id: string) => stored().find(n => n.id === id)!.read;
+	expect([after(alert.id), after(report.id), after(ask.id)]).toEqual([false, false, false]);
+});
+
+test("POST /api/notices/seen reads for the owner's page and refuses a hub-token caller", async () => {
+	const at = "2026-10-23T04:00:00.000Z";
+	emit("inbox", { ts: at, kind: "lane_report", lane: "sn6", text: "[done] 경로로 읽을 결과" });
+	const call = (agent: boolean) => routeNotices(new Request("http://local/api/notices/seen", { method: "POST", body: JSON.stringify({ target: "lane:sn6", ts: at }) }), new URL("http://local/api/notices/seen"), agent);
+	expect((await call(true))!.status).toBe(403);
+	expect(stored().find(n => n.key === "lane:sn6")!.read).toBe(false);
+	const ok = (await call(false))!;
+	expect(ok.status).toBe(200);
+	expect(stored().find(n => n.key === "lane:sn6")!.read).toBe(true);
 });
 
 // A throwaway data dir for a fresh process: config copy, optional stored notices / read positions, and the sessions that still exist on disk.
