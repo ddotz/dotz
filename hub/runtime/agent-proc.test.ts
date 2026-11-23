@@ -40,6 +40,13 @@ const isGone = (pid: number) => {
 		return true;
 	}
 };
+const reap = (pid: number) => {
+	try {
+		process.kill(pid, "SIGKILL");
+	} catch (e) {
+		if (!(e instanceof Error) || !("code" in e) || e.code !== "ESRCH") throw e;
+	}
+};
 
 test("a write to an agent that no longer reads its stdin neither throws nor leaves an unhandled rejection", async () => {
 	const unhandled: unknown[] = [];
@@ -86,7 +93,7 @@ test("ending an agent ends the grandchild it started", async () => {
 		await agent.exited;
 		expect(await endOfStream(agent, DEADLINE_MS)).toBe("closed");
 	} finally {
-		if (!isGone(grandchild)) process.kill(grandchild, "SIGKILL");
+		reap(grandchild);
 	}
 });
 
@@ -98,7 +105,7 @@ test("an agent that exits by itself takes its grandchild with it", async () => {
 		await agent.exited;
 		expect(await endOfStream(agent, DEADLINE_MS)).toBe("closed");
 	} finally {
-		if (!isGone(grandchild)) process.kill(grandchild, "SIGKILL");
+		reap(grandchild);
 	}
 });
 
@@ -111,6 +118,6 @@ test("a forced kill ends the whole group of an agent that ignores the stop signa
 		await agent.exited;
 		expect(await endOfStream(agent, DEADLINE_MS)).toBe("closed");
 	} finally {
-		if (!isGone(grandchild)) process.kill(grandchild, "SIGKILL");
+		reap(grandchild);
 	}
 });
