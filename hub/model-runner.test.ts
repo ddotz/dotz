@@ -262,6 +262,57 @@ test("no subscription login is its own reason, and a non-subscription model is n
 	expect(() => ensureProvider("openai/gpt-5")).not.toThrow();
 });
 
+const cliAccount = (name = "default") => ({ name, store: "claude-cli" });
+const SUB = "anthropic-subscription/claude-sonnet-5-5";
+const withProbe = async (readable: boolean, body: (probed: () => number) => unknown) => {
+	const real = runnerDeps.loginReadable;
+	let probed = 0;
+	runnerDeps.loginReadable = () => (probed++, readable);
+	try {
+		await body(() => probed);
+	} finally {
+		runnerDeps.loginReadable = real;
+	}
+};
+
+test("a claude-cli account whose login store this session cannot read is refused with that reason and starts no model process", async () => {
+	auth([cliAccount()]);
+	await withProbe(false, async probed => {
+		const call = callModel("sys", "u", { model: SONNET });
+		await expect(call).rejects.toThrow("이 접속에서는 맥의 로그인 저장소를 읽을 수 없어요");
+		await expect(call).rejects.toThrow("맥 본체에서 직접 실행해 주세요");
+		expect(spawns()).toEqual([]);
+		expect(() => ensureProvider(SUB)).toThrow("로그인 저장소");
+		expect(probed()).toBe(1);
+		clock.now += 31_000;
+		expect(() => ensureProvider(SUB)).toThrow("로그인 저장소");
+		expect(probed()).toBe(2);
+	});
+});
+
+test("a claude-cli account whose login store is readable passes", async () => {
+	auth([cliAccount()]);
+	await withProbe(true, async () => {
+		expect(() => ensureProvider(SUB)).not.toThrow();
+		expect((await callModel("sys", "u", { model: SONNET })).text).toBe("warm 답 1");
+	});
+});
+
+test("an account that keeps its token in auth.json and a non-subscription model are never probed", async () => {
+	auth([account()]);
+	await withProbe(false, async probed => {
+		expect(() => ensureProvider(SUB)).not.toThrow();
+		expect(() => ensureProvider("openai/gpt-5")).not.toThrow();
+		expect(probed()).toBe(0);
+	});
+	auth([cliAccount()]);
+	invalidateHealth();
+	await withProbe(false, async probed => {
+		expect(() => ensureProvider("openai/gpt-5")).not.toThrow();
+		expect(probed()).toBe(0);
+	});
+});
+
 test("when the pinned account is spent and readiness moves to another, the next call runs on a process pinned to that one", async () => {
 	auth([account("default"), account("work", "b")]);
 	expect((await callModel("sys", "u", { model: SONNET })).text).toBe("warm 답 1");

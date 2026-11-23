@@ -13,6 +13,7 @@
 // against what OmO itself records (auth.json accounts, credential-pool-state.json blocks, subscription-usage.json windows),
 // cached for 30 s; when no account is usable the call fails at once with the reset time, or moves to another account the
 // owner has logged in and that is not spent. The subscription-only rule stays: an API key is never a fallback here.
+import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -39,6 +40,12 @@ export const runnerDeps = {
 	maxRunners: 3,
 	which: (bin: string): string | null => Bun.which(bin),
 	usage: usageLast,
+	loginReadable: (): boolean => {
+		if (process.platform !== "darwin") return true;
+		const r = spawnSync("/usr/bin/security", ["show-keychain-info", join(homedir(), "Library", "Keychains", "login.keychain-db")], { stdio: "ignore", timeout: 3000 });
+		if (r.error || r.signal) return true;
+		return r.status === 0;
+	},
 };
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -75,6 +82,7 @@ export class ProviderBlockedError extends Error {
 }
 
 const HEALTH_TTL_MS = 30_000;
+const KEYCHAIN_LOCKED = "이 접속에서는 맥의 로그인 저장소를 읽을 수 없어요 (ssh 같은 원격 접속이에요) · 이 명령은 맥 본체에서 직접 실행해 주세요";
 let healthCache: { key: string; at: number; value: Health } | undefined;
 export function invalidateHealth(): void {
 	healthCache = undefined;
@@ -136,7 +144,10 @@ export function ensureProvider(model: string, now = runnerDeps.now()): void {
 		return;
 	}
 	const h = subscriptionHealth(now);
-	const value: Health = h.account ? { ok: true, account: h.account } : { ok: false, reason: h.reason ?? "구독 계정을 지금 쓸 수 없어요", resetAt: h.resetAt };
+	const store = h.account ? (readJson(authPath())?.["anthropic-subscription"]?.accounts as Json[] | undefined)?.find(a => a?.name === h.account)?.store : undefined;
+	const locked = store === "claude-cli" && !runnerDeps.loginReadable();
+	let value: Health = h.account ? { ok: true, account: h.account } : { ok: false, reason: h.reason ?? "구독 계정을 지금 쓸 수 없어요", resetAt: h.resetAt };
+	if (value.ok && locked) value = { ok: false, reason: KEYCHAIN_LOCKED };
 	healthCache = { key, at: now, value };
 	if (!value.ok) throw new ProviderBlockedError(value.reason, value.resetAt);
 }
