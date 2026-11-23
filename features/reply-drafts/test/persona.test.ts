@@ -7,7 +7,7 @@ import { runOnboard } from "../bin/onboard.ts";
 import { ensureKakaoRoom } from "../lib/kakao-tone.ts";
 import { offerMailDraft } from "../lib/offer.ts";
 import { COMMENT_TONE_VERSION, corpusFile, learnFirst, maybeRefine, REFINE_EVERY } from "../lib/persona.ts";
-import { identityOf, loadStyle, paths, recordCorrection, templatesOf, toneFile, writeAtomic, writeIdentity } from "../lib/settings.ts";
+import { identityOf, loadStyle, markLearned, paths, recordCorrection, templatesOf, toneFile, writeAtomic, writeIdentity } from "../lib/settings.ts";
 import { enable, fakeModel, goodReply, j, mailFixture, setupEnv } from "./helpers.ts";
 
 const env = setupEnv();
@@ -56,13 +56,14 @@ test("the first mail reads the sent mailbox once, analyses it into the mail iden
 	expect(analyze.calls).toHaveLength(1);
 });
 
-test("a mailbox with nothing to read yet is asked again with the next mail; a failed analysis still lets the draft go out", async () => {
+test("a mailbox with nothing to read yet is asked again a day later, not with every mail; a failed read still lets the draft go out", async () => {
 	let reads = 0;
 	const draft = fakeModel([j(goodReply)]);
 	const empty = async () => (reads++, [] as string[]);
 	await offerMailDraft({ ...mailFixture, key: "e-1" }, { send: () => {}, call: draft.call, analyze: fakeModel(["x"]).call, sentTexts: empty });
 	await offerMailDraft({ ...mailFixture, key: "e-2" }, { send: () => {}, call: draft.call, analyze: fakeModel(["x"]).call, sentTexts: empty });
-	expect(reads).toBe(2);
+	expect(reads).toBe(1);
+	markLearned(["mail~empty-logged"], new Date(new Date().getTime() - 2 * 86_400_000));
 	const failing = async () => Promise.reject(new Error("zele down"));
 	const logs: string[] = [];
 	expect(await offerMailDraft({ ...mailFixture, key: "e-3" }, { send: () => {}, call: draft.call, analyze: fakeModel(["x"]).call, sentTexts: failing, log: l => void logs.push(l) })).toBe("offered");

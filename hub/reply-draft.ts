@@ -174,7 +174,7 @@ export const CORRECTIONS_BUDGET = 4000;
 const CORRECTION_MAX = 300;
 const DATED = /^\s*(\d{4}-\d{2}-\d{2})/;
 
-/** The corrections a prompt shows: newest first by each line's leading date (undated = oldest; of one date the later line is newer), duplicates once, each cut to 300 characters, as many as fit in `budget` characters. */
+/** The corrections a prompt shows: newest first by each line's leading date (undated = oldest; of one date the later line is newer), duplicates once, each cut to 300 code points, as many as fit in `budget` code points. */
 export function promptCorrections(corrections: string[], budget: number): string[] {
 	const newestFirst = corrections
 		.map((line, at) => ({ line, at, date: DATED.exec(line)?.[1] ?? "" }))
@@ -182,11 +182,12 @@ export function promptCorrections(corrections: string[], budget: number): string
 	const out: string[] = [];
 	let total = 0;
 	for (const { line } of newestFirst) {
-		const cut = line.slice(0, CORRECTION_MAX);
+		const points = [...line].slice(0, CORRECTION_MAX);
+		const cut = points.join("");
 		if (out.includes(cut)) continue;
-		if (total + cut.length > budget) break;
+		if (total + points.length > budget) break;
 		out.push(cut);
-		total += cut.length;
+		total += points.length;
 	}
 	return out;
 }
@@ -307,8 +308,9 @@ export function parseResult(text: string): ModelJson | undefined {
 const PLACEHOLDER = /\[(?:이름|성함|name|날짜|시간|회사|받는\s*분|수신자)[^\]\n]*\]|\{\{[^}\n]*\}\}|\bO{3,}\b|\bX{3,}\b|\bTODO\b|[○◯]{2,}/i;
 
 const REGEX_ENTRY = /^\/(.+)\/([a-z]*)$/;
+const banText = (s: string): string => s.normalize("NFC").replace(/\s+/g, " ").trim().toLowerCase();
 
-/** Whether `body` uses a forbidden entry: a `/regex/flags` entry is tested as a pattern (an invalid one never hits), any other as a case-insensitive substring. */
+/** Whether `body` uses a forbidden entry: a `/regex/flags` entry is tested as a pattern against the raw body (an invalid one never hits), any other as a substring with whitespace runs as one space, both sides in NFC, case aside. */
 export function forbiddenHit(body: string, entry: string): boolean {
 	const re = REGEX_ENTRY.exec(entry);
 	if (re) {
@@ -318,7 +320,8 @@ export function forbiddenHit(body: string, entry: string): boolean {
 			return false;
 		}
 	}
-	return !!entry.trim() && body.toLowerCase().includes(entry.trim().toLowerCase());
+	const word = banText(entry);
+	return !!word && banText(body).includes(word);
 }
 
 // Deterministic checks, run on a fresh draft and again right before sending; returns the failures (empty = clean).
@@ -404,6 +407,7 @@ const subjectOf = (subject: string | undefined, item: ReplyItem): string | undef
 async function run(item: ReplyItem, style: ReplyStyle, call: ModelCall, base: PromptExtras): Promise<ReplyResult | AskResult> {
 	let failures: string[] | undefined;
 	let first: Omit<Extract<ReplyResult, { action: "draft" }>, "action" | "tries"> | undefined;
+	const taught: string[] = [];
 	for (let tries = 1; tries <= 2; tries++) {
 		const p = buildPrompt(item, style, { ...base, ...(failures ? { failures } : {}) });
 		let out: string;
@@ -433,7 +437,8 @@ async function run(item: ReplyItem, style: ReplyStyle, call: ModelCall, base: Pr
 		// The recipient and the Re: subject are settled here, by rule: a model retry cannot know an address the message does not show.
 		const draft: DraftOut = { to: recipientOf(parsed.to, item), subject: subjectOf(parsed.subject, item), body: parsed.body };
 		if (!draft.subject) delete draft.subject;
-		const found = [...lintReply(draft, item, style), ...(unfoundedSend(draft.body, item, base) ? [SENT_CLAIM_FAILURE] : []), ...(unfoundedRecipient(parsed.recipient, item) ? [RECIPIENT_FAILURE] : [])];
+		if (base.change) for (const w of learnedOf(parsed, base.change).forbid) if (![...style.forbidden, ...taught].some(f => banText(f) === banText(w))) taught.push(w);
+		const found = [...lintReply(draft, item, taught.length ? { ...style, forbidden: [...style.forbidden, ...taught] } : style), ...(unfoundedSend(draft.body, item, base) ? [SENT_CLAIM_FAILURE] : []), ...(unfoundedRecipient(parsed.recipient, item) ? [RECIPIENT_FAILURE] : [])];
 		const files = item.candidates?.length && parsed.files ? [...new Set(parsed.files.flatMap(f => item.candidates!.find(c => fileNameKey(c) === fileNameKey(f)) ?? []))] : undefined;
 		const attach = files ? attachIssues({ subject: draft.subject, body: draft.body, files, request: item.text }).flatMap(i => ATTACH_FAILURE[i.kind] ?? []) : [];
 		const fixable = [...rewritable(found), ...attach];
@@ -462,16 +467,15 @@ export type Learned = { line: string; forbid: string[]; everywhere: boolean };
 const BAN_CHARS = { min: 2, max: 40 };
 const BANS_MAX = 5;
 
-/** The lesson of a revision with the wordings it bans: the model's `forbid` entries that occur verbatim in `change` (whitespace and case aside), 2 to 40 characters, no `/regex/`, at most 5. */
+/** The lesson of a revision with the wordings it bans: the model's `forbid` entries that occur verbatim in `change` (whitespace, case and Unicode composition aside), 2 to 40 characters, no `/regex/`, at most 5, stored in NFC with whitespace runs as one space. */
 export function learnedOf(r: { lesson?: string; forbid?: string[]; everywhere?: boolean }, change: string): Learned {
 	const line = r.lesson === undefined ? change : r.lesson;
-	const said = change.replace(/\s+/g, " ").toLowerCase();
+	const said = banText(change);
 	const forbid: string[] = [];
 	for (const entry of r.forbid ?? []) {
-		const trimmed = entry.trim();
-		const word = trimmed.replace(/\s+/g, " ");
-		const chars = [...trimmed].length;
-		if (chars < BAN_CHARS.min || chars > BAN_CHARS.max || REGEX_ENTRY.test(trimmed) || !said.includes(word.toLowerCase()) || forbid.some(f => f.toLowerCase() === word.toLowerCase())) continue;
+		const word = entry.normalize("NFC").replace(/\s+/g, " ").trim();
+		const chars = [...word].length;
+		if (chars < BAN_CHARS.min || chars > BAN_CHARS.max || REGEX_ENTRY.test(word) || !said.includes(banText(word)) || forbid.some(f => banText(f) === banText(word))) continue;
 		forbid.push(word);
 		if (forbid.length === BANS_MAX) break;
 	}

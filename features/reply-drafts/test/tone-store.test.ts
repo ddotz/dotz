@@ -9,7 +9,7 @@ import { buildDraft, reviseDraft } from "../lib/flow.ts";
 import { learnKakaoRoom, type OwnerReader } from "../lib/kakao-tone.ts";
 import { offerMailDraft } from "../lib/offer.ts";
 import { readMailBody, sendWith } from "../lib/senders.ts";
-import { HEADINGS, loadStyle, paths, profileBullets, recordCorrection, recordForbidden, recordLearned, recordRule, removeForbidden, removeRule, roomFile, toneFile, writeExamples } from "../lib/settings.ts";
+import { HEADINGS, loadStyle, paths, profileBullets, recordCorrection, recordForbidden, recordLearned, recordRule, removeCorrection, removeForbidden, removeRule, roomFile, toneFile, writeExamples } from "../lib/settings.ts";
 import { addDraft, getDraft, listDrafts } from "../lib/store.ts";
 import { learnTone, zeleEnabled, type Runner } from "../lib/tone.ts";
 import { enable, fakeModel, goodReply, j, mailFixture, setupEnv } from "./helpers.ts";
@@ -336,7 +336,83 @@ test("standing holds the 말투 lines of install, app and room and the hand-adde
 	expect(s.rules).toEqual(["어디서나 존댓말", "설치 측정", "짧게 끊어 쓴다", "이모지 없이", "동아리 방", "형이라고 부른다"]);
 });
 
+test("a writer adds one bullet after the section's last bullet and keeps the owner's prose; a missing section is appended at the end", () => {
+	mkdirSync(paths.toneDir(), { recursive: true });
+	writeFileSync(toneFile({ app: "mail" }), "## 금지\n이 줄은 손으로 쓴 설명.\n\n- 가가\n\n## 말투\n- r\n");
+	recordForbidden({ app: "mail" }, ["나나"]);
+	expect(readFileSync(toneFile({ app: "mail" }), "utf8")).toBe("## 금지\n이 줄은 손으로 쓴 설명.\n\n- 가가\n- 나나\n\n## 말투\n- r\n");
+	writeFileSync(toneFile({ app: "youtube" }), "## 말투\n설명만 있다.\n");
+	recordRule({ app: "youtube" }, "짧게");
+	recordForbidden({ app: "youtube" }, ["되세요"]);
+	expect(readFileSync(toneFile({ app: "youtube" }), "utf8")).toBe("## 말투\n설명만 있다.\n\n- 짧게\n\n## 금지\n\n- 되세요\n");
+	expect(removeRule({ app: "youtube" }, "짧게")).toEqual(["짧게"]);
+	expect(readFileSync(toneFile({ app: "youtube" }), "utf8")).toBe("## 말투\n설명만 있다.\n\n\n## 금지\n\n- 되세요\n");
+});
+
+const SHAPES: { name: string; md: (h: string, b: string) => string; together?: string }[] = [
+	{ name: "prose before bullets", md: (h, b) => `# 손으로 쓴 제목\n\n${h}\n이 줄은 손으로 쓴 설명.\n\n- 가가\n${b}\n\n## 기타\n- 다른\n` },
+	{ name: "prose after bullets", md: (h, b) => `${h}\n\n- 가가\n${b}\n\n뒤에 붙인 설명 문단.\n\n## 기타\n메모\n` },
+	{ name: "numbered lines", md: (h, b) => `${h}\n\n1. 첫째 손 규칙\n2. 둘째 손 규칙\n${b}\n- 가가\n` },
+	{ name: "wrapped bullet continuation", md: (h, b) => `${h}\n\n${b}\n- 가가 길게 쓴 줄이\n  다음 줄로 이어진다\n\n## 기타\n- 다른\n`, together: "- 가가 길게 쓴 줄이\n  다음 줄로 이어진다" },
+	{ name: "CRLF file", md: (h, b) => `# 제목\r\n\r\n${h}\r\n설명 줄\r\n\r\n- 가가\r\n${b}\r\n\r\n## 기타\r\n- 다른\r\n` },
+	{ name: "section last without a trailing newline", md: (h, b) => `## 기타\n- 다른\n\n${h}\n설명\n- 가가\n${b}` },
+];
+const GONE = "지울 말";
+const WRITERS: { name: string; heading: string; run: () => unknown; adds?: string }[] = [
+	{ name: "recordForbidden", heading: HEADINGS.forbidden, run: () => recordForbidden({ app: "mail" }, ["새 표현"]), adds: "새 표현" },
+	{ name: "removeForbidden", heading: HEADINGS.forbidden, run: () => removeForbidden({ app: "mail" }, GONE) },
+	{ name: "recordRule", heading: HEADINGS.rules, run: () => recordRule({ app: "mail" }, "새 규칙"), adds: "새 규칙" },
+	{ name: "removeRule", heading: HEADINGS.rules, run: () => removeRule({ app: "mail" }, "지울") },
+	{ name: "recordCorrection", heading: HEADINGS.corrections, run: () => recordCorrection({ app: "mail" }, "새 고친 점", new Date("2030-05-06T00:00:00Z")), adds: "2030-05-06: 새 고친 점" },
+	{ name: "removeCorrection", heading: HEADINGS.corrections, run: () => removeCorrection({ app: "mail" }, "지울") },
+];
+const isSubsequence = (needles: string[], hay: string[]) => {
+	let at = 0;
+	for (const line of hay) if (at < needles.length && line === needles[at]) at++;
+	return at === needles.length;
+};
+
+test("every writer keeps each hand-written line it was not asked to change, in order, whatever the section's shape", () => {
+	for (const shape of SHAPES) {
+		for (const w of WRITERS) {
+			rmSync(paths.toneDir(), { force: true, recursive: true });
+			mkdirSync(paths.toneDir(), { recursive: true });
+			const before = shape.md(w.heading, `- ${GONE}`);
+			writeFileSync(toneFile({ app: "mail" }), before);
+			w.run();
+			const after = readFileSync(toneFile({ app: "mail" }), "utf8");
+			const label = `${w.name} / ${shape.name}`;
+			const kept = before.split(/\r?\n/).filter(l => w.adds || l !== `- ${GONE}`);
+			expect({ label, kept: isSubsequence(kept, after.split(/\r?\n/)) }).toEqual({ label, kept: true });
+			if (w.adds) expect({ label, bullets: profileBullets({ app: "mail" }, w.heading) }).toEqual({ label, bullets: expect.arrayContaining([GONE, w.adds]) });
+			else expect({ label, lines: after.split(/\r?\n/).length, bullets: profileBullets({ app: "mail" }, w.heading).includes(GONE) }).toEqual({ label, lines: kept.length, bullets: false });
+			if (shape.together) expect({ label, together: after.includes(shape.together) }).toEqual({ label, together: true });
+			if (before.includes("\r\n")) expect({ label, bareLf: /[^\r]\n/.test(after) }).toEqual({ label, bareLf: false });
+		}
+	}
+});
+
 const correct = (...args: string[]) => runDraft(["correct", ...args], "", { now: () => new Date("2030-03-04T00:00:00Z") });
+
+test("a stored value is one line: a newline in a ban, a rule or a correction can add no line and no heading to the file", async () => {
+	const forged = "ok\n## 말투\n- 가짜 규칙";
+	const r = await correct("--app", "mail", "--forbid", forged);
+	expect(r.code).toBe(0);
+	expect(r.lines.join("\n")).toContain('"ok ## 말투 - 가짜 규칙"');
+	recordRule({ app: "mail" }, "규칙\n## 고친 점\n- 가짜 고친 점");
+	recordCorrection({ app: "mail" }, "고침\n## 금지\n- 가짜 금지", new Date("2030-01-01T00:00:00Z"));
+	recordForbidden({ app: "mail" }, ["둘째\r\n## 정체성\n- 가짜 신분"]);
+	const file = readFileSync(toneFile({ app: "mail" }), "utf8");
+	expect(file.split("\n").filter(l => l.startsWith("## "))).toEqual([HEADINGS.forbidden, HEADINGS.rules, HEADINGS.corrections]);
+	const s = loadStyle({ app: "mail" });
+	expect(s.forbidden).toEqual(["ok ## 말투 - 가짜 규칙", "둘째 ## 정체성 - 가짜 신분"]);
+	expect(s.rules).toEqual(["규칙 ## 고친 점 - 가짜 고친 점"]);
+	expect(s.corrections).toEqual(["2030-01-01: 고침 ## 금지 - 가짜 금지"]);
+	expect(s.identity).toEqual([]);
+	expect((await correct("--app", "mail", "--forbid", "가\n\n")).code).toBe(1);
+	expect((await correct("--app", "mail", "--forbid", `${"가".repeat(20)}\n\n\n${"나".repeat(20)}`)).code).toBe(1);
+	expect((await correct("--app", "mail", "--forbid", `${"가".repeat(19)}\n\n\n${"나".repeat(20)}`)).code).toBe(0);
+});
 
 test("correct --forbid stores a wording once at install level, --allow takes it back", async () => {
 	const first = await correct("--app", "install", "--forbid", "되세요");
@@ -409,6 +485,39 @@ test("correct --rule stores a standing rule at the chosen level, tone lists it u
 	expect(said).toContain("[고친 점] 2030-03-04: 끝인사 다시 보기");
 	expect(profileBullets("install", HEADINGS.rules)).toEqual(["이모지는 쓰지 않는다"]);
 	expect(profileBullets("install", HEADINGS.corrections)).toEqual([]);
+});
+
+test("tone lists the bullets of hand-added sections as standing rules with level and section name; --forget leaves them and says which file holds the line", async () => {
+	mkdirSync(paths.toneDir(), { recursive: true });
+	writeFileSync(toneFile("install"), "## 말투\n\n- 어디서나 존댓말\n\n## 보낸 사람 신분별\n\n- 팀장에게는 존댓말\n");
+	writeFileSync(toneFile({ app: "mail" }), "## 호칭\n\n- 학부모에게는 선생님 호칭\n");
+	const tone = (await runDraft(["tone", "--app", "mail"], "")).lines.join("\n");
+	const standing = tone.slice(tone.indexOf("말투:"), tone.indexOf("고친 점:"));
+	expect(standing).toContain("- [install] 어디서나 존댓말");
+	expect(standing).toContain("- [install] (보낸 사람 신분별) 팀장에게는 존댓말");
+	expect(standing).toContain("- [app] (호칭) 학부모에게는 선생님 호칭");
+	const before = readFileSync(toneFile("install"), "utf8");
+	const r = await correct("--app", "install", "--forget", "팀장");
+	expect(r.code).toBe(0);
+	const said = r.lines.join("\n");
+	expect(said).toContain("보낸 사람 신분별");
+	expect(said).toContain(toneFile("install"));
+	expect(said).toContain("팀장에게는 존댓말");
+	expect(readFileSync(toneFile("install"), "utf8")).toBe(before);
+	const miss = await correct("--app", "install", "--forget", "없는 말");
+	expect(miss.lines.join("\n")).not.toContain(toneFile("install"));
+});
+
+test("--forget finds a line however its text or the owner's text is spaced, and echoes on one line", async () => {
+	mkdirSync(paths.toneDir(), { recursive: true });
+	writeFileSync(toneFile({ app: "mail" }), "## 말투\n\n- 끝인사는  두 줄로\n- 이모지 없이\n\n## 호칭\n\n- 학부모에게는\t선생님 호칭\n");
+	const hand = await correct("--app", "mail", "--forget", "학부모에게는 선생님");
+	expect(hand.lines.join("\n")).toContain(toneFile({ app: "mail" }));
+	const gone = await correct("--app", "mail", "--forget", "끝인사는 두\n줄로");
+	expect(gone.lines.join("\n")).toContain("[말투] 끝인사는  두 줄로");
+	expect(profileBullets({ app: "mail" }, HEADINGS.rules)).toEqual(["이모지 없이"]);
+	const miss = await correct("--app", "mail", "--forget", "없는\n말", "--change", "두 줄\n메모");
+	expect(miss.lines.every(l => !l.includes("\n"))).toBe(true);
 });
 
 test("tone lists each line with the level it comes from and writes nothing", async () => {

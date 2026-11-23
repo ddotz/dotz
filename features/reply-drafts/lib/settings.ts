@@ -289,10 +289,52 @@ export function writeIdentity(key: ToneKey | "install", lines: string[], templat
 }
 export const templatesOf = (key: ToneKey | "install"): string[] => bullets(profile(key), HEADINGS.templates);
 
+const BULLET = /^\s*[-*]\s+(.*\S)\s*$/;
+const oneLine = (s: string): string => s.replace(/\s+/g, " ").trim();
+
+function sectionOf(lines: string[], heading: string): { start: number; end: number } | undefined {
+	const start = lines.findIndex(l => l.trim() === heading);
+	if (start < 0) return undefined;
+	const next = lines.findIndex((l, i) => i > start && /^## /.test(l));
+	return { start, end: next < 0 ? lines.length : next };
+}
+
+function appendBullet(md: string, heading: string, item: string): string {
+	const eol = md.includes("\r\n") ? "\r\n" : "\n";
+	const lines = md.split(/(?<=\n)/);
+	const at = sectionOf(lines, heading);
+	if (!at) return `${md}${!md || md.endsWith(`${eol}${eol}`) ? "" : md.endsWith("\n") ? eol : eol + eol}${heading}${eol}${eol}- ${item}${eol}`;
+	const inSection = (i: number) => i >= at.start && i < at.end;
+	const lastBullet = lines.findLastIndex((l, i) => inSection(i) && BULLET.test(l));
+	const added = lastBullet < 0 ? ["", `- ${item}`] : [`- ${item}`];
+	let after = lastBullet < 0 ? lines.findLastIndex((l, i) => inSection(i) && !!l.trim()) : lastBullet;
+	while (lastBullet >= 0 && after + 1 < at.end && /^\s+\S/.test(lines[after + 1]!) && !BULLET.test(lines[after + 1]!)) after++;
+	const last = after === lines.length - 1 && !lines[after]!.endsWith("\n");
+	if (last) lines[after] += eol;
+	lines.splice(after + 1, 0, ...added.map((l, i) => (last && i === added.length - 1 ? l : l + eol)));
+	return lines.join("");
+}
+
+function dropBullets(md: string, heading: string, drop: (item: string) => boolean): { md: string; removed: string[] } | undefined {
+	const lines = md.split(/(?<=\n)/);
+	const at = sectionOf(lines, heading);
+	if (!at) return undefined;
+	const removed: string[] = [];
+	const kept = lines.filter((l, i) => {
+		const item = i > at.start && i < at.end ? BULLET.exec(l)?.[1] : undefined;
+		if (item === undefined || !drop(item)) return true;
+		removed.push(item);
+		return false;
+	});
+	if (!removed.length) return undefined;
+	const out = kept.join("");
+	return { md: md.endsWith("\n") ? out : out.replace(/\r?\n$/, ""), removed };
+}
+
 // The user's change request, verbatim and dated, in the profile of the draft that was revised, so every later draft there follows it.
 export function recordCorrection(key: ToneKey, change: string, now: Date): void {
-	const line = `${now.toISOString().slice(0, 10)}: ${change.replace(/\s+/g, " ").trim()}`;
-	editProfile(key, md => setSection(md, HEADINGS.corrections, [...bullets(md, HEADINGS.corrections), line]));
+	const line = `${now.toISOString().slice(0, 10)}: ${oneLine(change)}`;
+	editProfile(key, md => appendBullet(md, HEADINGS.corrections, line));
 }
 
 /** Takes every `## 고친 점` line of exactly that profile that contains the text (trimmed, case aside) out; returns the removed lines. */
@@ -305,21 +347,18 @@ function removeLines(key: ToneKey | "install", heading: string, text: string): s
 	const needle = banKey(text);
 	let removed: string[] = [];
 	editProfile(key, md => {
-		const have = bullets(md, heading);
-		removed = needle ? have.filter(l => l.toLowerCase().includes(needle)) : [];
-		return removed.length ? setSection(md, heading, have.filter(l => !removed.includes(l))) : undefined;
+		const out = needle ? dropBullets(md, heading, l => banKey(l).includes(needle)) : undefined;
+		removed = out?.removed ?? [];
+		return out?.md;
 	});
 	return removed;
 }
 
-/** Adds a standing rule, undated and whitespace-normalised, to the `## 말투` section of exactly that profile; a line equal apart from case and whitespace is not added again. */
+/** Adds a standing rule, undated and on one line, to the `## 말투` section of exactly that profile; a line equal apart from case and whitespace is not added again. */
 export function recordRule(key: ToneKey | "install", line: string): void {
-	const rule = line.replace(/\s+/g, " ").trim();
+	const rule = oneLine(line);
 	if (!rule) return;
-	editProfile(key, md => {
-		const have = bullets(md, HEADINGS.rules);
-		return have.some(h => normText(h) === normText(rule)) ? undefined : setSection(md, HEADINGS.rules, [...have, rule]);
-	});
+	editProfile(key, md => (bullets(md, HEADINGS.rules).some(h => normText(h) === normText(rule)) ? undefined : appendBullet(md, HEADINGS.rules, rule)));
 }
 
 /** Where a learned line goes: under the install key (the user said it holds always or everywhere) a standing rule of install.md, which no later lesson pushes out of a prompt; under any other key a dated correction of that profile. */
@@ -332,29 +371,35 @@ export function recordLearned(key: ToneKey, line: string, now: Date): "rule" | "
 	return "correction";
 }
 
-const banKey = (word: string) => word.trim().toLowerCase();
+const banKey = (word: string) => oneLine(word.normalize("NFC")).toLowerCase();
 
-/** Adds wordings the user banned to the `## 금지` section of exactly that profile; one already there (trimmed, case aside) is not added again. */
+/** Adds wordings the user banned, each on one line, to the `## 금지` section of exactly that profile; one already there (whitespace, case and Unicode composition aside) is not added again. */
 export function recordForbidden(key: ToneKey | "install", words: string[]): void {
 	editProfile(key, md => {
-		const have = bullets(md, HEADINGS.forbidden);
-		const next = [...have];
-		for (const word of words) if (word.trim() && !next.some(h => banKey(h) === banKey(word))) next.push(word.trim());
-		return next.length > have.length ? setSection(md, HEADINGS.forbidden, next) : undefined;
+		const have = bullets(md, HEADINGS.forbidden).map(banKey);
+		let next: string | undefined;
+		for (const word of words.map(oneLine)) {
+			if (!word || have.includes(banKey(word))) continue;
+			have.push(banKey(word));
+			next = appendBullet(next ?? md, HEADINGS.forbidden, word);
+		}
+		return next;
 	});
 }
 
-/** Takes a wording out of the `## 금지` section of exactly that profile (trimmed, case aside); false when it was not there. */
+/** Takes a wording out of the `## 금지` section of exactly that profile (whitespace, case and Unicode composition aside); false when it was not there. */
 export function removeForbidden(key: ToneKey | "install", word: string): boolean {
 	let removed = false;
 	editProfile(key, md => {
-		const have = bullets(md, HEADINGS.forbidden);
-		const next = have.filter(h => banKey(h) !== banKey(word));
-		removed = next.length < have.length;
-		return removed ? setSection(md, HEADINGS.forbidden, next) : undefined;
+		const out = dropBullets(md, HEADINGS.forbidden, h => banKey(h) === banKey(word));
+		removed = !!out;
+		return out?.md;
 	});
 	return removed;
 }
+
+/** The `## ` sections of exactly that profile that the owner added by hand (outside HEADINGS), with their bullets. */
+export const handSections = (key: ToneKey | "install"): { heading: string; items: string[] }[] => unknownSections(profile(key));
 
 // Profile files that exist, relative to the tone dir (for `onboard.ts status`).
 export function listProfiles(): string[] {

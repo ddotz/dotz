@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { ADAPT, addressesOf, automatedSender, buildPrompt, examplesUse, FAMILIAR_AT, generateReply, learnedOf, lintReply, NO_RECIPIENT, parseResult, precheck, promptCorrections, reviseReply, usableReplyTo, type ModelCall, type ReplyItem, type ReplyStyle } from "./reply-draft.ts";
+import { ADAPT, addressesOf, automatedSender, buildPrompt, examplesUse, FAMILIAR_AT, forbiddenHit, generateReply, learnedOf, lintReply, NO_RECIPIENT, parseResult, precheck, promptCorrections, reviseReply, usableReplyTo, type ModelCall, type ReplyItem, type ReplyStyle } from "./reply-draft.ts";
 import { replyExclusion } from "./mail-state.ts";
 
 const item: ReplyItem = { kind: "mail", from: "Kim <kim@example.com>", self: ["me@example.net"], subject: "회의 일정 문의", text: "다음 주 회의 일정을 알려 주실 수 있을까요?" };
@@ -167,6 +167,21 @@ test("promptCorrections: newest date first, undated as oldest, the later of one 
 	expect(promptCorrections([`2030-01-01: ${"가".repeat(500)}`], 4000)[0]).toHaveLength(300);
 });
 
+test("promptCorrections cuts a long line at 300 code points and never inside a surrogate pair", () => {
+	const loneHalf = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
+	for (const prefix of ["2030-01-01: x", "2030-01-01: ", "x"]) {
+		const whole = `${prefix}${"😀".repeat(200)}`;
+		const [kept] = promptCorrections([whole], 4000);
+		expect(loneHalf.test(kept!)).toBe(false);
+		expect(kept).toBe(whole);
+		const line = `${prefix}${"😀".repeat(400)}`;
+		const [cut] = promptCorrections([line], 4000);
+		expect(loneHalf.test(cut!)).toBe(false);
+		expect([...cut!]).toHaveLength(300);
+		expect(line.startsWith(cut!)).toBe(true);
+	}
+});
+
 test("wording the user banned never reaches the prompt as a past reply, a sample or a pattern; his identity and rules keep it", () => {
 	const ban = "행복한 하루 되세요";
 	const examples = [{ received: "오늘 잘 할게요", reply: `네 ${ban}~` }, { received: "언제 와요?", reply: "내일 갈게요." }];
@@ -199,6 +214,40 @@ test("learnedOf bans only wording the user himself wrote in the change, at most 
 	expect(learnedOf({}, "더 짧게")).toEqual({ line: "더 짧게", forbid: [], everywhere: false });
 });
 
+test("a ban matches however the text is spaced or composed: line breaks, runs of spaces and NFD all hit, a /regex/ entry still sees the raw body", () => {
+	const wording = "감사합니다.\n홍길동 드림";
+	const change = "앞으로 '감사합니다.\n홍길동 드림' 으로 끝내지 마";
+	const learned = learnedOf({ forbid: [wording] }, change);
+	expect(learned.forbid).toEqual(["감사합니다. 홍길동 드림"]);
+	const banned: ReplyStyle = { ...style, forbidden: learned.forbid, samples: ["확인해 보고 말씀드릴게요.", `알겠습니다.\n${wording}`], examples: [{ received: "일정 알려 주세요", reply: `다음 주 화요일이에요.\n\n${wording}` }, { received: "언제 와요?", reply: "내일 갈게요." }], closest: 0.9 };
+	const ok = { to: "kim@example.com", subject: "Re: 회의 일정 문의" };
+	for (const body of [`확인했습니다.\n${wording}`, "확인했습니다. 감사합니다.\r\n\r\n홍길동   드림", "확인했습니다. 감사합니다.\t홍길동 드림".normalize("NFD")]) expect(lintReply({ ...ok, body }, item, banned).join()).toContain("forbidden expression");
+	const p = buildPrompt(item, banned).user;
+	expect(p).not.toContain("다음 주 화요일이에요.");
+	expect(p).not.toContain("알겠습니다.\n감사합니다.");
+	expect(p).toContain("내일 갈게요.");
+	const nfd = learnedOf({ forbid: ["행복한 하루 되세요".normalize("NFD")] }, "'행복한 하루 되세요'는 쓰지 마".normalize("NFC"));
+	expect(nfd.forbid).toEqual(["행복한 하루 되세요".normalize("NFC")]);
+	expect(forbiddenHit("A\nb", "/a b/i")).toBe(false);
+	expect(forbiddenHit("A\nb", "/a\\sb/i")).toBe(true);
+	expect(forbiddenHit("   ", " ")).toBe(false);
+});
+
+test("every way of spacing or composing a banned wording is caught, and a body without it is not", () => {
+	const words = ["행복한 하루 되세요", "Thanks a lot", "감사합니다. 홍길동 드림", "좋은 하루"];
+	const gaps = [" ", "  ", "\n", "\r\n", "\t", " \n "];
+	for (const word of words) {
+		for (const gap of gaps) {
+			for (const form of ["NFC", "NFD"] as const) {
+				const body = `앞 문장. ${word.split(" ").join(gap)} 뒤 문장`.normalize(form);
+				expect(forbiddenHit(body, word)).toBe(true);
+				expect(forbiddenHit(body.toUpperCase(), word.normalize(form === "NFC" ? "NFD" : "NFC"))).toBe(true);
+				expect(forbiddenHit(body.replace(/\s+/g, ""), word)).toBe(false);
+			}
+		}
+	}
+});
+
 test("a revise asks what the change bans, rewrites a draft that uses a banned wording once with the finding listed, and returns the ban", async () => {
 	const ban = "행복한 하루 되세요";
 	const learned = { lesson: "끝인사는 '좋은 하루 보내세요'로", forbid: [ban], everywhere: true };
@@ -210,6 +259,23 @@ test("a revise asks what the change bans, rewrites a draft that uses a banned wo
 	expect(r).toMatchObject({ action: "draft", tries: 2, warnings: [], draft: { body: "네 좋은 하루 보내세요!" }, ...learned });
 	expect(parseResult(j({ ...good, forbid: "x", everywhere: "yes" }))).not.toHaveProperty("forbid");
 	expect(parseResult(j({ ...good, forbid: "x", everywhere: "yes" }))).not.toHaveProperty("everywhere");
+});
+
+test("a revise is linted against the ban it just taught: a draft that still holds the wording gets the one rewrite with the finding listed", async () => {
+	const ban = "즐거운 여행 되세요";
+	const learned = { lesson: "", forbid: [ban], everywhere: true };
+	const m = fake([j({ ...good, body: `네 확인했어요. ${ban}!`, ...learned }), j({ ...good, body: "네 확인했어요. 여행 잘 다녀오세요!", ...learned })]);
+	const r = await reviseReply(item, style, { to: "kim@example.com", subject: "Re: 회의 일정 문의", body: `${ban}!` }, `"${ban}"는 비문이니 앞으로 쓰지 마`, m.call);
+	expect(m.calls).toHaveLength(2);
+	expect(m.calls[1]!.user).toContain(`it uses the forbidden expression '${ban}'`);
+	expect(r).toMatchObject({ action: "draft", tries: 2, warnings: [], draft: { body: "네 확인했어요. 여행 잘 다녀오세요!" } });
+	const stuck = fake([j({ ...good, body: `네. ${ban}!`, ...learned })]);
+	const kept = await reviseReply(item, style, { to: "kim@example.com", subject: "Re: 회의 일정 문의", body: `${ban}!` }, `"${ban}"는 비문이니 앞으로 쓰지 마`, stuck.call);
+	expect(stuck.calls).toHaveLength(2);
+	expect(kept.action === "draft" && kept.warnings).toEqual([`it uses the forbidden expression '${ban}'`]);
+	const invented = fake([j({ ...good, body: `네. ${ban}!`, forbid: [ban] })]);
+	await reviseReply(item, style, { to: "kim@example.com", subject: "Re: 회의 일정 문의", body: "네." }, "더 짧게", invented.call);
+	expect(invented.calls).toHaveLength(1);
 });
 
 test("a subject enters the prompt at 200 characters and a 고치기 memo at 2,000", () => {
