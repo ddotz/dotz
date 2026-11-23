@@ -41,7 +41,7 @@ export function earlierMailTo({ store, mail, now, to, commentId, mailId }: { sto
 	return undefined;
 }
 
-export async function reviseMail({ store, mail, now, posting, emit, draft, mailId, change }: { store: Store; mail: MailLink; now: () => number; posting: (commentId: string) => boolean; emit: (e: Record<string, unknown>) => void; draft: Draft; mailId: string; change: string }): Promise<{ ok: true; draft: Draft } | { ok: false; reason: string }> {
+export async function reviseMail({ store, mail, now, posting, emit, draft, mailId, change }: { store: Store; mail: MailLink; now: () => number; posting: (commentId: string) => boolean; emit: (e: Record<string, unknown>) => void; draft: Draft; mailId: string; change: string }): Promise<{ ok: true; draft: Draft; lesson?: Lesson } | { ok: false; reason: string }> {
 	const m = await mail.revise(mailId, change).catch((e): { ok: false; reason: string } => ({ ok: false, reason: e instanceof Error && e.message ? clip(e.message, 160) : "고친 메일을 만들지 못했어요" }));
 	if (!m.ok) return { ok: false, reason: m.reason };
 	const cur = store.drafts().find(x => x.code === draft.code && x.status === "pending");
@@ -53,7 +53,7 @@ export async function reviseMail({ store, mail, now, posting, emit, draft, mailI
 	const next: Draft = { ...cur, mail: m.id, mailAt: now(), changes: [...cur.changes, `메일: ${change}`] };
 	store.putDraft(next);
 	emit({ kind: "comment_draft", source: draft.source, thread: draft.thread });
-	return { ok: true, draft: next };
+	return { ok: true, draft: next, ...(m.lesson ? { lesson: m.lesson } : {}) };
 }
 
 export function mailJson(d: Draft, view: (d: Draft) => MailView | undefined): { mail?: { id: string; to: string; subject?: string; body: string; attachments: { name: string; size?: string }[]; notes?: string[] } } {

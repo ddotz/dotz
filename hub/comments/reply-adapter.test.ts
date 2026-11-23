@@ -8,7 +8,8 @@ import { createEngine, type MailLink, type MailView } from "./engine.ts";
 import { localMidnight } from "../reply-route.ts";
 import { commentAdapter } from "./reply-adapter.ts";
 import { realMailLink } from "./mail-link.ts";
-import { approvalHash } from "../approval-send.ts";
+import { approvalHash, createApprovalSender } from "../approval-send.ts";
+import { createReplyActions } from "../reply-actions.ts";
 import { addDraft, getDraft, setStatus, type DraftRec } from "../../features/reply-drafts/lib/store.ts";
 import { HEADINGS, loadStyle, paths, profileBullets } from "../../features/reply-drafts/lib/settings.ts";
 import { generateReply } from "../reply-draft.ts";
@@ -347,4 +348,52 @@ test("a comment reply posted as the model wrote it teaches nothing", async () =>
 	if (!p.ok) throw new Error(p.reason);
 	await p.done;
 	expect(taught).toEqual([]);
+});
+
+const mailRevision = (lesson: string, extra: object = {}) => reply("자료 보내드려요. 확인 부탁드려요.", lesson, { to: "fan@example.com", subject: "Re: 자료", ...extra });
+
+async function reviseMailPart(o: { everywhere: boolean; instance?: string; part: "mail" | "reply" }) {
+	const model = [reply("이번 주말이에요!"), mailRevision(LESSON, { forbid: [BAN], everywhere: o.everywhere }), reply("토요일에 올라가요", LESSON, { forbid: [BAN], everywhere: o.everywhere })];
+	const { engine, a } = setup({ now: Date.now(), model, mail: realMailLink({ call: async () => model[1]! }) });
+	const code = await drafted(engine);
+	addDraft(rec("RMAIL01", { app: o.instance ?? "mail", item: { kind: "mail", app: o.instance ?? "mail", from: "fan@example.com", text: "hi", subject: "x" } as DraftRec["item"] }));
+	engine.store.putDraft({ ...engine.store.drafts().find(d => d.code === code)!, mail: "RMAIL01", mailAt: Date.now() });
+	const cards: string[] = [];
+	const sender = createApprovalSender({ kind: () => undefined, fingerprint: async () => undefined, run: async () => ({ code: 0, out: "" }), report: () => undefined, log: () => undefined, now: () => 1, undoMs: () => 0, after: () => undefined });
+	const actions = createReplyActions({
+		adapters: [a],
+		sender,
+		recordPick: () => undefined,
+		learning: replyLearning(() => ({})),
+		cards: { open: () => [], replace: (_o, _n, text) => void cards.push(text), rewrite: (_r, text) => void cards.push(text), repost: async () => undefined, close: () => undefined },
+		toBot: async () => undefined,
+		emit: () => undefined,
+		log: () => undefined,
+	});
+	const res = await actions.act({ ref: code, action: "revise", change: CHANGE, part: o.part }, { surface: "web", login: "me" });
+	expect(res.status).toBe(202);
+	await actions.idle();
+	return { cards };
+}
+
+for (const part of ["mail", "reply"] as const) {
+	test(`a ${part} revise of a comment card says on the card what it stored, as its first line`, async () => {
+		const { cards } = await reviseMailPart({ everywhere: false, part });
+		expect(cards).toHaveLength(1);
+		expect(cards[0]!.split("\n")[0]).toStartWith("[ask] 고친 초안이에요. 앞으로 ");
+		expect(cards[0]!.split("\n")[0]).toContain(BAN);
+	});
+}
+
+test("a mail revise of a comment card teaches the mail profile the linked mail's drafts read, or install when said everywhere", async () => {
+	await reviseMailPart({ everywhere: false, instance: "mail-teaching", part: "mail" });
+	expect(profileBullets({ app: "mail" }, HEADINGS.forbidden)).toEqual([BAN]);
+	expect(profileBullets({ app: "mail-teaching" }, HEADINGS.forbidden)).toEqual([]);
+	expect(profileBullets({ app: "youtube" }, HEADINGS.forbidden)).toEqual([]);
+});
+
+test("a mail revise of a comment card the model says holds everywhere is a standing rule of install.md", async () => {
+	await reviseMailPart({ everywhere: true, instance: "mail-teaching", part: "mail" });
+	expect(profileBullets("install", HEADINGS.forbidden)).toEqual([BAN]);
+	expect(profileBullets({ app: "mail-teaching" }, HEADINGS.forbidden)).toEqual([]);
 });

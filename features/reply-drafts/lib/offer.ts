@@ -73,6 +73,7 @@ const DAY = 24 * 60 * 60 * 1000;
 const EMPTY_LOG = "mail~empty-logged";
 
 async function learnMailIdentity(analyze: ModelCall, sentTexts: NonNullable<OfferDeps["sentTexts"]>, log: (line: string) => void): Promise<void> {
+	if (new Date().getTime() - Date.parse(readLearned()[EMPTY_LOG] ?? "") < DAY) return;
 	const read: string[] = [];
 	let found = 0;
 	const source = async (): Promise<string[]> => {
@@ -80,11 +81,11 @@ async function learnMailIdentity(analyze: ModelCall, sentTexts: NonNullable<Offe
 		found = texts.length;
 		return texts;
 	};
-	const result = await learnFirst({ app: "mail" }, source, "메일 (보낸 메일함)", analyze, undefined, MAIL_TONE_VERSION).catch(e => (log(`reply draft: mail identity not learned: ${(e as Error).message}`), undefined));
-	const now = new Date();
-	if (result !== "empty" || now.getTime() - Date.parse(readLearned()[EMPTY_LOG] ?? "") < DAY) return;
-	markLearned([EMPTY_LOG], now);
-	log(`reply draft: mail identity not learned: ${found ? `${found} sent texts read, the analysis gave no identity` : "no sent text found"} (sources read: ${read.join(", ") || "none"})`);
+	let failed = false;
+	const result = await learnFirst({ app: "mail" }, source, "메일 (보낸 메일함)", analyze, undefined, MAIL_TONE_VERSION).catch(e => (failed = true, log(`reply draft: mail identity not learned: ${(e as Error).message}`), undefined));
+	if (result !== "empty" && !failed) return;
+	markLearned([EMPTY_LOG], new Date());
+	if (!failed) log(`reply draft: mail identity not learned: ${found ? `${found} sent texts read, the analysis gave no identity` : "no sent text found"} (sources read: ${read.join(", ") || "none"})`);
 }
 
 // A draft keeps the pairs current too, and the mailboxes' voices are learned from what they kept; only an account with mailboxes loads that code.

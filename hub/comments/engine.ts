@@ -43,7 +43,7 @@ export type MailLink = {
 	/** What the mail's send-time lint would refuse (placeholder, forbidden expression, recipient), as the owner reads it; checked before the reply is posted, also for 이대로 보내기. Missing = nothing to check. */
 	lint?: (id: string) => string[];
 	drop: (id: string) => void;
-	revise: (id: string, change: string) => Promise<{ ok: true; id: string } | { ok: false; reason: string }>;
+	revise: (id: string, change: string) => Promise<{ ok: true; id: string; lesson?: Lesson } | { ok: false; reason: string }>;
 	/** The owner's own text for the mail, saved as written (직접 수정); refused with the lint's lines. Missing = the mail cannot be edited here. */
 	edit?: (id: string, text: string, subject?: string) => { ok: true } | { ok: false; reason: string; code?: string; lint?: string[] };
 	retarget?: (id: string, to: string) => void;
@@ -648,7 +648,9 @@ export function createEngine(deps: EngineDeps) {
 				if (left) revisingMail.set(d.commentId, left);
 				else revisingMail.delete(d.commentId);
 			});
-			return r.ok ? { ok: true, draft: paired(r.draft.code) ?? r.draft } : r;
+			if (!r.ok) return r;
+			if (r.lesson && opts.learn !== false) deps.learn?.(r.lesson);
+			return { ok: true, draft: paired(r.draft.code) ?? r.draft, ...(r.lesson ? { lesson: r.lesson } : {}) };
 		}
 		const { mail: _mail, mailAt: _mailAt, ...replyOnly } = d;
 		return run(c, src, noMail ? replyOnly : d, change.trim(), opts)

@@ -111,3 +111,29 @@ test("an empty sweep of the mail profile is logged with the sources it read, at 
 	await offerMailDraft({ ...corpMail, key: "e-3", id: "e3", thread: "t-e3" }, deps);
 	expect(empty()).toHaveLength(2);
 });
+
+const sweepReads = async (sentTexts: () => Promise<string[]>, drafts: number, from = 1) => {
+	enable(env);
+	const deps = { send: () => {}, call: fakeModel([j(goodReply), j(goodReply), j(goodReply)]).call, analyze: fakeModel([j({ identity: [], templates: [] })]).call, log: () => {}, sentTexts };
+	for (let n = from; n < from + drafts; n++) await offerMailDraft({ ...corpMail, key: `r-${n}`, id: `r${n}`, thread: `t-r${n}` }, deps);
+};
+
+test("a sweep that found no sent text reads the sent folders once a day, not with every draft", async () => {
+	let reads = 0;
+	await sweepReads(async () => (reads++, []), 3);
+	expect(reads).toBe(1);
+	markLearned(Object.keys(readLearned()).filter(k => /^mail~/.test(k)), daysAgo(2));
+	await sweepReads(async () => (reads++, []), 1, 4);
+	expect(reads).toBe(2);
+});
+
+test("a sweep that threw is not retried with every draft either", async () => {
+	let reads = 0;
+	const logged = spyOn(console, "error").mockImplementation(() => {});
+	await sweepReads(async () => {
+		reads++;
+		throw new Error("site down");
+	}, 3);
+	logged.mockRestore();
+	expect(reads).toBe(1);
+});

@@ -141,8 +141,9 @@ export const callOf = (deps: FlowDeps, item: ReplyItem, conv?: string, what = "d
 const nowOf = (deps: FlowDeps) => (deps.now ?? (() => new Date()))();
 /** The style of a mail written outside a draft (examples of the same sender first), or undefined when the mail profile has no samples and no identity yet.
  *  Every mail app instance shares the `mail` profile and its pairs, as offered drafts do. */
+export const MAIL_PROFILE: ToneKey = { app: "mail" };
 export function mailStyleOf(text: string, from: string): ReplyStyle | undefined {
-	const s = loadStyle({ app: "mail" });
+	const s = loadStyle(MAIL_PROFILE);
 	return s.samples.length || s.identity?.length ? styleWithExamples(s, "mail", text, from) : undefined;
 }
 // A mail draft's style carries the user's closest real past replies of ITS source as examples (a site's own sent folder for its mails, zele's for zele's); chat
