@@ -85,11 +85,21 @@ export function normalizeSnapshot(raw: unknown): Snapshot | undefined {
 
 const bodyOf = (prefix: string, s: Snapshot) => `${prefix ? `${prefix} ` : ""}${SNAPSHOT_MARK} ${JSON.stringify(s)}`;
 
-/** The message to post: cleaned, then cut (the longest lists lose their last items first) until it fits MAX_SNAPSHOT_CHARS. Undefined for a non-snapshot. */
+/** The message to post: cleaned, then cut until it fits MAX_SNAPSHOT_CHARS: the line under a name goes first (a project's note, a monitor's last output, the
+ * last rows' first), and only then do the longest lists lose their last items, so a reader still finds every project by name. Undefined for a non-snapshot. */
 export function encodeSnapshot(prefix: string, raw: unknown): string | undefined {
 	const s = normalizeSnapshot(raw);
 	if (!s) return undefined;
 	let out = bodyOf(prefix, s);
+	const rows: Array<{ note?: string; summary?: string }> = [...s.monitors, ...s.projects].reverse();
+	for (const x of rows) {
+		if (out.length <= MAX_SNAPSHOT_CHARS) break;
+		if (!x.note && !x.summary) continue;
+		delete x.note;
+		delete x.summary;
+		s.cut = true;
+		out = bodyOf(prefix, s);
+	}
 	while (out.length > MAX_SNAPSHOT_CHARS) {
 		const lists = [s.monitors, s.sessions, s.projects, s.notices, s.todos.items] as unknown[][];
 		const longest = lists.reduce((a, b) => (b.length > a.length ? b : a));
