@@ -161,6 +161,16 @@ test("the list pages 12 projects at a time, filters by need/running and searches
 	expect(await q(v, `return document.querySelector("#v-project .pmv-title").textContent`)).toBe("커스텀");
 });
 
+test("a pinned project at the bottom of the activity order still leads the first page, under 고정", async () => {
+	const v = await boot(390, 844);
+	await run(v, `PRJ.projects.find(p => p.key === "ch:8029").pinned = true; pjPaintRows()`);
+	await waitFor(v, `document.querySelector("#pl-list .pl-sec")?.textContent === "고정"`);
+	expect(await q(v, `return document.querySelector("#pl-list .pl-list .pl-row .pl-n").textContent`)).toBe("프로젝트 30");
+	expect(await q<number>(v, `return document.querySelectorAll('#pl-list .pl-row:not(.sub):not([data-k="sessions"])').length`)).toBe(12);
+	expect(await q(v, `return document.querySelector('#pl-list [data-k="more"]').textContent`)).toBe("프로젝트 18개 더 보기");
+	await run(v, `PRJ.projects.find(p => p.key === "ch:8029").pinned = false`);
+});
+
 test("프로젝트 더 보기 is the last line of the last group's card and draws the next page", async () => {
 	const v = await boot(390, 844);
 	await waitFor(v, `document.querySelector(".pl-list > .cv-more:last-child")`);

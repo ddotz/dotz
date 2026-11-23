@@ -223,8 +223,9 @@ const pjRuns = r => r.st.k === "run" || !!r.st.run;
 function pjChipCounts(rows) {
   return { all: rows.length, need: rows.filter(r => r.st.k === "need").length, run: rows.filter(pjRuns).length };
 }
+// Pinned rows lead before the page is cut (PJ.more), so a pinned project with no recent activity never falls behind 더 보기.
 function pjFiltered() {
-  const q = PJ.q.trim().toLowerCase(), rows = projRows((PRJ && PRJ.projects) || []);
+  const q = PJ.q.trim().toLowerCase(), all = projRows((PRJ && PRJ.projects) || []), rows = [...all.filter(r => r.p.pinned), ...all.filter(r => !r.p.pinned)];
   return rows.filter(r => (PJ.view === "all" || (PJ.view === "run" ? pjRuns(r) : r.st.k === PJ.view)) && (!q || `${prjTitle(r.p)} ${prjPurpose(r.p)}`.toLowerCase().includes(q)));
 }
 // One row, the prototype's list row (s-work.js 프로젝트): a folder tile, the name with one quiet line under it, then the state tag at the right.
