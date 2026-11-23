@@ -153,30 +153,38 @@ if (feature === "auto-reply") {
 	artifacts.push(...browser("browser-cold", autoReplyColdScript(browserRun, posted.target)));
 	note("cold: the mail conversation shows 보낸 답장 at 390 and 1280; 답장 대기 lists the sent mail (sender@example.invalid) under 보낸 것 after a reload");
 } else if (feature === "comments-mail-app") {
-	const json = async (path: string): Promise<any> => (await call(run, path, { as: "owner" })).json();
+	type Item = { key: string; app: string };
+	const owner = async (path: string): Promise<unknown> => (await call(run, path, { as: "owner" })).json();
+	const field = (v: unknown, k: string): unknown => (typeof v === "object" && v !== null ? new Map(Object.entries(v)).get(k) : undefined);
+	const listOf = (v: unknown, k: string): unknown[] => {
+		const list = field(v, k);
+		if (!Array.isArray(list)) fail(`${k}: expected a list, got ${JSON.stringify(v)}`);
+		return Array.isArray(list) ? list : [];
+	};
+	const items = async (): Promise<Item[]> => listOf(await owner("/api/integrations"), "items").map(i => ({ key: String(field(i, "key")), app: String(field(i, "app")) }));
+	const firstSource = async (): Promise<{ mailApp: unknown }> => ({ mailApp: field(listOf(await owner("/api/comments/sources"), "sources")[0], "mailApp") });
 	const config = join(run.data, "custom", "comments", "config.json");
 	mkdirSync(join(run.data, "custom", "sns"), { recursive: true });
 	mkdirSync(join(run.data, "custom", "comments"), { recursive: true });
 	writeFileSync(join(run.data, "custom", "sns", "config.json"), `${JSON.stringify({ youtube: {} })}\n`);
 	writeFileSync(config, `${JSON.stringify({ enabled: true, sources: { youtube: { key: "youtube", kind: "youtube", label: "유튜브 댓글", watch: [], autoDraft: false, autoMail: true } } })}\n`);
-	const none = await json("/api/integrations");
-	const mailsNone = (none.items as { app: string }[]).filter(i => i.app === "mail");
-	if (!(none.items as { key: string }[]).some(i => i.key === "youtube") || mailsNone.length) fail(`arrange: expected the youtube app and no mail app, got ${JSON.stringify(none.items.map((i: { key: string }) => i.key))}`);
+	const none = await items();
+	if (!none.some(i => i.key === "youtube") || none.some(i => i.app === "mail")) fail(`arrange: expected the youtube app and no mail app, got ${JSON.stringify(none.map(i => i.key))}`);
 	note("arrange: custom/sns/config.json + custom/comments/config.json (the owner's own config files) give a YouTube comment source with autoMail on and no mail app; /api/integrations lists no mail app");
 	noExternalNetwork("before");
 	artifacts.push(...browser("browser-none", mailAppNoneScript(browserRun)));
 	note("none: the 메일 앱 choice is disabled and the sheet says 연결된 메일 앱이 없어요 (sheet-none-390.png)");
 
 	writeFileSync(join(run.data, "custom", "apps.json"), `${JSON.stringify({ "mail-work": { label: "회사 메일" } })}\n`);
-	const connected = await json("/api/integrations");
-	if (!(connected.items as { key: string; app: string }[]).some(i => i.key === "mail-work" && i.app === "mail")) fail(`arrange: /api/integrations lists no mail-work instance: ${JSON.stringify(connected.items)}`);
-	const sourceBefore = (await json("/api/comments/sources")).sources[0];
+	const connected = await items();
+	if (!connected.some(i => i.key === "mail-work" && i.app === "mail")) fail(`arrange: /api/integrations lists no mail-work instance: ${JSON.stringify(connected)}`);
+	const sourceBefore = await firstSource();
 	if (sourceBefore.mailApp !== null) fail(`mailApp is ${sourceBefore.mailApp} before the pick, expected null`);
 	note("arrange: custom/apps.json adds the mail instance 회사 메일 (mail-work); before: /api/comments/sources mailApp null");
 	artifacts.push(...browser("browser-pick", mailAppPickScript(browserRun)));
-	const saved = JSON.parse(readFileSync(config, "utf8")).sources.youtube;
-	if (saved.mailApp !== "mail-work" || saved.autoMail !== true) fail(`after the pick custom/comments/config.json holds ${JSON.stringify(saved)}, expected mailApp mail-work and autoMail true`);
-	const sourceAfter = (await json("/api/comments/sources")).sources[0];
+	const saved = field(field(JSON.parse(readFileSync(config, "utf8")), "sources"), "youtube");
+	if (field(saved, "mailApp") !== "mail-work" || field(saved, "autoMail") !== true) fail(`after the pick custom/comments/config.json holds ${JSON.stringify(saved)}, expected mailApp mail-work and autoMail true`);
+	const sourceAfter = await firstSource();
 	if (sourceAfter.mailApp !== "mail-work") fail(`/api/comments/sources answers mailApp ${sourceAfter.mailApp} after the pick`);
 	note(`after: custom/comments/config.json youtube source has mailApp mail-work, autoMail true; /api/comments/sources answers mailApp mail-work`);
 	if (/zele mail (send|reply)/.test(calls())) fail("a zele send reached the stub during a settings change");
