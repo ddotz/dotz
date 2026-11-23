@@ -81,7 +81,7 @@ async function ready() {
 	await advanceSettled(view, 0);
 	await run(view, `
 		ta.value = "보내지 않은 초안 글"; ta.dispatchEvent(new Event("input", { bubbles: true }));
-		timeline.scrollTop = 300;
+		timeline.dispatchEvent(new Event("wheel")); timeline.scrollTop = 300;
 		document.head.append(Object.assign(document.createElement("style"), { textContent: "* { caret-color: transparent !important }" }));
 		window.__conn = []; const real = window.setConn; window.setConn = ok => { window.__conn.push(ok ? "T" : "F"); return real(ok); };
 		window.__banner = 0; new MutationObserver(() => { if (!$("#conn").hidden) window.__banner++; }).observe($("#conn"), { attributes: true });
