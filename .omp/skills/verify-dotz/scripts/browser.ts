@@ -546,7 +546,9 @@ try {
   await p.setViewportSize({ width: 1280, height: heights[1280] });
   await p.goto(ORIGIN + '/' + CHAT);
   await until(p, NAME, 15000);
+  await p.locator('#text').click();
   await p.locator('#text').fill(DRAFT);
+  await sleep(400);
   const len0 = await p.evaluate(() => history.length);
   await shot(p, 'panel-closed-1280.png');
   await p.getByRole('button', { name: '현황', exact: true }).click();
@@ -554,6 +556,7 @@ try {
   await sleep(600);
   const open = [await panel(p), await p.evaluate(() => document.querySelector('#text').value), await p.evaluate(() => history.length)];
   if (!(open[0] > 200) || open[1] !== DRAFT) failNow('after 현황 at 1280 the panel is ' + open[0] + 'px wide and the composer holds ' + JSON.stringify(open[1]));
+  if (open[2] !== len0) failNow('현황 at 1280 moved the history from ' + len0 + ' to ' + open[2] + ' entries');
   seen.push('1280 현황 open: ' + (await p.evaluate(() => location.hash)) + ', panel ' + open[0] + 'px, composer ' + JSON.stringify(open[1]) + ', history ' + len0 + ' -> ' + open[2]);
   art('panel-open.aria.txt', (await snapshot(p)).tree);
   await shot(p, 'panel-open-1280.png');
@@ -577,6 +580,8 @@ try {
     seen.push(w + ' cold #project/' + KEY + ': screen ' + cold[2] + ', lit ' + cold[1] + ', panel ' + cold[0] + 'px');
     await shot(c, 'panel-cold-' + w + '.png');
     if (w === 390) {
+      await c.getByRole('tab', { name: '현황', exact: true }).click();
+      await sleep(400);
       await c.evaluate(() => history.back());
       await settle(c, SHUT, 8000);
       await sleep(500);

@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "
 import { homedir } from "node:os";
 import { join, relative } from "node:path";
 import { REPO, type Run, alive, call, readRun } from "./lib.ts";
-import { appShellScript, autoReplyColdScript, autoReplyScript, fallbackKeysOffScript, fallbackKeysOnScript, fallbackUndoScript, fourTabAddressScript, fourTabAppsScript, fourTabCreateScript, fourTabDeleteScript, mailAppColdScript, mailAppNoneScript, mailAppPickScript, seenResultsScript } from "./browser.ts";
+import { appShellScript, autoReplyColdScript, autoReplyScript, fallbackKeysOffScript, fallbackKeysOnScript, fallbackUndoScript, fourTabAddressScript, fourTabAppsScript, fourTabCreateScript, fourTabDeleteScript, fourTabPanelScript, mailAppColdScript, mailAppNoneScript, mailAppPickScript, seenResultsScript } from "./browser.ts";
 
 const [feature, runId] = process.argv.slice(2);
 const FEATURES = ["auto-reply", "app-shell", "comments-mail-app", "fallback-keys", "seen-results", "four-tab"];
@@ -279,6 +279,8 @@ if (feature === "auto-reply") {
 	if (made[0] !== NAME || made[1] !== NAME || !made[2]) fail(`after 만들기 the data dir holds ${JSON.stringify(made)} for ${key}`);
 	if (workNames().filter(n => n === NAME).length !== 1) fail(`the refused second 만들기 left ${JSON.stringify(workNames())} in channels.json`);
 	note(`create: + 새 프로젝트 at 390 refused an empty name, made ${key} and opened its chat; channels.json work[${id}] and projects.json ${key} hold the name and purpose; the same name again was refused in the sheet and made no second project (create.log)`);
+	artifacts.push(...browser("browser-panel", fourTabPanelScript(browserRun, String(key), NAME)));
+	note(`panel: 현황 at 1280 opened the overview beside the conversation at #project/${key} without a new history entry and kept the typed draft, also after closing; #project/${key} opened cold at 390 and 1280 is the chat with the panel; 뒤로 from 현황 at 390 returned to 대화 (panel.log)`);
 	artifacts.push(...browser("browser-delete", fourTabDeleteScript(browserRun, String(key), NAME)));
 	const gone = [part(part(onDisk("channels.json"), "work"), id), part(part(onDisk("projects.json"), "projects"), String(key))];
 	if (gone[0] !== undefined || gone[1] !== undefined) fail(`after 삭제 the data dir still holds ${JSON.stringify(gone)} for ${key}`);
@@ -300,3 +302,4 @@ const manifest = Bun.spawnSync(
 );
 if (manifest.exitCode !== 0) process.exit(1);
 console.log(`manifest: ${relative(REPO, join(out, "manifest.json"))}`);
+process.exit(0);
