@@ -140,21 +140,44 @@ async function open() {
 }
 
 describe("screens", () => {
-	test("a paused monitor reads 꺼짐 on the home card, the 모니터링 row, its state line and the settings status, never 정상", async () => {
+	test("a paused monitor reads 꺼짐 in the 모니터링 row, its state line and the settings status, never 정상, and is no row of the home card (S9)", async () => {
 		const v = await open();
 		const got = await q<Record<string, unknown>>(v, `const m = NM.items.find(x => x.name === "paused-ok"), it = monItems().find(i => i.key === "m:paused-ok");
 			const card = [...document.querySelectorAll("#home-cards .hc-mon")].find(r => r.textContent.includes("paused ok"));
-			return { card: card && card.dataset.status, cardText: card && card.textContent, badge: it.badge, state: monState(it), stat: monStatNode(m).textContent, row: asStatRow("w:paused-ok", m).textContent,
+			return { card: !!card, badge: it.badge, state: monState(it), stat: monStatNode(m).textContent, row: asStatRow("w:paused-ok", m).textContent,
 				lateBadge: monItems().find(i => i.key === "m:late-changed").badge, lateState: monState(monItems().find(i => i.key === "m:late-changed")) };`);
-		expect(got.card).toBe("off");
-		expect(got.cardText).toContain("꺼짐");
-		expect(got.cardText).not.toContain("정상");
+		expect(got.card).toBe(false);
 		expect(got.badge).toEqual(["꺼짐", "off"]);
 		expect(got.state).toBe("꺼짐");
 		expect(got.stat).toContain("꺼짐");
 		expect(got.row).toContain("꺼짐");
 		expect(got.lateBadge).toEqual(["늦어짐", "warn"]);
 		expect(got.lateState).toBe("늦어짐");
+	});
+
+	test("the home monitoring card lists only the watches that are not fine, counted in its head: one failed, one changed and one ok show the two (S9)", async () => {
+		const v = await open();
+		const got = await q<{ rows: string[]; head: string; cards: number }>(v, `const t = ms => new Date(Date.now() + ms).toISOString(), w = (name, o) => ({ name, watch: name, kind: "watch", last_run: t(-60_000), next_run: t(1200_000), connection: "connected", fails: 0, ...o });
+			NM.items = [w("good-one", { last_result: "ok" }), w("moved-one", { last_result: "changed" }), w("broke-one", { last_result: "fail", fails: 1 })];
+			renderHome();
+			const card = document.querySelector('#home-cards [data-cap="watch"]').closest(".card");
+			return { rows: [...card.querySelectorAll(".hc-mon .n")].map(n => n.textContent), head: card.querySelector(".hc-n").textContent, cards: [...document.querySelectorAll("#home-cards .ch h3")].filter(h => h.textContent === "모니터링").length };`);
+		expect(got.rows).toEqual(["broke one", "moved one"]);
+		expect(got.head).toBe("2");
+		expect(got.cards).toBe(1);
+	});
+
+	test("with every watch ok, off or waiting, or none at all, the home screen has no monitoring card (S9)", async () => {
+		const v = await open();
+		const got = await q<{ fine: number; none: number; text: boolean }>(v, `const t = ms => new Date(Date.now() + ms).toISOString(), w = (name, o) => ({ name, watch: name, kind: "watch", last_run: t(-60_000), next_run: t(1200_000), connection: "connected", fails: 0, ...o });
+			const cards = () => [...document.querySelectorAll("#home-cards [data-cap='watch']")].length + [...document.querySelectorAll("#home-cards .ch h3")].filter(h => h.textContent === "모니터링").length;
+			NM.items = [w("good-one", { last_result: "ok" }), w("off-one", { last_result: "fail", paused: true }), { name: "waiter", kind: "schedule", next_run: t(600_000), connection: "connected" }];
+			renderHome(); const fine = cards();
+			NM.items = []; renderHome();
+			return { fine, none: cards(), text: document.querySelector("#home-cards").textContent.includes("모니터링 중인 항목이 없어요") };`);
+		expect(got.fine).toBe(0);
+		expect(got.none).toBe(0);
+		expect(got.text).toBe(false);
 	});
 
 	test("app rows leave every count to the row's number (a line without a time is empty) and say 연결 끊김 for a disconnected app; 확인할 것 없어요 only for a connected one with nothing", async () => {

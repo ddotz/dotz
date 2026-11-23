@@ -207,9 +207,10 @@ function homeWorklogCard() {
   return hcCard(() => openTarget("worklog", "chat"), hcHead(TX("common.worklog"), { menu: "notices:worklog" }), none ? hcNone(state || TX("home.card.no_worklog")) : hcNotices(recent, "worklog"));
 }
 function homeMonitorCard() {
-  const list = ntMons(), bad = list.filter(m => monStatus(m).key === "fail").length;
+  const list = ntMons().filter(m => !["ok", "off", "wait"].includes(monStatus(m).key));
   const state = NM.loaded ? "" : NM.failed ? TX("common.load_failed") : TX("common.loading"), none = !!state || !list.length;
-  return hcCard(() => go("monitoring"), hcHead(TX("common.monitoring"), { menu: "notices:watch", n: bad ? [el("span", { class: "dot err" }), TX("home.card.failed_n", { n: bad })] : null }),
+  if (!state && !list.length && !homeEdit) return null;
+  return hcCard(() => go("monitoring"), hcHead(TX("common.monitoring"), { menu: "notices:watch", n: !state && list.length ? String(list.length) : null }),
     none ? hcNone(state || TX("home.card.no_monitors")) : el("div", { class: "hc-list", "data-cap": "watch" }, ...list.map(m => {
       // The same status the 모니터링 row shows (30-monitoring.js monStatus); the dot's colour classes are the notice tones.
       const st = monStatus(m);
@@ -551,7 +552,8 @@ function renderHomeNowRaw() {
   add("now:running", el("div", { class: "card" }, hcHead(TX("home.card.running"), { n: working + settled.length ? TX("home.card.items_n", { n: working + settled.length }) : null }), running));
   if (heldT.length || heldW.length) add("now:waiting", el("div", { class: "card" }, hcHead(TX("home.card.held")), el("div", { class: "hn", "data-k": "waiting", "data-cap": "waiting" }, ...heldT.map(restRow), ...heldW.map(workRow))));
   if (ended.length || doneT.length) add("now:ended", el("div", { class: "card" }, hcHead(TX("home.card.ended")), el("div", { class: "hn", "data-k": "ended-work", "data-cap": "ended-work" }, ...doneT.map(doneRow), ...ended.map(workRow))));
-  add("notices:watch", homeMonitorCard());
+  const monCard = homeMonitorCard();
+  if (monCard) add("notices:watch", monCard);
   add("notices:worklog", homeWorklogCard());
 
   // entries per kind: {id, tone, open, card() (own floating card), row() (contents of its row in a bundle)}. A session is a row of

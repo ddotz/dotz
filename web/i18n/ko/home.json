@@ -186,7 +186,6 @@
   "home.status.fallback": "다른 모델로 전환",
   "home.card.no_alerts": "새 알림이 없어요",
   "home.card.no_worklog": "아직 작업내역이 없어요",
-  "home.card.failed_n": "실패 {n}",
   "home.card.no_monitors": "모니터링 중인 항목이 없어요",
   "home.card.more_n": "더 보기 · {n}개",
   "home.later": "백그라운드 작업 중",
