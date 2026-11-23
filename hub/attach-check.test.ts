@@ -31,6 +31,30 @@ test("three files of which two have nothing to do with the draft", () => {
 	expect(r[0]!.text).toContain("unrelated-one.pdf, other-thing.pdf");
 });
 
+test("one wrong file, or every file wrong, is unrelated to a draft that names its own topic", () => {
+	const draft = { subject: "Re: alpha-song 문서", body: "alpha-song 문서 보내드립니다." };
+	for (const files of [["other-thing.pdf"], ["unrelated-one.pdf", "other-thing.pdf"]]) {
+		const r = attachIssues({ ...draft, files });
+		expect([files, r.map(i => i.kind)]).toEqual([files, ["unrelated"]]);
+		for (const f of files) expect(r[0]!.text).toContain(f);
+	}
+});
+
+test("a topic only the received mail names is enough: its right file is fine, a wrong one is unrelated, a quoted earlier mail names nothing", () => {
+	const draft = { subject: "Re: 문의", body: "자료 보내드립니다." };
+	expect(kinds({ ...draft, files: ["alpha-song.pdf"], request: "alpha-song 문서 부탁드립니다." })).toEqual([]);
+	expect(kinds({ ...draft, files: ["other-thing.pdf"], request: "alpha-song 문서 부탁드립니다." })).toEqual(["unrelated"]);
+	expect(kinds({ ...draft, files: ["other-thing.pdf"], request: "자료 부탁드립니다.\n> alpha-song 문서 부탁드립니다." })).toEqual([]);
+});
+
+test("the fixed comment-mail template with library files, and generic file names, name no topic to be wrong against", () => {
+	const template = "안녕하세요, 홍길동님.\n\n댓글로 요청하신 자료를 보내드립니다. 확인 후 부족한 점이 있으면 편하게 말씀해 주세요.\n\n감사합니다.";
+	expect(kinds({ subject: "요청하신 자료 보내드립니다", body: template, files: ["alpha-song.pdf", "beta-song 음원.mp3"] })).toEqual([]);
+	expect(kinds({ subject: "요청하신 자료 보내드립니다", body: template, files: ["달빛정원 안내.pdf"] })).toEqual([]);
+	expect(kinds({ subject: "Re: alpha-song 문서", body: "alpha-song 문서 보내드립니다.", files: ["scan.pdf"] })).toEqual([]);
+	expect(kinds({ subject: "Re: alpha-song 사진", body: "alpha-song 사진 보내드립니다.", files: ["IMG_1234.jpg"] })).toEqual([]);
+});
+
 test("two cuts of one audio file are variants", () => {
 	const r = attachIssues({ subject: "Re: song 음원", body: "song 음원 보내드립니다.", files: ["song 음원 (1).mp3", "song 음원 (2).mp3"] });
 	expect(r.map(i => i.kind)).toEqual(["variants"]);

@@ -130,11 +130,11 @@ describe("files in the send sheet at 390px", () => {
 		expect(await texts(v, ".fs-body .dr-menu .btn")).toEqual(["이 기기에서 고르기", "첨부 파일 폴더에서 고르기"]);
 		await click(v, ".fs-body .dr-menu .btn:nth-child(2)");
 		await waitFor(v, `document.querySelectorAll(".fs-body .dr-li").length === 3`);
-		await click(v, `.fs-body .dr-li[title="문서/기타/캐논.pdf"]`);
+		await click(v, `.fs-body .dr-li[title="달빛정원_공유용.pdf"]`);
 		await waitFor(v, `document.querySelectorAll(".fs-body .dr-ar").length === 1 && !document.querySelector(".fs-ft .dr-warn:not([hidden])")`);
-		expect(await texts(v, ".fs-body .dr-fn")).toEqual(["캐논.pdf"]);
+		expect(await texts(v, ".fs-body .dr-fn")).toEqual(["달빛정원_공유용.pdf"]);
 		expect(await v.evaluate(`document.querySelector(".fs-ft .dr-warnbox").hidden`)).toBe(true);
-		expect(await v.evaluate(`fetch("/api/drafts/${ref}/files/0").then(r => r.text())`)).toContain("캐논.pdf");
+		expect(await v.evaluate(`fetch("/api/drafts/${ref}/files/0").then(r => r.text())`)).toContain("달빛정원_공유용.pdf");
 		await click(v, ".fs-body .dr-x");
 		await waitFor(v, `document.querySelectorAll(".fs-body .dr-ar").length === 0 && document.querySelector(".fs-ft .dr-warn")`);
 		expect((await fetch(`${base}api/drafts/${ref}/files`).then(r => r.json())) as { files: unknown[] }).toMatchObject({ files: [] });

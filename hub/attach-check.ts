@@ -126,6 +126,20 @@ function cutsOfOneFile(files: readonly string[]): string[] {
 	return [...out];
 }
 
+const GENERIC_FILE_WORD = /^(?:scan|scanned|scanner|img|image|images|photo|photos|pic|picture|dsc|dscn|screenshot|screen|shot|capture|doc|docs|document|file|untitled|attachment|download|copy|new|스캔|스캔본|스크린샷|사진|이미지|문서|파일|무제|캡처|사본|복사본|카카오톡|kakaotalk)$/;
+const genericName = (name: string): boolean => nameWords(name).map(norm).filter(w => !/^\d+$/.test(w)).every(w => GENERIC_FILE_WORD.test(w));
+
+const SUBJECT_PREFIX = /^(?:\s*(?:\[[^\]]*\]|(?:re|fw|fwd|답장|회신|전달)\s*:))+\s*/i;
+const GREETING = /안녕하세요(?:[^\n.!?]*?님)?|\b(?:dear|hello|hi)\b[^\n,.!?]*[,.!?]?/gi;
+const GENERIC_STEM = /^(?:안녕|감사|고맙|보내|보낼|드립|드리|드려|요청|자료|첨부|확인|문의|댓글|부족|말씀|편하게|바랍|부탁|회신|답장|메일|파일|연락|죄송|수고|혹시|다시|그럼|관련|내용|아래|함께|주세요|주시|해주|있으면|있으시|이번|제가|저는|저희|다른|어떤|해당|새로운|여러|모든)/;
+const GENERIC_END = /(?:님|입니다|이에요|예요|올림|드림|합니다|니다)$/;
+const GENERIC_ENGLISH = /^(?:the|and|for|you|your|with|please|find|attached|attach|attachment|thanks|thank|regards|best|sincerely|request|requested|sent|send|sending|here|are|let|know|have|any|questions|question|this|that|will|can|could|would|kind|hope|well|team|again|per|fw|fwd|file|files|document|documents|material|materials)$/;
+function namesTopic(subject: string | undefined, body: string, request: string): boolean {
+	const topicWords = (text: string, minLength: number) => withoutKindWords(text).replace(GREETING, " ").normalize("NFC").toLowerCase().split(/[^\p{L}\p{N}]+/u)
+		.filter(w => w.length >= minLength && !/^\d+$/.test(w) && !words().noise.test(w) && !GENERIC_STEM.test(w) && !GENERIC_END.test(w) && !GENERIC_ENGLISH.test(w));
+	return topicWords(`${(subject ?? "").replace(SUBJECT_PREFIX, "")}\n${request}`, 2).length > 0 || topicWords(body, 3).length > 0;
+}
+
 export function attachIssues(d: AttachCheck): AttachIssue[] {
 	// When the mail asked for a file, "모두 보내드리겠습니다" is about that file whether or not the sentence says so.
 	const asked = d.request === undefined ? new Set<FileKind>() : askedKinds(`${d.subject ?? ""}\n${d.request}`);
@@ -152,9 +166,11 @@ export function attachIssues(d: AttachCheck): AttachIssue[] {
 		const over = [...has].filter(k => !promised.has(k) && !asked.has(k));
 		if (over.length) out.push({ kind: "extra", text: `본문에도 받은 메일에도 없는 ${labels(over)} 파일이 붙었어요` });
 	}
-	const draftWords = `${d.subject ?? ""}\n${d.body}`;
+	const request = d.request === undefined ? "" : ownWords(d.request);
+	const draftWords = `${d.subject ?? ""}\n${d.body}\n${request}`;
 	const off = offTopic(d.files, norm(draftWords), draftWords);
-	if (off.length && off.length < d.files.length) out.push({ kind: "unrelated", text: `본문과 상관없어 보이는 파일이 있어요: ${off.join(", ")}` });
+	const unrelated = off.length < d.files.length ? off : namesTopic(d.subject, d.body, request) ? off.filter(f => !genericName(f)) : [];
+	if (unrelated.length) out.push({ kind: "unrelated", text: `본문과 상관없어 보이는 파일이 있어요: ${unrelated.join(", ")}` });
 	const cuts = cutsOfOneFile(d.files);
 	if (cuts.length) out.push({ kind: "variants", text: `같은 파일의 다른 판이 함께 붙었어요: ${cuts.join(", ")}` });
 	return out;

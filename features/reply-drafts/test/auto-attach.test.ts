@@ -92,7 +92,7 @@ describe("the install's own file words", () => {
 	});
 
 	test("a sound word of the install counts as audio, and a default install knows it as nothing", () => {
-		const check = { subject: "자료", body: "쿼크음 보내드립니다.", files: ["alpha.pdf"] };
+		const check = { subject: "자료", body: "쿼크음 보내드립니다.", files: ["쿼크음.pdf"] };
 		expect(asksForFile("쿼크음 부탁드립니다")).toBe(false);
 		expect(attachIssues(check)).toEqual([]);
 		setRules({ audioWords: ["쿼크음"] });
