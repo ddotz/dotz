@@ -81,6 +81,7 @@ const SURFACES: Record<string, { queue: object[]; open: string; then: string[]; 
 	"답장 확인 창 of a card only its notice holds": { queue: [], open: `ntDraftSheet(NT.items[0])`, then: [], parts: { ".fs-body .dc-dr-b": BODY, ".fs-body .dr-sub": [SUBJECT] } },
 	"the 모니터링 card of a draft the queue holds, drawn again after 펼치기": { queue: [queueItem], open: `document.body.append(${CARD})`, then: [REDRAW], parts: { "#layout-card .rq-text": BODY, "#layout-card .dr-sub": [SUBJECT] } },
 	"the 모니터링 card of a draft only its notice holds, drawn again after 펼치기": { queue: [], open: `document.body.append(${CARD})`, then: [REDRAW], parts: { "#layout-card .dr-body": BODY, "#layout-card .dr-sub": [SUBJECT] } },
+	"the docked card of a draft only its notice holds": { queue: [], open: `document.body.append(el("div", { class: "dc-body", id: "layout-dock" }, draftNode(NT.items[0].decision.draft, { t: "web", edit: false })))`, then: [], parts: { "#layout-dock .dc-dr-b": BODY, "#layout-dock .dc-dr-h > .dc-dr-v": [SUBJECT] } },
 	"the 빠른 처리 list": { queue: [mailItem], open: `tqOpen(); document.querySelector(".tr-tog").click()`, then: [], parts: { ".tq-row .tq-tx": BODY } },
 	"고치기 in 빠른 처리 after the draft changed elsewhere": { queue: [mailItem], open: `tqOpen(); document.querySelector(".tq-body [data-k=fix]").click()`, then: [EDIT], parts: { ".tq-body .ra-other-tx": ELSEWHERE } },
 };
