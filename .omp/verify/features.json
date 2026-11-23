@@ -24,5 +24,10 @@
 		"id": "comments-mail-app",
 		"paths": ["web/js/30-monitoring-comments.js", "web/i18n/*/mon.json", "hub/comments/web.ts", "hub/comments/engine.ts"],
 		"proof": "screenshot"
+	},
+	{
+		"id": "fallback-keys",
+		"paths": ["hub/apikey-policy.ts", "hub/routes-settings.ts", "web/js/20-models.js", "web/js/22-settings.js", "web/css/03-base.css", "web/i18n/*/settings.json"],
+		"proof": "screenshot"
 	}
 ]

@@ -130,7 +130,7 @@ function targetEdit(key, title, cur, confirmText, extra = {}) {
   ].filter(Boolean);
   return el("div", { class: "mt-list mt-edit", role: "group", "data-target": key, "aria-label": title }, ...(extra.chain ? [extra.chain(pick, notes)] : [pick, ...notes]));
 }
-function modelsEnter() { renderModels(); loadModels(); loadProviderData().then(() => current === "models" && renderModels(), () => {}); if (!ACC) loadAccounts().then(() => current === "models" && renderModels()); }
+function modelsEnter() { renderModels(); loadModels(); fbKeysLoad(); loadProviderData().then(() => current === "models" && renderModels(), () => {}); if (!ACC) loadAccounts().then(() => current === "models" && renderModels()); }
 screenHooks("models", { enter: modelsEnter });
 function renderModels() {
   const box = $("#models");
@@ -142,7 +142,7 @@ function renderModels() {
   clear(box).append(
     el("div", { class: "col mt" },
       el("div", { class: "mt-top" }, el("p", { class: "mt-intro", text: TX("settings.models.intro") }), el("div", { class: "mt-filter" }, filter)),
-      ...modelGroups()));
+      ...modelGroups(), fbKeysCard()));
   if (modelsRefocus) {
     const r = box.querySelector(`[data-use="${CSS.escape(modelsRefocus)}"]`);
     modelsRefocus = "";

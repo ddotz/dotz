@@ -29,6 +29,7 @@ import { messengersRoute } from "./messengers-api.ts";
 import { onboardingRoute } from "./onboarding.ts";
 import { introOf, setIntro } from "../firstrun/first-run.ts";
 import { convOfTarget, grantExpensive, isAgentRequest, isGrantKey, ownerGate } from "./model-guard.ts";
+import { apiKeysAllowed, setApiKeysAllowed } from "./apikey-policy.ts";
 import { applyFix } from "./usage-fix.ts";
 
 export async function routeSettings(req: Request, url: URL, parts: string[]): Promise<Response | undefined> {
@@ -179,6 +180,16 @@ export async function routeSettings(req: Request, url: URL, parts: string[]): Pr
 		return json({ source, history: page.items.length > 0, items: [...page.items, ...live], more: page.more });
 	}
 	if (req.method === "GET" && url.pathname === "/api/quota") return json(await (url.searchParams.has("fresh") ? refreshQuota() : quota()));
+	if (url.pathname === "/api/guard/allow-api-key" && (req.method === "GET" || req.method === "PUT")) {
+		if (req.method === "GET") return json({ allow: apiKeysAllowed() });
+		if (isAgentRequest(req)) return json({ error: "only the owner can change guard.allow_api_key" }, 403);
+		const b = await body(req);
+		if (typeof b.allow !== "boolean") return json({ error: "allow must be true or false" }, 400);
+		if (b.allow && b.confirm !== true) return json({ error: "turning API keys on needs confirm: true", confirm_required: true }, 400);
+		setApiKeysAllowed(b.allow);
+		log(`guard.allow_api_key set to ${b.allow} by the owner`);
+		return json({ allow: apiKeysAllowed() });
+	}
 	// One fix the usage screen listed, applied on the owner's press (hub/usage-fix.ts); the screen reads the usage again after it.
 	if (req.method === "POST" && url.pathname === "/api/usage/fix") {
 		const r = await applyFix(req, await body(req));

@@ -431,5 +431,18 @@
   "settings.notify.stays": "Turned-off alerts still appear in the list.",
   "settings.fb.saved_off": "Saved. The API key step stays off until you turn it on",
   "settings.fb.acc_auto": "Auto switch · now {name}",
-  "settings.fb.acc_pinned": "Pinned · {name}"
+  "settings.fb.acc_pinned": "Pinned · {name}",
+  "settings.fb.deleted": "Removed the {name} step",
+  "settings.fb.keys.title": "API key use",
+  "settings.fb.keys.label": "Move on to API key steps",
+  "settings.fb.keys.off_sub": "Off. A used-up subscription never moves to an API key",
+  "settings.fb.keys.on_sub": "On. API key steps that are switched on go on and bill the API key",
+  "settings.fb.keys.why": "An API key step keeps the same model going on an API key once the subscription limit is used up. While this switch is off, no step moves to an API key even when it is switched on, and nothing is billed.",
+  "settings.fb.keys.ask_title": "Turn on API key use?",
+  "settings.fb.keys.ask_text": "Once on, a used-up subscription moves to the API key steps that are switched on, and their use is billed to the API key.",
+  "settings.fb.keys.ask_ok": "Turn on",
+  "settings.fb.keys.on_done": "API key use is on",
+  "settings.fb.keys.off_done": "API key use is off",
+  "settings.fb.keys.tag_title": "Tap for the explanation and the switch",
+  "settings.fb.keys.load_failed": "Couldn't read the API key use setting"
 }

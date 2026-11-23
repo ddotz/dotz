@@ -315,6 +315,8 @@ entry added from the settings starts off, an entry without the field counts as o
 subagents and no sessions (heavy work waits in `open_tasks` until the subscription resets) unless the entry's `workers` switch
 is on: then its subagents and sessions bill the same key, and their spend counts against the key's cap. Every hub-driven switch
 to or from a key starts a fresh conversation with a handover, so the cache of the old one is not resumed on another model.
+삭제 on a step saves the chain without it at once, with no question; the toast's 되돌리기 saves the previous chain again.
+No step moves to a key while `guard.allow_api_key` is off (see the guard keys below).
 
 **Session context management.** Five `lanes.*` keys in `config.json` (all optional): `compact_at` (default `400000`
 tokens; the hub compacts an idle OmO session at that value, on omp it goes into the session's overlay) and `keep_recent`
@@ -449,10 +451,15 @@ there is no gate. `budget_gate: false` turns it off.
 - *Owner rule, off by default*: `no_api_key_accounts: ["<account>"]` names OmO subscription accounts whose tokens are not
   the owner's own; while OmO is pinned to one of them, no API-key fallback runs and API-key variables are stripped from what
   dotz spawns (`hub/apikey-policy.ts`).
+- *Owner rule, API keys off by default*: `allow_api_key: true` lets API-key fallback entries run and API-key variables reach
+  what dotz spawns. Missing, unreadable or anything but `true` keeps every API-key entry down (`down_reason: "api_key_off"`)
+  and strips the key variables (fail closed, `hub/apikey-policy.ts`; read from the file on every check, no restart). The owner
+  sets it on 모델 · 폴백 → API 키 사용: turning it on asks first, turning it off is one tap; the "API 키 사용 안 함(설정)" tag on
+  a step opens the same explanation and switch. Route: `PUT /api/guard/allow-api-key`.
 - Config: the `guard` object in `config.json`, every key optional (`enabled`, `max_brief_chars`, `max_fence_lines`,
   `max_output_chars`, `worker_answer_chars` 800, `worker_context_tokens` 400000, `budget_gate`, `budget_margin_percent`,
   `budget_default_estimate_percent`, `override_minutes`, `repeat_block_threshold`, `switch_compact_min_tokens`,
-  `external_commands` (regex strings), `ask_before_expensive`, `expensive_models`, `no_api_key_accounts`, `defer_to_installed`, `harness_tools`, `task_token_cap`, `task_compact_tokens`, `task_cap_grow`, `task_cap_step`, `task_cap_ceiling`).
+  `external_commands` (regex strings), `ask_before_expensive`, `expensive_models`, `no_api_key_accounts`, `allow_api_key`, `defer_to_installed`, `harness_tools`, `task_token_cap`, `task_compact_tokens`, `task_cap_grow`, `task_cap_step`, `task_cap_ceiling`).
 - *Already installed copies*: the runtime lists no loaded extensions to an extension, so the guard looks for
   `<agent dir>/extensions/orchestrator-guard.ts` (and `harness-tools.ts` for the commands), unless discovery is
   switched off or the config disables it. When it exists, this copy leaves those hooks to it (the same hooks
@@ -686,6 +693,9 @@ when omp is selected. What dotz and an omp harness installed next to it rely on 
   `cedar_ember`, read with a Claude Code user-agent); absent when the token is expired or the account has none to show. When the assistant
   runs on omp the card is omp's login and the counts come from omp's `resetCredits` (`omp usage --json`); only omp's next credit
   (`nextCreditId`) is usable, and only when omp marks it usable.
+- `GET /api/guard/allow-api-key` -> `{allow}`; `PUT /api/guard/allow-api-key {allow, confirm?}` writes `guard.allow_api_key` in
+  config.json, keeping every other key. Owner only: a hub-token (agent) request is refused (403) and nothing is written. `allow: true`
+  is refused (400, `confirm_required: true`) without `confirm: true`; `allow: false` needs no confirm; a non-boolean `allow` is 400.
 - `POST /api/quota/reset-credit {account, confirm: true}`: spends one Codex 리셋권. Refused (400) without `confirm: true`; after a fresh
   read, refused (409) when the account changed, none is held or no limit is reached; one use at a time -> `{ok, outcome, left}`.
   With `{provider: "anthropic", account, grant_id, confirm: true}` it spends that Claude grant (`reset_rate_limits` on the account's

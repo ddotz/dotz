@@ -2,10 +2,10 @@ import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "
 import { homedir } from "node:os";
 import { join, relative } from "node:path";
 import { REPO, type Run, alive, call, readRun } from "./lib.ts";
-import { appShellScript, autoReplyColdScript, autoReplyScript, mailAppColdScript, mailAppNoneScript, mailAppPickScript } from "./browser.ts";
+import { appShellScript, autoReplyColdScript, autoReplyScript, fallbackKeysOffScript, fallbackKeysOnScript, fallbackUndoScript, mailAppColdScript, mailAppNoneScript, mailAppPickScript } from "./browser.ts";
 
 const [feature, runId] = process.argv.slice(2);
-const FEATURES = ["auto-reply", "app-shell", "comments-mail-app"];
+const FEATURES = ["auto-reply", "app-shell", "comments-mail-app", "fallback-keys"];
 if (!feature || !runId || !FEATURES.includes(feature)) {
 	console.error(`usage: bun .omp/skills/verify-dotz/scripts/drive.ts <${FEATURES.join("|")}> <run-id>`);
 	process.exit(2);
@@ -184,6 +184,38 @@ if (feature === "auto-reply") {
 	noExternalNetwork("after");
 	artifacts.push(...browser("browser-cold", mailAppColdScript(browserRun)));
 	note("cold: fresh tabs at 390 and 1280 open the sheet and show 메일 앱: 회사 메일, enabled");
+} else if (feature === "fallback-keys") {
+	const OPUS = "anthropic/claude-opus-5-5";
+	const json = { "content-type": "application/json" };
+	const allowOnDisk = (): unknown => (JSON.parse(readFileSync(join(run.data, "config.json"), "utf8")) as { guard?: { allow_api_key?: unknown } }).guard?.allow_api_key;
+	type ChainView = { model: string; key_file?: string; down_reason?: string }[];
+	const chainNow = async (): Promise<ChainView> => ((await (await call(run, "/api/models", { as: "owner" })).json()) as { fallbacks: { orchestrator: { chain: ChainView } } }).fallbacks.orchestrator.chain;
+	mkdirSync(join(run.data, "secrets"), { recursive: true });
+	writeFileSync(join(run.data, "secrets", "anthropic-api-key"), "verify-placeholder-key\n", { mode: 0o600 });
+	note("arrange: a placeholder key <data>/secrets/anthropic-api-key (API keys are off and no orchestrator runs, so it is never sent)");
+	const chain = ["anthropic/claude-sonnet-5-5:high", { model: OPUS, key_file: "anthropic-api-key", when: "quota", enabled: true }];
+	const put = await call(run, "/api/fallbacks", { as: "owner", method: "PUT", headers: json, body: JSON.stringify({ target: "orchestrator", chain }) });
+	if (put.status !== 200) fail(`PUT /api/fallbacks: ${put.status} ${await put.text()}`);
+	const arranged = await chainNow();
+	if (arranged.length !== 2 || arranged[1]?.down_reason !== "api_key_off") fail(`the arranged chain is not [subscription step, key step down for api_key_off]: ${JSON.stringify(arranged)}`);
+	note(`arrange: the orchestrator chain is ${arranged.map(e => e.model + (e.key_file ? " (API key)" : "")).join(" -> ")}; the key step is down with down_reason api_key_off`);
+	const before = allowOnDisk();
+	if (before === true) fail("guard.allow_api_key is already true before the drive");
+	const agent = await call(run, "/api/guard/allow-api-key", { as: "agent", method: "PUT", body: JSON.stringify({ allow: true, confirm: true }) });
+	if (agent.status !== 403 || allowOnDisk() !== before) fail(`an agent PUT answered ${agent.status} and left guard.allow_api_key ${JSON.stringify(allowOnDisk())}`);
+	note(`before: guard.allow_api_key ${JSON.stringify(before)}; an agent (hub token) PUT {allow: true, confirm: true} answered 403 and config.json is unchanged`);
+	noExternalNetwork("before");
+	artifacts.push(...browser("browser-keys-on", fallbackKeysOnScript(browserRun)));
+	if (allowOnDisk() !== true) fail(`after 켜기 guard.allow_api_key is ${JSON.stringify(allowOnDisk())}, expected true`);
+	note("on: 취소 left the switch off; 켜기 in the confirm wrote guard.allow_api_key true to config.json");
+	artifacts.push(...browser("browser-keys-off", fallbackKeysOffScript(browserRun)));
+	if (allowOnDisk() !== false) fail(`after one tap off guard.allow_api_key is ${JSON.stringify(allowOnDisk())}, expected false`);
+	note("off: one tap with no question wrote guard.allow_api_key false; the step's API 키 사용 안 함(설정) tag opened the explanation and the switch");
+	artifacts.push(...browser("browser-undo", fallbackUndoScript(browserRun)));
+	const restored = await chainNow();
+	if (JSON.stringify(restored.map(e => [e.model, e.key_file ?? ""])) !== JSON.stringify(arranged.map(e => [e.model, e.key_file ?? ""]))) fail(`after 되돌리기 the chain is ${JSON.stringify(restored)}`);
+	note("undo: 삭제 saved the chain without the first step and raised 되돌리기 with no dialog; 되돌리기 saved the previous chain again (read back from /api/models)");
+	noExternalNetwork("after");
 } else {
 	artifacts.push(...browser("browser-shell", appShellScript(browserRun)));
 	noExternalNetwork("after");

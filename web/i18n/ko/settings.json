@@ -381,5 +381,18 @@
   "settings.notify.stays": "꺼도 목록에는 남아요.",
   "settings.fb.saved_off": "저장했어요. API 키 단계는 꺼진 채라 켜야 써요",
   "settings.fb.acc_auto": "자동 전환 · 지금 {name}",
-  "settings.fb.acc_pinned": "고정 · {name}"
+  "settings.fb.acc_pinned": "고정 · {name}",
+  "settings.fb.deleted": "{name} 단계를 지웠어요",
+  "settings.fb.keys.title": "API 키 사용",
+  "settings.fb.keys.label": "API 키 단계로 넘어가기",
+  "settings.fb.keys.off_sub": "꺼져 있어요. 구독 한도가 차도 API 키로 넘어가지 않아요",
+  "settings.fb.keys.on_sub": "켜져 있어요. 켜 둔 API 키 단계가 API 키로 요금을 내며 이어 가요",
+  "settings.fb.keys.why": "API 키 단계는 구독 한도가 찼을 때 같은 모델을 API 키로 이어 쓰는 단계예요. 이 스위치가 꺼져 있으면 단계를 켜 두어도 API 키로 넘어가지 않고, 요금도 나가지 않아요.",
+  "settings.fb.keys.ask_title": "API 키 사용을 켤까요?",
+  "settings.fb.keys.ask_text": "켜면 구독 한도가 찼을 때 켜 둔 API 키 단계로 넘어가고, 쓴 만큼 API 키로 요금이 나가요.",
+  "settings.fb.keys.ask_ok": "켜기",
+  "settings.fb.keys.on_done": "API 키 사용을 켰어요",
+  "settings.fb.keys.off_done": "API 키 사용을 껐어요",
+  "settings.fb.keys.tag_title": "눌러서 설명과 스위치 보기",
+  "settings.fb.keys.load_failed": "API 키 사용 설정을 읽지 못했어요"
 }

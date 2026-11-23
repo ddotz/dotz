@@ -6,6 +6,8 @@
 import { readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { writeAtomic } from "./config.ts";
+import { readObjectForUpdate } from "./json-update.ts";
 import { rolesOn } from "./runtime/runtime-id.ts";
 
 /** omp provider id -> the env var omp reads its API key from (omp docs: providers.md, "Environment variables"). */
@@ -76,8 +78,9 @@ export const API_KEY_OFF = "guard.allow_api_key";
 // file changes. Read from the file itself (not config.ts) so any process that spawns agents applies the same rule. Missing,
 // unreadable or not a list of strings: no account named, keys off.
 let banCache: { file: string; stamp: string; names: Set<string>; allow: boolean } | undefined;
+const configFile = () => join(process.env.DOTZ_DIR ?? join(homedir(), ".dotz"), "config.json");
 function guardRules(): { names: Set<string>; allow: boolean } {
-	const file = join(process.env.DOTZ_DIR ?? join(homedir(), ".dotz"), "config.json");
+	const file = configFile();
 	let stamp: string;
 	try {
 		const st = statSync(file);
@@ -96,6 +99,18 @@ function guardRules(): { names: Set<string>; allow: boolean } {
 	} catch {}
 	banCache = { file, stamp, names, allow };
 	return banCache;
+}
+
+/** Whether <DOTZ_DIR>/config.json turns API keys on (guard.allow_api_key is true); false when the file is missing or unreadable. */
+export const apiKeysAllowed = (): boolean => guardRules().allow;
+
+/** Writes guard.allow_api_key into <DOTZ_DIR>/config.json, keeping every other key (the owner's switch, PUT /api/guard/allow-api-key). */
+export function setApiKeysAllowed(allow: boolean): void {
+	const file = configFile();
+	const disk = readObjectForUpdate<{ guard?: Record<string, unknown> }>(file);
+	disk.guard = { ...disk.guard, allow_api_key: allow };
+	writeAtomic(file, `${JSON.stringify(disk, null, 2)}\n`);
+	banCache = undefined;
 }
 
 function forbiddingAccount(names: Set<string>): string | undefined {

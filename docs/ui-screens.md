@@ -144,12 +144,12 @@ flowchart LR
   end
   subgraph a_settings["settings"]
     c_settings(["settings code"])
-    o_settings_ask["ask (7)"]
-    o_settings_dialog["dialog (16)"]
+    o_settings_ask["ask (8)"]
+    o_settings_dialog["dialog (17)"]
     o_settings_float["float (2)"]
     o_settings_menu["menu (3)"]
     o_settings_select["select (8)"]
-    o_settings_toast["toast (56)"]
+    o_settings_toast["toast (58)"]
   end
   subgraph a_shell["shell"]
     c_shell(["shell code"])

@@ -193,3 +193,119 @@ try {
 }
 console.log('mail-app cold step done');
 `;
+
+const modelsPrelude = `
+const KEYS = 'API 키 단계로 넘어가기';
+const checked = p => p.evaluate(() => { const s = document.querySelector('[data-keys] [role="switch"]'); return s ? s.getAttribute('aria-checked') : null; });
+const toKeys = p => p.evaluate(() => document.querySelector('[data-keys]').scrollIntoView({ block: 'center' }));
+const openModels = async width => {
+  const p = await openTab('about:blank');
+  await p.setViewportSize({ width, height: heights[width] });
+  await p.goto(ORIGIN + '/#models');
+  await until(p, KEYS, 15000);
+  await sleep(600);
+  return p;
+};
+const tapSwitch = async p => {
+  const s = p.getByRole('switch', { name: KEYS }).first();
+  await s.scrollIntoViewIfNeeded();
+  const b = await s.boundingBox();
+  await p.mouse.click(b.x + b.width / 2, b.y + b.height / 2);
+};
+`;
+
+export const fallbackKeysOnScript = (run: Pick<Run, "port" | "loginCookie">): string => `${prelude(run)}${modelsPrelude}
+await login();
+try {
+  const p = await openModels(390);
+  if ((await checked(p)) !== 'false') failNow('the switch is not off before the drive');
+  await toKeys(p);
+  art('keys-before.aria.txt', (await snapshot(p)).tree);
+  await shot(p, 'keys-before-390.png');
+  await tapSwitch(p);
+  await until(p, 'API 키 사용을 켤까요?', 5000);
+  art('keys-confirm.aria.diff', (await snapshot(p)).diff);
+  await shot(p, 'keys-confirm-390.png');
+  await p.getByRole('button', { name: '취소', exact: true }).click();
+  await sleep(800);
+  if ((await checked(p)) !== 'false') failNow('취소 left the switch on');
+  console.log('cancel: the switch stays off');
+  await tapSwitch(p);
+  await until(p, 'API 키 사용을 켤까요?', 5000);
+  await p.getByRole('button', { name: '켜기', exact: true }).click();
+  await until(p, 'API 키 사용을 켰어요', 5000);
+  await sleep(400);
+  if ((await checked(p)) !== 'true') failNow('켜기 did not turn the switch on');
+  await toKeys(p);
+  art('keys-on.aria.diff', (await snapshot(p)).diff);
+  await shot(p, 'keys-on-390.png');
+  await closeTab(p);
+} finally {
+  await logout();
+}
+console.log('fallback-keys on step done');
+`;
+
+export const fallbackKeysOffScript = (run: Pick<Run, "port" | "loginCookie">): string => `${prelude(run)}${modelsPrelude}
+await login();
+try {
+  const p = await openModels(390);
+  if ((await checked(p)) !== 'true') failNow('the switch is not on before turning it off');
+  await tapSwitch(p);
+  await until(p, 'API 키 사용을 껐어요', 5000);
+  if (await p.evaluate(() => [...document.querySelectorAll('.dtitle')].some(n => n.textContent === 'API 키 사용을 켤까요?' && n.offsetParent))) failNow('turning off asked a question');
+  await sleep(400);
+  if ((await checked(p)) !== 'false') failNow('one tap did not turn the switch off');
+  await toKeys(p);
+  art('keys-off.aria.diff', (await snapshot(p)).diff);
+  await shot(p, 'keys-off-390.png');
+  await p.getByRole('button', { name: /^메인 어시스턴트/ }).first().click();
+  await until(p, 'API 키 사용 안 함(설정)', 5000);
+  await p.getByRole('button', { name: 'API 키 사용 안 함(설정)' }).click();
+  await until(p, '이 스위치가 꺼져 있으면', 5000);
+  art('tag-dialog.aria.diff', (await snapshot(p)).diff);
+  await shot(p, 'tag-dialog-390.png');
+  await p.keyboard.press('Escape');
+  await sleep(600);
+  await closeTab(p);
+} finally {
+  await logout();
+}
+console.log('fallback-keys off and tag step done');
+`;
+
+export const fallbackUndoScript = (run: Pick<Run, "port" | "loginCookie">): string => `${prelude(run)}${modelsPrelude}
+await login();
+try {
+  const p = await openModels(390);
+  await p.getByRole('button', { name: /^메인 어시스턴트/ }).first().click();
+  await until(p, 'API 키 사용 안 함(설정)', 5000);
+  const steps = () => p.evaluate(() => document.querySelectorAll('[data-target="orchestrator"] .fb-item[data-i]').length);
+  const before = await steps();
+  await p.evaluate(() => document.querySelector('[data-target="orchestrator"] .fb-item[data-i="0"]').scrollIntoView({ block: 'center' }));
+  art('chain-before.aria.txt', (await snapshot(p)).tree);
+  await shot(p, 'chain-before-390.png');
+  await p.locator('[data-target="orchestrator"] .fb-item[data-i="0"] .fb-body').click();
+  await until(p, '삭제', 5000);
+  await p.getByRole('button', { name: '삭제', exact: true }).click();
+  await until(p, '되돌리기', 5000);
+  if (await p.evaluate(() => !!document.querySelector('dialog[open]'))) failNow('삭제 opened a dialog');
+  const removed = await steps();
+  if (removed !== before - 1) failNow('삭제 left ' + removed + ' steps of ' + before);
+  art('delete-toast.aria.diff', (await snapshot(p)).diff);
+  await shot(p, 'delete-toast-390.png');
+  await p.getByRole('button', { name: '되돌리기', exact: true }).click();
+  const end = Date.now() + 5000;
+  while (Date.now() < end && (await steps()) !== before) await sleep(200);
+  if ((await steps()) !== before) failNow('되돌리기 did not bring the step back');
+  await sleep(400);
+  art('undo-after.aria.diff', (await snapshot(p)).diff);
+  await shot(p, 'undo-after-390.png');
+  console.log('delete: ' + before + ' -> ' + removed + ' steps; undo: back to ' + (await steps()));
+  await closeTab(p);
+  for (const w of [390, 1280]) await cold('#models', w, 'cold-models', KEYS);
+} finally {
+  await logout();
+}
+console.log('fallback-keys undo step done');
+`;

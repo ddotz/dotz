@@ -25,7 +25,9 @@ function fbAccount(e) {
 const fbFacts = e => [fbAccount(e), e.key_file ? TX("settings.api_key") : "", e.cap ? fbCapText(e.cap) : "", e.when ? FB_WHEN[e.when] : "", e.revert === false ? TX("settings.fb.no_revert") : ""].filter(Boolean);
 function fbDownTag(e) {
   if (!e.down) return null;
-  return el("span", { class: "tag warn", title: e.until ? TX("settings.fb.until", { at: new Date(e.until).toLocaleString(TX_LOCALE) }) : "", text: e.down === "cap" ? TX("settings.fb.down.cap") : e.down === "quota" ? TX("settings.fb.down.quota") : e.down_reason === "api_key_ban" ? TX("settings.fb.down.shared") : e.down_reason === "api_key_off" ? TX("settings.fb.down.key_off") : TX("settings.fb.down.unavailable") });
+  const title = e.until ? TX("settings.fb.until", { at: new Date(e.until).toLocaleString(TX_LOCALE) }) : "";
+  if (e.down !== "cap" && e.down !== "quota" && e.down_reason === "api_key_off") return el("button", { type: "button", class: "tag warn fb-keyoff", title: TX("settings.fb.keys.tag_title"), text: TX("settings.fb.down.key_off"), onclick: fbKeysDialog });
+  return el("span", { class: "tag warn", title, text: e.down === "cap" ? TX("settings.fb.down.cap") : e.down === "quota" ? TX("settings.fb.down.quota") : e.down_reason === "api_key_ban" ? TX("settings.fb.down.shared") : TX("settings.fb.down.unavailable") });
 }
 // Usage against the cap. The row draws it only from this share of the cap on; the step's editor always does.
 const FB_NEAR = 80;
@@ -39,16 +41,44 @@ function fbBar(e, nearOnly) {
   const label = byUsd ? TX("settings.fb.bar_usd", { when, used: fbMoney(e.used.usd), cap: fbMoney(e.cap.usd) }) : TX("settings.fb.bar_tokens", { when, used: num(e.used.tokens), cap: num(e.cap.tokens || 0) });
   return el("div", { class: `fb-usage${near ? " warn" : ""}` }, el("div", { class: "fb-bar", role: "progressbar", "aria-valuenow": String(Math.round(pct)), "aria-valuemin": "0", "aria-valuemax": "100", "aria-label": label }, el("i", { style: `width:${pct}%` })), el("div", { class: "fb-bar-l", text: label }));
 }
-async function fbSave(layer, list) {
+async function fbSave(layer, list, undo) {
   try {
     const r = await api("/api/fallbacks", "PUT", { target: layer, chain: list.map(fbStored) });
     // the hub saves a newly added API-key step switched off (control.ts setFallback): say so instead of "applied"
     const sent = new Set(list.filter(e => e.key_file && e.enabled === undefined).map(e => fbBase(e.model)));
     const off = ((r && r.chain) || []).some(e => e.key_file && e.enabled === false && sent.has(fbBase(e.model)));
-    toast(off ? TX("settings.fb.saved_off") : r && (r.applied === "updated" || r.applied === "restarted") ? TX("settings.fb.saved_now") : r && r.applied === "after-turn" ? TX("settings.fb.saved_after") : TX("settings.fb.saved_next"));
+    if (undo) toast(undo.text, false, { label: TX("common.undo"), onclick: undo.run });
+    else toast(off ? TX("settings.fb.saved_off") : r && (r.applied === "updated" || r.applied === "restarted") ? TX("settings.fb.saved_now") : r && r.applied === "after-turn" ? TX("settings.fb.saved_after") : TX("settings.fb.saved_next"));
     await loadModels(true);
     return true;
   } catch (e) { toast(e.message || TX("settings.save_failed"), true); await loadModels(true); return false; }
+}
+let fbKeysOn = null, fbKeysErr = "";
+async function fbKeysLoad() {
+  try { fbKeysOn = (await api("/api/guard/allow-api-key")).allow === true; fbKeysErr = ""; }
+  catch (e) { fbKeysOn = null; fbKeysErr = e.message || TX("settings.fb.keys.load_failed"); }
+  if (current === "models") renderModels();
+}
+async function fbKeysSet(on, btn) {
+  if (on && !await ask(TX("settings.fb.keys.ask_title"), TX("settings.fb.keys.ask_text"), TX("settings.fb.keys.ask_ok"), true)) return;
+  await busy(btn, async () => {
+    const r = await api("/api/guard/allow-api-key", "PUT", on ? { allow: true, confirm: true } : { allow: false });
+    fbKeysOn = r.allow === true;
+    toast(TX(fbKeysOn ? "settings.fb.keys.on_done" : "settings.fb.keys.off_done"));
+    document.querySelectorAll("dialog .fb-keys-row").forEach(n => n.replaceWith(fbKeysRow()));
+    await loadModels(true);
+  });
+}
+function fbKeysRow() {
+  const on = fbKeysOn === true, known = fbKeysOn !== null;
+  const sub = known ? TX(on ? "settings.fb.keys.on_sub" : "settings.fb.keys.off_sub") : fbKeysErr || TX("common.loading");
+  return el("div", { class: "fb-keys-row" },
+    el("div", { class: "mt-use-tx" }, el("span", { class: "nm", text: TX("settings.fb.keys.label") }), el("span", { class: "sup", text: sub })),
+    known ? el("span", { class: "mt-use-end" }, el("button", { type: "button", class: "fb-sw", role: "switch", "aria-checked": String(on), "aria-label": TX("settings.fb.keys.label"), title: on ? TX("settings.fb.sw_on_title") : TX("settings.fb.sw_off_title"), onclick: ev => fbKeysSet(!on, ev.currentTarget) }, el("span", { class: `dot${on ? " ok" : ""}`, "aria-hidden": "true" }), on ? TX("settings.fb.sw_on") : TX("settings.fb.sw_off"))) : null);
+}
+const fbKeysCard = () => el("section", { class: "mt-keys", "data-keys": "1", "aria-label": TX("settings.fb.keys.title") }, el("div", { class: "mt-head" }, el("span", { class: "t", text: TX("settings.fb.keys.title") })), el("div", { class: "list mt-use-list" }, fbKeysRow()));
+function fbKeysDialog() {
+  dialog({ mid: true, title: TX("settings.fb.keys.title"), body: el("div", { class: "col" }, el("p", { class: "sup", text: TX("settings.fb.keys.why") }), el("div", { class: "list mt-use-list" }, fbKeysRow())) });
 }
 // One fallback step edited in place (owner 2026-10-20: "클릭하면 설정하는 부분에 해당 부분 옵션 띄우고 바로 수정가능하게"): clicking a
 // step opens its options right under it, kept as a draft across re-renders until 저장 writes the chain once or 취소 drops it.
@@ -83,7 +113,10 @@ function fbEditor(L, F, list, i, move) {
     if (!hub) delete e.key_file;
     if (await fbSave(L.id, list.map((x, j) => (j === i ? e : x)))) { fbOpen = null; renderModels(); }
   });
-  const remove = btn => busy(btn, async () => { if (await fbSave(L.id, list.filter((_, j) => j !== i))) { fbOpen = null; renderModels(); } });
+  const remove = btn => busy(btn, async () => {
+    const undo = { text: TX("settings.fb.deleted", { name: modelChipText(fbBase(list[i].model)) }), run: () => fbSave(L.id, list) };
+    if (await fbSave(L.id, list.filter((_, j) => j !== i), undo)) { fbOpen = null; renderModels(); }
+  });
   return el("li", { class: "fbe", "aria-label": TX("settings.fb.edit_aria", { name: nm }) },
     el("div", { class: "fbe-grid" },
       selectField(TX("common.model"), nm, () => modelItems(`fbe:${L.id}`, base, only), base, v => setModel(fbBase(v), level)),
@@ -195,19 +228,21 @@ function fbParts(L) {
       ev.preventDefault();
       move(i, to).then(() => { const g = document.querySelector(`[data-target="${L.id}"] .fb-item[data-i="${to}"] .fb-grip`); if (g) g.focus(); });
     } }, icon("grip")) : null;
+    const down = fbDownTag(e), downOwnButton = Boolean(down) && down.tagName === "BUTTON";
     const node = el("li", { class: `fb-item${inUse ? " in-use" : ""}${on ? "" : " off"}${open(i) ? " open" : ""}`, "data-i": String(i), title: all },
       el("span", { class: "fb-n", text: String(i + 2) }),
       el("button", { type: "button", class: "fb-body", "aria-expanded": String(open(i)), "aria-label": TX("settings.fb.edit_aria", { name: [nm, short].filter(Boolean).join(" · ") }) },
         el("span", { class: "nm" }, ...fbNameParts(nm)),
         short ? el("span", { class: "fb-sum", text: short }) : null,
         inUse ? el("span", { class: "tag pri", text: TX("settings.fb.in_use") }) : null,
-        fbDownTag(e),
+        downOwnButton ? null : down,
         runs(e) ? null : el("span", { class: "tag warn", text: TX("settings.fb.cant_use") })),
+      downOwnButton ? down : null,
       el("button", { type: "button", class: "fb-sw", role: "switch", "aria-checked": String(on), title: on ? TX("settings.fb.sw_on_title") : TX("settings.fb.sw_off_title"), "aria-label": on ? TX("settings.fb.switch_off", { name: nm }) : TX("settings.fb.switch_on", { name: nm }), onclick: () => fbSave(L.id, list.map((x, j) => (j === i ? { ...x, enabled: !on } : x))) }, el("span", { class: `dot${on ? " ok" : ""}`, "aria-hidden": "true" }), on ? TX("settings.fb.sw_on") : TX("settings.fb.sw_off")),
       grip,
       open(i) ? null : fbBar(e, true));
     if (grip) fbDrag(grip, node, i, move);
-    node.addEventListener("click", ev => { if (!ev.target.closest(".fb-sw, .fb-grip") && !fbDragging) fbOpenStep(L.id, list, i); });
+    node.addEventListener("click", ev => { if (!ev.target.closest(".fb-sw, .fb-grip, .fb-keyoff") && !fbDragging) fbOpenStep(L.id, list, i); });
     return node;
   };
   if (fbOpen && fbOpen.layer === L.id && fbOpen.i >= list.length) fbOpen = null;

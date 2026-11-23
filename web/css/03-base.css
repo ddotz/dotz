@@ -29,6 +29,10 @@
   .mt-use-row .tag { max-width: 260px; }
   .mt-use-end { margin-left: auto; }
 }
+.fb-keys-row { display: flex; align-items: center; gap: var(--sp-3); min-height: var(--btn-hit); padding: var(--sp-15) var(--row-px); }
+.fb-keys-row .mt-use-tx { flex: 1 1 0; }
+.fb-keys-row .fb-sw { display: inline-flex; align-items: center; gap: var(--sp-15); }
+.fb-keyoff { border: 0; text-decoration: underline dotted; text-underline-offset: 3px; cursor: pointer; }
 .mt-head { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; }
 .mt-head .t { min-width: 0; font: 700 17px/24px var(--font); overflow-wrap: anywhere; }
 .mt-head .sup { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
