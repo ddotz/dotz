@@ -1,11 +1,11 @@
 // The mail list's 확인 대기 filter: a reply draft waiting on the owner (the send-approval card) shows only there, with its count on the chip,
 // for this computer's mail and a peer's alike; 전체 / 답장함 and the other views show the mails without it. Headless (Bun.WebView) against a fake hub.
-// Opening the app while drafts wait lands on 확인 대기 (30-monitoring.js mailLand). Screenshots go to MAIL_PENDING_SHOTS (default <tmpdir>/dotz-mail-pending): 390x844 and 1280x900, under 전체 and 확인 대기.
 import { afterAll, describe, expect, test } from "bun:test";
 import { mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { sseResponse } from "./events.ts";
+import { realSetTimeout } from "./runtime/test-clock.ts";
 import { appAsset, indexPage } from "./webapp.ts";
 
 const SHOTS = process.env.MAIL_PENDING_SHOTS ?? join(tmpdir(), "dotz-mail-pending");
@@ -92,31 +92,46 @@ async function boot(width: number, height: number, key: string): Promise<View> {
 	return v;
 }
 const landed = (v: View) => q<string>(v, `return document.querySelector('#mon-tl .mr-place .on:not([data-filter="in"]), #mon-tl .mr-f.on').dataset.filter`);
+const banner = (v: View) => q<string | null>(v, `const b = document.querySelector("#mon-tl [data-k='mail-pending']"); return b ? b.textContent : null`);
+const tapBanner = async (v: View) => {
+	await run(v, `document.querySelector("#mon-tl [data-k='mail-pending']").click()`);
+	await waitFor(v, `document.querySelector('#mon-tl .mr-f.on').dataset.filter === "pending"`);
+};
 
 for (const [width, height] of [[390, 844], [1280, 900]] as const) {
 	describe(`mail 확인 대기 at ${width}px`, () => {
 		test("approval cards show only under 확인 대기, newest first, with the count on the chip", async () => {
 			const v = await boot(width, height, "i:mail");
-			expect(await landed(v)).toBe("pending");
-			await pick(v, "all");
+			expect(await landed(v)).toBe("all");
 			await waitFor(v, `document.querySelectorAll("#mon-tl .mr").length > 0`);
+			expect(await banner(v)).toBe("확인 대기 초안 2건 · 바로 보기");
 			const all = await seen(v);
 			expect(all.chips).toEqual(["전체", "안 읽음", "답장 필요2", "확인 대기2", "답장함1"]);
 			expect(all.cards).toEqual([]);   // a sent draft is folded inside its mail's conversation (30-mail-sent.js); nothing waiting shows under 전체
 			expect(all.rows).toEqual(["자료 요청", "회의 일정 문의", "일정 조율"]);
 			expect(all.over).toBe(false);
+			await new Promise(res => realSetTimeout(res, 600));
 			await Bun.write(join(SHOTS, `all-${width}.png`), await v.screenshot());
 
 			await pick(v, "replied");
 			expect((await seen(v)).cards.filter(c => c.startsWith("Re: 자료") || c.startsWith("Re: 회의"))).toEqual([]);
+			expect(await banner(v)).toBe("확인 대기 초안 2건 · 바로 보기");
+			for (const place of ["sent", "archived"]) {
+				await pick(v, place);
+				expect(await banner(v)).toBeNull();
+			}
 
-			await pick(v, "pending");
+			await pick(v, "all");
+			await tapBanner(v);
+			expect(await landed(v)).toBe("pending");
+			expect(await banner(v)).toBeNull();
 			await waitFor(v, `document.querySelectorAll("#mon-tl .dr.open").length === 2`);
 			const p = await seen(v);
 			expect(p.cards).toEqual(["Re: 회의 일정 문의", "Re: 자료 요청"]);
 			expect(p.rows).toEqual([]);
 			expect(await q<string[]>(v, `return [...document.querySelectorAll("#mon-tl .dr.open .dr-act button")].map(b => b.dataset.k)`)).toEqual(["send", "fix", "drop", "send", "fix", "drop"]);
 			expect(p.over).toBe(false);
+			await new Promise(res => realSetTimeout(res, 600));
 			await Bun.write(join(SHOTS, `pending-${width}.png`), await v.screenshot());
 			expect(await q<boolean>(v, `return !!document.querySelector("#mbox-bar")`)).toBe(false);
 
@@ -129,14 +144,14 @@ for (const [width, height] of [[390, 844], [1280, 900]] as const) {
 
 test("a peer's mail app counts and shows its pending draft under 확인 대기 only", async () => {
 	const v = await boot(390, 844, `p:http://127.0.0.1:${server.port}/mini|i:mail`);
-	expect(await landed(v)).toBe("pending");
-	await pick(v, "all");
+	expect(await landed(v)).toBe("all");
 	await waitFor(v, `document.querySelectorAll("#mon-tl .mr").length > 0`);
+	expect(await banner(v)).toBe("확인 대기 초안 1건 · 바로 보기");
 	const all = await seen(v);
 	expect(all.chips).toContain("확인 대기1");
 	expect(all.cards).toEqual([]);
 	expect(all.rows).toEqual(["견적 요청"]);
-	await pick(v, "pending");
+	await tapBanner(v);
 	await waitFor(v, `document.querySelector('#mon-tl [data-nid="peer-1"]')`);
 	const p = await seen(v);
 	expect(p.rows).toEqual([]);
@@ -147,6 +162,7 @@ test("확인 대기 with nothing waiting says so", async () => {
 	settled = true;
 	const v = await boot(390, 844, "i:mail");
 	expect(await landed(v)).toBe("all");
+	expect(await banner(v)).toBeNull();
 	expect((await seen(v)).chips).toContain("확인 대기");
 	await pick(v, "pending");
 	const p = await seen(v);

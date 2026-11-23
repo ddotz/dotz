@@ -94,14 +94,12 @@ function mailDraftLive(notices) {
 // folded inside its mail's conversation (30-mail-sent.js).
 const mailDraftDone = n => !!(n.decision && n.decision.draft) && String(n.decision.to || "").startsWith("mail:") && !mailDraftHeld(n);
 const mailDraftGone = (n, newest) => !!(n.decision && n.decision.draft) && String(n.decision.to || "").startsWith("mail:") && (drState(n.decision) === "drop" || newest.get(mailDraftKey(n)) !== n);
-// Opening a mail app while reply drafts wait lands on 확인 대기 (once per opening, so a filter the owner picks stays); with none waiting a
-// left-over 확인 대기 goes back to 전체. It waits for the notices, so a draft that loads late still decides the landing.
 function mailLand(sel) {
   if (!monMailList(sel)) { monMailLand(""); return; }
   if (MON.land === sel.key || !NT.loaded) return;
   monMailLand(sel.key);
   const waiting = [...mailDraftLive(sel.notices).values()].some(mailDraftOpen);
-  if (waiting) monMailFilter("pending"); else if (MON.mailFilter === "pending") monMailFilter("all");
+  if (!waiting && MON.mailFilter === "pending") monMailFilter("all");
 }
 // The head of the mail list is two rows (owner 2026-11-11): where the mail sits (받은 메일 / 보낸 메일 / 보관함, screen tabs) and, only in 받은 메일,
 // the five ways to sift it. MON.mailFilter keeps its seven values; the place is read from it, and MON.mailIn is the sift 받은 메일 comes back to.
@@ -115,8 +113,10 @@ function mailFilterBar(mails, notices) {
     el("button", { class: `mx-tab${k === place ? " on" : ""}`, type: "button", role: "tab", "aria-selected": String(k === place), "data-filter": k, onclick: pick(k === "in" ? MON.mailIn || "all" : k) },
       label, k === "in" ? null : cntSpan(`mail-filter:${k}`, "mr-fn", count(k, MAIL_FILTERS.find(f => f[0] === k)[2]))))));
   if (place !== "in") return [tabs];
-  return [tabs, segKeep(el("div", { class: "mr-filter mr-mail", role: "tablist", "aria-label": TX("mon.mail.view_aria") }, ...MAIL_FILTERS.filter(f => f[0] !== "archived" && f[0] !== "sent").map(([k, label, ok]) =>
-    el("button", { class: `cchip mr-f${k === cur ? " on" : ""}`, type: "button", role: "tab", "aria-selected": String(k === cur), "data-filter": k, onclick: pick(k) }, label, cntSpan(`mail-filter:${k}`, "mr-fn", count(k, ok))))))];
+  const chips = segKeep(el("div", { class: "mr-filter mr-mail", role: "tablist", "aria-label": TX("mon.mail.view_aria") }, ...MAIL_FILTERS.filter(f => f[0] !== "archived" && f[0] !== "sent").map(([k, label, ok]) =>
+    el("button", { class: `cchip mr-f${k === cur ? " on" : ""}`, type: "button", role: "tab", "aria-selected": String(k === cur), "data-filter": k, onclick: pick(k) }, label, cntSpan(`mail-filter:${k}`, "mr-fn", count(k, ok))))));
+  const waiting = count("pending");
+  return [tabs, chips, ...(waiting && cur !== "pending" ? [el("button", { class: "mx-note", type: "button", "data-k": "mail-pending", onclick: pick("pending"), text: TX("mon.mail.pending_banner", { n: waiting }) })] : [])];
 }
 // A mail or chat of an integration is its own conversation in 채팅. A mail is a Gmail-like flat row: sender and time on one line (with
 // a paperclip and the file count when it has files), the subject with the reply-draft state beside it, and a one-line summary. The

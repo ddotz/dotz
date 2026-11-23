@@ -59,6 +59,7 @@ const hub = fakeHub({
 		if (p === "/api/comments/thread/youtube/v1" && req.method === "GET")
 			return json({ source: { key: "youtube", kind: "youtube", label: "유튜브 댓글" }, thread: { id: "v1", title: "첫 번째 영상", link: "https://video.example/v1" }, comments: COMMENTS, read: null, drafts, sends });
 		if (p === "/api/comments/thread/youtube/v1/read") { record({ method: "POST", path: p, body }); return json({ ok: true }); }
+		if (decodeURIComponent(p) === "/api/comments/comment/cm:youtube:c2/draft" && req.method === "POST") { record({ method: "POST", path: p, body }); return json({ state: "drafting" }, 202); }
 		if (p === "/api/reply/act" && req.method === "POST") {
 			record({ method: "POST", path: p, body });
 			const a = body!.action;
@@ -75,7 +76,7 @@ afterAll(() => { hub.stop(); });
 beforeEach(reset);
 
 const q = async <T = unknown>(v: View, code: string): Promise<T> => JSON.parse((await v.evaluate(`JSON.stringify((() => { ${code} })())`)) as string) as T;
-const shot = async (v: View, name: string) => { if (SHOTS) await Bun.write(join(SHOTS, name), await v.screenshot()); };
+const shot = async (v: View, name: string) => { if (SHOTS) { await new Promise(res => realSetTimeout(res, 600)); await Bun.write(join(SHOTS, name), await v.screenshot()); } };
 const boot = async (v: View) => {
 	const opened = hub.nextStream();
 	await v.navigate(`${hub.origin}/`);
@@ -86,6 +87,18 @@ const boot = async (v: View) => {
 	await run(v, `go("monitoring", "i:youtube")`);
 	await waitFor(v, `!$("#cm").hidden && CM.loaded && document.querySelector("#cm .kk-row")`);
 };
+
+const FILTER_ROWS = () => {
+	const row = (thread: string, extra: Record<string, unknown>) => ({ source: "youtube", thread, title: `글 ${thread}`, link: null, lastAt: at(22, 2, 0), lastText: "마지막 댓글", lastAuthor: "가나", unread: 0, drafts: 0, unreplied: 0, ...extra });
+	return [
+		row("a", { unreplied: 3, mails: { failed: 1, drafted: 0, sent: 0 }, lastAuthor: "마리", lastText: "영상 감사해요" }),
+		row("b", { unreplied: 2, title: "기타 연주 영상" }),
+		row("c", { drafts: 1, lastText: "자막 부탁해요" }),
+		row("d", {}),
+	];
+};
+const listed = (v: View) => q<{ titles: string[]; chips: string[]; on: string; empty: string; q: string; focused: boolean }>(v, `return { titles: [...document.querySelectorAll("#cm-rooms .kk-row .cv-n")].map(n => n.textContent), chips: [...document.querySelectorAll("#cm-rooms .cm-filter .mr-f")].map(b => b.textContent), on: (document.querySelector("#cm-rooms .cm-filter .mr-f.on") || {dataset: {}}).dataset.filter || "", empty: (document.querySelector("#cm-rooms .empty") || {}).textContent || "", q: document.querySelector("#cm-q").value, focused: document.activeElement === document.querySelector("#cm-q") }`);
+const chip = async (v: View, f: string) => { await run(v, `document.querySelector('#cm-rooms .cm-filter [data-filter="${f}"]').click()`); await waitFor(v, `document.querySelector('#cm-rooms .cm-filter .mr-f.on').dataset.filter === "${f}"`); };
 
 describe("댓글 on a phone (390x844)", async () => {
 	const v = await open(390, 844);
@@ -136,6 +149,63 @@ describe("댓글 on a phone (390x844)", async () => {
 		expect(rows.map(r => r.text)).toEqual(["실패 1", "미답장 2", "초안 1", "", "미답장 1"]);
 		expect(await q(v, `return document.querySelectorAll("#cm-rooms .cm-tr, #cm-rooms .cm-st").length`)).toBe(0);
 		await shot(v, "comments-markers-390.png");
+	});
+
+	test("the post list filters by 전체 / 미답장 / 실패 and searches title, author and last comment; the choice resets on leaving (S10)", async () => {
+		threadRows = FILTER_ROWS();
+		await boot(v);
+		await shot(v, "comments-list-all-390.png");
+		const all = await listed(v);
+		expect(all.titles).toEqual(["글 a", "기타 연주 영상", "글 c", "글 d"]);
+		expect(all.chips).toEqual(["전체", "미답장2", "실패1"]);
+		expect(all.on).toBe("all");
+
+		await chip(v, "unreplied");
+		expect((await listed(v)).titles).toEqual(["글 a", "기타 연주 영상"]);
+		await chip(v, "failed");
+		expect((await listed(v)).titles).toEqual(["글 a"]);
+		await chip(v, "all");
+
+		await run(v, `document.querySelector("#cm-q").focus()`);
+		await v.type("기타");
+		await waitFor(v, `document.querySelectorAll("#cm-rooms .kk-row").length === 1`);
+		const byTitle = await listed(v);
+		expect(byTitle.titles).toEqual(["기타 연주 영상"]);
+		expect(byTitle.focused).toBe(true);
+		await v.type(" 없는말");
+		await waitFor(v, `!document.querySelector("#cm-rooms .kk-row")`);
+		expect((await listed(v)).empty).toContain("찾는 글이 없어요");
+		await run(v, `const i = document.querySelector("#cm-q"); i.value = "마리"; i.dispatchEvent(new Event("input"))`);
+		await waitFor(v, `document.querySelectorAll("#cm-rooms .kk-row").length === 1`);
+		expect((await listed(v)).titles).toEqual(["글 a"]);
+		await run(v, `const i = document.querySelector("#cm-q"); i.value = "자막"; i.dispatchEvent(new Event("input"))`);
+		await waitFor(v, `document.querySelector('#cm-rooms .kk-row .cv-n').textContent === "글 c"`);
+		await chip(v, "unreplied");
+		await waitFor(v, `!document.querySelector("#cm-rooms .kk-row")`);
+		expect((await listed(v)).empty).toContain("찾는 글이 없어요");
+		await shot(v, "comments-filter-390.png");
+
+		await run(v, `go("monitoring", "list")`);
+		await waitFor(v, `MON.list && !CM.vis`);
+		await run(v, `go("monitoring", "i:youtube")`);
+		await waitFor(v, `!$("#cm").hidden && CM.loaded && document.querySelector("#cm .kk-row")`);
+		const back = await listed(v);
+		expect([back.on, back.q, back.titles.length]).toEqual(["all", "", 4]);
+	});
+
+	test("a comment_draft event for another post leaves this post's draft spinner alone (S10)", async () => {
+		await boot(v);
+		await run(v, `document.querySelector("#cm .kk-row").click()`);
+		await waitFor(v, `CM.open && !CM.loading && document.querySelector('#cm [data-k="draft"]')`);
+		await run(v, `document.querySelector('#cm [data-k="draft"]').click()`);
+		await expectReq(r => decodeURIComponent(r.path) === "/api/comments/comment/cm:youtube:c2/draft");
+		await waitFor(v, `CM.drafting.has("cm:youtube:c2") && document.querySelector('#cm [data-k="draft"]').disabled`);
+		hub.push({ kind: "comment_draft", source: "youtube", thread: "v2" });
+		await new Promise(res => realSetTimeout(res, 400));
+		expect(await q(v, `return [CM.drafting.has("cm:youtube:c2"), document.querySelector('#cm [data-k="draft"]').disabled]`)).toEqual([true, true]);
+		hub.push({ kind: "comment_draft", source: "youtube", thread: "v1" });
+		await waitFor(v, `!CM.drafting.has("cm:youtube:c2")`);
+		await waitFor(v, `!document.querySelector('#cm [data-k="draft"]').disabled`);
 	});
 
 	test("replies stand under the comment they answer (his own marked), the draft sits under its comment, not pinned below, and each comment shows how far its follow-up got", async () => {
@@ -246,6 +316,16 @@ describe("댓글 on a phone (390x844)", async () => {
 
 describe("댓글 at 1280x800", async () => {
 	const v = await open(1280, 800);
+
+	test("the post list at the wide size: search and filters sit above the posts (S10)", async () => {
+		threadRows = FILTER_ROWS();
+		await boot(v);
+		await shot(v, "comments-list-all-1280.png");
+		await chip(v, "unreplied");
+		expect((await listed(v)).titles).toEqual(["글 a", "기타 연주 영상"]);
+		await shot(v, "comments-filter-1280.png");
+		await chip(v, "all");
+	});
 
 	test("the app is the frame: its posts are the panel with the quiet line beside them, ‹ closes a post first and then leaves for the list, the entry under the app is the list", async () => {
 		const seen = () => q<Record<string, unknown>>(v, `return { list: !!document.querySelector("#mon-side").offsetParent, chat: !!document.querySelector("#cm-chat").offsetParent, rooms: document.querySelector("#cm-rooms").offsetWidth, back: document.querySelector("#back").hidden ? "" : document.querySelector("#back").textContent, hash: location.hash }`);

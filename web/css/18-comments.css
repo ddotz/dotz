@@ -18,6 +18,9 @@
 #cm-rooms .cm-tabs .mr-f::before { content: none; }
 @media (hover: hover) { #cm-rooms .cm-tabs .mr-f:hover { color: var(--fg); } }
 #cm-rooms .cm-tabs .mr-f.on { color: var(--fg); box-shadow: inset 0 -2px 0 var(--fg); }
+#cm-rooms .cm-find { padding: var(--sp-3) var(--sp-4) 0; }
+#cm-rooms .cm-search { background: var(--layer); }
+#cm-rooms .cm-filter { position: static; margin: 0; padding: var(--sp-2) 0 0; background: none; -webkit-mask-image: none; mask-image: none; }
 .dm-bar { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2); padding: var(--sp-1) var(--sp-4) var(--sp-2); }
 /* the note under the tabs says it once for the whole list; an open DM on a phone has no list beside it, so its own line stays there */
 #v-monitoring.app-two #dm-ro { display: none; }

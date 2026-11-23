@@ -143,12 +143,15 @@ describe("another computer's KakaoTalk room", () => {
 
 describe("mail app landing", () => {
 	const v = open(1280, 800);
-	test("opening the mail app while a reply draft waits lands on 확인 대기; a filter picked there stays until the app is opened again", async () => {
+	test("opening the mail app while a reply draft waits stays on 전체 and offers 확인 대기 in a banner; the banner's tap and a picked filter stay until the app is opened again (S10)", async () => {
 		decisions = [{ id: "d1", to: "mail:fx-a", at: iso(8), state: "open" }];
 		await boot(v);
 		await run(v, `go("monitoring", "i:mail")`);
 		await waitFor(v, `current === "monitoring" && document.querySelector('#mon-tl .mr-f.on')`);
-		expect(await q<string>(v, `return document.querySelector("#mon-tl .mr-f.on").dataset.filter`)).toBe("pending");
+		expect(await q<string>(v, `return document.querySelector("#mon-tl .mr-f.on").dataset.filter`)).toBe("all");
+		await waitFor(v, `document.querySelector("#mon-tl [data-k='mail-pending']")`);
+		await run(v, `document.querySelector("#mon-tl [data-k='mail-pending']").click()`);
+		await waitFor(v, `document.querySelector('#mon-tl .mr-f.on').dataset.filter === "pending"`);
 		await run(v, `document.querySelector('#mon-tl .mr-f[data-filter="all"]').click()`);
 		await waitFor(v, `document.querySelector('#mon-tl .mr-f.on').dataset.filter === "all"`);
 		await run(v, `monSchedule()`);
@@ -157,7 +160,7 @@ describe("mail app landing", () => {
 		await run(v, `go("monitoring", "i:kakao")`);
 		await waitFor(v, `MON.sel === "i:kakao" && !monRaf`);
 		await run(v, `go("monitoring", "i:mail")`);
-		await waitFor(v, `MON.sel === "i:mail" && document.querySelector('#mon-tl .mr-f.on') && document.querySelector('#mon-tl .mr-f.on').dataset.filter === "pending"`);
+		await waitFor(v, `MON.sel === "i:mail" && document.querySelector('#mon-tl .mr-f.on') && document.querySelector('#mon-tl .mr-f.on').dataset.filter === "all" && document.querySelector("#mon-tl [data-k='mail-pending']")`);
 	});
 	test("with no draft waiting the mail app opens on 전체, not on an empty 확인 대기", async () => {
 		decisions = [];

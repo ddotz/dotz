@@ -7,7 +7,7 @@
 const appFail = (e, what) => { const m = String((e && e.message) || ""); return !m || /^(offline|failed to fetch|load failed|networkerror.*)$/i.test(m) ? TX("mon.cm.fail_net", { what }) : m; };
 const appRetry = fn => el("button", { class: "btn tonal sm", type: "button", "data-k": "retry", text: TX("appset.retry"), onclick: fn });
 const CM = { apps: new Set(), sources: [], local: { sources: [], apps: new Set() }, pc: null, vis: false, app: "", threads: [], loaded: false, error: "", open: null, view: null, loading: false, viewErr: "", seq: 0, rseq: 0,
-  drafting: new Set(), raMiss: "", pickD: null, tab: "comments", posts: new Map(), timer: 0, intgT: 0, readSent: "", roomsSig: "", chatSig: "" };
+  drafting: new Map(), raMiss: "", pickD: null, tab: "comments", posts: new Map(), timer: 0, intgT: 0, readSent: "", roomsSig: "", chatSig: "", q: "", f: "all" };
 // An app item "i:<instance id>" opens the comment pane when one of its sources is followed. A source carries the instance that owns it (`app`: the
 // default instance of its app, or an added one such as site-mapia); an older gateway sends none, then the app of its kind.
 const cmAppOfKind = k => (k === "website" ? "site" : k);
@@ -186,26 +186,43 @@ function cmTab(id) {
   cmPaintAll(); bkCmSync();
   if (id === "dm") dmRefresh(); else cmLoad();
 }
+const CM_FILTERS = [["all", TX("mon.filter.all"), () => true], ["unreplied", TX("apps.unreplied"), t => t.unreplied > 0], ["failed", TX("mon.tag.fail"), t => !!(t.mails && t.mails.failed)]];
+const cmQ = el("input", { id: "cm-q", type: "search", placeholder: TX("mon.cm.search"), "aria-label": TX("mon.cm.search"), autocomplete: "off", enterkeyhint: "search" });
+const cmChips = el("div", { class: "mr-filter cm-filter", role: "tablist", "aria-label": TX("mon.cm.filter_aria") });
+const cmFind = el("div", { class: "cm-find", id: "cm-find", hidden: true }, el("label", { class: "pl-search cm-search" }, icon("search"), cmQ), cmChips);
+cmQ.addEventListener("input", () => { CM.q = cmQ.value; cmPaintRooms(); });
+const cmFindReset = () => { CM.q = ""; CM.f = "all"; cmQ.value = ""; };
+const cmShown = () => {
+  const q = CM.q.trim().toLowerCase(), ok = (CM_FILTERS.find(f => f[0] === CM.f) || CM_FILTERS[0])[2];
+  return CM.threads.filter(t => ok(t) && (!q || [t.title, t.lastAuthor, t.lastText].some(x => String(x ?? "").toLowerCase().includes(q))));
+};
 function cmPaintRooms() {
   if (!CM.vis) return;
   if (CM.tab === "dm") { dmPaintRooms(); return; }
   const top = cmRooms.scrollTop, srcs = cmSources();
-  const sig = JSON.stringify([CM.app, CM.threads, srcs, CM.open && [CM.open.source, CM.open.thread], CM.loaded, CM.error, cmHasTabs()]);
+  const sig = JSON.stringify([CM.app, CM.threads, srcs, CM.open && [CM.open.source, CM.open.thread], CM.loaded, CM.error, cmHasTabs(), CM.q, CM.f]);
   if (sig === CM.roomsSig) {   // nothing changed: only the relative times move, in place
     for (const t of CM.threads) { const n = cmRooms.querySelector(`[data-thread="${CSS.escape(t.thread)}"] .kk-t`); if (n && n.textContent !== kkListTime(t.lastAt)) n.textContent = kkListTime(t.lastAt); }
     return;
   }
   CM.roomsSig = sig;
-  const list = el("section", { class: "kk-watch", "aria-label": TX("mon.cm.posts_aria") });
+  const list = el("section", { class: "kk-watch", "aria-label": TX("mon.cm.posts_aria") }), shown = cmShown();
   if (CM.loaded) {
     list.append(el("div", { class: "cv-gh", role: "presentation", text: TX("mon.cm.posts") }));
     if (CM.error) list.append(el("div", { class: "kk-note", role: "status", text: CM.error }), el("button", { class: "btn tonal sm", type: "button", "data-k": "retry", text: TX("appset.retry"), onclick: () => cmLoad() }));
-    else if (CM.threads.length) list.append(...CM.threads.map(cmRow));
+    else if (shown.length) list.append(...shown.map(cmRow));
+    else if (CM.threads.length) list.append(emptyNode(TX("mon.cm.no_match"), null, { id: "cm-empty" }));
     else if (!srcs.length) list.append(emptyNode(TX("mon.cm.none_on"), null, { id: "cm-empty" }));
     else list.append(emptyNode(TX("mon.cm.empty"), null, { id: "cm-empty", more: [el("button", { class: "btn tonal sm", type: "button", "data-k": "pick-open", text: TX("mon.cm.pick"), onclick: () => cmPickOpen(CM.pc ? pqApp(CM.app, CM.pc) : CM.app) })] }));
   } else list.append(el("div", { class: "kk-note", role: "status", text: TX("common.loading") }));
+  cmFind.hidden = !(CM.loaded && !CM.error && CM.threads.length);
+  clear(cmChips).append(...CM_FILTERS.map(([k, label, ok]) =>
+    el("button", { class: `cchip mr-f${k === CM.f ? " on" : ""}`, type: "button", role: "tab", "aria-selected": String(k === CM.f), "data-filter": k, onclick: () => { CM.f = k; cmPaintRooms(); } }, label, cntSpan(`cm-filter:${k}`, "mr-fn", k === "all" ? 0 : CM.threads.filter(ok).length))));
   const tabs = cmTabs();
-  clear(cmRooms).append(...(tabs ? [tabs] : []), list);
+  for (const n of [...cmRooms.children]) if (n !== cmFind) n.remove();
+  if (cmFind.parentNode !== cmRooms) cmRooms.append(...(tabs ? [tabs] : []), cmFind);
+  else if (tabs) cmFind.before(tabs);
+  cmRooms.append(list);
   cmRooms.scrollTop = top;
 }
 
@@ -361,7 +378,7 @@ function cmPaintAll() {
 /* ---- drafts: made on request, then 보내기 / 고치기 / 보내지 않기 ---- */
 async function cmMakeDraft(c) {
   if (CM.drafting.has(c.id)) return;
-  CM.drafting.add(c.id); cmPaintChat(false);
+  CM.drafting.set(c.id, `${CM.open.source}/${CM.open.thread}`); cmPaintChat(false);
   setTimeout(() => { if (CM.drafting.delete(c.id)) { cmPaintChat(false); toast(TX("mon.cm.draft_late"), true); } }, 120000);
   try { await cmApi(`/api/comments/comment/${enc(c.id)}/draft`, "POST", {}); }
   catch (e) { CM.drafting.delete(c.id); cmPaintChat(false); toast(e.message, true); }
@@ -382,7 +399,7 @@ function cmLive(e) {
   if (CM.pc) return;   // the stream is this computer's; the peer's comments are read again by the timer
   if (e.kind === "comment_sources") { cmLoadSources(); return; }
   if (e.kind === "comment_draft" && e.error) toast(e.error, true);
-  if (e.kind === "comment_draft") for (const id of [...CM.drafting]) CM.drafting.delete(id);
+  if (e.kind === "comment_draft") for (const [id, thread] of CM.drafting) if (thread === `${e.source}/${e.thread}`) CM.drafting.delete(id);
   if (!CM.vis) return;
   cmLoad();
   if (CM.open && CM.open.source === e.source && CM.open.thread === e.thread) cmReload();
@@ -394,13 +411,13 @@ function cmMode(app, shown, pc) {
   if (app) $("#v-monitoring").classList.add("kk-on");
   cmPane.hidden = !app;
   if (swap) {   // another computer's comments: start from an empty pane (this computer's sources stay for its app rows)
-    Object.assign(CM, { vis: false, sources: [], apps: new Set(), threads: [], loaded: false, open: null, view: null, headSig: "", roomsSig: "", chatSig: "", error: "" }); CM.seq++; clearInterval(CM.timer);
+    Object.assign(CM, { vis: false, sources: [], apps: new Set(), threads: [], loaded: false, open: null, view: null, headSig: "", roomsSig: "", chatSig: "", error: "" }); CM.seq++; clearInterval(CM.timer); cmFindReset();
   }
   CM.pc = app ? pc || null : null;
   if (shown && (!CM.vis || CM.app !== app)) {
     // The DM tab is this computer's Instagram app only; another computer's comment app starts on its comments.
     const dm = !CM.pc && DM.on && DM.connected && app === DM_APP && !CM.sources.some(s => cmOwner(s) === app && (s.watch || []).length);
-    Object.assign(CM, { vis: true, app, threads: [], loaded: false, open: null, view: null, headSig: "", roomsSig: "", chatSig: "", tab: dm ? "dm" : "comments" }); CM.seq++;
+    Object.assign(CM, { vis: true, app, threads: [], loaded: false, open: null, view: null, headSig: "", roomsSig: "", chatSig: "", tab: dm ? "dm" : "comments" }); CM.seq++; cmFindReset();
     dmReset(true);
     cmPaintAll(); cmLoad();
     if (CM.tab === "dm") dmRefresh();
@@ -408,7 +425,7 @@ function cmMode(app, shown, pc) {
     // A peer's comments do not stream here (its events are its own), so its pane is read again on a short timer.
     CM.timer = setInterval(() => { if (document.visibilityState === "visible") { cmLoad(); if (CM.open) cmReload(); } }, CM.pc ? 15000 : 60000);
   } else if (!shown && CM.vis) {
-    CM.vis = false; CM.open = null; CM.seq++; dmReset(); clearInterval(CM.timer);
+    CM.vis = false; CM.open = null; CM.seq++; dmReset(); clearInterval(CM.timer); cmFindReset();
   }
   bkCmSync();
 }
