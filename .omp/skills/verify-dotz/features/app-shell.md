@@ -2,12 +2,12 @@ last-proven: 44a0f30d
 
 # App shell
 
-The web app opens on 홈 for a logged-in owner, with the instance name, 답변 필요, the home cards and a bottom (phone) or side (desktop) navigation of 홈, 채팅, 프로젝트, 모니터링, 설정. Each tab changes the screen title and the address hash.
+The web app opens on 홈 for a logged-in owner, with the instance name, 답변 필요, the home cards and a bottom (phone) or side (desktop) navigation of 홈, 채팅, 앱, 설정. Each tab changes the screen title and the address hash.
 
 ## Sub-features
 
 - `home`: a cold open renders the home screen with the instance name at 390 and 1280 px.
-- `tabs`: 채팅 → `#chat/main` (title is the instance name), 프로젝트 → `#projects`, 모니터링 → `#monitoring`, 설정 → `#settings`, 홈 → `#home`.
+- `tabs`: 채팅 → `#chat/main` (title is the instance name), 앱 → `#monitoring` (title 앱; the address keeps the screen's id), 설정 → `#settings`, 홈 → `#home`.
 - `login-gate`: without the owner cookie the page is the 로그인 screen and `/api/state` is 403 (checked by doctor).
 
 ## How to get to it (user POV)

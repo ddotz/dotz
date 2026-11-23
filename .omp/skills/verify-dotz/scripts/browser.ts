@@ -96,7 +96,7 @@ try {
   await p.goto(ORIGIN + '/');
   await until(p, 'verify', 15000);
   const seen = [];
-  const routes = [['채팅', '#chat/main', 'verify'], ['프로젝트', '#projects', '프로젝트'], ['모니터링', '#monitoring', '모니터링'], ['설정', '#settings', '설정'], ['홈', '#home', '홈']];
+  const routes = [['채팅', '#chat/main', 'verify'], ['앱', '#monitoring', '앱'], ['설정', '#settings', '설정'], ['홈', '#home', '홈']];
   for (const [tab, hash, title] of routes) {
     await p.getByRole('navigation', { name: '메뉴' }).getByRole('button', { name: new RegExp('^' + tab) }).click();
     await sleep(800);

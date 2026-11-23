@@ -28,7 +28,6 @@
 .pl-pc[aria-expanded="false"] .chev { transform: none; }
 .pl-pc.off .pl-pcn { color: var(--fg-3); }
 .pl-groups > .pl-list + .sec { margin-top: var(--sp-6); }
-.pl-groups .pl-gh { margin-bottom: var(--sp-2); }
 .pl-list { background: var(--card); border-radius: var(--r-card); overflow: hidden; }
 .pl-list > .empty { background: transparent; }
 .pl-empty-a { margin-top: var(--sp-3); }
