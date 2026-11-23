@@ -173,6 +173,7 @@ export function settleChain(lane: Lane): void {
 export function pauseExhausted(lane: Lane, c: Chain, until: number): void {
 	setStatus(lane, "rate-limited");
 	lane.limitPause = false;
+	lane.pauseKind = undefined;
 	const at = new Date(until).toLocaleString("ko-KR", { timeZone: TZ, month: "numeric", day: "numeric", weekday: "short", hour: "2-digit", minute: "2-digit" });
 	const line = msg().fallbackExhausted(c.label(c.active), at);
 	log(`lane ${lane.name} ${line}`);

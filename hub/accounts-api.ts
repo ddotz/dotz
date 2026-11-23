@@ -5,7 +5,7 @@
 // (default `anthropic`, the Claude subscription, so older clients keep working); the manual pick, the order, the limit answer and
 // the script are Claude's only.
 import { aliasesFile, aliasesOf, label, readAliases, resolveAccount, setAlias } from "./account-alias.ts";
-import { ANTHROPIC, blockedKind, checkNow, checkRules, DEFAULT_EVERY_MINUTES, DEFAULT_SCRIPT_TIMEOUT_MS, decisionsFile, describeRule, type Decision, getScriptOpinion, getUsage, josa, lastDecision, type Manual, readRules, rulesFile, type ScriptErrorKind, setManual, setOnLimit, setOrder, setRuleList } from "./account-rules.ts";
+import { ANTHROPIC, blockedKind, checkNow, checkRules, DEFAULT_EVERY_MINUTES, DEFAULT_SCRIPT_TIMEOUT_MS, decisionsFile, describeRule, type Decision, getScriptOpinion, getUsage, josa, lastDecision, type Manual, readOnLimit, readRules, rulesFile, type ScriptErrorKind, setManual, setOnLimit, setOrder, setRuleList } from "./account-rules.ts";
 import { type AccountSwitch, accountView, clearSwitches, deleteSwitch, hardPinned, inOrder, MAX_LOG_LINES, onUsedChange, type Pool, quietly, readPool, stickyAccount, type SwitchKind, type UsedChange } from "./account-sticky.ts";
 import { deletePoolAccount, forgetOwnProviderPin, ownProviderPins, providerGroups, readProviderStore, windowsOf, writeProviderPin } from "./accounts-providers.ts";
 import { issueBlock } from "./choices.ts";
@@ -304,12 +304,17 @@ function syncOmoPin(account: string | undefined): void {
 	}
 }
 
+function pinnedBlockedAccount(now: number): string | undefined {
+	if (!hardPinned(now)) return undefined;
+	const id = stickyAccount(now);
+	return id && readPool(undefined, now)?.blocked[id] ? id : undefined;
+}
+
 // The bell/chat text when a 고정 account hits its limit and the work pauses until `until` (ms): which account, until when, and the
 // choice to switch to 자동 전환 (its label is answered by the gateway itself, accountAsk). Undefined outside 고정 mode.
 export function pinnedLimitAlert(until: number, now = Date.now()): string | undefined {
-	if (!hardPinned(now)) return undefined;
-	const id = stickyAccount(now);
-	if (!id || !readPool(undefined, now)?.blocked[id]) return undefined;
+	const id = pinnedBlockedAccount(now);
+	if (!id) return undefined;
 	const l = label(id);
 	const at = clockText(until, now);
 	const t = msg().accountLimit;
@@ -320,9 +325,8 @@ export function pinnedLimitAlert(until: number, now = Date.now()): string | unde
 // carried out silently — "wait" keeps the pin and posts a plain notice, "switch" turns on 자동 전환 and says it moved. Undefined
 // outside 고정 mode, so the orchestrator and the lanes behave the same.
 export async function pinnedLimitNotice(until: number, now = Date.now()): Promise<string | undefined> {
-	if (!hardPinned(now)) return undefined;
-	const id = stickyAccount(now);
-	if (!id || !readPool(undefined, now)?.blocked[id]) return undefined;
+	const id = pinnedBlockedAccount(now);
+	if (!id) return undefined;
 	const pref = readRules().on_limit;
 	if (!pref) return pinnedLimitAlert(until, now);
 	const l = label(id);
@@ -636,7 +640,8 @@ export async function accountAnswer(ask: AccountAsk): Promise<string> {
 	if (off) return off;
 	// Answering the pinned-limit question remembers the answer, so it is asked once (both choices).
 	if (ask.kind === "auto") {
-		setOnLimit("switch");
+		const questionPending = Boolean(pinnedBlockedAccount(Date.now()) && !readOnLimit());
+		if (questionPending) setOnLimit("switch");
 		return pickedText(await useAccount("auto"));
 	}
 	if (ask.kind === "wait") {

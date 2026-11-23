@@ -388,6 +388,34 @@ test("고정 account at its limit: the alert says which account and until when, 
 	expect(pinnedLimitAlert(until)).toBeUndefined();
 });
 
+test("chat 자동 while the pinned-limit question is pending answers it: the choice is saved as switch", async () => {
+	writeAuth(["default", "work"]);
+	writeSlots({ default: { blockReason: "rate_limit", blockedUntil: Date.now() + 3_600_000 } });
+	await call("PUT", "/api/accounts/mode", { mode: "pinned", account: "default" });
+	expect(readRules().on_limit).toBeUndefined();
+	await accountAnswer({ kind: "auto" });
+	expect(readRules().on_limit).toBe("switch");
+	expect(accountsBody().mode).toBe("auto");
+});
+
+test("chat 자동 keeps a saved on_limit answer, and writes none when the pinned account is not at its limit", async () => {
+	writeAuth(["default", "work"]);
+	writeSlots({ default: { blockReason: "rate_limit", blockedUntil: Date.now() + 3_600_000 } });
+	writeRules({ manual: { account: "default" }, on_limit: "wait" });
+	await accountAnswer({ kind: "auto" });
+	expect(readRules().on_limit).toBe("wait");
+	expect(accountsBody().mode).toBe("auto");
+
+	writeSlots({});
+	writeRules({ manual: { account: "default" } });
+	await accountAnswer({ kind: "auto" });
+	expect(readRules().on_limit).toBeUndefined();
+	expect(accountsBody().mode).toBe("auto");
+
+	await accountAnswer({ kind: "auto" });
+	expect(readRules().on_limit).toBeUndefined();
+});
+
 test("on_limit unset: the pinned limit asks once with both choices; answering 기다리기 remembers it and keeps the pin", async () => {
 	writeAuth(["default", "work"]);
 	for (const [k, v] of Object.entries(ALIASES)) setAlias(k, v);

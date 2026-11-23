@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { Chain, clock, resetFallbackState } from "./fallback.ts";
 import { msg } from "./i18n.ts";
 import { limitAlertsFile, noteBlock } from "./limit-alert.ts";
-import { liftEnv, resetLiftMemory, checkUsageLimit, liftUsageLimit, scopeBlocksModels } from "./limit-lift.ts";
+import { liftEnv, resetLiftMemory, checkUsageLimit, liftUsageLimit, scopeBlocksModels, wakeAfterAccountSwitch } from "./limit-lift.ts";
 import { armLimitWatch, limitWatchArmed, LIMIT_WATCH_MS } from "./limit-watch.ts";
 import { omoRpcCommand, omoUnblockAccount } from "./runtime/omo-login.ts";
 import { advance, flush } from "./runtime/test-clock.ts";
@@ -242,4 +242,30 @@ test("a restart after an announced lift tells nothing again, and the saved usage
 	paused = true;
 	expect(await checkUsageLimit()).toBe(true);
 	expect(told).toHaveLength(1);
+});
+
+const convSession = (status: string) => {
+	const pins: string[] = [];
+	return { pins, o: { orch: { status }, applyAccountPin: () => (pins.push(status), "restarted") } };
+};
+
+test("an account switch wakes only the paused conversation sessions and the paused lanes; idle and working ones are left to their next turn", () => {
+	const idle = convSession("idle");
+	const working = convSession("working");
+	const paused = convSession("rate-limited");
+	let woken = 0;
+	Object.assign(liftEnv, { switchWake: { sessions: () => [idle.o, working.o, paused.o], lanes: () => ++woken } });
+	expect(wakeAfterAccountSwitch()).toEqual({ sessions: 1, lanes: 1 });
+	expect(paused.pins).toHaveLength(1);
+	expect(idle.pins).toEqual([]);
+	expect(working.pins).toEqual([]);
+	expect(woken).toBe(1);
+});
+
+test("a conversation session that fails to restart does not stop the others from waking", () => {
+	const failing = { orch: { status: "rate-limited" }, applyAccountPin: () => { throw new Error("not running"); } };
+	const next = convSession("rate-limited");
+	Object.assign(liftEnv, { switchWake: { sessions: () => [failing, next.o], lanes: () => 0 } });
+	expect(wakeAfterAccountSwitch()).toEqual({ sessions: 1, lanes: 0 });
+	expect(next.pins).toHaveLength(1);
 });

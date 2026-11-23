@@ -641,6 +641,15 @@ export function liftLanePauses(): number {
 	}
 	return paused.length;
 }
+/** An account switch hands every lane paused on a limit or a billing/auth error a new account to try, so it goes on now instead of at its timer. Lanes still entering the hold, idle ones, working ones and ones whose fallback steps are all used up (a new account does not reopen those) are left alone. Returns how many went on. */
+export function wakePausedLanes(): number {
+	const paused = [...lanes.values()].filter(l => l.proc && l.status === "rate-limited" && !l.pausing && (l.limitPause || l.pauseKind === "owner"));
+	for (const lane of paused) {
+		log(`lane ${lane.name} account switched; resuming the paused lane now`);
+		void restartPaused(lane).catch(e => log(`lane ${lane.name} restart after the account switch failed: ${(e as Error).message}`));
+	}
+	return paused.length;
+}
 async function restartPaused(lane: Lane): Promise<void> {
 	lane.limitPause = false;
 	clearTimeout(lane.resumeTimer);
@@ -655,7 +664,7 @@ async function pausedNow(lane: Lane): Promise<void> {
 	await old.exited;
 	if (endedMeanwhile(lane, old)) return;
 	setStatus(lane, "idle");
-	resumeLane(lane, msg().laneRate);
+	resumeLane(lane, lane.pauseKind === "owner" ? msg().laneProvider : msg().laneRate);
 }
 export function restartStaleLanes(): void {
 	for (const lane of lanes.values()) {

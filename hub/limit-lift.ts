@@ -16,7 +16,7 @@ import { DATA_DIR, log, writeAtomic } from "./config.ts";
 import { convs } from "./convsessions.ts";
 import { liftQuotaBlocks } from "./fallback.ts";
 import { msg } from "./i18n.ts";
-import { liftLanePauses, limitPausedLanes, limitPausedModels, resumeByName } from "./laneops.ts";
+import { liftLanePauses, limitPausedLanes, limitPausedModels, resumeByName, wakePausedLanes } from "./laneops.ts";
 import { lanes } from "./lanestate.ts";
 import { report } from "./lanereport.ts";
 import { endLimitEpisodes } from "./limit-alert.ts";
@@ -62,6 +62,10 @@ export const liftEnv = {
 	refresh: (account?: string): void => {
 		if (account) forgetAccountUsage(account);
 		void refreshQuota().catch(e => log(`usage refresh failed: ${(e as Error).message}`));
+	},
+	switchWake: {
+		sessions: (): { orch: { status: string }; applyAccountPin: () => unknown }[] => convs.conversations().map(c => c.o),
+		lanes: wakePausedLanes,
 	},
 };
 
@@ -129,6 +133,26 @@ export async function liftUsageLimit(account: string | undefined, why: string, r
 	if (told) liftEnv.tell(told, spentReset ? msg().limitLiftedReset : msg().limitLifted);
 	log(`usage limit lifted (${why}): chain blocks ${chain}, omo ${omo}, orchestrator sessions ${sessions}, lanes ${lanes}, found left behind: sessions ${left.sessions}, lanes ${left.lanes}, saved pauses cleared ${saved}, owner ${told ? `told (${told})` : "not told"}`);
 	return { sessions: sessions + left.sessions, lanes: lanes + left.lanes };
+}
+
+/**
+ * An account switch needs no restart for idle and working sessions (they pin the account at their next turn), but a conversation session or lane
+ * paused on a limit or a billing/auth error waits for its timer, up to the next usage check. Those go on now on the new account.
+ */
+export function wakeAfterAccountSwitch(): Resumed {
+	let sessions = 0;
+	for (const o of liftEnv.switchWake.sessions()) {
+		if (o.orch.status !== "rate-limited") continue;
+		try {
+			o.applyAccountPin();
+			sessions++;
+		} catch (e) {
+			log(`paused conversation session not woken after the account switch: ${(e as Error).message}`);
+		}
+	}
+	const lanes = liftEnv.switchWake.lanes();
+	if (sessions || lanes) log(`account switch woke paused sessions ${sessions}, lanes ${lanes}`);
+	return { sessions, lanes };
 }
 
 // Per role: when a lift went out and whether a later tick has seen the session paused again (the try failed). One lift per episode.

@@ -5,8 +5,10 @@ import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import * as accounts from "./accounts-api.ts";
 import { cfg } from "./config.ts";
-import { handleError } from "./lanefailover.ts";
-import { liftLanePauses, limitPausedLanes, sendToLane } from "./laneops.ts";
+import { Chain } from "./fallback.ts";
+import { handleError, pauseExhausted } from "./lanefailover.ts";
+import { msg } from "./i18n.ts";
+import { liftLanePauses, limitPausedLanes, sendToLane, wakePausedLanes } from "./laneops.ts";
 import type * as Lanes from "./lanes.ts";
 import { limitAlertsFile } from "./limit-alert.ts";
 import type * as Orchestrator from "./orchestrator.ts";
@@ -245,5 +247,68 @@ test("a billing/auth lane hold is not lifted by a usage lift", async () => {
 	expect(liftLanePauses()).toBe(0);
 	expect(lane.resumeTimer).toBeDefined();
 	l.stopLane(lane.name);
+	await advance(300);
+}, 30_000);
+
+test("an account switch resumes a lane paused on a billing/auth error or a usage limit, and leaves idle and working lanes alone", async () => {
+	holdUsage().resolve(0);
+	const authLane = await laneLimit("switch-auth", AUTH_ERR);
+	const rateLane = await laneLimit("switch-rate", RATE_ERR);
+	await advance(10);
+	const idleLane = await working("switch-idle");
+	await started.at(-1)!.push(...okTurn);
+	const workingLane = await working("switch-working");
+	expect(authLane.status).toBe("rate-limited");
+	expect(rateLane.status).toBe("rate-limited");
+	expect(idleLane.status).toBe("idle");
+	expect(workingLane.status).toBe("working");
+	sendToLane(authLane.name, "held lane message");
+	const idleProc = idleLane.proc;
+	const workingProc = workingLane.proc;
+	const spawned = started.length;
+
+	expect(wakePausedLanes()).toBe(2);
+	await advance(300);
+
+	expect(authLane.status).not.toBe("rate-limited");
+	expect(rateLane.status).not.toBe("rate-limited");
+	expect(authLane.resumeTimer).toBeUndefined();
+	expect(rateLane.resumeTimer).toBeUndefined();
+	expect(started.length).toBe(spawned + 2);
+	expect(started.flatMap(a => a.sent).some(c => c.includes("held lane message"))).toBe(true);
+	expect(started.flatMap(a => a.sent).some(c => c.includes(msg().laneProvider.slice(0, 40)))).toBe(true);
+	expect(idleLane.proc).toBe(idleProc);
+	expect(workingLane.proc).toBe(workingProc);
+	expect(idleLane.status).toBe("idle");
+	expect(workingLane.status).toBe("working");
+	expect(wakePausedLanes()).toBe(0);
+	for (const lane of [authLane, rateLane, idleLane, workingLane]) l.stopLane(lane.name);
+	await advance(300);
+}, 30_000);
+
+test("an account switch leaves a lane whose fallback steps are all used up alone, also after an earlier billing/auth pause: no restart, no second notice, held messages not sent twice", async () => {
+	holdUsage().resolve(0);
+	const fresh = await working("switch-exhausted");
+	const afterAuth = await laneLimit("switch-exhausted-auth", AUTH_ERR);
+	await advance(10);
+	expect(afterAuth.pauseKind).toBe("owner");
+	const until = Date.now() + 3_600_000;
+	for (const lane of [fresh, afterAuth]) pauseExhausted(lane, new Chain("anthropic/test-lane:low", [], "low"), until);
+	sendToLane(fresh.name, "held exhausted message");
+	sendToLane(afterAuth.name, "held exhausted message");
+	const procs = [fresh.proc, afterAuth.proc];
+	const spawned = started.length;
+	const notices = reports.length;
+
+	expect(wakePausedLanes()).toBe(0);
+	await advance(300);
+
+	expect(started.length).toBe(spawned);
+	expect([fresh.proc, afterAuth.proc]).toEqual(procs);
+	expect(fresh.status).toBe("rate-limited");
+	expect(afterAuth.status).toBe("rate-limited");
+	expect(reports.length).toBe(notices);
+	expect(started.flatMap(a => a.sent).filter(c => c.includes("held exhausted message"))).toEqual([]);
+	for (const lane of [fresh, afterAuth]) l.stopLane(lane.name);
 	await advance(300);
 }, 30_000);

@@ -31,6 +31,7 @@ import { startDataCleanup, startLaneHygiene, startOrphanReaper, startWorktreeCle
 import { startRecallIndexing } from "./recall-idle.ts";
 import { startLaneIdleStop } from "./laneidle.ts";
 import { startLaneResumeSweep, stopLaneResumeSweep } from "./laneresume.ts";
+import { wakeAfterAccountSwitch } from "./limit-lift.ts";
 import { createSessionResume } from "./sessionresume.ts";
 import { MAIN } from "./session-key.ts";
 import { startMemoryGuard } from "./memguard.ts";
@@ -544,6 +545,7 @@ onAccountSwitch(s => {
 	if (runtimeFor("orchestrator").id === "omo") {
 		holdOrchestratorKeepalive();
 		log(`account switch ${s.from ?? "-"} -> ${s.to}: orchestrator ${applyAccountPin()}`);
+		wakeAfterAccountSwitch();
 	}
 });
 // The account requests really use changed (a limit, the OmO pin, a rule): one alert saying from which to which and why; the

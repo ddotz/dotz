@@ -3,7 +3,8 @@
 dotz runs the orchestrator, the lanes and their task workers on one Claude subscription account from OmO's login pool
 (`~/.omo/agent/auth.json`, `"anthropic-subscription"`). It stays on that account and moves only when a rule, a script or
 the owner says so, or when the account is blocked (a usage limit, a rejected login). It only ever moves to another
-subscription login, never to an API key. A switch reaches every running agent on its next turn, with no restart.
+subscription login, never to an API key. A switch reaches every running agent on its next turn, with no restart. Only what is paused on a limit or a login error
+(main, conversation sessions, lanes) is woken at once on the new account instead of waiting for its timer.
 
 ## Why it looks like this: comparison with OmO
 
