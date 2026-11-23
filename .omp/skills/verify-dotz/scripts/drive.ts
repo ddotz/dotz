@@ -75,7 +75,7 @@ process.on("exit", releaseBrowserLock);
 function browser(step: string, script: string): string[] {
 	const env = { ...process.env, HOME: REAL_HOME };
 	takeBrowserLock();
-	const r = Bun.spawnSync(["aside", "repl", "--file", "-"], { stdin: Buffer.from(script), stdout: "pipe", stderr: "pipe", env, timeout: 118_000 });
+	const r = Bun.spawnSync(["aside", "repl", "--", script], { stdout: "pipe", stderr: "pipe", env, timeout: 118_000 });
 	releaseBrowserLock();
 	const lines = r.stdout.toString().split("\n");
 	const written: string[] = [];
@@ -89,9 +89,11 @@ function browser(step: string, script: string): string[] {
 		writeFileSync(join(out, m[1]!), Buffer.from(m[2]!, "base64"));
 		written.push(m[1]!);
 	}
-	writeFileSync(join(out, `${step}.log`), `${kept.join("\n")}\n${r.stderr.toString()}`);
+	const errors = r.stderr.toString();
+	writeFileSync(join(out, `${step}.log`), `${kept.join("\n")}\n${errors}`);
 	written.push(`${step}.log`);
-	if (r.exitCode !== 0 || kept.some(l => l.startsWith("@@FAIL"))) fail(`browser step ${step} failed (exit ${r.exitCode}); see ${relative(REPO, join(out, `${step}.log`))}`);
+	const threw = [...kept, ...errors.split("\n")].some(l => l.startsWith("@@FAIL") || /^\[error \| \d+ms\]$/.test(l));
+	if (r.exitCode !== 0 || threw) fail(`browser step ${step} failed (exit ${r.exitCode}); see ${relative(REPO, join(out, `${step}.log`))}`);
 	return written;
 }
 
