@@ -29,7 +29,8 @@ export type SendState =
 
 export type ReplyKind = "mail" | "webmail" | "comment" | "kakao" | "card";
 export type Part = "reply" | "mail";
-export type Lesson = { key: { app: string; room?: string }; line: string };
+/** What a revise teaches a tone profile: `line` the lasting preference ("" = none), `forbid` the wordings the owner banned; `key.app` is `install` when it holds everywhere. */
+export type Lesson = { key: { app: string; room?: string }; line: string; forbid?: string[] };
 export type Done = { ok: true } | { ok: false; reason: Reason };
 
 /** The buttons the server gives a send that needs the owner (hub/reply-reasons.ts policyOf), so no surface holds per-channel failure logic. */
