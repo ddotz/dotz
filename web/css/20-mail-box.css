@@ -13,7 +13,7 @@ span.mr-star:not(.on) { opacity: .45; }
 .mr.mr-new .rc-src { color: var(--fg); }
 .mr.mr-new .rc-title { color: var(--fg); font-weight: 600; }
 .mr:not(.mr-new) .rc-title { color: var(--fg-2); font-weight: 400; }
-.mr .rc-src > .mr-dot { display: inline-block; margin-right: var(--sp-15); vertical-align: middle; }   /* the unread dot stands before the sender, clear of the checkbox */
+.mr .rc-src > .mr-dot { display: inline-block; margin-right: var(--sp-15); vertical-align: middle; position: relative; top: -1px; }   /* the unread dot stands before the sender, clear of the checkbox */
 .mr-filter { padding-right: var(--sp-5); -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - var(--sp-5)), transparent); mask-image: linear-gradient(90deg, #000 calc(100% - var(--sp-5)), transparent); }
 .mr .tag.mr-unread { display: none; }
 #mon-tl > .bm.rc.mr.mr-sel { background: color-mix(in srgb, var(--accent) 10%, var(--card)); }
@@ -198,6 +198,11 @@ textarea.mbox-ta { display: block; flex: 1; min-height: 160px; margin: var(--sp-
 #mon-tl > .mr .rc-hd .ib { width: 28px; height: 28px; margin: -3px calc(var(--sp-1) * -1); /* nudge: 28px button inside a 22px text line */ color: var(--fg-3); }
 #mon-tl > .mr .rc-hd .ib .ic { width: 16px; height: 16px; }
 @media (hover: hover) { #mon-tl > .mr .rc-hd .ib:hover { background: var(--active); color: var(--fg); } }
+@media (pointer: coarse), (max-width: 639px) {
+  #mon-tl > .mr .rc-hd .mr-draft { display: none; }
+  #mon-tl > .mr .rc-hd .ib { margin-inline: 0; }
+  #mon-tl > .mr .rc-hd .mr-mv + .ib { margin-left: calc(var(--sp-2) + var(--sp-05)); }
+}
 #mon-tl > .mr > .rc-title { flex: 1 1 0; min-width: 0; font-size: 15px; line-height: 22px; }
 #mon-tl > .mr > .mr-reply { flex: none; }
 #mon-tl > .mr > .mr-sum { flex: 1 0 100%; display: block; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 12px; line-height: 16px; }

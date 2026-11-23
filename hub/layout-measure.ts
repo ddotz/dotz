@@ -535,6 +535,9 @@ export const SCREENS: Screen[] = [
 	{ name: "project-panel", call: `go("project", "ch:5")`, view: "chat", ready: `location.hash === "#project/ch%3A5" && pvShown() && !!document.querySelector("#pv-panel .pm-o")` },
 	{ name: "monitoring", call: `go("monitoring")`, view: "monitoring", ready: `NM.loaded` },
 	{ name: "mail", call: `(go("monitoring", "i:mail"), monMailFilter("pending"), monDirty())`, view: "monitoring", ready: `NM.loaded && MON.sel === "i:mail" && !!document.querySelector(".rq-recv")` },
+	{ name: "mail-inbox", call: `(window.__lmFilter = MON.mailFilter, go("monitoring", "i:mail"), monMailFilter("all"), monDirty())`, view: "monitoring", ready: `NM.loaded && MON.sel === "i:mail" && MON.mailFilter === "all" && !!document.querySelector("#mon-tl > .bm.rc.mr .mr-star")`,
+		open: { call: `document.querySelector(".mbox-fab-gap").scrollIntoView({ block: "end" })`, ready: `document.querySelector(".mbox-fab-gap").getBoundingClientRect().bottom <= innerHeight` },
+		close: `(monMailFilter(window.__lmFilter || "all"), monDirty(), document.querySelector("#mon-tl").firstElementChild.scrollIntoView({ block: "start" }))` },
 	// mail-recipient: the draft card's 고치기 pressed (받는이 rows are edited only there), its 받는이 fold (button.rq-recv) opened, then 받는 사람 추가 opened:
 	// an address field + 확인 button in the row
 	{ name: "mail-recipient", call: `(go("monitoring", "i:mail"), monMailFilter("pending"), monDirty())`, view: "monitoring", ready: `NM.loaded && MON.sel === "i:mail" && !!document.querySelector(".rq-recv")`,

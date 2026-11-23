@@ -39,6 +39,19 @@ const draw = `(() => {
 	return true;
 })()`;
 
+for (const width of [1280, 390]) {
+	test(`초안 작성 on an incoming row at ${width}px: ${width === 390 ? "no pencil, first item of the ⋯ menu" : "the pencil stays"}`, async () => {
+		const v = await open(width);
+		await v.evaluate(draw);
+		const pencil = JSON.parse((await v.evaluate(`JSON.stringify([...document.querySelectorAll("#mon-tl > .bm.rc.mr")].map(r => { const b = r.querySelector(".rc-hd > .mr-draft"); return !!b && b.checkVisibility() && b.getBoundingClientRect().width > 0; }))`)) as string) as boolean[];
+		expect(pencil).toEqual([true, true, true, true].map(() => width !== 390));
+		await v.evaluate(`document.querySelector("#mon-tl > .bm.rc.mr .mr-more").click()`);
+		await waitFor(v, `document.querySelector(".menu .mi")`);
+		const labels = JSON.parse((await v.evaluate(`JSON.stringify([...document.querySelectorAll(".menu .mi")].map(b => b.textContent))`)) as string) as string[];
+		expect(labels[0]).toBe("초안 작성");
+	}, 30_000);
+}
+
 for (const width of [1440, 390]) {
 	test(`mail rows at ${width}px: sender/time, subject, summary, no right buttons, the card is the link`, async () => {
 		const v = await open(width);

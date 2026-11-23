@@ -2739,6 +2739,7 @@ dialog.fs-card::backdrop { background: var(--scrim); }
 /* a wide screen: 빠른 처리 sits at the tabs' right end, not on a row of its own; a phone keeps the rows stacked so the button never moves with the tab counts */
 @media (min-width: 640px) { .rq-hd2 { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2) var(--sp-3); } .rq-hd2 > .nsc-f { flex: none; max-width: 100%; margin-bottom: 0; } .rq-hd2 > .rq-qm { flex: 1; min-width: 0; margin-block: 0; } .rq-hd2 > .rq-chips { flex: none; } }
 #v-monitoring.rq-on > .cv-head { display: none; }
+#v-monitoring.rq-on #mon-timeline { overflow-anchor: none; }
 /* a queue row's card: in the right column in place of the queue on a wide screen (30-replies.js rqPaneOpen), the row it came from marked as chat marks its open row */
 .rq-r.on { background: var(--row-sel); }
 /* the card fits the column the way the sheet fits the window: its head stays and a long draft scrolls in its body */
@@ -3066,6 +3067,7 @@ dialog.dlg .rl-do > .sel { flex: 1 1 160px; width: auto; min-width: 0; }
   .ans-wordy.ans-keys { display: flex; }
   .ans-wordy .rc-row { display: block; }
   .ans-wordy .rc-k { display: block; width: auto; line-height: var(--lh-sec); }
+  .ans-wordy .rc-w { display: block; }
 }
 
 /* result card (11-resultcard.js): a mail or a monitoring result - header, title, labelled sections, the original folded */

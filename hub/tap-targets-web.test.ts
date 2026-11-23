@@ -17,6 +17,7 @@ const NAMED: Record<string, string[]> = {
 	projects: ["#title"],
 	monitoring: ["#title"],
 	mail: ["#title", ".mr-f", ".rq-og", ".rq-recv"],
+	"mail-inbox": [".mr-star", ".mr-mv", ".mr-more"],
 	notices: ["#title", ".nsc-x", ".nsc-fold"],
 	settings: ["#title"],
 };
