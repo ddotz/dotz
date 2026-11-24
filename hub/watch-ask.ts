@@ -1,6 +1,7 @@
 import { fitSubject } from "./card-text.ts";
 import { cardBlock, INERT } from "./choices.ts";
 import { SLOT_SKIPPED_EXIT } from "./release-exit.ts";
+import { slotStart } from "./release.ts";
 import type { DecisionOpt } from "./notices-types.ts";
 import type { NotifyInfo } from "./watch-heal.ts";
 import { type WatchStatusLike, watchConnection } from "./watch-status.ts";
@@ -31,14 +32,14 @@ export type WatchFacts = { fails?: number; failSince?: number };
 export const watchCardId = (name: string): string => `watches:${name}`;
 
 /** The card of a watch issue: `<label> · <question>` within 40 characters, the reason, the failure count and since when as its evidence (a label cut to
- *  fit the title is shown whole as the first line). A skipped release slot says which slot was skipped instead of since when it fails; only a watch that
+ *  fit the title is shown whole as the first line). A skipped release slot names the slot its tick belongs to (hub/release.ts slotStart) instead of since when it fails; only a watch that
  *  still runs says so on 원인 확인. A watch that lost its login gets 다시 연결 / 원인 확인 / 이 모니터링 멈추기; any other gets 원인 확인 / 모니터링 끄기. */
 export function watchChoice(name: string, reason = "", login = false, facts: WatchFacts = {}): string {
 	const question = login ? RECONNECT_QUESTION : CHECK_QUESTION;
 	const subject = fitSubject(name, question);
 	const skipped = reason.endsWith(`(exit ${SLOT_SKIPPED_EXIT})`) && facts.failSince !== undefined;
 	const said = reason ? watchReasonKo(reason).split(". ")[0]! : "";
-	const when = facts.failSince ? clockKo(new Date(facts.failSince).toISOString()) : "";
+	const when = facts.failSince ? clockKo((skipped ? slotStart(new Date(facts.failSince)) : new Date(facts.failSince)).toISOString()) : "";
 	const evidence = [
 		subject === name ? "" : `모니터링: ${name}`,
 		skipped ? `${when} 릴리스 시간대를 건너뛰었어요` : said,
@@ -55,6 +56,10 @@ export function watchIssueText(w: WatchStatusLike, label: string, reason: string
 	const down = watchConnection(w);
 	return `${line.slice(0, ISSUE_MAX)}\n${watchChoice(label, reason, loginLost(line) || (down.state === "disconnected" && down.reason === "login"), { fails: w.state.fails, failSince: w.state.failSince })}`;
 }
+
+/** The post of a watch issue as hub/main.ts sends it with `out`: to alert, the issue text, and the card's id (watchCardId) so the card has its key. */
+export const watchIssuePost = (w: WatchStatusLike, label: string, reason: string, info: NotifyInfo | undefined, output: string): [string, string, undefined, Record<string, unknown>] =>
+	["alert", watchIssueText(w, label, reason, info, output), undefined, { source: "gateway", nk: "alert", news: true, card_ids: [watchCardId(w.name)] }];
 
 /** The watch label a watch-issue question is about, or undefined for any other question. A label cut to fit the title ends with "…". */
 export function watchSubject(title: string): string | undefined {

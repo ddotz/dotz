@@ -9,6 +9,7 @@ import { runKey } from "./notices-schedule.ts";
 import { ownerText } from "./owner-text.ts";
 import { proposeRecipe, recipeBlock } from "./recipes.ts";
 import { sendRepeatAlerts } from "./reflect.ts";
+import { slotStart } from "./release.ts";
 import { scheduleRan } from "./schedule-fire.ts";
 import { addSchedule, removeSchedule, runNow } from "./schedule.ts";
 import { RECONNECT_ACTION, watchChoice, watchIssueText, watchSubject } from "./watch-ask.ts";
@@ -78,7 +79,7 @@ test("every line of a monitor's card is true for its case: a stopped monitor is 
 	const skipped = cardOf(watchChoice("정시 릴리스", "failed 1 times in a row (exit 3)", false, { fails: 1, failSince: at }));
 	expectGatewayCard(skipped, "정시 릴리스");
 	expect(skipped.evidence.some(l => l.includes("실패하고 있어요"))).toBe(false);
-	expect(skipped.evidence).toEqual([`${clockKo(new Date(at).toISOString())} 릴리스 시간대를 건너뛰었어요`]);
+	expect(skipped.evidence).toEqual([`${clockKo(slotStart(new Date(at)).toISOString())} 릴리스 시간대를 건너뛰었어요`]);
 });
 
 test("a yes/no card derives its result lines only when they read true: an open, a nested or a negated question gets the plain lines", () => {

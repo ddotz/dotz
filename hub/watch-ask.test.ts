@@ -4,11 +4,14 @@ import { join } from "node:path";
 import { DATA_DIR } from "./config.ts";
 import { emit } from "./events.ts";
 import { allNotices, answerDecision, decisionsOf, listNotices, resetNoticesForTest } from "./notices.ts";
+import { settleDecision } from "./notices-store.ts";
+import { out } from "./outbound.ts";
+import { SLOT_SKIPPED_EXIT } from "./release-exit.ts";
 import { cardCovers } from "./doctor.ts";
 import { watches as doctorWatches } from "./doctor-checks.ts";
 import { deliverAnswer } from "./routes.ts";
 import { addWatch, allWatches, removeWatch, runWatch, startWatches, stopWatches, type Watch } from "./watch.ts";
-import { watchIssueText, watchSubject } from "./watch-ask.ts";
+import { watchChoice, watchIssuePost, watchIssueText, watchSubject } from "./watch-ask.ts";
 import { watchCardAnsweredAt } from "./watch-backoff.ts";
 import { reconnectWatch } from "./watch-reconnect.ts";
 import { watchLabel } from "./workchannels.ts";
@@ -115,4 +118,41 @@ test("the doctor's finding about a failing monitor is covered by that monitor's 
 		expect(finding).toBeDefined();
 		expect(cardCovers(allNotices(), Date.now(), doctorLabels)(finding)).toBe(true);
 	}
+});
+
+test("a failing monitor's alert, posted the way the gateway posts it, lands in the notice store as a card with the id watches:<name>", async () => {
+	addWatch({ name: "price-post", label: "가격 확인", command: "printf 'DOTZ_FAIL fetch\\n'; exit 1", every_minutes: 10, on: "fail", to: "alert" }, "");
+	const n = await failTwice("price-post");
+	await out(...watchIssuePost(n.w, watchLabel("price-post"), n.reason, n.info, n.output));
+	expect(listNotices(300).items.filter(c => c.kind === "decision").map(c => [c.decision!.card_id, c.title])).toEqual([["watches:price-post", "가격 확인 · 원인을 확인할까요?"]]);
+});
+
+test("a skipped release slot's line names the slot its tick belongs to, not the minute of the tick", () => {
+	const skipped = (tick: string) => watchChoice("정시 릴리스", `failed 1 times in a row (exit ${SLOT_SKIPPED_EXIT})`, false, { fails: 1, failSince: Date.parse(tick) }).split("\n")[1];
+	expect(skipped("2026-12-01T03:06:40Z")).toBe("12월 1일 오후 12:00 릴리스 시간대를 건너뛰었어요");
+	expect(skipped("2026-12-01T09:03:10Z")).toBe("12월 1일 오후 6:00 릴리스 시간대를 건너뛰었어요");
+	expect(skipped("2026-12-01T15:07:00Z")).toBe("12월 2일 오전 12:00 릴리스 시간대를 건너뛰었어요");
+});
+
+const LOGIN = "printf 'DOTZ_FAIL login\\n'; exit 1";
+const olderCard = (name: string, ts: string) => ({ ts, kind: "out", source: "gateway", target: "alert", nk: "alert", text: `[${name}] 로그인이 풀렸어요\n결정: ${name}: 로그인이 풀렸어요. 다시 연결할까요, 이 모니터링을 멈출까요?\n**1) 다시 연결**\n지금 다시 로그인해서 확인해요.\n**2) 원인 확인**\n출력을 보고 원인과 고칠 방법을 알려드려요.` });
+const olderCardOf = () => listNotices(300).items.find(n => n.decision?.to === "alert" && n.decision.card_id === undefined)!;
+
+test("an answer on a monitor's older card stored without an id counts for the back-off while its newer card with the id stays open", async () => {
+	addWatch({ name: "shop-old", command: LOGIN, every_minutes: 10, on: "fail", to: "alert", approval_minutes: 30 }, "");
+	emit("outbox", olderCard("shop-old", new Date(Date.now() - 3 * 3600_000).toISOString()));
+	emit("outbox", posted(allWatches().find(w => w.name === "shop-old")!, await failTwice("shop-old")));
+	expect((await answerDecision(olderCardOf().id, { n: 2 }, async () => {})).status).toBe(200);
+	expect(cardOf("shop-old").decision!.state).toBe("open");
+	expect(watchCardAnsweredAt("shop-old")).toBe(Date.parse(olderCardOf().decision!.answered_at!));
+});
+
+test("of a monitor's older card and its newer one, both answered, the newer answer counts", async () => {
+	addWatch({ name: "shop-two", command: LOGIN, every_minutes: 10, on: "fail", to: "alert", approval_minutes: 30 }, "");
+	const t0 = Date.parse("2026-12-01T00:00:00Z"), iso = (h: number) => new Date(t0 + h * 3600_000).toISOString();
+	emit("outbox", olderCard("shop-two", iso(0)));
+	settleDecision(olderCardOf(), "1) 다시 연결", iso(1));
+	emit("outbox", { ...posted(allWatches().find(x => x.name === "shop-two")!, await failTwice("shop-two")), ts: iso(2) });
+	settleDecision(cardOf("shop-two"), "2) 원인 확인", iso(3));
+	expect(watchCardAnsweredAt("shop-two")).toBe(t0 + 3 * 3600_000);
 });

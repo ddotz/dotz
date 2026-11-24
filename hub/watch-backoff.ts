@@ -19,13 +19,19 @@ export function markFailAlert(s: Alerted, at = Date.now()): void {
 
 type Skipped = Alerted & { recoveredAt?: number; skipAt?: number; skipAlerts?: number };
 
-/** When the owner himself answered the issue card of the watch `name` (hub/watch-ask.ts): the card with the id `watches:<name>`, or a card stored
- *  without an id whose title names the watch's label. Undefined while it is open, dismissed or not there, and when it closed without his answer:
- *  expired after its window, or closed by the gateway (`done`, `gone`, settled by a later message). */
+/** When the owner himself last answered an issue card of the watch `name` (hub/watch-ask.ts): of its cards with the id `watches:<name>` and the cards
+ *  stored without an id whose title names the watch's label, the answer that came last. His answer is a button, a typed number, or his own words,
+ *  whether typed in the alert conversation or closed by the bot's judgement (`closed_how: "words"`). Undefined while none was answered so: open,
+ *  dismissed, put off, expired after its window, or closed by the gateway (`done`, `gone`, settled by a later message). */
 export function watchCardAnsweredAt(name: string): number | undefined {
 	const id = watchCardId(name), label = watchLabelOf(name);
-	const d = items.findLast(n => n.decision?.to === "alert" && (n.decision.card_id === undefined ? watchSubject(n.title) === label : n.decision.card_id === id))?.decision;
-	return d?.state === "answered" && !d.resolved && d.answered_at ? Date.parse(d.answered_at) : undefined;
+	let last: number | undefined;
+	for (const n of items) {
+		const d = n.decision;
+		if (d?.to !== "alert" || (d.card_id === undefined ? watchSubject(n.title) !== label : d.card_id !== id)) continue;
+		if (d.state === "answered" && (!d.resolved || d.closed_how === "words") && d.answered_at) last = Math.max(last ?? 0, Date.parse(d.answered_at));
+	}
+	return last;
 }
 
 const SLOT_SLACK_MS = 3600_000;

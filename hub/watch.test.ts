@@ -1,13 +1,14 @@
 // dotz_watch robustness from the earlier secretary's launchd watchers: process-group SIGKILL deadline, per-kind retry, owner-approval gate.
-import { afterEach, beforeAll, expect, test } from "bun:test";
+import { afterEach, beforeAll, expect, setSystemTime, test } from "bun:test";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DATA_DIR, paths } from "./config.ts";
 import { emit } from "./events.ts";
-import { listNotices, resetNoticesForTest, sweepQuestions } from "./notices.ts";
+import { answerDecision, ignoreNotice, laterNotice, listNotices, resetNoticesForTest, resolveNotices, sweepQuestions } from "./notices.ts";
 import { settleDecision } from "./notices-store.ts";
+import type { Notice } from "./notices-types.ts";
 import { SLOT_SKIPPED_EXIT } from "./release-exit.ts";
 import { advance, clock } from "./runtime/test-clock.ts";
 import type { ReloginOpts, ReloginResult } from "./autologin.ts";
@@ -391,7 +392,7 @@ test("the skipped slot at the end of a 12- or 24-hour gap is told whether its ti
 });
 
 const HOUR = 3600_000;
-async function tellHoursWithEverySlotSkipped(days: number, answerAt?: number): Promise<number[]> {
+async function tellHoursWithEverySlotSkipped(days: number, answerAt?: number, act: (card: Notice) => unknown = card => settleDecision(card, "1) 원인 확인", new Date(clock.now).toISOString())): Promise<number[]> {
 	resetNoticesForTest();
 	const code = join(DATA_DIR, "watch-slot.txt"), start = clock.now, told: number[] = [];
 	addWatch({ name: "t-slot", command: `exit $(cat '${code}')`, every_minutes: 1, on: "fail", to: "alert" }, "");
@@ -418,7 +419,9 @@ async function tellHoursWithEverySlotSkipped(days: number, answerAt?: number): P
 				until(start + answerAt! * HOUR);
 				const card = listNotices(300).items.find(n => n.decision?.card_id === "watches:t-slot")!;
 				expect(card.decision!.state).toBe("open");
-				settleDecision(card, "1) 원인 확인", new Date(clock.now).toISOString());
+				setSystemTime(new Date(clock.now));
+				await act(card);
+				setSystemTime();
 				answered = true;
 			}
 			await tick(at, SLOT_SKIPPED_EXIT);
@@ -433,6 +436,37 @@ test("with every slot skipped for 9 days and no answer, the card expiring after 
 
 test("the owner's own answer on day 2 starts the count over: the next skipped slot is told at once, then after 12 hours, 24 hours and 3 days", async () => {
 	expect(await tellHoursWithEverySlotSkipped(9, 28)).toEqual([0, 12, 30, 48, 72, 144]);
+});
+
+test("the owner's words start the count over whether typed in the alert conversation or closed by the bot's judgement; x, 나중에 and a gateway close do not", async () => {
+	const at = () => new Date(clock.now).toISOString();
+	const acts: [string, (card: Notice) => unknown, number[]][] = [
+		["web button", card => answerDecision(card.id, { n: 1 }, async () => {}), [0, 12, 30, 48, 72]],
+		["typed number", () => emit("inbox", { ts: at(), kind: "message", source: "discord", target: "alert", author: "owner", text: "1" }), [0, 12, 30, 48, 72]],
+		["words typed in alert", () => emit("inbox", { ts: at(), kind: "message", source: "discord", target: "alert", author: "owner", text: "원인 확인, 부탁해요" }), [0, 12, 30, 48, 72]],
+		["words judged by the bot", card => resolveNotices({ ids: [card.id] }, undefined, undefined, { ts: at(), text: "알고 있어요, 그냥 둬요" }), [0, 12, 30, 48, 72]],
+		["x", card => ignoreNotice(card.id), [0, 12, 36, 108]],
+		["나중에", card => laterNotice(card.id, { for: "hour" }), [0, 12, 36, 108]],
+		["done by the gateway", card => settleDecision(card, "", at(), true), [0, 12, 36, 108]],
+		["gone", card => settleDecision(card, "", at(), true, { how: "gone" }), [0, 12, 36, 108]],
+	];
+	const seen: [string, number[]][] = [];
+	for (const [name, act] of acts) {
+		for (const w of allWatches()) removeWatch(w.id);
+		notes.length = 0;
+		seen.push([name, await tellHoursWithEverySlotSkipped(5, 28, act)]);
+	}
+	expect(seen).toEqual(acts.map(([name, , told]) => [name, told]));
+}, 60_000);
+
+test("approving a monitor starts the skipped-slot count over: the next skipped slot is told at once", async () => {
+	const slot = slotWatch();
+	await slot(5);
+	expect(notes).toHaveLength(1);
+	state("t-slot").paused = "fail";
+	approveWatch("t-slot");
+	await slot(6 * 60);
+	expect(notes).toHaveLength(2);
 });
 
 // The shape of a one-shot gate: the check fails until its condition holds, then prints one constant line. There is no second, different output

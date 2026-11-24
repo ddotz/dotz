@@ -6,7 +6,7 @@
 // - Options are numbered 1, 2, 3 ... in a row. A number that restarts at 1 after that means several decision blocks
 //   ("1 and 2"): there is no single answer to click, so no options are returned. Fewer than 2 options: none.
 // - The recommendation mark older messages carry on an option line is dropped (stripRecommendMark): nothing shows or keys on it.
-import { fitSubject, TITLE_CHARS } from "./card-text.ts";
+import { shorten, TITLE_CHARS } from "./card-text.ts";
 
 // The choice block a gateway job appends to an issue report on alert: "결정: <question>", then 2-4 options,
 // each a `**n) name**` line and a one-line consequence. The web's decision buttons and the decision notices read exactly this shape.
@@ -70,12 +70,20 @@ export const cleanQuestion = (v: unknown): string => {
 	return [...q].length > MAX_ASK_CHARS ? `${[...q].slice(0, MAX_ASK_CHARS - 1).join("")}…` : q;
 };
 
-/** The choice block a reply draft's question posts unchanged (a cardBlock): `<subject> · <question>`, the subject (whose reply it is) cut so the title
- *  stays within TITLE_CHARS and left out when the question alone fills it; each choice says what is sent, and the last, "직접 쓸게 …", carries the owner's own text. */
+/** The choice block a reply draft's question posts unchanged (a cardBlock): `<subject> · <question>` within TITLE_CHARS, the subject saying whose reply
+ *  it is (`<name> 답장`). When both do not fit, the name is cut at a word and its last word (답장) kept, and when that is not enough the question is cut at
+ *  a word too, leaving at least 2 characters of the name; a question with no word to cut at is the title alone, cut to TITLE_CHARS, with the subject as the
+ *  first evidence line. A question cut in the title is shown whole as an evidence line. Each choice says what is sent, and the last, "직접 쓸게 …",
+ *  carries the owner's own text. */
 export function replyChoiceBlock(question: string, choices: string[], subject = ""): string {
-	const fits = TITLE_CHARS - [...question].length - 3 > 1;
+	const width = (s: string) => [...s].length;
+	const cut = subject.lastIndexOf(" "), name = cut > 0 ? subject.slice(0, cut) : subject, kind = cut > 0 ? subject.slice(cut) : "";
+	const room = TITLE_CHARS - 3 - width(kind) - Math.min(width(name), 3);
+	const asked = width(question) <= room ? question : [...question].slice(1, room).includes(" ") ? shorten(question, room) : undefined;
+	const title = subject && asked !== undefined ? { subject: `${shorten(name, TITLE_CHARS - 3 - width(kind) - width(asked))}${kind}`, question: asked } : { subject: "", question: shorten(question, TITLE_CHARS) };
+	const evidence = [subject && asked === undefined ? subject : "", title.question === question ? "" : question];
 	const options = choices.map(c => ({ name: unnumbered(c), result: `'${unnumbered(c)}' 쪽으로 답장을 써서, 보내기 전에 보여드려요.` }));
-	return cardBlock({ subject: subject && fits ? fitSubject(subject, question) : "", question, options: [...options, { name: `${OWN_CHOICE} …`, result: "적은 글을 그대로 답장으로 써서, 보내기 전에 보여드려요." }] });
+	return cardBlock({ ...title, evidence, options: [...options, { name: `${OWN_CHOICE} …`, result: "적은 글을 그대로 답장으로 써서, 보내기 전에 보여드려요." }] });
 }
 
 export type ChoiceOption = { n: number; label: string; detail?: true };
