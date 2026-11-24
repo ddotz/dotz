@@ -30,6 +30,9 @@ export type Reply = { text: string; inputTokens: number; outputTokens: number; m
 export type Runtime = "omp" | "omo";
 type OmpLimit = { id?: string; status?: string; amount?: { used?: number; limit?: number }; window?: { resetsAt?: number } };
 
+/** Whether this process runs inside an ssh session (the only place the login keychain is probed, so a gateway started by launchd is never held back by the probe). */
+export const overSsh = (env: Record<string, string | undefined> = process.env): boolean => Boolean(env.SSH_CONNECTION || env.SSH_TTY || env.SSH_CLIENT);
+
 // Tests swap `spawn` for a fake `omo`; nothing else starts a process.
 export const runnerDeps = {
 	spawn: (argv: string[], o: { cwd: string; env: Record<string, string | undefined> }) => spawnAgent(argv, { cwd: o.cwd, env: o.env, stderr: "ignore" }),
@@ -41,7 +44,7 @@ export const runnerDeps = {
 	which: (bin: string): string | null => Bun.which(bin),
 	usage: usageLast,
 	loginReadable: (): boolean => {
-		if (process.platform !== "darwin") return true;
+		if (process.platform !== "darwin" || !overSsh()) return true;
 		const r = spawnSync("/usr/bin/security", ["show-keychain-info", join(homedir(), "Library", "Keychains", "login.keychain-db")], { stdio: "ignore", timeout: 3000 });
 		if (r.error || r.signal) return true;
 		return r.status === 0;

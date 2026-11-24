@@ -6,7 +6,7 @@ import { appendFileSync, mkdtempSync, readFileSync, writeFileSync } from "node:f
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { modelDeps, callModel } from "./outlang.ts";
-import { callWarm, ensureProvider, invalidateHealth, resetClock, runnerDeps, subscriptionHealth, PIN_ENV } from "./model-runner.ts";
+import { callWarm, ensureProvider, invalidateHealth, overSsh, resetClock, runnerDeps, subscriptionHealth, PIN_ENV } from "./model-runner.ts";
 import { advance, clock, flush } from "./runtime/test-clock.ts";
 import { fileLogged, liveProcesses } from "./runtime/test-file-log.ts";
 
@@ -296,6 +296,13 @@ test("a claude-cli account whose login store is readable passes", async () => {
 		expect(() => ensureProvider(SUB)).not.toThrow();
 		expect((await callModel("sys", "u", { model: SONNET })).text).toBe("warm 답 1");
 	});
+});
+
+test("only a process inside an ssh session probes the login store", () => {
+	expect(overSsh({})).toBe(false);
+	expect(overSsh({ SSH_CONNECTION: "10.0.0.2 51234 10.0.0.3 22" })).toBe(true);
+	expect(overSsh({ SSH_TTY: "/dev/ttys003" })).toBe(true);
+	expect(overSsh({ SSH_CLIENT: "10.0.0.2 51234 22" })).toBe(true);
 });
 
 test("an account that keeps its token in auth.json and a non-subscription model are never probed", async () => {
