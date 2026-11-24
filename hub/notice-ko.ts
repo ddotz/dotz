@@ -34,9 +34,12 @@ const SHELL_LANGS = new Set(["bash", "sh", "zsh", "shell", "console", "terminal"
 
 const w = (s: string): string => `\u0001${s}\u0002`;
 const PAIRS: string[][] = [["이", "가"], ["은", "는"], ["을", "를"], ["과", "와"], ["으로", "로"], ["이에요", "예요"]];
+const PARTICLE = "이에요|예요|으로|로|이|가|은|는|을|를|과|와";
+const NOT_HANGUL_NEXT = "(?![가-힣])";
+const PARTICLE_AFTER_WORD = new RegExp(`\\u0001([^\\u0001\\u0002]*)\\u0002([ \\t]?)(${PARTICLE})${NOT_HANGUL_NEXT}`, "g");
 // A word we put in place of a name takes the particle its last syllable asks for (모니터링 + 로 -> 모니터링으로).
 function josa(t: string): string {
-	const fixed = t.replace(/\u0001([^\u0001\u0002]*)\u0002([ \t]?)(이에요|예요|으로|로|이|가|은|는|을|를|과|와)(?![가-힣])/g, (m, word: string, gap: string, p: string) => {
+	const fixed = t.replace(PARTICLE_AFTER_WORD, (m, word: string, gap: string, p: string) => {
 		if (gap && p === "이") return m;
 		const code = (word.at(-1) ?? "").charCodeAt(0) - 0xac00;
 		if (code < 0 || code > 11171) return m;
@@ -99,7 +102,7 @@ const isPath = (p: string): boolean => {
 };
 const LONG_ID = /\b(?:id|uuid|hash)\s*[:=]\s*(?=[\w-]*\d)[\w-]{6,}|#\d{6,}\b|\b(?:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|[0-9a-f]{16,}|\d{16,}|(?=[0-9a-f]*\d)(?=[0-9a-f]*[a-f])[0-9a-f]{7,12})\b/gi;
 const SHORT_ID = /^[0-9a-f]{7,12}$/i;
-const PARTICLE_NEXT = /^[ \t]?(?:으로|로|이|가|을|를|은|는|에서|에|와|과|의)(?![가-힣])/;
+const ID_IS_PART_OF_A_WORD = new RegExp(`^(?:\\p{Script=Hangul}|[ \\t](?:${PARTICLE})${NOT_HANGUL_NEXT})`, "u");
 const ISO = /\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2})/g;
 const STATUS = /[ \t]*\[(?:run|done|ask|fail|warn|blocked|partial|later|ok|error|err|완료|진행|결정|실패|경고|차단|부분|나중|오류)\](?!\()/gi;
 const SLASH_RE = new RegExp(`(?<![\\w/:.])\\/(${Object.keys(SLASH).join("|")})(?![\\w/가-힣-])`, "g");
@@ -161,7 +164,7 @@ function prose(s: string, o: PlainOpts): string {
 	t = t.replace(/\bmcp__\w+?__(\w+)/g, (_m, n: string) => w(words(n)));
 	t = t.replace(TARGET, (_m, k: string, r: string) => w(target(k, r, o)));
 	t = t.replace(/\b[a-z][a-z0-9]*(?:_[a-z0-9]+)+\b(?!\.[A-Za-z0-9])/g, m => (named(m) ? w(words(m)) : m));
-	t = t.replace(LONG_ID, (m: string, at: number, s: string) => (SHORT_ID.test(m) && PARTICLE_NEXT.test(s.slice(at + m.length)) ? m : ""));
+	t = t.replace(LONG_ID, (m: string, at: number, s: string) => (SHORT_ID.test(m) && ID_IS_PART_OF_A_WORD.test(s.slice(at + m.length)) ? m : ""));
 	t = t.split(/(`[^`\n]*`)/).map((s, i) => (i % 2 ? s : s.replace(STATUS, ""))).join("");
 	t = t.replace(/^\[([^\]\n]{2,30})\][ \t]+(?=\S)/gm, (m, label: string) => (/^[\d\sx]+$/i.test(label) ? m : `${label}: `));
 	// An id can be all a code span held, or all a "근거:" piece: neither its marks nor its separator stay behind.

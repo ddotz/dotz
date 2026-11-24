@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import fc from "fast-check";
 import { buildNoticeKoWeb } from "./gen-notice-ko-web.ts";
 import { cronKo, dropIdNote, errorKo, noticeKo, plainTable } from "./notice-ko.ts";
 import * as hubNotice from "./notice.ts";
@@ -79,6 +80,32 @@ test("the update-failure alert keeps the version it tried and the one it went ba
 	const out = noticeKo("업데이트 4c1e2d9 가 시작되지 않아 e40f212으로 되돌렸어요.");
 	expect(out).toMatch(/^업데이트 4c1e2d9 ?가 시작되지 않아 e40f212(?:으로|로) 되돌렸어요\.$/);
 	expect(noticeKo("업데이트 4c1e2d9 가 시작되지 않았는데 e40f212으로 되돌리지 못했어요: 폴더를 되돌리지 못했어요")).toContain("e40f212");
+});
+
+test("a short id with Korean attached to it is part of a word and stays; one that stands alone goes", () => {
+	expect(noticeKo("마지막 커밋 c64bb4b에서 전체 테스트는 통과했어요")).toContain("c64bb4b에서");
+	expect(noticeKo("원인은 a9e15d3의 설정이에요")).toContain("a9e15d3의");
+	expect(noticeKo("작업 00aaa00각 끝났어요")).toContain("00aaa00각");
+	expect(noticeKo("커밋 e1b86a5 이전 상태로 되돌렸어요")).not.toContain("e1b86a5");
+});
+
+const shortId = fc.stringMatching(/^[0-9a-f]{7,12}$/).filter(s => /\d/.test(s) && /[a-f]/.test(s));
+const proseAround = fc.stringMatching(/^[가-힣 .,!?'"()0-9]{0,20}$/);
+
+test("property: whatever Korean is attached to a short id, the id stays with it", () => {
+	fc.assert(
+		fc.property(proseAround, shortId, fc.stringMatching(/^[가-힣]{1,3}$/), (around, id, tail) => {
+			expect(noticeKo(`${around}\n작업 ${id}${tail} 끝났어요`)).toContain(`${id}${tail}`);
+		}),
+	);
+});
+
+test("property: a short id that stands alone before a plain word is removed", () => {
+	fc.assert(
+		fc.property(proseAround, shortId, (around, id) => {
+			expect(noticeKo(`${around}\n작업 ${id} done`)).not.toContain(id);
+		}),
+	);
 });
 
 test("a table reads as words in a one-line preview", () => {
