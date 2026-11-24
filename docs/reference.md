@@ -418,9 +418,13 @@ and at which level, and the baselines the checks compare with).
   (yesterday's cost and the class names); under a shared headline the class lines come first: short ones (at most 40 characters) are packed `; `-joined into one line as far as 120 characters
   allow, ending in how many classes' numbers are left out (`외 N가지는 숫자를 싣지 못했어요` / `numbers for N more left out`), so the lines all classes share (largest sessions, yesterday's tokens
   and how the usual day was taken) keep their places however many classes there are; long ones take a line each, and when they overflow the last line counts the classes left out in the same
-  words. A step several lines share is said once after them. A re-told problem says since when it lasts: at the end of its headline when that fits, else the headline stays the finding's own
-  sentence and `<date>부터 계속돼요.` (`Ongoing since <date>.`) is the first sub-line (after the cut part, if any), so no count, unit, first-fail time or verb is cut away; when that pushes the
-  evidence past 3 lines, the last line counts the rest again (`left` of the finding: how many lines a stored `외 N번` line already stood for). The Discord text is the same text, sub-lines
+  words. Failure classes then end with one line of the window their shown numbers were measured over, each distinct window said once (`기준: 최근 7일 전체 1.00B 토큰, 7000턴` /
+  `Out of 1.00B tokens and 7000 turns in the last 7 days` when classes counted by tokens and by turns are shown together); it keeps its place ahead of a third class line, and a tool
+  line (`자주 나온 도구`) shows only when every class has the same one and a line is free. A class cut from the headline whose numbers are not stored (a night written before evidence became lines) is counted among those left out.
+  A step several lines share is said once after them. A re-told problem says since when it lasts (classes told together: the earliest of the classes in the line): at the end of its
+  headline when that fits, else the headline stays as it is and `<date>부터 계속돼요.` (`Ongoing since <date>.`) is a line of its own, outside the 3 evidence lines, first under the
+  headline (after the cut part, if any) so it reads as the headline's next sentence and the last line stays the one that counts what is left out; no count, unit, first-fail time or
+  verb is cut away and no evidence line is pushed out by it. A told line is thus a headline, at most 3 evidence sub-lines and at most one since line. The Discord text is the same text, sub-lines
   included. A problem whose cause can be looked into (`ask`) is such a line too,
   never a card: its headline ends with the look-up mark ` · 원인 찾기` (` · find the cause`, `DOCTOR_LOOK_KO`/`_EN`), and one hint line after the told lines says that replying with that line has its cause
   looked into (the reply goes to the model like any message in the alert conversation). On the web the mark is a `원인 찾기` button at the end of the headline's row (a 44 px tap area on a phone;
