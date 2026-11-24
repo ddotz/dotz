@@ -10,9 +10,9 @@ import { literalBan, parseBan } from "../../../hub/ban.ts";
 import { addressesOf, type ReplyItem } from "../../../hub/reply-draft.ts";
 import { PATTERN_NOTE } from "../../../hub/reply-reasons.ts";
 import { ensureKakaoRoom, defaultKakaoReader, KAKAO_APP } from "../lib/kakao-tone.ts";
-import { askText, attachFolder, buildDraft, candidatesFor, chosenFrom, dropDraft, kindOf, learnLine, learnPattern, type LineLearned, mailAsksFile, realFlowDeps, refineAfterCorrection, reviseDraft, sendDraft, settleDraft, stageForReply, type FlowDeps, type Outcome } from "../lib/flow.ts";
+import { askText, attachFolder, buildDraft, candidatesFor, chosenFrom, dropDraft, kindOf, learnLine, type LineLearned, mailAsksFile, type PatternProposal, proposeLinePattern, realFlowDeps, refineAfterCorrection, reviseDraft, sendDraft, settleDraft, stageForReply, type FlowDeps, type Outcome } from "../lib/flow.ts";
 import { compactCorrections } from "../lib/compact.ts";
-import { journalEntries, profileKey, profileOf, restoreEntry } from "../lib/curate.ts";
+import { journalEntries, type LearnKind, profileKey, profileOf, restoreEntry } from "../lib/curate.ts";
 import { dataDir, handSections, HEADINGS, INSTALL, loadSettings, profileBullets, recordForbidden, removeCorrection, removeForbidden, removeRule, toneFile, validApp, type ToneKey } from "../lib/settings.ts";
 import { addDraft, type DraftRec, getDraft, listDrafts, patchDraft } from "../lib/store.ts";
 import { listLibrary } from "../lib/library.ts";
@@ -194,17 +194,25 @@ export async function runDraft(args: string[], stdin: string, deps: DraftDeps = 
 			const where = levelName(key);
 			const lines: string[] = [];
 			const learn: DraftDeps = { ...deps, learnCall: rules.length || change || tidy ? learnCallOf(deps, app) : undefined };
+			const offers: PatternProposal[] = [];
+			const learnWithPattern = async (profile: ToneKey | "install", text: string, kind: LearnKind): Promise<LineLearned> => {
+				const [line, offer] = await Promise.allSettled([learnLine(profile, text, kind, learn), proposeLinePattern(profile, text, [text], learn)]);
+				if (offer.status === "rejected") console.error(`draft correct: wording pattern of ${app} not learned: ${(offer.reason as Error).message}`);
+				if (line.status === "rejected") throw line.reason;
+				if (line.value.stored && offer.status === "fulfilled" && offer.value) offers.push(offer.value);
+				return line.value;
+			};
 			const ruleResults: [string, LineLearned][] = [];
-			for (const r of rules) ruleResults.push([r, await learnLine(target, r, "rule", learn)]);
-			const changed = change ? await learnLine(key, change, "correction", learn) : undefined;
+			for (const r of rules) ruleResults.push([r, await learnWithPattern(target, r, "rule")]);
+			const changed = change ? await learnWithPattern(key, change, "correction") : undefined;
 			const added = ruleResults.filter(([, l]) => l.same === undefined).map(([r]) => `"${r}"`);
 			if (added.length) lines.push(`${where} 말투에 늘 지킬 규칙으로 기록했어요: ${added.join(", ")}`);
 			for (const [, l] of ruleResults) lines.push(...learnedNote(l, target));
 			if (changed) lines.push(`고친 점을 ${where} 말투에 기록했어요: ${change}`, ...learnedNote(changed, key));
-			for (const [profile, text] of [...rules.map(r => [target, r] as const), ...(change ? [[key, change] as const] : [])]) {
+			for (const offer of offers) {
 				try {
-					const learned = await learnPattern(profile, text, [text], learn);
-					if (learned) lines.push(`${PATTERN_NOTE}${learned.label}`);
+					offer.keep();
+					lines.push(`${PATTERN_NOTE}${offer.label}`);
 				} catch (e) {
 					console.error(`draft correct: wording pattern of ${app} not learned: ${(e as Error).message}`);
 				}

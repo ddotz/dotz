@@ -5,9 +5,11 @@ import fc from "fast-check";
 import { advance } from "../../../hub/runtime/test-clock.ts";
 import { runDraft } from "../bin/draft.ts";
 import { curate, journalEntries, restoreEntry } from "../lib/curate.ts";
-import { learnLine } from "../lib/flow.ts";
+import { learnLine, reviseDraft } from "../lib/flow.ts";
+import { offerMailDraft } from "../lib/offer.ts";
 import { HEADINGS, paths, profileBullets, toneFile } from "../lib/settings.ts";
-import { setupEnv } from "./helpers.ts";
+import { listDrafts } from "../lib/store.ts";
+import { enable, fakeModel, goodReply, j, mailFixture, setupEnv } from "./helpers.ts";
 
 const env = setupEnv();
 afterAll(env.cleanup);
@@ -201,4 +203,62 @@ test("property: whatever the model answers, curate keeps only existing ids, each
 		}),
 	);
 	log.mockRestore();
+});
+
+const HARU = { parts: [{ any: ["하루"] }, { gap: 3 }, { any: ["되세요"] }], label: "'하루 보내세요'로 쓴다", bad: ["행복한 하루 되세요"], good: [] };
+const byAsk = (curated: string, asked: string[] = []) => ({
+	asked,
+	learnCall: () => async (system: string) => {
+		const what = system.includes("style conditions") ? "curate" : "pattern";
+		asked.push(what);
+		return what === "curate" ? curated : j(HARU);
+	},
+});
+
+test("correct --rule that curation calls the same as a standing rule stores no line and no wording pattern though one was proposed beside it; a new rule keeps its pattern", async () => {
+	profile("install.md", "## 말투\n\n- 끝인사는 짧게 한다\n");
+	const same = byAsk(answer(["R1", "same"]));
+	const r = await correct({ learnCall: same.learnCall }, "--app", "install", "--rule", "끝인사에 '행복한 하루 되세요'는 쓰지 않고 짧게 끝낸다");
+	expect(r.lines).toEqual(['이미 있는 조건이라 더하지 않았어요: "끝인사는 짧게 한다"']);
+	expect(same.asked.toSorted()).toEqual(["curate", "pattern"]);
+	expect(profileBullets("install", HEADINGS.rules)).toEqual(["끝인사는 짧게 한다"]);
+	expect(profileBullets("install", HEADINGS.forbidden)).toEqual([]);
+	const added = await correct({ learnCall: byAsk(answer()).learnCall }, "--app", "install", "--rule", "덕담에 '행복한 하루 되세요'는 쓰지 않는다");
+	expect(added.lines).toContain("표현 규칙으로도 정해 뒀어요: '하루 보내세요'로 쓴다");
+	expect(profileBullets("install", HEADINGS.forbidden)).toHaveLength(1);
+});
+
+const LESSON = "끝인사는 짧게 한다";
+async function revisedWith(lesson: object, learnCall: () => (system: string) => Promise<string>) {
+	rmSync(paths.drafts(), { force: true, recursive: true });
+	enable(env);
+	await offerMailDraft({ ...mailFixture }, { send: () => undefined, call: fakeModel([j(goodReply)]).call });
+	const rec = listDrafts()[0]!;
+	const model = fakeModel([j({ ...goodReply, body: "곧 알려 드릴게요.", forbid: [], ...lesson })]);
+	return reviseDraft(rec.id, "끝인사에 '행복한 하루 되세요'는 쓰지 말고 짧게 끝내 줘", { call: model.call, learnCall });
+}
+
+test("draft.ts revise: a lesson the install profile already has adds no line and keeps no wording pattern, and says it was already there; on an empty profile both are kept", async () => {
+	profile("install.md", `## 말투\n\n- ${LESSON}\n`);
+	const same = byAsk(answer(["R1", "same"]));
+	const step = await revisedWith({ lesson: LESSON, everywhere: true }, same.learnCall);
+	expect(step.ok).toBe(true);
+	expect(same.asked).toEqual(["pattern"]);
+	expect(step.text).toContain(`이미 있는 조건이에요: ${LESSON}`);
+	expect(step.text).not.toContain("표현 규칙으로도");
+	expect(profileBullets("install", HEADINGS.rules)).toEqual([LESSON]);
+	expect(profileBullets("install", HEADINGS.forbidden)).toEqual([]);
+	rmSync(paths.toneDir(), { force: true, recursive: true });
+	const fresh = await revisedWith({ lesson: LESSON, everywhere: true }, byAsk(answer()).learnCall);
+	expect(fresh.text).toContain(`앞으로 모든 답장에 반영해요: ${LESSON}`);
+	expect(fresh.text).toContain("표현 규칙으로도 정해 뒀어요: '하루 보내세요'로 쓴다");
+	expect(profileBullets("install", HEADINGS.forbidden)).toHaveLength(1);
+});
+
+test("draft.ts revise: a correction the curation answer overrides goes to the journal, the profile keeps the new line and the note says one condition was replaced", async () => {
+	profile("mail.md", "## 고친 점\n\n- 2030-03-01: 끝인사는 길게 쓴다\n");
+	const step = await revisedWith({ lesson: LESSON, everywhere: false }, byAsk(answer(["C1", "overridden"])).learnCall);
+	expect(step.text).toContain(`앞으로 이 앱 답장에 반영해요: ${LESSON} · 기존 조건 1개를 이 조건으로 바꿨어요`);
+	expect(profileBullets({ app: "mail" }, HEADINGS.corrections)).toEqual([expect.stringMatching(new RegExp(`^\\d{4}-\\d{2}-\\d{2}: ${LESSON}$`))]);
+	expect(journalEntries().map(e => [e.line, e.why])).toEqual([["2030-03-01: 끝인사는 길게 쓴다", "overridden"]]);
 });

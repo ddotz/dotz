@@ -64,7 +64,7 @@ const onRevise = (chatId: string, learned: Learned) => {
 			log(`kakao ban for ${chatId} not recorded: ${e instanceof Error ? e.message : String(e)}`);
 		}
 	}
-	if (learned.line) void learning.record(key, learned.line).then(kind => (kind === "correction" ? learning.refine(key) : undefined)).catch(e => log(`kakao lesson for ${chatId} not recorded: ${e instanceof Error ? e.message : String(e)}`));
+	if (learned.line) void learning.record(key, learned.line).then(r => (r.kind === "correction" && r.stored ? learning.refine(key) : undefined)).catch(e => log(`kakao lesson for ${chatId} not recorded: ${e instanceof Error ? e.message : String(e)}`));
 };
 
 const machine = resolveName(cfg.web?.machine_name, hostname());

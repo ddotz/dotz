@@ -45,7 +45,7 @@ export function curatePrompt(existing: { rules: string[]; corrections: string[] 
 	].join("\n");
 }
 
-/** A curation ask over a `(system, user)` model call (the call `learnPattern` uses). */
+/** A curation ask over a `(system, user)` model call (the call `proposeLinePattern` uses). */
 export const curateAsk = (call: (system: string, user: string) => Promise<string>) => (prompt: string): Promise<string> => call(SYSTEM, prompt);
 
 function replacesOf(text: string): unknown[] | undefined {

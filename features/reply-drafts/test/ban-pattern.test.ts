@@ -5,7 +5,7 @@ import type { Msg } from "../../../hub/kakao/types.ts";
 import { replyLearning } from "../../../hub/reply-mail.ts";
 import { runDraft } from "../bin/draft.ts";
 import { advance, flush } from "../../../hub/runtime/test-clock.ts";
-import { learnPattern, ownerWarning } from "../lib/flow.ts";
+import { ownerWarning, proposeLinePattern } from "../lib/flow.ts";
 import { HEADINGS, loadStyle, paths, profileBullets, recordForbidden, recordRule, savePairs } from "../lib/settings.ts";
 import { j, setupEnv } from "./helpers.ts";
 
@@ -136,7 +136,7 @@ test("a lesson that holds everywhere is checked against every reply, the same as
 	mailPairs();
 	const log = quiet();
 	const deps = { learnCall: runner(PROPOSAL).learnCall, kakaoReader, kakaoRooms: kakaoRooms(["r1", "r2"]) };
-	expect(await learnPattern({ app: "install" }, RULE, [RULE], deps)).toBeUndefined();
+	expect(await proposeLinePattern({ app: "install" }, RULE, [RULE], deps)).toBeUndefined();
 	expect(profileBullets("install", HEADINGS.forbidden)).toEqual([]);
 	expect(log.mock.calls.map(c => String(c[0]))).toEqual([expect.stringContaining("hits 21 of the owner's 60 past replies")]);
 	log.mockRestore();
@@ -156,13 +156,15 @@ test("a missing pairs file, reader or room list is an empty corpus, never a thro
 });
 
 const lessonShape = { parts: [{ any: ["하루"] }, { gap: 3 }, { any: ["되세요"] }], label: "'하루 보내세요'로 쓴다", bad: ["행복한 하루 되세요"], good: [] };
-test("the card path: a quoted change asks once with the previous draft and the change, stores the pattern in the lesson's profile and returns its label", async () => {
+test("the card path: a quoted change asks once with the previous draft and the change, and its proposal writes the pattern into the lesson's profile only when kept", async () => {
 	const fake = runner(lessonShape);
 	const learning = replyLearning(() => ({ learnCall: fake.learnCall }));
-	const learned = await learning.pattern({ app: "mail" }, "끝인사는 '보내세요'로", { draft: "오늘도 행복한 하루 되세요!", change: "'되세요' 말고 '보내세요'로" }, []);
-	expect(learned).toEqual({ label: "'하루 보내세요'로 쓴다", inGood: [] });
+	const proposed = await learning.pattern({ app: "mail" }, "끝인사는 '보내세요'로", { draft: "오늘도 행복한 하루 되세요!", change: "'되세요' 말고 '보내세요'로" }, []);
+	expect(proposed).toMatchObject({ label: "'하루 보내세요'로 쓴다", inGood: [] });
 	expect(fake.asked).toHaveLength(1);
 	expect(fake.asked[0]).toContain("오늘도 행복한 하루 되세요!");
+	expect(profileBullets({ app: "mail" }, HEADINGS.forbidden)).toEqual([]);
+	proposed?.keep();
 	expect(profileBullets({ app: "mail" }, HEADINGS.forbidden)).toEqual([`shape {"parts":[{"any":["하루"]},{"gap":3},{"any":["되세요"]}],"label":"'하루 보내세요'로 쓴다"}`]);
 	expect(await replyLearning(() => ({})).pattern({ app: "mail" }, "끝인사는 '보내세요'로", { draft: "", change: "'보내세요'로" }, [])).toBeUndefined();
 });
@@ -188,7 +190,7 @@ test("the card path: a banned word one of the kept good examples uses is reporte
 	const fake = runner({ ...lessonShape, good: ["좋은 하루 보내세요"] });
 	const evidence = { draft: "오늘도 행복한 하루 되세요!", change: "'되세요' 말고 '좋은 하루 보내세요'처럼 써 줘, 감사합니다도 빼" };
 	const learned = await replyLearning(() => ({ learnCall: fake.learnCall })).pattern({ app: "mail" }, "", evidence, ["되세요", "하루", "감사합니다"]);
-	expect(learned).toEqual({ label: "'하루 보내세요'로 쓴다", inGood: ["하루"] });
+	expect(learned).toMatchObject({ label: "'하루 보내세요'로 쓴다", inGood: ["하루"] });
 	expect(fake.asked[0]).toContain(evidence.change);
 });
 
@@ -208,7 +210,9 @@ test("the card path waits 12 s for a pattern at most: a later answer leaves no p
 	expect(profileBullets({ app: "mail" }, HEADINGS.forbidden)).toEqual([]);
 	expect(log.mock.calls.map(c => String(c[0]))).toEqual([expect.stringContaining("no answer within 12000 ms")]);
 	log.mockRestore();
-	expect(await learning.pattern({ app: "mail" }, "끝인사", evidence, [])).toEqual({ label: lessonShape.label, inGood: [] });
+	const onTime = await learning.pattern({ app: "mail" }, "끝인사", evidence, []);
+	expect(onTime).toMatchObject({ label: lessonShape.label, inGood: [] });
+	onTime?.keep();
 	expect(profileBullets({ app: "mail" }, HEADINGS.forbidden)).toHaveLength(1);
 });
 

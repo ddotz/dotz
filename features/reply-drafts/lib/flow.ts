@@ -17,7 +17,7 @@ import { basename } from "node:path";
 import { ruleFilePath } from "./rules.ts";
 import { canAttach, sendsThroughZele, sendWith, settleAccount, threadMoved, webmailSite, zeleAccountOf, type Sent, type SendOutcome } from "./senders.ts";
 import { carryStagedFiles, removeStagedFile, stagedFiles, stagedName, stageFiles, stageWanted, type StageOpts, type Want } from "./staged.ts";
-import { dataDir, HEADINGS, INSTALL, loadPairs, loadSettings, loadStyle, normText, ownReplies, paths, profileBullets, recordForbidden, recordLearned, recordPattern, replaceBullets, toneFile, validApp, type ToneKey } from "./settings.ts";
+import { dataDir, HEADINGS, INSTALL, loadPairs, loadSettings, loadStyle, normText, ownReplies, paths, profileBullets, recordForbidden, recordPattern, replaceBullets, toneFile, validApp, type ToneKey } from "./settings.ts";
 import { curate, curateAsk, journalAdd, type LearnKind, profileOf } from "./curate.ts";
 import { compactCorrections } from "./compact.ts";
 import { defaultKakaoReader, defaultKakaoRooms, KAKAO_APP, kakaoOwnTexts, type OwnerReader, type RoomsReader } from "./kakao-tone.ts";
@@ -33,7 +33,7 @@ import type { Lesson } from "../../../hub/reply-types.ts";
 
 export { realRunner };
 // What hub/reply-mail.ts (the hub's single door into this feature) needs beside the flow itself.
-export { mailView, recordForbidden, recordLearned, sendAccountOf, webmailSite, type MailOf };
+export { mailView, recordForbidden, sendAccountOf, webmailSite, type MailOf };
 
 // `analyze` = the model call of the identity sweep and its refinement (persona.ts); absent, no identity is analysed or refined.
 export type FlowDeps = { /** Chooses among tied library files by name (stageForReply); the default is one short model call. */ pick?: (names: string[]) => Promise<string[]>; call?: ModelCall; judge?: ModelCall; /** The model calls of one draft and its overall budget (draftTrace); buildDraft makes one when absent. */ trace?: DraftTrace; analyze?: ModelCall; run?: Runner; now?: () => Date; send?: (rec: DraftRec) => Promise<SendOutcome>; /** How library files are copied onto a draft (tests). */ stage?: StageOpts; /** Told where an approved send left the mail, right after the transport answered and before any bookkeeping write (bin/draft.ts prints its DOTZ_SEND line). */ onOutcome?: (o: Outcome) => void; learnCall?: (app: string) => ModelCall; kakaoReader?: (chatId: string) => Promise<OwnerReader>; kakaoRooms?: () => Promise<RoomsReader> };
@@ -49,9 +49,16 @@ export async function refineAfterCorrection(key: ToneKey, deps: FlowDeps): Promi
 	await compactCorrections(key, deps).catch(e => console.error(`reply draft: corrections of ${key.app} not compacted: ${(e as Error).message}`));
 }
 
-/** The one "record, then refine" (design 3.4): a lesson line enters the tone profile (recordLearned), and every few corrections fold into its identity; a standing rule refines nothing. */
-export async function recordLesson(key: ToneKey, line: string, deps: FlowDeps): Promise<void> {
-	if (recordLearned(key, line, nowOf(deps)) === "correction") await refineAfterCorrection(key, deps);
+/** A lesson line learned through `learnLine` (design 3.4): under the install key a standing rule of install.md, under any other key a dated correction of that profile. Refines nothing. */
+export function learnLesson(key: ToneKey, line: string, deps: FlowDeps): Promise<LineLearned> {
+	return key.app === INSTALL ? learnLine(INSTALL, line, "rule", deps) : learnLine(key, line, "correction", deps);
+}
+
+/** The one "record, then refine" (design 3.4): a lesson line is learned (`learnLesson`), and a stored correction folds into its identity; a standing rule refines nothing. */
+export async function recordLesson(key: ToneKey, line: string, deps: FlowDeps): Promise<LineLearned> {
+	const learned = await learnLesson(key, line, deps);
+	if (learned.stored && learned.kind === "correction") await refineAfterCorrection(key, deps);
+	return learned;
 }
 
 /** What `learnLine` did: whether the line went in, as what, the old lines it replaced, and the standing rule that already says it (`same`, nothing stored). */
@@ -81,6 +88,8 @@ export async function learnLine(key: ToneKey | "install", line: string, kind: Le
 
 /** What a stored wording pattern taught: its label, and the literal words of the same lesson that one of its verified good examples uses (the owner's own text shows them right in some use, so they are not stored as literal bans). */
 export type PatternLearned = { label: string; inGood: string[] };
+/** A wording pattern code accepted but did not write yet: `keep` writes it under `## 금지` of the profile it was proposed for. */
+export type PatternProposal = PatternLearned & { keep: () => void };
 
 const REVISE_PATTERN_MS = 12_000;
 
@@ -113,8 +122,8 @@ async function patternCorpus(key: ToneKey | "install", deps: FlowDeps): Promise<
 	return deps.kakaoReader ? roomLines([key.room], deps.kakaoReader) : [];
 }
 
-/** A wording pattern for a rule or lesson just stored in `key`: proposed by `deps.learnCall` with bad and good examples only from `quotable`, accepted by code (hub/ban.ts) against the owner's own replies in that profile's scope (an app's stored pairs, a KakaoTalk room's own lines, every room's for the KakaoTalk app, all of them for the install), written under `## 금지` of that profile. Its label and which of `opts.words` a kept good example uses; undefined when none was kept, no call is set, or no answer came within `opts.capMs` (logged; a late answer is dropped). */
-export async function learnPattern(key: ToneKey | "install", rule: string, quotable: string[], deps: FlowDeps, opts: { words?: string[]; capMs?: number } = {}): Promise<PatternLearned | undefined> {
+/** A wording pattern for a rule or lesson of `key`: proposed by `deps.learnCall` with bad and good examples only from `quotable`, accepted by code (hub/ban.ts) against the owner's own replies in that profile's scope (an app's stored pairs, a KakaoTalk room's own lines, every room's for the KakaoTalk app, all of them for the install). Nothing is written until the caller calls `keep`, so it can run beside the line it belongs to and be kept only when that line was stored. Undefined when none was accepted, no call is set, or no answer came within `opts.capMs` (logged; a late answer is dropped). */
+export async function proposeLinePattern(key: ToneKey | "install", rule: string, quotable: string[], deps: FlowDeps, opts: { words?: string[]; capMs?: number } = {}): Promise<PatternProposal | undefined> {
 	const app = key === INSTALL ? INSTALL : key.app;
 	const call = deps.learnCall?.(app);
 	if (!call || !rule.trim()) return undefined;
@@ -129,36 +138,43 @@ export async function learnPattern(key: ToneKey | "install", rule: string, quota
 		return undefined;
 	}
 	if (!got) return undefined;
-	recordPattern(key, got.ban);
-	return { label: got.ban.label, inGood: (opts.words ?? []).filter(w => got.good.some(g => banHit(g, { kind: "literal", text: w }))) };
+	const { ban, good } = got;
+	return {
+		label: ban.label,
+		inGood: (opts.words ?? []).filter(w => good.some(g => banHit(g, { kind: "literal", text: w }))),
+		keep: () => {
+			recordPattern(key, ban);
+		},
+	};
 }
 
-/** The wording pattern a revise may teach (the card and `draft.ts revise`): asked only when the revise banned literal `words` or the owner's change quotes a wording, with only the previous draft and the change as quotable texts (never the model-written line), and given 12 s. */
-export async function revisePattern(key: ToneKey | "install", line: string, evidence: NonNullable<Lesson["evidence"]>, words: string[], deps: FlowDeps): Promise<PatternLearned | undefined> {
+/** The wording pattern a revise may teach (the card and `draft.ts revise`): asked only when the revise banned literal `words` or the owner's change quotes a wording, with only the previous draft and the change as quotable texts (never the model-written line), and given 12 s; written only by its `keep`. */
+export async function revisePattern(key: ToneKey | "install", line: string, evidence: NonNullable<Lesson["evidence"]>, words: string[], deps: FlowDeps): Promise<PatternProposal | undefined> {
 	if (!words.length && !quotesWording(evidence.change)) return undefined;
-	return learnPattern(key, line.trim() || evidence.change, [evidence.draft, evidence.change], deps, { words, capMs: REVISE_PATTERN_MS });
+	return proposeLinePattern(key, line.trim() || evidence.change, [evidence.draft, evidence.change], deps, { words, capMs: REVISE_PATTERN_MS });
 }
 
-type Taught = { line: string; forbid: string[]; pattern?: string };
+type Taught = { line: string; forbid: string[]; pattern?: string; replaced?: number; same?: boolean };
 
 async function teach(key: ToneKey, lesson: Taught, evidence: NonNullable<Lesson["evidence"]>, deps: FlowDeps): Promise<Taught> {
 	const stored: Taught = { line: "", forbid: [] };
-	if (lesson.line.trim()) {
+	const hasLine = lesson.line.trim() !== "";
+	const [recorded, proposed] = await Promise.allSettled([hasLine ? learnLesson(key, lesson.line, deps) : Promise.resolve(undefined), revisePattern(key, lesson.line, evidence, lesson.forbid, deps)]);
+	if (recorded.status === "rejected") console.error(`reply draft: lesson of ${key.app} not recorded: ${(recorded.reason as Error).message}`);
+	if (proposed.status === "rejected") console.error(`reply draft: wording pattern of ${key.app} not recorded: ${(proposed.reason as Error).message}`);
+	const learned = recorded.status === "fulfilled" ? recorded.value : undefined;
+	if (learned?.stored) [stored.line, stored.replaced] = [lesson.line, learned.replaced.length];
+	else if (learned?.same !== undefined) [stored.line, stored.same] = [learned.same, true];
+	const offer = proposed.status === "fulfilled" ? proposed.value : undefined;
+	if (offer && (!hasLine || learned?.stored)) {
 		try {
-			await recordLesson(key, lesson.line, deps);
-			stored.line = lesson.line;
+			offer.keep();
+			stored.pattern = offer.label;
 		} catch (e) {
-			console.error(`reply draft: lesson of ${key.app} not recorded: ${(e as Error).message}`);
+			console.error(`reply draft: wording pattern of ${key.app} not recorded: ${(e as Error).message}`);
 		}
 	}
-	let inGood: string[] = [];
-	try {
-		const pattern = await revisePattern(key, lesson.line, evidence, lesson.forbid, deps);
-		if (pattern) [stored.pattern, inGood] = [pattern.label, pattern.inGood];
-	} catch (e) {
-		console.error(`reply draft: wording pattern of ${key.app} not recorded: ${(e as Error).message}`);
-	}
-	const forbid = lesson.forbid.filter(w => !inGood.includes(w));
+	const forbid = lesson.forbid.filter(w => !offer?.inGood.includes(w));
 	if (forbid.length) {
 		try {
 			recordForbidden(key, forbid);
@@ -167,6 +183,7 @@ async function teach(key: ToneKey, lesson: Taught, evidence: NonNullable<Lesson[
 			console.error(`reply draft: forbidden wordings of ${key.app} not recorded: ${(e as Error).message}`);
 		}
 	}
+	if (learned?.stored && learned.kind === "correction") await refineAfterCorrection(key, deps);
 	return stored;
 }
 

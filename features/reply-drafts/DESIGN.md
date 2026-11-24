@@ -120,7 +120,13 @@ A chat message that needs his own decision still asks first (exit 4), since the 
   stores the line as before (one `reply draft:` log line for a failed call). `tone --journal` lists the newest 20 entries, each with its
   own number counted from the oldest (so a number never moves when later entries are added; an entry after a line a crash cut short starts
   on a new line); `restoreEntry(n)` adds the line back at the end of its section unless an equal line is there and marks the entry
-  `restoredAt`; the replacing line stays. The card path does not curate yet.
+  `restoredAt`; the replacing line stays. A revise's lesson line (the card's `learning.record` in `hub/reply-mail.ts`, and `teach` behind
+  `draft.ts revise`) is learned the same way through `learnLesson`: a standing rule for the install key, a dated correction for any other.
+  Its wording pattern is proposed beside it (`proposeLinePattern` / `revisePattern`, run side by side with the line, so a revise waits for
+  the slower of the two) and written by its `keep` only when the line was stored (or the revise had no line); a line that was already
+  there (`same`), not stored or whose recording failed keeps no pattern, and `correct --rule/--change` follows the same rule. The card's
+  first line says `기존 조건 N개를 이 조건으로 바꿨어요` after the lesson when curation replaced lines, and `이미 있는 조건이에요: <line>`
+  instead of `앞으로 … 반영해요` when the line was already there. Only a stored correction refines.
   A long `## 고친 점` is compacted by `compactCorrections` (`lib/compact.ts`): after a correction is stored and the card redrawn
   (`refineAfterCorrection`, a failure only logged) when the profile holds more than 12 of them, and on `draft.ts correct --tidy` (at
   least 2). One call through `learnCall` (30 s at most) sees only that profile's `## 고친 점` lines as `C1..` with their dates, as data,
