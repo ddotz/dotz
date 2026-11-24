@@ -67,7 +67,10 @@ const NOTICES_FRESH_MS = 60000;
 const noticesFresh = () => NT.loaded && Date.now() - NT.at < NOTICES_FRESH_MS;
 // /api/state carries notices_unread: a count that disagrees with ours means a frame was missed, so refetch.
 function ntSync(s) {
-  if (!s || typeof s.notices_unread !== "number" || s.notices_unread === NT.unread) return;
+  if (!s) return;
+  const lanes = (s.lanes || []).map(l => `${l.name}\t${laneProject(l)}`).join("\n");
+  if (lanes !== NT.lanes) { NT.lanes = lanes; ntPaint(); ntSheetPaint(); }
+  if (typeof s.notices_unread !== "number" || s.notices_unread === NT.unread) return;
   NT.unread = s.notices_unread; ntPaint();
   if (ntLoads) ntWant = s.notices_unread; else loadNotices();
 }
@@ -714,7 +717,7 @@ function ntSheetPaint() {
   const foot = el("div", { class: "fs-ft" }), ed = open && NS.edit && NS.edit.id === String(n.id) ? NS.edit : null;
   // Every notice event repaints the open sheet; one that changes nothing it shows leaves it alone, so the reason field being typed in is not
   // replaced (a new field takes the focus and a phone closes and reopens its keyboard).
-  const sig = JSON.stringify([n.title, n.text, d, ntWhen(n), NS.busy, ed ? (ed.opt ? ed.opt.n : -1) : 0, sibs.map(x => [x.id, x.decision.state]), DCG.get(String(n.id)) || 0, ASK.later === String(n.id), ASK.busy === String(n.id), askLeft(n)]);
+  const sig = JSON.stringify([ntDecCtx(n), n.title, n.text, d, ntWhen(n), NS.busy, ed ? (ed.opt ? ed.opt.n : -1) : 0, sibs.map(x => [x.id, x.decision.state]), DCG.get(String(n.id)) || 0, ASK.later === String(n.id), ASK.busy === String(n.id), askLeft(n)]);
   if (NS.h.box.dataset.sig === sig) return;
   NS.h.box.dataset.sig = sig;
   const hadNote = !!NS.node.querySelector(".dc-note:focus");

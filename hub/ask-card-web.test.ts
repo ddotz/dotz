@@ -79,3 +79,22 @@ describe.each([[412], [1280]])("a lane question at %ipx", width => {
 		await q.waitFor(`!document.querySelector('#v-notices .list[data-g="need"]')`);
 	});
 });
+
+test("a lane question drawn before the sessions are known names its work once a later state brings them, though the unread count did not change", async () => {
+	notices = [cardItem()];
+	const v = await hub.view({ width: 412, height: 844 });
+	const q = on(v);
+	await v.navigate(`${hub.origin}/#notices`);
+	const place = `document.querySelector('#v-notices .list[data-g="need"] .nsc-r .nsc-s').textContent`;
+	await q.waitFor(`typeof NT !== "undefined" && NT.loaded && ${place}.includes("dotz 웹앱 · 외부 접속 웹앱 전환")`);
+	await q.run(`stateSet({ ...S, lanes: [] }); ntSync(S); ntPaint()`);
+	await q.waitFor(`!${place}.includes("dotz 웹앱")`);
+	await q.run(`refreshState()`);
+	await q.waitFor(`${place}.includes("dotz 웹앱 · 외부 접속 웹앱 전환")`);
+	await q.run(`document.querySelector('#v-notices .list[data-g="need"] .nsc-r .nsc-tx').click()`);
+	await q.waitFor(`document.querySelector(".fs-ey")`);
+	await q.run(`stateSet({ ...S, lanes: [] }); ntSync(S)`);
+	await q.waitFor(`!document.querySelector(".fs-ey").textContent.includes("dotz 웹앱")`);
+	await q.run(`refreshState()`);
+	await q.waitFor(`document.querySelector(".fs-ey").textContent === "dotz 웹앱 · 외부 접속 웹앱 전환 · 답변 필요"`);
+}, 30_000);

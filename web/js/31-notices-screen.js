@@ -160,7 +160,7 @@ function nscPaint(force, fresh = false) {
     if (el0.dataset.c !== String(c)) { el0.dataset.c = String(c); rollCount(el0, c ? String(c) : ""); }
   }
   nscBox.all.hidden = !(NT.loaded && readable);   // the unread count is the tabs' own
-  const sig = JSON.stringify([NSC.f, NT.loaded, NT.failed, NSC.lim, [...NSC.open], rows.map(n => [n.id, n.read ? 1 : 0, n.tone, n.updated || n.ts, n.waits || "", n.decision ? n.decision.state : "", (n.repeats || []).length])]);
+  const sig = JSON.stringify([NSC.f, NT.loaded, NT.failed, NT.lanes || "", NSC.lim, [...NSC.open], rows.map(n => [n.id, n.read ? 1 : 0, n.tone, n.updated || n.ts, n.waits || "", n.decision ? n.decision.state : "", (n.repeats || []).length])]);
   if (!force && sig === NSC.sig) return;
   NSC.sig = sig;
   const first = !nscBox.list.firstChild, arrived = NT.loaded ? freshKeys(NSC.seen, rows.map(n => n.id)) : new Set();
