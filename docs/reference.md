@@ -381,7 +381,10 @@ files once a night and says something in the morning only when there is somethin
 night run, the morning pass then runs the checks itself); the notice goes out at `doctor_at`: `"auto"` (default; the zele brief hour when zele is on, else 08:00), `"HH:MM"` or
 `"off"` (the whole doctor is off: no run, no notice). Everything it finds sits in one file, `~/.dotz/doctor.json` (last run, each finding with the time it was first seen, what was told when
 and at which level, and the baselines the checks compare with).
-- *Checks.* gateway: `gateway restart (` in the hub log at least 3 times in 24 h, or at least 1 uncaught stack trace added to `gateway.err.log` since the last run; sessions: a running session with no
+- *Checks.* gateway: at least 3 `gateway restart (` lines in the hub log in 24 h that nothing explains (a restart is explained when a self-update was installed (`self-update #N: updated:`) or
+  the owner restarted on the web during its wait, from a minute before the request its `waited Ns` gives; the owner's 지금 재시작 (`gateway restart now (`) and the gateway's start line end
+  those marks, so a later restart is counted; the finding lists each counted restart's time and the log's reason), or at least 1 uncaught stack trace added to `gateway.err.log` since the last
+  run (a night store written before the morning re-look existed keeps its crashes); sessions: a running session with no
   progress for over 6 h, or one in error and not closed for over 24 h; logins: a login still lost over 12 h after it was lost; watches: failing for over 24 h or 3 runs in a row (a self-heal that worked since
   the last run is one *fixed* line); disk: the data volume under 10 % or 10 GB free is a finding, under 3 GB free it carries a decision (clean up session records older than the keep days, or leave it for a
   week; nothing is deleted unless the owner picks the first); update: the last harness or self update failed and none worked since; failures: the failure report's growth thresholds (share up 25 %,
@@ -390,6 +393,12 @@ and at which level, and the baselines the checks compare with).
 - *Telling.* A finding is told when it is new, when its level reached 1.5x the level last told, or 7 days after it was last told while still present; a resolved one is dropped (back again = new). Nothing
   notable: one log line, nothing posted anywhere. Self-fixed things are one line together. Each open problem is one line with what to do (failure classes share one line, token classes another;
   a step several lines share is said once after them), then the count of things told before and still there and the checks that found nothing; a re-told problem says since when it lasts.
+  Before posting, the morning runs the file-only checks again (gateway, sessions, logins, watches, disk, update, plugins) over the night's window, so a finding that no longer holds is not posted and
+  the numbers are those at posting time; the night's failures, tokens and prompt findings stay as they were. A matter another gateway card covers (the self-update card, the failed-install card of the
+  same harness, the watch's own issue card) is not told while that card is open or the owner answered it within 24 h (a card that expired unanswered does not count): no line and no question; it
+  counts among the things told before and still there, its check is not listed as fine, and when nothing else is due nothing is posted. It is not marked told, so the line comes with its question
+  once, on the first morning after the card stops covering it. On the day of the install, a night store written before the re-look existed keeps the night's crash count in the store, so a second
+  morning pass that day adds only the crashes since the night, once.
   Anything the owner may answer is a decision card at the end of the message (the alert conversation has no composer and no buttons, so no line asks a question): a finding with its own question
   (`decide`) is one card, and a finding that offers a look at its cause (`ask`) is one card titled `<what happened> · 원인을 찾아볼까요?` with `찾아봐요` (the answer goes to the model like any card answer) and `이번엔 둬요` (closes the card, starts no turn); findings said together on one line share one card. The item is an alert when anything in it is not fixed;
   when dotz fixed everything itself it is a worklog entry only. The night pass runs in its own process (`bun hub/doctor.ts --night`): reading a week of session logs

@@ -32,7 +32,7 @@ import { json } from "./routes-util.ts";
 import { applyTarball, checkTarball, type Kit } from "./selfupdate-tarball.ts";
 import { trackTimer } from "./shutdown.ts";
 import type { Pending } from "./update-watchdog.ts";
-import { SELF_UPDATE_LEAD } from "./worklog-kind.ts";
+import { SELF_UPDATE_CARD_TITLE, SELF_UPDATE_LEAD } from "./worklog-kind.ts";
 
 export { authOrder } from "./selfupdate-tarball.ts";
 export type Exec = (cmd: string[], cwd: string, timeoutMs: number) => Promise<{ code: number; out: string }>;
@@ -609,7 +609,7 @@ function signalSignature(o: Options, c: CheckResult, hooks: Pick<AutoHooks, "ale
 }
 
 const autoChoice = (): string =>
-	issueBlock("원인을 확인할까요, 자동 업데이트를 끌까요?", [
+	issueBlock(SELF_UPDATE_CARD_TITLE, [
 		{ name: "원인 확인", result: "업데이트 로그와 저장소 상태를 보고 원인과 고칠 방법을 알려드려요." },
 		{ name: "자동 업데이트 끄기", result: "자동 적용을 꺼서 새 버전 알림만 받아요. 설정 → 업데이트에서 직접 적용해요." },
 	]);

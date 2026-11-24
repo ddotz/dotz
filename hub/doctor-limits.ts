@@ -1,7 +1,6 @@
 // Every number the doctor (hub/doctor.ts, hub/doctor-checks.ts) decides by, in one place so the docs and the tests read the same values.
 // Hours and days are kept in their own unit; the checks convert once.
 export const THRESHOLDS = {
-	/** gateway: `gateway restart (` lines in hub.log within the window, at least this many. */
 	restarts: 3,
 	restartWindowH: 24,
 	/** gateway: uncaught stack traces added to gateway.err.log since the last run, at least this many. */

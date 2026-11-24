@@ -1,13 +1,17 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { compose, loadStore, morningTime, nextAt, nightTime, runMorning, runNight, shouldTell, storeFile, type Deps } from "./doctor.ts";
-import { countTraces, gateway, logins, plugins, sessions, update, watches } from "./doctor-checks.ts";
+import { parseDecisions } from "./choices.ts";
+import { cardCovers, compose, loadStore, morningTime, nextAt, nightTime, runMorning, runNight, shouldTell, storeFile, type CardLabels, type Deps } from "./doctor.ts";
+import { countTraces, gateway, logins, plugins, restartsOf, sessions, update, watches } from "./doctor-checks.ts";
 import { THRESHOLDS as T } from "./doctor-limits.ts";
 import { DOCTOR_AREAS, type DoctorCheck, type Finding } from "./doctor-types.ts";
 import { msg } from "./i18n.ts";
+import type { Decision, Notice } from "./notices-types.ts";
 import { loadPlugins } from "./plugins.ts";
+import { watchChoice } from "./watch-ask.ts";
+import { HARNESS_RETRY_TITLE, SELF_UPDATE_CARD_TITLE } from "./worklog-kind.ts";
 
 const H = 3600e3, D = 24 * H;
 const T0 = Date.parse("2026-11-10T08:00:00Z");
@@ -215,14 +219,14 @@ describe("checks read files only", () => {
 		writeFileSync(join(dir, "hub.log"), restart(H) + restart(2 * H) + restart(3 * H) + restart(30 * H));
 		writeFileSync(join(dir, "gateway.err.log"), "old\nerror: old\n    at a (x.ts:1)\n");
 		const memo: Record<string, unknown> = {};
-		const ctx = { now: T0, dataDir: dir, home: dir, memo };
-		const first = await gateway(ctx);
+		const ctx = (last?: number) => ({ now: T0, dataDir: dir, home: dir, memo, ...(last ? { last } : {}) });
+		const first = await gateway(ctx());
 		expect(first.map(f => f.key)).toEqual(["gateway:restarts"]);
 		expect(first[0]!.level).toBe(3);
 		writeFileSync(join(dir, "gateway.err.log"), "old\nerror: old\n    at a (x.ts:1)\nerror: new\n    at b (y.ts:2)\n    at c (y.ts:3)\n");
-		const second = await gateway(ctx);
+		const second = await gateway(ctx(T0 - 2 * D));
 		expect(second.find(f => f.key === "gateway:crashes")?.level).toBe(1);
-		expect((await gateway(ctx)).some(f => f.key === "gateway:crashes")).toBe(false);
+		expect((await gateway(ctx(T0 - D))).some(f => f.key === "gateway:crashes")).toBe(false);
 	});
 
 	test("two restarts are not a finding", async () => {
@@ -282,6 +286,253 @@ describe("checks read files only", () => {
 		].join(""));
 		const found = await update({ now: T0, dataDir: dir, home: dir });
 		expect(found.map(f => f.key).sort()).toEqual(["update:omo", "update:self"]);
+	});
+
+	test("gateway: restarts that install a self-update or go with the owner's web restart are not counted; the others keep their times and reasons", async () => {
+		const t = msg().doctor, at = (ms: number, text: string) => logLine(ms, text);
+		const explained = [
+			at(T0 - 13 * H, "gateway restart requested; waiting for: orchestrator"),
+			at(T0 - 13 * H + 190e3, "orchestrator restart: web restart (POST /api/orchestrator/restart)"),
+			at(T0 - 13 * H + 199e3, "gateway restart (2 request(s) coalesced, waited 199s, changes the prompt head)"),
+			...[12, 11, 10, 9, 8].flatMap(h => [
+				at(T0 - h * H, "update now: started (new turns are held until the restart)"),
+				at(T0 - h * H + 3e3, "self-update #1: updated: 1 → 2 (aaaa → bbbb) 받았어요. 재시작하면 적용돼요."),
+				at(T0 - h * H + 36e3, "gateway restart (1 request(s) coalesced, waited 33s)"),
+			]),
+		];
+		writeFileSync(join(dir, "hub.log"), explained.join(""));
+		expect(await gateway({ now: T0, dataDir: dir, home: dir })).toEqual([]);
+		const unexplained = [
+			at(T0 - 5 * H, "orchestrator restart: web restart (POST /api/orchestrator/restart)"),
+			...[4, 3, 2, 1].map(h => at(T0 - h * H, `gateway restart (1 request(s) coalesced, waited ${h}s)`)),
+		];
+		writeFileSync(join(dir, "hub.log"), [...explained, ...unexplained].join(""));
+		const [found, ...rest] = await gateway({ now: T0, dataDir: dir, home: dir });
+		expect(rest).toEqual([]);
+		expect([found!.key, found!.level, found!.what]).toEqual(["gateway:restarts", 4, t.restarts(4)]);
+		for (const h of [4, 3, 2, 1]) expect(found!.evidence).toContain(`${t.when(T0 - h * H)} (1 request(s) coalesced, waited ${h}s)`);
+		expect(found!.evidence).not.toContain("199s");
+	});
+
+	test("gateway: an update taken by the owner's 지금 재시작 or by a gateway start does not explain a later restart", () => {
+		const u = T0 - 10 * H, explained = (...between: { at: number; text: string }[]) => restartsOf([updated, ...between, requested, later]).map(r => [r.at, r.explained]);
+		const updated = { at: u, text: "self-update #3: updated: 1 → 2 (aaaa → bbbb) 받았어요. 재시작하면 적용돼요." };
+		const requested = { at: u + 30e3, text: "gateway restart requested; coalescing for 120s" };
+		const later = { at: u + 150e3, text: "gateway restart (1 request(s) coalesced, waited 120s)" };
+		expect(explained()).toEqual([[later.at, true]]);
+		expect(explained({ at: u + 5e3, text: "orchestrator exited (1)" })).toEqual([[later.at, true]]);
+		expect(explained({ at: u + 5e3, text: "gateway restart now (owner, settings → 업데이트; busy: none)" })).toEqual([[later.at, false]]);
+		expect(explained({ at: u + 5e3, text: "hub listening on 127.0.0.1:7420 as test (discord off)" })).toEqual([[later.at, false]]);
+		expect(restartsOf([updated, { at: T0 - 9 * H, text: "orchestrator exited (1)" }, { at: T0 - 2 * H, text: "gateway restart (1 request(s) coalesced, waited 30s)" }]).map(r => r.explained)).toEqual([false]);
+	});
+});
+
+describe("the morning looks again before it posts", () => {
+	const hubLog = () => join(dir, "hub.log");
+	function morningRig(checks: DoctorCheck[]) {
+		const state = { now: T0 - 3.5 * H, sent: [] as string[] };
+		const deps: Deps = { now: () => state.now, dataDir: dir, home: dir, at: () => "auto", checks, send: text => void state.sent.push(text), log: () => undefined };
+		return { state, deps };
+	}
+
+	test("an update that succeeded after the night run is not posted", async () => {
+		const r = morningRig([update, gateway]);
+		writeFileSync(hubLog(), logLine(T0 - 5 * H, "self-update #1: failed: x"));
+		await runNight(r.deps);
+		expect(Object.keys(loadStore(dir).findings)).toEqual(["update:self"]);
+		appendFileSync(hubLog(), logLine(T0 - H, "self-update #1: updated: 1 → 2 (aaaa → bbbb) 받았어요. 재시작하면 적용돼요."));
+		r.state.now = T0;
+		await runMorning(r.deps);
+		expect(r.state.sent).toEqual([]);
+		expect(loadStore(dir).findings).toEqual({});
+	});
+
+	test("numbers are the ones at posting time; the night's other findings are kept", async () => {
+		const t = msg().doctor, restart = (ago: number) => logLine(T0 - ago, "gateway restart (1 request(s) coalesced, waited 2s)");
+		const failures: DoctorCheck = () => [finding({ key: "failures:loop", area: "failures", what: "HEAVY-NIGHT" })];
+		const r = morningRig([gateway, failures]);
+		writeFileSync(hubLog(), restart(6 * H) + restart(5 * H) + restart(4 * H));
+		await runNight(r.deps);
+		expect(loadStore(dir).findings["gateway:restarts"]!.level).toBe(3);
+		appendFileSync(hubLog(), restart(H));
+		r.state.now = T0;
+		await runMorning(r.deps);
+		expect(r.state.sent).toHaveLength(1);
+		expect(r.state.sent[0]).toContain(t.restarts(4));
+		expect(r.state.sent[0]).not.toContain(t.restarts(3));
+		expect(r.state.sent[0]).toContain("HEAVY-NIGHT");
+	});
+
+	test("a second look the same morning neither loses nor double-counts crashes", async () => {
+		const t = msg().doctor, err = join(dir, "gateway.err.log"), trace = (n: number) => `error: e${n}\n    at f (x.ts:${n})\n`;
+		const r = morningRig([gateway]);
+		writeFileSync(err, trace(0));
+		r.state.now = T0 - 27.5 * H;
+		await runNight(r.deps);
+		appendFileSync(err, trace(1));
+		r.state.now = T0 - 3.5 * H;
+		await runNight(r.deps);
+		expect(loadStore(dir).findings["gateway:crashes"]!.level).toBe(1);
+		appendFileSync(err, trace(2));
+		r.state.now = T0;
+		await runMorning(r.deps);
+		expect(r.state.sent[0]).toContain(t.crashes(2));
+		r.state.now = T0 + 60e3;
+		await runMorning(r.deps);
+		expect(loadStore(dir).findings["gateway:crashes"]!.level).toBe(2);
+		r.state.now = T0 + 20.5 * H;
+		await runNight(r.deps);
+		expect(loadStore(dir).findings["gateway:crashes"]).toBeUndefined();
+		appendFileSync(err, trace(3));
+		r.state.now = T0 + D;
+		await runMorning(r.deps);
+		expect(loadStore(dir).findings["gateway:crashes"]!.level).toBe(1);
+	});
+
+	test("a store the night wrote before the morning re-look existed keeps the crashes it found", async () => {
+		const t = msg().doctor, err = join(dir, "gateway.err.log"), text = `${"x".repeat(100)}\nerror: e1\n    at f (x.ts:1)\n`;
+		writeFileSync(err, text);
+		const night = finding({ key: "gateway:crashes", what: t.crashes(1), evidence: "gateway.err.log", level: 1, ask: true });
+		writeFileSync(storeFile(dir), JSON.stringify({ version: 1, lastRun: T0 - 3.5 * H, memo: { errBytes: Buffer.byteLength(text) }, findings: { [night.key]: night }, told: {} }));
+		const r = morningRig([gateway]);
+		r.state.now = T0;
+		await runMorning(r.deps);
+		expect(r.state.sent).toHaveLength(1);
+		expect(r.state.sent[0]).toContain(t.crashes(1));
+	});
+
+	test("on an old store, a second look the same day keeps the count and adds a crash since the first look once", async () => {
+		const t = msg().doctor, err = join(dir, "gateway.err.log"), trace = (n: number) => `error: e${n}\n    at f (x.ts:${n})\n`;
+		writeFileSync(err, trace(1));
+		const night = finding({ key: "gateway:crashes", what: t.crashes(1), evidence: "gateway.err.log", level: 1, ask: true });
+		writeFileSync(storeFile(dir), JSON.stringify({ version: 1, lastRun: T0 - 3.5 * H, memo: { errBytes: Buffer.byteLength(trace(1)) }, findings: { [night.key]: night }, told: {} }));
+		appendFileSync(err, trace(2));
+		const r = morningRig([gateway]), look = async (at: number) => ((r.state.now = at), await runMorning(r.deps), loadStore(dir).findings["gateway:crashes"]!.level);
+		expect(await look(T0)).toBe(2);
+		expect(r.state.sent).toEqual([expect.stringContaining(t.crashes(2))]);
+		expect(await look(T0 + 2 * H)).toBe(2);
+		expect(r.state.sent).toHaveLength(1);
+		appendFileSync(err, trace(3));
+		expect(await look(T0 + 4 * H)).toBe(3);
+		expect(await look(T0 + 6 * H)).toBe(3);
+	});
+
+	test("a finding gone by the morning and back later is told again", async () => {
+		const t = msg().doctor, r = morningRig([update]);
+		writeFileSync(hubLog(), logLine(T0 - 30 * H, "self-update #1: failed: x"));
+		r.state.now = T0 - D - 3.5 * H;
+		await runNight(r.deps);
+		r.state.now = T0 - D;
+		await runMorning(r.deps);
+		expect(r.state.sent).toHaveLength(1);
+		appendFileSync(hubLog(), logLine(T0 - 10 * H, "self-update #2: failed: x"));
+		r.state.now = T0 - 3.5 * H;
+		await runNight(r.deps);
+		appendFileSync(hubLog(), logLine(T0 - 2 * H, "self-update #3: updated: 1 → 2 (aaaa → bbbb) 받았어요. 재시작하면 적용돼요."));
+		r.state.now = T0;
+		await runMorning(r.deps);
+		expect(r.state.sent).toHaveLength(1);
+		appendFileSync(hubLog(), logLine(T0 + 10 * H, "self-update #4: failed: x"));
+		r.state.now = T0 + D - 3.5 * H;
+		await runNight(r.deps);
+		r.state.now = T0 + D;
+		await runMorning(r.deps);
+		expect(r.state.sent).toHaveLength(2);
+		expect(r.state.sent[1]).toContain(t.updateFailed(t.selfUpdate));
+	});
+});
+
+describe("a matter another gateway card covers is not told", () => {
+	const card = (title: string, state: Decision["state"], answeredAgo?: number, text = ""): Pick<Notice, "title" | "text" | "decision"> => ({
+		title,
+		text,
+		decision: { options: [], to: "alert", group: 1, state, ...(answeredAgo === undefined ? {} : { answered_at: new Date(T0 - answeredAgo).toISOString() }) },
+	});
+	const self = finding({ key: "update:self", area: "update", ask: true, evidence: "self" });
+	const labels: CardLabels = { watch: name => (name === "w1" ? "Sample watch" : name), harness: id => ({ omp: "omp", omo: "작업 프로그램" })[id] };
+	const covers = (f: Finding, ...cards: Pick<Notice, "title" | "text" | "decision">[]) => cardCovers(cards, T0, labels)(f);
+
+	test("an open card or one answered 2 hours ago covers it; one answered 30 hours ago or waved off does not", () => {
+		expect(covers(self, card(SELF_UPDATE_CARD_TITLE, "open"))).toBe(true);
+		expect(covers(self, card(SELF_UPDATE_CARD_TITLE, "answered", 2 * H))).toBe(true);
+		expect(covers(self, card(SELF_UPDATE_CARD_TITLE, "answered", 30 * H))).toBe(false);
+		expect(covers(self, card(SELF_UPDATE_CARD_TITLE, "ignored"))).toBe(false);
+		expect(covers(self, card(HARNESS_RETRY_TITLE, "open"))).toBe(false);
+	});
+
+	test("a card that expired without an answer covers nothing", () => {
+		const expired = card(SELF_UPDATE_CARD_TITLE, "answered", 3 * H);
+		expired.decision = { ...expired.decision!, resolved: true, expired: true, closed_how: "expired" };
+		expect(covers(self, expired)).toBe(false);
+	});
+
+	test("a failed-install card covers only its own harness", () => {
+		const omp = finding({ key: "update:omp", area: "update", ask: true, evidence: "omp" });
+		const omoCard = card(HARNESS_RETRY_TITLE, "open", undefined, "작업 프로그램 1 → 2 설치하지 못했어요(지금 1): exit 1");
+		const ompCard = card(HARNESS_RETRY_TITLE, "open", undefined, "omp 1 → 2 설치하지 못했어요(지금 1): exit 1");
+		expect(covers(omp, omoCard)).toBe(false);
+		expect(covers(omp, ompCard)).toBe(true);
+		expect(covers(finding({ key: "update:omo", area: "update", ask: true, evidence: "omo" }), omoCard)).toBe(true);
+	});
+
+	test("a failing watch is covered only by its own watch's card", () => {
+		const watch = finding({ key: "watches:w1", area: "watches", ask: true, evidence: "w1" });
+		const titleOf = (text: string) => parseDecisions(text).blocks[0]!.title;
+		expect(covers(watch, card(titleOf(watchChoice("Sample watch", "exit 1")), "open"))).toBe(true);
+		expect(covers(watch, card(titleOf(watchChoice("Sample watch")), "answered", 2 * H))).toBe(true);
+		expect(covers(watch, card(titleOf(watchChoice("Other watch", "exit 1")), "open"))).toBe(false);
+	});
+
+	test("while a card covers the matter the morning neither says nor asks it: counted as told before, its area not called fine, not marked told", async () => {
+		const t = msg().doctor, line = t.updateFailed(t.selfUpdate);
+		const stuck: DoctorCheck = () => [finding({ key: "sessions:stuck", area: "sessions", what: "STUCK" })];
+		const morning = async (checks: DoctorCheck[], answeredAgo: number) => {
+			rmSync(storeFile(dir), { force: true });
+			const sent: string[] = [];
+			const deps: Deps = { now: () => T0, dataDir: dir, home: dir, at: () => "auto", checks, send: text => void sent.push(text), log: () => undefined, covered: cardCovers([card(SELF_UPDATE_CARD_TITLE, "answered", answeredAgo)], T0, labels) };
+			await runMorning(deps);
+			return { sent, told: Object.keys(loadStore(dir).told) };
+		};
+		writeFileSync(join(dir, "hub.log"), logLine(T0 - 5 * H, "self-update #1: failed: x"));
+		expect(await morning([update], 2 * H)).toEqual({ sent: [], told: [] });
+		const both = await morning([update, stuck], 2 * H);
+		expect(both.told).toEqual(["sessions:stuck"]);
+		expect(both.sent).toHaveLength(1);
+		expect(both.sent[0]).toContain("STUCK");
+		expect(both.sent[0]).not.toContain(line);
+		expect(both.sent[0]).toContain(t.still(1));
+		expect(both.sent[0]).toContain(t.healthy(DOCTOR_AREAS.filter(a => a !== "update" && a !== "sessions").map(a => t.areas[a])));
+		expect(parseDecisions(both.sent[0]!).blocks).toEqual([]);
+		const after = await morning([update], 30 * H);
+		expect(after.sent[0]).toContain(`- ${line}`);
+		expect(parseDecisions(after.sent[0]!).blocks.map(b => b.title)).toEqual([t.askCard(line.replace(/[.。]$/, ""))]);
+	});
+
+	test("a card open for one, two or three mornings: the line and its question come once, on the first morning the card no longer covers", async () => {
+		const t = msg().doctor, line = t.updateFailed(t.selfUpdate), posted = T0 - 4 * H, iso = (at: number) => new Date(at).toISOString();
+		const cardAt = (now: number, expires: number): Pick<Notice, "title" | "text" | "decision"> => ({
+			title: SELF_UPDATE_CARD_TITLE,
+			text: "",
+			decision: now < expires ? { options: [], to: "alert", group: 1, state: "open", expires_at: iso(expires) } : { options: [], to: "alert", group: 1, state: "answered", resolved: true, expired: true, closed_how: "expired", answered_at: iso(expires) },
+		});
+		for (const days of [1, 2, 3]) {
+			rmSync(storeFile(dir), { force: true });
+			const sent: string[] = [];
+			let now = 0;
+			const deps: Deps = { now: () => now, dataDir: dir, home: dir, at: () => "auto", checks: [update], send: text => void sent.push(text), log: () => undefined, covered: f => cardCovers([cardAt(now, posted + days * D)], now, labels)(f) };
+			writeFileSync(join(dir, "hub.log"), logLine(posted - 60e3, "self-update #1: failed: x"));
+			const mornings: [number, number, number][] = [];
+			for (let day = 0; day < 4; day++) {
+				now = T0 + day * D - 3.5 * H;
+				await runNight(deps);
+				now = T0 + day * D;
+				const before = sent.length;
+				await runMorning(deps);
+				const text = sent.slice(before).join("\n");
+				mornings.push([sent.length - before, text.split("\n").filter(l => l === `- ${line}`).length, text ? parseDecisions(text).blocks.length : 0]);
+			}
+			expect(mornings).toEqual([0, 1, 2, 3].map(day => (day === days ? [1, 1, 1] : [0, 0, 0])));
+		}
 	});
 });
 

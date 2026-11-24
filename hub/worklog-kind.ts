@@ -20,6 +20,10 @@ export const HARNESS_FAILED_MID = " 설치하지 못했어요(";
 export const ACCOUNT_LEAD = "계정을 ";
 export const ACCOUNT_CHANGED = "바꿨어요.";
 export const ACCOUNT_PICKED = "정했어요.";
+/** The question of the card a failed dotz self-update asks (hub/selfupdate.ts); the doctor looks for it in the notice store. */
+export const SELF_UPDATE_CARD_TITLE = "원인을 확인할까요, 자동 업데이트를 끌까요?";
+/** The question of the card a failed harness install asks (hub/update.ts), the same for every harness: its text starts with the harness label (harnessLabel). */
+export const HARNESS_RETRY_TITLE = "지금 다시 설치해 볼까요, 다음 점검까지 둘까요?";
 
 const HARNESS_TAILS = [HARNESS_ASK_TAIL, HARNESS_BLOCKED_TAIL, HARNESS_RESTART_TAIL, HARNESS_FAILED_MID];
 const isHarnessLine = (t: string): boolean => HARNESS_TAILS.some(tail => t.includes(tail));

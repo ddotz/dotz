@@ -4,7 +4,10 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { OMP } from "./config.ts";
-import { describe, newer, runHarnessUpdate, type Run } from "./update.ts";
+import { cardCovers } from "./doctor.ts";
+import type { Finding } from "./doctor-types.ts";
+import { describe, harnessLabel, newer, runHarnessUpdate, type Run } from "./update.ts";
+import { HARNESS_RETRY_TITLE } from "./worklog-kind.ts";
 
 let dir: string;
 beforeEach(() => void (dir = mkdtempSync(join(tmpdir(), "dotz-update-"))));
@@ -69,6 +72,16 @@ test("a failed install keeps the old version: alert with a choice block, no rest
 	expect(h.alerts[0]).toContain("5.1.38 → 5.1.40 설치하지 못했어요");
 	expect(h.alerts[0]).toContain("**1) 다시 설치해 봐요**");
 	expect(omo.state.version).toBe("5.1.38");
+});
+
+test("the failed-install alert, stored as its card, keeps the doctor from asking about that harness only", async () => {
+	const h = harness({ run: fakeOmo("5.1.38", { addCode: 1 }).run, latest: "5.1.40" });
+	await runHarnessUpdate(h.deps);
+	const card = { title: HARNESS_RETRY_TITLE, text: h.alerts[0]!, decision: { options: [], to: "alert", group: 1, state: "open" as const } };
+	const covers = cardCovers([card], Date.now(), { watch: name => name, harness: harnessLabel });
+	const failed = (id: string): Finding => ({ key: `update:${id}`, area: "update", what: "failed", evidence: id, since: 0, level: 1, ask: true });
+	expect(covers(failed("omo"))).toBe(true);
+	expect(covers(failed("omp"))).toBe(false);
 });
 
 test("an install that does not verify is rolled back to the old version", async () => {

@@ -69,14 +69,48 @@ const found = (key: string, area: Finding["area"], now: number, what: string, ev
 const asking = (f: Finding): Finding => ({ ...f, ask: true });
 const names = (list: string[]): string => list.slice(0, SHOWN_NAMES).join(", ") + (list.length > SHOWN_NAMES ? ` +${list.length - SHOWN_NAMES}` : "");
 
-export const gateway: DoctorCheck = ({ now, dataDir, memo }) => {
+const SELF_UPDATE_INSTALLS_AT_RESTART = /^self-update #\d+: updated: /;
+const OWNER_WEB_RESTART = /^orchestrator restart: web restart \(/;
+const RESTART = /^gateway restart \((.+)\)$/;
+const RESTARTED_ELSEWHERE = /^(gateway restart now \(|hub listening on )/;
+const REQUEST_SLACK_MS = 60e3;
+
+/**
+ * Every gateway restart in the log rows, oldest first. `explained`: a self-update was installed, or the owner restarted on the web, during its wait (from a
+ * minute before it was requested, which its `waited Ns` gives, to the restart). The owner's 지금 재시작 and a gateway start line end both marks, since that
+ * restart already took the install. `why` is the log's own text in its parentheses.
+ */
+export function restartsOf(rows: { at: number; text: string }[]): { at: number; why: string; explained: boolean }[] {
+	const out: { at: number; why: string; explained: boolean }[] = [], marks: number[] = [];
+	for (const r of rows) {
+		const m = RESTART.exec(r.text);
+		if (!m) {
+			if (RESTARTED_ELSEWHERE.test(r.text)) marks.length = 0;
+			else if (SELF_UPDATE_INSTALLS_AT_RESTART.test(r.text) || OWNER_WEB_RESTART.test(r.text)) marks.push(r.at);
+			continue;
+		}
+		const start = r.at - Number(/waited (\d+)s/.exec(m[1]!)?.[1] ?? 0) * 1000 - REQUEST_SLACK_MS;
+		out.push({ at: r.at, why: m[1]!, explained: marks.some(at => at >= start) });
+		marks.length = 0;
+	}
+	return out;
+}
+
+type ErrMark = { last: number; from: number };
+const isErrMark = (v: unknown): v is ErrMark => typeof (v as ErrMark | undefined)?.last === "number" && typeof (v as ErrMark).from === "number";
+
+export const gateway: DoctorCheck = ({ now, dataDir, memo, last }) => {
 	const t = msg().doctor, out: Finding[] = [];
-	const restarts = logRows(dataDir).filter(r => r.at >= now - T.restartWindowH * HOUR && r.text.startsWith("gateway restart (")).length;
-	if (restarts >= T.restarts) out.push(asking(found("gateway:restarts", "gateway", now, t.restarts(restarts), "hub.log", restarts)));
+	const restarts = restartsOf(logRows(dataDir)).filter(r => r.at >= now - T.restartWindowH * HOUR && !r.explained);
+	if (restarts.length >= T.restarts) out.push(asking(found("gateway:restarts", "gateway", now, t.restarts(restarts.length), restarts.map(r => `${t.when(r.at)} (${r.why})`).join("; "), restarts.length)));
 	const errFile = join(dataDir, "gateway.err.log");
 	const size = existsSync(errFile) ? statSync(errFile).size : 0;
-	const seen = typeof memo?.errBytes === "number" ? memo.errBytes : undefined;
-	if (memo) memo.errBytes = size;
+	const window = last ?? 0, mark = isErrMark(memo?.errMark) ? memo.errMark : undefined;
+	const seen = mark?.last === window ? mark.from : typeof memo?.errBytes === "number" ? memo.errBytes : undefined;
+	if (memo) {
+		memo.errBytes = size;
+		if (seen !== undefined) memo.errMark = { last: window, from: seen };
+	}
 	if (seen !== undefined) {
 		const crashes = countTraces(readRange(errFile, size < seen ? 0 : Math.max(seen, size - T.logTailBytes), size));
 		if (crashes >= T.crashes) out.push(asking(found("gateway:crashes", "gateway", now, t.crashes(crashes), "gateway.err.log", crashes)));
@@ -214,4 +248,6 @@ export const plugins: DoctorCheck = ({ now, dataDir }) => {
 	});
 };
 
-export const CHECKS: DoctorCheck[] = [gateway, sessions, logins, watches, disk, update, plugins, failures, tokens];
+/** The checks that read only small files (a log tail, a state file, statfs): cheap enough to run again right before the morning message. */
+export const FILE_CHECKS: DoctorCheck[] = [gateway, sessions, logins, watches, disk, update, plugins];
+export const CHECKS: DoctorCheck[] = [...FILE_CHECKS, failures, tokens];
