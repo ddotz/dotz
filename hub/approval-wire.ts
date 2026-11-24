@@ -10,6 +10,9 @@ import { escalations } from "./escalate.ts";
 import { type AnswerPick, replies, reportCliFailure, sender } from "./reply-wire.ts";
 import type { ActInput, ActResult } from "./reply-actions.ts";
 import { reasonOf } from "./reply-reasons.ts";
+import { msg } from "./i18n.ts";
+import { DECISION_HEAD } from "./choices.ts";
+import { heldOf } from "./notices-answers.ts";
 
 export { recordAnswer, reportSend, sender, sendTargetOf, settleSends } from "./reply-wire.ts";
 import { json } from "./routes-util.ts";
@@ -51,10 +54,13 @@ async function actOnCard(conv: string, q: string, label: string, note: string | 
 
 /** A Discord button pick (hub/askbuttons.ts) on a draft the reply flow knows: the same act as the web's card (send, revise with its words, drop),
  * checked against the version the card was drawn with. `edit`: the 고치기 form's text, changed by the owner (edit, then revise if he wrote words).
+ * A pick on a card whose web answer is held for its undo window (hub/notices-answers.ts holdDecision) is refused with that answer's label: it is not sent.
  * Undefined when the reply flow did not take it (the answer keeps its old path); `error`: why it refused (the owner hears it, the buttons stay). */
-export async function discordGatewayAnswer(_target: string, conv: string, text: string, picks: AnswerPick[], edit?: string): Promise<{ error?: string } | undefined> {
+export async function discordGatewayAnswer(target: string, conv: string, text: string, picks: AnswerPick[], edit?: string): Promise<{ error?: string } | undefined> {
 	const p = picks.length === 1 ? picks[0]! : undefined;
 	if (!p) return undefined;
+	const q = DECISION_HEAD.exec(p.q)?.[1] ?? p.q, card = allNotices().find(n => n.decision?.state === "open" && n.title === q && (n.decision.to === target || n.decision.to === conv)), hold = card && heldOf(card);
+	if (hold) return { error: msg().answerHeld(hold.label.replace(/^\d+\)\s*/, "")) };
 	const note = p.note ?? /\s-\s(.+)$/.exec(text)?.[1];
 	const r = await actOnCard(conv, p.q, p.label, note, { surface: "discord", login: "owner", ...(edit !== undefined ? { text: edit } : {}) });
 	if (!r) return undefined;

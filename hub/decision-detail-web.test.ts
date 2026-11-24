@@ -175,7 +175,7 @@ describe("decision options that need detail", () => {
 		await waitForPost();
 		const posted = await posts();
 		expect(posted[0]!.path).toBe(`/api/notices/${n.id}/answer`);
-		expect(posted[0]!.body).toEqual({ n: 2, label: "안 됨", note: "로그인이 안 돼요" });
+		expect(posted[0]!.body).toEqual({ n: 2, label: "안 됨", note: "로그인이 안 돼요", hold: true });
 	});
 });
 

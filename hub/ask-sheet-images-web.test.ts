@@ -103,15 +103,15 @@ describe("the question sheet", () => {
 	test("answering question 2 of 3 sends to question 2 only, then the sheet shows question 3 and the other two still wait", async () => {
 		await load(decide(THREE));
 		await openSheet("q1");
-		expect(await shown()).toMatchObject({ id: "q1", count: " · 1/3", next: 1 });
+		expect(await shown()).toMatchObject({ id: "q1", count: " · 남은 질문 3개", next: 1 });
 		await press('.fs-ft [data-k="next"]');
 		await waitFor(`NS.id === "q2"`);
-		expect(await shown()).toMatchObject({ id: "q2", count: " · 2/3", thumbs: 2 });
+		expect(await shown()).toMatchObject({ id: "q2", count: " · 남은 질문 3개", thumbs: 2 });
 		await press('.fs-ft [data-k="o1"]');
 		await answered.until(a => a.length > 0, 10_000, "the answer to q2");
 		expect([...answered]).toEqual([{ id: "q2", n: 1 }]);
 		await waitFor(`NS.id === "q3"`);
-		expect(await shown()).toMatchObject({ id: "q3", count: " · 3/3" });
+		expect(await shown()).toMatchObject({ id: "q3", count: " · 남은 질문 2개" });
 		expect(await ev<string[]>(`NT.items.map(n => n.id + ":" + n.decision.state)`)).toEqual(["q1:open", "q2:answered", "q3:open"]);
 		await press('.fs-ft [data-k="o2"]');
 		await answered.until(a => a.length > 1, 10_000, "the answer to q3");

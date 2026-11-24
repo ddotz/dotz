@@ -55,4 +55,52 @@ function askNotes() {
     const text = note.get(m.dataset.ts) || "", old = m.querySelector(":scope > .ask-note");
     if (!text) { if (old) old.remove(); } else if (!old) m.append(el("div", { class: "ask-note", role: "status", text })); else if (old.textContent !== text) old.textContent = text;
   }
+  dcQuestionLines();
+}
+function dqState(n) {
+  const d = n.decision;
+  if (ntOpenDec(n)) return TX("common.needs_reply");
+  if (ntLater(n)) return TX("decision.ask.later_at", { t: kstHM(d.later_until) });
+  if (d.state === "ignored") return TX("misc.nsc.d_ignored");
+  if (d.expired) return TX("misc.nsc.d_expired");
+  if (d.resolved) return askClosedLine(d) || TX("misc.nsc.d_closed");
+  const said = ntPlain(d.answer || "").replace(/^\d+\)\s*/, "");
+  return [d.hold && d.hold.state === "held" ? TX("decision.hold_lb") : TX("misc.nsc.d_answered"), said].filter(Boolean).join(" · ");
+}
+function dqRow(n) {
+  const open = ntOpenDec(n);
+  return el("button", { class: `dc-row dq${open ? " dq-open" : ""}`, type: "button", "data-nid": n.id, onclick: () => noticeSheetOpen(String(n.id)) },
+    el("span", { class: "dc-tx" }, el("span", { class: "dc-lb", text: ntPlain(n.title) }), el("span", { class: "dc-ds" }, open ? el("span", { class: "tag warn", text: dqState(n) }) : dqState(n))));
+}
+const DQ_SIG = new WeakMap();
+function dqPara(p, n) {
+  const open = ntOpenDec(n), sig = JSON.stringify([n.id, n.decision.state, n.decision.answer || "", open, dqState(n)]);
+  if (DQ_SIG.get(p) === sig) return;
+  DQ_SIG.set(p, sig);
+  p.dataset.nid = String(n.id);
+  p.classList.add("dq-p");
+  p.classList.toggle("dq-open", open);
+  p.setAttribute("role", "button");
+  p.tabIndex = 0;
+  p.onclick = () => noticeSheetOpen(String(n.id));
+  p.onkeydown = ev => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); noticeSheetOpen(String(n.id)); } };
+  const st = p.querySelector(":scope > .dq-st") || p.appendChild(el("span", { class: "dq-st" }));
+  st.replaceChildren(open ? el("span", { class: "tag warn", text: dqState(n) }) : dqState(n));
+}
+function dcQuestionLines() {
+  const on = current === "chat" && isFixedT(target);
+  for (const m of tl.querySelectorAll(".bm[data-dat]")) {
+    const first = on ? NT.items.find(x => ntIsDec(x) && !x.pc && x.decision.to === target && x.decision.reply_to === m.dataset.dat) : null, sibs = first ? ntSibs(first) : [], had = m.querySelector(":scope > .dq-list");
+    const paras = new Map([...m.querySelectorAll("[data-q]")].map(p => [Number(p.dataset.q), p])), lone = [];
+    for (const n of sibs) {
+      const p = Number.isInteger(n.decision.place) ? paras.get(n.decision.place) : null;
+      if (p) dqPara(p, n); else lone.push(n);
+    }
+    if (!lone.length) { if (had) had.remove(); continue; }
+    const sig = JSON.stringify(lone.map(n => [n.id, n.title, n.decision.state, n.decision.answer || "", ntOpenDec(n)]));
+    if (had && had.dataset.sig === sig) continue;
+    const box = had || m.appendChild(el("div", { class: "dq-list", role: "group", "aria-label": TX("decision.q_lines") }));
+    box.dataset.sig = sig;
+    box.replaceChildren(...lone.map(dqRow));
+  }
 }

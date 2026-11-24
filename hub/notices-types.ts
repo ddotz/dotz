@@ -61,6 +61,9 @@ export type Notice = {
 // `say` is the text sent when the button is chosen (default "<n>) <label>"); `action` marks a login request's button (approve / cancel /
 // form = the page's own input form, never answered through the hub).
 export type DecisionOpt = DecisionOption & { say?: string; action?: string };
+/** A held answer: the label given, when it goes out (`until`, gateway clock), the time left when the item was read, the option number and text typed with
+ * it; `failed` once its delivery after the window failed, with the reason the delivery gave (the card is open again). */
+export type HeldAnswer = { label: string; until: number; left: number; n?: number; note?: string } & ({ state: "held" } | { state: "failed"; code: string; error: string });
 export type Decision = {
 	options: DecisionOpt[];
 	/** The card's own evidence lines (the lines between its `결정:` head and its first option, hub/choices.ts parseDecisions), absent when it has none. The notice's text then starts with them, followed by the message's lead; the sheet shows them under the title. */
@@ -73,6 +76,10 @@ export type Decision = {
 	reply_to?: string;
 	// How many decisions the asking message held; with more than one the answer names its decision.
 	group: number;
+	/** The card's place among the decisions of its asking message, from 0 in the order the message lists them (hub/notices-decisions.ts decisionsOf). Absent on a card stored before the field. */
+	place?: number;
+	/** An answer the gateway holds for its undo window (hub/notices-answers.ts holdDecision), never saved to disk: see HeldAnswer. */
+	hold?: HeldAnswer;
 	asked?: { n: number; first: string };
 	// "ignored": the owner waved it off with the x (Notice.ignored); the matter was not answered.
 	state: "open" | "answered" | "ignored";

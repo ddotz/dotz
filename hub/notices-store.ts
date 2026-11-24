@@ -23,7 +23,7 @@ import { snapshotResults } from "./files.ts";
 import { type ResultFile, type ResultLink, resultFiles, resultLinks } from "./result-refs.ts";
 import { broadcast, summary } from "./notices-read.ts";
 import { QUIET_MS, awaitingReply, isViewing, ownerWroteAt, quietReplies, viewers } from "./notices-viewing.ts";
-import { decisionsOf, expiresAtOf, noteDroppedIds, plainCard, sending } from "./notices-decisions.ts";
+import { decisionsOf, expiresAtOf, holds, noteDroppedIds, plainCard, sending } from "./notices-decisions.ts";
 import { askedAgain, optionsOf, sameQuestion, withAskedLine } from "./notices-repeat.ts";
 import { worklogKind } from "./worklog-kind.ts";
 import { en } from "./i18n-en.ts";
@@ -36,7 +36,7 @@ export let items: Notice[] = loadNotices();
 let replaying = false;
 // The file paths on the chips of the stored notices (hub/listed-files.ts).
 export const noticeFilePaths = (): string[] => items.flatMap(n => n.files?.map(f => f.path) ?? []);
-export const { save, flush: flushNotices } = coalescedWrite(() => writeAtomic(paths.notices, `${JSON.stringify(items, null, 1)}\n`), 200);
+export const { save, flush: flushNotices } = coalescedWrite(() => writeAtomic(paths.notices, `${JSON.stringify(items, (k, v) => (k === "hold" ? undefined : v), 1)}\n`), 200);
 
 // The 알림 screen does not list quiet records (web/js/31-notices-screen.js nscListed), so the count must not hold what the owner cannot read there.
 // A conversation's unread answer (conv) is listed and counted: it is the bell's way to say an answer finished while he was elsewhere.
@@ -384,7 +384,7 @@ function closeCardsWrittenBackTo(to: string, at: string, keep?: Notice): void {
 	if (since && since <= at) for (const i of items) if (i !== keep && isOpenDecision(i) && hasChoice(i) && !i.decision!.draft && i.decision!.to === to && !laterOn(i.decision) && (i.at ?? i.ts) < since) settleDecision(i, "", at, true);
 }
 
-export function putDecision(d: { key: string; title: string; detail: string; to: string; open?: string; options: DecisionOpt[]; group: number; replyTo?: string; draft?: DraftApproval; by?: string; ref?: string; assumed?: true; evidence?: string[]; card_id?: string }, at: string): void {
+export function putDecision(d: { key: string; title: string; detail: string; to: string; open?: string; options: DecisionOpt[]; group: number; place?: number; replyTo?: string; draft?: DraftApproval; by?: string; ref?: string; assumed?: true; evidence?: string[]; card_id?: string }, at: string): void {
 	const old = items.find(n => n.key === d.key) ?? (d.card_id || d.draft || Object.values(FILLER_QUESTIONS).includes(d.title) ? undefined : items.findLast(n => n.decision?.to === d.to && !n.decision.draft && !n.decision.card_id && sameQuestion(n.title, d.title))), asked = askedAgain(old, d, at);
 	if (old?.decision) {
 		// The same ask can arrive twice (a session's mid-turn line and its turn-end report): one notice, and an answered one stays answered.
@@ -395,7 +395,7 @@ export function putDecision(d: { key: string; title: string; detail: string; to:
 	if (d.options.length && !d.draft) closeCardsWrittenBackTo(d.to, at, old);
 	const open = d.open ?? d.to, expires_at = expiresAtOf(d, at);
 	if (d.draft && !shownAsStored(d.draft)) d = { ...d, draft: undefined };
-	const decision: Decision = { options: optionsOf(d), ...(d.evidence ? { evidence: d.evidence } : {}), ...(d.card_id ? { card_id: d.card_id } : {}), to: d.to, ...(d.replyTo ? { reply_to: d.replyTo } : {}), group: d.group, state: "open", ...(expires_at ? { expires_at } : {}), ...(d.draft ? { draft: d.draft } : {}), ...(d.assumed ? { assumed: true as const } : {}), ...(asked ? { asked } : {}) };
+	const decision: Decision = { options: optionsOf(d), ...(d.evidence ? { evidence: d.evidence } : {}), ...(d.card_id ? { card_id: d.card_id } : {}), to: d.to, ...(d.replyTo ? { reply_to: d.replyTo } : {}), group: d.group, ...(d.place !== undefined ? { place: d.place } : {}), state: "open", ...(expires_at ? { expires_at } : {}), ...(d.draft ? { draft: d.draft } : {}), ...(d.assumed ? { assumed: true as const } : {}), ...(asked ? { asked } : {}) };
 	let item: Notice;
 	if (old) {
 		Object.assign(old, { kind: "decision", tone: "ask", title: d.title, text: withAskedLine(d.detail, asked), open, src: open, at, updated: at, read: false, decision, ...(d.by ? { by: d.by } : {}), ...(d.ref ? { ref: d.ref } : {}) });
@@ -425,6 +425,7 @@ export function settleDecision(item: Notice, answer: string, at = now(), resolve
 	const d = item.decision;
 	if (!d || d.state !== "open") return;
 	d.state = "answered";
+	delete d.hold;
 	// A resolved matter was not answered: it is marked resolved and carries no answer text.
 	if (resolved) d.resolved = true;
 	else d.answer = (sending.get(item.id) ?? answer).slice(0, 200);
@@ -575,6 +576,7 @@ function rerenderPending(): number {
 			if (n.decision.evidence) d.evidence = n.decision.evidence;
 			else delete d.evidence;
 			d.group = n.decision.group;
+			if (n.decision.place !== undefined) d.place = n.decision.place;
 			if (n.decision.draft) d.draft = n.decision.draft;
 			// A card read as its draft when it came keeps it: the stored draft may have changed since by the owner's own edit (its text or recipient).
 			else if (d.draft?.ref !== unreadDraftRef(n)) delete d.draft;
@@ -788,6 +790,8 @@ export function resetNoticesForTest(): void {
 	quietReplies.clear();
 	ownerWroteAt.clear();
 	sending.clear();
+	holds.by.clear();
+	holds.on = true;
 	orchTurnFrom = undefined;
 	flushNotices(true);
 }

@@ -2,6 +2,8 @@ import { afterAll, afterEach, beforeEach, describe, expect, test } from "bun:tes
 import { emit } from "./events.ts";
 import { answerDecision, type DecisionSend, listNotices, resetNoticesForTest, unreadCount } from "./notices.ts";
 import { putDecision } from "./notices-store.ts";
+import { ANSWER_HOLD_MS } from "./notices-answers.ts";
+import { advance } from "./runtime/test-clock.ts";
 import { fakeHub, idleState, inbox, json, on, type View } from "./test-web.ts";
 
 // "직접 답하기" on a question card (web/js/30-notices.js ntDirect): the composer quotes the asking message and what the owner writes next is sent with that
@@ -162,6 +164,8 @@ describe("직접 답하기 on a question asked in the 알림 conversation", () =
 		await waitFor(typing);
 		expect(await ev<string>(`current`)).toBe("notices");
 		await run(`const t = document.querySelector(".dc-note"); t.value = "이미 보냈어요"; t.dispatchEvent(new Event("input", { bubbles: true })); document.querySelector('.dc-go[data-k="send"]').click()`);
+		await waitFor(`document.querySelector(".snack .sa")`);
+		await advance(ANSWER_HOLD_MS);
 		const [a] = await delivered.until(d => d.length > 0);
 		await waitFor(`NT.items.some(n => n.decision && n.decision.state === "answered")`);   // the page heard the hub settle it
 		const id = decisions().find(d => d.title.includes("보고서"))!.id;

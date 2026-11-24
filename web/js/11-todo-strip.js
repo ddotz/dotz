@@ -335,6 +335,13 @@ function sysLine(e, text, hm) {
   const row = sysRow(id, st, e);
   return el("button", { class: "cv-sys", type: "button", title: TX("home.sys.open_task"), onclick: () => sysOpen(row, id, text.replace(/^[^:]*:\s*/, ""), e) }, ...kids);
 }
+function dqMark(md, blocks) {
+  const flat = s => String(s).replace(/\*\*|`/g, "").replace(/\s+/g, " ").trim(), paras = [...md.querySelectorAll("p, li, h2, h3, h4")];
+  blocks.forEach((b, i) => {
+    const t = flat(b.title), p = t ? paras.find(x => !x.dataset.q && flat(x.textContent).startsWith(t)) : null;
+    if (p) p.dataset.q = String(i);
+  });
+}
 // `inRow`: drawn inside an unfolded row (11-worklog.js wlFull), which is the message's one fold.
 function msgNode(e, inRow) {
   const text = String(e.text ?? ""), hm = kstHM(e.ts);
@@ -447,6 +454,7 @@ function msgNode(e, inRow) {
       // A spec stored before the hub read an emoji mark holds that mark in its first line: such an answer is drawn from its text, the mark read above.
       const stale = emoji && !Object.values(e.spec?.elements ?? {}).some(x => x?.type === "Status");
       const md = answer ? answerNode(shown, { shaped: fl.files.length > 0, spec: (pc && pc.blocks.length) || stale ? null : e.spec }) : mdNode(shown, "md", !!e.relay), files = e.relay ? null : pathFiles(md, host);
+      if (pc && pc.blocks.length > 1 && !inl) dqMark(md, pc.blocks);
       // A briefing-shaped answer (schedule rows, a mail line, counts) is drawn as a card of rows and chips (11-resultcard.js hcBriefNode).
       const brief = e.kind === "out" && !e.relay && !(pc && pc.blocks.length) ? hcBriefNode(fl.text) : null;
       if (e.kind === "out" && !isRestart(e)) streamIn(brief || md, `${e.ts}|${text.length}`, e.ts);

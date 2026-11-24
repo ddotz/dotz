@@ -3,14 +3,17 @@ import { log, now } from "./config.ts";
 import { detailOf, unnumbered } from "./choices.ts";
 import { DRAFT_BODY_MAX, draftActionOf, draftNeedsText } from "./draft-approval.ts";
 import type { Upload } from "./files.ts";
-import type { Decision, DecisionOpt, Notice, OwnerSaid } from "./notices-types.ts";
+import type { Decision, DecisionOpt, HeldAnswer, Notice, OwnerSaid } from "./notices-types.ts";
 import { msg } from "./i18n.ts";
 import { tellAsker } from "./notices-tell.ts";
 import { closedHooks, decisionHooks } from "./notices-wiring.ts";
 import { TEXT_MAX, clean, closedInfo, isOpenDecision, laterOn, needsAnswer, twinOf } from "./notices-rules.ts";
 import { broadcast } from "./notices-read.ts";
-import { expiresAtOf, sending } from "./notices-decisions.ts";
+import { expiresAtOf, holds, plainCard, sending } from "./notices-decisions.ts";
+import { finishOnStop } from "./shutdown.ts";
 import { RUN_DECISION } from "./notices-schedule.ts";
+import { laneExists } from "./notices-lanes.ts";
+import { escalations } from "./escalate.ts";
 import { items, orchTurnFrom, putDecision, resolveAsks, save, settleDecision, unreadCount } from "./notices-store.ts";
 
 // A question whose time is up stops waiting on the owner: it is closed as resolved (no answer), marked `expired` so the card reads 기한 지남, read, saved
@@ -45,18 +48,23 @@ const HANDED_OFF = "메인에 넘겼어요";
 const handedOff = (item: Notice, answer: string): string => `세션 ${item.decision!.to.slice(5)}은(는) 이미 끝나서 메인에 대신 전해요.\n질문: ${item.title}\n답: ${answer}`;
 // A button of a decision: `n` is the option's number. The answer goes to the asking chat / session (or the login request) through `send`; only
 // when that worked is the notice answered.
-export async function answerDecision(id: unknown, body: { n?: unknown; note?: unknown; files?: Upload[]; handoff?: unknown }, send: DecisionSend): Promise<{ status: number; body: Record<string, unknown> }> {
+export async function answerDecision(id: unknown, body: { n?: unknown; note?: unknown; files?: Upload[]; handoff?: unknown; hold?: unknown }, send: DecisionSend): Promise<{ status: number; body: Record<string, unknown> }> {
 	const item = items.find(i => i.id === String(id));
 	const d = item?.decision;
 	if (!item || !d) return { status: 404, body: { error: "unknown decision" } };
 	if (d.state !== "open") return { status: 200, body: { ok: true, already: true, item, unread: unreadCount() } };
 	// a second tap while the first answer is still going out: that one carries it (a double tap never sends the answer twice)
 	if (sending.has(item.id)) return { status: 200, body: { ok: true, already: true, item, unread: unreadCount() } };
+	const held = heldOf(item);
+	if (held) return { status: 409, body: { code: "held", error: msg().answerHeld(held.label.replace(/^\d+\)\s*/, "")), held, item, unread: unreadCount() } };
+	if (d.hold) delete d.hold;
 	const handoff = body.handoff === "main";
 	if (body.handoff !== undefined && (!handoff || !d.to.startsWith("lane:") || d.draft)) return { status: 400, body: { error: "unknown option" } };
-	if (body.n === undefined || body.n === null) return answerInWords(item, String(body.note ?? "").trim().slice(0, OWN_WORDS_MAX), send, handoff);
+	const mayHold = body.hold === true && plainCard(d) && !handoff && !body.files?.length && !(d.to.startsWith("lane:") && !laneExists(d.to.slice(5)));
+	if (body.n === undefined || body.n === null) return answerInWords(item, String(body.note ?? "").trim().slice(0, OWN_WORDS_MAX), send, handoff, mayHold);
 	const o = d.options.find(x => x.n === Number(body.n));
 	if (!o || o.action === "form") return { status: 400, body: { error: "unknown option" } };
+	const hold = mayHold && !o.action && !escalations()?.answers({ to: d.to, label: o.label });
 	const label = `${o.n}) ${unnumbered(o.label)}`;
 	// 고치기 on a draft carries what to change and needs it. Elsewhere an option that needs detail (choices.ts detailOf: 안 됨 …) needs the owner's written reason too;
 	// a button with its own `say` / `action` (login request, fixed yes / no) never does.
@@ -66,13 +74,14 @@ export async function answerDecision(id: unknown, body: { n?: unknown; note?: un
 	if (draftEdit && !note) return { status: 400, body: { error: draftActionOf(o.label) === "own" ? "어떻게 보낼지 적어 주세요" : "무엇을 고칠지 적어 주세요" } };
 	if (asksDetail && !note) return { status: 400, body: { error: "내용을 적어 주세요" } };
 	const text = (o.say ?? (d.group > 1 ? `${item.title}: ${label}` : label)) + (note ? ` - ${note}` : "");
-	return deliverDecision(item, handoff ? `${label} · ${HANDED_OFF}` : label, { to: handoff ? "main" : d.to, text: handoff ? handedOff(item, text) : text, notice: item.id, ...(d.to.startsWith("auth:") ? {} : { picks: [{ q: item.title, n: o.n, label: o.label, ...(asksDetail ? { note } : {}), ...(d.draft && d.hash ? { hash: d.hash } : {}) }] }), ...(d.reply_to && !handoff ? { replyTo: d.reply_to } : {}), ...(o.action ? { action: o.action } : {}), ...(draftEdit && body.files?.length ? { files: body.files } : {}) }, send);   // `picks` carries the question with the chosen option, so the agent gets the context even from another conversation (intake.ts decisionLines); files: what 직접 수정 attached, for the bot to put on the draft
+	return (hold ? holdDecision : deliverDecision)(item, handoff ? `${label} · ${HANDED_OFF}` : label, { to: handoff ? "main" : d.to, text: handoff ? handedOff(item, text) : text, notice: item.id, ...(d.to.startsWith("auth:") ? {} : { picks: [{ q: item.title, n: o.n, label: o.label, ...(asksDetail ? { note } : {}), ...(d.draft && d.hash ? { hash: d.hash } : {}) }] }), ...(d.reply_to && !handoff ? { replyTo: d.reply_to } : {}), ...(o.action ? { action: o.action } : {}), ...(draftEdit && body.files?.length ? { files: body.files } : {}) }, send);   // `picks` carries the question with the chosen option, so the agent gets the context even from another conversation (intake.ts decisionLines); files: what 직접 수정 attached, for the bot to put on the draft
 }
 // Sends the answer, and only when that worked is the notice answered. `label` is what the notice then shows as the answer.
 async function deliverDecision(item: Notice, label: string, payload: Parameters<DecisionSend>[0], send: DecisionSend): Promise<{ status: number; body: Record<string, unknown> }> {
 	sending.set(item.id, label);
 	try {
 		await send(payload);
+		delete item.decision?.hold;
 		settleDecision(item, label);
 	} catch (err) {
 		if (err instanceof SessionEnded) return { status: 409, body: { code: err.code, error: err.message } };
@@ -85,17 +94,84 @@ async function deliverDecision(item: Notice, label: string, payload: Parameters<
 	}
 	return { status: 200, body: { ok: true, item, unread: unreadCount() } };
 }
+/** How long a plain card's answer waits in the gateway's memory before it goes out, while the page offers 되돌리기 (POST /api/notices/<id>/unhold).
+ * An orderly stop (지금 재시작, the restart gate of an update, SIGTERM: hub/shutdown.ts) sends every held answer at once before it saves anything, and a
+ * restart that waits for an idle gateway waits for it. A crash (kill -9, power loss) inside the window loses the answer unsent; the card was never
+ * settled on disk, so it waits on the owner again. */
+export const ANSWER_HOLD_MS = 5000;
+const ANSWER_GONE = "답이 이미 전해져서 되돌릴 수 없어요";
+type HoldGiven = Omit<HeldAnswer & { state: "held" }, "left"> | Omit<HeldAnswer & { state: "failed" }, "left">;
+function holdOn(d: Decision, h: HoldGiven): void {
+	Object.defineProperty(d, "hold", { configurable: true, enumerable: true, get: (): HeldAnswer => ({ ...h, left: Math.max(0, h.until - Date.now()) }) });
+}
+const givenOf = new WeakMap<object, HoldGiven>();
+/** The answer held for `item` in its undo window, put back on its decision when a re-ask of the same question replaced that object; undefined when none waits. */
+export function heldOf(item: Notice): HeldAnswer | undefined {
+	const h = holds.by.get(item.id), given = h && givenOf.get(h);
+	if (!given || !item.decision) return undefined;
+	if (item.decision.hold?.until !== given.until) holdOn(item.decision, given);
+	return item.decision.hold;
+}
+async function holdDecision(item: Notice, label: string, payload: Parameters<DecisionSend>[0], send: DecisionSend): Promise<{ status: number; body: Record<string, unknown> }> {
+	if (!holds.on) return deliverDecision(item, label, payload, send);
+	const pick = payload.picks?.[0], typed = pick ? { n: pick.n, ...(pick.note ? { note: pick.note } : {}) } : { note: label };
+	const until = Date.now() + ANSWER_HOLD_MS;
+	const deliver = async (): Promise<void> => {
+		if (!isOpenDecision(item) || !items.includes(item)) {
+			delete item.decision?.hold;
+			return;
+		}
+		const r = await deliverDecision(item, label, payload, send);
+		if (r.status === 200) return;
+		if (!isOpenDecision(item)) {
+			delete item.decision?.hold;
+			return;
+		}
+		holdOn(item.decision!, { state: "failed", label, until, ...typed, code: String(r.body.code), error: String(r.body.error) });
+		announce([item], now());
+	};
+	let going: Promise<void> | undefined;
+	const go = (): Promise<void> => (going ??= deliver().finally(() => {
+		if (holds.by.get(item.id) === entry) holds.by.delete(item.id);
+	}));
+	const entry = { timer: setTimeout(() => void go(), ANSWER_HOLD_MS), go }, given: HoldGiven = { state: "held", label, until, ...typed };
+	givenOf.set(entry, given);
+	holds.by.set(item.id, entry);
+	holdOn(item.decision!, given);
+	announce([item], now());
+	return { status: 200, body: { ok: true, held: item.decision!.hold, item, unread: unreadCount() } };
+}
+/** 되돌리기 of a held answer: nothing went out and the card waits as it did; `back` is what was typed with the answer (its option and text), for the page to
+ * put back. 409 once the answer has left (or there was none to take back). */
+export function unholdDecision(id: unknown): { status: number; body: Record<string, unknown> } {
+	const item = items.find(i => i.id === String(id)), h = holds.by.get(String(id));
+	if (!item || !h || sending.has(item.id)) return { status: 409, body: { code: "gone_out", error: ANSWER_GONE } };
+	clearTimeout(h.timer);
+	holds.by.delete(item.id);
+	const given = givenOf.get(h);
+	delete item.decision?.hold;
+	announce([item], now());
+	return { status: 200, body: { ok: true, item, unread: unreadCount(), ...(given?.note ? { back: { ...(given.n === undefined ? {} : { n: given.n }), note: given.note } } : {}) } };
+}
+/** Every held answer goes out now, each once, and a later answer is not held: the first work of an orderly stop (hub/shutdown.ts finishOnStop). */
+export async function sendHeldNow(): Promise<void> {
+	holds.on = false;
+	const all = [...holds.by.values()];
+	for (const h of all) clearTimeout(h.timer);
+	await Promise.all(all.map(h => h.go()));
+}
+finishOnStop("held answers", sendHeldNow, () => holds.by.size > 0);
 
 // The owner's own words as the answer, no option picked: for a question asked where no composer takes typed text (the 알림 conversation), so the sheet's
 // text field is the only place to write. It reaches the asking chat / session as an option answer does, with the question (intake.ts decisionLines reads
 // replyTo and the notice); a question of a several-question message, or one with no asking message to point at, carries its title. A send approval and a
 // login request are answered by their buttons only.
-async function answerInWords(item: Notice, said: string, send: DecisionSend, handoff: boolean): Promise<{ status: number; body: Record<string, unknown> }> {
+async function answerInWords(item: Notice, said: string, send: DecisionSend, handoff: boolean, hold = false): Promise<{ status: number; body: Record<string, unknown> }> {
 	const d = item.decision!;
 	if (d.draft || d.to.startsWith("auth:") || d.to.startsWith(RUN_DECISION)) return { status: 400, body: { error: "unknown option" } };
 	if (!said) return { status: 400, body: { error: "내용을 적어 주세요" } };
 	const text = d.group > 1 || !d.reply_to ? `${item.title}: ${said}` : said;
-	return deliverDecision(item, handoff ? `${said} · ${HANDED_OFF}` : said, { to: handoff ? "main" : d.to, text: handoff ? handedOff(item, text) : text, notice: item.id, ...(d.reply_to && !handoff ? { replyTo: d.reply_to } : {}) }, send);
+	return (hold ? holdDecision : deliverDecision)(item, handoff ? `${said} · ${HANDED_OFF}` : said, { to: handoff ? "main" : d.to, text: handoff ? handedOff(item, text) : text, notice: item.id, ...(d.reply_to && !handoff ? { replyTo: d.reply_to } : {}) }, send);
 }
 
 // A login request (dotz_auth) waits on the owner: approve / cancel here, the form for typed values stays the page's own.

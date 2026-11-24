@@ -36,7 +36,7 @@ function ntClean(n) {
     const m = NM.items.find(x => monNames(x).includes(n.title));
     n.title = m ? monTitle(m) : monClean(n.title) || TX("mon.kind.schedule");
   }
-  return n;
+  return ntHoldView(n);
 }
 let ntLoads = 0, ntWant = null;   // reads on their way; the unread count /api/state gave while one was out (ntSync)
 async function loadNotices() {
@@ -274,7 +274,7 @@ async function monOpen(n) {
 timeline.addEventListener("click", ev => {
   if (current !== "chat" || !isFixedT(target) || !(ev.target instanceof Element)) return;
   const m = ev.target.closest(".bm[data-ts]");
-  if (!m || !tl.contains(m) || m.matches(".wl-row[role=button]") || ev.target.closest("a, summary, details[open] pre, input, textarea, button:not(.dcm-row), .fatt") || getSelection().toString()) return;
+  if (!m || !tl.contains(m) || m.matches(".wl-row[role=button]") || ev.target.closest("a, summary, details[open] pre, input, textarea, button:not(.dcm-row), .fatt, .dq-p") || getSelection().toString()) return;
   const e = ts(target).msgs.find(x => x.ts === m.dataset.ts);
   if (!e) return;
   ev.stopPropagation(); ev.preventDefault();
@@ -414,6 +414,7 @@ const ntLinkedDec = n => {
 // The decision whose sheet a tap opens: the twin above, or, for the conversation's latest-message item (key msg:<conversation>), its newest open decision,
 // unless that item's message is newer than the question: then the tap is about the message (ntJump) and the question stays on the docked card.
 const ntTapDec = n => {
+  if (ntIsDec(n)) return n;
   const t = n.src || n.open, q = n.kind === "message" && n.key === `msg:${t}` ? ntDecisions().find(x => x.decision.to === t) : null;
   return ntLinkedDec(n) || (q && !(Date.parse(n.at) > Date.parse(q.decision.reply_to)) ? q : null);
 };
@@ -432,7 +433,7 @@ function ntDecCtx(n) {
   return [proj, d.to.startsWith("schedule:") ? pcTargetName(ntWhere(n), n.pc) : ntDecWhere(d, n.pc)].filter(Boolean).join(" · ");
 }
 function ntApply(item, unread) {
-  if (item) { const i = NT.items.findIndex(x => x.id === item.id); if (i >= 0) NT.items[i] = item; else NT.items.push(item); }
+  if (item) { item = ntClean(item); const i = NT.items.findIndex(x => x.id === item.id); if (i >= 0) NT.items[i] = item; else NT.items.push(item); }
   if (typeof unread === "number") NT.unread = unread;
   ntPaint();
   ntSheetPaint();
@@ -446,14 +447,15 @@ function ntApply(item, unread) {
 // and the list is read again so the new options show (the error is thrown to the caller's toast like any other). `hash`: the draft version this card shows; a send of another (or of none) is refused `changed` and the list read again.
 const NT_STALE = "카드 선택지가 바뀌었어요. 다시 확인하고 골라 주세요";
 async function ntPost(n, num, note, files, label) {
-  const seen = label || ((n.decision && n.decision.options || []).find(o => o.n === num) || {}).label, hash = n.decision && n.decision.hash ? { hash: n.decision.hash } : {};
+  const o = (n.decision && n.decision.options || []).find(x => x.n === num) || {}, seen = label || o.label, hash = n.decision && n.decision.hash ? { hash: n.decision.hash } : {};
   try {
     if (n.pc) { await pqNotice(n, "answer", { id: String(n.id), n: num, ...(seen ? { label: seen } : {}), ...(note ? { note } : {}), ...hash }); return; }   // a peer's question: answered on that computer (34-peer-monitoring.js)
-    const r = await api(`/api/notices/${enc(n.id)}/answer`, "POST", { n: num, ...(seen ? { label: seen } : {}), ...(note ? { note } : {}), ...(files && files.length ? { files } : {}), ...hash });
+    const r = await api(`/api/notices/${enc(n.id)}/answer`, "POST", { n: num, ...(seen ? { label: seen } : {}), ...(note ? { note } : {}), ...(files && files.length ? { files } : {}), ...hash, ...(n.decision.draft || o.action || /^(?:auth|schedule):/.test(n.decision.to) ? {} : { hold: true }) });
     ntApply(r.item, r.unread);
-    return r.send;   // set while the gateway holds the send for its cancel window (hub/approval-send.ts)
+    return r.send || r.held;   // set while the gateway holds the send for its cancel window (hub/approval-send.ts)
   } catch (e) {
     if (e && (e.message === NT_STALE || (e.data && e.data.code === "changed"))) await loadNotices();
+    if (e && e.data && e.data.code === "held" && e.data.item) ntApply(e.data.item, e.data.unread);
     throw e;
   }
 }
@@ -559,18 +561,20 @@ async function ntAnswer(n, opt, note) {
   if (opt && opt.action === "form") { ntDirect(n); return; }
   if (opt && !note && ntNeedsNote(n, opt)) { NS.edit = { id: String(n.id), opt, text: "", fresh: true }; ntSheetPaint(); return; }
   NS.busy = true; ntSheetPaint();
-  let sent = false;
-  try { await ntPost(n, opt ? opt.n : undefined, note, undefined, opt ? opt.label : ""); NS.edit = null; sent = true; }
+  let sent = false, held = null;
+  try { held = await ntPost(n, opt ? opt.n : undefined, note, undefined, opt ? opt.label : ""); NS.edit = null; sent = true; }
   catch (err) { if (!dcGoneFail(n, err, opt, note)) toast(err.message, true); }
   NS.busy = false;
-  if (sent && NS.id === String(n.id) && ntAfterAnswer(n)) return;
+  if (sent && NS.id === String(n.id) && ntAfterAnswer(n, held)) { dcHeldToast(n, held, true); return; }
   ntSheetPaint();
+  if (sent) dcHeldToast(n, held, true);
 }
 // The questions one message asked (same conversation, same asking message), in the order they were made; a lone question has none to move between.
 function ntSibs(n) {
   const d = n.decision;
   if (n.pc || d.draft || !(d.group > 1) || !d.reply_to) return [];
   const all = NT.items.filter(x => ntIsDec(x) && !x.decision.draft && x.decision.to === d.to && x.decision.reply_to === d.reply_to && x.decision.group === d.group);
+  if (all.every(x => Number.isInteger(x.decision.place))) all.sort((a, b) => a.decision.place - b.decision.place);
   return all.length > 1 ? all : [];
 }
 // The question that waits next after `n` (then the ones before it), or null.
@@ -587,12 +591,19 @@ function ntSheetGo(id) {
   const b = $(".fs-body", NS.h.box); if (b) b.scrollTop = 0;
   NS.h.box.focus({ preventScroll: true });   // the sheet holds the focus, not an option: a ring on the first one would read as a pick
 }
+function ntGiveBack(n, back) {
+  const id = String(n.id), opt = back.n === undefined ? null : (n.decision.options || []).find(o => o.n === back.n) || null;
+  if (!back.note || (back.n !== undefined && !opt)) return;
+  const ed = { id, opt, text: back.note, fresh: true };
+  if (NS.node && NS.id === id) { NS.edit = ed; NS.h.box.dataset.sig = ""; } else NS.stash.set(id, ed);
+  if (opt) dcGiveBack(n, opt, back.note);
+}
 // After an answer: a question of a several-question message moves the sheet to the next one that waits, the last one closes it. False for a lone question (its sheet shows the answer).
-function ntAfterAnswer(n) {
+function ntAfterAnswer(n, held) {
   if (!ntSibs(n).length) return false;
-  const nx = ntNextOpen(n);
-  if (nx) { toast(TX("conv.nt.sent_next_q")); ntSheetGo(nx.id); }
-  else { ntSheetClose(); toast(TX("conv.nt.sent")); }
+  const nx = ntNextOpen(n), quiet = !!held && held.state === "held";
+  if (nx) { if (!quiet) toast(TX("conv.nt.sent_next_q")); ntSheetGo(nx.id); }
+  else { ntSheetClose(); if (!quiet) toast(TX("conv.nt.sent")); }
   return true;
 }
 function ntEditNode(n, ed) {
@@ -689,10 +700,10 @@ function ntSheetPaint() {
   if (NS.det) { ntDetailPaint(NS.det); return; }
   const n = NS.pn ? pqNoticeNow(NS.pn) : ntById(NS.id);
   if (!n || !ntIsDec(n)) { ntSheetClose(false); return; }
-  const d = n.decision, open = d.state === "open", ignd = d.state === "ignored", parts = ntParts(n), sibs = ntSibs(n), keep = NS.node.contains(document.activeElement) ? document.activeElement.dataset.k : "";
+  const d = n.decision, open = d.state === "open", ignd = d.state === "ignored", parts = ntParts(n), sibs = ntSibs(n), left = sibs.filter(ntOpenDec).length, keep = NS.node.contains(document.activeElement) ? document.activeElement.dataset.k : "";
   const fold = d.draft ? { head: parts.rest, rest: "" } : (d.options.length && ntEvFold(n, parts.rest)) || ntFold(d.options.length ? choiceBody(parts.rest, ntPlain(n.title)) : parts.rest);
   const kids = [
-    fsHead([el("span", { class: `fs-ey ${open ? "warn" : ignd ? "ign" : "done"}`, text: `${ntDecCtx(n)} · ${open ? TX("common.needs_reply") : ignd ? TX("mon.dr.st.ignored") : d.expired ? TX("misc.nsc.d_expired") : d.resolved ? TX("conv.nt.resolved") : TX("conv.nt.answered")}` }, sibs.length ? el("span", { class: "fs-left", "data-k": "count", text: ` · ${sibs.findIndex(x => x.id === n.id) + 1}/${d.group}` }) : null)],
+    fsHead([el("span", { class: `fs-ey ${open ? "warn" : ignd ? "ign" : "done"}`, text: `${ntDecCtx(n)} · ${open ? TX("common.needs_reply") : ignd ? TX("mon.dr.st.ignored") : d.expired ? TX("misc.nsc.d_expired") : d.resolved ? TX("conv.nt.resolved") : TX("conv.nt.answered")}` }, left ? el("span", { class: "fs-left", "data-k": "count", text: ` · ${TX("decision.q_left", { n: left })}` }) : null)],
       { ignore: open ? () => ntIgnore(n) : null, ignoreOff: NS.busy, close: () => ntSheetClose() }),
     el("div", { class: "fs-body" },
       el("h2", { class: "ds-t", id: "ds-t", text: parts.title || TX("decision.needs_reply") }),
@@ -724,9 +735,11 @@ function ntSheetPaint() {
     if (!d.to.startsWith("auth:")) foot.append(el("button", { type: "button", class: "ds-direct", "data-k": "go", onclick: () => { ntSheetClose(false); ntJump(n); }, text: TX("conv.nt.see_in_chat") }));
     foot.append(el("button", { type: "button", class: "ds-opt rec c", "data-k": "close", onclick: () => ntSheetClose(), text: TX("common.close") }));
   } else {
-    const cl = askClosed(d), ra = cl ? cl.ra : d.expired ? TX("conv.nt.closed_late") : d.resolved ? TX("conv.nt.closed_done") : ntPlain(d.answer || "") || TX("misc.nsc.d_answered");
-    foot.append(el("div", { class: "ds-res", role: "status" }, el("span", { class: "ds-rl", text: cl ? cl.lb : d.expired ? TX("misc.nsc.d_expired") : d.resolved ? TX("misc.nsc.d_closed") : TX("conv.nt.you_answered") }), ra ? el("span", { class: "ds-ra", text: ra }) : null));
+    const cl = askClosed(d), ra = cl ? cl.ra : d.expired ? TX("conv.nt.closed_late") : d.resolved ? TX("conv.nt.closed_done") : ntPlain(d.answer || "") || TX("misc.nsc.d_answered"), held = !!d.hold && d.hold.state === "held", nx = ntNextOpen(n);
+    foot.append(el("div", { class: "ds-res", role: "status" }, el("span", { class: "ds-rl", text: cl ? cl.lb : d.expired ? TX("misc.nsc.d_expired") : d.resolved ? TX("misc.nsc.d_closed") : held ? TX("decision.hold_lb") : TX("conv.nt.you_answered") }), ra ? el("span", { class: "ds-ra", text: ra }) : null));
+    if (held) foot.append(el("button", { type: "button", class: "ds-direct", "data-k": "unhold", onclick: () => dcUnhold(n, true), text: TX("common.undo") }));
     if (cl && cl.again) foot.append(el("button", { type: "button", class: "ds-direct", "data-k": "again", onclick: async () => { await dcReopen(n); ntSheetPaint(); }, text: TX("decision.closed.again") }));
+    if (nx) foot.append(el("button", { type: "button", class: "ds-direct", "data-k": "next", onclick: () => ntSheetGo(nx.id), text: TX("conv.nt.next_q") }));
     if (!d.to.startsWith("auth:")) foot.append(el("button", { type: "button", class: "ds-direct", "data-k": "go", onclick: () => { ntSheetClose(false); ntJump(n); }, text: TX("conv.nt.see_in_chat") }));
     foot.append(el("button", { type: "button", class: "ds-opt rec c", "data-k": "close", onclick: () => ntSheetClose(), text: TX("common.close") }));
   }

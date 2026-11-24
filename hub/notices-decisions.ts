@@ -26,7 +26,7 @@ const firstLine = (text: string) => {
 	return shortTitle(l);
 };
 
-type Draft = { title: string; detail: string; options: DecisionOpt[]; to: string; replyTo: string; group: number; key: string; by?: string; ref?: string; draft?: DraftApproval; assumed?: true; evidence?: string[] };
+type Draft = { title: string; detail: string; options: DecisionOpt[]; to: string; replyTo: string; group: number; place: number; key: string; by?: string; ref?: string; draft?: DraftApproval; assumed?: true; evidence?: string[] };
 
 // The quoted draft in the newest assistant message of a conversation before `before` (the draft the thread's send question is about).
 function threadDraft(conv: string, before: string): string | undefined {
@@ -90,7 +90,7 @@ function drafted(e: HubEvent): Draft[] {
 	const by = authorOf(e), ref = refOf(e);
 	const files = sendDraft || askDraft ? "" : messageFiles(stripHandoff(String(e.text ?? "")));
 	const withFiles = (s: string): string => s.slice(0, Math.max(0, TEXT_MAX - files.length)) + files;
-	const draft = (title: string, given: DecisionOpt[], group: number, idx: number): Draft => ({ title, detail: withFiles(detail), options: askDraft ? DRAFT_OPTIONS.map(o => ({ ...o })) : given, to, replyTo: e.ts, group, ...(by ? { by } : {}), ...(ref ? { ref } : {}), key: `dec:${to}:${hashOf(`${idx}|${title}|${(askDraft ? DRAFT_OPTIONS : given).map(o => o.label).join("/")}${sendDraft ? `|${sendDraft.to}|${sendDraft.subject ?? ""}|${sendDraft.body}` : ""}`)}`, ...(sendDraft ? { draft: sendDraft } : {}) });
+	const draft = (title: string, given: DecisionOpt[], group: number, idx: number): Draft => ({ title, detail: withFiles(detail), options: askDraft ? DRAFT_OPTIONS.map(o => ({ ...o })) : given, to, replyTo: e.ts, group, place: idx, ...(by ? { by } : {}), ...(ref ? { ref } : {}), key: `dec:${to}:${hashOf(`${idx}|${title}|${(askDraft ? DRAFT_OPTIONS : given).map(o => o.label).join("/")}${sendDraft ? `|${sendDraft.to}|${sendDraft.subject ?? ""}|${sendDraft.body}` : ""}`)}`, ...(sendDraft ? { draft: sendDraft } : {}) });
 	const unread = askDraft ? [] : unreadQuestions(stripHandoff(String(e.text ?? "")));
 	// No choice block (a plain question, often in a mail or work thread): the budget question's buttons, else yes / no or send defaults (ask-options.ts).
 	if (!pc.blocks.length) {
@@ -123,3 +123,5 @@ export const plainCard = (d: { to: string; draft?: DraftApproval }): boolean => 
 
 // The label a button answer shows (the sent text may be longer): set while its message is on the way, since that message settles the notice too.
 export const sending = new Map<string, string>();
+/** The answers the gateway holds for their undo window by notice id (hub/notices-answers.ts holdDecision), and `on`: false once an orderly stop sent them, so a later answer goes out at once. */
+export const holds = { on: true, by: new Map<string, { timer: Timer; go: () => Promise<void> }>() };

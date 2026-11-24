@@ -157,5 +157,10 @@
   "decision.closed.gone": "That session has already ended · passed to main",
   "decision.closed.again": "Ask again",
   "decision.judging": "Checking whether this answers \"{title}\"",
-  "decision.kept_open": "The question stays open"
+  "decision.kept_open": "The question stays open",
+  "decision.held": "{title} → {label}",
+  "decision.q_left": "{n} left",
+  "decision.q_lines": "Questions in this message",
+  "decision.hold_lb": "Going out soon",
+  "decision.hold_failed": "{title} · {error}"
 }

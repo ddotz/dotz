@@ -4,6 +4,7 @@ import { draftActionOf } from "./draft-approval.ts";
 import { replies } from "./reply-wire.ts";
 import { viewConversation } from "./push.ts";
 import { type Notice, allNotices, cardAsked, clockText, dismissNotice, handledNotice, ignoreNotice, laterNotice, moreNotice, undismissNotice, markNoticesRead, readSeenMessage, reopenNotices, resolveNotices, unignoreNotice } from "./notices.ts";
+import { unholdDecision } from "./notices-answers.ts";
 import { askAsker, convOfTarget } from "./outbound.ts";
 import { setAskExtra } from "./askbuttons.ts";
 import { msg } from "./i18n.ts";
@@ -74,11 +75,11 @@ export async function routeNotices(req: Request, url: URL, agent = false): Promi
 		const r = (settle[2] === "handled" ? handledNotice : undismissNotice)(decodeURIComponent(settle[1]!));
 		return json(r.body, r.status);
 	}
-	const ask = req.method === "POST" ? /^\/api\/notices\/([^/]+)\/(more|later)$/.exec(url.pathname) : null;
+	const ask = req.method === "POST" ? /^\/api\/notices\/([^/]+)\/(more|later|unhold)$/.exec(url.pathname) : null;
 	if (ask) {
 		if (agent) return json(OWNER_ONLY, 403);
 		const id = decodeURIComponent(ask[1]!);
-		const r = ask[2] === "more" ? moreNotice(id, askAsker) : laterNotice(id, await body(req));
+		const r = ask[2] === "unhold" ? unholdDecision(id) : ask[2] === "more" ? moreNotice(id, askAsker) : laterNotice(id, await body(req));
 		return json(r.body, r.status);
 	}
 	const ignore = req.method === "POST" ? /^\/api\/notices\/([^/]+)\/(ignore|unignore)$/.exec(url.pathname) : null;

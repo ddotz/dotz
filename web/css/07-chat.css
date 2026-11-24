@@ -99,7 +99,11 @@
 .dcard.fold .dc-fold .ic { transform: rotate(180deg); }
 .dc-body { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: var(--sp-05); padding: 0 var(--sp-15) var(--sp-15); overflow-y: auto; overscroll-behavior: contain; }
 .dc-sub { padding: var(--sp-05) var(--sp-1) 0; color: var(--fg-2); font-size: 12px; line-height: 16px; font-weight: 600; }
-.dc-inl { display: flex; flex-direction: column; gap: var(--sp-05); margin-top: var(--sp-2); padding: var(--sp-2); border: 1px solid var(--line); border-radius: var(--r-card); background: var(--card); }
+.dc-inl, .dq-list { display: flex; flex-direction: column; gap: var(--sp-05); margin-top: var(--sp-2); padding: var(--sp-2); border: 1px solid var(--line); border-radius: var(--r-card); background: var(--card); }
+.dq:not(.dq-open) .dc-lb { color: var(--fg-2); font-weight: 400; }
+.dq-p { min-height: 44px; margin-left: calc(-1 * var(--sp-1)); margin-right: calc(-1 * var(--sp-1)); padding: var(--sp-05) var(--sp-1); border-radius: var(--r-ctl); cursor: pointer; }
+.dq-p:active { background: var(--active); }
+.dq-st { display: block; margin-top: var(--sp-05); color: var(--fg-2); font: 400 13px/20px var(--font); }
 .dc-inl .dc-q { margin: 0 0 var(--sp-05); padding: 0 var(--sp-1); }
 .dc-ev { margin: 0 0 var(--sp-05); padding: 0 var(--sp-1); color: var(--fg-2); font: 400 13px/20px var(--font); }
 .dc-ev p { margin: 0; }

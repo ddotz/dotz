@@ -76,7 +76,7 @@ import { pendingBackups } from "./carryover.ts";
 import { clearChannel, endStanding, lapseStandings, nameWatches, setupChannel, wakeOnly, watchLabel, watchNoticeKind, watchWakeEvent } from "./workchannels.ts";
 import { watchIssueLine, watchLine } from "./watchtext.ts";
 import { createWatchSummarizer } from "./watchsummary.ts";
-import { clearTrackedTimers, runShutdown } from "./shutdown.ts";
+import { clearTrackedTimers, runShutdown, stopWorkBusy } from "./shutdown.ts";
 import { addWatch, allWatches, approveWatch, isWatchIssue, setHealedHandler, setHealHandler, setWatchGate, startWatches, stopWatches, type Watch, wakeTarget } from "./watch.ts";
 import { watchIssueText } from "./watch-ask.ts";
 import { watchOwner } from "./app-features.ts";
@@ -726,7 +726,7 @@ function busyNow(): string[] {
 	return [
 		...orchestrator,
 		...sessions,
-		replies.size() ? "reply" : "",
+		replies.size() ? "reply" : "", ...stopWorkBusy(),
 		...[...lanes.values()].flatMap(l => laneBusyLines(l.name, laneBusy(l), laneWorkers(l))),
 	].filter(Boolean);
 }

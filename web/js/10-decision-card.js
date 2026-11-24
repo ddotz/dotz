@@ -67,6 +67,13 @@ const choiceAsks = (e, tone, pc) => tone === "ask" || isHeadedChoice(pc) || (e.k
 const DC = { cur: null, picks: {}, step: {}, fold: {}, st: {}, edit: {}, fresh: "", note: {} };
 function dcUnfold(t) { DC.fold[t] = false; }
 function dcMarkSent(key, pick) { DC.picks[key] = [pick]; DC.st[key] = "sent"; delete DC.edit[key]; }   // an answer given elsewhere (a revised draft's sheet, 30-notices.js dkPaint)
+function dcForget(t) { for (const k of Object.keys(DC.st)) if (k.startsWith(`${t}|`)) { delete DC.st[k]; delete DC.picks[k]; delete DC.step[k]; } }
+function dcGiveBack(n, opt, note) {
+  const dc = decisionOf(n.decision.to), bi = !dc ? -1 : dc.each ? dc.blocks.findIndex(b => b.nd && String(b.nd.id) === String(n.id)) : dc.at === n.decision.reply_to ? 0 : -1;
+  if (bi < 0) return;
+  DC.edit[dc.key] = { bi, opt };
+  DC.note[dc.key] = note;
+}
 { const k = kept("dc", () => ({ edit: DC.edit, note: DC.note })) || {}; Object.assign(DC.edit, k.edit); Object.assign(DC.note, k.note); }   // the open field and its text outlive a reload (01-core.js kept)
 // A draft waiting for send approval (hub/draft-approval.ts): the notice carries it, the sheet shows it above 보내기 / 고치기 / 보내지 않기.
 const DRAFT_EDIT = "고치기", DRAFT_OWN = "어떻게 보낼지 직접 입력";
@@ -147,7 +154,7 @@ async function answerDecision(dc, text, opt, note) {
     const pk = DC.picks[dc.key] || [], picks = dc.blocks.flatMap((b, i) => (pk[i] ? [{ q: b.title || dc.question || "", n: pk[i].n, label: pk[i].label, ...(pk[i].note && !dc.draft ? { note: pk[i].note } : {}) }] : []));
     const r = nd ? null : await sendMsgOut(t, text, { text, ...(picks.length ? { picks } : {}), ...(dc.at ? { reply_to: dc.at } : {}), ...(lane ? { lane } : {}), ...(isProjT(t) ? { project: projOf(t) } : {}), ...(isMailT(t) ? { mail: mailOf(t) } : {}), ...(isRowT(t) ? { conv: t } : {}), ...(isWorking(t) ? { mode: "steer" } : {}) });
     if (r && r.queued) { putQueue(QUEUE.filter(i => i.id !== r.queued.id).concat(r.queued)); renderQueue(); }
-    DC.st[dc.key] = "sent"; delete DC.edit[dc.key]; delete DC.note[dc.key];
+    DC.st[dc.key] = "sent"; delete DC.edit[dc.key]; delete DC.note[dc.key]; dcHeldToast(nd, held, false);
     if (t === target) { putChatStick(true); scrollChat(true); }
   } catch (e) { delete DC.st[dc.key]; if (dc.blocks.length === 1) delete DC.picks[dc.key]; if (note) DC.edit[dc.key] = { bi: 0, opt }; if (!dcGoneFail(nd, e, opt, note)) toast(e.message, true); }
   paintDecision();
@@ -175,7 +182,7 @@ function pickOption(dc, bi, opt, note, typed) {
 }
 async function answerEach(dc, bi, opt, note) {
   DC.st[dc.key] = "sending"; paintDecision();
-  try { await ntPost(dc.blocks[bi].nd, opt.n, note, undefined, opt.label); delete DC.note[dc.key]; } catch (e) { if (note) DC.edit[dc.key] = { bi, opt }; if (!dcGoneFail(dc.blocks[bi].nd, e, opt, note)) toast(e.message, true); }
+  try { dcHeldToast(dc.blocks[bi].nd, await ntPost(dc.blocks[bi].nd, opt.n, note, undefined, opt.label), false); delete DC.note[dc.key]; } catch (e) { if (note) DC.edit[dc.key] = { bi, opt }; if (!dcGoneFail(dc.blocks[bi].nd, e, opt, note)) toast(e.message, true); }
   delete DC.picks[dc.key]; delete DC.step[dc.key];
   // The last question of the card answered: it leaves through dcLeave (fades, then goes) like any answered card; the others still wait on the card.
   if (decisionOf(dc.t)) delete DC.st[dc.key]; else DC.st[dc.key] = "sent";
@@ -595,7 +602,7 @@ async function answerInline(nd, opt) {
 // What a draft answered in place did, with the next step: 보냈어요 · 메일 열기 (the mail it answered), 보내지 않았어요 · 되돌리기 (the draft waits again).
 function dcAnswerToast(nd, opt, held) {
   const to = String(nd.decision.to || "");
-  if (!nd.decision.draft) return;
+  if (!nd.decision.draft) return dcHeldToast(nd, held, false);
   if (opt.label === "보내기" && held && held.state === "undo") toast(TX("decision.toast.sending_soon"), false, null, held.left);
   else if (opt.label === "보내기") toast(TX("decision.sent"), false, to.startsWith("mail:") ? { label: TX("decision.mail.open"), onclick: () => go("monitoring", `c:${to}`) } : null);
   else if (opt.label === "보내지 않기") toast(TX("decision.not_sent"), false, { label: TX("common.undo"), onclick: () => dcReopen(nd) });

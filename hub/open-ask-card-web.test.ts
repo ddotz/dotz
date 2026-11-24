@@ -55,7 +55,7 @@ describe("an open [ask] followed by other messages", () => {
 		expect(await open(2)).toBe("앱별 상한 두기|지금처럼 전부 쓰기");
 		await view.evaluate(`(document.querySelector("#dcard .dc-row").click(), 0)`);
 		await waitFor(`document.querySelector("#dcard").hidden`, 2000);
-		expect(answers).toEqual([{ path: "/api/notices/n0/answer", n: 1, label: "앱별 상한 두기" }]);
+		expect(answers).toEqual([{ path: "/api/notices/n0/answer", n: 1, label: "앱별 상한 두기", hold: true }]);
 	});
 
 	test("a peer message is not the owner's answer: the message's own card stays when no notice is loaded", async () => {

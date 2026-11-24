@@ -154,5 +154,10 @@
   "decision.closed.gone": "이 세션은 이미 끝났어요 · 메인에 전달",
   "decision.closed.again": "다시 묻기",
   "decision.judging": "이 말이 \"{title}\"의 답인지 확인하는 중",
-  "decision.kept_open": "질문은 열어 뒀어요"
+  "decision.kept_open": "질문은 열어 뒀어요",
+  "decision.held": "{title} → {label}",
+  "decision.q_left": "남은 질문 {n}개",
+  "decision.q_lines": "이 메시지의 질문",
+  "decision.hold_lb": "곧 전해요",
+  "decision.hold_failed": "{title} · {error}"
 }
