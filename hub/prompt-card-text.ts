@@ -19,7 +19,7 @@ export const promptCardEn = {
 	promptReviewRemoveResult: (file: string) => `Deletes the line from ${file}. Before anything is edited, the next message shows the whole line and asks you to confirm.`,
 	promptReviewLeave: "Leave",
 	promptReviewLeaveResult: (days: number) => `Nothing changes. If the next review (every ${days} days) points at the same line, you are asked again.`,
-	promptReviewUnplaced: (n: number) => `The weekly review pointed at ${n} line${n === 1 ? "" : "s"} it could not find in exactly one place in the files, so no card was made for ${n === 1 ? "it" : "them"}.`,
+	promptReviewUnplaced: (n: number) => `No card for the weekly review's ${n} line${n === 1 ? "" : "s"}: not in exactly one place in the files.`,
 	promptRemove: "Delete",
 	promptRemoveResult: (file: string) => `Deletes the line from ${file}; the code keeps blocking the rule. Before anything is edited, the next message shows the whole line and asks you to confirm.`,
 	promptKeep: "Keep as is",

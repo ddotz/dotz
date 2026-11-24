@@ -386,31 +386,41 @@ and at which level, and the baselines the checks compare with).
   owner`; a request line of older code without a requester explains nothing), or when it waited for the orchestrator and the owner restarted it on the web meanwhile (its request line
   `gateway restart requested…; waiting for: orchestrator…` names `orchestrator`, and `orchestrator restart: web restart (` comes after that line; one before the request or in a wait for something
   else explains nothing); an install wins over his request, his request over his orchestrator restart; an install or his request counts from a minute before the request its `waited Ns` gives;
-  the owner's 지금 재시작 (`gateway restart now (`) and the gateway's start line end those marks, so a later restart is counted). The finding's sentence gives all restarts of the day, how many updates, his requests and his orchestrator restarts
-  explain and how many are left; its lines give each counted restart's time and the last `deferred gateway restart goes now (…)` or `omo engine changed on disk (…)` line of the same wait, else
-  that the log does not say who asked. Crashes: at least 1 uncaught stack trace added to `gateway.err.log` since the last run (a night store written before the morning
-  re-look existed keeps its crashes); the sentence and lines give each time the gateway started again since the last run with no planned stop before it. sessions: a running session with no
-  progress for over 6 h, or one in error and not closed for over 24 h; logins: a login still lost over 12 h after it was lost; watches: failing for over 24 h or 3 runs in a row, said with since when,
-  how many runs in a row and the last run (the last line of the watch's `last-fail.log`; an empty one is a run that ended with no output, said with the exit code of its last `watch <name> failed
+  the owner's 지금 재시작 (`gateway restart now (`) and the gateway's start line end those marks, so a later restart is counted). The finding's headline gives all restarts of the day and how many
+  of them nothing explains; its lines first say how many updates, his requests and his orchestrator restarts explain, then give each counted restart's time and the last
+  `deferred gateway restart goes now (…)` or `omo engine changed on disk (…)` line of the same wait, else that the log does not say who asked. Crashes: at least 1 uncaught stack trace added to
+  `gateway.err.log` since the last run (a night store written before the morning re-look existed keeps its crashes); the headline gives how many, the lines each time the gateway started again
+  since the last run with no planned stop before it. sessions: a running session with no
+  progress for over 6 h, or one in error and not closed for over 24 h; logins: a login still lost over 12 h after it was lost; watches: failing for over 24 h or 3 runs in a row, the headline saying
+  since when and how many runs in a row, the lines the last run (the last line of the watch's `last-fail.log`; an empty one is a run that ended with no output, said with the exit code of its last `watch <name> failed
   (<code>, …)` log line; no `last-fail.log` at all is said as a run that failed with that exit code; when `watch <name> could not write last-fail.log` follows that last line, the file is an older
   run's and only the failure with its exit code is said; with no such log line nothing is said of the last run; a self-heal that worked since the last run is one *fixed* line); disk: the data volume under 10 % or 10 GB free is a finding, under 3 GB free it carries a decision (clean up
   session records older than the keep days, or leave it for a week; nothing is deleted unless the owner picks the first); update: the last harness or self update failed and none worked since,
-  said with since when (the first failure after the last success), how many times and the last error line; failures: the failure report's growth thresholds (share up 25 %, at least 1M tokens
-  or 10 more occurrences) against a baseline kept in the doctor's file, each grown class said as count and tokens before → after and its share of all tokens last (one case: "1건이 36.8M
+  the headline saying since when (the first failure after the last success) and how many times, the lines the last error; failures: the failure report's growth thresholds (share up 25 %, at least 1M tokens
+  or 10 more occurrences) against a baseline kept in the doctor's file, each grown class named in the headline (its label, `short`) and said in its first line as count and tokens before → after and its share of all tokens last (one case: "1건이 36.8M
   토큰"; one more case than before whose tokens grew: "늘어난 1건이 큰 것";
-  a value under the smallest step shown reads "0.1M 미만" / "0.01% 미만"); tokens: one finding per token-audit warning class that matters (`tokens:<class>`, its cost the level), each saying
-  yesterday's tokens and cost, the usual day (the median of the days with any use among the last 7 measured in `~/.dotz/token-audit.json`, only the newest run of entries with no missing day
-  between them, every 0-token day left out whatever its cause, with how many days and the days the entries cover, an entry covering the KST day before its audit; one day of use is said as
-  that day and its cost, not as a median), the three largest sessions by cost with model (what of a session's cost ran on an expensive model the owner
-  chose is marked as not waste: all of it, or how much; the owner's chosen total in the evidence goes through the same money format) and then its class with its cost; the morning says the told classes in one line under that lead (the audit
+  a value under the smallest step shown reads "0.1M 미만" / "0.01% 미만"), then the window it was measured over; tokens: one finding per token-audit warning class that matters (`tokens:<class>`, its cost the level), its
+  headline saying yesterday's cost against the usual day's cost and naming its class, its lines the class's sessions and cost, the largest sessions by cost with model that fit one line (what of a
+  session's cost ran on an expensive model the owner chose is marked as not waste: all of it, or how much), then yesterday's tokens with how the usual day was taken (the median of the days with any
+  use among the last 7 measured in `~/.dotz/token-audit.json`, only the newest run of entries with no missing day between them, every 0-token day left out whatever its cause, with how many days and
+  the days the entries cover, an entry covering the KST day before its audit; one day of use is said as that day and its cost, not as a median) and the owner's chosen total (through the same money
+  format; a line of its own when there is no line of largest sessions, else on the tokens line when that fits 120 characters, else left out); the morning says the told classes in one headline (the audit
   still writes its report `~/.dotz/logs/token-audit-YYYYMMDD.md` and 14 days of totals in `~/.dotz/token-audit.json`; the reflection digest cites them). Every time is in the install's time zone.
 - *Telling.* A finding is told when it is new, when its level reached 1.5x the level last told, or 7 days after it was last told while still present; a resolved one is dropped (back again = new). Nothing
   notable: one log line, nothing posted anywhere. The message's first line is `닥터 점검: <date> · 알릴 것 N · 정할 것 M` (`Doctor check: <date> · N to know · M to decide`; a count with
-  nothing in it is left out; the lead `DOCTOR_LEAD_KO`/`_EN` of `hub/doctor-text.ts` is what the worklog kind, the notice title and the push recognise it by, and the folded worklog row and the push
-  show this line). Then the part headed `알릴 것` (`To know`): each open problem without a question of its own is one told line with what to do (failure classes share one
-  line, token classes another; a step several lines share is said once after them; a re-told problem says since when it lasts). A problem whose cause can be looked into (`ask`) is such a line too,
-  never a card: it ends with the look-up mark ` · 원인 찾기` (` · find the cause`, `DOCTOR_LOOK_KO`/`_EN`), and one hint line after the told lines says that replying with that line has its cause
-  looked into (the reply goes to the model like any message in the alert conversation). It counts as no decision, opens no answer-needed card and sends no decision push. After the told lines come
+  nothing in it is left out; the lead `DOCTOR_LEAD_KO`/`_EN` of `hub/doctor-text.ts` is what the worklog kind, the notice title and the push recognise it by, and the folded worklog row shows this
+  line; the push of a message with no card says this line and the first headline without its mark, `· `-joined, never a sub-line (`doctorPreview`; one with a card pushes as other alerts do)). Then
+  the part headed `알릴 것` (`To know`): each open problem without a question of its own is one told line: a headline `- <what happened> <what to do>` of at most 80 characters in Korean and 110 in
+  English (`HEAD_CHARS` of `hub/doctor-types.ts`, the look-up mark and the step included; cut at a word boundary to fit) that says what the owner needs to decide whether to look into it, then at
+  most 3 sub-lines `  - <text>` (two spaces and a dash, `SUB_LINES`) of at most 120 characters from the finding's evidence; a line the headline already says is left out, the last says
+  `외 N가지` / `and N more` when there are more, and a finding with nothing more to say has none. Failure classes share one headline (the labels that fit, then `외 N가지`), token classes another
+  (yesterday's cost and the class names); under a shared headline come one sub-line per class (short ones on one line, `; `-joined) and then the lines all of them share. A step several lines share
+  is said once after them; a re-told problem says since when it lasts. The Discord text is the same text, sub-lines included. A problem whose cause can be looked into (`ask`) is such a line too,
+  never a card: its headline ends with the look-up mark ` · 원인 찾기` (` · find the cause`, `DOCTOR_LOOK_KO`/`_EN`), and one hint line after the told lines says that replying with that line has its cause
+  looked into (the reply goes to the model like any message in the alert conversation). On the web the mark is a `원인 찾기` button at the end of the headline's row (a 44 px tap area on a phone;
+  `web/js/11-doctor-look.js`); a sub-line gets no button and is drawn indented and quieter under its headline (`dl-sub`). The button sends one line,
+  `<date> 닥터 점검에서 알린 이 일의 원인을 찾아봐 주세요: <headline> (<sub-line>; <sub-line>)` (no brackets when there is no sub-line); `isDoctorLook` reads that, the headline sent back with its
+  mark, and the headline copied with its sub-lines (each on a line of its own, indented or starting with a list mark) as a look-up request, so a number in it answers no card. It counts as no decision, opens no answer-needed card and sends no decision push. After the told lines come
   the self-fixed things on one line, the count of things told before and still there, and the checks that found nothing. Last, the part headed `정할 것` (`To decide`) with one card per finding with its own
   question (`decide`: the disk clean-up, a rule line the code already enforces, a prompt-review proposal), written with `cardBlock` (`hub/choices.ts`): the title `<subject> · <question>` is at most
   40 characters in both languages, and the finding's evidence lines (`Finding.evidence`, at most 4 lines of at most 120 characters, cut at a word boundary where the finding is built; past 4, the last

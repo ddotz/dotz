@@ -25,11 +25,13 @@ const dayKo = (ms: number): string => new Date(ms).toLocaleDateString("ko-KR", {
 const range = (u: UsualDay, locale: string, to: string): string => (u.from === u.to ? dateOf(u.from, locale) : `${dateOf(u.from, locale)}${to}${dateOf(u.to, locale)}`);
 const fullyChosen = (s: TopSession): boolean => s.chosen > 0 && Math.round(s.chosen * 100) >= Math.round(s.cost * 100);
 const WARN_EN = " Warnings: ", WARN_KO = " 경고: ";
-const joinTokens = (items: string[], warn: string, head: (kinds: string) => string): string => {
+const joinTokens = (items: string[], warn: string, rest: string, head: (kinds: string) => string): string => {
 	const parts = items.map(s => (s.lastIndexOf(warn) < 0 ? { kinds: s.replace(/\.$/, "") } : { lead: s.slice(0, s.lastIndexOf(warn)), kinds: s.slice(s.lastIndexOf(warn) + warn.length).replace(/\.$/, "") }));
-	const lead = parts.find(p => p.lead)?.lead, kinds = parts.map(p => p.kinds).join(", ");
+	const lead = parts.find(p => p.lead)?.lead, kinds = `${parts.map(p => p.kinds).join(", ")}${rest}`;
 	return lead ? `${lead}${warn}${kinds}.` : head(kinds);
 };
+const topEn = (s: TopSession): string => `${s.kind === "orchestrator" ? "main" : s.name} ${s.model} ${EN.dollars(s.cost)}${fullyChosen(s) ? " (a model you chose, not waste)" : s.chosen > 0 ? ` (${EN.dollars(s.chosen)} of it on a model you chose, not waste)` : ""}`.replace(/ +/g, " ");
+const topKo = (s: TopSession): string => `${s.kind === "orchestrator" ? "메인" : s.name} ${s.model} ${KO.dollars(s.cost)}${fullyChosen(s) ? "(직접 고른 모델이라 낭비 아님)" : s.chosen > 0 ? `(이 중 직접 고른 모델 ${KO.dollars(s.chosen)}, 낭비 아님)` : ""}`.replace(/ +/g, " ");
 
 export const DOCTOR_LEAD_EN = "Doctor check:";
 export const DOCTOR_LEAD_KO = "닥터 점검:";
@@ -41,16 +43,27 @@ export const doctorLookAsk = {
 	en: (day: string, line: string) => `Please find the cause of this item from the ${day} doctor check: ${line}`,
 	ko: (day: string, line: string) => `${day} 닥터 점검에서 알린 이 일의 원인을 찾아봐 주세요: ${line}`,
 };
-/** Whether an owner's message asks to look into a told line: the look-up reply in either language, or the told line sent back with its mark. */
+const SUB_LINE = /^\s*[-•◦*]\s|^\s+\S/;
+/**
+ * Whether an owner's message asks to look into a told line: the look-up reply in either language, or the told line sent back with its mark; a told line
+ * copied with its sub-lines (each on its own line, indented or with a list mark) counts as that line.
+ */
 export function isDoctorLook(text: string): boolean {
-	const t = text.trim();
-	if (t.includes("\n")) return false;
+	const [first = "", ...rest] = text.trim().split("\n");
+	if (rest.length) return rest.every(l => !l.trim() || SUB_LINE.test(l)) && isDoctorLook(first.replace(/^\s*[-•*]\s+/, ""));
+	const t = first.trim();
 	if (t.endsWith(DOCTOR_LOOK_EN) || t.endsWith(DOCTOR_LOOK_KO)) return true;
 	return Object.values(doctorLookAsk).some(ask => {
 		const [pre = "", mid = ""] = ask("\0", "\0").split("\0");
 		const at = t.indexOf(mid, pre.length + 1);
 		return t.startsWith(pre) && at > pre.length && at - pre.length <= 20 && t.length > at + mid.length;
 	});
+}
+/** What a notification says of a morning doctor message: its first line (the date and the counts) and the headline of its first told line without the look-up mark; any other text, and a doctor message with no told line, as it is. */
+export function doctorPreview(text: string): string {
+	const lines = text.split("\n"), told = lines.find(l => l.startsWith("- "))?.slice(2);
+	if (told === undefined || ![DOCTOR_LEAD_EN, DOCTOR_LEAD_KO].some(lead => lines[0]!.startsWith(lead))) return text;
+	return `${lines[0]} · ${[DOCTOR_LOOK_EN, DOCTOR_LOOK_KO].reduce((s, mark) => (s.endsWith(mark) ? s.slice(0, -mark.length) : s), told)}`;
 }
 
 export const doctorEn = {
@@ -72,22 +85,24 @@ export const doctorEn = {
 	look: DOCTOR_LOOK_EN,
 	lookHint: `Reply with a line that ends in "${DOCTOR_LOOK_EN.slice(3)}" to have its cause looked into.`,
 	more: (n: number) => `and ${n} more`,
+	subMore: (n: number) => `and ${n} more`,
 	dryAt: (when: string) => `Check at ${when}. A dry run: nothing saved or sent.`,
 	dryMorning: "The morning notice carries only the new ones:",
 	drySame: "The morning notice says the same.",
 	dryNone: (factor: number, days: number) => `Nothing new for the morning notice. Something told before is told again once it grows ${factor}x or ${days} days pass.`,
-	restarts: (r: RestartCount) =>
-		`The gateway restarted ${r.all} times in one day: ${[r.update ? `${r.update} to install an update` : "", r.owner ? `${r.owner} that you asked for` : "", r.orchestrator ? `${r.orchestrator} along with your restart of the orchestrator on the web` : "", `${r.unexplained} without a known cause`].filter(Boolean).join(", ")}.`,
+	restarts: (r: RestartCount) => `The gateway restarted ${r.all} times in one day; ${r.unexplained} without a known cause.`,
+	restartWhy: (r: RestartCount) => {
+		const known = [r.update ? `${r.update} to install an update` : "", r.owner ? `${r.owner} that you asked for` : "", r.orchestrator ? `${r.orchestrator} along with your restart of the orchestrator on the web` : ""].filter(Boolean);
+		return known.length ? `With a known cause: ${known.join(", ")}` : "";
+	},
 	restartLine: (when: string, why: string) => `${when} · ${why}`,
 	restartUnasked: "the log does not say who asked for it",
-	crashes: (n: number, times: string[] = []) => `The gateway crashed ${n} time${n === 1 ? "" : "s"} since the last check${times.length ? `; it started again unplanned at ${times.join(", ")}` : ""}.`,
+	crashes: (n: number) => `The gateway crashed ${n} time${n === 1 ? "" : "s"} since the last check.`,
 	crashAt: (when: string) => `Started again unplanned at ${when}`,
 	sessionsStuck: (names: string, n: number, hours: number) => `${n} session${n === 1 ? " has" : "s have"} made no progress for over ${hours} hours: ${names}.`,
 	sessionsError: (names: string, n: number, hours: number) => `${n} session${n === 1 ? "" : "s"} stopped on an error over ${hours} hours ago and still open: ${names}.`,
 	loginLost: (name: string, hours: number) => `${name} has been logged out for ${hours} hours.`,
-	watchFailing: (name: string, fails: number, since: string, last: string) => `The monitor '${name}' failed ${fails} times in a row${since ? ` since ${since}` : ""}.${last ? ` ${last}` : ""}`,
-	firstFailed: (when: string) => `First failed: ${when}`,
-	failedInRow: (n: number) => `Failed ${n} time${n === 1 ? "" : "s"} in a row`,
+	watchFailing: (name: string, fails: number, since: string) => `The monitor '${name}' failed ${fails} times in a row${since ? ` since ${since}` : ""}.`,
 	lastReason: (reason: string) => `Last reason: ${reason}`,
 	noOutput: (code: string) => `The last run ended with no output (exit code ${code}).`,
 	exitCode: (code: string) => `The last run failed (exit code ${code}).`,
@@ -100,10 +115,9 @@ export const doctorEn = {
 	diskCleanResult: "Deletes session records past their keeping time (90 days by default) the same way the nightly cleanup does. Nothing is deleted before you pick this.",
 	diskKeepName: "Leave it this time",
 	diskKeepResult: "Looks again in a week.",
-	updateFailed: (what: string, n: number, since: string, error: string) => `The ${what} update failed ${n} time${n === 1 ? "" : "s"} since ${since} and has not worked since.${error ? ` Last error: ${error}` : ""}`,
-	failedTimes: (n: number) => `Failed ${n} time${n === 1 ? "" : "s"}`,
+	updateFailed: (what: string, n: number, since: string) => `The ${what} update failed ${n} time${n === 1 ? "" : "s"} since ${since} and has not worked since.`,
 	lastError: (error: string) => `Last error: ${error}`,
-	failuresGrew: (items: string[]) => `More failed or repeated work than at the last check: ${items.slice(0, 3).join("; ")}${items.length > 3 ? ` and ${items.length - 3} more` : ""}.`,
+	failuresGrew: (names: string[], rest: number) => `Failed or repeated work grew: ${names.join(", ")}${rest ? ` and ${rest} more` : ""}.`,
 	failureShort: (label: string, grew: string) => `${label}: ${grew}`,
 	failureGrowth: ({ byTokens, was, now }: FailureGrowth) =>
 		!byTokens ? `${was.count} → ${now.count} cases (${EN.perThousand(was.share)} → ${EN.perThousand(now.share)} per 1,000 turns)`
@@ -111,9 +125,12 @@ export const doctorEn = {
 		: `${was.count} → ${now.count} cases${now.count - was.count === 1 && now.tokens > was.tokens ? ", the one added case is large" : ""}, ${EN.mega(was.tokens)} → ${EN.mega(now.tokens)} tokens (${EN.share(now.share)} of all, was ${EN.share(was.share)})`,
 	failureBase: (days: number, total: number, byTokens: boolean) => `Out of ${byTokens ? `${EN.mega(total)} tokens` : `${total} turns`} in the last ${days} days`,
 	failureTools: (top: string) => `Most often in: ${top}`,
-	tokens: (items: string[]) => joinTokens(items, WARN_EN, kinds => `Sessions used many tokens yesterday: ${kinds}.`),
-	tokenDay: (d: TokenDay, kinds: string[]) =>
-		`Yesterday used ${EN.mega(d.tokens)} tokens, ${EN.dollars(d.cost)}${!d.usual ? "" : d.usual.days === 1 ? ` (the only day with use ${d.usual.from === d.usual.to ? "on" : "from"} ${range(d.usual, "en-US", " to ")}: ${EN.dollars(d.usual.cost)})` : ` (a usual day: ${EN.dollars(d.usual.cost)}, the median of the ${d.usual.days} days with use ${d.usual.from === d.usual.to ? "on" : "from"} ${range(d.usual, "en-US", " to ")})`}.${d.top.length ? ` Largest sessions: ${d.top.map(s => `${s.kind === "orchestrator" ? "main" : s.name} ${s.model} ${EN.dollars(s.cost)}${fullyChosen(s) ? " (a model you chose, not waste)" : s.chosen > 0 ? ` (${EN.dollars(s.chosen)} of it on a model you chose, not waste)` : ""}`.replace(/ +/g, " ")).join(", ")}.` : ""}${WARN_EN}${kinds.join(", ")}.`,
+	tokens: (items: string[], rest: number) => joinTokens(items, WARN_EN, rest ? ` and ${rest} more` : "", kinds => `Sessions used many tokens yesterday: ${kinds}.`),
+	tokenHead: (d: TokenDay, kinds: string[]) =>
+		`Yesterday cost ${EN.dollars(d.cost)}${!d.usual ? "" : d.usual.days === 1 ? ` (the one earlier day with use: ${EN.dollars(d.usual.cost)})` : ` (a usual day: ${EN.dollars(d.usual.cost)})`}.${WARN_EN}${kinds.join(", ")}.`,
+	tokenTop: (top: TopSession[], rest: number) => `Largest sessions: ${top.map(topEn).join(", ")}${rest ? ` and ${rest} more` : ""}`,
+	tokenUse: (d: TokenDay) =>
+		`${EN.mega(d.tokens)} tokens yesterday${!d.usual ? "" : d.usual.days === 1 ? `; the only day with use ${d.usual.from === d.usual.to ? "on" : "from"} ${range(d.usual, "en-US", " to ")}` : `; a usual day is the median of the ${d.usual.days} days with use ${d.usual.from === d.usual.to ? "on" : "from"} ${range(d.usual, "en-US", " to ")}`}`,
 	tokenShort: (kind: string, n: number, cost = 0) => `${kind}: ${n} session${n === 1 ? "" : "s"}${cost ? ` ${EN.dollars(cost)}` : ""}`,
 	dollars: EN.dollars,
 	ownerExpensive: (n: number, cost: string) => `Expensive models you chose: ${n} session${n === 1 ? "" : "s"}, ${cost}. Not counted as waste.`,
@@ -146,22 +163,24 @@ export const doctorKo: typeof doctorEn = {
 	look: DOCTOR_LOOK_KO,
 	lookHint: `'${DOCTOR_LOOK_KO.slice(3)}'가 붙은 줄을 그대로 답장하면 그 원인을 찾아봐요.`,
 	more: (n: number) => `외 ${n}번`,
+	subMore: (n: number) => `외 ${n}가지`,
 	dryAt: (when: string) => `${when} 점검이에요. 시험 실행이라 아무것도 저장하거나 보내지 않았어요.`,
 	dryMorning: "아침 알림에는 이 중 새로 알릴 것만 이렇게 올라가요.",
 	drySame: "아침 알림에도 이대로 올라가요.",
 	dryNone: (factor: number, days: number) => `아침에 새로 알릴 것은 없어요. 전에 알린 것은 ${factor}배로 커지거나 ${days}일이 지나야 다시 알려요.`,
-	restarts: (r: RestartCount) =>
-		`하루 사이에 게이트웨이가 ${r.all}번 다시 시작했어요: ${[r.update ? `업데이트 설치 ${r.update}번` : "", r.owner ? `직접 하신 재시작 ${r.owner}번` : "", r.orchestrator ? `웹에서 오케스트레이터를 다시 시작하실 때 함께 ${r.orchestrator}번` : "", `이유를 모르는 것 ${r.unexplained}번`].filter(Boolean).join(", ")}.`,
+	restarts: (r: RestartCount) => `하루 사이에 게이트웨이가 ${r.all}번 다시 시작했고, 그중 ${r.unexplained}번은 이유를 몰라요.`,
+	restartWhy: (r: RestartCount) => {
+		const known = [r.update ? `업데이트 설치 ${r.update}번` : "", r.owner ? `직접 하신 재시작 ${r.owner}번` : "", r.orchestrator ? `웹에서 오케스트레이터를 다시 시작하실 때 함께 ${r.orchestrator}번` : ""].filter(Boolean);
+		return known.length ? `이유를 아는 것: ${known.join(", ")}` : "";
+	},
 	restartLine: (when: string, why: string) => `${when} · ${why}`,
 	restartUnasked: "누가 요청했는지 로그에 나와 있지 않아요",
-	crashes: (n: number, times: string[] = []) => `지난 점검 뒤로 게이트웨이가 ${n}번 갑자기 꺼졌어요${times.length ? `. 예고 없이 다시 켜진 때: ${times.join(", ")}` : ""}.`,
+	crashes: (n: number) => `지난 점검 뒤로 게이트웨이가 ${n}번 갑자기 꺼졌어요.`,
 	crashAt: (when: string) => `${when}에 예고 없이 다시 켜졌어요`,
 	sessionsStuck: (names: string, n: number, hours: number) => `세션 ${n}개가 ${hours}시간 넘게 진전이 없어요: ${names}.`,
 	sessionsError: (names: string, n: number, hours: number) => `오류로 멈춘 세션 ${n}개가 ${hours}시간 넘게 그대로예요: ${names}.`,
 	loginLost: (name: string, hours: number) => `${name} 로그인이 ${hours}시간째 풀려 있어요.`,
-	watchFailing: (name: string, fails: number, since: string, last: string) => `'${name}' 모니터링이 ${since ? `${since}부터 ` : ""}${fails}번 연속 실패했어요.${last ? ` ${last}` : ""}`,
-	firstFailed: (when: string) => `처음 실패: ${when}`,
-	failedInRow: (n: number) => `연속 실패 ${n}번`,
+	watchFailing: (name: string, fails: number, since: string) => `'${name}' 모니터링이 ${since ? `${since}부터 ` : ""}${fails}번 연속 실패했어요.`,
 	lastReason: (reason: string) => `마지막 이유: ${reason}`,
 	noOutput: (code: string) => `마지막 실행은 아무 출력 없이 끝났어요(종료 코드 ${code}).`,
 	exitCode: (code: string) => `마지막 실행은 실패로 끝났어요(종료 코드 ${code}).`,
@@ -174,10 +193,9 @@ export const doctorKo: typeof doctorEn = {
 	diskCleanResult: "보관 기간(기본 90일)이 지난 세션 기록을 야간 정리와 같은 방식으로 지워요. 고르기 전에는 아무것도 지우지 않아요.",
 	diskKeepName: "이번엔 둬요",
 	diskKeepResult: "일주일 뒤에 다시 볼게요.",
-	updateFailed: (what: string, n: number, since: string, error: string) => `${what} 업데이트가 ${since}부터 ${n}번 실패했고 그 뒤로 성공하지 못했어요.${error ? ` 마지막 오류: ${error}` : ""}`,
-	failedTimes: (n: number) => `실패 ${n}번`,
+	updateFailed: (what: string, n: number, since: string) => `${what} 업데이트가 ${since}부터 ${n}번 실패했고 그 뒤로 성공하지 못했어요.`,
 	lastError: (error: string) => `마지막 오류: ${error}`,
-	failuresGrew: (items: string[]) => `실패하거나 되풀이한 작업이 어제 점검 때보다 늘었어요: ${items.slice(0, 3).join("; ")}${items.length > 3 ? ` 외 ${items.length - 3}가지` : ""}.`,
+	failuresGrew: (names: string[], rest: number) => `실패하거나 되풀이한 작업이 늘었어요: ${names.join(", ")}${rest ? ` 외 ${rest}가지` : ""}.`,
 	failureShort: (label: string, grew: string) => `${label}: ${grew}`,
 	failureGrowth: ({ byTokens, was, now }: FailureGrowth) =>
 		!byTokens ? `${was.count}건 → ${now.count}건 (1천 턴당 ${KO.perThousand(was.share)} → ${KO.perThousand(now.share)})`
@@ -185,9 +203,12 @@ export const doctorKo: typeof doctorEn = {
 		: `${was.count}건 → ${now.count}건${now.count - was.count === 1 && now.tokens > was.tokens ? ", 늘어난 1건이 큰 것" : ""}, ${KO.mega(was.tokens)} → ${KO.mega(now.tokens)} 토큰 (전체의 ${KO.share(now.share)}, 전에는 ${KO.share(was.share)})`,
 	failureBase: (days: number, total: number, byTokens: boolean) => `기준: 최근 ${days}일 ${byTokens ? `전체 ${KO.mega(total)} 토큰` : `${total}턴`}`,
 	failureTools: (top: string) => `자주 나온 도구: ${top}`,
-	tokens: (items: string[]) => joinTokens(items, WARN_KO, kinds => `어제 토큰을 많이 쓴 세션이 있어요: ${kinds}.`),
-	tokenDay: (d: TokenDay, kinds: string[]) =>
-		`어제 ${KO.mega(d.tokens)} 토큰, ${KO.dollars(d.cost)}를 썼어요${!d.usual ? "" : d.usual.days === 1 ? ` (${range(d.usual, "ko-KR", "~")} 중 쓴 날은 하루뿐, 그날 ${KO.dollars(d.usual.cost)})` : ` (평소 하루 ${KO.dollars(d.usual.cost)}: ${range(d.usual, "ko-KR", "~")} 중 쓴 날 ${d.usual.days}일의 중앙값)`}.${d.top.length ? ` 큰 세션: ${d.top.map(s => `${s.kind === "orchestrator" ? "메인" : s.name} ${s.model} ${KO.dollars(s.cost)}${fullyChosen(s) ? "(직접 고른 모델이라 낭비 아님)" : s.chosen > 0 ? `(이 중 직접 고른 모델 ${KO.dollars(s.chosen)}, 낭비 아님)` : ""}`.replace(/ +/g, " ")).join(", ")}.` : ""}${WARN_KO}${kinds.join(", ")}.`,
+	tokens: (items: string[], rest: number) => joinTokens(items, WARN_KO, rest ? ` 외 ${rest}가지` : "", kinds => `어제 토큰을 많이 쓴 세션이 있어요: ${kinds}.`),
+	tokenHead: (d: TokenDay, kinds: string[]) =>
+		`어제 ${KO.dollars(d.cost)}를 썼어요${!d.usual ? "" : d.usual.days === 1 ? `(전에 쓴 날 하루 ${KO.dollars(d.usual.cost)})` : `(평소 하루 ${KO.dollars(d.usual.cost)})`}.${WARN_KO}${kinds.join(", ")}.`,
+	tokenTop: (top: TopSession[], rest: number) => `큰 세션: ${top.map(topKo).join(", ")}${rest ? ` 외 ${rest}개` : ""}`,
+	tokenUse: (d: TokenDay) =>
+		`어제 ${KO.mega(d.tokens)} 토큰${!d.usual ? "" : d.usual.days === 1 ? `, ${range(d.usual, "ko-KR", "~")} 중 쓴 날은 하루뿐이에요` : `, 평소 하루는 ${range(d.usual, "ko-KR", "~")} 중 쓴 날 ${d.usual.days}일의 중앙값이에요`}`,
 	tokenShort: (kind: string, n: number, cost = 0) => `${kind} 세션 ${n}개${cost ? ` ${KO.dollars(cost)}` : ""}`,
 	dollars: KO.dollars,
 	ownerExpensive: (n: number, cost: string) => `직접 고른 비싼 모델: 세션 ${n}개, ${cost}. 요청하신 것이라 경고에서 뺐어요.`,

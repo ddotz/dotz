@@ -5,9 +5,9 @@ import { join } from "node:path";
 import { DOCTOR_LOOK_EN, DOCTOR_LOOK_KO, doctorEn, doctorKo, doctorLookAsk, isDoctorLook } from "./doctor-text.ts";
 import { diskReader, loadCatalog } from "./web-i18n.ts";
 
-type Line = { text: string; look: boolean; hint: boolean };
+type Line = { text: string; look: boolean; hint: boolean; sub: boolean; subs: string[] };
 type Split = { doctor: boolean; head: string; lines: Line[] };
-type Web = { dlSplit: (text: string, wk?: string) => Split; dlReply: (head: string, line: string) => string };
+type Web = { dlSplit: (text: string, wk?: string) => Split; dlReply: (head: string, line: string, subs?: string[]) => string };
 
 const web = join(import.meta.dir, "../web");
 const src = (f: string) => readFileSync(join(web, "js", f), "utf8");
@@ -20,7 +20,9 @@ const LANGS = [
 ] as const;
 
 for (const { lang, t, mark, day, web: w } of LANGS) {
-	const restarted = t.restarts({ all: 5, update: 2, owner: 1, orchestrator: 1, unexplained: 1 }), watch = t.watchFailing("Sample-2", 6, day, ""), stuck = `${t.sessionsStuck("sample", 1, 3)} ${t.todo.sessions}`;
+	const restarted = t.restarts({ all: 5, update: 2, owner: 1, orchestrator: 1, unexplained: 1 }), watch = t.watchFailing("Sample-2", 6, day), stuck = `${t.sessionsStuck("sample", 1, 3)} ${t.todo.sessions}`;
+	const subs = [t.restartLine(day, t.restartUnasked), `${t.lastReason("2번 페이지를 열지 못했어요")}${mark}`, t.subMore(2)];
+	const withSubs = [`${t.head(day)} · ${t.told(2)}`, t.toldPart, `- ${restarted}${mark}`, ...subs.map(s => `  - ${s}`), `- ${stuck}`, `  - ${t.lastReason(t.lookHint)}`, t.lookHint].join("\n");
 	const message = [`${t.head(day)} · ${t.told(3)} · ${t.decide(1)}`, t.toldPart, `- ${restarted}${mark}`, `- ${stuck}`, `- ${watch}${mark}`, t.lookHint, t.healthy(["disk"])].join("\n");
 	const looks = (s: Split) => s.lines.filter(l => l.look).map(l => l.text);
 	const hints = (s: Split) => s.lines.filter(l => l.hint).map(l => l.text);
@@ -83,12 +85,34 @@ for (const { lang, t, mark, day, web: w } of LANGS) {
 			}));
 		});
 
-		test("property: only a told line ending in the mark gets a button, and it gives back the line without it", () => {
+		test("a sub-line is no told line: it gets no button and no hint, even with the mark at its end, and belongs to the headline above it", () => {
+			const s = w.dlSplit(withSubs, "doctor");
+			expect(looks(s)).toEqual([restarted]);
+			expect(s.lines.filter(l => l.sub).map(l => l.text.trim())).toEqual([...subs, t.lastReason(t.lookHint)].map(x => `- ${x}`));
+			expect(s.lines.find(l => l.look)!.subs).toEqual(subs);
+			expect(hints(s)).toEqual([t.lookHint]);
+		});
+
+		test("the reply carries the headline and its sub-lines on one line, and the hub reads it as a look-up whatever numbers the sub-lines hold", () => {
+			const s = w.dlSplit(withSubs, "doctor"), look = s.lines.find(l => l.look)!;
+			const sent = w.dlReply(s.head, look.text, look.subs);
+			expect(sent).toBe(doctorLookAsk[lang](day, `${restarted} (${subs.join("; ")})`));
+			expect([sent.includes("\n"), isDoctorLook(sent)]).toEqual([false, true]);
+			fc.assert(fc.property(fc.array(fc.string({ unit: fc.constantFrom("a", "1", " ", "·", "'", "가", "%", "번", ")", "(", "-") }).filter(x => !!x.trim()), { minLength: 1, maxLength: 3 }), more => {
+				const text = [`${t.head(day)} · ${t.told(1)}`, t.toldPart, `- ${restarted}${mark}`, ...more.map(x => `  - ${x.trim()}`)].join("\n");
+				const one = w.dlSplit(text, "doctor").lines.find(l => l.look)!;
+				const reply = w.dlReply(day, one.text, one.subs);
+				expect(reply).toBe(doctorLookAsk[lang](day, `${restarted} (${more.map(x => x.trim()).join("; ")})`));
+				expect(isDoctorLook(reply)).toBe(true);
+			}));
+		});
+
+		test("property: only a told line ending in the mark gets a button, never a sub-line under it, and it gives back the line without it", () => {
 			const piece = fc.string({ unit: fc.constantFrom("a", "Z", "1", " ", "·", "'", "\"", "$", "→", "가", "닥", "원", "인", "찾", "기", "%") });
-			fc.assert(fc.property(fc.array(fc.record({ told: fc.boolean(), body: piece, marked: fc.boolean() }), { maxLength: 8 }), rows => {
-				const lines = rows.map(r => `${r.told ? "- " : ""}${r.body.replace(/\n/g, " ")}${r.marked ? mark : ""}`);
+			fc.assert(fc.property(fc.array(fc.record({ kind: fc.constantFrom("", "- ", "  - ", "    - "), body: piece, marked: fc.boolean() }), { maxLength: 8 }), rows => {
+				const lines = rows.map(r => `${r.kind}${r.body.replace(/\n/g, " ")}${r.marked ? mark : ""}`);
 				const s = w.dlSplit([t.head(day), ...lines].join("\n"), "doctor");
-				const want = lines.filter(l => /^\s*- /.test(l) && l.trimEnd().endsWith(mark)).map(l => l.trimEnd().slice(0, -mark.length).replace(/^\s*- /, "").trim());
+				const want = lines.filter(l => /^- /.test(l) && l.trimEnd().endsWith(mark)).map(l => l.trimEnd().slice(0, -mark.length).replace(/^- /, "").trim());
 				expect(looks(s)).toEqual(want);
 				expect(w.dlSplit([`x${t.head(day)}`, ...lines].join("\n")).lines.some(l => l.look || l.hint)).toBe(false);
 			}));

@@ -2,11 +2,13 @@
 import { expect, test } from "bun:test";
 import { createECDH } from "node:crypto";
 import { readFileSync, writeFileSync } from "node:fs";
+import { cardBlock } from "./choices.ts";
 import { CONFIG_FILE, NAME, paths } from "./config.ts";
+import { DOCTOR_LOOK_EN, DOCTOR_LOOK_KO, doctorEn, doctorKo } from "./doctor-text.ts";
 import { emit, lastEventId, recentEvents, replayAfter } from "./events.ts";
-import { dismissNotice, laterNotice, type Notice, onDecision, setWatchLabelResolver, sweepQuestions } from "./notices.ts";
+import { allNotices, dismissNotice, laterNotice, type Notice, onDecision, setWatchLabelResolver, sweepQuestions } from "./notices.ts";
 import { type RouteInput, route } from "./notify-route.ts";
-import { answersReach, classify, decisionPush, LONG_TURN_MS, notify, pushRoute, resetPushDedupeForTest, setRelayPeers, startPush, withdraw } from "./push.ts";
+import { answersReach, classify, decisionPush, LONG_TURN_MS, notify, noticePush, pushRoute, resetPushDedupeForTest, setRelayPeers, startPush, withdraw } from "./push.ts";
 import { flush } from "./runtime/test-clock.ts";
 import { b64u } from "./webpush.ts";
 
@@ -221,11 +223,11 @@ test("a decision notice pushes as 답변이 필요해요 with its id, the decisi
 	emit("outbox", { ts: new Date().toISOString(), kind: "out", source: "orchestrator", target: "web", text: "[ask] 어떻게 할까요?\n결정: 배포 방식\n**1) 지금 바로**\n**2) 밤에**\n**3) 하지 않기**" });
 	const n = fresh.find(x => x.title === "배포 방식")!;
 	expect(n).toBeDefined();
-	expect(decisionPush(n)).toEqual({ kind: "ask", title: "답변이 필요해요", body: "배포 방식", url: `/?m=${encodeURIComponent(n.at)}&n=${n.id}#chat/main`, tag: `decision:${n.id}`, ts: n.at, id: n.id, actions: [{ action: "opt:1", title: "1) 지금 바로" }, { action: "opt:2", title: "2) 밤에" }] });
+	expect(decisionPush(n)).toEqual({ kind: "ask", title: "답변이 필요해요", body: "배포 방식", url: `/?m=${encodeURIComponent(n.at!)}&n=${n.id}#chat/main`, tag: `decision:${n.id}`, ts: n.at, id: n.id, actions: [{ action: "opt:1", title: "1) 지금 바로" }, { action: "opt:2", title: "2) 밤에" }] });
 	emit("outbox", { ts: new Date().toISOString(), kind: "out", source: "lane:fix-ui", target: "lane:fix-ui", text: "[ask] 어느 쪽으로 이어갈까요?" });
 	const lane = fresh.find(x => x.title === "어느 쪽으로 이어갈까요?")!;
 	const m = decisionPush(lane);
-	expect(m).toMatchObject({ title: "답변이 필요해요", url: `/?m=${encodeURIComponent(lane.at)}&n=${lane.id}#chat/lane:fix-ui`, id: lane.id });
+	expect(m).toMatchObject({ title: "답변이 필요해요", url: `/?m=${encodeURIComponent(lane.at!)}&n=${lane.id}#chat/lane:fix-ui`, id: lane.id });
 	expect(m.actions).toBeUndefined();   // an open question has no options (a yes / no one gets 1) 네 2) 아니요, ask-options.ts): a tap opens the detail
 	// the store is shared with other test files: answer both so no pinned decision is left behind
 	emit("inbox", { ts: new Date().toISOString(), kind: "message", source: "web", channel: "web", text: "1" });
@@ -256,6 +258,25 @@ test("a push body is plain words: no option lines, no decision label, no small-l
 	expect(ask?.body).toBe("2부를 끝냈어요.");
 	const report = classify(ev({ target: "web", text: "[done] 표예요.\n\n| a | b |\n|---|---|\n| 1 | 2 |\n\n-# 지난 주 기준이에요" }));
 	expect(report?.body).not.toMatch(/-{2,}|-#/);
+});
+
+test("a morning doctor message with only told lines pushes its count once and its first headline, never a sub-line; one with a card and any other alert push as before", () => {
+	const ko = doctorKo, en = doctorEn, ts = "2026-11-24T00:30:00.000Z", count = new RegExp(ko.told(2), "g");
+	const head = ko.restarts({ all: 5, update: 2, owner: 1, orchestrator: 1, unexplained: 1 }), sub = ko.restartLine("11월 24일 03:10", ko.restartUnasked), why = ko.lastReason("로그인 화면에서 멈췄어요");
+	const told = [`${ko.head("11월 24일")} · ${ko.told(2)}`, ko.toldPart, `- ${head}${DOCTOR_LOOK_KO}`, `  - ${sub}`, `- ${ko.watchFailing("Sample-2", 6, "11월 23일 21:00")}${DOCTOR_LOOK_KO}`, `  - ${why}`, ko.lookHint].join("\n");
+	const doctor = { source: "gateway", target: "alert", wk: "doctor" };
+	const body = classify(ev({ ...doctor, ts, text: told }))?.body ?? "";
+	expect(body).toBe(`${ko.head("11월 24일")} · ${ko.told(2)} · ${head}`);
+	expect([body.match(count)?.length, body.includes(sub), body.includes(`${ko.toldPart} -`)]).toEqual([1, false, false]);
+	emit("outbox", { ts, kind: "out", ...doctor, text: told });
+	expect(noticePush(allNotices().find(n => n.at === ts)!)?.body).toBe(body);
+	const enHead = en.restarts({ all: 5, update: 2, owner: 1, orchestrator: 1, unexplained: 1 });
+	const enTold = [`${en.head("November 24")} · ${en.told(1)}`, en.toldPart, `- ${enHead}${DOCTOR_LOOK_EN}`, `  - ${en.restartLine("Nov 24 03:10", en.restartUnasked)}`, en.lookHint].join("\n");
+	expect(classify(ev({ ...doctor, text: enTold }))?.body).toBe(`${en.head("November 24")} · ${en.told(1)} · ${enHead}`);
+	const card = cardBlock({ subject: ko.diskSubject, question: ko.diskQuestion, evidence: ["남은 공간 9GB (4%)"], options: [{ name: ko.diskCleanName, result: ko.diskCleanResult }, { name: ko.diskKeepName, result: ko.diskKeepResult }] });
+	const withCard = `${[`${ko.head("11월 24일")} · ${ko.told(1)} · ${ko.decide(1)}`, ko.toldPart, `- ${head}${DOCTOR_LOOK_KO}`, `  - ${sub}`].join("\n")}\n\n${ko.decidePart}\n\n${card}`;
+	expect(classify(ev({ ...doctor, text: withCard }))?.body).toBe(`남은 공간 9GB (4%) ${ko.head("11월 24일")} · ${ko.told(1)} · ${ko.decide(1)} ${ko.toldPart} - ${head} · ${DOCTOR_LOOK_KO.slice(3)} - ${sub} ${ko.decidePart}`);
+	expect(classify(ev({ source: "gateway", target: "alert", text: "[fail] 백업이 멈췄어요\n- 디스크가 가득 찼어요\n  - 남은 공간 0GB" }))?.body).toBe("백업이 멈췄어요 - 디스크가 가득 찼어요 - 남은 공간 0GB");
 });
 
 test("route() throws on a class it does not know under test (a push of such a class used to vanish without a word)", () => {

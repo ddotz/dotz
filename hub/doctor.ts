@@ -4,11 +4,12 @@ import { cardBlock } from "./choices.ts";
 import { cfg, DATA_DIR, DEFAULTS, HOME, writeAtomic } from "./config.ts";
 import { CHECKS as HEALTH, FILE_CHECKS } from "./doctor-checks.ts";
 import { THRESHOLDS as T } from "./doctor-limits.ts";
-import { type DoctorArea, type DoctorCheck, DOCTOR_AREAS, evidenceLines, type Finding, lineSubject, wrapLines } from "./doctor-types.ts";
-import { fitSubject } from "./card-text.ts";
-import { msg } from "./i18n.ts";
+import { type DoctorArea, type DoctorCheck, DOCTOR_AREAS, EVIDENCE_CHARS, evidenceLines, type Finding, HEAD_CHARS, lineSubject, SUB_LINES, wrapLines } from "./doctor-types.ts";
+import { fitSubject, shorten } from "./card-text.ts";
+import { lang, msg } from "./i18n.ts";
 import { type Catalog, en } from "./i18n-en.ts";
 import { ko } from "./i18n-ko.ts";
+import { baseLanguage } from "./language.ts";
 import type { Notice as StoredNotice } from "./notices-types.ts";
 import { ledger } from "./ledger.ts";
 import { type Send, morningExtra, startLedger } from "./ledger-tick.ts";
@@ -163,9 +164,29 @@ export function shouldTell(f: Finding, t: Told | undefined, now: number): boolea
 }
 
 export type Notice = { text: string; decision: boolean; decisions: number; open: boolean; keys: string[]; ids: string[] };
-const SAID_TOGETHER: Partial<Record<DoctorArea, (t: Catalog["doctor"]) => (items: string[]) => string>> = { failures: t => t.failuresGrew, tokens: t => t.tokens };
+const SAID_TOGETHER: Partial<Record<DoctorArea, (t: Catalog["doctor"]) => (names: string[], rest: number) => string>> = { failures: t => t.failuresGrew, tokens: t => t.tokens };
 
-type Row = { what: string; todo?: string; ask: boolean };
+type Row = { what: string; todo?: string; ask: boolean; sub: string[] };
+type Sub = { text: string; n: number };
+const width = (s: string): number => [...s].length;
+const headChars = (): number => (baseLanguage(lang()) === "ko" ? HEAD_CHARS.ko : HEAD_CHARS.en);
+const fit = (text: string, room: number): string => (width(text) <= room ? text : shorten(text, room));
+
+function joinedHead(tell: (names: string[], rest: number) => string, names: string[], room: number): string {
+	let k = names.length;
+	while (k > 1 && width(tell(names.slice(0, k), names.length - k)) > room) k--;
+	return fit(tell(names.slice(0, k), names.length - k), room);
+}
+
+function subLines(same: Finding[], head: string, more: (n: number) => string): string[] {
+	const fresh = (l: string) => !!l && !head.includes(l), own = same.length > 1 ? same.flatMap(g => g.evidence.slice(0, 1)).filter(fresh) : [];
+	const shared = (same.length > 1 ? same[0]!.evidence.slice(1).filter(l => same.every(g => g.evidence.includes(l))) : same[0]!.evidence).filter(fresh);
+	const lines = own.map(l => shorten(l, EVIDENCE_CHARS)), one = lines.join("; ");
+	const each: Sub[] = lines.length > 1 && width(one) <= EVIDENCE_CHARS && lines.every(l => width(l) <= EVIDENCE_CHARS / 3) ? [{ text: one, n: lines.length }] : lines.map(text => ({ text, n: 1 }));
+	const subs = each.length >= SUB_LINES ? each : [...each, ...shared.map(l => ({ text: shorten(l, EVIDENCE_CHARS), n: 1 }))];
+	if (subs.length <= SUB_LINES) return subs.map(s => s.text);
+	return [...subs.slice(0, SUB_LINES - 1).map(s => s.text), more(subs.slice(SUB_LINES - 1).reduce((n, s) => n + s.n, 0))];
+}
 
 function items(found: Finding[], store: DoctorStore, now: number): Row[] {
 	const t = msg().doctor, out: Row[] = [], said = new Set<DoctorArea>();
@@ -173,21 +194,23 @@ function items(found: Finding[], store: DoctorStore, now: number): Row[] {
 		const together = SAID_TOGETHER[f.area];
 		if (together && said.has(f.area)) continue;
 		said.add(f.area);
-		const same = together ? found.filter(g => g.area === f.area) : [f];
-		const lasting = store.told[f.key] && now - f.since >= DAY;
-		const what = same.length > 1 ? together!(t)(same.map(g => g.short ?? g.what)) : lasting ? `${f.what} ${t.since(t.day(f.since))}` : f.what;
-		out.push({ what, ...(f.todo ? { todo: f.todo } : {}), ask: same.some(g => g.ask) });
+		const same = together ? found.filter(g => g.area === f.area) : [f], ask = same.some(g => g.ask);
+		const room = headChars() - width(f.todo ? ` ${f.todo}` : "") - width(ask ? t.look : ""), since = ` ${t.since(t.day(f.since))}`;
+		const what = same.length > 1 ? joinedHead(together!(t), same.map(g => g.short ?? g.what), room)
+			: store.told[f.key] && now - f.since >= DAY ? `${fit(f.what, room - width(since))}${since}` : fit(f.what, room);
+		out.push({ what, ...(f.todo ? { todo: f.todo } : {}), ask, sub: subLines(same, what, t.subMore) });
 	}
 	return out;
 }
 
 /**
  * The morning item: the lead, the date and the counts ("알릴 것 N · 정할 것 M", a zero left out), then the part headed "알릴 것" with one line per thing told
- * (a line whose cause can be looked into ends with the look-up mark, and one hint line after them says how), the self-fixed line, the count of things told
- * before and still there and the checks that found nothing; then the part headed "정할 것" with one card per finding that has its own question (`decide`),
- * titled `<subject> · <question>` within TITLE_CHARS with the finding's evidence as its lines; two cards that would share a title are told apart by a number.
- * A part with nothing in it is left out. `held`: findings another gateway card covers; they are neither a line nor a card this morning and count among the
- * things told before and still there. `decisions` is the number of cards; `ids` names each card by its finding's key, in the order of the cards.
+ * (a headline within HEAD_CHARS that ends with the look-up mark when its cause can be looked into, then at most SUB_LINES sub-lines `  - <text>` from its
+ * evidence, and one hint line after them says how), the self-fixed line, the count of things told before and still there and the checks that found nothing;
+ * then the part headed "정할 것" with one card per finding that has its own question (`decide`), titled `<subject> · <question>` within TITLE_CHARS with the
+ * finding's evidence as its lines; two cards that would share a title are told apart by a number. A part with nothing in it is left out. `held`: findings
+ * another gateway card covers; they are neither a line nor a card this morning and count among the things told before and still there. `decisions` is the
+ * number of cards; `ids` names each card by its finding's key, in the order of the cards.
  */
 export function compose(store: DoctorStore, now: number, all = false, held: (f: Finding) => boolean = () => false): Notice | undefined {
 	const t = msg().doctor, every = Object.values(store.findings);
@@ -205,7 +228,7 @@ export function compose(store: DoctorStore, now: number, all = false, held: (f: 
 		return cardBlock({ subject: shown, question, evidence: f.evidence, options });
 	});
 	const shared = [...new Set(rows.map(r => r.todo).filter((todo): todo is string => !!todo && rows.filter(r => r.todo === todo).length > 1))];
-	const lines = rows.map(r => `- ${r.todo && !shared.includes(r.todo) ? `${r.what} ${r.todo}` : r.what}${r.ask ? t.look : ""}`);
+	const lines = rows.flatMap(r => [`- ${r.todo && !shared.includes(r.todo) ? `${r.what} ${r.todo}` : r.what}${r.ask ? t.look : ""}`, ...r.sub.map(s => `  - ${s}`)]);
 	const told = rows.length ? [t.toldPart, ...lines, ...shared, rows.some(r => r.ask) ? t.lookHint : ""] : [];
 	const sick = new Set(every.filter(f => !f.fixed).map(f => f.area)), fine = DOCTOR_AREAS.filter(a => !sick.has(a)).map(a => t.areas[a]);
 	const first = [t.head(t.day(now)), rows.length ? t.told(rows.length) : "", cards.length ? t.decide(cards.length) : ""].filter(Boolean).join(" · ");

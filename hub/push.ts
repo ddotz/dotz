@@ -18,6 +18,7 @@ import { quietAlert } from "./alert-gate.ts";
 import { answerReply, confirmGroup, conversationTitle, decisionsOf, isViewing, laneNameKo, type Notice, onDecision, onHalfTime, onNoticeUnread, openDecisionNotices, setViewing, unreadCount } from "./notices.ts";
 import { msg } from "./i18n.ts";
 import { DECISION_HEAD, decisionText } from "./choices.ts";
+import { doctorPreview } from "./doctor-text.ts";
 import { dropIdNote, noticeKo, plainTable } from "./notice.ts";
 import { type Found, knownComputers } from "./peers.ts";
 import { isLater, parseTone, previewSource, stripMarkers } from "./tone.ts";
@@ -132,7 +133,7 @@ function classifyEvent(e: HubEvent, sinceOwner?: number): Classified | undefined
 		// An all-clear, or the same alert again (hub/alert-gate.ts), was already as good as told: a record, not a warning.
 		const quiet = !!e.reply_to || tone === "done" || e.repeat === true || quietAlert(text) || (tone !== "fail" && src !== "gateway" && !CRITICAL.test(rest));
 		const nk = pick(noticeClass({ kind: "alert", tone: tone ?? "", text: rest, quiet, nk: named }).cls, { ask: "ask", alert: "alert" });
-		return nk ? made(nk, { name: NAME, conv: "alert", text: clean(text).text }, plain(rest)) : undefined;
+		return nk ? made(nk, { name: NAME, conv: "alert", text: clean(text).text }, plain(rest.split("\n").some(l => DECISION_HEAD.test(l)) ? rest : doctorPreview(rest))) : undefined;
 	}
 	if (lane && (e.kind === "out" || e.kind === "lane_report")) {
 		// An untagged turn-end report that answers the owner, after a long turn, is the session's finished work, like the main chat's below.
@@ -195,7 +196,7 @@ export function noticePush(n: Notice & { nk?: unknown }): PushMessage | undefine
 	if (!nk || (cls === "news" && n.watch && watchPushOff(n.watch))) return undefined;
 	const result = nk === "schedule";
 	const item: KindItem = { name: result ? `${n.title} · ${plain(n.text)}` : n.title, conv, text: n.text, id: n.id, at: n.at, ...(n.key ? { key: n.key } : {}), ...(n.watch ? { watch: n.watch } : {}), folded: !!n.repeats?.length };
-	const { conv: open, ...m } = made(nk, item, result ? "" : plain(n.text) || plain(n.title));
+	const { conv: open, ...m } = made(nk, item, result ? "" : plain(doctorPreview(n.text)) || plain(n.title));
 	return { ...m, ...addrOf({ conv: open, at: n.at, nid: n.id }), ...(cls === "news" && n.app ? { app: n.app } : {}) };
 }
 function guessedKind(n: Notice, cls: NoticeClass, conv: string): NoticeKindName | undefined {

@@ -11,11 +11,12 @@ export type Finding = {
 	/** Stable id across runs, e.g. "watch-failing:<watch name>" or "tokens:<warning class>". Repeat suppression keys on it. */
 	key: string;
 	area: DoctorArea;
-	/** What happened, one plain sentence for the owner (already localized by the check through hub/i18n-*.ts). */
+	/** What happened, the headline of its morning line: one plain sentence for the owner (already localized by the check through hub/i18n-*.ts) that fits HEAD_CHARS with its look-up mark; the numbers behind it are in `evidence`. */
 	what: string;
 	todo?: string;
+	/** The finding's name in a headline that tells the findings of its area together (a failure class's label); the morning uses `what` when it is unset. */
 	short?: string;
-	/** The owner-facing evidence lines (numbers, times, file names, quotes), already localized: at most EVIDENCE_LINES lines of at most EVIDENCE_CHARS characters, cut by `evidenceLines` where the finding is built. A card shows them under its title. */
+	/** The owner-facing evidence lines (numbers, times, file names, quotes), already localized: at most EVIDENCE_LINES lines of at most EVIDENCE_CHARS characters, cut by `evidenceLines` where the finding is built. A card shows them under its title; a told line shows them as its sub-lines, at most SUB_LINES. */
 	evidence: string[];
 	/** Epoch ms of the first run that saw it (the doctor keeps the earliest across runs). */
 	since: number;
@@ -33,15 +34,19 @@ export type Finding = {
 
 export const EVIDENCE_LINES = 4;
 export const EVIDENCE_CHARS = 120;
+/** The most sub-lines under a told line of the morning item; the last one says how many more there are when they do not all fit. */
+export const SUB_LINES = 3;
+/** The most characters of a told line's headline, its look-up mark included, by catalog language (any language without its own catalog reads English). */
+export const HEAD_CHARS = { ko: 80, en: 110 } as const;
 
 const squash = (s: string): string => s.replace(/\s+/g, " ").trim();
 const width = (s: string): number => [...s].length;
 const cut = (line: string): string => shorten(squash(line), EVIDENCE_CHARS);
 
-/** A finding's evidence as stored: empty lines dropped, each line cut at a word boundary to EVIDENCE_CHARS, and over EVIDENCE_LINES lines the last kept line is `more(<lines left out>)`. */
-export function evidenceLines(lines: string[], more: (n: number) => string): string[] {
+/** A finding's evidence as stored: empty lines dropped, each line cut at a word boundary to EVIDENCE_CHARS, and over `most` lines (EVIDENCE_LINES by default) the last kept line is `more(<lines left out>)`. */
+export function evidenceLines(lines: string[], more: (n: number) => string, most: number = EVIDENCE_LINES): string[] {
 	const kept = lines.map(cut).filter(Boolean);
-	return kept.length <= EVIDENCE_LINES ? kept : [...kept.slice(0, EVIDENCE_LINES - 1), cut(more(kept.length - EVIDENCE_LINES + 1))];
+	return kept.length <= most ? kept : [...kept.slice(0, most - 1), cut(more(kept.length - most + 1))];
 }
 
 /** A text as at most `most` evidence lines, broken at word boundaries; only what does not fit the last line is cut, at a sentence end when one is in reach, else at a word. */

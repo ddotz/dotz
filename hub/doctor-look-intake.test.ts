@@ -16,7 +16,7 @@ afterAll(() => {
 });
 
 const DAY = "11월 24일";
-const WATCH = t.watchFailing("Sample-2", 2, "11월 23일 21:00", "");
+const WATCH = t.watchFailing("Sample-2", 2, "11월 23일 21:00");
 const CARD = cardBlock({ subject: t.diskSubject, question: t.diskQuestion, evidence: ["남은 공간 9GB (4%)"], options: [{ name: t.diskCleanName, result: t.diskCleanResult }, { name: t.diskKeepName, result: t.diskKeepResult }] });
 const MESSAGE = `${[`${t.head(DAY)} · ${t.told(1)} · ${t.decide(1)}`, t.toldPart, `- ${WATCH}${DOCTOR_LOOK_KO}`, t.lookHint].join("\n")}\n\n${t.decidePart}\n\n${CARD}`;
 const card = (): Notice => allNotices().find(n => n.kind === "decision" && n.decision?.to === "alert")!;
@@ -58,6 +58,16 @@ test("the told line typed back with its mark, as the hint says, is a look-up too
 	expect(prompt).not.toContain(openLine());
 	expect(card().decision!.judging).toBeUndefined();
 	expect(card().decision).toMatchObject({ state: "open" });
+});
+
+test("a told line copied with its sub-lines, as the owner copies it from Discord, is a look-up too: a number in a sub-line closes no card", async () => {
+	const copied = [`- ${WATCH}${DOCTOR_LOOK_KO}`, "  - 마지막 이유: 2번 페이지를 열지 못했어요", `  - ${t.subMore(2)}`].join("\n");
+	const prompt = await ownerSays(copied);
+	expect(prompt).not.toContain(openLine());
+	expect(card().decision!.judging).toBeUndefined();
+	expect(card().decision).toMatchObject({ state: "open" });
+	expect(isDoctorLook(copied.replace(/^- /, "").replace(/\n {2}- /g, "\n• "))).toBe(true);
+	expect(isDoctorLook(`${copied}\n2번으로 해요`)).toBe(false);
 });
 
 test("a typed answer to the card in the same state still answers it, by its label or by its number alone", async () => {

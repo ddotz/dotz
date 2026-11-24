@@ -1,12 +1,12 @@
-import { afterAll, describe, expect, test } from "bun:test";
+import { afterAll, afterEach, describe, expect, test } from "bun:test";
 import { cardBlock } from "./choices.ts";
-import { DOCTOR_LOOK_KO, doctorKo as t, doctorLookAsk } from "./doctor-text.ts";
+import { DOCTOR_LOOK_KO, doctorKo as t, doctorLookAsk, isDoctorLook } from "./doctor-text.ts";
 import { emit } from "./events.ts";
 import { listNotices, resetNoticesForTest } from "./notices.ts";
 import { fakeHub, idleState, inbox, json, on } from "./test-web.ts";
 
 const DAY = "11월 24일";
-const RESTARTED = t.restarts({ all: 5, update: 2, owner: 1, orchestrator: 1, unexplained: 1 }), WATCH = t.watchFailing("Sample-2", 6, "11월 23일 21:00", ""), STUCK = `${t.sessionsStuck("sample", 1, 3)} ${t.todo.sessions}`;
+const RESTARTED = t.restarts({ all: 5, update: 2, owner: 1, orchestrator: 1, unexplained: 1 }), WATCH = t.watchFailing("Sample-2", 6, "11월 23일 21:00"), STUCK = `${t.sessionsStuck("sample", 1, 3)} ${t.todo.sessions}`;
 const told = (n: number) => [t.toldPart, `- ${RESTARTED}${DOCTOR_LOOK_KO}`, `- ${STUCK}`, `- ${WATCH}${DOCTOR_LOOK_KO}`, t.lookHint, t.healthy(["디스크"])].slice(0, n + 3);
 const ROW = [`${t.head(DAY)} · ${t.told(3)}`, ...told(3)].join("\n");
 const CARD = cardBlock({ subject: t.diskSubject, question: t.diskQuestion, evidence: ["남은 공간 9GB (4%)"], options: [{ name: t.diskCleanName, result: t.diskCleanResult }, { name: t.diskKeepName, result: t.diskKeepResult }] });
@@ -14,8 +14,10 @@ const WITH_CARD = `${[`${t.head(DAY)} · ${t.told(3)} · ${t.decide(1)}`, ...tol
 const OTHER = `백업이 끝났어요\n- 정리 작업이 돌았어요${DOCTOR_LOOK_KO}\n- 남은 공간 12GB`;
 const STRUCK = "오래된 ~~규칙~~ 줄이 남아 있어요", PATHL = "큰 세션: ~/Code/sample-a 3개가 쌓였어요";
 const MARKS = [`${t.head(DAY)} · ${t.told(2)}`, t.toldPart, `- ${STRUCK}${DOCTOR_LOOK_KO}`, `- ${PATHL}${DOCTOR_LOOK_KO}`, t.lookHint].join("\n");
+const SUBS = [t.restartLine("11월 24일 03:10", t.restartUnasked), t.restartLine("11월 24일 05:40", t.restartUnasked)], WHY = t.lastReason("로그인 화면에서 멈췄어요");
+const SUBBED = [`${t.head(DAY)} · ${t.told(2)}`, t.toldPart, `- ${RESTARTED}${DOCTOR_LOOK_KO}`, ...SUBS.map(s => `  - ${s}`), `- ${WATCH}${DOCTOR_LOOK_KO}`, `  - ${WHY}`, t.lookHint].join("\n");
 const minutesAgo = (m: number) => new Date(Date.now() - m * 60_000).toISOString();
-const TS = { row: minutesAgo(40), marks: minutesAgo(38), other: minutesAgo(35), quote: minutesAgo(30), own: minutesAgo(25), card: minutesAgo(20), main: minutesAgo(15), lane: minutesAgo(12), work: minutesAgo(10) };
+const TS = { row: minutesAgo(40), marks: minutesAgo(38), other: minutesAgo(35), quote: minutesAgo(30), own: minutesAgo(25), card: minutesAgo(20), subbed: minutesAgo(18), main: minutesAgo(15), lane: minutesAgo(12), work: minutesAgo(10) };
 const out = (ts: string, target: string, text: string, source = "gateway", wk?: string) => ({ ts, kind: "out", source, target, ...(wk ? { wk } : {}), text });
 const ALERT = [
 	out(TS.row, "alert", ROW, "gateway", "doctor"),
@@ -38,7 +40,7 @@ type Sent = { text: string; cid?: string; conv?: string; mode?: string };
 const sent = inbox<Sent>();
 const stored: { ts: string; kind: string; source: string; channel: string; text: string; cid?: string }[] = [];
 const storedIn = (target: string) => stored.filter(m => m.channel === (target === "main" ? "web" : `web:${target}`));
-let refuse = "", down = false, blind = false, working = false;
+let refuse = "", down = false, blind = false, working = false, subbed = false;
 const hub = fakeHub({
 	stream: "fake",
 	state: () => idleState({ orchestrator: { status: working ? "working" : "idle" } }),
@@ -47,7 +49,7 @@ const hub = fakeHub({
 		if (p === "/api/history") {
 			if (blind) return new Response("bad gateway", { status: 502 });
 			const target = url.searchParams.get("target") ?? "main", after = url.searchParams.get("after") ?? "";
-			const events = [...(target === "alert" ? ALERT : target === "worklog" ? WORKLOG : target === "main" ? MAIN : []), ...storedIn(target)].filter(e => e.ts > after);
+			const events = [...(target === "alert" ? [...ALERT, ...(subbed ? [out(TS.subbed, "alert", SUBBED, "gateway", "doctor")] : [])] : target === "worklog" ? WORKLOG : target === "main" ? MAIN : []), ...storedIn(target)].filter(e => e.ts > after);
 			return json({ target, events });
 		}
 		if (p === "/api/activity") return json({ items: [], more: false, history: false });
@@ -61,6 +63,9 @@ const hub = fakeHub({
 			return json({ ok: true });
 		}
 	},
+});
+afterEach(() => {
+	subbed = false;
 });
 afterAll(() => {
 	hub.stop();
@@ -333,5 +338,46 @@ for (const width of [390, 1280]) {
 			const disk = rows.find(x => x.title.startsWith(t.diskSubject))!;
 			expect(Math.round(disk.w)).toBe(Math.round(disk.wFull));
 		});
+
+		test("a told line's sub-lines are drawn under its headline, indented and quieter, with no button; the headline's button sits on its row and sends one line holding the headline and its sub-lines, which the hub reads as a look-up and which reads 보냈어요 after a reload and in a second tab without being sent again", async () => {
+			subbed = true;
+			stored.length = 0;
+			await view.navigate(`${hub.origin}/`);
+			await run(`localStorage.clear()`);
+			await view.navigate(`${hub.origin}/`);
+			await open("alert", TS.subbed);
+			const rows = await ev<{ text: string; sub: boolean; btn: number; left: number; top: number; bottom: number; color: string; b: { top: number; bottom: number; hit: number } | null }[]>(`[...${at(TS.subbed)}.querySelectorAll("li")].map(li => { const r = li.getBoundingClientRect(), b = li.querySelector(".dl-btn"), br = b && b.getBoundingClientRect(), after = b && getComputedStyle(b, "::after"), x = document.createRange(); x.selectNodeContents(li); return { text: [...li.childNodes].filter(n => n.nodeType === 3).map(n => n.data).join("").trim(), sub: li.classList.contains("dl-sub"), btn: li.querySelectorAll(".dl-btn").length, left: x.getClientRects()[0].left, top: r.top, bottom: r.bottom, color: getComputedStyle(li).color, b: br && { top: br.top, bottom: br.bottom, hit: br.height - (after.content === "none" ? 0 : (parseFloat(after.top) || 0) + (parseFloat(after.bottom) || 0)) } }; })`);
+			expect(rows.map(r => [r.text, r.sub, r.btn])).toEqual([[RESTARTED, false, 1], [SUBS[0], true, 0], [SUBS[1], true, 0], [WATCH, false, 1], [WHY, true, 0]]);
+			const [head, s1, s2, watch, why] = rows as [(typeof rows)[0], (typeof rows)[0], (typeof rows)[0], (typeof rows)[0], (typeof rows)[0]];
+			for (const [above, sub] of [[head, s1], [s1, s2], [watch, why]] as const) expect(sub.top).toBeGreaterThanOrEqual(above.bottom - 1);
+			for (const sub of [s1, s2, why]) expect(sub.left).toBeGreaterThan(head.left + 8);
+			expect(s1.color).not.toBe(head.color);
+			for (const line of [head, watch]) {
+				expect(line.b!.top).toBeGreaterThanOrEqual(line.top - 1);
+				expect(line.b!.bottom).toBeLessThanOrEqual(line.bottom + 1);
+				if (width === 390) expect(line.b!.hit).toBeGreaterThanOrEqual(44);
+			}
+			const asked = reply(`${RESTARTED} (${SUBS.join("; ")})`), first = `${at(TS.subbed)}.querySelector(".dl-btn")`, before = sent.length;
+			expect(isDoctorLook(asked)).toBe(true);
+			await run(`${first}.click()`);
+			expect((await sent.until(a => a.length > before))[before]).toMatchObject({ text: asked, conv: "alert" });
+			await waitFor(`${first}.textContent === "보냈어요"`);
+			await view.navigate(`${hub.origin}/`);
+			await open("alert", TS.subbed);
+			expect(await ev<string[]>(`[...${at(TS.subbed)}.querySelectorAll(".dl-btn")].map(b => b.textContent)`)).toEqual(["보냈어요", "원인 찾기"]);
+			const other = await hub.view({ width, height: 900 }), tab = on(other);
+			await other.navigate(`${hub.origin}/`);
+			await tab.run(`localStorage.removeItem("dotz.doctor-look")`);
+			await other.navigate(`${hub.origin}/`);
+			await tab.waitFor(`typeof openTarget === "function" && S`);
+			await tab.run(`openTarget("alert", "chat")`);
+			await tab.waitFor(`!!${at(TS.subbed)}`);
+			if (await tab.ev<boolean>(`${at(TS.subbed)}.classList.contains("wl-row") && !${at(TS.subbed)}.classList.contains("fr-open")`)) await tab.run(`${at(TS.subbed)}.click()`);
+			await tab.waitFor(`${at(TS.subbed)}.querySelector(".dl-btn") && ${at(TS.subbed)}.querySelector(".dl-btn").textContent === "보냈어요"`);
+			await tab.run(`${at(TS.subbed)}.querySelector(".dl-btn").click()`);
+			expect(await tab.ev<string>(`${at(TS.subbed)}.querySelector(".dl-btn").textContent`)).toBe("보냈어요");
+			expect(sent.length).toBe(before + 1);
+			expect(storedIn("alert").filter(m => m.text === asked)).toHaveLength(1);
+		}, 20_000);
 	});
 }

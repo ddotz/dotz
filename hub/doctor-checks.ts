@@ -3,7 +3,7 @@
 import { closeSync, existsSync, openSync, readdirSync, readFileSync, readSync, statfsSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { THRESHOLDS as T } from "./doctor-limits.ts";
-import { type DoctorCheck, evidenceLines, type Finding, wrapLines } from "./doctor-types.ts";
+import { type DoctorCheck, EVIDENCE_CHARS, evidenceLines, type Finding, SUB_LINES, wrapLines } from "./doctor-types.ts";
 import { type Baseline, baselineOf, failureReport, grownClasses, isBaseline, type Report } from "./failure-report.ts";
 import { msg } from "./i18n.ts";
 import { pluginFailuresFile } from "./plugins.ts";
@@ -65,7 +65,7 @@ export function countTraces(text: string): number {
 	return n;
 }
 
-const found = (key: string, area: Finding["area"], now: number, what: string, evidence: string[], level: number, todo?: string): Finding => ({ key, area, what, ...(todo ? { todo } : {}), evidence: evidenceLines(evidence, msg().doctor.more), since: now, level });
+const found = (key: string, area: Finding["area"], now: number, what: string, evidence: string[], level: number, todo?: string): Finding => ({ key, area, what, ...(todo ? { todo } : {}), evidence: evidenceLines(evidence, msg().doctor.subMore, SUB_LINES), since: now, level });
 const asking = (f: Finding): Finding => ({ ...f, ask: true });
 const names = (list: string[]): string => list.slice(0, SHOWN_NAMES).join(", ") + (list.length > SHOWN_NAMES ? ` +${list.length - SHOWN_NAMES}` : "");
 
@@ -141,7 +141,7 @@ export const gateway: DoctorCheck = ({ now, dataDir, memo, last }) => {
 	const day = restartsOf(rows).filter(r => r.at >= now - T.restartWindowH * HOUR), restarts = day.filter(r => !r.explained);
 	if (restarts.length >= T.restarts) {
 		const count = { all: day.length, update: day.filter(r => r.by === "update").length, owner: day.filter(r => r.by === "owner").length, orchestrator: day.filter(r => r.by === "orchestrator").length, unexplained: restarts.length };
-		out.push(asking(found("gateway:restarts", "gateway", now, t.restarts(count), restarts.map(r => t.restartLine(t.when(r.at), r.cause ?? t.restartUnasked)), restarts.length)));
+		out.push(asking(found("gateway:restarts", "gateway", now, t.restarts(count), [t.restartWhy(count), ...restarts.map(r => t.restartLine(t.when(r.at), r.cause ?? t.restartUnasked))], restarts.length)));
 	}
 	const errFile = join(dataDir, "gateway.err.log");
 	const size = existsSync(errFile) ? statSync(errFile).size : 0;
@@ -155,8 +155,7 @@ export const gateway: DoctorCheck = ({ now, dataDir, memo, last }) => {
 		const crashes = countTraces(readRange(errFile, size < seen ? 0 : Math.max(seen, size - T.logTailBytes), size));
 		if (crashes >= T.crashes) {
 			const starts = unplannedStarts(rows, last ?? now - DAY).map(at => t.when(at));
-			const shown = starts.length > SHOWN_NAMES ? [...starts.slice(0, SHOWN_NAMES), t.more(starts.length - SHOWN_NAMES)] : starts;
-			out.push(asking(found("gateway:crashes", "gateway", now, t.crashes(crashes, shown), starts.length ? starts.map(t.crashAt) : ["gateway.err.log"], crashes)));
+			out.push(asking(found("gateway:crashes", "gateway", now, t.crashes(crashes), starts.length ? starts.map(t.crashAt) : ["gateway.err.log"], crashes)));
 		}
 	}
 	return out;
@@ -210,7 +209,6 @@ export const logins: DoctorCheck = ({ now, dataDir }) => {
 };
 
 const lastLine = (text: string): string => text.split("\n").map(l => l.trim()).filter(Boolean).at(-1) ?? "";
-const clip = (text: string): string => wrapLines(text, 1)[0] ?? "";
 const WATCH_FAILED = /^watch (.+) failed \(([^,()]+), /;
 const WATCH_UNWRITTEN = /^watch (.+) could not write last-fail\.log: /;
 
@@ -230,8 +228,7 @@ export const watches: DoctorCheck = ({ now, dataDir, last }) => {
 		const failSince = failing ? w.state?.failSince : undefined, since = failSince ? t.when(failSince) : "";
 		const failLog = join(dataDir, "watches", w.id, "last-fail.log"), output = lastLine(tailText(failLog, 4096)), code = exitCodes.get(w.name);
 		const lastRun = unwritten.has(w.name) ? (code === undefined ? "" : t.exitCode(code)) : output ? t.lastReason(output) : code === undefined ? "" : existsSync(failLog) ? t.noOutput(code) : t.exitCode(code);
-		const evidence = [...(since ? [t.firstFailed(since)] : []), t.failedInRow(fails), ...(lastRun ? wrapLines(lastRun, 2) : [])];
-		out.push(asking(found(`watches:${w.name}`, "watches", now, t.watchFailing(w.label ?? w.name, fails, since, clip(lastRun)), evidence, fails)));
+		out.push(asking(found(`watches:${w.name}`, "watches", now, t.watchFailing(w.label ?? w.name, fails, since), lastRun ? wrapLines(lastRun, 2) : [], fails)));
 	}
 	const fixed = new Set<string>();
 	for (const r of rows) {
@@ -278,18 +275,16 @@ export const update: DoctorCheck = ({ now, dataDir }) => {
 	return [...state].flatMap(([id, f]) => {
 		if (!f) return [];
 		const what = id === "self" ? t.selfUpdate : (UPDATER_NAMES[id] ?? id), since = t.when(f.first), error = f.error.trim();
-		const evidence = [t.firstFailed(since), t.failedTimes(f.n), ...(error ? wrapLines(t.lastError(error), 2) : [])];
-		return [asking(found(`update:${id}`, "update", now, t.updateFailed(what, f.n, since, clip(error)), evidence, f.n))];
+		return [asking(found(`update:${id}`, "update", now, t.updateFailed(what, f.n, since), error ? wrapLines(t.lastError(error), 2) : [], f.n))];
 	});
 };
 
-/** The findings of the failure classes that grew against `base`: the told text carries each class's counts and tokens before → after and its share last. */
+/** The findings of the failure classes that grew against `base`: the headline names the class, the evidence carries its counts and tokens before → after with its share last, then the window it was measured over. */
 export function failureFindings(now: number, r: Pick<Report, "tokens" | "turns" | "lost">, base: Baseline | undefined): Finding[] {
 	const t = msg().doctor;
 	return grownClasses(r, base, T.failures).map(g => {
-		const short = t.failureShort(g.label, t.failureGrowth(g));
-		const evidence = [short, t.failureBase(T.failureDays, g.byTokens ? r.tokens : r.turns, g.byTokens), ...(g.top ? [t.failureTools(g.top)] : [])];
-		return { ...asking(found(`failures:${g.name}`, "failures", now, t.failuresGrew([short]), evidence, Math.round(g.weight))), short };
+		const evidence = [t.failureShort(g.label, t.failureGrowth(g)), t.failureBase(T.failureDays, g.byTokens ? r.tokens : r.turns, g.byTokens), ...(g.top ? [t.failureTools(g.top)] : [])];
+		return { ...asking(found(`failures:${g.name}`, "failures", now, t.failuresGrew([g.label], 0), evidence, Math.round(g.weight))), short: g.label };
 	});
 }
 
@@ -300,9 +295,10 @@ export const failures: DoctorCheck = ({ now, dataDir, home, memo }) => {
 };
 
 /**
- * One finding per token warning kind that matters, keyed `tokens:<kind>` with that kind's cost as its level, so each kind is told again on its own. Each line
- * leads with yesterday's total and cost, the usual day and the three largest sessions, then names its kind with its cost; the morning joins the told kinds
- * under one lead (`tokens` of the catalog).
+ * One finding per token warning kind that matters, keyed `tokens:<kind>` with that kind's cost as its level, so each kind is told again on its own. Its
+ * headline gives yesterday's cost against the usual day and names its kind; its evidence is the kind's sessions and cost, the largest sessions that fit one
+ * line, then yesterday's tokens with how the usual day was taken and the owner's chosen use: on their own lines when there is no line of largest sessions,
+ * else on one line when it fits, else the chosen use is left out. The morning joins the told kinds under one headline.
  */
 export function tokenFindings(now: number, a: Pick<AuditResult, "told" | "tokens" | "cost" | "top" | "usual" | "ownerUse">): Finding[] {
 	const t = msg().doctor, byKind = new Map<string, { n: number; cost: number }>();
@@ -311,11 +307,11 @@ export function tokenFindings(now: number, a: Pick<AuditResult, "told" | "tokens
 		byKind.set(f.kind, { n: k.n + 1, cost: k.cost + (f.cost ?? 0) });
 	}
 	const day = { tokens: a.tokens, cost: a.cost, top: a.top, ...(a.usual ? { usual: a.usual } : {}) };
-	const chose = a.ownerUse.sessions ? [t.ownerExpensive(a.ownerUse.sessions, t.dollars(a.ownerUse.cost))] : [];
-	return [...byKind].map(([kind, k]) => {
-		const short = t.tokenShort(kind, k.n, k.cost);
-		return asking(found(`tokens:${kind}`, "tokens", now, t.tokenDay(day, [short]), [short, ...chose], Math.round(k.cost * 100) / 100 || k.n));
-	});
+	let shown = a.top.length;
+	while (shown > 1 && [...t.tokenTop(a.top.slice(0, shown), a.top.length - shown)].length > EVIDENCE_CHARS) shown--;
+	const top = a.top.length ? [t.tokenTop(a.top.slice(0, shown), a.top.length - shown)] : [], use = t.tokenUse(day), chose = a.ownerUse.sessions ? t.ownerExpensive(a.ownerUse.sessions, t.dollars(a.ownerUse.cost)) : "";
+	const shared = [...top, ...(!chose ? [use] : !top.length ? [use, chose] : [...`${use}. ${chose}`].length <= EVIDENCE_CHARS ? [`${use}. ${chose}`] : [use])];
+	return [...byKind].map(([kind, k]) => asking(found(`tokens:${kind}`, "tokens", now, t.tokenHead(day, [kind]), [t.tokenShort(kind, k.n, k.cost), ...shared], Math.round(k.cost * 100) / 100 || k.n)));
 }
 
 export const tokens: DoctorCheck = ({ now, dry }) => tokenFindings(now, runAudit({ hours: T.tokensH, dry: !!dry, readOnly: !!dry }));

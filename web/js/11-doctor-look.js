@@ -6,12 +6,16 @@ function dlSplit(text, wk) {
   const first = lines.map(l => l.replace(DL_STATUS_MARK, "")).find((l, i) => (i === 0 || !lines[i - 1].trim()) && l.startsWith(lead)) || "";
   const doctor = wk === "doctor" || !!first;
   const head = first ? first.slice(lead.length).split(" · ")[0].trim() : "";
+  let above = null;
   return { doctor, head, lines: lines.map(l => {
-    const told = /^\s*- /.test(l), look = doctor && told && l.trimEnd().endsWith(mark);
-    return { text: look ? l.trimEnd().slice(0, -mark.length).replace(/^\s*- /, "").trim() : l, look, hint: doctor && !told && !!l.trim() && l.includes(dlWord()) && !l.trimEnd().endsWith(mark) };
+    const told = /^- /.test(l), sub = doctor && /^\s+- /.test(l), look = doctor && told && l.trimEnd().endsWith(mark);
+    const row = { text: look ? l.trimEnd().slice(0, -mark.length).replace(/^- /, "").trim() : l, look, sub, subs: [], hint: doctor && !told && !sub && !!l.trim() && l.includes(dlWord()) && !l.trimEnd().endsWith(mark) };
+    if (sub && above) above.subs.push(l.replace(/^\s+- /, "").trim());
+    else above = look ? row : null;
+    return row;
   }) };
 }
-const dlReply = (head, line) => TX("home.doctor_look.reply", { day: head, line });
+const dlReply = (head, line, subs = []) => TX("home.doctor_look.reply", { day: head, line: subs.length ? `${line} (${subs.join("; ")})` : line });
 const dlSaid = (m, reply) => (m.kind === "message" || m.kind === "lane_message") && String(m.text ?? "").trim() === reply;
 const dlQueued = (t, reply) => OUTBOX.some(o => o.t === t && o.text === reply);
 function dlState(key, t, reply) {
@@ -80,16 +84,21 @@ function dlMarkedTextNode(li) {
 function dlMarks(nodes, src) {
   if (!nodes || !src || !["out", "decision"].includes(src.kind) || (src.source || src.by) !== "gateway") return nodes;
   const sp = dlSplit(src.text, src.wk), looks = sp.lines.filter(l => l.look);
-  if (!looks.length) return nodes;
   const roots = (Array.isArray(nodes) ? nodes : [nodes]).filter(n => n && n.querySelectorAll), t = src.target || src.open || "alert";
   const plain = s => String(s).replace(/[*`_~]/g, "").replace(/\s+/g, " ").trim(), done = new Set();
-  for (const li of roots.flatMap(r => [...r.querySelectorAll("li")]).filter(x => !x.querySelector("li, .dl-btn"))) {
+  const subs = sp.lines.filter(l => l.sub).map(l => l.text.replace(/^\s+- /, "").trim());
+  for (const li of subs.length ? roots.flatMap(r => [...r.querySelectorAll("li")]).filter(x => !x.querySelector("li")) : []) {
+    const at = subs.findIndex(s => [s, noticeKo(s, NK)].some(x => plain(x) === plain(li.textContent)));
+    if (at >= 0) { subs.splice(at, 1); li.classList.add("dl-sub"); }
+  }
+  if (!looks.length) return nodes;
+  for (const li of roots.flatMap(r => [...r.querySelectorAll("li")]).filter(x => !x.classList.contains("dl-sub") && !x.querySelector("li, .dl-btn"))) {
     const n = dlMarkedTextNode(li);
     if (!n) continue;
     const said = plain(li.textContent.trimEnd().slice(0, -`· ${dlWord()}`.length)), look = looks.find(l => !done.has(l) && [l.text, noticeKo(l.text, NK)].some(x => plain(x) === said));
     if (!look) continue;
     done.add(look);
-    const line = look.text, text = dlReply(sp.head, line), key = `${src.ts}|${line}`;
+    const line = look.text, text = dlReply(sp.head, line, look.subs), key = `${src.ts}|${line}`;
     n.data = n.data.trimEnd().slice(0, -`· ${dlWord()}`.length).trimEnd();
     const b = el("button", { class: "btn tonal inrow dl-btn", type: "button", "data-dl": key, "data-dlt": t, "data-dlr": text, "data-dll": line, "data-dla": src.ts,
       onclick: ev => { ev.stopPropagation(); dlSend(key, t, text, src.ts); } });

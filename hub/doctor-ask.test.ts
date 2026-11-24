@@ -38,7 +38,7 @@ describe("a finding whose cause can be looked into is a told line with the look-
 		const notice = compose(storeOf(asking()), T0)!;
 		expect(cardsOf(notice.text)).toEqual([]);
 		expect([notice.decision, notice.decisions]).toEqual([false, 0]);
-		expect(notice.text.split("\n").slice(0, 4)).toEqual([`${t.head(t.day(T0))} · ${t.told(1)}`, t.toldPart, `- Sample one restarted.${t.look}`, t.lookHint]);
+		expect(notice.text.split("\n").slice(0, 5)).toEqual([`${t.head(t.day(T0))} · ${t.told(1)}`, t.toldPart, `- Sample one restarted.${t.look}`, "  - hub.log", t.lookHint]);
 		expect(notice.text).not.toMatch(/[?？]|까요/);
 	});
 
@@ -79,7 +79,7 @@ describe("a finding whose cause can be looked into is a told line with the look-
 		const fail = (k: string) => asking({ key: `failures:${k}`, area: "failures", what: `LONG-${k}`, short: `S-${k}` });
 		const notice = compose(storeOf(fail("a"), fail("b")), T0)!;
 		expect(cardsOf(notice.text)).toEqual([]);
-		expect(notice.text.split("\n").filter(l => l.startsWith("- "))).toEqual([`- ${t.failuresGrew(["S-a", "S-b"])}${t.look}`]);
+		expect(notice.text.split("\n").filter(l => l.startsWith("- "))).toEqual([`- ${t.failuresGrew(["S-a", "S-b"], 0)}${t.look}`]);
 	});
 
 	test("a finding that does not ask has no mark, no hint and no card", () => {
@@ -117,8 +117,8 @@ describe("every doctor and prompt-health output path", () => {
 		writeFileSync(join(dir, "LESSONS.md"), "l".repeat(200_000));
 		const t = msg().doctor;
 		const byCatalog: Finding[] = [
-			asking({ key: "failures:sample-a", area: "failures", what: t.failuresGrew(["S-a"]), short: t.failureShort("sample-a", "up") }),
-			asking({ key: "tokens:sample-b", area: "tokens", what: t.tokens(["S-b"]), short: t.tokenShort("sample-b", 2) }),
+			asking({ key: "failures:sample-a", area: "failures", what: t.failuresGrew(["sample-a"], 0), short: "sample-a", evidence: [t.failureShort("sample-a", "up")] }),
+			asking({ key: "tokens:sample-b", area: "tokens", what: t.tokens(["S-b"], 0), evidence: [t.tokenShort("sample-b", 2)] }),
 			finding({ key: "disk:low", area: "disk", what: t.disk(2, 4), todo: t.todo.disk, evidence: ["2.0 / 500 GB"], decide: { subject: t.diskSubject, question: t.diskQuestion, options: [{ name: t.diskCleanName, result: t.diskCleanResult }, { name: t.diskKeepName, result: t.diskKeepResult }] } }),
 		];
 		return [...(await gateway(ctx)), ...(await sessions(ctx)), ...(await logins(ctx)), ...(await watches(ctx)), ...(await update(ctx)), ...(await plugins(ctx)), ...((await promptHealth({ ...prompt, now: T0 + D })) as Finding[]), ...byCatalog];
@@ -201,7 +201,7 @@ describe("the review cards of one morning, as the notice store keeps them", () =
 		writeFileSync(join(dir, "RULES.md"), `${LINES.join("\n")}\n`);
 		const reviewed = await runPromptReview({ now: T0, dataDir: dir, call: async () => ({ text: reply, usage: { input: 22961, output: 812 } }), budgetTight: false, model: undefined, log: () => {} });
 		const t = msg().doctor;
-		const told = [asking({ key: "failures:a", area: "failures", what: t.failuresGrew(["S-a"]), short: t.failureShort("S-a", "+728%") }), asking({ key: "tokens:b", area: "tokens", what: t.tokens(["S-b"]), short: t.tokenShort("S-b", 1) })];
+		const told = [asking({ key: "failures:a", area: "failures", what: t.failuresGrew(["S-a"], 0), short: "S-a", evidence: [t.failureShort("S-a", "+728%"), "기준: 최근 7일 전체 960.7M 토큰"] }), asking({ key: "tokens:b", area: "tokens", what: t.tokens(["S-b"], 0), evidence: [t.tokenShort("S-b", 1), "큰 세션: 2번 세션 model-a $1.00"] })];
 		const text = compose(storeOf(...told, ...reviewed.findings), T0)!.text;
 		resetNoticesForTest();
 		post(text);
