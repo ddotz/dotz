@@ -19,6 +19,7 @@ import { canAttach, sendsThroughZele, sendWith, settleAccount, threadMoved, webm
 import { carryStagedFiles, removeStagedFile, stagedFiles, stagedName, stageFiles, stageWanted, type StageOpts, type Want } from "./staged.ts";
 import { dataDir, HEADINGS, INSTALL, loadPairs, loadSettings, loadStyle, normText, ownReplies, paths, profileBullets, recordForbidden, recordLearned, recordPattern, replaceBullets, toneFile, validApp, type ToneKey } from "./settings.ts";
 import { curate, curateAsk, journalAdd, type LearnKind, profileOf } from "./curate.ts";
+import { compactCorrections } from "./compact.ts";
 import { defaultKakaoReader, defaultKakaoRooms, KAKAO_APP, kakaoOwnTexts, type OwnerReader, type RoomsReader } from "./kakao-tone.ts";
 import { banWarnings, boxById } from "./box.ts";
 import { maybeRefine } from "./persona.ts";
@@ -42,10 +43,10 @@ export type Outcome = { sent: Sent; code?: string; vars?: Record<string, string 
 /** The deps of a real send or revise outside a test: the identity model of the reply-drafts settings and the real tool runner. */
 export const realFlowDeps = (): FlowDeps => ({ analyze: defaultCall(loadSettings().model), run: realRunner, learnCall: app => replyCall(app === INSTALL ? "mail" : app), kakaoReader: defaultKakaoReader, kakaoRooms: defaultKakaoRooms });
 
-// After a recorded correction: every few corrections fold into the profile's identity. A failed refinement keeps the old identity.
+/** After a recorded correction: every few corrections fold into the profile's identity, and a long 고친 점 is compacted (compact.ts); a failed refinement keeps the old identity, a failed compaction the old lines. */
 export async function refineAfterCorrection(key: ToneKey, deps: FlowDeps): Promise<void> {
-	if (!deps.analyze) return;
-	await maybeRefine(key, deps.analyze).catch(e => console.error(`reply draft: identity of ${key.app} not refined: ${(e as Error).message}`));
+	if (deps.analyze) await maybeRefine(key, deps.analyze).catch(e => console.error(`reply draft: identity of ${key.app} not refined: ${(e as Error).message}`));
+	await compactCorrections(key, deps).catch(e => console.error(`reply draft: corrections of ${key.app} not compacted: ${(e as Error).message}`));
 }
 
 /** The one "record, then refine" (design 3.4): a lesson line enters the tone profile (recordLearned), and every few corrections fold into its identity; a standing rule refines nothing. */

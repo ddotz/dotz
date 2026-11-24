@@ -97,8 +97,8 @@ export async function curate(existing: { rules: string[]; corrections: string[] 
 	return { replaces: out };
 }
 
-/** One line curation took out: where it was (`profile` the tone file relative to the tone dir, `heading` its section), why, and the line that replaced it. */
-export type JournalEntry = { at: string; profile: string; heading: string; line: string; why: ReplaceWhy; by: "curate"; newLine: string; restoredAt?: string };
+/** One line curation or compaction took out: where it was (`profile` the tone file relative to the tone dir, `heading` its section), why, and the line that replaced it (a line compaction dropped has none). */
+export type JournalEntry = { at: string; profile: string; heading: string; line: string; restoredAt?: string } & ({ by: "curate"; why: ReplaceWhy; newLine: string } | { by: "compact"; why: "merged"; newLine: string } | { by: "compact"; why: "dropped"; newLine: "" });
 
 const journalFile = () => join(paths.toneDir(), "journal.jsonl");
 const JOURNAL_LOCK = "말투 기록";
@@ -136,7 +136,8 @@ function storedOf(raw: string): Stored | undefined {
 	}
 	if (!v || typeof v !== "object") return undefined;
 	const e = v as Record<string, unknown>;
-	if (![e.at, e.profile, e.heading, e.line, e.newLine].every(x => typeof x === "string") || (e.why !== "same" && e.why !== "overridden") || !SECTIONS.has(e.heading as string)) return undefined;
+	if (![e.at, e.profile, e.heading, e.line, e.newLine].every(x => typeof x === "string") || !SECTIONS.has(e.heading as string)) return undefined;
+	if (e.by === "curate" ? e.why !== "same" && e.why !== "overridden" : e.by !== "compact" || (e.why !== "merged" && (e.why !== "dropped" || e.newLine !== ""))) return undefined;
 	const key = profileKey(e.profile as string);
 	return key ? { entry: v as JournalEntry, key, raw } : undefined;
 }

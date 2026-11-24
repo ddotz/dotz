@@ -11,6 +11,7 @@ import { addressesOf, type ReplyItem } from "../../../hub/reply-draft.ts";
 import { PATTERN_NOTE } from "../../../hub/reply-reasons.ts";
 import { ensureKakaoRoom, defaultKakaoReader, KAKAO_APP } from "../lib/kakao-tone.ts";
 import { askText, attachFolder, buildDraft, candidatesFor, chosenFrom, dropDraft, kindOf, learnLine, learnPattern, type LineLearned, mailAsksFile, realFlowDeps, refineAfterCorrection, reviseDraft, sendDraft, settleDraft, stageForReply, type FlowDeps, type Outcome } from "../lib/flow.ts";
+import { compactCorrections } from "../lib/compact.ts";
 import { journalEntries, profileKey, profileOf, restoreEntry } from "../lib/curate.ts";
 import { dataDir, handSections, HEADINGS, INSTALL, loadSettings, profileBullets, recordForbidden, removeCorrection, removeForbidden, removeRule, toneFile, validApp, type ToneKey } from "../lib/settings.ts";
 import { addDraft, type DraftRec, getDraft, listDrafts, patchDraft } from "../lib/store.ts";
@@ -20,7 +21,7 @@ import { cloudFile, cloudPlaceholder, EVICTED_LATER, isEvicted, removeStagedFile
 
 // Exit code of `new --kind chat` when the message needs the owner's own decision: stdout is the choice block to post as an [ask] (hub/choices.ts replyChoiceBlock).
 export const ASK_EXIT = 4;
-const USAGE = "usage: draft.ts new --mail <key> [--app <app>] [--room <id>] [--kind mail|comment|chat] [--from <sender>] [--subject <s>] [--context <c>] [--source <src>] [--id <mail id>] [--choice <the owner's pick>] (text on stdin) | revise <id> --change <text> | send <id> | drop <id> | correct --app <app|install> [--room <id>] [--rule <standing rule>]... [--change <lesson>] [--forbid <wording>]... [--allow <wording or pattern label>]... [--forget <text>]... | correct --restore <n> | tone --app <app|install> [--room <id>] | tone --journal | attach <id> <path or file name in the 첨부 파일 폴더> | detach <id> <n or file name> | status\n  correct stores what the owner asked in exactly one tone profile (--app install = every reply; --room only with a messenger app); at least one of --rule --change --forbid --allow --forget\n  --rule a standing request the owner made in chat (always, never, from now on): kept undated under 말투, never pushed out by later lessons | --change what one corrected draft showed, a dated 고친 점 line; a rule or change about a wording to avoid (with its wrong and right examples quoted) may also store a checked wording pattern under 금지, printed as 이 표현 모양도 걸러요: <label>\n  --rule and --change first ask which lines of that profile the new line repeats or overrides: a rule an existing rule already says is not added (이미 있는 조건이라 더하지 않았어요), replaced lines (at most 3; a --change never replaces a rule) are taken out and printed with the correct --restore <n> that puts each back\n  --forbid never use this wording again (2-40 characters with whitespace runs as one space, not a /regex/; the owner's quoted wording) | --allow takes a forbidden wording, or a pattern by its label, back | --forget removes the 말투 and 고친 점 lines that contain the text (a line of a hand-written section is only named, with its file to edit)\n  correct --restore <n> puts the line of journal entry n back where it was (unless an equal line is there); exit 1 when there is no entry n\n  tone prints what a draft there follows (말투 with the hand-written sections, 고친 점, 금지; a pattern as <label> (패턴)) with the level of each line | tone --journal prints the newest 20 lines the product replaced, numbered for correct --restore\n  attach / detach change the files of a pending mail draft and print the refreshed [ask] (never edit draft-files/ or drafts.json by hand)\n  new --app kakao --room <chat id> --kind chat (recent messages on stdin; --mail optional) prints only the reply text\n  chat exit codes: 0 reply text on stdout | 3 nothing to answer | 4 the owner must choose first: stdout is a 결정 block (post it as an [ask]); after his pick run the same command again with --choice \"<pick>\"\n  --app: mail (default for mail), youtube | instagram for comments, kakao for chats; --room only for messenger rooms";
+const USAGE = "usage: draft.ts new --mail <key> [--app <app>] [--room <id>] [--kind mail|comment|chat] [--from <sender>] [--subject <s>] [--context <c>] [--source <src>] [--id <mail id>] [--choice <the owner's pick>] (text on stdin) | revise <id> --change <text> | send <id> | drop <id> | correct --app <app|install> [--room <id>] [--rule <standing rule>]... [--change <lesson>] [--forbid <wording>]... [--allow <wording or pattern label>]... [--forget <text>]... [--tidy] | correct --restore <n> | tone --app <app|install> [--room <id>] | tone --journal | attach <id> <path or file name in the 첨부 파일 폴더> | detach <id> <n or file name> | status\n  correct stores what the owner asked in exactly one tone profile (--app install = every reply; --room only with a messenger app); at least one of --rule --change --forbid --allow --forget --tidy\n  --rule a standing request the owner made in chat (always, never, from now on): kept undated under 말투, never pushed out by later lessons | --change what one corrected draft showed, a dated 고친 점 line; a rule or change about a wording to avoid (with its wrong and right examples quoted) may also store a checked wording pattern under 금지, printed as 이 표현 모양도 걸러요: <label>\n  --rule and --change first ask which lines of that profile the new line repeats or overrides: a rule an existing rule already says is not added (이미 있는 조건이라 더하지 않았어요), replaced lines (at most 3; a --change never replaces a rule) are taken out and printed with the correct --restore <n> that puts each back\n  --forbid never use this wording again (2-40 characters with whitespace runs as one space, not a /regex/; the owner's quoted wording) | --allow takes a forbidden wording, or a pattern by its label, back | --forget removes the 말투 and 고친 점 lines that contain the text (a line of a hand-written section is only named, with its file to edit)\n  --tidy folds the 고친 점 lines of that profile (at least 2) into at most 8 lasting conditions in one model call, printed as 고친 점 N줄을 M줄로 정리했어요; every line taken out stays in tone --journal for correct --restore (a 고친 점 longer than 12 lines is tidied on its own after a correction)\n  correct --restore <n> puts the line of journal entry n back where it was (unless an equal line is there); exit 1 when there is no entry n\n  tone prints what a draft there follows (말투 with the hand-written sections, 고친 점, 금지; a pattern as <label> (패턴)) with the level of each line | tone --journal prints the newest 20 lines the product replaced, merged or removed (→ 지움), numbered for correct --restore\n  attach / detach change the files of a pending mail draft and print the refreshed [ask] (never edit draft-files/ or drafts.json by hand)\n  new --app kakao --room <chat id> --kind chat (recent messages on stdin; --mail optional) prints only the reply text\n  chat exit codes: 0 reply text on stdout | 3 nothing to answer | 4 the owner must choose first: stdout is a 결정 block (post it as an [ask]); after his pick run the same command again with --choice \"<pick>\"\n  --app: mail (default for mail), youtube | instagram for comments, kakao for chats; --room only for messenger rooms";
 
 type Out = { lines: string[]; code: number; notes?: string[] };
 
@@ -183,7 +184,8 @@ export async function runDraft(args: string[], stdin: string, deps: DraftDeps = 
 			const allow = flagValues(rest, "--allow").map(oneLine);
 			const forget = flagValues(rest, "--forget").map(oneLine);
 			const rules = flagValues(rest, "--rule").map(oneLine).filter(Boolean);
-			if (!app || !validApp(app) || (!change && !rules.length && !forbid.length && !allow.length && !forget.length)) return { lines: [USAGE], code: 2 };
+			const tidy = rest.includes("--tidy");
+			if (!app || !validApp(app) || (!change && !rules.length && !forbid.length && !allow.length && !forget.length && !tidy)) return { lines: [USAGE], code: 2 };
 			if (app === INSTALL && room !== undefined) return { lines: ["--app install은 모든 답장에 적용돼서 --room과 같이 쓸 수 없어요"], code: 2 };
 			const bad = forbid.find(w => !literalBan(w));
 			if (bad !== undefined) return { lines: [`금지할 표현은 2~40자의 글자여야 하고 /정규식/은 쓸 수 없어요: ${bad}`], code: 1 };
@@ -191,7 +193,7 @@ export async function runDraft(args: string[], stdin: string, deps: DraftDeps = 
 			const target = app === INSTALL ? INSTALL : key;
 			const where = levelName(key);
 			const lines: string[] = [];
-			const learn: DraftDeps = { ...deps, learnCall: rules.length || change ? learnCallOf(deps, app) : undefined };
+			const learn: DraftDeps = { ...deps, learnCall: rules.length || change || tidy ? learnCallOf(deps, app) : undefined };
 			const ruleResults: [string, LineLearned][] = [];
 			for (const r of rules) ruleResults.push([r, await learnLine(target, r, "rule", learn)]);
 			const changed = change ? await learnLine(key, change, "correction", learn) : undefined;
@@ -221,13 +223,18 @@ export async function runDraft(args: string[], stdin: string, deps: DraftDeps = 
 				else lines.push(`${where}의 말투와 고친 점에 "${t}"이(가) 든 줄이 없어서 바꾼 게 없어요`);
 			}
 			if (changed) await refineAfterCorrection(key, deps);
+			if (tidy) {
+				const count = profileBullets(target, HEADINGS.corrections).length;
+				const tidied = count >= 2 ? await compactCorrections(target, learn, { force: true }) : undefined;
+				lines.push(count < 2 ? "정리할 것이 없어요" : tidied ? `고친 점 ${tidied.before}줄을 ${tidied.after}줄로 정리했어요 (지운 줄은 tone --journal에 남아 있어요)` : "모델의 답을 쓸 수 없어서 고친 점을 그대로 두었어요");
+			}
 			return { lines, code: 0 };
 		}
 		case "tone": {
 			if (rest.includes("--journal")) {
 				const recent = journalEntries().slice(0, JOURNAL_SHOWN);
 				if (!recent.length) return { lines: ["제품이 바꾼 말투 조건 기록이 아직 없어요"], code: 0 };
-				return { lines: recent.map(e => `${e.n}. [${journalLevel(e.profile)}] ${sectionName(e.heading)} "${e.line}" → "${e.newLine}" (${e.at.slice(0, 10)})${e.restoredAt ? " 되돌림" : ""}`), code: 0 };
+				return { lines: recent.map(e => `${e.n}. [${journalLevel(e.profile)}] ${sectionName(e.heading)} "${e.line}" → ${e.why === "dropped" ? "지움" : `"${e.newLine}"`} (${e.at.slice(0, 10)})${e.restoredAt ? " 되돌림" : ""}`), code: 0 };
 			}
 			const app = flag(rest, "--app");
 			const room = flag(rest, "--room");

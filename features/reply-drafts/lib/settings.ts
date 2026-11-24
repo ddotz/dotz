@@ -387,6 +387,22 @@ export function replaceBullets<T extends SectionLine>(key: ToneKey | "install", 
 	return { taken, added };
 }
 
+/** One locked edit of exactly that profile: when the section of `heading` holds nothing but bullets and they still equal `expect` (in order), hands control to `before` while the old file is still on disk (a throw there writes nothing) and replaces them with `items`; false, writing nothing, when they changed or the section holds any other line (a note, a sub-heading, a continuation line), which a rewrite would lose. */
+export function rewriteSection(key: ToneKey | "install", heading: string, expect: string[], items: string[], before?: () => void): boolean {
+	let done = false;
+	editProfile(key, md => {
+		const now = bullets(md, heading);
+		const lines = md.split(/\r?\n/);
+		const at = sectionOf(lines, heading);
+		const onlyBullets = !!at && lines.slice(at.start + 1, at.end).every(l => !l.trim() || /^[-*]\s+\S/.test(l));
+		done = onlyBullets && now.length === expect.length && now.every((b, i) => b === expect[i]);
+		if (!done) return undefined;
+		before?.();
+		return setSection(md, heading, items);
+	});
+	return done;
+}
+
 /** Adds a standing rule, undated and on one line, to the `## 말투` section of exactly that profile; a line equal apart from case and whitespace is not added again. */
 export function recordRule(key: ToneKey | "install", line: string): void {
 	const rule = oneLine(line);

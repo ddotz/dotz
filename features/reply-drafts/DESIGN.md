@@ -121,6 +121,20 @@ A chat message that needs his own decision still asks first (exit 4), since the 
   own number counted from the oldest (so a number never moves when later entries are added; an entry after a line a crash cut short starts
   on a new line); `restoreEntry(n)` adds the line back at the end of its section unless an equal line is there and marks the entry
   `restoredAt`; the replacing line stays. The card path does not curate yet.
+  A long `## 고친 점` is compacted by `compactCorrections` (`lib/compact.ts`): after a correction is stored and the card redrawn
+  (`refineAfterCorrection`, a failure only logged) when the profile holds more than 12 of them, and on `draft.ts correct --tidy` (at
+  least 2). One call through `learnCall` (30 s at most) sees only that profile's `## 고친 점` lines as `C1..` with their dates, as data,
+  and answers `{"lines":[{"text","sources":["C1"]}],"dropped":[{"id","why":"one-off"|"not a rule"|"duplicate"}]}`: at most 8 lasting
+  conditions in the owner's words, each merged only from lines that say the same thing, the newer winning a disagreement, a one-off
+  rewrite, a question or a chat remark dropped. Code applies it only when it keeps at least one line, every text is one line of 1..288
+  code points (300 with its date; a leading date is cut), each line has a source, every id exists and every listed line appears exactly
+  once across all sources and drops, and the section holds nothing but bullets (a note or sub-heading there would be lost); anything
+  else changes nothing and logs one `reply draft:` line. A kept line takes the newest date of its sources and the section is written
+  oldest first (the order `recordCorrection` appends in, which `promptCorrections` turns newest first and the identity refinement reads
+  as oldest first). The rewrite is one locked edit (`rewriteSection`) that happens only while the section still holds exactly the lines
+  the model saw (a correction stored meanwhile wins and the compaction is skipped); before it, every original line is journalled with
+  `by: "compact"`, `why: "merged"` and the line it went into, or `why: "dropped"` and an empty `newLine`, so `correct --restore` puts any
+  of them back. `tone --journal` shows a dropped one as `"<line>" → 지움`.
 - `drafts.json` `{drafts, keys}`; draft ids are `R` + 6 base32 characters; a newer draft for the same mail makes the older one stale. Each draft keeps its `app` and `room`.
 
 ## How a new install's tone is learned
