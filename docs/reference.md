@@ -404,7 +404,9 @@ and at which level, and the baselines the checks compare with).
   the start of that line (`계약 '오너 메시지만 지시예요. 세션 보고와…' 줄 · 고칠까요?`; `계약`/`규칙`/`교훈`/`기능` for the mode text, RULES.md, LESSONS.md, a feature body; the contract when the line is in
   none of them), the quote cut at a word boundary to fit; the same line gets the same title on a later day, so a repeat is asked again as a repeat. The kind of problem (`서로 맞지 않음`, `낡음`,
   `코드와 어긋남`, `코드가 이미 막음`) opens the card's first line, with the file and the quoted line; a review card's reason follows on up to two lines (cut, at a sentence or word, only past those) and
-  then the tokens the review used. The notice store finds an earlier card by its title, so no two cards of one message share one: when two would (two findings on one line), the later one ends in
+  then the tokens the review used. Each card carries its finding's key as its id (`disk:low`, `prompt:enforced:<rule id>`, `prompt:review:<hash>`; `compose` returns them as `ids`
+  and the send puts them on the post as `card_ids`), and the notice store finds an earlier card by that id alone, so a card about another finding never reopens or drops one that has its title.
+  Two cards of one message would still read the same, so when two would share a title (two findings on one line) the later one ends in
   ` (2)`, ` (3)` and so on, its quote shortened to keep 40 characters. A part with nothing in it is left out; `decisions` is the number of cards. A `doctor.json` written by the older code loads
   too: a finding whose evidence is one string has no evidence lines, and a card stored without a subject is rebuilt from its old question (Korean or English, read in either language) the way its
   check builds one now: an enforced-rule card or a review card gets the title from its quoted line (a rule card named by its stored file, a review card by the contract, its file not being stored), the kind and the quote as its first line and the
@@ -412,7 +414,7 @@ and at which level, and the baselines the checks compare with).
   it as its one line under its area's name.
   Before posting, the morning runs the file-only checks again (gateway, sessions, logins, watches, disk, update, plugins) over the night's window, so a finding that no longer holds is not posted and
   the numbers are those at posting time; the night's failures, tokens and prompt findings stay as they were. A matter another gateway card covers (the self-update card, the failed-install card of the
-  same harness, the watch's own issue card, matched by the watch name in the finding's key `watches:<name>`) is not told while that card is open or the owner answered it within 24 h (a card that
+  same harness, the watch's own issue card, matched by the watch name in the finding's key `watches:<name>`; a card that has an id is matched by it alone, the id being that finding key) is not told while that card is open or the owner answered it within 24 h (a card that
   expired unanswered does not count): neither a told line nor a card; it counts among the things told before and still there, its check is not listed as fine, and when nothing else is due nothing is
   posted. It is not marked told, so its line comes once, on the first morning after the card stops covering it. On the day of the install, a night store written before the re-look existed keeps the
   night's crash count in the store, so a second morning pass that day adds only the crashes since the night, once.

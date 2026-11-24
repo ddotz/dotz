@@ -47,7 +47,7 @@ const EXTRAS: { act: AskExtra; label: string }[] = [
 	{ act: "more", label: "자세히 알려 주세요" },
 	{ act: "later", label: "나중에 (1시간 뒤)" },
 ];
-type Extra = (target: string, question: string, act: AskExtra) => string;
+type Extra = (target: string, question: string, act: AskExtra, shown: string) => string;
 let extra: Extra = () => {
 	throw new Error("no ask extra handler");
 };
@@ -59,10 +59,10 @@ const EXTRA_ID = new RegExp(`^${ASK_PREFIX}:(.+):(more|later)$`);
 function extraInteraction(d: Interaction, deps: AskDeps, m: RegExpExecArray): Promise<void> {
 	const user = String(d.member?.user?.id ?? d.user?.id ?? "");
 	if (!deps.owner || user !== deps.owner) return deps.reply(d, 4, ephemeral(msg().auth.notOwner));
-	const question = parseChoices(String(d.message?.content ?? "")).question ?? "";
+	const shown = String(d.message?.content ?? ""), question = parseChoices(shown).question ?? "";
 	let said: string;
 	try {
-		said = (deps.extra ?? extra)(m[1]!, question, m[2] === "more" ? "more" : "later");
+		said = (deps.extra ?? extra)(m[1]!, question, m[2] === "more" ? "more" : "later", shown);
 	} catch (e) {
 		log(`ask ${m[1]} ${m[2]} failed: ${e}`);
 		said = msg().auth.answerFailed;

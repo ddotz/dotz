@@ -65,6 +65,8 @@ export type Decision = {
 	options: DecisionOpt[];
 	/** The card's own evidence lines (the lines between its `결정:` head and its first option, hub/choices.ts parseDecisions), absent when it has none. The notice's text then starts with them, followed by the message's lead; the sheet shows them under the title. */
 	evidence?: string[];
+	/** The id a gateway post gave this card (its event's `card_ids`, hub/notices-decisions.ts decisionsOf): the card is then found by that id alone, never by its title. Absent on every other card. */
+	card_id?: string;
 	// Where the answer goes: "main", "lane:<name>", "ch:<id>" (a project chat) or "auth:<request id>".
 	to: string;
 	// The asking message (its event ts): the answer is sent as a reply to it.

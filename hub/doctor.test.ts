@@ -489,6 +489,32 @@ describe("a matter another gateway card covers is not told", () => {
 		expect(covers(watch, card(titleOf(watchChoice("Other watch", "exit 1")), "open"))).toBe(false);
 	});
 
+	test("a card with an id covers the finding whose key it is, whatever its title, and never by its title; a card without one is matched by its title", () => {
+		const named = (c: Pick<Notice, "title" | "text" | "decision">, id: string) => ({ ...c, decision: { ...c.decision!, card_id: id } });
+		const titleOf = (text: string) => parseDecisions(text).blocks[0]!.title;
+		const w1 = finding({ key: "watches:w1", area: "watches", ask: true, evidence: [] }), sameLabel = card(titleOf(watchChoice("Sample watch", "exit 1")), "open");
+		expect(covers(self, named(card("Reworded update title", "open"), "update:self"))).toBe(true);
+		expect(covers(self, named(card(SELF_UPDATE_CARD_TITLE, "open"), "update:omp"))).toBe(false);
+		expect(covers(self, card(SELF_UPDATE_CARD_TITLE, "open"))).toBe(true);
+		expect(covers(w1, named(sameLabel, "watches:w2"))).toBe(false);
+		expect(covers(w1, named(card("Sample wat… · Reconnect?", "answered", 2 * H), "watches:w1"))).toBe(true);
+		expect(covers(w1, sameLabel)).toBe(true);
+		expect(covers(finding({ key: "disk:low", area: "disk", ask: true }), named(card("Disk · Clean it?", "open"), "disk:low"))).toBe(false);
+	});
+
+	test("the morning send names each card by its finding's key, in the order of the cards", async () => {
+		const decide = (subject: string) => ({ subject, question: "Change it?", options: [{ name: "A", result: "RA" }, { name: "B", result: "RB" }] });
+		const found = [finding({ key: "prompt:review:h1", area: "prompt", decide: decide("Same") }), finding(), finding({ key: "disk:low", area: "disk", decide: decide("Disk") }), finding({ key: "prompt:enforced:r9", area: "prompt", decide: decide("Same") })];
+		const sent: { text: string; ids: string[] }[] = [];
+		const deps: Deps = { now: () => T0, dataDir: dir, home: dir, at: () => "auto", checks: [() => found], send: (text, _d, _o, ids) => void sent.push({ text, ids }), log: () => undefined };
+		await runNight(deps);
+		await runMorning(deps);
+		expect(sent).toHaveLength(1);
+		const titles = parseDecisions(sent[0]!.text).blocks.map(b => b.title);
+		expect([titles.length, new Set(titles).size]).toEqual([3, 3]);
+		expect(sent[0]!.ids).toEqual(["prompt:review:h1", "disk:low", "prompt:enforced:r9"]);
+	});
+
 	test("while a card covers the matter the morning neither says nor asks it: counted as told before, its area not called fine, not marked told", async () => {
 		const t = msg().doctor, line = t.updateFailed(t.selfUpdate);
 		const stuck: DoctorCheck = () => [finding({ key: "sessions:stuck", area: "sessions", what: "STUCK" })];

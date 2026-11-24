@@ -84,10 +84,15 @@ export function laterNotice(id: unknown, body: { for?: unknown }): CardReply {
 	return { status: 200, body: { ok: true, item } };
 }
 
-/** The open card a Discord card with `question` in conversation `conv` stands for: the one of that title, else one whose title holds it or is held in it; none when no open card matches (the card closed). */
-export function cardAsked(conv: string, question: string): string | undefined {
-	const open = items.filter(n => isOpenDecision(n) && plainCard(n.decision!) && n.decision!.to === conv);
-	return (open.find(n => n.title === question) ?? open.find(n => !!question && (question.includes(n.title) || n.title.includes(question))))?.id;
+/**
+ * The open card a Discord card with `question` in conversation `conv` stands for: the one of that title, else one whose title holds it or is held in it; none
+ * when no open card matches (the card closed). Cards that have an id may share a title: of several, the one whose own lines are all in `shown`, the text of
+ * the Discord message, else the oldest.
+ */
+export function cardAsked(conv: string, question: string, shown = ""): string | undefined {
+	const open = items.filter(n => isOpenDecision(n) && plainCard(n.decision!) && n.decision!.to === conv), same = open.filter(n => n.title === question);
+	const own = same.length > 1 ? same.find(n => !!n.decision!.evidence?.length && n.decision!.evidence.every(l => shown.includes(l))) : undefined;
+	return (own ?? same[0] ?? open.find(n => !!question && (question.includes(n.title) || n.title.includes(question))))?.id;
 }
 
 function pastHalf(n: Notice, at: string): boolean {

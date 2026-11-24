@@ -75,8 +75,8 @@ export type Deps = {
 	/** The `doctor_at` value ("auto" | "HH:MM" | "off"). */
 	at: () => string;
 	checks?: DoctorCheck[];
-	/** `open`: something not fixed is in it (an alert); only self-fixed lines otherwise (a work log entry). */
-	send: (text: string, decision: boolean, open: boolean) => Promise<{ delivered: boolean; reason?: string } | void> | { delivered: boolean; reason?: string } | void;
+	/** `open`: something not fixed is in it (an alert); only self-fixed lines otherwise (a work log entry). `ids`: the id of each card in the text, in order (Notice.ids). */
+	send: (text: string, decision: boolean, open: boolean, ids: string[]) => Promise<{ delivered: boolean; reason?: string } | void> | { delivered: boolean; reason?: string } | void;
 	log: (line: string) => void;
 	/** Brings the result file up to date when it is stale at the morning pass; the gateway runs the night pass in a child process. Default: runNight here. */
 	refresh?: () => Promise<void>;
@@ -134,17 +134,20 @@ export type CardLabels = { watch: (name: string) => string; harness: (id: string
 /**
  * Whether a gateway card in `notices` already covers a finding's matter: the card is open, or the owner answered it within a day of `now` (a card that
  * expired unanswered covers nothing). Matters: a failed dotz update (`update:self`, the self-update card), a failed harness install (`update:<id>`, the
- * harness card, whose text starts with that harness's label), and a failing watch (`watches:<name>`, its issue card, matched by the watch's label). The disk
- * finding has no card to match: the disk guard's alert is a plain message without a choice block.
+ * harness card, whose text starts with that harness's label), and a failing watch (`watches:<name>`, its issue card, matched by the watch's label). A card
+ * that has an id (Decision.card_id) is matched by it alone: its id is the finding's key. The disk finding has no card to match: the disk guard's alert is a
+ * plain message without a choice block.
  */
 export function cardCovers(notices: Pick<StoredNotice, "title" | "text" | "decision">[], now: number, labels: CardLabels): (f: Finding) => boolean {
 	const live = notices.filter(({ decision: c }) => c && !c.expired && c.closed_how !== "expired" && (c.state === "open" || (c.state === "answered" && now - Date.parse(c.answered_at ?? "") < DAY)));
+	const plain = live.filter(n => n.decision?.card_id === undefined);
 	return f => {
 		if (f.fixed) return false;
-		if (f.key === "update:self") return live.some(n => n.title === SELF_UPDATE_CARD_TITLE);
+		if (/^(update|watches):/.test(f.key) && live.some(n => n.decision?.card_id === f.key)) return true;
+		if (f.key === "update:self") return plain.some(n => n.title === SELF_UPDATE_CARD_TITLE);
 		const harness = f.key.startsWith("update:") ? labels.harness(f.key.slice("update:".length)) : undefined;
-		if (harness !== undefined) return live.some(n => n.title === HARNESS_RETRY_TITLE && n.text.startsWith(`${harness} `));
-		if (f.key.startsWith("watches:")) return live.some(n => watchSubject(n.title) === labels.watch(f.key.slice("watches:".length)));
+		if (harness !== undefined) return plain.some(n => n.title === HARNESS_RETRY_TITLE && n.text.startsWith(`${harness} `));
+		if (f.key.startsWith("watches:")) return plain.some(n => watchSubject(n.title) === labels.watch(f.key.slice("watches:".length)));
 		return false;
 	};
 }
@@ -156,7 +159,7 @@ export function shouldTell(f: Finding, t: Told | undefined, now: number): boolea
 	return t.level > 0 ? f.level >= t.level * T.repeatFactor : f.level > 0;
 }
 
-export type Notice = { text: string; decision: boolean; decisions: number; open: boolean; keys: string[] };
+export type Notice = { text: string; decision: boolean; decisions: number; open: boolean; keys: string[]; ids: string[] };
 const SAID_TOGETHER: Partial<Record<DoctorArea, (t: Catalog["doctor"]) => (items: string[]) => string>> = { failures: t => t.failuresGrew, tokens: t => t.tokens };
 
 type Row = { what: string; todo?: string; ask: boolean };
@@ -181,7 +184,7 @@ function items(found: Finding[], store: DoctorStore, now: number): Row[] {
  * before and still there and the checks that found nothing; then the part headed "정할 것" with one card per finding that has its own question (`decide`),
  * titled `<subject> · <question>` within TITLE_CHARS with the finding's evidence as its lines; two cards that would share a title are told apart by a number.
  * A part with nothing in it is left out. `held`: findings another gateway card covers; they are neither a line nor a card this morning and count among the
- * things told before and still there. `decisions` is the number of cards.
+ * things told before and still there. `decisions` is the number of cards; `ids` names each card by its finding's key, in the order of the cards.
  */
 export function compose(store: DoctorStore, now: number, all = false, held: (f: Finding) => boolean = () => false): Notice | undefined {
 	const t = msg().doctor, every = Object.values(store.findings);
@@ -205,7 +208,7 @@ export function compose(store: DoctorStore, now: number, all = false, held: (f: 
 	const first = [t.head(t.day(now)), rows.length ? t.told(rows.length) : "", cards.length ? t.decide(cards.length) : ""].filter(Boolean).join(" · ");
 	const body = [first, ...told, fixed.length ? t.fixedLine(fixedNames) : "", quiet.length ? t.still(items(quiet, store, now).length) : "", (open.length || all) && fine.length ? t.healthy(fine) : "", open.length || fixed.length ? "" : t.clear];
 	const text = [body.filter(Boolean).join("\n"), ...(cards.length ? [t.decidePart, ...cards] : [])].join("\n\n");
-	return { text, decision: cards.length > 0, decisions: cards.length, open: open.length > 0, keys: due.map(f => f.key) };
+	return { text, decision: cards.length > 0, decisions: cards.length, open: open.length > 0, keys: due.map(f => f.key), ids: open.filter(f => f.decide).map(f => f.key) };
 }
 
 const pad = (n: number): string => String(n).padStart(2, "0");
@@ -267,7 +270,7 @@ export async function runMorning(d: Deps): Promise<void> {
 		return store ? d.log("doctor: nothing notable, nothing posted") : undefined;
 	}
 	const text = [notice?.text, extra?.text].filter(Boolean).join("\n\n");
-	const sent = await (notice ? d.send(text, notice.decision, notice.open) : d.ledgerPart?.news(text));
+	const sent = await (notice ? d.send(text, notice.decision, notice.open, notice.ids) : d.ledgerPart?.news(text));
 	if (sent && !sent.delivered) throw new Error(sent.reason ?? "not delivered");
 	extra?.commit();
 	if (notice && store) for (const k of notice.keys) store.told[k] = { at: now, level: store.findings[k]!.level };
@@ -294,6 +297,10 @@ async function nightChild(log: Deps["log"]): Promise<void> {
 	for (const line of err.trim().split("\n").filter(Boolean).slice(-5)) log(line);
 	if (code !== 0) throw new Error(`night pass exited ${code}`);
 }
+
+/** The morning message's post through the gateway's `out`: an alert when something is not fixed, else a work log entry, each card named by its finding's key (`card_ids`). */
+export const doctorPost = (out: (target: string, text: string, replyTo?: string, extra?: Record<string, unknown>) => Promise<{ delivered: boolean; reason?: string }>): Deps["send"] =>
+	(text, _decision, open, ids) => out(open ? "alert" : "worklog", text, undefined, { source: "gateway", wk: "doctor", ...(ids.length ? { card_ids: ids } : {}) });
 
 /** `covered`: whether another gateway card covers a finding's matter (cardCovers over the notice store). */
 export function startDoctor(send: Deps["send"], log: Deps["log"], briefHour: () => number | undefined, ledgerOut?: { send: Send; waiting: () => number }, covered?: Deps["covered"]): void {

@@ -25,8 +25,8 @@ function droppedDraftRefs(items: Notice[], ids: unknown): Map<string, string> {
 
 const OWNER_ONLY = { code: "owner_only", error: reasonOf("owner_only").text };
 
-setAskExtra((target, question, act) => {
-	const id = cardAsked(convOfTarget(target), question);
+setAskExtra((target, question, act, shown) => {
+	const id = cardAsked(convOfTarget(target), question, shown);
 	const r = act === "more" ? moreNotice(id, askAsker) : laterNotice(id, { for: "hour" });
 	if (r.status === 502) return r.body.error;
 	if (r.status !== 200) return msg().auth.finished;

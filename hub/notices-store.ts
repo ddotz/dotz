@@ -23,7 +23,7 @@ import { snapshotResults } from "./files.ts";
 import { type ResultFile, type ResultLink, resultFiles, resultLinks } from "./result-refs.ts";
 import { broadcast, summary } from "./notices-read.ts";
 import { QUIET_MS, awaitingReply, isViewing, ownerWroteAt, quietReplies, viewers } from "./notices-viewing.ts";
-import { decisionsOf, expiresAtOf, plainCard, sending } from "./notices-decisions.ts";
+import { decisionsOf, expiresAtOf, noteDroppedIds, plainCard, sending } from "./notices-decisions.ts";
 import { askedAgain, optionsOf, sameQuestion, withAskedLine } from "./notices-repeat.ts";
 import { worklogKind } from "./worklog-kind.ts";
 import { en } from "./i18n-en.ts";
@@ -283,6 +283,7 @@ export function feed(e: HubEvent): void {
 		else if (e.kind === "out" && adoptRepost(e)) return;
 		else if (e.kind === "out") {
 			const ds = decisionsOf(e);
+			noteDroppedIds(e, ds);
 			fromOutbox(e, ds.length > 0);
 			for (const d of ds) putDecision(d, e.ts);
 			// A decision message makes only its decision item; any other answer may become the conversation's unread message item
@@ -383,8 +384,8 @@ function closeCardsWrittenBackTo(to: string, at: string, keep?: Notice): void {
 	if (since && since <= at) for (const i of items) if (i !== keep && isOpenDecision(i) && hasChoice(i) && !i.decision!.draft && i.decision!.to === to && !laterOn(i.decision) && (i.at ?? i.ts) < since) settleDecision(i, "", at, true);
 }
 
-export function putDecision(d: { key: string; title: string; detail: string; to: string; open?: string; options: DecisionOpt[]; group: number; replyTo?: string; draft?: DraftApproval; by?: string; ref?: string; assumed?: true; evidence?: string[] }, at: string): void {
-	const old = items.find(n => n.key === d.key) ?? (d.draft || Object.values(FILLER_QUESTIONS).includes(d.title) ? undefined : items.findLast(n => n.decision?.to === d.to && !n.decision.draft && sameQuestion(n.title, d.title))), asked = askedAgain(old, d, at);
+export function putDecision(d: { key: string; title: string; detail: string; to: string; open?: string; options: DecisionOpt[]; group: number; replyTo?: string; draft?: DraftApproval; by?: string; ref?: string; assumed?: true; evidence?: string[]; card_id?: string }, at: string): void {
+	const old = items.find(n => n.key === d.key) ?? (d.card_id || d.draft || Object.values(FILLER_QUESTIONS).includes(d.title) ? undefined : items.findLast(n => n.decision?.to === d.to && !n.decision.draft && !n.decision.card_id && sameQuestion(n.title, d.title))), asked = askedAgain(old, d, at);
 	if (old?.decision) {
 		// The same ask can arrive twice (a session's mid-turn line and its turn-end report): one notice, and an answered one stays answered.
 		if (isOpenDecision(old) && old.key === d.key && !asked) return;
@@ -394,7 +395,7 @@ export function putDecision(d: { key: string; title: string; detail: string; to:
 	if (d.options.length && !d.draft) closeCardsWrittenBackTo(d.to, at, old);
 	const open = d.open ?? d.to, expires_at = expiresAtOf(d, at);
 	if (d.draft && !shownAsStored(d.draft)) d = { ...d, draft: undefined };
-	const decision: Decision = { options: optionsOf(d), ...(d.evidence ? { evidence: d.evidence } : {}), to: d.to, ...(d.replyTo ? { reply_to: d.replyTo } : {}), group: d.group, state: "open", ...(expires_at ? { expires_at } : {}), ...(d.draft ? { draft: d.draft } : {}), ...(d.assumed ? { assumed: true as const } : {}), ...(asked ? { asked } : {}) };
+	const decision: Decision = { options: optionsOf(d), ...(d.evidence ? { evidence: d.evidence } : {}), ...(d.card_id ? { card_id: d.card_id } : {}), to: d.to, ...(d.replyTo ? { reply_to: d.replyTo } : {}), group: d.group, state: "open", ...(expires_at ? { expires_at } : {}), ...(d.draft ? { draft: d.draft } : {}), ...(d.assumed ? { assumed: true as const } : {}), ...(asked ? { asked } : {}) };
 	let item: Notice;
 	if (old) {
 		Object.assign(old, { kind: "decision", tone: "ask", title: d.title, text: withAskedLine(d.detail, asked), open, src: open, at, updated: at, read: false, decision, ...(d.by ? { by: d.by } : {}), ...(d.ref ? { ref: d.ref } : {}) });

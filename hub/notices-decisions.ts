@@ -1,5 +1,5 @@
 // The decisions an event asks of the owner. A part of the notice store split out of hub/notices.ts, code unchanged.
-import { now } from "./config.ts";
+import { log, now } from "./config.ts";
 import { decisionText, hasDecisionHead, parseDecisions } from "./choices.ts";
 import { type DraftApproval, parseDraftApproval, quotedDraft } from "./draft-approval.ts";
 import { askDefaults, askedDraft, asksSendWithoutDraft, DRAFT_OPTIONS, lastQuestion } from "./ask-options.ts";
@@ -51,7 +51,21 @@ function messageFiles(raw: string): string {
 	return out.slice(0, 10).map(l => `\n${l}`).join("");
 }
 
-export function decisionsOf(e: HubEvent): Draft[] {
+const namesEach = (ids: unknown, n: number): ids is string[] => Array.isArray(ids) && ids.length === n && ids.every(i => typeof i === "string" && i !== "") && new Set(ids).size === n;
+/** The decisions an event asks of the owner. A gateway post may name its cards (`card_ids`, one id per card in their order): a card with an id is keyed by it
+ *  (`dec:<to>:id:<id>`) and carries it as `card_id`; a list that does not name every card once is dropped. Any other post's ids are ignored. */
+export function decisionsOf(e: HubEvent): (Draft & { card_id?: string })[] {
+	const ds = drafted(e), ids = e.source === "gateway" ? e.card_ids : undefined;
+	if (ids === undefined || !ds.length || !namesEach(ids, ds.length)) return ds;
+	return ds.map((d, i) => ({ ...d, key: `dec:${d.to}:id:${ids[i]}`, card_id: ids[i] }));
+}
+
+/** Logs a gateway post whose `card_ids` were dropped; `ds` is what decisionsOf made of it. Only the store's feed calls it, so the line is written once per post however many readers ask for its decisions. */
+export function noteDroppedIds(e: HubEvent, ds: { card_id?: string }[]): void {
+	if (e.source === "gateway" && e.card_ids !== undefined && ds.length && !ds[0]!.card_id) log(`card ids of ${e.ts} dropped: ${JSON.stringify(e.card_ids)} does not name its ${ds.length} card(s) once each`);
+}
+
+function drafted(e: HubEvent): Draft[] {
 	if (e.kind === "out") {
 		const src = String(e.source ?? "");
 		// The gateway's own alert (a token audit, a failed update) may ask a question too; its other posts never do.
