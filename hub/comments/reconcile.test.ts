@@ -118,6 +118,30 @@ describe("owner replies that come in later close the comment and its draft", () 
 		const out = await youtubeAdapter(() => api).list(source("youtube", "youtube"), undefined);
 		expect(out.comments.map(c => [c.native, c.parent ?? null, c.mine === true])).toEqual([["t", null, false], ["t.1", "t", true]]);
 	});
+
+	test("YouTube rows carry the author's channel id (his own replies the owner's), and a comment stored without one gains it when read again", async () => {
+		config([source("youtube", "youtube")]);
+		const at = (ms: number) => new Date(NOW - ms).toISOString();
+		const api: YoutubeApi = {
+			channelId: () => "UCme",
+			threadsSince: async () => ({
+				comments: [
+					{ id: "t", videoId: "p1", author: "fan", authorChannelId: "UCfan", text: "q", publishedAt: at(5000), replied: true, ownerReplies: [{ id: "t.1", parentId: "t", author: "지수", text: "네", publishedAt: at(1000) }] },
+					{ id: "u", videoId: "p1", author: "fan", text: "q2", publishedAt: at(4000), replied: false },
+				],
+			}),
+			uploads: async () => [],
+			videos: async () => ({}),
+			reply: async () => "r",
+			ownReplies: async () => [],
+		};
+		const out = await youtubeAdapter(() => api).list(source("youtube", "youtube"), undefined);
+		expect(out.comments.map(c => [c.native, c.authorId])).toEqual([["t", "UCfan"], ["t.1", "UCme"], ["u", undefined]]);
+		createStore(dir).addComments([{ id: "cm:youtube:t", source: "youtube", native: "t", thread: "p1", author: "fan", text: "q", postTitle: "P", at: NOW - 5000, mine: false, collector: "t" }]);
+		const { engine } = engineWith({ youtube: youtubeAdapter(() => api) });
+		await engine.collect({ force: true });
+		expect(engine.store.comments().map(c => [c.native, c.authorId])).toEqual([["t", "UCfan"], ["u", undefined], ["t.1", "UCme"]]);
+	});
 });
 
 describe("deleted and dismissed comments", () => {
@@ -236,6 +260,15 @@ describe("Instagram reply authors", () => {
 		return createEngine({ dir, now: () => NOW, collector: "t", adapters: { instagram: instagramAdapter(() => api) } });
 	}
 	const fresh = () => ({ list: [] as IgComment[], complete: true, authors: {} as Record<string, { username?: string; fromId?: string }>, lookups: [] as string[], withAuthor: true });
+
+	test("an Instagram author's id is the handle; a reply whose author stays unknown has none", async () => {
+		config([source("instagram", "instagram")]);
+		const state = { ...fresh(), withAuthor: false };
+		state.list = [top("k1", "fan1", "2030-06-15T12:10:00+0000", "자료 부탁드려요", { replies: [{ id: "r5", username: "", text: "저도요", timestamp: "2030-06-15T14:00:00+0000" }] })];
+		const engine = ig(state);
+		await engine.collect({ force: true });
+		expect(engine.store.comments().map(c => [c.native, c.author, c.authorId])).toEqual([["k1", "fan1", "fan1"], ["r5", UNKNOWN, undefined]]);
+	});
 
 	test("issue #31: a reply the comments edge also lists on its own is stored once, under its comment, with its real id, author and time", async () => {
 		config([source("instagram", "instagram")]);

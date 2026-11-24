@@ -6,8 +6,8 @@ import type { ReplyStyle } from "../reply-draft.ts";
 import type { Comment } from "./contract.ts";
 import type { Draft, Reply } from "./store.ts";
 
-/** `same`: the reply went to the very sender of the message being drafted (a mail's address, lib/pairs.ts styleFrom; a comment's author, hub/comments/draft-run.ts). `edited`: the owner changed the draft by hand before sending. `from`: who wrote the comment, when known. */
-export type PastPair = { comment: string; reply: string; at: number; thread: string; same?: boolean; edited?: true; from?: string };
+/** `same`: the reply went to the very sender of the message being drafted (a mail's address, lib/pairs.ts styleFrom; a comment's author by `authorId`, hub/comments/draft-run.ts). `edited`: the owner changed the draft by hand before sending. `from`: the display name of who wrote the comment, kept as stored and never used to tell authors apart. `fromId`: the platform id of who wrote it, when it gave one. */
+export type PastPair = { comment: string; reply: string; at: number; thread: string; same?: boolean; edited?: true; from?: string; fromId?: string };
 
 export const EXAMPLES = 8;
 export const SIDE_MAX = 1500;
@@ -36,7 +36,7 @@ export function pastPairs(comments: Comment[], replies: Reply[], source: string,
 	const byNative = new Map(own.map(c => [c.native, c]));
 	const byId = new Map(own.map(c => [c.id, c]));
 	const out: PastPair[] = [];
-	const pair = (parent: Comment, reply: string, at: number): PastPair => ({ comment: parent.text, reply, at, thread: parent.thread, ...(parent.author ? { from: parent.author } : {}) });
+	const pair = (parent: Comment, reply: string, at: number): PastPair => ({ comment: parent.text, reply, at, thread: parent.thread, ...(parent.author ? { from: parent.author } : {}), ...(parent.authorId ? { fromId: parent.authorId } : {}) });
 	for (const c of own) {
 		if (!c.mine || !c.text.trim() || isBot(bots, words(c.text))) continue;
 		const parent = c.parent ? byNative.get(c.parent) : rooms ? own.filter(x => !x.mine && x.thread === c.thread && x.at <= c.at).sort((a, b) => b.at - a.at)[0] : undefined;
@@ -63,7 +63,7 @@ export function mergePast(...lists: PastPair[][]): PastPair[] {
 		const k = pairKey(p);
 		const old = seen.get(k);
 		const [a, b] = old && old.at > p.at ? [old, p] : [p, old];
-		seen.set(k, { ...a, ...(b?.edited && !a.edited ? { edited: true as const } : {}), ...(!a.from && b?.from ? { from: b.from } : {}), ...(!a.thread && b?.thread ? { thread: b.thread } : {}) });
+		seen.set(k, { ...a, ...(b?.edited && !a.edited ? { edited: true as const } : {}), ...(!a.from && b?.from ? { from: b.from } : {}), ...(!a.fromId && b?.fromId ? { fromId: b.fromId } : {}), ...(!a.thread && b?.thread ? { thread: b.thread } : {}) });
 	}
 	return [...seen.values()];
 }

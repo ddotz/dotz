@@ -24,6 +24,7 @@ export function absorbComments(store: Store, collector: string, unknownUser: str
 			// A reply first stored as a comment of its own (Instagram listed it top-level) gets its comment once a read names it (issue #31).
 			if (c.parent && !old.parent) patch.parent = c.parent;
 			if (old.author === unknownUser && c.author !== unknownUser) patch.author = c.author;
+			if (c.authorId && !old.authorId) patch.authorId = c.authorId;
 			if (c.text && c.text !== old.text) {
 				patch.text = c.text;
 				if (old.text) edited.push({ c: { ...old, text: c.text }, before: old.text });
@@ -65,7 +66,7 @@ export function mergeIgTwins(store: Store, unknownUser: string): number {
 		const twin = cands.find(t => t.parent === s.parent) ?? cands.find(t => t.at >= s.at) ?? cands[0];
 		if (!twin) continue;
 		used.add(twin.id);
-		pairs.push({ from: s.id, to: { ...twin, parent: s.parent, ...(twin.author === unknownUser && s.author !== unknownUser ? { author: s.author } : {}) } });
+		pairs.push({ from: s.id, to: { ...twin, parent: s.parent, ...(twin.author === unknownUser && s.author !== unknownUser ? { author: s.author } : {}), ...(!twin.authorId && s.authorId ? { authorId: s.authorId } : {}) } });
 	}
 	store.replaceComments(pairs);
 	return pairs.length;

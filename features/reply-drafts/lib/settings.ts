@@ -165,7 +165,7 @@ export function setSection(existing: string, heading: string, items: string[]): 
 // Tone store: <DATA_DIR>/custom/reply-drafts/tone/install.md (whole install), <app>.md (mail, youtube, kakao, ...) and
 // <app>/<room>.md (one conversation of a messenger). Each file has the four sections above.
 // `base`: the app whose profile stands in at the app level when `app` has none (a mailbox's tone of a mail app instance without a profile of its own).
-/** `to`: the recipient as the channel knows it (a mail address, a comment author), whose own profile is `<app>/to/<recipientFile(to)>.md`; a `to` without a file name is no level, as if absent. */
+/** `to`: the recipient as the channel knows it (a mail address, a commenter's platform id: YouTube channel id, Instagram handle), whose own profile is `<app>/to/<recipientFile(to)>.md`; a `to` without a file name is no level, as if absent. */
 export type ToneKey = { app: string; room?: string; base?: string; to?: string };
 export type ToneLevel = "to" | "room" | "app" | "install";
 /** `standing`: the owner's standing rules (the `## 말투` lines and the hand-added sections of install, app, room and recipient, install first), also part of `rules`. */
@@ -533,10 +533,10 @@ export function listProfiles(): string[] {
 	return out.sort();
 }
 
-/** `from`: the address of the person the reply went to (absent in pairs stored before it was kept). `source`: the mail source whose sent folder it came from (a mail site, a plugin); absent = zele (comment pairs have their own file per source, so no tag).
+/** `from`: the address of the person the reply went to (absent in pairs stored before it was kept). `fromId`: the platform id of a comment pair's author (hub/comments/past.ts; absent when the platform gave none). `source`: the mail source whose sent folder it came from (a mail site, a plugin); absent = zele (comment pairs have their own file per source, so no tag).
  * `edited`: the user changed the draft by hand before sending. `thread`: the post a comment pair sits under.
  * `conv`: the mail conversation, `subj`: its subject, `account`: the zele address it was sent from: what says which mailbox a reply belongs to (lib/box-voice.ts), read fresh so a move or an undo needs no rewrite. */
-export type Pair = { received: string; reply: string; at: number; from?: string; source?: string; edited?: true; thread?: string; conv?: string; subj?: string; account?: string };
+export type Pair = { received: string; reply: string; at: number; from?: string; fromId?: string; source?: string; edited?: true; thread?: string; conv?: string; subj?: string; account?: string };
 
 export const MAX_PAIRS = 1000;
 
@@ -551,7 +551,7 @@ export function loadPairs(app: string): Pair[] {
 		if (!line.trim()) continue;
 		try {
 			const p = JSON.parse(line);
-			if (p && typeof p.received === "string" && typeof p.reply === "string" && typeof p.at === "number" && p.reply.trim()) out.push({ received: p.received, reply: p.reply, at: p.at, ...(typeof p.from === "string" && p.from ? { from: p.from } : {}), ...(typeof p.source === "string" && p.source ? { source: p.source } : {}), ...(p.edited === true ? { edited: true as const } : {}), ...(typeof p.thread === "string" && p.thread ? { thread: p.thread } : {}), ...(typeof p.conv === "string" && p.conv ? { conv: p.conv } : {}), ...(typeof p.subj === "string" && p.subj ? { subj: p.subj } : {}), ...(typeof p.account === "string" && p.account ? { account: p.account } : {}) });
+			if (p && typeof p.received === "string" && typeof p.reply === "string" && typeof p.at === "number" && p.reply.trim()) out.push({ received: p.received, reply: p.reply, at: p.at, ...(typeof p.from === "string" && p.from ? { from: p.from } : {}), ...(typeof p.fromId === "string" && p.fromId ? { fromId: p.fromId } : {}), ...(typeof p.source === "string" && p.source ? { source: p.source } : {}), ...(p.edited === true ? { edited: true as const } : {}), ...(typeof p.thread === "string" && p.thread ? { thread: p.thread } : {}), ...(typeof p.conv === "string" && p.conv ? { conv: p.conv } : {}), ...(typeof p.subj === "string" && p.subj ? { subj: p.subj } : {}), ...(typeof p.account === "string" && p.account ? { account: p.account } : {}) });
 		} catch {
 			unreadable++;
 		}
@@ -568,7 +568,7 @@ export function savePairs(app: string, pairs: Pair[]): void {
 		const k = `${p.source ?? ""}\n${normText(p.reply)}\n${normText(p.received)}`;
 		const before = seen.get(k);
 		if (!before) seen.set(k, p);
-		else seen.set(k, { ...before, ...(!before.from && p.from ? { from: p.from } : {}), ...(!before.edited && p.edited ? { edited: true as const } : {}), ...(!before.thread && p.thread ? { thread: p.thread } : {}), ...(!before.conv && p.conv ? { conv: p.conv } : {}), ...(!before.subj && p.subj ? { subj: p.subj } : {}), ...(!before.account && p.account ? { account: p.account } : {}) });
+		else seen.set(k, { ...before, ...(!before.from && p.from ? { from: p.from } : {}), ...(!before.fromId && p.fromId ? { fromId: p.fromId } : {}), ...(!before.edited && p.edited ? { edited: true as const } : {}), ...(!before.thread && p.thread ? { thread: p.thread } : {}), ...(!before.conv && p.conv ? { conv: p.conv } : {}), ...(!before.subj && p.subj ? { subj: p.subj } : {}), ...(!before.account && p.account ? { account: p.account } : {}) });
 	}
 	const count = new Map<string, number>();
 	const kept = [...seen.values()].filter(p => {

@@ -75,7 +75,9 @@ A chat message that needs his own decision still asks first (exit 4), since the 
   - `tone/<app>/<room>.md` one conversation of a messenger (room id reduced to `[A-Za-z0-9_-]`, so it is always a safe file name);
   - `tone/<app>/to/<recipient>.md` one person the owner answers in that app (`ToneKey.to`): for a mail the address its reply goes to by
     default (`replyAddress`: a usable Reply-To, else the first address of From), kept under `mail/to/` for every mail app instance and
-    mailbox (`recipientApp`: a person's address is the same in each), or a comment's author as the card shows it. The name is `recipientFile(id)`: the id NFC, trimmed and lowercased,
+    mailbox (`recipientApp`: a person's address is the same in each), or for a comment its author's platform id (`Comment.authorId`: the
+    YouTube channel id, the Instagram handle), never the display name two people can share. A website comment, an Instagram unknown user
+    and a draft made by hand (`draft.ts new --kind comment --from <name>`) have no id, so no recipient level. The name is `recipientFile(id)`: the id NFC, trimmed and lowercased,
     `[a-z0-9-]` kept and every other UTF-16 code unit written `_` plus its four hex digits, so it is injective and `recipientOf` reads it back.
     An empty id, one over 120 code units or whose name would pass 250 characters, and the nobody values (`익명`, the adapters' unknown user)
     have no recipient level. KakaoTalk has none: its room already is the person.
@@ -84,21 +86,25 @@ A chat message that needs his own decision still asks first (exit 4), since the 
   and 고친 점 lines are also listed apart (`ReplyStyle.recipient`): the draft prompt shows them under their own heading as holding for this
   recipient and winning over a broader line that says otherwise, and the style judge numbers them last under the same meaning. The
   prompt's and the judge's one corrections budget takes the recipient's corrections first and the other levels' in what is left. Every style
-  load of a mail or comment draft adds its recipient (`flow.ts` `styleKey`; the comment engine `EngineDeps.style(src, author)`). A second
+  load of a mail draft adds its recipient (`flow.ts` `styleKey`, which adds `to` for a mail only), the comment engine its author's id (`EngineDeps.style(src, authorId)`). A second
   mail app instance (`mail-<slug>`) reads and learns into its own profile only once it has a tone of its own (an identity or samples),
   else the shared `mail` one (`profileApp`, used by `toneKey`): its offered drafts, a mail composed there and a mail that rides on a
   comment (`mailStyleOf`) are therefore written, revised, checked and taught with the same profile and the same recipient file; with no
   recipient file the style, the prompts and the lint are exactly those of the key without `to`. Writing
   (`learnTone`, `recordCorrection`) goes into exactly one profile. A revise lesson goes to the key of its `scope` (mail: `flow.ts`
   `lessonKey` beside `styleKey`; comments: `draft-run.ts` `commentLessonKey`; KakaoTalk: `kakaoLessonKey`): the install for `everywhere`;
-  for `recipient` the draft's recipient file (a mail's `replyAddress`, a comment's author, a mail that rides on a comment that address
+  for `recipient` the draft's recipient file (a mail's `replyAddress`, a comment author's `authorId`, a mail that rides on a comment that address
   under the shared `mail` profile), or the channel's profile when the draft has no recipient with a file name (a sender with only a
-  name, an anonymous author); for KakaoTalk the room, which already is the person; for `channel` the draft's channel. The card path
+  name, a comment author without an id); for KakaoTalk the room, which already is the person; for `channel` the draft's channel. The card path
   (`hub/reply-actions.ts` `learn`) and `draft.ts revise` (`teach`) pass that key unchanged to the line's curation, the wording pattern
   (proposed against the app's replies, as for a channel lesson), the bans, refinement and compaction, so a recipient lesson writes that
-  person's file only, and the card says `앞으로 <id>에게 보내는 답장에 반영해요: <line>` (the id as stored, cut to 40 characters). Besides
-  that, `draft.ts correct|tone --app <app> --to <id>` reads and writes a recipient file (a mail app, `instanceIdOf("mail", app)`, takes exactly one
-  address and stores it bare; `--app kakao` refuses `--to`). Two rooms of one messenger therefore never share a tone, a room
+  person's file only, and the card says `앞으로 <name>에게 보내는 답장에 반영해요: <line>` (`Lesson.key.toName`, a commenter's display name,
+  else the id as stored; cut to 40 characters; the hub log keeps the id). Besides
+  that, `draft.ts correct|tone --app <app> --to <value>` reads and writes a recipient file (a mail app, `instanceIdOf("mail", app)`, takes exactly one
+  address and stores it bare; `--app kakao` refuses `--to`; any other app is a comment source: the value is a stored `authorId` of that source,
+  else a display name looked up in its stored comments (`lib/commenters.ts` `commentRecipient`, compared as `recipientFile` normalises
+  it) that exactly one author id has; none, several, or a source whose comments carry no id (a website) are refused with one line that says
+  why; the output and `tone --journal` name a commenter by the newest display name stored for that id). Two rooms of one messenger therefore never share a tone, a room
   that was never written to follows its app, an app without samples follows the install. A mailbox is a room of its account (`tone/<instance>/<box>.md`);
   what its voice was learned from is in `box-voice.json` (docs/mailbox.md "Voice").
   A profile with corrections or a section of its own is not relearned. A `## ` section the code does not know reaches the rules.
@@ -184,7 +190,7 @@ corrections turned into a checklist). `lib/persona.ts`:
   (`examplesUse` in `hub/reply-draft.ts`: mail 0.27, comment 0.36, plain similarity of the shown pairs) follows that reply's shape; any other message is
   unfamiliar and is written in the user's voice in new sentences, with three examples for voice only.
 - Every `REFINE_EVERY` (5) corrections of a profile, one call folds them into its identity and templates (`maybeRefine`).
-- Reply pairs (`pairs/<app>.jsonl`, `lib/pairs.ts`) are read from the sent mail of the accounts the mail apps name, even when zele is not switched on in config.json. They are refreshed without a model call: the first 500 threads, then the newest 40 once a day. Each pair keeps who it answered, and up to 3 newest replies to the same sender lead the examples (`hub/comments/past.ts` `sameFirst`, `same`); a comment's pairs keep their author, and up to 3 whose author is this comment's (as `recipientFile` normalises it; the nobody values never match) lead the same way, the rest by similarity, `EXAMPLES` in all.
+- Reply pairs (`pairs/<app>.jsonl`, `lib/pairs.ts`) are read from the sent mail of the accounts the mail apps name, even when zele is not switched on in config.json. They are refreshed without a model call: the first 500 threads, then the newest 40 once a day. Each pair keeps who it answered, and up to 3 newest replies to the same sender lead the examples (`hub/comments/past.ts` `sameFirst`, `same`); a comment's pairs keep their author's platform id (`fromId`, when the comment had an `authorId`), and up to 3 whose `fromId` equals this comment's `authorId` lead the same way (an equal display name marks nothing, and a comment without an id has no such pairs), the rest by similarity, `EXAMPLES` in all.
 - Where it runs: mail before the first offered draft (`offer.ts`, gateway passes zele's sent mail when zele is on), a comment source
   before its first draft (`CommentAdapter.ownTexts`), a KakaoTalk room on its first draft (`ensureKakaoRoom`), and `onboard.ts on|learn`.
   Without an injected `analyze` call (tests, library use) nothing is analysed.

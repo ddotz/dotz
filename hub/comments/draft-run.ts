@@ -21,9 +21,9 @@ const CLIP = 240;
 const clip = (s: string, n = CLIP) => s.replace(/\s+/g, " ").trim().slice(0, n);
 const MAIL_REPEAT_MS = 14 * 24 * 3600_000;
 
-/** The key a comment revise lesson of `scope` is written under: the install for `everywhere`, the author's own level of the source's app (as hub/comments/real.ts commentStyle loads it) for `recipient`, and the source's profile for `channel` or when `author` is undefined (an author without a file name: anonymous, an adapter's unknown user). */
-export const commentLessonKey = (app: string, author: string | undefined, scope: LessonScope): Lesson["key"] =>
-	scope === "everywhere" ? { app: "install" } : scope === "recipient" && author !== undefined ? { app, to: author } : { app };
+/** The key a comment revise lesson of `scope` is written under: the install for `everywhere`, for `recipient` the author's own level of the source's app by the platform's id (`authorId`, as hub/comments/real.ts commentStyle loads it; `toName` the name the card shows), and the source's profile for `channel` or for an author without an id (a website commenter, an adapter's unknown user). */
+export const commentLessonKey = (app: string, c: Pick<Comment, "author" | "authorId">, scope: LessonScope): Lesson["key"] =>
+	scope === "everywhere" ? { app: "install" } : scope === "recipient" && c.authorId !== undefined ? { app, to: c.authorId, toName: c.author } : { app };
 
 /** How the owner's own edits of sent drafts are learned (design 3.4): `lessonOfEdit` reads a comment reply's lesson, `learn` stores it through the one learning door (hub/reply-mail.ts replyLearning: curation, journal, a stored correction's refinement), and `mail` learns the edit of a mail that rode on a card (hub/reply-mail.ts learnMailEdit). None of them rejects. */
 export type EditLessons = { lessonOfEdit: LessonOfEdit; learn: (key: Lesson["key"], line: string) => Promise<void>; mail: (mailId: string) => Promise<void> };
@@ -96,7 +96,7 @@ export type DraftRunCtx = {
 	deps: EngineDeps & { model?: DraftModel };
 	store: Store;
 	ownerOf: (src: SourceConfig) => string;
-	styleOf: (src: SourceConfig, author?: string) => ReplyStyle;
+	styleOf: (src: SourceConfig, authorId?: string) => ReplyStyle;
 	contextOf: (c: Comment) => string;
 	code: () => string;
 	emit: (e: Record<string, unknown>) => void;
@@ -139,9 +139,8 @@ export function createDraftRun({ deps, store, ownerOf, styleOf, contextOf, code,
 		const mailThread = reuse || search?.kind === "failed" ? previous?.mailThread : found ? { id: found[1]!, ...(found[2] === "보냄" ? { answered: true } : found[2] === "안 보냄" ? { answered: false } : {}) } : undefined;
 		const mailLine = (previous ? !!mailView(previous) : mailPlanned(c, src)) ? "함께 보내는 메일: 있어요 (답글과 같은 카드로 나가요)" : "함께 보내는 메일: 없어요 (메일이나 파일을 보내 준다고 약속하지 마세요)";
 		const item: ReplyItem = { kind: "comment", app: src.key, from: c.author, text: c.text, context: [contextOf(c), mailLine, ...matched].join("\n") };
-		const fileOf = deps.authorFile, author = fileOf?.(c.author);
-		const marked = fileOf && author !== undefined ? past.map(p => (p.from !== undefined && fileOf(p.from) === author ? { ...p, same: true } : p)) : past;
-		const style = withExamples(styleOf(src, c.author), sameFirst(c.text, marked, deps.now()), [...past].sort((a, b) => b.at - a.at).map(p => p.reply), c.text);
+		const marked = c.authorId === undefined ? past : past.map(p => (p.fromId === c.authorId ? { ...p, same: true } : p));
+		const style = withExamples(styleOf(src, c.authorId), sameFirst(c.text, marked, deps.now()), [...past].sort((a, b) => b.at - a.at).map(p => p.reply), c.text);
 		const judgeModel = deps.judge;
 		const judge = judgeModel ? judgeAsk(async (system, user) => (await judgeModel(system, user, ownerOf(src))).text) : undefined;
 		const r = previous && change !== undefined ? await reviseReply(item, style, { to: `${c.author} 댓글`, body: previous.text }, change, call, judge) : await generateReply(item, style, call, judge);
@@ -162,7 +161,7 @@ export function createDraftRun({ deps, store, ownerOf, styleOf, contextOf, code,
 		emit({ kind: "comment_draft", source: src.key, thread: c.thread });
 		// Learned only once the new draft is stored (design 3.1); `learn: false` hands the lesson to the caller (hub/reply-actions.ts) instead.
 		const learnt = previous && change !== undefined && r.action === "draft" ? learnedOf(r, change) : undefined;
-		const lesson: Lesson | undefined = learnt && previous && (learnt.line.trim() || learnt.forbid.length) ? { key: commentLessonKey(src.key, author === undefined ? undefined : c.author, learnt.scope), line: learnt.line, forbid: learnt.forbid, evidence: { draft: previous.text, change: change ?? "" } } : undefined;
+		const lesson: Lesson | undefined = learnt && previous && (learnt.line.trim() || learnt.forbid.length) ? { key: commentLessonKey(src.key, c, learnt.scope), line: learnt.line, forbid: learnt.forbid, evidence: { draft: previous.text, change: change ?? "" } } : undefined;
 		if (lesson && opts.learn !== false) deps.learn?.(lesson);
 		return { ok: true, draft, ...(lesson ? { lesson } : {}) };
 	};

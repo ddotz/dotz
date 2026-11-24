@@ -29,8 +29,8 @@ export type SendState =
 
 export type ReplyKind = "mail" | "webmail" | "comment" | "kakao" | "card";
 export type Part = "reply" | "mail";
-/** What a revise teaches a tone profile: `line` the lasting preference ("" = none), `forbid` the wordings the owner banned, `evidence` the previous draft and the owner's change (the only texts a proposed wording pattern may quote, never the model-written line); `key.app` is `install` when it holds everywhere, `key.to` the person it holds for when it is about the recipient (that person's own file). */
-export type Lesson = { key: { app: string; room?: string; to?: string }; line: string; forbid?: string[]; evidence?: { draft: string; change: string } };
+/** What a revise teaches a tone profile: `line` the lasting preference ("" = none), `forbid` the wordings the owner banned, `evidence` the previous draft and the owner's change (the only texts a proposed wording pattern may quote, never the model-written line); `key.app` is `install` when it holds everywhere, `key.to` the person it holds for when it is about the recipient (that person's own file: a mail address, a commenter's platform id), `key.toName` how the owner knows that person when `to` is an id (a commenter's display name). */
+export type Lesson = { key: { app: string; room?: string; to?: string; toName?: string }; line: string; forbid?: string[]; evidence?: { draft: string; change: string } };
 /** The lasting wording preference a sent edit shows (features/reply-drafts/lib/edit-lesson.ts lessonOfEdit, which hub/reply-mail.ts re-exports): the lesson and whether it holds everywhere, undefined for none. */
 export type LessonOfEdit = (input: { before: string; after: string; received: string }, ask: (system: string, user: string) => Promise<string>) => Promise<{ lesson: string; everywhere: boolean } | undefined>;
 export type Done = { ok: true } | { ok: false; reason: Reason };

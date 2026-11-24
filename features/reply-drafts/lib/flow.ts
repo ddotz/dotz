@@ -216,9 +216,9 @@ export const toneKey = (x: { app?: string; room?: string; profile?: string; box?
 	const boxKey: ToneKey = { app: x.instance, room: x.box, ...(x.profile ? {} : { base: key.app }) };
 	return existsSync(toneFile(boxKey)) ? boxKey : key;
 };
-/** The key a draft's style is loaded with: `toneKey(x)` plus its recipient (a mail's: the address the reply goes to by default, replyAddress; a comment's: its author, unless `from` is only the app or room that `draft.ts new` fills in when no author was given). A revise lesson is written under `lessonKey`: the install for `everywhere`, this key for `recipient` when its recipient has a file name (recipientFile), else `toneKey(x)`. */
+/** The key a draft's style is loaded with: `toneKey(x)` plus, for a mail, its recipient (the address the reply goes to by default, replyAddress). A comment has no recipient level here: its author's level is keyed by the platform's id, which only the comment engine has (hub/comments/draft-run.ts). A revise lesson is written under `lessonKey`: the install for `everywhere`, this key for `recipient` when its recipient has a file name (recipientFile), else `toneKey(x)`. */
 export const styleKey = (x: Parameters<typeof toneKey>[0], item: Pick<ReplyItem, "kind" | "from" | "replyTo" | "self">): ToneKey => {
-	const key = toneKey(x), to = item.kind === "mail" ? replyAddress(item) : item.kind === "comment" && item.from !== (x.room ?? x.app) ? item.from : undefined;
+	const key = toneKey(x), to = item.kind === "mail" ? replyAddress(item) : undefined;
 	return to === undefined ? key : { ...key, to };
 };
 const lessonKey = (x: Parameters<typeof toneKey>[0], item: Pick<ReplyItem, "kind" | "from" | "replyTo" | "self">, scope: LessonScope): ToneKey => (scope === "everywhere" ? { app: INSTALL } : scope === "recipient" && recipientFile(styleKey(x, item).to ?? "") !== undefined ? styleKey(x, item) : toneKey(x));

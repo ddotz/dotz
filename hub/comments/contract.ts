@@ -22,7 +22,8 @@ export type SourceConfig = { key: string; kind: SourceKind; label: string; watch
 	autoMail?: boolean; mailApp?: string };
 export type CommentsConfig = { enabled: boolean; sources: Record<string, SourceConfig> };
 
-export type RawComment = { native: string; thread: string; parent?: string; author: string; text: string; postTitle: string; postLink?: string; thumb?: string; at: number; mine?: boolean };
+/** A comment as an adapter reads it; `authorId` is the platform's own stable id of the author (YouTube channel id, Instagram handle), absent when it gives none. */
+export type RawComment = { native: string; thread: string; parent?: string; author: string; authorId?: string; text: string; postTitle: string; postLink?: string; thumb?: string; at: number; mine?: boolean };
 // `gone`: when a re-check (adapter.recheck) found the comment deleted on the platform; never cleared once set.
 export type Comment = Omit<RawComment, "native" | "mine"> & { id: string; source: string; native: string; mine: boolean; collector: string; gone?: number };
 export type Post = { id: string; title: string; link?: string; thumb?: string };
@@ -70,8 +71,8 @@ export const DM_THREAD = "dm:";
 export const watches = (src: SourceConfig, thread: string): boolean => src.watch.includes("*") || src.watch.includes(thread) || (thread.startsWith(DM_THREAD) && !!src.site?.dm && src.watch.length > 0);
 
 export function toComment(src: SourceConfig, r: RawComment, collector: string): Comment {
-	const { native, mine, ...rest } = r;
-	return { ...rest, id: commentId(src.key, native), source: src.key, native, mine: mine === true, collector };
+	const { native, mine, authorId, ...rest } = r;
+	return { ...rest, ...(authorId ? { authorId } : {}), id: commentId(src.key, native), source: src.key, native, mine: mine === true, collector };
 }
 
 export type Approval = { by: "owner" } | { by: "rule" };

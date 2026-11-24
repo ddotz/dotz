@@ -59,7 +59,7 @@ function toneTree(): Record<string, string> {
 	return out;
 }
 
-async function onCard(adapter: ReplyAdapter, ref: string, change: string, learning: ReplyDeps["learning"] = replyLearning(() => ({})), part?: "mail"): Promise<string> {
+async function onCard(adapter: ReplyAdapter, ref: string, change: string, learning: ReplyDeps["learning"] = replyLearning(() => ({})), part?: "mail", log: (line: string) => void = () => undefined): Promise<string> {
 	const cards: string[] = [];
 	const sender = createApprovalSender({ kind: () => undefined, fingerprint: async () => undefined, run: async () => ({ code: 0, out: "" }), report: () => undefined, log: () => undefined, now: () => 1, undoMs: () => 0, after: () => undefined });
 	const actions = createReplyActions({
@@ -70,7 +70,7 @@ async function onCard(adapter: ReplyAdapter, ref: string, change: string, learni
 		cards: { open: () => [], replace: (_o, _n, text) => void cards.push(text), rewrite: (_r, text) => void cards.push(text), repost: async () => undefined, close: () => undefined },
 		toBot: async () => undefined,
 		emit: () => undefined,
-		log: () => undefined,
+		log,
 	});
 	const res = await actions.act({ ref, action: "revise", change, ...(part ? { part } : {}) }, { surface: "web", login: "me" });
 	expect(res.status).toBe(202);
@@ -179,36 +179,41 @@ test("older answers store, say and prompt what they did before scope: a channel 
 });
 
 const youtube: SourceConfig = { key: "youtube", kind: "youtube", label: "유튜브 댓글", watch: ["*"], autoDraft: false };
+const blog: SourceConfig = { key: "site-blog", kind: "website", label: "블로그 댓글", watch: ["*"], autoDraft: false };
 const commentAnswer = (said: object = {}, lesson = "") => j({ action: "draft", reason: "r", to: "", body: "토요일에 올라가요", questions: [], lesson, ...said });
+type Commenter = { author: string; authorId?: string };
+const KIM_A: Commenter = { author: "김 선생님", authorId: "UC_kimA" };
+const KIM_B: Commenter = { author: "김 선생님", authorId: "UC_kimB" };
 
-function commentWorld(authors: string[], o: { outs?: string[]; pairs?: PastPair[]; mail?: MailLink } = {}) {
+function commentWorld(authors: Commenter[], o: { outs?: string[]; pairs?: PastPair[]; mail?: MailLink; src?: SourceConfig } = {}) {
+	const src = o.src ?? youtube;
 	const dir = mkdtempSync(join(tmpdir(), "rd-to-lesson-"));
-	writeFileSync(join(dir, "config.json"), JSON.stringify({ enabled: true, sources: { youtube } }));
+	writeFileSync(join(dir, "config.json"), JSON.stringify({ enabled: true, sources: { [src.key]: src } }));
 	const platform: CommentAdapter = {
-		kind: "youtube",
-		list: async () => ({ comments: authors.map((author, i) => ({ native: `c${i}`, thread: "p1", author, text: "다음 편 언제 올라와요?", postTitle: "Post one", at: NOW - 1000 + i })), cursor: "1" }),
+		kind: src.kind,
+		list: async () => ({ comments: authors.map((who, i) => ({ native: `c${i}`, thread: "p1", ...who, text: "다음 편 언제 올라와요?", postTitle: "Post one", at: NOW - 1000 + i })), cursor: "1" }),
 		reply: async () => ({ ok: true, ref: "r1" }),
 		posts: async () => [],
 	};
 	const prompts: string[] = [];
 	const outs = o.outs ?? [commentAnswer()];
 	let n = 0;
-	const engine = createEngine({ dir, now: () => NOW, collector: "mac", adapters: { youtube: platform }, model: async (system, user) => (prompts.push(`${system}\n${user}`), { text: outs[Math.min(n++, outs.length - 1)]! }), style: commentStyle, authorFile: recipientFile, pairs: { load: () => o.pairs ?? [], save: () => undefined }, ...(o.mail ? { mail: o.mail } : {}) });
+	const engine = createEngine({ dir, now: () => NOW, collector: "mac", adapters: { [src.kind]: platform }, model: async (system, user) => (prompts.push(`${system}\n${user}`), { text: outs[Math.min(n++, outs.length - 1)]! }), style: commentStyle, pairs: { load: () => o.pairs ?? [], save: () => undefined }, ...(o.mail ? { mail: o.mail } : {}) });
 	const draft = async (i: number): Promise<string> => {
 		await engine.collect({ force: true });
-		const step = await engine.makeDraft(commentId("youtube", `c${i}`));
+		const step = await engine.makeDraft(commentId(src.key, `c${i}`));
 		if (!step.ok) throw new Error(step.reason);
 		return step.draft.code;
 	};
 	return { engine, prompts, draft, a: commentAdapter(engine), close: () => rmSync(dir, { recursive: true, force: true }) };
 }
 
-test("a comment revise whose answer says recipient stores the line in the author's file, the card names him, and only his next comment's draft carries it", async () => {
-	const w = commentWorld(["김 선생님", "박 학생", "김 선생님"], { outs: [commentAnswer(), commentAnswer({ scope: "recipient" }, LINE), commentAnswer()] });
+test("a recipient lesson on one of two commenters with the same name is stored under his channel id, the card names him, and only his next comment's draft carries it", async () => {
+	const w = commentWorld([KIM_A, KIM_B, KIM_A], { outs: [commentAnswer(), commentAnswer({ scope: "recipient" }, LINE), commentAnswer()] });
 	try {
 		const code = await w.draft(0);
 		expect(await onCard(w.a, code, CHANGE)).toBe(`[ask] 고친 초안이에요. 앞으로 김 선생님에게 보내는 답장에 반영해요: ${LINE}`);
-		expect(Object.keys(toneTree())).toEqual([join("youtube", "to", `${recipientFile("김 선생님")}.md`)]);
+		expect(Object.keys(toneTree())).toEqual([join("youtube", "to", `${recipientFile("UC_kimA")}.md`)]);
 		w.prompts.length = 0;
 		await w.draft(2);
 		await w.draft(1);
@@ -219,8 +224,20 @@ test("a comment revise whose answer says recipient stores the line in the author
 	}
 });
 
+test("the hub log names a commenter's recipient lesson by his id, never by the name the card shows", async () => {
+	const w = commentWorld([KIM_A], { outs: [commentAnswer(), commentAnswer({ scope: "recipient" }, LINE)] });
+	const logs: string[] = [];
+	const failing: ReplyDeps["learning"] = { ...replyLearning(() => ({})), record: async () => Promise.reject(new Error("disk full")) };
+	try {
+		await onCard(w.a, await w.draft(0), CHANGE, failing, undefined, line => void logs.push(line));
+		expect(logs).toContain("reply learning for youtube to UC_kimA failed: disk full");
+	} finally {
+		w.close();
+	}
+});
+
 test("a recipient lesson on an anonymous comment stays the source's, and the card says so", async () => {
-	const w = commentWorld(["익명"], { outs: [commentAnswer(), commentAnswer({ scope: "recipient" }, LINE)] });
+	const w = commentWorld([{ author: "익명" }], { outs: [commentAnswer(), commentAnswer({ scope: "recipient" }, LINE)] });
 	try {
 		expect(await onCard(w.a, await w.draft(0), CHANGE)).toBe(`[ask] 고친 초안이에요. 앞으로 이 앱 답장에 반영해요: ${LINE}`);
 		expect(Object.keys(toneTree())).toEqual(["youtube.md"]);
@@ -229,9 +246,19 @@ test("a recipient lesson on an anonymous comment stays the source's, and the car
 	}
 });
 
+test("a website comment has no recipient level: its recipient lesson goes to the site's profile with the channel wording and no to/ file appears", async () => {
+	const w = commentWorld([{ author: "홍길동" }], { src: blog, outs: [commentAnswer(), commentAnswer({ scope: "recipient" }, LINE)] });
+	try {
+		expect(await onCard(w.a, await w.draft(0), CHANGE)).toBe(`[ask] 고친 초안이에요. 앞으로 이 앱 답장에 반영해요: ${LINE}`);
+		expect(Object.keys(toneTree())).toEqual(["site-blog.md"]);
+	} finally {
+		w.close();
+	}
+});
+
 test("a recipient lesson of the mail that rides on a comment goes to that address's file under the shared mail profile", async () => {
 	const mailAnswer = j({ action: "draft", reason: "r", to: "fan@example.com", subject: "Re: 자료", body: "자료 보내드려요", questions: [], lesson: LINE, forbid: [], scope: "recipient" });
-	const w = commentWorld(["팬"], { mail: realMailLink({ call: async () => mailAnswer }) });
+	const w = commentWorld([{ author: "팬", authorId: "UC_fan" }], { mail: realMailLink({ call: async () => mailAnswer }) });
 	try {
 		const code = await w.draft(0);
 		addDraft({ ...mailRec("RMAIL01", "fan@example.com"), app: "mail-teaching", account: "me@example.net" } as DraftRec);
@@ -243,17 +270,20 @@ test("a recipient lesson of the mail that rides on a comment goes to that addres
 	}
 });
 
-test("a comment draft puts up to three past replies to the same author first, marked, then the most similar of the rest", async () => {
-	const pair = (reply: string, from: string, at: number): PastPair => ({ comment: "다음 편 언제 올라와요?", reply, at, thread: "", from });
-	const pairs = [pair("A1", " 김 선생님", NOW - 5), pair("A2", "김 선생님", NOW - 4), pair("A3", "김 선생님", NOW - 3), pair("A4", "김 선생님", NOW - 2), pair("B1", "박 학생", NOW - 1), pair("N1", "익명", NOW)];
-	const w = commentWorld(["김 선생님", "익명"], { pairs });
+test("a comment draft puts up to three past replies to the same author id first, marked, then the most similar of the rest; an equal name marks nothing", async () => {
+	const pair = (reply: string, fromId: string | undefined, at: number): PastPair => ({ comment: "다음 편 언제 올라와요?", reply, at, thread: "", ...(fromId ? { fromId } : {}) });
+	const pairs = [pair("A1", "UC_kimA", NOW - 5), pair("A2", "UC_kimA", NOW - 4), pair("A3", "UC_kimA", NOW - 3), pair("A4", "UC_kimA", NOW - 2), pair("B1", "UC_kimB", NOW - 1), pair("N1", undefined, NOW)];
+	const w = commentWorld([KIM_A, KIM_B, { author: "김 선생님" }], { pairs });
 	try {
 		await w.draft(0);
 		await w.draft(1);
+		await w.draft(2);
 		const order = (prompt: string) => [...prompt.matchAll(/<<<RECEIVED\n(\(this same sender\)\n)?[^]*?<<<REPLY\n(\w+)\n/g)].map(m => `${m[2]}${m[1] ? "*" : ""}`);
 		expect(order(w.prompts[0]!).slice(0, 3)).toEqual(["A4*", "A3*", "A2*"]);
 		expect(order(w.prompts[0]!).slice(3).toSorted()).toEqual(["A1*", "B1", "N1"]);
-		expect(order(w.prompts[1]!).some(e => e.endsWith("*"))).toBe(false);
+		expect(order(w.prompts[1]!)[0]).toBe("B1*");
+		expect(order(w.prompts[1]!).filter(e => e.endsWith("*"))).toEqual(["B1*"]);
+		expect(order(w.prompts[2]!).some(e => e.endsWith("*"))).toBe(false);
 	} finally {
 		w.close();
 	}
@@ -267,10 +297,10 @@ test("a mail draft puts up to three past replies to the same address first (two 
 	expect(style.examples?.slice(3).map(e => e.reply).toSorted()).toEqual(["A1", "B1"]);
 });
 
-test("the card names the person a recipient lesson holds for as stored, cut to 40 characters, in its line and in its ban sentence", () => {
+test("the card names the person a recipient lesson holds for by the name it was given, else as stored, cut to 40 characters, in its line and in its ban sentence", () => {
 	expect(lessonNote({ key: { app: "mail", to: `${"a".repeat(30)}@example.com` }, line: LINE, forbid: ["행복한 하루 되세요"] })).toBe(`앞으로 ${"a".repeat(30)}@example.c…에게 보내는 답장에 반영해요: ${LINE} · 앞으로 ${"a".repeat(30)}@example.c…에게 보내는 답장에서 쓰지 않을 표현: '행복한 하루 되세요'`);
-	expect(lessonNote({ key: { app: "youtube", to: "김 선생님" }, line: "", forbid: ["ㅋㅋ"] })).toBe("앞으로 김 선생님에게 보내는 답장에서 쓰지 않을 표현: 'ㅋㅋ'");
-	expect(lessonNote({ key: { app: "site-blog", to: " Foo\nBar  " }, line: LINE })).toBe(`앞으로 Foo Bar에게 보내는 답장에 반영해요: ${LINE}`);
+	expect(lessonNote({ key: { app: "youtube", to: "UC_kimA", toName: "김 선생님" }, line: "", forbid: ["ㅋㅋ"] })).toBe("앞으로 김 선생님에게 보내는 답장에서 쓰지 않을 표현: 'ㅋㅋ'");
+	expect(lessonNote({ key: { app: "instagram", to: "foo.bar", toName: " Foo\nBar  " }, line: LINE })).toBe(`앞으로 Foo Bar에게 보내는 답장에 반영해요: ${LINE}`);
 	expect(lessonNote({ key: { app: "mail", to: `${"b".repeat(28)}@example.com` }, line: LINE })).toBe(`앞으로 ${"b".repeat(28)}@example.com에게 보내는 답장에 반영해요: ${LINE}`);
 	expect(lessonNote({ key: { app: "kakao", room: "1" }, line: LINE })).toBe(`앞으로 이 대화방 답장에 반영해요: ${LINE}`);
 });

@@ -12,7 +12,7 @@ import type { Draft, Reply } from "./store.ts";
 const NOW = Date.parse("2026-10-23T00:00:00.000Z");
 const json = (o: object) => `\`\`\`json\n${JSON.stringify({ reason: "r", to: "", questions: [], ...o })}\n\`\`\``;
 const history: RawComment[] = [
-	{ native: "h1", thread: "p1", author: "A", text: "Where can I download the backing track?", postTitle: "P", at: NOW - 9e6 },
+	{ native: "h1", thread: "p1", author: "A", authorId: "UC_A", text: "Where can I download the backing track?", postTitle: "P", at: NOW - 9e6 },
 	{ native: "h1r", thread: "p1", parent: "h1", author: "me", text: "It is linked in the description.", postTitle: "P", at: NOW - 8e6, mine: true },
 	{ native: "h2", thread: "p1", author: "B", text: "Lovely performance!", postTitle: "P", at: NOW - 7e6 },
 	{ native: "h2r", thread: "p1", parent: "h2", author: "me", text: "Thank you so much!", postTitle: "P", at: NOW - 6e6, mine: true },
@@ -35,10 +35,11 @@ async function setup(model: string, pastSeed: boolean) {
 	return { engine, prompts };
 }
 
-test("the pairs are the owner's answers under other people's comments, closest first", () => {
+test("the pairs are the owner's answers under other people's comments, closest first, each with its author's platform id when the comment had one", () => {
 	const comments = history.map(r => ({ ...r, id: commentId("youtube", r.native), source: "youtube", mine: r.mine === true, collector: "m" }));
 	const pairs = pastPairs(comments, [], "youtube");
-	expect(pairs.map(p => p.reply)).toEqual(["It is linked in the description.", "Thank you so much!"]);
+	expect(pairs.map(p => [p.reply, p.fromId])).toEqual([["It is linked in the description.", "UC_A"], ["Thank you so much!", undefined]]);
+	expect(pairs.every(p => typeof p.from === "string" && p.from !== "")).toBe(true);
 	expect(similarPairs("download backing track?", pairs, 1)[0]!.reply).toBe("It is linked in the description.");
 });
 
@@ -101,9 +102,9 @@ test("a sent reply whose draft was changed by hand is marked edited, also when i
 	expect(mark([])).toBeUndefined();
 });
 
-test("merging keeps one copy of a repeat and the mark or sender any copy had", () => {
-	const merged = mergePast([pair("Q?", "A.", 1, { edited: true, from: "x" })], [pair("q?", "a. ", 0)]);
-	expect(merged).toMatchObject([{ edited: true, from: "x", at: NOW }]);
+test("merging keeps one copy of a repeat and the mark or author id any copy had", () => {
+	const merged = mergePast([pair("Q?", "A.", 1, { edited: true, fromId: "x" })], [pair("q?", "a. ", 0, { from: "Kim" })]);
+	expect(merged).toMatchObject([{ edited: true, fromId: "x", from: "Kim", at: NOW }]);
 });
 
 test("the prompt's closeness is the plain similarity of the shown pairs: recency and hand edits only rank them", () => {

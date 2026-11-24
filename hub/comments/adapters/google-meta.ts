@@ -48,8 +48,8 @@ function postFailure(e: unknown, app: string): ReplyOutcome {
 // A thread as stored rows: the top comment, then the channel's own replies that came with it (its answer is stored next to the comment, so the comment is not open).
 function ytRows(c: YtComment, channelId: string, shown: Pick<RawComment, "postTitle" | "postLink" | "thumb">): RawComment[] {
 	return [
-		{ native: c.id, thread: c.videoId, author: c.author, text: c.text, ...shown, at: Date.parse(c.publishedAt) || 0, mine: c.authorChannelId === channelId },
-		...(c.ownerReplies ?? []).map((r): RawComment => ({ native: r.id, thread: c.videoId, parent: c.id, author: r.author, text: r.text, ...shown, at: Date.parse(r.publishedAt) || 0, mine: true })),
+		{ native: c.id, thread: c.videoId, author: c.author, ...(c.authorChannelId ? { authorId: c.authorChannelId } : {}), text: c.text, ...shown, at: Date.parse(c.publishedAt) || 0, mine: c.authorChannelId === channelId },
+		...(c.ownerReplies ?? []).map((r): RawComment => ({ native: r.id, thread: c.videoId, parent: c.id, author: r.author, authorId: channelId, text: r.text, ...shown, at: Date.parse(r.publishedAt) || 0, mine: true })),
 	];
 }
 
@@ -84,7 +84,8 @@ export function youtubeAdapter(api: () => YoutubeApi): CommentAdapter {
 			const a = api();
 			const tops = open.filter(c => !c.parent);
 			if (!a.threadsByIds || !tops.length) return { comments: [], gone: [] };
-			const found = await a.threadsByIds(a.channelId(), tops.map(c => c.native));
+			const channelId = a.channelId();
+			const found = await a.threadsByIds(channelId, tops.map(c => c.native));
 			const comments: RawComment[] = [];
 			const gone: string[] = [];
 			for (const c of tops) {
@@ -93,7 +94,7 @@ export function youtubeAdapter(api: () => YoutubeApi): CommentAdapter {
 					gone.push(c.native);
 					continue;
 				}
-				for (const r of t.replies) comments.push({ native: r.id, thread: c.thread, parent: c.native, author: r.author, text: r.text, postTitle: c.postTitle, ...(c.postLink ? { postLink: c.postLink } : {}), ...(c.thumb ? { thumb: c.thumb } : {}), at: Date.parse(r.publishedAt) || 0, mine: true });
+				for (const r of t.replies) comments.push({ native: r.id, thread: c.thread, parent: c.native, author: r.author, authorId: channelId, text: r.text, postTitle: c.postTitle, ...(c.postLink ? { postLink: c.postLink } : {}), ...(c.thumb ? { thumb: c.thumb } : {}), at: Date.parse(r.publishedAt) || 0, mine: true });
 			}
 			return { comments, gone };
 		},
@@ -165,8 +166,11 @@ async function withAuthors(a: InstagramApi, list: IgComment[], budget = { left: 
 }
 const readMedia = async (a: InstagramApi, mediaId: string): Promise<IgCommentRead> => (a.read ? a.read(mediaId) : { comments: await a.comments(mediaId), complete: true });
 
-const igAuthor = (username: string | undefined): string => username || UNKNOWN_USER;
 const known = (username: string | undefined): string | undefined => (username && username !== UNKNOWN_USER ? username : undefined);
+const igAuthor = (username: string | undefined): Pick<RawComment, "author" | "authorId"> => {
+	const handle = known(username);
+	return handle ? { author: handle, authorId: handle } : { author: UNKNOWN_USER };
+};
 const igTitle = (m: IgMedia): string => (m.caption ?? "").replace(/\s+/g, " ").trim().slice(0, 80) || FALLBACK_TITLE.instagram;
 const igThumb = (m: IgMedia): string | undefined => m.thumb;
 
@@ -185,10 +189,10 @@ function igRows(list: IgComment[], isOwner: (c: { id?: string; username?: string
 		try {
 			if (nested.has(c.id)) continue;
 			const at = Date.parse(c.timestamp) || 0;
-			out.push({ native: c.id, thread, ...(c.parentId ? { parent: c.parentId } : {}), author: igAuthor(c.username), text: c.text ?? "", ...shown, at, mine: isOwner(c) });
+			out.push({ native: c.id, thread, ...(c.parentId ? { parent: c.parentId } : {}), ...igAuthor(c.username), text: c.text ?? "", ...shown, at, mine: isOwner(c) });
 			(c.replies ?? []).forEach((r, i) => {
 				const twin = r.id ? topById.get(r.id) : undefined;
-				out.push({ native: r.id ?? `${c.id}.${i}`, thread, parent: c.id, author: igAuthor(known(r.username) ?? known(twin?.username)), text: r.text || (twin?.text ?? ""), ...shown, at: Date.parse(r.timestamp ?? twin?.timestamp ?? "") || at + 1 + i, mine: isOwner(r) || (!!twin && isOwner(twin)) });
+				out.push({ native: r.id ?? `${c.id}.${i}`, thread, parent: c.id, ...igAuthor(known(r.username) ?? known(twin?.username)), text: r.text || (twin?.text ?? ""), ...shown, at: Date.parse(r.timestamp ?? twin?.timestamp ?? "") || at + 1 + i, mine: isOwner(r) || (!!twin && isOwner(twin)) });
 			});
 		} catch {}
 	}
