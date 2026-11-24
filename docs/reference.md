@@ -411,14 +411,21 @@ and at which level, and the baselines the checks compare with).
   nothing in it is left out; the lead `DOCTOR_LEAD_KO`/`_EN` of `hub/doctor-text.ts` is what the worklog kind, the notice title and the push recognise it by, and the folded worklog row shows this
   line; the push of a message with no card says this line and the first headline without its mark, `· `-joined, never a sub-line (`doctorPreview`; one with a card pushes as other alerts do)). Then
   the part headed `알릴 것` (`To know`): each open problem without a question of its own is one told line: a headline `- <what happened> <what to do>` of at most 80 characters in Korean and 110 in
-  English (`HEAD_CHARS` of `hub/doctor-types.ts`, the look-up mark and the step included; cut at a word boundary to fit) that says what the owner needs to decide whether to look into it, then at
-  most 3 sub-lines `  - <text>` (two spaces and a dash, `SUB_LINES`) of at most 120 characters from the finding's evidence; a line the headline already says is left out, the last says
-  `외 N가지` / `and N more` when there are more, and a finding with nothing more to say has none. Failure classes share one headline (the labels that fit, then `외 N가지`), token classes another
-  (yesterday's cost and the class names); under a shared headline come one sub-line per class (short ones on one line, `; `-joined) and then the lines all of them share. A step several lines share
-  is said once after them; a re-told problem says since when it lasts. The Discord text is the same text, sub-lines included. A problem whose cause can be looked into (`ask`) is such a line too,
+  English (`HEAD_CHARS` of `hub/doctor-types.ts`, the look-up mark and the step included) that says what the owner needs to decide whether to look into it; a headline still over its cap is cut
+  at a word boundary with `…` and keeps its mark, and what the cut took is its first sub-line, starting with `…`. Then come at most 3 sub-lines `  - <text>` (two spaces and a dash, `SUB_LINES`)
+  of at most 120 characters from the finding's evidence; a line the headline already says is left out, the last says how many more when there are more (restart and crash times `외 N번`, other
+  lines `외 N가지`, `and N more` in English), and a finding with nothing more to say has none. Failure classes share one headline (the labels that fit, then `외 N가지`), token classes another
+  (yesterday's cost and the class names); under a shared headline the class lines come first: short ones (at most 40 characters) are packed `; `-joined into one line as far as 120 characters
+  allow, ending in how many classes' numbers are left out (`외 N가지는 숫자를 싣지 못했어요` / `numbers for N more left out`), so the lines all classes share (largest sessions, yesterday's tokens
+  and how the usual day was taken) keep their places however many classes there are; long ones take a line each, and when they overflow the last line counts the classes left out in the same
+  words. A step several lines share is said once after them. A re-told problem says since when it lasts: at the end of its headline when that fits, else the headline stays the finding's own
+  sentence and `<date>부터 계속돼요.` (`Ongoing since <date>.`) is the first sub-line (after the cut part, if any), so no count, unit, first-fail time or verb is cut away; when that pushes the
+  evidence past 3 lines, the last line counts the rest again (`left` of the finding: how many lines a stored `외 N번` line already stood for). The Discord text is the same text, sub-lines
+  included. A problem whose cause can be looked into (`ask`) is such a line too,
   never a card: its headline ends with the look-up mark ` · 원인 찾기` (` · find the cause`, `DOCTOR_LOOK_KO`/`_EN`), and one hint line after the told lines says that replying with that line has its cause
   looked into (the reply goes to the model like any message in the alert conversation). On the web the mark is a `원인 찾기` button at the end of the headline's row (a 44 px tap area on a phone;
-  `web/js/11-doctor-look.js`); a sub-line gets no button and is drawn indented and quieter under its headline (`dl-sub`). The button sends one line,
+  `web/js/11-doctor-look.js`); a sub-line gets no button and is drawn indented and quieter under its headline (`dl-sub`; in a card's sheet too). A drawn list line is matched to the message's
+  lines in their order, so a told line whose text equals a later sub-line stays a told line and that sub-line is drawn as one. The button sends one line,
   `<date> 닥터 점검에서 알린 이 일의 원인을 찾아봐 주세요: <headline> (<sub-line>; <sub-line>)` (no brackets when there is no sub-line); `isDoctorLook` reads that, the headline sent back with its
   mark, and the headline copied with its sub-lines (each on a line of its own, indented or starting with a list mark) as a look-up request, so a number in it answers no card. It counts as no decision, opens no answer-needed card and sends no decision push. After the told lines come
   the self-fixed things on one line, the count of things told before and still there, and the checks that found nothing. Last, the part headed `정할 것` (`To decide`) with one card per finding with its own

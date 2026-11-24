@@ -18,6 +18,8 @@ export type Finding = {
 	short?: string;
 	/** The owner-facing evidence lines (numbers, times, file names, quotes), already localized: at most EVIDENCE_LINES lines of at most EVIDENCE_CHARS characters, cut by `evidenceLines` where the finding is built. A card shows them under its title; a told line shows them as its sub-lines, at most SUB_LINES. */
 	evidence: string[];
+	/** How many evidence lines the last evidence line counts when `evidenceLines` cut the list there (`외 N번` / `외 N가지`), so the morning counts them again when it shows fewer lines. */
+	left?: number;
 	/** Epoch ms of the first run that saw it (the doctor keeps the earliest across runs). */
 	since: number;
 	/** A comparable size (count, share, bytes, chars): the doctor re-reports only when this grew past the repeat step. */

@@ -14,8 +14,8 @@ const WITH_CARD = `${[`${t.head(DAY)} · ${t.told(3)} · ${t.decide(1)}`, ...tol
 const OTHER = `백업이 끝났어요\n- 정리 작업이 돌았어요${DOCTOR_LOOK_KO}\n- 남은 공간 12GB`;
 const STRUCK = "오래된 ~~규칙~~ 줄이 남아 있어요", PATHL = "큰 세션: ~/Code/sample-a 3개가 쌓였어요";
 const MARKS = [`${t.head(DAY)} · ${t.told(2)}`, t.toldPart, `- ${STRUCK}${DOCTOR_LOOK_KO}`, `- ${PATHL}${DOCTOR_LOOK_KO}`, t.lookHint].join("\n");
-const SUBS = [t.restartLine("11월 24일 03:10", t.restartUnasked), t.restartLine("11월 24일 05:40", t.restartUnasked)], WHY = t.lastReason("로그인 화면에서 멈췄어요");
-const SUBBED = [`${t.head(DAY)} · ${t.told(2)}`, t.toldPart, `- ${RESTARTED}${DOCTOR_LOOK_KO}`, ...SUBS.map(s => `  - ${s}`), `- ${WATCH}${DOCTOR_LOOK_KO}`, `  - ${WHY}`, t.lookHint].join("\n");
+const SUBS = [t.restartLine("11월 24일 03:10", t.restartUnasked), t.restartLine("11월 24일 05:40", t.restartUnasked)], WHY = t.lastReason("로그인 화면에서 멈췄어요"), PATHSUB = "큰 세션: ~/Code/sample-b 01a206e4 $113.93";
+const SUBBED = [`${t.head(DAY)} · ${t.told(3)}`, t.toldPart, `- ${RESTARTED}${DOCTOR_LOOK_KO}`, ...SUBS.map(s => `  - ${s}`), `- ${STUCK}`, `- ${WATCH}${DOCTOR_LOOK_KO}`, `  - ${WHY}`, `  - ${PATHSUB}`, `  - ${STUCK}`, t.lookHint].join("\n");
 const minutesAgo = (m: number) => new Date(Date.now() - m * 60_000).toISOString();
 const TS = { row: minutesAgo(40), marks: minutesAgo(38), other: minutesAgo(35), quote: minutesAgo(30), own: minutesAgo(25), card: minutesAgo(20), subbed: minutesAgo(18), main: minutesAgo(15), lane: minutesAgo(12), work: minutesAgo(10) };
 const out = (ts: string, target: string, text: string, source = "gateway", wk?: string) => ({ ts, kind: "out", source, target, ...(wk ? { wk } : {}), text });
@@ -36,6 +36,8 @@ emit("outbox", ALERT.at(-1)!);
 const TWO = [{ name: "지워요", result: "그 줄을 지워요" }, { name: "그대로 둬요", result: "아무것도 바꾸지 않아요" }];
 const TITLES = [[t.diskSubject, t.diskQuestion], ["RULES.md 12줄 '항상 한국어로 답하기'", "지울까요?"], ["샘플-2 가격 모니터링 로그인", "다시 로그인하고 이어서 볼까요?"]] as const;
 for (const [i, [subject, question]] of TITLES.slice(1).entries()) emit("outbox", out(minutesAgo(50 + i), "web", `[ask] ${question}\n${cardBlock({ subject, question, options: TWO })}`, "orchestrator"));
+const SHEET = cardBlock({ subject: "샘플 로그 정리", question: "지울까요?", options: TWO });
+emit("outbox", out(minutesAgo(45), "alert", `${[`${t.head(DAY)} · ${t.told(1)} · ${t.decide(1)}`, t.toldPart, `- ${WATCH}${DOCTOR_LOOK_KO}`, `  - ${WHY}`, `  - ${PATHSUB}`, t.lookHint].join("\n")}\n\n${t.decidePart}\n\n${SHEET}`, "gateway", "doctor"));
 type Sent = { text: string; cid?: string; conv?: string; mode?: string };
 const sent = inbox<Sent>();
 const stored: { ts: string; kind: string; source: string; channel: string; text: string; cid?: string }[] = [];
@@ -347,11 +349,15 @@ for (const width of [390, 1280]) {
 			await view.navigate(`${hub.origin}/`);
 			await open("alert", TS.subbed);
 			const rows = await ev<{ text: string; sub: boolean; btn: number; left: number; top: number; bottom: number; color: string; b: { top: number; bottom: number; hit: number } | null }[]>(`[...${at(TS.subbed)}.querySelectorAll("li")].map(li => { const r = li.getBoundingClientRect(), b = li.querySelector(".dl-btn"), br = b && b.getBoundingClientRect(), after = b && getComputedStyle(b, "::after"), x = document.createRange(); x.selectNodeContents(li); return { text: [...li.childNodes].filter(n => n.nodeType === 3).map(n => n.data).join("").trim(), sub: li.classList.contains("dl-sub"), btn: li.querySelectorAll(".dl-btn").length, left: x.getClientRects()[0].left, top: r.top, bottom: r.bottom, color: getComputedStyle(li).color, b: br && { top: br.top, bottom: br.bottom, hit: br.height - (after.content === "none" ? 0 : (parseFloat(after.top) || 0) + (parseFloat(after.bottom) || 0)) } }; })`);
-			expect(rows.map(r => [r.text, r.sub, r.btn])).toEqual([[RESTARTED, false, 1], [SUBS[0], true, 0], [SUBS[1], true, 0], [WATCH, false, 1], [WHY, true, 0]]);
-			const [head, s1, s2, watch, why] = rows as [(typeof rows)[0], (typeof rows)[0], (typeof rows)[0], (typeof rows)[0], (typeof rows)[0]];
-			for (const [above, sub] of [[head, s1], [s1, s2], [watch, why]] as const) expect(sub.top).toBeGreaterThanOrEqual(above.bottom - 1);
-			for (const sub of [s1, s2, why]) expect(sub.left).toBeGreaterThan(head.left + 8);
-			expect(s1.color).not.toBe(head.color);
+			expect(rows.map(r => [r.sub, r.btn])).toEqual([[false, 1], [true, 0], [true, 0], [false, 0], [false, 1], [true, 0], [true, 0], [true, 0]]);
+			expect(rows.map(r => r.text).filter((_, i) => i !== 6)).toEqual([RESTARTED, SUBS[0], SUBS[1], STUCK, WATCH, WHY, STUCK]);
+			const pathText = await ev<string>(`[...${at(TS.subbed)}.querySelectorAll("li")][6].textContent`);
+			expect([pathText.includes("폴더"), pathText.includes("~/")]).toEqual([true, false]);
+			const [head, s1, s2, plain, watch, why, path, again] = rows as [(typeof rows)[0], (typeof rows)[0], (typeof rows)[0], (typeof rows)[0], (typeof rows)[0], (typeof rows)[0], (typeof rows)[0], (typeof rows)[0]];
+			for (const [above, sub] of [[head, s1], [s1, s2], [watch, why], [why, path], [path, again]] as const) expect(sub.top).toBeGreaterThanOrEqual(above.bottom - 1);
+			for (const sub of [s1, s2, why, path, again]) expect(sub.left).toBeGreaterThan(head.left + 8);
+			expect(plain.left).toBeLessThan(head.left + 8);
+			expect([s1.color === head.color, again.color === plain.color]).toEqual([false, false]);
 			for (const line of [head, watch]) {
 				expect(line.b!.top).toBeGreaterThanOrEqual(line.top - 1);
 				expect(line.b!.bottom).toBeLessThanOrEqual(line.bottom + 1);
@@ -379,5 +385,19 @@ for (const width of [390, 1280]) {
 			expect(sent.length).toBe(before + 1);
 			expect(storedIn("alert").filter(m => m.text === asked)).toHaveLength(1);
 		}, 20_000);
+
+		test("in a card's sheet with 자세히 보기 open, a told line's sub-lines (a ~/path one too) are drawn as sub-lines, quieter than their headline, with no button", async () => {
+			await view.navigate(`${hub.origin}/`);
+			await waitFor(`typeof noticeSheetOpen === "function" && S`);
+			const id = listNotices(300).items.find(n => n.kind === "decision" && n.title.startsWith("샘플 로그 정리"))!.id;
+			await run(`noticeSheetOpen(${JSON.stringify(id)})`);
+			await waitFor(`!!document.querySelector(".fs-body .dl-btn")`);
+			await run(`const s = document.querySelector(".fs-body details.ds-more:not([open]) > summary"); if (s) s.click()`);
+			const rows = await ev<{ sub: boolean; btn: number; color: string; text: string }[]>(`[...document.querySelectorAll(".fs-body li")].map(li => ({ sub: li.classList.contains("dl-sub"), btn: li.querySelectorAll(".dl-btn").length, color: getComputedStyle(li).color, text: li.textContent }))`);
+			expect(rows.map(r => [r.sub, r.btn])).toEqual([[false, 1], [true, 0], [true, 0]]);
+			expect([rows[2]!.text.includes("폴더"), rows[2]!.text.includes("~/")]).toEqual([true, false]);
+			expect([rows[1]!.color === rows[0]!.color, rows[2]!.color === rows[0]!.color]).toEqual([false, false]);
+			await run(`ntSheetClose()`);
+		});
 	});
 }

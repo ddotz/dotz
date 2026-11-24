@@ -65,7 +65,10 @@ export function countTraces(text: string): number {
 	return n;
 }
 
-const found = (key: string, area: Finding["area"], now: number, what: string, evidence: string[], level: number, todo?: string): Finding => ({ key, area, what, ...(todo ? { todo } : {}), evidence: evidenceLines(evidence, msg().doctor.subMore, SUB_LINES), since: now, level });
+const found = (key: string, area: Finding["area"], now: number, what: string, evidence: string[], level: number, todo?: string): Finding => {
+	const t = msg().doctor, left = evidence.filter(l => l.trim()).length - SUB_LINES + 1;
+	return { key, area, what, ...(todo ? { todo } : {}), evidence: evidenceLines(evidence, area === "gateway" ? t.more : t.subMore, SUB_LINES), ...(left > 1 ? { left } : {}), since: now, level };
+};
 const asking = (f: Finding): Finding => ({ ...f, ask: true });
 const names = (list: string[]): string => list.slice(0, SHOWN_NAMES).join(", ") + (list.length > SHOWN_NAMES ? ` +${list.length - SHOWN_NAMES}` : "");
 

@@ -167,7 +167,6 @@ export type Notice = { text: string; decision: boolean; decisions: number; open:
 const SAID_TOGETHER: Partial<Record<DoctorArea, (t: Catalog["doctor"]) => (names: string[], rest: number) => string>> = { failures: t => t.failuresGrew, tokens: t => t.tokens };
 
 type Row = { what: string; todo?: string; ask: boolean; sub: string[] };
-type Sub = { text: string; n: number };
 const width = (s: string): number => [...s].length;
 const headChars = (): number => (baseLanguage(lang()) === "ko" ? HEAD_CHARS.ko : HEAD_CHARS.en);
 const fit = (text: string, room: number): string => (width(text) <= room ? text : shorten(text, room));
@@ -178,14 +177,19 @@ function joinedHead(tell: (names: string[], rest: number) => string, names: stri
 	return fit(tell(names.slice(0, k), names.length - k), room);
 }
 
-function subLines(same: Finding[], head: string, more: (n: number) => string): string[] {
-	const fresh = (l: string) => !!l && !head.includes(l), own = same.length > 1 ? same.flatMap(g => g.evidence.slice(0, 1)).filter(fresh) : [];
-	const shared = (same.length > 1 ? same[0]!.evidence.slice(1).filter(l => same.every(g => g.evidence.includes(l))) : same[0]!.evidence).filter(fresh);
-	const lines = own.map(l => shorten(l, EVIDENCE_CHARS)), one = lines.join("; ");
-	const each: Sub[] = lines.length > 1 && width(one) <= EVIDENCE_CHARS && lines.every(l => width(l) <= EVIDENCE_CHARS / 3) ? [{ text: one, n: lines.length }] : lines.map(text => ({ text, n: 1 }));
-	const subs = each.length >= SUB_LINES ? each : [...each, ...shared.map(l => ({ text: shorten(l, EVIDENCE_CHARS), n: 1 }))];
-	if (subs.length <= SUB_LINES) return subs.map(s => s.text);
-	return [...subs.slice(0, SUB_LINES - 1).map(s => s.text), more(subs.slice(SUB_LINES - 1).reduce((n, s) => n + s.n, 0))];
+function subLines(same: Finding[], head: string, first: string[]): string[] {
+	const t = msg().doctor, fresh = (l: string) => !!l && !head.includes(l);
+	if (same.length === 1) {
+		const f = same[0]!, lines = [...first, ...f.evidence].filter(fresh);
+		if (lines.length <= SUB_LINES) return lines;
+		return [...lines.slice(0, SUB_LINES - 1), (f.area === "gateway" ? t.more : t.subMore)(lines.length - SUB_LINES + (f.left ?? 1))];
+	}
+	const own = same.flatMap(g => g.evidence.slice(0, 1)).filter(fresh), shared = same[0]!.evidence.slice(1).filter(l => same.every(g => g.evidence.includes(l))).filter(fresh);
+	const packed = (k: number): string => [...own.slice(0, k), ...(k < own.length ? [t.subKinds(own.length - k)] : [])].join("; ");
+	let k = own.length;
+	while (k > 1 && width(packed(k)) > EVIDENCE_CHARS) k--;
+	const each = k > 1 && own.every(l => width(l) <= EVIDENCE_CHARS / 3) ? [packed(k)] : own;
+	return each.length > SUB_LINES ? [...each.slice(0, SUB_LINES - 1), t.subKinds(each.length - SUB_LINES + 1)] : [...each, ...shared].slice(0, SUB_LINES);
 }
 
 function items(found: Finding[], store: DoctorStore, now: number): Row[] {
@@ -195,10 +199,11 @@ function items(found: Finding[], store: DoctorStore, now: number): Row[] {
 		if (together && said.has(f.area)) continue;
 		said.add(f.area);
 		const same = together ? found.filter(g => g.area === f.area) : [f], ask = same.some(g => g.ask);
-		const room = headChars() - width(f.todo ? ` ${f.todo}` : "") - width(ask ? t.look : ""), since = ` ${t.since(t.day(f.since))}`;
-		const what = same.length > 1 ? joinedHead(together!(t), same.map(g => g.short ?? g.what), room)
-			: store.told[f.key] && now - f.since >= DAY ? `${fit(f.what, room - width(since))}${since}` : fit(f.what, room);
-		out.push({ what, ...(f.todo ? { todo: f.todo } : {}), ask, sub: subLines(same, what, t.subMore) });
+		const room = headChars() - width(f.todo ? ` ${f.todo}` : "") - width(ask ? t.look : ""), since = t.since(t.day(f.since));
+		const again = same.length === 1 && !!store.told[f.key] && now - f.since >= DAY, whole = again && width(`${f.what} ${since}`) <= room;
+		const what = same.length > 1 ? joinedHead(together!(t), same.map(g => g.short ?? g.what), room) : whole ? `${f.what} ${since}` : fit(f.what, room);
+		const cut = same.length === 1 && !whole && what !== f.what ? [shorten(`…${f.what.slice(what.length - 1).trimStart()}`, EVIDENCE_CHARS)] : [];
+		out.push({ what, ...(f.todo ? { todo: f.todo } : {}), ask, sub: subLines(same, what, [...cut, ...(again && !whole ? [since] : [])]) });
 	}
 	return out;
 }

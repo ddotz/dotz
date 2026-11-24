@@ -86,10 +86,13 @@ function dlMarks(nodes, src) {
   const sp = dlSplit(src.text, src.wk), looks = sp.lines.filter(l => l.look);
   const roots = (Array.isArray(nodes) ? nodes : [nodes]).filter(n => n && n.querySelectorAll), t = src.target || src.open || "alert";
   const plain = s => String(s).replace(/[*`_~]/g, "").replace(/\s+/g, " ").trim(), done = new Set();
-  const subs = sp.lines.filter(l => l.sub).map(l => l.text.replace(/^\s+- /, "").trim());
-  for (const li of subs.length ? roots.flatMap(r => [...r.querySelectorAll("li")]).filter(x => !x.querySelector("li")) : []) {
-    const at = subs.findIndex(s => [s, noticeKo(s, NK)].some(x => plain(x) === plain(li.textContent)));
-    if (at >= 0) { subs.splice(at, 1); li.classList.add("dl-sub"); }
+  const listed = sp.lines.filter(l => l.sub || l.look || /^- /.test(l.text)).map(l => ({ sub: l.sub, text: l.sub ? l.text.replace(/^\s+- /, "").trim() : l.look ? `${l.text} · ${dlWord()}` : l.text.replace(/^- /, "").trim() }));
+  let pos = 0;
+  for (const li of listed.some(l => l.sub) ? roots.flatMap(r => [...r.querySelectorAll("li")]).filter(x => !x.querySelector("li")) : []) {
+    const at = listed.findIndex((l, i) => i >= pos && [l.text, noticeKo(l.text, NK)].some(x => plain(x) === plain(li.textContent)));
+    if (at < 0) continue;
+    pos = at + 1;
+    if (listed[at].sub) li.classList.add("dl-sub");
   }
   if (!looks.length) return nodes;
   for (const li of roots.flatMap(r => [...r.querySelectorAll("li")]).filter(x => !x.classList.contains("dl-sub") && !x.querySelector("li, .dl-btn"))) {

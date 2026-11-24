@@ -321,7 +321,7 @@ describe("checks read files only", () => {
 		const [found, ...rest] = await gateway({ now: T0, dataDir: dir, home: dir });
 		expect(rest).toEqual([]);
 		expect([found!.key, found!.level, found!.what]).toEqual(["gateway:restarts", 4, "The gateway restarted 10 times in one day; 4 without a known cause."]);
-		expect(found!.evidence).toEqual(["With a known cause: 5 to install an update, 1 along with your restart of the orchestrator on the web", `${t.when(T0 - 4 * H)} · ${t.restartUnasked}`, t.subMore(3)]);
+		expect(found!.evidence).toEqual(["With a known cause: 5 to install an update, 1 along with your restart of the orchestrator on the web", `${t.when(T0 - 4 * H)} · ${t.restartUnasked}`, t.more(3)]);
 		expect(found!.evidence.join("\n")).not.toContain("coalesced");
 	});
 
@@ -474,7 +474,7 @@ describe("each check says what it measured, in numbers", () => {
 		writeFileSync(join(dir, "hub.log"), [...explained, ...unexplained].join(""));
 		const [found] = await gateway({ now: T0, dataDir: dir, home: dir });
 		expect([found!.level, found!.what]).toEqual([3, "하루 사이에 게이트웨이가 9번 다시 시작했고, 그중 3번은 이유를 몰라요."]);
-		expect(found!.evidence).toEqual(["이유를 아는 것: 업데이트 설치 5번, 직접 하신 재시작 1번", `${ko.doctor.when(T0 - 3 * H + 2e3)} · the gateway code changed`, ko.doctor.subMore(2)]);
+		expect(found!.evidence).toEqual(["이유를 아는 것: 업데이트 설치 5번, 직접 하신 재시작 1번", `${ko.doctor.when(T0 - 3 * H + 2e3)} · the gateway code changed`, ko.doctor.more(2)]);
 	});
 
 	test("a restart the owner asks for is logged with him as the requester and counts as his; a request line of the older code without one does not", async () => {
@@ -938,7 +938,7 @@ describe("the message tells and asks apart, and each card carries its own lines"
 		const t = msg().doctor;
 		writeFileSync(join(dir, "hub.log"), [6, 5, 4, 3, 2, 1].map(h => logLine(T0 - h * H, `gateway restart (1 request(s) coalesced, waited ${h}s)`)).join(""));
 		const [found] = await gateway({ now: T0, dataDir: dir, home: dir });
-		expect(found!.evidence).toEqual([...[6, 5].map(h => `${t.when(T0 - h * H)} · ${t.restartUnasked}`), t.subMore(4)]);
+		expect(found!.evidence).toEqual([...[6, 5].map(h => `${t.when(T0 - h * H)} · ${t.restartUnasked}`), t.more(4)]);
 		const long = "word ".repeat(60).trim(), [cut] = evidenceLines([long], t.more);
 		expect([...cut!].length).toBeLessThanOrEqual(EVIDENCE_CHARS);
 		expect(cut).toMatch(/^(word )+word…$/);

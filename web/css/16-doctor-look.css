@@ -1,3 +1,4 @@
 .dl-btn { margin: var(--sp-1) 0 var(--sp-1) var(--sp-1); vertical-align: middle; }
 .dl-btn.dl-sent { background: transparent; color: var(--fg-3); }
 .md li.dl-sub { margin-left: var(--sp-5); list-style-type: circle; color: var(--fg-2); font-size: var(--fs-body); line-height: var(--lh-body); }
+.ds-md li.dl-sub { color: var(--fg-3); }
