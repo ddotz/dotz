@@ -35,6 +35,9 @@ export const realModel: DraftModel = async (system, user, app) => {
 	return { text: r.text, inputTokens: r.inputTokens, outputTokens: r.outputTokens };
 };
 
+/** The owner's style for a comment reply in `src`: its app's tone profile and, when the comment's author has one of their own, that author's. */
+export const commentStyle: NonNullable<EngineDeps["style"]> = (src, author) => loadStyle({ app: src.key, ...(author !== undefined ? { to: author } : {}) });
+
 /** The engine over the real platforms, model and stores. What the owner's edit of a reply it sent, or of the mail that rode on it, teaches goes through the one learning door (hub/reply-mail.ts) with `flow` (the real flow deps by default: curation, refinement and compaction calls). `learnEdits: false`: a send of this process learns nothing from such an edit (the gateway's send queue ran it with `--no-learn` and learns it itself). */
 export function realEngine(dataDir: string, opts: { broadcast?: (e: Record<string, unknown>) => void; collector?: string; model?: DraftModel; sent?: EngineDeps["sent"]; mail?: MailLink; mailOwed?: EngineDeps["mailOwed"]; answeredMailThread?: EngineDeps["answeredMailThread"]; learnEdits?: false; flow?: Parameters<typeof replyLearning>[0] } = {}): Engine {
 	const dir = commentsDir(dataDir);
@@ -61,7 +64,7 @@ export function realEngine(dataDir: string, opts: { broadcast?: (e: Record<strin
 		...(opts.sent ? { sent: opts.sent } : {}),
 		...(opts.mailOwed ? { mailOwed: opts.mailOwed } : {}),
 		...(opts.answeredMailThread ? { answeredMailThread: opts.answeredMailThread } : {}),
-		style: src => loadStyle({ app: src.key }),
+		style: commentStyle,
 		...(opts.learnEdits === false ? {} : { edits: { lessonOfEdit, learn: replyLearning(opts.flow).learn, mail: (id: string) => learnMailEdit(id, opts.flow) } }),
 		learn: ({ key, line, forbid }) => {
 			if (line.trim()) {

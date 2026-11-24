@@ -5,8 +5,8 @@ export const JUDGE_TIMEOUT_MS = 15_000;
 export type Violation = { rule: number; text: string; quote: string; why: string };
 /** The style judge's model call: one prompt in, the model's text out. */
 export type JudgeAsk = (prompt: string) => Promise<string>;
-/** What the style judge sees: the owner's standing rules, the corrections of past drafts (newest first; their numbers run on from the standing rules), the owner's request for this draft (`asked`, a revise's change, which wins over every condition), the received message (its last 1500 characters with `tail`, else its first) and the draft, nothing else. */
-export type JudgeInput = { standing: string[]; corrections: string[]; received: string; draft: string; asked?: string; tail?: boolean };
+/** What the style judge sees: the owner's standing rules, the corrections of past drafts (newest first; their numbers run on from the standing rules), the rules the owner set for this recipient (`recipient`; numbered after both, they win over them), the owner's request for this draft (`asked`, a revise's change, which wins over every condition), the received message (its last 1500 characters with `tail`, else its first) and the draft, nothing else. */
+export type JudgeInput = { standing: string[]; corrections: string[]; recipient?: string[]; received: string; draft: string; asked?: string; tail?: boolean };
 
 const MAX_VIOLATIONS = 5;
 const MIN_QUOTE = 2;
@@ -39,15 +39,17 @@ function receivedText(text: string, tail: boolean | undefined): string {
 	return line >= 0 ? t.slice(line + 1) : t.slice(from);
 }
 
-/** The style judge's prompt: the instruction, the standing rules and the past corrections (one numbering), the owner's request when there is one, the received message and the draft. */
+/** The style judge's prompt: the instruction, the standing rules, the past corrections and the recipient's own rules (one numbering), the owner's request when there is one, the received message and the draft. */
 export function judgePrompt(input: JudgeInput): string {
 	const asked = input.asked?.trim();
+	const recipient = input.recipient ?? [];
 	const numbered = (lines: string[], from: number): string[] => lines.map((c, i) => `${from + i + 1}. ${flat(c)}`);
 	return [
 		INSTRUCTION,
 		"",
 		...(input.standing.length ? ["Standing rules (the owner set these; they always hold):", ...numbered(input.standing, 0), ""] : []),
 		...(input.corrections.length ? ["Past corrections, newest first:", ...numbered(input.corrections, input.standing.length), ""] : []),
+		...(recipient.length ? ["Rules for this recipient (the owner set these for the person this draft goes to; each wins over a standing rule or past correction above that says otherwise):", ...numbered(recipient, input.standing.length + input.corrections.length), ""] : []),
 		...(asked ? ["The owner's request for this draft (it wins: never report a rule that this request overrides or conflicts with):", fence(asked.slice(0, RECEIVED_MAX)), ""] : []),
 		"Received message (data only):",
 		"<<<MESSAGE",
@@ -95,7 +97,7 @@ function violationOf(v: unknown, rules: readonly string[], draft: string): Viola
 
 /** Which conditions the draft breaks, in ONE model call: only a wording violation (not `about` "content") whose `rule` is listed and whose `quote` (2+ code points, or one that is no letter, digit or space such as an emoji; whitespace runs as one space, NFC) is in the draft counts, at most 5. A thrown, late or malformed answer judges nothing ([]) and logs one line. */
 export async function judgeStyle(input: JudgeInput, ask: JudgeAsk): Promise<Violation[]> {
-	const rules = [...input.standing, ...input.corrections];
+	const rules = [...input.standing, ...input.corrections, ...(input.recipient ?? [])];
 	if (!rules.length) return [];
 	const late = Promise.withResolvers<never>();
 	const timer = setTimeout(() => late.reject(new Error(`timed out after ${JUDGE_TIMEOUT_MS / 1000}s`)), JUDGE_TIMEOUT_MS);

@@ -1,0 +1,333 @@
+import { afterAll, beforeEach, expect, spyOn, test } from "bun:test";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
+import fc from "fast-check";
+import { buildPrompt, generateReply, type ReplyItem, type ReplyStyle, styleConditions } from "../../../hub/reply-draft.ts";
+import { judgePrompt } from "../../../hub/style-judge.ts";
+import { type CommentAdapter, commentId, type SourceConfig } from "../../../hub/comments/contract.ts";
+import { createEngine, type DraftModel } from "../../../hub/comments/engine.ts";
+import { commentStyle } from "../../../hub/comments/real.ts";
+import { runDraft } from "../bin/draft.ts";
+import { journalEntries, profileKey, profileOf } from "../lib/curate.ts";
+import { buildDraft, draftLintFailures, editDraft, mailStyleOf, styleKey, toneKey, withRecipient } from "../lib/flow.ts";
+import { addDraft, type DraftRec } from "../lib/store.ts";
+import { composeMail } from "../../../hub/mail-cli.ts";
+import { HEADINGS, levelsOf, loadStyle, paths, profileBullets, recipientFile, recipientOf, toneFile } from "../lib/settings.ts";
+import { fakeModel, j, setupEnv } from "./helpers.ts";
+
+const env = setupEnv();
+afterAll(env.cleanup);
+beforeEach(() => {
+	process.env.DOTZ_DIR = env.dir;
+	rmSync(paths.toneDir(), { force: true, recursive: true });
+});
+
+const day = (d: string) => () => new Date(`${d}T09:00:00Z`);
+const correct = (deps: object, ...args: string[]) => runDraft(["correct", ...args], "", { now: day("2030-03-04"), ...deps });
+const quiet = () => spyOn(console, "error").mockImplementation(() => undefined);
+const write = (file: string, md: string) => {
+	mkdirSync(dirname(file), { recursive: true });
+	writeFileSync(file, md);
+};
+const learner = (reply: () => string) => {
+	const asked: string[] = [];
+	return { asked, learnCall: () => async (_system: string, user: string) => (asked.push(user), reply()) };
+};
+const draftOut = j({ action: "draft", reason: "r", to: "a@x.com", subject: "Re: 일정", body: "네 확인했어요", questions: [] });
+const mail = (from: string): ReplyItem => ({ kind: "mail", app: "mail", from, self: ["me@example.net"], subject: "일정", text: "다음 주 일정 알려 주세요" });
+const meta = { source: "zele", mailId: "m1", ref: "k1" };
+const promptOf = async (item: ReplyItem): Promise<string> => {
+	const model = fakeModel([draftOut]);
+	await buildDraft(item, meta, { call: model.call });
+	return model.calls[0]!.user;
+};
+const RECIPIENT_HEAD = "The user's conditions for this recipient only (he set them for the person this reply goes to; where a rule or correction above says otherwise, these win):";
+const normalised = (id: string) => id.normalize("NFC").trim().toLowerCase().normalize("NFC");
+
+test("a recipient file name decodes to the normalised id, and only [a-z0-9_-] ever appear in it", () => {
+	const id = fc.oneof(fc.string({ unit: "binary", maxLength: 40 }), fc.string({ unit: "grapheme", maxLength: 30 }), fc.emailAddress(), fc.constantFrom("김 선생님", "a@b.com", "a_b.com", "A_0040B.COM", " 익명 ", "Kim.Lee+x@Example.com", "\u0041\u030a", "\u00c5"));
+	fc.assert(
+		fc.property(id, id => {
+			const name = recipientFile(id);
+			if (name === undefined) return;
+			expect(name).toMatch(/^[a-z0-9_-]{1,250}$/);
+			expect(recipientOf(name)).toBe(normalised(id));
+		}),
+		{ numRuns: 2000 },
+	);
+	fc.assert(
+		fc.property(id, id, (a, b) => {
+			const [x, y] = [recipientFile(a), recipientFile(b)];
+			if (x !== undefined && y !== undefined && normalised(a) !== normalised(b)) expect(x).not.toBe(y);
+		}),
+		{ numRuns: 2000 },
+	);
+	expect(new Set(["a@b.com", "a_b.com", "a_0040b.com", "A@B.COM"].map(recipientFile)).size).toBe(3);
+	expect(recipientFile("\u0041\u030a")).toBe(recipientFile("\u00e5"));
+	for (const name of ["A", "a.b", "_0061", "_00e", "a_0040B", "", "_d800"]) expect([name, recipientOf(name)]).toEqual([name, name === "_d800" ? "\ud800" : undefined]);
+});
+
+test("an id that is empty, too long or a nobody value gives no level, and its key reads the app's own file", () => {
+	for (const id of ["", "   ", "x".repeat(121), "익명", " 알 수 없는 사용자 ", "가".repeat(51)]) {
+		expect(recipientFile(id)).toBeUndefined();
+		expect(levelsOf({ app: "mail", to: id }).map(([level]) => level)).toEqual(["app", "install"]);
+		expect(toneFile({ app: "mail", to: id })).toBe(toneFile({ app: "mail" }));
+	}
+	expect(recipientFile("x".repeat(120))).toBe("x".repeat(120));
+	expect(levelsOf({ app: "mail", room: "b", to: "a@x.com", base: "mail" }).map(([level, key]) => [level, toneFile(key)])).toEqual([
+		["to", join(paths.toneDir(), "mail", "to", "a_0040x_002ecom.md")],
+		["room", join(paths.toneDir(), "mail", "b.md")],
+		["app", join(paths.toneDir(), "mail.md")],
+		["install", join(paths.toneDir(), "install.md")],
+	]);
+});
+
+test("a mail recipient and a comment author map to their own file under the app", () => {
+	expect(profileOf(styleKey({ app: "mail" }, { kind: "mail", from: "Kim <Kim.Lee+x@Example.com>" }))).toBe("mail/to/kim_002elee_002bx_0040example_002ecom.md");
+	expect(profileOf({ app: "youtube", to: "김 선생님" })).toBe("youtube/to/_ae40_0020_c120_c0dd_b2d8.md");
+	expect(profileKey("youtube/to/_ae40_0020_c120_c0dd_b2d8.md")).toEqual({ app: "youtube", to: "김 선생님" });
+	expect(profileKey("mail/to/A.md")).toBeUndefined();
+	expect(profileKey("install/to/a.md")).toBeUndefined();
+});
+
+test("a rule stored for a@x.com reaches the draft prompt of a mail from A@X.com and not one from b@x.com", async () => {
+	const stored = await correct({}, "--app", "mail", "--to", "a@x.com", "--rule", "이분께는 반말로 쓴다");
+	expect(stored).toEqual({ lines: ['mail · a@x.com에게 말투에 늘 지킬 규칙으로 기록했어요: "이분께는 반말로 쓴다"'], code: 0 });
+	expect(profileBullets({ app: "mail", to: "A@X.com" }, HEADINGS.rules)).toEqual(["이분께는 반말로 쓴다"]);
+	const theirs = await promptOf(mail("Kim <A@X.com>"));
+	expect(theirs).toContain(`${RECIPIENT_HEAD}\n- 이분께는 반말로 쓴다\n`);
+	expect(theirs).toContain("The user's rules:\n(none)");
+	const other = await promptOf(mail("Lee <b@x.com>"));
+	expect(other).not.toContain("이분께는 반말로 쓴다");
+	expect(other).not.toContain(RECIPIENT_HEAD);
+});
+
+test("a rule stored for a comment author reaches that author's comment draft only", async () => {
+	expect((await correct({}, "--app", "youtube", "--to", "김 선생님", "--rule", "선생님께는 존칭을 쓴다")).code).toBe(0);
+	const dir = mkdtempSync(join(tmpdir(), "rd-to-comments-"));
+	try {
+		const source: SourceConfig = { key: "youtube", kind: "youtube", label: "유튜브 댓글", watch: ["*"], autoDraft: false };
+		writeFileSync(join(dir, "config.json"), JSON.stringify({ enabled: true, sources: { youtube: source } }));
+		const now = Date.parse("2026-10-23T00:00:00.000Z");
+		const adapter: CommentAdapter = {
+			kind: "youtube",
+			list: async () => ({ comments: [{ native: "c1", thread: "p1", author: "김 선생님", text: "영상 잘 봤어요", postTitle: "Post one", at: now - 2000 }, { native: "c2", thread: "p1", author: "박 학생", text: "영상 잘 봤어요", postTitle: "Post one", at: now - 1000 }], cursor: "1" }),
+			reply: async () => ({ ok: true, ref: "ref1" }),
+			posts: async () => [{ id: "p1", title: "Post one" }],
+		};
+		const prompts: string[] = [];
+		const model: DraftModel = async (_system, user) => (prompts.push(user), { text: j({ action: "draft", reason: "thanks", to: "", body: "고마워요", questions: [] }) });
+		const engine = createEngine({ dir, now: () => now, collector: "mac-a", adapters: { youtube: adapter }, model, style: commentStyle });
+		await engine.collect({ force: true });
+		await engine.makeDraft(commentId("youtube", "c1"));
+		await engine.makeDraft(commentId("youtube", "c2"));
+		expect(prompts).toHaveLength(2);
+		expect(prompts[0]).toContain(`${RECIPIENT_HEAD}\n- 선생님께는 존칭을 쓴다\n`);
+		expect(prompts[1]).not.toContain("선생님께는 존칭을 쓴다");
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+test("a recipient line and a contradicting app line both reach the prompt, the recipient's marked as winning, and the judge lists it after the others", async () => {
+	write(toneFile({ app: "mail" }), "## 말투\n\n- 존댓말로 쓴다\n\n## 고친 점\n\n- 2030-03-01: 끝인사는 길게\n");
+	write(toneFile({ app: "mail", to: "a@x.com" }), "## 말투\n\n- 반말로 쓴다\n\n## 고친 점\n\n- 2030-03-02: 끝인사는 한 줄로\n\n## 금지\n\n- 수고하세요\n");
+	const style = loadStyle(styleKey({ app: "mail" }, mail("a@x.com")));
+	expect(style.forbidden).toEqual(["수고하세요"]);
+	const { user } = buildPrompt(mail("a@x.com"), style);
+	expect(user).toContain("The user's rules:\n- 존댓말로 쓴다\n");
+	expect(user).toContain("- 2030-03-01: 끝인사는 길게\n");
+	expect(user).toContain(`${RECIPIENT_HEAD}\n- 반말로 쓴다\n- 2030-03-02: 끝인사는 한 줄로\n`);
+	expect(user.indexOf("- 2030-03-02: 끝인사는 한 줄로")).toBe(user.lastIndexOf("- 2030-03-02: 끝인사는 한 줄로"));
+	expect(styleConditions(style)).toEqual({ standing: ["존댓말로 쓴다"], corrections: ["끝인사는 길게"], recipient: ["반말로 쓴다", "끝인사는 한 줄로"] });
+	const judged: string[] = [];
+	await generateReply(mail("a@x.com"), style, fakeModel([draftOut]).call, async prompt => (judged.push(prompt), '{"violations":[]}'));
+	expect(judged).toHaveLength(1);
+	expect(judged[0]).toContain("Standing rules (the owner set these; they always hold):\n1. 존댓말로 쓴다\n\nPast corrections, newest first:\n2. 끝인사는 길게\n\nRules for this recipient (the owner set these for the person this draft goes to; each wins over a standing rule or past correction above that says otherwise):\n3. 반말로 쓴다\n4. 끝인사는 한 줄로\n");
+	const late = fakeModel([j({ action: "draft", reason: "r", to: "a@x.com", subject: "Re: 일정", body: "응 알겠어", questions: [] })]);
+	const r = await generateReply(mail("a@x.com"), { ...style, standing: [], corrections: [], rules: ["반말로 쓴다"] }, late.call, async () => JSON.stringify({ violations: [{ rule: 1, about: "wording", quote: "알겠어", why: "x" }] }));
+	expect(r.action === "draft" && r.warnings).toEqual(["말투 조건과 달라 보여요: 반말로 쓴다"]);
+});
+
+test("with no recipient file the mail and comment prompts, the judge prompt and the lint style equal those of a key without `to`", () => {
+	write(toneFile("install"), "## 말투\n\n- 설치 줄\n\n## 이웃별\n\n- 손으로 쓴 줄\n");
+	write(toneFile({ app: "mail" }), "## 예시\n\n- 네 확인했어요\n\n## 말투\n\n- 존댓말로 쓴다\n\n## 고친 점\n\n- 2030-03-01: 짧게\n\n## 금지\n\n- 수고하세요\n");
+	write(toneFile({ app: "youtube" }), "## 말투\n\n- 이모지는 하나까지\n");
+	write(toneFile({ app: "mail", to: "c@x.com" }), "## 말투\n\n- 다른 분 줄\n");
+	const cases: [ReplyItem, ReplyStyle, ReplyStyle][] = [
+		[mail("Kim <a@x.com>"), loadStyle(styleKey({ app: "mail" }, mail("Kim <a@x.com>"))), loadStyle(toneKey({ app: "mail" }))],
+		[{ kind: "comment", app: "youtube", from: "박 학생", text: "잘 봤어요" }, commentStyle({ key: "youtube", kind: "youtube", label: "유튜브", watch: ["*"], autoDraft: false }, "박 학생"), loadStyle({ app: "youtube" })],
+	];
+	for (const [item, withTo, without] of cases) {
+		expect(withTo).toEqual(without);
+		expect(buildPrompt(item, withTo)).toEqual(buildPrompt(item, without));
+		expect(judgePrompt({ ...styleConditions(withTo), received: item.text, draft: "d" })).toBe(judgePrompt({ ...styleConditions(without), received: item.text, draft: "d" }));
+	}
+});
+
+test("journal, --restore, --tidy and tone work on a recipient file, and --to is refused with --room, with install and for a nobody id", async () => {
+	const log = quiet();
+	const to = ["--app", "mail", "--to", "A@x.com"];
+	await correct({}, ...to, "--rule", "존댓말로 쓴다");
+	const replaced = await correct({ learnCall: learner(() => JSON.stringify({ replaces: [{ id: "R1", why: "overridden" }] })).learnCall }, ...to, "--rule", "반말로 쓴다");
+	expect(replaced.lines).toEqual(['mail · a@x.com에게 말투에 늘 지킬 규칙으로 기록했어요: "반말로 쓴다"', '기존 조건 1개를 이 조건으로 바꿨어요: "존댓말로 쓴다" (되돌리려면 correct --restore 1)']);
+	expect(journalEntries().map(e => [e.n, e.profile, e.line])).toEqual([[1, "mail/to/a_0040x_002ecom.md", "존댓말로 쓴다"]]);
+	expect((await runDraft(["tone", "--journal"], "")).lines).toEqual(['1. [mail · a@x.com에게] 말투 "존댓말로 쓴다" → "반말로 쓴다" (2030-03-04)']);
+	expect((await correct({}, "--restore", "1")).lines).toEqual(['되돌렸어요: [mail · a@x.com에게] 말투 "존댓말로 쓴다"']);
+	expect(profileBullets({ app: "mail", to: "a@x.com" }, HEADINGS.rules)).toEqual(["반말로 쓴다", "존댓말로 쓴다"]);
+	await correct({ now: day("2030-03-05") }, ...to, "--change", "끝인사는 짧게");
+	await correct({ now: day("2030-03-06") }, ...to, "--change", "끝인사는 한 줄로");
+	const tidy = learner(() => JSON.stringify({ lines: [{ text: "끝인사는 한 줄로 짧게", sources: ["C1", "C2"] }], dropped: [] }));
+	expect((await correct({ learnCall: tidy.learnCall }, ...to, "--tidy")).lines).toEqual(["고친 점 2줄을 1줄로 정리했어요 (지운 줄은 tone --journal에 남아 있어요)"]);
+	expect(tidy.asked[0]).toContain("C1. 2030-03-05: 끝인사는 짧게");
+	expect(profileBullets({ app: "mail", to: "a@x.com" }, HEADINGS.corrections)).toEqual(["2030-03-06: 끝인사는 한 줄로 짧게"]);
+	expect(journalEntries().slice(0, 2).map(e => [e.profile, e.by, e.line])).toEqual([
+		["mail/to/a_0040x_002ecom.md", "compact", "2030-03-06: 끝인사는 한 줄로"],
+		["mail/to/a_0040x_002ecom.md", "compact", "2030-03-05: 끝인사는 짧게"],
+	]);
+	write(toneFile({ app: "mail" }), "## 말투\n\n- 앱 줄\n");
+	expect((await runDraft(["tone", ...to], "")).lines.slice(0, 5)).toEqual(["mail · a@x.com에게 답장이 따르는 것", "말투:", "- [app] 앱 줄", "- [to] 반말로 쓴다", "- [to] 존댓말로 쓴다"]);
+	expect(await correct({}, "--app", "kakao", "--room", "r1", "--to", "a@x.com", "--rule", "x")).toEqual({ lines: ["--to(받는 사람)와 --room(대화방)은 같이 쓸 수 없어요"], code: 2 });
+	expect(await runDraft(["tone", "--app", "install", "--to", "a@x.com"], "")).toEqual({ lines: ["--app install은 모든 답장에 적용돼서 --to와 같이 쓸 수 없어요"], code: 2 });
+	expect((await correct({}, "--app", "youtube", "--to", "익명", "--rule", "x")).code).toBe(2);
+	expect(profileBullets({ app: "youtube" }, HEADINGS.rules)).toEqual([]);
+	log.mockRestore();
+});
+
+const ban = (body: string): string => `네 ${body} 확인했어요`;
+const draftWith = (to: string, body: string) => j({ action: "draft", reason: "r", to, subject: "Re: 일정", body, questions: [] });
+const NO_VIOLATIONS = '{"violations":[]}';
+
+test("a mail whose Reply-To differs from From is written, judged and linted with the conditions of the address the reply goes to", async () => {
+	write(toneFile({ app: "mail", to: "a@x.com" }), "## 말투\n\n- 에이분 규칙\n\n## 금지\n\n- 에이금지어\n");
+	write(toneFile({ app: "mail", to: "b@y.com" }), "## 말투\n\n- 비분 규칙\n\n## 금지\n\n- 비금지어\n");
+	const item: ReplyItem = { ...mail("A <a@x.com>"), replyTo: "B <b@y.com>" };
+	const model = fakeModel([draftWith("b@y.com", ban("에이금지어"))]), judge = fakeModel([NO_VIOLATIONS]);
+	const built = await buildDraft(item, meta, { call: model.call, judge: judge.call });
+	if (built.action !== "draft") throw new Error(`no draft: ${built.action}`);
+	expect(built.rec.to).toBe("b@y.com");
+	expect(built.warnings).toEqual([]);
+	expect(model.calls).toHaveLength(1);
+	expect(model.calls[0]!.user).toContain(`${RECIPIENT_HEAD}\n- 비분 규칙\n`);
+	expect(model.calls[0]!.user).toContain("Forbidden expressions:\n- 비금지어\n");
+	expect(model.calls[0]!.user).not.toContain("에이분 규칙");
+	expect(judge.calls).toHaveLength(1);
+	expect(judge.calls[0]!.user).toContain("1. 비분 규칙");
+	expect(judge.calls[0]!.user).not.toContain("에이분 규칙");
+	expect(draftLintFailures(built.rec)).toEqual([]);
+	expect(draftLintFailures({ ...built.rec, body: ban("비금지어") })).not.toEqual([]);
+});
+
+test("draft.ts new --kind comment reads the author's own file, as the comment engine does", async () => {
+	expect((await correct({}, "--app", "youtube", "--to", "김 선생님", "--rule", "선생님께는 존칭을 쓴다")).code).toBe(0);
+	const comment = async (from: string): Promise<string> => {
+		const model = fakeModel([j({ action: "draft", reason: "thanks", to: "", body: "고마워요", questions: [] })]);
+		const out = await runDraft(["new", "--mail", `c-${from}`, "--kind", "comment", "--app", "youtube", "--from", from], "영상 잘 봤어요", { call: model.call, judge: fakeModel([NO_VIOLATIONS]).call });
+		expect(out.lines).toEqual(["고마워요"]);
+		return model.calls[0]!.user;
+	};
+	expect(await comment("김 선생님")).toContain(`${RECIPIENT_HEAD}\n- 선생님께는 존칭을 쓴다\n`);
+	expect(await comment("박 학생")).not.toContain("선생님께는 존칭을 쓴다");
+});
+
+test("a comment drafted without an author does not read the file of a commenter named like its app or room", async () => {
+	expect((await correct({}, "--app", "youtube", "--to", "youtube", "--rule", "유튜브라는 분 규칙")).code).toBe(0);
+	expect((await correct({}, "--app", "youtube", "--to", "r9", "--rule", "알구라는 분 규칙")).code).toBe(0);
+	const drafted = async (...more: string[]): Promise<string> => {
+		const model = fakeModel([j({ action: "draft", reason: "thanks", to: "", body: "고마워요", questions: [] })]);
+		await runDraft(["new", "--mail", `c-${more.join("-")}`, "--kind", "comment", "--app", "youtube", ...more], "영상 잘 봤어요", { call: model.call, judge: fakeModel([NO_VIOLATIONS]).call });
+		return model.calls[0]!.user;
+	};
+	expect(await drafted()).not.toContain("유튜브라는 분 규칙");
+	expect(await drafted("--room", "r9")).not.toContain("알구라는 분 규칙");
+	expect(await drafted("--from", "r9")).toContain("알구라는 분 규칙");
+});
+
+test("a draft whose sender is only a name is checked on edit with the file of the address its text gives, as it is at send", () => {
+	write(toneFile({ app: "mail", to: "kim@x.com" }), "## 금지\n\n- 김금지어\n");
+	const item: ReplyItem = { kind: "mail", app: "mail", from: "김철수", self: ["me@example.net"], subject: "일정", text: "다음 주 일정 알려 주세요.\n\n김철수 드림\nkim@x.com" };
+	const rec: DraftRec = { id: "DNAME1", kind: "mail", app: "mail", source: "zele", mailId: "m-name", ref: "k-name", to: "김철수", subject: "Re: 일정", body: "네 확인했어요", status: "pending", created: "2030-03-04T09:00:00.000Z", changes: [], questions: [], item };
+	addDraft(rec);
+	expect(draftLintFailures({ ...withRecipient(rec), body: "네 김금지어 확인했어요" })).not.toEqual([]);
+	const edited = editDraft(rec.id, "네 김금지어 확인했어요");
+	expect(edited.ok).toBe(false);
+});
+
+test("a mail in a mailbox with its own tone file gets the rule and the ban of the base app's file of its sender", async () => {
+	write(toneFile({ app: "mail-2", room: "inbox" }), "## 말투\n\n- 메일함 줄\n");
+	write(toneFile({ app: "mail", to: "a@x.com" }), "## 말투\n\n- 에이분 규칙\n\n## 금지\n\n- 에이금지어\n");
+	const box = { ...meta, box: "inbox", instance: "mail-2" };
+	const model = fakeModel([draftWith("a@x.com", "네 확인했어요")]), judge = fakeModel([NO_VIOLATIONS]);
+	const built = await buildDraft(mail("A <a@x.com>"), box, { call: model.call, judge: judge.call });
+	if (built.action !== "draft") throw new Error(`no draft: ${built.action}`);
+	expect(model.calls[0]!.user).toContain(`${RECIPIENT_HEAD}\n- 에이분 규칙\n`);
+	expect(model.calls[0]!.user).toContain("Forbidden expressions:\n- 에이금지어\n");
+	expect(judge.calls[0]!.user).toContain("Rules for this recipient (the owner set these for the person this draft goes to; each wins over a standing rule or past correction above that says otherwise):\n2. 에이분 규칙\n");
+	expect(draftLintFailures(built.rec)).toEqual([]);
+	expect(draftLintFailures({ ...built.rec, body: ban("에이금지어") })).not.toEqual([]);
+	const key = { app: "mail-2", room: "inbox", base: "mail", to: "a@x.com" };
+	expect(levelsOf(key)[0]).toEqual(["to", { app: "mail", to: "a@x.com" }]);
+	expect(toneFile({ app: "mail-2", to: "a@x.com" })).toBe(toneFile({ app: "mail", to: "a@x.com" }));
+	expect(toneFile({ app: "youtube", to: "a@x.com" })).not.toBe(toneFile({ app: "mail", to: "a@x.com" }));
+});
+
+test("correct and tone --to refuse KakaoTalk and keep exactly one address for a mail app", async () => {
+	const kakao = "카카오톡은 대화방이 받는 사람이라 --to 대신 --room <대화방>으로 정해 주세요";
+	expect(await correct({}, "--app", "kakao", "--to", "엄마", "--rule", "반말로 쓴다")).toEqual({ lines: [kakao], code: 2 });
+	expect(await runDraft(["tone", "--app", "kakao", "--to", "엄마"], "")).toEqual({ lines: [kakao], code: 2 });
+	expect(existsSync(toneFile({ app: "kakao", to: "엄마" }))).toBe(false);
+	for (const to of ["김 선생님", "a@x.com, b@y.com"]) {
+		expect(await correct({}, "--app", "mail", "--to", to, "--rule", "반말로 쓴다")).toEqual({ lines: [`메일 앱의 --to는 메일 주소 하나여야 해요: ${to}`], code: 2 });
+		expect((await runDraft(["tone", "--app", "mail-2", "--to", to], "")).code).toBe(2);
+	}
+	expect(existsSync(join(paths.toneDir(), "mail", "to"))).toBe(false);
+	expect((await correct({}, "--app", "mail", "--to", "김 <Kim@X.com>", "--rule", "반말로 쓴다")).lines).toEqual(['mail · kim@x.com에게 말투에 늘 지킬 규칙으로 기록했어요: "반말로 쓴다"']);
+	expect(profileBullets({ app: "mail", to: "kim@x.com" }, HEADINGS.rules)).toEqual(["반말로 쓴다"]);
+	expect((await runDraft(["tone", "--app", "mail", "--to", "김 <Kim@X.com>"], "")).lines.slice(0, 3)).toEqual(["mail · kim@x.com에게 답장이 따르는 것", "말투:", "- [to] 반말로 쓴다"]);
+	expect((await correct({}, "--app", "mail-2", "--to", "Lee <Lee@Y.com>", "--rule", "짧게 쓴다")).code).toBe(0);
+	expect(profileBullets({ app: "mail", to: "lee@y.com" }, HEADINGS.rules)).toEqual(["짧게 쓴다"]);
+	expect(loadStyle(styleKey({ app: "mail" }, mail("Lee <lee@y.com>"))).recipient).toEqual(["짧게 쓴다"]);
+	expect((await correct({}, "--app", "mail", "--to", "kim@x.com", "--forget", "반말")).lines).toEqual(["mail · kim@x.com에게에서 1줄을 지웠어요:\n- [말투] 반말로 쓴다"]);
+	expect(profileBullets({ app: "mail", to: "kim@x.com" }, HEADINGS.rules)).toEqual([]);
+	expect((await correct({}, "--app", "youtube", "--to", "김 <a@b.com>", "--rule", "존칭")).code).toBe(0);
+	expect(profileBullets({ app: "youtube", to: "김 <a@b.com>" }, HEADINGS.rules)).toEqual(["존칭"]);
+});
+
+test("the recipient's corrections and the others share one 4000-character budget, the recipient's taken first", () => {
+	const line = (tag: string, i: number) => `2030-01-${String(i + 1).padStart(2, "0")}: ${tag}${String(i).padStart(2, "0")}${"가".repeat(88)}`;
+	const app = Array.from({ length: 30 }, (_, i) => line("앱", i)), own = Array.from({ length: 30 }, (_, i) => line("분", i));
+	write(toneFile({ app: "mail" }), `## 고친 점\n\n${app.map(l => `- ${l}`).join("\n")}\n`);
+	write(toneFile({ app: "mail", to: "a@x.com" }), `## 고친 점\n\n${own.map(l => `- ${l}`).join("\n")}\n`);
+	const style = loadStyle(styleKey({ app: "mail" }, mail("a@x.com")));
+	const { user } = buildPrompt(mail("a@x.com"), style);
+	const shown = (tag: string) => user.split("\n").filter(l => l.startsWith(`- 2030-01-`) && l.includes(`: ${tag}`)).map(l => l.slice(2));
+	const newestFirst = (xs: string[]) => [...xs].reverse();
+	expect(shown("분")).toEqual(newestFirst(own));
+	expect(shown("앱")).toEqual(newestFirst(app).slice(0, 8));
+	expect([...shown("분"), ...shown("앱")].reduce((n, l) => n + [...l].length, 0)).toBeLessThanOrEqual(4000);
+	const judged = styleConditions(style);
+	expect(judged.recipient).toHaveLength(30);
+	expect(judged.corrections).toEqual(newestFirst(app).slice(0, 8).map(l => l.slice(12)));
+});
+
+test("a mail that rides on a comment is written from the shared mail profile with its recipient's conditions, and its compose and send lint on a second mail app read the same person's file", async () => {
+	const apps = join(env.dir, "custom", "apps.json");
+	write(apps, JSON.stringify({ "mail-2": { app: "mail", label: "학교" } }));
+	try {
+		write(toneFile({ app: "mail" }), "## 예시\n\n- 네 보내드렸어요\n\n## 금지\n\n- 메일금지어\n");
+		write(toneFile({ app: "mail", to: "kim@x.com" }), "## 말투\n\n- 김 선생님께는 짧게\n\n## 금지\n\n- 김금지어\n");
+		const style = mailStyleOf("자료 부탁드려요", "Kim <kim@x.com>");
+		expect(style?.samples).toEqual(["네 보내드렸어요"]);
+		expect(style?.recipient).toEqual(["김 선생님께는 짧게"]);
+		expect(style?.forbidden).toEqual(["메일금지어", "김금지어"]);
+		expect(mailStyleOf("자료 부탁드려요", "lee@y.com")?.forbidden).toEqual(["메일금지어"]);
+		const body = "안녕하세요. 김금지어 자료 보내드립니다.";
+		const made = await composeMail({ app: "mail-2", to: ["kim@x.com"], subject: "자료", body, notify: false });
+		expect(made.ok === false && made.error).toStartWith("초안 검사에서 걸렸어요");
+		const item: ReplyItem = { kind: "mail", app: "mail-2", from: "kim@x.com", text: body };
+		expect(draftLintFailures({ id: "D1", kind: "mail", app: "mail-2", source: "zele", mailId: "compose-D1", ref: "compose-d1", compose: true, to: "kim@x.com", subject: "자료", body, status: "pending", created: "2030-03-04T09:00:00.000Z", changes: [], questions: [], item })).not.toEqual([]);
+	} finally {
+		rmSync(apps, { force: true });
+	}
+});

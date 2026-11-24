@@ -1,7 +1,7 @@
 import { appendFileSync, existsSync, readFileSync } from "node:fs";
 import { join, relative, sep } from "node:path";
 import { withLock } from "../../../hub/file-lock.ts";
-import { HEADINGS, INSTALL, paths, replaceBullets, toneFile, writeAtomic, type ToneKey } from "./settings.ts";
+import { HEADINGS, INSTALL, paths, recipientOf, replaceBullets, toneFile, writeAtomic, type ToneKey } from "./settings.ts";
 
 /** What a learned line is: a standing rule (`## 말투`) or a dated correction of one draft (`## 고친 점`). */
 export type LearnKind = "rule" | "correction";
@@ -104,12 +104,15 @@ const journalFile = () => join(paths.toneDir(), "journal.jsonl");
 const JOURNAL_LOCK = "말투 기록";
 const SECTIONS = new Set<string>([HEADINGS.rules, HEADINGS.corrections]);
 
-/** The tone file of `key` relative to the tone dir, as the journal names it (`install.md`, `mail.md`, `kakao/<room>.md`). */
+/** The tone file of `key` relative to the tone dir, as the journal names it (`install.md`, `mail.md`, `kakao/<room>.md`, `mail/to/<recipient>.md`). */
 export const profileOf = (key: ToneKey | "install"): string => relative(paths.toneDir(), toneFile(key)).split(sep).join("/");
 
 /** The profile a journal entry names; undefined for a name no profile has. */
 export function profileKey(profile: string): ToneKey | "install" | undefined {
 	if (profile === "install.md") return INSTALL;
+	const to = /^([a-z0-9-]+)\/to\/([a-z0-9_-]+)\.md$/.exec(profile);
+	const id = to ? recipientOf(to[2]!) : undefined;
+	if (to) return id === undefined || to[1] === INSTALL ? undefined : { app: to[1]!, to: id };
 	const m = /^([a-z0-9-]+)(?:\/([A-Za-z0-9_-]{1,80}))?\.md$/.exec(profile);
 	if (!m || m[1] === INSTALL) return undefined;
 	return { app: m[1]!, ...(m[2] !== undefined ? { room: m[2] } : {}) };

@@ -15,7 +15,7 @@ export type RealMailLink = Omit<MailLink, "compose" | "view"> & { compose: (spec
 const LIBRARY_MISS_NOTE = "확인: 첨부 파일 폴더에서 맞는 파일을 찾지 못했어요";
 const INSTRUCTION = "This message is a request for material. The requested material goes by this mail: write the mail that sends it (the files ride on it), not a reply that asks anything back.";
 
-/** The mail text in the owner's voice (the mail profile), by the reply model of the source's mail app; undefined = no profile yet or the model skipped. A failed model call throws. */
+/** The mail text in the owner's voice (the shared mail profile and the recipient's own conditions: mailStyleOf), by the reply model of the source's mail app; undefined = no profile yet or the model skipped. A failed model call throws. */
 export async function writeMail(spec: MailWrite): Promise<string | undefined> {
 	const style = mailStyleOf(spec.text, spec.to);
 	if (!style) return undefined;

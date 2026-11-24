@@ -39,6 +39,8 @@ export type ReplyStyle = {
 	samples: string[]; // sentences the user really wrote
 	rules: string[]; // standing instructions of the user
 	standing?: string[];
+	/** The lines of `rules` and `corrections` the user set for this one recipient: they win over a broader line that says otherwise. */
+	recipient?: string[];
 	corrections: string[]; // the user's own past change requests, verbatim
 	forbidden: string[]; // substring, or /regex/flags
 	maxChars?: number;
@@ -172,6 +174,7 @@ const forRecipient = (s: string): string =>
 // Revise mode (mail and comment): what the change teaches, so only a lasting preference enters the profile.
 const LESSON = 'Also add to the JSON object "lesson": the lasting preference this change shows, one short line in the user\'s language with its condition (when ... then ...), in the user\'s own words where possible; "" when the change is only about this message, its file, its song or its exact text. Add "forbid": the exact wordings, as they would appear in a reply, that the user says must not be used again ([] when the change bans none or is only about this message). "forbid" is only for a fixed phrase that is wrong wherever it appears; when the user rejects a kind of sentence or an ending in one use (a closing wish ending in a wording that is fine in other sentences), leave it out of "forbid" and state it in "lesson" with his examples. Add "everywhere": true only when the user says the change holds always or everywhere, or rejects the wording itself as wrong (grammar, spelling, a habit of language); false when it is about this kind of message or this channel.';
 const CORRECTIONS = "The user's past corrections, newest first; when two disagree, the newer one wins. Each was about one draft: carry over the preference it shows to the same kind of situation, never its specific words, songs, files or names; skip one that only rewrites a single draft:";
+const RECIPIENT_LINES = "The user's conditions for this recipient only (he set them for the person this reply goes to; where a rule or correction above says otherwise, these win):";
 /** The characters of the user's corrections a mail, comment or chat prompt carries (KakaoTalk's own prompt carries 1200). */
 export const CORRECTIONS_BUDGET = 4000;
 const CORRECTION_MAX = 300;
@@ -196,11 +199,22 @@ export function promptCorrections(corrections: string[], budget: number): string
 	return out;
 }
 
-/** What the style judge checks a draft against: the standing rules, and the corrections a prompt carries (promptCorrections, in its order and budget) without their leading date and its colon, duplicates once, a correction equal to a standing rule left out. */
-export function styleConditions(style: Pick<ReplyStyle, "standing" | "corrections">, budget = CORRECTIONS_BUDGET): { standing: string[]; corrections: string[] } {
-	const standing = [...new Set((style.standing ?? []).map(c => c.trim()).filter(Boolean))];
-	const corrections = [...new Set(promptCorrections(style.corrections, budget).map(c => c.replace(DATE_LEAD, "").trim()).filter(Boolean))].filter(c => !standing.includes(c));
-	return { standing, corrections };
+function budgetedLines(style: Pick<ReplyStyle, "recipient" | "corrections">, budget: number): { corrections: string[]; recipient: string[] } {
+	const own = style.recipient ?? [];
+	const all = new Set(style.corrections), mine = new Set(own);
+	const theirs = promptCorrections(own.filter(l => all.has(l)), budget);
+	const left = budget - theirs.reduce((n, c) => n + [...c].length, 0);
+	return { corrections: promptCorrections(style.corrections.filter(c => !mine.has(c)), left), recipient: [...own.filter(l => !all.has(l)), ...theirs] };
+}
+
+/** What the style judge checks a draft against: the standing rules, the corrections a prompt carries (promptCorrections, in its order, one budget shared with the recipient's corrections) without their leading date and its colon, duplicates once, a correction equal to a standing rule left out, and (only when the style has any) the recipient's own lines apart from both. */
+export function styleConditions(style: Pick<ReplyStyle, "standing" | "corrections" | "recipient">, budget = CORRECTIONS_BUDGET): { standing: string[]; corrections: string[]; recipient?: string[] } {
+	const own = new Set(style.recipient ?? []);
+	const lines = budgetedLines(style, budget);
+	const recipient = [...new Set(lines.recipient.map(c => c.replace(DATE_LEAD, "").trim()).filter(Boolean))];
+	const standing = [...new Set((style.standing ?? []).filter(c => !own.has(c)).map(c => c.trim()).filter(Boolean))];
+	const corrections = [...new Set(lines.corrections.map(c => c.replace(DATE_LEAD, "").trim()).filter(Boolean))].filter(c => !standing.includes(c));
+	return { standing, corrections, ...(recipient.length ? { recipient } : {}) };
 }
 
 // Chat only. The same single model call first decides whether the message needs the user's own decision.
@@ -237,7 +251,8 @@ export function buildPrompt(item: ReplyItem, style: ReplyStyle, extra: PromptExt
 	const examples = style.examples?.filter(e => allowed(e.reply)) ?? [];
 	const templates = (style.templates ?? []).filter(allowed);
 	const samples = style.samples.filter(allowed);
-	const corrections = promptCorrections(style.corrections, CORRECTIONS_BUDGET);
+	const own = new Set(style.recipient ?? []);
+	const { corrections, recipient: recipientOwn } = budgetedLines(style, CORRECTIONS_BUDGET);
 	const fresh = !!examples.length && examplesUse(item.kind, style.closest) === "voice";
 	const head = [
 		`Kind: ${item.kind}`,
@@ -261,10 +276,11 @@ export function buildPrompt(item: ReplyItem, style: ReplyStyle, extra: PromptExt
 		"",
 		list("The user's own sentences (their voice):", samples, "(none yet: use a neutral, polite register)"),
 		"",
-		list("The user's rules:", style.rules, "(none)"),
+		list("The user's rules:", style.rules.filter(r => !own.has(r)), "(none)"),
 		"",
 		item.kind === "chat" ? list("The user's past corrections (follow them):", [...corrections].reverse(), "(none)") : list(CORRECTIONS, corrections, "(none)"),
 		"",
+		...(recipientOwn.length ? [list(RECIPIENT_LINES, recipientOwn, ""), ""] : []),
 		list("Forbidden expressions:", bans.filter(b => !wordingRule(b)).map(banLabel), "(none)"),
 		"",
 		...(bans.some(wordingRule) ? [list(WORDING_RULES, bans.flatMap(b => wordingRule(b) ?? []), ""), ""] : []),
@@ -377,7 +393,9 @@ export function usableReplyTo(replyTo: string | undefined, self: readonly string
 	return addressesOf(replyTo).find(a => !own.has(untag(a)) && !automatedSender(a));
 }
 
-const defaultTo = (item: ReplyItem) => (item.kind === "mail" ? usableReplyTo(item.replyTo, item.self) ?? addressesOf(item.from)[0] ?? item.from : item.from);
+/** The address a mail reply goes to by default: the usable Reply-To, else the first address of From; undefined when neither has one. */
+export const replyAddress = (item: Pick<ReplyItem, "from" | "replyTo" | "self">): string | undefined => usableReplyTo(item.replyTo, item.self) ?? addressesOf(item.from)[0];
+const defaultTo = (item: ReplyItem) => (item.kind === "mail" ? replyAddress(item) ?? item.from : item.from);
 const defaultSubject = (item: ReplyItem) => (item.kind === "mail" && item.subject?.trim() ? (/^re\s*:/i.test(item.subject.trim()) ? item.subject.trim() : `Re: ${item.subject.trim()}`) : undefined);
 
 function recipientOf(to: string, item: ReplyItem): string {
@@ -399,7 +417,7 @@ async function run(item: ReplyItem, style: ReplyStyle, call: ModelCall, base: Pr
 	let first: Omit<Extract<ReplyResult, { action: "draft" }>, "action" | "tries"> | undefined;
 	let restyle: typeof first;
 	const taught: string[] = [];
-	const { standing, corrections } = judge ? styleConditions(style) : { standing: [], corrections: [] };
+	const { standing, corrections, recipient } = judge ? styleConditions(style) : { standing: [], corrections: [], recipient: undefined };
 	for (let tries = 1; tries <= 2; tries++) {
 		const p = buildPrompt(item, style, { ...base, ...(failures ? { failures } : {}) });
 		let out: string;
@@ -438,7 +456,7 @@ async function run(item: ReplyItem, style: ReplyStyle, call: ModelCall, base: Pr
 		const attach = files ? attachIssues({ subject: draft.subject, body: draft.body, files, request: item.text }).flatMap(i => ATTACH_FAILURE[i.kind] ?? []) : [];
 		if (restyle && (found.some(f => !restyle!.warnings.includes(f)) || attach.length)) return { action: "draft", ...restyle, tries };
 		const fixable = [...rewritable(found), ...attach];
-		const broken: Violation[] = !fixable.length && judge && (standing.length || corrections.length) ? await judgeStyle({ standing, corrections, received: item.text, draft: draft.body, ...(base.change ? { asked: base.change } : {}) }, judge) : [];
+		const broken: Violation[] = !fixable.length && judge && (standing.length || corrections.length || recipient) ? await judgeStyle({ standing, corrections, ...(recipient ? { recipient } : {}), received: item.text, draft: draft.body, ...(base.change ? { asked: base.change } : {}) }, judge) : [];
 		const warnings = [...found, ...styleWarnings(broken)];
 		const who = { ...(parsed.recipient ? { recipient: parsed.recipient } : {}), ...lessons, ...(files ? { files } : {}) };
 		if ((!fixable.length && !broken.length) || tries === 2) return { action: "draft", draft, questions: parsed.questions, warnings, tries, ...who };

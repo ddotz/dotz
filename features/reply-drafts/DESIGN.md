@@ -72,10 +72,24 @@ A chat message that needs his own decision still asks first (exit 4), since the 
 - `tone/` the tone store, one markdown file per profile, each with the sections `## 말투`, `## 예시`, `## 고친 점`, `## 금지` (bullets):
   - `tone/install.md` the whole install (fallback of everything);
   - `tone/<app>.md` one app: `mail`, `youtube`, `instagram`, `blog`, `kakao`, ... (app id `[a-z0-9-]`; `install` is reserved);
-  - `tone/<app>/<room>.md` one conversation of a messenger (room id reduced to `[A-Za-z0-9_-]`, so it is always a safe file name).
-  Reading (`loadStyle({app, room?})`): the 예시 come from the narrowest profile that has any (room -> app -> install) and the result says
-  which level that was; 말투, 고친 점 and 금지 are merged from all levels, install first and the narrower ones later. Writing
-  (`learnTone`, `recordCorrection`) goes into exactly one profile. Two rooms of one messenger therefore never share a tone, a room
+  - `tone/<app>/<room>.md` one conversation of a messenger (room id reduced to `[A-Za-z0-9_-]`, so it is always a safe file name);
+  - `tone/<app>/to/<recipient>.md` one person the owner answers in that app (`ToneKey.to`): for a mail the address its reply goes to by
+    default (`replyAddress`: a usable Reply-To, else the first address of From), kept under `mail/to/` for every mail app instance and
+    mailbox (`recipientApp`: a person's address is the same in each), or a comment's author as the card shows it. The name is `recipientFile(id)`: the id NFC, trimmed and lowercased,
+    `[a-z0-9-]` kept and every other UTF-16 code unit written `_` plus its four hex digits, so it is injective and `recipientOf` reads it back.
+    An empty id, one over 120 code units or whose name would pass 250 characters, and the nobody values (`익명`, the adapters' unknown user)
+    have no recipient level. KakaoTalk has none: its room already is the person.
+  Reading (`loadStyle({app, room?, to?})`, levels from `levelsOf`): the 예시 come from the narrowest profile that has any (to -> room -> app -> install) and the result says
+  which level that was; 말투, 고친 점 and 금지 are merged from all levels, install first and the narrower ones later. The recipient's own 말투
+  and 고친 점 lines are also listed apart (`ReplyStyle.recipient`): the draft prompt shows them under their own heading as holding for this
+  recipient and winning over a broader line that says otherwise, and the style judge numbers them last under the same meaning. The
+  prompt's and the judge's one corrections budget takes the recipient's corrections first and the other levels' in what is left. Every style
+  load of a mail or comment draft adds its recipient (`flow.ts` `styleKey`; the comment engine `EngineDeps.style(src, author)`), and a mail
+  that rides on a comment is written (`mailStyleOf`) from the shared `mail` profile with that same recipient file; with no
+  recipient file the style, the prompts and the lint are exactly those of the key without `to`. Writing
+  (`learnTone`, `recordCorrection`) goes into exactly one profile; lessons of a draft still go to its channel or the install, and only
+  `draft.ts correct|tone --app <app> --to <id>` reads and writes a recipient file (a mail app, `instanceIdOf("mail", app)`, takes exactly one
+  address and stores it bare; `--app kakao` refuses `--to`). Two rooms of one messenger therefore never share a tone, a room
   that was never written to follows its app, an app without samples follows the install. A mailbox is a room of its account (`tone/<instance>/<box>.md`);
   what its voice was learned from is in `box-voice.json` (docs/mailbox.md "Voice").
   A profile with corrections or a section of its own is not relearned. A `## ` section the code does not know reaches the rules.

@@ -7,6 +7,7 @@ import { dirname, join } from "node:path";
 import { withLock } from "../../../hub/file-lock.ts";
 import { banBullet, banKey, parseBan, type ShapeBan } from "../../../hub/ban.ts";
 import type { ReplyStyle } from "../../../hub/reply-draft.ts";
+import { UNKNOWN_USER } from "../../youtube-instagram/lib/ig-owner.ts";
 
 export const dataDir = () => process.env.DOTZ_DIR ?? join(homedir(), ".dotz");
 export const REPO_FEATURE = join(import.meta.dir, "..");
@@ -164,9 +165,10 @@ export function setSection(existing: string, heading: string, items: string[]): 
 // Tone store: <DATA_DIR>/custom/reply-drafts/tone/install.md (whole install), <app>.md (mail, youtube, kakao, ...) and
 // <app>/<room>.md (one conversation of a messenger). Each file has the four sections above.
 // `base`: the app whose profile stands in at the app level when `app` has none (a mailbox's tone of a mail app instance without a profile of its own).
-export type ToneKey = { app: string; room?: string; base?: string };
-export type ToneLevel = "room" | "app" | "install";
-/** `standing`: the owner's standing rules (the `## 말투` lines and the hand-added sections of install, app and room, install first), also part of `rules`. */
+/** `to`: the recipient as the channel knows it (a mail address, a comment author), whose own profile is `<app>/to/<recipientFile(to)>.md`; a `to` without a file name is no level, as if absent. */
+export type ToneKey = { app: string; room?: string; base?: string; to?: string };
+export type ToneLevel = "to" | "room" | "app" | "install";
+/** `standing`: the owner's standing rules (the `## 말투` lines and the hand-added sections of install, app, room and recipient, install first), also part of `rules`. */
 export type LoadedStyle = ReplyStyle & { samplesFrom: ToneLevel | "legacy" | "none"; standing: string[] };
 
 export const INSTALL = "install";
@@ -179,9 +181,52 @@ export function validApp(app: string): boolean {
 // A room id as a file name: only [A-Za-z0-9_-] survive (no dots, so no traversal), at most 80 characters.
 export const roomFile = (room: string): string => room.replace(/[^A-Za-z0-9_-]/g, "_").slice(0, 80) || "_";
 
+const RECIPIENT_MAX = 120;
+const RECIPIENT_NAME_MAX = 250;
+const recipientNorm = (id: string): string => id.normalize("NFC").trim().toLowerCase().normalize("NFC");
+const NOBODY = new Set(["익명", UNKNOWN_USER].map(recipientNorm));
+
+/** A recipient id (NFC, trimmed, lowercased) as a file name: `[a-z0-9-]` stay, every other UTF-16 code unit is `_` and its four hex digits, so two ids never share a name. Undefined for an id that is empty, longer than 120 code units, whose name would not fit a file name, or that names nobody ("익명", an adapter's unknown user). */
+export function recipientFile(id: string): string | undefined {
+	const norm = recipientNorm(id);
+	if (!norm || norm.length > RECIPIENT_MAX || NOBODY.has(norm)) return undefined;
+	let name = "";
+	for (let i = 0; i < norm.length; i++) {
+		const c = norm[i]!;
+		name += /[a-z0-9-]/.test(c) ? c : `_${norm.charCodeAt(i).toString(16).padStart(4, "0")}`;
+	}
+	return name.length > RECIPIENT_NAME_MAX ? undefined : name;
+}
+
+/** The recipient id a file name of `recipientFile` stands for; undefined for a name `recipientFile` never gives. */
+export function recipientOf(name: string): string | undefined {
+	const parts = name.match(/[a-z0-9-]|_[0-9a-f]{4}|[^]/g) ?? [];
+	if (parts.some(p => p.length === 1 && !/[a-z0-9-]/.test(p))) return undefined;
+	const id = parts.map(p => (p.length === 1 ? p : String.fromCharCode(Number.parseInt(p.slice(1), 16)))).join("");
+	return recipientFile(id) === name ? id : undefined;
+}
+
+const MAIL_INSTANCE = /^mail(-[a-z0-9]+)*$/;
+/** The app a recipient's file sits under: every mail app instance (`mail`, `mail-<slug>`) shares `mail`, since a person's address is the same in each of them; any other app is its own. */
+export const recipientApp = (app: string): string => (MAIL_INSTANCE.test(app) ? "mail" : app);
+
+/** The levels of `key`, narrowest first: the recipient (a `to` that has a file name, under `recipientApp`), the room, the app (with its `base`) and the install. */
+export function levelsOf(key: ToneKey): [ToneLevel, ToneKey][] {
+	const install: [ToneLevel, ToneKey] = ["install", { app: INSTALL }];
+	if (key.app === INSTALL) return [install];
+	return [
+		...(key.to !== undefined && recipientFile(key.to) !== undefined ? [["to", { app: recipientApp(key.app), to: key.to }] as [ToneLevel, ToneKey]] : []),
+		...(key.room !== undefined ? [["room", { app: key.app, room: key.room }] as [ToneLevel, ToneKey]] : []),
+		["app", { app: key.app, ...(key.base ? { base: key.base } : {}) }],
+		install,
+	];
+}
+
 export function toneFile(key: ToneKey | "install"): string {
 	if (key === INSTALL || key.app === INSTALL) return join(paths.toneDir(), "install.md");
 	if (!validApp(key.app)) throw new Error(`앱 이름은 영문 소문자·숫자·-만 쓸 수 있어요: ${key.app}`);
+	const to = key.to === undefined ? undefined : recipientFile(key.to);
+	if (to !== undefined) return join(paths.toneDir(), recipientApp(key.app), "to", `${to}.md`);
 	return key.room === undefined ? join(paths.toneDir(), `${key.app}.md`) : join(paths.toneDir(), key.app, `${roomFile(key.room)}.md`);
 }
 
@@ -193,7 +238,7 @@ const SNS_APPS = new Set(["youtube", "instagram"]);
 function profile(key: ToneKey | "install"): string {
 	const file = toneFile(key);
 	if (existsSync(file)) return readFileSync(file, "utf8");
-	return key !== INSTALL && key.app === "mail" && key.room === undefined ? read(paths.legacyStyle()) : "";
+	return key !== INSTALL && key.app === "mail" && file === toneFile({ app: "mail" }) ? read(paths.legacyStyle()) : "";
 }
 
 export const hasSamples = (key: ToneKey | "install"): boolean => bullets(profile(key), HEADINGS.samples).length > 0;
@@ -232,20 +277,16 @@ export function readLearned(): Record<string, string> {
 }
 export const markLearned = (marks: string[], now: Date): void => writeAtomic(paths.learned(), `${JSON.stringify({ ...readLearned(), ...Object.fromEntries(marks.map(m => [m, now.toISOString()])) }, null, 1)}\n`);
 
-// A `## ` section outside HEADINGS (one the user added by hand) is a standing instruction too: its bullets follow the known rule sections.
-// Samples come from the narrowest profile that has any (room -> app -> install; for the youtube and instagram apps the old
-// custom/sns/tone.md examples sit between app and install); rules, corrections and forbidden expressions are merged from every level,
-// install first and the narrower ones later.
+/** A `## ` section outside HEADINGS (one the user added by hand) is a standing instruction too: its bullets follow the known rule sections.
+ * Samples come from the narrowest profile that has any (levelsOf: recipient -> room -> app -> install; for the youtube and instagram apps the old
+ * custom/sns/tone.md examples sit between app and install); rules, corrections and forbidden expressions are merged from every level,
+ * install first and the narrower ones later. `recipient` lists the rules and corrections of the recipient level, absent when it has none. */
 export function loadStyle(key: ToneKey): LoadedStyle {
-	const room = key.room === undefined ? undefined : profile(key);
-	const app = profile({ app: key.app }) || (key.base ? profile({ app: key.base }) : "");
-	const install = profile("install");
-	const levels: [ToneLevel, string | undefined][] = [["room", room], ["app", app], ["install", install]];
+	const levels = levelsOf(key).map(([level, k]): [ToneLevel, string] => [level, level === "app" ? profile({ app: k.app }) || (k.base ? profile({ app: k.base }) : "") : profile(k)]);
 	let samples: string[] = [];
 	let samplesFrom: LoadedStyle["samplesFrom"] = "none";
 	const legacy = SNS_APPS.has(key.app) ? bullets(read(paths.snsTone()), HEADINGS.samples) : [];
 	for (const [level, md] of levels) {
-		if (md === undefined) continue;
 		let own = bullets(md, HEADINGS.samples);
 		let from: LoadedStyle["samplesFrom"] = level;
 		if (!own.length && level === "app" && legacy.length) [own, from] = [legacy, "legacy"];
@@ -254,12 +295,15 @@ export function loadStyle(key: ToneKey): LoadedStyle {
 			break;
 		}
 	}
-	const merged = (...headings: string[]) => unique([install, app, room ?? ""].flatMap(md => headings.flatMap(h => bullets(md, h))));
-	const handAdded = [install, app, room ?? ""].flatMap(md => unknownSections(md).flatMap(s => s.items));
+	const broadFirst = levels.map(([, md]) => md).reverse();
+	const merged = (...headings: string[]) => unique(broadFirst.flatMap(md => headings.flatMap(h => bullets(md, h))));
+	const handAdded = broadFirst.flatMap(md => unknownSections(md).flatMap(s => s.items));
 	// The identity (who the user is as a writer) comes from the narrowest profile that has one, like the samples.
-	const narrowest = (heading: string) => [room, app, install].map(md => (md === undefined ? [] : bullets(md, heading))).find(xs => xs.length) ?? [];
+	const narrowest = (heading: string) => levels.map(([, md]) => bullets(md, heading)).find(xs => xs.length) ?? [];
 	const identity = narrowest(HEADINGS.identity);
-	return { identity, templates: narrowest(HEADINGS.templates), samples, samplesFrom, rules: unique([...merged(HEADINGS.rules, HEADINGS.learned, HEADINGS.profile), ...handAdded]), standing: unique([...merged(HEADINGS.rules), ...handAdded]), corrections: merged(HEADINGS.corrections), forbidden: merged(HEADINGS.forbidden) };
+	const to = levels.find(([level]) => level === "to")?.[1] ?? "";
+	const recipient = unique([...[HEADINGS.rules, HEADINGS.learned, HEADINGS.profile].flatMap(h => bullets(to, h)), ...unknownSections(to).flatMap(s => s.items), ...bullets(to, HEADINGS.corrections)]);
+	return { identity, templates: narrowest(HEADINGS.templates), samples, samplesFrom, rules: unique([...merged(HEADINGS.rules, HEADINGS.learned, HEADINGS.profile), ...handAdded]), standing: unique([...merged(HEADINGS.rules), ...handAdded]), corrections: merged(HEADINGS.corrections), forbidden: merged(HEADINGS.forbidden), ...(recipient.length ? { recipient } : {}) };
 }
 
 function editProfile(key: ToneKey | "install", edit: (md: string) => string | undefined): void {

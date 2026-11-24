@@ -15,7 +15,7 @@ import { type HubLike, notifyGateway, reportSendFailed } from "./followup.ts";
 import { commentAsk } from "./comments/ask.ts";
 import { attachMail, linkedComment, mailPartOf } from "./comments/linked.ts";
 import { commentsDir, createStore } from "./comments/store.ts";
-import { accountHold, askText, draftAttachIssues, learningSettled, realFlowDeps, realRunner, sendAccountOf, sendDraft, settleDraft, toneKey, type FlowDeps } from "../features/reply-drafts/lib/flow.ts";
+import { accountHold, askText, draftAttachIssues, learningSettled, realFlowDeps, realRunner, sendAccountOf, sendDraft, settleDraft, styleKey, type FlowDeps } from "../features/reply-drafts/lib/flow.ts";
 import { webmailSite, zeleLogins } from "../features/reply-drafts/lib/senders.ts";
 import { listLibrary, rankLibrary, LIBRARY_PICK_MAX, MIN_SCORE } from "../features/reply-drafts/lib/library.ts";
 import { addStagedFile, STAGED_MAX } from "../features/reply-drafts/lib/staged.ts";
@@ -120,7 +120,7 @@ export async function composeMail(i: ComposeInput, deps: MailCliDeps = {}): Prom
 
 	const item = { kind: "mail" as const, app, from: to.join(", "), text: body };
 	const draft = { to: to.join(", "), subject, body };
-	const failures = lintReply(draft, item, loadStyle(toneKey({ app })));
+	const failures = lintReply(draft, item, loadStyle(styleKey({ app }, item)));
 	if (failures.length) return fail(`초안 검사에서 걸렸어요: ${failures.join("; ")}`, 1);
 
 	const id = newId();

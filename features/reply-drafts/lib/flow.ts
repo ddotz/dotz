@@ -9,7 +9,7 @@ import { withFileWords } from "../../../hub/auto-attach.ts";
 import { claimsAttachment, ownClaimText } from "../../../hub/attach-claim.ts";
 import { ATTACH_AS_IS_HINT, ATTACH_REFUSED, LINT_REFUSED, asksForFile, briefLines, draftApprovalBlock, draftVerdict, type DraftVerdict, SPENT_REFUSED, WAITING_REFUSED } from "../../../hub/draft-approval.ts";
 import type { ReplyCall } from "../../../hub/reply-model.ts";
-import { addressesOf, fileNameKey, generateChatReply, learnedOf, lintReply, NO_RECIPIENT, ownerLint, RECIPIENT_FAILURE, reviseReply, SENT_CLAIM_FAILURE, withSenderAddress, type ModelCall, type Recipient, type ReplyItem, type ReplyKind, type ReplyStyle } from "../../../hub/reply-draft.ts";
+import { addressesOf, fileNameKey, generateChatReply, learnedOf, lintReply, NO_RECIPIENT, ownerLint, RECIPIENT_FAILURE, replyAddress, reviseReply, SENT_CLAIM_FAILURE, withSenderAddress, type ModelCall, type Recipient, type ReplyItem, type ReplyKind, type ReplyStyle } from "../../../hub/reply-draft.ts";
 import { styleJudgeOn } from "../../../hub/config.ts";
 import { judgeAsk, type JudgeAsk } from "../../../hub/style-judge.ts";
 import { listLibrary, matchLibrary, MIN_SCORE, rankLibrary, type LibraryFile } from "./library.ts";
@@ -216,6 +216,11 @@ export const toneKey = (x: { app?: string; room?: string; profile?: string; box?
 	const boxKey: ToneKey = { app: x.instance, room: x.box, ...(x.profile ? {} : { base: key.app }) };
 	return existsSync(toneFile(boxKey)) ? boxKey : key;
 };
+/** The key a draft's style is loaded with: `toneKey(x)` plus its recipient (a mail's: the address the reply goes to by default, replyAddress; a comment's: its author, unless `from` is only the app or room that `draft.ts new` fills in when no author was given). Lessons are written under `toneKey` alone. */
+export const styleKey = (x: Parameters<typeof toneKey>[0], item: Pick<ReplyItem, "kind" | "from" | "replyTo" | "self">): ToneKey => {
+	const key = toneKey(x), to = item.kind === "mail" ? replyAddress(item) : item.kind === "comment" && item.from !== (x.room ?? x.app) ? item.from : undefined;
+	return to === undefined ? key : { ...key, to };
+};
 export type Meta = { /** The mailbox the mail is in and its mail app instance (box.ts boxCtx): set only for a mail in a box with settings. */ box?: string; instance?: string; source: string; mailId: string; ref: string; origAttachments?: number; /** The zele account the mail belongs to (its record's `account`); every zele call of the draft passes it. */ account?: string };
 // "ask" (chat only): the message needs a decision only the user can make; `choices` are 2-4 short answers.
 export type Built = { action: "skip"; reason: string } | { action: "draft"; rec: DraftRec; warnings: string[]; /** The candidates the model chose (ReplyResult.files); absent = it gave no choice. */ files?: string[] } | { action: "ask"; question: string; choices: string[] };
@@ -279,12 +284,12 @@ export const callOf = (deps: FlowDeps, item: ReplyItem, conv?: string, what = "d
 /** The style judge of a draft (hub/style-judge.ts) on the mail rule matcher's call, traced as `judge`; none while config guard.style_judge is false. */
 export const judgeOf = (deps: FlowDeps, item: ReplyItem, conv?: string): JudgeAsk | undefined => (styleJudgeOn() ? judgeAsk(callOf(deps.judge ? { ...deps, call: deps.judge } : deps, item, conv, "judge")) : undefined);
 const nowOf = (deps: FlowDeps) => (deps.now ?? (() => new Date()))();
-/** The style of a mail written outside a draft (examples of the same sender first), or undefined when the mail profile has no samples and no identity yet.
- *  Every mail app instance shares the `mail` profile and its pairs, as offered drafts do. */
+/** The profile a lesson of a mail outside a draft is written to: every mail app instance shares the `mail` profile and its pairs, as offered drafts do. */
 export const MAIL_PROFILE: ToneKey = { app: "mail" };
-export function mailStyleOf(text: string, from: string): ReplyStyle | undefined {
-	const s = loadStyle(MAIL_PROFILE);
-	return s.samples.length || s.identity?.length ? styleWithExamples(s, "mail", text, from) : undefined;
+/** The style of a mail written outside a draft to `to`: the shared `mail` profile whichever mail app it goes through, plus that person's own conditions (styleKey), with examples of the same person first; undefined when the mail profile has no samples and no identity yet. */
+export function mailStyleOf(text: string, to: string): ReplyStyle | undefined {
+	const s = loadStyle(styleKey(MAIL_PROFILE, { kind: "mail", from: to }));
+	return s.samples.length || s.identity?.length ? styleWithExamples(s, "mail", text, to) : undefined;
 }
 // A mail draft's style carries the user's closest real past replies of ITS source as examples (a site's own sent folder for its mails, zele's for zele's); chat
 // and comments keep theirs. A zele pair does not say which account it came from, so a zele draft with a profile of its own gets none: another account's replies
@@ -311,7 +316,7 @@ function toRec(item: ReplyItem, meta: Meta, r: { draft: { to: string; subject?: 
 // back to the model.
 export async function buildDraft(item: ReplyItem, meta: Meta, deps: FlowDeps): Promise<Built> {
 	const trace = deps.trace ?? draftTrace();
-	const style = await styleOf(item, toneKey({ ...item, box: meta.box, instance: meta.instance }), meta.source, meta), traced = { ...deps, trace }, call = callOf(traced, item, meta.ref);
+	const style = await styleOf(item, styleKey({ ...item, box: meta.box, instance: meta.instance }, item), meta.source, meta), traced = { ...deps, trace }, call = callOf(traced, item, meta.ref);
 	const r = await generateChatReply(item, style, call, judgeOf(traced, item, meta.ref));
 	if (r.action !== "draft") return r;
 	const questions = item.kind === "mail" ? r.questions.filter(q => !ADDRESS_ASK.test(q)) : r.questions;
@@ -399,7 +404,7 @@ const notYetStaged = (rec: DraftRec): string[] => {
 };
 
 // The send-time lint of a draft, in the lint's own words. A text the owner wrote himself (editedFrom) gets the owner-text lint: his length is not the style's.
-const draftLint = (d: DraftRec): string[] => (d.editedFrom !== undefined ? ownerLint : lintReply)({ to: d.to, cc: d.cc, subject: d.subject, body: d.body }, d.item, loadStyle(toneKey(d)), { anyRecipient: d.ownerRecipients === true });
+const draftLint = (d: DraftRec): string[] => (d.editedFrom !== undefined ? ownerLint : lintReply)({ to: d.to, cc: d.cc, subject: d.subject, body: d.body }, d.item, loadStyle(styleKey(d, d.item)), { anyRecipient: d.ownerRecipients === true });
 // The same as the owner reads it. The comment engine runs it before a combined card's reply is posted (hub/comments/engine.ts), so a hit never leaves a posted reply beside an unsent mail.
 export const draftLintFailures = (d: DraftRec): string[] => draftLint(d).map(ownerWarning);
 
@@ -427,7 +432,7 @@ export function editDraft(id: string, text: string, subject?: string): Step & { 
 	if (d.status !== "pending") return { ok: false, text: `초안 ${id}은(는) 이미 ${d.status} 상태라 고칠 수 없어요`, code: "not_pending" };
 	const body = stripControl(text).replace(/\r\n?/g, "\n").trim();
 	const subj = subject === undefined ? d.subject : stripControl(subject).replace(/\s+/g, " ").trim();
-	const found = ownerLint({ to: d.to, cc: d.cc, subject: subj, body }, d.item, loadStyle(toneKey(d)), { anyRecipient: d.ownerRecipients === true });
+	const found = ownerLint({ to: d.to, cc: d.cc, subject: subj, body }, d.item, loadStyle(styleKey(d, withRecipient(d).item)), { anyRecipient: d.ownerRecipients === true });
 	if (found.length) {
 		const lint = found.map(ownerWarning);
 		return { ok: false, text: `${LINT_REFUSED} ${lint.join(" · ")}`, ...lintCode(found[0]!), lint };
@@ -619,7 +624,7 @@ async function reviseClaimed(id: string, change: string, deps: FlowDeps, opts: {
 	const before = heldAndWanted(old);
 	const rev = await revisionCandidates(old, change);
 	const item = rev ? { ...old.item, candidates: rev.names } : held.length ? { ...old.item, files: held } : old.item;
-	const r = await reviseReply(item, await styleOf(old.item, toneKey(old), old.source, old), { to: old.to, subject: old.subject, body: old.body }, change, callOf(deps, old.item, old.ref), judgeOf(deps, old.item, old.ref));
+	const r = await reviseReply(item, await styleOf(old.item, styleKey(old, old.item), old.source, old), { to: old.to, subject: old.subject, body: old.body }, change, callOf(deps, old.item, old.ref), judgeOf(deps, old.item, old.ref));
 	if (r.action === "skip") return { ok: false, text: `고친 초안을 만들지 못했어요: ${r.reason}` };
 	const banned = old.box && old.instance ? banWarnings(boxById(old.instance, old.box), r.draft) : [];
 	const rec = toRec(old.item, { ...(old.box && old.instance ? { box: old.box, instance: old.instance } : {}), source: old.source, mailId: old.mailId, ref: old.ref, ...(old.account ? { account: old.account } : {}), ...(old.origAttachments ? { origAttachments: old.origAttachments } : {}) }, r, [...old.changes, change], deps);
