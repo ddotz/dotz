@@ -107,6 +107,20 @@ A chat message that needs his own decision still asks first (exit 4), since the 
   it appears and put a rejected kind of sentence or ending into `lesson` with his examples. `correct --forbid` is always stored. The rule goes
   under `## 금지` of the profile the rule or lesson went to, once per parts, and the card or the CLI says `표현 규칙으로도 정해 뒀어요:
   <label>`; `correct --allow "<label>"` takes it out.
+  A line the owner asks for (`draft.ts correct --rule/--change`) is learned by `learnLine` (`lib/flow.ts`): `curate` (`lib/curate.ts`)
+  asks the reply model of the profile's app once (through `learnCall`, 12 s at most) with that profile's own `## 말투` lines as `R1..`
+  and `## 고친 점` lines as `C1..` (dates kept; hand-added sections, 예시 and 금지 are never shown) and the new line with its kind, for
+  `{"replaces":[{"id","why":"same"|"overridden"}]}`. Code keeps only ids that exist, each once, the first three, and no `R` id for a
+  correction (one corrected draft never removes a rule the owner set). A rule that an `R` line already says (`same`, or equal apart from
+  case and whitespace, which asks nothing) stores nothing; otherwise the kept lines are written to `tone/journal.jsonl` (one JSON line
+  `{at, profile, heading, line, why, by: "curate", newLine}`, `profile` the tone file relative to `tone/`) and taken out, and the new
+  line is added as `recordRule` / `recordCorrection` add it, all in one locked edit of the profile (the journal line is written first, so
+  a crash never loses a removed line). No similarity threshold: a contradiction shares few words, and every removal is printed with the
+  `correct --restore <n>` that undoes it. No `learnCall`, an empty profile, a throw, a late or a malformed answer removes nothing and
+  stores the line as before (one `reply draft:` log line for a failed call). `tone --journal` lists the newest 20 entries, each with its
+  own number counted from the oldest (so a number never moves when later entries are added; an entry after a line a crash cut short starts
+  on a new line); `restoreEntry(n)` adds the line back at the end of its section unless an equal line is there and marks the entry
+  `restoredAt`; the replacing line stays. The card path does not curate yet.
 - `drafts.json` `{drafts, keys}`; draft ids are `R` + 6 base32 characters; a newer draft for the same mail makes the older one stale. Each draft keeps its `app` and `room`.
 
 ## How a new install's tone is learned

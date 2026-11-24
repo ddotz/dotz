@@ -355,6 +355,38 @@ function removeLines(key: ToneKey | "install", heading: string, text: string): s
 	return removed;
 }
 
+/** One bullet of a profile section. */
+export type SectionLine = { heading: string; line: string };
+
+/** One locked edit of exactly that profile: takes each `take` bullet out of its section (one equal bullet each), hands what was taken to `before` while the old file is still on disk (a throw there writes nothing), then adds `add` at the end of its section (with `once`, not when a bullet equal apart from case and whitespace is there). What was taken and whether `add` went in. */
+export function replaceBullets<T extends SectionLine>(key: ToneKey | "install", take: T[], add?: SectionLine & { once?: boolean }, before?: (taken: T[]) => void): { taken: T[]; added: boolean } {
+	let taken: T[] = [];
+	let added = false;
+	editProfile(key, md => {
+		let out = md;
+		taken = [];
+		for (const heading of unique(take.map(t => t.heading))) {
+			const want = take.filter(t => t.heading === heading);
+			const got: T[] = [];
+			const dropped = dropBullets(out, heading, item => {
+				const at = want.findIndex(w => w.line === item);
+				if (at >= 0) got.push(...want.splice(at, 1));
+				return at >= 0;
+			});
+			if (!dropped) continue;
+			out = dropped.md;
+			taken.push(...got);
+		}
+		const line = oneLine(add?.line ?? "");
+		added = !!add && !!line && !(add.once && bullets(out, add.heading).some(b => normText(b) === normText(line)));
+		if (add && added) out = appendBullet(out, add.heading, line);
+		if (!taken.length && !added) return undefined;
+		if (taken.length) before?.(taken);
+		return out;
+	});
+	return { taken, added };
+}
+
 /** Adds a standing rule, undated and on one line, to the `## 말투` section of exactly that profile; a line equal apart from case and whitespace is not added again. */
 export function recordRule(key: ToneKey | "install", line: string): void {
 	const rule = oneLine(line);

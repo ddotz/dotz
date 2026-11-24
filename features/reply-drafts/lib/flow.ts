@@ -17,7 +17,8 @@ import { basename } from "node:path";
 import { ruleFilePath } from "./rules.ts";
 import { canAttach, sendsThroughZele, sendWith, settleAccount, threadMoved, webmailSite, zeleAccountOf, type Sent, type SendOutcome } from "./senders.ts";
 import { carryStagedFiles, removeStagedFile, stagedFiles, stagedName, stageFiles, stageWanted, type StageOpts, type Want } from "./staged.ts";
-import { dataDir, INSTALL, loadPairs, loadSettings, loadStyle, ownReplies, paths, recordForbidden, recordLearned, recordPattern, toneFile, validApp, type ToneKey } from "./settings.ts";
+import { dataDir, HEADINGS, INSTALL, loadPairs, loadSettings, loadStyle, normText, ownReplies, paths, profileBullets, recordForbidden, recordLearned, recordPattern, replaceBullets, toneFile, validApp, type ToneKey } from "./settings.ts";
+import { curate, curateAsk, journalAdd, type LearnKind, profileOf } from "./curate.ts";
 import { defaultKakaoReader, defaultKakaoRooms, KAKAO_APP, kakaoOwnTexts, type OwnerReader, type RoomsReader } from "./kakao-tone.ts";
 import { banWarnings, boxById } from "./box.ts";
 import { maybeRefine } from "./persona.ts";
@@ -50,6 +51,31 @@ export async function refineAfterCorrection(key: ToneKey, deps: FlowDeps): Promi
 /** The one "record, then refine" (design 3.4): a lesson line enters the tone profile (recordLearned), and every few corrections fold into its identity; a standing rule refines nothing. */
 export async function recordLesson(key: ToneKey, line: string, deps: FlowDeps): Promise<void> {
 	if (recordLearned(key, line, nowOf(deps)) === "correction") await refineAfterCorrection(key, deps);
+}
+
+/** What `learnLine` did: whether the line went in, as what, the old lines it replaced, and the standing rule that already says it (`same`, nothing stored). */
+export type LineLearned = { stored: boolean; kind: LearnKind; replaced: string[]; same?: string };
+
+/** Learns one line the owner asked for into exactly the profile of `key`: `curate` (through `deps.learnCall`) names the lines it repeats or overrides; a standing rule an existing rule already says stores nothing, else the named lines are journalled and taken out and the line is stored as `recordRule` / `recordCorrection` store it (a correction dated today), in one locked edit. Without a call, or when it fails, the line is stored as it is. */
+export async function learnLine(key: ToneKey | "install", line: string, kind: LearnKind, deps: FlowDeps): Promise<LineLearned> {
+	const text = line.replace(/\s+/g, " ").trim();
+	if (!text) return { stored: false, kind, replaced: [] };
+	const rules = profileBullets(key, HEADINGS.rules), corrections = profileBullets(key, HEADINGS.corrections);
+	const equal = kind === "rule" ? rules.find(r => normText(r) === normText(text)) : undefined;
+	if (equal !== undefined) return { stored: false, kind, replaced: [], same: equal };
+	const app = key === INSTALL ? INSTALL : key.app;
+	const learnCall = deps.learnCall;
+	const { replaces } = learnCall ? await curate({ rules, corrections }, { line: text, kind }, curateAsk((system, user) => learnCall(app)(system, user))) : { replaces: [] };
+	const lineOf = (id: string): string => (id.startsWith("R") ? rules : corrections)[Number(id.slice(1)) - 1] ?? "";
+	const same = kind === "rule" ? replaces.map(r => (r.id.startsWith("R") && r.why === "same" ? lineOf(r.id) : "")).find(l => l && profileBullets(key, HEADINGS.rules).includes(l)) : undefined;
+	if (same) return { stored: false, kind, replaced: [], same };
+	const now = nowOf(deps);
+	const newLine = kind === "rule" ? text : `${now.toISOString().slice(0, 10)}: ${text}`;
+	const take = replaces.map(r => ({ heading: r.id.startsWith("R") ? HEADINGS.rules : HEADINGS.corrections, line: lineOf(r.id), why: r.why }));
+	const profile = profileOf(key);
+	const journal = (taken: typeof take) => journalAdd(taken.map(t => ({ at: now.toISOString(), profile, heading: t.heading, line: t.line, why: t.why, by: "curate", newLine })));
+	const done = replaceBullets(key, take, { heading: kind === "rule" ? HEADINGS.rules : HEADINGS.corrections, line: newLine, once: kind === "rule" }, journal);
+	return { stored: done.added, kind, replaced: done.taken.map(t => t.line) };
 }
 
 /** What a stored wording pattern taught: its label, and the literal words of the same lesson that one of its verified good examples uses (the owner's own text shows them right in some use, so they are not stored as literal bans). */
