@@ -22,7 +22,7 @@ const notices = [
 	dec("d-draft3", 5, "박지훈 님께 답장 보낼까요?", "mail:m3", { by: "orchestrator" }, { draft: { to: "park@example.com", body: "좋아요" } }),
 	dec("d-q", 6, "회의실 어디로 잡을까요?", "main", { by: "orchestrator" }),
 	{ id: "gw-update", kind: "alert", tone: "ask", by: "gateway", title: "게이트웨이 업데이트", text: "새 버전이 있어요. 업데이트할까요?", open: "alert", src: "alert", at: at(7), ts: at(7), updated: at(7), read: false },
-	{ id: "gw-login", kind: "alert", tone: "ask", by: "gateway", title: "카카오톡 로그인", text: "카카오톡 로그인이 풀렸어요. 다시 로그인해 주세요", open: "alert", src: "alert", at: at(8), ts: at(8), updated: at(8), read: false },
+	dec("gw-login", 8, "카카오톡: 로그인이 풀렸어요. 다시 연결할까요, 이 모니터링을 멈출까요?", "alert", { by: "gateway" }, { options: [{ n: 1, label: "다시 연결", rec: true, action: "watch-reconnect" }, { n: 2, label: "원인 확인" }, { n: 3, label: "이 모니터링 멈추기" }] }),
 ];
 // The three send approvals are the reply queue's waiting items (GET /api/reply/queue), of no app: what the 답장 대기 row counts under 기타.
 const queueItem = (ref: string, conv: string, to: string, text: string, at: number) => ({ item: `mail:${ref}`, ref, kind: "mail", app: "", label: "", conv, at, can: { send: true, revise: true, edit: true, drop: true, restore: false }, draft: { state: "pending", toLabel: "받는이", to, text } });
@@ -95,6 +95,13 @@ for (const [w, h] of [[390, 844], [1280, 900]] as const) {
 			expect(await q(`const keep = NT.items; NT.items = keep.filter(n => n.id === "gw-update"); try { return convNeeds("alert"); } finally { NT.items = keep; }`)).toBe(false);
 			if (SHOTS) await Bun.write(join(SHOTS, `B-home-needs-${w}.png`), await view.screenshot());
 		}, 15_000);
+
+		test("a gateway card that lists 로그인 among its passing checks asks to choose; only a card that is a login says 로그인", async () => {
+			const doctor = dec("d-doctor", 9, "토큰 사용 · 원인을 찾아볼까요?", "alert", { by: "gateway", text: "닥터 점검: 정할 것이 1가지 있어요.\n- 어제 토큰을 많이 쓴 세션이 있어요: 비싼 모델 세션 1개.\n괜찮은 점검 9가지: 세션, 로그인, 모니터링.\n\n결정: 토큰 사용 · 원인을 찾아볼까요?" }, { options: [{ n: 1, label: "찾아봐요", rec: true }, { n: 2, label: "이번엔 둬요" }] });
+			const r = await q<{ name: string; act: string; crit: boolean }[]>(`const keep = NT.items; NT.items = [...keep, ${JSON.stringify(doctor)}]; renderHomeNowRaw(); try { return [...${LIST}.querySelectorAll(":scope > .hr")].map(r => ({ name: (r.querySelector(".nm") || r).textContent.trim(), act: (r.querySelector(".hs") || {}).textContent || "", crit: r.classList.contains("crit") })); } finally { NT.items = keep; renderHomeNowRaw(); }`);
+			expect(r.find(x => x.name.includes("토큰 사용"))).toMatchObject({ act: "선택", crit: true });
+			expect(r.filter(x => x.act === "로그인").map(x => x.name).sort()).toEqual(["구글 계정 로그인이 필요해요", "카카오톡: 로그인이 풀렸어요. 다시 연결할까요, 이 모니터링을 멈출까요?"].sort());
+		});
 
 		test("a long list holds every row, shows four and says how many more; the count stays the item count", async () => {
 			expect(await q(`return [${LIST}.querySelectorAll(":scope > .hr:not([hidden])").length, ${LIST}.querySelector(".hn-more").textContent]`)).toEqual([4, "4개 더 보기"]);

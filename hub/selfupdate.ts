@@ -701,7 +701,7 @@ export function updateBoot(hooks: { alert: (text: string) => void }, o: { dir?: 
 	const m = readPending(file);
 	if (!m || m.dir !== dir) return;
 	if (m.status === "rolled-back" || m.status === "rollback-failed") {
-		const text = m.message ?? `업데이트 ${m.to.slice(0, 7)} 가 시작되지 않아 ${m.from.slice(0, 7)}으로 되돌렸어요.`;
+		const text = m.message ?? `업데이트${m.to ? ` ${m.to.slice(0, 7)}` : ""}가 시작되지 않아 ${m.from ? `${m.from.slice(0, 7)}으로` : "이전 버전으로"} 되돌렸어요.`;
 		record(logDir, `boot: ${text}`);
 		hooks.alert(text);
 		const s = readState();

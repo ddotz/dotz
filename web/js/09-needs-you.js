@@ -151,12 +151,11 @@ function attnToast(t, k) {
 // failure that needs his choice), 2 another decision, 3 a session question, 4 a loose question of the assistant.
 // A gateway [ask] that is not critical is a system notice it handles: not asked here, it is news in the 알림 card (08-home.js hcFyi).
 // A finished turn (결과 확인) and a rate limit (한도 걸림) are not decisions: the assistant card and 지금 진행 중 show them.
-const NY_LOGIN = /로그인|인증|2단계|OTP|비밀번호/i;
+const NY_RECONNECT = "watch-reconnect";
 function nyOf(n) {
-  const d = ntOpenDec(n) ? n.decision : null, gw = n.by === "gateway", text = `${n.title || ""}\n${n.text || ""}`;
-  if (d && d.to.startsWith("auth:")) return { n, rank: 0, crit: true, act: TX("home.ny.login") };
+  const d = ntOpenDec(n) ? n.decision : null, gw = n.by === "gateway";
+  if (d && (d.to.startsWith("auth:") || d.options.some(o => o.action === NY_RECONNECT))) return { n, rank: 0, crit: true, act: TX("home.ny.login") };
   if (d && d.draft) return null;   // a send approval is a row of 답장 대기 (30-replies.js), not of 답변 필요
-  if (gw && NY_LOGIN.test(text)) return { n, rank: 0, crit: true, act: TX("home.ny.login") };
   if (gw && (d || n.tone === "fail")) return { n, rank: 0, crit: true, act: TX("home.ny.choose") };
   if (gw) return null;
   return d ? { n, rank: 2, crit: n.tone === "fail", act: TX("home.ny.choose") } : { n, rank: 4, crit: false, act: TX("home.ny.reply") };

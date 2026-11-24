@@ -75,6 +75,12 @@ test("an id that was all of a code span leaves no marks behind", () => {
 	expect(noticeKo("커밋 `e1b86a59`, 테스트 · `a1b2c3d` · 끝")).not.toContain("``");
 });
 
+test("the update-failure alert keeps the version it tried and the one it went back to", () => {
+	const out = noticeKo("업데이트 4c1e2d9 가 시작되지 않아 e40f212으로 되돌렸어요.");
+	expect(out).toMatch(/^업데이트 4c1e2d9 ?가 시작되지 않아 e40f212(?:으로|로) 되돌렸어요\.$/);
+	expect(noticeKo("업데이트 4c1e2d9 가 시작되지 않았는데 e40f212으로 되돌리지 못했어요: 폴더를 되돌리지 못했어요")).toContain("e40f212");
+});
+
 test("a table reads as words in a one-line preview", () => {
 	expect(plainTable("앞\n| | 기본 | 넉넉 |\n|---|:--|---|\n| 요금 | 1 | 2 |")).toBe("앞\n기본 · 넉넉\n요금 · 1 · 2");
 	expect(plainTable("a | b 는 그대로예요")).toBe("a | b 는 그대로예요");
