@@ -9,13 +9,13 @@ import { cfg, DATA_DIR, log, NAME, updateNotifyPush, writeAtomic } from "./confi
 import { UnreadableFileError } from "./json-update.ts";
 import { classOfNotice, NOTICE_CLASSES, type NoticeClass, noticeClass } from "./notice-class.ts";
 import { type KindItem, kindOf, NOTICE_KINDS, type NoticeKindName, pushTitle } from "./notice-kinds.ts";
-import { clean, laterOn } from "./notices-rules.ts";
+import { clean, isOpenDecision, laterOn } from "./notices-rules.ts";
 import { RUN_DECISION, taskRunOf } from "./notices-schedule.ts";
 import { pushClasses, route } from "./notify-route.ts";
 import { eventTarget, type HubEvent, onBroadcast, onEmit } from "./events.ts";
 import { dropForLine, orchestratorOnlyAsk } from "./forline.ts";
 import { quietAlert } from "./alert-gate.ts";
-import { answerReply, confirmGroup, conversationTitle, decisionsOf, isViewing, laneNameKo, type Notice, onDecision, onHalfTime, onNoticeUnread, setViewing, unreadCount } from "./notices.ts";
+import { answerReply, confirmGroup, conversationTitle, decisionsOf, isViewing, laneNameKo, type Notice, onDecision, onHalfTime, onNoticeUnread, openDecisionNotices, setViewing, unreadCount } from "./notices.ts";
 import { msg } from "./i18n.ts";
 import { DECISION_HEAD, decisionText } from "./choices.ts";
 import { dropIdNote, noticeKo, plainTable } from "./notice.ts";
@@ -232,6 +232,36 @@ export function decisionPush(n: Notice): PushMessage {
 /** The one reminder when half of a card's answer time has gone (notices.ts onHalfTime): the card's push, its body `<title> · 답할 시간이 절반 남았어요`. */
 export const halfTimePush = (n: Notice): PushMessage => ({ ...decisionPush(n), body: msg().asker.half(plain(n.title)) });
 
+const GROUP_BODY = 180;
+const opening = new Map<string, string>();
+let held: Notice[] = [];
+const msgKey = (n: Pick<Notice, "at"> & { decision?: { to: string } }) => `${n.decision?.to ?? ""}@${n.at ?? ""}`;
+function leadOf(text: string): string {
+	const lines = text.split("\n"), end = lines.findIndex(l => DECISION_HEAD.test(l));
+	return plain(lines.slice(0, end < 0 ? 1 : end).find(l => plain(l)) ?? "", 80);
+}
+/** The one notification of the open cards `cards` of one message: `답변이 N개 필요해요`, its first line `lead` and then card titles as the body, opening the first card. */
+export function messagePush(cards: readonly [Notice, ...Notice[]], lead: string): PushMessage {
+	const { kind, url, ts, id } = decisionPush(cards[0]), lines = lead ? [lead] : [];
+	for (const n of cards) {
+		const line = `· ${plain(n.title, 60)}`;
+		if ([...lines, line].join("\n").length > GROUP_BODY) break;
+		lines.push(line);
+	}
+	return { kind, title: webText("notice.push.decisions", { n: cards.length }), body: lines.join("\n"), url, ...(ts ? { ts } : {}), ...(id ? { id } : {}), tag: `decision-msg:${msgKey(cards[0])}` };
+}
+function pushHeld(): void {
+	const cards = held.filter(isOpenDecision);
+	held = [];
+	for (const [k, [first, ...rest]] of Map.groupBy(cards, n => (!n.decision?.draft && opening.has(msgKey(n)) ? msgKey(n) : n.id))) {
+		const lead = opening.get(k);
+		if (!first) continue;
+		if (!rest.length || lead === undefined) void notify(decisionPush(first));
+		else void notify(messagePush([first, ...rest], lead));
+	}
+	opening.clear();
+}
+
 // Taking back what was handled (owner 2026-10-28: "완료된건데 확인이 필요하다고 막 이러면 좀 헷갈려"): every tag a device was shown is remembered with the
 // endpoints it reached, and once its matter is settled (a decision answered or dismissed, a conversation read) those devices close it. Apple's push
 // service revokes a subscription whose push shows nothing (webkit.org/blog/16535), so an Apple endpoint is never sent a bare withdraw: its owed
@@ -298,7 +328,8 @@ export function staleTags(e: Record<string, unknown>): string[] {
 		if (n.decision.state === "open" && !n.dismissed && !laterOn(n.decision)) return [];
 		// Its app's grouped notification goes too once no approval of that app is open (the group is asked as if this one were still open; it is not counted).
 		const group = n.decision.draft ? confirmGroup({ ...n, decision: { ...n.decision, state: "open" } }) : undefined;
-		return [`decision:${n.id}`, ...(group && group.count === 0 ? [`decision-group:${group.key}`] : [])];
+		const msgTag = `decision-msg:${msgKey(n)}`, more = shown.has(msgTag) && openDecisionNotices().some(i => i.id !== n.id && msgKey(i) === msgKey(n) && !laterOn(i.decision));
+		return [`decision:${n.id}`, ...(group && group.count === 0 ? [`decision-group:${group.key}`] : []), ...(shown.has(msgTag) && !more ? [msgTag] : [])];
 	}
 	if (e.kind === "read" && typeof e.target === "string") {
 		const t = e.target;
@@ -598,12 +629,16 @@ export function startPush(opts: { subject: () => string }): void {
 	// bell notice, fed the same way) never reaches a device ahead of the message it is about.
 	onEmit(e => {
 		if (e.kind === "message" && e.source === "web") ownerAt = Date.parse(String(e.ts)) || Date.now();
-		const m = classify(e, ownerAt ? Date.now() - ownerAt : undefined);
+		const m = classify(e, ownerAt ? Date.now() - ownerAt : undefined), ds = decisionsOf(e);
+		if (ds.length > 1) for (const d of ds) opening.set(msgKey({ at: String(e.ts), decision: d }), leadOf(typeof e.text === "string" ? e.text : ""));
 		// A message that becomes a decision notice (an [ask] or a choice block) is pushed by onDecision below (one push, with the options), not twice.
 		// The reply to a choice-button answer is quiet (notices.ts answerReply).
-		if (m && !decisionsOf(e).length && !answerReply(e)) notify(m);
+		if (m && !ds.length && !answerReply(e)) notify(m);
 	});
-	onDecision(n => notify(decisionPush(n)));
+	onDecision(n => {
+		if (!held.length) queueMicrotask(pushHeld);
+		held.push(n);
+	});
 	onHalfTime(n => notify(halfTimePush(n)));
 	onNoticeUnread(n => {
 		const m = noticePush(n);

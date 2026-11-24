@@ -28,6 +28,10 @@
   "notice.push.alert": "{name} · Alert",
   "notice.push.mail": "{name} · New mail",
   "notice.push.decision": "Needs your answer",
+  "notice.push.decisions": {
+    "one": "Needs {n} answer",
+    "other": "Needs {n} answers"
+  },
   "notice.push.fail": "{name} · Failed",
   "notice.push.done": "{name} · Done",
   "notice.push.check": "{name} · Needs a look",

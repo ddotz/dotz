@@ -4,13 +4,43 @@ import { createECDH } from "node:crypto";
 import { readFileSync, writeFileSync } from "node:fs";
 import { CONFIG_FILE, NAME, paths } from "./config.ts";
 import { emit, lastEventId, recentEvents, replayAfter } from "./events.ts";
-import { type Notice, onDecision, setWatchLabelResolver } from "./notices.ts";
+import { dismissNotice, laterNotice, type Notice, onDecision, setWatchLabelResolver, sweepQuestions } from "./notices.ts";
 import { type RouteInput, route } from "./notify-route.ts";
 import { answersReach, classify, decisionPush, LONG_TURN_MS, notify, pushRoute, resetPushDedupeForTest, setRelayPeers, startPush, withdraw } from "./push.ts";
 import { flush } from "./runtime/test-clock.ts";
 import { b64u } from "./webpush.ts";
 
 const ev = (e: Record<string, unknown>) => ({ ts: "2026-10-20T00:00:00Z", kind: "out", source: "orchestrator", text: "", ...e });
+let started = false;
+const startOnce = () => {
+	if (!started) startPush({ subject: () => "mailto:t@example.com" });
+	started = true;
+};
+async function pushesOf(lane: string, run: () => unknown): Promise<Array<Record<string, unknown>>> {
+	const got: Array<Record<string, unknown>> = [];
+	startOnce();
+	setRelayPeers(async () => [{ name: "me", host: "me.example.net", url: "https://me.example.net", self: true }, { name: "peer", host: "peer.example.net", url: "https://peer.example.net", self: false }]);
+	const real = globalThis.fetch;
+	globalThis.fetch = (async (url: string, init?: { body?: string }) => {
+		const sent = String(url).endsWith("/api/push/relay") && init?.body ? (JSON.parse(init.body) as Record<string, unknown>) : undefined;
+		if (sent?.via === "app" && String(sent.url).includes(`#chat/lane:${lane}`)) got.push(sent);
+		return Response.json({ served: [] });
+	}) as unknown as typeof fetch;
+	try {
+		await run();
+		await flush(30);
+	} finally {
+		globalThis.fetch = real;
+		setRelayPeers(async () => []);
+	}
+	return got;
+}
+const cardsOf = (n: number) => Array.from({ length: n }, (_, i) => `결정: ${i + 1}번 규칙 줄을 제안대로 고칠까요?\n**1) 고쳐요**\n제안한 대로 글을 고쳐요.\n**2) 그대로 둬요**\n글은 지금 그대로 남아요.`).join("\n\n");
+const ask = (lane: string, ts: string, text: string) => emit("outbox", { ts, kind: "out", source: `lane:${lane}`, target: `lane:${lane}`, text });
+const opened: Notice[] = [];
+onDecision(n => void opened.push(n));
+const cardsIn = (lane: string) => opened.filter(n => n.decision?.to === `lane:${lane}`);
+const settle = (lane: string) => cardsIn(lane).forEach(n => dismissNotice(n.id));
 
 test("a web answer notifies only when it finishes work or needs the owner; a quick reply does not", () => {
 	expect(classify(ev({ target: "web", text: "네, 맞아요" }), 5_000)).toBeUndefined();
@@ -159,7 +189,7 @@ test("the push for an out message leaves only after the message is persisted and
 	ua.generateKeys();
 	const endpoint = "https://push.example.net/order";
 	await pushRoute(new Request("http://x/api/push/subscribe", { method: "POST", body: JSON.stringify({ subscription: { endpoint, keys: { p256dh: b64u(ua.getPublicKey()), auth: b64u(Buffer.alloc(16, 5)) } } }) }), new URL("http://x/api/push/subscribe"));
-	startPush({ subject: () => "mailto:t@example.com" });
+	startOnce();
 	const ts = "2026-10-21T04:16:20.125Z", before = lastEventId();
 	let seen: { persisted: boolean; recent: boolean; replayable: boolean } | undefined;
 	const real = globalThis.fetch;
@@ -272,4 +302,36 @@ test("PUT /api/push/classes answers an error and leaves a corrupt config.json un
 	} finally {
 		writeFileSync(CONFIG_FILE, saved);
 	}
+});
+
+test("a message that opens seven cards is one push: the count in its title, its first line and the first card titles in its body, opening its first card", async () => {
+	const ts = "2026-11-24T00:31:00.000Z";
+	const pushes = await pushesOf("u7-seven", () => ask("u7-seven", ts, `[ask] 점검: 정할 것이 7가지 있어요.\n- 하루 사이에 4번 다시 시작했어요.\n\n${cardsOf(7)}`));
+	const cards = cardsIn("u7-seven");
+	expect(cards).toHaveLength(7);
+	expect(pushes).toHaveLength(1);
+	expect(pushes[0]).toMatchObject({ kind: "ask", title: "답변이 7개 필요해요", url: `/?m=${encodeURIComponent(ts)}&n=${cards[0]!.id}#chat/lane:u7-seven`, tag: `decision-msg:lane:u7-seven@${ts}` });
+	expect(String(pushes[0]!.body).split("\n").slice(0, 3)).toEqual(["점검: 정할 것이 7가지 있어요.", "· 1번 규칙 줄을 제안대로 고칠까요?", "· 2번 규칙 줄을 제안대로 고칠까요?"]);
+	expect(String(pushes[0]!.body).length).toBeLessThanOrEqual(180);
+	settle("u7-seven");
+});
+
+test("a message that opens one card pushes that card as before: its title, its decision line and its own tag", async () => {
+	const ts = "2026-11-24T00:32:00.000Z";
+	const pushes = await pushesOf("u7-one", () => ask("u7-one", ts, `[ask] 하나만 물을게요.\n\n${cardsOf(1)}`));
+	const [card] = cardsIn("u7-one");
+	expect(pushes).toHaveLength(1);
+	expect(pushes[0]).toMatchObject({ kind: "ask", title: "답변이 필요해요", body: "1번 규칙 줄을 제안대로 고칠까요?", url: `/?m=${encodeURIComponent(ts)}&n=${card!.id}#chat/lane:u7-one`, tag: `decision:${card!.id}`, id: card!.id });
+	settle("u7-one");
+});
+
+test("a card of a grouped message that comes back after 나중에 pushes alone, as its own card", async () => {
+	const ts = "2026-11-24T00:33:00.000Z";
+	expect(await pushesOf("u7-later", () => ask("u7-later", ts, `[ask] 두 가지예요.\n\n${cardsOf(2)}`))).toHaveLength(1);
+	const [card] = cardsIn("u7-later");
+	expect(laterNotice(card!.id, { for: "hour" }).status).toBe(200);
+	const woke = await pushesOf("u7-later", () => sweepQuestions(new Date(Date.parse(card!.decision!.later_until!) + 1000).toISOString()));
+	expect(woke).toHaveLength(1);
+	expect(woke[0]).toMatchObject({ title: "답변이 필요해요", body: "1번 규칙 줄을 제안대로 고칠까요?", tag: `decision:${card!.id}` });
+	settle("u7-later");
 });
