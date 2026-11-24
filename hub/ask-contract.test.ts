@@ -53,3 +53,67 @@ test("a question an [ask] answers itself with a list, above its card, is no unre
 	expect(unreadQuestions(text)).toEqual([]);
 	expect(askFault(text)).toBeUndefined();
 });
+
+const titleOf = (n: number): string => {
+	const subject = "sample-2 알림 문구", question = " · 문구를 바꿀까요?";
+	return subject + "긴".repeat(n - [...subject].length - [...question].length) + question;
+};
+const cardOf = (title: string, own = ""): string => `결정: ${title}\n${own ? `${own}\n` : ""}**1) 바꿔요**\n버튼 문구가 바뀌어요\n**2) 그대로 둬요**\n아무것도 안 바뀌어요`;
+
+test("a card title over 60 characters is too long to read at a glance; 60 or fewer is not", () => {
+	expect([...titleOf(61)].length).toBe(61);
+	expect(askFault(`[ask] 정리했어요.\n\n${cardOf(titleOf(61))}`)).toEqual({ kind: "long", title: titleOf(61) });
+	for (const n of [40, 60]) expect(askFault(`[ask] 정리했어요.\n\n${cardOf(titleOf(n))}`)).toBeUndefined();
+});
+
+test("several cards that all show only the shared lead are a fault; one line of a card's own under its head or after its options is enough", () => {
+	const three = (own: string[]) => `[ask] 정할 게 세 가지예요.\n\n${["백업 위치 · 옮길까요?", "알림 시각 · 바꿀까요?", "로그 보관 · 줄일까요?"].map((t, i) => cardOf(t, own[i])).join("\n\n")}\n\n번호로 답해 주세요.`;
+	expect(askFault(three([]))).toEqual({ kind: "lead", cards: 3 });
+	expect(askFault(`${three([])}\n-# 근거: 테스트 3개 통과`)).toEqual({ kind: "lead", cards: 3 });
+	expect(askFault(three(["디스크 92% 찼어요(어제부터)", "지금 08:00, 11-20부터", "`~/.dotz/logs` 4.1GB"]))).toBeUndefined();
+	expect(askFault(three(["", "", "지금 08:00, 11-20부터"]))).toBeUndefined();
+	expect(askFault(three([]).replace("아무것도 안 바뀌어요\n\n결정: 알림", "아무것도 안 바뀌어요\n지금은 08:00에 와요\n\n결정: 알림"))).toBeUndefined();
+	expect(askFault(`[ask] 정할 게 하나예요.\n\n${cardOf("백업 위치 · 옮길까요?")}`)).toBeUndefined();
+});
+
+test("the shared-lead rule reads any closing line as one, including the English closing MODE asks for", () => {
+	const ko = `[ask] 정할 게 세 가지예요.\n\n${["백업 위치 · 옮길까요?", "알림 시각 · 바꿀까요?", "로그 보관 · 줄일까요?"].map(t => cardOf(t)).join("\n\n")}`;
+	for (const close of ["각각 번호로 골라 주세요.", "추천: 둘 다 1번이에요."]) expect(askFault(`${ko}\n\n${close}`)).toEqual({ kind: "lead", cards: 3 });
+	const enCard = (t: string) => `결정: ${t}\n**1) Change it**\nThe button text changes\n**2) Leave it**\nNothing changes`;
+	const en = `[ask] Three things to settle.\n\n${["Backup location · move it?", "Alert time · change it?", "Log retention · shorten it?"].map(enCard).join("\n\n")}\n\nReply with the numbers.`;
+	expect(askFault(en)).toEqual({ kind: "lead", cards: 3 });
+	expect(askFault(en.replace("**1) Change it**\nThe button text changes\n**2) Leave it**\nNothing changes\n\n결정: Alert", "**1) Change it**\nThe button text changes\n**2) Leave it**\nNothing changes\nThe disk is 92% full since yesterday\n\n결정: Alert"))).toBeUndefined();
+});
+
+test("a card title is counted as the owner reads it: a markdown link counts as its text, not its URL", () => {
+	const shown = "PR #1234 백업 경로 정리 · 머지할까요?";
+	const linked = `[PR #1234 백업 경로 정리](https://github.com/example-owner/example-repo/pull/1234) · 머지할까요?`;
+	expect([...linked].length).toBeGreaterThan(60);
+	expect(askFault(`[ask] 정리했어요.\n\n${cardOf(linked)}`)).toBeUndefined();
+	const longLinked = `[${titleOf(61).split(" · ")[0]}](https://example.com/x) · ${titleOf(61).split(" · ")[1]}`;
+	expect(askFault(`[ask] 정리했어요.\n\n${cardOf(longLinked)}`)).toEqual({ kind: "long", title: titleOf(61) });
+	expect([...shown].length).toBeLessThan(60);
+});
+
+test("a label line under one card's options is that card's own line; only after the last card is it message-wide", () => {
+	const labelled = (labels: string[]) => `[ask] 정할 게 두 가지예요.\n\n${["백업 위치 · 옮길까요?", "로그 보관 · 줄일까요?"].map((t, i) => `${cardOf(t)}${labels[i] ? `\n${labels[i]}` : ""}`).join("\n\n")}\n\n번호로 답해 주세요.`;
+	expect(askFault(labelled(["영향: 외장 디스크가 꽂혀 있어야 해요", ""]))).toBeUndefined();
+	expect(askFault(labelled(["", "주의: 지운 로그는 되돌릴 수 없어요"]))).toEqual({ kind: "lead", cards: 2 });
+	expect(askFault(labelled(["", ""]))).toEqual({ kind: "lead", cards: 2 });
+});
+
+test("an English sentence that only mentions replying and numbers is not a closing line", () => {
+	const enCard = (t: string, own = "") => `결정: ${t}\n**1) Change it**\nThe button text changes\n**2) Leave it**\nNothing changes${own ? `\n${own}` : ""}`;
+	const two = (own: string) => `[ask] Two things to settle.\n\n${enCard("Backup location · move it?", own)}\n\n${enCard("Log retention · shorten it?")}`;
+	expect(askFault(two("Pick 1 if the numbers on the disk report worry you: 92% full since Monday"))).toBeUndefined();
+	expect(askFault(two(""))).toEqual({ kind: "lead", cards: 2 });
+	const list = "[done] Compared both exports.\n\nWhich format should the export use?\n1. JSON with numbers as strings\n2. CSV with one row per day";
+	expect(askFault(`${list}\n\nI'll reply with the numbers after the rerun.`)?.kind).toBe("unread");
+	expect(askFault(`${list}\n\nI'll rerun them after lunch.`)?.kind).toBe("unread");
+});
+
+test("a title link with a quoted link title counts as its text, as the push shows it", () => {
+	const linked = `[PR #1234 백업 경로 정리](https://github.com/example-owner/example-repo/pull/1234 "백업 경로를 한곳으로") · 머지할까요?`;
+	expect([...linked].length).toBeGreaterThan(60);
+	expect(askFault(`[ask] 정리했어요.\n\n${cardOf(linked)}`)).toBeUndefined();
+});

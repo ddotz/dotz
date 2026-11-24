@@ -59,6 +59,10 @@ function faultNote(fault: AskFault, text: string): string {
 			return msg().askUnread(fault.questions, text);
 		case "title":
 			return msg().askTitleRefused(fault.title, text);
+		case "long":
+			return msg().askLongTitleRefused(fault.title, text);
+		case "lead":
+			return msg().askLeadRefused(fault.cards, text);
 		case "prose":
 			return msg().askProseRefused(fault.line, text);
 	}

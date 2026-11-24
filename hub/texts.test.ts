@@ -71,6 +71,17 @@ test("the real catalogs: inboxMail can be overridden and youAre cannot", () => {
 	expect(textProblems(CATALOGS.ko, dir, LOCKED_TEXTS).map(p => `${p.key}:${p.kind}`)).toEqual(["youAre:locked"]);
 });
 
+test("the real catalogs: the notes that send a session's card back keep their own keys, so an install's wording for them applies", () => {
+	const keys = ["askRefused", "askTitleRefused", "askLongTitleRefused", "askLeadRefused", "askProseRefused"] as const;
+	for (const c of Object.values(CATALOGS)) for (const key of keys) expect(defaultHash(c, key, LOCKED_TEXTS)).toBeString();
+	write({ askTitleRefused: { text: "제목 {1}에 주제를 넣어 주세요.\n{2}", default: defaultHash(CATALOGS.ko, "askTitleRefused") } });
+	const t = applyTexts(CATALOGS.ko, dir, LOCKED_TEXTS);
+	expect(t.askTitleRefused("어떻게 할까요?", "본문")).toBe("제목 어떻게 할까요?에 주제를 넣어 주세요.\n본문");
+	expect(textProblems(CATALOGS.ko, dir, LOCKED_TEXTS)).toEqual([]);
+	for (const key of keys) setText(CATALOGS.ko, dir, key, `${key} {1}`, LOCKED_TEXTS);
+	expect(applyTexts(CATALOGS.ko, dir, LOCKED_TEXTS).askLeadRefused(3, "본문")).toBe("askLeadRefused 3");
+});
+
 test("the new-mail wake text names its conversation, the draft command and the revise marker in both languages", () => {
 	for (const c of Object.values(CATALOGS)) {
 		const t = c.inboxMail("th:7");

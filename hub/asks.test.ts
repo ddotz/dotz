@@ -285,6 +285,38 @@ test("a card from a session titled with no subject goes back once asking for its
 	expect(lane.pendingAsk?.text).toBe(generic);
 });
 
+test("a session's card titled over 60 characters goes back once naming the title; once sent back, a report whose cards share only the lead goes through", async () => {
+	const { lane, agent, reports } = await fresh("pl");
+	const title = "sample-2 알림 문구 · 화면은 작업내역, 알림은 작업 기록, Discord는 작업로그로 따로 부르는데 하나로 맞출까요?";
+	const long = `[ask] sample-2 이름을 정리했어요.\n\n결정: ${title}\n**1) 작업내역으로 맞춰요**\n세 곳 이름이 같아져요\n**2) 그대로 둬요**\n아무것도 안 바뀌어요`;
+	await said(agent, long);
+	await advance(500);
+	expect(reports).toEqual([]);
+	expect(agent.sent.at(-1)!.text).toContain(msg().askLongTitleRefused(title, long.slice(6)));
+	const count = agent.sent.length;
+	const shared = "[ask] 정할 게 두 가지예요.\n\n결정: 백업 위치 · 옮길까요?\n**1) 옮겨요**\n외장 디스크로 가요\n**2) 둬요**\n그대로예요\n\n결정: 로그 보관 · 줄일까요?\n**1) 줄여요**\n7일만 남아요\n**2) 둬요**\n그대로예요";
+	await said(agent, shared);
+	await advance(500);
+	expect(agent.sent.length).toBe(count);
+	expect(reports).toEqual([shared]);
+	expect(lane.pendingAsk?.text).toBe(shared);
+});
+
+test("a session's message of three cards with no line of their own goes back once asking for each card's lines; three cards with their own lines go through", async () => {
+	const cards = (own: string[]) => `[ask] 정할 게 세 가지예요.\n\n${["백업 위치 · 옮길까요?", "알림 시각 · 바꿀까요?", "로그 보관 · 줄일까요?"].map((t, i) => `결정: ${t}\n${own[i] ? `${own[i]}\n` : ""}**1) 바꿔요**\n고른 대로 바뀌어요\n**2) 둬요**\n그대로예요`).join("\n\n")}\n\n번호로 답해 주세요.`;
+	const { agent, reports } = await fresh("ps");
+	const bare = cards([]);
+	await said(agent, bare);
+	await advance(500);
+	expect(reports).toEqual([]);
+	expect(agent.sent.at(-1)!.text).toContain(msg().askLeadRefused(3, bare.slice(6)));
+	const owned = await fresh("pt");
+	const full = cards(["디스크 92% 찼어요(어제부터)", "지금 08:00, 11-20부터 이 시각이에요", "`~/.dotz/logs` 4.1GB"]);
+	await said(owned.agent, full);
+	await advance(500);
+	expect(owned.reports).toEqual([full]);
+});
+
 test("D3: a session's question whose list became no card goes back once, naming that question", async () => {
 	const { agent, reports } = await fresh("pq");
 	const two = "[ask] 정할 게 두 가지예요.\n\n배포 시각은 어느 쪽으로 할까요?\n- 오늘 밤에 바로 올려요.\n- 내일 아침에 올려요.\n\n결정: 백업 위치는 어디로 할까요?\n**1) 외장 디스크**\n**2) 클라우드**";

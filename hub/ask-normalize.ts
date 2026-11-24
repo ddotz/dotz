@@ -26,7 +26,7 @@ const HOW_PROCEED = /어떻게\s*(?:(?:진행|처리|반영|결정|마무리|정
 // Lines that may follow the list: attachments and role lines, then, after a blank line, a short "label: value" (대조표: `/tmp/...`).
 const META = /^\s*(?:-#\s*)?(?:[-*]\s+)?(?:\[file\]\s|근거:|출처:|Evidence:|Source:|For\s+\S+:|\S+\s몫:)/i;
 const LABELED = /^\s*[^\s:：|]{1,12}\s?[:：]\s/;
-const CLOSING = /^[^|]{0,60}(?:골라|알려|말씀|답해)\s*주(?:세요|시면|면)/;
+const CLOSING = /^(?:[^|]{0,60}(?:골라|알려|말씀|답해)\s*주(?:세요|시면|면)|\s*(?:please\s+)?(?:reply|answer|respond|pick)\b[^|:]{0,30}\bnumbers?\b[^|:]{0,20}$)/i;
 const NUMBERED = /^\s*(?:\*\*)?\s*(\d)[.)]\s*(.+)$/;
 const BULLET = /^\s*[-*•]\s+(.+)$/;
 const BOLD_LEAD = /^\s*\*\*[^*\s]/;
@@ -346,6 +346,39 @@ export function genericTitle(text: string): string | undefined {
 	});
 }
 
+/** The longest a card title may be before a session's report goes back: MODE asks for at most 40, this leaves room for a long subject. */
+export const MAX_CARD_TITLE_CHARS = 60;
+const MD_LINK = /\[([^\]]+)\]\([^)]+\)/g;
+/** The first card title in `text` longer than MAX_CARD_TITLE_CHARS: the owner reads the title as the whole question on his phone. */
+export function longTitle(text: string): string | undefined {
+	const p = parseTone(text);
+	if (parseDraftApproval(p.text)) return undefined;
+	return parseDecisions(p.text).blocks.map(b => b.title.replace(/\*\*/g, "").replace(MD_LINK, "$1").trim()).find(t => [...t].length > MAX_CARD_TITLE_CHARS);
+}
+
+/** The number of cards in `text` when there are two or more and none has a line of its own (under its `결정:` head, or after its options apart from
+ *  closing, evidence and "For" lines, and a "label: value" line after the last card): every card would show only the shared lead. 0 otherwise. */
+export function sharedLeadCards(text: string): number {
+	const p = parseTone(text);
+	const cards = parseDecisions(p.text).blocks.length;
+	if (cards < 2 || parseDraftApproval(p.text)) return 0;
+	const lines = p.text.split("\n");
+	const fenced = fenceMap(lines);
+	const lastHead = lines.findLastIndex((line, i) => !fenced[i] && DECISION_HEAD.test(line));
+	let at: "lead" | "head" | "options" = "lead";
+	for (let i = 0; i < lines.length; i++) {
+		const line = lines[i]!;
+		if (!fenced[i] && DECISION_HEAD.test(line)) at = "head";
+		else if (!fenced[i] && at !== "lead" && D_OPT.test(line)) {
+			at = "options";
+			const next = lines[i + 1];
+			if (next?.trim() && !fenced[i + 1] && !D_OPT.test(next) && !DECISION_HEAD.test(next) && !D_CLOSE.test(next)) i++;
+		} else if (at === "head" && line.trim()) return 0;
+		else if (at === "options" && line.trim() && !isForLine(line) && (!isTail(line) || (i < lastHead && !META.test(line) && !D_CLOSE.test(line) && !CLOSING.test(line)))) return 0;
+	}
+	return cards;
+}
+
 /** The questions of `text` with a list of their own under them that no card came from (a list shape the parser does not read): the owner would answer only the cards. */
 export function unreadQuestions(text: string): string[] {
 	const { tone, rest } = splitTone(text);
@@ -370,13 +403,23 @@ export function unreadQuestions(text: string): string[] {
 	return out;
 }
 
-export type AskFault = { kind: "unread"; questions: string[] } | { kind: "title"; title: string } | { kind: "prose"; line: string };
-/** What keeps the owner from answering a message on the spot, checked in this order: a question whose list became no card, a card titled with no subject, a request in words alone. */
+export type AskFault =
+	| { kind: "unread"; questions: string[] }
+	| { kind: "title"; title: string }
+	| { kind: "long"; title: string }
+	| { kind: "lead"; cards: number }
+	| { kind: "prose"; line: string };
+/** What keeps the owner from answering a message on the spot, checked in this order: a question whose list became no card, a card titled with no subject,
+ *  a card title too long to read at a glance, several cards with no line of their own, a request in words alone. */
 export function askFault(text: string): AskFault | undefined {
 	const questions = unreadQuestions(text);
 	if (questions.length) return { kind: "unread", questions };
 	const title = genericTitle(text);
 	if (title !== undefined) return { kind: "title", title };
+	const long = longTitle(text);
+	if (long !== undefined) return { kind: "long", title: long };
+	const cards = sharedLeadCards(text);
+	if (cards) return { kind: "lead", cards };
 	const line = proseAsk(text);
 	return line ? { kind: "prose", line } : undefined;
 }
