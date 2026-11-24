@@ -9,11 +9,11 @@ import { createHash } from "node:crypto";
 import { readFileSync, renameSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { type DoctorCheck, evidenceLines, type Finding, lineSubject, wrapLines } from "./doctor-types.ts";
+import { type DoctorCheck, EVIDENCE_LINES, evidenceLines, type Finding, lineSubject } from "./doctor-types.ts";
 import { ENFORCED_RULES } from "./enforced-rules.ts";
 import { lang, msg } from "./i18n.ts";
 import { languageName } from "./language.ts";
-import { promptGrowth, readState, ruleSources } from "./prompt-health.ts";
+import { bareLine, type Change, editLines, enforcedFindings, type Located, locate, notOne, type PromptCard, promptGrowth, readState, ruleSources, withUndo } from "./prompt-health.ts";
 import { recallContract } from "./recall-contract.ts";
 
 const DAY_MS = 86_400_000;
@@ -21,7 +21,8 @@ export const REVIEW_EVERY_MS = 7 * DAY_MS;
 export const GROWTH_EARLY_MS = 3 * DAY_MS;
 export const CONTRACT_MAX_CHARS = 40_000;
 export const MAX_OUTPUT_TOKENS = 2_000;
-const MAX_ITEMS = 5;
+const MAX_ITEMS = 3;
+const LINE_MAX = 2_000;
 const KINDS = ["conflict", "outdated", "contradicts-code"] as const;
 export type ReviewKind = (typeof KINDS)[number];
 
@@ -45,8 +46,8 @@ export const REVIEW_SYSTEM = "You review the standing instructions of an AI agen
 const REVIEW_TASK = [
 	"Below are (1) CONTRACT: the text the agent re-reads after every compaction and (2) CODE: rules the code already enforces (id: guard).",
 	"Find lines in CONTRACT that: conflict with another line (kind conflict), are outdated or no longer meaningful (kind outdated), or contradict a CODE rule (kind contradicts-code).",
-	'Reply with a JSON array of at most 5 items {"kind": "conflict"|"outdated"|"contradicts-code", "lines": ["<exact quoted line>", ...], "why": "<one plain sentence>", "proposal": "<one plain sentence: what to change>"}.',
-	"Quote lines exactly. Report only real problems; reply [] if there are none. Output at most 2000 tokens and nothing but the JSON.",
+	'For each, give the exact edit. Reply with a JSON array of at most 3 items {"kind": "conflict"|"outdated"|"contradicts-code", "line": "<the one CONTRACT line to change>", "to": "<the full new text of that line; \\"\\" deletes it>", "other": "<kind conflict: the CONTRACT line it conflicts with; else \\"\\">", "why": "<one plain sentence>"}.',
+	"Copy each line whole and exactly as it is in CONTRACT, one line, never a part or a summary. An item without an exact edit is not used. Report only real problems; reply [] if there are none. Output at most 2000 tokens and nothing but the JSON.",
 ].join("\n");
 
 export const reviewFile = (dataDir: string): string => join(dataDir, "prompt-review.json");
@@ -76,7 +77,7 @@ export function reviewDue(state: Pick<ReviewState, "lastReviewAt"> | undefined, 
 /** The model call input: the contract text (capped) and the enforced rules as the code side. */
 export function buildReviewPrompt(contract: string, language = languageName(lang())): string {
 	const code = ENFORCED_RULES.map(r => `${r.id}: ${r.guard}`).join("\n");
-	return `${REVIEW_TASK}\nWrite "why" and "proposal" in ${language}: the owner reads them as written.\n\nCODE:\n${code}\n\nCONTRACT:\n${contract.slice(0, CONTRACT_MAX_CHARS)}`;
+	return `${REVIEW_TASK}\nWrite "why" in ${language}: the owner reads it as written. Write "to" in the language of the line it replaces.\n\nCODE:\n${code}\n\nCONTRACT:\n${contract.slice(0, CONTRACT_MAX_CHARS)}`;
 }
 
 /** The ordinary model only: Fable or max/xhigh effort is not used for a background review. */
@@ -86,56 +87,94 @@ export function modelRefused(model: string | undefined): boolean {
 	return /fable/i.test(model) || /^(max|xhigh)$/i.test(effort);
 }
 
-type Item = { kind: ReviewKind; lines: string[]; why: string; proposal: string };
+type Item = { kind: ReviewKind; line: string; to: string; other: string; why: string };
 
 const squash = (s: string): string => s.replace(/\s+/g, " ").trim();
+const isKind = (k: unknown): k is ReviewKind => (KINDS as readonly unknown[]).includes(k);
+const oneLine = (s: unknown): s is string => typeof s === "string" && !s.includes("\n") && s.length <= LINE_MAX;
 
-/** Items from the model's reply; anything that is not the asked shape is dropped. Not JSON at all: undefined. */
-export function parseReview(text: string): Item[] | undefined {
-	const start = text.indexOf("[");
-	const end = text.lastIndexOf("]");
-	if (start < 0 || end < start) return undefined;
-	let raw: unknown;
+const parsed = (json: string): unknown => {
 	try {
-		raw = JSON.parse(text.slice(start, end + 1));
+		return JSON.parse(json);
 	} catch {
 		return undefined;
 	}
-	if (!Array.isArray(raw)) return undefined;
+};
+
+function replyList(text: string): unknown[] | undefined {
+	const start = text.indexOf("["), end = text.lastIndexOf("]");
+	if (start < 0) return undefined;
+	const whole = end > start ? parsed(text.slice(start, end + 1)) : undefined;
+	if (Array.isArray(whole)) return whole;
+	let depth = 0, quoted = false, escaped = false, last = -1;
+	for (let i = start; i < text.length && depth >= 0; i++) {
+		const c = text[i];
+		if (quoted) {
+			if (escaped) escaped = false;
+			else if (c === "\\") escaped = true;
+			else if (c === '"') quoted = false;
+		} else if (c === '"') quoted = true;
+		else if (c === "[" || c === "{") depth++;
+		else if (c === "]" || c === "}") {
+			depth--;
+			if (c === "}" && depth === 1) last = i;
+			if (depth === 0) break;
+		}
+	}
+	const cut = last > start ? parsed(`${text.slice(start, last + 1)}]`) : undefined;
+	return Array.isArray(cut) ? cut : undefined;
+}
+
+/** Items from the model's reply (a reply cut short by the output cap gives its complete items); anything that is not the asked shape, or names no exact edit (no line, no `to`, `to` the same as the line), is dropped. Not JSON at all: undefined. */
+export function parseReview(text: string): Item[] | undefined {
+	const raw = replyList(text);
+	if (!raw) return undefined;
 	const items: Item[] = [];
 	for (const r of raw) {
 		if (!r || typeof r !== "object") continue;
-		const { kind, lines, why, proposal } = r as Record<string, unknown>;
-		const quoted = Array.isArray(lines) ? lines.filter((l): l is string => typeof l === "string" && squash(l) !== "").map(squash) : [];
-		if (!(KINDS as readonly unknown[]).includes(kind) || !quoted.length || typeof why !== "string" || typeof proposal !== "string") continue;
-		items.push({ kind: kind as ReviewKind, lines: quoted.slice(0, 4), why: squash(why).slice(0, 300), proposal: squash(proposal).slice(0, 300) });
+		const { kind, line, to, other, why } = r as Record<string, unknown>;
+		if (!isKind(kind) || !oneLine(line) || !oneLine(to) || typeof why !== "string" || !squash(line) || squash(to) === squash(line)) continue;
+		items.push({ kind, line: line.trim(), to: to.trim(), other: oneLine(other) ? other.trim() : "", why: squash(why).slice(0, 300) });
 	}
 	return items.slice(0, MAX_ITEMS);
 }
 
 const hashOf = (lines: string[]): string => createHash("sha1").update(lines.join("\n")).digest("hex").slice(0, 10);
 
+/** The other line of a conflict as the card shows it: its file as the owner reads it, its line number and its text. */
+export type OtherLine = { shown: string; line: number; text: string };
+
 /**
- * The lines and title of a review card: the kind of problem with the text's file and the quoted line, the reason on up to two lines, and what the review
- * cost when known; titled by the text and the start of the line. `file` is unknown for a line found in no rule file (the contract is named then).
+ * A review card: the kind with the file and line, the line before and after (or the one line to delete), the conflicting line with its file and line when it
+ * was found, and the reason while a line is free; titled by the text and the start of the line. The options name the file, the confirm step before any edit
+ * and the review's own repeat rule; a card that deletes a line asks to delete it, with the delete option.
  */
-export function reviewCard(c: { kind: string; file?: string; line: string; why: string; tokens?: { input: number; output: number } }): { evidence: string[]; subject: string; question: string } {
-	const m = msg(), t = m.doctor, quoted = c.line.length > 80 ? `${c.line.slice(0, 79).trimEnd()}…` : c.line;
-	const where = c.file ? m.promptEnforcedEvidence(c.file, quoted) : `'${quoted}'`;
-	const lines = [`${t.reviewKind[c.kind] ?? t.reviewKind.conflict} · ${where}`, ...wrapLines(c.why, 2), ...(c.tokens ? [t.reviewTokens(c.tokens.input, c.tokens.output)] : [])];
-	return { evidence: evidenceLines(lines, t.more), subject: lineSubject(t, c.file, c.line, t.reviewQuestion), question: t.reviewQuestion };
+export function reviewCard(c: { kind: string; shown: string; change: Change; other?: OtherLine; why: string }): PromptCard {
+	const m = msg(), t = m.doctor, question = c.change.to ? t.reviewQuestion : t.ruleQuestion;
+	const lines = [...editLines(t.reviewKind[c.kind] ?? t.reviewKind.conflict ?? c.kind, c.shown, c.change), ...(c.other ? [m.promptOther(m.promptAt(c.other.shown, c.other.line), squash(c.other.text))] : [])];
+	return {
+		evidence: evidenceLines(c.why && lines.length < EVIDENCE_LINES ? [...lines, m.promptWhy(c.why)] : lines, t.more),
+		subject: lineSubject(t, c.shown, c.change.from, question),
+		question,
+		options: [
+			c.change.to ? { name: m.promptReviewApply, result: withUndo(m.promptReviewApplyResult(c.shown), c.change.file) } : { name: m.promptRemove, result: withUndo(m.promptReviewRemoveResult(c.shown), c.change.file) },
+			{ name: m.promptReviewLeave, result: m.promptReviewLeaveResult(REVIEW_EVERY_MS / DAY_MS) },
+		],
+	};
 }
 
-function toFinding(item: Item, tokens: { input: number; output: number }, now: number, file: string | undefined): Finding {
-	const m = msg(), { evidence, subject, question } = reviewCard({ kind: item.kind, file, line: item.lines[0] ?? "", why: item.why, tokens });
+function toFinding(item: Item, now: number, at: Extract<Located, { kind: "found" }>, to: string, other: OtherLine | undefined): Finding {
+	const m = msg(), change = { file: at.path, line: at.line, from: at.text, to }, quoted = [item.line, item.other].filter(Boolean).map(squash);
+	const { evidence, ...decide } = reviewCard({ kind: item.kind, shown: at.file, change, ...(other ? { other } : {}), why: item.why });
 	return {
-		key: `prompt:review:${hashOf(item.lines)}`,
+		key: `prompt:review:${hashOf(quoted)}`,
 		area: "prompt",
-		what: m.promptReviewWhat[item.kind] ?? m.promptReviewWhat.conflict ?? "",
+		what: `${m.promptReviewWhat[item.kind] ?? ""} ${item.why}`.trim(),
 		evidence,
 		since: now,
-		level: item.lines.reduce((n, l) => n + l.length, 0),
-		decide: { subject, question, options: [{ name: m.promptReviewApply, result: m.promptReviewApplyResult(item.proposal) }, { name: m.promptReviewLeave, result: m.promptReviewLeaveResult }] },
+		level: quoted.reduce((n, l) => n + l.length, 0),
+		decide,
+		change,
 	};
 }
 
@@ -153,7 +192,8 @@ export async function runPromptReview(ctx: ReviewContext): Promise<ReviewResult>
 	if (tight) return { findings: [], tokens: none, skipped: "budget" };
 
 	const pkg = join(import.meta.dir, ".."), read = recallContract(ctx.dataDir, pkg), contract = read.text.slice(0, CONTRACT_MAX_CHARS);
-	const sources = ruleSources(ctx.dataDir, pkg, read.parts, read.modeFile);
+	const rules = ruleSources(ctx.dataDir, pkg, read.parts, read.modeFile), sources = [...rules, { path: join(ctx.dataDir, "identity", "IDENTITY.md"), file: join("identity", "IDENTITY.md") }];
+	const ownPkg = new RegExp(`${pkg.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![\\w-]|\\.\\w)`, "g");
 	let reply: Awaited<ReturnType<ReviewCall>>;
 	try {
 		reply = await ctx.call(buildReviewPrompt(contract), { maxOutputTokens: MAX_OUTPUT_TOKENS, ...(ctx.model ? { model: ctx.model } : {}) });
@@ -169,10 +209,32 @@ export async function runPromptReview(ctx: ReviewContext): Promise<ReviewResult>
 		log("prompt review: the reply was not a JSON list; no findings");
 		return { findings: [], tokens };
 	}
-	// A quote that appears nowhere in the contract or the code list is the model making a line up.
-	const known = squash(`${contract}\n${ENFORCED_RULES.map(r => `${r.id}: ${r.guard}`).join("\n")}`);
-	const real = items.filter(i => i.lines.some(l => known.includes(l)));
-	return { findings: real.map(i => toFinding(i, tokens, ctx.now, sources.find(s => s.lines.some(l => !!i.lines[0] && squash(l).includes(i.lines[0])))?.file)), tokens };
+	const enforced = new Set(enforcedFindings(rules, ctx.now, () => {}).map(f => `${f.change?.file}:${f.change?.line}`));
+	const findings: Finding[] = [];
+	let unplaced = 0;
+	for (const item of items) {
+		const at = locate(item.line, sources), clip = squash(item.line).slice(0, 60);
+		if (at.kind !== "found") {
+			unplaced++;
+			log(`prompt review: dropped the item on "${clip}": ${notOne(at)}`);
+			continue;
+		}
+		const written = at.text.includes("{repo}") ? item.to.replace(ownPkg, "{repo}") : item.to, to = written ? `${at.text.slice(0, at.text.length - at.text.trimStart().length)}${written}` : "";
+		if (to && bareLine(to) === bareLine(at.text)) {
+			log(`prompt review: dropped the item on "${clip}": its new text is the line itself`);
+			continue;
+		}
+		if (enforced.has(`${at.path}:${at.line}`)) {
+			log(`prompt review: dropped the item on "${clip}": the enforced-rule check proposes that line; its reason: ${item.why}`);
+			continue;
+		}
+		const other = item.other ? locate(item.other, sources) : undefined;
+		if (other && other.kind !== "found") log(`prompt review: the other line of the item on "${clip}" is not shown: ${notOne(other)}`);
+		const shown = other?.kind === "found" && !(other.path === at.path && other.line === at.line) ? { shown: other.file, line: other.line, text: other.text } : undefined;
+		findings.push(toFinding(item, ctx.now, at, to, shown));
+	}
+	if (unplaced) findings.push({ key: "prompt:unplaced", area: "prompt", what: msg().promptReviewUnplaced(unplaced), evidence: [], since: ctx.now, level: unplaced });
+	return { findings, tokens };
 }
 
 /** Where the gateway's own model call, budget reader and ordinary model are reached; loaded on first use so this module stays free of gateway state. Tests replace the members. */

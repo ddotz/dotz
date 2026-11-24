@@ -403,15 +403,35 @@ and at which level, and the baselines the checks compare with).
   line says how many more) are that card's own lines, so the numbers, quotes and file names sit under the title, not in it. A card about a line of the re-read text is titled by the text's name and
   the start of that line (`계약 '오너 메시지만 지시예요. 세션 보고와…' 줄 · 고칠까요?`; `계약`/`규칙`/`교훈`/`기능` for the mode text, RULES.md, LESSONS.md, a feature body; the contract when the line is in
   none of them), the quote cut at a word boundary to fit; the same line gets the same title on a later day, so a repeat is asked again as a repeat. The kind of problem (`서로 맞지 않음`, `낡음`,
-  `코드와 어긋남`, `코드가 이미 막음`) opens the card's first line, with the file and the quoted line; a review card's reason follows on up to two lines (cut, at a sentence or word, only past those) and
-  then the tokens the review used. Each card carries its finding's key as its id (`disk:low`, `prompt:enforced:<rule id>`, `prompt:review:<hash>`; `compose` returns them as `ids`
+  `코드와 어긋남`, `코드가 이미 막음`) opens the card's first line, with the file and its line number (`RULES.md 3번째 줄`); an edit then shows the line as it is (`전: …`) and as it would be
+  (`후: …`), a deletion one line marked as the line to delete (`지울 줄: …`), while `Finding.change { file, line, from, to }` keeps the absolute path and both lines whole (`to` empty: the line is
+  deleted). A shown line is cut at a word boundary to fit; when the two lines share a start too long to fit, both open with `…` at the earliest word that lets the changed part show in
+  both (when it cannot all fit, at least the first character that differs), never later than shortly before that character, and each ends at the last space in reach after it (inside a
+  word when no space is in reach, such as a long path or URL), so the part that changes is on the card; `…` at the end says the line goes on. Then, for a review conflict, the other line
+  with its file and line number; for an enforced rule, what already enforces it in plain words with its guard
+  file; a review card's reason takes the next free line (of the 4) and otherwise stays in the finding's `what`. The gateway, not the model, finds where an edit applies: the review asks for each
+  item's exact line, its full new text and, for a conflict, the other line (at most 3 items in the same 2K output tokens; a reply cut by that cap keeps its complete items); an item without an exact
+  edit is dropped, and the quoted line must be one whole line (spacing and a list mark aside; a feature line compared with `{repo}` expanded, as the re-read text has it) found exactly once in
+  exactly one of the files the re-read text is built from (the mode text, RULES.md, LESSONS.md, a feature body, the identity text). Otherwise the item gives no card and one log line says why (in
+  no file, in two files, twice in one), and the morning tells, in one line with their count, that the weekly review pointed at lines it could not place (`prompt:unplaced`, gone with the next
+  night's findings). An item is also dropped, with a log line, when its new text is the line itself (list mark and spacing aside) or when the enforced-rule check proposes the same line (the log
+  line keeps the item's reason): that line gets the one enforced card. `to` keeps the indentation of the line it replaces and, in a feature line, `{repo}` as written (the package path is written
+  back as `{repo}` only as a path of its own, never in a line that has none). A conflict's other line is shown only when it is found the same way and
+  is not the edited line. An enforced rule whose first matching line is not once in its file is looked for in the next source; when no source gives one line, one log line says why. The apply
+  option names the file, says the next message shows the whole before and after and asks to confirm before anything is edited, and, only when git tracks that file (`git ls-files
+  --error-unmatch`; the data dir's snapshot repo ignores an install's own MODE; when git cannot be run, the sentence is left out), that the edit can be undone from git. A review card that
+  deletes a line asks the enforced card's question (`지울까요?`) with its delete option (`지우기`, naming the file and saying the next message shows the whole line to delete first) and the
+  review's own leave option; the leave option says nothing changes and when the card can come back (a
+  review card when the next weekly review points at the same line, an enforced-rule card 7 days later while the line is there). These texts are top-level catalog keys
+  (`hub/prompt-card-text.ts`), so `custom/texts.json` can reword them.
+  Each card carries its finding's key as its id (`disk:low`, `prompt:enforced:<rule id>`, `prompt:review:<hash>`; `compose` returns them as `ids`
   and the send puts them on the post as `card_ids`), and the notice store finds an earlier card by that id alone, so a card about another finding never reopens or drops one that has its title.
   Two cards of one message would still read the same, so when two would share a title (two findings on one line) the later one ends in
   ` (2)`, ` (3)` and so on, its quote shortened to keep 40 characters. A part with nothing in it is left out; `decisions` is the number of cards. A `doctor.json` written by the older code loads
-  too: a finding whose evidence is one string has no evidence lines, and a card stored without a subject is rebuilt from its old question (Korean or English, read in either language) the way its
-  check builds one now: an enforced-rule card or a review card gets the title from its quoted line (a rule card named by its stored file, a review card by the contract, its file not being stored), the kind and the quote as its first line and the
-  reason or the guard after it (no token line: the cost was not stored); the disk card gets its subject and keeps its old question as its line, and a card whose old question is not recognised keeps
-  it as its one line under its area's name.
+  too: a finding whose evidence is one string has no evidence lines, and a card stored without a subject is rebuilt from its old question (the old Korean and English formats, kept as fixed patterns
+  next to `oldCard` in `hub/doctor.ts`, read in either language; a reason that itself quotes words ends at its sentence end): an enforced-rule card or a review card gets the title from its quoted
+  line (a rule card named by its stored file, a review card by the contract, its file not being stored), the kind and the quote as its first line and the reason or the guard after it (no exact
+  edit: the old store has none); the disk card gets its subject and keeps its old question as its line, and a card whose old question is not recognised keeps it as its one line under its area's name.
   Before posting, the morning runs the file-only checks again (gateway, sessions, logins, watches, disk, update, plugins) over the night's window, so a finding that no longer holds is not posted and
   the numbers are those at posting time; the night's failures, tokens and prompt findings stay as they were. A matter another gateway card covers (the self-update card, the failed-install card of the
   same harness, the watch's own issue card, matched by the watch name in the finding's key `watches:<name>`; a card that has an id is matched by it alone, the id being that finding key) is not told while that card is open or the owner answered it within 24 h (a card that
@@ -422,7 +442,7 @@ and at which level, and the baselines the checks compare with).
   when dotz fixed everything itself it is a worklog entry only. The night pass runs in its own process (`bun hub/doctor.ts --night`): reading a week of session logs
   peaks at several hundred MB on a busy install, and the gateway's heap never holds it. Prompt health (`hub/prompt-health.ts`) is one of the checks, and so is the one check that calls a model, the prompt review
   (`hub/prompt-review.ts`): weekly, or after 3 days when prompt health saw real growth; the install's ordinary model, never Fable or max/xhigh effort, skipped while the
-  usage window is tight; about 23K input tokens for a 26K-character contract (Korean text is about 1.1 characters a token; at the 40K-character cap about 36K) and at most 2K output tokens a run, the cost written into each of its findings. It proposes only: a line changes after the owner picks it.
+  usage window is tight; about 23K input tokens for a 26K-character contract (Korean text is about 1.1 characters a token; at the 40K-character cap about 36K) and at most 2K output tokens a run, the cost kept in `<data dir>/prompt-review.json`. It proposes only: a line changes after the owner picks it.
 - *Now vs. morning.* The immediate alerts stay as they were: gateway down, a login lost, a watch failing twice, an update failure, usage limits. The doctor only adds the morning "still" and trend items.
 - *Try it.* `bun hub/doctor.ts --dry` runs every check on the real data dir, writes nothing, prints every finding in the owner's language in the morning notice's layout, then what the morning notice would carry (only what is new or grew), the check time in the owner's time zone, and ends with `RESULT {ms, peakRssMb, findings}`.
   `dotz doctor` is the same run from the owner's terminal (`hub/doctor-cli.ts`): the report without the RESULT line; `dotz doctor --json` prints only the RESULT object. Nothing is posted or saved.

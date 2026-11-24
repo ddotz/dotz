@@ -56,7 +56,6 @@ export const doctorEn = {
 	reviewQuestion: "Change it?",
 	texts: { mode: "Contract", rules: "Rules", lessons: "Lessons", feature: "Feature" },
 	lineSubject: (name: string, quote: string) => `${name} '${quote}'`,
-	reviewTokens: (input: number, output: number) => `This review used ${input} input and ${output} output tokens.`,
 	pluginNotLoaded: (file: string) => `A plugin did not load and is off: ${file}.`,
 };
 
@@ -110,6 +109,5 @@ export const doctorKo: typeof doctorEn = {
 	reviewQuestion: "고칠까요?",
 	texts: { mode: "계약", rules: "규칙", lessons: "교훈", feature: "기능" },
 	lineSubject: (name: string, quote: string) => `${name} '${quote}' 줄`,
-	reviewTokens: (input: number, output: number) => `이번 검토에 입력 ${input}, 출력 ${output} 토큰을 썼어요.`,
 	pluginNotLoaded: (file: string) => `불러오지 못해서 꺼진 플러그인이 있어요: ${file}.`,
 };

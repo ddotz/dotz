@@ -4,6 +4,7 @@ import { NAME, paths, tzLabel } from "./config.ts";
 import { askEn } from "./ask-text.ts";
 import { doctorEn } from "./doctor-text.ts";
 import { LESSONS_MAX_BYTES } from "./prompt-budget.ts";
+import { promptCardEn } from "./prompt-card-text.ts";
 import type { ContractArgs, FileText, HelpText, LaneFooterArgs, RecallArgs, SettingText, WorktreeArgs } from "./i18n.ts";
 import { OMO_WORDS, type WorkerWords } from "./worker-words.ts";
 import type { FailClass, HealTurnArgs } from "./watch-heal.ts";
@@ -396,22 +397,11 @@ Do this, briefly:
 	promptGrew: (label: string | undefined, from: number, to: number, date: string) => `The re-read text${label ? ` (${label})` : ""} grew from ${from.toLocaleString("en-US")} to ${to.toLocaleString("en-US")} chars since ${date}.`,
 	promptSizeEvidence: (from: number, to: number, date: string) => `${from} → ${to} chars (baseline ${date})`,
 	promptEnforced: (where: string, guard: string) => `The line at ${where} is a rule ${guard} already blocks.`,
-	promptEnforcedEvidence: (where: string, line: string) => `${where}: '${line}'`,
-	promptEnforcedAsk: (where: string, line: string, guard: string) => `Delete the line '${line}' at ${where}? ${guard} already blocks the same rule.`,
-	promptKeep: "Keep as is",
-	promptKeepResult: "The line stays and makes every re-read after a compaction that much longer.",
-	promptRemove: "Delete",
-	promptRemoveResult: "dotz deletes this line from that file when it gets your answer. The code keeps blocking the rule.",
+	...promptCardEn,
 	promptCapOver: (file: string, size: number, cap: number, unit: string) => `${file} is over its limit (${size.toLocaleString("en-US")} ${unit}, limit ${cap.toLocaleString("en-US")}). The end past the limit may be left out.`,
 	promptCapEvidence: (size: number, cap: number, unit: string) => `${size} > limit ${cap} (${unit})`,
 	// The weekly model review of the re-read text (hub/prompt-review.ts).
 	promptReviewWhat: { conflict: "Two lines in the re-read text contradict each other.", outdated: "A line in the re-read text looks outdated.", "contradicts-code": "A line in the re-read text says something the code does differently." } as Record<string, string>,
-	promptReviewEvidence: (line: string, why: string, input: number, output: number) => `"${line}" - ${why} (this review used ${input} input and ${output} output tokens)`,
-	promptReviewAsk: (line: string, why: string) => `${why} Change the line '${line}' as proposed?`,
-	promptReviewApply: "Apply",
-	promptReviewApplyResult: (proposal: string) => `The text is changed as proposed: ${proposal}`,
-	promptReviewLeave: "Leave",
-	promptReviewLeaveResult: "The text stays as it is.",
 	// Appended to `reflect` with tonight's one recipe candidate, and the card and answers around it (hub/recipes.ts).
 	recipeCandidate: (id: string, titles: string[], briefs: string[], script: string) => `\n\nOne recipe candidate (sessions that passed the gateway's check): ${titles.join(" / ")}. Briefs: ${briefs.join(", ")}. Propose it only if the same work will come again and steps can shorten it. Write the body (the steps, the commands they need) to a temp file, a script too if it helps, run \`${script} propose ${id} --slug <lowercase-ascii> --name "<short name>" --when "<when to use it, one line>" --body-file <file> [--script-file <file>]\` once and send its whole output to alert unchanged (this overrides step 5's no-alert line). Otherwise do nothing. The gateway saves on the owner's answer: do not write to custom/recipes, run it or create a watch. No secret values or other people's personal data.`,
 	recipeCard: (d: { name: string; when: string; script?: { file: string } }, preview: string, titles: string[]) => [`Keep work that went well as a recipe: ${d.name}`, `Use when: ${d.when}`, `From: ${titles.join(" / ")}`, preview, ...(d.script ? [`Script: ${d.script.file}`] : [])].join("\n"),

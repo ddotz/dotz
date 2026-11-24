@@ -4,15 +4,15 @@ import { cardBlock } from "./choices.ts";
 import { cfg, DATA_DIR, DEFAULTS, HOME, writeAtomic } from "./config.ts";
 import { CHECKS as HEALTH, FILE_CHECKS } from "./doctor-checks.ts";
 import { THRESHOLDS as T } from "./doctor-limits.ts";
-import { type DoctorArea, type DoctorCheck, DOCTOR_AREAS, evidenceLines, type Finding, fitSubject } from "./doctor-types.ts";
+import { type DoctorArea, type DoctorCheck, DOCTOR_AREAS, evidenceLines, type Finding, fitSubject, lineSubject, wrapLines } from "./doctor-types.ts";
 import { msg } from "./i18n.ts";
 import { type Catalog, en } from "./i18n-en.ts";
 import { ko } from "./i18n-ko.ts";
 import type { Notice as StoredNotice } from "./notices-types.ts";
 import { ledger } from "./ledger.ts";
 import { type Send, morningExtra, startLedger } from "./ledger-tick.ts";
-import { promptHealth, ruleCard } from "./prompt-health.ts";
-import { promptReviewCheck, reviewCard } from "./prompt-review.ts";
+import { promptHealth } from "./prompt-health.ts";
+import { promptReviewCheck } from "./prompt-review.ts";
 import { trackTimer } from "./shutdown.ts";
 import { watchSubject } from "./watch-ask.ts";
 import { HARNESS_RETRY_TITLE, SELF_UPDATE_CARD_TITLE } from "./worklog-kind.ts";
@@ -28,20 +28,22 @@ export type DoctorStore = { version: 1; lastRun: number; from?: number; memo: Re
 export const storeFile = (dataDir: string): string => join(dataDir, "doctor.json");
 
 const emptyStore = (): DoctorStore => ({ version: 1, lastRun: 0, memo: {}, findings: {}, told: {} });
-const OLD = { where: "\u0001", line: "\u0002", guard: "\u0003", why: "\u0004" };
-const oldAsk = (asked: string): RegExp =>
-	new RegExp(`^${asked.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(OLD.where, "(?<where>.+?)").replace(OLD.line, "(?<line>.*)").replace(OLD.guard, "(?<guard>.+)").replace(OLD.why, "(?<why>.*)")}$`, "s");
-const OLD_RULE = [ko, en].map(c => oldAsk(c.promptEnforcedAsk(OLD.where, OLD.line, OLD.guard)));
-const OLD_REVIEW = [ko, en].map(c => oldAsk(c.promptReviewAsk(OLD.line, OLD.why)));
+const OLD_RULE = [/^(?<where>.+?)의 '(?<line>.*)' 줄을 지울까요\? 같은 규칙을 (?<guard>.+)가 이미 막아요\.$/s, /^Delete the line '(?<line>.*)' at (?<where>.+?)\? (?<guard>.+) already blocks the same rule\.$/s];
+const OLD_REVIEW = [
+	/^(?<why>.*?[.!?。]) '(?<line>.*)' 줄을 제안대로 고칠까요\?$/s,
+	/^(?<why>.*?[.!?]) Change the line '(?<line>.*)' as proposed\?$/s,
+	/^(?<why>.*) '(?<line>.*)' 줄을 제안대로 고칠까요\?$/s,
+	/^(?<why>.*) Change the line '(?<line>.*)' as proposed\?$/s,
+];
 
 function oldCard(f: Finding, question: string): { evidence: string[]; subject: string; question: string } {
-	const t = msg().doctor;
+	const m = msg(), t = m.doctor;
 	if (f.key === "disk:low") return { evidence: evidenceLines([question], t.more), subject: t.diskSubject, question: t.diskQuestion };
 	const rule = f.key.startsWith("prompt:enforced:") ? OLD_RULE.map(re => re.exec(question)?.groups).find(Boolean) : undefined;
-	if (rule) return ruleCard({ where: rule.where!, line: rule.line!, guard: rule.guard! });
+	if (rule) return { evidence: evidenceLines([`${t.ruleKind} · ${rule.where}: '${rule.line}'`, m.promptEnforced(rule.where!, rule.guard!)], t.more), subject: lineSubject(t, rule.where, rule.line!, t.ruleQuestion), question: t.ruleQuestion };
 	const review = f.key.startsWith("prompt:review:") ? OLD_REVIEW.map(re => re.exec(question)?.groups).find(Boolean) : undefined;
-	const kind = [ko, en].map(c => Object.keys(c.promptReviewWhat).find(k => c.promptReviewWhat[k] === f.what)).find(Boolean);
-	if (review) return reviewCard({ kind: kind ?? "conflict", line: review.line!, why: review.why! });
+	const kind = [ko, en].map(c => Object.keys(c.promptReviewWhat).find(k => c.promptReviewWhat[k] === f.what)).find(Boolean) ?? "conflict";
+	if (review) return { evidence: evidenceLines([`${t.reviewKind[kind] ?? kind} · '${review.line}'`, ...wrapLines(review.why!, 2)], t.more), subject: lineSubject(t, undefined, review.line!, t.reviewQuestion), question: t.reviewQuestion };
 	return { evidence: evidenceLines([question], t.more), subject: fitSubject(t.areas[f.area], t.reviewQuestion), question: t.reviewQuestion };
 }
 const storedFinding = (f: Finding): Finding => {

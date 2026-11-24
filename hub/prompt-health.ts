@@ -7,8 +7,9 @@
 // `bun hub/prompt-health.ts --dry` prints the findings and a RESULT line and writes no state.
 import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { join, relative } from "node:path";
-import { type DoctorCheck, evidenceLines, type Finding, lineSubject } from "./doctor-types.ts";
+import { basename, dirname, join, relative } from "node:path";
+import { THRESHOLDS } from "./doctor-limits.ts";
+import { type DoctorCheck, EVIDENCE_CHARS, evidenceLines, type Finding, lineSubject } from "./doctor-types.ts";
 import { ENFORCED_RULES } from "./enforced-rules.ts";
 import { INLINE_MAX, loadFeatureDirs } from "./featuredirs.ts";
 import { msg } from "./i18n.ts";
@@ -116,45 +117,146 @@ export function sizeFindings(state: PromptState, now: number): Finding[] {
 // configuration, not a rule written out beside it: removing it would remove the guard, so it is never proposed.
 const DENY_ENTRY = /^\s*- deny:\s/;
 
-const QUOTE_MAX = 80;
-const quote = (line: string): string => {
-	const one = line.trim().replace(/\s+/g, " ");
-	return one.length <= QUOTE_MAX ? one : `${one.slice(0, QUOTE_MAX - 1).trimEnd()}…`;
-};
-const lineNumber = (path: string, line: string): number => {
-	try {
-		return readFileSync(path, "utf8").split("\n").indexOf(line) + 1;
-	} catch {
-		return 0;
-	}
-};
+/** The edit a prompt card proposes (see `Finding.change`). */
+export type Change = NonNullable<Finding["change"]>;
+/** A prompt card as its check builds it: its lines, its title parts and its two options. */
+export type PromptCard = { evidence: string[]; subject: string; question: string; options: { name: string; result: string }[] };
 
-/** The lines and title of a card about a line that spells out an enforced rule: the kind and the quoted line at `where` (file:line), then what blocks it; titled by the text and the line. */
-export function ruleCard(c: { where: string; line: string; guard: string }): { evidence: string[]; subject: string; question: string } {
-	const m = msg(), t = m.doctor;
-	return { evidence: evidenceLines([`${t.ruleKind} · ${m.promptEnforcedEvidence(c.where, quote(c.line))}`, m.promptEnforced(c.where, c.guard)], t.more), subject: lineSubject(t, c.where, c.line, t.ruleQuestion), question: t.ruleQuestion };
+/** Where a quoted line is: the one file line it is, or why there is not exactly one. */
+export type Located = { kind: "found"; path: string; file: string; line: number; text: string } | { kind: "nowhere" } | { kind: "files"; files: string[] } | { kind: "twice"; file: string };
+
+const squash = (s: string): string => s.replace(/\s+/g, " ").trim();
+const PKG = join(import.meta.dir, "..");
+
+/** A line as compared between a quote and a file: spacing squashed, a leading list mark dropped. */
+export const bareLine = (s: string): string => squash(s).replace(/^[-*+] +/, "");
+
+/** The one line of the files in `sources` that `quote` is (whole, ignoring spacing and a list mark; a feature line with `{repo}` as the re-read text has it), read from the files themselves, so `line` is the file's own line number and `text` the line as written. */
+export function locate(quote: string, sources: Pick<RuleSource, "path" | "file">[]): Located {
+	const want = bareLine(quote), hits: Extract<Located, { kind: "found" }>[] = [], seen = new Set<string>();
+	if (!want) return { kind: "nowhere" };
+	for (const s of sources) {
+		if (seen.has(s.path) || !existsSync(s.path)) continue;
+		seen.add(s.path);
+		const feature = basename(s.path) === "feature.md";
+		readFileSync(s.path, "utf8").split(/\r?\n/).forEach((text, i) => {
+			if (bareLine(feature ? text.replaceAll("{repo}", PKG) : text) === want) hits.push({ kind: "found", path: s.path, file: s.file, line: i + 1, text });
+		});
+	}
+	const files = [...new Set(hits.map(h => h.path))];
+	if (files.length > 1) return { kind: "files", files: [...new Set(hits.map(h => h.file))] };
+	const [hit] = hits;
+	if (hits.length > 1 && hit) return { kind: "twice", file: hit.file };
+	return hit ?? { kind: "nowhere" };
 }
 
-/** One finding per enforced rule that a rule file line still writes out. The first such line, named by file:line, is what the owner decides on. */
-export function enforcedFindings(sources: RuleSource[], now: number): Finding[] {
+/** Why a line was not found exactly once, for a log line. */
+export function notOne(at: Exclude<Located, { kind: "found" }>): string {
+	switch (at.kind) {
+		case "nowhere":
+			return "it is in no re-read file";
+		case "files":
+			return `it is in ${at.files.join(" and ")}`;
+		case "twice":
+			return `it is in ${at.file} more than once`;
+		default: {
+			const _exhaustive: never = at;
+			return _exhaustive;
+		}
+	}
+}
+
+/** An apply option's result, with the undo sentence only when git tracks the file at `path` itself (git is asked only when a folder above it holds `.git`; when git cannot be run, the sentence is left out). */
+export function withUndo(result: string, path: string): string {
+	for (let dir = dirname(path); !existsSync(join(dir, ".git")); dir = dirname(dir)) if (dirname(dir) === dir) return result;
+	try {
+		const git = Bun.spawnSync(["git", "-C", dirname(path), "ls-files", "--error-unmatch", "--", basename(path)], { stdout: "ignore", stderr: "ignore", timeout: 10_000 });
+		return git.exitCode === 0 ? `${result} ${msg().promptUndo}` : result;
+	} catch (e) {
+		console.error(`prompt health: git could not be run for ${path} (${(e as Error).message}); the card has no undo sentence`);
+		return result;
+	}
+}
+
+const BACK = 16;
+
+function shownEnd(x: string[], start: number, room: number, need: number): { end: number; atWord: boolean } {
+	const lead = start > 0 ? 1 : 0;
+	if (lead + x.length - start <= room) return { end: x.length, atWord: true };
+	const last = start + room - lead - 1;
+	for (let p = last; p >= need && p > start; p--) if (x[p] === " ") return { end: p, atWord: true };
+	return { end: last, atWord: false };
+}
+
+function changedParts(from: string, to: string, room: number): [string, string] {
+	const a = [...squash(from)], b = [...squash(to)];
+	let same = 0, tail = 0;
+	while (same < a.length && same < b.length && a[same] === b[same]) same++;
+	while (tail < a.length - same && tail < b.length - same && a[a.length - 1 - tail] === b[b.length - 1 - tail]) tail++;
+	const need = (x: string[]): number => (same < x.length ? (x[same] === " " ? same + 2 : same + 1) : x.length);
+	const whole = (x: string[]): number => Math.max(need(x), Math.min(x.length, x.length - tail + 1));
+	const starts = [0, ...a.flatMap((c, i) => (c === " " && i + 1 <= same - BACK ? [i + 1] : []))];
+	const fits = (start: number, want: (x: string[]) => number, atWord: boolean) => [a, b].every(x => {
+		const cut = shownEnd(x, start, room, need(x));
+		return cut.end >= want(x) && (cut.atWord || !atWord);
+	});
+	const start = starts.find(s => fits(s, whole, true)) ?? starts.find(s => fits(s, need, true)) ?? starts.find(s => fits(s, need, false)) ?? Math.max(0, same - BACK);
+	const part = (x: string[]): string => {
+		const { end } = shownEnd(x, start, room, need(x));
+		return `${start > 0 ? "…" : ""}${x.slice(start, end).join("").trim()}${end < x.length ? "…" : ""}`;
+	};
+	return [part(a), part(b)];
+}
+
+/** The first lines of a card that proposes `change`: the kind with the file and line, then the line as it is and what it becomes (on a long line both open at the earliest word that lets the changed part show, at least its first character, never later than shortly before it; a line ends inside a word when no space is in reach), or the one line to delete. */
+export function editLines(kind: string, shown: string, change: Change): string[] {
+	const m = msg(), head = `${kind} · ${m.promptAt(shown, change.line)}`;
+	if (!change.to) return [head, m.promptDelete(squash(change.from))];
+	const [from, to] = changedParts(change.from, change.to, EVIDENCE_CHARS - Math.max([...m.promptBefore("")].length, [...m.promptAfter("")].length));
+	return [head, m.promptBefore(from), m.promptAfter(to)];
+}
+
+/** The card about a line that spells out an enforced rule: the kind with file and line, the line to delete, and what already enforces it; titled by the text and the line. */
+export function ruleCard(c: { rule: string; guard: string; shown: string; change: Change }): PromptCard {
+	const m = msg(), t = m.doctor;
+	const words: Record<string, string> = {
+		"limit-stop": m.promptGuardLimitStop,
+		"expensive-model": m.promptGuardExpensiveModel,
+		"gateway-restart": m.promptGuardGatewayRestart,
+		"brief-done-when": m.promptGuardBriefDoneWhen,
+		"session-min-hours": m.promptGuardSessionMinHours,
+		"recommend-mark": m.promptGuardRecommendMark,
+		"telemetry-off": m.promptGuardTelemetryOff,
+	};
+	return {
+		evidence: evidenceLines([...editLines(t.ruleKind, c.shown, c.change), m.promptGuard(words[c.rule] ?? c.guard, c.guard)], t.more),
+		subject: lineSubject(t, c.shown, c.change.from, t.ruleQuestion),
+		question: t.ruleQuestion,
+		options: [{ name: m.promptRemove, result: withUndo(m.promptRemoveResult(c.shown), c.change.file) }, { name: m.promptKeep, result: m.promptKeepResult(THRESHOLDS.repeatDays) }],
+	};
+}
+
+/** One finding per enforced rule that a rule file line still writes out: in the first source whose first such line is found exactly once in its file, carried as a deletion in `change`; a rule written out only where no one line is found gives none and one log line. */
+export function enforcedFindings(sources: RuleSource[], now: number, log: (line: string) => void = line => console.error(line)): Finding[] {
 	const m = msg();
 	const out: Finding[] = [];
 	for (const rule of ENFORCED_RULES) {
-		const hit = sources.map(s => ({ s, line: s.lines.find(l => !DENY_ENTRY.test(l) && rule.match.test(l)) })).find(h => h.line !== undefined);
-		if (!hit?.line) continue;
-		const at = lineNumber(hit.s.path, hit.line);
-		const where = at ? `${hit.s.file}:${at}` : hit.s.file;
-		const guard = rule.guard.split(":")[0]!;
-		const { evidence, subject, question } = ruleCard({ where, line: hit.line, guard });
-		out.push({
-			key: `prompt:enforced:${rule.id}`,
-			area: "prompt",
-			what: m.promptEnforced(where, guard),
-			evidence,
-			since: now,
-			level: hit.line.length,
-			decide: { subject, question, options: [{ name: m.promptRemove, result: m.promptRemoveResult }, { name: m.promptKeep, result: m.promptKeepResult }] },
-		});
+		const missed: string[] = [];
+		for (const s of sources) {
+			const line = s.lines.find(l => !DENY_ENTRY.test(l) && rule.match.test(l));
+			if (line === undefined) continue;
+			const at = locate(line, [s]);
+			if (at.kind !== "found") {
+				missed.push(`${s.file}: ${notOne(at)}`);
+				continue;
+			}
+			const guard = rule.guard.split(":")[0]!, change = { file: at.path, line: at.line, from: at.text, to: "" };
+			const { evidence, ...decide } = ruleCard({ rule: rule.id, guard, shown: at.file, change });
+			out.push({ key: `prompt:enforced:${rule.id}`, area: "prompt", what: m.promptEnforced(`${at.file}:${at.line}`, guard), evidence, since: now, level: line.length, decide, change });
+			missed.length = 0;
+			break;
+		}
+		if (missed.length) log(`prompt health: no card for the enforced rule ${rule.id}: ${missed.join("; ")}`);
 	}
 	return out;
 }

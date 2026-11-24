@@ -4,6 +4,7 @@ import { ADDRESS, NAME, paths, tzLabel } from "./config.ts";
 import { askKo } from "./ask-text.ts";
 import { doctorKo } from "./doctor-text.ts";
 import { LESSONS_MAX_BYTES } from "./prompt-budget.ts";
+import { promptCardKo } from "./prompt-card-text.ts";
 import type { Catalog, Leads } from "./i18n-en.ts";
 import { OMO_WORDS } from "./worker-words.ts";
 
@@ -396,21 +397,10 @@ export const ko: Catalog = {
 	promptGrew: (label, from, to, date) => `압축 뒤 다시 읽는 글${label ? `(${label})` : ""}이 ${date} 이후 ${from.toLocaleString("ko-KR")}자에서 ${to.toLocaleString("ko-KR")}자로 늘었어요.`,
 	promptSizeEvidence: (from, to, date) => `${from}자 → ${to}자 (기준 ${date})`,
 	promptEnforced: (where, guard) => `${where} 줄은 ${guard}가 이미 막는 규칙이에요.`,
-	promptEnforcedEvidence: (where, line) => `${where}: '${line}'`,
-	promptEnforcedAsk: (where, line, guard) => `${where}의 '${line}' 줄을 지울까요? 같은 규칙을 ${guard}가 이미 막아요.`,
-	promptKeep: "그대로 두기",
-	promptKeepResult: "줄이 남아요. 압축 뒤 다시 읽을 때마다 이 줄만큼 글이 길어져요.",
-	promptRemove: "지우기",
-	promptRemoveResult: "답을 받은 dotz가 그 파일에서 이 줄을 지워요. 규칙은 코드가 계속 막아요.",
+	...promptCardKo,
 	promptCapOver: (file, size, cap, unit) => `${file} 길이가 한도를 넘었어요(${size.toLocaleString("ko-KR")}${unit === "bytes" ? "바이트" : "자"}, 한도 ${cap.toLocaleString("ko-KR")}). 넘는 끝부분은 빠질 수 있어요.`,
 	promptCapEvidence: (size, cap, unit) => `${size} > 한도 ${cap} (${unit === "bytes" ? "바이트" : "자"})`,
 	promptReviewWhat: { conflict: "다시 읽는 글의 두 줄이 서로 맞지 않아요.", outdated: "다시 읽는 글의 한 줄이 낡은 것 같아요.", "contradicts-code": "다시 읽는 글의 한 줄이 코드가 하는 일과 달라요." },
-	promptReviewEvidence: (line, why, input, output) => `"${line}" - ${why} (이번 검토에 입력 ${input}, 출력 ${output} 토큰을 썼어요)`,
-	promptReviewAsk: (line, why) => `${why} '${line}' 줄을 제안대로 고칠까요?`,
-	promptReviewApply: "고쳐요",
-	promptReviewApplyResult: proposal => `제안한 대로 글을 고쳐요: ${proposal}`,
-	promptReviewLeave: "그대로 둬요",
-	promptReviewLeaveResult: "글은 지금 그대로 남아요.",
 	repeatAlertOptions: [{ name: "막는 장치 만들기", result: "되풀이를 막는 가드·검사·테스트를 만들어요. 이 답을 받은 뒤에만 시작해요." }, { name: "이번 주는 그냥 두기", result: "7일 동안 이 주제로 카드를 올리지 않아요." }],
 	lessonCandidates: (stale, duplicates, over) => `\n\n코드가 고른 LESSONS.md 정리 후보예요. 지울지 합칠지는 직접 판단하세요(합칠 때는 더 최근이거나 구체적인 문장을 남기세요):${over ? `\n- ${over}` : ""}${stale.length ? `\n- 90일 넘은 줄:\n${stale.join("\n")}` : ""}${duplicates.length ? `\n- 거의 같은 줄(단어 겹침 0.6 이상):\n${duplicates.join("\n")}` : ""}`,
 

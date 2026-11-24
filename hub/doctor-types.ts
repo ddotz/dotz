@@ -26,6 +26,8 @@ export type Finding = {
 	ask?: true;
 	/** What the owner must decide, when he must: one card titled `<subject> · <question>` (at most 40 characters), with `evidence` as its lines. */
 	decide?: { subject: string; question: string; options: { name: string; result: string }[] };
+	/** The exact edit a prompt card proposes, found by the gateway: `file` is the absolute path, `line` its 1-based line, `from` that line as it is in the file, `to` the full new line (empty: the line is deleted). */
+	change?: { file: string; line: number; from: string; to: string };
 };
 
 export const EVIDENCE_LINES = 4;

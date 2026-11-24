@@ -1,12 +1,14 @@
-import { afterAll, beforeEach, expect, test } from "bun:test";
+import { afterAll, beforeEach, expect, spyOn, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import fc from "fast-check";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { Finding } from "./doctor-types.ts";
+import { cfg } from "./config.ts";
+import { evidenceLines, type Finding } from "./doctor-types.ts";
 import { ENFORCED_RULES } from "./enforced-rules.ts";
 import { LESSONS_MAX_BYTES } from "./prompt-budget.ts";
 import { msg } from "./i18n.ts";
-import { promptGrowth, promptHealth, readState, RULES_MAX_CHARS } from "./prompt-health.ts";
+import { editLines, enforcedFindings, promptGrowth, promptHealth, readState, ruleCard, RULES_MAX_CHARS } from "./prompt-health.ts";
 
 const root = mkdtempSync(join(tmpdir(), "prompt-health-"));
 afterAll(() => rmSync(root, { recursive: true, force: true }));
@@ -70,29 +72,32 @@ test("a shrink moves the baseline down without a finding, and later growth count
 	expect(sizeKeys(run(2))).toContain("prompt:size:rules");
 });
 
-test("a rule that code enforces is reported by file:line while a line writes it out, and not after the line is removed", () => {
+test("a rule that code enforces is reported by file and line while a line writes it out, carried as a deletion, and not after the line is removed", () => {
 	setRules("- keep replies short\n- never run launchctl kickstart on the gateway\n");
 	run(0);
-	const found = run(1);
+	const found = run(1), m = msg();
 	const hit = found.find(f => f.key === "prompt:enforced:gateway-restart");
-	expect(hit?.evidence.join("\n")).toContain("RULES.md:2");
-	expect(hit?.evidence.join("\n")).toContain("hub/systemdeny.ts");
+	expect(hit?.change).toEqual({ file: join(dir, "RULES.md"), line: 2, from: "- never run launchctl kickstart on the gateway", to: "" });
+	expect(hit?.evidence).toEqual([`${m.doctor.ruleKind} · ${m.promptAt("RULES.md", 2)}`, m.promptDelete("- never run launchctl kickstart on the gateway"), m.promptGuard(m.promptGuardGatewayRestart, "hub/systemdeny.ts")]);
 	expect(hit?.decide?.question).not.toMatch(/RULES\.md|systemdeny/);
-	expect(hit?.decide?.options.map(o => o.name)).toEqual([msg().promptRemove, msg().promptKeep]);
+	expect(hit?.decide?.options.map(o => o.name)).toEqual([m.promptRemove, m.promptKeep]);
+	expect(hit?.decide?.options[0]!.result).toBe(m.promptRemoveResult("RULES.md"));
 	expect(keys(found).filter(k => k.startsWith("prompt:enforced:"))).toEqual(["prompt:enforced:gateway-restart"]);
 	setRules("- keep replies short\n");
 	expect(keys(run(2)).filter(k => k.startsWith("prompt:enforced:"))).toEqual([]);
 });
 
-test("a blocked-command entry is the guard itself and is never proposed for removal; a long line is quoted short", () => {
+test("a blocked-command entry is the guard itself and is never proposed for removal; a long line is cut on the card at a word, whole in change", () => {
 	const entry = "## Blocked commands\n- deny: some-cli --big | fable only when the owner asked\n";
-	setRules(`## Rules\n- fable only when the owner asked; ${"x".repeat(120)} tail-marker\n\n${entry}`);
+	const long = `- fable only when the owner asked; ${"word ".repeat(30)}tail-marker`;
+	setRules(`## Rules\n${long}\n\n${entry}`);
 	run(0);
 	const hit = run(1).find(f => f.key === "prompt:enforced:expensive-model");
-	expect(hit?.evidence[0]).toContain("RULES.md:2");
+	expect(hit?.change).toMatchObject({ line: 2, from: long, to: "" });
 	expect(hit?.evidence.join("\n")).not.toContain("tail-marker");
-	expect(hit?.evidence[0]).toMatch(/fable only when the owner asked; x+…/);
-	expect(hit?.evidence[0]!.length).toBeLessThanOrEqual(`${msg().doctor.ruleKind} · RULES.md:2: ''`.length + 80);
+	expect(hit?.evidence[1]!.startsWith(msg().promptDelete(""))).toBe(true);
+	expect(hit?.evidence[1]!.slice(msg().promptDelete("").length)).toMatch(/^- fable only when the owner asked; (word )+word…$/);
+	expect(hit?.evidence.every(l => [...l].length <= 120)).toBe(true);
 	expect(hit?.evidence[0]!.startsWith(msg().doctor.ruleKind)).toBe(true);
 	expect(`${hit?.decide?.subject} · ${hit?.decide?.question}`).toMatch(new RegExp(`^${msg().doctor.texts.rules} 'fable only when[^']*'.* · ${msg().doctor.ruleQuestion.replace("?", "\\?")}$`));
 	expect([...`${hit?.decide?.subject} · ${hit?.decide?.question}`].length).toBeLessThanOrEqual(40);
@@ -100,12 +105,57 @@ test("a blocked-command entry is the guard itself and is never proposed for remo
 	expect(keys(run(2)).filter(k => k.startsWith("prompt:enforced:"))).toEqual([]);
 });
 
-test("a feature body line is named by its feature.md and line", () => {
+test("a feature body line is named by its feature.md and its line in that file", () => {
 	setRules("- keep replies short\n");
 	mkdirSync(join(dir, "features", "gw"), { recursive: true });
 	writeFileSync(join(dir, "features", "gw", "feature.md"), "---\nname: gw\nwhat: gateway care\ntrigger: 메시지 도착\nstage: s\n---\nNever run launchctl kickstart on the gateway.\n");
 	run(0);
-	expect(run(1).find(f => f.key === "prompt:enforced:gateway-restart")?.evidence.join("\n")).toContain("features/gw/feature.md:7");
+	const hit = run(1).find(f => f.key === "prompt:enforced:gateway-restart");
+	expect(hit?.change).toEqual({ file: join(dir, "features", "gw", "feature.md"), line: 7, from: "Never run launchctl kickstart on the gateway.", to: "" });
+	expect(hit?.evidence[0]).toContain(msg().promptAt(join("features", "gw", "feature.md"), 7));
+});
+
+test("a line written twice in its file is not proposed: there is no one line to delete, and one log line says so", () => {
+	const line = "- never run launchctl kickstart on the gateway", lines: string[] = [];
+	setRules(`${line}\n${line}\n`);
+	run(0);
+	expect(keys(run(1)).filter(k => k.startsWith("prompt:enforced:"))).toEqual([]);
+	expect(enforcedFindings([{ path: join(dir, "RULES.md"), file: "RULES.md", lines: [line, line] }], t0, l => lines.push(l))).toEqual([]);
+	expect(lines).toEqual(["prompt health: no card for the enforced rule gateway-restart: RULES.md: it is in RULES.md more than once"]);
+});
+
+test("a rule written twice in RULES.md and once in LESSONS.md is proposed at its LESSONS.md line, and no log line says it got no card", () => {
+	const line = "- never run launchctl kickstart on the gateway", lines: string[] = [];
+	setRules(`${line}\n${line}\n`);
+	writeFileSync(join(dir, "LESSONS.md"), `- lesson one\n${line}\n`);
+	run(0);
+	expect(run(1).find(f => f.key === "prompt:enforced:gateway-restart")?.change).toEqual({ file: join(dir, "LESSONS.md"), line: 2, from: line, to: "" });
+	const sources = [{ path: join(dir, "RULES.md"), file: "RULES.md", lines: [line, line] }, { path: join(dir, "LESSONS.md"), file: "LESSONS.md", lines: ["- lesson one", line] }];
+	expect(enforcedFindings(sources, t0, l => lines.push(l)).map(f => f.change?.file)).toEqual([join(dir, "LESSONS.md")]);
+	expect(lines).toEqual([]);
+});
+
+test("when git cannot be run, the enforced card is still made, without the undo sentence", () => {
+	setRules("- keep replies short\n- never run launchctl kickstart on the gateway\n");
+	mkdirSync(join(dir, ".git"));
+	const git = spyOn(Bun, "spawnSync").mockImplementation(() => {
+		throw new Error('Executable not found in $PATH: "git"');
+	});
+	try {
+		const hit = run(0).find(f => f.key === "prompt:enforced:gateway-restart");
+		expect(hit?.decide?.options[0]!.result).toBe(msg().promptRemoveResult("RULES.md"));
+	} finally {
+		git.mockRestore();
+	}
+});
+
+test("a feature line holding {repo} that writes out an enforced rule is found at its line", () => {
+	setRules("- keep replies short\n");
+	mkdirSync(join(dir, "features", "gw"), { recursive: true });
+	const raw = "Never run launchctl kickstart on the gateway; use `{repo}/bin/dotz restart`.";
+	writeFileSync(join(dir, "features", "gw", "feature.md"), `---\nname: gw\nwhat: gateway care\ntrigger: 메시지 도착\nstage: s\n---\n${raw}\n`);
+	run(0);
+	expect(run(1).find(f => f.key === "prompt:enforced:gateway-restart")?.change).toEqual({ file: join(dir, "features", "gw", "feature.md"), line: 7, from: raw, to: "" });
 });
 
 test("an open task in state.json is not a rule: its words never raise an enforced-rule finding", () => {
@@ -153,4 +203,115 @@ test("every enforced rule names an existing guard and matches its sample line", 
 		if (line) expect(readFileSync(join(repo, path), "utf8").split("\n").length).toBeGreaterThanOrEqual(Number(line));
 		expect(rule.match.test(samples[rule.id] ?? "")).toBe(true);
 	}
+});
+
+test("every enforced rule's card names in plain words what already enforces it, its own words, not only the guard file", () => {
+	const m = msg(), change = { file: join(dir, "RULES.md"), line: 1, from: "x", to: "" };
+	const words: Record<string, string> = {
+		"limit-stop": m.promptGuardLimitStop,
+		"expensive-model": m.promptGuardExpensiveModel,
+		"gateway-restart": m.promptGuardGatewayRestart,
+		"brief-done-when": m.promptGuardBriefDoneWhen,
+		"session-min-hours": m.promptGuardSessionMinHours,
+		"recommend-mark": m.promptGuardRecommendMark,
+		"telemetry-off": m.promptGuardTelemetryOff,
+	};
+	expect(new Set(Object.values(words)).size).toBe(ENFORCED_RULES.length);
+	for (const rule of ENFORCED_RULES) {
+		const guard = rule.guard.split(":")[0]!, last = ruleCard({ rule: rule.id, guard, shown: "RULES.md", change }).evidence.at(-1);
+		expect(last).toBe(m.promptGuard(words[rule.id]!, guard));
+	}
+});
+
+test("over every shipped MODE line with a clause added at its end, in its middle and at its start, the card's before and after never read the same", () => {
+	const saved = cfg.identity, same: string[] = [];
+	try {
+		for (const [language, file, clause] of [["ko", "MODE.ko.md", "끝에 붙인 말이에요."], ["en", "MODE.md", "Added words here."]] as const) {
+			cfg.identity = { ...cfg.identity, name: cfg.identity?.name ?? "sample-1", language };
+			const m = msg();
+			for (const from of readFileSync(join(import.meta.dir, "..", file), "utf8").split("\n").filter(l => l.trim().length > 10)) {
+				const words = from.split(" "), mid = Math.floor(words.length / 2);
+				for (const to of [`${from} ${clause}`, [...words.slice(0, mid), clause, ...words.slice(mid)].join(" "), `${clause} ${from}`]) {
+					const lines = evidenceLines(editLines("K", "F", { file: "/x", line: 1, from, to }), m.doctor.more);
+					if (lines[1]!.slice(m.promptBefore("").length) === lines[2]!.slice(m.promptAfter("").length)) same.push(`${file}: ${from}`);
+					expect(lines.every(l => [...l].length <= 120)).toBe(true);
+				}
+			}
+		}
+	} finally {
+		cfg.identity = saved;
+	}
+	expect(same).toEqual([]);
+});
+
+const shownPart = (line: string, label: string): string => {
+	const text = line.slice(label.length);
+	return text.slice(text.startsWith("…") ? 1 : 0).replace(/…$/, "");
+};
+const holds = (full: string, body: string, at: number): boolean => {
+	for (let i = full.indexOf(body); i >= 0; i = full.indexOf(body, i + 1)) if (i <= at && at < i + body.length) return true;
+	return false;
+};
+
+test("over every shipped MODE line of 70+ characters with a long path put in, one character of the path changed: before and after differ, are not empty and both show the changed character", () => {
+	const saved = cfg.identity, bad: string[] = [];
+	const path = "/Users/example/Library/Application_Support/dotz/features/reply.md";
+	try {
+		for (const [language, file] of [["ko", "MODE.ko.md"], ["en", "MODE.md"]] as const) {
+			cfg.identity = { ...cfg.identity, name: cfg.identity?.name ?? "sample-1", language };
+			const m = msg(), squashed = readFileSync(join(import.meta.dir, "..", file), "utf8").split("\n").map(l => l.replace(/\s+/g, " ").trim());
+			for (const line of new Set(squashed.filter(l => [...l].length >= 70))) {
+				for (const [near, offset] of [[60, 10], [60, 30], [90, 10], [90, 30]] as const) {
+					const space = line.lastIndexOf(" ", near), at = space > 20 ? space : near;
+					const from = `${line.slice(0, at)} ${path} ${line.slice(at)}`.replace(/\s+/g, " ").trim(), q = from.indexOf(path) + offset;
+					const to = `${from.slice(0, q)}${from[q] === "Q" ? "R" : "Q"}${from.slice(q + 1)}`;
+					const lines = evidenceLines(editLines("K", "F", { file: "/x", line: 1, from, to }), m.doctor.more);
+					const before = shownPart(lines[1]!, m.promptBefore("")), after = shownPart(lines[2]!, m.promptAfter(""));
+					if (before === after || !before || !after || !holds(from, before, q) || !holds(to, after, q)) bad.push(`${file} ${near}/${offset}: ${lines[1]} | ${lines[2]}`);
+					expect(lines.every(l => [...l].length <= 120)).toBe(true);
+				}
+			}
+		}
+	} finally {
+		cfg.identity = saved;
+	}
+	expect(bad).toEqual([]);
+});
+
+test("a window opens at the earliest word that lets the change show, never later than shortly before it, cuts inside a word too long to show, and fills the room when the change is at the end", () => {
+	const m = msg(), room = 120 - Math.max([...m.promptBefore("")].length, [...m.promptAfter("")].length);
+	const from = `- see ${"x".repeat(20)} ${"/very/long/path".repeat(10)} old tail words`, to = from.replace(" old ", " new "), q = from.indexOf(" old ") + 1;
+	const [, b, a] = evidenceLines(editLines("K", "F", { file: "/x", line: 1, from, to }), m.doctor.more);
+	expect(shownPart(b!, m.promptBefore(""))).toContain(from.slice(q - 16, q + 3));
+	expect(shownPart(a!, m.promptAfter(""))).toContain(to.slice(q - 16, q + 3));
+	const url = `- link: https://example.com/${"a".repeat(130)}/b?q=1 here.`, at = 50, changed = `${url.slice(0, at)}Z${url.slice(at + 1)}`;
+	const [, ub, ua] = evidenceLines(editLines("K", "F", { file: "/x", line: 1, from: url, to: changed }), m.doctor.more);
+	expect([shownPart(ub!, m.promptBefore("")), shownPart(ua!, m.promptAfter(""))].map(s => s.startsWith("- link: https://") && s.length > at)).toEqual([true, true]);
+	expect(shownPart(ua!, m.promptAfter(""))[at]).toBe("Z");
+	const cut = `- ${"every rule line here is long enough ".repeat(4)}the owner reads DROPPED words after it ${"and the line goes on ".repeat(3)}END`;
+	const [, cb, ca] = evidenceLines(editLines("K", "F", { file: "/x", line: 1, from: cut, to: cut.replace("DROPPED ", "") }), m.doctor.more);
+	expect([shownPart(cb!, m.promptBefore("")).includes("reads DROPPED words"), shownPart(ca!, m.promptAfter("")).includes("reads words")]).toEqual([true, true]);
+	const long = `- ${"every rule line here is long enough ".repeat(6)}END-OF-LINE`;
+	const [, , end] = evidenceLines(editLines("K", "F", { file: "/x", line: 1, from: long, to: `${long} too` }), m.doctor.more);
+	expect([...end!].length - [...m.promptAfter("")].length).toBeGreaterThan(room - 8);
+});
+
+test("for generated lines with long unbroken runs and one edit anywhere, the shown before and after differ, are not empty, fit the line limit and both hold the first changed character", () => {
+	const m = msg(), flat = (s: string) => s.replace(/\s+/g, " ").trim();
+	const token = fc.oneof(fc.constantFrom("a", "the", "rule", "never", "답장은", "짧게", "-", "`x`"), fc.integer({ min: 20, max: 160 }).map(n => "/p".repeat(n)));
+	const edit = fc.oneof(fc.constantFrom("Q", " new", "/q/r", " "), fc.constant(""));
+	fc.assert(
+		fc.property(fc.array(token, { minLength: 1, maxLength: 40 }), fc.nat(), fc.nat({ max: 12 }), edit, (tokens, where, drop, put) => {
+			const from = tokens.join(" "), at = where % (from.length + 1), to = `${from.slice(0, at)}${put}${from.slice(at + drop)}`;
+			fc.pre(flat(to) !== "" && flat(to) !== flat(from));
+			const a = [...flat(from)], b = [...flat(to)];
+			let q = 0;
+			while (q < a.length && q < b.length && a[q] === b[q]) q++;
+			const lines = evidenceLines(editLines("K", "F", { file: "/x", line: 1, from, to }), m.doctor.more);
+			const before = shownPart(lines[1]!, m.promptBefore("")), after = shownPart(lines[2]!, m.promptAfter(""));
+			expect([before === after, before === "", after === "", lines.every(l => [...l].length <= 120)]).toEqual([false, false, false, true]);
+			expect([q >= a.length || holds(a.join(""), before, q), q >= b.length || holds(b.join(""), after, q)]).toEqual([true, true]);
+		}),
+		{ numRuns: 400 },
+	);
 });
