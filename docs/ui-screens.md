@@ -123,7 +123,7 @@ flowchart LR
   subgraph a_peers["peers"]
     c_peers(["peers code"])
     o_peers_ask["ask (1)"]
-    o_peers_dialog["dialog (1)"]
+    o_peers_dialog["dialog (2)"]
     o_peers_float["float (2)"]
     o_peers_menu["menu (1)"]
     o_peers_overlay["overlay (2)"]

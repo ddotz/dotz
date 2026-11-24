@@ -65,6 +65,7 @@ const show = async (name: string) => {
 };
 // This computer's own markup of the screen stays in place but must not be drawn under the snapshot.
 const ownHidden = (name: string) => ev<boolean>(`[...document.querySelectorAll("#v-${name} > :not(.rv)")].every(n => getComputedStyle(n).display === "none") && getComputedStyle(document.querySelector("#v-${name} > .rv")).display !== "none"`);
+const projectDialog = `[...document.querySelectorAll("dialog[open]")].find(d => d.querySelector(".dtitle")?.textContent === "회사 사이트")`;
 const buttons = (name: string) => ev<string[]>(`[...document.querySelectorAll("#v-${name} > .rv button")].map(b => b.dataset.k)`);
 
 describe("a relayed computer chosen, read-only screens", () => {
@@ -93,7 +94,18 @@ describe("a relayed computer chosen, read-only screens", () => {
 		expect(text).toContain("회사 사이트");
 		expect(text).toContain("홈페이지를 고쳐요");
 		expect(text).not.toContain(OWN);
-		expect(await buttons("projects")).toEqual(["relay-chat"]);
+		expect(await ev<string[]>(`[...document.querySelectorAll("#v-projects > .rv button:not(.pl-row)")].map(b => b.dataset.k)`)).toEqual(["relay-chat"]);   // its rows open a project, read-only
+	});
+
+	test("a tap on one of its projects opens that project, read-only, with its chat one tap away", async () => {
+		await relayOpen();
+		await show("projects");
+		await run(`document.querySelector('#v-projects > .rv .pl-row[data-key="dir:~/Code/site"]').click()`);
+		await waitFor(`!!${projectDialog}`);
+		const text = await ev<string>(`${projectDialog}.textContent`);
+		for (const s of ["홈페이지를 고쳐요", "진행 중 2", "마지막 갱신", "읽기 전용이에요"]) expect(text).toContain(s);
+		await run(`[...${projectDialog}.querySelectorAll(".dact button")].find(b => b.textContent === "채팅 열기").click()`);
+		await waitFor(`!document.querySelector("dialog[open]") && current === "chat" && target === "relay:jandi:work"`);
 	});
 
 	test("모니터링 lists its monitors, not this computer's, without run or pause buttons", async () => {
@@ -151,6 +163,8 @@ describe("a relayed computer chosen, read-only screens", () => {
 		const text = await ev<string>(`document.querySelector("#v-projects > .rv").textContent`);
 		expect(text).toContain("회사 사이트");
 		expect(text).not.toContain(OWN);
+		await waitFor(`!!${projectDialog}`);   // the project tapped is the one that opens, not only the list it sits in
+		await run(`document.querySelector("dialog[open]").close()`);
 	});
 });
 
@@ -191,6 +205,11 @@ describe("a relayed computer chosen, the chat list", () => {
 		expect(await ev(`RELAY.cur`)).toBe("relay:jandi:work");
 		expect(await ownRows()).toEqual([]);
 		expect(await listText()).toContain("회사 사이트");
+		await run(`document.querySelector('#chat-convo .cv-row[data-k="rv:p:dir:~/Code/site"]').click()`);
+		await waitFor(`current === "projects" && !!${projectDialog}`);   // its project row opens that project over its projects
+		await run(`document.querySelector("dialog[open]").close()`);
+		await run(`go("chat", "list")`);
+		await waitFor(`chatList && document.querySelector('#chat-convo .cv-row[data-t="relay:jandi:work"]')`);
 		await run(`document.querySelector('#chat-convo .cv-row[data-t="relay:jandi:work"]').click()`);
 		await waitFor(`!chatList && current === "chat" && target === "relay:jandi:work"`);
 	});
