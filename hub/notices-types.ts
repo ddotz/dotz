@@ -34,6 +34,10 @@ export type Notice = {
 	by?: string;
 	// The owner message (or earlier post) the asking post replied to: what lets a later [done] to that same request tell it is about the same matter.
 	ref?: string;
+	/** A gateway card that proposes an edit, answered by the owner with its change option: when that answer came (its event ts) and the edit the card showed then. The orchestrator's first card in the card's conversation after `at` is its confirm card (hub/card-answer.ts). Kept on the notice, so a re-ask of the card leaves it. */
+	confirm_ask?: { at: string; edit?: CardEdit };
+	/** The orchestrator's confirm card of the gateway card `id` (see `confirm_ask`), with the edit that card showed when it was answered: Apply here is checked against that line. */
+	confirms?: { id: string; edit?: CardEdit };
 	// kind "watch": the key of the app integration (hub/integrations.ts) the report belongs to. It stays in that app's view and out of 감시 소식.
 	app?: string;
 	// kind "watch": the watch's own name, so a report of a watch an app owns (a login keeper, a sync) is stamped with that app whatever its words say.

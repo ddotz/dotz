@@ -379,9 +379,9 @@ function adoptRepost(e: HubEvent): boolean {
 	return true;
 }
 
-function closeCardsWrittenBackTo(to: string, at: string, keep?: Notice): void {
+function closeCardsWrittenBackTo(to: string, at: string, keep?: Notice, by?: string): void {
 	const since = ownerWroteAt.get(to);
-	if (since && since <= at) for (const i of items) if (i !== keep && isOpenDecision(i) && hasChoice(i) && !i.decision!.draft && i.decision!.to === to && !laterOn(i.decision) && (i.at ?? i.ts) < since) settleDecision(i, "", at, true);
+	if (since && since <= at) for (const i of items) if (i !== keep && isOpenDecision(i) && hasChoice(i) && !i.decision!.draft && i.decision!.to === to && !laterOn(i.decision) && (!i.decision!.card_id || i.by === by) && (i.at ?? i.ts) < since) settleDecision(i, "", at, true);
 }
 
 export function putDecision(d: { key: string; title: string; detail: string; to: string; open?: string; options: DecisionOpt[]; group: number; place?: number; replyTo?: string; draft?: DraftApproval; by?: string; ref?: string; assumed?: true; evidence?: string[]; card_id?: string; edit?: Decision["edit"] }, at: string): void {
@@ -392,7 +392,7 @@ export function putDecision(d: { key: string; title: string; detail: string; to:
 		if (!isOpenDecision(old) && !old.decision.expired && Date.parse(at) - Date.parse(old.ignored ?? old.decision.answered_at ?? "") < REASK_MS) return void closeRepeat(old, at);
 	}
 	if (old) old.key = d.key;
-	if (d.options.length && !d.draft) closeCardsWrittenBackTo(d.to, at, old);
+	if (d.options.length && !d.draft) closeCardsWrittenBackTo(d.to, at, old, d.by);
 	const open = d.open ?? d.to, expires_at = expiresAtOf(d, at);
 	if (d.draft && !shownAsStored(d.draft)) d = { ...d, draft: undefined };
 	const decision: Decision = { options: optionsOf(d), ...(d.evidence ? { evidence: d.evidence } : {}), ...(d.card_id ? { card_id: d.card_id } : {}), ...(d.edit ? { edit: d.edit } : {}), to: d.to, ...(d.replyTo ? { reply_to: d.replyTo } : {}), group: d.group, ...(d.place !== undefined ? { place: d.place } : {}), state: "open", ...(expires_at ? { expires_at } : {}), ...(d.draft ? { draft: d.draft } : {}), ...(d.assumed ? { assumed: true as const } : {}), ...(asked ? { asked } : {}) };

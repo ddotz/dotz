@@ -442,12 +442,24 @@ and at which level, and the baselines the checks compare with).
   and the send puts them on the post as `card_ids`), and the notice store finds an earlier card by that id alone, so a card about another finding never reopens or drops one that has its title.
   The post also carries `card_meta` (by card id: the finding's exact `change` as `edit` and the numbers of its options marked `keep`, read from the saved `doctor.json`); the notice store keeps
   them on the card (`Decision.edit`, `DecisionOpt.keep`, only from a `source: "gateway"` post), so an answer after the finding left the store still has the edit. `hub/card-answer.ts` builds the
-  answer turn: the card's title, its evidence lines and the picked option with its result line replace the quote of the message start for a card of a several-card message or one with evidence.
+  answer turn: the card's title, its evidence lines and the picked option with its result line replace the quote of the message start for a card of a several-card message or one with evidence
+  (web, and Discord buttons in the alert, chat and work channels, the card found by title in that channel's conversation; a Discord button in a session channel still sends only the picked line).
   Apply or delete on a prompt card adds the edit in full (file with its reach: the data folder's own file, the package's file, or neither; line; before; after or the line to delete) and the
   gateway's instruction to change nothing yet and post one confirm card (`적용` / `그대로 둬요`, every file with before and after, this computer only or pushed); without a kept edit it says the
-  record no longer holds it. Apply on that confirm card (found as the card posted in reply to the owner's answer message) first checks that the file's line still equals `from`: if so the turn
-  says to make exactly the edits the confirm card showed, else the card closes with no turn and says why. A `keep` option closes its card with no model turn and no inbox message, held for the
-  web's undo window like any answer, its answer ending in `아무것도 바꾸지 않았어요`; the same on a Discord button (`discordGatewayAnswer`). MODE's Reporting section holds the matching rule.
+  record no longer holds it. Only that change option does: Leave or Keep, also on a card stored without the marks, reaches the model as the card's own lines. The answer stamps the prompt card
+  (`Notice.confirm_ask`: the answer event's ts and the edit as it was), and the confirm card is the orchestrator's first card in that conversation posted after it that shows the edit's before line
+  (or the line to delete) and that no earlier card already confirms (`Notice.confirms`, set when it is posted), so two prompt cards answered in a row each get their own confirm card: a session's
+  card, another conversation's, a card that does not show the line, one posted before the answer and a gateway card never count, on the web and on Discord alike, and both stamps survive a restart
+  and a re-ask. Apply on the confirm card first checks that the file's line (CRLF read as LF) still equals the stamped `from`: if so the turn says to make exactly the edits the confirm card showed,
+  else the card closes with no turn and says why, naming the file as the card shows it (`RULES.md`). Apply on a card that is not a confirm card carries no "the owner picked Apply" line, and the
+  confirm-first instruction tells the model to edit only when that line came. Typed answers follow the same rule: words in the card sheet that are exactly one option's name or number are that
+  option's pick (anything longer goes to the model as before), and a number or option name typed in the conversation that closes one of these cards brings the same instruction into the turn (or,
+  after the line changed, a gateway line to edit nothing). An agent (the hub token) cannot answer either card or close it through the answer route, its typed words, `dotz_send`'s `resolves` or
+  `/api/notices/resolve` (`ownerOnlyCard`, `typedAnswer`); a `<resolves>` line in the orchestrator's answer still closes it as resolved, with no edit, and its answer never gets the instruction
+  or "the owner picked Apply". A card with a gateway id (doctor, monitor, disk) is not closed when the owner wrote in its conversation and another producer's card follows
+  (`closeCardsWrittenBackTo` in `hub/notices-store.ts`): it stays until answered, expired or closed by its own producer. A `keep` option
+  closes its card with no model turn and no inbox message, held for the web's undo window like any answer, its answer ending in `아무것도 바꾸지 않았어요`; the same on a Discord button
+  (`discordGatewayAnswer`), which then posts the closing line in that channel. MODE's Reporting section holds the matching rule.
   Two cards of one message would still read the same, so when two would share a title (two findings on one line) the later one ends in
   ` (2)`, ` (3)` and so on, its quote shortened to keep 40 characters. A part with nothing in it is left out; `decisions` is the number of cards. A `doctor.json` written by the older code loads
   too: a finding whose evidence is one string has no evidence lines, and a card stored without a subject is rebuilt from its old question (the old Korean and English formats, kept as fixed patterns

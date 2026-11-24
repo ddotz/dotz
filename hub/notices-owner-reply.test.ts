@@ -102,3 +102,13 @@ test("the same question asked again after the owner wrote is the same card count
 	expect(open()).toEqual(["보고서를 언제 보낼까요?"]);
 	expect(first().decision!.asked?.n).toBe(2);
 });
+
+test("a gateway card stays open when the owner wrote back and another producer's card follows; the orchestrator's own earlier card still closes", () => {
+	emit("outbox", { ts: ts(), kind: "out", source: "gateway", target: "alert", text: "[ask] 디스크가 부족해요\n결정: 디스크 공간 · 정리할까요?\n**1) 정리해요**\n**2) 두기**", card_ids: ["disk:low"] });
+	ask();
+	owner("다른 얘기예요");
+	emit("inbox", { ts: ts(), kind: "message", source: "web", channel: "web:alert", text: "다른 얘기예요" });
+	reask("보고서를 언제 보내면 좋을까요? (근거 포함)");
+	emit("outbox", { ts: ts(), kind: "out", source: "orchestrator", target: "web:alert", text: "[ask] 확인해 주세요\n결정: 적용할까요?\n**1) 적용**\n**2) 그대로 둬요**" });
+	expect(open().sort()).toEqual(["보고서를 언제 보내면 좋을까요? (근거 포함)", "디스크 공간 · 정리할까요?", "적용할까요?"].sort());
+});

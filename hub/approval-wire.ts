@@ -14,6 +14,8 @@ import { msg } from "./i18n.ts";
 import { DECISION_HEAD, unnumbered } from "./choices.ts";
 import { heldOf } from "./notices-answers.ts";
 import { noTurnLine } from "./card-answer.ts";
+import { editChainCard } from "./notices-rules.ts";
+import { out } from "./outbound.ts";
 
 export { recordAnswer, reportSend, sender, sendTargetOf, settleSends } from "./reply-wire.ts";
 import { json } from "./routes-util.ts";
@@ -21,10 +23,10 @@ import { json } from "./routes-util.ts";
 /** The refusal of an answer whose label is not the option's label now: the card changed since the owner looked. */
 const STALE_OPTIONS = "카드 선택지가 바뀌었어요. 다시 확인하고 골라 주세요";
 
-/** A card only the owner may settle: a send approval, a card naming a draft ref, a stronger-model request or a login request. An agent's call (the hub token) never closes, ignores or reopens one. */
+/** A card only the owner may settle: a send approval, a card naming a draft ref, a stronger-model request, a login request, or a card of an edit chain (a gateway card that proposes an edit and its confirm card, hub/notices-rules.ts editChainCard). An agent's call (the hub token) never closes, ignores or reopens one. */
 export const ownerOnlyCard = (card: Notice): boolean => {
 	const d = card.decision;
-	return !!d && (!!d.draft || questionRef(card.title) !== undefined || d.to.startsWith("auth:") || d.options.some(o => !!escalations()?.answers({ to: d.to, label: o.label })));
+	return !!d && (!!d.draft || editChainCard(card) || questionRef(card.title) !== undefined || d.to.startsWith("auth:") || d.options.some(o => !!escalations()?.answers({ to: d.to, label: o.label })));
 };
 
 /** What a card's picked label asks of the one reply flow, or undefined when the bot reads it (직접 입력, a 고치기 with no words). */
@@ -56,17 +58,19 @@ async function actOnCard(conv: string, q: string, label: string, note: string | 
 /** A Discord button pick (hub/askbuttons.ts) on a draft the reply flow knows: the same act as the web's card (send, revise with its words, drop),
  * checked against the version the card was drawn with. `edit`: the 고치기 form's text, changed by the owner (edit, then revise if he wrote words).
  * A pick on a card whose web answer is held for its undo window (hub/notices-answers.ts holdDecision) is refused with that answer's label: it is not sent.
- * A pick that closes its card with no model turn (hub/card-answer.ts noTurnLine: an option the gateway marked as changing nothing) is answered here as on the web.
+ * A pick that closes its card with no model turn (hub/card-answer.ts noTurnLine: an option the gateway marked as changing nothing, Apply on a confirm card whose line changed) is answered here as on the web, and the line it closed the card with is posted in that channel.
  * Undefined when the reply flow did not take it (the answer keeps its old path); `error`: why it refused (the owner hears it, the buttons stay). */
 export async function discordGatewayAnswer(target: string, conv: string, text: string, picks: AnswerPick[], edit?: string): Promise<{ error?: string } | undefined> {
 	const p = picks.length === 1 ? picks[0]! : undefined;
 	if (!p) return undefined;
 	const q = DECISION_HEAD.exec(p.q)?.[1] ?? p.q, card = allNotices().find(n => n.decision?.state === "open" && n.title === q && (n.decision.to === target || n.decision.to === conv)), hold = card && heldOf(card);
 	if (hold) return { error: msg().answerHeld(hold.label.replace(/^\d+\)\s*/, "")) };
-	const picked = card?.decision?.options.find(o => o.n === p.n && unnumbered(o.label) === unnumbered(p.label));
-	if (card && picked && noTurnLine(card, picked)) {
+	const picked = card?.decision?.options.find(o => o.n === p.n && unnumbered(o.label) === unnumbered(p.label)), quiet = card && picked && noTurnLine(card, picked);
+	if (card && picked && quiet) {
 		const r = await answerDecision(card.id, { n: picked.n }, async () => undefined);
-		return r.status === 200 ? {} : { error: String(r.body.error) };
+		if (r.status !== 200) return { error: String(r.body.error) };
+		if (!r.body.already) await out(target, quiet, undefined, { source: "gateway", nk: "gateway-note" }).catch(e => log(`no-turn line of ${card.id} not posted: ${e}`));
+		return {};
 	}
 	const note = p.note ?? /\s-\s(.+)$/.exec(text)?.[1];
 	const r = await actOnCard(conv, p.q, p.label, note, { surface: "discord", login: "owner", ...(edit !== undefined ? { text: edit } : {}) });

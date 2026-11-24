@@ -17,6 +17,10 @@ export const NOTICE_CAP = 300;
 export const TEXT_MAX = 1500;
 export const LOUD = new Set<NoticeTone>(["done", "fail", "ask"]);
 export const RESTART_PREFIX = /^게이트웨이(?: 재시작했어요|를 다시 시작했어요|가 다시 시작돼서)/;
+/** The id of a gateway card that proposes an edit of the owner's standing instructions (the doctor's prompt review and enforced-rule cards). */
+export const PROPOSES_EDIT = /^prompt:(?:review|enforced):/;
+/** A card only the owner's own answer may settle: a gateway card that proposes an edit, or the orchestrator's confirm card of one (hub/card-answer.ts). */
+export const editChainCard = (i: Notice): boolean => PROPOSES_EDIT.test(i.decision?.card_id ?? "") || !!i.confirms;
 
 // A question whose time is up is no longer open on any surface, even before the sweep reaches it (settleExpiredQuestions): the badge,
 // 답변 필요, push re-asks and the approval queue all read this one check. Stored times are the hub's clock (now()), compared as ISO strings.
@@ -145,7 +149,7 @@ export function authorOf(e: HubEvent): string | undefined {
 	const src = String(e.source ?? "");
 	return src.startsWith("lane:") || src === "orchestrator" || src === "gateway" ? src : undefined;
 }
-/** Which open decisions in conversation `to` message `e` answers by its words. An agent's post (AGENT_AUTHOR, the owner's terminal included) answers only an option of a card with options, never a send-approval card, and naming the card or quoting its question gives it no more. */
+/** Which open decisions in conversation `to` message `e` answers by its words. An agent's post (AGENT_AUTHOR, the owner's terminal included) answers only an option of a card with options, never a send-approval card or a card of an edit chain (editChainCard), and naming the card or quoting its question gives it no more. */
 export const typedAnswer = (e: HubEvent, to: string) => {
 	const agent = e.author === AGENT_AUTHOR;
 	const id = typeof e.decision === "string" ? e.decision : "";
@@ -155,7 +159,7 @@ export const typedAnswer = (e: HubEvent, to: string) => {
 	const answers = (i: Notice) => answersOption(i.decision!.options, text);
 	if (!agent && !id && isDoctorLook(text)) return () => false;
 	return (i: Notice): boolean =>
-		agent ? i.decision!.to === to && !i.decision!.draft && hasChoice(i) && answers(i) && (!id || i.id === id) : id ? i.id === id : i.decision!.to === to && !i.decision!.draft && (!hasChoice(i) || answers(i) || quotesAsk(i));
+		agent ? i.decision!.to === to && !i.decision!.draft && !editChainCard(i) && hasChoice(i) && answers(i) && (!id || i.id === id) : id ? i.id === id : i.decision!.to === to && !i.decision!.draft && (!hasChoice(i) || answers(i) || quotesAsk(i));
 };
 // Older items carry no `by`: a session's question shows in its decision target or lane key.
 export const originOf = (i: Notice): string | undefined => i.by ?? (i.decision?.to.startsWith("lane:") ? i.decision.to : i.key?.startsWith("lane:") ? i.key : undefined);

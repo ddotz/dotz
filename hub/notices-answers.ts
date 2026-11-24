@@ -15,7 +15,7 @@ import { RUN_DECISION } from "./notices-schedule.ts";
 import { laneExists } from "./notices-lanes.ts";
 import { escalations } from "./escalate.ts";
 import { items, orchTurnFrom, putDecision, resolveAsks, save, settleDecision, unreadCount } from "./notices-store.ts";
-import { noTurnLine } from "./card-answer.ts";
+import { noTurnLine, typedOption } from "./card-answer.ts";
 
 // A question whose time is up stops waiting on the owner: it is closed as resolved (no answer), marked `expired` so the card reads 기한 지남, read, saved
 // and broadcast like any other settle so every open page updates live. This runs in the hub's existing periodic pass (main.ts settleSweep); idempotent.
@@ -174,7 +174,9 @@ async function answerInWords(item: Notice, said: string, send: DecisionSend, han
 	if (d.draft || d.to.startsWith("auth:") || d.to.startsWith(RUN_DECISION)) return { status: 400, body: { error: "unknown option" } };
 	if (!said) return { status: 400, body: { error: "내용을 적어 주세요" } };
 	const text = d.group > 1 || !d.reply_to ? `${item.title}: ${said}` : said;
-	return (hold ? holdDecision : deliverDecision)(item, handoff ? `${said} · ${HANDED_OFF}` : said, { to: handoff ? "main" : d.to, text: handoff ? handedOff(item, text) : text, notice: item.id, ...(d.reply_to && !handoff ? { replyTo: d.reply_to } : {}) }, send);
+	const named = d.options.some(x => [`${x.n}`, `${x.n})`, `${x.n}번`, unnumbered(x.label), `${x.n}) ${unnumbered(x.label)}`].includes(said.trim()));
+	const o = handoff || !named ? undefined : typedOption(item, said), quiet = o && noTurnLine(item, o);
+	return (hold ? holdDecision : deliverDecision)(item, handoff ? `${said} · ${HANDED_OFF}` : quiet ? `${said} · ${quiet}` : said, { to: handoff ? "main" : d.to, text: handoff ? handedOff(item, text) : text, notice: item.id, ...(o ? { picks: [{ q: item.title, n: o.n, label: o.label }] } : {}), ...(d.reply_to && !handoff ? { replyTo: d.reply_to } : {}) }, quiet ? NO_TURN : send);
 }
 
 // A login request (dotz_auth) waits on the owner: approve / cancel here, the form for typed values stays the page's own.
