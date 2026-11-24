@@ -105,6 +105,27 @@ describe("owner replies that come in later close the comment and its draft", () 
 		expect(state.ids[0]).toEqual(["hwa"]);
 	});
 
+	test("a comment stored before author ids were kept gains its id at the next re-check, and nothing else of it changes", async () => {
+		config([source("youtube", "youtube"), source("instagram", "instagram")]);
+		const seed = (src: string, native: string, thread: string, author: string): Comment => ({ id: `cm:${src}:${native}`, source: src, native, thread, author, text: "질문이에요", postTitle: "post", at: NOW - DAY, mine: false, collector: "t" });
+		const store = createStore(dir);
+		store.addComments([seed("youtube", "old", "p1", "Kim"), seed("instagram", "k9", "m1", "fan9")]);
+		const yt: YoutubeApi = {
+			channelId: () => "UCme",
+			threadsSince: async () => ({ comments: [], newest: "n" }),
+			uploads: async () => [],
+			videos: async () => ({}),
+			reply: async () => "r",
+			ownReplies: async () => [],
+			threadsByIds: async () => ({ old: { videoId: "p1", authorChannelId: "UC_kim", replies: [] } }),
+		};
+		const list: IgComment[] = [{ id: "k9", text: "고쳐 쓴 글", username: "fan9", timestamp: new Date(NOW - DAY).toISOString(), replies: [] }];
+		const igApi: InstagramApi = { username: () => "owner_ig", userId: () => "17841", media: async (): Promise<IgMedia[]> => [], comments: async () => list, read: async () => ({ comments: list, complete: true }), reply: async () => "ref" };
+		const engine = createEngine({ dir, now: () => NOW, collector: "t", adapters: { youtube: youtubeAdapter(() => yt), instagram: instagramAdapter(() => igApi) } });
+		expect(await engine.reconcile({ recheck: true })).toEqual({ answered: 0, gone: 0, draftsClosed: 0 });
+		expect(engine.store.comments().map(c => [c.native, c.author, c.authorId, c.text])).toEqual([["old", "Kim", "UC_kim", "질문이에요"], ["k9", "fan9", "fan9", "질문이에요"]]);
+	});
+
 	test("YouTube list also stores the owner's replies it already reads", async () => {
 		const reply = { id: "t.1", parentId: "t", author: "지수", text: "네", publishedAt: new Date(NOW - 1000).toISOString() };
 		const api: YoutubeApi = {

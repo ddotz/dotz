@@ -77,7 +77,9 @@ A chat message that needs his own decision still asks first (exit 4), since the 
     default (`replyAddress`: a usable Reply-To, else the first address of From), kept under `mail/to/` for every mail app instance and
     mailbox (`recipientApp`: a person's address is the same in each), or for a comment its author's platform id (`Comment.authorId`: the
     YouTube channel id, the Instagram handle), never the display name two people can share. A website comment, an Instagram unknown user
-    and a draft made by hand (`draft.ts new --kind comment --from <name>`) have no id, so no recipient level. The name is `recipientFile(id)`: the id NFC, trimmed and lowercased,
+    and a draft made by hand (`draft.ts new --kind comment --from <name>`) have no id, so no recipient level. A YouTube or Instagram comment
+    stored before ids were kept gets its id while it is open, at the engine's next re-check of it (`adapters/google-meta.ts` `recheck`
+    returns the stored row with the id the platform shows; an answered one keeps none). The name is `recipientFile(id)`: the id NFC, trimmed and lowercased,
     `[a-z0-9-]` kept and every other UTF-16 code unit written `_` plus its four hex digits, so it is injective and `recipientOf` reads it back.
     An empty id, one over 120 code units or whose name would pass 250 characters, and the nobody values (`익명`, the adapters' unknown user)
     have no recipient level. KakaoTalk has none: its room already is the person.

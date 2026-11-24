@@ -23,7 +23,7 @@ test("threadsByIds returns the owner's replies of the threads still there and le
 	});
 	const out = await threadsByIds(ctx, CHANNEL, ["a", "b", "deleted"]);
 	expect(Object.keys(out).sort()).toEqual(["a", "b"]);
-	expect(out.a).toEqual({ videoId: "v1", replies: [{ id: "a.2", parentId: "a", author: "owner", text: "답했어요", publishedAt: "2030-06-11T01:00:00Z" }] });
+	expect(out.a).toEqual({ videoId: "v1", authorChannelId: "UCfan", replies: [{ id: "a.2", parentId: "a", author: "owner", text: "답했어요", publishedAt: "2030-06-11T01:00:00Z" }] });
 	expect(out.b!.replies).toEqual([]);
 	expect(calls(ctx, "/commentThreads")).toHaveLength(1);
 	expect(new URL(ctx.calls.at(-1)!.url).searchParams.get("id")).toBe("a,b,deleted");

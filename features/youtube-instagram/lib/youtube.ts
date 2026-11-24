@@ -197,18 +197,22 @@ async function repliesUnder(ctx: Ctx, token: string, channelId: string, parentId
 	return out;
 }
 
+/** One top-level comment `threadsByIds` read again: its video, its author's channel id when the platform gives one, and the channel's replies under it. */
+export type YtThread = { videoId: string; authorChannelId?: string; replies: YtReply[] };
+
 // Re-reads known top-level comments by id (commentThreads.list?id=, up to 50 per call, 1 unit): for each one still there, the video it sits on and the
 // channel's replies under it (a thread with more replies than the call returned is read through comments.list). An id missing from the answer is deleted.
-export async function threadsByIds(ctx: Ctx, channelId: string, ids: string[]): Promise<Record<string, { videoId: string; replies: YtReply[] }>> {
+export async function threadsByIds(ctx: Ctx, channelId: string, ids: string[]): Promise<Record<string, YtThread>> {
 	const token = await accessToken(ctx);
-	const out: Record<string, { videoId: string; replies: YtReply[] }> = {};
+	const out: Record<string, YtThread> = {};
 	const want = [...new Set(ids.filter(Boolean))];
 	for (let i = 0; i < want.length; i += BATCH) {
 		const d = await api<ThreadPage>(ctx, token, "GET", "commentThreads", { part: "snippet,replies", id: want.slice(i, i + BATCH).join(","), textFormat: "plainText" }, COSTS.list);
 		for (const t of d.items ?? []) {
 			const id = t.snippet.topLevelComment.id;
 			const shown = t.replies?.comments.length ?? 0;
-			out[id] = { videoId: t.snippet.videoId ?? "", replies: (t.snippet.totalReplyCount ?? 0) > shown ? await repliesUnder(ctx, token, channelId, id) : ownerRepliesOf(t, channelId) };
+			const author = t.snippet.topLevelComment.snippet.authorChannelId?.value;
+			out[id] = { videoId: t.snippet.videoId ?? "", ...(author ? { authorChannelId: author } : {}), replies: (t.snippet.totalReplyCount ?? 0) > shown ? await repliesUnder(ctx, token, channelId, id) : ownerRepliesOf(t, channelId) };
 		}
 	}
 	return out;

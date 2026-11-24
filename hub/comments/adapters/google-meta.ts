@@ -3,7 +3,7 @@
 import type { Config, Ctx } from "../../../features/youtube-instagram/lib/config.ts";
 import { mentions, ownerView, UNKNOWN_USER } from "../../../features/youtube-instagram/lib/ig-owner.ts";
 import type { IgAuthor, IgComment, IgCommentRead, IgMedia } from "../../../features/youtube-instagram/lib/instagram.ts";
-import type { YtComment, YtReply } from "../../../features/youtube-instagram/lib/youtube.ts";
+import type { YtComment, YtThread } from "../../../features/youtube-instagram/lib/youtube.ts";
 import { type Comment, type CommentAdapter, FALLBACK_TITLE, type PostInfo, type RawComment, type ReplyOutcome } from "../contract.ts";
 
 export type YoutubeApi = {
@@ -14,8 +14,8 @@ export type YoutubeApi = {
 	videos: (ids: string[]) => Promise<Record<string, { title: string; thumb?: string }>>;
 	reply: (parentId: string, text: string) => Promise<string>;
 	ownReplies: (channelId: string, limit: number) => Promise<string[]>;
-	/** Re-reads top-level comments by id: the video and the channel's replies of each one still there; an id missing from the answer is deleted. */
-	threadsByIds?: (channelId: string, ids: string[]) => Promise<Record<string, { videoId: string; replies: YtReply[] }>>;
+	/** Re-reads top-level comments by id: the video, the author's channel id and the channel's replies of each one still there; an id missing from the answer is deleted. */
+	threadsByIds?: (channelId: string, ids: string[]) => Promise<Record<string, YtThread>>;
 	/** The threads the channel answered, newest first, with its replies (youtube.ts ownerHistory); `deadline` is epoch ms. Missing = no history. */
 	history?: (channelId: string, opts: { target: number; deadline: number }) => Promise<YtComment[]>;
 };
@@ -44,6 +44,8 @@ function postFailure(e: unknown, app: string): ReplyOutcome {
 	if ((name === "YoutubeError" || name === "InstagramError") && typeof status === "number" && status >= 400 && status < 500) return status === 404 ? no("original_gone", "원래 글이 지워졌어요") : no("rejected", `${app}에서 이 글을 받지 않았어요`);
 	return maybe("unknown", "보내다가 문제가 생겼어요");
 }
+
+const withAuthorId = (stored: Comment, authorId: string): RawComment => ({ native: stored.native, thread: stored.thread, ...(stored.parent ? { parent: stored.parent } : {}), author: stored.author, authorId, text: stored.text, postTitle: stored.postTitle, ...(stored.postLink ? { postLink: stored.postLink } : {}), ...(stored.thumb ? { thumb: stored.thumb } : {}), at: stored.at, mine: stored.mine });
 
 // A thread as stored rows: the top comment, then the channel's own replies that came with it (its answer is stored next to the comment, so the comment is not open).
 function ytRows(c: YtComment, channelId: string, shown: Pick<RawComment, "postTitle" | "postLink" | "thumb">): RawComment[] {
@@ -94,6 +96,7 @@ export function youtubeAdapter(api: () => YoutubeApi): CommentAdapter {
 					gone.push(c.native);
 					continue;
 				}
+				if (!c.authorId && t.authorChannelId) comments.push(withAuthorId(c, t.authorChannelId));
 				for (const r of t.replies) comments.push({ native: r.id, thread: c.thread, parent: c.native, author: r.author, authorId: channelId, text: r.text, postTitle: c.postTitle, ...(c.postLink ? { postLink: c.postLink } : {}), ...(c.thumb ? { thumb: c.thumb } : {}), at: Date.parse(r.publishedAt) || 0, mine: true });
 			}
 			return { comments, gone };
@@ -254,7 +257,12 @@ export function instagramAdapter(api: () => InstagramApi): CommentAdapter {
 					const shown = { postTitle: first.postTitle, ...(first.postLink ? { postLink: first.postLink } : {}), ...(first.thumb ? { thumb: first.thumb } : {}) };
 					// His own rows handed over (stored top-level, issue #31) come back with their comment when they are replies.
 					const selves = new Set(rows.filter(r => r.mine).map(r => r.native));
-					comments.push(...igRows(list, ownerView(list, owner).isOwner, mediaId, shown).filter(r => r.mine && r.parent && (wanted.has(r.parent) || selves.has(r.native)) && !/\.\d+$/.test(r.native)));
+					const listed = igRows(list, ownerView(list, owner).isOwner, mediaId, shown);
+					comments.push(...listed.filter(r => r.mine && r.parent && (wanted.has(r.parent) || selves.has(r.native)) && !/\.\d+$/.test(r.native)));
+					for (const c of rows) {
+						const id = c.authorId ? undefined : listed.find(r => r.native === c.native)?.authorId;
+						if (id) comments.push(withAuthorId(c, id));
+					}
 					const seen = new Set(list.flatMap(c => [c.id, ...(c.replies ?? []).flatMap(r => (r.id ? [r.id] : []))]));
 					if (res.complete) for (const r of rows) if (!r.parent && !seen.has(r.native)) gone.push(r.native);
 					read++;
