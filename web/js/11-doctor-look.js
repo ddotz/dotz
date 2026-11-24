@@ -63,6 +63,8 @@ async function dlSend(key, t, text, since) {
     if (await dlHas(t, text, since)) { dlKeep(key); DL.st.delete(key); dlPaint(key); return; }
     const r = await sendMsgOut(t, text, { text, ...(isRowT(t) ? { conv: t } : {}), ...(isWorking(t) ? { mode: "steer" } : {}) });
     if (r && r.queued) { putQueue(QUEUE.filter(i => i.id !== r.queued.id).concat(r.queued)); renderQueue(); }
+    const waiting = r ? null : OUTBOX.findLast(o => o.t === t && o.text === text);
+    if (waiting) { waiting.since = since; outboxSave(); }
     DL.st.delete(key);
     if (r) dlKeep(key);
     if (t === target) { putChatStick(true); scrollChat(true); }
@@ -80,7 +82,7 @@ function dlMarks(nodes, src) {
   const sp = dlSplit(src.text, src.wk), looks = sp.lines.filter(l => l.look);
   if (!looks.length) return nodes;
   const roots = (Array.isArray(nodes) ? nodes : [nodes]).filter(n => n && n.querySelectorAll), t = src.target || src.open || "alert";
-  const plain = s => String(s).replace(/[*`_]/g, "").replace(/\s+/g, " ").trim(), done = new Set();
+  const plain = s => String(s).replace(/[*`_~]/g, "").replace(/\s+/g, " ").trim(), done = new Set();
   for (const li of roots.flatMap(r => [...r.querySelectorAll("li")]).filter(x => !x.querySelector("li, .dl-btn"))) {
     const n = dlMarkedTextNode(li);
     if (!n) continue;

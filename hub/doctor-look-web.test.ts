@@ -12,11 +12,14 @@ const ROW = [`${t.head(DAY)} · ${t.told(3)}`, ...told(3)].join("\n");
 const CARD = cardBlock({ subject: t.diskSubject, question: t.diskQuestion, evidence: ["남은 공간 9GB (4%)"], options: [{ name: t.diskCleanName, result: t.diskCleanResult }, { name: t.diskKeepName, result: t.diskKeepResult }] });
 const WITH_CARD = `${[`${t.head(DAY)} · ${t.told(3)} · ${t.decide(1)}`, ...told(3)].join("\n")}\n\n${t.decidePart}\n\n${CARD}`;
 const OTHER = `백업이 끝났어요\n- 정리 작업이 돌았어요${DOCTOR_LOOK_KO}\n- 남은 공간 12GB`;
+const STRUCK = "오래된 ~~규칙~~ 줄이 남아 있어요", PATHL = "큰 세션: ~/Code/sample-a 3개가 쌓였어요";
+const MARKS = [`${t.head(DAY)} · ${t.told(2)}`, t.toldPart, `- ${STRUCK}${DOCTOR_LOOK_KO}`, `- ${PATHL}${DOCTOR_LOOK_KO}`, t.lookHint].join("\n");
 const minutesAgo = (m: number) => new Date(Date.now() - m * 60_000).toISOString();
-const TS = { row: minutesAgo(40), other: minutesAgo(35), quote: minutesAgo(30), own: minutesAgo(25), card: minutesAgo(20), main: minutesAgo(15), lane: minutesAgo(12), work: minutesAgo(10) };
+const TS = { row: minutesAgo(40), marks: minutesAgo(38), other: minutesAgo(35), quote: minutesAgo(30), own: minutesAgo(25), card: minutesAgo(20), main: minutesAgo(15), lane: minutesAgo(12), work: minutesAgo(10) };
 const out = (ts: string, target: string, text: string, source = "gateway", wk?: string) => ({ ts, kind: "out", source, target, ...(wk ? { wk } : {}), text });
 const ALERT = [
 	out(TS.row, "alert", ROW, "gateway", "doctor"),
+	out(TS.marks, "alert", MARKS, "gateway", "doctor"),
 	out(TS.other, "alert", OTHER),
 	out(TS.quote, "alert", `아침 점검 내용을 다시 붙여 둘게요.\n\n${ROW}`, "orchestrator"),
 	{ ts: TS.own, kind: "message", source: "web", channel: "web:alert", author: "local", mid: "own1", text: `제가 붙여 넣은 글이에요.\n\n${ROW}` },
@@ -35,13 +38,14 @@ type Sent = { text: string; cid?: string; conv?: string; mode?: string };
 const sent = inbox<Sent>();
 const stored: { ts: string; kind: string; source: string; channel: string; text: string; cid?: string }[] = [];
 const storedIn = (target: string) => stored.filter(m => m.channel === (target === "main" ? "web" : `web:${target}`));
-let refuse = "", down = false, working = false;
+let refuse = "", down = false, blind = false, working = false;
 const hub = fakeHub({
 	stream: "fake",
 	state: () => idleState({ orchestrator: { status: working ? "working" : "idle" } }),
 	api: async (req, url) => {
 		const p = url.pathname;
 		if (p === "/api/history") {
+			if (blind) return new Response("bad gateway", { status: 502 });
 			const target = url.searchParams.get("target") ?? "main", after = url.searchParams.get("after") ?? "";
 			const events = [...(target === "alert" ? ALERT : target === "worklog" ? WORKLOG : target === "main" ? MAIN : []), ...storedIn(target)].filter(e => e.ts > after);
 			return json({ target, events });
@@ -95,7 +99,7 @@ for (const width of [390, 1280]) {
 			await run(`paneSplit("alert", "chat", "right")`);
 			await waitFor(`!!PN.root && !!PN.root.a`);
 			await run(`paneFocus(PN.root.a.id)`);
-			await waitFor(`document.querySelectorAll("#split .pane").length === 2 && document.querySelectorAll("#split .pane")[1].querySelectorAll(".dl-btn").length === 4`);
+			await waitFor(`document.querySelectorAll("#split .pane").length === 2 && document.querySelectorAll("#split .pane")[1].querySelectorAll(".dl-btn").length === 6`);
 		}, 15_000);
 
 		test("the unfolded told-only row and the bubble with a card draw a button on each marked line, named by its state and line, none on the other, and no hint line", async () => {
@@ -110,6 +114,30 @@ for (const width of [390, 1280]) {
 				expect(await ev<string>(`${at(ts)}.textContent`)).toContain(t.healthy(["디스크"]));
 			}
 			expect(await ev<boolean>(`parseFloat(getComputedStyle(${at(TS.row)}.querySelector(".dl-btn")).marginLeft) > 0`)).toBe(true);
+		});
+
+		const drawn = (ts: string) => `[...${at(ts)}.querySelectorAll("li")].map(li => { const b = li.querySelector(".dl-btn"); return { text: li.textContent.replace(b ? b.textContent : "", "").trim(), btn: b ? b.textContent : "", aria: b ? b.getAttribute("aria-label") : "" }; })`;
+		const pathBtn = `[...${at(TS.marks)}.querySelectorAll("li")].find(li => li.textContent.includes("폴더")).querySelector(".dl-btn")`;
+		test("a told line whose ~~ the page drops still gets its button, named by its source line", async () => {
+			await open("alert", TS.marks);
+			const [struck] = await ev<{ text: string; btn: string; aria: string }[]>(drawn(TS.marks));
+			expect(struck!.text).toBe("오래된 규칙 줄이 남아 있어요");
+			expect([struck!.btn, struck!.aria]).toEqual(["원인 찾기", `원인 찾기: ${STRUCK}`]);
+			expect(await ev<string>(`${at(TS.marks)}.textContent`)).not.toContain(t.lookHint);
+			expect(await ev<string>(`${at(TS.marks)}.textContent`)).not.toContain(DOCTOR_LOOK_KO.trim());
+		});
+
+		test("a told line the Korean display rules draw differently (a ~/path shown as 폴더) gets its button, and the reply quotes the source line", async () => {
+			await open("alert", TS.marks);
+			const [, path] = await ev<{ text: string; btn: string; aria: string }[]>(drawn(TS.marks));
+			expect(path!.text).toContain("폴더");
+			expect(path!.text).not.toContain("~/");
+			expect([path!.btn, path!.aria]).toEqual(["원인 찾기", `원인 찾기: ${PATHL}`]);
+			const before = sent.length;
+			await run(`${pathBtn}.click()`);
+			expect((await sent.until(a => a.length > before))[before]).toMatchObject({ text: reply(PATHL), conv: "alert" });
+			await waitFor(`${pathBtn}.textContent === "보냈어요"`);
+			expect(sent.length).toBe(before + 1);
 		});
 
 		test("only the gateway's own doctor message gets buttons: a model's quote, the owner's paste, a session report and another gateway alert keep their words", async () => {
@@ -147,8 +175,9 @@ for (const width of [390, 1280]) {
 			expect(sent.length).toBe(before + 1);
 		}, 20_000);
 
-		test("a request the outbox gives up offers 다시 보내기, and the retry sends it", async () => {
-			const second = `[...${at(TS.row)}.querySelectorAll(".dl-btn")][1]`, before = sent.length;
+		test("a request the outbox gives up offers 다시 보내기 and leaves the composer as the owner had it; the retry sends it once and the composer does not send it again", async () => {
+			const second = `[...${at(TS.row)}.querySelectorAll(".dl-btn")][1]`, before = sent.length, own = "디스크 얘기는 내일 할게요";
+			await run(`ta.value = ${JSON.stringify(own)}; saveDraft()`);
 			down = true;
 			await run(`${second}.click()`);
 			await waitFor(`OUTBOX.length === 1 && ${second}.textContent === "보내는 중"`);
@@ -156,12 +185,68 @@ for (const width of [390, 1280]) {
 			down = false;
 			await waitFor(`OUTBOX.length === 0 && ${second}.textContent === "다시 보내기" && !${second}.disabled`, 20_000);
 			expect(await ev<string>(`${second}.getAttribute("aria-label")`)).toBe(`다시 보내기: ${WATCH}`);
+			expect(await ev<string[]>(`[ta.value, ts("alert").draft, localStorage.getItem(DRAFT_KEY("alert"))]`)).toEqual([own, own, own]);
 			refuse = "";
 			await run(`${second}.click()`);
 			expect((await sent.until(a => a.length > before))[before]).toMatchObject({ text: reply(WATCH), conv: "alert" });
 			await waitFor(`${second}.textContent === "보냈어요"`);
 			expect(sent.length).toBe(before + 1);
+			await run(`sendChat()`);
+			await sent.until(a => a.length > before + 1);
+			expect(sent.slice(before).map(s => s.text)).toEqual([reply(WATCH), own]);
+			expect(storedIn("alert").filter(m => m.text === reply(WATCH)).length).toBe(1);
 		}, 20_000);
+
+		test("a request waiting in the outbox that another device sent meanwhile is not sent again: it leaves the outbox, the other waiting messages go out in their order (also one whose words the owner had sent earlier), and it reads 보냈어요; while the history cannot be read it keeps waiting", async () => {
+			refuse = "";
+			await run(`localStorage.removeItem("dotz.doctor-look")`);
+			stored.length = 0;
+			await view.navigate(`${hub.origin}/`);
+			await openAlert();
+			const first = `${at(TS.row)}.querySelector(".dl-btn")`, before = sent.length, early = "네, 그렇게 해 주세요", late = "나중에 보낼 글이에요";
+			stored.push({ ts: minutesAgo(5), kind: "message", source: "web", channel: "web", text: early, cid: "said-before" });
+			down = true;
+			blind = true;
+			await run(`sendMsgOut("main", ${JSON.stringify(early)}, { text: ${JSON.stringify(early)} })`);
+			await run(`${first}.click()`);
+			await waitFor(`OUTBOX.length === 2 && ${first}.textContent === "보내는 중"`);
+			await run(`sendMsgOut("main", ${JSON.stringify(late)}, { text: ${JSON.stringify(late)} })`);
+			await waitFor(`OUTBOX.length === 3`);
+			stored.push({ ts: minutesAgo(0), kind: "message", source: "web", channel: "web:alert", text: reply(RESTARTED), cid: "other-device" });
+			down = false;
+			await view.evaluate(`outboxFlush().then(() => 0)`);
+			expect(await ev<string[]>(`OUTBOX.map(o => o.t + ":" + o.text)`)).toEqual([`main:${early}`, `alert:${reply(RESTARTED)}`, `main:${late}`]);
+			expect(await ev<string>(`${first}.textContent`)).toBe("보내는 중");
+			expect(sent.length).toBe(before);
+			blind = false;
+			await view.evaluate(`outboxFlush().then(() => 0)`);
+			await waitFor(`OUTBOX.length === 0 && ${first}.textContent === "보냈어요"`, 15_000);
+			expect(sent.slice(before).map(s => s.text)).toEqual([early, late]);
+			expect(storedIn("alert").filter(m => m.text === reply(RESTARTED)).length).toBe(1);
+		}, 20_000);
+
+		test("a request the outbox gives up after a reload, while another conversation is open, is not left in the alert conversation's draft", async () => {
+			await run(`localStorage.removeItem("dotz.doctor-look")`);
+			stored.length = 0;
+			await view.navigate(`${hub.origin}/`);
+			await openAlert();
+			const second = `[...${at(TS.row)}.querySelectorAll(".dl-btn")][1]`, before = sent.length;
+			down = true;
+			await run(`${second}.click()`);
+			await waitFor(`OUTBOX.length === 1 && ${second}.textContent === "보내는 중"`);
+			await run(`openTarget("main", "chat")`);
+			await view.navigate(`${hub.origin}/`);
+			await waitFor(`typeof outboxFlush === "function" && !!S && target === "main" && OUTBOX.length === 1`);
+			refuse = "보낼 글 목록에서 거절됐어요";
+			down = false;
+			await view.evaluate(`outboxFlush().then(() => 0)`);
+			await waitFor(`OUTBOX.length === 0`, 20_000);
+			refuse = "";
+			expect(await ev<string[]>(`[ts("alert").draft || "", localStorage.getItem(DRAFT_KEY("alert")) || ""]`)).toEqual(["", ""]);
+			expect(sent.length).toBe(before);
+			await openAlert();
+			expect(await ev<string>(`${second}.textContent`)).toBe("원인 찾기");
+		}, 30_000);
 
 		test("a refused send says so and can be tried again", async () => {
 			await run(`localStorage.removeItem("dotz.doctor-look")`);
@@ -228,22 +313,25 @@ for (const width of [390, 1280]) {
 			working = false;
 		});
 
-		test("a card row of the notices screen keeps a short subject whole: the subject keeps up to a third of the row, the question up to two thirds, each gives the other what it does not need, and the space before · stays", async () => {
+		test("a card row of the notices screen keeps a short subject whole: the subject keeps up to a third of the row, the question up to two thirds, each gives the other what it does not need, each box is no wider than its text, and the space before · stays", async () => {
 			await view.navigate(`${hub.origin}/`);
 			await waitFor(`typeof nscGo === "function" && !!S`);
 			await run(`nscGo()`);
 			const rows = await waitFor(`${TITLES.length} === [...document.querySelectorAll(".nsc-r .hd-q")].filter(h => ${JSON.stringify(TITLES.map(([s, q]) => `${s} · ${q}`))}.includes(h.title)).length`).then(() =>
-				ev<{ title: string; row: number; w: number; wFull: number; q: number; qFull: number; space: number }[]>(`[...document.querySelectorAll(".nsc-r .hd-q")].map(h => { const w = h.querySelector(".w"), q = h.querySelector(".q"), r = document.createRange(); r.setStart(q.firstChild, 0); r.setEnd(q.firstChild, 1); return { title: h.title, row: h.clientWidth, w: w.clientWidth, wFull: w.scrollWidth, q: q.clientWidth, qFull: q.scrollWidth, space: r.getBoundingClientRect().width }; })`));
+				ev<{ title: string; row: number; w: number; wFull: number; q: number; qFull: number; space: number; gap: number }[]>(`[...document.querySelectorAll(".nsc-r .hd-q")].map(h => { const w = h.querySelector(".w"), q = h.querySelector(".q"), r = document.createRange(), text = n => { const t = document.createRange(); t.selectNodeContents(n.firstChild); return t.getBoundingClientRect().width; }; r.setStart(q.firstChild, 0); r.setEnd(q.firstChild, 1); const wb = w.getBoundingClientRect(); return { title: h.title, row: h.clientWidth, w: wb.width, wFull: text(w), q: q.getBoundingClientRect().width, qFull: text(q), space: r.getBoundingClientRect().width, gap: q.getBoundingClientRect().left - wb.left - Math.min(wb.width, text(w)) }; })`));
 			for (const [subject, question] of TITLES) {
 				const r = rows.find(x => x.title === `${subject} · ${question}`)!;
 				expect(r.space).toBeGreaterThan(0);
+				expect(Math.abs(r.gap)).toBeLessThan(1);
+				expect(r.w).toBeLessThan(r.wFull + 1);
+				expect(r.q).toBeLessThan(r.qFull + 1);
 				expect(r.w).toBeGreaterThanOrEqual(Math.min(r.wFull, Math.floor(r.row / 3)) - 1);
 				expect(r.q).toBeGreaterThanOrEqual(Math.min(r.qFull, Math.floor((r.row * 2) / 3)) - 1);
-				if (r.wFull + r.qFull <= r.row) expect([r.w, r.q]).toEqual([r.wFull, r.qFull]);
+				if (r.wFull + r.qFull <= r.row) expect([r.w, r.q].map(Math.round)).toEqual([r.wFull, r.qFull].map(Math.round));
 				else expect(r.w + r.q).toBeGreaterThanOrEqual(r.row - 1);
 			}
 			const disk = rows.find(x => x.title.startsWith(t.diskSubject))!;
-			expect(disk.w).toBe(disk.wFull);
+			expect(Math.round(disk.w)).toBe(Math.round(disk.wFull));
 		});
 	});
 }

@@ -26,15 +26,15 @@ const outboxLater = () => { if (!obT) obT = setTimeout(outboxFlush, Math.min(100
 const outboxGo = () => { if (OUTBOX.length) outboxFlush(); };
 // Was this message stored by the gateway after the first try? Matched by its `cid`; by text only for an event without one. The clocks differ by S.work_skew; 5 s of margin.
 async function outboxHas(o) {
-  const after = new Date(o.at + ((S && S.work_skew) || 0) - 5000).toISOString();
-  const r = await api(`/api/history?target=${enc(o.t)}&limit=100&after=${enc(after)}`);
-  return (r.events || []).some(e => (e.kind === "message" || e.kind === "lane_message") && e.source === "web" && (e.cid ? e.cid === o.body.cid : String(e.text ?? "").trim() === o.text.trim()));
+  const after = o.since || new Date(o.at + ((S && S.work_skew) || 0) - 5000).toISOString();
+  const r = await api(`/api/history?target=${enc(o.t)}&limit=${o.since ? 500 : 100}&after=${enc(after)}`);
+  return (r.events || []).some(e => (e.kind === "message" || e.kind === "lane_message") && e.source === "web" && (e.cid === o.body.cid || ((o.since || !e.cid) && String(e.text ?? "").trim() === o.text.trim())));
 }
 function outboxKeep(o, e) {
-  const open = o.t === target, cur = open ? ta.value : ts(o.t).draft || "", next = cur ? `${cur}\n${o.text}` : o.text;
+  const open = o.t === target, cur = open ? ta.value : ts(o.t).draft || "", next = o.since ? cur : cur ? `${cur}\n${o.text}` : o.text;
   ts(o.t).draft = next; lsSet(DRAFT_KEY(o.t), next);
   if (open) { ta.value = next; autosize(); }
-  toast(open ? e.message : TX("chat.send.kept", { message: e.message }), true);
+  toast(open || o.since ? e.message : TX("chat.send.kept", { message: e.message }), true);
 }
 async function outboxFlush() {
   clearTimeout(obT); obT = 0;
