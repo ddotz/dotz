@@ -11,11 +11,11 @@ import { mapLimit } from "./map-limit.ts";
 import { runLimited } from "./run-limited.ts";
 
 type Item = Record<string, string | number | undefined>;
-type Seen = { summary: string; start: string; end: string };
+type Seen = { summary: string; start: string; end: string; calendar?: string; account?: string; missingSince?: number };
 /** The newest message of a thread the watch has seen: its stamp (stampOf), whether it is the owner's own, and when it was noted (for the cap). */
 type ThreadSeen = { n: string; own: boolean; at: number };
 // `mail` holds the thread ids the older watch kept; `threads` replaces it and tells a new message in a thread that is already known.
-type State = { seeded: boolean; mail: string[]; threads: Record<string, ThreadSeen>; events: Record<string, Seen>; soon: string[]; briefDate: string; /** The watched accounts this state was recorded for (lowercased, sorted, comma-joined); missing or "" = all of them. */ watch?: string };
+type State = { seeded: boolean; mail: string[]; threads: Record<string, ThreadSeen>; events: Record<string, Seen>; soon: string[]; briefDate: string; /** The watched accounts this state was recorded for (lowercased, sorted, comma-joined); missing or "" = all of them. */ watch?: string; lastCalendarDay?: string };
 /** `message` names the newest message of the thread (stampOf): one value per message, so the hub can tell a repeat from an answer. */
 export type NewMail = { id: string; message: string; account: string; from: string; to: string; /** 참조 (the list output carries it as `cc` when the account's Gmail/IMAP output has one). */ cc?: string; subject: string; snippet: string };
 type Hooks = {
@@ -87,7 +87,10 @@ const load = (): State => {
 	if (Array.isArray(s.events)) s.events = Object.fromEntries(s.events.map((id: string) => [id, { summary: "", start: "", end: "" }]));
 	return s;
 };
-const seen = (ev: Item): Seen => ({ summary: String(ev.summary ?? ""), start: String(ev.start ?? ""), end: String(ev.end ?? "") });
+const seen = (ev: Item, calOnly: readonly string[]): Seen => {
+	const account = ev.account ? String(ev.account) : calOnly.length === 1 ? calOnly[0] : undefined;
+	return { summary: String(ev.summary ?? ""), start: String(ev.start ?? ""), end: String(ev.end ?? ""), ...(ev.calendar ? { calendar: String(ev.calendar) } : {}), ...(account ? { account } : {}) };
+};
 const whenSeen = (e: Seen) => when(e as unknown as Item);
 const norm = (s: string) => s.replace(/\s+/g, "").replace(/(예약|상담|미팅|회의)$/u, "").toLowerCase();
 // An edit made from another app can come back under a new id; pair a new id with an event that vanished in the same
@@ -101,10 +104,21 @@ const CAL_GET_MS = 30_000; // one event read over the network: seconds
 const MAIL_READ_MS = 60_000; // one thread read over the network: seconds, a minute at most
 const WHOAMI_MS = 30_000; // a local token check: seconds
 const LIST_MS = 90_000; // a poll listing over the network: seconds, a minute and a half at most
-async function stillThere(id: string, flags: string[]): Promise<boolean> {
+const MISSING_KEEP_MS = 15 * 86_400_000;
+const EVENT_NOT_FOUND = /event ".*" not found/i;
+async function lookUp(id: string, e: Seen, calOnly: readonly string[]): Promise<"there" | "gone" | "unknown"> {
+	const account = e.account ?? (calOnly.length === 1 ? calOnly[0] : undefined);
+	const flags = [...(account ? ["--account", account] : accountFlags(calOnly)), ...(e.calendar ? ["--calendar", e.calendar] : [])];
 	const r = await runLimited(["zele", "cal", "get", id, ...flags], CAL_GET_MS);
-	return r.code === 0 && !/status:\s*cancelled/i.test(r.stdout);
+	if (r.code === 0) return /status:\s*cancelled/i.test(r.stdout) ? "gone" : "there";
+	if (EVENT_NOT_FOUND.test(`${r.stderr}\n${r.stdout}`)) return "gone";
+	log(`zele: event ${id} not checked: ${r.timedOut ? "timed out" : (r.stderr || r.stdout).trim().slice(0, 200)}`);
+	return "unknown";
 }
+const addDays = (day: string, n: number) => {
+	const [y, m, d] = day.split("-").map(Number);
+	return new Date(y, m - 1, d + n).toLocaleDateString("sv-SE");
+};
 const save = (s: State) => writeAtomic(STATE, `${JSON.stringify(s)}\n`);
 const cap = (xs: string[]) => xs.slice(-2000);
 
@@ -380,14 +394,25 @@ export async function tick(h: Hooks, now = new Date(), list: (args: string[]) =>
 
 	let hasCalendar = true;
 	const noCalendar = () => void (hasCalendar = false);
-	const [upcomingRows, soon] = await Promise.all([
+	const today = now.toLocaleDateString("sv-SE");
+	const lastDay = s.seeded ? s.lastCalendarDay : undefined;
+	const windowEndNext = lastDay && lastDay < today ? addDays(lastDay, 14) : undefined;
+	const enteredFrom = windowEndNext && windowEndNext < today ? today : windowEndNext;
+	const [upcomingRows, soon, enteredRows] = await Promise.all([
 		calendar(list, ["cal", "events", "--days", "14", "--all", "--limit", "100", ...calFlags], noCalendar),
 		calendar(list, ["cal", "events", "--from", now.toISOString(), "--to", "+45m", "--all", ...calFlags], noCalendar),
+		enteredFrom ? calendar(list, ["cal", "events", "--from", enteredFrom, "--to", addDays(today, 13), "--all", "--limit", "100", ...calFlags]) : Promise.resolve([] as Item[]),
 	]);
+	s.lastCalendarDay = today;
+	const entered = new Set(enteredRows.map(ev => String(ev.id)));
 	const upcoming = upcomingRows.filter(ev => !isHoliday(ev));
-	const current = new Map(upcoming.map(ev => [String(ev.id), seen(ev)]));
-	for (const [id, e] of Object.entries(s.events)) if (!current.has(id) && !e.summary) delete s.events[id];
-	const vanished = Object.entries(s.events).filter(([id]) => !current.has(id));
+	const current = new Map<string, Seen>();
+	for (const ev of upcoming) if (!current.has(String(ev.id))) current.set(String(ev.id), seen(ev, calOnly));
+	for (const [id, e] of Object.entries(s.events)) {
+		if (current.has(id)) continue;
+		if (!e.summary || (e.missingSince !== undefined && now.getTime() - e.missingSince > MISSING_KEEP_MS)) delete s.events[id];
+	}
+	const vanished = Object.entries(s.events).filter(([id, e]) => !current.has(id) && e.missingSince === undefined);
 	const fresh: [string, Seen][] = [];
 	for (const [id, e] of current) {
 		const prev = s.events[id];
@@ -401,13 +426,14 @@ export async function tick(h: Hooks, now = new Date(), list: (args: string[]) =>
 			const [oldId, old] = vanished.splice(i, 1)[0];
 			delete s.events[oldId];
 			if (s.seeded) h.alert(`일정 변경: ${whenSeen(old)} · ${old.summary} -> ${whenSeen(e)} · ${e.summary}`);
-		} else if (s.seeded) h.alert(`새 일정: ${whenSeen(e)} · ${e.summary}`);
+		} else if (s.seeded && !entered.has(id)) h.alert(`새 일정: ${whenSeen(e)} · ${e.summary}`);
 	}
-	// A vanished event is cancelled only if zele no longer finds it; otherwise it moved out of the 14-day window or
-	// passed, and it is simply forgotten.
 	for (const [id, e] of vanished) {
-		if (s.seeded && !(await stillThere(id, calFlags))) h.alert(`일정 취소: ${whenSeen(e)} · ${e.summary}`);
-		delete s.events[id];
+		const found = s.seeded ? await lookUp(id, e, calOnly) : "gone";
+		if (found === "gone") {
+			if (s.seeded) h.alert(`일정 취소: ${whenSeen(e)} · ${e.summary}`);
+			delete s.events[id];
+		} else s.events[id] = { ...e, missingSince: now.getTime() };
 	}
 
 	for (const ev of soon) {
@@ -417,7 +443,6 @@ export async function tick(h: Hooks, now = new Date(), list: (args: string[]) =>
 		if (s.seeded && !isAllDay(ev) && !isHoliday(ev)) h.alert(`곧 시작: ${when(ev)} · ${ev.summary}`);
 	}
 
-	const today = now.toLocaleDateString("sv-SE");
 	if (s.seeded && now.getHours() >= BRIEF_HOUR && s.briefDate !== today) {
 		s.briefDate = today;
 		const only_ = flags.length ? ` ${flags.join(" ")}` : "";

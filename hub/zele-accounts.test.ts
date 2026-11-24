@@ -155,7 +155,7 @@ describe("calls that go straight to the binary", () => {
 		spawn = spyOn(Bun, "spawn").mockImplementation(((cmd: string[]) => {
 			argv.push(cmd.slice(1).join(" "));
 			const gone = cmd[1] === "cal" && cmd[2] === "get";
-			return { pid: 0, stdout: new Response(gone ? "" : "items: []").body, stderr: new Response("").body, exited: Promise.resolve(gone ? 1 : 0), kill() {} };
+			return { pid: 0, stdout: new Response(gone ? "" : "items: []").body, stderr: new Response(gone ? `Error: event "${cmd[3]}" not found` : "").body, exited: Promise.resolve(gone ? 1 : 0), kill() {} };
 		}) as unknown as typeof Bun.spawn);
 	});
 	afterAll(() => spawn.mockRestore());

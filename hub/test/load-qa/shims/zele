@@ -91,7 +91,7 @@ if (argv[0] === "whoami") {
 } else if (group === "cal") {
 	if (verb === "get") {
 		const e = (data.events ?? []).find(x => x.id === argv[2]);
-		if (!e) fail(`event ${argv[2]} not found`);
+		if (!e) fail(`event "${argv[2]}" not found`);
 		else console.log(`id: ${e.id}\nsummary: ${e.summary}\nstatus: confirmed`);
 	} else if (verb === "events" || verb === "list") out(opt("--from") ? [] : (data.events ?? []).slice(0, Number(opt("--limit") ?? 100)));
 	else console.log(`ok (${verb})`);
