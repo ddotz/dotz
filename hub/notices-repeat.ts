@@ -10,10 +10,11 @@ const dayOf = (iso: string): string => new Date(iso).toLocaleDateString("en-CA",
 export const askedLine = (asked: NonNullable<Decision["asked"]>): string => `${asked.n}번째 알려요 · 처음 알린 날 ${dayOf(asked.first)}`;
 
 /** A question put again while its notice still holds the earlier ask is the same question asked once more. Drafts, login requests and schedule runs are never counted,
- *  nor an ask again inside REASK_MS: that is one delivery arriving twice (a session's mid-turn line and its turn-end report) or the same ask reworded. */
+ *  nor an ask again inside REASK_MS of the notice's last change: that is one delivery arriving twice (a session's mid-turn line and its turn-end report) or the same
+ *  ask reworded. A card that expired was asked a whole answer window earlier, so an ask after its expiry is counted however soon it comes. */
 export function askedAgain(old: Notice | undefined, d: { to: string; draft?: unknown }, at: string): Decision["asked"] | undefined {
 	const prev = old?.decision;
-	if (!prev || d.draft || d.to.startsWith("auth:") || d.to.startsWith(RUN_DECISION) || Date.parse(at) - Date.parse(old.updated) < REASK_MS) return undefined;
+	if (!prev || d.draft || d.to.startsWith("auth:") || d.to.startsWith(RUN_DECISION) || (!prev.expired && Date.parse(at) - Date.parse(old.updated) < REASK_MS)) return undefined;
 	return { n: (prev.asked?.n ?? 1) + 1, first: prev.asked?.first ?? old.ts };
 }
 

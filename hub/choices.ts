@@ -6,6 +6,8 @@
 // - Options are numbered 1, 2, 3 ... in a row. A number that restarts at 1 after that means several decision blocks
 //   ("1 and 2"): there is no single answer to click, so no options are returned. Fewer than 2 options: none.
 // - The recommendation mark older messages carry on an option line is dropped (stripRecommendMark): nothing shows or keys on it.
+import { fitSubject, TITLE_CHARS } from "./card-text.ts";
+
 // The choice block a gateway job appends to an issue report on alert: "결정: <question>", then 2-4 options,
 // each a `**n) name**` line and a one-line consequence. The web's decision buttons and the decision notices read exactly this shape.
 export function issueBlock(question: string, options: { name: string; result: string }[]): string {
@@ -68,10 +70,12 @@ export const cleanQuestion = (v: unknown): string => {
 	return [...q].length > MAX_ASK_CHARS ? `${[...q].slice(0, MAX_ASK_CHARS - 1).join("")}…` : q;
 };
 
-// The choice block the orchestrator posts unchanged (the issue-report shape: "결정: <question>", `**n) name**` lines, one description line each;
-// the last option is "직접 쓸게 …": the trailing mark makes the answer carry the owner's own text).
-export function replyChoiceBlock(question: string, choices: string[]): string {
-	return [`결정: ${question}`, ...choices.flatMap((c, i) => [`**${i + 1}) ${unnumbered(c)}**`, "고른 대로 답장을 써요"]), `**${choices.length + 1}) ${OWN_CHOICE} …**`, "적은 글을 답장으로 써요"].join("\n");
+/** The choice block a reply draft's question posts unchanged (a cardBlock): `<subject> · <question>`, the subject (whose reply it is) cut so the title
+ *  stays within TITLE_CHARS and left out when the question alone fills it; each choice says what is sent, and the last, "직접 쓸게 …", carries the owner's own text. */
+export function replyChoiceBlock(question: string, choices: string[], subject = ""): string {
+	const fits = TITLE_CHARS - [...question].length - 3 > 1;
+	const options = choices.map(c => ({ name: unnumbered(c), result: `'${unnumbered(c)}' 쪽으로 답장을 써서, 보내기 전에 보여드려요.` }));
+	return cardBlock({ subject: subject && fits ? fitSubject(subject, question) : "", question, options: [...options, { name: `${OWN_CHOICE} …`, result: "적은 글을 그대로 답장으로 써서, 보내기 전에 보여드려요." }] });
 }
 
 export type ChoiceOption = { n: number; label: string; detail?: true };

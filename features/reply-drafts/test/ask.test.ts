@@ -20,7 +20,7 @@ describe("a chat message that needs the owner's decision", () => {
 		expect(m.calls).toHaveLength(1);
 		expect(m.calls[0]!.system).toContain('"action":"ask"');
 		const text = out.lines.join("\n");
-		expect(text.split("\n")[0]).toBe("결정: 티켓 취소할까?");
+		expect(text.split("\n")[0]).toBe("결정: room 답장 · 티켓 취소할까?");
 		const { blocks } = parseDecisions(text);
 		expect(blocks).toHaveLength(1);
 		expect(blocks[0]!.options.map(o => o.label)).toEqual(["취소해", "다른 날 물어봐", "그냥 가자", "직접 쓸게"]);
@@ -49,4 +49,23 @@ describe("a chat message that needs the owner's decision", () => {
 		expect(await runDraft(chat, "밥 먹었어?", { call: fakeModel([reply("ㅇㅇ 먹음")]).call })).toMatchObject({ code: 0, lines: ["ㅇㅇ 먹음"] });
 		expect(await runDraft(chat, "ㅋㅋ", { call: fakeModel([j({ action: "skip", reason: "no answer", to: "", body: "", questions: [] })]).call })).toMatchObject({ code: 3 });
 	});
+	test("the documented call (--room, no --from) names the chat by its room's name, cut so the title stays within 40 characters", async () => {
+		const documented = ["new", "--app", "kakao", "--room", "1234567890", "--kind", "chat"];
+		for (const [name, title] of [["민수", "민수 답장 · 티켓 취소할까?"], ["대학 동기 모임 단톡방 2026 송년회 준비위원회 공지 전용", "대학 동기 모임 단톡방 2026 송년회 준비위원회… · 티켓 취소할까?"]] as const) {
+			const kakaoReader = async () => ({ messages: async () => [], rooms: async () => [{ chatId: "1234567890", name }] });
+			const out = await runDraft(documented, MSG, { call: fakeModel([ask]).call, kakaoReader });
+			expect(out.code).toBe(ASK_EXIT);
+			const shown = parseDecisions(out.lines.join("\n")).blocks[0]!.title;
+			expect(shown).toBe(title);
+			expect([...shown].length).toBeLessThanOrEqual(40);
+		}
+	});
+	test("a room nobody named is called by its members, or 이름 없는 방, never by the reader's placeholder", async () => {
+		const documented = ["new", "--app", "kakao", "--room", "1234567890", "--kind", "chat"];
+		const rooms = async () => [{ chatId: "1234567890", name: "(unknown)" }];
+		const title = async (reader: object) => parseDecisions((await runDraft(documented, MSG, { call: fakeModel([ask]).call, kakaoReader: async () => ({ messages: async () => [], rooms, ...reader }) })).lines.join("\n")).blocks[0]!.title;
+		expect(await title({ label: async () => "민수, 영희" })).toBe("민수, 영희 답장 · 티켓 취소할까?");
+		expect(await title({})).toBe("이름 없는 방 답장 · 티켓 취소할까?");
+	});
+
 });

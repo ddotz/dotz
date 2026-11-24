@@ -1,6 +1,7 @@
 // The one finding format of the doctor (hub/doctor.ts). Every check (install health, token leaks, failure classes, prompt health)
 // returns these; the doctor stores them in one result file and decides what reaches the owner's morning briefing.
 // A check never sends anything itself and never calls a model.
+import { fitSubject, shorten } from "./card-text.ts";
 
 /** Which part of the doctor found it; the morning item groups by it. */
 export const DOCTOR_AREAS = ["gateway", "sessions", "logins", "watches", "disk", "update", "failures", "tokens", "prompt", "plugins"] as const;
@@ -33,18 +34,8 @@ export type Finding = {
 export const EVIDENCE_LINES = 4;
 export const EVIDENCE_CHARS = 120;
 
-/** The longest card title, `<subject> · <question>`, in characters. */
-export const TITLE_CHARS = 40;
-
 const squash = (s: string): string => s.replace(/\s+/g, " ").trim();
 const width = (s: string): number => [...s].length;
-const shorten = (one: string, max: number, cutAlready = false): string => {
-	const chars = [...one];
-	if (chars.length <= max && !cutAlready) return one;
-	if (chars.length < max) return `${one}…`;
-	const head = chars.slice(0, max - 1).join(""), space = chars[max - 1] === " " ? head.length : head.lastIndexOf(" ");
-	return `${(space > 0 ? head.slice(0, space) : head).trimEnd()}…`;
-};
 const cut = (line: string): string => shorten(squash(line), EVIDENCE_CHARS);
 
 /** A finding's evidence as stored: empty lines dropped, each line cut at a word boundary to EVIDENCE_CHARS, and over EVIDENCE_LINES lines the last kept line is `more(<lines left out>)`. */
@@ -67,15 +58,6 @@ export function wrapLines(text: string, most: number): string[] {
 	if (width(rest) <= EVIDENCE_CHARS) return [...out, rest];
 	const head = [...rest].slice(0, EVIDENCE_CHARS).join(""), end = Math.max(...[...head.matchAll(/[.!?。](?= )/g)].map(m => m.index), -1);
 	return [...out, end >= EVIDENCE_CHARS / 3 ? head.slice(0, end + 1) : shorten(rest, EVIDENCE_CHARS)];
-}
-
-/** A card subject that fits TITLE_CHARS with its question and `tag` (what tells apart two cards that would read the same): the quote in it ('…') is shortened at a word boundary first, then the subject's end. */
-export function fitSubject(subject: string, question: string, tag = ""): string {
-	const room = TITLE_CHARS - width(question) - 3 - width(tag), over = width(subject) - room;
-	if (over <= 0) return `${subject}${tag}`;
-	const open = subject.indexOf("'"), close = subject.lastIndexOf("'"), inner = subject.slice(open + 1, close);
-	if (open < 0 || close <= open || width(inner) - over < 2) return `${shorten(subject, room)}${tag}`;
-	return `${subject.slice(0, open + 1)}${shorten(inner.replace(/…$/, ""), width(inner) - over, inner.endsWith("…"))}${subject.slice(close)}${tag}`;
 }
 
 /** The texts the agent re-reads, by the name the owner knows them by. */

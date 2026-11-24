@@ -2,13 +2,12 @@
 import { join } from "node:path";
 import { ADDRESS, NAME, paths, tzLabel } from "./config.ts";
 import { askKo } from "./ask-text.ts";
+import { cardsKo } from "./card-text.ts";
 import { doctorKo } from "./doctor-text.ts";
 import { LESSONS_MAX_BYTES } from "./prompt-budget.ts";
 import { promptCardKo } from "./prompt-card-text.ts";
 import type { Catalog, Leads } from "./i18n-en.ts";
 import { OMO_WORDS } from "./worker-words.ts";
-
-const TOPIC_LABELS: Record<string, string> = { linebreak: "줄바꿈", copy: "문체·카피", "no-card": "카드 없는 질문", duplicate: "기능 중복", stalled: "멈춤·보고 끊김", misread: "지시 오해", "missing-output": "산출물 안 보임", ui: "화면·디자인", "ignored-setting": "설정 불이행", "not-applied": "미반영·반쯤 검증", other: "기타" };
 
 // How a nightly or monitoring run reports an issue (hub/reflect.ts, hub/watch.ts wake turn): one line plus a choice block that the web's
 // decision buttons and decision notices read (web/js/10-decision-card.js, hub/choices.ts).
@@ -263,6 +262,7 @@ export const ko: Catalog = {
 	checkPassed: (n, landed) => `확인 통과: 확인 항목 ${n}개가 모두 통과했어요${landed ? ", 작업 브랜치도 main에 반영됐어요" : ""}`,
 	waitMainRefused: `[게이트웨이 확인] 방금 [wait]는 아무에게도 가지 않았어요. 메인(${NAME})을 기다린다면 메인이 할 일을 "${NAME} 몫:" 줄에 쓰거나 dotz_main으로 보낸 뒤 다시 보고하세요. 메인이 아니라 CI·시간·워커를 기다리는 거면 그렇게 적어 다시 보고하세요.`,
 	...askKo,
+	...cardsKo,
 	languageRefused: (head, before) => `[게이트웨이 확인] 방금 보고는 오너에게 가지 않았어요. ${before ? `상태 줄보다 앞에 글이 있어요("${head}...")` : `"${head}..."로 시작하는 문단이 한국어가 아니에요`}. 상태 줄([done]·[run]·[wait]·[ask]·[fail])로 시작하고 모든 문단을 한국어로 써서 다시 보내세요. 코드, 경로, id와 red test·HEAD 같은 개발 용어는 그대로 둬도 돼요.`,
 	unverifiedRefused: lines => `[게이트웨이 확인] 방금 보고는 오너에게 가지 않았어요. 아래 줄은 확인하지 않은 것을 이유 없이 적었어요:\n- ${lines.join("\n- ")}\n먼저 이 컴퓨터에서 확인할 수 있는 건 전부 확인하세요(실행, 헤드리스 화면, 다시 읽기). 그래도 여기서 확인할 수 없는 것은 그 줄에 이유를 쓰고 \`대신 확인:\` 뒤에 대신 확인한 것을 적어 다시 보고하세요.`,
 	checkBounced: (n, failed) => `아직 통과 못 한 확인 항목이 있어서 세션에 다시 맡겼어요 (확인 ${n}개 중 ${failed}개)`,
@@ -347,7 +347,6 @@ export const ko: Catalog = {
 	inboxCheck: (ids, channel) => `[dotz inbox] 조용한 점검 (${ids.join(", ")}) - 오너가 시킨 일이 아니라 내가 걸어 둔 시스템 점검${ids.length > 1 ? `이에요. ${ids.length}개가 같은 시각이라 한 번에 와요: 번호 순서대로 보고 답은 하나로 쓰세요` : "이에요"}. 모두 정상이면 평범한 한 줄로만 답하세요(조용히 작업내역에만 남아요). 오너가 정해야 하거나 꼭 알아야 할 때만 답을 [ask] 또는 [fail]로 시작하세요. 할 말이 없으면 \"-\" 한 글자만 답하세요. 최종 답은 ${channel}로 가요:`,
 	scheduleNaming: items => `[dotz gateway] 이름과 작업 종류가 생기기 전에 만든 예약에 이름을 한 번 붙여요. 아래 id마다 dotz_schedule action=edit {id, name, kind}를 부르세요. name: 그것이 무엇인지 말하는 오너의 언어로 된 짧은 제목이에요(40자까지, 언제인지가 아니라 무엇인지, 예: "피드백 일일 보고"). kind: 글이 그 시각에 오너에게 전할 말이면(예: "3시에 회의 알려줘") "owner", 당신이 할 일이면(보고, 찾아보기, 명령 실행) "task"예요. [task]나 [check]가 붙은 id는 그 종류 그대로 두고 이름만 주세요. 다른 것은 바꾸지 마세요. 모두 마치면 "-" 하나만 답하세요.\n${items.map(i => `- ${i.id}${i.fixed ? ` [${i.fixed}]` : ""}${i.conv ? ` (${i.conv})` : ""}: ${i.text.replace(/\s+/g, " ").slice(0, 300)}`).join("\n")}`,
 	scheduleNamed: list => `예약에 이름과 종류를 붙였어요: ${list.map(s => `${s.name}(${({ owner: "알림", task: "작업", check: "조용한 점검" })[s.kind]})`).join(", ")}. 바꾸려면 모니터링의 예약 줄 ⋯이나 설정의 예약한 일에서 고칠 수 있어요.`,
-	scheduleRun: { running: "돌아가는 중이에요", nothing: "알릴 게 없었어요", posted: "결과를 대화에 올렸어요", held: name => `${name}: 모델 사용량 한도로 기다리는 중이에요. 풀리면 바로 시작해요.`, failed: name => `${name}을(를) 못 했어요 · 지금 다시 실행할까요?`, rerun: "다시 실행", stop: "그만두기" },
 	scheduleCheckLine: text => `${SCHEDULE_CHECK_LEAD} ${text}`,
 	inboxThread: (thread, parent) => ` (#${parent}의 스레드 "${thread}". 답은 스레드로 가요)`,
 	inboxFirst: channel => `(새 작업 채널 #${channel}: 오너는 채널 단위로 일을 맡겨요. 이 채널의 작업과 보고는 여기에 두세요. 이 채널의 일에 로그인 유지나 시간이 지나며 확인할 것이 필요하면 직접 dotz_channel setup으로 이 채널에 설정하세요.)`,
@@ -384,15 +383,10 @@ export const ko: Catalog = {
 	staleObservations: stale => `\n\n${paths.observations}에 90일 넘은 줄이 있어요. 지우세요(아직 맞는 패턴은 먼저 owner.md나 LESSONS.md로 옮기기):\n${stale.join("\n")}`,
 	lessonGate: topics => `\n\n이 교훈 주제에는 문장만 있고 강제 장치가 없어서, 문장 교훈을 더 넣으면 게이트웨이가 지워요: ${topics.join(", ")}. 새 줄에는 "(enforced: <가드·검사·테스트>)"가 있어야 해요. 줄의 단어로 주제가 안 드러나면 "(topic: <이름>)"을 붙이세요.`,
 	lessonsRefused: (rows, cap) => `[dotz gate] LESSONS.md에서 지웠어요. 문장으로 다시 넣지 마세요:\n${rows.map(r => `- ${r.line} (${r.why === "cap" ? `${cap}바이트 상한 초과: 먼저 줄을 합치거나 지우세요` : `${r.topic} 주제에 강제된 교훈이 없어요: 코드로 고치고 줄 끝에 (enforced: <가드·검사·테스트>)를 붙이세요`})`).join("\n")}`,
-	repeatAlert: a => [`같은 지적이 되풀이되고 있어요: ${TOPIC_LABELS[a.topic] ?? a.topic} (${[a.count ? `7일간 ${a.count}건` : "", a.broken ? `교훈이 ${a.broken}번 깨짐` : ""].filter(Boolean).join(", ")})`, ...a.examples.map(e => `- ${e}`)].join("\n"),
 	recipeCandidate: (id, titles, briefs, script) => `\n\n레시피 후보 하나예요(게이트웨이 확인을 통과한 세션): ${titles.join(" / ")}. 브리프: ${briefs.join(", ")}. 같은 일이 다시 올 만하고 절차로 줄일 수 있을 때만 제안하세요. 본문(단계, 필요한 명령)을 임시 파일에 쓰고, 도움이 되면 스크립트도 쓴 뒤 \`${script} propose ${id} --slug <영문-소문자> --name "<짧은 이름>" --when "<쓸 때 한 줄>" --body-file <파일> [--script-file <파일>]\`를 한 번 실행해 나온 글 전체를 alert에 고치지 말고 그대로 보내세요(위 5번의 alert 금지보다 우선해요). 아니면 아무것도 하지 마세요. 저장은 오너의 답을 받아 게이트웨이가 해요: custom/recipes에 직접 쓰지 말고, 실행하지 말고, watch도 만들지 마세요. 비밀값과 다른 사람의 개인정보는 넣지 마세요.`,
-	recipeCard: (d, preview, titles) => [`잘 끝난 일을 레시피로 남길까요: ${d.name}`, `쓸 때: ${d.when}`, `근거: ${titles.join(" / ")}`, preview, ...(d.script ? [`스크립트: ${d.script.file}`] : [])].join("\n"),
-	recipeQuestion: "이 레시피를 저장할까요?",
-	recipeOptions: [{ name: "레시피 저장", result: "이 설치의 custom/recipes에만 저장하고, 비슷한 일을 할 때 이름으로 찾아 써요. 저절로 돌지 않아요." }, { name: "레시피 건너뛰기", result: "저장하지 않고 같은 일은 다시 제안하지 않아요." }],
 	recipeSaved: (name, dir) => `레시피를 저장했어요: ${name} (${dir})`,
 	recipeSkipped: name => `건너뛰었어요. 같은 일은 다시 제안하지 않아요: ${name}`,
 	recipeFailed: why => `레시피를 저장하지 못했어요: ${why}`,
-	repeatAlertQuestion: "같은 지적이 또 나오지 않게 가드·검사·테스트를 만들까요, 이번 주는 그냥 둘까요?",
 	promptPartLabels: { mode: "모드 글", rules: "RULES.md", lessons: "LESSONS.md", identity: "정체성 글", features: "기능 본문", setups: "채널 설정", state: "state 발췌", rest: "그 밖의 틀" },
 	promptGrew: (label, from, to, date) => `압축 뒤 다시 읽는 글${label ? `(${label})` : ""}이 ${date} 이후 ${from.toLocaleString("ko-KR")}자에서 ${to.toLocaleString("ko-KR")}자로 늘었어요.`,
 	promptSizeEvidence: (from, to, date) => `${from}자 → ${to}자 (기준 ${date})`,
@@ -401,7 +395,6 @@ export const ko: Catalog = {
 	promptCapOver: (file, size, cap, unit) => `${file} 길이가 한도를 넘었어요(${size.toLocaleString("ko-KR")}${unit === "bytes" ? "바이트" : "자"}, 한도 ${cap.toLocaleString("ko-KR")}). 넘는 끝부분은 빠질 수 있어요.`,
 	promptCapEvidence: (size, cap, unit) => `${size} > 한도 ${cap} (${unit === "bytes" ? "바이트" : "자"})`,
 	promptReviewWhat: { conflict: "다시 읽는 글의 두 줄이 서로 맞지 않아요.", outdated: "다시 읽는 글의 한 줄이 낡은 것 같아요.", "contradicts-code": "다시 읽는 글의 한 줄이 코드가 하는 일과 달라요." },
-	repeatAlertOptions: [{ name: "막는 장치 만들기", result: "되풀이를 막는 가드·검사·테스트를 만들어요. 이 답을 받은 뒤에만 시작해요." }, { name: "이번 주는 그냥 두기", result: "7일 동안 이 주제로 카드를 올리지 않아요." }],
 	lessonCandidates: (stale, duplicates, over) => `\n\n코드가 고른 LESSONS.md 정리 후보예요. 지울지 합칠지는 직접 판단하세요(합칠 때는 더 최근이거나 구체적인 문장을 남기세요):${over ? `\n- ${over}` : ""}${stale.length ? `\n- 90일 넘은 줄:\n${stale.join("\n")}` : ""}${duplicates.length ? `\n- 거의 같은 줄(단어 겹침 0.6 이상):\n${duplicates.join("\n")}` : ""}`,
 
 	auth: {

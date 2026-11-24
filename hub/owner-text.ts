@@ -6,7 +6,7 @@
 import { appendFileSync } from "node:fs";
 import { join } from "node:path";
 import { normalizeAsk, normalizeHeaded } from "./ask-normalize.ts";
-import { D_OPT, DECISION_HEAD, issueBlock } from "./choices.ts";
+import { cardBlock, D_OPT, DECISION_HEAD } from "./choices.ts";
 import { DATA_DIR, log } from "./config.ts";
 import { canonicalDraft } from "./draft-approval.ts";
 import { resolveSpecFence } from "./message-spec-of.ts";
@@ -68,6 +68,9 @@ function laterTones(text: string): string {
 const BOLD_HEAD = /^\s*\*\*\s*(?:결정|decision(?: needed)?)\s*[:：][^*\n]+\*\*\s*$/i;
 // An option of its block, as the model writes it: after a context line, as a list item ("- **1) 이름**: 설명"); normalizeAsk reshapes it later.
 const LISTED_OPT = /^\s*(?:[-*+][ \t]+)?(?:\*\*)?\s*\d{1,2}\)\s*\S/;
+const DO_QUESTION = /^([^,?？]+?)할까요\s*[?？]?$/;
+const NOT_ONE_ACTION = /어떻게|무엇|뭘|뭐|어디|언제|누구|어느|몇|왜|얼마|어떤|할까요|(?:^|\s)안\s*$|야\s*$/;
+const PLAIN_YES_NO = ["물은 대로 하라고 답해요.", "하지 말라고 답해요."] as const;
 function yesNoCards(text: string): string {
 	if (!text.includes("**")) return text;
 	const lines = text.split("\n");
@@ -76,7 +79,11 @@ function yesNoCards(text: string): string {
 		if (FENCE.test(line)) fence = !fence;
 		if (fence || !BOLD_HEAD.test(line) || !QUESTION.test(line)) return line;
 		const after = lines.slice(i + 1), end = after.findIndex(l => DECISION_HEAD.test(l) || FENCE.test(l));
-		return (end < 0 ? after : after.slice(0, end)).some(l => LISTED_OPT.test(l)) ? line : issueBlock(DECISION_HEAD.exec(line)![1]!, [{ name: "예", result: "" }, { name: "아니요", result: "" }]);
+		if ((end < 0 ? after : after.slice(0, end)).some(l => LISTED_OPT.test(l))) return line;
+		const question = DECISION_HEAD.exec(line)![1]!;
+		const act = DO_QUESTION.exec(question.split(" · ").at(-1)!.trim())?.[1];
+		const [yes, no] = act && !NOT_ONE_ACTION.test(act) ? [`${act}해요.`, `${act}하지 않아요.`] : PLAIN_YES_NO;
+		return cardBlock({ subject: "", question, options: [{ name: "예", result: yes }, { name: "아니요", result: no }] });
 	}).join("\n");
 }
 

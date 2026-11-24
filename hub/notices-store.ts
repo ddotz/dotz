@@ -389,7 +389,7 @@ export function putDecision(d: { key: string; title: string; detail: string; to:
 	if (old?.decision) {
 		// The same ask can arrive twice (a session's mid-turn line and its turn-end report): one notice, and an answered one stays answered.
 		if (isOpenDecision(old) && old.key === d.key && !asked) return;
-		if (!isOpenDecision(old) && Date.parse(at) - Date.parse(old.ignored ?? old.decision.answered_at ?? "") < REASK_MS) return void closeRepeat(old, at);
+		if (!isOpenDecision(old) && !old.decision.expired && Date.parse(at) - Date.parse(old.ignored ?? old.decision.answered_at ?? "") < REASK_MS) return void closeRepeat(old, at);
 	}
 	if (old) old.key = d.key;
 	if (d.options.length && !d.draft) closeCardsWrittenBackTo(d.to, at, old);

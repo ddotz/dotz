@@ -4,7 +4,8 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { parseArgs } from "node:util";
-import { issueBlock } from "./choices.ts";
+import { fitSubject } from "./card-text.ts";
+import { cardBlock } from "./choices.ts";
 import { DATA_DIR, log, paths, writeAtomic } from "./config.ts";
 import { recipesDir } from "./featuredirs.ts";
 import { msg } from "./i18n.ts";
@@ -94,7 +95,9 @@ export function proposeRecipe(id: string, draft: Draft, now = Date.now()): strin
 	Object.assign(c, { status: "proposed", at: now, draft });
 	writeChoices(choices);
 	const m = msg();
-	return `${m.recipeCard(draft, cardPreview(draft.body), c.titles)}\n\n${issueBlock(m.recipeQuestion, m.recipeOptions)}`;
+	const question = m.recipeQuestion;
+	const card = cardBlock({ subject: fitSubject(draft.name, question), question, evidence: m.recipeEvidence(draft, c.titles), options: m.recipeOptions });
+	return `${m.recipeCard(draft, cardPreview(draft.body))}\n\n${card}`;
 }
 
 function store(d: Draft): string {

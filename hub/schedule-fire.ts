@@ -1,4 +1,4 @@
-import { log, now } from "./config.ts";
+import { log, now, TZ } from "./config.ts";
 import type { HubEvent } from "./events.ts";
 import { msg } from "./i18n.ts";
 import { items, putDecision, upsert } from "./notices-store.ts";
@@ -64,12 +64,15 @@ function heldRun(r: ScheduleRun): void {
 	upsert({ kind: "watch", tone: "", title: r.name, text: msg().scheduleRun.held(r.name), open: row?.open ?? r.conv ?? "main", key: runKey(r.run), ...(r.kind === "task" ? { nk: "schedule" as const } : {}), at: now() });
 }
 
+const RUN_TIME = new Intl.DateTimeFormat("en-CA", { timeZone: TZ, month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
+
 function failRun(r: ScheduleRun): void {
 	if (r.kind === "check") return;
 	const t = msg().scheduleRun;
 	const row = rowOf(r.run);
 	if (row) delete row.nk;
-	putDecision({ key: runKey(r.run), title: t.failed(r.name), detail: r.name, to: `${RUN_DECISION}${r.run}`, open: row?.open ?? r.conv ?? "main", options: [{ n: 1, label: t.rerun, desc: "", action: "rerun" }, { n: 2, label: t.stop, desc: "", action: "stop" }], group: 1 }, now());
+	const options = [{ n: 1, label: t.rerun, desc: t.rerunResult, action: "rerun" }, { n: 2, label: t.stop, desc: t.stopResult, action: "stop" }];
+	putDecision({ key: runKey(r.run), title: t.failed(r.name), detail: r.name, evidence: [t.failedWhen(RUN_TIME.format(Date.parse(r.firedAt)).replace(", ", " "))], to: `${RUN_DECISION}${r.run}`, open: row?.open ?? r.conv ?? "main", options, group: 1 }, now());
 }
 
 /** Looks at every run still waiting: one whose session is paused on a usage limit is held; a held one whose limit lifted FAIL_AFTER_MS ago with no result failed.

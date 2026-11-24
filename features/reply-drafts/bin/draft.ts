@@ -10,7 +10,8 @@ import { literalBan, parseBan } from "../../../hub/ban.ts";
 import { instanceIdOf } from "../../../hub/integrations.ts";
 import { addressesOf, type ReplyItem } from "../../../hub/reply-draft.ts";
 import { PATTERN_NOTE } from "../../../hub/reply-reasons.ts";
-import { ensureKakaoRoom, defaultKakaoReader, KAKAO_APP } from "../lib/kakao-tone.ts";
+import { ensureKakaoRoom, defaultKakaoReader, KAKAO_APP, type OwnerReader } from "../lib/kakao-tone.ts";
+import type { Room } from "../../../hub/kakao/types.ts";
 import { askText, attachFolder, buildDraft, candidatesFor, chosenFrom, dropDraft, kindOf, learningSettled, learnLine, type LineLearned, mailAsksFile, type PatternProposal, proposeLinePattern, realFlowDeps, refineAfterCorrection, reviseDraft, sendDraft, settleDraft, stageForReply, type FlowDeps, type Outcome } from "../lib/flow.ts";
 import { compactCorrections } from "../lib/compact.ts";
 import { journalEntries, type LearnKind, profileKey, profileOf, restoreEntry } from "../lib/curate.ts";
@@ -95,6 +96,17 @@ const positionals = (args: string[]): string[] => {
 	return out;
 };
 
+async function kakaoRoomName(room: string, deps: DraftDeps, notes: string[]): Promise<string | undefined> {
+	try {
+		const reader: OwnerReader & { rooms?: () => Promise<Pick<Room, "chatId" | "name">[]>; label?: (chatId: string) => Promise<string | undefined> } = await (deps.kakaoReader ?? defaultKakaoReader)(room);
+		const name = (await reader.rooms?.())?.find(r => r.chatId === room)?.name;
+		return name === "(unknown)" ? ((await reader.label?.(room)) ?? "이름 없는 방") : name;
+	} catch (e) {
+		notes.push(`확인: 대화방 이름을 못 읽었어요 (${(e as Error).message})`);
+		return undefined;
+	}
+}
+
 const nfc = (s: string) => s.normalize("NFC");
 // The pending mail draft whose files `attach` / `detach` change, or why it cannot.
 function editable(id: string | undefined): DraftRec | string {
@@ -151,7 +163,10 @@ export async function runDraft(args: string[], stdin: string, deps: DraftDeps = 
 			else if (cands) item.files = [];
 			const flow = { ...deps, stage: { tries: 5, ...deps.stage } };
 			const built = await buildDraft(item, meta, flow);
-			if (built.action === "ask") return { lines: [replyChoiceBlock(built.question, built.choices)], code: ASK_EXIT, notes };
+			if (built.action === "ask") {
+				const name = flag(rest, "--from") || (app === KAKAO_APP && room ? await kakaoRoomName(room, deps, notes) : undefined) || room || app;
+				return { lines: [replyChoiceBlock(built.question, built.choices, `${name} 답장`)], code: ASK_EXIT, notes };
+			}
 			if (built.action === "skip") return { lines: [`답장이 필요 없어 보여요: ${built.reason}`], code: kind === "chat" ? 3 : 0, notes };
 			if (kind === "comment" || kind === "chat") return { lines: [built.rec.body], code: 0, notes: [...notes, ...built.warnings.map(w => `확인: ${w}`)] };
 			const chosen = chosenFrom(cands, built.files);

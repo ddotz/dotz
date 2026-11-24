@@ -17,7 +17,7 @@ import { dirname, join } from "node:path";
 import { blockedBy } from "./lanegates.ts";
 import { ensureAside, replInTab } from "./aside.ts";
 import { type Relogin, relogin } from "./autologin.ts";
-import { failAlertGapMs, markFailAlert } from "./watch-backoff.ts";
+import { failAlertGapMs, markFailAlert, markSkipAlert, skipAlertDue, watchCardAnsweredAt } from "./watch-backoff.ts";
 import { cfg, DATA_DIR, log, now, paths, readJsonOrQuarantine, TZ, writeAtomic } from "./config.ts";
 import { blockedByFeatures } from "./featuredirs.ts";
 import { msg } from "./i18n.ts";
@@ -57,6 +57,7 @@ export type Watch = {
 	discord?: boolean;
 	state: {
 		hash?: string; last?: string; fails: number; failAlertAt?: number; failAlerts?: number; failSince?: number; recoveredAt?: number; lastRun?: string; lastOk?: string; lastChanged?: boolean; refreshedAt?: number;
+		skipAt?: number; skipAlerts?: number;
 		kind?: string; kindFails?: number; nextAt?: number; paused?: string; approvalAskedAt?: number;
 		reloginAt?: number; lifeMs?: number; // the last sign-in the gateway did itself, and the shortest session it has seen live
 		rejected?: number; // sign-ins the site rejected since the login last held: after 2 the gateway never types it again (accounts lock)
@@ -462,11 +463,11 @@ async function runOnce(w: Watch): Promise<void> {
 			if (wait) w.state.nextAt = Date.now() + wait[Math.min(wait.length, w.state.kindFails) - 1] * 60_000;
 			const since = w.state.failSince ?? Date.now();
 			const flapping = w.state.recoveredAt !== undefined && since - w.state.recoveredAt < flapWindow(w);
-			const due = toldDown(w.state) ? Date.now() - w.state.failAlertAt! > failAlertGapMs(w.state.failAlerts) : !flapping || Date.now() - since >= flapWindow(w);
+			const due = skipped ? skipAlertDue(w.state, watchCardAnsweredAt(w.name)) : toldDown(w.state) ? Date.now() - w.state.failAlertAt! > failAlertGapMs(w.state.failAlerts) : !flapping || Date.now() - since >= flapWindow(w);
 			if ((skipped || w.state.fails >= FAIL_ALERT_AFTER) && due) {
 				if (cls === "script" && !skipped && startHeal(w, output, code, cls, "")) return;
 				markFailAlert(w.state);
-				if (skipped) w.state.recoveredAt = w.state.failAlertAt;
+				if (skipped) markSkipAlert(w.state);
 				notify(w, `failed ${w.state.fails} times in a row (exit ${code})`, output, undefined, info);
 			}
 			return;
@@ -551,7 +552,7 @@ export function approveWatch(idOrName: string): Watch {
 		writeFileSync(approvalFile(w), String(Date.now()));
 	}
 	if (w.state.paused && w.state.fails) w.state.failSince = Date.now(); // a stopped failure starts its day over, so one more failed run does not stop it again
-	w.state.paused = w.state.approvalAskedAt = w.state.nextAt = undefined;
+	w.state.paused = w.state.approvalAskedAt = w.state.nextAt = w.state.skipAlerts = undefined;
 	w.state.kindFails = 0;
 	save();
 	const busy = running.get(w.id), kill = killers.get(w.id);

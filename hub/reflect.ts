@@ -3,7 +3,8 @@
 import { existsSync, readdirSync, readFileSync, watch, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { pushBackup, unstageSecrets } from "./backup.ts";
-import { issueBlock } from "./choices.ts";
+import { fitSubject } from "./card-text.ts";
+import { cardBlock } from "./choices.ts";
 import { cfg, DATA_DIR, DEFAULTS, log, paths, writeAtomic } from "./config.ts";
 import { CORRECTION, type Correction, SCAN_CHARS, TOPIC_NAMES, type Topic, topicOf } from "./corrections.ts";
 import { isPeerMessage } from "./events.ts";
@@ -231,7 +232,8 @@ export async function sendRepeatAlerts(post: (text: string) => Promise<unknown>,
 	const due = dueAlerts(ledger(now - WEEK), lessons, sent, now);
 	for (const a of due) {
 		const m = msg();
-		await post(`${m.repeatAlert(a)}\n\n${issueBlock(m.repeatAlertQuestion, m.repeatAlertOptions)}`);
+		const question = m.repeatAlertQuestion;
+		await post(cardBlock({ subject: fitSubject(m.repeatAlertSubject(a), question), question, evidence: m.repeatAlertEvidence(a), options: m.repeatAlertOptions }));
 		sent[a.key] = now;
 		writeAtomic(paths.repeatAlerts, `${JSON.stringify(sent)}\n`);
 	}

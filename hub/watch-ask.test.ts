@@ -3,10 +3,13 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { DATA_DIR } from "./config.ts";
 import { emit } from "./events.ts";
-import { answerDecision, decisionsOf, listNotices, resetNoticesForTest } from "./notices.ts";
+import { allNotices, answerDecision, decisionsOf, listNotices, resetNoticesForTest } from "./notices.ts";
+import { cardCovers } from "./doctor.ts";
+import { watches as doctorWatches } from "./doctor-checks.ts";
 import { deliverAnswer } from "./routes.ts";
 import { addWatch, allWatches, removeWatch, runWatch, startWatches, stopWatches, type Watch } from "./watch.ts";
-import { watchIssueText } from "./watch-ask.ts";
+import { watchIssueText, watchSubject } from "./watch-ask.ts";
+import { watchCardAnsweredAt } from "./watch-backoff.ts";
 import { reconnectWatch } from "./watch-reconnect.ts";
 import { watchLabel } from "./workchannels.ts";
 
@@ -20,6 +23,7 @@ beforeEach(() => {
 afterAll(() => {
 	for (const w of allWatches()) removeWatch(w.id);
 	stopWatches();
+	resetNoticesForTest();
 });
 
 const issueEvent = (w: Watch, n: Note, ts = new Date().toISOString()) => ({ ts, kind: "out", source: "gateway", target: "alert", nk: "alert", text: watchIssueText(w, watchLabel(w.name), n.reason, n.info, n.output) });
@@ -68,4 +72,47 @@ test("reconnecting a watch with no approval gate runs its check once", async () 
 	const outcome = reconnectWatch(allWatches().find(w => w.name === "plain-site")!);
 	await outcome.done;
 	expect([outcome.approved, readFileSync(counter, "utf8").trim().split("\n")]).toEqual([false, ["run"]]);
+});
+
+const posted = (w: Watch, n: Note) => ({ ...issueEvent(w, n), card_ids: [`watches:${w.name}`] });
+const cardOf = (name: string) => listNotices(300).items.find(n => n.decision?.card_id === `watches:${name}`)!;
+
+test("two monitors whose labels are cut to one title are two cards, and 다시 연결 on each reaches its own monitor", async () => {
+	const base = "아주 긴 채널 이름을 가진 프로젝트 사내 그룹웨어 결재";
+	for (const n of [1, 2]) addWatch({ name: `gw-${n}`, label: `${base} 감시 ${n}`, command: "printf 'DOTZ_FAIL login\\n'; exit 1", every_minutes: 10, on: "fail", to: "alert", approval_minutes: 30 }, "");
+	for (const n of [1, 2]) emit("outbox", posted(allWatches().find(w => w.name === `gw-${n}`)!, await failTwice(`gw-${n}`)));
+	const [one, two] = [cardOf("gw-1"), cardOf("gw-2")];
+	expect(one.title).toBe(two.title);
+	expect(one.id).not.toBe(two.id);
+	expect(one.decision!.evidence![0]).toBe(`모니터링: ${base} 감시 1`);
+	expect(two.decision!.evidence![0]).toBe(`모니터링: ${base} 감시 2`);
+	const reconnect = (card: typeof one) => answerDecision(card.id, { n: 1 }, a => deliverAnswer({ ...a, login: "local" }));
+	expect((await reconnect(two)).status).toBe(200);
+	expect([existsSync(join(DATA_DIR, "approvals", "gw-1")), existsSync(join(DATA_DIR, "approvals", "gw-2"))]).toEqual([false, true]);
+	expect((await reconnect(one)).status).toBe(200);
+	expect(existsSync(join(DATA_DIR, "approvals", "gw-1"))).toBe(true);
+});
+
+test("a monitor whose label starts with [, 결정 or Decision gets its card, answered by 다시 연결 and seen as answered by the back-off", async () => {
+	for (const [name, label] of [["nas", "[NAS] 패치 감시"], ["kr", "결정 로그 감시"], ["dlog", "Decision log 감시"]] as const) {
+		addWatch({ name, label, command: "printf 'DOTZ_FAIL login\\n'; exit 1", every_minutes: 10, on: "fail", to: "alert", approval_minutes: 30 }, "");
+		emit("outbox", posted(allWatches().find(w => w.name === name)!, await failTwice(name)));
+		const card = cardOf(name);
+		expect(watchSubject(card.title)).toBe(label);
+		expect((await answerDecision(card.id, { n: 1 }, a => deliverAnswer({ ...a, login: "local" }))).status).toBe(200);
+		expect(existsSync(join(DATA_DIR, "approvals", name))).toBe(true);
+		expect(watchCardAnsweredAt(name)).toBe(Date.parse(cardOf(name).decision!.answered_at!));
+	}
+});
+
+test("the doctor's finding about a failing monitor is covered by that monitor's card, whatever its label", async () => {
+	const doctorLabels = { watch: watchLabel, harness: () => undefined };
+	for (const [name, label] of [["price", "가격 확인"], ["long", "아주 긴 채널 이름을 가진 프로젝트 사내 그룹웨어 결재 감시 1"], ["bracket", "[NAS] 패치 감시"]] as const) {
+		addWatch({ name, label, command: "printf 'DOTZ_FAIL fetch\\n'; exit 1", every_minutes: 10, on: "fail", to: "alert" }, "");
+		await failTwice(name);
+		emit("outbox", posted(allWatches().find(w => w.name === name)!, await failTwice(name)));
+		const finding = (await doctorWatches({ now: Date.now(), dataDir: DATA_DIR, home: DATA_DIR })).find(f => f.key === `watches:${name}`)!;
+		expect(finding).toBeDefined();
+		expect(cardCovers(allNotices(), Date.now(), doctorLabels)(finding)).toBe(true);
+	}
 });

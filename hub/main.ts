@@ -656,7 +656,7 @@ startWatches((w, reason, output, prev, info, down) => {
 	// A failing, stopped or unapproved check is an issue: it goes to alert with a choice block, whatever `to` the watch has.
 	const issue = isWatchIssue(reason);
 	const label = watchLabel(w.name);
-	void out(issue ? "alert" : w.to, issue ? watchIssueText(w, label, reason, info, output) : watchLine(label, reason, output, { prev, down }).slice(0, 1900), undefined, { source: "gateway", nk: issue ? "alert" : watchNoticeKind(output), news: true, ...(issue ? {} : watchRoute(w)) }).catch(e => log(`watch ${w.name} send failed: ${e}`));
+	void out(issue ? "alert" : w.to, issue ? watchIssueText(w, label, reason, info, output) : watchLine(label, reason, output, { prev, down }).slice(0, 1900), undefined, { source: "gateway", nk: issue ? "alert" : watchNoticeKind(output), news: true, ...(issue ? { card_ids: [`watches:${w.name}`] } : watchRoute(w)) }).catch(e => log(`watch ${w.name} send failed: ${e}`));
 });
 // A watch whose check script broke (hub/watch.ts): the fix turn goes quietly to the watch's conversation (or main), and a fix that held is one worklog line.
 setHealHandler((w, turn) => {

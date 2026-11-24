@@ -195,6 +195,16 @@ test("of two open cards with one title, a Discord button stands for the card who
 	expect(cardAsked(first.decision!.to, first.title)).toBe(first.id);
 });
 
+test("of two open cards with one title whose own line is the start of the other's, a Discord button stands for the card whose whole line its message shows", () => {
+	const at = Date.now() - 3 * H, label = "아주 긴 채널 이름을 가진 프로젝트 사내 그룹웨어 결재 감시";
+	const text = (n: number) => `[${label} ${n}] 로그인이 풀렸어요\n${cardBlock({ subject: "아주 긴 채널 이름을 가진 프로젝트 사내…", question: "원인을 확인할까요?", evidence: [`모니터링: ${label} ${n}`], options: OPTIONS })}`;
+	post(text(1), at, ["watches:gw-1"]);
+	post(text(10), at + MIN, ["watches:gw-10"]);
+	const one = own("watches:gw-1"), ten = own("watches:gw-10");
+	expect(ten.title).toBe(one.title);
+	expect([cardAsked("alert", one.title, text(10)), cardAsked("alert", one.title, text(1))]).toEqual([ten.id, one.id]);
+});
+
 test("the gateway's morning post puts each card in the store under its finding's key, and a message without a card carries no ids", async () => {
 	const posts: [string, boolean][] = [], at = Date.now() - H;
 	const out = async (target: string, text: string, _replyTo?: string, extra: Record<string, unknown> = {}) => {

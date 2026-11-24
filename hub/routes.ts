@@ -307,7 +307,7 @@ type RestartHooks = { /** This node's tailnet name (tests); default `tailscale s
 // A card's answer to where its question came from (chat, session, project chat, mail or login request): the bot's turn.
 export async function deliverAnswer(a: Parameters<DecisionSend>[0] & { login: string; via?: ReturnType<typeof viaOf> }): Promise<void> {
 	if (a.to.startsWith(RUN_DECISION)) return void answerRunDecision(a.to.slice(RUN_DECISION.length), a.action);
-	if (a.to === "alert" && a.action === RECONNECT_ACTION) return reconnectFromCard(a.picks?.[0]?.q ?? "");
+	if (a.to === "alert" && a.action === RECONNECT_ACTION) return reconnectFromCard(a.picks?.[0]?.q ?? "", a.notice);
 	if (a.to.startsWith("auth:")) {
 		const path = `/api/auth/${a.to.slice(5)}`;
 		const res = await authRoute(new Request(`http://local${path}`, { method: "POST", body: JSON.stringify({ action: a.action }) }), new URL(`http://local${path}`));

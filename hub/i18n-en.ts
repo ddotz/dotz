@@ -2,6 +2,7 @@
 import { join } from "node:path";
 import { NAME, paths, tzLabel } from "./config.ts";
 import { askEn } from "./ask-text.ts";
+import { cardsEn } from "./card-text.ts";
 import { doctorEn } from "./doctor-text.ts";
 import { LESSONS_MAX_BYTES } from "./prompt-budget.ts";
 import { promptCardEn } from "./prompt-card-text.ts";
@@ -9,7 +10,6 @@ import type { ContractArgs, FileText, HelpText, LaneFooterArgs, RecallArgs, Sett
 import { OMO_WORDS, type WorkerWords } from "./worker-words.ts";
 import type { FailClass, HealTurnArgs } from "./watch-heal.ts";
 
-const TOPIC_LABELS: Record<string, string> = { linebreak: "line breaks", copy: "copy and tone", "no-card": "questions without a card", duplicate: "duplicate features", stalled: "stalls and lost reports", misread: "misread instructions", "missing-output": "output not visible", ui: "screens and design", "ignored-setting": "ignored settings", "not-applied": "not applied or half verified", other: "other" };
 // Prefixes (leads) of notes that are matched later; every note that has a lead starts with it.
 export const enLeads = {
 	youAre: "[dotz gateway] You are",
@@ -267,6 +267,7 @@ export const en = {
 	checkPassed: (n: number, landed: boolean) => `Checks passed: all ${n} checks passed${landed ? ", and the work branch is landed in main" : ""}`,
 	waitMainRefused: `[gateway check] Your last [wait] reached no one. If you wait on main (${NAME}), write what main is to do in the "For ${NAME}:" line or send it with dotz_main, then report again. If you wait on CI, time or workers rather than main, say so and report again.`,
 	...askEn,
+	...cardsEn,
 	languageRefused: (head: string, before: boolean, language: string) => `[gateway check] Your report did not reach the owner: ${before ? `it has text above the status line ("${head}...")` : `the paragraph starting "${head}..." is not in ${language}`}. Start with the status line ([done], [run], [wait], [ask] or [fail]) and write every paragraph in ${language} (code, paths, ids and dev terms such as red test or HEAD stay as they are), then send it again.`,
 	unverifiedRefused: (lines: string[]) => `[gateway check] Your report did not reach the owner: these lines say something is unchecked without saying why:\n- ${lines.join("\n- ")}\nFirst check everything this machine can check (run it, render it headless, read it back). For what still cannot be checked here, say why on that line and add \`instead checked:\` (or \`대신 확인:\`) with what you checked in its place. Then send the report again.`,
 	checkBounced: (n: number, failed: number) => `Some checks have not passed yet, so it went back to the session (${failed} of ${n} checks)`,
@@ -352,7 +353,6 @@ export const en = {
 	inboxCheck: (ids: string[], channel: string) => `[dotz inbox] quiet check (${ids.join(", ")}) - not something the owner asked for but a system check you set yourself${ids.length > 1 ? `. ${ids.length} fall at the same time, so they come as one turn: go through them in order and write one answer` : ""}. If everything is normal, answer one plain line (it is kept quietly in the worklog only). Start the answer with [ask] or [fail] only when the owner must decide or must know. If there is nothing to say, answer \"-\" alone. Your final answer goes to ${channel}:`,
 	scheduleNaming: (items: { id: string; text: string; conv?: string; fixed?: string }[]) => `[dotz gateway] One-time naming of the schedules made before schedules had a name and the task kind. For each id below call dotz_schedule action=edit {id, name, kind}. name: a short title in the owner's language (up to 40 characters) that says what it is, not when (e.g. "Daily feedback report"). kind: "owner" when the text is words to pass on to the owner at that time (a reminder such as "tell me about the 3 pm meeting"), "task" when it is work for you to carry out (a report, a lookup, a command). An id marked [task] or [check] keeps that kind: give it a name only. Change nothing else. When every id is done, answer "-" alone.\n${items.map(i => `- ${i.id}${i.fixed ? ` [${i.fixed}]` : ""}${i.conv ? ` (${i.conv})` : ""}: ${i.text.replace(/\s+/g, " ").slice(0, 300)}`).join("\n")}`,
 	scheduleNamed: (list: { name: string; kind: "owner" | "task" | "check" }[]) => `Schedules now have a name and a kind: ${list.map(s => `${s.name} (${({ owner: "reminder", task: "task", check: "quiet check" })[s.kind]})`).join(", ")}. To change one, use ⋯ on its row in Monitoring or Settings > Schedules.`,
-	scheduleRun: { running: "Running now.", nothing: "Nothing to tell this time.", posted: "The result is in the conversation.", held: (name: string) => `${name}: waiting on the model usage limit. It starts as soon as the limit lifts.`, failed: (name: string) => `${name} did not run · Run it again now?`, rerun: "Run again", stop: "Leave it" },
 	scheduleCheckLine: (text: string) => `${SCHEDULE_CHECK_LEAD} ${text}`,
 	inboxThread: (thread: string, parent: string) => ` (thread "${thread}" in #${parent}; your answer goes into the thread)`,
 	inboxFirst: (channel: string) => `(new work channel #${channel}: the owner hands out work by channel. Keep this channel's work and reports here. If its work needs a login kept alive or something checked over time, set that up for this channel with dotz_channel setup yourself.)`,
@@ -390,8 +390,6 @@ Do this, briefly:
 	// Gateway-written: the lessons gate and the repeat card (hub/reflect.ts admitLessons, sendRepeatAlerts).
 	lessonGate: (topics: string[]) => `\n\nThese lesson topics hold prose and nothing enforced, so the gateway removes any further prose line in them: ${topics.join(", ")}. A new line there needs "(enforced: <guard, test or check>)". Name a line's topic with "(topic: <name>)" when its words do not show it.`,
 	lessonsRefused: (rows: { line: string; topic: string; why: "prose" | "cap" }[], cap: number) => `[dotz gate] Removed from LESSONS.md, do not add them back as prose:\n${rows.map(r => `- ${r.line} (${r.why === "cap" ? `over the ${cap} byte cap: merge or delete a line first` : `topic ${r.topic} has no enforced lesson: fix it in code and end the line with (enforced: <guard, test or check>)`})`).join("\n")}`,
-	repeatAlert: (a: { topic: string; count: number; broken: number; examples: string[] }) => [`The same correction keeps coming back: ${TOPIC_LABELS[a.topic] ?? a.topic} (${[a.count ? `${a.count} in 7 days` : "", a.broken ? `a lesson broken on ${a.broken} nights` : ""].filter(Boolean).join(", ")})`, ...a.examples.map(e => `- ${e}`)].join("\n"),
-	repeatAlertQuestion: "Add a guard, check or test so this stops coming back, or leave it this week?",
 	// The prompt health check of the doctor (hub/prompt-health.ts).
 	promptPartLabels: { mode: "the mode text", rules: "RULES.md", lessons: "LESSONS.md", identity: "the identity text", features: "the feature texts", setups: "the channel setups", state: "the state excerpt", rest: "the framing around them" } as Record<string, string>,
 	promptGrew: (label: string | undefined, from: number, to: number, date: string) => `The re-read text${label ? ` (${label})` : ""} grew from ${from.toLocaleString("en-US")} to ${to.toLocaleString("en-US")} chars since ${date}.`,
@@ -404,13 +402,9 @@ Do this, briefly:
 	promptReviewWhat: { conflict: "Two lines in the re-read text contradict each other.", outdated: "A line in the re-read text looks outdated.", "contradicts-code": "A line in the re-read text says something the code does differently." } as Record<string, string>,
 	// Appended to `reflect` with tonight's one recipe candidate, and the card and answers around it (hub/recipes.ts).
 	recipeCandidate: (id: string, titles: string[], briefs: string[], script: string) => `\n\nOne recipe candidate (sessions that passed the gateway's check): ${titles.join(" / ")}. Briefs: ${briefs.join(", ")}. Propose it only if the same work will come again and steps can shorten it. Write the body (the steps, the commands they need) to a temp file, a script too if it helps, run \`${script} propose ${id} --slug <lowercase-ascii> --name "<short name>" --when "<when to use it, one line>" --body-file <file> [--script-file <file>]\` once and send its whole output to alert unchanged (this overrides step 5's no-alert line). Otherwise do nothing. The gateway saves on the owner's answer: do not write to custom/recipes, run it or create a watch. No secret values or other people's personal data.`,
-	recipeCard: (d: { name: string; when: string; script?: { file: string } }, preview: string, titles: string[]) => [`Keep work that went well as a recipe: ${d.name}`, `Use when: ${d.when}`, `From: ${titles.join(" / ")}`, preview, ...(d.script ? [`Script: ${d.script.file}`] : [])].join("\n"),
-	recipeQuestion: "Save this recipe?",
-	recipeOptions: [{ name: "Save recipe", result: "Stored only in this install's custom/recipes, found by name when similar work comes. It never runs by itself." }, { name: "Skip recipe", result: "Nothing is stored and the same work is not proposed again." }],
 	recipeSaved: (name: string, dir: string) => `Recipe saved: ${name} (${dir})`,
 	recipeSkipped: (name: string) => `Skipped. The same work will not be proposed again: ${name}`,
 	recipeFailed: (why: string) => `The recipe could not be saved: ${why}`,
-	repeatAlertOptions: [{ name: "Add a guard", result: "A guard, check or test that stops this; it starts only after this answer." }, { name: "Leave it this week", result: "No card on this topic for 7 days." }],
 	// Appended to `reflect` only when LESSONS.md has stale or near-duplicate lines or is over its byte cap (hub/reflect.ts lessonCandidates).
 	// Appended to `reflect` with the lessons no "(enforced: ...)" carries: all of them on a day with corrections, else those broken on 2+ nights (hub/reflect.ts lessonChecks).
 	lessonRepeats: (rows: { line: string; score: number; broken: number; likely: boolean }[], today: string) => `\n\nLessons nothing enforces yet, checked against today's corrections. Judge by meaning, not by the words: the score is only how many of a lesson's words a correction repeats ("likely" = 0.4 or more), and "broken N" counts the nights it was already found broken. For each lesson that was really broken today: add ${today} to its "(broken: ...)" list (start one if missing), then fix it at the highest level that works: remove the cause in the code or this contract, then a guard or check whose message names the right way, then a test; reword only a pure judgment call (and add the failure as an example). After a structural fix end the line with "(enforced: <the guard, check or test>)"; delete a lesson once its mistake cannot happen. A lesson broken on two or more nights is not reworded again: it gets the structural fix now. Leave the others as they are:\n${rows.map(r => `${r.line}${r.broken ? ` [broken ${r.broken}]` : ""}${r.likely ? ` [likely ${r.score}]` : ""}`).join("\n")}`,

@@ -86,12 +86,13 @@ export function laterNotice(id: unknown, body: { for?: unknown }): CardReply {
 
 /**
  * The open card a Discord card with `question` in conversation `conv` stands for: the one of that title, else one whose title holds it or is held in it; none
- * when no open card matches (the card closed). Cards that have an id may share a title: of several, the one whose own lines are all in `shown`, the text of
- * the Discord message, else the oldest.
+ * when no open card matches (the card closed). Cards that have an id may share a title: of several, the one whose own lines each end a line of `shown`,
+ * the text of the Discord message (a whole line, so a line that only starts another card's line does not count), else the oldest.
  */
 export function cardAsked(conv: string, question: string, shown = ""): string | undefined {
 	const open = items.filter(n => isOpenDecision(n) && plainCard(n.decision!) && n.decision!.to === conv), same = open.filter(n => n.title === question);
-	const own = same.length > 1 ? same.find(n => !!n.decision!.evidence?.length && n.decision!.evidence.every(l => shown.includes(l))) : undefined;
+	const said = shown.split("\n").map(l => l.trim());
+	const own = same.length > 1 ? same.find(n => !!n.decision!.evidence?.length && n.decision!.evidence.every(l => said.some(s => s.endsWith(l)))) : undefined;
 	return (own ?? same[0] ?? open.find(n => !!question && (question.includes(n.title) || n.title.includes(question))))?.id;
 }
 

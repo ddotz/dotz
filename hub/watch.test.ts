@@ -5,10 +5,14 @@ import { readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DATA_DIR, paths } from "./config.ts";
+import { emit } from "./events.ts";
+import { listNotices, resetNoticesForTest, sweepQuestions } from "./notices.ts";
+import { settleDecision } from "./notices-store.ts";
 import { SLOT_SKIPPED_EXIT } from "./release-exit.ts";
 import { advance, clock } from "./runtime/test-clock.ts";
 import type { ReloginOpts, ReloginResult } from "./autologin.ts";
 import { addWatch, allWatches, approveWatch, exec, learnLife, listWatches, patchWatch, putWatchScript, reloadWatches, removeWatch, runWatch, sessionGapMs, setSessionIo, startWatches, wakeTarget, watchScript, watchShell } from "./watch.ts";
+import { watchChoice, watchIssueText } from "./watch-ask.ts";
 
 const notes: { name: string; reason: string; down?: number }[] = [];
 let waiter: (() => void) | undefined;
@@ -295,23 +299,140 @@ test("a flapping watch tells the owner once per episode; a refail that lasts, or
 	expect(notes.map(n => n.reason)).toEqual(["failed 2 times in a row (exit 1)", "recovered", "failed 3 times in a row (exit 1)", "recovered", "failed 2 times in a row (exit 1)"]);
 });
 
-// A skipped release slot (exit SLOT_SKIPPED_EXIT) fails only the tick that found it: the owner hears of it at once, and the quiet rest of the
-// slot is no recovery news. The next skipped slot is news again.
-test("a skipped release slot alerts on its one failing tick, with no recovery note after, and the next skipped slot alerts again", async () => {
+const SKIPPED = `failed 1 times in a row (exit ${SLOT_SKIPPED_EXIT})`;
+function slotWatch(): (minutesAfterLastSlot: number) => Promise<void> {
 	const code = join(DATA_DIR, "watch-slot.txt");
 	addWatch({ name: "t-slot", command: `exit $(cat '${code}')`, every_minutes: 1, on: "fail", to: "alert" }, "");
-	const step = async (c: number, minutes = 1) => {
+	const tick = async (c: number, minutes: number) => {
 		writeFileSync(code, String(c));
 		clock.now += minutes * 60_000;
 		await runWatch("t-slot");
 	};
-	await step(SLOT_SKIPPED_EXIT);
-	expect(notes.map(n => n.reason)).toEqual([`failed 1 times in a row (exit ${SLOT_SKIPPED_EXIT})`]);
-	for (let i = 0; i < 5; i++) await step(0);
-	expect(notes).toHaveLength(1);
+	return async minutesAfterLastSlot => {
+		await tick(SLOT_SKIPPED_EXIT, minutesAfterLastSlot - 5);
+		for (let i = 0; i < 5; i++) await tick(0, 1);
+	};
+}
+
+test("a skipped release slot alerts at once with no recovery note after, and while its card stays unanswered the next skips wait 12 hours, then 24", async () => {
+	const slot = slotWatch();
+	await slot(5);
+	expect(notes.map(n => n.reason)).toEqual([SKIPPED]);
 	expect(state("t-slot").fails).toBe(0);
-	await step(SLOT_SKIPPED_EXIT, 6 * 60);
+	await slot(6 * 60);
+	expect(notes).toHaveLength(1);
+	await slot(6 * 60 + 1);
+	expect(notes.map(n => n.reason)).toEqual([SKIPPED, SKIPPED]);
+	await slot(12 * 60 - 1);
+	await slot(6 * 60);
 	expect(notes).toHaveLength(2);
+	await slot(6 * 60 + 2);
+	expect(notes).toHaveLength(3);
+});
+
+test("after the owner answers the skipped slot's card, or after 3 days with no skipped slot, the next skipped slot alerts at once", async () => {
+	const slot = slotWatch();
+	await slot(5);
+	emit("outbox", { ts: new Date(clock.now).toISOString(), kind: "out", source: "gateway", target: "alert", nk: "alert", text: watchChoice("t-slot", SKIPPED) });
+	const card = listNotices(300).items.find(n => n.decision?.to === "alert" && n.title.startsWith("t-slot · "))!;
+	settleDecision(card, "1) 원인 확인", new Date(clock.now).toISOString());
+	await slot(6 * 60);
+	expect(notes).toHaveLength(2);
+	await slot(6 * 60);
+	expect(notes).toHaveLength(2);
+	await slot(73 * 60);
+	expect(notes).toHaveLength(3);
+	await slot(6 * 60);
+	expect(notes).toHaveLength(3);
+});
+
+test("a slot skipped 3 days after the last one starts the count over: 12 hours after it the next skipped slot is told again", async () => {
+	const slot = slotWatch();
+	await slot(5);
+	await slot(13 * 60);
+	await slot(13 * 60);
+	await slot(13 * 60);
+	expect(notes).toHaveLength(3);
+	await slot(73 * 60);
+	expect(notes).toHaveLength(4);
+	await slot(12 * 60 + 1);
+	expect(notes).toHaveLength(5);
+});
+
+test("the slot skipped 3 days after the last one starts the count over whether its tick comes a minute early or a minute late", async () => {
+	for (const late of [-1, 1]) {
+		for (const w of allWatches()) removeWatch(w.id);
+		notes.length = 0;
+		const slot = slotWatch();
+		await slot(5);
+		await slot(13 * 60);
+		await slot(13 * 60);
+		await slot(13 * 60);
+		expect(notes).toHaveLength(3);
+		await slot(72 * 60 + late);
+		expect(notes).toHaveLength(4);
+		await slot(12 * 60 + 1);
+		expect(notes).toHaveLength(5);
+	}
+});
+
+test("the skipped slot at the end of a 12- or 24-hour gap is told whether its tick comes a minute early or a minute late", async () => {
+	for (const late of [-1, 1]) {
+		for (const w of allWatches()) removeWatch(w.id);
+		notes.length = 0;
+		const slot = slotWatch();
+		await slot(5);
+		await slot(12 * 60 + late);
+		expect(notes).toHaveLength(2);
+		await slot(12 * 60);
+		await slot(12 * 60 + late);
+		expect(notes).toHaveLength(3);
+	}
+});
+
+const HOUR = 3600_000;
+async function tellHoursWithEverySlotSkipped(days: number, answerAt?: number): Promise<number[]> {
+	resetNoticesForTest();
+	const code = join(DATA_DIR, "watch-slot.txt"), start = clock.now, told: number[] = [];
+	addWatch({ name: "t-slot", command: `exit $(cat '${code}')`, every_minutes: 1, on: "fail", to: "alert" }, "");
+	let swept = start, answered = answerAt === undefined;
+	const until = (at: number) => {
+		for (; swept <= at; swept += 5 * 60_000) sweepQuestions(new Date(swept).toISOString());
+		clock.now = at;
+	};
+	const tick = async (at: number, exit: number) => {
+		until(at);
+		writeFileSync(code, String(exit));
+		const before = notes.length;
+		await runWatch("t-slot");
+		if (notes.length === before) return;
+		told.push((at - start) / HOUR);
+		const w = allWatches().find(x => x.name === "t-slot")!;
+		emit("outbox", { ts: new Date(at).toISOString(), kind: "out", source: "gateway", target: "alert", nk: "alert", text: watchIssueText(w, "t-slot", notes.at(-1)!.reason, undefined, ""), card_ids: ["watches:t-slot"] });
+		expect(listNotices(300).items.filter(n => n.decision?.card_id === "watches:t-slot").map(n => n.decision!.state)).toEqual(["open"]);
+	};
+	for (let d = 0; d < days; d++)
+		for (const h of [0, 6, 12]) {
+			const at = start + (d * 24 + h) * HOUR;
+			if (!answered && at > start + answerAt! * HOUR) {
+				until(start + answerAt! * HOUR);
+				const card = listNotices(300).items.find(n => n.decision?.card_id === "watches:t-slot")!;
+				expect(card.decision!.state).toBe("open");
+				settleDecision(card, "1) 원인 확인", new Date(clock.now).toISOString());
+				answered = true;
+			}
+			await tick(at, SLOT_SKIPPED_EXIT);
+			await tick(at + 60_000, 0);
+		}
+	return told;
+}
+
+test("with every slot skipped for 9 days and no answer, the card expiring after 24 hours does not count as one: told at once, then after 12 hours, 24 hours and every 3 days", async () => {
+	expect(await tellHoursWithEverySlotSkipped(9)).toEqual([0, 12, 36, 108, 180]);
+});
+
+test("the owner's own answer on day 2 starts the count over: the next skipped slot is told at once, then after 12 hours, 24 hours and 3 days", async () => {
+	expect(await tellHoursWithEverySlotSkipped(9, 28)).toEqual([0, 12, 30, 48, 72, 144]);
 });
 
 // The shape of a one-shot gate: the check fails until its condition holds, then prints one constant line. There is no second, different output
