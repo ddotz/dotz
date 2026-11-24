@@ -885,7 +885,11 @@ changes go back on top as a local patch when they still apply and the tests stil
 clean and the patch stays in the backup, which the bot carries over to the custom layer (docs/customization.md, Surviving updates).
 An update is otherwise fast-forward, runs `bun install` when needed and the tests, and returns to the old commit if they fail. With
 `self_update.auto_apply: true` (default off) the daily check applies it itself, the same way, and restarts through the idle gate.
-A failure alerts with a choice block. A commit whose `bun install` or tests failed, or that the rollback watchdog undid, is not tried
+A failure alerts with a choice block. When the files are left at the new version (the rollback failed too, or a step after the
+merge stopped on an unexpected error), the card says the update stopped halfway, names the commit the files are at and gives one
+terminal line that puts them back: `git -C "<code dir>" stash && git -C "<code dir>" reset --keep <old commit>`. The stash keeps any
+file the update's install or tests changed (`git -C "<code dir>" stash list` shows it, `git -C "<code dir>" stash pop` brings it back);
+the Korean web shows that line whole, folder and commit included. A commit whose `bun install` or tests failed, or that the rollback watchdog undid, is not tried
 again (top bar, settings or the daily check) until a newer commit arrives; `bun hub/selfupdate.ts --apply` (what the bot runs when you
 ask) tries it again.
 

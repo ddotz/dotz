@@ -127,7 +127,7 @@ export const cardsEn = {
 			u.rel ? `Version ${u.rel}: ${u.failed ? "could not be applied" : "blocked, not applied"}` : u.failed ? "The new commits could not be applied" : "The new commits were blocked, not applied",
 			u.failed ? "Why: applying it failed; the update log has the reason" : "Why: blocked before applying; the update log has the reason",
 			...(u.halfway
-				? [`The update stopped halfway: the files are at the new version ${u.halfway.at}`, `To put it back, run in a terminal: ${u.halfway.undo}`]
+				? [`The update stopped halfway: the files are at the new version ${u.halfway.at}`, `To put it back, run in a terminal: \`${u.halfway.undo}\``]
 				: [u.commits ? `${u.commits} new commit(s)${u.latest ? `, newest: ${shorten(u.latest, 60)}` : ""}` : "", u.failed ? "The current version stays; a newer release is tried again" : "The current version stays; it is checked again daily"]),
 		],
 		check: "Find the cause",
@@ -242,7 +242,7 @@ export const cardsKo: typeof cardsEn = {
 			u.rel ? `버전 ${u.rel}: ${u.failed ? "적용하지 못했어요" : "막혀서 적용하지 않았어요"}` : u.failed ? "새 커밋을 적용하지 못했어요" : "새 커밋이 막혀서 적용하지 않았어요",
 			u.why ? `이유: ${shorten(u.why.split("\n")[0]!, 100)}` : "",
 			...(u.halfway
-				? [`업데이트가 중간에 멈췄어요. 파일은 새 버전 ${u.halfway.at}에 있어요`, `되돌리려면 터미널에서: ${u.halfway.undo}`]
+				? [`업데이트가 중간에 멈췄어요. 파일은 새 버전 ${u.halfway.at}에 있어요`, `되돌리려면 터미널에서: \`${u.halfway.undo}\``]
 				: [u.commits ? `새 커밋 ${u.commits}개${u.latest ? `, 마지막: ${shorten(u.latest, 60)}` : ""}` : "", u.failed ? "지금 버전 그대로예요. 더 새 버전이 오면 다시 시도해요" : "지금 버전 그대로예요. 매일 다시 확인해요"]),
 		],
 		check: "원인 확인",

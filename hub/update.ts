@@ -8,7 +8,7 @@
 import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { join } from "node:path";
 import { cfg, DATA_DIR, DEFAULTS, log, OMP, writeAtomic } from "./config.ts";
-import { fitSubject, type HarnessFailFacts } from "./card-text.ts";
+import { type AutoUpdateFacts, fitSubject, type HarnessFailFacts } from "./card-text.ts";
 import { cardBlock } from "./choices.ts";
 import { msg } from "./i18n.ts";
 import { activeHarness } from "./runtime/index.ts";
@@ -159,9 +159,21 @@ export function harnessFailText(id: string, facts: HarnessFailFacts): string {
 	return `${t.lead(name)}\n${cardBlock({ subject: fitSubject(t.subject(name), t.question), question: t.question, evidence: t.evidence(facts), options: [{ name: t.retry, result: t.retryResult }, { name: t.later, result: t.laterResult }] })}`;
 }
 
+/** The alert of a refused or failed dotz auto-update (hub/selfupdate.ts autoApply): a lead, then the card `dotz 업데이트 · 원인을 확인할까요?`, posted with the id SELF_UPDATE_CARD_ID. */
+export const autoAlert = (u: AutoUpdateFacts, t = msg().selfUpdate): string =>
+	`${t.lead(u.failed)}\n${cardBlock({ subject: t.subject, question: t.question, evidence: t.evidence(u), options: [{ name: t.check, result: t.checkResult }, { name: t.off, result: t.offResult }] })}`;
+
 /** The alert of a gateway card that has an id: posted through `out` with its `card_ids` (docs/notifications.md, 카드의 id); a text without ids goes through `plain` (outbound.ts alert). */
 export const cardAlert = (out: (target: string, text: string, replyTo?: string, extra?: Record<string, unknown>) => Promise<unknown>, plain: (text: string) => void) =>
 	(text: string, cardIds?: string[]): void => (cardIds?.length ? void out("alert", text, undefined, { source: "gateway", nk: "alert", card_ids: cardIds }).catch(e => log(`card alert failed: ${e}`)) : plain(text));
+
+/** What hub/main.ts hands the self-update job (`self`, hub/selfupdate.ts AutoHooks) and the nightly harness update (`harness`, startHarnessUpdate's arguments):
+ *  each one's worklog line, its card alert through `out` with the card's ids (cardAlert), and the gateway restart. */
+export const updateHooks = (out: Parameters<typeof cardAlert>[0], plain: (text: string) => void, restart: (o?: { auto?: boolean }) => string) => {
+	const worklog = (what: string) => (text: string): void => void out("worklog", text, undefined, { source: "gateway", wk: "update" }).catch(e => log(`${what} post failed: ${e}`));
+	const alert = cardAlert(out, plain);
+	return { self: { worklog: worklog("self-update worklog"), alert, restartIdle: () => restart() }, harness: [worklog("harness update"), () => restart({ auto: true }), alert] as const };
+};
 
 // One harness: the worklog line it posted, if any, and whether it installed something that needs a restart.
 async function updateOne(id: string, spec: Spec, { mode, post, alert = post, run = defaultRun, latest = npmLatest, locate = defaultLocate, stateDir = DATA_DIR }: Deps): Promise<{ line?: string; installed?: boolean }> {

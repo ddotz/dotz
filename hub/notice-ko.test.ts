@@ -175,3 +175,10 @@ test("the hub words a push with the language of the view it is given", () => {
 	expect(en.errorKo("HTTP 404")).toBe(enWord("notice.err.notfound"));
 	expect(hubNotice.noticeFor(enView)).toBe(en);
 });
+
+test("a command the owner is told to run in a terminal stays whole, folder and commit included, on the hub and on the page in both languages", () => {
+	const undo = 'git -C "/Users/me/.local/share/dotz" stash && git -C "/Users/me/.local/share/dotz" reset --keep 0a1b2c3d4e5f';
+	for (const line of [`되돌리려면 터미널에서: \`${undo}\``, `To put it back, run in a terminal: \`${undo}\``])
+		for (const read of [noticeKo, pageFor("ko").noticeKo, pageFor("en").noticeKo, hubNotice.noticeFor(enView).noticeKo]) expect(read(line, { keepFiles: true })).toBe(line);
+	expect(noticeKo("`git status`로 확인하고 /Users/me/.local/share/dotz/hub/main.ts 를 고쳤어요 (0a1b2c3d4e5f)")).not.toMatch(/git|\/Users|0a1b2c3d4e5f/);
+});

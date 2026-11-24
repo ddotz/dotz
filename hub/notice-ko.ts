@@ -107,6 +107,7 @@ const ISO = /\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\
 const STATUS = /[ \t]*\[(?:run|done|ask|fail|warn|blocked|partial|later|ok|error|err|완료|진행|결정|실패|경고|차단|부분|나중|오류)\](?!\()/gi;
 const SLASH_RE = new RegExp(`(?<![\\w/:.])\\/(${Object.keys(SLASH).join("|")})(?![\\w/가-힣-])`, "g");
 const TARGET = /\b(lane|ch|th|mail|settings|auth|msg|dec)((?::[\w.@~%-]+)+)/g;
+const RUN_AS_IS = /`(git -C "[^"\n]+" [^`\n]+)`/g;
 
 // "워커(st_01a1a07f)": an id in brackets after the thing it names says nothing to the owner, and the sentence stands without it.
 // "st_01a1a07f가 멈췄어요": a bare one is the sentence's subject, so the word for it takes its place, with the particle that word asks for. A code span or a path keeps it.
@@ -150,7 +151,8 @@ function spanRaw(code: string, o: PlainOpts): string {
 }
 
 function prose(s: string, o: PlainOpts): string {
-	let t = dropIdNote(s).replace(/<#\d{10,}>/g, w("채널")).replace(/`?\b(Bash|Read|Edit|Write|Grep|Glob|WebFetch|WebSearch|TodoWrite)\b`?\s*(?:도구|tool\b)/g, (_m, n: string) => w(TOOLS[n.toLowerCase()]!));
+	const run: string[] = [];
+	let t = dropIdNote(s.replace(RUN_AS_IS, (_m, code: string) => `\u0003${run.push(code) - 1}\u0004`)).replace(/<#\d{10,}>/g, w("채널")).replace(/`?\b(Bash|Read|Edit|Write|Grep|Glob|WebFetch|WebSearch|TodoWrite)\b`?\s*(?:도구|tool\b)/g, (_m, n: string) => w(TOOLS[n.toLowerCase()]!));
 	t = t.replace(/`([^`\n]+)`/g, (_m, c: string) => span(c, o));
 	t = t.replace(/^[ \t]*\$[ \t]+(.+)$/gm, (_m, c: string) => w(commandKo(c) ?? "명령"));
 	t = t.replace(/\bhttps?:\/\/([^\s/)>\]"'`]+)[^\s)>\]"'`]*/g, (_m, host: string) => (/^(?:localhost|\d+\.\d+\.\d+\.\d+)(?::\d+)?$/.test(host) ? "내부 주소" : host.replace(/^www\./, "")));
@@ -170,7 +172,7 @@ function prose(s: string, o: PlainOpts): string {
 	// An id can be all a code span held, or all a "근거:" piece: neither its marks nor its separator stay behind.
 	t = t.replace(/``/g, "").replace(/(:|·)[ \t]*·/g, "$1");
 	// An id that ended a bracket's list leaves its comma ("(v1.2, )"), one that led it leaves it the other way.
-	return josa(t).replace(/[ \t]*[,·][ \t]*\)/g, ")").replace(/\([ \t]*[,·][ \t]*/g, "(").replace(/\(\s*\)|\[\s*\]/g, "").replace(/[ \t]+([,.!?)])/g, "$1").replace(/[ \t]{2,}/g, " ").replace(/[ \t]+$/gm, "").replace(/[ \t]*·[ \t]*$/gm, "");
+	return josa(t).replace(/[ \t]*[,·][ \t]*\)/g, ")").replace(/\([ \t]*[,·][ \t]*/g, "(").replace(/\(\s*\)|\[\s*\]/g, "").replace(/[ \t]+([,.!?)])/g, "$1").replace(/[ \t]{2,}/g, " ").replace(/[ \t]+$/gm, "").replace(/[ \t]*·[ \t]*$/gm, "").replace(/\u0003(\d+)\u0004/g, (_m, i: string) => `\`${run[Number(i)]}\``);
 }
 
 // An error message as the owner reads it. Korean stays; an English / HTTP one becomes a sentence; "name: <english error>" keeps the name.

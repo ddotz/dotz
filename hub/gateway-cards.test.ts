@@ -24,8 +24,7 @@ import { slotStart } from "./release.ts";
 import { restartCapText } from "./restart.ts";
 import { scheduleRan } from "./schedule-fire.ts";
 import { addSchedule, removeSchedule, runNow } from "./schedule.ts";
-import { autoAlert } from "./selfupdate.ts";
-import { cardAlert, harnessFailText, harnessLabel, type Run, runHarnessUpdate } from "./update.ts";
+import { autoAlert, cardAlert, harnessFailText, harnessLabel, type Run, runHarnessUpdate } from "./update.ts";
 import { RECONNECT_ACTION, watchChoice, watchIssueText, watchSubject } from "./watch-ask.ts";
 import { clockKo } from "./watchtext.ts";
 import { SELF_UPDATE_CARD_ID } from "./worklog-kind.ts";
@@ -421,9 +420,13 @@ test("an account with a blank name is named by its id, and blocked accounts are 
 });
 
 test("a self-update whose rollback failed too says it stopped halfway, where the files are and the whole command that puts it back, never that the version is unchanged", () => {
-	expect(cardOf(autoAlert(HALFWAY)).evidence).toEqual(["버전 261124.1 → 261124.2: 적용하지 못했어요", "이유: 테스트 3개가 실패했어요", "업데이트가 중간에 멈췄어요. 파일은 새 버전 5f3e2a1에 있어요", `되돌리려면 터미널에서: ${UNDO}`]);
-	expect(inLanguage("en", () => cardOf(autoAlert(HALFWAY)).evidence)).toEqual(["Version 261124.1 → 261124.2: could not be applied", "Why: applying it failed; the update log has the reason", "The update stopped halfway: the files are at the new version 5f3e2a1", `To put it back, run in a terminal: ${UNDO}`]);
+	expect(cardOf(autoAlert(HALFWAY)).evidence).toEqual(["버전 261124.1 → 261124.2: 적용하지 못했어요", "이유: 테스트 3개가 실패했어요", "업데이트가 중간에 멈췄어요. 파일은 새 버전 5f3e2a1에 있어요", `되돌리려면 터미널에서: \`${UNDO}\``]);
+	expect(inLanguage("en", () => cardOf(autoAlert(HALFWAY)).evidence)).toEqual(["Version 261124.1 → 261124.2: could not be applied", "Why: applying it failed; the update log has the reason", "The update stopped halfway: the files are at the new version 5f3e2a1", `To put it back, run in a terminal: \`${UNDO}\``]);
 	expect(cardOf(autoAlert(SELF_FAILED)).evidence[3]).toBe("지금 버전 그대로예요. 더 새 버전이 오면 다시 시도해요");
+});
+
+test("an English self-update card says whether the update was blocked before applying or failed while applying", () => {
+	expect(inLanguage("en", () => [cardOf(autoAlert(SELF_REFUSED)).evidence[1], cardOf(autoAlert(SELF_FAILED)).evidence[1]])).toEqual(["Why: blocked before applying; the update log has the reason", "Why: applying it failed; the update log has the reason"]);
 });
 
 test("a self-update of a commit with no release number says the new commits, not an empty version", () => {

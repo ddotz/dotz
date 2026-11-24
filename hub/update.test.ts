@@ -8,7 +8,7 @@ import { cardCovers } from "./doctor.ts";
 import type { Finding } from "./doctor-types.ts";
 import { emit } from "./events.ts";
 import { allNotices, resetNoticesForTest } from "./notices.ts";
-import { cardAlert, describe, harnessLabel, newer, runHarnessUpdate, type Run } from "./update.ts";
+import { cardAlert, describe, harnessLabel, newer, runHarnessUpdate, type Run, updateHooks } from "./update.ts";
 
 let dir: string;
 beforeEach(() => void (dir = mkdtempSync(join(tmpdir(), "dotz-update-"))));
@@ -210,4 +210,25 @@ test("version order and the owner-facing check line", () => {
 	expect(newer("5.1.38", "5.1.38")).toBe(false);
 	expect(newer("5.1.9", "5.1.10")).toBe(false);
 	expect(describe({ status: "new", current: "5.1.38", latest: "5.1.40" }, "작업 프로그램")).toBe("작업 프로그램 새 버전이 있어요 (5.1.38 → 5.1.40).");
+});
+
+test("the update hooks hub/main.ts passes post each card with its id through out, each worklog line to the worklog, and restart the gateway", () => {
+	const posts: unknown[][] = [], plain: string[] = [], restarts: unknown[] = [];
+	const hooks = updateHooks(async (...a) => void posts.push(a), t => void plain.push(t), o => (restarts.push(o), "queued"));
+	const [post, restart, alert] = hooks.harness;
+	hooks.self.alert("self card", ["update:self"]);
+	alert("omo card", ["update:omo"]);
+	hooks.self.worklog("applied");
+	post("installed");
+	expect({ plain, posts, restarted: [hooks.self.restartIdle(), restart()], restarts }).toEqual({
+		plain: [],
+		posts: [
+			["alert", "self card", undefined, { source: "gateway", nk: "alert", card_ids: ["update:self"] }],
+			["alert", "omo card", undefined, { source: "gateway", nk: "alert", card_ids: ["update:omo"] }],
+			["worklog", "applied", undefined, { source: "gateway", wk: "update" }],
+			["worklog", "installed", undefined, { source: "gateway", wk: "update" }],
+		],
+		restarted: ["queued", "queued"],
+		restarts: [undefined, { auto: true }],
+	});
 });

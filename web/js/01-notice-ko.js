@@ -203,6 +203,7 @@ const ISO = /\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\
 const STATUS = /[ \t]*\[(?:run|done|ask|fail|warn|blocked|partial|later|ok|error|err|완료|진행|결정|실패|경고|차단|부분|나중|오류)\](?!\()/gi;
 const SLASH_RE = new RegExp(`(?<![\\w/:.])\\/(${Object.keys(SLASH).join("|")})(?![\\w/가-힣-])`, "g");
 const TARGET = /\b(lane|ch|th|mail|settings|auth|msg|dec)((?::[\w.@~%-]+)+)/g;
+const RUN_AS_IS = /`(git -C "[^"\n]+" [^`\n]+)`/g;
 const dropIdNote = (s) => josa(s.replace(/`[^`\n]+`|[ \t]*\((?:st_[0-9a-f]{8}|(?:ch|th):\d{10,})\)|(?<![\w/.:=-])st_[0-9a-f]{8}(?:,[ \t]*st_[0-9a-f]{8})*(?![\w-]|\.\w)/g, (m) => {
   if (m[0] === "`")
     return m;
@@ -257,7 +258,8 @@ function spanRaw(code, o) {
   return `\`${code}\``;
 }
 function prose(s, o) {
-  let t = dropIdNote(s).replace(/<#\d{10,}>/g, w("채널")).replace(/`?\b(Bash|Read|Edit|Write|Grep|Glob|WebFetch|WebSearch|TodoWrite)\b`?\s*(?:도구|tool\b)/g, (_m, n) => w(TOOLS[n.toLowerCase()]));
+  const run = [];
+  let t = dropIdNote(s.replace(RUN_AS_IS, (_m, code) => `\x03${run.push(code) - 1}\x04`)).replace(/<#\d{10,}>/g, w("채널")).replace(/`?\b(Bash|Read|Edit|Write|Grep|Glob|WebFetch|WebSearch|TodoWrite)\b`?\s*(?:도구|tool\b)/g, (_m, n) => w(TOOLS[n.toLowerCase()]));
   t = t.replace(/`([^`\n]+)`/g, (_m, c) => span(c, o));
   t = t.replace(/^[ \t]*\$[ \t]+(.+)$/gm, (_m, c) => w(commandKo(c) ?? "명령"));
   t = t.replace(/\bhttps?:\/\/([^\s/)>\]"'`]+)[^\s)>\]"'`]*/g, (_m, host) => /^(?:localhost|\d+\.\d+\.\d+\.\d+)(?::\d+)?$/.test(host) ? "내부 주소" : host.replace(/^www\./, ""));
@@ -278,7 +280,7 @@ function prose(s, o) {
   t = t.split(/(`[^`\n]*`)/).map((s, i) => i % 2 ? s : s.replace(STATUS, "")).join("");
   t = t.replace(/^\[([^\]\n]{2,30})\][ \t]+(?=\S)/gm, (m, label) => /^[\d\sx]+$/i.test(label) ? m : `${label}: `);
   t = t.replace(/``/g, "").replace(/(:|·)[ \t]*·/g, "$1");
-  return josa(t).replace(/[ \t]*[,·][ \t]*\)/g, ")").replace(/\([ \t]*[,·][ \t]*/g, "(").replace(/\(\s*\)|\[\s*\]/g, "").replace(/[ \t]+([,.!?)])/g, "$1").replace(/[ \t]{2,}/g, " ").replace(/[ \t]+$/gm, "").replace(/[ \t]*·[ \t]*$/gm, "");
+  return josa(t).replace(/[ \t]*[,·][ \t]*\)/g, ")").replace(/\([ \t]*[,·][ \t]*/g, "(").replace(/\(\s*\)|\[\s*\]/g, "").replace(/[ \t]+([,.!?)])/g, "$1").replace(/[ \t]{2,}/g, " ").replace(/[ \t]+$/gm, "").replace(/[ \t]*·[ \t]*$/gm, "").replace(/\u0003(\d+)\u0004/g, (_m, i) => `\`${run[Number(i)]}\``);
 }
 function errorKo(msg) {
   const m = msg.trim();

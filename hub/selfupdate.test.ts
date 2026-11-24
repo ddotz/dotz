@@ -401,12 +401,43 @@ describe("against temp git repos", () => {
 			expect(h.alerts).toHaveLength(1);
 		});
 
-		test("a rollback that fails too: the card says the update stopped halfway, which commit the files are at, and the whole command that puts it back works", async () => {
+		test("a rollback that fails too: the card says the update stopped halfway, which commit the files are at, and its command, pasted as printed, puts the files back and keeps the local change", async () => {
 			setSelfUpdateCfg({ auto_apply: true });
 			const before = head(work);
 			r.release("FAIL", "boom\n", "breaks the tests");
-			const exec: Exec = async (cmd, cwd, ms) => (cmd[0] === "git" && cmd[1] === "reset" ? { code: 1, out: "error: Your local changes to the following files would be overwritten by checkout" } : defaultExec(cmd, cwd, ms));
 			const { h, api, cardIds } = autoHooks();
+			const was = cfg.identity;
+			cfg.identity = { ...was!, language: "ko" };
+			try {
+				await autoCheck({ ...opts(), testCmd: ["sh", "-c", "echo local >> VERSION; test ! -f FAIL"] }, api);
+			} finally {
+				cfg.identity = was;
+			}
+			const stuck = head(work);
+			expect(stuck).not.toBe(before);
+			expect(cardIds).toEqual([["update:self"]]);
+			const evidence = parseDecisions(h.alerts[0]!).blocks[0]!.evidence ?? [];
+			expect(evidence[0]).toBe("버전 261101.1 → 261101.2: 적용하지 못했어요");
+			expect(evidence[1]).toStartWith("이유: ");
+			expect(evidence[2]).toBe(`업데이트가 중간에 멈췄어요. 파일은 새 버전 ${stuck.slice(0, 7)}에 있어요`);
+			expect(evidence[3]).toStartWith(`되돌리려면 터미널에서: \`git -C ${JSON.stringify(work)} `);
+			expect(evidence.filter(l => l.includes("그대로") || l.includes("되돌리기도"))).toEqual([]);
+			const pasted = /^되돌리려면 터미널에서: `?(git -C .+?)`?$/.exec(evidence[3]!)![1]!;
+			expect(Bun.spawnSync(["sh", "-c", pasted]).exitCode).toBe(0);
+			expect(head(work)).toBe(before);
+			expect([existsSync(join(work, "FAIL")), sh(work, "status", "--porcelain")]).toEqual([false, ""]);
+			expect(sh(work, "stash", "show", "-p", "stash@{0}")).toContain("+local");
+		});
+
+		test("a step that throws after the merge leaves the files at the new version: the card says so and its command puts them back, never that the version is unchanged", async () => {
+			setSelfUpdateCfg({ auto_apply: true });
+			const before = head(work);
+			r.release("b.txt", "2\n", "a release");
+			const exec: Exec = async (cmd, cwd, ms) => {
+				if (cmd.join(" ") === testCmd.join(" ")) throw Object.assign(new Error("spawn EACCES"), { code: "EACCES" });
+				return defaultExec(cmd, cwd, ms);
+			};
+			const { h, api } = autoHooks();
 			const was = cfg.identity;
 			cfg.identity = { ...was!, language: "ko" };
 			try {
@@ -416,15 +447,32 @@ describe("against temp git repos", () => {
 			}
 			const stuck = head(work);
 			expect(stuck).not.toBe(before);
-			expect(cardIds).toEqual([["update:self"]]);
 			const evidence = parseDecisions(h.alerts[0]!).blocks[0]!.evidence ?? [];
-			const undo = `git -C ${JSON.stringify(work)} reset --keep ${before.slice(0, 12)}`;
-			expect(evidence[0]).toBe("버전 261101.1 → 261101.2: 적용하지 못했어요");
-			expect(evidence[1]).toStartWith("이유: ");
-			expect(evidence.slice(2)).toEqual([`업데이트가 중간에 멈췄어요. 파일은 새 버전 ${stuck.slice(0, 7)}에 있어요`, `되돌리려면 터미널에서: ${undo}`]);
-			expect(evidence.filter(l => l.includes("그대로") || l.includes("되돌리기도"))).toEqual([]);
-			expect(Bun.spawnSync(["sh", "-c", undo]).exitCode).toBe(0);
+			expect(evidence.filter(l => l.includes("그대로"))).toEqual([]);
+			expect(evidence[2]).toBe(`업데이트가 중간에 멈췄어요. 파일은 새 버전 ${stuck.slice(0, 7)}에 있어요`);
+			const pasted = /^되돌리려면 터미널에서: `?(git -C .+?)`?$/.exec(evidence[3] ?? "")?.[1] ?? "";
+			expect(Bun.spawnSync(["sh", "-c", pasted]).exitCode).toBe(0);
 			expect(head(work)).toBe(before);
+		});
+
+		test("an install from a tarball address has no release number: its failed update says the new commits could not be applied, never a version named by a hash", async () => {
+			setSelfUpdateCfg({ auto_apply: true });
+			const app = join(r.root, "app"), src = join(r.root, "src"), tgz = join(r.root, "dotz.tar.gz");
+			mkdirSync(join(src, "dotz", "hub"), { recursive: true });
+			for (const f of ["setup.ts", "hub/main.ts", "FAIL"]) writeFileSync(join(src, "dotz", f), "x\n");
+			expect(Bun.spawnSync(["tar", "-czf", tgz, "-C", src, "dotz"]).exitCode).toBe(0);
+			mkdirSync(app);
+			writeFileSync(join(app, ".dotz-install"), `source=file://${tgz}\nkind=url\ntarball=file://${tgz}\nsha=${"a".repeat(64)}\nauth=public\n`);
+			const exec: Exec = async (cmd, cwd, ms) => (cmd[0] === "bun" ? { code: 0, out: "" } : defaultExec(cmd, cwd, ms));
+			const { h, api } = autoHooks();
+			const was = cfg.identity;
+			cfg.identity = { ...was!, language: "ko" };
+			try {
+				await autoCheck({ dir: app, testCmd, logDir, exec, alert: () => {} }, api);
+			} finally {
+				cfg.identity = was;
+			}
+			expect(parseDecisions(h.alerts[0]!).blocks[0]!.evidence?.[0]).toBe("새 커밋을 적용하지 못했어요");
 		});
 
 		test("a refused auto-update posts its card with its id", async () => {

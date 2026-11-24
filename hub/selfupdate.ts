@@ -24,15 +24,14 @@ import { join } from "node:path";
 import { installGitHooks } from "./git-hooks.ts";
 import { rewriteNote, rewriteState } from "./history-rewrite.ts";
 import type { AutoUpdateFacts } from "./card-text.ts";
-import { cardBlock } from "./choices.ts";
 import { CONFIG_FILE, cfg, DATA_DIR, DEFAULTS, HUB_TOKEN, log, PORT, writeAtomic } from "./config.ts";
-import { msg } from "./i18n.ts";
 import { FORMAT, type Keep, keepLine, openTrial, parseCommits, type Saved, saveLocal, savedNote, splitEquivalent, writeSavedSummary } from "./selfupdate-local.ts";
 import { compareReleases, diskRelease, failedTestNames, failureBlocks, gateIn, nightSlot, parseRelease, releaseTags, testFailure, testSummary } from "./selfupdate-parse.ts";
 import { type SigMode, type Signature, signatureAlert as signatureText, signed, verifyGitTag, wantOf } from "./release-verify.ts";
 import { json } from "./routes-util.ts";
 import { applyTarball, checkTarball, type Kit } from "./selfupdate-tarball.ts";
 import { trackTimer } from "./shutdown.ts";
+import { autoAlert } from "./update.ts";
 import { type Pending, rolledBackText } from "./update-watchdog.ts";
 import { SELF_UPDATE_CARD_ID, SELF_UPDATE_LEAD } from "./worklog-kind.ts";
 
@@ -135,6 +134,7 @@ export const defaultExec: Exec = async (cmd, cwd, timeoutMs) => {
 // Credentials embedded in a remote URL (https://user:token@host) never reach the page or the log.
 export const scrub = (s: string) => s.replace(/(https?:\/\/)[^/@\s]+@/g, "$1***@").replace(/\b(gh[pousr]_[A-Za-z0-9]{8,}|github_pat_[A-Za-z0-9_]{8,})\b/g, "***");
 const lastLine = (s: string) => scrub(s.split("\n").map(l => l.trim()).filter(Boolean).pop() ?? "").slice(0, 300);
+const undoLine = (dir: string, from: string) => `git -C ${JSON.stringify(dir)} stash && git -C ${JSON.stringify(dir)} reset --keep ${from.slice(0, 12)}`;
 
 // Does this check mean an install should move? Releases decide by version; a DOTZ_TARBALL install (no tags) still decides by bytes.
 export function updateAvailable(c: CheckResult): boolean {
@@ -381,6 +381,9 @@ export async function apply(o: Options, how: { keep?: boolean; auto?: boolean; r
 		const why = e instanceof Error ? ((e as { code?: unknown }).code ?? e.name) : typeof e;
 		const text = `예기치 않은 오류로 업데이트를 멈췄어요 (${String(why).slice(0, 40)}). 다시 시도하면 처음부터 해요.`;
 		Object.assign(j, { phase: "끝", message: text, status: "failed", endedAt: new Date().toISOString() });
+		const { dir, exec, logDir } = resolve(o);
+		const at = j.from && j.check?.version.kind === "git" ? (await exec(["git", "rev-parse", "HEAD"], dir, 15_000).catch(err => (record(logDir, `update #${j.id}: HEAD unreadable: ${lastLine(String(err))}`), undefined)))?.out.trim() : undefined;
+		if (at && j.from && at !== j.from) j.halfway = { why: text, at: at.slice(0, 7), undo: undoLine(dir, j.from) };
 		j.steps.push({ at: j.endedAt as string, text });
 		record(resolve(o).logDir, `update #${j.id}: ${text} ${lastLine(String(e))}`);
 		log(`self-update #${j.id}: failed: ${text}`);
@@ -510,7 +513,7 @@ async function runApply(o: Options, how: { keep?: boolean; auto?: boolean; retry
 		// --keep moves HEAD and the files the merge changed only; it refuses rather than overwrite anything else.
 		const r = await exec(["git", "reset", hard ? "--hard" : "--keep", from], dir, 60_000);
 		if (r.code === 0 && hard && saved?.dirtyPatch) await exec(["git", "apply", saved.dirtyPatch], dir, 60_000);
-		if (r.code !== 0) return ((j.halfway = { why, at: target.slice(0, 7), undo: `git -C ${JSON.stringify(dir)} reset --keep ${from.slice(0, 12)}` }), end("failed", `${why}. 되돌리기도 실패했어요(지금 ${to.slice(0, 7)}): ${lastLine(r.out)} — 터미널에서 \`git reset --keep ${from.slice(0, 12)}\`로 되돌려 주세요.`));
+		if (r.code !== 0) return ((j.halfway = { why, at: target.slice(0, 7), undo: undoLine(dir, from) }), end("failed", `${why}. 되돌리기도 실패했어요(지금 ${to.slice(0, 7)}): ${lastLine(r.out)} — 터미널에서 \`${undoLine(dir, from)}\`로 되돌려 주세요.`));
 		if (deps) {
 			const i = await exec(["bun", "install"], dir, 10 * 60_000);
 			if (i.code !== 0) step("되돌리기", `이전 의존성 bun install 실패: ${lastLine(i.out)}`);
@@ -610,9 +613,6 @@ function signalSignature(o: Options, c: CheckResult, hooks: Pick<AutoHooks, "ale
 	send(signatureText(s));
 	saveState({ ...readState(), signatureNotified: s.tag });
 }
-
-export const autoAlert = (u: AutoUpdateFacts, t = msg().selfUpdate): string =>
-	`${t.lead(u.failed)}\n${cardBlock({ subject: t.subject, question: t.question, evidence: t.evidence(u), options: [{ name: t.check, result: t.checkResult }, { name: t.off, result: t.offResult }] })}`;
 
 // auto_apply: runs only when upstream has something new, the checkout is clean and nothing is ahead of origin (check() lists
 // both as `blocked`). A failed apply is not retried for the same upstream commit; a refusal is re-evaluated daily but alerted once.
