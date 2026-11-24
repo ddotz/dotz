@@ -175,6 +175,7 @@ const CORRECTIONS = "The user's past corrections, newest first; when two disagre
 export const CORRECTIONS_BUDGET = 4000;
 const CORRECTION_MAX = 300;
 const DATED = /^\s*(\d{4}-\d{2}-\d{2})/;
+const DATE_LEAD = /^\s*\d{4}-\d{2}-\d{2}\s*:?/;
 
 /** The corrections a prompt shows: newest first by each line's leading date (undated = oldest; of one date the later line is newer), duplicates once, each cut to 300 code points, as many as fit in `budget` code points. */
 export function promptCorrections(corrections: string[], budget: number): string[] {
@@ -194,9 +195,11 @@ export function promptCorrections(corrections: string[], budget: number): string
 	return out;
 }
 
-/** The conditions the style judge checks a draft against: the standing rules first, then the corrections a prompt carries (promptCorrections, in its order and budget) without their leading date, duplicates once. */
-export function styleConditions(style: Pick<ReplyStyle, "standing" | "corrections">, budget = CORRECTIONS_BUDGET): string[] {
-	return [...new Set([...(style.standing ?? []), ...promptCorrections(style.corrections, budget).map(c => c.replace(DATED, ""))].map(c => c.trim()).filter(Boolean))];
+/** What the style judge checks a draft against: the standing rules, and the corrections a prompt carries (promptCorrections, in its order and budget) without their leading date and its colon, duplicates once, a correction equal to a standing rule left out. */
+export function styleConditions(style: Pick<ReplyStyle, "standing" | "corrections">, budget = CORRECTIONS_BUDGET): { standing: string[]; corrections: string[] } {
+	const standing = [...new Set((style.standing ?? []).map(c => c.trim()).filter(Boolean))];
+	const corrections = [...new Set(promptCorrections(style.corrections, budget).map(c => c.replace(DATE_LEAD, "").trim()).filter(Boolean))].filter(c => !standing.includes(c));
+	return { standing, corrections };
 }
 
 // Chat only. The same single model call first decides whether the message needs the user's own decision.
@@ -418,7 +421,7 @@ async function run(item: ReplyItem, style: ReplyStyle, call: ModelCall, base: Pr
 	let first: Omit<Extract<ReplyResult, { action: "draft" }>, "action" | "tries"> | undefined;
 	let restyle: typeof first;
 	const taught: string[] = [];
-	const conditions = judge ? styleConditions(style) : [];
+	const { standing, corrections } = judge ? styleConditions(style) : { standing: [], corrections: [] };
 	for (let tries = 1; tries <= 2; tries++) {
 		const p = buildPrompt(item, style, { ...base, ...(failures ? { failures } : {}) });
 		let out: string;
@@ -457,7 +460,7 @@ async function run(item: ReplyItem, style: ReplyStyle, call: ModelCall, base: Pr
 		const attach = files ? attachIssues({ subject: draft.subject, body: draft.body, files, request: item.text }).flatMap(i => ATTACH_FAILURE[i.kind] ?? []) : [];
 		if (restyle && (found.some(f => !restyle!.warnings.includes(f)) || attach.length)) return { action: "draft", ...restyle, tries };
 		const fixable = [...rewritable(found), ...attach];
-		const broken: Violation[] = !fixable.length && judge && conditions.length ? await judgeStyle({ conditions, received: item.text, draft: draft.body, ...(base.change ? { asked: base.change } : {}) }, judge) : [];
+		const broken: Violation[] = !fixable.length && judge && (standing.length || corrections.length) ? await judgeStyle({ standing, corrections, received: item.text, draft: draft.body, ...(base.change ? { asked: base.change } : {}) }, judge) : [];
 		const warnings = [...found, ...styleWarnings(broken)];
 		const who = { ...(parsed.recipient ? { recipient: parsed.recipient } : {}), ...lessons, ...(files ? { files } : {}) };
 		if ((!fixable.length && !broken.length) || tries === 2) return { action: "draft", draft, questions: parsed.questions, warnings, tries, ...who };

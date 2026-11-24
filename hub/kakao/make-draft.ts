@@ -92,9 +92,9 @@ const done = (error?: string, made?: { code: string; learned?: Learned }): Made 
 		const chat = chatLines(window, compose);
 		const { system, user } = buildDraftPrompt({ lines: chat, ...(intent ? { match: (shown: number) => matchLines(recent, intent, shown) } : {}), context, group, summary: readJsonText(summaryFile(chatId)), pairs, samples: ownSamples(recent), register: registerOf(ownLines), style, ...(choice ? { choice } : {}), ...(revise ? { revise: { draft: revise.draft, change: revise.change } } : {}), ...(intent ? { intent } : {}), ...(opts.known ? { known: true } : {}) });
 		const judgeModel = deps.judgeModel;
-		const conditions = judgeModel && style ? styleConditions(style, CORRECTIONS_BUDGET) : [];
+		const { standing, corrections } = judgeModel && style ? styleConditions(style, CORRECTIONS_BUDGET) : { standing: [], corrections: [] };
 		const ask = judgeModel ? judgeAsk(async (s, u) => (await judgeModel(s, u, chatId)).text) : undefined;
-		const judged = async (body: string): Promise<Violation[]> => (ask && conditions.length ? judgeStyle({ conditions, received: chat.join("\n"), draft: body, tail: true, ...(revise ? { asked: revise.change } : {}) }, ask) : []);
+		const judged = async (body: string): Promise<Violation[]> => (ask && (standing.length || corrections.length) ? judgeStyle({ standing, corrections, received: chat.join("\n"), draft: body, tail: true, ...(revise ? { asked: revise.change } : {}) }, ask) : []);
 		// One retry with the findings when the model's text fails the lint (design 3.6); what still fails is a 확인 note on the draft.
 		let reply = await deps.draftModel!(system, user, chatId);
 		let parsed = parseDraftReply(reply.text);

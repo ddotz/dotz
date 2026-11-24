@@ -67,7 +67,7 @@ test("a KakaoTalk draft that follows the owner's conditions is judged once and s
 	expect(await r.run()).toMatchObject({ ok: true });
 	expect(r.draftCalls).toHaveLength(1);
 	expect(r.judgeCalls).toHaveLength(1);
-	expect(r.judgeCalls[0]).toContain("1. 존댓말로 쓴다\n2. 약속은 시간을 먼저 말한다\n");
+	expect(r.judgeCalls[0]).toContain("Standing rules (the owner set these; they always hold):\n1. 존댓말로 쓴다\n\nPast corrections, newest first:\n2. 약속은 시간을 먼저 말한다\n");
 	expect((await r.pending()).map(d => [d.text, d.notes ?? []])).toEqual([["3시에 뵐게요", []]]);
 	r.close();
 });
@@ -78,6 +78,15 @@ test("a KakaoTalk draft that breaks a condition is written again once with the f
 	expect(r.draftCalls).toHaveLength(2);
 	expect(r.draftCalls[1]).toContain("Your last draft failed these checks; fix them: it breaks the owner's rule '존댓말로 쓴다' at '3시에 봐'");
 	expect(r.judgeCalls).toHaveLength(2);
+	expect((await r.pending()).map(d => [d.text, d.notes ?? []])).toEqual([["3시에 뵐게요", []]]);
+	r.close();
+});
+
+test("a KakaoTalk draft the judge flags only about its content is stored as written, with no rewrite and no note", async () => {
+	const r = room(["3시에 뵐게요"], [violations([{ rule: 2, about: "content", quote: "3시에", why: "시간을 약속함" }])]);
+	await r.run();
+	expect(r.draftCalls).toHaveLength(1);
+	expect(r.judgeCalls).toHaveLength(1);
 	expect((await r.pending()).map(d => [d.text, d.notes ?? []])).toEqual([["3시에 뵐게요", []]]);
 	r.close();
 });
@@ -115,7 +124,7 @@ test("a KakaoTalk revise is judged with the owner's request in its own block, an
 	const made = await makeDraft({ ...r.ctx, deps: { ...r.ctx.deps, onRevise: (_chatId, l) => void learned.push(l) } }, r.config, DIRECT, undefined, { code: "old", draft: "3시에 뵙겠습니다", change: "반말로 편하게 바꿔 줘" });
 	expect(learned).toEqual([{ line: "친한 사이에는 반말로 쓴다", forbid: [], everywhere: false }]);
 	expect(made).toMatchObject({ ok: true, learned: { line: "친한 사이에는 반말로 쓴다", everywhere: false } });
-	expect(r.judgeCalls[0]).toContain("1. 존댓말로 쓴다\n2. 약속은 시간을 먼저 말한다\n\nThe owner's request for this draft (it wins: never report a rule that this request overrides or conflicts with):\n반말로 편하게 바꿔 줘\n");
+	expect(r.judgeCalls[0]).toContain("Standing rules (the owner set these; they always hold):\n1. 존댓말로 쓴다\n\nPast corrections, newest first:\n2. 약속은 시간을 먼저 말한다\n\nThe owner's request for this draft (it wins: never report a rule that this request overrides or conflicts with):\n반말로 편하게 바꿔 줘\n");
 	r.close();
 });
 
