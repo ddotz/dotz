@@ -77,7 +77,8 @@ describe("a told line is a short headline with the numbers under it", () => {
 					expect(told.length).toBeGreaterThanOrEqual(6);
 					for (const [i, { head, subs }] of told.entries()) {
 						expect(width(head)).toBeLessThanOrEqual(most);
-						expect(head.endsWith(i === told.length - 1 ? ` ${t.todo.sessions}` : t.look)).toBe(true);
+						const allKnown = head.startsWith(t.restarts({ all: v.restarts, update: 0, owner: 0, orchestrator: 0, cause: v.restarts, unexplained: 0 }));
+						expect(head.endsWith(i === told.length - 1 ? ` ${t.todo.sessions}` : t.look)).toBe(!allKnown);
 						const evidence = subs.filter(s => s !== since), at = subs.indexOf(since);
 						expect([evidence.length <= 3, subs.length - evidence.length <= (again ? 1 : 0)]).toEqual([true, true]);
 						expect(head.includes(since) || at >= 0).toBe(again);

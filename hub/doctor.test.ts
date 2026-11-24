@@ -16,7 +16,8 @@ import { ko } from "./i18n-ko.ts";
 import type { Decision, Notice } from "./notices-types.ts";
 import { loadPlugins } from "./plugins.ts";
 import { bareLine, promptHealth, ruleCard } from "./prompt-health.ts";
-import { reviewCard, type ReviewContext, runPromptReview } from "./prompt-review.ts";
+import { reviewCard, type ReviewContext, promptReviewCheck, runPromptReview } from "./prompt-review.ts";
+import { LESSONS_MAX_BYTES } from "./prompt-budget.ts";
 import { createRestartGate } from "./restart.ts";
 import { advance } from "./runtime/test-clock.ts";
 import { watchChoice } from "./watch-ask.ts";
@@ -299,6 +300,16 @@ describe("checks read files only", () => {
 		expect(found.map(f => f.key).sort()).toEqual(["update:omo", "update:self"]);
 	});
 
+	test("update: a harness a later pass finds current is no longer failed; a harness with no line since its failure still is", async () => {
+		const fail = " 설치하지 못했어요(이전 버전으로 되돌렸어요(1.0.0)): EACCES";
+		writeFileSync(join(dir, "hub.log"), [
+			logLine(T0 - 5 * H, `omp update: omp 1.0.0 → 1.1.0${fail}`),
+			logLine(T0 - 5 * H, `omo update: 작업 프로그램 5.1.38 → 5.1.40${fail}`),
+			logLine(T0 - H, "omp update: omp는 최신이에요 (1.1.0)."),
+		].join(""));
+		expect((await update({ now: T0, dataDir: dir, home: dir })).map(f => f.key)).toEqual(["update:omo"]);
+	});
+
 	test("gateway: restarts that install a self-update or go with the owner's web restart are not counted; the others keep their times and reasons", async () => {
 		const t = msg().doctor, at = (ms: number, text: string) => logLine(ms, text);
 		const explained = [
@@ -335,6 +346,40 @@ describe("checks read files only", () => {
 		expect(explained({ at: u + 5e3, text: "gateway restart now (owner, settings → 업데이트; busy: none)" })).toEqual([[later.at, false]]);
 		expect(explained({ at: u + 5e3, text: "hub listening on 127.0.0.1:7420 as test (discord off)" })).toEqual([[later.at, false]]);
 		expect(restartsOf([updated, { at: T0 - 9 * H, text: "orchestrator exited (1)" }, { at: T0 - 2 * H, text: "gateway restart (1 request(s) coalesced, waited 30s)" }]).map(r => r.explained)).toEqual([false]);
+	});
+
+	test("gateway: a restart whose cause the log names counts as known and its line says that cause in the owner's language; one without a cause line stays unknown", async () => {
+		const saved = cfg.identity, at = (h: number, s: number, text: string) => logLine(T0 - h * H + s * 1e3, text);
+		const restart = (h: number, cause?: string) => [...(cause ? [at(h, 0, cause)] : []), at(h, 5, "gateway restart (1 request(s) coalesced, waited 5s)")];
+		const engine = (h: number, v: number) => restart(h, `omo engine changed on disk (3.${v}.0 -> 3.${v + 1}.0); restarting the gateway at the next idle point: queued`);
+		const mixed = [...engine(10, 0), ...restart(7, "deferred gateway restart goes now (the gateway code changed)"), ...restart(3)].join("");
+		const codeFirst = [...restart(10, "deferred gateway restart goes now (the gateway code changed)"), ...restart(7), ...restart(3)].join("");
+		const allKnown = [...engine(10, 0), ...engine(7, 1), ...engine(3, 2)].join("");
+		const told = async (log: string) => {
+			writeFileSync(join(dir, "hub.log"), log);
+			const [found] = await gateway({ now: T0, dataDir: dir, home: dir });
+			return [found!.what, ...found!.evidence];
+		};
+		try {
+			cfg.identity = { ...saved, name: saved?.name ?? "sample-1", language: "ko" };
+			const t = msg().doctor, when = (h: number) => t.when(T0 - h * H + 5e3);
+			expect(await told(mixed)).toEqual([
+				"하루 사이에 게이트웨이가 3번 다시 시작했고, 그중 1번은 이유를 몰라요.",
+				"이유를 아는 것: 로그에 적힌 이유 2번",
+				`${when(10)} · 작업 프로그램(OmO) 엔진이 바뀌었어요 (3.0.0 → 3.1.0)`,
+				t.more(2),
+			]);
+			expect(await told(codeFirst)).toEqual(["하루 사이에 게이트웨이가 3번 다시 시작했고, 그중 2번은 이유를 몰라요.", "이유를 아는 것: 로그에 적힌 이유 1번", `${when(10)} · 게이트웨이 코드가 바뀌었어요`, t.more(2)]);
+			expect((await told(allKnown))[0]).toBe("하루 사이에 게이트웨이가 3번 다시 시작했고, 모두 이유를 알아요.");
+			cfg.identity = { ...saved, name: saved?.name ?? "sample-1", language: "en" };
+			expect((await told(mixed)).slice(0, 3)).toEqual([
+				"The gateway restarted 3 times in one day; 1 without a known cause.",
+				"With a known cause: 2 for a reason the log names",
+				`${msg().doctor.when(T0 - 10 * H + 5e3)} · the OmO engine changed (3.0.0 → 3.1.0)`,
+			]);
+		} finally {
+			cfg.identity = saved;
+		}
 	});
 });
 
@@ -473,8 +518,8 @@ describe("each check says what it measured, in numbers", () => {
 		];
 		writeFileSync(join(dir, "hub.log"), [...explained, ...unexplained].join(""));
 		const [found] = await gateway({ now: T0, dataDir: dir, home: dir });
-		expect([found!.level, found!.what]).toEqual([3, "하루 사이에 게이트웨이가 9번 다시 시작했고, 그중 3번은 이유를 몰라요."]);
-		expect(found!.evidence).toEqual(["이유를 아는 것: 업데이트 설치 5번, 직접 하신 재시작 1번", `${ko.doctor.when(T0 - 3 * H + 2e3)} · the gateway code changed`, ko.doctor.more(2)]);
+		expect([found!.level, found!.what]).toEqual([3, "하루 사이에 게이트웨이가 9번 다시 시작했고, 그중 2번은 이유를 몰라요."]);
+		expect(found!.evidence).toEqual(["이유를 아는 것: 업데이트 설치 5번, 직접 하신 재시작 1번, 로그에 적힌 이유 1번", `${ko.doctor.when(T0 - 3 * H + 2e3)} · 게이트웨이 코드가 바뀌었어요`, ko.doctor.more(2)]);
 	});
 
 	test("a restart the owner asks for is logged with him as the requester and counts as his; a request line of the older code without one does not", async () => {
@@ -740,6 +785,46 @@ describe("the morning looks again before it posts", () => {
 		expect(r.state.sent).toHaveLength(2);
 		expect(r.state.sent[1]).toContain(t.updateFailed(t.selfUpdate, 1, t.when(T0 + 10 * H)));
 	});
+
+	test("prompt findings read from the files are read again: a rule line deleted or LESSONS.md trimmed under its cap after the night is not told; left as they were, both are", async () => {
+		const rule = "- 게이트웨이는 launchctl kickstart로 다시 시작하지 않아요.", long = "- 샘플 교훈 줄이에요.\n".repeat(Math.ceil(LESSONS_MAX_BYTES / 20) + 50);
+		const morning = async (edited: boolean) => {
+			const data = join(dir, String(edited));
+			mkdirSync(data);
+			writeFileSync(join(data, "RULES.md"), `${rule}\n- 다른 줄이에요.\n`);
+			writeFileSync(join(data, "LESSONS.md"), long);
+			const r = morningRig([promptHealth]), deps = { ...r.deps, dataDir: data, home: data };
+			await runNight(deps);
+			expect(Object.keys(loadStore(data).findings).filter(k => /^prompt:(enforced|cap):/.test(k)).sort()).toEqual(["prompt:cap:LESSONS.md", "prompt:enforced:gateway-restart"]);
+			if (edited) {
+				writeFileSync(join(data, "RULES.md"), "- 다른 줄이에요.\n");
+				writeFileSync(join(data, "LESSONS.md"), "- 샘플 교훈 줄이에요.\n");
+			}
+			r.state.now = T0;
+			await runMorning(deps);
+			return r.state.sent.join("\n");
+		};
+		const kept = await morning(false), edited = await morning(true);
+		expect([kept.includes("launchctl"), kept.includes("LESSONS.md")]).toEqual([true, true]);
+		expect([edited.includes("launchctl"), edited.includes("LESSONS.md")]).toEqual([false, false]);
+	});
+
+	test("a review proposal stays as the night stored it while its line is in the file as quoted, and is not asked once that line changed", async () => {
+		const file = join(dir, "RULES.md"), from = "- 답장은 짧게 써요.";
+		const decide = { subject: "REVIEW-CARD", question: "고칠까요?", options: [{ name: "A", result: "RA" }, { name: "B", result: "RB", keep: true as const }] };
+		const review = finding({ key: "prompt:review:abc", area: "prompt", what: "REVIEW-WHAT", decide, change: { file, line: 2, from, to: "- 답장은 길게 써요." } });
+		const morning = async (lines: string) => {
+			writeFileSync(file, lines);
+			writeFileSync(storeFile(dir), JSON.stringify({ version: 1, lastRun: T0 - 3.5 * H, memo: {}, findings: { [review.key]: review }, told: {} }));
+			const r = morningRig([promptHealth, promptReviewCheck]);
+			r.state.now = T0;
+			await runMorning(r.deps);
+			return r.state.sent.join("\n");
+		};
+		expect(await morning(`- 다른 줄이에요.\n${from}\n`)).toContain("REVIEW-CARD");
+		expect(await morning(`- 다른 줄이에요.\n- 답장은 아주 짧게 써요.\n`)).not.toContain("REVIEW-CARD");
+		expect(await morning(`${from}\n`)).not.toContain("REVIEW-CARD");
+	});
 });
 
 describe("a matter another gateway card covers is not told", () => {
@@ -794,6 +879,19 @@ describe("a matter another gateway card covers is not told", () => {
 		expect(covers(w1, named(card("Sample wat… · Reconnect?", "answered", 2 * H), "watches:w1"))).toBe(true);
 		expect(covers(w1, sameLabel)).toBe(true);
 		expect(covers(finding({ key: "disk:low", area: "disk", ask: true }), named(card("Disk · Clean it?", "open"), "disk:low"))).toBe(false);
+	});
+
+	test("a monitor's lost login is covered by that monitor's own card, by its id or its label; another monitor's card covers it not", () => {
+		const named = (c: Pick<Notice, "title" | "text" | "decision">, id: string) => ({ ...c, decision: { ...c.decision!, card_id: id } });
+		const titleOf = (text: string) => parseDecisions(text).blocks[0]!.title;
+		writeFileSync(join(dir, "watches.json"), JSON.stringify([{ id: "id-1", name: "w1", label: "Sample watch", session: { url: "u" }, state: { fails: 3, failSince: T0 - 13 * H, kind: "login" } }]));
+		const [login] = logins({ now: T0, dataDir: dir, home: dir }) as Finding[];
+		expect(login!.key).toBe("logins:id-1");
+		expect(covers(login!, named(card("Sample watch · Reconnect?", "open"), "watches:w1"))).toBe(true);
+		expect(covers(login!, card(titleOf(watchChoice("Sample watch", "login required")), "answered", 2 * H))).toBe(true);
+		expect(covers(login!, named(card("Sample watch · Reconnect?", "open"), "watches:w2"))).toBe(false);
+		expect(covers(login!, named(card("Sample watch · Reconnect?", "answered", 30 * H), "watches:w1"))).toBe(false);
+		expect(covers(finding({ key: "logins:id-2", area: "logins", evidence: ["w2"] }), named(card("Sample watch · Reconnect?", "open"), "watches:w1"))).toBe(false);
 	});
 
 	test("the morning send names each card by its finding's key, in the order of the cards", async () => {

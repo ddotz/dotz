@@ -2,8 +2,8 @@ import { TZ, tzLabel } from "./config.ts";
 import type { Grown } from "./failure-report.ts";
 import type { TopSession, UsualDay } from "./token-audit.ts";
 
-/** One day of counted gateway restarts: all of them, those an update install, the owner's own request or his restart of the orchestrator explains, and the rest. */
-export type RestartCount = { all: number; update: number; owner: number; orchestrator: number; unexplained: number };
+/** One day of counted gateway restarts: all of them, those an update install, the owner's own request or his restart of the orchestrator explains, those a cause line of the log names (an engine change, a deferred restart going now; none when unset), and the rest. */
+export type RestartCount = { all: number; update: number; owner: number; orchestrator: number; cause?: number; unexplained: number };
 /** A failure class's growth as the failure report measured it. */
 export type FailureGrowth = Pick<Grown, "byTokens" | "was" | "now">;
 /** Yesterday's token use as the token audit measured it. */
@@ -92,9 +92,9 @@ export const doctorEn = {
 	dryMorning: "The morning notice carries only the new ones:",
 	drySame: "The morning notice says the same.",
 	dryNone: (factor: number, days: number) => `Nothing new for the morning notice. Something told before is told again once it grows ${factor}x or ${days} days pass.`,
-	restarts: (r: RestartCount) => `The gateway restarted ${r.all} times in one day; ${r.unexplained} without a known cause.`,
+	restarts: (r: RestartCount) => (r.unexplained ? `The gateway restarted ${r.all} times in one day; ${r.unexplained} without a known cause.` : `The gateway restarted ${r.all} times in one day, each with a known cause.`),
 	restartWhy: (r: RestartCount) => {
-		const known = [r.update ? `${r.update} to install an update` : "", r.owner ? `${r.owner} that you asked for` : "", r.orchestrator ? `${r.orchestrator} along with your restart of the orchestrator on the web` : ""].filter(Boolean);
+		const known = [r.update ? `${r.update} to install an update` : "", r.owner ? `${r.owner} that you asked for` : "", r.orchestrator ? `${r.orchestrator} along with your restart of the orchestrator on the web` : "", r.cause ? `${r.cause} for a reason the log names` : ""].filter(Boolean);
 		return known.length ? `With a known cause: ${known.join(", ")}` : "";
 	},
 	restartLine: (when: string, why: string) => `${when} · ${why}`,
@@ -144,6 +144,13 @@ export const doctorEn = {
 	texts: { mode: "Contract", rules: "Rules", lessons: "Lessons", feature: "Feature" },
 	lineSubject: (name: string, quote: string) => `${name} '${quote}'`,
 	pluginNotLoaded: (file: string) => `A plugin did not load and is off: ${file}.`,
+	restartCause: {
+		engine: (from: string, to: string) => `the OmO engine changed (${from} → ${to})`,
+		code: "the gateway code changed",
+		head: "a held restart; the prompt head stopped changing",
+		context: (tokens: string) => `a held restart, at a short context (${tokens} tokens)`,
+		held: (hours: string) => `a restart held for ${hours} h`,
+	},
 };
 
 export const doctorKo: typeof doctorEn = {
@@ -172,9 +179,9 @@ export const doctorKo: typeof doctorEn = {
 	dryMorning: "아침 알림에는 이 중 새로 알릴 것만 이렇게 올라가요.",
 	drySame: "아침 알림에도 이대로 올라가요.",
 	dryNone: (factor: number, days: number) => `아침에 새로 알릴 것은 없어요. 전에 알린 것은 ${factor}배로 커지거나 ${days}일이 지나야 다시 알려요.`,
-	restarts: (r: RestartCount) => `하루 사이에 게이트웨이가 ${r.all}번 다시 시작했고, 그중 ${r.unexplained}번은 이유를 몰라요.`,
+	restarts: (r: RestartCount) => (r.unexplained ? `하루 사이에 게이트웨이가 ${r.all}번 다시 시작했고, 그중 ${r.unexplained}번은 이유를 몰라요.` : `하루 사이에 게이트웨이가 ${r.all}번 다시 시작했고, 모두 이유를 알아요.`),
 	restartWhy: (r: RestartCount) => {
-		const known = [r.update ? `업데이트 설치 ${r.update}번` : "", r.owner ? `직접 하신 재시작 ${r.owner}번` : "", r.orchestrator ? `웹에서 오케스트레이터를 다시 시작하실 때 함께 ${r.orchestrator}번` : ""].filter(Boolean);
+		const known = [r.update ? `업데이트 설치 ${r.update}번` : "", r.owner ? `직접 하신 재시작 ${r.owner}번` : "", r.orchestrator ? `웹에서 오케스트레이터를 다시 시작하실 때 함께 ${r.orchestrator}번` : "", r.cause ? `로그에 적힌 이유 ${r.cause}번` : ""].filter(Boolean);
 		return known.length ? `이유를 아는 것: ${known.join(", ")}` : "";
 	},
 	restartLine: (when: string, why: string) => `${when} · ${why}`,
@@ -224,4 +231,11 @@ export const doctorKo: typeof doctorEn = {
 	texts: { mode: "계약", rules: "규칙", lessons: "교훈", feature: "기능" },
 	lineSubject: (name: string, quote: string) => `${name} '${quote}' 줄`,
 	pluginNotLoaded: (file: string) => `불러오지 못해서 꺼진 플러그인이 있어요: ${file}.`,
+	restartCause: {
+		engine: (from: string, to: string) => `작업 프로그램(OmO) 엔진이 바뀌었어요 (${from} → ${to})`,
+		code: "게이트웨이 코드가 바뀌었어요",
+		head: "미뤄 둔 재시작이에요. 프롬프트 앞부분이 더 바뀌지 않아요",
+		context: (tokens: string) => `미뤄 둔 재시작이에요. 대화가 짧을 때 했어요 (${tokens} 토큰)`,
+		held: (hours: string) => `${hours}시간 미뤄 둔 재시작이에요`,
+	},
 };

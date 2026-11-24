@@ -4,7 +4,7 @@ import { cardBlock } from "./choices.ts";
 import { cfg, DATA_DIR, DEFAULTS, HOME, writeAtomic } from "./config.ts";
 import { CHECKS as HEALTH, FILE_CHECKS } from "./doctor-checks.ts";
 import { THRESHOLDS as T } from "./doctor-limits.ts";
-import { type DoctorArea, type DoctorCheck, DOCTOR_AREAS, EVIDENCE_CHARS, evidenceLines, type Finding, HEAD_CHARS, lineSubject, SUB_LINES, wrapLines } from "./doctor-types.ts";
+import { type DoctorArea, type DoctorCheck, type DoctorCtx, DOCTOR_AREAS, EVIDENCE_CHARS, evidenceLines, type Finding, HEAD_CHARS, lineSubject, SUB_LINES, wrapLines } from "./doctor-types.ts";
 import { fitSubject, shorten } from "./card-text.ts";
 import { lang, msg } from "./i18n.ts";
 import { type Catalog, en } from "./i18n-en.ts";
@@ -13,7 +13,7 @@ import { baseLanguage } from "./language.ts";
 import type { Notice as StoredNotice } from "./notices-types.ts";
 import { ledger } from "./ledger.ts";
 import { type Send, morningExtra, startLedger } from "./ledger-tick.ts";
-import { promptHealth } from "./prompt-health.ts";
+import { promptHealth, runPromptHealth } from "./prompt-health.ts";
 import { promptReviewCheck } from "./prompt-review.ts";
 import { trackTimer } from "./shutdown.ts";
 import { watchSubject } from "./watch-ask.ts";
@@ -108,20 +108,39 @@ export async function runChecks(checks: DoctorCheck[], d: Pick<Deps, "dataDir" |
 	return { version: 1, lastRun: now, from: prev.lastRun, memo, findings, told };
 }
 
-const CRASHES = "gateway:crashes", OLD_NIGHT = "oldNightCrashes";
+const CRASHES = "gateway:crashes", OLD_NIGHT = "oldNightCrashes", REVIEW = "prompt:review:", REVIEWED = /^prompt:(?:review:|unplaced$)/;
+
+const holds = (c: NonNullable<Finding["change"]>): boolean => {
+	if (!existsSync(c.file)) return false;
+	try {
+		return readFileSync(c.file, "utf8").split(/\r?\n/)[c.line - 1] === c.from;
+	} catch {
+		return true;
+	}
+};
+
+function prompt(ctx: DoctorCtx): Finding[] {
+	return runPromptHealth(ctx, false).findings;
+}
 
 /**
  * The morning re-look: the file-only checks among `checks` run again over the window of the last full run (from where it started), and their findings
- * replace the stored ones; the findings of the other checks (failures, tokens, prompt) stay as the night left them. `lastRun` and `from` are kept. A store
- * the night wrote before `from` existed cannot be re-read over the night's window: its crashes stay and the ones added since are counted on top. The night's
- * count is kept in the memo, so a second look the same day adds the crashes since the night once, not again on top of the first look's sum.
+ * replace the stored ones; the findings of the other checks (failures, tokens) stay as the night left them. Prompt health reads files only, so it runs
+ * again too, without moving its size baseline: a rule line deleted or a file trimmed since the night is gone by the morning. The weekly review's proposals
+ * stay as the night stored them, except one whose line is no longer in its file as quoted (the line its `change` names). `lastRun` and `from` are kept. A
+ * store the night wrote before `from` existed cannot be re-read over the night's window: its crashes stay and the ones added since are counted on top. The
+ * night's count is kept in the memo, so a second look the same day adds the crashes since the night once, not again on top of the first look's sum.
  */
 export async function recheck(checks: DoctorCheck[], d: Pick<Deps, "dataDir" | "home" | "log">, store: DoctorStore, now: number): Promise<DoctorStore> {
-	const again = checks.filter(c => FILE_CHECKS.includes(c));
-	if (!again.length) return store;
+	const again = checks.flatMap(c => (FILE_CHECKS.includes(c) ? [c] : c === promptHealth ? [prompt] : []));
+	const reviewed = checks.includes(promptReviewCheck);
+	if (!again.length && !reviewed) return store;
 	const fresh = await runChecks(again, d, { ...store, lastRun: store.from ?? 0 }, now);
-	const kept = Object.entries(store.findings).filter(([k]) => !again.some(c => k.startsWith(`${c.name}:`)));
+	const kept = Object.entries(store.findings).filter(([k]) => REVIEWED.test(k) || !again.some(c => k.startsWith(`${c.name}:`)));
 	const findings = { ...Object.fromEntries(kept), ...fresh.findings };
+	for (const [k, { change: c }] of Object.entries(findings)) {
+		if (reviewed && k.startsWith(REVIEW) && c && !holds(c)) delete findings[k];
+	}
 	delete fresh.memo[OLD_NIGHT];
 	if (store.from === undefined && again.some(c => CRASHES.startsWith(`${c.name}:`))) {
 		const before = store.findings[CRASHES], added = findings[CRASHES], night = typeof store.memo[OLD_NIGHT] === "number" ? store.memo[OLD_NIGHT] : (before?.level ?? 0);
@@ -138,7 +157,8 @@ export type CardLabels = { watch: (name: string) => string; harness: (id: string
 /**
  * Whether a gateway card in `notices` already covers a finding's matter: the card is open, or the owner answered it within a day of `now` (a card that
  * expired unanswered covers nothing). Matters: a failed dotz update (`update:self`, the self-update card), a failed harness install (`update:<id>`, the
- * harness card, whose text starts with that harness's label), and a failing watch (`watches:<name>`, its issue card, matched by the watch's label). A card
+ * harness card, whose text starts with that harness's label), and a failing watch (`watches:<name>`, its issue card, matched by the watch's label). A
+ * watch's lost login (`logins:<watch id>`, its evidence the watch's name) is that watch's matter: its card covers it as it covers `watches:<name>`. A card
  * that has an id (Decision.card_id) is matched by it alone: its id is the finding's key. The disk finding has no card to match: the disk guard's alert is a
  * plain message without a choice block.
  */
@@ -147,11 +167,12 @@ export function cardCovers(notices: Pick<StoredNotice, "title" | "text" | "decis
 	const plain = live.filter(n => n.decision?.card_id === undefined);
 	return f => {
 		if (f.fixed) return false;
-		if (/^(update|watches):/.test(f.key) && live.some(n => n.decision?.card_id === f.key)) return true;
-		if (f.key === "update:self") return plain.some(n => n.title === SELF_UPDATE_CARD_TITLE);
-		const harness = f.key.startsWith("update:") ? labels.harness(f.key.slice("update:".length)) : undefined;
+		const key = f.key.startsWith("logins:") && f.evidence[0] ? `watches:${f.evidence[0]}` : f.key;
+		if (/^(update|watches):/.test(key) && live.some(n => n.decision?.card_id === key)) return true;
+		if (key === "update:self") return plain.some(n => n.title === SELF_UPDATE_CARD_TITLE);
+		const harness = key.startsWith("update:") ? labels.harness(key.slice("update:".length)) : undefined;
 		if (harness !== undefined) return plain.some(n => n.title === HARNESS_RETRY_TITLE && n.text.startsWith(`${harness} `));
-		if (f.key.startsWith("watches:")) return plain.some(n => watchSubject(n.title) === labels.watch(f.key.slice("watches:".length)));
+		if (key.startsWith("watches:")) return plain.some(n => watchSubject(n.title) === labels.watch(key.slice("watches:".length)));
 		return false;
 	};
 }

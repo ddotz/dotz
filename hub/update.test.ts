@@ -3,8 +3,9 @@ import { afterEach, beforeEach, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { cfg, OMP } from "./config.ts";
+import { cfg, DATA_DIR, OMP } from "./config.ts";
 import { cardCovers } from "./doctor.ts";
+import { update } from "./doctor-checks.ts";
 import type { Finding } from "./doctor-types.ts";
 import { emit } from "./events.ts";
 import { allNotices, resetNoticesForTest } from "./notices.ts";
@@ -168,6 +169,16 @@ test("an up-to-date omo does nothing", async () => {
 	expect(h.posts).toEqual([]);
 	expect(h.alerts).toEqual([]);
 	expect(h.restarts()).toBe(0);
+});
+
+test("a harness whose install failed and that a later pass finds current is no longer told as failing by the doctor; one that failed again still is", async () => {
+	const told = async () => (await update({ now: Date.now(), dataDir: DATA_DIR, home: dir })).map(f => f.key);
+	await runHarnessUpdate(harness({ run: fakeOmo("5.1.38", { addCode: 1 }).run, latest: "5.1.40" }).deps);
+	expect(await told()).toContain("update:omo");
+	await runHarnessUpdate(harness({ run: fakeOmo("5.1.40").run, latest: "5.1.40" }).deps);
+	expect(await told()).not.toContain("update:omo");
+	await runHarnessUpdate(harness({ run: fakeOmo("5.1.40", { installTo: "5.1.41", addCode: 1 }).run, latest: "5.1.41" }).deps);
+	expect(await told()).toContain("update:omo");
 });
 
 test("a registry that does not answer installs nothing", async () => {

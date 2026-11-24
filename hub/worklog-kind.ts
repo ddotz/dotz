@@ -17,6 +17,8 @@ export const HARNESS_ASK_TAIL = " 설치는 확인한 뒤에 해요.";
 export const HARNESS_BLOCKED_TAIL = ". 그 설치 방식대로 올려 주세요.";
 export const HARNESS_RESTART_TAIL = " 올리고 재시작해요 (하던 일이 끝나면).";
 export const HARNESS_FAILED_MID = " 설치하지 못했어요(";
+/** The middle of the log line a harness update pass writes when it finds the harness up to date (`<id> update: <label>는 최신이에요 (<version>).`); the doctor's update check reads it as the harness working again. */
+export const HARNESS_CURRENT_MID = "는 최신이에요 (";
 export const ACCOUNT_LEAD = "계정을 ";
 export const ACCOUNT_CHANGED = "바꿨어요.";
 export const ACCOUNT_PICKED = "정했어요.";

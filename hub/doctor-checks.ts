@@ -8,7 +8,7 @@ import { type Baseline, baselineOf, failureReport, grownClasses, isBaseline, typ
 import { msg } from "./i18n.ts";
 import { pluginFailuresFile } from "./plugins.ts";
 import { type AuditResult, runAudit } from "./token-audit.ts";
-import { HARNESS_FAILED_MID, HARNESS_RESTART_TAIL } from "./worklog-kind.ts";
+import { HARNESS_CURRENT_MID, HARNESS_FAILED_MID, HARNESS_RESTART_TAIL } from "./worklog-kind.ts";
 
 const HOUR = 3600e3, DAY = 24 * HOUR, GB = 1024 ** 3;
 const LOGIN_KINDS = /^(?:login|session|auth|expired)$/;
@@ -139,12 +139,22 @@ export function unplannedStarts(rows: { at: number; text: string }[], from: numb
 type ErrMark = { last: number; from: number };
 const isErrMark = (v: unknown): v is ErrMark => typeof (v as ErrMark | undefined)?.last === "number" && typeof (v as ErrMark).from === "number";
 
+function causeSaid(cause: string): string {
+	const t = msg().doctor.restartCause;
+	const engine = /^omo engine changed on disk \((.+) -> (.+)\)$/.exec(cause), context = /^context (\d+) tokens$/.exec(cause), held = /^deferred (\d+) h$/.exec(cause);
+	if (engine) return t.engine(engine[1]!, engine[2]!);
+	if (context) return t.context(context[1]!);
+	if (held) return t.held(held[1]!);
+	return cause === "the gateway code changed" ? t.code : cause === "the prompt head no longer changes" ? t.head : cause;
+}
+
 export const gateway: DoctorCheck = ({ now, dataDir, memo, last }) => {
 	const t = msg().doctor, out: Finding[] = [], rows = logRows(dataDir);
-	const day = restartsOf(rows).filter(r => r.at >= now - T.restartWindowH * HOUR), restarts = day.filter(r => !r.explained);
+	const day = restartsOf(rows).filter(r => r.at >= now - T.restartWindowH * HOUR), restarts = day.filter(r => !r.explained), caused = restarts.filter(r => r.cause).length;
 	if (restarts.length >= T.restarts) {
-		const count = { all: day.length, update: day.filter(r => r.by === "update").length, owner: day.filter(r => r.by === "owner").length, orchestrator: day.filter(r => r.by === "orchestrator").length, unexplained: restarts.length };
-		out.push(asking(found("gateway:restarts", "gateway", now, t.restarts(count), [t.restartWhy(count), ...restarts.map(r => t.restartLine(t.when(r.at), r.cause ?? t.restartUnasked))], restarts.length)));
+		const count = { all: day.length, update: day.filter(r => r.by === "update").length, owner: day.filter(r => r.by === "owner").length, orchestrator: day.filter(r => r.by === "orchestrator").length, cause: caused, unexplained: restarts.length - caused };
+		const told = found("gateway:restarts", "gateway", now, t.restarts(count), [t.restartWhy(count), ...restarts.map(r => t.restartLine(t.when(r.at), r.cause ? causeSaid(r.cause) : t.restartUnasked))], restarts.length);
+		out.push(count.unexplained ? asking(told) : told);
 	}
 	const errFile = join(dataDir, "gateway.err.log");
 	const size = existsSync(errFile) ? statSync(errFile).size : 0;
@@ -273,7 +283,7 @@ export const update: DoctorCheck = ({ now, dataDir }) => {
 		const self = /^self-update #\d+: (\w+): ?(.*)$/.exec(text);
 		if (self && ["failed", "updated", "current"].includes(self[1]!)) mark("self", at, self[1] === "failed" ? self[2]! : undefined);
 		const m = /^(\S+) update(?: failed)?: (.*)$/.exec(text), failed = text.includes(" update failed: ") || text.includes(HARNESS_FAILED_MID);
-		if (m && (failed || text.includes(HARNESS_RESTART_TAIL))) mark(m[1]!, at, failed ? m[2]! : undefined);
+		if (m && (failed || text.includes(HARNESS_RESTART_TAIL) || text.includes(HARNESS_CURRENT_MID))) mark(m[1]!, at, failed ? m[2]! : undefined);
 	}
 	return [...state].flatMap(([id, f]) => {
 		if (!f) return [];

@@ -296,6 +296,49 @@ test("a window opens at the earliest word that lets the change show, never later
 	expect([...end!].length - [...m.promptAfter("")].length).toBeGreaterThan(room - 8);
 });
 
+test("a long line changed in two places far apart shows each changed stretch in its before and after, with … between them; a change in one place shows as before", () => {
+	const saved = cfg.identity;
+	try {
+		cfg.identity = { ...saved, name: saved?.name ?? "sample-1", language: "ko" };
+		const to = "- 메인 세션은 질문과 조회와 한 파일짜리 작은 수정만 직접 하고, 여러 단계이거나 길거나 시끄럽거나 나눌 수 있는 일은 워커에게 맡겨요. 워커에게 일을 맡길 때는 브리프에 완료 조건을 적고, 한 워커에는 모듈 하나만 맡기며, 결과 패치는 직접 읽은 뒤 적용하고, 리뷰가 필요한 패치는 100줄이 넘을 때만 리뷰어에게 먼저 보내요. 보안 패치는 언제나 보안 리뷰어에게 보내요.";
+		const one = to.replace("100줄이 넘을 때만 리뷰어에게 먼저 보내요. 보안 패치는 언제나 보안 리뷰어에게 보내요.", "300줄이 넘을 때만 리뷰어에게 먼저 보내요."), two = one.replace("한 파일짜리", "두 파일짜리");
+		const [, b, a, ...rest] = editLines("서로 맞지 않음", "RULES.md", { file: "/x/RULES.md", line: 12, from: two, to });
+		expect([b, a].every(l => [...l!].length <= 120)).toBe(true);
+		expect([b!.includes("두 파일짜리"), b!.includes("300줄이"), a!.includes("한 파일짜리"), a!.includes("100줄이"), a!.includes("보안 패치는")]).toEqual([true, true, true, true, true]);
+		expect([b!.includes(" … "), a!.includes(" … ")]).toEqual([true, true]);
+		expect(rest).toEqual([]);
+		expect(editLines("서로 맞지 않음", "RULES.md", { file: "/x/RULES.md", line: 12, from: one, to }).slice(1)).toEqual([
+			"전: …완료 조건을 적고, 한 워커에는 모듈 하나만 맡기며, 결과 패치는 직접 읽은 뒤 적용하고, 리뷰가 필요한 패치는 300줄이 넘을 때만 리뷰어에게 먼저 보내요.",
+			"후: …완료 조건을 적고, 한 워커에는 모듈 하나만 맡기며, 결과 패치는 직접 읽은 뒤 적용하고, 리뷰가 필요한 패치는 100줄이 넘을 때만 리뷰어에게 먼저 보내요. 보안 패치는 언제나 보안 리뷰어에게 보내요.",
+		]);
+	} finally {
+		cfg.identity = saved;
+	}
+});
+
+test("changes of a long line too far apart for one line each: the places that fit are shown, the rest counted on their own line; for generated two-place edits every place is shown or counted and every line fits", () => {
+	const m = msg(), word = (i: number) => `word${String(i).padStart(2, "0")}`, big = (c: string) => c.repeat(45);
+	const words = Array.from({ length: 60 }, (_, i) => word(i)), from = `- ${words.join(" ")}`;
+	const to = `- ${words.map((w, i) => ([5, 25, 45].includes(i) ? big(String.fromCharCode(65 + i / 5)) : w)).join(" ")}`;
+	const [more, b, a, ...rest] = editLines("K", "F", { file: "/x", line: 1, from, to });
+	expect([b!.includes(word(5)), a!.includes(big("B"))]).toEqual([true, true]);
+	expect(more).toBe(`K · ${m.promptAt("F", 1)} · ${m.promptMoreChanges(2)}`);
+	expect(rest).toEqual([]);
+	fc.assert(
+		fc.property(fc.array(fc.constantFrom("a", "rule", "답장은", "짧게", "`x`", "/p/q"), { minLength: 30, maxLength: 80 }), fc.nat(), fc.nat(), fc.constantFrom("Q", "새말", "/r/s/t"), (ws, p, q, put) => {
+			const i = p % ws.length, j = (i + 10 + (q % 20)) % ws.length, lo = Math.min(i, j), hi = Math.max(i, j);
+			fc.pre(hi - lo >= 8);
+			const before = ws.join(" "), after = ws.map((w, k) => (k === lo || k === hi ? `${w}${put}` : w)).join(" ");
+			const lines = editLines("K", "F", { file: "/x", line: 1, from: before, to: after });
+			const shownAfter = lines[2]!, counted = lines[0]!.endsWith(m.promptMoreChanges(1));
+			expect(lines.every(l => [...l].length <= 120)).toBe(true);
+			expect(lines.length).toBe(3);
+			expect(shownAfter.split(put).length - 1 >= 2 || counted).toBe(true);
+		}),
+		{ numRuns: 300 },
+	);
+});
+
 test("for generated lines with long unbroken runs and one edit anywhere, the shown before and after differ, are not empty, fit the line limit and both hold the first changed character", () => {
 	const m = msg(), flat = (s: string) => s.replace(/\s+/g, " ").trim();
 	const token = fc.oneof(fc.constantFrom("a", "the", "rule", "never", "답장은", "짧게", "-", "`x`"), fc.integer({ min: 20, max: 160 }).map(n => "/p".repeat(n)));

@@ -15,7 +15,7 @@ import { activeHarness } from "./runtime/index.ts";
 import { BUN_GLOBAL_OMO, OMO } from "./runtime/omo-hosts.ts";
 import { telemetryOff } from "./runtime/omo.ts";
 import { trackTimer } from "./shutdown.ts";
-import { HARNESS_ASK_TAIL, HARNESS_BLOCKED_TAIL, HARNESS_FAILED_MID, HARNESS_RESTART_TAIL, harnessCardId } from "./worklog-kind.ts";
+import { HARNESS_ASK_TAIL, HARNESS_BLOCKED_TAIL, HARNESS_CURRENT_MID, HARNESS_FAILED_MID, HARNESS_RESTART_TAIL, harnessCardId } from "./worklog-kind.ts";
 
 export type Mode = "check" | "install" | "off";
 export type Check =
@@ -135,7 +135,7 @@ export const harnessLabel = (id: string): string | undefined => SPECS[id]?.label
 
 export const describe = (c: Check, label = "omp"): string =>
 	c.status === "new" ? `${label} 새 버전이 있어요 (${c.current} → ${c.latest}).`
-		: c.status === "current" ? `${label}는 최신이에요 (${c.current}).`
+		: c.status === "current" ? `${label}${HARNESS_CURRENT_MID}${c.current}).`
 		: c.status === "managed" ? `${label} ${c.current}는 ${c.by}가 관리해서 업데이트 확인으로는 새 버전을 알 수 없어요.`
 		: `${label} 업데이트를 확인하지 못했어요 (지금 ${c.current}): ${c.detail}`;
 
@@ -175,7 +175,7 @@ export const updateHooks = (out: Parameters<typeof cardAlert>[0], plain: (text: 
 async function updateOne(id: string, spec: Spec, { mode, post, alert = post, run = defaultRun, latest = npmLatest, locate = defaultLocate, stateDir = DATA_DIR }: Deps): Promise<{ line?: string; installed?: boolean }> {
 	const t = { run, latest, locate };
 	const c = await spec.check(t);
-	if (c.status === "error") log(`${id} update: ${describe(c, spec.label)}`);
+	if (c.status === "error" || c.status === "current") log(`${id} update: ${describe(c, spec.label)}`);
 	if (c.status !== "new") return {};
 	const blocked = mode === "install" ? spec.blocked?.(t) : undefined;
 	if (mode === "check" || blocked) {

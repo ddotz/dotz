@@ -188,7 +188,7 @@ function shownEnd(x: string[], start: number, room: number, need: number): { end
 	return { end: last, atWord: false };
 }
 
-function changedParts(from: string, to: string, room: number): [string, string] {
+function changedParts(from: string, to: string, room: number): { parts: [string, string]; whole: boolean } {
 	const a = [...squash(from)], b = [...squash(to)];
 	let same = 0, tail = 0;
 	while (same < a.length && same < b.length && a[same] === b[same]) same++;
@@ -205,15 +205,62 @@ function changedParts(from: string, to: string, room: number): [string, string] 
 		const { end } = shownEnd(x, start, room, need(x));
 		return `${start > 0 ? "…" : ""}${x.slice(start, end).join("").trim()}${end < x.length ? "…" : ""}`;
 	};
-	return [part(a), part(b)];
+	return { parts: [part(a), part(b)], whole: fits(start, whole, false) };
 }
 
-/** The first lines of a card that proposes `change`: the kind with the file and line, then the line as it is and what it becomes (on a long line both open at the earliest word that lets the changed part show, at least its first character, never later than shortly before it; a line ends inside a word when no space is in reach), or the one line to delete. */
+const LEAD_WORDS = 2, TRAIL_WORDS = 1;
+type Stretch = { a: [number, number]; b: [number, number] };
+
+function stretchesOf(a: string[], b: string[]): Stretch[] {
+	let head = 0, foot = 0;
+	while (head < a.length && head < b.length && a[head] === b[head]) head++;
+	while (foot < a.length - head && foot < b.length - head && a[a.length - 1 - foot] === b[b.length - 1 - foot]) foot++;
+	const n = a.length - head - foot, m = b.length - head - foot, left = new Uint16Array((n + 1) * (m + 1));
+	for (let i = n - 1; i >= 0; i--) for (let j = m - 1; j >= 0; j--) left[i * (m + 1) + j] = a[head + i] === b[head + j] ? left[(i + 1) * (m + 1) + j + 1]! + 1 : Math.max(left[(i + 1) * (m + 1) + j]!, left[i * (m + 1) + j + 1]!);
+	const out: Stretch[] = [];
+	let i = 0, j = 0, open: Stretch | undefined;
+	while (i < n || j < m) {
+		if (i < n && j < m && a[head + i] === b[head + j] && left[i * (m + 1) + j] === left[(i + 1) * (m + 1) + j + 1]! + 1) {
+			open = undefined;
+			i++;
+			j++;
+			continue;
+		}
+		if (!open) out.push((open = { a: [head + i, head + i], b: [head + j, head + j] }));
+		if (j >= m || (i < n && left[(i + 1) * (m + 1) + j]! >= left[i * (m + 1) + j + 1]!)) open.a[1] = head + ++i;
+		else open.b[1] = head + ++j;
+	}
+	return out.reduce<Stretch[]>((merged, s) => {
+		const last = merged.at(-1);
+		if (last && s.a[0] - last.a[1] <= LEAD_WORDS + TRAIL_WORDS) {
+			last.a[1] = s.a[1];
+			last.b[1] = s.b[1];
+		} else merged.push(s);
+		return merged;
+	}, []);
+}
+
+function stretchParts(from: string, to: string, room: number, window: [string, string]): { parts: [string, string]; left: number } | undefined {
+	const a = squash(from).split(" "), b = squash(to).split(" "), all = stretchesOf(a, b);
+	if (all.length < 2) return undefined;
+	const side = (x: string[], key: keyof Stretch, shown: Stretch[]): string => {
+		const spans = shown.map((s, i) => [Math.max(s[key][0] - LEAD_WORDS, i ? shown[i - 1]![key][1] : 0), Math.min(s[key][1] + TRAIL_WORDS, x.length)] as const);
+		return `${spans[0]![0] > 0 ? "…" : ""}${spans.map(([s, e]) => x.slice(s, e).join(" ")).join(" … ")}${spans.at(-1)![1] < x.length ? "…" : ""}`;
+	};
+	for (let k = all.length; k > 0; k--) {
+		const parts: [string, string] = [side(a, "a", all.slice(0, k)), side(b, "b", all.slice(0, k))];
+		if (parts.every(p => [...p].length <= room)) return { parts, left: all.length - k };
+	}
+	return { parts: window, left: all.length - 1 };
+}
+
+/** The first lines of a card that proposes `change`: the kind with the file and line, then the line as it is and what it becomes (on a long line both open at the earliest word that lets the changed part show, at least its first character, never later than shortly before it; a line ends inside a word when no space is in reach), or the one line to delete. When the changes of a long line do not fit one window, both lines show each changed place with the words around it, `…` between them, and the places that do not fit either are counted on a line of their own. */
 export function editLines(kind: string, shown: string, change: Change): string[] {
 	const m = msg(), head = `${kind} · ${m.promptAt(shown, change.line)}`;
 	if (!change.to) return [head, m.promptDelete(squash(change.from))];
-	const [from, to] = changedParts(change.from, change.to, EVIDENCE_CHARS - Math.max([...m.promptBefore("")].length, [...m.promptAfter("")].length));
-	return [head, m.promptBefore(from), m.promptAfter(to)];
+	const room = EVIDENCE_CHARS - Math.max([...m.promptBefore("")].length, [...m.promptAfter("")].length), one = changedParts(change.from, change.to, room);
+	const apart = one.whole ? undefined : stretchParts(change.from, change.to, room, one.parts), [from, to] = apart?.parts ?? one.parts;
+	return [apart?.left ? `${head} · ${m.promptMoreChanges(apart.left)}` : head, m.promptBefore(from), m.promptAfter(to)];
 }
 
 /** The card about a line that spells out an enforced rule: the kind with file and line, the line to delete, and what already enforces it; titled by the text and the line. */

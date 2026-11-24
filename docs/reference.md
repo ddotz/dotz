@@ -386,16 +386,20 @@ and at which level, and the baselines the checks compare with).
   owner`; a request line of older code without a requester explains nothing), or when it waited for the orchestrator and the owner restarted it on the web meanwhile (its request line
   `gateway restart requested…; waiting for: orchestrator…` names `orchestrator`, and `orchestrator restart: web restart (` comes after that line; one before the request or in a wait for something
   else explains nothing); an install wins over his request, his request over his orchestrator restart; an install or his request counts from a minute before the request its `waited Ns` gives;
-  the owner's 지금 재시작 (`gateway restart now (`) and the gateway's start line end those marks, so a later restart is counted). The finding's headline gives all restarts of the day and how many
-  of them nothing explains; its lines first say how many updates, his requests and his orchestrator restarts explain, then give each counted restart's time and the last
-  `deferred gateway restart goes now (…)` or `omo engine changed on disk (…)` line of the same wait, else that the log does not say who asked. Crashes: at least 1 uncaught stack trace added to
+  the owner's 지금 재시작 (`gateway restart now (`) and the gateway's start line end those marks, so a later restart is counted). A counted restart whose wait has a
+  `deferred gateway restart goes now (…)` or `omo engine changed on disk (…)` line has a cause the log names: it still counts toward the finding, but as a restart with a known cause. The
+  finding's headline gives all restarts of the day and how many of them have no known cause (when every one has, it says so and carries no look-up mark: there is no cause left to find); its lines first say how many updates, his requests, his
+  orchestrator restarts and the log's cause lines explain, then give each counted restart's time and the last cause line of the same wait in the owner's language (the OmO engine changed with
+  its two versions, the gateway code changed, a held restart once the prompt head stopped changing, at a short context with its tokens, or after waiting N h; a cause the gateway has no
+  sentence for as logged), else that the log does not say who asked. Crashes: at least 1 uncaught stack trace added to
   `gateway.err.log` since the last run (a night store written before the morning re-look existed keeps its crashes); the headline gives how many, the lines each time the gateway started again
   since the last run with no planned stop before it. sessions: a running session with no
   progress for over 6 h, or one in error and not closed for over 24 h; logins: a login still lost over 12 h after it was lost; watches: failing for over 24 h or 3 runs in a row, the headline saying
   since when and how many runs in a row, the lines the last run (the last line of the watch's `last-fail.log`; an empty one is a run that ended with no output, said with the exit code of its last `watch <name> failed
   (<code>, …)` log line; no `last-fail.log` at all is said as a run that failed with that exit code; when `watch <name> could not write last-fail.log` follows that last line, the file is an older
   run's and only the failure with its exit code is said; with no such log line nothing is said of the last run; a self-heal that worked since the last run is one *fixed* line); disk: the data volume under 10 % or 10 GB free is a finding, under 3 GB free it carries a decision (clean up
-  session records older than the keep days, or leave it for a week; nothing is deleted unless the owner picks the first); update: the last harness or self update failed and none worked since,
+  session records older than the keep days, or leave it for a week; nothing is deleted unless the owner picks the first); update: the last harness or self update failed and none worked since
+  (a harness install line, or a later harness pass that found it up to date: the pass logs `<id> update: <label>는 최신이에요 (<version>).`),
   the headline saying since when (the first failure after the last success) and how many times, the lines the last error; failures: the failure report's growth thresholds (share up 25 %, at least 1M tokens
   or 10 more occurrences) against a baseline kept in the doctor's file, each grown class named in the headline (its label, `short`) and said in its first line as count and tokens before → after and its share of all tokens last (one case: "1건이 36.8M
   토큰"; one more case than before whose tokens grew: "늘어난 1건이 큰 것";
@@ -442,7 +446,9 @@ and at which level, and the baselines the checks compare with).
   (`후: …`), a deletion one line marked as the line to delete (`지울 줄: …`), while `Finding.change { file, line, from, to }` keeps the absolute path and both lines whole (`to` empty: the line is
   deleted). A shown line is cut at a word boundary to fit; when the two lines share a start too long to fit, both open with `…` at the earliest word that lets the changed part show in
   both (when it cannot all fit, at least the first character that differs), never later than shortly before that character, and each ends at the last space in reach after it (inside a
-  word when no space is in reach, such as a long path or URL), so the part that changes is on the card; `…` at the end says the line goes on. Then, for a review conflict, the other line
+  word when no space is in reach, such as a long path or URL), so the part that changes is on the card; `…` at the end says the line goes on. When the line changes in places too far apart
+  for that one window, both lines show each changed place with two words before it and one after, ` … ` between places; places that do not fit either are counted at the end of the card's
+  first line (`… · 이 줄은 N곳 더 바뀌어요. 확인 단계에서 줄 전체를 보여 줘요.`), so a conflict card keeps its fourth line for the line it conflicts with, and the confirm step still shows the whole line. Then, for a review conflict, the other line
   with its file and line number; for an enforced rule, what already enforces it in plain words with its guard
   file; a review card's reason takes the next free line (of the 4) and otherwise stays in the finding's `what`. The gateway, not the model, finds where an edit applies: the review asks for each
   item's exact line, its full new text and, for a conflict, the other line (at most 3 items in the same 2K output tokens; a reply cut by that cap keeps its complete items); an item without an exact
@@ -490,8 +496,11 @@ and at which level, and the baselines the checks compare with).
   line (a rule card named by its stored file, a review card by the contract, its file not being stored), the kind and the quote as its first line and the reason or the guard after it (no exact
   edit: the old store has none); the disk card gets its subject and keeps its old question as its line, and a card whose old question is not recognised keeps it as its one line under its area's name.
   Before posting, the morning runs the file-only checks again (gateway, sessions, logins, watches, disk, update, plugins) over the night's window, so a finding that no longer holds is not posted and
-  the numbers are those at posting time; the night's failures, tokens and prompt findings stay as they were. A matter another gateway card covers (the self-update card, the failed-install card of the
-  same harness, the watch's own issue card, matched by the watch name in the finding's key `watches:<name>`; a card that has an id is matched by it alone, the id being that finding key) is not told while that card is open or the owner answered it within 24 h (a card that
+  the numbers are those at posting time; prompt health reads files only, so it runs again too (its size baseline not moved): a rule line deleted or a file trimmed under its cap after the night
+  run is not told. The night's failures and tokens stay as they were, and so do the weekly review's proposals, except one whose line is no longer at its line number as quoted (the same test
+  the confirm step makes before an edit). A matter another gateway card covers (the self-update card, the failed-install card of the
+  same harness, the watch's own issue card, matched by the watch name in the finding's key `watches:<name>`, which also covers that watch's lost login `logins:<watch id>`, the watch name being
+  that finding's evidence; a card that has an id is matched by it alone, the id being that finding key) is not told while that card is open or the owner answered it within 24 h (a card that
   expired unanswered does not count): neither a told line nor a card; it counts among the things told before and still there, its check is not listed as fine, and when nothing else is due nothing is
   posted. It is not marked told, so its line comes once, on the first morning after the card stops covering it. On the day of the install, a night store written before the re-look existed keeps the
   night's crash count in the store, so a second morning pass that day adds only the crashes since the night, once.
