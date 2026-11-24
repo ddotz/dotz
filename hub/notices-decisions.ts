@@ -7,7 +7,7 @@ import { unreadQuestions } from "./ask-normalize.ts";
 import { eventTarget, historyEvents, type HubEvent } from "./events.ts";
 import { shortTitle } from "./notice-title.ts";
 import { parseTone, stripHandoff } from "./tone.ts";
-import type { DecisionOpt } from "./notices-types.ts";
+import type { CardEdit, DecisionOpt } from "./notices-types.ts";
 import { RUN_DECISION } from "./notices-schedule.ts";
 import { ALERT_ANSWER_WINDOW_MS, ANSWER_WINDOW_MS, TEXT_MAX, authorOf, laneTone, refOf } from "./notices-rules.ts";
 import { say } from "./notices-read.ts";
@@ -26,7 +26,7 @@ const firstLine = (text: string) => {
 	return shortTitle(l);
 };
 
-type Draft = { title: string; detail: string; options: DecisionOpt[]; to: string; replyTo: string; group: number; place: number; key: string; by?: string; ref?: string; draft?: DraftApproval; assumed?: true; evidence?: string[] };
+type Draft = { title: string; detail: string; options: DecisionOpt[]; to: string; replyTo: string; group: number; place: number; key: string; by?: string; ref?: string; draft?: DraftApproval; assumed?: true; evidence?: string[]; edit?: CardEdit };
 
 // The quoted draft in the newest assistant message of a conversation before `before` (the draft the thread's send question is about).
 function threadDraft(conv: string, before: string): string | undefined {
@@ -52,12 +52,26 @@ function messageFiles(raw: string): string {
 }
 
 const namesEach = (ids: unknown, n: number): ids is string[] => Array.isArray(ids) && ids.length === n && ids.every(i => typeof i === "string" && i !== "") && new Set(ids).size === n;
+const isEdit = (v: unknown): v is CardEdit => {
+	const c = v as Record<string, unknown> | null;
+	return typeof c === "object" && c !== null && typeof c.file === "string" && c.file !== "" && Number.isInteger(c.line) && Number(c.line) > 0 && typeof c.from === "string" && typeof c.to === "string";
+};
+function cardMetaOf(meta: unknown, id: string): { edit?: CardEdit; keep: number[] } {
+	const m = typeof meta === "object" && meta !== null ? (meta as Record<string, unknown>)[id] : undefined;
+	const one = typeof m === "object" && m !== null ? (m as Record<string, unknown>) : {};
+	const keep = Array.isArray(one.keep) ? one.keep.filter((n): n is number => Number.isInteger(n)) : [];
+	return { ...(isEdit(one.edit) ? { edit: { file: one.edit.file, line: one.edit.line, from: one.edit.from, to: one.edit.to } } : {}), keep };
+}
 /** The decisions an event asks of the owner. A gateway post may name its cards (`card_ids`, one id per card in their order): a card with an id is keyed by it
- *  (`dec:<to>:id:<id>`) and carries it as `card_id`; a list that does not name every card once is dropped. Any other post's ids are ignored. */
+ *  (`dec:<to>:id:<id>`) and carries it as `card_id`; a list that does not name every card once is dropped. Any other post's ids are ignored. Such a post's
+ *  `card_meta` (by card id) gives a card the edit it proposes and marks its options that change nothing (`keep`); no other post can set either. */
 export function decisionsOf(e: HubEvent): (Draft & { card_id?: string })[] {
 	const ds = drafted(e), ids = e.source === "gateway" ? e.card_ids : undefined;
 	if (ids === undefined || !ds.length || !namesEach(ids, ds.length)) return ds;
-	return ds.map((d, i) => ({ ...d, key: `dec:${d.to}:id:${ids[i]}`, card_id: ids[i] }));
+	return ds.map((d, i) => {
+		const { edit, keep } = cardMetaOf(e.card_meta, ids[i]!);
+		return { ...d, key: `dec:${d.to}:id:${ids[i]}`, card_id: ids[i], options: d.options.map(o => (keep.includes(o.n) ? { ...o, keep: true as const } : o)), ...(edit ? { edit } : {}) };
+	});
 }
 
 /** Logs a gateway post whose `card_ids` were dropped; `ds` is what decisionsOf made of it. Only the store's feed calls it, so the line is written once per post however many readers ask for its decisions. */

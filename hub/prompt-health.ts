@@ -120,7 +120,7 @@ const DENY_ENTRY = /^\s*- deny:\s/;
 /** The edit a prompt card proposes (see `Finding.change`). */
 export type Change = NonNullable<Finding["change"]>;
 /** A prompt card as its check builds it: its lines, its title parts and its two options. */
-export type PromptCard = { evidence: string[]; subject: string; question: string; options: { name: string; result: string }[] };
+export type PromptCard = { evidence: string[] } & NonNullable<Finding["decide"]>;
 
 /** Where a quoted line is: the one file line it is, or why there is not exactly one. */
 export type Located = { kind: "found"; path: string; file: string; line: number; text: string } | { kind: "nowhere" } | { kind: "files"; files: string[] } | { kind: "twice"; file: string };
@@ -232,7 +232,7 @@ export function ruleCard(c: { rule: string; guard: string; shown: string; change
 		evidence: evidenceLines([...editLines(t.ruleKind, c.shown, c.change), m.promptGuard(words[c.rule] ?? c.guard, c.guard)], t.more),
 		subject: lineSubject(t, c.shown, c.change.from, t.ruleQuestion),
 		question: t.ruleQuestion,
-		options: [{ name: m.promptRemove, result: withUndo(m.promptRemoveResult(c.shown), c.change.file) }, { name: m.promptKeep, result: m.promptKeepResult(THRESHOLDS.repeatDays) }],
+		options: [{ name: m.promptRemove, result: withUndo(m.promptRemoveResult(c.shown), c.change.file) }, { name: m.promptKeep, result: m.promptKeepResult(THRESHOLDS.repeatDays), keep: true }],
 	};
 }
 

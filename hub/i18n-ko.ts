@@ -1,6 +1,7 @@
 // Korean message catalog (see hub/i18n.ts). Moved out of i18n.ts unchanged.
 import { join } from "node:path";
 import { ADDRESS, NAME, paths, tzLabel } from "./config.ts";
+import { answerKo } from "./answer-text.ts";
 import { askKo } from "./ask-text.ts";
 import { cardsKo } from "./card-text.ts";
 import { doctorKo } from "./doctor-text.ts";
@@ -262,6 +263,7 @@ export const ko: Catalog = {
 	checkPassed: (n, landed) => `확인 통과: 확인 항목 ${n}개가 모두 통과했어요${landed ? ", 작업 브랜치도 main에 반영됐어요" : ""}`,
 	waitMainRefused: `[게이트웨이 확인] 방금 [wait]는 아무에게도 가지 않았어요. 메인(${NAME})을 기다린다면 메인이 할 일을 "${NAME} 몫:" 줄에 쓰거나 dotz_main으로 보낸 뒤 다시 보고하세요. 메인이 아니라 CI·시간·워커를 기다리는 거면 그렇게 적어 다시 보고하세요.`,
 	...askKo,
+	...answerKo,
 	...cardsKo,
 	languageRefused: (head, before) => `[게이트웨이 확인] 방금 보고는 오너에게 가지 않았어요. ${before ? `상태 줄보다 앞에 글이 있어요("${head}...")` : `"${head}..."로 시작하는 문단이 한국어가 아니에요`}. 상태 줄([done]·[run]·[wait]·[ask]·[fail])로 시작하고 모든 문단을 한국어로 써서 다시 보내세요. 코드, 경로, id와 red test·HEAD 같은 개발 용어는 그대로 둬도 돼요.`,
 	unverifiedRefused: lines => `[게이트웨이 확인] 방금 보고는 오너에게 가지 않았어요. 아래 줄은 확인하지 않은 것을 이유 없이 적었어요:\n- ${lines.join("\n- ")}\n먼저 이 컴퓨터에서 확인할 수 있는 건 전부 확인하세요(실행, 헤드리스 화면, 다시 읽기). 그래도 여기서 확인할 수 없는 것은 그 줄에 이유를 쓰고 \`대신 확인:\` 뒤에 대신 확인한 것을 적어 다시 보고하세요.`,

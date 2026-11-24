@@ -158,7 +158,7 @@ export function reviewCard(c: { kind: string; shown: string; change: Change; oth
 		question,
 		options: [
 			c.change.to ? { name: m.promptReviewApply, result: withUndo(m.promptReviewApplyResult(c.shown), c.change.file) } : { name: m.promptRemove, result: withUndo(m.promptReviewRemoveResult(c.shown), c.change.file) },
-			{ name: m.promptReviewLeave, result: m.promptReviewLeaveResult(REVIEW_EVERY_MS / DAY_MS) },
+			{ name: m.promptReviewLeave, result: m.promptReviewLeaveResult(REVIEW_EVERY_MS / DAY_MS), keep: true },
 		],
 	};
 }

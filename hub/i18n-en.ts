@@ -1,6 +1,7 @@
 // English message catalog (see hub/i18n.ts). Moved out of i18n.ts unchanged; the types come from i18n.ts as type-only imports.
 import { join } from "node:path";
 import { NAME, paths, tzLabel } from "./config.ts";
+import { answerEn } from "./answer-text.ts";
 import { askEn } from "./ask-text.ts";
 import { cardsEn } from "./card-text.ts";
 import { doctorEn } from "./doctor-text.ts";
@@ -267,6 +268,7 @@ export const en = {
 	checkPassed: (n: number, landed: boolean) => `Checks passed: all ${n} checks passed${landed ? ", and the work branch is landed in main" : ""}`,
 	waitMainRefused: `[gateway check] Your last [wait] reached no one. If you wait on main (${NAME}), write what main is to do in the "For ${NAME}:" line or send it with dotz_main, then report again. If you wait on CI, time or workers rather than main, say so and report again.`,
 	...askEn,
+	...answerEn,
 	...cardsEn,
 	languageRefused: (head: string, before: boolean, language: string) => `[gateway check] Your report did not reach the owner: ${before ? `it has text above the status line ("${head}...")` : `the paragraph starting "${head}..." is not in ${language}`}. Start with the status line ([done], [run], [wait], [ask] or [fail]) and write every paragraph in ${language} (code, paths, ids and dev terms such as red test or HEAD stay as they are), then send it again.`,
 	unverifiedRefused: (lines: string[]) => `[gateway check] Your report did not reach the owner: these lines say something is unchecked without saying why:\n- ${lines.join("\n- ")}\nFirst check everything this machine can check (run it, render it headless, read it back). For what still cannot be checked here, say why on that line and add \`instead checked:\` (or \`대신 확인:\`) with what you checked in its place. Then send the report again.`,

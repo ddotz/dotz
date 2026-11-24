@@ -60,7 +60,9 @@ export type Notice = {
 
 // `say` is the text sent when the button is chosen (default "<n>) <label>"); `action` marks a login request's button (approve / cancel /
 // form = the page's own input form, never answered through the hub).
-export type DecisionOpt = DecisionOption & { say?: string; action?: string };
+export type DecisionOpt = DecisionOption & { say?: string; action?: string; keep?: true };
+/** The exact edit of one line a gateway card proposes (the doctor's `Finding.change`): the absolute file, its line number, the line as it was and what it becomes ("" deletes it). */
+export type CardEdit = { file: string; line: number; from: string; to: string };
 /** A held answer: the label given, when it goes out (`until`, gateway clock), the time left when the item was read, the option number and text typed with
  * it; `failed` once its delivery after the window failed, with the reason the delivery gave (the card is open again). */
 export type HeldAnswer = { label: string; until: number; left: number; n?: number; note?: string } & ({ state: "held" } | { state: "failed"; code: string; error: string });
@@ -70,6 +72,8 @@ export type Decision = {
 	evidence?: string[];
 	/** The id a gateway post gave this card (its event's `card_ids`, hub/notices-decisions.ts decisionsOf): the card is then found by that id alone, never by its title. Absent on every other card. */
 	card_id?: string;
+	/** The edit this gateway card proposes, kept with the card for as long as it can be answered (its event's `card_meta`); absent on every other card. */
+	edit?: CardEdit;
 	// Where the answer goes: "main", "lane:<name>", "ch:<id>" (a project chat) or "auth:<request id>".
 	to: string;
 	// The asking message (its event ts): the answer is sent as a reply to it.

@@ -165,7 +165,7 @@ describe("runPromptReview", () => {
 	test("a review card that deletes a line asks to delete it: the delete question and options, the review's own leave option", async () => {
 		const f = (await runPromptReview(ctx(answer(JSON.stringify([{ kind: "outdated", line: LINE_B, to: "", other: "", why: "w" }])).call))).findings[0]!, m = msg();
 		expect(f.decide?.question).toBe(m.doctor.ruleQuestion);
-		expect(f.decide?.options).toEqual([{ name: m.promptRemove, result: m.promptReviewRemoveResult("RULES.md") }, { name: m.promptReviewLeave, result: m.promptReviewLeaveResult(7) }]);
+		expect(f.decide?.options).toEqual([{ name: m.promptRemove, result: m.promptReviewRemoveResult("RULES.md") }, { name: m.promptReviewLeave, result: m.promptReviewLeaveResult(7), keep: true }]);
 		expect(m.promptReviewRemoveResult("RULES.md")).not.toBe(m.promptRemoveResult("RULES.md"));
 	});
 

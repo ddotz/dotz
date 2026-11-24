@@ -25,8 +25,8 @@ export type Finding = {
 	fixed?: boolean;
 	/** The owner may have the cause looked into: the morning line ends with the look-up mark, and replying with that line starts the look. Never a card. */
 	ask?: true;
-	/** What the owner must decide, when he must: one card titled `<subject> · <question>` (at most 40 characters), with `evidence` as its lines. */
-	decide?: { subject: string; question: string; options: { name: string; result: string }[] };
+	/** What the owner must decide, when he must: one card titled `<subject> · <question>` (at most 40 characters), with `evidence` as its lines. `keep`: picking that option changes nothing, so the gateway closes the card with no model turn. */
+	decide?: { subject: string; question: string; options: { name: string; result: string; keep?: true }[] };
 	/** The exact edit a prompt card proposes, found by the gateway: `file` is the absolute path, `line` its 1-based line, `from` that line as it is in the file, `to` the full new line (empty: the line is deleted). */
 	change?: { file: string; line: number; from: string; to: string };
 };

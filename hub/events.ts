@@ -229,6 +229,15 @@ export function askedText(ts: string): string | undefined {
 	return (find(recent) ?? find(tailEvents(paths.outbox)))?.text;
 }
 
+/** The card answer the owner message `id` (a web `mid` or a Discord message id) carried: the answered notice's id when the web sent it, and its picks. The live ring first, then the inbox tail; undefined when that message answered no card. */
+export function answerOfMessage(id: string): { decision?: string; picks: { q: string; n: number; label: string }[]; conv: string } | undefined {
+	const is = (e: HubEvent) => !!id && (e.kind === "message" || e.kind === "lane_message") && (e.mid === id || e.message_id === id);
+	const e = recent.findLast(is) ?? tailEvents(paths.inbox).findLast(is);
+	const picks = Array.isArray(e?.picks) ? e.picks.filter((p): p is { q: string; n: number; label: string } => typeof p?.q === "string" && Number.isInteger(p?.n) && typeof p?.label === "string") : [];
+	if (!e || (typeof e.decision !== "string" && !picks.length)) return undefined;
+	return { ...(typeof e.decision === "string" ? { decision: e.decision } : {}), picks, conv: eventTarget(e) ?? "main" };
+}
+
 // The message that carries a finished worker's result: the session's answer to the request the worker served (`exact`), else its first answer in that
 // conversation after the worker ended (a worker with no request, or one whose answer has not gone out yet). The live ring first; the outbox tail only
 // when the ring no longer reaches back to the worker's end.

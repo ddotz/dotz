@@ -301,9 +301,18 @@ async function nightChild(log: Deps["log"]): Promise<void> {
 	if (code !== 0) throw new Error(`night pass exited ${code}`);
 }
 
-/** The morning message's post through the gateway's `out`: an alert when something is not fixed, else a work log entry, each card named by its finding's key (`card_ids`). */
-export const doctorPost = (out: (target: string, text: string, replyTo?: string, extra?: Record<string, unknown>) => Promise<{ delivered: boolean; reason?: string }>): Deps["send"] =>
-	(text, _decision, open, ids) => out(open ? "alert" : "worklog", text, undefined, { source: "gateway", wk: "doctor", ...(ids.length ? { card_ids: ids } : {}) });
+const cardMeta = (ids: string[], findings: DoctorStore["findings"]): Record<string, { edit?: Finding["change"]; keep: number[] }> =>
+	Object.fromEntries(ids.flatMap(id => {
+		const f = findings[id], keep = (f?.decide?.options ?? []).flatMap((o, i) => (o.keep ? [i + 1] : []));
+		return f && (f.change || keep.length) ? [[id, { ...(f.change ? { edit: f.change } : {}), keep }]] : [];
+	}));
+/** The morning message's post through the gateway's `out`: an alert when something is not fixed, else a work log entry, each card named by its finding's key (`card_ids`).
+ *  `card_meta` gives each card that has them the exact edit its finding proposes and the numbers of its options that change nothing, read from `findings` (the saved store). */
+export const doctorPost = (out: (target: string, text: string, replyTo?: string, extra?: Record<string, unknown>) => Promise<{ delivered: boolean; reason?: string }>, findings: () => DoctorStore["findings"] = () => loadStore(DATA_DIR).findings): Deps["send"] =>
+	(text, _decision, open, ids) => {
+		const meta = ids.length ? cardMeta(ids, findings()) : {};
+		return out(open ? "alert" : "worklog", text, undefined, { source: "gateway", wk: "doctor", ...(ids.length ? { card_ids: ids } : {}), ...(Object.keys(meta).length ? { card_meta: meta } : {}) });
+	};
 
 /** `covered`: whether another gateway card covers a finding's matter (cardCovers over the notice store). */
 export function startDoctor(send: Deps["send"], log: Deps["log"], briefHour: () => number | undefined, ledgerOut?: { send: Send; waiting: () => number }, covered?: Deps["covered"]): void {

@@ -15,6 +15,7 @@ import { RUN_DECISION } from "./notices-schedule.ts";
 import { laneExists } from "./notices-lanes.ts";
 import { escalations } from "./escalate.ts";
 import { items, orchTurnFrom, putDecision, resolveAsks, save, settleDecision, unreadCount } from "./notices-store.ts";
+import { noTurnLine } from "./card-answer.ts";
 
 // A question whose time is up stops waiting on the owner: it is closed as resolved (no answer), marked `expired` so the card reads 기한 지남, read, saved
 // and broadcast like any other settle so every open page updates live. This runs in the hub's existing periodic pass (main.ts settleSweep); idempotent.
@@ -74,8 +75,10 @@ export async function answerDecision(id: unknown, body: { n?: unknown; note?: un
 	if (draftEdit && !note) return { status: 400, body: { error: draftActionOf(o.label) === "own" ? "어떻게 보낼지 적어 주세요" : "무엇을 고칠지 적어 주세요" } };
 	if (asksDetail && !note) return { status: 400, body: { error: "내용을 적어 주세요" } };
 	const text = (o.say ?? (d.group > 1 ? `${item.title}: ${label}` : label)) + (note ? ` - ${note}` : "");
-	return (hold ? holdDecision : deliverDecision)(item, handoff ? `${label} · ${HANDED_OFF}` : label, { to: handoff ? "main" : d.to, text: handoff ? handedOff(item, text) : text, notice: item.id, ...(d.to.startsWith("auth:") ? {} : { picks: [{ q: item.title, n: o.n, label: o.label, ...(asksDetail ? { note } : {}), ...(d.draft && d.hash ? { hash: d.hash } : {}) }] }), ...(d.reply_to && !handoff ? { replyTo: d.reply_to } : {}), ...(o.action ? { action: o.action } : {}), ...(draftEdit && body.files?.length ? { files: body.files } : {}) }, send);   // `picks` carries the question with the chosen option, so the agent gets the context even from another conversation (intake.ts decisionLines); files: what 직접 수정 attached, for the bot to put on the draft
+	const quiet = handoff ? undefined : noTurnLine(item, o);
+	return (hold ? holdDecision : deliverDecision)(item, handoff ? `${label} · ${HANDED_OFF}` : quiet ? `${label} · ${quiet}` : label, { to: handoff ? "main" : d.to, text: handoff ? handedOff(item, text) : text, notice: item.id, ...(d.to.startsWith("auth:") ? {} : { picks: [{ q: item.title, n: o.n, label: o.label, ...(asksDetail ? { note } : {}), ...(d.draft && d.hash ? { hash: d.hash } : {}) }] }), ...(d.reply_to && !handoff ? { replyTo: d.reply_to } : {}), ...(o.action ? { action: o.action } : {}), ...(draftEdit && body.files?.length ? { files: body.files } : {}) }, quiet ? NO_TURN : send);   // `picks` carries the question with the chosen option, so the agent gets the context even from another conversation (intake.ts decisionLines); files: what 직접 수정 attached, for the bot to put on the draft
 }
+const NO_TURN: DecisionSend = async () => undefined;
 // Sends the answer, and only when that worked is the notice answered. `label` is what the notice then shows as the answer.
 async function deliverDecision(item: Notice, label: string, payload: Parameters<DecisionSend>[0], send: DecisionSend): Promise<{ status: number; body: Record<string, unknown> }> {
 	sending.set(item.id, label);

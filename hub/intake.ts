@@ -8,6 +8,7 @@ import { msg } from "./i18n.ts";
 import { recordCorrection } from "./corrections.ts";
 import { coalesceFor } from "./quick-chat.ts";
 import { recipeAnswer } from "./recipes.ts";
+import { answeredCard, answerLines } from "./card-answer.ts";
 import { askedText, emit, emitDelivery, eventTarget, isPeerMessage, onEmit, type HubEvent } from "./events.ts";
 import { markJudging, openChoices, type ListedChoice } from "./notices.ts";
 import { isDoctorLook } from "./doctor-text.ts";
@@ -82,6 +83,9 @@ function decisionLines(p: Record<string, any>): string[] {
 	const m = msg();
 	const out: string[] = [];
 	if (Array.isArray(p.picks) && p.picks.length) out.push(m.decisionAnswer(p.picks));
+	const card = Array.isArray(p.picks) && p.picks.length === 1 ? answeredCard(p) : undefined;
+	const own = card ? answerLines(card, Number(p.picks[0].n)) : [];
+	if (own.length) return [...out, ...own];
 	const asked = typeof p.reply_to === "string" && (p.picks?.length || p.decision) ? askedText(p.reply_to) : undefined;
 	if (asked) {
 		const flat = asked.replace(/^\s*\[[^\]\n]{1,10}\][ \t]*/, "").replace(/\s+/g, " ").trim();
