@@ -67,16 +67,17 @@ function rvConvRows(t) {
   const av = ic => el("span", { class: "cv-av", "aria-hidden": "true" }, icon(ic));
   const live = s.sessions.filter(x => x.live);
   if (live.length) rows.push({ header: TX("home.sys.running"), sec: true }, ...live.map(x => ({ k: `rv:s:${x.name}`, name: x.title || x.name, hint: x.waiting ? "" : x.status, last: x.at ? { ts: x.at } : null, av: av("lanes"), chips: x.waiting ? [[x.status, "warn"]] : undefined, open: show("home") })));
-  if (s.projects.length) rows.push({ header: TX("common.projects"), sec: true }, ...s.projects.map(p => ({ k: `rv:p:${p.key}`, name: p.name, hint: p.note || "", av: av("projects"), chips: p.live > 0 ? [[TX("relay.live", { n: p.live }), "pri"]] : undefined, open: show("projects") })));
+  if (s.projects.length) rows.push({ header: TX("common.projects"), sec: true }, ...s.projects.map(p => ({ k: `rv:p:${p.key}`, name: p.name, hint: p.note || "", av: av("projects"), chips: p.live > 0 ? [[TX("relay.live", { n: p.live }), "pri"]] : undefined, open: () => relayShow(t, who, "projects", p) })));
   if (!live.length && !s.projects.length) rows.push({ split: true }, { empty: TX("relay.no_sessions") });
   return rows;
 }
 
-/** Choose a relay computer from outside its chat (the 프로젝트 list's computer group) and show it on `view`. */
-function relayShow(t, name, view) {
+/** Choose a relay computer from outside its chat (the 프로젝트 list's computer group) and show it on `view`, with `project` (one of its projects) open over it. */
+function relayShow(t, name, view, project) {
   relayPick(t, name);
   if (target !== t) setTarget(t, true);
   go(view);
+  if (project) rvProject(t, project);
 }
 function relayOpenChat(t) { go("chat", t); relayLoad(t, true); }
 
@@ -102,7 +103,7 @@ function rvBody(name, t, c) {
   if (!c.snap) return [emptyNode(TX("relay.none_title", { name: who }), null, { more: [el("div", { class: "sup", text: TX("relay.none_hint") })] }), rvFoot(t, null)];
   const s = c.snap;
   const head = el("div", { class: "rv-head" }, name === "home" ? null : el("span", { class: "rv-n", text: who }), el("span", { class: "sup", text: TX("relay.updated", { when: rvWhen(c) }) }));
-  const body = name === "projects" ? rvProjects(s) : name === "monitoring" ? rvMonitors(s) : rvHome(s);
+  const body = name === "projects" ? rvProjects(t, s) : name === "monitoring" ? rvMonitors(s) : rvHome(s);
   return [head, ...body, rvFoot(t, s)];
 }
 
@@ -135,12 +136,22 @@ function rvHome(s) {
   }
   return nodes;
 }
-function rvProjects(s) {
+function rvProjects(t, s) {
   if (!s.projects.length) return [emptyNode(TX("relay.no_projects"))];
-  return [el("div", { class: "pl-list" }, ...s.projects.map(p => el("div", { class: "pl-row rv-row", "data-key": p.key },
+  return [el("div", { class: "pl-list" }, ...s.projects.map(p => el("button", { class: "pl-row", type: "button", "data-key": p.key, "aria-label": [p.name, TX("project.open")].join(" · "), onclick: () => rvProject(t, p) },
     el("span", { class: "ico" }, icon("projects")),
     el("span", { class: "pl-b" }, el("span", { class: "pl-1" }, el("span", { class: "pl-n", text: p.name })), p.note ? el("span", { class: "pl-s" }, el("span", { class: "pl-sw", text: p.note })) : null),
-    p.live > 0 ? el("span", { class: "li-end" }, el("span", { class: "tag pri", text: TX("relay.live", { n: p.live }) })) : null)))];
+    el("span", { class: "li-end" }, p.live > 0 ? el("span", { class: "tag pri", text: TX("relay.live", { n: p.live }) }) : null, icon("chev", "chev")))))];
+}
+// One of its projects, opened from a row: what the snapshot says about it, read-only, and the way to ask that computer about it.
+function rvProject(t, p) {
+  const c = RV.by[t], when = c ? rvWhen(c) : "";
+  dialog({ title: p.name, mid: true, body: el("div", { class: "col" },
+    p.note ? el("p", { text: p.note }) : null,
+    p.live > 0 ? el("div", {}, el("span", { class: "tag pri", text: TX("relay.live", { n: p.live }) })) : null,
+    el("div", { class: "sup", text: [targetName(t), when ? TX("relay.updated", { when }) : ""].filter(Boolean).join(" · ") }),
+    el("div", { class: "sup", text: TX("relay.readonly") })),
+    actions: [{ label: TX("relay.open_chat"), kind: "pri", onclick: close => { close(); relayOpenChat(t); } }] });
 }
 function rvMonitor(m) {
   const key = m.conn === "disconnected" ? "disconnected" : m.paused ? "off" : m.result || "", tag = MON_PTAG[key], times = [m.last ? TX("relay.mon_last", { when: rvTime(m.last) }) : "", m.next ? TX("relay.mon_next", { when: rvTime(m.next) }) : ""].filter(Boolean).join(" · ");
