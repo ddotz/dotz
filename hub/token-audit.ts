@@ -562,13 +562,16 @@ export function topSessions(use: SessionUse[], results: Stats[], asked: (s: Stat
 
 /**
  * The usual day among `prior`, the last measured days oldest first: the median of the days with any use (a day the subscription limit blocked reads 0 tokens
- * and is no usual day). An entry covers the KST day before its audit ran (its `use.at`, else the start of its date), so `from`/`to` name those days.
+ * and is no usual day) in the newest unbroken run of measured days, so a day the history does not hold is never inside `from`/`to`. An entry covers the KST
+ * day before its audit ran (its `use.at`, else the start of its date), so `from`/`to` name those days.
  */
 export function usualDay(prior: { date: string; tokens: number; cost: number; use?: { at: number; hours: number } }[]): UsualDay | undefined {
-	const used = prior.filter(d => d.tokens > 0);
+	const days = prior.map(d => kstDate((d.use?.at ?? Date.parse(`${d.date}T00:00:00+09:00`)) - (d.use?.hours ?? 24) * 1800e3));
+	let first = days.length - 1;
+	while (first > 0 && Date.parse(`${days[first]}T00:00:00Z`) - Date.parse(`${days[first - 1]}T00:00:00Z`) <= 864e5) first--;
+	const used = prior.slice(first).filter(d => d.tokens > 0);
 	if (!used.length) return undefined;
-	const covers = (d: (typeof prior)[number]): string => kstDate((d.use?.at ?? Date.parse(`${d.date}T00:00:00+09:00`)) - (d.use?.hours ?? 24) * 1800e3);
-	return { tokens: median(used.map(d => d.tokens)), cost: Number(median(used.map(d => d.cost)).toFixed(2)), from: covers(prior[0]!), to: covers(prior.at(-1)!), days: used.length };
+	return { tokens: median(used.map(d => d.tokens)), cost: Number(median(used.map(d => d.cost)).toFixed(2)), from: days[first]!, to: days.at(-1)!, days: used.length };
 }
 
 function auditEnabled(): boolean {

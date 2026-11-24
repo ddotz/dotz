@@ -371,6 +371,8 @@ describe("each check says what it measured, in numbers", () => {
 		expect(grown({ count: 40, tokens: 20e3, total: 1e9 }, { count: 41, tokens: 1.5e6, total: 1e9 })).toBe("같은 호출 반복: 40 → 41 cases, the one added case is large, under 0.1M → 1.5M tokens (0.15% of all, was under 0.01%)");
 		expect(grown({ count: 0, tokens: 0, total: 1e9 }, { count: 1, tokens: 30e6, total: 1e9 })).toBe("같은 호출 반복: one case of 30.0M tokens (3.00% of all, was 0.00%)");
 		expect(grown({ count: 6, tokens: 4e6, total: 1e9 }, { count: 7, tokens: 3.6e6, total: 0.3e9 })).not.toContain("the one added case is large");
+		expect(ko.doctor.failureGrowth({ byTokens: false, was: { count: 2, tokens: 0, share: 4e-6 }, now: { count: 5, tokens: 0, share: 0.003 } })).toBe("2건 → 5건 (1천 턴당 0.01 미만 → 3.00)");
+		expect(en.doctor.failureGrowth({ byTokens: false, was: { count: 2, tokens: 0, share: 4e-6 }, now: { count: 5, tokens: 0, share: 0.003 } })).toBe("2 → 5 cases (under 0.01 → 3.00 per 1,000 turns)");
 	});
 
 	const warn = (kind: string, cost?: number) => ({ flag: true, kind, who: "x", what: "", amount: "", save: 0, ...(cost === undefined ? {} : { cost }) });
@@ -406,6 +408,32 @@ describe("each check says what it measured, in numbers", () => {
 		expect(r.state.sent).toHaveLength(2);
 		expect(r.state.sent[1]!.text).toContain(`${tokenLead} 경고: 캐시 깨짐 세션 1개 $1.20.`);
 		expect(r.state.sent[1]!.text).not.toContain("비싼 모델 세션");
+	});
+
+	test("tokens: one day of use is said as that day, not as a median, and a row is all chosen only when all of its cost was", () => {
+		const one = { tokens: 50e6, cost: 50, from: "2026-11-16", to: "2026-11-22", days: 1 };
+		const half = [{ kind: "lane" as const, name: "sample-lane-1", model: "model-b", cost: 100, chosen: 50 }];
+		const [ko1] = tokenFindings(T0, { told: [warn("급증")], tokens: 300e6, cost: 160, top: half, usual: one, ownerUse: { sessions: 0, cost: 0 } });
+		expect(ko1!.what).toBe("어제 300.0M 토큰, $160.00를 썼어요 (11월 16일~11월 22일 중 쓴 날은 하루뿐, 그날 $50.00). 큰 세션: sample-lane-1 model-b $100.00(이 중 직접 고른 모델 $50.00, 낭비 아님). 경고: 급증 세션 1개.");
+		cfg.identity = { ...saved, name: saved?.name ?? "sample-1", language: "en" };
+		const [en1] = tokenFindings(T0, { told: [warn("급증")], tokens: 300e6, cost: 160, top: half, usual: one, ownerUse: { sessions: 0, cost: 0 } });
+		expect(en1!.what).toBe("Yesterday used 300.0M tokens, $160.00 (the only day with use from November 16 to November 22: $50.00). Largest sessions: sample-lane-1 model-b $100.00 ($50.00 of it on a model you chose, not waste). Warnings: 급증: 1 session.");
+	});
+
+	test("tokens: the owner's chosen cost under a cent reads as under the smallest step, not $0.00", () => {
+		const chose = () => tokenFindings(T0, { told: [warn("급증")], tokens: 300e6, cost: 160, top, ownerUse: { sessions: 1, cost: 0.004 } })[0]!.evidence;
+		expect(chose()).toEqual(["급증 세션 1개", "직접 고른 비싼 모델: 세션 1개, $0.01 미만. 요청하신 것이라 경고에서 뺐어요."]);
+		cfg.identity = { ...saved, name: saved?.name ?? "sample-1", language: "en" };
+		expect(chose()).toEqual(["급증: 1 session", "Expensive models you chose: 1 session, under $0.01. Not counted as waste."]);
+	});
+
+	test("tokens: the joined line keeps the first finding's lead whole, though a session name holds the warnings marker", () => {
+		const named = [{ kind: "lane" as const, name: "fix 경고: card", model: "model-a", cost: 10, chosen: 0 }];
+		const tonight = tokenFindings(T0, { told: [warn("비싼 모델", 1), warn("급증")], tokens: 100e6, cost: 10, top: named, ownerUse: { sessions: 0, cost: 0 } });
+		const lead = "어제 100.0M 토큰, $10.00를 썼어요. 큰 세션: fix 경고: card model-a $10.00.";
+		expect(ko.doctor.tokens(tonight.map(f => f.what))).toBe(`${lead} 경고: 비싼 모델 세션 1개 $1.00, 급증 세션 1개.`);
+		const earlier = tokenFindings(T0, { told: [warn("캐시 깨짐", 2)], tokens: 50e6, cost: 5, top: [], ownerUse: { sessions: 0, cost: 0 } });
+		expect(ko.doctor.tokens([tonight[0]!.what, earlier[0]!.what])).toBe(`${lead} 경고: 비싼 모델 세션 1개 $1.00, 캐시 깨짐 세션 1개 $2.00.`);
 	});
 
 	test("tokens: the usual day's dates read the same whatever the time zone of the process", () => {
@@ -466,9 +494,24 @@ describe("each check says what it measured, in numbers", () => {
 		const orchestrator = { at: T0 - 95e3, text: "orchestrator restart: web restart (POST /api/orchestrator/restart)" };
 		expect(restartsOf([owner, install, restart]).map(r => r.by)).toEqual(["update"]);
 		expect(restartsOf([orchestrator, owner, restart]).map(r => r.by)).toEqual(["owner"]);
-		expect(restartsOf([orchestrator, restart]).map(r => r.by)).toEqual(["orchestrator"]);
+		expect(restartsOf([{ at: T0 - 100e3, text: "gateway restart requested; waiting for: orchestrator" }, orchestrator, restart]).map(r => r.by)).toEqual(["orchestrator"]);
 		const causes = [{ at: T0 - 80e3, text: "omo engine changed on disk (5.1.70 → 5.1.71)" }, { at: T0 - 10e3, text: "deferred gateway restart goes now (the gateway code changed)" }];
 		expect(restartsOf([...causes, restart]).map(r => r.cause)).toEqual(["the gateway code changed"]);
+	});
+
+	test("a restart goes with the owner's orchestrator restart only when its request waited for the orchestrator and his web restart came inside that wait", async () => {
+		const web = (ms: number) => ({ at: ms, text: "orchestrator restart: web restart (POST /api/orchestrator/restart)" });
+		const gone = (ms: number, waited: number) => ({ at: ms, text: `gateway restart (1 request(s) coalesced, waited ${waited}s)` });
+		const real = [{ at: T0 - 200e3, text: "gateway restart requested; waiting for: orchestrator, conversation session ch:1" }, web(T0 - 6e3), gone(T0, 199)];
+		expect(restartsOf(real).map(r => r.by)).toEqual(["orchestrator"]);
+		const lane = [{ at: T0 - 600e3, text: "gateway restart requested; waiting for: lane:site-fix" }, web(T0 - 480e3), gone(T0, 600)];
+		const unrelated = [web(T0 - 50e3), { at: T0, text: "deferred gateway restart goes now (the gateway code changed)" }, gone(T0 + 1e3, 0)];
+		const before = [web(T0 - 50e3), { at: T0 - 40e3, text: "gateway restart requested; waiting for: orchestrator" }, gone(T0, 40)];
+		for (const rows of [lane, unrelated, before]) expect(restartsOf(rows).map(r => [r.explained, r.by])).toEqual([[false, undefined]]);
+		const rows = [...real, ...[3, 2, 1].map(h => gone(T0 + h * H, 2))].map(r => at(r.at, r.text));
+		writeFileSync(join(dir, "hub.log"), rows.join(""));
+		const [found] = await gateway({ now: T0 + 4 * H, dataDir: dir, home: dir });
+		expect(found!.what).toBe("하루 사이에 게이트웨이가 4번 다시 시작했어요: 웹에서 오케스트레이터를 다시 시작하실 때 함께 1번, 이유를 모르는 것 3번.");
 	});
 
 	test("update, monitor and crash findings say since when, how many times and the last error, reason or start", async () => {
@@ -509,6 +552,24 @@ describe("each check says what it measured, in numbers", () => {
 		expect(w!.what).toBe(`'정시 릴리스' 모니터링이 ${ko.doctor.when(T0 - 5 * H)}부터 258번 연속 실패했어요. 마지막 실행은 아무 출력 없이 끝났어요(종료 코드 1).`);
 		expect(w!.evidence).toEqual([`처음 실패: ${ko.doctor.when(T0 - 5 * H)}`, "연속 실패 258번", "마지막 실행은 아무 출력 없이 끝났어요(종료 코드 1)."]);
 		expect([w!.what, ...w!.evidence].join("\n")).not.toMatch(/257|in a row|unknown|마지막 이유/);
+	});
+
+	test("a monitor's last run is said only from what is that run's: the last logged exit code, and no output only when its last-fail.log was written", async () => {
+		writeFileSync(join(dir, "watches.json"), JSON.stringify([{ id: "c1", name: "price-check", label: "가격 확인", state: { fails: 4, failSince: T0 - 5 * H } }]));
+		const head = `'가격 확인' 모니터링이 ${ko.doctor.when(T0 - 5 * H)}부터 4번 연속 실패했어요.`;
+		const run = async (log: string[], file: string) => {
+			writeFileSync(join(dir, "hub.log"), log.map((l, i) => at(T0 - H + i * 60e3, `watch price-check ${l}`)).join(""));
+			mkdirSync(join(dir, "watches", "c1"), { recursive: true });
+			writeFileSync(join(dir, "watches", "c1", "last-fail.log"), file);
+			return (await watches({ now: T0, dataDir: dir, home: dir }))[0]!;
+		};
+		expect((await run(["failed (2, fail, 3 in a row) script", "failed (1, fail, 4 in a row) unknown"], "")).what).toBe(`${head} 마지막 실행은 아무 출력 없이 끝났어요(종료 코드 1).`);
+		const unknown = await run([], "");
+		expect([unknown.what, unknown.evidence]).toEqual([head, [`처음 실패: ${ko.doctor.when(T0 - 5 * H)}`, "연속 실패 4번"]]);
+		const unwritten = ["failed (1, fail, 3 in a row) unknown", "failed (2, fail, 4 in a row) script", "could not write last-fail.log: EACCES"];
+		expect((await run(unwritten, "")).what).toBe(`${head} 마지막 실행은 실패로 끝났어요(종료 코드 2).`);
+		expect((await run(unwritten, "error: the run before\n")).what).toBe(`${head} 마지막 실행은 실패로 끝났어요(종료 코드 2).`);
+		expect((await run(["failed (2, fail, 3 in a row) script", "could not write last-fail.log: EACCES", "failed (1, fail, 4 in a row) unknown"], "")).what).toBe(`${head} 마지막 실행은 아무 출력 없이 끝났어요(종료 코드 1).`);
 	});
 
 	test("an update error too long for one line goes on over a second evidence line, broken at a word", async () => {

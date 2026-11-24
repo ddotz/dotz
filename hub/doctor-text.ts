@@ -97,8 +97,9 @@ export const doctorEn = {
 	failureTools: (top: string) => `Most often in: ${top}`,
 	tokens: (items: string[]) => joinTokens(items, WARN_EN, kinds => `Sessions used many tokens yesterday: ${kinds}.`),
 	tokenDay: (d: TokenDay, kinds: string[]) =>
-		`Yesterday used ${EN.mega(d.tokens)} tokens, ${EN.dollars(d.cost)}${d.usual ? ` (a usual day: ${EN.dollars(d.usual.cost)}, the median of the ${d.usual.days} day${d.usual.days === 1 ? "" : "s"} with use ${d.usual.from === d.usual.to ? "on" : "from"} ${range(d.usual, "en-US", " to ")})` : ""}.${d.top.length ? ` Largest sessions: ${d.top.map(s => `${s.kind === "orchestrator" ? "main" : s.name} ${s.model} ${EN.dollars(s.cost)}${fullyChosen(s) ? " (a model you chose, not waste)" : s.chosen > 0 ? ` (${EN.dollars(s.chosen)} of it on a model you chose, not waste)` : ""}`.replace(/ +/g, " ")).join(", ")}.` : ""}${WARN_EN}${kinds.join(", ")}.`,
+		`Yesterday used ${EN.mega(d.tokens)} tokens, ${EN.dollars(d.cost)}${!d.usual ? "" : d.usual.days === 1 ? ` (the only day with use ${d.usual.from === d.usual.to ? "on" : "from"} ${range(d.usual, "en-US", " to ")}: ${EN.dollars(d.usual.cost)})` : ` (a usual day: ${EN.dollars(d.usual.cost)}, the median of the ${d.usual.days} days with use ${d.usual.from === d.usual.to ? "on" : "from"} ${range(d.usual, "en-US", " to ")})`}.${d.top.length ? ` Largest sessions: ${d.top.map(s => `${s.kind === "orchestrator" ? "main" : s.name} ${s.model} ${EN.dollars(s.cost)}${fullyChosen(s) ? " (a model you chose, not waste)" : s.chosen > 0 ? ` (${EN.dollars(s.chosen)} of it on a model you chose, not waste)` : ""}`.replace(/ +/g, " ")).join(", ")}.` : ""}${WARN_EN}${kinds.join(", ")}.`,
 	tokenShort: (kind: string, n: number, cost = 0) => `${kind}: ${n} session${n === 1 ? "" : "s"}${cost ? ` ${EN.dollars(cost)}` : ""}`,
+	dollars: EN.dollars,
 	ownerExpensive: (n: number, cost: string) => `Expensive models you chose: ${n} session${n === 1 ? "" : "s"}, ${cost}. Not counted as waste.`,
 	selfUpdate: "dotz",
 	ruleKind: "Code already blocks it",
@@ -170,8 +171,9 @@ export const doctorKo: typeof doctorEn = {
 	failureTools: (top: string) => `자주 나온 도구: ${top}`,
 	tokens: (items: string[]) => joinTokens(items, WARN_KO, kinds => `어제 토큰을 많이 쓴 세션이 있어요: ${kinds}.`),
 	tokenDay: (d: TokenDay, kinds: string[]) =>
-		`어제 ${KO.mega(d.tokens)} 토큰, ${KO.dollars(d.cost)}를 썼어요${d.usual ? ` (평소 하루 ${KO.dollars(d.usual.cost)}: ${range(d.usual, "ko-KR", "~")} 중 쓴 날 ${d.usual.days}일의 중앙값)` : ""}.${d.top.length ? ` 큰 세션: ${d.top.map(s => `${s.kind === "orchestrator" ? "메인" : s.name} ${s.model} ${KO.dollars(s.cost)}${fullyChosen(s) ? "(직접 고른 모델이라 낭비 아님)" : s.chosen > 0 ? `(이 중 직접 고른 모델 ${KO.dollars(s.chosen)}, 낭비 아님)` : ""}`.replace(/ +/g, " ")).join(", ")}.` : ""}${WARN_KO}${kinds.join(", ")}.`,
+		`어제 ${KO.mega(d.tokens)} 토큰, ${KO.dollars(d.cost)}를 썼어요${!d.usual ? "" : d.usual.days === 1 ? ` (${range(d.usual, "ko-KR", "~")} 중 쓴 날은 하루뿐, 그날 ${KO.dollars(d.usual.cost)})` : ` (평소 하루 ${KO.dollars(d.usual.cost)}: ${range(d.usual, "ko-KR", "~")} 중 쓴 날 ${d.usual.days}일의 중앙값)`}.${d.top.length ? ` 큰 세션: ${d.top.map(s => `${s.kind === "orchestrator" ? "메인" : s.name} ${s.model} ${KO.dollars(s.cost)}${fullyChosen(s) ? "(직접 고른 모델이라 낭비 아님)" : s.chosen > 0 ? `(이 중 직접 고른 모델 ${KO.dollars(s.chosen)}, 낭비 아님)` : ""}`.replace(/ +/g, " ")).join(", ")}.` : ""}${WARN_KO}${kinds.join(", ")}.`,
 	tokenShort: (kind: string, n: number, cost = 0) => `${kind} 세션 ${n}개${cost ? ` ${KO.dollars(cost)}` : ""}`,
+	dollars: KO.dollars,
 	ownerExpensive: (n: number, cost: string) => `직접 고른 비싼 모델: 세션 ${n}개, ${cost}. 요청하신 것이라 경고에서 뺐어요.`,
 	selfUpdate: "dotz",
 	ruleKind: "코드가 이미 막음",

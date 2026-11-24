@@ -383,23 +383,26 @@ night run, the morning pass then runs the checks itself); the notice goes out at
 and at which level, and the baselines the checks compare with).
 - *Checks.* gateway: at least 3 `gateway restart (` lines in the hub log in 24 h that nothing explains (a restart is explained when an update was installed during its wait (`self-update #N: updated:`,
   `harness update: gateway restart…` or `harness update <id> #N: updated:`), when the owner asked for it from settings → 업데이트, whose request line names him (`gateway restart requested by
-  owner`; a request line of older code without a requester explains nothing), or when it went with the owner's restart of the orchestrator on the web (`orchestrator restart: web restart (`);
-  an install wins over his request, his request over his orchestrator restart; the wait runs from a minute before the request its `waited Ns` gives; the owner's 지금 재시작 (`gateway restart now (`)
-  and the gateway's start line end those marks, so a later restart is counted). The finding's sentence gives all restarts of the day, how many updates, his requests and his orchestrator restarts
+  owner`; a request line of older code without a requester explains nothing), or when it waited for the orchestrator and the owner restarted it on the web meanwhile (its request line
+  `gateway restart requested…; waiting for: orchestrator…` names `orchestrator`, and `orchestrator restart: web restart (` comes after that line; one before the request or in a wait for something
+  else explains nothing); an install wins over his request, his request over his orchestrator restart; an install or his request counts from a minute before the request its `waited Ns` gives;
+  the owner's 지금 재시작 (`gateway restart now (`) and the gateway's start line end those marks, so a later restart is counted). The finding's sentence gives all restarts of the day, how many updates, his requests and his orchestrator restarts
   explain and how many are left; its lines give each counted restart's time and the last `deferred gateway restart goes now (…)` or `omo engine changed on disk (…)` line of the same wait, else
   that the log does not say who asked. Crashes: at least 1 uncaught stack trace added to `gateway.err.log` since the last run (a night store written before the morning
   re-look existed keeps its crashes); the sentence and lines give each time the gateway started again since the last run with no planned stop before it. sessions: a running session with no
   progress for over 6 h, or one in error and not closed for over 24 h; logins: a login still lost over 12 h after it was lost; watches: failing for over 24 h or 3 runs in a row, said with since when,
   how many runs in a row and the last run (the last line of the watch's `last-fail.log`; an empty one is a run that ended with no output, said with the exit code of its last `watch <name> failed
-  (<code>, …)` log line; a self-heal that worked since the last run is one *fixed* line); disk: the data volume under 10 % or 10 GB free is a finding, under 3 GB free it carries a decision (clean up
+  (<code>, …)` log line; no `last-fail.log` at all is said as a run that failed with that exit code; when `watch <name> could not write last-fail.log` follows that last line, the file is an older
+  run's and only the failure with its exit code is said; with no such log line nothing is said of the last run; a self-heal that worked since the last run is one *fixed* line); disk: the data volume under 10 % or 10 GB free is a finding, under 3 GB free it carries a decision (clean up
   session records older than the keep days, or leave it for a week; nothing is deleted unless the owner picks the first); update: the last harness or self update failed and none worked since,
   said with since when (the first failure after the last success), how many times and the last error line; failures: the failure report's growth thresholds (share up 25 %, at least 1M tokens
   or 10 more occurrences) against a baseline kept in the doctor's file, each grown class said as count and tokens before → after and its share of all tokens last (one case: "1건이 36.8M
   토큰"; one more case than before whose tokens grew: "늘어난 1건이 큰 것";
   a value under the smallest step shown reads "0.1M 미만" / "0.01% 미만"); tokens: one finding per token-audit warning class that matters (`tokens:<class>`, its cost the level), each saying
-  yesterday's tokens and cost, the usual day (the median of the days with any use among the last 7 measured in `~/.dotz/token-audit.json`, a 0-token day the plan blocked left out, with how many
-  days and the days the entries cover, an entry covering the KST day before its audit), the three largest sessions by cost with model (what of a session's cost ran on an expensive model the owner
-  chose is marked as not waste: all of it, or how much) and then its class with its cost; the morning says the told classes in one line under that lead (the audit
+  yesterday's tokens and cost, the usual day (the median of the days with any use among the last 7 measured in `~/.dotz/token-audit.json`, only the newest run of entries with no missing day
+  between them, every 0-token day left out whatever its cause, with how many days and the days the entries cover, an entry covering the KST day before its audit; one day of use is said as
+  that day and its cost, not as a median), the three largest sessions by cost with model (what of a session's cost ran on an expensive model the owner
+  chose is marked as not waste: all of it, or how much; the owner's chosen total in the evidence goes through the same money format) and then its class with its cost; the morning says the told classes in one line under that lead (the audit
   still writes its report `~/.dotz/logs/token-audit-YYYYMMDD.md` and 14 days of totals in `~/.dotz/token-audit.json`; the reflection digest cites them). Every time is in the install's time zone.
 - *Telling.* A finding is told when it is new, when its level reached 1.5x the level last told, or 7 days after it was last told while still present; a resolved one is dropped (back again = new). Nothing
   notable: one log line, nothing posted anywhere. The message's first line is `닥터 점검: <date> · 알릴 것 N · 정할 것 M` (`Doctor check: <date> · N to know · M to decide`; a count with

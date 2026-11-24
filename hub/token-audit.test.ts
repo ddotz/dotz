@@ -1,5 +1,6 @@
 // Nightly token audit on OmO session files: context shrink, projection re-pin and fallback attribution (hub/token-audit.ts).
 import { expect, test } from "bun:test";
+import fc from "fast-check";
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { DATA_DIR } from "./config.ts";
@@ -212,4 +213,28 @@ test("the usual day: the median of the days with use among the last measured one
 	expect(usualDay(prior)).toEqual({ tokens: 90e6, cost: 90, from: "2026-11-16", to: "2026-11-22", days: 5 });
 	expect(usualDay([{ date: "2026-11-23", tokens: 5, cost: 1 }])).toEqual({ tokens: 5, cost: 1, from: "2026-11-22", to: "2026-11-22", days: 1 });
 	expect(usualDay(prior.slice(5))).toBeUndefined();
+});
+
+test("the usual day: a gap in the history is never inside the named range, and two days of use give their mean", () => {
+	const day = (date: string, cost: number) => ({ date, tokens: cost * 1e6, cost, use: { at: Date.parse(`${date}T04:30:00+09:00`), hours: 24 } });
+	const gap = ["10", "11", "20", "21", "22", "23"].map(d => day(`2026-11-${d}`, 60));
+	expect(usualDay(gap)).toEqual({ tokens: 60e6, cost: 60, from: "2026-11-19", to: "2026-11-22", days: 4 });
+	expect(usualDay([day("2026-11-01", 20), day("2026-11-20", 0), day("2026-11-21", 0), day("2026-11-22", 80)])).toEqual({ tokens: 80e6, cost: 80, from: "2026-11-19", to: "2026-11-21", days: 1 });
+	expect(usualDay([day("2026-11-21", 40), day("2026-11-22", 0), day("2026-11-23", 100)])).toEqual({ tokens: 70e6, cost: 70, from: "2026-11-20", to: "2026-11-22", days: 2 });
+});
+
+test("the usual day: for any history with gaps and idle days, every day of the named range is a day an entry covers, and the count is the days with use in it", () => {
+	const base = Date.parse("2026-10-01T04:30:00+09:00");
+	const kst = (ms: number) => new Date(ms + 9 * 3600e3).toISOString().slice(0, 10);
+	fc.assert(
+		fc.property(fc.uniqueArray(fc.record({ offset: fc.integer({ min: 0, max: 40 }), cost: fc.oneof(fc.constant(0), fc.double({ min: 0.001, max: 900, noNaN: true })) }), { selector: d => d.offset, maxLength: 14 }), entries => {
+			const prior = [...entries].sort((a, b) => a.offset - b.offset).slice(-7).map(e => ({ date: kst(base + e.offset * 864e5), tokens: e.cost * 1e6, cost: e.cost, use: { at: base + e.offset * 864e5, hours: 24 } }));
+			const u = usualDay(prior);
+			if (!u) return expect(prior.at(-1)?.tokens ?? 0).toBe(0);
+			const covered = new Set(prior.map(d => kst(d.use.at - 864e5)));
+			for (let t = Date.parse(`${u.from}T00:00:00Z`); t <= Date.parse(`${u.to}T00:00:00Z`); t += 864e5) expect(covered.has(new Date(t).toISOString().slice(0, 10))).toBe(true);
+			expect(u.to).toBe(kst(prior.at(-1)!.use.at - 864e5));
+			expect(u.days).toBe(prior.filter(d => d.tokens > 0 && kst(d.use.at - 864e5) >= u.from).length);
+		}),
+	);
 });

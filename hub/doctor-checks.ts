@@ -78,34 +78,43 @@ const RESTART = /^gateway restart \((.+)\)$/;
 const RESTARTED_ELSEWHERE = /^(gateway restart now \(|hub listening on )/;
 const PLANNED_STOP = /^gateway restart(?: now)? \(/;
 const STARTED = /^hub listening on /;
+const WAIT_BEGINS = /^gateway restart requested(?: by \S+)?(?:; waiting for: ([^;]+))?(?:; coalescing for \d+s)?$/;
 const REQUEST_SLACK_MS = 60e3;
 
 /** What explains a gateway restart: an update it installs, the owner who asked for it, or the owner's restart of the orchestrator it went with. */
 export type RestartReason = "update" | "owner" | "orchestrator";
 /**
  * Every gateway restart in the log rows, oldest first. `by`: a self-update or a harness update was installed, the owner asked for this restart in settings
- * (`gateway restart requested by owner`), or the owner restarted the orchestrator on the web, during its wait (from a minute before it was requested, which
- * its `waited Ns` gives, to the restart); an install wins over the owner, the owner's request over his orchestrator restart. The owner's 지금 재시작 and a
- * gateway start line end those marks, since that restart already took the install. `why` is the log's own text in its parentheses; `cause` the last log line
- * in the same wait that says why it went (a deferred restart going now, an engine change on disk), when there is one.
+ * (`gateway restart requested by owner`), or the owner restarted the orchestrator on the web while this restart waited for it: its request line names
+ * `orchestrator` in `waiting for:` and his web restart comes after that line. An install or the owner's request counts from a minute before the request its
+ * `waited Ns` gives to the restart; an install wins over the owner, the owner's request over his orchestrator restart. The owner's 지금 재시작 and a gateway
+ * start line end those marks, since that restart already took the install. `why` is the log's own text in its parentheses; `cause` the last log line in the
+ * same wait that says why it went (a deferred restart going now, an engine change on disk), when there is one.
  */
 export function restartsOf(rows: { at: number; text: string }[]): { at: number; why: string; explained: boolean; by?: RestartReason; cause?: string }[] {
 	const out: { at: number; why: string; explained: boolean; by?: RestartReason; cause?: string }[] = [];
 	const marks: { at: number; by: RestartReason }[] = [], causes: { at: number; text: string }[] = [];
+	let wait: { at: number; orchestrator: boolean } | undefined;
 	for (const r of rows) {
 		const m = RESTART.exec(r.text);
 		if (!m) {
-			const by = EXPLAINED_BY.find(([re]) => re.test(r.text))?.[1];
-			if (RESTARTED_ELSEWHERE.test(r.text)) marks.length = causes.length = 0;
-			else if (by) marks.push({ at: r.at, by });
+			const by = EXPLAINED_BY.find(([re]) => re.test(r.text))?.[1], begins = WAIT_BEGINS.exec(r.text);
+			if (begins) wait = { at: r.at, orchestrator: (begins[1] ?? "").split(", ").includes("orchestrator") };
+			if (RESTARTED_ELSEWHERE.test(r.text)) {
+				marks.length = causes.length = 0;
+				wait = undefined;
+			} else if (by) marks.push({ at: r.at, by });
 			const cause = RESTART_CAUSES.map(re => re.exec(r.text)?.[1]).find(Boolean);
 			if (cause) causes.push({ at: r.at, text: cause });
 			continue;
 		}
 		const start = r.at - Number(/waited (\d+)s/.exec(m[1]!)?.[1] ?? 0) * 1000 - REQUEST_SLACK_MS;
-		const seen = marks.filter(k => k.at >= start), by = EXPLAINED_BY.map(([, k]) => k).find(k => seen.some(s => s.by === k)), cause = causes.filter(c => c.at >= start).at(-1)?.text;
+		const waitedFor = wait?.orchestrator && wait.at >= start ? wait.at : Infinity;
+		const seen = marks.filter(k => (k.by === "orchestrator" ? k.at >= waitedFor : k.at >= start));
+		const by = EXPLAINED_BY.map(([, k]) => k).find(k => seen.some(s => s.by === k)), cause = causes.filter(c => c.at >= start).at(-1)?.text;
 		out.push({ at: r.at, why: m[1]!, explained: by !== undefined, ...(by ? { by } : {}), ...(cause ? { cause } : {}) });
 		marks.length = causes.length = 0;
+		wait = undefined;
 	}
 	return out;
 }
@@ -203,12 +212,16 @@ export const logins: DoctorCheck = ({ now, dataDir }) => {
 const lastLine = (text: string): string => text.split("\n").map(l => l.trim()).filter(Boolean).at(-1) ?? "";
 const clip = (text: string): string => wrapLines(text, 1)[0] ?? "";
 const WATCH_FAILED = /^watch (.+) failed \(([^,()]+), /;
+const WATCH_UNWRITTEN = /^watch (.+) could not write last-fail\.log: /;
 
 export const watches: DoctorCheck = ({ now, dataDir, last }) => {
-	const t = msg().doctor, out: Finding[] = [], all = watchesOf(dataDir), rows = logRows(dataDir), exitCodes = new Map<string, string>();
+	const t = msg().doctor, out: Finding[] = [], all = watchesOf(dataDir), rows = logRows(dataDir), exitCodes = new Map<string, string>(), unwritten = new Set<string>();
 	for (const r of rows) {
-		const m = WATCH_FAILED.exec(r.text);
-		if (m) exitCodes.set(m[1]!, m[2]!);
+		const m = WATCH_FAILED.exec(r.text), stale = WATCH_UNWRITTEN.exec(r.text);
+		if (m) {
+			exitCodes.set(m[1]!, m[2]!);
+			unwritten.delete(m[1]!);
+		} else if (stale) unwritten.add(stale[1]!);
 	}
 	for (const w of all) {
 		const fails = w.state?.fails ?? 0, failing = failingFor(w, now);
@@ -216,7 +229,7 @@ export const watches: DoctorCheck = ({ now, dataDir, last }) => {
 		if (fails < T.watchFails && failing <= T.watchFailH * HOUR) continue;
 		const failSince = failing ? w.state?.failSince : undefined, since = failSince ? t.when(failSince) : "";
 		const failLog = join(dataDir, "watches", w.id, "last-fail.log"), output = lastLine(tailText(failLog, 4096)), code = exitCodes.get(w.name);
-		const lastRun = output ? t.lastReason(output) : code === undefined ? "" : existsSync(failLog) ? t.noOutput(code) : t.exitCode(code);
+		const lastRun = unwritten.has(w.name) ? (code === undefined ? "" : t.exitCode(code)) : output ? t.lastReason(output) : code === undefined ? "" : existsSync(failLog) ? t.noOutput(code) : t.exitCode(code);
 		const evidence = [...(since ? [t.firstFailed(since)] : []), t.failedInRow(fails), ...(lastRun ? wrapLines(lastRun, 2) : [])];
 		out.push(asking(found(`watches:${w.name}`, "watches", now, t.watchFailing(w.label ?? w.name, fails, since, clip(lastRun)), evidence, fails)));
 	}
@@ -298,7 +311,7 @@ export function tokenFindings(now: number, a: Pick<AuditResult, "told" | "tokens
 		byKind.set(f.kind, { n: k.n + 1, cost: k.cost + (f.cost ?? 0) });
 	}
 	const day = { tokens: a.tokens, cost: a.cost, top: a.top, ...(a.usual ? { usual: a.usual } : {}) };
-	const chose = a.ownerUse.sessions ? [t.ownerExpensive(a.ownerUse.sessions, `$${a.ownerUse.cost.toFixed(2)}`)] : [];
+	const chose = a.ownerUse.sessions ? [t.ownerExpensive(a.ownerUse.sessions, t.dollars(a.ownerUse.cost))] : [];
 	return [...byKind].map(([kind, k]) => {
 		const short = t.tokenShort(kind, k.n, k.cost);
 		return asking(found(`tokens:${kind}`, "tokens", now, t.tokenDay(day, [short]), [short, ...chose], Math.round(k.cost * 100) / 100 || k.n));
