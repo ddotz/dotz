@@ -68,6 +68,15 @@ const DROPPED: Drop[] = [
 const answer = (lines: Line[] = LINES, dropped: Drop[] = DROPPED) => JSON.stringify({ lines, dropped });
 const COMPACTED = ["2030-01-08: 이모지는 하나까지", "2030-01-10: 존댓말로 쓴다", "2030-01-12: 끝인사는 한 줄로 짧게", "2030-01-13: 일정 메일에는 마감 날짜를 꼭 적는다"];
 
+test("a correction a compaction keeps word for word is not written to the journal", async () => {
+	write(THIRTEEN);
+	const kept = [...LINES.slice(0, 3), { text: "마감 날짜는 꼭 적어", sources: ["C13"] }];
+	await compactCorrections(ROOM, { learnCall: model(() => answer(kept, DROPPED)).learnCall, now: day("2030-02-01") }, { force: true });
+	expect(profileBullets(ROOM, HEADINGS.corrections)).toContain("2030-01-13: 마감 날짜는 꼭 적어");
+	expect(journalEntries().map(e => e.line)).not.toContain("2030-01-13: 마감 날짜는 꼭 적어");
+	expect(journalEntries()).toHaveLength(12);
+});
+
 test("13 corrections and a valid answer leave the merged lines dated by their newest source, 13 journal entries, and a dropped line comes back with --restore", async () => {
 	write(THIRTEEN);
 	const m = model(() => `\`\`\`json\n${answer()}\n\`\`\``);

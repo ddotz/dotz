@@ -153,10 +153,11 @@ export async function compactCorrections(key: ToneKey | "install", deps: Pick<Fl
 	if (after.length === listed.length && after.every((l, i) => l === listed[i])) return { before: listed.length, after: after.length };
 	const into = new Map(kept.flatMap(k => k.sources.map(s => [s, k.line] as const)));
 	const at = (deps.now ?? (() => new Date()))().toISOString();
-	const entries = listed.map((line, i): JournalEntry => {
+	const entries = listed.flatMap((line, i): JournalEntry[] => {
 		const newLine = into.get(i);
 		const where = { at, profile, heading: HEADINGS.corrections, line };
-		return newLine === undefined ? { ...where, by: "compact", why: "dropped", newLine: "" } : { ...where, by: "compact", why: "merged", newLine };
+		if (newLine === line) return [];
+		return [newLine === undefined ? { ...where, by: "compact", why: "dropped", newLine: "" } : { ...where, by: "compact", why: "merged", newLine }];
 	});
 	if (!rewriteSection(key, HEADINGS.corrections, listed, after, () => journalAdd(entries))) {
 		console.error(`reply draft: ${what}: its lines changed while the model was asked`);
