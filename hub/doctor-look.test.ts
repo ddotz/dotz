@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import fc from "fast-check";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { DOCTOR_LOOK_EN, DOCTOR_LOOK_KO, doctorEn, doctorKo, doctorLookAsk, isDoctorLook } from "./doctor-text.ts";
+import { DOCTOR_LOOK_EN, DOCTOR_LOOK_KO, doctorEn, doctorKo, doctorLookAsk, doctorLookButtons, isDoctorLook } from "./doctor-text.ts";
 import { diskReader, loadCatalog } from "./web-i18n.ts";
 
 type Line = { text: string; look: boolean; hint: boolean; sub: boolean; subs: string[] };
@@ -105,6 +105,12 @@ for (const { lang, t, mark, day, web: w } of LANGS) {
 				expect(reply).toBe(doctorLookAsk[lang](day, `${restarted} (${more.map(x => x.trim()).join("; ")})`));
 				expect(isDoctorLook(reply)).toBe(true);
 			}));
+		});
+
+		test("the hub knows each word the web's button reads, so a told line copied from the page in any state of its button is a look-up", () => {
+			const catalog = loadCatalog(lang, diskReader(web));
+			expect(["go", "sending", "sent", "again"].map(k => catalog[`home.doctor_look.${k}`])).toEqual(doctorLookButtons[lang]);
+			for (const word of doctorLookButtons[lang]) expect(isDoctorLook(`${restarted} ${word}\n${subs[0]}\n${t.subMore(2)}`)).toBe(true);
 		});
 
 		test("property: only a told line ending in the mark gets a button, never a sub-line under it, and it gives back the line without it", () => {

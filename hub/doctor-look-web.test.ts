@@ -3,6 +3,7 @@ import { cardBlock } from "./choices.ts";
 import { DOCTOR_LOOK_KO, doctorKo as t, doctorLookAsk, isDoctorLook } from "./doctor-text.ts";
 import { emit } from "./events.ts";
 import { listNotices, resetNoticesForTest } from "./notices.ts";
+import { typedAnswer } from "./notices-rules.ts";
 import { fakeHub, idleState, inbox, json, on } from "./test-web.ts";
 
 const DAY = "11월 24일";
@@ -399,5 +400,36 @@ for (const width of [390, 1280]) {
 			expect([rows[1]!.color === rows[0]!.color, rows[2]!.color === rows[0]!.color]).toEqual([false, false]);
 			await run(`ntSheetClose()`);
 		});
+
+		test("a told line copied from the page with its sub-lines, whatever its button reads, is a look-up that closes no open card", async () => {
+			subbed = true;
+			stored.length = 0;
+			await view.navigate(`${hub.origin}/`);
+			await run(`localStorage.clear()`);
+			await view.navigate(`${hub.origin}/`);
+			await open("alert", TS.subbed);
+			const btn = `${at(TS.subbed)}.querySelector(".dl-btn")`;
+			const copy = `(() => { const li = ${at(TS.subbed)}.querySelectorAll("li"), s = getSelection(), r = document.createRange(); r.setStart(li[0], 0); r.setEnd(li[2], li[2].childNodes.length); s.removeAllRanges(); s.addRange(r); return s.toString(); })()`;
+			const copied: string[] = [await ev<string>(copy)];
+			down = true;
+			await run(`${btn}.click()`);
+			await waitFor(`${btn}.textContent === "보내는 중"`);
+			copied.push(await ev<string>(copy));
+			refuse = "보낼 글 목록에서 거절됐어요";
+			down = false;
+			await waitFor(`${btn}.textContent === "다시 보내기"`, 20_000);
+			copied.push(await ev<string>(copy));
+			refuse = "";
+			await run(`${btn}.click()`);
+			await waitFor(`${btn}.textContent === "보냈어요"`);
+			copied.push(await ev<string>(copy));
+			const disk = listNotices(300).items.find(n => n.kind === "decision" && n.title.startsWith(t.diskSubject))!;
+			expect(copied.map(c => c.split("\n")[0])).toEqual(["원인 찾기", "보내는 중", "다시 보내기", "보냈어요"].map(w => `${RESTARTED} ${w}`));
+			for (const text of copied) {
+				expect(text).toContain(SUBS[0]);
+				expect(isDoctorLook(text)).toBe(true);
+				expect(typedAnswer({ ts: minutesAgo(0), kind: "message", source: "web", channel: "web:alert", author: "local", text }, "alert")(disk)).toBe(false);
+			}
+		}, 30_000);
 	});
 }

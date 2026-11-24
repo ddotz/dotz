@@ -25,8 +25,8 @@ const titled = (q: string, conv: string | undefined): Notice | undefined => {
 };
 
 function answeredCard(p: { decision?: unknown; picks?: unknown; channel?: unknown }): Notice | undefined {
-	if (typeof p.decision === "string" && p.decision) return items.find(n => n.id === p.decision && !!n.decision);
-	const picks = Array.isArray(p.picks) ? p.picks : [];
+	const picks = Array.isArray(p.picks) ? p.picks : [], named = typeof p.decision === "string" ? p.decision : picks.length === 1 ? picks[0]?.decision : undefined;
+	if (typeof named === "string" && named) return items.find(n => n.id === named && !!n.decision);
 	return picks.length === 1 && typeof picks[0]?.q === "string" ? titled(picks[0].q, typeof p.channel === "string" ? eventTarget(p as HubEvent) : undefined) : undefined;
 }
 

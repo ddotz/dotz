@@ -43,14 +43,25 @@ export const doctorLookAsk = {
 	en: (day: string, line: string) => `Please find the cause of this item from the ${day} doctor check: ${line}`,
 	ko: (day: string, line: string) => `${day} 닥터 점검에서 알린 이 일의 원인을 찾아봐 주세요: ${line}`,
 };
+/** The word the web's look-up button shows in place of the mark, by its state (`home.doctor_look.go`, `.sending`, `.sent`, `.again` in `web/i18n`), by language. */
+export const doctorLookButtons = { en: ["Find the cause", "Sending", "Sent", "Send again"], ko: ["원인 찾기", "보내는 중", "보냈어요", "다시 보내기"] };
 const SUB_LINE = /^\s*[-•◦*]\s|^\s+\S/;
+const copiedLook = (t: string, alone: boolean): boolean =>
+	Object.values(doctorLookButtons).flatMap(words => (alone ? words.slice(0, 1) : words)).some(w => {
+		const line = t.slice(0, -w.length - 1);
+		return t.endsWith(` ${w}`) && line.includes(" ") && /[^\s.…][.…]$/.test(line);
+	});
 /**
  * Whether an owner's message asks to look into a told line: the look-up reply in either language, or the told line sent back with its mark; a told line
- * copied with its sub-lines (each on its own line, indented or with a list mark) counts as that line.
+ * copied with its sub-lines (each on its own line, indented or with a list mark) and the hint line under them counts as that line. A told line copied from
+ * the web page, where the mark is a button, ends in the button's word after the line's last stop (`… 실패했어요. 보냈어요`) and its sub-lines lose their
+ * indent and mark: every line under it counts as its sub-line or hint. Copied alone, with no line under it, only the button's first word counts
+ * (`… 실패했어요. 원인 찾기`): the owner's own sentence may end in the others (`네, 확인했어요. 보냈어요`).
  */
 export function isDoctorLook(text: string): boolean {
-	const [first = "", ...rest] = text.trim().split("\n");
-	if (rest.length) return rest.every(l => !l.trim() || SUB_LINE.test(l)) && isDoctorLook(first.replace(/^\s*[-•*]\s+/, ""));
+	const [first = "", ...rest] = text.trim().split("\n"), head = first.replace(/^\s*[-•*]\s+/, "").trim();
+	if (copiedLook(head, !rest.some(l => l.trim()))) return true;
+	if (rest.length) return rest.every(l => !l.trim() || SUB_LINE.test(l) || [doctorEn.lookHint, doctorKo.lookHint].includes(l.trim())) && isDoctorLook(head);
 	const t = first.trim();
 	if (t.endsWith(DOCTOR_LOOK_EN) || t.endsWith(DOCTOR_LOOK_KO)) return true;
 	return Object.values(doctorLookAsk).some(ask => {

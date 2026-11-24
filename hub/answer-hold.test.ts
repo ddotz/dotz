@@ -245,3 +245,14 @@ test("a stronger-model card is not held: its answer acts on the proposal at once
 		rmSync(dir, { recursive: true, force: true });
 	}
 });
+
+test("a card whose web answer is held stays open when the owner wrote in its conversation and its author posts a new card meanwhile: the held answer goes out when the window ends", async () => {
+	const [a, b] = cards();
+	emit("inbox", { ts: new Date(Date.now() + 1000).toISOString(), kind: "message", source: "web", channel: "web:alert", author: "owner", mid: "m-words", text: "이거 왜 이래요?" });
+	await answerDecision(a!.id, { n: 1, hold: true }, ok);
+	emit("outbox", { ts: new Date(Date.now() + 2000).toISOString(), kind: "out", source: "gateway", target: "alert", text: `메일 확인: 3번 연속 실패했어요\n${watchChoice("메일 확인", "failed 3 times in a row")}` });
+	expect([a!.decision!.state, b!.decision!.state]).toEqual(["open", "answered"]);
+	await advance(ANSWER_HOLD_MS);
+	expect(sent.map(s => s.notice)).toEqual([a!.id]);
+	expect(a!.decision!).toMatchObject({ state: "answered", answer: "1) 찾아봐요" });
+});

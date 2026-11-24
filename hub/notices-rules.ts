@@ -149,10 +149,11 @@ export function authorOf(e: HubEvent): string | undefined {
 	const src = String(e.source ?? "");
 	return src.startsWith("lane:") || src === "orchestrator" || src === "gateway" ? src : undefined;
 }
-/** Which open decisions in conversation `to` message `e` answers by its words. An agent's post (AGENT_AUTHOR, the owner's terminal included) answers only an option of a card with options, never a send-approval card or a card of an edit chain (editChainCard), and naming the card or quoting its question gives it no more. */
+/** Which open decisions in conversation `to` message `e` answers by its words. An answer that names its card (a web button's `decision`, the card id a Discord button's one pick carries) answers that card only. An agent's post (AGENT_AUTHOR, the owner's terminal included) answers only an option of a card with options, never a send-approval card or a card of an edit chain (editChainCard), and naming the card or quoting its question gives it no more. */
 export const typedAnswer = (e: HubEvent, to: string) => {
 	const agent = e.author === AGENT_AUTHOR;
-	const id = typeof e.decision === "string" ? e.decision : "";
+	const [only] = Array.isArray(e.picks) && e.picks.length === 1 ? e.picks : [], pick: unknown = typeof only === "object" && only && "decision" in only ? only.decision : undefined;
+	const id = typeof e.decision === "string" ? e.decision : typeof pick === "string" ? pick : "";
 	const text = String(e.text ?? "").trim();
 	const quoted = (e.reply as { id?: unknown } | undefined)?.id;
 	const quotesAsk = (i: Notice) => typeof quoted === "string" && quoted !== "" && i.decision!.reply_to === quoted && i.decision!.group === 1;

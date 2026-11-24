@@ -85,7 +85,7 @@ const noteOf = (d: Interaction): string => (fieldOf(d, NOTE_FIELD) ?? "").replac
 
 /** `edit`: the owner's own text from a draft's 고치기 form, when he changed it (saved as written before his words, if any, revise it).
  * Resolves to why the pick was refused, if it was (a draft that changed, a send already waiting). */
-type Answer = (target: string, text: string, picks: Pick[], edit?: string) => void | Promise<string | undefined>;
+type Answer = (target: string, text: string, picks: Pick[], edit?: string, shown?: string) => void | Promise<string | undefined>;
 let answer: Answer = () => {
 	throw new Error("no answer handler");
 };
@@ -146,7 +146,7 @@ export async function askInteraction(d: Interaction, deps: AskDeps): Promise<voi
 		return deps.reply(d, 4, ephemeral(m.notOwner));
 	}
 	const content = String(d.message?.content ?? "");
-	const { question, options } = parseChoices(content);
+	const { question: asked, options } = parseChoices(content), question = asked?.startsWith(`${TONE_EMOJI.ask} `) ? asked.slice(TONE_EMOJI.ask.length + 1) : asked;
 	const draft = !!parseDraftApproval(content)?.ref;
 	const picked = options.find(o => o.n === parsed.n);
 	if (!picked) return deps.reply(d, 4, ephemeral(m.finished));
@@ -172,7 +172,7 @@ export async function askInteraction(d: Interaction, deps: AskDeps): Promise<voi
 	try {
 		// A stronger-model card is acted on before the answer reaches the asker, as on the web (hub/routes.ts deliverAnswer).
 		await escalations()?.answer({ to: parsed.target, label: picked.label }).catch(e => log(`stronger-model answer failed: ${(e as Error).message}`));
-		refusal = (await (deps.answer ?? answer)(parsed.target, text, question ? [{ q: question, n: picked.n, label: picked.label, ...(note ? { note } : {}) }] : [], edit)) ?? undefined;
+		refusal = (await (deps.answer ?? answer)(parsed.target, text, question ? [{ q: question, n: picked.n, label: picked.label, ...(note ? { note } : {}) }] : [], edit, content)) ?? undefined;
 	} catch (e) {
 		log(`ask ${parsed.target} answer failed: ${e}`);
 		return deps.reply(d, 4, ephemeral(m.answerFailed));

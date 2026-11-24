@@ -84,16 +84,32 @@ export function laterNotice(id: unknown, body: { for?: unknown }): CardReply {
 	return { status: 200, body: { ok: true, item } };
 }
 
+const shows = (shown: string) => {
+	const said = shown.split("\n").map(l => l.trim());
+	return (n: Notice): boolean => !!n.decision!.evidence?.length && n.decision!.evidence.every(l => said.some(s => s.endsWith(l)));
+};
+const longest = (cards: Notice[]): Notice | undefined => cards.reduce<Notice | undefined>((best, n) => (best && best.decision!.evidence!.join("").length >= n.decision!.evidence!.join("").length ? best : n), undefined);
+
+/** Of `same`, open cards that share a title (oldest first), the one whose own lines each end a line of `shown`, the text of the Discord message; when the lines
+ * of several do (one card's line ends with another's whole line), the one with the most text, else the oldest. */
+export function shownCard(same: Notice[], shown: string): Notice | undefined {
+	return (same.length > 1 ? longest(same.filter(shows(shown))) : undefined) ?? same[0];
+}
+
+/** The card a Discord button pick on `question` in conversation `conv` or its Discord `target` answers, in any state (a closed card keeps its Discord buttons):
+ * of the cards of that title, the open one whose own lines `shown` shows, else the closed one whose lines it shows, else the oldest open one, else the newest. */
+export function pickedCard(target: string, conv: string, question: string, shown = ""): Notice | undefined {
+	const same = items.filter(n => !!n.decision && (n.decision.to === target || n.decision.to === conv) && n.title === question), open = same.filter(n => n.decision!.state === "open"), own = same.filter(shows(shown));
+	return longest(own.filter(n => open.includes(n))) ?? longest(own) ?? open[0] ?? same.at(-1);
+}
+
 /**
  * The open card a Discord card with `question` in conversation `conv` stands for: the one of that title, else one whose title holds it or is held in it; none
- * when no open card matches (the card closed). Cards that have an id may share a title: of several, the one whose own lines each end a line of `shown`,
- * the text of the Discord message (a whole line, so a line that only starts another card's line does not count), else the oldest.
+ * when no open card matches (the card closed). Cards that have an id may share a title: of several, the one `shown` shows (shownCard).
  */
 export function cardAsked(conv: string, question: string, shown = ""): string | undefined {
-	const open = items.filter(n => isOpenDecision(n) && plainCard(n.decision!) && n.decision!.to === conv), same = open.filter(n => n.title === question);
-	const said = shown.split("\n").map(l => l.trim());
-	const own = same.length > 1 ? same.find(n => !!n.decision!.evidence?.length && n.decision!.evidence.every(l => said.some(s => s.endsWith(l)))) : undefined;
-	return (own ?? same[0] ?? open.find(n => !!question && (question.includes(n.title) || n.title.includes(question))))?.id;
+	const open = items.filter(n => isOpenDecision(n) && plainCard(n.decision!) && n.decision!.to === conv);
+	return (shownCard(open.filter(n => n.title === question), shown) ?? open.find(n => !!question && (question.includes(n.title) || n.title.includes(question))))?.id;
 }
 
 function pastHalf(n: Notice, at: string): boolean {

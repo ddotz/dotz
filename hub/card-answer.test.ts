@@ -1,20 +1,25 @@
 import { beforeEach, expect, test } from "bun:test";
 import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { discordGatewayAnswer, webAnswer } from "./approval-wire.ts";
+import { discordGatewayAnswer, discordPicks, webAnswer } from "./approval-wire.ts";
+import { ASK_PREFIX, askInteraction } from "./askbuttons.ts";
 import { cardBlock } from "./choices.ts";
 import { DATA_DIR, paths } from "./config.ts";
 import { compose, type DoctorStore, doctorPost } from "./doctor.ts";
 import type { Finding } from "./doctor-types.ts";
+import type { Interaction } from "./discord.ts";
+import { buildPayloads } from "./discord-format.ts";
 import { emit, type HubEvent } from "./events.ts";
 import { msg } from "./i18n.ts";
 import { inboxText } from "./intake.ts";
 import { allNotices, flushNotices, reopenNotices, resetNoticesForTest } from "./notices.ts";
 import type { Notice } from "./notices-types.ts";
+import { ownerText } from "./owner-text.ts";
 import { type DecisionSend, sendHeldNow } from "./notices-answers.ts";
 import { reviewCard } from "./prompt-review.ts";
 import { ruleCard } from "./prompt-health.ts";
 import { AGENT_AUTHOR } from "./agent-author.ts";
+import { watchCardId, watchChoice } from "./watch-ask.ts";
 
 type Payload = Parameters<DecisionSend>[0];
 const H = 3600e3;
@@ -438,4 +443,134 @@ test("words in the sheet that say more than an option's name go to the model, al
 	expect((await webAnswer(card.id, { note: said }, "local", async a => void sent.push(a))).status).toBe(200);
 	expect(sent.map(a => a.text)).toEqual([said]);
 	expect(stored(card).decision!.answer).toBe(said);
+});
+
+const TWIN_LINES = ["- 첫 줄이에요.", "- 오너 메시지만 지시예요. 아주 길게 이어지는 문장이라 카드 제목에는 앞부분만 들어가요. 둘째", "- 오너 메시지만 지시예요. 아주 길게 이어지는 문장이라 카드 제목에는 앞부분만 들어가요. 셋째"];
+const lineFinding = (key: string, line: number): Finding => {
+	const change = { file: RULES, line, from: TWIN_LINES[line - 1]!, to: `${TWIN_LINES[line - 1]} (고침)` };
+	const { evidence, ...decide } = reviewCard({ kind: "conflict", shown: "RULES.md", change, why: `이유-${key}` });
+	return { key, area: "prompt", what: "REVIEW", evidence, since: Date.now(), level: 1, decide, change };
+};
+async function postedCards(...found: [string, number][]): Promise<{ card: Notice; shown: string }[]> {
+	writeFileSync(RULES, `${TWIN_LINES.join("\n")}\n`);
+	const shown: string[] = [];
+	for (const [key, line] of found) {
+		await morning([lineFinding(key, line)]);
+		shown.push(outbox().at(-1)!.text);
+	}
+	return found.map(([key], i) => ({ card: decisions().find(c => c.decision!.card_id === key)!, shown: shown[i]! }));
+}
+const changeOption = (card: Notice): number => card.decision!.options.find(o => !o.keep)!.n;
+const leaveOption = (card: Notice): number => card.decision!.options.find(o => o.keep)!.n;
+async function discordButton(n: number, shown: string): Promise<{ refusal?: string; turn?: string }> {
+	const said: string[] = [];
+	let turn: string | undefined;
+	const click = { id: "i", token: "t", type: 3, member: { user: { id: "owner-1" } }, message: { content: shown }, data: { custom_id: `${ASK_PREFIX}:alert:${n}` } } as Interaction;
+	await askInteraction(click, {
+		owner: "owner-1",
+		reply: async (_d, type, data) => void (type === 4 && said.push(data && typeof data === "object" && "content" in data ? String(data.content) : "")),
+		answer: async (target, text, asked, edit, message) => {
+			const picks = discordPicks(target, "alert", asked, message), r = await discordGatewayAnswer(target, "alert", text, picks, edit);
+			if (r) return r.error;
+			const e = { kind: "message", ts: tick(), source: "discord", channel: target, message_id: "", author: "owner", text, picks };
+			emit("inbox", e);
+			turn = inboxText(e);
+			return undefined;
+		},
+	});
+	return { ...(said.length ? { refusal: said[0] } : {}), ...(turn === undefined ? {} : { turn }) };
+}
+
+test("of two open doctor cards with one title, a Discord Leave closes the card its own message shows, with no model turn, and the other stays open", async () => {
+	for (const tapped of [0, 1]) {
+		resetNoticesForTest();
+		const twins = await postedCards(["prompt:review:aaaa", 2], ["prompt:review:bbbb", 3]);
+		expect(twins[0]!.card.title).toBe(twins[1]!.card.title);
+		const { card, shown } = twins[tapped]!, other = twins[1 - tapped]!.card;
+		expect(await discordButton(leaveOption(card), shown)).toEqual({});
+		expect([stored(card).decision!.state, stored(other).decision!.state]).toEqual(["answered", "open"]);
+		expect(stored(card).decision!.answer).toContain(msg().answerKept);
+	}
+});
+
+test("of two open doctor cards with one title, a Discord change pick hands the model the card its own message shows: its lines, its edit and its confirm tie; the other stays open", async () => {
+	const [a, b] = await postedCards(["prompt:review:aaaa", 2], ["prompt:review:bbbb", 3]);
+	const { turn } = await discordButton(changeOption(a!.card), a!.shown);
+	expect(turn).toContain("이유-prompt:review:aaaa");
+	expect(turn).not.toContain("이유-prompt:review:bbbb");
+	expect(stored(a!.card).confirm_ask?.edit).toMatchObject({ line: 2, from: TWIN_LINES[1] });
+	expect(stored(b!.card).confirm_ask).toBeUndefined();
+	expect([stored(a!.card).decision!.state, stored(b!.card).decision!.state]).toEqual(["answered", "open"]);
+});
+
+test("of two open doctor cards with one title, a Discord pick is refused as held only on the card whose own web answer is held", async () => {
+	const [a, b] = await postedCards(["prompt:review:aaaa", 2], ["prompt:review:bbbb", 3]);
+	await answer(b!.card, leaveOption(b!.card), true);
+	expect(await discordButton(leaveOption(a!.card), a!.shown)).toEqual({});
+	expect(stored(a!.card).decision!.state).toBe("answered");
+	const held = b!.card.decision!.options.find(o => o.keep)!.label.replace(/^\d+\)\s*/, "");
+	expect((await discordButton(changeOption(b!.card), b!.shown)).refusal).toContain(held);
+	await sendHeldNow();
+});
+
+test("a Discord button closes its own card only: another open card in that channel with an option of the same number stays open, whatever its title", async () => {
+	const [a, b] = await postedCards(["prompt:review:aaaa", 1], ["prompt:review:bbbb", 2]);
+	expect(a!.card.title).not.toBe(b!.card.title);
+	await discordButton(changeOption(a!.card), a!.shown);
+	expect([stored(a!.card).decision!.state, stored(b!.card).decision!.state, stored(b!.card).confirm_ask]).toEqual(["answered", "open", undefined]);
+	const watch = `메일 확인: 3번 연속 실패했어요\n${watchChoice("메일 확인", "failed 3 times in a row")}`;
+	emit("outbox", { ts: tick(), kind: "out", source: "gateway", target: "alert", nk: "alert", text: watch, card_ids: [watchCardId("mail")] });
+	await discordButton(1, watch);
+	expect(decisions().find(c => c.decision!.card_id === watchCardId("mail"))!.decision!.state).toBe("answered");
+	expect(stored(b!.card).decision!.state).toBe("open");
+});
+
+test("a pick stored without its card's id, as older code wrote it, and a Discord message of older code still reach their card by its title", async () => {
+	const [a] = await postedCards(["prompt:review:aaaa", 2]), o = a!.card.decision!.options.find(x => x.n === changeOption(a!.card))!;
+	const pick = { q: a!.card.title, n: o.n, label: o.label };
+	expect(discordPicks("alert", "alert", [pick], `${a!.card.title}\n1) ${o.label}`)).toEqual([{ ...pick, decision: a!.card.id }]);
+	const e = { kind: "message", ts: tick(), source: "discord", channel: "alert", message_id: "", author: "owner", text: `${o.n}) ${o.label}`, picks: [pick] };
+	emit("inbox", e);
+	expect(inboxText(e)).toContain("이유-prompt:review:aaaa");
+	expect(stored(a!.card).decision!.state).toBe("answered");
+});
+
+const asDiscord = (text: string): string => buildPayloads(ownerText(text), undefined, 1200).at(-1)!.content;
+const mailCard = (key: string, line: string): string => {
+	const text = `점검 결과예요\n${cardBlock({ subject: "메일 확인", question: "원인을 확인할까요?", evidence: [line], options: [{ name: "원인 확인", result: "찾아봐요" }, { name: "그대로 두기", result: "그대로" }] })}`;
+	emit("outbox", { ts: tick(), kind: "out", source: "gateway", target: "alert", text, card_ids: [key] });
+	return text;
+};
+const idCard = (key: string): Notice => decisions().find(c => c.decision!.card_id === key)!;
+
+test("a Discord button on a plain [ask] whose question is its first line, which Discord shows with the tone emoji, closes that card only", async () => {
+	const [doctor] = await postedCards(["prompt:review:aaaa", 2]);
+	const ask = "[ask] 지금 배포할까요?\n1) 해요\n2) 두기";
+	emit("outbox", { ts: tick(), kind: "out", source: "orchestrator", target: "alert", text: ask });
+	const asked = decisions().find(c => c.decision!.to === "alert" && !c.decision!.card_id)!;
+	await discordButton(1, asDiscord(ask));
+	expect([stored(asked).decision!.state, stored(doctor!.card).decision!.state, stored(doctor!.card).confirm_ask]).toEqual(["answered", "open", undefined]);
+});
+
+test("a Discord button on a card that already closed is refused as finished: it answers neither the open card of the same title nor another card with that option number", async () => {
+	const [a, b] = await postedCards(["prompt:review:aaaa", 2], ["prompt:review:bbbb", 3]);
+	await answer(a!.card, leaveOption(a!.card));
+	expect(stored(a!.card).decision!.state).toBe("answered");
+	expect(await discordButton(leaveOption(a!.card), asDiscord(a!.shown))).toEqual({ refusal: msg().auth.finished });
+	expect(stored(b!.card).decision!.state).toBe("open");
+	const watch = `메일 확인: 3번 연속 실패했어요\n${watchChoice("메일 확인", "failed 3 times in a row")}`;
+	emit("outbox", { ts: tick(), kind: "out", source: "gateway", target: "alert", nk: "alert", text: watch, card_ids: [watchCardId("mail")] });
+	await answer(idCard(watchCardId("mail")), 2);
+	expect(idCard(watchCardId("mail")).decision!.state).toBe("answered");
+	expect(await discordButton(1, asDiscord(watch))).toEqual({ refusal: msg().auth.finished });
+	expect([stored(b!.card).decision!.state, stored(b!.card).confirm_ask]).toEqual(["open", undefined]);
+});
+
+test("of two open cards with one title, a Discord button on the card whose own line ends with the other card's whole line closes the card its message shows", async () => {
+	for (const tapped of ["k:older", "k:newer"]) {
+		resetNoticesForTest();
+		const shown = { "k:older": mailCard("k:older", "2번 실패했어요"), "k:newer": mailCard("k:newer", "12번 실패했어요") };
+		await discordButton(2, asDiscord(shown[tapped as keyof typeof shown]));
+		expect(["k:older", "k:newer"].filter(k => idCard(k).decision!.state === "answered")).toEqual([tapped]);
+	}
 });

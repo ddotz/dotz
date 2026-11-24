@@ -13,6 +13,7 @@ import { reasonOf } from "./reply-reasons.ts";
 import { msg } from "./i18n.ts";
 import { DECISION_HEAD, unnumbered } from "./choices.ts";
 import { heldOf } from "./notices-answers.ts";
+import { pickedCard } from "./notices-later.ts";
 import { noTurnLine } from "./card-answer.ts";
 import { editChainCard } from "./notices-rules.ts";
 import { out } from "./outbound.ts";
@@ -55,15 +56,28 @@ async function actOnCard(conv: string, q: string, label: string, note: string | 
 	return replies.act({ ...input!, hash }, ctx);
 }
 
+/** A Discord button pick named by the id of the open card it answers (`decision`), as a web answer names its card: the inbox keeps it, and the store and the
+ * model turn act on that card only (hub/notices-rules.ts typedAnswer, hub/card-answer.ts). */
+export type DiscordPick = AnswerPick & { decision?: string };
+/** The Discord button's one pick named by its card (hub/notices-later.ts pickedCard): of the cards in `conv` or `target` titled as its question, the one
+ * whose own lines `shown`, the Discord message, shows, else the oldest open one. A pick of no card, or several picks, stay as they came. */
+export function discordPicks(target: string, conv: string, picks: AnswerPick[], shown = ""): DiscordPick[] {
+	const p = picks.length === 1 ? picks[0]! : undefined, card = p && pickedCard(target, conv, DECISION_HEAD.exec(p.q)?.[1] ?? p.q, shown);
+	return p && card ? [{ ...p, decision: card.id }] : picks;
+}
+
 /** A Discord button pick (hub/askbuttons.ts) on a draft the reply flow knows: the same act as the web's card (send, revise with its words, drop),
  * checked against the version the card was drawn with. `edit`: the 고치기 form's text, changed by the owner (edit, then revise if he wrote words).
+ * The card is the one the pick names (discordPicks); a pick that names none (a caller that did not name it) stands for the newest open card of its title, as before.
+ * A pick that names a card which already closed (answered elsewhere, expired: its Discord message keeps its buttons) is refused as finished and reaches no other card.
  * A pick on a card whose web answer is held for its undo window (hub/notices-answers.ts holdDecision) is refused with that answer's label: it is not sent.
  * A pick that closes its card with no model turn (hub/card-answer.ts noTurnLine: an option the gateway marked as changing nothing, Apply on a confirm card whose line changed) is answered here as on the web, and the line it closed the card with is posted in that channel.
  * Undefined when the reply flow did not take it (the answer keeps its old path); `error`: why it refused (the owner hears it, the buttons stay). */
-export async function discordGatewayAnswer(target: string, conv: string, text: string, picks: AnswerPick[], edit?: string): Promise<{ error?: string } | undefined> {
+export async function discordGatewayAnswer(target: string, conv: string, text: string, picks: DiscordPick[], edit?: string): Promise<{ error?: string } | undefined> {
 	const p = picks.length === 1 ? picks[0]! : undefined;
 	if (!p) return undefined;
-	const q = DECISION_HEAD.exec(p.q)?.[1] ?? p.q, card = allNotices().find(n => n.decision?.state === "open" && n.title === q && (n.decision.to === target || n.decision.to === conv)), hold = card && heldOf(card);
+	const q = DECISION_HEAD.exec(p.q)?.[1] ?? p.q, card = allNotices().find(n => n.decision?.state === "open" && (p.decision ? n.id === p.decision : n.title === q && (n.decision.to === target || n.decision.to === conv))), hold = card && heldOf(card);
+	if (p.decision && !card) return { error: msg().auth.finished };
 	if (hold) return { error: msg().answerHeld(hold.label.replace(/^\d+\)\s*/, "")) };
 	const picked = card?.decision?.options.find(o => o.n === p.n && unnumbered(o.label) === unnumbered(p.label)), quiet = card && picked && noTurnLine(card, picked);
 	if (card && picked && quiet) {

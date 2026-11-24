@@ -381,7 +381,7 @@ function adoptRepost(e: HubEvent): boolean {
 
 function closeCardsWrittenBackTo(to: string, at: string, keep?: Notice, by?: string): void {
 	const since = ownerWroteAt.get(to);
-	if (since && since <= at) for (const i of items) if (i !== keep && isOpenDecision(i) && hasChoice(i) && !i.decision!.draft && i.decision!.to === to && !laterOn(i.decision) && (!i.decision!.card_id || i.by === by) && (i.at ?? i.ts) < since) settleDecision(i, "", at, true);
+	if (since && since <= at) for (const i of items) if (i !== keep && isOpenDecision(i) && hasChoice(i) && !i.decision!.draft && i.decision!.to === to && !laterOn(i.decision) && !i.decision!.card_id && i.by === by && !holds.by.has(i.id) && (i.at ?? i.ts) < since) settleDecision(i, "", at, true);
 }
 
 export function putDecision(d: { key: string; title: string; detail: string; to: string; open?: string; options: DecisionOpt[]; group: number; place?: number; replyTo?: string; draft?: DraftApproval; by?: string; ref?: string; assumed?: true; evidence?: string[]; card_id?: string; edit?: Decision["edit"] }, at: string): void {

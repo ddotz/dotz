@@ -10,6 +10,7 @@ import { cardAsked, listNotices, resetNoticesForTest } from "./notices.ts";
 import { decisionsOf } from "./notices-decisions.ts";
 import { items, reconcileStored, settleDecision } from "./notices-store.ts";
 import type { Notice } from "./notices-types.ts";
+import { watchCardId, watchChoice } from "./watch-ask.ts";
 
 const MIN = 60e3, H = 60 * MIN, D = 24 * H, T0 = Date.parse("2026-11-24T08:00:00Z");
 const iso = (ms: number) => new Date(ms).toISOString();
@@ -217,4 +218,40 @@ test("the gateway's morning post puts each card in the store under its finding's
 	expect([own("prompt:review:aaaa").decision!.state, own("disk:low").decision!.state]).toEqual(["open", "open"]);
 	await doctorPost(out)("All fixed.", false, false, []);
 	expect(posts).toEqual([["alert", true], ["worklog", false]]);
+});
+
+const ownerAt = (at: number, extra: Record<string, unknown> = {}) => emit("inbox", { ts: iso(at), kind: "message", source: "web", channel: "web:alert", author: "owner", mid: `m-${at}`, text: "이거 왜 이래요?", ...extra });
+const watchCard = (at: number) => post(`메일 확인: 3번 연속 실패했어요\n${watchChoice("메일 확인", "failed 3 times in a row")}`, at, [watchCardId("mail")]);
+const orchestratorCard = (at: number, subject: string) =>
+	emit("outbox", { ts: iso(at), kind: "out", source: "orchestrator", target: "web:alert", text: `[ask] ${subject}\n\n결정: ${subject} · 적용할까요?\n전: - 줄\n후: - 새 줄\n**1) 적용**\n고쳐요\n**2) 그대로 둬요**\n그대로` });
+const titled = (start: string): Notice => cards().find(c => c.title.startsWith(start))!;
+
+test("a card with an id stays open when the owner wrote in its conversation and then the gateway or the orchestrator posts a card there", () => {
+	const at = Date.now() - 3 * H;
+	post(`업데이트가 실패했어요\n${cardBlock({ subject: "dotz 업데이트", question: "다시 시도할까요?", evidence: ["업데이트 근거"], options: OPTIONS })}`, at, ["update:self"]);
+	ownerAt(at + MIN);
+	watchCard(at + 2 * MIN);
+	expect([own("update:self").decision!.state, own(watchCardId("mail")).decision!.state]).toEqual(["open", "open"]);
+	ownerAt(at + 3 * MIN);
+	orchestratorCard(at + 4 * MIN, "RULES.md 2번째 줄");
+	expect([own("update:self").decision!.state, own(watchCardId("mail")).decision!.state]).toEqual(["open", "open"]);
+});
+
+test("after the owner answered one doctor card by its web button, a watch card leaves the doctor's other cards and the orchestrator's confirm card open", () => {
+	const at = Date.now() - 3 * H, n = compose(store(review("prompt:review:aaaa", "WHY-A", "Rules 'alpha'"), review("prompt:review:bbbb", "WHY-B", "Rules 'beta'"), review("prompt:review:cccc", "WHY-C", "Rules 'gamma'")), at)!;
+	post(n.text, at, n.ids);
+	orchestratorCard(at + MIN, "RULES.md 2번째 줄");
+	const c = own("prompt:review:cccc");
+	ownerAt(at + 2 * MIN, { text: "2) Leave", decision: c.id, picks: [{ q: c.title, n: 2, label: "Leave" }] });
+	expect(own("prompt:review:cccc").decision!.state).toBe("answered");
+	watchCard(at + 3 * MIN);
+	expect([own("prompt:review:aaaa").decision!.state, own("prompt:review:bbbb").decision!.state, titled("RULES.md 2번째 줄").decision!.state]).toEqual(["open", "open", "open"]);
+});
+
+test("a card without an id that the owner wrote back to is still closed by the next card of its own author", () => {
+	const at = Date.now() - 3 * H;
+	orchestratorCard(at, "RULES.md 2번째 줄");
+	ownerAt(at + MIN);
+	orchestratorCard(at + 2 * MIN, "RULES.md 3번째 줄");
+	expect([titled("RULES.md 2번째 줄").decision!.state, titled("RULES.md 2번째 줄").decision!.resolved, titled("RULES.md 3번째 줄").decision!.state]).toEqual(["answered", true, "open"]);
 });
