@@ -3,11 +3,12 @@ import { fakeHub, json, waitFor, run, type View } from "./test-web.ts";
 
 type Put = { path: string; body: Record<string, unknown> };
 let puts: Put[] = [];
+let saved = Promise.withResolvers<void>();
 let mailItems: Record<string, unknown>[] = [];
 let mailApp: string | null = null;
 
 const mailInstance = (key: string, label: string, state: "connected" | "disconnected") => ({ key, app: "mail", label, kind: "app", icon: "mail", conv: [], notices: [], unread: 0, state });
-const reset = () => { puts = []; mailItems = [mailInstance("mail", "메일", "connected"), mailInstance("mail-work", "회사 메일", "connected"), mailInstance("mail-old", "예전 메일", "disconnected")]; mailApp = null; };
+const reset = () => { puts = []; saved = Promise.withResolvers<void>(); mailItems = [mailInstance("mail", "메일", "connected"), mailInstance("mail-work", "회사 메일", "connected"), mailInstance("mail-old", "예전 메일", "disconnected")]; mailApp = null; };
 
 const hub = fakeHub({
 	stream: "fake",
@@ -27,6 +28,7 @@ const hub = fakeHub({
 		if (p === "/api/comments/sources/youtube" && req.method === "PUT") {
 			const body = (await req.json()) as Record<string, unknown>;
 			puts.push({ path: p, body });
+			saved.resolve();
 			if (typeof body.mailApp === "string") mailApp = body.mailApp || null;
 			return json({ ok: true });
 		}
@@ -59,6 +61,7 @@ describe("댓글 출처의 메일 앱", async () => {
 		expect(items).toEqual(["없음", "메일", "회사 메일"]);
 		await run(v, `[...document.querySelectorAll(".menu .mi")].find(n => n.textContent.includes("회사 메일")).click()`);
 		await waitFor(v, `document.querySelector('#cm-pick [data-setting="mail-app"] .val').textContent === "회사 메일"`);
+		await saved.promise;
 		expect(puts).toEqual([{ path: "/api/comments/sources/youtube", body: { mailApp: "mail-work" } }]);
 	});
 
