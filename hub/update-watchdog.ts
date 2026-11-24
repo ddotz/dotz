@@ -42,6 +42,12 @@ export type Deps = {
 export const TIMES = { pollMs: 2000, waitMaxMs: 48 * 3600_000, deadlineMs: 3 * 60_000, graceMs: 90_000, stopMs: 15_000 };
 
 const short = (sha: string) => sha.slice(0, 7);
+const ENDS_ON_A_CONSONANT = "013678";
+const ENDS_ON_A_CONSONANT_NOT_RIEUL = "036";
+const objectOf = (id: string) => `${id}${ENDS_ON_A_CONSONANT.includes(id.at(-1) ?? "") ? "을" : "를"}`;
+const towardOf = (id: string) => `${id}${ENDS_ON_A_CONSONANT_NOT_RIEUL.includes(id.at(-1) ?? "") ? "으로" : "로"}`;
+/** The rollback sentence the owner reads: both versions first, each with its particle; a version that is not known reads as a whole sentence. */
+export const rolledBackText = (to?: string, from?: string): string => `${to ? `${objectOf(short(to))} ` : ""}${from ? towardOf(short(from)) : "이전 버전으로"} 되돌렸어요. 업데이트가 시작되지 않았어요.`;
 export const read = (file: string): Pending | undefined => {
 	try {
 		return JSON.parse(readFileSync(file, "utf8")) as Pending;
@@ -119,7 +125,7 @@ async function rollback(file: string, m: Pending, d: Deps, t: typeof TIMES): Pro
 			failed = `폴더를 되돌리지 못했어요 (${String(e).split("\n")[0]}) — ${prev}를 ${m.dir}로 옮겨 주세요.`;
 		}
 	}
-	const message = failed ? `업데이트 ${short(m.to)} 가 시작되지 않았는데 ${short(m.from)}으로 되돌리지 못했어요: ${failed}` : `업데이트 ${short(m.to)} 가 시작되지 않아 ${short(m.from)}으로 되돌렸어요.`;
+	const message = failed ? `${objectOf(short(m.to))} ${towardOf(short(m.from))} 되돌리지 못했어요. 업데이트가 시작되지 않았어요: ${failed}` : rolledBackText(m.to, m.from);
 	write(file, { ...m, status: failed ? "rollback-failed" : "rolled-back", message });
 	d.log(`watchdog: ${message}`);
 	const pid = d.runningPid();

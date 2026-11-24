@@ -19,7 +19,8 @@ const nscIn = k => NT.items.filter(n => nscListed(n) && nscFits(n, k));
 const nscUnreadIn = k => NT.items.reduce((c, n) => c + (nscListed(n) && !n.read && nscFits(n, k) ? 1 : 0), 0);
 const nscGroup = n => (ntLaterTwin(n) ? "past" : ntNeeds(n) || n.waits ? "need" : n.read ? "past" : "news");
 const nscReadable = () => nscIn(NSC.f).filter(n => !n.read && !ntNeeds(n) && !ntLaterTwin(n));
-const nscTone = n => ntNeeds(n) || n.waits === "login" || n.tone === "warn" ? "warn" : n.tone === "fail" ? "err" : n.tone === "done" || n.cls === "result" ? "ok" : "";
+const nscLoginCard = n => !!n.decision && (String(n.decision.to || "").startsWith("auth:") || (n.decision.options || []).some(o => o.action === "watch-reconnect"));
+const nscTone = n => ntNeeds(n) || n.waits === "login" || nscLoginCard(n) || n.tone === "warn" ? "warn" : n.tone === "fail" ? "err" : n.tone === "done" || n.cls === "result" ? "ok" : "";
 // The tag word of the prototype's D.notices, from the notice's own kind, tone and app: the app is the integration key (mail, kakao, instagram/youtube/site = 댓글)
 // or the prefix of the conversation it lives in. A word the data does not give is not made up: the rest is 감시 / 경고 / the app's name / 새 소식.
 const NSC_APP_TAG = { mail: TX("common.mail"), kakao: TX("decision.app.kakao"), instagram: TX("misc.nsc.comments"), youtube: TX("misc.nsc.comments"), site: TX("misc.nsc.comments") };
@@ -28,8 +29,8 @@ const ntIsSched = n => n.nk === "schedule" || String(n.key || "").startsWith("sc
 const ntIsRemind = n => !n.decision && !n.nk && String(n.key || "").startsWith("schedule:");
 function nscTag(n) {
   const app = nscApp(n);
+  if (n.waits === "login" || nscLoginCard(n)) return TX("misc.nsc.tag_login");
   if (ntIsDec(n)) return n.decision.draft ? (app === "kakao" ? TX("decision.app.kakao") : TX("misc.nsc.tag_reply")) : TX("common.decision");
-  if (n.waits === "login") return TX("misc.nsc.tag_login");
   if (n.waits === "fail" || n.tone === "fail") return TX("home.sys.failed");
   if (n.tone === "ask") return TX("misc.nsc.tag_ask");
   if (ntIsSched(n)) return TX("misc.nsc.tag_sched");
@@ -39,7 +40,7 @@ function nscTag(n) {
   if (/아침/.test(n.title || "")) return TX("misc.nsc.tag_morning");
   if (n.kind === "watch") return TX("misc.nsc.tag_watch");
   if (n.cls === "alert" && /^[^\n]*: 다시 정상이에요/.test(n.text || "")) return TX("misc.nsc.tag_back");
-  if (n.cls === "alert") return TX("settings.notify.alert_label");
+  if (n.cls === "alert") return n.tone === "warn" ? TX("mon.tag.warn") : TX("notice.row.plain");
   if (n.cls === "conv") return TX("common.conversation");
   return ntPlain(n.app || "") || TX("settings.notify.news_label");
 }

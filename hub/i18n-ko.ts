@@ -233,7 +233,7 @@ export const ko: Catalog = {
 	laneRate: `${koLeads.rateLead}. 멈췄을 때 하던 작업을 이어서 하세요.`,
 	laneProvider: `${koLeads.providerLead}. 멈췄을 때 하던 작업을 이어서 하세요.`,
 	laneTransient: `${koLeads.transientLead}. 멈췄을 때 하던 작업을 이어서 하세요.`,
-	modelFallback: (from: string, to: string, reason?: string, worker?: boolean) => `${worker ? "서브에이전트 모델 폴백" : "모델 폴백"}: ${from} → ${to}${reason ? ` (${reason.replace(/\s+/g, " ").trim().slice(0, 120)})` : ""}`,
+	modelFallback: (from: string, to: string, why?: "rate" | "owner" | "transient" | "refusal", worker?: boolean) => `${worker ? "서브에이전트 모델 폴백" : "모델 폴백"}: ${from} → ${to}${why ? ` (${{ rate: "요청 한도에 걸려서 옮겼어요", owner: "로그인이나 결제 문제로 옮겼어요", transient: "제공자 오류로 옮겼어요", refusal: "모델이 요청을 거절해서 옮겼어요" }[why]})` : ""}`,
 	fallbackMove: (from: string, to: string, why: "quota" | "error" | "cap" | "revert", back?: string) => `${why === "revert" ? "모델 복귀" : "모델 폴백"}: ${from} → ${to} (${{ quota: "사용 한도 도달", error: "제공자 오류", cap: "사용 상한 도달", revert: "한도가 풀렸어요" }[why]}${back ? `, ${back}쯤 구독으로 돌아가요` : ""})`,
 	fallbackExhausted: (model: string, until: string) => `모델 폴백: ${model}이(가) 사용 상한에 도달했고 넘어갈 모델이 더는 없어요. ${until}까지 멈춰요.`,
 	modelReverted: (model: string) => `원래 모델(${model})로 되돌렸어요`,

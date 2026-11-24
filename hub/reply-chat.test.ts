@@ -2,6 +2,7 @@
 import { expect, test } from "bun:test";
 import { ownerText } from "./owner-text.ts";
 import { applyCardMarkers, cardLine, cardMarkers, ownerIntent, ownerPick } from "./reply-chat.ts";
+import type { ReplyItem } from "./reply-types.ts";
 
 const one = { cards: [{ ref: "RAAAAAA" }] };
 const read = (text: string, o: Parameters<typeof ownerIntent>[1] = one) => ownerIntent({ text }, o);
@@ -80,4 +81,25 @@ test("two revise markers for one card are one revision with both changes; a cont
 	expect(told).toHaveLength(1);
 	expect(told[0]).toContain("RAAAAAA");
 	expect(told[0]).not.toContain("보낼 카드를 찾지 못했어요");
+});
+
+test("a [drop] marker names the reply it dropped: a hand-written card by its title or draft, a stored draft by its recipient; six drops are six lines", async () => {
+	const told: string[] = [];
+	const done = { status: 200, body: { ok: true as const } };
+	const titles = ["가게 문의 답장을 보낼까요?", "동아리 공지 답장을 보낼까요?", "택배 문의 답장을 보낼까요?", "이사 견적 답장을 보낼까요?", "모임 장소 답장을 보낼까요?", "중고 거래 답장을 보낼까요?"];
+	const cards = titles.map((title, i) => ({ ref: `R${i}AAAAA`, title }));
+	const deps = { replies: { act: async () => done, confirm: async () => done }, owner: { mid: "m1", text: "그거 버려" }, mayDrop: () => true, cards, tell: async (line: string) => told.push(line), log: () => {} };
+	for (const c of cards) await applyCardMarkers(cardMarkers(`[drop ${c.ref}]`, [c.ref]), deps);
+	expect(told).toEqual(titles.map(t => `보내지 않을게요 - ${t}`));
+
+	told.length = 0;
+	const withDraft = [{ ref: "RDRAFTA", title: "이 답장 보낼까요?", draft: { toLabel: "받는이", to: "kim@example.com", body: "사진 잘 받았어요. 내일 다시 보고 알려 드릴게요" } }];
+	await applyCardMarkers(cardMarkers("[drop RDRAFTA]", ["RDRAFTA"]), { ...deps, cards: withDraft });
+	expect(told).toEqual(['보내지 않을게요 - 받는이 kim@example.com: "사진 잘 받았어요. 내일 다시 보고 알려 드릴게요"']);
+
+	told.length = 0;
+	const stored = { status: 200, body: { ok: true as const, item: { draft: { state: "dropped" as const, toLabel: "받는이", to: "lee@example.com", text: "네, 그 일정으로 할게요" } } as ReplyItem } };
+	await applyCardMarkers(cardMarkers("[drop mail:abc]", ["mail:abc"]), { ...deps, replies: { act: async () => stored, confirm: async () => done }, cards: [] });
+	expect(told).toEqual(['보내지 않을게요 - 받는이 lee@example.com: "네, 그 일정으로 할게요"']);
+	expect(cardLine("drop", undefined, 0)).toBe("이 답장은 보내지 않을게요");
 });

@@ -4,7 +4,7 @@
 // the rest with one marker line per card, `[send <ref>]`, `[drop <ref>]` or `[revise <ref>] <change>`: `cardMarkers` reads them out of its post
 // and `applyCardMarkers` acts on them. A send only posts a confirm card (its 보내기 is the owner's); a drop or a revise in an answer to the owner is his word.
 import { REF_ID } from "./draft-approval.ts";
-import type { ActCtx, ActInput, ActResult } from "./reply-actions.ts";
+import type { ActCtx, ActInput, ActResult, OpenCard } from "./reply-actions.ts";
 import type { ReplyItem } from "./reply-types.ts";
 
 export type OwnerPick = { act: "send"; asIs?: true } | { act: "drop" } | { act: "revise"; change: string };
@@ -17,12 +17,19 @@ export function draftHead(text: string): string {
 	const chars = [...text.replace(/\s+/g, " ").trim()];
 	return chars.length > HEAD_CHARS ? `${chars.slice(0, HEAD_CHARS).join("")}…` : chars.join("");
 }
-/** The one gateway line after a typed answer acted on a card. A send says who gets what (the recipient and the start of the text) and how long the card can take it back. */
-export function cardLine(act: OwnerIntent["act"], item: Pick<ReplyItem, "draft" | "send"> | undefined, now: number): string {
+/** The open card a line is about, as it was before the act closed it: its title, and its draft when it carries one. */
+export type LineCard = Pick<OpenCard, "title" | "draft">;
+/** The one gateway line after a typed answer acted on a card. A send says who gets what (the recipient and the start of the text) and how long the card can take it back; a drop names the reply it dropped. */
+export function cardLine(act: OwnerIntent["act"], item: Pick<ReplyItem, "draft" | "send"> | undefined, now: number, card?: LineCard): string {
+	if (act === "drop") return dropLine(item?.draft ?? (card?.draft && { toLabel: card.draft.toLabel, to: card.draft.to, text: card.draft.body }), card?.title);
 	if (act !== "send") return CARD_LINE[act];
 	if (!item) return "보낼게요";
 	const left = item.send?.state === "undo" ? Math.max(1, Math.round((item.send.until - now) / 1000)) : 0;
 	return `보낼게요 - ${item.draft.toLabel} ${item.draft.to}: "${draftHead(item.draft.text)}"${left ? `. 카드에서 ${left}초 안에 되돌릴 수 있어요` : ""}`;
+}
+function dropLine(draft: Pick<ReplyItem["draft"], "toLabel" | "to" | "text"> | undefined, title: string | undefined): string {
+	if (draft?.to) return `보내지 않을게요 - ${draft.toLabel} ${draft.to}: "${draftHead(draft.text)}"`;
+	return title?.trim() ? `보내지 않을게요 - ${draftHead(title)}` : CARD_LINE.drop;
 }
 
 // The card's own options, typed out whole; number and name must agree ("2) 보내기" is no pick), and a 고치기 carries its change.
@@ -79,6 +86,8 @@ export type MarkDeps = {
 	replies: { act: (input: ActInput, ctx: ActCtx) => Promise<ActResult>; confirm: (input: { ref: string }, ctx: ActCtx) => Promise<ActResult> };
 	owner?: { mid: string; text: string };
 	mayDrop?: (ref: string) => boolean;
+	/** The conversation's open cards, read before any act closes one: what a drop line names. */
+	cards?: Pick<OpenCard, "ref" | "title" | "draft">[];
 	/** One gateway line in the conversation. */
 	tell: (line: string) => Promise<unknown>;
 	log: (line: string) => void;
@@ -104,6 +113,6 @@ export async function applyCardMarkers(marks: CardMarks, d: MarkDeps): Promise<v
 		const r = await (m.act === "send" ? d.replies.confirm({ ref: m.ref }, ctx) : d.replies.act(m.act === "revise" ? { ref: m.ref, action: "revise", change: m.change } : { ref: m.ref, action: "drop" }, ctx));
 		d.log(`card marker ${m.act} ${m.ref}${from}: ${r.body.ok ? "done" : `refused ${r.body.code}`}`);
 		if (!r.body.ok) await d.tell(m.act !== "send" ? `답장 카드에 반영하지 못했어요: ${r.body.error}${m.act === "drop" && r.body.code === "owner_only" ? `. ${DROP_ON_CARD}` : ""}` : r.body.code === "revising" ? STILL_REVISING : r.body.code === "unknown_ref" ? NOT_FOUND : `보낼 수 없어요: ${r.body.error}`);
-		else if (m.act !== "send" && asOwner) await d.tell(cardLine(m.act, undefined, Date.now()));
+		else if (m.act !== "send" && asOwner) await d.tell(cardLine(m.act, r.body.item, Date.now(), d.cards?.find(c => c.ref === m.ref)));
 	}
 }

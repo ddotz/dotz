@@ -29,5 +29,6 @@
   "notice.push.update": "{name} · 새 버전",
   "notice.push.schedule": "{name}",
   "notice.push.test": "{name} 테스트 알림",
-  "notice.push.test_body": "알림이 잘 와요. 누르면 대화로 가요."
+  "notice.push.test_body": "알림이 잘 와요. 누르면 대화로 가요.",
+  "notice.row.plain": "알림"
 }

@@ -31,7 +31,7 @@ import { type SigMode, type Signature, signatureAlert as signatureText, signed, 
 import { json } from "./routes-util.ts";
 import { applyTarball, checkTarball, type Kit } from "./selfupdate-tarball.ts";
 import { trackTimer } from "./shutdown.ts";
-import type { Pending } from "./update-watchdog.ts";
+import { type Pending, rolledBackText } from "./update-watchdog.ts";
 import { SELF_UPDATE_CARD_TITLE, SELF_UPDATE_LEAD } from "./worklog-kind.ts";
 
 export { authOrder } from "./selfupdate-tarball.ts";
@@ -701,7 +701,7 @@ export function updateBoot(hooks: { alert: (text: string) => void }, o: { dir?: 
 	const m = readPending(file);
 	if (!m || m.dir !== dir) return;
 	if (m.status === "rolled-back" || m.status === "rollback-failed") {
-		const text = m.message ?? `업데이트${m.to ? ` ${m.to.slice(0, 7)}` : ""}가 시작되지 않아 ${m.from ? `${m.from.slice(0, 7)}으로` : "이전 버전으로"} 되돌렸어요.`;
+		const text = m.message ?? rolledBackText(m.to, m.from);
 		record(logDir, `boot: ${text}`);
 		hooks.alert(text);
 		const s = readState();

@@ -72,7 +72,8 @@ export function laneRanOn(lane: Lane): void {
 }
 // A turn that works again ends the lane's blocked episode: the owner hears it once.
 export function laneRecovered(lane: Lane): void {
-	if (noteRecovered(`lane:${lane.name}`, providerOf(lane.model))) report(lane, recoveryText(), "pause");
+	const back = noteRecovered(`lane:${lane.name}`, providerOf(lane.model));
+	if (back) report(lane, recoveryText(back.since), "pause");
 }
 
 // Overloaded/5xx/network errors: retry the failed turn with backoff, bounded. Returns false once the retries are spent,

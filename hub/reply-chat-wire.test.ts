@@ -50,6 +50,14 @@ test("a typed 2) 고치기 - <change> revises that card", async () => {
 	expect(await f.actedOnce).toEqual({ ref: "RA00002", action: "revise", change: "금요일을 목요일로" });
 });
 
+test("a typed 3) 보내지 않기 on a hand-written card says which reply it dropped", async () => {
+	const target = "ch:91005";
+	const f = fake(openIn("RA00005", target));
+	const line = lineIn(target, "gateway");
+	say(target, "3) 보내지 않기");
+	expect([await line, await f.actedOnce]).toEqual(["보내지 않을게요 - 이 답장 보낼까요? (RA00005)", { ref: "RA00005", action: "drop" }]);
+});
+
 test("two open cards and no quote: a typed option changes nothing and reaches the model as an ordinary turn", () => {
 	const f = fake([...openIn("RA00003", "ch:91003"), ...openIn("RA00004", "ch:91003")]);
 	say("ch:91003", "1) 보내기");
@@ -116,13 +124,13 @@ test("[send] in the answer to the owner's message posts the confirm card and sen
 	expect([await shown, f.confirms.map(c => [c.input, c.ctx.owner?.mid, c.ctx.agent]), f.acts]).toEqual(["보낼게요", [[{ ref: "RA00071" }, "m-71", undefined]], []]);
 });
 
-test("[drop] in the answer to the owner's message is his word (his message named, no agent flag) and one gateway line says so", async () => {
+test("[drop] in the answer to the owner's message is his word (his message named, no agent flag) and one gateway line names the card it dropped", async () => {
 	const target = "ch:91072";
 	const f = fake(openIn("RA00072", target));
 	owner(target, "m-72", "메일 안 보내도 돼");
 	const line = lineIn(target, "gateway");
 	await out(target, "[drop RA00072]", "m-72", { source: "orchestrator" });
-	expect([await line, f.acts.map(a => [a.input, a.ctx.owner?.mid, a.ctx.agent])]).toEqual(["이 답장은 보내지 않을게요", [[{ ref: "RA00072", action: "drop" }, "m-72", undefined]]]);
+	expect([await line, f.acts.map(a => [a.input, a.ctx.owner?.mid, a.ctx.agent])]).toEqual(["보내지 않을게요 - 이 답장 보낼까요? (RA00072)", [[{ ref: "RA00072", action: "drop" }, "m-72", undefined]]]);
 });
 
 test("[revise] answering the owner is his word; in a progress note it stays the agent's own", async () => {

@@ -10,12 +10,12 @@ import { advance, clock } from "./runtime/test-clock.ts";
 import type { ReloginOpts, ReloginResult } from "./autologin.ts";
 import { addWatch, allWatches, approveWatch, exec, learnLife, listWatches, patchWatch, putWatchScript, reloadWatches, removeWatch, runWatch, sessionGapMs, setSessionIo, startWatches, wakeTarget, watchScript, watchShell } from "./watch.ts";
 
-const notes: { name: string; reason: string }[] = [];
+const notes: { name: string; reason: string; down?: number }[] = [];
 let waiter: (() => void) | undefined;
 const nextNote = () => new Promise<void>(r => (waiter = r));
 beforeAll(() =>
-	startWatches((w, reason) => {
-		notes.push({ name: w.name, reason });
+	startWatches((w, reason, _output, _prev, _info, down) => {
+		notes.push({ name: w.name, reason, ...(down === undefined ? {} : { down }) });
 		waiter?.();
 	}),
 );
@@ -278,6 +278,7 @@ test("a flapping watch tells the owner once per episode; a refail that lasts, or
 	await step(1);
 	await step(0);
 	expect(notes.map(n => n.reason)).toEqual(["failed 2 times in a row (exit 1)", "recovered"]);
+	expect(notes.map(n => n.down)).toEqual([undefined, 10 * 60_000]);
 	await step(1);
 	await step(1);
 	await step(0);

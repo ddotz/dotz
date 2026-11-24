@@ -217,7 +217,7 @@ async function cardChatAnswer(target: string, b: Burst): Promise<void> {
 	// Typed on Discord, it answers the card as that message shows it; typed on the web, as the card was drawn (hub/reply-actions.ts act).
 	const seen = head.source === "discord" ? { hash: cards.find(c => c.ref === intent.ref)?.discord ?? "" } : {};
 	const r = await replies.act(intent.act === "revise" ? { ref: intent.ref, action: "revise", change: intent.change } : { ref: intent.ref, action: intent.act, ...(intent.act === "send" && intent.asIs ? { asIs: true } : {}), ...(intent.act === "send" ? seen : {}) }, { surface: "chat" }).catch(e => ({ body: { ok: false as const, error: (e as Error).message } }));
-	const line = r.body.ok ? cardLine(intent.act, r.body.item, Date.now()) : `답장 카드에 반영하지 못했어요: ${(r.body as { error?: string }).error ?? "알 수 없는 이유"}`;
+	const line = r.body.ok ? cardLine(intent.act, r.body.item, Date.now(), cards.find(c => c.ref === intent.ref)) : `답장 카드에 반영하지 못했어요: ${(r.body as { error?: string }).error ?? "알 수 없는 이유"}`;
 	await out(target, line, b.replyTo, { source: "gateway", nk: "gateway-note" }).catch(e => log(`card chat reply failed: ${e}`));
 }
 

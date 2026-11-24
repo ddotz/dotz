@@ -28,7 +28,6 @@ import { writeOrchestratorProfile } from "./runtime/omo.ts";
 import { atTime, Chain, ERROR_STREAK_STOP, ErrorStreak, failsOver, failureReason, hubChain, keyedSelector, type Move, quotaResetAt, Reverter, revertWhy } from "./fallback.ts";
 import type { AgentError, AgentProcess, RuntimeAdapter } from "./runtime/types.ts";
 import { orchestratorTurnStarted } from "./notices.ts";
-import { errorKo } from "./notice.ts";
 import type { OrchError } from "./orch-error.ts";
 import { createCompaction } from "./orch-compaction.ts";
 import { createErrorEpisode } from "./orch-episode.ts";
@@ -446,7 +445,8 @@ export function createOrchestrator(opts: OrchOpts) {
 						errorStreak.ok();
 						streakAlerted = false;
 						clearError();
-						if (noteRecovered("orchestrator", providerOf(limitModel()))) onAlert(recoveryText());
+						const back = noteRecovered("orchestrator", providerOf(limitModel()));
+						if (back) onAlert(recoveryText(back.since));
 					} else if (inKeepalive && keepaliveErrorDropped(ev.error.kind)) {
 						log(`keepalive failed (${ev.error.text.replace(/\s+/g, " ").slice(0, 120)}); not retried, the next message is the next try`);
 					} else if (ev.error.kind !== "rate" && ev.error.kind !== "owner" && errorStreak.fail() !== "go") {
@@ -493,7 +493,7 @@ export function createOrchestrator(opts: OrchOpts) {
 					break;
 				case "fallback": {
 					log(`${who} model fallback${ev.worker ? " (task worker)" : ""}: ${ev.from} -> ${ev.to}${ev.reason ? ` (${ev.reason.replace(/\s+/g, " ").slice(0, 200)})` : ""}`);
-					const line = msg().modelFallback(ev.from, ev.to, ev.reason && errorKo(ev.reason), ev.worker);
+					const line = msg().modelFallback(ev.from, ev.to, ev.reason ? (/refusal/i.test(ev.reason) ? "refusal" : adapter?.classifyError(ev.reason)) : undefined, ev.worker);
 					if (!ev.worker) {
 						clearTimeout(errorHold);
 						orch.activeModel = noteModelChange(opts.key === "main" ? "orchestrator" : opts.key, ev.from, ev.to, "fallback");

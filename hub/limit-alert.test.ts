@@ -5,7 +5,8 @@ import { join } from "node:path";
 import type * as Orchestrator from "./orchestrator.ts";
 import { cfg } from "./config.ts";
 import { authFile } from "./apikey-policy.ts";
-import { AUTH_WATCH_MS, blockText, limitAccount, limitAlertsFile, limitKind, markTold, noteBlock, noteRecovered, ownerRetryMs } from "./limit-alert.ts";
+import { quietAlert } from "./alert-gate.ts";
+import { AUTH_WATCH_MS, blockText, limitAccount, limitAlertsFile, limitKind, markTold, noteBlock, noteRecovered, ownerRetryMs, recoveryText } from "./limit-alert.ts";
 import { adapters } from "./runtime/index.ts";
 import { omo } from "./runtime/omo.ts";
 import { advance, clock, flush } from "./runtime/test-clock.ts";
@@ -75,6 +76,12 @@ test("kinds, accounts, owner text and the slow backoff", () => {
 	expect(text).not.toMatch(/authentication|fallback is off/);
 	expect([1, 2, 3, 4, 5, 9].map(ownerRetryMs)).toEqual([30 * MIN, 60 * MIN, 120 * MIN, 240 * MIN, 360 * MIN, 360 * MIN]);
 	expect(omo.classifyError("authentication_failed")).toBe("owner");
+});
+
+test("the recovery line says how long the work was held only when the stop's start is known", () => {
+	expect(recoveryText(T0, T0 + 90 * MIN)).toBe("모델 제공자가 다시 연결됐어요. 1.5시간 동안 멈춰 있던 일을 이어서 처리해요.");
+	expect(recoveryText(T0, T0 + 12 * MIN)).toBe("모델 제공자가 다시 연결됐어요. 12분 동안 멈춰 있던 일을 이어서 처리해요.");
+	expect(recoveryText()).toBe("모델 제공자가 다시 연결됐어요. 멈춰 있던 일을 이어서 처리해요.");
 });
 
 test("a turn that works on another provider does not end the login stop of the one still down, so the next blocked session is not told again", () => {
@@ -219,7 +226,8 @@ test("orchestrator: an auth block alerts once in plain Korean, retries slowly an
 	await started.at(-1)!.push(...okTurn);
 	await advance(500);
 	expect(alerts).toHaveLength(2);
-	expect(alerts[1]).toContain("다시 연결");
+	expect(alerts[1]).toMatch(/^모델 제공자가 다시 연결됐어요\. 2\.\d시간 동안 멈춰 있던 일을 이어서 처리해요\.$/);
+	expect(quietAlert(alerts[1]!)).toBe(true);
 	await started.at(-1)!.push(...okTurn);
 	await advance(500);
 	expect(alerts).toHaveLength(2);

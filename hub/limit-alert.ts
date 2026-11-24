@@ -137,4 +137,5 @@ export function blockText(kind: "auth" | "billing", account: string, provider: s
 	if (kind === "billing") return `모델 제공자 결제(크레딧) 문제로 멈췄어요. 계정: ${account}. ${provider} 사이트에서 크레딧을 충전해 주세요. ${held} ${wait}`;
 	return `${loginBlockedKo(provider)}.${account === provider ? "" : ` 계정: ${account}.`} 알림의 로그인 열기 버튼이나 설정 > 계정에서 ${provider}에 다시 로그인해 주세요. ${held} ${wait}`;
 }
-export const recoveryText = (): string => `${PROVIDER_BACK_KO}. 멈춰 있던 일을 이어서 처리해요.`;
+/** The provider-back line; `since`, when the stop's start is known, says how long the work was held. */
+export const recoveryText = (since?: number, now = Date.now()): string => `${PROVIDER_BACK_KO}. ${since === undefined ? "" : `${hoursText(Math.max(60_000, now - since))} 동안 `}멈춰 있던 일을 이어서 처리해요.`;

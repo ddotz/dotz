@@ -9,7 +9,7 @@ import { join } from "node:path";
 import { cfg } from "./config.ts";
 import { resetFallbackState } from "./fallback.ts";
 import { msg } from "./i18n.ts";
-import { errorKo } from "./notice.ts";
+import { ko } from "./i18n-ko.ts";
 import type * as Lanes from "./lanes.ts";
 import type * as Orchestrator from "./orchestrator.ts";
 import { adapters } from "./runtime/index.ts";
@@ -136,7 +136,7 @@ test("orchestrator: a refusal alerts the owner and goes back to the configured m
 	await turnWithFallback(p, "Refusal (cyber): the request was declined");
 	// The fallback is one plain alert line; the worklog notice channel stays quiet; nothing is switched mid-turn or at its end.
 	expect(alerts).toHaveLength(1);
-	expect(alerts[0]).toContain(msg().modelFallback("anthropic/test-orch", "anthropic/test-fallback", errorKo("Refusal (cyber): the request was declined")));
+	expect(alerts[0]).toContain("Model fallback: anthropic/test-orch → anthropic/test-fallback (moved after the model refused the request)");
 	expect(alerts[0]).not.toContain("the request was declined");
 	expect(notices).toEqual([]);
 	expect(o.orch.activeModel).toBe("anthropic/test-fallback");
@@ -196,6 +196,26 @@ test("orchestrator: a usage limit goes back only after the reset (15 minutes wit
 	expect(alerts.at(-1)).toContain(msg().modelReverted("anthropic/test-orch"));
 	expect(alerts).toHaveLength(2);
 	await stopOrchestrator();
+});
+
+test("orchestrator: a rate-limit fallback says what moved and why, never the generic failure phrase; an unknown reason names no cause", async () => {
+	trace("# orchestrator, rate limit wording");
+	await startOrchestrator();
+	const p = proc();
+	alerts.length = 0;
+	o.deliver("question");
+	await advance(1000);
+	await turnWithFallback(p, `Request failed: 429 {"type":"error","error":{"type":"rate_limit_error","message":"This request would exceed your account's rate limit. Please try again later."}}`);
+	expect(alerts).toHaveLength(1);
+	expect(alerts[0]).toContain("Model fallback: anthropic/test-orch → anthropic/test-fallback (moved after a rate limit)");
+	expect(alerts[0]).not.toContain("try again");
+	o.deliver("next question");
+	await advance(1000);
+	await turnWithFallback(p, "stream ended oddly");
+	expect(alerts.at(-1)).toMatch(/Model fallback: anthropic\/test-orch → anthropic\/test-fallback$/);
+	await stopOrchestrator();
+	expect(ko.modelFallback("anthropic/claude-opus-5-5:medium", "anthropic/claude-sonnet-5-5", "rate")).toBe("모델 폴백: anthropic/claude-opus-5-5:medium → anthropic/claude-sonnet-5-5 (요청 한도에 걸려서 옮겼어요)");
+	expect(ko.modelFallback("a/x", "a/y", undefined, true)).toBe("서브에이전트 모델 폴백: a/x → a/y");
 });
 
 test("orchestrator: a retry-after in the usage limit sets the reset; a prompt after it switches back first", async () => {
@@ -292,7 +312,7 @@ test("lane: a refusal posts to the lane channel and goes back before the next pr
 	await p.push(agentEnd);
 	await advance(500);
 	expect(lane.status).toBe("idle");
-	expect(laneNotices).toEqual([`rv: ${msg().modelFallback("anthropic/test-lane", "anthropic/test-lane-fallback", errorKo("Refusal (cyber): declined"))}`]);
+	expect(laneNotices).toEqual(["rv: Model fallback: anthropic/test-lane → anthropic/test-lane-fallback (moved after the model refused the request)"]);
 	expect(alerts).toEqual([]);
 	expect(lane.activeModel).toBe("anthropic/test-lane-fallback");
 	expect(p.types()).not.toContain("set_model");

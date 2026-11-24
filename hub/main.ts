@@ -640,7 +640,7 @@ const watchRoute = (w: Watch) => {
 	const own = app ? (app.split("-")[0] === "mail" ? undefined : readAppsFile(DATA_DIR)[app]?.discord) : w.discord;
 	return typeof own === "boolean" ? { discord_route: own } : {};
 };
-startWatches((w, reason, output, prev, info) => {
+startWatches((w, reason, output, prev, info, down) => {
 	if (w.to === "orchestrator") {
 		const event = watchWakeEvent(w, reason, output, prev);
 		const quiet = wakeOnly(w, reason, orchestratorAvailable());
@@ -650,13 +650,13 @@ startWatches((w, reason, output, prev, info) => {
 		if (!w.channels?.length) return deliver(wake, target ? { target } : undefined);
 		const [first, ...others] = w.channels;
 		endStanding(first, "once");
-		if (!quiet) for (const c of others) void out(`ch:${c}`, (isWatchIssue(reason) ? watchIssueLine(event.label, reason, info, output) : watchLine(event.label, reason, output, { note: `(처리는 #${discord.channels.work[first] ?? first}에서)`, prev })).slice(0, 1900), undefined, { source: "gateway", nk: "watch", news: true, ...watchRoute(w) }).catch(() => undefined);
+		if (!quiet) for (const c of others) void out(`ch:${c}`, (isWatchIssue(reason) ? watchIssueLine(event.label, reason, info, output) : watchLine(event.label, reason, output, { note: `(처리는 #${discord.channels.work[first] ?? first}에서)`, prev, down })).slice(0, 1900), undefined, { source: "gateway", nk: "watch", news: true, ...watchRoute(w) }).catch(() => undefined);
 		return deliver(wake, { target: target ?? `ch:${first}` });
 	}
 	// A failing, stopped or unapproved check is an issue: it goes to alert with a choice block, whatever `to` the watch has.
 	const issue = isWatchIssue(reason);
 	const label = watchLabel(w.name);
-	void out(issue ? "alert" : w.to, issue ? watchIssueText(w, label, reason, info, output) : watchLine(label, reason, output, { prev }).slice(0, 1900), undefined, { source: "gateway", nk: issue ? "alert" : watchNoticeKind(output), news: true, ...(issue ? {} : watchRoute(w)) }).catch(e => log(`watch ${w.name} send failed: ${e}`));
+	void out(issue ? "alert" : w.to, issue ? watchIssueText(w, label, reason, info, output) : watchLine(label, reason, output, { prev, down }).slice(0, 1900), undefined, { source: "gateway", nk: issue ? "alert" : watchNoticeKind(output), news: true, ...(issue ? {} : watchRoute(w)) }).catch(e => log(`watch ${w.name} send failed: ${e}`));
 });
 // A watch whose check script broke (hub/watch.ts): the fix turn goes quietly to the watch's conversation (or main), and a fix that held is one worklog line.
 setHealHandler((w, turn) => {

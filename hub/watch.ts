@@ -108,7 +108,7 @@ let stopped = false;
 let offGate: (name: string) => boolean = () => false;
 export const setWatchGate = (fn: (name: string) => boolean) => void (offGate = fn);
 const save = () => writeAtomic(paths.watches, `${JSON.stringify(items, null, 2)}\n`);
-let notify: (w: Watch, reason: string, output: string, prev?: string, info?: NotifyInfo) => void = () => {};
+let notify: (w: Watch, reason: string, output: string, prev?: string, info?: NotifyInfo, down?: number) => void = () => {};
 
 // Self-healing (design: a failing check script gets one model turn to fix the file; the gateway runs the same check again and a pass is one worklog line).
 export const HEAL_WAIT_MS = 30 * 60_000;
@@ -473,7 +473,7 @@ async function runOnce(w: Watch): Promise<void> {
 		}
 		const healedBy = verifying && w.state.healing ? (healNotes.get(w.id) ?? "") : undefined;
 		healNotes.delete(w.id);
-		if (healedBy === undefined && toldDown(w.state)) notify(w, "recovered", output);
+		if (healedBy === undefined && toldDown(w.state)) notify(w, "recovered", output, undefined, undefined, w.state.failSince === undefined ? undefined : Date.now() - w.state.failSince);
 		if (w.state.fails && w.state.failAlertAt !== undefined) w.state.recoveredAt = Date.now();
 		w.state.fails = 0;
 		w.state.failSince = undefined;

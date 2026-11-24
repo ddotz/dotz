@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { quietAlert } from "./alert-gate.ts";
 import { i18nPrelude } from "./web-i18n.ts";
 import { clockKo, deriveLabel, describeOutput, failKindKo, humanLabel, isKeyLabel, isMachineOutput, loginLost, nameKo, plainLabel, rawFence, scheduleLabel, scheduleLine, sentinelMatch, watchLine, watchSummary } from "./watchtext.ts";
 
@@ -109,6 +110,15 @@ test("a JSON report reads in Korean key words, a long log says its lines and las
 	expect(watchSummary("new=3 checked_at=2025-01-02T01:02:03Z", NOW, TZ)).toBe("새 소식 3건 · 1월 2일 오전 10:02");
 	expect(watchLine("사이트", "recovered", "ok", opts)).toBe("사이트: 다시 정상이에요\n점검이 다시 통과했어요");
 	expect(watchLine("사이트", "recovered", "응답 200, 지연 30ms", opts)).toBe("사이트: 다시 정상이에요\n응답 200, 지연 30ms");
+});
+
+test("a recovery says how long the check had failed only when the watch knows when it started; the all-clear readers still see it", () => {
+	expect(watchLine("릴리스 정시 발행", "recovered", "ok", { down: 4 * 3600_000 })).toBe("릴리스 정시 발행: 다시 정상이에요 (4시간 동안 실패했어요)\n점검이 다시 통과했어요");
+	expect(watchLine("사이트", "recovered", "", { down: 25 * 60_000 })).toBe("사이트: 다시 정상이에요 (25분 동안 실패했어요)");
+	expect(watchLine("사이트", "recovered", "", { down: 3 * 86_400_000 })).toBe("사이트: 다시 정상이에요 (3일 동안 실패했어요)");
+	expect(watchLine("사이트", "recovered", "")).toBe("사이트: 다시 정상이에요");
+	expect(watchLine("사이트", "output changed", "", { down: 25 * 60_000 })).toBe("사이트: 결과가 바뀌었어요");
+	expect(quietAlert(watchLine("사이트", "recovered", "", { down: 25 * 60_000 }))).toBe(true);
 });
 
 test("web/js/11-watchtext.js words the same posts as this module", () => {

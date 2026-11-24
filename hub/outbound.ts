@@ -531,7 +531,7 @@ export async function out(target: string, text: string, replyTo?: string, extra:
 			};
 			const revised = answersOwner && !extra.update_key && !extra.queued ? (splitDraftCards(marks.rest)?.cards ?? [marks.rest]).map(c => approvals.replaces(target, c)) : [];
 			const acts = marks.acts.filter(m => !(m.act === "drop" && revised.includes(m.ref)));
-			if (replies) void applyCardMarkers({ ...marks, acts }, { replies, ...owner, mayDrop, tell: line => out(target, line, replyTo, { source: "gateway", nk: "gateway-note" }), log }).catch(e => log(`card markers in ${target} failed: ${(e as Error).message}`));
+			if (replies) void applyCardMarkers({ ...marks, acts }, { replies, ...owner, mayDrop, cards: replies.open(conv), tell: line => out(target, line, replyTo, { source: "gateway", nk: "gateway-note" }), log }).catch(e => log(`card markers in ${target} failed: ${(e as Error).message}`));
 			text = marks.rest;
 			// A marker alone still answers the owner's message: it is settled (shown answered, its progress line stopped) as a posted answer is.
 			if (!text) return (settleAnswer({ target, text, replyTo: replyTo ?? lateRequest(target), extra }), { delivered: true });

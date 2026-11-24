@@ -235,7 +235,7 @@ export const en = {
 	laneProvider: `${enLeads.providerLead}. Continue the work you were doing when it stopped.`,
 	laneTransient: `${enLeads.transientLead}. Continue the work you were doing when it stopped.`,
 	// The one worklog / lane line when a fallback chain moves a process (or one of its task workers) to its next model.
-	modelFallback: (from: string, to: string, reason?: string, worker?: boolean) => `${worker ? "Task subagent model fallback" : "Model fallback"}: ${from} → ${to}${reason ? ` (${reason.replace(/\s+/g, " ").trim().slice(0, 120)})` : ""}`,
+	modelFallback: (from: string, to: string, why?: "rate" | "owner" | "transient" | "refusal", worker?: boolean) => `${worker ? "Task subagent model fallback" : "Model fallback"}: ${from} → ${to}${why ? ` (${{ rate: "moved after a rate limit", owner: "moved after a login or billing problem", transient: "moved after a provider error", refusal: "moved after the model refused the request" }[why]})` : ""}`,
 	// Hub-driven chain (conditional entries): a switch, a return to an earlier entry, and every entry spent.
 	fallbackMove: (from: string, to: string, why: "quota" | "error" | "cap" | "revert", back?: string) => `${why === "revert" ? "Model back" : "Model fallback"}: ${from} → ${to} (${{ quota: "usage limit reached", error: "provider error", cap: "spend cap reached", revert: "limit reset" }[why]}${back ? `; back on the subscription around ${back}` : ""})`,
 	fallbackExhausted: (model: string, until: string) => `Model fallback: ${model} reached its spend cap and no fallback model is left. Paused until ${until}.`,

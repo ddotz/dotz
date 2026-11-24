@@ -7,7 +7,8 @@ import { join } from "node:path";
 import { DATA_DIR } from "./config.ts";
 import { advance } from "./runtime/test-clock.ts";
 import { updateBoot } from "./selfupdate.ts";
-import { type Deps, type Pending, read, TIMES, watch } from "./update-watchdog.ts";
+import { noticeKo } from "./notice-ko.ts";
+import { type Deps, type Pending, read, rolledBackText, TIMES, watch } from "./update-watchdog.ts";
 
 const FROM = "a".repeat(40);
 const TO = "b".repeat(40);
@@ -56,12 +57,27 @@ describe("watchdog", () => {
 		expect(await watch(file, f.d)).toBe("rolled-back");
 		expect(f.exec).toEqual([`git reset --keep ${FROM} @${join(root, "dotz")}`]);
 		expect(firstExecAt).toBeGreaterThanOrEqual(10_000 + TIMES.deadlineMs);
-		expect(read(file)).toMatchObject({ status: "rolled-back", message: "업데이트 bbbbbbb 가 시작되지 않아 aaaaaaa으로 되돌렸어요." });
+		expect(read(file)).toMatchObject({ status: "rolled-back", message: "bbbbbbb를 aaaaaaa로 되돌렸어요. 업데이트가 시작되지 않았어요." });
 		expect(f.kills[0]).toBe("SIGTERM 200");
 		// a second watchdog on the same marker does nothing: one rollback at most
 		const again = fake({ running: () => 200 });
 		expect(await watch(file, again.d)).toBe("superseded");
 		expect(again.exec).toEqual([]);
+	});
+
+	test("the rollback line names both versions first, each with the particle its last digit asks for, and the shown text keeps both", async () => {
+		const cases: [string, string, string][] = [
+			["4c1e2d9", "e40f212", "4c1e2d9를 e40f212로 되돌렸어요."],
+			["1234560", "abcdef3", "1234560을 abcdef3으로 되돌렸어요."],
+			["abcdef7", "1234561", "abcdef7을 1234561로 되돌렸어요."],
+		];
+		for (const [to, from, head] of cases) {
+			put(marker({ to: `${to}${"0".repeat(33)}`, from: `${from}${"0".repeat(33)}` }));
+			expect(await watch(file, fake().d)).toBe("rolled-back");
+			const message = read(file)?.message ?? "";
+			expect(message).toBe(`${head} 업데이트가 시작되지 않았어요.`);
+			expect(noticeKo(message)).toBe(message);
+		}
 	});
 
 	test("lockfile changes run bun install after the reset; a failed reset says how to fix it by hand", async () => {
@@ -151,5 +167,15 @@ describe("updateBoot (the gateway's start)", () => {
 		expect(alerts).toEqual(["업데이트 bbbbbbb 가 시작되지 않아 aaaaaaa으로 되돌렸어요."]);
 		expect(existsSync(file)).toBe(false);
 		expect(JSON.parse(readFileSync(join(DATA_DIR, "self-update.json"), "utf8")).autoFailed).toBe(TO);
+	});
+
+	test("a rolled-back marker with no stored sentence is told in the same words: both versions first, a whole sentence when one is unknown", () => {
+		put(marker({ status: "rolled-back" }));
+		const alerts: string[] = [];
+		updateBoot({ alert: t => void alerts.push(t) }, { dir: dir(), dataDir: root });
+		expect(alerts).toEqual(["bbbbbbb를 aaaaaaa로 되돌렸어요. 업데이트가 시작되지 않았어요."]);
+		expect(noticeKo(alerts[0]!)).toBe(alerts[0]!);
+		expect(rolledBackText()).toBe("이전 버전으로 되돌렸어요. 업데이트가 시작되지 않았어요.");
+		expect(rolledBackText("1234560aaa")).toBe("1234560을 이전 버전으로 되돌렸어요. 업데이트가 시작되지 않았어요.");
 	});
 });

@@ -1561,7 +1561,7 @@ test("a lost login is an alert of any kind and waits for its recovery: the watch
 	// the watch passes again: the outbox line and the orchestrator's wake event both close it, read or not
 	markNoticesRead({ ids: [a.id] });
 	expect(listed(a.id)!.waits).toBe("login");
-	emit("outbox", { ts: later(), kind: "out", source: "gateway", target: "ch:9543", text: "카톡9541: 다시 정상이에요" });
+	emit("outbox", { ts: later(), kind: "out", source: "gateway", target: "ch:9543", text: watchLine("카톡9541", "recovered", "", { down: 3 * 3600_000 }) });
 	expect(listed(a.id)!.waits).toBeUndefined();
 	expect(typeof stored().find(n => n.id === a.id)!.handled).toBe("string");
 	emit("inbox", { ts: later(), kind: "watch", watch: "w9542", label: "쿠팡9542", reason: "recovered", text: "ok" });
@@ -1570,7 +1570,7 @@ test("a lost login is an alert of any kind and waits for its recovery: the watch
 	post("alert", "땃쥐: " + blockText("auth", "acct9544", "anthropic", 1_800_000), { source: "gateway" });
 	const p = stored().find(n => n.kind === "alert" && n.text.includes("acct9544"))!;
 	expect(listed(p.id)).toMatchObject({ cls: "alert", waits: "login" });
-	post("alert", "땃쥐: " + recoveryText(), { source: "gateway" });
+	post("alert", "땃쥐: " + recoveryText(Date.now() - 2 * 3600_000), { source: "gateway" });
 	expect(listed(p.id)!.waits).toBeUndefined();
 	expect(stored().find(n => n.id === p.id)).toMatchObject({ read: true });
 	// a stop that ends with the usage limit lifting (no recovery line of its own) is over too (2026-11-14: it stayed in 답변 필요)

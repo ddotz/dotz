@@ -285,14 +285,17 @@ export function describeOutput(output: string, opts: DescribeOpts = {}): Describ
 	return { text: "", readable: false };
 }
 
-export type LineOpts = { raw?: boolean; now?: number; tz?: string; note?: string; prev?: string; summary?: string };
+/** `down`: on a recovery, how long the check had been failing (ms), when the watch knows when it started. */
+export type LineOpts = { raw?: boolean; now?: number; tz?: string; note?: string; prev?: string; summary?: string; down?: number };
+const spanKo = (ms: number): string => (ms < 3600_000 ? `${Math.max(1, Math.round(ms / 60_000))}분` : ms < 48 * 3600_000 ? `${Math.round(ms / 3600_000)}시간` : `${Math.round(ms / 86_400_000)}일`);
 
 // "<감시 이름>: 결과가 바뀌었어요" (or the counted title of a change, "이슈 갱신 4건"), then the output in words (describeOutput; `summary` is a cached model sentence for output the rules could not read),
 // then the raw text folded (raw: false leaves it out, for the bell). A plain Korean output is its own words and is not folded again.
 // `note` is added after the first line's phrase.
 export function watchLine(label: string, reason: string, output = "", opts: LineOpts = {}): string {
 	const out = output.trim();
-	const first = (said: string) => `${humanLabel(label)}: ${said}${opts.note ? ` ${opts.note}` : ""}`;
+	const down = reason.trim() === "recovered" && opts.down !== undefined ? ` (${spanKo(opts.down)} 동안 실패했어요)` : "";
+	const first = (said: string) => `${humanLabel(label)}: ${said}${down}${opts.note ? ` ${opts.note}` : ""}`;
 	if (!out || sentinelMatch(reason, out)) return first(watchReasonKo(reason));
 	// A recovery's output that is one status word ("ok", "200") is the check passing, not news: said in words.
 	if (reason.trim() === "recovered" && /^[\w.-]{1,12}$/.test(out)) return `${first(watchReasonKo(reason))}\n점검이 다시 통과했어요`;

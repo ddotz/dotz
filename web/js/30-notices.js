@@ -510,13 +510,13 @@ function nwChangeNode(line) {
 // row does; the tab already names the kind, so a plain notice shows only the time. Its second line is the place only.
 const NT_TONE_TAG = { fail: [TX("home.sys.failed"), "err"], warn: [TX("mon.tag.warn"), "warn"] };
 function ntEndNode(n) {
-  const k = NT_TONE_TAG[n.tone];
+  const k = n.waits === "login" ? [TX("misc.nsc.tag_login"), "warn"] : NT_TONE_TAG[n.tone];
   return el("span", { class: "nt-end" }, k ? el("span", { class: `tag ${k[1]}`, text: k[0] }) : null, el("span", { class: "nt-time", text: ntWhen(n) }));
 }
 function ntHomeRow(n, label = TX("common.needs_reply")) {
   const title = n.decision ? ntPlain(n.title) : hcLine(n), src = n.src || n.open, chg = n.kind === "watch" ? nwChangeNode(nwChangeLine(n.text)) : null;   // a loose [ask] notice has no decision: its conversation names where it waits
   // A watch change is the landing page's 가격 알림 row: a 32px round icon tile, the title, the change line under it, the time at the right.
-  const lead = chg ? el("span", { class: `nt-wi${n.read ? "" : " new"}`, "aria-hidden": "true" }, icon("bell")) : el("span", { class: label ? "dot att" : `dot${n.read ? "" : n.cls === "alert" ? " err" : " un"}` });
+  const lead = chg ? el("span", { class: `nt-wi${n.read ? "" : " new"}`, "aria-hidden": "true" }, icon("bell")) : el("span", { class: label ? "dot att" : `dot${n.read ? "" : n.cls !== "alert" ? " un" : nscTone(n) ? ` ${nscTone(n)}` : ""}` });
   return el("div", { class: `hr hrx${chg ? " nt-w" : ""}${n.read ? "" : " un"}`, "data-nid": n.id },
     el("button", { class: "hrx-m", type: "button", onclick: () => noticeOpen(n), "aria-label": label ? `${title} · ${label}` : title },
       lead,

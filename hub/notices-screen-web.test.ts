@@ -11,6 +11,7 @@ const iso = (m: number) => new Date(Date.UTC(2026, 10, 3, 0, 0) + m * 60_000).to
 const mk = (id: string, m: number, cls: string, kind: string, tone: string, title: string, o: Partial<N> = {}): N =>
 	({ id, cls, kind, tone, title, text: title, open: "alert", src: "alert", at: iso(m), ts: iso(m), updated: iso(m), read: false, ...o });
 let notices: N[] = [];
+let extra: N[] = [];
 const reset = () => {
 	notices = [
 		mk("dec", 500, "ask", "decision", "ask", "배포 공지 형태를 정해 주세요", { open: "main", src: "main",
@@ -24,6 +25,7 @@ const reset = () => {
 		mk("conv", 444, "conv", "message", "", "프로젝트 대화에 새 답이 있어요", { src: "proj:p1", open: "proj:p1" }),
 		mk("old", 400, "news", "watch", "", "아침 브리핑이 왔어요", { read: true }),
 		...Array.from({ length: 14 }, (_, i) => mk(`a${i}`, 100 + i, "alert", "alert", "", `지난 경고 ${i + 1}번`, { read: true })),
+		...extra,
 	];
 };
 reset();
@@ -105,6 +107,21 @@ describe("the 알림 screen", () => {
 		expect(await ev(`[...document.querySelectorAll("#v-notices .nsc-r")].every(r => r.querySelectorAll(".ln").length === 2 && r.querySelector(".ln .hd") && r.querySelector(".ln .t") && r.querySelector(".ln .tag") && r.querySelectorAll(".nsc-x, .nsc-tr, .nsc-fold").length === (r.dataset.nid === "fail" ? 2 : 1))`)).toBe(true);
 		expect(await ev<string[]>(`[...document.querySelectorAll("#v-notices .nsc-r")].slice(0, 6).map(r => r.querySelector(".tag").textContent)`)).toEqual(["결정", "실패", "로그인", "가격 변경", "댓글", "작업 완료"]);
 		expect(await ev(`document.documentElement.scrollWidth <= innerWidth`)).toBe(true);
+	}, 30_000);
+
+	test("an alert row looks like who must act, from its stored fields: a lost login or a login card orange, a failure red, a plain notice grey, each with its word", async () => {
+		extra = [
+			mk("plain", 475, "alert", "alert", "", "API 키 사용 시작: 구독이 사용 한도에 걸렸어요"),
+			mk("card", 476, "ask", "decision", "ask", "JANDI에 다시 로그인할까요?", { decision: { options: [{ n: 1, label: "로그인", desc: "", rec: true }], to: "auth:jandi", reply_to: iso(476), group: 2, state: "open" } }),
+		];
+		const v = await shown(await open(390));
+		extra = [];
+		const looks = await on(v).ev<Record<string, [string, string]>>(`(() => {
+			const probe = token => { const s = document.createElement("span"); s.style.background = "var(" + token + ")"; document.body.append(s); const c = getComputedStyle(s).backgroundColor; s.remove(); return c; };
+			const named = { [probe("--warn")]: "orange", [probe("--err")]: "red" };
+			return Object.fromEntries(["login", "card", "fail", "plain"].map(id => { const r = document.querySelector('#v-notices .nsc-r[data-nid="' + id + '"]'); return [id, [named[getComputedStyle(r.querySelector(".lead .dot")).backgroundColor] || "grey", r.querySelector(".tag").textContent]]; }));
+		})()`);
+		expect(looks).toEqual({ login: ["orange", "로그인"], card: ["orange", "로그인"], fail: ["red", "실패"], plain: ["grey", "알림"] });
 	}, 30_000);
 
 	test("a filter only hides rows: 답변 필요, 경고, and back to 전체", async () => {
