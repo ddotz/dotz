@@ -33,6 +33,7 @@ function page() {
 		cut(web("11-todo-strip.js"), "const gatewayWake", "const BAN_KEY"),
 		cut(web("31-conversations.js"), "const CONV_KINDS", "const convIncoming"),
 		cut(web("10-decision-card.js"), "const CH_OPT", "const DC = "),
+		web("10-card-evidence.js"),
 	].join("\n");
 	return new Function(...Object.keys(env), `${i18nPrelude()}${src}\nreturn { eventTarget, ingestMsg, convReal, parseChoices, isChoiceMsg, choiceAsks, parseTone, isFixedT, TS };`)(...Object.values(env)) as {
 		eventTarget: (e: any) => string | null; ingestMsg: (e: any) => void; convReal: (e: any) => boolean;

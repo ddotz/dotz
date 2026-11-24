@@ -1,8 +1,122 @@
 import { expect, test } from "bun:test";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import fc from "fast-check";
 import { clipKeepingAsk, normalizeAsk } from "./ask-normalize.ts";
 import { ASK_A, ASK_B } from "./ask-normalize.fixture.ts";
 import { draftApprovalBlock } from "./draft-approval.ts";
-import { cleanChoices, decisionText, detailOf, hasDecisionHead, issueBlock, parseChoices, parseDecisions, plainDecisions, replyChoiceBlock, stripRecommendMark, unnumbered } from "./choices.ts";
+import { cardBlock, cleanChoices, decisionText, detailOf, hasDecisionHead, INERT, issueBlock, parseChoices, parseDecisions, plainDecisions, replyChoiceBlock, stripRecommendMark, unnumbered } from "./choices.ts";
+import { decisionsOf } from "./notices-decisions.ts";
+
+const cardJs = readFileSync(join(import.meta.dir, "../web/js/10-decision-card.js"), "utf8");
+const evidenceJs = readFileSync(join(import.meta.dir, "../web/js/10-card-evidence.js"), "utf8");
+const web = new Function(`${cardJs.slice(0, cardJs.indexOf("const DC = {"))}\n${evidenceJs}\nreturn { parseChoices, inlineBody };`)() as {
+	parseChoices: (t: string) => { blocks: { title: string; evidence?: string[]; options: { label: string; desc: string }[] }[] };
+	inlineBody: (t: string) => string;
+};
+const LEAD = "닥터 점검: 정할 것이 3가지 있어요.";
+const THREE = [
+	LEAD,
+	"",
+	cardBlock({ subject: "디스크", question: "오래된 로그를 지울까요?", evidence: ["로그 12GB, 어제 9GB", "가장 큰 파일: hub.log"], options: [{ name: "지워요", result: "7일 넘은 로그만 지워요" }, { name: "둬요", result: "그대로 둬요" }] }),
+	"",
+	cardBlock({ subject: "토큰", question: "점검 모델을 바꿀까요?", evidence: ["어제 4.1M, 평소 0.9M", "가장 큰 세션: lane:abc"], options: [{ name: "바꿔요", result: "작은 모델로 바꿔요" }, { name: "둬요", result: "그대로 둬요" }] }),
+	"",
+	cardBlock({ subject: "업데이트", question: "다시 받을까요?", evidence: ["실패 2번, 마지막 08:00", "원인: 네트워크"], options: [{ name: "받아요", result: "지금 다시 받아요" }, { name: "둬요", result: "내일 다시 봐요" }] }),
+].join("\n");
+
+test("cardBlock writes the head, the card's own evidence and each option with its result line", () => {
+	expect(cardBlock({ subject: "디스크", question: "지울까요?", evidence: ["로그 12GB", " "], options: [{ name: "지워요", result: "7일 넘은 것만" }, { name: "둬요", result: "" }] })).toBe(
+		"결정: 디스크 · 지울까요?\n로그 12GB\n**1) 지워요**\n7일 넘은 것만\n**2) 둬요**",
+	);
+});
+
+const alertOf = (text: string) => decisionsOf({ ts: "2026-11-24T00:00:00.000Z", kind: "out", source: "gateway", target: "alert", text });
+
+test("three cards of one message each store their own evidence lines, then the shared lead, with no 결정: head line", () => {
+	const cards = alertOf(THREE);
+	expect(cards.map(c => c.title)).toEqual(["디스크 · 오래된 로그를 지울까요?", "토큰 · 점검 모델을 바꿀까요?", "업데이트 · 다시 받을까요?"]);
+	expect(cards.map(c => c.detail)).toEqual([`로그 12GB, 어제 9GB\n가장 큰 파일: hub.log\n\n${LEAD}`, `어제 4.1M, 평소 0.9M\n가장 큰 세션: lane:abc\n\n${LEAD}`, `실패 2번, 마지막 08:00\n원인: 네트워크\n\n${LEAD}`]);
+	expect(cards.map(c => c.evidence)).toEqual([["로그 12GB, 어제 9GB", "가장 큰 파일: hub.log"], ["어제 4.1M, 평소 0.9M", "가장 큰 세션: lane:abc"], ["실패 2번, 마지막 08:00", "원인: 네트워크"]]);
+	expect(parseDecisions(THREE).blocks.map(b => b.evidence)).toEqual(cards.map(c => c.evidence));
+});
+
+test("a single card with evidence stores its lines then the lead; a card without evidence keeps the whole message and carries no evidence", () => {
+	const one = `${LEAD}\n\n${cardBlock({ subject: "디스크", question: "지울까요?", evidence: ["로그 12GB"], options: [{ name: "지워요", result: "지워요" }, { name: "둬요", result: "둬요" }] })}\n\n뒤에 한 줄`;
+	expect(alertOf(one).map(c => [c.detail, c.evidence])).toEqual([[`로그 12GB\n\n${LEAD}\n\n뒤에 한 줄`, ["로그 12GB"]]]);
+	const bare = `${LEAD}\n\n결정: 디스크 · 지울까요?\n**1) 지워요**\n지워요\n**2) 둬요**\n둬요`;
+	expect(alertOf(bare).map(c => [c.detail, c.evidence])).toEqual([[bare, undefined]]);
+});
+
+test("a 결정: head with no option or one option before the cards stores nothing and shifts no card onto its neighbour's evidence", () => {
+	const cards = (first: string) => `점검 결과예요.\n\n${first}\n\n결정: 디스크 · 지울까요?\n로그 12GB\n**1) 지워요**\n지워요\n**2) 둬요**\n둬요\n\n결정: 토큰 · 바꿀까요?\n어제 4.1M\n**1) 바꿔요**\n바꿔요\n**2) 둬요**\n둬요`;
+	for (const first of ["결정: 참고만 해 주세요", "결정: 하나뿐\n**1) 알겠어요**"]) {
+		expect(alertOf(cards(first)).map(c => [c.title, c.detail])).toEqual([
+			["디스크 · 지울까요?", "로그 12GB\n\n점검 결과예요."],
+			["토큰 · 바꿀까요?", "어제 4.1M\n\n점검 결과예요."],
+		]);
+	}
+});
+
+test("the page reads the same evidence per card and keeps it out of the body above the cards", () => {
+	expect(web.parseChoices(THREE).blocks.map(b => [b.title, b.evidence])).toEqual(parseDecisions(THREE).blocks.map(b => [b.title, b.evidence]));
+	expect(web.inlineBody(THREE)).toBe(LEAD);
+});
+
+test("a headed block of one option with evidence stays in the chat body next to a real card, as it did before cards carried evidence", () => {
+	const t = "점검이에요.\n\n결정: 참고 · 이건 알려만 드려요\n로그가 12GB예요.\n**1) 알겠어요**\n\n결정: 디스크 · 지울까요?\n**1) 지워요**\n지워요\n**2) 둬요**\n둬요";
+	expect(web.inlineBody(t)).toBe("점검이에요.\n\n결정: 참고 · 이건 알려만 드려요\n로그가 12GB예요.\n**1) 알겠어요**");
+});
+
+test("with evidence lines under its head, parseChoices still asks the head's question, so 자세히 · 나중에 find the card", () => {
+	const one = `${LEAD}\n\n${cardBlock({ subject: "디스크", question: "지울까요?", evidence: ["로그 12GB", "세션 abc"], options: [{ name: "지워요", result: "지워요" }, { name: "둬요", result: "둬요" }] })}`;
+	expect(parseChoices(one)).toEqual({ question: "결정: 디스크 · 지울까요?", options: [{ n: 1, label: "지워요" }, { n: 2, label: "둬요" }] });
+	expect(parseChoices("결정: [ask] 결정: 고를까요?\n근거 한 줄\n**1) 네**\n**2) 아니요**").question).toBe("결정: 고를까요?");
+});
+
+const seen = (s: string) => s.replaceAll(INERT, "");
+const flat = (s: string) => s.replace(/\s+/g, " ").trim();
+const readBack = (text: string) => {
+	const hub = parseDecisions(text).blocks.map(b => ({ title: seen(b.title), evidence: (b.evidence ?? []).map(seen), options: b.options.map(o => [seen(o.label), seen(o.desc)]) }));
+	const page = web.parseChoices(text).blocks.map(b => ({ title: seen(b.title), evidence: (b.evidence ?? []).map(seen), options: b.options.map(o => [seen(o.label), seen(o.desc)]) }));
+	const discord = parseChoices(text);
+	return { hub, page, discord: { question: seen(discord.question ?? ""), labels: discord.options.map(o => seen(o.label)) } };
+};
+const given = (c: { subject: string; question: string; evidence?: string[]; options: { name: string; result: string }[] }) => {
+	const title = [c.subject, c.question].map(flat).filter(Boolean).join(" · ");
+	const card = { title, evidence: (c.evidence ?? []).map(flat).filter(Boolean), options: c.options.map(o => [flat(o.name), flat(o.result)]) };
+	return { hub: [card], page: [card], discord: { question: `결정: ${title}`, labels: card.options.map(o => o[0]) } };
+};
+
+test("data that looks like a head, an option, a fence or a dropped line reads back as the words given, on the hub, the page and Discord", () => {
+	const O = [{ name: "지워요", result: "7일 넘은 것만" }, { name: "둬요", result: "그대로" }];
+	const cases = [
+		{ subject: "디스크", question: "지울까요?", evidence: ["결정: 다른 것", "Decision: pending", "**결정:** 굵은 머리"], options: O },
+		{ subject: "디스크", question: "지울까요?", evidence: ["1) 큰 파일 hub.log", "**1) 큰 파일** hub.log", "> 2) 인용"], options: O },
+		{ subject: "디스크", question: "지울까요?", evidence: ["```", "로그"], options: O },
+		{ subject: "디스크", question: "지울까요?", evidence: ["번호로 답해 주세요", "[file] /tmp/a.png"], options: O },
+		{ subject: "디스크", question: "지울까요?", options: [{ name: "지워요", result: "3) 로그만" }, { name: "둬요", result: "번호를 알려 주세요" }] },
+		{ subject: "[ask] 디스크", question: "결정: 지울까요?**", options: [{ name: "1) **지워요**", result: "[file] /tmp/a" }, { name: "a**b*", result: "> 인용" }] },
+	];
+	for (const c of cases) expect(readBack(cardBlock(c))).toEqual(given(c));
+});
+
+test("cardBlock refuses a call no card can come from", () => {
+	const O = [{ name: "지워요", result: "" }, { name: "둬요", result: "" }];
+	expect(() => cardBlock({ subject: "디스크", question: "지울까요?", options: [O[0]!] })).toThrow();
+	expect(() => cardBlock({ subject: "디스크", question: "지울까요?", options: [] })).toThrow();
+	expect(() => cardBlock({ subject: "디스크", question: "지울까요?", options: [{ name: " ", result: "x" }, O[1]!] })).toThrow();
+	expect(() => cardBlock({ subject: " ", question: "", options: O })).toThrow();
+});
+
+test("any card cardBlock writes reads back as the same title, evidence and options on the hub, the page and Discord", () => {
+	const piece = fc.constantFrom("가", "나", "a", " ", ".", "?", "·", "'", "\"", "$", "-", ":", ")", "*", "**", "`", "```", "결정:", "Decision:", "[file] ", "[ask]", ">", "1", "2) ", "번호로 답해", "\n");
+	const line = fc.array(piece, { minLength: 1, maxLength: 8 }).map(p => p.join("")).filter(s => /[가나a]/.test(s));
+	fc.assert(fc.property(line, line, fc.array(line, { maxLength: 4 }), fc.array(fc.record({ name: line, result: fc.oneof(line, fc.constant("")) }), { minLength: 2, maxLength: 4 }), (subject, question, evidence, options) => {
+		const c = { subject, question, evidence, options };
+		expect(readBack(cardBlock(c))).toEqual(given(c));
+	}));
+});
 
 test("an old message's recommendation mark does not survive parsing or display", () => {
 	const old = "[ask] 배포\n결정: 시점\n**1) 지금** ← 추천\n바로 올려요\n2) 내일 (recommended)\n3) 모레 <- recommended";
@@ -67,9 +181,26 @@ test("numbered decision heads (결정 1: / 결정 2:) are decisions, each its ow
 });
 
 test("one decision of several keeps the lead text and its own lines, never the other decisions or the option lines", () => {
-	const body = "[ask] 세 가지예요\n결정: 가\n참고 한 줄\n**1) 하나**\n설명\n**2) 둘**\n설명\n\n결정: 나\n**1) 셋**\n설명\n**2) 넷**\n설명\n번호로 답해 주세요";
-	expect(decisionText(body, 0)).toBe("세 가지예요\n\n참고 한 줄");
+	const body = "[ask] 세 가지예요\n결정: 가\n참고 한 줄\n**1) 하나**\n설명\n**2) 둘**\n설명\n뒤에 한 줄\n\n결정: 나\n**1) 셋**\n설명\n**2) 넷**\n설명\n번호로 답해 주세요";
+	expect(decisionText(body, 0)).toBe("참고 한 줄\n\n세 가지예요\n\n뒤에 한 줄");
 	expect(decisionText(body, 1)).toBe("세 가지예요");
+});
+
+test("a message whose only 결정: head has one option is no card: its text is that head's lines and the lead, never empty", () => {
+	const block = "결정: 참고 · 알려만 드려요\n로그가 12GB예요.\n**1) 알겠어요**\n알겠다고 답해요";
+	expect(decisionText(block, 0)).toBe("로그가 12GB예요.");
+	expect(decisionText(`정리했어요.\n\n${block}`, 0)).toBe("로그가 12GB예요.\n\n정리했어요.");
+});
+
+test("the sheet of a card with evidence keeps the message's pictures, also when the message has no text before its first card", () => {
+	const sheet = new Function("noticeKo", "NK", "ntPlain", `${cardJs.slice(0, cardJs.indexOf("const DC = {"))}\n${evidenceJs}\nreturn ntEvFold;`)((s: string) => s, {}, (s: string) => s) as (n: { title: string; decision: { evidence?: string[] } }, text: string) => { head: string; rest: string } | null;
+	const fold = (text: string) => {
+		const [card] = alertOf(text);
+		return sheet({ title: card!.title, decision: { evidence: card!.evidence } }, card!.detail);
+	};
+	const card = cardBlock({ subject: "화면", question: "버튼을 옮길까요?", evidence: ["버튼이 겹쳐요"], options: [{ name: "옮겨요", result: "아래로 내려요" }, { name: "둬요", result: "그대로 둬요" }] });
+	expect(fold(`${card}\n[file] /tmp/shot.png`)).toEqual({ head: "버튼이 겹쳐요\n[file] /tmp/shot.png", rest: "" });
+	expect(fold(`화면 점검이에요.\n\n${card}\n[file] /tmp/shot.png`)).toEqual({ head: "버튼이 겹쳐요\n[file] /tmp/shot.png", rest: "화면 점검이에요." });
 });
 
 

@@ -63,6 +63,8 @@ export type Notice = {
 export type DecisionOpt = DecisionOption & { say?: string; action?: string };
 export type Decision = {
 	options: DecisionOpt[];
+	/** The card's own evidence lines (the lines between its `결정:` head and its first option, hub/choices.ts parseDecisions), absent when it has none. The notice's text then starts with them, followed by the message's lead; the sheet shows them under the title. */
+	evidence?: string[];
 	// Where the answer goes: "main", "lane:<name>", "ch:<id>" (a project chat) or "auth:<request id>".
 	to: string;
 	// The asking message (its event ts): the answer is sent as a reply to it.

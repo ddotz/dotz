@@ -33,20 +33,6 @@ function choiceFree(text) {
   const t = String(text ?? "").replace(/^[ \t]*\d{1,2}\.[ \t]+(?=(?:\*\*)?[ \t]*결정[ \t]*[:：])/gm, "");   // text that never passed the hub (a peer's message) can number its heads
   return parseChoices(t).blocks.length ? choiceBody(t) : text;
 }
-// The message body above its inline card (dcInline): the card holds the question and the options, so neither stays as text. Text outside the blocks stays, code fences whole.
-function inlineBody(text) {
-  const lines = stripRecMark(String(text ?? "")).split("\n"), out = [];
-  let fence = false, block = false;
-  for (let i = 0; i < lines.length; i++) {
-    if (CH_FENCE.test(lines[i])) { fence = !fence; block = false; }
-    else if (!fence && CH_HEAD.test(lines[i]) && CH_OPT.test(lines.slice(i + 1).find(l => l.trim()) || "")) { block = true; continue; }
-    else if (!fence && block && CH_OPT.test(lines[i])) { if (isDescLine(lines[i + 1])) i++; continue; }
-    else if (!fence && CH_CLOSE.test(lines[i])) continue;
-    else if (lines[i].trim()) block = false;
-    out.push(lines[i]);
-  }
-  return out.join("\n").replace(/\n{3,}/g, "\n\n").trim();
-}
 function parseChoices(text) {
   const OPT = CH_OPT, HEAD = CH_HEAD;
   const lines = stripRecMark(String(text ?? "")).replace(/^\s*\[[^\]\n]+\][ \t]*/, "").split("\n");
@@ -61,7 +47,7 @@ function parseChoices(text) {
     const h = chHead(lines[i]);
     if (h) { cur = { title: h[1].trim(), options: [], headed: true }; blocks.push(cur); continue; }
     const m = OPT.exec(lines[i]);
-    if (!m) continue;
+    if (!m) { if (cur && cur.headed && !cur.options.length && chEvidence(lines[i])) (cur.evidence = cur.evidence || []).push(lines[i].trim()); continue; }
     const n = Number(m[1]);
     if (!cur || (cur.options.length && n <= cur.options[cur.options.length - 1].n)) { cur = { title: "", options: [] }; blocks.push(cur); }
     let desc = "";
@@ -203,7 +189,7 @@ function dcSendAll(dc) {
 // Every decision of a several-decision card at once, each with its title and options, then one 보내기 that is on once each has a pick.
 function multiNodes(dc, picks, st) {
   const got = dc.blocks.filter((_, i) => picks[i]).length, all = got === dc.blocks.length;
-  return [...dc.blocks.flatMap((b, i) => [el("div", { class: "dc-sub", text: `${picks[i] ? "✓ " : ""}${b.title || TX("decision.n", { n: i + 1 })}` }), ...b.options.map(o => choiceRow(dc, i, o, picks, st))]),
+  return [...dc.blocks.flatMap((b, i) => [el("div", { class: "dc-sub", text: `${picks[i] ? "✓ " : ""}${b.title || TX("decision.n", { n: i + 1 })}` }), dcEvNode(b), ...b.options.map(o => choiceRow(dc, i, o, picks, st))]),
     dc.each ? null : el("button", { class: "btn dc-send", type: "button", disabled: !!st || !all, onclick: () => dcSendAll(dc) }, all ? TX("common.send") : TX("decision.send_progress", { got, total: dc.blocks.length }))].filter(Boolean);
 }
 // The files a draft sends along (hub/draft-approval.ts `> 첨부:` lines): one row per file, the row opens the file that will go out
@@ -671,9 +657,9 @@ function paintInline(box, live) {
   let note = null;
   if (!hide) {
     // While the card is docked its rows are there: the message keeps the question, one set of buttons on screen.
-    if (docked) kids.push(...i.blocks.map(b => mdNode(draftQ(b.title), "md dc-q")));
+    if (docked) kids.push(...i.blocks.flatMap(b => [mdNode(draftQ(b.title), "md dc-q"), dcEvNode(b)].filter(Boolean)));
     else if (dc && i.blocks.length > 1) kids.push(...multiNodes(dc, picks, st));
-    else for (const [bi, b] of i.blocks.entries()) kids.push(...[b.title ? mdNode(draftQ(b.title), "md dc-q") : null, ...b.options.map(o => choiceRow(dc || { key: "" }, bi, o, picks, st))].filter(Boolean));
+    else for (const [bi, b] of i.blocks.entries()) kids.push(...[b.title ? mdNode(draftQ(b.title), "md dc-q") : null, dcEvNode(b), ...b.options.map(o => choiceRow(dc || { key: "" }, bi, o, picks, st))].filter(Boolean));
     if (!dc && !picks.some(Boolean)) kids.push(el("div", { class: "dc-ds", text: TX("decision.past") }));
     // No docked card to type in (a session's mid-turn question): what to change is asked here. Its text outlives a repaint (DC.note).
     if (edit) {

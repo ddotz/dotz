@@ -36,6 +36,10 @@ describe("renderTerminal", () => {
 		expect(visible(out)).toContain("제목");
 		expect(out).not.toContain("/tmp/a");
 	});
+	test("a card prints its question, then its own evidence lines, then the options", () => {
+		const choice = { type: "Choice", props: { question: "디스크 · 오래된 로그를 지울까요?", evidence: ["로그 폴더 12GB, 어제는 9GB였어요.", "가장 큰 파일: hub.log"], options: [{ n: 1, label: "지워요", desc: "7일 넘은 로그만 지워요" }, { n: 2, label: "둬요" }] } };
+		expect(renderTerminal(spec(choice), { color: false })).toBe("디스크 · 오래된 로그를 지울까요?\n로그 폴더 12GB, 어제는 9GB였어요.\n가장 큰 파일: hub.log\n1) 지워요\n   7일 넘은 로그만 지워요\n2) 둬요");
+	});
 	test("NO_COLOR and a pipe turn colour off", () => {
 		expect(useColor({}, true)).toBe(true);
 		expect(useColor({ NO_COLOR: "1" }, true)).toBe(false);

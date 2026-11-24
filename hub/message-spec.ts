@@ -86,8 +86,8 @@ export const CATALOG: Record<string, { props: Check; plain: (p: any) => string }
 	Rule: { props: obj({}), plain: () => "---" },
 	// Display of a decision block. The buttons, the answer path and every gate stay where they are (hub/askbuttons.ts, hub/draft-approval.ts): an option only ever answers.
 	Choice: {
-		props: obj({ question: nonEmpty, options: list(obj({ n: v => Number.isInteger(v), label: nonEmpty }, { desc: str })) }),
-		plain: p => [`결정: ${p.question}`, ...p.options.flatMap((o: { n: number; label: string; desc?: string }) => [`**${o.n}) ${o.label}**`, ...(o.desc ? [o.desc] : [])])].join("\n"),
+		props: obj({ question: nonEmpty, options: list(obj({ n: v => Number.isInteger(v), label: nonEmpty }, { desc: str })) }, { evidence: list(v => nonEmpty(v) && !(v as string).includes("\n")) }),
+		plain: p => [`결정: ${p.question}`, ...(p.evidence ?? []), ...p.options.flatMap((o: { n: number; label: string; desc?: string }) => [`**${o.n}) ${o.label}**`, ...(o.desc ? [o.desc] : [])])].join("\n"),
 	},
 	Files: { props: obj({ items: list(obj({ path: nonEmpty })) }), plain: p => lines("[file] ", p.items.map((x: { path: string }) => x.path)) },
 };

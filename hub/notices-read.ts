@@ -38,26 +38,29 @@ const dep = <T>(read: () => T): T => {
 const laneName = (name: string): string | undefined => laneTitleOf(name)?.trim() || recordedTitle(name);
 // A notice as the owner reads it (the stored one keeps what the bot wrote): everyday Korean, no tool names, commands, ids or paths (hub/notice-ko.ts).
 export const say = (s: string): string => noticeKo(s, { lane: name => dep(() => laneName(name)), keepFiles: true });
-type Shown = { kind: Notice["kind"]; key: string | undefined; title: string; text: string; draft: boolean; engine: unknown; day: string; deps: Dep[]; outTitle: string; outText: string };
+type Shown = { kind: Notice["kind"]; key: string | undefined; title: string; text: string; evidence: string[] | undefined; draft: boolean; engine: unknown; day: string; deps: Dep[]; outTitle: string; outText: string; outEvidence: string[] | undefined };
 const shown = new WeakMap<Notice, Shown>();
 let dayOf: Intl.DateTimeFormat | undefined;
 const today = (): string => (dayOf ??= new Intl.DateTimeFormat("en-CA", { timeZone: TZ })).format(Date.now());
 export function readable(n: Notice): Notice {
-	const engine = noticeFor(webView()), day = today(), draft = !!n.decision?.draft;
+	const engine = noticeFor(webView()), day = today(), draft = !!n.decision?.draft, evidence = n.decision?.evidence;
 	let c = shown.get(n);
-	if (!c || c.kind !== n.kind || c.key !== n.key || c.title !== n.title || c.text !== n.text || c.draft !== draft || c.engine !== engine || c.day !== day || c.deps.some(d => d.read() !== d.was)) {
+	if (!c || c.kind !== n.kind || c.key !== n.key || c.title !== n.title || c.text !== n.text || c.evidence !== evidence || c.draft !== draft || c.engine !== engine || c.day !== day || c.deps.some(d => d.read() !== d.was)) {
 		const seen: Dep[] = [];
 		deps = seen;
 		try {
 			const r = readableStored(n);
 			const outTitle = say(r.title), outText = r.decision?.draft ? r.text : say(r.text);
-			c = { kind: n.kind, key: n.key, title: n.title, text: n.text, draft, engine, day, deps: seen, outTitle, outText };
+			const said = draft ? undefined : evidence?.map(say);
+			const outEvidence = said && evidence && said.some((l, i) => l !== evidence[i]) ? said : undefined;
+			c = { kind: n.kind, key: n.key, title: n.title, text: n.text, evidence, draft, engine, day, deps: seen, outTitle, outText, outEvidence };
 		} finally {
 			deps = undefined;
 		}
 		shown.set(n, c);
 	}
-	return c.outTitle === n.title && c.outText === n.text ? n : { ...n, title: c.outTitle, text: c.outText };
+	if (c.outTitle === n.title && c.outText === n.text && !c.outEvidence) return n;
+	return { ...n, title: c.outTitle, text: c.outText, ...(n.decision && c.outEvidence ? { decision: { ...n.decision, evidence: c.outEvidence } } : {}) };
 }
 // A watch notice stored before labels and Korean reasons: its title is the watch name and its text starts with the raw reason.
 function readableStored(n: Notice): Notice {

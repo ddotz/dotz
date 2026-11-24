@@ -6,12 +6,37 @@
 // - Options are numbered 1, 2, 3 ... in a row. A number that restarts at 1 after that means several decision blocks
 //   ("1 and 2"): there is no single answer to click, so no options are returned. Fewer than 2 options: none.
 // - The recommendation mark older messages carry on an option line is dropped (stripRecommendMark): nothing shows or keys on it.
-// - `question` is the last non-empty line before the first option, without a leading status marker.
 // The choice block a gateway job appends to an issue report on alert: "결정: <question>", then 2-4 options,
 // each a `**n) name**` line and a one-line consequence. The web's decision buttons and the decision notices read exactly this shape.
 export function issueBlock(question: string, options: { name: string; result: string }[]): string {
 	return [`결정: ${question}`, ...options.flatMap((o, i) => [`**${i + 1}) ${unnumbered(o.name)}**`, ...(o.result ? [o.result] : [])])].join("\n");
 }
+
+/** One answer-needed card in the D1 shape (docs/notifications.md): the head `결정: <subject> · <question>`, the card's own evidence lines,
+ * then each option as a `**n) name**` line and the line that says what picking it does. Every surface reads the evidence as this card's.
+ * Text from data that a parser would read as a head, an option, a fence or a dropped line gets an INERT mark, so every parser reads the card as given.
+ * Throws on a call no card can come from: fewer than two options, an option without a name, or no subject and no question. */
+export function cardBlock(card: { subject: string; question: string; evidence?: string[]; options: { name: string; result: string }[] }): string {
+	const title = [card.subject, card.question].map(flat).filter(Boolean).join(" · ");
+	if (!title) throw new Error("cardBlock: a card needs a subject or a question");
+	if (card.options.length < 2) throw new Error("cardBlock: a card needs at least two options");
+	if (card.options.some(o => !flat(o.name))) throw new Error("cardBlock: every option needs a name");
+	const evidence = (card.evidence ?? []).map(flat).filter(Boolean).map(inertLine);
+	return [`결정: ${inertWithin(title, TITLE_START)}`, ...evidence, ...card.options.flatMap((o, i) => [`**${i + 1}) ${inertWithin(flat(o.name), NAME_START)}**`, ...(flat(o.result) ? [inertLine(flat(o.result))] : [])])].join("\n");
+}
+/** The invisible mark cardBlock puts into a data line the parsers would otherwise read as structure: the owner reads the same words. */
+export const INERT = "\u200b";
+const STRUCTURE_START = /^(?:[>*`[]|\d+\s*[).]|결정|decision)/i;
+const TITLE_START = /^(?:\[|결정|decision)/i;
+const NAME_START = /^(?:\d{1,2}[).]|\*)/;
+const inertLine = (s: string): string => {
+	const t = D_CLOSE.test(s) ? s.replace(/번(?=호[로를])/g, `번${INERT}`) : s;
+	return STRUCTURE_START.test(t) ? `${INERT}${t}` : t;
+};
+const inertWithin = (s: string, start: RegExp): string => {
+	const t = (start.test(s) ? `${INERT}${s}` : s).replace(/\*(?=\*)/g, `*${INERT}`);
+	return t.endsWith("*") ? `${t}${INERT}` : t;
+};
 
 // KakaoTalk reply drafts: when the incoming message needs a decision only the owner can make, the draft model returns 2-4 short choices
 // instead of a draft. Pure helpers shared by the web draft API, the CLI (features/reply-drafts/bin/draft.ts) and the model prompts.
@@ -74,6 +99,7 @@ export function parseChoices(text: string): Choices {
 	const options: ChoiceOption[] = [];
 	let question: string | undefined;
 	let before: string | undefined;
+	let headed = false;
 	let fence = false;
 	for (const line of fromFirstHead(text.split("\n"))) {
 		if (FENCE.test(line)) {
@@ -97,7 +123,11 @@ export function parseChoices(text: string): Choices {
 			continue;
 		}
 		const plain = line.replace(/^\s*>\s?/, "").replace(/\*\*/g, "").trim();
-		if (plain && !options.length) before = oneHead(plain.replace(/^\[[^\]]{1,10}\][ \t]*/, ""));
+		if (!plain || options.length) continue;
+		const said = oneHead(plain.replace(/^\[[^\]]{1,10}\][ \t]*/, ""));
+		const head = DECISION_HEAD.test(said);
+		if (head || !headed) before = said;
+		headed ||= head;
 	}
 	if (options.length < 2 || options.length > MAX_OPTIONS) return { options: [] };
 	return { ...(question ? { question } : {}), options };
@@ -117,7 +147,7 @@ export const DETAIL_DESC = /(?:적어|알려|써|말해)\s*(?:주|줘|달라|세
 export const detailOf = (o: { label: string; desc?: string; detail?: boolean }): boolean => !!o.detail || DETAIL_LABEL.test(o.label) || DETAIL_DESC.test(o.desc ?? "");
 // `headed`: the block was opened by a "결정:" line. Any bot message (not only an [ask]) holding a headed block with 2+ options is a decision;
 // a bare numbered list without the "결정:" line is not.
-type DecisionBlock = { title: string; options: DecisionOption[]; headed?: true };
+type DecisionBlock = { title: string; options: DecisionOption[]; headed?: true; evidence?: string[] };
 export const hasDecisionHead = (blocks: DecisionBlock[]): boolean => blocks.some(b => b.headed);
 export const D_OPT = /^\s*(?:\*\*)?\s*(\d+)\)\s*(.+?)\s*(?:\*\*)?\s*$/;
 export const DECISION_HEAD = /^\s*(?:\*\*)?\s*(?:결정|decision(?: needed)?)(?:\s*#?\d{1,2})?\s*[:：]\s*(.*?)\s*(?:\*\*)?\s*$/i;
@@ -127,29 +157,45 @@ export const D_CLOSE = /번호(?:로|를).*(?:답|알려)/;
 // A head written twice ("결정: [ask] 결정: <question>", outbox 2026-11-09) is one head: the marker and the second label after the first go.
 const DOUBLED_HEAD = /^(\s*(?:\*\*)?\s*(?:결정|decision(?: needed)?)(?:\s*#?\d{1,2})?\s*[:：]\s*)(?:\[[^\]\n]{1,10}\][ \t]*|(?:결정|decision(?: needed)?)\s*[:：][ \t]*)+/i;
 const oneHead = (line: string): string => line.replace(DOUBLED_HEAD, "$1");
-// One decision of a several-decision message: the lead text before the first "결정:" line plus that block's own lines, without its option
-// lines (the buttons show them) and without the other decisions. A message whose blocks are not all headed stays whole. Empty when nothing is left.
+const FILE_LINE = /^\s*\[file\]\s+\S/;
+const isEvidence = (line: string): boolean => !!line.trim() && !D_CLOSE.test(line) && !FILE_LINE.test(line) && !D_OPT.test(line) && !DECISION_HEAD.test(line);
+/** One decision of a several-decision message, as its notice stores it: the card's evidence lines (the lines between its "결정:" head and its
+ * first option), the lead text before the first head, then the block's lines after its options. Option lines (the buttons show them), the head
+ * and the other decisions never appear. `index` counts the blocks parseDecisions keeps (a head with 2+ options), so a head with no or one
+ * option shifts nothing; a message with no such block at all (no card) counts every head, so its text is never lost. Empty when nothing is left. */
 export function decisionText(body: string, index: number): string {
 	const lines = stripRecommendMark(body).replace(/^\s*\[[^\]\n]+\][ \t]*/, "").split("\n");
 	const lead: string[] = [];
-	const parts: string[][] = [];
+	const parts: { evidence: string[]; rest: string[]; options: number; last: number; restarted: boolean }[] = [];
 	let fence = false;
 	for (let i = 0; i < lines.length; i++) {
 		const line = lines[i]!;
 		if (FENCE.test(line)) fence = !fence;
 		if (!fence && DECISION_HEAD.test(line)) {
-			parts.push([]);
+			parts.push({ evidence: [], rest: [], options: 0, last: 0, restarted: false });
 			continue;
 		}
 		if (!fence && D_CLOSE.test(line)) continue;
-		if (!fence && parts.length && D_OPT.test(line)) {
+		const part = parts[parts.length - 1];
+		const opt = !fence && part ? D_OPT.exec(line) : null;
+		if (part && opt) {
+			const n = Number(opt[1]);
+			if (part.options && n <= part.last) part.restarted = true;
+			if (!part.restarted) {
+				part.options++;
+				part.last = n;
+			}
 			const nx = lines[i + 1];
-			if (nx !== undefined && nx.trim() && !D_OPT.test(nx) && !DECISION_HEAD.test(nx) && !D_CLOSE.test(nx)) i++;
+			if (nx !== undefined && nx.trim() && !D_OPT.test(nx) && !DECISION_HEAD.test(nx) && !D_CLOSE.test(nx) && !FENCE.test(nx)) i++;
 			continue;
 		}
-		(parts.length ? parts[parts.length - 1]! : lead).push(line);
+		if (!part) lead.push(line);
+		else if (!fence && !part.options && !FENCE.test(line) && isEvidence(line)) part.evidence.push(line.trim());
+		else part.rest.push(line);
 	}
-	return [...lead, "", ...(parts[index] ?? [])].join("\n").replace(/\n{3,}/g, "\n\n").trim();
+	const cards = parts.filter(p => p.options >= 2), own = (cards.length ? cards : parts)[index];
+	const evidence = own?.evidence.length ? [...own.evidence, ""] : [];
+	return [...evidence, ...lead, "", ...(own?.rest ?? [])].join("\n").replace(/\n{3,}/g, "\n\n").trim();
 }
 // A message for a place with no buttons (the main chat's compact result card): each "결정:" line keeps its question in words, its option lines and their
 // description lines go (a summary cut inside the block left a head with one option: a card that could not be, 2026-11-10 "라이선스").
@@ -195,7 +241,10 @@ export function parseDecisions(text: string): { question: string; blocks: Decisi
 			continue;
 		}
 		const m = D_OPT.exec(line);
-		if (!m) continue;
+		if (!m) {
+			if (cur?.headed && !cur.options.length && isEvidence(line)) (cur.evidence ??= []).push(line.trim());
+			continue;
+		}
 		const n = Number(m[1]);
 		if (!cur || (cur.options.length && n <= cur.options[cur.options.length - 1]!.n)) {
 			cur = { title: "", options: [] };

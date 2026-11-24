@@ -9,7 +9,7 @@ const shipped = readFileSync(join(import.meta.dir, "..", "web/js/01-message-spec
 test("the page's copy is this code, and runs to the same answers", async () => {
 	expect(shipped).toBe(await buildMessageSpecWeb());
 	const web = new Function(`${shipped}; return { deriveSpec, deriveBasicSpec };`)() as { deriveSpec: typeof deriveSpec; deriveBasicSpec: typeof deriveBasicSpec };
-	for (const t of ["정리했어요.\n\n1. 열기\n2. 누르기\n\n근거: 로그 · 파일", "- **응답:** 5,308ms → 36ms\n- **상태:** 정상", "네, 알겠어요.", "| a | b |\n|---|---|\n| 1 | 2 |", "출처:\n- 예시: https://example.com/a\n- https://example.com/b", "```목록\n# 방\n가족 | 단체\n```"]) {
+	for (const t of ["정리했어요.\n\n1. 열기\n2. 누르기\n\n근거: 로그 · 파일", "- **응답:** 5,308ms → 36ms\n- **상태:** 정상", "네, 알겠어요.", "| a | b |\n|---|---|\n| 1 | 2 |", "출처:\n- 예시: https://example.com/a\n- https://example.com/b", "```목록\n# 방\n가족 | 단체\n```", "결정: 디스크 · 지울까요?\n로그 12GB, 어제 9GB\n**1) 지워요**\n7일 넘은 것만\n**2) 둬요**\n그대로\n\n근거: 로그"]) {
 		expect(web.deriveSpec(t)).toEqual(deriveSpec(t));
 		expect(web.deriveBasicSpec(t)).toEqual(deriveBasicSpec(t));
 	}

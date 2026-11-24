@@ -26,7 +26,7 @@ const firstLine = (text: string) => {
 	return shortTitle(l);
 };
 
-type Draft = { title: string; detail: string; options: DecisionOpt[]; to: string; replyTo: string; group: number; key: string; by?: string; ref?: string; draft?: DraftApproval; assumed?: true };
+type Draft = { title: string; detail: string; options: DecisionOpt[]; to: string; replyTo: string; group: number; key: string; by?: string; ref?: string; draft?: DraftApproval; assumed?: true; evidence?: string[] };
 
 // The quoted draft in the newest assistant message of a conversation before `before` (the draft the thread's send question is about).
 function threadDraft(conv: string, before: string): string | undefined {
@@ -93,7 +93,8 @@ export function decisionsOf(e: HubEvent): Draft[] {
 	const cards = pc.blocks.map((b, i) => {
 		const title = b.title || (many ? `결정 ${i + 1}` : pc.question || line);
 		const d = draft(title, b.options.map(o => ({ ...o })), group, i);
-		return own ? { ...d, detail: withFiles(decisionText(body, i) || title) } : d;
+		const evidence = sendDraft || askDraft ? undefined : b.evidence;
+		return own || evidence ? { ...d, detail: withFiles(decisionText(body, i) || title), ...(evidence ? { evidence } : {}) } : d;
 	});
 	return [...cards, ...unread.map((q, i) => draft(shortTitle(q), [], group, pc.blocks.length + i))];
 }

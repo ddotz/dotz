@@ -80,8 +80,9 @@ ${p.code}
 \`\`\`` },
   Rule: { props: obj({}), plain: () => "---" },
   Choice: {
-    props: obj({ question: nonEmpty, options: list(obj({ n: (v) => Number.isInteger(v), label: nonEmpty }, { desc: str })) }),
-    plain: (p) => [`결정: ${p.question}`, ...p.options.flatMap((o) => [`**${o.n}) ${o.label}**`, ...o.desc ? [o.desc] : []])].join(`
+    props: obj({ question: nonEmpty, options: list(obj({ n: (v) => Number.isInteger(v), label: nonEmpty }, { desc: str })) }, { evidence: list((v) => nonEmpty(v) && !v.includes(`
+`)) }),
+    plain: (p) => [`결정: ${p.question}`, ...p.evidence ?? [], ...p.options.flatMap((o) => [`**${o.n}) ${o.label}**`, ...o.desc ? [o.desc] : []])].join(`
 `)
   },
   Files: { props: obj({ items: list(obj({ path: nonEmpty })) }), plain: (p) => lines("[file] ", p.items.map((x) => x.path)) }
@@ -252,6 +253,7 @@ function sourceRuns(src, last) {
 const DECISION_HEAD = /^\s*(?:\*\*)?\s*(?:결정|decision(?: needed)?)(?:\s*#?\d{1,2})?\s*[:：]\s*(.*?)\s*(?:\*\*)?\s*$/i;
 const D_OPT = /^\s*(?:\*\*)?\s*(\d+)\)\s*(.+?)\s*(?:\*\*)?\s*$/;
 const DRAFT_REF = /\(\s*[A-Za-z0-9][A-Za-z0-9_.:-]{1,63}\)\s*$/;
+const HEAD_MARK = /^\[[^\]\n]{1,10}\]/;
 function isDraft(text) {
   let fence = false, head = false, quoted = false;
   for (const line of text.split(`
@@ -282,7 +284,13 @@ function choiceOf(p) {
   if (!h)
     return null;
   const OPT = /^\*\*([1-9]\d{0,2})\) (\S[^*]*)\*\*$/;
-  for (let i = 1;i < p.length; i++) {
+  const first = p.findIndex((l) => OPT.test(l));
+  if (first < 1)
+    return null;
+  const evidence = p.slice(1, first);
+  if (evidence.length && (DECISION_HEAD.exec(p[0])?.[1] !== h[1] || DECISION_HEAD.test(h[1]) || HEAD_MARK.test(h[1]) || evidence.some((l) => FILE_LINE.test(l) || D_OPT.test(l) || DECISION_HEAD.test(l))))
+    return null;
+  for (let i = first;i < p.length; i++) {
     const o = OPT.exec(p[i]);
     if (!o)
       return null;
@@ -292,7 +300,7 @@ function choiceOf(p) {
       i++;
     options.push({ n: Number(o[1]), label: o[2], ...desc !== undefined ? { desc } : {} });
   }
-  return options.length >= 2 ? mk("Choice", { question: h[1], options }) : null;
+  return options.length >= 2 ? mk("Choice", { question: h[1], ...evidence.length ? { evidence } : {}, options }) : null;
 }
 function blocks(text, last, shape, meta) {
   const items = [], src = unquoteChoices(text.split(`

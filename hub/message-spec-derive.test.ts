@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { parseDecisions } from "./choices.ts";
 import { type HubEvent, emit, onEmit } from "./events.ts";
 import { deriveSpec } from "./message-spec-derive.ts";
 import { resolveSpecFence } from "./message-spec-of.ts";
@@ -35,6 +36,36 @@ test("deriveSpec reads back what specPlain wrote, for one spec of each component
 		expect(validateSpec(spec).ok, name).toBe(true);
 		expect(deriveSpec(specPlain(spec)), name).toEqual(spec);
 	}
+});
+
+test("a card's head, its evidence lines and its options are one Choice, and its plain form is the card shape", () => {
+	const choice = el("Choice", { question: "디스크 · 오래된 로그를 지울까요?", evidence: ["로그 12GB, 어제 9GB", "가장 큰 파일: hub.log"], options: [{ n: 1, label: "지워요", desc: "7일 넘은 로그만 지워요" }, { n: 2, label: "둬요", desc: "그대로 둬요" }] });
+	const spec = specOfElements([choice, el("Evidence", { items: ["로그"] })]);
+	expect(validateSpec(spec).ok).toBe(true);
+	expect(specPlain(spec)).toBe("결정: 디스크 · 오래된 로그를 지울까요?\n로그 12GB, 어제 9GB\n가장 큰 파일: hub.log\n**1) 지워요**\n7일 넘은 로그만 지워요\n**2) 둬요**\n그대로 둬요\n\n근거: 로그");
+	expect(deriveSpec(specPlain(spec))).toEqual(spec);
+	expect(validateSpec(specOfElements([el("Choice", { ...choice.props, evidence: [] })])).ok).toBe(false);
+	expect(validateSpec(specOfElements([el("Choice", { ...choice.props, evidence: ["두 줄\n이에요"] })])).ok).toBe(false);
+});
+
+test("the spec reads a card's title and evidence as the hub parser does, and leaves a paragraph the parsers read otherwise as text", () => {
+	const opts = "**1) 지워요**\n7일 넘은 것만\n**2) 둬요**\n그대로", H = "결정: 디스크 · 지울까요?";
+	const spec = (t: string) => specChildren(deriveSpec(t) ?? specOfElements([])).filter(e => e.type === "Choice").map(e => [e.props.question, e.props.evidence ?? [], (e.props.options as { label: string }[]).map(o => o.label)]);
+	const hub = (t: string) => parseDecisions(t).blocks.map(b => [b.title, b.evidence ?? [], b.options.map(o => o.label)]);
+	const plain = `${H}\n로그 12GB\n${opts}`;
+	expect(spec(plain)).toEqual(hub(plain));
+	for (const t of [`결정: 가?\n${H}\n로그 12GB\n${opts}`, `${H}\nDecision: pending since 08:00\n${opts}`, `${H}\n[file] /tmp/a.png\n${opts}`, `결정: 결정: 가?\n로그\n${opts}`, `결정: 가?**\n로그\n${opts}`]) {
+		expect(spec(t)).toEqual([]);
+		const s = deriveSpec(t);
+		expect(s === null || specPlain(s) === t).toBe(true);
+	}
+});
+
+test("a card without evidence lines is a Choice as before, whatever its head looks like", () => {
+	const opts = "**1) 지금**\n**2) 내일**";
+	const questions = (t: string) => specChildren(deriveSpec(t) ?? specOfElements([])).filter(e => e.type === "Choice").map(e => e.props.question);
+	expect(questions(`결정: 결정: 배포 시점을 정할까요?\n${opts}`)).toEqual(["결정: 배포 시점을 정할까요?"]);
+	expect(questions(`결정: [긴급] 배포 시점을 정할까요?\n${opts}`)).toEqual(["[긴급] 배포 시점을 정할까요?"]);
 });
 
 test("a whole answer comes out as its blocks in order", () => {

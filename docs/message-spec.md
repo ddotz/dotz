@@ -53,7 +53,7 @@
 | `Sources` | 출처 링크 | `- 이름: URL` |
 | `Quote`, `Meta`, `Evidence` | 인용, 작은 줄, 근거 | `> `, `-# `, `근거: a · b` |
 | `Code`, `Rule` | 코드 블록, 구분선 | 펜스, `---` |
-| `Choice` | 선택지 표시 | `결정:` 블록 |
+| `Choice` | 선택지 표시. `question`은 머리 줄의 제목, `evidence`(있을 때만)는 머리 줄과 첫 선택지 사이의 근거 줄, `options`는 선택지와 그 아래 한 줄이에요. 근거 줄은 알림 저장, 웹 시트, 웹 대화 카드, Discord가 모두 그 카드의 근거로 읽어요(`docs/notifications.md`의 카드 모양) | `결정: <무엇> · <질문>`, 근거 줄 0~4줄, `**n) 이름**`과 그 아래 한 줄 |
 | `Files` | 첨부 | `[file] 경로` |
 
 ` ```chart ` 블록은 [ztd-charts](https://github.com/Junhan2/ztd-charts) 스펙이에요. 글에서 읽을 때는 JSON 객체인지만 보고, 게이트웨이(`hub/chart.ts`)가 ztd 검증기로 확인한 뒤 웹에는 앱 테마(밝게/어둡게)에 맞는 SVG를, Discord에는 PNG 첨부를 보내요. 데이터는 블록 안에 있어야 하고(`data.url`은 받지 않아요), 검증을 못 넘으면 그림 대신 JSON 코드 블록과 짧은 안내 한 줄이 보여요. 차트 모듈은 처음 그릴 때만 불러와서 게이트웨이 시작 시간과 메모리는 그대로예요. 그림은 `<data dir>/charts`에 해시로 저장하고 30MB를 넘으면 오래된 것부터 지워요.

@@ -46,7 +46,7 @@ function lines(e: SpecElement, S: ReturnType<typeof styles>): string[] {
 		case "Meta": return [S.dim(clean(p.text))];
 		case "Code": return clean(p.code).split("\n").map(l => `  ${S.dim(l)}`);
 		case "Rule": return [S.dim("─".repeat(24))];
-		case "Choice": return [S.bold(clean(p.question)), ...p.options.flatMap((o: { n: number; label: string; desc?: string }) => [`${o.n}) ${S.inline(o.label)}`, ...(o.desc ? [`   ${S.dim(clean(o.desc))}`] : [])])];
+		case "Choice": return [S.bold(clean(p.question)), ...(p.evidence ?? []).map((l: string) => S.inline(l)), ...p.options.flatMap((o: { n: number; label: string; desc?: string }) => [`${o.n}) ${S.inline(o.label)}`, ...(o.desc ? [`   ${S.dim(clean(o.desc))}`] : [])])];
 		case "Files": return [];
 		default: return elementPlain(e).split("\n").map(l => (/^#{1,6}\s/.test(l) ? S.bold(clean(l.replace(/^#{1,6}\s+/, ""))) : S.inline(l)));
 	}

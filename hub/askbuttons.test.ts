@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createEscalations, escalations, setEscalationsForTest } from "./escalate.ts";
 import { ASK_PREFIX, askComponents, askComponentsFor, askInteraction, parseAskId } from "./askbuttons.ts";
+import { cardBlock, parseDecisions } from "./choices.ts";
 import { msg } from "./i18n.ts";
 import type { Interaction } from "./discord.ts";
 import { buildPayloads } from "./discord-format.ts";
@@ -42,6 +43,16 @@ test("자세히 · 나중에 run the hub's handler for the owner only and leave 
 	expect(calls).toEqual([["lane:fix", "시작 설정", "later"]]);
 	const quiet = (content: string) => ({ type: 4, data: { content, flags: 64, allowed_mentions: { parse: [] } } });
 	expect(replies).toEqual([quiet("later ok"), quiet(msg().auth.notOwner)]);
+});
+
+test("a card with evidence lines under its head keeps its buttons, and 나중에 names the card's title, not an evidence line", async () => {
+	const card = `닥터 점검이에요.\n\n${cardBlock({ subject: "디스크", question: "지울까요?", evidence: ["로그 12GB, 어제 9GB", "세션 abc"], options: [{ name: "지워요", result: "7일 넘은 것만" }, { name: "둬요", result: "그대로" }] })}`;
+	const rows = askComponentsFor("alert", card) as { components: { custom_id: string }[] }[];
+	expect(rows.flatMap(r => r.components.map(c => c.custom_id))).toEqual([`${ASK_PREFIX}:alert:1`, `${ASK_PREFIX}:alert:2`, `${ASK_PREFIX}:alert:more`, `${ASK_PREFIX}:alert:later`]);
+	const calls: string[] = [];
+	await askInteraction(click("owner-1", `${ASK_PREFIX}:alert:later`, card), { owner: "owner-1", reply: async () => {}, answer: () => {}, extra: (_t, question) => (calls.push(question), "ok") });
+	expect(calls).toEqual(["결정: 디스크 · 지울까요?"]);
+	expect(calls[0]).toContain(parseDecisions(card).blocks[0]!.title);
 });
 
 test("rows of 5, label cut to 80, at most 25 buttons", () => {

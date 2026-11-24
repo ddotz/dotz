@@ -10,7 +10,7 @@ import { alertMatter, quietAlert } from "./alert-gate.ts";
 import { eventTarget, isPeerMessage, type HubEvent } from "./events.ts";
 import { classOfNotice, noticeClass } from "./notice-class.ts";
 import { kindOf, NOTICE_KINDS, type NoticeKindName } from "./notice-kinds.ts";
-import { dropClaim, isSilent, parkedTone } from "./tone.ts";
+import { isSilent, parkedTone } from "./tone.ts";
 import { BRACKET_CHANNEL_TAG, describeOutput, humanLabel, isIssue, itemRefOf, loginBlockedIn, PROVIDER_BACK_KO, sentinelMatch, watchLine } from "./watchtext.ts";
 import { answerRow, fireRow, restored, runKey, taskRunOf } from "./notices-schedule.ts";
 import { resolveItem, type WatchItem } from "./watchitem.ts";
@@ -29,19 +29,9 @@ import { worklogKind } from "./worklog-kind.ts";
 import { en } from "./i18n-en.ts";
 import { ko } from "./i18n-ko.ts";
 import { coalescedWrite } from "./coalesced-write.ts";
+import { loadNotices } from "./notices-file.ts";
 
-const load = (): Notice[] => {
-	if (!existsSync(paths.notices)) return [];
-	try {
-		const parsed = JSON.parse(readFileSync(paths.notices, "utf8"));
-		// An entry stored before the claim word was dropped reads the same as a new one (clean), and so does an older report (restored).
-		return Array.isArray(parsed) ? parsed.filter((n): n is Notice => typeof n?.id === "string" && typeof n.text === "string").map(n => ({ ...n, text: restored({ ...n, text: dropClaim(n.text) }) })) : [];
-	} catch (e) {
-		log(`notices.json unreadable, starting empty: ${e}`);
-		return [];
-	}
-};
-export let items: Notice[] = load();
+export let items: Notice[] = loadNotices();
 // True while backfillNotices replays old events: upsert then neither writes the file nor broadcasts per item.
 let replaying = false;
 // The file paths on the chips of the stored notices (hub/listed-files.ts).
@@ -393,7 +383,7 @@ function closeCardsWrittenBackTo(to: string, at: string, keep?: Notice): void {
 	if (since && since <= at) for (const i of items) if (i !== keep && isOpenDecision(i) && hasChoice(i) && !i.decision!.draft && i.decision!.to === to && !laterOn(i.decision) && (i.at ?? i.ts) < since) settleDecision(i, "", at, true);
 }
 
-export function putDecision(d: { key: string; title: string; detail: string; to: string; open?: string; options: DecisionOpt[]; group: number; replyTo?: string; draft?: DraftApproval; by?: string; ref?: string; assumed?: true }, at: string): void {
+export function putDecision(d: { key: string; title: string; detail: string; to: string; open?: string; options: DecisionOpt[]; group: number; replyTo?: string; draft?: DraftApproval; by?: string; ref?: string; assumed?: true; evidence?: string[] }, at: string): void {
 	const old = items.find(n => n.key === d.key) ?? (d.draft || Object.values(FILLER_QUESTIONS).includes(d.title) ? undefined : items.findLast(n => n.decision?.to === d.to && !n.decision.draft && sameQuestion(n.title, d.title))), asked = askedAgain(old, d, at);
 	if (old?.decision) {
 		// The same ask can arrive twice (a session's mid-turn line and its turn-end report): one notice, and an answered one stays answered.
@@ -404,7 +394,7 @@ export function putDecision(d: { key: string; title: string; detail: string; to:
 	if (d.options.length && !d.draft) closeCardsWrittenBackTo(d.to, at, old);
 	const open = d.open ?? d.to, expires_at = expiresAtOf(d, at);
 	if (d.draft && !shownAsStored(d.draft)) d = { ...d, draft: undefined };
-	const decision: Decision = { options: optionsOf(d), to: d.to, ...(d.replyTo ? { reply_to: d.replyTo } : {}), group: d.group, state: "open", ...(expires_at ? { expires_at } : {}), ...(d.draft ? { draft: d.draft } : {}), ...(d.assumed ? { assumed: true as const } : {}), ...(asked ? { asked } : {}) };
+	const decision: Decision = { options: optionsOf(d), ...(d.evidence ? { evidence: d.evidence } : {}), to: d.to, ...(d.replyTo ? { reply_to: d.replyTo } : {}), group: d.group, state: "open", ...(expires_at ? { expires_at } : {}), ...(d.draft ? { draft: d.draft } : {}), ...(d.assumed ? { assumed: true as const } : {}), ...(asked ? { asked } : {}) };
 	let item: Notice;
 	if (old) {
 		Object.assign(old, { kind: "decision", tone: "ask", title: d.title, text: withAskedLine(d.detail, asked), open, src: open, at, updated: at, read: false, decision, ...(d.by ? { by: d.by } : {}), ...(d.ref ? { ref: d.ref } : {}) });
@@ -581,6 +571,8 @@ function rerenderPending(): number {
 			if (n.key) i.key = n.key;
 			const d = i.decision!;
 			d.options = n.decision.options;
+			if (n.decision.evidence) d.evidence = n.decision.evidence;
+			else delete d.evidence;
 			d.group = n.decision.group;
 			if (n.decision.draft) d.draft = n.decision.draft;
 			// A card read as its draft when it came keeps it: the stored draft may have changed since by the owner's own edit (its text or recipient).

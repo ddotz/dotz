@@ -10,7 +10,7 @@ import { parseTone } from "./tone.ts";
 
 // The page's own parser, the code the bundle serves: the hub and the web must read one text the same way.
 const card = readFileSync(join(import.meta.dir, "../web/js/10-decision-card.js"), "utf8");
-const web = new Function(`${card.slice(0, card.indexOf("const DC = {"))}\nreturn { parseChoices, stripChoices, inlineBody };`)() as {
+const web = new Function(`${card.slice(0, card.indexOf("const DC = {"))}\n${readFileSync(join(import.meta.dir, "../web/js/10-card-evidence.js"), "utf8")}\nreturn { parseChoices, stripChoices, inlineBody };`)() as {
 	parseChoices: (t: string) => { blocks: { title: string; options: { n: number; label: string; desc: string }[] }[] };
 	stripChoices: (t: string) => string;
 	inlineBody: (t: string) => string;

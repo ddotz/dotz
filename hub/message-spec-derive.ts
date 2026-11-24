@@ -102,6 +102,7 @@ function sourceRuns(src: string[], last: boolean): Map<number, { head: string; i
 const DECISION_HEAD = /^\s*(?:\*\*)?\s*(?:결정|decision(?: needed)?)(?:\s*#?\d{1,2})?\s*[:：]\s*(.*?)\s*(?:\*\*)?\s*$/i;
 const D_OPT = /^\s*(?:\*\*)?\s*(\d+)\)\s*(.+?)\s*(?:\*\*)?\s*$/;
 const DRAFT_REF = /\(\s*[A-Za-z0-9][A-Za-z0-9_.:-]{1,63}\)\s*$/;
+const HEAD_MARK = /^\[[^\]\n]{1,10}\]/;
 // A draft approval (hub/draft-approval.ts) carries "(<ref>)" in its question, and the draft's own lines quoted above its options. Those messages stay exactly as they are.
 function isDraft(text: string): boolean {
 	let fence = false, head = false, quoted = false;
@@ -121,13 +122,15 @@ function isDraft(text: string): boolean {
 	}
 	return quoted && head && text.split("\n").some(l => D_OPT.test(l.replace(/^\s*>\s?/, "")));
 }
-// Only the written form of a decision block is a Choice (MODE.md): "결정: 질문", then `**n) 이름**` lines with at most one line under each, and nothing else in the paragraph.
-// Anything looser stays a paragraph, as it was drawn.
 function choiceOf(p: string[]): SpecElement | null {
 	const h = /^결정: (\S.*)$/.exec(p[0]!), options: Props[] = [];
 	if (!h) return null;
 	const OPT = /^\*\*([1-9]\d{0,2})\) (\S[^*]*)\*\*$/;
-	for (let i = 1; i < p.length; i++) {
+	const first = p.findIndex(l => OPT.test(l));
+	if (first < 1) return null;
+	const evidence = p.slice(1, first);
+	if (evidence.length && (DECISION_HEAD.exec(p[0]!)?.[1] !== h[1] || DECISION_HEAD.test(h[1]!) || HEAD_MARK.test(h[1]!) || evidence.some(l => FILE_LINE.test(l) || D_OPT.test(l) || DECISION_HEAD.test(l)))) return null;
+	for (let i = first; i < p.length; i++) {
 		const o = OPT.exec(p[i]!);
 		if (!o) return null;
 		const next = p[i + 1];
@@ -135,7 +138,7 @@ function choiceOf(p: string[]): SpecElement | null {
 		if (desc !== undefined) i++;
 		options.push({ n: Number(o[1]), label: o[2], ...(desc !== undefined ? { desc } : {}) });
 	}
-	return options.length >= 2 ? mk("Choice", { question: h[1], options }) : null;
+	return options.length >= 2 ? mk("Choice", { question: h[1], ...(evidence.length ? { evidence } : {}), options }) : null;
 }
 
 // ---- the blocks of one stretch of text ----

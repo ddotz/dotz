@@ -627,8 +627,12 @@ function ntParts(n) {
   const first = (text.split("\n").find(l => l.trim()) || "").trim();
   const m = /^.*?[.!?。？！](?=\s|$)/.exec(first), sent = m ? m[0] : first;
   const head = ntShort(sent.replace(/[*`#>]|(?<![A-Za-z0-9])_|_(?![A-Za-z0-9])/g, "")), a = head.replace(/…$/, ""), b = title0.replace(/…$/, "");
-  if (!title0 || !a || !(a.startsWith(b) || b.startsWith(a))) return { title: ntShort(title0), rest: text };
+  if (!title0 || !a || !(a.startsWith(b) || b.startsWith(a))) return { title: ntHeaded(n, text) ? title0 : ntShort(title0), rest: text };
   return { title: head, rest: head.endsWith("…") ? text : text.replace(sent, "").trim() };
+}
+function ntHeaded(n, text) {
+  const d = n.decision;
+  return !!d && !!d.options.length && !d.assumed && (d.group > 1 || !!d.evidence || parseChoices(text).blocks.some(b => b.title === n.title));
 }
 // A failure alert: its whole text in the same sheet over the current screen, with the way into the conversation.
 function ntDetailOpen(n) {
@@ -686,7 +690,7 @@ function ntSheetPaint() {
   const n = NS.pn ? pqNoticeNow(NS.pn) : ntById(NS.id);
   if (!n || !ntIsDec(n)) { ntSheetClose(false); return; }
   const d = n.decision, open = d.state === "open", ignd = d.state === "ignored", parts = ntParts(n), sibs = ntSibs(n), keep = NS.node.contains(document.activeElement) ? document.activeElement.dataset.k : "";
-  const fold = d.draft ? { head: parts.rest, rest: "" } : ntFold(d.options.length ? choiceBody(parts.rest, ntPlain(n.title)) : parts.rest);
+  const fold = d.draft ? { head: parts.rest, rest: "" } : (d.options.length && ntEvFold(n, parts.rest)) || ntFold(d.options.length ? choiceBody(parts.rest, ntPlain(n.title)) : parts.rest);
   const kids = [
     fsHead([el("span", { class: `fs-ey ${open ? "warn" : ignd ? "ign" : "done"}`, text: `${ntDecCtx(n)} · ${open ? TX("common.needs_reply") : ignd ? TX("mon.dr.st.ignored") : d.expired ? TX("misc.nsc.d_expired") : d.resolved ? TX("conv.nt.resolved") : TX("conv.nt.answered")}` }, sibs.length ? el("span", { class: "fs-left", "data-k": "count", text: ` · ${sibs.findIndex(x => x.id === n.id) + 1}/${d.group}` }) : null)],
       { ignore: open ? () => ntIgnore(n) : null, ignoreOff: NS.busy, close: () => ntSheetClose() }),
