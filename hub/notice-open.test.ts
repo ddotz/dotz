@@ -190,7 +190,7 @@ describe("entry points use the shared handler", () => {
 		make({ current: "chat", target: "alert" });
 		expect(tap({})).toEqual(["stop", "prevent"]);
 		expect(opened).toEqual([{ e: msgs[0] }]);
-		const link = "a, summary, details[open] pre, input, textarea, button:not(.dcm-row), .fatt";
+		const link = "a, summary, details[open] pre, input, textarea, button:not(.dcm-row), .fatt, .dq-p";
 		expect(tap({ [link]: true })).toEqual([]);   // a link / fold / other button / file row inside keeps its own job
 		expect(opened).toHaveLength(1);
 		unfolds = true;
