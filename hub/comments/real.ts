@@ -2,7 +2,7 @@
 // profiles of features/reply-drafts, and the one subscription-only model call. The gateway and the watch/onboard scripts build the engine here.
 import { homedir, hostname } from "node:os";
 import { join } from "node:path";
-import { loadPairs, loadStyle, markLearned, readLearned, recordForbidden, recordLearned, savePairs } from "../../features/reply-drafts/lib/settings.ts";
+import { loadPairs, loadStyle, markLearned, readLearned, recipientFile, recordForbidden, recordLearned, savePairs } from "../../features/reply-drafts/lib/settings.ts";
 import { loadConfig, realCtx } from "../../features/youtube-instagram/lib/config.ts";
 import { commentsFor, commentsRead, mediaHistory, mediaWithCounts, replyAuthor, reply as igReply } from "../../features/youtube-instagram/lib/instagram.ts";
 import { readCommentsSince } from "../../features/youtube-instagram/lib/yt-read.ts";
@@ -65,6 +65,7 @@ export function realEngine(dataDir: string, opts: { broadcast?: (e: Record<strin
 		...(opts.mailOwed ? { mailOwed: opts.mailOwed } : {}),
 		...(opts.answeredMailThread ? { answeredMailThread: opts.answeredMailThread } : {}),
 		style: commentStyle,
+		authorFile: recipientFile,
 		...(opts.learnEdits === false ? {} : { edits: { lessonOfEdit, learn: replyLearning(opts.flow).learn, mail: (id: string) => learnMailEdit(id, opts.flow) } }),
 		learn: ({ key, line, forbid }) => {
 			if (line.trim()) {

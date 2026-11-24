@@ -9,7 +9,7 @@ import { withFileWords } from "../../../hub/auto-attach.ts";
 import { claimsAttachment, ownClaimText } from "../../../hub/attach-claim.ts";
 import { ATTACH_AS_IS_HINT, ATTACH_REFUSED, LINT_REFUSED, asksForFile, briefLines, draftApprovalBlock, draftVerdict, type DraftVerdict, SPENT_REFUSED, WAITING_REFUSED } from "../../../hub/draft-approval.ts";
 import type { ReplyCall } from "../../../hub/reply-model.ts";
-import { addressesOf, fileNameKey, generateChatReply, learnedOf, lintReply, NO_RECIPIENT, ownerLint, RECIPIENT_FAILURE, replyAddress, reviseReply, SENT_CLAIM_FAILURE, withSenderAddress, type ModelCall, type Recipient, type ReplyItem, type ReplyKind, type ReplyStyle } from "../../../hub/reply-draft.ts";
+import { addressesOf, fileNameKey, generateChatReply, learnedOf, lintReply, NO_RECIPIENT, ownerLint, RECIPIENT_FAILURE, replyAddress, reviseReply, SENT_CLAIM_FAILURE, withSenderAddress, type LessonScope, type ModelCall, type Recipient, type ReplyItem, type ReplyKind, type ReplyStyle } from "../../../hub/reply-draft.ts";
 import { styleJudgeOn } from "../../../hub/config.ts";
 import { judgeAsk, type JudgeAsk } from "../../../hub/style-judge.ts";
 import { listLibrary, matchLibrary, MIN_SCORE, rankLibrary, type LibraryFile } from "./library.ts";
@@ -17,7 +17,7 @@ import { basename } from "node:path";
 import { ruleFilePath } from "./rules.ts";
 import { canAttach, sendsThroughZele, sendWith, settleAccount, threadMoved, webmailSite, zeleAccountOf, type Sent, type SendOutcome } from "./senders.ts";
 import { carryStagedFiles, removeStagedFile, stagedFiles, stagedName, stageFiles, stageWanted, type StageOpts, type Want } from "./staged.ts";
-import { dataDir, HEADINGS, INSTALL, loadPairs, loadSettings, loadStyle, normText, ownReplies, paths, profileBullets, recordForbidden, recordPattern, replaceBullets, toneFile, validApp, type ToneKey } from "./settings.ts";
+import { dataDir, HEADINGS, INSTALL, loadPairs, loadSettings, loadStyle, normText, ownReplies, paths, profileBullets, recipientFile, recordForbidden, recordPattern, replaceBullets, toneFile, validApp, type ToneKey } from "./settings.ts";
 import { curate, curateAsk, journalAdd, type LearnKind, profileOf } from "./curate.ts";
 import { compactCorrections } from "./compact.ts";
 import { lessonOfEdit } from "./edit-lesson.ts";
@@ -216,11 +216,12 @@ export const toneKey = (x: { app?: string; room?: string; profile?: string; box?
 	const boxKey: ToneKey = { app: x.instance, room: x.box, ...(x.profile ? {} : { base: key.app }) };
 	return existsSync(toneFile(boxKey)) ? boxKey : key;
 };
-/** The key a draft's style is loaded with: `toneKey(x)` plus its recipient (a mail's: the address the reply goes to by default, replyAddress; a comment's: its author, unless `from` is only the app or room that `draft.ts new` fills in when no author was given). Lessons are written under `toneKey` alone. */
+/** The key a draft's style is loaded with: `toneKey(x)` plus its recipient (a mail's: the address the reply goes to by default, replyAddress; a comment's: its author, unless `from` is only the app or room that `draft.ts new` fills in when no author was given). A revise lesson is written under `lessonKey`: the install for `everywhere`, this key for `recipient` when its recipient has a file name (recipientFile), else `toneKey(x)`. */
 export const styleKey = (x: Parameters<typeof toneKey>[0], item: Pick<ReplyItem, "kind" | "from" | "replyTo" | "self">): ToneKey => {
 	const key = toneKey(x), to = item.kind === "mail" ? replyAddress(item) : item.kind === "comment" && item.from !== (x.room ?? x.app) ? item.from : undefined;
 	return to === undefined ? key : { ...key, to };
 };
+const lessonKey = (x: Parameters<typeof toneKey>[0], item: Pick<ReplyItem, "kind" | "from" | "replyTo" | "self">, scope: LessonScope): ToneKey => (scope === "everywhere" ? { app: INSTALL } : scope === "recipient" && recipientFile(styleKey(x, item).to ?? "") !== undefined ? styleKey(x, item) : toneKey(x));
 export type Meta = { /** The mailbox the mail is in and its mail app instance (box.ts boxCtx): set only for a mail in a box with settings. */ box?: string; instance?: string; source: string; mailId: string; ref: string; origAttachments?: number; /** The zele account the mail belongs to (its record's `account`); every zele call of the draft passes it. */ account?: string };
 // "ask" (chat only): the message needs a decision only the user can make; `choices` are 2-4 short answers.
 export type Built = { action: "skip"; reason: string } | { action: "draft"; rec: DraftRec; warnings: string[]; /** The candidates the model chose (ReplyResult.files); absent = it gave no choice. */ files?: string[] } | { action: "ask"; question: string; choices: string[] };
@@ -659,8 +660,7 @@ async function reviseClaimed(id: string, change: string, deps: FlowDeps, opts: {
 	}
 	// Learned only once the new draft is stored: a revise that failed teaches nothing.
 	const learnt = learnedOf(r, change);
-	const lessonKey: ToneKey = learnt.everywhere ? { app: INSTALL } : toneKey(old);
-	const taught = learnt.line.trim() || learnt.forbid.length ? { key: lessonKey, line: learnt.line, forbid: learnt.forbid, evidence: { draft: old.body, change } } : undefined;
+	const taught = learnt.line.trim() || learnt.forbid.length ? { key: lessonKey(old, old.item, learnt.scope), line: learnt.line, forbid: learnt.forbid, evidence: { draft: old.body, change } } : undefined;
 	const stored = taught && opts.learn !== false ? await teach(taught.key, taught, taught.evidence, deps) : taught;
 	const said = taught && stored ? lessonNote({ key: taught.key, ...stored }) : "";
 	return { ok: true, text: askText(rec, [...r.warnings, ...banned, ...notStaged], said ? `답장 초안을 고쳤어요. ${said}` : "답장 초안을 고쳤어요"), id: rec.id, replaces: old.id, ...(taught ? { lesson: taught } : {}) };

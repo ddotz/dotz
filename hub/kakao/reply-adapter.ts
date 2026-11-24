@@ -4,8 +4,8 @@
 import type { SendJob } from "../approval-send.ts";
 import { sinceMidnight } from "../reply-route.ts";
 import { isReasonCode } from "../reply-reasons.ts";
-import type { Learned } from "../reply-draft.ts";
-import type { DraftView, LessonOfEdit, ReasonCode, ReplyAdapter, SendOutcome } from "../reply-types.ts";
+import type { Learned, LessonScope } from "../reply-draft.ts";
+import type { DraftView, Lesson, LessonOfEdit, ReasonCode, ReplyAdapter, SendOutcome } from "../reply-types.ts";
 import { dispatchSend, type DispatchDeps } from "./contract.ts";
 import type { Made } from "./make-draft.ts";
 import { claimEditLearned, confirmSent, type Draft, draftBlock, dropDraft, editDraft, kakaoView, readDrafts, restoreDraft, type SendResult } from "./send.ts";
@@ -14,8 +14,11 @@ import type { KakaoPaths } from "./types.ts";
 /** What createKakaoWeb hands the adapter: the store, a revise through its own model call, and the deps of one send. */
 // original: the message a draft answers (absent in tests that build the adapter alone).
 export type KakaoKit = { paths: KakaoPaths; original?: (d: Draft) => Promise<DraftView["original"]>; revise: (chatId: string, revise: { code: string; draft: string; change: string; intent?: string }) => Promise<Made>; sendDeps: () => Promise<DispatchDeps>; edits?: EditLearning };
-/** What a sent draft the owner edited teaches (design 3.4): the chat lines the draft answered, the room's reply model, the lesson reader, and where a lesson goes (that room's profile, install when it holds everywhere). */
+/** What a sent draft the owner edited teaches (design 3.4): the chat lines the draft answered, the room's reply model, the lesson reader, and where a lesson goes (kakaoLessonKey: that room's profile, install when it holds everywhere). */
 export type EditLearning = { answered: (d: Draft) => Promise<string>; ask: (system: string, user: string, chatId: string) => Promise<string>; lessonOfEdit: LessonOfEdit; learn: (chatId: string, learned: Learned) => void };
+
+/** The key a KakaoTalk lesson of `scope` is written under: the install for `everywhere`, else the room, which is the person a reply goes to (`recipient` and `channel` alike). */
+export const kakaoLessonKey = (chatId: string, scope: LessonScope): Lesson["key"] => (scope === "everywhere" ? { app: "install" } : { app: "kakao", room: chatId });
 
 const codeOf = (c: string | undefined): ReasonCode => (isReasonCode(c) ? c : "unknown");
 
@@ -50,7 +53,7 @@ export function kakaoAdapter(kit: KakaoKit): ReplyAdapter {
 			if (!claimEditLearned(kit.paths, ref)) return;
 			const received = await e.answered(d);
 			const taught = await e.lessonOfEdit({ before, after: d.text, received }, (system, user) => e.ask(system, user, d.chatId));
-			if (taught) e.learn(d.chatId, { line: taught.lesson, forbid: [], everywhere: taught.everywhere });
+			if (taught) e.learn(d.chatId, { line: taught.lesson, forbid: [], scope: taught.everywhere ? "everywhere" : "channel" });
 		};
 		void learning().catch(err => console.error(`kakao: what the edit of ${ref} teaches was not recorded: ${err instanceof Error ? err.message : String(err)}`));
 	};
@@ -78,7 +81,7 @@ export function kakaoAdapter(kit: KakaoKit): ReplyAdapter {
 			if (!d) return { ok: false, reason: { code: "gone", text: "그 초안을 찾지 못했어요" } };
 			const made = await kit.revise(d.chatId, { code: d.code, draft: d.text, change, ...(d.intent ? { intent: d.intent } : {}) });
 			if (!made.ok || !made.code) return { ok: false, reason: { code: "revise_failed", text: made.ok ? "고친 초안을 만들지 못했어요" : made.error } };
-			return { ok: true, ref: made.code, replaces: ref, ...(made.learned ? { lesson: { key: made.learned.everywhere ? { app: "install" } : { app: "kakao", room: d.chatId }, line: made.learned.line, forbid: made.learned.forbid, evidence: { draft: d.text, change } } } : {}) };
+			return { ok: true, ref: made.code, replaces: ref, ...(made.learned ? { lesson: { key: kakaoLessonKey(d.chatId, made.learned.scope), line: made.learned.line, forbid: made.learned.forbid, evidence: { draft: d.text, change } } } : {}) };
 		},
 		edit: async (ref, text) => done(editDraft(ref, text, { paths: kit.paths })),
 		drop: async ref => done(dropDraft(ref, { paths: kit.paths })),

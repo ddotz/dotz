@@ -348,13 +348,16 @@ describe("the owner's standing words in the prompt", () => {
 		for (const system of [reply, picked, compose, revise]) expect(system).toContain("beat the measured register");
 	});
 
-	test("a revise answer carries the wordings the owner banned and whether the change holds everywhere", () => {
+	test("a revise answer carries the wordings the owner banned and for whom the change holds; an older answer's everywhere still parses and an unknown scope is the room's", () => {
 		const r = parseDraftReply(JSON.stringify({ action: "draft", parts: ["3시"], summary: "", lesson: "존댓말", forbid: [" 하루 되세요 ", "", 3], everywhere: true }));
-		expect([r?.forbid, r?.everywhere]).toEqual([["하루 되세요"], true]);
+		expect([r?.forbid, r?.scope]).toEqual([["하루 되세요"], "everywhere"]);
+		const scoped = (o: object) => parseDraftReply(JSON.stringify({ action: "draft", parts: ["3시"], summary: "", lesson: "존댓말", ...o }))?.scope;
+		expect([scoped({ scope: "recipient" }), scoped({ scope: "everywhere" }), scoped({ scope: "channel" }), scoped({ scope: "room" }), scoped({ everywhere: false })]).toEqual(["recipient", "everywhere", "channel", "channel", "channel"]);
 		const plain = parseDraftReply(JSON.stringify({ action: "draft", parts: ["3시"], summary: "" }));
-		expect([plain?.forbid, plain?.everywhere]).toEqual([undefined, undefined]);
+		expect([plain?.forbid, plain?.scope]).toEqual([undefined, undefined]);
 		const { system } = buildDraftPrompt({ lines: ["상대: 몇 시?"], revise: { draft: "3시에 봐요", change: "더 짧게" } });
 		expect(system).toContain('"forbid"');
-		expect(system).toContain('"everywhere"');
+		expect(system).toContain(`"scope":"recipient" only when the owner says the change is about the person this reply goes to`);
+		expect(system).not.toContain('"everywhere":true');
 	});
 });

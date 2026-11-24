@@ -15,7 +15,7 @@ import { type KakaoDb, sqlcipherDb } from "./db.ts";
 import { callReplyModel } from "../reply-model.ts";
 import type { Learned } from "../reply-draft.ts";
 import { lessonOfEdit, replyLearning } from "../reply-mail.ts";
-import { kakaoAdapter } from "./reply-adapter.ts";
+import { kakaoAdapter, kakaoLessonKey } from "./reply-adapter.ts";
 import { type DraftModel, type StyleHint, type VoiceSource } from "./draft.ts";
 import { createLive } from "./live.ts";
 import { defaultRunner, type KakaoConfig, kakaoPaths } from "./types.ts";
@@ -56,7 +56,7 @@ const learnVoice = async (src: VoiceSource) => {
 // A revise that was stored teaches its lesson (never the raw request, never before the new draft exists), then the profile may fold it in.
 const learning = replyLearning();
 const onRevise = (chatId: string, learned: Learned) => {
-	const key = learned.everywhere ? { app: "install" } : { app: "kakao", room: chatId };
+	const key = kakaoLessonKey(chatId, learned.scope);
 	if (learned.forbid.length) {
 		try {
 			recordForbidden(key, learned.forbid);

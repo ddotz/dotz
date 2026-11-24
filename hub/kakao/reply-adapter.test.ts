@@ -17,7 +17,7 @@ afterAll(() => rmSync(dir, { recursive: true, force: true }));
 const paths = kakaoPaths(dir, dir);
 const runner = async () => ({ code: 0, stdout: "", stderr: "" });
 let revised: { chatId: string; change: string; intent?: string }[] = [];
-let taught: { line: string; forbid: string[]; everywhere: boolean } = { line: "짧게 쓴다", forbid: [], everywhere: false };
+let taught: Learned = { line: "짧게 쓴다", forbid: [], scope: "channel" };
 const kit = {
 	paths,
 	revise: async (chatId: string, r: { code: string; change: string; intent?: string }) => {
@@ -30,7 +30,7 @@ const kit = {
 beforeEach(() => {
 	rmSync(join(dir, "kakao"), { recursive: true, force: true });
 	revised = [];
-	taught = { line: "짧게 쓴다", forbid: [], everywhere: false };
+	taught = { line: "짧게 쓴다", forbid: [], scope: "channel" };
 });
 const draft = () => createDraft({ chatId: "1", roomName: "Alex", text: "내일 3시에 봐요", basisLogId: "9" }, { paths, runner });
 
@@ -87,14 +87,19 @@ test("revise returns the new code with what it replaced and the room's lesson; e
 	expect(readDrafts(paths).find(x => x.code === next)!.status).toBe("pending");
 });
 
-test("a revise that holds everywhere returns its lesson under the install key with the banned wordings; one that bans only a wording in the room keeps the room key", async () => {
+test("a revise that holds everywhere returns its lesson under the install key with the banned wordings; one that bans only a wording in the room, or is about the person, keeps the room key", async () => {
 	const a = kakaoAdapter(kit);
 	const d = await draft();
-	taught = { line: "존댓말로 쓴다", forbid: ["편안한 하루 되세요"], everywhere: true };
+	taught = { line: "존댓말로 쓴다", forbid: ["편안한 하루 되세요"], scope: "everywhere" };
 	expect(await a.revise(d.code, "편안한 하루 되세요는 비문이야, 항상 존댓말로")).toMatchObject({ ok: true, lesson: { key: { app: "install" }, line: "존댓말로 쓴다", forbid: ["편안한 하루 되세요"] } });
 	const room = await draft();
-	taught = { line: "", forbid: ["ㅋㅋㅋ"], everywhere: false };
+	taught = { line: "", forbid: ["ㅋㅋㅋ"], scope: "channel" };
 	expect(await a.revise(room.code, "ㅋㅋㅋ 쓰지 마")).toMatchObject({ ok: true, lesson: { key: { app: "kakao", room: "1" }, line: "", forbid: ["ㅋㅋㅋ"] } });
+	const person = await draft();
+	taught = { line: "이분께는 존댓말로 쓴다", forbid: [], scope: "recipient" };
+	const r = await a.revise(person.code, "이분께는 존댓말로");
+	expect(r).toMatchObject({ ok: true, lesson: { key: { app: "kakao", room: "1" }, line: "이분께는 존댓말로 쓴다" } });
+	expect(r.ok && r.lesson?.key).toEqual({ app: "kakao", room: "1" });
 });
 
 test("every send result reads as sent, surely not sent, may be in the room, or some parts in", () => {
@@ -147,10 +152,10 @@ async function sentEdit(o: { answer?: () => Promise<string>; text?: string; wire
 test("a sent KakaoTalk draft the owner edited teaches the model's lesson to that room, read with the chat lines it answered; one about the language itself is marked everywhere", async () => {
 	const r = await sentEdit();
 	expect([r.out, r.status]).toEqual([{ sent: "yes" }, "sent"]);
-	expect(r.learned).toEqual([["1", { line: EDIT_LESSON, forbid: [], everywhere: false }]]);
+	expect(r.learned).toEqual([["1", { line: EDIT_LESSON, forbid: [], scope: "channel" }]]);
 	expect(r.asked.map(x => x.chatId)).toEqual(["1"]);
 	for (const said of [ROOM_LINES, "내일 3시에 봐요", "내일 3시에 봐!! ㅎㅎ"]) expect(r.asked[0]!.user).toContain(said);
-	expect((await sentEdit({ answer: async () => JSON.stringify({ lesson: "맞춤법은 '돼요'로 쓴다", everywhere: true }) })).learned).toEqual([["1", { line: "맞춤법은 '돼요'로 쓴다", forbid: [], everywhere: true }]]);
+	expect((await sentEdit({ answer: async () => JSON.stringify({ lesson: "맞춤법은 '돼요'로 쓴다", everywhere: true }) })).learned).toEqual([["1", { line: "맞춤법은 '돼요'로 쓴다", forbid: [], scope: "everywhere" }]]);
 });
 
 test('a KakaoTalk edit teaches nothing for "", a failed or late call, a whitespace-only edit, a send that did not go out, or no wiring, and the send result stays the same', async () => {
@@ -196,5 +201,5 @@ test("an unconfirmed KakaoTalk send is learned only once the owner says it went 
 	r.a.learnSent?.(r.code);
 	r.a.learnSent?.(r.code);
 	await flush();
-	expect([r.learned, r.asked.length]).toEqual([[["1", { line: EDIT_LESSON, forbid: [], everywhere: false }]], 1]);
+	expect([r.learned, r.asked.length]).toEqual([[["1", { line: EDIT_LESSON, forbid: [], scope: "channel" }]], 1]);
 });

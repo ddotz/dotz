@@ -117,7 +117,7 @@ const flagged = mailDraft("네 수고하세요", [FORBIDDEN], 2, 2);
 const skipped = (calls: number) => ({ result: { action: "skip", reason: "no need" }, calls });
 const asked = (calls: number) => ({ result: { action: "ask", question: "갈까?", choices: ["가", "안 가"] }, calls });
 const unusable = { result: { threw: "the model did not return a usable JSON object" }, calls: 2 };
-const CHANGE_LESSON = { line: CHANGE, forbid: [], everywhere: false };
+const CHANGE_LESSON = { line: CHANGE, forbid: [], scope: "channel" };
 const kakao = (made: object, calls: number, o: { drafts?: unknown[]; learned?: object; asks?: unknown[] } = {}) => ({ made, onRevise: o.learned ? [o.learned] : [], asks: o.asks ?? [], drafts: o.drafts ?? [], calls, judged: 0 });
 const kStored = (text: string, notes: string[], calls: number, learned?: object) => kakao({ ok: true, stored: true, ...(learned ? { learned } : {}) }, calls, { drafts: [[text, notes]], ...(learned ? { learned } : {}) });
 const kClean = (calls: number, learned?: object) => kStored("네 확인했어요", [], calls, learned);
@@ -138,7 +138,7 @@ const MAIN: [string, Answer[], Want][] = [
 	["lint failure then skip", ["lint", "skip"], same(skipped(2), kFailed(NO_REPLY, 2), kFailed(NO_REPLY, 2))],
 	["chat ask", ["ask"], { ...same(unusable, kAsked(1), kFailed(DRAFT_FAILED, 1)), generateChatReply: asked(1) }],
 	["lint failure then ask", ["lint", "ask"], { ...same(flagged, kAsked(2), kFailed(DRAFT_FAILED, 2)), generateChatReply: asked(2) }],
-	["lint retry with a different lesson", ["lessonFirst", "lessonRetry"], same(mailDraft("네 확인했어요", [], 2, 2, RETRY_LESSON), kClean(2), kClean(2, { line: "L2", forbid: ["안녕히"], everywhere: true }))],
+	["lint retry with a different lesson", ["lessonFirst", "lessonRetry"], same(mailDraft("네 확인했어요", [], 2, 2, { lesson: "L2", forbid: ["안녕히"], scope: "everywhere" }), kClean(2), kClean(2, { line: "L2", forbid: ["안녕히"], scope: "everywhere" }))],
 ];
 
 for (const [name, seq, want] of MAIN) {

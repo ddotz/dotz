@@ -265,8 +265,8 @@ describe("a mail or comment draft and the style judge", () => {
 	});
 
 	test("a judged revise returns the lesson of its first try, never the rewrite's", async () => {
-		const d = scripted([json({ body: informal, lesson: "편한 사이에는 반말로 쓴다", forbid: ["편하게"], everywhere: false }), json({ body: polite, lesson: "it breaks the owner's rule", forbid: [], everywhere: true })]), j = asker([broke, answer([])]);
-		expect(await reviseReply(item, ruled, previous, "반말로 편하게 바꿔 줘", d.call, j.ask)).toMatchObject({ draft: { body: polite }, lesson: "편한 사이에는 반말로 쓴다", forbid: ["편하게"], everywhere: false, tries: 2 });
+		const d = scripted([json({ body: informal, lesson: "편한 사이에는 반말로 쓴다", forbid: ["편하게"], scope: "recipient" }), json({ body: polite, lesson: "it breaks the owner's rule", forbid: [], scope: "everywhere" })]), j = asker([broke, answer([])]);
+		expect(await reviseReply(item, ruled, previous, "반말로 편하게 바꿔 줘", d.call, j.ask)).toMatchObject({ draft: { body: polite }, lesson: "편한 사이에는 반말로 쓴다", forbid: ["편하게"], scope: "recipient", tries: 2 });
 	});
 
 	test("a rewrite the judge asked for that fails the lint, skips, asks, throws or does not parse keeps the first draft with the judge's note", async () => {
@@ -287,8 +287,8 @@ describe("a mail or comment draft and the style judge", () => {
 	});
 
 	test("a judged revise whose rewrite is refused keeps the first try's draft and lesson", async () => {
-		const d = scripted([json({ body: informal, lesson: "편한 사이에는 반말로 쓴다", forbid: ["편하게"], everywhere: false }), json({ body: "[이름]님, 편하게 말씀드릴게요.", lesson: "it breaks the owner's rule", forbid: [], everywhere: true })]), j = asker([broke]);
-		expect(await reviseReply(item, ruled, previous, "반말로 편하게 바꿔 줘", d.call, j.ask)).toMatchObject({ draft: { body: informal }, warnings: ["말투 조건과 달라 보여요: 존댓말로 쓴다"], lesson: "편한 사이에는 반말로 쓴다", forbid: ["편하게"], everywhere: false, tries: 2 });
+		const d = scripted([json({ body: informal, lesson: "편한 사이에는 반말로 쓴다", forbid: ["편하게"], scope: "channel" }), json({ body: "[이름]님, 편하게 말씀드릴게요.", lesson: "it breaks the owner's rule", forbid: [], scope: "everywhere" })]), j = asker([broke]);
+		expect(await reviseReply(item, ruled, previous, "반말로 편하게 바꿔 줘", d.call, j.ask)).toMatchObject({ draft: { body: informal }, warnings: ["말투 조건과 달라 보여요: 존댓말로 쓴다"], lesson: "편한 사이에는 반말로 쓴다", forbid: ["편하게"], scope: "channel", tries: 2 });
 	});
 
 	test("a rewrite that only repeats a warning the first draft already had (no sender address) replaces it when it fixes the style", async () => {

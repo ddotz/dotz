@@ -28,10 +28,10 @@ tone is learned per install, from that install's user, and lives only under `<DA
    is a rewritable failure (`it breaks the owner's rule '<rule>' at '<quote>'`) for the same one retry; the retry is judged once more
    and what it still breaks is a `확인: 말투 조건과 달라 보여요: <rule>` note. With no judge or no rule every result equals the
    one without the style judge for the same model answers: a retry the lint asked for keeps its own outcome (a skip or ask stays a skip
-   or ask) and its own `lesson`, `forbid` and `everywhere`. A rewrite only the judge asked for replaces the first draft only when it is
+   or ask) and its own `lesson`, `forbid` and `scope`. A rewrite only the judge asked for replaces the first draft only when it is
    a draft that passes the lint with no finding (mail and comments: no `lintReply` finding and no attach failure; KakaoTalk: no
    `kakaoLint` note), and is then judged once more; one that has a finding, is not a draft (skip, ask), does not parse or throws leaves
-   the first draft with its warnings and the judge's notes, and a judged revise keeps the `lesson`, `forbid` and `everywhere` of its
+   the first draft with its warnings and the judge's notes, and a judged revise keeps the `lesson`, `forbid` and `scope` of its
    first try, since the rewrite's prompt carried the judge's findings, not the owner's change. A comment draft with a style note is not
    `clean`, so an auto-send rule does not send it by itself and the owner sees its card. At most two judge calls and two draft tries;
    a thrown, late (its own limit, `JUDGE_TIMEOUT_MS`, 15 s) or malformed answer judges nothing and logs one `reply draft:` line. No
@@ -39,7 +39,7 @@ tone is learned per install, from that install's user, and lives only under `<DA
    traced as `judge` in the draft's `model calls` line), comments (`EngineDeps.judge`) and KakaoTalk (`WebDeps.judgeModel`, after
    `kakaoLint`) share it.
 4. The same lint runs again right before sending (`draft.ts send`).
-5. A revision records only the lasting preference the change shows (the model's `lesson`), dated under `## 고친 점` of the tone profile of the draft that was revised (its room, else its app). A one-off change (`lesson` empty) records nothing; a model that gives no `lesson` leaves the change itself. A revise also yields the wordings the user banned (`forbid`: verbatim in his change, 2 to 40 characters, never a `/regex/`) and an `everywhere` flag that moves the record to the install profile; bans go to `## 금지`, where the lint enforces them on every later draft. A mail, comment or chat prompt carries the corrections of all levels newest first by date within a character budget (`CORRECTIONS_BUDGET`, 4000; KakaoTalk 1200), not a fixed count. A standing request made in chat takes the same path through `draft.ts correct` (`--forbid`, `--allow`, `--forget`; `draft.ts tone` shows what is stored), never a hand edit of a tone file.
+5. A revision records only the lasting preference the change shows (the model's `lesson`), dated under `## 고친 점` of the tone profile of the draft that was revised (its room, else its app). A one-off change (`lesson` empty) records nothing; a model that gives no `lesson` leaves the change itself. A revise also yields the wordings the user banned (`forbid`: verbatim in his change, 2 to 40 characters, never a `/regex/`) and a `scope` that says for whom the lesson holds: `recipient` when the change is about the person this reply goes to (이분께는, 이 사람한테는, a name), which moves the record to that person's recipient file; `everywhere` when he says it holds always or everywhere or rejects the wording itself (grammar, spelling, a habit of language), which moves it to the install profile; `channel` otherwise. An older answer's `everywhere` boolean still parses (true is `everywhere`, false or absent `channel`), and an unknown `scope` string is `channel`. Bans go to `## 금지`, where the lint enforces them on every later draft. A mail, comment or chat prompt carries the corrections of all levels newest first by date within a character budget (`CORRECTIONS_BUDGET`, 4000; KakaoTalk 1200), not a fixed count. A standing request made in chat takes the same path through `draft.ts correct` (`--forbid`, `--allow`, `--forget`; `draft.ts tone` shows what is stored), never a hand edit of a tone file.
 6. `drafts.json` remembers every mail key already looked at, so a mail is not drafted twice.
 7. A mail draft reads the whole mail and the sender's earlier mail, and judges who wrote before writing: `recipient {who, evidence}`, where the evidence must be the sender's own words.
 8. An edit asked outside a card goes through the gateway's one reply flow (a typed change read by code, or the turn's one `[revise <id>] <change>` line), which records it once, so the next draft sees it.
@@ -87,8 +87,15 @@ A chat message that needs his own decision still asks first (exit 4), since the 
   load of a mail or comment draft adds its recipient (`flow.ts` `styleKey`; the comment engine `EngineDeps.style(src, author)`), and a mail
   that rides on a comment is written (`mailStyleOf`) from the shared `mail` profile with that same recipient file; with no
   recipient file the style, the prompts and the lint are exactly those of the key without `to`. Writing
-  (`learnTone`, `recordCorrection`) goes into exactly one profile; lessons of a draft still go to its channel or the install, and only
-  `draft.ts correct|tone --app <app> --to <id>` reads and writes a recipient file (a mail app, `instanceIdOf("mail", app)`, takes exactly one
+  (`learnTone`, `recordCorrection`) goes into exactly one profile. A revise lesson goes to the key of its `scope` (mail: `flow.ts`
+  `lessonKey` beside `styleKey`; comments: `draft-run.ts` `commentLessonKey`; KakaoTalk: `kakaoLessonKey`): the install for `everywhere`;
+  for `recipient` the draft's recipient file (a mail's `replyAddress`, a comment's author, a mail that rides on a comment that address
+  under the shared `mail` profile), or the channel's profile when the draft has no recipient with a file name (a sender with only a
+  name, an anonymous author); for KakaoTalk the room, which already is the person; for `channel` the draft's channel. The card path
+  (`hub/reply-actions.ts` `learn`) and `draft.ts revise` (`teach`) pass that key unchanged to the line's curation, the wording pattern
+  (proposed against the app's replies, as for a channel lesson), the bans, refinement and compaction, so a recipient lesson writes that
+  person's file only, and the card says `앞으로 <id>에게 보내는 답장에 반영해요: <line>` (the id as stored, cut to 40 characters). Besides
+  that, `draft.ts correct|tone --app <app> --to <id>` reads and writes a recipient file (a mail app, `instanceIdOf("mail", app)`, takes exactly one
   address and stores it bare; `--app kakao` refuses `--to`). Two rooms of one messenger therefore never share a tone, a room
   that was never written to follows its app, an app without samples follows the install. A mailbox is a room of its account (`tone/<instance>/<box>.md`);
   what its voice was learned from is in `box-voice.json` (docs/mailbox.md "Voice").
@@ -175,7 +182,7 @@ corrections turned into a checklist). `lib/persona.ts`:
   (`examplesUse` in `hub/reply-draft.ts`: mail 0.27, comment 0.36, plain similarity of the shown pairs) follows that reply's shape; any other message is
   unfamiliar and is written in the user's voice in new sentences, with three examples for voice only.
 - Every `REFINE_EVERY` (5) corrections of a profile, one call folds them into its identity and templates (`maybeRefine`).
-- Reply pairs (`pairs/<app>.jsonl`, `lib/pairs.ts`) are read from the sent mail of the accounts the mail apps name, even when zele is not switched on in config.json. They are refreshed without a model call: the first 500 threads, then the newest 40 once a day. Each pair keeps who it answered, and replies to the same sender lead the examples.
+- Reply pairs (`pairs/<app>.jsonl`, `lib/pairs.ts`) are read from the sent mail of the accounts the mail apps name, even when zele is not switched on in config.json. They are refreshed without a model call: the first 500 threads, then the newest 40 once a day. Each pair keeps who it answered, and up to 3 newest replies to the same sender lead the examples (`hub/comments/past.ts` `sameFirst`, `same`); a comment's pairs keep their author, and up to 3 whose author is this comment's (as `recipientFile` normalises it; the nobody values never match) lead the same way, the rest by similarity, `EXAMPLES` in all.
 - Where it runs: mail before the first offered draft (`offer.ts`, gateway passes zele's sent mail when zele is on), a comment source
   before its first draft (`CommentAdapter.ownTexts`), a KakaoTalk room on its first draft (`ensureKakaoRoom`), and `onboard.ts on|learn`.
   Without an injected `analyze` call (tests, library use) nothing is analysed.

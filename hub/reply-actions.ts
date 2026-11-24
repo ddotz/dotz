@@ -87,7 +87,7 @@ function sendAction(input: ActInput): keyof typeof SEND_LABEL {
 
 async function learn(deps: ReplyDeps, lesson: Lesson | undefined): Promise<{ said: string; refine: () => Promise<void> }> {
 	if (!lesson) return { said: "", refine: async () => undefined };
-	const where = `${lesson.key.app}${lesson.key.room ? `/${lesson.key.room}` : ""}`;
+	const where = `${lesson.key.app}${lesson.key.room ? `/${lesson.key.room}` : ""}${lesson.key.to !== undefined ? ` to ${lesson.key.to}` : ""}`;
 	const hasLine = lesson.line.trim() !== "";
 	const propose = deps.learning.pattern;
 	const [recorded, proposed] = await Promise.allSettled([

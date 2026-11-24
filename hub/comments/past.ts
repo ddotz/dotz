@@ -6,7 +6,7 @@ import type { ReplyStyle } from "../reply-draft.ts";
 import type { Comment } from "./contract.ts";
 import type { Draft, Reply } from "./store.ts";
 
-/** `same`: the reply went to the very sender of the message being drafted (lib/pairs.ts styleWithExamples). `edited`: the owner changed the draft by hand before sending. `from`: who wrote the comment, when known. */
+/** `same`: the reply went to the very sender of the message being drafted (a mail's address, lib/pairs.ts styleFrom; a comment's author, hub/comments/draft-run.ts). `edited`: the owner changed the draft by hand before sending. `from`: who wrote the comment, when known. */
 export type PastPair = { comment: string; reply: string; at: number; thread: string; same?: boolean; edited?: true; from?: string };
 
 export const EXAMPLES = 8;
@@ -104,6 +104,15 @@ export function similarPairs(text: string, pairs: PastPair[], k = 3, thread?: st
 		.sort((a, b) => b.s - a.s || b.p.at - a.p.at)
 		.slice(0, k)
 		.map(x => x.p);
+}
+
+/** How many past replies to the same person (`same`) lead a prompt's examples. */
+export const SAME_EXAMPLES = 3;
+
+/** A prompt's examples: up to SAME_EXAMPLES newest pairs marked `same`, then the pairs most like `text` among the rest (similarPairs), EXAMPLES in all, no repeats. */
+export function sameFirst(text: string, past: PastPair[], now = Date.now()): PastPair[] {
+	const same = past.filter(p => p.same).sort((a, b) => b.at - a.at).slice(0, SAME_EXAMPLES);
+	return [...same, ...similarPairs(text, past.filter(p => !same.includes(p)), EXAMPLES, undefined, now)].slice(0, EXAMPLES);
 }
 
 export const SEEDED_NOTE = "확인 필요: 모델이 답글을 비워서 비슷한 지난 댓글에 단 답을 옮겼어요. 이 댓글에 맞는지, 날짜·파일·약속처럼 사용자만 아는 사실이 맞는지 봐 주세요";
