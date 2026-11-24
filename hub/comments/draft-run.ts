@@ -1,9 +1,9 @@
 // One model call for a comment's reply draft or its revision, and the stored draft: what the comment engine runs on request, by its
 // auto-draft rule and for a 고치기. Split out of createEngine (hub/comments/engine.ts), which hands it the store and its helpers.
 import { fileSizeText } from "../draft-approval.ts";
-import { editLesson, generateReply, learnedOf, reviseReply, type ReplyItem, type ReplyStyle } from "../reply-draft.ts";
+import { generateReply, learnedOf, reviseReply, type ReplyItem, type ReplyStyle } from "../reply-draft.ts";
 import { judgeAsk } from "../style-judge.ts";
-import type { Lesson } from "../reply-types.ts";
+import type { Lesson, LessonOfEdit, Part } from "../reply-types.ts";
 import type { Comment, SourceConfig } from "./contract.ts";
 import type { DraftModel, EngineDeps, MailLink, MailView, Step } from "./engine.ts";
 import { EXAMPLES, mergePast, SEEDED_NOTE, similarPairs, withExamples } from "./past.ts";
@@ -21,11 +21,30 @@ const CLIP = 240;
 const clip = (s: string, n = CLIP) => s.replace(/\s+/g, " ").trim().slice(0, n);
 const MAIL_REPEAT_MS = 14 * 24 * 3600_000;
 
-/** What a sent comment draft the owner edited teaches (design 3.4): his text against the model's, in the source's profile; nothing before it went out. */
-export function editedLesson(store: Store, draftCode: string): Lesson | undefined {
+/** How the owner's own edits of sent drafts are learned (design 3.4): `lessonOfEdit` reads a comment reply's lesson, `learn` stores it through the one learning door (hub/reply-mail.ts replyLearning: curation, journal, a stored correction's refinement), and `mail` learns the edit of a mail that rode on a card (hub/reply-mail.ts learnMailEdit). None of them rejects. */
+export type EditLessons = { lessonOfEdit: LessonOfEdit; learn: (key: Lesson["key"], line: string) => Promise<void>; mail: (mailId: string) => Promise<void> };
+
+/** What a sent comment draft the owner edited teaches, stored through `edits.learn` and awaited: its `editLearned` mark is claimed first (Store claimEditLearned), so any number of callers in any process learn it once; then `lessonOfEdit` reads his text against the model's and the comment it answers through the reply model of the source's app (`ownerOf`); the lesson goes to the source's profile, or install when it holds everywhere. Nothing before it went out, nothing once marked, and nothing without a model or `edits`. Never rejects: a failure logs one line. */
+export async function learnEdited(store: Store, draftCode: string, deps: Pick<EngineDeps, "model" | "edits">, ownerOf: (src: SourceConfig) => string): Promise<void> {
 	const d = store.drafts().find(x => x.code === draftCode);
-	const line = d?.status === "sent" && d.editedFrom !== undefined ? editLesson(d.editedFrom, d.text) : undefined;
-	return d && line ? { key: { app: d.source }, line } : undefined;
+	const { model, edits } = deps;
+	if (d?.status !== "sent" || d.editedFrom === undefined || !model || !edits) return;
+	try {
+		if (!store.claimEditLearned(draftCode)) return;
+		const src = store.config().sources[d.source];
+		const received = store.comments().find(c => c.id === d.commentId)?.text ?? "";
+		const taught = await edits.lessonOfEdit({ before: d.editedFrom, after: d.text, received }, async (system, user) => (await model(system, user, src ? ownerOf(src) : d.source)).text);
+		if (taught) await edits.learn(taught.everywhere ? { app: "install" } : { app: d.source }, taught.lesson);
+	} catch (e) {
+		console.error(`comments: what the edit of ${draftCode} teaches was not recorded: ${e instanceof Error ? e.message : "error"}`);
+	}
+}
+
+/** What a send of `part` of comment draft `draftCode` teaches, both parts when absent: the reply's edit (`learnEdited`) and the edit of the mail it carried (`edits.mail`): the card's mail, or after 메일만 the one the draft kept (`mailKept`). A send of the whole card never reaches back to a mail an earlier 메일만 sent. Never rejects. */
+export function learnSentParts(store: Store, draftCode: string, part: Part | undefined, deps: Pick<EngineDeps, "model" | "edits">, ownerOf: (src: SourceConfig) => string): Promise<unknown> {
+	const d = part === "reply" ? undefined : store.drafts().find(x => x.code === draftCode);
+	const mailId = part === "mail" ? (d?.mail ?? d?.mailKept) : d?.mail;
+	return Promise.all([part === "mail" ? undefined : learnEdited(store, draftCode, deps, ownerOf), mailId ? deps.edits?.mail(mailId) : undefined]);
 }
 
 export function earlierMailTo({ store, mail, now, to, commentId, mailId }: { store: Store; mail: MailLink | undefined; now: number; to: string; commentId: string; mailId: string }): string | undefined {

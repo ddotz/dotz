@@ -10,7 +10,7 @@ import { literalBan, parseBan } from "../../../hub/ban.ts";
 import { addressesOf, type ReplyItem } from "../../../hub/reply-draft.ts";
 import { PATTERN_NOTE } from "../../../hub/reply-reasons.ts";
 import { ensureKakaoRoom, defaultKakaoReader, KAKAO_APP } from "../lib/kakao-tone.ts";
-import { askText, attachFolder, buildDraft, candidatesFor, chosenFrom, dropDraft, kindOf, learnLine, type LineLearned, mailAsksFile, type PatternProposal, proposeLinePattern, realFlowDeps, refineAfterCorrection, reviseDraft, sendDraft, settleDraft, stageForReply, type FlowDeps, type Outcome } from "../lib/flow.ts";
+import { askText, attachFolder, buildDraft, candidatesFor, chosenFrom, dropDraft, kindOf, learningSettled, learnLine, type LineLearned, mailAsksFile, type PatternProposal, proposeLinePattern, realFlowDeps, refineAfterCorrection, reviseDraft, sendDraft, settleDraft, stageForReply, type FlowDeps, type Outcome } from "../lib/flow.ts";
 import { compactCorrections } from "../lib/compact.ts";
 import { journalEntries, type LearnKind, profileKey, profileOf, restoreEntry } from "../lib/curate.ts";
 import { dataDir, handSections, HEADINGS, INSTALL, loadSettings, profileBullets, recordForbidden, removeCorrection, removeForbidden, removeRule, toneFile, validApp, type ToneKey } from "../lib/settings.ts";
@@ -160,7 +160,7 @@ export async function runDraft(args: string[], stdin: string, deps: DraftDeps = 
 				deps.onOutcome?.(o);
 				if (gateway) printOutcome(o);
 			};
-			const r = await sendDraft(pos[0], { ...deps, onOutcome: tell }, rest.includes("--retry") ? { retry: true } : {});
+			const r = await sendDraft(pos[0], { ...deps, onOutcome: tell }, { ...(rest.includes("--retry") ? { retry: true as const } : {}), ...(rest.includes("--no-learn") ? { learn: false as const } : {}) });
 			if (!told && r.sent) tell({ sent: r.sent, ...(r.code ? { code: r.code } : {}), ...(r.vars ? { vars: r.vars } : {}) });
 			if (r.sendFailed && rec) await reportSendFailed(rec, r.text, deps.hub);
 			// An approved mail reply went out: tell the gateway, which wakes the bot once if the mail app has a 이어서 할 일 rule (hub/followup.ts).
@@ -309,19 +309,22 @@ export async function runDraft(args: string[], stdin: string, deps: DraftDeps = 
 	}
 }
 
-if (import.meta.main) {
-	const args = process.argv.slice(2);
+/** The command as its process runs it: prints what `runDraft` answers first (`print`: its stdout lines, console.log by default), then waits for what the owner's edit of a mail it sent teaches (learningSettled) before it hands back the exit code. `deps`: the flow deps (the real ones by default). */
+export async function cli(args: string[], o: { deps?: DraftDeps; print?: (line: string) => void } = {}): Promise<number> {
 	const stdin = args[0] === "new" ? await Bun.stdin.text() : "";
 	try {
 		// This process is not the gateway: a plugin source says here whether it sends files (senders.ts canAttach) for every command, the send's file check too.
 		await loadPlugins(dataDir());
-		const out = await runDraft(args, stdin, realFlowDeps());
+		const out = await runDraft(args, stdin, o.deps ?? realFlowDeps());
 		// stdout is only ever something to post or pipe on: on a non-zero exit the lines are explanations and go to stderr.
-		for (const l of out.lines) (out.code === 0 || out.code === ASK_EXIT ? console.log : console.error)(l);
+		for (const l of out.lines) (out.code === 0 || out.code === ASK_EXIT ? (o.print ?? console.log) : console.error)(l);
 		for (const n of out.notes ?? []) console.error(n);
-		process.exit(out.code);
+		await learningSettled();
+		return out.code;
 	} catch (e) {
 		console.log(`실패했어요: ${(e as Error).message}`);
-		process.exit(1);
+		return 1;
 	}
 }
+
+if (import.meta.main) process.exit(await cli(process.argv.slice(2)));

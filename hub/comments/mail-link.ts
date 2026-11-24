@@ -44,7 +44,7 @@ export function realMailLink(deps: FlowDeps = { run: realRunner }): RealMailLink
 		record: id => withAccount(mailRecordOf(id)),
 		pendingFor: commentId => listDrafts().find(d => d.compose && d.status === "pending" && d.origin?.kind === "comment" && d.origin.id === commentId)?.id,
 		send: async (id, opts) => {
-			const r = await sendDraft(id, deps, { withReply: true, ...(opts?.asIs ? { asIs: true as const } : {}), ...(opts?.retry ? { retry: true as const } : {}) });
+			const r = await sendDraft(id, deps, { withReply: true, learn: false, ...(opts?.asIs ? { asIs: true as const } : {}), ...(opts?.retry ? { retry: true as const } : {}) });
 			return { ok: r.ok, text: r.text };
 		},
 		issues: id => {

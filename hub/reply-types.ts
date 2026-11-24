@@ -31,6 +31,8 @@ export type ReplyKind = "mail" | "webmail" | "comment" | "kakao" | "card";
 export type Part = "reply" | "mail";
 /** What a revise teaches a tone profile: `line` the lasting preference ("" = none), `forbid` the wordings the owner banned, `evidence` the previous draft and the owner's change (the only texts a proposed wording pattern may quote, never the model-written line); `key.app` is `install` when it holds everywhere. */
 export type Lesson = { key: { app: string; room?: string }; line: string; forbid?: string[]; evidence?: { draft: string; change: string } };
+/** The lasting wording preference a sent edit shows (features/reply-drafts/lib/edit-lesson.ts lessonOfEdit, which hub/reply-mail.ts re-exports): the lesson and whether it holds everywhere, undefined for none. */
+export type LessonOfEdit = (input: { before: string; after: string; received: string }, ask: (system: string, user: string) => Promise<string>) => Promise<{ lesson: string; everywhere: boolean } | undefined>;
 export type Done = { ok: true } | { ok: false; reason: Reason };
 
 /** The buttons the server gives a send that needs the owner (hub/reply-reasons.ts policyOf), so no surface holds per-channel failure logic. */
@@ -109,6 +111,8 @@ export type ReplyAdapter = {
 	target(ref: string, part?: Part): { kind: "mail" | "comment" | "kakao"; lane: string } | undefined;
 	/** In-process sender. Absent: the queue spawns the kind's CLI (hub/approval-send.ts sendArgv). */
 	run?(job: SendJob): Promise<SendOutcome>;
+	/** An approved send of this kind turned out sent (its run's outcome, a boot or a later check that found it sent, the owner's 나갔어요, a proof): what the owner's own edit of the sent draft teaches is learned here, in the background (design 3.4). Safe to call any number of times: the draft's `editLearned` mark, claimed in its store before the model call, lets one call in any process learn it. `part`: the one part of a reply + mail card that send carried; absent, the whole card. Never throws. */
+	learnSent?(ref: string, part?: Part): void;
 	/** Model rewrite: stores the new draft with `replaces`, marks the old one stale. Records no learning itself. */
 	revise(ref: string, change: string, part?: Part): Promise<{ ok: true; ref: string; replaces: string; lesson?: Lesson } | { ok: false; reason: Reason }>;
 	/** The owner's text (and a mail's subject), saved as it is under the same ref. Refuses when the owner-text lint fails. */

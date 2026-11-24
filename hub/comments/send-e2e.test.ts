@@ -6,7 +6,9 @@ import { afterAll, beforeEach, describe, expect, test } from "bun:test";
 import { appendFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { run as runComments } from "../../features/comments/bin/comments.ts";
+import { cli, run as runComments } from "../../features/comments/bin/comments.ts";
+import { learningSettled, learnSentEdit, toneKey, type FlowDeps } from "../../features/reply-drafts/lib/flow.ts";
+import { HEADINGS, profileBullets } from "../../features/reply-drafts/lib/settings.ts";
 import { stagedFiles } from "../../features/reply-drafts/lib/staged.ts";
 import { getDraft, setStatus } from "../../features/reply-drafts/lib/store.ts";
 import type { Runner } from "../../features/reply-drafts/lib/tone.ts";
@@ -15,7 +17,9 @@ import { parseDraftApproval } from "../draft-approval.ts";
 import { runMailCli } from "../mail-cli.ts";
 import { commentAsk } from "./ask.ts";
 import { type CommentAdapter, commentId, type SourceConfig } from "./contract.ts";
-import { createEngine, type Engine } from "./engine.ts";
+import { createEngine, type Engine, type EngineDeps } from "./engine.ts";
+import type { EditLessons } from "./draft-run.ts";
+import { lessonOfEdit } from "../reply-mail.ts";
 import { approvalHash } from "../draft-approval.ts";
 import { commentAdapter } from "./reply-adapter.ts";
 import { realMailLink } from "./mail-link.ts";
@@ -56,7 +60,8 @@ function world(o: { replyFails?: string; zeleFails?: boolean } = {}) {
 		reply: async (_s, _c, text) => (posted.push(text), replyFails ? { ok: false, reason: replyFails, code: "rejected", sent: "no" } : { ok: true, ref: "yt-r1" }),
 	};
 	const clock = { now: NOW };
-	const engine = createEngine({ dir: root, now: () => clock.now, collector: "mac-a", adapters: { youtube: adapter }, mail: realMailLink({ run }) });
+	const make = (extra: Partial<EngineDeps> = {}, mailDeps: FlowDeps = {}): Engine => createEngine({ dir: root, now: () => clock.now, collector: "mac-a", adapters: { youtube: adapter }, mail: realMailLink({ run, ...mailDeps }), ...extra });
+	const engine = make();
 	const inbox = join(dir, "inbox.jsonl");
 	// A pick names the version the card shows now (hub/reply-actions.ts records its approvalHash).
 	const pick = async (code: string, n: 1 | 3 = 1, at = NOW + 5000) => {
@@ -68,7 +73,7 @@ function world(o: { replyFails?: string; zeleFails?: boolean } = {}) {
 		replyFails = undefined;
 		zeleFails = false;
 	};
-	return { engine, posted, zele, mailSends: () => zele.filter(a => a[2] === "send"), inbox, pick, recover, clock };
+	return { engine, make, posted, zele, mailSends: () => zele.filter(a => a[2] === "send"), inbox, pick, recover, clock };
 }
 type World = ReturnType<typeof world>;
 
@@ -175,5 +180,89 @@ describe("comment reply + mail: 1) 보내기 -> reply posted -> mail sent with t
 		expect(w.posted).toHaveLength(1);
 		expect(w.mailSends()).toHaveLength(1);
 		expect(w.engine.store.replies()[0]).toMatchObject({ state: "sent", mail: { state: "sent" } });
+	});
+});
+
+const MAIL_LESSON = "자료를 보내는 메일에는 받는 분을 먼저 부른다";
+const OWNER_MAIL = "팬님, 요청하신 캐논 문서 보내드립니다.";
+function teacher() {
+	const lessons: string[] = [];
+	const call = async (system: string) => (system.startsWith("You learn how") ? (lessons.push(system), JSON.stringify({ lesson: MAIL_LESSON, everywhere: false })) : JSON.stringify({ replaces: [] }));
+	const deps = { learnCall: () => call } satisfies FlowDeps;
+	return { lessons, deps, edits: { lessonOfEdit, learn: async () => undefined, mail: id => learnSentEdit(id, deps) } satisfies EditLessons };
+}
+const learned = (mailId: string): string[] => profileBullets(toneKey(getDraft(mailId)!), HEADINGS.corrections).filter(l => l.endsWith(MAIL_LESSON));
+async function editedCard(w: World) {
+	const c = await card(w);
+	expect(w.engine.edit(c.d.code, OWNER_MAIL, "mail")).toMatchObject({ ok: true });
+	await w.pick(c.d.code);
+	return c;
+}
+
+describe("the owner's edit of the mail riding on a comment card is learned once", () => {
+	test("gateway, whole card: the CLI child and its mail link learn nothing; the gateway's comment adapter learns the mail once", async () => {
+		const w = world();
+		const t = teacher();
+		const child = w.make({}, t.deps);
+		const gateway = w.make({ edits: t.edits });
+		const { d, mailId } = await editedCard(w);
+		expect((await runComments(["send", d.code], child, w.inbox)).code).toBe(0);
+		await Promise.all([child.idle(), learningSettled()]);
+		expect([t.lessons.length, learned(mailId)]).toEqual([0, []]);
+		commentAdapter(gateway).learnSent?.(d.code);
+		await Promise.all([gateway.idle(), learningSettled()]);
+		expect([t.lessons.length, learned(mailId).length]).toEqual([1, 1]);
+	});
+
+	test("gateway, reply first and the mail alone after: the send whose mail failed learns no mail, 메일만 다시 보내기 learns it once", async () => {
+		const w = world({ zeleFails: true });
+		const t = teacher();
+		const child = w.make({}, t.deps);
+		const gateway = w.make({ edits: t.edits });
+		const { d, mailId } = await editedCard(w);
+		expect((await runComments(["send", d.code], child, w.inbox)).code).toBe(1);
+		commentAdapter(gateway).learnSent?.(d.code);
+		await Promise.all([gateway.idle(), learningSettled()]);
+		expect(t.lessons).toEqual([]);
+		w.recover();
+		expect(await child.sendMailOnly(d.code, { retry: true })).toMatchObject({ ok: true });
+		commentAdapter(gateway).learnSent?.(d.code, "mail");
+		await Promise.all([gateway.idle(), learningSettled()]);
+		expect([t.lessons.length, learned(mailId).length]).toEqual([1, 1]);
+	});
+
+	test("gateway, the mail alone first and the reply after: the mail is learned once, the reply's send does not learn it again", async () => {
+		const w = world();
+		const t = teacher();
+		const child = w.make({}, t.deps);
+		const gateway = w.make({ edits: t.edits });
+		const { d, mailId } = await editedCard(w);
+		expect(await child.sendMailOnly(d.code)).toMatchObject({ ok: true });
+		commentAdapter(gateway).learnSent?.(d.code, "mail");
+		await Promise.all([gateway.idle(), learningSettled()]);
+		const r = child.send(d.code, { by: "owner" });
+		if (!r.ok) throw new Error(r.reason);
+		expect((await r.done).state).toBe("sent");
+		commentAdapter(gateway).learnSent?.(d.code);
+		await Promise.all([gateway.idle(), learningSettled()]);
+		expect([t.lessons.length, learned(mailId).length]).toEqual([1, 1]);
+	});
+
+	test("by hand: comments.ts send without --no-learn learns the mail once before it hands back the exit code", async () => {
+		const w = world();
+		const t = teacher();
+		const { d, mailId } = await editedCard(w);
+		const learnAsked: boolean[] = [];
+		const exit = await cli(["send", d.code], { engineOf: learn => (learnAsked.push(learn), w.make(learn ? { edits: t.edits } : {}, t.deps)), inbox: w.inbox, print: () => undefined });
+		expect([exit, learnAsked, t.lessons.length, learned(mailId).length]).toEqual([0, [true], 1, 1]);
+	});
+
+	test("by hand: comments.ts send --only mail learns the mail's edit once before it hands back the exit code", async () => {
+		const w = world();
+		const t = teacher();
+		const { d, mailId } = await editedCard(w);
+		const learnAsked: boolean[] = [];
+		const exit = await cli(["send", d.code, "--only", "mail"], { engineOf: learn => (learnAsked.push(learn), w.make(learn ? { edits: t.edits } : {}, t.deps)), inbox: w.inbox, print: () => undefined });
+		expect([exit, learnAsked, w.mailSends().length, w.posted, t.lessons.length, learned(mailId).length]).toEqual([0, [true], 1, [], 1, 1]);
 	});
 });

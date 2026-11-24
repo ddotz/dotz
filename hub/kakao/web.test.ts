@@ -8,9 +8,11 @@ import { replySource, replySourceLog } from "./media.ts";
 import { MAX_CHAT_CHARS, MAX_PAIRS, MAX_PROMPT_CHARS, type ModelReply } from "./draft.ts";
 import { addMessage, BASE_LOG, BASE_TIME, bplistOfInts, makeFixtureDb, OWNER, ROOM } from "./fixture.ts";
 import { dispatchSend } from "./contract.ts";
+import { lessonOfEdit } from "../reply-mail.ts";
+import { flush } from "../runtime/test-clock.ts";
 import { makeDraft } from "./make-draft.ts";
 import { kakaoAdapter } from "./reply-adapter.ts";
-import { createDraft, dropDraft, listDrafts, readDrafts, restoreDraft } from "./send.ts";
+import { createDraft, dropDraft, editDraft, listDrafts, readDrafts, restoreDraft } from "./send.ts";
 import { type KakaoConfig, kakaoPaths, type Runner } from "./types.ts";
 import { fakeScreen } from "./ui.fixture.ts";
 import { createKakaoWeb, type WebDeps } from "./web.ts";
@@ -1207,6 +1209,25 @@ describe("pending drafts for the 답장 확인 queue", () => {
 		expect(t.web.pendingCount()).toBe(1);
 		expect(restoreDraft(g.code, { paths }).ok).toBe(true);
 		expect(t.web.pendingCount()).toBe(2);
+		t.close();
+	});
+});
+
+describe("a sent edit", () => {
+	test("a sent draft the owner edited teaches its room through the room's model, read with the chat lines the draft answered and nothing after them", async () => {
+		const learned: unknown[] = [];
+		const after = (w: Database) => addMessage(w, { logId: BASE_LOG + BigInt(60), chatId: ROOM.direct, authorId: OWNER, message: "이미 보낸 다른 말", sentAt: BASE_TIME + 600 });
+		const t = setup({}, after, { onRevise: (...args) => void learned.push(args), lessonOfEdit });
+		const lesson = "점심 약속에는 'ㅇㅋ'처럼 짧게 답한다";
+		t.model.reply = async () => ({ text: JSON.stringify({ lesson, everywhere: false }) });
+		const d = await t.draft();
+		expect(editDraft(d.code, "ㅇㅋ 내일 봐", { paths }).ok).toBe(true);
+		expect(await kakaoAdapter(t.web.replyKit).run!({ ref: d.code, conv: `kakao:${DIRECT}`, action: "send", title: "", by: "owner" })).toEqual({ sent: "yes" });
+		await flush();
+		expect(learned).toEqual([[DIRECT, { line: lesson, forbid: [], everywhere: false }]]);
+		const user = t.model.calls.at(-1)!.user;
+		for (const said of ["fine, lunch tomorrow?", "see you", "ㅇㅋ 내일 봐"]) expect(user).toContain(said);
+		for (const unsaid of ["hello there", "hi, how are you", "이미 보낸 다른 말"]) expect(user).not.toContain(unsaid);
 		t.close();
 	});
 });

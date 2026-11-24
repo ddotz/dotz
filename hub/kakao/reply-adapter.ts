@@ -4,15 +4,18 @@
 import type { SendJob } from "../approval-send.ts";
 import { sinceMidnight } from "../reply-route.ts";
 import { isReasonCode } from "../reply-reasons.ts";
-import type { DraftView, ReasonCode, ReplyAdapter, SendOutcome } from "../reply-types.ts";
+import type { Learned } from "../reply-draft.ts";
+import type { DraftView, LessonOfEdit, ReasonCode, ReplyAdapter, SendOutcome } from "../reply-types.ts";
 import { dispatchSend, type DispatchDeps } from "./contract.ts";
 import type { Made } from "./make-draft.ts";
-import { confirmSent, type Draft, draftBlock, dropDraft, editDraft, kakaoView, readDrafts, restoreDraft, type SendResult } from "./send.ts";
+import { claimEditLearned, confirmSent, type Draft, draftBlock, dropDraft, editDraft, kakaoView, readDrafts, restoreDraft, type SendResult } from "./send.ts";
 import type { KakaoPaths } from "./types.ts";
 
 /** What createKakaoWeb hands the adapter: the store, a revise through its own model call, and the deps of one send. */
 // original: the message a draft answers (absent in tests that build the adapter alone).
-export type KakaoKit = { paths: KakaoPaths; original?: (d: Draft) => Promise<DraftView["original"]>; revise: (chatId: string, revise: { code: string; draft: string; change: string; intent?: string }) => Promise<Made>; sendDeps: () => Promise<DispatchDeps> };
+export type KakaoKit = { paths: KakaoPaths; original?: (d: Draft) => Promise<DraftView["original"]>; revise: (chatId: string, revise: { code: string; draft: string; change: string; intent?: string }) => Promise<Made>; sendDeps: () => Promise<DispatchDeps>; edits?: EditLearning };
+/** What a sent draft the owner edited teaches (design 3.4): the chat lines the draft answered, the room's reply model, the lesson reader, and where a lesson goes (that room's profile, install when it holds everywhere). */
+export type EditLearning = { answered: (d: Draft) => Promise<string>; ask: (system: string, user: string, chatId: string) => Promise<string>; lessonOfEdit: LessonOfEdit; learn: (chatId: string, learned: Learned) => void };
 
 const codeOf = (c: string | undefined): ReasonCode => (isReasonCode(c) ? c : "unknown");
 
@@ -39,6 +42,18 @@ export function kakaoAdapter(kit: KakaoKit): ReplyAdapter {
 		return { ...v, ...(original ? { original } : {}), ...(at === undefined ? {} : { sent: { at, how: "owner" as const } }) };
 	};
 	const done = (r: SendResult) => (r.ok ? { ok: true as const } : { ok: false as const, reason: { code: codeOf(r.code), text: r.reason ?? "" } });
+	const learnEdit = (ref: string): void => {
+		const d = draftOf(ref), e = kit.edits;
+		if (!e || d?.status !== "sent" || d.unconfirmed || d.editedFrom === undefined) return;
+		const before = d.editedFrom;
+		const learning = async (): Promise<void> => {
+			if (!claimEditLearned(kit.paths, ref)) return;
+			const received = await e.answered(d);
+			const taught = await e.lessonOfEdit({ before, after: d.text, received }, (system, user) => e.ask(system, user, d.chatId));
+			if (taught) e.learn(d.chatId, { line: taught.lesson, forbid: [], everywhere: taught.everywhere });
+		};
+		void learning().catch(err => console.error(`kakao: what the edit of ${ref} teaches was not recorded: ${err instanceof Error ? err.message : String(err)}`));
+	};
 
 	return {
 		kind: "kakao",
@@ -53,8 +68,11 @@ export function kakaoAdapter(kit: KakaoKit): ReplyAdapter {
 		// (force) takes over a dead sender.
 		run: async (job: SendJob) => {
 			if (job.by !== "owner" && job.by !== "auto") return { sent: "no", code: "not_approved" };
-			return outcomeOf(await dispatchSend({ kind: "draft", code: job.ref, ownerApproved: true, ...(job.force ? { retry: true } : {}) }, await kit.sendDeps()));
+			const o = outcomeOf(await dispatchSend({ kind: "draft", code: job.ref, ownerApproved: true, ...(job.force ? { retry: true } : {}) }, await kit.sendDeps()));
+			if (o.sent === "yes") learnEdit(job.ref);
+			return o;
 		},
+		learnSent: learnEdit,
 		revise: async (ref, change) => {
 			const d = draftOf(ref);
 			if (!d) return { ok: false, reason: { code: "gone", text: "그 초안을 찾지 못했어요" } };

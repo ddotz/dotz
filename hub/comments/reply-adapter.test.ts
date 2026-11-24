@@ -1,20 +1,26 @@
 // The comment adapter of the one reply flow (design 1.8 column 3) over a real engine with an injected platform, model and mail link.
-import { afterEach, beforeEach, expect, test } from "bun:test";
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { afterEach, beforeEach, expect, spyOn, test } from "bun:test";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { CommentAdapter, RawComment, ReplyOutcome, SourceConfig } from "./contract.ts";
 import { createEngine, type MailLink, type MailView } from "./engine.ts";
+import type { EditLessons } from "./draft-run.ts";
 import { localMidnight } from "../reply-route.ts";
 import { commentAdapter } from "./reply-adapter.ts";
 import { realMailLink } from "./mail-link.ts";
-import { approvalHash, createApprovalSender } from "../approval-send.ts";
+import { approvalHash, createApprovalSender, type SendJob, type SendLook } from "../approval-send.ts";
 import { createReplyActions } from "../reply-actions.ts";
 import { addDraft, getDraft, setStatus, type DraftRec } from "../../features/reply-drafts/lib/store.ts";
-import { HEADINGS, loadStyle, paths, profileBullets } from "../../features/reply-drafts/lib/settings.ts";
+import { HEADINGS, loadStyle, paths, profileBullets, recordLearned } from "../../features/reply-drafts/lib/settings.ts";
 import { generateReply } from "../reply-draft.ts";
-import { replyLearning } from "../reply-mail.ts";
-import type { Lesson } from "../reply-types.ts";
+import { lessonOfEdit, replyLearning } from "../reply-mail.ts";
+import { cli } from "../../features/comments/bin/comments.ts";
+import { realEngine } from "./real.ts";
+import { commentsDir } from "./store.ts";
+import { appendSealed } from "../approval-seal.ts";
+import { flush } from "../runtime/test-clock.ts";
+import type { Lesson, LessonOfEdit } from "../reply-types.ts";
 
 const NOW = Date.parse("2026-11-13T00:00:00.000Z");
 const source: SourceConfig = { key: "youtube", kind: "youtube", label: "유튜브 댓글", watch: ["*"], autoDraft: false };
@@ -33,7 +39,7 @@ afterEach(() => {
 });
 
 const WISH_RULE = `shape ${JSON.stringify({ parts: [{ any: ["좋은"] }, { gap: 5 }, { any: ["되세요"] }], label: "'좋은 주말 보내세요'로 쓴다" })}`;
-function setup(o: { model?: string[]; learn?: string[]; taught?: Lesson[]; prompts?: string[]; tone?: true; files?: MailView["attachments"]; now?: number; mail?: MailLink; posts?: ReplyOutcome[]; answered?: { thread: string; at: number }[] } = {}) {
+function setup(o: { model?: string[]; learn?: string[]; taught?: Lesson[]; prompts?: string[]; tone?: true; files?: MailView["attachments"]; now?: number; mail?: MailLink; posts?: ReplyOutcome[]; answered?: { thread: string; at: number }[]; lessonOfEdit?: LessonOfEdit; learnEdit?: EditLessons["learn"] } = {}) {
 	writeFileSync(join(dir, "config.json"), JSON.stringify({ enabled: true, sources: { youtube: source } }));
 	const posts = [...(o.posts ?? [])];
 	const platform: CommentAdapter = { kind: "youtube", list: async () => ({ comments: [raw], cursor: "1" }), reply: async () => posts.shift() ?? { ok: true, ref: "r1" }, posts: async () => [] };
@@ -41,7 +47,8 @@ function setup(o: { model?: string[]; learn?: string[]; taught?: Lesson[]; promp
 	const mail: MailLink = o.mail ?? { compose: async () => ({ ok: false, reason: "x" }), send: async () => ({ ok: true, text: "" }), drop: () => undefined, revise: async () => ({ ok: false, reason: "x" }), view: id => mails.get(id), edit: (id, text, subject) => (mails.set(id, { ...mails.get(id)!, body: text, ...(subject !== undefined ? { subject } : {}) }), { ok: true }) };
 	let n = 0;
 	const outs = o.model ?? [reply("이번 주말이에요!")];
-	const engine = createEngine({ dir, now: () => o.now ?? NOW, collector: "mac", adapters: { youtube: platform }, model: async (system, user) => (o.prompts?.push(`${system}\n${user}`), { text: outs[Math.min(n++, outs.length - 1)]! }), mail, learn: lesson => void (o.learn?.push(lesson.line), o.taught?.push(lesson)), style: o.tone ? src => loadStyle({ app: src.key }) : () => ({ rules: [], corrections: [], forbidden: ["무조건", WISH_RULE], samples: [] }), answeredMailThread: (thread, at) => void o.answered?.push({ thread, at }) });
+	const learnEdit = o.learnEdit ?? (async (key: Lesson["key"], line: string) => void (o.learn?.push(line), o.taught?.push({ key, line })));
+	const engine = createEngine({ dir, now: () => o.now ?? NOW, collector: "mac", adapters: { youtube: platform }, model: async (system, user) => (o.prompts?.push(`${system}\n${user}`), { text: outs[Math.min(n++, outs.length - 1)]! }), mail, learn: lesson => void (o.learn?.push(lesson.line), o.taught?.push(lesson)), style: o.tone ? src => loadStyle({ app: src.key }) : () => ({ rules: [], corrections: [], forbidden: ["무조건", WISH_RULE], samples: [] }), answeredMailThread: (thread, at) => void o.answered?.push({ thread, at }), ...(o.lessonOfEdit ? { edits: { lessonOfEdit: o.lessonOfEdit, learn: learnEdit, mail: async () => undefined } } : {}) });
 	return { engine, a: commentAdapter(engine) };
 }
 async function drafted(engine: ReturnType<typeof createEngine>): Promise<string> {
@@ -320,26 +327,190 @@ test("K3 a one-off comment change returns no lesson and writes no tone file; K4 
 	expect(existsSync(paths.toneDir())).toBe(false);
 });
 
-test("an edited comment reply teaches what he changed once it went up, not before and not when the post failed", async () => {
+const EDIT_LESSON = "팬 댓글에는 날짜 대신 요일로 답한다";
+const lessonAnswer = (lesson: string, everywhere = false) => JSON.stringify({ lesson, everywhere });
+
+test("an edited comment reply teaches the model's lesson once it went up, not before and not when the post failed", async () => {
 	const taught: Lesson[] = [];
-	const failed = setup({ taught, posts: [{ ok: false, reason: "x", code: "rejected", sent: "no" }] });
+	const failed = setup({ taught, lessonOfEdit, model: [reply("이번 주말이에요!"), lessonAnswer(EDIT_LESSON)], posts: [{ ok: false, reason: "x", code: "rejected", sent: "no" }] });
 	const lost = await drafted(failed.engine);
 	expect(await failed.a.edit(lost, "토요일에 올릴게요 :)")).toEqual({ ok: true });
 	const bad = failed.engine.send(lost, { by: "owner" });
 	if (!bad.ok) throw new Error(bad.reason);
 	await bad.done;
+	await failed.engine.idle();
 	expect(taught).toEqual([]);
 
-	const { engine, a } = setup({ taught });
+	const prompts: string[] = [];
+	const { engine, a } = setup({ taught, prompts, lessonOfEdit, model: [reply("이번 주말이에요!"), lessonAnswer(EDIT_LESSON)] });
 	const code = await drafted(engine);
 	expect(await a.edit(code, "토요일에 올릴게요 :)")).toEqual({ ok: true });
 	expect(taught).toEqual([]);
 	const r = engine.send(code, { by: "owner" });
 	if (!r.ok) throw new Error(r.reason);
 	await r.done;
-	expect(taught).toHaveLength(1);
-	expect(taught[0]).toMatchObject({ key: { app: "youtube" } });
-	expect(taught[0]!.line).toContain("토요일에 올릴게요");
+	await engine.idle();
+	expect(taught).toEqual([{ key: { app: "youtube" }, line: EDIT_LESSON }]);
+	expect(prompts).toHaveLength(2);
+	for (const said of ["다음 편 언제 올라와요?", "이번 주말이에요!", "토요일에 올릴게요 :)"]) expect(prompts[1]).toContain(said);
+});
+
+test("an edited comment lesson about the language itself goes to install; nothing is learned for \"\", a failed call, a whitespace-only edit or no lesson reader, and the post goes up the same", async () => {
+	const run = async (o: { model?: string[]; lessonOfEdit?: LessonOfEdit; text?: string }) => {
+		rmSync(dir, { recursive: true, force: true });
+		mkdirSync(dir);
+		const taught: Lesson[] = [], prompts: string[] = [];
+		const { engine, a } = setup({ taught, prompts, model: [reply("이번 주말이에요!"), ...(o.model ?? [])], ...(o.lessonOfEdit ? { lessonOfEdit: o.lessonOfEdit } : {}) });
+		const code = await drafted(engine);
+		expect(await a.edit(code, o.text ?? "토요일에 올릴게요 :)")).toEqual({ ok: true });
+		const r = engine.send(code, { by: "owner" });
+		if (!r.ok) throw new Error(r.reason);
+		const rep = await r.done;
+		await engine.idle();
+		return { taught, calls: prompts.length - 1, state: rep.state };
+	};
+	expect(await run({ lessonOfEdit, model: [lessonAnswer("맞춤법은 '돼요'로 쓴다", true)] })).toEqual({ taught: [{ key: { app: "install" }, line: "맞춤법은 '돼요'로 쓴다" }], calls: 1, state: "sent" });
+	expect(await run({ lessonOfEdit, model: [lessonAnswer("")] })).toEqual({ taught: [], calls: 1, state: "sent" });
+	const log = spyOn(console, "error").mockImplementation(() => undefined);
+	expect(await run({ lessonOfEdit: input => lessonOfEdit(input, async () => { throw new Error("model down"); }) })).toEqual({ taught: [], calls: 0, state: "sent" });
+	log.mockRestore();
+	expect(await run({ lessonOfEdit, model: [lessonAnswer(EDIT_LESSON)], text: "이번  주말이에요! " })).toEqual({ taught: [], calls: 0, state: "sent" });
+	expect(await run({ model: [lessonAnswer(EDIT_LESSON)] })).toEqual({ taught: [], calls: 0, state: "sent" });
+});
+
+test("an edited comment lesson that says a standing rule of install.md again is not added again: it goes through the one learning door and its curation", async () => {
+	const STANDING = "맞춤법은 '되요'가 아니라 '돼요'로 쓴다";
+	await replyLearning(() => ({})).record({ app: "install" }, STANDING);
+	const curated: string[] = [];
+	const learning = replyLearning(() => ({ learnCall: () => async (_system, user) => (curated.push(user), JSON.stringify({ replaces: [{ id: "R1", why: "same" }] })) }));
+	const { engine, a } = setup({ lessonOfEdit, learnEdit: learning.learn, model: [reply("이번 주말이에요!"), lessonAnswer("'돼요'를 맞춤법대로 쓴다", true)] });
+	const code = await drafted(engine);
+	expect(await a.edit(code, "토요일에 올릴게요 :)")).toEqual({ ok: true });
+	const r = engine.send(code, { by: "owner" });
+	if (!r.ok) throw new Error(r.reason);
+	expect((await r.done).state).toBe("sent");
+	await engine.idle();
+	expect(curated).toHaveLength(1);
+	expect(curated[0]).toContain("'돼요'를 맞춤법대로 쓴다");
+	expect(profileBullets("install", HEADINGS.rules)).toEqual([STANDING]);
+});
+
+const approve = (inbox: string, code: string, hash: string) => appendSealed(inbox, { ts: new Date(NOW + 5000).toISOString(), kind: "message", source: "web", text: "1) 보내기", picks: [{ q: `이 답글 올릴까요? (${code})`, n: 1, label: "보내기", hash }] });
+
+test("a comment send by hand through the CLI prints its result first and stores the edit's lesson before it hands back the exit code", async () => {
+	const taught: Lesson[] = [], order: string[] = [];
+	const printed = Promise.withResolvers<void>();
+	const afterPrint: LessonOfEdit = (input, ask) =>
+		lessonOfEdit(input, async (system, user) => {
+			await Promise.race([printed.promise, flush(30)]);
+			const text = await ask(system, user);
+			order.push("lesson answered");
+			return text;
+		});
+	const { engine, a } = setup({ taught, lessonOfEdit: afterPrint, model: [reply("이번 주말이에요!"), lessonAnswer(EDIT_LESSON)] });
+	const code = await drafted(engine);
+	expect(await a.edit(code, "토요일에 올릴게요 :)")).toEqual({ ok: true });
+	const inbox = join(dir, "inbox.jsonl");
+	approve(inbox, code, approvalHash((await a.get(code))!));
+	const learnAsked: boolean[] = [];
+	const exit = await cli(["send", code], { engineOf: learn => (learnAsked.push(learn), engine), inbox, print: text => (order.push(text), printed.resolve()) });
+	expect([exit, learnAsked]).toEqual([0, [true]]);
+	expect(order).toEqual([`답글을 올렸어요 (${code})`, "lesson answered"]);
+	expect(taught).toEqual([{ key: { app: "youtube" }, line: EDIT_LESSON }]);
+});
+
+test("a comment send the gateway's queue runs: the CLI gets --no-learn and learns nothing; the gateway learns the edit once the outcome is stored", async () => {
+	const taught: Lesson[] = [], childTaught: Lesson[] = [];
+	const gateway = setup({ taught, lessonOfEdit, model: [reply("이번 주말이에요!"), lessonAnswer(EDIT_LESSON)] });
+	const code = await drafted(gateway.engine);
+	expect(await gateway.a.edit(code, "토요일에 올릴게요 :)")).toEqual({ ok: true });
+	const inbox = join(dir, "inbox.jsonl");
+	approve(inbox, code, approvalHash((await gateway.a.get(code))!));
+	const argvs: string[][] = [], learnAsked: boolean[] = [], reports: string[] = [], stateAtLearn: (string | undefined)[] = [];
+	const s = createApprovalSender({
+		kind: () => ({ kind: "comment", lane: "comment:youtube" }),
+		run: async argv => {
+			argvs.push(argv);
+			const child = (learn: boolean) => (learnAsked.push(learn), setup({ taught: childTaught, model: [lessonAnswer(EDIT_LESSON)], ...(learn ? { lessonOfEdit } : {}) }).engine);
+			return { code: await cli(argv.slice(2), { engineOf: child, inbox, print: () => undefined }), out: "" };
+		},
+		learn: job => {
+			stateAtLearn.push(reports.at(-1));
+			gateway.a.learnSent?.(job.ref);
+		},
+		report: r => void reports.push(r.state),
+		log: () => undefined,
+	});
+	expect(s.enqueue({ ref: code, conv: "comment:youtube", action: "send", title: `이 답글 올릴까요? (${code})`, by: "owner" })).toBe(true);
+	await s.idle();
+	await gateway.engine.idle();
+	expect(argvs.map(argv => argv.slice(2))).toEqual([["send", code, "--no-learn"]]);
+	expect([learnAsked, childTaught, stateAtLearn]).toEqual([[false], [], ["sent"]]);
+	expect(taught).toEqual([{ key: { app: "youtube" }, line: EDIT_LESSON }]);
+});
+
+test("a comment send whose CLI child finishes after the gateway restarted (its reply left unsure at boot, then found sent) is learned once, however many triggers find it sent, and never again by a later engine over the same store", async () => {
+	const taught: Lesson[] = [], prompts: string[] = [];
+	const gateway = setup({ taught, prompts, lessonOfEdit, model: [reply("이번 주말이에요!"), lessonAnswer(EDIT_LESSON)] });
+	const code = await drafted(gateway.engine);
+	expect(await gateway.a.edit(code, "토요일에 올릴게요 :)")).toEqual({ ok: true });
+	const posting = Promise.withResolvers<ReplyOutcome>();
+	const childPlatform: CommentAdapter = { kind: "youtube", list: async () => ({ comments: [], cursor: "1" }), reply: () => posting.promise, posts: async () => [] };
+	const child = createEngine({ dir, now: () => NOW, collector: "mac", adapters: { youtube: childPlatform } });
+	const sending = child.send(code, { by: "owner" });
+	if (!sending.ok) throw new Error(sending.reason);
+
+	const job: SendJob = { ref: code, conv: "comment:youtube", action: "send", title: `이 답글 올릴까요? (${code})` };
+	const file = { body: JSON.stringify([{ ...job, state: "sending" }]) };
+	const outcome = (ref: string): SendLook => {
+		const r = gateway.engine.store.replies().find(x => x.draft === ref);
+		return r?.state === "sent" ? { state: "sent" } : { state: "unsure", text: r?.reason ?? "?" };
+	};
+	const s = createApprovalSender({ kind: () => undefined, run: async () => ({ code: 0, out: "" }), store: { load: () => JSON.parse(file.body) as unknown[], save: body => void (file.body = body) }, look: j => outcome(j.ref), learn: j => gateway.a.learnSent?.(j.ref), report: () => undefined, log: () => undefined });
+	expect(gateway.engine.leaveUnsure()).toBe(1);
+	s.recover();
+	expect(JSON.parse(file.body)).toMatchObject([{ ref: code, state: "unsure" }]);
+	await gateway.engine.idle();
+	expect(taught).toEqual([]);
+
+	posting.resolve({ ok: true, ref: "r1" });
+	expect((await sending.done).state).toBe("sent");
+	expect(outcome(code)).toEqual({ state: "sent" });
+	s.settle(job, "sent");
+	await gateway.engine.idle();
+	expect(taught).toEqual([{ key: { app: "youtube" }, line: EDIT_LESSON }]);
+	s.settle(job, "sent");
+	gateway.a.learnSent?.(code);
+	await gateway.engine.idle();
+	const later = setup({ taught, prompts, lessonOfEdit, model: [lessonAnswer(EDIT_LESSON)] });
+	later.a.learnSent?.(code);
+	await later.engine.idle();
+	expect([taught, prompts.length]).toEqual([[{ key: { app: "youtube" }, line: EDIT_LESSON }], 2]);
+});
+
+test("the real engine's comment edit lesson goes through the one learning door: curated against the profile, stored as a correction, and the stored correction starts the refinement", async () => {
+	const root = commentsDir(dir);
+	mkdirSync(root, { recursive: true });
+	writeFileSync(join(root, "config.json"), JSON.stringify({ enabled: true, sources: { youtube: source } }));
+	const platform: CommentAdapter = { kind: "youtube", list: async () => ({ comments: [raw], cursor: "1" }), reply: async () => ({ ok: true, ref: "r1" }), posts: async () => [] };
+	const sender = createEngine({ dir: root, now: () => NOW, collector: "mac", adapters: { youtube: platform }, model: async () => ({ text: reply("이번 주말이에요!") }), style: () => ({ rules: [], corrections: [], forbidden: [], samples: [] }) });
+	const code = await drafted(sender);
+	expect(await commentAdapter(sender).edit(code, "토요일에 올릴게요 :)")).toEqual({ ok: true });
+	const sent = sender.send(code, { by: "owner" });
+	if (!sent.ok) throw new Error(sent.reason);
+	expect((await sent.done).state).toBe("sent");
+	const earlier = Array.from({ length: 12 }, (_, i) => `예전에 고친 점 ${i + 1}`);
+	for (const line of earlier) recordLearned({ app: "youtube" }, line, new Date(NOW));
+
+	const asked: string[] = [];
+	const engine = realEngine(dir, { model: async () => ({ text: lessonAnswer(EDIT_LESSON) }), flow: () => ({ learnCall: () => async (_system, user) => (asked.push(user), JSON.stringify({ replaces: [] })) }) });
+	const log = spyOn(console, "error").mockImplementation(() => undefined);
+	await engine.learnSent(code);
+	log.mockRestore();
+	expect(asked).toHaveLength(2);
+	expect(asked[0]).toContain(EDIT_LESSON);
+	for (const line of earlier) expect(asked[1]).toContain(line);
+	expect(profileBullets({ app: "youtube" }, HEADINGS.corrections).filter(l => l.endsWith(EDIT_LESSON))).toHaveLength(1);
 });
 
 test("a comment reply posted as the model wrote it teaches nothing", async () => {

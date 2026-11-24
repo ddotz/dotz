@@ -41,8 +41,10 @@ if (import.meta.main) {
 		process.exit(1);
 	}, HARD_STOP_MS).unref();
 	try {
-		const lines = await run();
+		const engine = realEngine(dataDir(), { mailOwed: id => void owedMails.push(id) });
+		const lines = await run(dataDir(), engine);
 		if (lines.length) console.log(lines.join("\n\n"));
+		await engine.idle();
 		process.exit(0);
 	} catch (e) {
 		console.log("DOTZ_FAIL comments");

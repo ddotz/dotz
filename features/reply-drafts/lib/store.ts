@@ -48,6 +48,8 @@ export type DraftRec = {
 	created: string;
 	/** When it went out (ISO): stamped once by setStatus(id, "sent"); a draft sent before this field existed has none. */
 	sentAt?: string;
+	/** The owner's edit of this sent draft was taken for learning (claimEditLearned): no other caller, in any process, learns it again. */
+	editLearned?: true;
 	closedAt?: string;
 	changes: string[];
 	questions: string[];
@@ -273,5 +275,16 @@ export function setStatus(id: string, status: DraftStatus): void {
 		const f = read();
 		const at = new Date(Date.now()).toISOString();
 		write({ ...f, drafts: f.drafts.map(d => (d.id === id ? { ...d, status, ...(status === "sent" && !d.sentAt ? { sentAt: at } : {}), ...(status === "pending" ? {} : { closedAt: at }) } : d)) });
+	});
+}
+
+/** Marks sent draft `id` as taken for learning the owner's edit (`editLearned`), under the store's lock: true for the one caller that marks it, false when it is gone, not sent or already marked. */
+export function claimEditLearned(id: string): boolean {
+	return locked(() => {
+		const f = read();
+		const d = f.drafts.find(x => x.id === id);
+		if (!d || d.status !== "sent" || d.editLearned) return false;
+		write({ ...f, drafts: f.drafts.map(x => (x.id === id ? { ...x, editLearned: true as const } : x)) });
+		return true;
 	});
 }

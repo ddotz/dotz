@@ -9,7 +9,7 @@ import { withFileWords } from "../../../hub/auto-attach.ts";
 import { claimsAttachment, ownClaimText } from "../../../hub/attach-claim.ts";
 import { ATTACH_AS_IS_HINT, ATTACH_REFUSED, LINT_REFUSED, asksForFile, briefLines, draftApprovalBlock, draftVerdict, type DraftVerdict, SPENT_REFUSED, WAITING_REFUSED } from "../../../hub/draft-approval.ts";
 import type { ReplyCall } from "../../../hub/reply-model.ts";
-import { addressesOf, editLesson, fileNameKey, generateChatReply, learnedOf, lintReply, NO_RECIPIENT, ownerLint, RECIPIENT_FAILURE, reviseReply, SENT_CLAIM_FAILURE, withSenderAddress, type ModelCall, type Recipient, type ReplyItem, type ReplyKind, type ReplyStyle } from "../../../hub/reply-draft.ts";
+import { addressesOf, fileNameKey, generateChatReply, learnedOf, lintReply, NO_RECIPIENT, ownerLint, RECIPIENT_FAILURE, reviseReply, SENT_CLAIM_FAILURE, withSenderAddress, type ModelCall, type Recipient, type ReplyItem, type ReplyKind, type ReplyStyle } from "../../../hub/reply-draft.ts";
 import { styleJudgeOn } from "../../../hub/config.ts";
 import { judgeAsk, type JudgeAsk } from "../../../hub/style-judge.ts";
 import { listLibrary, matchLibrary, MIN_SCORE, rankLibrary, type LibraryFile } from "./library.ts";
@@ -20,11 +20,12 @@ import { carryStagedFiles, removeStagedFile, stagedFiles, stagedName, stageFiles
 import { dataDir, HEADINGS, INSTALL, loadPairs, loadSettings, loadStyle, normText, ownReplies, paths, profileBullets, recordForbidden, recordPattern, replaceBullets, toneFile, validApp, type ToneKey } from "./settings.ts";
 import { curate, curateAsk, journalAdd, type LearnKind, profileOf } from "./curate.ts";
 import { compactCorrections } from "./compact.ts";
+import { lessonOfEdit } from "./edit-lesson.ts";
 import { defaultKakaoReader, defaultKakaoRooms, KAKAO_APP, kakaoOwnTexts, type OwnerReader, type RoomsReader } from "./kakao-tone.ts";
 import { banWarnings, boxById } from "./box.ts";
 import { maybeRefine } from "./persona.ts";
 import { addPair, styleFrom, styleWithExamples } from "./pairs.ts";
-import { addRevision, claimFile, getDraft, listDrafts, newId, patchDraft, type RevisionConflict, setStatus, type DraftRec } from "./store.ts";
+import { addRevision, claimEditLearned, claimFile, getDraft, listDrafts, newId, patchDraft, type RevisionConflict, setStatus, type DraftRec } from "./store.ts";
 import { realRunner, type Runner } from "./tone.ts";
 import { mailHash, mailView, sendAccountOf, type MailOf } from "./view.ts";
 import { lessonNote, reasonOf } from "../../../hub/reply-reasons.ts";
@@ -33,7 +34,7 @@ import type { Lesson } from "../../../hub/reply-types.ts";
 
 export { realRunner };
 // What hub/reply-mail.ts (the hub's single door into this feature) needs beside the flow itself.
-export { mailView, recordForbidden, sendAccountOf, webmailSite, type MailOf };
+export { lessonOfEdit, mailView, recordForbidden, sendAccountOf, webmailSite, type MailOf };
 
 // `analyze` = the model call of the identity sweep and its refinement (persona.ts); absent, no identity is analysed or refined.
 export type FlowDeps = { /** Chooses among tied library files by name (stageForReply); the default is one short model call. */ pick?: (names: string[]) => Promise<string[]>; call?: ModelCall; judge?: ModelCall; /** The model calls of one draft and its overall budget (draftTrace); buildDraft makes one when absent. */ trace?: DraftTrace; analyze?: ModelCall; run?: Runner; now?: () => Date; send?: (rec: DraftRec) => Promise<SendOutcome>; /** How library files are copied onto a draft (tests). */ stage?: StageOpts; /** Told where an approved send left the mail, right after the transport answered and before any bookkeeping write (bin/draft.ts prints its DOTZ_SEND line). */ onOutcome?: (o: Outcome) => void; learnCall?: (app: string) => ModelCall; kakaoReader?: (chatId: string) => Promise<OwnerReader>; kakaoRooms?: () => Promise<RoomsReader> };
@@ -54,11 +55,31 @@ export function learnLesson(key: ToneKey, line: string, deps: FlowDeps): Promise
 	return key.app === INSTALL ? learnLine(INSTALL, line, "rule", deps) : learnLine(key, line, "correction", deps);
 }
 
-/** The one "record, then refine" (design 3.4): a lesson line is learned (`learnLesson`), and a stored correction folds into its identity; a standing rule refines nothing. */
-export async function recordLesson(key: ToneKey, line: string, deps: FlowDeps): Promise<LineLearned> {
-	const learned = await learnLesson(key, line, deps);
-	if (learned.stored && learned.kind === "correction") await refineAfterCorrection(key, deps);
-	return learned;
+const learning = new Set<Promise<void>>();
+
+/** Settles once every edit lesson this process started (learnSentEdit) is stored or given up: a short-lived process awaits it after printing its send result, before it exits. Each is bounded by its steps in turn: the lesson call (`lessonOfEdit`, 12 s), the curation of the line (`curate`, 12 s), and for a stored correction the identity refinement every few corrections (one analyze call, 120 s by the default call) and the compaction of the corrections (30 s), about three minutes at worst. */
+export async function learningSettled(): Promise<void> {
+	while (learning.size) await Promise.all([...learning]);
+}
+
+async function learnEditOf(id: string, deps: FlowDeps): Promise<void> {
+	try {
+		const d = getDraft(id), learnCall = deps.learnCall;
+		if (!d || d.status !== "sent" || d.editedFrom === undefined || !learnCall || d.editedFrom.replace(/\s+/g, "") === d.body.replace(/\s+/g, "") || !claimEditLearned(id)) return;
+		const key = toneKey(d);
+		const taught = await lessonOfEdit({ before: d.editedFrom, after: d.body, received: d.item.text }, (system, user) => learnCall(key.app)(system, user));
+		const learned = taught ? await learnLine(taught.everywhere ? INSTALL : key, taught.lesson, taught.everywhere ? "rule" : "correction", deps) : undefined;
+		if (learned?.stored && learned.kind === "correction") await refineAfterCorrection(key, deps);
+	} catch (e) {
+		console.error(`reply draft: what the edit of ${id} teaches was not recorded: ${(e as Error).message}`);
+	}
+}
+
+/** What sent mail draft `id` teaches when the owner wrote its text himself (직접 수정, design 3.4), started now and counted by `learningSettled`: read from the store (status sent, `editedFrom`), its `editLearned` mark claimed under the store's lock (store.ts claimEditLearned) before one `lessonOfEdit` call through `deps.learnCall` of its app, then `learnLine` into its profile (install when it holds everywhere) and a correction's refinement. Every caller may start it (sendDraft for the send CLI by hand, the gateway after its send queue ran the CLI with `--no-learn` or found the send sent later, the comment engine or the gateway for a mail that rode on a comment card); the mark lets one of them, in any process, learn a draft once. Nothing without a learnCall, a real edit or the mark; never rejects (a failure logs one line). */
+export function learnSentEdit(id: string, deps: FlowDeps): Promise<void> {
+	const taught: Promise<void> = learnEditOf(id, deps).finally(() => learning.delete(taught));
+	learning.add(taught);
+	return taught;
 }
 
 /** What `learnLine` did: whether the line went in, as what, the old lines it replaced, and the standing rule that already says it (`same`, nothing stored). */
@@ -691,7 +712,7 @@ export async function restoreDraft(ref: string, deps: Pick<FlowDeps, "run"> = {}
 // `asIs`: with `withReply`, the owner picked 이대로 보내기 on the card (without it the verdict says so). A mail whose files disagree with its words is refused
 // before it goes out unless he did; the draft stays pending so the card can still be answered.
 // `retry`: the owner pressed 다시 보내기 on purpose; only then is a claim left by a sender that died (the mail may have gone out) taken over.
-export async function sendDraft(id: string, deps: FlowDeps, opts: { withReply?: true; asIs?: true; retry?: true } = {}): Promise<Step> {
+export async function sendDraft(id: string, deps: FlowDeps, opts: { withReply?: true; asIs?: true; retry?: true; learn?: false } = {}): Promise<Step> {
 	const stored = getDraft(id);
 	const d = stored && withRecipient(stored);
 	if (!d) return { ok: false, text: `초안 ${id}을(를) 찾지 못했어요`, sent: "no", code: "gone" };
@@ -754,10 +775,10 @@ export async function sendDraft(id: string, deps: FlowDeps, opts: { withReply?: 
 			}
 		}
 		// A text the owner wrote himself (직접 수정) teaches what he changed, in the profile of that draft, once it went out (design 3.4).
-		const taught = now.editedFrom !== undefined ? editLesson(now.editedFrom, now.body) : undefined;
-		if (taught) await recordLesson(toneKey(now), taught, deps).catch(e => console.error(`reply draft: what the edit of ${id} teaches was not recorded: ${(e as Error).message}`));
+		const edited = now.editedFrom !== undefined && now.editedFrom.replace(/\s+/g, "") !== now.body.replace(/\s+/g, "");
+		if (edited && opts.learn !== false) void learnSentEdit(id, deps);
 		// A draft the owner changed is his own wording now: it joins his past replies. An unchanged bot draft never does.
-		if (now.kind === "mail" && !now.compose && (now.changes.length > 0 || taught !== undefined) && now.item.text.trim()) {
+		if (now.kind === "mail" && !now.compose && (now.changes.length > 0 || edited) && now.item.text.trim()) {
 			try {
 				const source = pairSource(now.source);
 				addPair("mail", { received: now.item.text, reply: now.body, at: nowOf(deps).getTime(), edited: true, ...(addressesOf(now.item.from)[0] ? { from: addressesOf(now.item.from)[0] } : {}), ...(source !== "zele" ? { source } : {}) });

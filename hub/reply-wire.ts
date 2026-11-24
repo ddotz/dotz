@@ -168,6 +168,7 @@ export const sender = createApprovalSender({
 	fingerprint: fingerprintOf,
 	run: runCli,
 	runJob: j => (j.kind === "kakao" ? kakaoReply.run?.(j) : undefined),
+	learn: j => adapterOf(j.ref)?.learnSent?.(j.ref, j.action === "send-main" ? "reply" : j.action === "send-mail" ? "mail" : undefined),
 	repair: async (j, code) => (await adapterOf(j.ref)?.repair?.(j.ref, code)) ?? "failed",
 	prove: async j => (await adapterOf(j.ref)?.prove?.(j.ref)) ?? "unknown",
 	report: reportSend,

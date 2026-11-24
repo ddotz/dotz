@@ -1,14 +1,17 @@
 // The mail and webmail adapter of the one reply flow (the reply unification design, 1.8 columns 1 and 2) and the one learning
 // implementation ("record, then refine"). It is the hub's single door into the reply-drafts feature: it imports exactly flow.ts and store.ts,
 // and re-exports what the gateway's other modules read of it, so no other hub file needs a feature edge for them.
-import { askText, defaultCall, dropDraft, editDraft, learnLesson, mailView, realFlowDeps, recordForbidden, refineAfterCorrection, restoreDraft, reviseDraft, revisePattern, type FlowDeps, type MailOf, webmailSite } from "../features/reply-drafts/lib/flow.ts";
+import { askText, defaultCall, dropDraft, editDraft, learningSettled, learnLesson, learnSentEdit, lessonOfEdit, mailView, realFlowDeps, recordForbidden, refineAfterCorrection, restoreDraft, reviseDraft, revisePattern, type FlowDeps, type MailOf, webmailSite } from "../features/reply-drafts/lib/flow.ts";
 import { claimFile, DRAFT_ID, draftStoreIntact, getDraft, listDrafts, patchDraft, setStatus, unlessUnreadable, type DraftRec } from "../features/reply-drafts/lib/store.ts";
 import { pairedMails, ridingMails } from "./comments/linked.ts";
 import { sinceMidnight } from "./reply-route.ts";
 import { reasonOf } from "./reply-reasons.ts";
 import type { DraftView, Lesson, ReasonCode, ReplyAdapter } from "./reply-types.ts";
 
-export { claimFile, defaultCall, DRAFT_ID, draftStoreIntact, getDraft, listDrafts, patchDraft, unlessUnreadable };
+export { claimFile, defaultCall, DRAFT_ID, draftStoreIntact, getDraft, learningSettled, lessonOfEdit, listDrafts, patchDraft, unlessUnreadable };
+
+/** What the owner's edit of sent mail draft `id` teaches, learned with `deps` (the real flow deps by default; flow.ts learnSentEdit, counted by `learningSettled`): the mail that rode on a comment card, which the comment engine learns (hub/comments/real.ts). Never rejects. */
+export const learnMailEdit = (id: string, deps: () => FlowDeps = realFlowDeps): Promise<void> => learnSentEdit(id, deps());
 
 const known = (ref: string): DraftRec | undefined => {
 	const rec = getDraft(ref);
@@ -47,6 +50,10 @@ export function mailAdapter(deps: () => FlowDeps = realFlowDeps, mailOf: MailOf 
 			const rec = known(ref);
 			if (!rec) return undefined;
 			return { kind: "mail", lane: mailLane(rec) };
+		},
+		learnSent: ref => {
+			const rec = known(ref);
+			if (rec) void learnSentEdit(rec.id, deps());
 		},
 		revise: async (ref, change) => {
 			const r = await reviseDraft(ref, change, deps(), { learn: false });
@@ -97,5 +104,9 @@ export function replyLearning(deps: () => FlowDeps = realFlowDeps) {
 		refine: (key: Lesson["key"]) => refineAfterCorrection(key, deps()),
 		forbid: async (key: Lesson["key"], words: string[]) => recordForbidden(key, words),
 		pattern: (key: Lesson["key"], line: string, evidence: NonNullable<Lesson["evidence"]>, words: string[]) => revisePattern(key, line, evidence, words, deps()),
+		learn: async (key: Lesson["key"], line: string): Promise<void> => {
+			const learned = await learnLesson(key, line, deps());
+			if (learned.stored && learned.kind === "correction") await refineAfterCorrection(key, deps());
+		},
 	};
 }

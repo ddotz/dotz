@@ -14,7 +14,7 @@ import { getSecret } from "./creds.ts";
 import { type KakaoDb, sqlcipherDb } from "./db.ts";
 import { callReplyModel } from "../reply-model.ts";
 import type { Learned } from "../reply-draft.ts";
-import { replyLearning } from "../reply-mail.ts";
+import { lessonOfEdit, replyLearning } from "../reply-mail.ts";
 import { kakaoAdapter } from "./reply-adapter.ts";
 import { type DraftModel, type StyleHint, type VoiceSource } from "./draft.ts";
 import { createLive } from "./live.ts";
@@ -93,6 +93,7 @@ const web = createKakaoWeb({
 	learnVoice,
 	log,
 	onRevise,
+	lessonOfEdit,
 	replies: useReplies,
 });
 

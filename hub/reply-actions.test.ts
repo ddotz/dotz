@@ -489,7 +489,7 @@ test("unsure: a second send answers needs_resolve; 나갔어요 closes it as sen
 	expect((await w.replies.act({ ref: "RAAAAAA", action: "resolve", as: "retry", hash: w.seen("RAAAAAA") }, owner)).status).toBe(200);
 	await w.sender.idle();
 	expect(w.ran).toHaveLength(2);
-	expect(w.ran[1]!.at(-1)).toBe("--retry");
+	expect(w.ran[1]!.slice(-2)).toEqual(["--retry", "--no-learn"]);
 
 	const v = world({ outcome: maybe });
 	await v.replies.act({ ref: "RAAAAAA", action: "send", hash: v.seen("RAAAAAA") }, owner);

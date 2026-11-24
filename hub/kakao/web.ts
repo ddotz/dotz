@@ -3,6 +3,7 @@
 // Events carry ids only: never a body or a room name. Sends go only through send.ts (Accessibility UI automation).
 import type { useReplies } from "../reply-actions.ts";
 import type { Learned } from "../reply-draft.ts";
+import type { LessonOfEdit } from "../reply-types.ts";
 import { mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { hostname } from "node:os";
 import { dirname, join } from "node:path";
@@ -11,7 +12,7 @@ import { featureEnabled } from "../app-feature-flags.ts";
 import type { Lease } from "./contract.ts";
 import { writePrivate } from "./creds.ts";
 import { hasWords, type KakaoDb, lastLines, memberLabels, messageById, ownerNames, peopleNames, readText, roomShown, messages, roomHead, rooms, sentAtMs, unreadCount, watermarks } from "./db.ts";
-import { type DraftModel, draftParts, type StyleHint, type VoiceSource } from "./draft.ts";
+import { chatLines, type DraftModel, draftParts, sinceOwnLast, type StyleHint, type VoiceSource } from "./draft.ts";
 import { makeDraft } from "./make-draft.ts";
 import { buildPersonPrompt, personStats, type PersonStats } from "./person.ts";
 import { fetchMedia, mediaTarget, replySource, serveLocalFile } from "./media.ts";
@@ -47,6 +48,7 @@ export type WebDeps = {
 	learnVoice?: (src: VoiceSource) => Promise<void>;
 	// A revise of a draft ("더 짧게") was stored: what it teaches beyond this draft (the model's lesson) goes into the room's tone profile.
 	onRevise?: (chatId: string, learned: Learned) => void;
+	lessonOfEdit?: LessonOfEdit;
 	// The fetch behind GET /api/kakao/media/... and GET /api/link-preview (default: the global fetch).
 	fetch?: typeof fetch;
 	// How link previews resolve host names (default: dns.lookup); tests pass their own.
@@ -562,6 +564,14 @@ export function createKakaoWeb(deps: WebDeps) {
 	const idle = async () => {
 		while (pending.size) await Promise.all([...pending]);
 	};
+	const answered = async (d: Draft): Promise<string> => {
+		const config = readConfig(paths);
+		if (!config?.enabled || !/^\d+$/.test(d.basisLogId)) return "";
+		const upTo = await messages(await getDb(config), d.chatId, 30, config.userId ?? "", { before: String(BigInt(d.basisLogId) + 1n) });
+		return chatLines(sinceOwnLast(upTo, false)).join("\n");
+	};
+	const { draftModel, onRevise, lessonOfEdit } = deps;
+	const edits = draftModel && onRevise && lessonOfEdit ? { answered, ask: async (system: string, user: string, chatId: string) => (await draftModel(system, user, chatId)).text, lessonOfEdit, learn: onRevise } : undefined;
 	// The kit of the one reply flow's KakaoTalk adapter (hub/kakao/reply-adapter.ts): a revise through this room's model call, and one send's deps.
 	const replyKit = {
 		paths,
@@ -582,6 +592,7 @@ export function createKakaoWeb(deps: WebDeps) {
 			const cache = await allRooms(config, true);
 			return { paths, runner: deps.runner, now, lease: deps.lease, latestIncoming: (id: string) => latestIncoming(config, id), roomNames: async () => cache.all.map(({ chatId, name, kind, members }) => ({ chatId, name, kind, members })) };
 		},
+		...(edits ? { edits } : {}),
 	};
 	return { route, idle, unrepliedCount, draftFacts, pendingDrafts, pendingCount, replyKit };
 }

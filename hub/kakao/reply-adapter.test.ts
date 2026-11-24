@@ -1,12 +1,16 @@
 // The KakaoTalk adapter of the one reply flow (design 1.8 column 4) on a temp store: the view, the actions and every send result as the queue reads it.
-import { afterAll, beforeEach, expect, test } from "bun:test";
+import { afterAll, beforeEach, expect, spyOn, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { Learned } from "../reply-draft.ts";
+import { lessonOfEdit } from "../reply-mail.ts";
 import { localMidnight } from "../reply-route.ts";
-import { kakaoAdapter, outcomeOf } from "./reply-adapter.ts";
-import { createDraft, readDrafts } from "./send.ts";
+import { advance, flush } from "../runtime/test-clock.ts";
+import { type EditLearning, kakaoAdapter, outcomeOf } from "./reply-adapter.ts";
+import { createDraft, editDraft, readDrafts } from "./send.ts";
 import { kakaoPaths } from "./types.ts";
+import { fakeScreen } from "./ui.fixture.ts";
 
 const dir = mkdtempSync(join(tmpdir(), "kakao-adapter-"));
 afterAll(() => rmSync(dir, { recursive: true, force: true }));
@@ -124,4 +128,73 @@ test("U4-7 a draft sent today is listed as sent with its time; one sent before m
 	expect(await a.get(made[0]!)).toMatchObject({ draft: { state: "sent" }, can: { send: false }, sent: { at: today, how: "owner" } });
 	expect((await a.get(made[1]!))!.sent).toEqual({ at: yesterday, how: "owner" });
 	expect((await a.get(made[2]!))!.sent).toBeUndefined();
+});
+
+const EDIT_LESSON = "친구 방에서 약속을 정할 때는 '봐요' 대신 '봐!!'처럼 들뜬 반말로 쓴다";
+const ROOM_LINES = "Alex: 내일 몇 시에 볼까요?";
+async function sentEdit(o: { answer?: () => Promise<string>; text?: string; wired?: false; latest?: string; unconfirmed?: true } = {}) {
+	const d = await draft();
+	expect(editDraft(d.code, o.text ?? "내일 3시에 봐!! ㅎㅎ", { paths })).toEqual({ ok: true });
+	const asked: { user: string; chatId: string }[] = [], learned: [string, Learned][] = [];
+	const screen = fakeScreen([{ id: "chat_alex", title: "Alex", window: { title: "Alex" } }], o.unconfirmed ? { axSend: () => ({ ok: false, why: "unclear", pressed: true }) } : {});
+	const edits: EditLearning = { answered: async x => (x.code === d.code ? ROOM_LINES : ""), ask: async (_system, user, chatId) => (asked.push({ user, chatId }), (o.answer ?? (async () => JSON.stringify({ lesson: EDIT_LESSON, everywhere: false })))()), lessonOfEdit, learn: (chatId, l) => void learned.push([chatId, l]) };
+	const a = kakaoAdapter({ ...kit, sendDeps: async () => ({ paths, runner: screen.runner, now: () => 1, latestIncoming: async () => o.latest, ...(o.unconfirmed ? { confirm: async () => false, sleep: async () => undefined, later: () => undefined } : {}) }), ...(o.wired === false ? {} : { edits }) });
+	const out = await a.run!({ ref: d.code, conv: "kakao:1", action: "send", title: a.question(d.code), by: "owner" });
+	await flush();
+	return { out, asked, learned, status: readDrafts(paths).find(x => x.code === d.code)!.status, a, code: d.code };
+}
+
+test("a sent KakaoTalk draft the owner edited teaches the model's lesson to that room, read with the chat lines it answered; one about the language itself is marked everywhere", async () => {
+	const r = await sentEdit();
+	expect([r.out, r.status]).toEqual([{ sent: "yes" }, "sent"]);
+	expect(r.learned).toEqual([["1", { line: EDIT_LESSON, forbid: [], everywhere: false }]]);
+	expect(r.asked.map(x => x.chatId)).toEqual(["1"]);
+	for (const said of [ROOM_LINES, "내일 3시에 봐요", "내일 3시에 봐!! ㅎㅎ"]) expect(r.asked[0]!.user).toContain(said);
+	expect((await sentEdit({ answer: async () => JSON.stringify({ lesson: "맞춤법은 '돼요'로 쓴다", everywhere: true }) })).learned).toEqual([["1", { line: "맞춤법은 '돼요'로 쓴다", forbid: [], everywhere: true }]]);
+});
+
+test('a KakaoTalk edit teaches nothing for "", a failed or late call, a whitespace-only edit, a send that did not go out, or no wiring, and the send result stays the same', async () => {
+	const plain = await sentEdit({ wired: false });
+	expect([plain.out, plain.learned]).toEqual([{ sent: "yes" }, []]);
+	const log = spyOn(console, "error").mockImplementation(() => undefined);
+	const empty = await sentEdit({ answer: async () => JSON.stringify({ lesson: "", everywhere: true }) });
+	const thrown = await sentEdit({ answer: async () => { throw new Error("model down"); } });
+	const late = Promise.withResolvers<string>();
+	const slow = await sentEdit({ answer: () => late.promise });
+	await advance(12_000);
+	late.resolve(JSON.stringify({ lesson: EDIT_LESSON, everywhere: false }));
+	await flush();
+	log.mockRestore();
+	for (const r of [empty, thrown, slow]) expect([r.out, r.learned, r.asked.length]).toEqual([plain.out, [], 1]);
+	const spaces = await sentEdit({ text: "내일  3시에 봐요 " });
+	expect([spaces.out, spaces.learned, spaces.asked]).toEqual([plain.out, [], []]);
+	const stale = await sentEdit({ latest: "99" });
+	expect([stale.status, stale.learned, stale.asked]).toEqual(["stale", [], []]);
+});
+
+test("a KakaoTalk press that was not confirmed is not a send the queue records as sent: it teaches nothing, though the draft counts as sent", async () => {
+	const r = await sentEdit({ unconfirmed: true });
+	expect([r.out, r.status, r.learned, r.asked]).toEqual([{ sent: "maybe", code: "press_unconfirmed" }, "sent", [], []]);
+});
+
+test("a KakaoTalk send the in-process run learned is not learned again by the gateway's learnSent, nor by a new adapter over the same store after a restart", async () => {
+	const r = await sentEdit();
+	expect(r.learned).toHaveLength(1);
+	r.a.learnSent?.(r.code);
+	const again: string[] = [];
+	kakaoAdapter({ ...kit, edits: { answered: async () => ROOM_LINES, ask: async () => (again.push("asked"), JSON.stringify({ lesson: EDIT_LESSON, everywhere: false })), lessonOfEdit, learn: () => void again.push("learned") } }).learnSent?.(r.code);
+	await flush();
+	expect([r.learned.length, r.asked.length, again]).toEqual([1, 1, []]);
+});
+
+test("an unconfirmed KakaoTalk send is learned only once the owner says it went out (나갔어요), and then once", async () => {
+	const r = await sentEdit({ unconfirmed: true });
+	r.a.learnSent?.(r.code);
+	await flush();
+	expect(r.learned).toEqual([]);
+	expect(await r.a.markSent(r.code)).toEqual({ ok: true });
+	r.a.learnSent?.(r.code);
+	r.a.learnSent?.(r.code);
+	await flush();
+	expect([r.learned, r.asked.length]).toEqual([[["1", { line: EDIT_LESSON, forbid: [], everywhere: false }]], 1]);
 });

@@ -191,9 +191,9 @@ describe("approval sender", () => {
 	});
 
 	test("the send commands are the ones the bot runs", () => {
-		expect(sendArgv("comment", "D1", "send-mail", "bun").slice(2)).toEqual(["send", "D1", "--only", "mail"]);
-		expect(sendArgv("comment", "D1", "send-mail", "bun", true)!.slice(2)).toEqual(["send", "D1", "--only", "mail", "--retry"]);
-		expect(sendArgv("mail", "RAAAAAA", "send", "bun")![1]).toEndWith("features/reply-drafts/bin/draft.ts");
+		expect(sendArgv("comment", "D1", "send-mail", "bun").slice(2)).toEqual(["send", "D1", "--only", "mail", "--no-learn"]);
+		expect(sendArgv("comment", "D1", "send-mail", "bun", true)!.slice(2)).toEqual(["send", "D1", "--only", "mail", "--retry", "--no-learn"]);
+		expect(sendArgv("mail", "RAAAAAA", "send", "bun")!.slice(1)).toEqual([expect.stringMatching(/features\/reply-drafts\/bin\/draft\.ts$/), "send", "RAAAAAA", "--no-learn"]);
 		expect(sendActionOf("보내기")).toBe("send");
 		expect(sendActionOf("고치기")).toBeUndefined();
 		expect(sendActionOf("어떻게 보낼지 직접 입력")).toBeUndefined();

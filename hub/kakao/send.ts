@@ -8,6 +8,7 @@ import { randomBytes } from "node:crypto";
 import { appendFileSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { claimHolder, claimSend } from "../draft-claim.ts";
+import { claimLearned } from "../edit-learned.ts";
 import { readState } from "../statefile.ts";
 import { approvalHash, draftApprovalBlock, draftVerdict, type DraftVerdict, SPENT_REFUSED, WAITING_REFUSED } from "../draft-approval.ts";
 import { reasonOf } from "../reply-reasons.ts";
@@ -78,6 +79,12 @@ export function readDrafts(paths: KakaoPaths): Draft[] {
 }
 
 const writeDrafts = (paths: KakaoPaths, list: Draft[]) => writePrivate(paths.drafts, `${JSON.stringify(list.slice(-MAX_DRAFTS), null, 1)}\n`);
+
+/** Marks sent draft `code` as taken for learning the owner's edit, in `edit-learned.json` beside the drafts file (claimLearned): true for the one caller that marks it, false when it is gone, not sent or already marked. */
+export function claimEditLearned(paths: KakaoPaths, code: string): boolean {
+	const d = readDrafts(paths).find(x => x.code === code), file = join(dirname(paths.drafts), "edit-learned.json");
+	return d?.status === "sent" && claimLearned(file, `${d.code}:${d.created}`, marks => writePrivate(file, `${JSON.stringify(marks)}\n`));
+}
 
 export async function listDrafts(deps: SendDeps): Promise<Draft[]> {
 	return readDrafts(deps.paths);

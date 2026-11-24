@@ -78,16 +78,20 @@ export { approvalHash };
 /** The ref in a decision question's trailing "(<ref>)". */
 export const refOfQuestion = (q: string): string | undefined => /\(([A-Za-z0-9][A-Za-z0-9_.:-]{1,63})\)\s*$/.exec(q)?.[1];
 
-/** The command that sends draft `ref` (a comment reply draft, a mail draft of features/reply-drafts), or undefined. */
+const NO_LEARN = "--no-learn";
+
+/** The command that sends draft `ref` (a comment reply draft, a mail draft of features/reply-drafts), or undefined. It always carries `--no-learn`: what the owner's edit teaches is learned by this process once the send went out (SenderDeps.learn), never by the CLI. */
 export function sendArgv(kind: SendKind, ref: string, action: SendAction, bun = process.execPath, retry = false): string[] | undefined {
-	if (kind === "comment") return [bun, join(ROOT, "features/comments/bin/comments.ts"), "send", ref, ...(action === "send-main" ? ["--only", "reply"] : action === "send-mail" ? ["--only", "mail", ...(retry ? ["--retry"] : [])] : action === "send-as-is" ? ["--as-is"] : [])];
+	if (kind === "comment") return [bun, join(ROOT, "features/comments/bin/comments.ts"), "send", ref, ...(action === "send-main" ? ["--only", "reply"] : action === "send-mail" ? ["--only", "mail", ...(retry ? ["--retry"] : [])] : action === "send-as-is" ? ["--as-is"] : []), NO_LEARN];
 	// A mail draft has one body; 답글만 / 메일만 belong to a comment card. Both 보내기 and 이대로 보내기 run the same send: it reads the owner's pick.
-	return action === "send" || action === "send-as-is" ? [bun, join(ROOT, "features/reply-drafts/bin/draft.ts"), "send", ref, ...(retry ? ["--retry"] : [])] : undefined;
+	return action === "send" || action === "send-as-is" ? [bun, join(ROOT, "features/reply-drafts/bin/draft.ts"), "send", ref, ...(retry ? ["--retry"] : []), NO_LEARN] : undefined;
 }
 
 export type SenderDeps = {
 	/** An in-process sender for `job` (used before the CLI; a kind with no CLI, KakaoTalk, needs one). */
 	runJob?: (job: SendJob & { kind: SendKind }) => ReturnType<NonNullable<ReplyAdapter["run"]>> | undefined;
+	/** An approved send turned out sent: its run went out (or the reply of its card did, `partial`), a boot or a later check found it sent, the owner's 나갔어요 or a proof settled it. What the owner's edit of it teaches is learned here, after the sent state is stored; the job's ref and action say which draft and part, so a sent draft that no longer has a send target is learned too. A kind sent by its CLI (sendArgv, `--no-learn`) learns only through here. It may be called more than once for one draft (the draft's store mark lets one learner run); it must not throw or wait. */
+	learn?: (job: SendJob) => void;
 	/** The approvalHash of draft `ref` as its store holds it now (undefined: no store knows it). Absent: no approval gate (tests of the queue alone). */
 	fingerprint?: (ref: string) => Promise<string | undefined>;
 	/** Code repair before an automatic retry whose policy asks for one (a background re-login). Absent: such a reason is never retried by code. */
@@ -249,6 +253,7 @@ export function createApprovalSender(deps: SenderDeps) {
 				o = { sent: "maybe", code: "unknown" };
 			}
 			ended(j, o, tries);
+			if (o.sent === "yes" || o.sent === "partial") learnFrom(deps, j);
 		}
 	}
 	const drain = (key: string, jobs: (SendJob & { kind: SendKind })[]): Promise<void> =>
@@ -281,7 +286,6 @@ export function createApprovalSender(deps: SenderDeps) {
 		set(j, "failed", reason.text, undefined, { reason, safeToAuto: true, auto: next, attempts: tries, ...said });
 		schedule(j, next);
 	}
-
 	// An automatic attempt: after its wait, the repair its reason asks for (a failed repair ends it for the owner), then the whole send again
 	// with no cancel window and no new approval. The lane is not held while it waits.
 	const autoAt = new Map<string, number>();
@@ -334,7 +338,7 @@ export function createApprovalSender(deps: SenderDeps) {
 			set(j, "sending", "", undefined, { attempts: attempts(j.ref) });
 		} else {
 			orphans.delete(j.ref);
-			if (l.state === "sent") set(j, "sent");
+			if (l.state === "sent") set(j, "sent"), learnFrom(deps, j);
 			else {
 				const reason: Reason = { code: l.state === "unsure" ? "interrupted" : "tool_before_send", text: l.text };
 				set(j, l.state, l.text, undefined, { reason, attempts: attempts(j.ref), ...(l.state === "failed" ? { safeToAuto: false } : {}) });
@@ -369,7 +373,7 @@ export function createApprovalSender(deps: SenderDeps) {
 				} else if (state === "failed" || state === "unsure") kept.delete(j.ref);
 				else if (state === "undo") back(j, "restart");
 				else if (state === "sending") settleLeft(j);
-				else if (look(j).state === "sent") set(j, "sent");
+				else if (look(j).state === "sent") set(j, "sent"), learnFrom(deps, j);
 				else {
 					// Queued again as a fresh job: its own kept row must not read as a second approval.
 					kept.delete(j.ref);
@@ -389,7 +393,7 @@ export function createApprovalSender(deps: SenderDeps) {
 				provedAt.set(k.ref, now());
 				const j: SendJob = { ref: k.ref, conv: k.conv, action: k.action, title: k.title };
 				void deps.prove(j).then(
-					p => void (p === "sent" && kept.get(k.ref)?.state === "unsure" && set(j, "sent")),
+					p => void (p === "sent" && kept.get(k.ref)?.state === "unsure" && (set(j, "sent"), learnFrom(deps, j))),
 					e => deps.log(`approved send ${k.ref}: read-back failed: ${(e as Error).message}`),
 				);
 			}
@@ -407,7 +411,7 @@ export function createApprovalSender(deps: SenderDeps) {
 			return "cancelled";
 		},
 		/** An unsure job got its answer (proof read back, the owner's pick, its old sender finished). */
-		settle: (j: SendJob, state: "sent" | "failed", text = "") => (state === "sent" ? set(j, "sent") : set(j, "failed", text, undefined, { reason: { code: "tool_before_send", text }, safeToAuto: false, attempts: attempts(j.ref) })),
+		settle: (j: SendJob, state: "sent" | "failed", text = "") => (state === "sent" ? (set(j, "sent"), learnFrom(deps, j)) : set(j, "failed", text, undefined, { reason: { code: "tool_before_send", text }, safeToAuto: false, attempts: attempts(j.ref) })),
 		forget: (ref: string): boolean => {
 			const st = kept.get(ref)?.state ?? results.get(ref)?.state;
 			if (st !== "failed" && st !== "unsure") return false;
@@ -450,6 +454,13 @@ function gateMark(deps: Pick<SenderDeps, "mark" | "log">, j: SendJob, mark: "spe
 		deps.mark?.(j, mark);
 	} catch (e) {
 		deps.log(`approved send ${j.ref}: the ${mark} mark was not written to the inbox: ${(e as Error).message}`);
+	}
+}
+function learnFrom(deps: Pick<SenderDeps, "learn" | "log">, j: SendJob): void {
+	try {
+		deps.learn?.(j);
+	} catch (e) {
+		deps.log(`approved send ${j.ref}: what its edit teaches was not started: ${(e as Error).message}`);
 	}
 }
 // The draft's fingerprint as its store holds it now; undefined when no store knows it (or there is no gate), null when it could not be read.

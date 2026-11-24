@@ -2,10 +2,10 @@
 // the gate in contract.ts). Everything is injected (adapters, model, clock, tone, broadcast) so tests run without a network.
 import { editFollower } from "./edited.ts";
 import { ownerLint, type ReplyStyle } from "../reply-draft.ts";
-import type { Lesson } from "../reply-types.ts";
+import type { Lesson, Part } from "../reply-types.ts";
 import { absorbComments, mergeIgTwins } from "./absorb.ts";
 import { failAuto, leaveQueue } from "./auto-queue.ts";
-import { createDraftRun, earlierMailTo, editedLesson, MAIL_SAME_ADDRESS_NOTE, mailJson, POSTING_REASON, reviseMail, tokenStats } from "./draft-run.ts";
+import { createDraftRun, earlierMailTo, type EditLessons, learnSentParts, MAIL_SAME_ADDRESS_NOTE, mailJson, POSTING_REASON, reviseMail, tokenStats } from "./draft-run.ts";
 import { createSendRecovery } from "./recover.ts";
 import { replyPosted } from "./posted.ts";
 import { type Comment, type CommentAdapter, dispatchReply, type GateResult, isUntitled, type Post, ruleAllows, type SourceConfig, type SourceKind, threadKey, watches } from "./contract.ts";
@@ -60,6 +60,7 @@ export type EngineDeps = {
 	judge?: DraftModel;
 	style?: (src: SourceConfig) => ReplyStyle;
 	learn?: (lesson: Lesson) => void;
+	edits?: EditLessons;
 	broadcast?: (event: Record<string, unknown>) => void;
 	/** A reply was posted (owner's 보내기 or an owner-enabled rule): the app instance and the send record. hub/followup.ts wakes the bot from here. */
 	sent?: (app: string, reply: Reply) => void;
@@ -176,6 +177,8 @@ export function createEngine(deps: EngineDeps) {
 	const store = createStore(deps.dir);
 	const inflight = new Set<string>();
 	const pending = new Set<Promise<unknown>>();
+	const track = <T>(p: Promise<T>): Promise<T> => (pending.add(p), void p.finally(() => pending.delete(p)), p);
+	const learnSent = (draftCode: string, part?: Part): Promise<unknown> => track(learnSentParts(store, draftCode, part, deps, ownerOf));
 	const emit = (e: Record<string, unknown>) => deps.broadcast?.(e);
 	const replyOn = (src: SourceConfig): boolean => deps.featureOn?.(ownerOf(src), "comment_reply") ?? true;
 	const gate = { store, adapters: deps.adapters, now: deps.now, collector: deps.collector, inflight, onState: (r: Reply) => {
@@ -184,8 +187,7 @@ export function createEngine(deps: EngineDeps) {
 		// A reply that carries a mail wakes no 이어서 할 일 rule: the mail it would draft is already in the card.
 		if (r.state === "sent") {
 			replyPosted(deps, store, r, src && ownerOf(src));
-			const taught = learned(r.draft);
-			if (taught) deps.learn?.(taught);
+			void learnSent(r.draft, "reply");
 		}
 	} };
 
@@ -340,8 +342,7 @@ export function createEngine(deps: EngineDeps) {
 		const r = (mailId ? mailLintRefusal(deps.mail, mailId) : undefined) ?? (mailId && !opts.asIs ? mailRefusal(deps.mail, mailId) : undefined) ?? dispatchReply({ code: codeOrId, approval: { by: opts.by }, ...(opts.text !== undefined ? { text: opts.text } : {}), ...(opts.resend ? { resend: true as const } : {}) }, gate);
 		if (!r.ok) return r;
 		const done = mailId ? r.done.then(rep => sendMail(rep, mailId, opts.asIs)) : r.done;
-		pending.add(done);
-		void done.finally(() => pending.delete(done));
+		track(done);
 		return { ...r, done };
 	}
 
@@ -682,7 +683,6 @@ export function createEngine(deps: EngineDeps) {
 		paired(d.code);
 		return { ok: true };
 	}
-	const learned = (draftCode: string): Lesson | undefined => editedLesson(store, draftCode);
 
 	function update(key: string, patch: { watch?: string[]; autoDraft?: boolean; autoSend?: SourceConfig["autoSend"]; autoMail?: boolean; mailApp?: string }): SourceConfig | undefined {
 		const src = sourceOf(key);
@@ -795,6 +795,6 @@ export function createEngine(deps: EngineDeps) {
 	const idle = async () => {
 		while (pending.size) await Promise.all([...pending]);
 	};
-	return { store, ownerOf, ...createSendRecovery({ store, adapters: deps.adapters, onState: gate.onState, now: deps.now, inflight }), collect, refreshPast: createPastRefresh(store, deps, ownerOf), reconcile, makeDraft, revise, edit, learned, drop, restore, retrySend, dismissSend, pendingDrafts, send, sendMailOnly, update, threads, threadView, markRead, addDraft, linkMail, mailView, mailRecord, mailMarkOf, needs, noReply, unreplied, tokenStats: () => tokenStats(store), posts, ownReplies, idle, needsReply };
+	return { store, ownerOf, ...createSendRecovery({ store, adapters: deps.adapters, onState: gate.onState, now: deps.now, inflight }), collect, refreshPast: createPastRefresh(store, deps, ownerOf), reconcile, makeDraft, revise, edit, drop, restore, retrySend, dismissSend, pendingDrafts, send, sendMailOnly, update, threads, threadView, markRead, addDraft, linkMail, mailView, mailRecord, mailMarkOf, needs, noReply, unreplied, tokenStats: () => tokenStats(store), posts, ownReplies, idle, learnSent, needsReply };
 }
 export type Engine = ReturnType<typeof createEngine>;

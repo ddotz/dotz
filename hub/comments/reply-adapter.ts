@@ -84,6 +84,7 @@ export function commentAdapter(engine: Engine, mailAnswered: () => (thread: stri
 			const d = draftOf(ref);
 			return d ? { kind: "comment", lane: `comment:${d.source}` } : undefined;
 		},
+		learnSent: (ref, part) => void engine.learnSent(ref, part),
 		revise: async (ref, change, part) => {
 			const r = await engine.revise(ref, change, part ?? "reply", false, { learn: false });
 			if (!r.ok) return { ok: false, reason: reason(r.reason, "revise_failed") };

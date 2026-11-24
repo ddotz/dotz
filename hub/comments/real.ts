@@ -10,6 +10,7 @@ import { ownerHistory, ownReplies, recentUploads, replyToComment, threadsByIds, 
 import { appBase, appEntries, commentOwner } from "../integrations.ts";
 import { featureEnabled } from "../app-feature-flags.ts";
 import { callReplyModel } from "../reply-model.ts";
+import { learnMailEdit, lessonOfEdit, replyLearning } from "../reply-mail.ts";
 import { styleJudgeOn } from "../config.ts";
 import { appOf, type DraftModel, createEngine, type Engine, type EngineDeps, type MailLink } from "./engine.ts";
 import { realMailLink } from "./mail-link.ts";
@@ -34,7 +35,8 @@ export const realModel: DraftModel = async (system, user, app) => {
 	return { text: r.text, inputTokens: r.inputTokens, outputTokens: r.outputTokens };
 };
 
-export function realEngine(dataDir: string, opts: { broadcast?: (e: Record<string, unknown>) => void; collector?: string; model?: DraftModel; sent?: EngineDeps["sent"]; mail?: MailLink; mailOwed?: EngineDeps["mailOwed"]; answeredMailThread?: EngineDeps["answeredMailThread"] } = {}): Engine {
+/** The engine over the real platforms, model and stores. What the owner's edit of a reply it sent, or of the mail that rode on it, teaches goes through the one learning door (hub/reply-mail.ts) with `flow` (the real flow deps by default: curation, refinement and compaction calls). `learnEdits: false`: a send of this process learns nothing from such an edit (the gateway's send queue ran it with `--no-learn` and learns it itself). */
+export function realEngine(dataDir: string, opts: { broadcast?: (e: Record<string, unknown>) => void; collector?: string; model?: DraftModel; sent?: EngineDeps["sent"]; mail?: MailLink; mailOwed?: EngineDeps["mailOwed"]; answeredMailThread?: EngineDeps["answeredMailThread"]; learnEdits?: false; flow?: Parameters<typeof replyLearning>[0] } = {}): Engine {
 	const dir = commentsDir(dataDir);
 	const authors = createStore(dir);
 	const secretsDir = join(process.env.DOTZ_DIR ?? join(homedir(), ".dotz"), "secrets");
@@ -60,6 +62,7 @@ export function realEngine(dataDir: string, opts: { broadcast?: (e: Record<strin
 		...(opts.mailOwed ? { mailOwed: opts.mailOwed } : {}),
 		...(opts.answeredMailThread ? { answeredMailThread: opts.answeredMailThread } : {}),
 		style: src => loadStyle({ app: src.key }),
+		...(opts.learnEdits === false ? {} : { edits: { lessonOfEdit, learn: replyLearning(opts.flow).learn, mail: (id: string) => learnMailEdit(id, opts.flow) } }),
 		learn: ({ key, line, forbid }) => {
 			if (line.trim()) {
 				try {

@@ -4,6 +4,7 @@
 import { chmodSync, mkdirSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { log } from "../config.ts";
+import { claimLearned } from "../edit-learned.ts";
 import { readState, stateIntact } from "../statefile.ts";
 import type { Comment, CommentsConfig, SourceConfig } from "./contract.ts";
 
@@ -162,6 +163,10 @@ export function createStore(dir: string) {
 		putDraft: (d: Draft) => writeAtomic(f("drafts.json"), upsert(drafts(), d, "code", MAX_DRAFTS, x => x.status === "pending")),
 		patchDraft: (code: string, patch: Partial<Draft>) => writeAtomic(f("drafts.json"), drafts().map(d => (d.code === code ? { ...d, ...patch } : d))),
 		setDraftStatus: (code: string, status: DraftStatus) => writeAtomic(f("drafts.json"), drafts().map(d => (d.code === code ? { ...d, status } : d))),
+		claimEditLearned: (code: string): boolean => {
+			const d = drafts().find(x => x.code === code);
+			return d?.status === "sent" && claimLearned(f("edit-learned.json"), `${d.code}:${d.created}`, marks => writeAtomic(f("edit-learned.json"), marks));
+		},
 		replies,
 		putReply: (r: Reply) => writeAtomic(f("replies.json"), upsert(replies(), r, "id", MAX_REPLIES, x => x.state !== "sent")),
 		removeReply: (id: string) => writeAtomic(f("replies.json"), replies().filter(r => r.id !== id)),

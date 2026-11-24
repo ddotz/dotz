@@ -19,6 +19,7 @@ import { approvalHash, ATTACH_REFUSED, draftVerdict, LINT_REFUSED, SPENT_REFUSED
 import { reasonOf } from "../../../hub/reply-reasons.ts";
 import { dataDir } from "../../reply-drafts/lib/settings.ts";
 import { notifyGateway } from "../../../hub/followup.ts";
+import { learningSettled } from "../../../hub/reply-mail.ts";
 
 type Out = { lines: string[]; code: number; posted?: string };
 const flag = (args: string[], name: string) => (args.includes(name) ? args[args.indexOf(name) + 1] : undefined);
@@ -100,6 +101,7 @@ async function runCmd(args: string[], engine: Engine, inbox: string): Promise<Ou
 					const [sent, code] = mailFailure(m.text);
 					return { ...fail(m.text.startsWith(ATTACH_REFUSED) ? m.text : `메일을 보내지 못했어요: ${m.text}`), send: [sendLine(sent, "mail", code)] };
 				}
+				void engine.learnSent(d.code, "mail");
 				const sent = [sendLine("yes", "mail")];
 				if (d.status === "sent") return { lines: [...said, `메일만 다시 보냈어요. 답글은 이미 올라가 있어요 (${d.code})`], code: 0, send: sent };
 				return { lines: [...said, `메일만 보냈어요. 답글은 아직 올리지 않았어요 (${d.code})`, askOf(d.code, "메일은 보냈어요. 답글은 따로 물어봐요") ?? ""].filter(Boolean), code: 0, send: sent };
@@ -123,6 +125,7 @@ async function runCmd(args: string[], engine: Engine, inbox: string): Promise<Ou
 				const [sent, code] = mailFailure(done.mail.text);
 				return { ...fail(`답글은 올렸지만 메일은 보내지 못했어요: ${done.mail.text} (메일 초안 ${d.mail}은 남아 있어요. 사용자에게 알려 주세요)`), send: [replyUp, sendLine(sent, "mail", code, done.mail.text)], posted: d.code };
 			}
+			if (done.mail?.state === "sent") void engine.learnSent(d.code, "mail");
 			return { lines: [...said, done.mail ? `답글을 올리고 메일을 보냈어요 (${d.code})` : `답글을 올렸어요 (${d.code})`], code: 0, send: done.mail ? [replyUp, sendLine("yes", "mail")] : [replyUp], posted: d.code };
 		}
 		case "status": {
@@ -137,9 +140,14 @@ async function runCmd(args: string[], engine: Engine, inbox: string): Promise<Ou
 	}
 }
 
-if (import.meta.main) {
-	const r = await run(process.argv.slice(2));
+/** The command as its process runs it: prints what `run` answers first, then waits for what an edited reply it sent, or the edited mail that went with it, teaches (engine.idle and learningSettled) before it hands back the exit code. `--no-learn` (the gateway's send queue, which learns the edit itself) builds an engine that learns nothing. */
+export async function cli(args: string[], o: { engineOf?: (learn: boolean) => Engine; print?: (text: string) => void; inbox?: string } = {}): Promise<number> {
+	const engine = (o.engineOf ?? (learn => realEngine(dataDir(), learn ? {} : { learnEdits: false })))(!args.includes("--no-learn"));
+	const r = await run(args, engine, o.inbox);
 	if (r.posted && !process.env.DOTZ_GATEWAY_SEND) await notifyGateway({ path: "/api/comments/changed", body: { threads: [], mails: [], sent: [r.posted] } });
-	console.log(r.lines.join("\n"));
-	process.exit(r.code);
+	(o.print ?? console.log)(r.lines.join("\n"));
+	await Promise.all([engine.idle(), learningSettled()]);
+	return r.code;
 }
+
+if (import.meta.main) process.exit(await cli(process.argv.slice(2)));

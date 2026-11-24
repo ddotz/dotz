@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
-import { createApprovalSender, outcomeOf, sendArgv, type SendJob, type SendLook, type SendResult } from "./approval-send.ts";
+import { createApprovalSender, outcomeOf, sendArgv, type SenderDeps, type SendJob, type SendLook, type SendResult } from "./approval-send.ts";
+import { flush } from "./runtime/test-clock.ts";
 
 const PLACES: Record<string, { kind: "comment" | "mail"; lane: string }> = {
 	RAAAAAA: { kind: "mail", lane: "mail:zele" },
@@ -14,16 +15,18 @@ function memoryStore() {
 }
 const left = (m: ReturnType<typeof memoryStore>) => (JSON.parse(m.box.body) as { ref: string; state: string }[]).map(j => `${j.ref}:${j.state}`);
 
-function boot(m: ReturnType<typeof memoryStore>, o: { run?: (argv: string[]) => Promise<{ code: number; out: string }>; look?: (j: SendJob) => SendLook } = {}) {
+function boot(m: ReturnType<typeof memoryStore>, o: { run?: (argv: string[]) => Promise<{ code: number; out: string }>; look?: (j: SendJob) => SendLook; learn?: SenderDeps["learn"]; kind?: SenderDeps["kind"]; prove?: SenderDeps["prove"] } = {}) {
 	const reports: SendResult[] = [];
 	const ran: string[][] = [];
 	const s = createApprovalSender({
-		kind: ref => PLACES[ref],
+		kind: o.kind ?? (ref => PLACES[ref]),
 		run: o.run ?? (async argv => (ran.push(argv), { code: 0, out: "보냈어요" })),
 		report: r => void reports.push(r),
 		log: () => undefined,
 		store: m.store,
 		look: o.look,
+		learn: o.learn,
+		prove: o.prove,
 	});
 	return { s, reports, ran };
 }
@@ -40,7 +43,7 @@ test("a send approved but not started when the gateway stopped is queued again o
 	second.s.recover();
 	second.s.recover();
 	await second.s.idle();
-	expect(second.ran.map(a => a[a.length - 1])).toEqual(["RBBBBBB"]);
+	expect(second.ran.map(a => a[3])).toEqual(["RBBBBBB"]);
 	expect(second.reports.filter(r => r.ref === "RBBBBBB").map(r => r.state)).toEqual(["queued", "sending", "sent"]);
 	// The one that was sending is kept as look judged it, until it is resolved.
 	expect(left(m)).toEqual(["RAAAAAA:failed"]);
@@ -102,6 +105,50 @@ test("a send whose sender is still alive keeps waiting, blocks a second approval
 	expect(left(m)).toEqual([]);
 });
 
+test("a send that turned out sent is learned though no send target answers for a sent draft: left sending and found sent on boot, queued and found sent, or a live one the later check finds sent", async () => {
+	const m = memoryStore();
+	const first = boot(m, { run: never });
+	first.s.enqueue(job("RAAAAAA"));
+	first.s.enqueue(job("RBBBBBB"));
+	expect(left(m)).toEqual(["RAAAAAA:sending", "RBBBBBB:queued"]);
+	const learned: string[] = [];
+	const learn = (j: SendJob) => void learned.push(`${j.ref}:${j.action}`);
+	const noTargetOnceSent = () => undefined;
+	const second = boot(m, { look: () => ({ state: "sent" }), learn, kind: noTargetOnceSent });
+	second.s.recover();
+	await second.s.idle();
+	expect([second.ran, learned, left(m)]).toEqual([[], ["RAAAAAA:send", "RBBBBBB:send"], []]);
+
+	const later = memoryStore();
+	boot(later, { run: never }).s.enqueue(job("D1"));
+	let look: SendLook = { state: "alive" };
+	const third = boot(later, { look: () => look, learn, kind: noTargetOnceSent });
+	third.s.recover();
+	third.s.recheck();
+	expect(learned).toEqual(["RAAAAAA:send", "RBBBBBB:send"]);
+	look = { state: "sent" };
+	third.s.recheck();
+	third.s.recheck();
+	expect([learned, left(later)]).toEqual([["RAAAAAA:send", "RBBBBBB:send", "D1:send"], []]);
+});
+
+test("an unsure send later found sent by a proof, or settled sent (the owner's 나갔어요, its old sender that finished after a restart), is learned; one settled failed is not", async () => {
+	const m = memoryStore();
+	const first = boot(m, { run: never, kind: ref => ({ kind: "mail", lane: ref }) });
+	for (const ref of ["RAAAAAA", "RBBBBBB", "D1"]) first.s.enqueue(job(ref));
+	boot(m, { look: () => ({ state: "unsure", text: "?" }) }).s.recover();
+	expect(left(m)).toEqual(["RAAAAAA:unsure", "RBBBBBB:unsure", "D1:unsure"]);
+	const learned: string[] = [];
+	const third = boot(m, { learn: j => void learned.push(j.ref), kind: () => undefined, prove: async j => (j.ref === "RAAAAAA" ? "sent" : "unknown") });
+	third.s.recover();
+	third.s.recheck();
+	await flush();
+	expect(learned).toEqual(["RAAAAAA"]);
+	third.s.settle(job("RBBBBBB"), "sent");
+	third.s.settle(job("D1"), "failed", "x");
+	expect([learned, left(m)]).toEqual([["RAAAAAA", "RBBBBBB"], ["D1:failed"]]);
+});
+
 test("a queued send the gateway can no longer make ends failed on boot instead of staying queued", async () => {
 	const m = memoryStore();
 	m.store.save(JSON.stringify([{ ...job("GONE"), state: "queued" }]));
@@ -127,7 +174,7 @@ test("the owner's retry of a mail send reaches the CLI as --retry, a first send 
 	const first = sendArgv("mail", "RAAAAAA", "send", "bun");
 	const retry = sendArgv("mail", "RAAAAAA", "send", "bun", true);
 	expect(first).not.toContain("--retry");
-	expect(retry!.slice(-2)).toEqual(["RAAAAAA", "--retry"]);
+	expect(retry!.slice(-3)).toEqual(["RAAAAAA", "--retry", "--no-learn"]);
 	expect(sendArgv("comment", "D1", "send", "bun", true)).not.toContain("--retry");
 });
 
@@ -180,14 +227,14 @@ test("an unsure send survives a restart; a second approval sends nothing; only t
 	expect(second.s.enqueue({ ...job("RAAAAAA"), force: true })).toBe(true);
 	await second.s.idle();
 	expect(second.ran).toHaveLength(1);
-	expect(second.ran[0]!.at(-1)).toBe("--retry");
+	expect(second.ran[0]!.slice(-2)).toEqual(["--retry", "--no-learn"]);
 	expect(second.reports.at(-1)).toMatchObject({ state: "sent" });
 	expect(left(m)).toEqual([]);
 });
 
 test("LV-1 a restart holds the failed and unsure jobs the file kept without a report; a failure that happens afterwards is reported once", async () => {
 	const m = memoryStore();
-	const first = boot(m, { run: async argv => ({ code: 1, out: line(argv.at(-1) === "RAAAAAA" ? { sent: "no", code: "rejected" } : { sent: "maybe", code: "net_cut" }) }) });
+	const first = boot(m, { run: async argv => ({ code: 1, out: line(argv[3] === "RAAAAAA" ? { sent: "no", code: "rejected" } : { sent: "maybe", code: "net_cut" }) }) });
 	first.s.enqueue(job("RAAAAAA"));
 	first.s.enqueue(job("RBBBBBB"));
 	await first.s.idle();

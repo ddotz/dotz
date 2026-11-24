@@ -15,7 +15,7 @@ import { type HubLike, notifyGateway, reportSendFailed } from "./followup.ts";
 import { commentAsk } from "./comments/ask.ts";
 import { attachMail, linkedComment, mailPartOf } from "./comments/linked.ts";
 import { commentsDir, createStore } from "./comments/store.ts";
-import { accountHold, askText, draftAttachIssues, realRunner, sendAccountOf, sendDraft, settleDraft, toneKey, type FlowDeps } from "../features/reply-drafts/lib/flow.ts";
+import { accountHold, askText, draftAttachIssues, learningSettled, realFlowDeps, realRunner, sendAccountOf, sendDraft, settleDraft, toneKey, type FlowDeps } from "../features/reply-drafts/lib/flow.ts";
 import { webmailSite, zeleLogins } from "../features/reply-drafts/lib/senders.ts";
 import { listLibrary, rankLibrary, LIBRARY_PICK_MAX, MIN_SCORE } from "../features/reply-drafts/lib/library.ts";
 import { addStagedFile, STAGED_MAX } from "../features/reply-drafts/lib/staged.ts";
@@ -192,9 +192,10 @@ if (import.meta.main) {
 	const args = process.argv.slice(2);
 	const stdin = args[0] === "compose" ? await Bun.stdin.text() : "";
 	try {
-		const out = await runMailCli(args, stdin, { run: realRunner });
+		const out = await runMailCli(args, stdin, realFlowDeps());
 		for (const l of out.lines) (out.code === 0 ? console.log : console.error)(l);
 		for (const n of out.notes ?? []) console.error(n);
+		await learningSettled();
 		process.exit(out.code);
 	} catch (e) {
 		console.error(`실패했어요: ${(e as Error).message}`);
