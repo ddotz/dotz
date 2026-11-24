@@ -20,9 +20,10 @@ function inlineBody(text) {
   return out.join("\n").replace(/\n{3,}/g, "\n\n").trim();
 }
 const dcEvNode = b => (b.evidence ? answerNode(b.evidence.join("\n"), { cls: "md dc-ev", lead: false }) : null);
+const ntQuotes = n => !!(n && n.decision) && (/^prompt:(?:review|enforced):/.test(n.decision.card_id || "") || !!n.decision.edit);
 function ntEvFold(n, text) {
   const ev = n.decision.evidence;
   if (!ev || !ev.length) return null;
   const lines = String(text ?? "").split("\n"), cut = lines.findIndex(l => !l.trim()), lead = cut < 0 ? [] : lines.slice(cut + 1), file = /^\s*\[file\]\s+\S/;
-  return { head: [...ev.map(l => noticeKo(l, { ...NK, keepFiles: true })), ...lines.filter(l => file.test(l))].join("\n"), rest: choiceBody(lead.filter(l => !file.test(l)).join("\n"), ntPlain(n.title)) };
+  return { head: [...(ntQuotes(n) ? ev : ev.map(l => noticeKo(l, { ...NK, keepFiles: true }))), ...lines.filter(l => file.test(l))].join("\n"), rest: choiceBody(lead.filter(l => !file.test(l)).join("\n"), ntPlain(n.title)) };
 }

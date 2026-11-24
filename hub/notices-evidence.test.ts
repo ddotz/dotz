@@ -1,9 +1,11 @@
 import { beforeEach, expect, test } from "bun:test";
 import { cardBlock } from "./choices.ts";
+import { doctorKo } from "./doctor-text.ts";
+import { lineSubject } from "./doctor-types.ts";
 import { emit } from "./events.ts";
-import { resetNoticesForTest } from "./notices.ts";
+import { listNotices, resetNoticesForTest } from "./notices.ts";
 import { openDecisionNotices } from "./notices-bell.ts";
-import { say } from "./notices-read.ts";
+import { readable, say } from "./notices-read.ts";
 import { items, reconcileStored } from "./notices-store.ts";
 import { runState } from "./runstate.ts";
 
@@ -38,4 +40,31 @@ test("a redraw on start sets each card's evidence from its message again, and ta
 	reconcileStored();
 	expect(disk!.decision!.evidence).toEqual(EVIDENCE);
 	expect(token!.decision).not.toHaveProperty("evidence");
+});
+
+const FROM = "- 게이트웨이는 launchctl kickstart 전에 `git push` 하고 ~/Code/dotz/hub/main.ts 를 확인해요.";
+const TO = "- 게이트웨이는 launchctl kickstart 전에 `git push` 하지 말고 ~/Code/dotz/hub/main.ts 를 확인해요.";
+const EDIT_EV = ["낡은 줄 · RULES.md 7번째 줄", `전: ${FROM}`, `후: ${TO}`];
+const WATCH_EV = ["멈춘 곳: ~/Code/sample-shop/hub/watch.ts 에서 3번 실패했어요"];
+const EDIT_SUBJECT = lineSubject(doctorKo, "/Users/runner/.dotz/RULES.md", FROM, "고칠까요?");
+const gatewayCard = (id: string, subject: string, question: string, evidence: string[], meta?: Record<string, unknown>) =>
+	emit("outbox", { ts: new Date().toISOString(), kind: "out", source: "gateway", target: "alert", wk: "doctor", text: `[ask] 아침 점검이에요.\n\n${card(subject, question, evidence)}`, card_ids: [id], ...(meta ? { card_meta: { [id]: meta } } : {}) });
+
+test("a card that proposes an instruction edit reaches the owner with the file's own words, title quote included; a monitor card's path is still said plainly", () => {
+	gatewayCard("prompt:review:a1b2c3", EDIT_SUBJECT, "고칠까요?", EDIT_EV, { edit: { file: "/Users/runner/.dotz/RULES.md", line: 7, from: FROM, to: TO } });
+	gatewayCard("prompt:enforced:d4e5f6", EDIT_SUBJECT, "지울까요?", [`지울 줄: ${FROM}`]);
+	gatewayCard("watches:sample-shop", "샘플 상점 모니터", "다시 볼까요?", WATCH_EV);
+	const listed = listNotices(300).items, of = (id: string) => listed.find(n => n.decision?.card_id === id)!;
+	const review = of("prompt:review:a1b2c3"), enforced = of("prompt:enforced:d4e5f6"), watch = of("watches:sample-shop");
+	expect(review.decision!.evidence).toEqual(EDIT_EV);
+	expect(review.text.startsWith(`${EDIT_EV.join("\n")}\n\n`)).toBe(true);
+	expect(enforced.decision!.evidence).toEqual([`지울 줄: ${FROM}`]);
+	expect(review.title).toBe(`${EDIT_SUBJECT} · 고칠까요?`);
+	expect(review.title).toContain("'게이트웨이는 launchctl");
+	expect([...review.title].length).toBeLessThanOrEqual(40);
+	const stored = items.find(n => n.decision?.card_id === "prompt:review:a1b2c3")!;
+	expect(readable(stored).decision!.evidence).toEqual(EDIT_EV);
+	expect(readable(stored).title).toBe(stored.title);
+	expect(say(WATCH_EV[0]!)).not.toBe(WATCH_EV[0]);
+	expect(watch.decision!.evidence).toEqual(WATCH_EV.map(say));
 });

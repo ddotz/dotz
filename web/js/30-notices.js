@@ -12,7 +12,7 @@ const ntAt = n => Date.parse(n.updated || n.ts) || 0;
 const ntTime = t => kstDay(t) === kstDay(Date.now()) ? kstHM(t) : `${dayLabel(t)} ${kstHM(t)}`;
 const ntWhen = n => ntTime(n.updated || n.ts);
 // Row text is plain: markdown marks (links, headings, bullets, emphasis, code) are dropped.
-const ntPlain = s => plainTable(noticeKo(peerMsgLine(s), NK))
+const NT_QUOTED = new Set(), ntPlain = s => plainTable(NT_QUOTED.has(s) ? peerMsgLine(s) : noticeKo(peerMsgLine(s), NK))
   .replace(/!?\[([^\]]*)\]\([^)]*\)/g, "$1")
   .replace(/^\s{0,3}(?:#{1,6}|>|-#|[-*+]|\d+\.)\s+/gm, "")
   .replace(/\*+|~~|`+/g, "")
@@ -36,6 +36,7 @@ function ntClean(n) {
     const m = NM.items.find(x => monNames(x).includes(n.title));
     n.title = m ? monTitle(m) : monClean(n.title) || TX("mon.kind.schedule");
   }
+  if (ntQuotes(n)) NT_QUOTED.add(n.title);
   return ntHoldView(n);
 }
 let ntLoads = 0, ntWant = null;   // reads on their way; the unread count /api/state gave while one was out (ntSync)
@@ -620,7 +621,7 @@ function ntEditNode(n, ed) {
 // A notice sheet's body: the text without its `[file]` lines, then those files as the same image / file chips a chat message shows (15-attachments.js).
 function ntBody(n, text) {
   const fl = fileLines(text == null ? n.text : text);
-  return answerParts({ text: ntCode(noticeKo(fl.text, NK)), files: fl.files }, { cls: "md ds-md", lead: false });
+  return answerParts({ text: ntCode(ntQuotes(n) ? fl.text : noticeKo(fl.text, NK)), files: fl.files }, { cls: "md ds-md", lead: false });
 }
 // Ids, hashes and paths in the body read as `code` (they wrap anywhere); text already in backticks stays as it is.
 function ntCode(text) {

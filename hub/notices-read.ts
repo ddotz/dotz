@@ -7,7 +7,7 @@ import { webView } from "./web-i18n.ts";
 import { loginBlockedProvider, watchLine, watchReasonKo } from "./watchtext.ts";
 import type { Notice } from "./notices-types.ts";
 import { laneTitleOf, watchLabelOf } from "./notices-wiring.ts";
-import { waitsOf, type Waits } from "./notices-rules.ts";
+import { PROPOSES_EDIT, waitsOf, type Waits } from "./notices-rules.ts";
 import { channelTitle, recordedTitle } from "./notices-lanes.ts";
 import { worklogKind } from "./worklog-kind.ts";
 
@@ -49,9 +49,9 @@ export function readable(n: Notice): Notice {
 		const seen: Dep[] = [];
 		deps = seen;
 		try {
-			const r = readableStored(n);
-			const outTitle = say(r.title), outText = r.decision?.draft ? r.text : say(r.text);
-			const said = draft ? undefined : evidence?.map(say);
+			const r = readableStored(n), quotes = PROPOSES_EDIT.test(n.decision?.card_id ?? "") || !!n.decision?.edit;
+			const outTitle = quotes ? r.title : say(r.title), outText = r.decision?.draft ? r.text : quotes ? sayAfter(r.text, evidence) : say(r.text);
+			const said = draft || quotes ? undefined : evidence?.map(say);
 			const outEvidence = said && evidence && said.some((l, i) => l !== evidence[i]) ? said : undefined;
 			c = { kind: n.kind, key: n.key, title: n.title, text: n.text, evidence, draft, engine, day, deps: seen, outTitle, outText, outEvidence };
 		} finally {
@@ -61,6 +61,10 @@ export function readable(n: Notice): Notice {
 	}
 	if (c.outTitle === n.title && c.outText === n.text && !c.outEvidence) return n;
 	return { ...n, title: c.outTitle, text: c.outText, ...(n.decision && c.outEvidence ? { decision: { ...n.decision, evidence: c.outEvidence } } : {}) };
+}
+function sayAfter(text: string, evidence: string[] | undefined): string {
+	const head = evidence?.join("\n"), lead = !head ? undefined : text === head ? "" : text.startsWith(`${head}\n\n`) ? text.slice(head.length + 2) : undefined;
+	return lead === undefined ? say(text) : lead ? `${head}\n\n${say(lead)}` : text;
 }
 // A watch notice stored before labels and Korean reasons: its title is the watch name and its text starts with the raw reason.
 function readableStored(n: Notice): Notice {

@@ -481,6 +481,8 @@ and at which level, and the baselines the checks compare with).
   (`closeCardsWrittenBackTo` in `hub/notices-store.ts`): it stays until answered, expired or closed by its own producer. A `keep` option
   closes its card with no model turn and no inbox message, held for the web's undo window like any answer, its answer ending in `아무것도 바꾸지 않았어요`; the same on a Discord button
   (`discordGatewayAnswer`), which then posts the closing line in that channel. MODE's Reporting section holds the matching rule.
+  The notices API, the push frame and the answer replies (`hub/notices-read.ts` `readable`) leave the title and the evidence lines of a card that proposes an edit (`PROPOSES_EDIT` id or
+  `Decision.edit`) as stored, so the quoted line keeps its commands, paths and file names; the web sheet and list (`ntEvFold`, `ntBody`, `ntPlain`) do the same, and the lead after the evidence is said as on every other card.
   Two cards of one message would still read the same, so when two would share a title (two findings on one line) the later one ends in
   ` (2)`, ` (3)` and so on, its quote shortened to keep 40 characters. A part with nothing in it is left out; `decisions` is the number of cards. A `doctor.json` written by the older code loads
   too: a finding whose evidence is one string has no evidence lines, and a card stored without a subject is rebuilt from its old question (the old Korean and English formats, kept as fixed patterns
