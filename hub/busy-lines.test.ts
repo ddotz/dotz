@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import { emitEventActivity } from "./activity.ts";
 import { laneBusyLines, sessionBusyLines, type SessionBusy } from "./busy-lines.ts";
+import { cfg } from "./config.ts";
 import { laneBusy, type Lane } from "./lanes.ts";
 import { restartCapText } from "./restart.ts";
 import type { AgentProcess } from "./runtime/types.ts";
@@ -51,9 +52,17 @@ test("a lane whose process says async work can still wake it is busy; one that d
 	expect(laneBusy(lane(() => true), false)).toBe(false);
 });
 
-test("the owner reads a job line as work, a worker line as workers", () => {
-	const text = restartCapText(["orchestrator background jobs (1)", "conversation session c1 background jobs (1)", "orchestrator background workers (2)"], 30);
-	expect(text).toContain("메인 대화 작업 1개, 대화 c1 작업 1개, 메인 대화 워커 2개");
+test("the owner reads a job line as work, a worker line as workers, in the owner's language", () => {
+	const busy = ["orchestrator background jobs (1)", "conversation session c1 background jobs (1)", "orchestrator background workers (2)"];
+	const was = cfg.identity;
+	try {
+		cfg.identity = { ...was!, language: "ko" };
+		expect(restartCapText(busy, 30)).toContain("메인 대화 작업 1개, 대화 c1 작업 1개, 메인 대화 워커 2개");
+		cfg.identity = { ...was!, language: "en" };
+		expect(restartCapText(busy, 30)).toContain("main chat 1 job(s), chat c1 1 job(s), main chat 2 worker(s)");
+	} finally {
+		cfg.identity = was;
+	}
 });
 
 test("an omp feed counts running subagents and awaitingAsync, and only for omp", () => {

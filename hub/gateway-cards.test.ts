@@ -1,19 +1,34 @@
 import { afterAll, afterEach, beforeAll, expect, test } from "bun:test";
-import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { parseDecisions, replyChoiceBlock } from "./choices.ts";
-import { cfg, paths } from "./config.ts";
+import { aliasesFile, setAlias } from "./account-alias.ts";
+import { rulesFile, writeRules } from "./account-rules.ts";
+import { resetStickyForTest } from "./account-sticky.ts";
+import { accountAsk, pinnedLimitAlert } from "./accounts-api.ts";
+import { authFile } from "./apikey-policy.ts";
+import { detailOf, parseChoices, parseDecisions, replyChoiceBlock } from "./choices.ts";
+import { cfg, DATA_DIR, paths } from "./config.ts";
+import { cardCovers } from "./doctor.ts";
+import type { Finding } from "./doctor-types.ts";
 import { emit } from "./events.ts";
+import { LEGACY_ID, legacyAnswer, legacyAsk, MIGRATIONS_FILE } from "./migrations.ts";
 import { allNotices, resetNoticesForTest } from "./notices.ts";
+import { answerDecision } from "./notices-answers.ts";
+import { errorAnswer, errorAsk, plainError } from "./orch-error.ts";
 import { runKey } from "./notices-schedule.ts";
 import { ownerText } from "./owner-text.ts";
-import { proposeRecipe, recipeBlock } from "./recipes.ts";
+import { proposeRecipe, recipeAnswer, recipeBlock } from "./recipes.ts";
 import { sendRepeatAlerts } from "./reflect.ts";
 import { slotStart } from "./release.ts";
+import { restartCapText } from "./restart.ts";
 import { scheduleRan } from "./schedule-fire.ts";
 import { addSchedule, removeSchedule, runNow } from "./schedule.ts";
+import { autoAlert } from "./selfupdate.ts";
+import { cardAlert, harnessFailText, harnessLabel, type Run, runHarnessUpdate } from "./update.ts";
 import { RECONNECT_ACTION, watchChoice, watchIssueText, watchSubject } from "./watch-ask.ts";
 import { clockKo } from "./watchtext.ts";
+import { SELF_UPDATE_CARD_ID } from "./worklog-kind.ts";
 
 const DAY = 24 * 3600_000;
 const NOW = Date.now();
@@ -165,4 +180,254 @@ test("a failed schedule run's card is correct Korean for any name and says what 
 		expect(card.decision!.evidence!.length).toBeGreaterThan(0);
 		expectSaysWhatEachAnswerDoes({ title: card.title, evidence: card.decision!.evidence!, results: card.decision!.options.map(o => o.desc) });
 	}
+});
+
+const LIMIT_FILES = () => [authFile(), join(process.env.OMO_CODING_AGENT_DIR!, "credential-pool-state.json"), join(DATA_DIR, "account.json"), rulesFile(), aliasesFile()];
+function pinnedAtLimit<T>(read: (until: number) => T, o: { alias?: string; blocked?: string[]; ahead?: number } = {}): T {
+	const until = NOW + (o.ahead ?? 3600_000), alias = o.alias ?? "개인 계정";
+	writeFileSync(authFile(), JSON.stringify({ "anthropic-subscription": { accounts: ["default", "work"].map(name => ({ name, access: "fake" })) } }));
+	writeFileSync(LIMIT_FILES()[1]!, JSON.stringify({ providers: { "anthropic-subscription": { lanes: { stored: { slots: Object.fromEntries((o.blocked ?? ["default"]).map(n => [n, { blockReason: "rate_limit", blockedUntil: until }])) } } } } }));
+	writeRules({ manual: { account: "default" } });
+	if (alias.trim()) setAlias("default", alias);
+	else writeFileSync(aliasesFile(), JSON.stringify({ default: alias }));
+	resetStickyForTest();
+	try {
+		return read(until);
+	} finally {
+		for (const f of LIMIT_FILES()) rmSync(f, { force: true });
+		resetStickyForTest();
+	}
+}
+const SELF_FAILED = { failed: true, rel: "261124.1 → 261124.2", why: "테스트 3개가 실패해서 이전 버전으로 되돌렸어요", commits: 4, latest: "닥터 점검 줄이 무엇을 쟀는지 숫자로 말해요" };
+const SELF_REFUSED = { failed: false, rel: "261124.1 → 261124.2", why: "지금 브랜치가 dev이에요. main에서만 업데이트해요.", commits: 4, latest: "닥터 점검 줄이 무엇을 쟀는지 숫자로 말해요" };
+const HARNESS_FAILED = { current: "5.1.38", latest: "5.1.40", now: "5.1.38", kept: "rolledBack" as const, output: "error: network down" };
+const orchStopped = { since: new Date(NOW - 40 * 60_000).toISOString(), ...plainError("getaddrinfo ENOTFOUND api.anthropic.com"), raw: "getaddrinfo ENOTFOUND api.anthropic.com" };
+const BUSY = ["lane l1 (2 background workers)", "orchestrator background jobs (1)"];
+const busyTitle = (_kind: "lane" | "conv", key: string) => (key === "l1" ? "사이트 고치기" : key);
+
+test("a pinned account at its limit: the card names the account, says when the limit clears and how many other accounts are free, and how each answer is changed back", () => {
+	const card = pinnedAtLimit(until => cardOf(pinnedLimitAlert(until)!));
+	expectGatewayCard(card, "개인 계정 한도");
+	expect(card.evidence).toContain("지금 쓸 수 있는 다른 계정이 1개 있어요");
+	expect(card.evidence.some(l => l.endsWith("에 한도가 풀려요"))).toBe(true);
+	for (const r of card.results) expect(r).toContain("설정 → 계정");
+});
+
+test("a stopped orchestrator: the card names the assistant, says what broke and since when, and an empty name still gives a subject", () => {
+	const card = cardOf(errorAsk("sample-1", orchStopped));
+	expectGatewayCard(card, "sample-1");
+	expect(card.evidence[0]).toBe("네트워크(DNS)가 안 돼요");
+	expect(card.evidence[1]).toMatch(/^\d{2}:\d{2}부터 멈춰 있어요$/);
+	expectGatewayCard(cardOf(errorAsk(" ", orchStopped)), "어시스턴트");
+});
+
+test("a restart past its cap: the card names the gateway restart, says how long it waited and what still runs, and that 지금 재시작 cuts that work", () => {
+	const card = cardOf(restartCapText(BUSY, 92, busyTitle));
+	expectGatewayCard(card, "게이트웨이 재시작");
+	expect(card.evidence).toContain("92분째 기다리고 있어요");
+	expect(card.evidence).toContain("아직 도는 작업: 세션 사이트 고치기 (워커 2개), 메인 대화 작업 1개");
+	expect(card.results[0]).toContain("끊고");
+	expect(card.results[1]).toContain("끊지 않고");
+});
+
+test("a failed or refused dotz auto-update: the card says which release, why, the new commits, and where auto-update is turned back on", () => {
+	for (const [facts, first] of [[SELF_FAILED, "버전 261124.1 → 261124.2: 적용하지 못했어요"], [SELF_REFUSED, "버전 261124.1 → 261124.2: 막혀서 적용하지 않았어요"]] as const) {
+		const card = cardOf(autoAlert(facts));
+		expectGatewayCard(card, "dotz 업데이트");
+		expect(card.evidence[0]).toBe(first);
+		expect(card.evidence[1]).toBe(`이유: ${facts.why}`);
+		expect(card.evidence).toContain("새 커밋 4개, 마지막: 닥터 점검 줄이 무엇을 쟀는지 숫자로 말해요");
+		expect(card.results[1]).toContain("설정 → 업데이트의 '새 버전 자동 적용'으로 다시 켤 수 있어요");
+	}
+});
+
+test("a failed harness install: the card names the harness update, says the versions, what it is on now and the installer's last line", () => {
+	const card = cardOf(harnessFailText("omp", HARNESS_FAILED));
+	expectGatewayCard(card, "omp 업데이트");
+	expect(card.evidence).toEqual(["버전 5.1.38 → 5.1.40 설치하지 못했어요", "이전 버전으로 되돌렸어요 (지금 5.1.38)", "마지막 출력: error: network down"]);
+});
+
+test("the earlier YouTube/Instagram login: the card names it, says what was found and that nothing is copied yet, and how to bring it over later", () => {
+	const card = cardOf(legacyAsk(["youtube-oauth.json", "instagram.json"]));
+	expectGatewayCard(card, "예전 유튜브·인스타 연결");
+	expect(card.evidence[0]).toBe("찾은 연결: 유튜브, 인스타그램");
+	expect(card.results[1]).toContain("예전 파일 위치");
+	expect(card.results[1]).toContain("다시 묻지 않아요");
+});
+
+test("every card of these producers keeps its subject and a title within 40 characters in English too", () => {
+	const ko = cfg.identity;
+	cfg.identity = { ...ko!, language: "en" };
+	try {
+		const cards: [string, string][] = [
+			[pinnedAtLimit(until => pinnedLimitAlert(until)!), "개인 계정 limit"],
+			[errorAsk("sample-1", orchStopped), "sample-1"],
+			[restartCapText(BUSY, 92, busyTitle), "Gateway restart"],
+			[autoAlert(SELF_FAILED), "dotz update"],
+			[harnessFailText("omp", HARNESS_FAILED), "omp update"],
+			[legacyAsk(["youtube-oauth.json"]), "YouTube/Instagram login"],
+		];
+		for (const [text, subject] of cards) expectGatewayCard(cardOf(text), subject);
+	} finally {
+		cfg.identity = ko;
+	}
+});
+
+test("the answers of an orchestrator-error card are read from its labels in either language, so a card stored by the old code is still answered", () => {
+	expect([errorAnswer("1) 다시 시작"), errorAnswer("**2) 기다리기**"), errorAnswer("1) Restart"), errorAnswer("2) Wait")]).toEqual(["restart", "wait", "restart", "wait"]);
+	expect([errorAnswer("2) 다시 시작"), errorAnswer("다시 시작"), errorAnswer("1) 다시 생각해 볼게요")]).toEqual([undefined, undefined, undefined]);
+});
+
+test("the self-update and failed-install cards are posted with their ids, and the doctor's finding of the same matter counts as covered", async () => {
+	const plain: string[] = [];
+	const post = cardAlert(async (target, text, _replyTo, extra) => void emit("outbox", { ts: new Date(NOW).toISOString(), kind: "out", source: "gateway", target, text, ...extra }), text => void plain.push(text));
+	post(autoAlert(SELF_FAILED), [SELF_UPDATE_CARD_ID]);
+	const run: Run = async cmd => (cmd[1] === "--version" ? { code: 0, out: "omo 5.1.38 (engine: senpi 2026.10.19)" } : { code: 1, out: "error: network down" });
+	const stateDir = mkdtempSync(join(tmpdir(), "dotz-gateway-cards-"));
+	try {
+		await runHarnessUpdate({ mode: "install", post: () => undefined, alert: post, restart: () => "", run, latest: async () => "5.1.40", locate: () => "/home/user/.bun/install/global/node_modules/omo-ai/bin/omo.js", harnesses: ["omo"], stateDir });
+	} finally {
+		rmSync(stateDir, { recursive: true, force: true });
+	}
+	expect(plain).toEqual([]);
+	const cards = allNotices().filter(n => n.kind === "decision");
+	expect(cards.map(n => n.decision?.card_id).sort()).toEqual(["update:omo", "update:self"]);
+	for (const n of cards) expectGatewayCard({ title: n.title, evidence: n.decision?.evidence ?? [], results: n.decision!.options.map(o => o.desc) }, n.decision?.card_id === "update:self" ? "dotz 업데이트" : `${harnessLabel("omo")} 업데이트`);
+	expect(cards.find(n => n.decision?.card_id === "update:self")!.decision?.evidence).toEqual(cardOf(autoAlert(SELF_FAILED)).evidence);
+	expect(cards.find(n => n.decision?.card_id === "update:omo")!.decision?.evidence).toEqual(["버전 5.1.38 → 5.1.40 설치하지 못했어요", "지금 5.1.38 그대로예요", "마지막 출력: error: network down"]);
+	const covers = cardCovers(allNotices(), NOW, { watch: name => name, harness: harnessLabel });
+	const matter = (key: string): Finding => ({ key, area: "update", what: "failed", evidence: [], since: NOW, level: 1, ask: true });
+	expect([covers(matter("update:self")), covers(matter("update:omo")), covers(matter("update:omp"))]).toEqual([true, true, false]);
+});
+
+const LONG_ALIAS = "회사 공용 클로드 맥스 구독 계정 (디자인팀 + 개발팀 함께 씀)";
+const LONG_NAME = "우리 집 비서 어시스턴트 (맥미니 메인 오케스트레이터)";
+const LONG_ERR = "Error: request failed\n    at fetch (node:internal/deps/undici:1)\n    caused by: getaddrinfo ENOTFOUND api.anthropic.com";
+const BUSY_LONG = ["lane l1 (2 background workers)", "lane l2 (1 background workers)", "conversation session c1 background jobs (3)", "orchestrator background workers (2)", "orchestrator background jobs (1)"];
+const longTitle = (_kind: "lane" | "conv", key: string) => ({ l1: "인스타그램 댓글 자동 답장 기능 전체 리팩터링과 테스트 보강", l2: "세션 사이트 고치기", c1: "어머니와의 대화 (카카오톡)" })[key] ?? key;
+const SELF_LONG = { failed: true, rel: "261124.1 → 261124.2", why: "테스트 3개가 실패해서 이전 버전으로 되돌렸어요: hub/doctor.test.ts > the morning card names its subject and stays within forty characters on a phone\nhub/x.test.ts > y", commits: 137, latest: "게이트웨이 카드가 주제를 말하고, 근거를 보여 주고, 각 답이 무엇을 하는지 말해요 (긴 제목 시험)" };
+const UNDO = `git -C "/Users/me/dotz" reset --keep 0a1b2c3d4e5f`;
+const HALFWAY = { ...SELF_FAILED, why: "테스트 3개가 실패했어요", halfway: { at: "5f3e2a1", undo: UNDO } };
+const NPM_404 = "npm ERR! code E404\nnpm ERR! 404 Not Found - GET https://registry.npmjs.org/omo-ai/-/omo-ai-5.1.40.tgz - Not found in this registry, please check the version and the package name";
+type Handler = "account" | "orch" | "legacy" | "model";
+const systemCards = (): { name: string; text: string; handler: Handler }[] => [
+	{ name: "account", text: pinnedAtLimit(until => pinnedLimitAlert(until)!), handler: "account" },
+	{ name: "account, long name, another day", text: pinnedAtLimit(until => pinnedLimitAlert(until)!, { alias: LONG_ALIAS, ahead: 2 * DAY }), handler: "account" },
+	{ name: "orchestrator", text: errorAsk("sample-1", orchStopped), handler: "orch" },
+	{ name: "orchestrator, long name and error", text: errorAsk(LONG_NAME, { since: orchStopped.since, ...plainError(LONG_ERR), raw: LONG_ERR }), handler: "orch" },
+	{ name: "restart", text: restartCapText(BUSY, 92, busyTitle), handler: "model" },
+	{ name: "restart, long busy list", text: restartCapText(BUSY_LONG, 1440, longTitle), handler: "model" },
+	{ name: "self-update failed", text: autoAlert(SELF_FAILED), handler: "model" },
+	{ name: "self-update refused", text: autoAlert(SELF_REFUSED), handler: "model" },
+	{ name: "self-update, long reason", text: autoAlert(SELF_LONG), handler: "model" },
+	{ name: "self-update stopped halfway", text: autoAlert(HALFWAY), handler: "model" },
+	{ name: "harness", text: harnessFailText("omp", HARNESS_FAILED), handler: "model" },
+	{ name: "harness, long output", text: harnessFailText("omo", { ...HARNESS_FAILED, kept: "notRolledBack", now: "5.1.40", output: NPM_404.split("\n").pop()! }), handler: "model" },
+	{ name: "legacy", text: legacyAsk(["instagram.json"]), handler: "legacy" },
+	{ name: "legacy, both", text: legacyAsk(["youtube-oauth.json", "instagram.json"]), handler: "legacy" },
+];
+function inLanguage<T>(language: string, read: () => T): T {
+	const was = cfg.identity;
+	cfg.identity = { ...was!, language };
+	try {
+		return read();
+	} finally {
+		cfg.identity = was;
+	}
+}
+const LANGUAGES = ["ko", "en"];
+
+test("every system card keeps a title within 40 characters and at most four evidence lines for the longest realistic input, and cuts a long reason, output or busy list", () => {
+	for (const language of LANGUAGES)
+		for (const { name, text } of inLanguage(language, systemCards)) {
+			const card = cardOf(text);
+			expect({ name, language, titleChars: [...card.title].length <= 40, evidence: card.evidence.length >= 1 && card.evidence.length <= 4 }).toEqual({ name, language, titleChars: true, evidence: true });
+			for (const line of card.evidence.filter(l => !l.includes(UNDO))) expect({ name, language, line, short: [...line].length <= 120 }).toEqual({ name, language, line, short: true });
+		}
+	const ko = Object.fromEntries(systemCards().map(c => [c.name, cardOf(c.text)]));
+	const why = ko["self-update, long reason"]!.evidence[1]!;
+	expect({ start: why.startsWith("이유: 테스트 3개가 실패해서 이전 버전으로 되돌렸어요: hub/doctor.test.ts"), cut: why.endsWith("…"), secondLine: why.includes("hub/x.test.ts"), short: [...why].length <= 104 }).toEqual({ start: true, cut: true, secondLine: false, short: true });
+	const output = ko["harness, long output"]!.evidence[2]!;
+	expect({ start: output.startsWith("마지막 출력: npm ERR! 404 Not Found - GET"), cut: output.endsWith("…"), short: [...output].length <= 88 }).toEqual({ start: true, cut: true, short: true });
+	expect(ko["restart, long busy list"]!.evidence[1]!.endsWith("…")).toBe(true);
+	expect(ko["account, long name, another day"]!.title).toBe("회사 공용 클로드 맥스 구독 계정… · 자동 전환으로 바꿀까요?");
+	expect([...ko["orchestrator, long name and error"]!.title].length).toBeLessThanOrEqual(40);
+});
+
+test("every option of the system cards is taken by a tap alone, and its answer is read by its own card's handler and by no other, in both languages", async () => {
+	const kept = process.env.DOTZ_LEGACY_SECRETS;
+	process.env.DOTZ_LEGACY_SECRETS = "";
+	const pending = join(DATA_DIR, MIGRATIONS_FILE);
+	const readers = (said: string): Handler[] => {
+		writeFileSync(pending, JSON.stringify({ done: {}, pending: { [LEGACY_ID]: ["instagram.json"] } }));
+		try {
+			const took: (Handler | false)[] = [errorAnswer(said) !== undefined && "orch", legacyAnswer(DATA_DIR, said) !== undefined && "legacy", accountAsk(said, ["default", "work"], {}) !== undefined && "account", recipeAnswer(said) !== undefined && "model"];
+			return took.filter((h): h is Handler => h !== false);
+		} finally {
+			rmSync(pending, { force: true });
+			rmSync(join(DATA_DIR, "custom", "sns"), { recursive: true, force: true });
+		}
+	};
+	try {
+		for (const language of LANGUAGES)
+			for (const { name, text, handler } of inLanguage(language, systemCards)) {
+				const options = parseDecisions(text).blocks[0]!.options;
+				expect(parseChoices(text).options.map(o => o.label)).toEqual(options.map(o => o.label));
+				for (const o of options) {
+					resetNoticesForTest();
+					emit("outbox", { ts: new Date(NOW).toISOString(), kind: "out", source: "gateway", target: "alert", nk: "alert", text });
+					const id = allNotices().find(n => n.kind === "decision")!.id;
+					let sent = "";
+					const tapped = await answerDecision(id, { n: o.n }, async p => void (sent = p.text));
+					const said = `${o.n}) ${o.label}`;
+					expect({ name, language, label: o.label, asksDetail: detailOf(o), status: tapped.status, sent }).toEqual({ name, language, label: o.label, asksDetail: false, status: 200, sent: said });
+					expect({ name, language, said, readBy: readers(said) }).toEqual({ name, language, said, readBy: handler === "model" ? [] : [handler] });
+				}
+			}
+	} finally {
+		kept === undefined ? delete process.env.DOTZ_LEGACY_SECRETS : (process.env.DOTZ_LEGACY_SECRETS = kept);
+	}
+	expect([errorAnswer("1) Restart the orchestrator"), errorAnswer("1) 다시 시작하지 마요"), errorAnswer("1) 다시 시작 - 지금 바로")]).toEqual([undefined, undefined, "restart"]);
+});
+
+test("an English install's system cards carry no Korean in a line the gateway writes, and name each setting as the settings page names it", () => {
+	const cards = inLanguage("en", () => [
+		pinnedAtLimit(until => pinnedLimitAlert(until)!, { alias: "Personal", ahead: 2 * DAY }),
+		pinnedAtLimit(until => pinnedLimitAlert(until)!, { alias: "Personal", ahead: 60_000 }),
+		errorAsk("sample-1", orchStopped),
+		restartCapText(BUSY_LONG, 92, (_kind, key) => (key === "l1" ? "Fix the site" : key)),
+		autoAlert({ ...SELF_FAILED, latest: "Cards say what each answer does" }),
+		autoAlert({ ...SELF_REFUSED, latest: "Cards say what each answer does" }),
+		autoAlert({ ...HALFWAY, latest: "Cards say what each answer does" }),
+		harnessFailText("omo", HARNESS_FAILED),
+		legacyAsk(["youtube-oauth.json", "instagram.json"]),
+	]);
+	for (const text of cards) expect(text.split("\n").map(l => l.replace(/^결정: /, "")).filter(l => /[가-힣]/.test(l))).toEqual([]);
+	expect(cardOf(cards[4]!).results[1]).toContain("Settings → Updates, Apply updates automatically");
+	expect(cardOf(cards[3]!).results[0]).toContain("Restart now in Settings → Updates");
+	for (const r of cardOf(cards[0]!).results) expect(r).toContain("Settings → Accounts");
+	expect(cardOf(cards[0]!).results[1]).toContain("At a limit");
+	expect(cardOf(cards[7]!).title).toBe("work program update · Install again?");
+});
+
+test("the switch answer of the account card says later limits switch without asking and where that is changed", () => {
+	expect(cardOf(pinnedAtLimit(until => pinnedLimitAlert(until)!)).results[0]).toBe("쓸 수 있는 다른 계정으로 넘어가 바로 이어서 해요. 고정은 풀리고, 다음 한도에도 묻지 않고 넘어가요. 설정 → 계정에서 다시 고정하고, '한도에 걸리면'에서 바꿀 수 있어요.");
+	expect(inLanguage("en", () => cardOf(pinnedAtLimit(until => pinnedLimitAlert(until)!)).results[0])).toBe("Moves to another usable account and continues right away; the pin is lifted and later limits switch without asking. Settings → Accounts pins it again, and At a limit changes that.");
+});
+
+test("an account with a blank name is named by its id, and blocked accounts are not counted as usable", () => {
+	expect(cardOf(pinnedAtLimit(until => pinnedLimitAlert(until)!, { alias: "  " })).title).toBe("default 한도 · 자동 전환으로 바꿀까요?");
+	expect(cardOf(pinnedAtLimit(until => pinnedLimitAlert(until)!, { blocked: ["default", "work"] })).evidence).toContain("다른 계정도 지금은 모두 막혀 있어요");
+});
+
+test("a self-update whose rollback failed too says it stopped halfway, where the files are and the whole command that puts it back, never that the version is unchanged", () => {
+	expect(cardOf(autoAlert(HALFWAY)).evidence).toEqual(["버전 261124.1 → 261124.2: 적용하지 못했어요", "이유: 테스트 3개가 실패했어요", "업데이트가 중간에 멈췄어요. 파일은 새 버전 5f3e2a1에 있어요", `되돌리려면 터미널에서: ${UNDO}`]);
+	expect(inLanguage("en", () => cardOf(autoAlert(HALFWAY)).evidence)).toEqual(["Version 261124.1 → 261124.2: could not be applied", "Why: applying it failed; the update log has the reason", "The update stopped halfway: the files are at the new version 5f3e2a1", `To put it back, run in a terminal: ${UNDO}`]);
+	expect(cardOf(autoAlert(SELF_FAILED)).evidence[3]).toBe("지금 버전 그대로예요. 더 새 버전이 오면 다시 시도해요");
+});
+
+test("a self-update of a commit with no release number says the new commits, not an empty version", () => {
+	expect(cardOf(autoAlert({ ...SELF_FAILED, rel: "" })).evidence[0]).toBe("새 커밋을 적용하지 못했어요");
+	expect(cardOf(autoAlert({ ...SELF_REFUSED, rel: "" })).evidence[0]).toBe("새 커밋이 막혀서 적용하지 않았어요");
+	expect(inLanguage("en", () => cardOf(autoAlert({ ...SELF_FAILED, rel: "" })).evidence[0])).toBe("The new commits could not be applied");
 });

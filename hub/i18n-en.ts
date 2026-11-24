@@ -46,20 +46,6 @@ export const SCHEDULE_CHECK_LEAD = "Scheduled check:";
 export const en = {
 	...enLeads,
 
-	// A pinned account at its usage limit (hub/accounts-api.ts): the one-time question, the saved answers and the plain notices.
-	accountLimit: {
-		question: (account: string, at: string) => `The pinned account ${account} hit its usage limit, so work pauses until ${at}. It stays pinned, so requests do not move to another account.`,
-		questionTitle: "Switch to automatic, or wait for the limit to clear?",
-		switchChoice: "Switch to automatic",
-		switchChoiceNote: "When a limit hits, it moves to another account and continues right away",
-		waitChoice: "Keep waiting",
-		waitChoiceNote: (at: string) => `It continues once the limit clears at ${at}`,
-		wait: (account: string, at: string) => `Waiting while the limit lasts. The limit on ${account} clears at ${at}, and the work continues then.`,
-		switched: (to: string) => `The limit was reached, so it moved to ${to} and continues on automatic.`,
-		anotherAccount: "another account",
-		waitAnswer: "I will keep waiting. Work continues as soon as the limit clears.",
-	},
-
 	// Owner-facing text of the slash-command cards (hub/control.ts runCommand); lane -> session, worker -> subagent.
 	// A computer with no address of its own, reached through a messenger: the app's computer list, its chat and the messenger's settings screen.
 	relay: {

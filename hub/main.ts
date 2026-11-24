@@ -67,7 +67,7 @@ import { syncFeatureWatches } from "./features.ts";
 import { startSchedules, stopSchedules } from "./schedule.ts";
 import { fireSchedule, namingDeps, startRunWatch } from "./schedule-fire.ts";
 import { syncRoutineSchedules } from "./custom.ts";
-import { harnessLabel, startHarnessUpdate } from "./update.ts";
+import { cardAlert, harnessLabel, startHarnessUpdate } from "./update.ts";
 import { startOmoEngineWatch } from "./runtime/omo-engine-watch.ts";
 import { CARD_AUDIT_ID, type CardAudit, legacyComments, runMigrations } from "./migrations.ts";
 import { applyAndSave, defaultExec, onUpdateResolved, startSelfUpdate, updateBoot, diskCommit } from "./selfupdate.ts";
@@ -593,7 +593,7 @@ startReflection(text => deliver(text), () => orch.sessionFile, text => out("aler
 startDayNote();
 for (const l of telemetryOff()) log(l);
 for (const l of installDotzCommand({ dir: DATA_DIR, pkg: join(import.meta.dir, ".."), bun: Bun.which("bun") ?? process.execPath, home: HOME, expose: DATA_DIR === join(HOME, ".dotz"), shell: process.env.SHELL })) log(l);
-startHarnessUpdate(text => void out("worklog", text, undefined, { source: "gateway", wk: "update" }).catch(e => log(`harness update post failed: ${e}`)), () => restartGateway({ auto: true }), alert);
+startHarnessUpdate(text => void out("worklog", text, undefined, { source: "gateway", wk: "update" }).catch(e => log(`harness update post failed: ${e}`)), () => restartGateway({ auto: true }), cardAlert(out, alert));
 // The hidden doctor (hub/doctor.ts): one night run, at most one morning item: an alert when something is not fixed (a choice block when he must decide),
 // a work log entry when dotz fixed everything itself. The ledger's day-before notices (hub/ledger-tick.ts) start with it and go out as news.
 startDoctor(doctorPost(out), log, () => (zeleState() === "on" ? Number(cfg.zele?.brief_hour ?? DEFAULTS.zele_brief_hour) : undefined), { send: (text, project) => out(project ?? (discord.status.enabled ? "chat" : "web"), text, undefined, { source: "gateway", nk: "ledger", news: true }), waiting: () => draftCardCounts().open + approvals.held().length }, f => cardCovers(allNotices(), Date.now(), { watch: watchLabel, harness: harnessLabel })(f));
@@ -612,7 +612,7 @@ void startSelfUpdate(text => {
 	broadcast({ ts: now(), kind: "update_available", source: "gateway", text });
 }, undefined, {
 	worklog: text => void out("worklog", text, undefined, { source: "gateway", wk: "update" }).catch(e => log(`self-update worklog post failed: ${e}`)),
-	alert,
+	alert: cardAlert(out, alert),
 	restartIdle: restartGateway,
 }).catch(e => log(`self-update start failed: ${e}`));
 // An update applied before this start: marked healthy after a quiet settle (ends the rollback watchdog), or the watchdog's rollback told once.

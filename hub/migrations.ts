@@ -7,10 +7,12 @@ import { join } from "node:path";
 import { findLegacy, LEGACY_NO, LEGACY_YES, legacyComments, type LegacyComments, legacyGate } from "../features/youtube-instagram/lib/legacy.ts";
 export { legacyComments, type LegacyComments };
 import { createApp } from "./app-off.ts";
-import { issueBlock } from "./choices.ts";
+import { cardAnswer, cardsEn, cardsKo } from "./card-text.ts";
+import { cardBlock } from "./choices.ts";
 import { commentsDir, createStore } from "./comments/store.ts";
 import { DEFAULT_MODEL, DEFAULT_WORKER_MODEL, log as hubLog, parseSelector, readJsonOrQuarantine, writeAtomic } from "./config.ts";
 import { APPS_FILE, srcKey } from "./integrations.ts";
+import { msg } from "./i18n.ts";
 
 export const MIGRATIONS_FILE = "migrations.json";
 export const LEGACY_ID = "legacy-sns-tokens";
@@ -73,11 +75,10 @@ const siteApps: Migration = {
 };
 
 // (b) The earlier YouTube/Instagram login: never copied silently. One owner question (once), and the answer (legacyAnswer) copies or records the refusal.
-export const legacyAsk = (names: string[]): string =>
-	`[ask] 예전 유튜브·인스타 연결을 찾았어요. 가져올까요? (${names.join(", ")})\n${issueBlock("예전 유튜브·인스타 연결을 가져올까요?", [
-		{ name: "가져오기", result: "예전 설정의 연결 파일을 이 컴퓨터로 복사해요 (권한 0600). 값은 어디에도 보여 주지 않아요." },
-		{ name: "안 가져오기", result: "복사하지 않고 다시 묻지 않아요." },
-	])}`;
+export function legacyAsk(names: string[]): string {
+	const t = msg().legacy;
+	return `${t.lead}\n${cardBlock({ subject: t.subject, question: t.question, evidence: [t.found(names), t.where, t.notYet], options: [{ name: t.yes, result: t.yesResult }, { name: t.no, result: t.noResult }] })}`;
+}
 const legacyTokens: Migration = {
 	id: LEGACY_ID,
 	label: "예전 유튜브·인스타 연결 묻기",
@@ -181,14 +182,12 @@ export async function runMigrations(deps: Deps): Promise<{ ran: string[]; failed
 	return { ran, failed };
 }
 
-const YES = /^\s*(?:\*\*)?1\)\s*가져오기/;
-const NO = /^\s*(?:\*\*)?2\)\s*안 가져오기/;
-
-/** The owner's answer to the legacy question (a button click or the web card types "1) 가져오기" / "2) 안 가져오기"); read only while that question is open.
- *  Returns the reply to post, or undefined when the text is not an answer to it. */
+/** The owner's answer to the legacy question (a button click or the web card types "1) 가져오기" / "2) 안 가져오기", or the English labels); read only while
+ *  that question is open. Returns the reply to post, or undefined when the text is not an answer to it. */
 export function legacyAnswer(dataDir: string, text: string): string | undefined {
-	const yes = YES.test(text);
-	if (!yes && !NO.test(text)) return undefined;
+	const n = cardAnswer(text, [msg().legacy, cardsKo.legacy, cardsEn.legacy].map(t => [t.yes, t.no]));
+	if (!n) return undefined;
+	const yes = n === 1;
 	if (!existsSync(join(dataDir, MIGRATIONS_FILE))) return undefined;
 	const state = readState(dataDir);
 	if (!state.pending[LEGACY_ID]) return undefined;

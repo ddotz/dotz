@@ -73,9 +73,16 @@ test("plain Korean reasons for the raw errors", () => {
 	expect(plainError("something odd").kind).toBe("other");
 });
 
-test("the ask is one [ask] with the restart option first, and its answers are read", () => {
+test("the ask is one [ask] with the restart option first in the owner's language, and its answers are read", () => {
 	const e: OrchError = { since: "2026-10-23T03:05:00.000Z", ...plainError("timed out"), raw: "timed out" };
-	const text = errorAsk("dotz", e);
+	const was = cfg.identity;
+	cfg.identity = { ...was!, language: "ko" };
+	let text: string;
+	try {
+		text = errorAsk("dotz", e);
+	} finally {
+		cfg.identity = was;
+	}
 	expect(parseTone(text).tone).toBe("ask");
 	expect(parseChoices(text).options.map(x => [x.n, x.label])).toEqual([[1, "다시 시작"], [2, "기다리기"]]);
 	expect(errorAnswer("1) 다시 시작")).toBe("restart");

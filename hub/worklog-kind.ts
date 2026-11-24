@@ -20,9 +20,13 @@ export const HARNESS_FAILED_MID = " 설치하지 못했어요(";
 export const ACCOUNT_LEAD = "계정을 ";
 export const ACCOUNT_CHANGED = "바꿨어요.";
 export const ACCOUNT_PICKED = "정했어요.";
-/** The question of the card a failed dotz self-update asks (hub/selfupdate.ts); the doctor looks for it in the notice store. */
+/** The id the card of a refused or failed dotz self-update is posted with (hub/selfupdate.ts, `card_ids`): the key of the doctor's finding about it. */
+export const SELF_UPDATE_CARD_ID = "update:self";
+/** The id the card of a failed install of harness `id` is posted with (hub/update.ts, `card_ids`): the key of the doctor's finding about that harness. */
+export const harnessCardId = (id: string): string => `update:${id}`;
+/** The title of the self-update card older code posted without an id; the doctor still finds such a stored card by it (hub/doctor.ts cardCovers). */
 export const SELF_UPDATE_CARD_TITLE = "원인을 확인할까요, 자동 업데이트를 끌까요?";
-/** The question of the card a failed harness install asks (hub/update.ts), the same for every harness: its text starts with the harness label (harnessLabel). */
+/** The title of the failed-install card older code posted without an id, the same for every harness: its text starts with the harness label (harnessLabel). */
 export const HARNESS_RETRY_TITLE = "지금 다시 설치해 볼까요, 다음 점검까지 둘까요?";
 
 const HARNESS_TAILS = [HARNESS_ASK_TAIL, HARNESS_BLOCKED_TAIL, HARNESS_RESTART_TAIL, HARNESS_FAILED_MID];

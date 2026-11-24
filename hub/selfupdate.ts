@@ -23,8 +23,10 @@ import { rm } from "node:fs/promises";
 import { join } from "node:path";
 import { installGitHooks } from "./git-hooks.ts";
 import { rewriteNote, rewriteState } from "./history-rewrite.ts";
-import { issueBlock } from "./choices.ts";
+import type { AutoUpdateFacts } from "./card-text.ts";
+import { cardBlock } from "./choices.ts";
 import { CONFIG_FILE, cfg, DATA_DIR, DEFAULTS, HUB_TOKEN, log, PORT, writeAtomic } from "./config.ts";
+import { msg } from "./i18n.ts";
 import { FORMAT, type Keep, keepLine, openTrial, parseCommits, type Saved, saveLocal, savedNote, splitEquivalent, writeSavedSummary } from "./selfupdate-local.ts";
 import { compareReleases, diskRelease, failedTestNames, failureBlocks, gateIn, nightSlot, parseRelease, releaseTags, testFailure, testSummary } from "./selfupdate-parse.ts";
 import { type SigMode, type Signature, signatureAlert as signatureText, signed, verifyGitTag, wantOf } from "./release-verify.ts";
@@ -32,7 +34,7 @@ import { json } from "./routes-util.ts";
 import { applyTarball, checkTarball, type Kit } from "./selfupdate-tarball.ts";
 import { trackTimer } from "./shutdown.ts";
 import { type Pending, rolledBackText } from "./update-watchdog.ts";
-import { SELF_UPDATE_CARD_TITLE, SELF_UPDATE_LEAD } from "./worklog-kind.ts";
+import { SELF_UPDATE_CARD_ID, SELF_UPDATE_LEAD } from "./worklog-kind.ts";
 
 export { authOrder } from "./selfupdate-tarball.ts";
 export type Exec = (cmd: string[], cwd: string, timeoutMs: number) => Promise<{ code: number; out: string }>;
@@ -79,6 +81,7 @@ export type Job = {
 	check?: CheckResult;
 	keep?: Keep;
 	note?: string;
+	halfway?: NonNullable<AutoUpdateFacts["halfway"]> & { why: string };
 };
 export type Options = {
 	dir: string;
@@ -507,7 +510,7 @@ async function runApply(o: Options, how: { keep?: boolean; auto?: boolean; retry
 		// --keep moves HEAD and the files the merge changed only; it refuses rather than overwrite anything else.
 		const r = await exec(["git", "reset", hard ? "--hard" : "--keep", from], dir, 60_000);
 		if (r.code === 0 && hard && saved?.dirtyPatch) await exec(["git", "apply", saved.dirtyPatch], dir, 60_000);
-		if (r.code !== 0) return end("failed", `${why}. 되돌리기도 실패했어요(지금 ${to.slice(0, 7)}): ${lastLine(r.out)} — 터미널에서 \`git reset --keep ${from.slice(0, 12)}\`로 되돌려 주세요.`);
+		if (r.code !== 0) return ((j.halfway = { why, at: target.slice(0, 7), undo: `git -C ${JSON.stringify(dir)} reset --keep ${from.slice(0, 12)}` }), end("failed", `${why}. 되돌리기도 실패했어요(지금 ${to.slice(0, 7)}): ${lastLine(r.out)} — 터미널에서 \`git reset --keep ${from.slice(0, 12)}\`로 되돌려 주세요.`));
 		if (deps) {
 			const i = await exec(["bun", "install"], dir, 10 * 60_000);
 			if (i.code !== 0) step("되돌리기", `이전 의존성 bun install 실패: ${lastLine(i.out)}`);
@@ -596,7 +599,7 @@ const settled = (c: CheckResult) => {
 };
 
 // What auto_apply needs from main.ts: a worklog post, an alert, and the idle restart gate (never launchctl).
-export type AutoHooks = { worklog: (text: string) => void; alert: (text: string) => void; restartIdle: () => string };
+export type AutoHooks = { worklog: (text: string) => void; alert: (text: string, cardIds?: string[]) => void; restartIdle: () => string };
 let autoHooks: AutoHooks | undefined;
 
 // One owner alert per release tag that could not be verified (warn applies anyway, enforce refuses); self-update.json remembers the tag.
@@ -608,11 +611,8 @@ function signalSignature(o: Options, c: CheckResult, hooks: Pick<AutoHooks, "ale
 	saveState({ ...readState(), signatureNotified: s.tag });
 }
 
-const autoChoice = (): string =>
-	issueBlock(SELF_UPDATE_CARD_TITLE, [
-		{ name: "원인 확인", result: "업데이트 로그와 저장소 상태를 보고 원인과 고칠 방법을 알려드려요." },
-		{ name: "자동 업데이트 끄기", result: "자동 적용을 꺼서 새 버전 알림만 받아요. 설정 → 업데이트에서 직접 적용해요." },
-	]);
+export const autoAlert = (u: AutoUpdateFacts, t = msg().selfUpdate): string =>
+	`${t.lead(u.failed)}\n${cardBlock({ subject: t.subject, question: t.question, evidence: t.evidence(u), options: [{ name: t.check, result: t.checkResult }, { name: t.off, result: t.offResult }] })}`;
 
 // auto_apply: runs only when upstream has something new, the checkout is clean and nothing is ahead of origin (check() lists
 // both as `blocked`). A failed apply is not retried for the same upstream commit; a refusal is re-evaluated daily but alerted once.
@@ -626,7 +626,7 @@ async function autoApply(o: Options, c: CheckResult, s: State, hooks: AutoHooks)
 		record(logDir, `auto-apply: refused ${rel} (${short}): ${c.blocked.join(" ")}`);
 		if (s.autoRefused === remoteHead) return;
 		s.autoRefused = remoteHead;
-		hooks.alert(`dotz 자동 업데이트를 하지 않았어요 (${rel}). ${c.blocked.join(" ")}\n${autoChoice()}`);
+		hooks.alert(autoAlert({ failed: false, rel: c.available ? rel : "", why: c.blocked.join(" "), commits: c.incomingTotal, latest: c.incoming[0]?.subject ?? "" }), [SELF_UPDATE_CARD_ID]);
 		return;
 	}
 	record(logDir, `auto-apply: applying ${rel} (${short})`);
@@ -642,7 +642,7 @@ async function autoApply(o: Options, c: CheckResult, s: State, hooks: AutoHooks)
 	if (j.status === "failed") s.autoFailed = remoteHead;
 	if (j.status === "refused") s.autoRefused = remoteHead;
 	if (j.status === "current" || (j.status === "refused" && j.check?.signature?.status !== "verified" && j.check?.signature)) return; // the signature alert already told the owner
-	hooks.alert(`dotz 자동 업데이트를 하지 못했어요 (${rel}): ${j.message}\n${autoChoice()}`);
+	hooks.alert(autoAlert({ failed: j.status === "failed", rel: c.available ? rel : "", why: j.halfway?.why ?? j.message, commits: c.incomingTotal, latest: c.incoming[0]?.subject ?? "", halfway: j.halfway }), [SELF_UPDATE_CARD_ID]);
 }
 
 // `install`: false outside the nightly slot (schedule): a new release is announced like auto_apply off, and installed at the slot.

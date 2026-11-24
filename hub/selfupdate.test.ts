@@ -3,6 +3,8 @@
 import { afterEach, beforeEach, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { parseDecisions } from "./choices.ts";
+import { cfg } from "./config.ts";
 import { autoHooks, commit, failFileTestCmd as testCmd, git as sh, head, makeRepos, type Repos, setSelfUpdateCfg } from "./selfupdate-fixture.ts";
 import { advance, flush } from "./runtime/test-clock.ts";
 import { clearTrackedTimers } from "./shutdown.ts";
@@ -369,22 +371,76 @@ describe("against temp git repos", () => {
 			expect(h.restarts).toBe(1);
 		});
 
-		test("reverts on a test failure, alerts with a choice block, does not retry that commit and does not restart", async () => {
+		test("reverts on a test failure, alerts with its card in the owner's language and its id, does not retry that commit and does not restart", async () => {
 			setSelfUpdateCfg({ auto_apply: true });
 			const before = head(work);
 			r.release("FAIL", "boom\n", "breaks the tests");
 			const { seen, exec } = spy();
-			const { h, api } = autoHooks();
-			await autoCheck(opts(exec), api);
+			const { h, api, cardIds } = autoHooks();
+			const was = cfg.identity;
+			cfg.identity = { ...was!, language: "ko" };
+			try {
+				await autoCheck(opts(exec), api);
+			} finally {
+				cfg.identity = was;
+			}
 			expect(head(work)).toBe(before);
 			expect(h.alerts).toHaveLength(1);
-			expect(h.alerts[0]).toContain("결정:");
+			expect(cardIds).toEqual([["update:self"]]);
+			const card = parseDecisions(h.alerts[0]!).blocks[0]!;
+			expect(card.title).toBe("dotz 업데이트 · 원인을 확인할까요?");
+			expect(card.evidence?.[0]).toBe("버전 261101.1 → 261101.2: 적용하지 못했어요");
+			expect(card.evidence).toContain("새 커밋 1개, 마지막: breaks the tests");
+			expect(card.evidence?.[3]).toBe("지금 버전 그대로예요. 더 새 버전이 오면 다시 시도해요");
+			expect(card.options.map(o => o.label)).toEqual(["원인 확인", "자동 업데이트 끄기"]);
 			expect(h.restarts).toBe(0);
 			expect(h.worklog).toEqual([]);
 			const merged = merges(seen);
 			await autoCheck(opts(exec), api);
 			expect(merges(seen)).toBe(merged);
 			expect(h.alerts).toHaveLength(1);
+		});
+
+		test("a rollback that fails too: the card says the update stopped halfway, which commit the files are at, and the whole command that puts it back works", async () => {
+			setSelfUpdateCfg({ auto_apply: true });
+			const before = head(work);
+			r.release("FAIL", "boom\n", "breaks the tests");
+			const exec: Exec = async (cmd, cwd, ms) => (cmd[0] === "git" && cmd[1] === "reset" ? { code: 1, out: "error: Your local changes to the following files would be overwritten by checkout" } : defaultExec(cmd, cwd, ms));
+			const { h, api, cardIds } = autoHooks();
+			const was = cfg.identity;
+			cfg.identity = { ...was!, language: "ko" };
+			try {
+				await autoCheck(opts(exec), api);
+			} finally {
+				cfg.identity = was;
+			}
+			const stuck = head(work);
+			expect(stuck).not.toBe(before);
+			expect(cardIds).toEqual([["update:self"]]);
+			const evidence = parseDecisions(h.alerts[0]!).blocks[0]!.evidence ?? [];
+			const undo = `git -C ${JSON.stringify(work)} reset --keep ${before.slice(0, 12)}`;
+			expect(evidence[0]).toBe("버전 261101.1 → 261101.2: 적용하지 못했어요");
+			expect(evidence[1]).toStartWith("이유: ");
+			expect(evidence.slice(2)).toEqual([`업데이트가 중간에 멈췄어요. 파일은 새 버전 ${stuck.slice(0, 7)}에 있어요`, `되돌리려면 터미널에서: ${undo}`]);
+			expect(evidence.filter(l => l.includes("그대로") || l.includes("되돌리기도"))).toEqual([]);
+			expect(Bun.spawnSync(["sh", "-c", undo]).exitCode).toBe(0);
+			expect(head(work)).toBe(before);
+		});
+
+		test("a refused auto-update posts its card with its id", async () => {
+			setSelfUpdateCfg({ auto_apply: true });
+			r.release("b.txt", "2\n", "a new release");
+			sh(work, "checkout", "-q", "-b", "dev");
+			const { h, api, cardIds } = autoHooks();
+			const was = cfg.identity;
+			cfg.identity = { ...was!, language: "ko" };
+			try {
+				await autoCheck(opts(), api);
+			} finally {
+				cfg.identity = was;
+			}
+			expect(cardIds).toEqual([["update:self"]]);
+			expect(parseDecisions(h.alerts[0]!).blocks[0]!.evidence?.[0]).toBe("버전 261101.1 → 261101.2: 막혀서 적용하지 않았어요");
 		});
 	});
 

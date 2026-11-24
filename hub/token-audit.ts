@@ -9,7 +9,6 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { cfg, DATA_DIR, DEFAULTS, HOME, paths, writeAtomic } from "./config.ts";
-import { issueBlock } from "./choices.ts";
 import { msg } from "./i18n.ts";
 import { bareModel, type Covered, ownerCovered, readOwnerBasis } from "./owner-asked.ts";
 import { type FixRow, type SessionUse, sharesOf, type UseShare } from "./usage-share.ts";
@@ -448,34 +447,18 @@ function readHistory(): Day[] {
 	}
 }
 
-// What reaches the owner is built from what matters, not a fixed form (owner 2026-10-29: "마이너한 경우에는 메시지에서 제외"): a warning is
-// told only when it costs at least MINOR_USD, keeps costing three days running, or is the day's spike; the rest stays in the report (a
-// 0-token error streak is the gateway's own error alert's matter). With
-// nothing that matters, nothing is sent. The decision (원인 확인 / 넘어가요) is asked only when something is told.
+/** A warning the doctor tells (owner 2026-10-29: "마이너한 경우에는 메시지에서 제외") costs at least MINOR_USD, keeps costing three days running, or is the day's
+ *  spike (material); the rest stays in the report, and a 0-token error streak is the gateway's own error alert's matter. */
 export const MINOR_USD = 1;
 export const material = (f: Pick<Finding, "flag" | "kind" | "recur" | "cost" | "save">): boolean =>
 	f.flag && (f.kind === "급증" || (f.cost ?? f.save ?? 0) >= MINOR_USD || ((f.recur ?? 0) >= 3 && (f.cost ?? f.save ?? 0) > 0));
-export function auditAlert(a: { since: number; now: number; total: number; totalCost: number; flags: Finding[]; recurring: string[]; reportPath: string }): string | undefined {
-	const told = a.flags.filter(material);
-	if (!told.length) return undefined;
-	const minor = a.flags.length - told.length;
-	const plain = (t: string) => t.replace(/ tok\b/g, " 토큰");
-	const brief = (f: Finding) => `- ${f.kind} ${f.who.replace(/ 워커 /, " · ")}: ${plain(f.amount.split(" / ")[0])}${f.tip ? ` → ${f.tip}` : ""}`;
-	const recurring = a.recurring.filter(k => told.some(f => f.kind === k));
-	return [
-		`토큰 점검 (${kst(a.since)}~${kst(a.now)}): ${M(a.total)} 토큰 ${usd(a.totalCost)}, 볼 만한 경고 ${told.length}건`,
-		...(recurring.length ? [`며칠째 반복: ${recurring.join(", ")}`] : []),
-		...Object.values(Object.groupBy([...told].sort((x, y) => (y.cost ?? y.save) - (x.cost ?? x.save)), f => f.kind)).slice(0, 4).map(g => (g!.length === 1 ? brief(g![0]) : `${brief(g![0])} 외 ${g!.length - 1}건`)),
-		`전체 보고서: ${tilde(a.reportPath)}${minor ? ` (사소한 경고 ${minor}건은 보고서에만)` : ""}`,
-	].join("\n") + `\n${issueBlock("이 경고를 어떻게 할까요?", [{ name: "원인 확인", result: "세션별 원인을 살펴보고 고칠 방법을 제안해요." }, { name: "이번엔 넘어가요", result: "보고서만 남기고 다음 점검 때 다시 봐요." }])}`;
-}
 
 /** One of the day's three largest sessions by cost as the usage screen names it; `chosen`: the part of its cost spent on an expensive model the owner chose. */
 export type TopSession = { kind: SessionUse["kind"]; name: string; model: string; cost: number; chosen: number };
 /** The usual day the audit's line compares with: the median of the days with use among the measured days `from` to `to` (the days they cover), `days` of them. */
 export type UsualDay = { tokens: number; cost: number; from: string; to: string; days: number };
 /** `told`: the warnings that matter (material); the doctor makes one finding of each class. */
-export type AuditResult = { ownerUse: { sessions: number; cost: number }; told: Finding[]; flags: number; notes: number; sessions: number; tokens: number; cost: number; top: TopSession[]; usual?: UsualDay; report: string; alert?: string; summary: string };
+export type AuditResult = { ownerUse: { sessions: number; cost: number }; told: Finding[]; flags: number; notes: number; sessions: number; tokens: number; cost: number; top: TopSession[]; usual?: UsualDay; report: string; summary: string };
 
 // The owner's basis for expensive use, read once per run; a worker is judged on its parent session's target.
 function askedBy(results: Stats[], basis = readOwnerBasis(join(DATA_DIR, "state", "model-picks.json"), paths.log, join(DATA_DIR, "lanes"))): (s: Stats) => Covered {
@@ -632,7 +615,6 @@ export function runAudit(opts: { hours?: number; dry?: boolean; readOnly?: boole
 	}
 	const flags = findings.filter(f => f.flag);
 	const kinds = [...new Set(flags.map(f => f.kind))];
-	const recurring = [...new Set(flags.filter(f => f.recur).map(f => f.kind))];
 	const reportPath = join(LOG_DIR, `token-audit-${today.replace(/-/g, "")}.md`);
 	const use = useOf(results), top = topSessions(use, results, asked, now, hours), usual = usualDay(prior);
 	if (!opts.dry) {
@@ -677,9 +659,8 @@ export function runAudit(opts: { hours?: number; dry?: boolean; readOnly?: boole
 		mkdirSync(LOG_DIR, { recursive: true });
 		writeFileSync(reportPath, `${report}\n`);
 	}
-	const alert = auditAlert({ since, now, total, totalCost, flags, recurring, reportPath });
 	const summary = `토큰 점검: 세션 ${results.length}개, ${M(total)} tok ${usd(totalCost)}, 경고 ${flags.length}건 / 참고 ${findings.length - flags.length}건, 보고서 ${tilde(reportPath)}${ownerUse.sessions ? ` · ${msg().doctor.ownerExpensive(ownerUse.sessions, usd(ownerUse.cost))}` : ""}`;
-	return { ownerUse, told: flags.filter(material), flags: flags.length, notes: findings.length - flags.length, sessions: results.length, tokens: total, cost: Number(totalCost.toFixed(2)), top, ...(usual ? { usual } : {}), report: reportPath, alert, summary };
+	return { ownerUse, told: flags.filter(material), flags: flags.length, notes: findings.length - flags.length, sessions: results.length, tokens: total, cost: Number(totalCost.toFixed(2)), top, ...(usual ? { usual } : {}), report: reportPath, summary };
 }
 
 if (import.meta.main) {
@@ -690,7 +671,7 @@ if (import.meta.main) {
 		process.exit(1);
 	}
 	const r = runAudit({ hours: Number(argv[argv.indexOf("--hours") + 1]) || 24, dry });
-	console.log(r.alert ? `--- (dry) would send to alert ---\n${r.alert}\n---` : "--- (dry) clean, nothing to send ---");
+	console.log(r.told.length ? `--- (dry) ${r.told.length} warning(s) the doctor would tell: ${[...new Set(r.told.map(f => f.kind))].join(", ")} ---` : "--- (dry) nothing the doctor would tell ---");
 	console.log(r.summary);
 	console.log(`RESULT ${JSON.stringify({ flags: r.flags, notes: r.notes, sessions: r.sessions, tokens: r.tokens, cost: r.cost, report: r.report })}`);
 }

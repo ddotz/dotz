@@ -3,8 +3,10 @@
 // (orch.error); this file has no model calls. The web banner reads orch.error from /api/state (web/js/40-orch-error.js).
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { issueBlock } from "./choices.ts";
+import { cardAnswer, cardsEn, cardsKo, fitSubject } from "./card-text.ts";
+import { cardBlock } from "./choices.ts";
 import { DATA_DIR, TZ, writeAtomic } from "./config.ts";
+import { msg } from "./i18n.ts";
 
 export type OrchError = { since: string; kind: "timeout" | "dns" | "network" | "overload" | "crash" | "other"; text: string; raw: string; waiting?: boolean; probed?: boolean };
 
@@ -21,11 +23,11 @@ export function plainError(raw: string): Pick<OrchError, "kind" | "text"> {
 const hm = (iso: string) => new Date(iso).toLocaleTimeString("ko-KR", { timeZone: TZ, hour: "2-digit", minute: "2-digit", hour12: false });
 
 // The one [ask] per error episode: Discord shows buttons for the choice block, the web a decision card, push the ask kind.
-export const errorAsk = (name: string, e: OrchError): string =>
-	`[ask] ${name}: ${e.text}. ${hm(e.since)}부터 오케스트레이터가 멈춰 있어요.\n${issueBlock("지금 다시 시작할까요, 연결이 돌아올 때까지 기다릴까요?", [
-		{ name: "다시 시작", result: "오케스트레이터만 다시 시작하고, 답하지 못한 요청을 오래된 것부터 한 번씩 다시 처리해요." },
-		{ name: "기다리기", result: "연결이 돌아오면 한 번 자동으로 다시 시도해요." },
-	])}`;
+export function errorAsk(name: string, e: OrchError): string {
+	const t = msg().orchError, who = name.trim() || t.assistant;
+	const card = cardBlock({ subject: fitSubject(who, t.question), question: t.question, evidence: [t.what(e), t.since(hm(e.since)), t.retried], options: [{ name: t.restart, result: t.restartResult }, { name: t.wait, result: t.waitResult }] });
+	return `${t.lead(who)}\n${card}`;
+}
 
 // The ask waits (owner 2026-10-29: "장애 알림이 너무 자주 와요"; 7 of 9 asks in a week ended on their own, 3 of them within 20
 // minutes): the error watch below resumes by itself, so an episode that ends inside the hold leaves one worklog line and no
@@ -45,9 +47,8 @@ export const noteErrorAsked = (at = Date.now()): void => writeAtomic(errorAskFil
 
 // The owner's answer to that ask (a Discord button click or the web card types it); only read while an error is on.
 export function errorAnswer(text: string): "restart" | "wait" | undefined {
-	if (/^\s*(?:\*\*)?1\)\s*다시 시작/.test(text)) return "restart";
-	if (/^\s*(?:\*\*)?2\)\s*기다리기/.test(text)) return "wait";
-	return undefined;
+	const n = cardAnswer(text, [msg().orchError, cardsKo.orchError, cardsEn.orchError].map(t => [t.restart, t.wait]));
+	return n === 1 ? "restart" : n === 2 ? "wait" : undefined;
 }
 
 // One cheap reachability check of the model host: no tokens, any HTTP answer means DNS, TCP and TLS work again.

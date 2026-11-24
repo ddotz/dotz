@@ -8,7 +8,8 @@ import { aliasesFile, aliasesOf, label, readAliases, resolveAccount, setAlias } 
 import { ANTHROPIC, blockedKind, checkNow, checkRules, DEFAULT_EVERY_MINUTES, DEFAULT_SCRIPT_TIMEOUT_MS, decisionsFile, describeRule, type Decision, getScriptOpinion, getUsage, josa, lastDecision, type Manual, readOnLimit, readRules, rulesFile, type ScriptErrorKind, setManual, setOnLimit, setOrder, setRuleList } from "./account-rules.ts";
 import { type AccountSwitch, accountView, clearSwitches, deleteSwitch, hardPinned, inOrder, MAX_LOG_LINES, onUsedChange, type Pool, quietly, readPool, stickyAccount, type SwitchKind, type UsedChange } from "./account-sticky.ts";
 import { deletePoolAccount, forgetOwnProviderPin, ownProviderPins, providerGroups, readProviderStore, windowsOf, writeProviderPin } from "./accounts-providers.ts";
-import { issueBlock } from "./choices.ts";
+import { cardsKo, fitSubject } from "./card-text.ts";
+import { cardBlock } from "./choices.ts";
 import { TZ } from "./config.ts";
 import { msg } from "./i18n.ts";
 import { deleteOmoAccount, writeOmoPin } from "./omo-pin.ts";
@@ -37,11 +38,11 @@ const SCRIPT_ERROR_TEXT: Record<ScriptErrorKind, string> = { timeout: "시간이
 const clock = (ms: number) => new Intl.DateTimeFormat("en-GB", { timeZone: TZ, hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(new Date(ms));
 const dayKey = (ms: number) => new Intl.DateTimeFormat("en-CA", { timeZone: TZ }).format(new Date(ms));
 // "18:00" today, "내일 01:00" tomorrow, "10월 25일 18:00" otherwise.
-function clockText(ms: number, now: number): string {
+function clockText(ms: number, now: number, words: Pick<typeof cardsKo.accountLimit, "tomorrow" | "onDay"> = cardsKo.accountLimit): string {
 	if (dayKey(ms) === dayKey(now)) return clock(ms);
-	if (dayKey(ms) === dayKey(now + 86_400_000)) return `내일 ${clock(ms)}`;
+	if (dayKey(ms) === dayKey(now + 86_400_000)) return words.tomorrow(clock(ms));
 	const part = (type: "month" | "day") => new Intl.DateTimeFormat("en-US", { timeZone: TZ, [type]: "numeric" }).format(new Date(ms));
-	return `${part("month")}월 ${part("day")}일 ${clock(ms)}`;
+	return words.onDay(part("month"), part("day"), clock(ms));
 }
 
 // The bell alert for a change of the account requests really use: from which to which, and why.
@@ -310,15 +311,19 @@ function pinnedBlockedAccount(now: number): string | undefined {
 	return id && readPool(undefined, now)?.blocked[id] ? id : undefined;
 }
 
-// The bell/chat text when a 고정 account hits its limit and the work pauses until `until` (ms): which account, until when, and the
-// choice to switch to 자동 전환 (its label is answered by the gateway itself, accountAsk). Undefined outside 고정 mode.
+/** The bell/chat text when a 고정 account hits its limit and the work pauses until `until` (ms): the card `<account> 한도 · 자동 전환으로 바꿀까요?`
+ *  with until when, that the pin keeps it there and how many other accounts are usable now; its labels are answered by the gateway itself (accountAsk).
+ *  Undefined outside 고정 mode. */
 export function pinnedLimitAlert(until: number, now = Date.now()): string | undefined {
 	const id = pinnedBlockedAccount(now);
 	if (!id) return undefined;
 	const l = label(id);
-	const at = clockText(until, now);
 	const t = msg().accountLimit;
-	return [t.question(`${l}${josa(l, "이", "가")}`, at), issueBlock(t.questionTitle, [{ name: t.switchChoice, result: t.switchChoiceNote }, { name: t.waitChoice, result: t.waitChoiceNote(at) }])].join("\n");
+	const at = clockText(until, now, t);
+	const pool = readPool(undefined, now);
+	const others = pool ? pool.names.filter(n => n !== id && !pool.blocked[n]).length : 0;
+	const card = cardBlock({ subject: fitSubject(t.subject(l), t.questionTitle), question: t.questionTitle, evidence: [t.until(at), t.pinned, t.others(others)], options: [{ name: t.switchChoice, result: t.switchChoiceNote }, { name: t.waitChoice, result: t.waitChoiceNote(at) }] });
+	return [t.question(l, at), card].join("\n");
 }
 
 // What the owner hears when a 고정 account hits its limit: the one-time question while the answer is unset, else the saved answer
@@ -612,7 +617,7 @@ const VERB = "(?:바꿔|바꾸자?|바꿀래|전환|변경|갈아타|옮겨|돌�
 const SHOW = [/^(?:(?:지금|현재)\s*)?(?:무슨|어떤|뭔|어느)\s*계정(?:이야|이에요|이지|이니|인가요|인지|써|쓰고\s*있어요?|쓰고\s*있니)?$/, /^(?:지금|현재)\s*계정(?:\s*(?:뭐야|뭐에요|뭐예요|뭐지|알려|보여|확인|상태))?$/, /^계정\s*(?:확인|상태|알려|보여)$/];
 const AUTO = /^(?:자동\s*전환(?:으로)?(?:\s*바꾸기)?|자동\s*계정(?:으로)?|계정(?:을|은)?\s*자동(?:으로)?|계정\s*자동\s*(?:전환|선택)?|switch\s*to\s*automatic)(?:\s*(?:바꿔|전환|돌려|돌려놔|설정|맞춰|선택))?$/i;
 // The other answer to the pinned-limit question: keep waiting (saved so the question is asked once).
-const WAIT = /^(?:(?:그대로\s*)?기다리기|keep\s+waiting)$/i;
+const WAIT = /^(?:그대로\s*기다리기|keep\s+waiting)$/i;
 const OTHER = [new RegExp(`^(?:(?:지금|현재)\\s*)?계정(?:을)?\\s*${VERB}$`), new RegExp(`^(?:다른|딴|반대|다음)\\s*계정(?:으로|로)?(?:\\s*${VERB})?$`)];
 
 // Pure: a short owner message that asks about or changes the account, else undefined (the message goes to the orchestrator).

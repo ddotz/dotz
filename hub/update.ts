@@ -8,12 +8,14 @@
 import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { join } from "node:path";
 import { cfg, DATA_DIR, DEFAULTS, log, OMP, writeAtomic } from "./config.ts";
-import { issueBlock } from "./choices.ts";
+import { fitSubject, type HarnessFailFacts } from "./card-text.ts";
+import { cardBlock } from "./choices.ts";
+import { msg } from "./i18n.ts";
 import { activeHarness } from "./runtime/index.ts";
 import { BUN_GLOBAL_OMO, OMO } from "./runtime/omo-hosts.ts";
 import { telemetryOff } from "./runtime/omo.ts";
 import { trackTimer } from "./shutdown.ts";
-import { HARNESS_ASK_TAIL, HARNESS_BLOCKED_TAIL, HARNESS_FAILED_MID, HARNESS_RESTART_TAIL, HARNESS_RETRY_TITLE } from "./worklog-kind.ts";
+import { HARNESS_ASK_TAIL, HARNESS_BLOCKED_TAIL, HARNESS_FAILED_MID, HARNESS_RESTART_TAIL, harnessCardId } from "./worklog-kind.ts";
 
 export type Mode = "check" | "install" | "off";
 export type Check =
@@ -148,7 +150,18 @@ const readState = (file: string): State => {
 
 // `post`: the one-line worklog entry; `alert`: an issue (a failed install) with its choice block, which goes to the alert conversation.
 // `harnesses`: runtime ids to update (default: the ones dotz runs on); `restart` is called at most once per pass.
-type Deps = { mode: Mode; post: (text: string) => void; alert?: (text: string) => void; restart: () => string; run?: Run; latest?: Latest; locate?: Locate; harnesses?: string[]; stateDir?: string };
+type Deps = { mode: Mode; post: (text: string) => void; alert?: (text: string, cardIds?: string[]) => void; restart: () => string; run?: Run; latest?: Latest; locate?: Locate; harnesses?: string[]; stateDir?: string };
+
+/** The alert of a failed install of harness `id`: a lead, then the card `<name> 업데이트 · 다시 설치해 볼까요?` (the harness named in the owner's language) with the versions,
+ *  what it is on now and the installer's last line. */
+export function harnessFailText(id: string, facts: HarnessFailFacts): string {
+	const t = msg().harnessUpdate, name = t.name(id, harnessLabel(id) ?? id);
+	return `${t.lead(name)}\n${cardBlock({ subject: fitSubject(t.subject(name), t.question), question: t.question, evidence: t.evidence(facts), options: [{ name: t.retry, result: t.retryResult }, { name: t.later, result: t.laterResult }] })}`;
+}
+
+/** The alert of a gateway card that has an id: posted through `out` with its `card_ids` (docs/notifications.md, 카드의 id); a text without ids goes through `plain` (outbound.ts alert). */
+export const cardAlert = (out: (target: string, text: string, replyTo?: string, extra?: Record<string, unknown>) => Promise<unknown>, plain: (text: string) => void) =>
+	(text: string, cardIds?: string[]): void => (cardIds?.length ? void out("alert", text, undefined, { source: "gateway", nk: "alert", card_ids: cardIds }).catch(e => log(`card alert failed: ${e}`)) : plain(text));
 
 // One harness: the worklog line it posted, if any, and whether it installed something that needs a restart.
 async function updateOne(id: string, spec: Spec, { mode, post, alert = post, run = defaultRun, latest = npmLatest, locate = defaultLocate, stateDir = DATA_DIR }: Deps): Promise<{ line?: string; installed?: boolean }> {
@@ -171,10 +184,11 @@ async function updateOne(id: string, spec: Spec, { mode, post, alert = post, run
 	if (u.code !== 0 || !spec.landed(now, c)) {
 		// A half-done install must not leave the harness on a version that does not verify.
 		const back = now !== c.current && spec.rollback ? await spec.rollback(t, c.current) : undefined;
-		const kept = back ? `${back.code === 0 ? "이전 버전으로 되돌렸어요" : "이전 버전으로 되돌리지 못했어요"}(${await spec.version(t)})` : `지금 ${now}`;
-		const line = `${spec.label} ${c.current} → ${c.latest}${HARNESS_FAILED_MID}${kept}): ${u.out.split("\n").pop()?.slice(0, 160) || `exit ${u.code}`}`;
+		const after = back ? await spec.version(t) : now, output = u.out.split("\n").pop()?.slice(0, 160) || `exit ${u.code}`;
+		const kept = back ? `${back.code === 0 ? "이전 버전으로 되돌렸어요" : "이전 버전으로 되돌리지 못했어요"}(${after})` : `지금 ${now}`;
+		const line = `${spec.label} ${c.current} → ${c.latest}${HARNESS_FAILED_MID}${kept}): ${output}`;
 		log(`${id} update: ${line}`);
-		alert(`${line}\n${issueBlock(HARNESS_RETRY_TITLE, [{ name: "다시 설치해 봐요", result: "지금 한 번 더 설치하고 결과를 알려드려요." }, { name: "다음 점검까지 둬요", result: "내일 새벽 점검 때 다시 시도해요." }])}`);
+		alert(harnessFailText(id, { current: c.current, latest: c.latest, now: after, kept: back ? (back.code === 0 ? "rolledBack" : "notRolledBack") : now === c.current ? "untouched" : "moved", output }), [harnessCardId(id)]);
 		return { line };
 	}
 	const line = `${spec.label} ${c.current} → ${now}${HARNESS_RESTART_TAIL}`;
@@ -205,7 +219,7 @@ export async function runHarnessUpdate(deps: Deps): Promise<string[]> {
 	return lines;
 }
 
-export function startHarnessUpdate(post: (text: string) => void, restart: () => string, alert: (text: string) => void = post): void {
+export function startHarnessUpdate(post: (text: string) => void, restart: () => string, alert: NonNullable<Deps["alert"]> = post): void {
 	const raw: unknown = "omp_update" in cfg ? cfg.omp_update : undefined;
 	const o = raw && typeof raw === "object" ? raw : {};
 	const mode: Mode = "mode" in o && (o.mode === "check" || o.mode === "off") ? o.mode : "install";

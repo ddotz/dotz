@@ -30,8 +30,9 @@ export const setSelfUpdateCfg = (v: Record<string, unknown> | undefined) => {
 // Records what main.ts would do after an auto-check: worklog lines, alerts, idle-gated restarts.
 export const autoHooks = () => {
 	const h = { worklog: [] as string[], alerts: [] as string[], restarts: 0 };
-	const api: AutoHooks = { worklog: t => void h.worklog.push(t), alert: t => void h.alerts.push(t), restartIdle: () => (h.restarts++, "queued") };
-	return { h, api };
+	const cardIds: (string[] | undefined)[] = [];
+	const api: AutoHooks = { worklog: t => void h.worklog.push(t), alert: (t, ids) => void (h.alerts.push(t), cardIds.push(ids)), restartIdle: () => (h.restarts++, "queued") };
+	return { h, api, cardIds };
 };
 
 let template: string | undefined;

@@ -6,6 +6,7 @@ import { runOnboard, type Gateway } from "../features/comments/bin/onboard.ts";
 import { createApp } from "./app-off.ts";
 import { createEngine } from "./comments/engine.ts";
 import type { CommentAdapter } from "./comments/contract.ts";
+import { cfg } from "./config.ts";
 import { LEGACY_ID, legacyAnswer, type LegacyComments, MIGRATIONS, MIGRATIONS_FILE, runMigrations, SNS_COMMENTS_ID, type Migration } from "./migrations.ts";
 
 // Temp data dirs only; the token values are placeholders that must never reach a notice, a reply or a log line.
@@ -128,12 +129,20 @@ describe("legacy YouTube/Instagram tokens", () => {
 	const legacyOnly = MIGRATIONS.filter(m => m.id === LEGACY_ID);
 	const secret = (name: string) => join(dir, "secrets", name);
 
-	test("asks once with names only, copies nothing before the yes", async () => {
+	test("asks once with what it found as a card in the owner's language, copies nothing before the yes", async () => {
 		putLegacy();
 		const s = spy();
-		await runMigrations(s.deps(legacyOnly));
+		const was = cfg.identity;
+		cfg.identity = { ...was!, language: "ko" };
+		try {
+			await runMigrations(s.deps(legacyOnly));
+		} finally {
+			cfg.identity = was;
+		}
 		expect(s.asks).toHaveLength(1);
-		expect(s.asks[0]).toContain("[ask] 예전 유튜브·인스타 연결을 찾았어요. 가져올까요?");
+		expect(s.asks[0]).toContain("[ask] 예전 유튜브·인스타 연결을 찾았어요.");
+		expect(s.asks[0]).toContain("결정: 예전 유튜브·인스타 연결 · 가져올까요?");
+		expect(s.asks[0]).toContain("찾은 연결: 유튜브, 인스타그램");
 		expect(s.asks[0]).toContain("1) 가져오기");
 		expect(s.asks[0]).toContain("2) 안 가져오기");
 		expect(s.asks[0]).not.toContain(VALUE);
@@ -165,6 +174,19 @@ describe("legacy YouTube/Instagram tokens", () => {
 		rmSync(join(dir, MIGRATIONS_FILE));
 		await runMigrations(s.deps(legacyOnly));
 		expect(s.asks).toHaveLength(1);
+	});
+
+	test("the English labels answer it too: Bring it over imports, Do not bring it over records the refusal", async () => {
+		putLegacy();
+		await runMigrations(spy().deps(legacyOnly));
+		expect(legacyAnswer(dir, "2) Do not bring it over")).toBeDefined();
+		expect(existsSync(secret("youtube-oauth.json"))).toBe(false);
+		expect(existsSync(join(dir, "custom", "sns", "legacy-import.json"))).toBe(true);
+		rmSync(join(dir, "custom", "sns", "legacy-import.json"));
+		rmSync(join(dir, MIGRATIONS_FILE));
+		await runMigrations(spy().deps(legacyOnly));
+		expect(legacyAnswer(dir, "1) Bring it over")).toContain("youtube-oauth.json");
+		expect(statSync(secret("youtube-oauth.json")).mode & 0o777).toBe(0o600);
 	});
 
 	test("no question when there is nothing to import or the tokens are already there, and an answer with no open question does nothing", async () => {

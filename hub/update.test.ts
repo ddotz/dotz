@@ -3,11 +3,12 @@ import { afterEach, beforeEach, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { OMP } from "./config.ts";
+import { cfg, OMP } from "./config.ts";
 import { cardCovers } from "./doctor.ts";
 import type { Finding } from "./doctor-types.ts";
-import { describe, harnessLabel, newer, runHarnessUpdate, type Run } from "./update.ts";
-import { HARNESS_RETRY_TITLE } from "./worklog-kind.ts";
+import { emit } from "./events.ts";
+import { allNotices, resetNoticesForTest } from "./notices.ts";
+import { cardAlert, describe, harnessLabel, newer, runHarnessUpdate, type Run } from "./update.ts";
 
 let dir: string;
 beforeEach(() => void (dir = mkdtempSync(join(tmpdir(), "dotz-update-"))));
@@ -62,10 +63,16 @@ test("an omo on PATH that bun -g does not own is not installed over: one worklog
 	expect(await runHarnessUpdate(h.deps)).toEqual([]);
 });
 
-test("a failed install keeps the old version: alert with a choice block, no restart", async () => {
+test("a failed install keeps the old version: alert with a choice block in the owner's language, no restart", async () => {
 	const omo = fakeOmo("5.1.38", { addCode: 1 });
 	const h = harness({ run: omo.run, latest: "5.1.40" });
-	await runHarnessUpdate(h.deps);
+	const was = cfg.identity;
+	cfg.identity = { ...was!, language: "ko" };
+	try {
+		await runHarnessUpdate(h.deps);
+	} finally {
+		cfg.identity = was;
+	}
 	expect(h.restarts()).toBe(0);
 	expect(h.posts).toEqual([]);
 	expect(h.alerts).toHaveLength(1);
@@ -74,14 +81,67 @@ test("a failed install keeps the old version: alert with a choice block, no rest
 	expect(omo.state.version).toBe("5.1.38");
 });
 
-test("the failed-install alert, stored as its card, keeps the doctor from asking about that harness only", async () => {
-	const h = harness({ run: fakeOmo("5.1.38", { addCode: 1 }).run, latest: "5.1.40" });
-	await runHarnessUpdate(h.deps);
-	const card = { title: HARNESS_RETRY_TITLE, text: h.alerts[0]!, decision: { options: [], to: "alert", group: 1, state: "open" as const } };
-	const covers = cardCovers([card], Date.now(), { watch: name => name, harness: harnessLabel });
+test("the failed-install card, posted with its id the way the gateway posts it, keeps the doctor from asking about that harness only", async () => {
+	resetNoticesForTest();
+	const plain: string[] = [];
+	const alert = cardAlert(async (target, text, _replyTo, extra) => void emit("outbox", { ts: new Date().toISOString(), kind: "out", source: "gateway", target, text, ...extra }), text => void plain.push(text));
+	await runHarnessUpdate({ ...harness({ run: fakeOmo("5.1.38", { addCode: 1 }).run, latest: "5.1.40" }).deps, alert });
+	expect(plain).toEqual([]);
+	const cards = allNotices().filter(n => n.kind === "decision");
+	expect(cards.map(n => n.decision?.card_id)).toEqual(["update:omo"]);
+	const covers = cardCovers(cards, Date.now(), { watch: name => name, harness: harnessLabel });
 	const failed = (id: string): Finding => ({ key: `update:${id}`, area: "update", what: "failed", evidence: id, since: 0, level: 1, ask: true });
 	expect(covers(failed("omo"))).toBe(true);
 	expect(covers(failed("omp"))).toBe(false);
+	resetNoticesForTest();
+});
+
+function twoFailing(o: { ompTo: string; rollbackCode: number }): Run {
+	const v = { omp: "18.12.1", omo: "5.1.38" };
+	return async cmd => {
+		if (cmd[0] === OMP && cmd[1] === "update") {
+			if (cmd[2] === "--check") return { code: 0, out: `Current version: ${v.omp}\nNew version available: 18.13.0` };
+			v.omp = o.ompTo;
+			return { code: 1, out: "omp: download failed" };
+		}
+		if (cmd[1] === "--version") return { code: 0, out: cmd[0] === OMP ? `omp/${v.omp}` : `omo ${v.omo} (engine: senpi 2026.10.19)` };
+		if (cmd[1] === "add" && cmd[3] === "omo-ai@latest") {
+			v.omo = "5.1.39";
+			return { code: 1, out: "error: network down" };
+		}
+		if (cmd[1] === "add") {
+			if (o.rollbackCode === 0) v.omo = "5.1.38";
+			return { code: o.rollbackCode, out: "rollback" };
+		}
+		return { code: 1, out: "unexpected" };
+	};
+}
+
+async function failedCards(run: Run) {
+	resetNoticesForTest();
+	const was = cfg.identity;
+	cfg.identity = { ...was!, language: "ko" };
+	try {
+		const alert = cardAlert(async (target, text, _replyTo, extra) => void emit("outbox", { ts: new Date().toISOString(), kind: "out", source: "gateway", target, text, ...extra }), () => undefined);
+		await runHarnessUpdate({ ...harness({ run, latest: "5.1.40" }).deps, harnesses: ["omp", "omo"], alert });
+		return allNotices().filter(n => n.kind === "decision").map(n => ({ id: n.decision?.card_id, title: n.title, evidence: n.decision?.evidence }));
+	} finally {
+		cfg.identity = was;
+		resetNoticesForTest();
+	}
+}
+
+test("two harnesses failing in one pass give two open cards, each with its own id, and each says what its install is on now", async () => {
+	const cards = await failedCards(twoFailing({ ompTo: "18.12.1", rollbackCode: 0 }));
+	expect(cards.sort((a, b) => String(a.id).localeCompare(String(b.id)))).toEqual([
+		{ id: "update:omo", title: "작업 프로그램 업데이트 · 다시 설치해 볼까요?", evidence: ["버전 5.1.38 → 5.1.40 설치하지 못했어요", "이전 버전으로 되돌렸어요 (지금 5.1.38)", "마지막 출력: error: network down"] },
+		{ id: "update:omp", title: "omp 업데이트 · 다시 설치해 볼까요?", evidence: ["버전 18.12.1 → 18.13.0 설치하지 못했어요", "지금 18.12.1 그대로예요", "마지막 출력: omp: download failed"] },
+	]);
+});
+
+test("a failed rollback says the earlier version was not put back, and an install that moved the version without landing never says it is unchanged", async () => {
+	const cards = await failedCards(twoFailing({ ompTo: "18.12.5", rollbackCode: 1 }));
+	expect(Object.fromEntries(cards.map(c => [c.id, c.evidence?.[1]]))).toEqual({ "update:omo": "이전 버전으로 되돌리지 못했어요 (지금 5.1.39)", "update:omp": "버전이 바뀌었어요: 설치 전 18.12.1, 지금 18.12.5" });
 });
 
 test("an install that does not verify is rolled back to the old version", async () => {

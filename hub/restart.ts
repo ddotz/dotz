@@ -5,8 +5,10 @@
 import { createHash } from "node:crypto";
 import { existsSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
 import { join } from "node:path";
-import { issueBlock } from "./choices.ts";
+import type { cardsEn } from "./card-text.ts";
+import { cardBlock } from "./choices.ts";
 import { OMP, writeAtomic } from "./config.ts";
+import { msg } from "./i18n.ts";
 
 /** A restart that changes the prompt head (system note or tool text) makes every session write its whole prompt cache anew: it waits for a small context and comes at most once per HEAD_RESTART_EVERY_MS. */
 export const HEAD_RESTART_EVERY_MS = 24 * 3_600_000;
@@ -67,26 +69,21 @@ export function markRestartPending(dataDir: string, on: boolean): void {
 
 // What the owner reads for the hub's busy list (hub/main.ts busyNow).
 export type BusyTitle = (kind: "lane" | "conv", key: string) => string;
-const ownerName = (b: string, title: BusyTitle): string => {
-	const work = (kind: string, n?: string) => `${kind === "jobs" ? "작업" : "워커"}${n ? ` ${n}개` : ""}`;
+const ownerName = (b: string, title: BusyTitle, t: typeof cardsEn.restartCap): string => {
 	const lane = /^lane (\S+)(?: background workers \((\d+)\)| \((\d+) background workers\))?$/.exec(b);
-	if (lane) return `세션 ${title("lane", lane[1]!)}${lane[2] ?? lane[3] ? ` (워커 ${lane[2] ?? lane[3]}개)` : ""}`;
+	if (lane) return t.lane(title("lane", lane[1]!), lane[2] ?? lane[3]);
 	const main = /^orchestrator background (workers|jobs)(?: \((\d+)\))?$/.exec(b);
-	if (main) return `메인 대화 ${work(main[1]!, main[2])}`;
+	if (main) return t.main(t.work(main[1]!, main[2]));
 	const conv = /^conversation session (\S+)(?: background (workers|jobs)(?: \((\d+)\))?)?$/.exec(b);
-	if (conv) return `대화 ${title("conv", conv[1]!)}${conv[2] ? ` ${work(conv[2], conv[3])}` : ""}`;
-	return b === "reply" ? "보내는 중인 답" : b;
+	if (conv) return t.conv(title("conv", conv[1]!), conv[2] ? t.work(conv[2], conv[3]) : undefined);
+	return b === "reply" ? t.reply : b;
 };
 
 // The one alert of a restart that waited past the cap: what still runs, and the owner's choice. Nothing is killed on its own.
 export function restartCapText(busy: string[], waitedMin: number, title: BusyTitle = (_, key) => key): string {
-	return [
-		`게이트웨이 재시작을 ${waitedMin}분째 기다리고 있어요. 새 버전은 아직 적용되지 않았어요. 새 워커는 막아 두었지만 이 작업이 아직 돌고 있어요: ${busy.map(b => ownerName(b, title)).join(", ")}.`,
-		issueBlock("지금 재시작할까요, 작업이 끝날 때까지 기다릴까요?", [
-			{ name: "지금 재시작", result: "설정 → 업데이트의 '지금 재시작'으로 바로 다시 시작해요. 돌던 작업은 끊기고, 세션은 재시작 뒤 이어서 해요." },
-			{ name: "계속 기다리기", result: "그대로 두면 돌던 작업이 끝나는 대로 저절로 재시작해요." },
-		]),
-	].join("\n");
+	const t = msg().restartCap, running = busy.map(b => ownerName(b, title, t)).join(", ");
+	const evidence = [t.waited(waitedMin), running ? t.running(running) : "", t.held, t.pending];
+	return [t.lead, cardBlock({ subject: t.subject, question: t.question, evidence, options: [{ name: t.now, result: t.nowResult }, { name: t.wait, result: t.waitResult }] })].join("\n");
 }
 
 /** Who asked for a restart, written into its request log line so the doctor (hub/doctor-checks.ts restartsOf) counts it as explained. */
