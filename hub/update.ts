@@ -8,7 +8,7 @@
 import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { join } from "node:path";
 import { cfg, DATA_DIR, DEFAULTS, log, OMP, writeAtomic } from "./config.ts";
-import { type AutoUpdateFacts, fitSubject, type HarnessFailFacts } from "./card-text.ts";
+import { fitSubject, type HarnessFailFacts } from "./card-text.ts";
 import { cardBlock } from "./choices.ts";
 import { msg } from "./i18n.ts";
 import { activeHarness } from "./runtime/index.ts";
@@ -158,10 +158,6 @@ export function harnessFailText(id: string, facts: HarnessFailFacts): string {
 	const t = msg().harnessUpdate, name = t.name(id, harnessLabel(id) ?? id);
 	return `${t.lead(name)}\n${cardBlock({ subject: fitSubject(t.subject(name), t.question), question: t.question, evidence: t.evidence(facts), options: [{ name: t.retry, result: t.retryResult }, { name: t.later, result: t.laterResult }] })}`;
 }
-
-/** The alert of a refused or failed dotz auto-update (hub/selfupdate.ts autoApply): a lead, then the card `dotz 업데이트 · 원인을 확인할까요?`, posted with the id SELF_UPDATE_CARD_ID. */
-export const autoAlert = (u: AutoUpdateFacts, t = msg().selfUpdate): string =>
-	`${t.lead(u.failed)}\n${cardBlock({ subject: t.subject, question: t.question, evidence: t.evidence(u), options: [{ name: t.check, result: t.checkResult }, { name: t.off, result: t.offResult }] })}`;
 
 /** The alert of a gateway card that has an id: posted through `out` with its `card_ids` (docs/notifications.md, 카드의 id); a text without ids goes through `plain` (outbound.ts alert). */
 export const cardAlert = (out: (target: string, text: string, replyTo?: string, extra?: Record<string, unknown>) => Promise<unknown>, plain: (text: string) => void) =>

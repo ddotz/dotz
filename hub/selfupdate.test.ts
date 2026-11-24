@@ -2,7 +2,7 @@
 // clone that pushes newer commits. The test command is a shell check so a commit can make "the tests" fail on purpose.
 import { afterEach, beforeEach, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join, relative } from "node:path";
 import { parseDecisions } from "./choices.ts";
 import { cfg } from "./config.ts";
 import { autoHooks, commit, failFileTestCmd as testCmd, git as sh, head, makeRepos, type Repos, setSelfUpdateCfg } from "./selfupdate-fixture.ts";
@@ -515,4 +515,21 @@ describe("against temp git repos", () => {
 		expect((await apply(opts(exec))).status).toBe("failed");
 		expect(tests()).toBe(3);
 	});
+});
+
+test("the updater CLI imports only code a release without the extension, features and web folders has (hub/install-e2e.test.ts runs it from one)", () => {
+	const repo = join(import.meta.dir, ".."), seen = new Set<string>(), outside: string[] = [], scan = new Bun.Transpiler({ loader: "ts" });
+	const walk = (file: string): void => {
+		if (seen.has(file)) return;
+		seen.add(file);
+		for (const i of scan.scanImports(readFileSync(file, "utf8"))) {
+			if (i.kind !== "import-statement" || !i.path.startsWith(".")) continue;
+			const to = join(dirname(file), i.path), rel = relative(repo, to);
+			if (!/^(hub|onboard|firstrun)\//.test(rel)) outside.push(`${relative(repo, file)} -> ${rel}`);
+			else if (existsSync(to)) walk(to);
+		}
+	};
+	walk(join(repo, "hub", "selfupdate.ts"));
+	expect(outside).toEqual([]);
+	expect(seen.size).toBeGreaterThan(10);
 });

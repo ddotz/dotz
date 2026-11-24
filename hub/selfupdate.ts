@@ -31,7 +31,7 @@ import { type SigMode, type Signature, signatureAlert as signatureText, signed, 
 import { json } from "./routes-util.ts";
 import { applyTarball, checkTarball, type Kit } from "./selfupdate-tarball.ts";
 import { trackTimer } from "./shutdown.ts";
-import { autoAlert } from "./update.ts";
+import { autoAlert } from "./selfupdate-card.ts";
 import { type Pending, rolledBackText } from "./update-watchdog.ts";
 import { SELF_UPDATE_CARD_ID, SELF_UPDATE_LEAD } from "./worklog-kind.ts";
 
