@@ -3,7 +3,7 @@ import { expect, test } from "bun:test";
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { DATA_DIR } from "./config.ts";
-import { analyze, auditAlert, type Decisions, fallbackAfterCapacity, findingsOf, fixesOf, material, projectLabel, readDecisions } from "./token-audit.ts";
+import { analyze, auditAlert, type Decisions, fallbackAfterCapacity, findingsOf, fixesOf, material, projectLabel, readDecisions, topSessions, useOf, usualDay } from "./token-audit.ts";
 
 const T0 = Date.UTC(2026, 9, 19, 12);
 const at = (min: number) => new Date(T0 + min * 60e3).toISOString();
@@ -185,4 +185,31 @@ test("the usage screen's fixes: a watch that keeps waking a session, a big conte
 	expect(fixes.find(f => f.fix === "compact")).toMatchObject({ id: "compact:lane:site-fix", target: "lane:site-fix" });
 	expect(fixes.find(f => f.fix === "worker")).toMatchObject({ target: "lane:site-fix", model: "claude-fable-5-2", who: { kind: "lane", name: "site-fix" } });
 	expect(fixesOf([main, lane, worker], () => ({ model: true, effort: true })).some(f => f.fix === "worker")).toBe(false);
+});
+
+test("the token line's largest sessions: three rows by cost, each with what its sessions spent on an expensive model the owner chose; an effort level alone is no model choice", () => {
+	const run = (name: string, target: string, cost: number, dear: { fableCost?: number; effortTurns?: number } = {}) =>
+		Object.assign(analyze({ ...session(name, [user(0), turn(1, 0, 5_000)]), target }, T0 - 1), { cost, modelCost: { "model-a": cost }, fable: dear.fableCost ? 1 : 0, fableCost: dear.fableCost ?? 0, effortTurns: dear.effortTurns ?? 0 });
+	const results = [run("top-main", "orchestrator", 80), run("top-a1", "lane:alpha", 40, { fableCost: 40 }), run("top-a2", "lane:alpha", 5), run("top-b", "lane:beta", 35, { effortTurns: 3 }), run("top-c", "lane:gamma", 10, { fableCost: 10 })];
+	expect(topSessions(useOf(results), results, s => ({ model: s.src.target !== "lane:beta", effort: true }), T0, 24)).toEqual([
+		{ kind: "orchestrator", name: "", model: "model-a", cost: 80, chosen: 0 },
+		{ kind: "lane", name: "alpha", model: "model-a", cost: 45, chosen: 40 },
+		{ kind: "lane", name: "beta", model: "model-a", cost: 35, chosen: 0 },
+	]);
+});
+
+test("the token line's largest sessions: an expensive-model session the owner did not choose counts nothing as chosen, and a chosen one only the part spent on that model", () => {
+	const run = (name: string, target: string, cost: number, fableCost: number) =>
+		Object.assign(analyze({ ...session(name, [user(0), turn(1, 0, 5_000)]), target }, T0 - 1), { cost, modelCost: { "model-a": cost }, fable: 1, fableCost, effortTurns: 0 });
+	const results = [run("pick-a", "lane:alpha", 40, 25), run("pick-b", "lane:beta", 35, 20)];
+	const rows = topSessions(useOf(results), results, s => ({ model: s.src.target === "lane:alpha", effort: true }), T0, 24);
+	expect(rows.map(r => [r.name, r.cost, r.chosen])).toEqual([["alpha", 40, 25], ["beta", 35, 0]]);
+});
+
+test("the usual day: the median of the days with use among the last measured ones, labelled by the days the entries cover", () => {
+	const day = (date: string, cost: number) => ({ date, tokens: cost * 1e6, cost, use: { at: Date.parse(`${date}T04:30:00+09:00`), hours: 24 } });
+	const prior = [day("2026-11-17", 600), day("2026-11-18", 120), day("2026-11-19", 90), day("2026-11-20", 70), day("2026-11-21", 40), day("2026-11-22", 0), day("2026-11-23", 0)];
+	expect(usualDay(prior)).toEqual({ tokens: 90e6, cost: 90, from: "2026-11-16", to: "2026-11-22", days: 5 });
+	expect(usualDay([{ date: "2026-11-23", tokens: 5, cost: 1 }])).toEqual({ tokens: 5, cost: 1, from: "2026-11-22", to: "2026-11-22", days: 1 });
+	expect(usualDay(prior.slice(5))).toBeUndefined();
 });

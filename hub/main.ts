@@ -52,7 +52,7 @@ import { restGuard } from "./context.ts";
 import { errorAsk, startResumeWatch, watchSession } from "./orch-error.ts";
 import { interruptedLanes } from "./lanereconnect.ts";
 import { queuedTargets } from "./queue.ts";
-import { createRestartGate, gatewayCodeChanged, markRestartPending, promptHeadChanged, RESTART_NOTICE_MS, restartCapText, takeRestartHeld } from "./restart.ts";
+import { createRestartGate, gatewayCodeChanged, markRestartPending, promptHeadChanged, RESTART_NOTICE_MS, type RestartBy, restartCapText, takeRestartHeld } from "./restart.ts";
 import { modeContract } from "./orchestrator-parts.ts";
 import { createWaitCheck, wakeReply } from "./waitcheck.ts";
 import { ownerMessage } from "./events.ts";
@@ -787,7 +787,7 @@ const sessionResume = createSessionResume({
 		),
 });
 startLaneResumeSweep({ budget: name => budgetProblem(name, estimateOf(undefined, ""), false), restarting: () => restartGate.waiting(), sessions: sessionResume.tick });
-function restartGateway(o: { auto?: boolean } = {}): string {
+function restartGateway(o: { auto?: boolean; by?: RestartBy } = {}): string {
 	return restartGate.request(o);
 }
 // The owner chose '지금 재시작' in settings → 업데이트: running turns are cut (unanswered prompts replay on the next start).

@@ -3,11 +3,11 @@
 import { closeSync, existsSync, openSync, readdirSync, readFileSync, readSync, statfsSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { THRESHOLDS as T } from "./doctor-limits.ts";
-import { type DoctorCheck, evidenceLines, type Finding } from "./doctor-types.ts";
-import { baselineOf, failureReport, grownClasses, isBaseline } from "./failure-report.ts";
+import { type DoctorCheck, evidenceLines, type Finding, wrapLines } from "./doctor-types.ts";
+import { type Baseline, baselineOf, failureReport, grownClasses, isBaseline, type Report } from "./failure-report.ts";
 import { msg } from "./i18n.ts";
 import { pluginFailuresFile } from "./plugins.ts";
-import { runAudit } from "./token-audit.ts";
+import { type AuditResult, runAudit } from "./token-audit.ts";
 import { HARNESS_FAILED_MID, HARNESS_RESTART_TAIL } from "./worklog-kind.ts";
 
 const HOUR = 3600e3, DAY = 24 * HOUR, GB = 1024 ** 3;
@@ -69,29 +69,57 @@ const found = (key: string, area: Finding["area"], now: number, what: string, ev
 const asking = (f: Finding): Finding => ({ ...f, ask: true });
 const names = (list: string[]): string => list.slice(0, SHOWN_NAMES).join(", ") + (list.length > SHOWN_NAMES ? ` +${list.length - SHOWN_NAMES}` : "");
 
-const SELF_UPDATE_INSTALLS_AT_RESTART = /^self-update #\d+: updated: /;
-const OWNER_WEB_RESTART = /^orchestrator restart: web restart \(/;
+const UPDATE_INSTALLS_AT_RESTART = /^(?:self-update #\d+: updated: |harness update(?:: gateway restart| \S+ #\d+: updated: ))/;
+const OWNER_RESTART = /^gateway restart requested by owner\b/;
+const ORCHESTRATOR_RESTART = /^orchestrator restart: web restart \(/;
+const EXPLAINED_BY: [RegExp, RestartReason][] = [[UPDATE_INSTALLS_AT_RESTART, "update"], [OWNER_RESTART, "owner"], [ORCHESTRATOR_RESTART, "orchestrator"]];
+const RESTART_CAUSES = [/^deferred gateway restart goes now \((.+)\)$/, /^(omo engine changed on disk \([^)]*\))/];
 const RESTART = /^gateway restart \((.+)\)$/;
 const RESTARTED_ELSEWHERE = /^(gateway restart now \(|hub listening on )/;
+const PLANNED_STOP = /^gateway restart(?: now)? \(/;
+const STARTED = /^hub listening on /;
 const REQUEST_SLACK_MS = 60e3;
 
+/** What explains a gateway restart: an update it installs, the owner who asked for it, or the owner's restart of the orchestrator it went with. */
+export type RestartReason = "update" | "owner" | "orchestrator";
 /**
- * Every gateway restart in the log rows, oldest first. `explained`: a self-update was installed, or the owner restarted on the web, during its wait (from a
- * minute before it was requested, which its `waited Ns` gives, to the restart). The owner's 지금 재시작 and a gateway start line end both marks, since that
- * restart already took the install. `why` is the log's own text in its parentheses.
+ * Every gateway restart in the log rows, oldest first. `by`: a self-update or a harness update was installed, the owner asked for this restart in settings
+ * (`gateway restart requested by owner`), or the owner restarted the orchestrator on the web, during its wait (from a minute before it was requested, which
+ * its `waited Ns` gives, to the restart); an install wins over the owner, the owner's request over his orchestrator restart. The owner's 지금 재시작 and a
+ * gateway start line end those marks, since that restart already took the install. `why` is the log's own text in its parentheses; `cause` the last log line
+ * in the same wait that says why it went (a deferred restart going now, an engine change on disk), when there is one.
  */
-export function restartsOf(rows: { at: number; text: string }[]): { at: number; why: string; explained: boolean }[] {
-	const out: { at: number; why: string; explained: boolean }[] = [], marks: number[] = [];
+export function restartsOf(rows: { at: number; text: string }[]): { at: number; why: string; explained: boolean; by?: RestartReason; cause?: string }[] {
+	const out: { at: number; why: string; explained: boolean; by?: RestartReason; cause?: string }[] = [];
+	const marks: { at: number; by: RestartReason }[] = [], causes: { at: number; text: string }[] = [];
 	for (const r of rows) {
 		const m = RESTART.exec(r.text);
 		if (!m) {
-			if (RESTARTED_ELSEWHERE.test(r.text)) marks.length = 0;
-			else if (SELF_UPDATE_INSTALLS_AT_RESTART.test(r.text) || OWNER_WEB_RESTART.test(r.text)) marks.push(r.at);
+			const by = EXPLAINED_BY.find(([re]) => re.test(r.text))?.[1];
+			if (RESTARTED_ELSEWHERE.test(r.text)) marks.length = causes.length = 0;
+			else if (by) marks.push({ at: r.at, by });
+			const cause = RESTART_CAUSES.map(re => re.exec(r.text)?.[1]).find(Boolean);
+			if (cause) causes.push({ at: r.at, text: cause });
 			continue;
 		}
 		const start = r.at - Number(/waited (\d+)s/.exec(m[1]!)?.[1] ?? 0) * 1000 - REQUEST_SLACK_MS;
-		out.push({ at: r.at, why: m[1]!, explained: marks.some(at => at >= start) });
-		marks.length = 0;
+		const seen = marks.filter(k => k.at >= start), by = EXPLAINED_BY.map(([, k]) => k).find(k => seen.some(s => s.by === k)), cause = causes.filter(c => c.at >= start).at(-1)?.text;
+		out.push({ at: r.at, why: m[1]!, explained: by !== undefined, ...(by ? { by } : {}), ...(cause ? { cause } : {}) });
+		marks.length = causes.length = 0;
+	}
+	return out;
+}
+
+/** When the gateway started again after `from` with no planned stop before it (`gateway restart (` or `gateway restart now (`): a crash, a kill or a reboot. */
+export function unplannedStarts(rows: { at: number; text: string }[], from: number): number[] {
+	const out: number[] = [];
+	let planned = false;
+	for (const r of rows) {
+		if (PLANNED_STOP.test(r.text)) planned = true;
+		else if (STARTED.test(r.text)) {
+			if (!planned && r.at > from) out.push(r.at);
+			planned = false;
+		}
 	}
 	return out;
 }
@@ -100,9 +128,12 @@ type ErrMark = { last: number; from: number };
 const isErrMark = (v: unknown): v is ErrMark => typeof (v as ErrMark | undefined)?.last === "number" && typeof (v as ErrMark).from === "number";
 
 export const gateway: DoctorCheck = ({ now, dataDir, memo, last }) => {
-	const t = msg().doctor, out: Finding[] = [];
-	const restarts = restartsOf(logRows(dataDir)).filter(r => r.at >= now - T.restartWindowH * HOUR && !r.explained);
-	if (restarts.length >= T.restarts) out.push(asking(found("gateway:restarts", "gateway", now, t.restarts(restarts.length), restarts.map(r => `${t.when(r.at)} (${r.why})`), restarts.length)));
+	const t = msg().doctor, out: Finding[] = [], rows = logRows(dataDir);
+	const day = restartsOf(rows).filter(r => r.at >= now - T.restartWindowH * HOUR), restarts = day.filter(r => !r.explained);
+	if (restarts.length >= T.restarts) {
+		const count = { all: day.length, update: day.filter(r => r.by === "update").length, owner: day.filter(r => r.by === "owner").length, orchestrator: day.filter(r => r.by === "orchestrator").length, unexplained: restarts.length };
+		out.push(asking(found("gateway:restarts", "gateway", now, t.restarts(count), restarts.map(r => t.restartLine(t.when(r.at), r.cause ?? t.restartUnasked)), restarts.length)));
+	}
 	const errFile = join(dataDir, "gateway.err.log");
 	const size = existsSync(errFile) ? statSync(errFile).size : 0;
 	const window = last ?? 0, mark = isErrMark(memo?.errMark) ? memo.errMark : undefined;
@@ -113,7 +144,11 @@ export const gateway: DoctorCheck = ({ now, dataDir, memo, last }) => {
 	}
 	if (seen !== undefined) {
 		const crashes = countTraces(readRange(errFile, size < seen ? 0 : Math.max(seen, size - T.logTailBytes), size));
-		if (crashes >= T.crashes) out.push(asking(found("gateway:crashes", "gateway", now, t.crashes(crashes), ["gateway.err.log"], crashes)));
+		if (crashes >= T.crashes) {
+			const starts = unplannedStarts(rows, last ?? now - DAY).map(at => t.when(at));
+			const shown = starts.length > SHOWN_NAMES ? [...starts.slice(0, SHOWN_NAMES), t.more(starts.length - SHOWN_NAMES)] : starts;
+			out.push(asking(found("gateway:crashes", "gateway", now, t.crashes(crashes, shown), starts.length ? starts.map(t.crashAt) : ["gateway.err.log"], crashes)));
+		}
 	}
 	return out;
 };
@@ -165,15 +200,28 @@ export const logins: DoctorCheck = ({ now, dataDir }) => {
 	return out;
 };
 
+const lastLine = (text: string): string => text.split("\n").map(l => l.trim()).filter(Boolean).at(-1) ?? "";
+const clip = (text: string): string => wrapLines(text, 1)[0] ?? "";
+const WATCH_FAILED = /^watch (.+) failed \(([^,()]+), /;
+
 export const watches: DoctorCheck = ({ now, dataDir, last }) => {
-	const t = msg().doctor, out: Finding[] = [], all = watchesOf(dataDir);
+	const t = msg().doctor, out: Finding[] = [], all = watchesOf(dataDir), rows = logRows(dataDir), exitCodes = new Map<string, string>();
+	for (const r of rows) {
+		const m = WATCH_FAILED.exec(r.text);
+		if (m) exitCodes.set(m[1]!, m[2]!);
+	}
 	for (const w of all) {
 		const fails = w.state?.fails ?? 0, failing = failingFor(w, now);
 		if (w.paused || w.state?.paused || LOGIN_KINDS.test(w.state?.kind ?? "")) continue;
-		if (fails >= T.watchFails || failing > T.watchFailH * HOUR) out.push(asking(found(`watches:${w.name}`, "watches", now, t.watchFailing(w.label ?? w.name, Math.floor(failing / HOUR), fails), [w.name], fails)));
+		if (fails < T.watchFails && failing <= T.watchFailH * HOUR) continue;
+		const failSince = failing ? w.state?.failSince : undefined, since = failSince ? t.when(failSince) : "";
+		const failLog = join(dataDir, "watches", w.id, "last-fail.log"), output = lastLine(tailText(failLog, 4096)), code = exitCodes.get(w.name);
+		const lastRun = output ? t.lastReason(output) : code === undefined ? "" : existsSync(failLog) ? t.noOutput(code) : t.exitCode(code);
+		const evidence = [...(since ? [t.firstFailed(since)] : []), t.failedInRow(fails), ...(lastRun ? wrapLines(lastRun, 2) : [])];
+		out.push(asking(found(`watches:${w.name}`, "watches", now, t.watchFailing(w.label ?? w.name, fails, since, clip(lastRun)), evidence, fails)));
 	}
 	const fixed = new Set<string>();
-	for (const r of logRows(dataDir)) {
+	for (const r of rows) {
 		const m = /^watch (.+) self-heal: the check passes again$/.exec(r.text);
 		if (m && r.at >= (last ?? now - DAY)) fixed.add(m[1]!);
 	}
@@ -194,50 +242,70 @@ export const disk: DoctorCheck = ({ now, dataDir }) => {
 	const pct = (free / total) * 100;
 	if (pct >= T.diskFreePct && free >= T.diskFreeGb * GB) return [];
 	const t = msg().doctor, critical = free < T.diskDecideGb * GB;
-	const f = found("disk:low", "disk", now, t.disk(Math.round((free / GB) * 10) / 10, Math.round(pct)), [`${(free / GB).toFixed(1)} / ${(total / GB).toFixed(0)} GB`], critical ? 2 : 1, t.todo.disk);
+	const f = found("disk:low", "disk", now, t.disk(Math.round((free / GB) * 10) / 10, Math.round(pct)), [t.diskLeft((free / GB).toFixed(1), (total / GB).toFixed(0))], critical ? 2 : 1, t.todo.disk);
 	if (critical) f.decide = { subject: t.diskSubject, question: t.diskQuestion, options: [{ name: t.diskCleanName, result: t.diskCleanResult }, { name: t.diskKeepName, result: t.diskKeepResult }] };
 	return [f];
 };
 
 // The newest update line per updater decides: a failure with no success after it is "still failed".
 const UPDATER_NAMES: Record<string, string> = { omo: "OmO", omp: "omp" };
+type Failing = { first: number; n: number; error: string };
 export const update: DoctorCheck = ({ now, dataDir }) => {
-	const t = msg().doctor, state = new Map<string, number | undefined>(), fails = new Map<string, number>();
-	const mark = (id: string, failed: boolean | undefined) => {
-		if (failed === undefined) return;
-		state.set(id, failed ? now : undefined);
-		fails.set(id, failed ? (fails.get(id) ?? 0) + 1 : 0);
+	const t = msg().doctor, state = new Map<string, Failing | undefined>();
+	const mark = (id: string, at: number, error: string | undefined) => {
+		const was = state.get(id);
+		state.set(id, error === undefined ? undefined : { first: was?.first ?? at, n: (was?.n ?? 0) + 1, error });
 	};
-	for (const { text } of logRows(dataDir)) {
-		const self = /^self-update #\d+: (\w+):/.exec(text);
-		if (self) mark("self", self[1] === "failed" ? true : self[1] === "updated" || self[1] === "current" ? false : undefined);
-		const m = /^(\S+) update(?: failed)?: /.exec(text);
-		if (m) mark(m[1]!, text.includes(" update failed: ") || text.includes(HARNESS_FAILED_MID) ? true : text.includes(HARNESS_RESTART_TAIL) ? false : undefined);
+	for (const { at, text } of logRows(dataDir)) {
+		const self = /^self-update #\d+: (\w+): ?(.*)$/.exec(text);
+		if (self && ["failed", "updated", "current"].includes(self[1]!)) mark("self", at, self[1] === "failed" ? self[2]! : undefined);
+		const m = /^(\S+) update(?: failed)?: (.*)$/.exec(text), failed = text.includes(" update failed: ") || text.includes(HARNESS_FAILED_MID);
+		if (m && (failed || text.includes(HARNESS_RESTART_TAIL))) mark(m[1]!, at, failed ? m[2]! : undefined);
 	}
-	return [...state].filter(([, failedAt]) => failedAt !== undefined).map(([id]) => asking(found(`update:${id}`, "update", now, t.updateFailed(id === "self" ? t.selfUpdate : (UPDATER_NAMES[id] ?? id)), [id], fails.get(id) ?? 1)));
+	return [...state].flatMap(([id, f]) => {
+		if (!f) return [];
+		const what = id === "self" ? t.selfUpdate : (UPDATER_NAMES[id] ?? id), since = t.when(f.first), error = f.error.trim();
+		const evidence = [t.firstFailed(since), t.failedTimes(f.n), ...(error ? wrapLines(t.lastError(error), 2) : [])];
+		return [asking(found(`update:${id}`, "update", now, t.updateFailed(what, f.n, since, clip(error)), evidence, f.n))];
+	});
 };
+
+/** The findings of the failure classes that grew against `base`: the told text carries each class's counts and tokens before → after and its share last. */
+export function failureFindings(now: number, r: Pick<Report, "tokens" | "turns" | "lost">, base: Baseline | undefined): Finding[] {
+	const t = msg().doctor;
+	return grownClasses(r, base, T.failures).map(g => {
+		const short = t.failureShort(g.label, t.failureGrowth(g));
+		const evidence = [short, t.failureBase(T.failureDays, g.byTokens ? r.tokens : r.turns, g.byTokens), ...(g.top ? [t.failureTools(g.top)] : [])];
+		return { ...asking(found(`failures:${g.name}`, "failures", now, t.failuresGrew([short]), evidence, Math.round(g.weight))), short };
+	});
+}
 
 export const failures: DoctorCheck = ({ now, dataDir, home, memo }) => {
 	const r = failureReport({ home, dataDir, days: T.failureDays, now }), base = isBaseline(memo?.failBase) ? memo.failBase : undefined;
 	if (memo) memo.failBase = baselineOf(r);
-	const t = msg().doctor;
-	return grownClasses(r, base, T.failures).map(g => {
-		const short = t.failureShort(g.label, g.grew);
-		return { ...asking(found(`failures:${g.name}`, "failures", now, t.failuresGrew([short]), [g.name], Math.round(g.weight))), short };
-	});
+	return failureFindings(now, r, base);
 };
 
-export const tokens: DoctorCheck = ({ now, dry }) => {
+/**
+ * One finding per token warning kind that matters, keyed `tokens:<kind>` with that kind's cost as its level, so each kind is told again on its own. Each line
+ * leads with yesterday's total and cost, the usual day and the three largest sessions, then names its kind with its cost; the morning joins the told kinds
+ * under one lead (`tokens` of the catalog).
+ */
+export function tokenFindings(now: number, a: Pick<AuditResult, "told" | "tokens" | "cost" | "top" | "usual" | "ownerUse">): Finding[] {
 	const t = msg().doctor, byKind = new Map<string, { n: number; cost: number }>();
-	for (const f of runAudit({ hours: T.tokensH, dry: !!dry, readOnly: !!dry }).told) {
+	for (const f of a.told) {
 		const k = byKind.get(f.kind) ?? { n: 0, cost: 0 };
 		byKind.set(f.kind, { n: k.n + 1, cost: k.cost + (f.cost ?? 0) });
 	}
+	const day = { tokens: a.tokens, cost: a.cost, top: a.top, ...(a.usual ? { usual: a.usual } : {}) };
+	const chose = a.ownerUse.sessions ? [t.ownerExpensive(a.ownerUse.sessions, `$${a.ownerUse.cost.toFixed(2)}`)] : [];
 	return [...byKind].map(([kind, k]) => {
-		const short = t.tokenShort(kind, k.n);
-		return { ...asking(found(`tokens:${kind}`, "tokens", now, t.tokens([short]), [kind], Math.round(k.cost * 100) / 100 || k.n)), short };
+		const short = t.tokenShort(kind, k.n, k.cost);
+		return asking(found(`tokens:${kind}`, "tokens", now, t.tokenDay(day, [short]), [short, ...chose], Math.round(k.cost * 100) / 100 || k.n));
 	});
-};
+}
+
+export const tokens: DoctorCheck = ({ now, dry }) => tokenFindings(now, runAudit({ hours: T.tokensH, dry: !!dry, readOnly: !!dry }));
 
 // A custom plugin whose import or default export failed in the last load (hub/plugins.ts writes the file); the error's first line is the evidence.
 export const plugins: DoctorCheck = ({ now, dataDir }) => {

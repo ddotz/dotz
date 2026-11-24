@@ -470,8 +470,12 @@ export function auditAlert(a: { since: number; now: number; total: number; total
 	].join("\n") + `\n${issueBlock("이 경고를 어떻게 할까요?", [{ name: "원인 확인", result: "세션별 원인을 살펴보고 고칠 방법을 제안해요." }, { name: "이번엔 넘어가요", result: "보고서만 남기고 다음 점검 때 다시 봐요." }])}`;
 }
 
-// `told`: the warnings that matter (material); the doctor makes one finding of each class.
-export type AuditResult = { ownerUse: { sessions: number; cost: number }; told: Finding[]; flags: number; notes: number; sessions: number; tokens: number; cost: number; report: string; alert?: string; summary: string };
+/** One of the day's three largest sessions by cost as the usage screen names it; `chosen`: the part of its cost spent on an expensive model the owner chose. */
+export type TopSession = { kind: SessionUse["kind"]; name: string; model: string; cost: number; chosen: number };
+/** The usual day the audit's line compares with: the median of the days with use among the measured days `from` to `to` (the days they cover), `days` of them. */
+export type UsualDay = { tokens: number; cost: number; from: string; to: string; days: number };
+/** `told`: the warnings that matter (material); the doctor makes one finding of each class. */
+export type AuditResult = { ownerUse: { sessions: number; cost: number }; told: Finding[]; flags: number; notes: number; sessions: number; tokens: number; cost: number; top: TopSession[]; usual?: UsualDay; report: string; alert?: string; summary: string };
 
 // The owner's basis for expensive use, read once per run; a worker is judged on its parent session's target.
 function askedBy(results: Stats[], basis = readOwnerBasis(join(DATA_DIR, "state", "model-picks.json"), paths.log, join(DATA_DIR, "lanes"))): (s: Stats) => Covered {
@@ -546,6 +550,27 @@ export function ownerUseOf(results: Stats[], asked: (s: Stats) => Covered): { se
 	return { sessions, cost: Number(cost.toFixed(2)) };
 }
 
+/** The three largest rows of `use` by cost, each with what its sessions spent on an expensive model the owner chose; an effort level he chose is no model choice. */
+export function topSessions(use: SessionUse[], results: Stats[], asked: (s: Stats) => Covered, now: number, hours: number): TopSession[] {
+	const chosen = new Map<string, number>();
+	for (const s of results) {
+		const key = whoOf(s).join("\0");
+		if (s.fable > 0 && asked(s).model) chosen.set(key, (chosen.get(key) ?? 0) + s.fableCost);
+	}
+	return sharesOf(use, now, hours, 0).rows.slice(0, 3).map(r => ({ kind: r.kind, name: r.name, model: r.model, cost: r.cost, chosen: Number((chosen.get(`${r.kind}\0${r.name}`) ?? 0).toFixed(2)) }));
+}
+
+/**
+ * The usual day among `prior`, the last measured days oldest first: the median of the days with any use (a day the subscription limit blocked reads 0 tokens
+ * and is no usual day). An entry covers the KST day before its audit ran (its `use.at`, else the start of its date), so `from`/`to` name those days.
+ */
+export function usualDay(prior: { date: string; tokens: number; cost: number; use?: { at: number; hours: number } }[]): UsualDay | undefined {
+	const used = prior.filter(d => d.tokens > 0);
+	if (!used.length) return undefined;
+	const covers = (d: (typeof prior)[number]): string => kstDate((d.use?.at ?? Date.parse(`${d.date}T00:00:00+09:00`)) - (d.use?.hours ?? 24) * 1800e3);
+	return { tokens: median(used.map(d => d.tokens)), cost: Number(median(used.map(d => d.cost)).toFixed(2)), from: covers(prior[0]!), to: covers(prior.at(-1)!), days: used.length };
+}
+
 function auditEnabled(): boolean {
 	return String((cfg as { doctor_at?: string }).doctor_at ?? DEFAULTS.doctor_at) !== "off";
 }
@@ -606,8 +631,9 @@ export function runAudit(opts: { hours?: number; dry?: boolean; readOnly?: boole
 	const kinds = [...new Set(flags.map(f => f.kind))];
 	const recurring = [...new Set(flags.filter(f => f.recur).map(f => f.kind))];
 	const reportPath = join(LOG_DIR, `token-audit-${today.replace(/-/g, "")}.md`);
+	const use = useOf(results), top = topSessions(use, results, asked, now, hours), usual = usualDay(prior);
 	if (!opts.dry) {
-		history = [...history.filter(d => d.date !== today), { date: today, tokens: total, cost: totalCost, cacheWrite: totalCw, sessions: results.length, flags: flags.length, kinds, report: reportPath, use: { ...sharesOf(useOf(results), now, hours), fixes: fixesOf(results, asked) } }].slice(-14);
+		history = [...history.filter(d => d.date !== today), { date: today, tokens: total, cost: totalCost, cacheWrite: totalCw, sessions: results.length, flags: flags.length, kinds, report: reportPath, use: { ...sharesOf(use, now, hours), fixes: fixesOf(results, asked) } }].slice(-14);
 		writeAtomic(HISTORY, `${JSON.stringify({ updated: new Date(now).toISOString(), days: history }, null, 1)}\n`);
 	}
 	const ordered = [...findings].sort((a, b) => Number(b.flag) - Number(a.flag) || b.save - a.save);
@@ -650,7 +676,7 @@ export function runAudit(opts: { hours?: number; dry?: boolean; readOnly?: boole
 	}
 	const alert = auditAlert({ since, now, total, totalCost, flags, recurring, reportPath });
 	const summary = `토큰 점검: 세션 ${results.length}개, ${M(total)} tok ${usd(totalCost)}, 경고 ${flags.length}건 / 참고 ${findings.length - flags.length}건, 보고서 ${tilde(reportPath)}${ownerUse.sessions ? ` · ${msg().doctor.ownerExpensive(ownerUse.sessions, usd(ownerUse.cost))}` : ""}`;
-	return { ownerUse, told: flags.filter(material), flags: flags.length, notes: findings.length - flags.length, sessions: results.length, tokens: total, cost: Number(totalCost.toFixed(2)), report: reportPath, alert, summary };
+	return { ownerUse, told: flags.filter(material), flags: flags.length, notes: findings.length - flags.length, sessions: results.length, tokens: total, cost: Number(totalCost.toFixed(2)), top, ...(usual ? { usual } : {}), report: reportPath, alert, summary };
 }
 
 if (import.meta.main) {

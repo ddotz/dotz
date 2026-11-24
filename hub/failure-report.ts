@@ -330,12 +330,15 @@ function loadBaseline(file: string): Baseline | undefined {
 	}
 }
 export type Thresholds = { pct: number; minTokens: number; minCount: number };
+/** One side of a class's growth: its count, its tokens and its share (of all tokens, or per assistant turn for a class without tokens). */
+export type ClassSide = { count: number; tokens: number; share: number };
+export type Grown = { name: string; label: string; grew: string; change: string; line: string; weight: number; byTokens: boolean; was: ClassSide; now: ClassSide; top?: string };
 // A class grew when its share grew by at least pct percent and it cost at least the floor beyond what its old share predicts for this window
 // (tokens, or count for classes that carry no tokens). Share = tokens / all tokens, or count / assistant turns for a count-only class: counts have
 // no token total, and turns are what a model error or a hub.log retry happens per, so a longer or busier window dilutes them like it dilutes tokens.
-export function grownClasses(r: Report, base: Baseline | undefined, th: Thresholds): { name: string; label: string; grew: string; change: string; line: string; weight: number }[] {
+export function grownClasses(r: Pick<Report, "tokens" | "turns" | "lost">, base: Baseline | undefined, th: Thresholds): Grown[] {
 	if (!base) return [];
-	const out: { name: string; label: string; grew: string; change: string; line: string; weight: number }[] = [];
+	const out: Grown[] = [];
 	for (const c of r.lost) {
 		const b = base.classes[c.name] ?? { count: 0, tokens: 0 };
 		const byTokens = c.tokens > 0 || b.tokens > 0;
@@ -348,7 +351,10 @@ export function grownClasses(r: Report, base: Baseline | undefined, th: Threshol
 		const pct = before ? `+${Math.round((after / before - 1) * 100)}%` : "새로 생김";
 		const share = byTokens ? `비중 ${P(before)} → ${P(after)}` : `1천 턴당 ${(before * 1e3).toFixed(2)} → ${(after * 1e3).toFixed(2)}`;
 		const label = shownClass(c.name), change = `${byTokens ? `토큰 ${M(b.tokens)} → ${M(c.tokens)}, ` : ""}건수 ${b.count} → ${c.count}, ${share} (${pct})`;
-		out.push({ name: c.name, label, grew: pct, change, weight: byTokens ? excess : excess * 1e3, line: `${label}: ${change}` });
+		out.push({
+			name: c.name, label, grew: pct, change, weight: byTokens ? excess : excess * 1e3, line: `${label}: ${change}`, byTokens,
+			was: { count: b.count, tokens: b.tokens, share: before }, now: { count: c.count, tokens: c.tokens, share: after }, ...(c.top ? { top: c.top } : {}),
+		});
 	}
 	return out.sort((a, b) => b.weight - a.weight);
 }

@@ -70,6 +70,7 @@ import { mailCodeRoute } from "./mail-otp.ts";
 import { handleLease, type LeaseReq } from "./send-lease.ts";
 import { cleanName, friendlyName, resolveName } from "./machine-name.ts";
 import { machineHost } from "./hostname.ts";
+import type { RestartBy } from "./restart.ts";
 import { queue, bgWork, workRows, out, fileRoots } from "./outbound.ts";
 import { convs, maxLiveView } from "./convsessions.ts";
 import { QUICK } from "./session-key.ts";
@@ -302,7 +303,7 @@ const lastTurnStart = (items: ReturnType<typeof activityItems>): string | undefi
 const runningChildren = (source: string) =>
 	(subagentLists()[source] || []).filter(s => s.status === "running").map(s => ({ name: s.id, description: s.description || s.agent }));
 
-type RestartHooks = { /** This node's tailnet name (tests); default `tailscale status`. */ tailnetName?: () => Promise<string | undefined>; busyNow: () => string[]; restartGateway: (o?: { auto?: boolean }) => string; restartGatewayNow: () => string; mailDeps?: () => MailDeps; /** One mail reconcile round of at most `limit` mails (hub/mail-reconcile.ts); absent = not wired in this process. */ mailReconcile?: (limit: number) => Promise<{ checked: number; replied: number; notChecked: number; skipped: number }> };
+type RestartHooks = { /** This node's tailnet name (tests); default `tailscale status`. */ tailnetName?: () => Promise<string | undefined>; busyNow: () => string[]; restartGateway: (o?: { auto?: boolean; by?: RestartBy }) => string; restartGatewayNow: () => string; mailDeps?: () => MailDeps; /** One mail reconcile round of at most `limit` mails (hub/mail-reconcile.ts); absent = not wired in this process. */ mailReconcile?: (limit: number) => Promise<{ checked: number; replied: number; notChecked: number; skipped: number }> };
 // A card's answer to where its question came from (chat, session, project chat, mail or login request): the bot's turn.
 export async function deliverAnswer(a: Parameters<DecisionSend>[0] & { login: string; via?: ReturnType<typeof viaOf> }): Promise<void> {
 	if (a.to.startsWith(RUN_DECISION)) return void answerRunDecision(a.to.slice(RUN_DECISION.length), a.action);
@@ -431,7 +432,7 @@ export function makeRoute({ tailnetName = ownTailnetName, busyNow, restartGatewa
 		}
 		const pushResponse = await pushRoute(req, url);
 		if (pushResponse) return pushResponse;
-		const updateResponse = await updateRoute(req, url, { boot: BOOT_ID, busy: busyNow, restartIdle: restartGateway, restartNow: restartGatewayNow, now: updateNow() });
+		const updateResponse = await updateRoute(req, url, { boot: BOOT_ID, busy: busyNow, restartIdle: () => restartGateway(agentCall(req, peer) ? {} : { by: "owner" }), restartNow: restartGatewayNow, now: updateNow() });
 		if (updateResponse) return updateResponse;
 		// Settings → 업데이트 → 실행 하네스 (hub/harness-update.ts): the harness binary itself, from the package registry.
 		const harnessUpdateResponse = await harnessUpdateRoute(req, url, { busy: busyNow, restartIdle: restartGateway });

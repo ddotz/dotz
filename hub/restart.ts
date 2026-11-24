@@ -89,6 +89,9 @@ export function restartCapText(busy: string[], waitedMin: number, title: BusyTit
 	].join("\n");
 }
 
+/** Who asked for a restart, written into its request log line so the doctor (hub/doctor-checks.ts restartsOf) counts it as explained. */
+export type RestartBy = "owner";
+
 type RestartGateDeps = {
 	busy: () => string[];
 	/** Owner messages still being collected; they go into the ledger at shutdown, but waiting for them is cheaper. */
@@ -164,7 +167,7 @@ export function createRestartGate(deps: RestartGateDeps) {
 		begin();
 	};
 
-	function begin(): string {
+	function begin(by?: RestartBy): string {
 		const busy = deps.busy();
 		since = Date.now();
 		head = deps.headChanged?.() ?? false;
@@ -172,17 +175,20 @@ export function createRestartGate(deps: RestartGateDeps) {
 		setTimeout(tick, tickMs);
 		const gap = Math.max(0, earliest() - Date.now());
 		const why = [busy.length ? `waiting for: ${busy.join(", ")}` : "", gap ? `coalescing for ${Math.ceil(gap / 1000)}s` : ""].filter(Boolean);
-		if (why.length) deps.log(`gateway restart requested; ${why.join("; ")}`);
+		if (why.length || by) deps.log(`gateway restart requested${by ? ` by ${by}` : ""}${why.length ? `; ${why.join("; ")}` : ""}`);
 		return why.length ? `gateway restarts when idle (${why.join("; ")}; a busy lane is never killed)` : "gateway restarting";
 	}
 
-	function request(o: { auto?: boolean } = {}): string {
+	function request(o: { auto?: boolean; by?: RestartBy } = {}): string {
 		requests++;
 		const busy = deps.busy();
-		if (since !== undefined) return `gateway restart is already waiting (${requests} requests coalesced${busy.length ? `; waiting for: ${busy.join(", ")}` : ""})`;
+		if (since !== undefined) {
+			if (o.by) deps.log(`gateway restart requested by ${o.by}; joins the waiting one`);
+			return `gateway restart is already waiting (${requests} requests coalesced${busy.length ? `; waiting for: ${busy.join(", ")}` : ""})`;
+		}
 		if (!o.auto || !deps.headChanged?.() || deps.codeChanged?.() || headDue()) {
 			deferred = undefined;
-			return begin();
+			return begin(o.by);
 		}
 		if (deferred !== undefined) return `gateway restart is already deferred (${requests} requests coalesced)`;
 		deferred = Date.now();

@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { INERT, parseDecisions } from "./choices.ts";
 import { cfg } from "./config.ts";
 import { cardCovers, compose, type DoctorStore, loadStore, morningTime, nextAt, nightTime, runMorning, runNight, shouldTell, storeFile, type CardLabels, type Deps } from "./doctor.ts";
-import { countTraces, gateway, logins, plugins, restartsOf, sessions, update, watches } from "./doctor-checks.ts";
+import { countTraces, failureFindings, gateway, logins, plugins, restartsOf, sessions, tokenFindings, update, watches } from "./doctor-checks.ts";
 import { THRESHOLDS as T } from "./doctor-limits.ts";
 import { DOCTOR_AREAS, type DoctorCheck, EVIDENCE_CHARS, evidenceLines, type Finding, fitSubject } from "./doctor-types.ts";
 import { msg } from "./i18n.ts";
@@ -16,6 +16,8 @@ import type { Decision, Notice } from "./notices-types.ts";
 import { loadPlugins } from "./plugins.ts";
 import { bareLine, promptHealth, ruleCard } from "./prompt-health.ts";
 import { reviewCard, type ReviewContext, runPromptReview } from "./prompt-review.ts";
+import { createRestartGate } from "./restart.ts";
+import { advance } from "./runtime/test-clock.ts";
 import { watchChoice } from "./watch-ask.ts";
 import { HARNESS_RETRY_TITLE, SELF_UPDATE_CARD_TITLE } from "./worklog-kind.ts";
 
@@ -317,8 +319,11 @@ describe("checks read files only", () => {
 		writeFileSync(join(dir, "hub.log"), [...explained, ...unexplained].join(""));
 		const [found, ...rest] = await gateway({ now: T0, dataDir: dir, home: dir });
 		expect(rest).toEqual([]);
-		expect([found!.key, found!.level, found!.what]).toEqual(["gateway:restarts", 4, t.restarts(4)]);
-		expect(found!.evidence).toEqual([4, 3, 2, 1].map(h => `${t.when(T0 - h * H)} (1 request(s) coalesced, waited ${h}s)`));
+		expect([found!.key, found!.level, found!.what]).toEqual(["gateway:restarts", 4, t.restarts({ all: 10, update: 5, owner: 0, orchestrator: 1, unexplained: 4 })]);
+		expect(found!.what).toContain("1 along with your restart of the orchestrator on the web");
+		expect(found!.what).not.toContain("that you asked for");
+		expect(found!.evidence).toEqual([4, 3, 2, 1].map(h => `${t.when(T0 - h * H)} · ${t.restartUnasked}`));
+		expect(found!.evidence.join("\n")).not.toContain("coalesced");
 	});
 
 	test("gateway: an update taken by the owner's 지금 재시작 or by a gateway start does not explain a later restart", () => {
@@ -331,6 +336,224 @@ describe("checks read files only", () => {
 		expect(explained({ at: u + 5e3, text: "gateway restart now (owner, settings → 업데이트; busy: none)" })).toEqual([[later.at, false]]);
 		expect(explained({ at: u + 5e3, text: "hub listening on 127.0.0.1:7420 as test (discord off)" })).toEqual([[later.at, false]]);
 		expect(restartsOf([updated, { at: T0 - 9 * H, text: "orchestrator exited (1)" }, { at: T0 - 2 * H, text: "gateway restart (1 request(s) coalesced, waited 30s)" }]).map(r => r.explained)).toEqual([false]);
+	});
+});
+
+describe("each check says what it measured, in numbers", () => {
+	const saved = cfg.identity;
+	beforeEach(() => void (cfg.identity = { ...saved, name: saved?.name ?? "sample-1", language: "ko" }));
+	afterEach(() => void (cfg.identity = saved));
+	const at = (ms: number, text: string) => logLine(ms, text);
+
+	test("failures: counts and tokens before → after come first and the share last; a growth of one case says so instead of a percent jump", () => {
+		const one = "워커 도구 도중 끊김", many = "같은 호출 반복", added = "도구 오류 정책 차단";
+		const r = { tokens: 960_652_238, turns: 7062, lost: [{ name: one, count: 1, tokens: 36_816_025, share: 0 }, { name: many, count: 9, tokens: 36_816_025, share: 0 }, { name: added, count: 7, tokens: 18_100_000, share: 0 }] };
+		const base = { version: 2 as const, at: "", tokens: 900e6, turns: 7000, classes: { [one]: { count: 1, tokens: 4.14e6 }, [many]: { count: 3, tokens: 4.14e6 }, [added]: { count: 6, tokens: 4.5e6 } } };
+		const found = failureFindings(T0, r, base);
+		expect(found.map(f => f.short)).toEqual([
+			"워커 도구 도중 끊김: 1건이 36.8M 토큰 (전체의 3.83%, 전에는 0.46%)",
+			"같은 호출 반복: 3건 → 9건, 4.1M → 36.8M 토큰 (전체의 3.83%, 전에는 0.46%)",
+			"도구 오류 정책 차단: 6건 → 7건, 늘어난 1건이 큰 것, 4.5M → 18.1M 토큰 (전체의 1.88%, 전에는 0.50%)",
+		]);
+		expect(found[0]!.what).toBe("실패하거나 되풀이한 작업이 어제 점검 때보다 늘었어요: 워커 도구 도중 끊김: 1건이 36.8M 토큰 (전체의 3.83%, 전에는 0.46%).");
+		expect(found[0]!.evidence).toEqual(["워커 도구 도중 끊김: 1건이 36.8M 토큰 (전체의 3.83%, 전에는 0.46%)", "기준: 최근 7일 전체 960.7M 토큰"]);
+		expect(found.some(f => /\+\d+%/.test(f.what))).toBe(false);
+	});
+
+	test("failures: 'the one added case is large' only when the class's tokens grew, and a small value that is not zero reads as less than the smallest step", () => {
+		const name = "같은 호출 반복", grown = (was: { count: number; tokens: number; total: number }, now: { count: number; tokens: number; total: number }) =>
+			failureFindings(T0, { tokens: now.total, turns: 1000, lost: [{ name, count: now.count, tokens: now.tokens, share: 0 }] }, { version: 2, at: "", tokens: was.total, turns: 1000, classes: { [name]: { count: was.count, tokens: was.tokens } } })[0]!.short;
+		expect(grown({ count: 6, tokens: 4e6, total: 1e9 }, { count: 7, tokens: 3.6e6, total: 0.3e9 })).toBe("같은 호출 반복: 6건 → 7건, 4.0M → 3.6M 토큰 (전체의 1.20%, 전에는 0.40%)");
+		expect(grown({ count: 1, tokens: 2e6, total: 1e9 }, { count: 2, tokens: 30e6, total: 1e9 })).toBe("같은 호출 반복: 1건 → 2건, 늘어난 1건이 큰 것, 2.0M → 30.0M 토큰 (전체의 3.00%, 전에는 0.20%)");
+		expect(grown({ count: 40, tokens: 20e3, total: 1e9 }, { count: 41, tokens: 1.5e6, total: 1e9 })).toBe("같은 호출 반복: 40건 → 41건, 늘어난 1건이 큰 것, 0.1M 미만 → 1.5M 토큰 (전체의 0.15%, 전에는 0.01% 미만)");
+		cfg.identity = { ...saved, name: saved?.name ?? "sample-1", language: "en" };
+		expect(grown({ count: 40, tokens: 20e3, total: 1e9 }, { count: 41, tokens: 1.5e6, total: 1e9 })).toBe("같은 호출 반복: 40 → 41 cases, the one added case is large, under 0.1M → 1.5M tokens (0.15% of all, was under 0.01%)");
+		expect(grown({ count: 0, tokens: 0, total: 1e9 }, { count: 1, tokens: 30e6, total: 1e9 })).toBe("같은 호출 반복: one case of 30.0M tokens (3.00% of all, was 0.00%)");
+		expect(grown({ count: 6, tokens: 4e6, total: 1e9 }, { count: 7, tokens: 3.6e6, total: 0.3e9 })).not.toContain("the one added case is large");
+	});
+
+	const warn = (kind: string, cost?: number) => ({ flag: true, kind, who: "x", what: "", amount: "", save: 0, ...(cost === undefined ? {} : { cost }) });
+	const top = [
+		{ kind: "orchestrator" as const, name: "", model: "model-a", cost: 80.78, chosen: 0 },
+		{ kind: "lane" as const, name: "sample-lane-1", model: "model-b", cost: 45.41, chosen: 45.41 },
+		{ kind: "lane" as const, name: "sample-lane-2", model: "model-a", cost: 35.11, chosen: 5 },
+	];
+	const usual = { tokens: 185e6, cost: 91.52, from: "2026-11-16", to: "2026-11-22", days: 5 };
+	const tokenLead = "어제 327.6M 토큰, $161.30를 썼어요 (평소 하루 $91.52: 11월 16일~11월 22일 중 쓴 날 5일의 중앙값). 큰 세션: 메인 model-a $80.78, sample-lane-1 model-b $45.41(직접 고른 모델이라 낭비 아님), sample-lane-2 model-a $35.11(이 중 직접 고른 모델 $5.00, 낭비 아님).";
+
+	test("tokens: one finding per warning kind, keyed and leveled by kind; each line gives yesterday's total and cost, the usual day over the days with use, the three largest sessions, then its kind with its cost", () => {
+		const found = tokenFindings(T0, { told: [warn("비싼 모델", 19.81), warn("급증")], tokens: 327_604_900, cost: 161.3, top, usual, ownerUse: { sessions: 1, cost: 45.41 } });
+		expect(found.map(f => [f.key, f.level, f.ask])).toEqual([["tokens:비싼 모델", 19.81, true], ["tokens:급증", 1, true]]);
+		expect(found.map(f => f.what)).toEqual([`${tokenLead} 경고: 비싼 모델 세션 1개 $19.81.`, `${tokenLead} 경고: 급증 세션 1개.`]);
+		expect(found[0]!.evidence).toEqual(["비싼 모델 세션 1개 $19.81", "직접 고른 비싼 모델: 세션 1개, $45.41. 요청하신 것이라 경고에서 뺐어요."]);
+		expect(tokenFindings(T0, { told: [], tokens: 1, cost: 1, top, ownerUse: { sessions: 0, cost: 0 } })).toEqual([]);
+		cfg.identity = { ...saved, name: saved?.name ?? "sample-1", language: "en" };
+		const [en] = tokenFindings(T0, { told: [warn("비싼 모델", 19.81)], tokens: 327_604_900, cost: 161.3, top, usual, ownerUse: { sessions: 0, cost: 0 } });
+		expect(en!.what).toBe(
+			"Yesterday used 327.6M tokens, $161.30 (a usual day: $91.52, the median of the 5 days with use from November 16 to November 22). Largest sessions: main model-a $80.78, sample-lane-1 model-b $45.41 (a model you chose, not waste), sample-lane-2 model-a $35.11 ($5.00 of it on a model you chose, not waste). Warnings: 비싼 모델: 1 session $19.81.",
+		);
+	});
+
+	test("tokens: the morning says the told kinds as one line that leads with the day's totals, and a new kind is told the next morning though the summed cost did not grow 1.5 times", async () => {
+		const day = (told: ReturnType<typeof warn>[]) => tokenFindings(T0, { told, tokens: 327_604_900, cost: 161.3, top, usual, ownerUse: { sessions: 0, cost: 0 } });
+		const r = rig(day([warn("비싼 모델", 19.81), warn("급증")]));
+		await r.day();
+		expect(r.state.sent).toHaveLength(1);
+		expect(r.state.sent[0]!.text).toContain(`${tokenLead} 경고: 비싼 모델 세션 1개 $19.81, 급증 세션 1개.`);
+		r.state.found = day([warn("비싼 모델", 19.81), warn("급증"), warn("캐시 깨짐", 1.2)]);
+		await r.day();
+		expect(r.state.sent).toHaveLength(2);
+		expect(r.state.sent[1]!.text).toContain(`${tokenLead} 경고: 캐시 깨짐 세션 1개 $1.20.`);
+		expect(r.state.sent[1]!.text).not.toContain("비싼 모델 세션");
+	});
+
+	test("tokens: the usual day's dates read the same whatever the time zone of the process", () => {
+		const script = `import { doctorEn, doctorKo } from "./hub/doctor-text.ts"; const d = { tokens: 1, cost: 1, top: [], usual: { tokens: 1, cost: 1, from: "2026-11-16", to: "2026-11-22", days: 5 } }; console.log(doctorKo.tokenDay(d, ["x"]) + "|" + doctorEn.tokenDay(d, ["x"]));`;
+		for (const tz of ["Asia/Seoul", "Pacific/Auckland", "America/Los_Angeles"]) {
+			const out = Bun.spawnSync([process.execPath, "-e", script], { cwd: join(import.meta.dir, ".."), env: { ...process.env, DOTZ_DIR: dir, TZ: tz } }).stdout.toString();
+			expect([tz, out.includes("11월 16일~11월 22일 중 쓴 날 5일"), out.includes("5 days with use from November 16 to November 22")]).toEqual([tz, true, true]);
+		}
+	});
+
+	test("restarts: five update installs and one the owner asked for are no finding; past the threshold the rest are listed with their time and the log's reason", async () => {
+		const explained = [
+			...[12, 11, 10, 9].flatMap(h => [at(T0 - h * H, "self-update #1: updated: 1 → 2 (aaaa → bbbb) 받았어요. 재시작하면 적용돼요."), at(T0 - h * H + 36e3, "gateway restart (1 request(s) coalesced, waited 33s)")]),
+			at(T0 - 8 * H, "omo update: OmO 1 → 2 올리고 재시작해요 (하던 일이 끝나면)."),
+			at(T0 - 8 * H + 1e3, "harness update: gateway restarts when idle (waiting for: reply; a busy lane is never killed)"),
+			at(T0 - 8 * H + 40e3, "gateway restart (1 request(s) coalesced, waited 39s)"),
+			at(T0 - 7 * H, "gateway restart requested by owner; waiting for: orchestrator"),
+			at(T0 - 7 * H + 60e3, "gateway restart (1 request(s) coalesced, waited 60s)"),
+		];
+		writeFileSync(join(dir, "hub.log"), explained.join(""));
+		expect(await gateway({ now: T0, dataDir: dir, home: dir })).toEqual([]);
+		const unexplained = [
+			at(T0 - 3 * H, "deferred gateway restart goes now (the gateway code changed)"),
+			at(T0 - 3 * H + 2e3, "gateway restart (1 request(s) coalesced, waited 2s)"),
+			at(T0 - 2 * H, "gateway restart (1 request(s) coalesced, waited 2s)"),
+			at(T0 - H, "gateway restart (1 request(s) coalesced, waited 2s)"),
+		];
+		writeFileSync(join(dir, "hub.log"), [...explained, ...unexplained].join(""));
+		const [found] = await gateway({ now: T0, dataDir: dir, home: dir });
+		expect([found!.level, found!.what]).toEqual([3, "하루 사이에 게이트웨이가 9번 다시 시작했어요: 업데이트 설치 5번, 직접 하신 재시작 1번, 이유를 모르는 것 3번."]);
+		expect(found!.evidence).toEqual([`${ko.doctor.when(T0 - 3 * H + 2e3)} · the gateway code changed`, ...[2, 1].map(h => `${ko.doctor.when(T0 - h * H)} · 누가 요청했는지 로그에 나와 있지 않아요`)]);
+	});
+
+	test("a restart the owner asks for is logged with him as the requester and counts as his; a request line of the older code without one does not", async () => {
+		const rows: { at: number; text: string }[] = [];
+		const gate = createRestartGate({ busy: () => [], collecting: () => false, startedAt: Date.now() - H, minGapMs: 5 * 60e3, noticeAfterMs: 20 * 60e3, notice: () => undefined, log: text => void rows.push({ at: Date.now(), text }), exit: () => undefined });
+		gate.request({ by: "owner" });
+		await advance(5000);
+		expect(restartsOf(rows).map(r => [r.explained, r.by])).toEqual([[true, "owner"]]);
+		const old = [{ at: T0 - 60e3, text: "gateway restart requested; waiting for: orchestrator" }, { at: T0, text: "gateway restart (1 request(s) coalesced, waited 50s)" }];
+		expect(restartsOf(old).map(r => [r.explained, r.by])).toEqual([[false, undefined]]);
+		rows.length = 0;
+		let busy = ["orchestrator"];
+		const waiting = createRestartGate({ busy: () => busy, collecting: () => false, startedAt: Date.now() - H, minGapMs: 5 * 60e3, noticeAfterMs: 20 * 60e3, notice: () => undefined, log: text => void rows.push({ at: Date.now(), text }), exit: () => undefined });
+		waiting.request();
+		await advance(5000);
+		waiting.request({ by: "owner" });
+		busy = [];
+		await advance(10_000);
+		expect(rows.map(r => r.text).filter(l => l.startsWith("gateway restart requested"))).toEqual(["gateway restart requested; waiting for: orchestrator", "gateway restart requested by owner; joins the waiting one"]);
+		expect(restartsOf(rows).map(r => [r.explained, r.by])).toEqual([[true, "owner"]]);
+	});
+
+	test("a restart's reason: an install wins over the owner's request in the same wait, his request over his orchestrator restart, and the last cause line of the wait is the one shown", () => {
+		const restart = { at: T0, text: "gateway restart (2 request(s) coalesced, waited 100s)" };
+		const owner = { at: T0 - 90e3, text: "gateway restart requested by owner; waiting for: orchestrator" };
+		const install = { at: T0 - 50e3, text: "self-update #2: updated: 1 → 2 (aaaa → bbbb) 받았어요. 재시작하면 적용돼요." };
+		const orchestrator = { at: T0 - 95e3, text: "orchestrator restart: web restart (POST /api/orchestrator/restart)" };
+		expect(restartsOf([owner, install, restart]).map(r => r.by)).toEqual(["update"]);
+		expect(restartsOf([orchestrator, owner, restart]).map(r => r.by)).toEqual(["owner"]);
+		expect(restartsOf([orchestrator, restart]).map(r => r.by)).toEqual(["orchestrator"]);
+		const causes = [{ at: T0 - 80e3, text: "omo engine changed on disk (5.1.70 → 5.1.71)" }, { at: T0 - 10e3, text: "deferred gateway restart goes now (the gateway code changed)" }];
+		expect(restartsOf([...causes, restart]).map(r => r.cause)).toEqual(["the gateway code changed"]);
+	});
+
+	test("update, monitor and crash findings say since when, how many times and the last error, reason or start", async () => {
+		const when = ko.doctor.when;
+		writeFileSync(join(dir, "hub.log"), [
+			at(T0 - 30 * H, "self-update #1: updated: 1 → 2 (aaaa → bbbb) 받았어요. 재시작하면 적용돼요."),
+			at(T0 - 20 * H, "self-update #2: failed: 테스트 실패: the gateway of this version starts and serves the app. 쓰던 버전 그대로예요."),
+			at(T0 - 10 * H, "self-update #3: failed: 같은 커밋(548460a)은 이미 확인을 통과하지 못해서 다시 해 보지 않았어요."),
+			at(T0 - 5 * H, "watch price-check failed (3, fail, 4 in a row) unknown"),
+			at(T0 - 4 * H, "gateway restart (1 request(s) coalesced, waited 2s)"),
+			at(T0 - 4 * H + 3e3, "hub listening on 127.0.0.1:7420 as test (discord off)"),
+			at(T0 - 2 * H, "hub listening on 127.0.0.1:7420 as test (discord off)"),
+		].join(""));
+		const [up] = await update({ now: T0, dataDir: dir, home: dir });
+		expect(up!.what).toBe(`dotz 업데이트가 ${when(T0 - 20 * H)}부터 2번 실패했고 그 뒤로 성공하지 못했어요. 마지막 오류: 같은 커밋(548460a)은 이미 확인을 통과하지 못해서 다시 해 보지 않았어요.`);
+		expect(up!.evidence).toEqual([`처음 실패: ${when(T0 - 20 * H)}`, "실패 2번", "마지막 오류: 같은 커밋(548460a)은 이미 확인을 통과하지 못해서 다시 해 보지 않았어요."]);
+		writeFileSync(join(dir, "watches.json"), JSON.stringify([{ id: "a1b2c3", name: "price-check", label: "가격 확인", state: { fails: 4, failSince: T0 - 8 * H } }]));
+		const [watch] = await watches({ now: T0, dataDir: dir, home: dir });
+		expect(watch!.what).toBe(`'가격 확인' 모니터링이 ${when(T0 - 8 * H)}부터 4번 연속 실패했어요. 마지막 실행은 실패로 끝났어요(종료 코드 3).`);
+		mkdirSync(join(dir, "watches", "a1b2c3"), { recursive: true });
+		writeFileSync(join(dir, "watches", "a1b2c3", "last-fail.log"), "fetching\nerror: page returned 503\n\n");
+		expect((await watches({ now: T0, dataDir: dir, home: dir }))[0]!.evidence).toEqual([`처음 실패: ${when(T0 - 8 * H)}`, "연속 실패 4번", "마지막 이유: error: page returned 503"]);
+		writeFileSync(join(dir, "gateway.err.log"), "");
+		const memo: Record<string, unknown> = {};
+		await gateway({ now: T0 - 6 * H, dataDir: dir, home: dir, memo });
+		writeFileSync(join(dir, "gateway.err.log"), "error: boom\n    at f (x.ts:1)\n");
+		const crash = (await gateway({ now: T0, dataDir: dir, home: dir, memo, last: T0 - 6 * H })).find(f => f.key === "gateway:crashes");
+		expect(crash!.what).toBe(`지난 점검 뒤로 게이트웨이가 1번 갑자기 꺼졌어요. 예고 없이 다시 켜진 때: ${when(T0 - 2 * H)}.`);
+		expect(crash!.evidence).toEqual([`${when(T0 - 2 * H)}에 예고 없이 다시 켜졌어요`]);
+	});
+
+	test("a monitor whose last run failed with no output says so with its exit code, never the log's counters as a reason", async () => {
+		writeFileSync(join(dir, "hub.log"), at(T0 - H, "watch release-slot failed (1, fail, 257 in a row) unknown"));
+		writeFileSync(join(dir, "watches.json"), JSON.stringify([{ id: "b6c88b", name: "release-slot", label: "정시 릴리스", state: { fails: 258, failSince: T0 - 5 * H } }]));
+		mkdirSync(join(dir, "watches", "b6c88b"), { recursive: true });
+		writeFileSync(join(dir, "watches", "b6c88b", "last-fail.log"), "");
+		const [w] = await watches({ now: T0, dataDir: dir, home: dir });
+		expect(w!.what).toBe(`'정시 릴리스' 모니터링이 ${ko.doctor.when(T0 - 5 * H)}부터 258번 연속 실패했어요. 마지막 실행은 아무 출력 없이 끝났어요(종료 코드 1).`);
+		expect(w!.evidence).toEqual([`처음 실패: ${ko.doctor.when(T0 - 5 * H)}`, "연속 실패 258번", "마지막 실행은 아무 출력 없이 끝났어요(종료 코드 1)."]);
+		expect([w!.what, ...w!.evidence].join("\n")).not.toMatch(/257|in a row|unknown|마지막 이유/);
+	});
+
+	test("an update error too long for one line goes on over a second evidence line, broken at a word", async () => {
+		const error = `테스트 실패: ${"the gateway of this version starts and serves the app ".repeat(3).trim()}. 쓰던 버전 그대로예요.`;
+		writeFileSync(join(dir, "hub.log"), at(T0 - H, `self-update #2: failed: ${error}`));
+		const [up] = await update({ now: T0, dataDir: dir, home: dir });
+		expect(up!.evidence).toHaveLength(4);
+		expect(up!.evidence.slice(2).join(" ")).toBe(`마지막 오류: ${error}`);
+		expect(up!.evidence.every(l => [...l].length <= EVIDENCE_CHARS && !l.endsWith("…"))).toBe(true);
+	});
+
+	test("for generated counts, names and reasons, in both languages, every evidence line of every check is at most 120 characters and the update's lines carry its last error", async () => {
+		const text = fc.string({ unit: fc.constantFrom("a", "Z", " ", "결", "정", "1", "9", ".", ",", "(", ")", "'", "/", "-", "가", "😀"), minLength: 1, maxLength: 400 });
+		const count = fc.integer({ min: 0, max: 2_000_000_000 });
+		const session = fc.record({ kind: fc.constantFrom("orchestrator" as const, "lane" as const, "worker" as const, "other" as const), name: text, model: text, cost: fc.double({ min: 0, max: 1e6, noNaN: true }), chosen: fc.double({ min: 0, max: 1e6, noNaN: true }) });
+		const input = fc.record({ language: fc.constantFrom("ko", "en"), name: text, reason: text, error: text, cause: text, fails: fc.integer({ min: 3, max: 100_000 }), was: count, now: count, cases: count, top: fc.array(session, { maxLength: 3 }), kind: text });
+		await fc.assert(
+			fc.asyncProperty(input, async v => {
+				cfg.identity = { ...saved, name: saved?.name ?? "sample-1", language: v.language };
+				const clean = (s: string) => s.replace(/\)/g, "");
+				writeFileSync(join(dir, "hub.log"), [
+					...[4, 3, 2].flatMap(h => [at(T0 - h * H, `deferred gateway restart goes now (${clean(v.cause)})`), at(T0 - h * H + 1e3, "gateway restart (1 request(s) coalesced, waited 1s)")]),
+					at(T0 - 5 * H, `self-update #1: failed: ${v.error}`),
+					at(T0 - 5 * H, `omo update failed: ${v.error}`),
+					at(T0 - 5 * H, `watch ${v.name} failed (${v.fails % 256}, fail, ${v.fails} in a row) unknown`),
+					...[5, 4, 3, 2, 1].map(h => at(T0 - h * H + 2e3, "hub listening on 127.0.0.1:7420 as test (discord off)")),
+				].join(""));
+				writeFileSync(join(dir, "watches.json"), JSON.stringify([{ id: "w1", name: v.name, label: v.name, state: { fails: v.fails, failSince: T0 - 30 * H } }]));
+				mkdirSync(join(dir, "watches", "w1"), { recursive: true });
+				writeFileSync(join(dir, "watches", "w1", "last-fail.log"), v.reason);
+				writeFileSync(join(dir, "gateway.err.log"), "");
+				const memo: Record<string, unknown> = {};
+				await gateway({ now: T0 - 6 * H, dataDir: dir, home: dir, memo });
+				writeFileSync(join(dir, "gateway.err.log"), "error: a\n    at f (x.ts:1)\n".repeat(1 + (v.fails % 5)));
+				const ctx = { now: T0, dataDir: dir, home: dir, memo, last: T0 - 6 * H };
+				const r = { tokens: 1e9, turns: 7000, lost: [{ name: v.name, count: v.cases, tokens: 5e6 + v.now, share: 0 }, { name: `${v.name} `, count: v.cases, tokens: 0, share: 0 }] };
+				const base = { version: 2 as const, at: "", tokens: 1e9, turns: 7000, classes: { [v.name]: { count: v.was % 1000, tokens: v.was % 1e6 }, [`${v.name} `]: { count: 0, tokens: 0 } } };
+				const found = [
+					...(await gateway(ctx)), ...(await watches(ctx)), ...(await update(ctx)), ...failureFindings(T0, r, base),
+					...tokenFindings(T0, { told: [{ flag: true, kind: v.kind, who: "x", what: "", amount: "", save: 0, cost: v.now / 100 }], tokens: v.now, cost: v.was / 100, top: v.top, ownerUse: { sessions: v.cases, cost: v.was / 100 } }),
+				];
+				const head = [...v.error.replace(/\s+/g, " ").trim()].slice(0, 10).join(""), self = found.find(f => f.key === "update:self");
+				return found.length >= 5 && !!self?.evidence.join("\n").includes(head) && found.every(f => f.what.length > 0 && f.evidence.every(l => [...l].length <= EVIDENCE_CHARS));
+			}),
+			{ numRuns: 60 },
+		);
 	});
 });
 
@@ -365,8 +588,8 @@ describe("the morning looks again before it posts", () => {
 		r.state.now = T0;
 		await runMorning(r.deps);
 		expect(r.state.sent).toHaveLength(1);
-		expect(r.state.sent[0]).toContain(t.restarts(4));
-		expect(r.state.sent[0]).not.toContain(t.restarts(3));
+		expect(r.state.sent[0]).toContain(t.restarts({ all: 4, update: 0, owner: 0, orchestrator: 0, unexplained: 4 }));
+		expect(r.state.sent[0]).not.toContain(t.restarts({ all: 3, update: 0, owner: 0, orchestrator: 0, unexplained: 3 }));
 		expect(r.state.sent[0]).toContain("HEAVY-NIGHT");
 	});
 
@@ -445,7 +668,7 @@ describe("the morning looks again before it posts", () => {
 		r.state.now = T0 + D;
 		await runMorning(r.deps);
 		expect(r.state.sent).toHaveLength(2);
-		expect(r.state.sent[1]).toContain(t.updateFailed(t.selfUpdate));
+		expect(r.state.sent[1]).toContain(t.updateFailed(t.selfUpdate, 1, t.when(T0 + 10 * H), "x"));
 	});
 });
 
@@ -517,7 +740,7 @@ describe("a matter another gateway card covers is not told", () => {
 	});
 
 	test("while a card covers the matter the morning neither says nor asks it: counted as told before, its area not called fine, not marked told", async () => {
-		const t = msg().doctor, line = t.updateFailed(t.selfUpdate);
+		const t = msg().doctor, line = t.updateFailed(t.selfUpdate, 1, t.when(T0 - 5 * H), "x");
 		const stuck: DoctorCheck = () => [finding({ key: "sessions:stuck", area: "sessions", what: "STUCK" })];
 		const morning = async (checks: DoctorCheck[], answeredAgo: number) => {
 			rmSync(storeFile(dir), { force: true });
@@ -542,7 +765,7 @@ describe("a matter another gateway card covers is not told", () => {
 	});
 
 	test("a card open for one, two or three mornings: the line and its question come once, on the first morning the card no longer covers", async () => {
-		const t = msg().doctor, line = t.updateFailed(t.selfUpdate), posted = T0 - 4 * H, iso = (at: number) => new Date(at).toISOString();
+		const t = msg().doctor, posted = T0 - 4 * H, line = t.updateFailed(t.selfUpdate, 1, t.when(posted - 60e3), "x"), iso = (at: number) => new Date(at).toISOString();
 		const cardAt = (now: number, expires: number): Pick<Notice, "title" | "text" | "decision"> => ({
 			title: SELF_UPDATE_CARD_TITLE,
 			text: "",
@@ -645,7 +868,7 @@ describe("the message tells and asks apart, and each card carries its own lines"
 		const t = msg().doctor;
 		writeFileSync(join(dir, "hub.log"), [6, 5, 4, 3, 2, 1].map(h => logLine(T0 - h * H, `gateway restart (1 request(s) coalesced, waited ${h}s)`)).join(""));
 		const [found] = await gateway({ now: T0, dataDir: dir, home: dir });
-		expect(found!.evidence).toEqual([...[6, 5, 4].map(h => `${t.when(T0 - h * H)} (1 request(s) coalesced, waited ${h}s)`), t.more(3)]);
+		expect(found!.evidence).toEqual([...[6, 5, 4].map(h => `${t.when(T0 - h * H)} · ${t.restartUnasked}`), t.more(3)]);
 		const long = "word ".repeat(60).trim(), [cut] = evidenceLines([long], t.more);
 		expect([...cut!].length).toBeLessThanOrEqual(EVIDENCE_CHARS);
 		expect(cut).toMatch(/^(word )+word…$/);
