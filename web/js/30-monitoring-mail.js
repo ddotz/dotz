@@ -218,7 +218,7 @@ const mailActRun = (t, a, b) => a === "draft" ? mailDraftRun(t, b) : a === "dele
 // 삭제: the mail leaves dotz on the computer that holds it (DELETE /api/mail/<key>); the real mailbox keeps it, unless the app's 삭제하면 원본도 삭제 is on (mbTrash). A newer message of the thread brings it back.
 async function mailDelete(t, btn = null) {
   if (mailOriginal(t)) return mbTrash([t], btn);
-  if (!await ask(TX("mail.trash.title"), `${TX("mail.trash.list_one")} ${mailStays(1)}`, TX("common.delete"), true)) return;
+  if (!await ask(TX("mail.trash.title"), TX("mail.trash.list_one"), TX("common.delete"), true)) return;
   mbDeleting();
   const pc = pqPc(t), row = [...document.querySelectorAll("#mon-tl > .mr[data-t]")].find(r => r.dataset.t === t);
   // the row and its ⋯ stay busy until the hub has deleted the mail, then the row folds away; a repaint in between draws them busy again (mbHeld)

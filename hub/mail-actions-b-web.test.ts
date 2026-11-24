@@ -6,7 +6,7 @@ import { advanceTimers, ev, fakeHub, inbox, json, run, waitFor, type View } from
 const SHOTS = process.env.MAIL_B_SHOTS ?? "";
 const CAN = ["read", "unread", "archive", "unarchive", "trash", "star", "unstar"];
 const ago = (h: number) => new Date(Date.now() - h * 3_600_000).toISOString();
-const LISTED = "목록에서 지웠어요 · 원본은 그대로예요";
+const LISTED = "삭제했어요";
 const NEWER = "새 답장이 와서 이 메일은 지우지 않았어요";
 
 type Mail = { key: string; subject: string; from: string; at: string; read: boolean; mark: string };
@@ -97,7 +97,8 @@ describe("a deleted mail stays deleted on the page", () => {
 		const v = await openList(width, height);
 		await deleteOne(v, "sample-1 보고서");
 		await snackSays(v, LISTED);
-		expect((await snack(v))!.act).toBe("되돌리기");
+		expect(await snack(v)).toEqual({ text: LISTED, act: "되돌리기", bad: false });
+		expect((await snack(v))!.text).not.toMatch(/원본|메일함/);
 		await shot(v, `delete-listed-toast-${width}`);
 		await watchRow(v, "fx-a");
 		const asked = convAsks.length;

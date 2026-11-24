@@ -95,7 +95,7 @@ function mbApply(t, a) {
   if (a === "read") ts(t).unread = 0;
   return () => { m[f] = was; if (f === "read") ts(t).unread = unread; };
 }
-const MB_DONE = { read: n => (n > 1 ? TX("mail.done_n.read", { n }) : TX("mail.done.read")), unread: n => (n > 1 ? TX("mail.done_n.unread", { n }) : TX("mail.done.unread")), archive: n => (n > 1 ? TX("mail.done_n.archive", { n }) : TX("mail.done.archive")), unarchive: n => (n > 1 ? TX("mail.done_n.unarchive", { n }) : TX("mail.done.unarchive")), trash: n => (n > 1 ? TX("mail.trash.listed_n", { n }) : TX("mail.trash.listed")) };
+const MB_DONE = { read: n => (n > 1 ? TX("mail.done_n.read", { n }) : TX("mail.done.read")), unread: n => (n > 1 ? TX("mail.done_n.unread", { n }) : TX("mail.done.unread")), archive: n => (n > 1 ? TX("mail.done_n.archive", { n }) : TX("mail.done.archive")), unarchive: n => (n > 1 ? TX("mail.done_n.unarchive", { n }) : TX("mail.done.unarchive")), trash: n => (n > 1 ? TX("mail.done_n.trash", { n }) : TX("mail.done.trash")) };
 const MB_BACK = { archive: "unarchive", unarchive: "archive", read: "unread", unread: "read" };
 // Runs one action on `keys` (mail targets). Resolves the keys that went through.
 async function mbRun(keys, action, quiet = false, btn = null, held = null) {
@@ -179,19 +179,16 @@ async function mbTrashOriginal(keys, orig, btn = null) {
 // time is up or the page goes away (Gmail's way, owner 11-03). A mailbox that will not follow, or an older hub, only drops the row from
 // dotz and cannot bring it back, so that asks first in the small confirm box.
 const MB_UNDO_MS = 6000;
-// The one sentence under both 삭제 confirms (a row's ⋯ and an open mail): dotz drops the mail from its list. One mail that its mailbox will not trash stays there, so the box says so plainly;
-// of several, the ones a mailbox can trash go and the rest stay.
 // The answer to a 삭제 confirm can take a moment (the mailbox is asked): say at once that it is going on; the toast of the result replaces this one.
 const MB_HUB_MS = 60000;
 const mbDeleting = () => { const n = toast(TX("mail.trash.deleting"), false, undefined, MB_HUB_MS); return () => toastGone(n); };
-const mailStays = n => n > 1 ? TX("mail.trash.stay_some") : TX("mail.trash.stay_one");
 async function mbTrash(keys, btn = null) {
   keys = keys.filter(t => MAILS.has(t));
   if (!keys.length) return [];
   const orig = keys.filter(mailOriginal);
   if (orig.length) return mbTrashOriginal(keys, orig, btn);
   if (!keys.every(t => mailCan(t, "trash"))) {
-    if (!await ask(TX("mail.trash.title"), `${keys.length > 1 ? TX("mail.trash.list_n", { n: keys.length }) : TX("mail.trash.list_one")} ${mailStays(keys.length)}`, TX("common.delete"), true)) return [];
+    if (!await ask(TX("mail.trash.title"), keys.length > 1 ? TX("mail.trash.list_n", { n: keys.length }) : TX("mail.trash.list_one"), TX("common.delete"), true)) return [];
     const off = mbDeleting(), done = await mbRun(keys, "trash", false, btn);
     off();
     mbLeave(keys);
