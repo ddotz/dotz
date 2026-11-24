@@ -8,7 +8,7 @@
 import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, relative } from "node:path";
-import type { DoctorCheck, Finding } from "./doctor-types.ts";
+import { type DoctorCheck, evidenceLines, type Finding, lineSubject } from "./doctor-types.ts";
 import { ENFORCED_RULES } from "./enforced-rules.ts";
 import { INLINE_MAX, loadFeatureDirs } from "./featuredirs.ts";
 import { msg } from "./i18n.ts";
@@ -106,7 +106,7 @@ export function sizeFindings(state: PromptState, now: number): Finding[] {
 		area: "prompt",
 		what: m.promptGrew(g.key === "total" ? undefined : (m.promptPartLabels[g.key] ?? g.key), g.from, g.to, m.doctor.day(g.at)),
 		ask: true,
-		evidence: m.promptSizeEvidence(g.from, g.to, day(g.at)),
+		evidence: evidenceLines([m.promptSizeEvidence(g.from, g.to, day(g.at))], m.doctor.more),
 		since: now,
 		level: g.to - g.from,
 	}));
@@ -129,6 +129,12 @@ const lineNumber = (path: string, line: string): number => {
 	}
 };
 
+/** The lines and title of a card about a line that spells out an enforced rule: the kind and the quoted line at `where` (file:line), then what blocks it; titled by the text and the line. */
+export function ruleCard(c: { where: string; line: string; guard: string }): { evidence: string[]; subject: string; question: string } {
+	const m = msg(), t = m.doctor;
+	return { evidence: evidenceLines([`${t.ruleKind} · ${m.promptEnforcedEvidence(c.where, quote(c.line))}`, m.promptEnforced(c.where, c.guard)], t.more), subject: lineSubject(t, c.where, c.line, t.ruleQuestion), question: t.ruleQuestion };
+}
+
 /** One finding per enforced rule that a rule file line still writes out. The first such line, named by file:line, is what the owner decides on. */
 export function enforcedFindings(sources: RuleSource[], now: number): Finding[] {
 	const m = msg();
@@ -139,15 +145,15 @@ export function enforcedFindings(sources: RuleSource[], now: number): Finding[] 
 		const at = lineNumber(hit.s.path, hit.line);
 		const where = at ? `${hit.s.file}:${at}` : hit.s.file;
 		const guard = rule.guard.split(":")[0]!;
-		const shown = quote(hit.line);
+		const { evidence, subject, question } = ruleCard({ where, line: hit.line, guard });
 		out.push({
 			key: `prompt:enforced:${rule.id}`,
 			area: "prompt",
 			what: m.promptEnforced(where, guard),
-			evidence: m.promptEnforcedEvidence(where, shown),
+			evidence,
 			since: now,
 			level: hit.line.length,
-			decide: { question: m.promptEnforcedAsk(where, shown, guard), options: [{ name: m.promptRemove, result: m.promptRemoveResult }, { name: m.promptKeep, result: m.promptKeepResult }] },
+			decide: { subject, question, options: [{ name: m.promptRemove, result: m.promptRemoveResult }, { name: m.promptKeep, result: m.promptKeepResult }] },
 		});
 	}
 	return out;
@@ -159,7 +165,7 @@ export function capFindings(dataDir: string, now: number): Finding[] {
 	const out: Finding[] = [];
 	const over = (file: string, size: number, cap: number, unit: string) => {
 		if (size <= cap) return;
-		out.push({ key: `prompt:cap:${file}`, area: "prompt", what: m.promptCapOver(file, size, cap, unit), ask: true, evidence: m.promptCapEvidence(size, cap, unit), since: now, level: size - cap });
+		out.push({ key: `prompt:cap:${file}`, area: "prompt", what: m.promptCapOver(file, size, cap, unit), ask: true, evidence: evidenceLines([m.promptCapEvidence(size, cap, unit)], m.doctor.more), since: now, level: size - cap });
 	};
 	const read = (name: string): string | undefined => (existsSync(join(dataDir, name)) ? readFileSync(join(dataDir, name), "utf8") : undefined);
 	const lessons = read("LESSONS.md");

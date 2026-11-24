@@ -39,9 +39,9 @@ test("growth past both thresholds gives a finding with the growth as its level",
 	const rules = found.find(f => f.key === "prompt:size:rules");
 	expect(rules?.level).toBe(6000);
 	expect(rules?.area).toBe("prompt");
-	expect(rules?.evidence).toContain("1000");
-	expect(rules?.evidence).toContain("7000");
-	expect(rules?.evidence).toContain("2026-11-01");
+	expect(rules?.evidence.join("\n")).toContain("1000");
+	expect(rules?.evidence.join("\n")).toContain("7000");
+	expect(rules?.evidence.join("\n")).toContain("2026-11-01");
 	expect(promptGrowth(readState(dir)!)).toBe(true);
 });
 
@@ -75,8 +75,9 @@ test("a rule that code enforces is reported by file:line while a line writes it 
 	run(0);
 	const found = run(1);
 	const hit = found.find(f => f.key === "prompt:enforced:gateway-restart");
-	expect(hit?.decide?.question).toContain("RULES.md:2");
-	expect(hit?.decide?.question).toContain("hub/systemdeny.ts");
+	expect(hit?.evidence.join("\n")).toContain("RULES.md:2");
+	expect(hit?.evidence.join("\n")).toContain("hub/systemdeny.ts");
+	expect(hit?.decide?.question).not.toMatch(/RULES\.md|systemdeny/);
 	expect(hit?.decide?.options.map(o => o.name)).toEqual([msg().promptRemove, msg().promptKeep]);
 	expect(keys(found).filter(k => k.startsWith("prompt:enforced:"))).toEqual(["prompt:enforced:gateway-restart"]);
 	setRules("- keep replies short\n");
@@ -88,10 +89,13 @@ test("a blocked-command entry is the guard itself and is never proposed for remo
 	setRules(`## Rules\n- fable only when the owner asked; ${"x".repeat(120)} tail-marker\n\n${entry}`);
 	run(0);
 	const hit = run(1).find(f => f.key === "prompt:enforced:expensive-model");
-	expect(hit?.evidence).toContain("RULES.md:2");
-	expect(hit?.evidence).not.toContain("tail-marker");
-	expect(hit?.decide?.question).toMatch(/fable only when the owner asked; x+…/);
-	expect(hit?.evidence.length).toBeLessThanOrEqual("RULES.md:2: ''".length + 80);
+	expect(hit?.evidence[0]).toContain("RULES.md:2");
+	expect(hit?.evidence.join("\n")).not.toContain("tail-marker");
+	expect(hit?.evidence[0]).toMatch(/fable only when the owner asked; x+…/);
+	expect(hit?.evidence[0]!.length).toBeLessThanOrEqual(`${msg().doctor.ruleKind} · RULES.md:2: ''`.length + 80);
+	expect(hit?.evidence[0]!.startsWith(msg().doctor.ruleKind)).toBe(true);
+	expect(`${hit?.decide?.subject} · ${hit?.decide?.question}`).toMatch(new RegExp(`^${msg().doctor.texts.rules} 'fable only when[^']*'.* · ${msg().doctor.ruleQuestion.replace("?", "\\?")}$`));
+	expect([...`${hit?.decide?.subject} · ${hit?.decide?.question}`].length).toBeLessThanOrEqual(40);
 	setRules(entry);
 	expect(keys(run(2)).filter(k => k.startsWith("prompt:enforced:"))).toEqual([]);
 });
@@ -101,7 +105,7 @@ test("a feature body line is named by its feature.md and line", () => {
 	mkdirSync(join(dir, "features", "gw"), { recursive: true });
 	writeFileSync(join(dir, "features", "gw", "feature.md"), "---\nname: gw\nwhat: gateway care\ntrigger: 메시지 도착\nstage: s\n---\nNever run launchctl kickstart on the gateway.\n");
 	run(0);
-	expect(run(1).find(f => f.key === "prompt:enforced:gateway-restart")?.decide?.question).toContain("features/gw/feature.md:7");
+	expect(run(1).find(f => f.key === "prompt:enforced:gateway-restart")?.evidence.join("\n")).toContain("features/gw/feature.md:7");
 });
 
 test("an open task in state.json is not a rule: its words never raise an enforced-rule finding", () => {

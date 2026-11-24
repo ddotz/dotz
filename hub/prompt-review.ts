@@ -9,11 +9,11 @@ import { createHash } from "node:crypto";
 import { readFileSync, renameSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import type { DoctorCheck, Finding } from "./doctor-types.ts";
+import { type DoctorCheck, evidenceLines, type Finding, lineSubject, wrapLines } from "./doctor-types.ts";
 import { ENFORCED_RULES } from "./enforced-rules.ts";
 import { lang, msg } from "./i18n.ts";
 import { languageName } from "./language.ts";
-import { promptGrowth, readState } from "./prompt-health.ts";
+import { promptGrowth, readState, ruleSources } from "./prompt-health.ts";
 import { recallContract } from "./recall-contract.ts";
 
 const DAY_MS = 86_400_000;
@@ -115,17 +115,27 @@ export function parseReview(text: string): Item[] | undefined {
 
 const hashOf = (lines: string[]): string => createHash("sha1").update(lines.join("\n")).digest("hex").slice(0, 10);
 
-function toFinding(item: Item, tokens: { input: number; output: number }, now: number): Finding {
-	const m = msg();
-	const shown = item.lines[0] ?? "", quoted = shown.length > 80 ? `${shown.slice(0, 79).trimEnd()}…` : shown;
+/**
+ * The lines and title of a review card: the kind of problem with the text's file and the quoted line, the reason on up to two lines, and what the review
+ * cost when known; titled by the text and the start of the line. `file` is unknown for a line found in no rule file (the contract is named then).
+ */
+export function reviewCard(c: { kind: string; file?: string; line: string; why: string; tokens?: { input: number; output: number } }): { evidence: string[]; subject: string; question: string } {
+	const m = msg(), t = m.doctor, quoted = c.line.length > 80 ? `${c.line.slice(0, 79).trimEnd()}…` : c.line;
+	const where = c.file ? m.promptEnforcedEvidence(c.file, quoted) : `'${quoted}'`;
+	const lines = [`${t.reviewKind[c.kind] ?? t.reviewKind.conflict} · ${where}`, ...wrapLines(c.why, 2), ...(c.tokens ? [t.reviewTokens(c.tokens.input, c.tokens.output)] : [])];
+	return { evidence: evidenceLines(lines, t.more), subject: lineSubject(t, c.file, c.line, t.reviewQuestion), question: t.reviewQuestion };
+}
+
+function toFinding(item: Item, tokens: { input: number; output: number }, now: number, file: string | undefined): Finding {
+	const m = msg(), { evidence, subject, question } = reviewCard({ kind: item.kind, file, line: item.lines[0] ?? "", why: item.why, tokens });
 	return {
 		key: `prompt:review:${hashOf(item.lines)}`,
 		area: "prompt",
 		what: m.promptReviewWhat[item.kind] ?? m.promptReviewWhat.conflict ?? "",
-		evidence: m.promptReviewEvidence(quoted, item.why, tokens.input, tokens.output),
+		evidence,
 		since: now,
 		level: item.lines.reduce((n, l) => n + l.length, 0),
-		decide: { question: m.promptReviewAsk(quoted, item.why), options: [{ name: m.promptReviewApply, result: m.promptReviewApplyResult(item.proposal) }, { name: m.promptReviewLeave, result: m.promptReviewLeaveResult }] },
+		decide: { subject, question, options: [{ name: m.promptReviewApply, result: m.promptReviewApplyResult(item.proposal) }, { name: m.promptReviewLeave, result: m.promptReviewLeaveResult }] },
 	};
 }
 
@@ -142,7 +152,8 @@ export async function runPromptReview(ctx: ReviewContext): Promise<ReviewResult>
 	const tight = typeof ctx.budgetTight === "function" ? await ctx.budgetTight() : ctx.budgetTight;
 	if (tight) return { findings: [], tokens: none, skipped: "budget" };
 
-	const contract = recallContract(ctx.dataDir, join(import.meta.dir, "..")).text.slice(0, CONTRACT_MAX_CHARS);
+	const pkg = join(import.meta.dir, ".."), read = recallContract(ctx.dataDir, pkg), contract = read.text.slice(0, CONTRACT_MAX_CHARS);
+	const sources = ruleSources(ctx.dataDir, pkg, read.parts, read.modeFile);
 	let reply: Awaited<ReturnType<ReviewCall>>;
 	try {
 		reply = await ctx.call(buildReviewPrompt(contract), { maxOutputTokens: MAX_OUTPUT_TOKENS, ...(ctx.model ? { model: ctx.model } : {}) });
@@ -161,7 +172,7 @@ export async function runPromptReview(ctx: ReviewContext): Promise<ReviewResult>
 	// A quote that appears nowhere in the contract or the code list is the model making a line up.
 	const known = squash(`${contract}\n${ENFORCED_RULES.map(r => `${r.id}: ${r.guard}`).join("\n")}`);
 	const real = items.filter(i => i.lines.some(l => known.includes(l)));
-	return { findings: real.map(i => toFinding(i, tokens, ctx.now)), tokens };
+	return { findings: real.map(i => toFinding(i, tokens, ctx.now, sources.find(s => s.lines.some(l => !!i.lines[0] && squash(l).includes(i.lines[0])))?.file)), tokens };
 }
 
 /** Where the gateway's own model call, budget reader and ordinary model are reached; loaded on first use so this module stays free of gateway state. Tests replace the members. */

@@ -1,17 +1,18 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { issueBlock } from "./choices.ts";
+import { cardBlock } from "./choices.ts";
 import { cfg, DATA_DIR, DEFAULTS, HOME, writeAtomic } from "./config.ts";
 import { CHECKS as HEALTH, FILE_CHECKS } from "./doctor-checks.ts";
 import { THRESHOLDS as T } from "./doctor-limits.ts";
-import { type DoctorArea, type DoctorCheck, DOCTOR_AREAS, type Finding } from "./doctor-types.ts";
+import { type DoctorArea, type DoctorCheck, DOCTOR_AREAS, evidenceLines, type Finding, fitSubject } from "./doctor-types.ts";
 import { msg } from "./i18n.ts";
-import type { Catalog } from "./i18n-en.ts";
+import { type Catalog, en } from "./i18n-en.ts";
+import { ko } from "./i18n-ko.ts";
 import type { Notice as StoredNotice } from "./notices-types.ts";
 import { ledger } from "./ledger.ts";
 import { type Send, morningExtra, startLedger } from "./ledger-tick.ts";
-import { promptHealth } from "./prompt-health.ts";
-import { promptReviewCheck } from "./prompt-review.ts";
+import { promptHealth, ruleCard } from "./prompt-health.ts";
+import { promptReviewCheck, reviewCard } from "./prompt-review.ts";
 import { trackTimer } from "./shutdown.ts";
 import { watchSubject } from "./watch-ask.ts";
 import { HARNESS_RETRY_TITLE, SELF_UPDATE_CARD_TITLE } from "./worklog-kind.ts";
@@ -27,12 +28,41 @@ export type DoctorStore = { version: 1; lastRun: number; from?: number; memo: Re
 export const storeFile = (dataDir: string): string => join(dataDir, "doctor.json");
 
 const emptyStore = (): DoctorStore => ({ version: 1, lastRun: 0, memo: {}, findings: {}, told: {} });
+const OLD = { where: "\u0001", line: "\u0002", guard: "\u0003", why: "\u0004" };
+const oldAsk = (asked: string): RegExp =>
+	new RegExp(`^${asked.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(OLD.where, "(?<where>.+?)").replace(OLD.line, "(?<line>.*)").replace(OLD.guard, "(?<guard>.+)").replace(OLD.why, "(?<why>.*)")}$`, "s");
+const OLD_RULE = [ko, en].map(c => oldAsk(c.promptEnforcedAsk(OLD.where, OLD.line, OLD.guard)));
+const OLD_REVIEW = [ko, en].map(c => oldAsk(c.promptReviewAsk(OLD.line, OLD.why)));
+
+function oldCard(f: Finding, question: string): { evidence: string[]; subject: string; question: string } {
+	const t = msg().doctor;
+	if (f.key === "disk:low") return { evidence: evidenceLines([question], t.more), subject: t.diskSubject, question: t.diskQuestion };
+	const rule = f.key.startsWith("prompt:enforced:") ? OLD_RULE.map(re => re.exec(question)?.groups).find(Boolean) : undefined;
+	if (rule) return ruleCard({ where: rule.where!, line: rule.line!, guard: rule.guard! });
+	const review = f.key.startsWith("prompt:review:") ? OLD_REVIEW.map(re => re.exec(question)?.groups).find(Boolean) : undefined;
+	const kind = [ko, en].map(c => Object.keys(c.promptReviewWhat).find(k => c.promptReviewWhat[k] === f.what)).find(Boolean);
+	if (review) return reviewCard({ kind: kind ?? "conflict", line: review.line!, why: review.why! });
+	return { evidence: evidenceLines([question], t.more), subject: fitSubject(t.areas[f.area], t.reviewQuestion), question: t.reviewQuestion };
+}
+const storedFinding = (f: Finding): Finding => {
+	const evidence: unknown = f.evidence, subject: unknown = f.decide?.subject, question: unknown = f.decide?.question;
+	const lines = Array.isArray(evidence) ? evidence.filter((l): l is string => typeof l === "string") : [];
+	if (!f.decide || typeof subject === "string") return { ...f, evidence: lines };
+	const { evidence: rebuilt, ...card } = oldCard(f, typeof question === "string" ? question : "");
+	return { ...f, evidence: rebuilt, decide: { ...card, options: f.decide.options } };
+};
+/**
+ * The store as last saved. A file written before evidence became lines loads too: a finding whose evidence is one string has no lines. A card stored
+ * without a subject is rebuilt from its old question the way its check builds one now (an enforced rule's or a review's card: titled by the text and the
+ * quoted line, with the kind, where, why and guard as its lines); a card whose old question is not recognised keeps it as its one line under its area's name.
+ */
 export function loadStore(dataDir: string): DoctorStore {
 	const file = storeFile(dataDir);
 	if (!existsSync(file)) return emptyStore();
 	try {
 		const j = JSON.parse(readFileSync(file, "utf8"));
-		return j?.version === 1 && typeof j.findings === "object" && typeof j.told === "object" ? { ...emptyStore(), ...j } : emptyStore();
+		if (!(j?.version === 1 && typeof j.findings === "object" && typeof j.told === "object")) return emptyStore();
+		return { ...emptyStore(), ...j, findings: Object.fromEntries(Object.entries(j.findings as Record<string, Finding>).map(([k, f]) => [k, storedFinding(f)])) };
 	} catch {
 		return emptyStore(); // a half-written or foreign file is a first run, not an error
 	}
@@ -98,13 +128,13 @@ export async function recheck(checks: DoctorCheck[], d: Pick<Deps, "dataDir" | "
 	return { ...store, memo: fresh.memo, findings, told: Object.fromEntries(Object.entries(store.told).filter(([k]) => k in findings)) };
 }
 
-/** How cardCovers names a matter's card: a watch by its label (from the watch name in the finding's evidence), a harness by the label its card text starts with. */
+/** How cardCovers names a matter's card: a watch by its label (from the watch name in the finding's key, `watches:<name>`), a harness by the label its card text starts with. */
 export type CardLabels = { watch: (name: string) => string; harness: (id: string) => string | undefined };
 
 /**
  * Whether a gateway card in `notices` already covers a finding's matter: the card is open, or the owner answered it within a day of `now` (a card that
  * expired unanswered covers nothing). Matters: a failed dotz update (`update:self`, the self-update card), a failed harness install (`update:<id>`, the
- * harness card, whose text starts with that harness's label), and a failing watch (`watches:<id>`, its issue card, matched by the watch's label). The disk
+ * harness card, whose text starts with that harness's label), and a failing watch (`watches:<name>`, its issue card, matched by the watch's label). The disk
  * finding has no card to match: the disk guard's alert is a plain message without a choice block.
  */
 export function cardCovers(notices: Pick<StoredNotice, "title" | "text" | "decision">[], now: number, labels: CardLabels): (f: Finding) => boolean {
@@ -114,7 +144,7 @@ export function cardCovers(notices: Pick<StoredNotice, "title" | "text" | "decis
 		if (f.key === "update:self") return live.some(n => n.title === SELF_UPDATE_CARD_TITLE);
 		const harness = f.key.startsWith("update:") ? labels.harness(f.key.slice("update:".length)) : undefined;
 		if (harness !== undefined) return live.some(n => n.title === HARNESS_RETRY_TITLE && n.text.startsWith(`${harness} `));
-		if (f.key.startsWith("watches:")) return live.some(n => watchSubject(n.title) === labels.watch(f.evidence));
+		if (f.key.startsWith("watches:")) return live.some(n => watchSubject(n.title) === labels.watch(f.key.slice("watches:".length)));
 		return false;
 	};
 }
@@ -129,7 +159,7 @@ export function shouldTell(f: Finding, t: Told | undefined, now: number): boolea
 export type Notice = { text: string; decision: boolean; decisions: number; open: boolean; keys: string[] };
 const SAID_TOGETHER: Partial<Record<DoctorArea, (t: Catalog["doctor"]) => (items: string[]) => string>> = { failures: t => t.failuresGrew, tokens: t => t.tokens };
 
-type Row = { what: string; todo?: string; ask?: string };
+type Row = { what: string; todo?: string; ask: boolean };
 
 function items(found: Finding[], store: DoctorStore, now: number): Row[] {
 	const t = msg().doctor, out: Row[] = [], said = new Set<DoctorArea>();
@@ -140,32 +170,41 @@ function items(found: Finding[], store: DoctorStore, now: number): Row[] {
 		const same = together ? found.filter(g => g.area === f.area) : [f];
 		const lasting = store.told[f.key] && now - f.since >= DAY;
 		const what = same.length > 1 ? together!(t)(same.map(g => g.short ?? g.what)) : lasting ? `${f.what} ${t.since(t.day(f.since))}` : f.what;
-		const ask = same.some(g => g.ask) ? (together ? t.areas[f.area] : f.what.replace(/[.。]$/, "")) : undefined;
-		out.push({ what, todo: f.todo, ...(ask ? { ask } : {}) });
+		out.push({ what, ...(f.todo ? { todo: f.todo } : {}), ask: same.some(g => g.ask) });
 	}
 	return out;
 }
 
 /**
- * The morning item. One decision card per thing the owner decides: the findings with their own question first, then each line that offers a look at its cause,
- * named by that line. `held`: findings another gateway card covers; they are not told this morning and count among the things told before and still there.
+ * The morning item: the lead, the date and the counts ("알릴 것 N · 정할 것 M", a zero left out), then the part headed "알릴 것" with one line per thing told
+ * (a line whose cause can be looked into ends with the look-up mark, and one hint line after them says how), the self-fixed line, the count of things told
+ * before and still there and the checks that found nothing; then the part headed "정할 것" with one card per finding that has its own question (`decide`),
+ * titled `<subject> · <question>` within TITLE_CHARS with the finding's evidence as its lines; two cards that would share a title are told apart by a number.
+ * A part with nothing in it is left out. `held`: findings another gateway card covers; they are neither a line nor a card this morning and count among the
+ * things told before and still there. `decisions` is the number of cards.
  */
 export function compose(store: DoctorStore, now: number, all = false, held: (f: Finding) => boolean = () => false): Notice | undefined {
 	const t = msg().doctor, every = Object.values(store.findings);
 	const due = all ? every : every.filter(f => !held(f) && shouldTell(f, store.told[f.key], now));
 	if (!due.length && !all) return undefined;
 	const open = due.filter(f => !f.fixed), fixed = due.filter(f => f.fixed), quiet = every.filter(f => !f.fixed && !due.includes(f));
-	const asking = open.filter(f => f.decide), rows = items(open.filter(f => !f.decide), store, now), fixedNames = fixed.map(f => f.what).join(", ");
-	const cards = [
-		...asking.map(f => issueBlock(f.decide!.question, f.decide!.options)),
-		...rows.flatMap(r => (r.ask ? [issueBlock(t.askCard(r.ask), [{ name: t.askFind, result: t.askFindResult }, { name: t.askLeave, result: t.askLeaveResult }])] : [])),
-	];
+	const rows = items(open.filter(f => !f.decide), store, now), fixedNames = fixed.map(f => f.what).join(", ");
+	const titles = new Set<string>();
+	const cards = open.filter(f => f.decide).map(f => {
+		const { subject, question, options } = f.decide!;
+		const title = (s: string) => `${s} · ${question}`.replace(/\s+/g, " ").trim();
+		let shown = fitSubject(subject, question);
+		for (let n = 2; titles.has(title(shown)); n++) shown = fitSubject(subject, question, t.again(n));
+		titles.add(title(shown));
+		return cardBlock({ subject: shown, question, evidence: f.evidence, options });
+	});
 	const shared = [...new Set(rows.map(r => r.todo).filter((todo): todo is string => !!todo && rows.filter(r => r.todo === todo).length > 1))];
-	const lines = rows.map(r => `- ${r.todo && !shared.includes(r.todo) ? `${r.what} ${r.todo}` : r.what}`);
+	const lines = rows.map(r => `- ${r.todo && !shared.includes(r.todo) ? `${r.what} ${r.todo}` : r.what}${r.ask ? t.look : ""}`);
+	const told = rows.length ? [t.toldPart, ...lines, ...shared, rows.some(r => r.ask) ? t.lookHint : ""] : [];
 	const sick = new Set(every.filter(f => !f.fixed).map(f => f.area)), fine = DOCTOR_AREAS.filter(a => !sick.has(a)).map(a => t.areas[a]);
-	const head = open.length ? t.head(rows.filter(r => !r.ask).length, cards.length) : fixed.length ? t.fixedHead(fixedNames) : t.clear;
-	const body = [head, ...lines, ...shared, open.length && fixed.length ? t.fixedLine(fixedNames) : "", quiet.length ? t.still(items(quiet, store, now).length) : "", (open.length || all) && fine.length ? t.healthy(fine) : ""];
-	const text = [body.filter(Boolean).join("\n"), ...cards].join("\n\n");
+	const first = [t.head(t.day(now)), rows.length ? t.told(rows.length) : "", cards.length ? t.decide(cards.length) : ""].filter(Boolean).join(" · ");
+	const body = [first, ...told, fixed.length ? t.fixedLine(fixedNames) : "", quiet.length ? t.still(items(quiet, store, now).length) : "", (open.length || all) && fine.length ? t.healthy(fine) : "", open.length || fixed.length ? "" : t.clear];
+	const text = [body.filter(Boolean).join("\n"), ...(cards.length ? [t.decidePart, ...cards] : [])].join("\n\n");
 	return { text, decision: cards.length > 0, decisions: cards.length, open: open.length > 0, keys: due.map(f => f.key) };
 }
 

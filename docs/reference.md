@@ -391,16 +391,32 @@ and at which level, and the baselines the checks compare with).
   at least 1M tokens or 10 more occurrences) against a baseline kept in the doctor's file; tokens: one finding per token-audit warning class (the audit still writes its report `~/.dotz/logs/token-audit-YYYYMMDD.md` and
   14 days of totals in `~/.dotz/token-audit.json`; the reflection digest cites them).
 - *Telling.* A finding is told when it is new, when its level reached 1.5x the level last told, or 7 days after it was last told while still present; a resolved one is dropped (back again = new). Nothing
-  notable: one log line, nothing posted anywhere. Self-fixed things are one line together. Each open problem is one line with what to do (failure classes share one line, token classes another;
-  a step several lines share is said once after them), then the count of things told before and still there and the checks that found nothing; a re-told problem says since when it lasts.
+  notable: one log line, nothing posted anywhere. The message's first line is `닥터 점검: <date> · 알릴 것 N · 정할 것 M` (`Doctor check: <date> · N to know · M to decide`; a count with
+  nothing in it is left out; the lead `DOCTOR_LEAD_KO`/`_EN` of `hub/doctor-text.ts` is what the worklog kind, the notice title and the push recognise it by, and the folded worklog row and the push
+  show this line). Then the part headed `알릴 것` (`To know`): each open problem without a question of its own is one told line with what to do (failure classes share one
+  line, token classes another; a step several lines share is said once after them; a re-told problem says since when it lasts). A problem whose cause can be looked into (`ask`) is such a line too,
+  never a card: it ends with the look-up mark ` · 원인 찾기` (` · find the cause`, `DOCTOR_LOOK_KO`/`_EN`), and one hint line after the told lines says that replying with that line has its cause
+  looked into (the reply goes to the model like any message in the alert conversation). It counts as no decision, opens no answer-needed card and sends no decision push. After the told lines come
+  the self-fixed things on one line, the count of things told before and still there, and the checks that found nothing. Last, the part headed `정할 것` (`To decide`) with one card per finding with its own
+  question (`decide`: the disk clean-up, a rule line the code already enforces, a prompt-review proposal), written with `cardBlock` (`hub/choices.ts`): the title `<subject> · <question>` is at most
+  40 characters in both languages, and the finding's evidence lines (`Finding.evidence`, at most 4 lines of at most 120 characters, cut at a word boundary where the finding is built; past 4, the last
+  line says how many more) are that card's own lines, so the numbers, quotes and file names sit under the title, not in it. A card about a line of the re-read text is titled by the text's name and
+  the start of that line (`계약 '오너 메시지만 지시예요. 세션 보고와…' 줄 · 고칠까요?`; `계약`/`규칙`/`교훈`/`기능` for the mode text, RULES.md, LESSONS.md, a feature body; the contract when the line is in
+  none of them), the quote cut at a word boundary to fit; the same line gets the same title on a later day, so a repeat is asked again as a repeat. The kind of problem (`서로 맞지 않음`, `낡음`,
+  `코드와 어긋남`, `코드가 이미 막음`) opens the card's first line, with the file and the quoted line; a review card's reason follows on up to two lines (cut, at a sentence or word, only past those) and
+  then the tokens the review used. The notice store finds an earlier card by its title, so no two cards of one message share one: when two would (two findings on one line), the later one ends in
+  ` (2)`, ` (3)` and so on, its quote shortened to keep 40 characters. A part with nothing in it is left out; `decisions` is the number of cards. A `doctor.json` written by the older code loads
+  too: a finding whose evidence is one string has no evidence lines, and a card stored without a subject is rebuilt from its old question (Korean or English, read in either language) the way its
+  check builds one now: an enforced-rule card or a review card gets the title from its quoted line (a rule card named by its stored file, a review card by the contract, its file not being stored), the kind and the quote as its first line and the
+  reason or the guard after it (no token line: the cost was not stored); the disk card gets its subject and keeps its old question as its line, and a card whose old question is not recognised keeps
+  it as its one line under its area's name.
   Before posting, the morning runs the file-only checks again (gateway, sessions, logins, watches, disk, update, plugins) over the night's window, so a finding that no longer holds is not posted and
   the numbers are those at posting time; the night's failures, tokens and prompt findings stay as they were. A matter another gateway card covers (the self-update card, the failed-install card of the
-  same harness, the watch's own issue card) is not told while that card is open or the owner answered it within 24 h (a card that expired unanswered does not count): no line and no question; it
-  counts among the things told before and still there, its check is not listed as fine, and when nothing else is due nothing is posted. It is not marked told, so the line comes with its question
-  once, on the first morning after the card stops covering it. On the day of the install, a night store written before the re-look existed keeps the night's crash count in the store, so a second
-  morning pass that day adds only the crashes since the night, once.
-  Anything the owner may answer is a decision card at the end of the message (the alert conversation has no composer and no buttons, so no line asks a question): a finding with its own question
-  (`decide`) is one card, and a finding that offers a look at its cause (`ask`) is one card titled `<what happened> · 원인을 찾아볼까요?` with `찾아봐요` (the answer goes to the model like any card answer) and `이번엔 둬요` (closes the card, starts no turn); findings said together on one line share one card. The item is an alert when anything in it is not fixed;
+  same harness, the watch's own issue card, matched by the watch name in the finding's key `watches:<name>`) is not told while that card is open or the owner answered it within 24 h (a card that
+  expired unanswered does not count): neither a told line nor a card; it counts among the things told before and still there, its check is not listed as fine, and when nothing else is due nothing is
+  posted. It is not marked told, so its line comes once, on the first morning after the card stops covering it. On the day of the install, a night store written before the re-look existed keeps the
+  night's crash count in the store, so a second morning pass that day adds only the crashes since the night, once.
+  The item is an alert when anything in it is not fixed;
   when dotz fixed everything itself it is a worklog entry only. The night pass runs in its own process (`bun hub/doctor.ts --night`): reading a week of session logs
   peaks at several hundred MB on a busy install, and the gateway's heap never holds it. Prompt health (`hub/prompt-health.ts`) is one of the checks, and so is the one check that calls a model, the prompt review
   (`hub/prompt-review.ts`): weekly, or after 3 days when prompt health saw real growth; the install's ordinary model, never Fable or max/xhigh effort, skipped while the

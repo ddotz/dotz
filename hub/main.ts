@@ -10,7 +10,7 @@ import { bootFallback } from "./fallback.ts";
 import * as discord from "./discord.ts";
 import * as livestatus from "./livestatus.ts";
 import { setAskAnswer } from "./askbuttons.ts";
-import { discordDoctorLeave, discordGatewayAnswer, settleSends, webAnswer } from "./approval-wire.ts";
+import { discordGatewayAnswer, settleSends, webAnswer } from "./approval-wire.ts";
 import { installFanout, makeCtx, register, setAskApplier, startAll } from "./messenger.ts";
 import { setProjectSource, syncAllRooms } from "./messenger-rooms.ts";
 import { discordAdapter } from "./messenger-discord.ts";
@@ -327,7 +327,7 @@ void discord.clearLeftProgress().catch(e => log(`left progress messages not clea
 // A click on a decision button (hub/askbuttons.ts) is the owner typing the answer in that channel: the same inbound path.
 setAskAnswer(async (target, content, picks, edit) => {
 	// A pick on a draft the reply flow knows (send, 고치기 with the owner's text and words, drop) runs there with no model turn (hub/approval-wire.ts).
-	const acted = (await discordGatewayAnswer(target, convOfTarget(target), content, picks, edit)) ?? ((await discordDoctorLeave(target, picks, a => deliverAnswer({ ...a, login: "owner" }))) ? {} : undefined); if (acted) return acted.error;
+	const acted = await discordGatewayAnswer(target, convOfTarget(target), content, picks, edit); if (acted) return acted.error;
 	const id = target.slice(target.indexOf(":") + 1);
 	const channel = target.startsWith("lane:") ? { lane: id } : target.startsWith("ch:") ? { work: id, name: discord.channels.work[id] ?? id, first: false } : target.startsWith("th:") ? { thread: id, name: discord.channels.threads[id]?.name ?? id } : (target as "chat");
 	onOwner({ id: "", channelId: "", ackChannelId: "", channel, author: "owner", content, attachments: [], picks });

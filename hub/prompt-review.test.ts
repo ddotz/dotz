@@ -2,6 +2,7 @@ import { afterAll, afterEach, beforeEach, describe, expect, test } from "bun:tes
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { msg } from "./i18n.ts";
 import { buildReviewPrompt, CONTRACT_MAX_CHARS, MAX_OUTPUT_TOKENS, modelRefused, parseReview, promptReviewCheck, readReviewState, reviewDeps, reviewFile, runPromptReview, type ReviewCall, type ReviewContext } from "./prompt-review.ts";
 
 const root = mkdtempSync(join(tmpdir(), "prompt-review-"));
@@ -135,9 +136,29 @@ describe("runPromptReview", () => {
 		expect(f.area).toBe("prompt");
 		expect(f.key).toMatch(/^prompt:review:[0-9a-f]{10}$/);
 		expect(f.decide?.options).toHaveLength(2);
-		expect(f.evidence).toContain("1234");
-		expect(f.evidence).toContain("567");
+		expect(f.evidence.join("\n")).toContain("1234");
+		expect(f.evidence.join("\n")).toContain("567");
 		expect(prompts[0]).toContain(LINE_A);
+	});
+
+	test("a real-sized reason (two lines' worth) keeps its last words, and the token note is a line of its own", async () => {
+		const why = `${"the first rule asks for an answer at once while the second one asks to wait, ".repeat(2)}so neither can be followed: LAST-WORDS`;
+		expect(why.length).toBeGreaterThanOrEqual(106);
+		const r = await runPromptReview(ctx(answer(JSON.stringify([{ kind: "conflict", lines: [LINE_A, LINE_B], why, proposal: "keep the first" }])).call));
+		const lines = r.findings[0]!.evidence;
+		expect(lines.length).toBeLessThanOrEqual(4);
+		expect(lines.every(l => [...l].length <= 120)).toBe(true);
+		expect(lines.join(" ")).toContain("LAST-WORDS");
+		expect(lines.at(-1)).toContain("1234");
+		expect(lines.at(-1)).toContain("567");
+	});
+
+	test("a quote that is one sentence of a rule line still names that line's text and file", async () => {
+		writeFileSync(join(dir, "RULES.md"), `- [11-02] Tests run headless. The owner's window stays in the back.\n${LINE_B}\n`);
+		const r = await runPromptReview(ctx(answer(JSON.stringify([{ kind: "conflict", lines: ["Tests run headless."], why: "w", proposal: "p" }])).call));
+		const f = r.findings[0]!;
+		expect(f.decide!.subject.startsWith(`${msg().doctor.texts.rules} 'Tests run headless.`)).toBe(true);
+		expect(f.evidence[0]).toContain("RULES.md");
 	});
 
 	test("the key follows the quoted lines, not the wording of the rest", async () => {
