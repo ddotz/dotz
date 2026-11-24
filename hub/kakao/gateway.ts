@@ -4,7 +4,7 @@ import { useReplies } from "../reply-actions.ts";
 import { hostname } from "node:os";
 import { enableKakaoApp, ensureKakaoVoice } from "../../features/reply-drafts/lib/kakao-voice.ts";
 import { loadStyle, recordForbidden } from "../../features/reply-drafts/lib/settings.ts";
-import { cfg, DATA_DIR, log } from "../config.ts";
+import { cfg, DATA_DIR, log, styleJudgeOn } from "../config.ts";
 import { broadcast, subscriberCount } from "../events.ts";
 import { resolveName } from "../machine-name.ts";
 import { peerHeaders, peerTokenFor } from "../peer-auth.ts";
@@ -88,6 +88,7 @@ const web = createKakaoWeb({
 	collector: machine,
 	lease,
 	draftModel,
+	...(styleJudgeOn() ? { judgeModel: draftModel } : {}),
 	draftStyle,
 	learnVoice,
 	log,

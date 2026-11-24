@@ -10,6 +10,7 @@ import { ownerHistory, ownReplies, recentUploads, replyToComment, threadsByIds, 
 import { appBase, appEntries, commentOwner } from "../integrations.ts";
 import { featureEnabled } from "../app-feature-flags.ts";
 import { callReplyModel } from "../reply-model.ts";
+import { styleJudgeOn } from "../config.ts";
 import { appOf, type DraftModel, createEngine, type Engine, type EngineDeps, type MailLink } from "./engine.ts";
 import { realMailLink } from "./mail-link.ts";
 import type { MailQuery } from "./mail-match.ts";
@@ -42,6 +43,7 @@ export function realEngine(dataDir: string, opts: { broadcast?: (e: Record<strin
 		now: Date.now,
 		collector: opts.collector ?? hostname(),
 		model: opts.model ?? realModel,
+		...(styleJudgeOn() ? { judge: opts.model ?? realModel } : {}),
 		mail: opts.mail ?? realMailLink(),
 		// Used only by sources whose owner turned `mailMatch` on; read-only zele search over his own mail. Loaded on first use: zele.ts reads
 		// the gateway config at import, and the comments CLIs (onboard.ts) must run before there is one.

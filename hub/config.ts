@@ -53,6 +53,8 @@ export type Config = {
 	notify?: { push?: Record<string, boolean> };
 	// Fleet (docs/fleet.md): auto_place sends a launch that would wait here to a paired computer with room (default false).
 	fleet?: { auto_place?: boolean };
+	/** `style_judge`: a draft's wording is checked against the owner's style conditions by one more model call (hub/style-judge.ts); default true. The other guard.* keys are read by extension/guard-config.ts. */
+	guard?: { style_judge?: boolean };
 };
 export type ContextLimits = { window?: number; compact_at?: number };
 // One target's model, thinking level and ordered fallback chain: the orchestrator, the lanes (default of every lane) and the
@@ -324,6 +326,9 @@ export const workerIdleMin = () => count(cfg.lanes?.worker_idle_min, DEFAULTS.wo
 // `ui.origin_view` (default false): the 구성 view marks what the owner changed against what ships with dotz, and its requests carry a
 // 범위 (개인/배포) line. Off, the view shows no such distinction. Read once at start like the other cfg flags.
 export const uiOriginView = () => cfg.ui?.origin_view === true;
+/** On unless `guard.style_judge` is false: mail, comment and KakaoTalk drafts are judged against the owner's style conditions (hub/style-judge.ts). */
+export const styleJudgeIn = (c: { guard?: { style_judge?: boolean } }): boolean => c.guard?.style_judge !== false;
+export const styleJudgeOn = () => styleJudgeIn(cfg);
 // Splits "<model>:<thinking>" at the last colon when the suffix is a thinking level (model ids may contain colons).
 export function parseSelector(selector: string): { model: string; thinking: string } {
 	const i = selector.lastIndexOf(":");

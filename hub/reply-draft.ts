@@ -6,6 +6,7 @@
 
 import { type AttachIssueKind, attachIssues } from "./attach-check.ts";
 import { cleanChoices, cleanQuestion } from "./choices.ts";
+import { type JudgeAsk, judgeStyle, styleFailure, styleWarnings, type Violation } from "./style-judge.ts";
 
 export type ModelCall = (system: string, user: string) => Promise<string>;
 export type ReplyKind = "mail" | "comment" | "chat";
@@ -36,6 +37,7 @@ export type ReplyStyle = {
 	templates?: string[]; // "<situation> => <sentence> | <sentence>": how the user answers a recurring kind of message, in their own sentences
 	samples: string[]; // sentences the user really wrote
 	rules: string[]; // standing instructions of the user
+	standing?: string[];
 	corrections: string[]; // the user's own past change requests, verbatim
 	forbidden: string[]; // substring, or /regex/flags
 	maxChars?: number;
@@ -190,6 +192,11 @@ export function promptCorrections(corrections: string[], budget: number): string
 		total += points.length;
 	}
 	return out;
+}
+
+/** The conditions the style judge checks a draft against: the standing rules first, then the corrections a prompt carries (promptCorrections, in its order and budget) without their leading date, duplicates once. */
+export function styleConditions(style: Pick<ReplyStyle, "standing" | "corrections">, budget = CORRECTIONS_BUDGET): string[] {
+	return [...new Set([...(style.standing ?? []), ...promptCorrections(style.corrections, budget).map(c => c.replace(DATED, ""))].map(c => c.trim()).filter(Boolean))];
 }
 
 // Chat only. The same single model call first decides whether the message needs the user's own decision.
@@ -363,7 +370,7 @@ export function editLesson(before: string, after: string): string | undefined {
 }
 
 // Findings a rewrite by the model can fix; the rest (a recipient the model cannot know, the user's own address) come back as warnings, never as a retry.
-const REWRITABLE = /^the body is empty$|^the body is \d+ characters|^the text contains a placeholder$|^it uses the forbidden expression |^it says something was already sent|^the recipient evidence /;
+const REWRITABLE = /^the body is empty$|^the body is \d+ characters|^the text contains a placeholder$|^it uses the forbidden expression |^it says something was already sent|^the recipient evidence |^it breaks the owner's rule /;
 export const rewritable = (failures: string[]): string[] => failures.filter(f => REWRITABLE.test(f));
 // With candidates: a body that promises a file the chosen files do not carry (hub/attach-check.ts missing | partial) is rewritten once, never shown as a warning.
 const ATTACH_FAILURE: Partial<Record<AttachIssueKind, string>> = { missing: "the body says a file is sent, but you chose no file: choose the file the message asks for from the list, or take the promise out of the body", partial: "the message asks for or the body promises a file that the files you chose do not cover: fix the choice or the body" };
@@ -404,10 +411,14 @@ function recipientOf(to: string, item: ReplyItem): string {
 // A mail reply's subject is the original's with Re: in front; the model's own subject stays when it already starts with Re:.
 const subjectOf = (subject: string | undefined, item: ReplyItem): string | undefined => (item.kind === "mail" && item.subject?.trim() && !/^re\s*:/i.test((subject ?? "").trim()) ? defaultSubject(item) : subject ?? defaultSubject(item));
 
-async function run(item: ReplyItem, style: ReplyStyle, call: ModelCall, base: PromptExtras): Promise<ReplyResult | AskResult> {
+const lessonsOf = (r: Pick<ModelJson, "lesson" | "forbid" | "everywhere">): Pick<ModelJson, "lesson" | "forbid" | "everywhere"> => ({ ...(r.lesson !== undefined ? { lesson: r.lesson } : {}), ...(r.forbid ? { forbid: r.forbid } : {}), ...(r.everywhere !== undefined ? { everywhere: r.everywhere } : {}) });
+
+async function run(item: ReplyItem, style: ReplyStyle, call: ModelCall, base: PromptExtras, judge?: JudgeAsk): Promise<ReplyResult | AskResult> {
 	let failures: string[] | undefined;
 	let first: Omit<Extract<ReplyResult, { action: "draft" }>, "action" | "tries"> | undefined;
+	let restyle: typeof first;
 	const taught: string[] = [];
+	const conditions = judge ? styleConditions(style) : [];
 	for (let tries = 1; tries <= 2; tries++) {
 		const p = buildPrompt(item, style, { ...base, ...(failures ? { failures } : {}) });
 		let out: string;
@@ -415,10 +426,12 @@ async function run(item: ReplyItem, style: ReplyStyle, call: ModelCall, base: Pr
 			out = await call(p.system, p.user);
 		} catch (e) {
 			// A retry that times out or runs past the draft's budget keeps the first draft, with its findings as warnings.
-			if (first) return { action: "draft", ...first, tries };
+			const kept = first ?? restyle;
+			if (kept) return { action: "draft", ...kept, tries };
 			throw e;
 		}
 		const parsed = parseResult(out);
+		if (restyle && parsed?.action !== "draft") return { action: "draft", ...restyle, tries };
 		if (!parsed) {
 			failures = ["the output was not exactly one JSON object in a ```json block"];
 			continue;
@@ -437,15 +450,21 @@ async function run(item: ReplyItem, style: ReplyStyle, call: ModelCall, base: Pr
 		// The recipient and the Re: subject are settled here, by rule: a model retry cannot know an address the message does not show.
 		const draft: DraftOut = { to: recipientOf(parsed.to, item), subject: subjectOf(parsed.subject, item), body: parsed.body };
 		if (!draft.subject) delete draft.subject;
-		if (base.change) for (const w of learnedOf(parsed, base.change).forbid) if (![...style.forbidden, ...taught].some(f => banText(f) === banText(w))) taught.push(w);
+		const lessons = lessonsOf(restyle ?? parsed);
+		if (base.change) for (const w of learnedOf(lessons, base.change).forbid) if (![...style.forbidden, ...taught].some(f => banText(f) === banText(w))) taught.push(w);
 		const found = [...lintReply(draft, item, taught.length ? { ...style, forbidden: [...style.forbidden, ...taught] } : style), ...(unfoundedSend(draft.body, item, base) ? [SENT_CLAIM_FAILURE] : []), ...(unfoundedRecipient(parsed.recipient, item) ? [RECIPIENT_FAILURE] : [])];
 		const files = item.candidates?.length && parsed.files ? [...new Set(parsed.files.flatMap(f => item.candidates!.find(c => fileNameKey(c) === fileNameKey(f)) ?? []))] : undefined;
 		const attach = files ? attachIssues({ subject: draft.subject, body: draft.body, files, request: item.text }).flatMap(i => ATTACH_FAILURE[i.kind] ?? []) : [];
+		if (restyle && (found.some(f => !restyle!.warnings.includes(f)) || attach.length)) return { action: "draft", ...restyle, tries };
 		const fixable = [...rewritable(found), ...attach];
-		const who = { ...(parsed.recipient ? { recipient: parsed.recipient } : {}), ...(parsed.lesson !== undefined ? { lesson: parsed.lesson } : {}), ...(parsed.forbid ? { forbid: parsed.forbid } : {}), ...(parsed.everywhere !== undefined ? { everywhere: parsed.everywhere } : {}), ...(files ? { files } : {}) };
-		if (!fixable.length || tries === 2) return { action: "draft", draft, questions: parsed.questions, warnings: found, tries, ...who };
-		first ??= { draft, questions: parsed.questions, warnings: found, ...who };
-		failures = fixable;
+		const broken: Violation[] = !fixable.length && judge && conditions.length ? await judgeStyle({ conditions, received: item.text, draft: draft.body, ...(base.change ? { asked: base.change } : {}) }, judge) : [];
+		const warnings = [...found, ...styleWarnings(broken)];
+		const who = { ...(parsed.recipient ? { recipient: parsed.recipient } : {}), ...lessons, ...(files ? { files } : {}) };
+		if ((!fixable.length && !broken.length) || tries === 2) return { action: "draft", draft, questions: parsed.questions, warnings, tries, ...who };
+		const kept = { draft, questions: parsed.questions, warnings, ...who };
+		if (fixable.length) first = kept;
+		else restyle = kept;
+		failures = fixable.length ? fixable : broken.map(styleFailure);
 	}
 	if (first) return { action: "draft", ...first, tries: 2 };
 	throw new Error("the model did not return a usable JSON object");
@@ -457,10 +476,10 @@ const noAsk = async (p: Promise<ReplyResult | AskResult>): Promise<ReplyResult> 
 	if (r.action === "ask") throw new Error("unexpected ask");
 	return r;
 };
-export const generateReply = (item: ReplyItem, style: ReplyStyle, call: ModelCall): Promise<ReplyResult> => noAsk(run(item, style, call, {}));
+export const generateReply = (item: ReplyItem, style: ReplyStyle, call: ModelCall, judge?: JudgeAsk): Promise<ReplyResult> => noAsk(run(item, style, call, {}, judge));
 
 // A chat message: the same single call may return an ask (the message needs the user's own decision) instead of a draft; with `item.choice` it always drafts.
-export const generateChatReply = (item: ReplyItem, style: ReplyStyle, call: ModelCall): Promise<ReplyResult | AskResult> => run(item, style, call, {});
+export const generateChatReply = (item: ReplyItem, style: ReplyStyle, call: ModelCall, judge?: JudgeAsk): Promise<ReplyResult | AskResult> => run(item, style, call, {}, judge);
 
 /** What a revision teaches, checked: `line` is the model's lesson, the change itself when the model left it out, "" for a one-off; `forbid` only wordings the user's own change text holds; `everywhere` only when something was learned. */
 export type Learned = { line: string; forbid: string[]; everywhere: boolean };
@@ -483,4 +502,4 @@ export function learnedOf(r: { lesson?: string; forbid?: string[]; everywhere?: 
 }
 
 // The same, applying the user's requested change to a previous draft.
-export const reviseReply = (item: ReplyItem, style: ReplyStyle, previous: DraftOut, change: string, call: ModelCall): Promise<ReplyResult> => noAsk(run(item, style, call, { previous, change }));
+export const reviseReply = (item: ReplyItem, style: ReplyStyle, previous: DraftOut, change: string, call: ModelCall, judge?: JudgeAsk): Promise<ReplyResult> => noAsk(run(item, style, call, { previous, change }, judge));

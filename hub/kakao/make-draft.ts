@@ -3,10 +3,11 @@
 // (hub/kakao/web.ts), which hands it its room and database helpers.
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { type Learned, learnedOf, ownerLint } from "../reply-draft.ts";
+import { type Learned, learnedOf, ownerLint, styleConditions } from "../reply-draft.ts";
+import { judgeAsk, judgeStyle, styleFailure, styleWarnings, type Violation } from "../style-judge.ts";
 import { writePrivate } from "./creds.ts";
 import { type KakaoDb, messages, ownTextCounts, ownTexts, roomHead } from "./db.ts";
-import { basisOf, buildDraftPrompt, chatLines, contextLines, estimateTokens, matchLines, ownPairs, ownSamples, parseDraftReply, registerOf, type StyleHint, sinceOwnLast } from "./draft.ts";
+import { basisOf, buildDraftPrompt, chatLines, contextLines, CORRECTIONS_BUDGET, estimateTokens, matchLines, type ModelReply, ownPairs, ownSamples, parseDraftReply, registerOf, type StyleHint, sinceOwnLast } from "./draft.ts";
 import { createDraft } from "./send.ts";
 import type { KakaoConfig, KakaoPaths, Room } from "./types.ts";
 import type { StoredAsk, WebDeps } from "./web.ts";
@@ -90,15 +91,37 @@ const done = (error?: string, made?: { code: string; learned?: Learned }): Made 
 		const group = room.kind === "group" || room.kind === "open";
 		const chat = chatLines(window, compose);
 		const { system, user } = buildDraftPrompt({ lines: chat, ...(intent ? { match: (shown: number) => matchLines(recent, intent, shown) } : {}), context, group, summary: readJsonText(summaryFile(chatId)), pairs, samples: ownSamples(recent), register: registerOf(ownLines), style, ...(choice ? { choice } : {}), ...(revise ? { revise: { draft: revise.draft, change: revise.change } } : {}), ...(intent ? { intent } : {}), ...(opts.known ? { known: true } : {}) });
+		const judgeModel = deps.judgeModel;
+		const conditions = judgeModel && style ? styleConditions(style, CORRECTIONS_BUDGET) : [];
+		const ask = judgeModel ? judgeAsk(async (s, u) => (await judgeModel(s, u, chatId)).text) : undefined;
+		const judged = async (body: string): Promise<Violation[]> => (ask && conditions.length ? judgeStyle({ conditions, received: chat.join("\n"), draft: body, tail: true, ...(revise ? { asked: revise.change } : {}) }, ask) : []);
 		// One retry with the findings when the model's text fails the lint (design 3.6); what still fails is a 확인 note on the draft.
 		let reply = await deps.draftModel!(system, user, chatId);
 		let parsed = parseDraftReply(reply.text);
 		let notes = parsed?.action === "draft" ? kakaoLint(parsed.body, style) : [];
+		let broken = parsed?.action === "draft" && !notes.length ? await judged(parsed.body) : [];
+		let restyledFrom: typeof parsed;
 		if (notes.length) {
 			reply = await deps.draftModel!(system, `${user}\n\nYour last draft failed these checks; fix them: ${notes.join("; ")}`, chatId);
 			parsed = parseDraftReply(reply.text) ?? parsed;
 			notes = parsed?.action === "draft" ? kakaoLint(parsed.body, style) : [];
+			broken = parsed?.action === "draft" && !notes.length ? await judged(parsed.body) : [];
+		} else if (broken.length) {
+			let again: ModelReply | undefined;
+			try {
+				again = await deps.draftModel!(system, `${user}\n\nYour last draft failed these checks; fix them: ${broken.map(styleFailure).join("; ")}`, chatId);
+			} catch (e) {
+				noted("style rewrite failed, the first draft stays", e);
+			}
+			const rewritten = again ? parseDraftReply(again.text) : undefined;
+			if (again && rewritten?.action === "draft" && !kakaoLint(rewritten.body, style).length) {
+				restyledFrom = parsed;
+				reply = again;
+				parsed = rewritten;
+				broken = await judged(rewritten.body);
+			}
 		}
+		notes = [...notes, ...styleWarnings(broken)];
 		if (!parsed) return done(DRAFT_FAILED);
 		if (intent && parsed.action === "ask" && !revise && !opts.known) {
 			if (parsed.summary) writePrivate(summaryFile(chatId), `${parsed.summary}\n`);
@@ -120,7 +143,7 @@ const done = (error?: string, made?: { code: string; learned?: Learned }): Made 
 		} catch (e) {
 			return done(e instanceof Error ? e.message : DRAFT_FAILED);
 		}
-		const learned = revise ? learnedOf(parsed, revise.change) : undefined;
+		const learned = revise ? learnedOf(restyledFrom ?? parsed, revise.change) : undefined;
 		const taught = learned && (learned.line.trim() || learned.forbid.length) ? { ...learned, line: learned.line.trim() } : undefined;
 		if (taught && opts.learn !== false) deps.onRevise?.(chatId, taught);
 		if (parsed.summary) writePrivate(summaryFile(chatId), `${parsed.summary}\n`);

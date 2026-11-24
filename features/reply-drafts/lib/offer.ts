@@ -24,6 +24,7 @@ export type OfferMail = { account?: string; key: string; /** The card's first li
 export type OfferDeps = BoxDeps & {
 	send: (target: string, text: string) => unknown;
 	call?: ModelCall;
+	judge?: ModelCall;
 	/** The mail as its draft card shows it (hub/mail.ts mailDraftBrief); without it the card has the sender and summary the offer came with. */
 	brief?: (key: string) => DraftBrief | undefined;
 	/** Picks among tied 첨부 파일 폴더 files by name (flow.ts stageForReply); tests inject it. */
@@ -340,7 +341,7 @@ async function offerOne(m: OfferMail, deps: OfferDeps, { body, history, replyTo 
 		// One budget for every model call of this draft: the rule match, the draft call and the file tie-break.
 		trace = draftTrace();
 		// A short wait for an iCloud file to come back (the offer queue waits on this draft); what is still away is retried in the background (wantFiles).
-		const flow = { call: deps.call, pick: deps.pick, trace, stage: { tries: 5, ...deps.stage } };
+		const flow = { call: deps.call, judge: deps.judge, pick: deps.pick, trace, stage: { tries: 5, ...deps.stage } };
 		let hit: MailMatch = {};
 		if (rules.length || judges.length) {
 			try {

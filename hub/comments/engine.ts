@@ -57,6 +57,7 @@ export type EngineDeps = {
 	collector: string;
 	adapters: Partial<Record<SourceKind, CommentAdapter>>;
 	model?: DraftModel;
+	judge?: DraftModel;
 	style?: (src: SourceConfig) => ReplyStyle;
 	learn?: (lesson: Lesson) => void;
 	broadcast?: (event: Record<string, unknown>) => void;

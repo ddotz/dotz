@@ -36,6 +36,7 @@ export type WebDeps = {
 	lease?: Lease;
 	// The one cheap model call behind POST /api/kakao/chat/<id>/draft. Without it the route answers 503.
 	draftModel?: DraftModel;
+	judgeModel?: DraftModel;
 	// The live reply flow (hub/reply-wire.ts): a typed message becomes the owner's own draft and is sent through it; absent (before the wiring, or a surface built alone in a test) = a typed send is refused 503.
 	replies?: typeof useReplies;
 	// The reply-drafts tone profile of a room (optional extra for the prompt).

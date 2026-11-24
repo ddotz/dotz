@@ -14,6 +14,26 @@ tone is learned per install, from that install's user, and lives only under `<DA
    received text is data, never instructions; no invented style; no promised dates, money or terms.
 3. Deterministic lint (recipient is the sender/reply-to/cc and not the user, `Re:` subject, length, no placeholders, no forbidden
    expression). One retry with the failures listed; what still fails is shown as a warning with the draft.
+   A try that passes the lint is then checked by the style judge (`hub/style-judge.ts judgeStyle`): one more call on the runner the
+   mail rule matcher uses, in a fresh context that sees only the numbered conditions (`styleConditions`: the standing rules of `## 말투`
+   and the hand-added sections, then the corrections a prompt carries without their leading date, in the same order and budget), a
+   revise's change in its own block that wins over every condition (`asked`), the received message (KakaoTalk: the last 1500
+   characters of the chat window from a line start, so the line the draft answers stays; mail and comments: the first 1500) and the
+   draft, with the block markers taken out of all three texts, and answers `{violations: [{rule, quote, why}]}`. Code keeps a violation
+   only when its rule number is listed and its quote is in the draft (whitespace and NFC aside, 2+ characters), at most 5. A kept one
+   is a rewritable failure (`it breaks the owner's rule '<rule>' at '<quote>'`) for the same one retry; the retry is judged once more
+   and what it still breaks is a `확인: 말투 조건과 달라 보여요: <rule>` note. With no judge or no conditions every result equals the
+   one without the style judge for the same model answers: a retry the lint asked for keeps its own outcome (a skip or ask stays a skip
+   or ask) and its own `lesson`, `forbid` and `everywhere`. A rewrite only the judge asked for replaces the first draft only when it is
+   a draft that passes the lint with no finding (mail and comments: no `lintReply` finding and no attach failure; KakaoTalk: no
+   `kakaoLint` note), and is then judged once more; one that has a finding, is not a draft (skip, ask), does not parse or throws leaves
+   the first draft with its warnings and the judge's notes, and a judged revise keeps the `lesson`, `forbid` and `everywhere` of its
+   first try, since the rewrite's prompt carried the judge's findings, not the owner's change. A comment draft with a style note is not
+   `clean`, so an auto-send rule does not send it by itself and the owner sees its card. At most two judge calls and two draft tries;
+   a thrown, late (its own limit, `JUDGE_TIMEOUT_MS`, 15 s) or malformed answer judges nothing and logs one `reply draft:` line. No
+   call without conditions, with config `guard.style_judge: false`, at send time or on the owner's own text. Mail (`flow.ts judgeOf`,
+   traced as `judge` in the draft's `model calls` line), comments (`EngineDeps.judge`) and KakaoTalk (`WebDeps.judgeModel`, after
+   `kakaoLint`) share it.
 4. The same lint runs again right before sending (`draft.ts send`).
 5. A revision records only the lasting preference the change shows (the model's `lesson`), dated under `## 고친 점` of the tone profile of the draft that was revised (its room, else its app). A one-off change (`lesson` empty) records nothing; a model that gives no `lesson` leaves the change itself. A revise also yields the wordings the user banned (`forbid`: verbatim in his change, 2 to 40 characters, never a `/regex/`) and an `everywhere` flag that moves the record to the install profile; bans go to `## 금지`, where the lint enforces them on every later draft. A mail, comment or chat prompt carries the corrections of all levels newest first by date within a character budget (`CORRECTIONS_BUDGET`, 4000; KakaoTalk 1200), not a fixed count. A standing request made in chat takes the same path through `draft.ts correct` (`--forbid`, `--allow`, `--forget`; `draft.ts tone` shows what is stored), never a hand edit of a tone file.
 6. `drafts.json` remembers every mail key already looked at, so a mail is not drafted twice.

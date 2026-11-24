@@ -2,6 +2,7 @@
 // auto-draft rule and for a 고치기. Split out of createEngine (hub/comments/engine.ts), which hands it the store and its helpers.
 import { fileSizeText } from "../draft-approval.ts";
 import { editLesson, generateReply, learnedOf, reviseReply, type ReplyItem, type ReplyStyle } from "../reply-draft.ts";
+import { judgeAsk } from "../style-judge.ts";
 import type { Lesson } from "../reply-types.ts";
 import type { Comment, SourceConfig } from "./contract.ts";
 import type { DraftModel, EngineDeps, MailLink, MailView, Step } from "./engine.ts";
@@ -116,7 +117,9 @@ export function createDraftRun({ deps, store, ownerOf, styleOf, contextOf, code,
 		const mailLine = (previous ? !!mailView(previous) : mailPlanned(c, src)) ? "함께 보내는 메일: 있어요 (답글과 같은 카드로 나가요)" : "함께 보내는 메일: 없어요 (메일이나 파일을 보내 준다고 약속하지 마세요)";
 		const item: ReplyItem = { kind: "comment", app: src.key, from: c.author, text: c.text, context: [contextOf(c), mailLine, ...matched].join("\n") };
 		const style = withExamples(styleOf(src), similarPairs(c.text, past, EXAMPLES, undefined, deps.now()), [...past].sort((a, b) => b.at - a.at).map(p => p.reply), c.text);
-		const r = previous && change !== undefined ? await reviseReply(item, style, { to: `${c.author} 댓글`, body: previous.text }, change, call) : await generateReply(item, style, call);
+		const judgeModel = deps.judge;
+		const judge = judgeModel ? judgeAsk(async (system, user) => (await judgeModel(system, user, ownerOf(src))).text) : undefined;
+		const r = previous && change !== undefined ? await reviseReply(item, style, { to: `${c.author} 댓글`, body: previous.text }, change, call, judge) : await generateReply(item, style, call, judge);
 		// pastSeed: no empty card. An empty or skipped reply takes the closest past answer of the owner, marked 확인 필요.
 		const seed = (r.action === "skip" || !r.draft.body.trim()) && !previous ? seeds[0] : undefined;
 		if (r.action === "skip" && !seed) return { ok: false, reason: r.reason || "답할 내용이 없어서 초안을 만들지 않았어요", permanent: true };
