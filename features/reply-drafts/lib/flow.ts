@@ -17,7 +17,8 @@ import { basename } from "node:path";
 import { ruleFilePath } from "./rules.ts";
 import { canAttach, sendsThroughZele, sendWith, settleAccount, threadMoved, webmailSite, zeleAccountOf, type Sent, type SendOutcome } from "./senders.ts";
 import { carryStagedFiles, removeStagedFile, stagedFiles, stagedName, stageFiles, stageWanted, type StageOpts, type Want } from "./staged.ts";
-import { dataDir, INSTALL, loadSettings, loadStyle, paths, recordForbidden, recordLearned, toneFile, validApp, type ToneKey } from "./settings.ts";
+import { dataDir, INSTALL, loadPairs, loadSettings, loadStyle, ownReplies, paths, recordForbidden, recordLearned, recordPattern, toneFile, validApp, type ToneKey } from "./settings.ts";
+import { defaultKakaoReader, defaultKakaoRooms, KAKAO_APP, kakaoOwnTexts, type OwnerReader, type RoomsReader } from "./kakao-tone.ts";
 import { banWarnings, boxById } from "./box.ts";
 import { maybeRefine } from "./persona.ts";
 import { addPair, styleFrom, styleWithExamples } from "./pairs.ts";
@@ -25,18 +26,20 @@ import { addRevision, claimFile, getDraft, listDrafts, newId, patchDraft, type R
 import { realRunner, type Runner } from "./tone.ts";
 import { mailHash, mailView, sendAccountOf, type MailOf } from "./view.ts";
 import { lessonNote, reasonOf } from "../../../hub/reply-reasons.ts";
+import { askWith, banHit, proposePattern, quotesWording, ruleOfFinding } from "../../../hub/ban.ts";
+import type { Lesson } from "../../../hub/reply-types.ts";
 
 export { realRunner };
 // What hub/reply-mail.ts (the hub's single door into this feature) needs beside the flow itself.
 export { mailView, recordForbidden, recordLearned, sendAccountOf, webmailSite, type MailOf };
 
 // `analyze` = the model call of the identity sweep and its refinement (persona.ts); absent, no identity is analysed or refined.
-export type FlowDeps = { /** Chooses among tied library files by name (stageForReply); the default is one short model call. */ pick?: (names: string[]) => Promise<string[]>; call?: ModelCall; judge?: ModelCall; /** The model calls of one draft and its overall budget (draftTrace); buildDraft makes one when absent. */ trace?: DraftTrace; analyze?: ModelCall; run?: Runner; now?: () => Date; send?: (rec: DraftRec) => Promise<SendOutcome>; /** How library files are copied onto a draft (tests). */ stage?: StageOpts; /** Told where an approved send left the mail, right after the transport answered and before any bookkeeping write (bin/draft.ts prints its DOTZ_SEND line). */ onOutcome?: (o: Outcome) => void };
+export type FlowDeps = { /** Chooses among tied library files by name (stageForReply); the default is one short model call. */ pick?: (names: string[]) => Promise<string[]>; call?: ModelCall; judge?: ModelCall; /** The model calls of one draft and its overall budget (draftTrace); buildDraft makes one when absent. */ trace?: DraftTrace; analyze?: ModelCall; run?: Runner; now?: () => Date; send?: (rec: DraftRec) => Promise<SendOutcome>; /** How library files are copied onto a draft (tests). */ stage?: StageOpts; /** Told where an approved send left the mail, right after the transport answered and before any bookkeeping write (bin/draft.ts prints its DOTZ_SEND line). */ onOutcome?: (o: Outcome) => void; learnCall?: (app: string) => ModelCall; kakaoReader?: (chatId: string) => Promise<OwnerReader>; kakaoRooms?: () => Promise<RoomsReader> };
 /** Where a send left the mail and why (design 1.5, 2.2): what sendDraft tells `onOutcome` and carries on a Step that did not send. */
 export type Outcome = { sent: Sent; code?: string; vars?: Record<string, string | number> };
 
 /** The deps of a real send or revise outside a test: the identity model of the reply-drafts settings and the real tool runner. */
-export const realFlowDeps = (): FlowDeps => ({ analyze: defaultCall(loadSettings().model), run: realRunner });
+export const realFlowDeps = (): FlowDeps => ({ analyze: defaultCall(loadSettings().model), run: realRunner, learnCall: app => replyCall(app === INSTALL ? "mail" : app), kakaoReader: defaultKakaoReader, kakaoRooms: defaultKakaoRooms });
 
 // After a recorded correction: every few corrections fold into the profile's identity. A failed refinement keeps the old identity.
 export async function refineAfterCorrection(key: ToneKey, deps: FlowDeps): Promise<void> {
@@ -49,9 +52,69 @@ export async function recordLesson(key: ToneKey, line: string, deps: FlowDeps): 
 	if (recordLearned(key, line, nowOf(deps)) === "correction") await refineAfterCorrection(key, deps);
 }
 
-type Taught = { line: string; forbid: string[] };
+/** What a stored wording pattern taught: its label, and the literal words of the same lesson that one of its verified good examples uses (the owner's own text shows them right in some use, so they are not stored as literal bans). */
+export type PatternLearned = { label: string; inGood: string[] };
 
-async function teach(key: ToneKey, lesson: Taught, deps: FlowDeps): Promise<Taught> {
+const REVISE_PATTERN_MS = 12_000;
+
+async function roomLines(rooms: string[], reader: (room: string) => Promise<OwnerReader>): Promise<string[]> {
+	const lines = await Promise.all(
+		rooms.map(room =>
+			reader(room)
+				.then(r => kakaoOwnTexts(r, room))
+				.catch((e: Error): string[] => (console.error(`reply draft: KakaoTalk lines of room ${room} not read for a wording pattern: ${e.message}`), [])),
+		),
+	);
+	return lines.flat();
+}
+
+async function everyRoomLines(deps: FlowDeps): Promise<string[]> {
+	if (!deps.kakaoRooms) return [];
+	try {
+		const reader = await deps.kakaoRooms();
+		return roomLines(await reader.rooms(), async () => reader);
+	} catch (e) {
+		console.error(`reply draft: KakaoTalk rooms not read for a wording pattern: ${(e as Error).message}`);
+		return [];
+	}
+}
+
+async function patternCorpus(key: ToneKey | "install", deps: FlowDeps): Promise<string[]> {
+	if (key === INSTALL || key.app === INSTALL) return [...ownReplies(), ...(await everyRoomLines(deps))];
+	if (key.app !== KAKAO_APP) return loadPairs(key.base ?? key.app).map(p => p.reply);
+	if (key.room === undefined) return everyRoomLines(deps);
+	return deps.kakaoReader ? roomLines([key.room], deps.kakaoReader) : [];
+}
+
+/** A wording pattern for a rule or lesson just stored in `key`: proposed by `deps.learnCall` with bad and good examples only from `quotable`, accepted by code (hub/ban.ts) against the owner's own replies in that profile's scope (an app's stored pairs, a KakaoTalk room's own lines, every room's for the KakaoTalk app, all of them for the install), written under `## 금지` of that profile. Its label and which of `opts.words` a kept good example uses; undefined when none was kept, no call is set, or no answer came within `opts.capMs` (logged; a late answer is dropped). */
+export async function learnPattern(key: ToneKey | "install", rule: string, quotable: string[], deps: FlowDeps, opts: { words?: string[]; capMs?: number } = {}): Promise<PatternLearned | undefined> {
+	const app = key === INSTALL ? INSTALL : key.app;
+	const call = deps.learnCall?.(app);
+	if (!call || !rule.trim()) return undefined;
+	const proposed = patternCorpus(key, deps).then(corpus => proposePattern(rule, quotable, corpus, askWith(call)));
+	const { promise: late, resolve } = Promise.withResolvers<"late">();
+	const timer = opts.capMs === undefined ? undefined : setTimeout(() => resolve("late"), opts.capMs);
+	const got = await (timer === undefined ? proposed : Promise.race([proposed, late]));
+	clearTimeout(timer);
+	if (got === "late") {
+		console.error(`reply draft: no wording pattern for ${app}: no answer within ${opts.capMs} ms`);
+		proposed.catch(e => console.error(`reply draft: late wording pattern for ${app} failed: ${(e as Error).message}`));
+		return undefined;
+	}
+	if (!got) return undefined;
+	recordPattern(key, got.ban);
+	return { label: got.ban.label, inGood: (opts.words ?? []).filter(w => got.good.some(g => banHit(g, { kind: "literal", text: w }))) };
+}
+
+/** The wording pattern a revise may teach (the card and `draft.ts revise`): asked only when the revise banned literal `words` or the owner's change quotes a wording, with only the previous draft and the change as quotable texts (never the model-written line), and given 12 s. */
+export async function revisePattern(key: ToneKey | "install", line: string, evidence: NonNullable<Lesson["evidence"]>, words: string[], deps: FlowDeps): Promise<PatternLearned | undefined> {
+	if (!words.length && !quotesWording(evidence.change)) return undefined;
+	return learnPattern(key, line.trim() || evidence.change, [evidence.draft, evidence.change], deps, { words, capMs: REVISE_PATTERN_MS });
+}
+
+type Taught = { line: string; forbid: string[]; pattern?: string };
+
+async function teach(key: ToneKey, lesson: Taught, evidence: NonNullable<Lesson["evidence"]>, deps: FlowDeps): Promise<Taught> {
 	const stored: Taught = { line: "", forbid: [] };
 	if (lesson.line.trim()) {
 		try {
@@ -61,10 +124,18 @@ async function teach(key: ToneKey, lesson: Taught, deps: FlowDeps): Promise<Taug
 			console.error(`reply draft: lesson of ${key.app} not recorded: ${(e as Error).message}`);
 		}
 	}
-	if (lesson.forbid.length) {
+	let inGood: string[] = [];
+	try {
+		const pattern = await revisePattern(key, lesson.line, evidence, lesson.forbid, deps);
+		if (pattern) [stored.pattern, inGood] = [pattern.label, pattern.inGood];
+	} catch (e) {
+		console.error(`reply draft: wording pattern of ${key.app} not recorded: ${(e as Error).message}`);
+	}
+	const forbid = lesson.forbid.filter(w => !inGood.includes(w));
+	if (forbid.length) {
 		try {
-			recordForbidden(key, lesson.forbid);
-			stored.forbid = lesson.forbid;
+			recordForbidden(key, forbid);
+			stored.forbid = forbid;
 		} catch (e) {
 			console.error(`reply draft: forbidden wordings of ${key.app} not recorded: ${(e as Error).message}`);
 		}
@@ -236,7 +307,8 @@ export function ownerWarning(w: string): string {
 	if (w === SENT_CLAIM_FAILURE) return "이미 보냈다고 썼는데 보낸 근거가 없어요";
 	if (w === "the text contains a placeholder") return "채워 넣지 않은 자리표시가 있어요";
 	if ((x = m(/^it uses the forbidden expression '(.+)'$/))) return `쓰지 않기로 한 표현 '${x[1]}'이(가) 있어요`;
-	return w;
+	const rule = ruleOfFinding(w);
+	return rule === undefined ? w : reasonOf("wording_rule", { label: rule }).text;
 }
 
 /** A 고치기 asked for other files and the files stayed as they were: what it asked for is not in the 첨부 파일 폴더. */
@@ -274,6 +346,8 @@ function lintCode(raw: string): { code: string; vars?: Record<string, string | n
 	if ((x = /^'(.+)' is not the sender, reply-to or a cc of the original$/.exec(raw))) return { code: "recipient_not_on_mail", vars: { address: x[1]! } };
 	if ((x = /^the body is (\d+) characters; the limit is (\d+)$/.exec(raw))) return { code: "too_long", vars: { n: Number(x[1]), max: Number(x[2]) } };
 	if ((x = /^it uses the forbidden expression '(.+)'$/.exec(raw))) return { code: "forbidden_word", vars: { word: x[1]! } };
+	const rule = ruleOfFinding(raw);
+	if (rule !== undefined) return { code: "wording_rule", vars: { label: rule } };
 	if (raw === "the subject must start with 'Re:'") return { code: "subject_re" };
 	if (raw === "the body is empty") return { code: "empty" };
 	return { code: "placeholder" };
@@ -465,7 +539,7 @@ async function restageForRevision(rec: DraftRec, change: string, deps: FlowDeps,
 
 export type Step = { ok: boolean; text: string; /** The id of the draft a revision made. */ id?: string; /** The approved send itself failed (not the approval gate): the owner has to hear it. */ sendFailed?: true;
 	/** A send that did not go out: whether it surely did not or may have, and the reason code (absent on success, where the mail went out). */ sent?: Exclude<Sent, "yes">; code?: string; vars?: Record<string, string | number>;
-	/** A revision: the draft it replaced, and the lesson it recorded (none when the change was only about that draft). */ replaces?: string; lesson?: { key: ToneKey; line: string; forbid: string[] } };
+	/** A revision: the draft it replaced, and the lesson it recorded (none when the change was only about that draft). */ replaces?: string; lesson?: { key: ToneKey; line: string; forbid: string[]; evidence: NonNullable<Lesson["evidence"]> } };
 
 // The change stays verbatim in the draft's own `changes`.
 // `learn: false`: the caller records the returned lesson itself (hub/reply-actions.ts, so every kind learns in one place).
@@ -516,8 +590,8 @@ async function reviseClaimed(id: string, change: string, deps: FlowDeps, opts: {
 	// Learned only once the new draft is stored: a revise that failed teaches nothing.
 	const learnt = learnedOf(r, change);
 	const lessonKey: ToneKey = learnt.everywhere ? { app: INSTALL } : toneKey(old);
-	const taught = learnt.line.trim() || learnt.forbid.length ? { key: lessonKey, line: learnt.line, forbid: learnt.forbid } : undefined;
-	const stored = taught && opts.learn !== false ? await teach(taught.key, taught, deps) : taught;
+	const taught = learnt.line.trim() || learnt.forbid.length ? { key: lessonKey, line: learnt.line, forbid: learnt.forbid, evidence: { draft: old.body, change } } : undefined;
+	const stored = taught && opts.learn !== false ? await teach(taught.key, taught, taught.evidence, deps) : taught;
 	const said = taught && stored ? lessonNote({ key: taught.key, ...stored }) : "";
 	return { ok: true, text: askText(rec, [...r.warnings, ...banned, ...notStaged], said ? `답장 초안을 고쳤어요. ${said}` : "답장 초안을 고쳤어요"), id: rec.id, replaces: old.id, ...(taught ? { lesson: taught } : {}) };
 }

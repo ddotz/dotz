@@ -80,6 +80,33 @@ A chat message that needs his own decision still asks first (exit 4), since the 
   A profile with corrections or a section of its own is not relearned. A `## ` section the code does not know reaches the rules.
   Legacy: an old `style.md` is read as the `mail` profile until `tone/mail.md` exists (the next write moves it over); for the `youtube`
   and `instagram` apps without samples, `## 예시` of `custom/sns/tone.md` is used (only for those apps, between app and install).
+  A `## 금지` bullet is one ban (`hub/ban.ts` `parseBan`): `shape <JSON>` a wording rule the product wrote, `/re/flags` a regex the owner
+  wrote by hand, anything else a literal wording (matched with whitespace runs as one space, NFC, case aside). A regex is tested once on the
+  body as written (an invalid one never hits), named as written, exactly as before wording rules existed; `/x/ = y` is a literal. A `shape`
+  bullet holds `{"parts":[...],"label":"..."}` on one line and is read back with `JSON.parse` and a strict check (only those keys, the limits
+  below); one that fails is a literal of its whole text. The label of a wording rule says what to write instead, so it is never listed as
+  forbidden: the mail and comment prompt and the KakaoTalk prompt list literals and regexes under the forbidden list ("Never use" on KakaoTalk)
+  and labels under "Wording rules the owner set (a draft that breaks one is rejected):"; the lint says `it breaks the owner's wording rule
+  '<label>'` (rewritable), the owner reads `정해 둔 표현 규칙과 달라요: <label>` (reason `wording_rule`), and `draft.ts tone` shows `<label>
+  (표현 규칙)`. The product never compiles a regex: `matchShape` reads body and wordings in NFC, lower case, with every whitespace removed but
+  a newline kept as a sentence break, and from every start position takes an `any` part as one of its wordings by `startsWith` (not when the
+  text right before ends with one of its `notAfter` wordings) and a `gap` part as 0..n characters that are not `.`, `!`, `?` or a newline.
+  A failed part at a position is remembered, every `startsWith` and every gap position is one step, and past 2000000 steps the check stops, counts as not used and
+  logs one `reply draft:` line naming the label. `proposePattern` asks the reply model of the profile's app once for `{parts, label, bad,
+  good}` or `null`, where a part is `{any: [wordings], notAfter?: [wordings]}` or `{gap: n}`; the limits (`acceptPattern` and the reader) are
+  1 to 5 parts, `any` first and last, at most 2 gaps never in a row, gap 1..30, 1..40 wordings of 1..20 code points on one line, `notAfter` at
+  most 10 of 1..6 code points, a label of 1..80 code points on one line. `acceptPattern` keeps it only when it hits every bad example and no
+  good one, and hits at most 15% of the owner's own past replies in the profile's scope (checked from 20 of them): an app profile its own
+  `pairs/<app>.jsonl`, a KakaoTalk room the owner's own lines there, the KakaoTalk app profile his lines in every room the reader may read, the
+  install all pairs and all those lines; a missing pairs file or reader is an empty corpus. Bad and good examples count only when they occur
+  in the texts the caller lets it quote: `draft.ts correct --rule/--change` the rule text itself, a revise (the card or `draft.ts revise`,
+  `revisePattern`) the previous draft and the owner's change, never the model-written lesson line. A revise asks only when it banned literal
+  words or the change quotes a wording ('…', "…", ‘…’, “…”, 「…」), and waits 12 s at most (a later answer is dropped). A word the revise
+  banned as a literal is not stored only when one of the kept good examples uses it (the owner's own text shows it is right in some use);
+  every other word is stored, and the card names what was stored. The revise prompts keep `forbid` for a fixed phrase that is wrong wherever
+  it appears and put a rejected kind of sentence or ending into `lesson` with his examples. `correct --forbid` is always stored. The rule goes
+  under `## 금지` of the profile the rule or lesson went to, once per parts, and the card or the CLI says `표현 규칙으로도 정해 뒀어요:
+  <label>`; `correct --allow "<label>"` takes it out.
 - `drafts.json` `{drafts, keys}`; draft ids are `R` + 6 base32 characters; a newer draft for the same mail makes the older one stale. Each draft keeps its `app` and `room`.
 
 ## How a new install's tone is learned

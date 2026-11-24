@@ -1,6 +1,5 @@
 // Tone source for KakaoTalk rooms: the user's own text lines of ONE room (fromMe, type 1) from the hub/kakao reader -> that room's
 // profile, tone/kakao/<chatId>.md. The reader is injected (tests use hub/kakao/fixture.ts); nothing here talks to the app or sends.
-import { readFileSync } from "node:fs";
 import type { Msg } from "../../../hub/kakao/types.ts";
 import type { ModelCall } from "../../../hub/reply-draft.ts";
 import { learnFirst } from "./persona.ts";
@@ -34,18 +33,35 @@ export async function ensureKakaoRoom(chatId: string, reader: () => Promise<Owne
 	return learnKakaoRoom(chatId, await reader());
 }
 
+async function enabledKakao() {
+	const { kakaoPaths } = await import("../../../hub/kakao/types.ts");
+	const { readConfig } = await import("../../../hub/kakao/web.ts");
+	const paths = kakaoPaths(dataDir());
+	const config = readConfig(paths);
+	return config?.enabled === true ? { paths, config } : undefined;
+}
+
+async function realReader() {
+	const on = await enabledKakao();
+	if (!on) throw new Error("카톡 연동이 꺼져 있어요");
+	const { realCtx } = await import("../../../hub/kakao/cli.ts");
+	return realCtx(on.paths).reader(on.config);
+}
+
 // The real reader: the hub/kakao database reader, only for a room the integration may draft for (same rule as `cli.ts read`).
 export async function defaultKakaoReader(chatId: string): Promise<OwnerReader> {
-	const { kakaoPaths } = await import("../../../hub/kakao/types.ts");
-	const { realCtx } = await import("../../../hub/kakao/cli.ts");
-	const paths = kakaoPaths(dataDir());
-	let config: any;
-	try {
-		config = JSON.parse(readFileSync(paths.config, "utf8"));
-	} catch {}
-	if (config?.enabled !== true) throw new Error("카톡 연동이 꺼져 있어요");
-	const reader = await realCtx(paths).reader(config);
+	const reader = await realReader();
 	const room = (await reader.rooms()).find(r => r.chatId === chatId);
 	if (!room || !reader.draftable(room)) throw new Error("이 대화방은 말투를 배울 수 없어요 (답장 초안 대상이 아니에요)");
 	return reader;
+}
+
+/** A reader that also names the rooms it may read: every room drafts can be made for. */
+export type RoomsReader = OwnerReader & { rooms: () => Promise<string[]> };
+
+/** The real `RoomsReader`: one hub/kakao database reader for every room the integration may draft for; no room while the integration is off. */
+export async function defaultKakaoRooms(): Promise<RoomsReader> {
+	if (!(await enabledKakao())) return { messages: async () => [], rooms: async () => [] };
+	const reader = await realReader();
+	return { messages: (chatId, limit) => reader.messages(chatId, limit), rooms: async () => (await reader.rooms()).filter(r => reader.draftable(r)).map(r => r.chatId) };
 }

@@ -40,7 +40,7 @@ export type ReplyDeps = {
 	/** A plain line from the owner in the card's conversation (나갔어요), no pick. */
 	recordText?: (conv: string, text: string) => void;
 	say?: (conv: string, ref: string, text: string) => void;
-	learning: { record: (key: Lesson["key"], line: string) => Promise<"rule" | "correction">; refine: (key: Lesson["key"]) => Promise<void>; forbid: (key: Lesson["key"], words: string[]) => Promise<void> };
+	learning: { record: (key: Lesson["key"], line: string) => Promise<"rule" | "correction">; refine: (key: Lesson["key"]) => Promise<void>; forbid: (key: Lesson["key"], words: string[]) => Promise<void>; pattern?: (key: Lesson["key"], line: string, evidence: NonNullable<Lesson["evidence"]>, words: string[]) => Promise<{ label: string; inGood: string[] } | undefined> };
 	/** `rewrite` and `replace` draw a card anew (every surface, Discord included) and store `hash`, the version it now shows. `repost` posts the open card
 	 * of `ref` again at the bottom of its conversation (the same notice; `text` and `hash` when given), its old post marked moved. */
 	cards: { open: () => OpenCard[]; replace: (oldRef: string, newRef: string, text: string, hash: string | undefined) => void; rewrite: (ref: string, text: string, hash: string | undefined) => void; repost: (ref: string, text: string | undefined, hash: string | undefined) => Promise<void>; close: (ref: string) => void;
@@ -87,7 +87,7 @@ function sendAction(input: ActInput): keyof typeof SEND_LABEL {
 async function learn(deps: ReplyDeps, lesson: Lesson | undefined): Promise<{ said: string; refine: () => Promise<void> }> {
 	if (!lesson) return { said: "", refine: async () => undefined };
 	const where = `${lesson.key.app}${lesson.key.room ? `/${lesson.key.room}` : ""}`;
-	const words = lesson.forbid ?? [];
+	let words = lesson.forbid ?? [];
 	let kind: "rule" | "correction" | undefined;
 	let banned = false;
 	if (lesson.line.trim()) {
@@ -95,6 +95,16 @@ async function learn(deps: ReplyDeps, lesson: Lesson | undefined): Promise<{ sai
 			kind = await deps.learning.record(lesson.key, lesson.line);
 		} catch (e) {
 			deps.log(`reply learning for ${where} failed: ${(e as Error).message}`);
+		}
+	}
+	let pattern: string | undefined;
+	if (lesson.evidence && deps.learning.pattern) {
+		try {
+			const learned = await deps.learning.pattern(lesson.key, lesson.line, lesson.evidence, words);
+			pattern = learned?.label;
+			words = words.filter(w => !learned?.inGood.includes(w));
+		} catch (e) {
+			deps.log(`reply wording pattern for ${where} failed: ${(e as Error).message}`);
 		}
 	}
 	if (words.length) {
@@ -113,7 +123,7 @@ async function learn(deps: ReplyDeps, lesson: Lesson | undefined): Promise<{ sai
 			deps.log(`reply learning for ${where} failed: ${(e as Error).message}`);
 		}
 	};
-	return { said: lessonNote({ key: lesson.key, line: kind ? lesson.line : "", forbid: banned ? words : [] }), refine };
+	return { said: lessonNote({ key: lesson.key, line: kind ? lesson.line : "", forbid: banned ? words : [], ...(pattern ? { pattern } : {}) }), refine };
 }
 
 /** The cards of `ref` show the version the store holds now, and keep its hash (a pick from one of them is checked against it). */

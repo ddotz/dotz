@@ -676,7 +676,7 @@ export function createEngine(deps: EngineDeps) {
 		}
 		const body = text.replace(/\r\n?/g, "\n").trim();
 		const found = ownerLint({ body }, { kind: "comment", app: src.key, from: find(d.commentId)?.author ?? "", text: "" }, styleOf(src));
-		if (found.length) return { ok: false, reason: `${LINT_REFUSED} ${found.join(" · ")}`, code: found[0]!.startsWith("it uses the forbidden") ? "forbidden_word" : found[0]!.startsWith("the body is empty") ? "empty" : found[0]!.startsWith("the body is") ? "too_long" : "placeholder", lint: found };
+		if (found.length) return { ok: false, reason: `${LINT_REFUSED} ${found.join(" · ")}`, code: found[0]!.startsWith("it uses the forbidden") ? "forbidden_word" : found[0]!.startsWith("it breaks the owner's wording rule") ? "wording_rule" : found[0]!.startsWith("the body is empty") ? "empty" : found[0]!.startsWith("the body is") ? "too_long" : "placeholder", lint: found };
 		store.putDraft({ ...d, text: body, clean: false, ...(d.editedFrom === undefined ? { editedFrom: d.text } : {}) });
 		emit({ kind: "comment_draft", source: d.source, thread: d.thread });
 		paired(d.code);

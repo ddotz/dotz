@@ -227,13 +227,13 @@ test("K3 a one-off mail change writes no tone file and returns no lesson; with l
 	expect(once.step.text).not.toContain("앞으로");
 	rmSync(paths.drafts(), { force: true, recursive: true });
 	const handed = await revisedWith({ lesson: LESSON, forbid: [BAN], everywhere: false }, CHANGE, { learn: false });
-	expect(handed.step.lesson).toEqual({ key: { app: "mail" }, line: LESSON, forbid: [BAN] });
+	expect(handed.step.lesson).toEqual({ key: { app: "mail" }, line: LESSON, forbid: [BAN], evidence: { draft: handed.rec.body, change: CHANGE } });
 	expect(existsSync(paths.toneDir())).toBe(false);
 });
 
 test("K4 a mail revise bans only wording the user's own change holds: the received mail's words and the model's own idea are never stored", async () => {
-	const { step } = await revisedWith({ lesson: LESSON, forbid: ["다음 주 회의", "공손하지 않은 말투"], everywhere: false });
-	expect(step.lesson).toEqual({ key: { app: "mail" }, line: LESSON, forbid: [] });
+	const { rec, step } = await revisedWith({ lesson: LESSON, forbid: ["다음 주 회의", "공손하지 않은 말투"], everywhere: false });
+	expect(step.lesson).toEqual({ key: { app: "mail" }, line: LESSON, forbid: [], evidence: { draft: rec.body, change: CHANGE } });
 	expect(profileBullets({ app: "mail" }, HEADINGS.forbidden)).toEqual([]);
 	expect(profileBullets({ app: "mail" }, HEADINGS.corrections).join("\n")).toContain(LESSON);
 });

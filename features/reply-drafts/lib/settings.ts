@@ -5,6 +5,7 @@ import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { withLock } from "../../../hub/file-lock.ts";
+import { banBullet, banKey, parseBan, type ShapeBan } from "../../../hub/ban.ts";
 import type { ReplyStyle } from "../../../hub/reply-draft.ts";
 
 export const dataDir = () => process.env.DOTZ_DIR ?? join(homedir(), ".dotz");
@@ -344,10 +345,10 @@ export const removeCorrection = (key: ToneKey | "install", text: string): string
 export const removeRule = (key: ToneKey | "install", text: string): string[] => removeLines(key, HEADINGS.rules, text);
 
 function removeLines(key: ToneKey | "install", heading: string, text: string): string[] {
-	const needle = banKey(text);
+	const needle = lineKey(text);
 	let removed: string[] = [];
 	editProfile(key, md => {
-		const out = needle ? dropBullets(md, heading, l => banKey(l).includes(needle)) : undefined;
+		const out = needle ? dropBullets(md, heading, l => lineKey(l).includes(needle)) : undefined;
 		removed = out?.removed ?? [];
 		return out?.md;
 	});
@@ -371,31 +372,53 @@ export function recordLearned(key: ToneKey, line: string, now: Date): "rule" | "
 	return "correction";
 }
 
-const banKey = (word: string) => oneLine(word.normalize("NFC")).toLowerCase();
+const lineKey = (word: string) => oneLine(word.normalize("NFC")).toLowerCase();
+const bulletKey = (bullet: string) => banKey(parseBan(bullet));
 
 /** Adds wordings the user banned, each on one line, to the `## 금지` section of exactly that profile; one already there (whitespace, case and Unicode composition aside) is not added again. */
 export function recordForbidden(key: ToneKey | "install", words: string[]): void {
 	editProfile(key, md => {
-		const have = bullets(md, HEADINGS.forbidden).map(banKey);
+		const have = bullets(md, HEADINGS.forbidden).map(bulletKey);
 		let next: string | undefined;
 		for (const word of words.map(oneLine)) {
-			if (!word || have.includes(banKey(word))) continue;
-			have.push(banKey(word));
+			if (!word || have.includes(bulletKey(word))) continue;
+			have.push(bulletKey(word));
 			next = appendBullet(next ?? md, HEADINGS.forbidden, word);
 		}
 		return next;
 	});
 }
 
-/** Takes a wording out of the `## 금지` section of exactly that profile (whitespace, case and Unicode composition aside); false when it was not there. */
+/** Adds a wording rule as its `shape <JSON>` bullet to the `## 금지` section of exactly that profile; false when one with the same parts is already there. */
+export function recordPattern(key: ToneKey | "install", ban: ShapeBan): boolean {
+	let added = false;
+	editProfile(key, md => {
+		if (bullets(md, HEADINGS.forbidden).some(b => bulletKey(b) === banKey(ban))) return undefined;
+		added = true;
+		return appendBullet(md, HEADINGS.forbidden, banBullet(ban));
+	});
+	return added;
+}
+
+/** Takes a wording, or a wording rule by its label, out of the `## 금지` section of exactly that profile (whitespace, case and Unicode composition aside); false when it was not there. */
 export function removeForbidden(key: ToneKey | "install", word: string): boolean {
 	let removed = false;
 	editProfile(key, md => {
-		const out = dropBullets(md, HEADINGS.forbidden, h => banKey(h) === banKey(word));
+		const out = dropBullets(md, HEADINGS.forbidden, h => {
+			const ban = parseBan(h);
+			return lineKey(h) === lineKey(word) || (ban.kind === "shape" && lineKey(ban.label) === lineKey(word));
+		});
 		removed = !!out;
 		return out?.md;
 	});
 	return removed;
+}
+
+/** The owner's own past replies of every app (all stored pairs), the install's corpus a proposed wording pattern must not hit too often. */
+export function ownReplies(): string[] {
+	const dir = dirname(paths.pairs("mail"));
+	if (!existsSync(dir)) return [];
+	return readdirSync(dir).filter(f => f.endsWith(".jsonl")).flatMap(f => loadPairs(f.slice(0, -".jsonl".length)).map(p => p.reply));
 }
 
 /** The `## ` sections of exactly that profile that the owner added by hand (outside HEADINGS), with their bullets. */

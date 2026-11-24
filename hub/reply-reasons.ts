@@ -31,6 +31,7 @@ const TABLE: Record<ReasonCode, Entry> = {
 	subject_re: no("제목이 답장 형식(Re:)이 아니에요", "The subject is not a reply subject (Re:)", ["retry"], auto(1, [0], true)),
 	placeholder: no("채우지 않은 자리가 글에 남아 있어요 (예: [이름])", "The text still has a blank to fill in (like [name])", []),
 	forbidden_word: no("쓰지 않기로 한 표현이 들어 있어요 ('{word}')", "The text has a phrase you chose not to use ('{word}')", []),
+	wording_rule: no("정해 둔 표현 규칙과 달라요: {label}", "The text breaks a wording rule you set: {label}", []),
 	too_long: no("글이 너무 길어요 ({n}자, {max}자까지)", "The text is too long ({n} characters, up to {max})", []),
 	empty: no("보낼 글이 비어 있어요", "There is no text to send", []),
 	attach_mismatch: { ...no("첨부가 글과 맞지 않아요 ({issues})", "The attachments do not match the text ({issues})", ["pick_file", "send_as_is"]), reopen: true },
@@ -107,11 +108,14 @@ export function partialReason(p: { done: number; total: number; code: ReasonCode
 	return { code: p.code, text: `${head}. ${reasonOf(p.code, p.vars, lang).text}` };
 }
 
-/** The Korean sentence that tells the owner what a revise stored in the tone profile ("" when it stored nothing): where it holds (every reply, this KakaoTalk room, this mailbox or this app), the lesson line and the banned wordings. */
-export function lessonNote(lesson: Pick<Lesson, "key" | "line" | "forbid">): string {
+/** What the owner is told when a rule or lesson also stored a wording rule (a `shape` ban), before its label. */
+export const PATTERN_NOTE = "표현 규칙으로도 정해 뒀어요: ";
+
+/** The Korean sentence that tells the owner what a revise stored in the tone profile ("" when it stored nothing): where it holds (every reply, this KakaoTalk room, this mailbox or this app), the lesson line, the label of a wording pattern it stored and the banned wordings. */
+export function lessonNote(lesson: Pick<Lesson, "key" | "line" | "forbid"> & { pattern?: string }): string {
 	const where = lesson.key.app === "install" ? "모든 답장" : lesson.key.room === undefined ? "이 앱 답장" : lesson.key.app === "kakao" ? "이 대화방 답장" : "이 메일함 답장";
 	const line = [...lesson.line.replace(/\s+/g, " ").trim()];
 	const shown = line.length > 100 ? `${line.slice(0, 100).join("")}…` : line.join("");
 	const words = (lesson.forbid ?? []).map(w => `'${w}'`).join(", ");
-	return [...(shown ? [`앞으로 ${where}에 반영해요: ${shown}`] : []), ...(words ? [`앞으로 ${where}에서 쓰지 않을 표현: ${words}`] : [])].join(" · ");
+	return [...(shown ? [`앞으로 ${where}에 반영해요: ${shown}`] : []), ...(lesson.pattern ? [`${PATTERN_NOTE}${lesson.pattern}`] : []), ...(words ? [`앞으로 ${where}에서 쓰지 않을 표현: ${words}`] : [])].join(" · ");
 }

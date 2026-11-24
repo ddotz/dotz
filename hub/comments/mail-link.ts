@@ -67,7 +67,7 @@ export function realMailLink(deps: FlowDeps = { run: realRunner }): RealMailLink
 		async revise(id, change) {
 			const r = await reviseDraft(id, change, deps, { learn: false });
 			if (!r.ok || !r.id) return { ok: false, reason: r.text };
-			const lesson = r.lesson && { key: r.lesson.key.app === "install" ? r.lesson.key : MAIL_PROFILE, line: r.lesson.line, forbid: r.lesson.forbid };
+			const lesson = r.lesson && { key: r.lesson.key.app === "install" ? r.lesson.key : MAIL_PROFILE, line: r.lesson.line, forbid: r.lesson.forbid, evidence: r.lesson.evidence };
 			return { ok: true, id: r.id, ...(lesson ? { lesson } : {}) };
 		},
 		view: id => {

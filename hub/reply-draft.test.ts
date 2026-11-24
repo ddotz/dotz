@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
-import { ADAPT, addressesOf, automatedSender, buildPrompt, examplesUse, FAMILIAR_AT, forbiddenHit, generateReply, learnedOf, lintReply, NO_RECIPIENT, parseResult, precheck, promptCorrections, reviseReply, usableReplyTo, type ModelCall, type ReplyItem, type ReplyStyle } from "./reply-draft.ts";
+import { banHit, parseBan } from "./ban.ts";
+import { ADAPT, addressesOf, automatedSender, buildPrompt, examplesUse, FAMILIAR_AT, generateReply, learnedOf, lintReply, NO_RECIPIENT, parseResult, precheck, promptCorrections, reviseReply, usableReplyTo, type ModelCall, type ReplyItem, type ReplyStyle } from "./reply-draft.ts";
 import { replyExclusion } from "./mail-state.ts";
 
 const item: ReplyItem = { kind: "mail", from: "Kim <kim@example.com>", self: ["me@example.net"], subject: "회의 일정 문의", text: "다음 주 회의 일정을 알려 주실 수 있을까요?" };
@@ -228,9 +229,9 @@ test("a ban matches however the text is spaced or composed: line breaks, runs of
 	expect(p).toContain("내일 갈게요.");
 	const nfd = learnedOf({ forbid: ["행복한 하루 되세요".normalize("NFD")] }, "'행복한 하루 되세요'는 쓰지 마".normalize("NFC"));
 	expect(nfd.forbid).toEqual(["행복한 하루 되세요".normalize("NFC")]);
-	expect(forbiddenHit("A\nb", "/a b/i")).toBe(false);
-	expect(forbiddenHit("A\nb", "/a\\sb/i")).toBe(true);
-	expect(forbiddenHit("   ", " ")).toBe(false);
+	expect(banHit("A\nb", parseBan("/a b/i"))).toBe(false);
+	expect(banHit("A\nb", parseBan("/a\\sb/i"))).toBe(true);
+	expect(banHit("   ", parseBan(" "))).toBe(false);
 });
 
 test("every way of spacing or composing a banned wording is caught, and a body without it is not", () => {
@@ -240,9 +241,9 @@ test("every way of spacing or composing a banned wording is caught, and a body w
 		for (const gap of gaps) {
 			for (const form of ["NFC", "NFD"] as const) {
 				const body = `앞 문장. ${word.split(" ").join(gap)} 뒤 문장`.normalize(form);
-				expect(forbiddenHit(body, word)).toBe(true);
-				expect(forbiddenHit(body.toUpperCase(), word.normalize(form === "NFC" ? "NFD" : "NFC"))).toBe(true);
-				expect(forbiddenHit(body.replace(/\s+/g, ""), word)).toBe(false);
+				expect(banHit(body, parseBan(word))).toBe(true);
+				expect(banHit(body.toUpperCase(), parseBan(word.normalize(form === "NFC" ? "NFD" : "NFC")))).toBe(true);
+				expect(banHit(body.replace(/\s+/g, ""), parseBan(word))).toBe(false);
 			}
 		}
 	}

@@ -5,6 +5,7 @@
 // Pure: no fs, no network, no config import.
 
 import { type AttachIssueKind, attachIssues } from "./attach-check.ts";
+import { banFinding, banHit, banKey, banLabel, literalBan, parseBan, WORDING_RULES, wordingRule } from "./ban.ts";
 import { cleanChoices, cleanQuestion } from "./choices.ts";
 import { type JudgeAsk, judgeStyle, styleFailure, styleWarnings, type Violation } from "./style-judge.ts";
 
@@ -169,7 +170,7 @@ const forRecipient = (s: string): string =>
 		.replace('{"action":"skip"|"draft"', () => '{"recipient":{"who":"...","evidence":"..."},"action":"skip"|"draft"')
 		.replace("Output exactly one JSON", () => `${RECIPIENT}\nOutput exactly one JSON`);
 // Revise mode (mail and comment): what the change teaches, so only a lasting preference enters the profile.
-const LESSON = 'Also add to the JSON object "lesson": the lasting preference this change shows, one short line in the user\'s language with its condition (when ... then ...), in the user\'s own words where possible; "" when the change is only about this message, its file, its song or its exact text. Add "forbid": the exact wordings, as they would appear in a reply, that the user says must not be used again ([] when the change bans none or is only about this message). Add "everywhere": true only when the user says the change holds always or everywhere, or rejects the wording itself as wrong (grammar, spelling, a habit of language); false when it is about this kind of message or this channel.';
+const LESSON = 'Also add to the JSON object "lesson": the lasting preference this change shows, one short line in the user\'s language with its condition (when ... then ...), in the user\'s own words where possible; "" when the change is only about this message, its file, its song or its exact text. Add "forbid": the exact wordings, as they would appear in a reply, that the user says must not be used again ([] when the change bans none or is only about this message). "forbid" is only for a fixed phrase that is wrong wherever it appears; when the user rejects a kind of sentence or an ending in one use (a closing wish ending in a wording that is fine in other sentences), leave it out of "forbid" and state it in "lesson" with his examples. Add "everywhere": true only when the user says the change holds always or everywhere, or rejects the wording itself as wrong (grammar, spelling, a habit of language); false when it is about this kind of message or this channel.';
 const CORRECTIONS = "The user's past corrections, newest first; when two disagree, the newer one wins. Each was about one draft: carry over the preference it shows to the same kind of situation, never its specific words, songs, files or names; skip one that only rewrites a single draft:";
 /** The characters of the user's corrections a mail, comment or chat prompt carries (KakaoTalk's own prompt carries 1200). */
 export const CORRECTIONS_BUDGET = 4000;
@@ -231,7 +232,8 @@ const SUBJECT_MAX = 200;
 const CHANGE_MAX = 2000;
 
 export function buildPrompt(item: ReplyItem, style: ReplyStyle, extra: PromptExtras = {}): { system: string; user: string } {
-	const allowed = (text: string) => !style.forbidden.some(f => forbiddenHit(text, f));
+	const bans = style.forbidden.map(parseBan);
+	const allowed = (text: string) => !bans.some(b => banHit(text, b));
 	const examples = style.examples?.filter(e => allowed(e.reply)) ?? [];
 	const templates = (style.templates ?? []).filter(allowed);
 	const samples = style.samples.filter(allowed);
@@ -263,8 +265,9 @@ export function buildPrompt(item: ReplyItem, style: ReplyStyle, extra: PromptExt
 		"",
 		item.kind === "chat" ? list("The user's past corrections (follow them):", [...corrections].reverse(), "(none)") : list(CORRECTIONS, corrections, "(none)"),
 		"",
-		list("Forbidden expressions:", style.forbidden, "(none)"),
+		list("Forbidden expressions:", bans.filter(b => !wordingRule(b)).map(banLabel), "(none)"),
 		"",
+		...(bans.some(wordingRule) ? [list(WORDING_RULES, bans.flatMap(b => wordingRule(b) ?? []), ""), ""] : []),
 		...(item.kind === "chat" && item.choice ? [`The user's decision (his own words, data): "${item.choice.replace(/\s+/g, " ").trim().slice(0, 60).replace(/"/g, "'")}"`, ""] : []),
 		...(examples.length ? [fresh ? "The user's real past replies to other kinds of message (for their voice only; none of them answers this one):" : "The user's real past replies to the most similar received messages (verbatim, their exact wording; use them for voice and for how this kind of message is answered; facts must still fit THIS message):", ...(fresh ? examples.slice(0, FRESH_EXAMPLES) : examples).map(e => `<<<RECEIVED\n${e.same ? "(this same sender)\n" : ""}${defang(e.received)}\nRECEIVED>>>\n<<<REPLY\n${defang(e.reply)}\nREPLY>>>`), ""] : []),
 		...(style.habits?.length ? [list("The user's measured habits. Keep these as they are; never normalise, correct or beautify spelling, spacing or punctuation:", style.habits, ""), ""] : []),
@@ -317,23 +320,6 @@ export function parseResult(text: string): ModelJson | undefined {
 
 const PLACEHOLDER = /\[(?:이름|성함|name|날짜|시간|회사|받는\s*분|수신자)[^\]\n]*\]|\{\{[^}\n]*\}\}|\bO{3,}\b|\bX{3,}\b|\bTODO\b|[○◯]{2,}/i;
 
-const REGEX_ENTRY = /^\/(.+)\/([a-z]*)$/;
-const banText = (s: string): string => s.normalize("NFC").replace(/\s+/g, " ").trim().toLowerCase();
-
-/** Whether `body` uses a forbidden entry: a `/regex/flags` entry is tested as a pattern against the raw body (an invalid one never hits), any other as a substring with whitespace runs as one space, both sides in NFC, case aside. */
-export function forbiddenHit(body: string, entry: string): boolean {
-	const re = REGEX_ENTRY.exec(entry);
-	if (re) {
-		try {
-			return new RegExp(re[1]!, re[2]).test(body);
-		} catch {
-			return false;
-		}
-	}
-	const word = banText(entry);
-	return !!word && banText(body).includes(word);
-}
-
 // Deterministic checks, run on a fresh draft and again right before sending; returns the failures (empty = clean).
 // `anyRecipient`: the owner chose the addresses himself on the card (a new colleague, a group list), so only the other checks apply.
 export function lintReply(draft: DraftOut, item: ReplyItem, style: ReplyStyle, opts: { anyRecipient?: boolean } = {}): string[] {
@@ -355,7 +341,7 @@ export function lintReply(draft: DraftOut, item: ReplyItem, style: ReplyStyle, o
 		if (item.subject?.trim() && !/^re\s*:/i.test((draft.subject ?? "").trim())) out.push("the subject must start with 'Re:'");
 	}
 	if (PLACEHOLDER.test(`${draft.subject ?? ""}\n${body}`)) out.push("the text contains a placeholder");
-	for (const f of style.forbidden) if (forbiddenHit(`${draft.subject ?? ""}\n${body}`, f)) out.push(`it uses the forbidden expression '${f}'`);
+	for (const b of style.forbidden.map(parseBan)) if (banHit(`${draft.subject ?? ""}\n${body}`, b)) out.push(banFinding(b));
 	return out;
 }
 
@@ -373,7 +359,7 @@ export function editLesson(before: string, after: string): string | undefined {
 }
 
 // Findings a rewrite by the model can fix; the rest (a recipient the model cannot know, the user's own address) come back as warnings, never as a retry.
-const REWRITABLE = /^the body is empty$|^the body is \d+ characters|^the text contains a placeholder$|^it uses the forbidden expression |^it says something was already sent|^the recipient evidence |^it breaks the owner's rule /;
+const REWRITABLE = /^the body is empty$|^the body is \d+ characters|^the text contains a placeholder$|^it uses the forbidden expression |^it breaks the owner's wording rule |^it says something was already sent|^the recipient evidence |^it breaks the owner's rule /;
 export const rewritable = (failures: string[]): string[] => failures.filter(f => REWRITABLE.test(f));
 // With candidates: a body that promises a file the chosen files do not carry (hub/attach-check.ts missing | partial) is rewritten once, never shown as a warning.
 const ATTACH_FAILURE: Partial<Record<AttachIssueKind, string>> = { missing: "the body says a file is sent, but you chose no file: choose the file the message asks for from the list, or take the promise out of the body", partial: "the message asks for or the body promises a file that the files you chose do not cover: fix the choice or the body" };
@@ -454,7 +440,7 @@ async function run(item: ReplyItem, style: ReplyStyle, call: ModelCall, base: Pr
 		const draft: DraftOut = { to: recipientOf(parsed.to, item), subject: subjectOf(parsed.subject, item), body: parsed.body };
 		if (!draft.subject) delete draft.subject;
 		const lessons = lessonsOf(restyle ?? parsed);
-		if (base.change) for (const w of learnedOf(lessons, base.change).forbid) if (![...style.forbidden, ...taught].some(f => banText(f) === banText(w))) taught.push(w);
+		if (base.change) for (const w of learnedOf(lessons, base.change).forbid) if (![...style.forbidden, ...taught].some(f => banKey(parseBan(f)) === banKey(parseBan(w)))) taught.push(w);
 		const found = [...lintReply(draft, item, taught.length ? { ...style, forbidden: [...style.forbidden, ...taught] } : style), ...(unfoundedSend(draft.body, item, base) ? [SENT_CLAIM_FAILURE] : []), ...(unfoundedRecipient(parsed.recipient, item) ? [RECIPIENT_FAILURE] : [])];
 		const files = item.candidates?.length && parsed.files ? [...new Set(parsed.files.flatMap(f => item.candidates!.find(c => fileNameKey(c) === fileNameKey(f)) ?? []))] : undefined;
 		const attach = files ? attachIssues({ subject: draft.subject, body: draft.body, files, request: item.text }).flatMap(i => ATTACH_FAILURE[i.kind] ?? []) : [];
@@ -486,19 +472,16 @@ export const generateChatReply = (item: ReplyItem, style: ReplyStyle, call: Mode
 
 /** What a revision teaches, checked: `line` is the model's lesson, the change itself when the model left it out, "" for a one-off; `forbid` only wordings the user's own change text holds; `everywhere` only when something was learned. */
 export type Learned = { line: string; forbid: string[]; everywhere: boolean };
-const BAN_CHARS = { min: 2, max: 40 };
 const BANS_MAX = 5;
 
-/** The lesson of a revision with the wordings it bans: the model's `forbid` entries that occur verbatim in `change` (whitespace, case and Unicode composition aside), 2 to 40 characters, no `/regex/`, at most 5, stored in NFC with whitespace runs as one space. */
+/** The lesson of a revision with the wordings it bans: the model's `forbid` entries that are literal bans (`literalBan`) occurring in `change` (whitespace, case and Unicode composition aside), at most 5, stored as `literalBan` gives them. */
 export function learnedOf(r: { lesson?: string; forbid?: string[]; everywhere?: boolean }, change: string): Learned {
 	const line = r.lesson === undefined ? change : r.lesson;
-	const said = banText(change);
 	const forbid: string[] = [];
 	for (const entry of r.forbid ?? []) {
-		const word = entry.normalize("NFC").replace(/\s+/g, " ").trim();
-		const chars = [...word].length;
-		if (chars < BAN_CHARS.min || chars > BAN_CHARS.max || REGEX_ENTRY.test(word) || !said.includes(banText(word)) || forbid.some(f => banText(f) === banText(word))) continue;
-		forbid.push(word);
+		const ban = literalBan(entry);
+		if (!ban || !banHit(change, ban) || forbid.some(f => banKey(parseBan(f)) === banKey(ban))) continue;
+		forbid.push(ban.text);
 		if (forbid.length === BANS_MAX) break;
 	}
 	return { line, forbid, everywhere: r.everywhere === true && (!!line.trim() || forbid.length > 0) };

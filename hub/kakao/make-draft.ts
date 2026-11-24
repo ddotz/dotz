@@ -3,7 +3,9 @@
 // (hub/kakao/web.ts), which hands it its room and database helpers.
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { ruleOfFinding } from "../ban.ts";
 import { type Learned, learnedOf, ownerLint, styleConditions } from "../reply-draft.ts";
+import { reasonOf } from "../reply-reasons.ts";
 import { judgeAsk, judgeStyle, styleFailure, styleWarnings, type Violation } from "../style-judge.ts";
 import { writePrivate } from "./creds.ts";
 import { type KakaoDb, messages, ownTextCounts, ownTexts, roomHead } from "./db.ts";
@@ -139,7 +141,11 @@ const done = (error?: string, made?: { code: string; learned?: Learned }): Made 
 		let made: { code: string };
 		const tokens = reported ? { in: reply.inputTokens ?? 0, out: reply.outputTokens ?? 0 } : { in: estimateTokens(system.length + user.length), out: estimateTokens(reply.text.length), estimated: true as const };
 		try {
-			made = await createDraft({ chatId, roomName: room.name, text: parsed.body, basisLogId: basis, tokens, ...(intent ? { intent } : {}), ...(revise ? { replaces: revise.code } : {}), ...(notes.length ? { notes: notes.map(n => `확인: ${n}`) } : {}) }, { paths, runner: deps.runner, now });
+			const shown = notes.map(n => {
+				const rule = ruleOfFinding(n);
+				return `확인: ${rule === undefined ? n : reasonOf("wording_rule", { label: rule }).text}`;
+			});
+			made = await createDraft({ chatId, roomName: room.name, text: parsed.body, basisLogId: basis, tokens, ...(intent ? { intent } : {}), ...(revise ? { replaces: revise.code } : {}), ...(shown.length ? { notes: shown } : {}) }, { paths, runner: deps.runner, now });
 		} catch (e) {
 			return done(e instanceof Error ? e.message : DRAFT_FAILED);
 		}

@@ -32,6 +32,7 @@ afterEach(() => {
 	else process.env.DOTZ_DIR = savedDir;
 });
 
+const WISH_RULE = `shape ${JSON.stringify({ parts: [{ any: ["좋은"] }, { gap: 5 }, { any: ["되세요"] }], label: "'좋은 주말 보내세요'로 쓴다" })}`;
 function setup(o: { model?: string[]; learn?: string[]; taught?: Lesson[]; prompts?: string[]; tone?: true; files?: MailView["attachments"]; now?: number; mail?: MailLink; posts?: ReplyOutcome[]; answered?: { thread: string; at: number }[] } = {}) {
 	writeFileSync(join(dir, "config.json"), JSON.stringify({ enabled: true, sources: { youtube: source } }));
 	const posts = [...(o.posts ?? [])];
@@ -40,7 +41,7 @@ function setup(o: { model?: string[]; learn?: string[]; taught?: Lesson[]; promp
 	const mail: MailLink = o.mail ?? { compose: async () => ({ ok: false, reason: "x" }), send: async () => ({ ok: true, text: "" }), drop: () => undefined, revise: async () => ({ ok: false, reason: "x" }), view: id => mails.get(id), edit: (id, text, subject) => (mails.set(id, { ...mails.get(id)!, body: text, ...(subject !== undefined ? { subject } : {}) }), { ok: true }) };
 	let n = 0;
 	const outs = o.model ?? [reply("이번 주말이에요!")];
-	const engine = createEngine({ dir, now: () => o.now ?? NOW, collector: "mac", adapters: { youtube: platform }, model: async (system, user) => (o.prompts?.push(`${system}\n${user}`), { text: outs[Math.min(n++, outs.length - 1)]! }), mail, learn: lesson => void (o.learn?.push(lesson.line), o.taught?.push(lesson)), style: o.tone ? src => loadStyle({ app: src.key }) : () => ({ rules: [], corrections: [], forbidden: ["무조건"], samples: [] }), answeredMailThread: (thread, at) => void o.answered?.push({ thread, at }) });
+	const engine = createEngine({ dir, now: () => o.now ?? NOW, collector: "mac", adapters: { youtube: platform }, model: async (system, user) => (o.prompts?.push(`${system}\n${user}`), { text: outs[Math.min(n++, outs.length - 1)]! }), mail, learn: lesson => void (o.learn?.push(lesson.line), o.taught?.push(lesson)), style: o.tone ? src => loadStyle({ app: src.key }) : () => ({ rules: [], corrections: [], forbidden: ["무조건", WISH_RULE], samples: [] }), answeredMailThread: (thread, at) => void o.answered?.push({ thread, at }) });
 	return { engine, a: commentAdapter(engine) };
 }
 async function drafted(engine: ReturnType<typeof createEngine>): Promise<string> {
@@ -84,10 +85,11 @@ test("the engine's own revise (the skill CLI) still learns, after the new draft 
 	expect(learned).toEqual(["날짜는 요일로 말한다"]);
 });
 
-test("edit keeps the code, stores the owner's text, makes the draft unclean and refuses a forbidden word", async () => {
+test("edit keeps the code, stores the owner's text, makes the draft unclean and refuses a forbidden word or a broken wording rule", async () => {
 	const { engine, a } = setup();
 	const code = await drafted(engine);
 	expect(await a.edit(code, "무조건 토요일!")).toMatchObject({ ok: false, reason: { code: "forbidden_word" } });
+	expect(await a.edit(code, "좋은 주말 되세요!")).toMatchObject({ ok: false, reason: { code: "wording_rule" } });
 	expect(await a.edit(code, "토요일에 올릴게요 :)")).toEqual({ ok: true });
 	const d = engine.store.drafts().find(x => x.code === code)!;
 	expect([d.text, d.clean, d.editedFrom]).toEqual(["토요일에 올릴게요 :)", false, "이번 주말이에요!"]);

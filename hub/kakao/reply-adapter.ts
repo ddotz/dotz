@@ -60,7 +60,7 @@ export function kakaoAdapter(kit: KakaoKit): ReplyAdapter {
 			if (!d) return { ok: false, reason: { code: "gone", text: "그 초안을 찾지 못했어요" } };
 			const made = await kit.revise(d.chatId, { code: d.code, draft: d.text, change, ...(d.intent ? { intent: d.intent } : {}) });
 			if (!made.ok || !made.code) return { ok: false, reason: { code: "revise_failed", text: made.ok ? "고친 초안을 만들지 못했어요" : made.error } };
-			return { ok: true, ref: made.code, replaces: ref, ...(made.learned ? { lesson: { key: made.learned.everywhere ? { app: "install" } : { app: "kakao", room: d.chatId }, line: made.learned.line, forbid: made.learned.forbid } } : {}) };
+			return { ok: true, ref: made.code, replaces: ref, ...(made.learned ? { lesson: { key: made.learned.everywhere ? { app: "install" } : { app: "kakao", room: d.chatId }, line: made.learned.line, forbid: made.learned.forbid, evidence: { draft: d.text, change } } } : {}) };
 		},
 		edit: async (ref, text) => done(editDraft(ref, text, { paths: kit.paths })),
 		drop: async ref => done(dropDraft(ref, { paths: kit.paths })),

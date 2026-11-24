@@ -137,7 +137,7 @@ export function createDraftRun({ deps, store, ownerOf, styleOf, contextOf, code,
 		emit({ kind: "comment_draft", source: src.key, thread: c.thread });
 		// Learned only once the new draft is stored (design 3.1); `learn: false` hands the lesson to the caller (hub/reply-actions.ts) instead.
 		const learnt = previous && change !== undefined && r.action === "draft" ? learnedOf(r, change) : undefined;
-		const lesson: Lesson | undefined = learnt && (learnt.line.trim() || learnt.forbid.length) ? { key: { app: learnt.everywhere ? "install" : src.key }, line: learnt.line, forbid: learnt.forbid } : undefined;
+		const lesson: Lesson | undefined = learnt && previous && (learnt.line.trim() || learnt.forbid.length) ? { key: { app: learnt.everywhere ? "install" : src.key }, line: learnt.line, forbid: learnt.forbid, evidence: { draft: previous.text, change: change ?? "" } } : undefined;
 		if (lesson && opts.learn !== false) deps.learn?.(lesson);
 		return { ok: true, draft, ...(lesson ? { lesson } : {}) };
 	};

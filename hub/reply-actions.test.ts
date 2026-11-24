@@ -9,7 +9,7 @@ const owner: ActCtx = { surface: "web", login: "me" };
 const agent: ActCtx = { surface: "cli", agent: true };
 
 /** `held`: the revise waits on it; `askThrows`: drawing a card throws; `cards`: the open cards. */
-function world(o: { outcome?: string; reviseFails?: boolean; lesson?: string; forbid?: string[]; everywhere?: boolean; forbidFails?: boolean; editLint?: string[]; undoMs?: number; sameRef?: boolean; held?: Promise<void>; askThrows?: boolean; cards?: OpenCard[]; cardConv?: string } = {}) {
+function world(o: { outcome?: string; reviseFails?: boolean; lesson?: string; forbid?: string[]; everywhere?: boolean; forbidFails?: boolean; editLint?: string[]; undoMs?: number; sameRef?: boolean; held?: Promise<void>; askThrows?: boolean; cards?: OpenCard[]; cardConv?: string; pattern?: string; inGood?: string[]; patternFails?: boolean } = {}) {
 	const log: string[] = [];
 	const calls = { edit: 0, drop: 0 };
 	const picks: Parameters<ReplyDeps["recordPick"]>[0][] = [];
@@ -32,7 +32,7 @@ function world(o: { outcome?: string; reviseFails?: boolean; lesson?: string; fo
 			drafts.set("RBBBBBB", { ...view("RBBBBBB", "목요일까지 보내드릴게요."), draft: { ...view("RBBBBBB", "목요일까지 보내드릴게요.").draft, replaces: { ref, text: drafts.get(ref)!.draft.text } } });
 			set(ref, { state: "stale" });
 			log.push("stored RBBBBBB");
-			const lesson: Lesson | undefined = o.lesson !== undefined || o.forbid ? { key: { app: o.everywhere ? "install" : "mail" }, line: o.lesson ?? "", ...(o.forbid ? { forbid: o.forbid } : {}) } : undefined;
+			const lesson: Lesson | undefined = o.lesson !== undefined || o.forbid ? { key: { app: o.everywhere ? "install" : "mail" }, line: o.lesson ?? "", ...(o.forbid ? { forbid: o.forbid } : {}), evidence: { draft: drafts.get(ref)!.draft.text, change } } : undefined;
 			return { ok: true, ref: "RBBBBBB", replaces: ref, ...(lesson ? { lesson } : {}) };
 		},
 		edit: async (ref, text, _part, subject) => {
@@ -76,7 +76,7 @@ function world(o: { outcome?: string; reviseFails?: boolean; lesson?: string; fo
 		recordPick: p => void (picks.push(p), log.push(`pick ${p.label}${p.note ? ` - ${p.note}` : ""}`)),
 		recordText: (_c, t) => void log.push(`text ${t}`),
 		say: (conv, ref, text) => void log.push(`say ${conv} ${ref} ${text}`),
-		learning: { record: async (k, line) => (log.push(`learn ${k.app} ${line}`), k.app === "install" ? "rule" : "correction"), refine: async () => void log.push("refine"), forbid: async (k, words) => (o.forbidFails ? Promise.reject(new Error("disk full")) : void log.push(`forbid ${k.app} ${words.join("|")}`)) },
+		learning: { record: async (k, line) => (log.push(`learn ${k.app} ${line}`), k.app === "install" ? "rule" : "correction"), refine: async () => void log.push("refine"), forbid: async (k, words) => (o.forbidFails ? Promise.reject(new Error("disk full")) : void log.push(`forbid ${k.app} ${words.join("|")}`)), ...(o.pattern !== undefined ? { pattern: async (k: Lesson["key"], line: string, evidence: NonNullable<Lesson["evidence"]>, words: string[]) => (log.push(`pattern ${k.app} ${line} [${evidence.draft} | ${evidence.change}] {${words.join("|")}}`), o.patternFails ? Promise.reject(new Error("model down")) : o.pattern ? { label: o.pattern, inGood: o.inGood ?? [] } : undefined) } : {}) },
 		cards: { open: () => o.cards ?? [], convOf: () => o.cardConv, replace: (a, b, text, hash) => void (drawn.push([b, hash]), log.push(`cards ${a}->${b}`), texts.push(text)), rewrite: (ref, _t, hash) => void (drawn.push([ref, hash]), log.push(`rewrite ${ref}`)), repost: async (ref, text, hash) => void reposts.push([ref, text, hash]), close: ref => void log.push(`close ${ref}`) },
 		toBot: async (conv, text) => void log.push(`bot ${conv} ${text}`),
 		emit: e => void log.push(`event ${e.ref}${e.next ? `->${e.next}` : ""}${e.revising ? " revising" : ""}${e.why ? ` ${e.why}` : ""}`),
@@ -176,6 +176,44 @@ test("revise: a one-off change or a lesson with no line and no words records not
 	await words.replies.act({ ref: "RAAAAAA", action: "revise", change: "되세요 쓰지 마" }, owner);
 	await words.replies.idle();
 	expect(words.log.filter(l => /^(learn|forbid|refine)/.test(l))).toEqual(["forbid mail 되세요"]);
+});
+
+test("revise: a lesson asks for a wording pattern with the previous draft and the change, and the new card's first line names its label", async () => {
+	const w = world({ lesson: "덕담은 '보내세요'로 맺는다", pattern: "덕담은 '~ 보내세요'로 맺는다" });
+	await w.replies.act({ ref: "RAAAAAA", action: "revise", change: "'되세요' 말고 보내세요로" }, owner);
+	await w.replies.idle();
+	expect(w.linesOf("pattern")).toEqual(["pattern mail 덕담은 '보내세요'로 맺는다 [확인해 보고 말씀드릴게요. | '되세요' 말고 보내세요로] {}"]);
+	expect(w.texts[0]!.split("\n")[0]).toContain("표현 규칙으로도 정해 뒀어요: 덕담은 '~ 보내세요'로 맺는다");
+	const refused = world({ lesson: "짧게 쓴다", pattern: "" });
+	await refused.replies.act({ ref: "RAAAAAA", action: "revise", change: "짧게" }, owner);
+	await refused.replies.idle();
+	expect(refused.linesOf("pattern")).toHaveLength(1);
+	expect(refused.texts[0]).not.toContain("표현 규칙으로도");
+});
+
+test("revise: a banned word a kept good example of the stored pattern uses is not stored as a literal and the card names only what was stored; any other word is stored", async () => {
+	const shown = world({ lesson: "", forbid: ["하루"], pattern: "덕담은 '~ 보내세요'로 맺는다", inGood: ["하루"] });
+	await shown.replies.act({ ref: "RAAAAAA", action: "revise", change: "'하루 되세요' 말고 '좋은 하루 보내세요'" }, owner);
+	await shown.replies.idle();
+	expect(shown.linesOf("pattern")).toEqual(["pattern mail  [확인해 보고 말씀드릴게요. | '하루 되세요' 말고 '좋은 하루 보내세요'] {하루}"]);
+	expect(shown.linesOf("forbid")).toEqual([]);
+	const first = shown.texts[0]!.split("\n")[0]!;
+	expect(first).toContain("표현 규칙으로도 정해 뒀어요: 덕담은 '~ 보내세요'로 맺는다");
+	expect(first).not.toContain("쓰지 않을 표현");
+	const partly = world({ lesson: "", forbid: ["되세요", "감사합니다"], pattern: "덕담은 '~ 보내세요'로 맺는다", inGood: [] });
+	await partly.replies.act({ ref: "RAAAAAA", action: "revise", change: "되세요랑 감사합니다 쓰지 마" }, owner);
+	await partly.replies.idle();
+	expect(partly.linesOf("forbid")).toEqual(["forbid mail 되세요|감사합니다"]);
+	expect(partly.texts[0]!.split("\n")[0]).toContain("쓰지 않을 표현: '되세요', '감사합니다'");
+});
+
+test("revise: a pattern call that throws still stores every banned word, and the card claims no pattern", async () => {
+	const w = world({ lesson: "", forbid: ["되세요"], pattern: "x", patternFails: true });
+	await w.replies.act({ ref: "RAAAAAA", action: "revise", change: "되세요 쓰지 마" }, owner);
+	await w.replies.idle();
+	expect(w.linesOf("forbid")).toEqual(["forbid mail 되세요"]);
+	expect(w.texts[0]).not.toContain("표현 규칙으로도");
+	expect(w.texts[0]!.split("\n")[0]).toContain("쓰지 않을 표현: '되세요'");
 });
 
 test("revise: banned wordings that could not be stored do not stop the line, and the card does not claim them", async () => {
