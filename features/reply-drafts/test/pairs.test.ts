@@ -377,12 +377,13 @@ test("the model's recipient judgement is kept on the draft; evidence that is not
 	expect(none.calls).toHaveLength(1);
 });
 
-test("a linked mail is written from the mail profile whichever mail app it goes through; no profile yet means no style", () => {
-	expect(mailStyleOf("문서 부탁드려요", "kim@example.com")).toBeUndefined();
+test("a linked mail is written from the mail profile, also through a second mail app that has no tone of its own; no profile yet means no style", () => {
+	expect(mailStyleOf("mail", "문서 부탁드려요", "kim@example.com")).toBeUndefined();
 	mkdirSync(join(toneFile({ app: "mail" }), ".."), { recursive: true });
 	writeFileSync(toneFile({ app: "mail" }), "## 예시\n\n- 네 보내드렸어요\n");
 	savePairs("mail", [{ received: "문서 부탁드려요", reply: "보내드립니다", at: day, from: "kim@example.com" }]);
-	expect(mailStyleOf("문서 부탁드려요", "kim@example.com")?.examples?.[0]).toMatchObject({ reply: "보내드립니다", same: true });
+	expect(mailStyleOf("mail", "문서 부탁드려요", "kim@example.com")?.examples?.[0]).toMatchObject({ reply: "보내드립니다", same: true });
+	expect(mailStyleOf("mail-work", "문서 부탁드려요", "kim@example.com")?.examples?.[0]).toMatchObject({ reply: "보내드립니다", same: true });
 });
 
 test("a revision records only its lasting lesson: the model's line, nothing for an empty one, the verbatim change when the field is missing", async () => {

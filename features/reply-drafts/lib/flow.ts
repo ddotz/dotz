@@ -17,7 +17,7 @@ import { basename } from "node:path";
 import { ruleFilePath } from "./rules.ts";
 import { canAttach, sendsThroughZele, sendWith, settleAccount, threadMoved, webmailSite, zeleAccountOf, type Sent, type SendOutcome } from "./senders.ts";
 import { carryStagedFiles, removeStagedFile, stagedFiles, stagedName, stageFiles, stageWanted, type StageOpts, type Want } from "./staged.ts";
-import { dataDir, HEADINGS, INSTALL, loadPairs, loadSettings, loadStyle, normText, ownReplies, paths, profileBullets, recipientFile, recordForbidden, recordPattern, replaceBullets, toneFile, validApp, type ToneKey } from "./settings.ts";
+import { dataDir, HEADINGS, INSTALL, loadPairs, loadSettings, loadStyle, normText, ownReplies, paths, profileApp, profileBullets, recipientFile, recordForbidden, recordPattern, replaceBullets, toneFile, validApp, type ToneKey } from "./settings.ts";
 import { curate, curateAsk, journalAdd, type LearnKind, profileOf } from "./curate.ts";
 import { compactCorrections } from "./compact.ts";
 import { lessonOfEdit } from "./edit-lesson.ts";
@@ -211,7 +211,7 @@ async function teach(key: ToneKey, lesson: Taught, evidence: NonNullable<Lesson[
 // The tone profile an item or draft belongs to: its room when it has one, else its own profile (a mail app instance's), else its app (mail unless the item says otherwise).
 // A draft made in a mailbox (box + instance) uses tone/<instance>/<box>.md when that file exists, falling back to the instance's profile (else the mail one), then the install.
 export const toneKey = (x: { app?: string; room?: string; profile?: string; box?: string; instance?: string }): ToneKey => {
-	const key: ToneKey = { app: x.profile ?? x.app ?? "mail", ...(x.room !== undefined ? { room: x.room } : {}) };
+	const key: ToneKey = { app: x.profile ?? profileApp(x.app ?? "mail"), ...(x.room !== undefined ? { room: x.room } : {}) };
 	if (!x.box || !x.instance || x.room !== undefined || !validApp(x.instance)) return key;
 	const boxKey: ToneKey = { app: x.instance, room: x.box, ...(x.profile ? {} : { base: key.app }) };
 	return existsSync(toneFile(boxKey)) ? boxKey : key;
@@ -285,11 +285,9 @@ export const callOf = (deps: FlowDeps, item: ReplyItem, conv?: string, what = "d
 /** The style judge of a draft (hub/style-judge.ts) on the mail rule matcher's call, traced as `judge`; none while config guard.style_judge is false. */
 export const judgeOf = (deps: FlowDeps, item: ReplyItem, conv?: string): JudgeAsk | undefined => (styleJudgeOn() ? judgeAsk(callOf(deps.judge ? { ...deps, call: deps.judge } : deps, item, conv, "judge")) : undefined);
 const nowOf = (deps: FlowDeps) => (deps.now ?? (() => new Date()))();
-/** The profile a lesson of a mail outside a draft is written to: every mail app instance shares the `mail` profile and its pairs, as offered drafts do. */
-export const MAIL_PROFILE: ToneKey = { app: "mail" };
-/** The style of a mail written outside a draft to `to`: the shared `mail` profile whichever mail app it goes through, plus that person's own conditions (styleKey), with examples of the same person first; undefined when the mail profile has no samples and no identity yet. */
-export function mailStyleOf(text: string, to: string): ReplyStyle | undefined {
-	const s = loadStyle(styleKey(MAIL_PROFILE, { kind: "mail", from: to }));
+/** The style of a mail of mail app `app` written outside a draft to `to`: the profile that app's drafts read (toneKey: its own tone, else the shared `mail` one) plus that person's own conditions, the same key its compose, revise and send lint load (styleKey), with examples of the same person first; undefined when that profile has no samples and no identity yet. */
+export function mailStyleOf(app: string, text: string, to: string): ReplyStyle | undefined {
+	const s = loadStyle(styleKey({ app }, { kind: "mail", from: to }));
 	return s.samples.length || s.identity?.length ? styleWithExamples(s, "mail", text, to) : undefined;
 }
 // A mail draft's style carries the user's closest real past replies of ITS source as examples (a site's own sent folder for its mails, zele's for zele's); chat

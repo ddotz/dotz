@@ -84,8 +84,10 @@ A chat message that needs his own decision still asks first (exit 4), since the 
   and 고친 점 lines are also listed apart (`ReplyStyle.recipient`): the draft prompt shows them under their own heading as holding for this
   recipient and winning over a broader line that says otherwise, and the style judge numbers them last under the same meaning. The
   prompt's and the judge's one corrections budget takes the recipient's corrections first and the other levels' in what is left. Every style
-  load of a mail or comment draft adds its recipient (`flow.ts` `styleKey`; the comment engine `EngineDeps.style(src, author)`), and a mail
-  that rides on a comment is written (`mailStyleOf`) from the shared `mail` profile with that same recipient file; with no
+  load of a mail or comment draft adds its recipient (`flow.ts` `styleKey`; the comment engine `EngineDeps.style(src, author)`). A second
+  mail app instance (`mail-<slug>`) reads and learns into its own profile only once it has a tone of its own (an identity or samples),
+  else the shared `mail` one (`profileApp`, used by `toneKey`): its offered drafts, a mail composed there and a mail that rides on a
+  comment (`mailStyleOf`) are therefore written, revised, checked and taught with the same profile and the same recipient file; with no
   recipient file the style, the prompts and the lint are exactly those of the key without `to`. Writing
   (`learnTone`, `recordCorrection`) goes into exactly one profile. A revise lesson goes to the key of its `scope` (mail: `flow.ts`
   `lessonKey` beside `styleKey`; comments: `draft-run.ts` `commentLessonKey`; KakaoTalk: `kakaoLessonKey`): the install for `everywhere`;

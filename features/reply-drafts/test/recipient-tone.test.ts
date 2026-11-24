@@ -311,22 +311,36 @@ test("the recipient's corrections and the others share one 4000-character budget
 	expect(judged.corrections).toEqual(newestFirst(app).slice(0, 8).map(l => l.slice(12)));
 });
 
-test("a mail that rides on a comment is written from the shared mail profile with its recipient's conditions, and its compose and send lint on a second mail app read the same person's file", async () => {
+test("a mail written outside a draft on a second mail app is written and checked with one profile: the shared mail one until that app has a tone of its own, plus the recipient's file either way", async () => {
 	const apps = join(env.dir, "custom", "apps.json");
 	write(apps, JSON.stringify({ "mail-2": { app: "mail", label: "학교" } }));
+	const checked = async (word: string): Promise<boolean> => {
+		const body = `안녕하세요. ${word} 자료 보내드립니다.`;
+		const made = await composeMail({ app: "mail-2", to: ["kim@x.com"], subject: "자료", body, notify: false });
+		const item: ReplyItem = { kind: "mail", app: "mail-2", from: "kim@x.com", text: body };
+		const sendLint = draftLintFailures({ id: "D1", kind: "mail", app: "mail-2", source: "zele", mailId: "compose-D1", ref: "compose-d1", compose: true, to: "kim@x.com", subject: "자료", body, status: "pending", created: "2030-03-04T09:00:00.000Z", changes: [], questions: [], item });
+		expect(made.ok === false).toBe(sendLint.length > 0);
+		return sendLint.length > 0;
+	};
 	try {
 		write(toneFile({ app: "mail" }), "## 예시\n\n- 네 보내드렸어요\n\n## 금지\n\n- 메일금지어\n");
 		write(toneFile({ app: "mail", to: "kim@x.com" }), "## 말투\n\n- 김 선생님께는 짧게\n\n## 금지\n\n- 김금지어\n");
-		const style = mailStyleOf("자료 부탁드려요", "Kim <kim@x.com>");
-		expect(style?.samples).toEqual(["네 보내드렸어요"]);
-		expect(style?.recipient).toEqual(["김 선생님께는 짧게"]);
-		expect(style?.forbidden).toEqual(["메일금지어", "김금지어"]);
-		expect(mailStyleOf("자료 부탁드려요", "lee@y.com")?.forbidden).toEqual(["메일금지어"]);
-		const body = "안녕하세요. 김금지어 자료 보내드립니다.";
-		const made = await composeMail({ app: "mail-2", to: ["kim@x.com"], subject: "자료", body, notify: false });
-		expect(made.ok === false && made.error).toStartWith("초안 검사에서 걸렸어요");
-		const item: ReplyItem = { kind: "mail", app: "mail-2", from: "kim@x.com", text: body };
-		expect(draftLintFailures({ id: "D1", kind: "mail", app: "mail-2", source: "zele", mailId: "compose-D1", ref: "compose-d1", compose: true, to: "kim@x.com", subject: "자료", body, status: "pending", created: "2030-03-04T09:00:00.000Z", changes: [], questions: [], item })).not.toEqual([]);
+		const shared = mailStyleOf("mail-2", "자료 부탁드려요", "Kim <kim@x.com>");
+		expect(shared?.samples).toEqual(["네 보내드렸어요"]);
+		expect(shared?.recipient).toEqual(["김 선생님께는 짧게"]);
+		expect(shared?.forbidden).toEqual(["메일금지어", "김금지어"]);
+		expect(mailStyleOf("mail-2", "자료 부탁드려요", "lee@y.com")?.forbidden).toEqual(["메일금지어"]);
+		expect(toneKey({ app: "mail-2" })).toEqual({ app: "mail" });
+		for (const word of shared?.forbidden ?? []) expect(await checked(word)).toBe(true);
+		write(toneFile({ app: "mail-2" }), "## 예시\n\n- 자료 보내드려요\n\n## 금지\n\n- 학교금지어\n");
+		const own = mailStyleOf("mail-2", "자료 부탁드려요", "Kim <kim@x.com>");
+		expect(own?.samples).toEqual(["자료 보내드려요"]);
+		expect(own?.recipient).toEqual(["김 선생님께는 짧게"]);
+		expect(own?.forbidden).toEqual(["학교금지어", "김금지어"]);
+		expect(toneKey({ app: "mail-2" })).toEqual({ app: "mail-2" });
+		for (const word of own?.forbidden ?? []) expect(await checked(word)).toBe(true);
+		expect(await checked("메일금지어")).toBe(false);
+		expect(mailStyleOf("mail", "자료 부탁드려요", "Kim <kim@x.com>")?.forbidden).toEqual(["메일금지어", "김금지어"]);
 	} finally {
 		rmSync(apps, { force: true });
 	}
