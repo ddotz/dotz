@@ -534,7 +534,7 @@ function chatPush(en, bulk) {
     // Repeated [run]/[wait] reports are one message, as on Discord (hub/lanewire.ts): the newest takes the place of the one before it, until another message stands between.
     const parked = e.kind === "lane_report" && !e.answering && parkedTone(statedTone(noHandoff(String(e.text ?? ""))).tone);
     if (parked && CS.parked) csParkedDrop();
-    const g = wake && wake.lead ? newGroup(wake) : null, n = g ? g.node : wake ? null : wlIs(e) ? wlNode(e) : msgNode(e);
+    const g = wake && wake.lead ? newGroup(wake) : null, n = g ? g.node : wake ? null : wlIs(e) ? wlNode(e) : dlMarks(msgNode(e), e);
     if (wake) csWakeSet({ ts: e.ts, from: wake.from, rows: [], day: null, began: false, ended: false, meta: wake });
     if (n) {
       const day = dayDiv(e.ts);   // only above a drawn row: a conversation of rows that draw nothing keeps its empty state

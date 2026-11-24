@@ -11,6 +11,7 @@ import type { Closing, Decision, Notice, NoticeTone, OwnerSaid } from "./notices
 import type { ClosedCard } from "./notices-wiring.ts";
 import { addressesIn, blockDraftRef, DRAFT_BODY_MAX, type DraftApproval } from "./draft-approval.ts";
 import { storedDraftOf } from "./notices-wiring.ts";
+import { isDoctorLook } from "./doctor-text.ts";
 
 export const NOTICE_CAP = 300;
 export const TEXT_MAX = 1500;
@@ -152,6 +153,7 @@ export const typedAnswer = (e: HubEvent, to: string) => {
 	const quoted = (e.reply as { id?: unknown } | undefined)?.id;
 	const quotesAsk = (i: Notice) => typeof quoted === "string" && quoted !== "" && i.decision!.reply_to === quoted && i.decision!.group === 1;
 	const answers = (i: Notice) => answersOption(i.decision!.options, text);
+	if (!agent && !id && isDoctorLook(text)) return () => false;
 	return (i: Notice): boolean =>
 		agent ? i.decision!.to === to && !i.decision!.draft && hasChoice(i) && answers(i) && (!id || i.id === id) : id ? i.id === id : i.decision!.to === to && !i.decision!.draft && (!hasChoice(i) || answers(i) || quotesAsk(i));
 };

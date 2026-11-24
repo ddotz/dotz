@@ -29,6 +29,7 @@
   "10-draft-upload.js": "reply",
   "10-reply-actions.js": "reply",
   "10-reply-card.js": "reply",
+  "11-doctor-look.js": "chat",
   "11-mailbody.js": "chat",
   "11-mailtext.js": "chat",
   "11-resultcard.js": "chat",

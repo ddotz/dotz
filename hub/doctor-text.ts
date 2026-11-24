@@ -36,6 +36,22 @@ export const DOCTOR_LEAD_KO = "닥터 점검:";
 /** The mark a morning line ends with when its cause can be looked into; the web turns it into a button that replies with the line. */
 export const DOCTOR_LOOK_EN = " · find the cause";
 export const DOCTOR_LOOK_KO = " · 원인 찾기";
+/** The reply the web's look-up button sends for a told line (`home.doctor_look.reply` in `web/i18n`), by language. */
+export const doctorLookAsk = {
+	en: (day: string, line: string) => `Please find the cause of this item from the ${day} doctor check: ${line}`,
+	ko: (day: string, line: string) => `${day} 닥터 점검에서 알린 이 일의 원인을 찾아봐 주세요: ${line}`,
+};
+/** Whether an owner's message asks to look into a told line: the look-up reply in either language, or the told line sent back with its mark. */
+export function isDoctorLook(text: string): boolean {
+	const t = text.trim();
+	if (t.includes("\n")) return false;
+	if (t.endsWith(DOCTOR_LOOK_EN) || t.endsWith(DOCTOR_LOOK_KO)) return true;
+	return Object.values(doctorLookAsk).some(ask => {
+		const [pre = "", mid = ""] = ask("\0", "\0").split("\0");
+		const at = t.indexOf(mid, pre.length + 1);
+		return t.startsWith(pre) && at > pre.length && at - pre.length <= 20 && t.length > at + mid.length;
+	});
+}
 
 export const doctorEn = {
 	head: (day: string) => `${DOCTOR_LEAD_EN} ${day}`,

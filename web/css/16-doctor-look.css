@@ -1,0 +1,2 @@
+.dl-btn { margin: var(--sp-1) 0 var(--sp-1) var(--sp-1); vertical-align: middle; }
+.dl-btn.dl-sent { background: transparent; color: var(--fg-3); }

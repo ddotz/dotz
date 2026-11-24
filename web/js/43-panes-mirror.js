@@ -109,7 +109,7 @@ function paneAppend(m, e) {
   const was = target;
   let n = null;
   putTargetId(m.p.t);
-  try { n = msgNode(e); } finally { putTargetId(was); }
+  try { n = dlMarks(msgNode(e), e); } finally { putTargetId(was); }
   if (!n) return;
   n.dataset.ts = e.ts;
   const key = e.kind === "out" && e.update_key ? `${e.target ?? ""}|${e.update_key}` : "";

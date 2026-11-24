@@ -714,6 +714,7 @@ function ntSheetPaint() {
       ...ntBody(n, fold.head),
       fold.rest ? el("details", { class: "ds-more", open: ntMoreOpen.has(String(n.id)), ontoggle: ev => { if (ev.currentTarget.open) ntMoreOpen.add(String(n.id)); else ntMoreOpen.delete(String(n.id)); } }, el("summary", { text: TX("conv.nt.more") }), ...ntBody(n, fold.rest)) : null),
     el("button", { type: "button", class: "ds-hint", hidden: true }, TX("conv.nt.more_below"))];
+  dlMarks(kids, { ...n, ts: n.at });
   const foot = el("div", { class: "fs-ft" }), ed = open && NS.edit && NS.edit.id === String(n.id) ? NS.edit : null;
   // Every notice event repaints the open sheet; one that changes nothing it shows leaves it alone, so the reason field being typed in is not
   // replaced (a new field takes the focus and a phone closes and reopens its keyboard).

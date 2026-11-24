@@ -35,8 +35,8 @@
 .nsc-r .hd { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 400; color: var(--fg-2); }
 .nsc-r.unread .hd { font-weight: 700; color: var(--fg); }
 .nsc-r .ln .hd.hd-q { display: flex; padding-right: 0; -webkit-mask-image: none; mask-image: none; }
-.nsc-r .hd-q .w { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.nsc-r .hd-q .q { flex: none; white-space: nowrap; }
+.nsc-r .hd-q .w { flex: 1 1 0; max-width: max-content; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nsc-r .hd-q .q { flex: 2 1 0; max-width: max-content; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: pre; }
 .nsc-r .t { flex: none; color: var(--fg-3); font: 400 var(--fs-meta)/var(--lh-row) var(--font); }
 .nsc-s { flex: 1; min-width: 0; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg-2); font: 400 var(--fs-meta)/var(--lh-meta) var(--font); }
 .nsc-r .ib, .nsc-tr { position: relative; z-index: 1; flex: none; display: grid; place-items: center; width: var(--btn-h-row); height: var(--btn-h-row); align-self: center; margin-left: calc(var(--sp-1) * -1); color: var(--fg-3); }

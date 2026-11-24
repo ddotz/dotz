@@ -10,6 +10,7 @@ import { coalesceFor } from "./quick-chat.ts";
 import { recipeAnswer } from "./recipes.ts";
 import { askedText, emit, emitDelivery, eventTarget, isPeerMessage, onEmit, type HubEvent } from "./events.ts";
 import { markJudging, openChoices, type ListedChoice } from "./notices.ts";
+import { isDoctorLook } from "./doctor-text.ts";
 import { attachmentLine, attachmentLines, type Upload } from "./files.ts";
 import { pickedLines, type Picked } from "./picked.ts";
 import { abortLane, approvesBudget, lanes, ownerNotes, sendToLane } from "./lanes.ts";
@@ -91,7 +92,7 @@ function decisionLines(p: Record<string, any>): string[] {
 
 // The owner's message holds no answer by itself when it lands in a conversation with open choice questions: the bot is told which, judges whether the message answers one, and closes it at once with `resolves` or a closing `<resolves>` line.
 const openQuestionLines = (listed: ListedChoice[]): string[] => (listed.length ? [msg().openQuestions(listed.map(q => q.title))] : []);
-const askedIn = (e: HubEvent): ListedChoice[] => (e.kind === "message" && !isPeerMessage(e) ? openChoices(eventTarget(e) ?? "main") : []);
+const askedIn = (e: HubEvent): ListedChoice[] => (e.kind === "message" && !isPeerMessage(e) && !(Array.isArray(e.parts) ? e.parts : [e]).every((p: { text?: unknown }) => isDoctorLook(String(p.text ?? ""))) ? openChoices(eventTarget(e) ?? "main") : []);
 
 function inboxBody(e: Record<string, any>): string {
 	const m = msg();

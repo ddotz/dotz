@@ -74,7 +74,7 @@ function wlFitLater(row, toggle, label) {
 }
 // The whole message as the chat draws it (its head line, the state tags and the kind word the row's own head shows are left out; the row is the fold, so nothing inside folds again).
 function wlFull(e) {
-  const b = msgNode({ ...e, update_key: undefined }, true);
+  const b = dlMarks(msgNode({ ...e, update_key: undefined }, true), e);
   if (!b) return null;
   const body = el("div", { class: "wl-full" }, ...[...b.children].filter(c => !c.classList.contains("mt")));
   for (const t of body.querySelectorAll(":is(p, li):first-child > .st-tag")) { const p = t.parentElement; t.remove(); if (!p.children.length && !p.textContent.trim()) p.remove(); }
