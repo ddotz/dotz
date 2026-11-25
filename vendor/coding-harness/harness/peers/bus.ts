@@ -5,12 +5,13 @@ import { harnessDir } from "../agent-home.ts";
 const MAX_TEXT_BYTES = 8192;
 const STALE_INBOX_MS = 30 * 24 * 3600_000;
 
-/** One live main session as other sessions see it: its session id, display name, working directory, git repo root (absent outside a repo) and owning process. */
+/** One live main session as other sessions see it: its session id, display name, working directory, `repo` (the folder its checkout slot belongs to, else its git root; absent outside a repo), `tree` (the git root of its own working tree; absent in records from an older harness) and owning process. */
 export interface PeerRecord {
 	id: string;
 	name: string;
 	cwd: string;
 	repo?: string;
+	tree?: string;
 	pid: number;
 	startedAt: string;
 }
@@ -79,6 +80,53 @@ export function livePeers(dir: string): PeerRecord[] {
 		else rmSync(join(dir, file), { force: true });
 	}
 	return found.sort((a, b) => a.name.localeCompare(b.name));
+}
+
+const CLAIM_TTL_MS = 90_000;
+const claimPath = (dir: string, slot: string) => join(dir, `${slot}.claim.json`);
+
+/** A session launch that picked checkout slot `slot`: the launching shell's pid and when it picked, in ms. */
+export interface LaunchClaim {
+	slot: string;
+	shellPid: number;
+	at: number;
+}
+
+/** Records that the launch in shell `shellPid` took slot `slot` at `now`, replacing an earlier claim of that slot; the file never counts as a peer, inbox or offset. */
+export function claim(dir: string, slot: string, shellPid: number, now: number): void {
+	mkdirSync(dir, { recursive: true });
+	const path = claimPath(dir, slot);
+	const entry: LaunchClaim = { slot, shellPid, at: now };
+	writeFileSync(`${path}.${process.pid}.tmp`, JSON.stringify(entry));
+	renameSync(`${path}.${process.pid}.tmp`, path);
+}
+
+function readClaim(path: string): LaunchClaim | undefined {
+	try {
+		const entry = JSON.parse(readFileSync(path, "utf8")) as Partial<LaunchClaim> | null;
+		return typeof entry?.slot === "string" && typeof entry.shellPid === "number" && typeof entry.at === "number" ? { slot: entry.slot, shellPid: entry.shellPid, at: entry.at } : undefined;
+	} catch {
+		return undefined;
+	}
+}
+
+/** The claims whose shell is alive and that are under 90 s old at `now`; a dead, expired or unreadable claim file is deleted. */
+export function liveClaims(dir: string, now: number): LaunchClaim[] {
+	if (!existsSync(dir)) return [];
+	const found: LaunchClaim[] = [];
+	for (const file of readdirSync(dir)) {
+		if (!file.endsWith(".claim.json")) continue;
+		const path = join(dir, file);
+		const entry = readClaim(path);
+		if (entry !== undefined && now - entry.at < CLAIM_TTL_MS && alive(entry.shellPid)) found.push(entry);
+		else rmSync(path, { force: true });
+	}
+	return found;
+}
+
+/** Removes the claim of slot `slot`; a slot without one is left alone. */
+export function dropClaims(dir: string, slot: string): void {
+	rmSync(claimPath(dir, slot), { force: true });
 }
 
 /** The sessions `to` names among `peers` other than `self`: an exact name, an id or unique id prefix, or `all` for every peer in `self`'s repo; otherwise why none was picked. */

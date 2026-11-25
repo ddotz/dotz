@@ -96,6 +96,21 @@ function commandName(word: string): string {
 	return basename(word.startsWith("$") ? word.slice(1) : word);
 }
 
+const LOCAL_REPOSITORY = /^(?:\/|\.|~\/|file:\/\/)/;
+const PUSH_VALUE_OPTIONS = ["-o", "--push-option"];
+const PUSH_REMOTE_OPTIONS = /^--(?:repo|receive-pack|exec)(?:=|$)/;
+
+function localPushOperand(tokens: readonly string[], from: number): boolean {
+	for (let i = from; i < tokens.length && i < from + MAX_OPTION_WALK; i++) {
+		const word = tokens[i];
+		if (word === "--") return i + 1 < tokens.length && LOCAL_REPOSITORY.test(tokens[i + 1]);
+		if (PUSH_REMOTE_OPTIONS.test(word)) return false;
+		if (PUSH_VALUE_OPTIONS.includes(word)) i++;
+		else if (!word.startsWith("-") || word === "-") return LOCAL_REPOSITORY.test(word);
+	}
+	return false;
+}
+
 function verbKindAt(tokens: readonly string[], at: number, publish: boolean): string | undefined {
 	const name = commandName(tokens[at]);
 	const table = valueOptionsOf(name);
@@ -103,7 +118,7 @@ function verbKindAt(tokens: readonly string[], at: number, publish: boolean): st
 	const verb = table ? verbIndex(tokens, at + 1, table) : at + 1;
 	if (verb < 0 || verb >= tokens.length) return undefined;
 	const word = tokens[verb];
-	if (name === "git") return word === "push" || word === "send-pack" || (word === "lfs" && tokens[verb + 1] === "push") ? "git push" : undefined;
+	if (name === "git") return word === "send-pack" || (word === "lfs" && tokens[verb + 1] === "push") || (word === "push" && !localPushOperand(tokens, verb + 1)) ? "git push" : undefined;
 	if (name === "git-lfs") return word === "push" ? "git push" : undefined;
 	if (publish) return undefined;
 	if (name === "yarn") return yarnPublish(tokens, verb) ? "package publish" : undefined;
@@ -124,7 +139,7 @@ function ghApiWrites(tokens: readonly string[], from: number, live: ReadonlySet<
 		if (!value?.startsWith("query=")) return;
 		queries++;
 		const text = value.slice(6).trimStart();
-		if (!text.startsWith("query") || /mutation|\$\{|#\{/.test(text) || live === undefined || live.has(word)) writingQuery = true;
+		if (!text.startsWith("query") || /\bmutation\b|\$\{|#\{/.test(text) || live === undefined || live.has(word)) writingQuery = true;
 	};
 	for (let i = from; i < tokens.length && i < from + MAX_API_WALK; i++) {
 		const word = tokens[i];
@@ -215,7 +230,7 @@ function goExecCommand(line: readonly string[]): string | undefined {
 }
 
 
-const DATA_ONLY: Record<string, true> = { echo: true, printf: true, grep: true, egrep: true, fgrep: true, rg: true, ag: true, cat: true, head: true, tail: true, wc: true, sort: true, uniq: true, jq: true, less: true, ls: true };
+const DATA_ONLY: Record<string, true> = { echo: true, printf: true, grep: true, egrep: true, fgrep: true, rg: true, ag: true, cat: true, head: true, tail: true, wc: true, sort: true, uniq: true, jq: true, less: true, ls: true, which: true, whereis: true };
 const DATA_ONLY_GIT = /^(commit|log|show|grep|diff|status|tag|notes)$/;
 function testRunner(line: string[]): boolean {
 	const [name = "", verb = "", extra = ""] = line;
@@ -436,6 +451,9 @@ function opaqueRunner(name: string, args: string[]): boolean {
 }
 
 /**
+ * Threat model: layer 2 of the worker boundary catches the accidents of an honest worker (a stray `git push`, `gh pr create`, `ssh host`, `curl -d`), not an adversary. It reads command text only; worker-env.sh and the worker-bin shims (layer 1) decide what a spawned binary may do, so a push to a local repository, which layer 1 lets through, passes here too (`git push /tmp/bare.git`; a first operand beginning with `/`, `.`, `~/` or `file://`), while a named remote, a bare `git push` and `--repo`, `--receive-pack` or `--exec` stay blocked because only layer 1 can resolve them.
+ * Named residuals, not caught here and not planned: a script written to disk with a heredoc and run afterwards (`cat > x.sh <<'EOF' ... EOF; sh x.sh`), and network calls made through `fetch()` or raw sockets in interpreter code, which no command text names.
+ *
  * Kind of external-impact action in `command`, or undefined. Each simple command is checked at its command word (after env
  * assignments, wrappers and package-runner launchers), so a quoted mention (`echo "git push"`, commit messages) passes; `bash -c`,
  * `eval`, `$(...)`, backticks and `go test -exec` are checked recursively, and the code of an interpreter one-liner

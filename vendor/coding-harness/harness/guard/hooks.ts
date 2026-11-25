@@ -2,9 +2,11 @@ import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, resolve } from "node:path";
 import { say } from "../notice.ts";
+import { folderWrites, slotCall } from "../checkouts/redirect.ts";
 import { type Block, block } from "./block.ts";
-import { checkoutRoots, checkTaskInput, dropLongTtl, estimateFrom, inGitRepo, trimWaitOutput } from "./briefs.ts";
-import { anthropicLimits, BUDGET_OK_MS, budgetProblem, roleEffortOfAgent } from "./budget.ts";
+import { changeItems, checkoutRoots, checkTaskInput, dropLongTtl, estimateFrom, inGitRepo, trimWaitOutput } from "./briefs.ts";
+import { escalationTarget } from "../model-tiers/plan.ts";
+import { anthropicLimits, BUDGET_OK_MS, budgetProblem, effortSetupOfAgent, roleSelectors, tierData } from "./budget.ts";
 import { debug } from "./debug.ts";
 import { deletionProblem } from "./deletion.ts";
 import { evalExternalAction, externalAction } from "./eval-scan.ts";
@@ -17,13 +19,15 @@ import { machineRuleProblem } from "./machine-rules.ts";
 import { appliedPatchNames, applyDirsOf, patchesApplying, patchIsApplied, patchKey, patchLanded, runsGitApply } from "./patches.ts";
 import { detectCycle, REPEAT_ESCALATION_ATTEMPTS, REPEAT_HISTORY, REPEAT_MAX_SESSIONS, REPEAT_WINDOW_MS, repeatArgsDigest, repeatBlockReason, type RepeatCall, repeatResultDigest, type RepeatRow, repeatStopReason, repeatSubject, requiredLaps } from "./repeat.ts";
 import { mistakeSessionKey, openMistakeProblem } from "./open-mistakes.ts";
-import { broadSearchProblem } from "./search.ts";
 import { capToolResult, spillToStateDir } from "./output-cap.ts";
-import { deepBudgetProblem, effortProblem, patchChangedLines, reviewedPatchesIn, reviewProblem } from "./spawn-rules.ts";
-import { loadState, type ProjectState, saveState, settleFinishedWorkers, settleFromText, stateSummary, briefLabel } from "./state.ts";
+import { deepBudgetProblem, effortAction, escalationProblem, modelProblem, patchChangedLines, reviewedPatchesIn, reviewProblem } from "./spawn-rules.ts";
+import { loadState, type ProjectState, saveState, settleFinishedWorkers, settleFromText, stateSummary, briefLabel, workersOfSession } from "./state.ts";
+import { familyProblem, measureFinishedWorkers, sizeNote } from "./worker-size.ts";
 import { type RetryStartEvent, usageWaitAborts } from "./usage-wait.ts";
 import { expandShellVars } from "./shell.ts";
 import { sourcesWorkerEnv, WORKER_ENV_NOTICE, WORKER_ENV_PREFIX, workerBashInput, workerEnvFile, workerEnvPrefix, workerEnvProblem } from "./worker-env.ts";
+
+const SLOT_REDIRECT_NOTICE = "orchestrator-guard: this session works in its own checkout of the folder. A path you named under the folder went to the checkout's copy of the file, and the folder changes only when the checkout lands. Use paths relative to the working directory, or the checkout's own paths.";
 
 const WRAP_UP_STEER = "[orchestrator-guard] Your context was just compacted: this assignment is larger than one worker should hold. Finish only the step in progress, then return your final answer now: what is done (with changed paths), what remains, and how you verified. Do not start new steps.";
 const STOP_REASON = "[orchestrator-guard] Context compacted twice: tools are disabled for this worker. Write your final answer now with partial findings: done (changed paths), remaining work, verification state.";
@@ -74,8 +78,14 @@ type WorkerInput = { input: Fields; additionalContext?: string };
  * longer than REPEAT_WINDOW_MS (or whose id was reused) starts over: a streak that old no longer describes a loop.
  * A call that is not part of the loop runs, joins the history and leaves no engaged cycle behind it; another element of
  * a blocked cycle stays blocked, because the history did not advance, so it is the same loop one step along.
+ *
+ * A main session whose cwd is inside an ovnfs checkout slot has the folder paths of its file tool calls moved to the
+ * slot's copy (`slotCall`), with one notice per session once a redirected call succeeded; a write call that still names a
+ * folder path after that is blocked with the slot path to use. Bash commands and workers are not rewritten.
  */
 export function registerGuardHooks(pi: HostApi): void {
+	let redirectTold = false;
+	const redirectsInFlight = new Set<string>();
 	let state: ProjectState | undefined;
 	let budgetOkUntil = 0;
 	let compactions = 0;
@@ -83,6 +93,10 @@ export function registerGuardHooks(pi: HostApi): void {
 	const repeatRows = new Map<string, RepeatRow>();
 	const failureRows = new Map<string, FailureRow>();
 	const projectState = (ctx: HostCtx | undefined) => (state ??= loadState(String(ctx?.cwd ?? process.cwd())));
+	const sessionIdOf = (ctx: HostCtx | undefined) => {
+		const id = ctx?.sessionManager?.getSessionId?.();
+		return typeof id === "string" && id !== "" ? id : undefined;
+	};
 	const repeatKey = (ctx: HostCtx | undefined) => String(ctx?.sessionManager?.getSessionId?.() ?? ctx?.agent?.id ?? "");
 	const failureRow = (ctx: HostCtx | undefined): FailureRow => {
 		const key = repeatKey(ctx);
@@ -92,11 +106,11 @@ export function registerGuardHooks(pi: HostApi): void {
 		if (failureRows.size > REPEAT_MAX_SESSIONS) failureRows.delete(failureRows.keys().next().value as string);
 		return row;
 	};
-	const refreshApplied = (current: ProjectState, extraDirs: string[] = [], history = false): boolean => {
+	const refreshApplied = (current: ProjectState, session: string | undefined, extraDirs: string[] = [], history = false): boolean => {
 		let changed = false;
 		const dirs = [...new Set([...extraDirs, current.cwd])];
 		const cache = new Map<string, string[]>();
-		for (const worker of Object.values(current.workers)) {
+		for (const [, worker] of workersOfSession(current, session)) {
 			if (!worker.patch || worker.applied || !existsSync(worker.patch)) continue;
 			if (patchIsApplied(dirs, worker.patch, cache) || (history && patchLanded(dirs, worker.patch))) {
 				worker.applied = true;
@@ -108,16 +122,17 @@ export function registerGuardHooks(pi: HostApi): void {
 	const injectState = (ctx: HostCtx | undefined, previousSession: boolean) => {
 		const current = projectState(ctx);
 		const settled = settleFinishedWorkers(ctx?.sessionManager?.getSessionFile?.(), current);
-		if (refreshApplied(current, [], true) || settled) saveState(current);
-		const summary = stateSummary(current, previousSession);
+		const session = sessionIdOf(ctx);
+		if (refreshApplied(current, session, [], true) || settled) saveState(current, sessionIdOf(ctx));
+		const summary = stateSummary(current, previousSession, session);
 		debug({ phase: "state-inject", previousSession, summary });
 		if (summary) pi.sendMessage({ customType: "orchestrator-state", content: summary, display: true }, { deliverAs: "nextTurn" });
 		if (previousSession) {
 			let lost = false;
-			for (const worker of Object.values(current.workers)) {
+			for (const [, worker] of workersOfSession(current, session)) {
 				if (worker.status === "running") lost = Boolean((worker.status = "lost"));
 			}
-			if (lost) saveState(current);
+			if (lost) saveState(current, sessionIdOf(ctx));
 		}
 	};
 
@@ -142,6 +157,7 @@ export function registerGuardHooks(pi: HostApi): void {
 			if (workersToldOfEnvPrefix.size > 1000) workersToldOfEnvPrefix.clear();
 			workersToldOfEnvPrefix.add(envNoticeKey(ctx));
 		}
+		if (redirectsInFlight.delete(String(event?.toolCallId ?? "")) && !event?.isError) redirectTold = true;
 		if (ctx?.agent?.kind !== "main") return;
 		const current = projectState(ctx);
 		const text = textBlocks(event.content).join("\n");
@@ -150,10 +166,10 @@ export function registerGuardHooks(pi: HostApi): void {
 		if (event.toolName === "bash" && runsGitApply(command) && (!event.isError || (/--3way/.test(command) && /with conflicts/i.test(text)))) {
 			const named = appliedPatchNames(command);
 			let marked = false;
-			for (const worker of Object.values(current.workers)) {
+			for (const [, worker] of workersOfSession(current, sessionIdOf(ctx))) {
 				if (worker.patch && !worker.applied && named.includes(basename(worker.patch))) marked = worker.applied = true;
 			}
-			if (marked) saveState(current);
+			if (marked) saveState(current, sessionIdOf(ctx));
 		}
 		if (event?.isError) return;
 		if (event.toolName === "task") {
@@ -165,16 +181,20 @@ export function registerGuardHooks(pi: HostApi): void {
 				? fromDetails
 				: [...new Set([...text.matchAll(/Spawned agent `([^`]+)`/g), ...text.matchAll(/^\s*- `([^`]+)` \(job `[^`]+`\)/gm)].map(m => m[1]))];
 			const items = Array.isArray(toolInput.tasks) ? toolInput.tasks : [];
+			const session = sessionIdOf(ctx);
 			ids.forEach((id, i) => {
 				if (current.settled) delete current.settled[id];
-				current.workers[id] ??= { brief: briefLabel(fieldsOf(items[i]).task), spawnedAt: Date.now(), status: "running" };
+				const task = fieldsOf(items[i]).task;
+				current.workers[id] ??= { brief: briefLabel(task), spawnedAt: Date.now(), status: "running", ...(session ? { session } : {}), ...(typeof task === "string" ? { items: changeItems(task) } : {}) };
 			});
 			debug({ phase: "state-spawn", ids });
 		}
-		if (settleFromText(current, text) || event.toolName === "task") saveState(current);
-		if (event.toolName === "bash" && runsGitApply(command) && refreshApplied(current, applyDirsOf(command, resolve(current.cwd, textOf(toolInput.cwd))))) {
+		const settledByText = settleFromText(current, text, sessionIdOf(ctx));
+		const sized = measureFinishedWorkers(ctx?.sessionManager?.getSessionFile?.(), current);
+		if (settledByText || sized || event.toolName === "task") saveState(current, sessionIdOf(ctx));
+		if (event.toolName === "bash" && runsGitApply(command) && refreshApplied(current, sessionIdOf(ctx), applyDirsOf(command, resolve(current.cwd, textOf(toolInput.cwd))))) {
 			debug({ phase: "state-applied" });
-			saveState(current);
+			saveState(current, sessionIdOf(ctx));
 		}
 	});
 
@@ -315,11 +335,6 @@ export function registerGuardHooks(pi: HostApi): void {
 			debug({ phase: "sub-stop-block", agent: ctx.agent.id, tool });
 			return deny("sub-stop-block", STOP_REASON);
 		}
-		const broad = broadSearchProblem(tool, event?.input);
-		if (broad) {
-			debug({ phase: "broad-search-block", agent: ctx?.agent?.id, tool });
-			return deny("broad-search-block", broad);
-		}
 		const evidence = evidenceWriteProblem(tool, event?.input);
 		if (evidence) {
 			debug({ phase: "evidence-write-block", agent: ctx?.agent?.id, tool });
@@ -392,8 +407,8 @@ export function registerGuardHooks(pi: HostApi): void {
 			const command = toolInput.command.replace(WORKER_ENV_PREFIX, "");
 			if (sourcesWorkerEnv(command)) return deny("worker-env-leak-block", "orchestrator-guard: this command sources worker-env.sh, the env of worker shells: every git push, wrangler call and the like would fail in this session from then on. Run the command without the `. worker-env.sh` part.");
 			const current = projectState(ctx);
-			if (settleFinishedWorkers(ctx?.sessionManager?.getSessionFile?.(), current)) saveState(current);
-			const running = Object.values(current.workers).filter(worker => worker.status === "running" && Date.now() - worker.spawnedAt < RUNNING_JOB_MAX_AGE_MS).length;
+			if (settleFinishedWorkers(ctx?.sessionManager?.getSessionFile?.(), current)) saveState(current, sessionIdOf(ctx));
+			const running = workersOfSession(current, sessionIdOf(ctx)).filter(([, worker]) => worker.status === "running" && Date.now() - worker.spawnedAt < RUNNING_JOB_MAX_AGE_MS).length;
 			const polling = pollingProblem(expandShellVars(command), running);
 			if (polling) {
 				debug({ phase: "polling-block", running });
@@ -403,7 +418,7 @@ export function registerGuardHooks(pi: HostApi): void {
 		}
 		const target = /^agent:\/\/([^/?#]+)/.exec(textOf(toolInput.path))?.[1];
 		if (tool === "write" && target && target !== "all") {
-			const worker = projectState(ctx).workers[target];
+			const worker = workersOfSession(projectState(ctx), sessionIdOf(ctx)).find(([id]) => id === target)?.[1];
 			if (worker && worker.status !== "running") {
 				debug({ phase: "finished-worker-message-block", target, status: worker.status });
 				return deny("finished-worker-message-block", `orchestrator-guard: worker ${target} already ${worker.status}; a message would revive it and it may redo its earlier work. Spawn a new worker for the follow-up (task) with only the new step.`);
@@ -415,12 +430,48 @@ export function registerGuardHooks(pi: HostApi): void {
 			const verdict = checkTaskInput(event.input, isolate, isolate ? checkoutRoots(taskCwd) : []);
 			debug({ phase: "task", verdict });
 			if ("reason" in verdict) return deny("brief-block", verdict.reason);
-			const taskItems = (Array.isArray(toolInput.tasks) ? toolInput.tasks : []).map(fieldsOf);
-			for (const item of taskItems) {
+			const sent = fieldsOf(verdict.input);
+			const tiers = tierData();
+			const candidates = roleSelectors();
+			const notices: string[] = [];
+			const taskItems: Fields[] = [];
+			const sizes = projectState(ctx);
+			if (measureFinishedWorkers(ctx?.sessionManager?.getSessionFile?.(), sizes)) saveState(sizes);
+			const original = Array.isArray(toolInput.tasks) ? toolInput.tasks : [];
+			for (const [index, raw] of (Array.isArray(sent.tasks) ? sent.tasks : []).entries()) {
+				let item = fieldsOf(raw);
+				const name = item.name;
+				const brief = fieldsOf(original[index]).task;
+				const sizeProblem = typeof name === "string" && name !== "" && typeof brief === "string" ? familyProblem(sizes, name, changeItems(brief)) : undefined;
+				if (sizeProblem) return deny("worker-size-block", sizeProblem);
 				const agent = typeof item.agent === "string" ? item.agent : "task";
 				const effort = typeof item.effort === "string" ? item.effort : undefined;
-				const problem = effortProblem(effort, effort === undefined ? undefined : roleEffortOfAgent(agent));
-				if (problem) return deny("effort-block", problem);
+				const asked = typeof item.model === "string" && item.model.trim() !== "" ? item.model : undefined;
+				const askedSetup = effortSetupOfAgent(agent);
+				const escalating = (): string | undefined => escalationProblem(name, [...Object.keys(sizes.workers), ...(sizes.finished ?? []).map(entry => entry.id), ...Object.keys(sizes.settled ?? {})]);
+				if (asked !== undefined) {
+					const escalate = (selector: string) => escalationTarget(tiers, selector, candidates);
+					const problem = modelProblem(asked, askedSetup, escalate);
+					if (problem) return deny("model-block", problem);
+					const target = askedSetup.overridden || askedSetup.roleSelector === undefined ? undefined : escalate(askedSetup.roleSelector);
+					if (target !== undefined && asked.trim() === target && target !== askedSetup.roleSelector) {
+						const unproven = escalating();
+						if (unproven) return deny("escalation-block", unproven);
+					}
+				}
+				if (effort !== undefined) {
+					const pinned = typeof item.model === "string" && /:[a-z]+$/i.test(item.model) ? item.model : undefined;
+					const action = effortAction(effort, typeof item.model === "string" ? { ...askedSetup, roleSelector: pinned ?? askedSetup.roleSelector, overridden: true } : askedSetup, selector => escalationTarget(tiers, selector, candidates));
+					if (action.kind === "refuse") return deny("effort-block", action.problem);
+					if (action.kind === "rewrite") {
+						const unproven = escalating();
+						if (unproven) return deny("escalation-block", unproven);
+						item = { ...item, model: action.model };
+						delete item.effort;
+						notices.push(say({ en: `effort "${effort}" on agent ${agent} asks for more than the role level of ${action.from}; it runs ${action.model} instead, a cheaper point than the same model one level up.`, ko: `agent ${agent}의 effort "${effort}"는 역할 기본값 ${action.from}보다 높아서, 같은 모델을 한 단계 올리는 것보다 싼 ${action.model}에서 실행하도록 바꿨습니다.` }));
+					}
+				}
+				taskItems.push(item);
 			}
 			if (Date.now() >= budgetOkUntil) {
 				const workers = Array.isArray(toolInput.tasks) ? toolInput.tasks.length : 1;
@@ -439,9 +490,10 @@ export function registerGuardHooks(pi: HostApi): void {
 			if (named.length) {
 				const current = projectState(ctx);
 				current.reviewerNamed = [...new Set([...(current.reviewerNamed ?? []), ...named])];
-				saveState(current);
+				saveState(current, sessionIdOf(ctx));
 			}
-			return { input: verdict.input, ...(verdict.notice ? { additionalContext: verdict.notice } : {}) };
+			const additionalContext = [verdict.notice, ...notices, sizeNote(sizes)].filter(Boolean).join(" ");
+			return { input: notices.length ? { ...sent, tasks: taskItems } : verdict.input, ...(additionalContext ? { additionalContext } : {}) };
 		}
 		const path = textOf(toolInput.path);
 		if (tool === "read" && /\.patch(:|$)/.test(path)) reviewedPatches.add(patchKey(path));
@@ -466,6 +518,24 @@ export function registerGuardHooks(pi: HostApi): void {
 				}
 			}
 		}
+		const sessionCwd = String(ctx?.cwd ?? process.cwd());
+		const slotted = slotCall(sessionCwd, tool, event?.input);
+		if (slotted.placement !== undefined) {
+			const stray = folderWrites(slotted.placement, tool, slotted.input, sessionCwd);
+			if (stray.length > 0) {
+				debug({ phase: "slot-write-block", tool, paths: stray.length });
+				const named = stray.map(path => (path.above === true ? `${path.named} (above the folder, so it can reach it: scope the call to the checkout, ${path.use})` : `${path.named} (use ${path.use})`));
+				return deny("slot-write-block", `orchestrator-guard: this session works in its own checkout, and ${tool} names ${named.join(", ")} outside it. A write to the folder would bypass the checkout; name the checkout's path instead.`);
+			}
+			if (slotted.moved.length > 0) {
+				debug({ phase: "slot-redirect", tool, moved: slotted.moved.length });
+				const input = fieldsOf(slotted.input);
+				if (redirectTold) return { input };
+				if (redirectsInFlight.size > 1000) redirectsInFlight.clear();
+				redirectsInFlight.add(String(event?.toolCallId ?? ""));
+				return { input, additionalContext: SLOT_REDIRECT_NOTICE };
+			}
+		}
 		return mainInput;
 	};
 
@@ -482,9 +552,9 @@ export function registerGuardHooks(pi: HostApi): void {
 		for (const message of event.messages) {
 			const content = fieldsOf(message).content;
 			const text = typeof content === "string" ? content : textBlocks(content).join("\n");
-			if (text.includes("<task-result") && settleFromText(current, text)) settled = true;
+			if (text.includes("<task-result") && settleFromText(current, text, sessionIdOf(ctx))) settled = true;
 		}
-		if (settled) saveState(current);
+		if (settled) saveState(current, sessionIdOf(ctx));
 		let trimmed = 0;
 		const trim = (text: string) => {
 			const next = trimWaitOutput(text);

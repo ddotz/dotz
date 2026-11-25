@@ -1,85 +1,103 @@
 export const LADDER = ["minimal", "low", "medium", "high", "xhigh", "max"];
 
-export type Family = { provider: string; tier: string; pattern: string };
-export type Role = { tier: string; step?: number; effort?: string };
-export type Spot = { effort: string; confidence: string; basis: string; sources: string[]; checked: string };
+export type Role = { above: string } | { effort?: string };
+export type Point = [index: number, usdPerTask: number];
+export type Spot = { effort: string; confidence: string; basis: string; sources: string[]; checked: string; points?: Record<string, Point> };
 export type Data = {
-	primaryProvider: string;
-	ignoredProviders?: string[];
-	ignoredModels?: string[];
-	pinnedRoles?: string[];
-	families: Family[];
 	roles: Record<string, Role>;
 	sweetSpots: Record<string, Spot>;
 };
 export type Model = { provider: string; id: string; levels: string[] };
-export type TierPick = { adopted?: Model; newest: Model };
-export type Plan = { tiers: Record<string, TierPick>; roles: Record<string, string>; research: string[] };
+export type Resolution = { set: Record<string, string>; userSet: string[]; research: string[] };
 
 export const key = (m: Model) => `${m.provider}/${m.id}`;
 
-function version(family: Family, id: string): number[] | undefined {
-	const match = new RegExp(family.pattern).exec(id);
-	return match ? match.slice(1).map(group => Number(group ?? 0)) : undefined;
+function parse(selector: string): { model: string; level?: string } {
+	const split = /^(.+):([a-z]+)$/.exec(selector);
+	return split ? { model: split[1], level: split[2] } : { model: selector };
 }
 
-function compareVersions(a: number[], b: number[]): number {
-	for (let i = 0; i < Math.max(a.length, b.length); i++) {
-		const diff = (a[i] ?? 0) - (b[i] ?? 0);
-		if (diff) return diff;
+function clamp(level: string, levels: string[]): string {
+	const supported = LADDER.filter(l => levels.includes(l));
+	return supported.find(l => LADDER.indexOf(l) >= LADDER.indexOf(level)) ?? supported[supported.length - 1] ?? level;
+}
+
+/** The level a role one notch harder than `level` runs `model` at: the next supported level whose recorded benchmark index beats `level`'s, skipping plateaus; without points for either level, the next supported level; with no level above that gains, `level` itself. */
+export function gainStep(data: Data, model: string, level: string, levels: string[]): string {
+	const supported = LADDER.filter(l => levels.includes(l));
+	const at = supported.indexOf(level);
+	if (at < 0) return level;
+	const points = data.sweetSpots[model]?.points;
+	const base = points?.[level]?.[0];
+	for (const next of supported.slice(at + 1)) {
+		const index = points?.[next]?.[0];
+		if (base === undefined || index === undefined || index > base) return next;
 	}
-	return 0;
+	return level;
 }
 
-function stepEffort(base: string, step: number, levels: string[]): string {
-	const supported = LADDER.filter(level => levels.includes(level));
-	let index = supported.indexOf(base);
-	if (index < 0) index = supported.findIndex(level => LADDER.indexOf(level) >= LADDER.indexOf(base));
-	if (index < 0) index = supported.length - 1;
-	return supported[Math.min(supported.length - 1, Math.max(0, index + step))];
-}
-
-/** The role each tier policy picks from `models`: per tier the newest model on the primary provider whose sweet spot is recorded, at that sweet spot plus the role's `step` (or its fixed `effort`), clamped to the model's levels; pinned roles are left out; newer unresearched models, unknown providers and unclassified model lines are listed as research. */
-export function plan(data: Data, models: Model[]): Plan {
-	const tiers: Record<string, TierPick> = {};
-	const research: string[] = [];
-	for (const family of data.families) {
-		const ranked = models
-			.filter(m => m.provider === family.provider)
-			.map(m => ({ m, v: version(family, m.id) }))
-			.filter((x): x is { m: Model; v: number[] } => x.v !== undefined)
-			.sort((a, b) => compareVersions(b.v, a.v));
-		if (!ranked.length) continue;
-		const newest = ranked[0].m;
-		const adopted = ranked.find(x => data.sweetSpots[key(x.m)])?.m;
-		if (!data.sweetSpots[key(newest)]) {
-			research.push(`sweet spot for ${key(newest)} (tier ${family.tier}${adopted ? `; ${key(adopted)} stays in use until it is recorded` : ""})`);
+/**
+ * The modelRoles values the policy writes, given the user's `current` values and the values it wrote last time (`applied`).
+ * A role without `above` keeps the model the user put in it and runs at that model's sweet spot (or the role's fixed `effort`, clamped to the model's levels); when the user changed only the level of a model the policy had written, that level stays.
+ * A role with `above` runs the model of the role it names at `gainStep` above that role's level; a value the user wrote over the policy's last one stays.
+ * A model with no recorded sweet spot keeps its value and is listed for research. Unset roles are left unset.
+ */
+export function resolveRoles({ data, current, applied, models }: { data: Data; current: Record<string, string | undefined>; applied: Record<string, string>; models: Model[] }): Resolution {
+	const levelsOf = (model: string) => models.find(m => key(m) === model)?.levels ?? LADDER.slice(1);
+	const set: Record<string, string> = {};
+	const userSet: string[] = [];
+	const research = new Set<string>();
+	const effective: Record<string, string> = {};
+	const entries = Object.entries(data.roles);
+	for (const [role, spec] of entries) {
+		const now = current[role];
+		if ("above" in spec || now === undefined) continue;
+		effective[role] = now;
+		const chosen = parse(now);
+		const last = applied[role] === undefined ? undefined : parse(applied[role]);
+		if (last?.model === chosen.model && last.level !== chosen.level) {
+			userSet.push(role);
+			continue;
 		}
-		if (family.provider === data.primaryProvider) tiers[family.tier] = { adopted, newest };
+		const spot = data.sweetSpots[chosen.model];
+		if (!spot) {
+			research.add(`sweet spot for ${chosen.model}`);
+			continue;
+		}
+		effective[role] = set[role] = `${chosen.model}:${clamp(spec.effort ?? spot.effort, levelsOf(chosen.model))}`;
 	}
-	const known = new Set(data.families.map(f => f.provider));
-	const ignored = new Set([...(data.ignoredProviders ?? []), data.primaryProvider]);
-	for (const provider of new Set(models.map(m => m.provider))) {
-		if (!known.has(provider) && !ignored.has(provider)) research.push(`tier families for provider ${provider} (which of its model lines are worker / base / deep / light class)`);
+	for (const [role, spec] of entries) {
+		if (!("above" in spec)) continue;
+		const base = effective[spec.above] === undefined ? undefined : parse(effective[spec.above]);
+		if (!base?.level) continue;
+		const target = `${base.model}:${gainStep(data, base.model, base.level, levelsOf(base.model))}`;
+		const now = current[role];
+		if (now !== undefined && applied[role] !== undefined && now !== applied[role] && now !== target) {
+			userSet.push(role);
+			continue;
+		}
+		set[role] = target;
 	}
-	const skip = (data.ignoredModels ?? []).map(p => new RegExp(p));
-	const unclassified = new Map<string, string[]>();
-	for (const m of models) {
-		if (m.provider !== data.primaryProvider || /-\d{8}$/.test(m.id) || skip.some(r => r.test(m.id))) continue;
-		if (data.families.some(f => f.provider === m.provider && version(f, m.id) !== undefined)) continue;
-		const line = m.id.replace(/(-\d+)+$/, "");
-		unclassified.set(line, [...(unclassified.get(line) ?? []), m.id]);
+	return { set, userSet, research: [...research] };
+}
+
+/** The selector a harder task should run on instead of `selector` (`provider/model:level`): the same model's next supported level, unless another model in `candidates` (the selectors the roles use) has a cheaper point whose index reaches that next level, in which case the cheapest such point wins. A model without points steps one level on itself; the top level stays. */
+export function escalationTarget(data: Data | undefined, selector: string, candidates: readonly string[]): string | undefined {
+	const { model, level } = parse(selector);
+	if (level === undefined) return undefined;
+	const own = data?.sweetSpots[model]?.points;
+	const supported = LADDER.filter(l => (own ? l in own : l !== "minimal"));
+	const at = supported.indexOf(level);
+	const next = at < 0 ? undefined : supported[Math.min(supported.length - 1, at + 1)];
+	if (next === undefined) return undefined;
+	const reach = own?.[next];
+	let best = { target: `${model}:${next}`, cost: reach?.[1] ?? Infinity, index: reach?.[0] ?? -Infinity };
+	if (!data || !reach) return best.target;
+	for (const other of new Set(candidates.map(c => parse(c).model))) {
+		if (other === model) continue;
+		for (const [l, [index, cost]] of Object.entries(data.sweetSpots[other]?.points ?? {})) {
+			if (index >= reach[0] && (cost < best.cost || (cost === best.cost && index > best.index))) best = { target: `${other}:${l}`, cost, index };
+		}
 	}
-	for (const [line, ids] of unclassified) {
-		research.push(`tier family for ${data.primaryProvider} model line ${line} (${ids.join(", ")}): record a family, or add it to ignoredModels if it fits no tier`);
-	}
-	const roles: Record<string, string> = {};
-	for (const [role, spec] of Object.entries(data.roles)) {
-		if (data.pinnedRoles?.includes(role)) continue;
-		const model = tiers[spec.tier]?.adopted;
-		if (!model) continue;
-		const effort = spec.effort ? stepEffort(spec.effort, 0, model.levels) : stepEffort(data.sweetSpots[key(model)].effort, spec.step ?? 0, model.levels);
-		roles[role] = `${key(model)}:${effort}`;
-	}
-	return { tiers, roles, research };
+	return best.target;
 }

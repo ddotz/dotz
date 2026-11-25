@@ -1,20 +1,27 @@
 import { execFileSync } from "node:child_process";
+import { readFileSync, statSync } from "node:fs";
+import { whereis } from "../checkouts/place.ts";
 import { BUDGET_5H_EST } from "./budget.ts";
 import { type Fields, fieldsOf } from "./host-types.ts";
+import { WRITING_AGENTS } from "./shell.ts";
 import { WORKER_FOOTER_LINES } from "./spawn-rules.ts";
 
 const MAX_BRIEF_CHARS = 8000;
 const MAX_FENCE_LINES = 40;
 const MAX_OUTPUT_CHARS = 2000;
 const MAX_CHANGE_ITEMS = 6;
-const WRITING_AGENTS = new Set(["task", "sonic"]);
 const DONE_MARKER = /acceptance|done when|done-condition|end state|success criteria|완료 조건|완료 기준|끝 조건/i;
 const ESTIMATE_RE = /^\s*Estimate:\s*(\d+(?:\.\d+)?)\s*%?/im;
+const APPLIES_PATCH = /\bgit\s+(?:apply|am)\b(?!\s+--(?:check|stat|numstat|summary)\b)/;
+const WHOLE_SUITE = /(?<!\b(?:not|never|no|without)\s+(?:(?:run|running)\s+)?(?:the\s+)?)\b(?:whole|full|entire)\s+(?:test\s+)?suite\b|(?:테스트|스위트|suite|bun test).{0,3}전체|전체.{0,3}(?:테스트|스위트|suite|bun test)/i;
+const BRIEF_FILE = /(?<![\w.-])(\/[^\s`'"()<>]+\.md)\b/g;
+const MAX_BRIEF_FILES = 5;
+const MAX_BRIEF_FILE_BYTES = 64 * 1024;
 
 /** Marks the budget line the guard appends to a brief, so a brief that already carries it is not footed twice. */
 export const BUDGET_MARKER = "[orchestrator-guard]";
 /** The answer and context budget appended to every worker brief. */
-export const BUDGET_LINE = `${BUDGET_MARKER} Final answer: at most 800 characters - outcome, changed paths, verification, blockers. Context budget 300K tokens; if you near it, stop and hand back partial findings.`;
+export const BUDGET_LINE = `${BUDGET_MARKER} Final answer: at most 800 characters - outcome, changed paths, verification, blockers. Context budget 400K tokens; if you near it, stop and hand back partial findings.`;
 /** The whole footer appended to every worker brief: the budget line, then the worker rules. */
 export const BRIEF_FOOTER = `${BUDGET_LINE}\n${WORKER_FOOTER_LINES.join("\n")}`;
 
@@ -34,9 +41,24 @@ export function inGitRepo(cwd: string): boolean {
 	}
 }
 
+/** The text of a brief file a task names by absolute path; undefined when it is missing, unreadable or over 64 KB. */
+export function readBriefFile(path: string): string | undefined {
+	try {
+		return statSync(path).size > MAX_BRIEF_FILE_BYTES ? undefined : readFileSync(path, "utf8");
+	} catch {
+		return undefined;
+	}
+}
+
+function withBriefFiles(text: string, read: (path: string) => string | undefined): string {
+	const paths = [...new Set([...text.matchAll(BRIEF_FILE)].map(m => m[1]!))].slice(0, MAX_BRIEF_FILES);
+	return [text, ...paths.map(path => read(path) ?? "")].join("\n");
+}
+
 /**
- * Checkout roots an isolated worker must not reach by absolute path: the cwd's own toplevel and the repo's main checkout
- * (a lane worktree's brief still names the main checkout). omp copies the repo but does not remap absolute paths, so a
+ * Checkout roots an isolated worker must not reach by absolute path: the cwd's own toplevel, the repo's main checkout
+ * (a lane worktree's brief still names the main checkout) and, in a checkout slot, the folder the slot belongs to.
+ * omp copies the repo but does not remap absolute paths, so a
  * brief with /abs/repo/file makes the worker edit the real repo (onboard-perms lane, 2026-10-17). git prints resolved
  * paths, while briefs use the path the session was started with: /tmp/x resolves to /private/tmp/x on macOS and the
  * brief's /tmp/x passed through unchanged (ulwp probe, 2026-11-16). Both spellings count.
@@ -48,7 +70,7 @@ export function checkoutRoots(cwd: string): string[] {
 		const prefix = git("rev-parse", "--show-prefix").replace(/\/$/, "");
 		const main = git("worktree", "list", "--porcelain").split("\n").find(line => line.startsWith("worktree "))?.slice(9) ?? "";
 		const logicalTop = prefix && cwd.endsWith(`/${prefix}`) ? cwd.slice(0, -prefix.length - 1) : prefix ? "" : cwd.replace(/\/$/, "");
-		const roots = [top, main, logicalTop].filter(Boolean);
+		const roots = [top, main, logicalTop, whereis(cwd)?.folder ?? ""].filter(Boolean);
 		for (const root of [...roots]) if (/^\/private\/(tmp|var|etc)\//.test(root)) roots.push(root.slice("/private".length));
 		return [...new Set(roots)].sort((a, b) => b.length - a.length);
 	} catch {
@@ -66,10 +88,11 @@ export function relativizeRoots(text: string, roots: string[]): string {
 	return out;
 }
 
-/** Top-level list items under a brief's `# Change` heading, up to the next heading. */
+/** Top-level list items and numbered `REQn` lines under a brief's `# Change` or `## Changes` heading, up to the next heading; a brief with no such heading counts its numbered and `REQn` lines across the whole text. */
 export function changeItems(brief: string): number {
-	const section = /^#+[ \t]*Change\b[^\n]*\n([\s\S]*?)(?=^#+[ \t]|(?![\s\S]))/im.exec(brief)?.[1] ?? "";
-	return section.split("\n").filter(line => /^(?:\d+[.)]|[-*])[ \t]/.test(line)).length;
+	const section = /^#+[ \t]*Changes?\b[^\n]*\n([\s\S]*?)(?=^#+[ \t]|(?![\s\S]))/im.exec(brief)?.[1];
+	if (section !== undefined) return section.split("\n").filter(line => /^(?:\d+[.)]|[-*])[ \t]|^REQ\d+\b/.test(line)).length;
+	return brief.split("\n").filter(line => /^(?:\d+[.)][ \t]|(?:[-*][ \t]+)?REQ\d+\b)/.test(line)).length;
 }
 
 /**
@@ -78,8 +101,10 @@ export function changeItems(brief: string): number {
  * parallel: each writer is forced isolated. A lone writer runs in place (`isolated: false`), so there is no patch step.
  * `isolate` is false outside a git repo. `roots`: checkout paths rewritten to cwd-relative in isolated briefs, so the worker edits its own copy.
  * `notice` names every task whose isolation or paths the guard changed, for the main agent; absent when it changed neither.
+ * `read` returns the text of a brief file a task names by absolute path (readBriefFile); a task that does not run isolated and is told, inline or in
+ * that file, to apply a patch is refused, because it would apply it in the checkout the main session and other sessions share.
  */
-export function checkTaskInput(input: unknown, isolate = true, roots: string[] = []): { reason: string } | { input: unknown; notice?: string } {
+export function checkTaskInput(input: unknown, isolate = true, roots: string[] = [], read: (path: string) => string | undefined = readBriefFile): { reason: string } | { input: unknown; notice?: string } {
 	const fields = fieldsOf(input);
 	const context = typeof fields.context === "string" ? fields.context : "";
 	const items: unknown[] = Array.isArray(fields.tasks) ? fields.tasks : [];
@@ -92,8 +117,12 @@ export function checkTaskInput(input: unknown, isolate = true, roots: string[] =
 		if (!DONE_MARKER.test(`${brief}\n${context}`)) problems.push(`${label} has no observable done-condition (add an "Acceptance:" or "Done when:" line)`);
 		if (brief.length + context.length > MAX_BRIEF_CHARS) problems.push(`${label} brief is ${brief.length + context.length} chars; pass paths instead of pasted contents (limit ${MAX_BRIEF_CHARS})`);
 		if (longestFence(`${brief}\n${context}`) > MAX_FENCE_LINES) problems.push(`${label} pastes a code block over ${MAX_FENCE_LINES} lines; pass the path and line range instead`);
+		if (WRITING_AGENTS.has(String(entry.agent ?? "task")) && WHOLE_SUITE.test(`${brief}\n${context}`.replace(BRIEF_FOOTER, "")))
+			problems.push(`${label} asks a writing worker for the whole test suite; a worker runs only the tests of the files it changed and the whole suite is run once per batch in the main session. Name the affected test files instead (e.g. "bun test <files>") and run the whole suite yourself before landing`);
 		if (WRITING_AGENTS.has(String(entry.agent ?? "task")) && changeItems(brief) > MAX_CHANGE_ITEMS)
 			problems.push(`${label} lists ${changeItems(brief)} change items; a worker that large stops at its context limit before it verifies anything. Split it: at most ${MAX_CHANGE_ITEMS} items and one module per worker; when the tests already exist, name the test files the worker must turn green`);
+		if (isolate && entry.isolated !== true && !WRITING_AGENTS.has(String(entry.agent ?? "task")) && APPLIES_PATCH.test(withBriefFiles(`${brief}\n${context}`, read)))
+			problems.push(`${label} tells a worker that shares this checkout to apply a patch (git apply / git am); a patch is applied only in a private copy: add isolated: true to that task`);
 	});
 	if (problems.length) return { reason: `Worker brief rejected by orchestrator-guard (RULES.md):\n- ${problems.join("\n- ")}\nRewrite the task call and retry.` };
 	let anyIsolated = false;

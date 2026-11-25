@@ -1,8 +1,10 @@
-import { basename } from "node:path";
+import { lstatSync } from "node:fs";
+import { basename, join } from "node:path";
 import type { EscapeInput } from "./types.ts";
 
 const GIT_TIMEOUT_MS = 20_000;
 const MAX_TEXT_LENGTH = 160;
+const MAX_OUTPUT_BYTES = 128 * 1024 * 1024;
 
 /** What a child process wrote to stdout and stderr, and its exit code. */
 export interface Run {
@@ -11,20 +13,50 @@ export interface Run {
 	err: string;
 }
 
-/** How a child process is bounded: it is killed after `timeoutMs`, and when `signal` aborts. `stdin` is written to it, then closed. */
+/** How a child process is bounded: it is killed after `timeoutMs`, when `signal` aborts, and when it writes more than `DONE_GATE_ESCAPE_MAX_OUTPUT_BYTES` (at most 128 MiB) to stdout or to stderr. `stdin` is written to it, then closed. */
 export interface RunOptions {
 	timeoutMs: number;
 	signal?: AbortSignal;
 	stdin?: Uint8Array;
 }
 
-/** `ceiling` milliseconds, or the value of the environment variable `name` when that is a lower positive number. */
-export function timeoutMs(name: string, ceiling: number): number {
+/** `ceiling`, or the value of the environment variable `name` when that is a lower positive number. */
+export function loweredLimit(name: string, ceiling: number): number {
 	const wanted = Number(process.env[name]);
 	return Number.isFinite(wanted) && wanted > 0 ? Math.min(wanted, ceiling) : ceiling;
 }
 
-/** Runs a command to completion. An aborting `signal` kills it and rejects with the abort reason; one that outlives its timeout is killed and rejects with "did not finish". The child has exited before the call settles. */
+/** A fingerprint of what the anti-escape stage is given: the base, and for each changed file whether the tool wrote it and its size and modification and change times in nanoseconds (or that it is gone). Any write to a file changes it. */
+export function escapeInputPrint(input: Pick<EscapeInput, "repo" | "base" | "files" | "toolEdited">): string {
+	const parts = [...input.files].sort().map(file => {
+		const edited = input.toolEdited === undefined || input.toolEdited.has(file) ? "t" : "g";
+		try {
+			const stat = lstatSync(join(input.repo, file), { bigint: true });
+			return `${file}\0${edited}\0${stat.size}\0${stat.mtimeNs}\0${stat.ctimeNs}`;
+		} catch {
+			return `${file}\0${edited}\0gone`;
+		}
+	});
+	return [input.base, ...parts].join("\n");
+}
+
+async function drain(stream: ReadableStream<Uint8Array>, limit: number, onOver: () => void): Promise<{ text: string; over: boolean }> {
+	const chunks: Uint8Array[] = [];
+	let size = 0;
+	let over = false;
+	for await (const chunk of stream) {
+		if (over) continue;
+		size += chunk.byteLength;
+		if (size > limit) {
+			over = true;
+			chunks.length = 0;
+			onOver();
+		} else chunks.push(chunk);
+	}
+	return { text: over ? "" : new TextDecoder().decode(Buffer.concat(chunks)), over };
+}
+
+/** Runs a command to completion, reading its output as a stream. An aborting `signal` kills it and rejects with the abort reason; one that outlives its timeout is killed and rejects with "did not finish"; one whose stdout or stderr passes the byte cap is killed and rejects with "printed more than". The child has exited before the call settles. */
 export async function run(cmd: string[], cwd: string, options: RunOptions): Promise<Run> {
 	const { signal, stdin } = options;
 	signal?.throwIfAborted();
@@ -40,10 +72,15 @@ export async function run(cmd: string[], cwd: string, options: RunOptions): Prom
 	};
 	signal?.addEventListener("abort", onAbort, { once: true });
 	try {
-		const [out, err, code] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text(), proc.exited]);
+		const limit = loweredLimit("DONE_GATE_ESCAPE_MAX_OUTPUT_BYTES", MAX_OUTPUT_BYTES);
+		const kill = (): void => {
+			proc.kill("SIGKILL");
+		};
+		const [out, err, code] = await Promise.all([drain(proc.stdout, limit, kill), drain(proc.stderr, limit, kill), proc.exited]);
 		signal?.throwIfAborted();
 		if (timedOut) throw new Error(`escape: \`${basename(cmd[0])} ${cmd[1]}\` did not finish within ${options.timeoutMs} ms and was killed`);
-		return { code, out, err };
+		if (out.over || err.over) throw new Error(`escape: \`${basename(cmd[0])} ${cmd[1]}\` printed more than ${limit} bytes and was killed`);
+		return { code, out: out.text, err: err.text };
 	} finally {
 		clearTimeout(timer);
 		signal?.removeEventListener("abort", onAbort);
@@ -52,7 +89,7 @@ export async function run(cmd: string[], cwd: string, options: RunOptions): Prom
 
 /** Runs git in `repo`, bounded as `run` bounds it. */
 export function git(repo: string, args: string[], signal?: AbortSignal): Promise<Run> {
-	return run(["git", ...args], repo, { timeoutMs: timeoutMs("DONE_GATE_ESCAPE_GIT_TIMEOUT_MS", GIT_TIMEOUT_MS), signal });
+	return run(["git", ...args], repo, { timeoutMs: loweredLimit("DONE_GATE_ESCAPE_GIT_TIMEOUT_MS", GIT_TIMEOUT_MS), signal });
 }
 
 /** The text of `file` in the tree of `base`; undefined when the tree has no file of that name. */

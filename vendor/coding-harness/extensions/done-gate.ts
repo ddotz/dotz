@@ -7,6 +7,8 @@ import { createDoneGate } from "../harness/gate/engine.ts";
 import type { DoneGate } from "../harness/gate/engine.ts";
 import { cwdOf, notify, sessionKey } from "../harness/gate/host.ts";
 import { say } from "../harness/notice.ts";
+import { showReport } from "../harness/gate/show-report.ts";
+import { renderReply } from "../harness/gate/superseded.ts";
 import type { Api, Ctx } from "../harness/gate/host.ts";
 import { registerMistakes } from "../harness/gate/mistakes.ts";
 import { runShell } from "../harness/gate/runs.ts";
@@ -35,7 +37,7 @@ async function decline(ctx: Ctx, args: string): Promise<void> {
 	notify(ctx, say({ en: `done-gate: ${repo} is declined; the gate will not ask for a gate file in any checkout of this repo.`, ko: `done-gate: ${repo}을(를) 거부했습니다. 게이트는 이 저장소의 어떤 체크아웃에서도 게이트 파일을 요청하지 않습니다.` }), "info");
 }
 
-async function boundaries(ctx: Ctx, args: string): Promise<void> {
+async function boundaries(pi: Api, ctx: Ctx, args: string): Promise<void> {
 	const [verb, id, ...extra] = args.split(/\s+/).filter(Boolean);
 	const action: BoundariesAction | undefined = verb === undefined ? { kind: "list" } : (verb === "accept" || verb === "reject") && id !== undefined && extra.length === 0 ? { kind: verb, id } : undefined;
 	if (action === undefined) return notify(ctx, say({ en: "done-gate: usage: /gate-boundaries [accept <id> | reject <id>]; nothing was changed.", ko: "done-gate: 사용법: /gate-boundaries [accept <id> | reject <id>]. 바뀐 것은 없습니다." }), "warning");
@@ -44,12 +46,16 @@ async function boundaries(ctx: Ctx, args: string): Promise<void> {
 	const repo = await repoOfDir(new Map(), dir, signal);
 	if (repo === undefined) return notify(ctx, signal.aborted ? say({ en: `done-gate: the git repo of ${dir} was not found in time; nothing was changed.`, ko: `done-gate: ${dir}의 git 저장소를 제때 찾지 못했습니다. 바뀐 것은 없습니다.` }) : say({ en: `done-gate: ${dir} is not inside a git repo; nothing was changed.`, ko: `done-gate: ${dir}은(는) git 저장소 안에 있지 않습니다. 바뀐 것은 없습니다.` }), "warning");
 	const result = await runBoundaries({ repo, action, signal });
-	notify(ctx, result.message, result.ok ? "info" : "warning");
+	showReport(pi, ctx, { title: "gate-boundaries", markdown: result.message, level: result.ok ? "info" : "warning" });
 }
 
-/** Registers the done gate's handlers and the /gate-ok, /gate-decline and /gate-boundaries commands on `pi` and returns the gate, whose `sessionChanges` the mistake obligations read. */
+/** Registers the done gate's handlers, the assistant text renderer that folds a reply the gate sent back into one row, and the /gate-ok, /gate-decline, /gate-boundaries and /gate-show commands on `pi`, and returns the gate, whose `sessionChanges` the mistake obligations read. */
 export function registerDoneGate(pi: Api, stages?: Stages): DoneGate {
-	const gate = createDoneGate(stages, message => pi.sendMessage(message, { deliverAs: "aside", triggerTurn: true }));
+	const gate = createDoneGate(
+		stages,
+		message => pi.sendMessage(message, { deliverAs: "aside", triggerTurn: true }),
+		(ctx, report) => showReport(pi, ctx, report),
+	);
 	pi.on("before_agent_start", gate.handlers.before_agent_start);
 	pi.on("agent_start", gate.handlers.agent_start);
 	pi.on("agent_end", gate.handlers.agent_end);
@@ -74,8 +80,13 @@ export function registerDoneGate(pi: Api, stages?: Stages): DoneGate {
 	});
 	pi.registerCommand("gate-boundaries", {
 		description: "List the boundary rules drafted from the import graph of the repo of this session's working directory (they are drafted first when there are none, and refuse nothing until accepted): /gate-boundaries; /gate-boundaries accept <id> moves one into the rule kit and adopts it, /gate-boundaries reject <id> deletes it for good",
-		handler: (args, ctx) => boundaries(ctx, String(args ?? "").trim()),
+		handler: (args, ctx) => boundaries(pi, ctx, String(args ?? "").trim()),
 	});
+	pi.registerCommand("gate-show", {
+		description: "Show the replies the done gate sent back in full again, or fold them back into one row each: /gate-show",
+		handler: async (_args, ctx) => gate.toggleSuperseded(ctx),
+	});
+	pi.registerAssistantTextRenderer?.(renderReply);
 	return gate;
 }
 
@@ -87,12 +98,12 @@ export function registerDoneGate(pi: Api, stages?: Stages): DoneGate {
  * session has seen, and any other repo a run touches is baselined at first sight. The lines a session added are measured against
  * the text each file held at the run's base point. Every edit gets the same findings back at once. Starting omp with
  * DONE_GATE_DISABLED=1 in its environment registers nothing: the switch for the user, out of reach of the session's agent.
- * A reply that cites a principle skill (principle-<kebab>) the run did not read through a skill:// URL is refused too, and so is
- * one with markdown the terminal shows raw (bold, a # heading, a table) outside fenced code, once per run. A reply in another
+ * Markdown the terminal shows raw (bold, a # heading, a table) never refuses a stop: the assistant text renderer draws a finished
+ * reply without it outside fenced code. A reply in another
  * script than the user's last prompt (`report:language`), and the last reply of a run that was refused for work, whose
- * message answered the gate and not the user (`report:after-refusal`), are refused once per run too. A reply that is exactly
- * `ok`, `-` or `[later]` (the dotz protocol answers) passes both reply stages. In a dotz session (`DOTZ_RUNTIME` set and not
- * empty) the gate skips the `plain` stage, the whole `report` stage and the skill://ulw reminder; every other stage stays.
+ * message answered the gate and not the user (`report:after-refusal`), are refused once per run. A reply that is exactly
+ * `ok`, `-` or `[later]` (the dotz protocol answers) passes the reply stages. In a dotz session (`DOTZ_RUNTIME` set and not
+ * empty) the gate skips the whole `report` stage, the markdown stripping and the skill://ulw reminder; every other stage stays.
  */
 export default function doneGate(pi: Api): void {
 	if (process.env.DONE_GATE_DISABLED === "1") return;

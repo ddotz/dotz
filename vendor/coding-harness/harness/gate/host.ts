@@ -13,10 +13,11 @@ export function inDotz(): boolean {
  */
 export interface Ctx {
 	cwd?: string;
-	agent?: { kind?: string; id?: string };
+	agent?: { kind?: string; id?: string; worker?: boolean };
 	sessionManager?: { getSessionId?(): string };
 	hasUI?: boolean;
-	ui?: { notify(text: string, level: "info" | "warning"): void };
+	mode?: string;
+	ui?: { notify(text: string, level: "info" | "warning"): void; rerenderMessage?(timestamp: number): void };
 }
 
 export interface ToolCallEvent {
@@ -57,9 +58,17 @@ export interface AgentEndEvent {
 	willContinue?: boolean;
 }
 
-/** A finalized assistant message: `message.content` holds its blocks (`text`, `thinking`, `toolCall`). */
+/** A finalized assistant message: `message.content` holds its blocks (`text`, `thinking`, `toolCall`); `message.timestamp` identifies the reply to `ctx.ui.rerenderMessage` and to the assistant text renderers. */
 export interface AssistantMessageEvent {
-	message?: { content?: unknown };
+	message?: { content?: unknown; timestamp?: number };
+}
+
+/** What the host passes an assistant text renderer for one text block of a reply: `message` (a deep copy) with its `timestamp`, the block's `contentIndex` in the reply's content, its `text` so far and whether it is `streaming`. */
+export interface AssistantTextContext {
+	message?: { content?: unknown; timestamp?: number };
+	contentIndex?: number;
+	text?: string;
+	streaming?: boolean;
 }
 
 /**
@@ -104,9 +113,10 @@ export interface GateMessage {
 }
 
 export interface Api extends Pick<MistakeApi, "zod" | "registerTool"> {
-	sendMessage(message: GateMessage, options: { deliverAs: "nextTurn" | "aside"; triggerTurn: boolean }): void;
+	sendMessage(message: GateMessage, options?: { deliverAs: "nextTurn" | "aside"; triggerTurn: boolean }): void;
 	on<E extends keyof Handlers>(event: E, handler: Handlers[E]): void;
 	registerCommand(name: string, command: Command): void;
+	registerAssistantTextRenderer?(renderer: (context: AssistantTextContext) => string | undefined): void;
 }
 
 export const isMain = (ctx: Ctx) => ctx.agent?.kind === "main";

@@ -5,13 +5,14 @@ import { setupCommit } from "../gate/log.ts";
 import { lastStopReason } from "../guard/limit-lift.ts";
 import { say } from "../notice.ts";
 
-/** Why a session restarts: the agent asked for it and goes on after it (`asked`), or the installed harness changed under it (`deployed`); `stopped` when its last run was aborted or ended in an error, so nothing is restarted for it. */
+/** Why a session restarts: the agent asked for it and goes on after it (`asked`), or the installed harness changed under it (`deployed`); `stopped` when its last run was aborted or ended in an error, so nothing is restarted for it; `clean` when its last run ended normally and nothing has run since, so a deploy restart starts no turn. */
 export interface RestartRequest {
 	sessionId: string;
 	cause: "asked" | "deployed";
 	reason: string;
 	at: number;
 	stopped?: boolean;
+	clean?: boolean;
 }
 
 /** What the session is doing when a restart is considered: `jobs` counts its running background jobs, `submits` says the composer sends to this session (not to a viewed subagent) and can submit now. */
@@ -64,7 +65,8 @@ export interface RestartApi {
 	zod: { object(shape: Record<string, Schema>): Schema; string(): Schema };
 	on(event: "session_start" | "session_switch" | "session_shutdown" | "agent_end", handler: (event: { willContinue?: boolean; messages?: readonly unknown[] }, ctx: Ctx) => void | Promise<void>): void;
 	registerTool<P>(tool: { name: string; label: string; description: string; parameters: Schema; execute(id: string, params: P | undefined, signal: unknown, onUpdate: unknown, ctx: Ctx): Promise<ToolResult> }): void;
-	sendMessage(message: { customType: string; content: string; display: boolean }, options: { deliverAs?: "aside"; triggerTurn: boolean }): void;
+	sendMessage(message: { customType: string; content: string; display: boolean }, options: { triggerTurn: false }): void;
+	sendUserMessage(content: string, options: { attribution: "agent" }): void;
 }
 
 /** The restart watcher of one omp process; `check` restarts now when a restart is due and the session is ready for it. */
@@ -142,11 +144,12 @@ function alive(pid: number): boolean {
 	}
 }
 
-/** What the resumed session is told: an asked restart goes on with the task; after a deploy or a `/restart` the user typed (`undefined`), the agent continues unfinished work or says in one line that nothing is left; after a deploy that came while the last run stood stopped, it waits for the user. */
+/** What the resumed session is told: an asked restart goes on with the task; after a deploy or a `/restart` the user typed (`undefined`), the agent continues unfinished work or says in one line that nothing is left; after a deploy that came while the last run stood stopped, or had ended normally, it waits for the user. */
 export function resumedText(request: RestartRequest | undefined, loaded: string | undefined): string {
 	const harness = loaded === undefined ? "" : ` Harness ${loaded} is loaded.`;
 	if (request?.cause === "asked") return `session-restart: omp restarted as you asked (${request.reason}).${harness} Continue the task from where you left off; do not redo finished steps.`;
 	if (request?.stopped === true) return `session-restart: omp restarted to load the deployed harness.${harness} The last run was stopped (aborted or errored) before it, so nothing was resumed; wait for the user.`;
+	if (request?.clean === true) return `session-restart: omp restarted to load the deployed harness.${harness} The last run ended normally before it, so no turn was started; wait for the user.`;
 	const why = request === undefined ? "omp was restarted" : "omp restarted to load the deployed harness";
 	return `session-restart: ${why}.${harness} If the task you were on is unfinished (open todos, a pending step, a worker or check result you were waiting for), continue it now without redoing finished steps; if everything is done, reply with one short line that says so.`;
 }
@@ -158,10 +161,14 @@ const text = (body: string, isError = false): ToolResult => ({ content: [{ type:
  * when the agent asks (`session_restart`, once the run ends; the resumed session gets a turn to continue; a run the user stops
  * or that errors drops the request), and when the harness deployed on this machine is no longer the one this process loaded
  * (once the session is idle with nothing typed). Either waits while `pendingWork` (done-gate checks left running after a stop)
- * is not zero, since a restart would lose their results. Every restart resumes with a turn, including a `/restart` the user
- * typed (the first session of a process whose `restoredFile` is its own file): the agent continues unfinished work or says in
- * one line that nothing is left. Workers, print, RPC and ACP sessions are left alone. A restart that does not happen is not
- * tried again for the same commit.
+ * is not zero, since a restart would lose their results. The resumed session is told once it has started and is idle, never
+ * from inside `session_start`, so the turn runs on the settled tool devices. An asked restart and a `/restart` the user typed
+ * (the first session of a process whose `restoredFile` is its own file) resume with a turn, sent as a prompt attributed to
+ * the agent rather than a custom message: omp recalls memory only for a prompt, and a turn without that block runs on a
+ * system prompt unlike the next turn's, so both turns would rewrite the whole context. The turn continues unfinished work or
+ * says in one line that nothing is left; a deploy restart after a run that ended normally, or that was stopped, only adds the
+ * message to the context. Workers, print, RPC and ACP sessions are left alone. A restart that does not happen is not tried
+ * again for the same commit.
  */
 export function createSessionRestart(pi: RestartApi, loadComposer: () => Promise<ComposerClass>, pendingWork: () => number, restoredFile: () => string | undefined): SessionRestart {
 	let restoreChecked = false;
@@ -171,8 +178,10 @@ export function createSessionRestart(pi: RestartApi, loadComposer: () => Promise
 	let sessionId: string | undefined;
 	let composer: Composer | undefined;
 	let asked: RestartRequest | undefined;
+	let resume: { content: string; turn: boolean } | undefined;
 	let runEnded = true;
 	let stopped = false;
+	let clean = false;
 	let tried: string | undefined;
 	let poll: ReturnType<typeof setInterval> | undefined;
 
@@ -182,7 +191,17 @@ export function createSessionRestart(pi: RestartApi, loadComposer: () => Promise
 	};
 
 	const check = () => {
-		if (ctx === undefined || composer === undefined || sessionId === undefined) return;
+		if (ctx === undefined || sessionId === undefined) return;
+		const idle = ctx.isIdle?.() === true && ctx.hasPendingMessages?.() !== true;
+		if (resume !== undefined) {
+			if (!idle) return;
+			const { content, turn } = resume;
+			resume = undefined;
+			if (turn) pi.sendUserMessage(content, { attribution: "agent" });
+			else pi.sendMessage({ customType: "session-restart", content, display: true }, { triggerTurn: false });
+			return;
+		}
+		if (composer === undefined) return;
 		const moment: Moment = {
 			idle: ctx.isIdle?.() === true,
 			pending: ctx.hasPendingMessages?.() === true,
@@ -200,7 +219,7 @@ export function createSessionRestart(pi: RestartApi, loadComposer: () => Promise
 		const deployed = setupCommit();
 		if (loaded === undefined || deployed === undefined || deployed === loaded || deployed === tried || !readyFor("deployed", moment)) return;
 		tried = deployed;
-		restart({ sessionId, cause: "deployed", reason: `harness ${deployed} deployed`, at: Date.now(), ...(stopped ? { stopped } : {}) });
+		restart({ sessionId, cause: "deployed", reason: `harness ${deployed} deployed`, at: Date.now(), ...(stopped ? { stopped } : {}), ...(clean ? { clean } : {}) });
 	};
 
 	const leave = () => {
@@ -210,8 +229,10 @@ export function createSessionRestart(pi: RestartApi, loadComposer: () => Promise
 		sessionId = undefined;
 		composer = undefined;
 		asked = undefined;
+		resume = undefined;
 		runEnded = true;
 		stopped = false;
+		clean = false;
 	};
 
 	const join = async (next: Ctx) => {
@@ -222,7 +243,17 @@ export function createSessionRestart(pi: RestartApi, loadComposer: () => Promise
 		const resumed = takeRequest(dir, id);
 		const typed = !restoreChecked && resumed === undefined && restoredFile() !== undefined && restoredFile() === next.sessionManager?.getSessionFile?.();
 		restoreChecked = true;
-		if (resumed !== undefined || typed) pi.sendMessage({ customType: "session-restart", content: resumedText(resumed, loaded), display: true }, resumed?.stopped === true ? { triggerTurn: false } : { deliverAs: "aside", triggerTurn: true });
+		clean = resumed?.clean === true;
+		if (resumed !== undefined || typed) {
+			const turn = resumed?.stopped !== true && !(resumed?.cause === "deployed" && resumed.clean === true);
+			resume = { content: resumedText(resumed, loaded), turn };
+		}
+		ctx = next;
+		sessionId = id;
+		if (process.env.HARNESS_RESTART_WATCH !== "0") {
+			poll = setInterval(check, POLL_MS);
+			poll.unref?.();
+		}
 		let Base: ComposerClass;
 		try {
 			Base = await loadComposer();
@@ -237,11 +268,6 @@ export function createSessionRestart(pi: RestartApi, loadComposer: () => Promise
 			composer = made;
 			return made;
 		});
-		ctx = next;
-		sessionId = id;
-		if (process.env.HARNESS_RESTART_WATCH === "0") return;
-		poll = setInterval(check, POLL_MS);
-		poll.unref?.();
 	};
 
 	pi.on("session_start", (_event, started) => join(started));
@@ -251,6 +277,7 @@ export function createSessionRestart(pi: RestartApi, loadComposer: () => Promise
 		if (event.willContinue === true) return;
 		const reason = lastStopReason(event.messages);
 		stopped = reason === "aborted" || reason === "error";
+		clean = reason === "stop";
 		if (stopped) asked = undefined;
 		runEnded = true;
 		check();

@@ -1,6 +1,7 @@
 import { freshAnthropicLimits } from "./budget.ts";
 import { debug } from "./debug.ts";
 import type { HostApi, HostCtx } from "./host-types.ts";
+import { fillsFableWindow } from "./spawn-rules.ts";
 import { LONG_USAGE_WAIT_MS } from "./usage-wait.ts";
 
 const IDLE_WAIT_MS = 5_000;
@@ -41,7 +42,7 @@ const appliesTo = (limit: UsageLimit, model: string): boolean => {
 	if (tier === undefined) return true;
 	const words = tierWords(tier);
 	const id = model.toLowerCase();
-	return words.length === 0 || id === "" || words.some(word => id.includes(word));
+	return words.length === 0 || id === "" || words.some(word => id.includes(word) || (word === "fable" && fillsFableWindow(id)));
 };
 
 const spent = (limit: UsageLimit): boolean => {
@@ -53,7 +54,7 @@ const spent = (limit: UsageLimit): boolean => {
 /**
  * True when the usage report was readable and no window that applies to `model` is spent, i.e. the limit a session waits on is over (dotz `limitsUsable` with `scopeBlocksModels`).
  * A window is spent when `amount.remaining <= 0` or its `status` is anything but `ok`, so `warning` and `unknown` hold a lift back too.
- * A window with a tier (`scope.tier`, else the part of its id after `<provider>:<window>:`) applies only to a model whose id contains one of the tier's words of 3+ letters other than `claude`.
+ * A window with a tier (`scope.tier`, else the part of its id after `<provider>:<window>:`) applies only to a model whose id contains one of the tier's words of 3+ letters other than `claude`; the `fable` tier also applies to every model that fills the Fable window (`fillsFableWindow`).
  * An empty `model`, or a tier without such a word, makes it apply to every model. Undefined or empty `limits` (an unreadable report) is never over.
  */
 export function limitOver(limits: readonly UsageLimit[] | undefined, model: string): boolean {

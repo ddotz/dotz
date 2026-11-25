@@ -1,13 +1,13 @@
 import { say } from "../notice.ts";
-import { CODE_LINE, CODE_SPAN, INLINE_CODE, outsideFences, shortened } from "./plaintext.ts";
+import { CODE_LINE, outsideFences, shortened, withoutQuoted } from "./plaintext.ts";
 import { isProtocolAnswer } from "./report.ts";
 import type { Finding } from "./types.ts";
 
 const MAX_LISTED = 5;
 const LEFTOVER = /남은\s*것|남은\s*일|남은\s*문제|아직\s*남|후속\s*작업|다음에\s*할|나중에\s*(?:할|하겠|처리|고치|고칠|손볼|다루)|\bremaining\b|\bfollow[- ]?ups?\b|\bleft for later\b|\bnot yet done\b/i;
 const MARKER = /\bTODO\b/;
-const NOTHING_LEFT = /(?:남은\s*(?:것|일|문제)[은는이가]?\s*(?:없|하나도\s*없)|없습니다|없음|\bnothing\b|\bnone\b|\bno\s+(?:remaining|follow[- ]?ups?)\b)/i;
-const DONE_VERB = /고쳤|해결했|해결됨|처리했|마쳤|끝냈|반영했|\b(?:fixed|resolved|addressed|closed)\b|(?<!\bnot yet )\bdone\b/i;
+const NOTHING_LEFT = /(?:남은\s*(?:것|일|문제)[은는이가:：]?\s*(?:없|하나도\s*없)|없습니다|없어요|없음|\bnothing\b|\bnone\b|\bno\s+(?:remaining|follow[- ]?ups?)\b)/i;
+const DONE_VERB = /고쳤|해결했|해결됨|처리했|마쳤|끝냈|반영했|(?:완료|통과)(?!되지|하지|\s*(?:않|못))|\b(?:fixed|resolved|addressed|closed|passed|verified)\b|(?<!\bnot yet )\bdone\b/i;
 const BLOCKER = /권한이?\s*없|차단(?:됨|되어|돼|된)|막혀|막힘|승인(?:이|을)?\s*(?:필요|받아야|대기|기다)|오너(?:의)?\s*(?:결정|승인)|\bneeds? the owner\b|\bblocked by\b|\bcan(?:no|')t reach\b|\bcannot reach\b/i;
 const LIST_MARK = /^\s*(?:[-*•]\s+|\d+[.)]\s+)/;
 const HEADER_END = /[:：]\s*$/;
@@ -19,8 +19,8 @@ const OUTRO = "Fix each listed item now in this run, then write the final report
  * indented 4 spaces or a tab. A line introduces leftovers with a Korean phrase (`남은 것`, `남은 일`, `남은 문제`, `아직 남`, `후속 작업`,
  * `다음에 할`, `나중에 할` and the like) or an English word (`remaining`, `follow-up`, `left for later`, `not yet done`, or the marker word in capitals); every bullet or
  * numbered line right after it (blank lines between are skipped) is a finding, and so is a bullet that contains such a phrase itself,
- * which also introduces the bullets after it when it ends in a colon. A line that says nothing is left (`남은 것 없음`, `없습니다`, `nothing`,
- * `none`) or that the items were done (`고쳤`, `해결했`, `fixed`, `resolved`, `done` but not `not yet done`) introduces nothing. Inline code is ignored. A line that names a blocker the agent
+ * which also introduces the bullets after it when it ends in a colon. A line that says nothing is left (`남은 것 없음`, `남은 일: 없어요`, `없습니다`, `nothing`,
+ * `none`) or that the items were done (`고쳤`, `해결했`, `완료`, `통과`, `fixed`, `resolved`, `passed`, `verified`, `done` but not `not yet done`) introduces nothing. Inline code and quoted text (`"..."`, `'...'`, curly double quotes) are ignored, so a line that only cites a phrase is no leftover. A line that names a blocker the agent
  * cannot remove (`권한 없음`, `차단됨`, `막힘`, `승인 필요`, `오너 결정`, `needs the owner`, `blocked by`, `cannot reach`) is no finding, and exempts
  * only itself. Quote lines (`>`) are not looked into. The finding's `line` is the 1-based line of the reply and its `text` the line
  * cut to 100 characters. Empty for an undefined reply or a protocol answer (`ok`, `-`, `[later]`).
@@ -28,7 +28,7 @@ const OUTRO = "Fix each listed item now in this run, then write the final report
 export function leftoverFindings(reply: string | undefined): Finding[] {
 	if (reply === undefined || isProtocolAnswer(reply)) return [];
 	const raws = outsideFences(reply);
-	const lines = raws.map(raw => (raw === undefined || CODE_LINE.test(raw) || raw.trim().startsWith(">") ? undefined : raw.replace(INLINE_CODE, CODE_SPAN)));
+	const lines = raws.map(raw => (raw === undefined || CODE_LINE.test(raw) || raw.trim().startsWith(">") ? undefined : withoutQuoted(raw)));
 	const listed = new Set<number>();
 	lines.forEach((line, at) => {
 		if (line === undefined || !(LEFTOVER.test(line) || MARKER.test(line)) || NOTHING_LEFT.test(line) || DONE_VERB.test(line)) return;

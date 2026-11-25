@@ -1,7 +1,7 @@
 ---
 name: ulw
 disable-model-invocation: true
-description: "Rigor mode for non-trivial work: restate the goal, size the work LIGHT or HEAVY once, run one playbook from skill://ulw/playbooks/, apply the principles it touches, and stop only when every success criterion has real-surface evidence. Entered from the omp router rule ~/.omp/agent/rules/routines.md (main sessions only), the literal keyword `ulw`, or /skill:ulw; hidden from the catalog so task workers never enter it."
+description: "Rigor mode for non-trivial work: size it, run one playbook from skill://ulw/playbooks/, stop only on real-surface evidence. Entered from rules/routines.md (main sessions), the keyword `ulw`, or /skill:ulw."
 ---
 
 Ship exactly what was asked, proven on the real surface, with the smallest change that does it. Ported from pstack's poteto-mode; omp rules (`agent/RULES.md`, `agent/AGENTS.md`) win where they differ.
@@ -30,6 +30,7 @@ Record the tier and its one-line reason in the plan file.
 Read the matched file in full before the first edit or worker spawn, LIGHT work included; then copy its numbered steps verbatim as the first todos. A step you skip stays in the list as `skip: <reason>`. Files live at `skill://ulw/playbooks/<file>.md`.
 
 - `investigation`: read-only question (how does X work, why is Y like this, are we sure about Z, X or Y).
+- `edge-audit`: try an existing feature's edge cases or audit where it breaks; findings with runs, no fixes unless asked.
 - `bug-fix`: a reported defect to reproduce, root-cause, and fix with runtime evidence.
 - `perf-issue`: measured slowness to trace and improve against a baseline.
 - `hillclimb`: sustained improvement of one metric against a target, one change per measurement.
@@ -52,6 +53,8 @@ Read the matched file in full before the first edit or worker spawn, LIGHT work 
 - `session-pickup` and `pause-safely`: resume or suspend in-flight work (`skill://pause` owns the procedure).
 - `worktree-cleanup`: reclaim disk from stale worktrees (`skill://worktree-cleanup`).
 
+Several independent items in one request: one playbook per item.
+
 A large or cross-cutting effort, or work the owner reviews after stepping away, routes to `skill://figure-it-out` even when a narrower playbook fits; a standing program of many units and patches routes to `orchestrate` instead. No playbook fits: `skill://figure-it-out` designs one and writes it in the plan file.
 
 Real surface for UI and apps: a change a user can see is proven through the project's `verify-<app>` skill (`.omp/skills/verify-*/`). None exists: run `skill://verify` to create it first. A surface that cannot be driven here (native mobile, a Tauri window) is reported as "not drivable here"; never claim it works.
@@ -62,7 +65,7 @@ Real surface for UI and apps: a change a user can see is proven through the proj
 - Any code: name the data shape first and its organizing structure (`skill://principle-model-the-domain`).
 - Code crossing a function boundary: `skill://architect`. Several valid shapes: `skill://arena`. Contested design before shipping: `skill://interrogate`.
 - Parallel fan-out for coverage, races, or exploration: `skill://swarm`.
-- Nontrivial multi-step work: write the throughput checkpoint (`playbooks/feature.md` step 4).
+- Nontrivial multi-step work: write the throughput checkpoint (four todos, as `playbooks/feature.md` lists them).
 - Before changing a shared symbol, persisted shape, IPC contract, or config: `skill://blast-radius`.
 - A bug with a cheap local test: `skill://tdd`. Parsers, serializers, pure transforms: `skill://pbt`. A promise like "never charged twice" on HEAVY concurrency work: `skill://formal-verify`.
 - The owner asks to prune or clean up tests, or a suite under your change holds copies, tests of removed code, or tests pinned to internals: `skill://prune-tests`.
@@ -78,12 +81,12 @@ Real surface for UI and apps: a change a user can see is proven through the proj
 
 ## 5. Principles
 
-Index: `skill://ulw/references/principles.md` (24 principles, each with its trigger). Read a principle's `skill://principle-<id>` file in full before applying it. The reply names each principle that shaped a decision by its id and the choice it changed; cite only principles read this session (the done gate refuses an unread citation).
+Index: `skill://ulw/references/principles.md` (24 principles, each with its trigger). Read a principle's `skill://principle-<id>` file in full before applying it.
 
 ## 6. Workers and models
 
-- Implementation and QA: `task` workers (worker tier), briefs per the orchestrator rules already in context. A brief names the `skill://` files the worker must read first. Workers never spawn workers (recursion depth 1), never push, open, reply on, or merge PRs; they return patches and this session runs every external action.
-- Review of a risky patch: `reviewer`, of a different tier than the author where possible.
+- Implementation and QA over three files: `task` workers, briefs per RULES.md; three files or fewer: this session. A brief names the `skill://` files to read first. Workers never spawn workers, never push, open, reply on, or merge PRs; they return patches and this session runs every external action.
+- Review: one `reviewer` per batch of related patches, of another tier than the author; one fix round, then you decide.
 - `deep-reviewer` (deep tier) ONLY for one-way-door judgments: the `skill://arena` judge seat and the deep seat in `skill://interrogate`.
 - New work goes to a fresh worker with consolidated scope (the original brief, later directives, the prior result's path). Never message a finished worker.
 - You own every worker's output: read the patch, write your own summary, never pass a worker's report through.
@@ -105,7 +108,6 @@ Final reply, in Korean plain text, written clean as you draft it (`skill://unslo
 1. Goal, one line.
 2. What changed, by file or behavior, framed for the user and for the next maintainer.
 3. Each criterion: the command or surface run and what it showed.
-4. Principles that shaped decisions, by id, with the choice each changed.
-5. Residual risk or what was not verified, stated plainly. Every claim carries its evidence or a confidence label; never hand the owner a check you could run.
+4. Residual risk or what was not verified, stated plainly. Every claim carries its evidence or a confidence label; never hand the owner a check you could run.
 
 Source: pstack skills/poteto-mode/SKILL.md (MIT, skill://ulw/references/LICENSE-pstack).

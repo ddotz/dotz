@@ -1,7 +1,11 @@
-import { mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { mkdirSync, readdirSync, readFileSync, realpathSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, join, relative } from "node:path";
+import { dirname, join, relative, sep } from "node:path";
 import { logsDir } from "./agent-home.ts";
+import { list } from "./checkouts/ovnfs.ts";
+import { parseSlotName, slugOf } from "./checkouts/slots.ts";
+import { isRecord } from "./gate/util.ts";
+import { fillsFableWindow } from "./guard/spawn-rules.ts";
 import { noticeLanguage } from "./notice.ts";
 
 const HOME = homedir();
@@ -15,12 +19,13 @@ const IF_DUE = argv.includes("--if-due");
 const LANG = arg("--lang") === "en" || arg("--lang") === "ko" ? arg("--lang") : noticeLanguage();
 const L = (en: string, ko: string): string => (LANG === "en" ? en : ko);
 const LOGS = arg("--logs");
+const BASELINE_FILE = arg("--baseline") ?? join(import.meta.dir, "token-baseline.json");
 const KEEP_HISTORY = ROOT === DEFAULT_ROOT || LOGS !== undefined;
 const AGENT_DIR = dirname(ROOT);
 const LOG_DIR = LOGS ?? logsDir();
 const HISTORY = join(LOG_DIR, "token-audit.json");
 const BUST_UNCACHED = 50_000;
-const BIG_CTX = 300_000;
+const BIG_CTX = 400_000;
 const SUB_NOTE = 20e6;
 const SUB_FLAG = 50e6;
 const IDLE_OUT = 300;
@@ -49,7 +54,7 @@ const M = (n: number) => `${(n / 1e6).toFixed(1)}M`;
 const K = (n: number) => `${Math.round(n / 1e3)}K`;
 const usd = (n: number) => `$${n.toFixed(2)}`;
 
-type Src = { file: string; label: string; child: boolean; advisor: boolean };
+type Src = { file: string; label: string; project: string; bucket: string; child: boolean; advisor: boolean };
 const srcs: Src[] = [];
 function walk(dir: string, depth: number): void {
 	let entries: import("node:fs").Dirent[] = [];
@@ -74,10 +79,20 @@ function walk(dir: string, depth: number): void {
 		const project = parts[0].replace(/^--|--$/g, "").replace(/-/g, "/").replace(HOME.slice(1), "~");
 		const child = parts.length >= 3;
 		const id = child ? `${parts[1].match(/_([0-9a-f]{8})/)?.[1] ?? parts[1].slice(0, 8)}/${entry.name.replace(/\.jsonl$/, "")}` : entry.name.match(/_([0-9a-f]{8})/)?.[1] ?? entry.name.slice(0, 8);
-		srcs.push({ file: path, label: `${project} ${child ? "worker " : ""}${id}`, child, advisor: entry.name === "__advisor.jsonl" });
+		srcs.push({ file: path, label: `${project} ${child ? "worker " : ""}${id}`, project, bucket: parts[0], child, advisor: entry.name === "__advisor.jsonl" });
 	}
 }
 walk(ROOT, 2);
+
+const REWRITE_CAUSES = ["compaction", "restart/resume", "model change", "gap over TTL", "unexplained"] as const;
+type RewriteCause = (typeof REWRITE_CAUSES)[number];
+type LevelUse = Record<string, { turns: number; cost: number }>;
+
+const bump = (use: LevelUse, key: string, cost: number): void => {
+	const entry = (use[key] ??= { turns: 0, cost: 0 });
+	entry.turns++;
+	entry.cost += cost;
+};
 
 type Bust = { ts: number; uncached: number; cr: number; prevCtx: number; cost: number; events: string[] };
 type Stats = {
@@ -111,6 +126,9 @@ type Stats = {
 	effortTurns: number;
 	effortCost: number;
 	efforts: Set<string>;
+	levels: LevelUse;
+	dearLevels: LevelUse;
+	rewrites: Record<RewriteCause, number>;
 	expensiveCost: number;
 	maxToolStreak: number;
 	maxToolDesc: string;
@@ -118,6 +136,7 @@ type Stats = {
 	loopCost: number;
 	readRate: number;
 	start?: number;
+	cwd?: string;
 };
 
 const sameModel = (a: string, b: string) => {
@@ -183,6 +202,7 @@ interface SessionMessage {
 }
 
 interface SessionEntry {
+	cwd?: string;
 	type?: string;
 	timestamp?: string;
 	reason?: string;
@@ -198,9 +218,10 @@ function analyze(src: Src): Stats {
 		src, turns: 0, tokens: 0, cost: 0, cw: 0, cr: 0, out: 0, maxCtx: 0, compactions: 0, busts: [], explained: {}, bigNew: 0,
 		wakes: {}, warmings: 0, ttsr: 0, errTurns: 0, maxErrStreak: 0, errCodes: {}, compactErr: 0, maxBigStreak: 0, bigTokens: 0, bigCost: 0,
 		fbTurns: 0, fbModels: new Set(), fable: 0, fableCost: 0, effortTurns: 0, effortCost: 0, efforts: new Set(), expensiveCost: 0, maxToolStreak: 0, maxToolDesc: "", loopTokens: 0, loopCost: 0, readRate: 0,
+		levels: {}, dearLevels: {}, rewrites: { compaction: 0, "restart/resume": 0, "model change": 0, "gap over TTL": 0, unexplained: 0 },
 	};
 	let events: string[] = [];
-	let compacted = false, modelChanged = false, thinkChanged = false, user = false;
+	let compacted = false, modelChanged = false, thinkChanged = false, resumed = false, user = false;
 	let prev: { ts: number; ctx: number; ttlMin: number } | undefined;
 	let prevStop = "stop";
 	let errStreak = 0, bigStreak = 0, toolHash = "", toolStreak = 0, readTok = 0, readCost = 0;
@@ -215,6 +236,10 @@ function analyze(src: Src): Stats {
 			continue;
 		}
 		const ts = Date.parse(entry.timestamp ?? "");
+		if (entry.type === "session" && typeof entry.cwd === "string") {
+			s.cwd = entry.cwd;
+			continue;
+		}
 		if (entry.type === "compaction") {
 			compacted = true;
 			bigStreak = 0;
@@ -239,6 +264,7 @@ function analyze(src: Src): Stats {
 			const kind = String(entry.customType ?? entry.message?.customType ?? "custom");
 			events.push(kind);
 			if (/warm|keepalive/i.test(kind)) s.warmings++;
+			if (kind === "session_exit" || kind === "session-restart") resumed = true;
 			continue;
 		}
 		if (entry.type !== "message") continue;
@@ -292,7 +318,7 @@ function analyze(src: Src): Stats {
 				readTok += cr;
 				readCost += u.cost?.cacheRead ?? 0;
 			}
-			const dearModel = /fable/i.test(model) && !configuredModel(src, model);
+			const dearModel = fillsFableWindow(model) && !configuredModel(src, model);
 			const dearEffort = EXPENSIVE_LEVELS.has(level) && !configuredModel(src, model);
 			if (dearModel) {
 				s.fable++;
@@ -303,10 +329,14 @@ function analyze(src: Src): Stats {
 				s.effortCost += cost;
 				s.efforts.add(`${m.model ?? "?"}:${level}`);
 			}
+			bump(s.levels, level || "unset", cost);
+			if (dearEffort) bump(s.dearLevels, level, cost);
 			if (dearModel || dearEffort) s.expensiveCost += cost;
 			if (uncached > BUST_UNCACHED && prev) {
 				const gapMin = (ts - prev.ts) / 60e3;
 				const why = compacted ? "compaction" : modelChanged ? "model change" : thinkChanged ? "thinking change" : gapMin > prev.ttlMin ? `gap>${prev.ttlMin}m` : "";
+				const rewriteCause: RewriteCause | undefined = compacted ? "compaction" : resumed ? "restart/resume" : modelChanged || thinkChanged ? "model change" : gapMin > prev.ttlMin ? "gap over TTL" : cr < prev.ctx * 0.8 ? "unexplained" : undefined;
+				if (rewriteCause) s.rewrites[rewriteCause] += (u.cost?.cacheWrite ?? 0) + (u.cost?.input ?? 0);
 				if (why) s.explained[why] = (s.explained[why] ?? 0) + 1;
 				else if (cr < prev.ctx * 0.8) s.busts.push({ ts, uncached, cr, prevCtx: prev.ctx, cost: (u.cost?.cacheWrite ?? 0) + (u.cost?.input ?? 0), events: [...new Set(events)] });
 				else s.bigNew++;
@@ -353,7 +383,7 @@ function analyze(src: Src): Stats {
 		prev = { ts, ctx, ttlMin };
 		prevStop = m.stopReason ?? "stop";
 		events = [];
-		compacted = modelChanged = thinkChanged = user = false;
+		compacted = modelChanged = thinkChanged = resumed = user = false;
 	}
 	s.readRate = readTok ? readCost / readTok : 0;
 	return s;
@@ -417,10 +447,10 @@ for (const s of results) {
 		});
 	}
 	if (s.fable || s.effortTurns) {
-		const parts = [s.fable ? L(`${s.fable} Fable replies (${usd(s.fableCost)})`, `Fable 응답 ${s.fable}회 (${usd(s.fableCost)})`) : "", s.effortTurns ? L(`${s.effortTurns} turns at max/xhigh thinking level (${usd(s.effortCost)}; ${[...s.efforts].join(", ")})`, `max/xhigh 생각 수준 ${s.effortTurns}턴 (${usd(s.effortCost)}; ${[...s.efforts].join(", ")})`) : ""].filter(Boolean);
+		const parts = [s.fable ? L(`${s.fable} Fable/Mythos replies (${usd(s.fableCost)})`, `Fable/Mythos 응답 ${s.fable}회 (${usd(s.fableCost)})`) : "", s.effortTurns ? L(`${s.effortTurns} turns at max/xhigh thinking level (${usd(s.effortCost)}; ${[...s.efforts].join(", ")})`, `max/xhigh 생각 수준 ${s.effortTurns}턴 (${usd(s.effortCost)}; ${[...s.efforts].join(", ")})`) : ""].filter(Boolean);
 		const cost = s.fable && s.effortTurns ? s.expensiveCost : s.fable ? s.fableCost : s.effortCost;
 		findings.push({
-			flag: s.fable > 0, kind: L("expensive model", "비싼 모델"), who, what: L(`${parts.join(" + ")} (user rule: Fable only when asked for explicitly or a configured role, no fallback; max/xhigh is a note: the guard caps worker effort at the role plus one step)`, `${parts.join(" + ")} (사용자 규칙: Fable은 명시적으로 요청하거나 설정된 역할일 때만, 폴백 금지; max/xhigh는 참고: 워커 effort는 가드가 역할+1단계로 막음)`), amount: usd(cost), save: cost,
+			flag: s.fable > 0 || (s.src.child && !s.src.advisor && s.effortTurns > 0), kind: L("expensive model", "비싼 모델"), who, what: L(`${parts.join(" + ")} (user rule: Fable and Mythos only when asked for explicitly or a configured role, no fallback; max/xhigh on a worker is a warning, on a main session a note)`, `${parts.join(" + ")} (사용자 규칙: Fable과 Mythos는 명시적으로 요청하거나 설정된 역할일 때만, 폴백 금지; 워커의 max/xhigh는 경고, 메인 세션의 max/xhigh는 참고)`), amount: usd(cost), save: cost,
 			fix: L("Proposal: check the model path of this session/worker (roles, fallback chain, agentModelOverrides)", "제안: 이 세션/워커의 모델 경로(역할·폴백 체인·agentModelOverrides) 확인"),
 		});
 	}
@@ -481,6 +511,130 @@ if (KEEP_HISTORY && !DRY) writeFileSync(HISTORY, `${JSON.stringify({ updated: ne
 
 const ordered = [...findings].sort((a, b) => Number(b.flag) - Number(a.flag) || b.save - a.save);
 const sorted = [...results].sort((a, b) => b.tokens - a.tokens);
+
+function realOrSame(path: string): string {
+	try {
+		return realpathSync(path);
+	} catch {
+		return path;
+	}
+}
+
+const slotRoots: { root: string; folder: string }[] = [];
+if (results.length > 0) {
+	const listed = await list();
+	if (listed.ok) {
+		for (const row of listed.value) if (parseSlotName(row.name, slugOf(row.source)) !== undefined) slotRoots.push({ root: realOrSame(row.path), folder: row.source });
+	} else console.error(`ovnfs listing failed, so slot sessions keep their own path: ${listed.why}`);
+}
+
+function folderOf(cwd: string): string {
+	const real = realOrSame(cwd);
+	for (const { root, folder } of slotRoots) if (real === root || real.startsWith(root + sep)) return join(folder, relative(root, real));
+	return cwd;
+}
+
+const bucketCwd = new Map<string, string>();
+for (const s of [...results].sort((a, b) => Number(a.src.child) - Number(b.src.child))) if (s.cwd !== undefined && !bucketCwd.has(s.src.bucket)) bucketCwd.set(s.src.bucket, s.cwd);
+const byProject = new Map<string, { sessions: number; tokens: number; cost: number }>();
+for (const s of results) {
+	const cwd = bucketCwd.get(s.src.bucket);
+	const project = cwd === undefined ? s.src.project : folderOf(cwd).replace(HOME, "~");
+	const tally = byProject.get(project) ?? { sessions: 0, tokens: 0, cost: 0 };
+	tally.sessions++;
+	tally.tokens += s.tokens;
+	tally.cost += s.cost;
+	byProject.set(project, tally);
+}
+const projectLines = [...byProject].sort((a, b) => b[1].tokens - a[1].tokens).map(([project, t]) => L(`- ${project}: ${t.sessions} sessions, ${M(t.tokens)} tok, ${usd(t.cost)}`, `- ${project}: 세션 ${t.sessions}개, ${M(t.tokens)} tok, ${usd(t.cost)}`));
+
+type Kind = "workers" | "main" | "advisor";
+const kindOf = (s: Stats): Kind => (s.src.advisor ? "advisor" : s.src.child ? "workers" : "main");
+const kindLabel: Record<Kind, string> = { workers: L("workers", "워커"), main: L("main", "메인"), advisor: L("advisor", "어드바이저") };
+const kindCost: Record<Kind, number> = { workers: 0, main: 0, advisor: 0 };
+for (const s of results) kindCost[kindOf(s)] += s.cost;
+
+type Tally = { workers: number; turns: number; cost: number };
+function workerLevels(pick: (s: Stats) => LevelUse): [string, Tally][] {
+	const out = new Map<string, Tally>();
+	for (const s of results) {
+		if (kindOf(s) !== "workers") continue;
+		for (const [name, use] of Object.entries(pick(s))) {
+			const tally = out.get(name) ?? { workers: 0, turns: 0, cost: 0 };
+			tally.workers++;
+			tally.turns += use.turns;
+			tally.cost += use.cost;
+			out.set(name, tally);
+		}
+	}
+	return [...out].sort((a, b) => b[1].cost - a[1].cost);
+}
+
+const rewriteLabel: Record<RewriteCause, string> = { compaction: L("compaction", "압축"), "restart/resume": L("restart/resume", "재시작/재개"), "model change": L("model change", "모델 변경"), "gap over TTL": L("gap over TTL", "TTL 초과 공백"), unexplained: L("unexplained", "원인 불명") };
+const rewriteCost = (cause: RewriteCause) => results.reduce((a, s) => a + s.rewrites[cause], 0);
+const levelList = (rows: [string, Tally][]) => rows.map(([name, t]) => L(`${name} ${usd(t.cost)} (${t.workers} workers, ${t.turns} turns)`, `${name} ${usd(t.cost)} (워커 ${t.workers}개, ${t.turns}턴)`)).join(", ") || "-";
+const maxWorkers = results.filter(s => kindOf(s) === "workers" && s.effortTurns > 0);
+const maxNow = { workers: maxWorkers.length, cost: maxWorkers.reduce((a, s) => a + s.effortCost, 0) };
+
+interface Baseline {
+	windowEnd: string;
+	hours: number;
+	cost: Record<Kind | "total", number>;
+	workerMaxLevel: { workers: number; cost: number };
+}
+const finite = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
+function parseBaseline(raw: unknown): Baseline | undefined {
+	if (!isRecord(raw) || typeof raw.windowEnd !== "string" || !finite(raw.hours) || raw.hours <= 0) return undefined;
+	const { cost, workerMaxLevel: max } = raw;
+	if (!isRecord(cost) || !isRecord(max)) return undefined;
+	if (!finite(cost.total) || !finite(cost.workers) || !finite(cost.main) || !finite(cost.advisor) || !finite(max.workers) || !finite(max.cost)) return undefined;
+	return { windowEnd: raw.windowEnd, hours: raw.hours, cost: { total: cost.total, workers: cost.workers, main: cost.main, advisor: cost.advisor }, workerMaxLevel: { workers: max.workers, cost: max.cost } };
+}
+function loadBaseline(): Baseline | undefined {
+	try {
+		const parsed = parseBaseline(JSON.parse(readFileSync(BASELINE_FILE, "utf8")));
+		if (!parsed) console.error(`baseline ${BASELINE_FILE}: unexpected shape`);
+		return parsed;
+	} catch (error) {
+		console.error(`baseline ${BASELINE_FILE}: ${error}`);
+		return undefined;
+	}
+}
+const baseline = loadBaseline();
+const change = (current: number, base: number) => {
+	if (base <= 0) return "-";
+	const pct = Math.round((current / base - 1) * 100);
+	return `${pct > 0 ? "+" : ""}${pct}%`;
+};
+const baselineLines = baseline
+	? (() => {
+			const scale = HOURS / baseline.hours;
+			const span = (base: string) => L(`baseline ${base} over ${baseline.hours}h, scaled to ${HOURS}h`, `기준선 ${base}, ${baseline.hours}h 기간을 ${HOURS}h로 환산`);
+			const maxWorkerBase = baseline.workerMaxLevel;
+			return [
+				L(`## Versus baseline (window ending ${baseline.windowEnd})`, `## 기준선 비교 (기간 종료 ${baseline.windowEnd})`),
+				"",
+				...(["total", "workers", "main", "advisor"] as const).map(k => {
+					const current = k === "total" ? totalCost : kindCost[k];
+					const base = baseline.cost[k];
+					const name = k === "total" ? L("total", "합계") : kindLabel[k];
+					return `- ${name}: ${L("now", "현재")} ${usd(current)} · ${L("baseline", "기준선")} ${usd(base * scale)} (${span(usd(base))}) · ${change(current, base * scale)}`;
+				}),
+				`- ${L("workers at max/xhigh", "max/xhigh 워커")}: ${L(`now ${maxNow.workers} workers, ${usd(maxNow.cost)} · baseline ${(maxWorkerBase.workers * scale).toFixed(1)} workers, ${usd(maxWorkerBase.cost * scale)} (${span(`${maxWorkerBase.workers} workers, ${usd(maxWorkerBase.cost)}`)})`, `현재 워커 ${maxNow.workers}개, ${usd(maxNow.cost)} · 기준선 워커 ${(maxWorkerBase.workers * scale).toFixed(1)}개, ${usd(maxWorkerBase.cost * scale)} (${span(`워커 ${maxWorkerBase.workers}개, ${usd(maxWorkerBase.cost)}`)})`)} · ${change(maxNow.cost, maxWorkerBase.cost * scale)}`,
+			];
+		})()
+	: [L("## Versus baseline", "## 기준선 비교"), "", L("- no usable baseline file", "- 사용할 수 있는 기준선 파일 없음")];
+
+const causeSection = [
+	L("## Cost by cause", "## 원인별 비용"),
+	"",
+	`- ${L("Cost by kind", "종류별 비용")}: ${(["workers", "main", "advisor"] as const).map(k => `${kindLabel[k]} ${usd(kindCost[k])}`).join(", ")}`,
+	`- ${L("Worker cost by effort level", "워커 비용 (effort 수준별)")}: ${levelList(workerLevels(s => s.levels))}`,
+	`- ${L("Cache rewrite cost by cause", "캐시 재작성 비용 (원인별)")}: ${REWRITE_CAUSES.map(c => `${rewriteLabel[c]} ${usd(rewriteCost(c))}`).join(", ")}`,
+	...workerLevels(s => s.dearLevels).map(([name, t]) => `- ${L(`Warning: workers at ${name}: ${t.workers} workers, ${t.turns} turns, ${usd(t.cost)}`, `경고: ${name} 수준 워커: 워커 ${t.workers}개, ${t.turns}턴, ${usd(t.cost)}`)}`),
+	"",
+	...baselineLines,
+];
 const report = [
 	L(`# Token leak audit ${today} (KST)`, `# 토큰 누수 점검 ${today} (KST)`),
 	"",
@@ -488,6 +642,8 @@ const report = [
 	L(`7-day median: ${prior.length ? `${M(medTok)} tok / ${usd(medCost)} (${prior.length} days)` : "no history"}`, `7일 중앙값: ${prior.length ? `${M(medTok)} tok / ${usd(medCost)} (${prior.length}일)` : "기록 없음"}`),
 	"",
 	L("Everything is report only; nothing is applied automatically. A \"Proposal\" has no performance trade-off; candidates with a trade-off are marked \"On hold\" separately.", "모든 항목은 보고만 합니다. 자동 적용 없음. \"제안\"은 성능 트레이드오프가 없는 것만, 트레이드오프가 있는 후보는 \"보류\"로 따로 표시합니다."),
+	"",
+	...causeSection,
 	"",
 	L(`## ${flags.length} warnings / ${findings.length - flags.length} notes`, `## 경고 ${flags.length}건 / 참고 ${findings.length - flags.length}건`),
 	...ordered.flatMap(f => [
@@ -503,6 +659,10 @@ const report = [
 	"",
 	...sorted.map(s => L(`- ${s.src.label}: started ${s.start ? kst(s.start) : "-"}, ${s.turns} turns, ${M(s.tokens)} tok, ${usd(s.cost)}, cache read ${M(s.cr)}, write ${M(s.cw)}, busts ${s.busts.length}, explained big writes ${Object.entries(s.explained).map(([k, v]) => `${k}x${v}`).join(" ") || "-"}${s.bigNew ? ` new content x${s.bigNew}` : ""}, idle wakes ${Object.values(s.wakes).reduce((a, w) => a + w.n, 0)}, cache warmings ${s.warmings}, TTSR ${s.ttsr}, errors ${s.errTurns}, max context ${K(s.maxCtx)}, compactions ${s.compactions}`, `- ${s.src.label}: 시작 ${s.start ? kst(s.start) : "-"}, ${s.turns}턴, ${M(s.tokens)} tok, ${usd(s.cost)}, 캐시 읽기 ${M(s.cr)}, 쓰기 ${M(s.cw)}, 깨짐 ${s.busts.length}, 설명된 큰 쓰기 ${Object.entries(s.explained).map(([k, v]) => `${k}x${v}`).join(" ") || "-"}${s.bigNew ? ` 새내용x${s.bigNew}` : ""}, 헛깨움 ${Object.values(s.wakes).reduce((a, w) => a + w.n, 0)}, 캐시 워밍 ${s.warmings}, TTSR ${s.ttsr}, 에러 ${s.errTurns}, 최대 컨텍스트 ${K(s.maxCtx)}, 압축 ${s.compactions}`)),
 	"",
+	L("## Per project (by tokens)", "## 프로젝트별 (토큰 순)"),
+	"",
+	...projectLines,
+	"",
 	L("## Recent history", "## 최근 기록"),
 	"",
 	...history.map(d => L(`- ${d.date}: ${M(d.tokens)} tok, ${usd(d.cost)}, cache writes ${M(d.cacheWrite)}, sessions ${d.sessions}, warnings ${d.flags}`, `- ${d.date}: ${M(d.tokens)} tok, ${usd(d.cost)}, 캐시 쓰기 ${M(d.cacheWrite)}, 세션 ${d.sessions}, 경고 ${d.flags}`)),
@@ -514,6 +674,7 @@ if (!DRY) writeFileSync(reportPath, `${report}\n`);
 
 const summary = [
 	L(`Token audit (${kst(since)}~${kst(now)}): ${results.length} sessions, ${M(total)} tok ${usd(totalCost)}, ${flags.length} warnings`, `토큰 점검 (${kst(since)}~${kst(now)}): 세션 ${results.length}개, ${M(total)} tok ${usd(totalCost)}, 경고 ${flags.length}건`),
+	...(DRY ? [] : causeSection),
 	...flags.sort((a, b) => b.save - a.save).slice(0, 4).map(f => `- ${f.kind} ${f.who}: ${f.amount}`),
 	DRY ? L("Report: not saved (--dry)", "보고서: 저장 안 함 (--dry)") : `${L("Report", "보고서")}: ${reportPath.replace(HOME, "~")}`,
 ].join("\n");

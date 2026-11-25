@@ -406,13 +406,13 @@ export function listDrafts(input: { repo: string }): string[] {
 }
 
 function describeDrafts(drafts: { id: string; message: string }[]): string {
-	return drafts.map(draft => `  ${draft.id}\n    ${draft.message.endsWith(DRAFTED_NOTE) ? draft.message.slice(0, -DRAFTED_NOTE.length) : draft.message}`).join("\n");
+	return drafts.map(draft => `- \`${draft.id}\`\n  ${draft.message.endsWith(DRAFTED_NOTE) ? draft.message.slice(0, -DRAFTED_NOTE.length) : draft.message}`).join("\n");
 }
 
 function listing(repo: string): string {
 	const ids = draftIds(repo);
 	const drafts = describeDrafts(ids.map(id => ({ id, message: messageOfDraft(repo, id) })));
-	return say({ en: `${plural(ids.length, "boundary draft")} in ${draftsDir(repo)}, inactive until accepted:\n${drafts}\n${guidance()}`, ko: `${draftsDir(repo)}의 경계 초안 ${ids.length}개(수락하기 전에는 적용되지 않습니다):\n${drafts}\n${guidance()}` });
+	return say({ en: `${plural(ids.length, "boundary draft")} in ${draftsDir(repo)}, inactive until accepted:\n\n${drafts}\n\n${guidance()}`, ko: `${draftsDir(repo)}의 경계 초안 ${ids.length}개(수락하기 전에는 적용되지 않습니다):\n\n${drafts}\n\n${guidance()}` });
 }
 
 function summary(plan: DraftPlan): string {
@@ -428,20 +428,20 @@ async function draftCommand(input: { repo: string; dryRun: boolean; date?: strin
 	const found =
 		plan.drafts.length === 0
 			? say({ en: "No new boundary qualifies.", ko: "새로 만들 만한 경계가 없습니다." })
-			: say({ en: `${plural(plan.drafts.length, "new draft")} would be written to ${draftsDir(repo)}:\n${describeDrafts(plan.drafts)}`, ko: `${draftsDir(repo)}에 새 초안 ${plan.drafts.length}개를 쓸 예정입니다:\n${describeDrafts(plan.drafts)}` });
-	if (dryRun) return { ok: true, message: say({ en: `--dry-run: nothing was written. ${summary(plan)}.\n${found}`, ko: `--dry-run: 아무것도 쓰지 않았습니다. ${summary(plan)}.\n${found}` }) };
+			: say({ en: `${plural(plan.drafts.length, "new draft")} would be written to ${draftsDir(repo)}:\n\n${describeDrafts(plan.drafts)}`, ko: `${draftsDir(repo)}에 새 초안 ${plan.drafts.length}개를 쓸 예정입니다:\n\n${describeDrafts(plan.drafts)}` });
+	if (dryRun) return { ok: true, message: say({ en: `--dry-run: nothing was written. ${summary(plan)}.\n\n${found}`, ko: `--dry-run: 아무것도 쓰지 않았습니다. ${summary(plan)}.\n\n${found}` }) };
 	if (!hasKit(repo)) {
 		return {
 			ok: false,
 			message: say({
-				en: `Nothing was written: ${repo} has no rule kit (.omp/lint/sgconfig.yml), and a bare .omp/lint would keep bootstrap from creating one. Run \`bun ${BOOTSTRAP} ${repo}\` first. ${summary(plan)}.\n${found}`,
-				ko: `아무것도 쓰지 않았습니다. ${repo}에는 규칙 키트(.omp/lint/sgconfig.yml)가 없고, 빈 .omp/lint가 있으면 부트스트랩이 키트를 만들지 못합니다. 먼저 \`bun ${BOOTSTRAP} ${repo}\`를 실행하세요. ${summary(plan)}.\n${found}`,
+				en: `Nothing was written: ${repo} has no rule kit (.omp/lint/sgconfig.yml), and a bare .omp/lint would keep bootstrap from creating one. Run \`bun ${BOOTSTRAP} ${repo}\` first. ${summary(plan)}.\n\n${found}`,
+				ko: `아무것도 쓰지 않았습니다. ${repo}에는 규칙 키트(.omp/lint/sgconfig.yml)가 없고, 빈 .omp/lint가 있으면 부트스트랩이 키트를 만들지 못합니다. 먼저 \`bun ${BOOTSTRAP} ${repo}\`를 실행하세요. ${summary(plan)}.\n\n${found}`,
 			}),
 		};
 	}
 	writeDrafts({ repo, plan });
 	const head = say({ en: `${summary(plan)}; ${plural(plan.drafts.length, "new draft")} written.`, ko: `${summary(plan)}; 새 초안 ${plan.drafts.length}개를 썼습니다.` });
-	if (draftIds(repo).length > 0) return { ok: true, message: `${head}\n${listing(repo)}` };
+	if (draftIds(repo).length > 0) return { ok: true, message: `${head}\n\n${listing(repo)}` };
 	return {
 		ok: true,
 		message: say({

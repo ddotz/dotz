@@ -1,6 +1,18 @@
 #!/bin/sh
 . "${0%/*}/../worker-shim.sh"
 
+og_gh_has_mutation() {
+	_og_rest=$1
+	while :; do
+		case $_og_rest in *mutation*) ;; *) return 1 ;; esac
+		_og_head=${_og_rest%%mutation*}
+		_og_rest=${_og_rest#*mutation}
+		case $_og_head in *[A-Za-z0-9_]) continue ;; esac
+		case $_og_rest in [A-Za-z0-9_]*) continue ;; esac
+		return 0
+	done
+}
+
 og_gh_value() {
 	case $1 in
 	method) _og_method=$2 ;;
@@ -11,11 +23,14 @@ og_gh_value() {
 			_og_q=${2#query=}
 			_og_q=${_og_q#"${_og_q%%[![:space:]]*}"}
 			_og_nquery=$((_og_nquery + 1))
-			case $_og_q in
-			*mutation*) _og_badquery=1 ;;
-			query*) ;;
-			*) _og_badquery=1 ;;
-			esac
+			if og_gh_has_mutation "$_og_q"; then
+				_og_badquery=1
+			else
+				case $_og_q in
+				query*) ;;
+				*) _og_badquery=1 ;;
+				esac
+			fi
 			;;
 		esac
 		;;
@@ -102,34 +117,49 @@ og_gh_status_check() {
 	done
 }
 
-case $1 in
-pr)
-	case $2 in view | list | diff | checks | status) og_exec gh "$@" ;; esac
-	;;
-issue)
-	case $2 in view | list | status) og_exec gh "$@" ;; esac
-	;;
-repo)
-	case $2 in view) og_exec gh "$@" ;; esac
-	;;
-run)
-	case $2 in view | list) og_exec gh "$@" ;; esac
-	;;
-release)
-	case $2 in view | list) og_exec gh "$@" ;; esac
-	;;
-search) og_exec gh "$@" ;;
-auth)
-	case $2 in
-	status)
-		og_gh_status_check "$@"
-		og_exec gh "$@"
+og_gh_judge() {
+	while :; do
+		case $1 in
+		-R | --repo)
+			[ $# -ge 2 ] || og_block "gh with an incomplete option"
+			shift 2
+			;;
+		--repo=* | -R?*) shift ;;
+		*) break ;;
+		esac
+	done
+	case $1 in
+	pr)
+		case $2 in view | list | diff | checks | status) return 0 ;; esac
+		;;
+	issue)
+		case $2 in view | list | status) return 0 ;; esac
+		;;
+	repo)
+		case $2 in view) return 0 ;; esac
+		;;
+	run)
+		case $2 in view | list) return 0 ;; esac
+		;;
+	release)
+		case $2 in view | list) return 0 ;; esac
+		;;
+	search) return 0 ;;
+	auth)
+		case $2 in
+		status)
+			og_gh_status_check "$@"
+			return 0
+			;;
+		esac
+		;;
+	api)
+		og_gh_api_check "$@"
+		return 0
 		;;
 	esac
-	;;
-api)
-	og_gh_api_check "$@"
-	og_exec gh "$@"
-	;;
-esac
-og_block "gh $1 $2"
+	og_block "gh $1 $2"
+}
+
+og_gh_judge "$@"
+og_exec gh "$@"

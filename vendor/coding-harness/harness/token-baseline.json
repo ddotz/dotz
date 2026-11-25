@@ -1,0 +1,6 @@
+{
+ "windowEnd": "2026-11-18T14:30:00Z",
+ "hours": 72,
+ "cost": { "total": 1435, "workers": 716, "main": 526, "advisor": 193 },
+ "workerMaxLevel": { "workers": 78, "cost": 380 }
+}

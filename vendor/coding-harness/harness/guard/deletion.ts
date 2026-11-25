@@ -150,29 +150,104 @@ function findDeletes(args: ShellWord[]): boolean {
 
 interface Scan {
 	cwd: string | undefined;
+	others: (string | undefined)[];
+	uncertain: boolean;
 	home: string;
 	depth: number;
 }
 
-function protectedTargets(verb: string, texts: string[], scan: Scan): string | undefined {
-	for (const text of texts) {
-		const absolute = resolveWord(text, scan.cwd, scan.home);
-		const entry = absolute === undefined ? undefined : protectedEntry(absolute, scan.home);
-		if (entry) return REFUSED_PROTECTED(verb, text, entry.rel);
+const MAX_BRACE_WORDS = 1024;
+const SCOPED_CD = /\(|\||(?<![&>])&(?![&>])/;
+const SCRATCH_GLOB = /^\/(?:private\/)?tmp\/scratch-[^/]*$/;
+const VERIFY_RUNS_GLOB = /^(?:[^*?[]*\/)?\.omp\/verify\/runs\/[^/]+\/?$/;
+
+function braceParts(body: string): string[] | undefined {
+	const range = /^(-?\d+)\.\.(-?\d+)$/.exec(body) ?? /^([A-Za-z])\.\.([A-Za-z])$/.exec(body);
+	if (!range) return undefined;
+	const numeric = /^-?\d+$/.test(range[1]);
+	const from = numeric ? Number(range[1]) : range[1].charCodeAt(0);
+	const to = numeric ? Number(range[2]) : range[2].charCodeAt(0);
+	const step = from <= to ? 1 : -1;
+	const parts: string[] = [];
+	for (let at = from; parts.length <= MAX_BRACE_WORDS; at += step) {
+		parts.push(numeric ? String(at) : String.fromCharCode(at));
+		if (at === to) break;
+	}
+	return parts;
+}
+
+function braceGroup(text: string): { open: number; close: number; parts: string[] } | undefined {
+	for (let open = text.indexOf("{"); open >= 0; open = text.indexOf("{", open + 1)) {
+		if (text[open - 1] === "$") continue;
+		const cuts = [open];
+		let depth = 0;
+		for (let i = open + 1; i < text.length; i++) {
+			if (text[i] === "{") depth++;
+			else if (text[i] === "," && depth === 0) cuts.push(i);
+			else if (text[i] === "}" && depth > 0) depth--;
+			else if (text[i] === "}") {
+				cuts.push(i);
+				const parts = cuts.slice(1).map((cut, at) => text.slice(cuts[at] + 1, cut));
+				const expanded = parts.length > 1 ? parts : braceParts(parts[0]);
+				if (expanded) return { open, close: i, parts: expanded };
+				break;
+			}
+		}
 	}
 	return undefined;
 }
 
+function expandBraces(text: string, budget = { left: MAX_BRACE_WORDS }): string[] | undefined {
+	const group = braceGroup(text);
+	if (!group) return [text];
+	const words: string[] = [];
+	for (const part of group.parts) {
+		const rest = expandBraces(text.slice(0, group.open) + part + text.slice(group.close + 1), budget);
+		budget.left -= rest?.length ?? Infinity;
+		if (!rest || budget.left < 0) return undefined;
+		words.push(...rest);
+	}
+	return words;
+}
+
+const sessionPatch = (absolute: string, home: string): boolean => absolute.startsWith(`${home}/.omp/agent/sessions/`) && absolute.endsWith(".patch");
+
+function protectedTargets(verb: string, texts: string[], scan: Scan, patchesOk = false): string | undefined {
+	for (const text of texts) {
+		const variants = expandBraces(text);
+		if (variants === undefined) return REFUSED_GLOB(text);
+		for (const variant of variants) {
+			for (const cwd of [scan.cwd, ...scan.others]) {
+				const absolute = resolveWord(variant, cwd, scan.home);
+				if (absolute === undefined || (patchesOk && sessionPatch(absolute, scan.home))) continue;
+				const entry = protectedEntry(absolute, scan.home);
+				if (entry) return REFUSED_PROTECTED(verb, text, entry.rel);
+			}
+		}
+	}
+	return undefined;
+}
+
+function globAllowed(variant: string, scan: Scan): boolean {
+	const absolute = resolveWord(variant, scan.cwd, scan.home);
+	if (absolute !== undefined && (SCRATCH_GLOB.test(absolute) || sessionPatch(absolute, scan.home))) return true;
+	return VERIFY_RUNS_GLOB.test(posix.normalize(variant));
+}
+
 function removalProblem(name: string, args: ShellWord[], scan: Scan): string | undefined {
 	const operands = operandsOf(args);
-	const found = protectedTargets(name, operands, scan);
+	const found = protectedTargets(name, operands, scan, name === "rm" || name === "unlink");
 	if (found || name !== "rm" || !flagsOf(args).some(flag => (flag.startsWith("--") ? flag === "--recursive" : /[rR]/.test(flag)))) return found;
-	const glob = operands.find(text => hasGlob(posix.basename(text.replace(/\/+$/, ""))));
-	return glob === undefined ? undefined : REFUSED_GLOB(glob);
+	for (const text of operands) {
+		const glob = expandBraces(text)?.find(variant => variant.split("/").some(hasGlob) && !globAllowed(variant, scan));
+		if (glob !== undefined) return REFUSED_GLOB(glob);
+	}
+	return undefined;
 }
 
 function changeDirectory(args: ShellWord[], scan: Scan): void {
 	const target = operandsOf(args)[0];
+	if (scan.uncertain) scan.others = [...scan.others, scan.cwd];
 	scan.cwd = target === undefined ? scan.home : target === "-" ? undefined : resolveWord(target, scan.cwd, scan.home);
 }
 
@@ -203,6 +278,7 @@ function segmentProblem(segment: Segment, scan: Scan): string | undefined {
 
 function scanCommand(command: string, scan: Scan): string | undefined {
 	if (scan.depth > MAX_DEPTH) return undefined;
+	if (SCOPED_CD.test(command)) scan.uncertain = true;
 	const inner: Scan = { ...scan, depth: scan.depth + 1 };
 	for (const segment of shellSegments(expandShellVars(command))) {
 		const found = segmentProblem(segment, scan);
@@ -223,5 +299,5 @@ function scanCommand(command: string, scan: Scan): string | undefined {
  * relative paths (after `cd`) and `..` are resolved; a command this rule cannot read (an `eval` of a variable, a script file) is not refused.
  */
 export function deletionProblem(command: string, cwd: string, home: string): string | undefined {
-	return scanCommand(command, { cwd: posix.resolve(cwd), home: posix.resolve(home), depth: 0 });
+	return scanCommand(command, { cwd: posix.resolve(cwd), others: [], uncertain: false, home: posix.resolve(home), depth: 0 });
 }

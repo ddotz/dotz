@@ -822,3 +822,6 @@ export function commandHead(words: ShellWord[]): { head: string; name: string; a
 	const head = words[i];
 	return head && { head: head.text, name: basename(head.text), args: words.slice(i + 1) };
 }
+
+/** The agents whose workers write files: the default `task` agent and `sonic`. Every other agent reads. */
+export const WRITING_AGENTS: ReadonlySet<string> = new Set(["task", "sonic"]);

@@ -1,7 +1,7 @@
 import { join } from "node:path";
 
 export interface Finding {
-	stage: "escape" | "rules" | "defaults" | "checks" | "evidence" | "mistakes" | "verify" | "cite" | "plain" | "ask" | "leftover" | "report";
+	stage: "escape" | "rules" | "defaults" | "checks" | "evidence" | "mistakes" | "verify" | "ask" | "leftover" | "report";
 	class: string;
 	message: string;
 	file?: string;

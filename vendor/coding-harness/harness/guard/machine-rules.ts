@@ -1,5 +1,6 @@
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { readFileSync, realpathSync } from "node:fs";
+import { homedir } from "node:os";
+import { join, resolve } from "node:path";
 import { harnessDir } from "../agent-home.ts";
 import { commandHead, shellSegments } from "./shell.ts";
 
@@ -26,6 +27,58 @@ export function machineRules(): MachineRules {
 	if (typeof parsed !== "object" || parsed === null || !("bunOnly" in parsed) || !("noChrome" in parsed)) return ALL_OFF;
 	if (typeof parsed.bunOnly !== "boolean" || typeof parsed.noChrome !== "boolean") return ALL_OFF;
 	return { bunOnly: parsed.bunOnly, noChrome: parsed.noChrome };
+}
+
+const realOrResolved = (path: string): string => {
+	try {
+		return realpathSync(path);
+	} catch {
+		return resolve(path);
+	}
+};
+
+function mainCheckoutsExclude(): readonly string[] {
+	let parsed: unknown;
+	try {
+		parsed = JSON.parse(readFileSync(join(harnessDir(), "machine-rules.json"), "utf8"));
+	} catch {
+		return [];
+	}
+	if (typeof parsed !== "object" || parsed === null || !("mainCheckouts" in parsed)) return [];
+	const section = parsed.mainCheckouts;
+	if (typeof section !== "object" || section === null || !("exclude" in section)) return [];
+	const { exclude } = section;
+	if (!Array.isArray(exclude) || !exclude.every((entry): entry is string => typeof entry === "string")) return [];
+	return exclude;
+}
+
+function excludeSegments(entry: string): string[] | undefined {
+	const home = process.env.HOME || homedir();
+	const absolute = entry === "~" || entry.startsWith("~/") ? home + entry.slice(1) : entry;
+	if (!absolute.startsWith("/")) return undefined;
+	const segments = absolute.split("/").filter(Boolean);
+	const firstGlob = segments.findIndex(segment => segment.includes("*"));
+	if (firstGlob < 0) return realOrResolved(`/${segments.join("/")}`).split("/").filter(Boolean);
+	return [...realOrResolved(`/${segments.slice(0, firstGlob).join("/")}`).split("/").filter(Boolean), ...segments.slice(firstGlob)];
+}
+
+function segmentMatches(pattern: string, segment: string): boolean {
+	if (!pattern.includes("*")) return pattern === segment;
+	const source = pattern.split("*").map(part => part.replace(/[.+?^${}()|[\]\\]/g, "\\$&")).join("[^/]*");
+	return new RegExp(`^${source}$`).test(segment);
+}
+
+/**
+ * True when `folder` (compared by real path) is one of the `mainCheckouts.exclude` entries of `<harnessDir()>/machine-rules.json` or lies below one: sessions there run in the folder, not in a checkout.
+ * An entry is an absolute path or starts with `~` (the home directory); `*` stands for one path segment. A missing or malformed `mainCheckouts` excludes nothing, whatever the other keys say.
+ */
+export function mainCheckoutExcluded(folder: string): boolean {
+	const target = realOrResolved(folder).split("/").filter(Boolean);
+	for (const entry of mainCheckoutsExclude()) {
+		const segments = excludeSegments(entry);
+		if (segments && segments.length <= target.length && segments.every((pattern, i) => segmentMatches(pattern, target[i]))) return true;
+	}
+	return false;
 }
 
 /**

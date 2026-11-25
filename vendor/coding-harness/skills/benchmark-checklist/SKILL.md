@@ -4,7 +4,7 @@ disable-model-invocation: true
 description: "Vet a performance measurement (limiter, tuning, limits, errors, repeatability, relevance, and whether the work happened) before you report or act on it. ulw enters it whenever you run a benchmark or report a speedup or regression you measured, including inside skill://perf."
 ---
 
-Use this when you produce a performance number: a PR's before and after, a regression claim, a hillclimb harness, or a library or config choice. Answer each question with evidence from a run, not a guess about the code.
+Use this when you produce a performance number: a PR's before and after, a regression claim, a hillclimb harness, or a library or config choice. Answer each question with evidence from a run, not a guess about the code. The principle behind the list: `skill://principle-explain-the-number`.
 
 For a quick ballpark the owner asked for, one run is enough. Still check questions 4 and 7, and say that it is one run. Skip the rest unless that run looks wrong. A choice between options is never a ballpark.
 

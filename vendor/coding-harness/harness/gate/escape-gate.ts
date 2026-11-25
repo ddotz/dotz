@@ -73,9 +73,20 @@ function entriesByName(gate: unknown, list: string): Map<string, unknown> {
 	return entries;
 }
 
+function pathsWidened(before: unknown, after: unknown): boolean {
+	if (!Array.isArray(before) || !Array.isArray(after)) return false;
+	const kept = new Set(after.map(canonical));
+	return before.every(path => kept.has(canonical(path)));
+}
+
 function changedKeys(before: unknown, after: unknown): string[] {
 	const keysOf = (value: unknown): string[] => (typeof value === "object" && value !== null ? Object.keys(value) : []);
-	return [...new Set([...keysOf(before), ...keysOf(after)])].filter(key => canonical(propertyOf(before, key)) !== canonical(propertyOf(after, key)));
+	return [...new Set([...keysOf(before), ...keysOf(after)])].filter(key => {
+		const was = propertyOf(before, key);
+		const now = propertyOf(after, key);
+		if (canonical(was) === canonical(now)) return false;
+		return !(key === "paths" && pathsWidened(was, now));
+	});
 }
 
 function gateEntryFindings(file: string, noun: "check" | "evidence", before: unknown, after: unknown, list: string): Finding[] {
@@ -86,6 +97,8 @@ function gateEntryFindings(file: string, noun: "check" | "evidence", before: unk
 			findings.push(weakenedGate(file, `${noun} "${name}" was removed`));
 		} else if (canonical(entry) !== canonical(remaining.get(name))) {
 			const keys = changedKeys(entry, remaining.get(name));
+			const bothObjects = typeof entry === "object" && entry !== null && typeof remaining.get(name) === "object" && remaining.get(name) !== null;
+			if (keys.length === 0 && bothObjects) continue;
 			findings.push(weakenedGate(file, `${noun} "${name}" changed: ${keys.length > 0 ? keys.join(", ") : "its definition"}`));
 		}
 	}

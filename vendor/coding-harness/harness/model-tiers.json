@@ -1,75 +1,26 @@
 {
-	"$comment": "Source of truth for automatic model-role selection (extensions/model-tiers.ts). Tiers: worker = Sonnet-class implementation workers and the fast slot; base = Opus-class main session; deep = Fable-class planning, hardest work and advisor; light = Haiku-class session titles only. Each role runs on the newest available model of its tier at that model's benchmark sweet spot plus `step` levels (or a fixed `effort`). A newer model is adopted only after its sweet spot is recorded here (model_tiers tool, action record). Roles in pinnedRoles are never touched.",
-	"primaryProvider": "anthropic",
-	"ignoredProviders": [
-		"apple"
-	],
-	"pinnedRoles": [],
-	"families": [
-		{
-			"provider": "anthropic",
-			"tier": "worker",
-			"pattern": "^claude-sonnet-(\\d+)(?:-(\\d+))?$"
-		},
-		{
-			"provider": "anthropic",
-			"tier": "base",
-			"pattern": "^claude-opus-(\\d+)(?:-(\\d+))?$"
-		},
-		{
-			"provider": "anthropic",
-			"tier": "deep",
-			"pattern": "^claude-fable-(\\d+)(?:-(\\d+))?$"
-		},
-		{
-			"provider": "anthropic",
-			"tier": "light",
-			"pattern": "^claude-haiku-(\\d+)(?:-(\\d+))?$"
-		}
-	],
+	"$comment": "Source of truth for model-role effort levels (extensions/model-tiers.ts, policy in harness/model-tiers/plan.ts). The user picks the model of each role in config.yml modelRoles; this file sets only the level. A role without `above` runs its model at that model's sweet spot (or the role's fixed `effort`); a role with `above` runs the named role's model at the next level whose benchmark index gains (points), or one level up without points. A level the user changes by hand stays until the model of that role is picked again. A model without a sweet spot here is queued for research (model_tiers tool, action record).",
 	"roles": {
-		"default": {
-			"tier": "base",
-			"step": 0
-		},
+		"default": {},
 		"slow": {
-			"tier": "base",
-			"step": 1
+			"above": "default"
 		},
-		"task": {
-			"tier": "worker",
-			"step": 0
-		},
-		"smol": {
-			"tier": "worker",
-			"step": 0
-		},
+		"task": {},
+		"smol": {},
 		"commit": {
-			"tier": "worker",
 			"effort": "medium"
 		},
 		"memory": {
-			"tier": "worker",
 			"effort": "medium"
 		},
 		"judge": {
-			"tier": "worker",
 			"effort": "low"
 		},
-		"plan": {
-			"tier": "deep",
-			"step": 0
-		},
+		"plan": {},
 		"deep": {
-			"tier": "deep",
-			"step": 1
-		},
-		"advisor": {
-			"tier": "deep",
-			"step": 0
+			"above": "plan"
 		},
 		"tiny": {
-			"tier": "light",
 			"effort": "low"
 		}
 	},
@@ -83,6 +34,28 @@
 				"https://atomicagent.io/blog/claude-fable-5-2",
 				"https://platform.claude.com/docs/en/build-with-claude/effort"
 			],
+			"points": {
+				"low": [
+					42,
+					0.55
+				],
+				"medium": [
+					51,
+					1.34
+				],
+				"high": [
+					54,
+					1.82
+				],
+				"xhigh": [
+					56,
+					3.46
+				],
+				"max": [
+					58,
+					5.98
+				]
+			},
 			"checked": "2026-11-16"
 		},
 		"anthropic/claude-sonnet-5-5": {
@@ -93,6 +66,28 @@
 				"https://www.beri.net/article/claude-sonnet-5-5-vs-opus-5-5-cost-per-task-matched-score-effort-between-tools-migration",
 				"https://platform.claude.com/docs/en/build-with-claude/effort"
 			],
+			"points": {
+				"low": [
+					36,
+					0.41
+				],
+				"medium": [
+					41,
+					0.59
+				],
+				"high": [
+					47,
+					1.08
+				],
+				"xhigh": [
+					52,
+					2.74
+				],
+				"max": [
+					56,
+					7.6
+				]
+			},
 			"checked": "2026-11-16"
 		},
 		"anthropic/claude-fable-5-2": {
@@ -103,6 +98,28 @@
 				"https://atomicagent.io/blog/claude-fable-5-2",
 				"https://platform.claude.com/docs/en/build-with-claude/effort"
 			],
+			"points": {
+				"low": [
+					54,
+					3.1
+				],
+				"medium": [
+					56,
+					3.8
+				],
+				"high": [
+					62,
+					9.08
+				],
+				"xhigh": [
+					62,
+					14.83
+				],
+				"max": [
+					65,
+					26.54
+				]
+			},
 			"checked": "2026-11-16"
 		},
 		"anthropic/claude-haiku-5-5": {
@@ -113,7 +130,47 @@
 				"https://aihubmix.com/blog/claude-haiku-5-5-effort-levels-medium-is-the-default-low-is-often-enough",
 				"https://platform.claude.com/docs/en/build-with-claude/effort"
 			],
+			"points": {
+				"low": [
+					29,
+					0.02
+				],
+				"medium": [
+					34,
+					0.05
+				],
+				"high": [
+					38,
+					0.08
+				],
+				"xhigh": [
+					41,
+					0.12
+				],
+				"max": [
+					43,
+					0.21
+				]
+			},
 			"checked": "2026-11-16"
+		},
+		"anthropic/claude-mythos-5-2": {
+			"effort": "high",
+			"confidence": "Medium",
+			"basis": "Not measured separately by Artificial Analysis. Mythos 5.2 shares weights and price ($8/$40) with Fable 5.2 and differs only in safety classifiers and access, so Fable 5.2 numbers apply: AA Intelligence Index (2026-11-10) low 54 / $3.10, medium 56 / $3.80, high 62 / $9.08, xhigh 62 / $14.83, max 65 / $26.54; high equals xhigh at 61% of the cost. Anthropic: start with high.",
+			"sources": [
+				"https://agentspulse.github.io/tutorials/claude-fable-5-2",
+				"https://atomicagent.io/blog/claude-fable-5-2",
+				"https://platform.claude.com/docs/en/build-with-claude/effort"
+			],
+			"points": {
+				"low": [54, 3.10],
+				"medium": [56, 3.80],
+				"high": [62, 9.08],
+				"xhigh": [62, 14.83],
+				"max": [65, 26.54]
+			},
+			"checked": "2026-11-18"
 		}
 	}
 }

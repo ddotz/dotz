@@ -3,10 +3,12 @@ import { join } from "node:path";
 import { lookup } from "@oh-my-pi/pi-coding-agent/config/registry";
 import { harnessDir } from "../harness/agent-home.ts";
 import { say } from "../harness/notice.ts";
-import { type Data, type Family, key, LADDER, type Model, plan } from "../harness/model-tiers/plan.ts";
+import { showReport } from "../harness/gate/show-report.ts";
+import { type Data, key, LADDER, type Model, resolveRoles } from "../harness/model-tiers/plan.ts";
 
 const DATA_FILE = join(harnessDir(), "model-tiers.json");
 const STATE_FILE = join(harnessDir(), "model-tiers-state.json");
+const APPLIED_FILE = join(harnessDir(), "model-tiers-applied.json");
 const ASK_AGAIN_MS = 24 * 3600_000;
 const RECHECK_MS = 120_000;
 
@@ -37,7 +39,7 @@ interface Api {
 	pi: { settings: unknown };
 	setLabel?(label: string): void;
 	on(event: "session_start", handler: (event: unknown, ctx: Ctx) => Promise<void>): void;
-	sendMessage(message: { customType: string; display: boolean; content: string }, options: { deliverAs: "nextTurn"; triggerTurn?: boolean }): void;
+	sendMessage(message: { customType: string; display: boolean; content: string; excludeFromContext?: boolean }, options?: { deliverAs: "nextTurn"; triggerTurn?: boolean }): void;
 	registerTool(tool: {
 		name: string;
 		label: string;
@@ -54,7 +56,6 @@ interface ToolParams {
 	confidence?: "High" | "Medium" | "Low";
 	basis?: string;
 	sources?: string[];
-	family?: Family;
 }
 type ToolResult = { content: { type: "text"; text: string }[]; isError?: boolean };
 
@@ -76,7 +77,7 @@ function writeJson(file: string, value: unknown): void {
 function loadData(): Data | undefined {
 	if (!existsSync(DATA_FILE)) return undefined;
 	const data = readJson<Data | undefined>(DATA_FILE, undefined);
-	return data && Array.isArray(data.families) && data.roles && data.sweetSpots ? data : undefined;
+	return data && data.roles && data.sweetSpots ? data : undefined;
 }
 
 function levelsOf(model: unknown): string[] {
@@ -97,51 +98,72 @@ async function availableModels(ctx: Ctx): Promise<Model[]> {
 		.filter(m => m.provider && m.id);
 }
 
-function applyRoles(pi: Api, target: Record<string, string>): string[] {
+type RoleResult = { changed: string[]; userSet: string[]; research: string[] };
+
+function claim(pi: Api, data: Data, models: Model[]) {
 	const handle = lookup("modelRoles") as unknown as RecordSetting | undefined;
-	if (!handle) return [];
+	if (!handle) return undefined;
 	const raw = handle.get(pi.pi.settings);
 	const current = (raw && typeof raw === "object" ? raw : {}) as Record<string, string | undefined>;
+	const applied = readJson<Record<string, string>>(APPLIED_FILE, {});
+	return { handle, current, applied, ...resolveRoles({ data, current, applied, models }) };
+}
+
+function inspectRoles(pi: Api, data: Data, models: Model[]): RoleResult {
+	const c = claim(pi, data, models);
+	return { changed: [], userSet: c?.userSet.map(role => `${role} = ${c.current[role]}`) ?? [], research: c?.research ?? [] };
+}
+
+function applyRoles(pi: Api, data: Data, models: Model[]): RoleResult {
+	const c = claim(pi, data, models);
+	if (!c) return { changed: [], userSet: [], research: [] };
 	const changed: string[] = [];
-	for (const [role, value] of Object.entries(target)) {
-		if (current[role] === value) continue;
-		handle.setEntry(pi.pi.settings, role, value);
-		changed.push(`${role}: ${current[role] ?? "(unset)"} -> ${value}`);
+	for (const [role, value] of Object.entries(c.set)) {
+		if (c.current[role] === value) continue;
+		c.handle.setEntry(pi.pi.settings, role, value);
+		changed.push(`${role}: ${c.current[role] ?? "(unset)"} -> ${value}`);
 	}
-	return changed;
+	writeJson(APPLIED_FILE, { ...c.applied, ...c.set });
+	return { changed, userSet: c.userSet.map(role => `${role} = ${c.current[role]}`), research: c.research };
 }
 
 const RESEARCH_BRIEF = [
 	"Find, per reasoning-effort level, an independent benchmark score and cost per task (Artificial Analysis Intelligence Index first; vendor effort docs and coding benchmarks as support).",
 	"Sweet spot = the level after which the next step buys clearly less score per added cost (a plateau or a level dominated by another model at the same price); when the data is thin, use the vendor's recommended starting level and mark confidence Low.",
-	"For a provider without families: decide which model lines are worker (Sonnet-class), base (Opus-class), deep (Fable-class) and light (Haiku-class), and record one family per line with a version-capturing id pattern.",
 	"Record each result with the model_tiers tool (action record): model, effort, confidence, basis with the numbers, sources. Do not guess numbers.",
 ].join("\n");
 
-function statusText(data: Data, models: Model[], changed: string[], display = false): string {
+const cell = (text: string): string => text.replaceAll("|", "\\|");
+const labelled = (label: string, items: string[]): string[] => (items.length ? ["", `**${label}**`, "", ...items.map(item => `- ${item}`)] : []);
+
+function statusMarkdown(pi: Api, data: Data, roles: RoleResult, display = false): string {
 	const t = (n: { en: string; ko: string }) => (display ? say(n) : n.en);
-	const p = plan(data, models);
-	const lines = [`model-tiers (primary provider ${data.primaryProvider}; data ${DATA_FILE})`];
-	for (const [tier, pick] of Object.entries(p.tiers)) {
-		const spot = pick.adopted ? data.sweetSpots[key(pick.adopted)] : undefined;
-		lines.push(`- ${tier}: ${pick.adopted ? `${key(pick.adopted)} sweet spot ${spot?.effort} (${spot?.confidence})` : "no researched model"}${pick.adopted && key(pick.adopted) !== key(pick.newest) ? `; newer ${key(pick.newest)} awaits research` : ""}`);
-	}
-	lines.push(t({ en: "roles:", ko: "역할:" }), ...Object.entries(p.roles).map(([role, value]) => `- ${role} = ${value}`));
-	if (changed.length) lines.push(t({ en: "changed:", ko: "변경됨:" }), ...changed.map(c => `- ${c}`));
-	if (p.research.length) lines.push(t({ en: "research needed:", ko: "조사 필요:" }), ...p.research.map(r => `- ${r}`));
-	return lines.join("\n");
+	const handle = lookup("modelRoles") as unknown as RecordSetting | undefined;
+	const raw = handle?.get(pi.pi.settings);
+	const current = (raw && typeof raw === "object" ? raw : {}) as Record<string, string | undefined>;
+	const rows = Object.entries(data.roles).map(([role, spec]) => {
+		const rule = "above" in spec ? t({ en: `next gaining level above ${spec.above}`, ko: `${spec.above}보다 한 단계 위 (점수가 오르는 수준)` }) : spec.effort ? t({ en: `fixed ${spec.effort}`, ko: `${spec.effort} 고정` }) : "sweet spot";
+		return `| ${cell(role)} | ${cell(current[role] ?? t({ en: "(unset)", ko: "(미설정)" }))} | ${cell(rule)} |`;
+	});
+	return [
+		t({ en: `Data \`${DATA_FILE}\``, ko: `데이터 \`${DATA_FILE}\`` }),
+		"",
+		`| ${t({ en: "role", ko: "역할" })} | ${t({ en: "current", ko: "현재 설정" })} | ${t({ en: "rule", ko: "규칙" })} |`,
+		"| --- | --- | --- |",
+		...rows,
+		...labelled(t({ en: "changed", ko: "변경됨" }), roles.changed),
+		...labelled(t({ en: "level set by the user, left alone (pick the model again to hand the level back)", ko: "사용자가 직접 정한 effort라 건드리지 않음 (모델을 다시 고르면 자동 관리로 돌아감)" }), roles.userSet),
+		...labelled(t({ en: "research needed", ko: "조사 필요" }), roles.research),
+	].join("\n");
 }
 
 /**
- * Keeps modelRoles on the newest model of each tier, at that model's benchmark sweet spot.
+ * Keeps the effort level of each modelRoles entry at its model's benchmark sweet spot; the user picks the models.
  * Source of truth is model-tiers.json in the harness directory of this copy:
- * `families` map provider + id pattern (capture groups are version numbers) to a tier (worker / base / deep / light),
- * `roles` map a role to a tier plus `step` levels above the sweet spot or a fixed `effort`,
- * `sweetSpots` map provider/model to a sweet-spot effort with benchmark evidence and sources.
- * On a main session start, and once more after the background catalog refresh adds model ids, the newest available model of each tier on the primary provider is chosen.
- * It is adopted only once its sweet spot is recorded; until then the newest researched generation stays and an interactive session is asked to research it, in a turn of its own so the research never rides on the user's first request.
- * Connected providers without family entries are queued the same way, so every connected provider keeps baseline values although roles use the primary provider only.
- * A model line on the primary provider that matches no family is queued for research unless `ignoredModels` names it; dated snapshot ids (-YYYYMMDD) are aliases of classified lines, not new lines.
+ * `roles` map a role to its rule: the sweet spot of the model the user set (or a fixed `effort`), or `above` another role (that role's model at the next level whose benchmark index gains),
+ * `sweetSpots` map provider/model to a sweet-spot effort with benchmark evidence, sources and per-level points.
+ * The policy in harness/model-tiers/plan.ts (`resolveRoles`) decides; the values it wrote last are kept in model-tiers-applied.json so a level the user changed by hand stays.
+ * A role whose model has no recorded sweet spot keeps its value, and an interactive session is asked to research the model in a turn of its own so the research never rides on the user's first request.
  * Only interactive main sessions are checked: headless runs (-p, RPC, dotz lanes) often carry a --model runtime override that would read as a role change and must not start research turns.
  * The agent records findings with the model_tiers tool (action "record"), which re-applies the roles.
  */
@@ -154,16 +176,13 @@ export default function modelTiers(pi: Api) {
 		if (!data) return;
 		const models = await availableModels(ctx);
 		if (!models.length) return;
-		const p = plan(data, models);
-		const changed = applyRoles(pi, p.roles);
-		if (changed.length) {
-			const list = changed.map(c => `- ${c}`).join("\n");
-			ctx.ui?.notify(say({ en: `model-tiers: roles moved to the newest researched models\n${list}`, ko: `model-tiers: 역할이 조사된 최신 모델로 옮겨졌습니다\n${list}` }), "info");
-		}
-		if (!p.research.length) return;
+		const { changed, research } = applyRoles(pi, data, models);
+		if (changed.length)
+			showReport(pi, ctx, { title: say({ en: "model-tiers: role levels moved to the models' sweet spots", ko: "model-tiers: 역할 effort를 모델별 sweet spot에 맞췄습니다" }), markdown: changed.map(c => `- ${c}`).join("\n"), level: "info" });
+		if (!research.length) return;
 		const state = readJson<Record<string, number>>(STATE_FILE, {});
 		const now = Date.now();
-		const due = p.research.filter(item => now - (state[item] ?? 0) > ASK_AGAIN_MS);
+		const due = research.filter(item => now - (state[item] ?? 0) > ASK_AGAIN_MS);
 		if (!due.length) return;
 		for (const item of due) state[item] = now;
 		writeJson(STATE_FILE, state);
@@ -171,7 +190,7 @@ export default function modelTiers(pi: Api) {
 			{
 				customType: "model-tiers",
 				display: true,
-				content: `[model-tiers] Benchmark research needed before these models get default roles:\n${due.map(d => `- ${d}`).join("\n")}\n\n${RESEARCH_BRIEF}`,
+				content: `[model-tiers] Benchmark research needed for the models these roles use:\n${due.map(d => `- ${d}`).join("\n")}\n\n${RESEARCH_BRIEF}`,
 			},
 			{ deliverAs: "nextTurn", triggerTurn: true },
 		);
@@ -188,7 +207,7 @@ export default function modelTiers(pi: Api) {
 		name: "model_tiers",
 		label: "Model tiers",
 		description:
-			"Automatic model-role selection by tier (worker = Sonnet-class, base = Opus-class, deep = Fable-class, light = Haiku-class) at each model's benchmark sweet spot. action status: current picks, roles and pending research. action apply: re-apply roles now. action record: store a researched sweet spot (model = provider/id, effort, confidence, basis with numbers, sources) and/or a tier family (family = { provider, tier, pattern } with version capture groups), then re-apply.",
+			"Effort levels for the models the user picked in modelRoles, at each model's benchmark sweet spot (slow and deep run one gaining level above default and plan). action status: roles, user-set levels and pending research. action apply: re-apply the levels now. action record: store a researched sweet spot (model = provider/id, effort, confidence, basis with numbers, sources), then re-apply.",
 		parameters: z.object({
 			action: z.enum(["status", "apply", "record"]),
 			model: z.string().optional(),
@@ -196,7 +215,6 @@ export default function modelTiers(pi: Api) {
 			confidence: z.enum(["High", "Medium", "Low"]).optional(),
 			basis: z.string().optional(),
 			sources: z.array(z.string()).optional(),
-			family: z.object({ provider: z.string(), tier: z.string(), pattern: z.string() }).optional(),
 		}),
 		async execute(_id, params, _signal, _onUpdate, ctx) {
 			const fail = (text: string): ToolResult => ({ content: [{ type: "text", text: `model_tiers: ${text}` }], isError: true });
@@ -204,45 +222,34 @@ export default function modelTiers(pi: Api) {
 			if (!data) return fail(`missing or invalid ${DATA_FILE}`);
 			const models = await availableModels(ctx);
 			if (params.action === "record") {
-				if (params.family) {
-					const { provider, tier, pattern } = params.family;
-					if (!Object.values(data.roles).some(r => r.tier === tier)) return fail(`unknown tier ${tier}`);
-					try {
-						new RegExp(pattern);
-					} catch (error) {
-						return fail(`bad pattern: ${String(error)}`);
-					}
-					data.families = [...data.families.filter(f => !(f.provider === provider && f.tier === tier)), { provider, tier, pattern }];
-				}
-				if (params.model) {
-					const model = models.find(m => key(m) === params.model);
-					if (!model) return fail(`${params.model} is not an available model`);
-					if (!params.effort || !model.levels.includes(params.effort)) return fail(`effort must be one of ${model.levels.join(", ")}`);
-					if (!params.confidence || !params.basis || !params.sources?.length) return fail("record needs confidence, basis and sources");
-					data.sweetSpots[params.model] = {
-						effort: params.effort,
-						confidence: params.confidence,
-						basis: params.basis,
-						sources: params.sources,
-						checked: new Date().toISOString().slice(0, 10),
-					};
-				}
-				if (!params.family && !params.model) return fail("record needs model and/or family");
+				if (!params.model) return fail("record needs model");
+				const model = models.find(m => key(m) === params.model);
+				if (!model) return fail(`${params.model} is not an available model`);
+				if (!params.effort || !model.levels.includes(params.effort)) return fail(`effort must be one of ${model.levels.join(", ")}`);
+				if (!params.confidence || !params.basis || !params.sources?.length) return fail("record needs confidence, basis and sources");
+				data.sweetSpots[params.model] = {
+					effort: params.effort,
+					confidence: params.confidence,
+					basis: params.basis,
+					sources: params.sources,
+					...(data.sweetSpots[params.model]?.points ? { points: data.sweetSpots[params.model].points } : {}),
+					checked: new Date().toISOString().slice(0, 10),
+				};
 				writeJson(DATA_FILE, data);
 			}
-			const changed = params.action === "status" ? [] : applyRoles(pi, plan(data, models).roles);
-			return { content: [{ type: "text", text: statusText(data, models, changed) }] };
+			const roles = params.action === "status" ? inspectRoles(pi, data, models) : applyRoles(pi, data, models);
+			return { content: [{ type: "text", text: `model-tiers\n\n${statusMarkdown(pi, data, roles)}` }] };
 		},
 	});
 
 	pi.registerCommand("model-tiers", {
-		description: "Model tiers: show picks, roles and pending research; /model-tiers apply re-applies the roles now",
+		description: "Model tiers: show role levels, user-set levels and pending research; /model-tiers apply re-applies the levels now",
 		handler: async (args, ctx) => {
 			const data = loadData();
 			if (!data) return ctx.ui?.notify(say({ en: `model-tiers: missing or invalid ${DATA_FILE}`, ko: `model-tiers: ${DATA_FILE} 파일이 없거나 올바르지 않습니다` }), "warning");
 			const models = await availableModels(ctx);
-			const changed = String(args ?? "").trim() === "apply" ? applyRoles(pi, plan(data, models).roles) : [];
-			ctx.ui?.notify(statusText(data, models, changed, true), "info");
+			const roles = String(args ?? "").trim() === "apply" ? applyRoles(pi, data, models) : inspectRoles(pi, data, models);
+			showReport(pi, ctx, { title: "model-tiers", markdown: statusMarkdown(pi, data, roles, true), level: "info" });
 		},
 	});
 }

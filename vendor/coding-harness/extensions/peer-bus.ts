@@ -1,9 +1,10 @@
 import { execFileSync } from "node:child_process";
-import { mkdirSync, watch } from "node:fs";
+import { existsSync, mkdirSync, watch } from "node:fs";
 import type { FSWatcher } from "node:fs";
-import { basename } from "node:path";
+import { basename, join as joinPath } from "node:path";
+import { whereis } from "../harness/checkouts/place.ts";
 import { say } from "../harness/notice.ts";
-import { deliveryText, livePeers, peersDir, register, resolvePeers, send, takeNew, unregister } from "../harness/peers/bus.ts";
+import { deliveryText, dropClaims, livePeers, peersDir, register, resolvePeers, send, takeNew, unregister } from "../harness/peers/bus.ts";
 import type { PeerRecord } from "../harness/peers/bus.ts";
 
 const POLL_MS = 2000;
@@ -41,7 +42,7 @@ export interface PeerBus {
 
 const text = (body: string, isError = false): ToolResult => ({ content: [{ type: "text", text: body }], details: {}, ...(isError ? { isError } : {}) });
 
-function repoOf(cwd: string): string | undefined {
+function toplevelOf(cwd: string): string | undefined {
 	try {
 		return execFileSync("git", ["-C", cwd, "rev-parse", "--show-toplevel"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], timeout: 3000 }).trim() || undefined;
 	} catch {
@@ -84,8 +85,11 @@ export default function registerPeerBus(pi: Api): PeerBus {
 		const id = ctx.sessionManager?.getSessionId?.();
 		if (ctx.agent?.kind !== "main" || id === undefined) return;
 		const cwd = String(ctx.cwd ?? process.cwd());
-		self = { id, name: nameFor(id, cwd), cwd, repo: repoOf(cwd), pid: process.pid, startedAt: new Date().toISOString() };
+		const placement = whereis(cwd);
+		const tree = toplevelOf(cwd);
+		self = { id, name: nameFor(id, cwd), cwd, repo: placement?.folder ?? tree, tree, pid: process.pid, startedAt: new Date().toISOString() };
 		register(dir, self);
+		if (placement !== undefined) dropClaims(dir, placement.name);
 		drain();
 		if (process.env.HARNESS_PEERS_WATCH === "0") return;
 		mkdirSync(dir, { recursive: true });
@@ -97,10 +101,10 @@ export default function registerPeerBus(pi: Api): PeerBus {
 		poll.unref?.();
 	};
 
-	const refreshName = () => {
+	const refreshRecord = () => {
 		if (self === undefined) return;
 		const name = nameFor(self.id, self.cwd);
-		if (name === self.name) return;
+		if (name === self.name && existsSync(joinPath(dir, `${self.id}.json`))) return;
 		self = { ...self, name };
 		register(dir, self);
 	};
@@ -108,7 +112,7 @@ export default function registerPeerBus(pi: Api): PeerBus {
 	pi.on("session_start", (_event, ctx) => join(ctx));
 	pi.on("session_switch", (_event, ctx) => join(ctx));
 	pi.on("session_shutdown", () => leave());
-	pi.on("agent_start", () => refreshName());
+	pi.on("agent_start", () => refreshRecord());
 
 	pi.registerTool({
 		name: "peer_list",
@@ -117,7 +121,7 @@ export default function registerPeerBus(pi: Api): PeerBus {
 		parameters: pi.zod.object({}),
 		async execute() {
 			if (self === undefined) return text("peer_list: only main sessions take part in peer messaging.", true);
-			refreshName();
+			refreshRecord();
 			const others = livePeers(dir).filter(peer => peer.id !== self?.id);
 			if (others.length === 0) return text(`No other live main session. This session is "${self.name}".`);
 			return text([`This session is "${self.name}". Other live main sessions:`, ...others.map(peer => `- ${peer.name} (${peer.id}) ${peer.cwd}${peer.repo !== undefined && peer.repo === self?.repo ? " [same repo]" : ""}`)].join("\n"));
@@ -133,7 +137,7 @@ export default function registerPeerBus(pi: Api): PeerBus {
 			if (self === undefined) return text("peer_send: only main sessions take part in peer messaging.", true);
 			const body = String(params?.message ?? "").trim();
 			if (body === "") return text("peer_send: the message is empty; nothing was sent.", true);
-			refreshName();
+			refreshRecord();
 			const picked = resolvePeers(livePeers(dir), self, String(params?.to ?? ""));
 			if ("error" in picked) return text(`peer_send: ${picked.error}`, true);
 			for (const target of picked.targets) send(dir, self, target, body);
@@ -147,7 +151,7 @@ export default function registerPeerBus(pi: Api): PeerBus {
 			const name = String(args ?? "").trim();
 			if (!/^\S+$/.test(name)) return ctx.ui?.notify(say({ en: "peer-bus: usage: /peer-name <name> (one word)", ko: "peer-bus: 사용법: /peer-name <name> (한 단어)" }), "warning");
 			chosenName = name;
-			refreshName();
+			refreshRecord();
 			ctx.ui?.notify(say({ en: `peer-bus: this session is "${name}" for peer messaging.`, ko: `peer-bus: 이 세션은 피어 메시지에서 "${name}"(으)로 불립니다.` }), "info");
 		},
 	});

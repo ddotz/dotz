@@ -10,6 +10,6 @@
     "allowImportingTsExtensions": true,
     "resolveJsonModule": true
   },
-  "include": ["../extensions/*.ts", "../skills/ulw/scripts/**/*.ts", "guard/**/*.ts", "tests/**/*.ts", "checks/**/*.ts", "evals/**/*.ts", "*.ts"],
+  "include": ["../extensions/*.ts", "../skills/ulw/scripts/**/*.ts", "guard/**/*.ts", "checkouts/**/*.ts", "tests/**/*.ts", "checks/**/*.ts", "evals/**/*.ts", "*.ts"],
   "exclude": ["node_modules"]
 }

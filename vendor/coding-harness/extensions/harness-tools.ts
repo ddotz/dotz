@@ -3,8 +3,14 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSy
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { harnessDir, isHostCopy } from "../harness/agent-home.ts";
-import { loadState, patchDiscarded } from "../harness/guard/state.ts";
+import { ownSlotLine, slotLines, slotsUnlistedLine, slotStates } from "../harness/checkouts/report.ts";
+import { whereis, workOf } from "../harness/checkouts/place.ts";
+import { WRITING_AGENTS } from "../harness/guard/shell.ts";
+import { loadState, patchDiscarded, pruneStateDir, workersOfSession } from "../harness/guard/state.ts";
+import { ORPHAN_MIN_IDLE_MS, sessionStartHygiene, sweepOrphans } from "../harness/hygiene.ts";
 import { type NoticeLanguage, type NoticeText, noticeLanguage, say } from "../harness/notice.ts";
+import { type ReportMessage, showReport } from "../harness/gate/show-report.ts";
+import { livePeers, type PeerRecord, peersDir } from "../harness/peers/bus.ts";
 
 const HOME = homedir();
 const AUDIT_SCRIPT = join(harnessDir(), "token-audit.ts");
@@ -16,7 +22,6 @@ const VERSION_FILE = join(harnessDir(), "last-omp-version");
 const ORPHAN_MIN_AGE_MIN = 10;
 const GUARD_WINDOW_MS = 7 * 24 * 3600_000;
 const GUARD_MARKER = "[orchestrator-guard]";
-const WRITING_AGENTS = new Set(["task", "sonic"]);
 const RESULT_TOOLS = new Set(["task", "wait"]);
 const GUARD_TASK_RESULT = /<task-result\b[^>]*\bid="([^"]+)"[^>]*\bstatus="([^"]+)"[^>]*>/g;
 const GUARD_PATCH_LINE = /changes captured at `([^`]+\.patch)`/g;
@@ -32,6 +37,56 @@ export function setupStatus(loaded: string, deployed: string, t: (text: NoticeTe
 		info: t({ en: `harness setup: ${deployed.slice(0, 7)} (this session runs ${loaded.slice(0, 7)})`, ko: `하네스 설치: ${deployed.slice(0, 7)} (이 세션은 ${loaded.slice(0, 7)}로 실행 중)` }),
 		problem: t({ en: `the deployed harness ${deployed.slice(0, 7)} is not loaded: this session still runs ${loaded.slice(0, 7)}; call session_restart`, ko: `배포된 하네스 ${deployed.slice(0, 7)}가 실리지 않았습니다. 이 세션은 아직 ${loaded.slice(0, 7)}로 실행 중이니 session_restart를 부르세요` }),
 	};
+}
+
+/** The doctor's notice that another live main session works in the same working tree as this one (`selfTree`, the git toplevel of its cwd), naming each; undefined when none does. A record without `tree` (an older harness) counts by its `repo`. */
+export function sharedTreeNotice(peers: readonly PeerRecord[], selfId: string | undefined, selfTree: string | undefined, t: (text: NoticeText) => string): string | undefined {
+	const sharing = selfTree === undefined ? [] : peers.filter(peer => peer.id !== selfId && (peer.tree ?? peer.repo) === selfTree);
+	if (sharing.length === 0) return undefined;
+	const list = sharing.map(peer => `${peer.name} (${peer.id}) in ${peer.cwd}`).join("; ");
+	return t({
+		en: `another main session works in this working tree (${selfTree}): ${list}. Two sessions in one tree overwrite each other's edits; start the other session with \`omp\` so it gets its own checkout`,
+		ko: `이 작업 트리(${selfTree})에서 다른 메인 세션이 작업 중입니다: ${list}. 한 작업 트리를 두 세션이 쓰면 서로의 수정을 덮어씁니다. 다른 세션을 \`omp\`로 시작해 자기만의 체크아웃을 쓰게 하세요`,
+	});
+}
+
+/**
+ * The doctor's hygiene lines: orphaned omp worktrees with their size, the worker state dir (stale files, lost workers, kept patches) and another main session in this session's working tree (a notice only), and the checkout slots of this session's folder: one line per slot holding work nobody holds, a count of the rest, and a line naming this session's own slot with what it holds right now.
+ * Without `fix` nothing is deleted; with it the idle orphans are removed and the state dir is pruned.
+ */
+export async function hygieneSection({ cwd, sessionId, fix, t }: { cwd: string; sessionId: string | undefined; fix: boolean; t: (text: NoticeText) => string }): Promise<{ problems: string[]; info: string[] }> {
+	const problems: string[] = [];
+	const info: string[] = [];
+	const prune = pruneStateDir({ dry: !fix });
+	info.push(
+		t({
+			en: `worker state: ${prune.stateFiles} file(s), ${prune.deletedFiles} for a folder that is gone, ${prune.lostWorkers} running with a state file unwritten for a day, ${prune.keptPatches} kept patch(es), ${prune.deletedPatches} unreferenced over 7 days${fix ? "; pruned now" : "; the next session start prunes them"}`,
+			ko: `워커 상태: 파일 ${prune.stateFiles}개, 사라진 폴더의 것 ${prune.deletedFiles}개, 하루 넘게 갱신 없는 running ${prune.lostWorkers}개, 보관 패치 ${prune.keptPatches}개, 7일 넘게 참조 없는 패치 ${prune.deletedPatches}개${fix ? "; 지금 정리했습니다" : "; 다음 세션 시작 때 정리됩니다"}`,
+		}),
+	);
+	try {
+		const swept = await sweepOrphans({ dry: !fix });
+		const megabytes = (kb: number) => (kb / 1024).toFixed(1);
+		const total = swept.orphans.reduce((sum, orphan) => sum + orphan.kb, 0);
+		const idle = swept.orphans.filter(orphan => orphan.removable).length;
+		const idleHours = ORPHAN_MIN_IDLE_MS / 3600_000;
+		info.push(t({ en: `orphaned worktrees: ${swept.orphans.length} (${megabytes(total)} MB), ${idle} idle over ${idleHours} h`, ko: `고아 worktree: ${swept.orphans.length}개 (${megabytes(total)} MB), ${idleHours}시간 넘게 쓰지 않은 것 ${idle}개` }));
+		if (fix) info.push(t({ en: `removed ${swept.removed} orphaned worktree(s), ${megabytes(swept.kb)} MB freed${swept.deferred ? `; ${swept.deferred} left for the next run` : ""}`, ko: `고아 worktree ${swept.removed}개를 지웠습니다 (${megabytes(swept.kb)} MB 확보)${swept.deferred ? `; ${swept.deferred}개는 다음 실행으로 남겼습니다` : ""}` }));
+	} catch (error) {
+		info.push(t({ en: `worktree audit failed: ${String(error)}`, ko: `worktree 점검에 실패했습니다: ${String(error)}` }));
+	}
+	const toplevel = await run("git", ["-C", cwd, "rev-parse", "--show-toplevel"], { timeout: 5000 });
+	const tree = toplevel.ok ? toplevel.out.trim() || undefined : undefined;
+	const notice = sharedTreeNotice(livePeers(peersDir()), sessionId, tree, t);
+	if (notice) problems.push(notice);
+	const placement = whereis(cwd);
+	if (placement) info.push(ownSlotLine(placement, await workOf(placement), t));
+	const folder = placement?.folder ?? tree;
+	if (folder !== undefined) {
+		const slots = await slotStates(folder);
+		info.push(...(slots.ok ? slotLines(slots.value, t) : [slotsUnlistedLine(slots.why, t)]));
+	}
+	return { problems, info };
 }
 
 interface TextBlock {
@@ -59,8 +114,9 @@ interface Ctx {
 	cwd?: string;
 	agent?: { kind?: string };
 	model?: { provider: string; id: string };
-	sessionManager?: { getSessionFile?(): string | undefined };
+	sessionManager?: { getSessionFile?(): string | undefined; getSessionId?(): string | undefined };
 	getContextUsage?(): { tokens: number; contextWindow: number; percent?: number } | undefined;
+	mode?: string;
 	ui: { notify(text: string, level: Level): void };
 	newSession(options?: { parentSession: string }): Promise<{ cancelled?: boolean } | undefined>;
 }
@@ -87,6 +143,7 @@ interface Api {
 		execute(id: string, params: P | undefined, signal: unknown, onUpdate: unknown, ctx: Ctx): Promise<ToolResult>;
 	}): void;
 	sendUserMessage(text: string): void;
+	sendMessage(message: ReportMessage): void;
 }
 
 function run(cmd: string, args: string[], options: { cwd?: string; timeout?: number } = {}): Promise<{ ok: boolean; out: string }> {
@@ -128,8 +185,9 @@ function lastReports(entries: LogEntry[], count: number, cap: number): string {
 	return texts.slice(-count).join("\n\n=====\n\n").slice(-cap);
 }
 
-function orchestratorState(cwd: string): string[] {
-	return Object.entries(loadState(cwd).workers)
+/** The open workers and unapplied patches of `session` in the project folder `cwd` (all of them when the session id is unknown). */
+export function orchestratorState(cwd: string, session: string | undefined): string[] {
+	return workersOfSession(loadState(cwd), session)
 		.filter(([, w]) => w.status === "running" || !patchDiscarded(w))
 		.map(([id, w]) => (w.status === "running" ? `${id}: running - ${w.brief}` : `${id}: ${w.status}${w.patch && !w.applied ? `, patch NOT applied: ${w.patch}` : ""} - ${w.brief}`));
 }
@@ -264,14 +322,24 @@ async function tokenAuditReport(hours: number, ifDue = false, language: NoticeLa
 	return { text: lines.filter(l => !l.startsWith("RESULT ")).join("\n"), flags: parsed.flags ?? 0, ok: true, skipped: parsed.skipped === true };
 }
 
-async function doctorReport(ctx: Ctx, fix: boolean, display = false): Promise<{ text: string; problems: number }> {
+function showAudit(pi: Api, ctx: Ctx, text: string, level: Level): void {
+	const [title, ...body] = text.split("\n");
+	showReport(pi, ctx, { title, markdown: body.join("\n").trim(), level });
+}
+
+function markdownItem(text: string): string {
+	const [head, ...rest] = text.split("\n");
+	return [`- ${head}`, ...rest.map(line => `  - ${line.trim()}`)].join("\n");
+}
+
+async function doctorReport(ctx: Ctx, fix: boolean, display = false): Promise<{ text: string; title: string; markdown: string; problems: number }> {
 	const t = (n: NoticeText) => (display ? say(n) : n.en);
 	const file: string | undefined = ctx.sessionManager?.getSessionFile?.();
 	const entries = file ? readTail(file, 400_000) : [];
 	const usage = ctx.getContextUsage?.();
 	const model = ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : "?";
 	const setup = setupStatus(LOADED_SETUP, readSetupVersion(), t);
-	const [quota, orphanList, defaultRole] = await Promise.all([
+	const [quota, orphanList, defaultRole, hygiene] = await Promise.all([
 		anthropicLimits(),
 		orphans(),
 		run(OMP_BIN, ["config", "get", "modelRoles", "--json"]).then(r => {
@@ -281,9 +349,12 @@ async function doctorReport(ctx: Ctx, fix: boolean, display = false): Promise<{ 
 				return "";
 			}
 		}),
+		hygieneSection({ cwd: String(ctx.cwd ?? process.cwd()), sessionId: ctx.sessionManager?.getSessionId?.(), fix, t }),
 	]);
 	const problems: string[] = [];
 	const info: string[] = [];
+	problems.push(...hygiene.problems);
+	info.push(...hygiene.info);
 	info.push(`${t({ en: "context", ko: "컨텍스트" })}: ${usage ? `${Math.round(usage.tokens / 1000)}K / ${Math.round(usage.contextWindow / 1000)}K (${usage.percent?.toFixed?.(1) ?? "?"}%)` : "?"}`);
 	const fileSize = file && existsSync(file) ? statSync(file).size : 0;
 	info.push(`${t({ en: "session file", ko: "세션 파일" })}: ${fileSize ? `${(fileSize / 1e6).toFixed(1)}MB` : t({ en: "none (ephemeral)", ko: "없음 (임시 세션)" })}`);
@@ -295,7 +366,7 @@ async function doctorReport(ctx: Ctx, fix: boolean, display = false): Promise<{ 
 	const rl = lastRateLimit(entries);
 	if (rl) problems.push(rl);
 	info.push(quota);
-	const open = orchestratorState(String(ctx.cwd ?? process.cwd()));
+	const open = orchestratorState(String(ctx.cwd ?? process.cwd()), ctx.sessionManager?.getSessionId?.());
 	if (open.length) problems.push(`${t({ en: "open workers/patches", ko: "열린 워커/패치" })}:\n    ${open.join("\n    ")}`);
 	if (file) {
 		const health = guardHealth(dirname(file), t);
@@ -318,8 +389,15 @@ async function doctorReport(ctx: Ctx, fix: boolean, display = false): Promise<{ 
 			info.push(`${t({ en: "orphaned omp RPC processes killed", ko: "종료한 고아 omp RPC 프로세스" })}: ${orphanList.length - left.length}/${orphanList.length}`);
 		} else problems.push(t({ en: `orphaned omp RPC processes (ppid 1, >${ORPHAN_MIN_AGE_MIN} min); run doctor with fix to kill them:\n    ${list}`, ko: `고아 omp RPC 프로세스가 있습니다(ppid 1, ${ORPHAN_MIN_AGE_MIN}분 넘음). /doctor fix로 종료하세요:\n    ${list}` }));
 	}
+	const title = `doctor: ${problems.length ? t({ en: `${problems.length} issue(s)`, ko: `문제 ${problems.length}건` }) : t({ en: "healthy", ko: "정상" })}`;
+	const sections = [
+		...(problems.length ? [`**${t({ en: "Issues", ko: "문제" })}**`, "", ...problems.map(markdownItem)] : []),
+		...(info.length ? [...(problems.length ? [""] : []), `**${t({ en: "Info", ko: "정보" })}**`, "", ...info.map(markdownItem)] : []),
+	];
 	return {
-		text: [`doctor: ${problems.length ? t({ en: `${problems.length} issue(s)`, ko: `문제 ${problems.length}건` }) : t({ en: "healthy", ko: "정상" })}`, ...problems.map(p => `- ${p}`), ...info.map(i => `  ${i}`)].join("\n"),
+		text: [title, ...problems.map(p => `- ${p}`), ...info.map(i => `  ${i}`)].join("\n"),
+		title,
+		markdown: sections.join("\n"),
 		problems: problems.length,
 	};
 }
@@ -338,9 +416,10 @@ export default function harnessTools(pi: Api) {
 
 	pi.on("session_start", async (_event, ctx) => {
 		if (ctx?.agent?.kind !== "main") return;
+		void sessionStartHygiene({ sweepWorktrees: !isHostCopy() });
 		if (!isHostCopy())
 			void tokenAuditReport(24, true, noticeLanguage()).then(report => {
-				if (report.ok && !report.skipped && report.flags) ctx.ui?.notify?.(report.text, "warning");
+				if (report.ok && !report.skipped && report.flags) showAudit(pi, ctx, report.text, "warning");
 			});
 		const version = (await run(OMP_BIN, ["--version"])).out.trim();
 		let previous = "";
@@ -355,14 +434,11 @@ export default function harnessTools(pi: Api) {
 		if (!previous) return;
 		const file: string | undefined = ctx.sessionManager?.getSessionFile?.();
 		const health = file ? guardHealth(dirname(file), say) : { problems: [], info: say({ en: "guard: no session history to check", ko: "가드: 확인할 세션 기록이 없습니다" }) };
-		ctx.ui?.notify?.(
-			[
-				say({ en: `harness-tools: omp updated ${previous} -> ${version}.`, ko: `harness-tools: omp가 ${previous} -> ${version}(으)로 업데이트되었습니다.` }),
-				...(health.problems.length ? health.problems.map(p => `- ${p}`) : [say({ en: "guard health OK.", ko: "가드 상태 정상입니다." })]),
-				`  ${health.info}`,
-			].join("\n"),
-			health.problems.length ? "warning" : "info",
-		);
+		showReport(pi, ctx, {
+			title: say({ en: `harness-tools: omp updated ${previous} -> ${version}.`, ko: `harness-tools: omp가 ${previous} -> ${version}(으)로 업데이트되었습니다.` }),
+			markdown: [...(health.problems.length ? health.problems.map(markdownItem) : [`- ${say({ en: "guard health OK.", ko: "가드 상태 정상입니다." })}`]), markdownItem(health.info)].join("\n"),
+			level: health.problems.length ? "warning" : "info",
+		});
 	});
 
 	pi.registerCommand("token-audit", {
@@ -376,7 +452,7 @@ export default function harnessTools(pi: Api) {
 				);
 			ctx.ui.notify(say({ en: `token-audit: scanning the last ${hours}h...`, ko: `token-audit: 최근 ${hours}시간을 검사하는 중입니다...` }), "info");
 			const report = await tokenAuditReport(hours, false, noticeLanguage());
-			ctx.ui.notify(report.text, !report.ok ? "error" : report.flags ? "warning" : "info");
+			showAudit(pi, ctx, report.text, !report.ok ? "error" : report.flags ? "warning" : "info");
 		},
 	});
 
@@ -394,7 +470,7 @@ export default function harnessTools(pi: Api) {
 	pi.registerTool({
 		name: "harness_doctor",
 		label: "Harness doctor",
-		description: "Health check of this omp session and harness: context, session file size, model vs default role, last rate limit, quota, open workers and unapplied patches, orchestrator-guard health, orphaned omp RPC processes. Use when the user asks to check or inspect the setup. fix=true also kills the orphaned processes.",
+		description: "Health check of this omp session and harness: context, session file size, model vs default role, last rate limit, quota, open workers and unapplied patches, orchestrator-guard health, orphaned omp RPC processes, orphaned worker worktrees and their size, stale worker state, another main session in the same working tree. Use when the user asks to check or inspect the setup. fix=true also kills the orphaned processes, removes idle orphaned worktrees and prunes the worker state.",
 		parameters: z.object({ fix: z.boolean().optional() }),
 		async execute(_id: string, params: { fix?: boolean } | undefined, _signal: unknown, _onUpdate: unknown, ctx: Ctx) {
 			const report = await doctorReport(ctx, params?.fix === true);
@@ -406,7 +482,7 @@ export default function harnessTools(pi: Api) {
 		description: "Session/harness health check: /doctor [fix]  (fix = kill orphaned omp RPC processes)",
 		handler: async (args, ctx) => {
 			const report = await doctorReport(ctx, String(args ?? "").trim() === "fix", true);
-			ctx.ui.notify(report.text, report.problems ? "warning" : "info");
+			showReport(pi, ctx, { title: report.title, markdown: report.markdown, level: report.problems ? "warning" : "info" });
 		},
 	});
 
@@ -420,7 +496,7 @@ export default function harnessTools(pi: Api) {
 			const recent = lastReports(entries, 3, 8000);
 			const git = await run("git", ["status", "--short"], { cwd });
 			const status = git.ok ? git.out.split("\n").slice(0, 40).join("\n").trim() : "";
-			const open = orchestratorState(cwd);
+			const open = orchestratorState(cwd, ctx.sessionManager?.getSessionId?.());
 			const handover = [
 				`[handover] Continuing from previous session ${file ?? "(ephemeral)"}${note ? ` - note: ${note}` : ""}.`,
 				"There is no conversation context: continue from the recent reports below and the state on disk (git). Read only the tail of the previous session file if you need more.",

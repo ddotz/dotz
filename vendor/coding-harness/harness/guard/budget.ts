@@ -5,7 +5,8 @@ import { agentHome, ompAgentDir } from "../agent-home.ts";
 import { debug } from "./debug.ts";
 import { fieldsOf } from "./host-types.ts";
 import type { UsageLimit } from "./limit-lift.ts";
-import { agentRoleIn, roleEffortIn } from "./spawn-rules.ts";
+import type { Data } from "../model-tiers/plan.ts";
+import { agentOverrideIn, agentRoleIn, type EffortSetup, roleSelectorIn, roleSelectorsIn, taskSettingIn } from "./spawn-rules.ts";
 
 /** An Anthropic usage window as `omp usage --json` reports it. */
 export type Limit = { id: string; window?: { resetsAt?: number }; amount?: { remaining?: number } };
@@ -30,13 +31,30 @@ const agentsDir = () => join(process.env.ORCH_GUARD_AGENT_DIR ?? agentHome(), "a
 const ompConfig = () => join(process.env.ORCH_GUARD_AGENT_DIR ?? ompAgentDir(), "config.yml");
 const textIfPresent = (path: string) => (existsSync(path) ? readFileSync(path, "utf8") : undefined);
 
-/** Effort of the role an agent runs on: the `task` agent runs the task role, others the `@role` of their definition; undefined when it cannot be told. */
-export function roleEffortOfAgent(agent: string): string | undefined {
-	if (!/^[\w-]+$/.test(agent)) return undefined;
+/** What the effort rules need for an agent: the selector of the role it runs on (the `task` agent runs the task role, others the `@role` of their definition), `task.maxEffort` and whether `task.agentModelOverrides` pins its model; the selector is undefined when it cannot be told. */
+export function effortSetupOfAgent(agent: string): EffortSetup {
+	const config = textIfPresent(ompConfig());
+	if (config === undefined || !/^[\w-]+$/.test(agent)) return { overridden: false };
 	const definition = textIfPresent(join(agentsDir(), `${agent}.md`));
 	const role = agent === "task" ? "task" : definition === undefined ? undefined : agentRoleIn(definition);
+	return { roleSelector: role === undefined ? undefined : roleSelectorIn(config, role), maxEffort: taskSettingIn(config, "maxEffort"), overridden: agentOverrideIn(config, agent) };
+}
+
+/** The tier data the escalation reads (`harness/model-tiers.json` of the agent directory), or undefined when it is absent or unreadable. */
+export function tierData(): Data | undefined {
+	const text = textIfPresent(join(process.env.ORCH_GUARD_AGENT_DIR ?? agentHome(), "harness", "model-tiers.json"));
+	try {
+		return text === undefined ? undefined : (JSON.parse(text) as Data);
+	} catch (parseError) {
+		debug({ phase: "tiers-parse-error", message: String(parseError) });
+		return undefined;
+	}
+}
+
+/** The selectors the `modelRoles` block of the omp config sets, the models an escalation may move to. */
+export function roleSelectors(): string[] {
 	const config = textIfPresent(ompConfig());
-	return role === undefined || config === undefined ? undefined : roleEffortIn(config, role);
+	return config === undefined ? [] : Object.values(roleSelectorsIn(config));
 }
 
 function runOmp(args: string[]): Promise<string | undefined> {

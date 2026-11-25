@@ -365,12 +365,19 @@ export function walk(root: string, rel = ""): FileTime[] {
 
 const listed = (files: readonly string[]): string => `${files.slice(0, LISTED_FILES).join(", ")}${files.length > LISTED_FILES ? ` (+${files.length - LISTED_FILES} more)` : ""}`;
 
+/** What the stop asks of an evidence entry whose changed files lack evidence: a driver-written manifest under the entry's dir, or a waiver there. */
+export function evidenceAsk(entry: EvidenceEntry): string[] {
+	return [
+		`Evidence is a manifest.json that a verify-* driver wrote under ${entry.dir}/ for the current content of each feature's files; do not write one by hand.`,
+		`If the surface cannot be driven, a non-empty waiver-<slug>.md in ${entry.dir}/ stating the reason is the only accepted substitute.`,
+	];
+}
+
 export function evidenceText(repo: string, entry: EvidenceEntry, changed: readonly string[], verdict: EvidenceVerdict): string {
 	const lines = [`done-gate: evidence "${entry.name}" is missing in ${repo}.`, `Changed files matching ${entry.paths.join(", ")}: ${listed(changed)}.`];
 	if (verdict.uncovered.length > 0) lines.push(`No feature in ${FEATURES_FILE} covers: ${listed(verdict.uncovered)}. Add an entry { "id", "paths": [glob], "proof": "${PROOFS.join("|")}" } for them.`);
 	for (const lack of verdict.lacking) lines.push(`- ${lack}`);
-	lines.push(`Evidence is a manifest.json that a verify-* driver wrote under ${entry.dir}/ for the current content of each feature's files; do not write one by hand.`);
-	lines.push(`If the surface cannot be driven, a non-empty waiver-<slug>.md in ${entry.dir}/ stating the reason is the only accepted substitute.`);
+	lines.push(...evidenceAsk(entry));
 	return lines.join("\n");
 }
 

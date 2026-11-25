@@ -6,6 +6,8 @@ import type { Readable } from "node:stream";
 import { StringDecoder } from "node:string_decoder";
 import { until } from "./deadline.ts";
 import type { Check } from "./gate-file.ts";
+import { appendRow } from "./log.ts";
+import type { CheckResultKind } from "./log.ts";
 import { message } from "./util.ts";
 
 const OUTPUT_LINES = 60;
@@ -65,6 +67,12 @@ function signalGroup(pid: number, signal: NodeJS.Signals): void {
 	}
 }
 
+function recordEnd(name: string | undefined, repo: string, startedAt: number, result: CheckResultKind): void {
+	if (name === undefined) return;
+	const endedAt = Date.now();
+	appendRow({ at: new Date(endedAt).toISOString(), check: name, repo, startedAt: new Date(startedAt).toISOString(), endedAt: new Date(endedAt).toISOString(), durationMs: endedAt - startedAt, result });
+}
+
 function failedToStart(startedAt: number, error: unknown): Run {
 	const settled: CheckResult = { code: null, signal: null, timedOut: false, output: "", spawnError: message(error) };
 	return { startedAt, promise: Promise.resolve(settled), settled, cancel: () => undefined };
@@ -73,14 +81,16 @@ function failedToStart(startedAt: number, error: unknown): Run {
 /**
  * Runs `command` with bash in `repo` as the leader of its own process group. The whole group is killed when the shell
  * exits, when `timeoutSec` passes (SIGTERM, then SIGKILL), on `cancel()` and when the host process exits. A child that
- * leaves the group, for example under `set -m` or `setsid`, is not killed.
+ * leaves the group, for example under `set -m` or `setsid`, is not killed. With a `name`, the run is a gate check and its end
+ * leaves one row in gate.jsonl: how long it ran and whether it passed, failed, timed out or was cancelled.
  */
-export function startRun(repo: string, command: string, timeoutSec: number): Run {
+export function startRun(repo: string, command: string, timeoutSec: number, name?: string): Run {
 	const startedAt = Date.now();
 	let child: ChildProcessByStdio<null, Readable, Readable>;
 	try {
 		child = spawn("bash", ["-c", command], { cwd: repo, detached: true, stdio: ["ignore", "pipe", "pipe"], env: process.env });
 	} catch (error) {
+		recordEnd(name, repo, startedAt, "fail");
 		return failedToStart(startedAt, error);
 	}
 	const { promise, resolve } = Promise.withResolvers<CheckResult>();
@@ -90,14 +100,21 @@ export function startRun(repo: string, command: string, timeoutSec: number): Run
 	let timedOut = false;
 	let finished = false;
 	let groupGone = false;
+	let recorded = false;
 	let exit: { code: number | null; signal: NodeJS.Signals | null } = { code: null, signal: null };
 
 	const killGroup = (signal: NodeJS.Signals) => {
 		if (child.pid !== undefined && !groupGone) signalGroup(child.pid, signal);
 	};
+	const record = (result: CheckResultKind) => {
+		if (recorded) return;
+		recorded = true;
+		recordEnd(name, repo, startedAt, result);
+	};
 	const finish = (spawnError?: string) => {
 		if (finished) return;
 		finished = true;
+		record(timedOut ? "timeout" : spawnError === undefined && exit.code === 0 ? "pass" : "fail");
 		groupGone = true;
 		for (const timer of timers) clearTimeout(timer);
 		child.stdout.destroy();
@@ -127,7 +144,11 @@ export function startRun(repo: string, command: string, timeoutSec: number): Run
 		}, timeoutSec * 1000).unref(),
 	);
 
-	const run: Run = { startedAt, promise, cancel: () => killGroup("SIGKILL") };
+	const cancel = () => {
+		if (!finished && !groupGone && !timedOut) record("cancelled");
+		killGroup("SIGKILL");
+	};
+	const run: Run = { startedAt, promise, cancel };
 	live.add(run);
 	hookExit();
 	void promise.then(result => {

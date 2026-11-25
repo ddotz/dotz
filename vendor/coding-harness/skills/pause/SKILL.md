@@ -17,13 +17,14 @@ description: "Pause or resume work safely: stop at a safe boundary and leave a r
    - State: branch, last commit, dirty paths, running services or ports.
    - Next: the first three actions on resume.
    - Gotchas: traps already hit. Point at an existing plan or decision log instead of copying it.
-6. Reply: what is on disk vs only in this conversation, commits made, whether the tree is clean, the first action on resume.
+6. Reply, in Korean plain text: where you are in the work, what is on disk vs only in this conversation (paths, no diff dumps), commits made, whether the tree is clean, the first action on resume. This is a pause, not a final report.
 
 ## Resume
 
-1. Find the trail in this workspace only: `.omp/resume.md`, the plan or decision log it points to, `git log` and `git status`, and the previous session via `history://` for this cwd. Never read other projects' sessions.
-2. Rebuild state: done vs pending, open decisions, what is waiting on the user. Treat the trail as authoritative for what happened; do not redo finished work.
+1. Find the trail in this workspace only: `.omp/resume.md`, the plan or decision log it points to, `git log` and `git status`, and the previous session via `history://` for this cwd. Never read other projects' sessions or glob across the sessions directory. Read the overview and the last messages first, then scan back for the decision points; parse a long transcript in a `scout` worker and keep only its reduced timeline (decisions, landed commits, open todos).
+2. Rebuild state: branch and worktree, what already landed (`git log`, `git diff` against the base), done vs pending, open decisions, what is waiting on the user. Treat the trail as authoritative for what happened; do not re-run the earlier repro or redo finished work.
 3. Re-check every number and claim you will repeat to the user against the tree now (counts, test results, versions).
 4. For each item waiting on the user, show one decision card: the question, the options, your recommendation, and what it blocks.
-5. Pick the playbook for the next step (via `skill://ulw` for code work) and continue. Before calling anything done, verify inherited claims on the real artifact: a previous self-report is not proof.
+5. Name the resume point and pick the verdict: continue the execution, ship a finished recommendation, ratify or override a prior conclusion, or postmortem a failed run. Pick the playbook for the next step (via `skill://ulw` for code work) and continue. Before calling anything done, verify inherited claims on the real artifact at the current tree: a previous self-report is not proof.
 6. Delete `.omp/resume.md` once its next steps are done.
+7. Reply, in Korean plain text: where the prior session stopped, what you inherited vs redid (ideally nothing redone), the resume point, and the outcome.

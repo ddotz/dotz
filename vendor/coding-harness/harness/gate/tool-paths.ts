@@ -4,30 +4,41 @@ import { basename, dirname, join, resolve } from "node:path";
 import { isRecord, list, shellHome } from "./util.ts";
 
 const EDIT_TOOLS: Record<string, true> = { edit: true, write: true, ast_edit: true };
-const SKILL_REF = /skill:\/\/([A-Za-z0-9][A-Za-z0-9._-]*)|(?:^|\/)skills\/([A-Za-z0-9][A-Za-z0-9._-]*)\/[^/\s]/g;
+const SKILL_REF = /skill:\/\/([A-Za-z0-9][A-Za-z0-9._-]*)(\/[^\s"'`):]*)?|(?:^|\/)skills\/([A-Za-z0-9][A-Za-z0-9._-]*)\/(?=[^/\s])([^\s"'`):]*)/g;
 const SHELL_DIRS = /(?:^|[;&|(\n]\s*)(?:cd|pushd)\s+("[^"]+"|'[^']+'|[^\s;&|)]+)|\bgit\s+-C\s+("[^"]+"|'[^']+'|[^\s;&|)]+)/g;
 const PATH_ARGS = /"([^"]*)"|'([^']*)'|(?<![\w.@+~/}-])((?:\/|~\/|\$HOME\/|\$\{HOME\}\/)[\w@+~./-]*)/g;
 const PATH_START = /^(?:\/|~\/|\$HOME\/|\$\{HOME\}\/)/;
 const HOME_PREFIX = /^(?:~|\$HOME|\$\{HOME\})(?=\/)/;
 
-const skillNames = (text: string): string[] => [...text.matchAll(SKILL_REF)].map(match => match[1] ?? match[2]);
-
-/** The skills a read or bash call reads. A `read` reads the skill named by a skill:// URL or by a path `.../skills/<name>/<file>`; a bash command reads it only through `cat`, `head`, `tail`, `less`, `more`, `bat` or `sed -n` (also under `bash -c`) on such a URL or path, not when it merely mentions it. */
-export function skillsRead(tool: string | undefined, input: Record<string, unknown>): string[] {
-	if (tool === "read") return typeof input.path === "string" ? skillNames(input.path) : [];
-	return tool === "bash" && typeof input.command === "string" ? statements(withoutHeredocs(input.command)).flatMap(skillsReadBy) : [];
+function skillRefs(text: string): string[] {
+	return [...text.matchAll(SKILL_REF)].map(match => {
+		const name = match[1] ?? match[3];
+		const path = `${name}/${match[2]?.slice(1) ?? match[4] ?? ""}`.replace(/\/+$/, "");
+		return path.endsWith("/SKILL.md") ? name : path;
+	});
 }
 
-function skillsReadBy(words: readonly string[]): string[] {
+/** The skill files a read or bash call reads, as `<name>` or `<name>/<sub-path>` (a final `/SKILL.md` is the skill itself). A `read` reads what a skill:// URL or a path `.../skills/<name>/<file>` names, up to a `:` read selector, whitespace, a quote, a backtick or `)`; a bash command reads it only through `cat`, `head`, `tail`, `less`, `more`, `bat` or `sed -n` (also under `bash -c`) on such a URL or path, not when it merely mentions it. */
+export function skillFilesRead(tool: string | undefined, input: Record<string, unknown>): string[] {
+	if (tool === "read") return typeof input.path === "string" ? skillRefs(input.path) : [];
+	return tool === "bash" && typeof input.command === "string" ? statements(withoutHeredocs(input.command)).flatMap(skillFilesReadBy) : [];
+}
+
+/** The skills a read or bash call reads: the first segment of each `skillFilesRead` reference. */
+export function skillsRead(tool: string | undefined, input: Record<string, unknown>): string[] {
+	return skillFilesRead(tool, input).map(ref => ref.split("/", 1)[0]);
+}
+
+function skillFilesReadBy(words: readonly string[]): string[] {
 	const [name, ...args] = commandWords(words);
 	if (name === undefined) return [];
 	const program = basename(name);
 	if (SHELLS.includes(program)) {
 		const script = args.findIndex(arg => /^-[a-z]*c[a-z]*$/.test(arg));
-		return script >= 0 && script + 1 < args.length ? statements(withoutHeredocs(args[script + 1])).flatMap(skillsReadBy) : [];
+		return script >= 0 && script + 1 < args.length ? statements(withoutHeredocs(args[script + 1])).flatMap(skillFilesReadBy) : [];
 	}
 	if (!SKILL_READERS.includes(program) || (program === "sed" && !args.some(arg => /^-[a-z]*n[a-z]*$/.test(arg) || arg === "--quiet" || arg === "--silent"))) return [];
-	return args.flatMap(skillNames);
+	return args.flatMap(skillRefs);
 }
 
 function patchTargets(patch: string): string[] {

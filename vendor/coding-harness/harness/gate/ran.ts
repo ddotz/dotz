@@ -1,5 +1,5 @@
 import { basename } from "node:path";
-import { type Segment, type ShellWord, shellSegments } from "../guard/shell.ts";
+import { type Segment, type ShellWord, shellSegments, WRITING_AGENTS } from "../guard/shell.ts";
 import { WRAPPERS } from "./tool-paths.ts";
 
 const NEVER_EVIDENCE_TOOLS: ReadonlySet<string> = new Set(["read", "grep", "glob", "edit", "ast_edit", "todo", "ask", "web_search", "wait", "task"]);
@@ -138,4 +138,15 @@ export function appliesPatch(tool: string, input: unknown): boolean {
 	if (tool !== "bash") return false;
 	const command = field(input, "command");
 	return typeof command === "string" && bashApplies(command);
+}
+
+/** Whether a tool call hands source to a worker or applies a patch: a `task` call with at least one writing worker (`task` or `sonic`; an item without an agent is `task`, and a `tasks` list that cannot be read counts), or a bash command that runs `git apply`, `git am` or `patch`. */
+export function delegatesWrites(tool: string, input: unknown): boolean {
+	if (tool !== "task") return appliesPatch(tool, input);
+	const tasks = field(input, "tasks");
+	if (!Array.isArray(tasks)) return true;
+	return tasks.some((item) => {
+		const agent = field(item, "agent");
+		return WRITING_AGENTS.has(typeof agent === "string" ? agent : "task");
+	});
 }

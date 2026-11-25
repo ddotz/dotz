@@ -5,8 +5,6 @@ Router for the 24 principle skills. Each entry names the trigger. The leaf is `s
 ## Rules
 
 - Read the leaf in full before you apply a principle. Do not apply one from its trigger line alone.
-- A reply names each principle that shaped a decision by its id `principle-<kebab>` and the choice it changed.
-- Cite only principles whose `skill://principle-*` file you read this session. The done gate checks this.
 - Worker briefs that need a principle name its `skill://` URL and say "read it first". Workers can read hidden skills by URL.
 
 

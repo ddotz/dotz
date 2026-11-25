@@ -7,7 +7,7 @@ The prototype is an instrument, not the build. Speed over polish, no planning, a
 3. Run `skill://prototype`: build throwaway in a scratch folder outside the repo, the lightest stack that shows the difference, no tests or abstractions.
 4. Compare alternatives behind one labeled switcher with the same content in each (`skill://principle-exhaust-the-design-space` made cheap).
 5. Observe on the matching surface: screenshot each variant and drive the interaction (`skill://verify`, `skill://visual-diff` for pixel comparison); for a behavioral or timing decision, print the timings or outputs. The observation is the test.
-6. Present alternatives, tradeoffs, and a recommendation. The output is the decision plus the throwaway artifact, never shippable code. The decision hands to `playbooks/feature.md` (or `skill://architect` for the shape) for the real build, which starts from the decision and copies no prototype code.
+6. Present alternatives, tradeoffs, and a recommendation that favors the user's experience over build convenience (`skill://principle-experience-first`). The output is the decision plus the throwaway artifact, never shippable code. The decision hands to `playbooks/feature.md` (or `skill://architect` for the shape) for the real build, which starts from the decision and copies no prototype code.
 
 When the owner's taste decides rather than an observable fact, show the screenshots and ask one question with the variants as options.
 

@@ -1,8 +1,8 @@
 Build new behavior with the design owned by the main session and the implementation delegated to workers.
 
-1. Trace the affected subsystem and map callers and boundaries with lsp references.
-2. Write the call site or the screen first (how a caller or user will use it), then name the data shape and its organizing structure (`skill://principle-model-the-domain`): a typed model over repeated shape assumptions, a state machine or one discriminated union over scattered booleans, a table or registry over branching. Scrap the sketch when it needs a flag per caller or explaining takes longer than writing.
-3. Run `skill://architect` for parallel design exploration of the shape. A one-way door: `skill://arena` on the design sketch before implementing. A state-heavy flow (retries, payments, sync, multi-step forms): `skill://statechart` first.
+1. Trace the affected subsystem and map callers and boundaries with lsp references. A change to a shared symbol, persisted shape, IPC contract or config: `skill://blast-radius` before the design.
+2. Write the call site or the screen first (how a caller or user will use it), then name the data shape and its organizing structure (`skill://principle-model-the-domain`): a typed model over repeated shape assumptions, a state machine or one discriminated union over scattered booleans, a table or registry over branching. Scrap the sketch when it needs a flag per caller or explaining takes longer than writing. A scope or UX tradeoff: `skill://principle-experience-first`.
+3. Run `skill://architect` for parallel design exploration of the shape. A one-way door: `skill://arena` on the design sketch before implementing. A state-heavy flow (retries, payments, sync, multi-step forms): `skill://statechart` first; a promise like "never charged twice" on HEAVY concurrency work: `skill://formal-verify`.
 4. Write the throughput checkpoint as four todos. A dimension that does not apply keeps its todo as `n/a: <reason>`:
    - Blocking first steps: gates that run before fan-out.
    - Independent workstreams: disjoint files, services, or layers parallelize; shared writes serialize.

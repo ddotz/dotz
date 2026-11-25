@@ -1,32 +1,65 @@
+import { whereis } from "../checkouts/place.ts";
+import { folderWrites, slotCall } from "../checkouts/redirect.ts";
 import { acceptedTextAt } from "./accepted-gate.ts";
 import { sessionFiles } from "./changed.ts";
-import { replyText } from "./citations.ts";
 import { handlerDeadline, until } from "./deadline.ts";
 import { createFeedback } from "./feedback.ts";
-import type { BaseOf, FeedbackBase } from "./feedback.ts";
+import type { BaseOf, FeedbackBase, RunFeedback } from "./feedback.ts";
 import { cwdOf, inDotz, isMain, sessionIdOfFile, sessionKey } from "./host.ts";
 import type { Ctx, GateHandlers, SessionChangeEvent, ToolCallEvent, ToolResultContext } from "./host.ts";
 import { cancelLater, judging, noteRun, reportSettled } from "./later.ts";
 import type { Deliver } from "./later.ts";
+import type { Show } from "./show-report.ts";
 import { inheritMistakes } from "./mistakes.ts";
-import { afterCommand, afterPatch, beforeCommand, beforePatch, markEdited, saveHidden } from "./moves.ts";
+import { afterBash, afterCommand, afterPatch, beforeBash, beforeCommand, beforePatch, markEdited, saveHidden } from "./moves.ts";
 import { PreEditTexts } from "./pre-edit.ts";
-import { appliesPatch, evidenceCall } from "./ran.ts";
+import { appliesPatch, delegatesWrites, evidenceCall } from "./ran.ts";
 import { filesByRepo } from "./repo-files.ts";
 import { askedScriptOf, isProtocolAnswer, LANGUAGE_NAMES, promptScriptOf, scriptOf } from "./report.ts";
-import { beginRun, changesOf, endCall, endRun, isSourceFile, newState, noteEvidence, noteSourceWrite, startCall, track, userScriptOf } from "./session.ts";
+import { beginRun, changesOf, endCall, endRun, forgetRepo, isSourceFile, newState, noteEvidence, noteSourceWrite, startCall, track, userScriptOf } from "./session.ts";
 import type { SessionChange, State } from "./session.ts";
 import { baseRef, headBase } from "./snapshot.ts";
 import { realStages } from "./stages.ts";
 import type { Stages } from "./stages.ts";
 import { onStop } from "./stop.ts";
-import { bashDirs, editedPaths, skillsRead, touchedPaths } from "./tool-paths.ts";
-import { message } from "./util.ts";
+import { forgetReplies, noteReply, toggleSuperseded } from "./superseded.ts";
+import { bashDirs, editedPaths, skillFilesRead, touchedPaths } from "./tool-paths.ts";
+import { isRecord, message, replyText } from "./util.ts";
 
 const SESSION_CHANGES_BUDGET_MS = 20_000;
 const SYSTEM_PROMPT = /^\s*(?:<system|done-gate:|session-restart:|\[peer message from )/;
 const ULW_NUDGE =
-	"done-gate: this run edits source code and has not read skill://ulw. The router (rules/routines.md) requires skill://ulw and the playbook it picks before the first edit for a bug report, a feature, a refactor or a multi-step run; skip it only for a quick question, a config-only edit or a single-line change the user dictated.";
+	"done-gate: this session hands source writes to a worker, applies a patch, or edits more than three source files, and has not read skill://ulw. The router (rules/routines.md) reads skill://ulw and the playbook it picks first for HEAVY work: an auth, security, schema, concurrency or external-integration fact, more than three files, an unattended or multi-step run, or the keyword ulw. Read them now before going on.";
+const ULW_SOURCE_FILES = 3;
+const OVNFS_LAND = /(?:^|[\s;&|(])ovnfs\s+land\b([^;&|\n]*)/g;
+
+function ownSlotLanded(cwd: string, input: Record<string, unknown>): string | undefined {
+	const landings = typeof input.command === "string" ? [...input.command.matchAll(OVNFS_LAND)] : [];
+	if (landings.length === 0) return undefined;
+	const slot = whereis(cwd);
+	if (slot === undefined) return undefined;
+	return landings.every(landing => landing[1].split(/\s+/).includes(slot.name)) ? slot.folder : undefined;
+}
+
+const SLOT_CALLS_KEPT = 1000;
+type SlotCalls = Map<string, Record<string, unknown> | "refused">;
+const slotCallsOf = new WeakMap<State, SlotCalls>();
+
+function slotCallsFor(state: State): SlotCalls {
+	const known = slotCallsOf.get(state);
+	if (known !== undefined) return known;
+	const made: SlotCalls = new Map();
+	slotCallsOf.set(state, made);
+	return made;
+}
+
+function slotInput(tool: string | undefined, input: Record<string, unknown>, ctx: Ctx): { readonly input: Record<string, unknown>; readonly moved: boolean; readonly refused: boolean } {
+	const cwd = cwdOf(ctx);
+	const slotted = slotCall(cwd, tool ?? "", input);
+	const revised = isRecord(slotted.input) ? slotted.input : input;
+	const refused = slotted.placement !== undefined && folderWrites(slotted.placement, tool ?? "", revised, cwd).length > 0;
+	return { input: revised, moved: slotted.moved.length > 0, refused };
+}
 
 async function noteSourceWrites(state: State, paths: readonly string[], calls: number, signal: AbortSignal): Promise<void> {
 	for (const [repo, files] of await filesByRepo(state.dirRepo, paths.filter(isSourceFile), signal)) {
@@ -38,10 +71,11 @@ export interface DoneGate {
 	handlers: GateHandlers;
 	sessionChanges(ctx: Ctx, signal?: AbortSignal): Promise<SessionChange[]>;
 	waive(ctx: Ctx, reason: string): boolean;
+	toggleSuperseded(ctx: Ctx): void;
 }
 
-/** One done gate: the handlers a host registers, the per-session changes the mistake obligations read, and the user's waiver. All state lives in this closure, keyed by session id. `deliver` puts a check's failure that arrives after a stop before the agent; without it, a stop waits for running checks. */
-export function createDoneGate(stages: Stages = realStages, deliver?: Deliver): DoneGate {
+/** One done gate: the handlers a host registers, the per-session changes the mistake obligations read, and the user's waiver. All state lives in this closure, keyed by session id. `deliver` puts a check's failure that arrives after a stop before the agent; without it, a stop waits for running checks. `show` draws a multi-line notice as a block; without it, the notice goes through `ctx.ui.notify`. */
+export function createDoneGate(stages: Stages = realStages, deliver?: Deliver, show?: Show): DoneGate {
 	const sessions = new Map<string, State>();
 	const workers = new Map<string, PreEditTexts>();
 	const feedback = createFeedback(stages);
@@ -58,6 +92,7 @@ export function createDoneGate(stages: Stages = realStages, deliver?: Deliver): 
 		if (state !== undefined) {
 			cancelLater(state);
 			endRun(state);
+			forgetReplies(state);
 		}
 		sessions.delete(id);
 		workers.delete(id);
@@ -138,6 +173,7 @@ export function createDoneGate(stages: Stages = realStages, deliver?: Deliver): 
 			const state = stateOf(ctx);
 			const reply = replyText(event.message?.content);
 			state.reply = reply;
+			noteReply(state, event.message?.timestamp);
 			const wrote = inDotz() || isProtocolAnswer(reply) ? undefined : scriptOf(reply);
 			const user = userScriptOf(state);
 			state.interimLanguage = wrote !== undefined && user !== undefined && wrote !== user ? wrote : undefined;
@@ -149,17 +185,30 @@ export function createDoneGate(stages: Stages = realStages, deliver?: Deliver): 
 				return undefined;
 			}
 			const state = stateOf(ctx);
-			startCall(state, event.toolCallId, event.input ?? {});
+			const slotted = slotInput(event.toolName, event.input ?? {}, ctx);
+			const input = slotted.input;
+			if (event.toolCallId !== undefined && (slotted.moved || slotted.refused)) {
+				const slotCalls = slotCallsFor(state);
+				if (slotCalls.size >= SLOT_CALLS_KEPT) slotCalls.clear();
+				slotCalls.set(event.toolCallId, slotted.refused ? "refused" : input);
+			}
+			if (slotted.refused) return undefined;
+			startCall(state, event.toolCallId, input);
 			let nudge: ToolResultContext | undefined;
 			try {
-				const input = event.input ?? {};
 				const cwd = cwdOf(ctx);
 				const deadline = handlerDeadline();
-				for (const skill of skillsRead(event.toolName, input)) state.skills.add(skill);
+				for (const ref of skillFilesRead(event.toolName, input)) {
+					state.skills.add(ref.split("/", 1)[0]);
+					state.skillFiles.add(ref);
+				}
 				const where = event.toolName === "bash" ? [cwd, ...bashDirs(input, cwd)] : [cwd];
 				const edited = editedPaths(event.toolName, input, cwd);
 				if (state.skills.has("ulw")) state.ulwRead = true;
-				if (!inDotz() && !state.nudgedUlw && !state.ulwRead && edited.some(isSourceFile)) {
+				const delegates = delegatesWrites(event.toolName ?? "", input);
+				if (delegates) state.delegated = true;
+				for (const file of edited) if (isSourceFile(file)) state.sourcesEdited.add(file);
+				if (!inDotz() && !state.nudgedUlw && !state.ulwRead && (delegates || state.sourcesEdited.size > ULW_SOURCE_FILES)) {
 					state.nudgedUlw = true;
 					nudge = { additionalContext: ULW_NUDGE };
 				}
@@ -180,6 +229,7 @@ export function createDoneGate(stages: Stages = realStages, deliver?: Deliver): 
 					nudge = { additionalContext: nudge === undefined ? told : `${nudge.additionalContext}\n${told}` };
 				}
 				await track(state, [{ paths: where, edited: false, bash: event.toolName === "bash" }, { paths: edited, edited: true }], deadline, true);
+				if (event.toolName === "bash") await beforeBash(state, event.toolCallId, where, deadline);
 				await saveHidden(state, edited, deadline);
 				await markEdited(state, edited, deadline);
 				if (appliesPatch(event.toolName ?? "", input)) await beforePatch(state, event.toolCallId, deadline);
@@ -192,29 +242,41 @@ export function createDoneGate(stages: Stages = realStages, deliver?: Deliver): 
 		async tool_result(event, ctx) {
 			if (!isMain(ctx)) return await feedback.after(event, ctx, workerBase(sessionKey(ctx)));
 			const state = stateOf(ctx);
+			const slotCalls = slotCallsFor(state);
+			const slotted = event.toolCallId === undefined ? undefined : slotCalls.get(event.toolCallId);
+			if (event.toolCallId !== undefined) slotCalls.delete(event.toolCallId);
+			if (slotted === "refused") return undefined;
 			const call = endCall(state, event.toolCallId);
-			const input = event.input ?? call?.input ?? {};
+			const input = slotted ?? event.input ?? call?.input ?? {};
 			const calls = call?.calls ?? state.toolCalls;
+			const run: RunFeedback = { state, patched: [], verifies: false };
 			try {
-				if (evidenceCall(event.toolName ?? "", input)) noteEvidence(state, calls);
+				const ran = evidenceCall(event.toolName ?? "", input);
+				if (ran) noteEvidence(state, calls);
 				const deadline = handlerDeadline();
-				await afterPatch(state, event.toolCallId, calls, deadline);
+				run.patched = await afterPatch(state, event.toolCallId, calls, deadline);
 				if (event.toolName === "bash") {
+					await afterBash(state, event.toolCallId, input, event.details, deadline);
 					await afterCommand(state, event.toolCallId, deadline);
+					const landedOn = ownSlotLanded(cwdOf(ctx), input);
+					if (landedOn !== undefined) forgetRepo(state, landedOn);
 				} else {
 					const touched = touchedPaths(event.toolName, input, event.details, cwdOf(ctx));
 					await markEdited(state, touched, deadline);
 					if (event.isError !== true) await noteSourceWrites(state, touched, calls, deadline);
 				}
+				const lastWrite = [...state.sourceWrites.values()].reduce((last, files) => [...files.values()].reduce((most, at) => Math.max(most, at), last), 0);
+				run.verifies = ran && lastWrite > 0 && calls > lastWrite;
 			} catch (error) {
 				state.errors.push(message(error));
 			}
-			return await feedback.after(event, ctx, mainBase(state));
+			return await feedback.after(event, ctx, mainBase(state), run);
 		},
 		async session_stop(event, ctx) {
 			if (!isMain(ctx)) return undefined;
 			const state = stateOf(ctx);
-			return await judging(state, () => onStop(state, ctx, event, stages, deliver));
+			state.worker = ctx.agent?.worker === true;
+			return await judging(state, () => onStop(state, ctx, event, stages, deliver, show));
 		},
 		async session_switch(event, ctx) {
 			leave(event, ctx, event.reason === "fork");
@@ -237,6 +299,9 @@ export function createDoneGate(stages: Stages = realStages, deliver?: Deliver): 
 			if (!isMain(ctx)) return false;
 			stateOf(ctx).waiver = { reason };
 			return true;
+		},
+		toggleSuperseded(ctx) {
+			toggleSuperseded(isMain(ctx) ? sessions.get(sessionKey(ctx)) : undefined, ctx);
 		},
 	};
 }

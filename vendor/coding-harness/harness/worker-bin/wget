@@ -1,0 +1,27 @@
+#!/bin/sh
+. "${0%/*}/../worker-shim.sh"
+
+og_wget_method() {
+	case $1 in
+	[Gg][Ee][Tt] | [Hh][Ee][Aa][Dd]) ;;
+	*) og_block "wget with method $1" ;;
+	esac
+}
+
+_og_take=
+for _og_a in "$@"; do
+	if [ -n "$_og_take" ]; then
+		[ "$_og_take" != method ] || og_wget_method "$_og_a"
+		_og_take=
+		continue
+	fi
+	case $_og_a in
+	--) break ;;
+	--post-d* | --post-f* | --body-d* | --body-f*) og_block "wget with a request body" ;;
+	--method=*) og_wget_method "${_og_a#*=}" ;;
+	--method) _og_take=method ;;
+	--header | --output-document | --output-file | --user-agent | --referer | --execute) _og_take=other ;;
+	esac
+done
+[ -z "$_og_take" ] || [ "$_og_take" = other ] || og_block "wget with an incomplete option"
+og_exec wget "$@"

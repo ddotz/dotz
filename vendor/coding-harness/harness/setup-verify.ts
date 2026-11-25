@@ -2,6 +2,7 @@ import { spawnSync } from "node:child_process";
 import { existsSync, lstatSync, readdirSync, readFileSync, realpathSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
+import { whereis } from "./checkouts/place.ts";
 import { isRecord } from "./gate/util.ts";
 
 /** One place where a machine is not what the repo describes. */
@@ -115,11 +116,24 @@ export function verifySetup(input: { source: string; home: string; ompCheck?: bo
 	return found;
 }
 
+function headOf(repo: string): string | undefined {
+	const run = spawnSync("git", ["-C", repo, "rev-parse", "HEAD"], { encoding: "utf8" });
+	return run.status === 0 ? run.stdout.trim() : undefined;
+}
+
+/** The tree a deployed machine is compared against: `location` itself, except inside a slot whose HEAD differs from its folder's (or that git cannot read), where it is the same place in the slot's folder (the landed tree), so edits that exist only in the slot are not reported. A slot whose HEAD is the folder's compares its own tree, so another session's uncommitted edit in the folder does not count against a deploy made from the slot. */
+export function comparisonSource(location: string): string {
+	const slot = whereis(location);
+	if (slot === undefined) return location;
+	const head = headOf(slot.path);
+	return head !== undefined && head === headOf(slot.folder) ? location : join(slot.folder, slot.subdir);
+}
+
 if (import.meta.main) {
 	const argv = process.argv.slice(2);
 	const homeAt = argv.indexOf("--home");
 	const home = resolve(homeAt === -1 ? homedir() : (argv[homeAt + 1] ?? ""));
-	const source = resolve(import.meta.dir, "..", "..");
+	const source = comparisonSource(resolve(import.meta.dir, "..", ".."));
 	const known = argv.every((arg, i) => arg === "--home" || arg === "--skip-omp-check" || (homeAt !== -1 && i === homeAt + 1));
 	if (!known || !existsSync(join(source, "agent", "skills")) || !existsSync(join(source, "home"))) {
 		console.error("usage: bun agent/harness/setup-verify.ts [--home <dir>] [--skip-omp-check]   (run it from a checkout of the repo, not from ~/.omp/agent)");

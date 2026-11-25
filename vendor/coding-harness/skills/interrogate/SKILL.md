@@ -33,9 +33,9 @@ Rerun every finding's command yourself. Keep a finding only when the output show
 
 ## Output
 
-- **Intent**: the restatement.
-- **Findings**: per verified finding, the command, its output, how it breaks the intent, which seats found it, and a fix plan (the smallest change that makes the command pass, and the file it lands in). Say "no verified findings" when none survive.
-- **Evidence**: every repro path and captured output file in one list, so the caller can rerun them.
-- **Dropped**: per seat, how many findings were dropped and why (not reproduced, not against intent, style only).
+- Intent: the restatement.
+- Findings: per verified finding, the command, its output, how it breaks the intent, which seats found it, and a fix plan (the smallest change that makes the command pass, and the file it lands in). Say "no verified findings" when none survive.
+- Evidence: every repro path and captured output file in one list, so the caller can rerun them.
+- Dropped: per seat, how many findings were dropped and why (not reproduced, not against intent, style only).
 
 Do not fix anything here; fixing is the caller's next step.

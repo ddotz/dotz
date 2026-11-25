@@ -1,4 +1,4 @@
-import { say } from "../notice.ts";
+import { replyLanguage, say } from "../notice.ts";
 import type { Finding } from "./types.ts";
 
 /** A writing system the gate tells languages apart by. */
@@ -33,7 +33,9 @@ const NAMED: readonly (readonly [Script, RegExp])[] = [
 ];
 const ASKS_FOR_TEXT = /\b(?:report|reports|reply|replies|answer|answers|respond|response|summary|summarize|summarise|explain|final)\b/i;
 const NAMES_LANGUAGE = /\bin (korean|japanese|chinese|russian|english)\b(?=\s*(?:[.,;:!?)]|$|please\b))|\b(korean|japanese|chinese|russian|english),? please\b/i;
-const ASKED_IN_KOREAN = /(한국어|일본어|중국어|러시아어|영어)로\s*(?:보고|답|대답|응답|정리|요약|알려)/;
+const ASKED_IN_KOREAN = /(한국어|일본어|중국어|러시아어|영어)로\s*(?:보고|답|대답|응답|정리|요약|알려)/g;
+const NEGATED_AFTER = /^[^.!?\n,]{0,12}?(?:지\s*(?:마|말)|않)/;
+const NEGATED_BEFORE = /\b(?:do\s*n['’]?t|do not|never|not|no)\b/i;
 
 const PROTOCOL_ANSWERS: ReadonlySet<string> = new Set(["ok", "-", "[later]"]);
 
@@ -63,14 +65,23 @@ export function scriptOf(text: string): Script | undefined {
 /** The language a prompt explicitly asks the report or reply in ("Write the summary in Korean.", "영어로 보고해"), from its prose. */
 export function askedScriptOf(text: string): Script | undefined {
 	const prose = proseOf(text);
-	const korean = ASKED_IN_KOREAN.exec(prose)?.[1];
+	const koreanName = [...prose.matchAll(ASKED_IN_KOREAN)].find(match => !NEGATED_AFTER.test(prose.slice(match.index + match[0].length)))?.[1];
 	const english = prose
 		.split(/[.!?\n]+/)
 		.filter(sentence => ASKS_FOR_TEXT.test(sentence))
-		.map(sentence => NAMES_LANGUAGE.exec(sentence))
+		.map(sentence => {
+			const match = NAMES_LANGUAGE.exec(sentence);
+			return match !== null && !NEGATED_BEFORE.test(sentence.slice(0, match.index).split(/[;,]/).pop() ?? "") ? match : null;
+		})
 		.find(match => match !== null);
-	const name = english?.[1] ?? english?.[2] ?? korean;
+	const name = english?.[1] ?? english?.[2] ?? koreanName;
 	return name === undefined ? undefined : NAMED.find(([, pattern]) => pattern.test(name))?.[0];
+}
+
+/** The script `replyLanguage` in machine-rules.json pins every reply to (`ko` is hangul, `en` is latin); undefined when it is not set, and then the prompts decide. */
+export function pinnedScript(): Script | undefined {
+	const pinned = replyLanguage();
+	return pinned === undefined ? undefined : pinned === "ko" ? "hangul" : "latin";
 }
 
 /**

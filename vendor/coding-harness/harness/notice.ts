@@ -11,15 +11,25 @@ export interface NoticeText {
 	ko: string;
 }
 
-/** The language of the notices the user sees: `noticeLanguage` in `<harnessDir()>/machine-rules.json` ("en" or "ko"), read on every call; English when the file or the field is missing or holds anything else. Messages for the agent (refusal reasons, additionalContext) stay English. */
-export function noticeLanguage(): NoticeLanguage {
+function ruleOf(name: "noticeLanguage" | "replyLanguage"): unknown {
 	let parsed: unknown;
 	try {
 		parsed = JSON.parse(readFileSync(join(harnessDir(), "machine-rules.json"), "utf8"));
 	} catch {
-		return "en";
+		return undefined;
 	}
-	return typeof parsed === "object" && parsed !== null && "noticeLanguage" in parsed && parsed.noticeLanguage === "ko" ? "ko" : "en";
+	return typeof parsed === "object" && parsed !== null && name in parsed ? Reflect.get(parsed, name) : undefined;
+}
+
+/** The language of the notices the user sees: `noticeLanguage` in `<harnessDir()>/machine-rules.json` ("en" or "ko"), read on every call; English when the file or the field is missing or holds anything else. Messages for the agent (refusal reasons, additionalContext) stay English. */
+export function noticeLanguage(): NoticeLanguage {
+	return ruleOf("noticeLanguage") === "ko" ? "ko" : "en";
+}
+
+/** The language every reply of this machine must be in: `replyLanguage` in `<harnessDir()>/machine-rules.json` ("en" or "ko"), read on every call; undefined (the prompts decide) when the file or the field is missing or holds anything else. */
+export function replyLanguage(): NoticeLanguage | undefined {
+	const value = ruleOf("replyLanguage");
+	return value === "ko" || value === "en" ? value : undefined;
 }
 
 /** The text of `notice` in the machine's notice language. */

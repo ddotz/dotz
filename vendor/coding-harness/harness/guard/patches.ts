@@ -3,6 +3,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, join, resolve } from "node:path";
 import { debug } from "./debug.ts";
+import { commandHead, shellSegments, type Segment } from "./shell.ts";
 
 const GIT_APPLY = String.raw`\bgit(?:\s+-C\s+(?:"[^"]*"|'[^']*'|[^\s;&|)]+))*\s+apply\b`;
 const GIT_APPLY_RE = new RegExp(GIT_APPLY);
@@ -16,10 +17,40 @@ export function appliedPatchNames(command: string): string[] {
 	return [...command.matchAll(GIT_APPLY_NAMED)].map(match => basename(match[1].replace(/^['"]|['"]$/g, "")));
 }
 
-/** Patch files a `git apply` in `command` would apply (--stat and --check runs excluded), as written in the command. */
+const GIT_VALUE_OPTIONS: Record<string, true> = { "-C": true, "-c": true, "--git-dir": true, "--work-tree": true, "--namespace": true };
+const NON_APPLYING = /^--(?:stat|check|reverse|summary|numstat)$|^-R$/;
+const SHELLS: Record<string, true> = { bash: true, sh: true, zsh: true, dash: true, ksh: true };
+const MAX_NESTING = 4;
+
+function gitApplyOperands(words: Segment["words"]): string[] | undefined {
+	const head = commandHead(words);
+	if (head?.name !== "git") return undefined;
+	let at = 0;
+	while (at < head.args.length && head.args[at].text.startsWith("-")) at += GIT_VALUE_OPTIONS[head.args[at].text] === true ? 2 : 1;
+	if (head.args[at]?.text !== "apply") return undefined;
+	const operands = head.args.slice(at + 1).map(word => word.text);
+	return operands.some(text => NON_APPLYING.test(text)) ? [] : operands.filter(text => text.endsWith(".patch"));
+}
+
+function patchesIn(command: string, depth: number): string[] {
+	if (depth > MAX_NESTING) return [];
+	const found: string[] = [];
+	for (const segment of shellSegments(command)) {
+		found.push(...(gitApplyOperands(segment.words) ?? []));
+		const head = commandHead(segment.words);
+		if (head && SHELLS[head.name] === true) {
+			const flag = head.args.findIndex(arg => /^-[A-Za-z]*c[A-Za-z]*$/.test(arg.text));
+			const code = flag < 0 ? undefined : head.args.slice(flag + 1).find(arg => !arg.text.startsWith("-"))?.text;
+			if (code !== undefined) found.push(...patchesIn(code, depth + 1));
+		}
+		for (const word of [...segment.words, ...segment.redirects]) for (const sub of word.subs) found.push(...patchesIn(sub, depth + 1));
+	}
+	return found;
+}
+
+/** Every `.patch` operand of each `git apply` the shell would run in `command`, as written; --stat, --check, --reverse (-R), --summary and --numstat runs apply nothing, and a mention inside another command's quoted argument is no apply. */
 export function patchesApplying(command: string): string[] {
-	const applying = new RegExp(`${GIT_APPLY}(?![^|;&]*--(?:stat|check))[^|;&]*?(\\S+\\.patch)`, "g");
-	return [...command.matchAll(applying)].map(match => match[1]);
+	return patchesIn(command, 0);
 }
 
 /** One key per patch file however it was named: quotes, a read selector (x.patch:1-200), ~/ or a relative path (resolved against `base`). */

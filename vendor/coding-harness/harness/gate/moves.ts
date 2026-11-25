@@ -1,13 +1,82 @@
+import { join } from "node:path";
 import { until } from "./deadline.ts";
 import { filesByRepo } from "./repo-files.ts";
 import { existingDir, isSourceFile, noteSourceWrite, repoOfDir } from "./session.ts";
-import type { PendingMove, PendingPatch, State } from "./session.ts";
-import { committedFiles, hashFile, mapLimit, takeSnapshot } from "./snapshot.ts";
+import type { Baseline, PendingMove, PendingPatch, State } from "./session.ts";
+import { changedFiles, committedFiles, hashFile, mapLimit, takeSnapshot } from "./snapshot.ts";
 import type { Snapshot } from "./snapshot.ts";
 import { movesBase, movesHistory } from "./tool-paths.ts";
-import { message } from "./util.ts";
+import { isRecord, message } from "./util.ts";
 
 const HASH_CONCURRENCY = 8;
+
+async function reposOf(state: State, dirs: readonly string[], signal: AbortSignal): Promise<Set<string>> {
+	const repos = new Set<string>();
+	for (const dir of dirs) {
+		const found = existingDir(dir);
+		const repo = found === undefined ? undefined : await repoOfDir(state.dirRepo, found, signal);
+		if (repo !== undefined) repos.add(repo);
+	}
+	return repos;
+}
+
+function countAll(state: State, baseline: Baseline): void {
+	baseline.blind = true;
+	state.repos.add(baseline.repo);
+}
+
+/**
+ * Before a bash call runs: a snapshot of every repo of `dirs` that the run reached only as a bash command's directory and has a
+ * usable baseline of, kept under the call until `afterBash`. The first call to reach such a repo uses its baseline, which that
+ * call's own `track` took. A repo whose snapshot fails or does not finish by `signal` counts every change from then on.
+ */
+export async function beforeBash(state: State, callId: string | undefined, dirs: readonly string[], signal: AbortSignal): Promise<void> {
+	const repos = await reposOf(state, dirs, signal);
+	await Promise.all(
+		[...repos].map(async repo => {
+			const baseline = state.baselines.get(repo);
+			if (baseline === undefined || baseline.direct || baseline.failure !== undefined) return;
+			try {
+				const settled = await until(baseline.result, signal);
+				if (settled === undefined) return countAll(state, baseline);
+				if (!settled.value.ok) return;
+				const before = baseline.probed ? await takeSnapshot(repo, signal) : settled.value.snapshot;
+				baseline.probed = true;
+				baseline.probes.set(callId ?? "", before);
+			} catch {
+				countAll(state, baseline);
+			}
+		}),
+	);
+}
+
+/**
+ * After a bash call: in each repo `beforeBash` took, the files that differ from its snapshot, committed by the call or changed in
+ * the working tree, are the call's writes; a repo where it wrote anything is seen by later runs. A call that goes on after its
+ * result (a background job, `details.async.state` "running", or a named service) or whose second snapshot fails makes its repos
+ * count every change from then on.
+ */
+export async function afterBash(state: State, callId: string | undefined, input: Record<string, unknown>, details: unknown, signal: AbortSignal): Promise<void> {
+	const id = callId ?? "";
+	const goesOn = (isRecord(details) && isRecord(details.async) && details.async.state === "running") || (typeof input.name === "string" && input.name.trim() !== "");
+	await Promise.all(
+		[...state.baselines.values()].map(async baseline => {
+			const before = baseline.probes.get(id);
+			if (before === undefined) return;
+			try {
+				if (goesOn) return countAll(state, baseline);
+				const after = await takeSnapshot(baseline.repo, signal);
+				const files = changedFiles(before, after, await committedFiles(baseline.repo, before.head, after.head, signal));
+				for (const file of files) baseline.bashWrote.add(file);
+				if (files.length > 0) state.repos.add(baseline.repo);
+			} catch {
+				countAll(state, baseline);
+			} finally {
+				baseline.probes.delete(id);
+			}
+		}),
+	);
+}
 
 /** Notes the files of `paths` as changed by the session and as written by a tool, in each repo the run has a baseline of; a directory, which an ast_edit may name, is not a file and is skipped. */
 export async function markEdited(state: State, paths: readonly string[], signal: AbortSignal): Promise<void> {
@@ -47,12 +116,7 @@ export async function beforeCommand(state: State, callId: string | undefined, co
 	const alone = movesBase(command);
 	if (!alone && !movesHistory(command)) return;
 	const startedAt = Date.now();
-	const repos = new Set<string>();
-	for (const dir of dirs) {
-		const found = existingDir(dir);
-		const repo = found === undefined ? undefined : await repoOfDir(state.dirRepo, found, signal);
-		if (repo !== undefined) repos.add(repo);
-	}
+	const repos = await reposOf(state, dirs, signal);
 	const taken = await Promise.all(
 		[...repos].map(async (repo): Promise<PendingMove | undefined> => {
 			const baseline = state.baselines.get(repo);
@@ -133,20 +197,25 @@ async function changedSince(repo: string, before: Snapshot, signal: AbortSignal)
 /**
  * The second snapshot of the call that `beforePatch` preceded: every source file whose content differs from what the first snapshot
  * saw, whether it was created, changed or deleted, in the working tree or by a commit the call made, is a write of the call, at the
- * call's tool-call count `calls`, also when an edit tool wrote the file before. A call that changes nothing records nothing, and
- * neither does a repo whose snapshot fails or does not finish by `signal`: that failure goes to `state.errors`.
+ * call's tool-call count `calls`, also when an edit tool wrote the file before; the absolute paths of those files are returned. A
+ * call that changes nothing records nothing, and neither does a repo whose snapshot fails or does not finish by `signal`: that
+ * failure goes to `state.errors`.
  */
-export async function afterPatch(state: State, callId: string | undefined, calls: number, signal: AbortSignal): Promise<void> {
+export async function afterPatch(state: State, callId: string | undefined, calls: number, signal: AbortSignal): Promise<string[]> {
 	const pending = state.patches.get(callId ?? "");
-	if (pending === undefined) return;
+	if (pending === undefined) return [];
 	state.patches.delete(callId ?? "");
-	await Promise.all(
+	const written = await Promise.all(
 		pending.map(async ({ repo, before }) => {
 			try {
-				for (const file of await changedSince(repo, before, signal)) noteSourceWrite(state, repo, file, calls);
+				const files = await changedSince(repo, before, signal);
+				for (const file of files) noteSourceWrite(state, repo, file, calls);
+				return files.map(file => join(repo, file));
 			} catch (error) {
 				state.errors.push(`could not take ${repo} after a call that applies a patch, so the source files it changed there are not counted as written: ${message(error)}`);
+				return [];
 			}
 		}),
 	);
+	return written.flat();
 }
