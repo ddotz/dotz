@@ -65,19 +65,50 @@ export function earlierMailTo({ store, mail, now, to, commentId, mailId }: { sto
 	return undefined;
 }
 
-export async function reviseMail({ store, mail, now, posting, emit, draft, mailId, change }: { store: Store; mail: MailLink; now: () => number; posting: (commentId: string) => boolean; emit: (e: Record<string, unknown>) => void; draft: Draft; mailId: string; change: string }): Promise<{ ok: true; draft: Draft; lesson?: Lesson } | { ok: false; reason: string }> {
-	const m = await mail.revise(mailId, change).catch((e): { ok: false; reason: string } => ({ ok: false, reason: e instanceof Error && e.message ? clip(e.message, 160) : "고친 메일을 만들지 못했어요" }));
+const touchesMail = (change: string): boolean => /메일|mail|첨부|attach|파일|file/i.test(change);
+// What that mail's revise is told: the owner's words as written, which part of them is its own, and the reply as now rewritten (for 메일에도 반영해).
+const mailAskOf = (change: string, replyText: string): string =>
+	`${change}\n\n(댓글 답글과 함께 고쳐 달라는 말이에요. 이 메일의 본문과 첨부 파일에 해당하는 부분만 반영하세요. 고친 댓글 답글: "${replyText}")`;
+
+// The mail is revised on whichever pending draft of the comment carries it when the revise ends: a reply revised meanwhile moved it to its new draft.
+// `ask`: what the mail's revise is told when it is not the owner's `change` itself.
+export async function reviseMail({ store, mail, now, posting, emit, draft, mailId, change, ask }: { store: Store; mail: MailLink; now: () => number; posting: (commentId: string) => boolean; emit: (e: Record<string, unknown>) => void; draft: Draft; mailId: string; change: string; ask?: string }): Promise<{ ok: true; draft: Draft; lesson?: Lesson } | { ok: false; reason: string }> {
+	const m = await mail.revise(mailId, ask ?? change).catch((e): { ok: false; reason: string } => ({ ok: false, reason: e instanceof Error && e.message ? clip(e.message, 160) : "고친 메일을 만들지 못했어요" }));
 	if (!m.ok) return { ok: false, reason: m.reason };
-	const cur = store.drafts().find(x => x.code === draft.code && x.status === "pending");
+	const cur = store.drafts().find(x => x.commentId === draft.commentId && x.status === "pending" && x.mail === mailId);
 	const busy = posting(draft.commentId);
-	if (busy || !cur || cur.mail !== mailId) {
+	if (busy || !cur) {
 		if (m.id !== mailId) mail.drop(m.id);
-		return { ok: false, reason: busy ? POSTING_REASON : !cur ? "이 초안은 이미 처리됐어요" : MAIL_MOVED_REASON };
+		const same = store.drafts().find(x => x.code === draft.code && x.status === "pending");
+		return { ok: false, reason: busy ? POSTING_REASON : !same ? "이 초안은 이미 처리됐어요" : MAIL_MOVED_REASON };
 	}
 	const next: Draft = { ...cur, mail: m.id, mailAt: now(), changes: [...cur.changes, `메일: ${change}`] };
 	store.putDraft(next);
 	emit({ kind: "comment_draft", source: draft.source, thread: draft.thread });
 	return { ok: true, draft: next, ...(m.lesson ? { lesson: m.lesson } : {}) };
+}
+
+type MailCtx = { store: Store; mail: MailLink; now: () => number; posting: (commentId: string) => boolean; emit: (e: Record<string, unknown>) => void; busy: Map<string, number> };
+// While a mail is revised, its comment counts in `busy` (engine.ts mailRevising).
+export async function reviseRidingMail({ busy, ...ctx }: MailCtx, d: Draft, mailId: string, change: string, ask?: string): ReturnType<typeof reviseMail> {
+	busy.set(d.commentId, (busy.get(d.commentId) ?? 0) + 1);
+	return reviseMail({ ...ctx, draft: d, mailId, change, ...(ask ? { ask } : {}) }).finally(() => {
+		const left = (busy.get(d.commentId) ?? 1) - 1;
+		if (left) busy.set(d.commentId, left);
+		else busy.delete(d.commentId);
+	});
+}
+
+// A plain 고치기 (no part named) of a card that carries a mail, once the reply is rewritten: words about the mail or its files revise that mail too,
+// told the new reply; a comment-only change leaves it as it is. A mail that could not be revised is a "확인:" line on the card.
+export async function mailFollowsReply(ctx: MailCtx, draft: Draft, change: string): Promise<Draft> {
+	if (!draft.mail || !touchesMail(change)) return draft;
+	const m = await reviseRidingMail(ctx, draft, draft.mail, change, mailAskOf(change, draft.text));
+	if (m.ok) return m.draft;
+	const now = ctx.store.drafts().find(x => x.code === draft.code) ?? draft;
+	const next = { ...now, notes: [...now.notes, `확인: 메일은 고치지 못했어요 - ${m.reason}`] };
+	ctx.store.putDraft(next);
+	return next;
 }
 
 export function mailJson(d: Draft, view: (d: Draft) => MailView | undefined): { mail?: { id: string; to: string; subject?: string; body: string; attachments: { name: string; size?: string }[]; notes?: string[] } } {
@@ -149,14 +180,17 @@ export function createDraftRun({ deps, store, ownerOf, styleOf, contextOf, code,
 		if (r.action === "skip" && !seed) return { ok: false, reason: r.reason || "답할 내용이 없어서 초안을 만들지 않았어요", permanent: true };
 		if (r.action === "draft" && !r.draft.body.trim() && !seed) return { ok: false, reason: "모델이 빈 답글을 돌려줘서 초안을 만들지 않았어요" };
 		const measured: Tokens = tokens.reported ? { in: tokens.in, out: tokens.out } : { in: estimate(tokens.chars), out: estimate(tokens.outChars), estimated: true };
-		// Only a mail that still waits moves to the revised draft: one already stale or dropped could only fail after the reply is posted.
-		const mail = previous && mailView(previous) ? previous.mail : undefined;
-		const notes = [...(r.action === "draft" ? [...r.warnings.map(w => `확인: ${w}`), ...r.questions.map(q => `정해 주세요: ${q}`)] : []), ...(seed ? [SEEDED_NOTE] : []), ...matched, ...(mail ? (previous?.notes ?? []).filter(n => n.startsWith(MAIL_SAME_ADDRESS_NOTE)) : [])];
 		const body = seed ? seed.reply : r.action === "draft" ? r.draft.body : "";
 		if (posting(c.id)) return { ok: false, reason: POSTING_REASON };
-		if (previous && store.drafts().find(d => d.code === previous.code)?.status !== "pending") return { ok: false, reason: "이 초안은 이미 처리됐어요" };
+		const stored = previous && store.drafts().find(d => d.code === previous.code);
+		if (previous && stored?.status !== "pending") return { ok: false, reason: "이 초안은 이미 처리됐어요" };
+		// Only a mail that still waits moves to the revised draft: one already stale or dropped could only fail after the reply is posted. It is the
+		// mail the draft carries now (a mail revised while the reply was rewritten has a new id); a `previous` given without its mail keeps none.
+		const mail = previous?.mail && stored && mailView(stored) ? stored.mail : undefined;
+		const mailAt = mail ? stored?.mailAt : undefined;
+		const notes = [...(r.action === "draft" ? [...r.warnings.map(w => `확인: ${w}`), ...r.questions.map(q => `정해 주세요: ${q}`)] : []), ...(seed ? [SEEDED_NOTE] : []), ...matched, ...(mail ? (previous?.notes ?? []).filter(n => n.startsWith(MAIL_SAME_ADDRESS_NOTE)) : [])];
 		for (const d of store.drafts()) if (d.commentId === c.id && d.status === "pending") store.setDraftStatus(d.code, "stale");
-		const draft: Draft = { code: code(), commentId: c.id, source: src.key, thread: c.thread, text: body, status: "pending", created: deps.now(), changes: previous ? [...previous.changes, change ?? ""] : [], clean: !notes.length && !mail, notes, tokens: measured, ...(mail ? { mail, ...(previous?.mailAt ? { mailAt: previous.mailAt } : {}) } : {}), ...(mailThread ? { mailThread } : {}), ...(previous ? { replaces: previous.code } : {}) };
+		const draft: Draft = { code: code(), commentId: c.id, source: src.key, thread: c.thread, text: body, status: "pending", created: deps.now(), changes: previous ? [...previous.changes, change ?? ""] : [], clean: !notes.length && !mail, notes, tokens: measured, ...(mail ? { mail, ...(mailAt ? { mailAt } : {}) } : {}), ...(mailThread ? { mailThread } : {}), ...(previous ? { replaces: previous.code } : {}) };
 		store.putDraft(draft);
 		emit({ kind: "comment_draft", source: src.key, thread: c.thread });
 		// Learned only once the new draft is stored (design 3.1); `learn: false` hands the lesson to the caller (hub/reply-actions.ts) instead.

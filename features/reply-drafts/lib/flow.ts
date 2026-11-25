@@ -480,8 +480,7 @@ export function askText(draft: DraftRec, warnings: string[], headline = draft.co
 	return [`[ask] ${headline}`, ...briefLines(rec.brief), ...(notes ? [`-# ${notes}`] : []), block].join("\n");
 }
 
-// The 첨부 파일 폴더 of the mail app instance that owns the mail `ref` (app setting attach_folder), or undefined. A new mail (compose, e.g. the one riding
-// on a comment reply) is claimed by no instance filter: the instance that wrote it is its own app, as composing read the folder (hub/mail-cli.ts).
+// The 첨부 파일 폴더 of the mail app instance that owns the mail `ref` (app setting attach_folder), or undefined. A new mail (compose, e.g. one riding on a comment reply) is claimed by no instance filter: the instance that wrote it is its own app, as composing read the folder (hub/mail-cli.ts).
 export async function attachFolder(at: string | Pick<DraftRec, "ref" | "app" | "compose">): Promise<string | undefined> {
 	if (typeof at !== "string" && at.compose) return loadSettings().attachFolders?.[at.app];
 	const ref = typeof at === "string" ? at : at.ref;

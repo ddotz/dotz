@@ -5,7 +5,7 @@ import { ownerLint, type ReplyStyle } from "../reply-draft.ts";
 import type { Lesson, Part } from "../reply-types.ts";
 import { absorbComments, mergeIgTwins } from "./absorb.ts";
 import { failAuto, leaveQueue } from "./auto-queue.ts";
-import { createDraftRun, earlierMailTo, type EditLessons, learnSentParts, MAIL_SAME_ADDRESS_NOTE, mailJson, POSTING_REASON, reviseMail, tokenStats } from "./draft-run.ts";
+import { createDraftRun, earlierMailTo, type EditLessons, learnSentParts, MAIL_SAME_ADDRESS_NOTE, mailFollowsReply, mailJson, POSTING_REASON, reviseRidingMail, tokenStats } from "./draft-run.ts";
 import { createSendRecovery } from "./recover.ts";
 import { replyPosted } from "./posted.ts";
 import { type Comment, type CommentAdapter, dispatchReply, type GateResult, isUntitled, type Post, ruleAllows, type SourceConfig, type SourceKind, threadKey, watches } from "./contract.ts";
@@ -631,8 +631,10 @@ export function createEngine(deps: EngineDeps) {
 		});
 	}
 
+	const mailCtx = (mail: MailLink) => ({ store, mail, now: deps.now, posting, emit, busy: revisingMail });
 	// `part` "mail" changes only the mail of the card (the reply stays, same code); "reply" (default) rewrites the reply and the mail stays attached,
-	// or with `noMail` is dropped once the new reply draft exists, so the card is the reply alone.
+	// or with `noMail` is dropped once the new reply draft exists, so the card is the reply alone. A "reply" change about the mail or its files
+	// revises the mail too (draft-run.ts mailFollowsReply), so the owner's one 고치기 reaches both parts.
 	async function revise(draftCode: string, change: string, part: "reply" | "mail" = "reply", noMail = false, opts: { learn?: false } = {}): Promise<Step & { lesson?: Lesson }> {
 		const d = store.drafts().find(x => x.code === draftCode);
 		const c = d && find(d.commentId);
@@ -644,21 +646,18 @@ export function createEngine(deps: EngineDeps) {
 		if (!change.trim()) return { ok: false, reason: "무엇을 고칠지 적어 주세요" };
 		if (part === "mail") {
 			if (!d.mail || !deps.mail) return { ok: false, reason: "이 초안에는 함께 보낼 메일이 없어요" };
-			revisingMail.set(d.commentId, (revisingMail.get(d.commentId) ?? 0) + 1);
-			const r = await reviseMail({ store, mail: deps.mail, now: deps.now, posting, emit, draft: d, mailId: d.mail, change: change.trim() }).finally(() => {
-				const left = (revisingMail.get(d.commentId) ?? 1) - 1;
-				if (left) revisingMail.set(d.commentId, left);
-				else revisingMail.delete(d.commentId);
-			});
+			const r = await reviseRidingMail(mailCtx(deps.mail), d, d.mail, change.trim());
 			if (!r.ok) return r;
 			if (r.lesson && opts.learn !== false) deps.learn?.(r.lesson);
 			return { ok: true, draft: paired(r.draft.code) ?? r.draft, ...(r.lesson ? { lesson: r.lesson } : {}) };
 		}
 		const { mail: _mail, mailAt: _mailAt, ...replyOnly } = d;
 		return run(c, src, noMail ? replyOnly : d, change.trim(), opts)
-			.then(step => {
+			.then(async step => {
 				if (step.ok && noMail && d.mail) deps.mail?.drop(d.mail);
-				return step.ok ? { ...step, draft: paired(step.draft.code, !!d.mail || d.notes.some(n => PAIR_NOTE.test(n))) ?? step.draft } : step;
+				if (!step.ok) return step;
+				const draft = !noMail && deps.mail ? await mailFollowsReply(mailCtx(deps.mail), step.draft, change.trim()) : step.draft;
+				return { ...step, draft: paired(draft.code, !!d.mail || d.notes.some(n => PAIR_NOTE.test(n))) ?? draft };
 			})
 			.catch(e => ({ ok: false as const, reason: e instanceof Error && e.message ? clip(e.message, 160) : "고친 초안을 만들지 못했어요" }));
 	}

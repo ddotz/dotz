@@ -1,0 +1,135 @@
+// 고치기 on a comment card that carries a mail: the mail and its files follow a plain revise that talks about them, and the mail stays on the
+// card when its own revise runs at the same time as the reply's. Everything is injected (adapter, model, mail link): nothing is posted or sent.
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { type CommentAdapter, commentId, type SourceConfig } from "./contract.ts";
+import { createEngine, type MailLink, type MailView } from "./engine.ts";
+
+const NOW = Date.parse("2026-11-25T00:00:00.000Z");
+const source: SourceConfig = { key: "youtube", kind: "youtube", label: "유튜브 댓글", watch: ["*"], autoDraft: false };
+const MAIL = { app: "mail", to: "fan@example.com", subject: "자료 보내드립니다", body: "안녕하세요.\n요청하신 자료입니다.", attach: ["/files/파일A.mp3", "/files/파일C.pdf"] };
+const reply = (body: string) => `\`\`\`json\n${JSON.stringify({ action: "draft", reason: "asks", to: "", body, questions: [] })}\n\`\`\``;
+const FILES = ["파일A.mp3", "파일B.mp3", "파일C.pdf"];
+
+let dir: string;
+beforeEach(() => {
+	dir = mkdtempSync(join(tmpdir(), "riding-mail-"));
+});
+afterEach(() => rmSync(dir, { recursive: true, force: true }));
+
+// Like the real mail link: a revise makes a new draft and the old one is no longer pending (its view is gone). The files become the ones the
+// change names ("<name> 빼" removes it), and `asked` keeps what each revise was told. `hold` parks a revise until released.
+function fakeMail() {
+	const drafts = new Map<string, MailView>();
+	const asked: string[] = [];
+	let n = 0;
+	let hold: Promise<void> | undefined;
+	const link: MailLink = {
+		compose: async spec => {
+			const id = `M${++n}`;
+			drafts.set(id, { id, to: spec.to, subject: spec.subject, body: spec.body, attachments: (spec.attach ?? []).map(p => ({ name: p.split("/").pop()! })) });
+			return { ok: true, id };
+		},
+		send: async () => ({ ok: true, text: "메일을 보냈어요" }),
+		drop: id => void drafts.delete(id),
+		revise: async (id, change) => {
+			asked.push(change);
+			await hold;
+			const v = drafts.get(id);
+			if (!v) return { ok: false, reason: "gone" };
+			const named = FILES.filter(f => change.includes(f.split(".")[0]!));
+			const removed = named.filter(f => new RegExp(`${f.split(".")[0]}\\S*\\s*(빼|없애)`).test(change));
+			const kept = v.attachments.filter(f => !removed.includes(f.name));
+			const attachments = [...kept, ...named.filter(f => !removed.includes(f) && !kept.some(k => k.name === f)).map(name => ({ name }))];
+			const next = `M${++n}`;
+			drafts.delete(id);
+			drafts.set(next, { ...v, id: next, body: `${v.body}\n(${change})`, attachments });
+			return { ok: true, id: next };
+		},
+		view: id => drafts.get(id),
+	};
+	return { link, asked, park: () => { let go!: () => void; hold = new Promise(r => (go = r)); return () => { hold = undefined; go(); }; } };
+}
+
+async function setup() {
+	writeFileSync(join(dir, "config.json"), JSON.stringify({ enabled: true, sources: { youtube: source } }));
+	const adapter: CommentAdapter = {
+		kind: "youtube",
+		list: async () => ({ comments: [{ native: "c1", thread: "p1", author: "팬", text: "자료 받을 수 있나요? fan@example.com", postTitle: "Post one", at: NOW - 1000 }], cursor: "1" }),
+		reply: async () => ({ ok: true, ref: "r1" }),
+		posts: async () => [],
+	};
+	const mail = fakeMail();
+	let modelHold: Promise<void> | undefined;
+	const engine = createEngine({
+		dir,
+		now: () => NOW,
+		collector: "mac-a",
+		adapters: { youtube: adapter },
+		model: async () => (await modelHold, { text: reply("전체 버전을 먼저 보내드려요.") }),
+		broadcast: () => {},
+		sent: () => {},
+		mail: mail.link,
+	});
+	await engine.collect({ force: true });
+	const s = await engine.addDraft(commentId("youtube", "c1"), "자료는 메일로 보내 드릴게요", undefined, MAIL);
+	if (!s.ok) throw new Error(s.reason);
+	const parkModel = () => { let go!: () => void; modelHold = new Promise(r => (go = r)); return () => { modelHold = undefined; go(); }; };
+	return { engine, mail, draft: s.draft, parkModel };
+}
+const names = (v: MailView | undefined) => v?.attachments.map(f => f.name);
+
+describe("a plain 고치기 on a card with a riding mail", () => {
+	test("words about the files or the mail change the mail too: its files are swapped and the new reply is mirrored when asked", async () => {
+		const t = await setup();
+		const r = await t.engine.revise(t.draft.code, "첨부 두 개 다 이상함. 파일C 빼고 파일B를 첨부해야지. 방금 고친 답글 내용을 메일에도 반영해", "reply");
+		if (!r.ok) throw new Error(r.reason);
+		expect(r.draft.text).toBe("전체 버전을 먼저 보내드려요.");
+		expect(r.draft.mail).toBe("M2");
+		expect(names(t.engine.mailView(r.draft))).toEqual(["파일A.mp3", "파일B.mp3"]);
+		expect(t.mail.asked).toHaveLength(1);
+		expect(t.mail.asked[0]).toContain("전체 버전을 먼저 보내드려요.");
+		expect(r.draft.changes.at(-1)).toContain("파일B");
+	});
+
+	test("a change about the reply alone leaves the mail as it is", async () => {
+		const t = await setup();
+		const r = await t.engine.revise(t.draft.code, "더 짧게", "reply");
+		if (!r.ok) throw new Error(r.reason);
+		expect(r.draft.mail).toBe("M1");
+		expect(t.mail.asked).toEqual([]);
+		expect(names(t.engine.mailView(r.draft))).toEqual(["파일A.mp3", "파일C.pdf"]);
+	});
+});
+
+describe("a reply revise and a mail revise of the same card at once", () => {
+	test("the mail revised while the reply is rewritten stays on the new card", async () => {
+		const t = await setup();
+		const go = t.parkModel();
+		const replying = t.engine.revise(t.draft.code, "더 짧게", "reply");
+		const m = await t.engine.revise(t.draft.code, "파일B를 첨부해", "mail");
+		if (!m.ok) throw new Error(m.reason);
+		go();
+		const r = await replying;
+		if (!r.ok) throw new Error(r.reason);
+		expect(r.draft.mail).toBe("M2");
+		expect(names(t.engine.mailView(r.draft))).toEqual(["파일A.mp3", "파일C.pdf", "파일B.mp3"]);
+	});
+
+	test("the reply rewritten while the mail is revised: the revised mail moves to the new card", async () => {
+		const t = await setup();
+		const go = t.mail.park();
+		const mailing = t.engine.revise(t.draft.code, "파일B를 첨부해", "mail");
+		const r = await t.engine.revise(t.draft.code, "더 짧게", "reply");
+		if (!r.ok) throw new Error(r.reason);
+		go();
+		const m = await mailing;
+		if (!m.ok) throw new Error(m.reason);
+		const now = t.engine.store.drafts().find(x => x.status === "pending")!;
+		expect(now.code).toBe(r.draft.code);
+		expect(now.mail).toBe("M2");
+		expect(names(t.engine.mailView(now))).toEqual(["파일A.mp3", "파일C.pdf", "파일B.mp3"]);
+	});
+});
