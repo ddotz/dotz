@@ -38,23 +38,25 @@ test("a stronger-model proposal never offers what the guards keep for the owner:
 	expect(ownerOnlyModel("acme/vendor-lite-2:high", rules)).toBeUndefined();
 });
 
-test("with the guard off nothing is expensive, and the lane launch route does not refuse a Fable model", async () => {
+test("with the guard off nothing is expensive, and the lane launch route refuses a Fable model only to an agent", async () => {
 	setGuard({ ask_before_expensive: false, expensive_models: ["fable"] });
 	expect(isExpensive(FABLE)).toBe(false);
 	expect(isExpensive("anthropic/claude-opus-5-5:max")).toBe(false);
 	setGuard(undefined);
 	expect(isExpensive(FABLE)).toBe(false);
-	const launch = async (model: string) => {
+	const launch = async (model: string, agent: boolean) => {
 		const url = new URL("http://hub/api/lanes");
-		const res = await routeLanes(new Request(url, { method: "POST", body: JSON.stringify({ name: "dear-check", model, brief: "x" }), headers: { "content-type": "application/json" } }), url, ["api", "lanes"]);
+		const res = await routeLanes(new Request(url, { method: "POST", body: JSON.stringify({ name: "dear-check", model, brief: "x" }), headers: { "content-type": "application/json" } }), url, ["api", "lanes"], agent);
 		return { status: res!.status, error: String(((await res!.json()) as { error?: string }).error) };
 	};
-	const off = await launch(FABLE);
+	const off = await launch(FABLE, true);
 	expect(off.error).not.toContain("fable");
 	setGuard(ON);
-	const on = await launch(FABLE);
+	const on = await launch(FABLE, true);
 	expect(on.status).toBe(409);
 	expect(on.error).toContain("fable");
+	expect((await launch(FABLE, false)).error).not.toContain("fable");
+	expect((await launch("anthropic/claude-opus-5-5:max", false)).error).not.toContain("max");
 });
 
 test("with the guard on, the configured list decides: a model substring and a :level entry", () => {

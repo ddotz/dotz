@@ -231,7 +231,7 @@ export async function routeLanes(req: Request, url: URL, parts: string[], agent 
 				if (b.session === QUICK) return json({ error: "the quick chat does not launch sessions; hand it to main with dotz_conv send main" }, 403);
 				const mode = parseLaneMode(b.mode);
 				if (b.mode !== undefined && !mode) return json({ error: BAD_MODE }, 400);
-				const asked = Boolean(b.owner_asked_for_fable);
+				const asked = Boolean(b.owner_asked_for_fable) || !agent;
 				const dear = [b.model, b.worker_model].filter(m => m && isExpensive(String(m)));
 				if (dear.length && !asked) return json({ error: `Fable and max/xhigh-effort models (${dear.join(", ")}) run only when the owner explicitly asks for them. Use the defaults, or relaunch with owner_asked_for_fable=true after they ask.` }, 409);
 				const unjustified = laneJustification(b.why, b.hours, Boolean(b.owner_asked_for_lane));

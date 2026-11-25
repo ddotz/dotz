@@ -83,6 +83,8 @@ export const GUARD_DEFAULTS: GuardConfig = {
 };
 
 export const dataDir = () => process.env.DOTZ_DIR ?? join(homedir(), ".dotz");
+/** The model-picks.json key of one lane's own task workers (hub/control.ts setLaneWorker writes it); the default workers' key is `workers`. */
+export const laneWorkersPick = (lane: string): string => `lane:${lane}:workers`;
 
 const positive = (v: unknown, fallback: number) => (typeof v === "number" && Number.isFinite(v) && v > 0 ? v : fallback);
 const strings = (v: unknown) => (Array.isArray(v) ? v.filter((s): s is string => typeof s === "string" && s.trim() !== "").map(s => s.trim()) : []);

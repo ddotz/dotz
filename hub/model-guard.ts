@@ -44,7 +44,16 @@ const ALIASES: Record<string, string[]> = {
 	gemini: ["제미나이", "제미니"],
 };
 const namesFamily = (text: string, family: string): boolean => text.includes(family) || (ALIASES[family] ?? []).some(a => text.includes(a));
-const namesLevel = (text: string, level: string): boolean => new RegExp(`(?:^|[^a-z])${level}(?:[^a-z]|$)`).test(text);
+const KOREAN_LEVEL_WORDS: Record<string, RegExp> = {
+	off: /끔|끄고|꺼/,
+	minimal: /최소/,
+	low: /낮음|낮게|로우/,
+	medium: /보통|중간|미디엄/,
+	high: /(?<!매우 ?|아주 ?)(?:높음|높게)|(?<!엑스)하이/,
+	xhigh: /(?:매우|아주) ?높|엑스하이/,
+	max: /최고|최대|맥스/,
+};
+const namesLevel = (text: string, level: string): boolean => new RegExp(`(?:^|[^a-z])${level}(?:[^a-z]|$)`).test(text) || Boolean(KOREAN_LEVEL_WORDS[level]?.test(text));
 
 // The family every install treats as expensive, whatever its guard config lists.
 const ALWAYS_EXPENSIVE = ["fable"];

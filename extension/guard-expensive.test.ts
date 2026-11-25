@@ -194,3 +194,21 @@ test("I4: a conversation on main's model counts main's owner pick", () => {
 	s.request("claude-fable-5-2");
 	expect(s.notes).toEqual([]);
 });
+
+test("I3: a worker model the owner picked for this session's workers starts; another expensive one or a pick by nobody does not", () => {
+	process.env.DOTZ_LANE = "pick";
+	const { handlers } = setup();
+	const spawn = (pattern: string) => handlers.before_subagent_spawn[0]({ agent: "task", patterns: [pattern] });
+	expect(spawn("anthropic/claude-opus-5-5:max")).toMatchObject({ block: true });
+
+	writeState("model-picks.json", { "lane:pick:workers": { model: "anthropic/claude-opus-5-5", thinking: "max", by: "owner", at: minutes(0) } }, 1_000);
+	expect(spawn("anthropic/claude-opus-5-5:max")?.block).toBeUndefined();
+	expect(spawn("anthropic/claude-fable-5-2")).toMatchObject({ block: true });
+
+	writeState("model-picks.json", { workers: { model: "anthropic/claude-fable-5-2", thinking: "high", by: "owner", at: minutes(0) } }, 2_000);
+	expect(spawn("anthropic/claude-fable-5-2:high")?.block).toBeUndefined();
+	expect(spawn("anthropic/claude-opus-5-5:max")).toMatchObject({ block: true });
+
+	writeState("model-picks.json", { "lane:pick:workers": { model: "anthropic/claude-opus-5-5", thinking: "max", by: "fallback", at: minutes(0) } }, 3_000);
+	expect(spawn("anthropic/claude-opus-5-5:max")).toMatchObject({ block: true });
+});

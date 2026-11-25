@@ -89,7 +89,7 @@ function startFailed(lane: Lane, why: string, resume: boolean): void {
 // workers run a Fable model the owner picked (a model picker, /model, or the lanes/workers defaults). A launch that names Fable is
 // refused without the ask (hub/routes-lanes.ts), and a worker switch the lane recorded itself (workerByLane) is not the owner's pick.
 export const ownerAsked = (lane: Pick<Lane, "fableOk" | "model" | "workerModel" | "workerByLane">): boolean =>
-	Boolean(lane.fableOk) || isExpensive(parseSelector(lane.model).model) || (!lane.workerByLane && isExpensive(parseSelector(laneWorkerModel(lane)).model));
+	Boolean(lane.fableOk) || isExpensive(lane.model) || (!lane.workerByLane && isExpensive(laneWorkerModel(lane)));
 
 export function spawn(lane: Lane, resume: boolean): boolean {
 	if (resume) {

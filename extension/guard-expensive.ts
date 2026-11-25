@@ -2,7 +2,7 @@
 // gateway-owned state files it reads (hub/model-guard.ts writes them): expensive-grants.json and model-picks.json.
 import { readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
-import { dataDir, expensiveMatch, type GuardConfig } from "./guard-config.ts";
+import { dataDir, expensiveMatch, type GuardConfig, laneWorkersPick } from "./guard-config.ts";
 
 // The configured worker model (models.workers in <DOTZ_DIR>/config.json, default as hub/config.ts workerModel()) in OmO's provider names.
 const DEFAULT_WORKER_MODEL = "anthropic/claude-sonnet-5-5:high";
@@ -75,4 +75,15 @@ export function ownerPickedHere(running: unknown, effort: string, g: GuardConfig
 	const bare = (s: unknown) => String(s ?? "").replace(/:[a-z]+$/i, "").split("/").pop();
 	if (!bare(pick.model) || bare(pick.model) !== bare(running)) return false;
 	return !(expensiveMatch(`:${effort}`, g) && pick.thinking !== effort);
+}
+
+/** True when every expensive pattern of a worker spawn is the worker model the owner picked for this process's workers: the lane's own pick, else models.workers. */
+export function ownerPickedWorker(patterns: unknown, g: GuardConfig): boolean {
+	const picks = readGatewayState("model-picks.json");
+	const lane = process.env.DOTZ_LANE;
+	const pick = (lane && picks?.[laneWorkersPick(lane)]) || picks?.workers;
+	if (!pick || !(pick.by === "owner" || String(pick.by).startsWith("owner-message:"))) return false;
+	const bare = (s: unknown) => splitLevel(String(s ?? "")).model.split("/").pop();
+	const expensive = (Array.isArray(patterns) ? patterns : [patterns]).filter(p => expensiveMatch(p, g));
+	return expensive.length > 0 && expensive.every(p => bare(p) === bare(pick.model) && [undefined, pick.thinking].includes(splitLevel(String(p)).thinking));
 }

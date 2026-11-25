@@ -27,3 +27,11 @@ test("with the guard off no model needs an ask", () => {
 	setGuard(undefined);
 	expect(ownerAsked({ model: FABLE, workerModel: OPUS })).toBe(false);
 });
+
+test("a level the guard lists as expensive, picked for the lane or its workers, counts as asked too", () => {
+	setGuard({ ask_before_expensive: true, expensive_models: ["fable", ":max"] });
+	expect(ownerAsked({ model: OPUS, workerModel: `${OPUS}:max` })).toBe(true);
+	expect(ownerAsked({ model: `${OPUS}:max`, workerModel: OPUS })).toBe(true);
+	expect(ownerAsked({ model: OPUS, workerModel: `${OPUS}:max`, workerByLane: true })).toBe(false);
+	expect(ownerAsked({ model: `${OPUS}:high`, workerModel: `${OPUS}:high` })).toBe(false);
+});

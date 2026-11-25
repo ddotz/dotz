@@ -140,10 +140,13 @@ test("a target with no stored effort follows the install's benchmark value; a st
 	}
 });
 
-test("picking a model for a config target stores no effort unless the owner gave one", async () => {
-	cfg.models = { lanes: { model: OPUS, thinking: "low" } };
+test("picking a model for a config target stores no effort unless the owner gave one, and keeps the one the owner gave", async () => {
+	cfg.models = { lanes: { model: OPUS } };
 	await setModel("lanes", FABLE);
 	expect(cfg.models?.lanes).toEqual({ model: FABLE, thinking: undefined });
+	cfg.models = { lanes: { model: OPUS, thinking: "low" } };
+	await setModel("lanes", FABLE);
+	expect(cfg.models?.lanes).toEqual({ model: FABLE, thinking: "low" });
 	await setModel("lanes", OPUS, "xhigh");
 	expect(cfg.models?.lanes).toEqual({ model: OPUS, thinking: "xhigh" });
 	await setModel("lanes", FABLE, "high");

@@ -4,7 +4,7 @@ import { join, resolve } from "node:path";
 import { codeLockReason, scopeReaches, writeScopes, writtenPaths } from "../hub/codeguard.ts";
 import { dataDir, expensiveMatch, type GuardConfig, isMain, laneShareReason, payloadStateDir, statePath } from "./guard-config.ts";
 import { debug } from "./guard-debug.ts";
-import { grantedHere, ownerPickedHere } from "./guard-expensive.ts";
+import { grantedHere, ownerPickedHere, ownerPickedWorker } from "./guard-expensive.ts";
 import { limitStopProblem } from "./guard-limit.ts";
 import { pipedStatusBlock } from "./guard-pipe.ts";
 import { expandShellVars, shellText } from "./guard-shell.ts";
@@ -181,7 +181,7 @@ export function installDotzGate(pi: RuleHost, config: GuardConfig) {
 		const evalBlock = evalSpawnBlock(event);
 		if (evalBlock) return evalBlock;
 		const allowed = ok();
-		const found = allowed ? undefined : expensiveMatch(event?.patterns, config);
+		const found = allowed || ownerPickedWorker(event?.patterns, config) ? undefined : expensiveMatch(event?.patterns, config);
 		debug({ phase: "spawn-model", agent: event?.agent, patterns: event?.patterns, found });
 		if (found) return { block: true, reason: reason(`worker ${event?.agent ?? "task"}`, found) };
 		return routeSpawn(difficulty, readRoutes(), selector => !allowed && Boolean(expensiveMatch(selector, config)));

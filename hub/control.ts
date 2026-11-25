@@ -22,7 +22,8 @@ import { convOfTarget, type Gate, grantExpensive, isAgentRequest, noteModelChang
 import { abortLane, applyChainChange as applyLaneChain, compactLane, laneLive, laneModels, lanes, restartLane, resumeByName, setLaneModel, setLaneWorkerModel, stopLane } from "./lanes.ts";
 import { cancelByOwner, applyChainChange as applyOrchestratorChain, applyModelChange, compact as compactOrchestrator, orch, orchestratorPid, restart as restartOrchestrator } from "./orchestrator.ts";
 import { keepsCacheOnEffort } from "./mid-effort.ts";
-import { sweetSpot } from "./model-effort.ts";
+import { clampEffort, EFFORT_ORDER, type Effort, sweetSpot } from "./model-effort.ts";
+import { laneWorkersPick } from "./lanegates.ts";
 import { availableModels, cancelLogin, completeLogin, ControlError, listProviders, loginProviders, logoutProvider, type ModelInfo, pendingLogin, quota, startLogin } from "./providers.ts";
 
 export { ControlError };
@@ -262,16 +263,16 @@ export async function changeTarget(target: string, change: { model?: string; thi
 		if ("denied" in gate) throw new ControlError(gate.denied, 403);
 		by = gate.by;
 	}
-	if (inherits) return inheritMain(key, change.force === true);
+	if (inherits) return inheritMain(key, change.force === true, by);
 	if (change.compact) {
 		const r = compactTarget(key.replace(/^lane:/, ""));
 		return { ok: true, target: key, compaction: r.compaction.state, note: r.message };
 	}
-	if (change.workerModel) return target === "workers" ? setModel(target, change.workerModel, undefined, false, by) : setLaneWorker(key, change.workerModel, change.byLane === true);
+	if (change.workerModel) return target === "workers" ? setModel(target, change.workerModel, undefined, false, by) : setLaneWorker(key, change.workerModel, change.byLane === true, by);
 	return setModel(key, change.model, change.thinking, change.force === true, by);
 }
 
-async function setLaneWorker(target: string, input: string, byLane: boolean) {
+async function setLaneWorker(target: string, input: string, byLane: boolean, by: string) {
 	const name = target.startsWith("lane:") ? target.slice(5) : "";
 	const lane = lanes.get(name);
 	if (!lane) throw new ControlError(`worker_model needs target "workers" or "lane:<name>" of an existing lane (got "${target}")`);
@@ -279,6 +280,7 @@ async function setLaneWorker(target: string, input: string, byLane: boolean) {
 	const thinking = split.thinking || parseSelector(laneWorkerModel(lane)).thinking;
 	if (!(THINKING_LEVELS as readonly string[]).includes(thinking)) throw new ControlError(`thinking must be one of ${THINKING_LEVELS.join(", ")}`);
 	const selector = selectorOf({ model: resolveModel(split.model, await availableModels()), thinking });
+	noteModelChange(laneWorkersPick(name), laneWorkerModel(lane), selector, by);
 	const applied = setLaneWorkerModel(name, selector, byLane);
 	return { ok: true as const, target, worker_model: selector, applied, note: applied === "live" ? `Lane ${name} starts its next task workers on ${selector}.` : `Saved. Lane ${name} runs its task workers on ${selector} when it is next resumed.` };
 }
@@ -300,10 +302,12 @@ export function resolveModel(input: string, available: ModelInfo[]): string {
 type ModelChange = { ok: true; target: string; model: string; thinking: string; applied: "live" | "restarted" | "next-start" | "next-turn"; note: string };
 const PROJECT_NOTE = "Only this conversation changes.";
 const projectApplied = (applied: "live" | "restarted" | "next-start") => (applied === "next-start" ? "next-turn" : applied);
-function inheritMain(key: string, force = false): ModelChange {
+function inheritMain(key: string, force: boolean, by: string): ModelChange {
 	const own = Boolean(ownModelOf(key)), back = convs.kindModel(key);
-	if (own) askBeforeRewrite(`Conversation ${key}`, liveCtxOf(key), convModel(key), back ? parseSelector(back) : orchestratorModel(), force);
+	const before = convModel(key);
+	if (own) askBeforeRewrite(`Conversation ${key}`, liveCtxOf(key), before, back ? parseSelector(back) : orchestratorModel(), force);
 	const applied = own ? projectApplied(convs.setOwnModel(key, undefined)) : "live";
+	if (own) noteModelChange(key, selectorOf(before), selectorOf(convModel(key)), by);
 	return { ok: true, target: key, ...convModel(key), applied, note: own ? PROJECT_NOTE : "unchanged" };
 }
 
@@ -352,11 +356,12 @@ export async function setModel(target: string, modelInput?: string, thinkingInpu
 	else throw new ControlError(`target must be "orchestrator", "lanes", "workers" or "lane:<name>" of an existing lane (got "${target}")`);
 	const available = model ? await availableModels() : [];
 	const picked = model ? resolveModel(model, available) : current.model;
-	// A different model with no effort in the same request takes that model's sweet spot (hub/model-effort.ts), clamped to the levels it lists; an effort sent with the request wins.
-	const sweet = picked !== current.model ? sweetSpot(picked, available.find(m => m.selector === picked)?.thinking).effort : current.thinking;
-	const next = { model: picked, thinking: thinking ?? sweet };
-	// config.json keeps only an effort the owner gave (or already had stored for this model); without one the target follows the model's sweet spot, which can change as benchmarks come in (hub/effort-wire.ts).
-	const stored = { model: picked, thinking: thinking ?? (picked === current.model ? cfg.models?.[target as FallbackTarget]?.thinking : undefined) };
+	const levels = available.find(m => m.selector === picked)?.thinking;
+	const levelIsOwners = ["orchestrator", "lanes", "workers"].includes(target) ? Boolean(cfg.models?.[target as FallbackTarget]?.thinking) : (!projectOf(target) || Boolean(ownModelOf(target))) && current.thinking !== sweetSpot(current.model, available.find(m => m.selector === current.model)?.thinking).effort;
+	const ownerLevelOnNewModel = levels && current.thinking !== "off" && (EFFORT_ORDER as readonly string[]).includes(current.thinking) ? clampEffort(current.thinking as Effort, levels) : current.thinking;
+	const levelAfterModelChange = picked === current.model ? current.thinking : levelIsOwners ? ownerLevelOnNewModel : sweetSpot(picked, levels).effort;
+	const next = { model: picked, thinking: thinking ?? levelAfterModelChange };
+	const stored = { model: picked, thinking: thinking ?? (levelIsOwners ? next.thinking : undefined) };
 	const done = (applied: ModelChange["applied"], note: string): ModelChange => {
 		noteModelChange(target, selectorOf(current), selectorOf(next), by);
 		return { ok: true, target, ...next, applied, note };

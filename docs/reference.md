@@ -247,7 +247,8 @@ The session brief contract tells the session to review a subagent's diff itself 
 subagent model until it restarts.
 
 **Default effort of a model.** A target with no `thinking` in `config.json` (or a selector without `:level`) runs its model at the
-model's sweet spot (hub/model-effort.ts). Order: an effort the owner set (config or selector suffix, never replaced), a row of the shipped
+model's sweet spot (hub/model-effort.ts). Order: an effort the owner set (config or selector suffix, never replaced; a later model pick
+for that target, a project conversation or a session keeps it, moved to the nearest level the new model lists), a row of the shipped
 table, the install's own benchmark value, a stand-in taken from the nearest row of the same model family (provisional, replaced when
 numbers are found), then `medium`; the value is clamped to the levels the model lists. With `orchestrator.effort_learn` (boolean,
 default `true`, live) a model that appears after the first run, or that the config names with no row and no recorded value, is looked up
