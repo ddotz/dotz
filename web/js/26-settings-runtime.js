@@ -35,7 +35,7 @@ function rtBadge(it) {
 function rtReportView(r, report) {
   const core = report.items.filter(i => i.core && i.result !== "ok" && i.result !== "adapted" && i.result !== "disabled");
   const changed = report.items.filter(i => i.result !== "ok").length;
-  const stale = !!(r.version && report.version !== r.version);
+  const stale = r.id !== "omo" && !!(r.version && report.version !== r.version);   // OmO switches without a check (usable() in rtFlow), so an old check asks nothing of it
   const sum = !r.hasAdapter ? TX("connect.rt.no_adapter")
     : report.verdict === "blocked" ? TX("connect.rt.blocked", { list: core.map(i => i.label).join(", ") })
     : stale ? TX("connect.rt.stale", { from: report.version || "?", to: r.version })
@@ -83,7 +83,7 @@ function rtFlow(r) {
     const running = checking || (st && st.running);
     if (needLogin()) box.append(el("p", { text: webLogin ? TX("connect.rt.login_needed_web") : TX("connect.rt.login_needed") }));
     if (running) box.append(el("div", {}, el("p", { text: [TX("connect.rt.checking"), st && st.current].filter(Boolean).join(" · ") }), el("div", { class: "bar" }, el("i", { style: `width:${st && st.total ? Math.round((st.done / st.total) * 100) : 4}%` })), el("div", { class: "note", text: st && st.total ? TX("connect.rt.progress", { done: st.done, total: st.total }) : TX("connect.rt.starting") })));
-    else if (report) box.append(rtReportView(r, report));
+    else if (report && !needLogin()) box.append(rtReportView(r, report));   // the sign-in comes first: the check needs it too
     else if (r.id === "omo" && r.hasAdapter) box.append(el("p", { text: TX("connect.rt.omo_note") }));
     else box.append(el("p", { text: r.hasAdapter ? TX("connect.rt.check_note", r.limits || {}) : TX("connect.rt.no_adapter_check") }));
     if (r.hasAdapter) box.append(roleBar());

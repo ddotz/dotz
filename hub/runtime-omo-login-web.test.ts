@@ -39,7 +39,8 @@ const server = Bun.serve({
 		if (p === "/api/notices") return json({ unread: 0, items: [] });
 		if (p === "/api/monitors" || p === "/api/integrations") return json({ items: [] });
 		if (p === "/api/runtimes") return json(runtimes());
-		if (p === "/api/runtimes/omo") return json({ id: "omo", report: null, state: null });
+		// A check from an older OmO, as an install that updated OmO since has.
+		if (p === "/api/runtimes/omo") return json({ id: "omo", report: { runtime: "omo", at: "2026-10-19T19:56:06.833Z", version: "5.1.38", verdict: "ok", items: [{ id: "turn", label: "turn", core: true, result: "ok" }] }, state: null });
 		if (p === "/api/runtimes/omo/login") return json({ id: "omo", ...omo().login });
 		if (p === "/api/providers/anthropic/login" && req.method === "POST") {
 			const b = (await req.json().catch(() => ({}))) as { via?: string };
@@ -88,7 +89,8 @@ for (const [label, w, h] of [["phone", 390, 844], ["desktop", 1280, 860]] as con
 		await waitFor(v, `RT && RT.runtimes.length`);
 		await run(v, `rtFlow(RT.runtimes.find(r => r.id === "omo"))`);
 		await waitFor(v, `document.querySelector("dialog[open] .dact button")`);
-		expect(await q(v, `return document.querySelector("dialog[open]").textContent.includes("아직 Claude 구독 로그인이 안 돼 있어요")`)).toBe(true);
+		expect(await q(v, `return document.querySelector("dialog[open]").textContent.includes(TX("connect.rt.login_needed_web"))`)).toBe(true);
+		expect(await q(v, `return !!document.querySelector("dialog[open] .rt-rep")`)).toBe(false);
 		expect(await q(v, acts)).toEqual([["취소", false], ["로그인", false], ["로그인 확인", false], ["바꾸기", true]]);
 		const o = await q<{ vw: number; doc: number }>(v, `return { vw: innerWidth, doc: document.documentElement.scrollWidth }`);
 		expect(o.doc).toBeLessThanOrEqual(o.vw);
@@ -98,6 +100,8 @@ for (const [label, w, h] of [["phone", 390, 844], ["desktop", 1280, 860]] as con
 		expect(calls).toEqual(["POST login via omo"]);
 		await run(v, `const i = [...document.querySelectorAll("dialog[open] input")].find(x => x.type === "text" && x.offsetParent); i.value = "code-1"; i.dispatchEvent(new Event("input")); ${button("완료")}.click()`);
 		await waitFor(v, `document.querySelectorAll("dialog[open]").length === 1 && ${button("바꾸기")} && !${button("바꾸기")}.disabled`);
-		expect(await q(v, acts)).toEqual([["취소", false], ["작동 검사", false], ["바꾸기", false]]);
+		expect(await q(v, acts)).toEqual([["취소", false], ["다시 검사", false], ["바꾸기", false]]);
+		// OmO switches without a check, so the old check's version asks for no new one.
+		expect(await q(v, `const t = document.querySelector("dialog[open] .rt-rep").textContent; return [t.includes(TX("connect.rt.all_ok")), t.includes("5.1.83")]`)).toEqual([true, false]);
 	}, 20_000);
 }

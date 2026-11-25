@@ -241,7 +241,7 @@
   "connect.rt.run_check": "Run check",
   "connect.rt.switch": "Switch",
   "connect.rt.login_needed": "Not signed in yet. Sign in from a terminal, then check again.",
-  "connect.rt.login_needed_web": "No Claude sign-in yet. Tap Sign in to do it here.",
+  "connect.rt.login_needed_web": "OmO does not share Claude Code's sign-in; it needs its own Claude subscription sign-in. Tap Sign in to do it here, once.",
   "connect.rt.web_login_name": "{name} Claude",
   "connect.rt.login_open": "Sign in in the terminal",
   "connect.rt.login_recheck": "Check sign-in",
