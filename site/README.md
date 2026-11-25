@@ -51,6 +51,8 @@ bun site/stageshow-src/record.ts
 
 Cloudflare Pages에 `site` 폴더를 그대로 올립니다(프로젝트 이름 `dotz`, 사용자 도메인 `ddotz.dev`).
 
+이 프로젝트는 직접 올리기 방식이라 push로는 배포되지 않습니다. 정해진 시간의 릴리스(`hub/release.ts`)가 태그를 푸시한 뒤 그 태그의 `site/`를 올리므로, 공개 사이트와 데모는 늘 마지막 릴리스와 같습니다(`docs/releases.md`). 릴리스를 기다리지 않고 올릴 때만 아래처럼 손으로 합니다.
+
 ```sh
 bun site/stamp-landing.ts   # 다섯 랜딩과 시제품의 자산 주소에 내용 해시를 찍어, 다시 찾은 브라우저가 옛 CSS나 스크립트와 섞이지 않게 합니다
 rsync -a --delete --exclude AGENTS.md site/ /tmp/dotz-site/   # Pages는 .assetsignore를 안 읽어서, 작업 규칙 파일은 복사본에서 뺍니다

@@ -8,6 +8,7 @@ import { ownerAddress, releaseTerms, scrub, type Term } from "./public-scrub.ts"
 import { clearGate, gateStatus, realGateEnv, runGate, runSuiteIn, saveRedEvidence, startGate, type GateEnv } from "./release-gate.ts";
 import { SLOT_SKIPPED_EXIT } from "./release-exit.ts";
 import { buildReleaseNote, NOTE_LOG_FORMAT, parseNoteCommits } from "./release-note.ts";
+import { readSecretFile } from "./secretbox.ts";
 import { keyMissing, pushAuthArgs, RELEASE_IDENTITY, signingKeyPath, signMode, signTag, verifyOwnTag, type SignMode } from "./release-sign.ts";
 
 export type Release = { readonly date: string; readonly n: number; readonly hotfix: number | null; readonly text: string };
@@ -27,6 +28,7 @@ const DAY_MS = 24 * 3600_000;
 const SLOT_HOURS = [18, 12, 0];
 const RELEASE_REPO = "ddotz/dotz";
 const RELEASE_OWNER = "ddotz";
+const PAGES_PROJECT = "dotz";
 const NOTE_LOG_LIMIT = 500;
 const GITHUB_REPO = /github\.com[:/]([^/\s]+\/[^/\s]+?)(?:\.git)?$/;
 export const TAG_RE = /^v(\d{2})(\d{2})(\d{2})\.([1-3])(?:\.(\d+))?$/;
@@ -189,6 +191,7 @@ export type PublishOptions = {
 	terms?: readonly Term[];
 	address?: string; // how the owner is addressed; this install's config when not given
 	buildDemo?: Exec; // rebuilds site/demo from web/ before the release commit, then runs the demo's check (cmd says which); `bun site/build-demo.ts` and `bun test ./site/demo-update.test.ts` in the checkout when not given
+	deploySite?: Exec; // uploads the tagged site/ to Cloudflare Pages (cmd says which); `bunx wrangler pages deploy` with the token in $DOTZ_DIR/secrets/cloudflare when not given
 	signingKey?: string; // the release signing key file; $DOTZ_DIR/secrets/release-signing-key when not given
 	ci?: boolean; // running on a GitHub runner (the one unsigned transition release); GITHUB_ACTIONS when not given
 };
@@ -264,6 +267,45 @@ async function rebuildDemo(root: string, build: Exec | undefined, print: (line: 
 	await gitOutput(["checkout", "--", "site"], root);
 	for (const file of await untracked()) if (!before.has(file)) rmSync(join(root, file), { force: true });
 	return false;
+}
+
+// ddotz.dev (the landing pages and the public demo) is a Cloudflare Pages project fed by direct upload (site/README.md): no push deploys it, so the
+// release does, from the tree of the tag it just pushed, so the public site is always a release. The folder's work rules (AGENTS.md) stay out.
+// The tag is already out, so a failure is reported and fails the run (the slot watch alerts once); the site stays at the last release.
+async function deploySite(root: string, tag: string, deploy: Exec | undefined, ci: boolean, print: (line: string) => void): Promise<boolean> {
+	if (!deploy && (ci || !existsSync(join(root, "site", "build-demo.ts")))) return true; // the runner has no Cloudflare token; a checkout without the site has nothing to deploy
+	const exec = deploy ?? pagesDeploy;
+	const dir = mkdtempSync(join(tmpdir(), "dotz-site-"));
+	try {
+		const tar = join(dir, "site.tar");
+		const archived = await gitOutput(["archive", "--output", tar, tag, "site"], root);
+		const unpacked = archived.code === 0 ? await run(["tar", "-xf", tar, "-C", dir]) : archived;
+		if (unpacked.code !== 0) {
+			print(`${tag}의 사이트 파일을 꺼내지 못해서 배포하지 않았어요: ${unpacked.out}`);
+			return false;
+		}
+		const site = join(dir, "site");
+		rmSync(join(site, "AGENTS.md"), { force: true });
+		const commit = (await gitOutput(["rev-parse", `${tag}^{commit}`], root)).out;
+		const made = await exec(["bunx", "wrangler", "pages", "deploy", site, "--project-name", PAGES_PROJECT, "--branch", "main", "--commit-hash", commit]).catch((e: unknown) => ({ code: 1, out: String(e) }));
+		if (made.code === 0) {
+			print(`사이트: ${tag}의 site/를 Cloudflare Pages(${PAGES_PROJECT})에 올렸어요`);
+			return true;
+		}
+		print(`태그는 나갔지만 사이트(데모 포함)를 배포하지 못했어요: ${made.out.slice(-500)}`);
+		return false;
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+}
+
+// The owner's Cloudflare token: <data dir>/secrets/cloudflare, sealed, holding {"code": token} as the secrets screen saves it.
+async function pagesDeploy(cmd: readonly string[]): Promise<{ code: number; out: string }> {
+	const file = join(process.env.DOTZ_DIR ?? join(homedir(), ".dotz"), "secrets", "cloudflare");
+	if (!existsSync(file)) return { code: 1, out: `Cloudflare 토큰이 없어요 (${file})` };
+	const token = (JSON.parse(readSecretFile(file)) as { code?: string }).code;
+	if (!token) return { code: 1, out: `Cloudflare 토큰 파일에 code가 없어요 (${file})` };
+	return run(cmd, undefined, { CLOUDFLARE_API_TOKEN: token });
 }
 
 export async function publishVersion(opts: PublishOptions): Promise<number> {
@@ -423,7 +465,9 @@ export async function publishVersion(opts: PublishOptions): Promise<number> {
 	print(`푸시: origin ${tag}`);
 	print(`내보냈어요: ${tag} (${sha.out})`);
 	// After the rebase above: the note covers what the tag really holds, commits that landed during the run included.
-	return (await publishNote(root, tag, await releaseNote(root, tag, base, tag, terms, address), opts.exec ?? run, print)) ? 0 : 1;
+	const noted = await publishNote(root, tag, await releaseNote(root, tag, base, tag, terms, address), opts.exec ?? run, print);
+	const deployed = await deploySite(root, tag, opts.deploySite, ci, print);
+	return noted && deployed ? 0 : 1;
 }
 
 // What the gate runner does when the suite is green: the release of exactly that commit, from the worktree the suite ran in.
@@ -435,8 +479,8 @@ async function releaseGreen(dir: string, sha: string): Promise<{ code: number; o
 
 type Exec = (cmd: readonly string[]) => Promise<{ code: number; out: string }>;
 
-async function run(cmd: readonly string[], cwd?: string): Promise<{ code: number; out: string }> {
-	const proc = Bun.spawn([...cmd], { cwd, stdout: "pipe", stderr: "pipe", timeout: 120_000 });
+async function run(cmd: readonly string[], cwd?: string, env?: Record<string, string>): Promise<{ code: number; out: string }> {
+	const proc = Bun.spawn([...cmd], { cwd, env: env && { ...process.env, ...env }, stdout: "pipe", stderr: "pipe", timeout: 120_000 });
 	const [out, err] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text()]);
 	return { code: await proc.exited, out: `${out}${err}`.trim() };
 }

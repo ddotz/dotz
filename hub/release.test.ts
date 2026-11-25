@@ -273,8 +273,9 @@ describe("release note", () => {
 		git(root, "add", ".");
 		commit(root, "base");
 		git(root, "push", "-q", "origin", "main");
-		const release = (buildDemo: (cmd: readonly string[]) => Promise<{ code: number; out: string }>, lines: string[] = []) =>
-			publishVersion({ ...UNSIGNED, auto: false, force: false, dryRun: false, cwd: root, now: kst("2026-11-06T13:00:00"), print: l => lines.push(l), exec: async () => ({ code: 0, out: "" }), buildDemo, terms: [], address: "" });
+		type Exec = (cmd: readonly string[]) => Promise<{ code: number; out: string }>;
+		const release = (buildDemo: Exec, lines: string[] = [], deploySite?: Exec) =>
+			publishVersion({ ...UNSIGNED, auto: false, force: false, dryRun: false, cwd: root, now: kst("2026-11-06T13:00:00"), print: l => lines.push(l), exec: async () => ({ code: 0, out: "" }), buildDemo, deploySite, terms: [], address: "" });
 		return { root, origin, release };
 	};
 
@@ -294,6 +295,40 @@ describe("release note", () => {
 		expect(git(root, "show", "v261106.1:site/demo/app.js")).toBe("rebuilt demo\n");
 		expect(git(origin, "show", "main:site/demo/app.js")).toBe("rebuilt demo\n");
 		expect(lines.join("\n")).toContain("데모");
+	});
+
+	// ddotz.dev is a Pages project fed by direct upload: nothing deploys it on a push, so the release uploads the site of the tag it just pushed.
+	test("after the tag is out the release deploys the tagged site, demo included, without the folder's work rules", async () => {
+		const { root, release } = withDemo();
+		writeFileSync(join(root, "site", "AGENTS.md"), "rules\n");
+		git(root, "add", ".");
+		commit(root, "site rules");
+		const lines: string[] = [];
+		const deployed: { cmd: readonly string[]; demo: string; rules: boolean }[] = [];
+		const code = await release(async () => {
+			writeFileSync(join(root, "site", "demo", "app.js"), "rebuilt demo\n");
+			return { code: 0, out: "" };
+		}, lines, async cmd => {
+			const dir = cmd[4];
+			deployed.push({ cmd, demo: readFileSync(join(dir, "demo", "app.js"), "utf8"), rules: existsSync(join(dir, "AGENTS.md")) });
+			return { code: 0, out: "Deployment complete" };
+		});
+		expect(code).toBe(0);
+		expect(deployed).toHaveLength(1);
+		expect(deployed[0].cmd).toEqual(["bunx", "wrangler", "pages", "deploy", deployed[0].cmd[4], "--project-name", "dotz", "--branch", "main", "--commit-hash", git(root, "rev-parse", "v261106.1^{commit}").trim()]);
+		expect(deployed[0].demo).toBe("rebuilt demo\n");
+		expect(deployed[0].rules).toBe(false);
+		expect(existsSync(deployed[0].cmd[4])).toBe(false);
+		expect(lines.join("\n")).toContain("사이트");
+	});
+
+	test("a site deploy that fails fails the release run, with the tag already out", async () => {
+		const { origin, release } = withDemo();
+		const lines: string[] = [];
+		const code = await release(async () => ({ code: 0, out: "" }), lines, async () => ({ code: 1, out: "Authentication error [code: 10000]" }));
+		expect(code).toBe(1);
+		expect(git(origin, "tag", "--list", "v*").trim()).toBe("v261106.1");
+		expect(lines.join("\n")).toContain("Authentication error");
 	});
 
 	for (const [name, build] of [
