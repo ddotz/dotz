@@ -19,7 +19,6 @@ the owner's own.
 | `DOTZ_LANE=<name>` | a lane | guard: worker state per lane; repeat guard: no UI confirm, refuse instead |
 | `DOTZ_ORCHESTRATOR=1` | the orchestrator and conversation sessions | repeat guard: no UI confirm, refuse instead |
 | `DOTZ_CONV=<key>` | a conversation session | not read by the harness |
-| `DOTZ_WORKER_GATE=<payload dir>` and `HARNESS_AGENT_HOME=<payload dir>` | the orchestrator and conversation sessions, unless `workers.harness_gate` is false, and only with the payload installed | `DOTZ_WORKER_GATE` is not read by the harness; the dotz extension reads it (extension/worker-gate.ts). `HARNESS_AGENT_HOME` keeps the gate's state, logs and bootstrap state under the payload instead of `~/.omp/agent`. `DOTZ_CODING_HARNESS` is not set there, so dotz's own guard copies keep running |
 | `DOTZ_CODING_HARNESS=<payload dir>` and `HARNESS_AGENT_HOME=<payload dir>` | a coding-mode omp lane (a process spawned with `SpawnOpts.codingHarness`); the hub's gate bootstrap of its worktree gets `HARNESS_AGENT_HOME` too | the dotz extension reads `DOTZ_CODING_HARNESS`: its copies of checks the payload's own extensions cover stand down, and only the rules dotz alone has stay in its guard (extension/guard-dotz.ts: a lane merges only through `dotz_merge`, shared dotz files are written by their owner, the quick chat's reach, usage-limit stop lines, eval-started workers, the expensive-model gate); `HARNESS_AGENT_HOME` is the payload folder the payload's extensions resolve their files and state from |
 
 A rename or a new meaning needs both sides in one step.
@@ -43,18 +42,7 @@ dotz runs each session in one of two modes (`laneMode` in hub/lanestate.ts). Eve
   it and restarts the lane on its session so the harness loads or drops; omp only, any other runtime refuses, because only omp can
   load the harness. A switch to coding bootstraps the worktree before the resumed session's first message; any other restart or
   resume is not bootstrapped again.
-- Task workers of the orchestrator and of conversation sessions: with `workers.harness_gate` not false (unset means on) and the
-  payload installed, the hub sets `DOTZ_WORKER_GATE` and `HARNESS_AGENT_HOME` to the payload dir and the dotz extension loads the
-  gate inside each task subagent only (extension/worker-gate.ts). These sessions load no harness extension of their own, so
-  `HARNESS_AGENT_HOME` is what keeps the gate's state and its bootstrap child's state under the payload and off `~/.omp/agent`.
-  Only the gate modules the extension imports and that child read it, and `DOTZ_CODING_HARNESS` is not set, so dotz's own guard
-  copies keep running. The extension imports two exports of the payload: `registerDoneGate` from `extensions/done-gate.ts`
-  (never the default export, so no `mistake` tool and no `/gate-*` commands) and `needsBootstrap` from `harness/gate/bootstrap.ts`.
-  The main agent's run registers nothing: its prompt, tools and turns are the same with the setting on or off. The gate sees
-  the worker as a main session without a UI (`agent.kind` "main", `hasUI` false, no `ui`).
-  omp fires no `session_stop` for a subagent, so the stop judgement runs at the worker's final message (an
-  `assistant_message` without tool calls) when the worker changed files in a git repo; a refusal goes back to the worker as
-  a steer and it takes another turn. OmO does not get it.
+- Task workers of the orchestrator and of conversation sessions run no done gate; the orchestrator checks a worker's result.
 - The hub runs the gate bootstrap for a fresh lane worktree, and the dotz extension runs it for a worker's repos (its cwd
   repo at its first prompt, each changed repo before the stop judgement, once per repo per process); the model never does.
   Both run it with the payload as `HARNESS_AGENT_HOME`. A repo whose checks all fail (`nothing-passed`) is recorded by the
@@ -106,10 +94,10 @@ dotz runs each session in one of two modes (`laneMode` in hub/lanestate.ts). Eve
   `bun install --frozen-lockfile` runs in `harness/` only when its `package.json` or `bun.lock` changed since the last
   successful install or `node_modules` is missing; one that fails or is stopped makes the install failed.
 - The gateway's own environment never names a payload: omp spawns strip an inherited `HARNESS_AGENT_HOME` and
-  `DOTZ_CODING_HARNESS`, and get them only from the hub's decision for that process (`codingHarnessEnv`, `workerGateEnv`); the
+  `DOTZ_CODING_HARNESS`, and get them only from the hub's decision for that process (`codingHarnessEnv`); the
   bootstrap child is stripped the same way.
 - A coding-mode lane is spawned with it: `hub/done-gate.ts` finds the folder with `codingHarnessDir(DATA_DIR)` and `hub/lanerun.ts`
-  passes it as `SpawnOpts.codingHarness` (section 2). The orchestrator and conversation sessions get it only as `DOTZ_WORKER_GATE`.
+  passes it as `SpawnOpts.codingHarness` (section 2). The orchestrator and conversation sessions never get it.
 - `hub/check.ts` scans `hub/`, `extension/`, `features/`, `onboard/`, `firstrun/`, `web/`, `site/` and `setup.ts`, so
   `vendor/` and `scripts/` are outside every rule by their place. The root `package.json` has no workspaces and the
   release install runs `bun install` at the root only, so `vendor/coding-harness/harness/package.json` joins neither.

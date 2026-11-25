@@ -6,8 +6,6 @@ export type HarnessGate = { extension: string; bootstrap: string };
 
 export const BOOTSTRAP_LIMIT_MS = 100_000;
 
-export const WORKER_GATE_AGENT_DIR_ENV = "DOTZ_WORKER_GATE";
-
 /** Set on a coding-harness session to its payload dir: dotz's own guard copies stand down for the payload's originals (guard-config.ts installedOriginal). */
 export const CODING_HARNESS_ENV = "DOTZ_CODING_HARNESS";
 

@@ -34,7 +34,7 @@ const RUNS = Symbol.for("dotz.omp.factoryRuns");
 const runs = globalThis as { [RUNS]?: number };
 
 /** The hosts the install functions get on omp: the hooks of `main` answer the main agent, the hooks of `workers` a subagent. The first factory run of a process is the main agent's and registers its tools as usual; a later run is a subagent's, so a tool registered through `main` starts inactive there and its prompt and tool list never hold it (dotz_recall, the one tool a subagent keeps, is active at once). A main agent that is not the first run switches them on when its session starts. `gateway` collects the names of the tools left to the main agent. With `topLevel` (a session the gateway started: orchestrator, conversation, lane) the main agent's dotz_ tools are top-level tools as on OmO, not `xd://` devices, so the first call needs no `read xd://<tool>` and `write xd://<tool>` round. */
-export function ompHosts(pi: Host, o: { topLevel?: boolean } = {}): { main: Host; workers: Host; gateway: Set<string>; first: boolean } {
+export function ompHosts(pi: Host, o: { topLevel?: boolean } = {}): { main: Host; workers: Host; gateway: Set<string> } {
 	const gateway = new Set<string>();
 	// why(platform): omp runs an extension's factory for the main agent first and once more for every task subagent, all in one process (omp@18.22.0)
 	const first = (runs[RUNS] = (runs[RUNS] ?? 0) + 1) === 1;
@@ -51,7 +51,7 @@ export function ompHosts(pi: Host, o: { topLevel?: boolean } = {}): { main: Host
 			if (active) await pi.setActiveTools?.([...new Set([...active, ...gateway])]);
 		});
 	}
-	return { main, workers: gated(pi, isSubagent), gateway, first };
+	return { main, workers: gated(pi, isSubagent), gateway };
 }
 
 /** The backstop for the tools a subagent never has active: a call to one that still gets through is refused. */

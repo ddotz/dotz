@@ -1,9 +1,9 @@
 import { existsSync } from "node:fs";
 import { isAbsolute, join } from "node:path";
-import { BOOTSTRAP_LIMIT_MS, CODING_HARNESS_ENV, excludeGenerated, type HarnessGate, harnessFiles, WORKER_GATE_AGENT_DIR_ENV } from "../extension/harness-gate.ts";
+import { BOOTSTRAP_LIMIT_MS, CODING_HARNESS_ENV, excludeGenerated, type HarnessGate, harnessFiles } from "../extension/harness-gate.ts";
 import { withoutApiKeys } from "./apikey-policy.ts";
 import { codingHarnessDir } from "./coding-harness-install.ts";
-import { cfg, DATA_DIR, lanesHarnessGate, log, workersHarnessGate } from "./config.ts";
+import { cfg, DATA_DIR, lanesHarnessGate, log } from "./config.ts";
 import { runLimited, type Ran } from "./run-limited.ts";
 import { NICE } from "./runtime/agent-proc.ts";
 import type { SendMode } from "./runtime/types.ts";
@@ -55,7 +55,7 @@ export function codingHarnessEnv(dir: string): Record<string, string> {
 	return { ...harnessHomeEnv(dir), [CODING_HARNESS_ENV]: dir };
 }
 
-/** `env` without the two variables that name a payload: what the gateway itself inherited never reaches a process, which gets them only from the hub's own decision for it (`codingHarnessEnv`, `workerGateEnv`). */
+/** `env` without the two variables that name a payload: what the gateway itself inherited never reaches a process, which gets them only from the hub's own decision for it (`codingHarnessEnv`). */
 export function withoutPayloadEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
 	const out = { ...env };
 	delete out[HARNESS_HOME_ENV];
@@ -63,35 +63,22 @@ export function withoutPayloadEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
 	return out;
 }
 
-const noted = new Set<string>();
+let noted = false;
 
-function noteMissing(key: "lanes" | "workers", without: string): void {
-	if (cfg[key]?.harness_gate !== true || noted.has(key)) return;
-	noted.add(key);
-	log(`${key}.harness_gate is true, but the coding harness dotz installs under ${DATA_DIR} at gateway start is not there, or its install did not finish (the "coding harness:" lines above say why; extensions/done-gate.ts and harness/gate/bootstrap.ts must be in it): ${without}`);
-}
-
-function installedPayload(): CodingHarness | undefined {
-	const dir = codingHarnessDir(DATA_DIR);
-	return dir ? codingHarnessFiles(dir) : undefined;
+function noteMissing(): void {
+	if (cfg.lanes?.harness_gate !== true || noted) return;
+	noted = true;
+	log(`lanes.harness_gate is true, but the coding harness dotz installs under ${DATA_DIR} at gateway start is not there, or its install did not finish (the "coding harness:" lines above say why; extensions/done-gate.ts and harness/gate/bootstrap.ts must be in it): coding lanes start without it`);
 }
 
 /** The installed coding harness payload a coding lane loads (hub/lanerun.ts passes it to omp as `SpawnOpts.codingHarness`); undefined when `lanes.harness_gate` is false or dotz has no finished install of it. The owner's omp agent folder is never consulted. */
 export function harnessGate(): CodingHarness | undefined {
 	if (!lanesHarnessGate()) return undefined;
-	const payload = installedPayload();
+	const dir = codingHarnessDir(DATA_DIR);
+	const payload = dir ? codingHarnessFiles(dir) : undefined;
 	if (payload) return payload;
-	noteMissing("lanes", "coding lanes start without it");
+	noteMissing();
 	return undefined;
-}
-
-/** What the omp orchestrator and conversation processes need for the done gate in their task workers: the installed payload as `DOTZ_WORKER_GATE` and as the gate's home. {} when the runtime cannot load the gate, `workers.harness_gate` is false or the payload is not installed. */
-export function workerGateEnv(caps: { doneGate?: boolean }): Record<string, string> {
-	if (!caps.doneGate || !workersHarnessGate()) return {};
-	const payload = installedPayload();
-	if (payload) return { [WORKER_GATE_AGENT_DIR_ENV]: payload.dir, ...harnessHomeEnv(payload.dir) };
-	noteMissing("workers", "task workers run without the done gate");
-	return {};
 }
 
 // The script's own words, on one log line.
