@@ -347,7 +347,9 @@ test("a message that opens one card pushes that card as before: its title, its d
 });
 
 test("a card of a grouped message that comes back after 나중에 pushes alone, as its own card", async () => {
-	const ts = "2026-11-24T00:33:00.000Z";
+	// 나중에 counts its hour from the real clock, so the message is asked now too: from a fixed day, the other card's own reminder
+	// comes due in the same sweep once that day is far enough behind.
+	const ts = new Date().toISOString();
 	expect(await pushesOf("u7-later", () => ask("u7-later", ts, `[ask] 두 가지예요.\n\n${cardsOf(2)}`))).toHaveLength(1);
 	const [card] = cardsIn("u7-later");
 	expect(laterNotice(card!.id, { for: "hour" }).status).toBe(200);
