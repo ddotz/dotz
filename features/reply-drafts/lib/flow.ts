@@ -350,7 +350,7 @@ type Revision = { /** Library files offered besides those on the draft. */ lib: 
 // Candidates for a revision whose change is about files: the files on the draft plus the library matches for the change.
 async function revisionCandidates(old: DraftRec, change: string): Promise<Revision | undefined> {
 	if (old.kind !== "mail" || !canAttach(old.source) || !fileChange().test(change)) return undefined;
-	const folder = await attachFolder(old.ref);
+	const folder = await attachFolder(old);
 	if (!folder) return undefined;
 	const held = stagedFiles(old.id).map(f => f.name);
 	const lib = rankLibrary(listLibrary(folder), { subject: change, text: change }).filter(r => r.score >= MIN_SCORE && !held.includes(stagedName(basename(r.file.path)))).map(r => r.file).slice(0, Math.max(0, CANDIDATE_MAX - held.length));
@@ -480,8 +480,11 @@ export function askText(draft: DraftRec, warnings: string[], headline = draft.co
 	return [`[ask] ${headline}`, ...briefLines(rec.brief), ...(notes ? [`-# ${notes}`] : []), block].join("\n");
 }
 
-// The 첨부 파일 폴더 of the mail app instance that owns the mail `ref` (app setting attach_folder), or undefined.
-export async function attachFolder(ref: string): Promise<string | undefined> {
+// The 첨부 파일 폴더 of the mail app instance that owns the mail `ref` (app setting attach_folder), or undefined. A new mail (compose, e.g. the one riding
+// on a comment reply) is claimed by no instance filter: the instance that wrote it is its own app, as composing read the folder (hub/mail-cli.ts).
+export async function attachFolder(at: string | Pick<DraftRec, "ref" | "app" | "compose">): Promise<string | undefined> {
+	if (typeof at !== "string" && at.compose) return loadSettings().attachFolders?.[at.app];
+	const ref = typeof at === "string" ? at : at.ref;
 	try {
 		const { instanceOf } = await import("../../../hub/reply-model.ts");
 		const { appEntries } = await import("../../../hub/integrations.ts");
@@ -585,7 +588,7 @@ async function restageForRevision(rec: DraftRec, change: string, deps: FlowDeps,
 		}
 		return failed;
 	}
-	const folder = await attachFolder(rec.ref);
+	const folder = await attachFolder(rec);
 	if (!folder) return [];
 	const have = () => new Set(stagedFiles(rec.id).map(f => f.name));
 	const named = await matchLibrary(folder, { subject: change, text: change });

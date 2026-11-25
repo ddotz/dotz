@@ -85,7 +85,7 @@ async function view(rec: DraftRec | undefined, ref: string) {
 	return {
 		files: asked ? asked.map(f => ({ name: f.name, size: f.size })) : stagedFiles(rec?.id ?? ref).map(f => ({ name: f.name, size: fileSizeText(f.size), bytes: f.size })),
 		canAttach: !!rec && canAttach(rec.source),
-		library: editable && !!(await attachFolder(rec.ref)),
+		library: editable && !!(await attachFolder(rec)),
 		editable,
 		// Where the draft's words and its files disagree now (the card's 첨부 확인 line), so the sheet follows a file added or taken off.
 		attachIssues: rec ? draftAttachIssues(rec) : [],
@@ -136,7 +136,7 @@ export async function draftAttachRoute(req: Request, url: URL, ref: string, tail
 		if (tail === "files" && req.method === "GET") return json(await view(rec, ref));
 		if (!rec || !editable) return json({ error: "이 초안은 파일을 바꿀 수 없어요" }, rec ? 409 : 404);
 		if (tail === "library" && req.method === "GET") {
-			const folder = await attachFolder(rec.ref);
+			const folder = await attachFolder(rec);
 			if (!folder) return json({ error: "첨부 파일 폴더가 정해져 있지 않아요" }, 409);
 			const q = (url.searchParams.get("q") ?? "").trim().toLowerCase();
 			const ranked = rankLibrary(listLibrary(folder), { subject: rec.item.subject ?? "", text: rec.item.text }).filter(r => !q || r.file.rel.toLowerCase().includes(q));
@@ -151,7 +151,7 @@ export async function draftAttachRoute(req: Request, url: URL, ref: string, tail
 				if (typeof b.name === "string" && (marked?.name !== b.name || (typeof b.size === "number" && marked?.size !== b.size))) return json({ error: "첨부 파일이 바뀌었어요. 목록을 다시 불러왔어요", code: "changed", ...(await view(rec, ref)) }, 409);
 				if (!removeStagedFile(rec.id, b.remove)) return json({ error: "그런 첨부파일이 없어요" }, 404);
 			} else if (typeof b.library === "string") {
-				const folder = await attachFolder(rec.ref);
+				const folder = await attachFolder(rec);
 				const f = folder ? libraryFile(folder, b.library) : undefined;
 				if (!f) return json({ error: "첨부 파일 폴더에서 그 파일을 찾지 못했어요" }, 404);
 				addStagedFile(rec.id, f.path);

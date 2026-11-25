@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { writeSettings } from "../../../hub/app-settings.ts";
 import { claimsAttachment } from "../../../hub/attach-claim.ts";
 import { asksForFile } from "../../../hub/draft-approval.ts";
+import { realMailLink } from "../../../hub/comments/mail-link.ts";
 import { composeMail } from "../../../hub/mail-cli.ts";
 import { buildPrompt, generateReply, type ReplyItem, type ReplyStyle } from "../../../hub/reply-draft.ts";
 import { advance } from "../../../hub/runtime/test-clock.ts";
@@ -183,6 +184,28 @@ describe("(e) 고치기 about the files", () => {
 		const rec = draft();
 		const step = await reviseDraft(rec.id, "더 짧게", { call: fakeModel([j(answer({ body: "문서 보내드립니다.", files: ["봄노래_문서.pdf"] }))]).call });
 		expect(names(step.id!)).toEqual(["봄노래_문서.pdf", "봄노래_음원.mp3"]);
+	});
+	test("the mail riding on a comment reply, composed by a mail app of its own, swaps the wrong file on 고치기 and its card shows the new one", async () => {
+		const apps = join(env.dir, "custom", "apps.json");
+		mkdirSync(join(env.dir, "custom"), { recursive: true });
+		writeFileSync(apps, JSON.stringify({ "mail-2": { app: "mail", label: "학교", filter: { source: "zele" } } }));
+		try {
+			enable(env, { attachFolders: { "mail-2": lib } });
+			const model = fakeModel([j(answer({ to: "kim@example.com", subject: "봄노래 자료", body: "여름노래 문서 보내드립니다.", files: ["여름노래_문서.pdf"] }))]);
+			const link = realMailLink({ call: model.call });
+			const made = await link.compose({ app: "mail-2", to: "kim@example.com", subject: "봄노래 자료", body: "자료 보내드립니다.", fromLibrary: "봄노래 음원" });
+			if (!made.ok) throw new Error(made.reason);
+			expect(names(made.id)).toEqual(["봄노래_음원.mp3"]);
+			const r = await link.revise(made.id, "음원 말고 여름노래 문서 파일로 바꿔 줘");
+			if (!r.ok) throw new Error(r.reason);
+			expect(model.calls[0]!.user).toContain('"여름노래_문서.pdf"');
+			expect(names(r.id)).toEqual(["여름노래_문서.pdf"]);
+			const card = link.view(r.id)!;
+			expect(card.attachments.map(a => a.name)).toEqual(["여름노래_문서.pdf"]);
+			expect(card.attachIssues ?? []).not.toContain(FILE_CHANGE_MISSED);
+		} finally {
+			rmSync(apps, { force: true });
+		}
 	});
 });
 

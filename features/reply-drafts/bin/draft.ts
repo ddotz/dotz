@@ -120,7 +120,7 @@ function editable(id: string | undefined): DraftRec | string {
 async function fileToAttach(rec: DraftRec, what: string): Promise<string | { error: string }> {
 	const path = cloudFile(what);
 	if (isAbsolute(path) && (existsSync(path) || existsSync(cloudPlaceholder(path)))) return path;
-	const folder = await attachFolder(rec.ref);
+	const folder = await attachFolder(rec);
 	if (!folder) return { error: "첨부 파일 폴더가 정해져 있지 않아요. 파일의 전체 경로로 알려 주세요" };
 	const all = listLibrary(folder), exact = all.filter(f => nfc(f.rel) === nfc(what));
 	const hit = exact.length ? exact : all.filter(f => nfc(basename(f.rel)) === nfc(basename(what)));
