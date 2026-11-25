@@ -24,7 +24,8 @@ export function fitSubject(subject: string, question: string, tag = ""): string 
 const TOPIC_LABELS_EN: Record<string, string> = { linebreak: "line breaks", copy: "copy and tone", "no-card": "questions without a card", duplicate: "duplicate features", stalled: "stalls and lost reports", misread: "misread instructions", "missing-output": "output not visible", ui: "screens and design", "ignored-setting": "ignored settings", "not-applied": "not applied or half verified", other: "other" };
 const TOPIC_LABELS_KO: Record<string, string> = { linebreak: "줄바꿈", copy: "문체·카피", "no-card": "카드 없는 질문", duplicate: "기능 중복", stalled: "멈춤·보고 끊김", misread: "지시 오해", "missing-output": "산출물 안 보임", ui: "화면·디자인", "ignored-setting": "설정 불이행", "not-applied": "미반영·반쯤 검증", other: "기타" };
 
-type Repeat = { topic: string; count: number; broken: number; examples: string[] };
+type Repeat = { topic: string; count: number; broken: number; examples: string[]; lesson?: { text: string; title: string; recent?: { month: number; day: number; reason: string } } };
+const MONTHS_EN = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 type RecipeDraft = { name: string; when: string; script?: { file: string } };
 /** A refused or failed dotz auto-update as its card shows it (hub/selfupdate.ts): the release step ("" for new commits with no release), why, the number of new commits
  *  and the newest one's subject; `halfway` when the rollback failed too: the commit the files are left at and the terminal command that puts them back. */
@@ -63,8 +64,15 @@ export const cardsEn = {
 		stop: "Leave it",
 		stopResult: "This run stays failed; the schedule itself stays as it is.",
 	},
-	repeatAlertSubject: (a: Repeat) => (a.topic === "other" && a.examples[0] ? a.examples[0] : (TOPIC_LABELS_EN[a.topic] ?? a.topic)),
-	repeatAlertEvidence: (a: Repeat) => [a.count ? `${a.count} in 7 days` : "", a.broken ? `A lesson broken on ${a.broken} nights` : "", a.examples[0] ? `For example: ${a.examples[0]}` : ""].filter(Boolean),
+	repeatAlertSubject: (a: Repeat) => (a.topic === "other" ? a.lesson?.title || "A repeated mistake" : (TOPIC_LABELS_EN[a.topic] ?? a.topic)),
+	repeatAlertEvidence: (a: Repeat) =>
+		[
+			a.count ? `${a.count} in 7 days` : "",
+			a.broken ? `The same mistake came back ${a.broken} times` : "",
+			a.lesson ? `To keep: ${a.lesson.text}` : "",
+			a.lesson?.recent ? `Latest: ${MONTHS_EN[a.lesson.recent.month - 1]} ${a.lesson.recent.day}, ${a.lesson.recent.reason}` : "",
+			a.examples[0] ? `For example: ${a.examples[0]}` : "",
+		].filter(Boolean),
 	repeatAlertQuestion: "Add a guard?",
 	repeatAlertOptions: [{ name: "Add a guard", result: "A guard, check or test that stops this comes next; it starts only after this answer." }, { name: "Leave it this week", result: "No card on this topic for 7 days; if it still comes back after that, you are asked again." }],
 	recipeCard: (d: RecipeDraft, preview: string) => [preview, ...(d.script ? [`Script: ${d.script.file}`] : [])].filter(Boolean).join("\n"),
@@ -178,8 +186,15 @@ export const cardsKo: typeof cardsEn = {
 		stop: "그만두기",
 		stopResult: "이번 실행은 실패로 두고, 예약은 그대로 둬요.",
 	},
-	repeatAlertSubject: a => (a.topic === "other" && a.examples[0] ? a.examples[0] : (TOPIC_LABELS_KO[a.topic] ?? a.topic)),
-	repeatAlertEvidence: a => [a.count ? `7일간 ${a.count}건` : "", a.broken ? `교훈이 ${a.broken}번 깨졌어요` : "", a.examples[0] ? `예: ${a.examples[0]}` : ""].filter(Boolean),
+	repeatAlertSubject: a => (a.topic === "other" ? a.lesson?.title || "되풀이되는 실수" : (TOPIC_LABELS_KO[a.topic] ?? a.topic)),
+	repeatAlertEvidence: a =>
+		[
+			a.count ? `7일간 ${a.count}건` : "",
+			a.broken ? `같은 실수가 ${a.broken}번 다시 나왔어요` : "",
+			a.lesson ? `지켜야 할 것: ${a.lesson.text}` : "",
+			a.lesson?.recent ? `최근: ${a.lesson.recent.month}월 ${a.lesson.recent.day}일 ${a.lesson.recent.reason}` : "",
+			a.examples[0] ? `예: ${a.examples[0]}` : "",
+		].filter(Boolean),
 	repeatAlertQuestion: "막는 장치를 만들까요?",
 	repeatAlertOptions: [{ name: "막는 장치 만들기", result: "되풀이를 막는 가드·검사·테스트를 만들어요. 이 답을 받은 뒤에만 시작해요." }, { name: "이번 주는 그냥 두기", result: "7일 동안 이 주제로 카드를 올리지 않아요. 그 뒤에도 되풀이되면 다시 물어요." }],
 	recipeCard: (d, preview) => [preview, ...(d.script ? [`스크립트: ${d.script.file}`] : [])].filter(Boolean).join("\n"),

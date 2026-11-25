@@ -195,7 +195,21 @@ export function gateLessons(tell: (text: string) => void, reset = false): Reject
 	return r.rejected;
 }
 
-export type RepeatAlert = { key: string; topic: Topic; count: number; broken: number; examples: string[] };
+/** A lesson as its card shows it: the rule alone (no "- ", date tag or trailer notes), a short title when one fits ("" when none does), and the
+ *  latest broken night with its reason when the "(broken: ...)" note gives one. */
+export type PlainLesson = { text: string; title: string; recent?: { month: number; day: number; reason: string } };
+const LESSON_TITLE_CHARS = 25;
+export function plainLesson(line: string): PlainLesson {
+	const text = (LESSON_LINE.exec(line)?.[4] ?? line.replace(BULLET, "")).replace(BROKEN, "").replace(ENFORCED, "").replace(TOPIC_TAG, "").replace(/\s+/g, " ").trim();
+	const notes = (BROKEN.exec(line)?.[1] ?? "").split(",").map(s => s.trim()).filter(Boolean);
+	const dates = notes.filter(n => /^(\d{4}-)?\d{2}-\d{2}$/.test(n)), reason = notes.filter(n => !dates.includes(n)).join(", ");
+	const [month, day] = (dates.at(-1) ?? "").split("-").slice(-2).map(Number);
+	const fits = (s: string) => [...s].length <= LESSON_TITLE_CHARS;
+	const whole = text.replace(/[.!?。]$/, ""), clause = text.split(/[.;!?。](?:\s|$)|[,:]\s|\s[—–]\s/)[0].trim();
+	return { text, title: fits(whole) ? whole : fits(clause) ? clause : "", ...(reason && month && day ? { recent: { month, day, reason } } : {}) };
+}
+
+export type RepeatAlert = { key: string; topic: Topic; count: number; broken: number; examples: string[]; lesson?: PlainLesson };
 // Three corrections repeating one complaint in 7 days, or a lesson found broken on two nights: the words have failed, so the gateway says so itself,
 // one card per topic per 7 days. A shared topic is no repeat (repeatCluster counts within it). "other" holds no one subject, so it never counts; a
 // broken lesson of no topic stands alone under its own key.
@@ -212,7 +226,7 @@ export function dueAlerts(entries: readonly Correction[], lessons: string, sent:
 		const key = topic === "other" ? `lesson:${c.line.slice(0, 60)}` : topic;
 		const a = due.get(key) ?? { key, topic, count: 0, broken: 0, examples: [] };
 		a.broken = Math.max(a.broken, c.broken);
-		a.examples = [c.line.slice(0, 120), ...a.examples].slice(0, EXAMPLES);
+		a.lesson ??= plainLesson(c.line);
 		due.set(key, a);
 	}
 	return [...due.values()].filter(a => now - (sent[a.key] ?? -Infinity) >= WEEK);

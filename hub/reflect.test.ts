@@ -4,6 +4,8 @@ import { cfg, paths } from "./config.ts";
 import { daysDir, kstDay, noteFile } from "./day-note-format.ts";
 import type { Correction } from "./corrections.ts";
 import type { Schedule } from "./schedule.ts";
+import { fitSubject } from "./card-text.ts";
+import { msg } from "./i18n.ts";
 import { admitLessons, correctionBlock, CORRECTIONS_MAX_CHARS, digest, dueAlerts, gateLessons, lessonCandidates, lessonChecks, lessonScore, proseClosedTopics, scheduleBlock, reflectPrompt, repeatedLessons, sendRepeatAlerts } from "./reflect.ts";
 
 const DAY = 24 * 3600_000;
@@ -197,6 +199,16 @@ test("a lesson broken on two nights raises a card under its topic, merged with t
 	expect(dueAlerts(rows, broken, {}, now).map(x => [x.key, x.count, x.broken])).toEqual([["ui", 3, 2]]);
 	expect(dueAlerts([], `${broken} (enforced: hub/x.test.ts)`, {}, now)).toEqual([]);
 	expect(dueAlerts([], "- [10-02] Sign the tag (broken: 10-03, 10-05)", {}, now).map(x => x.key)).toEqual(["lesson:- [10-02] Sign the tag (broken: 10-03, 10-05)"]);
+});
+
+test("a broken lesson's card reads in plain words: no date tag, no (broken: ...) note, no cut title", () => {
+	const line = "- [11-17] 묻는 말은 rN·마디 같은 작업 용어 없이 쉬운 말로. (broken: 11-24, 회의 기록 표기 비교 문장)";
+	const [a] = dueAlerts([], line, {}, now);
+	const m = msg(), subject = fitSubject(m.repeatAlertSubject(a), m.repeatAlertQuestion), evidence = m.repeatAlertEvidence(a).join("\n");
+	for (const text of [subject, evidence]) for (const raw of ["[11-17]", "broken", "교훈", "lesson"]) expect(text).not.toContain(raw);
+	expect(subject).not.toMatch(/(\.\.\.|…)$/);
+	expect(evidence).toContain("묻는 말은 rN·마디 같은 작업 용어 없이 쉬운 말로.");
+	expect(evidence).toContain("회의 기록 표기 비교 문장");
 });
 
 test("a topic with prose and no enforcer refuses more prose; an enforced line, a rewording and another topic pass", () => {
