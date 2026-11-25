@@ -228,7 +228,7 @@ test("a subagent's events reach the gate as a main agent's without a UI and answ
 	expect(await w.fire("tool_call", { toolName: "edit" }, ctx)).toBeUndefined();
 	expect(rec.calls.map(c => c.name)).toEqual(["tool_result", "tool_call"]);
 	const view = rec.calls[0]!.ctx as SubCtx;
-	expect(view.agent).toEqual({ kind: "main", id: "w1", depth: 1 });
+	expect(view.agent).toEqual({ kind: "main", worker: true, id: "w1", depth: 1 });
 	expect([view.hasUI, view.ui]).toEqual([false, undefined]);
 	expect(view.sessionManager).toBe(ctx.sessionManager);
 	expect(view.cwd).toBe(repo);

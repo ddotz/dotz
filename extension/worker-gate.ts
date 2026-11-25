@@ -94,7 +94,7 @@ async function bootstrapCwd(gate: Gate, view: object): Promise<void> {
 }
 
 function asMain(ctx: object): object {
-	const own = { agent: Object.assign({}, field(ctx, "agent"), { kind: "main" }), hasUI: false, ui: undefined };
+	const own = { agent: Object.assign({}, field(ctx, "agent"), { kind: "main", worker: true }), hasUI: false, ui: undefined };
 	return new Proxy(ctx, { get: (target, prop) => (Object.hasOwn(own, prop) ? Reflect.get(own, prop) : Reflect.get(target, prop, target)) });
 }
 
