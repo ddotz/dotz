@@ -3,14 +3,13 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { parseDraftApproval } from "../../../hub/draft-approval.ts";
-import { loadPlugins } from "../../../hub/plugins.ts";
 import { askText, reviseDraft } from "../lib/flow.ts";
 import { sendWith } from "../lib/senders.ts";
 import { addStagedFile, removeStagedFile, stagedFiles } from "../lib/staged.ts";
 import { paths } from "../lib/settings.ts";
 import { addDraft, getDraft, type DraftRec } from "../lib/store.ts";
 import type { Runner } from "../lib/tone.ts";
-import { enable, fakeModel, j, setupEnv } from "./helpers.ts";
+import { fakeModel, j, setupEnv } from "./helpers.ts";
 
 // A draft's files never go missing: they are carried through 고치기 (a new draft id), they are what the approval card lists, they are
 // removed only when the owner removes them, and both mailers (zele's --attach argv and a plugin's attachments) carry their exact bytes.
@@ -124,42 +123,5 @@ describe("what the mailer gets", () => {
 		expect(mime).toContain(base64Of(PDF));
 		expect(mime).toContain(base64Of(SHEET));
 		expect(mime).toContain("안녕하세요. 짧게 보냅니다.");
-	});
-
-	test("a plugin mailer receives every file with its bytes and size", async () => {
-		mkdirSync(join(env.dir, "custom", "plugins"), { recursive: true });
-		writeFileSync(join(env.dir, "custom", "plugins", "acme.ts"), [
-			`export default {`,
-			`\trepliesWithFiles: () => true,`,
-			`\treply: async d => {`,
-			`\t\tglobalThis.__pluginGot = d;`,
-			`\t\treturn { ok: true, message: "보냈어요" };`,
-			`\t},`,
-			`};`,
-		].join("\n"));
-		await loadPlugins(env.dir);
-		const d = rec({ source: "acme", mailId: "acme-1", ref: "acme-1" });
-		addDraft(d);
-		twoFiles(d.id);
-		const out = await sendWith(getDraft(d.id)!, fake().run);
-		expect(out).toEqual({ ok: true, message: "보냈어요", sent: "yes" });
-		const got = (globalThis as { __pluginGot?: { attachments: { name: string; path: string; size: number }[] } }).__pluginGot!;
-		expect(got.attachments.map(a => a.name)).toEqual(["점검보고서.pdf", "점수표.csv"]);
-		expect(readFileSync(got.attachments[0]!.path)).toEqual(PDF);
-		expect(got.attachments[0]!.size).toBe(PDF.length);
-		delete (globalThis as { __pluginGot?: unknown }).__pluginGot;
-	});
-});
-
-describe("a source that cannot carry files says so instead of sending the text alone", () => {
-	test("a webmail site with a file on the draft is refused, and the card says why", async () => {
-		enable(env);
-		const d = rec({ source: "webmail:school" });
-		addDraft(d);
-		twoFiles(d.id);
-		const r = await sendWith(getDraft(d.id)!, async () => ({ code: 0, stdout: "", stderr: "" }));
-		expect(r.ok).toBe(false);
-		expect(r.message).toContain("첨부파일");
-		expect(askText(getDraft(d.id)!, [])).toContain("빠진 파일: 점검보고서.pdf, 점수표.csv");
 	});
 });

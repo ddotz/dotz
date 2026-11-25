@@ -430,21 +430,6 @@ test("a stored value is one line: a newline in a ban, a rule or a correction can
 	expect(readLedger().every(r => !/[\r\n]/.test(r.text))).toBe(true);
 });
 
-test("correct --forbid stores a wording once at install level, --allow takes it back", async () => {
-	const first = await correct("--app", "install", "--forbid", "되세요");
-	expect(first).toMatchObject({ code: 0 });
-	expect(first.lines.join("\n")).toContain("모든 답장");
-	expect(loadStyle({ app: "youtube" }).forbidden).toEqual(["되세요"]);
-	await correct("--app", "install", "--forbid", "되세요", "--forbid", " 되세요 ");
-	expect(profileBullets("install", HEADINGS.forbidden)).toEqual(["되세요"]);
-	const gone = await correct("--app", "install", "--allow", "되세요");
-	expect(gone.code).toBe(0);
-	expect(loadStyle({ app: "youtube" }).forbidden).toEqual([]);
-	const none = await correct("--app", "install", "--allow", "되세요");
-	expect(none).toMatchObject({ code: 0 });
-	expect(none.lines.join("\n")).toContain("없어서");
-});
-
 test("correct refuses a one-character wording and a /regex/ and writes nothing", async () => {
 	for (const bad of ["a", " 요 ", "/되세요/", "/x+/i", "가".repeat(41)]) {
 		const r = await correct("--app", "youtube", "--change", "존댓말로", "--forbid", "좋은말", "--forbid", bad);

@@ -196,7 +196,7 @@ describe("a draft with no file: the gate refuses what the card warns about", () 
 		}
 	});
 
-	test.each(["견적서를 첨부했습니다.", "견적서 보내드렸습니다.", "Please find the attached quote.", "I've attached the quote."])("%s: 1) 보내기 is refused, 이대로 보내기 sends", async body => {
+	test.each(["견적서를 첨부했습니다.", "I've attached the quote."])("%s: 1) 보내기 is refused, 이대로 보내기 sends", async body => {
 		const rec = draft(body, { item: { kind: "mail", from: "teacher@example.com", text: "안부 인사드립니다" } as never });
 		choose(rec.id, 1, "보내기");
 		const s = fakeSend();

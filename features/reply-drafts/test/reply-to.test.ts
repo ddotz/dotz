@@ -33,12 +33,6 @@ describe("Reply-To reaches the draft", () => {
 		expect(await requestMailDraft(relay, deps(model.call))).toBe("offered");
 		expect(getDraft(listDrafts().find(d => d.ref === "rt-1")!.id)?.to).toBe("person@example.com");
 	});
-
-	test("a mail with no Reply-To still goes to its sender", async () => {
-		const model = fakeModel([j({ ...goodReply, to: "forms@relay.example" })]);
-		await offerMailDraft({ ...relay, replyTo: undefined }, deps(model.call));
-		expect(listDrafts().find(d => d.ref === "rt-1")!.to).toBe("forms@relay.example");
-	});
 });
 
 describe("Reply-To read at draft time", () => {

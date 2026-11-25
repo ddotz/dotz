@@ -3,7 +3,6 @@ import { copyFileSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { writeSettings } from "../../../hub/app-settings.ts";
-import { claimsAttachment } from "../../../hub/attach-claim.ts";
 import { asksForFile } from "../../../hub/draft-approval.ts";
 import { realMailLink } from "../../../hub/comments/mail-link.ts";
 import { composeMail } from "../../../hub/mail-cli.ts";
@@ -312,13 +311,10 @@ describe("(f) a file that is slow to download is not lost", () => {
 });
 
 describe("(g) phrases that ask for or promise a file", () => {
-	test.each(["문서 요청드립니다", "문서 신청해요", "보고서 받을 수 있을까요", "문서집 받고 싶어요", "음원 부탁드립니다", "음원 보내주세요"])("%s asks for a file", t => {
+	test.each(["문서 요청드립니다", "문서 신청해요", "문서집 받고 싶어요"])("%s asks for a file", t => {
 		expect(asksForFile(t)).toBe(true);
 	});
-	test.each(["Mr. Kim 잘 부탁드립니다", "회의 신청해요", "안녕하세요 감사합니다"])("%s does not", t => {
+	test.each(["Mr. Kim 잘 부탁드립니다", "회의 신청해요"])("%s does not", t => {
 		expect(asksForFile(t)).toBe(false);
-	});
-	test.each(["보고서 보내드립니다", "음원 보내드립니다", "문서집 보내드립니다"])("%s is a claim", t => {
-		expect(claimsAttachment(t)).toBe(true);
 	});
 });

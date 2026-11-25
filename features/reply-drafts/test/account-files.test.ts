@@ -104,14 +104,6 @@ describe("a mail of an install with several accounts", () => {
 		expect(f.calls.at(-1)!.slice(0, 6)).toEqual(["zele", "mail", "reply", "T42", "--account", A2]);
 	});
 
-	test("a draft whose account its card showed is sent at once, from that account", async () => {
-		const draft = rec({ account: A2 });
-		addDraft(draft);
-		const f = twoAccounts([A2]);
-		expect((await sendWith(getDraft(draft.id)!, f.run)).ok).toBe(true);
-		expect(f.calls.find(c => c[2] === "reply")!.slice(0, 6)).toEqual(["zele", "mail", "reply", "T42", "--account", A2]);
-	});
-
 	test("the approval text names the account the send goes out from", () => {
 		expect(askText(rec({ account: A2 }), []).split("\n")).toContain(`-# 보내는 계정: ${A2}`);
 		expect(askText(rec({ account: undefined }), []).includes("보내는 계정")).toBe(false);

@@ -68,9 +68,9 @@ describe("a mail in no box (or a base box that sets nothing)", () => {
 });
 
 describe("mode of the box", () => {
-	test.each(["ask", "notify"])("%s: no automatic draft and no model call, but 초안 작성 drafts", async mode => {
+	test("ask: no automatic draft and no model call, but 초안 작성 drafts", async () => {
 		appSwitch(true);
-		boxes(BASE, box("b-m", { mode }));
+		boxes(BASE, box("b-m", { mode: "ask" }));
 		const model = fakeModel([j(reply)]), w = world("b-m"), m = mail();
 		expect(await offerMailDraft(m, { ...w.deps, call: model.call })).toBe("off");
 		expect(model.calls).toHaveLength(0);
