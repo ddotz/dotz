@@ -45,11 +45,11 @@ const INLINE_FLAG = /^(-c|-e|-E|--eval|-p|--print)$/;
 const REPLY_ACT = "/api/reply/act";
 // A reply act that can send: everything but revise is the owner's (the hub answers an agent's send 403 too; this stops the attempt).
 const SENDING_ACT = /["']?action["']?\s*[:=]\s*\\?["']?(send|retry|resolve)\b/;
-// A card's answer (POST /api/notices/<id>/answer) is the owner's word too: on a draft's card only 고치기 is the agent's (the hub answers 403 for
-// the rest). A 보내기-family or 보내지 않기 label sends or drops; an answer with no label cannot be told apart, so it is refused as well.
+// A card's answer (POST /api/notices/<id>/answer) that names a 보내기-family or 보내지 않기 label sends or drops a draft, so it is refused here.
+// An answer with no label (`{"n":1}`) is the usual pick on a plain decision card and passes: which card it is only the hub knows, and the hub
+// answers the hub token 403 on a draft's card for anything but 고치기 (hub/approval-wire.ts webAnswer, ownerOnlyCard).
 const NOTICE_ANSWER = /\/api\/notices\/[^/\s"'`]+\/answer/;
 const SENDING_PICK = /["']?label["']?\s*[:=]\s*\\?["'][^"'\\]*(보내|직접 입력)/;
-const LABELLED = /["']?label["']?\s*[:=]/;
 
 // Code that makes an HTTP call (a cell that only names the route, in a search pattern or a test, sends nothing).
 const HTTP_CALL = /\b(fetch|urlopen|post|request)\s*\(/i;
@@ -57,7 +57,7 @@ const HTTP_CALL = /\b(fetch|urlopen|post|request)\s*\(/i;
 /** What a call to the hub posts that sends or drops a reply, or undefined. `fromFile`: its body is read from a file, so it cannot be checked. */
 function postSends(text: string, fromFile: boolean, calls = true): string | undefined {
 	if (text.includes(REPLY_ACT) && (fromFile || SENDING_ACT.test(text))) return `a ${REPLY_ACT} call that sends`;
-	if (calls && NOTICE_ANSWER.test(text) && (fromFile || SENDING_PICK.test(text) || !LABELLED.test(text))) return "a card answer that sends or drops a draft";
+	if (calls && NOTICE_ANSWER.test(text) && (fromFile || SENDING_PICK.test(text))) return "a card answer that sends or drops a draft";
 	return undefined;
 }
 

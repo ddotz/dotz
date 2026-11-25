@@ -31,11 +31,10 @@ const refusedShell = [
 	`curl -s -X POST http://127.0.0.1:7420/api/reply/act -H 'x-dotz-token: t' -d '{"ref":"D1","action":"send"}'`,
 	`curl -s http://127.0.0.1:7420/api/reply/act -d '{"action": "retry", "ref": "D1"}'`,
 	"curl -s http://127.0.0.1:7420/api/reply/act --data @body.json",
-	// A card's answer is the owner's word: a 보내기 or 보내지 않기 pick, or one with no label to tell, is refused.
+	// A card's answer that names a 보내기 or 보내지 않기 pick, or reads its body from a file, is refused.
 	`curl -s -X POST http://127.0.0.1:7420/api/notices/n1/answer -H 'x-dotz-token: t' -d '{"n":1,"label":"보내기"}'`,
 	`curl -s http://127.0.0.1:7420/api/notices/n1/answer -d '{"n":3,"label":"보내지 않기"}'`,
 	`curl -s http://127.0.0.1:7420/api/notices/n1/answer -d '{"n":4,"label":"이대로 보내기"}'`,
-	`curl -s http://127.0.0.1:7420/api/notices/n1/answer -d '{"n":1}'`,
 	"curl -s http://127.0.0.1:7420/api/notices/n1/answer --data-binary @pick.json",
 	// Package runners and other HTTP clients.
 	"bunx zele mail send --to a@example.com",
@@ -98,6 +97,9 @@ const allowedShell = [
 	`curl -s http://127.0.0.1:7420/api/reply/act -d '{"ref":"D1","action":"revise","change":"shorter"}'`,
 	"curl -s http://127.0.0.1:7420/api/replies",
 	`curl -s http://127.0.0.1:7420/api/notices/n1/answer -d '{"n":2,"label":"고치기","note":"보내기 전에 더 짧게"}'`,
+	// A plain decision card's pick (n only, or a non-send label) passes: the hub refuses the hub token on a draft's card (hub/approval-wire.ts webAnswer).
+	`curl -s -X POST http://127.0.0.1:7420/api/notices/n1/answer -H 'x-dotz-token: t' -d '{"n":1}'`,
+	`curl -s http://127.0.0.1:7420/api/notices/n1/answer -d '{"n":2,"label":"7일 숨기기"}'`,
 	"curl -s http://127.0.0.1:7420/api/notices?limit=20",
 	"wget -qO- http://127.0.0.1:7420/api/notices",
 	"bunx zele mail list --limit 5",
@@ -128,7 +130,6 @@ const refusedCell = [
 	"os.system('bun features/reply-drafts/bin/draft.ts send 7')",
 	"await fetch('http://127.0.0.1:7420/api/reply/act', { method: 'POST', body: JSON.stringify({ ref: 'D1', action: 'send' }) })",
 	"await fetch('http://127.0.0.1:7420/api/notices/n1/answer', { method: 'POST', body: JSON.stringify({ n: 1, label: '보내기' }) })",
-	"await fetch(`${base}/api/notices/${id}/answer`, { method: 'POST', body: JSON.stringify({ n: 3 }) })",
 	// qa-clean-3 H2: the CLI or its flow called in-process, also through a name an earlier cell imported.
 	`const { sendDraft } = await import("./features/reply-drafts/lib/flow"); await sendDraft("A1", {})`,
 	`const { runDraft } = await import("/x/features/reply-drafts/bin/draft"); await runDraft(["send", "A1"], "")`,
@@ -145,6 +146,7 @@ const allowedCell = [
 	"print(['send', 'reply'].length)",
 	"await fetch('http://127.0.0.1:7420/api/notices/n1/answer', { method: 'POST', body: JSON.stringify({ n: 2, label: '고치기', note: 'shorter' }) })",
 	"const hits = await tool.grep({ pattern: '/api/notices/[^/]+/answer', path: 'hub' })",
+	"await fetch(`${base}/api/notices/${id}/answer`, { method: 'POST', body: JSON.stringify({ n: 1 }) })",
 ];
 
 test.each(refusedShell)("bash refused: %s", command => expect(bash(command)).toBeString());

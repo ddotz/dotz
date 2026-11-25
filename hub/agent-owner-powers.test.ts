@@ -141,6 +141,22 @@ describe("REQ4: an agent cannot restore a draft the owner dropped", () => {
 	});
 });
 
+describe("REQ6: a pick with no label (the shell guard lets it by) answers a plain card, never a send card", () => {
+	test("n only on a draft's card is owner_only and the draft waits; on an ordinary [ask] card it answers", async () => {
+		const id = newId();
+		mailDraft(id);
+		await out("mail:ao-nolabel", draftText(id));
+		const send = listNotices(500).items.find(n => n.decision?.draft?.ref === id)!;
+		const refused = await call("POST", `/api/notices/${encodeURIComponent(send.id)}/answer`, { n: 1 });
+		expect([refused.status, ((await refused.json()) as { code?: string }).code]).toEqual([403, "owner_only"]);
+		expect([stateOf(send.id), getDraft(id)?.status]).toEqual(["open", "pending"]);
+		ask("[ask] 검사\n결정: 작업 용어 검사를 만들까요?\n**1) 검사 만들기**\n**2) 7일 숨기기**");
+		const plain = card("작업 용어 검사");
+		expect((await call("POST", `/api/notices/${encodeURIComponent(plain.id)}/answer`, { n: 1 })).status).toBe(200);
+		expect(stateOf(plain.id)).not.toBe("open");
+	});
+});
+
 describe("REQ5: an agent cannot close the owner's open Kakao question", () => {
 	test("POST /api/kakao/chat/<id>/ask/drop with the hub token is owner_only", async () => {
 		const r = await call("POST", "/api/kakao/chat/100/ask/drop");
