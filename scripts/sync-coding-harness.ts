@@ -36,7 +36,7 @@ if (import.meta.main) {
 	const args = process.argv.slice(2);
 	const at = args.indexOf("--commit");
 	const rev = at >= 0 ? args[at + 1] : undefined;
-	const rest = args.filter((_, i) => i !== at && i !== at + 1);
+	const rest = at < 0 ? args : args.filter((_, i) => i !== at && i !== at + 1);
 	if (rest.length !== 1 || (at >= 0 && !rev)) {
 		console.error(USAGE);
 		process.exit(2);
