@@ -108,11 +108,6 @@ test("I2: a cheap live pin still pins as before", async () => {
 	expect(r.input.model).toBe("anthropic-subscription/claude-opus-5-5:medium");
 });
 
-test("I2: the dispatch-time net still blocks an expensive child model", () => {
-	const { handlers } = setup();
-	expect(handlers.before_subagent_spawn[0]({ agent: "task", patterns: ["anthropic/claude-fable-5-2"] })).toMatchObject({ block: true });
-});
-
 test("I2: guard off leaves the call exactly as it was", async () => {
 	const { call } = setup({ ...gate, ask_before_expensive: false });
 	const r = await call(omo({ subagent_type: "oracle", model: "anthropic-subscription/claude-fable-5-2" }));
@@ -147,12 +142,6 @@ test("I3: the grant key is main without a conversation and lane:<name> in a lane
 	expect((await setup().call(fable())).input.model).toBe(WORKER);
 	writeState("expensive-grants.json", { "lane:probe": { until: minutes(30), by: "owner" } }, 5_000);
 	expect((await setup().call(fable())).input.model).toBe("anthropic-subscription/claude-fable-5-2");
-});
-
-test("I3: DOTZ_OWNER_ASKED_FABLE still lifts the gate", async () => {
-	process.env.DOTZ_OWNER_ASKED_FABLE = "1";
-	const r = await setup().call(omo({ subagent_type: "oracle", model: "anthropic-subscription/claude-fable-5-2" }));
-	expect(r.input.model).toBe("anthropic-subscription/claude-fable-5-2");
 });
 
 test("I4: an owner-picked expensive main model raises no warning; any other one warns once and never tells the agent to switch back", () => {

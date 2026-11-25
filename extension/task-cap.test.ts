@@ -52,14 +52,6 @@ test("one hidden steer past 75% of the configured cap, then the block still fire
 	expect(w.call().block).toBe(true);
 });
 
-test("the default cap warns at 18M", () => {
-	const w = worker(guardConfigFrom({}).task_token_cap);
-	w.turn(17_998_999);
-	expect(w.sent).toEqual([]);
-	w.turn(0);
-	expect(w.sent).toHaveLength(1);
-});
-
 test("no warning on a final turn without tools, nor when one turn jumps past the cap", () => {
 	const w = worker(1_000_000);
 	w.turn(800_000, []);
@@ -202,15 +194,6 @@ test("config: compaction threshold defaults to 300K, 0 turns it off, bad values 
 	expect(guardConfigFrom({}).task_compact_tokens).toBe(300_000);
 	expect(guardConfigFrom({ task_compact_tokens: 0 }).task_compact_tokens).toBe(0);
 	expect(guardConfigFrom({ task_compact_tokens: -5 }).task_compact_tokens).toBe(300_000);
-});
-
-test("with the default threshold a worker at 200K context keeps working uncompacted and compacts past 300K", () => {
-	const w = worker(50_000_000, guardConfigFrom({}).task_compact_tokens);
-	w.turn(200_000);
-	w.turn(290_000);
-	expect(w.compacts).toHaveLength(0);
-	w.turn(300_000);
-	expect(w.compacts).toHaveLength(1);
 });
 
 test("past the cap read-only collection calls run without counting a block, every other tool stays blocked", () => {

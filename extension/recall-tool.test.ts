@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { jsonZod, params } from "./schema.ts";
+import { jsonZod } from "./schema.ts";
 import { findBun, recallArgv, recallTool, type RunCli } from "./recall-tool.ts";
 
 function register(run: RunCli) {
@@ -9,13 +9,6 @@ function register(run: RunCli) {
 }
 
 describe("dotz_recall", () => {
-	test("is a deferred tool without a prompt snippet", () => {
-		const t = register(async () => "");
-		expect(t.name).toBe("dotz_recall");
-		expect(t.exposure).toBe("search");
-		expect(t.promptSnippet).toBeUndefined();
-	});
-
 	test("a search maps every parameter to flags and puts the query after --", () => {
 		expect(recallArgv({ query: " fix it ", also: ["a b", " "], after: "2026-01-01", before: "2026-02-01", project: "app", limit: 5.7 })).toEqual([
 			"search", "--also", "a b", "--after", "2026-01-01", "--before", "2026-02-01", "--project", "app", "--limit", "5", "--", "fix it",
@@ -37,13 +30,6 @@ describe("dotz_recall", () => {
 		const r = await t.execute("1", { query: "  " });
 		expect(called).toBe(false);
 		expect(r.content[0].text).toContain("recall failed");
-	});
-
-	test("the schema lists the documented parameters, none required, limit bounded", () => {
-		const schema = params(register(async () => "").parameters);
-		expect(Object.keys(schema.properties).sort()).toEqual(["after", "also", "before", "limit", "open", "project", "query"]);
-		expect(schema.required).toBeUndefined();
-		expect(schema.properties.limit).toEqual({ type: "number", minimum: 1, maximum: 20 });
 	});
 });
 

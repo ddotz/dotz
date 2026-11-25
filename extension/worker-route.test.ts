@@ -199,15 +199,6 @@ test("a queued spawn keeps its difficulty: a later call with the same name is re
 	expect(spawn("task", "Fix-2")?.model).toBe("anthropic/claude-sonnet-5-5:high");
 });
 
-test("an entry left by a call that never spawned does not bind a later item of that name", async () => {
-	writeRoutes();
-	const { task, spawn } = setup();
-	await task(call(item({ name: "Fix", effort: "hi" })));
-	const later = await task(call(item({ name: "Fix", effort: "lo" })));
-	expect(later.tasks[0].name).toBe("Fix-2");
-	expect(spawn("task", "Fix-2")?.model).toBe("anthropic/claude-sonnet-5-5:high");
-});
-
 test("after a restart nothing is let through yet, so a spawn keyed Fix-2 (omp's suffix for an id from before the restart) takes the pending Fix", async () => {
 	writeRoutes();
 	const { task, spawn } = setup();

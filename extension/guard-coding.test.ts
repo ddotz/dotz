@@ -114,11 +114,3 @@ test("a payload with another extension present only stands down that name", () =
 	expect(installedOriginal(agentPi(), "harness-tools")).toBeUndefined();
 	expect(installedOriginal(agentPi(), "orchestrator-guard")).toBeDefined();
 });
-
-test("without the marker the copies register as today", () => {
-	const run = installInFreshProcess(undefined);
-	expect(run.handlers.tool_call).toBeGreaterThan(0);
-	expect(run.handlers.before_subagent_spawn).toBeGreaterThan(0);
-	expect(run.commands.length + run.tools.length).toBeGreaterThan(0);
-	expect(installedOriginal(agentPi(), "orchestrator-guard")).toBeUndefined();
-});

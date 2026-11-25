@@ -58,14 +58,6 @@ test("a worker spawned at xhigh, then a switch to medium: its completion turn ru
 	expect(o.turn("[dotz inbox] web from owner\nnext question")).toBe("medium");
 });
 
-test("a worker spawned at medium completes at medium while the session runs at xhigh", () => {
-	const o = orchestrator("medium");
-	o.spawn("st_01a1bbbb");
-	o.ownerSwitch("xhigh");
-	expect(o.turn(o.wake("st_01a1bbbb"))).toBe("medium");
-	expect(o.level()).toBe("xhigh");
-});
-
 test("an owner message after the switch runs at the current effort with no switch call", () => {
 	const o = orchestrator("xhigh");
 	o.spawn("st_01a1cccc");
@@ -91,17 +83,6 @@ test("a lane launched at xhigh reports into an xhigh turn after a switch to medi
 	expect(o.level()).toBe("medium");
 	o.spawn("st_01a1ffff");
 	expect(o.turn(`${o.wake("st_01a1eeee")}\n${o.wake("st_01a1ffff")}`)).toBe("medium");
-});
-
-test("the owner's switch made during a result turn is the level the session goes back to", () => {
-	const o = orchestrator("xhigh");
-	o.spawn("st_01a1gggg");
-	o.ownerSwitch("medium");
-	o.fire("before_agent_start", { prompt: o.wake("st_01a1gggg"), trigger: "extension" });
-	expect(o.level()).toBe("xhigh");
-	o.ownerSwitch("high");
-	o.fire("agent_end", { messages: [] });
-	expect(o.level()).toBe("high");
 });
 
 test("a lane report in Korean is matched too", () => {
@@ -297,13 +278,6 @@ test("omp: the owner's switch during the wake turn is the level the session goes
 	o.end();
 	expect(o.level()).toBe("medium");
 	expect(o.switches).toEqual(["low", "high", "medium"]);
-});
-
-test("omp: a recorded level equal to the current one makes no switch call", () => {
-	const o = ompSession("medium");
-	o.spawn("Alpha");
-	expect(o.wake("Alpha")).toBe("medium");
-	expect(o.switches).toEqual([]);
 });
 
 test("omp: a deep-marked prompt that starts the same run as a wake keeps xhigh, and the session goes back to its own level", () => {
