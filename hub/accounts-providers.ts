@@ -141,6 +141,31 @@ export function providerGroups(input: { auth: Json | undefined; pool?: Json; usa
 	return { providers, login_providers };
 }
 
+export function ompProviderGroups(input: { credentials: { provider: string; type: string; label?: string }[]; aliases?: Record<string, string>; catalog: { id: string; name: string }[] }): { providers: ProviderGroup[]; login_providers: LoginProviderRow[] } {
+	const catalog = input.catalog;
+	const ids = new Set(catalog.map(p => p.id));
+	const byProvider = Map.groupBy(input.credentials, c => c.provider);
+	const providers = [...byProvider].map(([id, creds]): ProviderGroup => {
+		const oauth = creds.some(c => c.type === "oauth");
+		const shown = oauth ? creds.filter(c => c.type === "oauth") : creds;
+		return {
+			id,
+			name: id === "anthropic" && !oauth ? "Claude API 키" : providerLabel(id, catalog),
+			auth: oauth ? "oauth" : "api_key",
+			multi: oauth,
+			can_add: ids.has(id) && oauth,
+			can_pin: false,
+			can_delete: false,
+			accounts: shown.map((c, i) => {
+				const name = c.label ?? "default";
+				return { name, label: input.aliases?.[`${id}:${name}`] ?? (oauth ? name : "API 키"), order: i + 1, current: i === 0, pinned: false, picked: false, blocked: null, blocked_until: null, blocked_tag: null, windows: [] };
+			}),
+		};
+	});
+	providers.sort((a, b) => a.name.localeCompare(b.name));
+	return { providers, login_providers: catalog.map(p => ({ id: p.id, name: providerLabel(p.id, catalog), configured: byProvider.has(p.id) })) };
+}
+
 // The two usage numbers rules read (hub/account-rules.ts Usage), per account of one provider: what is left of its 5-hour and 7-day
 // windows (a model-scoped window like "7d fable" is not the account's own). A window whose reset time passed is an old reading.
 export function usageLeft(usage: Json | undefined, provider: string, names: string[], now: number): Record<string, { five_hour_left?: number; seven_day_left?: number }> {

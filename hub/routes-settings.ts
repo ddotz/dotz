@@ -274,7 +274,7 @@ export async function routeSettings(req: Request, url: URL, parts: string[]): Pr
 				const provider = decodeURIComponent(parts[2]);
 				if (req.method === "POST" && parts.length === 4) {
 					const b = await body(req);
-					return json({ ok: true, ...(await startLogin(provider, b.pending === "resume" || b.pending === "restart" ? b.pending : undefined)) });
+					return json({ ok: true, ...(await startLogin(provider, b.pending === "resume" || b.pending === "restart" ? b.pending : undefined, b.via === "omo" || b.via === "omp" ? b.via : undefined)) });
 				}
 				if (req.method === "POST" && parts.length === 5 && parts[4] === "complete") {
 					const b = await body(req);

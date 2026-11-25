@@ -232,6 +232,8 @@
   "connect.rt.run_check": "작동 검사",
   "connect.rt.switch": "바꾸기",
   "connect.rt.login_needed": "아직 로그인이 안 돼 있어요. 터미널에서 로그인한 뒤 다시 확인해 주세요.",
+  "connect.rt.login_needed_web": "아직 Claude 구독 로그인이 안 돼 있어요. 로그인을 누르면 여기서 바로 할 수 있어요.",
+  "connect.rt.web_login_name": "{name} Claude 구독",
   "connect.rt.login_open": "터미널에서 로그인",
   "connect.rt.login_recheck": "로그인 확인",
   "connect.rt.login_done": "로그인이 확인됐어요",

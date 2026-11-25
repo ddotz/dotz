@@ -7,7 +7,7 @@
 import { aliasesFile, aliasesOf, label, readAliases, resolveAccount, setAlias } from "./account-alias.ts";
 import { ANTHROPIC, blockedKind, checkNow, checkRules, DEFAULT_EVERY_MINUTES, DEFAULT_SCRIPT_TIMEOUT_MS, decisionsFile, describeRule, type Decision, getScriptOpinion, getUsage, josa, lastDecision, type Manual, readOnLimit, readRules, rulesFile, type ScriptErrorKind, setManual, setOnLimit, setOrder, setRuleList } from "./account-rules.ts";
 import { type AccountSwitch, accountView, clearSwitches, deleteSwitch, hardPinned, inOrder, MAX_LOG_LINES, onUsedChange, type Pool, quietly, readPool, stickyAccount, type SwitchKind, type UsedChange } from "./account-sticky.ts";
-import { deletePoolAccount, forgetOwnProviderPin, ownProviderPins, providerGroups, readProviderStore, windowsOf, writeProviderPin } from "./accounts-providers.ts";
+import { deletePoolAccount, forgetOwnProviderPin, ompProviderGroups, ownProviderPins, providerGroups, readProviderStore, windowsOf, writeProviderPin } from "./accounts-providers.ts";
 import { cardsKo, fitSubject } from "./card-text.ts";
 import { cardBlock } from "./choices.ts";
 import { TZ } from "./config.ts";
@@ -169,9 +169,9 @@ function chosenText(chosen: string, used: string | undefined, source: Decision["
 
 // `catalog`: the login providers this install offers (providers.ts loginProviders); a provider there can gain an account, and
 // only those appear in the 계정 추가 picker. accountsRoute fills it, since reading it may start an OmO process.
-export function accountsBody(now = Date.now(), catalog: { id: string; name: string }[] = []) {
+export function accountsBody(now = Date.now(), catalog: { id: string; name: string }[] = [], ompStore?: { provider: string; type: string; label?: string }[]) {
 	const sticky = stickyAccount(now);
-	const pool = readPool(undefined, now);
+	const pool = ompStore ? undefined : readPool(undefined, now);
 	const names = pool?.names ?? [];
 	// OmO skips a blocked account: this is where requests really go.
 	// 고정 mode: requests stay on the pinned account even while it is blocked
@@ -242,7 +242,7 @@ export function accountsBody(now = Date.now(), catalog: { id: string; name: stri
 			windows: claudeWindows(a.name).length ? claudeWindows(a.name) : [...(a.five_hour_left !== null ? [{ id: "anthropic:5h", label: "5시간", left: a.five_hour_left, resets_at: null }] : []), ...(a.seven_day_left !== null ? [{ id: "anthropic:7d", label: "7일", left: a.seven_day_left, resets_at: null }] : [])],
 		})),
 	};
-	const generic = providerGroups({ ...store, aliases, own: ownProviderPins(), catalog, now });
+	const generic = ompStore ? ompProviderGroups({ credentials: ompStore, aliases, catalog }) : providerGroups({ ...store, aliases, own: ownProviderPins(), catalog, now });
 	for (const g of generic.providers) for (const a of g.accounts) if (a.blocked) a.blocked_tag = blockedTag(blockedKind(a.blocked), a.blocked_until ? Date.parse(a.blocked_until) : undefined, now);
 	// every other pool: its rules (applied through OmO's pin, account-rules.ts applyProviderRules) once it holds two accounts or more
 	const others = generic.providers.map(g => {
@@ -438,7 +438,10 @@ export async function accountsRoute(req: Request, url: URL): Promise<Response | 
 	const p = url.pathname;
 	if (p !== "/api/accounts" && !["/api/accounts/alias", "/api/accounts/rules", "/api/accounts/rules/check", "/api/accounts/use", "/api/accounts/mode", "/api/accounts/on-limit", "/api/accounts/order", "/api/accounts/pin", "/api/accounts/switches"].includes(p)) return undefined;
 	// the login providers this install offers, for the 계정 추가 picker (one OmO/omp process, then cached by providers.ts)
-	const catalog = async () => (await import("./providers.ts")).loginProviders().catch(() => []);
+	const view = async () => {
+		const { authInfos, loginProviders, usesOmo } = await import("./providers.ts");
+		return accountsBody(Date.now(), await loginProviders().catch(() => []), usesOmo() ? undefined : await authInfos());
+	};
 	try {
 		const off = pinUnavailable();
 		if (off && req.method !== "GET" && PIN_PATHS.includes(p)) return Response.json({ error: off }, { status: 409 });
@@ -447,7 +450,7 @@ export async function accountsRoute(req: Request, url: URL): Promise<Response | 
 			const at = url.searchParams.get("at");
 			return Response.json({ removed: at === null ? clearSwitches() : deleteSwitch(at) });
 		}
-		if (req.method === "GET" && p === "/api/accounts") return Response.json(accountsBody(Date.now(), await catalog()));
+		if (req.method === "GET" && p === "/api/accounts") return Response.json(await view());
 		// DELETE /api/accounts?provider=<id>&name=<slot>: one account of any provider's pool (Claude keeps its own route below).
 		if (req.method === "DELETE" && p === "/api/accounts" && !(url.searchParams.get("provider") ?? "anthropic").startsWith("anthropic")) {
 			const provider = url.searchParams.get("provider")!;
@@ -455,7 +458,7 @@ export async function accountsRoute(req: Request, url: URL): Promise<Response | 
 			const r = deletePoolAccount(provider, name);
 			if (r === "missing") throw new AccountsError(`그런 계정이 없어요: ${name}`, 404);
 			if (r === "last") throw new AccountsError("마지막 남은 계정은 지울 수 없어요. 계정 화면에서 로그아웃해 주세요", 409);
-			return Response.json(accountsBody(Date.now(), await catalog()));
+			return Response.json(await view());
 		}
 		// DELETE /api/accounts?name=<id>: removes a subscription account from OmO's store and from dotz's pick, order and alias.
 		if (req.method === "DELETE" && p === "/api/accounts") {
@@ -466,7 +469,7 @@ export async function accountsRoute(req: Request, url: URL): Promise<Response | 
 				if (r === "last") throw new AccountsError("마지막 남은 계정은 지울 수 없어요. 계정 화면에서 로그아웃해 주세요", 409);
 				await checkNow();
 			});
-			return Response.json(accountsBody(Date.now(), await catalog()));
+			return Response.json(await view());
 		}
 		// {provider, account}: OmO's own pinned account for that provider's pool (null clears it). Claude also moves dotz's pick,
 		// so its rules and the 고정 mode agree with what OmO runs on.
@@ -483,18 +486,18 @@ export async function accountsRoute(req: Request, url: URL): Promise<Response | 
 				if (r === "missing") throw new AccountsError(`그런 공급자가 없어요: ${provider}`, 404);
 				await quietly(async () => void (await checkNow()));
 			}
-			return Response.json(accountsBody(Date.now(), await catalog()));
+			return Response.json(await view());
 		}
 		if (req.method === "PUT" && p === "/api/accounts/alias") {
 			const b = await readBody(req);
 			if (typeof b.key !== "string" || !b.key.trim()) throw new AccountsError("key(계정 id 또는 이메일)가 필요해요", 400);
 			if (b.alias !== undefined && b.alias !== null && typeof b.alias !== "string") throw new AccountsError("alias는 글자여야 해요", 400);
 			setAlias(b.key.trim(), b.alias ?? "");
-			return Response.json(accountsBody(Date.now(), await catalog()));
+			return Response.json(await view());
 		}
 		if (req.method === "PUT" && p === "/api/accounts/rules") {
 			await putRules(await readBody(req));
-			return Response.json(accountsBody(Date.now(), await catalog()));
+			return Response.json(await view());
 		}
 		// {provider?, rules: [...]}: each rule's sentence (null for a bad one) and the bad fields, {index, field, text}; nothing is saved
 		if (req.method === "POST" && p === "/api/accounts/rules/check") {
@@ -513,7 +516,7 @@ export async function accountsRoute(req: Request, url: URL): Promise<Response | 
 				if (!account) throw new AccountsError("고정할 계정을 골라 주세요", 400);
 				await useAccount(account);
 			} else throw new AccountsError('mode는 "auto" 또는 "pinned"여야 해요', 400);
-			return Response.json(accountsBody(Date.now(), await catalog()));
+			return Response.json(await view());
 		}
 		// 한도에 걸렸을 때의 선택: {on_limit:"switch"|"wait"|null} — 고정/자동 전환 모드 자체는 그대로 두고 다음부터 조용히 따라요.
 		// null (or DELETE) clears it: the next limit asks once again.
@@ -523,7 +526,7 @@ export async function accountsRoute(req: Request, url: URL): Promise<Response | 
 			const v = b.on_limit;
 			if (v !== "switch" && v !== "wait" && v !== null) throw new AccountsError('on_limit은 "switch", "wait" 또는 null이어야 해요', 400);
 			setOnLimit(v ?? undefined);
-			return Response.json(accountsBody(Date.now(), await catalog()));
+			return Response.json(await view());
 		}
 		// {order:[id, ...]}: the account order (the fallback order of 자동 전환); every id must be an account in OmO's pool
 		if (req.method === "PUT" && p === "/api/accounts/order") {
@@ -536,12 +539,12 @@ export async function accountsRoute(req: Request, url: URL): Promise<Response | 
 				setOrder(order);
 				await checkNow();
 			});
-			return Response.json(accountsBody(Date.now(), await catalog()));
+			return Response.json(await view());
 		}
 		if (req.method === "POST" && p === "/api/accounts/use") {
 			const b = await readBody(req);
 			await useAccount(String(b.account ?? ""), b.until === undefined || b.until === null ? undefined : String(b.until));
-			return Response.json(accountsBody(Date.now(), await catalog()));
+			return Response.json(await view());
 		}
 		return undefined;
 	} catch (e) {

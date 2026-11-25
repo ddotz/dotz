@@ -3,6 +3,7 @@ let RT = null, rtLive = null;
 const RT_ICON = { omp: "term", claude: "spark", codex: "code", omo: "braces" };
 const RT_ROLE = { orchestrator: TX("common.assistant"), lanes: TX("common.session") };
 const RT_RESULT = { ok: [TX("project.res.passed"), "ok"], adapted: [TX("connect.rt.adapted"), "pri"], disabled: [TX("connect.rt.disabled"), ""], unsupported: [TX("connect.rt.unsupported"), "warn"], unknown: [TX("connect.rt.unknown"), "warn"], fail: [TX("home.sys.failed"), "err"] };
+const RT_WEB_LOGIN = { omo: "anthropic" };
 async function loadRuntimes(refresh) {
   try { RT = await api(`/api/runtimes${refresh ? "?refresh=1" : ""}`); } catch { return; }
   if (current === "settings" || current === "runtime") renderSettings();
@@ -53,6 +54,7 @@ function rtFlow(r) {
   const err = usErr();
   const d = dialog({ classic: true, title: TX("connect.rt.switch_to", { name: r.label }), body: [box, err], wide: true, onclose: () => { clearInterval(timer); rtLive = null; loadRuntimes(true); } });
   const needLogin = () => !!(r.login && r.login.checked && !r.login.ready);
+  const webLogin = RT_WEB_LOGIN[r.id];
   const usable = () => r.hasAdapter && !needLogin() && (r.id === "omo" && r.installed !== false || (report && report.verdict !== "blocked" && !(r.version && report.version !== r.version)));
   async function pull() {
     try { const x = await api(`/api/runtimes/${r.id}`); report = x.report; st = x.state; } catch { return; }
@@ -79,14 +81,16 @@ function rtFlow(r) {
   function paint() {
     clear(box);
     const running = checking || (st && st.running);
-    if (needLogin()) box.append(el("p", { text: TX("connect.rt.login_needed") }));
+    if (needLogin()) box.append(el("p", { text: webLogin ? TX("connect.rt.login_needed_web") : TX("connect.rt.login_needed") }));
     if (running) box.append(el("div", {}, el("p", { text: [TX("connect.rt.checking"), st && st.current].filter(Boolean).join(" · ") }), el("div", { class: "bar" }, el("i", { style: `width:${st && st.total ? Math.round((st.done / st.total) * 100) : 4}%` })), el("div", { class: "note", text: st && st.total ? TX("connect.rt.progress", { done: st.done, total: st.total }) : TX("connect.rt.starting") })));
     else if (report) box.append(rtReportView(r, report));
     else if (r.id === "omo" && r.hasAdapter) box.append(el("p", { text: TX("connect.rt.omo_note") }));
     else box.append(el("p", { text: r.hasAdapter ? TX("connect.rt.check_note", r.limits || {}) : TX("connect.rt.no_adapter_check") }));
     if (r.hasAdapter) box.append(roleBar());
     const acts = [{ label: TX("common.cancel"), onclick: c => c() }];
-    if (needLogin()) acts.push({ label: TX("connect.rt.login_open"), kind: "tonal", onclick: () => openShell({ command: r.login.command }) }, { label: TX("connect.rt.login_recheck"), kind: "text", onclick: async () => { await pullLogin(); toast(needLogin() ? TX("connect.rt.login_still") : TX("connect.rt.login_done")); } });
+    if (needLogin()) acts.push(webLogin
+      ? { label: TX("settings.login"), kind: "tonal", onclick: (c, btn) => busy(btn, () => startLogin({ id: webLogin, name: TX("connect.rt.web_login_name", { name: r.label }) }, undefined, { via: r.id, done: pullLogin })) }
+      : { label: TX("connect.rt.login_open"), kind: "tonal", onclick: () => openShell({ command: r.login.command }) }, { label: TX("connect.rt.login_recheck"), kind: "text", onclick: async () => { await pullLogin(); toast(needLogin() ? TX("connect.rt.login_still") : TX("connect.rt.login_done")); } });
     else if (!running) acts.push({ label: report ? TX("connect.rt.recheck") : TX("connect.rt.run_check"), kind: report ? "text" : "tonal", onclick: () => check() });
     acts.push({ label: TX("connect.rt.switch"), kind: "pri", disabled: running || !usable() || !roles.size, onclick: (c, btn) => usRun(btn, err, async () => {
       try { const res = await api(`/api/runtimes/${r.id}/use`, "POST", { roles: [...roles] }); toast(res.applies); c(); }

@@ -120,9 +120,9 @@ function addProviderDialog() {
   else paintKey();
 }
 // A login still open (a closed tab, /login in the chat) blocks a new one: pick it up where it stopped, or drop it and start over.
-function pendingLoginAsk(p, pending) {
+function pendingLoginAsk(p, pending, opts) {
   const same = pending.provider === p.id;
-  const go = mode => c => { c(); startLogin(p, mode); };
+  const go = mode => c => { c(); startLogin(p, mode, opts); };
   const dg = dialog({ confirm: true, title: TX("settings.login.pending_title"),
     body: same ? null : el("p", { text: TX("settings.login.pending_other", { name: providerName(pending.provider) }) }),
     actions: [{ label: TX("common.close"), onclick: c => c() }, ...(same
@@ -130,11 +130,11 @@ function pendingLoginAsk(p, pending) {
       : [{ label: TX("settings.login.restart"), kind: "pri", onclick: go("restart") }])] });
   ovFocus(dg.node, dg.node.querySelector(".dact .btn.pri"));   // by the keyboard the main way out gets the focus, not the close beside it
 }
-async function startLogin(p, pending) {
+async function startLogin(p, pending, { via, done } = {}) {
   let r;
-  try { r = await api(`/api/providers/${enc(p.id)}/login`, "POST", pending ? { pending } : {}); }
+  try { r = await api(`/api/providers/${enc(p.id)}/login`, "POST", { ...(pending ? { pending } : {}), ...(via ? { via } : {}) }); }
   catch (e) {
-    if (!pending && e.data && e.data.pending) pendingLoginAsk(p, e.data.pending);
+    if (!pending && e.data && e.data.pending) pendingLoginAsk(p, e.data.pending, { via, done });
     else toast(e.message, true);
     return;
   }
@@ -197,6 +197,7 @@ async function startLogin(p, pending) {
     if (current === "home") renderHome();
     loadModels(true);
     loadAccounts();
+    if (done) done();
   };
   const fail = text => { msg.textContent = text; msg.hidden = false; };
   const poll = async () => {

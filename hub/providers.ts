@@ -40,7 +40,7 @@ export async function saveProviderKey(provider: string, rawKey: string): Promise
 		const saved = await runLimited([OMP, "auth", "import", "-"], OMP_AUTH_MS, { stdin: JSON.stringify({ version: 1, credentials: [{ provider, credential: { type: "api_key", key } }] }) });
 		if (saved.code !== 0) throw new ControlError("키를 저장하지 못했어요", 500);
 	}
-	invalidate(); modelConnected();
+	signedIn();
 	return mask(key);
 }
 
@@ -97,11 +97,12 @@ const authStamp = (): string => `${authFile()}:${mtimeOf(authFile())}`;
 let cache: { models?: Cached<ModelInfo[]>; auth?: Cached<AuthInfo[]>; usage?: Cached<OmpUsageReport[]> } = {};
 // A read in flight is shared: pages asking at the same moment wait for one process instead of starting one each.
 const loading = new Map<keyof typeof cache, Promise<unknown>>();
-function invalidate(): void {
-	cache = {}; loading.clear();
-}
 /** Forgets every cached read, the model list included, as a login does. */
-export const forgetProviderReads = invalidate;
+export const forgetProviderReads = (): void => { cache = {}; loading.clear(); };
+const invalidate = forgetProviderReads;
+const signInListeners: (() => void)[] = [];
+export const onSignedIn = (fn: () => void): void => void signInListeners.push(fn);
+const signedIn = (): void => { invalidate(); modelConnected(); for (const fn of signInListeners) fn(); };
 const modelsListeners = new Map<string, () => void>();
 /** Runs `listener` once, right after the next model list read that gave a list; a second call under the same `id` replaces the first. It never starts a read. */
 export const onModelsLoaded = (id: string, listener: () => void): void => void modelsListeners.set(id, listener);
@@ -129,7 +130,7 @@ async function cached<K extends keyof typeof cache>(key: K, load: () => Promise<
 // Runtimes keep separate credential stores: omp has its own (`omp auth export`), OmO reads <agent dir>/auth.json. A role that
 // runs on OmO lists what OmO can run, not what omp happens to hold (a fresh OmO machine has an empty omp store).
 const ROLES = ["orchestrator", "lane"] as const;
-const usesOmo = (): boolean => ROLES.some(r => runtimeIdOf(r) === "omo");
+export const usesOmo = (): boolean => ROLES.some(r => runtimeIdOf(r) === "omo");
 const usesOmp = (): boolean => ROLES.some(r => runtimeIdOf(r) !== "omo");
 
 async function cliText(bin: string, args: string[], timeoutMs = 30_000): Promise<string | undefined> {
@@ -218,7 +219,7 @@ export const heldModels = (): readonly ModelInfo[] | undefined => cache.models?.
 
 // What omp itself has stored (`omp auth export`): only provider ids, credential types and masked key tails are kept.
 type AuthInfo = { provider: string; type: string; label?: string; masked?: string; accounts?: number; pool?: boolean };
-const authInfos = async (): Promise<AuthInfo[]> =>
+export const authInfos = async (): Promise<AuthInfo[]> =>
 	(await cached("auth", async () => {
 		const own = usesOmo() ? omoAuthInfos(omoAuth()) : [];
 		if (!usesOmp()) return own;
@@ -397,7 +398,7 @@ function finishLogin(l: Login, code: number): void {
 		l.status = "failed";
 		l.error = l.cancelled ? "로그인이 취소됐어요" : "로그인에 실패했어요. 코드를 확인하고 다시 시도해 주세요";
 	}
-	if (l.status === "done") { invalidate(); modelConnected(); }
+	if (l.status === "done") signedIn();
 }
 
 async function pump(l: Login, stream: ReadableStream<Uint8Array>): Promise<void> {
@@ -439,8 +440,8 @@ function loginOf(provider: string, loginId: string): Login | OmoLogin {
 }
 
 // `pending`: what to do with a login still open. resume hands back that login (same provider only) at its current step, restart cancels it first.
-export async function startLogin(provider: string, pending?: "resume" | "restart"): Promise<{ login_id: string } & LoginView> {
-	if (!PROVIDER_ID.test(provider) || !(await loginProviders()).some(p => p.id === provider)) throw new ControlError(`"${provider}"은(는) 로그인할 수 없는 공급자예요`, 404);
+export async function startLogin(provider: string, pending?: "resume" | "restart", via: "omo" | "omp" = loginVia()): Promise<{ login_id: string } & LoginView> {
+	if (!PROVIDER_ID.test(provider) || (via === loginVia() && !(await loginProviders()).some(p => p.id === provider))) throw new ControlError(`"${provider}"은(는) 로그인할 수 없는 공급자예요`, 404);
 	if (login && !login.exited) {
 		const l = login;
 		if (pending === "resume" && l.provider === provider) return { login_id: l.id, ...(l.via === "omo" ? omoView(l) : parseLoginOutput(l.out)) };
@@ -448,7 +449,7 @@ export async function startLogin(provider: string, pending?: "resume" | "restart
 		await cancelLogin(l.provider);
 	}
 	// `omp login` writes omp's store, which OmO never reads: on OmO the login goes through OmO's own RPC.
-	if (loginVia() === "omo") return startOmoLogin(provider);
+	if (via === "omo") return startOmoLogin(provider);
 	const proc = Bun.spawn([OMP, "login", provider], { stdin: "pipe", stdout: "pipe", stderr: "pipe", env: { ...process.env, BROWSER: "true" } });
 	const l: Login = { via: "omp", id: crypto.randomUUID(), provider, proc, out: "", lastOutAt: Date.now(), exited: false, status: "waiting", cancelled: false, timer: setTimeout(() => killLogin(l, "시간이 지나 로그인이 취소됐어요"), LOGIN_TTL_MS) };
 	l.timer.unref();
@@ -568,7 +569,7 @@ function finishOmo(l: OmoLogin, ok: boolean, error?: string): void {
 	if (ok && !l.cancelled) {
 		l.status = "done";
 		keepPin(l);
-		invalidate(); modelConnected();
+		signedIn();
 	} else {
 		l.status = "failed";
 		l.error = l.cancelled ? "로그인이 취소됐어요" : error ?? "로그인에 실패했어요. 코드를 확인하고 다시 시도해 주세요";

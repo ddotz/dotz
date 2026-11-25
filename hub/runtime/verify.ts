@@ -12,6 +12,7 @@ import { broadcast } from "../events.ts";
 import { codex } from "./detect.ts";
 import { adapters } from "./index.ts";
 import { loginCommand, loginOf, type LoginState } from "./login.ts";
+import { onSignedIn } from "../providers.ts";
 import { makeOmpProbes } from "./omp-probes.ts";
 import { configuredRuntime, DEFAULT_RUNTIME } from "./runtime-id.ts";
 import type { DetectResult, RuntimeAdapter, RuntimeId } from "./types.ts";
@@ -214,6 +215,7 @@ const NO_LOGIN: LoginState = { checked: false, ready: false, accounts: 0 };
 const LOGIN_CACHE_MS = 30_000;
 export const LOGIN_REFUSAL = "로그인이 안 돼 있어요. 먼저 로그인해 주세요";
 const loginCache = new Map<string, { at: number; state: LoginState }>();
+onSignedIn(() => loginCache.clear());
 
 async function loginFor(d: Detected | undefined, fresh = false): Promise<LoginState> {
 	if (!d?.installed || !d.hasAdapter) return NO_LOGIN;
