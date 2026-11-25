@@ -247,6 +247,8 @@
   "connect.rt.login_recheck": "Check sign-in",
   "connect.rt.login_done": "Sign-in confirmed",
   "connect.rt.login_still": "Still not signed in",
+  "connect.rt.broken": "{name} can't load its settings (models.json), so the sign-in can't be checked. It isn't a sign-in problem: fix the settings, then check again.",
+  "connect.rt.broken_still": "Settings still can't be loaded",
   "connect.rt.pending": "Switching: {list}. Applies when current work finishes",
   "connect.rt.switching": "Switching",
   "connect.cond.current": "Account in use",

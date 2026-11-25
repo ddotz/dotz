@@ -18,6 +18,8 @@ test("login parsers: an account pool counts as signed in, garbage is unchecked",
 	expect(parseOmoAuth('{"status":"not_ready","provider":"anthropic-subscription","reason":"provider_not_found","accounts":[]}')).toEqual({ checked: true, ready: false, accounts: 0 });
 	expect(parseOmoAuth('warn: x\n{"status":"not_ready","accounts":[{"name":"a"},{"name":"b"}]}')).toEqual({ checked: true, ready: true, accounts: 2 });
 	expect(parseOmoAuth('{"status":"ready","accounts":[]}').ready).toBe(true);
+	// OmO could not load its model runtime: no accounts are listed whatever the pool holds
+	expect(parseOmoAuth('{"status":"invalid","provider":"anthropic-subscription","reason":"invalid_state","accounts":[]}')).toEqual({ checked: true, ready: false, accounts: 0, broken: true });
 	expect(parseOmoAuth("Error: unknown command").checked).toBe(false);
 	expect(parseClaudeAuth('{\n  "loggedIn": false,\n  "authMethod": "none"\n}')).toEqual({ checked: true, ready: false, accounts: 0 });
 	expect(parseClaudeAuth('{"loggedIn": true}').ready).toBe(true);

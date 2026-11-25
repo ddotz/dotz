@@ -238,6 +238,8 @@
   "connect.rt.login_recheck": "로그인 확인",
   "connect.rt.login_done": "로그인이 확인됐어요",
   "connect.rt.login_still": "아직 로그인이 안 돼 있어요",
+  "connect.rt.broken": "{name}가 자기 설정(모델 목록 models.json)을 읽지 못해서 로그인을 확인할 수 없어요. 로그인 문제는 아니에요. 설정을 고친 뒤 다시 확인해 주세요.",
+  "connect.rt.broken_still": "아직 설정을 읽지 못해요",
   "connect.rt.pending": "바꾸는 중이에요: {list}. 하던 일이 끝나는 대로 다시 시작해서 적용해요",
   "connect.rt.switching": "바꾸는 중",
   "connect.cond.current": "지금 쓰는 계정",

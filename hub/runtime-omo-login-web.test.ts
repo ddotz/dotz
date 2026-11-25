@@ -7,8 +7,9 @@ const SHOTS = process.env.RUNTIME_LOGIN_SHOTS;
 if (SHOTS) mkdirSync(SHOTS, { recursive: true });
 
 let signedIn = false;
+let broken = false;   // OmO cannot load its models.json: its check lists no accounts whatever the pool holds
 const calls: string[] = [];
-const omo = () => ({ id: "omo", label: "OmO (oh-my-openagent)", installed: true, version: "5.1.83", hasAdapter: true, usable: true, roles: [], pending_roles: [], login: { checked: true, ready: signedIn, accounts: signedIn ? 1 : 0, command: "omo" }, limits: {}, report: null, state: null, switchable: true, refusal: null });
+const omo = () => ({ id: "omo", label: "OmO (oh-my-openagent)", installed: true, version: "5.1.83", hasAdapter: true, usable: true, roles: [], pending_roles: [], login: { checked: true, ready: signedIn && !broken, accounts: signedIn && !broken ? 1 : 0, ...(broken ? { broken: true } : {}), command: "omo" }, limits: {}, report: null, state: null, switchable: true, refusal: null });
 const runtimes = () => ({ current: { orchestrator: "omp", lanes: "omp" }, pending: { orchestrator: "omp", lanes: "omp" }, restart_needed: false, checklist: [], runtimes: [{ ...omo(), id: "omp", label: "omp", roles: ["orchestrator", "lanes"], pending_roles: ["orchestrator", "lanes"], login: { checked: true, ready: true, accounts: 1, command: "omp login" } }, omo()] });
 
 const te = new TextEncoder();
@@ -74,9 +75,33 @@ const shot = async (v: View, name: string) => {
 const acts = `return [...document.querySelector("dialog[open]").querySelectorAll(".dact button")].map(b => [b.textContent.trim(), b.disabled])`;
 const button = (label: string) => `[...document.querySelectorAll("dialog[open] .dact button")].find(b => b.textContent.trim() === ${JSON.stringify(label)})`;
 
+test("an OmO that cannot load its settings says so instead of asking for a sign-in; once they are fixed, 로그인 확인 turns 바꾸기 on", async () => {
+	signedIn = true;
+	broken = true;
+	calls.length = 0;
+	const v = new Bun.WebView({ width: 390, height: 844 });
+	views.push(v);
+	const { promise: opened, resolve } = Promise.withResolvers<void>();
+	streamWaiters.push(resolve);
+	await v.navigate(`http://127.0.0.1:${server.port}/`);
+	await opened;
+	await waitFor(v, `typeof NT !== "undefined" && NT.loaded && S`);
+	await run(v, `go("runtime")`);
+	await waitFor(v, `RT && RT.runtimes.length`);
+	await run(v, `rtFlow(RT.runtimes.find(r => r.id === "omo"))`);
+	await waitFor(v, `document.querySelector("dialog[open] .dact button")`);
+	expect(await q(v, `const t = document.querySelector("dialog[open]").textContent; return [t.includes(TX("connect.rt.broken", { name: "OmO (oh-my-openagent)" })), t.includes(TX("connect.rt.login_needed_web"))]`)).toEqual([true, false]);
+	expect(await q(v, acts)).toEqual([["취소", false], ["로그인 확인", false], ["바꾸기", true]]);
+	broken = false;
+	await run(v, `${button("로그인 확인")}.click()`);
+	await waitFor(v, `${button("바꾸기")} && !${button("바꾸기")}.disabled`);
+	expect(calls).toEqual([]);
+}, 20_000);
+
 for (const [label, w, h] of [["phone", 390, 844], ["desktop", 1280, 860]] as const) {
 	test(`${label} ${w}px: switching to OmO without its Claude login offers 로그인 right there; the finished login turns 바꾸기 on`, async () => {
 		signedIn = false;
+		broken = false;
 		calls.length = 0;
 		const v = new Bun.WebView({ width: w, height: h });
 		views.push(v);

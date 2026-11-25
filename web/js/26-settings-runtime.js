@@ -53,9 +53,10 @@ function rtFlow(r) {
   const box = el("div", { style: "display:flex;flex-direction:column;gap:var(--sp-3)" });
   const err = usErr();
   const d = dialog({ classic: true, title: TX("connect.rt.switch_to", { name: r.label }), body: [box, err], wide: true, onclose: () => { clearInterval(timer); rtLive = null; loadRuntimes(true); } });
-  const needLogin = () => !!(r.login && r.login.checked && !r.login.ready);
+  const broken = () => !!(r.login && r.login.broken);   // the runtime cannot load its settings: no sign-in can be read until they are fixed
+  const needLogin = () => !!(r.login && r.login.checked && !r.login.ready && !r.login.broken);
   const webLogin = RT_WEB_LOGIN[r.id];
-  const usable = () => r.hasAdapter && !needLogin() && (r.id === "omo" && r.installed !== false || (report && report.verdict !== "blocked" && !(r.version && report.version !== r.version)));
+  const usable = () => r.hasAdapter && !needLogin() && !broken() && (r.id === "omo" && r.installed !== false || (report && report.verdict !== "blocked" && !(r.version && report.version !== r.version)));
   async function pull() {
     try { const x = await api(`/api/runtimes/${r.id}`); report = x.report; st = x.state; } catch { return; }
     if (checking && !(st && st.running)) { checking = false; clearInterval(timer); rtLive = null; }
@@ -75,20 +76,22 @@ function rtFlow(r) {
     checking = true; st = { running: true, done: 0, total: 0 }; rtLive = pull; clearInterval(timer); timer = setInterval(tick, 1000); paint();
   }
   async function pullLogin() {
-    try { r.login = { ...r.login, ...(await api(`/api/runtimes/${r.id}/login`)) }; } catch { return; }
+    try { r.login = await api(`/api/runtimes/${r.id}/login`); } catch { return; }   // the whole state, command included: a merge would keep a broken flag the new read no longer has
     paint();
   }
   function paint() {
     clear(box);
     const running = checking || (st && st.running);
+    if (broken()) box.append(el("p", { text: TX("connect.rt.broken", { name: r.label }) }));
     if (needLogin()) box.append(el("p", { text: webLogin ? TX("connect.rt.login_needed_web") : TX("connect.rt.login_needed") }));
     if (running) box.append(el("div", {}, el("p", { text: [TX("connect.rt.checking"), st && st.current].filter(Boolean).join(" · ") }), el("div", { class: "bar" }, el("i", { style: `width:${st && st.total ? Math.round((st.done / st.total) * 100) : 4}%` })), el("div", { class: "note", text: st && st.total ? TX("connect.rt.progress", { done: st.done, total: st.total }) : TX("connect.rt.starting") })));
-    else if (report && !needLogin()) box.append(rtReportView(r, report));   // the sign-in comes first: the check needs it too
+    else if (report && !needLogin() && !broken()) box.append(rtReportView(r, report));   // the sign-in comes first: the check needs it too
     else if (r.id === "omo" && r.hasAdapter) box.append(el("p", { text: TX("connect.rt.omo_note") }));
     else box.append(el("p", { text: r.hasAdapter ? TX("connect.rt.check_note", r.limits || {}) : TX("connect.rt.no_adapter_check") }));
     if (r.hasAdapter) box.append(roleBar());
     const acts = [{ label: TX("common.cancel"), onclick: c => c() }];
-    if (needLogin()) acts.push(webLogin
+    if (broken()) acts.push({ label: TX("connect.rt.login_recheck"), kind: "tonal", onclick: async () => { await pullLogin(); if (broken()) toast(TX("connect.rt.broken_still"), true); } });
+    else if (needLogin()) acts.push(webLogin
       ? { label: TX("settings.login"), kind: "tonal", onclick: (c, btn) => busy(btn, () => startLogin({ id: webLogin, name: TX("connect.rt.web_login_name", { name: r.label }) }, undefined, { via: r.id, done: pullLogin })) }
       : { label: TX("connect.rt.login_open"), kind: "tonal", onclick: () => openShell({ command: r.login.command }) }, { label: TX("connect.rt.login_recheck"), kind: "text", onclick: async () => { await pullLogin(); toast(needLogin() ? TX("connect.rt.login_still") : TX("connect.rt.login_done")); } });
     else if (!running) acts.push({ label: report ? TX("connect.rt.recheck") : TX("connect.rt.run_check"), kind: report ? "text" : "tonal", onclick: () => check() });

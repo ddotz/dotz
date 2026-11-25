@@ -1,14 +1,20 @@
 import type { RuntimeId } from "./types.ts";
 
-export type LoginState = { checked: boolean; ready: boolean; accounts: number };
+/** broken: the runtime could not load its own settings, so the sign-in could not be read either way (OmO's status "invalid"). */
+export type LoginState = { checked: boolean; ready: boolean; accounts: number; broken?: true };
 
 const UNCHECKED: LoginState = { checked: false, ready: false, accounts: 0 };
 const CHECK_TIMEOUT_MS = 20_000;
 
-/** Parses `omo auth check --json`: an account pool with at least one account counts as signed in. */
+/**
+ * Parses `omo auth check --json`: an account pool with at least one account counts as signed in. Status "invalid" is OmO failing to
+ * load its model runtime (one bad models.json entry does it, for every provider; MacBook 2026-11-25): it lists no accounts whatever
+ * the pool holds, so it is not read as signed out.
+ */
 export function parseOmoAuth(out: string): LoginState {
 	try {
 		const j = JSON.parse(out.trim().split("\n").filter(l => l.startsWith("{")).pop() ?? "");
+		if (j.status === "invalid") return { checked: true, ready: false, accounts: 0, broken: true };
 		const accounts = Array.isArray(j.accounts) ? j.accounts.length : 0;
 		return { checked: true, ready: j.status === "ready" || accounts > 0, accounts };
 	} catch {
