@@ -42,6 +42,7 @@ interface Match<T> {
 
 interface Pair extends Match<Definition> {
 	file: string;
+	isNew: boolean;
 }
 
 interface Target {
@@ -78,6 +79,8 @@ const CANDIDATE = new RegExp(String.raw`(?<!${NAME_CHAR})(?:${PREFIXES.join("|")
 const REMAINDER = /^(?:_[\p{L}\p{N}_$]|\p{Lu})/u;
 const REGEXP_SPECIALS = /[.*+?^${}()|[\]\\]/g;
 const MARKER = /fast-check|fc\.assert|fc\.property|hypothesis|@given/;
+const MANIFESTS = ["package.json", "pyproject.toml", "requirements.txt", "requirements-dev.txt"];
+const MANIFEST_MARKER = /fast-check|hypothesis/;
 const TEST_DIRECTORY = /^(?:tests?|__tests__)$/;
 const TEST_NAME = /\.(?:test|spec)\.|_test\.py$|^test_.*\.py$/;
 const AST_GREP_SUPPRESSION = Buffer.from("ast-grep-ignore");
@@ -311,14 +314,16 @@ async function changedPairs(input: PropertyInput, target: Target, edited: boolea
 			const old = base?.get(definition.name)?.text;
 			return old !== undefined && tokens(old, python) === tokens(definition.text, python);
 		});
-	const changed: typeof matches = [];
+	const changed: Pair[] = [];
 	for (const match of matches) {
 		const pair = [match.first, match.second];
 		if (pair.every(definition => kept(definition, [before]))) continue;
-		const elsewhere = await baseDefinitions();
-		if (!pair.every(definition => kept(definition, [before, ...elsewhere]))) changed.push(match);
+		const bases = [before, ...(await baseDefinitions())];
+		if (pair.every(definition => kept(definition, bases))) continue;
+		const isNew = !pair.every(definition => bases.some(base => base?.has(definition.name) === true));
+		changed.push({ ...match, file: target.file, isNew });
 	}
-	return changed.map(match => ({ ...match, file: target.file })).sort((a, b) => a.first.line - b.first.line);
+	return changed.sort((a, b) => a.first.line - b.first.line);
 }
 
 function wordPattern(name: string): RegExp {
@@ -330,19 +335,26 @@ async function testText(path: string): Promise<string | undefined> {
 	return size !== undefined && size <= MAX_TEST_BYTES ? readFile(path, "utf8") : undefined;
 }
 
-async function uncovered(input: PropertyInput, pairs: readonly Pair[]): Promise<Pair[]> {
+async function uncovered(input: PropertyInput, pairs: readonly Pair[]): Promise<{ open: Pair[]; tooling: boolean }> {
 	const listing = await git(input.repo, ["ls-files", "-co", "--exclude-standard", "-z"], input.signal);
 	if (listing.code !== 0) throw new Error(`property: git ls-files failed in ${input.repo}: ${listing.err.trim().slice(0, 300)}`);
 	const tests = [...new Set(listing.out.split("\0").filter(file => file !== "" && isTestFile(file)))];
 	let open = pairs.map(pair => ({ pair, first: wordPattern(pair.first.name), second: wordPattern(pair.second.name) }));
+	let tooling = false;
 	for (let start = 0; start < tests.length && open.length > 0; start += READ_BATCH) {
 		input.signal?.throwIfAborted();
 		const texts = await Promise.all(tests.slice(start, start + READ_BATCH).map(file => testText(join(input.repo, file))));
 		for (const text of texts) {
-			if (text !== undefined && MARKER.test(text)) open = open.filter(({ first, second }) => !(first.test(text) && second.test(text)));
+			if (text === undefined || !MARKER.test(text)) continue;
+			tooling = true;
+			open = open.filter(({ first, second }) => !(first.test(text) && second.test(text)));
 		}
 	}
-	return open.map(({ pair }) => pair);
+	if (!tooling && open.length > 0) {
+		const manifests = await Promise.all(MANIFESTS.map(name => testText(join(input.repo, name))));
+		tooling = manifests.some(text => text !== undefined && MANIFEST_MARKER.test(text));
+	}
+	return { open: open.map(({ pair }) => pair), tooling };
 }
 
 function findingOf(pair: Pair): Finding {
@@ -362,9 +374,11 @@ function findingOf(pair: Pair): Finding {
  * changed TypeScript, JavaScript or Python file whose names are the two prefixes of one row of the pair table (`encode` and
  * `decode`, `to` and `from`, ...) followed by the same remainder, and it counts as changed when the text of either function
  * differs from the file's base text or the file is new. A test file of the repo (tracked, or untracked and not ignored)
- * covers a pair when it names both functions as whole words and holds a property-testing marker. Test files are never
- * scanned for pairs; a source file over 10 MiB and a test file over 1 MiB are not read. Aborting `signal` kills every child
- * process and rejects with its reason.
+ * covers a pair when it names both functions as whole words and holds a property-testing marker. A pair whose two functions
+ * both existed at the base is reported only in a repo that already has property tests (a test file with a marker, or
+ * fast-check or hypothesis named in a root manifest), so a fix of existing code never asks for a new dependency. Test files
+ * are never scanned for pairs; a source file over 10 MiB and a test file over 1 MiB are not read. Aborting `signal` kills
+ * every child process and rejects with its reason.
  */
 export async function propertyScan(input: PropertyInput): Promise<Finding[]> {
 	input.signal?.throwIfAborted();
@@ -380,5 +394,6 @@ export async function propertyScan(input: PropertyInput): Promise<Finding[]> {
 	);
 	const changed = scanned.flat();
 	if (changed.length === 0) return [];
-	return (await uncovered(input, changed)).map(findingOf);
+	const { open, tooling } = await uncovered(input, changed);
+	return open.filter(pair => tooling || pair.isNew).map(findingOf);
 }

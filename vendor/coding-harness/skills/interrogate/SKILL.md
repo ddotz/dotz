@@ -19,7 +19,7 @@ One `task` batch, every seat `isolated: true` (requires a git repo and plan mode
 |---|---|---|
 | Implementer's eye | `task` | always |
 | Reviewer's eye | `reviewer` | always |
-| Deep seat | `deep-reviewer` | one-way door only: a schema/migration, public API or wire format, auth/security, data deletion, or anything costly to undo after it ships. HEAVY alone does not qualify. |
+| Deep seat | `deep-reviewer` | one-way door only: a migration that rewrites stored data, a public API or wire format other programs depend on, auth/security, data deletion. A field added so that old data still reads is not one. HEAVY alone does not qualify. |
 
 Each brief carries the scope, the intent, and this assignment:
 
