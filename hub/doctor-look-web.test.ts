@@ -335,7 +335,8 @@ for (const width of [390, 1280]) {
 				expect(r.q).toBeLessThan(r.qFull + 1);
 				expect(r.w).toBeGreaterThanOrEqual(Math.min(r.wFull, Math.floor(r.row / 3)) - 1);
 				expect(r.q).toBeGreaterThanOrEqual(Math.min(r.qFull, Math.floor((r.row * 2) / 3)) - 1);
-				if (r.wFull + r.qFull <= r.row) expect([r.w, r.q].map(Math.round)).toEqual([r.wFull, r.qFull].map(Math.round));
+				// Within 1px like the bounds above: a text width is fractional and moves with the system font, so rounding both sides can split 170.5.
+				if (r.wFull + r.qFull <= r.row) for (const [box, text] of [[r.w, r.wFull], [r.q, r.qFull]]) expect(Math.abs(box - text)).toBeLessThan(1);
 				else expect(r.w + r.q).toBeGreaterThanOrEqual(r.row - 1);
 			}
 			const disk = rows.find(x => x.title.startsWith(t.diskSubject))!;

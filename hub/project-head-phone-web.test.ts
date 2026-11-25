@@ -92,6 +92,8 @@ test("at 390px the ⋯ menu still opens the name field, in the head and in reach
 test("at 1280px the head keeps the boxes it had", async () => {
 	const v = await open(wide);
 	const b = await boxes(v);
-	expect(b).toEqual(WIDE_1280);
+	// Boxes sized by their text (title, tag, upd) move a pixel or two with the system font version; a layout change moves them by far more.
+	expect(Object.keys(b).sort()).toEqual(Object.keys(WIDE_1280).sort());
+	for (const [k, want] of Object.entries(WIDE_1280)) for (const [f, n] of Object.entries(want)) expect([k, f, Math.abs((b as Record<string, Record<string, number>>)[k][f] - n) <= 2]).toEqual([k, f, true]);
 });
 });
