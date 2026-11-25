@@ -4,10 +4,12 @@ import { afterAll, expect, test } from "bun:test";
 import { chmodSync, mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { claudeShimEnv, isWindowsSide, linuxSidePath, realClaude, successLineSplitter } from "./claude-cli-shim.ts";
+import { claudeShimEnv, isWindowsSide, linuxSidePath, loginOutputFixer, realClaude } from "./claude-cli-shim.ts";
 
 const BEFORE_PASTE = "Opening browser to sign in…\nIf the browser didn't open, visit: https://claude.com/cai/oauth/authorize?code=true&client_id=9d1c&state=s\nPaste code here if prompted > ";
 const AFTER_PASTE = "Login successful.\n";
+// Claude Code 2.1.331 (recorded 2026-11-25 the same way): the URL moved to its own line.
+const BEFORE_PASTE_331 = "Opening browser to sign in…\nIf the browser didn't open, visit:\nhttps://claude.ai/oauth/authorize?z-_z30oanvjM\nPaste code here if prompted > ";
 const SENPI_SUCCESS_LINE = /^Login successful\.$/m;
 const SENPI_MANUAL_URL_LINE = /If the browser didn't open, visit: (https:\/\/\S+)\r?\n/;
 
@@ -16,7 +18,7 @@ afterAll(() => rmSync(dir, { recursive: true, force: true }));
 
 test("the stock output fails senpi's success test, and passes it once the wrapper ends the prompt line", () => {
 	expect(SENPI_SUCCESS_LINE.test(BEFORE_PASTE + AFTER_PASTE)).toBe(false);
-	const split = successLineSplitter();
+	const split = loginOutputFixer();
 	const out = split(BEFORE_PASTE) + split(AFTER_PASTE);
 	expect(SENPI_SUCCESS_LINE.test(out)).toBe(true);
 	expect(SENPI_MANUAL_URL_LINE.exec(out)?.[1]).toBe("https://claude.com/cai/oauth/authorize?code=true&client_id=9d1c&state=s");
@@ -24,11 +26,27 @@ test("the stock output fails senpi's success test, and passes it once the wrappe
 });
 
 test("output that already has the line break (browser callback, a fixed CLI) and other output pass through unchanged", () => {
-	const split = successLineSplitter();
+	const split = loginOutputFixer();
 	expect(split(BEFORE_PASTE) + split(`\n${AFTER_PASTE}`)).toBe(`${BEFORE_PASTE}\n${AFTER_PASTE}`);
-	expect(successLineSplitter()(`${BEFORE_PASTE}${AFTER_PASTE}`)).toBe(`${BEFORE_PASTE}\n${AFTER_PASTE}`);
-	expect(successLineSplitter()("2.1.316 (Claude Code)\n")).toBe("2.1.316 (Claude Code)\n");
-	expect(successLineSplitter()(AFTER_PASTE)).toBe(AFTER_PASTE);
+	expect(loginOutputFixer()(`${BEFORE_PASTE}${AFTER_PASTE}`)).toBe(`${BEFORE_PASTE}\n${AFTER_PASTE}`);
+	expect(loginOutputFixer()("2.1.316 (Claude Code)\n")).toBe("2.1.316 (Claude Code)\n");
+	expect(loginOutputFixer()(AFTER_PASTE)).toBe(AFTER_PASTE);
+});
+
+test("the 2.1.331 URL on its own line goes back on the visit: line senpi reads, in one chunk or split after visit:", () => {
+	const URL = "https://claude.ai/oauth/authorize?z-_z30oanvjM";
+	expect(SENPI_MANUAL_URL_LINE.exec(BEFORE_PASTE_331)).toBeNull();
+	const whole = loginOutputFixer()(BEFORE_PASTE_331);
+	expect(SENPI_MANUAL_URL_LINE.exec(whole)?.[1]).toBe(URL);
+	const cut = BEFORE_PASTE_331.indexOf("https://");
+	for (const at of [cut - 1, cut]) {
+		const fix = loginOutputFixer();
+		const out = fix(BEFORE_PASTE_331.slice(0, at)) + fix(BEFORE_PASTE_331.slice(at)) + fix(AFTER_PASTE) + fix();
+		expect(SENPI_MANUAL_URL_LINE.exec(out)?.[1]).toBe(URL);
+		expect(SENPI_SUCCESS_LINE.test(out)).toBe(true);
+	}
+	const ended = loginOutputFixer();
+	expect(ended("If the browser didn't open, visit:\n") + ended()).toBe("If the browser didn't open, visit:\n");
 });
 
 test("the wrapper runs the real CLI with the same arguments, stdin and exit code", async () => {

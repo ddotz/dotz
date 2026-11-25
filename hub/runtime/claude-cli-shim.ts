@@ -6,19 +6,33 @@
 // pasted). senpi 2026.10.31 decides the outcome with /^Login successful\.$/m, so the pasted-code sign-in - the one the web page
 // uses - is judged "unexpected_exit" and undone even though the CLI exited 0 signed in. This wrapper runs the real CLI and only
 // starts a new line before "Login successful." when it would otherwise share a line; everything else passes through unchanged.
-// Upstream: senpi's SUCCESS_LINE should accept the prompt prefix (anthropic-subscription/claude-cli-auth.js).
+// Claude Code 2.1.331 also moved the copy-code URL to its own line ("...visit:\nhttps://..."), which senpi's
+// /visit: (https:\/\/\S+)\r?\n/ never matches: no URL and no paste prompt reach the web, and the sign-in waits on nothing (MacBook,
+// 2026-11-25). The wrapper puts the URL back on the "visit:" line.
+// Upstream: senpi's SUCCESS_LINE should accept the prompt prefix and MANUAL_URL_LINE a line break (anthropic-subscription/claude-cli-auth.js).
 import { chmodSync, existsSync, mkdirSync, readdirSync, realpathSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 const SUCCESS = "Login successful.";
 
-// Pure, stateful per stream: the output with a line break before "Login successful." wherever it does not start a line.
-export function successLineSplitter(): (chunk: string) => string {
+const VISIT_END = /If the browser didn't open, visit:\s*$/;
+
+// Pure, stateful per stream: the output with a line break before "Login successful." wherever it does not start a line, and the
+// sign-in URL on the "visit:" line. A chunk ending at "visit:" is held until the next one; no chunk (undefined) at the end flushes it.
+export function loginOutputFixer(): (chunk?: string) => string {
 	let atLineStart = true;
+	let held = "";
 	return chunk => {
-		if (!chunk) return chunk;
-		let s = chunk.replace(/([^\n])(?=Login successful\.)/g, "$1\n");
+		let s = held + (chunk ?? "");
+		held = "";
+		const tail = chunk === undefined ? null : VISIT_END.exec(s);
+		if (tail) {
+			held = s.slice(tail.index);
+			s = s.slice(0, tail.index);
+		}
+		if (!s) return s;
+		s = s.replace(/(If the browser didn't open, visit:)\s+(?=https:\/\/)/g, "$1 ").replace(/([^\n])(?=Login successful\.)/g, "$1\n");
 		if (!atLineStart && s.startsWith(SUCCESS)) s = `\n${s}`;
 		atLineStart = s.endsWith("\n");
 		return s;
@@ -106,12 +120,14 @@ if (import.meta.main) {
 	const { DOTZ_CLAUDE_REAL: _, ...env } = process.env;
 	const child = Bun.spawn([real, ...process.argv.slice(2)], { stdin: "inherit", stdout: "pipe", stderr: "inherit", env });
 	for (const sig of ["SIGTERM", "SIGINT", "SIGHUP"] as const) process.on(sig, () => child.kill(sig));
-	const split = successLineSplitter();
+	const fix = loginOutputFixer();
 	const dec = new TextDecoder();
 	for await (const chunk of child.stdout) {
-		const out = split(dec.decode(chunk, { stream: true }));
+		const out = fix(dec.decode(chunk, { stream: true }));
 		if (out) process.stdout.write(out);
 	}
+	const rest = fix();
+	if (rest) process.stdout.write(rest);
 	const code = await child.exited;
 	process.exit(child.signalCode ? 1 : code);
 }
