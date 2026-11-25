@@ -13,9 +13,9 @@ import { shellHome } from "./util.ts";
 
 /** "advisor" is read from records written while the advisor was on; the harness no longer produces it. */
 export type MistakeSource = "user" | "advisor" | "agent";
-export type CheckKind = "type" | "lint" | "test" | "property" | "guard" | "none";
+export type CheckKind = "type" | "lint" | "test" | "property" | "none";
 
-/** The existing check that already covers a mistake closed as kind none: the path of a test, lint rule or guard file and the command that runs it. */
+/** The existing check that already covers a mistake closed as kind none: the path of a test or lint rule and the command that runs it. */
 export interface Covered {
 	path: string;
 	command: string;
@@ -33,6 +33,7 @@ export interface Mistake {
 	id: string;
 	source: MistakeSource;
 	text: string;
+	repeat?: true;
 	openedAt: string;
 	status: "open" | "proposed-unencoded" | "resolved" | "unencoded";
 	cause?: string;
@@ -94,7 +95,6 @@ const TYPED_EXTENSIONS = ["ts", "tsx", "mts", "cts", "rs", "go", "swift", "kt", 
 const LINT_CONFIG_NAME = /^(?:\.oxlintrc|eslint\.config\.|\.eslintrc|biome\.json|clippy\.toml$|ruff\.toml$|pyproject\.toml$|\.golangci\.)/;
 const TEST_FILE_NAME = /(?:\.(?:test|spec)\.|_test\.go$|_test\.py$|^test_.*\.py$|_spec\.rb$)/;
 const TEST_DIRECTORIES = ["test", "tests", "__tests__", "spec"];
-const GUARD_DIRECTORIES = ["extensions", "harness"];
 const TRIVIAL_COMMAND = /^(?:(?:true|echo|printf|exit)(?![\w-])|:(?:\s|$))/;
 const RULE_KIT_COMMAND = /(?:^|[\s/])harness\/gate\/rules\.ts\s+\S/;
 const AST_GREP_COMMAND = /(?:^|[\s;&|/])ast-grep\s/;
@@ -104,7 +104,7 @@ const HOME_PREFIX = /^(?:~|\$HOME|\$\{HOME\})(?=\/)/;
 const DOUBLE_QUOTE_UNSAFE = /[$`\\"]/;
 const OUTPUT_TAIL_CHARS = 1500;
 const DAY_MS = 86_400_000;
-const CHECK_KINDS: readonly CheckKind[] = ["type", "lint", "test", "property", "guard", "none"];
+const CHECK_KINDS: readonly CheckKind[] = ["type", "lint", "test", "property", "none"];
 
 function stateDir(): string {
 	return process.env.DONE_GATE_STATE_DIR ?? join(agentHome(), "gate-state");
@@ -225,8 +225,8 @@ function outputTail(output: string): string {
 	return trimmed.length > OUTPUT_TAIL_CHARS ? `...${trimmed.slice(-OUTPUT_TAIL_CHARS)}` : trimmed;
 }
 
-/** Records an obligation for the session; identical text from the same source returns the existing one. A user obligation is deduped only against one still unresolved, so a repeated correction reopens a closed one. Every change to a session's obligations runs under an exclusive lock, so concurrent writers (other turns, other processes) never overwrite each other. */
-export function openMistake(sessionId: string, input: { source: MistakeSource; text: string }): Mistake {
+/** Records an obligation for the session; identical text from the same source returns the existing one. A user obligation is deduped only against one still unresolved, so a repeated correction reopens a closed one. A mistake is marked repeat when the caller says so, when the session already holds a mistake with that text, or when the mistake log holds an open event with that text; opening the text of a still unresolved obligation again marks it repeat. Every change to a session's obligations runs under an exclusive lock, so concurrent writers (other turns, other processes) never overwrite each other. */
+export function openMistake(sessionId: string, input: { source: MistakeSource; text: string; repeat?: boolean }): Mistake {
 	return openOrFind(sessionId, input).mistake;
 }
 
@@ -235,14 +235,24 @@ export function isUnresolved(mistake: Mistake): boolean {
 	return mistake.status === "open" || mistake.status === "proposed-unencoded";
 }
 
-function openOrFind(sessionId: string, input: { source: MistakeSource; text: string }): { mistake: Mistake; created: boolean } {
+/** Whether an obligation blocks finishing and pushing: unresolved, and its class happened at least twice. */
+export function blocksStop(mistake: Mistake): boolean {
+	return isUnresolved(mistake) && mistake.repeat === true;
+}
+
+function openOrFind(sessionId: string, input: { source: MistakeSource; text: string; repeat?: boolean }) {
 	const text = input.text.trim();
-	return updateMistakes<{ mistake: Mistake; created: boolean }>(sessionId, mistakes => {
+	return updateMistakes<{ mistake: Mistake; created: boolean; raised: boolean }>(sessionId, mistakes => {
+		const repeat = input.repeat === true || mistakes.some(m => m.text === text) || readLog().some(entry => entry.event === "open" && typeof entry.text === "string" && entry.text.trim() === text);
 		const existing = mistakes.find(m => m.source === input.source && m.text === text && (input.source !== "user" || isUnresolved(m)));
-		if (existing) return { result: { mistake: existing, created: false } };
-		const mistake: Mistake = { id: `m${mistakes.length + 1}`, source: input.source, text, openedAt: new Date().toISOString(), status: "open" };
+		if (existing) {
+			if (!repeat || existing.repeat) return { result: { mistake: existing, created: false, raised: false } };
+			const raised: Mistake = { ...existing, repeat: true };
+			return { next: mistakes.map(m => (m === existing ? raised : m)), result: { mistake: raised, created: false, raised: true } };
+		}
+		const mistake: Mistake = { id: `m${mistakes.length + 1}`, source: input.source, text, openedAt: new Date().toISOString(), status: "open", ...(repeat ? { repeat: true as const } : {}) };
 		appendLog({ sessionId, id: mistake.id, event: "open", source: mistake.source, text });
-		return { next: [...mistakes, mistake], result: { mistake, created: true } };
+		return { next: [...mistakes, mistake], result: { mistake, created: true, raised: repeat } };
 	});
 }
 
@@ -320,11 +330,8 @@ function refusePathFit(kind: CheckKind, path: string): string | undefined {
 		const fits = TEST_FILE_NAME.test(name) || directories.some(d => TEST_DIRECTORIES.includes(d));
 		return fits ? undefined : `a ${kind} check lives in a test file (*.test.ts, *.spec.ts, *_test.go, test_*.py, or a file under test/, tests/, __tests__/, spec/); ${path} is not one.`;
 	}
-	if (kind === "type") {
-		const extension = name.includes(".") ? name.slice(name.lastIndexOf(".") + 1) : "";
-		return TYPED_EXTENSIONS.includes(extension) ? undefined : `a type check lives in a source file of a typed language (${TYPED_EXTENSIONS.join(", ")}); ${path} is docs, configuration or another file type.`;
-	}
-	return directories.some(d => GUARD_DIRECTORIES.includes(d)) ? undefined : `a guard lives in a file under an extensions/ or harness/ directory; ${path} is not under one.`;
+	const extension = name.includes(".") ? name.slice(name.lastIndexOf(".") + 1) : "";
+	return TYPED_EXTENSIONS.includes(extension) ? undefined : `a type check lives in a source file of a typed language (${TYPED_EXTENSIONS.join(", ")}); ${path} is docs, configuration or another file type.`;
 }
 
 function isTrivialCommand(command: string): boolean {
@@ -382,7 +389,7 @@ async function refuseUnlessPasses(command: string, cwd: string, deps: ResolveDep
 }
 
 async function refuseCovered(covered: Covered | undefined, cwd: string, deps: ResolveDeps, deadline: AbortSignal): Promise<string | undefined> {
-	const ask = `kind "none" must name the check that already covers this mistake: covered { path, command }, the path of an existing test, lint rule or guard file and the command that runs it and exits 0 now. If no check covers it, write one and resolve with its kind (skill://correct).`;
+	const ask = `kind "none" must name the check that already covers this mistake: covered { path, command }, the path of an existing test or lint rule and the command that runs it and exits 0 now. If no check covers it, write one and resolve with its kind (skill://correct).`;
 	if (!covered?.path?.trim()) return `kind "none" has no covered check. ${ask}`;
 	const path = resolve(cwd, covered.path);
 	const link = lstatSync(path, { throwIfNoEntry: false });
@@ -402,7 +409,7 @@ async function refuseNone(check: Check, source: MistakeSource, cwd: string, deps
 	const reason = check.reason?.trim() ?? "";
 	const words = new Set(reason.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? []).size;
 	if (reason.length < MIN_UNENCODED_REASON || words < MIN_UNENCODED_WORDS) {
-		return `kind "none" needs a reason of at least ${MIN_UNENCODED_REASON} characters and ${MIN_UNENCODED_WORDS} distinct words saying why no type, lint rule, test or guard can catch this class (got ${reason.length} characters, ${words} distinct words). Encode it instead if you can; skill://correct shows how.`;
+		return `kind "none" needs a reason of at least ${MIN_UNENCODED_REASON} characters and ${MIN_UNENCODED_WORDS} distinct words saying why no type, lint rule or test can catch this class (got ${reason.length} characters, ${words} distinct words). Encode it instead if you can; skill://correct shows how.`;
 	}
 	return source === "user" ? undefined : await refuseCovered(check.covered, cwd, deps, deadline);
 }
@@ -549,7 +556,7 @@ async function refuseCheck(check: Check, source: MistakeSource, deps: ResolveDep
 		return refusal ? { refusal } : {};
 	}
 	const refuse = (refusal: string): Verdict => ({ refusal });
-	if (!check.path?.trim()) return refuse(`kind "${check.kind}" needs the path of the file that encodes the check (a type, a .omp/lint/ rule or its test, a test, a guard).`);
+	if (!check.path?.trim()) return refuse(`kind "${check.kind}" needs the path of the file that encodes the check (a type, a .omp/lint/ rule or its test, a test).`);
 	const path = resolve(cwd, check.path);
 	const shown = shownPath(cwd, path);
 	const misfit = refusePathFit(check.kind, shown);
@@ -599,29 +606,19 @@ export async function resolveMistake(sessionId: string, id: string, input: { cau
 
 function unresolvedMessage(mistake: Mistake): string {
 	if (mistake.status === "proposed-unencoded") {
-		return [
-			`Mistake ${mistake.id} (from ${mistake.source}) is not closed: ${mistake.text}`,
-			`You proposed that no check can encode it (${mistake.check?.reason ?? ""}). A mistake the user reported is closed that way only by the user, with /gate-ok; the agent cannot accept its own reason.`,
-			"Either encode the class with a real check and resolve it again, or tell the user the reason and let them accept it.",
-		].join("\n");
+		return `Mistake ${mistake.id} (from ${mistake.source}) is not closed: ${mistake.text}\nYou proposed that no check can encode it (${mistake.check?.reason ?? ""}). A mistake the user reported is closed that way only by the user, with /gate-ok; the agent cannot accept its own reason.\nEither encode the class with a real check and resolve it again, or tell the user the reason and let them accept it.`;
 	}
-	const noneRule =
-		mistake.source === "user"
-			? `Only if no check can encode it: kind "none" with a reason of at least ${MIN_UNENCODED_REASON} characters and ${MIN_UNENCODED_WORDS} distinct words; for a user-reported mistake that is only a proposal, and it stays unresolved until the user accepts it with /gate-ok.`
-			: `Only if an existing check already covers it: kind "none" with covered { path, command } (an existing test, lint rule or guard file that exists, and the command that runs it and exits 0 now) and a reason of at least ${MIN_UNENCODED_REASON} characters and ${MIN_UNENCODED_WORDS} distinct words saying why that check covers it; that is logged as unencoded and shown to the user. A mistake no existing check covers is not closed as none: write the check.`;
 	return [
 		`Unresolved mistake ${mistake.id} (from ${mistake.source}): ${mistake.text}`,
-		"Finishing is refused until this is closed with a check, not an excuse. First state the cause: why did it happen?",
-		"Then encode the class with the strongest check that fits, in this order: a type that makes it unrepresentable; a lint rule with a test under .omp/lint/ (skill://correct); a test or property test; a guard.",
-		`Resolve it with the mistake tool: action "resolve", id "${mistake.id}", cause, check { kind: type|lint|test|property|guard, path, command }. The path must be a file you changed in this session (in any git repo you edited, also outside the working directory), fit the kind (type: a typed source file; lint: .omp/lint/ rule or test, or a lint config; test or property: a test file; guard: under extensions/ or harness/), and the command must exit 0 and name that file, after a leading "cd <repo> &&" when the file is in another repo (a lint rule under .omp/lint/ may use the rule kit or ast-grep).`,
-		noneRule,
+		"This class happened twice, so finishing is refused until it is fixed in the project repo you are working on, at the highest level that works, in order: architecture, types, lint, test, docs last. Never add a gate or guard stage for it. First state the cause: why did it happen?",
+		`Resolve it with the mistake tool: action "resolve", id "${mistake.id}", cause, check { kind, path, command }; the tool description says what each kind accepts.`,
 	].join("\n");
 }
 
 /** One finding per unresolved obligation of the session, for the stop gate. */
 export function mistakeFindings(sessionId: string): Finding[] {
 	return readMistakes(sessionId)
-		.filter(isUnresolved)
+		.filter(blocksStop)
 		.map(m => ({ stage: "mistakes", class: "unresolved", message: unresolvedMessage(m), text: m.text }));
 }
 
@@ -684,12 +681,14 @@ interface Schema {
 	object(shape: Record<string, SchemaNode>): SchemaNode;
 	enum(values: string[]): SchemaNode;
 	string(): SchemaNode;
+	boolean(): SchemaNode;
 }
 
 interface ToolParams {
 	action: "open" | "resolve" | "list";
 	text?: string;
 	source?: "user" | "agent";
+	repeat?: boolean;
 	id?: string;
 	cause?: string;
 	check?: Check;
@@ -719,7 +718,7 @@ export interface MistakeHostDeps {
 }
 
 const TOOL_DESCRIPTION =
-	"Record and close mistake obligations. A mistake (a user correction, a review or drive finding) blocks completion until it is encoded as a check. action open: text = the mistake, source = user when the user found it (a correction or complaint in their message), omitted when you or a review found it. action resolve: id, cause (one line: why it happened), check { kind: type|lint|test|property|guard|none, path (a file you changed this session that fits the kind, in any git repo you edited, also outside the working directory), command (required for every kind but none: must exit 0 now, name the path's file, and exit non-zero on the tree as it was when the mistake was opened (the session's base point when that tree is unknown) with only the check file copied over it, by an assertion, not by a load error; for a check in another repo begin with cd into it: its absolute path, or one relative to the working directory, then names the copy at that tree; a lint rule under .omp/lint/ may use the rule kit or ast-grep), reason (kind none only, at least 30 characters and 6 distinct words), covered (kind none only, required unless the mistake came from the user: { path, command } of an existing test, lint rule or guard file that already covers this mistake and the command that runs it; the path must exist and the command must exit 0 now, so a mistake that no existing check covers cannot be closed as none; for a user-reported mistake none is only a proposal the user accepts with /gate-ok) }. action list: show the session's obligations. Strongest check first: type, lint rule with a test under .omp/lint/ (skill://correct), test or property test, guard.";
+	"Record and close mistake obligations. A mistake (a user correction, a review or drive finding) blocks finishing only once its class happened twice. action open: text = the mistake, source = user when the user found it, omitted when you or a review found it, repeat = true when the same class happened before (earlier in this session, an earlier session, or the repo's history); the first time, fix this instance only. action resolve: id, cause (one line: why it happened), check { kind: type|lint|test|property|none, path (a file you changed this session that fits the kind, in any git repo you edited), command (required unless none: must exit 0 now, name the path's file, and exit non-zero on the tree as it was when the mistake was opened with only the check file copied over it, by an assertion, not a load error; for a check in another repo begin with cd into it; a lint rule under .omp/lint/ may use the rule kit or ast-grep), reason (kind none only, at least 30 characters and 6 distinct words), covered (kind none only, required unless the mistake came from the user: { path, command } of an existing test or lint rule that covers it and the command that exits 0 now; for a user-reported mistake none is only a proposal the user accepts with /gate-ok) }. action list: show the session's obligations. Fix the class in the project repo, strongest first: architecture, types, lint (skill://correct), test, docs last; never add a harness gate or guard stage."
 
 function reply(text: string, isError = false): ToolResult {
 	return { content: [{ type: "text", text }], isError };
@@ -740,9 +739,10 @@ async function runTool(params: ToolParams, ctx: MistakeCtx, deps: MistakeHostDep
 	}
 	if (params.action === "open") {
 		if (!params.text?.trim()) return reply('mistake: action "open" needs text describing the mistake.', true);
-		const { mistake, created } = openOrFind(sessionId, { source: params.source === "user" ? "user" : "agent", text: params.text });
+		const { mistake, created, raised } = openOrFind(sessionId, { source: params.source === "user" ? "user" : "agent", text: params.text, repeat: params.repeat });
 		if (created) await snapshotOpened(sessionId, mistake.id, deps.bases(ctx));
-		return reply(created ? `mistake: opened ${describe(mistake)}\nResolve it with a check before finishing.` : `mistake: already recorded as ${describe(mistake)}`);
+		if (!created && !raised) return reply(`mistake: already recorded as ${describe(mistake)}`);
+		return reply(`mistake: ${created ? "opened" : "now a repeat:"} ${describe(mistake)}\n${mistake.repeat ? "The same class happened twice, so finishing is refused until you fix the class in the project repo (architecture, types, lint, test, docs last) and resolve it with a check." : "Fix this instance. It does not block finishing. If the same class happens again, open it with repeat: true and fix the class."}`);
 	}
 	if (!params.id || !params.check) return reply('mistake: action "resolve" needs id, cause and check { kind, path, command }.', true);
 	const outcome = await resolveMistake(sessionId, params.id, { cause: params.cause ?? "", check: params.check }, {
@@ -774,11 +774,12 @@ export function registerMistakes(pi: MistakeApi, deps: MistakeHostDeps): void {
 			action: z.enum(["open", "resolve", "list"]),
 			text: z.string().optional(),
 			source: z.enum(["user", "agent"]).optional(),
+			repeat: z.boolean().optional(),
 			id: z.string().optional(),
 			cause: z.string().optional(),
 			check: z
 				.object({
-					kind: z.enum(["type", "lint", "test", "property", "guard", "none"]),
+					kind: z.enum(["type", "lint", "test", "property", "none"]),
 					path: z.string().optional(),
 					command: z.string().optional(),
 					reason: z.string().optional(),
@@ -790,14 +791,14 @@ export function registerMistakes(pi: MistakeApi, deps: MistakeHostDeps): void {
 	});
 
 	pi.registerCommand("mistake", {
-		description: "Record a mistake the agent made; it must be encoded as a check (type, lint rule with test, test, guard) before the session can finish",
+		description: "Record a mistake the agent made; once its class happened twice, it must be fixed in the project repo and encoded as a check before the session can finish",
 		handler: async (args, ctx) => {
 			const text = String(args ?? "").trim();
 			if (!text) return ctx.ui?.notify(say({ en: "usage: /mistake <what the agent did wrong>", ko: "사용법: /mistake <에이전트가 잘못한 내용>" }), "warning");
-			const { mistake, created } = openOrFind(deps.sessionId(ctx), { source: "user", text });
-			ctx.ui?.notify(created ? say({ en: `mistake ${mistake.id} opened: the agent must encode it as a check before finishing.`, ko: `mistake ${mistake.id}을(를) 등록했습니다. 에이전트는 끝내기 전에 이를 검사로 만들어야 합니다.` }) : say({ en: `mistake already recorded as ${describe(mistake)}`, ko: `이미 ${describe(mistake)}(으)로 기록된 실수입니다.` }), "info");
-			if (!created) return;
-			await snapshotOpened(deps.sessionId(ctx), mistake.id, deps.bases(ctx));
+			const { mistake, created, raised } = openOrFind(deps.sessionId(ctx), { source: "user", text });
+			if (created) await snapshotOpened(deps.sessionId(ctx), mistake.id, deps.bases(ctx));
+			if (!raised) return ctx.ui?.notify(created ? say({ en: `mistake ${mistake.id} recorded: it does not block finishing; if the same class happens again, /mistake it again.`, ko: `mistake ${mistake.id}을(를) 기록했습니다. 끝내는 것을 막지 않습니다. 같은 종류가 다시 생기면 /mistake를 한 번 더 실행하세요.` }) : say({ en: `mistake already recorded as ${describe(mistake)}`, ko: `이미 ${describe(mistake)}(으)로 기록된 실수입니다.` }), "info");
+			ctx.ui?.notify(say({ en: `mistake ${mistake.id} repeated: the agent must fix the class and encode it as a check before finishing.`, ko: `mistake ${mistake.id}이(가) 반복되었습니다. 에이전트는 끝내기 전에 이 종류를 고치고 검사로 만들어야 합니다.` }), "info");
 			pi.sendMessage({ customType: "mistake", display: true, content: unresolvedMessage(mistake) }, { deliverAs: "nextTurn", triggerTurn: true });
 		},
 	});

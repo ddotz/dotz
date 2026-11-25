@@ -67,7 +67,7 @@ Real surface for UI and apps: a change a user can see is proven through the proj
 - Parallel fan-out for coverage, races, or exploration: `skill://swarm`.
 - Nontrivial multi-step work: write the throughput checkpoint (four todos, as `playbooks/feature.md` lists them).
 - Before changing a shared symbol, persisted shape, IPC contract, or config: `skill://blast-radius`.
-- A bug with a cheap local test: `skill://tdd`. Parsers, serializers, pure transforms: `skill://pbt`. A promise like "never charged twice" on HEAVY concurrency work: `skill://formal-verify`.
+- A bug with a cheap local test: `skill://tdd`. Property tests when the owner asks: `skill://pbt`. A promise like "never charged twice" on HEAVY concurrency work: `skill://formal-verify`.
 - The owner asks to prune or clean up tests, or a suite under your change holds copies, tests of removed code, or tests pinned to internals: `skill://prune-tests`.
 - Running a benchmark or reporting a number you measured: `skill://benchmark-checklist`.
 - Motivation or history of code: `skill://why`. How a subsystem works: `skill://how`. The owner wants to understand it: `skill://teach`.
@@ -86,7 +86,7 @@ Index: `skill://ulw/references/principles.md` (24 principles, each with its trig
 ## 6. Workers and models
 
 - Implementation and QA over three files: `task` workers, briefs per RULES.md; three files or fewer: this session. A brief names the `skill://` files to read first. Workers never spawn workers, never push, open, reply on, or merge PRs; they return patches and this session runs every external action.
-- Review: one `reviewer` per batch of related patches, of another tier than the author; one fix round, then you decide.
+- Review is chosen by content, not size: `reviewer` for a contested design, `security-reviewer` for auth, security, sessions or permissions; one per batch of related patches, of another tier than the author; one fix round, then you decide.
 - `deep-reviewer` (deep tier) ONLY for one-way-door judgments: the `skill://arena` judge seat and the deep seat in `skill://interrogate`.
 - New work goes to a fresh worker with consolidated scope (the original brief, later directives, the prior result's path). Never message a finished worker.
 - You own every worker's output: read the patch, write your own summary, never pass a worker's report through.

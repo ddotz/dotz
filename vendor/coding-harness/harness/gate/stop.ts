@@ -218,7 +218,7 @@ async function judgeGate(state: State, prepared: Prepared, stop: Stop): Promise<
 	}
 	const features = readFeatures(repo);
 	const baseFeatures = gate.evidence.length && changed.length ? featuresAt(repo, baseRef(prepared.base)) : undefined;
-	for (const entry of changed.length && !state.worker ? gate.evidence : []) {
+	for (const entry of changed.length ? gate.evidence : []) {
 		const matching = changed.filter(file => matchesAny(entry.paths, file) && !isUnder(entry.dir, file));
 		const verdict = evidenceVerdict(repo, entry, matching, features, baseFeatures);
 		if (verdict.verdict === "waived") judged.waived.push(`${entry.name}: ${verdict.waiver}`);

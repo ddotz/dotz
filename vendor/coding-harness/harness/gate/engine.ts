@@ -6,19 +6,18 @@ import { handlerDeadline, until } from "./deadline.ts";
 import { createFeedback } from "./feedback.ts";
 import type { BaseOf, FeedbackBase, RunFeedback } from "./feedback.ts";
 import { cwdOf, inDotz, isMain, sessionIdOfFile, sessionKey } from "./host.ts";
-import type { Ctx, GateHandlers, SessionChangeEvent, ToolCallEvent, ToolResultContext } from "./host.ts";
+import type { Ctx, GateHandlers, SessionChangeEvent, ToolResultContext } from "./host.ts";
 import { cancelLater, judging, noteRun, reportSettled } from "./later.ts";
 import type { Deliver } from "./later.ts";
 import type { Show } from "./show-report.ts";
 import { inheritMistakes } from "./mistakes.ts";
 import { afterBash, afterCommand, afterPatch, beforeBash, beforeCommand, beforePatch, markEdited, saveHidden } from "./moves.ts";
-import { PreEditTexts } from "./pre-edit.ts";
 import { appliesPatch, delegatesWrites, evidenceCall } from "./ran.ts";
 import { filesByRepo } from "./repo-files.ts";
 import { askedScriptOf, isProtocolAnswer, LANGUAGE_NAMES, promptScriptOf, scriptOf } from "./report.ts";
 import { beginRun, changesOf, endCall, endRun, forgetRepo, isSourceFile, newState, noteEvidence, noteSourceWrite, startCall, track, userScriptOf } from "./session.ts";
 import type { SessionChange, State } from "./session.ts";
-import { baseRef, headBase } from "./snapshot.ts";
+import { baseRef } from "./snapshot.ts";
 import { realStages } from "./stages.ts";
 import type { Stages } from "./stages.ts";
 import { onStop } from "./stop.ts";
@@ -77,7 +76,6 @@ export interface DoneGate {
 /** One done gate: the handlers a host registers, the per-session changes the mistake obligations read, and the user's waiver. All state lives in this closure, keyed by session id. `deliver` puts a check's failure that arrives after a stop before the agent; without it, a stop waits for running checks. `show` draws a multi-line notice as a block; without it, the notice goes through `ctx.ui.notify`. */
 export function createDoneGate(stages: Stages = realStages, deliver?: Deliver, show?: Show): DoneGate {
 	const sessions = new Map<string, State>();
-	const workers = new Map<string, PreEditTexts>();
 	const feedback = createFeedback(stages);
 	const stateOf = (ctx: Ctx): State => {
 		const key = sessionKey(ctx);
@@ -95,7 +93,6 @@ export function createDoneGate(stages: Stages = realStages, deliver?: Deliver, s
 			forgetReplies(state);
 		}
 		sessions.delete(id);
-		workers.delete(id);
 		feedback.reset(id);
 	};
 	const leave = (event: SessionChangeEvent, ctx: Ctx, inherits: boolean): void => {
@@ -120,25 +117,6 @@ export function createDoneGate(stages: Stages = realStages, deliver?: Deliver, s
 				return found;
 			}
 		};
-	const workerBase =
-		(key: string): BaseOf =>
-		async (repo, signal) => {
-			const texts = workers.get(key);
-			const files = texts?.files(repo) ?? [];
-			return { base: await headBase(repo, signal), baseText: texts?.textAt(repo), files, toolEdited: new Set(files) };
-		};
-	const saveBeforeEdit = async (event: ToolCallEvent, ctx: Ctx): Promise<void> => {
-		try {
-			const paths = editedPaths(event.toolName, event.input ?? {}, cwdOf(ctx));
-			if (paths.length === 0) return;
-			const key = sessionKey(ctx);
-			const texts = workers.get(key) ?? new PreEditTexts();
-			workers.set(key, texts);
-			await texts.save(paths, handlerDeadline());
-		} catch {
-			return;
-		}
-	};
 
 	const handlers: GateHandlers = {
 		async before_agent_start(event, ctx) {
@@ -180,10 +158,7 @@ export function createDoneGate(stages: Stages = realStages, deliver?: Deliver, s
 			return undefined;
 		},
 		async tool_call(event, ctx) {
-			if (!isMain(ctx)) {
-				await saveBeforeEdit(event, ctx);
-				return undefined;
-			}
+			if (!isMain(ctx)) return undefined;
 			const state = stateOf(ctx);
 			const slotted = slotInput(event.toolName, event.input ?? {}, ctx);
 			const input = slotted.input;
@@ -240,7 +215,7 @@ export function createDoneGate(stages: Stages = realStages, deliver?: Deliver, s
 			return nudge;
 		},
 		async tool_result(event, ctx) {
-			if (!isMain(ctx)) return await feedback.after(event, ctx, workerBase(sessionKey(ctx)));
+			if (!isMain(ctx)) return undefined;
 			const state = stateOf(ctx);
 			const slotCalls = slotCallsFor(state);
 			const slotted = event.toolCallId === undefined ? undefined : slotCalls.get(event.toolCallId);
@@ -275,7 +250,6 @@ export function createDoneGate(stages: Stages = realStages, deliver?: Deliver, s
 		async session_stop(event, ctx) {
 			if (!isMain(ctx)) return undefined;
 			const state = stateOf(ctx);
-			state.worker = ctx.agent?.worker === true;
 			return await judging(state, () => onStop(state, ctx, event, stages, deliver, show));
 		},
 		async session_switch(event, ctx) {

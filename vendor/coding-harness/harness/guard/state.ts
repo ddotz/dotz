@@ -15,7 +15,7 @@ export function workersOfSession(state: ProjectState, session: string | undefine
 
 /** What a finished worker's own session file showed: its brief's change items, its peak context in tokens and whether it compacted; absent fields were not recorded. */
 export type FinishedWorker = { id: string; at: number; items?: number; peak?: number; compacted?: boolean };
-export type ProjectState = { cwd: string; lane?: string; workers: Record<string, WorkerState>; settled?: Record<string, number>; reviewerNamed?: string[]; finished?: FinishedWorker[] };
+export type ProjectState = { cwd: string; lane?: string; workers: Record<string, WorkerState>; settled?: Record<string, number>; finished?: FinishedWorker[] };
 
 const STATE_MAX_AGE_MS = 7 * 24 * 3600_000;
 const SETTLED_MAX_AGE_MS = 30 * 24 * 3600_000;

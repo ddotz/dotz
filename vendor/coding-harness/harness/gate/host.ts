@@ -13,7 +13,7 @@ export function inDotz(): boolean {
  */
 export interface Ctx {
 	cwd?: string;
-	agent?: { kind?: string; id?: string; worker?: boolean };
+	agent?: { kind?: string; id?: string };
 	sessionManager?: { getSessionId?(): string };
 	hasUI?: boolean;
 	mode?: string;

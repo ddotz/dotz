@@ -1,7 +1,7 @@
 ---
 name: pbt
 disable-model-invocation: true
-description: "Property-based tests with fast-check (TS/JS) or proptest (Rust) for parsers, serializers, shell or query builders, date and number math, and pure transforms. Entered from ulw when code has an invariant that example tests cover poorly."
+description: "Property-based tests with fast-check (TS/JS) or proptest (Rust) for parsers, serializers, shell or query builders, date and number math, and pure transforms. Use only when the owner asks for property tests."
 ---
 
 Example tests check the cases you thought of. A property checks a rule over generated inputs and shrinks a failure to the smallest case.

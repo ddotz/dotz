@@ -164,7 +164,6 @@ export interface State {
 	refusal?: string;
 	next?: "continue" | "fresh";
 	active: boolean;
-	worker: boolean;
 	moves: Map<string, PendingMove[]>;
 	patches: Map<string, PendingPatch[]>;
 	pending: Map<string, PendingCall>;
@@ -242,7 +241,6 @@ export const newState = (): State => ({
 	refusals: 0,
 	waits: 0,
 	toolCalls: 0,
-	worker: false,
 	active: false,
 	moves: new Map(),
 	patches: new Map(),

@@ -46,12 +46,6 @@ async function gitRef(repo: string, ref: string, signal: AbortSignal): Promise<s
 	}
 }
 
-/** The commit a diff against `repo`'s current HEAD starts from: the empty tree for a repo without commits. */
-export async function headBase(repo: string, signal: AbortSignal): Promise<string> {
-	const head = await gitRef(repo, "HEAD", signal);
-	return head === "none" ? EMPTY_TREE : head;
-}
-
 /** The paths in `git status --porcelain=v1 -z` output; a rename or copy lists both its new and its old path. */
 export function parseStatus(raw: string): string[] {
 	const parts = raw.split("\0");
@@ -131,11 +125,6 @@ export async function takeSnapshot(repo: string, signal: AbortSignal): Promise<S
 	const files = [...new Set(parseStatus(status))];
 	const hashes = await mapLimit(files, HASH_CONCURRENCY, file => hashFile(repo, file, signal));
 	return { head, tree, dirty: Object.fromEntries(files.map((file, i) => [file, hashes[i]])) };
-}
-
-/** The paths `git status` lists as changed or untracked in `repo`. */
-export async function dirtyFiles(repo: string, signal: AbortSignal): Promise<string[]> {
-	return [...new Set(parseStatus(await git(repo, ["status", "--porcelain=v1", "-z", "--untracked-files=all"], signal)))];
 }
 
 export async function committedFiles(repo: string, from: string, to: string, signal: AbortSignal): Promise<string[]> {

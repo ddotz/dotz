@@ -7,8 +7,6 @@ import type { AcceptedComment, EscapeScan } from "./escape.ts";
 import { formsScan } from "./forms.ts";
 import type { FormsInput } from "./forms.ts";
 import { mistakeFindings } from "./mistakes.ts";
-import { propertyScan } from "./property.ts";
-import type { PropertyInput } from "./property.ts";
 import { rulesScan } from "./rules.ts";
 import { AST_GREP } from "./types.ts";
 import type { EscapeInput, Finding, Preexisting, RulesInput, RulesScan, TextAt } from "./types.ts";
@@ -19,12 +17,11 @@ export interface Stages {
 	escape(input: EscapeInput): Promise<EscapeScan>;
 	rules(input: RulesInput): Promise<RulesScan>;
 	forms(input: FormsInput): Promise<Finding[]>;
-	property(input: PropertyInput): Promise<Finding[]>;
 	mistakes(sessionId: string): Finding[];
 	astGrep: string;
 }
 
-export const realStages: Stages = { escape: escapeScan, rules: rulesScan, forms: formsScan, property: propertyScan, mistakes: mistakeFindings, astGrep: AST_GREP };
+export const realStages: Stages = { escape: escapeScan, rules: rulesScan, forms: formsScan, mistakes: mistakeFindings, astGrep: AST_GREP };
 
 /** What the stages found in one repo, the why comments the anti-escape stage accepted, what they could not judge (the files the anti-escape stage could not read, the rule occurrences outside the session's changes), the errors of the stages that could not say, and whether the anti-escape stage itself threw in this call (`escapeFailed`; a stage that only outlasted its budget did not), which the stop remembers for the input it threw on. */
 export interface StageRun {
@@ -91,7 +88,7 @@ export function hasRuleKit(repo: string): boolean {
 }
 
 /**
- * Runs the anti-escape stage, the default scans (swallowed errors and `any`, round-trip pairs), and the rules stage when the repo has
+ * Runs the anti-escape stage, the default scans (swallowed errors and `any`), and the rules stage when the repo has
  * `.omp/lint/sgconfig.yml`, side by side; what the default scans find is the defaults stage. A stage that throws or outlasts its share of the stop budget
  * becomes an error and finds nothing; a missing ast-grep binary is one error for all of them.
  * With `input.skipEscape`, the anti-escape stage is not run and that text is its error.
@@ -105,20 +102,19 @@ export async function runStages(stages: Stages, input: StageInput, parent: Abort
 	}
 	const lint = hasRuleKit(repo);
 	const scanned = { repo, base: input.base, files, baseText: input.baseText, toolEdited: input.toolEdited };
-	const [escape, rules, forms, property] = await Promise.all([
+	const [escape, rules, forms] = await Promise.all([
 		input.skipEscape === undefined ? limited("escape", repo, NO_SCAN, parent, signal => stages.escape({ ...input, signal })) : skipped(input.skipEscape),
 		lint ? limited("rules", repo, NO_RULES, parent, signal => stages.rules({ repo, files, signal })) : NO_RULES_RUN,
 		limited<Finding[]>("forms", repo, [], parent, signal => stages.forms({ ...scanned, signal })),
-		limited<Finding[]>("property", repo, [], parent, signal => stages.property({ ...scanned, signal })),
 	]);
 	return {
 		escape: escape.findings.findings,
 		accepted: escape.findings.accepted,
 		unscanned: escape.findings.unscanned,
 		rules: rules.findings.findings,
-		defaults: [...forms.findings, ...property.findings],
+		defaults: forms.findings,
 		preexisting: rules.findings.preexisting,
-		errors: [escape.error, rules.error, forms.error, property.error].filter(error => error !== undefined),
+		errors: [escape.error, rules.error, forms.error].filter(error => error !== undefined),
 		escapeFailed: escape.threw === true && !parent.aborted,
 	};
 }

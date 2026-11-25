@@ -4,13 +4,8 @@ import { whereis } from "../checkouts/place.ts";
 import { BUDGET_5H_EST } from "./budget.ts";
 import { type Fields, fieldsOf } from "./host-types.ts";
 import { WRITING_AGENTS } from "./shell.ts";
-import { WORKER_FOOTER_LINES } from "./spawn-rules.ts";
 
-const MAX_BRIEF_CHARS = 8000;
-const MAX_FENCE_LINES = 40;
 const MAX_OUTPUT_CHARS = 2000;
-const MAX_CHANGE_ITEMS = 6;
-const DONE_MARKER = /acceptance|done when|done-condition|end state|success criteria|완료 조건|완료 기준|끝 조건/i;
 const ESTIMATE_RE = /^\s*Estimate:\s*(\d+(?:\.\d+)?)\s*%?/im;
 const APPLIES_PATCH = /\bgit\s+(?:apply|am)\b(?!\s+--(?:check|stat|numstat|summary)\b)/;
 const WHOLE_SUITE = /(?<!\b(?:not|never|no|without)\s+(?:(?:run|running)\s+)?(?:the\s+)?)\b(?:whole|full|entire)\s+(?:test\s+)?suite\b|(?:테스트|스위트|suite|bun test).{0,3}전체|전체.{0,3}(?:테스트|스위트|suite|bun test)/i;
@@ -22,14 +17,8 @@ const MAX_BRIEF_FILE_BYTES = 64 * 1024;
 export const BUDGET_MARKER = "[orchestrator-guard]";
 /** The answer and context budget appended to every worker brief. */
 export const BUDGET_LINE = `${BUDGET_MARKER} Final answer: at most 800 characters - outcome, changed paths, verification, blockers. Context budget 400K tokens; if you near it, stop and hand back partial findings.`;
-/** The whole footer appended to every worker brief: the budget line, then the worker rules. */
-export const BRIEF_FOOTER = `${BUDGET_LINE}\n${WORKER_FOOTER_LINES.join("\n")}`;
-
-function longestFence(text: string): number {
-	let longest = 0;
-	for (const block of text.match(/```[\s\S]*?```/g) ?? []) longest = Math.max(longest, block.split("\n").length - 2);
-	return longest;
-}
+/** The footer appended to every worker brief: the budget line, then a pointer to the worker rules. */
+export const BRIEF_FOOTER = `${BUDGET_LINE}\nRead skill://ulw/worker.md before anything else.`;
 
 /** Whether `cwd` is inside a git work tree. Isolation needs one; outside it an isolated worker cannot start, so writing workers run in place there. */
 export function inGitRepo(cwd: string): boolean {
@@ -96,9 +85,8 @@ export function changeItems(brief: string): number {
 }
 
 /**
- * Refuses a task call whose briefs lack a done-condition, paste contents or code blocks, or list too many change items;
- * otherwise returns the input with the budget footer appended to every brief. A call with two or more writing agents is
- * parallel: each writer is forced isolated. A lone writer runs in place (`isolated: false`), so there is no patch step.
+ * Refuses a task call that asks a writing worker for the whole test suite or tells a shared-checkout worker to apply a patch;
+ * otherwise returns the input with the budget footer appended to every brief and writing agents forced isolated.
  * `isolate` is false outside a git repo. `roots`: checkout paths rewritten to cwd-relative in isolated briefs, so the worker edits its own copy.
  * `notice` names every task whose isolation or paths the guard changed, for the main agent; absent when it changed neither.
  * `read` returns the text of a brief file a task names by absolute path (readBriefFile); a task that does not run isolated and is told, inline or in
@@ -114,13 +102,8 @@ export function checkTaskInput(input: unknown, isolate = true, roots: string[] =
 		const entry = fieldsOf(item);
 		const brief = typeof entry.task === "string" ? entry.task : "";
 		const label = `tasks[${i}]`;
-		if (!DONE_MARKER.test(`${brief}\n${context}`)) problems.push(`${label} has no observable done-condition (add an "Acceptance:" or "Done when:" line)`);
-		if (brief.length + context.length > MAX_BRIEF_CHARS) problems.push(`${label} brief is ${brief.length + context.length} chars; pass paths instead of pasted contents (limit ${MAX_BRIEF_CHARS})`);
-		if (longestFence(`${brief}\n${context}`) > MAX_FENCE_LINES) problems.push(`${label} pastes a code block over ${MAX_FENCE_LINES} lines; pass the path and line range instead`);
-		if (WRITING_AGENTS.has(String(entry.agent ?? "task")) && WHOLE_SUITE.test(`${brief}\n${context}`.replace(BRIEF_FOOTER, "")))
+		if (WRITING_AGENTS.has(String(entry.agent ?? "task")) && WHOLE_SUITE.test(`${brief}\n${context}`))
 			problems.push(`${label} asks a writing worker for the whole test suite; a worker runs only the tests of the files it changed and the whole suite is run once per batch in the main session. Name the affected test files instead (e.g. "bun test <files>") and run the whole suite yourself before landing`);
-		if (WRITING_AGENTS.has(String(entry.agent ?? "task")) && changeItems(brief) > MAX_CHANGE_ITEMS)
-			problems.push(`${label} lists ${changeItems(brief)} change items; a worker that large stops at its context limit before it verifies anything. Split it: at most ${MAX_CHANGE_ITEMS} items and one module per worker; when the tests already exist, name the test files the worker must turn green`);
 		if (isolate && entry.isolated !== true && !WRITING_AGENTS.has(String(entry.agent ?? "task")) && APPLIES_PATCH.test(withBriefFiles(`${brief}\n${context}`, read)))
 			problems.push(`${label} tells a worker that shares this checkout to apply a patch (git apply / git am); a patch is applied only in a private copy: add isolated: true to that task`);
 	});

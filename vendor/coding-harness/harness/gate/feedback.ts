@@ -164,11 +164,10 @@ export function createFeedback(stages: Stages): Feedback {
 		const files = [...called, ...others.slice(0, Math.max(0, MAX_SCANNED_FILES - called.length))];
 		const scanned = { repo, base: start.base, files, baseText: start.baseText, toolEdited: start.toolEdited, signal };
 		const formsRun = settled(() => stages.forms(scanned), signal);
-		const propertyRun = settled(() => stages.property(scanned), signal);
 		const rulesRun = hasRuleKit(repo) ? settled(() => stages.rules({ repo, files, signal }), signal) : undefined;
 		const escaped = await until(stages.escape({ ...scanned, acceptedText: start.acceptedText }), signal);
 		if (!escaped) return undefined;
-		const rows = [...((await formsRun) ?? []), ...((await propertyRun) ?? []), ...((await rulesRun)?.findings ?? [])];
+		const rows = [...((await formsRun) ?? []), ...((await rulesRun)?.findings ?? [])];
 		return called.map(file => ({ kind: "findings", repo, file, escape: escaped.value.findings.filter(finding => finding.file === file), rows: rows.filter(finding => finding.file === file) }));
 	};
 

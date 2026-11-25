@@ -26,7 +26,7 @@ The done gate already refuses a net increase of `any` types outside tests, new s
 | Boundary validation | Parse where data crosses in, into a named domain type. `Record<string, unknown>` (however spelled) stops at that parse. Trust types inside. Handle a parse failure; never swallow it. See `skill://principle-boundary-discipline`. |
 | Schema-derived types | Reach for `Pick`/`Omit`/`Parameters`/`ReturnType`/`Awaited`/`typeof` before declaring a new interface. |
 | Object args | Pass objects, not positional, so argument order is self-documenting. Skip on hot paths (per-frame render, tokenizers, parsers). |
-| Real tests | Don't mock what you can run. Prefer `bun:test` with real inputs and disposable or leak checks, and verify UI in a running build. Mock only what you can't run locally. A parser/serializer pair needs a property test (`skill://pbt`). |
+| Real tests | Don't mock what you can run. Prefer `bun:test` with real inputs and disposable or leak checks, and verify UI in a running build. Mock only what you can't run locally. |
 | Structured telemetry | Prefer structured logger diagnostics with enough context to debug from an id. No `console.log` in shipped code, except the intended output of a CLI. |
 
 Examples: `references/patterns.md` (`skill://typescript-best-practices/references/patterns.md`).

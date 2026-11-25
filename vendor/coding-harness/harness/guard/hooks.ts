@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, resolve } from "node:path";
 import { say } from "../notice.ts";
@@ -20,7 +20,7 @@ import { appliedPatchNames, applyDirsOf, patchesApplying, patchIsApplied, patchK
 import { detectCycle, REPEAT_ESCALATION_ATTEMPTS, REPEAT_HISTORY, REPEAT_MAX_SESSIONS, REPEAT_WINDOW_MS, repeatArgsDigest, repeatBlockReason, type RepeatCall, repeatResultDigest, type RepeatRow, repeatStopReason, repeatSubject, requiredLaps } from "./repeat.ts";
 import { mistakeSessionKey, openMistakeProblem } from "./open-mistakes.ts";
 import { capToolResult, spillToStateDir } from "./output-cap.ts";
-import { deepBudgetProblem, effortAction, escalationProblem, modelProblem, patchChangedLines, reviewedPatchesIn, reviewProblem } from "./spawn-rules.ts";
+import { deepBudgetProblem, effortAction, escalationProblem, modelProblem } from "./spawn-rules.ts";
 import { loadState, type ProjectState, saveState, settleFinishedWorkers, settleFromText, stateSummary, briefLabel, workersOfSession } from "./state.ts";
 import { familyProblem, measureFinishedWorkers, sizeNote } from "./worker-size.ts";
 import { type RetryStartEvent, usageWaitAborts } from "./usage-wait.ts";
@@ -486,12 +486,6 @@ export function registerGuardHooks(pi: HostApi): void {
 				if (problem)
 					return deny("budget-block", `orchestrator-guard budget gate: ${problem}. Stop and ask the user, showing the 5h and 7d remaining %: "지금 해 / 리셋 후 / 줄여서 해". 지금 해 -> they run /budget-ok (30 min); 줄여서 해 -> fewer workers or a smaller "Estimate: N%" line.`);
 			}
-			const named = reviewedPatchesIn(event.input);
-			if (named.length) {
-				const current = projectState(ctx);
-				current.reviewerNamed = [...new Set([...(current.reviewerNamed ?? []), ...named])];
-				saveState(current, sessionIdOf(ctx));
-			}
 			const additionalContext = [verdict.notice, ...notices, sizeNote(sizes)].filter(Boolean).join(" ");
 			return { input: notices.length ? { ...sent, tasks: taskItems } : verdict.input, ...(additionalContext ? { additionalContext } : {}) };
 		}
@@ -506,16 +500,6 @@ export function registerGuardHooks(pi: HostApi): void {
 			if (unreviewed.length) {
 				debug({ phase: "apply-block", unreviewed });
 				return deny("apply-block", `orchestrator-guard: review before apply. Read ${unreviewed.join(", ")} first (read tool), check it matches the brief, then apply. For large or risky patches spawn the reviewer agent.`);
-			}
-			const reviewerNamed = new Set(projectState(ctx).reviewerNamed ?? []);
-			for (const patch of applying) {
-				const file = patchKey(patch, base);
-				const size = existsSync(file) ? patchChangedLines(readFileSync(file, "utf8")) : 0;
-				const oversized = reviewProblem(file, size, reviewerNamed);
-				if (oversized) {
-					debug({ phase: "review-size-block", patch: file, size });
-					return deny("review-size-block", oversized);
-				}
 			}
 		}
 		const sessionCwd = String(ctx?.cwd ?? process.cwd());
