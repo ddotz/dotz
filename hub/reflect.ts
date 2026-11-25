@@ -398,7 +398,8 @@ export function lessonChecks(text: string, corrections: readonly string[]): Less
 		if (!m || ENFORCED.test(line)) continue;
 		const words = m[4].replace(BROKEN, "");
 		const score = Math.max(0, ...corrections.map(c => lessonScore(words, c)));
-		const broken = (BROKEN.exec(line)?.[1] ?? "").split(",").map(s => s.trim()).filter(Boolean).length;
+		// Only the dates count as nights: "(broken: 11-24, what broke)" is one night, its reason no second.
+		const broken = (BROKEN.exec(line)?.[1] ?? "").split(",").filter(s => /^(\d{4}-)?\d{2}-\d{2}$/.test(s.trim())).length;
 		out.push({ line, score, broken });
 	}
 	return out.sort((a, b) => b.broken - a.broken || b.score - a.score);

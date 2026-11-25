@@ -202,8 +202,11 @@ test("a lesson broken on two nights raises a card under its topic, merged with t
 });
 
 test("a broken lesson's card reads in plain words: no date tag, no (broken: ...) note, no cut title", () => {
-	const line = "- [11-17] 묻는 말은 rN·마디 같은 작업 용어 없이 쉬운 말로. (broken: 11-24, 회의 기록 표기 비교 문장)";
+	const once = "- [11-17] 묻는 말은 rN·마디 같은 작업 용어 없이 쉬운 말로. (broken: 11-24, 회의 기록 표기 비교 문장)";
+	expect(dueAlerts([], once, {}, now)).toEqual([]);
+	const line = once.replace("broken: 11-24", "broken: 11-20, 11-24");
 	const [a] = dueAlerts([], line, {}, now);
+	expect(a.broken).toBe(2);
 	const m = msg(), subject = fitSubject(m.repeatAlertSubject(a), m.repeatAlertQuestion), evidence = m.repeatAlertEvidence(a).join("\n");
 	for (const text of [subject, evidence]) for (const raw of ["[11-17]", "broken", "교훈", "lesson"]) expect(text).not.toContain(raw);
 	expect(subject).not.toMatch(/(\.\.\.|…)$/);
