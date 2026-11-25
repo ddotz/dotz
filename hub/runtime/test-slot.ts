@@ -20,7 +20,7 @@ import { acquireHeavySlot, holderInfo, MAX_HOLD_MS, pidAlive } from "../heavyslo
 
 // Flags whose value is the next argument (the others take --flag=value or none).
 const VALUE_FLAGS = new Set(["-t", "--test-name-pattern", "--timeout", "--rerun-each", "--retry", "--seed", "--reporter", "--reporter-outfile", "--max-concurrency", "--path-ignore-patterns", "--shard", "--timings", "--changed", "--coverage-reporter", "--coverage-dir", "--bail", "--parallel-delay", "--preload", "-r", "--config", "-c"]);
-const FEW_FILES = 20;
+export const FEW_FILES = 20;
 const WINDOW_MS = 6 * 3_600_000;
 const FREE_RUNS = 2;
 const LAST_RESULT = ".dotz-last-test.xml"; // written by every run: bunfig.toml, [test.reporter]
