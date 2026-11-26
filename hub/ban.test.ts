@@ -335,11 +335,11 @@ test("the KakaoTalk prompt lists a wording rule under the owner's wording rules,
 	expect(user).toContain("내일 봐요");
 });
 
-test("the revise prompts keep forbid for fixed phrases and send a rejected kind of sentence to the lesson", () => {
+test("the revise prompts keep forbid for fixed phrases and leave a rejected kind of sentence out of it", () => {
 	const p = buildPrompt(item, style([]), { change: "덕담 끝을 바꿔 줘", previous: { to: "viewer", body: "즐거운 공연 되세요" } });
 	expect(`${p.system}\n${p.user}`).toContain('"forbid" is only for a fixed phrase that is wrong wherever it appears; when the user rejects a kind of sentence or an ending in one use');
-	expect(`${p.system}\n${p.user}`).toContain('leave it out of "forbid" and state it in "lesson" with his examples');
+	expect(`${p.system}\n${p.user}`).toContain('in other sentences), leave it out of "forbid".');
 	const kakao = buildDraftPrompt({ lines: ["상대: 내일 공연해요"], revise: { draft: "즐거운 공연 되세요", change: "덕담 끝을 바꿔 줘" } });
 	expect(kakao.system).toContain("forbid is only for a fixed phrase that is wrong wherever it appears; when the owner rejects a kind of sentence or an ending in one use");
-	expect(kakao.system).toContain("leave it out of forbid and state it in lesson with his examples");
+	expect(kakao.system).toContain("in other sentences), leave it out of forbid");
 });
