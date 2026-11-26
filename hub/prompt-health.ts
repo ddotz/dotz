@@ -310,7 +310,6 @@ export function enforcedFindings(sources: RuleSource[], now: number, log: (line:
 	return out;
 }
 
-/** Prompt files past a limit. LESSONS.md: bytes against the gate's cap. RULES.md and memory/boundaries.md: characters against their caps. A feature: its always-loaded line against INLINE_MAX. */
 export function capFindings(dataDir: string, now: number): Finding[] {
 	const m = msg();
 	const out: Finding[] = [];

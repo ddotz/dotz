@@ -23,11 +23,9 @@ export function ruleTitle(text: string, titles: Record<string, unknown> = {}): s
 
 const plainRule = (text: string): string => text.replace(/^\[\d{2}-\d{2}\]\s*/, "").replace(/\s+/g, " ").trim();
 
-/** The rule rows of a RULES.md text as the custom page lists them: each list line without its bullet, a deny line as its reason. */
 export const ruleTexts = (rules: string): string[] =>
 	rules.split("\n").map(l => l.trim()).filter(l => /^(?:[-*]|\d+[.)])\s+\S/.test(l)).map(l => l.replace(/^(?:[-*]|\d+[.)])\s+/, "").replace(/^deny:\s*.*?\s\|\s+/, "막아 둔 명령: "));
 
-/** The titles whose key is still a rule in `rules` (by its text, with or without the [MM-DD] stamp). */
 export function liveRuleTitles(rules: string, titles: Record<string, unknown>): Record<string, unknown> {
 	const keys = new Set(ruleTexts(rules).flatMap(t => [t, plainRule(t)]));
 	return Object.fromEntries(Object.entries(titles).filter(([key]) => keys.has(key)));

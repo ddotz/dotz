@@ -6,7 +6,6 @@ import { featurePrompt } from "./featuredirs.ts";
 import { baseLanguage, detectLanguage, languageName } from "./language.ts";
 import { boundaryEntries, dropSection, newestLines, renderSetups, renderState } from "./recall-parts.ts";
 
-/** The parts of the contract text as written into it (rules is RULES.md alone; the feature bodies that follow it are `features`; owner and boundaries make up the owner memory). */
 export type RecallParts = { identity: string; mode: string; rules: string; features: string; lessons: string; owner: string; boundaries: string; setups: string; state: string };
 
 // Same language and MODE file chain as hub/i18n.ts (that module has gateway side effects, so only the pure helpers are shared).
