@@ -14,7 +14,7 @@ import { ko } from "./i18n-ko.ts";
 import { applyTexts, reportTexts } from "./texts.ts";
 import { diskReader, loadCatalog } from "./web-i18n.ts";
 
-export type LaneFooterArgs = { lane: string; language: string; mode: string; workerModel: string; slots: number; worktree: string; identity: string; harness?: string };
+export type LaneFooterArgs = { lane: string; language: string; mode: string; workerModel: string; slots: number; worktree: string; identity: string; rules: string; harness?: string };
 export type WorktreeArgs = { path: string; repo: string; branch: string; base: string };
 // A runtime with caps.modeInSystem carries the `contract` text (identity and MODE) in its system prompt: `recall` then gets no `contract` and points there.
 export type ContractArgs = { identity: string; mode: string };

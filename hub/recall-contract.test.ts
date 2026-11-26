@@ -62,3 +62,16 @@ test("another language keeps its reply line either way", () => {
 	expect(rest.endsWith(line)).toBe(true);
 	expect(rest).not.toContain("mode marker en");
 });
+
+test("the re-read carries the owner memory: owner.md and every boundaries.md entry, bracketed date or not, never the bare template", () => {
+	const { data, pkg } = install("memory", "en");
+	mkdirSync(join(data, "memory"));
+	writeFileSync(join(data, "memory", "owner.md"), "# Owner\n\n- [2026-11-01] owner marker 3c1e\n");
+	writeFileSync(join(data, "memory", "boundaries.md"), "# Boundaries\n\ntemplate note 0f7e\n");
+	expect(recallContract(data, pkg).text).not.toContain("template note 0f7e");
+
+	writeFileSync(join(data, "memory", "boundaries.md"), `# Boundaries\n\n- [10-17] "bracketed marker 22c4"\n- 2026-11-05: "bare marker 9a0b"\n`);
+	const rest = recallContract(data, pkg, { modeInSystem: true }).text;
+	for (const marker of ["owner marker 3c1e", "bracketed marker 22c4", "bare marker 9a0b"]) expect(rest).toContain(marker);
+	expect(rest.indexOf("Owner memory:")).toBeLessThan(rest.indexOf("bare marker 9a0b"));
+});

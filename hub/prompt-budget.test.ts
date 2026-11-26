@@ -4,9 +4,18 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { paths, TEMPLATES } from "./config.ts";
 import { BOUNDARIES_TEMPLATE_MAX_BYTES, LESSONS_TEMPLATE_MAX_BYTES, MODE_KO_MD_MAX_BYTES, MODE_MD_MAX_BYTES, OWNER_TEMPLATE_MAX_BYTES, RULES_TEMPLATE_MAX_BYTES } from "./prompt-budget.ts";
+import { en } from "./i18n-en.ts";
+import { ko } from "./i18n-ko.ts";
 
 const repo = join(import.meta.dir, "..");
 const bytes = (text: string | Buffer) => Buffer.byteLength(text);
+
+const LANE_FOOTER_MAX_CHARS = { en: 6510, ko: 3660 };
+
+test("the lane footer's fixed text stays within its character cap", () => {
+	const args = { lane: "x", language: "English", mode: "MODE.md", workerModel: "m", slots: 4, worktree: "", identity: "", rules: "" };
+	expect({ en: en.footer(args).length <= LANE_FOOTER_MAX_CHARS.en, ko: ko.footer(args).length <= LANE_FOOTER_MAX_CHARS.ko }).toEqual({ en: true, ko: true });
+});
 
 const budgets: [name: string, size: number, cap: number][] = [
 	["MODE.md", bytes(readFileSync(join(repo, "MODE.md"))), MODE_MD_MAX_BYTES],

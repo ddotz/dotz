@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { compose } from "./doctor.ts";
 import { CATALOGS, LOCKED_TEXTS, msg } from "./i18n.ts";
-import { promptHealth } from "./prompt-health.ts";
+import { CONTRACT_SHAPE, promptHealth } from "./prompt-health.ts";
 import { buildReviewPrompt, CONTRACT_MAX_CHARS, MAX_OUTPUT_TOKENS, modelRefused, parseReview, promptReviewCheck, readReviewState, reviewDeps, reviewFile, runPromptReview, type ReviewCall, type ReviewContext } from "./prompt-review.ts";
 import { applyTexts, textsPath } from "./texts.ts";
 
@@ -30,7 +30,7 @@ beforeEach(() => {
 });
 
 const reviewedAt = (at: number) => writeFileSync(reviewFile(dir), JSON.stringify({ lastReviewAt: at, lastTokens: { input: 1, output: 1 } }));
-const grown = () => writeFileSync(join(dir, "prompt-health.json"), JSON.stringify({ baseline: { total: { chars: 1000, at: NOW - 30 * DAY } }, last: { total: 50_000 } }));
+const grown = () => writeFileSync(join(dir, "prompt-health.json"), JSON.stringify({ baseline: { total: { chars: 1000, at: NOW - 30 * DAY } }, last: { total: 50_000 }, shape: CONTRACT_SHAPE }));
 
 const answer = (text: string, usage = { input: 1234, output: 567 }) => {
 	const prompts: string[] = [];

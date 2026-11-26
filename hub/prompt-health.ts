@@ -24,18 +24,19 @@ export const PART_GROWTH = { share: 0.25, chars: 1000 };
 // read in hub/recall-contract.ts and the file cap in hub/harness.ts, which keep it inline and not exported).
 export const RULES_MAX_CHARS = 12_000;
 
-export const PART_KEYS = ["mode", "rules", "lessons", "identity", "features", "setups", "state", "rest"] as const;
+export const PART_KEYS = ["mode", "rules", "lessons", "identity", "features", "owner", "boundaries", "setups", "state", "rest"] as const;
+export const CONTRACT_SHAPE = 2;
 export type Sizes = Record<string, number>;
 type Base = { chars: number; at: number };
 /** baseline: the lowest size seen per key and when it was set; last: the sizes of the latest run. Key "total" is the whole text. */
-export type PromptState = { baseline: Record<string, Base>; last: Sizes };
+export type PromptState = { baseline: Record<string, Base>; last: Sizes; shape: number };
 
 export const stateFile = (dataDir: string): string => join(dataDir, "prompt-health.json");
 
 export function readState(dataDir: string): PromptState | undefined {
 	try {
 		const raw = JSON.parse(readFileSync(stateFile(dataDir), "utf8"));
-		return raw && typeof raw.baseline === "object" && typeof raw.last === "object" ? (raw as PromptState) : undefined;
+		return raw && typeof raw.baseline === "object" && typeof raw.last === "object" && raw.shape === CONTRACT_SHAPE ? (raw as PromptState) : undefined;
 	} catch {
 		return undefined;
 	}
@@ -54,7 +55,7 @@ export function ruleSources(dataDir: string, pkg: string, parts: RecallParts, mo
 		return path;
 	};
 	const source = (path: string, text: string): RuleSource => ({ path, file: shown(path), lines: text ? text.split("\n") : [] });
-	const out = [source(modeFile, parts.mode), source(join(dataDir, "RULES.md"), parts.rules), source(join(dataDir, "LESSONS.md"), parts.lessons)];
+	const out = [source(modeFile, parts.mode), source(join(dataDir, "RULES.md"), parts.rules), source(join(dataDir, "memory", "boundaries.md"), parts.boundaries), source(join(dataDir, "LESSONS.md"), parts.lessons)];
 	let cur: RuleSource | undefined;
 	for (const line of parts.features.split("\n")) {
 		const head = FEATURE_BODY_HEAD.exec(line);
@@ -68,7 +69,7 @@ export function ruleSources(dataDir: string, pkg: string, parts: RecallParts, mo
 /** The contract text of a data dir, its sizes per part (rest = framing text and anything not listed) and the rule files in it. */
 export function measure(dataDir: string, pkg: string = join(import.meta.dir, "..")): { text: string; sizes: Sizes; sources: RuleSource[] } {
 	const { text, parts, modeFile } = recallContract(dataDir, pkg);
-	const sizes: Sizes = { total: text.length, mode: parts.mode.length, rules: parts.rules.length, lessons: parts.lessons.length, identity: parts.identity.length, features: parts.features.length, setups: parts.setups.length, state: parts.state.length };
+	const sizes: Sizes = { total: text.length, mode: parts.mode.length, rules: parts.rules.length, lessons: parts.lessons.length, identity: parts.identity.length, features: parts.features.length, owner: parts.owner.length, boundaries: parts.boundaries.length, setups: parts.setups.length, state: parts.state.length };
 	sizes.rest = text.length - PART_KEYS.filter(k => k !== "rest").reduce((n, k) => n + sizes[k], 0);
 	return { text, sizes, sources: ruleSources(dataDir, pkg, parts, modeFile) };
 }
@@ -80,7 +81,7 @@ export function advance(state: PromptState | undefined, sizes: Sizes, now: numbe
 		const was = baseline[key];
 		if (!was || chars < was.chars) baseline[key] = { chars, at: now };
 	}
-	return { baseline, last: sizes };
+	return { baseline, last: sizes, shape: CONTRACT_SHAPE };
 }
 
 function grown(state: PromptState): { key: string; from: number; to: number; at: number }[] {

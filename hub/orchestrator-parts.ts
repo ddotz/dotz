@@ -11,7 +11,7 @@ import { modeFile, msg, withReplyLine } from "./i18n.ts";
 import type { OrchError } from "./orch-error.ts";
 import { LESSONS_MAX_BYTES } from "./prompt-budget.ts";
 import { quickMode } from "./quick-chat.ts";
-import { dropSection, newestLines, renderState } from "./recall-parts.ts";
+import { boundaryEntries, dropSection, newestLines, renderState } from "./recall-parts.ts";
 import type { RuntimeAdapter } from "./runtime/types.ts";
 import { setupsSummary } from "./workchannels.ts";
 
@@ -68,7 +68,7 @@ export function recallText(scope: string, ledger = "", light = false, modeInSyst
 		return t.length > max ? `${t.slice(0, max)}\n[... cut at ${max} characters; read ${p} for the rest]` : t;
 	};
 	const features = featurePrompt(DATA_DIR, "orchestrator", log);
-	const text = withReplyLine(msg().recall({ contract: modeInSystem ? undefined : modeContract(light), rules: file(paths.rules, 12000) + (features ? `\n\n${features}` : ""), lessons: file(paths.lessons, LESSONS_MAX_BYTES), memory: `${newestLines(whole(paths.owner), paths.owner)}\n${whole(paths.boundaries)}`, ...(light ? {} : { setups: setupsSummary(), state }) }) + (ledger ? `\n\n${ledger}` : "") + (scope ? `\n\n${scope}` : ""));
+	const text = withReplyLine(msg().recall({ contract: modeInSystem ? undefined : modeContract(light), rules: file(paths.rules, 12000) + (features ? `\n\n${features}` : ""), lessons: file(paths.lessons, LESSONS_MAX_BYTES), memory: `${newestLines(whole(paths.owner), paths.owner)}\n${boundaryEntries(whole(paths.boundaries))}`, ...(light ? {} : { setups: setupsSummary(), state }) }) + (ledger ? `\n\n${ledger}` : "") + (scope ? `\n\n${scope}` : ""));
 	const note = yesterdayNote();
 	return note ? `${text}\n${msg().dayNote.line(note)}` : text;
 }

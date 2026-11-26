@@ -1,12 +1,12 @@
 // The orchestrator's pinned first prompt and its system note: the MODE section on mail and calendar is there only while zele is enabled; identity and MODE
 // are in the first prompt, or in the system note on a runtime that keeps its system prompt through compaction and resume (caps.modeInSystem: omp).
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import type * as Lanes from "./lanes.ts";
 import type * as Orchestrator from "./orchestrator.ts";
-import { cfg, HUB_TOKEN, IDENTITY_FILE, NAME } from "./config.ts";
+import { cfg, HUB_TOKEN, IDENTITY_FILE, NAME, paths } from "./config.ts";
 import { isNote, modeFile } from "./i18n.ts";
 import { claude } from "./runtime/claude.ts";
 import { adapters } from "./runtime/index.ts";
@@ -129,6 +129,24 @@ describe("owner memory in prompts", () => {
 		} finally {
 			l.stopLane("footer-boundaries");
 			rmSync(cwd, { recursive: true, force: true });
+		}
+	});
+
+	test("the lane footer carries RULES.md to its last rule, without its blocked commands, and a boundary with no bracketed date", () => {
+		const before = existsSync(paths.rules) ? readFileSync(paths.rules, "utf8") : undefined;
+		const cwd = mkdtempSync(join(tmpdir(), "dotz-footer-"));
+		writeFileSync(paths.rules, "# Owner rules\n\nProject rules: rules/projects.md\n\n## Rules\n- first rule\n- last rule 6d2f\n\n## Blocked commands\n- deny: rm\\s+-rf | deny marker 4e81\n");
+		appendFileSync(boundaries, `- 2026-11-05: "bare dated 51ab"\n`);
+		try {
+			l.launch("footer-rules", cwd, "Polish the theme.\nDone when: owner approves");
+			const text = started.at(-1)!.sent[0]!.text;
+			for (const kept of ["rules/projects.md", "last rule 6d2f", "bare dated 51ab"]) expect(text).toContain(kept);
+			expect(text).not.toContain("deny marker 4e81");
+		} finally {
+			l.stopLane("footer-rules");
+			rmSync(cwd, { recursive: true, force: true });
+			if (before === undefined) rmSync(paths.rules, { force: true });
+			else writeFileSync(paths.rules, before);
 		}
 	});
 

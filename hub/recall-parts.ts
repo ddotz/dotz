@@ -123,6 +123,10 @@ export function dropSection(mode: string, heading: string): string {
 	return [...lines.slice(0, from), ...lines.slice(to)].join("\n");
 }
 
+export const sessionRules = (rules: string): string => dropSection(rules, "## Blocked commands").trim();
+
+export const boundaryEntries = (text: string): string => (/^- /m.test(text) ? text.trim() : "");
+
 // MODE.md cut to the text before its first `## ` heading and the sections whose heading starts with one of `headings`.
 export function keepSections(mode: string, headings: readonly string[]): string {
 	const lines = mode.split("\n");

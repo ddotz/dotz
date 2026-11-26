@@ -72,6 +72,15 @@ test("a shrink moves the baseline down without a finding, and later growth count
 	expect(sizeKeys(run(2))).toContain("prompt:size:rules");
 });
 
+test("a state written for an older contract shape is replaced by a fresh baseline, so a part the re-read newly carries reports no growth", () => {
+	setRules("a".repeat(1000));
+	writeFileSync(join(dir, "prompt-health.json"), JSON.stringify({ baseline: { total: { chars: 100, at: t0 }, rules: { chars: 100, at: t0 } }, last: { total: 100, rules: 100 } }));
+	expect(sizeKeys(run(1))).toEqual([]);
+	expect(readState(dir)?.baseline.rules).toEqual({ chars: 1000, at: t0 + DAY });
+	setRules("a".repeat(3000));
+	expect(sizeKeys(run(2))).toContain("prompt:size:rules");
+});
+
 test("a rule that code enforces is reported by file and line while a line writes it out, carried as a deletion, and not after the line is removed", () => {
 	setRules("- keep replies short\n- never run launchctl kickstart on the gateway\n");
 	run(0);

@@ -4,10 +4,10 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { featurePrompt } from "./featuredirs.ts";
 import { baseLanguage, detectLanguage, languageName } from "./language.ts";
-import { dropSection, renderSetups, renderState } from "./recall-parts.ts";
+import { boundaryEntries, dropSection, newestLines, renderSetups, renderState } from "./recall-parts.ts";
 
-/** The parts of the contract text as written into it (rules is RULES.md alone; the feature bodies that follow it are `features`). */
-export type RecallParts = { identity: string; mode: string; rules: string; features: string; lessons: string; setups: string; state: string };
+/** The parts of the contract text as written into it (rules is RULES.md alone; the feature bodies that follow it are `features`; owner and boundaries make up the owner memory). */
+export type RecallParts = { identity: string; mode: string; rules: string; features: string; lessons: string; owner: string; boundaries: string; setups: string; state: string };
 
 // Same language and MODE file chain as hub/i18n.ts (that module has gateway side effects, so only the pure helpers are shared).
 function language(data: string): string {
@@ -59,10 +59,14 @@ export function recallContract(data: string, pkg: string, opts: { modeInSystem?:
 	const stateFile = join(data, "state.json");
 	const setupsFile = join(data, "channel-setups.json");
 	const rules = file(join(data, "RULES.md"), 12000);
+	const ownerFile = join(data, "memory", "owner.md");
+	const owner = newestLines(file(ownerFile, Number.POSITIVE_INFINITY), ownerFile);
+	const boundaries = boundaryEntries(file(join(data, "memory", "boundaries.md"), Number.POSITIVE_INFINITY));
+	const memory = [owner, boundaries].filter(Boolean).join("\n");
 	const parts = { identity: identityText(data), rules: rules + (features ? `\n\n${features}` : ""), lessons: file(join(data, "LESSONS.md"), 3000), setups: existsSync(setupsFile) ? renderSetups(readFileSync(setupsFile, "utf8")) : "", state: (existsSync(stateFile) && renderState(readFileSync(stateFile, "utf8"), stateFile)) || "{}" };
-	const split: RecallParts = { identity: parts.identity, mode, rules, features, lessons: parts.lessons, setups: parts.setups, state: parts.state };
+	const split: RecallParts = { identity: parts.identity, mode, rules, features, lessons: parts.lessons, owner, boundaries, setups: parts.setups, state: parts.state };
 	const sys = opts.modeInSystem === true;
-	if (base === "ko") return { text: `[dotz] 컨텍스트 압축 뒤 계약을 다시 읽어요${sys ? " (정체성과 계약은 시스템 프롬프트에 있어요)" : ""}:\n\n${sys ? "" : `정체성:\n${parts.identity}\n\n${mode}\n\n`}오너 규칙:\n${parts.rules}\n\n교훈:\n${parts.lessons}\n\n작업 채널 설정 (자세한 건 dotz_channel list):\n${parts.setups || "(없음)"}\n\n현재 state.json:\n${parts.state}`, parts: split, modeFile };
+	if (base === "ko") return { text: `[dotz] 컨텍스트 압축 뒤 계약을 다시 읽어요${sys ? " (정체성과 계약은 시스템 프롬프트에 있어요)" : ""}:\n\n${sys ? "" : `정체성:\n${parts.identity}\n\n${mode}\n\n`}오너 규칙:\n${parts.rules}\n\n교훈:\n${parts.lessons}\n\n오너 메모리:\n${memory || "(없음)"}\n\n작업 채널 설정 (자세한 건 dotz_channel list):\n${parts.setups || "(없음)"}\n\n현재 state.json:\n${parts.state}`, parts: split, modeFile };
 	const reply = base === "en" ? "" : `\n\nReply to the owner in ${languageName(code)} (${code}).`;
-	return { text: `[dotz] Contract re-read after compaction${sys ? " (your identity and the contract are in your system prompt)" : ""}:\n\n${sys ? "" : `Identity:\n${parts.identity}\n\n${mode}\n\n`}Owner rules:\n${parts.rules}\n\nLessons:\n${parts.lessons}\n\nWork channel setups (dotz_channel list for details):\n${parts.setups || "(none)"}\n\nCurrent state.json:\n${parts.state}${reply}`, parts: split, modeFile };
+	return { text: `[dotz] Contract re-read after compaction${sys ? " (your identity and the contract are in your system prompt)" : ""}:\n\n${sys ? "" : `Identity:\n${parts.identity}\n\n${mode}\n\n`}Owner rules:\n${parts.rules}\n\nLessons:\n${parts.lessons}\n\nOwner memory:\n${memory || "(none)"}\n\nWork channel setups (dotz_channel list for details):\n${parts.setups || "(none)"}\n\nCurrent state.json:\n${parts.state}${reply}`, parts: split, modeFile };
 }
