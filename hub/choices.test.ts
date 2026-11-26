@@ -31,6 +31,13 @@ test("cardBlock writes the head, the card's own evidence and each option with it
 	);
 });
 
+test("bullet evidence, a blank line, then numbered options: the numbered list is the card's options and the bullets stay its evidence", () => {
+	const text = "[ask] 패치가 안 읽히는 곳에 있었어요.\n\n결정: 패치 · 옮길까요?\n- 지금 앱은 하나예요.\n- 전 → 후: 파일A → 파일B\n\n**1) 옮기고 치우기**\n백업 뒤 옮겨요.\n**2) 옮기기만**\n남겨요.\n**3) 그대로**\n안 바뀌어요.\n\n- 뒤 보고 한 줄";
+	const [b] = parseDecisions(normalizeAsk(text)).blocks;
+	expect(b!.options.map(o => o.label)).toEqual(["옮기고 치우기", "옮기기만", "그대로"]);
+	expect(normalizeAsk(text)).toContain("- 지금 앱은 하나예요.");
+});
+
 const alertOf = (text: string) => decisionsOf({ ts: "2026-11-24T00:00:00.000Z", kind: "out", source: "gateway", target: "alert", text });
 
 test("three cards of one message each store their own evidence lines, then the shared lead, with no 결정: head line", () => {

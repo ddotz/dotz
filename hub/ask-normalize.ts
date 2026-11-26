@@ -241,6 +241,13 @@ function readHeaded(lines: string[], fenced: boolean[], from: number): { list: H
 		prev.option.desc = line.trim().replace(/^[-*•]\s+/, "");
 		end = i + 1;
 	}
+	// Bullets, a blank line, then "1)" options: the bullets are the card's evidence and the numbered list is its options.
+	let j = end;
+	while (!numbered && list.length && j < lines.length && !lines[j]!.trim()) j++;
+	if (j > end && !fenced[j] && HEADED_OPTION.exec(lines[j]!)?.[1] === "1") {
+		const after = readHeaded(lines, fenced, j);
+		if (after?.numbered) return { ...after, lead: [...lines.slice(from, end).filter(l => l.trim()).map(l => l.trim()), ...after.lead] };
+	}
 	return list.length >= 2 && list.length <= MAX_HEADED ? { list, lead, numbered, end } : undefined;
 }
 
