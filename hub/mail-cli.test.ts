@@ -2,7 +2,8 @@ import { afterAll, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { learningSettled, toneKey, type FlowDeps } from "../features/reply-drafts/lib/flow.ts";
+import { learningSettled, type FlowDeps } from "../features/reply-drafts/lib/flow.ts";
+import { draftRules } from "../features/reply-drafts/lib/draft-rules.ts";
 import { HEADINGS, paths, profileBullets } from "../features/reply-drafts/lib/settings.ts";
 import { addDraft, getDraft, type DraftRec } from "../features/reply-drafts/lib/store.ts";
 import { mailHash } from "../features/reply-drafts/lib/view.ts";
@@ -35,5 +36,5 @@ test("a compose mail the owner edited and sent by hand with mail-cli send --draf
 	expect(out.code).toBe(0);
 	await learningSettled();
 	expect(asked).toEqual(["mail"]);
-	expect(profileBullets(toneKey(getDraft("RCOMP01")!), HEADINGS.corrections)).toEqual([expect.stringMatching(new RegExp(`^\\d{4}-\\d{2}-\\d{2}: ${LESSON}$`))]);
+	expect(profileBullets(draftRules(getDraft("RCOMP01")!, getDraft("RCOMP01")!.item).tone, HEADINGS.corrections)).toEqual([expect.stringMatching(new RegExp(`^\\d{4}-\\d{2}-\\d{2}: ${LESSON}$`))]);
 });

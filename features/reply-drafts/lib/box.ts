@@ -17,15 +17,20 @@ export function boxRules(b: Box | undefined): DraftRule[] | undefined {
 	return list.length ? list : undefined;
 }
 
-/** `how`, the greeting for this sender (a greet's `addr` is an address or `@domain`) and the banned phrases, as instruction lines of the configured instruction (rules.ts ruleInstruction), which a newer learned correction outranks. */
-export function boxLines(b: Box | undefined, from: string | undefined): string[] {
-	if (!b) return [];
+/** The greeting the box sets for this sender (a greet's `addr` is an address or `@domain`) with the greet it came from; undefined when none matches. */
+export function boxGreeting(b: Box, from: string | undefined): { line: string; hello: string } | undefined {
 	const sender = addressesOf(from).map(a => a.toLowerCase());
 	const hit = b.greets.find(g => {
 		const a = g.addr.trim().toLowerCase();
 		return !!g.hello && !!a && (a.startsWith("@") ? sender.some(s => s.endsWith(a)) : sender.includes(a));
 	});
-	return [b.how.trim(), hit ? `이 보낸 사람(${hit.who || hit.addr})에게는 "${hit.hello}"(으)로 인사해요.` : "", b.bans.length ? `쓰지 않을 표현: ${b.bans.join(", ")}.` : ""].filter(Boolean);
+	return hit && { line: `이 보낸 사람(${hit.who || hit.addr})에게는 "${hit.hello}"(으)로 인사해요.`, hello: hit.hello };
+}
+
+/** `how`, the greeting for this sender and the banned phrases, as instruction lines of the configured instruction (rules.ts ruleInstruction), which a newer learned correction outranks. */
+export function boxLines(b: Box | undefined, from: string | undefined): string[] {
+	if (!b) return [];
+	return [b.how.trim(), boxGreeting(b, from)?.line ?? "", b.bans.length ? `쓰지 않을 표현: ${b.bans.join(", ")}.` : ""].filter(Boolean);
 }
 
 /** One warning line per banned phrase found in the draft (flow.ts ownerWarning words it for the card); sending is not blocked. */

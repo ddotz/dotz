@@ -10,7 +10,8 @@ import { runOnboard } from "../bin/onboard.ts";
 import { learnBox, ownPairs, refreshVoices, relearnBox, VOICE_MAX, VOICE_MIN, voiceLines, voiceOf } from "../lib/box-voice.ts";
 import { boxCtx } from "../lib/box-place.ts";
 import { boxLines } from "../lib/box.ts";
-import { buildDraft, toneKey } from "../lib/flow.ts";
+import { buildDraft } from "../lib/flow.ts";
+import { draftRules } from "../lib/draft-rules.ts";
 import { correctionsOf, identityOf, loadPairs, loadStyle, paths, type Pair, recordCorrection, readLearned, savePairs, templatesOf, toneFile, writeIdentity } from "../lib/settings.ts";
 import { addDraft, setStatus, type DraftRec } from "../lib/store.ts";
 import { refreshPairs, type PluginSent } from "../lib/tone.ts";
@@ -43,6 +44,7 @@ const analyst = () => {
 	const calls: string[] = [];
 	return { calls, call: async (_s: string, user: string) => (calls.push(user), j({ identity: [user.includes(FORMAL) && !user.includes(CASUAL) ? "격식을 갖춰 써요" : user.includes(CASUAL) && !user.includes(FORMAL) ? "친구처럼 편하게 써요" : "섞여 있어요"], templates: [] })) };
 };
+const ITEM = { kind: "mail" as const, from: "", text: "" };
 const item = (text = "자료 부탁해요"): ReplyItem => ({ kind: "mail", from: "Kim <kim@example.com>", self: ["me@example.net"], subject: "자료", text });
 const draftPrompt = async (box: string): Promise<string> => {
 	const model = fakeModel([j(goodReply)]);
@@ -154,7 +156,7 @@ describe("too few of his own replies", () => {
 		await refreshVoices("mail", a.call, () => {}, now);
 		expect(identityOf(key)).toEqual([]);
 		expect(correctionsOf(key).length).toBe(1);
-		expect(loadStyle(toneKey({ box: "b-work", instance: "mail" })).identity).toEqual(["계정 말투"]);
+		expect(loadStyle(draftRules({ box: "b-work", instance: "mail" }, ITEM).tone).identity).toEqual(["계정 말투"]);
 		expect(voiceOf("mail", "b-work").state).toBe("few");
 		expect(readdirSync(join(paths.toneDir(), "mail")).some(f => f.startsWith("b-work.md.bak-"))).toBe(true);
 	});

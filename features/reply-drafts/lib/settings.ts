@@ -5,6 +5,7 @@ import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { withLock } from "../../../hub/file-lock.ts";
+import { appEntries } from "../../../hub/integrations.ts";
 import { banBullet, banKey, parseBan, type ShapeBan } from "../../../hub/ban.ts";
 import type { ReplyStyle } from "../../../hub/reply-draft.ts";
 import { UNKNOWN_USER } from "../../youtube-instagram/lib/ig-owner.ts";
@@ -140,14 +141,19 @@ export function setApp(app: string, auto: boolean): Settings {
 export const HEADINGS = { identity: "## 정체성", templates: "## 답장 틀", rules: "## 말투", samples: "## 예시", corrections: "## 고친 점", forbidden: "## 금지", learned: "## 학습한 말투", profile: "## 대화 이해", record: "## 학습 기록" } as const;
 
 export function bullets(md: string, heading: string): string[] {
+	return bulletLines(md, heading).map(b => b.text);
+}
+
+/** The bullets of a section with the 1-based line each stands on. */
+export function bulletLines(md: string, heading: string): { text: string; line: number }[] {
 	const lines = md.split("\n");
 	const start = lines.findIndex(l => l.trim() === heading);
 	if (start < 0) return [];
-	const out: string[] = [];
-	for (const line of lines.slice(start + 1)) {
-		if (/^## /.test(line)) break;
-		const m = /^\s*[-*]\s+(.*\S)\s*$/.exec(line);
-		if (m) out.push(m[1]!);
+	const out: { text: string; line: number }[] = [];
+	for (let i = start + 1; i < lines.length; i++) {
+		if (/^## /.test(lines[i]!)) break;
+		const m = /^\s*[-*]\s+(.*\S)\s*$/.exec(lines[i]!);
+		if (m) out.push({ text: m[1]!, line: i + 1 });
 	}
 	return out;
 }
@@ -235,12 +241,13 @@ const read = (file: string) => (existsSync(file) ? readFileSync(file, "utf8") : 
 const unique = (xs: string[]) => [...new Set(xs)];
 const SNS_APPS = new Set(["youtube", "instagram"]);
 
-// One profile's markdown; the mail app profile falls back to the old single style.md until tone/mail.md exists.
-function profile(key: ToneKey | "install"): string {
+// One profile's markdown and the file it is read from; the mail app profile falls back to the old single style.md until tone/mail.md exists.
+function profileAt(key: ToneKey | "install"): { file: string; md: string } {
 	const file = toneFile(key);
-	if (existsSync(file)) return readFileSync(file, "utf8");
-	return key !== INSTALL && key.app === "mail" && file === toneFile({ app: "mail" }) ? read(paths.legacyStyle()) : "";
+	if (existsSync(file)) return { file, md: readFileSync(file, "utf8") };
+	return key !== INSTALL && key.app === "mail" && file === toneFile({ app: "mail" }) ? { file: paths.legacyStyle(), md: read(paths.legacyStyle()) } : { file, md: "" };
 }
+const profile = (key: ToneKey | "install"): string => profileAt(key).md;
 
 export const hasSamples = (key: ToneKey | "install"): boolean => bullets(profile(key), HEADINGS.samples).length > 0;
 export const identityOf = (key: ToneKey | "install"): string[] => bullets(profile(key), HEADINGS.identity);
@@ -248,9 +255,10 @@ export const identityOf = (key: ToneKey | "install"): string[] => bullets(profil
 export const hasOwnTone = (app: string): boolean => app !== "mail" && validApp(app) && (identityOf({ app }).length > 0 || hasSamples({ app }));
 /** A mail app instance whose file holds lessons (rules, corrections, forbidden wordings) but no identity or samples: its drafts read the shared `mail` tone with those lessons on top (toneKey `base`). */
 export const lessonsOnly = (app: string): boolean => app !== "mail" && MAIL_INSTANCE.test(app) && validApp(app) && !hasOwnTone(app) && [HEADINGS.rules, HEADINGS.corrections, HEADINGS.forbidden].some(h => bullets(profile({ app }), h).length > 0);
-/** The mail app instances whose drafts read a file of their own (hasOwnTone, lessonsOnly), from the top-level files of the tone dir: a lesson given for the shared `mail` profile is learned into each of them too (flow.ts learnLine, recordForbidden). */
-export const ownToneMailApps = (): string[] =>
-	existsSync(paths.toneDir()) ? readdirSync(paths.toneDir()).filter(f => f.endsWith(".md")).map(f => f.slice(0, -".md".length)).filter(a => MAIL_INSTANCE.test(a) && (hasOwnTone(a) || lessonsOnly(a))).sort() : [];
+/** The mail app instances of the app list (custom/apps.json), the default `mail` apart: the only mail apps whose drafts exist, so the only tone files that are read. */
+export const listedMailApps = (): string[] => appEntries(dataDir()).filter(e => e.created && e.app === "mail" && !e.gone).map(e => e.key);
+/** The listed mail app instances whose drafts read a file of their own (hasOwnTone, lessonsOnly): a lesson given for the shared `mail` profile is learned into each of them too (flow.ts learnLine, recordForbidden). A tone file of an app that is not in the list is no one's. */
+export const ownToneMailApps = (): string[] => listedMailApps().filter(a => hasOwnTone(a) || lessonsOnly(a)).sort();
 /** The app whose tone profile a draft of `app` reads and learns into: a second mail app instance (`mail-<slug>`) with no file of its own shares `mail`, as its offered drafts do; every other app is itself. */
 export const profileApp = (app: string): string => (app !== "mail" && MAIL_INSTANCE.test(app) && !hasOwnTone(app) && !lessonsOnly(app) ? "mail" : app);
 export const correctionsOf = (key: ToneKey | "install"): string[] => bullets(profile(key), HEADINGS.corrections);
@@ -285,18 +293,22 @@ export function readLearned(): Record<string, string> {
 }
 export const markLearned = (marks: string[], now: Date): void => writeAtomic(paths.learned(), `${JSON.stringify({ ...readLearned(), ...Object.fromEntries(marks.map(m => [m, now.toISOString()])) }, null, 1)}\n`);
 
+/** The profiles a style is merged from, narrowest level first, each with the app it belongs to and its file. The app level of a key with a `base`: its own file and, when that holds no identity or samples (only lessons, or nothing), the base's file under it. */
+export function styleSources(key: ToneKey): { level: ToneLevel; app: string; file: string; md: string }[] {
+	return levelsOf(key).flatMap(([level, k]) => {
+		if (level !== "app") return [{ level, app: k.app, ...profileAt(k) }];
+		const own = profileAt({ app: k.app });
+		const under = k.base && !bullets(own.md, HEADINGS.identity).length && !bullets(own.md, HEADINGS.samples).length ? [{ level, app: k.base, ...profileAt({ app: k.base }) }] : [];
+		return own.md || !under.length ? [{ level, app: k.app, ...own }, ...under] : under;
+	});
+}
+
 /** A `## ` section outside HEADINGS (one the user added by hand) is a standing instruction too: its bullets follow the known rule sections.
  * Samples come from the narrowest profile that has any (levelsOf: recipient -> room -> app -> install; for the youtube and instagram apps the old
  * custom/sns/tone.md examples sit between app and install); rules, corrections and forbidden expressions are merged from every level,
  * install first and the narrower ones later. `recipient` lists the rules and corrections of the recipient level, absent when it has none. */
 export function loadStyle(key: ToneKey): LoadedStyle {
-	// The app level of a key with a `base`: its own file and, when that holds no identity or samples (only lessons, or nothing), the base's file under it.
-	const levels = levelsOf(key).flatMap(([level, k]): [ToneLevel, string][] => {
-		if (level !== "app") return [[level, profile(k)]];
-		const own = profile({ app: k.app });
-		const under = k.base && !bullets(own, HEADINGS.identity).length && !bullets(own, HEADINGS.samples).length ? [[level, profile({ app: k.base })] as [ToneLevel, string]] : [];
-		return own || !under.length ? [[level, own], ...under] : under;
-	});
+	const levels = styleSources(key).map((s): [ToneLevel, string] => [s.level, s.md]);
 	let samples: string[] = [];
 	let samplesFrom: LoadedStyle["samplesFrom"] = "none";
 	const legacy = SNS_APPS.has(key.app) ? bullets(read(paths.snsTone()), HEADINGS.samples) : [];

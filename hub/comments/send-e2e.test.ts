@@ -7,7 +7,8 @@ import { appendFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "n
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { cli, run as runComments } from "../../features/comments/bin/comments.ts";
-import { learningSettled, learnSentEdit, toneKey, type FlowDeps } from "../../features/reply-drafts/lib/flow.ts";
+import { learningSettled, learnSentEdit, type FlowDeps } from "../../features/reply-drafts/lib/flow.ts";
+import { draftRules } from "../../features/reply-drafts/lib/draft-rules.ts";
 import { HEADINGS, profileBullets } from "../../features/reply-drafts/lib/settings.ts";
 import { stagedFiles } from "../../features/reply-drafts/lib/staged.ts";
 import { getDraft, setStatus } from "../../features/reply-drafts/lib/store.ts";
@@ -191,7 +192,7 @@ function teacher() {
 	const deps = { learnCall: () => call } satisfies FlowDeps;
 	return { lessons, deps, edits: { lessonOfEdit, learn: async () => undefined, mail: id => learnSentEdit(id, deps) } satisfies EditLessons };
 }
-const learned = (mailId: string): string[] => profileBullets(toneKey(getDraft(mailId)!), HEADINGS.corrections).filter(l => l.endsWith(MAIL_LESSON));
+const learned = (mailId: string): string[] => profileBullets(draftRules(getDraft(mailId)!, getDraft(mailId)!.item).tone, HEADINGS.corrections).filter(l => l.endsWith(MAIL_LESSON));
 async function editedCard(w: World) {
 	const c = await card(w);
 	expect(w.engine.edit(c.d.code, OWNER_MAIL, "mail")).toMatchObject({ ok: true });

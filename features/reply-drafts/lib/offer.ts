@@ -10,10 +10,11 @@ import { threadIdOf, webmailSite } from "./senders.ts";
 import { existsSync, readFileSync, renameSync } from "node:fs";
 import { basename, join } from "node:path";
 import { retryWanted, stagedName, stageFiles, type StageOpts, type Want } from "./staged.ts";
-import { askText, attachFolder, buildDraft, callOf, candidatesFor, chosenFrom, draftTrace, mailAsksFile, replyCall, settleDraft, stageForReply, styleKey, traceLine, type DraftTrace } from "./flow.ts";
+import { askText, attachFolder, buildDraft, callOf, candidatesFor, chosenFrom, draftTrace, mailAsksFile, replyCall, settleDraft, stageForReply, traceLine, type DraftTrace } from "./flow.ts";
 import { compactForPrompt } from "./compact.ts";
 import { anyRuleOn, mailInstanceOf, matchMail, ruleFileMissing, ruleInstruction, rulesOf, stageRuleFiles, type MailMatch } from "./rules.ts";
-import { banWarnings, boxFolders, boxLines, boxRules, noAutoDraft } from "./box.ts";
+import { boxFolders, boxLines, boxRules, noAutoDraft } from "./box.ts";
+import { draftRules } from "./draft-rules.ts";
 import { boxCtx, moveByJudge, type BoxDeps } from "./box-place.ts";
 import { learnFirst, MAIL_TONE_VERSION } from "./persona.ts";
 import { appOn, dataDir, ensureSwitch, hasOwnTone, loadSettings, markLearned, readLearned, writeAtomic } from "./settings.ts";
@@ -389,7 +390,7 @@ async function offerOne(m: OfferMail, deps: OfferDeps, { body, history, replyTo 
 		if (cands?.files.length) item.candidates = cands.files.map(f => f.rel);
 		else if (cands && asked) item.files = [];
 		// A long 고친 점 is folded before its prompt is built (compact.ts), on the reply model of the mail's app.
-		await compactForPrompt(styleKey({ ...item, ...(box ? { box: box.id, instance } : {}) }, item), { learnCall: app => deps.call ?? replyCall(app) }).catch(e => log(`reply draft: corrections for mail ${m.key} not compacted: ${(e as Error).message}`));
+		await compactForPrompt(draftRules({ ...item, ...(box ? { box: box.id, instance } : {}) }, item).key, { learnCall: app => deps.call ?? replyCall(app) }).catch(e => log(`reply draft: corrections for mail ${m.key} not compacted: ${(e as Error).message}`));
 		const built = await buildDraft(item, { ...(box ? { box: box.id, instance } : {}), source: m.source, mailId: m.id, ref: m.key, ...(m.account ? { account: m.account } : {}), ...(m.attachments?.length ? { origAttachments: m.attachments.length } : {}) }, flow);
 		if (built.action !== "draft") {
 			log(`reply draft: mail ${m.key} skipped: ${built.reason}`);
@@ -401,7 +402,7 @@ async function offerOne(m: OfferMail, deps: OfferDeps, { body, history, replyTo 
 		built.rec.mode = "reply";
 		ensureSwitch();
 		if (rule) built.rec.rule = { id: rule.id, name: rule.name };
-		const warnings = [...built.warnings, ...banWarnings(box, built.rec), ...(subjectOnly ? [SUBJECT_ONLY] : [])];
+		const warnings = [...built.warnings, ...draftRules(built.rec, built.rec.item).banned(built.rec), ...(subjectOnly ? [SUBJECT_ONLY] : [])];
 		const chosen = chosenFrom(cands, built.files);
 		const notStaged = (e: Error): string[] => (log(`reply draft: files for mail ${m.key} not staged: ${e.message}`), []);
 		if (given.length) {

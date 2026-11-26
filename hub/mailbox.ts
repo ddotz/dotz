@@ -63,7 +63,7 @@ function parse(v: unknown): Mailboxes {
 	return out;
 }
 
-const fileOf = (dir: string) => join(dir, "custom", "mailboxes.json");
+export const fileOf = (dir: string) => join(dir, "custom", "mailboxes.json");
 const cache = new Map<string, { sig: string; store: Mailboxes }>();
 /** The store as it is on disk now (read again only when the file changed). The result is shared: copy it (`structuredClone`) before changing it. */
 export function loadMailboxes(dir: string): Mailboxes {

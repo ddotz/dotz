@@ -1,6 +1,6 @@
 // The draft life cycle shared by the gateway offer (offer.ts) and the CLI (bin/draft.ts): build -> ask -> revise | send | drop.
 // Nothing here sends without the user's 1) 보내기 pick for exactly that draft id, read from the inbox log.
-import { existsSync, statSync } from "node:fs";
+import { statSync } from "node:fs";
 import type { DraftRule } from "../../../hub/app-settings.ts";
 import { linkedComment, mailComment } from "../../../hub/comments/linked.ts";
 import { claimHolder, claimSend, claimToken, keepClaimToken } from "../../../hub/draft-claim.ts";
@@ -9,7 +9,7 @@ import { withFileWords } from "../../../hub/auto-attach.ts";
 import { claimsAttachment, ownClaimText } from "../../../hub/attach-claim.ts";
 import { ATTACH_AS_IS_HINT, ATTACH_REFUSED, LINT_REFUSED, asksForFile, briefLines, draftApprovalBlock, draftVerdict, type DraftVerdict, SPENT_REFUSED, WAITING_REFUSED } from "../../../hub/draft-approval.ts";
 import type { ReplyCall } from "../../../hub/reply-model.ts";
-import { addressesOf, asksFileOff, fileNameKey, generateChatReply, learnedOf, lintReply, NO_RECIPIENT, ownerLint, RECIPIENT_FAILURE, replyAddress, reviseReply, SENT_CLAIM_FAILURE, withSenderAddress, type LessonScope, type ModelCall, type Recipient, type ReplyItem, type ReplyKind, type ReplyStyle } from "../../../hub/reply-draft.ts";
+import { addressesOf, asksFileOff, fileNameKey, generateChatReply, learnedOf, lintReply, NO_RECIPIENT, ownerLint, RECIPIENT_FAILURE, reviseReply, SENT_CLAIM_FAILURE, withSenderAddress, type LessonScope, type ModelCall, type Recipient, type ReplyItem, type ReplyKind, type ReplyStyle } from "../../../hub/reply-draft.ts";
 import { styleJudgeOn } from "../../../hub/config.ts";
 import { judgeAsk, type JudgeAsk } from "../../../hub/style-judge.ts";
 import { listLibrary, matchLibrary, MIN_SCORE, rankLibrary, type LibraryFile } from "./library.ts";
@@ -17,14 +17,14 @@ import { basename } from "node:path";
 import { configConflicts, outgoingMail, ruleFilePath } from "./rules.ts";
 import { canAttach, sendsThroughZele, sendWith, settleAccount, threadMoved, webmailSite, zeleAccountOf, type Sent, type SendOutcome } from "./senders.ts";
 import { carryStagedFiles, removeStagedFile, stagedFiles, stagedName, stageFiles, stageWanted, type StageOpts, type Want } from "./staged.ts";
-import { dataDir, INSTALL, lessonsOnly, loadPairs, loadSettings, loadStyle, ownReplies, paths, profileApp, recipientFile, recordPattern, toneFile, validApp, type ToneKey } from "./settings.ts";
+import { dataDir, INSTALL, loadPairs, loadSettings, ownReplies, paths, recipientFile, recordPattern, type ToneKey } from "./settings.ts";
+import { draftRules, pairSource, type DraftRules } from "./draft-rules.ts";
 import { compactCorrections } from "./compact.ts";
 import { alsoInto, learnLine, type LineLearned, recordForbidden } from "./learn-line.ts";
 import { lessonOfEdit } from "./edit-lesson.ts";
 import { defaultKakaoReader, defaultKakaoRooms, KAKAO_APP, kakaoOwnTexts, type OwnerReader, type RoomsReader } from "./kakao-tone.ts";
-import { banWarnings, boxById } from "./box.ts";
 import { maybeRefine } from "./persona.ts";
-import { addPair, styleFrom, styleWithExamples } from "./pairs.ts";
+import { addPair } from "./pairs.ts";
 import { addRevision, claimEditLearned, claimFile, getDraft, listDrafts, newId, patchDraft, type RevisionConflict, setStatus, type DraftRec } from "./store.ts";
 import { realRunner, type Runner } from "./tone.ts";
 import { mailHash, mailView, sendAccountOf, type MailOf } from "./view.ts";
@@ -34,7 +34,8 @@ import type { Lesson } from "../../../hub/reply-types.ts";
 
 export { realRunner };
 // What hub/reply-mail.ts (the hub's single door into this feature) needs beside the flow itself.
-export { alsoInto, configConflicts, learnLine, lessonOfEdit, type LineLearned, mailView, outgoingMail, recordForbidden, sendAccountOf, webmailSite, type MailOf };
+export { boxOfOutgoing } from "./box-place.ts";
+export { alsoInto, configConflicts, draftRules, learnLine, lessonOfEdit, type LineLearned, mailView, outgoingMail, recordForbidden, sendAccountOf, webmailSite, type MailOf };
 
 // `analyze` = the model call of the identity sweep and its refinement (persona.ts); absent, no identity is analysed or refined.
 export type FlowDeps = { /** Chooses among tied library files by name (stageForReply); the default is one short model call. */ pick?: (names: string[]) => Promise<string[]>; call?: ModelCall; judge?: ModelCall; /** The model calls of one draft and its overall budget (draftTrace); buildDraft makes one when absent. */ trace?: DraftTrace; analyze?: ModelCall; run?: Runner; now?: () => Date; send?: (rec: DraftRec) => Promise<SendOutcome>; /** How library files are copied onto a draft (tests). */ stage?: StageOpts; /** Told where an approved send left the mail, right after the transport answered and before any bookkeeping write (bin/draft.ts prints its DOTZ_SEND line). */ onOutcome?: (o: Outcome) => void; learnCall?: (app: string) => ModelCall; kakaoReader?: (chatId: string) => Promise<OwnerReader>; kakaoRooms?: () => Promise<RoomsReader> };
@@ -66,7 +67,7 @@ async function learnEditOf(id: string, deps: FlowDeps): Promise<void> {
 	try {
 		const d = getDraft(id), learnCall = deps.learnCall;
 		if (!d || d.status !== "sent" || d.editedFrom === undefined || !learnCall || d.editedFrom.replace(/\s+/g, "") === d.body.replace(/\s+/g, "") || !claimEditLearned(id)) return;
-		const key = toneKey(d);
+		const key = draftRules(d, d.item).tone;
 		const taught = await lessonOfEdit({ before: d.editedFrom, after: d.body, received: d.item.text }, (system, user) => learnCall(key.app)(system, user));
 		const learned = taught ? await learnLine(taught.everywhere ? INSTALL : key, taught.lesson, taught.everywhere ? "rule" : "correction", deps) : undefined;
 		if (learned?.stored && learned.kind === "correction") await refineAfterCorrection(key, deps);
@@ -183,21 +184,7 @@ async function teach(key: ToneKey, lesson: Taught, evidence: NonNullable<Lesson[
 	return stored;
 }
 
-// The tone profile an item or draft belongs to: its room when it has one, else its own profile (a mail app instance's), else its app (mail unless the item says otherwise).
-// A draft made in a mailbox (box + instance) uses tone/<instance>/<box>.md when that file exists, falling back to the instance's profile (else the mail one), then the install.
-export const toneKey = (x: { app?: string; room?: string; profile?: string; box?: string; instance?: string }): ToneKey => {
-	const app = x.profile ?? profileApp(x.app ?? "mail");
-	const key: ToneKey = { app, ...(lessonsOnly(app) ? { base: "mail" } : {}), ...(x.room !== undefined ? { room: x.room } : {}) };
-	if (!x.box || !x.instance || x.room !== undefined || !validApp(x.instance)) return key;
-	const boxKey: ToneKey = { app: x.instance, room: x.box, ...(x.profile ? {} : { base: key.base ?? key.app }) };
-	return existsSync(toneFile(boxKey)) ? boxKey : key;
-};
-/** The key a draft's style is loaded with: `toneKey(x)` plus, for a mail, its recipient (the address the reply goes to by default, replyAddress). A comment has no recipient level here: its author's level is keyed by the platform's id, which only the comment engine has (hub/comments/draft-run.ts). A revise lesson is written under `lessonKey`: the install for `everywhere`, this key for `recipient` when its recipient has a file name (recipientFile), else `toneKey(x)`. */
-export const styleKey = (x: Parameters<typeof toneKey>[0], item: Pick<ReplyItem, "kind" | "from" | "replyTo" | "self">): ToneKey => {
-	const key = toneKey(x), to = item.kind === "mail" ? replyAddress(item) : undefined;
-	return to === undefined ? key : { ...key, to };
-};
-const lessonKey = (x: Parameters<typeof toneKey>[0], item: Pick<ReplyItem, "kind" | "from" | "replyTo" | "self">, scope: LessonScope): ToneKey => (scope === "everywhere" ? { app: INSTALL } : scope === "recipient" && recipientFile(styleKey(x, item).to ?? "") !== undefined ? styleKey(x, item) : toneKey(x));
+const lessonKey = (r: DraftRules, scope: LessonScope): ToneKey => (scope === "everywhere" ? { app: INSTALL } : scope === "recipient" && recipientFile(r.key.to ?? "") !== undefined ? r.key : r.tone);
 export type Meta = { /** The mailbox the mail is in and its mail app instance (box.ts boxCtx): set only for a mail in a box with settings. */ box?: string; instance?: string; source: string; mailId: string; ref: string; origAttachments?: number; /** The zele account the mail belongs to (its record's `account`); every zele call of the draft passes it. */ account?: string };
 // "ask" (chat only): the message needs a decision only the user can make; `choices` are 2-4 short answers.
 export type Built = { action: "skip"; reason: string } | { action: "draft"; rec: DraftRec; warnings: string[]; /** The candidates the model chose (ReplyResult.files); absent = it gave no choice. */ files?: string[] } | { action: "ask"; question: string; choices: string[] };
@@ -261,23 +248,6 @@ export const callOf = (deps: FlowDeps, item: ReplyItem, conv?: string, what = "d
 /** The style judge of a draft (hub/style-judge.ts) on the mail rule matcher's call, traced as `judge`; none while config guard.style_judge is false. */
 export const judgeOf = (deps: FlowDeps, item: ReplyItem, conv?: string): JudgeAsk | undefined => (styleJudgeOn() ? judgeAsk(callOf(deps.judge ? { ...deps, call: deps.judge } : deps, item, conv, "judge")) : undefined);
 const nowOf = (deps: FlowDeps) => (deps.now ?? (() => new Date()))();
-/** The style of a mail of mail app `app` written outside a draft to `to`: the profile that app's drafts read (toneKey: its own tone, else the shared `mail` one) plus that person's own conditions, the same key its compose, revise and send lint load (styleKey), with examples of the same person first; undefined when that profile has no samples and no identity yet. With `box` (the mailbox of app `app` the mail falls in), that box's own tone file when it has one, as a draft of a mail in that box reads it (toneKey). */
-export function mailStyleOf(app: string, text: string, to: string, box?: string): ReplyStyle | undefined {
-	const s = loadStyle(styleKey({ app, ...(box ? { box, instance: app } : {}) }, { kind: "mail", from: to }));
-	return s.samples.length || s.identity?.length ? styleWithExamples(s, "mail", text, to) : undefined;
-}
-// A mail draft's style carries the user's closest real past replies of ITS source as examples (a site's own sent folder for its mails, zele's for zele's); chat
-// and comments keep theirs. A zele pair does not say which account it came from, so a zele draft with a profile of its own gets none: another account's replies
-// must not ride in its prompt.
-export const pairSource = (source: string): string => webmailSite(source) ?? source;
-// A mail in a mailbox with enough of the owner's own replies sees only those (lib/box-voice.ts, loaded on use: only a mail in a box pays for it).
-async function styleOf(item: ReplyItem, key: ToneKey, source: string, at: { box?: string; instance?: string }) {
-	if (item.kind !== "mail") return loadStyle(key);
-	const own = at.box && at.instance ? (await import("./box-voice.ts")).boxExamples(at.instance, at.box) : undefined;
-	if (own) return styleFrom(loadStyle(key), own, item.text, item.from);
-	return item.profile && pairSource(source) === "zele" ? loadStyle(key) : styleWithExamples(loadStyle(key), "mail", item.text, item.from, pairSource(source));
-}
-
 function toRec(item: ReplyItem, meta: Meta, r: { draft: { to: string; subject?: string; body: string }; questions: string[]; recipient?: Recipient }, changes: string[], deps: FlowDeps): DraftRec {
 	// The candidates were for this one model call; a later revision builds its own.
 	const { candidates: _candidates, ...kept } = item;
@@ -291,7 +261,7 @@ function toRec(item: ReplyItem, meta: Meta, r: { draft: { to: string; subject?: 
 // back to the model.
 export async function buildDraft(item: ReplyItem, meta: Meta, deps: FlowDeps): Promise<Built> {
 	const trace = deps.trace ?? draftTrace();
-	const style = await styleOf(item, styleKey({ ...item, box: meta.box, instance: meta.instance }, item), meta.source, meta), traced = { ...deps, trace }, call = callOf(traced, item, meta.ref);
+	const style = await draftRules({ ...item, ...meta }, item).examples(), traced = { ...deps, trace }, call = callOf(traced, item, meta.ref);
 	const r = await generateChatReply(item, style, call, judgeOf(traced, item, meta.ref));
 	if (r.action !== "draft") return r;
 	const questions = item.kind === "mail" ? r.questions.filter(q => !ADDRESS_ASK.test(q)) : r.questions;
@@ -379,7 +349,7 @@ const notYetStaged = (rec: DraftRec): string[] => {
 };
 
 // The send-time lint of a draft, in the lint's own words. A text the owner wrote himself (editedFrom) gets the owner-text lint: his length is not the style's.
-const draftLint = (d: DraftRec): string[] => (d.editedFrom !== undefined ? ownerLint : lintReply)({ to: d.to, cc: d.cc, subject: d.subject, body: d.body }, d.item, loadStyle(styleKey(d, d.item)), { anyRecipient: d.ownerRecipients === true });
+const draftLint = (d: DraftRec): string[] => (d.editedFrom !== undefined ? ownerLint : lintReply)({ to: d.to, cc: d.cc, subject: d.subject, body: d.body }, d.item, draftRules(d, d.item).style(), { anyRecipient: d.ownerRecipients === true });
 // The same as the owner reads it. The comment engine runs it before a combined card's reply is posted (hub/comments/engine.ts), so a hit never leaves a posted reply beside an unsent mail.
 export const draftLintFailures = (d: DraftRec): string[] => draftLint(d).map(ownerWarning);
 
@@ -407,7 +377,7 @@ export function editDraft(id: string, text: string, subject?: string): Step & { 
 	if (d.status !== "pending") return { ok: false, text: `초안 ${id}은(는) 이미 ${d.status} 상태라 고칠 수 없어요`, code: "not_pending" };
 	const body = stripControl(text).replace(/\r\n?/g, "\n").trim();
 	const subj = subject === undefined ? d.subject : stripControl(subject).replace(/\s+/g, " ").trim();
-	const found = ownerLint({ to: d.to, cc: d.cc, subject: subj, body }, d.item, loadStyle(styleKey(d, withRecipient(d).item)), { anyRecipient: d.ownerRecipients === true });
+	const found = ownerLint({ to: d.to, cc: d.cc, subject: subj, body }, d.item, draftRules(d, withRecipient(d).item).style(), { anyRecipient: d.ownerRecipients === true });
 	if (found.length) {
 		const lint = found.map(ownerWarning);
 		return { ok: false, text: `${LINT_REFUSED} ${lint.join(" · ")}`, ...lintCode(found[0]!), lint };
@@ -602,9 +572,10 @@ async function reviseClaimed(id: string, change: string, deps: FlowDeps, opts: {
 	const rev = await revisionCandidates(old, change);
 	const asked = old.request === undefined ? old.item : { ...old.item, text: old.request };
 	const item = rev ? { ...asked, candidates: rev.names } : held.length ? { ...asked, files: held } : asked;
-	const r = await reviseReply(item, await styleOf(asked, styleKey(old, old.item), old.source, old), { to: old.to, subject: old.subject, body: old.body }, change, callOf(deps, old.item, old.ref), judgeOf(deps, old.item, old.ref));
+	const rules = draftRules(old, asked);
+	const r = await reviseReply(item, await rules.examples(), { to: old.to, subject: old.subject, body: old.body }, change, callOf(deps, old.item, old.ref), judgeOf(deps, old.item, old.ref));
 	if (r.action === "skip") return { ok: false, text: `고친 초안을 만들지 못했어요: ${r.reason}` };
-	const banned = old.box && old.instance ? banWarnings(boxById(old.instance, old.box), r.draft) : [];
+	const banned = rules.banned(r.draft);
 	const rec = toRec(old.item, { ...(old.box && old.instance ? { box: old.box, instance: old.instance } : {}), source: old.source, mailId: old.mailId, ref: old.ref, ...(old.account ? { account: old.account } : {}), ...(old.origAttachments ? { origAttachments: old.origAttachments } : {}) }, r, [...old.changes, change], deps);
 	if (old.subjectEdited) {
 		rec.subjectEdited = true;
@@ -638,7 +609,7 @@ async function reviseClaimed(id: string, change: string, deps: FlowDeps, opts: {
 	}
 	// Learned only once the new draft is stored: a revise that failed teaches nothing.
 	const learnt = learnedOf(r, change);
-	const taught = learnt.line.trim() || learnt.forbid.length ? { key: lessonKey(old, old.item, learnt.scope), line: learnt.line, forbid: learnt.forbid, evidence: { draft: old.body, change } } : undefined;
+	const taught = learnt.line.trim() || learnt.forbid.length ? { key: lessonKey(rules, learnt.scope), line: learnt.line, forbid: learnt.forbid, evidence: { draft: old.body, change } } : undefined;
 	const stored = taught && opts.learn !== false ? await teach(taught.key, taught, taught.evidence, deps) : taught;
 	const said = taught && stored ? lessonNote({ key: taught.key, ...stored }) : "";
 	return { ok: true, text: askText(rec, [...r.warnings, ...banned, ...notStaged], said ? `답장 초안을 고쳤어요. ${said}` : "답장 초안을 고쳤어요"), id: rec.id, replaces: old.id, ...(taught ? { lesson: taught } : {}) };
@@ -670,7 +641,7 @@ export function dropDraft(id: string, why?: { reason: string; deps: FlowDeps }):
 }
 
 function learnDropReason(d: DraftRec, reason: string, deps: FlowDeps): Promise<void> {
-	const key = toneKey(d);
+	const key = draftRules(d, d.item).tone;
 	const taught: Promise<void> = learnLine(key, `보내지 않은 초안 - ${reason.trim()}`, "correction", deps)
 		.then(async learned => {
 			if (learned.stored) await refineAfterCorrection(key, deps);

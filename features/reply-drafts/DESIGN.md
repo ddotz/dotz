@@ -88,13 +88,13 @@ A chat message that needs his own decision still asks first (exit 4), since the 
   and 고친 점 lines are also listed apart (`ReplyStyle.recipient`): the draft prompt shows them under their own heading as holding for this
   recipient and winning over a broader line that says otherwise, and the style judge numbers them last under the same meaning. The
   prompt's and the judge's one corrections budget takes the recipient's corrections first and the other levels' in what is left. Every style
-  load of a mail draft adds its recipient (`flow.ts` `styleKey`, which adds `to` for a mail only), the comment engine its author's id (`EngineDeps.style(src, authorId)`). A second
+  load of a mail draft adds its recipient (`lib/draft-rules.ts` `draftRules`, the one place a tone key is built, which adds `to` for a mail only), the comment engine its author's id (`EngineDeps.style(src, authorId)`). A second
   mail app instance (`mail-<slug>`) reads and learns into its own profile only once it has a tone of its own (an identity or samples),
-  else the shared `mail` one (`profileApp`, used by `toneKey`): its offered drafts, a mail composed there and a mail that rides on a
-  comment (`mailStyleOf`) are therefore written, revised, checked and taught with the same profile and the same recipient file; with no
+  else the shared `mail` one (`profileApp`, used by `draftRules`): its offered drafts, a mail composed there and a mail that rides on a
+  comment (`writeMail`) are therefore written, revised, checked and taught with the same profile and the same recipient file; with no
   recipient file the style, the prompts and the lint are exactly those of the key without `to`. Writing
   (`learnTone`, `recordCorrection`) goes into exactly one profile. A revise lesson goes to the key of its `scope` (mail: `flow.ts`
-  `lessonKey` beside `styleKey`; comments: `draft-run.ts` `commentLessonKey`; KakaoTalk: `kakaoLessonKey`): the install for `everywhere`;
+  `lessonKey` over `draftRules`; comments: `draft-run.ts` `commentLessonKey`; KakaoTalk: `kakaoLessonKey`): the install for `everywhere`;
   for `recipient` the draft's recipient file (a mail's `replyAddress`, a comment author's `authorId`, a mail that rides on a comment that address
   under the shared `mail` profile), or the channel's profile when the draft has no recipient with a file name (a sender with only a
   name, a comment author without an id); for KakaoTalk the room, which already is the person; for `channel` the draft's channel. The card path

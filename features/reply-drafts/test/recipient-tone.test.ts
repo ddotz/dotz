@@ -10,7 +10,8 @@ import { commentStyle } from "../../../hub/comments/real.ts";
 import { commentsDir, createStore } from "../../../hub/comments/store.ts";
 import { runDraft } from "../bin/draft.ts";
 import { journalEntries, profileKey, profileOf } from "../lib/curate.ts";
-import { buildDraft, draftLintFailures, editDraft, mailStyleOf, styleKey, toneKey, withRecipient } from "../lib/flow.ts";
+import { buildDraft, draftLintFailures, editDraft, withRecipient } from "../lib/flow.ts";
+import { draftRules } from "../lib/draft-rules.ts";
 import { addDraft, type DraftRec } from "../lib/store.ts";
 import { composeMail } from "../../../hub/mail-cli.ts";
 import { HEADINGS, levelsOf, loadStyle, paths, profileBullets, recipientFile, recipientOf, toneFile } from "../lib/settings.ts";
@@ -36,6 +37,8 @@ const learner = (reply: () => string) => {
 	return { asked, learnCall: () => async (_system: string, user: string) => (asked.push(user), reply()) };
 };
 const draftOut = j({ action: "draft", reason: "r", to: "a@x.com", subject: "Re: 일정", body: "네 확인했어요", questions: [] });
+const ITEM = { kind: "mail" as const, from: "", text: "" };
+const outgoing = (app: string, to: string) => draftRules({ app }, { kind: "mail", from: to, text: "자료 부탁드려요" }).style();
 const mail = (from: string): ReplyItem => ({ kind: "mail", app: "mail", from, self: ["me@example.net"], subject: "일정", text: "다음 주 일정 알려 주세요" });
 const meta = { source: "zele", mailId: "m1", ref: "k1" };
 const promptOf = async (item: ReplyItem): Promise<string> => {
@@ -88,7 +91,7 @@ test("an id that is empty, too long or a nobody value gives no level, and its ke
 });
 
 test("a mail recipient and a comment author map to their own file under the app", () => {
-	expect(profileOf(styleKey({ app: "mail" }, { kind: "mail", from: "Kim <Kim.Lee+x@Example.com>" }))).toBe("mail/to/kim_002elee_002bx_0040example_002ecom.md");
+	expect(profileOf(draftRules({ app: "mail" }, { kind: "mail", from: "Kim <Kim.Lee+x@Example.com>", text: "" }).key)).toBe("mail/to/kim_002elee_002bx_0040example_002ecom.md");
 	expect(profileOf({ app: "youtube", to: "김 선생님" })).toBe("youtube/to/_ae40_0020_c120_c0dd_b2d8.md");
 	expect(profileKey("youtube/to/_ae40_0020_c120_c0dd_b2d8.md")).toEqual({ app: "youtube", to: "김 선생님" });
 	expect(profileKey("mail/to/A.md")).toBeUndefined();
@@ -169,7 +172,7 @@ test("tone --journal and correct --restore name a commenter by his stored displa
 test("a recipient line and a contradicting app line both reach the prompt, the recipient's marked as winning, and the judge lists it after the others", async () => {
 	write(toneFile({ app: "mail" }), "## 말투\n\n- 존댓말로 쓴다\n\n## 고친 점\n\n- 2030-03-01: 끝인사는 길게\n");
 	write(toneFile({ app: "mail", to: "a@x.com" }), "## 말투\n\n- 반말로 쓴다\n\n## 고친 점\n\n- 2030-03-02: 끝인사는 한 줄로\n\n## 금지\n\n- 수고하세요\n");
-	const style = loadStyle(styleKey({ app: "mail" }, mail("a@x.com")));
+	const style = draftRules({ app: "mail" }, mail("a@x.com")).style();
 	expect(style.forbidden).toEqual(["수고하세요"]);
 	const { user } = buildPrompt(mail("a@x.com"), style);
 	expect(user).toContain("The user's rules:\n- 존댓말로 쓴다\n");
@@ -192,7 +195,7 @@ test("with no recipient file the mail and comment prompts, the judge prompt and 
 	write(toneFile({ app: "youtube" }), "## 말투\n\n- 이모지는 하나까지\n");
 	write(toneFile({ app: "mail", to: "c@x.com" }), "## 말투\n\n- 다른 분 줄\n");
 	const cases: [ReplyItem, ReplyStyle, ReplyStyle][] = [
-		[mail("Kim <a@x.com>"), loadStyle(styleKey({ app: "mail" }, mail("Kim <a@x.com>"))), loadStyle(toneKey({ app: "mail" }))],
+		[mail("Kim <a@x.com>"), draftRules({ app: "mail" }, mail("Kim <a@x.com>")).style(), loadStyle(draftRules({ app: "mail" }, ITEM).tone)],
 		[{ kind: "comment", app: "youtube", from: "박 학생", text: "잘 봤어요" }, commentStyle({ key: "youtube", kind: "youtube", label: "유튜브", watch: ["*"], autoDraft: false }, "UC_park"), loadStyle({ app: "youtube" })],
 	];
 	for (const [item, withTo, without] of cases) {
@@ -269,7 +272,7 @@ test("draft.ts new --kind comment has no recipient level: it reads no commenter'
 		expect(prompt).not.toContain("라는 분 규칙");
 		expect(prompt).not.toContain(RECIPIENT_HEAD);
 	}
-	expect(styleKey({ app: "youtube" }, { kind: "comment", from: "김 선생님" })).toEqual({ app: "youtube" });
+	expect(draftRules({ app: "youtube" }, { kind: "comment", from: "김 선생님", text: "" }).key).toEqual({ app: "youtube" });
 });
 
 test("a draft whose sender is only a name is checked on edit with the file of the address its text gives, as it is at send", () => {
@@ -315,7 +318,7 @@ test("correct and tone --to refuse KakaoTalk and keep exactly one address for a 
 	expect((await runDraft(["tone", "--app", "mail", "--to", "김 <Kim@X.com>"], "")).lines.slice(0, 3)).toEqual(["mail · kim@x.com 답장이 따르는 것", "말투:", "- [to] 반말로 쓴다"]);
 	expect((await correct({}, "--app", "mail-2", "--to", "Lee <Lee@Y.com>", "--rule", "짧게 쓴다")).code).toBe(0);
 	expect(profileBullets({ app: "mail", to: "lee@y.com" }, HEADINGS.rules)).toEqual(["짧게 쓴다"]);
-	expect(loadStyle(styleKey({ app: "mail" }, mail("Lee <lee@y.com>"))).recipient).toEqual(["짧게 쓴다"]);
+	expect(draftRules({ app: "mail" }, mail("Lee <lee@y.com>")).style().recipient).toEqual(["짧게 쓴다"]);
 	expect((await correct({}, "--app", "mail", "--to", "kim@x.com", "--forget", "반말")).lines).toEqual(["mail · kim@x.com에서 1줄을 지웠어요:\n- [말투] 반말로 쓴다"]);
 	expect(profileBullets({ app: "mail", to: "kim@x.com" }, HEADINGS.rules)).toEqual([]);
 	expect((await correct({}, "--app", "youtube", "--to", "김 <a@b.com>", "--rule", "존칭")).code).toBe(2);
@@ -327,7 +330,7 @@ test("the recipient's corrections and the others share one 4000-character budget
 	const app = Array.from({ length: 30 }, (_, i) => line("앱", i)), own = Array.from({ length: 30 }, (_, i) => line("분", i));
 	write(toneFile({ app: "mail" }), `## 고친 점\n\n${app.map(l => `- ${l}`).join("\n")}\n`);
 	write(toneFile({ app: "mail", to: "a@x.com" }), `## 고친 점\n\n${own.map(l => `- ${l}`).join("\n")}\n`);
-	const style = loadStyle(styleKey({ app: "mail" }, mail("a@x.com")));
+	const style = draftRules({ app: "mail" }, mail("a@x.com")).style();
 	const { user } = buildPrompt(mail("a@x.com"), style);
 	const shown = (tag: string) => user.split("\n").filter(l => l.startsWith(`- 2030-01-`) && l.includes(`: ${tag}`)).map(l => l.slice(2));
 	const newestFirst = (xs: string[]) => [...xs].reverse();
@@ -353,22 +356,22 @@ test("a mail written outside a draft on a second mail app is written and checked
 	try {
 		write(toneFile({ app: "mail" }), "## 예시\n\n- 네 보내드렸어요\n\n## 금지\n\n- 메일금지어\n");
 		write(toneFile({ app: "mail", to: "kim@x.com" }), "## 말투\n\n- 김 선생님께는 짧게\n\n## 금지\n\n- 김금지어\n");
-		const shared = mailStyleOf("mail-2", "자료 부탁드려요", "Kim <kim@x.com>");
+		const shared = outgoing("mail-2", "Kim <kim@x.com>");
 		expect(shared?.samples).toEqual(["네 보내드렸어요"]);
 		expect(shared?.recipient).toEqual(["김 선생님께는 짧게"]);
 		expect(shared?.forbidden).toEqual(["메일금지어", "김금지어"]);
-		expect(mailStyleOf("mail-2", "자료 부탁드려요", "lee@y.com")?.forbidden).toEqual(["메일금지어"]);
-		expect(toneKey({ app: "mail-2" })).toEqual({ app: "mail" });
+		expect(outgoing("mail-2", "lee@y.com")?.forbidden).toEqual(["메일금지어"]);
+		expect(draftRules({ app: "mail-2" }, ITEM).tone).toEqual({ app: "mail" });
 		for (const word of shared?.forbidden ?? []) expect(await checked(word)).toBe(true);
 		write(toneFile({ app: "mail-2" }), "## 예시\n\n- 자료 보내드려요\n\n## 금지\n\n- 학교금지어\n");
-		const own = mailStyleOf("mail-2", "자료 부탁드려요", "Kim <kim@x.com>");
+		const own = outgoing("mail-2", "Kim <kim@x.com>");
 		expect(own?.samples).toEqual(["자료 보내드려요"]);
 		expect(own?.recipient).toEqual(["김 선생님께는 짧게"]);
 		expect(own?.forbidden).toEqual(["학교금지어", "김금지어"]);
-		expect(toneKey({ app: "mail-2" })).toEqual({ app: "mail-2" });
+		expect(draftRules({ app: "mail-2" }, ITEM).tone).toEqual({ app: "mail-2" });
 		for (const word of own?.forbidden ?? []) expect(await checked(word)).toBe(true);
 		expect(await checked("메일금지어")).toBe(false);
-		expect(mailStyleOf("mail", "자료 부탁드려요", "Kim <kim@x.com>")?.forbidden).toEqual(["메일금지어", "김금지어"]);
+		expect(outgoing("mail", "Kim <kim@x.com>")?.forbidden).toEqual(["메일금지어", "김금지어"]);
 	} finally {
 		rmSync(apps, { force: true });
 	}

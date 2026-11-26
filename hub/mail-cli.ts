@@ -15,11 +15,11 @@ import { type HubLike, notifyGateway, reportSendFailed } from "./followup.ts";
 import { commentAsk } from "./comments/ask.ts";
 import { attachMail, linkedComment, mailPartOf } from "./comments/linked.ts";
 import { commentsDir, createStore } from "./comments/store.ts";
-import { accountHold, askText, draftAttachIssues, learningSettled, realFlowDeps, realRunner, sendAccountOf, sendDraft, settleDraft, styleKey, type FlowDeps } from "../features/reply-drafts/lib/flow.ts";
+import { accountHold, askText, boxOfOutgoing, draftRules, draftAttachIssues, learningSettled, realFlowDeps, realRunner, sendAccountOf, sendDraft, settleDraft, type FlowDeps } from "../features/reply-drafts/lib/flow.ts";
 import { webmailSite, zeleLogins } from "../features/reply-drafts/lib/senders.ts";
 import { listLibrary, rankLibrary, LIBRARY_PICK_MAX, MIN_SCORE } from "../features/reply-drafts/lib/library.ts";
 import { cloudFile, cloudPlaceholder, retryWanted, STAGED_MAX, stageFiles, type Want } from "../features/reply-drafts/lib/staged.ts";
-import { dataDir, loadSettings, loadStyle, validApp } from "../features/reply-drafts/lib/settings.ts";
+import { dataDir, loadSettings, validApp } from "../features/reply-drafts/lib/settings.ts";
 import { addDraft, getDraft, newId, patchDraft, type DraftRec } from "../features/reply-drafts/lib/store.ts";
 import { autoAttach } from "./auto-attach.ts";
 
@@ -120,10 +120,10 @@ export async function composeMail(i: ComposeInput, deps: MailCliDeps = {}): Prom
 	}
 	if (paths.length > STAGED_MAX) return fail(`첨부파일은 ${STAGED_MAX}개까지 붙일 수 있어요`);
 
-	const w = i.written, at = w?.box ? { box: w.box, instance: app } : {};
+	const w = i.written, box = w?.box ?? boxOfOutgoing(app, { src: "", from: to.join(", "), subj: subject, body })?.id, at = box ? { box, instance: app } : {};
 	const item = { kind: "mail" as const, app, from: to.join(", "), text: body, ...(w?.instruction ? { instruction: w.instruction } : {}), ...(w?.configured ? { configured: w.configured } : {}), ...(w?.postTitle ? { context: w.postTitle } : {}) };
 	const draft = { to: to.join(", "), subject, body };
-	const failures = lintReply(draft, item, loadStyle(styleKey({ app, ...at }, item)));
+	const failures = lintReply(draft, item, draftRules({ app, ...at }, item).style());
 	if (failures.length) return fail(`초안 검사에서 걸렸어요: ${failures.join("; ")}`, 1);
 
 	const id = newId();

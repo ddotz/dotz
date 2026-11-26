@@ -4,7 +4,8 @@ import { afterAll, beforeEach, expect, test, spyOn } from "bun:test";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { buildPrompt, type ReplyItem, type ReplyStyle } from "../../../hub/reply-draft.ts";
-import { buildDraft, mailStyleOf, reviseDraft, sendDraft } from "../lib/flow.ts";
+import { buildDraft, reviseDraft, sendDraft } from "../lib/flow.ts";
+import { writeMail } from "../../../hub/comments/mail-link.ts";
 import { offerMailDraft } from "../lib/offer.ts";
 import { habitsOf } from "../../../hub/comments/past.ts";
 import { addPair, styleWithExamples } from "../lib/pairs.ts";
@@ -377,13 +378,19 @@ test("the model's recipient judgement is kept on the draft; evidence that is not
 	expect(none.calls).toHaveLength(1);
 });
 
-test("a linked mail is written from the mail profile, also through a second mail app that has no tone of its own; no profile yet means no style", () => {
-	expect(mailStyleOf("mail", "문서 부탁드려요", "kim@example.com")).toBeUndefined();
+test("a linked mail is written from the mail profile, also through a second mail app that has no tone of its own; no profile yet means no style", async () => {
+	const spec = (app: string) => ({ app, to: "kim@example.com", author: "A", text: "문서 부탁드려요", postTitle: "글A" });
+	const unwritten = fakeModel([replyJson("보내드립니다")]);
+	expect(await writeMail(spec("mail"), unwritten.call)).toBeUndefined();
+	expect(unwritten.calls).toHaveLength(0);
 	mkdirSync(join(toneFile({ app: "mail" }), ".."), { recursive: true });
 	writeFileSync(toneFile({ app: "mail" }), "## 예시\n\n- 네 보내드렸어요\n");
 	savePairs("mail", [{ received: "문서 부탁드려요", reply: "보내드립니다", at: day, from: "kim@example.com" }]);
-	expect(mailStyleOf("mail", "문서 부탁드려요", "kim@example.com")?.examples?.[0]).toMatchObject({ reply: "보내드립니다", same: true });
-	expect(mailStyleOf("mail-work", "문서 부탁드려요", "kim@example.com")?.examples?.[0]).toMatchObject({ reply: "보내드립니다", same: true });
+	for (const app of ["mail", "mail-work"]) {
+		const written = fakeModel([replyJson("확인했습니다.")]);
+		await writeMail(spec(app), written.call);
+		expect(written.calls[0]!.user).toContain("보내드립니다");
+	}
 });
 
 test("a revision records only its lasting lesson: the model's line, nothing for an empty one, the verbatim change when the field is missing", async () => {

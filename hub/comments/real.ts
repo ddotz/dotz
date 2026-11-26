@@ -2,7 +2,7 @@
 // profiles of features/reply-drafts, and the one subscription-only model call. The gateway and the watch/onboard scripts build the engine here.
 import { homedir, hostname } from "node:os";
 import { join } from "node:path";
-import { loadPairs, loadStyle, markLearned, readLearned, recordForbidden, recordLearned, savePairs, validApp } from "../../features/reply-drafts/lib/settings.ts";
+import { loadPairs, markLearned, readLearned, recordForbidden, recordLearned, savePairs, validApp } from "../../features/reply-drafts/lib/settings.ts";
 import { DM_THREAD } from "./contract.ts";
 import { loadConfig, realCtx } from "../../features/youtube-instagram/lib/config.ts";
 import { commentsFor, commentsRead, mediaHistory, mediaWithCounts, replyAuthor, reply as igReply } from "../../features/youtube-instagram/lib/instagram.ts";
@@ -11,7 +11,7 @@ import { ownerHistory, ownReplies, recentUploads, replyToComment, threadsByIds, 
 import { appBase, appEntries, commentOwner } from "../integrations.ts";
 import { featureEnabled } from "../app-feature-flags.ts";
 import { callReplyModel } from "../reply-model.ts";
-import { learnMailEdit, lessonOfEdit, replyLearning } from "../reply-mail.ts";
+import { draftRules, learnMailEdit, lessonOfEdit, replyLearning } from "../reply-mail.ts";
 import { styleJudgeOn } from "../config.ts";
 import { appOf, type DraftModel, createEngine, type Engine, type EngineDeps, type MailLink } from "./engine.ts";
 import { realMailLink } from "./mail-link.ts";
@@ -39,7 +39,7 @@ export const realModel: DraftModel = async (system, user, app) => {
 /** The owner's style for a comment reply in `src`: its app's tone profile and, when the comment's author has a platform id (`authorId`) with a profile of their own, that author's. A reply to a site's DM (thread `dm:<room>`) reads `<key>-dm.md` too, over the app's profile (its identity and samples stand in when that file has none). */
 export const commentStyle: NonNullable<EngineDeps["style"]> = (src, authorId, thread) => {
 	const dm = thread?.startsWith(DM_THREAD) && validApp(`${src.key}-dm`);
-	return loadStyle({ ...(dm ? { app: `${src.key}-dm`, base: src.key } : { app: src.key }), ...(authorId !== undefined ? { to: authorId } : {}) });
+	return draftRules({ profile: dm ? `${src.key}-dm` : src.key, ...(dm ? { base: src.key } : {}), ...(authorId !== undefined ? { authorId } : {}) }, { kind: "comment", from: "", text: "" }).style();
 };
 
 /** The engine over the real platforms, model and stores. What the owner's edit of a reply it sent, or of the mail that rode on it, teaches goes through the one learning door (hub/reply-mail.ts) with `flow` (the real flow deps by default: curation, refinement and compaction calls). `learnEdits: false`: a send of this process learns nothing from such an edit (the gateway's send queue ran it with `--no-learn` and learns it itself). */

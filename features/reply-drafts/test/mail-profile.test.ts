@@ -3,7 +3,8 @@
 import { afterAll, beforeEach, expect, test } from "bun:test";
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { toneKey, reviseDraft, sendDraft } from "../lib/flow.ts";
+import { reviseDraft, sendDraft } from "../lib/flow.ts";
+import { draftRules } from "../lib/draft-rules.ts";
 import { offerMailDraft, type OfferMail } from "../lib/offer.ts";
 import { paths, savePairs, toneFile, writeIdentity } from "../lib/settings.ts";
 import { listDrafts } from "../lib/store.ts";
@@ -34,13 +35,15 @@ test("two mails offered at once are each written with only their own app's ident
 	expect(promptOf(model, "m-1")).not.toContain("BETA-IDENTITY");
 });
 
+const tone = (r: Parameters<typeof draftRules>[0] & { item: Parameters<typeof draftRules>[1] }) => draftRules(r, r.item).tone;
+
 test("the stored draft keeps app mail and names its own profile only when the app has one", async () => {
 	own();
 	await offer(["m-1", "beta-1"]);
 	const recs = listDrafts();
 	expect(recs.map(r => [r.ref, r.app, r.profile])).toEqual(expect.arrayContaining([["m-1", "mail", undefined], ["beta-1", "mail", "mail-beta"]]));
-	expect(toneKey(recs.find(r => r.ref === "beta-1")!)).toEqual({ app: "mail-beta" });
-	expect(toneKey(recs.find(r => r.ref === "m-1")!)).toEqual({ app: "mail" });
+	expect(tone(recs.find(r => r.ref === "beta-1")!)).toEqual({ app: "mail-beta" });
+	expect(tone(recs.find(r => r.ref === "m-1")!)).toEqual({ app: "mail" });
 });
 
 test("a mail app without its own profile keeps using the shared mail profile", async () => {

@@ -16,6 +16,8 @@ afterAll(env.cleanup);
 beforeEach(() => {
 	process.env.DOTZ_DIR = env.dir;
 	rmSync(paths.toneDir(), { force: true, recursive: true });
+	mkdirSync(join(env.dir, "custom"), { recursive: true });
+	writeFileSync(join(env.dir, "custom", "apps.json"), JSON.stringify({ "mail-beta": { app: "mail" } }));
 });
 
 const journalFile = () => join(paths.toneDir(), "journal.jsonl");
