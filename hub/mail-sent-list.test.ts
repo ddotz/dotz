@@ -6,7 +6,7 @@ import { HUB_TOKEN } from "./config.ts";
 import { afterSentSettled } from "./after-sent.ts";
 import { onBroadcast } from "./events.ts";
 import { setFollowupWake } from "./followup.ts";
-import { mailByKey, mailTarget, postMail, type MailDeps } from "./mail.ts";
+import { mailByKey, mailKey, mailTarget, postMail, recordMail, type MailDeps } from "./mail.ts";
 import { sender } from "./reply-wire.ts";
 import { makeRoute } from "./routes.ts";
 
@@ -31,6 +31,8 @@ describe("보낸 메일 목록", () => {
 		expect(await rowOf(r.key)).toMatchObject({ dir: "out", to: "kim@example.com", at: "2030-05-01T00:00:00.000Z", preview: "자료 첨부해요.\n확인 부탁해요.", html: true });
 		const label = await postMail({ source: "zele", id: uid("snl"), subject: "라벨로 보냄", from: "Me <me@example.com>", to: "lee@example.com", labels: ["SENT"], summary: "한 줄 요약" }, deps);
 		expect(await rowOf(label.key)).toMatchObject({ dir: "out", to: "lee@example.com", summary: "한 줄 요약" });
+		// written in the mailbox itself, not through an approval card: no card mark
+		expect([(await rowOf(r.key))!.card, (await rowOf(label.key))!.card]).toEqual([undefined, undefined]);
 	});
 
 	test("a reply dotz sent is listed at once with its text and files, in the thread of the mail it answered", async () => {
@@ -45,6 +47,17 @@ describe("보낸 메일 목록", () => {
 		expect(sent?.mail?.base).toBe((await rowOf(incoming.key))!.base);
 		expect((await rowOf(incoming.key))!.reply).toBe("replied");
 		expect(mailByKey(sent!.target.slice(5))!.attachments![0]!.file).toContain("견적서.pdf");
+		// sent with the card's 보내기: the sent mail names the draft it came from and when it went out
+		expect(mailByKey(sent!.target.slice(5))!.card?.draft).toBe(id);
+		expect(sent?.mail?.card).toEqual({ draft: id, at: expect.stringMatching(/^\d{4}-\d\d-\d\dT/) });
+		expect((await rowOf(incoming.key))!.card).toBeUndefined();
+	});
+
+	test("a card send recorded before the card mark existed still reads as sent with the card", async () => {
+		const id = `R${uid("OLD").toUpperCase().replace(/[^A-Z0-9]/g, "")}`.slice(0, 12);
+		const key = mailKey("fx", `sent-${id}`);
+		recordMail({ key, source: "fx", id: `sent-${id}`, subject: "Re: 예전 답장", from: "", to: "kim@example.com", at: "2030-04-01T01:00:00.000Z", dir: "out" });
+		expect((await rowOf(key))!.card).toEqual({ draft: id, at: "2030-04-01T01:00:00.000Z" });
 	});
 
 	test("a new mail composed in dotz becomes the sent mail once it went out", async () => {
@@ -55,6 +68,7 @@ describe("보낸 메일 목록", () => {
 		addDraft(draft(id, `compose-${id.toLowerCase()}`, { compose: true, source: "zele", to: "park@example.com", subject: "새 제안", body: "제안드립니다." }));
 		expect((await call("POST", "/api/mail/compose", { ref: id, source: "zele", state: "sent" })).status).toBe(200);
 		expect(await rowOf(key)).toMatchObject({ dir: "out", to: "park@example.com", preview: "제안드립니다.", suggest: { state: "sent" } });
+		expect(String((await rowOf(key))!.card?.draft).toLowerCase()).toBe(id.toLowerCase());
 	});
 });
 

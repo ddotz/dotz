@@ -7,7 +7,7 @@ import { isAbsolute, join, sep } from "node:path";
 import { cfg, DATA_DIR, log, readJsonOrQuarantine, writeAtomic } from "./config.ts";
 import { FileError, replyFilesOf, safeName, serveFile, type ReplyFile } from "./files.ts";
 import { MAIL_HTML_MAX, sanitizeMailHtml } from "./mailhtml.ts";
-import { addressesOf, addressKey, directionOf, EXCLUSION_LABEL, evictSurplus, migrateMails, nextReply, noteOwnSender, ownAddresses, replyExclusion, replyExpected, replyOf, selfSent, setOwnAddresses, setToOnlyDir, type MailReply, type MailReplyEvent, type ReplyBy, type StoredMail } from "./mail-state.ts";
+import { addressesOf, addressKey, cardSendOf, directionOf, EXCLUSION_LABEL, evictSurplus, migrateMails, nextReply, noteOwnSender, ownAddresses, replyExclusion, replyExpected, replyOf, selfSent, setOwnAddresses, setToOnlyDir, type CardSend, type MailReply, type MailReplyEvent, type ReplyBy, type StoredMail } from "./mail-state.ts";
 import { mailUnreplied } from "./unreplied.ts";
 import { trackBox, type MailboxWhy, type Placed } from "./mailbox.ts";
 import { withSenderAddress } from "./reply-draft.ts";
@@ -29,7 +29,7 @@ export type MailSuggest = { kind: "reply-draft"; label: string; ref: string; sta
 // `msg` = the id of the newest incoming message the record stands for (MailInput.messageId); a post with another id is a newer message of the
 // same thread and reopens it (postMail). `reopenedAt` = when that happened: a reply draft sent before it answered an older message.
 // `list` = the poster saw a List-Id / List-Unsubscribe header; `account` = the mailbox it came to (zele: the account, for marking it read there).
-export type MailRecord = { /** the mailbox (hub/mailbox.ts) it was placed in or moved to; none = the base mailbox */ mbox?: string; mwhy?: MailboxWhy; /** archived in dotz (hub/mail-sync.ts); a newer message of the thread makes a new record and clears it */ archived?: true; starred?: true; /** the last state the mailbox reported (hub/mail-sync.ts applyMailboxFlags): only a change of it is applied */ box?: { read?: boolean; archived?: boolean; starred?: boolean; trashed?: boolean }; list?: true; account?: string; msg?: string; reopenedAt?: string; key: string; source: string; id: string; subject: string; from: string; to?: string; cc?: string; replyTo?: string; at: string; thread?: string; summary?: string; /** 할 일 / 직접 답할 것, apart from the summary (hub/mail-lines.ts); an older record has them in its summary */ todo?: string[]; questions?: string[]; preview?: string; attachments?: MailAttachment[]; replyFiles?: ReplyFile[]; html?: true; suggest?: MailSuggest; rule?: string; dir?: "out"; reply?: MailReply; reply_by?: ReplyBy; reply_at?: string; sentAt?: string; needsReply?: true; noReply?: true; commentReplyAt?: string };
+export type MailRecord = { /** a sent mail that went out with an approval card's 보내기 (recordSentByDotz): the draft it was and when it went out */ card?: CardSend; /** the mailbox (hub/mailbox.ts) it was placed in or moved to; none = the base mailbox */ mbox?: string; mwhy?: MailboxWhy; /** archived in dotz (hub/mail-sync.ts); a newer message of the thread makes a new record and clears it */ archived?: true; starred?: true; /** the last state the mailbox reported (hub/mail-sync.ts applyMailboxFlags): only a change of it is applied */ box?: { read?: boolean; archived?: boolean; starred?: boolean; trashed?: boolean }; list?: true; account?: string; msg?: string; reopenedAt?: string; key: string; source: string; id: string; subject: string; from: string; to?: string; cc?: string; replyTo?: string; at: string; thread?: string; summary?: string; /** 할 일 / 직접 답할 것, apart from the summary (hub/mail-lines.ts); an older record has them in its summary */ todo?: string[]; questions?: string[]; preview?: string; attachments?: MailAttachment[]; replyFiles?: ReplyFile[]; html?: true; suggest?: MailSuggest; rule?: string; dir?: "out"; reply?: MailReply; reply_by?: ReplyBy; reply_at?: string; sentAt?: string; needsReply?: true; noReply?: true; commentReplyAt?: string };
 export type MailInput = { /** Names this message of the thread; the same id again is a repeat, another id is a newer message and a new mail again. */ messageId?: string; /** when the mail was sent (ISO 8601 with a zone); an outgoing mail is kept at that time */ at?: string; source: string; id: string; subject: string; from?: string; to?: string; cc?: string; replyTo?: string; summary?: string; todo?: string[]; questions?: string[]; body?: string; html?: string; thread?: string; wake?: boolean; needsReply?: boolean; attachments?: AttachmentInput[]; replyFiles?: ReplyFile[]; /** "out" = the owner's own mail; `folder` / `labels` (SENT, 보낸편지함) say the same. */ direction?: "in" | "out"; folder?: string; labels?: string[]; /** a List-Id / List-Unsubscribe header was on the mail (`list: true`, `listId` or `listUnsubscribe`) */ list?: boolean; account?: string };
 export type MailResult = { ok: true; key: string; target: string; thread?: string; duplicate?: boolean; skipped?: true; direction?: "out"; replied?: true; /** a sent mail's body is kept (it opens in full) */ html?: true };
 export type MailDeps = {
@@ -516,10 +516,10 @@ const realFiles = (atts: MailAttachment[]) => attachmentList({ attachments: atts
 // A cid: picture the HTML body shows is part of the body (drawn in place), not a file of the mail.
 const markInline = (atts: MailAttachment[], html: string | undefined): MailAttachment[] => atts.map(a => (a.cid && html && html.toLowerCase().includes(`cid:${a.cid.toLowerCase()}`) ? { ...a, inline: true as const } : a));
 
-/** The direction and reply state a row shows (`sent` = a dotz send of a draft for this mail is on record). */
+/** The direction and reply state a row shows (`sent` = a dotz send of a draft for this mail is on record); `card` = it went out with a card. */
 export const mailStateOf = (m: MailRecord, sent: boolean) => {
-	const reply = m.dir === "out" ? undefined : sent ? ("replied" as const) : replyOf(m);
-	return { ...(m.dir === "out" ? { dir: "out" as const } : {}), ...(reply ? { reply } : {}), ...(m.sentAt ? { sentAt: m.sentAt } : {}) };
+	const reply = m.dir === "out" ? undefined : sent ? ("replied" as const) : replyOf(m), card = cardSendOf(m);
+	return { ...(m.dir === "out" ? { dir: "out" as const } : {}), ...(reply ? { reply } : {}), ...(m.sentAt ? { sentAt: m.sentAt } : {}), ...(card ? { card } : {}) };
 };
 
 /** Why an incoming mail is not 답장 필요 although it may look like it: he is not a main recipient (hub/mail-state.ts replyExclusion). */
@@ -732,7 +732,7 @@ export async function recordSentByDotz(d: SentByDotz, opts: { answers?: string; 
 	const html = await saveHtml(key, plainAsHtml(d.body), []);
 	const preview = mailPreview(d.body);
 	const { summary: _s, ...base } = row ?? ({} as MailRecord);
-	recordMail({ ...base, key, source: row?.source ?? d.source, id: row?.id ?? `sent-${d.id}`, subject: row?.subject || subject, from: row?.from ?? "", to: d.to, ...(d.cc?.length ? { cc: d.cc.join(", ") } : {}), at: row ? row.at : at, dir: "out", ...(preview ? { preview } : {}), ...(stored.length ? { attachments: stored } : {}), ...(html ? { html: true as const } : {}), ...(incoming?.account ? { account: incoming.account } : {}), } as MailRecord);
+	recordMail({ ...base, key, source: row?.source ?? d.source, id: row?.id ?? `sent-${d.id}`, subject: row?.subject || subject, from: row?.from ?? "", to: d.to, ...(d.cc?.length ? { cc: d.cc.join(", ") } : {}), at: row ? row.at : at, dir: "out", ...(preview ? { preview } : {}), ...(stored.length ? { attachments: stored } : {}), ...(html ? { html: true as const } : {}), ...(incoming?.account ? { account: incoming.account } : {}), card: { draft: d.id, at } } as MailRecord);
 	return key;
 }
 

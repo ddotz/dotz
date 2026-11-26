@@ -59,6 +59,14 @@ const mailReplyChip = sg => {
 // An outgoing mail is 내가 보냄 in the thread list of a mail (30-mail-thread.js), where both directions sit together; a list row has no tag for it.
 const MAIL_STATE = { needs: [TX("mail.needs_reply"), "warn"], draft: [TX("mon.mail.state.draft"), "warn"], replied: [TX("mon.mail.state.replied"), "ok"], skipped: [TX("mail.fyi.title"), ""], fyi: [TX("mail.fyi.title"), ""] };
 const mailStateOf = m => m.dir === "out" ? [TX("mon.mail.state.out"), ""] : MAIL_STATE[m.reply] || ["", ""];
+// A sent mail that went out with an approval card's 보내기 (hub/mail.ts cardSendOf): 카드로 보냄, with the send time in its title (the row and the
+// open mail already show the time). A mail written in the mailbox or sent by a script has none.
+const mailCardTag = m => {
+  const c = m && m.dir === "out" && m.card;
+  if (!c) return null;
+  const when = rcWhen(c.at);
+  return el("span", { class: "tag ok mr-card", "data-k": "card-sent", title: TX("mail.card_sent.title", { when }), text: TX("mail.card_sent") });
+};
 // An app whose conversation is a list of mails (메일 and its instances): newest on top, opened at the top.
 const monMailList = it => !!(it && it.app && !it.mon && (it.listed || it.mails.some(t => MAILS.has(t))));
 // The filter of the mail list: 전체 / 안 읽음 / 답장 필요 / 확인 대기 / 답장함 / 보낸 메일. A filter gets the mail and its conversation target.
@@ -142,7 +150,7 @@ function monConvNode(t, label) {
   const clip = files.length ? el("span", { class: "mr-clip", title: TX("mon.mail.clip", { n: files.length }), "aria-label": TX("mon.mail.clip", { n: files.length }) }, icon("clip"), String(files.length)) : null;
   return el("div", { class: `bm alert rc mr${m && n ? " mr-new" : ""}${m && MBOX.sel.has(t) ? " mr-sel" : ""}`, role: "button", tabindex: "0", "data-t": m ? t : null, "aria-label": `${m && n ? `${TX("common.unread")}, ` : ""}${title} ${m ? TX("mon.mail.open_orig") : TX("project.open_chat")}`, onclick: open,
     onkeydown: e => { if (e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); open(); } } },
-    el("div", { class: "rc-hd" }, m ? mbLead(t, title) : null, el("span", { class: "rc-src" }, m && n ? el("span", { class: "dot pri mr-dot", "aria-hidden": "true" }) : null, m ? m.dir === "out" ? TX("mon.mail.me_to", { to: mailSender(m.to) || TX("mon.mail.someone") }) : mailSender(m.from) || label : label), ...mxSender(t), stateTag, cmtTag, whyTag, ruleTag, tag, clip, when ? el("span", { class: "rc-time", text: when }) : null, m && m.dir !== "out" ? mailDraftButton(t, "ib mr-draft") : null, mxMoveBtn(t), m ? mailMenuBtn(t, () => orgMailItem(t)) : null),
+    el("div", { class: "rc-hd" }, m ? mbLead(t, title) : null, el("span", { class: "rc-src" }, m && n ? el("span", { class: "dot pri mr-dot", "aria-hidden": "true" }) : null, m ? m.dir === "out" ? TX("mon.mail.me_to", { to: mailSender(m.to) || TX("mon.mail.someone") }) : mailSender(m.from) || label : label), ...mxSender(t), stateTag, mailCardTag(m), cmtTag, whyTag, ruleTag, tag, clip, when ? el("span", { class: "rc-time", text: when }) : null, m && m.dir !== "out" ? mailDraftButton(t, "ib mr-draft") : null, mxMoveBtn(t), m ? mailMenuBtn(t, () => orgMailItem(t)) : null),
     el("div", { class: "rc-title", text: title }), chip,
     m && m.to ? el("div", { class: "mr-to", text: mailToText(m) }) : null,
     ...mailSumNodes(m, t, brief), ...(m ? orgMailRow(t) : []));

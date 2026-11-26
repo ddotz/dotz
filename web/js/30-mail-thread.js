@@ -114,7 +114,7 @@ function mailThreadRows(t, rel) {
     const tag = state ? (m.unreplied ? unrepPill(state) : el("span", { class: `tag${tone ? ` ${tone}` : ""}`, text: state })) : null;
     return el("li", {},
       el("button", { class: `mth-row${cur ? " on" : ""}`, type: "button", "aria-current": cur ? "true" : null, "data-t": k, onclick: cur ? null : () => mailThreadOpen(k) },
-        el("span", { class: "mth-top" }, tag, el("span", { class: "mth-when", text: rcWhen(m.at) || "" })),
+        el("span", { class: "mth-top" }, tag, mailCardTag(m), el("span", { class: "mth-when", text: rcWhen(m.at) || "" })),
         el("span", { class: "mth-subj", text: m.subject || TX("mail.no_subject") }),
         brief ? el("span", { class: "mth-sum", text: brief }) : null));
   });
@@ -156,7 +156,7 @@ function mailMetaNode(t, e) {
   const line = [to.length ? TX("mail.to_line", { names: names(to) }) : "", cc.length ? TX("mail.cc_line", { names: names(cc) }) : ""].filter(Boolean).join(" · ") || TX("mail.people.aria");
   const tog = el("button", { class: "mhd-tog", type: "button", "aria-expanded": "false", title: TX("mail.people.details"), onclick: () => { const open = head.hidden; head.hidden = !open; tog.setAttribute("aria-expanded", String(open)); tog.classList.toggle("open", open); } },
     el("span", { class: "mhd-tl", text: line }), icon("drop", "mhd-ch"));
-  return el("div", { class: "mhd-wrap" }, el("div", { class: "mhd-line" }, tog, mailThreadMobile(t)), head, mailCmtPaint(el("div", { class: "note mhd-cmt", role: "note", "data-k": "answered-elsewhere", "data-t": t, text: TX("reply.answered.comment") })));
+  return el("div", { class: "mhd-wrap" }, el("div", { class: "mhd-line" }, tog, mailCardTag(base), mailThreadMobile(t)), head, mailCmtPaint(el("div", { class: "note mhd-cmt", role: "note", "data-k": "answered-elsewhere", "data-t": t, text: TX("reply.answered.comment") })));
 }
 function mailCmtPaint(n) {
   n.hidden = !(MAILS.get(n.dataset.t) || {}).commentReplyAt;
@@ -181,7 +181,7 @@ function mailThreadSync() {
   mailThrEl.hidden = !open;
   document.querySelectorAll("#tl .mth-mb").forEach(b => { const x = MTH_WIDE.matches && mthOpen; b.setAttribute("aria-expanded", String(x)); b.classList.toggle("open", x); });
   if (!show) { mthKey = ""; mthSig = ""; return; }
-  const sig = rel.map(r => `${r.t}|${r.m.at}|${r.m.reply || ""}|${r.m.suggest && r.m.suggest.state || ""}|${r.m.subject || ""}`).join("\n");
+  const sig = rel.map(r => `${r.t}|${r.m.at}|${r.m.reply || ""}|${r.m.suggest && r.m.suggest.state || ""}|${r.m.card ? r.m.card.at : ""}|${r.m.subject || ""}`).join("\n");
   if (sig === mthSig && mthKey === target) return;
   mthKey = target; mthSig = sig;
   clear(mailThrEl).append(

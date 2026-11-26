@@ -89,6 +89,8 @@
   "mail.cc_line": "Cc {names}",
   "mail.no_subject": "(no subject)",
   "mail.thread.count": "Emails with this person: {n}",
+  "mail.card_sent": "Sent from card",
+  "mail.card_sent.title": "Sent with Send on an approval card · {when}",
   "mail.people.details": "Sender and recipient details",
   "mail.thread.aria": "Emails with the same person",
   "mail.thread.title": "Emails with this person",

@@ -304,3 +304,16 @@ export function evictSurplus<T extends { key: string; reply?: MailReply; suggest
 		return false;
 	});
 }
+
+export type CardSend = { draft: string; at: string };
+/** Whether a sent mail went out with an approval card's 보내기, and which draft it was. (hub/mail.ts MailRecord.card) A record from before `card` was kept still says so:
+ *  a sent reply is recorded under the id `sent-<draft id>` (recordSentByDotz), and a new mail composed in dotz is the row whose draft is `sent`.
+ *  A mail written in the mailbox or sent by a script has neither. */
+export const cardSendOf = (m: { dir?: string; id: string; at: string; card?: CardSend; suggest?: { kind: string; ref: string; state?: string; at?: string } }): CardSend | undefined => {
+	if (m.dir !== "out") return undefined;
+	if (m.card) return m.card;
+	const id = /^sent-(.+)$/.exec(m.id)?.[1];
+	if (id) return { draft: id, at: m.at };
+	if (m.suggest?.kind === "reply-draft" && m.suggest.state === "sent" && m.id.startsWith("compose-")) return { draft: m.suggest.ref, at: m.suggest.at ?? m.at };
+	return undefined;
+};

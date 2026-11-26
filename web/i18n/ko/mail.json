@@ -68,6 +68,8 @@
   "mail.cc_line": "참조 {names}",
   "mail.no_subject": "(제목 없음)",
   "mail.thread.count": "이 사람과 주고받은 메일 {n}",
+  "mail.card_sent": "카드로 보냄",
+  "mail.card_sent.title": "승인 카드의 보내기로 보낸 메일 · {when}",
   "mail.people.details": "보낸 사람·받는 사람 자세히",
   "mail.thread.aria": "같은 사람과 주고받은 메일",
   "mail.thread.title": "이 사람과 주고받은 메일",
