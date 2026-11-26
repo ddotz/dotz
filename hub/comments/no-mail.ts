@@ -1,12 +1,16 @@
 import { claimsAttachment, NO_CLAIM } from "../attach-claim.ts";
 import { MAIL_PROMISE, PAIR_NOTE, asksForFile } from "../draft-approval.ts";
-import type { Comment, SourceConfig } from "./contract.ts";
+import { type Comment, isUntitled, type SourceConfig } from "./contract.ts";
 import type { Draft, Store } from "./store.ts";
 
 /** The card line of a comment whose mail app is not set, so no mail draft was written. */
 export const MAIL_NO_APP_NOTE = "확인: 메일 앱이 정해지지 않아 메일 초안은 만들지 않았어요";
 /** The card line of a linked mail whose compose failed; the reason follows after " - ". */
 export const MAIL_FAILED_NOTE = "확인: 메일 초안을 만들지 못했어요";
+/** The card line of a linked mail whose post title was not readable: the post names what is asked for, so without it no file is picked. */
+export const NO_TITLE_NOTE = "확인 필요: 글 제목을 읽지 못해 어떤 자료인지 알 수 없어요. 첨부는 비워 뒀어요";
+/** The line the reply prompt gets for a comment that asks for a file on a titled post: the post's work is what is asked for, so the reply never asks which one. */
+export const postAsked = (c: Comment): string[] => (!isUntitled(c) && asksForFile(c.text) ? ["이 댓글이 요청하는 자료는 이 글의 곡(자료)이에요. 어떤 곡인지 되묻지 마세요."] : []);
 /** The card line prefix of a task the owner does beside the reply (the model's extra), which covers what the reply promises. */
 export const EXTRA_NOTE = "함께 할 일: ";
 /** The send refusal of a reply that promises a mail or a file no mail carries. */

@@ -8,12 +8,12 @@ import { commentAsk } from "./ask.ts";
 import { ATTACH_REFUSED } from "../draft-approval.ts";
 import { type CommentAdapter, commentId, type RawComment, type SourceConfig } from "./contract.ts";
 import { createEngine, type MailLink, type MailSpec, type MailView } from "./engine.ts";
-import { MAIL_NO_APP_NOTE } from "./no-mail.ts";
+import { MAIL_NO_APP_NOTE, NO_TITLE_NOTE } from "./no-mail.ts";
 import { createCommentsWeb } from "./web.ts";
 
 const NOW = Date.parse("2026-11-02T00:00:00.000Z");
 const ASKS = "문서 부탁드립니다. Fan@Example.com 입니다";
-const raw = (native: string, text: string): RawComment => ({ native, thread: "p1", author: "팬", text, postTitle: "숲과 나나미 요약", at: NOW - 1000 });
+const raw = (native: string, text: string, postTitle = "숲과 나나미 요약"): RawComment => ({ native, thread: "p1", author: "팬", text, postTitle, at: NOW - 1000 });
 const reply = `\`\`\`json\n${JSON.stringify({ action: "draft", reason: "asks", to: "", body: "메일로 보내드릴게요", questions: [] })}\n\`\`\``;
 const replyOf = (body: string) => `\`\`\`json\n${JSON.stringify({ action: "draft", reason: "asks", to: "", body, questions: [] })}\n\`\`\``;
 const base: SourceConfig = { key: "youtube", kind: "youtube", label: "유튜브 댓글", watch: ["*"], autoDraft: true };
@@ -50,7 +50,7 @@ function fakeMail(o: { miss?: boolean; failSend?: string; failCompose?: string; 
 	return { link, specs };
 }
 
-function setup(o: { source?: Partial<SourceConfig>; text?: string; mail?: Parameters<typeof fakeMail>[0]; noMail?: boolean; body?: string } = {}) {
+function setup(o: { source?: Partial<SourceConfig>; text?: string; title?: string; mail?: Parameters<typeof fakeMail>[0]; noMail?: boolean; body?: string } = {}) {
 	const source: SourceConfig = { ...base, ...o.source };
 	mkdirSync(dir, { recursive: true });
 	writeFileSync(join(dir, "config.json"), JSON.stringify({ enabled: true, sources: { youtube: source } }));
@@ -58,7 +58,7 @@ function setup(o: { source?: Partial<SourceConfig>; text?: string; mail?: Parame
 	const prompts: string[] = [];
 	const adapter: CommentAdapter = {
 		kind: "youtube",
-		list: async () => ({ comments: [raw("c1", o.text ?? ASKS)], cursor: "1" }),
+		list: async () => ({ comments: [raw("c1", o.text ?? ASKS, o.title)], cursor: "1" }),
 		reply: async (_s, _c, text) => (posted.push(text), { ok: true, ref: "r1" }),
 		posts: async () => [],
 	};
@@ -87,9 +87,8 @@ describe("autoMail", () => {
 		expect(t.engine.threads(t.engine.ownerOf(t.source))[0]!.mails).toEqual({ drafted: 1, sent: 0, failed: 0 });
 		expect(t.mail.specs).toHaveLength(1);
 		expect(t.mail.specs[0]).toMatchObject({ app: "mail", to: "Fan@Example.com" });
-		// the library is searched with the post title and the comment words
-		expect(t.mail.specs[0]!.fromLibrary).toContain("숲과 나나미 요약");
-		expect(t.mail.specs[0]!.fromLibrary).toContain("문서");
+		// the post is what is asked for: the library is searched with its title alone
+		expect(t.mail.specs[0]!.fromLibrary).toBe("숲과 나나미 요약");
 		const text = commentAsk(t.source, t.engine.store.comments()[0]!, d, undefined, t.engine.mailView(d));
 		expect(text).toContain("메일 초안 작성됨");
 		expect(text).toContain("> 첨부: brief.pdf");
@@ -117,6 +116,19 @@ describe("autoMail", () => {
 		const t = setup({ source: { autoMail: true, mailApp: "mail" }, text });
 		await t.engine.collect({ force: true });
 		expect(t.mail.specs[0]).toMatchObject({ request: text });
+	});
+
+	test("another work named in the comment never picks the files: only the post title does", async () => {
+		const t = setup({ source: { autoMail: true, mailApp: "mail" }, text: "곡B 문서 부탁드립니다. Fan@Example.com 입니다" });
+		await t.engine.collect({ force: true });
+		expect(t.mail.specs[0]!.fromLibrary).toBe("숲과 나나미 요약");
+	});
+
+	test("a post without a title: the mail has no files and the card says to check", async () => {
+		const t = setup({ source: { autoMail: true, mailApp: "mail" }, title: "" });
+		await t.engine.collect({ force: true });
+		expect(t.mail.specs[0]!.fromLibrary).toBeUndefined();
+		expect(pendingOf(t)[0]!.notes).toEqual([NO_TITLE_NOTE]);
 	});
 
 	test("library miss: the card gets a 확인 line", async () => {

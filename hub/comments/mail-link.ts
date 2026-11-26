@@ -13,7 +13,7 @@ import { mailRecordOf, mailViewOf } from "./linked.ts";
 export type MailComposed = { ok: true; id: string; notes: string[]; libraryMiss?: boolean } | { ok: false; reason: string };
 export type RealMailLink = Omit<MailLink, "compose" | "view"> & { compose: (spec: MailSpec) => Promise<MailComposed>; view: (id: string) => MailView | undefined };
 const LIBRARY_MISS_NOTE = "확인: 첨부 파일 폴더에서 맞는 파일을 찾지 못했어요";
-const INSTRUCTION = "This message is a request for material. The requested material goes by this mail: write the mail that sends it (the files ride on it), not a reply that asks anything back.";
+const INSTRUCTION = "This message is a request for material. The requested material goes by this mail: write the mail that sends it (the files ride on it), not a reply that asks anything back. What is asked for is the work of the post (the context): never ask which song or file is meant.";
 
 /** The mail text in the owner's voice (the profile the source's mail app reads and the recipient's own conditions, as the mail's lint reads them: mailStyleOf), by the reply model of that mail app; undefined = no profile yet or the model skipped. A failed model call throws. */
 export async function writeMail(spec: MailWrite): Promise<string | undefined> {

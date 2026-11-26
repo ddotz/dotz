@@ -11,7 +11,7 @@ import { replyPosted } from "./posted.ts";
 import { type Comment, type CommentAdapter, dispatchReply, type GateResult, isUntitled, type Post, ruleAllows, type SourceConfig, type SourceKind, threadKey, watches } from "./contract.ts";
 import { UNKNOWN_USER } from "../../features/youtube-instagram/lib/ig-owner.ts";
 import { ATTACH_AS_IS_HINT, ATTACH_REFUSED, LINT_REFUSED, PAIR_NOTE, asksForFile, pairCheck, recipientCheck } from "../draft-approval.ts";
-import { ADDRESS, checkNoMail, EXTRA_NOTE, MAIL_FAILED_NOTE, MAIL_NO_APP_NOTE, mailPlanned, NO_MAIL_REFUSED, promisesMail } from "./no-mail.ts";
+import { ADDRESS, checkNoMail, EXTRA_NOTE, MAIL_FAILED_NOTE, MAIL_NO_APP_NOTE, mailPlanned, NO_MAIL_REFUSED, NO_TITLE_NOTE, postAsked, promisesMail } from "./no-mail.ts";
 import { type ClosedReason, createStore, type Draft, type MailOutcome, type Reply, type Store } from "./store.ts";
 import { type CommentNotice, sendFailedNotice, waitingNotice } from "./news.ts";
 import { unrepliedFresh } from "../unreplied.ts";
@@ -218,7 +218,7 @@ export function createEngine(deps: EngineDeps) {
 
 	const contextOf = (c: Comment): string => {
 		const lines = stream(c).slice(-CONTEXT_COMMENTS).map(x => `- ${x.mine ? "나" : x.author}: ${clip(x.text)}`);
-		return [`글: ${clip(c.postTitle, 120)}${c.postLink ? ` (${c.postLink})` : ""}`, "같은 댓글 줄기:", ...lines].join("\n");
+		return [`글: ${clip(c.postTitle, 120)}${c.postLink ? ` (${c.postLink})` : ""}`, ...postAsked(c), "같은 댓글 줄기:", ...lines].join("\n");
 	};
 	const styleOf = (src: SourceConfig, authorId?: string): ReplyStyle => {
 		const s = deps.style?.(src, authorId) ?? { rules: [], corrections: [], forbidden: [], samples: [] };
@@ -244,7 +244,7 @@ export function createEngine(deps: EngineDeps) {
 	}
 
 	// Linked mail for a comment that asks for a file and names an address: the pending reply draft `code` gets a compose mail draft (template text, files
-	// chosen from the library by the post title + comment words), shown in the same card and sent only with the owner's 보내기. Idempotent: a draft that
+	// chosen from the library by the post title alone, never other words of the comment; no title, no files: NO_TITLE_NOTE), shown in the same card and sent only with the owner's 보내기. Idempotent: a draft that
 	// already has its pending mail keeps it. A skip is told back as the reason; a missing mail app or a failed compose is also a "확인:" line on the card.
 	const linking = new Set<string>();
 	async function linkMail(code: string): Promise<{ ok: true; mail: string; existing?: true } | { ok: false; reason: string }> {
@@ -276,7 +276,7 @@ export function createEngine(deps: EngineDeps) {
 				to,
 				subject: title ? `${title} 자료 보내드립니다` : "요청하신 자료 보내드립니다",
 				body: (await deps.mail.write?.({ app: src.mailApp, to, author: c.author, text: c.text, postTitle: title }).catch(e => (addNote(`확인: 메일 본문을 쓰지 못해 기본 문구로 했어요 - ${e instanceof Error && e.message ? clip(e.message, 160) : "알 수 없는 이유"}`), undefined)))?.trim() || `안녕하세요, ${c.author}님.\n\n댓글로 요청하신 자료를 보내드립니다. 확인 후 부족한 점이 있으면 편하게 말씀해 주세요.\n\n감사합니다.`,
-				fromLibrary: clip(`${title} ${c.text.replace(to, " ")}`, 200),
+				...(title ? { fromLibrary: title } : {}),
 				request: c.text,
 			}).catch((e): { ok: false; reason: string } => ({ ok: false, reason: e instanceof Error && e.message ? clip(e.message, 160) : "메일 초안을 만들지 못했어요" }));
 			if (!made.ok) {
@@ -292,7 +292,7 @@ export function createEngine(deps: EngineDeps) {
 			if (cur.mail && cur.mail !== made.id) deps.mail.drop(cur.mail);
 			const check = recipientCheck(to, c.text);
 			const earlier = earlierMailTo({ store, mail: deps.mail, now: deps.now(), to, commentId: c.id, mailId: made.id });
-			const found = [...(made.notes ?? []), ...(made.libraryMiss && !made.notes?.some(n => n.includes("찾지 못했어요")) ? [LIBRARY_MISS_NOTE] : []), ...(check ? [`확인: ${check}`] : []), ...(earlier ? [`${MAIL_SAME_ADDRESS_NOTE} (${earlier})`] : [])];
+			const found = [...(title ? [] : [NO_TITLE_NOTE]), ...(made.notes ?? []), ...(made.libraryMiss && !made.notes?.some(n => n.includes("찾지 못했어요")) ? [LIBRARY_MISS_NOTE] : []), ...(check ? [`확인: ${check}`] : []), ...(earlier ? [`${MAIL_SAME_ADDRESS_NOTE} (${earlier})`] : [])];
 			const notes = [...cur.notes.filter(n => n !== MAIL_NO_APP_NOTE), ...found.filter((n, i) => !cur.notes.includes(n) && found.indexOf(n) === i)];
 			store.putDraft({ ...cur, mail: made.id, mailAt: deps.now(), clean: false, notes });
 			emit({ kind: "comment_draft", source: d.source, thread: d.thread });

@@ -9,7 +9,8 @@ import { runDraft } from "../bin/draft.ts";
 import { candidatesFor, sendDraft } from "../lib/flow.ts";
 import { listLibrary } from "../lib/library.ts";
 import { paths } from "../lib/settings.ts";
-import { brctlArgv, stagedFiles, stageFiles, type Want } from "../lib/staged.ts";
+import { brctlArgv, EVICTED_LATER, stagedFiles, stageFiles, type Want } from "../lib/staged.ts";
+import { composeMail } from "../../../hub/mail-cli.ts";
 import { addDraft, type DraftRec, getDraft } from "../lib/store.ts";
 import { mailHash } from "../lib/view.ts";
 import { enable, setupEnv } from "./helpers.ts";
@@ -76,6 +77,20 @@ describe("draft.ts attach with a cloud-only file", () => {
 		expect(out.code).toBe(0);
 		expect(getDraft(rec.id)!.wantFiles).toEqual([{ name: "fileA.mp3", path: real }]);
 		expect(stagedFiles(rec.id)).toEqual([]);
+		expect(d.asked).toEqual([real]);
+	});
+});
+
+describe("a new mail (mail-cli compose) with a cloud-only file", () => {
+	const compose = (o: { fromLibrary?: string; attach?: string[] }, stage: ReturnType<typeof downloads>["stage"]) =>
+		composeMail({ app: "mail", to: ["kim@example.com"], subject: "곡A 음원", body: "안녕하세요. 음원 보내드립니다.", ...o, notify: false }, { stage });
+	test.each([["the library pick", { fromLibrary: "fileA" }], ["--attach with the placeholder's path", { attach: [placeholder] }], ["--attach with the path it will have", { attach: [real] }]])("by %s: the draft is made and waits for the file (wantFiles)", async (_how, o) => {
+		const d = downloads();
+		const made = await compose(o, d.stage);
+		if (!made.ok) throw new Error(made.error);
+		expect(getDraft(made.rec.id)!.wantFiles).toEqual([{ name: "fileA.mp3", path: real }]);
+		expect(stagedFiles(made.rec.id)).toEqual([]);
+		expect(made.notes).toContain(EVICTED_LATER("fileA.mp3"));
 		expect(d.asked).toEqual([real]);
 	});
 });

@@ -18,10 +18,11 @@ import { commentAdapter } from "../../../hub/comments/reply-adapter.ts";
 import { approvalHash, ATTACH_REFUSED, draftVerdict, LINT_REFUSED, SPENT_REFUSED, WAITING_REFUSED } from "../../../hub/draft-approval.ts";
 import { reasonOf } from "../../../hub/reply-reasons.ts";
 import { dataDir } from "../../reply-drafts/lib/settings.ts";
-import { notifyGateway } from "../../../hub/followup.ts";
+import { type HubLike, notifyGateway } from "../../../hub/followup.ts";
 import { learningSettled } from "../../../hub/reply-mail.ts";
 
-type Out = { lines: string[]; code: number; posted?: string };
+/** `drafted`: the thread of a draft this run made (the gateway re-reads it, so the open screen shows the draft). */
+type Out = { lines: string[]; code: number; posted?: string; drafted?: { source: string; thread: string } };
 const flag = (args: string[], name: string) => (args.includes(name) ? args[args.indexOf(name) + 1] : undefined);
 type Part = "reply" | "mail";
 type Sent = "yes" | "no" | "maybe";
@@ -33,8 +34,8 @@ const mailFailure = (text: string): [Sent, string] => (text.startsWith(ATTACH_RE
 
 export async function run(args: string[], engine: Engine = realEngine(dataDir()), inbox = join(dataDir(), "inbox.jsonl")): Promise<Out> {
 	const out = await runCmd(args, engine, inbox);
-	const posted = out.posted ? { posted: out.posted } : {};
-	return process.env.DOTZ_GATEWAY_SEND && out.send ? { lines: [...out.send, ...out.lines], code: out.code, ...posted } : { lines: out.lines, code: out.code, ...posted };
+	const more = { ...(out.posted ? { posted: out.posted } : {}), ...(out.drafted ? { drafted: out.drafted } : {}) };
+	return process.env.DOTZ_GATEWAY_SEND && out.send ? { lines: [...out.send, ...out.lines], code: out.code, ...more } : { lines: out.lines, code: out.code, ...more };
 }
 
 async function runCmd(args: string[], engine: Engine, inbox: string): Promise<Out & { send?: string[] }> {
@@ -50,7 +51,7 @@ async function runCmd(args: string[], engine: Engine, inbox: string): Promise<Ou
 		case "draft": {
 			if (!id) return fail("댓글 id가 필요해요");
 			const step = await engine.makeDraft(id);
-			return step.ok ? { lines: [askOf(step.draft.code) ?? "초안을 만들었어요"], code: 0 } : fail(step.reason);
+			return step.ok ? { lines: [askOf(step.draft.code) ?? "초안을 만들었어요"], code: 0, drafted: { source: step.draft.source, thread: step.draft.thread } } : fail(step.reason);
 		}
 		case "revise": {
 			if (!id) return fail("초안 id가 필요해요");
@@ -63,7 +64,7 @@ async function runCmd(args: string[], engine: Engine, inbox: string): Promise<Ou
 			if (!noMail && (await notifyGateway({ path: "/api/reply/act", body: { ref: id, action: "revise", change, part } })))
 				return { lines: [`고치기를 맡겼어요. 고친 초안은 카드(${id})에 바로 나와요. 무엇을 고쳤는지 한 줄로만 답하세요.`], code: 0 };
 			const step = await engine.revise(id, change, part, noMail);
-			return step.ok ? { lines: [askOf(step.draft.code, part === "mail" ? "함께 보낼 메일 초안을 고쳤어요" : "댓글 답글 초안을 고쳤어요") ?? "초안을 고쳤어요"], code: 0 } : fail(step.reason);
+			return step.ok ? { lines: [askOf(step.draft.code, part === "mail" ? "함께 보낼 메일 초안을 고쳤어요" : "댓글 답글 초안을 고쳤어요") ?? "초안을 고쳤어요"], code: 0, drafted: { source: step.draft.source, thread: step.draft.thread } } : fail(step.reason);
 		}
 		case "drop": {
 			if (!id) return fail("초안 id가 필요해요");
@@ -141,10 +142,12 @@ async function runCmd(args: string[], engine: Engine, inbox: string): Promise<Ou
 }
 
 /** The command as its process runs it: prints what `run` answers first, then waits for what an edited reply it sent, or the edited mail that went with it, teaches (engine.idle and learningSettled) before it hands back the exit code. `--no-learn` (the gateway's send queue, which learns the edit itself) builds an engine that learns nothing. */
-export async function cli(args: string[], o: { engineOf?: (learn: boolean) => Engine; print?: (text: string) => void; inbox?: string } = {}): Promise<number> {
+export async function cli(args: string[], o: { engineOf?: (learn: boolean) => Engine; print?: (text: string) => void; inbox?: string; hub?: HubLike } = {}): Promise<number> {
 	const engine = (o.engineOf ?? (learn => realEngine(dataDir(), learn ? {} : { learnEdits: false })))(!args.includes("--no-learn"));
 	const r = await run(args, engine, o.inbox);
-	if (r.posted && !process.env.DOTZ_GATEWAY_SEND) await notifyGateway({ path: "/api/comments/changed", body: { threads: [], mails: [], sent: [r.posted] } });
+	if (r.posted && !process.env.DOTZ_GATEWAY_SEND) await notifyGateway({ path: "/api/comments/changed", body: { threads: [], mails: [], sent: [r.posted] } }, o.hub);
+	// This process's engine has no broadcast: the gateway tells the open screen about the draft.
+	if (r.drafted) await notifyGateway({ path: "/api/comments/changed", body: { threads: [r.drafted], mails: [], sent: [] } }, o.hub);
 	(o.print ?? console.log)(r.lines.join("\n"));
 	await Promise.all([engine.idle(), learningSettled()]);
 	return r.code;

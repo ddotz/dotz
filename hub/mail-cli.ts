@@ -18,9 +18,9 @@ import { commentsDir, createStore } from "./comments/store.ts";
 import { accountHold, askText, draftAttachIssues, learningSettled, realFlowDeps, realRunner, sendAccountOf, sendDraft, settleDraft, styleKey, type FlowDeps } from "../features/reply-drafts/lib/flow.ts";
 import { webmailSite, zeleLogins } from "../features/reply-drafts/lib/senders.ts";
 import { listLibrary, rankLibrary, LIBRARY_PICK_MAX, MIN_SCORE } from "../features/reply-drafts/lib/library.ts";
-import { addStagedFile, STAGED_MAX } from "../features/reply-drafts/lib/staged.ts";
+import { cloudFile, cloudPlaceholder, retryWanted, STAGED_MAX, stageFiles, type Want } from "../features/reply-drafts/lib/staged.ts";
 import { dataDir, loadSettings, loadStyle, validApp } from "../features/reply-drafts/lib/settings.ts";
-import { addDraft, getDraft, newId, type DraftRec } from "../features/reply-drafts/lib/store.ts";
+import { addDraft, getDraft, newId, patchDraft, type DraftRec } from "../features/reply-drafts/lib/store.ts";
 import { autoAttach } from "./auto-attach.ts";
 
 export type MailCliDeps = FlowDeps & { hub?: HubLike };
@@ -83,8 +83,10 @@ export async function composeMail(i: ComposeInput, deps: MailCliDeps = {}): Prom
 	if ("error" in via) return fail(via.error);
 	if (i.account && (via.source !== "zele" || !(await zeleLogins(deps.run ?? realRunner)).includes(i.account))) return fail(`이 앱으로 보낼 수 있는 메일 계정이 아니에요: ${i.account}`);
 	const paths: string[] = [];
-	for (const p of i.attach ?? []) {
-		if (!existsSync(p) || !statSync(p).isFile()) return fail(`첨부파일을 찾지 못했어요: ${p}`);
+	for (const given of i.attach ?? []) {
+		// A file iCloud keeps only in the cloud (its `.<name>.icloud` placeholder, by either path) is attached once it is downloaded.
+		const p = cloudFile(given);
+		if (existsSync(p) ? !statSync(p).isFile() : !existsSync(cloudPlaceholder(p))) return fail(`첨부파일을 찾지 못했어요: ${given}`);
 		paths.push(p);
 	}
 	const notes: string[] = [];
@@ -124,10 +126,17 @@ export async function composeMail(i: ComposeInput, deps: MailCliDeps = {}): Prom
 	if (failures.length) return fail(`초안 검사에서 걸렸어요: ${failures.join("; ")}`, 1);
 
 	const id = newId();
-	for (const p of paths) addStagedFile(id, p);
 	const rec: DraftRec = { id, kind: "mail", app, source: via.source, mailId: `compose-${id}`, ref: `compose-${id.toLowerCase()}`, compose: true, ...(i.account ? { account: i.account } : {}), ...(libraryMiss ? { libraryMiss: true } : {}), ...(origin ? { origin } : {}), ...draft, status: "pending", created: (deps.now ?? (() => new Date()))().toISOString(), changes: [], questions: [], item };
 	await settleDraft(rec, deps.run);
+	// The draft is saved before its files: a file that is not on this computer yet (iCloud) waits in wantFiles and is attached as it downloads.
 	addDraft(rec);
+	const want: Want[] = [];
+	notes.push(...(await stageFiles(id, paths, want, deps.stage)));
+	if (want.length) {
+		rec.wantFiles = want;
+		patchDraft(id, { wantFiles: want });
+		retryWanted(id, deps.stage);
+	}
 	if (i.notify !== false) await notifyGateway({ path: "/api/mail/compose", body: { ref: id, source: via.source, app, to: draft.to, subject, ...(origin ? { origin: origin.text } : {}) } }, deps.hub);
 	return { ok: true, rec, notes };
 }

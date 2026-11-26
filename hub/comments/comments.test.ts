@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { run as runComments } from "../../features/comments/bin/comments.ts";
+import { cli as commentsCli, run as runComments } from "../../features/comments/bin/comments.ts";
 import { type Comment, type CommentAdapter, commentId, type RawComment, type SourceConfig } from "./contract.ts";
 import { createEngine, type DraftModel, type Engine } from "./engine.ts";
 import { approvalHash } from "../draft-approval.ts";
@@ -620,5 +620,17 @@ describe("a send that never reached the platform leaves no record (CM-4)", () =>
 		gate.resolve({ comments: [], gone: [] });
 		expect((await first.done).state).toBe("sent");
 		expect(t.state.posted.map(p => p.text)).toEqual(["중복 답글"]);
+	});
+});
+
+describe("comments.ts draft from the CLI", () => {
+	test("a draft it makes is told to the gateway, so the open screen shows it", async () => {
+		const a = setup([src()]);
+		a.state.pages = [[raw("c1")]];
+		await a.engine.collect({ force: true });
+		const posts: { path: string; body?: unknown }[] = [];
+		const exit = await commentsCli(["draft", commentId("youtube", "c1")], { engineOf: () => a.engine, inbox: join(dir, "inbox.jsonl"), print: () => undefined, hub: { post: async (path, body) => (posts.push({ path, body }), { status: 200 }) } });
+		expect(exit).toBe(0);
+		expect(posts).toEqual([{ path: "/api/comments/changed", body: { threads: [{ source: "youtube", thread: "p1" }], mails: [], sent: [] } }]);
 	});
 });
