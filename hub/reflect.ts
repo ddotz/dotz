@@ -6,6 +6,7 @@ import { pushBackup, unstageSecrets } from "./backup.ts";
 import { fitSubject } from "./card-text.ts";
 import { cardBlock } from "./choices.ts";
 import { cfg, DATA_DIR, DEFAULTS, log, paths, writeAtomic } from "./config.ts";
+import { liveRuleTitles } from "./custom-text.ts";
 import { CORRECTION, type Correction, SCAN_CHARS, TOPIC_NAMES, type Topic, topicOf } from "./corrections.ts";
 import { isPeerMessage } from "./events.ts";
 import { yesterdayNote } from "./day-note-format.ts";
@@ -254,8 +255,19 @@ export async function sendRepeatAlerts(post: (text: string) => Promise<unknown>,
 	return due;
 }
 
+/** Drops the rule-titles.json keys whose rule is no longer in RULES.md (an edited or removed rule leaves its old key behind). */
+export function pruneRuleTitles(): number {
+	if (!existsSync(paths.ruleTitles) || !existsSync(paths.rules)) return 0;
+	const titles: unknown = JSON.parse(readFileSync(paths.ruleTitles, "utf8"));
+	if (!titles || typeof titles !== "object" || Array.isArray(titles)) return 0;
+	const live = liveRuleTitles(readFileSync(paths.rules, "utf8"), titles as Record<string, unknown>);
+	const dropped = Object.keys(titles).length - Object.keys(live).length;
+	if (dropped) writeAtomic(paths.ruleTitles, `${JSON.stringify(live, null, 2)}\n`);
+	return dropped;
+}
+
 // Local history of the files the bot edits itself (rules, lessons, identity, schedules), so a bad edit can be undone.
-const SNAPSHOT = ["RULES.md", "RULES.history.md", "rules", "LESSONS.md", "memory", "identity", "features", "schedules.json", "watches.json", "channel-setups.json", "config.json", "channels.json"];
+const SNAPSHOT = ["RULES.md", "RULES.history.md", "rule-titles.json", "rules", "LESSONS.md", "memory", "identity", "features", "schedules.json", "watches.json", "channel-setups.json", "config.json", "channels.json"];
 export async function snapshot(): Promise<string | undefined> {
 	const git = (...a: string[]) => runLimited(["git", "-C", DATA_DIR, ...a], 60_000 /* a local snapshot: seconds */);
 	const ignore = ["*", ...SNAPSHOT.flatMap(f => [`!${f}`, `!${f}/**`]), "!.gitignore", ""].join("\n");
@@ -462,6 +474,12 @@ export function startReflection(deliver: (text: string) => void, sessionFile: ()
 	const run = async () => {
 		const alert = await snapshot().catch(e => (log(`snapshot failed: ${e}`), undefined));
 		if (alert) deliver(`${alert}\n(위 내용을 오너에게 짧게 알려줘.)`);
+		try {
+			const dropped = pruneRuleTitles();
+			if (dropped) log(`rule titles: dropped ${dropped} whose rule is no longer in RULES.md`);
+		} catch (e) {
+			log(`rule titles not pruned: ${e}`);
+		}
 		const d = digest(sessionFile());
 		if (d) {
 			log("reflection: delivering nightly self-review");

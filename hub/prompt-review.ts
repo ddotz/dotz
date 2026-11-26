@@ -23,7 +23,7 @@ export const CONTRACT_MAX_CHARS = 40_000;
 export const MAX_OUTPUT_TOKENS = 2_000;
 const MAX_ITEMS = 3;
 const LINE_MAX = 2_000;
-const KINDS = ["conflict", "outdated", "contradicts-code"] as const;
+const KINDS = ["conflict", "duplicate", "outdated", "contradicts-code"] as const;
 export type ReviewKind = (typeof KINDS)[number];
 
 export type ReviewState = { lastReviewAt: number; lastTokens: { input: number; output: number } };
@@ -45,8 +45,8 @@ export type ReviewContext = {
 export const REVIEW_SYSTEM = "You review the standing instructions of an AI agent. Reply with a JSON array only.";
 const REVIEW_TASK = [
 	"Below are (1) CONTRACT: the text the agent re-reads after every compaction and (2) CODE: rules the code already enforces (id: guard).",
-	"Find lines in CONTRACT that: conflict with another line (kind conflict), are outdated or no longer meaningful (kind outdated), or contradict a CODE rule (kind contradicts-code).",
-	'For each, give the exact edit. Reply with a JSON array of at most 3 items {"kind": "conflict"|"outdated"|"contradicts-code", "line": "<the one CONTRACT line to change>", "to": "<the full new text of that line; \\"\\" deletes it>", "other": "<kind conflict: the CONTRACT line it conflicts with; else \\"\\">", "why": "<one plain sentence>"}.',
+	"Find lines in CONTRACT that: conflict with another line (kind conflict), say the same thing as another line, often in another file (kind duplicate), are outdated or no longer meaningful (kind outdated), or contradict a CODE rule (kind contradicts-code).",
+	'For each, give the exact edit. Reply with a JSON array of at most 3 items {"kind": "conflict"|"duplicate"|"outdated"|"contradicts-code", "line": "<the one CONTRACT line to change; kind duplicate: the copy to remove or fold in>", "to": "<the full new text of that line; \\"\\" deletes it>", "other": "<kind conflict or duplicate: the CONTRACT line it conflicts with or repeats; else \\"\\">", "why": "<one plain sentence>"}.',
 	"Copy each line whole and exactly as it is in CONTRACT, one line, never a part or a summary. An item without an exact edit is not used. Report only real problems; reply [] if there are none. Output at most 2000 tokens and nothing but the JSON.",
 ].join("\n");
 

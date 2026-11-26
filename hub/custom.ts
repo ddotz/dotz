@@ -14,7 +14,7 @@ import { loadProjectInfo, type ProjectInfo } from "./projectinfo.ts";
 import { loadProjects, type ProjectRecord } from "./projects.ts";
 import { addSchedule, listSchedules, patchSchedule, removeSchedule, type Schedule } from "./schedule.ts";
 import { type GitState, gitState, type ReceiptIn, readReceipts, readReport } from "./custom-detail-data.ts";
-import { newestRules, reportHead, ruleTitle } from "./custom-text.ts";
+import { newestRules, reportHead, ruleTexts, ruleTitle } from "./custom-text.ts";
 import { repoOfCached } from "./fleet-launch.ts";
 import { exec, listWatches } from "./watch.ts";
 import { getSetup, homeChannel } from "./workchannels.ts";
@@ -583,7 +583,7 @@ export function builtinDetail() {
 	const shipped = new Set((TEMPLATES[paths.rules] ?? "").split("\n").map(l => l.trim()));
 	let rules: string[] = [];
 	try {
-		rules = readFileSync(paths.rules, "utf8").split("\n").map(l => l.trim()).filter(l => /^(?:[-*]|\d+[.)])\s+\S/.test(l) && !shipped.has(l)).map(l => l.replace(/^(?:[-*]|\d+[.)])\s+/, "").replace(/^deny:\s*.*?\s\|\s+/, "막아 둔 명령: "));
+		rules = ruleTexts(readFileSync(paths.rules, "utf8").split("\n").filter(l => !shipped.has(l.trim())).join("\n"));
 	} catch {}
 	let ruleTitles: Record<string, unknown> = {};
 	try {

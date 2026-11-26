@@ -162,6 +162,16 @@ describe("runPromptReview", () => {
 		expect(c.evidence).toEqual([`${m.doctor.reviewKind.conflict} · ${m.promptAt("RULES.md", 1)}`, m.promptDelete(LINE_A), m.promptOther(m.promptAt("RULES.md", 2), LINE_B), m.promptWhy("W-REASON")]);
 	});
 
+	test("a don't held in both boundaries.md and RULES.md becomes a duplicate card that deletes the inbox copy and names the RULES.md line", async () => {
+		const copy = `- [10-17] "${LINE_A}"`;
+		mkdirSync(join(dir, "memory"), { recursive: true });
+		writeFileSync(join(dir, "memory", "boundaries.md"), `# Boundaries\n\n${copy}\n`);
+		const f = (await runPromptReview(ctx(answer(JSON.stringify([{ kind: "duplicate", line: copy, to: "", other: LINE_A, why: "W-REASON" }])).call))).findings[0]!, m = msg();
+		expect(f.change).toMatchObject({ file: join(dir, "memory", "boundaries.md"), line: 3, to: "" });
+		expect(f.evidence[0]).toBe(`${m.doctor.reviewKind.duplicate} · ${m.promptAt("memory/boundaries.md", 3)}`);
+		expect(f.evidence).toContain(m.promptOther(m.promptAt("RULES.md", 1), LINE_A));
+	});
+
 	test("a review card that deletes a line asks to delete it: the delete question and options, the review's own leave option", async () => {
 		const f = (await runPromptReview(ctx(answer(JSON.stringify([{ kind: "outdated", line: LINE_B, to: "", other: "", why: "w" }])).call))).findings[0]!, m = msg();
 		expect(f.decide?.question).toBe(m.doctor.ruleQuestion);

@@ -12,7 +12,7 @@ import { BUILTIN_KEY, type CustomDeps, customRoute, ownFolders, type DetailInput
 import { computerGroups } from "./custom-computers.ts";
 import { PEER_GET } from "./peer-auth.ts";
 import { createPeerProjects } from "./peer-projects.ts";
-import { newestRules, reportHead, ruleTitle } from "./custom-text.ts";
+import { liveRuleTitles, newestRules, reportHead, ruleTitle } from "./custom-text.ts";
 import { advance, clock } from "./runtime/test-clock.ts";
 import { addSchedule, listSchedules, removeSchedule } from "./schedule.ts";
 
@@ -108,6 +108,13 @@ test("ruleTitle: the sidecar phrase wins, else the first clause without the date
 	expect(ruleTitle("[10-22] 야간 작업에서 문제가 생기면 알림 대화창에 보고해요")).toBe("야간 작업에서 문제가 생기면 알림 대화창에");
 	expect(ruleTitle("[10-22] 매번 확인해요", { "매번 확인해요": "날짜 없는 열쇠" })).toBe("날짜 없는 열쇠");
 	expect(ruleTitle("x", { x: 5 })).toBe("x");
+});
+
+test("liveRuleTitles keeps the titles of rules still in RULES.md, stamped, unstamped or blocked, and drops the ones whose rule was edited or removed", () => {
+	const rules = "# Owner rules\n\n## Rules\n- [10-21] 답을 호칭으로 시작하지 않아요\n- 메일 코드는 직접 찾아요\n\n## Blocked commands\n- deny: agent-discord\\s | 봇 명의로만 보내요\n";
+	const titles = { "[10-21] 답을 호칭으로 시작하지 않아요": "호칭 금지", "메일 코드는 직접 찾아요": "메일 코드", "막아 둔 명령: 봇 명의로만 보내요": "봇 명의", "[10-20] 예전 문구로 쓴 규칙이에요": "옛 제목" };
+	expect(liveRuleTitles(rules, titles)).toEqual({ "[10-21] 답을 호칭으로 시작하지 않아요": "호칭 금지", "메일 코드는 직접 찾아요": "메일 코드", "막아 둔 명령: 봇 명의로만 보내요": "봇 명의" });
+	expect(liveRuleTitles(rules, { "답을 호칭으로 시작하지 않아요": "날짜 없는 열쇠" })).toEqual({ "답을 호칭으로 시작하지 않아요": "날짜 없는 열쇠" });
 });
 
 test("newestRules: newest stamp first, last year's after this year's, lower in the file first on the same day, no stamp last", () => {
