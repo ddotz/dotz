@@ -4,7 +4,7 @@
 // The drafts are mails of a source this machine cannot send from, refused after the approval check, so nothing leaves this machine.
 import { afterAll, beforeEach, expect, spyOn, test } from "bun:test";
 import { realSetTimeout, realClearTimeout } from "./runtime/test-clock.ts";
-import { type HubEvent, onBroadcast, onEmit } from "./events.ts";
+import { type HubEvent, emit, onBroadcast, onEmit } from "./events.ts";
 import { draftApprovalBlock } from "./draft-approval.ts";
 import { askText } from "./draft-attach.ts";
 import { ignoreNotice, listNotices, settleOpenDecision } from "./notices.ts";
@@ -179,6 +179,17 @@ test("U4-6 보내기 on the card of a mail draft already sent closes the card as
 	expect(listNotices(500).items.find(n => n.id === shown.id)!.decision).toMatchObject({ state: "answered", answer: "이미 처리됨: 이미 보낸 답장이에요" });
 	expect(bot).toEqual([]);
 	expect(sender.results().filter(x => x.ref === id)).toEqual([]);
+});
+
+test("보내기 on the second of two open cards of one draft answers the card pressed; its twin closes as resolved", async () => {
+	const id = draft("두 곳에 올라간 답");
+	for (const target of ["mail:aw-twin-a", "mail:aw-twin-b"]) emit("outbox", { ts: new Date().toISOString(), kind: "out", source: "orchestrator", target, text: card(id) });
+	const [first, second] = ["mail:aw-twin-a", "mail:aw-twin-b"].map(to => listNotices(500).items.find(n => n.decision?.state === "open" && n.decision.to === to && n.decision.draft?.ref === id));
+	const r = await webAnswer(second!.id, { n: 1, hash: (await replies.view(id))!.draft.hash }, "owner@example.com", async () => undefined);
+	expect(r.status).toBe(200);
+	const after = (n: string) => listNotices(500).items.find(x => x.id === n)!.decision!;
+	expect([after(second!.id).state, after(second!.id).resolved, after(first!.id).state, after(first!.id).resolved]).toEqual(["answered", undefined, "answered", true]);
+	await sender.idle();
 });
 
 test("a new card of a draft whose card was answered is that card asked again: one card per draft in its conversation", async () => {

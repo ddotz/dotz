@@ -20,7 +20,7 @@ export { moreNotice, laterNotice, sweepQuestions, nextMorning, clockText, cardAs
 export type { CardReply } from "./notices-later.ts";
 export { takeAskerNotes } from "./notices-tell.ts";
 export { refreshNoticeDrafts, tagStoredApps } from "./notices-stored.ts";
-export { onDraftCardRefreshed, refreshDraftFiles, syncDraftFiles, markDraftPosted, markCardShown, stampDraftCard, openDraftRefs, openDraftCards, markDraftSend, openDraftText, rewriteOpenDraft, redrawDraftCards, repostDraftCard, reviseDraftCard, setCardFingerprint, settleHandledDrafts, draftCardCounts, refreshStoredDrafts, confirmNoun, confirmGroup, reopenDraftNotices, updateDraftRecipients } from "./notices-drafts.ts";
+export { onDraftCardRefreshed, refreshDraftFiles, syncDraftFiles, markDraftPosted, markCardShown, stampDraftCard, openDraftRefs, openDraftCards, draftCardsOf, markDraftSend, openDraftText, rewriteOpenDraft, redrawDraftCards, repostDraftCard, reviseDraftCard, setCardFingerprint, settleHandledDrafts, draftCardCounts, refreshStoredDrafts, confirmNoun, confirmGroup, reopenDraftNotices, updateDraftRecipients } from "./notices-drafts.ts";
 export { settleExpiredQuestions, settleOpenDecision, answerDecision, SessionEnded, authRequested, authSettled, orchestratorAnswered, closeLaneCards, resolveNotices, ignoreNotice, unignoreNotice, reopenNotices } from "./notices-answers.ts";
 export type { DecisionSend } from "./notices-answers.ts";
 export { laneVerified, UPDATE_NOTICE_KEY, updateAvailable, accountUsedChanged, updateResolved } from "./notices-signals.ts";

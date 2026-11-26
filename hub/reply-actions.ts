@@ -13,7 +13,8 @@ import { sinceMidnight } from "./reply-route.ts";
 import type { DraftView, FileShown, LearnFlip, LearnInput, Learnt, LessonScope, OwnerAction, Part, Reason, ReasonCode, ReplyAdapter, ReplyItem, ReplyKind, SendState } from "./reply-types.ts";
 
 /** `owner`: the owner's chat message the model read this act from (its marker line); his pick then names that message. */
-export type ActCtx = { surface: "web" | "discord" | "chat" | "peer" | "cli"; login?: string; agent?: boolean; owner?: { mid: string; text: string } };
+/** `notice`: the id of the card the owner pressed; the act, its pick and its version check stand on that card, not on the first open card of the ref. */
+export type ActCtx = { surface: "web" | "discord" | "chat" | "peer" | "cli"; login?: string; agent?: boolean; owner?: { mid: string; text: string }; notice?: string };
 /** `hash`: the draft.hash of the item the caller showed (a send act of another version is refused `changed`; "" = it showed none the hub can
  * name, refused the same). `scope`: where `learn-scope` moves what the card learned. `subject`: an edit's new subject (mail, or the bundled mail with part "mail"). */
 export type ActInput = { ref: string; action: string; change?: string; text?: string; subject?: string; part?: Part; scope?: LessonScope; asIs?: boolean; as?: "sent" | "retry"; hash?: string };
@@ -36,7 +37,7 @@ export type ReplyDeps = {
 	sender: Sender;
 	/** The owner's word, sealed into the inbox (the CLIs' gate reads it): the one writer of a pick. */
 	/** `until`: on a 보내기, when its undo window ends (the CLIs' gate counts it only from then). */
-	recordPick: (p: { surface: ActCtx["surface"]; conv: string; q: string; n: number; label: string; note?: string; hash?: string; until?: number; from?: ActCtx["owner"] }) => void;
+	recordPick: (p: { surface: ActCtx["surface"]; conv: string; q: string; n: number; label: string; note?: string; hash?: string; until?: number; from?: ActCtx["owner"]; notice?: string }) => void;
 	/** A plain line from the owner in the card's conversation (나갔어요), no pick. */
 	recordText?: (conv: string, text: string) => void;
 	say?: (conv: string, ref: string, text: string) => void;
@@ -97,8 +98,10 @@ async function redraw(deps: ReplyDeps, a: ReplyAdapter, ref: string, now: DraftV
 }
 /** The owner's pick on `view`, kept as his answer on the card; an agent's call records none. */
 function pick(deps: ReplyDeps, ctx: ActCtx, a: ReplyAdapter, view: DraftView, n: number, label: string, o: { note?: string; hash?: string; until?: number } = {}) {
-	if (!ctx.agent) deps.recordPick({ surface: ctx.surface, conv: view.conv, q: a.question(view.ref), n, label, ...o, ...(ctx.owner ? { from: ctx.owner } : {}) });
+	if (!ctx.agent) deps.recordPick({ surface: ctx.surface, conv: view.conv, q: a.question(view.ref), n, label, ...o, ...(ctx.owner ? { from: ctx.owner } : {}), ...(ctx.notice ? { notice: ctx.notice } : {}) });
 }
+/** The one rule for which open card of draft `ref` an act stands on: the card pressed (`notice`), else the first open card of the ref. */
+export const cardOf = (cards: OpenCard[], ref: string, notice?: string): OpenCard | undefined => (notice ? cards.find(c => c.ref === ref && c.notice === notice) : undefined) ?? cards.find(c => c.ref === ref);
 
 export function createReplyActions(deps: ReplyDeps) {
 	const revising = new Set<string>();
@@ -157,7 +160,7 @@ export function createReplyActions(deps: ReplyDeps) {
 		const no = unsendable(view);
 		if (no) return no;
 		// What the owner read on the open card is what goes out, to the character: another body (the hash covers the rest) refuses the send.
-		const shown = deps.cards.open().find(c => c.ref === view.ref)?.draft;
+		const shown = cardOf(deps.cards.open(), view.ref, ctx.notice)?.draft;
 		if (view.kind === "mail" && shown?.toLabel === "받는이" && shown.body !== cardBodyOf(view.draft.text)) return fail(409, "card_mismatch", CARD_MISMATCH);
 		const action = sendAction(input);
 		return sendPicked(ctx, a, view, action === "send-as-is" ? 4 : 1, SEND_LABEL[action], job(a, view, action));
@@ -317,7 +320,7 @@ export function createReplyActions(deps: ReplyDeps) {
 		if ("card" in found) return toBot(deps, ctx, found.card, input);
 		// The pick, the send and its card state belong where the draft's card was asked, when it has one (a 다시 보내기 comes after the card
 		// was answered, so an answered card counts too); the store's own place otherwise.
-		const card = deps.cards.open().find(c => c.ref === input.ref);
+		const card = cardOf(deps.cards.open(), input.ref, ctx.notice);
 		const conv = card?.conv ?? deps.cards.convOf?.(input.ref);
 		const a = found.adapter, view = conv ? { ...found.view, conv } : found.view;
 		// A send that names no version (typed chat, an older page) is checked against the version its card was last drawn with. One with neither
@@ -505,7 +508,7 @@ async function confirm(c: { deps: ReplyDeps; found: Resolved | undefined; unsend
 		deps.log(`reply ${ref}: hand-written card posted again to confirm${why}`);
 		return { status: 200, body: { ok: true } };
 	}
-	const card = deps.cards.open().find(x => x.ref === ref);
+	const card = cardOf(deps.cards.open(), ref, ctx.notice);
 	const view = card ? { ...found.view, conv: card.conv } : found.view;
 	const no = c.unsendable(view);
 	if (no) return no;

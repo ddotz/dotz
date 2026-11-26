@@ -116,6 +116,8 @@ export const openDraftRefs = (to: string): string[] => items.flatMap(i => (isOpe
  * `shown`: when the card was last drawn as it reads now. */
 export const openDraftCards = (to?: string): { id: string; to: string; ref: string; title: string; draft: DraftApproval; at: string; shown: string; text: string; hash?: string; discord?: string; asked?: string; posts?: string[] }[] =>
 	items.flatMap(i => (isOpenDecision(i) && (to === undefined || i.decision!.to === to) && i.decision!.draft?.ref ? [{ id: i.id, to: i.decision!.to, ref: i.decision!.draft.ref, title: i.title, draft: i.decision!.draft, at: i.at ?? i.ts, shown: i.updated, text: i.text, ...(i.decision!.hash ? { hash: i.decision!.hash } : {}), ...(discordHash(i) ? { discord: discordHash(i) } : {}), ...(i.decision!.reply_to ? { asked: i.decision!.reply_to } : {}), ...(i.decision!.card?.ids.length ? { posts: i.decision!.card.ids } : {}) }] : []));
+/** The open cards of draft `ref` (in `to`, or everywhere): the one rule for "this card is that draft's" the reply flow, the queue and the answer paths read. */
+export const draftCardsOf = (ref: string, to?: string) => openDraftCards(to).filter(c => c.ref === ref);
 /** The newest card of draft `ref`, open or answered, in the order the cards were made (not the screen's order, which lists open and unread ones first). */
 export const newestDraftCard = (ref: string): Notice | undefined => items.findLast(i => i.decision && (openDraftRef(i) === ref || i.title.endsWith(`(${ref})`)));
 /** The newest card of draft `ref` in `to` the owner already answered, as it closed, with the Discord message it was posted as (undefined: none, or never on Discord). */

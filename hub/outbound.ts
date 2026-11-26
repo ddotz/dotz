@@ -47,7 +47,7 @@ import { OMO_WORDS, ompWords, runName, type WorkerWords } from "./worker-words.t
 import { dropClaim, resolvesOf, splitTone, stripHandoff, stripLater, stripProjectInfo, stripResolves } from "./tone.ts";
 import { isLate, isSnowflake, lateQuote, lateRequestId, replyRef, snowflakeTime, withQuote } from "./threads.ts";
 import { handMailKey, keepBrief } from "./draft-approval.ts";
-import { allNotices, keepOpen, markCardShown, markDraftPosted, markJudging, onDecisionClosed, onDraftCardRefreshed, openDraftCards, openDraftRefs, openDraftText, orchestratorAnswered, resolveNotices, reviseDraftCard, rewriteOpenDraft, SessionEnded, untouchedChoices } from "./notices.ts";
+import { allNotices, draftCardsOf, keepOpen, markCardShown, markDraftPosted, markJudging, onDecisionClosed, onDraftCardRefreshed, openDraftCards, openDraftRefs, openDraftText, orchestratorAnswered, resolveNotices, reviseDraftCard, rewriteOpenDraft, SessionEnded, untouchedChoices } from "./notices.ts";
 import type { OwnerSaid } from "./notices-types.ts";
 import { askerLines, askerNotes } from "./asker-notes.ts";
 import { channelTitle, GENERIC_TITLES } from "./notices-lanes.ts";
@@ -414,7 +414,7 @@ const storeDown = (line: string): void => {
 	itemOfDown = true;
 };
 const handWritten = (ref: string): boolean => !ref.startsWith("mail:") && unlessUnreadable(() => useReplies()?.knows(ref) === false, false, storeDown);
-const openElsewhere = (ref: string, conv: string): boolean => openDraftCards().some(c => c.ref === ref && c.to !== conv);
+const openElsewhere = (ref: string, conv: string): boolean => draftCardsOf(ref).some(c => c.to !== conv);
 export const approvals = createApprovalQueue({
 	convOf: convOfTarget,
 	openRefs: openDraftRefs,
@@ -424,7 +424,7 @@ export const approvals = createApprovalQueue({
 		if (key === undefined) return ref;
 		itemOfDown = false;
 		if (key !== ref || !handWritten(ref)) return key;
-		return handMailKey(conv, text ? cardDraft(text) : openDraftCards(conv).find(c => c.ref === ref)?.draft) ?? ref;
+		return handMailKey(conv, text ? cardDraft(text) : draftCardsOf(ref, conv)[0]?.draft) ?? ref;
 	},
 	handWritten,
 	openElsewhere,

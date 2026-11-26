@@ -2,7 +2,7 @@
 // approval route left beside /api/reply/*:
 //   POST /api/approvals/failed           { op: "report", ref, conv, text }: a session's own CLI send of a draft failed; the card shows it and the owner hears it
 import { log } from "./config.ts";
-import { answerDecision, type DecisionSend, type Notice, allNotices, openDraftCards } from "./notices.ts";
+import { answerDecision, type DecisionSend, type Notice, allNotices, draftCardsOf } from "./notices.ts";
 import type { Upload } from "./files.ts";
 import { refOfQuestion } from "./approval-send.ts";
 import { draftActionOf, questionRef } from "./draft-approval.ts";
@@ -41,15 +41,16 @@ function replyInputOf(ref: string, label: string, note?: string): ActInput | und
 }
 /** How a pick reached the card: `agent` (the hub token, never the owner's word), `hash` (the version the web page showed; absent: the one the
  * card stored when it was drawn; on Discord always the one its message shows, hub/notices-drafts.ts) and `text` (고치기 with the owner's own text: saved first, then his words, if any, revise it). */
-type CardPick = { surface: "web" | "discord"; login: string; agent?: boolean; hash?: string; text?: string };
+type CardPick = { surface: "web" | "discord"; login: string; agent?: boolean; hash?: string; text?: string; notice?: string };
 /** A pick on an open card whose draft an adapter knows, as one act of the reply flow; undefined = the answer keeps its old path. */
 async function actOnCard(conv: string, q: string, label: string, note: string | undefined, o: CardPick): Promise<ActResult | undefined> {
 	const ref = refOfQuestion(q);
-	const card = ref && !conv.startsWith("lane:") && !conv.startsWith("auth:") ? openDraftCards(conv).find(c => c.ref === ref) : undefined;
+	const mine = ref && !conv.startsWith("lane:") && !conv.startsWith("auth:") ? draftCardsOf(ref, conv) : [];
+	const card = mine.find(c => c.id === o.notice) ?? mine[0];
 	if (!ref || !card) return undefined;
 	const input = o.text !== undefined ? undefined : replyInputOf(ref, label, note);
 	if ((o.text === undefined && !input) || !(await replies.list()).some(i => i.ref === ref && i.kind !== "card")) return undefined;
-	const ctx = { surface: o.surface, login: o.login, ...(o.agent ? { agent: true } : {}) };
+	const ctx = { surface: o.surface, login: o.login, notice: card.id, ...(o.agent ? { agent: true } : {}) };
 	if (o.text !== undefined) return replies.amend({ ref, text: o.text, ...(note?.trim() ? { change: note } : {}) }, ctx);
 	// No version known for what the surface showed (""): a send is refused `changed` and the card drawn anew (hub/reply-actions.ts act).
 	const hash = o.surface === "discord" ? (card.discord ?? "") : (o.hash ?? card.hash ?? "");
@@ -92,7 +93,7 @@ export async function discordGatewayAnswer(target: string, conv: string, text: s
 		return {};
 	}
 	const note = p.note ?? /\s-\s(.+)$/.exec(text)?.[1];
-	const r = await actOnCard(conv, p.q, p.label, note, { surface: "discord", login: "owner", ...(edit !== undefined ? { text: edit } : {}) });
+	const r = await actOnCard(conv, p.q, p.label, note, { surface: "discord", login: "owner", ...(p.decision ? { notice: p.decision } : {}), ...(edit !== undefined ? { text: edit } : {}) });
 	if (!r) return undefined;
 	if (r.body.ok) return {};
 	log(`discord pick on ${p.q}: ${r.body.error}`);
@@ -115,7 +116,7 @@ export async function webAnswer(id: string, body: { n?: unknown; label?: unknown
 	// The page names the label it showed for `n`: a card whose options changed since (a staged file moves 이대로 보내기 and 답글만) answers 409 instead of running another action. No label = as before.
 	if (typeof body.label === "string" && card?.decision?.state === "open" && opt?.label !== body.label) return { status: 409, body: { error: STALE_OPTIONS } };
 	// A draft the reply flow knows: its act writes the pick, settles or moves the card and queues the send. Files ride to the bot as before.
-	const pick: CardPick = { surface: "web", login, ...(agent ? { agent } : {}), ...(typeof body.hash === "string" ? { hash: body.hash } : {}) };
+	const pick: CardPick = { surface: "web", login, notice: id, ...(agent ? { agent } : {}), ...(typeof body.hash === "string" ? { hash: body.hash } : {}) };
 	const acted = card && opt && !body.files?.length ? await actOnCard(card.decision!.to, card.title, opt.label, typeof body.note === "string" ? body.note : undefined, pick) : undefined;
 	if (acted) {
 		if (!acted.body.ok) return { status: acted.status, body: { code: acted.body.code, error: acted.body.error, ...(acted.body.item ? { item: acted.body.item } : {}) } };

@@ -8,7 +8,7 @@ import { join } from "node:path";
 import { cfg, DATA_DIR, log, now, writeAtomic } from "./config.ts";
 import { broadcast, emit, onBroadcast } from "./events.ts";
 import { approvals, cardMoved, newMid, out, showSendOnCard } from "./outbound.ts";
-import { allNotices, markDraftSend, onDecision, openDraftCards, redrawDraftCards, repostDraftCard, setCardFingerprint, setStoredDraft, settleOpenDecision, stampDraftCard } from "./notices.ts";
+import { allNotices, draftCardsOf, markDraftSend, onDecision, openDraftCards, redrawDraftCards, repostDraftCard, setCardFingerprint, setStoredDraft, settleOpenDecision, stampDraftCard } from "./notices.ts";
 import { newestDraftCard, setSendOwed, settleSoon } from "./notices-drafts.ts";
 import { commentDraftsOnMail, commentKeptMails, commentMailCarded, commentMarkMails, commentPostedOf, commentProveSends, commentReply, commentSendOutcome, commentSettleSending, commentSettleStale, onCommentAnsweredMail, onCommentMailOwed } from "./comments/gateway.ts";
 import { kakaoReply } from "./kakao/gateway.ts";
@@ -192,16 +192,17 @@ export const sender = createApprovalSender({
 // The bot's turn for a hand-written card (kind `card`): routes.ts hands its deliver here once it exists.
 let toBot: (conv: string, text: string, agent: boolean) => Promise<void> = async conv => log(`reply: a hand-written card in ${conv} has no bot path yet`);
 export const setReplyBot = (fn: typeof toBot): void => void (toBot = fn);
-const openCardOf = (conv: string, ref: string) => openDraftCards(conv).find(c => c.ref === ref);
+// The card a pick answers: the one pressed (`notice`), else the first open card of the draft in `conv`.
+const openCardOf = (conv: string, ref: string, notice?: string) => draftCardsOf(ref).find(c => c.id === notice) ?? draftCardsOf(ref, conv)[0];
 // The card of draft `ref`, open or answered: the conversation its sends report to.
 const cardOfRef = newestDraftCard;
 
 export const replies = createReplyActions({
 	adapters,
 	sender,
-	recordPick: ({ surface, conv, q, n, label, note, hash, until, from }) => {
+	recordPick: ({ surface, conv, q, n, label, note, hash, until, from, notice }) => {
 		const ref = refOfQuestion(q);
-		const card = ref ? openCardOf(conv, ref) : undefined;
+		const card = ref ? openCardOf(conv, ref, notice) : undefined;
 		// A word that is no card option (직접 고치기, n 0) is written as its label alone.
 		const said = `${n ? `${n}) ` : ""}${label}`;
 		// A change (고치기, 직접 고치기) keeps its card open: the revise moves it to the new draft, the edit redraws it in place. Its record names no
@@ -226,7 +227,7 @@ export const replies = createReplyActions({
 			if (r.delivered && n.card) cardMoved(n.to, ref, { ...n.card, text: n.text });
 		},
 		close: (ref, label = "") => {
-			for (const c of openDraftCards().filter(x => x.ref === ref)) settleOpenDecision(c.id, label);
+			for (const c of draftCardsOf(ref)) settleOpenDecision(c.id, label);
 		},
 	},
 	toBot: (conv, text, agent) => toBot(conv, text, agent),
