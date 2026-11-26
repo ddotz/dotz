@@ -8,7 +8,7 @@ import { evidenceLines, type Finding } from "./doctor-types.ts";
 import { ENFORCED_RULES } from "./enforced-rules.ts";
 import { LESSONS_MAX_BYTES } from "./prompt-budget.ts";
 import { msg } from "./i18n.ts";
-import { editLines, enforcedFindings, promptGrowth, promptHealth, readState, ruleCard, RULES_MAX_CHARS } from "./prompt-health.ts";
+import { BOUNDARIES_MAX_CHARS, editLines, enforcedFindings, promptGrowth, promptHealth, readState, ruleCard, RULES_MAX_CHARS } from "./prompt-health.ts";
 
 const root = mkdtempSync(join(tmpdir(), "prompt-health-"));
 afterAll(() => rmSync(root, { recursive: true, force: true }));
@@ -178,11 +178,15 @@ test("an open task in state.json is not a rule: its words never raise an enforce
 test("a prompt file over its cap is reported once per file", () => {
 	writeFileSync(join(dir, "LESSONS.md"), "l".repeat(LESSONS_MAX_BYTES + 1));
 	setRules("r".repeat(RULES_MAX_CHARS + 5));
+	mkdirSync(join(dir, "memory"), { recursive: true });
+	writeFileSync(join(dir, "memory", "boundaries.md"), "b".repeat(BOUNDARIES_MAX_CHARS + 12));
 	const found = run(0);
-	expect(keys(found).filter(k => k.startsWith("prompt:cap:"))).toEqual(["prompt:cap:LESSONS.md", "prompt:cap:RULES.md"]);
+	expect(keys(found).filter(k => k.startsWith("prompt:cap:"))).toEqual(["prompt:cap:LESSONS.md", "prompt:cap:RULES.md", "prompt:cap:memory/boundaries.md"]);
 	expect(found.find(f => f.key === "prompt:cap:RULES.md")?.level).toBe(5);
+	expect(found.find(f => f.key === "prompt:cap:memory/boundaries.md")?.level).toBe(12);
 	writeFileSync(join(dir, "LESSONS.md"), "l".repeat(LESSONS_MAX_BYTES));
 	setRules("r".repeat(RULES_MAX_CHARS));
+	writeFileSync(join(dir, "memory", "boundaries.md"), "b".repeat(BOUNDARIES_MAX_CHARS));
 	expect(keys(run(1)).filter(k => k.startsWith("prompt:cap:"))).toEqual([]);
 });
 

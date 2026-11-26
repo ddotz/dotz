@@ -23,6 +23,7 @@ export const PART_GROWTH = { share: 0.25, chars: 1000 };
 // RULES.md is read into the re-read text up to this many characters; the rest is cut away silently (the same 12_000 as the
 // read in hub/recall-contract.ts and the file cap in hub/harness.ts, which keep it inline and not exported).
 export const RULES_MAX_CHARS = 12_000;
+export const BOUNDARIES_MAX_CHARS = 4_000;
 
 export const PART_KEYS = ["mode", "rules", "lessons", "identity", "features", "owner", "boundaries", "setups", "state", "rest"] as const;
 export const CONTRACT_SHAPE = 2;
@@ -309,19 +310,21 @@ export function enforcedFindings(sources: RuleSource[], now: number, log: (line:
 	return out;
 }
 
-/** Prompt files past a limit. LESSONS.md: bytes against the gate's cap. RULES.md: characters against the read cut. A feature: its always-loaded line against INLINE_MAX. */
+/** Prompt files past a limit. LESSONS.md: bytes against the gate's cap. RULES.md and memory/boundaries.md: characters against their caps. A feature: its always-loaded line against INLINE_MAX. */
 export function capFindings(dataDir: string, now: number): Finding[] {
 	const m = msg();
 	const out: Finding[] = [];
-	const over = (file: string, size: number, cap: number, unit: string) => {
+	const over = (file: string, size: number, cap: number, unit: string, what = m.promptCapOver(file, size, cap, unit)) => {
 		if (size <= cap) return;
-		out.push({ key: `prompt:cap:${file}`, area: "prompt", what: m.promptCapOver(file, size, cap, unit), ask: true, evidence: evidenceLines([m.promptCapEvidence(size, cap, unit)], m.doctor.more), since: now, level: size - cap });
+		out.push({ key: `prompt:cap:${file}`, area: "prompt", what, ask: true, evidence: evidenceLines([m.promptCapEvidence(size, cap, unit)], m.doctor.more), since: now, level: size - cap });
 	};
 	const read = (name: string): string | undefined => (existsSync(join(dataDir, name)) ? readFileSync(join(dataDir, name), "utf8") : undefined);
 	const lessons = read("LESSONS.md");
 	if (lessons !== undefined) over("LESSONS.md", Buffer.byteLength(lessons), LESSONS_MAX_BYTES, "bytes");
 	const rules = read("RULES.md");
 	if (rules !== undefined) over("RULES.md", rules.length, RULES_MAX_CHARS, "chars");
+	const boundaries = read(join("memory", "boundaries.md"));
+	if (boundaries !== undefined) over("memory/boundaries.md", boundaries.length, BOUNDARIES_MAX_CHARS, "chars", m.promptInboxOver(boundaries.length, BOUNDARIES_MAX_CHARS));
 	for (const f of loadFeatureDirs(dataDir).features) if (f.enabled && f.body) over(`features/${f.id}/feature.md`, f.what.length, INLINE_MAX, "chars");
 	return out;
 }

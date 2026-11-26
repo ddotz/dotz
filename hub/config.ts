@@ -447,7 +447,7 @@ guess and never about other people: \`- [YYYY-MM-DD] <fact> <!-- src: <message i
 `,
 	[paths.boundaries]: `# Boundaries
 
-What the owner told me not to do, in their own words, added only when they say it:
+Owner don'ts the nightly review found, not in RULES.md yet; kept until moved there or dropped:
 \`- [YYYY-MM-DD] "<their words>" (<what it covers>) <!-- src: <message id or file> -->\`. Their current instruction wins.
 `,
 	[paths.observations]: `# Observations

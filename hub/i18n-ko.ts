@@ -39,7 +39,7 @@ const koLeads: Leads = {
 };
 
 
-const koRetainNudge = "이어가기 전에, 지금까지의 대화에서 나온 오너·프로젝트·선호 중 오래 남길 사실이 아직 저장되지 않았으면 dotz 데이터 폴더에 저장하세요(오너 사실은 memory/owner.md, 오너가 한 '하지 마' 원문은 memory/boundaries.md, 규칙은 RULES.md, 교훈은 LESSONS.md, 진행 중인 일은 state.json). 없으면 건너뛰세요.";
+const koRetainNudge = "이어가기 전에, 지금까지의 대화에서 나온 오너·프로젝트·선호 중 오래 남길 사실이 아직 저장되지 않았으면 dotz 데이터 폴더에 저장하세요(오너 사실은 memory/owner.md, 오너가 말한 규칙과 '하지 마'는 RULES.md(원문은 RULES.history.md), 교훈은 LESSONS.md, 진행 중인 일은 state.json). 없으면 건너뛰세요.";
 
 export const NIGHT_LEAD = "야간 정리:";
 export const SCHEDULE_CHECK_LEAD = "예약 점검:";
@@ -361,7 +361,7 @@ export const ko: Catalog = {
 	reflect: (digest, lessons) => `[dotz reflect] 지난 24시간의 야간 자기 점검이에요. 게이트웨이가 모은 데이터:\n${digest}\n
 짧게 이렇게 하세요:
 1. 잘못됐거나 비용이 너무 든 것을 찾으세요: 오너의 정정이나 반복된 요청, 실패했거나 멈춘 세션, 알림, 캐시 재작성.
-2. 진짜 교훈마다 ${lessons}에 날짜가 붙은 줄을 하나 추가하거나 고치세요(파일은 ${LESSONS_MAX_BYTES}바이트 안으로 유지하고(넘는 줄은 게이트웨이가 거절해요), 더 이상 맞지 않거나 규칙이 이미 다루는 교훈은 지우세요). 위 오너의 정정이나 반응마다 ${paths.observations}에 출처가 붙은 줄을 하나 남기세요. 오래 갈 오너의 선호나 맥락(분명히 말했거나 거기서 두 번 보인 것)은 ${paths.owner}로, 오너가 직접 한 '하지 마'는 원문 그대로 출처와 함께 ${paths.boundaries}로 옮기세요. 오너가 말하거나 한 것만 적고, 다른 사람에 대해서는 여기에 쓰지 마세요.
+2. 진짜 교훈마다 ${lessons}에 날짜가 붙은 줄을 하나 추가하거나 고치세요(파일은 ${LESSONS_MAX_BYTES}바이트 안으로 유지하고(넘는 줄은 게이트웨이가 거절해요), 더 이상 맞지 않거나 규칙이 이미 다루는 교훈은 지우세요). 위 오너의 정정이나 반응마다 ${paths.observations}에 출처가 붙은 줄을 하나 남기세요. 오래 갈 오너의 선호나 맥락(분명히 말했거나 거기서 두 번 보인 것)은 ${paths.owner}로, 오너가 직접 한 '하지 마' 중 RULES.md에 아직 없는 것만 원문 그대로 출처와 함께 ${paths.boundaries}로 옮기세요(오너가 RULES.md로 옮기거나 버릴 때까지 거기 남아요). 오너가 말하거나 한 것만 적고, 다른 사람에 대해서는 여기에 쓰지 마세요.
 3. 문제가 있으면(실패, 이상, 되풀이된 실수, 토큰 누수, RULES.md나 LESSONS.md가 이미 다루는데도 되풀이된 일) alert로 한 번만 ${koIssue}
 4. 여기서 RULES.md는 절대 수정하지 마세요. 규칙 변경은 선택지로 올리고 답을 기다리세요.
 5. 위 예약이 서로 겹치면 합치고(dotz_schedule remove 후 같은 이름과 종류로 add), 할 일이 끝난 예약은 지우세요.
@@ -381,6 +381,7 @@ export const ko: Catalog = {
 	promptEnforced: (where, guard) => `${where} 줄은 ${guard}가 이미 막는 규칙이에요.`,
 	...promptCardKo,
 	promptCapOver: (file, size, cap, unit) => `${file} 길이가 한도를 넘었어요(${size.toLocaleString("ko-KR")}${unit === "bytes" ? "바이트" : "자"}, 한도 ${cap.toLocaleString("ko-KR")}). 넘는 끝부분은 빠질 수 있어요.`,
+	promptInboxOver: (size, cap) => `memory/boundaries.md(야간 점검이 찾은 금지)가 한도를 넘었어요(${size.toLocaleString("ko-KR")}자, 한도 ${cap.toLocaleString("ko-KR")}). 항목마다 RULES.md로 옮기거나 버려서 줄여야 해요.`,
 	promptCapEvidence: (size, cap, unit) => `${size} > 한도 ${cap} (${unit === "bytes" ? "바이트" : "자"})`,
 	promptReviewWhat: { conflict: "다시 읽는 글의 두 줄이 서로 맞지 않아요.", outdated: "다시 읽는 글의 한 줄이 낡은 것 같아요.", "contradicts-code": "다시 읽는 글의 한 줄이 코드가 하는 일과 달라요." },
 	lessonCandidates: (stale, duplicates, over) => `\n\n코드가 고른 LESSONS.md 정리 후보예요. 지울지 합칠지는 직접 판단하세요(합칠 때는 더 최근이거나 구체적인 문장을 남기세요):${over ? `\n- ${over}` : ""}${stale.length ? `\n- 90일 넘은 줄:\n${stale.join("\n")}` : ""}${duplicates.length ? `\n- 거의 같은 줄(단어 겹침 0.6 이상):\n${duplicates.join("\n")}` : ""}`,

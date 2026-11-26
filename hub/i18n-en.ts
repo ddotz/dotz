@@ -29,7 +29,7 @@ export const enLeads = {
 export type Leads = typeof enLeads;
 // One sentence reused by every handover and, once after a compaction, by the next prompt: a fresh or compacted session
 // loses what the old context held, so facts worth keeping are saved to memory before the work goes on.
-const enRetainNudge = "Before continuing, save any durable owner, project or preference fact from the conversation so far that is not saved yet in the dotz data directory (owner facts in memory/owner.md, the owner's verbatim don'ts in memory/boundaries.md, rules in RULES.md, lessons in LESSONS.md, open work in state.json); skip this if there is none.";
+const enRetainNudge = "Before continuing, save any durable owner, project or preference fact from the conversation so far that is not saved yet in the dotz data directory (owner facts in memory/owner.md, a rule or don't the owner stated in RULES.md with their words in RULES.history.md, lessons in LESSONS.md, open work in state.json); skip this if there is none.";
 const enClock = `Give times in ${tzLabel()}, converting the UTC times of logs and tool output.`, enLaneLanguage = (language: string) => `Write every report, progress note, todo item and tool-call intent in ${language}, whatever language the brief, the code or the tool output is in. ${enClock}`;
 
 // How a nightly or monitoring run reports an issue (hub/reflect.ts, hub/watch.ts wake turn): one line plus a choice block that the web's
@@ -369,7 +369,7 @@ export const en = {
 	reflect: (digest: string, lessons: string) => `[dotz reflect] Nightly self-review of the last 24h. Data from the gateway:\n${digest}\n
 Do this, briefly:
 1. Find what went wrong or cost too much: owner corrections or repeated asks, failed or stuck lanes, alerts, cache rewrites.
-2. For each real lesson add or update one dated line in ${lessons} (keep the file under ${LESSONS_MAX_BYTES} bytes; the gateway refuses lines past that; delete lessons that no longer apply or that a rule already covers). For each owner correction or reaction above, add one sourced line to ${paths.observations}; move a durable owner preference or context (stated plainly, or seen twice there) to ${paths.owner}, and a "don't" in the owner's own words to ${paths.boundaries}, verbatim with its source. Only what the owner said or did; never write about other people there.
+2. For each real lesson add or update one dated line in ${lessons} (keep the file under ${LESSONS_MAX_BYTES} bytes; the gateway refuses lines past that; delete lessons that no longer apply or that a rule already covers). For each owner correction or reaction above, add one sourced line to ${paths.observations}; move a durable owner preference or context (stated plainly, or seen twice there) to ${paths.owner}, and a "don't" not already in RULES.md in the owner's own words to ${paths.boundaries}, verbatim with its source (it stays there until the owner moves it into RULES.md or drops it). Only what the owner said or did; never write about other people there.
 3. If there is an issue (a failure, an anomaly, a repeated mistake, a token leak, something that recurred although RULES.md or LESSONS.md already covers it), once, ${enIssue}
 4. Never edit RULES.md here; offer a rule change as an option and wait for the owner's answer.
 5. If the schedules above overlap, merge them (dotz_schedule remove + add with the same name and kind), and remove those whose task is over.
@@ -385,6 +385,7 @@ Do this, briefly:
 	promptEnforced: (where: string, guard: string) => `The line at ${where} is a rule ${guard} already blocks.`,
 	...promptCardEn,
 	promptCapOver: (file: string, size: number, cap: number, unit: string) => `${file} is over its limit (${size.toLocaleString("en-US")} ${unit}, limit ${cap.toLocaleString("en-US")}). The end past the limit may be left out.`,
+	promptInboxOver: (size: number, cap: number) => `memory/boundaries.md (the don'ts the nightly review found) is over its limit (${size.toLocaleString("en-US")} chars, limit ${cap.toLocaleString("en-US")}). Move each entry into RULES.md or drop it.`,
 	promptCapEvidence: (size: number, cap: number, unit: string) => `${size} > limit ${cap} (${unit})`,
 	// The weekly model review of the re-read text (hub/prompt-review.ts).
 	promptReviewWhat: { conflict: "Two lines in the re-read text contradict each other.", outdated: "A line in the re-read text looks outdated.", "contradicts-code": "A line in the re-read text says something the code does differently." } as Record<string, string>,
