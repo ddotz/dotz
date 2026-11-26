@@ -112,7 +112,7 @@ export function partialReason(p: { done: number; total: number; code: ReasonCode
 export const PATTERN_NOTE = "표현 규칙으로도 정해 뒀어요: ";
 
 /** The Korean sentence that tells the owner what a revise stored in the tone profile ("" when it stored nothing): where it holds (every reply, replies to the person `key.toName` (else `key.to`) names (cut to 40 characters), this KakaoTalk room, this mailbox or this app), the lesson line, how many old conditions it replaced (`replaced`), the label of a wording pattern it stored and the banned wordings; with `same` the line was already a condition and nothing was added. */
-export function lessonNote(lesson: Pick<Lesson, "key" | "line" | "forbid"> & { pattern?: string; replaced?: number; same?: boolean }): string {
+export function lessonNote(lesson: Pick<Lesson, "key" | "line" | "forbid"> & { pattern?: string; replaced?: number; same?: boolean; conflicts?: string[] }): string {
 	const who = lesson.key.to === undefined ? undefined : (lesson.key.toName ?? lesson.key.to);
 	const to = who === undefined ? undefined : [...who.replace(/\s+/g, " ").trim()];
 	const where = lesson.key.app === "install" ? "모든 답장" : to ? `${to.length > 40 ? `${to.slice(0, 40).join("")}…` : to.join("")}에게 보내는 답장` : lesson.key.room === undefined ? "이 앱 답장" : lesson.key.app === "kakao" ? "이 대화방 답장" : "이 메일함 답장";
@@ -120,5 +120,6 @@ export function lessonNote(lesson: Pick<Lesson, "key" | "line" | "forbid"> & { p
 	const shown = line.length > 100 ? `${line.slice(0, 100).join("")}…` : line.join("");
 	const words = (lesson.forbid ?? []).map(w => `'${w}'`).join(", ");
 	const said = !shown ? [] : lesson.same ? [`이미 있는 조건이에요: ${shown}`] : [`앞으로 ${where}에 반영해요: ${shown}`, ...(lesson.replaced ? [`기존 조건 ${lesson.replaced}개를 이 조건으로 바꿨어요`] : [])];
-	return [...said, ...(lesson.pattern ? [`${PATTERN_NOTE}${lesson.pattern}`] : []), ...(words ? [`앞으로 ${where}에서 쓰지 않을 표현: ${words}`] : [])].join(" · ");
+	const clash = (lesson.conflicts ?? []).map(c => `"${c.length > 60 ? `${c.slice(0, 60)}…` : c}"`).join(", ");
+	return [...said, ...(clash ? [`설정한 지시 ${clash}와(과) 어긋나요. 초안은 더 새로 배운 이 고친 점을 따르고, 설정은 그대로예요`] : []), ...(lesson.pattern ? [`${PATTERN_NOTE}${lesson.pattern}`] : []), ...(words ? [`앞으로 ${where}에서 쓰지 않을 표현: ${words}`] : [])].join(" · ");
 }

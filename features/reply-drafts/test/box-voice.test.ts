@@ -302,8 +302,8 @@ describe("existing files and installs", () => {
 	});
 });
 
-test("a mailbox's hand-written instruction outranks the learned voice in the box lines", () => {
-	expect(boxLines({ how: "짧게 답해요", greets: [], bans: [] } as never, "")[0]).toBe("짧게 답해요");
+test("a mailbox's hand-written instruction is a box line of its own, with no claim to outrank the learned corrections", () => {
+	expect(boxLines({ how: "짧게 답해요", greets: [], bans: [] } as never, "")).toEqual(["짧게 답해요"]);
 	expect(boxLines({ how: "", greets: [], bans: [] } as never, "")).toEqual([]);
 });
 

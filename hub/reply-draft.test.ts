@@ -324,13 +324,24 @@ test("초안 작성 with text: the owner's instruction is in the prompt as his w
 	expect(without.user).not.toContain("The user's instruction for this reply");
 });
 
+test("the configured instruction (기본 규칙, mailbox, rule) comes before the dated corrections, the owner's own words for this draft after them", () => {
+	const base = { kind: "mail" as const, from: "Kim <kim@example.com>", subject: "견적", text: "견적 부탁드립니다", requested: true };
+	const learned: ReplyStyle = { identity: [], templates: [], samples: [], rules: [], corrections: ["2030-01-02: 반말로 짧게"], forbidden: [] };
+	const { user } = buildPrompt({ ...base, configured: "격식체로 길게 써요", instruction: "금요일까지라고 써 줘" }, learned);
+	const at = (s: string) => user.indexOf(s);
+	expect(at("격식체로 길게 써요")).toBeGreaterThan(-1);
+	expect(at("격식체로 길게 써요")).toBeLessThan(at("2030-01-02: 반말로 짧게"));
+	expect(at("2030-01-02: 반말로 짧게")).toBeLessThan(at("금요일까지라고 써 줘"));
+	expect(user.split("\n").find(l => l.includes("격식체로 길게 써요"))).not.toContain("금요일까지라고 써 줘");
+});
+
 test("a draft that says it already sent something gets one rewrite; the user's own word or an attached file is ground for it", async () => {
 	const claim = j({ action: "draft", reason: "r", body: "선생님 음원 메일로 보내드렸습니다~!" });
 	const plain = j({ action: "draft", reason: "r", body: "선생님 음원 곧 확인해 볼게요~!" });
 	const m = fake([claim, plain]);
 	const r = await generateReply(item, style, m.call);
 	expect(r).toMatchObject({ action: "draft", tries: 2, warnings: [], draft: { body: "선생님 음원 곧 확인해 볼게요~!" } });
-	for (const grounded of [{ files: ["mr.mp3"] }, { instruction: "보냈다고 답해" }]) expect(await generateReply({ ...item, ...grounded }, style, fake([claim]).call)).toMatchObject({ tries: 1, warnings: [] });
+	for (const grounded of [{ files: ["mr.mp3"] }, { instruction: "보냈다고 답해" }, { configured: "보냈다고 답해" }]) expect(await generateReply({ ...item, ...grounded }, style, fake([claim]).call)).toMatchObject({ tries: 1, warnings: [] });
 	expect(await generateReply(item, style, fake([claim, claim]).call)).toMatchObject({ tries: 2, warnings: [expect.stringContaining("already sent")] });
 	expect(lintReply({ to: "kim@example.com", subject: "Re: 회의 일정 문의", body: "메일로 보내드렸습니다" }, item, style)).toEqual([]);
 });

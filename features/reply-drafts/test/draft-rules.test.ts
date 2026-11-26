@@ -6,7 +6,8 @@ import { readSettings, writeSettings } from "../../../hub/app-settings.ts";
 import { parseDraftApproval } from "../../../hub/draft-approval.ts";
 import { reviseDraft } from "../lib/flow.ts";
 import { offerMailDraft } from "../lib/offer.ts";
-import { matchRule, ruleInstruction } from "../lib/rules.ts";
+import { replyLearning } from "../../../hub/reply-mail.ts";
+import { configConflicts, matchRule, ruleInstruction } from "../lib/rules.ts";
 import { loadSettings, paths, setApp } from "../lib/settings.ts";
 import { stagedFiles } from "../lib/staged.ts";
 import { getDraft, listDrafts } from "../lib/store.ts";
@@ -86,8 +87,29 @@ describe("matching", () => {
 		for (let i = 0; i < 3; i++) expect(await matchRule({ subject: "s", text: "t" }, rules, m.call)).toBeUndefined();
 	});
 	test("the instruction is the 기본 규칙, the rule's 어떻게 and the owner's words, in that order", () => {
-		expect(ruleInstruction("존댓말로", { id: "r1", ...RULE, on: true }, "금요일까지라고 써 줘")).toBe(`존댓말로\n${RULE.how}\n금요일까지라고 써 줘`);
+		expect(ruleInstruction("존댓말로", { id: "r1", ...RULE, on: true })).toBe(`존댓말로\n${RULE.how}`);
 		expect(ruleInstruction("", undefined)).toBeUndefined();
+	});
+});
+
+describe("a learned correction against the configured instruction", () => {
+	const overrides = (line: string) => async (_system: string, user: string) => (user.includes(line) ? JSON.stringify({ replaces: [{ id: "R1", why: "overridden" }] }) : JSON.stringify({ replaces: [] }));
+	test("the 기본 규칙 or a rule's 어떻게 it contradicts is named; nothing configured costs no call", async () => {
+		const asked: string[] = [];
+		const ask = (line: string) => (system: string, user: string) => (asked.push(user), overrides(line)(system, user));
+		expect(await configConflicts({ app: "mail" }, "반말로 짧게", ask("격식체"))).toEqual([]);
+		expect(asked).toHaveLength(0);
+		rulesOff([RULE], "격식체로 길게 써요");
+		expect(await configConflicts({ app: "mail" }, "반말로 짧게", ask("격식체"))).toEqual(["격식체로 길게 써요"]);
+		expect(asked.at(-1)).toContain(RULE.how);
+		expect(await configConflicts({ app: "mail" }, "반말로 짧게", ask("없는 줄"))).toEqual([]);
+	});
+	test("the learning result flags the conflict and leaves the settings as they are", async () => {
+		rulesOff([], "격식체로 길게 써요");
+		const learned = await replyLearning(() => ({ learnCall: () => overrides("격식체") })).record({ app: "mail" }, "반말로 짧게");
+		expect(learned).toMatchObject({ stored: true, kind: "correction", conflicts: ["격식체로 길게 써요"] });
+		expect(readSettings(env.dir, "mail").find(f => f.key === "draft_default")?.value).toBe("격식체로 길게 써요");
+		rmSync(paths.toneDir(), { force: true, recursive: true });
 	});
 });
 

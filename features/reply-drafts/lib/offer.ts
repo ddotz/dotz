@@ -370,8 +370,8 @@ async function offerOne(m: OfferMail, deps: OfferDeps, { body, history, replyTo 
 			markDrafted(looked);
 			return "skipped";
 		}
-		const instruction = ruleInstruction(box?.alone ? "" : own?.base ?? "", rule, requested ? m.instruction?.trim().slice(0, 500) : undefined, boxLines(box, item.from));
-		if (instruction) item.instruction = instruction;
+		const configured = ruleInstruction(box?.alone ? "" : own?.base ?? "", rule, boxLines(box, item.from));
+		if (configured) item.configured = configured;
 		const read = Date.now();
 		if (allowed) refreshPairs(deps, log, instance);
 		if (allowed && deps.analyze && deps.sentTexts) await learnMailIdentity(deps.analyze, deps.sentTexts, log);

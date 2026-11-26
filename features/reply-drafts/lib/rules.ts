@@ -7,9 +7,11 @@ import { homedir } from "node:os";
 import { basename, isAbsolute, join } from "node:path";
 import type { DraftRule } from "../../../hub/app-settings.ts";
 import type { ModelCall } from "../../../hub/reply-draft.ts";
+import { boxById, boxRules } from "./box.ts";
+import { curate, curateAsk } from "./curate.ts";
 import { libraryFile, listLibrary } from "./library.ts";
 import { stageFiles, stageLibraryFile, type StageOpts, type Want } from "./staged.ts";
-import { dataDir, loadSettings } from "./settings.ts";
+import { dataDir, INSTALL, loadSettings, type ToneKey } from "./settings.ts";
 
 export type InstanceRules = { instance: string; base: string; rules: DraftRule[] };
 
@@ -69,10 +71,22 @@ export async function matchRule(mail: { from?: string; subject?: string; text: s
 	return (await matchMail(mail, rules, [], call)).rule;
 }
 
-/** The draft's instruction: the 기본 규칙, the mailbox's lines (box.ts boxLines), then the matched rule's 어떻게, then what the owner typed for this one draft; undefined when all are empty. */
-export function ruleInstruction(base: string, rule: DraftRule | undefined, owner?: string, box: string[] = []): string | undefined {
-	const parts = [base, box.join("\n").slice(0, 1200), rule?.how ?? "", owner ?? ""].map(s => s.trim()).filter(Boolean);
+/** The draft's configured instruction (ReplyItem.configured): the 기본 규칙, the mailbox's lines (box.ts boxLines), then the matched rule's 어떻게; undefined when all are empty. What the owner typed for one draft is apart (ReplyItem.instruction): the dated corrections outrank this, his own words outrank them. */
+export function ruleInstruction(base: string, rule: DraftRule | undefined, box: string[] = []): string | undefined {
+	const parts = [base, box.join("\n").slice(0, 1200), rule?.how ?? ""].map(s => s.trim()).filter(Boolean);
 	return parts.length ? parts.join("\n").slice(0, 2000) : undefined;
+}
+
+/** The configured instruction lines of the profile `key` (its instance's 기본 규칙 and switched-on rules' 어떻게, or a mailbox's own when it stands alone, and the mailbox's 어떻게) that a newly learned correction contradicts, by ONE curate call (curate.ts: the lines as standing rules, only "overridden" counts); nothing configured = no call. The settings stay as they are: the caller shows the conflict, and the prompt lets the newer correction win. */
+export async function configConflicts(key: ToneKey, line: string, call: ModelCall): Promise<string[]> {
+	if (key.app === INSTALL) return [];
+	const box = key.room !== undefined ? boxById(key.app, key.room) : undefined;
+	const { base, rules } = await rulesOf(key.app);
+	const own = box?.alone ? [] : [base, ...rules.filter(r => r.on).map(r => r.how)];
+	const lines = [...new Set([...own, ...(boxRules(box) ?? []).filter(r => r.on).map(r => r.how), box?.how ?? ""].map(s => s.replace(/\s+/g, " ").trim()).filter(Boolean))];
+	if (!lines.length) return [];
+	const { replaces } = await curate({ rules: lines, corrections: [] }, { line, kind: "rule" }, curateAsk(call));
+	return replaces.flatMap(r => (r.why === "overridden" ? [lines[Number(r.id.slice(1)) - 1]!] : []));
 }
 
 const expand = (p: string) => (p === "~" ? homedir() : p.startsWith("~/") ? join(homedir(), p.slice(2)) : p);

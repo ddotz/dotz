@@ -14,6 +14,7 @@ import { ensureKakaoRoom, defaultKakaoReader, KAKAO_APP, type OwnerReader } from
 import type { Room } from "../../../hub/kakao/types.ts";
 import { alsoInto, askText, attachFolder, buildDraft, candidatesFor, chosenFrom, dropDraft, kindOf, learningSettled, learnLine, type LineLearned, mailAsksFile, type PatternProposal, proposeLinePattern, realFlowDeps, recordForbidden, refineAfterCorrection, reviseDraft, sendDraft, settleDraft, stageForReply, type FlowDeps, type Outcome } from "../lib/flow.ts";
 import { compactCorrections } from "../lib/compact.ts";
+import { configConflicts } from "../lib/rules.ts";
 import { journalEntries, type LearnKind, profileKey, profileOf, restoreEntry } from "../lib/curate.ts";
 import { dataDir, handSections, HEADINGS, INSTALL, levelsOf, loadSettings, profileBullets, recipientFile, removeCorrection, removeForbidden, removeRule, toneFile, validApp, type ToneKey, type ToneLevel } from "../lib/settings.ts";
 import { authorName, commentRecipient } from "../lib/commenters.ts";
@@ -247,6 +248,8 @@ export async function runDraft(args: string[], stdin: string, deps: DraftDeps = 
 			if (added.length) lines.push(`${where} 말투에 늘 지킬 규칙으로 기록했어요: ${added.join(", ")}`);
 			for (const [, l] of ruleResults) lines.push(...learnedNote(l, target));
 			if (changed) lines.push(`고친 점을 ${where} 말투에 기록했어요: ${change}`, ...learnedNote(changed, key));
+			const clash = changed?.stored && learn.learnCall ? await configConflicts(key, change, learn.learnCall(app)) : [];
+			if (clash.length) lines.push(`설정한 지시와 어긋나요: ${clash.map(c => `"${c}"`).join(", ")}. 초안은 더 새로 배운 이 고친 점을 따르고, 설정은 그대로예요`);
 			// A lesson for the whole mail app also went into each mail app with a file of its own (flow.ts learnLine, recordForbidden, alsoInto); one allowed or forgotten for it is taken out there too.
 			const subs = alsoInto(target).map(k => k.app);
 			for (const sub of subs) {

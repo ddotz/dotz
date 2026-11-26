@@ -40,8 +40,8 @@ export type ReplyDeps = {
 	/** A plain line from the owner in the card's conversation (나갔어요), no pick. */
 	recordText?: (conv: string, text: string) => void;
 	say?: (conv: string, ref: string, text: string) => void;
-	/** `record`: what the lesson line did in its profile (`learnLine`: stored or not, the old lines it replaced, the standing rule that already said it). `pattern`: a wording pattern proposed for the lesson, written only by its `keep`. */
-	learning: { record: (key: Lesson["key"], line: string) => Promise<{ kind: "rule" | "correction"; stored: boolean; replaced: string[]; same?: string }>; refine: (key: Lesson["key"]) => Promise<void>; forbid: (key: Lesson["key"], words: string[]) => Promise<void>; pattern?: (key: Lesson["key"], line: string, evidence: NonNullable<Lesson["evidence"]>, words: string[]) => Promise<{ label: string; inGood: string[]; keep: () => void } | undefined> };
+	/** `record`: what the lesson line did in its profile (`learnLine`: stored or not, the old lines it replaced, the standing rule that already said it, the configured instruction lines a stored correction contradicts). `pattern`: a wording pattern proposed for the lesson, written only by its `keep`. */
+	learning: { record: (key: Lesson["key"], line: string) => Promise<{ kind: "rule" | "correction"; stored: boolean; replaced: string[]; same?: string; conflicts?: string[] }>; refine: (key: Lesson["key"]) => Promise<void>; forbid: (key: Lesson["key"], words: string[]) => Promise<void>; pattern?: (key: Lesson["key"], line: string, evidence: NonNullable<Lesson["evidence"]>, words: string[]) => Promise<{ label: string; inGood: string[]; keep: () => void } | undefined> };
 	/** `rewrite` and `replace` draw a card anew (every surface, Discord included) and store `hash`, the version it now shows. `repost` posts the open card
 	 * of `ref` again at the bottom of its conversation (the same notice; `text` and `hash` when given), its old post marked moved. */
 	cards: { open: () => OpenCard[]; replace: (oldRef: string, newRef: string, text: string, hash: string | undefined) => void; rewrite: (ref: string, text: string, hash: string | undefined) => void; repost: (ref: string, text: string | undefined, hash: string | undefined) => Promise<void>; close: (ref: string) => void;
@@ -127,7 +127,7 @@ async function learn(deps: ReplyDeps, lesson: Lesson | undefined): Promise<{ sai
 	};
 	const same = learned?.same;
 	const replaced = learned?.stored ? learned.replaced.length : 0;
-	return { said: lessonNote({ key: lesson.key, line: learned?.stored ? lesson.line : same ?? "", forbid: banned ? words : [], pattern: pattern?.label, replaced, same: same !== undefined }), refine };
+	return { said: lessonNote({ key: lesson.key, line: learned?.stored ? lesson.line : same ?? "", forbid: banned ? words : [], pattern: pattern?.label, replaced, same: same !== undefined, conflicts: learned?.conflicts }), refine };
 }
 
 /** The cards of `ref` show the version the store holds now, and keep its hash (a pick from one of them is checked against it). */

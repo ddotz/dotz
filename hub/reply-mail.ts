@@ -1,7 +1,7 @@
 // The mail and webmail adapter of the one reply flow (the reply unification design, 1.8 columns 1 and 2) and the one learning
 // implementation ("record, then refine"). It is the hub's single door into the reply-drafts feature: it imports exactly flow.ts and store.ts,
 // and re-exports what the gateway's other modules read of it, so no other hub file needs a feature edge for them.
-import { askText, defaultCall, dropDraft, editDraft, learningSettled, learnLesson, learnSentEdit, lessonOfEdit, mailView, realFlowDeps, recordForbidden, refineAfterCorrection, restoreDraft, reviseDraft, revisePattern, type FlowDeps, type MailOf, webmailSite } from "../features/reply-drafts/lib/flow.ts";
+import { askText, configConflicts, defaultCall, dropDraft, editDraft, learningSettled, learnLesson, learnSentEdit, lessonOfEdit, mailView, realFlowDeps, recordForbidden, refineAfterCorrection, restoreDraft, reviseDraft, revisePattern, type FlowDeps, type MailOf, webmailSite } from "../features/reply-drafts/lib/flow.ts";
 import { claimFile, DRAFT_ID, draftStoreIntact, getDraft, listDrafts, patchDraft, setStatus, unlessUnreadable, type DraftRec } from "../features/reply-drafts/lib/store.ts";
 import { pairedMails, ridingMails } from "./comments/linked.ts";
 import { sinceMidnight } from "./reply-route.ts";
@@ -97,10 +97,15 @@ export function mailAdapter(deps: () => FlowDeps = realFlowDeps, mailOf: MailOf 
 	};
 }
 
-/** The one "record, then refine" of every kind (design 3.4): a lesson line is curated into its tone profile (`learnLine`: the lines it repeats or overrides go to the journal), and every few corrections fold into the identity; a wording pattern is proposed apart and written only by its `keep`. */
+/** The one "record, then refine" of every kind (design 3.4): a lesson line is curated into its tone profile (`learnLine`: the lines it repeats or overrides go to the journal), a stored correction is checked against the configured instruction it may contradict (rules.ts configConflicts: named in `conflicts`, the settings unchanged), and every few corrections fold into the identity; a wording pattern is proposed apart and written only by its `keep`. */
 export function replyLearning(deps: () => FlowDeps = realFlowDeps) {
 	return {
-		record: (key: Lesson["key"], line: string) => learnLesson(key, line, deps()),
+		record: async (key: Lesson["key"], line: string) => {
+			const d = deps(), learned = await learnLesson(key, line, d), call = d.learnCall;
+			if (!learned.stored || learned.kind !== "correction" || !call) return learned;
+			const conflicts = await configConflicts(key, line, (system, user) => call(key.app)(system, user)).catch((e: Error) => (console.error(`reply draft: correction of ${key.app} not checked against its settings: ${e.message}`), []));
+			return conflicts.length ? { ...learned, conflicts } : learned;
+		},
 		refine: (key: Lesson["key"]) => refineAfterCorrection(key, deps()),
 		forbid: async (key: Lesson["key"], words: string[]) => recordForbidden(key, words),
 		pattern: (key: Lesson["key"], line: string, evidence: NonNullable<Lesson["evidence"]>, words: string[]) => revisePattern(key, line, evidence, words, deps()),

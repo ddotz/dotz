@@ -29,6 +29,7 @@ export type ReplyItem = {
 	requested?: boolean; // the user asked for a reply to this message himself (초안 작성): always a draft, never a skip
 	expected?: boolean; // the gateway holds this mail as waiting on the user's reply (답장 필요): a draft, never a skip; one that does not say enough asks what is missing
 	instruction?: string; // what the user typed when he asked for it (초안 작성 with text): the draft carries it out; empty = the model decides
+	configured?: string; // the mail app's configured instruction (기본 규칙, the mailbox's lines, the matched rule's 어떻게: features/reply-drafts/lib/rules.ts ruleInstruction): older than the dated corrections, which win over it
 	files?: string[]; // mail: the names of the files that ride on this reply (picked before the draft is written); [] = the folder holds none that fits; absent = not looked at
 	candidates?: string[]; // mail: the file names the model may choose from (the matched rule's files first, then the best library matches); the draft's JSON then carries "files"
 };
@@ -182,6 +183,7 @@ const forRecipient = (s: string): string =>
 // Revise mode (mail and comment): what the change teaches, so only a lasting preference enters the profile.
 const LESSON = 'Also add to the JSON object "lesson": the lasting preference this change shows, one short line in the user\'s language with its condition (when ... then ...), in the user\'s own words where possible; "" when the change is only about this message, its file, its song or its exact text. Add "forbid": the exact wordings, as they would appear in a reply, that the user says must not be used again ([] when the change bans none or is only about this message). "forbid" is only for a fixed phrase that is wrong wherever it appears; when the user rejects a kind of sentence or an ending in one use (a closing wish ending in a wording that is fine in other sentences), leave it out of "forbid" and state it in "lesson" with his examples. Add "scope", for whom the lesson holds: "recipient" only when the user says the change is about the person this reply goes to (이분께는, 이 사람한테는, or that person\'s name); "everywhere" only when the user says the change holds always or everywhere, or rejects the wording itself as wrong (grammar, spelling, a habit of language); "channel" otherwise, when it is about this kind of message or this channel.';
 const CORRECTIONS = "The user's past corrections, newest first; when two disagree, the newer one wins. Each was about one draft: carry over the preference it shows to the same kind of situation, never its specific words, songs, files or names; skip one that only rewrites a single draft:";
+const OVER_CONFIGURED = "The user's past corrections, newest first; when two disagree, the newer one wins, and every one of them is newer than the configured instruction above, so where a correction and that instruction disagree, the correction wins. Each was about one draft: carry over the preference it shows to the same kind of situation, never its specific words, songs, files or names; skip one that only rewrites a single draft:";
 const RECIPIENT_LINES = "The user's conditions for this recipient only (he set them for the person this reply goes to; where a rule or correction above says otherwise, these win):";
 /** The characters of the user's corrections a mail, comment or chat prompt carries (KakaoTalk's own prompt carries 1200). */
 export const CORRECTIONS_BUDGET = 4000;
@@ -284,9 +286,10 @@ export function buildPrompt(item: ReplyItem, style: ReplyStyle, extra: PromptExt
 		"",
 		list("The user's own sentences (their voice):", samples, "(none yet: use a neutral, polite register)"),
 		"",
+		...(item.configured?.trim() ? [`The user's configured instruction for this kind of mail (his settings, written before the dated corrections below; follow it where no correction says otherwise): "${item.configured.replace(/\s+/g, " ").trim().slice(0, 2000).replace(/"/g, "'")}"`, ""] : []),
 		list("The user's rules:", style.rules.filter(r => !own.has(r)), "(none)"),
 		"",
-		item.kind === "chat" ? list("The user's past corrections (follow them):", [...corrections].reverse(), "(none)") : list(CORRECTIONS, corrections, "(none)"),
+		item.kind === "chat" ? list("The user's past corrections (follow them):", [...corrections].reverse(), "(none)") : list(item.configured?.trim() ? OVER_CONFIGURED : CORRECTIONS, corrections, "(none)"),
 		"",
 		...(recipientOwn.length ? [list(RECIPIENT_LINES, recipientOwn, ""), ""] : []),
 		list("Forbidden expressions:", bans.filter(b => !wordingRule(b)).map(banLabel), "(none)"),
@@ -400,7 +403,7 @@ const FILE_OFF = /빼|제외|없애|지워|말고|상관\s*없|관계\s*없|바�
 /** The owner's change takes a file off the reply or swaps one. */
 export const asksFileOff = (change: string): boolean => FILE_OFF.test(change);
 const FILES_UNNAMED = 'the change takes a file off or swaps one: add "files":[...] with exactly the files from the list that stay on the reply';
-const unfoundedSend = (body: string, item: ReplyItem, base: PromptExtras): boolean => SENT_CLAIM.test(body) && !item.files?.length && !item.candidates?.length && !item.instruction?.trim() && !item.choice && !base.change;
+const unfoundedSend = (body: string, item: ReplyItem, base: PromptExtras): boolean => SENT_CLAIM.test(body) && !item.files?.length && !item.candidates?.length && !item.instruction?.trim() && !item.configured?.trim() && !item.choice && !base.change;
 
 /** The address a reply follows out of a Reply-To value: the first one that is neither the owner's own nor an automated sender's, else none. */
 export function usableReplyTo(replyTo: string | undefined, self: readonly string[] | undefined): string | undefined {

@@ -14,7 +14,7 @@ import { styleJudgeOn } from "../../../hub/config.ts";
 import { judgeAsk, type JudgeAsk } from "../../../hub/style-judge.ts";
 import { listLibrary, matchLibrary, MIN_SCORE, rankLibrary, type LibraryFile } from "./library.ts";
 import { basename } from "node:path";
-import { ruleFilePath } from "./rules.ts";
+import { configConflicts, ruleFilePath } from "./rules.ts";
 import { canAttach, sendsThroughZele, sendWith, settleAccount, threadMoved, webmailSite, zeleAccountOf, type Sent, type SendOutcome } from "./senders.ts";
 import { carryStagedFiles, removeStagedFile, stagedFiles, stagedName, stageFiles, stageWanted, type StageOpts, type Want } from "./staged.ts";
 import { dataDir, INSTALL, lessonsOnly, loadPairs, loadSettings, loadStyle, ownReplies, paths, profileApp, recipientFile, recordPattern, toneFile, validApp, type ToneKey } from "./settings.ts";
@@ -34,7 +34,7 @@ import type { Lesson } from "../../../hub/reply-types.ts";
 
 export { realRunner };
 // What hub/reply-mail.ts (the hub's single door into this feature) needs beside the flow itself.
-export { alsoInto, learnLine, lessonOfEdit, type LineLearned, mailView, recordForbidden, sendAccountOf, webmailSite, type MailOf };
+export { alsoInto, configConflicts, learnLine, lessonOfEdit, type LineLearned, mailView, recordForbidden, sendAccountOf, webmailSite, type MailOf };
 
 // `analyze` = the model call of the identity sweep and its refinement (persona.ts); absent, no identity is analysed or refined.
 export type FlowDeps = { /** Chooses among tied library files by name (stageForReply); the default is one short model call. */ pick?: (names: string[]) => Promise<string[]>; call?: ModelCall; judge?: ModelCall; /** The model calls of one draft and its overall budget (draftTrace); buildDraft makes one when absent. */ trace?: DraftTrace; analyze?: ModelCall; run?: Runner; now?: () => Date; send?: (rec: DraftRec) => Promise<SendOutcome>; /** How library files are copied onto a draft (tests). */ stage?: StageOpts; /** Told where an approved send left the mail, right after the transport answered and before any bookkeeping write (bin/draft.ts prints its DOTZ_SEND line). */ onOutcome?: (o: Outcome) => void; learnCall?: (app: string) => ModelCall; kakaoReader?: (chatId: string) => Promise<OwnerReader>; kakaoRooms?: () => Promise<RoomsReader> };
