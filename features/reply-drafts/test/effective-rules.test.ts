@@ -79,7 +79,7 @@ test("tone files and settings keys of a mail app that is not in the app list are
 	seedRules({ app: "mail-ghost" }, { instruction: ["유령 지시"] });
 	writeFileSync(join(env.dir, "custom", "apps.json"), JSON.stringify({ "mail-real": { app: "mail" } }));
 	const note = (what: string, where: string) => `읽는 초안 없음: ${what} (${where}) - 앱 목록에 mail-ghost이(가) 없어요`;
-	const marks = [note("말투 파일", toneFile({ app: "mail-ghost" })), note("말투 파일", toneFile({ app: "mail-ghost", room: "b-x" })), note("규칙 장부", paths.ledger())];
+	const marks = [note("말투 파일", toneFile({ app: "mail-ghost" })), note("말투 파일", toneFile({ app: "mail-ghost", room: "b-x" })), note("답장 규칙", paths.ledger())];
 	for (const args of [["tone", "--app", "mail"], ["tone", "--effective", "--app", "mail"]]) expect((await runDraft(args, "")).lines.filter(l => l.startsWith("읽는 초안 없음"))).toEqual(marks);
 	rmSync(join(env.dir, "custom", "apps.json"));
 });

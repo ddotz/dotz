@@ -35,7 +35,7 @@ export const readLedger = (dir: string = dataDir()): LedgerRecord[] => readDoc(d
 
 /** One locked edit of the ledger; the file is written only when `edit` changed something. */
 function change<T>(dir: string, edit: (doc: Doc) => T): T {
-	return withLock(paths.ledger(dir), "규칙 장부", () => {
+	return withLock(paths.ledger(dir), "답장 규칙", () => {
 		const doc = readDoc(dir);
 		const before = JSON.stringify(doc);
 		const out = edit(doc);

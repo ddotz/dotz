@@ -33,22 +33,22 @@ function ledgerCommand(cmd: string | undefined, rest: string[], dir: string): Ou
 	switch (cmd) {
 		case "ledger": {
 			const all = readLedger(dir);
-			return { lines: rest.includes("--json") ? [JSON.stringify(all, null, 1)] : all.length ? all.map(r => `${r.id} [${r.state}${r.into ? ` → ${r.into}` : ""}] ${scopeName(r.scope)} · ${r.kind} · ${r.text}`) : ["장부에 규칙이 없어요"], code: 0 };
+			return { lines: rest.includes("--json") ? [JSON.stringify(all, null, 1)] : all.length ? all.map(r => `${r.id} [${r.state}${r.into ? ` → ${r.into}` : ""}] ${scopeName(r.scope)} · ${r.kind} · ${r.text}`) : ["모아 둔 규칙이 없어요"], code: 0 };
 		}
 		case "migrate": {
 			if (rest.includes("--preview")) {
 				const plan = previewMigration(dir);
-				return { lines: plan ? [...plan.files.flatMap(f => [`${f.file}: 옮길 규칙 ${f.lines.length}줄`, ...f.lines.map(l => `  ${l.kind} · ${l.text}`)]), "장부에 생길 기록:", ...plan.records.map(r => `  ${scopeName(r.scope)} · ${r.kind} · ${r.texts}줄`)] : ["옮길 규칙이 없거나 이미 옮겼어요"], code: 0 };
+				return { lines: plan ? [...plan.files.flatMap(f => [`${f.file}: 옮길 규칙 ${f.lines.length}줄`, ...f.lines.map(l => `  ${l.kind} · ${l.text}`)]), "rules.json에 생길 기록:", ...plan.records.map(r => `  ${scopeName(r.scope)} · ${r.kind} · ${r.texts}줄`)] : ["옮길 규칙이 없거나 이미 옮겼어요"], code: 0 };
 			}
 			const done = migrateLedger(dir);
-			return { lines: [done ? `규칙 ${done.records}개를 장부로 옮겼어요. 바뀐 파일 ${done.files.length}개는 ledger-backup에 복사해 뒀어요 (되돌리기: rules.ts undo)` : "옮길 규칙이 없거나 이미 옮겼어요"], code: 0 };
+			return { lines: [done ? `규칙 ${done.records}개를 rules.json 한 파일로 모았어요. 바뀐 파일 ${done.files.length}개는 ledger-backup에 복사해 뒀어요 (되돌리기: rules.ts undo)` : "옮길 규칙이 없거나 이미 옮겼어요"], code: 0 };
 		}
 		case "undo": {
 			const files = undoLedger(dir);
-			return { lines: [files ? `파일 ${files.length}개를 그대로 되돌리고 장부를 지웠어요: ${files.join(", ")}` : "되돌릴 이전 기록이 없어요"], code: files ? 0 : 1 };
+			return { lines: [files ? `파일 ${files.length}개를 그대로 되돌리고 rules.json을 지웠어요: ${files.join(", ")}` : "되돌릴 이전 기록이 없어요"], code: files ? 0 : 1 };
 		}
 		case "hand":
-			return { lines: [`손으로 쓴 규칙 ${moveHandRules(dir)}개를 장부로 옮겼어요`], code: 0 };
+			return { lines: [`손으로 쓴 규칙 ${moveHandRules(dir)}개를 rules.json 한 파일로 모았어요`], code: 0 };
 	}
 }
 

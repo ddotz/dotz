@@ -48,7 +48,7 @@ export function unreadSources(): { what: string; app: string; file: string; line
 	const s = loadSettings();
 	for (const [what, byApp] of Object.entries({ draftRules: s.draftRules, models: s.models, attachFolders: s.attachFolders }))
 		out.push(...Object.keys(byApp ?? {}).filter(stray).map(app => ({ what, app, file: paths.config(), line: jsonLine(paths.config(), app, what) })));
-	out.push(...readLedger().filter(r => r.state === "on" && r.scope.app !== undefined && stray(r.scope.app)).map(r => ({ what: "규칙 장부", app: r.scope.app!, file: paths.ledger() })));
+	out.push(...readLedger().filter(r => r.state === "on" && r.scope.app !== undefined && stray(r.scope.app)).map(r => ({ what: "답장 규칙", app: r.scope.app!, file: paths.ledger() })));
 	return out;
 }
 

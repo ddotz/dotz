@@ -161,20 +161,20 @@ const snsComments: Migration = {
 // Each changed file is copied to ledger-backup first; `rules.ts undo` puts them back byte for byte and removes the ledger.
 const ruleLedger: Migration = {
 	id: "rule-ledger",
-	label: "답장 규칙을 장부 하나로 옮기기",
+	label: "답장 규칙을 한 파일에 모으기",
 	run: ({ dataDir }) => {
 		const done = migrateLedger(dataDir);
-		return done ? `답장 규칙 ${done.records}개를 장부로 옮김 (바뀐 파일 ${done.files.length}개는 백업, 되돌리기: features/reply-drafts/bin/rules.ts undo)` : undefined;
+		return done ? `답장 규칙 ${done.records}개를 한 파일(rules.json)에 모음 (바뀐 파일 ${done.files.length}개는 백업, 되돌리기: features/reply-drafts/bin/rules.ts undo)` : undefined;
 	},
 };
 
 export const MIGRATIONS: Migration[] = [siteApps, legacyTokens, cardAudit, modelPicks, snsComments, ruleLedger];
 
 export const HAND_RULES_ID = "hand-rules";
-const HAND_YES = "1) 장부로 옮기기", HAND_NO = "2) 그대로 두기";
+const HAND_YES = "1) 규칙 파일로 옮기기", HAND_NO = "2) 그대로 두기";
 /** The owner's question when a tone file holds rules written by hand (a bullet under 말투, 고친 점 or 금지, or a section of its own): they are still read as they are until he answers. */
 export const handRulesAsk = (files: string[]): string =>
-	`말투 파일에 손으로 쓴 규칙이 있어요.\n${cardBlock({ subject: "손으로 쓴 말투 규칙", question: "이 규칙을 규칙 장부로 옮길까요? 옮기기 전 파일은 백업해요.", evidence: files, options: [{ name: HAND_YES, result: "규칙 장부로 옮겨요" }, { name: HAND_NO, result: "그대로 두고 다시 묻지 않아요" }] })}`;
+	`말투 파일에 손으로 쓴 규칙이 있어요.\n${cardBlock({ subject: "손으로 쓴 말투 규칙", question: "이 규칙을 답장 규칙 파일(rules.json)로 옮길까요? 옮기기 전 파일은 백업해요.", evidence: files, options: [{ name: HAND_YES, result: "규칙 파일로 옮겨요" }, { name: HAND_NO, result: "그대로 두고 다시 묻지 않아요" }] })}`;
 
 /** Asks once per file content about rules written by hand into tone files after the migration; not while an earlier question is open. */
 export function askHandRules(dataDir: string, ask: (text: string) => void): boolean {
@@ -196,7 +196,7 @@ export function handRulesAnswer(dataDir: string, text: string): string | undefin
 	if (!state.pending[HAND_RULES_ID]) return undefined;
 	delete state.pending[HAND_RULES_ID];
 	saveState(dataDir, state);
-	return n === 1 ? `손으로 쓴 규칙 ${moveHandRules(dataDir)}개를 규칙 장부로 옮겼어요` : "그대로 둘게요. 파일 내용이 바뀌기 전에는 다시 묻지 않아요.";
+	return n === 1 ? `손으로 쓴 규칙 ${moveHandRules(dataDir)}개를 답장 규칙 파일로 옮겼어요` : "그대로 둘게요. 파일 내용이 바뀌기 전에는 다시 묻지 않아요.";
 }
 
 /** Runs every migration that is not done, in order. One notice line lists what changed; each failure gets its own notice and is retried at the next start. */
