@@ -194,6 +194,19 @@ describe("an option that lists the values it asks for", () => {
 		expect(await view.evaluate(`[...document.querySelectorAll("#tl li")].some(li => li.textContent.includes("등록 번호"))`)).toBe(false);
 	});
 
+	test("picking it opens one field per listed value and answers them on one line", async () => {
+		history = ask(FIELDS);
+		await load(`(openTarget("main", "chat"), 0)`);
+		await waitFor(`document.querySelectorAll("#dcard .dc-row").length === 2`);
+		await view.evaluate(`(${rowOf(1)}.click(), 0)`);
+		await waitFor(`document.querySelectorAll("#dcard .dc-fv").length === 4`);
+		expect(await view.evaluate(`document.querySelector("#dcard .dc-go").disabled`)).toBe(true);
+		await view.evaluate(`(() => { const f = document.querySelectorAll("#dcard .dc-fv"); for (const [i, v] of [[0, "6월 29일"], [3, "A-1"]]) { f[i].value = v; f[i].dispatchEvent(new Event("input", { bubbles: true })); } return 0; })()`);
+		await view.evaluate(`(document.querySelector("#dcard .dc-go").click(), 0)`);
+		await waitForPost();
+		expect((await posts())[0]!.body.text).toBe("1) 지금 바로 정하기 - 시작일: 6월 29일; 등록 번호: A-1");
+	});
+
 	test("the notice sheet shows the list on the option, not under 자세히 보기", async () => {
 		const title = `신청서-${Date.now()}`;
 		emit("outbox", { ts: new Date().toISOString(), kind: "out", source: "orchestrator", target: "alert", text: FIELDS.replace("신청서 · 비어 있는 칸 채우기", title) });

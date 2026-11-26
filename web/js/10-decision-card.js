@@ -68,7 +68,7 @@ function parseChoices(text) {
 const isChoiceMsg = pc => pc.blocks.some(b => b.options.length > 1);
 const isHeadedChoice = pc => pc.blocks.some(b => b.headed && b.options.length > 1);
 const choiceAsks = (e, tone, pc) => tone === "ask" || isHeadedChoice(pc) || (e.kind === "out" && e.source === "gateway" && e.target === "alert" && isChoiceMsg(pc));
-const DC = { cur: null, picks: {}, step: {}, fold: {}, st: {}, edit: {}, fresh: "", note: {} };
+const DC = { cur: null, picks: {}, step: {}, fold: {}, st: {}, edit: {}, fresh: "", note: {}, fv: {} };
 function dcUnfold(t) { DC.fold[t] = false; }
 function dcMarkSent(key, pick) { DC.picks[key] = [pick]; DC.st[key] = "sent"; delete DC.edit[key]; }   // an answer given elsewhere (a revised draft's sheet, 30-notices.js dkPaint)
 function dcForget(t) { for (const k of Object.keys(DC.st)) if (k.startsWith(`${t}|`)) { delete DC.st[k]; delete DC.picks[k]; delete DC.step[k]; } }
@@ -447,7 +447,8 @@ const decideNode = d => (d && d.decide && d.decide.length ? el("div", { class: "
 const noteKeys = (go, back) => ev => { if (imeKey(ev)) return; if (ev.key === "Enter" && (ev.metaKey || ev.ctrlKey)) { ev.preventDefault(); go(); } else if (ev.key === "Escape") { ev.preventDefault(); ev.stopPropagation(); back(); } };
 const draftNoteText = opt => (opt.label === DRAFT_OWN ? { hint: OWN_HINT, aria: TX("decision.own.aria"), ask: TX("decision.own.ask") } : { hint: DRAFT_HINT, aria: TX("decision.revise.what"), ask: TX("decision.revise.ask") });
 function editNode(dc, ed, st) {
-  const opt = ed.opt, drf = !!dc.draft;
+  const opt = ed.opt, drf = !!dc.draft, fields = drf ? [] : optFields(opt);
+  if (fields.length > 1) return fieldsEditNode(opt, fields, DC.fv[dc.key] || (DC.fv[dc.key] = []), !!st, note => pickOption(dc, ed.bi, opt, note, true), () => { delete DC.edit[dc.key]; paintDecision(); });
   const dt = draftNoteText(opt);
   const ta = el("textarea", { class: "dc-note", rows: "2", maxlength: "500", placeholder: drf ? dt.hint : TX("decision.note.reason_ph"), "aria-label": drf ? dt.aria : TX("decision.note.details"), disabled: !!st, oninput: () => { DC.note[dc.key] = ta.value; go.disabled = drf && !ta.value.trim(); }, "data-esc": "field", onkeydown: noteKeys(() => go.click(), () => back.click()) });
   ta.value = DC.note[dc.key] ?? "";

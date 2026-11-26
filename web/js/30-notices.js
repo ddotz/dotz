@@ -611,7 +611,13 @@ function ntAfterAnswer(n, held) {
   return true;
 }
 function ntEditNode(n, ed) {
-  const own = !ed.opt, drf = !own && !!n.decision.draft, dt = drf ? draftNoteText(ed.opt) : null;
+  const own = !ed.opt, drf = !own && !!n.decision.draft, dt = drf ? draftNoteText(ed.opt) : null, fields = own || drf ? [] : optFields(ed.opt);
+  if (fields.length > 1) {   // one input per value the option asks for (10-decision-card.js optFields)
+    const vals = ed.fv || (ed.fv = []);
+    const go = el("button", { class: "dc-go", type: "button", "data-k": "send", disabled: NS.busy || !fieldsNote(fields, vals), onclick: () => ntAnswer(n, ed.opt, fieldsNote(fields, vals)) }, noteGoLabel(ed.opt, false));
+    const back = el("button", { class: "dc-back", type: "button", "data-k": "back", disabled: NS.busy, onclick: () => { NS.edit = null; ntSheetPaint(); } }, TX("decision.back"));
+    return el("div", { class: "dc-edit" }, el("div", { class: "dc-ctx" }, el("span", { class: "dc-key", text: String(ed.opt.n) }), el("span", { class: "dc-lb", text: ed.opt.label })), noteFieldsNode(fields, vals, () => { go.disabled = !fieldsNote(fields, vals); }, NS.busy, noteKeys(() => go.click(), () => back.click())), el("div", { class: "dc-eb" }, back, go));
+  }
   const ta = el("textarea", { class: "dc-note", rows: "3", maxlength: own ? "1000" : "500", placeholder: own ? TX("conv.nt.own_ph") : drf ? dt.hint : TX("decision.note.reason_ph"), "aria-label": own ? TX("conv.nt.direct") : drf ? dt.aria : TX("decision.note.details"), disabled: NS.busy, oninput: () => { ed.text = ta.value; go.disabled = !ta.value.trim(); }, "data-esc": "field", onkeydown: noteKeys(() => go.click(), () => back.click()) });
   ta.value = ed.text;
   const go = el("button", { class: "dc-go", type: "button", "data-k": "send", disabled: NS.busy || !ta.value.trim(), onclick: () => { const note = ta.value.trim(); if (note) ntAnswer(n, ed.opt, note); } }, own ? TX("conv.nt.own_go") : noteGoLabel(ed.opt, drf));

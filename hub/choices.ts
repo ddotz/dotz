@@ -181,6 +181,12 @@ const descEnd = (lines: string[], at: number): number => {
 	while (isSubLine(lines[i + 1])) i++;
 	return i;
 };
+/** The values an option asks for: the list items of its description ("- 공개일: ..."), each answered in its own field. Mirrors optFields in web/js/10-decision-card.js. */
+export const optionFields = (desc: string): string[] => desc.split("\n").filter(l => /^[-*•]\s+\S/.test(l)).map(l => l.replace(/^[-*•]\s+/, "").trim());
+/** A field's short name: the words before its ":", else the whole item. */
+export const fieldName = (field: string): string => (/^([^:：]{1,40})[:：]/.exec(field)?.[1] ?? field).trim();
+/** The one answer line of filled fields, `<name>: <value>; ...`, empty ones left out. Mirrors fieldsNote in web/js/10-decision-card.js. */
+export const fieldsAnswer = (fields: string[], values: string[]): string => fields.flatMap((f, i) => (values[i]?.trim() ? [`${fieldName(f)}: ${values[i]!.trim()}`] : [])).join("; ");
 const isEvidence = (line: string): boolean => !!line.trim() && !D_CLOSE.test(line) && !FILE_LINE.test(line) && !D_OPT.test(line) && !DECISION_HEAD.test(line);
 /** One decision of a several-decision message, as its notice stores it: the card's evidence lines (the lines between its "결정:" head and its
  * first option), the lead text before the first head, then the block's lines after its options. Option lines (the buttons show them), the head

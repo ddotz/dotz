@@ -3,7 +3,7 @@
 import { DRAFT_EDIT, parseDraftApproval } from "./draft-approval.ts";
 import { webLink } from "./weblink.ts";
 import { log } from "./config.ts";
-import { type ChoiceOption, hasDecisionHead, parseChoices, parseDecisions } from "./choices.ts";
+import { type ChoiceOption, fieldName, fieldsAnswer, hasDecisionHead, optionFields, parseChoices, parseDecisions } from "./choices.ts";
 import type { Interaction } from "./discord.ts";
 import { escalations } from "./escalate.ts";
 import type { Pick } from "./intake.ts";
@@ -146,6 +146,21 @@ function noteModal(target: string, o: ChoiceOption) {
 		components: [{ type: 1, components: [{ type: 4, custom_id: NOTE_FIELD, label: msg().auth.noteLabel, style: 2, required: true, min_length: 1, max_length: 500 }] }],
 	};
 }
+// An option that asks for several values (2-5 listed under it) opens one field per value; its submit answers `n) label - <field>: <value>; ...`,
+// the same line the web card sends. More than a modal holds goes to the one note field.
+const MODAL_FIELDS = 5;
+const LABEL_CHARS = 45;
+const fieldsOfPick = (content: string, n: number): string[] => {
+	const fields = optionFields(parseDecisions(content).blocks[0]?.options.find(o => o.n === n)?.desc ?? "");
+	return fields.length > 1 && fields.length <= MODAL_FIELDS ? fields : [];
+};
+function fieldsModal(target: string, o: ChoiceOption, fields: string[]) {
+	return {
+		custom_id: `${ASK_PREFIX}:${target}:${o.n}`,
+		title: `${o.n}) ${o.label}`.slice(0, LABEL_CHARS),
+		components: fields.map((f, i) => ({ type: 1, components: [{ type: 4, custom_id: `f${i}`, label: fieldName(f).slice(0, LABEL_CHARS), style: 1, required: false, max_length: 200 }] })),
+	};
+}
 // A reply draft's 고치기 (the reply clarity design, amendment A): one form with the draft's text to change by hand and, under it, optional words for
 // the AI. Its submit saves the text when he changed it, then revises with his words when he wrote any; neither does nothing. The form's id carries
 // the draft's hash (ReplyItem draft.hash) as it was opened: a submit after the draft changed does nothing, so an untouched text never overwrites a newer one.
@@ -199,8 +214,9 @@ export async function askInteraction(d: Interaction, deps: AskDeps): Promise<voi
 		if (!note && edit === undefined) return deps.reply(d, 4, ephemeral(m.noteMissing));
 		if (note) text += ` - ${note}`;
 	} else if (picked.detail) {
-		if (d.type === 3) return deps.reply(d, 9, noteModal(parsed.target, picked));   // nothing is sent until the modal is submitted
-		note = noteOf(d);
+		const fields = fieldsOfPick(content, picked.n);
+		if (d.type === 3) return deps.reply(d, 9, fields.length ? fieldsModal(parsed.target, picked, fields) : noteModal(parsed.target, picked));   // nothing is sent until the modal is submitted
+		note = fields.length ? fieldsAnswer(fields, fields.map((_, i) => fieldOf(d, `f${i}`) ?? "")).slice(0, 500) : noteOf(d);
 		if (!note) return deps.reply(d, 4, ephemeral(m.noteMissing));
 		text += ` - ${note}`;
 	} else if (d.type === 5) return deps.reply(d, 4, ephemeral(m.finished));

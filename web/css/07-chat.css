@@ -55,7 +55,7 @@
 .bm .st-tag { height: 22px; margin-right: var(--sp-2); font-size: 12px; line-height: 16px; vertical-align: 1px; }
 
 /* 확인/질문 카드: 컴포저 바로 위에 붙어 있고, 흰 대화 카드 안에서도 한 면으로 읽히게 회색 위에 놓여요 (얇은 모양·동작은 그대로) */
-#composer > .dcard { background: var(--layer); }
+#composer > .dcard { background: var(--layer); --ff-fill: var(--card); }
 
 
 /* dotz_auth 입력 요청 (16-target-switcher-conversation.js authCard): 새 토큰의 입력칸과 버튼. 비밀 값은 type=password 그대로, 화면에만 보기/숨기기 */
@@ -69,7 +69,7 @@
 .au .rem { color: var(--fg-2); font-size: 13px; }
 @media (pointer: coarse), (max-width: 639px) { .au input:not([type=checkbox]) { height: var(--field-h-touch); font-size: 16px; } .au .eye { height: var(--field-h-touch); } }
 /* 확인 카드 (owner 2026-11-03): 머리 한 줄(답 기다림), 카드 제목 크기의 짧은 질문, 작은 답 버튼, 지금보다 눈에 띄게 낮게 */
-.dcard { display: flex; flex-direction: column; max-height: 35dvh; margin: 0 0 var(--sp-2); border-radius: var(--r-card); background: var(--card); overflow: hidden; }
+.dcard { display: flex; flex-direction: column; max-height: 35dvh; margin: 0 0 var(--sp-2); border-radius: var(--r-card); background: var(--card); --ff-fill: var(--layer); overflow: hidden; }
 .dcard[hidden] { display: none; }
 /* a waiting send-approval card that later posts pushed up: one row in the dock that opens it (10-decision-card.js dcPointer) */
 .dc-wait { display: flex; align-items: center; gap: var(--sp-2); width: 100%; min-height: 44px; padding: var(--sp-2) var(--row-px); border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
@@ -132,13 +132,18 @@
 .dc-ctx { display: flex; align-items: center; gap: var(--sp-2); }
 .dc-note { width: 100%; box-sizing: border-box; min-height: 72px; padding: var(--sp-2) var(--sp-3); border: 0; border-radius: var(--r-ctl); background: var(--ff-fill); resize: vertical; font-size: 14px; line-height: 22px; }
 .dc-note:focus { outline: 0; box-shadow: var(--ff-ring); }
+.dc-fields, .dc-field { display: flex; flex-direction: column; gap: var(--sp-2); }
+.dc-field { gap: var(--sp-05); }
+.dc-fk { color: var(--fg-3); font-size: 12px; line-height: 16px; }
+.dc-fv { width: 100%; box-sizing: border-box; padding: var(--sp-2) var(--sp-3); border: 0; border-radius: var(--r-ctl); background: var(--ff-fill); font-size: 14px; line-height: 22px; }
+.dc-fv:focus { outline: 0; box-shadow: var(--ff-ring); }
 .dc-eb { display: flex; gap: var(--sp-2); }
 .dc-fl { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); }
 .dc-fl .dr-add { flex: none; padding: 0 var(--sp-3); }
 .dc-fl .fatt { height: 48px; max-width: 100%; }
 /* 돌아가기 (secondary) and the send button (primary) are the one button system (01-tokens.css); only the row layout is here */
 .dc-back, .dc-go { flex: 1; }
-@media (pointer: coarse) { .dc-note { font-size: 16px; } }
+@media (pointer: coarse) { .dc-note, .dc-fv { font-size: 16px; } }
 .dc-st { flex: none; padding: var(--sp-1) var(--sp-4) var(--sp-2); color: var(--fg-3); font-size: 12.5px; line-height: 18px; }
 /* 답한 결정의 기록 (10-decision-card.js dcRecordNode): 카드가 접힌 뒤 대화에 남는 조용한 한 줄 — 질문과 고른 답만, 바탕·테두리 없이 */
 .tl-in > .dc-rec { align-self: flex-end; display: grid; gap: var(--sp-05); max-width: 80%; min-width: 0; margin-top: var(--sp-3); color: var(--fg-3); font: 400 12.5px/18px var(--font); text-align: right; }

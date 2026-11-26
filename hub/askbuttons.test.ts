@@ -82,6 +82,18 @@ test("custom_id round trip keeps targets with colons, and a form's draft hash", 
 	expect(parseAskId("dz-auth:abc:approve")).toBeUndefined();
 });
 
+test("an option that lists the values it asks for opens one field per value, and its submit answers them on one line", async () => {
+	const card = "[ask] 초안을 만들었어요.\n\n결정: 신청서 · 비어 있는 칸 채우기\n**1) 지금 바로 정하기 …**\n아래를 답해 주세요\n- 시작일: 처음 올린 날로 할지\n- 담당자\n- 등록 번호\n**2) 같이 하기**\n로그인해 주세요";
+	const replies: { type: number; data?: any }[] = [], answers: string[] = [];
+	const run = (d: Interaction) => askInteraction(d, { owner: "owner-1", reply: async (_d, type, data) => void replies.push({ type, data }), answer: (_t, text) => void answers.push(text) });
+	await run(click("owner-1", `${ASK_PREFIX}:chat:1`, card));
+	expect(replies[0]!.type).toBe(9);
+	expect(replies[0]!.data.components.map((r: any) => [r.components[0].custom_id, r.components[0].label])).toEqual([["f0", "시작일"], ["f1", "담당자"], ["f2", "등록 번호"]]);
+	const values: Record<string, string> = { f0: "6월 29일", f1: "", f2: "A-1" };
+	await run({ id: "i2", token: "t", type: 5, member: { user: { id: "owner-1" } }, message: { content: card }, data: { custom_id: `${ASK_PREFIX}:chat:1`, components: Object.entries(values).map(([custom_id, value]) => ({ type: 1, components: [{ type: 4, custom_id, value }] })) } } as Interaction);
+	expect(answers).toEqual(["1) 지금 바로 정하기 - 시작일: 6월 29일; 등록 번호: A-1"]);
+});
+
 function click(user: string, customId: string, content = ASK): Interaction {
 	return { id: "i1", token: "t", type: 3, member: { user: { id: user } }, message: { content }, data: { custom_id: customId } };
 }

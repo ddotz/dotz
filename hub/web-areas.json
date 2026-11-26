@@ -21,6 +21,7 @@
   "08-home.js": "home",
   "09-needs-you.js": "chat",
   "10-card-evidence.js": "chat",
+  "10-card-fields.js": "chat",
   "10-decision-card.js": "chat",
   "10-decision-fold.js": "chat",
   "10-decision-gone.js": "chat",
