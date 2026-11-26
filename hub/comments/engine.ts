@@ -636,8 +636,8 @@ export function createEngine(deps: EngineDeps) {
 
 	const mailCtx = (mail: MailLink) => ({ store, mail, now: deps.now, posting, emit, busy: revisingMail });
 	// `part` "mail" changes only the mail of the card (the reply stays, same code); "reply" (default) rewrites the reply and the mail stays attached,
-	// or with `noMail` is dropped once the new reply draft exists, so the card is the reply alone. A "reply" change about the mail or its files
-	// revises the mail too (draft-run.ts mailFollowsReply), so the owner's one 고치기 reaches both parts.
+	// or with `noMail` is dropped once the new reply draft exists, so the card is the reply alone. A "reply" change always revises
+	// the riding mail too (draft-run.ts mailFollowsReply), so the owner's one 고치기 reaches both parts and the card says which changed.
 	async function revise(draftCode: string, change: string, part: "reply" | "mail" = "reply", noMail = false): Promise<Step & { lesson?: Lesson }> {
 		const d = store.drafts().find(x => x.code === draftCode);
 		const c = d && find(d.commentId);
@@ -658,7 +658,7 @@ export function createEngine(deps: EngineDeps) {
 			.then(async step => {
 				if (step.ok && noMail && d.mail) deps.mail?.drop(d.mail);
 				if (!step.ok) return step;
-				const draft = !noMail && deps.mail ? await mailFollowsReply(mailCtx(deps.mail), step.draft, change.trim()) : step.draft;
+				const draft = !noMail && deps.mail ? await mailFollowsReply(mailCtx(deps.mail), step.draft, change.trim(), d.text) : step.draft;
 				return { ...step, draft: paired(draft.code, !!d.mail || d.notes.some(n => PAIR_NOTE.test(n))) ?? draft };
 			})
 			.catch(e => ({ ok: false as const, reason: e instanceof Error && e.message ? clip(e.message, 160) : "고친 초안을 만들지 못했어요" }));

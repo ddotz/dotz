@@ -237,7 +237,7 @@ describe("the combined card", () => {
 		expect(t.log).toEqual(["compose M1", "reply"]);
 	});
 
-	test("고치기 changes the mail alone (same card code) or the reply alone (mail stays attached)", async () => {
+	test("고치기 changes the mail alone (same card code), or the reply with its riding mail shown the words too (mail stays attached)", async () => {
 		const t = setup();
 		const d = await withMail(t);
 		const m = await t.engine.revise(d.code, "제목에 곡 이름을 넣어 줘", "mail");
@@ -249,7 +249,8 @@ describe("the combined card", () => {
 		const r = await t.engine.revise(d.code, "더 짧게", "reply");
 		if (!r.ok) throw new Error(r.reason);
 		expect(r.draft.code).not.toBe(d.code);
-		expect(r.draft).toMatchObject({ text: "고쳐 쓴 답글이에요.", mail: "M2", clean: false });
+		expect(r.draft).toMatchObject({ text: "고쳐 쓴 답글이에요.", mail: "M3", clean: false });
+		expect(t.log).toContain("revise M2 -> M3");
 		expect(t.engine.store.drafts().find(x => x.code === d.code)!.status).toBe("stale");
 
 		const plain = setup({ sub: "b" });

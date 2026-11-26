@@ -65,10 +65,19 @@ export function earlierMailTo({ store, mail, now, to, commentId, mailId }: { sto
 	return undefined;
 }
 
-const touchesMail = (change: string): boolean => /메일|mail|첨부|attach|파일|file/i.test(change);
 // What that mail's revise is told: the owner's words as written, which part of them is its own, and the reply as now rewritten (for 메일에도 반영해).
+// Words that are about the reply alone leave the mail as it is: the mail's revise decides that, not a word list.
 const mailAskOf = (change: string, replyText: string): string =>
-	`${change}\n\n(댓글 답글과 함께 고쳐 달라는 말이에요. 이 메일의 본문과 첨부 파일에 해당하는 부분만 반영하세요. 고친 댓글 답글: "${replyText}")`;
+	`${change}\n\n(댓글 답글과 함께 고쳐 달라는 말이에요. 이 메일의 본문과 첨부 파일에 해당하는 부분만 반영하고, 메일에 해당하는 말이 없으면 본문과 첨부를 그대로 두세요. 고친 댓글 답글: "${replyText}")`;
+
+/** The card line that says which part of a plain 고치기 changed and which stayed: the reply, the mail's body (with its subject) and its files. */
+export const CHANGED_NOTE = "고친 곳:";
+const mailParts = (v: MailView | undefined) => ({ body: `${v?.subject ?? ""}\n${v?.body ?? ""}`, files: (v?.attachments ?? []).map(f => f.name).sort().join("\n") });
+export function changedLine(replyChanged: boolean, before: MailView | undefined, after: MailView | undefined): string {
+	const a = mailParts(before), b = mailParts(after);
+	const word = (changed: boolean) => (changed ? "바뀜" : "그대로");
+	return `${CHANGED_NOTE} 답글 ${word(replyChanged)} · 메일 본문 ${word(a.body !== b.body)} · 첨부 ${word(a.files !== b.files)}`;
+}
 
 // The mail is revised on whichever pending draft of the comment carries it when the revise ends: a reply revised meanwhile moved it to its new draft.
 // `ask`: what the mail's revise is told when it is not the owner's `change` itself.
@@ -99,14 +108,23 @@ export async function reviseRidingMail({ busy, ...ctx }: MailCtx, d: Draft, mail
 	});
 }
 
-// A plain 고치기 (no part named) of a card that carries a mail, once the reply is rewritten: words about the mail or its files revise that mail too,
-// told the new reply; a comment-only change leaves it as it is. A mail that could not be revised is a "확인:" line on the card.
-export async function mailFollowsReply(ctx: MailCtx, draft: Draft, change: string): Promise<Draft> {
-	if (!draft.mail || !touchesMail(change)) return draft;
+// A plain 고치기 (no part named) of a card that carries a mail, once the reply is rewritten: the mail is always revised too, told the owner's words
+// and the new reply, and it keeps what those words do not touch. The card then says which part changed and which stayed (`changedLine`, against
+// the reply before, `replyBefore`). A mail that could not be revised, or that a 메일-only 고치기 still revises (a second revise of the same
+// mail would only fail), is a "확인:" line on the card.
+export async function mailFollowsReply(ctx: MailCtx, draft: Draft, change: string, replyBefore: string): Promise<Draft> {
+	if (!draft.mail) return draft;
+	if (ctx.busy.has(draft.commentId)) {
+		const next = { ...draft, notes: [...draft.notes, "확인: 메일은 다른 고치기가 끝나는 중이라 이번 말은 메일에 반영하지 않았어요"] };
+		ctx.store.putDraft(next);
+		return next;
+	}
+	const before = ctx.mail.view(draft.mail);
 	const m = await reviseRidingMail(ctx, draft, draft.mail, change, mailAskOf(change, draft.text));
-	if (m.ok) return m.draft;
-	const now = ctx.store.drafts().find(x => x.code === draft.code) ?? draft;
-	const next = { ...now, notes: [...now.notes, `확인: 메일은 고치지 못했어요 - ${m.reason}`] };
+	const now = ctx.store.drafts().find(x => x.code === (m.ok ? m.draft.code : draft.code)) ?? (m.ok ? m.draft : draft);
+	const replyChanged = now.text.trim() !== replyBefore.trim();
+	const lines = m.ok ? [changedLine(replyChanged, before, now.mail ? ctx.mail.view(now.mail) : undefined)] : [`확인: 메일은 고치지 못했어요 - ${m.reason}`];
+	const next = { ...now, notes: [...now.notes, ...lines] };
 	ctx.store.putDraft(next);
 	return next;
 }

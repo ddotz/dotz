@@ -11,7 +11,7 @@ const NOW = Date.parse("2026-11-25T00:00:00.000Z");
 const source: SourceConfig = { key: "youtube", kind: "youtube", label: "유튜브 댓글", watch: ["*"], autoDraft: false };
 const MAIL = { app: "mail", to: "fan@example.com", subject: "자료 보내드립니다", body: "안녕하세요.\n요청하신 자료입니다.", attach: ["/files/파일A.mp3", "/files/파일C.pdf"] };
 const reply = (body: string) => `\`\`\`json\n${JSON.stringify({ action: "draft", reason: "asks", to: "", body, questions: [] })}\n\`\`\``;
-const FILES = ["파일A.mp3", "파일B.mp3", "파일C.pdf"];
+const FILES = ["파일A.mp3", "파일B.mp3", "파일C.pdf", "곡B.mp3"];
 
 let dir: string;
 beforeEach(() => {
@@ -20,7 +20,8 @@ beforeEach(() => {
 afterEach(() => rmSync(dir, { recursive: true, force: true }));
 
 // Like the real mail link: a revise makes a new draft and the old one is no longer pending (its view is gone). The files become the ones the
-// change names ("<name> 빼" removes it), and `asked` keeps what each revise was told. `hold` parks a revise until released.
+// change names ("<name> 빼" removes it), and `asked` keeps what each revise was told. `hold` parks a revise until released. Like the model told
+// to keep what the owner's words do not touch, the body changes only when his words (the ask's first paragraph) name a file or the mail.
 function fakeMail() {
 	const drafts = new Map<string, MailView>();
 	const asked: string[] = [];
@@ -45,7 +46,8 @@ function fakeMail() {
 			const attachments = [...kept, ...named.filter(f => !removed.includes(f) && !kept.some(k => k.name === f)).map(name => ({ name }))];
 			const next = `M${++n}`;
 			drafts.delete(id);
-			drafts.set(next, { ...v, id: next, body: `${v.body}\n(${change})`, attachments });
+			const words = change.split("\n\n")[0]!;
+			drafts.set(next, { ...v, id: next, body: named.length || words.includes("메일") ? `${v.body}\n(${words})` : v.body, attachments });
 			return { ok: true, id: next };
 		},
 		view: id => drafts.get(id),
@@ -94,13 +96,24 @@ describe("a plain 고치기 on a card with a riding mail", () => {
 		expect(r.draft.changes.at(-1)).toContain("파일B");
 	});
 
-	test("a change about the reply alone leaves the mail as it is", async () => {
+	test("words with no mail word still reach the mail: a wrong track is swapped and the card says what changed", async () => {
+		const t = await setup();
+		const r = await t.engine.revise(t.draft.code, "음원이 잘못 붙었어. 곡B로 다시 골라 줘", "reply");
+		if (!r.ok) throw new Error(r.reason);
+		expect(t.mail.asked).toHaveLength(1);
+		expect(names(t.engine.mailView(r.draft))).toContain("곡B.mp3");
+		expect(r.draft.notes).toContain("고친 곳: 답글 바뀜 · 메일 본문 바뀜 · 첨부 바뀜");
+	});
+
+	test("a change about the reply alone is still shown to the mail, which stays as it is, and the card says so", async () => {
 		const t = await setup();
 		const r = await t.engine.revise(t.draft.code, "더 짧게", "reply");
 		if (!r.ok) throw new Error(r.reason);
-		expect(r.draft.mail).toBe("M1");
-		expect(t.mail.asked).toEqual([]);
-		expect(names(t.engine.mailView(r.draft))).toEqual(["파일A.mp3", "파일C.pdf"]);
+		expect(t.mail.asked).toHaveLength(1);
+		const v = t.engine.mailView(r.draft);
+		expect(names(v)).toEqual(["파일A.mp3", "파일C.pdf"]);
+		expect(v?.body).toBe(MAIL.body);
+		expect(r.draft.notes).toContain("고친 곳: 답글 바뀜 · 메일 본문 그대로 · 첨부 그대로");
 	});
 });
 
@@ -114,8 +127,8 @@ describe("a reply revise and a mail revise of the same card at once", () => {
 		go();
 		const r = await replying;
 		if (!r.ok) throw new Error(r.reason);
-		expect(r.draft.mail).toBe("M2");
 		expect(names(t.engine.mailView(r.draft))).toEqual(["파일A.mp3", "파일C.pdf", "파일B.mp3"]);
+		expect(r.draft.notes).toContain("고친 곳: 답글 바뀜 · 메일 본문 그대로 · 첨부 그대로");
 	});
 
 	test("the reply rewritten while the mail is revised: the revised mail moves to the new card", async () => {
@@ -124,6 +137,7 @@ describe("a reply revise and a mail revise of the same card at once", () => {
 		const mailing = t.engine.revise(t.draft.code, "파일B를 첨부해", "mail");
 		const r = await t.engine.revise(t.draft.code, "더 짧게", "reply");
 		if (!r.ok) throw new Error(r.reason);
+		expect(t.mail.asked).toHaveLength(1);
 		go();
 		const m = await mailing;
 		if (!m.ok) throw new Error(m.reason);
