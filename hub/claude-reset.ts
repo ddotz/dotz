@@ -4,6 +4,7 @@
 // read shows that grant still has one left and applies now. The token is never refreshed: an expired one is refused, not renewed.
 import { randomUUID } from "node:crypto";
 import { log } from "./config.ts";
+import { isRealFetch, testSpendRefusal } from "./reset-guard.ts";
 import { claudeCliUa, claudeGrants, claudeOrg, claudeResets, claudeUsageGet, subscriptionAccounts } from "./usage-account.ts";
 
 type Json = Record<string, any>;
@@ -21,6 +22,8 @@ let using = false;
 export async function useClaudeReset(b: Json, fetchFn: (url: string, init: RequestInit) => Promise<Response> = fetch, lift?: (account: string) => Promise<Json | void>): Promise<{ status: number; body: Json }> {
 	if (b.confirm !== true) return { status: 400, body: { error: "리셋권은 확인을 거친 뒤에만 써요" } };
 	if (typeof b.account !== "string" || typeof b.grant_id !== "string") return { status: 400, body: { error: "어느 리셋권인지 알 수 없어요" } };
+	const refused = testSpendRefusal(isRealFetch(fetchFn));
+	if (refused) return refused;
 	if (using) return { status: 409, body: { error: "리셋권을 쓰는 중이에요" } };
 	using = true;
 	try {

@@ -8,6 +8,7 @@ import { join } from "node:path";
 import { installGitHooks } from "../git-hooks.ts";
 import { setMachineProbe } from "../limits.ts";
 import { liveDataDir } from "../live-guard.ts";
+import { REAL_NETWORK } from "../reset-guard.ts";
 import { installClock } from "./test-clock.ts";
 import { takeSuiteSlot } from "./test-slot.ts";
 
@@ -75,10 +76,11 @@ if (liveDataDir(dir)) throw new Error(`refused: DOTZ_TEST_DIR ${dir} is not a te
 // The owner's gateway answers here. No test talks to it, whatever URL a fixture builds.
 const LIVE_HUB = /^https?:\/\/(?:127\.0\.0\.1|localhost|\[::1\]):7420(?:\/|$)/;
 const realFetch = globalThis.fetch;
+// Marked as the real network: a 리셋권 spend (hub/reset-guard.ts) refuses to run through it.
 globalThis.fetch = Object.assign((input: string | URL | Request, init?: RequestInit) => {
 	const url = input instanceof Request ? input.url : String(input);
 	return LIVE_HUB.test(url) ? Promise.reject(new Error(`refused: a test called the live gateway at ${url}`)) : realFetch(input, init);
-}, realFetch);
+}, realFetch, { [REAL_NETWORK]: true });
 const data = join(dir, "data");
 mkdirSync(data, { recursive: true });
 // An empty models.dev cache, so an API-key entry's model lookup (hub/fallback.ts modelsDevDef) never reaches the network.

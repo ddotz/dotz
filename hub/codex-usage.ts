@@ -10,6 +10,7 @@ import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { log } from "./config.ts";
+import { isRealFetch, testSpendRefusal } from "./reset-guard.ts";
 import type { QuotaLimit } from "./usage-account.ts";
 
 const BASE = "https://chatgpt.com/backend-api/wham";
@@ -100,6 +101,8 @@ export function withCodex<B extends Built>(b: B, codex: Read | undefined) {
 let using = false;
 export async function useResetCredit(b: Json): Promise<{ status: number; body: Json }> {
 	if (b.confirm !== true) return { status: 400, body: { error: "리셋권은 확인을 거친 뒤에만 써요" } };
+	const refused = testSpendRefusal(isRealFetch(globalThis.fetch));
+	if (refused) return refused;
 	if (using) return { status: 409, body: { error: "리셋권을 쓰는 중이에요" } };
 	using = true;
 	try {

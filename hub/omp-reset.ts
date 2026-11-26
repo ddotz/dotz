@@ -1,4 +1,5 @@
 import { log, OMP } from "./config.ts";
+import { testSpendRefusal } from "./reset-guard.ts";
 import { type Ran, runLimited } from "./run-limited.ts";
 
 type Credit = { id?: string; remainingCount?: number; status?: string; usable?: boolean };
@@ -43,6 +44,8 @@ let using = false;
 export async function useOmpReset(b: Request, lift?: (account: string) => Promise<Record<string, unknown> | void>, env = ompResetEnv): Promise<Answer> {
 	if (b.confirm !== true) return refuse(400, "리셋권은 확인을 거친 뒤에만 써요");
 	if (typeof b.account !== "string" || typeof b.grant_id !== "string") return refuse(400, "어느 리셋권인지 알 수 없어요");
+	const refused = testSpendRefusal(env.run === runLimited);
+	if (refused) return refused;
 	if (using) return refuse(409, "리셋권을 쓰는 중이에요");
 	using = true;
 	try {
