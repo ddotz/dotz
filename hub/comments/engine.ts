@@ -58,7 +58,7 @@ export type EngineDeps = {
 	adapters: Partial<Record<SourceKind, CommentAdapter>>;
 	model?: DraftModel;
 	judge?: DraftModel;
-	style?: (src: SourceConfig, authorId?: string) => ReplyStyle;
+	style?: (src: SourceConfig, authorId?: string, thread?: string) => ReplyStyle;
 	learn?: (lesson: Lesson) => void;
 	edits?: EditLessons;
 	broadcast?: (event: Record<string, unknown>) => void;
@@ -220,8 +220,8 @@ export function createEngine(deps: EngineDeps) {
 		const lines = stream(c).slice(-CONTEXT_COMMENTS).map(x => `- ${x.mine ? "나" : x.author}: ${clip(x.text)}`);
 		return [`글: ${clip(c.postTitle, 120)}${c.postLink ? ` (${c.postLink})` : ""}`, ...postAsked(c), "같은 댓글 줄기:", ...lines].join("\n");
 	};
-	const styleOf = (src: SourceConfig, authorId?: string): ReplyStyle => {
-		const s = deps.style?.(src, authorId) ?? { rules: [], corrections: [], forbidden: [], samples: [] };
+	const styleOf = (src: SourceConfig, authorId?: string, thread?: string): ReplyStyle => {
+		const s = deps.style?.(src, authorId, thread) ?? { rules: [], corrections: [], forbidden: [], samples: [] };
 		return { ...s, samples: s.samples.slice(0, SAMPLES) };
 	};
 	const code = (): string => newCommentCode(new Set(store.drafts().map(d => d.code)));
@@ -675,7 +675,7 @@ export function createEngine(deps: EngineDeps) {
 			return r;
 		}
 		const body = text.replace(/\r\n?/g, "\n").trim();
-		const c = find(d.commentId), found = ownerLint({ body }, { kind: "comment", app: src.key, from: c?.author ?? "", text: "" }, styleOf(src, c?.authorId));
+		const c = find(d.commentId), found = ownerLint({ body }, { kind: "comment", app: src.key, from: c?.author ?? "", text: "" }, styleOf(src, c?.authorId, c?.thread));
 		if (found.length) return { ok: false, reason: `${LINT_REFUSED} ${found.join(" · ")}`, code: found[0]!.startsWith("it uses the forbidden") ? "forbidden_word" : found[0]!.startsWith("it breaks the owner's wording rule") ? "wording_rule" : found[0]!.startsWith("the body is empty") ? "empty" : found[0]!.startsWith("the body is") ? "too_long" : "placeholder", lint: found };
 		store.putDraft({ ...d, text: body, clean: false, ...(d.editedFrom === undefined ? { editedFrom: d.text } : {}) });
 		emit({ kind: "comment_draft", source: d.source, thread: d.thread });

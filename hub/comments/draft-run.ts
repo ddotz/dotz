@@ -127,7 +127,7 @@ export type DraftRunCtx = {
 	deps: EngineDeps & { model?: DraftModel };
 	store: Store;
 	ownerOf: (src: SourceConfig) => string;
-	styleOf: (src: SourceConfig, authorId?: string) => ReplyStyle;
+	styleOf: (src: SourceConfig, authorId?: string, thread?: string) => ReplyStyle;
 	contextOf: (c: Comment) => string;
 	code: () => string;
 	emit: (e: Record<string, unknown>) => void;
@@ -171,7 +171,7 @@ export function createDraftRun({ deps, store, ownerOf, styleOf, contextOf, code,
 		const mailLine = (previous ? !!mailView(previous) : mailPlanned(c, src)) ? "함께 보내는 메일: 있어요 (답글과 같은 카드로 나가요)" : "함께 보내는 메일: 없어요 (메일이나 파일을 보내 준다고 약속하지 마세요)";
 		const item: ReplyItem = { kind: "comment", app: src.key, from: c.author, text: c.text, context: [contextOf(c), mailLine, ...matched].join("\n") };
 		const marked = c.authorId === undefined ? past : past.map(p => (p.fromId === c.authorId ? { ...p, same: true } : p));
-		const style = withExamples(styleOf(src, c.authorId), sameFirst(c.text, marked, deps.now()), [...past].sort((a, b) => b.at - a.at).map(p => p.reply), c.text);
+		const style = withExamples(styleOf(src, c.authorId, c.thread), sameFirst(c.text, marked, deps.now()), [...past].sort((a, b) => b.at - a.at).map(p => p.reply), c.text);
 		const judgeModel = deps.judge;
 		const judge = judgeModel ? judgeAsk(async (system, user) => (await judgeModel(system, user, ownerOf(src))).text) : undefined;
 		const r = previous && change !== undefined ? await reviseReply(item, style, { to: `${c.author} 댓글`, body: previous.text }, change, call, judge) : await generateReply(item, style, call, judge);

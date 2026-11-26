@@ -2,7 +2,7 @@
 // Nothing here sends without the user's 1) 보내기 pick for exactly that draft id, read from the inbox log.
 import { existsSync, statSync } from "node:fs";
 import type { DraftRule } from "../../../hub/app-settings.ts";
-import { linkedComment } from "../../../hub/comments/linked.ts";
+import { linkedComment, mailComment } from "../../../hub/comments/linked.ts";
 import { claimHolder, claimSend, claimToken, keepClaimToken } from "../../../hub/draft-claim.ts";
 import { attachIssues, ownWords, withoutKindWords } from "../../../hub/attach-check.ts";
 import { withFileWords } from "../../../hub/auto-attach.ts";
@@ -17,9 +17,9 @@ import { basename } from "node:path";
 import { ruleFilePath } from "./rules.ts";
 import { canAttach, sendsThroughZele, sendWith, settleAccount, threadMoved, webmailSite, zeleAccountOf, type Sent, type SendOutcome } from "./senders.ts";
 import { carryStagedFiles, removeStagedFile, stagedFiles, stagedName, stageFiles, stageWanted, type StageOpts, type Want } from "./staged.ts";
-import { dataDir, HEADINGS, INSTALL, loadPairs, loadSettings, loadStyle, normText, ownReplies, paths, profileApp, profileBullets, recipientFile, recordForbidden, recordPattern, replaceBullets, toneFile, validApp, type ToneKey } from "./settings.ts";
-import { curate, curateAsk, journalAdd, type LearnKind, profileOf } from "./curate.ts";
+import { dataDir, INSTALL, lessonsOnly, loadPairs, loadSettings, loadStyle, ownReplies, paths, profileApp, recipientFile, recordPattern, toneFile, validApp, type ToneKey } from "./settings.ts";
 import { compactCorrections } from "./compact.ts";
+import { alsoInto, learnLine, type LineLearned, recordForbidden } from "./learn-line.ts";
 import { lessonOfEdit } from "./edit-lesson.ts";
 import { defaultKakaoReader, defaultKakaoRooms, KAKAO_APP, kakaoOwnTexts, type OwnerReader, type RoomsReader } from "./kakao-tone.ts";
 import { banWarnings, boxById } from "./box.ts";
@@ -34,7 +34,7 @@ import type { Lesson } from "../../../hub/reply-types.ts";
 
 export { realRunner };
 // What hub/reply-mail.ts (the hub's single door into this feature) needs beside the flow itself.
-export { lessonOfEdit, mailView, recordForbidden, sendAccountOf, webmailSite, type MailOf };
+export { alsoInto, learnLine, lessonOfEdit, type LineLearned, mailView, recordForbidden, sendAccountOf, webmailSite, type MailOf };
 
 // `analyze` = the model call of the identity sweep and its refinement (persona.ts); absent, no identity is analysed or refined.
 export type FlowDeps = { /** Chooses among tied library files by name (stageForReply); the default is one short model call. */ pick?: (names: string[]) => Promise<string[]>; call?: ModelCall; judge?: ModelCall; /** The model calls of one draft and its overall budget (draftTrace); buildDraft makes one when absent. */ trace?: DraftTrace; analyze?: ModelCall; run?: Runner; now?: () => Date; send?: (rec: DraftRec) => Promise<SendOutcome>; /** How library files are copied onto a draft (tests). */ stage?: StageOpts; /** Told where an approved send left the mail, right after the transport answered and before any bookkeeping write (bin/draft.ts prints its DOTZ_SEND line). */ onOutcome?: (o: Outcome) => void; learnCall?: (app: string) => ModelCall; kakaoReader?: (chatId: string) => Promise<OwnerReader>; kakaoRooms?: () => Promise<RoomsReader> };
@@ -80,31 +80,6 @@ export function learnSentEdit(id: string, deps: FlowDeps): Promise<void> {
 	const taught: Promise<void> = learnEditOf(id, deps).finally(() => learning.delete(taught));
 	learning.add(taught);
 	return taught;
-}
-
-/** What `learnLine` did: whether the line went in, as what, the old lines it replaced, and the standing rule that already says it (`same`, nothing stored). */
-export type LineLearned = { stored: boolean; kind: LearnKind; replaced: string[]; same?: string };
-
-/** Learns one line the owner asked for into exactly the profile of `key`: `curate` (through `deps.learnCall`) names the lines it repeats or overrides; a standing rule an existing rule already says stores nothing, else the named lines are journalled and taken out and the line is stored as `recordRule` / `recordCorrection` store it (a correction dated today), in one locked edit. Without a call, or when it fails, the line is stored as it is. */
-export async function learnLine(key: ToneKey | "install", line: string, kind: LearnKind, deps: FlowDeps): Promise<LineLearned> {
-	const text = line.replace(/\s+/g, " ").trim();
-	if (!text) return { stored: false, kind, replaced: [] };
-	const rules = profileBullets(key, HEADINGS.rules), corrections = profileBullets(key, HEADINGS.corrections);
-	const equal = kind === "rule" ? rules.find(r => normText(r) === normText(text)) : undefined;
-	if (equal !== undefined) return { stored: false, kind, replaced: [], same: equal };
-	const app = key === INSTALL ? INSTALL : key.app;
-	const learnCall = deps.learnCall;
-	const { replaces } = learnCall ? await curate({ rules, corrections }, { line: text, kind }, curateAsk((system, user) => learnCall(app)(system, user))) : { replaces: [] };
-	const lineOf = (id: string): string => (id.startsWith("R") ? rules : corrections)[Number(id.slice(1)) - 1] ?? "";
-	const same = kind === "rule" ? replaces.map(r => (r.id.startsWith("R") && r.why === "same" ? lineOf(r.id) : "")).find(l => l && profileBullets(key, HEADINGS.rules).includes(l)) : undefined;
-	if (same) return { stored: false, kind, replaced: [], same };
-	const now = nowOf(deps);
-	const newLine = kind === "rule" ? text : `${now.toISOString().slice(0, 10)}: ${text}`;
-	const take = replaces.map(r => ({ heading: r.id.startsWith("R") ? HEADINGS.rules : HEADINGS.corrections, line: lineOf(r.id), why: r.why }));
-	const profile = profileOf(key);
-	const journal = (taken: typeof take) => journalAdd(taken.map(t => ({ at: now.toISOString(), profile, heading: t.heading, line: t.line, why: t.why, by: "curate", newLine })));
-	const done = replaceBullets(key, take, { heading: kind === "rule" ? HEADINGS.rules : HEADINGS.corrections, line: newLine, once: kind === "rule" }, journal);
-	return { stored: done.added, kind, replaced: done.taken.map(t => t.line) };
 }
 
 /** What a stored wording pattern taught: its label, and the literal words of the same lesson that one of its verified good examples uses (the owner's own text shows them right in some use, so they are not stored as literal bans). */
@@ -164,7 +139,7 @@ export async function proposeLinePattern(key: ToneKey | "install", rule: string,
 		label: ban.label,
 		inGood: (opts.words ?? []).filter(w => good.some(g => banHit(g, { kind: "literal", text: w }))),
 		keep: () => {
-			recordPattern(key, ban);
+			for (const k of [key, ...alsoInto(key)]) recordPattern(k, ban);
 		},
 	};
 }
@@ -211,9 +186,10 @@ async function teach(key: ToneKey, lesson: Taught, evidence: NonNullable<Lesson[
 // The tone profile an item or draft belongs to: its room when it has one, else its own profile (a mail app instance's), else its app (mail unless the item says otherwise).
 // A draft made in a mailbox (box + instance) uses tone/<instance>/<box>.md when that file exists, falling back to the instance's profile (else the mail one), then the install.
 export const toneKey = (x: { app?: string; room?: string; profile?: string; box?: string; instance?: string }): ToneKey => {
-	const key: ToneKey = { app: x.profile ?? profileApp(x.app ?? "mail"), ...(x.room !== undefined ? { room: x.room } : {}) };
+	const app = x.profile ?? profileApp(x.app ?? "mail");
+	const key: ToneKey = { app, ...(lessonsOnly(app) ? { base: "mail" } : {}), ...(x.room !== undefined ? { room: x.room } : {}) };
 	if (!x.box || !x.instance || x.room !== undefined || !validApp(x.instance)) return key;
-	const boxKey: ToneKey = { app: x.instance, room: x.box, ...(x.profile ? {} : { base: key.app }) };
+	const boxKey: ToneKey = { app: x.instance, room: x.box, ...(x.profile ? {} : { base: key.base ?? key.app }) };
 	return existsSync(toneFile(boxKey)) ? boxKey : key;
 };
 /** The key a draft's style is loaded with: `toneKey(x)` plus, for a mail, its recipient (the address the reply goes to by default, replyAddress). A comment has no recipient level here: its author's level is keyed by the platform's id, which only the comment engine has (hub/comments/draft-run.ts). A revise lesson is written under `lessonKey`: the install for `everywhere`, this key for `recipient` when its recipient has a file name (recipientFile), else `toneKey(x)`. */
@@ -681,12 +657,26 @@ const revisionRefused = (id: string, c: RevisionConflict): string => {
 	return `${why}. 고친 초안은 저장하지 않았어요`;
 };
 
-export function dropDraft(id: string): Step {
+/** 보내지 않기: the draft is dropped. `why`: the reason the owner gave with it ("3) 보내지 않기 - <reason>", the card's note), learned as a correction of the draft's tone (learnLine, counted by `learningSettled`); no reason, nothing learned. */
+export function dropDraft(id: string, why?: { reason: string; deps: FlowDeps }): Step {
 	const d = getDraft(id);
 	if (!d) return { ok: false, text: `초안 ${id}을(를) 찾지 못했어요` };
 	if (d.status !== "pending" && d.status !== "held") return { ok: false, text: `초안 ${id}은(는) 이미 ${d.status} 상태예요` };
 	setStatus(id, "dropped");
+	if (why?.reason.trim()) void learnDropReason(d, why.reason, why.deps);
 	return { ok: true, text: `초안 ${id}을(를) 버렸어요` };
+}
+
+function learnDropReason(d: DraftRec, reason: string, deps: FlowDeps): Promise<void> {
+	const key = toneKey(d);
+	const taught: Promise<void> = learnLine(key, `보내지 않은 초안 - ${reason.trim()}`, "correction", deps)
+		.then(async learned => {
+			if (learned.stored) await refineAfterCorrection(key, deps);
+		})
+		.catch(e => console.error(`reply draft: why ${d.id} was not sent was not recorded: ${(e as Error).message}`))
+		.finally(() => learning.delete(taught));
+	learning.add(taught);
+	return taught;
 }
 
 /** 되돌리기 after the owner's 보내지 기: a dropped draft waits for approval again. A sent or replaced (stale) draft stays as it is, and so does one
@@ -728,7 +718,7 @@ export async function sendDraft(id: string, deps: FlowDeps, opts: { withReply?: 
 	if (v.verdict === "changed") return { ok: false, text: reasonOf("changed").text, sent: "no", code: "changed" };
 	if (v.verdict === "waiting" || v.verdict === "spent") return { ok: false, text: v.verdict === "waiting" ? WAITING_REFUSED : SPENT_REFUSED, sent: "no", code: "not_approved" };
 	if (v.verdict === "drop") {
-		setStatus(id, "dropped");
+		dropDraft(id, v.detail ? { reason: v.detail, deps } : undefined);
 		return { ok: false, text: "보내지 않기로 한 초안이에요", sent: "no", code: "not_approved" };
 	}
 	if (v.verdict === "edit") return { ok: false, text: `고치기를 골랐어요${v.detail ? ` (${v.detail})` : ""}. revise로 고친 뒤 다시 물어봐 주세요`, sent: "no", code: "not_approved" };
@@ -782,11 +772,14 @@ export async function sendDraft(id: string, deps: FlowDeps, opts: { withReply?: 
 		// A text the owner wrote himself (직접 수정) teaches what he changed, in the profile of that draft, once it went out (design 3.4).
 		const edited = now.editedFrom !== undefined && now.editedFrom.replace(/\s+/g, "") !== now.body.replace(/\s+/g, "");
 		if (edited && opts.learn !== false) void learnSentEdit(id, deps);
-		// A draft the owner changed is his own wording now: it joins his past replies. An unchanged bot draft never does.
-		if (now.kind === "mail" && !now.compose && (now.changes.length > 0 || edited) && now.item.text.trim()) {
+		// A draft the owner changed is his own wording now: it joins his past replies. An unchanged bot draft never does. A new mail answers no mail,
+		// except one that rode on a comment reply: it answers that comment, and is kept tagged with the comment's source.
+		const comment = now.kind === "mail" && now.compose && opts.withReply ? mailComment(id) : undefined;
+		const received = now.compose ? (comment?.text ?? "") : now.item.text;
+		if (now.kind === "mail" && (now.changes.length > 0 || edited) && received.trim()) {
 			try {
 				const source = pairSource(now.source);
-				addPair("mail", { received: now.item.text, reply: now.body, at: nowOf(deps).getTime(), edited: true, ...(addressesOf(now.item.from)[0] ? { from: addressesOf(now.item.from)[0] } : {}), ...(source !== "zele" ? { source } : {}) });
+				addPair("mail", { received, reply: now.body, at: nowOf(deps).getTime(), edited: true, ...(addressesOf(now.item.from)[0] ? { from: addressesOf(now.item.from)[0] } : {}), ...(source !== "zele" ? { source } : {}), ...(comment ? { via: `comment:${comment.source}` } : {}) });
 			} catch (e) {
 				console.error(`reply draft: sent draft ${id} not kept as a past reply: ${(e as Error).message}`);
 			}

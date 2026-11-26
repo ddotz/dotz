@@ -2,7 +2,8 @@
 // profiles of features/reply-drafts, and the one subscription-only model call. The gateway and the watch/onboard scripts build the engine here.
 import { homedir, hostname } from "node:os";
 import { join } from "node:path";
-import { loadPairs, loadStyle, markLearned, readLearned, recordForbidden, recordLearned, savePairs } from "../../features/reply-drafts/lib/settings.ts";
+import { loadPairs, loadStyle, markLearned, readLearned, recordForbidden, recordLearned, savePairs, validApp } from "../../features/reply-drafts/lib/settings.ts";
+import { DM_THREAD } from "./contract.ts";
 import { loadConfig, realCtx } from "../../features/youtube-instagram/lib/config.ts";
 import { commentsFor, commentsRead, mediaHistory, mediaWithCounts, replyAuthor, reply as igReply } from "../../features/youtube-instagram/lib/instagram.ts";
 import { readCommentsSince } from "../../features/youtube-instagram/lib/yt-read.ts";
@@ -35,8 +36,11 @@ export const realModel: DraftModel = async (system, user, app) => {
 	return { text: r.text, inputTokens: r.inputTokens, outputTokens: r.outputTokens };
 };
 
-/** The owner's style for a comment reply in `src`: its app's tone profile and, when the comment's author has a platform id (`authorId`) with a profile of their own, that author's. */
-export const commentStyle: NonNullable<EngineDeps["style"]> = (src, authorId) => loadStyle({ app: src.key, ...(authorId !== undefined ? { to: authorId } : {}) });
+/** The owner's style for a comment reply in `src`: its app's tone profile and, when the comment's author has a platform id (`authorId`) with a profile of their own, that author's. A reply to a site's DM (thread `dm:<room>`) reads `<key>-dm.md` too, over the app's profile (its identity and samples stand in when that file has none). */
+export const commentStyle: NonNullable<EngineDeps["style"]> = (src, authorId, thread) => {
+	const dm = thread?.startsWith(DM_THREAD) && validApp(`${src.key}-dm`);
+	return loadStyle({ ...(dm ? { app: `${src.key}-dm`, base: src.key } : { app: src.key }), ...(authorId !== undefined ? { to: authorId } : {}) });
+};
 
 /** The engine over the real platforms, model and stores. What the owner's edit of a reply it sent, or of the mail that rode on it, teaches goes through the one learning door (hub/reply-mail.ts) with `flow` (the real flow deps by default: curation, refinement and compaction calls). `learnEdits: false`: a send of this process learns nothing from such an edit (the gateway's send queue ran it with `--no-learn` and learns it itself). */
 export function realEngine(dataDir: string, opts: { broadcast?: (e: Record<string, unknown>) => void; collector?: string; model?: DraftModel; sent?: EngineDeps["sent"]; mail?: MailLink; mailOwed?: EngineDeps["mailOwed"]; answeredMailThread?: EngineDeps["answeredMailThread"]; learnEdits?: false; flow?: Parameters<typeof replyLearning>[0] } = {}): Engine {

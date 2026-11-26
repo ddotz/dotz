@@ -301,11 +301,11 @@ export function createReplyActions(deps: ReplyDeps) {
 		return { status: 200, body: { ok: true, item } };
 	}
 
-	async function drop(ctx: ActCtx, a: ReplyAdapter, view: DraftView): Promise<ActResult> {
+	async function drop(ctx: ActCtx, a: ReplyAdapter, view: DraftView, reason?: string): Promise<ActResult> {
 		const guard = editable(view);
 		if (guard) return guard;
-		pick(deps, ctx, a, view, 3, "보내지 않기");
-		const r = await a.drop(view.ref);
+		pick(deps, ctx, a, view, 3, "보내지 않기", reason ? { note: reason } : {});
+		const r = await a.drop(view.ref, reason);
 		if (!r.ok) return fail(409, r.reason.code, r.reason.text);
 		deps.sender.forget(view.ref);
 		deps.cards.close(view.ref);
@@ -367,7 +367,7 @@ export function createReplyActions(deps: ReplyDeps) {
 			case "send": return send(ctx, a, view, input);
 			case "revise": return revise(ctx, a, view, input);
 			case "edit": return edit(ctx, a, view, input);
-			case "drop": return drop(ctx, a, view);
+			case "drop": return drop(ctx, a, view, input.change?.trim() || undefined);
 			case "restore": return restore(a, view);
 			case "retry": return retry(ctx, a, view, input);
 			case "resolve": return resolveSend(ctx, a, view, input.as);

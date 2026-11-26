@@ -681,7 +681,7 @@ export function draftVerdict(inboxPath: string, ref: string, sinceMs: number, cu
 				out = { verdict: "waiting" };
 				continue;
 			}
-			const detail = draftNeedsText(p.label) && typeof e.text === "string" ? e.text.split(" - ").slice(1).join(" - ").trim() : "";
+			const detail = (draftNeedsText(p.label) || draftActionOf(p.label) === "drop") && typeof e.text === "string" ? e.text.split(" - ").slice(1).join(" - ").trim() : "";
 			out = { verdict: draftActionOf(p.label)!, ...(detail ? { detail } : {}), ...(SENDING.has(draftActionOf(p.label)!) ? { token: String(e.seal) } : {}) };
 		}
 	}

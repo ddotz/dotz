@@ -117,7 +117,8 @@ export type ReplyAdapter = {
 	revise(ref: string, change: string, part?: Part): Promise<{ ok: true; ref: string; replaces: string; lesson?: Lesson } | { ok: false; reason: Reason }>;
 	/** The owner's text (and a mail's subject), saved as it is under the same ref. Refuses when the owner-text lint fails. */
 	edit(ref: string, text: string, part?: Part, subject?: string): Promise<{ ok: true } | { ok: false; reason: Reason; lint?: string[] }>;
-	drop(ref: string): Promise<Done>;
+	/** `reason`: what the owner wrote with 보내지 않기, which a kind may learn from (a mail: a correction of its tone). */
+	drop(ref: string, reason?: string): Promise<Done>;
 	restore(ref: string): Promise<Done>;
 	/** The owner says it went out: closed as sent, nothing is sent. */
 	markSent(ref: string): Promise<Done>;

@@ -10,6 +10,14 @@ import { commentsDir, createStore, type Draft, type Store } from "./store.ts";
 /** The pending comment draft that carries the mail draft `mailId`, or undefined when it is a mail of its own. */
 export const linkedComment = (mailId: string): string | undefined => createStore(commentsDir(dataDir())).drafts().find(d => d.status === "pending" && d.mail === mailId)?.code;
 
+/** The comment a mail draft rode on (the comment draft that carries it, or kept it after 메일만 보내기), whatever their states: its source key and text. */
+export function mailComment(mailId: string): { source: string; text: string } | undefined {
+	const store = createStore(commentsDir(dataDir()));
+	const d = store.drafts().findLast(x => x.mail === mailId || x.mailKept === mailId);
+	const c = d && store.comments().find(x => x.id === d.commentId);
+	return d && c ? { source: d.source, text: c.text } : undefined;
+}
+
 /** The mail drafts that ride on a pending comment draft: the reply queue shows each inside that reply's card, not as a card of its own. */
 export const ridingMails = (): Set<string> => new Set(createStore(commentsDir(dataDir())).drafts().flatMap(d => (d.status === "pending" && d.mail ? [d.mail] : [])));
 /** The mail drafts that went out together with a comment reply (the reply's send record carries a sent mail outcome): that reply's row shows each, so it is never a sent row of its own.

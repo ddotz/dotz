@@ -12,10 +12,10 @@ import { addressesOf, type ReplyItem } from "../../../hub/reply-draft.ts";
 import { PATTERN_NOTE } from "../../../hub/reply-reasons.ts";
 import { ensureKakaoRoom, defaultKakaoReader, KAKAO_APP, type OwnerReader } from "../lib/kakao-tone.ts";
 import type { Room } from "../../../hub/kakao/types.ts";
-import { askText, attachFolder, buildDraft, candidatesFor, chosenFrom, dropDraft, kindOf, learningSettled, learnLine, type LineLearned, mailAsksFile, type PatternProposal, proposeLinePattern, realFlowDeps, refineAfterCorrection, reviseDraft, sendDraft, settleDraft, stageForReply, type FlowDeps, type Outcome } from "../lib/flow.ts";
+import { alsoInto, askText, attachFolder, buildDraft, candidatesFor, chosenFrom, dropDraft, kindOf, learningSettled, learnLine, type LineLearned, mailAsksFile, type PatternProposal, proposeLinePattern, realFlowDeps, recordForbidden, refineAfterCorrection, reviseDraft, sendDraft, settleDraft, stageForReply, type FlowDeps, type Outcome } from "../lib/flow.ts";
 import { compactCorrections } from "../lib/compact.ts";
 import { journalEntries, type LearnKind, profileKey, profileOf, restoreEntry } from "../lib/curate.ts";
-import { dataDir, handSections, HEADINGS, INSTALL, levelsOf, loadSettings, ownToneMailApps, profileBullets, recipientFile, recordForbidden, removeCorrection, removeForbidden, removeRule, toneFile, validApp, type ToneKey, type ToneLevel } from "../lib/settings.ts";
+import { dataDir, handSections, HEADINGS, INSTALL, levelsOf, loadSettings, profileBullets, recipientFile, removeCorrection, removeForbidden, removeRule, toneFile, validApp, type ToneKey, type ToneLevel } from "../lib/settings.ts";
 import { authorName, commentRecipient } from "../lib/commenters.ts";
 import type { Comment } from "../../../hub/comments/contract.ts";
 import { commentsDir, createStore } from "../../../hub/comments/store.ts";
@@ -247,14 +247,11 @@ export async function runDraft(args: string[], stdin: string, deps: DraftDeps = 
 			if (added.length) lines.push(`${where} 말투에 늘 지킬 규칙으로 기록했어요: ${added.join(", ")}`);
 			for (const [, l] of ruleResults) lines.push(...learnedNote(l, target));
 			if (changed) lines.push(`고친 점을 ${where} 말투에 기록했어요: ${change}`, ...learnedNote(changed, key));
-			// A draft of a mail app with its own tone file reads only that file, so a rule, correction or forbidden wording for the whole mail app is learned (and curated) there too, and one allowed or forgotten for it is taken out there too.
-			const alsoInto = app === "mail" && room === undefined && recipient.to === undefined && (rules.length || change || forbid.length || allow.length || forget.length) ? ownToneMailApps() : [];
-			for (const sub of rules.length || change ? alsoInto : []) {
-				const subKey: ToneKey = { app: sub };
-				const learned: LineLearned[] = [];
-				for (const r of rules) learned.push(await learnWithPattern(subKey, r, "rule"));
-				if (change) learned.push(await learnWithPattern(subKey, change, "correction"));
-				lines.push(`${sub} 말투에도 같이 기록했어요`, ...learned.flatMap(l => learnedNote(l, subKey)));
+			// A lesson for the whole mail app also went into each mail app with a file of its own (flow.ts learnLine, recordForbidden, alsoInto); one allowed or forgotten for it is taken out there too.
+			const subs = alsoInto(target).map(k => k.app);
+			for (const sub of subs) {
+				const learned = [...ruleResults.map(([, l]) => l), ...(changed ? [changed] : [])].flatMap(l => l.also?.filter(a => a.app === sub) ?? []);
+				if (learned.length) lines.push(`${sub} 말투에도 같이 기록했어요`, ...learned.flatMap(l => learnedNote(l, { app: sub })));
 			}
 			for (const offer of offers) {
 				try {
@@ -267,18 +264,15 @@ export async function runDraft(args: string[], stdin: string, deps: DraftDeps = 
 			if (forbid.length) {
 				recordForbidden(target, forbid);
 				lines.push(`${where}에서 쓰지 않을 표현으로 기록했어요: ${forbid.map(w => `"${w}"`).join(", ")}`);
-				for (const sub of alsoInto) {
-					recordForbidden({ app: sub }, forbid);
-					lines.push(`${sub}에서도 쓰지 않을 표현으로 기록했어요`);
-				}
+				for (const sub of subs) lines.push(`${sub}에서도 쓰지 않을 표현으로 기록했어요`);
 			}
 			for (const w of allow) {
 				lines.push(removeForbidden(target, w) ? `${where}의 금지 표현에서 뺐어요: "${w}"` : `${where}의 금지 표현에 "${w}"이(가) 없어서 바꾼 게 없어요`);
-				for (const sub of alsoInto) if (removeForbidden({ app: sub }, w)) lines.push(`${sub}의 금지 표현에서도 뺐어요: "${w}"`);
+				for (const sub of subs) if (removeForbidden({ app: sub }, w)) lines.push(`${sub}의 금지 표현에서도 뺐어요: "${w}"`);
 			}
 			for (const t of forget) {
 				const gone = [...removeRule(target, t).map(l => `- [말투] ${l}`), ...removeCorrection(target, t).map(l => `- [고친 점] ${l}`)];
-				const subGone = alsoInto.map(sub => [sub, [...removeRule({ app: sub }, t).map(l => `- [말투] ${l}`), ...removeCorrection({ app: sub }, t).map(l => `- [고친 점] ${l}`)]] as const).filter(([, g]) => g.length);
+				const subGone = subs.map(sub => [sub, [...removeRule({ app: sub }, t).map(l => `- [말투] ${l}`), ...removeCorrection({ app: sub }, t).map(l => `- [고친 점] ${l}`)]] as const).filter(([, g]) => g.length);
 				const needle = t.toLowerCase();
 				const hand = gone.length || subGone.length || !needle ? [] : toneLevels(key).flatMap(([, k]) => handSections(k).flatMap(s => s.items.filter(l => oneLine(l).toLowerCase().includes(needle)).map(l => `- ${l} (손으로 쓴 '${s.heading}' 섹션, ${toneFile(k)})`)));
 				if (gone.length) lines.push(`${where}에서 ${gone.length}줄을 지웠어요:\n${gone.join("\n")}`);

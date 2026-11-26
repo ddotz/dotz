@@ -565,7 +565,7 @@ export function makeRoute({ tailnetName = ownTailnetName, busyNow, restartGatewa
 			const r = await webAnswer(decodeURIComponent(decide[1]!), { ...answer, files }, login, a => deliverAnswer({ ...a, login, via }), agentCall(req, peer));
 			// 보내지 않기 on a mail reply draft drops it in the reply-drafts store at once (not only when the bot gets to it), so every count and
 			// list, here and on the other computer, sees it gone.
-			if (r.status === 200 && !r.body.already) await dropAnsweredMailDraft(r.body.item as Notice | undefined, Number(answer.n), log);
+			if (r.status === 200 && !r.body.already) await dropAnsweredMailDraft(r.body.item as Notice | undefined, Number(answer.n), log, typeof answer.note === "string" ? answer.note : undefined);
 			return json(r.body, r.status);
 		}
 		if (req.method === "POST" && url.pathname === "/api/read") {

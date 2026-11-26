@@ -35,7 +35,7 @@ function replyInputOf(ref: string, label: string, note?: string): ActInput | und
 	const a = draftActionOf(label);
 	if (a === "send" || a === "send-as-is") return { ref, action: "send", ...(a === "send-as-is" ? { asIs: true } : {}) };
 	if (a === "send-main" || a === "send-mail") return { ref, action: "send", part: a === "send-main" ? "reply" : "mail" };
-	if (a === "drop") return { ref, action: "drop" };
+	if (a === "drop") return { ref, action: "drop", ...(note?.trim() ? { change: note.trim() } : {}) };
 	if (a === "edit" && note?.trim()) return { ref, action: "revise", change: note.trim() };
 	return undefined;
 }

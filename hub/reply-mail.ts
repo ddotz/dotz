@@ -65,7 +65,7 @@ export function mailAdapter(deps: () => FlowDeps = realFlowDeps, mailOf: MailOf 
 			if (r.ok) return { ok: true };
 			return { ok: false, reason: { code: (r.code as ReasonCode | undefined) ?? "not_pending", text: r.text }, ...(r.lint ? { lint: r.lint } : {}) };
 		},
-		drop: async ref => done(dropDraft(ref)),
+		drop: async (ref, reason) => done(dropDraft(ref, reason?.trim() ? { reason, deps: deps() } : undefined)),
 		restore: async ref => {
 			const r = await restoreDraft(ref, deps());
 			return done(r, r.code ?? "not_pending");

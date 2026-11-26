@@ -210,12 +210,12 @@ const MAIL_INSTANCE = /^mail(-[a-z0-9]+)*$/;
 /** The app a recipient's file sits under: every mail app instance (`mail`, `mail-<slug>`) shares `mail`, since a person's address is the same in each of them; any other app is its own. */
 export const recipientApp = (app: string): string => (MAIL_INSTANCE.test(app) ? "mail" : app);
 
-/** The levels of `key`, narrowest first: the recipient (a `to` that has a file name, under `recipientApp`), the room, the app (with its `base`) and the install. */
+/** The levels of `key`, narrowest first: the recipient (a `to` that has a file name, under `recipientApp` of its `base` when it has one), the room, the app (with its `base`) and the install. */
 export function levelsOf(key: ToneKey): [ToneLevel, ToneKey][] {
 	const install: [ToneLevel, ToneKey] = ["install", { app: INSTALL }];
 	if (key.app === INSTALL) return [install];
 	return [
-		...(key.to !== undefined && recipientFile(key.to) !== undefined ? [["to", { app: recipientApp(key.app), to: key.to }] as [ToneLevel, ToneKey]] : []),
+		...(key.to !== undefined && recipientFile(key.to) !== undefined ? [["to", { app: recipientApp(key.base ?? key.app), to: key.to }] as [ToneLevel, ToneKey]] : []),
 		...(key.room !== undefined ? [["room", { app: key.app, room: key.room }] as [ToneLevel, ToneKey]] : []),
 		["app", { app: key.app, ...(key.base ? { base: key.base } : {}) }],
 		install,
@@ -245,11 +245,13 @@ export const hasSamples = (key: ToneKey | "install"): boolean => bullets(profile
 export const identityOf = (key: ToneKey | "install"): string[] => bullets(profile(key), HEADINGS.identity);
 // A mail app instance with a tone profile of its own (an identity or samples written there); the shared `mail` profile does not count.
 export const hasOwnTone = (app: string): boolean => app !== "mail" && validApp(app) && (identityOf({ app }).length > 0 || hasSamples({ app }));
-/** The mail app instances with a tone profile of their own (hasOwnTone), from the top-level files of the tone dir: a draft of one reads only that file, so a rule or correction given for the shared `mail` profile is learned into each of them too (draft.ts correct). */
+/** A mail app instance whose file holds lessons (rules, corrections, forbidden wordings) but no identity or samples: its drafts read the shared `mail` tone with those lessons on top (toneKey `base`). */
+export const lessonsOnly = (app: string): boolean => app !== "mail" && MAIL_INSTANCE.test(app) && validApp(app) && !hasOwnTone(app) && [HEADINGS.rules, HEADINGS.corrections, HEADINGS.forbidden].some(h => bullets(profile({ app }), h).length > 0);
+/** The mail app instances whose drafts read a file of their own (hasOwnTone, lessonsOnly), from the top-level files of the tone dir: a lesson given for the shared `mail` profile is learned into each of them too (flow.ts learnLine, recordForbidden). */
 export const ownToneMailApps = (): string[] =>
-	existsSync(paths.toneDir()) ? readdirSync(paths.toneDir()).filter(f => f.endsWith(".md")).map(f => f.slice(0, -".md".length)).filter(a => MAIL_INSTANCE.test(a) && hasOwnTone(a)).sort() : [];
-/** The app whose tone profile a draft of `app` reads and learns into: a second mail app instance (`mail-<slug>`) without a tone of its own shares `mail`, as its offered drafts do; every other app is itself. */
-export const profileApp = (app: string): string => (app !== "mail" && MAIL_INSTANCE.test(app) && !hasOwnTone(app) ? "mail" : app);
+	existsSync(paths.toneDir()) ? readdirSync(paths.toneDir()).filter(f => f.endsWith(".md")).map(f => f.slice(0, -".md".length)).filter(a => MAIL_INSTANCE.test(a) && (hasOwnTone(a) || lessonsOnly(a))).sort() : [];
+/** The app whose tone profile a draft of `app` reads and learns into: a second mail app instance (`mail-<slug>`) with no file of its own shares `mail`, as its offered drafts do; every other app is itself. */
+export const profileApp = (app: string): string => (app !== "mail" && MAIL_INSTANCE.test(app) && !hasOwnTone(app) && !lessonsOnly(app) ? "mail" : app);
 export const correctionsOf = (key: ToneKey | "install"): string[] => bullets(profile(key), HEADINGS.corrections);
 
 // The `## ` sections of a profile the code does not know (a hand-added `## 보낸 사람 신분별`), with their bullets.
@@ -287,7 +289,13 @@ export const markLearned = (marks: string[], now: Date): void => writeAtomic(pat
  * custom/sns/tone.md examples sit between app and install); rules, corrections and forbidden expressions are merged from every level,
  * install first and the narrower ones later. `recipient` lists the rules and corrections of the recipient level, absent when it has none. */
 export function loadStyle(key: ToneKey): LoadedStyle {
-	const levels = levelsOf(key).map(([level, k]): [ToneLevel, string] => [level, level === "app" ? profile({ app: k.app }) || (k.base ? profile({ app: k.base }) : "") : profile(k)]);
+	// The app level of a key with a `base`: its own file and, when that holds no identity or samples (only lessons, or nothing), the base's file under it.
+	const levels = levelsOf(key).flatMap(([level, k]): [ToneLevel, string][] => {
+		if (level !== "app") return [[level, profile(k)]];
+		const own = profile({ app: k.app });
+		const under = k.base && !bullets(own, HEADINGS.identity).length && !bullets(own, HEADINGS.samples).length ? [[level, profile({ app: k.base })] as [ToneLevel, string]] : [];
+		return own || !under.length ? [[level, own], ...under] : under;
+	});
 	let samples: string[] = [];
 	let samplesFrom: LoadedStyle["samplesFrom"] = "none";
 	const legacy = SNS_APPS.has(key.app) ? bullets(read(paths.snsTone()), HEADINGS.samples) : [];
@@ -539,7 +547,8 @@ export function listProfiles(): string[] {
 /** `from`: the address of the person the reply went to (absent in pairs stored before it was kept). `fromId`: the platform id of a comment pair's author (hub/comments/past.ts; absent when the platform gave none). `source`: the mail source whose sent folder it came from (a mail site, a plugin); absent = zele (comment pairs have their own file per source, so no tag).
  * `edited`: the user changed the draft by hand before sending. `thread`: the post a comment pair sits under.
  * `conv`: the mail conversation, `subj`: its subject, `account`: the zele address it was sent from: what says which mailbox a reply belongs to (lib/box-voice.ts), read fresh so a move or an undo needs no rewrite. */
-export type Pair = { received: string; reply: string; at: number; from?: string; fromId?: string; source?: string; edited?: true; thread?: string; conv?: string; subj?: string; account?: string };
+/** `via`: where the message it answers came from when that is not a mail (`comment:<comment source key>`: a mail that rode on a comment reply answers that comment). */
+export type Pair = { received: string; reply: string; at: number; from?: string; fromId?: string; source?: string; edited?: true; thread?: string; conv?: string; subj?: string; account?: string; via?: string };
 
 export const MAX_PAIRS = 1000;
 
@@ -554,7 +563,7 @@ export function loadPairs(app: string): Pair[] {
 		if (!line.trim()) continue;
 		try {
 			const p = JSON.parse(line);
-			if (p && typeof p.received === "string" && typeof p.reply === "string" && typeof p.at === "number" && p.reply.trim()) out.push({ received: p.received, reply: p.reply, at: p.at, ...(typeof p.from === "string" && p.from ? { from: p.from } : {}), ...(typeof p.fromId === "string" && p.fromId ? { fromId: p.fromId } : {}), ...(typeof p.source === "string" && p.source ? { source: p.source } : {}), ...(p.edited === true ? { edited: true as const } : {}), ...(typeof p.thread === "string" && p.thread ? { thread: p.thread } : {}), ...(typeof p.conv === "string" && p.conv ? { conv: p.conv } : {}), ...(typeof p.subj === "string" && p.subj ? { subj: p.subj } : {}), ...(typeof p.account === "string" && p.account ? { account: p.account } : {}) });
+			if (p && typeof p.received === "string" && typeof p.reply === "string" && typeof p.at === "number" && p.reply.trim()) out.push({ received: p.received, reply: p.reply, at: p.at, ...(typeof p.from === "string" && p.from ? { from: p.from } : {}), ...(typeof p.fromId === "string" && p.fromId ? { fromId: p.fromId } : {}), ...(typeof p.source === "string" && p.source ? { source: p.source } : {}), ...(p.edited === true ? { edited: true as const } : {}), ...(typeof p.thread === "string" && p.thread ? { thread: p.thread } : {}), ...(typeof p.conv === "string" && p.conv ? { conv: p.conv } : {}), ...(typeof p.subj === "string" && p.subj ? { subj: p.subj } : {}), ...(typeof p.account === "string" && p.account ? { account: p.account } : {}), ...(typeof p.via === "string" && p.via ? { via: p.via } : {}) });
 		} catch {
 			unreadable++;
 		}
@@ -571,7 +580,7 @@ export function savePairs(app: string, pairs: Pair[]): void {
 		const k = `${p.source ?? ""}\n${normText(p.reply)}\n${normText(p.received)}`;
 		const before = seen.get(k);
 		if (!before) seen.set(k, p);
-		else seen.set(k, { ...before, ...(!before.from && p.from ? { from: p.from } : {}), ...(!before.fromId && p.fromId ? { fromId: p.fromId } : {}), ...(!before.edited && p.edited ? { edited: true as const } : {}), ...(!before.thread && p.thread ? { thread: p.thread } : {}), ...(!before.conv && p.conv ? { conv: p.conv } : {}), ...(!before.subj && p.subj ? { subj: p.subj } : {}), ...(!before.account && p.account ? { account: p.account } : {}) });
+		else seen.set(k, { ...before, ...(!before.from && p.from ? { from: p.from } : {}), ...(!before.fromId && p.fromId ? { fromId: p.fromId } : {}), ...(!before.edited && p.edited ? { edited: true as const } : {}), ...(!before.thread && p.thread ? { thread: p.thread } : {}), ...(!before.conv && p.conv ? { conv: p.conv } : {}), ...(!before.subj && p.subj ? { subj: p.subj } : {}), ...(!before.account && p.account ? { account: p.account } : {}), ...(!before.via && p.via ? { via: p.via } : {}) });
 	}
 	const count = new Map<string, number>();
 	const kept = [...seen.values()].filter(p => {
