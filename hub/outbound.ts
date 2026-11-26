@@ -691,6 +691,7 @@ export async function progress(target: string, key: string, text: string, replyT
 			if (prefix) t = `${head}${prefix}${dropClaim(rest)}`;
 		}
 		emit("outbox", outEvent({ ts: now(), kind: "out", source: "orchestrator", target, text: t, update_key: key, ...(target === "worklog" && key.startsWith("lane:") ? { wk: "session" } : {}) }, threadHome, threadMail));
+		if (key === "progress") livestatus.noteWebLine(target, t);
 		return t;
 	});
 	if (isLocal(target) || !discord.status.enabled || !route({ target, text: sent, extra: { update_key: key }, replyTo }).messengers.discord) return { delivered: true };

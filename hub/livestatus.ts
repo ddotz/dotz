@@ -41,6 +41,13 @@ let webPost: (target: string, text: string) => void = () => {};
 export function setWebProgress(fn: (target: string, text: string) => void): void {
 	webPost = fn;
 }
+// The orchestrator's own progress note (a dotz_send held for the turn's answer, hub/routes-send.ts) is a web line this reporter never
+// posted, so stop() could not finalize it: the held text stayed on the page next to the note that released it (2026-11-26 11:18).
+const noted = new Set<string>();
+export function noteWebLine(target: string, text: string): void {
+	if (text.trim()) noted.add(target);
+	else noted.delete(target);
+}
 
 const short = (s: string, n: number) => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
 
@@ -173,6 +180,7 @@ export function begin(target: string, source: string, web = false): void {
 // (the answer's clearProgress after outbound's settle) waits for the first one's report in flight too, so the clearing sees it.
 const draining = new Map<string, Promise<void>>();
 export function stop(target: string): Promise<void> {
+	if (noted.delete(target)) webPost(target, "");
 	const lives = [active.get(target), active.get(`web|${target}`)].filter((l): l is Live => !!l);
 	if (!lives.length) return draining.get(target) ?? Promise.resolve();
 	const done = Promise.all([
