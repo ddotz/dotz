@@ -614,13 +614,17 @@ export async function edit(target: string, messageId: string, text: string, opts
 	return { delivered: true, ids: [messageId] };
 }
 
-/** A card that closed (hub/outbound.ts onDecisionClosed): every button of its message is turned off, its words and link buttons kept. A message already gone is left. */
-export async function disableButtons(target: string, messageId: string): Promise<void> {
-	const id = resolve(target), path = `/channels/${id}/messages/${messageId}`, on = (c: { type: number; style?: number; disabled?: boolean }) => c.type === 2 && c.style !== 5 && !c.disabled;
+// Switches every button of a message (link buttons never) to `disabled`; a message already gone is left, and none to switch means no edit.
+async function switchButtons(target: string, messageId: string, disabled: boolean): Promise<void> {
+	const id = resolve(target), path = `/channels/${id}/messages/${messageId}`, on = (c: { type: number; style?: number; disabled?: boolean }) => c.type === 2 && c.style !== 5 && !!c.disabled !== disabled;
 	if (!status.enabled || !id) return;
 	const rows: { components?: Parameters<typeof on>[0][] }[] = (await rest("GET", path).catch(e => { if (!/ 404 |10008/.test(String(e))) throw e; }))?.components ?? [];
-	if (rows.some(r => r.components?.some(on))) await rest("PATCH", path, { components: rows.map(r => ({ ...r, components: r.components?.map(c => (on(c) ? { ...c, disabled: true } : c)) })) });
+	if (rows.some(r => r.components?.some(on))) await rest("PATCH", path, { components: rows.map(r => ({ ...r, components: r.components?.map(c => (on(c) ? { ...c, disabled } : c)) })) });
 }
+/** A card that closed (hub/outbound.ts onDecisionClosed): every button of its message is turned off, its words and link buttons kept. A message already gone is left. */
+export const disableButtons = (target: string, messageId: string): Promise<void> => switchButtons(target, messageId, true);
+/** A card that opened again (hub/outbound.ts onDecisionReopened): the buttons disableButtons turned off are turned on, link buttons kept. */
+export const enableButtons = (target: string, messageId: string): Promise<void> => switchButtons(target, messageId, false);
 
 /** The Discord link of a message the bot posted to `target` (a pending card the bot's turn names), or undefined off Discord. */
 export function messageLink(target: string, messageId: string): string | undefined {

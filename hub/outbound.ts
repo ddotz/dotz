@@ -47,7 +47,7 @@ import { OMO_WORDS, ompWords, runName, type WorkerWords } from "./worker-words.t
 import { dropClaim, resolvesOf, splitTone, stripHandoff, stripLater, stripProjectInfo, stripResolves } from "./tone.ts";
 import { isLate, isSnowflake, lateQuote, lateRequestId, replyRef, snowflakeTime, withQuote } from "./threads.ts";
 import { handMailKey, keepBrief } from "./draft-approval.ts";
-import { allNotices, draftCardsOf, keepOpen, markCardShown, markCardsPosted, markDraftPosted, markJudging, onDecision, onDecisionClosed, onDraftCardRefreshed, openDraftCards, openDraftRefs, openDraftText, orchestratorAnswered, resolveNotices, reviseDraftCard, rewriteOpenDraft, SessionEnded, untouchedChoices } from "./notices.ts";
+import { allNotices, draftCardsOf, keepOpen, markCardShown, markCardsPosted, markDraftPosted, markJudging, onDecision, onDecisionClosed, onDecisionReopened, onDraftCardRefreshed, openDraftCards, openDraftRefs, openDraftText, orchestratorAnswered, resolveNotices, reviseDraftCard, rewriteOpenDraft, SessionEnded, untouchedChoices } from "./notices.ts";
 import type { OwnerSaid } from "./notices-types.ts";
 import { RUN_DECISION } from "./notices-schedule.ts";
 import { askerLines, askerNotes } from "./asker-notes.ts";
@@ -491,6 +491,10 @@ onDecisionClosed((to, ref, card) => {
 	if (card && ref) closeDiscordCard(to, ref, card);
 	else if (card?.target && card.ids?.length) disableCardButtons(card.target, card.ids);
 	approvals.closed(to, ref);
+});
+// A choice card that opens again gets its buttons back (a send-approval card, which has a ref, is drawn anew by its own path: its closed message lost them).
+onDecisionReopened((_to, ref, card) => {
+	if (!ref && card?.target && card.ids?.length && !isLocal(card.target)) void discord.enableButtons(card.target, card.ids.at(-1)!).catch(e => log(`card buttons of ${card.ids!.at(-1)} not turned on on Discord: ${e}`));
 });
 // A failed scheduled run's card (hub/schedule-fire.ts failRun) has no post: its open notice goes to Discord through the send ledger, so no second notice is made.
 // Its buttons answer that notice (hub/approval-wire.ts discordGatewayAnswer).

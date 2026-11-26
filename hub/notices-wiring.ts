@@ -49,6 +49,9 @@ export const onDraftRepost = (fn: (n: Notice, note: string) => void): void => vo
 export type ClosedCard = { text: string; how: "answered" | "resolved" | "ignored"; label: string; target?: string; ids?: string[] };
 export const closedHooks: Array<(to: string, ref: string | undefined, card?: ClosedCard) => void> = [];
 export const onDecisionClosed = (fn: (to: string, ref: string | undefined, card?: ClosedCard) => void): void => void closedHooks.push(fn);
+// The counterpart: a closed card that is open again (an ignore taken back, an answered or resolved one put back), with the card as it was posted.
+export const reopenedHooks: Array<(to: string, ref: string | undefined, card?: ClosedCard) => void> = [];
+export const onDecisionReopened = (fn: (to: string, ref: string | undefined, card?: ClosedCard) => void): void => void reopenedHooks.push(fn);
 // Signal 5: the item behind a send approval was handled without the notice hearing of it. An open draft decision is the owner's to pick, yet the draft
 // itself can be over: sent from the app or by the owner's own client, dropped, replaced by a revision, marked 답장 안 함, answered on the platform,
 // deleted at the source, or handled on another computer. The apps know it (hub/draft-handled.ts); this settles the notice as resolved.

@@ -80,3 +80,14 @@ test("a closed card's buttons are turned off in place, its link kept; a message 
 	await discord.disableButtons("ch:222", "m1");
 	expect(requests).toEqual([]);
 });
+
+test("a reopened card's buttons are turned back on in place, its link kept; a message with none off is not edited", async () => {
+	shownComponents = [{ type: 1, components: [{ type: 2, style: 2, label: "지금 고치기", custom_id: "dz-ask:ch:222:1", disabled: true }, { type: 2, style: 5, label: "웹에서 보기", url: "https://gw.example/#chat/ch:222" }] }];
+	requests.length = 0;
+	await discord.enableButtons("ch:222", "m1");
+	expect(requests.map(r => r.payload)).toEqual([{ components: [{ type: 1, components: [{ type: 2, style: 2, label: "지금 고치기", custom_id: "dz-ask:ch:222:1", disabled: false }, shownComponents[0]!.components[1]] }] }] as never);
+	shownComponents = [{ type: 1, components: [{ type: 2, style: 2, label: "지금 고치기", custom_id: "dz-ask:ch:222:1" }] }];
+	requests.length = 0;
+	await discord.enableButtons("ch:222", "m1");
+	expect(requests).toEqual([]);
+});

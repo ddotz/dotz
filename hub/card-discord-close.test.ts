@@ -7,7 +7,7 @@ import { askComponentsFor } from "./askbuttons.ts";
 import { discordGatewayAnswer, discordPicks } from "./approval-wire.ts";
 import { emit } from "./events.ts";
 import { inboxText } from "./intake.ts";
-import { allNotices, answerDecision, ignoreNotice } from "./notices.ts";
+import { allNotices, answerDecision, ignoreNotice, reopenNotices, unignoreNotice } from "./notices.ts";
 import { settleExpiredQuestions } from "./notices-answers.ts";
 import { out, sends } from "./outbound.ts";
 import { advance } from "./runtime/test-clock.ts";
@@ -17,6 +17,7 @@ import { addSchedule, runNow, startSchedules } from "./schedule.ts";
 let posted = 0;
 const submit = spyOn(sends, "submit").mockImplementation(async () => ({ delivered: true, ids: [`m${++posted}`] }));
 const off = spyOn(discord, "disableButtons").mockImplementation(async () => {});
+const on = spyOn(discord, "enableButtons").mockImplementation(async () => {});
 const enabled = discord.status.enabled;
 beforeAll(() => {
 	discord.status.enabled = true;
@@ -26,6 +27,7 @@ afterAll(() => {
 	discord.status.enabled = enabled;
 	submit.mockRestore();
 	off.mockRestore();
+	on.mockRestore();
 });
 
 const card = (title: string) => `[ask] ${title}\n\n**1) 지금 하기**\n바로 해요\n**2) 내일 하기**\n내일 아침에 해요`;
@@ -47,6 +49,25 @@ test("a choice card's Discord buttons turn off when it is ignored, answered on t
 		await Bun.sleep(0);
 		expect(off.mock.calls).toEqual([["chat", id]]);
 	}
+});
+
+test("a card that opens again, an ignore taken back or an answer put back, gets its Discord buttons back", async () => {
+	on.mockClear();
+	await out("chat", card("sample 재개를 할까요"));
+	const n = cardOf("sample 재개를 할까요")!, id = lastId();
+	ignoreNotice(n.id);
+	expect(on.mock.calls).toEqual([]);
+	unignoreNotice(n.id);
+	expect(on.mock.calls).toEqual([["chat", id]]);
+	on.mockClear();
+	await answerDecision(n.id, { n: 1 }, async () => undefined);
+	expect(on.mock.calls).toEqual([]);
+	reopenNotices([n.id]);
+	expect(on.mock.calls).toEqual([["chat", id]]);
+	// A card that was never closed is not "opened again": reopening it switches nothing.
+	on.mockClear();
+	reopenNotices([n.id]);
+	expect(on.mock.calls).toEqual([]);
 });
 
 test("one message with two cards keeps its buttons until both are closed", async () => {

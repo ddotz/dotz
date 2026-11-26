@@ -6,7 +6,7 @@ import type { Upload } from "./files.ts";
 import type { Decision, DecisionOpt, HeldAnswer, Notice, OwnerSaid } from "./notices-types.ts";
 import { msg } from "./i18n.ts";
 import { tellAsker } from "./notices-tell.ts";
-import { closedHooks, decisionHooks } from "./notices-wiring.ts";
+import { closedHooks, decisionHooks, reopenedHooks } from "./notices-wiring.ts";
 import { TEXT_MAX, clean, closedInfo, isOpenDecision, laterOn, needsAnswer, twinOf } from "./notices-rules.ts";
 import { broadcast } from "./notices-read.ts";
 import { cardKind, expiresAtOf, holds, plainCard, sending } from "./notices-decisions.ts";
@@ -277,12 +277,13 @@ export function unignoreNotice(id: unknown): { status: number; body: Record<stri
 	const item = items.find(i => i.id === String(id));
 	if (!item) return { status: 404, body: { error: "unknown notice" } };
 	if (!item.ignored) return { status: 200, body: { ok: true, already: true, item, unread: unreadCount() } };
-	const at = now(), group = askGroup(item, true);
+	const at = now(), group = askGroup(item, true), back: Notice[] = [];
 	for (const n of group) {
 		delete n.ignored;
 		n.read = false;
 		if (n.decision?.state === "ignored") {
 			n.decision.state = "open";
+			back.push(n);
 			// A question that waits again gets a full window from now, not the one it had before it was waved off.
 			delete n.decision.expired;
 			delete n.decision.half_told;
@@ -292,6 +293,7 @@ export function unignoreNotice(id: unknown): { status: number; body: Record<stri
 		}
 	}
 	announce(group, at);
+	for (const n of back) for (const fn of reopenedHooks) fn(n.decision!.to, n.decision!.draft?.ref, closedInfo(n, "ignored"));
 	return { status: 200, body: { ok: true, item, ids: group.map(n => n.id), unread: unreadCount() } };
 }
 
@@ -302,7 +304,7 @@ const pushedFor = new Map<string, string>();
 export function reopenNotices(ids: unknown, because?: string): { reopened: string[]; unread: number } {
 	const want = new Set(Array.isArray(ids) ? ids.map(String) : []);
 	const hit = items.filter(i => want.has(i.id) && (i.decision || i.tone === "ask"));
-	const at = now();
+	const at = now(), back: Notice[] = [];
 	for (const i of hit) {
 		i.read = false;
 		i.updated = at;
@@ -310,6 +312,7 @@ export function reopenNotices(ids: unknown, because?: string): { reopened: strin
 		delete i.ignored;
 		const d = i.decision;
 		if (!d) continue;
+		if (d.state !== "open") back.push(i);
 		d.state = "open";
 		delete d.resolved;
 		delete d.expired;
@@ -320,6 +323,7 @@ export function reopenNotices(ids: unknown, because?: string): { reopened: strin
 		if (exp) d.expires_at = exp;
 	}
 	if (hit.length) announce(hit, at);
+	for (const n of back) for (const fn of reopenedHooks) fn(n.decision!.to, n.decision!.draft?.ref, closedInfo(n, "answered"));
 	if (because !== undefined) {
 		if (pushedFor.size > 200) for (const id of pushedFor.keys()) if (!items.some(i => i.id === id)) pushedFor.delete(id);
 		for (const i of hit) {

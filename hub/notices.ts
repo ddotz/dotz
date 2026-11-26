@@ -5,7 +5,7 @@ import { feed, reconcileStored } from "./notices-store.ts";
 import { laneTurnEnded } from "./notices-judging.ts";
 import { DRAFT_CHANGED, settleSoon } from "./notices-drafts.ts";
 export type { NoticeKind, NoticeTone, Notice, DecisionOpt, Decision } from "./notices-types.ts";
-export { setLaneTitleResolver, setWatchLabelResolver, setAppResolver, setAppBlocker, setWatchSummarizer, setOrchestratorAvailable, onNoticeUnread, setConvNameResolver, onDecision, onHalfTime, onDraftRepost, onDecisionClosed, setDraftHandled, setStoredDraft, setAppLabelResolver } from "./notices-wiring.ts";
+export { setLaneTitleResolver, setWatchLabelResolver, setAppResolver, setAppBlocker, setWatchSummarizer, setOrchestratorAvailable, onNoticeUnread, setConvNameResolver, onDecision, onHalfTime, onDraftRepost, onDecisionClosed, onDecisionReopened, setDraftHandled, setStoredDraft, setAppLabelResolver } from "./notices-wiring.ts";
 export type { ClosedCard } from "./notices-wiring.ts";
 export { repostNote, NOTICE_CAP, WATCH_KEEP, WATCH_DAYS, keepWatchNewest, needsAnswer, ANSWER_WINDOW_MS, ALERT_ANSWER_WINDOW_MS, BACKFILL_DAYS } from "./notices-rules.ts";
 export type { Waits } from "./notices-rules.ts";
