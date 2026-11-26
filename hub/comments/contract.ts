@@ -4,6 +4,7 @@
 // only says who saw it first). One door out: dispatchReply() is the only function a reply is posted through (owner's 보내기 or an
 // owner-enabled rule), a reply is posted at most once per comment, and the record goes sending -> sent | failed | unsure (+reason, code); one cut off by a restart goes to unsure (recover.ts).
 // `failed` means surely not posted, `unsure` means it may have gone up: only the owner sends an unsure reply again.
+import { claimSend } from "../draft-claim.ts";
 import { maskSecrets } from "../public-scrub.ts";
 import { type Draft, type Reply, type Store } from "./store.ts";
 
@@ -80,7 +81,7 @@ export function toComment(src: SourceConfig, r: RawComment, collector: string): 
 export type Approval = { by: "owner" } | { by: "rule" };
 /** `resend`: the owner's 다시 보내기 of a reply nobody can say went up, the only send that passes an unsure record. */
 export type ReplyRequest = { code: string; approval: Approval; text?: string; resend?: true };
-export type GateDeps = { store: Store; adapters: Partial<Record<SourceKind, CommentAdapter>>; now: () => number; collector: string; inflight: Set<string>; onState?: (r: Reply) => void; log?: (line: string) => void };
+export type GateDeps = { store: Store; adapters: Partial<Record<SourceKind, CommentAdapter>>; now: () => number; collector: string; inflight: Set<string>; claimFile: (draft: string) => string; onState?: (r: Reply) => void; log?: (line: string) => void };
 /** A refusal carries the reason code of hub/reply-reasons.ts when the gate gave it. */
 export type GateResult = { ok: true; reply: Reply; done: Promise<Posted> } | { ok: false; reason: string; code?: string };
 /** A finished send: the stored record, plus `detail`, what the place itself answered when it refused (a site's own words; masked and bounded).
@@ -159,13 +160,27 @@ export function dispatchReply(req: ReplyRequest, deps: GateDeps): GateResult {
 	} else if (req.approval.by !== "owner") return refuse("보내기 승인이 없어요", "not_approved");
 	const sendId = `send:${comment.id}`;
 	const prior = store.replies().find(r => r.id === sendId);
-	if (prior?.state === "unsure" && !(req.resend && req.approval.by === "owner")) return refuse("이 답글은 올라갔는지 확인이 필요해요. 다시 보내기나 완료를 골라 주세요", "needs_resolve");
-	if (deps.inflight.has(sendId) || prior?.state === "sending" || prior?.state === "sent") return prior?.state === "sent" ? refuse("이미 답글을 보냈어요", "already_sent") : refuse("이미 보내는 중이에요", "already_sending");
+	const held = (p: Reply | undefined): GateResult | undefined => {
+		if (p?.state === "unsure" && !(req.resend && req.approval.by === "owner")) return refuse("이 답글은 올라갔는지 확인이 필요해요. 다시 보내기나 완료를 골라 주세요", "needs_resolve");
+		if (p?.state === "sent") return refuse("이미 답글을 보냈어요", "already_sent");
+		if (p?.state === "sending") return refuse("이미 보내는 중이에요", "already_sending");
+		return undefined;
+	};
+	const busy = held(prior) ?? (deps.inflight.has(sendId) ? refuse("이미 보내는 중이에요", "already_sending") : undefined);
+	if (busy) return busy;
 	const adapter = deps.adapters[src.kind];
 	if (!adapter) return refuse("이 댓글 종류를 보낼 수 없어요", "config");
 	if (comment.gone) return refuse(GONE_REASON, "original_gone");
 	if (answeredStored(store, comment, adapter)) return refuse(ANSWERED_REASON, "stale");
 	const record: Reply = { id: sendId, commentId: comment.id, source: src.key, thread: comment.thread, text, state: "sending", at: now(), draft: draft.code, via: req.approval.by, collector: deps.collector, ...(prior?.state === "failed" || prior?.state === "unsure" ? { attempts: (prior.attempts ?? 1) + 1 } : {}) };
+	const release = claimSend(deps.claimFile(draft.code), true);
+	if (!release) return refuse("이미 보내는 중이에요", "already_sending");
+	const again = store.replies().find(r => r.id === sendId);
+	const moved = again?.state !== prior?.state || again?.at !== prior?.at ? (held(again) ?? refuse("이미 보내는 중이에요", "already_sending")) : store.drafts().find(d => d.code === draft.code)?.status !== "pending" ? refuse("이 초안은 더 이상 보낼 수 없어요", "gone") : undefined;
+	if (moved) {
+		release();
+		return moved;
+	}
 	deps.inflight.add(sendId);
 	const done = (async (): Promise<Posted> => {
 		try {
@@ -205,6 +220,7 @@ export function dispatchReply(req: ReplyRequest, deps: GateDeps): GateResult {
 			return detail && !crashed ? { ...final, detail } : final;
 		} finally {
 			deps.inflight.delete(sendId);
+			release();
 		}
 	})();
 	return { ok: true, reply: record, done };

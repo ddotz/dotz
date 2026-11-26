@@ -6,7 +6,7 @@ import { askComponentsFor, askInteraction, ASK_PREFIX } from "./askbuttons.ts";
 import { parseDecisions } from "./choices.ts";
 import { buildPayloads } from "./discord-format.ts";
 import { paths } from "./config.ts";
-import { approvalHash, briefLines, draftActionOf, draftApprovalBlock, draftVerdict, keepBrief, parseDraftApproval } from "./draft-approval.ts";
+import { approvalHash, asksForFile, briefLines, draftActionOf, draftApprovalBlock, draftVerdict, keepBrief, NO_ATTACHMENT_WARNING, pairCheck, parseDraftApproval, sameDraft, withStagedFiles } from "./draft-approval.ts";
 import { AGENT_AUTHOR } from "./agent-author.ts";
 import { emit } from "./events.ts";
 import { inboxText } from "./intake.ts";
@@ -314,4 +314,40 @@ test("a question that closes with its ref before the question mark is that draft
 	pickLine("owner", "이 답장 보낼까요 (XRQMARK3)?", "보내지 않기");
 	pickLine("owner", "이 답장 보낼까요 (RQMARK3)? 그리고 하나 더", "보내지 않기");
 	expect(draftVerdict(paths.inbox, "RQMARK3", since, "h1")).toEqual({ verdict: "none" });
+});
+
+test("a card's account line is read back: another account is another draft, in the reply and in the bundled mail", () => {
+	const card = (o: object) => parseDraftApproval(draftApprovalBlock({ to: "kim@example.com", toLabel: "받는이", body: "안녕하세요.", ref: "D778", ...o }))!;
+	expect(card({ account: "me@example.net" })).toMatchObject({ account: "me@example.net" });
+	expect(card({ accountHeld: true })).toMatchObject({ accountHeld: true });
+	expect(card({}).account).toBeUndefined();
+	expect(sameDraft(card({ account: "a@example.net" }), card({ account: "a@example.net" }))).toBe(true);
+	expect(sameDraft(card({ account: "a@example.net" }), card({ account: "b@example.net" }))).toBe(false);
+	expect(sameDraft(card({ account: "a@example.net" }), card({ accountHeld: true }))).toBe(false);
+	const bundle = (account: string) => card({ toLabel: "대상", to: "팬 댓글", body: "고마워요", mail: { to: "kim@example.com", account, subject: "자료", body: "보내드려요", attachments: [] } });
+	expect(bundle("a@example.net").mail).toMatchObject({ account: "a@example.net" });
+	expect(bundle("a@example.net").account).toBeUndefined();
+	expect(sameDraft(bundle("a@example.net"), bundle("b@example.net"))).toBe(false);
+	expect(sameDraft(card({}), card({ account: "a@example.net" }))).toBe(true);
+	expect(sameDraft(card({}), card({ accountHeld: true }))).toBe(true);
+	const unnamed = card({ toLabel: "대상", to: "팬 댓글", body: "고마워요", mail: { to: "kim@example.com", subject: "자료", body: "보내드려요", attachments: [] } });
+	expect(sameDraft(unnamed, bundle("a@example.net"))).toBe(true);
+});
+
+test("the card warns about a promise only where the gate does, and an asked file has its own words", () => {
+	const card = (body: string, o: object = {}) => parseDraftApproval(draftApprovalBlock({ to: "kim@example.com", toLabel: "받는이", subject: "Re: 문의", body, ref: "D779", ...o }))!;
+	for (const body of ["필요하시면 자료 공유드리겠습니다.", "확인 후 내일 따로 견적서 보내드릴게요.", "지난번에 보내드린 문서 잘 활용하시길 바랍니다!", "요청하신 영상 링크 공유드립니다: https://youtu.be/x"]) expect([body, card(body).warning, card(body).note]).toEqual([body, undefined, undefined]);
+	expect(card("견적서 첨부드립니다, 확인해 주시면 감사하겠습니다.")).toMatchObject({ warning: NO_ATTACHMENT_WARNING, note: "본문에는 보낸다고 썼어요" });
+	expect(card("확인했습니다.", { asksFile: true })).toMatchObject({ warning: "받은 메일이 파일을 요청했는데 첨부가 없어요", note: "받은 메일이 파일을 요청했어요" });
+	expect(parseDraftApproval(withStagedFiles(draftApprovalBlock({ to: "kim@example.com", toLabel: "받는이", body: "필요하시면 자료 공유드리겠습니다.", ref: "D779" }), []))!.note).toBeUndefined();
+});
+
+test("asksForFile reads the mail's own words, not a quote of an older one; pairCheck follows the gate", () => {
+	expect(asksForFile("잘 받았습니다 감사합니다!\n\n--- Original Message ---\n견적서 파일 보내주세요.")).toBe(false);
+	expect(asksForFile("잘 받았습니다.\n> 견적서 파일 보내주세요.")).toBe(false);
+	expect(asksForFile("견적서 파일 보내주세요.")).toBe(true);
+	const mail = { to: "kim@example.com", attachments: [] };
+	expect(pairCheck("영상 링크 공유드립니다: https://youtu.be/abc", mail)).toEqual([]);
+	expect(pairCheck("확인 후 내일 따로 자료 보내드릴게요", mail)).toEqual([]);
+	expect(pairCheck("견적서 첨부드립니다.", mail)).toHaveLength(1);
 });

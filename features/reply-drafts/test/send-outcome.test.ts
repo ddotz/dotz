@@ -89,6 +89,13 @@ describe("sendWith: the mail table", () => {
 		expect(await reply("something odd happened")).toBe("fail maybe unknown");
 	});
 
+	test("the line and column of a stack are not an error status: a failure that only shows `:400:12` may have gone out", async () => {
+		const stack = (status: string) => `TypeError: boom\n    at send (/app/zele/dist/mail.js:${status}:12)\n    at run (/app/zele/dist/cli.js:552:9)`;
+		for (const status of ["400", "401", "413"]) expect(await where(rec(), zele({ reply: [1, stack(status)] }))).toBe("fail maybe unknown");
+		expect(await where(rec({ compose: true }), zele({ reply: [1, stack("404")] }))).toBe("fail maybe unknown");
+		expect(await where(rec(), zele({ reply: [1, `400 Bad Request\n    at send (/app/zele/dist/mail.js:90:12)`] }))).toBe("fail no rejected");
+	});
+
 	test("a provider refusing the mail for its size is surely not sent, and the card gets a reason line", async () => {
 		for (const raw of ["552 5.3.4 Message size exceeds fixed maximum message size", "413 Request Entity Too Large", "Message too large", "Request Payload Size Exceeds the Limit: 35 MB"]) {
 			const o = await sendWith(rec(), zele({ reply: [1, raw] }));

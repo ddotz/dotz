@@ -1,12 +1,13 @@
 // A mail of a second mail app (instance `mail-beta`) is written, revised and checked with that app's own tone profile when it has one,
 // and never carries the examples of another account. Without its own profile it uses the shared `mail` profile, as before.
 import { afterAll, beforeEach, expect, test } from "bun:test";
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { reviseDraft, sendDraft } from "../lib/flow.ts";
 import { draftRules } from "../lib/draft-rules.ts";
 import { readLedger } from "../lib/ledger.ts";
 import { offerMailDraft, type OfferMail } from "../lib/offer.ts";
+import { runDraft } from "../bin/draft.ts";
 import { paths, savePairs, toneFile, writeIdentity } from "../lib/settings.ts";
 import { listDrafts } from "../lib/store.ts";
 import { enable, fakeModel, goodReply, j, mailFixture, seedRules, setupEnv } from "./helpers.ts";
@@ -88,4 +89,15 @@ test("a draft with its own profile carries no past replies, since a pair does no
 	await offer(["m-1", "beta-1"], model);
 	expect(promptOf(model, "m-1")).toContain("PAIR-REPLY-TEXT");
 	expect(promptOf(model, "beta-1")).not.toContain("PAIR-REPLY-TEXT");
+});
+
+test("draft.ts correct and tone use the profile the drafts read: a mail-beta word is listed for mail-beta, with a tone of its own or without, and never for the shared mail one", async () => {
+	const shown = async (app: string) => (await runDraft(["tone", "--app", app], "")).lines.join("\n");
+	expect((await runDraft(["correct", "--app", "mail-beta", "--forbid", "공유금지어"], "")).code).toBe(0);
+	expect(await shown("mail-beta")).toContain("공유금지어");
+	expect(await shown("mail")).not.toContain("공유금지어");
+	own();
+	expect((await runDraft(["correct", "--app", "mail-beta", "--forbid", "베타금지어"], "")).code).toBe(0);
+	expect(await shown("mail-beta")).toContain("베타금지어");
+	expect(await shown("mail")).not.toContain("베타금지어");
 });

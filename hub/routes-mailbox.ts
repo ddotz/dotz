@@ -53,23 +53,26 @@ export type PastMail = { source: string; received: string; conv?: string; from?:
  * A source with no conversation ids is matched by sender and subject.
  */
 export function pastPass(dir: string, instance: string): (p: PastMail, remembered?: string) => string | undefined {
-	const entries = mailEntries(dir), boxes = boxesOf(dir, instance), pins = loadMailboxes(dir).pins, shown = boxPass(dir), held = new Map<string, string>(), owners = new Map<string, string>();
+	const entries = mailEntries(dir), boxes = boxesOf(dir, instance), pins = loadMailboxes(dir).pins, shown = boxPass(dir), held = new Map<string, string>(), owners = new Map<string, string>(), sources = new Map<string, string>();
 	const apps = readAppsFile(dir), addr = (s?: string): string | undefined => addressesIn(s)[0]?.toLowerCase();
 	const named = new Map(entries.flatMap(e => { const a = addr(apps[e.key]?.filter?.account); return a ? [[a, e.key] as const] : []; })), plain = entries.find(e => !apps[e.key]?.filter?.account)?.key ?? "mail";
 	const known = (id: string | undefined): id is string => !!id && boxes.some(b => b.id === id);
 	const talk = (from?: string, subj?: string): string => (from && subj ? `${addr(from) ?? ""}|${subjectKey(subj)}` : "");
 	for (const r of mailRecords()) {
 		if (r.dir === "out") continue;
-		owners.set(r.source.replace(/^webmail[:/]/, ""), instanceIn(entries, r.key));
+		const bare = r.source.replace(/^webmail[:/]/, "");
+		owners.set(bare, instanceIn(entries, r.key));
+		sources.set(bare, r.source);
 		const { box, boxWhy } = shown(r);
 		if (box === BASE_ID && !boxWhy) continue;   // the base box with no reason says nothing: the rules decide
 		held.set(`${r.source}|${conversationOf(r.source, r.id)}`, box);
 		held.set(talk(r.from, r.subject), box);
 	}
 	return (p, remembered) => {
-		if ((p.source === "zele" ? named.get(addr(p.account) ?? "") ?? plain : owners.get(p.source) ?? instanceIn(entries, `${p.source}-0`)) !== instance) return undefined;
-		const kept = [p.conv ? pins[pinKey(instance, p.source, p.conv)] : undefined, p.conv ? held.get(`${p.source}|${conversationOf(p.source, p.conv)}`) : undefined, held.get(talk(p.from, p.subj)), remembered].find(known);
-		return kept ?? pickBox({ src: p.source, from: p.from ?? "", subj: p.subj ?? "", body: p.received }, boxes).box.id;
+		const bare = p.source.replace(/^webmail[:/]/, ""), source = sources.get(bare) ?? p.source;
+		if ((p.source === "zele" ? named.get(addr(p.account) ?? "") ?? plain : owners.get(bare) ?? instanceIn(entries, `${p.source}-0`)) !== instance) return undefined;
+		const kept = [p.conv ? pins[pinKey(instance, source, p.conv)] : undefined, p.conv ? held.get(`${source}|${conversationOf(source, p.conv)}`) : undefined, held.get(talk(p.from, p.subj)), remembered].find(known);
+		return kept ?? pickBox({ src: source, from: p.from ?? "", subj: p.subj ?? "", body: p.received }, boxes).box.id;
 	};
 }
 

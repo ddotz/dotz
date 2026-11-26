@@ -39,6 +39,14 @@ test("a subject given with the text is saved too (trimmed); a subject alone chan
 	expect([getDraft("REDIT1")?.subject, getDraft("REDIT1")?.body]).toEqual(["Re: 문의 드린 일정", "목요일까지 보내드릴게요."]);
 });
 
+test("the attachment check of an edit reads the subject he saved with it, not the old one", () => {
+	addDraft(rec({ compose: true, subject: "문의", item: { kind: "mail", text: "문의드립니다", from: "Kim <kim@example.com>" } }));
+	const promises = editDraft("REDIT1", "확인해 보고 말씀드릴게요.", "견적서 첨부드립니다");
+	expect(promises.text).toContain("확인:");
+	const plain = editDraft("REDIT1", "확인해 보고 말씀드릴게요.", "문의");
+	expect(plain.text).toBe("초안 REDIT1을(를) 고친 글 그대로 저장했어요");
+});
+
 test("a forbidden word refuses the edit with its code and stores nothing", () => {
 	addDraft(rec());
 	const r = editDraft("REDIT1", "무조건 금요일에 드릴게요");

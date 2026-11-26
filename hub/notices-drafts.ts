@@ -2,13 +2,13 @@
 import { createHash } from "node:crypto";
 import { log, now } from "./config.ts";
 import { parseDecisions } from "./choices.ts";
-import { ATTACH_REFUSED, blockDraftRef, type DraftApproval, type DraftFileIn, parseDraftApproval, refreshDraft, rewriteDraftTo, sameDraft, withAttachIssues, withStagedFiles } from "./draft-approval.ts";
+import { ATTACH_REFUSED, blockDraftRef, type DraftApproval, type DraftFileIn, MAIL_MARK, parseDraftApproval, refreshDraft, rewriteDraftTo, sameDraft, withAttachIssues, withStagedFiles } from "./draft-approval.ts";
 import { policyOf } from "./reply-reasons.ts";
 import type { ReasonCode } from "./reply-types.ts";
 import { parseTone, stripHandoff } from "./tone.ts";
 import type { Decision, DecisionOpt, Notice } from "./notices-types.ts";
 import { appLabelOf, appOf, type ClosedCard, draftHandled } from "./notices-wiring.ts";
-import { TEXT_MAX, closedInfo, isOpenDecision } from "./notices-rules.ts";
+import { DRAFT_TEXT_MAX, closedInfo, isOpenDecision } from "./notices-rules.ts";
 import { items, save, settleDecision } from "./notices-store.ts";
 import { refreshNoticeDrafts, retitleDraftCard } from "./notices-stored.ts";
 import { announce, reopenNotices } from "./notices-answers.ts";
@@ -62,15 +62,15 @@ function stamp(hit: Notice[]): Promise<void> {
 		const turn = (stamping.get(n) ?? 0) + 1;
 		stamping.set(n, turn);
 		const run = fingerprint(ref).then(
-			now => {
+			read => {
 				// Drawn again or stamped again meanwhile: that drawing or stamp keeps its own fingerprint.
 				if (stamping.get(n) !== turn || n.text !== text || n.decision?.draft?.ref !== ref) return;
-				const store = now?.text ? parseDraftApproval(cardBody(now.text)) : undefined;
-				const h = store && sameDraft(store, shown) ? now!.hash : undefined;
+				const store = read?.text ? parseDraftApproval(cardBody(read.text)) : undefined;
+				const h = store && sameDraft(store, shown) ? read!.hash : undefined;
 				if (n.decision.hash === h) return;
 				if (h) n.decision.hash = h;
 				else delete n.decision.hash;
-				save();
+				announce([n], now());
 			},
 			e => log(`card hash of ${ref} not read: ${(e as Error).message}`),
 		);
@@ -202,8 +202,11 @@ function rewriteCards(hit: Notice[], text: string, newRef?: string): number {
 	const draft = parseDraftApproval(body);
 	const at = now();
 	for (const n of hit) {
-		n.text = body.slice(0, TEXT_MAX);
-		if (draft) n.decision!.draft = draft;
+		n.text = body.slice(0, DRAFT_TEXT_MAX);
+		if (draft) {
+			n.decision!.draft = draft;
+			n.decision!.options = optionsOf(n.decision!.options, n.text);
+		}
 		// A new draft has no send yet: the old one's state stays with the old ref.
 		if (newRef) delete n.decision!.send;
 		retitleDraftCard(n);
@@ -296,15 +299,22 @@ export function reopenDraftNotices(draftIds: string[]): { reopened: string[]; un
 // The 받는 사람·참조 of a waiting mail draft changed (hub/draft-recipients.ts): every open card of that draft shows the new lines at once, on
 // every page, and its stored text is rewritten so a restart reads the same card. Returns how many cards changed.
 export function updateDraftRecipients(ref: string, r: { to: string; cc: string[]; mode?: "reply" | "all" }): number {
-	const hit = items.filter(i => i.decision?.state === "open" && i.decision.draft?.ref === ref);
+	const hit = items.filter(i => i.decision?.state === "open" && (i.decision.draft?.ref === ref || i.decision.draft?.mail?.ref === ref));
 	if (!hit.length) return 0;
 	const at = now();
 	for (const n of hit) {
 		const d = n.decision!;
-		const next: DraftApproval = { ...d.draft!, to: r.to, ...(r.cc.length ? { cc: r.cc } : {}), ...(r.mode ? { mode: r.mode } : {}) };
+		const part = d.draft!.ref === ref ? undefined : d.draft!.mail;
+		const next: DraftApproval = { ...(part ?? d.draft!), to: r.to, ...(r.cc.length ? { cc: r.cc } : {}), ...(r.mode ? { mode: r.mode } : {}) };
 		if (!r.cc.length) delete next.cc;
-		d.draft = next;
-		n.text = rewriteDraftTo(n.text, r.to, r.cc);
+		if (part) {
+			d.draft = { ...d.draft!, mail: next };
+			const mailAt = n.text.search(new RegExp(`^>\\s*${MAIL_MARK}`, "m"));
+			if (mailAt >= 0) n.text = n.text.slice(0, mailAt) + rewriteDraftTo(n.text.slice(mailAt), r.to, r.cc);
+		} else {
+			d.draft = next;
+			n.text = rewriteDraftTo(n.text, r.to, r.cc);
+		}
 		n.updated = at;
 	}
 	announce(hit, at);

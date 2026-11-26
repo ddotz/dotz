@@ -153,3 +153,12 @@ test("a room with no standing rule and no correction makes no judge call", async
 	expect((await r.pending()).map(d => [d.text, d.notes ?? []])).toEqual([["3시에 봐", []]]);
 	r.close();
 });
+
+test("a KakaoTalk draft the owner asked for in words (초안 작성) is judged with that request in its own block", async () => {
+	const r = room(["3시에 봐"], [violations([])]);
+	expect(await makeDraft(r.ctx, r.config, DIRECT, undefined, undefined, "친구한테 쓰듯 반말로 약속 잡자고 써 줘")).toMatchObject({ ok: true });
+	expect(r.judgeCalls).toHaveLength(1);
+	expect(r.judgeCalls[0]).toContain("The owner's request for this draft (it wins: never report a rule that this request overrides or conflicts with):");
+	expect(r.judgeCalls[0]).toContain("친구한테 쓰듯 반말로 약속 잡자고 써 줘");
+	r.close();
+});

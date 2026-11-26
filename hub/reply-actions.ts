@@ -135,8 +135,8 @@ export function createReplyActions(deps: ReplyDeps) {
 	};
 	/** The owner's 보내기 on the version `view` holds: his pick carries its fingerprint and the end of its undo window (the sender's own, handed
 	 *  over before the job is held or queued), so no CLI counts it before the gateway's sender would run it (qa-clean-7 N13). */
-	const sendPicked = (ctx: ActCtx, a: ReplyAdapter, view: DraftView, n: number, label: string, j: SendJob): ActResult => {
-		if (!deps.sender.enqueue(j, until => pick(deps, ctx, a, view, n, label, { hash: j.hash, until }))) return refused(409, "not_supported");
+	const sendPicked = (ctx: ActCtx, a: ReplyAdapter, view: DraftView, action: keyof typeof SEND_LABEL, extra: Partial<SendJob> = {}): ActResult => {
+		if (!deps.sender.enqueue(job(a, view, action, extra), until => pick(deps, ctx, a, view, action === "send-as-is" ? 4 : 1, SEND_LABEL[action], { hash: approvalHash(view), until }))) return refused(409, "not_supported");
 		return { status: 200, body: { ok: true, item: itemOf(view) } };
 	};
 	/** Why a send of `ref` holds its draft still: one waits, runs or may have gone out. */
@@ -152,18 +152,22 @@ export function createReplyActions(deps: ReplyDeps) {
 
 	/** Why `view` cannot be sent now (a send's and a confirm card's guards, in this order), or undefined. */
 	const unsendable = (view: DraftView): ActResult | undefined => {
-		const code = held(view.ref) ?? (ledger(view.ref)?.state === "sent" || view.draft.state === "sent" ? "already_sent" : view.draft.state !== "pending" ? "not_pending" : revising.has(view.ref) ? "revising" : undefined);
+		const hold = held(view.ref);
+		const code = (view.mailLeft && hold === "needs_resolve" ? undefined : hold) ?? (ledger(view.ref)?.state === "sent" || view.draft.state === "sent" ? "already_sent" : view.draft.state !== "pending" ? "not_pending" : revising.has(view.ref) ? "revising" : undefined);
 		return code && refused(409, code);
 	};
 	// A failed send is no shortcut: 보내기 on it is a new approval of the version shown now, as on any other draft.
 	async function send(ctx: ActCtx, a: ReplyAdapter, view: DraftView, input: ActInput): Promise<ActResult> {
+		if (input.part === "mail" && view.draft.state === "sent" && view.mailLeft === true) {
+			const st = ledger(view.ref)?.state, code = st && LIVE.has(st) ? "already_sending" : st === "sent" ? "already_sent" : revising.has(view.ref) ? "revising" : undefined;
+			return code ? refused(409, code) : sendPicked(ctx, a, view, "send-mail", st === "unsure" ? { force: true } : {});
+		}
 		const no = unsendable(view);
 		if (no) return no;
 		// What the owner read on the open card is what goes out, to the character: another body (the hash covers the rest) refuses the send.
 		const shown = cardOf(deps.cards.open(), view.ref, ctx.notice)?.draft;
 		if (view.kind === "mail" && shown?.toLabel === "받는이" && shown.body !== cardBodyOf(view.draft.text)) return fail(409, "card_mismatch", CARD_MISMATCH);
-		const action = sendAction(input);
-		return sendPicked(ctx, a, view, action === "send-as-is" ? 4 : 1, SEND_LABEL[action], job(a, view, action));
+		return sendPicked(ctx, a, view, sendAction(input));
 	}
 
 	// 다시 보내기 of a surely-failed send: a fresh 보내기 on the current version (the CLIs' gates count from it), with no cancel window. A failure that
@@ -172,11 +176,9 @@ export function createReplyActions(deps: ReplyDeps) {
 		const last = ledger(view.ref);
 		if (last?.state !== "failed") return refused(409, "not_pending");
 		if (view.draft.state !== "pending") return refused(409, view.draft.state === "sent" ? "already_sent" : "not_pending");
-		if (last.reason && policyOf(last.reason.code).reapprove) {
-			const action = sendAction(input);
-			return sendPicked(ctx, a, view, action === "send-as-is" ? 4 : 1, SEND_LABEL[action], job(a, view, action));
-		}
-		return sendPicked(ctx, a, view, 1, SEND_LABEL.send, job(a, view, "send", { retry: true }));
+		const reapprove = Boolean(last.reason && policyOf(last.reason.code).reapprove);
+		const action = reapprove && (input.part || input.asIs) ? sendAction(input) : (last.action ?? sendAction(input));
+		return sendPicked(ctx, a, view, action, reapprove ? {} : { retry: true });
 	}
 
 	function revise(ctx: ActCtx, a: ReplyAdapter, view: DraftView, input: ActInput): ActResult {
@@ -269,9 +271,9 @@ export function createReplyActions(deps: ReplyDeps) {
 	async function drop(ctx: ActCtx, a: ReplyAdapter, view: DraftView, reason?: string): Promise<ActResult> {
 		const guard = editable(view);
 		if (guard) return guard;
-		pick(deps, ctx, a, view, 3, "보내지 않기", reason ? { note: reason } : {});
 		const r = await a.drop(view.ref, reason);
 		if (!r.ok) return fail(409, r.reason.code, r.reason.text);
+		pick(deps, ctx, a, view, 3, "보내지 않기", reason ? { note: reason } : {});
 		deps.sender.forget(view.ref);
 		deps.cards.close(view.ref);
 		return { status: 200, body: { ok: true, item: itemOf((await announce(a, view.ref)) ?? view) } };
@@ -301,7 +303,7 @@ export function createReplyActions(deps: ReplyDeps) {
 		if (as !== "retry") return fail(400, "bad_request", "as는 sent 또는 retry여야 해요");
 		// The owner decided again after 확인 필요: a fresh 보내기, and the send may go out again (force).
 		if (view.draft.state !== "pending") return refused(409, view.draft.state === "sent" ? "already_sent" : "not_pending");
-		return sendPicked(ctx, a, view, 1, SEND_LABEL.send, job(a, view, "send", { force: true }));
+		return sendPicked(ctx, a, view, ledger(view.ref)?.action ?? "send", { force: true });
 	}
 
 	function undo(view: DraftView): ActResult {

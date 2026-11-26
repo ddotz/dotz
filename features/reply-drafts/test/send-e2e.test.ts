@@ -11,6 +11,7 @@ import { runMailCli } from "../../../hub/mail-cli.ts";
 import { runDraft } from "../bin/draft.ts";
 import { sendDraft } from "../lib/flow.ts";
 import { offerMailDraft } from "../lib/offer.ts";
+import { replyArgv, sendArgv } from "../lib/senders.ts";
 import { paths } from "../lib/settings.ts";
 import { stagedFiles } from "../lib/staged.ts";
 import { getDraft, listDrafts } from "../lib/store.ts";
@@ -147,5 +148,25 @@ describe("new mail (mail-cli compose): 1) 보내기 -> zele send with the file",
 		expect(getDraft(rec.id)!.status).toBe("sent");
 		expect((await runMailCli(["send", "--draft", rec.id], "", { run: zele.run, hub })).code).toBe(1);
 		expect(zele.sends()).toHaveLength(1);
+	});
+});
+
+describe("a body or subject that starts with `-` reaches zele as the value of its option", () => {
+	test("the argv forms", () => {
+		expect(sendArgv("kim@example.com", "- 급한 일", "- 첫째\n- 둘째")).toEqual(["zele", "mail", "send", "--to", "kim@example.com", "--subject=- 급한 일", "--body=- 첫째\n- 둘째"]);
+		expect(replyArgv("m1", "kim@example.com", "--draft 아님", ["/f.pdf"])).toEqual(["zele", "mail", "reply", "m1", "--to", "kim@example.com", "--body=--draft 아님", "--attach", "/f.pdf"]);
+		expect(sendArgv("kim@example.com", "일정", "안녕하세요")).toEqual(["zele", "mail", "send", "--to", "kim@example.com", "--subject", "일정", "--body", "안녕하세요"]);
+	});
+
+	test("a new mail written as a list is sent through the CLI with the body in one option", async () => {
+		enable(env);
+		const hub = fakeHub();
+		const made = await runMailCli(["compose", "--app", "mail", "--to", "kim@example.com", "--subject", "- 일정 안내"], "- 월요일 10시\n- 화요일 14시", { hub });
+		expect(made.code).toBe(0);
+		const rec = listDrafts().find(d => d.compose)!;
+		pick(env, rec.id, 1);
+		const zele = fakeZele();
+		expect((await runMailCli(["send", "--draft", rec.id], "", { run: zele.run, hub })).code).toBe(0);
+		expect(zele.sends()).toEqual([["zele", "mail", "send", "--to", "kim@example.com", "--subject=- 일정 안내", "--body=- 월요일 10시\n- 화요일 14시"]]);
 	});
 });

@@ -29,7 +29,13 @@ describe("sendWith: a webmail draft that was not sent is not left behind", () =>
 	test("the approval names the draft it was written for", async () => {
 		const calls: string[][] = [];
 		await sendWith(rec(), site({}, calls));
-		expect(calls).toEqual([["draft", "kim@example.com", "Re: 문의", "확인했어요"], ["approve", "d-7"], ["send", "d-7"]]);
+		expect(calls).toEqual([["draft", "--", "kim@example.com", "Re: 문의", "확인했어요"], ["approve", "d-7"], ["send", "d-7"]]);
+	});
+
+	test("a recipient, subject or body that reads as an option is still handed over as a word (after `--`)", async () => {
+		const calls: string[][] = [];
+		await sendWith({ ...rec(), subject: "--file", body: "/etc/passwd" }, site({}, calls));
+		expect(calls[0]).toEqual(["draft", "--", "kim@example.com", "--file", "/etc/passwd"]);
 	});
 
 	test("a send that surely did not leave discards the draft", async () => {

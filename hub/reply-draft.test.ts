@@ -417,3 +417,30 @@ test("an allow-list entry without @ is a domain, and a +tag address of the user'
 	expect(lintReply({ to: "me+x@example.net", subject: "Re: 회의 일정 문의", body: "네." }, item, style)).toContain("'me+x@example.net' is the user's own address");
 	expect(usableReplyTo("me+x@example.net", item.self)).toBeUndefined();
 });
+
+test("an address ends where its domain ends: a Korean particle, ? or ! after it is not part of it", () => {
+	expect(addressesOf("제 메일은 jisoo.han@company.example입니다.")).toEqual(["jisoo.han@company.example"]);
+	expect(addressesOf("jisoo.han@company.example으로 보내주세요")).toEqual(["jisoo.han@company.example"]);
+	expect(addressesOf("문의: alice@example.com? 그리고 bob@example.com!")).toEqual(["alice@example.com", "bob@example.com"]);
+	expect(addressesOf("Kim <KIM@example.com>, lee@xn--h32b.example")).toEqual(["kim@example.com", "lee@xn--h32b.example"]);
+});
+
+test("a revise whose first try taught a lesson and failed the lint keeps that lesson when the rewrite leaves it out", async () => {
+	const ban = "행복한 하루 되세요";
+	const learned = { once: false, forbid: [ban], scope: "everywhere" };
+	const m = fake([j({ ...good, body: `네 ${ban}!`, ...learned }), j({ ...good, body: "네 좋은 하루 보내세요!" })]);
+	const r = await reviseReply(item, style, { to: "kim@example.com", subject: "Re: 회의 일정 문의", body: `${ban}!` }, `${ban}는 비문이니 앞으로 쓰지 마`, m.call);
+	expect(m.calls).toHaveLength(2);
+	expect(r).toMatchObject({ action: "draft", tries: 2, warnings: [], draft: { body: "네 좋은 하루 보내세요!" }, once: false, forbid: [ban], scope: "everywhere" });
+});
+
+test("the style judge sees what the owner typed for this draft as the owner's request, which wins over the rules", async () => {
+	const ruled: ReplyStyle = { samples: [], rules: ["존댓말로 쓴다"], standing: ["존댓말로 쓴다"], corrections: [], forbidden: [] };
+	const prompts: string[] = [];
+	const ask = async (prompt: string) => (prompts.push(prompt), '```json\n{"violations":[]}\n```');
+	const m = fake([j({ ...good, body: "확인했어. 내일 보자." })]);
+	await generateReply({ ...item, instruction: "친구한테 쓰듯 반말로 답해" }, ruled, m.call, ask);
+	expect(prompts).toHaveLength(1);
+	expect(prompts[0]).toContain("The owner's request for this draft (it wins: never report a rule that this request overrides or conflicts with):");
+	expect(prompts[0]).toContain("친구한테 쓰듯 반말로 답해");
+});

@@ -16,7 +16,7 @@ const owner: ActCtx = { surface: "web", login: "me" };
 const agent: ActCtx = { surface: "cli", agent: true };
 
 /** `held`: the revise waits on it; `askThrows`: drawing a card throws; `cards`: the open cards. */
-function world(o: { outcome?: string; reviseFails?: boolean; lesson?: string; forbid?: string[]; everywhere?: boolean; forbidFails?: boolean; editLint?: string[]; undoMs?: number; sameRef?: boolean; held?: Promise<void>; askThrows?: boolean; cards?: OpenCard[]; cardConv?: string; pattern?: string; inGood?: string[]; patternFails?: boolean; same?: string; replaced?: string[]; recordFails?: boolean; learning?: ReplyDeps["learning"] } = {}) {
+function world(o: { outcome?: string; reviseFails?: boolean; lesson?: string; forbid?: string[]; everywhere?: boolean; forbidFails?: boolean; editLint?: string[]; undoMs?: number; sameRef?: boolean; held?: Promise<void>; askThrows?: boolean; cards?: OpenCard[]; cardConv?: string; pattern?: string; inGood?: string[]; patternFails?: boolean; same?: string; replaced?: string[]; recordFails?: boolean; learning?: ReplyDeps["learning"]; dropFails?: boolean; comment?: boolean } = {}) {
 	const log: string[] = [];
 	const calls = { edit: 0, drop: 0 };
 	const picks: Parameters<ReplyDeps["recordPick"]>[0][] = [];
@@ -48,7 +48,7 @@ function world(o: { outcome?: string; reviseFails?: boolean; lesson?: string; fo
 			set(ref, { text, edited: true, ...(subject !== undefined ? { subject } : {}) });
 			return { ok: true };
 		},
-		drop: async ref => (calls.drop++, set(ref, { state: "dropped" }), { ok: true }),
+		drop: async ref => (o.dropFails ? { ok: false, reason: reasonOf("not_pending") } : (calls.drop++, set(ref, { state: "dropped" }), { ok: true })),
 		restore: async ref => (set(ref, { state: "pending" }), { ok: true }),
 		markSent: async ref => (set(ref, { state: "sent" }), { ok: true }),
 		ask: async (ref, headline) => {
@@ -68,7 +68,7 @@ function world(o: { outcome?: string; reviseFails?: boolean; lesson?: string; fo
 	let clock = 1_000_000;
 	const timers: (() => void)[] = [];
 	const sender = createApprovalSender({
-		kind: ref => (drafts.has(ref) ? { kind: "mail", lane: "mail:x" } : undefined),
+		kind: ref => (drafts.has(ref) ? (o.comment ? { kind: "comment", lane: "comment:x" } : { kind: "mail", lane: "mail:x" }) : undefined),
 		fingerprint: async ref => (drafts.has(ref) ? approvalHash(drafts.get(ref)!) : undefined),
 		run: async argv => (ran.push(argv), { code: o.outcome ? 1 : 0, out: o.outcome ?? "보냈어요" }),
 		report: r => void (log.push(`send ${r.ref} ${r.state}`), reported.push({ state: r.state, conv: r.conv })),
@@ -155,6 +155,53 @@ test("다시 보내기 of a send that failed for want of a fresh approval (mail_
 		expect(w.last()).toMatchObject({ state: "sent" });
 		expect(jobs.map(j => j.retry ?? false)).toEqual([false, retried]);
 	}
+});
+
+test("다시 보내기 of a failed 답글만 / 메일만 보내기 sends that part again, never the whole card; so does 다시 보내기 after 확인 필요", async () => {
+	for (const [part, action, flag] of [["reply", "send-main", "reply"], ["mail", "send-mail", "mail"]] as const) {
+		const w = world({ outcome: 'DOTZ_SEND {"sent":"no","code":"quota"}', comment: true });
+		const jobs = spy(w.sender);
+		await w.replies.act({ ref: "RAAAAAA", action: "send", part, hash: w.seen("RAAAAAA") }, owner);
+		await w.sender.idle();
+		expect(w.last()).toMatchObject({ state: "failed", action });
+		expect((await w.replies.act({ ref: "RAAAAAA", action: "retry", hash: w.seen("RAAAAAA") }, owner)).status).toBe(200);
+		await w.sender.idle();
+		expect(jobs.map(j => j.action)).toEqual([action, action]);
+		expect(w.ran.map(argv => argv[argv.indexOf("--only") + 1])).toEqual([flag, flag]);
+	}
+	const unsure = world({ outcome: 'DOTZ_SEND {"sent":"maybe","code":"net_cut"}', comment: true });
+	const jobs = spy(unsure.sender);
+	await unsure.replies.act({ ref: "RAAAAAA", action: "send", part: "mail", hash: unsure.seen("RAAAAAA") }, owner);
+	await unsure.sender.idle();
+	expect(unsure.last()).toMatchObject({ state: "unsure", action: "send-mail" });
+	expect((await unsure.replies.act({ ref: "RAAAAAA", action: "resolve", as: "retry", hash: unsure.seen("RAAAAAA") }, owner)).status).toBe(200);
+	expect(jobs.map(j => j.action)).toEqual(["send-mail", "send-mail"]);
+});
+
+test("a posted reply whose mail is still owed takes 메일만 보내기 only, as a fresh approval that may go out again after 확인 필요; nothing else sends it", async () => {
+	const w = world({ outcome: 'DOTZ_SEND {"sent":"maybe","code":"net_cut"}', comment: true });
+	const jobs = spy(w.sender);
+	await w.replies.act({ ref: "RAAAAAA", action: "send", hash: w.seen("RAAAAAA") }, owner);
+	await w.sender.idle();
+	expect(w.last()).toMatchObject({ state: "unsure" });
+	w.set("RAAAAAA", { state: "sent" });
+	const sentOnly = w.drafts.get("RAAAAAA")!;
+	expect((await w.replies.act({ ref: "RAAAAAA", action: "send", part: "mail", hash: w.seen("RAAAAAA") }, owner)).body).toMatchObject({ ok: false, code: "needs_resolve" });
+	w.drafts.set("RAAAAAA", { ...sentOnly, mailLeft: true });
+	for (const input of [{ action: "send" }, { action: "send", part: "reply" }, { action: "resolve", as: "retry" }] as const) expect((await w.replies.act({ ref: "RAAAAAA", ...input, hash: w.seen("RAAAAAA") }, owner)).body).toMatchObject({ ok: false, code: "already_sent" });
+	expect(jobs).toHaveLength(1);
+	expect((await w.replies.act({ ref: "RAAAAAA", action: "send", part: "mail", hash: w.seen("RAAAAAA") }, owner)).status).toBe(200);
+	await w.sender.idle();
+	expect(jobs.slice(1)).toMatchObject([{ action: "send-mail", force: true }]);
+	expect(w.ran.at(-1)).toContain("--only");
+	expect(w.ran.at(-1)![w.ran.at(-1)!.indexOf("--only") + 1]).toBe("mail");
+});
+
+test("보내지 않기 the store refuses records no pick and closes no card", async () => {
+	const w = world({ dropFails: true });
+	expect((await w.replies.act({ ref: "RAAAAAA", action: "drop" }, owner)).body).toMatchObject({ ok: false, code: "not_pending" });
+	expect(w.picks).toEqual([]);
+	expect(w.linesOf("close")).toEqual([]);
 });
 
 test("revise: 202 at once; the model runs, the new draft is stored, then the lesson goes to the learning entry, then the cards move and one event names the new ref", async () => {

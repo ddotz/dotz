@@ -1,9 +1,10 @@
 // A reply cut off by a restart: nobody knows whether it went up. It is sent only on proof read back from the platform, otherwise it waits for the owner, and nothing posts it by itself.
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { CommentAdapter, GateResult, RawComment, SourceConfig, SourceKind } from "./contract.ts";
+import { claimSend } from "../draft-claim.ts";
 import { createEngine } from "./engine.ts";
 import { STALE_SENDING_MS } from "./recover.ts";
 import type { Reply } from "./store.ts";
@@ -193,5 +194,29 @@ describe("a sender that died outside a boot", () => {
 		const fresh = world("youtube", {});
 		expect(fresh.engine.markPosted(ID)).toMatchObject({ ok: false });
 		expect(fresh.reply().state).toBe("sending");
+	});
+
+	test("a sender that died holding the claim: its sending record ends unsure, nothing but the owner's resend posts, and the resend takes the dead claim over and frees it", async () => {
+		const w = world("youtube", {});
+		older(w, STALE_SENDING_MS + 1);
+		mkdirSync(join(dir, "sending"), { recursive: true });
+		writeFileSync(join(dir, "sending", "D1"), `${process.pid} Mon Jan  1 00:00:00 2001`);
+		expect(w.engine.leaveUnsure({ live: dead })).toBe(1);
+		expect(w.engine.send("D1", { by: "owner" })).toMatchObject({ ok: false, code: "needs_resolve" });
+		expect(w.posted).toEqual([]);
+		const r = w.engine.retrySend(ID);
+		if (!r.ok) throw new Error(r.reason);
+		expect(await r.done).toMatchObject({ state: "sent" });
+		expect(w.posted).toEqual(["고마워요 또 오세요"]);
+		expect(existsSync(join(dir, "sending", "D1"))).toBe(false);
+	});
+
+	test("a live sender's claim holds even the owner's resend of an unsure reply", () => {
+		const w = world("youtube", {}, { state: "unsure" });
+		const other = claimSend(join(dir, "sending", "D1"))!;
+		expect(w.engine.retrySend(ID)).toMatchObject({ ok: false, code: "already_sending" });
+		expect(w.posted).toEqual([]);
+		expect(w.reply().state).toBe("unsure");
+		other();
 	});
 });

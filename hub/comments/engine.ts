@@ -184,7 +184,7 @@ export function createEngine(deps: EngineDeps) {
 	const learnSent = (draftCode: string, part?: Part): Promise<unknown> => track(learnSentParts(store, draftCode, part, deps, ownerOf));
 	const emit = (e: Record<string, unknown>) => deps.broadcast?.(e);
 	const replyOn = (src: SourceConfig): boolean => deps.featureOn?.(ownerOf(src), "comment_reply") ?? true;
-	const gate = { store, adapters: deps.adapters, now: deps.now, collector: deps.collector, inflight, onState: (r: Reply) => {
+	const gate = { store, adapters: deps.adapters, now: deps.now, collector: deps.collector, inflight, claimFile: (draft: string) => `${deps.dir}/sending/${draft}`, onState: (r: Reply) => {
 		emit({ kind: "comment_send", source: r.source, thread: r.thread, id: r.id, state: r.state, ...(r.reason ? { reason: r.reason } : {}) });
 		const src = store.config().sources[r.source];
 		// A reply that carries a mail wakes no 이어서 할 일 rule: the mail it would draft is already in the card.

@@ -98,5 +98,6 @@ export async function matchLibrary(folder: string, q: Query, pick?: (names: stri
 
 // The file of the library folder at `rel`, or undefined when it is not inside the folder.
 export function libraryFile(folder: string, rel: string): LibraryFile | undefined {
-	return listLibrary(folder).find(f => f.rel === rel);
+	const want = rel.normalize("NFC");
+	return listLibrary(folder).find(f => f.rel.normalize("NFC") === want);
 }

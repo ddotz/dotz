@@ -325,3 +325,11 @@ test("a list under an option's description is part of that option, never text le
 test("a label is cut only at a number the model wrote as a list mark", () => {
 	for (const [label, shown] of [["3개월 보관", "3개월 보관"], ["2.5 버전으로", "2.5 버전으로"], ["10) 열 번째", "열 번째"], ["", ""]] as const) expect(unnumbered(label)).toBe(shown);
 });
+
+test("a message whose first line is a code fence is no question line: its decision block still reads, on the hub and on the web", () => {
+	const text = "```\n로그 한 줄\n```\n결정: 무엇을 할까요?\n**1) 지워요**\n지워요\n**2) 둬요**\n둬요";
+	const hub = parseDecisions(text);
+	expect([hub.question, hub.blocks.map(b => [b.title, b.options.map(o => o.label)])]).toEqual(["", [["무엇을 할까요?", ["지워요", "둬요"]]]]);
+	const shown = web.parseChoices(text);
+	expect(shown.blocks.map(b => [b.title, b.options.map(o => o.label)])).toEqual(hub.blocks.map(b => [b.title, b.options.map(o => o.label)]));
+});

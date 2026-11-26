@@ -175,6 +175,40 @@ test("a state file that cannot be written is logged and the send ends as state_w
 	expect(screen.sends).toHaveLength(1);
 });
 
+test("a draft dropped while a send waits for the newest message is not sent", async () => {
+	const screen = room();
+	const d = await draftOf();
+	const r = await sendDraft(d.code, approved(screen, { latestIncoming: async () => {
+		const list = await listDrafts(idle(screen));
+		writeFileSync(paths.drafts, JSON.stringify(list.map(x => (x.code === d.code ? { ...x, status: "dropped" } : x))));
+		return "500";
+	} }));
+	expect(r).toMatchObject({ ok: false, sent: "no", code: "gone" });
+	expect(screen.sends).toHaveLength(0);
+	expect((await listDrafts(idle(screen))).find(x => x.code === d.code)!.status).toBe("dropped");
+});
+
+test("a draft that is being sent cannot be dropped, and ends as sent", async () => {
+	const screen = room();
+	const d = await draftOf();
+	let dropped: SendResult | undefined;
+	const r = await sendDraft(d.code, approved(screen, { latestIncoming: async () => {
+		dropped = dropDraft(d.code, { paths });
+		return "500";
+	} }));
+	expect(dropped).toMatchObject({ ok: false, sent: "no", code: "already_sending" });
+	expect(r.ok).toBe(true);
+	expect(screen.sends).toHaveLength(1);
+	expect((await listDrafts(idle(screen))).find(x => x.code === d.code)!.status).toBe("sent");
+});
+
+test("a draft whose press is under way cannot be dropped", async () => {
+	const d = await draftOf();
+	await withPressing(d.code);
+	expect(dropDraft(d.code, { paths })).toMatchObject({ ok: false, code: "already_sending" });
+	expect((await listDrafts({ paths, runner: room().runner })).find(x => x.code === d.code)!.status).toBe("pending");
+});
+
 const me = (logId: string, type: number): Msg => ({ logId, chatId: "777", authorId: "1", sender: "나", text: "", type, sentAt: 0, fromMe: true });
 const selfRoom = { chatId: "777", name: "나", kind: "self" as const, members: 1 };
 let clock = 0;

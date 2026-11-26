@@ -83,6 +83,19 @@ export function runDraft(site: string, now: number, input: { to: string; subject
 	return { draft, code: 0 };
 }
 
+export function draftInput(rest: string[]): { to: string; subject: string; body: string; files: string[] } {
+	const cut = rest.indexOf("--");
+	const options = cut < 0 ? rest : rest.slice(0, cut);
+	const files: string[] = [];
+	const args = options.filter((a, i) => {
+		if (a === "--file") return false;
+		if (options[i - 1] === "--file") return void files.push(a);
+		return true;
+	});
+	const [to = "", subject = "", ...words] = [...args, ...(cut < 0 ? [] : rest.slice(cut + 1))];
+	return { to, subject, body: words.join(" "), files };
+}
+
 // Exit codes of `send`, so its caller (features/reply-drafts/lib/senders.ts) reads no text: 0 sent, 1 surely not sent, 2 not approved,
 // 3 may have been sent, 4 login expired. `reason` is the code of design 2.2 for the `DOTZ_SEND` line `main` prints.
 type SendRun = { lines: string[]; code: number; reason?: { sent: "yes" | "no" | "maybe"; code?: string } };
@@ -174,15 +187,8 @@ async function main(argv: string[]): Promise<number> {
 			break;
 		}
 		case "draft": {
-			const files: string[] = [];
-			const args = rest.filter((a, i) => {
-				if (a === "--file") return false;
-				if (rest[i - 1] === "--file") return void files.push(a);
-				return true;
-			});
-			const [to = "", subject = "", ...words] = args;
 			try {
-				const { draft } = runDraft(site, now, { to, subject, body: words.join(" "), files });
+				const { draft } = runDraft(site, now, draftInput(rest));
 				out = { lines: [`초안 저장: ${draft.id}${draft.files ? ` (파일 ${draft.files.length}개)` : ""}`], code: 0 };
 			} catch (error) {
 				out = { lines: [(error as Error).message], code: 1 };
@@ -209,7 +215,7 @@ async function main(argv: string[]): Promise<number> {
 			out = await runSend(ctx, spec, site, rest[0], now);
 			break;
 		default:
-			out = { lines: ["사용법: list | read <id> | search <말> | sent [--limit n] | draft <받는이> <제목> <본문...> [--file <경로>]... | approve <초안id> | send <초안id> | discard <초안id>"], code: 1 };
+			out = { lines: ["사용법: list | read <id> | search <말> | sent [--limit n] | draft [--file <경로>]... [--] <받는이> <제목> <본문...> | approve <초안id> | send <초안id> | discard <초안id>"], code: 1 };
 	}
 	for (const l of out.lines) console.log(l);
 	if (out.reason) console.log(`DOTZ_SEND ${JSON.stringify(out.reason)}`);

@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { createApprovalSender, outcomeOf, refOfQuestion, runCli, sendActionOf, sendArgv, type SendResult } from "./approval-send.ts";
+import { flush } from "./runtime/test-clock.ts";
 import { reasonOf } from "./reply-reasons.ts";
 
 const said = (o: object) => `DOTZ_SEND ${JSON.stringify(o)}`;
@@ -164,6 +165,50 @@ describe("approval sender", () => {
 		const r = await runCli([process.execPath, "-e", script]);
 		expect(r.out.length).toBeLessThan(4500);
 		expect(outcomeOf(r)).toEqual({ sent: "no", code: "offline" });
+	});
+
+	test("every DOTZ_SEND line the CLI printed reaches outcomeOf, however long the output after them: a posted reply with a refused mail stays a partial send", async () => {
+		const script = `console.log(${JSON.stringify(said({ sent: "yes", part: "reply" }))}); console.log(${JSON.stringify(said({ sent: "no", code: "attach_mismatch", part: "mail" }))}); console.error("w".repeat(6000)); process.exit(1);`;
+		const r = await runCli([process.execPath, "-e", script]);
+		expect(r.out.length).toBeLessThan(4500);
+		expect(outcomeOf(r)).toMatchObject({ sent: "partial", rest: "no", code: "attach_mismatch" });
+	});
+
+	test("a reply that may have gone up is never `no`, whatever the mail line after it says; its own reason and detail are kept", () => {
+		const out = [said({ sent: "maybe", code: "net_cut", part: "reply", detail: "the site hung up" }), said({ sent: "no", code: "offline", part: "mail" })].join("\n");
+		expect(outcomeOf({ code: 1, out })).toEqual({ sent: "maybe", code: "net_cut", detail: "the site hung up" });
+		const s = createApprovalSender({ kind: ref => PLACES[ref], run: async () => ({ code: 1, out }), report: () => undefined, log: () => undefined });
+		s.enqueue({ ref: "D1", conv: "comment:site-a", action: "send", title: "q (D1)" });
+		return s.idle().then(() => {
+			expect(s.results().find(x => x.ref === "D1")).toMatchObject({ state: "unsure", reason: { code: "net_cut" }, detail: "the site hung up" });
+		});
+	});
+
+	test("code's own retry waiting on its repair steps aside when the owner's 다시 보내기 took the job meanwhile: one more send, no second run on a draft already sent", async () => {
+		const runs: string[] = [], timers: (() => void)[] = [];
+		const repairStarted = Promise.withResolvers<void>();
+		const repairGate = Promise.withResolvers<void>();
+		const s = createApprovalSender({
+			kind: () => PLACES.RAAAAAA,
+			run: async () => (runs.push("run"), runs.length === 1 ? { code: 1, out: said({ sent: "no", code: "login_expired" }) } : { code: 0, out: "" }),
+			repair: async () => (repairStarted.resolve(), await repairGate.promise, "fixed"),
+			after: (_ms, fn) => void timers.push(fn),
+			report: () => undefined,
+			log: () => undefined,
+		});
+		s.enqueue({ ref: "RAAAAAA", conv: "c", action: "send", title: "q (RAAAAAA)", by: "owner" });
+		await s.idle();
+		expect(s.results()[0]).toMatchObject({ state: "failed", safeToAuto: true });
+		for (const fn of timers.splice(0)) fn();
+		await repairStarted.promise;
+		s.enqueue({ ref: "RAAAAAA", conv: "c", action: "send", title: "q (RAAAAAA)", retry: true, by: "owner" });
+		await s.idle();
+		expect(s.results()[0]).toMatchObject({ state: "sent" });
+		repairGate.resolve();
+		await flush();
+		await s.idle();
+		expect(runs).toHaveLength(2);
+		expect(s.results()[0]).toMatchObject({ state: "sent" });
 	});
 
 	test("a report that throws is logged and leaves no place stuck sending", async () => {

@@ -103,7 +103,7 @@ async function raAct(item, action, args = {}) {
     // Another computer's item runs there, through its own queue (hub/peer-monitor.ts "reply").
     const body = { ref, action, ...args, ...(sends && item.draft.hash ? { hash: item.draft.hash } : {}) };
     const r = item.pc ? await api(pqProxy(item.pc, "/api/peer/act"), "POST", { action: "reply", args: body }, CARD_WAIT_MS) : await api("/api/reply/act", "POST", body, CARD_WAIT_MS);
-    if (r && r.item) RA.items.set(ref, { ...RA.items.get(ref), ...r.item });
+    if (r && r.item && !item.pc) RA.items.set(ref, { ...RA.items.get(ref), ...r.item });
     else if (item.kind === "card" && (sends || action === "drop")) RA.answered.set(ref, item.draft.hash);
     return true;
   } catch (e) {

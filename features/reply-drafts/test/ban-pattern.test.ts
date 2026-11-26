@@ -4,8 +4,9 @@ import { type Ban, banBullet, banHit, parseBan } from "../../../hub/ban.ts";
 import type { Msg } from "../../../hub/kakao/types.ts";
 import { runDraft } from "../bin/draft.ts";
 import { advance, flush } from "../../../hub/runtime/test-clock.ts";
-import { learnLine, ownerWarning, proposeLinePattern } from "../lib/flow.ts";
+import { learnLine, proposeLinePattern } from "../lib/flow.ts";
 import { learn } from "../lib/learn.ts";
+import { ownerWarning } from "../lib/lint-findings.ts";
 import { HEADINGS, loadStyle, paths, profileBullets, recordForbidden, recordRule, savePairs } from "../lib/settings.ts";
 import { j, setupEnv } from "./helpers.ts";
 

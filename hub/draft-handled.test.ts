@@ -296,3 +296,10 @@ test("send approvals of one app push as one evolving notification with the item 
 	expect(c.tag).toBe(a.tag);
 	expect(a.actions).toBeUndefined();
 });
+
+test("a pending new-mail draft (ref compose-<id>) has no mail record and is not handled until its status says so", () => {
+	const compose = (status: string) => ({ drafts: () => [mail("c1", "compose-c1", status)], record: () => undefined });
+	expect(mailDraftHandled("c1", compose("pending"))).toBe(false);
+	for (const status of ["sent", "dropped", "stale"]) expect(mailDraftHandled("c1", compose(status))).toBe(true);
+	expect(mailDraftHandled("d1", { drafts: () => [mail("d1", "m1")], record: () => undefined })).toBe(true);
+});

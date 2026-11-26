@@ -11,7 +11,7 @@ import { defaultCall } from "./flow.ts";
 import { analyzeTone, backupTone, corpusFile, corpusOf } from "./persona.ts";
 import { dataDir, HEADINGS, hasSamples, identityOf, isTuned, loadPairs, loadSettings, markLearned, normText, paths, readLearned, templatesOf, type Pair, type ToneKey, writeAtomic, writeSections } from "./settings.ts";
 import { listDrafts } from "./store.ts";
-import { pickExamples, realRunner, refreshPairs, SWEEP_LIMIT } from "./tone.ts";
+import { isBotDraft, pickExamples, realRunner, refreshPairs, SWEEP_LIMIT } from "./tone.ts";
 
 export const VOICE_MIN = 20; // fewer replies than this show the mail they answered, not how he writes there: the account's voice is the better guess
 export const VOICE_MAX = SWEEP_LIMIT; // the same newest batch the account's own sweep reads
@@ -35,8 +35,6 @@ function readVoices(): Record<string, Learned> {
 const keyOf = (instance: string, box: string): ToneKey => ({ app: instance, room: box });
 const idOf = (instance: string, box: string): string => `${instance}/${box}`;
 const seenOf = (p: Pair): string => Bun.hash(normText(p.reply)).toString(36);
-// A short draft body ("네, 감사합니다") must not take every reply that opens the same way.
-const isOurs = (text: string, ours: string[]): boolean => ours.some(o => text === o || (o.length >= 40 && text.startsWith(o)));
 // What the sweep reads (persona.ts corpusOf): his words, then what they answered as a quote.
 const asText = (p: Pair): string => `${p.reply}\n${p.received.split("\n").map(l => `> ${l}`).join("\n")}`;
 
@@ -46,7 +44,7 @@ export function ownPairs(instance: string): Map<string, Pair[]> {
 	for (const [id, v] of Object.entries(readVoices())) if (id.startsWith(`${instance}/`)) for (const s of v.seen) learned.set(s, id.slice(instance.length + 1));
 	const ours = [...listDrafts().filter(d => d.status === "sent").map(d => d.body), ...all.filter(p => p.edited).map(p => p.reply)].map(normText).filter(Boolean);
 	for (const p of all.sort((a, b) => b.at - a.at)) {
-		const box = isOurs(normText(p.reply), ours) ? undefined : place({ ...p, source: p.source ?? "zele" }, learned.get(seenOf(p)));
+		const box = isBotDraft(normText(p.reply), ours) ? undefined : place({ ...p, source: p.source ?? "zele" }, learned.get(seenOf(p)));
 		if (box) (out.get(box) ?? out.set(box, []).get(box)!).push(p);
 	}
 	return out;

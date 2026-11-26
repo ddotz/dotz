@@ -40,3 +40,24 @@ test("an edit keeps the ref: the card shows the saved text, stores its hash and 
 	expect([n!.decision!.state, n!.decision!.hash, n!.text.includes("내일 오전에 보내드릴게요.")]).toEqual(["open", "hash-e", true]);
 	expect(refreshed).toEqual([{ id: n!.id, text: n!.text, hash: "hash-e" }]);
 });
+
+test("a revise that drops or adds the send option redraws the card's buttons with its text", () => {
+	const noSend = (ref: string) => `[ask] 답장 초안을 만들었어요\n${draftApprovalBlock({ to: "kim@example.com", body: "초안", ref, question: "이 답장 보낼까요?", noSend: "본문이 비어 있어서 보낼 수 없어요" })}`;
+	emit("outbox", { ts: new Date().toISOString(), kind: "out", source: "orchestrator", target: "main", text: noSend("RAAAAAA") });
+	const labels = () => stored().find(n => n.decision?.draft?.ref === "RAAAAAA" || n.decision?.draft?.ref === "RBBBBBB")!.decision!.options.map(o => o.label);
+	expect(labels()).not.toContain("보내기");
+	expect(redrawDraftCards("RAAAAAA", card("RBBBBBB", "목요일까지 보내드릴게요."), "hash-b", "RBBBBBB")).toBe(1);
+	expect(labels()).toContain("보내기");
+	expect(redrawDraftCards("RBBBBBB", noSend("RBBBBBB"), "hash-c")).toBe(1);
+	expect(labels()).not.toContain("보내기");
+});
+
+test("a long draft stays whole in the card text after a redraw", () => {
+	emit("outbox", { ts: new Date().toISOString(), kind: "out", source: "orchestrator", target: "main", text: card("RAAAAAA", "첫 초안") });
+	const body = "목요일까지 보내드릴게요.\n".repeat(200);
+	expect(redrawDraftCards("RAAAAAA", card("RAAAAAA", body), "hash-l")).toBe(1);
+	const [n] = stored().filter(x => x.decision?.draft?.ref === "RAAAAAA");
+	expect(n!.text.length).toBeGreaterThan(1500);
+	expect(n!.text).toContain("결정: 이 답장 보낼까요? (RAAAAAA)");
+	expect(n!.decision!.draft!.body.length).toBe(body.trim().length);
+});

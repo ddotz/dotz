@@ -1,7 +1,7 @@
 // Who a mail reply draft goes to: 답장 (the sender alone) or 전체 답장 (the sender plus the original mail's 받는 사람 and 참조, minus the
 // owner's own addresses). Pure: the caller hands in the original's headers and the owner's addresses (hub/mail-state.ts ownAddresses,
 // which knows the config aliases and each source's account), so nothing here reads a config or a mail store.
-import { addressesOf, usableReplyTo } from "../../../hub/reply-draft.ts";
+import { addressesOf, selfKeys, untag, usableReplyTo } from "../../../hub/reply-draft.ts";
 
 export type ReplyMode = "reply" | "all";
 export type Recipients = { to: string[]; cc: string[] };
@@ -29,7 +29,7 @@ export function uniqAddresses(list: readonly string[]): string[] {
 
 /** One address per entry from what a source gives ("Kim <kim@x>", "a@x, b@y"); a sender the source names without an address stays as it is. */
 export function recipientList(s: string | undefined): string[] {
-	const found = uniqAddresses(addressesOf(s));
+	const found = uniqAddresses(addressesOf(s?.replace(/(?:"[^"]*"|[^,;<>"]*)\s*<([^<>]*)>/g, " $1 ")));
 	if (found.length || !s?.trim()) return found;
 	return [s.trim()];
 }
@@ -42,11 +42,11 @@ export const recipientText = (list: readonly string[]): string => list.join(", "
  * sender alone; 전체 답장 = that address and the original's 받는 사람, with its 참조 kept in 참조. The owner's own addresses are never a recipient.
  */
 export function replyRecipients(m: { sender: string; replyTo?: string; to?: string; cc?: string; self?: readonly string[] }): { reply: Recipients; all: Recipients } {
-	const own = new Set(m.self?.flatMap(a => addressesOf(a)) ?? []);
+	const own = selfKeys(m.self);
 	const reply: Recipients = { to: recipientList(usableReplyTo(m.replyTo, m.self) ?? m.sender), cc: [] };
 	const to = uniqAddresses([...reply.to, ...addressesOf(m.to)]);
 	const cc = uniqAddresses(addressesOf(m.cc));
-	const all: Recipients = { to: to.filter(a => !own.has(a)), cc: cc.filter(a => !own.has(a) && !to.includes(a)) };
+	const all: Recipients = { to: to.filter(a => !own.has(untag(a))), cc: cc.filter(a => !own.has(untag(a)) && !to.includes(a)) };
 	return { reply, all };
 }
 
@@ -64,8 +64,8 @@ export function parseRecipients(value: unknown, own: readonly string[] = []): Pa
 		if (!found.length) return { ok: false, error: `'${entry.trim() || "(빈 값)"}'은(는) 메일 주소가 아니에요` };
 		for (const a of found) if (!list.includes(a)) list.push(a);
 	}
-	const mine = new Set(own.flatMap(a => addressesOf(a)));
-	const self = list.find(a => mine.has(a));
+	const mine = selfKeys(own);
+	const self = list.find(a => mine.has(untag(a)));
 	if (self) return { ok: false, error: `${self}은(는) 내 주소라서 받는 사람이 될 수 없어요` };
 	if (list.length > RECIPIENTS_MAX) return { ok: false, error: `받는 사람·참조는 ${RECIPIENTS_MAX}명까지예요` };
 	return { ok: true, list };

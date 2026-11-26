@@ -255,7 +255,7 @@ export function parseDecisions(text: string): { question: string; blocks: Decisi
 	let cur: DecisionBlock | undefined;
 	let fence = false;
 	while (i < lines.length && !lines[i]!.trim()) i++;
-	if (i < lines.length && !D_OPT.test(lines[i]!) && !DECISION_HEAD.test(lines[i]!)) question = lines[i++]!.trim();
+	if (i < lines.length && !D_OPT.test(lines[i]!) && !DECISION_HEAD.test(lines[i]!) && !FENCE.test(lines[i]!)) question = lines[i++]!.trim();
 	for (; i < lines.length; i++) {
 		const line = lines[i]!;
 		if (FENCE.test(line)) {

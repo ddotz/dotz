@@ -93,9 +93,18 @@ describe("matching", () => {
 		expect(m.calls[0]!.user).toContain(askMail.body);
 		for (let i = 0; i < 3; i++) expect(await matchRule({ subject: "s", text: "t" }, rules, m.call)).toBeUndefined();
 	});
-	test("the instruction is the 기본 규칙, the rule's 어떻게 and the owner's words, in that order", () => {
+	test("the instruction is the 기본 규칙, the mailbox's lines and the rule's 어떻게, in that order", () => {
 		expect(ruleInstruction("존댓말로", { id: "r1", ...RULE, on: true })).toBe(`존댓말로\n${RULE.how}`);
 		expect(ruleInstruction("", undefined)).toBeUndefined();
+	});
+	test("past 2000 characters the rule's 어떻게 stays whole, the mailbox's 어떻게 is cut and its greeting and bans stay", () => {
+		const how = "규칙의 어떻게 ".repeat(40);
+		const box = ["박스어떻게".repeat(600), '이 보낸 사람(김)에게는 "안녕하세요"(으)로 인사해요.', "쓰지 않을 표현: 귀하."];
+		const out = ruleInstruction("기본 규칙 ".repeat(300), { id: "r1", ...RULE, how, on: true }, box)!;
+		expect(out.length).toBeLessThanOrEqual(2000);
+		expect(out.endsWith(how.trim())).toBe(true);
+		for (const kept of box.slice(1)) expect(out).toContain(kept);
+		expect(out).not.toContain("기본 규칙");
 	});
 });
 

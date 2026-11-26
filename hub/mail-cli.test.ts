@@ -1,15 +1,16 @@
 import { afterAll, expect, test } from "bun:test";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { learningSettled, type FlowDeps } from "../features/reply-drafts/lib/flow.ts";
 import { draftRules } from "../features/reply-drafts/lib/draft-rules.ts";
 import { HEADINGS, paths, profileBullets } from "../features/reply-drafts/lib/settings.ts";
 import { addDraft, getDraft, listDrafts, type DraftRec } from "../features/reply-drafts/lib/store.ts";
+import { stagedFiles, stagedRoot } from "../features/reply-drafts/lib/staged.ts";
 import { recordMail } from "./mail.ts";
 import { mailHash } from "../features/reply-drafts/lib/view.ts";
 import { appendSealed } from "./approval-seal.ts";
-import { runMailCli } from "./mail-cli.ts";
+import { composeMail, runMailCli } from "./mail-cli.ts";
 
 const dir = mkdtempSync(join(tmpdir(), "mail-cli-"));
 const before = process.env.DOTZ_DIR;
@@ -54,4 +55,41 @@ test("mail-cli reply makes the store's reply draft of a received mail and prints
 	expect(again.code).toBe(0);
 	expect(listDrafts().filter(d => d.ref === "zele-thread-r1" && d.status === "pending").map(d => [d.id, d.body])).toEqual([[made[0]!.id, "안녕하세요. 자료를 다시 보내드려요."]]);
 	expect((await runMailCli(["reply", "zele-thread-none", "--body-file", file], "")).code).toBe(2);
+});
+
+const files = mkdtempSync(join(tmpdir(), "mail-cli-files-"));
+afterAll(() => rmSync(files, { recursive: true, force: true }));
+const compose = (more: object) => composeMail({ app: "mail", to: ["kim@example.com"], subject: "자료 보내드려요", body: "안녕하세요. 자료 보내드립니다.", notify: false, ...more });
+
+test("a webmail mail app cannot carry files: attach and from-library are refused before anything is staged", async () => {
+	writeFileSync(join(files, "ok.pdf"), "bytes");
+	mkdirSync(join(dir, "custom", "webmail", "corp"), { recursive: true });
+	writeFileSync(join(dir, "custom", "webmail", "corp", "spec.json"), "{}");
+	writeFileSync(join(dir, "custom", "apps.json"), JSON.stringify({ "mail-corp": { app: "mail", label: "회사", filter: { source: "webmail:corp" } } }));
+	mkdirSync(join(dir, "custom", "reply-drafts"), { recursive: true });
+	writeFileSync(join(dir, "custom", "reply-drafts", "config.json"), JSON.stringify({ enabled: true, attachFolders: { "mail-corp": files } }));
+	for (const more of [{ attach: [join(files, "ok.pdf")] }, { fromLibrary: "ok" }]) {
+		const made = await compose({ app: "mail-corp", ...more });
+		expect(made).toMatchObject({ ok: false, error: expect.stringContaining("파일을 붙여 보낼 수 없어요") });
+	}
+	expect((await compose({ app: "mail-corp" })).ok).toBe(true);
+	expect(existsSync(stagedRoot()) ? readdirSync(stagedRoot()) : []).toEqual([]);
+});
+
+test("the install's narrow rule reads a request typed decomposed (NFD) like the composed word it lists", async () => {
+	const songs = mkdtempSync(join(tmpdir(), "mail-cli-songs-"));
+	for (const [d, name] of [["Orbit 오빗/문서", "Orbit 공개본.pdf"], ["Orbit 오빗/소리", "오빗Orbit_내부용.mp3"], ["Orbit 오빗/문서", "Orbit 내부용 brief.pdf"]] as const) {
+		mkdirSync(join(songs, d), { recursive: true });
+		writeFileSync(join(songs, d, name), "bytes");
+	}
+	writeFileSync(join(dir, "custom", "reply-drafts", "config.json"), JSON.stringify({ enabled: true, attachFolders: { mail: songs } }));
+	writeFileSync(join(dir, "custom", "reply-drafts", "auto-attach.json"), JSON.stringify({ narrow: { when: ["샀어요"], only: "\\.mp3$" } }));
+	const names = async (request: string) => {
+		const made = await compose({ fromLibrary: "Orbit 오빗 샀어요", request });
+		if (!made.ok) throw new Error(made.error);
+		return stagedFiles(made.rec.id).map(f => f.name);
+	};
+	expect(await names("Orbit 샀어요")).toEqual(["오빗Orbit_내부용.mp3"]);
+	expect(await names("Orbit 샀어요".normalize("NFD"))).toEqual(["오빗Orbit_내부용.mp3"]);
+	rmSync(songs, { recursive: true, force: true });
 });

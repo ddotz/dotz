@@ -19,7 +19,7 @@ import { commentAsk } from "./comments/ask.ts";
 import { attachMail, linkedComment, mailPartOf } from "./comments/linked.ts";
 import { commentsDir, createStore } from "./comments/store.ts";
 import { accountHold, askText, boxOfOutgoing, checkDraft, draftAttachIssues, judgeOf, learningSettled, ownerWarning, realFlowDeps, realRunner, sendAccountOf, sendDraft, settleDraft, type FlowDeps } from "../features/reply-drafts/lib/flow.ts";
-import { zeleLogins } from "../features/reply-drafts/lib/senders.ts";
+import { canAttach, zeleLogins } from "../features/reply-drafts/lib/senders.ts";
 import { listLibrary, rankLibrary, LIBRARY_PICK_MAX, MIN_SCORE } from "../features/reply-drafts/lib/library.ts";
 import { cloudFile, cloudPlaceholder, retryWanted, STAGED_MAX, stageFiles, type Want } from "../features/reply-drafts/lib/staged.ts";
 import { dataDir, loadSettings } from "../features/reply-drafts/lib/settings.ts";
@@ -71,6 +71,7 @@ export async function composeMail(i: ComposeInput, deps: MailCliDeps = {}): Prom
 	const via = sourceOf(app);
 	if ("error" in via) return fail(via.error);
 	if (i.account && (via.source !== "zele" || !(await zeleLogins(deps.run ?? realRunner)).includes(i.account))) return fail(`이 앱으로 보낼 수 있는 메일 계정이 아니에요: ${i.account}`);
+	if ((i.attach?.length || i.fromLibrary) && !canAttach(via.source)) return fail("이 메일은 파일을 붙여 보낼 수 없어요");
 	const paths: string[] = [];
 	for (const given of i.attach ?? []) {
 		// A file iCloud keeps only in the cloud (its `.<name>.icloud` placeholder, by either path) is attached once it is downloaded.
@@ -91,7 +92,7 @@ export async function composeMail(i: ComposeInput, deps: MailCliDeps = {}): Prom
 		// Only the best-scoring files, and only when the best is a real match: three different songs on one mail were never asked for.
 		const top = ranked[0]?.score ?? 0;
 		let found = top >= MIN_SCORE ? ranked.filter(r => r.score === top).slice(0, LIBRARY_PICK_MAX) : [];
-		const request = i.request?.toLowerCase();
+		const request = i.request?.normalize("NFC").toLowerCase();
 		const narrow = request === undefined ? undefined : rules.narrow?.when.some(w => request.includes(w)) ? rules.narrow : undefined;
 		if (narrow) {
 			// Only the files of the one work he names; a weak match or files of several works is a guess, so nothing is attached.

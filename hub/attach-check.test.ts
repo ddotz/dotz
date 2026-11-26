@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { attachIssues } from "./attach-check.ts";
+import { attachIssues, promisesAttachment } from "./attach-check.ts";
 
 const kinds = (d: Parameters<typeof attachIssues>[0]) => attachIssues(d).map(i => i.kind);
 
@@ -149,4 +149,49 @@ test("a file the mail asked for and the draft leaves off is skipped, a kind of i
 
 test("a numbers, key, pages, rtf, odt, rar or 7z file counts as the document the draft promises", () => {
 	for (const ext of ["numbers", "key", "pages", "rtf", "odt", "rar", "7z"]) expect([ext, kinds({ subject: "Re: 견적", body: "견적 문서 보내드립니다.", files: [`견적서.${ext}`] })]).toEqual([ext, []]);
+});
+
+test("a closer after the send does not put it off, an if-clause before it does; a request to the reader is no send", () => {
+	for (const body of ["견적서 첨부드립니다, 확인해 주시면 감사하겠습니다.", "I'm sending you the quote; let me know if you have questions.", "검토해 보시면 좋을 자료 첨부합니다."]) expect([body, kinds({ body, files: [] })]).toEqual([body, ["missing"]]);
+	for (const body of ["필요하시면 자료 공유드리겠습니다.", "관련 자료를 보내주시면 검토 후 견적서 보내드리겠습니다.", "If you like, I'll send the quote."]) expect([body, kinds({ body, files: [] })]).toEqual([body, []]);
+});
+
+test("a sale notice holds nothing, unless the sentence attaches in so many words", () => {
+	expect(kinds({ body: "음원은 온라인 상점에서 판매 중이며 구매 후 안내 이메일을 보내드립니다.", files: [] })).toEqual([]);
+	for (const body of ["판매 중인 음원 파일 첨부드립니다.", "판매 보고서 PDF 첨부드립니다."]) expect([body, kinds({ body, files: [] })]).toEqual([body, ["missing"]]);
+});
+
+test("a linked ending of an attach is an attach; a request to attach is not", () => {
+	for (const body of ["견적서 첨부드리오니 확인 부탁드립니다.", "견적서 첨부드리며 자세한 내용은 본문을 참고해 주세요.", "파일 첨부하오니 참고 바랍니다.", "첨부파일 확인 부탁드립니다.", "견적서를 첨부하여 보내드립니다."]) expect([body, kinds({ body, files: [] })]).toEqual([body, ["missing"]]);
+	for (const body of ["서류를 첨부하여 보내주세요.", "사진을 첨부해서 회신 바랍니다.", "보내주신 첨부파일 확인 부탁드립니다.", "받은 첨부 문서 검토 부탁드립니다."]) expect([body, kinds({ body, files: [] })]).toEqual([body, []]);
+});
+
+test("a link, a date, an amount or an account is no file, unless it is joined to one", () => {
+	for (const body of ["요청하신 영상 링크 공유드립니다: https://youtu.be/example", "음원 구매 링크 보내드립니다.", "사진 촬영 일정 공유드립니다.", "견적서 금액 보내드립니다.", "Here is the document link: https://docs.example.com/view"]) expect([body, kinds({ body, files: [] })]).toEqual([body, []]);
+	for (const body of ["견적서와 일정 공유드립니다.", "견적서 및 링크 보내드립니다.", "견적서 내용을 메일로 보내드립니다."]) expect([body, kinds({ body, files: [] })]).toEqual([body, ["missing"]]);
+});
+
+test("a reply that declines or points to a store or a link leaves the asked file unflagged; a price note does not", () => {
+	const ask = { request: "음원 파일 공유 부탁드립니다." };
+	for (const body of ["안녕하세요. 죄송하지만 해당 음원 파일 제공은 어렵습니다.", "보안 규정상 외부 공유 불가합니다.", "해당 음원은 온라인 상점에서 판매하고 있습니다.", "아래 링크에서 바로 내려받으실 수 있습니다: https://example.com/dl"]) expect([body, kinds({ body, files: [], ...ask })]).toEqual([body, []]);
+	expect(kinds({ body: "판매 가격은 별도입니다. 확인했습니다.", files: [], ...ask })).toEqual(["skipped"]);
+});
+
+test("a file the sender attached is no file asked for, unless the sentence asks for one back; a reply, a link or an account sent is no file", () => {
+	expect(kinds({ body: "확인했습니다. 수정 의견 정리해서 회신 보내드립니다.", files: [], request: "첨부한 계약서 검토 부탁드립니다." })).toEqual([]);
+	expect(kinds({ body: "작성해서 보내드립니다.", files: [], request: "첨부한 양식 작성해서 보내주세요." })).toEqual(["missing"]);
+	expect(kinds({ body: "총액은 50만원이고 입금 계좌번호 보내드립니다.", files: [], request: "견적서 금액만 부탁드립니다." })).toEqual([]);
+	expect(kinds({ body: "네, 바로 보내드립니다.", files: [], request: "견적서 부탁드립니다." })).toEqual(["missing"]);
+});
+
+test("a sentence that says it is not sending, or sends without a file, claims nothing", () => {
+	for (const body of ["죄송하지만 견적서는 안 보내드립니다.", "견적서는 파일 없이 본문에 적어 보내드립니다.", "I am not sending the file this time."]) expect([body, kinds({ body, files: [] })]).toEqual([body, []]);
+	expect(kinds({ body: "서류 없이도 신청하실 수 있도록 양식 첨부드립니다.", files: [] })).toEqual(["missing"]);
+});
+
+test("promisesAttachment is the gate's own reading: what the gate lets through the card does not warn about", () => {
+	expect(promisesAttachment(undefined, "확인 후 내일 따로 견적서 보내드릴게요.")).toBe(false);
+	expect(promisesAttachment("Re: 견적서 첨부합니다", "확인했습니다.")).toBe(false);
+	expect(promisesAttachment("견적서 첨부합니다", "확인했습니다.")).toBe(true);
+	expect(promisesAttachment(undefined, "견적서 첨부드립니다, 확인해 주시면 감사하겠습니다.")).toBe(true);
 });

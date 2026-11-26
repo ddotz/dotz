@@ -9,7 +9,7 @@ import { shortTitle } from "./notice-title.ts";
 import { parseTone, stripHandoff } from "./tone.ts";
 import type { CardEdit, CardKind, DecisionOpt } from "./notices-types.ts";
 import { RUN_DECISION } from "./notices-schedule.ts";
-import { ALERT_ANSWER_WINDOW_MS, ANSWER_WINDOW_MS, TEXT_MAX, authorOf, laneTone, refOf } from "./notices-rules.ts";
+import { ALERT_ANSWER_WINDOW_MS, ANSWER_WINDOW_MS, DRAFT_TEXT_MAX, TEXT_MAX, authorOf, laneTone, refOf } from "./notices-rules.ts";
 import { say } from "./notices-read.ts";
 
 const BUDGET_OPTIONS: DecisionOpt[] = [
@@ -96,14 +96,15 @@ function drafted(e: HubEvent): Draft[] {
 	const to = eventTarget(e) ?? "main";
 	// A mail thread's send question without the draft: the thread's latest drafted quote goes above it, so the owner can decide on it.
 	const quoted = !pc.blocks.length && to.startsWith("mail:") && asksSendWithoutDraft(body) ? threadDraft(to, e.ts) : undefined;
-	const detail = quoted ? `${quoted.slice(0, Math.max(0, TEXT_MAX - body.length - 1))}\n${body}`.slice(0, TEXT_MAX) : body.slice(0, TEXT_MAX);
+	const cap = (pc.blocks.length === 1 ? parseDraftApproval(body) : !pc.blocks.length ? askedDraft(quoted ? `${quoted}\n${body}` : body) : undefined) ? DRAFT_TEXT_MAX : TEXT_MAX;
+	const detail = quoted ? `${quoted.slice(0, Math.max(0, cap - body.length - 1))}\n${body}`.slice(0, cap) : body.slice(0, cap);
 	const line = firstLine(body);
 	// A send question that quotes its draft is a draft approval even without the choice block: it gets the draft and the draft options.
 	const askDraft = !pc.blocks.length ? askedDraft(detail) : undefined;
 	const sendDraft = pc.blocks.length === 1 ? parseDraftApproval(body) : askDraft;
 	const by = authorOf(e), ref = refOf(e);
 	const files = sendDraft || askDraft ? "" : messageFiles(stripHandoff(String(e.text ?? "")));
-	const withFiles = (s: string): string => s.slice(0, Math.max(0, TEXT_MAX - files.length)) + files;
+	const withFiles = (s: string): string => s.slice(0, Math.max(0, cap - files.length)) + files;
 	const draft = (title: string, given: DecisionOpt[], group: number, idx: number): Draft => ({ title, detail: withFiles(detail), options: askDraft ? DRAFT_OPTIONS.map(o => ({ ...o })) : given, to, replyTo: e.ts, group, place: idx, ...(by ? { by } : {}), ...(ref ? { ref } : {}), key: `dec:${to}:${hashOf(`${idx}|${title}|${(askDraft ? DRAFT_OPTIONS : given).map(o => o.label).join("/")}${sendDraft ? `|${sendDraft.to}|${sendDraft.subject ?? ""}|${sendDraft.body}` : ""}`)}`, ...(sendDraft ? { draft: sendDraft } : {}) });
 	const unread = askDraft ? [] : unreadQuestions(stripHandoff(String(e.text ?? "")));
 	// No choice block (a plain question, often in a mail or work thread): the budget question's buttons, else yes / no or send defaults (ask-options.ts).

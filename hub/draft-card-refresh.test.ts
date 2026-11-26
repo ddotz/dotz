@@ -1,7 +1,9 @@
 import { expect, test } from "bun:test";
 import { parseDecisions } from "./choices.ts";
 import { decideOf, draftApprovalBlock, NO_ATTACHMENT_WARNING, parseDraftApproval, withAttachIssues, withStagedFiles } from "./draft-approval.ts";
-import { type Notice, refreshDraftFiles } from "./notices.ts";
+import { emit, onBroadcast } from "./events.ts";
+import { allNotices, type Notice, refreshDraftFiles, resetNoticesForTest, setCardFingerprint, stampDraftCard, updateDraftRecipients } from "./notices.ts";
+import { decisionsOf } from "./notices-decisions.ts";
 
 const mail = { to: "kim@example.com", subject: "문서 요청", body: "안녕하세요.\n\n문서 첨부해 드립니다.", ref: "RABC123", question: "이 답장 보낼까요?" };
 
@@ -72,4 +74,45 @@ test("an open card already waiting is re-checked against its staged files; an an
 	expect(list[0]!.text).toContain("> 첨부: 문서.pdf (2KB)");
 	expect([list[1]!.text, list[2]!.text]).toEqual([text, text]);
 	expect(refreshDraftFiles(list, filesOf)).toEqual([]);
+});
+
+test("a long draft card keeps its whole draft and decision block in the stored text, so it is read back and follows later findings", () => {
+	const body = "안녕하세요. 요청하신 일정과 견적 내역을 안내드립니다.\n".repeat(120);
+	const mailBody = "자료 보내드립니다.\n".repeat(120);
+	const text = `[ask] 답장 초안을 만들었어요\n${draftApprovalBlock({ ...mail, body, ref: "RLONG11", mail: { id: "RMAIL11", to: "b@example.com", subject: "Re: 자료", body: mailBody } })}`;
+	expect(text.length).toBeGreaterThan(5000);
+	const [d] = decisionsOf({ ts: "2026-11-26T10:00:00.000Z", kind: "out", source: "orchestrator", target: "mail:zele-1", text });
+	expect(d!.detail).toContain("결정: 이 답장 보낼까요? (RLONG11)");
+	const read = parseDraftApproval(d!.detail)!;
+	expect([read.ref, read.body.length, read.mail?.body.length]).toEqual([parseDraftApproval(text)!.ref, parseDraftApproval(text)!.body.length, parseDraftApproval(text)!.mail!.body.length]);
+	const open = { id: "a", text: d!.detail, decision: { options: d!.options, to: "mail:zele-1", group: 1, state: "open", draft: d!.draft! } } as unknown as Notice;
+	const why = "본문에 문서 파일을 보낸다고 썼지만 첨부파일이 없어요";
+	expect(refreshDraftFiles([open], id => (id === "RMAIL11" ? [{ name: "score.pdf", size: 1024 }] : undefined), id => (id === "RLONG11" ? [why] : undefined)).map(n => n.id)).toEqual(["a"]);
+	expect([open.text.includes("> 첨부: score.pdf (1KB)"), open.text.includes("함께 보낼 메일"), (open as any).decision.options.map((o: { label: string }) => o.label).includes("이대로 보내기")]).toEqual([true, true, true]);
+	expect(parseDraftApproval(open.text)!.mail!.attachments).toEqual([{ name: "score.pdf", size: "1KB" }]);
+});
+
+test("a card whose stored version moved under it tells every page the hash it now holds", async () => {
+	resetNoticesForTest();
+	emit("outbox", { ts: new Date().toISOString(), kind: "out", source: "orchestrator", target: "main", text: `[ask] 답장 초안을 만들었어요\n${draftApprovalBlock({ ...mail, ref: "RHASH11" })}` });
+	const n = allNotices().find(i => i.decision?.draft?.ref === "RHASH11")!;
+	const seen: (string | undefined)[] = [];
+	onBroadcast(e => {
+		const item = e.item as Notice | undefined;
+		if (e.kind === "notice" && item?.id === n.id) seen.push(item.decision?.hash);
+	});
+	setCardFingerprint(async () => ({ hash: "h-new", text: n.text }));
+	await stampDraftCard(n.id);
+	setCardFingerprint(async () => undefined);
+	expect([n.decision!.hash, seen]).toEqual(["h-new", ["h-new"]]);
+});
+
+test("new recipients of the mail part of a combined card rewrite that card's mail lines and draft, not the reply's", () => {
+	resetNoticesForTest();
+	const card = `[ask] 댓글 답글과 메일 초안이에요\n${draftApprovalBlock({ ref: "yt:rcpt1", toLabel: "대상", to: "구독자", body: "답글이에요", question: "답글과 메일을 보낼까요?", mail: { id: "RMAIL33", to: "fan@example.com", subject: "자료", body: "자료 보내드립니다." } })}`;
+	emit("outbox", { ts: new Date().toISOString(), kind: "out", source: "orchestrator", target: "main", text: card });
+	expect(updateDraftRecipients("RMAIL33", { to: "new@example.com", cc: ["cc@example.com"] })).toBe(1);
+	const n = allNotices().find(i => i.decision?.draft?.ref === "yt:rcpt1")!;
+	const read = parseDraftApproval(n.text)!;
+	expect([read.to, read.mail?.to, read.mail?.cc, n.decision!.draft!.to, n.decision!.draft!.mail?.to, n.decision!.draft!.mail?.cc]).toEqual(["구독자", "new@example.com", ["cc@example.com"], "구독자", "new@example.com", ["cc@example.com"]]);
 });

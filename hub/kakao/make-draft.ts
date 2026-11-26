@@ -96,7 +96,8 @@ const done = (error?: string, made?: { code: string; learned?: Learned }): Made 
 		const judgeModel = deps.judgeModel;
 		const { standing, corrections } = judgeModel && style ? styleConditions(style, CHANNELS.kakao.correctionsBudget) : { standing: [], corrections: [] };
 		const ask = judgeModel ? judgeAsk(async (s, u) => (await judgeModel(s, u, chatId)).text) : undefined;
-		const judged = async (body: string): Promise<Violation[]> => (ask && (standing.length || corrections.length) ? judgeStyle({ standing, corrections, received: chat.join("\n"), draft: body, tail: true, ...(revise ? { asked: revise.change } : {}) }, ask) : []);
+		const asked = revise?.change ?? intent;
+		const judged = async (body: string): Promise<Violation[]> => (ask && (standing.length || corrections.length) ? judgeStyle({ standing, corrections, received: chat.join("\n"), draft: body, tail: true, ...(asked ? { asked } : {}) }, ask) : []);
 		// One retry with the findings when the model's text fails the lint (design 3.6); what still fails is a 확인 note on the draft.
 		let reply = await deps.draftModel!(system, user, chatId);
 		let parsed = parseDraftReply(reply.text);

@@ -12,7 +12,7 @@ import { addPair, styleWithExamples } from "../lib/pairs.ts";
 import { learnFirst, learnSiteSent, MAIL_TONE_VERSION } from "../lib/persona.ts";
 import { identityOf, listProfiles, loadPairs, loadStyle, MAX_PAIRS, paths, savePairs, toneFile } from "../lib/settings.ts";
 import { getDraft, listDrafts as storedDrafts } from "../lib/store.ts";
-import { learnTone, ownText, sentMail, sentPairs, type PluginSent, type Runner, type SentMail } from "../lib/tone.ts";
+import { learnTone, ownText, quotedText, sentMail, sentPairs, type PluginSent, type Runner, type SentMail } from "../lib/tone.ts";
 import { enable, fakeModel, j, mailFixture, pick, seedRules, setupEnv } from "./helpers.ts";
 
 const env = setupEnv();
@@ -248,9 +248,10 @@ test("an empty source or a failed model call changes nothing, and the relearn wa
 
 test("a bot draft that went out with a signature makes no pair either", async () => {
 	const own = "me@example.com", other = "kim@example.com";
-	const read = `Thread: x\n──────────\nFrom: Kim <${other}>\nTo: ${own}\nDate: Oct 1\n\n문서 부탁드려요\n──────────\nFrom: Me <${own}>\nTo: ${other}\nDate: Oct 2\n\n네 보내드립니다.\n감사합니다 드림`;
+	const bot = "네 보내드립니다. 문서는 내일 오전까지 정리해서 공유드리겠습니다. 확인 부탁드려요.";
+	const read = `Thread: x\n──────────\nFrom: Kim <${other}>\nTo: ${own}\nDate: Oct 1\n\n문서 부탁드려요\n──────────\nFrom: Me <${own}>\nTo: ${other}\nDate: Oct 2\n\n${bot}\n감사합니다 드림`;
 	const run = async (argv: string[]) => ({ code: 0, stderr: "", stdout: argv[2] === "list" ? JSON.stringify({ items: [{ id: "t", account: own, subject: "문서" }] }) : read });
-	expect((await sentMail(run, 1, ["네 보내드립니다."])).pairs).toEqual([]);
+	expect((await sentMail(run, 1, [bot])).pairs).toEqual([]);
 	expect((await sentMail(run, 1)).pairs.length).toBe(1);
 });
 
@@ -426,16 +427,33 @@ test("sentPairs keeps a real reply with its quote and skips forwards, empty quot
 		sent(3, { body: "---------- Forwarded message ---------\n사이트답3\n> 질문3" }),
 		sent(4, { body: "사이트답4 가능해요." }),
 		sent(5, { to: "noreply@example.test" }),
-		sent(6, { body: "봇이 쓴 초안입니다 6.\n> 질문6" }),
+		sent(6, { body: "봇이 쓴 초안입니다. 요청하신 자료는 내일 오전까지 정리해서 공유드리겠습니다 6.\n> 질문6" }),
 		sent(7, { body: `${"가".repeat(1600)}\n> 질문7` }),
 		sent(8, { body: "사이트답8\n-----원본 메일-----\n질문8" }),
 		sent(9, { received: "넘겨받은 질문", body: "사이트답9" }),
 	];
-	expect(sentPairs(items, "work", ["봇이 쓴 초안입니다"]).map(p => [p.reply, p.received, p.from, p.source])).toEqual([
+	expect(sentPairs(items, "work", ["봇이 쓴 초안입니다. 요청하신 자료는 내일 오전까지 정리해서 공유드리겠습니다"]).map(p => [p.reply, p.received, p.from, p.source])).toEqual([
 		["사이트답1 가능해요.", "질문1 인가요?", "rcpt1@example.test", "work"],
 		["사이트답8", "질문8", "rcpt8@example.test", "work"],
 		["사이트답9", "넘겨받은 질문", "rcpt9@example.test", "work"],
 	]);
+});
+
+test("a short bot draft only equals a sent text; it never takes a longer reply that opens the same way", () => {
+	const items: SentMail[] = [
+		{ to: "bob@x.example", at: day, body: "네, 감사합니다. 요청하신 계약서 초안은 검토해서 내일 오전 중으로 공유드리겠습니다.\n> 계약서 부탁드립니다" },
+		{ to: "amy@x.example", at: day + 1, body: "네, 감사합니다.\n> 계약서 받았어요" },
+	];
+	expect(sentPairs(items, "work", ["네, 감사합니다."]).map(p => p.from)).toEqual(["bob@x.example"]);
+});
+
+test("a Korean sentence about who wrote something is the owner's own text; a signature is not a quote; a quoted line is read once", () => {
+	expect(ownText("김철수님이 작성해주신 자료 잘 받았습니다.\n검토 후 금요일까지 회신드리겠습니다.")).toBe("김철수님이 작성해주신 자료 잘 받았습니다.\n검토 후 금요일까지 회신드리겠습니다.");
+	expect(ownText("확인했습니다.\n\n2026년 11월 26일 (목) 오후 3:00 홍길동 <hong@example.com>님이 작성:\n> 자료 부탁드립니다")).toBe("확인했습니다.\n");
+	const signed = "네, 내일 오후 3시에 뵙겠습니다.\n\n-- \n홍길동 드림\n010-1234-5678";
+	expect(quotedText(signed)).toBe("");
+	expect(sentPairs([{ to: "a@x.example", at: day, body: signed }], "work")).toEqual([]);
+	expect(quotedText("감사합니다.\n\nOn Mon, Alice wrote:\n> 안녕하세요\n> 자료 부탁드립니다")).toBe("안녕하세요\n자료 부탁드립니다");
 });
 
 test("the newest MAX_PAIRS are kept per source, so a big folder of one source never pushes out another", () => {
@@ -515,4 +533,10 @@ test("each source is refreshed on its own: a failing zele read stops neither a m
 		which.mockRestore();
 		logged.mockRestore();
 	}
+});
+
+test("the same reply typed with decomposed Hangul is the same pair", () => {
+	const reply = "자료 확인했습니다. 내일 보내드릴게요.";
+	savePairs("mail", [{ received: "자료 부탁드립니다", reply, at: day }, { received: "자료 부탁드립니다".normalize("NFD"), reply: reply.normalize("NFD"), at: day + 1 }]);
+	expect(loadPairs("mail")).toHaveLength(1);
 });
