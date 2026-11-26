@@ -85,6 +85,12 @@
 @media (pointer: coarse), (max-width: 639px) { .rq-acts .btn.sm { position: relative; height: var(--btn-h-sm); min-height: 0; } .rq-acts .btn.sm::after { content: ""; position: absolute; inset: calc(var(--sp-2) * -1) -2px; } }
 .rq-acts .btn.text.sm { padding: 0 var(--sp-2); }
 .rq-acts.dr-row .dr-send { flex: none; }
+/* what the last lesson on the card did, one meta line with its two small text buttons (rqLearnedNode) */
+.rq-learn { display: flex; flex-wrap: wrap; align-items: center; margin-top: var(--sp-1); color: var(--fg-3); font-size: var(--fs-meta); line-height: var(--lh-meta); }
+.rq-learn-tx { margin-right: var(--sp-3); }
+/* the buttons' own side padding is pulled out, so their words line up with the line's text whether they follow it or wrap under it */
+.rq-learn-bt { display: flex; margin-left: calc(var(--sp-2) * -1); }
+.rq-learn-bt .btn.inrow { font-size: var(--fs-meta); font-weight: 500; }
 
 /* 답장 대기 (web/js/30-replies.js): the prototype's #queue. Rows and tabs are the notice screen's own classes (09-notices-screen.css); the head sticks to the top of the scroll area. */
 .rq-hd2 { position: sticky; top: 0; z-index: 2; background: var(--bg); padding-bottom: var(--sp-1); }

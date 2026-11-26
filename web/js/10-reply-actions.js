@@ -323,6 +323,17 @@ function rqFixNodes(item, lead) {
 
 const raStateText = s => s === "dropped" ? TX("reply.state.dropped") : s === "stale" ? TX("reply.state.stale") : s === "sent" ? TX("reply.state.sent") : TX("reply.state.closed");
 const rqAnsweredNode = a => a ? el("div", { class: "note rq-also", role: "note", "data-k": "answered-elsewhere", "data-via": a.via, text: TX(a.via === "mail" ? "reply.answered.mail" : "reply.answered.comment") }) : null;
+/** What the last lesson on the card did, as one quiet line under the notes: 범위 바꾸기 moves it to the next scope the draft can hold it for, 이번만 takes it back to this message
+ *  and 앞으로도 puts it back. One press is one act; the card repaints from the item the hub returns. */
+function rqLearnedNode(item) {
+  const l = item.draft.learned, scopes = l ? l.scopes || [] : [];
+  if (!l) return null;
+  const once = l.state === "once", busy = RA.busy.has(item.ref), btn = (k, act, args, text) => el("button", { class: "btn text inrow", type: "button", "data-k": `learn-${k}`, disabled: busy, text, onclick: () => raAct(item, act, args) });
+  return el("div", { class: "rq-learn", role: "note", "data-k": "learned", "data-state": l.state }, el("span", { class: "rq-learn-tx", text: l.text }),
+    el("span", { class: "rq-learn-bt" },
+      scopes.length > 1 ? btn("scope", "learn-scope", { scope: scopes[(scopes.indexOf(l.scope) + 1) % scopes.length] }, TX("reply.learn.scope")) : null,
+      once ? btn("keep", "learn-keep", {}, TX("reply.learn.keep")) : btn("once", "learn-once", {}, TX("reply.learn.once"))));
+}
 /** The one card of a reply, on every surface. */
 function rqItemCard(item, opts = {}) {
   drSeen(item.ref, item.draft.hash); if (item.draft.mail) drSeen(item.draft.mail.ref, item.draft.hash);
@@ -346,7 +357,7 @@ function rqItemCard(item, opts = {}) {
     // Which version this is, said above the body: the owner's own text, or the model's rewrite with what it changed marked against the draft it replaced (rqDiffBody).
     label: d.edited ? TX("reply.edited") : d.replaces ? TX("reply.revised") : "",
     body: fx && fx.body ? { node: fx.body, full: true } : (d.replaces && !d.edited && rqDiffBody(d)) || { text: d.text, parts: d.parts, sentParts: d.sentParts },
-    extra: [rqAnsweredNode(item.answeredElsewhere), ...(d.notes || []).map(n => el("div", { class: "dr-wn", text: n })),
+    extra: [rqAnsweredNode(item.answeredElsewhere), ...(d.notes || []).map(n => el("div", { class: "dr-wn", text: n })), rqLearnedNode(item),
       // The mail a comment reply carries goes out with it, so it stands in the card: who gets it, its subject, its text and its files.
       d.mail ? draftMailNode({ ...(local ? { ref: d.mail.ref } : {}), to: d.mail.to, account: d.mail.account, accountHeld: d.mail.accountHeld, subject: d.mail.subject, body: d.mail.text, attachments: d.mail.attachments }, { t: item.conv, fix: fx && fx.mail }) : null, ...((p && p.extra) || [])],
     fail: fail && !fx ? fail : null,

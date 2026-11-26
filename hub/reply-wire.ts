@@ -23,6 +23,7 @@ import { kakaoPaths } from "./kakao/types.ts";
 import { reasonOf } from "./reply-reasons.ts";
 import { DRAFT_UNDO, draftActionOf, SEND_GATE } from "./draft-approval.ts";
 import { askText, withRecipient } from "./draft-attach.ts";
+import { setAskLearned } from "./askbuttons.ts";
 import { createReplyActions, sendOf, setReplies } from "./reply-actions.ts";
 import type { ReplyAdapter } from "./reply-types.ts";
 
@@ -239,6 +240,7 @@ export const replies = createReplyActions({
 	now: Date.now,
 });
 setReplies(replies);
+setAskLearned(replyLearning().shown);
 // A draft's card just opened: every surface gets the reply as that card shows it (the web swaps its inline placeholder for the real card at once).
 onDecision(n => {
 	const ref = n.decision?.draft?.ref;

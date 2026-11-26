@@ -90,7 +90,7 @@ function sendAction(input: ActInput): keyof typeof SEND_LABEL {
 
 /** The cards of `ref` show the version the store holds now, and keep its hash (a pick from one of them is checked against it). */
 async function redraw(deps: ReplyDeps, a: ReplyAdapter, ref: string, now: DraftView | undefined, headline?: string) {
-	const text = await a.ask(ref, headline);
+	const text = await a.ask(ref, headline ?? deps.learning.shown(ref)?.text);
 	if (text) deps.cards.rewrite(ref, text, now && approvalHash(now));
 }
 /** The owner's pick on `view`, kept as his answer on the card; an agent's call records none. */

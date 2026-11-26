@@ -11,6 +11,7 @@ import { msg } from "./i18n.ts";
 import { parseTone, TONE_EMOJI } from "./tone.ts";
 import { refOfQuestion } from "./approval-send.ts";
 import { useReplies } from "./reply-actions.ts";
+import type { LessonScope } from "./reply-types.ts";
 
 export const ASK_PREFIX = "dz-ask";
 const SECONDARY = 2;
@@ -33,13 +34,46 @@ export function askComponentsFor(target: string, text: string, shown = text): un
 	const { question, options } = parseChoices(text);
 	const part = parseChoices(shown);
 	const sameQuestion = !question || part.question === question || part.question === `${TONE_EMOJI.ask} ${question}`;
-	const draft = !!parseDraftApproval(text)?.ref;
+	const ref = parseDraftApproval(text)?.ref, draft = !!ref;
 	const rows = part.options.length === options.length && sameQuestion ? askComponents(target, options) : [];
 	// A reply draft's card also opens the web app's 답장 대기, where the same card can be edited by hand (the reply design, mockup 4).
 	const open = rows.length && rows.length < ROW && draft ? webLink("/#monitoring/replies") : undefined;
-	if (open) return [...rows, { type: 1, components: [{ type: 2, style: LINK, label: "웹앱에서 열기", url: open }] }];
 	const extras = EXTRAS.map(e => ({ type: 2, style: SECONDARY, label: e.label, custom_id: `${ASK_PREFIX}:${target}:${e.act}` }));
-	return rows.length && !draft && rows.length < ROW && extras.every(b => b.custom_id.length <= ID_MAX) ? [...rows, { type: 1, components: extras }] : rows;
+	const base = open ? [...rows, { type: 1, components: [{ type: 2, style: LINK, label: "웹앱에서 열기", url: open }] }] : rows.length && !draft && rows.length < ROW && extras.every(b => b.custom_id.length <= ID_MAX) ? [...rows, { type: 1, components: extras }] : rows;
+	return ref && base.length && base.length < ROW ? [...base, ...learnRow(target, ref)] : base;
+}
+
+// What a reply card says it learned (hub/reply-actions.ts flipLesson): its second row of buttons, one press each. The lookup is wired by hub/reply-wire.ts.
+type Learned = { state: "remembered" | "once"; scope: LessonScope; scopes: LessonScope[] };
+let learnedOf: (ref: string) => Learned | undefined = () => undefined;
+export function setAskLearned(fn: ((ref: string) => Learned | undefined) | undefined): void {
+	learnedOf = fn ?? (() => undefined);
+}
+const LEARN_LABEL = { "learn-scope": "범위 바꾸기", "learn-once": "이번만", "learn-keep": "앞으로도" } as const;
+type LearnAct = keyof typeof LEARN_LABEL;
+function learnRow(target: string, ref: string): unknown[] {
+	const l = learnedOf(ref);
+	if (!l) return [];
+	const acts: LearnAct[] = [...(l.scopes.length > 1 ? ["learn-scope" as const] : []), l.state === "once" ? "learn-keep" : "learn-once"];
+	const buttons = acts.map(a => ({ type: 2, style: SECONDARY, label: LEARN_LABEL[a], custom_id: `${ASK_PREFIX}:${target}:${a}` }));
+	return buttons.every(b => b.custom_id.length <= ID_MAX) ? [{ type: 1, components: buttons }] : [];
+}
+const LEARN_ID = new RegExp(`^${ASK_PREFIX}:(.+):(${Object.keys(LEARN_LABEL).join("|")})$`);
+/** A learn button: the owner's press is the act of the same name on the card's draft (hub/reply-actions.ts flipLesson redraws the card); 범위 바꾸기 moves to the next scope after the current one. */
+async function learnInteraction(d: Interaction, deps: AskDeps, act: LearnAct): Promise<void> {
+	const user = String(d.member?.user?.id ?? d.user?.id ?? "");
+	if (!deps.owner || user !== deps.owner) return deps.reply(d, 4, ephemeral(msg().auth.notOwner));
+	const content = String(d.message?.content ?? ""), ref = parseDraftApproval(content)?.ref ?? refOfQuestion(parseChoices(content).question ?? "");
+	const replies = useReplies(), learned = ref ? (await replies?.view(ref))?.draft.learned : undefined;
+	if (!ref || !replies || !learned) return deps.reply(d, 4, ephemeral(msg().auth.finished));
+	const at = learned.scopes.indexOf(learned.scope), scope = learned.scopes[(at + 1) % learned.scopes.length];
+	try {
+		const r = await replies.act({ ref, action: act, ...(act === "learn-scope" ? { scope } : {}) }, { surface: "discord", login: "owner" });
+		return deps.reply(d, 4, ephemeral(r.body.ok ? (r.body.item?.draft.learned?.text ?? learned.scope) : r.body.error));
+	} catch (e) {
+		log(`ask ${ref} ${act} failed: ${e}`);
+		return deps.reply(d, 4, ephemeral(msg().auth.answerFailed));
+	}
 }
 
 export type AskExtra = "more" | "later";
@@ -138,6 +172,8 @@ export async function askInteraction(d: Interaction, deps: AskDeps): Promise<voi
 	const customId = String(d.data?.custom_id ?? "");
 	const extraId = d.type === 3 ? EXTRA_ID.exec(customId) : null;
 	if (extraId) return extraInteraction(d, deps, extraId);
+	const learnId = d.type === 3 ? LEARN_ID.exec(customId) : null;
+	if (learnId) return learnInteraction(d, deps, learnId[2] as LearnAct);
 	const parsed = parseAskId(customId);
 	if (!parsed || (d.type !== 3 && d.type !== 5)) return deps.reply(d, 4, ephemeral(m.finished));
 	const user = String(d.member?.user?.id ?? d.user?.id ?? "");
