@@ -98,5 +98,9 @@ for the current installs. Make a new key, put its public half in `release-signer
 release as `bad` and take it, which also brings the new key; under `enforce` they refuse it and each install has to run `install.sh` again. Keep an
 offline copy of the key before switching the default to `enforce`.
 
+Before a release, replay recorded cases with `bun features/reply-drafts/bin/draft.ts replay <draft id> [--change <text>]` (a stored draft runs draft, revise and the pre-send check on a scratch copy of the data dir and sends nothing). The release check list line:
+
+- 메일함 있는 딸린 메일 1건, 첨부 고치기 1건 replay
+
 See the current version with `cat VERSION`, and what shipped with `git tag --list 'v*' | tail -3` or
 `git ls-remote --tags origin`; `git describe --tags --abbrev=0` names the last release marker.
