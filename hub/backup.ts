@@ -22,6 +22,8 @@ const SECRET_ASSIGN = /"?(?:api_?key|access_?token|refresh_?token|client_?secret
 const SECRET_KEY = /(pass|pw$|secret|token|key|credential|cookie|auth)/i;
 // `token_file: "~/.dotz/secrets/x"` names where a secret lives; it is not one.
 const POINTER_KEY = /_(file|path|dir)$/i;
+// A key with whitespace is prose used as a map key (rule-titles.json maps each rule sentence to its title), not a field name.
+const PROSE_KEY = /\s/;
 const MAX_BYTES = 1_000_000;
 
 function jsonSecret(text: string): boolean {
@@ -37,14 +39,14 @@ function jsonSecret(text: string): boolean {
 		if (Array.isArray(o)) stack.push(...o);
 		else if (o && typeof o === "object")
 			for (const [k, v] of Object.entries(o)) {
-				if (typeof v === "string" && SECRET_KEY.test(k) && !POINTER_KEY.test(k) && v.length >= 6 && !/^[!$]/.test(v)) return true;
+				if (typeof v === "string" && SECRET_KEY.test(k) && !POINTER_KEY.test(k) && !PROSE_KEY.test(k) && v.length >= 6 && !/^[!$]/.test(v)) return true;
 				stack.push(v);
 			}
 	}
 	return false;
 }
 
-const hasSecret = (text: string): boolean => SECRET.test(text) || SECRET_ASSIGN.test(text) || jsonSecret(text);
+export const hasSecret = (text: string): boolean => SECRET.test(text) || SECRET_ASSIGN.test(text) || jsonSecret(text);
 
 type Run = { code: number; out: string };
 async function git(dir: string, args: string[], timeout = 60_000): Promise<Run> {
