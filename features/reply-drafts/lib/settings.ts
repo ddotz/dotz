@@ -10,7 +10,7 @@ import { banBullet, parseBan, type ShapeBan } from "../../../hub/ban.ts";
 import type { ReplyStyle } from "../../../hub/reply-draft.ts";
 import { bulletLines, bullets, dataDir, HEADINGS, INSTALL, levelsOf, normText, paths, recipientApp, recipientFile, roomFile, unknownSections, validApp, writeAtomic, type ToneKey, type ToneLevel } from "./tone-key.ts";
 export { bulletLines, bullets, dataDir, HEADINGS, INSTALL, levelsOf, normText, paths, recipientApp, recipientFile, recipientOf, roomFile, unknownSections, validApp, writeAtomic, type ToneKey, type ToneLevel } from "./tone-key.ts";
-export { migrateLedger, moveHandRules, setLines, textsAt, toAskAbout, undoLedger } from "./ledger.ts";
+export { effectiveTexts, migrateLedger, moveHandRules, setEffective, setLines, textsAt, toAskAbout, undoLedger } from "./ledger.ts";
 import { addRecord, banKind, type LedgerKind, removeMatching, rulesFor, scopeOfKey, textsAt } from "./ledger.ts";
 
 // `enabled` is the feature switch; `apps` has one switch per source (mail, youtube, instagram, ...), every source off until turned on.

@@ -6,7 +6,7 @@
 // request, so a peer gateway can be handed the same plain HTTP call. Pure fs: no import of hub/config.ts, the data dir is a parameter.
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { setLines, textsAt } from "./rule-ledger.ts";
+import { effectiveTexts, setEffective, setLines, textsAt } from "./rule-ledger.ts";
 import { readObjectForUpdate, UnreadableFileError } from "./json-update.ts";
 import { appEntries, INTEGRATIONS, readAppsFile } from "./integrations.ts";
 import type { UnansweredSettings } from "./mail-unanswered.ts";
@@ -270,13 +270,13 @@ export function validate(app: string, values: unknown): Record<string, SettingVa
 export type SettingView = Pick<SettingField, "key" | "label" | "type" | "help" | "section" | "options" | "labels" | "min" | "max" | "switch" | "memory" | "placeholder" | "lines"> & { value: SettingValue; blocked?: string };
 /** A field with its current value, as GET returns it. */
 export const viewOf = (f: SettingField, value: SettingValue): SettingView => ({ key: f.key, label: f.label, type: f.type, help: f.help, ...(f.section ? { section: f.section } : {}), ...(f.options ? { options: f.options } : {}), ...(f.labels ? { labels: f.labels } : {}), ...(f.min !== undefined ? { min: f.min } : {}), ...(f.max !== undefined ? { max: f.max } : {}), ...(f.switch ? { switch: true } : {}), ...(f.memory ? { memory: true as const } : {}), ...(f.placeholder ? { placeholder: f.placeholder } : {}), ...(f.lines ? { lines: f.lines } : {}), value });
-// A ledger field reads its lines at the scope of the app (a rule's 어떻게 at the scope of the app and the rule's id) and nothing else of it from the store file.
+// A ledger field reads what the app follows (기본 규칙, 이어서 할 일: its own lines and the ones it inherits, minus the ones it masks; a rule's 어떻게 at the scope of the app and the rule's id) and nothing else of it from the store file.
 function ledgerValue(f: SettingField, app: string, dir: string, raw: unknown): SettingValue {
-	if (f.ledger !== "request") return textsAt({ app }, f.ledger!, dir).join("\n");
+	if (f.ledger !== "request") return effectiveTexts(app, f.ledger!, dir).join("\n");
 	return cleanRules(f.key, raw ?? []).map(r => ({ ...r, how: textsAt({ app, request: r.id }, "request", dir).join("\n") }));
 }
 const writeLedger = (f: SettingField, app: string, dir: string, v: SettingValue, before: unknown): void => {
-	if (f.ledger !== "request") return setLines({ app }, f.ledger!, v as string, "settings", dir);
+	if (f.ledger !== "request") return setEffective(app, f.ledger!, v as string, "settings", dir);
 	const rules = v as DraftRule[];
 	for (const r of rules) setLines({ app, request: r.id }, "request", r.how, "settings", dir, true);
 	for (const r of Array.isArray(before) ? (before as DraftRule[]) : []) if (!rules.some(x => x.id === r.id)) setLines({ app, request: r.id }, "request", "", "settings", dir, true);

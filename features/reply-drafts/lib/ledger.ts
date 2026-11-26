@@ -1,6 +1,7 @@
 // The one rule ledger (<data dir>/custom/reply-drafts/rules.json): a rule is one record with a kind, a scope, a source and a state. The tone files keep only the learned voice;
 // the settings screen, `correct`/`learn` and every draft read and write the same records. Narrower scope wins, then newer (decided here, in `clashes`); a mail instance reads the
 // `mail` scope under its own at read time, so a lesson is never copied. Nothing is deleted: a curated line is "merged" into the record that replaced it, a removed one "off".
+// A "mask" is the one record that is no rule: a narrower scope saying it does not follow that inherited line (same kind and text); it only ever takes a line out of what is read (`chainOver`).
 import { existsSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
 import { createHash, randomUUID } from "node:crypto";
 import { dirname, join, relative } from "node:path";
@@ -11,7 +12,7 @@ import { bullets, dataDir, HEADINGS, INSTALL, levelsOf, normText, paths, recipie
 export type LedgerKind = "tone" | "correction" | "ban" | "content-ban" | "instruction" | "followup" | "request";
 /** `request`: the id of the 자동 초안 규칙 whose 어떻게 the record is. */
 export type LedgerScope = { app?: string; room?: string; to?: string; request?: string };
-export type LedgerRecord = { id: string; text: string; kind: LedgerKind; scope: LedgerScope; at: string; by: string; ref?: string; state: "on" | "off" | "merged"; into?: string };
+export type LedgerRecord = { id: string; text: string; kind: LedgerKind; scope: LedgerScope; at: string; by: string; ref?: string; state: "on" | "off" | "merged" | "mask"; into?: string };
 type Doc = { records: LedgerRecord[]; asked: Record<string, string> };
 type Draft = Pick<LedgerRecord, "text" | "kind" | "scope" | "by"> & { ref?: string; at?: Date };
 
@@ -88,9 +89,9 @@ export const removeMatching = (scope: LedgerScope, kinds: LedgerKind[], drop: (t
 /** Turns a record that left the ledger's lines (merged or off) back on, found by `id` or else the newest of that scope, kind and text, and adds it when none is left; false, changing nothing, when an equal line is on already. */
 export function bringBack(id: string | undefined, scope: LedgerScope, kind: LedgerKind, text: string, dir: string = dataDir()): boolean {
 	return change(dir, doc => {
-		const same = (r: LedgerRecord): boolean => r.kind === kind && sameScope(r.scope, scope) && textKey(kind, r.text) === textKey(kind, text);
+		const same = (r: LedgerRecord): boolean => r.state !== "mask" && r.kind === kind && sameScope(r.scope, scope) && textKey(kind, r.text) === textKey(kind, text);
 		if (doc.records.some(r => r.state === "on" && same(r))) return false;
-		const gone = doc.records.find(r => (id !== undefined ? r.id === id : same(r)) && r.state !== "on") ?? doc.records.findLast(r => same(r));
+		const gone = doc.records.find(r => (id !== undefined ? r.id === id : same(r)) && r.state !== "on" && r.state !== "mask") ?? doc.records.findLast(r => same(r));
 		if (gone) (gone.state = "on"), delete gone.into;
 		else doc.records.push(fresh({ text, kind, scope, by: "restore" }));
 		return true;
@@ -112,6 +113,25 @@ export function setLines(scope: LedgerScope, kind: LedgerKind, text: string, by:
 			else doc.records.push(fresh({ text: line, kind, scope, by }));
 		}
 		for (const r of mine) if (!keep.has(r.id)) r.state = "off";
+	});
+}
+
+/** Makes what a draft of `app` follows for `kind` (the settings screen's 기본 규칙 and 이어서 할 일: the lines it inherits, minus the ones it masks, plus its own, broad first) read as `text`, storing only the difference at the scope of `app`: an inherited line left out becomes a mask, one written again clears its mask, a new line is its own record, an own line left out goes off. */
+export function setEffective(app: string, kind: LedgerKind, text: string, by: string, dir: string = dataDir()): void {
+	change(dir, doc => {
+		const scope = { app }, key = (t: string): string => textKey(kind, t);
+		const mine = (r: LedgerRecord): boolean => r.kind === kind && sameScope(r.scope, scope);
+		const inherited = new Map(chainOver(doc.records.filter(r => !(r.state === "mask" && mine(r))), { app }).filter(r => r.kind === kind && !sameScope(r.scope, scope)).map(r => [key(r.text), r.text]));
+		const want = lines(text), wanted = new Set(want.map(key));
+		const masks = doc.records.filter(r => r.state === "mask" && mine(r));
+		for (const [k, t] of inherited) {
+			const own = masks.filter(m => key(m.text) === k);
+			if (wanted.has(k)) own.forEach(m => (m.state = "off"));
+			else if (!own.length) doc.records.push({ ...fresh({ text: t, kind, scope, by }), state: "mask" });
+		}
+		const own = doc.records.filter(r => r.state === "on" && mine(r));
+		for (const line of want) if (!inherited.has(key(line)) && !own.some(r => key(r.text) === key(line))) doc.records.push(fresh({ text: line, kind, scope, by }));
+		for (const r of own) if (!wanted.has(key(r.text))) r.state = "off";
 	});
 }
 
@@ -139,12 +159,18 @@ export function scopeOfProfile(profile: string): LedgerScope | undefined {
 export const chainOf = (key: ToneKey): LedgerScope[] =>
 	levelsOf(key).flatMap(([level, k]) => (level === "app" && k.base ? [scopeOfKey({ app: k.app }), { app: k.base }] : [scopeOfKey(k)])).reverse();
 
-/** The on records of every scope of `key`'s chain, the narrower scope later, of one scope the older first; `rank` = the place of its scope in the chain. */
-export function chainRecords(key: ToneKey, dir: string = dataDir()): (LedgerRecord & { rank: number })[] {
+/** The on records of every scope of `key`'s chain, the narrower scope later, of one scope the older first; `rank` = the place of its scope in the chain. A line a narrower scope masks (same kind and text) is left out, and masks are never listed. */
+const chainOver = (records: LedgerRecord[], key: ToneKey): (LedgerRecord & { rank: number })[] => {
 	const chain = chainOf(key);
-	return readLedger(dir).flatMap((r, i) => ({ r, i, rank: chain.findIndex(c => sameScope(c, { ...r.scope, request: undefined })) })).filter(x => x.r.state === "on" && x.rank >= 0 && (x.r.scope.request === undefined || x.r.kind === "request"))
-		.sort((a, b) => a.rank - b.rank || a.r.at.localeCompare(b.r.at) || a.i - b.i).map(x => ({ ...x.r, rank: x.rank }));
-}
+	const live = records.flatMap((r, i) => ({ r, i, rank: chain.findIndex(c => sameScope(c, { ...r.scope, request: undefined })) })).filter(x => (x.r.state === "on" || x.r.state === "mask") && x.rank >= 0 && (x.r.scope.request === undefined || x.r.kind === "request"))
+		.sort((a, b) => a.rank - b.rank || a.r.at.localeCompare(b.r.at) || a.i - b.i);
+	const masked = (x: (typeof live)[number]): boolean => live.some(m => m.r.state === "mask" && m.rank > x.rank && m.r.kind === x.r.kind && textKey(m.r.kind, m.r.text) === textKey(x.r.kind, x.r.text));
+	return live.filter(x => x.r.state === "on" && !masked(x)).map(x => ({ ...x.r, rank: x.rank }));
+};
+export const chainRecords = (key: ToneKey, dir: string = dataDir()): (LedgerRecord & { rank: number })[] => chainOver(readLedger(dir), key);
+
+/** The lines a draft of `app` follows for `kind`, broad first: what the settings screen shows. */
+export const effectiveTexts = (app: string, kind: LedgerKind, dir: string = dataDir()): string[] => rulesFor({ app }, [kind], dir).map(r => r.text);
 
 export type Ruled = { text: string; kind: string; rank: number; at?: string; ref?: string };
 export type Clash = { a: number; b: number; why: "copy" | "ban-in-rule"; winner: number };
@@ -219,14 +245,27 @@ function widest(drafts: Draft[]): Draft[] {
 }
 
 type Plan = { edits: Map<string, string>; from: Map<string, Draft[]>; records: LedgerRecord[] };
+const MAIL_APP = /^mail(-[a-z0-9]+)*$/;
+/** The kinds of config.json: a mail instance had its own and never read the `mail` ones. */
+const CONFIG_KINDS: LedgerKind[] = ["instruction", "followup", "request"];
+
+/** For every mail instance seen, a mask for each `mail`-scope line of the config kinds it did not hold before, so that moving the lines up changes nobody's 기본 규칙 or 이어서 할 일. */
+function maskInherited(records: LedgerRecord[], found: Draft[], instances: Set<string>, now: Date): LedgerRecord[] {
+	const id = (app: string | undefined, d: { kind: LedgerKind; text: string; scope: LedgerScope }): string => `${app}\0${d.kind}\0${d.scope.request ?? ""}\0${textKey(d.kind, d.text)}`;
+	const held = new Set(found.map(d => id(d.scope.app, d)));
+	return [...instances].filter(app => app !== "mail").flatMap(app => records
+		.filter(r => CONFIG_KINDS.includes(r.kind) && r.scope.app === "mail" && r.scope.room === undefined && r.scope.to === undefined && !held.has(id(app, r)))
+		.map(r => ({ ...fresh({ text: r.text, kind: r.kind, scope: { ...r.scope, app }, by: "migrate", at: now }), state: "mask" as const })));
+}
 
 /** What the migration would do, with nothing written: the new text of every file it changes, the rule lines each file (relative to `dir`) gives up, and the records the ledger gets (equal lines of one scope and kind once). Undefined when there is nothing to move. */
 function planMigration(dir: string, now: Date): Plan | undefined {
 	const edits = new Map<string, string>(), from = new Map<string, Draft[]>();
-	const found: Draft[] = [];
+	const found: Draft[] = [], instances = new Set<string>();
 	for (const name of toneFiles()) {
 		const file = join(paths.toneDir(), name), scope = scopeOfProfile(name.split("\\").join("/")), md = readFileSync(file, "utf8");
 		if (!scope) continue;
+		if (scope.app) instances.add(scope.app);
 		const mine = fileRules(scope, md);
 		found.push(...mine);
 		if (mine.length) from.set(rel(dir, file), mine);
@@ -239,6 +278,7 @@ function planMigration(dir: string, now: Date): Plan | undefined {
 		config = undefined;
 	}
 	if (config && typeof config === "object") {
+		for (const doc of [config.draftDefaults, config.followups, config.draftRules, config.apps, config.models, config.attachFolders]) if (doc && typeof doc === "object") for (const app of Object.keys(doc)) instances.add(app);
 		const by = (kind: LedgerKind, doc: unknown) => Object.entries(doc && typeof doc === "object" ? (doc as Record<string, unknown>) : {}).flatMap(([app, v]) => (typeof v === "string" ? lines(v).map((text): Draft => ({ text, kind, scope: { app }, by: "migrate" })) : []));
 		const cfg = [...by("instruction", config.draftDefaults), ...by("followup", config.followups)];
 		const rules = config.draftRules && typeof config.draftRules === "object" ? (config.draftRules as Record<string, unknown>) : {};
@@ -256,7 +296,8 @@ function planMigration(dir: string, now: Date): Plan | undefined {
 	}
 	const seen = new Set<string>();
 	const records = widest(found).map(d => fresh({ ...d, at: now })).filter(r => ((k: string) => !seen.has(k) && !!seen.add(k))(`${r.kind}\0${JSON.stringify(r.scope)}\0${textKey(r.kind, r.text)}`));
-	return records.length || edits.size ? { edits, from, records } : undefined;
+	const masks = maskInherited(records, found, new Set([...instances].filter(app => MAIL_APP.test(app))), now);
+	return records.length || edits.size ? { edits, from, records: [...records, ...masks] } : undefined;
 }
 
 /** Moves every rule an install has into the ledger once: the tone files' rule sections, config.json's 기본 규칙, 이어서 할 일 and the 어떻게 of the 자동 초안 규칙. Every file it changes is copied to `ledger-backup/` first (with a manifest); the ledger is written last, so it also marks the install as done. Undefined when it was done before or there was nothing to move. */
@@ -275,7 +316,7 @@ export function migrateLedger(dir: string = dataDir(), now: Date = new Date()): 
 	change(dir, doc => {
 		doc.records = records;
 	});
-	return { files: manifest.map(m => m.file), records: records.length };
+	return { files: manifest.map(m => m.file), records: records.filter(r => r.state === "on").length };
 }
 
 /** What `migrateLedger` would move, for a before/after to show before an install updates; nothing is written. Per file the rule lines it gives up (relative to `dir`), and the records the ledger gets by scope and kind with their text count. Undefined when it was done before or there is nothing to move. */
@@ -283,7 +324,7 @@ export function previewMigration(dir: string = dataDir()): { files: { file: stri
 	const plan = existsSync(paths.ledger(dir)) ? undefined : planMigration(dir, new Date());
 	if (!plan) return undefined;
 	const groups = new Map<string, { scope: LedgerScope; kind: LedgerKind; texts: number }>();
-	for (const r of plan.records) {
+	for (const r of plan.records.filter(r => r.state === "on")) {
 		const g = groups.get(`${r.kind}\0${JSON.stringify(r.scope)}`) ?? { scope: r.scope, kind: r.kind, texts: 0 };
 		groups.set(`${r.kind}\0${JSON.stringify(r.scope)}`, { ...g, texts: g.texts + 1 });
 	}

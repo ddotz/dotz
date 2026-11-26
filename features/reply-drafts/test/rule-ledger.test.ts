@@ -1,14 +1,15 @@
 import { afterAll, beforeEach, expect, test } from "bun:test";
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
-import { writeSettings } from "../../../hub/app-settings.ts";
+import { readSettings, writeSettings } from "../../../hub/app-settings.ts";
 import { runRules } from "../bin/rules.ts";
 import { journalEntries, restoreEntry } from "../lib/curate.ts";
 import { draftRules } from "../lib/draft-rules.ts";
 import { addRecord, migrateLedger, readLedger, undoLedger } from "../lib/ledger.ts";
 import { learn } from "../lib/learn.ts";
 import { learnLine } from "../lib/learn-line.ts";
-import { loadStyle, paths, toneFile } from "../lib/settings.ts";
+import { rulesOf } from "../lib/rules.ts";
+import { followupText, loadStyle, paths, toneFile } from "../lib/settings.ts";
 import { setupEnv } from "./helpers.ts";
 
 // The one rule ledger (rules.json): a sentence is one record, narrower scopes win and newer ones at equal scope, instances inherit at read time, never a copy. Anonymous fixture text.
@@ -166,4 +167,71 @@ test("a correction that contradicts a 기본 규칙 line turns that setting off,
 	restoreEntry(entry.n, NOW);
 	expect(readLedger().find(r => r.id === setting.id)?.state).toBe("on");
 	expect(statSync(paths.ledger()).isFile()).toBe(true);
+});
+
+// A mask is a narrower scope's "I do not follow that inherited line": the migration masks, so moving a line up to `mail` changes no instance's 기본 규칙 or 이어서 할 일.
+const BOTH = "끝에 감사 인사\n첨부는 본문에";
+const snapshot = () => new Map(files(join(env.dir, "custom")).map(f => [f, readFileSync(join(env.dir, "custom", f))]));
+const restored = (before: Map<string, Buffer>) => {
+	expect(files(join(env.dir, "custom")).filter(f => !f.includes("ledger-backup"))).toEqual([...before.keys()]);
+	for (const [f, buf] of before) expect(readFileSync(join(env.dir, "custom", f)).equals(buf)).toBe(true);
+};
+
+test("migration: an instance keeps its own 기본 규칙 and 이어서 할 일, a mail instance with no config entry starts empty, undo restores every file", async () => {
+	write(paths.config(), `${JSON.stringify({ enabled: true, apps: {}, draftDefaults: { mail: BOTH, "mail-2": "끝에 감사 인사" }, followups: { mail: "답이 오면 알려요" } }, null, 2)}\n`);
+	write(toneFile({ app: "mail-3" }), "## 고친 점\n\n- 2026-11-01: 인사는 한 줄로 써요\n");
+	const before = snapshot();
+	migrateLedger(env.dir);
+	expect((await rulesOf("mail")).base).toBe(BOTH);
+	expect((await rulesOf("mail-2")).base).toBe("끝에 감사 인사");
+	expect((await rulesOf("mail-3")).base).toBe("");
+	expect(followupText("mail")).toBe("답이 오면 알려요");
+	expect([followupText("mail-2"), followupText("mail-3")]).toEqual(["", ""]);
+	const masks = readLedger(env.dir).filter(r => r.state === "mask");
+	expect(masks.map(r => `${r.scope.app}:${r.kind}:${r.text}`).sort()).toEqual(["mail-2:followup:답이 오면 알려요", "mail-2:instruction:첨부는 본문에", "mail-3:followup:답이 오면 알려요", "mail-3:instruction:끝에 감사 인사", "mail-3:instruction:첨부는 본문에"]);
+	const shown = (await draftRules({ app: "mail-2" }, ITEM).effective()).rules.map(r => r.text);
+	expect(shown).toContain("끝에 감사 인사");
+	expect(shown).not.toContain("첨부는 본문에");
+	expect(undoLedger(env.dir)).toBeDefined();
+	restored(before);
+});
+
+test("migration: the pure fixture (mail has two lines, mail-2 one) hoists the shared line and masks the other for mail-2", async () => {
+	write(paths.config(), `${JSON.stringify({ enabled: true, apps: {}, draftDefaults: { mail: BOTH, "mail-2": "끝에 감사 인사" } }, null, 2)}\n`);
+	const before = snapshot();
+	migrateLedger(env.dir);
+	expect((await rulesOf("mail-2")).base).toBe("끝에 감사 인사");
+	expect((await rulesOf("mail")).base).toBe(BOTH);
+	expect(readLedger(env.dir).filter(r => r.state === "mask").map(r => r.text)).toEqual(["첨부는 본문에"]);
+	undoLedger(env.dir);
+	restored(before);
+});
+
+test("settings: an instance's 기본 규칙 is the effective view; writing stores only the difference as masks and own lines", () => {
+	const field = (app: string) => readSettings(env.dir, app).find(v => v.key === "draft_default")!.value;
+	const on = (app: string) => readLedger(env.dir).filter(r => r.state === "on" && r.scope.app === app).map(r => r.text);
+	const mask = (app: string) => readLedger(env.dir).filter(r => r.state === "mask" && r.scope.app === app).map(r => r.text);
+	writeSettings(env.dir, "mail", { draft_default: BOTH });
+	expect(field("mail-2")).toBe(BOTH);
+	writeSettings(env.dir, "mail-2", { draft_default: "끝에 감사 인사" });
+	expect(field("mail-2")).toBe("끝에 감사 인사");
+	expect(field("mail")).toBe(BOTH);
+	expect(mask("mail-2")).toEqual(["첨부는 본문에"]);
+	expect(on("mail-2")).toEqual([]);
+	writeSettings(env.dir, "mail-2", { draft_default: BOTH });
+	expect(field("mail-2")).toBe(BOTH);
+	expect(mask("mail-2")).toEqual([]);
+	writeSettings(env.dir, "mail-2", { draft_default: `${BOTH}\n서명은 생략해요` });
+	expect(field("mail-2")).toBe(`${BOTH}\n서명은 생략해요`);
+	expect(on("mail-2")).toEqual(["서명은 생략해요"]);
+	expect(field("mail")).toBe(BOTH);
+	expect(readLedger(env.dir).filter(r => r.state === "on" && r.kind === "instruction").map(r => r.text).sort()).toEqual(["끝에 감사 인사", "서명은 생략해요", "첨부는 본문에"]);
+});
+
+test("settings: 이어서 할 일 works the same way", () => {
+	const field = (app: string) => readSettings(env.dir, app).find(v => v.key === "followup")!.value;
+	writeSettings(env.dir, "mail", { followup: "답이 오면 알려요" });
+	expect(field("mail-2")).toBe("답이 오면 알려요");
+	writeSettings(env.dir, "mail-2", { followup: "" });
+	expect([field("mail-2"), field("mail"), followupText("mail-2")]).toEqual(["", "답이 오면 알려요", ""]);
 });
