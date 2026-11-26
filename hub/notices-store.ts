@@ -385,11 +385,12 @@ function closeCardsWrittenBackTo(to: string, at: string, keep?: Notice, by?: str
 }
 
 export function putDecision(d: { key: string; title: string; detail: string; to: string; open?: string; options: DecisionOpt[]; group: number; place?: number; replyTo?: string; draft?: DraftApproval; by?: string; ref?: string; assumed?: true; evidence?: string[]; card_id?: string; edit?: Decision["edit"] }, at: string): void {
-	const old = items.find(n => n.key === d.key) ?? (d.card_id || d.draft || Object.values(FILLER_QUESTIONS).includes(d.title) ? undefined : items.findLast(n => n.decision?.to === d.to && !n.decision.draft && !n.decision.card_id && sameQuestion(n.title, d.title))), asked = askedAgain(old, d, at);
+	// A new card of a draft that already has one in `to` is that card asked again (written anew, reopened if it was answered): one card per draft there.
+	const old = items.find(n => n.key === d.key) ?? (d.card_id || Object.values(FILLER_QUESTIONS).includes(d.title) ? undefined : d.draft ? items.findLast(n => n.decision?.to === d.to && !!d.draft!.ref && n.decision.draft?.ref === d.draft!.ref) : items.findLast(n => n.decision?.to === d.to && !n.decision.draft && !n.decision.card_id && sameQuestion(n.title, d.title))), asked = askedAgain(old, d, at);
 	if (old?.decision) {
 		// The same ask can arrive twice (a session's mid-turn line and its turn-end report): one notice, and an answered one stays answered.
 		if (isOpenDecision(old) && old.key === d.key && !asked) return;
-		if (!isOpenDecision(old) && !old.decision.expired && Date.parse(at) - Date.parse(old.ignored ?? old.decision.answered_at ?? "") < REASK_MS) return void closeRepeat(old, at);
+		if (!isOpenDecision(old) && !old.decision.expired && !(d.draft && old.key !== d.key) && Date.parse(at) - Date.parse(old.ignored ?? old.decision.answered_at ?? "") < REASK_MS) return void closeRepeat(old, at);
 	}
 	if (old) old.key = d.key;
 	if (d.options.length && !d.draft) closeCardsWrittenBackTo(d.to, at, old, d.by);

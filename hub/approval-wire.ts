@@ -8,11 +8,11 @@ import { refOfQuestion } from "./approval-send.ts";
 import { draftActionOf, questionRef } from "./draft-approval.ts";
 import { escalations } from "./escalate.ts";
 import { type AnswerPick, replies, reportCliFailure, sender } from "./reply-wire.ts";
-import type { ActInput, ActResult } from "./reply-actions.ts";
+import { type ActInput, type ActResult, HANDLED_LABEL } from "./reply-actions.ts";
 import { reasonOf } from "./reply-reasons.ts";
 import { msg } from "./i18n.ts";
 import { DECISION_HEAD, unnumbered } from "./choices.ts";
-import { heldOf } from "./notices-answers.ts";
+import { heldOf, settleOpenDecision } from "./notices-answers.ts";
 import { pickedCard } from "./notices-later.ts";
 import { noTurnLine } from "./card-answer.ts";
 import { editChainCard } from "./notices-rules.ts";
@@ -53,8 +53,13 @@ async function actOnCard(conv: string, q: string, label: string, note: string | 
 	if (o.text !== undefined) return replies.amend({ ref, text: o.text, ...(note?.trim() ? { change: note } : {}) }, ctx);
 	// No version known for what the surface showed (""): a send is refused `changed` and the card drawn anew (hub/reply-actions.ts act).
 	const hash = o.surface === "discord" ? (card.discord ?? "") : (o.hash ?? card.hash ?? "");
-	return replies.act({ ...input!, hash }, ctx);
+	const r = await replies.act({ ...input!, hash }, ctx);
+	// A card whose draft was sent or settled elsewhere is finished: the pick closes it saying so, with no model turn, instead of a refusal that keeps it open.
+	if (r.body.ok || !FINISHED.has(r.body.code)) return r;
+	settleOpenDecision(card.id, `${HANDLED_LABEL}: ${r.body.error}`);
+	return { status: 200, body: { ok: true } };
 }
+const FINISHED = new Set<string>(["already_sent", "not_pending"]);
 
 /** A Discord button pick named by the id of the open card it answers (`decision`), as a web answer names its card: the inbox keeps it, and the store and the
  * model turn act on that card only (hub/notices-rules.ts typedAnswer, hub/card-answer.ts). */

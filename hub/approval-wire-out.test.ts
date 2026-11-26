@@ -7,7 +7,7 @@ import { realSetTimeout, realClearTimeout } from "./runtime/test-clock.ts";
 import { type HubEvent, onBroadcast, onEmit } from "./events.ts";
 import { draftApprovalBlock } from "./draft-approval.ts";
 import { askText } from "./draft-attach.ts";
-import { ignoreNotice, listNotices } from "./notices.ts";
+import { ignoreNotice, listNotices, settleOpenDecision } from "./notices.ts";
 import * as outbound from "./outbound.ts";
 import { out } from "./outbound.ts";
 import { withSendState } from "./approval-queue.ts";
@@ -166,7 +166,7 @@ test("답글만 보내기 through the gateway: the mail draft left behind gets o
 	expect(sendTargetOf(mail, "send")).toMatchObject({ kind: "mail" });
 });
 
-test("U4-6 보내기 on the card of a mail draft already sent is refused already_sent by the reply flow: nothing queued, the bot not asked", async () => {
+test("U4-6 보내기 on the card of a mail draft already sent closes the card as handled: nothing queued, the bot not asked", async () => {
 	const conv = "mail:aw-sent";
 	const id = draft("이미 보낸 답");
 	await out(conv, card(id));
@@ -175,11 +175,22 @@ test("U4-6 보내기 on the card of a mail draft already sent is refused already
 	setStatus(id, "sent");
 	const bot: string[] = [];
 	const r = await webAnswer(shown.id, { n: 1, hash }, "owner@example.com", async a => void bot.push(a.text));
-	expect(r.status).toBe(409);
-	expect(r.body).toMatchObject({ code: "already_sent" });
+	expect(r.status).toBe(200);
+	expect(listNotices(500).items.find(n => n.id === shown.id)!.decision).toMatchObject({ state: "answered", answer: "이미 처리됨: 이미 보낸 답장이에요" });
 	expect(bot).toEqual([]);
 	expect(sender.results().filter(x => x.ref === id)).toEqual([]);
-	for (const n of listNotices(500).items.filter(x => x.decision?.draft?.ref === id)) ignoreNotice(n.id);
+});
+
+test("a new card of a draft whose card was answered is that card asked again: one card per draft in its conversation", async () => {
+	const conv = "mail:aw-again";
+	const id = draft("다시 물은 답");
+	await out(conv, card(id));
+	const first = listNotices(500).items.find(n => n.decision?.to === conv && n.decision.draft?.ref === id)!;
+	settleOpenDecision(first.id, "2) 고치기");
+	await out(conv, `[ask] 다시 올려요\n${draftApprovalBlock({ to: "친구", toLabel: "대화방", body: getDraft(id)!.body, ref: id, question: "이제 보낼까요?" })}`);
+	const cards = listNotices(500).items.filter(n => n.decision?.to === conv && n.decision.draft?.ref === id);
+	expect(cards.map(n => [n.id, n.decision!.state])).toEqual([[first.id, "open"]]);
+	for (const n of cards) ignoreNotice(n.id);
 });
 
 test("a failed send tells every page the item as it is now, so a card redraws with the version the next 보내기 must carry", async () => {
