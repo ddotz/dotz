@@ -6,7 +6,7 @@
 // (`confirm`, the reply intent design 2026-11-16) sends nothing: it posts the card again to be pressed. Everything it touches is injected: it
 // imports no adapter, no notice code and no route.
 import { approvalHash, type SendJob, type SendResult } from "./approval-send.ts";
-import { DRAFT_HAND_EDIT } from "./draft-approval.ts";
+import { DRAFT_HAND_EDIT, draftApprovalBlock, parseDraftApproval } from "./draft-approval.ts";
 import { draftHead } from "./reply-chat.ts";
 import { lessonNote, policyOf, reasonOf } from "./reply-reasons.ts";
 import { sinceMidnight } from "./reply-route.ts";
@@ -17,7 +17,7 @@ export type ActCtx = { surface: "web" | "discord" | "chat" | "peer" | "cli"; log
 /** `hash`: the draft.hash of the item the caller showed (a send act of another version is refused `changed`; "" = it showed none the hub can
  * name, refused the same). `subject`: an edit's new subject (mail, or the bundled mail with part "mail"). */
 export type ActInput = { ref: string; action: string; change?: string; text?: string; subject?: string; part?: Part; asIs?: boolean; as?: "sent" | "retry"; hash?: string };
-export type ActResult = { status: number; body: { ok: true; item?: ReplyItem } | { ok: false; code: ReasonCode | "bad_request" | "unknown_ref"; error: string; lint?: string[]; item?: ReplyItem } };
+export type ActResult = { status: number; body: { ok: true; item?: ReplyItem } | { ok: false; code: ReasonCode | "bad_request" | "unknown_ref" | "card_mismatch"; error: string; lint?: string[]; item?: ReplyItem } };
 type Sender = {
 	enqueue: (j: SendJob, approved?: (until: number) => void) => boolean;
 	cancel: (ref: string) => "cancelled" | "late" | "none";
@@ -61,6 +61,9 @@ const ACTIONS = new Set(["send", "revise", "edit", "drop", "restore", "retry", "
 const fail = (status: number, code: ActResult["body"] extends infer B ? (B extends { ok: false; code: infer C } ? C : never) : never, error: string, lint?: string[]): ActResult => ({ status, body: { ok: false, code, error, ...(lint ? { lint } : {}) } });
 const refused = (status: number, code: ReasonCode, vars?: Record<string, string | number>): ActResult => fail(status, code, reasonOf(code, vars).text);
 const LIVE = new Set(["undo", "queued", "sending"]);
+const CARD_MISMATCH = "카드에 보인 글이 저장된 초안과 달라서 보내지 않았어요. 세션이 카드를 저장된 초안대로 다시 올려야 해요";
+/** A body as the open card shows it (the one reading of a block: hub/draft-approval.ts), so the card's text and the store's compare like for like. */
+const cardBodyOf = (body: string): string => parseDraftApproval(draftApprovalBlock({ to: "-", body, ref: "x" }))?.body ?? body;
 
 /** The send state the queue holds for `ref`, as every surface reads it, with the owner's buttons for one that needs him. */
 export function sendOf(r: SendResult | undefined, now: number = Date.now()): (SendState & { actions: OwnerAction[] }) | undefined {
@@ -196,6 +199,9 @@ export function createReplyActions(deps: ReplyDeps) {
 	async function send(ctx: ActCtx, a: ReplyAdapter, view: DraftView, input: ActInput): Promise<ActResult> {
 		const no = unsendable(view);
 		if (no) return no;
+		// What the owner read on the open card is what goes out, to the character: another body (the hash covers the rest) refuses the send.
+		const shown = deps.cards.open().find(c => c.ref === view.ref)?.draft;
+		if (view.kind === "mail" && shown?.toLabel === "받는이" && shown.body !== cardBodyOf(view.draft.text)) return fail(409, "card_mismatch", CARD_MISMATCH);
 		const action = sendAction(input);
 		return sendPicked(ctx, a, view, action === "send-as-is" ? 4 : 1, SEND_LABEL[action], job(a, view, action));
 	}

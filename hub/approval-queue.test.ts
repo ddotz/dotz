@@ -26,6 +26,7 @@ function setup(load: Held[] = [], more: Partial<ApprovalQueueDeps> = {}) {
 		persist: h => void (disk = h),
 		log: () => {},
 		load: () => load,
+		store: async (_conv, text) => text,
 		...more,
 	});
 	// What outbound.out does around route(): a post that goes out becomes an open decision, then posted() records it.

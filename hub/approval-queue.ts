@@ -16,6 +16,13 @@
 import { D_CLOSE, D_OPT, DECISION_HEAD, parseDecisions } from "./choices.ts";
 import { type DraftApproval, keepBrief, parseDraftApproval, REF_ID, sameDraft, withRecipientMark } from "./draft-approval.ts";
 import { readState } from "./statefile.ts";
+import { log } from "./config.ts";
+import { askText } from "./draft-attach.ts";
+import { composeMail, type MailCliDeps } from "./mail-cli.ts";
+import { manualDraft } from "./mail-manual.ts";
+import { mailByKey } from "./mail.ts";
+import { getDraft, listDrafts, patchDraft } from "./reply-mail.ts";
+import type { DraftRec } from "../features/reply-drafts/lib/store.ts";
 import { parseTone, stripHandoff } from "./tone.ts";
 
 export type Held = { ref: string; target: string; text: string; extra: Record<string, unknown> };
@@ -32,6 +39,8 @@ export type ApprovalQueueDeps = {
 	openRefs: (conv: string) => string[];
 	/** Posts a held card (back through outbound.out, marked so it is not routed again). */
 	post: (target: string, text: string, extra: Record<string, unknown>) => void;
+	/** Turns a hand-written mail send card into the card of a store draft (default: storeCard); tests inject it. */
+	store?: (conv: string, text: string) => Promise<string>;
 	/** Shows a new text on a card already out: the open notice and, when known, its Discord message. */
 	rewrite: (conv: string, shown: { ref: string; target: string; ids?: string[] }, text: string) => void;
 	persist: (held: Held[]) => void;
@@ -184,6 +193,58 @@ export function numberedOf(text: string): CardPos | undefined {
 /** The card's name: its first line without its tone tag, or its decision question (without the ref tag) when that line is no prose (a `[file]` line, a quote, a note): what a pointer to it or the bot's list of waiting cards names it by. */
 export const cardTitle = (text: string): string => cardHead(text).replace(/\s+/g, " ").slice(0, 120);
 
+const PLAIN_ADDRESS = /^[^\s<>@,;]+@[^\s<>@,;]+$/;
+
+/** The reply draft of the mail `key` the card `d` answers: the one the owner's reply box makes (hub/mail-manual.ts), carrying the card's recipients, subject and body. A pending
+ * draft of that mail takes them as its new version, so a revised card is the same draft and never a second. The draft answers through the mail's own source (a plugin's
+ * mail goes back through that plugin's `reply`), never the app's compose source. */
+async function replyDraftOf(key: string, d: DraftApproval): Promise<DraftRec> {
+	const mail = mailByKey(key);
+	if (!mail || mail.dir === "out") throw new Error(`이 메일을 찾지 못했어요: ${key}`);
+	const pending = listDrafts().find(x => x.ref === key && x.status === "pending" && !x.compose);
+	if (pending) {
+		patchDraft(pending.id, { to: d.to, cc: d.cc ?? [], ...(d.subject ? { subject: d.subject } : {}), body: d.body });
+		return getDraft(pending.id)!;
+	}
+	const made = manualDraft({ replyTo: key, to: d.to, ...(d.cc?.length ? { cc: d.cc.join(", ") } : {}), ...(d.subject ? { subject: d.subject } : {}), body: d.body });
+	if (!made.ok) throw new Error(made.error);
+	if (made.rec.source === mail.source) return made.rec;
+	patchDraft(made.rec.id, { source: mail.source });
+	return getDraft(made.rec.id)!;
+}
+
+/** A mail written outside any mail thread: a new mail draft (the same one composeMail makes) when it goes to one plain address; the pending one of the same recipient and subject takes a revised card's text. */
+async function composeDraftOf(d: DraftApproval, deps: MailCliDeps): Promise<DraftRec> {
+	const to = d.to.trim();
+	if (!PLAIN_ADDRESS.test(to) || !d.subject?.trim()) throw new Error("받는이가 주소 하나이고 제목이 있어야 새 메일 초안이 돼요");
+	const pending = listDrafts().find(x => x.compose && x.status === "pending" && x.to === to && x.subject === d.subject!.trim() && !x.origin);
+	if (pending) {
+		patchDraft(pending.id, { body: d.body });
+		return getDraft(pending.id)!;
+	}
+	const made = await composeMail({ app: "mail", to: [to], subject: d.subject.trim(), body: d.body }, deps);
+	if (!made.ok) throw new Error(made.error);
+	return made.rec;
+}
+
+/** A mail send card a session wrote by hand (a 받는이 card whose ref no store draft has) becomes a draft of the reply store, and the card posted is the store's:
+ * what the owner reads, what the store keeps and what the sender gets are one text. Any failure posts the card as written with one `확인:` line saying why. */
+export async function storeCard(conv: string, text: string, deps: MailCliDeps = {}): Promise<string> {
+	const parts = splitCardLead(text);
+	const d = cardDraft(parts?.card ?? text);
+	if (!d?.ref || d.toLabel !== "받는이" || d.mail || getDraft(d.ref)) return text;
+	try {
+		const block = askText(conv.startsWith("mail:") ? await replyDraftOf(conv.slice(5), d) : await composeDraftOf(d, deps), []);
+		return parts && !/^\s*\[ask\]/im.test(parts.lead) ? `${parts.lead}\n${block}` : block;
+	} catch (e) {
+		const why = (e as Error).message.replace(/\s+/g, " ").trim();
+		log(`approval card ${d.ref} in ${conv} stays hand-written: ${why}`);
+		const lines = text.split("\n");
+		lines.splice(Math.max(0, lines.findIndex(l => /^\s*>/.test(l))), 0, `-# 확인: 저장소 초안으로 바꾸지 못했어요 - ${why}`);
+		return lines.join("\n");
+	}
+}
+
 export function createApprovalQueue(deps: ApprovalQueueDeps) {
 	const itemOf = (conv: string, ref: string, text?: string) => deps.itemOf?.(conv, ref, text) ?? ref;
 	let held: Held[] = deps.load?.() ?? [];
@@ -244,7 +305,14 @@ export function createApprovalQueue(deps: ApprovalQueueDeps) {
 		return ref && !deps.openElsewhere?.(ref, conv) ? revisedRef(conv, { ref, text: splitCardLead(text)?.card ?? text }) : undefined;
 	};
 
+	// A hand-written mail card is the store's card before it is queued; what the queue then posts is that text.
 	async function route(target: string, text: string, extra: Record<string, unknown> = {}): Promise<Route> {
+		const card = await (deps.store ?? storeCard)(deps.convOf(target), text);
+		const r = await routeCard(target, card, extra);
+		return card !== text && r.action === "post" && r.text === undefined ? { ...r, text: card } : r;
+	}
+
+	async function routeCard(target: string, text: string, extra: Record<string, unknown> = {}): Promise<Route> {
 		const ref = cardRef(text);
 		if (!ref) return { action: "post" };
 		const conv = deps.convOf(target);
