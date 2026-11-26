@@ -1,9 +1,9 @@
 // One model call for a comment's reply draft or its revision, and the stored draft: what the comment engine runs on request, by its
 // auto-draft rule and for a 고치기. Split out of createEngine (hub/comments/engine.ts), which hands it the store and its helpers.
 import { fileSizeText } from "../draft-approval.ts";
-import { generateReply, learnedOf, reviseReply, type LessonScope, type ReplyItem, type ReplyStyle } from "../reply-draft.ts";
+import { generateReply, learnedOf, reviseReply, type ReplyItem, type ReplyStyle } from "../reply-draft.ts";
 import { judgeAsk } from "../style-judge.ts";
-import type { Lesson, LessonOfEdit, Part } from "../reply-types.ts";
+import type { LearnInput, Lesson, LessonOfEdit, Part } from "../reply-types.ts";
 import type { Comment, SourceConfig } from "./contract.ts";
 import type { DraftModel, EngineDeps, MailLink, MailView, Step } from "./engine.ts";
 import { mergePast, sameFirst, SEEDED_NOTE, similarPairs, withExamples } from "./past.ts";
@@ -22,12 +22,11 @@ const CLIP = 240;
 const clip = (s: string, n = CLIP) => s.replace(/\s+/g, " ").trim().slice(0, n);
 const MAIL_REPEAT_MS = 14 * 24 * 3600_000;
 
-/** The key a comment revise lesson of `scope` is written under: the install for `everywhere`, for `recipient` the author's own level of the source's app by the platform's id (`authorId`, as hub/comments/real.ts commentStyle loads it; `toName` the name the card shows), and the source's profile for `channel` or for an author without an id (a website commenter, an adapter's unknown user). */
-export const commentLessonKey = (app: string, c: Pick<Comment, "author" | "authorId">, scope: LessonScope): Lesson["key"] =>
-	scope === "everywhere" ? { app: "install" } : scope === "recipient" && c.authorId !== undefined ? { app, to: c.authorId, toName: c.author } : { app };
+/** The profiles a comment lesson may go to: the source's own (`channel`), and the author's own level of it by the platform's id (`recipient`, as hub/comments/real.ts commentStyle loads it), none for an author without an id (a website commenter, an adapter's unknown user). */
+export const commentKeys = (app: string, c: Pick<Comment, "authorId"> | undefined): LearnInput["keys"] => ({ channel: { app }, ...(c?.authorId !== undefined ? { recipient: { app, to: c.authorId } } : {}) });
 
-/** How the owner's own edits of sent drafts are learned (design 3.4): `lessonOfEdit` reads a comment reply's lesson, `learn` stores it through the one learning door (hub/reply-mail.ts replyLearning: curation, journal, a stored correction's refinement), and `mail` learns the edit of a mail that rode on a card (hub/reply-mail.ts learnMailEdit). None of them rejects. */
-export type EditLessons = { lessonOfEdit: LessonOfEdit; learn: (key: Lesson["key"], line: string) => Promise<void>; mail: (mailId: string) => Promise<void> };
+/** How the owner's own edits of sent drafts are learned (design 3.4): `lessonOfEdit` reads a comment reply's lesson, `learn` hands it to the one learning entry (hub/reply-mail.ts replyLearning), and `mail` learns the edit of a mail that rode on a card (hub/reply-mail.ts learnMailEdit). None of them rejects. */
+export type EditLessons = { lessonOfEdit: LessonOfEdit; learn: (input: LearnInput) => Promise<void>; mail: (mailId: string) => Promise<void> };
 
 /** What a sent comment draft the owner edited teaches, stored through `edits.learn` and awaited: its `editLearned` mark is claimed first (Store claimEditLearned), so any number of callers in any process learn it once; then `lessonOfEdit` reads his text against the model's and the comment it answers through the reply model of the source's app (`ownerOf`); the lesson goes to the source's profile, or install when it holds everywhere. Nothing before it went out, nothing once marked, and nothing without a model or `edits`. Never rejects: a failure logs one line. */
 export async function learnEdited(store: Store, draftCode: string, deps: Pick<EngineDeps, "model" | "edits">, ownerOf: (src: SourceConfig) => string): Promise<void> {
@@ -37,9 +36,9 @@ export async function learnEdited(store: Store, draftCode: string, deps: Pick<En
 	try {
 		if (!store.claimEditLearned(draftCode)) return;
 		const src = store.config().sources[d.source];
-		const received = store.comments().find(c => c.id === d.commentId)?.text ?? "";
-		const taught = await edits.lessonOfEdit({ before: d.editedFrom, after: d.text, received }, async (system, user) => (await model(system, user, src ? ownerOf(src) : d.source)).text);
-		if (taught) await edits.learn(taught.everywhere ? { app: "install" } : { app: d.source }, taught.lesson);
+		const comment = store.comments().find(c => c.id === d.commentId);
+		const taught = await edits.lessonOfEdit({ before: d.editedFrom, after: d.text, received: comment?.text ?? "" }, async (system, user) => (await model(system, user, src ? ownerOf(src) : d.source)).text).catch(e => (console.error(`comments: what the edit of ${draftCode} teaches was not read: ${e instanceof Error ? e.message : "error"}`), undefined));
+		await edits.learn({ source: "edit", ref: draftCode, keys: commentKeys(d.source, comment), words: taught?.lesson ?? "", ...(taught?.everywhere ? { proposal: { scope: "everywhere" } } : {}) });
 	} catch (e) {
 		console.error(`comments: what the edit of ${draftCode} teaches was not recorded: ${e instanceof Error ? e.message : "error"}`);
 	}
@@ -138,7 +137,7 @@ export type DraftRunCtx = {
 };
 
 export function createDraftRun({ deps, store, ownerOf, styleOf, contextOf, code, emit, mailView, mailPlanned, posting }: DraftRunCtx) {
-	return async function run(c: Comment, src: SourceConfig, previous?: Draft, change?: string, opts: { learn?: false } = {}): Promise<Step & { lesson?: Lesson }> {
+	return async function run(c: Comment, src: SourceConfig, previous?: Draft, change?: string): Promise<Step & { lesson?: Lesson }> {
 		const fixed = previous ? undefined : templateText(src, c, "reply");
 		if (!deps.model && fixed === undefined) return { ok: false, reason: "초안 만들기를 쓸 수 없어요" };
 		const tokens = { in: 0, out: 0, reported: false, chars: 0, outChars: 0 };
@@ -195,10 +194,9 @@ export function createDraftRun({ deps, store, ownerOf, styleOf, contextOf, code,
 		const draft: Draft = { code: code(), commentId: c.id, source: src.key, thread: c.thread, text: body, status: "pending", created: deps.now(), changes: previous ? [...previous.changes, change ?? ""] : [], clean: !notes.length && !mail, notes, tokens: measured, ...(mail ? { mail, ...(mailAt ? { mailAt } : {}) } : {}), ...(mailThread ? { mailThread } : {}), ...(previous ? { replaces: previous.code } : {}) };
 		store.putDraft(draft);
 		emit({ kind: "comment_draft", source: src.key, thread: c.thread });
-		// Learned only once the new draft is stored (design 3.1); `learn: false` hands the lesson to the caller (hub/reply-actions.ts) instead.
+		// Handed to the learning entry only once the new draft is stored (hub/reply-actions.ts), which says remembered or once on its card.
 		const learnt = previous && change !== undefined && r.action === "draft" ? learnedOf(r, change) : undefined;
-		const lesson: Lesson | undefined = learnt && previous && (learnt.line.trim() || learnt.forbid.length) ? { key: commentLessonKey(src.key, c, learnt.scope), line: learnt.line, forbid: learnt.forbid, evidence: { draft: previous.text, change: change ?? "" } } : undefined;
-		if (lesson && opts.learn !== false) deps.learn?.(lesson);
+		const lesson: Lesson | undefined = learnt && previous ? { keys: commentKeys(src.key, c), words: learnt.line, proposal: { once: learnt.once, scope: learnt.scope, forbid: learnt.forbid }, evidence: { draft: previous.text, change: change ?? "" } } : undefined;
 		return { ok: true, draft, ...(lesson ? { lesson } : {}) };
 	};
 

@@ -9,6 +9,7 @@ import { MAX_CHAT_CHARS, MAX_PAIRS, MAX_PROMPT_CHARS, type ModelReply } from "./
 import { addMessage, BASE_LOG, BASE_TIME, bplistOfInts, makeFixtureDb, OWNER, ROOM } from "./fixture.ts";
 import { dispatchSend } from "./contract.ts";
 import type { Learned } from "../reply-draft.ts";
+import type { LearnInput } from "../reply-types.ts";
 import { lessonOfEdit } from "../reply-mail.ts";
 import { flush } from "../runtime/test-clock.ts";
 import { makeDraft } from "./make-draft.ts";
@@ -573,40 +574,44 @@ describe("on-demand draft", () => {
 		t.close();
 	});
 
-	test("a revise that bans a wording quoted in the change hands the learner the line, the wordings and for whom it holds (an older answer's everywhere too); a wording the change never said is dropped", async () => {
-		const learned: ({ chatId: string } & Learned)[] = [];
+	test("a revise that bans a wording quoted in the change hands back the owner's words, the wordings and for whom it holds; a wording the change never said is dropped", async () => {
+		const learned: Learned[] = [];
 		const t = setup();
 		const quiet = async () => ({ code: 0, stdout: "", stderr: "" });
 		const config = t.config$();
 		const room = { chatId: DIRECT, name: "Alex", type: 1, kind: "direct" as const, unread: 0, lastAt: 1 };
 		const draftModel = () => t.model.reply();
-		const ctx = { deps: { paths, runner: quiet, now: () => NOW, openDb: async () => t.db, broadcast: () => {}, draftModel, onRevise: (chatId: string, l: Learned) => void learned.push({ chatId, ...l }) }, paths, now: () => NOW, getDb: async () => t.db, allRooms: async () => ({ all: [room] }), eligible: (rooms: (typeof room)[]) => rooms, setAsk: () => {}, storedAsks: () => ({}) };
-		const answer = (said: object) => ({ text: JSON.stringify({ action: "draft", body: "잘 다녀와", summary: "", lesson: "인사에 되세요를 쓰지 않는다", forbid: ["편안한 하루 되세요", "지어낸 표현"], ...said }) });
-		for (const said of [{ everywhere: true }, { everywhere: false }, { scope: "recipient" }]) {
+		const ctx = { deps: { paths, runner: quiet, now: () => NOW, openDb: async () => t.db, broadcast: () => {}, draftModel }, paths, now: () => NOW, getDb: async () => t.db, allRooms: async () => ({ all: [room] }), eligible: (rooms: (typeof room)[]) => rooms, setAsk: () => {}, storedAsks: () => ({}) };
+		const answer = (said: object) => ({ text: JSON.stringify({ action: "draft", body: "잘 다녀와", summary: "", once: false, forbid: ["편안한 하루 되세요", "지어낸 표현"], ...said }) });
+		const change = "편안한 하루 되세요는 비문이야, 이 말 빼줘";
+		for (const said of [{ scope: "everywhere" }, {}, { scope: "recipient" }]) {
 			t.model.reply = async () => answer(said);
 			const old = await t.draft({ text: "편안한 하루 되세요" });
-			await makeDraft(ctx, config, DIRECT, undefined, { code: old.code, draft: old.text, change: "편안한 하루 되세요는 비문이야, 이 말 빼줘" });
+			const made = await makeDraft(ctx, config, DIRECT, undefined, { code: old.code, draft: old.text, change });
+			if (made.ok && made.learned) learned.push(made.learned);
 		}
-		const line = "인사에 되세요를 쓰지 않는다", forbid = ["편안한 하루 되세요"];
-		expect(learned).toEqual([{ chatId: DIRECT, line, forbid, scope: "everywhere" }, { chatId: DIRECT, line, forbid, scope: "channel" }, { chatId: DIRECT, line, forbid, scope: "recipient" }]);
+		const forbid = ["편안한 하루 되세요"];
+		expect(learned).toEqual([{ line: change, once: false, forbid, scope: "everywhere" }, { line: change, once: false, forbid, scope: "channel" }, { line: change, once: false, forbid, scope: "recipient" }]);
 		t.close();
 	});
 
-	test("a revise through the reply flow returns its lesson under the room key, for the room's person too, or under the install key when the owner said it holds everywhere, without recording it itself", async () => {
+	test("a revise through the reply flow returns its lesson under the room's keys with the scope the model gave, the owner's own words and the once it said, without recording it itself", async () => {
 		const learned: unknown[] = [];
-		const t = setup({}, undefined, { onRevise: (...args) => void learned.push(args) });
+		const t = setup({}, undefined, { learn: (input: LearnInput) => void learned.push(input) });
 		const change = "편안한 하루 되세요는 비문이야, 이 말 빼줘";
 		const ask = async (said: object) => {
-			t.model.reply = async () => ({ text: JSON.stringify({ action: "draft", body: "잘 다녀와", summary: "", lesson: "인사에 되세요를 쓰지 않는다", forbid: ["편안한 하루 되세요", "지어낸 표현"], ...said }) });
+			t.model.reply = async () => ({ text: JSON.stringify({ action: "draft", body: "잘 다녀와", summary: "", once: false, forbid: ["편안한 하루 되세요", "지어낸 표현"], ...said }) });
 			const d = await t.draft({ text: "편안한 하루 되세요" });
 			return kakaoAdapter(t.web.replyKit).revise(d.code, change);
 		};
-		const expected = { line: "인사에 되세요를 쓰지 않는다", forbid: ["편안한 하루 되세요"] };
-		expect(await ask({ everywhere: true })).toMatchObject({ ok: true, lesson: { key: { app: "install" }, ...expected } });
-		expect(await ask({ everywhere: false })).toMatchObject({ ok: true, lesson: { key: { app: "kakao", room: DIRECT }, ...expected } });
-		expect(await ask({ scope: "everywhere" })).toMatchObject({ ok: true, lesson: { key: { app: "install" }, ...expected } });
+		const keys = { channel: { app: "kakao", room: DIRECT } };
+		const expected = (scope: string, once = false) => ({ ok: true, lesson: { keys, words: change, proposal: { once, scope, forbid: ["편안한 하루 되세요"] } } });
+		expect(await ask({ scope: "everywhere" })).toMatchObject(expected("everywhere"));
+		expect(await ask({})).toMatchObject(expected("channel"));
+		expect(await ask({ once: true })).toMatchObject(expected("channel", true));
 		const person = await ask({ scope: "recipient" });
-		expect(person.ok && person.lesson?.key).toEqual({ app: "kakao", room: DIRECT });
+		expect(person).toMatchObject(expected("recipient"));
+		expect(person.ok && person.lesson?.keys).toEqual(keys);
 		expect(learned).toEqual([]);
 		t.close();
 	});
@@ -1221,14 +1226,14 @@ describe("a sent edit", () => {
 	test("a sent draft the owner edited teaches its room through the room's model, read with the chat lines the draft answered and nothing after them", async () => {
 		const learned: unknown[] = [];
 		const after = (w: Database) => addMessage(w, { logId: BASE_LOG + BigInt(60), chatId: ROOM.direct, authorId: OWNER, message: "이미 보낸 다른 말", sentAt: BASE_TIME + 600 });
-		const t = setup({}, after, { onRevise: (...args) => void learned.push(args), lessonOfEdit });
+		const t = setup({}, after, { learn: (input: LearnInput) => void learned.push(input), lessonOfEdit });
 		const lesson = "점심 약속에는 'ㅇㅋ'처럼 짧게 답한다";
 		t.model.reply = async () => ({ text: JSON.stringify({ lesson, everywhere: false }) });
 		const d = await t.draft();
 		expect(editDraft(d.code, "ㅇㅋ 내일 봐", { paths }).ok).toBe(true);
 		expect(await kakaoAdapter(t.web.replyKit).run!({ ref: d.code, conv: `kakao:${DIRECT}`, action: "send", title: "", by: "owner" })).toEqual({ sent: "yes" });
 		await flush();
-		expect(learned).toEqual([[DIRECT, { line: lesson, forbid: [], scope: "channel" }]]);
+		expect(learned).toEqual([{ source: "edit", ref: d.code, keys: { channel: { app: "kakao", room: DIRECT } }, words: lesson }]);
 		const user = t.model.calls.at(-1)!.user;
 		for (const said of ["fine, lunch tomorrow?", "see you", "ㅇㅋ 내일 봐"]) expect(user).toContain(said);
 		for (const unsaid of ["hello there", "hi, how are you", "이미 보낸 다른 말"]) expect(user).not.toContain(unsaid);

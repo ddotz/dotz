@@ -92,20 +92,20 @@ test("보내지 않기 with a reason learns it as a correction of the draft's to
 	const withReason = draft();
 	expect(dropDraft(withReason.id, { reason: "광고 메일에는 답하지 않는다", deps: { now } }).ok).toBe(true);
 	await learningSettled();
-	expect(profileBullets({ app: "mail" }, HEADINGS.corrections)).toEqual(["2030-01-01: MAIL-CORRECTION", "2030-03-04: 보내지 않은 초안 - 광고 메일에는 답하지 않는다"]);
+	expect(profileBullets({ app: "mail" }, HEADINGS.corrections)).toEqual(["2030-01-01: MAIL-CORRECTION", "2030-03-04: 광고 메일에는 답하지 않는다"]);
 	// The owner's pick on the card: "3) 보내지 않기 - <reason>" reaches the send, which drops and learns it.
 	const picked = draft();
 	pick(env, picked.id, 3, "회신이 필요 없는 공지");
 	expect((await sendDraft(picked.id, { now })).ok).toBe(false);
 	await learningSettled();
 	expect(getDraft(picked.id)?.status).toBe("dropped");
-	expect(profileBullets({ app: "mail" }, HEADINGS.corrections).at(-1)).toBe("2030-03-04: 보내지 않은 초안 - 회신이 필요 없는 공지");
+	expect(profileBullets({ app: "mail" }, HEADINGS.corrections).at(-1)).toBe("2030-03-04: 회신이 필요 없는 공지");
 	// The web card's free-text note with 보내지 않기.
 	const noted = draft();
 	await dropAnsweredMailDraft({ decision: { draft: { ref: noted.id }, options: [{ n: 3, label: "보내지 않기" }] } } as never, 3, undefined, "스팸", () => ({ now }));
 	await learningSettled();
 	expect(getDraft(noted.id)?.status).toBe("dropped");
-	expect(profileBullets({ app: "mail" }, HEADINGS.corrections).at(-1)).toBe("2030-03-04: 보내지 않은 초안 - 스팸");
+	expect(profileBullets({ app: "mail" }, HEADINGS.corrections).at(-1)).toBe("2030-03-04: 스팸");
 });
 
 test("a site's DM reply reads its DM tone file on top of the site's tone; a comment reply does not", () => {

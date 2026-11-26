@@ -393,11 +393,11 @@ test("a linked mail is written from the mail profile, also through a second mail
 	}
 });
 
-test("a revision records only its lasting lesson: the model's line, nothing for an empty one, the verbatim change when the field is missing", async () => {
+test("a revision records the owner's own change unless the model says once: nothing for once, the verbatim change otherwise and when the field is missing", async () => {
 	const first = fakeModel([replyJson("확인해 보고 말씀드릴게요.")]);
 	const cases: [Record<string, unknown>, string[]][] = [
-		[{ lesson: "" }, []],
-		[{ lesson: "when 일정을 물으면 then 요일만 답함" }, ["when 일정을 물으면 then 요일만 답함"]],
+		[{ once: true }, []],
+		[{ once: false }, ["더 짧게"]],
 		[{}, ["더 짧게"]],
 	];
 	for (const [i, [extra, expected]] of cases.entries()) {

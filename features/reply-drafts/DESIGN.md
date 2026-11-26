@@ -93,8 +93,8 @@ A chat message that needs his own decision still asks first (exit 4), since the 
   else the shared `mail` one (`profileApp`, used by `draftRules`): its offered drafts, a mail composed there and a mail that rides on a
   comment (`writeMail`) are therefore written, revised, checked and taught with the same profile and the same recipient file; with no
   recipient file the style, the prompts and the lint are exactly those of the key without `to`. Writing
-  (`learnTone`, `recordCorrection`) goes into exactly one profile. A revise lesson goes to the key of its `scope` (mail: `flow.ts`
-  `lessonKey` over `draftRules`; comments: `draft-run.ts` `commentLessonKey`; KakaoTalk: `kakaoLessonKey`): the install for `everywhere`;
+  (`learnTone`, `recordCorrection`) goes into exactly one profile. A revise lesson goes to the key of its `scope` (mail: `lib/learn.ts`
+  `keysOf` over `draftRules`; comments: `draft-run.ts` `commentKeys`; KakaoTalk: `kakaoKeys`): the install for `everywhere`;
   for `recipient` the draft's recipient file (a mail's `replyAddress`, a comment author's `authorId`, a mail that rides on a comment that address
   under the shared `mail` profile), or the channel's profile when the draft has no recipient with a file name (a sender with only a
   name, a comment author without an id); for KakaoTalk the room, which already is the person; for `channel` the draft's channel. The card path
@@ -136,10 +136,14 @@ A chat message that needs his own decision still asks first (exit 4), since the 
   words or the change quotes a wording ('…', "…", ‘…’, “…”, 「…」), and waits 12 s at most (a later answer is dropped). A word the revise
   banned as a literal is not stored only when one of the kept good examples uses it (the owner's own text shows it is right in some use);
   every other word is stored, and the card names what was stored. The revise prompts keep `forbid` for a fixed phrase that is wrong wherever
-  it appears and put a rejected kind of sentence or ending into `lesson` with his examples. `correct --forbid` is always stored. The rule goes
+  it appears and leave a rejected kind of sentence or ending to the owner's own words (the line stored) with his examples. `correct --forbid` is always stored. The rule goes
   under `## 금지` of the profile the rule or lesson went to, once per parts, and the card or the CLI says `표현 규칙으로도 정해 뒀어요:
   <label>`; `correct --allow "<label>"` takes it out.
-  A line the owner asks for (`draft.ts correct --rule/--change`) is learned by `learnLine` (`lib/flow.ts`): `curate` (`lib/curate.ts`)
+  Every source (a revise on a card or `draft.ts revise`, `draft.ts correct --draft/--app`, a hand edit, a drop with a reason) goes through the one entry `learn` (`lib/learn.ts`)
+  and ends visibly: REMEMBERED (`기억했어요: "<문장>" · 범위: <범위>`) or ONCE (`이번만 반영했어요`, nothing stored). The model proposes `once`, `scope` and `forbid`;
+  words with 앞으로/항상/절대, a ban or a chat request are always remembered. The line is the owner's own words (an edit uses `lessonOfEdit`'s lesson, none is ONCE).
+  Each is one record of `custom/reply-drafts/learn-log.json` (500 at most), and the card's `learn-scope`, `learn-once` and `learn-keep` acts (`flipLearnt`) reverse it.
+  A line the owner asks for (`draft.ts correct --rule/--change`) is stored by `learnLine` (`lib/flow.ts`): `curate` (`lib/curate.ts`)
   asks the reply model of the profile's app once (through `learnCall`, 12 s at most) with that profile's own `## 말투` lines as `R1..`
   and `## 고친 점` lines as `C1..` (dates kept; hand-added sections, 예시 and 금지 are never shown) and the new line with its kind, for
   `{"replaces":[{"id","why":"same"|"overridden"}]}`. Code keeps only ids that exist, each once, the first three, and no `R` id for a

@@ -4,6 +4,7 @@
 // the user's own sent texts and corrections. The script, never the model, posts and sends.
 // Pure: no fs, no network, no config import.
 
+import type { LessonScope } from "./reply-types.ts";
 import { type AttachIssueKind, attachIssues } from "./attach-check.ts";
 import { banFinding, banHit, banKey, banLabel, contentBan, literalBan, parseBan, WORDING_RULES, wordingRule } from "./ban.ts";
 import { cleanChoices, cleanQuestion } from "./choices.ts";
@@ -54,16 +55,15 @@ export type DraftOut = { to: string; cc?: readonly string[]; subject?: string; b
 /** Who wrote to the user, as the model judged it (mail and comment): `evidence` = the sender's own words that show it. */
 export type Recipient = { who: string; evidence: string };
 export type ReplyResult =
-	| { action: "draft"; draft: DraftOut; questions: string[]; warnings: string[]; /** The part of `warnings` the style judge found (its 확인 notes, content bans too). */ judged?: string[]; /** How many of the user's corrections the prompt's budget cut (absent = none): the card says so (`leftOutNote`). */ leftOut?: number; tries: number; recipient?: Recipient; /** Revise mode: the lasting preference the change shows ("" = only about this message); absent = the model did not say. */ lesson?: string; forbid?: string[]; scope?: LessonScope; /** The candidates the model chose (exact names); [] = none, absent = it gave no "files" or the item had no candidates. */ files?: string[] }
+	| { action: "draft"; draft: DraftOut; questions: string[]; warnings: string[]; /** The part of `warnings` the style judge found (its 확인 notes, content bans too). */ judged?: string[]; /** How many of the user's corrections the prompt's budget cut (absent = none): the card says so (`leftOutNote`). */ leftOut?: number; tries: number; recipient?: Recipient; /** Revise mode: true when the change is only about this message (LESSON); absent = the model did not say. */ once?: boolean; forbid?: string[]; scope?: LessonScope; /** The candidates the model chose (exact names); [] = none, absent = it gave no "files" or the item had no candidates. */ files?: string[] }
 	| { action: "skip"; reason: string };
 // chat only (generateChatReply): the message needs a decision only the user can make; 2-4 short choices come back instead of a draft
 export type AskResult = { action: "ask"; question: string; choices: string[] };
 
 export type SenderFilter = { only: string[]; skip: string[] };
 export type PromptExtras = { previous?: DraftOut; change?: string; failures?: string[] };
-export type ModelJson = { recipient?: Recipient; lesson?: string; forbid?: string[]; scope?: LessonScope; action: "skip" | "draft" | "ask"; reason: string; to: string; subject?: string; body: string; questions: string[]; question?: string; choices?: string[]; /** Absent key = undefined, [] = the model chose none. */ files?: string[] };
-/** For whom a revise lesson holds: the person the reply goes to, this channel (the kind of message, the app, room or mailbox), or every reply. */
-export type LessonScope = "recipient" | "channel" | "everywhere";
+export type ModelJson = { recipient?: Recipient; once?: boolean; forbid?: string[]; scope?: LessonScope; action: "skip" | "draft" | "ask"; reason: string; to: string; subject?: string; body: string; questions: string[]; question?: string; choices?: string[]; /** Absent key = undefined, [] = the model chose none. */ files?: string[] };
+export type { LessonScope };
 /** The scope a model answer gives its lesson: its `scope` (a string other than "recipient" or "everywhere" is "channel"), else an older answer's `everywhere` boolean (true is "everywhere", false "channel"); undefined when it gives neither. */
 export function scopeOf(o: { scope?: unknown; everywhere?: unknown }): LessonScope | undefined {
 	if (typeof o.scope === "string") return o.scope === "recipient" || o.scope === "everywhere" ? o.scope : "channel";
@@ -181,7 +181,7 @@ const forRecipient = (s: string): string =>
 		.replace('{"action":"skip"|"draft"', () => '{"recipient":{"who":"...","evidence":"..."},"action":"skip"|"draft"')
 		.replace("Output exactly one JSON", () => `${RECIPIENT}\nOutput exactly one JSON`);
 // Revise mode (mail and comment): what the change teaches, so only a lasting preference enters the profile.
-const LESSON = 'Also add to the JSON object "lesson": the lasting preference this change shows, one short line in the user\'s language with its condition (when ... then ...), in the user\'s own words where possible; "" when the change is only about this message, its file, its song or its exact text. Add "forbid": the exact wordings, as they would appear in a reply, that the user says must not be used again ([] when the change bans none or is only about this message). "forbid" is only for a fixed phrase that is wrong wherever it appears; when the user rejects a kind of sentence or an ending in one use (a closing wish ending in a wording that is fine in other sentences), leave it out of "forbid" and state it in "lesson" with his examples. Add "scope", for whom the lesson holds: "recipient" only when the user says the change is about the person this reply goes to (이분께는, 이 사람한테는, or that person\'s name); "everywhere" only when the user says the change holds always or everywhere, or rejects the wording itself as wrong (grammar, spelling, a habit of language); "channel" otherwise, when it is about this kind of message or this channel.';
+const LESSON = 'Also add to the JSON object "once": true when the change is only about this message, its file, its song or its exact text, false when it shows a preference for later replies too. Add "forbid": the exact wordings, as they would appear in a reply, that the user says must not be used again ([] when the change bans none or is only about this message). "forbid" is only for a fixed phrase that is wrong wherever it appears; when the user rejects a kind of sentence or an ending in one use (a closing wish ending in a wording that is fine in other sentences), leave it out of "forbid". Add "scope", for whom the change holds: "recipient" only when the user says the change is about the person this reply goes to (이분께는, 이 사람한테는, or that person\'s name); "everywhere" only when the user says the change holds always or everywhere, or rejects the wording itself as wrong (grammar, spelling, a habit of language); "channel" otherwise, when it is about this kind of message or this channel.';
 const CORRECTIONS = "The user's past corrections, newest first; when two disagree, the newer one wins. Each was about one draft: carry over the preference it shows to the same kind of situation, never its specific words, songs, files or names; skip one that only rewrites a single draft:";
 const OVER_CONFIGURED = "The user's past corrections, newest first; when two disagree, the newer one wins, and every one of them is newer than the configured instruction above, so where a correction and that instruction disagree, the correction wins. Each was about one draft: carry over the preference it shows to the same kind of situation, never its specific words, songs, files or names; skip one that only rewrites a single draft:";
 const CONTENT_BANS = "Content the owner set as never to write (a draft that says one is rejected, whatever the wording; they hold over every sample, pattern and past reply):";
@@ -339,7 +339,7 @@ function toJson(raw: string): ModelJson | undefined {
 	const recipient = r && typeof r === "object" && typeof r.who === "string" && typeof r.evidence === "string" ? { who: r.who.trim(), evidence: r.evidence.trim() } : undefined;
 	const ask = o.action === "ask" ? { question: cleanQuestion(o.question), choices: cleanChoices(o.choices) } : undefined;
 	const scope = scopeOf(o);
-	return { ...(recipient ? { recipient } : {}), ...(typeof o.lesson === "string" ? { lesson: o.lesson.trim() } : {}), ...(Array.isArray(o.forbid) ? { forbid: strings(o.forbid) } : {}), ...(scope ? { scope } : {}), action: o.action, reason: str(o.reason).trim(), ...(Array.isArray(o.files) ? { files: strings(o.files) } : {}), ...(ask ? { question: ask.question, choices: ask.choices } : {}), to: str(o.to).trim(), ...(str(o.subject).trim() ? { subject: str(o.subject).trim() } : {}), body: str(o.body).trim(), questions: strings(o.questions) };
+	return { ...(recipient ? { recipient } : {}), ...(typeof o.once === "boolean" ? { once: o.once } : {}), ...(Array.isArray(o.forbid) ? { forbid: strings(o.forbid) } : {}), ...(scope ? { scope } : {}), action: o.action, reason: str(o.reason).trim(), ...(Array.isArray(o.files) ? { files: strings(o.files) } : {}), ...(ask ? { question: ask.question, choices: ask.choices } : {}), to: str(o.to).trim(), ...(str(o.subject).trim() ? { subject: str(o.subject).trim() } : {}), body: str(o.body).trim(), questions: strings(o.questions) };
 }
 
 // The model's one JSON object: the last ```json block, else the last line that is a {...} object, else the whole text.
@@ -435,7 +435,7 @@ function recipientOf(to: string, item: ReplyItem): string {
 // A mail reply's subject is the original's with Re: in front; the model's own subject stays when it already starts with Re:.
 const subjectOf = (subject: string | undefined, item: ReplyItem): string | undefined => (item.kind === "mail" && item.subject?.trim() && !/^re\s*:/i.test((subject ?? "").trim()) ? defaultSubject(item) : subject ?? defaultSubject(item));
 
-const lessonsOf = (r: Pick<ModelJson, "lesson" | "forbid" | "scope">): Pick<ModelJson, "lesson" | "forbid" | "scope"> => ({ ...(r.lesson !== undefined ? { lesson: r.lesson } : {}), ...(r.forbid ? { forbid: r.forbid } : {}), ...(r.scope !== undefined ? { scope: r.scope } : {}) });
+const lessonsOf = (r: Pick<ModelJson, "once" | "forbid" | "scope">): Pick<ModelJson, "once" | "forbid" | "scope"> => ({ ...(r.once !== undefined ? { once: r.once } : {}), ...(r.forbid ? { forbid: r.forbid } : {}), ...(r.scope !== undefined ? { scope: r.scope } : {}) });
 
 async function run(item: ReplyItem, style: ReplyStyle, call: ModelCall, base: PromptExtras, judge?: JudgeAsk): Promise<ReplyResult | AskResult> {
 	let failures: string[] | undefined;
@@ -507,13 +507,12 @@ export const generateReply = (item: ReplyItem, style: ReplyStyle, call: ModelCal
 // A chat message: the same single call may return an ask (the message needs the user's own decision) instead of a draft; with `item.choice` it always drafts.
 export const generateChatReply = (item: ReplyItem, style: ReplyStyle, call: ModelCall, judge?: JudgeAsk): Promise<ReplyResult | AskResult> => run(item, style, call, {}, judge);
 
-/** What a revision teaches, checked: `line` is the model's lesson, the change itself when the model left it out, "" for a one-off; `forbid` only wordings the user's own change text holds; `scope` the model's, and "channel" when it gave none or nothing was learned. */
-export type Learned = { line: string; forbid: string[]; scope: LessonScope };
+/** What a revision teaches, checked: `line` is the owner's change as he gave it (one line), `once` the model's word that it holds only for this message (hub/reply-draft.ts LESSON), `forbid` only wordings the user's own change text holds, `scope` the model's, "channel" when it gave none. */
+export type Learned = { line: string; once: boolean; forbid: string[]; scope: LessonScope };
 const BANS_MAX = 5;
 
-/** The lesson of a revision with the wordings it bans: the model's `forbid` entries that are literal bans (`literalBan`) occurring in `change` (whitespace, case and Unicode composition aside), at most 5, stored as `literalBan` gives them. */
-export function learnedOf(r: { lesson?: string; forbid?: string[]; scope?: LessonScope }, change: string): Learned {
-	const line = r.lesson === undefined ? change : r.lesson;
+/** What a revision proposes to learn, with the wordings it bans: the model's `forbid` entries that are literal bans (`literalBan`) occurring in `change` (whitespace, case and Unicode composition aside), at most 5, stored as `literalBan` gives them. */
+export function learnedOf(r: { once?: boolean; forbid?: string[]; scope?: LessonScope }, change: string): Learned {
 	const forbid: string[] = [];
 	for (const entry of r.forbid ?? []) {
 		const ban = literalBan(entry);
@@ -521,7 +520,7 @@ export function learnedOf(r: { lesson?: string; forbid?: string[]; scope?: Lesso
 		forbid.push(ban.text);
 		if (forbid.length === BANS_MAX) break;
 	}
-	return { line, forbid, scope: r.scope !== undefined && (!!line.trim() || forbid.length > 0) ? r.scope : "channel" };
+	return { line: change.replace(/\s+/g, " ").trim(), once: r.once === true, forbid, scope: r.scope ?? "channel" };
 }
 
 // The same, applying the user's requested change to a previous draft.

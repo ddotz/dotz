@@ -49,7 +49,7 @@ function world(w: World) {
 		sender,
 		recordPick: () => undefined,
 		recordText: () => undefined,
-		learning: { record: async () => ({ kind: "correction" as const, stored: true, replaced: [] }), refine: async () => undefined, forbid: async () => undefined },
+		learning: { learn: async i => ({ ref: i.ref, state: "once", line: "", scope: "channel", scopeLabel: "이 앱", scopes: ["channel"], text: "이번만 반영했어요" }), shown: () => undefined, flip: async () => undefined },
 		cards: { open: () => w.cards ?? [], convOf: () => undefined, replace: () => undefined, rewrite: () => undefined, repost: async () => undefined, close: () => undefined },
 		toBot: async () => undefined,
 		emit: () => undefined,

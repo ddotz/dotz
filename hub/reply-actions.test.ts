@@ -39,7 +39,7 @@ function world(o: { outcome?: string; reviseFails?: boolean; lesson?: string; fo
 			drafts.set("RBBBBBB", { ...view("RBBBBBB", "목요일까지 보내드릴게요."), draft: { ...view("RBBBBBB", "목요일까지 보내드릴게요.").draft, replaces: { ref, text: drafts.get(ref)!.draft.text } } });
 			set(ref, { state: "stale" });
 			log.push("stored RBBBBBB");
-			const lesson: Lesson | undefined = o.lesson !== undefined || o.forbid ? { key: { app: o.everywhere ? "install" : "mail" }, line: o.lesson ?? "", ...(o.forbid ? { forbid: o.forbid } : {}), evidence: { draft: drafts.get(ref)!.draft.text, change } } : undefined;
+			const lesson: Lesson | undefined = o.lesson !== undefined || o.forbid ? { keys: { channel: { app: "mail" } }, words: o.lesson ?? "", proposal: { scope: o.everywhere ? "everywhere" : "channel", ...(o.forbid ? { forbid: o.forbid } : {}) }, evidence: { draft: drafts.get(ref)!.draft.text, change } } : undefined;
 			return { ok: true, ref: "RBBBBBB", replaces: ref, ...(lesson ? { lesson } : {}) };
 		},
 		edit: async (ref, text, _part, subject) => {
@@ -84,23 +84,13 @@ function world(o: { outcome?: string; reviseFails?: boolean; lesson?: string; fo
 		recordText: (_c, t) => void log.push(`text ${t}`),
 		say: (conv, ref, text) => void log.push(`say ${conv} ${ref} ${text}`),
 		learning: o.learning ?? {
-			record: async (k, line) => {
-				log.push(`learn ${k.app} ${line}`);
+			learn: async i => {
+				log.push(`learn ${i.keys.channel.app} ${i.proposal?.scope ?? "channel"} ${i.words}`);
 				if (o.recordFails) throw new Error("disk full");
-				return { kind: k.app === "install" ? "rule" : "correction", stored: o.same === undefined, replaced: o.replaced ?? [], ...(o.same !== undefined ? { same: o.same } : {}) };
+				return { ref: i.ref, state: "remembered", line: i.words, scope: i.proposal?.scope ?? "channel", scopeLabel: "이 앱", scopes: ["channel", "everywhere"], text: `기억했어요: "${i.words}" · 범위: 이 앱` };
 			},
-			refine: async () => void log.push("refine"),
-			forbid: async (k, words) => (o.forbidFails ? Promise.reject(new Error("disk full")) : void log.push(`forbid ${k.app} ${words.join("|")}`)),
-			...(o.pattern !== undefined
-				? {
-						pattern: async (k: Lesson["key"], line: string, evidence: NonNullable<Lesson["evidence"]>, words: string[]) => {
-							log.push(`pattern ${k.app} ${line} [${evidence.draft} | ${evidence.change}] {${words.join("|")}}`);
-							if (o.patternFails) throw new Error("model down");
-							const label = o.pattern;
-							return label ? { label, inGood: o.inGood ?? [], keep: () => void log.push(`keep ${label}`) } : undefined;
-						},
-					}
-				: {}),
+			shown: () => undefined,
+			flip: async () => undefined,
 		},
 		cards: { open: () => o.cards ?? [], convOf: () => o.cardConv, replace: (a, b, text, hash) => void (drawn.push([b, hash]), log.push(`cards ${a}->${b}`), texts.push(text)), rewrite: (ref, _t, hash) => void (drawn.push([ref, hash]), log.push(`rewrite ${ref}`)), repost: async (ref, text, hash) => void reposts.push([ref, text, hash]), close: ref => void log.push(`close ${ref}`) },
 		toBot: async (conv, text) => void log.push(`bot ${conv} ${text}`),
@@ -167,200 +157,13 @@ test("다시 보내기 of a send that failed for want of a fresh approval (mail_
 	}
 });
 
-test("revise: 202 at once; the model runs, the new draft is stored, then the lesson is learned and refined, then the cards move and one event names the new ref", async () => {
+test("revise: 202 at once; the model runs, the new draft is stored, then the lesson goes to the learning entry, then the cards move and one event names the new ref", async () => {
 	const w = world({ lesson: "마감은 넉넉히 잡아서 쓴다" });
 	const r = await w.replies.act({ ref: "RAAAAAA", action: "revise", change: "마감을 목요일로" }, owner);
 	expect(r.status).toBe(202);
 	expect((await w.replies.act({ ref: "RAAAAAA", action: "revise", change: "또" }, owner)).body).toMatchObject({ code: "revising" });
 	await w.replies.idle();
-	expect(w.log).toEqual(["pick 고치기 - 마감을 목요일로", "event RAAAAAA revising", "model 마감을 목요일로", "stored RBBBBBB", "learn mail 마감은 넉넉히 잡아서 쓴다", "cards RAAAAAA->RBBBBBB", "event RAAAAAA->RBBBBBB", "refine"]);
-});
-
-test("revise: the line and the banned wordings are each recorded once, in the profile the lesson names, the new card tells the owner what was stored, and only a correction refines the identity", async () => {
-	for (const [everywhere, where] of [[false, "이 앱 답장"], [true, "모든 답장"]] as const) {
-		const w = world({ lesson: "끝인사는 짧게", forbid: ["행복한 하루 되세요"], everywhere });
-		await w.replies.act({ ref: "RAAAAAA", action: "revise", change: "행복한 하루 되세요는 쓰지 말고 끝인사는 짧게" }, owner);
-		await w.replies.idle();
-		const app = everywhere ? "install" : "mail";
-		expect(w.linesOf("learn")).toEqual([`learn ${app} 끝인사는 짧게`]);
-		expect(w.linesOf("forbid")).toEqual([`forbid ${app} 행복한 하루 되세요`]);
-		expect(w.linesOf("refine")).toEqual(everywhere ? [] : ["refine"]);
-		expect(w.texts).toHaveLength(1);
-		expect(w.texts[0]).toContain(`앞으로 ${where}에 반영해요: 끝인사는 짧게`);
-		expect(w.texts[0]).toContain(`앞으로 ${where}에서 쓰지 않을 표현: '행복한 하루 되세요'`);
-	}
-});
-
-test("revise: a one-off change or a lesson with no line and no words records nothing and the card carries no note; words alone are recorded without a line or a refine", async () => {
-	const none = world({ lesson: "", forbid: [] });
-	await none.replies.act({ ref: "RAAAAAA", action: "revise", change: "목요일로만" }, owner);
-	await none.replies.idle();
-	expect(none.log.filter(l => /^(learn|forbid|refine)/.test(l))).toEqual([]);
-	expect(none.texts[0]).not.toContain("앞으로");
-	const words = world({ lesson: "", forbid: ["되세요"] });
-	await words.replies.act({ ref: "RAAAAAA", action: "revise", change: "되세요 쓰지 마" }, owner);
-	await words.replies.idle();
-	expect(words.log.filter(l => /^(learn|forbid|refine)/.test(l))).toEqual(["forbid mail 되세요"]);
-});
-
-test("revise: a lesson asks for a wording pattern with the previous draft and the change, and the new card's first line names its label", async () => {
-	const w = world({ lesson: "덕담은 '보내세요'로 맺는다", pattern: "덕담은 '~ 보내세요'로 맺는다" });
-	await w.replies.act({ ref: "RAAAAAA", action: "revise", change: "'되세요' 말고 보내세요로" }, owner);
-	await w.replies.idle();
-	expect(w.linesOf("pattern")).toEqual(["pattern mail 덕담은 '보내세요'로 맺는다 [확인해 보고 말씀드릴게요. | '되세요' 말고 보내세요로] {}"]);
-	expect(w.texts[0]!.split("\n")[0]).toContain("표현 규칙으로도 정해 뒀어요: 덕담은 '~ 보내세요'로 맺는다");
-	const refused = world({ lesson: "짧게 쓴다", pattern: "" });
-	await refused.replies.act({ ref: "RAAAAAA", action: "revise", change: "짧게" }, owner);
-	await refused.replies.idle();
-	expect(refused.linesOf("pattern")).toHaveLength(1);
-	expect(refused.texts[0]).not.toContain("표현 규칙으로도");
-});
-
-test("revise: a banned word a kept good example of the stored pattern uses is not stored as a literal and the card names only what was stored; any other word is stored", async () => {
-	const shown = world({ lesson: "", forbid: ["하루"], pattern: "덕담은 '~ 보내세요'로 맺는다", inGood: ["하루"] });
-	await shown.replies.act({ ref: "RAAAAAA", action: "revise", change: "'하루 되세요' 말고 '좋은 하루 보내세요'" }, owner);
-	await shown.replies.idle();
-	expect(shown.linesOf("pattern")).toEqual(["pattern mail  [확인해 보고 말씀드릴게요. | '하루 되세요' 말고 '좋은 하루 보내세요'] {하루}"]);
-	expect(shown.linesOf("forbid")).toEqual([]);
-	const first = shown.texts[0]!.split("\n")[0]!;
-	expect(first).toContain("표현 규칙으로도 정해 뒀어요: 덕담은 '~ 보내세요'로 맺는다");
-	expect(first).not.toContain("쓰지 않을 표현");
-	const partly = world({ lesson: "", forbid: ["되세요", "감사합니다"], pattern: "덕담은 '~ 보내세요'로 맺는다", inGood: [] });
-	await partly.replies.act({ ref: "RAAAAAA", action: "revise", change: "되세요랑 감사합니다 쓰지 마" }, owner);
-	await partly.replies.idle();
-	expect(partly.linesOf("forbid")).toEqual(["forbid mail 되세요|감사합니다"]);
-	expect(partly.texts[0]!.split("\n")[0]).toContain("쓰지 않을 표현: '되세요', '감사합니다'");
-});
-
-test("revise: a pattern call that throws still stores every banned word, and the card claims no pattern", async () => {
-	const w = world({ lesson: "", forbid: ["되세요"], pattern: "x", patternFails: true });
-	await w.replies.act({ ref: "RAAAAAA", action: "revise", change: "되세요 쓰지 마" }, owner);
-	await w.replies.idle();
-	expect(w.linesOf("forbid")).toEqual(["forbid mail 되세요"]);
-	expect(w.texts[0]).not.toContain("표현 규칙으로도");
-	expect(w.texts[0]!.split("\n")[0]).toContain("쓰지 않을 표현: '되세요'");
-});
-
-test("revise: banned wordings that could not be stored do not stop the line, and the card does not claim them", async () => {
-	const w = world({ lesson: "끝인사는 짧게", forbid: ["되세요"], forbidFails: true });
-	await w.replies.act({ ref: "RAAAAAA", action: "revise", change: "되세요 쓰지 말고 끝인사는 짧게" }, owner);
-	await w.replies.idle();
-	expect(w.linesOf("learn")).toEqual(["learn mail 끝인사는 짧게"]);
-	expect(w.linesOf("refine")).toEqual(["refine"]);
-	expect(w.texts[0]).toContain("끝인사는 짧게");
-	expect(w.texts[0]).not.toContain("되세요");
-});
-
-const CURATE_REPLACES_C1 = JSON.stringify({ replaces: [{ id: "C1", why: "overridden" }] });
-const HARU_SHAPE = `\`\`\`json\n${JSON.stringify({ parts: [{ any: ["하루"] }, { gap: 3 }, { any: ["되세요"] }], label: "'하루 보내세요'로 쓴다", bad: ["행복한 하루 되세요"], good: [] })}\n\`\`\``;
-const learnCallOf = (answers: { curate: string; pattern: string }, asked: string[] = []) => () => async (system: string) => {
-	const what = system.includes("style conditions") ? "curate" : "pattern";
-	asked.push(what);
-	return answers[what];
-};
-async function inToneDir(run: () => Promise<void>): Promise<void> {
-	const before = process.env.DOTZ_DIR;
-	const dir = mkdtempSync(join(tmpdir(), "reply-learn-"));
-	process.env.DOTZ_DIR = dir;
-	try {
-		mkdirSync(paths.toneDir(), { recursive: true });
-		await run();
-	} finally {
-		rmSync(dir, { recursive: true, force: true });
-		if (before === undefined) delete process.env.DOTZ_DIR;
-		else process.env.DOTZ_DIR = before;
-	}
-}
-
-test("revise: the card curates its lesson; a correction the answer overrides goes to the journal, the profile keeps only the new line, and the card's first line says one condition was replaced", async () => {
-	await inToneDir(async () => {
-		writeFileSync(join(paths.toneDir(), "mail.md"), "## 고친 점\n\n- 2030-03-01: 마감은 금요일로 잡는다\n");
-		const w = world({ lesson: "마감은 넉넉히 잡아서 쓴다", learning: replyLearning(() => ({ learnCall: learnCallOf({ curate: CURATE_REPLACES_C1, pattern: "null" }) })) });
-		await w.replies.act({ ref: "RAAAAAA", action: "revise", change: "마감을 목요일로" }, owner);
-		await w.replies.idle();
-		expect(w.texts[0]!.split("\n")[0]).toContain("앞으로 이 앱 답장에 반영해요: 마감은 넉넉히 잡아서 쓴다 · 기존 조건 1개를 이 조건으로 바꿨어요");
-		expect(profileBullets({ app: "mail" }, HEADINGS.corrections)).toEqual([expect.stringMatching(/^\d{4}-\d{2}-\d{2}: 마감은 넉넉히 잡아서 쓴다$/)]);
-		expect(journalEntries().map(e => [e.profile, e.line, e.why])).toEqual([["mail.md", "2030-03-01: 마감은 금요일로 잡는다", "overridden"]]);
-	});
-});
-
-test("revise: a lesson rule the install profile already has is not added again, keeps no wording pattern, and the card says it was already there; the same revise on an empty profile keeps both", async () => {
-	await inToneDir(async () => {
-		const revise = async () => {
-			const asked: string[] = [];
-			const w = world({ lesson: "끝인사는 짧게 한다", everywhere: true, learning: replyLearning(() => ({ learnCall: learnCallOf({ curate: CURATE_REPLACES_C1, pattern: HARU_SHAPE }, asked) })) });
-			await w.replies.act({ ref: "RAAAAAA", action: "revise", change: "'행복한 하루 되세요' 말고 짧게" }, owner);
-			await w.replies.idle();
-			return { first: w.texts[0]!.split("\n")[0]!, asked };
-		};
-		writeFileSync(join(paths.toneDir(), "install.md"), "## 말투\n\n- 끝인사는 짧게 한다\n");
-		const same = await revise();
-		expect(same.asked).toEqual(["pattern"]);
-		expect(same.first).toContain("이미 있는 조건이에요: 끝인사는 짧게 한다");
-		expect(same.first).not.toContain("반영해요");
-		expect(same.first).not.toContain("표현 규칙으로도");
-		expect(profileBullets("install", HEADINGS.rules)).toEqual(["끝인사는 짧게 한다"]);
-		expect(profileBullets("install", HEADINGS.forbidden)).toEqual([]);
-		rmSync(paths.toneDir(), { recursive: true, force: true });
-		const fresh = await revise();
-		expect(fresh.first).toContain("앞으로 모든 답장에 반영해요: 끝인사는 짧게 한다");
-		expect(fresh.first).toContain("표현 규칙으로도 정해 뒀어요: '하루 보내세요'로 쓴다");
-		expect(profileBullets("install", HEADINGS.forbidden)).toHaveLength(1);
-	});
-});
-
-test("revise: a lesson the profile already says in other words shows the stored rule, and a word the proposal's good example uses is not banned though no pattern is kept", async () => {
-	const w = world({ lesson: "끝인사에 '행복한 하루 되세요'는 쓰지 말고 짧게", same: "끝인사는 짧게 한다", forbid: ["되세요", "하루"], pattern: "'하루 보내세요'로 쓴다", inGood: ["하루"] });
-	await w.replies.act({ ref: "RAAAAAA", action: "revise", change: "'행복한 하루 되세요' 말고 짧게" }, owner);
-	await w.replies.idle();
-	const first = w.texts[0]!.split("\n")[0]!;
-	expect(first).toContain("이미 있는 조건이에요: 끝인사는 짧게 한다");
-	expect(first).not.toContain("쓰지 말고 짧게");
-	expect(first).not.toContain("표현 규칙으로도");
-	expect(w.linesOf("forbid")).toEqual(["forbid mail 되세요"]);
-});
-
-test("revise: recording the line and proposing its wording pattern run side by side, so the card waits for the slower of the two, not both in turn", async () => {
-	const line = Promise.withResolvers<{ kind: "correction"; stored: boolean; replaced: string[] }>();
-	const shape = Promise.withResolvers<{ label: string; inGood: string[]; keep: () => void } | undefined>();
-	const recordStarted = Promise.withResolvers<void>();
-	const started: string[] = [];
-	let kept = 0;
-	const w = world({
-		lesson: "끝인사는 짧게",
-		learning: {
-			record: async () => (started.push("record"), recordStarted.resolve(), line.promise),
-			pattern: async () => (started.push("pattern"), shape.promise),
-			refine: async () => undefined,
-			forbid: async () => undefined,
-		},
-	});
-	await w.replies.act({ ref: "RAAAAAA", action: "revise", change: "'되세요' 말고 짧게" }, owner);
-	await recordStarted.promise;
-	await flush();
-	expect(started).toEqual(["record", "pattern"]);
-	shape.resolve({ label: "덕담 규칙", inGood: [], keep: () => void kept++ });
-	line.resolve({ kind: "correction", stored: true, replaced: [] });
-	await w.replies.idle();
-	expect(kept).toBe(1);
-	expect(w.texts[0]!.split("\n")[0]).toContain("앞으로 이 앱 답장에 반영해요: 끝인사는 짧게 · 표현 규칙으로도 정해 뒀어요: 덕담 규칙");
-});
-
-test("revise: a pattern proposal that throws keeps the stored line and its refine; a record that throws keeps no pattern and claims no line", async () => {
-	const proposalFails = world({ lesson: "끝인사는 짧게", pattern: "덕담 규칙", patternFails: true });
-	await proposalFails.replies.act({ ref: "RAAAAAA", action: "revise", change: "'되세요' 말고 짧게" }, owner);
-	await proposalFails.replies.idle();
-	expect(proposalFails.linesOf("learn")).toEqual(["learn mail 끝인사는 짧게"]);
-	expect(proposalFails.linesOf("refine")).toEqual(["refine"]);
-	expect(proposalFails.texts[0]!.split("\n")[0]).toContain("앞으로 이 앱 답장에 반영해요: 끝인사는 짧게");
-	const recordFails = world({ lesson: "끝인사는 짧게", pattern: "덕담 규칙", recordFails: true });
-	await recordFails.replies.act({ ref: "RAAAAAA", action: "revise", change: "'되세요' 말고 짧게" }, owner);
-	await recordFails.replies.idle();
-	expect(recordFails.linesOf("pattern")).toHaveLength(1);
-	expect(recordFails.linesOf("keep")).toEqual([]);
-	expect(recordFails.linesOf("refine")).toEqual([]);
-	expect(recordFails.texts[0]).not.toContain("표현 규칙으로도");
-	expect(recordFails.texts[0]).not.toContain("반영해요");
+	expect(w.log).toEqual(["pick 고치기 - 마감을 목요일로", "event RAAAAAA revising", "model 마감을 목요일로", "stored RBBBBBB", "learn mail channel 마감은 넉넉히 잡아서 쓴다", "cards RAAAAAA->RBBBBBB", "event RAAAAAA->RBBBBBB"]);
 });
 
 test("revise: the new draft cannot be sent until its cards moved; a revise that keeps the same ref is a failed revise", async () => {
@@ -503,7 +306,7 @@ test("unsure: a second send answers needs_resolve; 나갔어요 closes it as sen
 test("undo inside the window cancels the send; drop and restore move the draft and close the card", async () => {
 	const w = world();
 	const sender = createApprovalSender({ kind: () => ({ kind: "mail", lane: "m" }), run: async () => ({ code: 0, out: "" }), report: () => undefined, log: () => undefined, undoMs: () => 10_000, after: () => undefined });
-	const replies = createReplyActions({ adapters: [], sender, recordPick: () => undefined, learning: { record: async () => ({ kind: "correction" as const, stored: true, replaced: [] }), refine: async () => undefined, forbid: async () => undefined }, cards: { open: () => [], replace: () => undefined, rewrite: () => undefined, close: () => undefined }, toBot: async () => undefined, emit: () => undefined, log: () => undefined });
+	const replies = createReplyActions({ adapters: [], sender, recordPick: () => undefined, learning: { learn: async i => ({ ref: i.ref, state: "once", line: "", scope: "channel", scopeLabel: "이 앱", scopes: ["channel"], text: "이번만 반영했어요" }), shown: () => undefined, flip: async () => undefined }, cards: { open: () => [], replace: () => undefined, rewrite: () => undefined, close: () => undefined }, toBot: async () => undefined, emit: () => undefined, log: () => undefined });
 	expect((await replies.act({ ref: "RAAAAAA", action: "undo" }, owner)).status).toBe(404);
 	const job: SendJob = { ref: "RAAAAAA", conv: "c", action: "send", title: "q (RAAAAAA)" };
 	sender.enqueue(job);
@@ -531,7 +334,7 @@ test("a hand-written card goes to the bot as its numbered answer and closes on �
 	let cards = [{ ref: "X1", conv: "ch:1", notice: "n1", title: "이 답글 올릴까요? (X1)" }, { ref: "X2", conv: "ch:1", notice: "n2", title: "이 답글 올릴까요? (X2)" }, { ref: "X3", conv: "ch:1", notice: "n3", title: "이 답장 보낼까요? (X3)" }];
 	const log: string[] = [];
 	const close = (ref: string) => void (log.push(`close ${ref}`), (cards = cards.filter(c => c.ref !== ref)));
-	const replies = createReplyActions({ adapters: [], sender: w.sender, recordPick: () => undefined, learning: { record: async () => ({ kind: "correction" as const, stored: true, replaced: [] }), refine: async () => undefined, forbid: async () => undefined }, cards: { open: () => cards, replace: () => undefined, rewrite: () => undefined, close }, toBot: async (c, t) => void log.push(`${c}|${t}`), emit: () => undefined, log: () => undefined });
+	const replies = createReplyActions({ adapters: [], sender: w.sender, recordPick: () => undefined, learning: { learn: async i => ({ ref: i.ref, state: "once", line: "", scope: "channel", scopeLabel: "이 앱", scopes: ["channel"], text: "이번만 반영했어요" }), shown: () => undefined, flip: async () => undefined }, cards: { open: () => cards, replace: () => undefined, rewrite: () => undefined, close }, toBot: async (c, t) => void log.push(`${c}|${t}`), emit: () => undefined, log: () => undefined });
 	const r = await replies.batch([{ ref: "X1", action: "send" }, { ref: "X2", action: "revise", change: "더 짧게" }, { ref: "NOPE", action: "send" }], owner);
 	expect(r.body).toMatchObject({ results: [{ ref: "X1", ok: true }, { ref: "X2", ok: true }, { ref: "NOPE", ok: false, code: "unknown_ref" }] });
 	expect(log).toEqual(["ch:1|결정 답: 이 답글 올릴까요? (X1) → 1) 보내기\n결정 답: 이 답글 올릴까요? (X2) → 2) 고치기 - 더 짧게", "close X1"]);
@@ -548,7 +351,7 @@ test("the model's own [drop] marker on a hand-written card, carrying the owner's
 	let cards = [{ ref: "X1", conv: "ch:1", notice: "n1", title: "이 답장 보낼까요? (X1)" }];
 	const log: string[] = [];
 	const close = (ref: string) => void (log.push(`close ${ref}`), (cards = cards.filter(c => c.ref !== ref)));
-	const replies = createReplyActions({ adapters: [], sender: w.sender, recordPick: () => undefined, learning: { record: async () => undefined, refine: async () => undefined }, cards: { open: () => cards, replace: () => undefined, rewrite: () => undefined, close }, toBot: async (c, t) => void log.push(`${c}|${t}`), emit: () => undefined, log: () => undefined });
+	const replies = createReplyActions({ adapters: [], sender: w.sender, recordPick: () => undefined, learning: { learn: async i => ({ ref: i.ref, state: "once", line: "", scope: "channel", scopeLabel: "이 앱", scopes: ["channel"], text: "이번만 반영했어요" }), shown: () => undefined, flip: async () => undefined }, cards: { open: () => cards, replace: () => undefined, rewrite: () => undefined, close }, toBot: async (c, t) => void log.push(`${c}|${t}`), emit: () => undefined, log: () => undefined });
 	expect((await replies.act({ ref: "X1", action: "drop" }, { surface: "chat", owner: { mid: "m1", text: "그건 보내지 마" } })).status).toBe(200);
 	expect(log).toEqual(["close X1"]);
 });
@@ -557,7 +360,7 @@ test("the model's own [revise] marker on a hand-written card reaches the bot as 
 	const w = world();
 	const cards = [{ ref: "X1", conv: "ch:1", notice: "n1", title: "이 답장 보낼까요? (X1)" }];
 	const sent: [string, boolean][] = [];
-	const replies = createReplyActions({ adapters: [], sender: w.sender, recordPick: () => undefined, learning: { record: async () => undefined, refine: async () => undefined }, cards: { open: () => cards, replace: () => undefined, rewrite: () => undefined, close: () => undefined }, toBot: async (_c, t, agent) => void sent.push([t, agent]), emit: () => undefined, log: () => undefined });
+	const replies = createReplyActions({ adapters: [], sender: w.sender, recordPick: () => undefined, learning: { learn: async i => ({ ref: i.ref, state: "once", line: "", scope: "channel", scopeLabel: "이 앱", scopes: ["channel"], text: "이번만 반영했어요" }), shown: () => undefined, flip: async () => undefined }, cards: { open: () => cards, replace: () => undefined, rewrite: () => undefined, close: () => undefined }, toBot: async (_c, t, agent) => void sent.push([t, agent]), emit: () => undefined, log: () => undefined });
 	expect((await replies.act({ ref: "X1", action: "revise", change: "더 짧게" }, { surface: "chat", owner: { mid: "m1", text: "더 짧게 고쳐" } })).status).toBe(200);
 	expect((await replies.act({ ref: "X1", action: "revise", change: "존댓말로" }, owner)).status).toBe(200);
 	expect(sent).toEqual([["결정 답: 이 답장 보낼까요? (X1) → 2) 고치기 - 더 짧게", true], ["결정 답: 이 답장 보낼까요? (X1) → 2) 고치기 - 존댓말로", false]]);
@@ -567,7 +370,7 @@ test("a hand-written send card lists with the recipient, subject, body and files
 	const w = world();
 	const draft = { toLabel: "받는이", to: "A <a@example.com>", subject: "제목A", body: "본문A", attachments: [{ name: "파일A.xlsx", size: "12 KB" }] };
 	const cards = [{ ref: "X1", conv: "ch:1", notice: "n1", title: "이 답장 보낼까요? (X1)", draft }, { ref: "X2", conv: "ch:1", notice: "n2", title: "이 답글 올릴까요? (X2)" }];
-	const replies = createReplyActions({ adapters: [], sender: w.sender, recordPick: () => undefined, learning: { record: async () => undefined, refine: async () => undefined }, cards: { open: () => cards, replace: () => undefined, rewrite: () => undefined, close: () => undefined }, toBot: async () => undefined, emit: () => undefined, log: () => undefined });
+	const replies = createReplyActions({ adapters: [], sender: w.sender, recordPick: () => undefined, learning: { learn: async i => ({ ref: i.ref, state: "once", line: "", scope: "channel", scopeLabel: "이 앱", scopes: ["channel"], text: "이번만 반영했어요" }), shown: () => undefined, flip: async () => undefined }, cards: { open: () => cards, replace: () => undefined, rewrite: () => undefined, close: () => undefined }, toBot: async () => undefined, emit: () => undefined, log: () => undefined });
 	const items = await replies.list();
 	expect(items.find(i => i.ref === "X1")?.draft).toEqual({ state: "pending", toLabel: "받는이", to: "A <a@example.com>", subject: "제목A", text: "본문A", attachments: [{ name: "파일A.xlsx", size: "12 KB" }] });
 	expect(items.find(i => i.ref === "X2")?.draft).toEqual({ state: "pending", toLabel: "", to: "", text: "" });
@@ -666,14 +469,6 @@ test("A7: a revised draft whose card cannot be drawn ends 고치는 중 with a r
 	expect(w.linesOf("event").at(-1)).toStartWith("event RAAAAAA->RBBBBBB ");
 	expect((await w.replies.view("RBBBBBB"))!.draft.revising).toBeUndefined();
 	expect((await w.replies.act({ ref: "RBBBBBB", action: "drop" }, owner)).status).toBe(200);
-});
-
-test("revise: a lesson recorded before the card failed to draw still refines the identity once", async () => {
-	const w = world({ lesson: "끝인사는 짧게", askThrows: true });
-	await w.replies.act({ ref: "RAAAAAA", action: "revise", change: "끝인사는 짧게" }, owner);
-	await w.replies.idle();
-	expect(w.linesOf("learn")).toEqual(["learn mail 끝인사는 짧게"]);
-	expect(w.linesOf("refine")).toEqual(["refine"]);
 });
 
 test("edit with a subject saves it on a mail draft and redraws the cards with the saved version's hash; a subject on a KakaoTalk draft is 400", async () => {

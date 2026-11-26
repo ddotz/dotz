@@ -2,10 +2,10 @@ import { afterAll, beforeEach, expect, spyOn, test } from "bun:test";
 import { rmSync } from "node:fs";
 import { type Ban, banBullet, banHit, parseBan } from "../../../hub/ban.ts";
 import type { Msg } from "../../../hub/kakao/types.ts";
-import { replyLearning } from "../../../hub/reply-mail.ts";
 import { runDraft } from "../bin/draft.ts";
 import { advance, flush } from "../../../hub/runtime/test-clock.ts";
 import { learnLine, ownerWarning, proposeLinePattern } from "../lib/flow.ts";
+import { learn } from "../lib/learn.ts";
 import { HEADINGS, loadStyle, paths, profileBullets, recordForbidden, recordRule, savePairs } from "../lib/settings.ts";
 import { j, setupEnv } from "./helpers.ts";
 
@@ -34,7 +34,7 @@ test("correct --rule with a fake runner stores the K1 shape bullet that tone --a
 	const fake = runner(PROPOSAL);
 	const r = await correct({ learnCall: fake.learnCall }, "--app", "install", "--rule", RULE);
 	expect(r.code).toBe(0);
-	expect(r.lines).toContain(`표현 규칙으로도 정해 뒀어요: ${LABEL}`);
+	expect(r.lines.join("\n")).toContain(`표현 규칙으로도 정해 뒀어요: ${LABEL}`);
 	expect(fake.asked).toHaveLength(1);
 	expect(fake.asked[0]).toStartWith("install: ");
 	expect(profileBullets("install", HEADINGS.forbidden)).toEqual([K1_BULLET]);
@@ -156,63 +156,72 @@ test("a missing pairs file, reader or room list is an empty corpus, never a thro
 });
 
 const lessonShape = { parts: [{ any: ["하루"] }, { gap: 3 }, { any: ["되세요"] }], label: "'하루 보내세요'로 쓴다", bad: ["행복한 하루 되세요"], good: [] };
-test("the card path: a quoted change asks once with the previous draft and the change, and its proposal writes the pattern into the lesson's profile only when kept", async () => {
+const KEYS = { channel: { app: "mail" } };
+const learnWith = (words: string, evidence: { draft: string; change: string }, deps: object, proposal: { forbid?: string[]; once?: boolean } = {}) => learn({ source: "revise", ref: "R1", keys: KEYS, words, proposal, evidence }, { now: () => new Date("2030-03-04T00:00:00Z"), ...deps });
+const SHAPE_BULLET = `shape {"parts":[{"any":["하루"]},{"gap":3},{"any":["되세요"]}],"label":"'하루 보내세요'로 쓴다"}`;
+test("learn: a quoted change asks once with the previous draft and the change, and its proposal is written into the lesson's profile only when the line is stored", async () => {
 	const fake = runner(lessonShape);
-	const learning = replyLearning(() => ({ learnCall: fake.learnCall }));
-	const proposed = await learning.pattern({ app: "mail" }, "끝인사는 '보내세요'로", { draft: "오늘도 행복한 하루 되세요!", change: "'되세요' 말고 '보내세요'로" }, []);
-	expect(proposed).toMatchObject({ label: "'하루 보내세요'로 쓴다", inGood: [] });
+	const evidence = { draft: "오늘도 행복한 하루 되세요!", change: "'되세요' 말고 '보내세요'로" };
+	const learnt = await learnWith(evidence.change, evidence, { learnCall: fake.learnCall });
+	expect(learnt.text).toContain("표현 규칙으로도 정해 뒀어요: '하루 보내세요'로 쓴다");
 	expect(fake.asked).toHaveLength(1);
 	expect(fake.asked[0]).toContain("오늘도 행복한 하루 되세요!");
+	expect(profileBullets({ app: "mail" }, HEADINGS.forbidden)).toEqual([SHAPE_BULLET]);
+	rmSync(paths.toneDir(), { force: true, recursive: true });
+	const once = await learnWith(evidence.change, evidence, { learnCall: fake.learnCall }, { once: true });
+	expect(once.state).toBe("once");
+	expect(fake.asked).toHaveLength(1);
 	expect(profileBullets({ app: "mail" }, HEADINGS.forbidden)).toEqual([]);
-	proposed?.keep();
-	expect(profileBullets({ app: "mail" }, HEADINGS.forbidden)).toEqual([`shape {"parts":[{"any":["하루"]},{"gap":3},{"any":["되세요"]}],"label":"'하루 보내세요'로 쓴다"}`]);
-	expect(await replyLearning(() => ({})).pattern({ app: "mail" }, "끝인사는 '보내세요'로", { draft: "", change: "'보내세요'로" }, [])).toBeUndefined();
+	const unasked = await learnWith(evidence.change, evidence, {});
+	expect(unasked.text).not.toContain("표현 규칙으로도");
+	expect(profileBullets({ app: "mail" }, HEADINGS.forbidden)).toEqual([]);
 });
 
-test("the card path: a bad example quoted only in the model-written lesson stores nothing", async () => {
+test("learn: a bad example the draft and the change never quoted stores no pattern", async () => {
 	const log = quiet();
 	const fake = runner(lessonShape);
-	const learned = await replyLearning(() => ({ learnCall: fake.learnCall })).pattern({ app: "mail" }, "덕담은 '행복한 하루 되세요' 대신 '하루 보내세요'로", { draft: "확인했습니다. 감사합니다.", change: "끝인사는 '보내세요'로 바꿔 줘" }, []);
-	expect(learned).toBeUndefined();
+	const learnt = await learnWith("끝인사는 '보내세요'로 바꿔 줘", { draft: "확인했습니다. 감사합니다.", change: "끝인사는 '보내세요'로 바꿔 줘" }, { learnCall: fake.learnCall });
+	expect(learnt.state).toBe("remembered");
+	expect(learnt.text).not.toContain("표현 규칙으로도");
 	expect(fake.asked).toHaveLength(1);
 	expect(profileBullets({ app: "mail" }, HEADINGS.forbidden)).toEqual([]);
 	log.mockRestore();
 });
 
-test("the card path: no quote in the change and no banned word makes no model call", async () => {
+test("learn: no quote in the change and no banned word makes no pattern call", async () => {
 	const fake = runner(lessonShape);
-	const learned = await replyLearning(() => ({ learnCall: fake.learnCall })).pattern({ app: "mail" }, "끝인사는 짧게", { draft: "오늘도 행복한 하루 되세요!", change: "끝인사 짧게 해 줘" }, []);
-	expect(learned).toBeUndefined();
+	const learnt = await learnWith("끝인사 짧게 해 줘", { draft: "오늘도 행복한 하루 되세요!", change: "끝인사 짧게 해 줘" }, { learnCall: fake.learnCall });
+	expect(learnt.state).toBe("remembered");
 	expect(fake.asked).toEqual([]);
 });
 
-test("the card path: a banned word one of the kept good examples uses is reported, so it is not stored; a word inside the shape's own wordings is not", async () => {
+test("learn: a banned word one of the kept good examples uses is not stored as a literal ban; a word inside the shape's own wordings is not either", async () => {
 	const fake = runner({ ...lessonShape, good: ["좋은 하루 보내세요"] });
 	const evidence = { draft: "오늘도 행복한 하루 되세요!", change: "'되세요' 말고 '좋은 하루 보내세요'처럼 써 줘, 감사합니다도 빼" };
-	const learned = await replyLearning(() => ({ learnCall: fake.learnCall })).pattern({ app: "mail" }, "", evidence, ["되세요", "하루", "감사합니다"]);
-	expect(learned).toMatchObject({ label: "'하루 보내세요'로 쓴다", inGood: ["하루"] });
+	const learnt = await learnWith(evidence.change, evidence, { learnCall: fake.learnCall }, { forbid: ["되세요", "하루", "감사합니다"] });
+	expect(learnt.text).toContain("쓰지 않을 표현: '되세요', '감사합니다'");
+	expect(learnt.text).not.toContain("'하루'");
 	expect(fake.asked[0]).toContain(evidence.change);
 });
 
-test("the card path waits 12 s for a pattern at most: a later answer leaves no pattern, one log line and nothing stored when it arrives; the same answer on time is stored", async () => {
+test("learn waits 12 s for a pattern at most: a later answer leaves no pattern, one log line and nothing stored when it arrives; the same answer on time is stored", async () => {
 	const log = quiet();
 	const answer = Promise.withResolvers<string>();
-	const learning = replyLearning(() => ({ learnCall: () => () => answer.promise }));
 	const evidence = { draft: "오늘도 행복한 하루 되세요!", change: "'되세요' 말고" };
 	let settled = false;
-	const pending = learning.pattern({ app: "mail" }, "끝인사", evidence, []).finally(() => (settled = true));
+	const pending = learnWith(evidence.change, evidence, { learnCall: () => () => answer.promise }).finally(() => (settled = true));
 	await advance(11_999);
 	expect(settled).toBe(false);
 	await advance(1);
-	expect(await pending).toBeUndefined();
+	expect((await pending).state).toBe("remembered");
 	answer.resolve(j(lessonShape));
 	await flush();
 	expect(profileBullets({ app: "mail" }, HEADINGS.forbidden)).toEqual([]);
 	expect(log.mock.calls.map(c => String(c[0]))).toEqual([expect.stringContaining("no answer within 12000 ms")]);
 	log.mockRestore();
-	const onTime = await learning.pattern({ app: "mail" }, "끝인사", evidence, []);
-	expect(onTime).toMatchObject({ label: lessonShape.label, inGood: [] });
-	onTime?.keep();
+	rmSync(paths.toneDir(), { force: true, recursive: true });
+	const onTime = await learnWith(evidence.change, evidence, { learnCall: () => () => answer.promise });
+	expect(onTime.text).toContain(`표현 규칙으로도 정해 뒀어요: ${lessonShape.label}`);
 	expect(profileBullets({ app: "mail" }, HEADINGS.forbidden)).toHaveLength(1);
 });
 

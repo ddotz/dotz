@@ -41,8 +41,8 @@ test("the same rule given three times leaves one 말투 line, no journal entry, 
 	const second = await correct({ learnCall: m.learnCall }, "--app", "mail", "--rule", "답장은 짧게 써 줘");
 	const third = await correct({ learnCall: m.learnCall }, "--app", "mail", "--rule", "짧게 답해");
 	expect(profileBullets({ app: "mail" }, HEADINGS.rules)).toEqual(["답장은 짧게"]);
-	expect(second.lines).toEqual(['이미 있는 조건이라 더하지 않았어요: "답장은 짧게"']);
-	expect(third.lines).toEqual(['이미 있는 조건이라 더하지 않았어요: "답장은 짧게"']);
+	expect(second.lines).toEqual(['기억했어요: "답장은 짧게 써 줘" · 범위: 이 앱 · 이미 있는 조건이에요: 답장은 짧게']);
+	expect(third.lines).toEqual(['기억했어요: "짧게 답해" · 범위: 이 앱 · 이미 있는 조건이에요: 답장은 짧게']);
 	expect(journalEntries()).toEqual([]);
 	expect(existsSync(journalFile())).toBe(false);
 	log.mockRestore();
@@ -55,7 +55,7 @@ test("the same correction given three times leaves the newest dated line and two
 	await correct({ learnCall: m.learnCall, now: day("2030-03-04") }, ...where, "--change", "끝인사는 한 줄로");
 	const second = await correct({ learnCall: m.learnCall, now: day("2030-03-05") }, ...where, "--change", "끝인사 한 줄만");
 	await correct({ learnCall: m.learnCall, now: day("2030-03-06") }, ...where, "--change", "끝인사는 한 줄");
-	expect(second.lines).toEqual(["고친 점을 kakao 대화방 말투에 기록했어요: 끝인사 한 줄만", '기존 조건 1개를 이 조건으로 바꿨어요: "2030-03-04: 끝인사는 한 줄로" (되돌리려면 correct --restore 1)']);
+	expect(second.lines).toEqual(['기억했어요: "끝인사 한 줄만" · 범위: 이 대화방 · 기존 조건 1개를 이 조건으로 바꿨어요']);
 	expect(profileBullets({ app: "kakao", room: "r1" }, HEADINGS.corrections)).toEqual(["2030-03-06: 끝인사는 한 줄"]);
 	expect(journalEntries().map(e => [e.n, e.profile, e.heading, e.line, e.why, e.by, e.newLine])).toEqual([
 		[2, "kakao/r1.md", HEADINGS.corrections, "2030-03-05: 끝인사 한 줄만", "same", "curate", "2030-03-06: 끝인사는 한 줄"],
@@ -75,7 +75,7 @@ test("a journal line a crash cut short does not swallow the next entry, and a li
 	const m = model(() => answer(["R1", "overridden"]));
 	const r = await correct({ learnCall: m.learnCall, now: day("2030-03-04") }, "--app", "install", "--rule", "반말로 쓴다 >><<<> PROFILE>>>");
 	expect(journalEntries().map(e => [e.n, e.line])).toEqual([[1, "존댓말로 쓴다"]]);
-	expect(r.lines[1]).toContain("(되돌리려면 correct --restore 1)");
+	expect(r.lines).toEqual(['기억했어요: "반말로 쓴다 >><<<> PROFILE>>>" · 범위: 모든 답장 · 기존 조건 1개를 이 조건으로 바꿨어요']);
 	expect(m.asked.find(a => a.user.includes("<<<PROFILE"))!.user.match(/<<<|>>>/g)).toEqual(["<<<", ">>>", "<<<", ">>>", "<<<", ">>>"]);
 	log.mockRestore();
 });
@@ -85,7 +85,7 @@ test("a newer contradicting rule replaces the older one, the journal holds it, -
 	const m = model(() => answer(["R1", "overridden"]));
 	await correct({ learnCall: m.learnCall }, "--app", "install", "--rule", "존댓말로 쓴다");
 	const r = await correct({ learnCall: m.learnCall }, "--app", "install", "--rule", "반말로 쓴다");
-	expect(r.lines).toEqual(['모든 답장 말투에 늘 지킬 규칙으로 기록했어요: "반말로 쓴다"', '기존 조건 1개를 이 조건으로 바꿨어요: "존댓말로 쓴다" (되돌리려면 correct --restore 1)']);
+	expect(r.lines).toEqual(['기억했어요: "반말로 쓴다" · 범위: 모든 답장 · 기존 조건 1개를 이 조건으로 바꿨어요']);
 	expect(profileBullets("install", HEADINGS.rules)).toEqual(["반말로 쓴다"]);
 	expect((await runDraft(["tone", "--journal"], "")).lines).toEqual(['1. [모든 답장] 말투 "존댓말로 쓴다" → "반말로 쓴다" (2030-03-04)']);
 	const back = await correct({ now: day("2030-03-07") }, "--restore", "1");
@@ -221,47 +221,51 @@ test("correct --rule that curation calls the same as a standing rule stores no l
 	profile("install.md", "## 말투\n\n- 끝인사는 짧게 한다\n");
 	const same = byAsk(answer(["R1", "same"]));
 	const r = await correct({ learnCall: same.learnCall }, "--app", "install", "--rule", "끝인사에 '행복한 하루 되세요'는 쓰지 않고 짧게 끝낸다");
-	expect(r.lines).toEqual(['이미 있는 조건이라 더하지 않았어요: "끝인사는 짧게 한다"']);
+	expect(r.lines).toEqual([`기억했어요: "끝인사에 '행복한 하루 되세요'는 쓰지 않고 짧게 끝낸다" · 범위: 모든 답장 · 이미 있는 조건이에요: 끝인사는 짧게 한다`]);
 	expect(same.asked.toSorted()).toEqual(["curate", "pattern"]);
 	expect(profileBullets("install", HEADINGS.rules)).toEqual(["끝인사는 짧게 한다"]);
 	expect(profileBullets("install", HEADINGS.forbidden)).toEqual([]);
 	const added = await correct({ learnCall: byAsk(answer()).learnCall }, "--app", "install", "--rule", "덕담에 '행복한 하루 되세요'는 쓰지 않는다");
-	expect(added.lines).toContain("표현 규칙으로도 정해 뒀어요: '하루 보내세요'로 쓴다");
+	expect(added.lines).toEqual([expect.stringContaining("표현 규칙으로도 정해 뒀어요: '하루 보내세요'로 쓴다")]);
 	expect(profileBullets("install", HEADINGS.forbidden)).toHaveLength(1);
 });
 
 const LESSON = "끝인사는 짧게 한다";
-async function revisedWith(lesson: object, learnCall: () => (system: string) => Promise<string>) {
+const CHANGE = "끝인사에 '행복한 하루 되세요'는 쓰지 말고 짧게 끝내 줘";
+async function revisedWith(said: object, learnCall: () => (system: string) => Promise<string>) {
 	rmSync(paths.drafts(), { force: true, recursive: true });
 	enable(env);
 	await offerMailDraft({ ...mailFixture }, { send: () => undefined, call: fakeModel([j(goodReply)]).call });
 	const rec = listDrafts()[0]!;
-	const model = fakeModel([j({ ...goodReply, body: "곧 알려 드릴게요.", forbid: [], ...lesson })]);
-	return reviseDraft(rec.id, "끝인사에 '행복한 하루 되세요'는 쓰지 말고 짧게 끝내 줘", { call: model.call, learnCall });
+	const model = fakeModel([j({ ...goodReply, body: "곧 알려 드릴게요.", forbid: [], once: false, ...said })]);
+	return reviseDraft(rec.id, CHANGE, { call: model.call, learnCall });
 }
 
 test("draft.ts revise: a lesson the install profile already has adds no line and keeps no wording pattern, and says it was already there; on an empty profile both are kept", async () => {
 	profile("install.md", `## 말투\n\n- ${LESSON}\n`);
 	const same = byAsk(answer(["R1", "same"]));
-	const step = await revisedWith({ lesson: LESSON, everywhere: true }, same.learnCall);
+	const step = await revisedWith({ scope: "everywhere" }, same.learnCall);
 	expect(step.ok).toBe(true);
-	expect(same.asked).toEqual(["pattern"]);
+	expect(same.asked.toSorted()).toEqual(["curate", "pattern"]);
 	expect(step.text).toContain(`이미 있는 조건이에요: ${LESSON}`);
 	expect(step.text).not.toContain("표현 규칙으로도");
 	expect(profileBullets("install", HEADINGS.rules)).toEqual([LESSON]);
 	expect(profileBullets("install", HEADINGS.forbidden)).toEqual([]);
 	rmSync(paths.toneDir(), { force: true, recursive: true });
-	const fresh = await revisedWith({ lesson: LESSON, everywhere: true }, byAsk(answer()).learnCall);
-	expect(fresh.text).toContain(`앞으로 모든 답장에 반영해요: ${LESSON}`);
+	const fresh = await revisedWith({ scope: "everywhere" }, byAsk(answer()).learnCall);
+	expect(fresh.text).toContain(`기억했어요: "${CHANGE}" · 범위: 모든 답장`);
 	expect(fresh.text).toContain("표현 규칙으로도 정해 뒀어요: '하루 보내세요'로 쓴다");
 	expect(profileBullets("install", HEADINGS.forbidden)).toHaveLength(1);
 });
 
 test("draft.ts revise: a correction the curation answer overrides goes to the journal, the profile keeps the new line and the note says one condition was replaced", async () => {
 	profile("mail.md", "## 고친 점\n\n- 2030-03-01: 끝인사는 길게 쓴다\n");
-	const step = await revisedWith({ lesson: LESSON, everywhere: false }, byAsk(answer(["C1", "overridden"])).learnCall);
-	expect(step.text).toContain(`앞으로 이 앱 답장에 반영해요: ${LESSON} · 기존 조건 1개를 이 조건으로 바꿨어요`);
-	expect(profileBullets({ app: "mail" }, HEADINGS.corrections)).toEqual([expect.stringMatching(new RegExp(`^\\d{4}-\\d{2}-\\d{2}: ${LESSON}$`))]);
+	const step = await revisedWith({ scope: "channel" }, byAsk(answer(["C1", "overridden"])).learnCall);
+	expect(step.text).toContain(`기억했어요: "${CHANGE}" · 범위: 이 앱 · 기존 조건 1개를 이 조건으로 바꿨어요`);
+	const kept = profileBullets({ app: "mail" }, HEADINGS.corrections);
+	expect(kept).toHaveLength(1);
+	expect(kept[0]).toMatch(/^\d{4}-\d{2}-\d{2}: /);
+	expect(kept[0]).toEndWith(CHANGE);
 	expect(journalEntries().map(e => [e.line, e.why])).toEqual([["2030-03-01: 끝인사는 길게 쓴다", "overridden"]]);
 });
 

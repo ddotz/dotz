@@ -100,7 +100,7 @@ test("a mail recipient and a comment author map to their own file under the app"
 
 test("a rule stored for a@x.com reaches the draft prompt of a mail from A@X.com and not one from b@x.com", async () => {
 	const stored = await correct({}, "--app", "mail", "--to", "a@x.com", "--rule", "이분께는 반말로 쓴다");
-	expect(stored).toEqual({ lines: ['mail · a@x.com 말투에 늘 지킬 규칙으로 기록했어요: "이분께는 반말로 쓴다"'], code: 0 });
+	expect(stored).toEqual({ lines: ['기억했어요: "이분께는 반말로 쓴다" · 범위: 이 받는 사람'], code: 0 });
 	expect(profileBullets({ app: "mail", to: "A@X.com" }, HEADINGS.rules)).toEqual(["이분께는 반말로 쓴다"]);
 	const theirs = await promptOf(mail("Kim <A@X.com>"));
 	expect(theirs).toContain(`${RECIPIENT_HEAD}\n- 이분께는 반말로 쓴다\n`);
@@ -126,7 +126,7 @@ test("a rule stored for a commenter by his display name is kept under his channe
 	const model: DraftModel = async (_system, user) => (prompts.push(user), { text: j({ action: "draft", reason: "thanks", to: "", body: "고마워요", questions: [] }) });
 	const engine = createEngine({ dir, now: () => now, collector: "mac-a", adapters: { youtube: adapter }, model, style: commentStyle });
 	await engine.collect({ force: true });
-	expect(await correct({}, "--app", "youtube", "--to", "김 선생님", "--rule", "선생님께는 존칭을 쓴다")).toEqual({ lines: ['youtube · 김 선생님 말투에 늘 지킬 규칙으로 기록했어요: "선생님께는 존칭을 쓴다"'], code: 0 });
+	expect(await correct({}, "--app", "youtube", "--to", "김 선생님", "--rule", "선생님께는 존칭을 쓴다")).toEqual({ lines: ['기억했어요: "선생님께는 존칭을 쓴다" · 범위: 이 받는 사람'], code: 0 });
 	expect(profileBullets({ app: "youtube", to: "UC_kim" }, HEADINGS.rules)).toEqual(["선생님께는 존칭을 쓴다"]);
 	expect(existsSync(toneFile({ app: "youtube", to: "김 선생님" }))).toBe(false);
 	await engine.makeDraft(commentId("youtube", "c1"));
@@ -139,7 +139,7 @@ test("a rule stored for a commenter by his display name is kept under his channe
 test("correct and tone --to for a comment source take a stored channel id or the one stored commenter of that name, and refuse none, several and a website", async () => {
 	seedComments("youtube", [{ author: "김 선생님", authorId: "UC_kimA" }, { author: "김 선생님", authorId: "UC_kimB" }, { author: "Park", authorId: "UC_park" }, { author: "옛 손님" }]);
 	seedComments("site-blog", [{ author: "홍길동" }]);
-	expect(await correct({}, "--app", "youtube", "--to", " park ", "--rule", "짧게 쓴다")).toEqual({ lines: ['youtube · Park 말투에 늘 지킬 규칙으로 기록했어요: "짧게 쓴다"'], code: 0 });
+	expect(await correct({}, "--app", "youtube", "--to", " park ", "--rule", "짧게 쓴다")).toEqual({ lines: ['기억했어요: "짧게 쓴다" · 범위: 이 받는 사람'], code: 0 });
 	expect(profileBullets({ app: "youtube", to: "UC_park" }, HEADINGS.rules)).toEqual(["짧게 쓴다"]);
 	const none = `youtube에서 모은 댓글에 '이순신'(이)라는 이름이나 아이디가 없어요. 그분 댓글이 들어오면 그 카드에서 답글을 "이분께는 ..."처럼 고쳐도 돼요`;
 	expect(await correct({}, "--app", "youtube", "--to", "이순신", "--rule", "반말로 쓴다")).toEqual({ lines: [none], code: 2 });
@@ -148,7 +148,7 @@ test("correct and tone --to for a comment source take a stored channel id or the
 	expect(await correct({}, "--app", "youtube", "--to", "옛 손님", "--rule", "반말로 쓴다")).toEqual({ lines: ["'옛 손님'님의 댓글은 아이디 없이 모은 예전 댓글뿐이에요. 그분의 새 댓글이 들어오면 정할 수 있어요"], code: 2 });
 	expect(await correct({}, "--app", "youtube", "--to", "김 선생님", "--rule", "반말로 쓴다")).toEqual({ lines: [two], code: 2 });
 	expect(await runDraft(["tone", "--app", "youtube", "--to", "김 선생님"], "")).toEqual({ lines: [two], code: 2 });
-	expect(await correct({}, "--app", "youtube", "--to", "UC_kimB", "--rule", "반말로 쓴다")).toEqual({ lines: ['youtube · 김 선생님 말투에 늘 지킬 규칙으로 기록했어요: "반말로 쓴다"'], code: 0 });
+	expect(await correct({}, "--app", "youtube", "--to", "UC_kimB", "--rule", "반말로 쓴다")).toEqual({ lines: ['기억했어요: "반말로 쓴다" · 범위: 이 받는 사람'], code: 0 });
 	expect(profileBullets({ app: "youtube", to: "UC_kimB" }, HEADINGS.rules)).toEqual(["반말로 쓴다"]);
 	expect(profileBullets({ app: "youtube", to: "UC_kimA" }, HEADINGS.rules)).toEqual([]);
 	expect((await runDraft(["tone", "--app", "youtube", "--to", "UC_kimB"], "")).lines.slice(0, 3)).toEqual(["youtube · 김 선생님 답장이 따르는 것", "말투:", "- [to] 반말로 쓴다"]);
@@ -164,7 +164,7 @@ test("tone --journal and correct --restore name a commenter by his stored displa
 	seedComments("youtube", [{ author: "Park", authorId: "UC_park" }]);
 	await correct({}, "--app", "youtube", "--to", "UC_park", "--rule", "존댓말로 쓴다");
 	const replaced = await correct({ learnCall: learner(() => JSON.stringify({ replaces: [{ id: "R1", why: "overridden" }] })).learnCall }, "--app", "youtube", "--to", "Park", "--rule", "반말로 쓴다");
-	expect(replaced.lines).toEqual(['youtube · Park 말투에 늘 지킬 규칙으로 기록했어요: "반말로 쓴다"', '기존 조건 1개를 이 조건으로 바꿨어요: "존댓말로 쓴다" (되돌리려면 correct --restore 1)']);
+	expect(replaced.lines).toEqual(['기억했어요: "반말로 쓴다" · 범위: 이 받는 사람 · 기존 조건 1개를 이 조건으로 바꿨어요']);
 	expect((await runDraft(["tone", "--journal"], "")).lines).toEqual(['1. [youtube · Park] 말투 "존댓말로 쓴다" → "반말로 쓴다" (2030-03-04)']);
 	expect((await correct({}, "--restore", "1")).lines).toEqual(['되돌렸어요: [youtube · Park] 말투 "존댓말로 쓴다"']);
 });
@@ -210,7 +210,7 @@ test("journal, --restore, --tidy and tone work on a recipient file, and --to is 
 	const to = ["--app", "mail", "--to", "A@x.com"];
 	await correct({}, ...to, "--rule", "존댓말로 쓴다");
 	const replaced = await correct({ learnCall: learner(() => JSON.stringify({ replaces: [{ id: "R1", why: "overridden" }] })).learnCall }, ...to, "--rule", "반말로 쓴다");
-	expect(replaced.lines).toEqual(['mail · a@x.com 말투에 늘 지킬 규칙으로 기록했어요: "반말로 쓴다"', '기존 조건 1개를 이 조건으로 바꿨어요: "존댓말로 쓴다" (되돌리려면 correct --restore 1)']);
+	expect(replaced.lines).toEqual(['기억했어요: "반말로 쓴다" · 범위: 이 받는 사람 · 기존 조건 1개를 이 조건으로 바꿨어요']);
 	expect(journalEntries().map(e => [e.n, e.profile, e.line])).toEqual([[1, "mail/to/a_0040x_002ecom.md", "존댓말로 쓴다"]]);
 	expect((await runDraft(["tone", "--journal"], "")).lines).toEqual(['1. [mail · a@x.com] 말투 "존댓말로 쓴다" → "반말로 쓴다" (2030-03-04)']);
 	expect((await correct({}, "--restore", "1")).lines).toEqual(['되돌렸어요: [mail · a@x.com] 말투 "존댓말로 쓴다"']);
@@ -313,7 +313,7 @@ test("correct and tone --to refuse KakaoTalk and keep exactly one address for a 
 		expect((await runDraft(["tone", "--app", "mail-2", "--to", to], "")).code).toBe(2);
 	}
 	expect(existsSync(join(paths.toneDir(), "mail", "to"))).toBe(false);
-	expect((await correct({}, "--app", "mail", "--to", "김 <Kim@X.com>", "--rule", "반말로 쓴다")).lines).toEqual(['mail · kim@x.com 말투에 늘 지킬 규칙으로 기록했어요: "반말로 쓴다"']);
+	expect((await correct({}, "--app", "mail", "--to", "김 <Kim@X.com>", "--rule", "반말로 쓴다")).lines).toEqual(['기억했어요: "반말로 쓴다" · 범위: 이 받는 사람']);
 	expect(profileBullets({ app: "mail", to: "kim@x.com" }, HEADINGS.rules)).toEqual(["반말로 쓴다"]);
 	expect((await runDraft(["tone", "--app", "mail", "--to", "김 <Kim@X.com>"], "")).lines.slice(0, 3)).toEqual(["mail · kim@x.com 답장이 따르는 것", "말투:", "- [to] 반말로 쓴다"]);
 	expect((await correct({}, "--app", "mail-2", "--to", "Lee <Lee@Y.com>", "--rule", "짧게 쓴다")).code).toBe(0);

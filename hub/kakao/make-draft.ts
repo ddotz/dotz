@@ -48,7 +48,7 @@ export function kakaoLint(text: string, style: StyleHint | undefined): string[] 
 // The one model call of a draft request (never per incoming message). Never rejects: every outcome is a kakao_draft event.
 // With `choice` (the owner's pick of the room's open question) the call writes the reply for that pick instead of deciding again.
 // With `revise` (a pending draft and the owner's change request) the call rewrites that draft; createDraft marks the old one stale only when the new one is stored.
-export async function makeDraft(ctx: MakeDraftCtx, config: KakaoConfig, chatId: string, choice?: string, revise?: { code: string; draft: string; change: string }, intent?: string, opts: { learn?: false; known?: true } = {}): Promise<Made> {
+export async function makeDraft(ctx: MakeDraftCtx, config: KakaoConfig, chatId: string, choice?: string, revise?: { code: string; draft: string; change: string }, intent?: string, opts: { known?: true } = {}): Promise<Made> {
 const { deps, paths, now, getDb, allRooms, eligible, setAsk, storedAsks } = ctx;
 const noted = (what: string, e: unknown) => deps.log?.(`kakao draft ${chatId}: ${what} (${(e instanceof Error ? e.message : String(e)).slice(0, 200)})`);
 const summaryFile = (id: string) => join(paths.dataDir, "kakao", "summaries", `${id}.md`);
@@ -150,9 +150,7 @@ const done = (error?: string, made?: { code: string; learned?: Learned }): Made 
 		} catch (e) {
 			return done(e instanceof Error ? e.message : DRAFT_FAILED);
 		}
-		const learned = revise ? learnedOf(restyledFrom ?? parsed, revise.change) : undefined;
-		const taught = learned && (learned.line.trim() || learned.forbid.length) ? { ...learned, line: learned.line.trim() } : undefined;
-		if (taught && opts.learn !== false) deps.onRevise?.(chatId, taught);
+		const taught = revise ? learnedOf(restyledFrom ?? parsed, revise.change) : undefined;
 		if (parsed.summary) writePrivate(summaryFile(chatId), `${parsed.summary}\n`);
 		if (storedAsks()[chatId]) setAsk(chatId, undefined);
 		return done(undefined, { code: made.code, ...(taught ? { learned: taught } : {}) });

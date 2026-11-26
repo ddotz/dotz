@@ -9,15 +9,15 @@ import { type HubLike, mailInstance, notifyGateway, reportSendFailed } from "../
 import { literalBan, parseBan } from "../../../hub/ban.ts";
 import { instanceIdOf } from "../../../hub/integrations.ts";
 import { addressesOf, type ReplyItem } from "../../../hub/reply-draft.ts";
-import { PATTERN_NOTE } from "../../../hub/reply-reasons.ts";
+import type { LearnInput } from "../../../hub/reply-types.ts";
 import { ensureKakaoRoom, defaultKakaoReader, KAKAO_APP, type OwnerReader } from "../lib/kakao-tone.ts";
 import type { Room } from "../../../hub/kakao/types.ts";
-import { alsoInto, askText, attachFolder, buildDraft, candidatesFor, chosenFrom, dropDraft, kindOf, learningSettled, learnLine, type LineLearned, mailAsksFile, type PatternProposal, proposeLinePattern, realFlowDeps, recordForbidden, refineAfterCorrection, reviseDraft, sendDraft, settleDraft, stageForReply, type FlowDeps, type Outcome } from "../lib/flow.ts";
+import { alsoInto, askText, attachFolder, buildDraft, candidatesFor, chosenFrom, dropDraft, kindOf, learningSettled, mailAsksFile, realFlowDeps, recordForbidden, reviseDraft, sendDraft, settleDraft, stageForReply, type FlowDeps, type Outcome } from "../lib/flow.ts";
 import { compactCorrections, compactForPrompt } from "../lib/compact.ts";
-import { configConflicts } from "../lib/rules.ts";
+import { keysOf, learn } from "../lib/learn.ts";
 import { draftRules } from "../lib/draft-rules.ts";
 import { unreadSources } from "../lib/effective-rules.ts";
-import { journalEntries, type LearnKind, profileKey, profileOf, restoreEntry } from "../lib/curate.ts";
+import { journalEntries, type LearnKind, profileKey, restoreEntry } from "../lib/curate.ts";
 import { dataDir, handSections, HEADINGS, INSTALL, levelsOf, loadSettings, profileBullets, recipientFile, removeCorrection, removeForbidden, removeRule, toneFile, validApp, type ToneKey, type ToneLevel } from "../lib/settings.ts";
 import { authorName, commentRecipient } from "../lib/commenters.ts";
 import type { Comment } from "../../../hub/comments/contract.ts";
@@ -29,7 +29,7 @@ import { cloudFile, cloudPlaceholder, EVICTED_LATER, isEvicted, removeStagedFile
 
 // Exit code of `new --kind chat` when the message needs the owner's own decision: stdout is the choice block to post as an [ask] (hub/choices.ts replyChoiceBlock).
 export const ASK_EXIT = 4;
-const USAGE = "usage: draft.ts new --mail <key> [--app <app>] [--room <id>] [--kind mail|comment|chat] [--from <sender>] [--subject <s>] [--context <c>] [--source <src>] [--id <mail id>] [--choice <the owner's pick>] (text on stdin) | revise <id> --change <text> | send <id> | drop <id> | correct --app <app|install> [--room <id> | --to <recipient>] [--rule <standing rule>]... [--change <lesson>] [--forbid <wording>]... [--allow <wording or pattern label>]... [--forget <text>]... [--tidy] | correct --restore <n> | tone --app <app|install> [--room <id> | --to <recipient>] | tone --effective --app <app> [--box <mailbox id>] [--request <rule id>] [--room <id> | --to <recipient>] | tone --journal | attach <id> <path or file name in the 첨부 파일 폴더> | detach <id> <n or file name> | status\n  correct stores what the owner asked in exactly one tone profile (--app install = every reply; --room only with a messenger app; --to one person of that app: for a mail app exactly one address, case aside (\"Name <address>\" is kept as the address); for a comment source the author's platform id (YouTube channel id, Instagram handle) or a display name exactly one collected commenter of that source has (refused when none or several do, and for a website, whose commenters have no id; output names the person by display name); never with --room or install, and never for kakao, whose room is the person); at least one of --rule --change --forbid --allow --forget --tidy\n  --rule a standing request the owner made in chat (always, never, from now on): kept undated under 말투, never pushed out by later lessons | --change what one corrected draft showed, a dated 고친 점 line; a rule or change about a wording to avoid (with its wrong and right examples quoted) may also store a checked wording pattern under 금지, printed as 이 표현 모양도 걸러요: <label>\n  --rule and --change first ask which lines of that profile the new line repeats or overrides: a rule an existing rule already says is not added (이미 있는 조건이라 더하지 않았어요), replaced lines (at most 3; a --change never replaces a rule) are taken out and printed with the correct --restore <n> that puts each back\n  --forbid never use this wording again (2-40 characters with whitespace runs as one space, not a /regex/; the owner's quoted wording) | --allow takes a forbidden wording, or a pattern by its label, back | --forget removes the 말투 and 고친 점 lines that contain the text (a line of a hand-written section is only named, with its file to edit)\n  --tidy folds the 고친 점 lines of that profile (at least 2) into at most 8 lasting conditions in one model call, printed as 고친 점 N줄을 M줄로 정리했어요; every line taken out stays in tone --journal for correct --restore (a 고친 점 longer than 12 lines is tidied on its own after a correction)\n  correct --restore <n> puts the line of journal entry n back where it was (unless an equal line is there); exit 1 when there is no entry n\n  tone prints what a draft there follows (말투 with the hand-written sections, 고친 점, 금지; a pattern as <label> (패턴)) with the level of each line (install, app, room, to); a recipient's lines win over broader ones in that person's drafts | tone --journal prints the newest 20 lines the product replaced, merged or removed (→ 지움), numbered for correct --restore\n  attach / detach change the files of a pending mail draft and print the refreshed [ask] (never edit draft-files/ or drafts.json by hand)\n  new --app kakao --room <chat id> --kind chat (recent messages on stdin; --mail optional) prints only the reply text\n  chat exit codes: 0 reply text on stdout | 3 nothing to answer | 4 the owner must choose first: stdout is a 결정 block (post it as an [ask]); after his pick run the same command again with --choice \"<pick>\"\n  --app: mail (default for mail), youtube | instagram for comments, kakao for chats; --room only for messenger rooms";
+const USAGE = "usage: draft.ts new --mail <key> [--app <app>] [--room <id>] [--kind mail|comment|chat] [--from <sender>] [--subject <s>] [--context <c>] [--source <src>] [--id <mail id>] [--choice <the owner's pick>] (text on stdin) | revise <id> --change <text> | send <id> | drop <id> | correct --draft <id> --change <what the owner asked> [--scope recipient|channel|everywhere] | correct --app <app|install> [--room <id> | --to <recipient>] [--rule <standing rule>]... [--change <lesson>] [--forbid <wording>]... [--allow <wording or pattern label>]... [--forget <text>]... [--tidy] | correct --restore <n> | tone --app <app|install> [--room <id> | --to <recipient>] | tone --effective --app <app> [--box <mailbox id>] [--request <rule id>] [--room <id> | --to <recipient>] | tone --journal | attach <id> <path or file name in the 첨부 파일 폴더> | detach <id> <n or file name> | status\n  correct --draft stores what the owner asked in chat for that draft: the draft's own channel by default (its mailbox, app or room), the recipient's own file with --scope recipient, every reply with --scope everywhere; it prints 기억했어요: \"<the owner's words>\" · 범위: <where> (nothing to pick, no --app, --room or --to needed)\n  correct --app is only for a rule not tied to a draft: it stores what the owner asked in exactly one tone profile (--app install = every reply; --room only with a messenger app; --to one person of that app: for a mail app exactly one address, case aside (\"Name <address>\" is kept as the address); for a comment source the author's platform id (YouTube channel id, Instagram handle) or a display name exactly one collected commenter of that source has (refused when none or several do, and for a website, whose commenters have no id; output names the person by display name); never with --room or install, and never for kakao, whose room is the person); at least one of --rule --change --forbid --allow --forget --tidy\n  --rule a standing request the owner made in chat (always, never, from now on): kept undated under 말투, never pushed out by later lessons | --change what one corrected draft showed, a dated 고친 점 line; a rule or change about a wording to avoid (with its wrong and right examples quoted) may also store a checked wording pattern under 금지, printed as 이 표현 모양도 걸러요: <label>\n  --rule and --change first ask which lines of that profile the new line repeats or overrides: a rule an existing rule already says is not added (이미 있는 조건이라 더하지 않았어요), replaced lines (at most 3; a --change never replaces a rule) are taken out and stay in tone --journal for correct --restore <n>\n  --forbid never use this wording again (2-40 characters with whitespace runs as one space, not a /regex/; the owner's quoted wording) | --allow takes a forbidden wording, or a pattern by its label, back | --forget removes the 말투 and 고친 점 lines that contain the text (a line of a hand-written section is only named, with its file to edit)\n  --tidy folds the 고친 점 lines of that profile (at least 2) into at most 8 lasting conditions in one model call, printed as 고친 점 N줄을 M줄로 정리했어요; every line taken out stays in tone --journal for correct --restore (a 고친 점 longer than 12 lines is tidied on its own after a correction)\n  correct --restore <n> puts the line of journal entry n back where it was (unless an equal line is there); exit 1 when there is no entry n\n  tone prints what a draft there follows (말투 with the hand-written sections, 고친 점, 금지; a pattern as <label> (패턴)) with the level of each line (install, app, room, to); a recipient's lines win over broader ones in that person's drafts | tone --journal prints the newest 20 lines the product replaced, merged or removed (→ 지움), numbered for correct --restore\n  attach / detach change the files of a pending mail draft and print the refreshed [ask] (never edit draft-files/ or drafts.json by hand)\n  new --app kakao --room <chat id> --kind chat (recent messages on stdin; --mail optional) prints only the reply text\n  chat exit codes: 0 reply text on stdout | 3 nothing to answer | 4 the owner must choose first: stdout is a 결정 block (post it as an [ask]); after his pick run the same command again with --choice \"<pick>\"\n  --app: mail (default for mail), youtube | instagram for comments, kakao for chats; --room only for messenger rooms";
 
 type Out = { lines: string[]; code: number; notes?: string[] };
 
@@ -55,13 +55,6 @@ const journalLevel = (profile: string, nameOf: (key: ToneKey) => string | undefi
 	return key === undefined || key === INSTALL ? levelName({ app: INSTALL }) : levelName(key, nameOf(key));
 };
 const sectionName = (heading: string): string => (heading === HEADINGS.rules ? "말투" : "고친 점");
-function learnedNote(learned: LineLearned, key: ToneKey | "install"): string[] {
-	if (learned.same !== undefined) return [`이미 있는 조건이라 더하지 않았어요: "${learned.same}"`];
-	if (!learned.replaced.length) return [];
-	const open = journalEntries().filter(e => e.profile === profileOf(key) && !e.restoredAt);
-	const numbers = learned.replaced.flatMap(old => open.find(e => e.line === old)?.n ?? []);
-	return [`기존 조건 ${learned.replaced.length}개를 이 조건으로 바꿨어요: ${learned.replaced.map(o => `"${o}"`).join(", ")}${numbers.length ? ` (되돌리려면 ${numbers.map(n => `correct --restore ${n}`).join(", ")})` : ""}`];
-}
 function learnCallOf(deps: FlowDeps, app: string): FlowDeps["learnCall"] {
 	try {
 		const call = deps.learnCall?.(app);
@@ -230,6 +223,15 @@ export async function runDraft(args: string[], stdin: string, deps: DraftDeps = 
 				const what = `[${journalLevel(back.entry.profile, commenterNames())}] ${sectionName(back.entry.heading)} "${back.entry.line}"`;
 				return { lines: [back.put ? `되돌렸어요: ${what}` : `이미 있는 줄이라 바꾼 게 없어요: ${what}`], code: 0 };
 			}
+			const draftId = flag(rest, "--draft");
+			if (draftId !== undefined) {
+				const d = getDraft(draftId), words = oneLine(flag(rest, "--change") ?? ""), scope = flag(rest, "--scope");
+				if (!d) return { lines: [`초안 ${draftId}을(를) 찾지 못했어요`], code: 1 };
+				if (!words || (scope !== undefined && scope !== "recipient" && scope !== "channel" && scope !== "everywhere")) return { lines: [USAGE], code: 2 };
+				const keys = keysOf(draftRules(d, d.item));
+				const learnt = await learn({ source: "chat", ref: d.id, keys, words, ...(scope ? { proposal: { scope } } : {}) }, { ...deps, learnCall: learnCallOf(deps, keys.channel.app) });
+				return { lines: [learnt.text], code: 0 };
+			}
 			const app = flag(rest, "--app");
 			const change = oneLine(flag(rest, "--change") ?? "");
 			const room = flag(rest, "--room");
@@ -249,38 +251,13 @@ export async function runDraft(args: string[], stdin: string, deps: DraftDeps = 
 			const target = app === INSTALL ? INSTALL : key;
 			const where = levelName(key, recipient.name);
 			const lines: string[] = [];
-			const learn: DraftDeps = { ...deps, learnCall: rules.length || change || tidy ? learnCallOf(deps, app) : undefined };
-			const offers: PatternProposal[] = [];
-			const learnWithPattern = async (profile: ToneKey | "install", text: string, kind: LearnKind): Promise<LineLearned> => {
-				const [line, offer] = await Promise.allSettled([learnLine(profile, text, kind, learn), proposeLinePattern(profile, text, [text], learn)]);
-				if (offer.status === "rejected") console.error(`draft correct: wording pattern of ${app} not learned: ${(offer.reason as Error).message}`);
-				if (line.status === "rejected") throw line.reason;
-				if (line.value.stored && offer.status === "fulfilled" && offer.value) offers.push(offer.value);
-				return line.value;
-			};
-			const ruleResults: [string, LineLearned][] = [];
-			for (const r of rules) ruleResults.push([r, await learnWithPattern(target, r, "rule")]);
-			const changed = change ? await learnWithPattern(key, change, "correction") : undefined;
-			const added = ruleResults.filter(([, l]) => l.same === undefined).map(([r]) => `"${r}"`);
-			if (added.length) lines.push(`${where} 말투에 늘 지킬 규칙으로 기록했어요: ${added.join(", ")}`);
-			for (const [, l] of ruleResults) lines.push(...learnedNote(l, target));
-			if (changed) lines.push(`고친 점을 ${where} 말투에 기록했어요: ${change}`, ...learnedNote(changed, key));
-			const clash = changed?.stored && learn.learnCall ? await configConflicts(key, change, learn.learnCall(app)) : [];
-			if (clash.length) lines.push(`설정한 지시와 어긋나요: ${clash.map(c => `"${c}"`).join(", ")}. 초안은 더 새로 배운 이 고친 점을 따르고, 설정은 그대로예요`);
-			// A lesson for the whole mail app also went into each mail app with a file of its own (flow.ts learnLine, recordForbidden, alsoInto); one allowed or forgotten for it is taken out there too.
+			const learnDeps: DraftDeps = { ...deps, learnCall: rules.length || change || tidy ? learnCallOf(deps, app) : undefined };
+			const keys: LearnInput["keys"] = recipient.to !== undefined ? { recipient: key, channel: { app } } : { channel: key };
+			const scope = app === INSTALL ? "everywhere" : recipient.to !== undefined ? "recipient" : "channel";
+			const taught = async (words: string, kind?: LearnKind): Promise<string> => (await learn({ source: "chat", ref: `chat:${where}`, keys, words, proposal: { scope, ...(kind ? { kind } : {}) } }, learnDeps)).text;
+			for (const r of rules) lines.push(await taught(r, "rule"));
+			if (change) lines.push(await taught(change));
 			const subs = alsoInto(target).map(k => k.app);
-			for (const sub of subs) {
-				const learned = [...ruleResults.map(([, l]) => l), ...(changed ? [changed] : [])].flatMap(l => l.also?.filter(a => a.app === sub) ?? []);
-				if (learned.length) lines.push(`${sub} 말투에도 같이 기록했어요`, ...learned.flatMap(l => learnedNote(l, { app: sub })));
-			}
-			for (const offer of offers) {
-				try {
-					offer.keep();
-					lines.push(`${PATTERN_NOTE}${offer.label}`);
-				} catch (e) {
-					console.error(`draft correct: wording pattern of ${app} not learned: ${(e as Error).message}`);
-				}
-			}
 			if (forbid.length) {
 				recordForbidden(target, forbid);
 				lines.push(`${where}에서 쓰지 않을 표현으로 기록했어요: ${forbid.map(w => `"${w}"`).join(", ")}`);
@@ -301,10 +278,9 @@ export async function runDraft(args: string[], stdin: string, deps: DraftDeps = 
 				if (hand.length) lines.push(`"${t}"이(가) 든 줄은 손으로 쓴 섹션에만 있어서 지우지 않았어요. 그 파일에서 직접 고쳐야 해요:\n${hand.join("\n")}`);
 				else lines.push(`${where}의 말투와 고친 점에 "${t}"이(가) 든 줄이 없어서 바꾼 게 없어요`);
 			}
-			if (changed) await refineAfterCorrection(key, deps);
 			if (tidy) {
 				const count = profileBullets(target, HEADINGS.corrections).length;
-				const tidied = count >= 2 ? await compactCorrections(target, learn, { force: true }) : undefined;
+				const tidied = count >= 2 ? await compactCorrections(target, learnDeps, { force: true }) : undefined;
 				lines.push(count < 2 ? "정리할 것이 없어요" : tidied ? `고친 점 ${tidied.before}줄을 ${tidied.after}줄로 정리했어요 (지운 줄은 tone --journal에 남아 있어요)` : "모델의 답을 쓸 수 없어서 고친 점을 그대로 두었어요");
 			}
 			return { lines, code: 0 };

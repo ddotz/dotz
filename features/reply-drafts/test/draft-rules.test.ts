@@ -106,8 +106,9 @@ describe("a learned correction against the configured instruction", () => {
 	});
 	test("the learning result flags the conflict and leaves the settings as they are", async () => {
 		rulesOff([], "격식체로 길게 써요");
-		const learned = await replyLearning(() => ({ learnCall: () => overrides("격식체") })).record({ app: "mail" }, "반말로 짧게");
-		expect(learned).toMatchObject({ stored: true, kind: "correction", conflicts: ["격식체로 길게 써요"] });
+		const learned = await replyLearning(() => ({ learnCall: () => overrides("격식체") })).learn({ source: "revise", ref: "R1", keys: { channel: { app: "mail" } }, words: "반말로 짧게", proposal: {} });
+		expect(learned).toMatchObject({ state: "remembered", line: "반말로 짧게" });
+		expect(learned.text).toContain('설정한 지시 "격식체로 길게 써요"와(과) 어긋나요');
 		expect(readSettings(env.dir, "mail").find(f => f.key === "draft_default")?.value).toBe("격식체로 길게 써요");
 		rmSync(paths.toneDir(), { force: true, recursive: true });
 	});

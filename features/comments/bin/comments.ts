@@ -19,7 +19,7 @@ import { approvalHash, ATTACH_REFUSED, draftVerdict, LINT_REFUSED, SPENT_REFUSED
 import { reasonOf } from "../../../hub/reply-reasons.ts";
 import { dataDir } from "../../reply-drafts/lib/settings.ts";
 import { type HubLike, notifyGateway } from "../../../hub/followup.ts";
-import { learningSettled } from "../../../hub/reply-mail.ts";
+import { learningSettled, replyLearning } from "../../../hub/reply-mail.ts";
 
 /** `drafted`: the thread of a draft this run made (the gateway re-reads it, so the open screen shows the draft). */
 type Out = { lines: string[]; code: number; posted?: string; drafted?: { source: string; thread: string } };
@@ -64,7 +64,10 @@ async function runCmd(args: string[], engine: Engine, inbox: string): Promise<Ou
 			if (!noMail && (await notifyGateway({ path: "/api/reply/act", body: { ref: id, action: "revise", change, part } })))
 				return { lines: [`고치기를 맡겼어요. 고친 초안은 카드(${id})에 바로 나와요. 무엇을 고쳤는지 한 줄로만 답하세요.`], code: 0 };
 			const step = await engine.revise(id, change, part, noMail);
-			return step.ok ? { lines: [askOf(step.draft.code, part === "mail" ? "함께 보낼 메일 초안을 고쳤어요" : "댓글 답글 초안을 고쳤어요") ?? "초안을 고쳤어요"], code: 0, drafted: { source: step.draft.source, thread: step.draft.thread } } : fail(step.reason);
+			if (!step.ok) return fail(step.reason);
+			const said = step.lesson ? await replyLearning().learn({ source: "revise", ref: step.draft.code, ...step.lesson }).catch(e => (console.error(`comments: lesson of ${step.draft.code} not recorded: ${e instanceof Error ? e.message : "error"}`), undefined)) : undefined;
+			const headline = part === "mail" ? "함께 보낼 메일 초안을 고쳤어요" : "댓글 답글 초안을 고쳤어요";
+			return { lines: [askOf(step.draft.code, said ? `${headline}. ${said.text}` : headline) ?? "초안을 고쳤어요"], code: 0, drafted: { source: step.draft.source, thread: step.draft.thread } };
 		}
 		case "drop": {
 			if (!id) return fail("초안 id가 필요해요");

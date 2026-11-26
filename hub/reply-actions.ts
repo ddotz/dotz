@@ -8,15 +8,15 @@
 import { approvalHash, type SendJob, type SendResult } from "./approval-send.ts";
 import { DRAFT_HAND_EDIT, draftApprovalBlock, parseDraftApproval } from "./draft-approval.ts";
 import { draftHead } from "./reply-chat.ts";
-import { lessonNote, policyOf, reasonOf } from "./reply-reasons.ts";
+import { policyOf, reasonOf } from "./reply-reasons.ts";
 import { sinceMidnight } from "./reply-route.ts";
-import type { DraftView, FileShown, Lesson, OwnerAction, Part, Reason, ReasonCode, ReplyAdapter, ReplyItem, ReplyKind, SendState } from "./reply-types.ts";
+import type { DraftView, FileShown, LearnFlip, LearnInput, Learnt, LessonScope, OwnerAction, Part, Reason, ReasonCode, ReplyAdapter, ReplyItem, ReplyKind, SendState } from "./reply-types.ts";
 
 /** `owner`: the owner's chat message the model read this act from (its marker line); his pick then names that message. */
 export type ActCtx = { surface: "web" | "discord" | "chat" | "peer" | "cli"; login?: string; agent?: boolean; owner?: { mid: string; text: string } };
 /** `hash`: the draft.hash of the item the caller showed (a send act of another version is refused `changed`; "" = it showed none the hub can
- * name, refused the same). `subject`: an edit's new subject (mail, or the bundled mail with part "mail"). */
-export type ActInput = { ref: string; action: string; change?: string; text?: string; subject?: string; part?: Part; asIs?: boolean; as?: "sent" | "retry"; hash?: string };
+ * name, refused the same). `scope`: where `learn-scope` moves what the card learned. `subject`: an edit's new subject (mail, or the bundled mail with part "mail"). */
+export type ActInput = { ref: string; action: string; change?: string; text?: string; subject?: string; part?: Part; scope?: LessonScope; asIs?: boolean; as?: "sent" | "retry"; hash?: string };
 export type ActResult = { status: number; body: { ok: true; item?: ReplyItem } | { ok: false; code: ReasonCode | "bad_request" | "unknown_ref" | "card_mismatch"; error: string; lint?: string[]; item?: ReplyItem } };
 type Sender = {
 	enqueue: (j: SendJob, approved?: (until: number) => void) => boolean;
@@ -40,8 +40,8 @@ export type ReplyDeps = {
 	/** A plain line from the owner in the card's conversation (나갔어요), no pick. */
 	recordText?: (conv: string, text: string) => void;
 	say?: (conv: string, ref: string, text: string) => void;
-	/** `record`: what the lesson line did in its profile (`learnLine`: stored or not, the old lines it replaced, the standing rule that already said it, the configured instruction lines a stored correction contradicts). `pattern`: a wording pattern proposed for the lesson, written only by its `keep`. */
-	learning: { record: (key: Lesson["key"], line: string) => Promise<{ kind: "rule" | "correction"; stored: boolean; replaced: string[]; same?: string; conflicts?: string[] }>; refine: (key: Lesson["key"]) => Promise<void>; forbid: (key: Lesson["key"], words: string[]) => Promise<void>; pattern?: (key: Lesson["key"], line: string, evidence: NonNullable<Lesson["evidence"]>, words: string[]) => Promise<{ label: string; inGood: string[]; keep: () => void } | undefined> };
+	/** The one learning entry (hub/reply-mail.ts replyLearning): `learn` stores what an owner's correction teaches and says remembered or once, `shown` reads what was said of `ref`, `flip` turns it to another scope, once or kept. */
+	learning: { learn: (input: LearnInput) => Promise<Learnt>; shown: (ref: string) => Learnt | undefined; flip: (ref: string, to: LearnFlip) => Promise<Learnt | undefined> };
 	/** `rewrite` and `replace` draw a card anew (every surface, Discord included) and store `hash`, the version it now shows. `repost` posts the open card
 	 * of `ref` again at the bottom of its conversation (the same notice; `text` and `hash` when given), its old post marked moved. */
 	cards: { open: () => OpenCard[]; replace: (oldRef: string, newRef: string, text: string, hash: string | undefined) => void; rewrite: (ref: string, text: string, hash: string | undefined) => void; repost: (ref: string, text: string | undefined, hash: string | undefined) => Promise<void>; close: (ref: string) => void;
@@ -57,7 +57,7 @@ export type ReplyDeps = {
 };
 
 const SEND_LABEL = { send: "보내기", "send-as-is": "이대로 보내기", "send-main": "답글만 보내기", "send-mail": "메일만 보내기" } as const;
-const ACTIONS = new Set(["send", "revise", "edit", "drop", "restore", "retry", "resolve", "undo"]);
+const ACTIONS = new Set(["send", "revise", "edit", "drop", "restore", "retry", "resolve", "undo", "learn-scope", "learn-once", "learn-keep"]);
 const fail = (status: number, code: ActResult["body"] extends infer B ? (B extends { ok: false; code: infer C } ? C : never) : never, error: string, lint?: string[]): ActResult => ({ status, body: { ok: false, code, error, ...(lint ? { lint } : {}) } });
 const refused = (status: number, code: ReasonCode, vars?: Record<string, string | number>): ActResult => fail(status, code, reasonOf(code, vars).text);
 const LIVE = new Set(["undo", "queued", "sending"]);
@@ -88,54 +88,9 @@ function sendAction(input: ActInput): keyof typeof SEND_LABEL {
 	return input.asIs ? "send-as-is" : "send";
 }
 
-async function learn(deps: ReplyDeps, lesson: Lesson | undefined): Promise<{ said: string; refine: () => Promise<void> }> {
-	if (!lesson) return { said: "", refine: async () => undefined };
-	const where = `${lesson.key.app}${lesson.key.room ? `/${lesson.key.room}` : ""}${lesson.key.to !== undefined ? ` to ${lesson.key.to}` : ""}`;
-	const hasLine = lesson.line.trim() !== "";
-	const propose = deps.learning.pattern;
-	const [recorded, proposed] = await Promise.allSettled([
-		Promise.resolve().then(() => (hasLine ? deps.learning.record(lesson.key, lesson.line) : undefined)),
-		Promise.resolve().then(() => (lesson.evidence && propose ? propose(lesson.key, lesson.line, lesson.evidence, lesson.forbid ?? []) : undefined)),
-	]);
-	if (recorded.status === "rejected") deps.log(`reply learning for ${where} failed: ${(recorded.reason as Error).message}`);
-	if (proposed.status === "rejected") deps.log(`reply wording pattern for ${where} failed: ${(proposed.reason as Error).message}`);
-	const learned = recorded.status === "fulfilled" ? recorded.value : undefined;
-	const offer = proposed.status === "fulfilled" ? proposed.value : undefined;
-	let pattern: { label: string; inGood: string[] } | undefined;
-	if (offer && (!hasLine || learned?.stored)) {
-		try {
-			offer.keep();
-			pattern = offer;
-		} catch (e) {
-			deps.log(`reply wording pattern for ${where} failed: ${(e as Error).message}`);
-		}
-	}
-	const words = (lesson.forbid ?? []).filter(w => !offer?.inGood.includes(w));
-	let banned = false;
-	if (words.length) {
-		try {
-			await deps.learning.forbid(lesson.key, words);
-			banned = true;
-		} catch (e) {
-			deps.log(`reply forbidden wordings for ${where} failed: ${(e as Error).message}`);
-		}
-	}
-	const refine = async () => {
-		if (!learned?.stored || learned.kind !== "correction") return;
-		try {
-			await deps.learning.refine(lesson.key);
-		} catch (e) {
-			deps.log(`reply learning for ${where} failed: ${(e as Error).message}`);
-		}
-	};
-	const same = learned?.same;
-	const replaced = learned?.stored ? learned.replaced.length : 0;
-	return { said: lessonNote({ key: lesson.key, line: learned?.stored ? lesson.line : same ?? "", forbid: banned ? words : [], pattern: pattern?.label, replaced, same: same !== undefined, conflicts: learned?.conflicts }), refine };
-}
-
 /** The cards of `ref` show the version the store holds now, and keep its hash (a pick from one of them is checked against it). */
-async function redraw(deps: ReplyDeps, a: ReplyAdapter, ref: string, now: DraftView | undefined) {
-	const text = await a.ask(ref);
+async function redraw(deps: ReplyDeps, a: ReplyAdapter, ref: string, now: DraftView | undefined, headline?: string) {
+	const text = await a.ask(ref, headline);
 	if (text) deps.cards.rewrite(ref, text, now && approvalHash(now));
 }
 /** The owner's pick on `view`, kept as his answer on the card; an agent's call records none. */
@@ -163,7 +118,7 @@ export function createReplyActions(deps: ReplyDeps) {
 		return card ? { card } : undefined;
 	}
 
-	const itemOf = (view: DraftView): ReplyItem => itemFor(view, ledger(view.ref), revising.has(view.ref), deps.now?.() ?? Date.now());
+	const itemOf = (view: DraftView): ReplyItem => itemFor(view, ledger(view.ref), revising.has(view.ref), deps.now?.() ?? Date.now(), deps.learning.shown(view.ref));
 	/** A send or an edit whose `hash` names another version than the store holds: refused with the fresh item, nothing queued or saved, and its
 	 * cards redrawn and every surface told (another device repaints too). */
 	const stale = async (a: ReplyAdapter, view: DraftView, input: ActInput): Promise<ActResult | undefined> => {
@@ -258,10 +213,10 @@ export function createReplyActions(deps: ReplyDeps) {
 		}
 		const moved = r.ref !== view.ref;
 		if (moved) revising.add(r.ref);
-		const [next, taught] = await Promise.all([a.get(r.ref), learn(deps, r.lesson)]);
+		const [next, taught] = await Promise.all([a.get(r.ref), r.lesson ? deps.learning.learn({ source: "revise", ref: r.ref, ...r.lesson }).catch(e => (deps.log(`reply learning for ${r.ref} failed: ${(e as Error).message}`), undefined)) : undefined]);
 		let drawn = true;
 		try {
-			const text = await a.ask(r.ref, taught.said ? `고친 초안이에요. ${taught.said}` : undefined);
+			const text = await a.ask(r.ref, taught ? `고친 초안이에요. ${taught.text}` : undefined);
 			if (text && !moved) deps.cards.rewrite(view.ref, text, next && approvalHash(next));
 			else if (text) deps.cards.replace(view.ref, r.ref, text, next && approvalHash(next));
 		} catch (e) {
@@ -274,7 +229,6 @@ export function createReplyActions(deps: ReplyDeps) {
 			if (moved) revising.delete(r.ref);
 		}
 		if (drawn) deps.emit({ kind: "reply", ref: view.ref, ...(moved ? { next: r.ref } : {}), ...(next ? { item: itemOf(next) } : {}) });
-		await taught.refine();
 	}
 
 	/** A draft that can still change: no revise replacing it, pending, with no send waiting, running or unsure. */
@@ -377,6 +331,9 @@ export function createReplyActions(deps: ReplyDeps) {
 			case "restore": return restore(a, view);
 			case "retry": return retry(ctx, a, view, input);
 			case "resolve": return resolveSend(ctx, a, view, input.as);
+			case "learn-scope":
+			case "learn-once":
+			case "learn-keep": return flipLesson({ deps, itemOf }, a, view, input);
 			default: return undo(view);
 		}
 	}
@@ -455,15 +412,28 @@ async function toBot(deps: ReplyDeps, ctx: ActCtx, card: OpenCard, input: ActInp
 	return { status: 200, body: { ok: true } };
 }
 
+/** What the card says it learned, turned to another scope, once or kept: allowed on any draft state, since the lesson outlives the draft. */
+async function flipLesson(c: { deps: ReplyDeps; itemOf: (v: DraftView) => ReplyItem }, a: ReplyAdapter, view: DraftView, input: ActInput): Promise<ActResult> {
+	const to: LearnFlip | undefined = input.action === "learn-once" ? { once: true } : input.action === "learn-keep" ? { keep: true } : input.scope ? { scope: input.scope } : undefined;
+	if (!to) return fail(400, "bad_request", "어느 범위로 바꿀지 적어 주세요 (scope)");
+	const learnt = await c.deps.learning.flip(view.ref, to);
+	if (!learnt) return fail(404, "unknown_ref", "이 카드에서 배운 것이 없어요");
+	const next = (await a.get(view.ref)) ?? view;
+	await redraw(c.deps, a, view.ref, next, learnt.text);
+	const item = c.itemOf(next);
+	c.deps.emit({ kind: "reply", ref: view.ref, item });
+	return { status: 200, body: { ok: true, item } };
+}
+
 type Resolved = { adapter: ReplyAdapter; view: DraftView } | { card: OpenCard };
 const OWED = new Set(["failed", "unsure"]);
 const owes = (v: DraftView): boolean => v.draft.state === "pending" || v.mailLeft === true;
-function itemFor(v: DraftView, last: SendResult | undefined, revising: boolean, now: number): ReplyItem {
+function itemFor(v: DraftView, last: SendResult | undefined, revising: boolean, now: number, learnt: Learnt | undefined): ReplyItem {
 	const { sent, mailLeft: _m, ...view } = v;
 	const held = sendOf(!owes(v) && OWED.has(last?.state ?? "") ? undefined : last, now);
 	const send = (held && v.draft.state !== "pending" && (held.state === "failed" || held.state === "unsure") ? { ...held, actions: [] } : held) ?? (sent && { state: "sent" as const, at: sent.at, how: sent.how, today: sinceMidnight(sent.at, now), actions: [] });
 	const back = last?.state === "back" && last.cause === "restart" && v.draft.state === "pending" ? { at: last.at, cause: "restart" as const } : undefined;
-	return { ...view, draft: { ...view.draft, hash: approvalHash(view), ...(revising ? { revising: true as const } : {}) }, ...(send ? { send, why: "reason" in send ? send.reason.text : view.why } : {}), ...(back && !send ? { back } : {}) };
+	return { ...view, draft: { ...view.draft, hash: approvalHash(view), ...(revising ? { revising: true as const } : {}), ...(learnt ? { learned: { state: learnt.state, text: learnt.text, scope: learnt.scope, scopes: learnt.scopes } } : {}) }, ...(send ? { send, why: "reason" in send ? send.reason.text : view.why } : {}), ...(back && !send ? { back } : {}) };
 }
 type Settler = { deps: ReplyDeps; known: (ref: string) => Promise<{ view: DraftView } | undefined>; ledger: (ref: string) => SendResult | undefined; revising: Set<string> };
 async function settleOwed(c: Settler): Promise<number> {

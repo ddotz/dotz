@@ -63,7 +63,6 @@ export type EngineDeps = {
 	model?: DraftModel;
 	judge?: DraftModel;
 	style?: (src: SourceConfig, authorId?: string, thread?: string) => ReplyStyle;
-	learn?: (lesson: Lesson) => void;
 	edits?: EditLessons;
 	broadcast?: (event: Record<string, unknown>) => void;
 	/** A reply was posted (owner's 보내기 or an owner-enabled rule): the app instance and the send record. hub/followup.ts wakes the bot from here. */
@@ -639,7 +638,7 @@ export function createEngine(deps: EngineDeps) {
 	// `part` "mail" changes only the mail of the card (the reply stays, same code); "reply" (default) rewrites the reply and the mail stays attached,
 	// or with `noMail` is dropped once the new reply draft exists, so the card is the reply alone. A "reply" change about the mail or its files
 	// revises the mail too (draft-run.ts mailFollowsReply), so the owner's one 고치기 reaches both parts.
-	async function revise(draftCode: string, change: string, part: "reply" | "mail" = "reply", noMail = false, opts: { learn?: false } = {}): Promise<Step & { lesson?: Lesson }> {
+	async function revise(draftCode: string, change: string, part: "reply" | "mail" = "reply", noMail = false): Promise<Step & { lesson?: Lesson }> {
 		const d = store.drafts().find(x => x.code === draftCode);
 		const c = d && find(d.commentId);
 		const src = d && sourceOf(d.source);
@@ -652,11 +651,10 @@ export function createEngine(deps: EngineDeps) {
 			if (!d.mail || !deps.mail) return { ok: false, reason: "이 초안에는 함께 보낼 메일이 없어요" };
 			const r = await reviseRidingMail(mailCtx(deps.mail), d, d.mail, change.trim());
 			if (!r.ok) return r;
-			if (r.lesson && opts.learn !== false) deps.learn?.(r.lesson);
 			return { ok: true, draft: paired(r.draft.code) ?? r.draft, ...(r.lesson ? { lesson: r.lesson } : {}) };
 		}
 		const { mail: _mail, mailAt: _mailAt, ...replyOnly } = d;
-		return run(c, src, noMail ? replyOnly : d, change.trim(), opts)
+		return run(c, src, noMail ? replyOnly : d, change.trim())
 			.then(async step => {
 				if (step.ok && noMail && d.mail) deps.mail?.drop(d.mail);
 				if (!step.ok) return step;

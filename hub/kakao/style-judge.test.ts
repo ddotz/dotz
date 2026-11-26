@@ -117,23 +117,21 @@ test("a KakaoTalk rewrite the judge asked for that fails the lint, skips, throws
 });
 
 test("a KakaoTalk revise is judged with the owner's request in its own block, and teaches what its first try said", async () => {
-	const first: ModelReply = { text: JSON.stringify({ action: "draft", body: "3시에 봐", summary: "", lesson: "친한 사이에는 반말로 쓴다", forbid: [], scope: "recipient" }) };
-	const rewrite: ModelReply = { text: JSON.stringify({ action: "draft", body: "3시에 뵐게요", summary: "", lesson: "it breaks the owner's rule", forbid: [], scope: "everywhere" }) };
+	const first: ModelReply = { text: JSON.stringify({ action: "draft", body: "3시에 봐", summary: "", once: false, forbid: [], scope: "recipient" }) };
+	const rewrite: ModelReply = { text: JSON.stringify({ action: "draft", body: "3시에 뵐게요", summary: "", once: true, forbid: [], scope: "everywhere" }) };
 	const r = room([first, rewrite], [violations([{ rule: 1, quote: "3시에 봐", why: "반말" }]), violations([])]);
-	const learned: unknown[] = [];
-	const made = await makeDraft({ ...r.ctx, deps: { ...r.ctx.deps, onRevise: (_chatId, l) => void learned.push(l) } }, r.config, DIRECT, undefined, { code: "old", draft: "3시에 뵙겠습니다", change: "반말로 편하게 바꿔 줘" });
-	expect(learned).toEqual([{ line: "친한 사이에는 반말로 쓴다", forbid: [], scope: "recipient" }]);
-	expect(made).toMatchObject({ ok: true, learned: { line: "친한 사이에는 반말로 쓴다", scope: "recipient" } });
+	const made = await makeDraft(r.ctx, r.config, DIRECT, undefined, { code: "old", draft: "3시에 뵙겠습니다", change: "반말로 편하게 바꿔 줘" });
+	expect(made).toMatchObject({ ok: true, learned: { line: "반말로 편하게 바꿔 줘", once: false, forbid: [], scope: "recipient" } });
 	expect(r.judgeCalls[0]).toContain("Standing rules (the owner set these; they always hold):\n1. 존댓말로 쓴다\n\nPast corrections, newest first:\n2. 약속은 시간을 먼저 말한다\n\nThe owner's request for this draft (it wins: never report a rule that this request overrides or conflicts with):\n반말로 편하게 바꿔 줘\n");
 	r.close();
 });
 
 test("a KakaoTalk revise whose judged rewrite fails the lint stores the first try and teaches its lesson", async () => {
-	const first: ModelReply = { text: JSON.stringify({ action: "draft", body: "3시에 봐", summary: "", lesson: "친한 사이에는 반말로 쓴다", forbid: [], everywhere: false }) };
-	const rewrite: ModelReply = { text: JSON.stringify({ action: "draft", body: "[이름]님 3시에 뵐게요", summary: "", lesson: "it breaks the owner's rule", forbid: [], everywhere: true }) };
+	const first: ModelReply = { text: JSON.stringify({ action: "draft", body: "3시에 봐", summary: "", once: false, forbid: [] }) };
+	const rewrite: ModelReply = { text: JSON.stringify({ action: "draft", body: "[이름]님 3시에 뵐게요", summary: "", once: true, forbid: [], scope: "everywhere" }) };
 	const r = room([first, rewrite], [violations([{ rule: 1, quote: "3시에 봐", why: "반말" }]), violations([])]);
 	const made = await makeDraft(r.ctx, r.config, DIRECT, undefined, { code: "old", draft: "3시에 뵙겠습니다", change: "반말로 편하게 바꿔 줘" });
-	expect(made).toMatchObject({ ok: true, learned: { line: "친한 사이에는 반말로 쓴다", forbid: [], scope: "channel" } });
+	expect(made).toMatchObject({ ok: true, learned: { line: "반말로 편하게 바꿔 줘", once: false, forbid: [], scope: "channel" } });
 	expect((await r.pending()).map(d => [d.text, d.notes])).toEqual([["3시에 봐", [NOTE]]]);
 	r.close();
 });

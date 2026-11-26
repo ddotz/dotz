@@ -105,7 +105,7 @@ test("a sent mail the owner edited stores the model's lesson as a dated correcti
 	const apps: string[] = [];
 	const { r } = await send({ learnCall: learnCall(answer(LESSON), apps) });
 	expect(r).toEqual({ ok: true, text: "보냈어요" });
-	expect(apps).toEqual(["mail"]);
+	expect(apps).toEqual(["mail", "mail"]);
 	expect(profileBullets({ app: "mail" }, HEADINGS.corrections)).toEqual([expect.stringMatching(new RegExp(`^\\d{4}-\\d{2}-\\d{2}: ${LESSON}$`))]);
 	expect(profileBullets("install", HEADINGS.rules)).toEqual([]);
 	expect(`${fileOf({ app: "mail" })}${fileOf("install")}`).not.toMatch(/^- (\d{4}-\d{2}-\d{2}: )?초안 "/m);

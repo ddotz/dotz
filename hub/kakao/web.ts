@@ -2,8 +2,7 @@
 // are readable, sendable and shown. Everything is injected (database, runner, clock, paths, broadcast) so tests run without the app.
 // Events carry ids only: never a body or a room name. Sends go only through send.ts (Accessibility UI automation).
 import type { useReplies } from "../reply-actions.ts";
-import type { Learned } from "../reply-draft.ts";
-import type { LessonOfEdit } from "../reply-types.ts";
+import type { LearnInput, LessonOfEdit } from "../reply-types.ts";
 import { mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { hostname } from "node:os";
 import { dirname, join } from "node:path";
@@ -47,7 +46,7 @@ export type WebDeps = {
 	// It gets the room's messages (read once to write the profile) and counts of the owner's own lines.
 	learnVoice?: (src: VoiceSource) => Promise<void>;
 	// A revise of a draft ("더 짧게") was stored: what it teaches beyond this draft (the model's lesson) goes into the room's tone profile.
-	onRevise?: (chatId: string, learned: Learned) => void;
+	learn?: (input: LearnInput) => void;
 	lessonOfEdit?: LessonOfEdit;
 	// The fetch behind GET /api/kakao/media/... and GET /api/link-preview (default: the global fetch).
 	fetch?: typeof fetch;
@@ -570,8 +569,8 @@ export function createKakaoWeb(deps: WebDeps) {
 		const upTo = await messages(await getDb(config), d.chatId, 30, config.userId ?? "", { before: String(BigInt(d.basisLogId) + 1n) });
 		return chatLines(sinceOwnLast(upTo, false)).join("\n");
 	};
-	const { draftModel, onRevise, lessonOfEdit } = deps;
-	const edits = draftModel && onRevise && lessonOfEdit ? { answered, ask: async (system: string, user: string, chatId: string) => (await draftModel(system, user, chatId)).text, lessonOfEdit, learn: onRevise } : undefined;
+	const { draftModel, learn, lessonOfEdit } = deps;
+	const edits = draftModel && learn && lessonOfEdit ? { answered, ask: async (system: string, user: string, chatId: string) => (await draftModel(system, user, chatId)).text, lessonOfEdit, learn } : undefined;
 	// The kit of the one reply flow's KakaoTalk adapter (hub/kakao/reply-adapter.ts): a revise through this room's model call, and one send's deps.
 	const replyKit = {
 		paths,
@@ -585,7 +584,7 @@ export function createKakaoWeb(deps: WebDeps) {
 		revise: async (chatId: string, revise: { code: string; draft: string; change: string; intent?: string }) => {
 			const config = readConfig(paths);
 			if (!config?.enabled || !deps.draftModel) return { ok: false as const, error: "카카오톡 초안 만들기를 쓸 수 없어요" };
-			return makeDraft(draftCtx, config, chatId, undefined, revise, revise.intent, { learn: false });
+			return makeDraft(draftCtx, config, chatId, undefined, revise, revise.intent);
 		},
 		sendDeps: async () => {
 			const config = readConfig(paths)!;

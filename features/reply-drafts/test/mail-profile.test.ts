@@ -57,12 +57,12 @@ test("a revise reads the draft's profile and its correction is recorded there, n
 	own();
 	await offer(["beta-1"]);
 	const rec = listDrafts()[0]!;
-	const model = fakeModel([j({ ...goodReply, lesson: "항상 짧게" })]);
+	const model = fakeModel([j({ ...goodReply, once: false })]);
 	expect((await reviseDraft(rec.id, "더 짧게", { call: model.call })).ok).toBe(true);
 	expect(model.calls[0]!.system + model.calls[0]!.user).toContain("BETA-IDENTITY");
 	expect(model.calls[0]!.system + model.calls[0]!.user).not.toContain("ALPHA-IDENTITY");
-	expect(readFileSync(toneFile({ app: "mail-beta" }), "utf8")).toContain("항상 짧게");
-	expect(readFileSync(toneFile({ app: "mail" }), "utf8")).not.toContain("항상 짧게");
+	expect(readFileSync(toneFile({ app: "mail-beta" }), "utf8")).toContain("더 짧게");
+	expect(readFileSync(toneFile({ app: "mail" }), "utf8")).not.toContain("더 짧게");
 	expect(listDrafts().find(r => r.status === "pending")!.profile).toBe("mail-beta");
 });
 

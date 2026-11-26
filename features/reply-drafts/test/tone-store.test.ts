@@ -454,7 +454,7 @@ test("correct --forget removes the matching correction lines of that profile onl
 test("correct --change alone still records a dated line in the room profile", async () => {
 	const r = await correct("--app", "kakao", "--room", "r1", "--change", "반말로");
 	expect(r.code).toBe(0);
-	expect(r.lines.join("\n")).toContain("kakao 대화방");
+	expect(r.lines.join("\n")).toContain('기억했어요: "반말로" · 범위: 이 대화방');
 	expect(profileBullets({ app: "kakao", room: "r1" }, HEADINGS.corrections)).toEqual(["2030-03-04: 반말로"]);
 });
 
@@ -478,6 +478,9 @@ test("correct --rule stores a standing rule at the chosen level, tone lists it u
 	const tone = (await runDraft(["tone", "--app", "youtube"], "")).lines.join("\n");
 	expect(tone.slice(tone.indexOf("말투:"), tone.indexOf("고친 점:"))).toContain("- [install] 끝인사는 짧게");
 	await correct("--app", "install", "--change", "끝인사 다시 보기");
+	expect(profileBullets("install", HEADINGS.rules)).toContain("끝인사 다시 보기");
+	removeRule("install", "끝인사 다시 보기");
+	recordCorrection({ app: "install" }, "끝인사 다시 보기", new Date("2030-03-04T00:00:00Z"));
 	const gone = await correct("--app", "install", "--forget", "끝인사");
 	expect(gone.code).toBe(0);
 	const said = gone.lines.join("\n");

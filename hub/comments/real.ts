@@ -2,7 +2,7 @@
 // profiles of features/reply-drafts, and the one subscription-only model call. The gateway and the watch/onboard scripts build the engine here.
 import { homedir, hostname } from "node:os";
 import { join } from "node:path";
-import { loadPairs, markLearned, readLearned, recordForbidden, recordLearned, savePairs, validApp } from "../../features/reply-drafts/lib/settings.ts";
+import { loadPairs, markLearned, readLearned, savePairs, validApp } from "../../features/reply-drafts/lib/settings.ts";
 import { DM_THREAD } from "./contract.ts";
 import { loadConfig, realCtx } from "../../features/youtube-instagram/lib/config.ts";
 import { commentsFor, commentsRead, mediaHistory, mediaWithCounts, replyAuthor, reply as igReply } from "../../features/youtube-instagram/lib/instagram.ts";
@@ -69,23 +69,7 @@ export function realEngine(dataDir: string, opts: { broadcast?: (e: Record<strin
 		...(opts.mailOwed ? { mailOwed: opts.mailOwed } : {}),
 		...(opts.answeredMailThread ? { answeredMailThread: opts.answeredMailThread } : {}),
 		style: commentStyle,
-		...(opts.learnEdits === false ? {} : { edits: { lessonOfEdit, learn: replyLearning(opts.flow).learn, mail: (id: string) => learnMailEdit(id, opts.flow) } }),
-		learn: ({ key, line, forbid }) => {
-			if (line.trim()) {
-				try {
-					recordLearned(key, line, new Date());
-				} catch (e) {
-					console.error(`comments: lesson of ${key.app} not recorded: ${e instanceof Error ? e.message : "error"}`);
-				}
-			}
-			if (forbid?.length) {
-				try {
-					recordForbidden(key, forbid);
-				} catch (e) {
-					console.error(`comments: forbidden wordings of ${key.app} not recorded: ${e instanceof Error ? e.message : "error"}`);
-				}
-			}
-		},
+		...(opts.learnEdits === false ? {} : { edits: { lessonOfEdit, learn: async input => void (await replyLearning(opts.flow).learn(input)), mail: (id: string) => learnMailEdit(id, opts.flow) } }),
 		pairs: {
 			load: key => loadPairs(key).map(p => ({ comment: p.received, reply: p.reply, at: p.at, thread: p.thread ?? "", ...(p.from ? { from: p.from } : {}), ...(p.fromId ? { fromId: p.fromId } : {}), ...(p.edited ? { edited: true as const } : {}) })),
 			save: (key, list) => savePairs(key, list.map(p => ({ received: p.comment, reply: p.reply, at: p.at, ...(p.from ? { from: p.from } : {}), ...(p.fromId ? { fromId: p.fromId } : {}), ...(p.thread ? { thread: p.thread } : {}), ...(p.edited ? { edited: true as const } : {}) }))),

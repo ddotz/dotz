@@ -41,7 +41,7 @@ test("revise stores a new draft that names the one it replaced and returns the l
 	addDraft(rec());
 	const a = mailAdapter(() => ({ call: async () => reply("목요일까지 보내드릴게요.", "마감은 넉넉히 잡아서 쓴다") }));
 	const r = await a.revise("RMAILAA", "마감을 목요일로");
-	expect(r).toMatchObject({ ok: true, replaces: "RMAILAA", lesson: { line: "마감은 넉넉히 잡아서 쓴다" } });
+	expect(r).toMatchObject({ ok: true, replaces: "RMAILAA", lesson: { words: "마감을 목요일로", keys: { channel: { app: "mail" } } } });
 	const next = r.ok ? await a.get(r.ref) : undefined;
 	expect(next?.draft).toMatchObject({ state: "pending", text: "목요일까지 보내드릴게요.", replaces: { ref: "RMAILAA", text: "확인해 보고 말씀드릴게요." } });
 	expect(getDraft("RMAILAA")?.status).toBe("stale");

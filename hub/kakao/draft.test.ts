@@ -260,12 +260,15 @@ describe("buildDraftPrompt", () => {
 	});
 });
 
-test("a revise answer carries its lesson; an answer without the key has none, an empty one says the change taught nothing", () => {
-	expect(parseDraftReply(JSON.stringify({ action: "draft", parts: ["3시"], summary: "", lesson: " 짧게 끊어서 쓴다 " }))?.lesson).toBe("짧게 끊어서 쓴다");
-	expect(parseDraftReply(JSON.stringify({ action: "draft", parts: ["3시"], summary: "", lesson: "" }))?.lesson).toBe("");
-	expect(parseDraftReply(JSON.stringify({ action: "draft", parts: ["3시"], summary: "" }))?.lesson).toBeUndefined();
+test("a revise answer carries its once; an answer without the key has none, and a lesson line is ignored", () => {
+	expect(parseDraftReply(JSON.stringify({ action: "draft", parts: ["3시"], summary: "", once: true }))?.once).toBe(true);
+	expect(parseDraftReply(JSON.stringify({ action: "draft", parts: ["3시"], summary: "", once: false }))?.once).toBe(false);
+	expect(parseDraftReply(JSON.stringify({ action: "draft", parts: ["3시"], summary: "", once: "yes" }))?.once).toBeUndefined();
+	expect(parseDraftReply(JSON.stringify({ action: "draft", parts: ["3시"], summary: "" }))?.once).toBeUndefined();
+	expect(parseDraftReply(JSON.stringify({ action: "draft", parts: ["3시"], summary: "", lesson: "짧게 끊어서 쓴다" }))).not.toHaveProperty("lesson");
 	const { system } = buildDraftPrompt({ lines: ["상대: 몇 시?"], revise: { draft: "3시에 봐요", change: "더 짧게" } });
-	expect(system).toContain('"lesson"');
+	expect(system).toContain('"once"');
+	expect(system).not.toContain('"lesson"');
 });
 
 describe("the owner's standing words in the prompt", () => {

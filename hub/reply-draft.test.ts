@@ -208,14 +208,14 @@ test("whenever past replies, patterns or samples are shown, the system text says
 	expect(ranks({ ...style, samples: [] })).toBe(false);
 });
 
-test("learnedOf bans only wording the user himself wrote in the change, at most five, and keeps the model's scope only when something was learned", () => {
+test("learnedOf keeps the owner's change as the line, bans only wording the user himself wrote in it (at most five), and takes the model's once and scope as proposed", () => {
 	const change = "앞으로 '행복한  하루 되세요'랑 thanks, /하루/ 같은 건 쓰지 마. 가 나다 라마 바사 아자 도 빼고, 이것도: " + "길".repeat(41);
 	const forbid = ["행복한 하루 되세요", "받은 메일에 있던 말", "가", "/하루/", "Thanks", "행복한 하루 되세요 ", "길".repeat(41), "나다", "라마", "바사", "아자"];
-	expect(learnedOf({ lesson: "끝인사는 '좋은 하루 보내세요'로", forbid, scope: "everywhere" }, change)).toEqual({ line: "끝인사는 '좋은 하루 보내세요'로", forbid: ["행복한 하루 되세요", "Thanks", "나다", "라마", "바사"], scope: "everywhere" });
-	expect(learnedOf({ lesson: "이분께는 존댓말로", scope: "recipient" }, change)).toEqual({ line: "이분께는 존댓말로", forbid: [], scope: "recipient" });
-	expect(learnedOf({ lesson: "", forbid: ["받은 메일에 있던 말"], scope: "everywhere" }, change)).toEqual({ line: "", forbid: [], scope: "channel" });
-	expect(learnedOf({ lesson: "", forbid: [], scope: "recipient" }, change)).toEqual({ line: "", forbid: [], scope: "channel" });
-	expect(learnedOf({}, "더 짧게")).toEqual({ line: "더 짧게", forbid: [], scope: "channel" });
+	const line = change.replace(/\s+/g, " ").trim();
+	expect(learnedOf({ once: false, forbid, scope: "everywhere" }, change)).toEqual({ line, once: false, forbid: ["행복한 하루 되세요", "Thanks", "나다", "라마", "바사"], scope: "everywhere" });
+	expect(learnedOf({ once: true, scope: "recipient" }, " 이분께는  존댓말로 ")).toEqual({ line: "이분께는 존댓말로", once: true, forbid: [], scope: "recipient" });
+	expect(learnedOf({ forbid: ["받은 메일에 있던 말"] }, change)).toEqual({ line, once: false, forbid: [], scope: "channel" });
+	expect(learnedOf({}, "더 짧게")).toEqual({ line: "더 짧게", once: false, forbid: [], scope: "channel" });
 });
 
 test("a revise answer's scope says for whom its lesson holds; an older answer's everywhere boolean still parses, and any other scope string is the channel", () => {
@@ -267,14 +267,14 @@ test("every way of spacing or composing a banned wording is caught, and a body w
 
 test("a revise asks what the change bans, rewrites a draft that uses a banned wording once with the finding listed, and returns the ban", async () => {
 	const ban = "행복한 하루 되세요";
-	const learned = { lesson: "끝인사는 '좋은 하루 보내세요'로", forbid: [ban], everywhere: true };
+	const learned = { once: false, forbid: [ban], everywhere: true };
 	const m = fake([j({ ...good, body: `네 ${ban}!`, ...learned }), j({ ...good, body: "네 좋은 하루 보내세요!", ...learned })]);
 	const r = await reviseReply(item, { ...style, forbidden: [ban] }, { to: "kim@example.com", subject: "Re: 회의 일정 문의", body: `${ban}!` }, `${ban}는 비문이니 앞으로 쓰지 마`, m.call);
 	expect(m.calls).toHaveLength(2);
 	expect(m.calls[0]!.user).toContain('"forbid"');
 	expect(m.calls[1]!.user).toContain(`it uses the forbidden expression '${ban}'`);
-	expect(r).toMatchObject({ action: "draft", tries: 2, warnings: [], draft: { body: "네 좋은 하루 보내세요!" }, lesson: learned.lesson, forbid: learned.forbid, scope: "everywhere" });
-	expect(m.calls[0]!.user).toContain('Add "scope", for whom the lesson holds: "recipient" only when the user says the change is about the person this reply goes to');
+	expect(r).toMatchObject({ action: "draft", tries: 2, warnings: [], draft: { body: "네 좋은 하루 보내세요!" }, once: false, forbid: learned.forbid, scope: "everywhere" });
+	expect(m.calls[0]!.user).toContain('Add "scope", for whom the change holds: "recipient" only when the user says the change is about the person this reply goes to');
 	expect(parseResult(j({ ...good, forbid: "x", everywhere: "yes" }))).not.toHaveProperty("forbid");
 	expect(parseResult(j({ ...good, forbid: "x", everywhere: "yes" }))).not.toHaveProperty("scope");
 });

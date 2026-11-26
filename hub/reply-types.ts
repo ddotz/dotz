@@ -29,8 +29,17 @@ export type SendState =
 
 export type ReplyKind = "mail" | "webmail" | "comment" | "kakao" | "card";
 export type Part = "reply" | "mail";
-/** What a revise teaches a tone profile: `line` the lasting preference ("" = none), `forbid` the wordings the owner banned, `evidence` the previous draft and the owner's change (the only texts a proposed wording pattern may quote, never the model-written line); `key.app` is `install` when it holds everywhere, `key.to` the person it holds for when it is about the recipient (that person's own file: a mail address, a commenter's platform id), `key.toName` how the owner knows that person when `to` is an id (a commenter's display name). */
-export type Lesson = { key: { app: string; room?: string; to?: string; toName?: string }; line: string; forbid?: string[]; evidence?: { draft: string; change: string } };
+/** For whom a lesson holds: the person the reply goes to, this channel (the kind of message, the app, room or mailbox), or every reply. */
+export type LessonScope = "recipient" | "channel" | "everywhere";
+/** A tone profile a lesson is written to: the app (a mail app instance, a comment source), its room or mailbox, and `to` the person it holds for (a mail address, a commenter's platform id). */
+export type LessonKey = { app: string; room?: string; base?: string; to?: string };
+/** What the one learning entry (features/reply-drafts/lib/learn.ts) takes from every source: `ref` the card or draft its result is shown on, `keys` the profiles of that draft (`recipient` only when it can hold for that person), `words` the owner's own words, `proposal` what the model suggests (`once`: only about this message; `kind`: a standing rule instead of a dated correction), `evidence` the previous draft and the change (the only texts a proposed wording pattern may quote). */
+export type LearnInput = { source: "revise" | "edit" | "drop" | "chat"; ref: string; keys: { recipient?: LessonKey; channel: LessonKey }; words: string; proposal?: { once?: boolean; scope?: LessonScope; forbid?: string[]; kind?: "rule" | "correction" }; evidence?: { draft: string; change: string } };
+/** What a revise hands the entry: the source and ref are the hub's. */
+export type Lesson = Pick<LearnInput, "keys" | "words" | "proposal" | "evidence">;
+/** What the owner is told of one learned line (the card's `text`), and what he may flip: `scopes` are the scopes this draft can hold it for. */
+export type Learnt = { ref: string; state: "remembered" | "once"; line: string; scope: LessonScope; scopeLabel: string; scopes: LessonScope[]; text: string };
+export type LearnFlip = { scope: LessonScope } | { once: true } | { keep: true };
 /** The lasting wording preference a sent edit shows (features/reply-drafts/lib/edit-lesson.ts lessonOfEdit, which hub/reply-mail.ts re-exports): the lesson and whether it holds everywhere, undefined for none. */
 export type LessonOfEdit = (input: { before: string; after: string; received: string }, ask: (system: string, user: string) => Promise<string>) => Promise<{ lesson: string; everywhere: boolean } | undefined>;
 export type Done = { ok: true } | { ok: false; reason: Reason };
@@ -76,6 +85,8 @@ export type ReplyItem = {
 		revising?: true;
 		/** The approvalHash of this version (hub/approval-send.ts): a send act carries it back, and a different one is refused `changed`. */
 		hash?: string;
+		/** What the owner's last lesson on this card did (remembered or once) and the scopes he can flip it to; no part of the hash. */
+		learned?: Pick<Learnt, "state" | "text" | "scope" | "scopes">;
 	};
 	original?: { who: string; text: string; at?: number; subject?: string; post?: string; cut?: true };
 	/** Absent: it waits for the owner. */

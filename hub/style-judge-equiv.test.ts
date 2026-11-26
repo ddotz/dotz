@@ -14,8 +14,8 @@ import type { JudgeAsk } from "./style-judge.ts";
 type Answer = "clean" | "lint" | "unparsable" | "skip" | "ask" | "thrown" | "lessonFirst" | "lessonRetry";
 const json = (o: object) => `\`\`\`json\n${JSON.stringify(o)}\n\`\`\``;
 const d = (body: string, extra: object = {}) => json({ action: "draft", reason: "r", to: "kim@example.com", subject: "Re: 회의 일정 문의", body, questions: [], ...extra });
-const FIRST_LESSON = { lesson: "L1", forbid: [], everywhere: false };
-const RETRY_LESSON = { lesson: "L2", forbid: ["안녕히"], everywhere: true };
+const FIRST_LESSON = { once: true, forbid: [] };
+const RETRY_LESSON = { once: false, forbid: ["안녕히"], scope: "everywhere" };
 const timedOut = new Error("model call timed out after 45s");
 const mailAnswer: Record<Answer, string | Error> = {
 	clean: d("네 확인했어요"),
@@ -70,7 +70,6 @@ async function kakaoRun(revise: boolean, seq: Answer[], judge: boolean) {
 	const db = sqliteDb(dbPath);
 	let calls = 0;
 	const judged = { calls: 0 };
-	const onRevise: unknown[] = [];
 	const asks: unknown[] = [];
 	const room = { chatId: String(ROOM.direct), name: "Alex", type: 1, kind: "direct" as const, unread: 0, lastAt: 1 };
 	const ctx: MakeDraftCtx = {
@@ -81,7 +80,6 @@ async function kakaoRun(revise: boolean, seq: Answer[], judge: boolean) {
 			openDb: async () => db,
 			broadcast: () => {},
 			draftStyle: () => kHint,
-			onRevise: (_chatId, l) => void onRevise.push(l),
 			draftModel: async () => {
 				const a = kakaoAnswer[seq[Math.min(calls++, seq.length - 1)]!];
 				if (a instanceof Error) throw a;
@@ -101,7 +99,7 @@ async function kakaoRun(revise: boolean, seq: Answer[], judge: boolean) {
 	try {
 		const made = await makeDraft(ctx, config, String(ROOM.direct), undefined, revise ? { code: "old", draft: "옛 초안", change: CHANGE } : undefined);
 		const drafts = (await listDrafts({ paths, runner: quiet })).filter(x => x.status === "pending").map(x => [x.text, x.notes ?? []]);
-		return { made: made.ok ? { ok: true, stored: !!made.code, ...(made.learned ? { learned: made.learned } : {}) } : made, onRevise, asks, drafts, calls, judged: judged.calls };
+		return { made: made.ok ? { ok: true, stored: !!made.code, ...(made.learned ? { learned: made.learned } : {}) } : made, asks, drafts, calls, judged: judged.calls };
 	} finally {
 		db.close();
 		rmSync(dir, { recursive: true, force: true });
@@ -117,9 +115,9 @@ const flagged = mailDraft("네 수고하세요", [FORBIDDEN], 2, 2);
 const skipped = (calls: number) => ({ result: { action: "skip", reason: "no need" }, calls });
 const asked = (calls: number) => ({ result: { action: "ask", question: "갈까?", choices: ["가", "안 가"] }, calls });
 const unusable = { result: { threw: "the model did not return a usable JSON object" }, calls: 2 };
-const CHANGE_LESSON = { line: CHANGE, forbid: [], scope: "channel" };
-const kakao = (made: object, calls: number, o: { drafts?: unknown[]; learned?: object; asks?: unknown[] } = {}) => ({ made, onRevise: o.learned ? [o.learned] : [], asks: o.asks ?? [], drafts: o.drafts ?? [], calls, judged: 0 });
-const kStored = (text: string, notes: string[], calls: number, learned?: object) => kakao({ ok: true, stored: true, ...(learned ? { learned } : {}) }, calls, { drafts: [[text, notes]], ...(learned ? { learned } : {}) });
+const CHANGE_LESSON = { line: CHANGE, once: false, forbid: [], scope: "channel" };
+const kakao = (made: object, calls: number, o: { drafts?: unknown[]; learned?: object; asks?: unknown[] } = {}) => ({ made, asks: o.asks ?? [], drafts: o.drafts ?? [], calls, judged: 0 });
+const kStored = (text: string, notes: string[], calls: number, learned?: object) => kakao({ ok: true, stored: true, ...(learned ? { learned } : {}) }, calls, { drafts: [[text, notes]] });
 const kClean = (calls: number, learned?: object) => kStored("네 확인했어요", [], calls, learned);
 const kFlagged = (learned?: object) => kStored("네 수고하세요", [`확인: ${FORBIDDEN}`], 2, learned);
 const kFailed = (error: string, calls: number) => kakao({ ok: false, error }, calls);
@@ -138,7 +136,7 @@ const MAIN: [string, Answer[], Want][] = [
 	["lint failure then skip", ["lint", "skip"], same(skipped(2), kFailed(NO_REPLY, 2), kFailed(NO_REPLY, 2))],
 	["chat ask", ["ask"], { ...same(unusable, kAsked(1), kFailed(DRAFT_FAILED, 1)), generateChatReply: asked(1) }],
 	["lint failure then ask", ["lint", "ask"], { ...same(flagged, kAsked(2), kFailed(DRAFT_FAILED, 2)), generateChatReply: asked(2) }],
-	["lint retry with a different lesson", ["lessonFirst", "lessonRetry"], same(mailDraft("네 확인했어요", [], 2, 2, { lesson: "L2", forbid: ["안녕히"], scope: "everywhere" }), kClean(2), kClean(2, { line: "L2", forbid: ["안녕히"], scope: "everywhere" }))],
+	["lint retry with a different lesson", ["lessonFirst", "lessonRetry"], same(mailDraft("네 확인했어요", [], 2, 2, { once: false, forbid: ["안녕히"], scope: "everywhere" }), kClean(2), kClean(2, { line: CHANGE, once: false, forbid: ["안녕히"], scope: "everywhere" }))],
 ];
 
 for (const [name, seq, want] of MAIN) {

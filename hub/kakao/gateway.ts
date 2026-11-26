@@ -3,7 +3,7 @@
 import { useReplies } from "../reply-actions.ts";
 import { hostname } from "node:os";
 import { enableKakaoApp, ensureKakaoVoice } from "../../features/reply-drafts/lib/kakao-voice.ts";
-import { loadStyle, recordForbidden } from "../../features/reply-drafts/lib/settings.ts";
+import { loadStyle } from "../../features/reply-drafts/lib/settings.ts";
 import { cfg, DATA_DIR, log, styleJudgeOn } from "../config.ts";
 import { broadcast, subscriberCount } from "../events.ts";
 import { resolveName } from "../machine-name.ts";
@@ -13,9 +13,8 @@ import { claimLease, postLease } from "../send-lease.ts";
 import { getSecret } from "./creds.ts";
 import { type KakaoDb, sqlcipherDb } from "./db.ts";
 import { callReplyModel } from "../reply-model.ts";
-import type { Learned } from "../reply-draft.ts";
 import { lessonOfEdit, replyLearning } from "../reply-mail.ts";
-import { kakaoAdapter, kakaoLessonKey } from "./reply-adapter.ts";
+import { kakaoAdapter } from "./reply-adapter.ts";
 import { type DraftModel, type StyleHint, type VoiceSource } from "./draft.ts";
 import { createLive } from "./live.ts";
 import { defaultRunner, type KakaoConfig, kakaoPaths } from "./types.ts";
@@ -53,19 +52,7 @@ const learnVoice = async (src: VoiceSource) => {
 	if (r.mode) log(`kakao voice ${r.mode} room=${src.chatId} model tokens in=${r.tokens?.in ?? 0} out=${r.tokens?.out ?? 0} profile=${r.profile.length > 0}`);
 };
 
-// A revise that was stored teaches its lesson (never the raw request, never before the new draft exists), then the profile may fold it in.
 const learning = replyLearning();
-const onRevise = (chatId: string, learned: Learned) => {
-	const key = kakaoLessonKey(chatId, learned.scope);
-	if (learned.forbid.length) {
-		try {
-			recordForbidden(key, learned.forbid);
-		} catch (e) {
-			log(`kakao ban for ${chatId} not recorded: ${e instanceof Error ? e.message : String(e)}`);
-		}
-	}
-	if (learned.line) void learning.record(key, learned.line).then(r => (r.kind === "correction" && r.stored ? learning.refine(key) : undefined)).catch(e => log(`kakao lesson for ${chatId} not recorded: ${e instanceof Error ? e.message : String(e)}`));
-};
 
 const machine = resolveName(cfg.web?.machine_name, hostname());
 // One sender per room across this owner's computers (docs/peer-monitoring.md): before a send, this gateway claims the room's lease here
@@ -92,7 +79,7 @@ const web = createKakaoWeb({
 	draftStyle,
 	learnVoice,
 	log,
-	onRevise,
+	learn: input => void learning.learn(input).catch(e => log(`kakao lesson for ${input.ref} not recorded: ${e instanceof Error ? e.message : String(e)}`)),
 	lessonOfEdit,
 	replies: useReplies,
 });

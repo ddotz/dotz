@@ -180,7 +180,7 @@ test("고치기 round trip: pick with the change, revise makes a new id, the old
 
 const BAN = "행복한 하루 되세요";
 const CHANGE = `끝인사에 "${BAN}"는 쓰지 말고 짧게 끝내 줘`;
-const LESSON = "끝인사는 짧게 한다";
+const KEYS = { channel: { app: "mail" }, recipient: { app: "mail", to: "kim@example.com" } };
 
 async function revisedWith(learned: object, change = CHANGE, opts: { learn?: false } = {}) {
 	const { rec, model } = await offered(fakeModel([j(goodReply), j({ ...goodReply, body: "곧 알려 드릴게요.", ...learned }), j({ ...goodReply, body: "내일 드릴게요." })]));
@@ -189,55 +189,56 @@ async function revisedWith(learned: object, change = CHANGE, opts: { learn?: fal
 }
 
 test("K1 a mail revise that quotes a wording stores the ban and the lesson in the draft's own profile, the next draft of that app carries both, and the owner is told", async () => {
-	const { model, step } = await revisedWith({ lesson: LESSON, forbid: [BAN], everywhere: false });
-	expect(step).toMatchObject({ ok: true, lesson: { key: { app: "mail" }, line: LESSON, forbid: [BAN] } });
+	const { model, step } = await revisedWith({ forbid: [BAN], once: false, scope: "channel" });
+	expect(step).toMatchObject({ ok: true, lesson: { keys: KEYS, words: CHANGE, proposal: { forbid: [BAN], once: false, scope: "channel" } } });
 	expect(profileBullets({ app: "mail" }, HEADINGS.forbidden)).toEqual([BAN]);
-	expect(profileBullets({ app: "mail" }, HEADINGS.corrections).join("\n")).toContain(LESSON);
+	expect(profileBullets({ app: "mail" }, HEADINGS.corrections).join("\n")).toContain(CHANGE);
 	expect(existsSync(toneFile("install"))).toBe(false);
-	expect(step.text).toContain("앞으로 이 앱 답장");
-	expect(step.text).toContain(BAN);
+	expect(step.text).toContain(`기억했어요: "${CHANGE}" · 범위: 이 앱`);
+	expect(step.text).toContain(`쓰지 않을 표현: '${BAN}'`);
 	await offerMailDraft({ ...mailFixture, key: "m-2", id: "msg-2" }, { send: () => undefined, call: model.call });
 	const prompt = `${model.calls[2]!.system}\n${model.calls[2]!.user}`;
 	expect(prompt).toContain(BAN);
-	expect(prompt).toContain(LESSON);
+	expect(prompt).toContain(CHANGE);
 });
 
 test("K1 a mail revise the model says holds everywhere is a standing rule of install.md, not a dated correction, and holds in a later draft of the app after 60 newer corrections and in a draft of another app", async () => {
-	const { model, step } = await revisedWith({ lesson: LESSON, forbid: [BAN], everywhere: true });
-	expect(step).toMatchObject({ ok: true, lesson: { key: { app: "install" }, line: LESSON, forbid: [BAN] } });
+	const { model, step } = await revisedWith({ forbid: [BAN], once: false, scope: "everywhere" });
+	expect(step).toMatchObject({ ok: true, lesson: { keys: KEYS, words: CHANGE, proposal: { forbid: [BAN], once: false, scope: "everywhere" } } });
 	expect(profileBullets("install", HEADINGS.forbidden)).toEqual([BAN]);
-	expect(profileBullets("install", HEADINGS.rules)).toEqual([LESSON]);
+	expect(profileBullets("install", HEADINGS.rules)).toEqual([CHANGE]);
 	expect(profileBullets("install", HEADINGS.corrections)).toEqual([]);
 	expect(existsSync(toneFile({ app: "mail" }))).toBe(false);
-	expect(step.text).toContain("모든 답장");
+	expect(step.text).toContain(`기억했어요: "${CHANGE}" · 범위: 모든 답장`);
 	for (let i = 0; i < 60; i++) recordCorrection({ app: "mail" }, `고친 점 ${i} ${"가".repeat(200)}`.slice(0, 200), new Date(Date.UTC(2030, 0, 1 + i)));
 	await offerMailDraft({ ...mailFixture, key: "m-2", id: "msg-2" }, { send: () => undefined, call: model.call });
 	// The 60 corrections are folded first (compact.ts compactForPrompt); the draft call comes after that one.
 	const draft = model.calls.slice(2).find(c => c.system.startsWith("You draft ONE reply"))!;
-	expect(`${draft.system}\n${draft.user}`).toContain(LESSON);
+	expect(`${draft.system}\n${draft.user}`).toContain(CHANGE);
 	let seen = "";
 	await generateReply({ kind: "comment", app: "youtube", from: "팬", text: "언제요?", context: "" }, loadStyle({ app: "youtube" }), async (system, user) => ((seen = `${system}\n${user}`), j({ ...goodReply, body: "토요일이에요" })));
 	expect(seen).toContain(BAN);
-	expect(seen).toContain(LESSON);
+	expect(seen).toContain(CHANGE);
 });
 
-test("K3 a one-off mail change writes no tone file and returns no lesson; with learn false nothing is written and the lesson comes back for the caller", async () => {
-	const once = await revisedWith({ lesson: "", forbid: [], everywhere: true });
+test("K3 a one-off mail change is told as 이번만 반영했어요, returns its lesson with once and writes no tone file; with learn false nothing is written and the lesson comes back for the caller", async () => {
+	const once = await revisedWith({ forbid: [], once: true, scope: "everywhere" });
 	expect(once.step.ok).toBe(true);
-	expect(once.step.lesson).toBeUndefined();
+	expect(once.step.lesson).toMatchObject({ words: CHANGE, proposal: { once: true } });
 	expect(existsSync(paths.toneDir())).toBe(false);
-	expect(once.step.text).not.toContain("앞으로");
+	expect(once.step.text).toContain("이번만 반영했어요");
+	expect(once.step.text).not.toContain("기억했어요");
 	rmSync(paths.drafts(), { force: true, recursive: true });
-	const handed = await revisedWith({ lesson: LESSON, forbid: [BAN], everywhere: false }, CHANGE, { learn: false });
-	expect(handed.step.lesson).toEqual({ key: { app: "mail" }, line: LESSON, forbid: [BAN], evidence: { draft: handed.rec.body, change: CHANGE } });
+	const handed = await revisedWith({ forbid: [BAN], once: false, scope: "channel" }, CHANGE, { learn: false });
+	expect(handed.step.lesson).toEqual({ keys: KEYS, words: CHANGE, proposal: { forbid: [BAN], once: false, scope: "channel" }, evidence: { draft: handed.rec.body, change: CHANGE } });
 	expect(existsSync(paths.toneDir())).toBe(false);
 });
 
 test("K4 a mail revise bans only wording the user's own change holds: the received mail's words and the model's own idea are never stored", async () => {
-	const { rec, step } = await revisedWith({ lesson: LESSON, forbid: ["다음 주 회의", "공손하지 않은 말투"], everywhere: false });
-	expect(step.lesson).toEqual({ key: { app: "mail" }, line: LESSON, forbid: [], evidence: { draft: rec.body, change: CHANGE } });
+	const { rec, step } = await revisedWith({ forbid: ["다음 주 회의", "공손하지 않은 말투"], once: false, scope: "channel" });
+	expect(step.lesson).toEqual({ keys: KEYS, words: CHANGE, proposal: { forbid: [], once: false, scope: "channel" }, evidence: { draft: rec.body, change: CHANGE } });
 	expect(profileBullets({ app: "mail" }, HEADINGS.forbidden)).toEqual([]);
-	expect(profileBullets({ app: "mail" }, HEADINGS.corrections).join("\n")).toContain(LESSON);
+	expect(profileBullets({ app: "mail" }, HEADINGS.corrections).join("\n")).toContain(CHANGE);
 });
 
 test("draft.ts revise hands the change to the gateway's one reply flow and rewrites nothing itself; without the gateway it rewrites and prints the card", async () => {

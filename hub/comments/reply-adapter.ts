@@ -86,7 +86,7 @@ export function commentAdapter(engine: Engine, mailAnswered: () => (thread: stri
 		},
 		learnSent: (ref, part) => void engine.learnSent(ref, part),
 		revise: async (ref, change, part) => {
-			const r = await engine.revise(ref, change, part ?? "reply", false, { learn: false });
+			const r = await engine.revise(ref, change, part ?? "reply");
 			if (!r.ok) return { ok: false, reason: reason(r.reason, "revise_failed") };
 			return { ok: true, ref: r.draft.code, replaces: ref, ...(r.lesson ? { lesson: r.lesson } : {}) };
 		},

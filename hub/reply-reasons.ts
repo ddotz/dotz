@@ -1,7 +1,7 @@
 // Every reason a reply send or action can end with (the reply unification design, section 2): its class (surely not sent, may have gone
 // out, or not a send failure), its plain Korean and English text, what code may retry by itself (section 2.4) and the buttons the owner gets.
 // The text is the cause only; a card builds its line around it. Raw tool output never comes here: it goes to hub.log.
-import type { Lesson, OwnerAction, Reason, ReasonCode } from "./reply-types.ts";
+import type { OwnerAction, Reason, ReasonCode } from "./reply-types.ts";
 
 /** `no`: surely not sent. `maybe`: may have gone out (확인 필요; code never sends it again). `action`: an action was refused or a revise failed. */
 export type ReasonClass = "no" | "maybe" | "action";
@@ -110,16 +110,3 @@ export function partialReason(p: { done: number; total: number; code: ReasonCode
 
 /** What the owner is told when a rule or lesson also stored a wording rule (a `shape` ban), before its label. */
 export const PATTERN_NOTE = "표현 규칙으로도 정해 뒀어요: ";
-
-/** The Korean sentence that tells the owner what a revise stored in the tone profile ("" when it stored nothing): where it holds (every reply, replies to the person `key.toName` (else `key.to`) names (cut to 40 characters), this KakaoTalk room, this mailbox or this app), the lesson line, how many old conditions it replaced (`replaced`), the label of a wording pattern it stored and the banned wordings; with `same` the line was already a condition and nothing was added. */
-export function lessonNote(lesson: Pick<Lesson, "key" | "line" | "forbid"> & { pattern?: string; replaced?: number; same?: boolean; conflicts?: string[] }): string {
-	const who = lesson.key.to === undefined ? undefined : (lesson.key.toName ?? lesson.key.to);
-	const to = who === undefined ? undefined : [...who.replace(/\s+/g, " ").trim()];
-	const where = lesson.key.app === "install" ? "모든 답장" : to ? `${to.length > 40 ? `${to.slice(0, 40).join("")}…` : to.join("")}에게 보내는 답장` : lesson.key.room === undefined ? "이 앱 답장" : lesson.key.app === "kakao" ? "이 대화방 답장" : "이 메일함 답장";
-	const line = [...lesson.line.replace(/\s+/g, " ").trim()];
-	const shown = line.length > 100 ? `${line.slice(0, 100).join("")}…` : line.join("");
-	const words = (lesson.forbid ?? []).map(w => `'${w}'`).join(", ");
-	const said = !shown ? [] : lesson.same ? [`이미 있는 조건이에요: ${shown}`] : [`앞으로 ${where}에 반영해요: ${shown}`, ...(lesson.replaced ? [`기존 조건 ${lesson.replaced}개를 이 조건으로 바꿨어요`] : [])];
-	const clash = (lesson.conflicts ?? []).map(c => `"${c.length > 60 ? `${c.slice(0, 60)}…` : c}"`).join(", ");
-	return [...said, ...(clash ? [`설정한 지시 ${clash}와(과) 어긋나요. 초안은 더 새로 배운 이 고친 점을 따르고, 설정은 그대로예요`] : []), ...(lesson.pattern ? [`${PATTERN_NOTE}${lesson.pattern}`] : []), ...(words ? [`앞으로 ${where}에서 쓰지 않을 표현: ${words}`] : [])].join(" · ");
-}

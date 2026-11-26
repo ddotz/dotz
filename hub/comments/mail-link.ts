@@ -81,8 +81,7 @@ export function realMailLink(deps: FlowDeps = { run: realRunner }): RealMailLink
 		async revise(id, change) {
 			const r = await reviseDraft(id, change, deps, { learn: false });
 			if (!r.ok || !r.id) return { ok: false, reason: r.text };
-			const lesson = r.lesson && { key: r.lesson.key, line: r.lesson.line, forbid: r.lesson.forbid, evidence: r.lesson.evidence };
-			return { ok: true, id: r.id, ...(lesson ? { lesson } : {}) };
+			return { ok: true, id: r.id, ...(r.lesson ? { lesson: r.lesson } : {}) };
 		},
 		view: id => {
 			const v = mailViewOf(id), rec = v && getDraft(id), issues = rec ? draftAttachIssues(rec) : [];
