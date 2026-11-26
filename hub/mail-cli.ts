@@ -1,4 +1,6 @@
-// `bun hub/mail-cli.ts compose|send`: a NEW mail the bot writes (not an answer to a received one), with the same owner approval as every reply.
+// `bun hub/mail-cli.ts compose|reply|send`: a mail the bot writes, with the same owner approval as every reply; the card it prints is the store's draft.
+//   reply <mail key> --body-file <path> [--to <addr>] [--cc <addr>] [--subject <s>]
+//     the reply draft of that received mail (hub/mail-manual.ts replyDraft: to its sender, through the mail's own source); again on the same mail = the same draft's new version.
 //   compose --app <mail instance> --to <addr> --subject <s> [--account <logged-in zele account>] [--attach <path>]... [--from-library <keywords>] [--origin comment|mail|kakao:<id>] [--with-comment <comment draft code>] (body on stdin)
 //     stages the files, records a draft and prints the shared approval block (hub/draft-approval.ts) to post unchanged as an [ask].
 //     --with-comment: the mail rides on that pending comment reply draft (hub/comments): the printed block is ONE card with the reply and then the
@@ -8,27 +10,27 @@
 //   send --draft <code>
 //     sends only after the owner picked 1) 보내기 for exactly that draft (features/reply-drafts/lib/flow.ts sendDraft, the same check as the reply path).
 // Attachments go out through the reply path's sender (zele `--attach`); a mail source that cannot send a new mail is refused at compose time.
-import { existsSync, statSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { addressesOf, lintReply } from "./reply-draft.ts";
-import { appEntries, instanceIdOf, readAppsFile } from "./integrations.ts";
+import { readAppsFile } from "./integrations.ts";
+import { replyDraft, sourceOf } from "./mail-manual.ts";
 import { type HubLike, notifyGateway, reportSendFailed } from "./followup.ts";
 import { commentAsk } from "./comments/ask.ts";
 import { attachMail, linkedComment, mailPartOf } from "./comments/linked.ts";
 import { commentsDir, createStore } from "./comments/store.ts";
 import { accountHold, askText, boxOfOutgoing, draftRules, draftAttachIssues, learningSettled, realFlowDeps, realRunner, sendAccountOf, sendDraft, settleDraft, type FlowDeps } from "../features/reply-drafts/lib/flow.ts";
-import { webmailSite, zeleLogins } from "../features/reply-drafts/lib/senders.ts";
+import { zeleLogins } from "../features/reply-drafts/lib/senders.ts";
 import { listLibrary, rankLibrary, LIBRARY_PICK_MAX, MIN_SCORE } from "../features/reply-drafts/lib/library.ts";
 import { cloudFile, cloudPlaceholder, retryWanted, STAGED_MAX, stageFiles, type Want } from "../features/reply-drafts/lib/staged.ts";
-import { dataDir, loadSettings, validApp } from "../features/reply-drafts/lib/settings.ts";
+import { dataDir, loadSettings } from "../features/reply-drafts/lib/settings.ts";
 import { addDraft, getDraft, newId, patchDraft, type DraftRec } from "../features/reply-drafts/lib/store.ts";
 import { autoAttach } from "./auto-attach.ts";
 
 export type MailCliDeps = FlowDeps & { hub?: HubLike };
 type Out = { lines: string[]; code: number; notes?: string[] };
 
-const USAGE = "usage: mail-cli.ts compose --app <mail app> --to <addr> --subject <s> [--account <addr>] [--attach <path>]... [--from-library <keywords>] [--origin comment|mail|kakao:<id>] [--with-comment <comment draft code>] (body on stdin) | send --draft <code> | ask --draft <code>";
+const USAGE = "usage: mail-cli.ts compose --app <mail app> --to <addr> --subject <s> [--account <addr>] [--attach <path>]... [--from-library <keywords>] [--origin comment|mail|kakao:<id>] [--with-comment <comment draft code>] (body on stdin) | reply <mail key> --body-file <path> [--to <addr>] [--cc <addr>] [--subject <s>] | send --draft <code> | ask --draft <code>";
 const MULTI = new Set(["--attach"]);
-const WEBMAIL = /^webmail[:/-]([a-z0-9-]+)$/;
 
 function parse(args: string[]): { flags: Record<string, string[]>; rest: string[] } {
 	const flags: Record<string, string[]> = {};
@@ -40,19 +42,6 @@ function parse(args: string[]): { flags: Record<string, string[]>; rest: string[
 	}
 	for (const k of Object.keys(flags)) if (!MULTI.has(k)) flags[k] = [flags[k]!.at(-1)!];
 	return { flags, rest };
-}
-
-// The mail source that sends for an instance: zele (the default, or an instance filtered to it) or a webmail-no-api site.
-export function sourceOf(app: string): { source: string } | { error: string } {
-	if (!validApp(app) || !instanceIdOf("mail", app)) return { error: `메일 앱 이름이 아니에요: ${app}` };
-	const raw = readAppsFile(dataDir())[app];
-	if (app !== "mail" && (!raw || raw.deleted || !appEntries(dataDir()).some(e => e.key === app))) return { error: `그런 메일 앱이 없어요: ${app}` };
-	if (raw?.off) return { error: `${app} 앱이 꺼져 있어요` };
-	const src = (raw?.filter?.source ?? "").trim().toLowerCase();
-	if (!src || src === "zele") return { source: "zele" };
-	const site = WEBMAIL.exec(src)?.[1] ?? webmailSite(src);
-	// Any other source is a category of the one mailbox (mail-orders = `orders`, posted by a mail watch from zele threads): a new mail goes out through zele.
-	return { source: site ? `webmail:${site}` : "zele" };
 }
 
 function originOf(spec: string | undefined): DraftRec["origin"] | { error: string } | undefined {
@@ -144,8 +133,15 @@ export async function composeMail(i: ComposeInput, deps: MailCliDeps = {}): Prom
 
 export async function runMailCli(args: string[], stdin: string, deps: MailCliDeps = {}): Promise<Out> {
 	const [cmd, ...more] = args;
-	const { flags } = parse(more);
+	const { flags, rest } = parse(more);
 	const one = (k: string) => flags[k]?.[0]?.trim() || undefined;
+	if (cmd === "reply") {
+		const key = rest[0], file = one("--body-file");
+		if (!key || !file) return { lines: [USAGE], code: 2 };
+		if (!existsSync(file)) return { lines: [`본문 파일을 찾지 못했어요: ${file}`], code: 2 };
+		const made = replyDraft(key, { body: readFileSync(file, "utf8").replace(/\r\n?/g, "\n"), to: one("--to"), cc: one("--cc"), subject: one("--subject") });
+		return made.ok ? { lines: [askText(made.rec, [])], code: 0 } : { lines: [made.error], code: made.code === 404 ? 2 : 1 };
+	}
 	if (cmd === "send") {
 		const id = one("--draft");
 		if (!id) return { lines: [USAGE], code: 2 };

@@ -1,11 +1,12 @@
 import { afterAll, expect, test } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { learningSettled, type FlowDeps } from "../features/reply-drafts/lib/flow.ts";
 import { draftRules } from "../features/reply-drafts/lib/draft-rules.ts";
 import { HEADINGS, paths, profileBullets } from "../features/reply-drafts/lib/settings.ts";
-import { addDraft, getDraft, type DraftRec } from "../features/reply-drafts/lib/store.ts";
+import { addDraft, getDraft, listDrafts, type DraftRec } from "../features/reply-drafts/lib/store.ts";
+import { recordMail } from "./mail.ts";
 import { mailHash } from "../features/reply-drafts/lib/view.ts";
 import { appendSealed } from "./approval-seal.ts";
 import { runMailCli } from "./mail-cli.ts";
@@ -37,4 +38,20 @@ test("a compose mail the owner edited and sent by hand with mail-cli send --draf
 	await learningSettled();
 	expect(asked).toEqual(["mail"]);
 	expect(profileBullets(draftRules(getDraft("RCOMP01")!, getDraft("RCOMP01")!.item).tone, HEADINGS.corrections)).toEqual([expect.stringMatching(new RegExp(`^\\d{4}-\\d{2}-\\d{2}: ${LESSON}$`))]);
+});
+
+test("mail-cli reply makes the store's reply draft of a received mail and prints its card; again on the same mail it is the same draft's new version", async () => {
+	recordMail({ key: "zele-thread-r1", source: "zele", id: "thread-r1", subject: "자료 문의", from: "Fan <fan@example.com>", at: "2031-01-01T00:00:00Z" });
+	const file = join(dir, "reply-body.txt");
+	writeFileSync(file, "안녕하세요. 자료 보내드려요.\n");
+	const out = await runMailCli(["reply", "zele-thread-r1", "--body-file", file], "");
+	expect(out.code).toBe(0);
+	const made = listDrafts().filter(d => d.ref === "zele-thread-r1" && d.status === "pending");
+	expect(made.map(d => ({ source: d.source, to: d.to, subject: d.subject, body: d.body, compose: d.compose }))).toEqual([{ source: "zele", to: "Fan <fan@example.com>", subject: "Re: 자료 문의", body: "안녕하세요. 자료 보내드려요.", compose: undefined }]);
+	expect(out.lines.join("\n")).toContain(made[0]!.id);
+	writeFileSync(file, "안녕하세요. 자료를 다시 보내드려요.");
+	const again = await runMailCli(["reply", "zele-thread-r1", "--body-file", file], "");
+	expect(again.code).toBe(0);
+	expect(listDrafts().filter(d => d.ref === "zele-thread-r1" && d.status === "pending").map(d => [d.id, d.body])).toEqual([[made[0]!.id, "안녕하세요. 자료를 다시 보내드려요."]]);
+	expect((await runMailCli(["reply", "zele-thread-none", "--body-file", file], "")).code).toBe(2);
 });

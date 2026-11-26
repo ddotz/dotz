@@ -4,13 +4,28 @@
 // through the same gate, claim and mailer as every other draft (features/reply-drafts/lib/flow.ts sendDraft).
 import { statSync, readFileSync } from "node:fs";
 import { basename } from "node:path";
-import { appEntries } from "./integrations.ts";
-import { sourceOf } from "./mail-cli.ts";
+import { appEntries, instanceIdOf, readAppsFile } from "./integrations.ts";
 import { mailByKey, type MailRecord } from "./mail.ts";
 import { instanceOf } from "./reply-model.ts";
+import { dataDir, validApp, webmailSite } from "./reply-mail.ts";
 import { addStagedBytes, removeStagedFile, stagedFiles, type StagedFile } from "../features/reply-drafts/lib/staged.ts";
-import { addDraft, newId, type DraftRec } from "../features/reply-drafts/lib/store.ts";
+import { addDraft, getDraft, listDrafts, newId, patchDraft, type DraftRec } from "../features/reply-drafts/lib/store.ts";
 import { DATA_DIR } from "./config.ts";
+
+const WEBMAIL = /^webmail[:/-]([a-z0-9-]+)$/;
+
+// The mail source that sends for an instance: zele (the default, or an instance filtered to it) or a webmail-no-api site.
+export function sourceOf(app: string): { source: string } | { error: string } {
+	if (!validApp(app) || !instanceIdOf("mail", app)) return { error: `메일 앱 이름이 아니에요: ${app}` };
+	const raw = readAppsFile(dataDir())[app];
+	if (app !== "mail" && (!raw || raw.deleted || !appEntries(dataDir()).some(e => e.key === app))) return { error: `그런 메일 앱이 없어요: ${app}` };
+	if (raw?.off) return { error: `${app} 앱이 꺼져 있어요` };
+	const src = (raw?.filter?.source ?? "").trim().toLowerCase();
+	if (!src || src === "zele") return { source: "zele" };
+	const site = WEBMAIL.exec(src)?.[1] ?? webmailSite(src);
+	// Any other source is a category of the one mailbox (mail-orders = `orders`, posted by a mail watch from zele threads): a new mail goes out through zele.
+	return { source: site ? `webmail:${site}` : "zele" };
+}
 
 export type ManualIn = {
 	/** The text he typed. Empty is refused: a draft with no body is not worth a card. */
@@ -97,4 +112,19 @@ export function manualDraft(i: ManualIn): Manual {
 	};
 	addDraft(rec);
 	return { ok: true, rec, app, attachments: stagedFiles(rec.id) };
+}
+
+/** The reply draft of received mail `key` a session writes (hub/mail-cli.ts reply): the pending reply draft of that mail takes the new text as its next version, so asking
+ * again is the same draft and never a second; else a new one as the owner's reply box makes it (to the sender, `Re:` subject, the mail's own source). */
+export function replyDraft(key: string, d: { body: string; to?: string; cc?: string; subject?: string }): Manual {
+	const mail = answered(key);
+	if (!mail) return { ok: false, error: "이 메일을 찾지 못했어요", code: 404 };
+	const pending = listDrafts().find(x => x.ref === key && x.status === "pending" && !x.compose);
+	if (!pending) return manualDraft({ replyTo: key, body: d.body, to: d.to || mail.replyTo || mail.from, ...(d.cc ? { cc: d.cc } : {}), ...(d.subject ? { subject: d.subject } : {}) });
+	const body = text(d.body, Infinity);
+	if (!body) return { ok: false, error: "내용을 적어 주세요", code: 400 };
+	if (body.length > BODY_MAX) return { ok: false, error: "내용이 너무 길어요. 20,000자까지 쓸 수 있어요", code: 400 };
+	patchDraft(pending.id, { body, ...(d.to ? { to: d.to } : {}), ...(d.cc ? { cc: [d.cc] } : {}), ...(d.subject ? { subject: d.subject } : {}) });
+	const rec = getDraft(pending.id)!;
+	return { ok: true, rec, app: rec.app, attachments: stagedFiles(rec.id) };
 }

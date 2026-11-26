@@ -35,6 +35,7 @@ import type { Lesson } from "../../../hub/reply-types.ts";
 export { realRunner };
 // What hub/reply-mail.ts (the hub's single door into this feature) needs beside the flow itself.
 export { boxOfOutgoing } from "./box-place.ts";
+export { dataDir, validApp } from "./settings.ts";
 export { alsoInto, configConflicts, draftRules, learnLine, lessonOfEdit, type LineLearned, mailView, outgoingMail, recordForbidden, sendAccountOf, webmailSite, type MailOf };
 
 // `analyze` = the model call of the identity sweep and its refinement (persona.ts); absent, no identity is analysed or refined.

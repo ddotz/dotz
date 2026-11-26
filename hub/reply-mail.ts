@@ -8,7 +8,8 @@ import { sinceMidnight } from "./reply-route.ts";
 import { reasonOf } from "./reply-reasons.ts";
 import type { DraftView, Lesson, ReasonCode, ReplyAdapter } from "./reply-types.ts";
 
-export { claimAfter, claimFile, defaultCall, DRAFT_ID, draftRules, draftStoreIntact, getDraft, learningSettled, lessonOfEdit, listDrafts, patchDraft, setStatus, unlessUnreadable };
+export { dataDir, validApp } from "../features/reply-drafts/lib/flow.ts";
+export { claimAfter, claimFile, defaultCall, DRAFT_ID, draftRules, draftStoreIntact, getDraft, learningSettled, lessonOfEdit, listDrafts, patchDraft, setStatus, unlessUnreadable, webmailSite };
 
 /** What the owner's edit of sent mail draft `id` teaches, learned with `deps` (the real flow deps by default; flow.ts learnSentEdit, counted by `learningSettled`): the mail that rode on a comment card, which the comment engine learns (hub/comments/real.ts). Never rejects. */
 export const learnMailEdit = (id: string, deps: () => FlowDeps = realFlowDeps): Promise<void> => learnSentEdit(id, deps());
