@@ -1,8 +1,9 @@
 import { afterAll, beforeEach, expect, test } from "bun:test";
-import { readFileSync, rmSync } from "node:fs";
+import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { runRules } from "../bin/rules.ts";
 import { readLedger, textsAt } from "../lib/ledger.ts";
-import { paths } from "../lib/settings.ts";
+import { paths, toneFile } from "../lib/settings.ts";
 import { setupEnv } from "./helpers.ts";
 
 // bin/rules.ts, the 자동 초안 규칙 CLI the bot runs: it writes the same store the settings screen does. Names are placeholders.
@@ -41,4 +42,21 @@ test("a bad request changes nothing: missing fields, an unknown id, a non-mail a
 	expect(runRules(["add", "--name", "이름이 스무 자를 훌쩍 넘어 버리는 아주 긴 규칙 이름", "--when", "x"])).toMatchObject({ code: 1, lines: [expect.stringContaining("이름")] });
 	expect(runRules(["bogus"]).code).toBe(2);
 	expect(() => readFileSync(paths.config())).toThrow();
+});
+
+test("import-style moves a style guide's bullets into the ledger and its examples into the profile, keeps the guide, and import-undo puts it back", () => {
+	const guide = join(env.dir, "style-guide.md");
+	const md = "# 문체 가이드\n\n## 1. 인사\n\n- 첫 줄은 인사로 시작\n- 소속을 밝힘\n\n## 2. 하지 않는 것\n\n- 서명은 넣지 않음\n\n## 3. 예시\n\n**자료 요청**\n> 안녕하세요.\n> 자료 부탁드립니다.\n\n**확인**\n> 확인 부탁드립니다.\n";
+	writeFileSync(guide, md);
+	rmSync(toneFile({ app: "co-mail" }), { force: true });
+	const out = runRules(["import-style", guide, "--app", "co-mail"]);
+	expect(out.code).toBe(0);
+	expect(out.lines[0]).toContain("문체 규칙 3개를 rules.json(co-mail)에, 예시 2개를");
+	expect(readLedger().filter(r => r.state === "on" && r.scope.app === "co-mail").map(r => [r.kind, r.text])).toEqual([["tone", "첫 줄은 인사로 시작"], ["tone", "소속을 밝힘"], ["tone", "서명은 넣지 않음"]]);
+	expect(readFileSync(toneFile({ app: "co-mail" }), "utf8")).toContain("- 안녕하세요. 자료 부탁드립니다.\n- 확인 부탁드립니다.");
+	expect(readFileSync(guide, "utf8")).toBe(md);
+	expect(runRules(["import-undo"]).code).toBe(0);
+	expect(readLedger().some(r => r.state === "on" && r.scope.app === "co-mail")).toBe(false);
+	expect(existsSync(toneFile({ app: "co-mail" }))).toBe(false);
+	expect(runRules(["import-undo"]).code).toBe(1);
 });

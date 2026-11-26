@@ -3,7 +3,9 @@
 import { readSettings, writeSettings, type DraftRule } from "../../../hub/app-settings.ts";
 import { appEntries } from "../../../hub/integrations.ts";
 import { migrateLedger, moveHandRules, previewMigration, readLedger, undoLedger } from "../lib/ledger.ts";
+import { existsSync } from "node:fs";
 import { boxFixes, undoBoxFix } from "../lib/box.ts";
+import { importStyle, undoImport } from "../lib/import-style.ts";
 import { dataDir } from "../lib/settings.ts";
 
 export const USAGE = [
@@ -14,6 +16,7 @@ export const USAGE = [
 	"  default [--set <text> | --clear] [--app ..]   (the 기본 규칙 every draft of the app follows; no flag prints it)",
 	"  ledger [--json]   (every record of the rule ledger: id, state, scope, kind, text)",
 	"  migrate [--preview] | undo | hand   (move every rule into the ledger once, with a backup; --preview only prints per file the lines that would move and the records the ledger would get / put the files back byte for byte and remove the ledger / move the rules written by hand into tone files into the ledger)",
+	"  import-style <file> --app <app> | import-undo [<at>]   (move an outside style guide into the app's tone profile: its bullets into the ledger, its > examples into the samples, both files backed up first / put the newest or <at> import back)",
 	"  box-undo [<n>]   (the mailbox settings a learned correction rewrote, numbered; with <n> put the line before fix n back)",
 	"  --app: mail (default) or an instance id like mail-2. --file: a file of the app's 첨부 파일 폴더 (name or path inside it) or a full path; none = the folder's best match",
 ].join("\n");
@@ -51,6 +54,17 @@ function ledgerCommand(cmd: string | undefined, rest: string[], dir: string): Ou
 		}
 		case "hand":
 			return { lines: [`손으로 쓴 규칙 ${moveHandRules(dir)}개를 rules.json 한 파일로 모았어요`], code: 0 };
+		case "import-style": {
+			const file = rest.find(a => !a.startsWith("--") && a !== flag(rest, "--app")), app = flag(rest, "--app");
+			if (!file || !app) return { lines: [USAGE], code: 2 };
+			if (!existsSync(file)) return { lines: [`파일이 없어요: ${file}`], code: 1 };
+			const r = importStyle(file, app, dir);
+			return { lines: [`문체 규칙 ${r.rules}개를 rules.json(${app})에, 예시 ${r.samples}개를 ${app} 말투 프로필에 옮겨어요. 원본은 그대로 두고 ledger-backup/import/${r.at}에 복사해 뒀어요 (되돌리기: rules.ts import-undo ${r.at})`], code: 0 };
+		}
+		case "import-undo": {
+			const done = undoImport(rest[0], dir);
+			return done ? { lines: [`옮긴 문체 ${done}을(를) 되돌렸어요`], code: 0 } : { lines: ["되돌릴 옮긴 문체가 없어요"], code: 1 };
+		}
 		case "box-undo": {
 			if (rest[0] === undefined) {
 				const all = boxFixes();
