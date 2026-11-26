@@ -92,6 +92,8 @@ export type SenderDeps = {
 	runJob?: (job: SendJob & { kind: SendKind }) => ReturnType<NonNullable<ReplyAdapter["run"]>> | undefined;
 	/** An approved send turned out sent: its run went out (or the reply of its card did, `partial`), a boot or a later check found it sent, the owner's 나갔어요 or a proof settled it. What the owner's edit of it teaches is learned here, after the sent state is stored; the job's ref and action say which draft and part, so a sent draft that no longer has a send target is learned too. A kind sent by its CLI (sendArgv, `--no-learn`) learns only through here. It may be called more than once for one draft (the draft's store mark lets one learner run); it must not throw or wait. */
 	learn?: (job: SendJob) => void;
+	/** An approved send ended sent, however that was found (its run, a boot's look, a proof, the owner's 나갔어요): the mail a reply draft answers is 답장함 from here (hub/reply-wire.ts), not only when its CLI sent it at once. */
+	sent?: (job: SendJob) => void;
 	/** The approvalHash of draft `ref` as its store holds it now (undefined: no store knows it). Absent: no approval gate (tests of the queue alone). */
 	fingerprint?: (ref: string) => Promise<string | undefined>;
 	/** Code repair before an automatic retry whose policy asks for one (a background re-login). Absent: such a reason is never retried by code. */
@@ -152,7 +154,7 @@ export function createApprovalSender(deps: SenderDeps) {
 	const orphans = new Map<string, SendJob>();
 	// `gone`: the draft is no longer pending, so there is nothing left to resolve and the file does not keep it.
 	const set = (j: SendJob, state: SendResult["state"], text = "", hold?: Hold, ended: Ended = {}, quiet = false) => {
-		if ((state === "failed" || state === "unsure") && !spentAlready(kept.get(j.ref)?.state)) gateMark(deps, j, "spent");
+		endMarks(deps, j, state, kept.get(j.ref)?.state);
 		const keep = state === "queued" || state === "sending" || state === "undo" || ((state === "failed" || state === "unsure") && ended.reason?.code !== "gone");
 		if (keep) kept.set(j.ref, { ref: j.ref, conv: j.conv, action: j.action, title: j.title, ...(j.retry ? { retry: true as const } : {}), ...(j.force ? { force: true as const } : {}), ...(j.hash ? { hash: j.hash } : {}), ...(j.by ? { by: j.by } : {}), state, ...(hold ?? {}), ...ended });
 		else kept.delete(j.ref);
@@ -454,6 +456,16 @@ function gateMark(deps: Pick<SenderDeps, "mark" | "log">, j: SendJob, mark: "spe
 		deps.mark?.(j, mark);
 	} catch (e) {
 		deps.log(`approved send ${j.ref}: the ${mark} mark was not written to the inbox: ${(e as Error).message}`);
+	}
+}
+// What a job's end tells outside the queue: a failed or unsure one spends its gate mark (once), a sent one is passed on to `sent`.
+function endMarks(deps: Pick<SenderDeps, "mark" | "sent" | "log">, j: SendJob, state: SendResult["state"], before: SendResult["state"] | undefined): void {
+	if ((state === "failed" || state === "unsure") && !spentAlready(before)) gateMark(deps, j, "spent");
+	if (state !== "sent") return;
+	try {
+		deps.sent?.(j);
+	} catch (e) {
+		deps.log(`approved send ${j.ref}: its sent mark was not passed on: ${(e as Error).message}`);
 	}
 }
 function learnFrom(deps: Pick<SenderDeps, "learn" | "log">, j: SendJob): void {

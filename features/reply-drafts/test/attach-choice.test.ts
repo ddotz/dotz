@@ -9,7 +9,7 @@ import { realMailLink } from "../../../hub/comments/mail-link.ts";
 import { composeMail } from "../../../hub/mail-cli.ts";
 import { buildPrompt, generateReply, type ReplyItem, type ReplyStyle } from "../../../hub/reply-draft.ts";
 import { advance } from "../../../hub/runtime/test-clock.ts";
-import { candidatesFor, CANDIDATE_MAX, draftAttachIssues, FILE_CHANGE_MISSED, reviseDraft } from "../lib/flow.ts";
+import { candidatesFor, CANDIDATE_MAX, draftAttachIssues, FILE_CHANGE_MISSED, FILE_CHANGE_NO_FOLDER, FILE_CHANGE_UNDECIDED, reviseDraft } from "../lib/flow.ts";
 import { matchLibrary } from "../lib/library.ts";
 import { offerMailDraft } from "../lib/offer.ts";
 import { paths } from "../lib/settings.ts";
@@ -178,6 +178,40 @@ describe("(e) 고치기 about the files", () => {
 		expect(step.text).toContain(FILE_CHANGE_MISSED);
 		addStagedFile(step.id!, join(lib, "여름노래_문서.pdf"));
 		expect(draftAttachIssues(getDraft(step.id!)!)).not.toContain(FILE_CHANGE_MISSED);
+	});
+	test("with no 첨부 파일 폴더 set, a 고치기 that takes an unrelated file off still chooses among the files on the draft", async () => {
+		enable(env);
+		const rec = draft();
+		const model = fakeModel([j(answer({ body: "문서 보내드립니다.", files: ["봄노래_문서.pdf"] }))]);
+		const step = await reviseDraft(rec.id, "음원은 상관없는 파일이니 빼 줘", { call: model.call });
+		expect(step.ok).toBe(true);
+		expect(model.calls[0]!.user).toContain('"봄노래_음원.mp3"');
+		expect(names(step.id!)).toEqual(["봄노래_문서.pdf"]);
+		expect(draftAttachIssues(getDraft(step.id!)!)).toEqual([]);
+	});
+	test("with no 첨부 파일 폴더 set, a 고치기 that asks for another file says the folder is not set, not that the folder lacks it", async () => {
+		enable(env);
+		const rec = draft();
+		const step = await reviseDraft(rec.id, "여름노래 문서 파일로 바꿔 줘", { call: fakeModel([j(answer({ body: "문서 보내드립니다.", files: ["봄노래_문서.pdf", "봄노래_음원.mp3"] }))]).call });
+		const issues = draftAttachIssues(getDraft(step.id!)!);
+		expect(issues).toContain(FILE_CHANGE_NO_FOLDER);
+		expect(issues).not.toContain(FILE_CHANGE_MISSED);
+	});
+	test("a 고치기 that takes a file off gets no silent keep: a model that names no files is asked once", async () => {
+		enable(env, { attachFolders: { mail: lib } });
+		const asked = fakeModel([j(answer({ body: "문서 보내드립니다." })), j(answer({ body: "문서 보내드립니다.", files: ["봄노래_문서.pdf"] }))]);
+		const fixed = await reviseDraft(draft().id, "음원 파일은 빼 줘", { call: asked.call });
+		expect(asked.calls[1]!.user).toContain("takes a file off");
+		expect(names(fixed.id!)).toEqual(["봄노래_문서.pdf"]);
+	});
+	test("a 고치기 that takes a file off, answered twice with no files, keeps them and the card says the model did not settle them", async () => {
+		enable(env, { attachFolders: { mail: lib } });
+		const mute = fakeModel([j(answer({ body: "문서 보내드립니다." })), j(answer({ body: "문서 보내드립니다." }))]);
+		const kept = await reviseDraft(draft().id, "음원 파일은 빼 줘", { call: mute.call });
+		const issues = draftAttachIssues(getDraft(kept.id!)!);
+		expect(issues).toContain(FILE_CHANGE_UNDECIDED);
+		expect(issues).not.toContain(FILE_CHANGE_MISSED);
+		expect(kept.text).toContain(FILE_CHANGE_UNDECIDED);
 	});
 	test("a change about wording keeps the files whatever the model says", async () => {
 		enable(env, { attachFolders: { mail: lib } });

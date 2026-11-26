@@ -15,7 +15,7 @@ function memoryStore() {
 }
 const left = (m: ReturnType<typeof memoryStore>) => (JSON.parse(m.box.body) as { ref: string; state: string }[]).map(j => `${j.ref}:${j.state}`);
 
-function boot(m: ReturnType<typeof memoryStore>, o: { run?: (argv: string[]) => Promise<{ code: number; out: string }>; look?: (j: SendJob) => SendLook; learn?: SenderDeps["learn"]; kind?: SenderDeps["kind"]; prove?: SenderDeps["prove"] } = {}) {
+function boot(m: ReturnType<typeof memoryStore>, o: { run?: (argv: string[]) => Promise<{ code: number; out: string }>; look?: (j: SendJob) => SendLook; learn?: SenderDeps["learn"]; sent?: SenderDeps["sent"]; kind?: SenderDeps["kind"]; prove?: SenderDeps["prove"] } = {}) {
 	const reports: SendResult[] = [];
 	const ran: string[][] = [];
 	const s = createApprovalSender({
@@ -26,6 +26,7 @@ function boot(m: ReturnType<typeof memoryStore>, o: { run?: (argv: string[]) => 
 		store: m.store,
 		look: o.look,
 		learn: o.learn,
+		sent: o.sent,
 		prove: o.prove,
 	});
 	return { s, reports, ran };
@@ -147,6 +148,26 @@ test("an unsure send later found sent by a proof, or settled sent (the owner's �
 	third.s.settle(job("RBBBBBB"), "sent");
 	third.s.settle(job("D1"), "failed", "x");
 	expect([learned, left(m)]).toEqual([["RAAAAAA", "RBBBBBB"], ["D1:failed"]]);
+});
+
+test("every way an approved send turns out sent tells `sent` once (its run, a boot's look, a proof, the owner's 나갔어요), so its mail is 답장함; one that failed or stays unsure does not", async () => {
+	const m = memoryStore();
+	const sent: string[] = [];
+	const ran = boot(m, { sent: j => void sent.push(j.ref) });
+	ran.s.enqueue(job("RAAAAAA"));
+	await ran.s.idle();
+	expect(sent).toEqual(["RAAAAAA"]);
+	const first = boot(m, { run: never, kind: ref => ({ kind: "mail", lane: ref }) });
+	for (const ref of ["RBBBBBB", "RCCCCCC", "RDDDDDD", "REEEEEE"]) first.s.enqueue(job(ref));
+	boot(m, { look: j => (j.ref === "RBBBBBB" ? { state: "sent" } : { state: "unsure", text: "?" }), sent: j => void sent.push(j.ref) }).s.recover();
+	expect(sent).toEqual(["RAAAAAA", "RBBBBBB"]);
+	const third = boot(m, { sent: j => void sent.push(j.ref), kind: () => undefined, prove: async j => (j.ref === "RCCCCCC" ? "sent" : "unknown") });
+	third.s.recover();
+	third.s.recheck();
+	await flush();
+	third.s.settle(job("RDDDDDD"), "sent");
+	third.s.settle(job("REEEEEE"), "failed", "x");
+	expect(sent).toEqual(["RAAAAAA", "RBBBBBB", "RCCCCCC", "RDDDDDD"]);
 });
 
 test("a queued send the gateway can no longer make ends failed on boot instead of staying queued", async () => {

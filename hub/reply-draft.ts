@@ -394,6 +394,12 @@ function unfoundedRecipient(r: Recipient | undefined, item: ReplyItem): boolean 
 	const seen = squash(`${item.subject ?? ""}\n${item.text}\n${item.context ?? ""}`);
 	return r.evidence.split(/[/…]|\.{3}/).map(squash).some(q => q && !seen.includes(q));
 }
+// A change that takes a file off the reply or swaps one ("음원은 빼 줘", "상관없는 파일", "다른 파일로 바꿔"). With candidates, a draft that names no files would leave every
+// file on: it is asked once for its "files".
+const FILE_OFF = /빼|제외|없애|지워|말고|상관\s*없|관계\s*없|바꿔|바꾸|교체|\b(?:remove|drop|without|instead|swap|replace)\b/i;
+/** The owner's change takes a file off the reply or swaps one. */
+export const asksFileOff = (change: string): boolean => FILE_OFF.test(change);
+const FILES_UNNAMED = 'the change takes a file off or swaps one: add "files":[...] with exactly the files from the list that stay on the reply';
 const unfoundedSend = (body: string, item: ReplyItem, base: PromptExtras): boolean => SENT_CLAIM.test(body) && !item.files?.length && !item.candidates?.length && !item.instruction?.trim() && !item.choice && !base.change;
 
 /** The address a reply follows out of a Reply-To value: the first one that is neither the owner's own nor an automated sender's, else none. */
@@ -464,7 +470,8 @@ async function run(item: ReplyItem, style: ReplyStyle, call: ModelCall, base: Pr
 		const files = item.candidates?.length && parsed.files ? [...new Set(parsed.files.flatMap(f => item.candidates!.find(c => fileNameKey(c) === fileNameKey(f)) ?? []))] : undefined;
 		const attach = files ? attachIssues({ subject: draft.subject, body: draft.body, files, request: item.text }).flatMap(i => ATTACH_FAILURE[i.kind] ?? []) : [];
 		if (restyle && (found.some(f => !restyle!.warnings.includes(f)) || attach.length)) return { action: "draft", ...restyle, tries };
-		const fixable = [...rewritable(found), ...attach];
+		const unnamed = item.candidates?.length && base.change && asksFileOff(base.change) && !parsed.files ? [FILES_UNNAMED] : [];
+		const fixable = [...rewritable(found), ...attach, ...unnamed];
 		const broken: Violation[] = !fixable.length && judge && (standing.length || corrections.length || recipient) ? await judgeStyle({ standing, corrections, ...(recipient ? { recipient } : {}), received: item.text, draft: draft.body, ...(base.change ? { asked: base.change } : {}) }, judge) : [];
 		const warnings = [...found, ...styleWarnings(broken)];
 		const who = { ...(parsed.recipient ? { recipient: parsed.recipient } : {}), ...lessons, ...(files ? { files } : {}) };

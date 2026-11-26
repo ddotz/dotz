@@ -14,7 +14,7 @@ import { kakaoReply } from "./kakao/gateway.ts";
 import { linkedComment } from "./comments/linked.ts";
 import { isCommentPlace } from "./comments/reply-adapter.ts";
 import { claimFile, getDraft, listDrafts, mailAdapter, mailLane, replyLearning, unlessUnreadable } from "./reply-mail.ts";
-import { mailByKey, mailTarget } from "./mail.ts";
+import { mailByKey, mailTarget, setMailReply } from "./mail.ts";
 import { claimHolder } from "./draft-claim.ts";
 import { approvalHash, createApprovalSender, MAY_HAVE_GONE_OUT, refOfQuestion, runCli, type SendAction, type SendJob, type SendLook, type SendResult, type SendTarget } from "./approval-send.ts";
 import { readDrafts } from "./kakao/send.ts";
@@ -169,6 +169,11 @@ export const sender = createApprovalSender({
 	run: runCli,
 	runJob: j => (j.kind === "kakao" ? kakaoReply.run?.(j) : undefined),
 	learn: j => adapterOf(j.ref)?.learnSent?.(j.ref, j.action === "send-main" ? "reply" : j.action === "send-mail" ? "mail" : undefined),
+	// The mail a sent reply draft answers is 답장함 (a new mail he wrote answers none), also when the send ended unsure and was found sent later.
+	sent: j => {
+		const d = getDraft(j.ref);
+		if (d?.kind === "mail" && !d.compose && setMailReply(d.ref, "sent")) broadcast({ kind: "mail_unreplied", target: mailTarget(d.ref) });
+	},
 	repair: async (j, code) => (await adapterOf(j.ref)?.repair?.(j.ref, code)) ?? "failed",
 	prove: async j => (await adapterOf(j.ref)?.prove?.(j.ref)) ?? "unknown",
 	report: reportSend,

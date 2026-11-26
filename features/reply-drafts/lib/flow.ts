@@ -9,7 +9,7 @@ import { withFileWords } from "../../../hub/auto-attach.ts";
 import { claimsAttachment, ownClaimText } from "../../../hub/attach-claim.ts";
 import { ATTACH_AS_IS_HINT, ATTACH_REFUSED, LINT_REFUSED, asksForFile, briefLines, draftApprovalBlock, draftVerdict, type DraftVerdict, SPENT_REFUSED, WAITING_REFUSED } from "../../../hub/draft-approval.ts";
 import type { ReplyCall } from "../../../hub/reply-model.ts";
-import { addressesOf, fileNameKey, generateChatReply, learnedOf, lintReply, NO_RECIPIENT, ownerLint, RECIPIENT_FAILURE, replyAddress, reviseReply, SENT_CLAIM_FAILURE, withSenderAddress, type LessonScope, type ModelCall, type Recipient, type ReplyItem, type ReplyKind, type ReplyStyle } from "../../../hub/reply-draft.ts";
+import { addressesOf, asksFileOff, fileNameKey, generateChatReply, learnedOf, lintReply, NO_RECIPIENT, ownerLint, RECIPIENT_FAILURE, replyAddress, reviseReply, SENT_CLAIM_FAILURE, withSenderAddress, type LessonScope, type ModelCall, type Recipient, type ReplyItem, type ReplyKind, type ReplyStyle } from "../../../hub/reply-draft.ts";
 import { styleJudgeOn } from "../../../hub/config.ts";
 import { judgeAsk, type JudgeAsk } from "../../../hub/style-judge.ts";
 import { listLibrary, matchLibrary, MIN_SCORE, rankLibrary, type LibraryFile } from "./library.ts";
@@ -347,13 +347,13 @@ export const claimsNoFile = (q: string): boolean => fileWord().test(q) && CANNOT
 const fileChange = withFileWords(({ document, audio }) => new RegExp(`${FILE_WORD}|음원|자료|사진${document}${audio}`, "i"));
 type Revision = { /** Library files offered besides those on the draft. */ lib: LibraryFile[]; /** Names the model may choose from: the files on the draft, then the library matches. */ names: string[] };
 
-// Candidates for a revision whose change is about files: the files on the draft plus the library matches for the change.
+// Candidates for a revision whose change is about files: the files on the draft plus the library matches for the change. With no 첨부 파일 폴더
+// the files on the draft alone: a change that takes one off still chooses among them.
 async function revisionCandidates(old: DraftRec, change: string): Promise<Revision | undefined> {
 	if (old.kind !== "mail" || !canAttach(old.source) || !fileChange().test(change)) return undefined;
 	const folder = await attachFolder(old);
-	if (!folder) return undefined;
 	const held = stagedFiles(old.id).map(f => f.name);
-	const lib = rankLibrary(listLibrary(folder), { subject: change, text: change }).filter(r => r.score >= MIN_SCORE && !held.includes(stagedName(basename(r.file.path)))).map(r => r.file).slice(0, Math.max(0, CANDIDATE_MAX - held.length));
+	const lib = !folder ? [] : rankLibrary(listLibrary(folder), { subject: change, text: change }).filter(r => r.score >= MIN_SCORE && !held.includes(stagedName(basename(r.file.path)))).map(r => r.file).slice(0, Math.max(0, CANDIDATE_MAX - held.length));
 	const names = [...held, ...lib.map(f => f.rel)];
 	return names.length ? { lib, names } : undefined;
 }
@@ -380,8 +380,8 @@ export function ownerWarning(w: string): string {
 	return rule === undefined ? w : reasonOf("wording_rule", { label: rule }).text;
 }
 
-/** A 고치기 asked for other files and the files stayed as they were: what it asked for is not in the 첨부 파일 폴더. */
-export const FILE_CHANGE_MISSED = "고쳐 달라고 한 파일을 첨부 파일 폴더에서 찾지 못해서 첨부는 그대로예요";
+/** A 고치기 asked for other files and the files stayed as they were, as the card says why (store.ts fileChangeWhy): what it asked for is not in the 첨부 파일 폴더, no folder is set for its mail app, or it takes a file off and the model, asked once more, still named no files. */
+export const FILE_CHANGE_MISSED = "고쳐 달라고 한 파일을 첨부 파일 폴더에서 찾지 못해서 첨부는 그대로예요", FILE_CHANGE_NO_FOLDER = "메일 앱에 첨부 파일 폴더가 정해져 있지 않아 다른 파일을 찾지 못했고 첨부는 그대로예요", FILE_CHANGE_UNDECIDED = "뺄 파일을 정하지 못해서 첨부는 그대로예요. 뺄 파일 이름을 적어 다시 고쳐 주세요";
 
 // What a mail draft's words and its files disagree on, as the owner reads it on the card and in the refused send (hub/attach-check.ts), plus the files
 // chosen for it that are not on it yet. Mail only; a source that cannot carry files has nothing to check.
@@ -390,7 +390,7 @@ export function draftAttachIssues(rec: DraftRec): string[] {
 	const files = stagedFiles(rec.id).map(f => f.name);
 	const want = notYetStaged(rec);
 	const found = files.length || !want.length ? attachIssues({ subject: rec.subject, body: rec.body, files, request: rec.compose ? undefined : rec.item.text }).map(i => i.text) : [];
-	if (rec.fileChangeMissed && sortedNames(rec.fileChangeMissed) === sortedNames(files)) found.push(FILE_CHANGE_MISSED);
+	if (rec.fileChangeMissed && sortedNames(rec.fileChangeMissed) === sortedNames(files)) found.push(rec.fileChangeWhy === "no_folder" ? FILE_CHANGE_NO_FOLDER : rec.fileChangeWhy === "undecided" ? FILE_CHANGE_UNDECIDED : FILE_CHANGE_MISSED);
 	return want.length ? [...found, `아직 못 붙인 파일: ${want.join(", ")}`] : found;
 }
 const sortedNames = (names: readonly string[]): string => [...names].sort().join("\n");
@@ -652,7 +652,7 @@ async function reviseClaimed(id: string, change: string, deps: FlowDeps, opts: {
 	carryStagedFiles(old.id, rec.id);
 	const notStaged = await restageForRevision(rec, change, deps, rev && r.files ? { rev, chosen: r.files } : undefined).catch(e => [(e as Error).message]);
 	// The change asked for other files and none came: the card says so instead of a rewritten body that only promises them.
-	if (rec.kind === "mail" && canAttach(rec.source) && fileChange().test(change) && heldAndWanted(rec) === before) rec.fileChangeMissed = stagedFiles(rec.id).map(f => f.name);
+	if (rec.kind === "mail" && canAttach(rec.source) && fileChange().test(change) && heldAndWanted(rec) === before) Object.assign(rec, { fileChangeMissed: stagedFiles(rec.id).map(f => f.name) }, rev && !r.files && asksFileOff(change) ? { fileChangeWhy: "undecided" } : (await attachFolder(old)) ? {} : { fileChangeWhy: "no_folder" });
 	const conflict = addRevision(rec, old.id);
 	if (conflict) {
 		for (let n = stagedFiles(rec.id).length; n > 0; n--) removeStagedFile(rec.id, n - 1);
