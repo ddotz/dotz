@@ -114,7 +114,7 @@ const oneLine = (s: string): string => s.replace(/\s+/g, " ").trim();
 
 type Keys = LearnInput["keys"];
 type Stored = { key: ToneKey; kind: LearnKind; heading: string; line: string };
-type Rec = { ref: string; at: string; source: LearnInput["source"]; line: string; state: Learnt["state"]; scope: LessonScope; keys: Keys; stored?: Stored; forbid: string[]; replaced: string[]; notes: string[] };
+type Rec = { ref: string; at: string; source: LearnInput["source"]; line: string; asked?: LearnKind; state: Learnt["state"]; scope: LessonScope; keys: Keys; stored?: Stored; forbid: string[]; replaced: string[]; notes: string[] };
 
 /** The profiles a draft's lesson may go to: its channel (`DraftRules.tone`), and the recipient's own (`DraftRules.key`) when the draft has a recipient with a file of his own. */
 export const keysOf = (r: DraftRules): Keys => ({ channel: r.tone, ...(r.key.to !== undefined && recipientFile(r.key.to) !== undefined ? { recipient: r.key } : {}) });
@@ -184,7 +184,7 @@ export async function learn(input: LearnInput, deps: FlowDeps & { deferRefine?: 
 	const proposal = input.proposal ?? (input.source === "drop" && words ? await proposalOf(words, input.keys.channel, flow) : undefined);
 	const forbid = proposal?.forbid ?? [];
 	const scope = scopeIn(proposal?.scope, input.keys);
-	const rec: Rec = { ref: input.ref, at: now.toISOString(), source: input.source, line: words, state: "once", scope, keys: input.keys, forbid: [], replaced: [], notes: [] };
+	const rec: Rec = { ref: input.ref, at: now.toISOString(), source: input.source, line: words, ...(proposal?.kind ? { asked: proposal.kind } : {}), state: "once", scope, keys: input.keys, forbid: [], replaced: [], notes: [] };
 	const lasting = words !== "" && (input.source === "chat" || REMEMBER_WORDS.test(words) || forbid.length > 0 || proposal?.once !== true);
 	if (lasting) {
 		rec.state = "remembered";
@@ -255,7 +255,7 @@ export async function flipLearnt(ref: string, to: LearnFlip, deps: Pick<FlowDeps
 			}
 		}
 		if (state === "remembered") {
-			const key = keyIn(scope, rec.keys), kind = rec.stored?.kind === "rule" && key.app !== INSTALL ? "rule" : kindIn(key), put = putOf(kind, rec.line, new Date(rec.at));
+			const key = keyIn(scope, rec.keys), kind = key.app === INSTALL ? "rule" : (rec.asked ?? kindIn(key)), put = putOf(kind, rec.line, new Date(rec.at));
 			for (const k of homes(key)) replaceBullets(k, [], { ...put, once: true });
 			next.stored = { key, kind, ...put };
 		}

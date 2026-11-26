@@ -1,14 +1,22 @@
 import { afterAll, beforeEach, expect, spyOn, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
+import { commentAdapter } from "../../../hub/comments/reply-adapter.ts";
+import type { CommentAdapter, RawComment, SourceConfig } from "../../../hub/comments/contract.ts";
+import { createEngine } from "../../../hub/comments/engine.ts";
+import { realMailLink } from "../../../hub/comments/mail-link.ts";
+import { kakaoAdapter } from "../../../hub/kakao/reply-adapter.ts";
+import { createDraft } from "../../../hub/kakao/send.ts";
+import { kakaoPaths } from "../../../hub/kakao/types.ts";
 import { createReplyActions, type ReplyDeps } from "../../../hub/reply-actions.ts";
 import { addressesOf, type ReplyItem } from "../../../hub/reply-draft.ts";
 import { mailAdapter, replyLearning } from "../../../hub/reply-mail.ts";
 import type { DraftView, Lesson, ReplyAdapter } from "../../../hub/reply-types.ts";
 import { runDraft } from "../bin/draft.ts";
 import { dropDraft, learningSettled, learnSentEdit, reviseDraft, type FlowDeps } from "../lib/flow.ts";
-import { flipLearnt, shownLearnt } from "../lib/learn.ts";
-import { HEADINGS, paths, profileBullets, toneFile } from "../lib/settings.ts";
+import { compactCorrections } from "../lib/compact.ts";
+import { flipLearnt, learn, shownLearnt } from "../lib/learn.ts";
+import { HEADINGS, paths, profileBullets, toneFile, type ToneKey } from "../lib/settings.ts";
 import { addDraft, type DraftRec } from "../lib/store.ts";
 import { fakeModel, j, setupEnv } from "./helpers.ts";
 
@@ -179,6 +187,22 @@ test("a scope flip moves the line to the other tone file and back byte for byte;
 	expect(shownLearnt(ref)?.scopes).toEqual(["recipient", "channel", "everywhere"]);
 });
 
+test("a line flipped to everywhere and back comes back as the kind the owner asked for, every tone file byte for byte", async () => {
+	const learning = replyLearning(() => calm());
+	for (const [scope, kind] of [["channel", undefined], ["recipient", undefined], ["channel", "rule"]] as const) {
+		rmSync(paths.toneDir(), { force: true, recursive: true });
+		for (const key of [{ app: "mail" }, A]) seed(key, "## 말투\n\n- 예전 규칙\n\n## 고친 점\n\n- 2030-03-01: 예전에 고친 점\n");
+		const ref = `K-${scope}-${kind ?? "correction"}`;
+		await learning.learn({ source: "chat", ref, keys: KEYS, words: CHANGE, proposal: { scope, ...(kind ? { kind } : {}) } });
+		const first = tree();
+		await flipLearnt(ref, { scope: "everywhere" }, calm());
+		await flipLearnt(ref, { scope }, calm());
+		const back = tree();
+		for (const [file, text] of Object.entries(first)) expect(back[file]).toBe(text);
+		expect(profileBullets("install", HEADINGS.rules)).toEqual([]);
+	}
+});
+
 test("once puts back the lines the curation replaced, from the journal", async () => {
 	seed({ app: "mail" }, "## 고친 점\n\n- 2030-03-01: 끝인사는 길게\n");
 	const learning = replyLearning(() => calm({ learnCall: () => async () => JSON.stringify({ replaces: [{ id: "C1", why: "overridden" }] }) }));
@@ -190,20 +214,149 @@ test("once puts back the lines the curation replaced, from the journal", async (
 	expect(profileBullets({ app: "mail" }, HEADINGS.merged)).toEqual([]);
 });
 
-test("a mail revise and a comment reply revise are learned exactly once, one log record and one tone line", async () => {
-	const learning = replyLearning(() => calm());
+/** The gateway's revise act over the real adapter `a`: the headline the redrawn card was asked with, once the learning behind it settled. */
+async function reviseWith(a: ReplyAdapter, ref: string, part?: "mail"): Promise<string | undefined> {
+	const asks: (string | undefined)[] = [];
+	const actions = createReplyActions({ adapters: [{ ...a, ask: async (r, headline) => (asks.push(headline), a.ask(r, headline)) }], sender, recordPick: () => undefined, learning: replyLearning(() => calm()), cards: { open: () => [], replace: () => undefined, rewrite: () => undefined, repost: async () => undefined, close: () => undefined }, toBot: async () => undefined, emit: () => undefined, log: () => undefined });
+	expect((await actions.act({ ref, action: "revise", change: CHANGE, ...(part ? { part } : {}) }, { surface: "web", login: "me" })).status).toBe(202);
+	await actions.idle();
+	await learningSettled();
+	return asks[0];
+}
+
+const youtube: SourceConfig = { key: "youtube", kind: "youtube", label: "유튜브 댓글", watch: ["*"], autoDraft: false };
+const fan: RawComment = { native: "c1", thread: "p1", author: "팬", text: "다음 편 언제 올라와요?", postTitle: "Post one", at: Date.now() - 1000 };
+
+/** A pending draft of a real comment engine (over a fake platform) and, with `withMail`, a real mail draft riding on it; every model answers with `lesson`. */
+async function commentCard(lesson: object, withMail: boolean): Promise<{ adapter: ReplyAdapter; ref: string }> {
+	const dir = mkdtempSync(join(env.dir, "comments-"));
+	writeFileSync(join(dir, "config.json"), JSON.stringify({ enabled: true, sources: { youtube } }));
+	const platform: CommentAdapter = { kind: "youtube", list: async () => ({ comments: [fan], cursor: "1" }), reply: async () => ({ ok: true, ref: "r1" }), posts: async () => [] };
+	const say = (body: string) => j({ action: "draft", reason: "asks", to: "", body, questions: [], ...lesson });
+	const answers = [say("이번 주말이에요!"), say("토요일에 올라가요")];
+	let n = 0;
+	const engine = createEngine({ dir, now: Date.now, collector: "mac", adapters: { youtube: platform }, model: async () => ({ text: answers[Math.min(n++, 1)]! }), mail: realMailLink({ call: async () => revised({ to: "fan@example.com", ...lesson }) }), style: () => ({ rules: [], corrections: [], forbidden: [], samples: [] }) });
+	await engine.collect();
+	const step = await engine.makeDraft(engine.store.comments()[0]!.id);
+	if (!step.ok) throw new Error(step.reason);
+	if (withMail) {
+		addDraft(mailRec("RMAIL01", { to: "fan@example.com", item: mailItem("fan@example.com") }));
+		engine.store.putDraft({ ...engine.store.drafts().find(d => d.code === step.draft.code)!, mail: "RMAIL01", mailAt: Date.now() });
+	}
+	return { adapter: commentAdapter(engine), ref: step.draft.code };
+}
+
+async function kakaoCard(once: boolean): Promise<{ adapter: ReplyAdapter; ref: string }> {
+	const dir = mkdtempSync(join(env.dir, "kakao-"));
+	const kp = kakaoPaths(dir, dir), runner = async () => ({ code: 0, stdout: "", stderr: "" });
+	const adapter = kakaoAdapter({
+		paths: kp,
+		sendDeps: async () => ({ paths: kp, runner }),
+		revise: async (chatId, r) => ({ ok: true as const, code: (await createDraft({ chatId, roomName: "Alex", text: "3시", basisLogId: "9", replaces: r.code }, { paths: kp, runner })).code, learned: { line: CHANGE, once, forbid: [], scope: "channel" as const } }),
+	});
+	return { adapter, ref: (await createDraft({ chatId: "1", roomName: "Alex", text: "내일 3시에 봐요", basisLogId: "9" }, { paths: kp, runner })).code };
+}
+
+test("a mail revise is learned exactly once, one log record and one tone line", async () => {
 	addDraft(mailRec("EX1"));
-	const model = fakeModel([revised({ scope: "channel" })]);
-	const mail = mailAdapter(() => calm({ call: model.call }));
-	await reviseOnCard({ keys: KEYS, words: CHANGE, proposal: {} }, learning, mail, "EX1");
+	const mail = mailAdapter(() => calm({ call: fakeModel([revised({ scope: "channel" })]).call }));
+	expect(await reviseWith(mail, "EX1")).toMatch(/^고친 초안이에요\. 기억했어요: /);
 	expect(logRecords()).toHaveLength(1);
 	expect(toneLines()).toHaveLength(1);
-	rmSync(paths.toneDir(), { force: true, recursive: true });
-	rmSync(join(env.dir, "custom", "reply-drafts", "learn-log.json"), { force: true });
-	for (const part of ["reply", "mail"] as const) {
-		await reviseOnCard({ keys: { channel: { app: "youtube" } }, words: CHANGE, proposal: {} }, learning, { revise: async ref => ({ ok: true, ref: `${ref}-2`, replaces: ref, lesson: { keys: { channel: { app: "youtube" } }, words: `${CHANGE} ${part}`, proposal: {} } }) });
-	}
-	expect(logRecords()).toHaveLength(2);
-	expect(toneLines()).toHaveLength(2);
 	expect(addressesOf("a@x.com")).toEqual(["a@x.com"]);
+});
+
+test("a comment reply revise, the mail riding on a comment card and a KakaoTalk revise, each through its real adapter, are learned exactly once and the card says remembered or once", async () => {
+	for (const once of [false, true]) {
+		const lesson = { once, scope: "channel" };
+		const paths3: [string, () => Promise<{ adapter: ReplyAdapter; ref: string }>, "mail"?][] = [
+			["comment reply", () => commentCard(lesson, false)],
+			["comment mail", () => commentCard(lesson, true), "mail"],
+			["kakao", () => kakaoCard(once)],
+		];
+		for (const [name, make, part] of paths3) {
+			for (const p of [paths.toneDir(), paths.drafts(), join(env.dir, "custom", "reply-drafts", "learn-log.json")]) rmSync(p, { force: true, recursive: true });
+			const { adapter, ref } = await make();
+			const headline = await reviseWith(adapter, ref, part);
+			expect([name, headline]).toEqual([name, expect.stringMatching(once ? /^고친 초안이에요\. 이번만 반영했어요$/ : /^고친 초안이에요\. 기억했어요: /)]);
+			expect([name, logRecords().length, toneLines().length]).toEqual([name, 1, once ? 0 : 1]);
+		}
+	}
+});
+
+const MAIL = { channel: { app: "mail" } };
+const SHAPE = { parts: [{ any: ["하루"] }, { gap: 3 }, { any: ["되세요"] }], label: "'하루 보내세요'로 쓴다", bad: ["행복한 하루 되세요"], good: [] as string[] };
+const EVIDENCE = { draft: "오늘도 행복한 하루 되세요!", change: "'되세요' 말고 '좋은 하루 보내세요'로" };
+const SHAPE_BULLET = `shape ${JSON.stringify({ parts: SHAPE.parts, label: SHAPE.label })}`;
+const literals = (key: ToneKey | "install") => profileBullets(key, HEADINGS.forbidden).filter(b => !b.startsWith("shape "));
+const learnWith = (words: string, deps: Partial<FlowDeps>, proposal: { forbid?: string[]; scope?: "everywhere" } = {}) => learn({ source: "revise", ref: "R9", keys: MAIL, words, proposal, evidence: EVIDENCE }, { now: () => NOW, ...deps });
+/** A learnCall answering the line's curation and the wording pattern apart; `asked` collects what the pattern call was told. */
+const answering = (curate: () => Promise<string>, pattern: () => Promise<string>, asked: string[] = []) => ({ asked, learnCall: () => (system: string, user: string) => (system.includes("style conditions") ? curate() : (asked.push(user), pattern())) });
+const NO_REPLACES = async () => JSON.stringify({ replaces: [] });
+const shape = (good: string[] = []) => async () => j({ ...SHAPE, good });
+
+test("learn stores the banned wordings once in the lesson's profile and names them on the card line; the pattern is proposed with the previous draft and the change, kept with the line, its label on the line", async () => {
+	const fake = answering(NO_REPLACES, shape());
+	const learnt = await learnWith("끝인사는 짧게", fake, { forbid: ["되세요"] });
+	expect(fake.asked).toHaveLength(1);
+	expect(fake.asked[0]).toContain(EVIDENCE.draft);
+	expect(fake.asked[0]).toContain(EVIDENCE.change);
+	expect(literals({ app: "mail" })).toHaveLength(1);
+	expect(profileBullets({ app: "mail" }, HEADINGS.forbidden)).toContain(SHAPE_BULLET);
+	expect(literals("install")).toEqual([]);
+	expect(learnt.text).toContain("쓰지 않을 표현: '되세요'");
+	expect(learnt.text).toContain(`표현 규칙으로도 정해 뒀어요: ${SHAPE.label}`);
+});
+
+test("learn does not store a banned word a kept pattern's good example uses as a literal, and stores any other", async () => {
+	const fake = answering(NO_REPLACES, shape(["좋은 하루 보내세요"]));
+	const learnt = await learnWith("끝인사는 짧게", fake, { forbid: ["되세요", "하루", "감사합니다"] });
+	expect(literals({ app: "mail" }).join("|")).toContain("되세요");
+	expect(literals({ app: "mail" }).join("|")).toContain("감사합니다");
+	expect(literals({ app: "mail" }).join("|")).not.toContain("하루");
+	expect(learnt.text).toContain("쓰지 않을 표현: '되세요', '감사합니다'");
+});
+
+test("learn with a pattern call that throws still stores the banned words and claims no pattern", async () => {
+	const log = spyOn(console, "error").mockImplementation(() => undefined);
+	const learnt = await learnWith("끝인사는 짧게", answering(NO_REPLACES, () => Promise.reject(new Error("model down"))), { forbid: ["되세요"] });
+	log.mockRestore();
+	expect(literals({ app: "mail" })).toHaveLength(1);
+	expect(learnt.text).toContain("쓰지 않을 표현: '되세요'");
+	expect(learnt.text).not.toContain("표현 규칙으로도");
+	expect(profileBullets({ app: "mail" }, HEADINGS.forbidden)).not.toContain(SHAPE_BULLET);
+});
+
+test("learn does not add a line an existing rule already says, keeps no pattern for it, and the line says so", async () => {
+	seed({ app: "install" }, "## 말투\n\n- 끝인사는 짧게 한다\n");
+	const learnt = await learnWith("끝인사는 짧게 한다", answering(NO_REPLACES, shape()), { scope: "everywhere" });
+	expect(learnt.text).toContain("이미 있는 조건이에요: 끝인사는 짧게 한다");
+	expect(learnt.text).not.toContain("표현 규칙으로도");
+	expect(profileBullets("install", HEADINGS.rules)).toEqual(["끝인사는 짧게 한다"]);
+	expect(profileBullets("install", HEADINGS.forbidden)).toEqual([]);
+});
+
+test("learn records the line and proposes the pattern side by side: both calls start before either answers", async () => {
+	seed({ app: "mail" }, "## 고친 점\n\n- 2030-03-01: 예전에 고친 점\n");
+	const line = Promise.withResolvers<string>(), pattern = Promise.withResolvers<string>();
+	const started = { line: Promise.withResolvers<void>(), pattern: Promise.withResolvers<void>() };
+	const fake = answering(() => (started.line.resolve(), line.promise), () => (started.pattern.resolve(), pattern.promise));
+	const done = learnWith("끝인사는 짧게", fake, { forbid: ["되세요"] });
+	await Promise.all([started.line.promise, started.pattern.promise]);
+	pattern.resolve(j(SHAPE));
+	line.resolve(JSON.stringify({ replaces: [] }));
+	expect((await done).text).toContain(`끝인사는 짧게" · 범위: 이 앱 · 표현 규칙으로도 정해 뒀어요: ${SHAPE.label}`);
+});
+
+test("a compaction leaves every line on before on or marked after, and marks exactly the lines no longer on", async () => {
+	const before = Array.from({ length: 13 }, (_, i) => `2030-01-${String(i + 1).padStart(2, "0")}: 고친 점 ${i + 1}`);
+	const marked = ["2029-12-31: 아주 옛 고친 점 → 지움 (one-off)"];
+	seed({ app: "mail" }, `## 고친 점\n\n${before.map(l => `- ${l}`).join("\n")}\n\n## 합쳐진 고친 점\n\n${marked.map(l => `- ${l}`).join("\n")}\n`);
+	const answer = JSON.stringify({ lines: [{ text: "고친 점 1부터 6까지", sources: ["C1", "C2", "C3", "C4", "C5", "C6"] }, { text: "고친 점 7부터 12까지", sources: ["C7", "C8", "C9", "C10", "C11", "C12"] }], dropped: [{ id: "C13", why: "one-off" }] });
+	expect(await compactCorrections({ app: "mail" }, { now: () => NOW, learnCall: () => async () => answer })).toMatchObject({ before: 13 });
+	const on = profileBullets({ app: "mail" }, HEADINGS.corrections), after = profileBullets({ app: "mail" }, HEADINGS.merged);
+	for (const line of before) expect(on.includes(line) || after.some(m => m.startsWith(`${line} → `))).toBe(true);
+	const gone = before.filter(line => !on.includes(line));
+	expect(gone.length).toBeGreaterThan(0);
+	expect(after).toHaveLength(marked.length + gone.length);
 });
