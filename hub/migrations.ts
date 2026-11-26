@@ -30,9 +30,9 @@ export type CardAudit = {
 	/** Starts the one chat turn that compares the apps with the send records. */
 	turn: (counts: { closed: number; refreshed: number; open: number }) => void;
 };
-export type Ctx = { dataDir: string; state: State; ask: (text: string) => void; cards?: CardAudit; comments?: LegacyComments };
+export type Ctx = { dataDir: string; state: State; ask: (text: string) => void; cards?: CardAudit; comments?: LegacyComments; wake?: (id: string, text: string) => void };
 export type Migration = { id: string; label: string; run: (ctx: Ctx) => string | undefined | Promise<string | undefined> };
-export type Deps = { dataDir: string; ask: (text: string) => void; notify: (text: string) => void; cards?: CardAudit; comments?: LegacyComments; migrations?: Migration[]; log?: (s: string) => void; now?: () => Date };
+export type Deps = { dataDir: string; ask: (text: string) => void; notify: (text: string) => void; cards?: CardAudit; comments?: LegacyComments; wake?: (id: string, text: string) => void; migrations?: Migration[]; log?: (s: string) => void; now?: () => Date };
 
 const readState = (dataDir: string): State => {
 	try {
@@ -168,7 +168,20 @@ const ruleLedger: Migration = {
 	},
 };
 
-export const MIGRATIONS: Migration[] = [siteApps, legacyTokens, cardAudit, modelPicks, snsComments, ruleLedger];
+export const RULES_INBOX_ID = "rules-inbox-review";
+const rulesInbox: Migration = {
+	id: RULES_INBOX_ID,
+	label: "금지 수신함을 RULES.md로 옮길지 묻기",
+	run: ({ dataDir, wake }) => {
+		const file = join(dataDir, "memory", "boundaries.md");
+		const entries = existsSync(file) ? readFileSync(file, "utf8").split("\n").filter(line => line.startsWith("- ")).length : 0;
+		if (!entries) return undefined;
+		wake!(RULES_INBOX_ID, msg().rulesInboxReview(entries));
+		return `금지 수신함 ${entries}개 항목을 RULES.md로 옮길지 확인 카드로 물어요`;
+	},
+};
+
+export const MIGRATIONS: Migration[] = [siteApps, legacyTokens, cardAudit, modelPicks, snsComments, ruleLedger, rulesInbox];
 
 export const HAND_RULES_ID = "hand-rules";
 const HAND_YES = "1) 규칙 파일로 옮기기", HAND_NO = "2) 그대로 두기";
@@ -206,9 +219,9 @@ export async function runMigrations(deps: Deps): Promise<{ ran: string[]; failed
 	const ran: string[] = [], failed: string[] = [];
 	for (const m of deps.migrations ?? MIGRATIONS) {
 		// A gateway with no orchestrator (the update smoke check) has no one to take the audit: it stays for the next real start.
-		if (state.done[m.id] || (m.id === CARD_AUDIT_ID && !deps.cards) || (m.id === SNS_COMMENTS_ID && !deps.comments)) continue;
+		if (state.done[m.id] || (m.id === CARD_AUDIT_ID && !deps.cards) || (m.id === SNS_COMMENTS_ID && !deps.comments) || (m.id === RULES_INBOX_ID && !deps.wake)) continue;
 		try {
-			const note = await m.run({ dataDir: deps.dataDir, state, ask: deps.ask, cards: deps.cards, comments: deps.comments });
+			const note = await m.run({ dataDir: deps.dataDir, state, ask: deps.ask, cards: deps.cards, comments: deps.comments, wake: deps.wake });
 			state.done[m.id] = { at: (deps.now?.() ?? new Date()).toISOString(), ...(note ? { note } : {}) };
 			saveState(deps.dataDir, state);
 			log(`migration ${m.id}: ${note ?? "nothing to do"}`);

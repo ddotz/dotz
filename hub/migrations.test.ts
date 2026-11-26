@@ -7,7 +7,8 @@ import { createApp } from "./app-off.ts";
 import { createEngine } from "./comments/engine.ts";
 import type { CommentAdapter } from "./comments/contract.ts";
 import { cfg } from "./config.ts";
-import { LEGACY_ID, legacyAnswer, type LegacyComments, MIGRATIONS, MIGRATIONS_FILE, runMigrations, SNS_COMMENTS_ID, type Migration } from "./migrations.ts";
+import { msg } from "./i18n.ts";
+import { LEGACY_ID, legacyAnswer, type LegacyComments, MIGRATIONS, MIGRATIONS_FILE, RULES_INBOX_ID, runMigrations, SNS_COMMENTS_ID, type Migration } from "./migrations.ts";
 
 // Temp data dirs only; the token values are placeholders that must never reach a notice, a reply or a log line.
 const VALUE = "placeholder-refresh-token-value";
@@ -230,5 +231,26 @@ describe("sns comment replies move to the comments app", () => {
 		const s = spy();
 		expect(await runMigrations(s.deps(only()))).toEqual({ ran: [], failed: [] });
 		expect(existsSync(join(dir, MIGRATIONS_FILE)) ? JSON.parse(readFileSync(join(dir, MIGRATIONS_FILE), "utf8")).done[SNS_COMMENTS_ID] : undefined).toBeUndefined();
+	});
+});
+
+describe("rules inbox", () => {
+	const only = () => MIGRATIONS.filter(m => m.id === RULES_INBOX_ID);
+	const boundaries = () => join(dir, "memory", "boundaries.md");
+	test("entries, dated in brackets or not, wake the orchestrator once with their count; a start with no orchestrator leaves it for later", async () => {
+		put(boundaries(), `# Boundaries\n\n- [10-17] "first"\n- 2026-11-05: "second"\n`);
+		const s = spy(), woke: string[] = [];
+		const wake = (id: string, text: string) => void woke.push(`${id} ${text}`);
+		await runMigrations(s.deps(only()));
+		expect(woke).toEqual([]);
+		await runMigrations({ ...s.deps(only()), wake });
+		await runMigrations({ ...s.deps(only()), wake });
+		expect(woke).toEqual([`${RULES_INBOX_ID} ${msg().rulesInboxReview(2)}`]);
+	});
+	test("the bare template wakes nothing", async () => {
+		put(boundaries(), "# Boundaries\n\nformat note\n");
+		const s = spy(), woke: string[] = [];
+		await runMigrations({ ...s.deps(only()), wake: (id: string) => void woke.push(id) });
+		expect(woke).toEqual([]);
 	});
 });

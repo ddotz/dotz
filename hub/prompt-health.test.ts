@@ -81,6 +81,17 @@ test("a state written for an older contract shape is replaced by a fresh baselin
 	expect(sizeKeys(run(2))).toContain("prompt:size:rules");
 });
 
+test("moving entries from boundaries.md into RULES.md is no growth", () => {
+	const entry = `- [10-17] ${"x".repeat(100)}\n`;
+	mkdirSync(join(dir, "memory"), { recursive: true });
+	setRules("a".repeat(500));
+	writeFileSync(join(dir, "memory", "boundaries.md"), entry.repeat(20));
+	run(0);
+	setRules(`${"a".repeat(500)}\n${entry.repeat(20)}`);
+	writeFileSync(join(dir, "memory", "boundaries.md"), "# Boundaries\n");
+	expect(sizeKeys(run(1))).toEqual([]);
+});
+
 test("a rule that code enforces is reported by file and line while a line writes it out, carried as a deletion, and not after the line is removed", () => {
 	setRules("- keep replies short\n- never run launchctl kickstart on the gateway\n");
 	run(0);

@@ -25,8 +25,8 @@ export const PART_GROWTH = { share: 0.25, chars: 1000 };
 export const RULES_MAX_CHARS = 12_000;
 export const BOUNDARIES_MAX_CHARS = 4_000;
 
-export const PART_KEYS = ["mode", "rules", "lessons", "identity", "features", "owner", "boundaries", "setups", "state", "rest"] as const;
-export const CONTRACT_SHAPE = 2;
+export const PART_KEYS = ["mode", "rules", "lessons", "identity", "features", "owner", "setups", "state", "rest"] as const;
+export const CONTRACT_SHAPE = 3;
 export type Sizes = Record<string, number>;
 type Base = { chars: number; at: number };
 /** baseline: the lowest size seen per key and when it was set; last: the sizes of the latest run. Key "total" is the whole text. */
@@ -70,7 +70,7 @@ export function ruleSources(dataDir: string, pkg: string, parts: RecallParts, mo
 /** The contract text of a data dir, its sizes per part (rest = framing text and anything not listed) and the rule files in it. */
 export function measure(dataDir: string, pkg: string = join(import.meta.dir, "..")): { text: string; sizes: Sizes; sources: RuleSource[] } {
 	const { text, parts, modeFile } = recallContract(dataDir, pkg);
-	const sizes: Sizes = { total: text.length, mode: parts.mode.length, rules: parts.rules.length, lessons: parts.lessons.length, identity: parts.identity.length, features: parts.features.length, owner: parts.owner.length, boundaries: parts.boundaries.length, setups: parts.setups.length, state: parts.state.length };
+	const sizes: Sizes = { total: text.length, mode: parts.mode.length, rules: parts.rules.length + parts.boundaries.length, lessons: parts.lessons.length, identity: parts.identity.length, features: parts.features.length, owner: parts.owner.length, setups: parts.setups.length, state: parts.state.length };
 	sizes.rest = text.length - PART_KEYS.filter(k => k !== "rest").reduce((n, k) => n + sizes[k], 0);
 	return { text, sizes, sources: ruleSources(dataDir, pkg, parts, modeFile) };
 }

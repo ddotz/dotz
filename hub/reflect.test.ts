@@ -1,12 +1,13 @@
 import { expect, test } from "bun:test";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { cfg, paths } from "./config.ts";
+import { join } from "node:path";
+import { cfg, DATA_DIR, paths } from "./config.ts";
 import { daysDir, kstDay, noteFile } from "./day-note-format.ts";
 import type { Correction } from "./corrections.ts";
 import type { Schedule } from "./schedule.ts";
 import { fitSubject } from "./card-text.ts";
 import { msg } from "./i18n.ts";
-import { admitLessons, correctionBlock, CORRECTIONS_MAX_CHARS, digest, dueAlerts, gateLessons, lessonCandidates, lessonChecks, lessonScore, proseClosedTopics, scheduleBlock, reflectPrompt, repeatedLessons, sendRepeatAlerts } from "./reflect.ts";
+import { admitLessons, correctionBlock, CORRECTIONS_MAX_CHARS, digest, dueAlerts, gateLessons, lessonCandidates, lessonChecks, lessonScore, proseClosedTopics, scheduleBlock, reflectPrompt, repeatedLessons, sendRepeatAlerts, snapshot } from "./reflect.ts";
 
 const DAY = 24 * 3600_000;
 const now = Date.UTC(2026, 9, 19);
@@ -314,5 +315,21 @@ test("yesterday's day note is named by one more last line only when the feature 
 	} finally {
 		delete holder.day_note;
 		rmSync(file, { force: true });
+	}
+});
+
+test("a snapshot on an install with an old allowlist backs up the owner memory and the rule history too", async () => {
+	const made = [join(DATA_DIR, ".git"), join(DATA_DIR, ".gitignore"), join(DATA_DIR, "RULES.history.md"), join(DATA_DIR, "memory", "boundaries.md")];
+	writeFileSync(join(DATA_DIR, ".gitignore"), "*\n!RULES.md\n!RULES.md/**\n!.gitignore\n");
+	writeFileSync(join(DATA_DIR, "RULES.history.md"), "- [10-17] words\n");
+	mkdirSync(join(DATA_DIR, "memory"), { recursive: true });
+	writeFileSync(join(DATA_DIR, "memory", "boundaries.md"), "- [10-17] a don't\n");
+	try {
+		await snapshot();
+		const tracked = Bun.spawnSync(["git", "-C", DATA_DIR, "ls-files"]).stdout.toString().split("\n");
+		expect(tracked).toContain("RULES.history.md");
+		expect(tracked).toContain("memory/boundaries.md");
+	} finally {
+		for (const p of made) rmSync(p, { recursive: true, force: true });
 	}
 });

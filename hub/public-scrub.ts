@@ -299,7 +299,7 @@ export function installVocabulary(dataDir: string): Map<string, string> {
 	const custom = join(dataDir, "custom");
 	addWords(words, [jsonText(join(custom, "apps.json")), jsonText(join(custom, "mailboxes.json")), jsonText(join(custom, "projects.json"))].join("\n"), "메일 앱 A");
 	addWords(words, [...folderNames(join(custom, "apps")), ...folderNames(join(custom, "plugins")).map(f => f.split(".")[0])].join("\n"), "앱 A");
-	addProse(words, [jsonText(join(dataDir, "channel-setups.json")), fileText(join(dataDir, "identity", "IDENTITY.md")), ...["owner.md", "boundaries.md", "observations.md"].map(f => fileText(join(dataDir, "memory", f), MAX_NOTES_BYTES)), fileText(join(dataDir, "RULES.md")), fileText(join(dataDir, "LESSONS.md"))].join("\n"), "일반 표현");
+	addProse(words, [jsonText(join(dataDir, "channel-setups.json")), fileText(join(dataDir, "identity", "IDENTITY.md")), ...["owner.md", "boundaries.md", "observations.md"].map(f => fileText(join(dataDir, "memory", f), MAX_NOTES_BYTES)), fileText(join(dataDir, "RULES.md")), fileText(join(dataDir, "RULES.history.md"), MAX_NOTES_BYTES), fileText(join(dataDir, "LESSONS.md"))].join("\n"), "일반 표현");
 	addLayerWords(words, dataDir);
 	return words;
 }

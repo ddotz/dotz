@@ -322,6 +322,7 @@ export const ko: Catalog = {
 	restartHeldResume: "[dotz gateway] 게이트웨이가 재시작됐어요. 재시작 대기 중에 막혔던 워커나 세션 시작이 있어요. state.json open_tasks에서 재시작 뒤로 미룬 일을 찾아 지금 이어서 하세요. 이미 시작했으면 아무것도 하지 마세요.",
 	carryOver: (where, read, stat, files) => `[dotz 업데이트] 이 설치에서 dotz 코드를 직접 고친 내용이 업데이트 전에 보관됐어요(보관본마다 이 안내는 한 번만 와요). 보관: ${where}\n변경: ${stat}\n${files}\n해 주세요: 1) \`${read}\`로 diff를 읽으세요. 2) 각 변경을 가능하면 사용자 층으로 옮기세요: 문구는 <데이터 폴더>/custom/texts.json(bun hub/texts-cli.ts), 기능은 <데이터 폴더>/features, 규칙은 RULES.md. 3) dotz 코어에서만 의미가 있는 변경은 dotz 관리자에게 보낼 한국어 보고를 작업내역에 남기고(개인정보와 민감한 내용은 모두 빼서 비식별화·일반화하되 증상, 재현 순서, 기대 결과, 실제 결과, 버전은 상세하게), ddotz/dotz에 GitHub 이슈로 열지 오너에게 물으세요. 4) 마지막으로 오너에게 한 번에, 무엇을 옮겼고 무엇을 못 옮겼는지 알리세요. dotz 코드는 고치지 마세요.`,
 	cardAudit: (closed, refreshed, open) => `[dotz 업데이트] 이번 업데이트에서 이 설치의 카드를 한 번 전역 점검해요. 게이트웨이가 전송 기록으로 보낸 카드 ${closed}장을 닫았고 ${refreshed}장을 새로 고쳤어요. 열린 카드는 ${open}장이에요.\n메일, 답장 초안, 댓글, 쪽지, 카톡, sns 작업, 승인 대기, 알림을 모두 읽고 전송 기록과 맞춰 보세요. 읽는 길은 features/<앱>/feature.md에 있고, 카드는 GET /api/notices와 GET /api/reply/queue로 읽어요.\n- 외부로 아무것도 보내지 않아요. 다시 보내기, 승인, 버리기를 하지 않아요. 보내기 명령은 실행하지 않아요.\n- 전송 기록으로 보낸 것이 증명된 카드만 닫아요(POST /api/notices/resolve의 ids).\n- 증명하지 못한 카드는 열어 둬요. 초안과 어긋나면 보내기가 되도록 카드만 새로 고쳐요.\n- 끝나면 이 대화에 오너에게 짧게 요약해요: 닫은 카드, 남은 카드, 오너가 볼 것. 이 점검은 다시 오지 않아요.`,
+	rulesInboxReview: count => `[dotz 업데이트] 규칙 저장소를 하나로 모아요. 앞으로 오너가 말한 규칙과 금지는 ${paths.rules}에 바로 쓰고, ${paths.boundaries}에는 야간 점검이 찾은 금지만 승인 전까지 둬요. 지금 그 파일에 항목이 ${count}개 있어요.\n1) ${paths.rules}, 같은 폴더의 RULES.history.md, ${paths.boundaries}, rules/projects.md(있으면)를 읽으세요.\n2) 항목마다 하나로 정하세요: RULES.md에 이미 있음(지우기), RULES.md로 옮기기(규칙 한 문장과 대표 예시 1~2개, \`- [MM-DD]\` 날짜, ${paths.ruleTitles}에 25자 안 제목), 한 프로젝트 규칙(rules/projects.md로), 이미 끝난 한 건짜리 금지(버리기). 겹치는 항목은 합치세요.\n3) 아무것도 고치기 전에 alert로 선택지 블록 하나만 올리세요: 제목은 \`규칙 정리 · 옮길까요?\`, 근거 줄에 옮기기·합치기·버리기 개수, 고칠 RULES.md 줄은 전 → 후. 선택지는 1) 이대로 옮기기 2) 그대로 두기.\n4) 1)이면 옮기거나 버리는 항목의 원문을 출처와 함께 RULES.history.md 끝에 붙이고, RULES.md와 제목 파일을 고친 뒤, 처리한 줄만 ${paths.boundaries}에서 지우고 한 줄로 알리세요. 2)면 아무것도 바꾸지 마세요.\n- 외부로 아무것도 보내지 않아요. 이 안내는 다시 오지 않아요.`,
 	watchIssue: {
 		cls: { script: "확인 스크립트에 오류가 있어요", outside: "바깥 서비스(네트워크·서버) 문제예요", owner: "로그인이나 승인이 필요해요", unknown: "원인을 알 수 없어요" },
 		tried: note => `스스로 고쳐 보려 했지만 안 됐어요: ${note}`,
@@ -375,7 +376,7 @@ export const ko: Catalog = {
 	recipeSaved: (name, dir) => `레시피를 저장했어요: ${name} (${dir})`,
 	recipeSkipped: name => `건너뛰었어요. 같은 일은 다시 제안하지 않아요: ${name}`,
 	recipeFailed: why => `레시피를 저장하지 못했어요: ${why}`,
-	promptPartLabels: { mode: "모드 글", rules: "RULES.md", lessons: "LESSONS.md", identity: "정체성 글", features: "기능 본문", owner: "owner.md", boundaries: "boundaries.md", setups: "채널 설정", state: "state 발췌", rest: "그 밖의 틀" },
+	promptPartLabels: { mode: "모드 글", rules: "RULES.md와 boundaries.md", lessons: "LESSONS.md", identity: "정체성 글", features: "기능 본문", owner: "owner.md", setups: "채널 설정", state: "state 발췌", rest: "그 밖의 틀" },
 	promptGrew: (label, from, to, date) => `압축 뒤 다시 읽는 글${label ? `(${label})` : ""}이 ${date} 이후 ${from.toLocaleString("ko-KR")}자에서 ${to.toLocaleString("ko-KR")}자로 늘었어요.`,
 	promptSizeEvidence: (from, to, date) => `${from}자 → ${to}자 (기준 ${date})`,
 	promptEnforced: (where, guard) => `${where} 줄은 ${guard}가 이미 막는 규칙이에요.`,

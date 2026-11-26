@@ -255,13 +255,13 @@ export async function sendRepeatAlerts(post: (text: string) => Promise<unknown>,
 }
 
 // Local history of the files the bot edits itself (rules, lessons, identity, schedules), so a bad edit can be undone.
-const SNAPSHOT = ["RULES.md", "LESSONS.md", "memory", "identity", "features", "schedules.json", "watches.json", "channel-setups.json", "config.json", "channels.json"];
+const SNAPSHOT = ["RULES.md", "RULES.history.md", "rules", "LESSONS.md", "memory", "identity", "features", "schedules.json", "watches.json", "channel-setups.json", "config.json", "channels.json"];
 export async function snapshot(): Promise<string | undefined> {
 	const git = (...a: string[]) => runLimited(["git", "-C", DATA_DIR, ...a], 60_000 /* a local snapshot: seconds */);
-	if (!existsSync(join(DATA_DIR, ".git"))) {
-		writeFileSync(join(DATA_DIR, ".gitignore"), ["*", ...SNAPSHOT.flatMap(f => [`!${f}`, `!${f}/**`]), "!.gitignore", ""].join("\n"));
-		await git("init", "-q");
-	}
+	const ignore = ["*", ...SNAPSHOT.flatMap(f => [`!${f}`, `!${f}/**`]), "!.gitignore", ""].join("\n");
+	const ignoreFile = join(DATA_DIR, ".gitignore");
+	if (!existsSync(ignoreFile) || readFileSync(ignoreFile, "utf8") !== ignore) writeFileSync(ignoreFile, ignore);
+	if (!existsSync(join(DATA_DIR, ".git"))) await git("init", "-q");
 	await git("add", "-A");
 	// Off-machine copy is opt-in (`backup.remote` in config.json). Files that look like secrets stay out of the commit then.
 	const remote = String((cfg as { backup?: { remote?: string } }).backup?.remote ?? "").trim();
