@@ -6,7 +6,8 @@ import { writeSettings } from "../../../hub/app-settings.ts";
 import { mailByKey, recordMail } from "../../../hub/mail.ts";
 import { reviseDraft } from "../lib/flow.ts";
 import { offerMailDraft, requestMailDraft, type OfferMail } from "../lib/offer.ts";
-import { correctionsOf, paths, writeIdentity } from "../lib/settings.ts";
+import { writeMail } from "../../../hub/comments/mail-link.ts";
+import { correctionsOf, paths, toneFile, writeIdentity } from "../lib/settings.ts";
 import { listDrafts } from "../lib/store.ts";
 import { enable, fakeModel, j, mailFixture, setupEnv } from "./helpers.ts";
 
@@ -224,5 +225,23 @@ describe("tone of the box", () => {
 		expect(correctionsOf(toneBox.key).some(c => c.includes("인사를 줄여서"))).toBe(true);
 		expect(correctionsOf({ app: "mail" }).some(c => c.includes("인사를 줄여서"))).toBe(false);
 		nothingSent();
+	});
+});
+
+describe("a mail that rides on a comment reply (hub/comments/mail-link.ts writeMail)", () => {
+	test("follows the box its recipient falls in, the mail app's 기본 규칙 and its matching rule, as a mail draft does", async () => {
+		writeSettings(env.dir, "mail", { draft_rules: [RULE], draft_default: "모든 메일에 넣는 지시" });
+		boxes(BASE, box("b-fan", { conds: { from: ["fan@example.com"], subj: [], body: [], src: [] }, how: "팬에게는 두 줄로 답해요", bans: ["무조건"] }));
+		mkdirSync(paths.toneDir(), { recursive: true });
+		writeFileSync(toneFile({ app: "mail" }), "## 예시\n\n- 네 보내드렸어요\n");
+		const model = fakeModel(["1", j({ ...reply, to: "fan@example.com", subject: "자료", body: "자료 보내드려요" })]);
+		const spec = { app: "mail", to: "Fan <fan@example.com>", author: "팬", text: "신청서 보내 주실 수 있나요", postTitle: "봄 공연" };
+		expect(await writeMail(spec, model.call)).toBe("자료 보내드려요");
+		const draft = model.calls.at(-1)!.user;
+		for (const s of ["모든 메일에 넣는 지시", "팬에게는 두 줄로 답해요", RULE.how, "무조건"]) expect(draft).toContain(s);
+		const other = fakeModel(["0", j({ ...reply, to: "lee@example.com", subject: "자료", body: "자료 보내드려요" })]);
+		await writeMail({ ...spec, to: "lee@example.com" }, other.call);
+		expect(other.calls.at(-1)!.user).toContain("모든 메일에 넣는 지시");
+		expect(other.calls.at(-1)!.user).not.toContain("팬에게는 두 줄로 답해요");
 	});
 });

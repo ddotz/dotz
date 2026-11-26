@@ -14,7 +14,7 @@ import { styleJudgeOn } from "../../../hub/config.ts";
 import { judgeAsk, type JudgeAsk } from "../../../hub/style-judge.ts";
 import { listLibrary, matchLibrary, MIN_SCORE, rankLibrary, type LibraryFile } from "./library.ts";
 import { basename } from "node:path";
-import { configConflicts, ruleFilePath } from "./rules.ts";
+import { configConflicts, outgoingMail, ruleFilePath } from "./rules.ts";
 import { canAttach, sendsThroughZele, sendWith, settleAccount, threadMoved, webmailSite, zeleAccountOf, type Sent, type SendOutcome } from "./senders.ts";
 import { carryStagedFiles, removeStagedFile, stagedFiles, stagedName, stageFiles, stageWanted, type StageOpts, type Want } from "./staged.ts";
 import { dataDir, INSTALL, lessonsOnly, loadPairs, loadSettings, loadStyle, ownReplies, paths, profileApp, recipientFile, recordPattern, toneFile, validApp, type ToneKey } from "./settings.ts";
@@ -34,7 +34,7 @@ import type { Lesson } from "../../../hub/reply-types.ts";
 
 export { realRunner };
 // What hub/reply-mail.ts (the hub's single door into this feature) needs beside the flow itself.
-export { alsoInto, configConflicts, learnLine, lessonOfEdit, type LineLearned, mailView, recordForbidden, sendAccountOf, webmailSite, type MailOf };
+export { alsoInto, configConflicts, learnLine, lessonOfEdit, type LineLearned, mailView, outgoingMail, recordForbidden, sendAccountOf, webmailSite, type MailOf };
 
 // `analyze` = the model call of the identity sweep and its refinement (persona.ts); absent, no identity is analysed or refined.
 export type FlowDeps = { /** Chooses among tied library files by name (stageForReply); the default is one short model call. */ pick?: (names: string[]) => Promise<string[]>; call?: ModelCall; judge?: ModelCall; /** The model calls of one draft and its overall budget (draftTrace); buildDraft makes one when absent. */ trace?: DraftTrace; analyze?: ModelCall; run?: Runner; now?: () => Date; send?: (rec: DraftRec) => Promise<SendOutcome>; /** How library files are copied onto a draft (tests). */ stage?: StageOpts; /** Told where an approved send left the mail, right after the transport answered and before any bookkeeping write (bin/draft.ts prints its DOTZ_SEND line). */ onOutcome?: (o: Outcome) => void; learnCall?: (app: string) => ModelCall; kakaoReader?: (chatId: string) => Promise<OwnerReader>; kakaoRooms?: () => Promise<RoomsReader> };
@@ -261,9 +261,9 @@ export const callOf = (deps: FlowDeps, item: ReplyItem, conv?: string, what = "d
 /** The style judge of a draft (hub/style-judge.ts) on the mail rule matcher's call, traced as `judge`; none while config guard.style_judge is false. */
 export const judgeOf = (deps: FlowDeps, item: ReplyItem, conv?: string): JudgeAsk | undefined => (styleJudgeOn() ? judgeAsk(callOf(deps.judge ? { ...deps, call: deps.judge } : deps, item, conv, "judge")) : undefined);
 const nowOf = (deps: FlowDeps) => (deps.now ?? (() => new Date()))();
-/** The style of a mail of mail app `app` written outside a draft to `to`: the profile that app's drafts read (toneKey: its own tone, else the shared `mail` one) plus that person's own conditions, the same key its compose, revise and send lint load (styleKey), with examples of the same person first; undefined when that profile has no samples and no identity yet. */
-export function mailStyleOf(app: string, text: string, to: string): ReplyStyle | undefined {
-	const s = loadStyle(styleKey({ app }, { kind: "mail", from: to }));
+/** The style of a mail of mail app `app` written outside a draft to `to`: the profile that app's drafts read (toneKey: its own tone, else the shared `mail` one) plus that person's own conditions, the same key its compose, revise and send lint load (styleKey), with examples of the same person first; undefined when that profile has no samples and no identity yet. With `box` (the mailbox of app `app` the mail falls in), that box's own tone file when it has one, as a draft of a mail in that box reads it (toneKey). */
+export function mailStyleOf(app: string, text: string, to: string, box?: string): ReplyStyle | undefined {
+	const s = loadStyle(styleKey({ app, ...(box ? { box, instance: app } : {}) }, { kind: "mail", from: to }));
 	return s.samples.length || s.identity?.length ? styleWithExamples(s, "mail", text, to) : undefined;
 }
 // A mail draft's style carries the user's closest real past replies of ITS source as examples (a site's own sent folder for its mails, zele's for zele's); chat

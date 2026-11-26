@@ -1,7 +1,7 @@
 // The mailbox a mail is in, as the gateway's offer sees it (docs/mailbox.md "Handling"): which box, and the judge boxes it may still move to.
 // A mail in no stored box, or in a base box that sets nothing and has no voice of its own, has no box here: offer.ts then takes today's path with no extra call.
 import { mailByKey, type MailRecord } from "../../../hub/mail.ts";
-import { boxesOf, loadMailboxes, type Box } from "../../../hub/mailbox.ts";
+import { boxesOf, loadMailboxes, pickBox, type Box, type MailFacts } from "../../../hub/mailbox.ts";
 import { boxPass, placeByJudge } from "../../../hub/routes-mailbox.ts";
 import { dataDir, identityOf } from "./settings.ts";
 
@@ -24,6 +24,14 @@ export function boxCtx(instance: string, m: BoxMail, deps: BoxDeps): BoxCtx {
 	const rec = (deps.mailOf ?? mailByKey)(m.key) ?? { key: m.key, source: m.source, id: m.id, subject: m.subject, from: m.from ?? "", at: "" };
 	const id = boxPass(dir)(rec).box, found = boxes.find(b => b.id === id);
 	return { ...(found && !plain(instance, found) ? { box: found } : {}), judges: !found || found.base ? boxes.filter(b => !b.base && b.judge.on && b.judge.text) : [] };
+}
+
+/** The box a mail the owner writes himself (the one that rides on a comment reply) falls in by its recipient, subject and text (hub/mailbox.ts pickBox, as a received mail by its sender), or undefined when the account stores no boxes or the box sets nothing. */
+export function boxOfOutgoing(instance: string, m: MailFacts): Box | undefined {
+	const dir = dataDir();
+	if (!loadMailboxes(dir).accounts[instance]) return undefined;
+	const { box } = pickBox(m, boxesOf(dir, instance));
+	return plain(instance, box) ? undefined : box;
 }
 
 /** A judge hit: the mail moves to `to` (record mbox, mwhy judge) before drafting. */

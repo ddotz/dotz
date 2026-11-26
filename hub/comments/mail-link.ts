@@ -1,9 +1,9 @@
 // The real MailLink of the comment engine (engine.ts): the mail that rides on a comment reply is a compose draft of hub/mail-cli.ts, sent and
 // revised through the same reply-drafts flow, so its lint, files and sender are the ones of every other mail. It is not listed in the web mail
 // app on its own (the card of the comment reply is the one place to approve it).
-import { accountHold, draftAttachIssues, draftLintFailures, dropDraft, editDraft, withRecipient, mailStyleOf, realRunner, reviseDraft, sendAccountOf, sendDraft, type FlowDeps } from "../../features/reply-drafts/lib/flow.ts";
+import { accountHold, draftAttachIssues, draftLintFailures, dropDraft, editDraft, withRecipient, mailStyleOf, outgoingMail, realRunner, reviseDraft, sendAccountOf, sendDraft, type FlowDeps } from "../../features/reply-drafts/lib/flow.ts";
 import { getDraft, listDrafts, patchDraft } from "../../features/reply-drafts/lib/store.ts";
-import { addressesOf, generateReply } from "../reply-draft.ts";
+import { addressesOf, generateReply, type ModelCall } from "../reply-draft.ts";
 import { callReplyModel } from "../reply-model.ts";
 import { composeMail } from "../mail-cli.ts";
 import type { MailLink, MailSpec, MailView, MailWrite } from "./engine.ts";
@@ -15,12 +15,13 @@ export type RealMailLink = Omit<MailLink, "compose" | "view"> & { compose: (spec
 const LIBRARY_MISS_NOTE = "확인: 첨부 파일 폴더에서 맞는 파일을 찾지 못했어요";
 const INSTRUCTION = "This message is a request for material. The requested material goes by this mail: write the mail that sends it (the files ride on it), not a reply that asks anything back. What is asked for is the work of the post (the context): never ask which song or file is meant.";
 
-/** The mail text in the owner's voice (the profile the source's mail app reads and the recipient's own conditions, as the mail's lint reads them: mailStyleOf), by the reply model of that mail app; undefined = no profile yet or the model skipped. A failed model call throws. */
-export async function writeMail(spec: MailWrite): Promise<string | undefined> {
-	const style = mailStyleOf(spec.app, spec.text, spec.to);
+/** The mail text in the owner's voice, by the reply model of the mail app (`call`); undefined = no profile yet or the model skipped. A failed model call throws. It is set up as a mail draft of that app is (rules.ts outgoingMail): the box its recipient falls in gives its tone (mailStyleOf, with the recipient's own conditions as the mail's lint reads them), and the configured instruction is the 기본 규칙, that box's lines and the matching rule's 어떻게; the fixed material-mail instruction is the owner's word for it. */
+export async function writeMail(spec: MailWrite, call: ModelCall = async (system, user) => (await callReplyModel(spec.app, undefined, system, user)).text): Promise<string | undefined> {
+	const { box, configured } = await outgoingMail(spec.app, { to: spec.to, subject: spec.postTitle, text: spec.text }, call);
+	const style = mailStyleOf(spec.app, spec.text, spec.to, box);
 	if (!style) return undefined;
-	const item = { kind: "mail" as const, app: spec.app, from: spec.to, text: spec.text, instruction: INSTRUCTION, ...(spec.postTitle ? { context: spec.postTitle } : {}) };
-	const r = await generateReply(item, style, async (system, user) => (await callReplyModel(spec.app, undefined, system, user)).text);
+	const item = { kind: "mail" as const, app: spec.app, from: spec.to, text: spec.text, instruction: INSTRUCTION, ...(configured ? { configured } : {}), ...(spec.postTitle ? { context: spec.postTitle } : {}) };
+	const r = await generateReply(item, style, call);
 	return r.action === "draft" ? r.draft.body.trim() || undefined : undefined;
 }
 
@@ -32,7 +33,7 @@ function withAccount(v: MailView | undefined): MailView | undefined {
 
 export function realMailLink(deps: FlowDeps = { run: realRunner }): RealMailLink {
 	return {
-		write: writeMail,
+		write: spec => writeMail(spec),
 		async compose(spec) {
 			const to = addressesOf(spec.to);
 			if (!to.length) return { ok: false, reason: "메일 받는이 주소가 없어요" };
