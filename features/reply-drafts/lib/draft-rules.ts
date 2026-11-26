@@ -1,7 +1,7 @@
 // The rules that apply to one draft, read in one place: every way a draft is made or checked asks `draftRules` and nothing else builds a tone key, so a mail auto draft, a comment
 // reply, the mail that rides on a comment reply (first write, revise, compose check) and the send check all see the same tone files, examples and bans.
 // The configured instruction (rules.ts ruleInstruction) is matched once when a draft is first written and rides on `item.configured`, so a later revise reads what the write read.
-// A send card the bot writes by hand (hub/reply-actions.ts) has no draft record to read these from: step 7 of the reply-draft plan brings it in as a stored draft; until then it reads none of them.
+// A send card the bot writes by hand becomes a stored draft before it is posted (hub/approval-queue.ts storeCard), so it reads these like any other draft.
 import { existsSync } from "node:fs";
 import { replyAddress, type ReplyItem, type ReplyStyle } from "../../../hub/reply-draft.ts";
 import { boxById } from "./box.ts";
