@@ -11,6 +11,7 @@ import { paths, writeAtomic } from "./settings.ts";
 
 // held = set aside by 답장 안 해도 돼요 on its mail (holdDrafts); 되돌리기 makes it pending again (restoreDrafts).
 // answered = the owner replied to the mail outside dotz (hub/mail-reconcile.ts); the draft is closed like a sent one, never sent.
+export type AfterStage = "recorded" | "followup" | "closed";
 export type DraftStatus = "pending" | "sent" | "dropped" | "stale" | "held" | "answered";
 export type DraftRec = {
 	id: string;
@@ -52,6 +53,8 @@ export type DraftRec = {
 	sentAt?: string;
 	/** The owner's edit of this sent draft was taken for learning (claimEditLearned): no other caller, in any process, learns it again. */
 	editLearned?: true;
+	/** What hub/after-sent.ts already did for this sent draft, besides its status and the reply mark (those are their own marks): each step once, whichever path got there first. */
+	after?: AfterStage[];
 	closedAt?: string;
 	changes: string[];
 	questions: string[];
@@ -277,6 +280,17 @@ export function setStatus(id: string, status: DraftStatus): void {
 		const f = read();
 		const at = new Date(Date.now()).toISOString();
 		write({ ...f, drafts: f.drafts.map(d => (d.id === id ? { ...d, status, ...(status === "sent" && !d.sentAt ? { sentAt: at } : {}), ...(status === "pending" ? {} : { closedAt: at }) } : d)) });
+	});
+}
+
+/** Marks `stage` of what follows sent draft `id` as taken (hub/after-sent.ts), under the store's lock: true for the one caller that marks it, false when the draft is gone or the stage is already marked. */
+export function claimAfter(id: string, stage: AfterStage): boolean {
+	return locked(() => {
+		const f = read();
+		const d = f.drafts.find(x => x.id === id);
+		if (!d || d.after?.includes(stage)) return false;
+		write({ ...f, drafts: f.drafts.map(x => (x.id === id ? { ...x, after: [...(x.after ?? []), stage] } : x)) });
+		return true;
 	});
 }
 

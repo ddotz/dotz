@@ -10,11 +10,11 @@ import { lazyMailCard } from "./conversations-mail-card.ts";
 import { markRead, markUnread } from "./reads.ts";
 import { broadcast } from "./events.ts";
 import { askedFile, draftAttachRoute } from "./draft-attach.ts";
+import { afterSent } from "./after-sent.ts";
 import { parseFollowup, triggerFollowup } from "./followup.ts";
 import { draftFileRoute } from "./draft-files.ts";
 import { draftRecipientsRoute } from "./draft-recipients.ts";
-import { stagedFiles } from "../features/reply-drafts/lib/staged.ts";
-import { composeMail, deleteMail, mailTargets, sentReplyRefs, unrepliedMails, mailKey, recordSentByDotz, MailError, syncMailStates, type MailSourceState, mailBodyRoute, settleMailDrafts, mailStateOf, mailByKey, mailFileRoute, mailTarget, postMail, setMailFyi, setMailNoReply, setMailsFyi, mailKeep, setMailSuggest, setMailReply, type MailDeps } from "./mail.ts";
+import { composeMail, deleteMail, mailTargets, sentReplyRefs, unrepliedMails, mailKey, MailError, syncMailStates, type MailSourceState, mailBodyRoute, settleMailDrafts, mailStateOf, mailByKey, mailFileRoute, mailTarget, postMail, setMailFyi, setMailNoReply, setMailsFyi, mailKeep, setMailSuggest, setMailReply, type MailDeps } from "./mail.ts";
 import { moveMailRoute } from "./mail-move.ts";
 import { applyMailboxFlags, deleteLine, isMailAction, mailAction, mailActions, spawnExec, type SyncDeps } from "./mail-sync.ts";
 import { originalDeleteRoute, originalDeps } from "./mail-delete.ts";
@@ -240,14 +240,13 @@ export async function routeMail(req: Request, url: URL, { peer, mailDeps, mailRe
 	// The reply and KakaoTalk CLIs report an approved send here; the gateway wakes the bot once when that app has a 이어서 할 일 rule (hub/followup.ts).
 	if (req.method === "POST" && url.pathname === "/api/followup") {
 		const input = parseFollowup(await body(req));
-		// The approved reply went out: the mail is 답장함 (hub/mail-state.ts), whether or not the app has a 이어서 할 일 rule.
-		if (input?.kind === "mail" && input.ids.mail && setMailReply(input.ids.mail, "sent")) {
-			// What he sent is listed as a sent mail now, with its text and files, in the thread of the mail it answered.
-			const d = input.ids.draft ? getDraft(input.ids.draft) : undefined;
-			if (d) await recordSentByDotz({ id: d.id, source: d.source, to: d.to, cc: d.cc, subject: d.subject, body: d.body, files: stagedFiles(d.id) }, { answers: input.ids.mail }).catch(e => log(`mail ${input.ids.mail}: sent reply not listed: ${(e as Error).message}`));
-			broadcast({ kind: "mail_unreplied", target: mailTarget(input.ids.mail) });
-		}
-		return input ? json({ ok: true, result: triggerFollowup(input) }) : json({ error: "app, kind (comment|mail|kakao), key required" }, 400);
+		if (!input) return json({ error: "app, kind (comment|mail|kakao), key required" }, 400);
+		// An approved mail reply went out: all that follows it is hub/after-sent.ts, the same the send queue's late confirmation runs.
+		const d = input.kind === "mail" && input.ids.draft ? getDraft(input.ids.draft) : undefined;
+		if (d?.kind === "mail" && d.ref === input.ids.mail) return json({ ok: true, result: await afterSent(d) });
+		// A mail reply with no draft of this store (a plugin's own send) still leaves 답장 필요.
+		if (input.kind === "mail" && input.ids.mail && setMailReply(input.ids.mail, "sent")) broadcast({ kind: "mail_unreplied", target: mailTarget(input.ids.mail) });
+		return json({ ok: true, result: triggerFollowup(input) });
 	}
 	if (req.method === "POST" && url.pathname === "/api/mail/compose") {
 		if (!mailDeps) return json({ error: msg().refuse.mailNotReady }, 503);
@@ -258,7 +257,7 @@ export async function routeMail(req: Request, url: URL, { peer, mailDeps, mailRe
 			const made = composeMail(b, mailDeps());
 			// The new mail went out: its row becomes the sent mail, with the text and the files it carried.
 			const d = (b as { state?: unknown }).state === "sent" ? getDraft(String((b as { ref?: unknown }).ref)) : undefined;
-			if (d) await recordSentByDotz({ id: d.id, source: d.source, to: d.to, cc: d.cc, subject: d.subject, body: d.body, files: stagedFiles(d.id) }, { compose: made.key });
+			if (d) await afterSent(d);
 			return json(made);
 		} catch (error) {
 			if (error instanceof BodyError) throw error;

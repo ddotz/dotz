@@ -213,4 +213,19 @@ describe("approval sender", () => {
 		expect(outcomeOf({ code: 0, out: [said({ sent: "yes", part: "reply" }), said({ sent: "yes", part: "mail" })].join("\n") })).toEqual({ sent: "yes" });
 		expect(outcomeOf({ code: 1, out: [said({ sent: "no", code: "offline", part: "reply" }), said({ sent: "no", code: "offline", part: "mail" })].join("\n") })).toEqual({ sent: "no", code: "offline" });
 	});
+
+	test("a send command that exits 5 sent the mail and only failed its cleanup: sent plus one cleanup notice, and it is never run again", async () => {
+		expect(outcomeOf({ code: 5, out: "mail went out; the cleanup failed" })).toMatchObject({ sent: "yes", cleanup: true });
+		// A line that says where the mail is outranks the exit code.
+		expect(outcomeOf({ code: 5, out: said({ sent: "no", code: "offline" }) })).toEqual({ sent: "no", code: "offline" });
+		const reports: SendResult[] = [];
+		const runs: string[][] = [];
+		const s = createApprovalSender({ kind: ref => PLACES[ref], run: async argv => (runs.push(argv), { code: 5, out: "cleanup failed" }), report: r => void reports.push(r), log: () => undefined });
+		expect(s.enqueue({ ref: "RAAAAAA", conv: "mail:zele", action: "send", title: "q (RAAAAAA)" })).toBe(true);
+		await s.idle();
+		expect(reports.at(-1)).toMatchObject({ ref: "RAAAAAA", state: "sent" });
+		expect(reports.at(-1)!.text).not.toBe("");
+		expect(runs).toHaveLength(1);
+		expect(s.results().find(r => r.ref === "RAAAAAA")?.state).toBe("sent");
+	});
 });

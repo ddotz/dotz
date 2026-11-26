@@ -276,7 +276,7 @@ export function createApprovalSender(deps: SenderDeps) {
 
 	// One send ended: sent, surely not sent (retried by code when its policy allows) or may have gone out.
 	function ended(j: SendJob, o: SendOutcome | MailLeft, tries: number): void {
-		if (o.sent === "yes") return set(j, "sent");
+		if (o.sent === "yes") return set(j, "sent", o.cleanup ? SENT_CLEANUP_TEXT : "");
 		const reason = o.sent === "partial" ? ("mail" in o ? { code: o.code, text: `답글은 올렸고 메일은 못 보냈어요: ${o.mail}` } : partialReason(o)) : reasonOf(o.code, o.sent === "no" ? o.vars : {});
 		const said = "detail" in o && o.detail ? { detail: o.detail } : {};
 		if (o.sent === "maybe" || (o.sent === "partial" && o.rest === "maybe")) return set(j, "unsure", reason.text, undefined, { reason, attempts: tries, ...said });
@@ -498,6 +498,9 @@ const lastLine = (out: string): string => out.trim().split("\n").filter(Boolean)
 const DETAIL_MAX = 300;
 const OUT_TAIL = 4000;
 const SENT = new Set(["yes", "no", "maybe"]);
+/** The exit code of a send command (a plugin's send or act included) that sent the mail and then failed its own cleanup: sent, never run again. */
+const CLEANUP_EXIT = 5;
+export const SENT_CLEANUP_TEXT = "보냈어요. 다만 보낸 뒤 정리가 끝나지 않았어요. 정리만 직접 확인해 주세요";
 
 /** A comment reply that went up while its mail did not: `mail` is the mail's own reason, as the CLI printed it. */
 export type MailLeft = Extract<SendOutcome, { sent: "partial" }> & { mail: string };
@@ -518,7 +521,7 @@ function sendLines(out: string): SendLine[] {
 }
 const detailOf = (said: SendLine): string | undefined => (typeof said.detail === "string" && said.detail.trim() ? said.detail.trim().slice(0, DETAIL_MAX) : undefined);
 
-/** How a CLI send ended (design 1.11): timed out is unsure; the `DOTZ_SEND` lines decide (the last one, but a reply line "yes" followed by a mail line that is not "yes" is a reply posted and a mail left, with the mail's reason; a "yes" wins over a non-zero exit); without one, exit 0 is sent and anything else may have gone out. */
+/** How a CLI send ended (design 1.11): timed out is unsure; the `DOTZ_SEND` lines decide (the last one, but a reply line "yes" followed by a mail line that is not "yes" is a reply posted and a mail left, with the mail's reason; a "yes" wins over a non-zero exit); without one, exit 0 is sent, exit 5 is sent with its cleanup left (`cleanup`), and anything else may have gone out. */
 export function outcomeOf(r: { code: number; out: string; timedOut?: boolean }): SendOutcome | MailLeft {
 	if (r.timedOut) return { sent: "maybe", code: "timeout" };
 	const lines = sendLines(r.out).filter(x => SENT.has(String(x.sent)));
@@ -537,6 +540,7 @@ export function outcomeOf(r: { code: number; out: string; timedOut?: boolean }):
 		const vars = said.vars && typeof said.vars === "object" ? (said.vars as Record<string, string | number>) : undefined;
 		return { sent: "no", code, ...(vars ? { vars } : {}), ...(detail ? { detail } : {}) };
 	}
+	if (r.code === CLEANUP_EXIT) return { sent: "yes", cleanup: true };
 	return r.code === 0 ? { sent: "yes" } : { sent: "maybe", code: "unknown" };
 }
 

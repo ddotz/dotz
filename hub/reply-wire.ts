@@ -1,6 +1,7 @@
 // The real wiring of the one reply flow (the reply unification design, 1.2 and lane C1): the send queue with its job file, the three
 // adapters (mail and webmail, comments, KakaoTalk), the owner's word in the inbox, the cards in the notices and the reply event. Every
 // approval entry (the web's card answer, Discord's buttons, the triage list, /api/reply/*) reaches a reply through `replies` from here.
+import { afterSent } from "./after-sent.ts";
 import { triggerFollowup } from "./followup.ts";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -14,7 +15,7 @@ import { kakaoReply } from "./kakao/gateway.ts";
 import { linkedComment } from "./comments/linked.ts";
 import { isCommentPlace } from "./comments/reply-adapter.ts";
 import { claimFile, getDraft, listDrafts, mailAdapter, mailLane, replyLearning, unlessUnreadable } from "./reply-mail.ts";
-import { mailByKey, mailTarget, setMailReply } from "./mail.ts";
+import { mailByKey, mailTarget } from "./mail.ts";
 import { claimHolder } from "./draft-claim.ts";
 import { approvalHash, createApprovalSender, MAY_HAVE_GONE_OUT, refOfQuestion, runCli, type SendAction, type SendJob, type SendLook, type SendResult, type SendTarget } from "./approval-send.ts";
 import { readDrafts } from "./kakao/send.ts";
@@ -112,6 +113,8 @@ export const reportSend = (r: SendResult): void => {
 	if (kakaoReply.target(r.ref)) broadcast({ kind: "kakao_draft", chatId: "" });
 	if (r.state === "sent" || r.state === "failed" || r.state === "unsure") commentMarkMails([r.ref]);
 	if (r.state === "sent") cardOwedMail(r);
+	// A send that went out but whose command failed its cleanup (hub/approval-send.ts SENT_CLEANUP_TEXT): said once, as a note on the card's conversation.
+	if (r.state === "sent" && r.text) void out(noteTarget(r.conv, r.ref), `[wait] ${r.title.replace(/\s*\([^()]*\)\s*$/, "")} (${r.ref})\n${r.text}`, undefined, { source: "gateway", nk: "send-check" }).catch(e => log(`send cleanup note for ${r.ref} failed: ${e}`));
 	// A KakaoTalk draft goes out in this process (no CLI posts /api/followup for it): the app's 이어서 할 일 is woken here, once per draft.
 	if (r.state === "sent" && kakaoReply.target(r.ref)) triggerFollowup({ app: "kakao", kind: "kakao", key: r.ref, ids: { draft: r.ref } });
 	const what = r.title.replace(/\s*\([^()]*\)\s*$/, "");
@@ -169,10 +172,10 @@ export const sender = createApprovalSender({
 	run: runCli,
 	runJob: j => (j.kind === "kakao" ? kakaoReply.run?.(j) : undefined),
 	learn: j => adapterOf(j.ref)?.learnSent?.(j.ref, j.action === "send-main" ? "reply" : j.action === "send-mail" ? "mail" : undefined),
-	// The mail a sent reply draft answers is 답장함 (a new mail he wrote answers none), also when the send ended unsure and was found sent later.
+	// Everything after a mail draft went out (hub/after-sent.ts), also when the send ended unsure and was found sent later.
 	sent: j => {
 		const d = getDraft(j.ref);
-		if (d?.kind === "mail" && !d.compose && setMailReply(d.ref, "sent")) broadcast({ kind: "mail_unreplied", target: mailTarget(d.ref) });
+		if (d?.kind === "mail") void afterSent(d);
 	},
 	repair: async (j, code) => (await adapterOf(j.ref)?.repair?.(j.ref, code)) ?? "failed",
 	prove: async j => (await adapterOf(j.ref)?.prove?.(j.ref)) ?? "unknown",

@@ -96,7 +96,7 @@ export type DraftView = Omit<ReplyItem, "send" | "back"> & {
 /** How one send ended, said by the place that knows (an in-process runner, or a CLI's `DOTZ_SEND` line). `detail`: the place's own answer (masked,
  * bounded), for hub.log and the send queue's record only. */
 export type SendOutcome =
-	| { sent: "yes" }
+	| { sent: "yes"; /** The send command exited 5: the mail went out, the command's own cleanup after it failed (hub/approval-send.ts outcomeOf). */ cleanup?: true }
 	| { sent: "no"; code: ReasonCode; vars?: Record<string, string | number>; detail?: string }
 	| { sent: "maybe"; code: ReasonCode; detail?: string }
 	| { sent: "partial"; done: number; total: number; code: ReasonCode; rest: "no" | "maybe" };

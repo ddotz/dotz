@@ -1,9 +1,13 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { addDraft, type DraftRec } from "../features/reply-drafts/lib/store.ts";
+import { addDraft, getDraft, type DraftRec } from "../features/reply-drafts/lib/store.ts";
 import { addStagedBytes } from "../features/reply-drafts/lib/staged.ts";
-import { setupEnv } from "../features/reply-drafts/test/helpers.ts";
+import { enable, setupEnv } from "../features/reply-drafts/test/helpers.ts";
 import { HUB_TOKEN } from "./config.ts";
-import { mailByKey, postMail, type MailDeps } from "./mail.ts";
+import { afterSentSettled } from "./after-sent.ts";
+import { onBroadcast } from "./events.ts";
+import { setFollowupWake } from "./followup.ts";
+import { mailByKey, mailTarget, postMail, type MailDeps } from "./mail.ts";
+import { sender } from "./reply-wire.ts";
 import { makeRoute } from "./routes.ts";
 
 // A mail the owner sent shows in the mail list (GET /api/conversations) as 내가 보냄: one the mailbox's sent folder reports, one dotz sent as an approved
@@ -52,4 +56,45 @@ describe("보낸 메일 목록", () => {
 		expect((await call("POST", "/api/mail/compose", { ref: id, source: "zele", state: "sent" })).status).toBe(200);
 		expect(await rowOf(key)).toMatchObject({ dir: "out", to: "park@example.com", preview: "제안드립니다.", suggest: { state: "sent" } });
 	});
+});
+
+// What follows an approved reply that went out is one function (hub/after-sent.ts): the CLI's report right after its send and the queue's late
+// confirmation of a send that ended 확인 필요 both call it, so each step happens once per draft whichever comes first, or both.
+describe("보낸 뒤 처리", () => {
+	const RULE = "문서를 달라는 메일이면 문서를 메일로 보낸다";
+	const marked: string[] = [];
+	onBroadcast(e => void (e.kind === "mail_unreplied" && marked.push(String(e.target))));
+	const prepare = async () => {
+		enable(env, { followups: { mail: RULE } });
+		const turns: string[] = [];
+		setFollowupWake(t => void turns.push(t));
+		const incoming = await postMail({ source: "fx", id: uid("inc"), subject: "문의", from: "Kim <kim@example.com>", to: "me@example.com", body: "답 부탁해요", needsReply: true }, deps);
+		const id = `R${uid("A").toUpperCase().replace(/[^A-Z0-9]/g, "")}`.slice(0, 12), subject = uid("Re: 문의 ");
+		addDraft(draft(id, incoming.key, { subject }));
+		return { id, ref: incoming.key, subject, turns, marks: () => marked.filter(m => m === mailTarget(incoming.key)).length, listed: async () => (await rows()).filter(i => i.mail?.dir === "out" && i.mail?.subject === subject).length };
+	};
+	// The queue found the send sent after it had ended 확인 필요 (the owner's 나갔어요, a boot's look, a proof): its sent hook.
+	const confirmed = (id: string) => sender.settle({ ref: id, conv: "mail:after-sent", action: "send", title: `답장 (${id})` }, "sent");
+	// The reply CLI's report right after a send it saw succeed.
+	const reported = (id: string, ref: string) => call("POST", "/api/followup", { app: "mail", kind: "mail", key: id, ids: { draft: id, mail: ref } });
+
+	test("a send that ended 확인 필요 and was confirmed sent later is a sent mail and wakes the follow-up once", async () => {
+		const p = await prepare();
+		confirmed(p.id);
+		await afterSentSettled();
+		expect([await p.listed(), p.turns.length, (await rowOf(p.ref))!.reply, getDraft(p.id)?.status]).toEqual([1, 1, "replied", "sent"]);
+	});
+
+	for (const order of ["report first", "confirmation first"]) {
+		test(`both paths for one draft (${order}): one sent record, one follow-up, one reply mark`, async () => {
+			const p = await prepare();
+			if (order === "report first") await reported(p.id, p.ref);
+			else confirmed(p.id);
+			await afterSentSettled();
+			if (order === "report first") confirmed(p.id);
+			else await reported(p.id, p.ref);
+			await afterSentSettled();
+			expect([await p.listed(), p.turns.length, p.marks()]).toEqual([1, 1, 1]);
+		});
+	}
 });
