@@ -3,6 +3,8 @@
 // ("1) 보내기", "2) 고치기 - <내용>", "3) 보내지 않기", "4) 이대로 보내기"), about the quoted card or the conversation's only open card. The model answers
 // the rest with one marker line per card, `[send <ref>]`, `[drop <ref>]` or `[revise <ref>] <change>`: `cardMarkers` reads them out of its post
 // and `applyCardMarkers` acts on them. A send only posts a confirm card (its 보내기 is the owner's); a drop or a revise in an answer to the owner is his word.
+// `[handled <ref>] <why>` is the bot's own: the card's work is already done outside dotz (a reply posted in the app by hand), so the card closes
+// with that reason, nothing is sent and no owner word is written (another install, 2026-11-26: four stale cards the bot had checked could only be closed by the owner).
 import { REF_ID } from "./draft-approval.ts";
 import type { ActCtx, ActInput, ActResult, OpenCard } from "./reply-actions.ts";
 import type { ReplyItem } from "./reply-types.ts";
@@ -50,9 +52,9 @@ export function ownerIntent(message: { text: string }, o: { cards: { ref: string
 	return pick && ref ? { ...pick, ref } : undefined;
 }
 
-export type CardMark = { act: "send" | "drop"; ref: string } | { act: "revise"; ref: string; change: string };
+export type CardMark = { act: "send" | "drop"; ref: string } | { act: "revise"; ref: string; change: string } | { act: "handled"; ref: string; why: string };
 export type CardMarks = { acts: CardMark[]; rest: string; unknown: { verb: string; ref: string; why: string }[] };
-const MARK = new RegExp(`^\\s*\\[(send|drop|revise)\\s+(${REF_ID})\\]\\s*(.*?)\\s*$`);
+const MARK = new RegExp(`^\\s*\\[(send|drop|revise|handled)\\s+(${REF_ID})\\]\\s*(.*?)\\s*$`);
 /** The model's marker lines (each one leads its line) for the cards open here, and its post without them. A ref that is not open and a revise with
  * no change act on nothing; two revises for one card are one revise (their changes joined), any other two markers for one card contradict each
  * other and act on nothing; every marker line leaves the post. */
@@ -62,8 +64,9 @@ export function cardMarkers(text: string, openRefs: readonly string[]): CardMark
 		const [, verb, ref, change] = MARK.exec(line) ?? [];
 		if (!verb || !ref) rest.push(line);
 		else if (!openRefs.includes(ref)) unknown.push({ verb, ref, why: "not an open card of this conversation" });
-		else if (verb === "revise" && !change) unknown.push({ verb, ref, why: "no change" });
+		else if ((verb === "revise" || verb === "handled") && !change) unknown.push({ verb, ref, why: verb === "revise" ? "no change" : "no reason" });
 		else if (verb === "revise") acts.push({ act: "revise", ref, change: change! });
+		else if (verb === "handled") acts.push({ act: "handled", ref, why: change! });
 		else acts.push({ act: verb === "send" ? "send" : "drop", ref });
 	}
 	const byRef = new Map<string, CardMark[]>();
@@ -83,7 +86,7 @@ const TWICE = "two markers for one card";
 const STILL_REVISING = "고치는 중이에요. 고친 카드가 올라오면 거기서 보내기를 눌러 주세요";
 const DROP_ON_CARD = "버리기는 카드에서 눌러 주세요";
 export type MarkDeps = {
-	replies: { act: (input: ActInput, ctx: ActCtx) => Promise<ActResult>; confirm: (input: { ref: string }, ctx: ActCtx) => Promise<ActResult> };
+	replies: { act: (input: ActInput, ctx: ActCtx) => Promise<ActResult>; confirm: (input: { ref: string }, ctx: ActCtx) => Promise<ActResult>; handled: (input: { ref: string; why: string }) => Promise<ActResult> };
 	owner?: { mid: string; text: string };
 	mayDrop?: (ref: string) => boolean;
 	/** The conversation's open cards, read before any act closes one: what a drop line names. */
@@ -104,6 +107,12 @@ export async function applyCardMarkers(marks: CardMarks, d: MarkDeps): Promise<v
 	if (clashed.length) await d.tell(`한 카드에 서로 맞지 않는 표시가 겹쳐서 반영하지 않았어요 (${clashed.join(", ")}). 보낼지 고칠지 버릴지 한 번만 알려 주세요`);
 	const from = d.owner ? ` for owner msg ${d.owner.mid} "${d.owner.text.replace(/\s+/g, " ").slice(0, 80)}"` : "";
 	for (const m of marks.acts) {
+		if (m.act === "handled") {
+			const r = await d.replies.handled({ ref: m.ref, why: m.why });
+			d.log(`card marker handled ${m.ref} "${m.why.slice(0, 80)}": ${r.body.ok ? "closed" : `refused ${r.body.code}`}`);
+			if (!r.body.ok) await d.tell(`카드를 닫지 못했어요: ${r.body.error}`);
+			continue;
+		}
 		if (m.act === "send" && !d.owner) {
 			d.log(`card marker ${m.act} ${m.ref} refused: the post answers no owner message`);
 			continue;

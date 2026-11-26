@@ -4,10 +4,11 @@ import { draftApprovalBlock } from "./draft-approval.ts";
 import { HUB_TOKEN, paths } from "./config.ts";
 import { AGENT_AUTHOR } from "./agent-author.ts";
 import { openDraftCards, redrawDraftCards } from "./notices-drafts.ts";
-import { emit, onEmit, tailEvents, type HubEvent } from "./events.ts";
+import { emit, onBroadcast, onEmit, tailEvents, type HubEvent } from "./events.ts";
 import { activeGrant } from "./model-guard.ts";
 import { commandGate } from "./control.ts";
-import { resetNoticesForTest } from "./notices.ts";
+import { answerDecision, type Notice, resetNoticesForTest } from "./notices.ts";
+import { HANDLED_LABEL } from "./reply-actions.ts";
 import { reasonOf } from "./reply-reasons.ts";
 import { makeRoute } from "./routes.ts";
 import { routeSend } from "./routes-send.ts";
@@ -129,6 +130,28 @@ describe("a card marker answering a message (P1-1)", () => {
 		await agent("POST", "/api/send", { target: "web", text: "[drop RAGT009]", reply_to: "m-revise-1" });
 		expect((await told).text).toContain(DROP_ON_CARD);
 		expect(openDraftCards("main").map(c => c.ref)).toEqual(["RAGT009"]);
+	});
+
+	// another install, 2026-11-26: the bot checked four stale cards were already replied to by hand, but could not close them (owner_only); the owner then
+	// pressed 보내기 on each and the bot asked again with a new card every time.
+	test("[handled] from the bot closes a card whose work was done outside, with its reason, and a later press reaches no one", async () => {
+		const t = new Date().getTime() - 60_000;
+		draftCard("RAGT010", { ts: t });
+		ownerSaid("m-stale-1", t + 1000);
+		ownerSaid("m-stale-2", t + 2000);
+		const closed = Promise.withResolvers<Record<string, unknown>>();
+		onBroadcast(e => void (e.kind === "notice" && (e.item as Notice | undefined)?.decision?.draft?.ref === "RAGT010" && (e.item as Notice).decision!.state === "answered" && closed.resolve(e.item as Record<string, unknown>)));
+		const lines: string[] = [];
+		onEmit(e => void (e.kind === "out" && e.source === "gateway" && lines.push(String(e.text))));
+		await agent("POST", "/api/send", { target: "web", text: "이미 앱에서 답글을 달았어요.\n[handled RAGT010] 11/22에 앱에서 이미 답글을 달았어요", reply_to: "m-stale-1" });
+		const item = (await closed.promise) as unknown as Notice;
+		expect(item.decision!.answer).toBe(`${HANDLED_LABEL}: 11/22에 앱에서 이미 답글을 달았어요`);
+		expect(openDraftCards("main").map(c => c.ref)).toEqual([]);
+		expect(lines.some(l => l.includes(reasonOf("owner_only").text))).toBe(false);
+		expect(tailEvents(paths.inbox).some(e => String(e.text).includes("(RAGT010) →"))).toBe(false);
+		let sent = 0;
+		const press = await answerDecision(item.id, { n: 1 }, async () => void sent++);
+		expect([press.body.already, sent]).toEqual([true, 0]);
 	});
 });
 

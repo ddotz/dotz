@@ -39,10 +39,10 @@ export function brokenHeads(text: string): string[] {
 const plainHead = (text: string, heads: string[]): string =>
 	text.split("\n").map(line => (heads.includes(line.trim()) && QUESTION.test(line) ? line.replace(DECISION_HEAD, "$1") : line)).join("\n");
 
-// The model's card markers (hub/reply-chat.ts cardMarkers: [send <ref>], [drop <ref>], [revise <ref>] <change>) are for code: a line that no open
+// The model's card markers (hub/reply-chat.ts cardMarkers: [send <ref>], [drop <ref>], [revise <ref>] <change>, [handled <ref>] <why>) are for code: a line that no open
 // card took (a closed card, a ref the model made up) is dropped. A marker inside a sentence is no marker and stays.
-const MARKER_LINE = /^[ \t]*\[(?:send|drop|revise)\s[^\n]*(?:\n|$)/gm;
-export const stripMarkerLines = (text: string): string => (/\[(?:send|drop|revise)\s/.test(text) ? text.replace(MARKER_LINE, "").replace(/\s+$/, "") : text);
+const MARKER_LINE = /^[ \t]*\[(?:send|drop|revise|handled)\s[^\n]*(?:\n|$)/gm;
+export const stripMarkerLines = (text: string): string => (/\[(?:send|drop|revise|handled)\s/.test(text) ? text.replace(MARKER_LINE, "").replace(/\s+$/, "") : text);
 function dropMarkerLines(text: string): string {
 	const lines = text.match(MARKER_LINE);
 	if (!lines) return text;

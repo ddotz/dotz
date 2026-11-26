@@ -44,7 +44,7 @@ export type ReplyDeps = {
 	learning: { learn: (input: LearnInput) => Promise<Learnt>; shown: (ref: string) => Learnt | undefined; flip: (ref: string, to: LearnFlip) => Promise<Learnt | undefined> };
 	/** `rewrite` and `replace` draw a card anew (every surface, Discord included) and store `hash`, the version it now shows. `repost` posts the open card
 	 * of `ref` again at the bottom of its conversation (the same notice; `text` and `hash` when given), its old post marked moved. */
-	cards: { open: () => OpenCard[]; replace: (oldRef: string, newRef: string, text: string, hash: string | undefined) => void; rewrite: (ref: string, text: string, hash: string | undefined) => void; repost: (ref: string, text: string | undefined, hash: string | undefined) => Promise<void>; close: (ref: string) => void;
+	cards: { open: () => OpenCard[]; replace: (oldRef: string, newRef: string, text: string, hash: string | undefined) => void; rewrite: (ref: string, text: string, hash: string | undefined) => void; repost: (ref: string, text: string | undefined, hash: string | undefined) => Promise<void>; close: (ref: string, label?: string) => void;
 		/** The conversation of the newest card of `ref`, open or already answered. */
 		convOf?: (ref: string) => string | undefined };
 	/** A card a session wrote by hand (kind `card`): its answer goes to the bot as one message per conversation. */
@@ -56,6 +56,8 @@ export type ReplyDeps = {
 	now?: () => number;
 };
 
+/** What a card closed by the bot's `[handled]` marker shows as its answer, before the reason. */
+export const HANDLED_LABEL = "이미 처리됨";
 const SEND_LABEL = { send: "보내기", "send-as-is": "이대로 보내기", "send-main": "답글만 보내기", "send-mail": "메일만 보내기" } as const;
 const ACTIONS = new Set(["send", "revise", "edit", "drop", "restore", "retry", "resolve", "undo", "learn-scope", "learn-once", "learn-keep"]);
 const fail = (status: number, code: ActResult["body"] extends infer B ? (B extends { ok: false; code: infer C } ? C : never) : never, error: string, lint?: string[]): ActResult => ({ status, body: { ok: false, code, error, ...(lint ? { lint } : {}) } });
@@ -343,6 +345,7 @@ export function createReplyActions(deps: ReplyDeps) {
 		held,
 		confirm: async (input: { ref: string }, ctx: ActCtx): Promise<ActResult> => confirm({ deps, found: await resolve(input.ref), unsendable, itemOf }, input.ref, ctx),
 		revising: (ref: string): boolean => revising.has(ref),
+		handled: async (input: { ref: string; why: string }): Promise<ActResult> => handled({ deps, found: await resolve(input.ref), editable, announce, itemOf }, input),
 		/** A 고치기 form posted as one (Discord's; the reply clarity design, amendment A): the owner's own text is saved first, then his words, if any,
 		 * revise that saved version. A failed save revises nothing. */
 		async amend(input: { ref: string; text: string; change?: string; part?: Part }, ctx: ActCtx): Promise<ActResult> {
@@ -410,6 +413,27 @@ async function toBot(deps: ReplyDeps, ctx: ActCtx, card: OpenCard, input: ActInp
 	if (!(marker && input.action === "drop")) await deps.toBot(card.conv, line, ctx.agent === true || marker);
 	if (answers(input)) deps.cards.close(card.ref);
 	return { status: 200, body: { ok: true } };
+}
+
+/** The bot's `[handled <ref>] <why>` (hub/reply-chat.ts): the card's work was done outside dotz, so its cards close showing `why` and a stored draft is
+ * dropped with it. Nothing is sent and no owner word is written: the one card act an agent may take besides a revise. */
+async function handled(c: { deps: ReplyDeps; found: Resolved | undefined; editable: (v: DraftView) => ActResult | undefined; announce: (a: ReplyAdapter, ref: string) => Promise<DraftView | undefined>; itemOf: (v: DraftView) => ReplyItem }, input: { ref: string; why: string }): Promise<ActResult> {
+	const why = input.why?.replace(/\s+/g, " ").trim();
+	if (!why) return fail(400, "bad_request", "왜 닫는지 적어 주세요");
+	if (!c.found) return fail(404, "unknown_ref", "그 초안을 찾지 못했어요");
+	const label = `${HANDLED_LABEL}: ${why}`;
+	if ("card" in c.found) {
+		c.deps.cards.close(c.found.card.ref, label);
+		return { status: 200, body: { ok: true } };
+	}
+	const { adapter, view } = c.found;
+	const guard = c.editable(view);
+	if (guard) return guard;
+	const r = await adapter.drop(input.ref, why);
+	if (!r.ok) return fail(409, r.reason.code, r.reason.text);
+	c.deps.sender.forget(input.ref);
+	c.deps.cards.close(input.ref, label);
+	return { status: 200, body: { ok: true, item: c.itemOf((await c.announce(adapter, input.ref)) ?? view) } };
 }
 
 /** What the card says it learned, turned to another scope, once or kept: allowed on any draft state, since the lesson outlives the draft. */

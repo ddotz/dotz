@@ -225,8 +225,8 @@ export const replies = createReplyActions({
 			const r = await out(targetOf(n.to, ref), n.text, undefined, { queued: true, repost: n.id });
 			if (r.delivered && n.card) cardMoved(n.to, ref, { ...n.card, text: n.text });
 		},
-		close: ref => {
-			for (const c of openDraftCards().filter(x => x.ref === ref)) settleOpenDecision(c.id, "");
+		close: (ref, label = "") => {
+			for (const c of openDraftCards().filter(x => x.ref === ref)) settleOpenDecision(c.id, label);
 		},
 	},
 	toBot: (conv, text, agent) => toBot(conv, text, agent),
