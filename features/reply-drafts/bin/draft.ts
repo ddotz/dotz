@@ -1,6 +1,6 @@
-// Action CLI the orchestrator runs: `new --mail <key>`, `revise <id> --change <text>`, `replay <id> [--change <text>] [--json]` (a stored draft run again on a scratch copy of the data: draft, revise, the pre-send check; sends nothing, writes nothing real), `send <id>`, `drop <id>`, `attach <id> <file>`, `detach <id> <n|name>`, `status`.
-// `new` and `revise` print the [ask] block to post unchanged (comment and chat drafts print the reply text only, notes go to stderr);
-// `send` refuses unless the user picked 1) 보내기 for that exact id. Stdin of `new` is the text to answer.
+// Action CLI the orchestrator runs, one verb set for every channel: `draft --mail <key>`, `revise <id> --change <text>`, `replay <id> [--change <text>] [--json]` (a stored draft run again on a scratch copy of the data: draft, revise, the pre-send check; sends nothing, writes nothing real), `drop <id>`, `learn ...` (what the owner asked, kept as a rule), `show [<id>]` / `show --app ...` (pending drafts, the rules a reply follows), `attach <id> <file>`, `detach <id> <n|name>`. `new`, `correct`, `status` and `tone` are older names of draft, learn and show. `send <id>` is the gateway's.
+// `draft` and `revise` print the [ask] block to post unchanged (comment and chat drafts print the reply text only, notes go to stderr);
+// `send` refuses unless the user picked 1) 보내기 for that exact id. Stdin of `draft` is the text to answer.
 import { existsSync } from "node:fs";
 import { basename, isAbsolute } from "node:path";
 import { replyChoiceBlock } from "../../../hub/choices.ts";
@@ -31,7 +31,7 @@ import { cloudFile, cloudPlaceholder, EVICTED_LATER, isEvicted, removeStagedFile
 
 // Exit code of `new --kind chat` when the message needs the owner's own decision: stdout is the choice block to post as an [ask] (hub/choices.ts replyChoiceBlock).
 export const ASK_EXIT = 4;
-const USAGE = "usage: draft.ts new --mail <key> [--app <app>] [--room <id>] [--kind mail|comment|chat] [--from <sender>] [--subject <s>] [--context <c>] [--source <src>] [--id <mail id>] [--choice <the owner's pick>] (text on stdin) | revise <id> --change <text> | replay <id> [--change <text>] [--json] | send <id> | drop <id> | correct --draft <id> --change <what the owner asked> [--scope recipient|channel|everywhere] | correct --app <app|install> [--room <id> | --to <recipient>] [--rule <standing rule>]... [--change <lesson>] [--forbid <wording>]... [--allow <wording or pattern label>]... [--forget <text>]... [--tidy] | correct --restore <n> | tone --app <app|install> [--room <id> | --to <recipient>] | tone --effective --app <app> [--box <mailbox id>] [--request <rule id>] [--room <id> | --to <recipient>] | tone --journal | attach <id> <path or file name in the 첨부 파일 폴더> | detach <id> <n or file name> | status\n  correct --draft stores what the owner asked in chat for that draft: the draft's own channel by default (its mailbox, app or room), the recipient's own file with --scope recipient, every reply with --scope everywhere; it prints 기억했어요: \"<the owner's words>\" · 범위: <where> (nothing to pick, no --app, --room or --to needed)\n  correct --app is only for a rule not tied to a draft: it stores what the owner asked in exactly one tone profile (--app install = every reply; --room only with a messenger app; --to one person of that app: for a mail app exactly one address, case aside (\"Name <address>\" is kept as the address); for a comment source the author's platform id (YouTube channel id, Instagram handle) or a display name exactly one collected commenter of that source has (refused when none or several do, and for a website, whose commenters have no id; output names the person by display name); never with --room or install, and never for kakao, whose room is the person); at least one of --rule --change --forbid --allow --forget --tidy\n  --rule a standing request the owner made in chat (always, never, from now on): kept undated under 말투, never pushed out by later lessons | --change what one corrected draft showed, a dated 고친 점 line; a rule or change about a wording to avoid (with its wrong and right examples quoted) may also store a checked wording pattern under 금지, printed as 이 표현 모양도 걸러요: <label>\n  --rule and --change first ask which lines of that profile the new line repeats or overrides: a rule an existing rule already says is not added (이미 있는 조건이라 더하지 않았어요), replaced lines (at most 3; a --change never replaces a rule) are taken out and stay in tone --journal for correct --restore <n>\n  --forbid never use this wording again (2-40 characters with whitespace runs as one space, not a /regex/; the owner's quoted wording) | --allow takes a forbidden wording, or a pattern by its label, back | --forget removes the 말투 and 고친 점 lines that contain the text (a line of a hand-written section is only named, with its file to edit)\n  --tidy folds the 고친 점 lines of that profile (at least 2) into at most 8 lasting conditions in one model call, printed as 고친 점 N줄을 M줄로 정리했어요; every line taken out stays in tone --journal for correct --restore (a 고친 점 longer than 12 lines is tidied on its own after a correction)\n  correct --restore <n> puts the line of journal entry n back where it was (unless an equal line is there); exit 1 when there is no entry n\n  tone prints what a draft there follows (말투 with the hand-written sections, 고친 점, 금지; a pattern as <label> (패턴)) with the level of each line (install, app, room, to); a recipient's lines win over broader ones in that person's drafts | tone --journal prints the newest 20 lines the product replaced, merged or removed (→ 지움), numbered for correct --restore\n  attach / detach change the files of a pending mail draft and print the refreshed [ask] (never edit draft-files/ or drafts.json by hand)\n  new --app kakao --room <chat id> --kind chat (recent messages on stdin; --mail optional) prints only the reply text\n  chat exit codes: 0 reply text on stdout | 3 nothing to answer | 4 the owner must choose first: stdout is a 결정 block (post it as an [ask]); after his pick run the same command again with --choice \"<pick>\"\n  --app: mail (default for mail), youtube | instagram for comments, kakao for chats; --room only for messenger rooms";
+const USAGE = "usage: draft.ts draft --mail <key> [--app <app>] [--room <id>] [--kind mail|comment|chat] [--from <sender>] [--subject <s>] [--context <c>] [--source <src>] [--id <mail id>] [--choice <the owner's pick>] (text on stdin) | revise <id> --change <text> | replay <id> [--change <text>] [--json] | drop <id> | learn --draft <id> --change <what the owner asked> [--scope recipient|channel|everywhere] | learn --app <app|install> [--room <id> | --to <recipient>] [--rule <standing rule>]... [--change <lesson>] [--forbid <wording>]... [--allow <wording or pattern label>]... [--forget <text>]... [--tidy] | learn --restore <n> | show --app <app|install> [--room <id> | --to <recipient>] | show --app <app> --effective [--box <mailbox id>] [--request <rule id>] [--room <id> | --to <recipient>] | show --journal | attach <id> <path or file name in the 첨부 파일 폴더> | detach <id> <n or file name> | show [<id>]\n  learn --draft stores what the owner asked in chat for that draft: the draft's own channel by default (its mailbox, app or room), the recipient's own file with --scope recipient, every reply with --scope everywhere; it prints 기억했어요: \"<the owner's words>\" · 범위: <where> (nothing to pick, no --app, --room or --to needed)\n  learn --app is only for a rule not tied to a draft: it stores what the owner asked in exactly one tone profile (--app install = every reply; --room only with a messenger app; --to one person of that app: for a mail app exactly one address, case aside (\"Name <address>\" is kept as the address); for a comment source the author's platform id (YouTube channel id, Instagram handle) or a display name exactly one collected commenter of that source has (refused when none or several do, and for a website, whose commenters have no id; output names the person by display name); never with --room or install, and never for kakao, whose room is the person); at least one of --rule --change --forbid --allow --forget --tidy\n  --rule a standing request the owner made in chat (always, never, from now on): kept undated under 말투, never pushed out by later lessons | --change what one corrected draft showed, a dated 고친 점 line; a rule or change about a wording to avoid (with its wrong and right examples quoted) may also store a checked wording pattern under 금지, printed as 이 표현 모양도 걸러요: <label>\n  --rule and --change first ask which lines of that profile the new line repeats or overrides: a rule an existing rule already says is not added (이미 있는 조건이라 더하지 않았어요), replaced lines (at most 3; a --change never replaces a rule) are taken out and stay in show --journal for learn --restore <n>\n  --forbid never use this wording again (2-40 characters with whitespace runs as one space, not a /regex/; the owner's quoted wording) | --allow takes a forbidden wording, or a pattern by its label, back | --forget removes the 말투 and 고친 점 lines that contain the text (a line of a hand-written section is only named, with its file to edit)\n  --tidy folds the 고친 점 lines of that profile (at least 2) into at most 8 lasting conditions in one model call, printed as 고친 점 N줄을 M줄로 정리했어요; every line taken out stays in show --journal for learn --restore (a 고친 점 longer than 12 lines is tidied on its own after a correction)\n  learn --restore <n> puts the line of journal entry n back where it was (unless an equal line is there); exit 1 when there is no entry n\n  show --app prints what a draft there follows (말투 with the hand-written sections, 고친 점, 금지; a pattern as <label> (패턴)) with the level of each line (install, app, room, to); a recipient's lines win over broader ones in that person's drafts | show --journal prints the newest 20 lines the product replaced, merged or removed (→ 지움), numbered for learn --restore\n  attach / detach change the files of a pending mail draft and print the refreshed [ask] (never edit draft-files/ or drafts.json by hand)\n  draft --app kakao --room <chat id> --kind chat (recent messages on stdin; --mail optional) prints only the reply text\n  chat exit codes: 0 reply text on stdout | 3 nothing to answer | 4 the owner must choose first: stdout is a 결정 block (post it as an [ask]); after his pick run the same command again with --choice \"<pick>\"\n  --app: mail (default for mail), youtube | instagram for comments, kakao for chats; --room only for messenger rooms";
 
 type Out = { lines: string[]; code: number; notes?: string[] };
 
@@ -140,12 +140,19 @@ async function fileToAttach(rec: DraftRec, what: string): Promise<string | { err
 	return { error: hit.length ? `이름이 같은 파일이 여러 개예요: ${hit.map(f => f.rel).join(", ")}` : `첨부 파일 폴더에서 ${what}을(를) 찾지 못했어요` };
 }
 
+const PROFILE_FLAGS = ["--app", "--journal", "--effective", "--room", "--to"];
+const draftLine = (d: DraftRec): string => `${d.id} ${d.kind} ${d.to} ${d.subject ?? ""}`.trim();
+// The older names of the verbs (installs' custom scripts call them) run the same case.
+const OLDER: Record<string, string> = { new: "draft", correct: "learn", status: "show", tone: "show" };
+const verbOf = (name: string | undefined): string | undefined => (name === undefined ? undefined : (OLDER[name] ?? name));
+
 export async function runDraft(args: string[], stdin: string, deps: DraftDeps = {}): Promise<Out> {
-	const [cmd, ...rest] = args;
+	const [given, ...rest] = args;
+	const cmd = verbOf(given);
 	const pos = positionals(rest);
 	const done = (r: { ok: boolean; text: string }): Out => ({ lines: [r.text], code: r.ok ? 0 : 1 });
 	switch (cmd) {
-		case "new": {
+		case "draft": {
 			// A draft the user asks for is their own request: only an explicit `onboard.ts off` refuses it.
 			const s = loadSettings();
 			if (s.decided && !s.enabled) return { lines: ["답장 초안 기능이 꺼져 있어요 (onboard.ts on)"], code: 1 };
@@ -222,7 +229,7 @@ export async function runDraft(args: string[], stdin: string, deps: DraftDeps = 
 			if (r.ok && rec?.kind === "mail" && rec.compose) await notifyGateway({ path: "/api/mail/compose", body: { ref: rec.id, source: rec.source, state: "sent" } }, deps.hub);
 			return done(r);
 		}
-		case "correct": {
+		case "learn": {
 			const restore = flag(rest, "--restore");
 			if (restore !== undefined) {
 				const back = /^\d+$/.test(restore) ? restoreEntry(Number(restore), (deps.now ?? (() => new Date()))()) : undefined;
@@ -287,7 +294,15 @@ export async function runDraft(args: string[], stdin: string, deps: DraftDeps = 
 			}
 			return { lines, code: 0 };
 		}
-		case "tone": {
+		case "show": {
+			if (given !== "tone" && !rest.some(a => PROFILE_FLAGS.includes(a))) {
+				if (pos[0]) {
+					const rec = getDraft(pos[0]);
+					return rec ? { lines: [draftLine(rec)], code: 0 } : { lines: [`초안 ${pos[0]}을(를) 찾지 못했어요`], code: 1 };
+				}
+				const pending = listDrafts().filter(d => d.status === "pending");
+				return { lines: pending.length ? pending.map(draftLine) : ["기다리는 초안이 없어요"], code: 0 };
+			}
 			if (rest.includes("--journal")) {
 				const recent = journalEntries().slice(0, JOURNAL_SHOWN);
 				if (!recent.length) return { lines: ["제품이 바꾼 말투 조건 기록이 아직 없어요"], code: 0 };
@@ -354,10 +369,6 @@ export async function runDraft(args: string[], stdin: string, deps: DraftDeps = 
 		case "drop":
 			if (!pos[0]) return { lines: [USAGE], code: 2 };
 			return done(dropDraft(pos[0]));
-		case "status": {
-			const pending = listDrafts().filter(d => d.status === "pending");
-			return { lines: pending.length ? pending.map(d => `${d.id} ${d.kind} ${d.to} ${d.subject ?? ""}`.trim()) : ["기다리는 초안이 없어요"], code: 0 };
-		}
 		default:
 			return { lines: [USAGE], code: 2 };
 	}
@@ -365,7 +376,7 @@ export async function runDraft(args: string[], stdin: string, deps: DraftDeps = 
 
 /** The command as its process runs it: prints what `runDraft` answers first (`print`: its stdout lines, console.log by default), then waits for what the owner's edit of a mail it sent teaches (learningSettled) before it hands back the exit code. `deps`: the flow deps (the real ones by default). */
 export async function cli(args: string[], o: { deps?: DraftDeps; print?: (line: string) => void } = {}): Promise<number> {
-	const stdin = args[0] === "new" ? await Bun.stdin.text() : "";
+	const stdin = verbOf(args[0]) === "draft" ? await Bun.stdin.text() : "";
 	try {
 		// This process is not the gateway: a plugin source says here whether it sends files (senders.ts canAttach) for every command, the send's file check too.
 		await loadPlugins(dataDir());

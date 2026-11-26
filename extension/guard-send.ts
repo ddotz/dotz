@@ -12,7 +12,7 @@
 import { basename } from "node:path";
 import { commandStart, shellSegments, type ShellWord } from "./guard-shell.ts";
 
-const REFUSAL = "Blocked by dotz: an agent never sends a reply itself (%s). Only the owner's 보내기 on the draft card sends it, through the gateway. Leave the card to the owner: make the draft (draft.ts new, mail-cli.ts compose, comments.ts draft, kakao cli.ts draft) and post its block, and ask for a change only with one line `[revise <ref>] <change>` or `draft.ts revise`. If the owner's words mean to send it, write one line `[send <ref>]`: that only puts a confirm card up for his button.";
+const REFUSAL = "Blocked by dotz: an agent never sends a reply itself (%s). Only the owner's 보내기 on the draft card sends it, through the gateway. Leave the card to the owner: make the draft (draft.ts draft, mail-cli.ts compose, comments.ts draft, kakao cli.ts draft) and post its block, and ask for a change only with one line `[revise <ref>] <change>` or `draft.ts revise`. If the owner's words mean to send it, write one line `[send <ref>]`: that only puts a confirm card up for his button.";
 
 const ZELE_SENDS = new Set(["send", "reply", "forward"]);
 // The CLIs whose `send` subcommand sends a draft (each still checks the owner's pick; the agent must not be the one calling it). Any case and

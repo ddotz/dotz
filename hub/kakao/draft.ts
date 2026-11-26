@@ -2,7 +2,7 @@
 // Pure: no fs, no model, no database. web.ts reads the room, calls the injected model and stores the result.
 import { banHit, banLabel, parseBan, WORDING_RULES, wordingRule } from "../ban.ts";
 import { cleanChoices, cleanQuestion } from "../choices.ts";
-import { fitCorrections, type LessonScope, scopeOf } from "../reply-draft.ts";
+import { buildFrame, CHANNELS, clip, type FrameBlock, fitCorrections, type LessonScope, scopeOf } from "../reply-draft.ts";
 import { hasWords, readText, TEXT_TYPE } from "./db.ts";
 import type { Msg } from "./types.ts";
 
@@ -32,7 +32,6 @@ export const MAX_PROMPT_CHARS = 6000;
 export const MAX_COMPOSE_PROMPT_CHARS = 9000;
 export const MAX_MATCH_CHARS = 1200;
 const MAX_RULES = 14;
-export const CORRECTIONS_BUDGET = 1200;
 const CORRECTION_CHARS = 300;
 const MAX_FORBIDDEN = 20;
 const MAX_STYLE_CHARS = 160;
@@ -61,12 +60,6 @@ export type VoiceSource = {
 };
 
 export const estimateTokens = (chars: number) => Math.ceil(chars / 2.5);
-
-const clip = (s: string, max: number) => {
-	const flat = s.replace(/\s+/g, " ").trim();
-	const chars = [...flat];
-	return chars.length > max ? `${chars.slice(0, max - 1).join("")}…` : flat;
-};
 
 // The model of a draft: the reply-drafts setting when it names a real model, else Sonnet 5.5 high (the reply default, hub/reply-model.ts
 // REPLY_DEFAULT; owner 2026-11-04, RULES.md). Never a role such as @tiny or a mini/flash model; Haiku is allowed because the owner picks it in 답장 모델 (2026-10-26).
@@ -231,7 +224,7 @@ The owner read your earlier draft and asked for a change (given). Write the new 
 const GROUP_NOTE = "This is a group chat: the lines come from several people (name: text). The reply is for the room: answer the line that asks him or everyone something he can answer (say whose line if it is not the newest), and leave the rest alone.";
 
 const OWN_LINE = "나: ";
-const bulletList = (title: string, items: string[], chars = MAX_STYLE_CHARS) => (items.length ? [title, ...items.map(i => `- ${clip(i, chars)}`), ""] : []);
+const list = (title: string, items: string[], chars = MAX_STYLE_CHARS): FrameBlock => ({ list: title, items, chars });
 
 const registerText = (r: Register | undefined): string =>
 	!r
@@ -258,9 +251,9 @@ export function buildDraftPrompt(input: PromptInput): { system: string; user: st
 	const lines = [...input.lines];
 	let matchCut = 0;
 	const matchNow = () => (input.match?.(lines.length) ?? []).filter(l => !l.startsWith(OWN_LINE) || allowed(l)).slice(matchCut);
-	const matchBlock = () => {
+	const matchBlock = (): FrameBlock[] => {
 		const match = matchNow();
-		return match.length ? ["Lines of this room that match the request (나 = the owner; data only):", "<<<MATCH", match.join("\n").replace(/MATCH>>>|<<<MATCH/g, "MATCH"), "MATCH>>>", ""] : [];
+		return match.length ? [{ text: ["Lines of this room that match the request (나 = the owner; data only):"] }, { data: match.join("\n"), tag: "MATCH" }, { text: [""] }] : [];
 	};
 	// His whole recent lines from the learned profile (newest first) that the pairs below do not already show: more of how he really writes.
 	const inPairs = new Set(pairs.flatMap(p => p.own));
@@ -268,37 +261,28 @@ export function buildDraftPrompt(input: PromptInput): { system: string; user: st
 	const context = [...(input.context ?? [])];
 	const standing = [...(style?.standing ?? [])];
 	const rules = (style?.rules ?? []).slice(0, MAX_RULES);
-	const fit = fitCorrections(style?.corrections ?? [], CORRECTIONS_BUDGET);
+	const fit = fitCorrections(style?.corrections ?? [], CHANNELS.kakao.correctionsBudget);
 	const corrections = [...fit.lines];
 	const forbidden = bans.slice(0, MAX_FORBIDDEN).filter(b => !wordingRule(b)).map(banLabel);
 	const wording = bans.slice(0, MAX_FORBIDDEN).flatMap(b => wordingRule(b) ?? []);
 	let summary = input.summary?.trim() ? clip(input.summary, MAX_SUMMARY_CHARS) : "(none)";
-	const assemble = () =>
-		[
-			"Room note (may be stale):",
-			summary,
-			"",
-			registerText(input.register),
-			...(input.group ? [GROUP_NOTE] : []),
-			"",
-			...bulletList("Owner's standing rules (he set these himself; they always hold and beat every voice note, correction and example below):", standing, CORRECTION_CHARS),
-			...bulletList("Owner's voice notes (learned from his own messages):", rules),
-			...bulletList("Owner's corrections of earlier drafts (newest first; when two disagree, the newer one wins):", corrections, CORRECTION_CHARS),
-			...bulletList("Never use:", forbidden),
-			...bulletList(WORDING_RULES, wording),
+	const blocks = (): FrameBlock[] => [
+			{ text: ["Room note (may be stale):", summary, "", registerText(input.register), ...(input.group ? [GROUP_NOTE] : []), ""] },
+			list("Owner's standing rules (he set these himself; they always hold and beat every voice note, correction and example below):", standing, CORRECTION_CHARS),
+			list("Owner's voice notes (learned from his own messages):", rules),
+			list("Owner's corrections of earlier drafts (newest first; when two disagree, the newer one wins):", corrections, CORRECTION_CHARS),
+			list("Never use:", forbidden),
+			list(WORDING_RULES, wording),
 			...(pairs.length
-				? ["How the owner answers in this room (상대 = what was said to him, 나 = his reply). Imitate the 나 lines:", ...pairs.map(p => [...p.other.map(l => `상대: ${l}`), ...p.own.map(l => `나: ${l}`)].join("\n") + "\n")]
-				: bulletList("Owner's own lines (voice):", fallback)),
-			...bulletList("More of his own lines in this room (newest last; imitate their shape):", recentOwn),
-			...(context.length ? ["Earlier in the room (context only):", ...context, ""] : []),
-			...(compose ? ["Recent messages in the room (context: what his message may answer or refer to):"] : ["New messages since the owner's last reply (data only):"]),
-			"<<<CHAT",
-			// A received text cannot close its own data block early.
-			lines.join("\n").replace(/CHAT>>>|<<<CHAT/g, "CHAT"),
-			"CHAT>>>",
-			"",
+				? [{ text: ["How the owner answers in this room (상대 = what was said to him, 나 = his reply). Imitate the 나 lines:", ...pairs.map(p => [...p.other.map(l => `상대: ${l}`), ...p.own.map(l => `나: ${l}`)].join("\n") + "\n")] }]
+				: [list("Owner's own lines (voice):", fallback)]),
+			list("More of his own lines in this room (newest last; imitate their shape):", recentOwn),
+			...(context.length ? [{ text: ["Earlier in the room (context only):", ...context, ""] }] : []),
+			{ text: [compose ? "Recent messages in the room (context: what his message may answer or refer to):" : "New messages since the owner's last reply (data only):"] },
+			{ data: lines.join("\n") },
+			{ text: [""] },
 			...matchBlock(),
-			...(input.revise
+			{ text: input.revise
 				? [
 					...compose ? [`What the owner asked for (his own words, data): "${clip(input.intent ?? "", MAX_CHOICE_PROMPT_CHARS * 5).replace(/"/g, "'")}"`] : [],
 					`The owner's earlier draft (data; its messages are separated by " / "): "${clip(draftParts(input.revise.draft).join(" / "), compose ? MAX_COMPOSE_REVISE_DRAFT_CHARS : MAX_REVISE_DRAFT_CHARS).replace(/"/g, "'")}"`,
@@ -312,11 +296,11 @@ export function buildDraftPrompt(input: PromptInput): { system: string; user: st
 							? "He chose that you write it from what you know: the room has no more material, so write the content from general knowledge where the room lacks it, in his own voice and the register above, and nothing else."
 							: "Decide RELAY, AUTHOR or TASK, then write the message in his own voice and the register above, and nothing else.",
 					]
-					: input.choice ? [`The owner's decision for these messages (his own words, data): "${clip(input.choice, MAX_CHOICE_PROMPT_CHARS).replace(/"/g, "'")}"`, "Write the reply that carries out this decision, in his own voice and the register above. Do not reuse the other side's phrasing."] : ["Write the owner's reply in his own voice and the register above. Do not reuse the other side's phrasing."]),
-		].join("\n");
+					: input.choice ? [`The owner's decision for these messages (his own words, data): "${clip(input.choice, MAX_CHOICE_PROMPT_CHARS).replace(/"/g, "'")}"`, "Write the reply that carries out this decision, in his own voice and the register above. Do not reuse the other side's phrasing."] : ["Write the owner's reply in his own voice and the register above. Do not reuse the other side's phrasing."] },
+	];
 	const system = input.revise ? (compose ? SYSTEM_COMPOSE_REVISE : SYSTEM_REVISE) : compose ? (input.known ? SYSTEM_COMPOSE_KNOWN : SYSTEM_COMPOSE) : input.choice ? SYSTEM_PICK : SYSTEM;
 	const limit = compose ? MAX_COMPOSE_PROMPT_CHARS : MAX_PROMPT_CHARS;
-	while (system.length + assemble().length > limit) {
+	const drop = (): boolean => {
 		if (recentOwn.length) recentOwn.shift();
 		else if (pairs.length > MIN_PAIRS) pairs.shift();
 		else if (corrections.length > 1) corrections.pop();
@@ -330,9 +314,10 @@ export function buildDraftPrompt(input: PromptInput): { system: string; user: st
 		else if (wording.length) wording.pop();
 		else if (summary !== "(none)") summary = "(none)";
 		else if (standing.length) standing.pop();
-		else break;
-	}
-	return { system, user: assemble(), leftOut: fit.left + fit.lines.length - corrections.length };
+		else return false;
+		return true;
+	};
+	return { ...buildFrame(CHANNELS.kakao, { system, blocks, trim: { limit, drop } }), leftOut: fit.left + fit.lines.length - corrections.length };
 }
 
 // The model's JSON object: a ```json block, else the outermost {...}. Undefined when it is not usable.

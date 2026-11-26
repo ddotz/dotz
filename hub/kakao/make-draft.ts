@@ -4,12 +4,12 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { ruleOfFinding } from "../ban.ts";
-import { type Learned, learnedOf, leftOutNote, ownerLint, styleConditions } from "../reply-draft.ts";
+import { CHANNELS, type Learned, learnedOf, leftOutNote, ownerLint, styleConditions } from "../reply-draft.ts";
 import { reasonOf } from "../reply-reasons.ts";
 import { judgeAsk, judgeStyle, styleFailure, styleWarnings, type Violation } from "../style-judge.ts";
 import { writePrivate } from "./creds.ts";
 import { type KakaoDb, messages, ownTextCounts, ownTexts, roomHead } from "./db.ts";
-import { basisOf, buildDraftPrompt, chatLines, contextLines, CORRECTIONS_BUDGET, estimateTokens, matchLines, type ModelReply, ownPairs, ownSamples, parseDraftReply, registerOf, type StyleHint, sinceOwnLast } from "./draft.ts";
+import { basisOf, buildDraftPrompt, chatLines, contextLines, estimateTokens, matchLines, type ModelReply, ownPairs, ownSamples, parseDraftReply, registerOf, type StyleHint, sinceOwnLast } from "./draft.ts";
 import { createDraft } from "./send.ts";
 import type { KakaoConfig, KakaoPaths, Room } from "./types.ts";
 import type { StoredAsk, WebDeps } from "./web.ts";
@@ -94,7 +94,7 @@ const done = (error?: string, made?: { code: string; learned?: Learned }): Made 
 		const chat = chatLines(window, compose);
 		const { system, user, leftOut } = buildDraftPrompt({ lines: chat, ...(intent ? { match: (shown: number) => matchLines(recent, intent, shown) } : {}), context, group, summary: readJsonText(summaryFile(chatId)), pairs, samples: ownSamples(recent), register: registerOf(ownLines), style, ...(choice ? { choice } : {}), ...(revise ? { revise: { draft: revise.draft, change: revise.change } } : {}), ...(intent ? { intent } : {}), ...(opts.known ? { known: true } : {}) });
 		const judgeModel = deps.judgeModel;
-		const { standing, corrections } = judgeModel && style ? styleConditions(style, CORRECTIONS_BUDGET) : { standing: [], corrections: [] };
+		const { standing, corrections } = judgeModel && style ? styleConditions(style, CHANNELS.kakao.correctionsBudget) : { standing: [], corrections: [] };
 		const ask = judgeModel ? judgeAsk(async (s, u) => (await judgeModel(s, u, chatId)).text) : undefined;
 		const judged = async (body: string): Promise<Violation[]> => (ask && (standing.length || corrections.length) ? judgeStyle({ standing, corrections, received: chat.join("\n"), draft: body, tail: true, ...(revise ? { asked: revise.change } : {}) }, ask) : []);
 		// One retry with the findings when the model's text fails the lint (design 3.6); what still fails is a 확인 note on the draft.
