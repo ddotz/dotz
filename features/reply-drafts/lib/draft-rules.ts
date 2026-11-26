@@ -4,7 +4,7 @@
 // A send card the bot writes by hand (hub/reply-actions.ts) has no draft record to read these from: step 7 of the reply-draft plan brings it in as a stored draft; until then it reads none of them.
 import { existsSync } from "node:fs";
 import { replyAddress, type ReplyItem, type ReplyStyle } from "../../../hub/reply-draft.ts";
-import { banWarnings, boxById } from "./box.ts";
+import { boxById } from "./box.ts";
 import type { EffectiveRules } from "./effective-rules.ts";
 import { styleFrom, styleWithExamples } from "./pairs.ts";
 import { webmailSite } from "./senders.ts";
@@ -22,8 +22,8 @@ export type DraftRules = {
 	style: () => LoadedStyle;
 	/** The style a prompt is built from: `style()` plus the owner's real past replies as examples (a mailbox with enough of its own replies shows only those); a comment keeps its own examples (hub/comments/draft-run.ts). */
 	examples: () => Promise<ReplyStyle>;
-	/** One warning line per phrase of the mailbox's 설정 금지 the draft uses; sending is not blocked. */
-	banned: (d: { subject?: string; body: string }) => string[];
+	/** The style a draft is checked against (check-draft.ts): `style()` with the mailbox's 설정 금지 as bans. */
+	checkStyle: () => LoadedStyle;
 	/** Every rule that applies to this target with its scope, kind and the file:line it is written in, and the conflicts between them (effective-rules.ts); reads only. */
 	effective: () => Promise<EffectiveRules>;
 };
@@ -54,7 +54,10 @@ export function draftRules(at: RuleAt, item: RuleItem): DraftRules {
 			const source = at.source === undefined ? undefined : pairSource(at.source);
 			return item.profile && source === "zele" ? loadStyle(key) : styleWithExamples(loadStyle(key), "mail", item.text, item.from, source);
 		},
-		banned: d => (at.box && at.instance ? banWarnings(boxById(at.instance, at.box), d) : []),
+		checkStyle() {
+			const style = loadStyle(key), bans = at.box && at.instance ? boxById(at.instance, at.box)?.bans ?? [] : [];
+			return bans.length ? { ...style, forbidden: [...style.forbidden, ...bans] } : style;
+		},
 		effective: async () => (await import("./effective-rules.ts")).effectiveRules(key, at, item),
 	};
 }

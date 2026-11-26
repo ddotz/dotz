@@ -11,14 +11,14 @@
 //     sends only after the owner picked 1) 보내기 for exactly that draft (features/reply-drafts/lib/flow.ts sendDraft, the same check as the reply path).
 // Attachments go out through the reply path's sender (zele `--attach`); a mail source that cannot send a new mail is refused at compose time.
 import { existsSync, readFileSync, statSync } from "node:fs";
-import { addressesOf, lintReply } from "./reply-draft.ts";
+import { addressesOf } from "./reply-draft.ts";
 import { readAppsFile } from "./integrations.ts";
 import { replyDraft, sourceOf } from "./mail-manual.ts";
 import { type HubLike, notifyGateway, reportSendFailed } from "./followup.ts";
 import { commentAsk } from "./comments/ask.ts";
 import { attachMail, linkedComment, mailPartOf } from "./comments/linked.ts";
 import { commentsDir, createStore } from "./comments/store.ts";
-import { accountHold, askText, boxOfOutgoing, draftRules, draftAttachIssues, learningSettled, realFlowDeps, realRunner, sendAccountOf, sendDraft, settleDraft, type FlowDeps } from "../features/reply-drafts/lib/flow.ts";
+import { accountHold, askText, boxOfOutgoing, checkDraft, draftAttachIssues, judgeOf, learningSettled, ownerWarning, realFlowDeps, realRunner, sendAccountOf, sendDraft, settleDraft, type FlowDeps } from "../features/reply-drafts/lib/flow.ts";
 import { zeleLogins } from "../features/reply-drafts/lib/senders.ts";
 import { listLibrary, rankLibrary, LIBRARY_PICK_MAX, MIN_SCORE } from "../features/reply-drafts/lib/library.ts";
 import { cloudFile, cloudPlaceholder, retryWanted, STAGED_MAX, stageFiles, type Want } from "../features/reply-drafts/lib/staged.ts";
@@ -61,7 +61,7 @@ function originOf(spec: string | undefined): DraftRec["origin"] | { error: strin
 }
 
 const NARROW_MIN_SCORE = 2;
-export type ComposeInput = { app: string; to: string[]; subject: string; body: string; /** The logged-in zele account to send from; refused when it is not one. */ account?: string; attach?: string[]; fromLibrary?: string; /** What the writer asked in his own words: the install's narrow rule (hub/auto-attach.ts) reads it, and a revise of the draft reads it as the received text. */ request?: string; /** What a mail riding on a comment reply was first written from (hub/comments/mail-link.ts): revise and the checks read it as that write did. `box` is the mailbox its recipient falls in. */ written?: { box?: string; configured?: string; instruction?: string; postTitle?: string }; origin?: DraftRec["origin"]; /** false = not listed in the web mail app (the mail rides on a comment reply's card). */ notify?: boolean };
+export type ComposeInput = { app: string; to: string[]; subject: string; body: string; /** The logged-in zele account to send from; refused when it is not one. */ account?: string; attach?: string[]; fromLibrary?: string; /** What the writer asked in his own words: the install's narrow rule (hub/auto-attach.ts) reads it, and a revise of the draft reads it as the received text. */ request?: string; /** What a mail riding on a comment reply was first written from (hub/comments/mail-link.ts): revise and the checks read it as that write did. `box` is the mailbox its recipient falls in. */ written?: { box?: string; configured?: string; instruction?: string; postTitle?: string; /** The style judge's notes on that write (checkDraft takes them instead of asking again). */ judged?: string[] }; origin?: DraftRec["origin"]; /** false = not listed in the web mail app (the mail rides on a comment reply's card). */ notify?: boolean };
 export type Composed = { ok: true; rec: DraftRec; notes: string[] } | { ok: false; error: string; code: number };
 
 // A new mail draft: stages the files, lints, records it as pending and (unless `notify` is false) tells the gateway. Sends nothing.
@@ -112,11 +112,12 @@ export async function composeMail(i: ComposeInput, deps: MailCliDeps = {}): Prom
 	const w = i.written, box = w?.box ?? boxOfOutgoing(app, { src: "", from: to.join(", "), subj: subject, body })?.id, at = box ? { box, instance: app } : {};
 	const item = { kind: "mail" as const, app, from: to.join(", "), text: body, ...(w?.instruction ? { instruction: w.instruction } : {}), ...(w?.configured ? { configured: w.configured } : {}), ...(w?.postTitle ? { context: w.postTitle } : {}) };
 	const draft = { to: to.join(", "), subject, body };
-	const failures = lintReply(draft, item, draftRules({ app, ...at }, item).style());
-	if (failures.length) return fail(`초안 검사에서 걸렸어요: ${failures.join("; ")}`, 1);
 
 	const id = newId();
 	const rec: DraftRec = { id, kind: "mail", app, source: via.source, mailId: `compose-${id}`, ref: `compose-${id.toLowerCase()}`, compose: true, ...at, ...(i.request ? { request: i.request } : {}), ...(i.account ? { account: i.account } : {}), ...(libraryMiss ? { libraryMiss: true } : {}), ...(origin ? { origin } : {}), ...draft, status: "pending", created: (deps.now ?? (() => new Date()))().toISOString(), changes: [], questions: [], item };
+	const check = await checkDraft(rec, judgeOf(deps, item, rec.ref), w?.judged);
+	if (check.refuse.length) return fail(`초안 검사에서 걸렸어요: ${check.refuse.join("; ")}`, 1);
+	notes.push(...check.warn.map(n => `확인: ${ownerWarning(n)}`));
 	await settleDraft(rec, deps.run);
 	// The draft is saved before its files: a file that is not on this computer yet (iCloud) waits in wantFiles and is attached as it downloads.
 	addDraft(rec);
@@ -140,7 +141,11 @@ export async function runMailCli(args: string[], stdin: string, deps: MailCliDep
 		if (!key || !file) return { lines: [USAGE], code: 2 };
 		if (!existsSync(file)) return { lines: [`본문 파일을 찾지 못했어요: ${file}`], code: 2 };
 		const made = replyDraft(key, { body: readFileSync(file, "utf8").replace(/\r\n?/g, "\n"), to: one("--to"), cc: one("--cc"), subject: one("--subject") });
-		return made.ok ? { lines: [askText(made.rec, [])], code: 0 } : { lines: [made.error], code: made.code === 404 ? 2 : 1 };
+		if (!made.ok) return { lines: [made.error], code: made.code === 404 ? 2 : 1 };
+		// The text the session wrote passes the one pre-card check; its warnings ride on the card, and a refusal is said before any card.
+		const check = await checkDraft(made.rec, judgeOf(deps, made.rec.item, made.rec.ref));
+		if (check.refuse.length) return { lines: [`초안 검사에서 걸렸어요: ${check.refuse.join("; ")}`], code: 1 };
+		return { lines: [askText(made.rec, [])], code: 0, notes: check.warn.map(n => `확인: ${ownerWarning(n)}`) };
 	}
 	if (cmd === "send") {
 		const id = one("--draft");

@@ -232,7 +232,7 @@ describe("(e) 고치기 about the files", () => {
 			expect(names(made.id)).toEqual(["봄노래_음원.mp3"]);
 			const r = await link.revise(made.id, "음원 말고 여름노래 문서 파일로 바꿔 줘");
 			if (!r.ok) throw new Error(r.reason);
-			expect(model.calls[0]!.user).toContain('"여름노래_문서.pdf"');
+			expect(model.calls.some(c => c.user.includes('"여름노래_문서.pdf"'))).toBe(true);
 			expect(names(r.id)).toEqual(["여름노래_문서.pdf"]);
 			const card = link.view(r.id)!;
 			expect(card.attachments.map(a => a.name)).toEqual(["여름노래_문서.pdf"]);

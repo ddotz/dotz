@@ -1,5 +1,6 @@
 // Learning one lesson line into the tone profiles that read it (design 3.4): the profile it was given for and, for the whole mail app, each mail app
 // instance whose drafts read a file of their own. Every learning path (correct, revise, the owner's own edit, a 보내지 않기 reason) goes through here.
+import { CONTENT_PREFIX } from "../../../hub/ban.ts";
 import { curate, curateAsk, journalAdd, type LearnKind, profileOf } from "./curate.ts";
 import type { FlowDeps } from "./flow.ts";
 import { HEADINGS, INSTALL, normText, ownToneMailApps, profileBullets, recordForbidden as recordForbiddenIn, replaceBullets, type ToneKey } from "./settings.ts";
@@ -11,6 +12,9 @@ export const alsoInto = (key: ToneKey | "install"): ToneKey[] => (key !== INSTAL
 export function recordForbidden(key: ToneKey | "install", words: string[]): void {
 	for (const k of [key, ...alsoInto(key)]) recordForbiddenIn(k, words);
 }
+
+// A correction phrased as a prohibition ("용도를 묻지 않기", "~하지 마") is a content ban, not a dated 고친 점: it stays in the prompt and the check whatever its age.
+const PROHIBITION = /지\s*(?:마(?:요|라|세요)?|말(?:기|아|라|자)|않기)[\s.!。]*$/u;
 
 /** What `learnLine` did: whether the line went in, as what, the old lines it replaced, and the standing rule that already says it (`same`, nothing stored); `also`: the same for each profile of `alsoInto(key)`. */
 export type LineLearned = { stored: boolean; kind: LearnKind; replaced: string[]; same?: string; also?: (LineLearned & { app: string })[] };
@@ -27,6 +31,10 @@ export async function learnLine(key: ToneKey | "install", line: string, kind: Le
 async function learnInto(key: ToneKey | "install", line: string, kind: LearnKind, deps: FlowDeps): Promise<LineLearned> {
 	const text = line.replace(/\s+/g, " ").trim();
 	if (!text) return { stored: false, kind, replaced: [] };
+	if (kind === "correction" && PROHIBITION.test(text)) {
+		recordForbiddenIn(key, [`${CONTENT_PREFIX} ${text}`]);
+		return { stored: true, kind, replaced: [] };
+	}
 	const rules = profileBullets(key, HEADINGS.rules), corrections = profileBullets(key, HEADINGS.corrections);
 	const equal = kind === "rule" ? rules.find(r => normText(r) === normText(text)) : undefined;
 	if (equal !== undefined) return { stored: false, kind, replaced: [], same: equal };

@@ -33,12 +33,6 @@ export function boxLines(b: Box | undefined, from: string | undefined): string[]
 	return [b.how.trim(), boxGreeting(b, from)?.line ?? "", b.bans.length ? `쓰지 않을 표현: ${b.bans.join(", ")}.` : ""].filter(Boolean);
 }
 
-/** One warning line per banned phrase found in the draft (flow.ts ownerWarning words it for the card); sending is not blocked. */
-export const banWarnings = (b: Box | undefined, d: { subject?: string; body: string }): string[] => {
-	const text = `${d.subject ?? ""}\n${d.body}`.toLowerCase();
-	return (b?.bans ?? []).filter(p => text.includes(p.toLowerCase())).map(p => `it uses the forbidden expression '${p}'`);
-};
-
 const expand = (p: string) => (p === "~" ? homedir() : p.startsWith("~/") ? join(homedir(), p.slice(2)) : p);
 /** The box's 첨부 파일 folders, which go in front of the app's own. */
 export const boxFolders = (b: Box | undefined): string[] => (b?.folders ?? []).map(expand);

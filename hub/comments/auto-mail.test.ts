@@ -24,7 +24,7 @@ beforeEach(() => {
 });
 afterEach(() => rmSync(dir, { recursive: true, force: true }));
 
-function fakeMail(o: { miss?: boolean; failSend?: string; failCompose?: string; write?: MailLink["write"] } = {}) {
+function fakeMail(o: { miss?: boolean; failSend?: string; failCompose?: string; write?: MailLink["write"]; notes?: string[] } = {}) {
 	const specs: MailSpec[] = [];
 	const status = new Map<string, string>();
 	const views = new Map<string, MailView>();
@@ -35,7 +35,7 @@ function fakeMail(o: { miss?: boolean; failSend?: string; failCompose?: string; 
 			const id = `M${specs.push(spec)}`;
 			status.set(id, "pending");
 			views.set(id, { id, to: spec.to, subject: spec.subject, body: spec.body, attachments: o.miss ? [] : [{ name: "brief.pdf", size: 2048 }] });
-			return { ok: true, id, notes: [], ...(o.miss ? { libraryMiss: true } : {}) };
+			return { ok: true, id, notes: o.notes ?? [], ...(o.miss ? { libraryMiss: true } : {}) };
 		},
 		state: id => status.get(id),
 		send: async id => {
@@ -137,6 +137,17 @@ describe("autoMail", () => {
 		const d = pendingOf(t)[0]!;
 		expect(d.mail).toBe("M1");
 		expect(d.notes).toEqual(["확인: 첨부 파일 폴더에서 맞는 파일을 찾지 못했어요"]);
+	});
+
+	test("a warning of the mail's own check reaches the card: the draft is not clean and the auto-send rule does not post it", async () => {
+		const WARN = "확인: 쓰지 않기로 한 내용이 들어 있어요: 용도를 묻지 않기";
+		const t = setup({ source: { autoMail: true, mailApp: "mail", autoSend: { on: true, match: ["부탁"], max_per_day: 5 } }, mail: { notes: [WARN] } });
+		const out = await t.engine.collect({ force: true });
+		expect(out.drafted[0]!.notes).toEqual([WARN]);
+		expect(out.drafted[0]!.clean).toBe(false);
+		expect(out.sent).toEqual([]);
+		expect(t.engine.send(out.drafted[0]!.code, { by: "rule" })).toMatchObject({ ok: false });
+		expect(t.posted).toEqual([]);
 	});
 
 	test("no address, no file ask, or no mail link: no mail, and the reply that promises one says why on the card", async () => {

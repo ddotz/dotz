@@ -529,7 +529,7 @@ test("tone lists each line with the level it comes from and writes nothing", asy
 	expect(r.code).toBe(0);
 	const text = r.lines.join("\n");
 	expect(text).toContain("- [install] 되세요");
-	expect(text).toContain("- [app] 2030-03-04: 이모지 쓰지 마");
+	expect(text).toContain("- [app] 내용: 이모지 쓰지 마");
 	expect(text).not.toContain("방 전용");
 	expect(text.indexOf("고친 점:")).toBeLessThan(text.indexOf("금지:"));
 	expect((await runDraft(["tone", "--app", "youtube", "--room", "c1"], "")).lines.join("\n")).toContain("- [room] 2030-03-04: 방 전용");

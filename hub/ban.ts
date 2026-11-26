@@ -3,8 +3,8 @@ export type Part = { any: string[]; notAfter?: string[] } | { gap: number };
 /** A wording a model describes and code matches (`matchShape`); the model never writes a regex. */
 export type Shape = { parts: Part[] };
 
-/** A banned wording: `literal` matches as a substring (NFC, whitespace runs as one space, case aside); `regex` is a pattern the owner wrote by hand; `shape` is a wording rule the product wrote, shown by its label (what to write instead). */
-export type Ban = { kind: "literal"; text: string } | { kind: "regex"; source: string; flags: string } | { kind: "shape"; shape: Shape; label: string };
+/** A banned wording: `literal` matches as a substring (NFC, whitespace runs as one space, case aside); `regex` is a pattern the owner wrote by hand; `shape` is a wording rule the product wrote, shown by its label (what to write instead); `content` is something the draft must not say (`내용: 용도를 묻지 않기`), which no wording finds: only the style judge reads it (hub/style-judge.ts). */
+export type Ban = { kind: "literal"; text: string } | { kind: "regex"; source: string; flags: string } | { kind: "shape"; shape: Shape; label: string } | { kind: "content"; text: string };
 /** A ban that is a wording rule the product wrote. */
 export type ShapeBan = Extract<Ban, { kind: "shape" }>;
 
@@ -13,6 +13,8 @@ export const WORDING_RULES = "Wording rules the owner set (a draft that breaks o
 
 const REGEX_ENTRY = /^\/(.+)\/([a-z]*)$/;
 const SHAPE_PREFIX = "shape ";
+/** The marker of a content ban bullet in `## 금지`: `내용: <what not to write>`. */
+export const CONTENT_PREFIX = "내용:";
 const MULTILINE = /[\n\r\u2028\u2029]/;
 const oneLine = (s: string): string => s.normalize("NFC").replace(/\s+/g, " ").trim();
 const banText = (s: string): string => oneLine(s).toLowerCase();
@@ -89,23 +91,27 @@ function storedShape(json: string): ShapeBan | undefined {
 	return { kind: "shape", shape: { parts }, label };
 }
 
-/** One `## 금지` bullet as a ban: `/re/flags` a hand-written regex, `shape <JSON>` a wording rule the product stored (one that does not read back strictly is a literal), anything else a literal. */
+/** One `## 금지` bullet as a ban: `/re/flags` a hand-written regex, `shape <JSON>` a wording rule the product stored (one that does not read back strictly is a literal), `내용: <text>` a content ban, anything else a literal. */
 export function parseBan(bullet: string): Ban {
 	const text = bullet.trim();
 	const re = REGEX_ENTRY.exec(text);
 	if (re) return { kind: "regex", source: re[1]!, flags: re[2]! };
 	if (text.startsWith(SHAPE_PREFIX)) return storedShape(text.slice(SHAPE_PREFIX.length)) ?? { kind: "literal", text };
-	return { kind: "literal", text };
+	const content = text.startsWith(CONTENT_PREFIX) ? oneLine(text.slice(CONTENT_PREFIX.length)) : "";
+	return content ? { kind: "content", text: content } : { kind: "literal", text };
 }
 
 /** The bullet a ban is stored as; `parseBan` reads it back. */
-export const banBullet = (ban: Ban): string => (ban.kind === "literal" ? ban.text : ban.kind === "regex" ? `/${ban.source}/${ban.flags}` : `${SHAPE_PREFIX}${JSON.stringify({ parts: ban.shape.parts, label: ban.label })}`);
+export const banBullet = (ban: Ban): string => (ban.kind === "literal" ? ban.text : ban.kind === "content" ? `${CONTENT_PREFIX} ${ban.text}` : ban.kind === "regex" ? `/${ban.source}/${ban.flags}` : `${SHAPE_PREFIX}${JSON.stringify({ parts: ban.shape.parts, label: ban.label })}`);
 
 /** What tells two bans apart: a literal by its normalised text, a regex by its source and flags, a shape by its parts (label aside). */
-export const banKey = (ban: Ban): string => (ban.kind === "literal" ? banText(ban.text) : ban.kind === "regex" ? `/${ban.source}/${ban.flags}` : `${SHAPE_PREFIX}${JSON.stringify(ban.shape.parts)}`);
+export const banKey = (ban: Ban): string => (ban.kind === "literal" ? banText(ban.text) : ban.kind === "content" ? `${CONTENT_PREFIX}${banText(ban.text)}` : ban.kind === "regex" ? `/${ban.source}/${ban.flags}` : `${SHAPE_PREFIX}${JSON.stringify(ban.shape.parts)}`);
 
-/** What the model and the owner see for a ban: the literal text, a regex as the owner wrote it, or a shape's label. */
-export const banLabel = (ban: Ban): string => (ban.kind === "shape" ? ban.label : banBullet(ban));
+/** What the model and the owner see for a ban: the literal text, a regex as the owner wrote it, a shape's label or a content ban's text. */
+export const banLabel = (ban: Ban): string => (ban.kind === "shape" ? ban.label : ban.kind === "content" ? ban.text : banBullet(ban));
+
+/** The text of a content ban; undefined for any other ban. */
+export const contentBan = (ban: Ban): string | undefined => (ban.kind === "content" ? ban.text : undefined);
 
 /** The label of a wording rule (a shape); undefined for a literal or a regex, which stay forbidden expressions. */
 export const wordingRule = (ban: Ban): string | undefined => (ban.kind === "shape" ? ban.label : undefined);
@@ -176,8 +182,9 @@ function compiled(source: string, flags: string): RegExp | undefined {
 	}
 }
 
-/** Whether `body` uses the ban: a literal as a substring (NFC, whitespace runs as one space, case aside; an empty one never hits), a regex tested once on the body as written (an invalid one never hits), a shape by `matchShape` (one that runs past its step budget counts as not used, logged once). */
+/** Whether `body` uses the ban (a content ban never: no wording finds it, only the style judge): a literal as a substring (NFC, whitespace runs as one space, case aside; an empty one never hits), a regex tested once on the body as written (an invalid one never hits), a shape by `matchShape` (one that runs past its step budget counts as not used, logged once). */
 export function banHit(body: string, ban: Ban): boolean {
+	if (ban.kind === "content") return false;
 	if (ban.kind === "regex") return compiled(ban.source, ban.flags)?.test(body) ?? false;
 	if (ban.kind === "shape") {
 		const r = matchShape(body, ban.shape);

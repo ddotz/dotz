@@ -173,6 +173,8 @@ A chat message that needs his own decision still asks first (exit 4), since the 
   the model saw (a correction stored meanwhile wins and the compaction is skipped); before it, every original line is journalled with
   `by: "compact"`, `why: "merged"` and the line it went into, or `why: "dropped"` and an empty `newLine`, so `correct --restore` puts any
   of them back. `tone --journal` shows a dropped one as `"<line>" → 지움`.
+  `내용: <text>` is a content ban: something the draft must not say ("내용: 용도를 묻지 않기"), which no wording finds. `banHit` never hits it; the prompt carries every content ban under its own heading (apart from the 고친 점 budget, so age never cuts one), and the style judge (`hub/style-judge.ts`) keeps a content remark only when its rule number is one of them. A revise lesson phrased as a prohibition ("~하지 마", "~하지 않기") is stored as such a line by `learnLine`, never as a dated 고친 점. `draftRules().effective()` lists it as kind `content-ban`.
+  One check, `checkDraft` (`lib/check-draft.ts`), runs before every card (mail auto draft, revise, compose and the mail riding on a comment reply): bans (tone files and the mailbox's 설정 금지), placeholders, recipient, length and the style judge, and keeps the result in `DraftRec.check` (`refuse` = refuses the send, `warn` = a ban left after the one rewrite or a judge note, `judged` = the judge's part). The card shows `warn` as `확인:` and, with the 첨부 확인 gate (`draftAttachIssues`), offers 이대로 보내기; the send needs it. A comment auto-send rule skips any draft with a note.
 - `drafts.json` `{drafts, keys}`; draft ids are `R` + 6 base32 characters; a newer draft for the same mail makes the older one stale. Each draft keeps its `app` and `room`.
 
 ## How a new install's tone is learned

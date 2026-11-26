@@ -79,3 +79,9 @@ test("tone files and settings keys of a mail app that is not in the app list are
 	for (const args of [["tone", "--app", "mail"], ["tone", "--effective", "--app", "mail"]]) expect((await runDraft(args, "")).lines.filter(l => l.startsWith("읽는 초안 없음"))).toEqual(marks);
 	rmSync(join(env.dir, "custom", "apps.json"));
 });
+
+test("a 금지 line with the 내용: marker is listed as a content ban", async () => {
+	tone(toneFile({ app: "mail", room: "b-a" }), "## 금지\n\n- 내용: 용도를 묻지 않기\n");
+	const { rules } = await draftRules(AT, ITEM).effective();
+	expect(rules.filter(r => r.kind === "content-ban").map(r => ({ text: r.text, scope: r.scope }))).toEqual([{ text: "내용: 용도를 묻지 않기", scope: "mailbox" }]);
+});

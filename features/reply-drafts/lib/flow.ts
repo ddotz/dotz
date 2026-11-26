@@ -9,11 +9,12 @@ import { withFileWords } from "../../../hub/auto-attach.ts";
 import { claimsAttachment, ownClaimText } from "../../../hub/attach-claim.ts";
 import { ATTACH_AS_IS_HINT, ATTACH_REFUSED, LINT_REFUSED, asksForFile, briefLines, draftApprovalBlock, draftVerdict, type DraftVerdict, SPENT_REFUSED, WAITING_REFUSED } from "../../../hub/draft-approval.ts";
 import type { ReplyCall } from "../../../hub/reply-model.ts";
-import { addressesOf, asksFileOff, fileNameKey, generateChatReply, learnedOf, lintReply, NO_RECIPIENT, ownerLint, RECIPIENT_FAILURE, reviseReply, SENT_CLAIM_FAILURE, withSenderAddress, type LessonScope, type ModelCall, type Recipient, type ReplyItem, type ReplyKind, type ReplyStyle } from "../../../hub/reply-draft.ts";
+import { addressesOf, asksFileOff, fileNameKey, generateChatReply, learnedOf, NO_RECIPIENT, RECIPIENT_FAILURE, reviseReply, SENT_CLAIM_FAILURE, withSenderAddress, type LessonScope, type ModelCall, type Recipient, type ReplyItem, type ReplyKind, type ReplyStyle } from "../../../hub/reply-draft.ts";
 import { styleJudgeOn } from "../../../hub/config.ts";
 import { judgeAsk, type JudgeAsk } from "../../../hub/style-judge.ts";
 import { listLibrary, matchLibrary, MIN_SCORE, rankLibrary, type LibraryFile } from "./library.ts";
 import { basename } from "node:path";
+import { checkDraft, checkText, readCheck } from "./check-draft.ts";
 import { configConflicts, outgoingMail, ruleFilePath } from "./rules.ts";
 import { canAttach, sendsThroughZele, sendWith, settleAccount, threadMoved, webmailSite, zeleAccountOf, type Sent, type SendOutcome } from "./senders.ts";
 import { carryStagedFiles, removeStagedFile, stagedFiles, stagedName, stageFiles, stageWanted, type StageOpts, type Want } from "./staged.ts";
@@ -36,7 +37,7 @@ export { realRunner };
 // What hub/reply-mail.ts (the hub's single door into this feature) needs beside the flow itself.
 export { boxOfOutgoing } from "./box-place.ts";
 export { dataDir, validApp } from "./settings.ts";
-export { alsoInto, configConflicts, draftRules, learnLine, lessonOfEdit, type LineLearned, mailView, outgoingMail, recordForbidden, sendAccountOf, webmailSite, type MailOf };
+export { alsoInto, checkDraft, configConflicts, draftRules, learnLine, lessonOfEdit, type LineLearned, mailView, outgoingMail, recordForbidden, sendAccountOf, webmailSite, type MailOf };
 
 // `analyze` = the model call of the identity sweep and its refinement (persona.ts); absent, no identity is analysed or refined.
 export type FlowDeps = { /** Chooses among tied library files by name (stageForReply); the default is one short model call. */ pick?: (names: string[]) => Promise<string[]>; call?: ModelCall; judge?: ModelCall; /** The model calls of one draft and its overall budget (draftTrace); buildDraft makes one when absent. */ trace?: DraftTrace; analyze?: ModelCall; run?: Runner; now?: () => Date; send?: (rec: DraftRec) => Promise<SendOutcome>; /** How library files are copied onto a draft (tests). */ stage?: StageOpts; /** Told where an approved send left the mail, right after the transport answered and before any bookkeeping write (bin/draft.ts prints its DOTZ_SEND line). */ onOutcome?: (o: Outcome) => void; learnCall?: (app: string) => ModelCall; kakaoReader?: (chatId: string) => Promise<OwnerReader>; kakaoRooms?: () => Promise<RoomsReader> };
@@ -266,7 +267,9 @@ export async function buildDraft(item: ReplyItem, meta: Meta, deps: FlowDeps): P
 	const r = await generateChatReply(item, style, call, judgeOf(traced, item, meta.ref));
 	if (r.action !== "draft") return r;
 	const questions = item.kind === "mail" ? r.questions.filter(q => !ADDRESS_ASK.test(q)) : r.questions;
-	return { action: "draft", rec: toRec(item, meta, { ...r, questions }, [], deps), warnings: r.warnings, ...(r.files ? { files: r.files } : {}) };
+	const rec = toRec(item, meta, { ...r, questions }, [], deps);
+	await checkDraft(rec, undefined, r.judged ?? []);
+	return { action: "draft", rec, warnings: r.warnings, ...(r.files ? { files: r.files } : {}) };
 }
 
 
@@ -330,15 +333,17 @@ export function ownerWarning(w: string): string {
 /** A 고치기 asked for other files and the files stayed as they were, as the card says why (store.ts fileChangeWhy): what it asked for is not in the 첨부 파일 폴더, no folder is set for its mail app, or it takes a file off and the model, asked once more, still named no files. */
 export const FILE_CHANGE_MISSED = "고쳐 달라고 한 파일을 첨부 파일 폴더에서 찾지 못해서 첨부는 그대로예요", FILE_CHANGE_NO_FOLDER = "메일 앱에 첨부 파일 폴더가 정해져 있지 않아 다른 파일을 찾지 못했고 첨부는 그대로예요", FILE_CHANGE_UNDECIDED = "뺄 파일을 정하지 못해서 첨부는 그대로예요. 뺄 파일 이름을 적어 다시 고쳐 주세요";
 
-// What a mail draft's words and its files disagree on, as the owner reads it on the card and in the refused send (hub/attach-check.ts), plus the files
-// chosen for it that are not on it yet. Mail only; a source that cannot carry files has nothing to check.
+// What the owner confirms before this draft goes, as he reads it on the card and in the refused send (a pick of 이대로 보내기 lets it through): what its words and its files
+// disagree on (hub/attach-check.ts), the files chosen for it that are not on it yet (mail only; a source that cannot carry files has none), and what the stored check warns
+// of (check-draft.ts: a ban the text still holds, the style judge's notes).
 export function draftAttachIssues(rec: DraftRec): string[] {
-	if (rec.kind !== "mail" || !canAttach(rec.source)) return [];
+	const held = readCheck(rec).warn.map(ownerWarning);
+	if (rec.kind !== "mail" || !canAttach(rec.source)) return held;
 	const files = stagedFiles(rec.id).map(f => f.name);
 	const want = notYetStaged(rec);
 	const found = files.length || !want.length ? attachIssues({ subject: rec.subject, body: rec.body, files, request: rec.compose ? undefined : rec.item.text }).map(i => i.text) : [];
 	if (rec.fileChangeMissed && sortedNames(rec.fileChangeMissed) === sortedNames(files)) found.push(rec.fileChangeWhy === "no_folder" ? FILE_CHANGE_NO_FOLDER : rec.fileChangeWhy === "undecided" ? FILE_CHANGE_UNDECIDED : FILE_CHANGE_MISSED);
-	return want.length ? [...found, `아직 못 붙인 파일: ${want.join(", ")}`] : found;
+	return [...found, ...(want.length ? [`아직 못 붙인 파일: ${want.join(", ")}`] : []), ...held];
 }
 const sortedNames = (names: readonly string[]): string => [...names].sort().join("\n");
 // The files on a draft and those chosen for it that are still downloading: what a 고치기 about the files is expected to change.
@@ -349,10 +354,13 @@ const notYetStaged = (rec: DraftRec): string[] => {
 	return (rec.wantFiles ?? []).map(f => f.name).filter(n => !files.includes(stagedName(n)));
 };
 
-// The send-time lint of a draft, in the lint's own words. A text the owner wrote himself (editedFrom) gets the owner-text lint: his length is not the style's.
-const draftLint = (d: DraftRec): string[] => (d.editedFrom !== undefined ? ownerLint : lintReply)({ to: d.to, cc: d.cc, subject: d.subject, body: d.body }, d.item, draftRules(d, d.item).style(), { anyRecipient: d.ownerRecipients === true });
-// The same as the owner reads it. The comment engine runs it before a combined card's reply is posted (hub/comments/engine.ts), so a hit never leaves a posted reply beside an unsent mail.
-export const draftLintFailures = (d: DraftRec): string[] => draftLint(d).map(ownerWarning);
+// What the stored check holds against a draft (check-draft.ts), as the owner reads it: refusals first, then the notes that need his 이대로 보내기.
+export const draftLintFailures = (d: DraftRec): string[] => {
+	const check = readCheck(d);
+	return [...check.refuse, ...check.warn].map(ownerWarning);
+};
+// The findings that refuse the send whatever the owner picks. The comment engine runs it before a combined card's reply is posted (hub/comments/engine.ts), so a hit never leaves a posted reply beside an unsent mail.
+export const draftRefusals = (d: DraftRec): string[] => readCheck(d).refuse.map(ownerWarning);
 
 // The reason code of a lint finding (design 2.2), with the value its text names.
 function lintCode(raw: string): { code: string; vars?: Record<string, string | number> } {
@@ -378,13 +386,14 @@ export function editDraft(id: string, text: string, subject?: string): Step & { 
 	if (d.status !== "pending") return { ok: false, text: `초안 ${id}은(는) 이미 ${d.status} 상태라 고칠 수 없어요`, code: "not_pending" };
 	const body = stripControl(text).replace(/\r\n?/g, "\n").trim();
 	const subj = subject === undefined ? d.subject : stripControl(subject).replace(/\s+/g, " ").trim();
-	const found = ownerLint({ to: d.to, cc: d.cc, subject: subj, body }, d.item, draftRules(d, withRecipient(d).item).style(), { anyRecipient: d.ownerRecipients === true });
+	const check = checkText({ ...withRecipient(d), subject: subj, body, editedFrom: d.editedFrom ?? d.body }, []);
+	const found = [...check.refuse, ...check.warn];
 	if (found.length) {
 		const lint = found.map(ownerWarning);
 		return { ok: false, text: `${LINT_REFUSED} ${lint.join(" · ")}`, ...lintCode(found[0]!), lint };
 	}
-	if (body !== d.body || subj !== d.subject) patchDraft(id, { ...(subj !== d.subject ? { subject: subj, subjectEdited: true as const } : {}), ...(body !== d.body ? { body, questions: [], ...(d.editedFrom === undefined ? { editedFrom: d.body } : {}) } : {}) });
-	const issues = draftAttachIssues({ ...d, body });
+	if (body !== d.body || subj !== d.subject) patchDraft(id, { ...(subj !== d.subject ? { subject: subj, subjectEdited: true as const } : {}), ...(body !== d.body ? { body, questions: [], check, ...(d.editedFrom === undefined ? { editedFrom: d.body } : {}) } : {}) });
+	const issues = draftAttachIssues({ ...d, body, ...(body !== d.body ? { check } : {}) });
 	return { ok: true, text: `초안 ${id}을(를) 고친 글 그대로 저장했어요${issues.length ? `. 확인: ${issues.join(" · ")}` : ""}` };
 }
 
@@ -411,6 +420,8 @@ export const accountHold = (rec: DraftRec): string | undefined => (rec.accounts 
 export function askText(draft: DraftRec, warnings: string[], headline = draft.compose ? "새 메일 초안을 만들었어요" : "답장 초안을 만들었어요"): string {
 	const rec = withRecipient(draft);
 	if (rec !== draft) warnings = warnings.filter(w => w !== NO_RECIPIENT);
+	const check = readCheck(rec);
+	warnings = [...new Set([...check.refuse, ...check.warn, ...warnings])];
 	// An account set in the meantime answers it: the send finds that one.
 	const hold = accountHold(rec);
 	if (hold) warnings = [...warnings, hold];
@@ -576,7 +587,6 @@ async function reviseClaimed(id: string, change: string, deps: FlowDeps, opts: {
 	const rules = draftRules(old, asked);
 	const r = await reviseReply(item, await rules.examples(), { to: old.to, subject: old.subject, body: old.body }, change, callOf(deps, old.item, old.ref), judgeOf(deps, old.item, old.ref));
 	if (r.action === "skip") return { ok: false, text: `고친 초안을 만들지 못했어요: ${r.reason}` };
-	const banned = rules.banned(r.draft);
 	const rec = toRec(old.item, { ...(old.box && old.instance ? { box: old.box, instance: old.instance } : {}), source: old.source, mailId: old.mailId, ref: old.ref, ...(old.account ? { account: old.account } : {}), ...(old.origAttachments ? { origAttachments: old.origAttachments } : {}) }, r, [...old.changes, change], deps);
 	if (old.subjectEdited) {
 		rec.subjectEdited = true;
@@ -603,6 +613,7 @@ async function reviseClaimed(id: string, change: string, deps: FlowDeps, opts: {
 	const notStaged = await restageForRevision(rec, change, deps, rev && r.files ? { rev, chosen: r.files } : undefined).catch(e => [(e as Error).message]);
 	// The change asked for other files and none came: the card says so instead of a rewritten body that only promises them.
 	if (rec.kind === "mail" && canAttach(rec.source) && fileChange().test(change) && heldAndWanted(rec) === before) Object.assign(rec, { fileChangeMissed: stagedFiles(rec.id).map(f => f.name) }, rev && !r.files && asksFileOff(change) ? { fileChangeWhy: "undecided" } : (await attachFolder(old)) ? {} : { fileChangeWhy: "no_folder" });
+	await checkDraft(rec, undefined, r.judged ?? []);
 	const conflict = addRevision(rec, old.id);
 	if (conflict) {
 		for (let n = stagedFiles(rec.id).length; n > 0; n--) removeStagedFile(rec.id, n - 1);
@@ -613,7 +624,7 @@ async function reviseClaimed(id: string, change: string, deps: FlowDeps, opts: {
 	const taught = learnt.line.trim() || learnt.forbid.length ? { key: lessonKey(rules, learnt.scope), line: learnt.line, forbid: learnt.forbid, evidence: { draft: old.body, change } } : undefined;
 	const stored = taught && opts.learn !== false ? await teach(taught.key, taught, taught.evidence, deps) : taught;
 	const said = taught && stored ? lessonNote({ key: taught.key, ...stored }) : "";
-	return { ok: true, text: askText(rec, [...r.warnings, ...banned, ...notStaged], said ? `답장 초안을 고쳤어요. ${said}` : "답장 초안을 고쳤어요"), id: rec.id, replaces: old.id, ...(taught ? { lesson: taught } : {}) };
+	return { ok: true, text: askText(rec, [...r.warnings, ...notStaged], said ? `답장 초안을 고쳤어요. ${said}` : "답장 초안을 고쳤어요"), id: rec.id, replaces: old.id, ...(taught ? { lesson: taught } : {}) };
 }
 
 export async function reviseDraft(id: string, change: string, deps: FlowDeps, opts: { learn?: false } = {}): Promise<Step> {
@@ -702,7 +713,7 @@ export async function sendDraft(id: string, deps: FlowDeps, opts: { withReply?: 
 	const issues = v.verdict === "send" ? draftAttachIssues(d) : [];
 	// Only a chosen file still on its way (and nothing else wrong) is `file_pending`, which code may retry; any other mismatch waits for the owner.
 	if (issues.length) return { ok: false, text: `${ATTACH_REFUSED} ${issues.join(" · ")}. ${ATTACH_AS_IS_HINT}`, sent: "no", ...(issues.length === 1 && notYetStaged(d).length ? { code: "file_pending" } : { code: "attach_mismatch", vars: { issues: issues.join(" · ") } }) };
-	const found = draftLint(d);
+	const found = readCheck(d).refuse;
 	if (found.length) return { ok: false, text: `${LINT_REFUSED} ${found.map(ownerWarning).join(" · ")}`, sent: "no", ...lintCode(found[0]!) };
 	// One approval, one run (qa-clean-8 N15): the run that took the claim under this token (the gateway's `go`, or a pick no gateway holds) used it
 	// up, even one killed mid-send; a takeover (`--retry`) or a second run under it needs a new `go` or the owner's new pick.

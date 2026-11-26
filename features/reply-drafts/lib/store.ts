@@ -13,6 +13,9 @@ import { paths, writeAtomic } from "./settings.ts";
 // answered = the owner replied to the mail outside dotz (hub/mail-reconcile.ts); the draft is closed like a sent one, never sent.
 export type AfterStage = "recorded" | "followup" | "closed";
 export type DraftStatus = "pending" | "sent" | "dropped" | "stale" | "held" | "answered";
+/** What the one check before a card found (check-draft.ts): `refuse` = lint findings that refuse the send (recipient, empty, length, placeholder), `warn` = what the owner confirms with 이대로 보내기 (a ban the text still holds, the style judge's notes); `judged` = the part of `warn` the style judge found, the one thing a later read cannot recompute without a model. */
+export type DraftCheck = { refuse: string[]; warn: string[]; judged: string[] };
+
 export type DraftRec = {
 	id: string;
 	recipient?: { who: string; evidence: string }; // who the model judged the sender to be and the sender's words it rests on (audit only)
@@ -58,6 +61,8 @@ export type DraftRec = {
 	closedAt?: string;
 	changes: string[];
 	questions: string[];
+	/** Stored by checkDraft before the card; the card and the send read it. */
+	check?: DraftCheck;
 	item: ReplyItem;
 };
 type File = { drafts: DraftRec[]; keys: string[] };

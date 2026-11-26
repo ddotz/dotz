@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import fc from "fast-check";
 import { JUDGE_TIMEOUT_MS, judgePrompt, judgeStyle, styleFailure, styleWarning, type JudgeAsk } from "./style-judge.ts";
-import { generateChatReply, generateReply, type ModelCall, NO_RECIPIENT, type ReplyItem, type ReplyStyle, reviseReply, rewritable, styleConditions } from "./reply-draft.ts";
+import { generateChatReply, generateReply, type ModelCall, NO_RECIPIENT, type ReplyItem, type ReplyStyle, buildPrompt, reviseReply, rewritable, styleConditions } from "./reply-draft.ts";
 import { styleJudgeIn } from "./config.ts";
 import { advance } from "./runtime/test-clock.ts";
 
@@ -146,15 +146,15 @@ test("a violation is a rewritable failure, and the owner's note cuts the rule to
 });
 
 test("the standing rules and the corrections newest first in the prompt's budget are kept apart, the corrections without their leading date and colon", () => {
-	const style = { standing: ["존댓말로 쓴다"], corrections: ["2026-11-01 짧게 쓴다", "2026-11-20: 감사 댓글에는 이모지를 붙이지 않는다", "존댓말로 쓴다"] };
+	const style = { forbidden: [], standing: ["존댓말로 쓴다"], corrections: ["2026-11-01 짧게 쓴다", "2026-11-20: 감사 댓글에는 이모지를 붙이지 않는다", "존댓말로 쓴다"] };
 	expect(styleConditions(style)).toEqual({ standing: ["존댓말로 쓴다"], corrections: ["감사 댓글에는 이모지를 붙이지 않는다", "짧게 쓴다"] });
 	expect(styleConditions(style, 20)).toEqual({ standing: ["존댓말로 쓴다"], corrections: [] });
 });
 
 test("a correction equal to a standing rule appears once, and the same correction on two dates appears once", () => {
-	expect(styleConditions({ standing: ["감사 댓글에는 이모지를 붙이지 않는다"], corrections: ["2026-11-20 감사 댓글에는 이모지를 붙이지 않는다"] })).toEqual({ standing: ["감사 댓글에는 이모지를 붙이지 않는다"], corrections: [] });
-	expect(styleConditions({ standing: [], corrections: ["2026-11-20: 짧게 쓴다", "2026-11-18 짧게 쓴다"] })).toEqual({ standing: [], corrections: ["짧게 쓴다"] });
-	const p = judgePrompt({ ...input, ...styleConditions({ standing: ["짧게 쓴다"], corrections: ["2026-11-20: 짧게 쓴다"] }) });
+	expect(styleConditions({ forbidden: [], standing: ["감사 댓글에는 이모지를 붙이지 않는다"], corrections: ["2026-11-20 감사 댓글에는 이모지를 붙이지 않는다"] })).toEqual({ standing: ["감사 댓글에는 이모지를 붙이지 않는다"], corrections: [] });
+	expect(styleConditions({ forbidden: [], standing: [], corrections: ["2026-11-20: 짧게 쓴다", "2026-11-18 짧게 쓴다"] })).toEqual({ standing: [], corrections: ["짧게 쓴다"] });
+	const p = judgePrompt({ ...input, ...styleConditions({ forbidden: [], standing: ["짧게 쓴다"], corrections: ["2026-11-20: 짧게 쓴다"] }) });
 	expect(p.match(/짧게 쓴다/g)).toHaveLength(1);
 });
 
@@ -211,7 +211,7 @@ describe("a mail or comment draft and the style judge", () => {
 
 	test("a rewrite that still breaks the rule comes back with the note, never a third try or judge call", async () => {
 		const d = drafter([informal, informal]), j = asker([broke, broke, broke]);
-		expect(await generateReply(item, ruled, d.call, j.ask)).toMatchObject({ action: "draft", draft: { body: informal }, warnings: ["말투 조건과 달라 보여요: 존댓말로 쓴다"], tries: 2 });
+		expect(await generateReply(item, ruled, d.call, j.ask)).toMatchObject({ action: "draft", draft: { body: informal }, warnings: ["말투 조건과 달라 보여요: 존댓말로 쓴다"], judged: ["말투 조건과 달라 보여요: 존댓말로 쓴다"], tries: 2 });
 		expect(d.users).toHaveLength(2);
 		expect(j.prompts).toHaveLength(2);
 	});
@@ -234,7 +234,7 @@ describe("a mail or comment draft and the style judge", () => {
 
 	test("a try that fails the lint is not judged; its rewrite is", async () => {
 		const d = drafter(["[이름]님, 확인해 볼게요.", informal]), j = asker([broke]);
-		expect(await generateReply(item, ruled, d.call, j.ask)).toMatchObject({ draft: { body: informal }, warnings: ["말투 조건과 달라 보여요: 존댓말로 쓴다"], tries: 2 });
+		expect(await generateReply(item, ruled, d.call, j.ask)).toMatchObject({ draft: { body: informal }, warnings: ["말투 조건과 달라 보여요: 존댓말로 쓴다"], judged: ["말투 조건과 달라 보여요: 존댓말로 쓴다"], tries: 2 });
 		expect(j.prompts).toHaveLength(1);
 		expect(j.prompts[0]).toContain(informal);
 	});
@@ -273,7 +273,7 @@ describe("a mail or comment draft and the style judge", () => {
 		const second = [reply("[이름]님, 확인해 보고 말씀드릴게요."), json({ action: "skip", reason: "답할 필요 없음", body: "" }), json({ action: "ask", body: "", question: "회의를 미룰까요?", choices: ["미룬다", "그대로 둔다"] }), new Error("model call timed out after 45s"), "다시 써 봤어요: 확인해 보고 말씀드릴게요."];
 		for (const a of second) {
 			const d = scripted([reply(informal), a]), j = asker([broke, answer([])]);
-			expect(await generateReply(item, ruled, d.call, j.ask)).toEqual({ action: "draft", draft: { to: "kim@example.com", subject: "Re: 회의 일정 문의", body: informal }, questions: [], warnings: ["말투 조건과 달라 보여요: 존댓말로 쓴다"], tries: 2 });
+			expect(await generateReply(item, ruled, d.call, j.ask)).toEqual({ action: "draft", draft: { to: "kim@example.com", subject: "Re: 회의 일정 문의", body: informal }, questions: [], warnings: ["말투 조건과 달라 보여요: 존댓말로 쓴다"], judged: ["말투 조건과 달라 보여요: 존댓말로 쓴다"], tries: 2 });
 			expect(d.users).toHaveLength(2);
 			expect(j.prompts).toHaveLength(1);
 		}
@@ -282,7 +282,7 @@ describe("a mail or comment draft and the style judge", () => {
 	test("a rewrite the judge asked for whose file promise the chosen files do not keep leaves the first draft, with its files and note", async () => {
 		const withFiles: ReplyItem = { ...item, candidates: ["회의 일정표.pdf"] };
 		const d = scripted([json({ body: informal, files: [] }), json({ body: "회의 일정표 파일 첨부해 드려요.", files: [] })]), j = asker([broke, answer([])]);
-		expect(await generateReply(withFiles, ruled, d.call, j.ask)).toEqual({ action: "draft", draft: { to: "kim@example.com", subject: "Re: 회의 일정 문의", body: informal }, questions: [], warnings: ["말투 조건과 달라 보여요: 존댓말로 쓴다"], tries: 2, files: [] });
+		expect(await generateReply(withFiles, ruled, d.call, j.ask)).toEqual({ action: "draft", draft: { to: "kim@example.com", subject: "Re: 회의 일정 문의", body: informal }, questions: [], warnings: ["말투 조건과 달라 보여요: 존댓말로 쓴다"], judged: ["말투 조건과 달라 보여요: 존댓말로 쓴다"], tries: 2, files: [] });
 		expect(j.prompts).toHaveLength(1);
 	});
 
@@ -320,7 +320,44 @@ describe("a mail or comment draft and the style judge", () => {
 		const chat: ReplyItem = { kind: "chat", app: "line", from: "Kim", text: "다음 주 회의 언제 할까?" };
 		const asks = json({ action: "ask", to: "", subject: "", body: "", question: "회의를 언제 할까요?", choices: ["월요일", "화요일"] });
 		const chatDraft = json({ to: "Kim", subject: "", body: informal });
-		expect(await generateChatReply(chat, ruled, scripted([chatDraft, asks]).call, asker([broke]).ask)).toMatchObject({ action: "draft", draft: { body: informal }, warnings: ["말투 조건과 달라 보여요: 존댓말로 쓴다"], tries: 2 });
+		expect(await generateChatReply(chat, ruled, scripted([chatDraft, asks]).call, asker([broke]).ask)).toMatchObject({ action: "draft", draft: { body: informal }, warnings: ["말투 조건과 달라 보여요: 존댓말로 쓴다"], judged: ["말투 조건과 달라 보여요: 존댓말로 쓴다"], tries: 2 });
 		expect(await generateChatReply(chat, ruled, scripted([asks]).call, asker([broke]).ask)).toEqual({ action: "ask", question: "회의를 언제 할까요?", choices: ["월요일", "화요일"] });
+	});
+});
+
+describe("content bans (a `내용:` line of 금지)", () => {
+	const BAN = "용도를 묻지 않기";
+	const mail: ReplyItem = { kind: "mail", app: "mail", from: "kim@example.com", subject: "자료 요청", text: "글A 자료 부탁드려요" };
+	const draftOf = (body: string) => `\`\`\`json\n${JSON.stringify({ action: "draft", reason: "r", to: "kim@example.com", subject: "Re: 자료 요청", body, questions: [] })}\n\`\`\``;
+	const script = (outs: string[]): ModelCall => {
+		let at = 0;
+		return async () => outs[Math.min(at++, outs.length - 1)]!;
+	};
+	const ASKS = "어디에 쓰실 건가요? 자료 보내드릴게요.";
+
+	test("a content remark is kept only when it names one of the listed content bans", async () => {
+		const draft = "다음 주에 보내요. 어디에 쓰실 건가요?";
+		const remarks = answer([{ rule: 1, about: "content", quote: "다음 주에", why: "약속" }, { rule: 2, about: "content", quote: "어디에 쓰실", why: "용도" }]);
+		expect(await judgeStyle({ standing: ["존댓말로 쓴다"], corrections: [], contentBans: [BAN], received: "자료 부탁", draft }, asker([remarks]).ask)).toEqual([{ rule: 2, text: BAN, quote: "어디에 쓰실", why: "용도", content: true }]);
+		expect(await judgeStyle({ standing: ["존댓말로 쓴다"], corrections: [], received: "자료 부탁", draft }, asker([remarks]).ask)).toEqual([]);
+	});
+
+	test("a draft that still says a content ban after the one rewrite comes back with its warning", async () => {
+		const style: ReplyStyle = { samples: [], rules: [], corrections: [], forbidden: [`내용: ${BAN}`] };
+		const d = script([draftOf(ASKS)]), j = asker([answer([{ rule: 1, about: "content", quote: "어디에 쓰실", why: "용도" }])]);
+		const r = await generateReply(mail, style, d, j.ask);
+		expect(r).toMatchObject({ action: "draft", tries: 2, warnings: [`쓰지 않기로 한 내용이 들어 있어요: ${BAN}`], judged: [`쓰지 않기로 한 내용이 들어 있어요: ${BAN}`] });
+		expect(j.prompts).toHaveLength(2);
+	});
+
+	test("corrections over the budget never push the oldest content ban out of the prompt or the judge", async () => {
+		const many = Array.from({ length: 60 }, (_, i) => `2026-10-${String(i % 28 + 1).padStart(2, "0")}: ${"가나다".repeat(30)}${i}번 고친 점`);
+		const style: ReplyStyle = { samples: [], rules: [], corrections: many, forbidden: [`내용: ${BAN}`] };
+		expect(styleConditions(style).contentBans).toEqual([BAN]);
+		expect(styleConditions(style).corrections.length).toBeLessThan(many.length);
+		expect(buildPrompt(mail, style).user).toContain(BAN);
+		const j = asker([answer([])]);
+		await generateReply(mail, style, script([draftOf("보내드릴게요")]), j.ask);
+		expect(j.prompts[0]).toContain(BAN);
 	});
 });

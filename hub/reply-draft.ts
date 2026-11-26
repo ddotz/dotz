@@ -5,7 +5,7 @@
 // Pure: no fs, no network, no config import.
 
 import { type AttachIssueKind, attachIssues } from "./attach-check.ts";
-import { banFinding, banHit, banKey, banLabel, literalBan, parseBan, WORDING_RULES, wordingRule } from "./ban.ts";
+import { banFinding, banHit, banKey, banLabel, contentBan, literalBan, parseBan, WORDING_RULES, wordingRule } from "./ban.ts";
 import { cleanChoices, cleanQuestion } from "./choices.ts";
 import { type JudgeAsk, judgeStyle, styleFailure, styleWarnings, type Violation } from "./style-judge.ts";
 
@@ -54,7 +54,7 @@ export type DraftOut = { to: string; cc?: readonly string[]; subject?: string; b
 /** Who wrote to the user, as the model judged it (mail and comment): `evidence` = the sender's own words that show it. */
 export type Recipient = { who: string; evidence: string };
 export type ReplyResult =
-	| { action: "draft"; draft: DraftOut; questions: string[]; warnings: string[]; tries: number; recipient?: Recipient; /** Revise mode: the lasting preference the change shows ("" = only about this message); absent = the model did not say. */ lesson?: string; forbid?: string[]; scope?: LessonScope; /** The candidates the model chose (exact names); [] = none, absent = it gave no "files" or the item had no candidates. */ files?: string[] }
+	| { action: "draft"; draft: DraftOut; questions: string[]; warnings: string[]; /** The part of `warnings` the style judge found (its 확인 notes, content bans too). */ judged?: string[]; tries: number; recipient?: Recipient; /** Revise mode: the lasting preference the change shows ("" = only about this message); absent = the model did not say. */ lesson?: string; forbid?: string[]; scope?: LessonScope; /** The candidates the model chose (exact names); [] = none, absent = it gave no "files" or the item had no candidates. */ files?: string[] }
 	| { action: "skip"; reason: string };
 // chat only (generateChatReply): the message needs a decision only the user can make; 2-4 short choices come back instead of a draft
 export type AskResult = { action: "ask"; question: string; choices: string[] };
@@ -184,6 +184,7 @@ const forRecipient = (s: string): string =>
 const LESSON = 'Also add to the JSON object "lesson": the lasting preference this change shows, one short line in the user\'s language with its condition (when ... then ...), in the user\'s own words where possible; "" when the change is only about this message, its file, its song or its exact text. Add "forbid": the exact wordings, as they would appear in a reply, that the user says must not be used again ([] when the change bans none or is only about this message). "forbid" is only for a fixed phrase that is wrong wherever it appears; when the user rejects a kind of sentence or an ending in one use (a closing wish ending in a wording that is fine in other sentences), leave it out of "forbid" and state it in "lesson" with his examples. Add "scope", for whom the lesson holds: "recipient" only when the user says the change is about the person this reply goes to (이분께는, 이 사람한테는, or that person\'s name); "everywhere" only when the user says the change holds always or everywhere, or rejects the wording itself as wrong (grammar, spelling, a habit of language); "channel" otherwise, when it is about this kind of message or this channel.';
 const CORRECTIONS = "The user's past corrections, newest first; when two disagree, the newer one wins. Each was about one draft: carry over the preference it shows to the same kind of situation, never its specific words, songs, files or names; skip one that only rewrites a single draft:";
 const OVER_CONFIGURED = "The user's past corrections, newest first; when two disagree, the newer one wins, and every one of them is newer than the configured instruction above, so where a correction and that instruction disagree, the correction wins. Each was about one draft: carry over the preference it shows to the same kind of situation, never its specific words, songs, files or names; skip one that only rewrites a single draft:";
+const CONTENT_BANS = "Content the owner set as never to write (a draft that says one is rejected, whatever the wording; they hold over every sample, pattern and past reply):";
 const RECIPIENT_LINES = "The user's conditions for this recipient only (he set them for the person this reply goes to; where a rule or correction above says otherwise, these win):";
 /** The characters of the user's corrections a mail, comment or chat prompt carries (KakaoTalk's own prompt carries 1200). */
 export const CORRECTIONS_BUDGET = 4000;
@@ -217,14 +218,15 @@ function budgetedLines(style: Pick<ReplyStyle, "recipient" | "corrections">, bud
 	return { corrections: promptCorrections(style.corrections.filter(c => !mine.has(c)), left), recipient: [...own.filter(l => !all.has(l)), ...theirs] };
 }
 
-/** What the style judge checks a draft against: the standing rules, the corrections a prompt carries (promptCorrections, in its order, one budget shared with the recipient's corrections) without their leading date and its colon, duplicates once, a correction equal to a standing rule left out, and (only when the style has any) the recipient's own lines apart from both. */
-export function styleConditions(style: Pick<ReplyStyle, "standing" | "corrections" | "recipient">, budget = CORRECTIONS_BUDGET): { standing: string[]; corrections: string[]; recipient?: string[] } {
+/** What the style judge checks a draft against: the standing rules (and the style's content bans, always whole: they take no part in the corrections' budget), the corrections a prompt carries (promptCorrections, in its order, one budget shared with the recipient's corrections) without their leading date and its colon, duplicates once, a correction equal to a standing rule left out, and (only when the style has any) the recipient's own lines apart from both. */
+export function styleConditions(style: Pick<ReplyStyle, "standing" | "corrections" | "recipient" | "forbidden">, budget = CORRECTIONS_BUDGET): { standing: string[]; corrections: string[]; recipient?: string[]; contentBans?: string[] } {
 	const own = new Set(style.recipient ?? []);
 	const lines = budgetedLines(style, budget);
+	const contentBans = [...new Set(style.forbidden.flatMap(b => contentBan(parseBan(b)) ?? []))];
 	const recipient = [...new Set(lines.recipient.map(c => c.replace(DATE_LEAD, "").trim()).filter(Boolean))];
 	const standing = [...new Set((style.standing ?? []).filter(c => !own.has(c)).map(c => c.trim()).filter(Boolean))];
 	const corrections = [...new Set(lines.corrections.map(c => c.replace(DATE_LEAD, "").trim()).filter(Boolean))].filter(c => !standing.includes(c));
-	return { standing, corrections, ...(recipient.length ? { recipient } : {}) };
+	return { standing, corrections, ...(recipient.length ? { recipient } : {}), ...(contentBans.length ? { contentBans } : {}) };
 }
 
 // Chat only. The same single model call first decides whether the message needs the user's own decision.
@@ -292,9 +294,11 @@ export function buildPrompt(item: ReplyItem, style: ReplyStyle, extra: PromptExt
 		item.kind === "chat" ? list("The user's past corrections (follow them):", [...corrections].reverse(), "(none)") : list(item.configured?.trim() ? OVER_CONFIGURED : CORRECTIONS, corrections, "(none)"),
 		"",
 		...(recipientOwn.length ? [list(RECIPIENT_LINES, recipientOwn, ""), ""] : []),
-		list("Forbidden expressions:", bans.filter(b => !wordingRule(b)).map(banLabel), "(none)"),
+		list("Forbidden expressions:", bans.filter(b => !wordingRule(b) && !contentBan(b)).map(banLabel), "(none)"),
 		"",
 		...(bans.some(wordingRule) ? [list(WORDING_RULES, bans.flatMap(b => wordingRule(b) ?? []), ""), ""] : []),
+		// Apart from the corrections' budget: a content ban is never cut by age.
+		...(bans.some(contentBan) ? [list(CONTENT_BANS, bans.flatMap(b => contentBan(b) ?? []), ""), ""] : []),
 		...(item.kind === "chat" && item.choice ? [`The user's decision (his own words, data): "${item.choice.replace(/\s+/g, " ").trim().slice(0, 60).replace(/"/g, "'")}"`, ""] : []),
 		...(examples.length ? [fresh ? "The user's real past replies to other kinds of message (for their voice only; none of them answers this one):" : "The user's real past replies to the most similar received messages (verbatim, their exact wording; use them for voice and for how this kind of message is answered; facts must still fit THIS message):", ...(fresh ? examples.slice(0, FRESH_EXAMPLES) : examples).map(e => `<<<RECEIVED\n${e.same ? "(this same sender)\n" : ""}${defang(e.received)}\nRECEIVED>>>\n<<<REPLY\n${defang(e.reply)}\nREPLY>>>`), ""] : []),
 		...(style.habits?.length ? [list("The user's measured habits. Keep these as they are; never normalise, correct or beautify spelling, spacing or punctuation:", style.habits, ""), ""] : []),
@@ -435,7 +439,7 @@ async function run(item: ReplyItem, style: ReplyStyle, call: ModelCall, base: Pr
 	let first: Omit<Extract<ReplyResult, { action: "draft" }>, "action" | "tries"> | undefined;
 	let restyle: typeof first;
 	const taught: string[] = [];
-	const { standing, corrections, recipient } = judge ? styleConditions(style) : { standing: [], corrections: [], recipient: undefined };
+	const { standing, corrections, recipient, contentBans = [] } = judge ? styleConditions(style) : { standing: [], corrections: [], recipient: undefined };
 	for (let tries = 1; tries <= 2; tries++) {
 		const p = buildPrompt(item, style, { ...base, ...(failures ? { failures } : {}) });
 		let out: string;
@@ -475,11 +479,11 @@ async function run(item: ReplyItem, style: ReplyStyle, call: ModelCall, base: Pr
 		if (restyle && (found.some(f => !restyle!.warnings.includes(f)) || attach.length)) return { action: "draft", ...restyle, tries };
 		const unnamed = item.candidates?.length && base.change && asksFileOff(base.change) && !parsed.files ? [FILES_UNNAMED] : [];
 		const fixable = [...rewritable(found), ...attach, ...unnamed];
-		const broken: Violation[] = !fixable.length && judge && (standing.length || corrections.length || recipient) ? await judgeStyle({ standing, corrections, ...(recipient ? { recipient } : {}), received: item.text, draft: draft.body, ...(base.change ? { asked: base.change } : {}) }, judge) : [];
-		const warnings = [...found, ...styleWarnings(broken)];
+		const broken: Violation[] = !fixable.length && judge && (standing.length || corrections.length || recipient || contentBans.length) ? await judgeStyle({ standing, corrections, ...(recipient ? { recipient } : {}), ...(contentBans.length ? { contentBans } : {}), received: item.text, draft: draft.body, ...(base.change ? { asked: base.change } : {}) }, judge) : [];
+		const judged = styleWarnings(broken), warnings = [...found, ...judged];
 		const who = { ...(parsed.recipient ? { recipient: parsed.recipient } : {}), ...lessons, ...(files ? { files } : {}) };
-		if ((!fixable.length && !broken.length) || tries === 2) return { action: "draft", draft, questions: parsed.questions, warnings, tries, ...who };
-		const kept = { draft, questions: parsed.questions, warnings, ...who };
+		if ((!fixable.length && !broken.length) || tries === 2) return { action: "draft", draft, questions: parsed.questions, warnings, ...(judged.length ? { judged } : {}), tries, ...who };
+		const kept = { draft, questions: parsed.questions, warnings, ...(judged.length ? { judged } : {}), ...who };
 		if (fixable.length) first = kept;
 		else restyle = kept;
 		failures = fixable.length ? fixable : broken.map(styleFailure);

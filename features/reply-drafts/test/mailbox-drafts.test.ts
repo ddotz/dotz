@@ -276,7 +276,8 @@ describe("a mail that rides on a comment reply keeps what it was first written f
 		const { link, write } = written();
 		await write();
 		const made = await compose(link, "무조건 보내드려요");
-		expect(made.ok).toBe(false);
-		expect(!made.ok && made.reason).toContain("무조건");
+		if (!made.ok) throw new Error(made.reason);
+		expect(made.notes.join(" ")).toContain("무조건");
+		expect(getDraft(made.id)?.check?.warn).toEqual(["it uses the forbidden expression '무조건'"]);
 	});
 });

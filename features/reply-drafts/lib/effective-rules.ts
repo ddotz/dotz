@@ -5,7 +5,7 @@
 // of the same target (the draft is told to write what it is told not to). Only these two; contradictions in meaning need a model and are not looked for here.
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { parseBan } from "../../../hub/ban.ts";
+import { contentBan, parseBan } from "../../../hub/ban.ts";
 import { fileOf } from "../../../hub/mailbox.ts";
 import type { RuleAt, RuleItem } from "./draft-rules.ts";
 import { boxById, boxGreeting, boxRules } from "./box.ts";
@@ -58,7 +58,7 @@ export async function effectiveRules(key: ToneKey, at: RuleAt, item: RuleItem): 
 	// A mailbox of an instance with no file of its own lists the same app file twice (as its own and as its base): one record each.
 	for (const s of styleSources(key).reverse().filter((s, i, all) => all.findIndex(o => o.file === s.file) === i)) {
 		for (const [heading, kind] of [[HEADINGS.rules, "tone"], [HEADINGS.corrections, "tone"], [HEADINGS.forbidden, "ban"]] as const) {
-			records.push(...bulletLines(s.md, heading).map(b => ({ text: b.text, kind, scope: scopeOf(s.level, s.app), source: { file: s.file, line: b.line } })));
+			records.push(...bulletLines(s.md, heading).map(b => ({ text: b.text, kind: kind === "ban" && contentBan(parseBan(b.text)) !== undefined ? ("content-ban" as const) : kind, scope: scopeOf(s.level, s.app), source: { file: s.file, line: b.line } })));
 		}
 	}
 	const instance = at.instance ?? at.app ?? "mail";

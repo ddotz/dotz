@@ -350,7 +350,7 @@ test("a mail written outside a draft on a second mail app is written and checked
 		const made = await composeMail({ app: "mail-2", to: ["kim@x.com"], subject: "자료", body, notify: false });
 		const item: ReplyItem = { kind: "mail", app: "mail-2", from: "kim@x.com", text: body };
 		const sendLint = draftLintFailures({ id: "D1", kind: "mail", app: "mail-2", source: "zele", mailId: "compose-D1", ref: "compose-d1", compose: true, to: "kim@x.com", subject: "자료", body, status: "pending", created: "2030-03-04T09:00:00.000Z", changes: [], questions: [], item });
-		expect(made.ok === false).toBe(sendLint.length > 0);
+		expect(made.ok && (made.rec.check?.warn.length ?? 0) > 0).toBe(sendLint.length > 0);
 		return sendLint.length > 0;
 	};
 	try {

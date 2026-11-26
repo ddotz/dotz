@@ -402,7 +402,7 @@ async function offerOne(m: OfferMail, deps: OfferDeps, { body, history, replyTo 
 		built.rec.mode = "reply";
 		ensureSwitch();
 		if (rule) built.rec.rule = { id: rule.id, name: rule.name };
-		const warnings = [...built.warnings, ...draftRules(built.rec, built.rec.item).banned(built.rec), ...(subjectOnly ? [SUBJECT_ONLY] : [])];
+		const warnings = [...built.warnings, ...(subjectOnly ? [SUBJECT_ONLY] : [])];
 		const chosen = chosenFrom(cands, built.files);
 		const notStaged = (e: Error): string[] => (log(`reply draft: files for mail ${m.key} not staged: ${e.message}`), []);
 		if (given.length) {

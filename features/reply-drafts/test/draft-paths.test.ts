@@ -4,7 +4,8 @@ import { dirname, join } from "node:path";
 import { writeSettings } from "../../../hub/app-settings.ts";
 import { commentStyle } from "../../../hub/comments/real.ts";
 import { realMailLink } from "../../../hub/comments/mail-link.ts";
-import { draftLintFailures } from "../lib/flow.ts";
+import { DRAFT_AS_IS } from "../../../hub/draft-approval.ts";
+import { draftAttachIssues, draftLintFailures } from "../lib/flow.ts";
 import { offerMailDraft } from "../lib/offer.ts";
 import { type Pair, paths, savePairs, toneFile } from "../lib/settings.ts";
 import { getDraft, listDrafts } from "../lib/store.ts";
@@ -78,10 +79,20 @@ describe("one rule bundle for every mail path", () => {
 		expect((await link.revise(made.id, "더 짧게")).ok).toBe(true);
 		expect({ prompt: prompted(model.calls[2]!), check: checked(model.calls[3]!.user) }).toEqual({ prompt: SEEN, check: FULL });
 	});
-	test("compose check", async () => {
+	test("compose check: the same bans, kept on the draft for the card and the gate", async () => {
 		const made = await composeOf(riding().link, BAD);
-		expect(made.ok).toBe(false);
-		expect(checked(made.ok ? "" : made.reason)).toEqual(FULL);
+		if (!made.ok) throw new Error(made.reason);
+		expect(checked(getDraft(made.id)!.check!.warn.join("\n"))).toEqual(FULL);
+		expect(checked(made.notes.join("\n"))).toEqual(FULL);
+	});
+	test("the attachment match reads the same on a mail auto draft and a riding mail", async () => {
+		const auto = getDraft((await viaOffer()).id)!;
+		const { link } = riding();
+		const made = await composeOf(link, (await link.write!(spec))!);
+		if (!made.ok) throw new Error(made.reason);
+		const [a, b] = [auto, getDraft(made.id)!].map(d => draftAttachIssues({ ...d, check: { refuse: [], warn: [], judged: [] }, body: "자료를 첨부해 드려요." }));
+		expect(a!.length).toBeGreaterThan(0);
+		expect(a).toEqual(b);
 	});
 	test("pre-send check of an auto draft and of a riding mail", async () => {
 		const auto = getDraft((await viaOffer()).id)!;
@@ -96,5 +107,38 @@ describe("one rule bundle for every mail path", () => {
 		tone(toneFile({ app: "youtube", to: "UC-a" }), `## 금지\n\n- ${TO}\n`);
 		const style = commentStyle({ key: "youtube" } as Parameters<typeof commentStyle>[0], "UC-a");
 		expect([APP, TO].map(w => style.forbidden.includes(w))).toEqual([true, true]);
+	});
+});
+
+// A `내용:` line of 금지 (content not to write): the style judge keeps a remark about it, the one rewrite leaves it, and then the card holds the draft for 이대로 보내기.
+describe("a content ban in the tone files, on every path", () => {
+	const CONTENT = "용도를 묻지 않기", ASKS = "어디에 쓰실 건가요? 확인해 보고 말씀드릴게요.";
+	const WARN = `쓰지 않기로 한 내용이 들어 있어요: ${CONTENT}`;
+	const judged = j({ violations: [{ rule: 1, about: "content", quote: "어디에 쓰실", why: "용도" }] });
+	beforeEach(() => tone(toneFile({ app: "mail" }), `## 예시\n\n- 네 보내드렸어요\n\n## 금지\n\n- 내용: ${CONTENT}\n`));
+
+	test("mail auto draft: one rewrite, the ban still there: the card says 확인: and offers 이대로 보내기", async () => {
+		const model = fakeModel([reply(ASKS), judged, reply(ASKS), judged]);
+		const cards: string[] = [];
+		const m = { ...mailFixture, key: "dp-2", from: "A <a@example.com>" };
+		const deps = { send: (_target: string, text: string) => void cards.push(text), log: () => {}, call: model.call, mailOf: (key: string) => ({ key, source: "zele", id: "msg-2", subject: "s", from: m.from, at: "2031-01-01T00:00:00Z", mbox: "b-a" }), place: () => {} };
+		expect(await offerMailDraft(m, deps)).toBe("offered");
+		expect(model.calls).toHaveLength(4);
+		expect(cards[0]).toContain(`확인: ${WARN}`);
+		expect(cards[0]).toContain(DRAFT_AS_IS);
+		expect(listDrafts()[0]!.check?.warn).toEqual([WARN]);
+	});
+
+	test("riding mail: its first write is judged, the warning reaches the reply card's notes and the gate that asks for 이대로 보내기", async () => {
+		const model = fakeModel([reply(ASKS), judged, reply(ASKS), judged]);
+		const link = realMailLink({ call: model.call, run: async () => ({ code: 1, stdout: "", stderr: "" }) });
+		const body = await link.write!(spec);
+		expect(model.calls).toHaveLength(4);
+		const made = await composeOf(link, body!);
+		if (!made.ok) throw new Error(made.reason);
+		expect(model.calls).toHaveLength(4);
+		expect(made.notes).toContain(`확인: ${WARN}`);
+		expect(getDraft(made.id)!.check?.warn).toEqual([WARN]);
+		expect(link.issues!(made.id)).toContain(WARN);
 	});
 });

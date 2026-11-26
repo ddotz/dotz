@@ -1,11 +1,11 @@
 import { afterAll, beforeEach, expect, spyOn, test } from "bun:test";
 import { rmSync } from "node:fs";
-import { type Ban, parseBan } from "../../../hub/ban.ts";
+import { type Ban, banBullet, banHit, parseBan } from "../../../hub/ban.ts";
 import type { Msg } from "../../../hub/kakao/types.ts";
 import { replyLearning } from "../../../hub/reply-mail.ts";
 import { runDraft } from "../bin/draft.ts";
 import { advance, flush } from "../../../hub/runtime/test-clock.ts";
-import { ownerWarning, proposeLinePattern } from "../lib/flow.ts";
+import { learnLine, ownerWarning, proposeLinePattern } from "../lib/flow.ts";
 import { HEADINGS, loadStyle, paths, profileBullets, recordForbidden, recordRule, savePairs } from "../lib/settings.ts";
 import { j, setupEnv } from "./helpers.ts";
 
@@ -220,4 +220,20 @@ test("the owner reads a broken wording rule as a rule he set, and a hand-written
 	expect(ownerWarning(`it breaks the owner's wording rule '${LABEL}'`)).toBe(`정해 둔 표현 규칙과 달라요: ${LABEL}`);
 	expect(ownerWarning("it uses the forbidden expression '무조건'")).toBe("쓰지 않기로 한 표현 '무조건'이(가) 있어요");
 	expect(ownerWarning("it uses the forbidden expression '/되세요/'")).toBe("쓰지 않기로 한 표현 '/되세요/'이(가) 있어요");
+});
+
+test("a 금지 line with the 내용: marker is a content ban: it reads back as one, no wording finds it", () => {
+	const ban = parseBan("내용: 용도를 묻지 않기");
+	expect(ban).toEqual({ kind: "content", text: "용도를 묻지 않기" });
+	expect(banBullet(ban)).toBe("내용: 용도를 묻지 않기");
+	expect(banHit("용도를 묻지 않기", ban)).toBe(false);
+	expect(parseBan("내용:").kind).toBe("literal");
+});
+
+test("a lesson phrased as a prohibition is stored as a content ban under 금지, never as a dated 고친 점", async () => {
+	await learnLine({ app: "mail" }, "용도를 묻지 않기", "correction", {});
+	await learnLine({ app: "mail" }, "자료 메일에는 짧게 써요", "correction", {});
+	expect(profileBullets({ app: "mail" }, HEADINGS.forbidden)).toEqual(["내용: 용도를 묻지 않기"]);
+	expect(profileBullets({ app: "mail" }, HEADINGS.corrections)).toHaveLength(1);
+	expect(loadStyle({ app: "mail" }).forbidden).toEqual(["내용: 용도를 묻지 않기"]);
 });
