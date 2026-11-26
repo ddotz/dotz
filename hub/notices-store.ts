@@ -439,6 +439,8 @@ export function settleDecision(item: Notice, answer: string, at = now(), resolve
 	// The notices made by the same asking event (the alert and message twins) are settled with it.
 	if (d.reply_to !== undefined && !items.some(n => n !== item && isOpenDecision(n) && n.decision!.reply_to === d.reply_to))
 		readIds(items.filter(n => twinOf(item, n) && !n.read && !n.dismissed).map(n => n.id));
+	// An answer on one card of a draft answers the draft: its open cards elsewhere close (resolved); a card closed as misprinted (draftCardRedo) does not.
+	if (!resolved && d.draft?.ref && answer !== msg().draftCardRedo) for (const n of items) if (n !== item && isOpenDecision(n) && n.decision!.draft?.ref === d.draft.ref) settleDecision(n, "", at, true);
 	if (replaying) return;
 	save();
 	broadcast({ ts: at, kind: "notice", source: "gateway", item, unread: unreadCount() });
