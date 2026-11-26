@@ -468,7 +468,12 @@ async function discordButton(n: number, shown: string): Promise<{ refusal?: stri
 	const click = { id: "i", token: "t", type: 3, member: { user: { id: "owner-1" } }, message: { content: shown }, data: { custom_id: `${ASK_PREFIX}:alert:${n}` } } as Interaction;
 	await askInteraction(click, {
 		owner: "owner-1",
-		reply: async (_d, type, data) => void (type === 4 && said.push(data && typeof data === "object" && "content" in data ? String(data.content) : "")),
+		// A closed card's refusal is said on the message itself, its buttons turned off (type 7): read as the finished refusal.
+		reply: async (_d, type, data) => {
+			const content = data && typeof data === "object" && "content" in data ? String(data.content) : "";
+			if (type === 4) said.push(content);
+			else if (type === 7 && content.endsWith(msg().auth.closedCard)) said.push(msg().auth.finished);
+		},
 		answer: async (target, text, asked, edit, message) => {
 			const picks = discordPicks(target, "alert", asked, message), r = await discordGatewayAnswer(target, "alert", text, picks, edit);
 			if (r) return r.error;
