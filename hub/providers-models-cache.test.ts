@@ -2,13 +2,16 @@
 // /api/models each minute and 구성 asks /api/harness every 15 s, so a 20 s cache started that process on nearly every poll. The list now
 // stays until a login changes (auth.json), the runtime binary changes (an update) or 10 minutes pass, and concurrent asks share one process.
 import { afterAll, expect, spyOn, test } from "bun:test";
-import { mkdirSync, utimesSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { authFile } from "./apikey-policy.ts";
 import { availableModels } from "./providers.ts";
 import { clock } from "./runtime/test-clock.ts";
 
-const TABLE = "provider  model  context  max-out  thinking  images\nanthropic-subscription  claude-opus-5-5  1M  128K  yes  yes\n";
+const BARE = "provider  model  context  max-out  thinking  images\nanthropic-subscription  claude-opus-5-5  1M  128K  yes  yes\n";
+const row = (id: string) => `anthropic-subscription  ${id}  1M  128K  yes  yes\n`;
+// OmO lists the Mythos models here, so dotz has none to add to models.json (the last test lists without them).
+let TABLE = BARE + ["claude-mythos-5", "claude-mythos-5-1", "claude-mythos-5-2"].map(row).join("");
 const OMP_JSON = JSON.stringify({ models: [{ kind: "chat", selector: "anthropic/claude-opus-5-5", provider: "anthropic", reasoning: true }] });
 let spawns = 0;
 const spy = spyOn(Bun, "spawn").mockImplementation(((argv: string[]) => {
@@ -69,4 +72,24 @@ test("a model added to the agent's models.json is listed at the next ask, not 10
 	utimesSync(models, ++stamp, ++stamp);
 	await availableModels();
 	expect(spawns).toBeGreaterThan(0);
+});
+
+test("the Mythos models OmO's Claude login lacks are written to models.json and the next ask reads the list again", async () => {
+	const models = join(dirname(auth), "models.json");
+	rmSync(models, { force: true });
+	TABLE = BARE;
+	login();
+	await availableModels();
+	const ids = JSON.parse(readFileSync(models, "utf8")).providers["anthropic-subscription"].models.map((m: { id: string }) => m.id);
+	expect(ids).toEqual(["claude-mythos-5", "claude-mythos-5-1", "claude-mythos-5-2"]);
+	TABLE = BARE + ids.map(row).join("");
+	spawns = 0;
+	clock.now += 1000;
+	const listed = await availableModels();
+	expect(spawns).toBeGreaterThan(0);
+	expect(listed.map(m => m.selector)).toContain("anthropic/claude-mythos-5-2");
+	spawns = 0;
+	clock.now += 1000;
+	await availableModels();
+	expect(spawns).toBe(0);
 });

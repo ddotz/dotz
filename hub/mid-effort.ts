@@ -60,5 +60,5 @@ export function midConvoEffort(model: string, fallback: RegExp, agentDir = omoAg
 
 // OmO sends an effort change as a per-message effort marker on these models (senpi anthropic-messages, compat
 // supportsMidConvoEffort; Anthropic docs "Change effort mid-conversation"), so the prompt cache survives it.
-export const MID_CONVO_EFFORT = /claude-(opus-5|opus-5-5|sonnet-5-5|haiku-5-5|fable-5-1|fable-5-2|mythos-5-1)$/;
+export const MID_CONVO_EFFORT = /claude-(opus-5|opus-5-5|sonnet-5-5|haiku-5-5|fable-5-1|fable-5-2|mythos-5-1|mythos-5-2)$/;
 export const keepsCacheOnEffort = (runtime: string, model: string) => runtime === "omo" && midConvoEffort(model, MID_CONVO_EFFORT);

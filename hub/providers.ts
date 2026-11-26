@@ -20,7 +20,7 @@ import { heldLimits, readReports, readUsageJson } from "./usage-last.ts";
 import { useField } from "./usage-share.ts";
 import { type AccountReport, AccountUsage, type ClaudeResets, type QuotaLimit, cliTokensSettled, ompAccounts, ompStanding, scopeOf, subscriptionAccount, subscriptionAccounts } from "./usage-account.ts";
 import { runtimeIdOf } from "./runtime/runtime-id.ts";
-
+import { listWithSubscriptionModels } from "./runtime/omo-settings.ts";
 export class ControlError extends Error {
 	constructor(message: string, readonly status = 400) {
 		super(message);
@@ -81,7 +81,7 @@ type Cached<T> = { at: number; value: T; stamp?: string };
 const TTL_MS = 20_000;
 // The model catalog is a child process (`omo --list-models`: ~0.5 s CPU, ~280 MB peak RSS, measured 2026-10-26) that every open page asked
 // for each minute (and 구성 every 15 s). It only changes with a login (auth.json, or invalidate() after a web login), a model added to the
-// agent's models.json or a runtime update (the binary), so it is kept until one of those changes, re-read at most every MODELS_TTL_MS as a backstop.
+// agent's models.json (by hand, or the Mythos models dotz adds: omo-settings.ts) or a runtime update (the binary), so it is kept until one of those changes, re-read at most every MODELS_TTL_MS as a backstop.
 const MODELS_TTL_MS = 10 * 60_000;
 const mtimeOf = (path: string | null | undefined): number => {
 	try {
@@ -201,7 +201,7 @@ const ompModels = async (): Promise<ModelInfo[] | undefined> => {
 let listFailureLogged = false;
 export const availableModels = async (): Promise<ModelInfo[]> =>
 	(await cached("models", async () => {
-		const [omo, omp] = await Promise.all([usesOmo() ? cliText(OMO, ["--list-models"]).then(t => (t === undefined ? undefined : omoModels(t, omoAuth(), process.env))) : [], usesOmp() ? ompModels() : []]);
+		const [omo, omp] = await Promise.all([usesOmo() ? listWithSubscriptionModels(dirname(authFile()), omoAuth(), () => cliText(OMO, ["--list-models"])).then(t => (t === undefined ? undefined : omoModels(t, omoAuth(), process.env))) : [], usesOmp() ? ompModels() : []]);
 		const failed = [usesOmo() && omo === undefined ? "omo" : "", usesOmp() && omp === undefined ? "omp" : ""].filter(Boolean);
 		if (failed.length && !listFailureLogged) log(`dotz: the model list could not be read from ${failed.join(" and ")}`);
 		listFailureLogged = failed.length > 0;
