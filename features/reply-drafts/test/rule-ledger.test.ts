@@ -100,6 +100,23 @@ test("migration: shared copies become one record, the difference stays with its 
 	for (const [f, buf] of before) expect(readFileSync(join(env.dir, "custom", f)).equals(buf)).toBe(true);
 });
 
+test("migration: a line only some mail apps hold stays with them, so the others and mail do not start reading it; undo puts config.json back byte for byte", () => {
+	const some = "2026-11-04: 회신은 오전에 해요";
+	write(toneFile({ app: "mail" }), `## 고친 점\n\n- ${SHARED[0]}\n`);
+	for (const app of ["mail-2", "mail-3"]) write(toneFile({ app }), `## 고친 점\n\n- ${SHARED[0]}\n- ${some}\n`);
+	write(paths.config(), `${JSON.stringify({ enabled: true, apps: {}, draftDefaults: { mail: "끝에 감사 인사를 해요", "mail-2": "끝에 감사 인사를 해요" } }, null, 2)}\n`);
+	const config = readFileSync(paths.config());
+	migrateLedger(env.dir);
+	const on = readLedger(env.dir).filter(r => r.state === "on");
+	expect(on.filter(r => r.text === SHARED[0])).toMatchObject([{ scope: { app: "mail" } }]);
+	expect(on.filter(r => r.text === some).map(r => r.scope.app).sort()).toEqual(["mail-2", "mail-3"]);
+	expect(on.filter(r => r.text === "끝에 감사 인사를 해요").map(r => r.scope.app).sort()).toEqual(["mail", "mail-2"]);
+	expect(loadStyle({ app: "mail" }).corrections.some(c => c.includes("오전에"))).toBe(false);
+	expect(loadStyle({ app: "mail-2", base: "mail" }).corrections.filter(c => c.includes("오전에"))).toHaveLength(1);
+	undoLedger(env.dir);
+	expect(readFileSync(paths.config()).equals(config)).toBe(true);
+});
+
 test("migrate --preview shows the lines that would move and the records the ledger would get, and writes no file", () => {
 	write(toneFile({ app: "mail" }), "## 정체성\n\n- 짧게 쓰는 사람이에요\n\n## 고친 점\n\n- 2026-11-01: 인사는 한 줄로 써요\n");
 	write(paths.config(), `${JSON.stringify({ enabled: true, apps: {}, draftDefaults: { mail: "끝에 감사 인사를 해요" } }, null, 2)}\n`);

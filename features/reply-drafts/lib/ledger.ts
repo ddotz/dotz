@@ -207,7 +207,9 @@ function widest(drafts: Draft[]): Draft[] {
 	const mailApp = (d: Draft): boolean => d.scope.app !== undefined && d.scope.room === undefined && d.scope.to === undefined && d.scope.request === undefined && /^mail(-[a-z0-9]+)*$/.test(d.scope.app);
 	const groups = new Map<string, Draft[]>();
 	for (const d of drafts.filter(mailApp)) groups.set(`${d.kind}\0${textKey(d.kind, d.text)}`, [...(groups.get(`${d.kind}\0${textKey(d.kind, d.text)}`) ?? []), d]);
-	const shared = new Set([...groups.values()].filter(g => new Set(g.map(d => d.scope.app)).size > 1).flat());
+	// Only a sentence every mail app holds goes up: one held by some would reach the others (and `mail`) through inheritance.
+	const apps = new Set(["mail", ...drafts.filter(mailApp).map(d => d.scope.app!)]);
+	const shared = new Set([...groups.values()].filter(g => g.length > 1 && new Set(g.map(d => d.scope.app)).size === apps.size).flat());
 	const seen = new Set<string>();
 	return drafts.flatMap(d => {
 		if (!shared.has(d)) return [d];
