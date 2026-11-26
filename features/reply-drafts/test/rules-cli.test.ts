@@ -2,6 +2,7 @@ import { afterAll, beforeEach, expect, test } from "bun:test";
 import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { runRules } from "../bin/rules.ts";
+import { runDraft } from "../bin/draft.ts";
 import { readLedger, textsAt } from "../lib/ledger.ts";
 import { paths, toneFile } from "../lib/settings.ts";
 import { setupEnv } from "./helpers.ts";
@@ -44,7 +45,7 @@ test("a bad request changes nothing: missing fields, an unknown id, a non-mail a
 	expect(() => readFileSync(paths.config())).toThrow();
 });
 
-test("import-style moves a style guide's bullets into the ledger and its examples into the profile, keeps the guide, and import-undo puts it back", () => {
+test("import-style moves a style guide's bullets into the ledger and its examples into the profile, keeps the guide, and import-undo puts it back", async () => {
 	const guide = join(env.dir, "style-guide.md");
 	const md = "# 문체 가이드\n\n## 1. 인사\n\n- 첫 줄은 인사로 시작\n- 소속을 밝힘\n\n## 2. 하지 않는 것\n\n- 서명은 넣지 않음\n\n## 3. 예시\n\n**자료 요청**\n> 안녕하세요.\n> 자료 부탁드립니다.\n\n**확인**\n> 확인 부탁드립니다.\n";
 	writeFileSync(guide, md);
@@ -55,6 +56,9 @@ test("import-style moves a style guide's bullets into the ledger and its example
 	expect(readLedger().filter(r => r.state === "on" && r.scope.app === "co-mail").map(r => [r.kind, r.text])).toEqual([["tone", "첫 줄은 인사로 시작"], ["tone", "소속을 밝힘"], ["tone", "서명은 넣지 않음"]]);
 	expect(readFileSync(toneFile({ app: "co-mail" }), "utf8")).toContain("- 안녕하세요. 자료 부탁드립니다.\n- 확인 부탁드립니다.");
 	expect(readFileSync(guide, "utf8")).toBe(md);
+	const shown = (await runDraft(["show", "--app", "co-mail"], "")).lines.join("\n");
+	expect(shown).toContain("- [app] 서명은 넣지 않음");
+	expect(shown).toContain("예시:\n- [app] 안녕하세요. 자료 부탁드립니다.");
 	expect(runRules(["import-undo"]).code).toBe(0);
 	expect(readLedger().some(r => r.state === "on" && r.scope.app === "co-mail")).toBe(false);
 	expect(existsSync(toneFile({ app: "co-mail" }))).toBe(false);

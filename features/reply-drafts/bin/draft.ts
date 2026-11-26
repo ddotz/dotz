@@ -331,6 +331,9 @@ export async function runDraft(args: string[], stdin: string, deps: DraftDeps = 
 				if (heading === HEADINGS.rules) rows.push(...toneLevels(key).flatMap(([level, k]) => handSections(k).flatMap(s => s.items.map(l => `- [${level}] (${s.heading.replace(/^##\s*/, "")}) ${l}`))));
 				lines.push(...(rows.length ? rows : ["- 없음"]));
 			}
+			// The examples a draft of this profile imitates (rules.ts import-style puts a style guide's here), so a session drafting by hand sees them too.
+			const samples = toneLevels(key).flatMap(([level, k]) => profileBullets(k, HEADINGS.samples).map(l => `- [${level}] ${l}`));
+			lines.push("예시:", ...(samples.length ? samples : ["- 없음"]));
 			return { lines: [...lines, ...unreadView()], code: 0 };
 		}
 		// The files of a pending mail draft: the owner's card follows them (its 첨부 확인 line too), and the refreshed [ask] is printed.
