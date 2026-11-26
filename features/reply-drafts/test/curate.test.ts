@@ -7,7 +7,7 @@ import { runDraft } from "../bin/draft.ts";
 import { curate, journalEntries, restoreEntry } from "../lib/curate.ts";
 import { learnLine, reviseDraft } from "../lib/flow.ts";
 import { offerMailDraft } from "../lib/offer.ts";
-import { HEADINGS, paths, profileBullets, toneFile } from "../lib/settings.ts";
+import { HEADINGS, loadStyle, paths, profileApp, profileBullets, toneFile } from "../lib/settings.ts";
 import { listDrafts } from "../lib/store.ts";
 import { enable, fakeModel, goodReply, j, mailFixture, setupEnv } from "./helpers.ts";
 
@@ -261,4 +261,43 @@ test("draft.ts revise: a correction the curation answer overrides goes to the jo
 	expect(step.text).toContain(`앞으로 이 앱 답장에 반영해요: ${LESSON} · 기존 조건 1개를 이 조건으로 바꿨어요`);
 	expect(profileBullets({ app: "mail" }, HEADINGS.corrections)).toEqual([expect.stringMatching(new RegExp(`^\\d{4}-\\d{2}-\\d{2}: ${LESSON}$`))]);
 	expect(journalEntries().map(e => [e.line, e.why])).toEqual([["2030-03-01: 끝인사는 길게 쓴다", "overridden"]]);
+});
+
+test("a rule and a correction for the mail app also reach a mail app with its own tone file, superseding its contradicting line there", async () => {
+	profile("mail.md", "## 말투\n");
+	profile("mail-beta.md", "## 정체성\n- BETA-IDENTITY\n\n## 말투\n- 답장은 길게\n");
+	const m = model(() => answer());
+	m.learnCall = (app: string) => async (system: string, user: string) => (m.asked.push({ app, system, user }), user.includes("답장은 길게") ? answer(["R1", "overridden"]) : answer());
+	const r = await correct({ learnCall: m.learnCall }, "--app", "mail", "--rule", "답장은 짧게", "--change", "인사는 뺀다");
+	expect(r.code).toBe(0);
+	const style = loadStyle({ app: profileApp("mail-beta") });
+	expect(profileApp("mail-beta")).toBe("mail-beta");
+	expect(style.rules).toContain("답장은 짧게");
+	expect(style.rules).not.toContain("답장은 길게");
+	expect(profileBullets({ app: "mail-beta" }, HEADINGS.corrections)).toEqual(["2030-03-04: 인사는 뺀다"]);
+	expect(profileBullets({ app: "mail" }, HEADINGS.rules)).toEqual(["답장은 짧게"]);
+	expect(journalEntries().map(e => [e.profile, e.line, e.why])).toEqual([["mail-beta.md", "답장은 길게", "overridden"]]);
+});
+
+test("a wording forbidden for the mail app is also forbidden in a mail app with its own tone file", async () => {
+	profile("mail.md", "## 말투\n");
+	profile("mail-beta.md", "## 정체성\n- BETA-IDENTITY\n");
+	const r = await correct({}, "--app", "mail", "--forbid", "확인 부탁드립니다");
+	expect(r.code).toBe(0);
+	expect(profileBullets({ app: "mail" }, HEADINGS.forbidden)).toEqual(["확인 부탁드립니다"]);
+	expect(loadStyle({ app: profileApp("mail-beta") }).forbidden).toContain("확인 부탁드립니다");
+});
+
+test("an allowed wording and a forgotten line for the mail app are also taken out of a mail app with its own tone file", async () => {
+	const md = "## 말투\n- 답장은 짧게\n\n## 고친 점\n- 2030-03-01: 짧게 끝낸다\n\n## 금지\n- 확인 부탁드립니다\n";
+	profile("mail.md", md);
+	profile("mail-beta.md", `## 정체성\n- BETA-IDENTITY\n\n${md}`);
+	const r = await correct({}, "--app", "mail", "--allow", "확인 부탁드립니다", "--forget", "짧게");
+	expect(r.code).toBe(0);
+	for (const app of ["mail", "mail-beta"]) {
+		expect(profileBullets({ app }, HEADINGS.forbidden)).toEqual([]);
+		expect(profileBullets({ app }, HEADINGS.rules)).toEqual([]);
+		expect(profileBullets({ app }, HEADINGS.corrections)).toEqual([]);
+	}
+	expect(profileBullets({ app: "mail-beta" }, HEADINGS.identity)).toEqual(["BETA-IDENTITY"]);
 });

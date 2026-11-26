@@ -245,6 +245,9 @@ export const hasSamples = (key: ToneKey | "install"): boolean => bullets(profile
 export const identityOf = (key: ToneKey | "install"): string[] => bullets(profile(key), HEADINGS.identity);
 // A mail app instance with a tone profile of its own (an identity or samples written there); the shared `mail` profile does not count.
 export const hasOwnTone = (app: string): boolean => app !== "mail" && validApp(app) && (identityOf({ app }).length > 0 || hasSamples({ app }));
+/** The mail app instances with a tone profile of their own (hasOwnTone), from the top-level files of the tone dir: a draft of one reads only that file, so a rule or correction given for the shared `mail` profile is learned into each of them too (draft.ts correct). */
+export const ownToneMailApps = (): string[] =>
+	existsSync(paths.toneDir()) ? readdirSync(paths.toneDir()).filter(f => f.endsWith(".md")).map(f => f.slice(0, -".md".length)).filter(a => MAIL_INSTANCE.test(a) && hasOwnTone(a)).sort() : [];
 /** The app whose tone profile a draft of `app` reads and learns into: a second mail app instance (`mail-<slug>`) without a tone of its own shares `mail`, as its offered drafts do; every other app is itself. */
 export const profileApp = (app: string): string => (app !== "mail" && MAIL_INSTANCE.test(app) && !hasOwnTone(app) ? "mail" : app);
 export const correctionsOf = (key: ToneKey | "install"): string[] => bullets(profile(key), HEADINGS.corrections);
