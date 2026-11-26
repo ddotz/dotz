@@ -409,7 +409,7 @@ const ntSuccessor = n => (n.pc ? (((PQ.list.find(p => p && p.url === n.pc.url) |
 const ntNeeds = n => !n.read && !n.ignored && !n.dismissed && !ntLaterTwin(n) && (ntOpenDec(n) || n.tone === "ask");
 const ntIgnoredDec = n => ntIsDec(n) && n.decision.state === "ignored";
 // A login request ends by logging in, never set aside: it offers no ignore (hub/notices-answers.ts ignoreNotice refuses it).
-const ntLoginCard = n => !!n && (n.waits === "login" || (ntIsDec(n) && n.decision.to.startsWith("auth:")));
+const ntLoginCard = n => !!n && (n.waits === "login" || (ntIsDec(n) && (n.decision.kind ? n.decision.kind === "auth" : n.decision.to.startsWith("auth:"))));
 // The open decision a notice carries or is the twin of: itself, or the one asked in the same conversation at the same time (the [ask] alert twin the hub
 // stores beside it). Rows and counts use this to show a question once.
 const ntLinkedDec = n => {

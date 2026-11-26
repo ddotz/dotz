@@ -13,6 +13,7 @@ import { reasonOf } from "./reply-reasons.ts";
 import { msg } from "./i18n.ts";
 import { DECISION_HEAD, unnumbered } from "./choices.ts";
 import { heldOf, settleOpenDecision } from "./notices-answers.ts";
+import { cardKind } from "./notices-decisions.ts";
 import { pickedCard } from "./notices-later.ts";
 import { noTurnLine } from "./card-answer.ts";
 import { editChainCard } from "./notices-rules.ts";
@@ -27,7 +28,7 @@ const STALE_OPTIONS = "카드 선택지가 바뀌었어요. 다시 확인하고 
 /** A card only the owner may settle: a send approval, a card naming a draft ref, a stronger-model request, a login request, or a card of an edit chain (a gateway card that proposes an edit and its confirm card, hub/notices-rules.ts editChainCard). An agent's call (the hub token) never closes, ignores or reopens one. */
 export const ownerOnlyCard = (card: Notice): boolean => {
 	const d = card.decision;
-	return !!d && (!!d.draft || editChainCard(card) || questionRef(card.title) !== undefined || d.to.startsWith("auth:") || d.options.some(o => !!escalations()?.answers({ to: d.to, label: o.label })));
+	return !!d && (["send", "auth"].includes(cardKind(d)) || editChainCard(card) || questionRef(card.title) !== undefined || d.options.some(o => !!escalations()?.answers({ to: d.to, label: o.label })));
 };
 
 /** What a card's picked label asks of the one reply flow, or undefined when the bot reads it (직접 입력, a 고치기 with no words). */

@@ -9,7 +9,7 @@ import { tellAsker } from "./notices-tell.ts";
 import { closedHooks, decisionHooks } from "./notices-wiring.ts";
 import { TEXT_MAX, clean, closedInfo, isOpenDecision, laterOn, needsAnswer, twinOf } from "./notices-rules.ts";
 import { broadcast } from "./notices-read.ts";
-import { expiresAtOf, holds, plainCard, sending } from "./notices-decisions.ts";
+import { cardKind, expiresAtOf, holds, plainCard, sending } from "./notices-decisions.ts";
 import { finishOnStop } from "./shutdown.ts";
 import { RUN_DECISION } from "./notices-schedule.ts";
 import { laneExists } from "./notices-lanes.ts";
@@ -256,7 +256,7 @@ export function ignoreNotice(id: unknown): { status: number; body: Record<string
 	if (item.ignored) return { status: 200, body: { ok: true, already: true, item, unread: unreadCount() } };
 	if (!needsAnswer(item) && !(isOpenDecision(item) && laterOn(item.decision))) return { status: 409, body: { error: "not waiting" } };
 	// A login request ends by logging in (or its request finishing), never by being set aside: its asker would wait on a login no one gives.
-	if (item.decision?.to.startsWith("auth:") || item.waits === "login") return { status: 409, body: { code: "login", error: msg().auth.noIgnoreLogin } };
+	if ((item.decision && cardKind(item.decision) === "auth") || item.waits === "login") return { status: 409, body: { code: "login", error: msg().auth.noIgnoreLogin } };
 	const at = now(), group = askGroup(item, false);
 	for (const n of group) {
 		n.ignored = at;

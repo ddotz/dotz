@@ -1,13 +1,13 @@
 // The decisions an event asks of the owner. A part of the notice store split out of hub/notices.ts, code unchanged.
 import { log, now } from "./config.ts";
-import { decisionText, hasDecisionHead, parseDecisions } from "./choices.ts";
+import { decisionText, hasDecisionHead, optionFields, parseDecisions } from "./choices.ts";
 import { type DraftApproval, parseDraftApproval, quotedDraft } from "./draft-approval.ts";
 import { askDefaults, askedDraft, asksSendWithoutDraft, DRAFT_OPTIONS, lastQuestion } from "./ask-options.ts";
 import { unreadQuestions } from "./ask-normalize.ts";
 import { eventTarget, historyEvents, type HubEvent } from "./events.ts";
 import { shortTitle } from "./notice-title.ts";
 import { parseTone, stripHandoff } from "./tone.ts";
-import type { CardEdit, DecisionOpt } from "./notices-types.ts";
+import type { CardEdit, CardKind, DecisionOpt } from "./notices-types.ts";
 import { RUN_DECISION } from "./notices-schedule.ts";
 import { ALERT_ANSWER_WINDOW_MS, ANSWER_WINDOW_MS, TEXT_MAX, authorOf, laneTone, refOf } from "./notices-rules.ts";
 import { say } from "./notices-read.ts";
@@ -132,8 +132,15 @@ export const expiresAtOf = (d: { to: string; by?: string; draft?: DraftApproval 
 	const from = Date.parse(at);
 	return new Date((Number.isNaN(from) ? Date.parse(now()) : from) + (d.by === "gateway" || d.to === "alert" ? ALERT_ANSWER_WINDOW_MS : ANSWER_WINDOW_MS)).toISOString();
 };
+/** What a card is, decided once as it opens (notices-store.ts putDecision, where every card opens: a post's cards from drafted, a login request, a
+ * failed schedule run) and stored as `decision.kind`: a login request, a schedule run's card, a send approval, a card asking for several values (an
+ * option listing 2+ of them, hub/choices.ts optionFields), the gateway's own alert, else a plain choice. The rules below and the web read the field. */
+export const cardKindOf = (d: { to: string; by?: string; draft?: DraftApproval; options: { desc?: string }[] }): CardKind =>
+	d.to.startsWith("auth:") ? "auth" : d.to.startsWith(RUN_DECISION) ? "run" : d.draft ? "send" : d.options.some(o => optionFields(o.desc ?? "").length > 1) ? "values" : d.by === "gateway" || d.to === "alert" ? "alert" : "choice";
+/** A card's kind: its stored field, else (a card stored before it) the same rule. */
+export const cardKind = (d: { to: string; draft?: DraftApproval; kind?: CardKind }): CardKind => d.kind ?? cardKindOf({ ...d, options: [] });
 /** A question card that 자세히 / 나중에, the close labels, the half-time reminder and the asker's note apply to: no send approval, login request or schedule run. */
-export const plainCard = (d: { to: string; draft?: DraftApproval }): boolean => !d.draft && !d.to.startsWith("auth:") && !d.to.startsWith(RUN_DECISION);
+export const plainCard = (d: { to: string; draft?: DraftApproval; kind?: CardKind }): boolean => !["send", "auth", "run"].includes(cardKind(d));
 
 // The label a button answer shows (the sent text may be longer): set while its message is on the way, since that message settles the notice too.
 export const sending = new Map<string, string>();

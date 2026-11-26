@@ -823,6 +823,17 @@ test("a login request is a decision that its approve button and its end both set
 	expect(stored().find(x => x.id === form.id)!.decision).toMatchObject({ state: "answered", answer: "시간이 지나 닫혔어요" });
 });
 
+test("each card stores its kind once as it opens: choice, values, send, login, alert", () => {
+	post("web", "[ask] 종류 확인\n\n결정: 시작 · 언제 할까요?\n**1) 지금**\n바로 해요\n**2) 내일**\n내일 해요");
+	post("web", "[ask] 값 확인\n\n결정: 신청서 · 빈 칸\n**1) 지금 정하기 …**\n- 공개일\n- 회원 번호\n**2) 나중에**\n다음에 해요");
+	post("web", `[ask] 답장\n${draftApprovalBlock({ to: "kim@example.com", body: "본문", ref: "RKINDAA", question: "이대로 보낼까요?" })}`);
+	authRequested({ id: "kind1", kind: "approve", title: "로그인 승인", site: "example.com", purpose: "승인해 주세요" });
+	emit("outbox", { ts: new Date().toISOString(), kind: "out", source: "gateway", target: "alert", text: "[ask] 디스크가 거의 찼어요\n\n결정: 디스크 · 지울까요?\n**1) 지워요**\n오래된 것만\n**2) 둠요**\n그대로" });
+	const kindOfTitle = (t: string) => stored().find(n => n.decision && n.title.includes(t))?.decision?.kind;
+	expect(["언제 할까요", "빈 칸", "RKINDAA", "로그인 승인", "지울까요"].map(kindOfTitle)).toEqual(["choice", "values", "send", "auth", "alert"]);
+	authSettled("kind1", "timeout");
+});
+
 test("a login request cannot be ignored: it stays open and waiting", () => {
 	authRequested({ id: "ign1", kind: "approve", title: "로그인 승인", site: "example.com", purpose: "승인해 주세요" });
 	const n = decisions("auth:ign1")[0]!;

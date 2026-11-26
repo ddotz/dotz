@@ -70,8 +70,12 @@ export type CardEdit = { file: string; line: number; from: string; to: string };
 /** A held answer: the label given, when it goes out (`until`, gateway clock), the time left when the item was read, the option number and text typed with
  * it; `failed` once its delivery after the window failed, with the reason the delivery gave (the card is open again). */
 export type HeldAnswer = { label: string; until: number; left: number; n?: number; note?: string } & ({ state: "held" } | { state: "failed"; code: string; error: string });
+/** What a card is (hub/notices-decisions.ts cardKindOf): a plain choice, a send approval, a card asking for values, a login request, a schedule run's card, the gateway's own alert. */
+export type CardKind = "choice" | "send" | "values" | "auth" | "run" | "alert";
 export type Decision = {
 	options: DecisionOpt[];
+	/** Set once as the card opens; absent on a card stored before the field (cardKind then reads it from the card). */
+	kind?: CardKind;
 	/** The card's own evidence lines (the lines between its `결정:` head and its first option, hub/choices.ts parseDecisions), absent when it has none. The notice's text then starts with them, followed by the message's lead; the sheet shows them under the title. */
 	evidence?: string[];
 	/** The id a gateway post gave this card (its event's `card_ids`, hub/notices-decisions.ts decisionsOf): the card is then found by that id alone, never by its title. Absent on every other card. */
