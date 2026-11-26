@@ -10,6 +10,7 @@ import { mergePast, sameFirst, SEEDED_NOTE, similarPairs, withExamples } from ".
 import { storedPairs } from "./past-refresh.ts";
 import type { Draft, Store, Tokens } from "./store.ts";
 import { fixedReply, templateText } from "./template.ts";
+import { textsAt } from "../rule-ledger.ts";
 
 const MATCH_NOTE = /^(메일 대조|근거|초안 메모):/;
 const MATCHED_THREAD = / 스레드 (\S+) \(답장: ([^)]*)\)$/;
@@ -188,7 +189,11 @@ export function createDraftRun({ deps, store, ownerOf, styleOf, contextOf, code,
 		const found = matched.find(n => n.startsWith("메일 대조: 있음"))?.match(MATCHED_THREAD);
 		const mailThread = reuse || search?.kind === "failed" ? previous?.mailThread : found ? { id: found[1]!, ...(found[2] === "보냄" ? { answered: true } : found[2] === "안 보냄" ? { answered: false } : {}) } : undefined;
 		const mailLine = (previous ? !!mailView(previous) : mailPlanned(c, src)) ? "함께 보내는 메일: 있어요 (답글과 같은 카드로 나가요)" : "함께 보내는 메일: 없어요 (메일이나 파일을 보내 준다고 약속하지 마세요)";
-		const item: ReplyItem = { kind: "comment", app: src.key, from: c.author, text: c.text, context: [contextOf(c), mailLine, ...matched].join("\n") };
+		// The request kind its riding mail met (that mail's 자동 초안 규칙): the reply follows the rule's 어떻게 too, lessons of that kind included, as the mail does.
+		const request = previous ? mailView(previous)?.rule : undefined;
+		const requestHow = request ? textsAt({ app: request.app, request: request.id }, "request") : [];
+		const requestLine = requestHow.length ? [`이 요청 종류(${request!.name ?? request!.id})에 정한 것: ${requestHow.join(" ")}`] : [];
+		const item: ReplyItem = { kind: "comment", app: src.key, from: c.author, text: c.text, context: [contextOf(c), mailLine, ...requestLine, ...matched].join("\n") };
 		const marked = c.authorId === undefined ? past : past.map(p => (p.fromId === c.authorId ? { ...p, same: true } : p));
 		const style = withExamples(styleOf(src, c.authorId, c.thread), sameFirst(c.text, marked, deps.now()), [...past].sort((a, b) => b.at - a.at).map(p => p.reply), c.text);
 		const judgeModel = deps.judge;
@@ -214,7 +219,7 @@ export function createDraftRun({ deps, store, ownerOf, styleOf, contextOf, code,
 		emit({ kind: "comment_draft", source: src.key, thread: c.thread });
 		// Handed to the learning entry only once the new draft is stored (hub/reply-actions.ts), which says remembered or once on its card.
 		const learnt = previous && change !== undefined && r.action === "draft" ? learnedOf(r, change) : undefined;
-		const lesson: Lesson | undefined = learnt && previous ? { keys: commentKeys(src.key, c), words: learnt.line, proposal: { once: learnt.once, scope: learnt.scope, forbid: learnt.forbid }, evidence: { draft: previous.text, change: change ?? "" } } : undefined;
+		const lesson: Lesson | undefined = learnt && previous ? { keys: { ...commentKeys(src.key, c), ...(request ? { request } : {}) }, words: learnt.line, proposal: { once: learnt.once, scope: learnt.scope, forbid: learnt.forbid }, evidence: { draft: previous.text, change: change ?? "" } } : undefined;
 		return { ok: true, draft, ...(lesson ? { lesson } : {}) };
 	};
 

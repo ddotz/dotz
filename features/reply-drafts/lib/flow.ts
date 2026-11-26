@@ -53,7 +53,7 @@ async function learnEditOf(id: string, deps: FlowDeps): Promise<void> {
 	try {
 		const d = getDraft(id), learnCall = deps.learnCall;
 		if (!d || d.status !== "sent" || d.editedFrom === undefined || !learnCall || d.editedFrom.replace(/\s+/g, "") === d.body.replace(/\s+/g, "") || !claimEditLearned(id)) return;
-		const keys = keysOf(draftRules(d, d.item));
+		const keys = keysOf(draftRules(d, d.item), d);
 		const taught = await lessonOfEdit({ before: d.editedFrom, after: d.body, received: d.item.text }, (system, user) => learnCall(keys.channel.app)(system, user)).catch(e => (console.error(`reply draft: what the edit of ${id} teaches was not read: ${(e as Error).message}`), undefined));
 		await learn({ source: "edit", ref: id, keys, words: taught?.lesson ?? "", ...(taught?.everywhere ? { proposal: { scope: "everywhere" } } : {}) }, deps);
 	} catch (e) {
@@ -467,7 +467,7 @@ async function reviseClaimed(id: string, change: string, deps: FlowDeps, opts: {
 	}
 	// Learned only once the new draft is stored: a revise that failed teaches nothing.
 	const learnt = learnedOf(r, change);
-	const lesson: Lesson = { keys: keysOf(rules), words: learnt.line, proposal: { once: learnt.once, scope: learnt.scope, forbid: learnt.forbid }, evidence: { draft: old.body, change } };
+	const lesson: Lesson = { keys: keysOf(rules, rec), words: learnt.line, proposal: { once: learnt.once, scope: learnt.scope, forbid: learnt.forbid }, evidence: { draft: old.body, change } };
 	const said: Learnt | undefined = opts.learn === false ? undefined : await learn({ source: "revise", ref: rec.id, ...lesson }, deps);
 	return { ok: true, text: askText(rec, [...r.warnings, ...notStaged], said ? `답장 초안을 고쳤어요. ${said.text}` : "답장 초안을 고쳤어요"), id: rec.id, replaces: old.id, lesson };
 }
@@ -499,7 +499,7 @@ export function dropDraft(id: string, why?: { reason: string; deps: FlowDeps }):
 
 const learnDropReason = (d: DraftRec, reason: string, deps: FlowDeps): Promise<void> =>
 	track(
-		learn({ source: "drop", ref: d.id, keys: keysOf(draftRules(d, d.item)), words: reason }, deps).then(
+		learn({ source: "drop", ref: d.id, keys: keysOf(draftRules(d, d.item), d), words: reason }, deps).then(
 			() => undefined,
 			e => console.error(`reply draft: why ${d.id} was not sent was not recorded: ${(e as Error).message}`),
 		),

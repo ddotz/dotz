@@ -151,6 +151,29 @@ describe("a learned correction against the configured instruction", () => {
 	});
 });
 
+describe("a lesson of a request kind (같은 요청 종류 규칙은 양쪽에)", () => {
+	test("taught on a comment card whose mail met rule r1, it is one rules.json record that the rule's 어떻게 and so the mail drafts read; flipping it to the app takes it out", async () => {
+		rulesOff([RULE]);
+		const request = { app: "mail", id: "r1", name: RULE.name };
+		const learned = await replyLearning(() => ({})).learn({ source: "revise", ref: "C1", keys: { channel: { app: "youtube" }, request }, words: "용도는 묻지 말기", proposal: { scope: "request" } });
+		expect(learned).toMatchObject({ state: "remembered", scope: "request", scopes: ["channel", "request", "everywhere"] });
+		expect(learned.text).toContain("같은 요청(자료 요청)의 댓글·메일");
+		expect(readLedger().filter(r => r.state === "on" && r.text === "용도는 묻지 말기").map(r => [r.kind, r.scope])).toEqual([["request", { app: "mail", request: "r1" }]]);
+		const how = (readSettings(env.dir, "mail").find(f => f.key === "draft_rules")?.value as { how: string }[])[0]!.how;
+		expect(how).toBe(`${RULE.how}\n용도는 묻지 말기`);
+		expect(ruleInstruction("", { id: "r1", ...RULE, how, on: true }, [])).toContain("용도는 묻지 말기");
+		const back = await replyLearning(() => ({})).flip("C1", { scope: "channel" });
+		expect(back?.scope).toBe("channel");
+		expect(readLedger().some(r => r.state === "on" && r.kind === "request" && r.text === "용도는 묻지 말기")).toBe(false);
+	});
+	test("without a request kind on the draft, a request scope stays the app's own", async () => {
+		rulesOff([RULE]);
+		const learned = await replyLearning(() => ({})).learn({ source: "revise", ref: "C2", keys: { channel: { app: "mail" } }, words: "용도는 묻지 말기", proposal: { scope: "request" } });
+		expect(learned).toMatchObject({ scope: "channel", scopes: ["channel", "everywhere"] });
+		expect(readLedger().some(r => r.kind === "request" && r.text === "용도는 묻지 말기")).toBe(false);
+	});
+});
+
 describe("an offer drafted by a rule", () => {
 	test("with 자동 초안 off, a matching mail is drafted with the rule's instruction, its file staged and its badge on the card and the mail", async () => {
 		rulesOff([other, RULE], "존댓말로 짧게");
@@ -162,7 +185,7 @@ describe("an offer drafted by a rule", () => {
 		expect(m.calls).toHaveLength(2);
 		expect(m.calls[1]!.user).toContain(`존댓말로 짧게 ${RULE.how}`);
 		const d = listDrafts()[0]!;
-		expect(d.rule).toEqual({ id: "r2", name: "자료 요청" });
+		expect(d.rule).toEqual({ id: "r2", name: "자료 요청", app: "mail" });
 		expect(stagedFiles(d.id).map(f => [f.name, readFileSync(f.path, "utf8")])).toEqual([["신청서.pdf", "form bytes"]]);
 		expect(parseDraftApproval(out.sent[0]!.text)).toMatchObject({ rule: "자료 요청", attachments: [{ name: "신청서.pdf" }] });
 		expect(out.suggested).toEqual([{ key: "r-1", s: { kind: "reply-draft", label: "답장 초안", ref: d.id, rule: "자료 요청" } }]);

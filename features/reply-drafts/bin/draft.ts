@@ -241,8 +241,8 @@ export async function runDraft(args: string[], stdin: string, deps: DraftDeps = 
 			if (draftId !== undefined) {
 				const d = getDraft(draftId), words = oneLine(flag(rest, "--change") ?? ""), scope = flag(rest, "--scope");
 				if (!d) return { lines: [`초안 ${draftId}을(를) 찾지 못했어요`], code: 1 };
-				if (!words || (scope !== undefined && scope !== "recipient" && scope !== "channel" && scope !== "everywhere")) return { lines: [USAGE], code: 2 };
-				const keys = keysOf(draftRules(d, d.item));
+				if (!words || (scope !== undefined && scope !== "recipient" && scope !== "channel" && scope !== "request" && scope !== "everywhere")) return { lines: [USAGE], code: 2 };
+				const keys = keysOf(draftRules(d, d.item), d);
 				const learnt = await learn({ source: "chat", ref: d.id, keys, words, ...(scope ? { proposal: { scope } } : {}) }, { ...deps, learnCall: learnCallOf(deps, keys.channel.app) });
 				return { lines: [learnt.text], code: 0 };
 			}

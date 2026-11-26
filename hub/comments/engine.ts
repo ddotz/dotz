@@ -2,7 +2,7 @@
 // the gate in contract.ts). Everything is injected (adapters, model, clock, tone, broadcast) so tests run without a network.
 import { editFollower } from "./edited.ts";
 import { ownerLint, type ReplyStyle } from "../reply-draft.ts";
-import type { Lesson, Part } from "../reply-types.ts";
+import type { Lesson, Part, RequestKind } from "../reply-types.ts";
 import { absorbComments, mergeIgTwins } from "./absorb.ts";
 import { failAuto, leaveQueue } from "./auto-queue.ts";
 import { createDraftRun, earlierMailTo, type EditLessons, learnSentParts, MAIL_SAME_ADDRESS_NOTE, mailFollowsReply, mailJson, POSTING_REASON, reviseRidingMail, tokenStats } from "./draft-run.ts";
@@ -24,7 +24,7 @@ import { createPastRefresh, type PastDeps } from "./past-refresh.ts";
 // after the reply is posted, revised or dropped with it.
 // `request`: the writer's own words, for the install's narrow rule (hub/auto-attach.ts; see hub/mail-cli.ts composeMail).
 export type MailSpec = { app: string; to: string; subject: string; body: string; attach?: string[]; fromLibrary?: string; request?: string; postTitle?: string };
-export type MailView = { id: string; to: string; account?: string; accountHeld?: true; subject?: string; body: string; attachments: { name: string; size?: number; digest?: string }[]; asksFile?: boolean; libraryMiss?: boolean; /** Warnings the owner reads before approving, shown with the mail. */ notes?: string[]; /** Where the mail's words and files disagree (flow.ts draftAttachIssues): the card's `첨부 확인` line. */ attachIssues?: string[] };
+export type MailView = { id: string; to: string; account?: string; accountHeld?: true; subject?: string; body: string; attachments: { name: string; size?: number; digest?: string }[]; asksFile?: boolean; libraryMiss?: boolean; /** Warnings the owner reads before approving, shown with the mail. */ notes?: string[]; /** Where the mail's words and files disagree (flow.ts draftAttachIssues): the card's `첨부 확인` line. */ attachIssues?: string[]; /** The 자동 초안 규칙 (request kind) the mail met, in the mail app that holds it: a lesson taught on the card can hold for that kind, replies and mails alike. */ rule?: RequestKind };
 /** What the mail text is written from: the comment, its author and post, the mail app of the source and the address the mail goes to. */
 export type MailWrite = { app: string; to: string; author: string; text: string; postTitle: string; /** The source's own fixed mail text (SourceConfig.template): set up as a written mail is, but this text is the one that comes back. */ fixed?: string };
 export type MailLink = {

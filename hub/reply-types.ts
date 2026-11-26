@@ -30,11 +30,14 @@ export type SendState =
 export type ReplyKind = "mail" | "webmail" | "comment" | "kakao" | "card";
 export type Part = "reply" | "mail";
 /** For whom a lesson holds: the person the reply goes to, this channel (the kind of message, the app, room or mailbox), or every reply. */
-export type LessonScope = "recipient" | "channel" | "everywhere";
+/** `request`: the 자동 초안 규칙 (request kind) the draft answered, in the mail app that holds it, so the lesson reaches comment replies and mail drafts of that kind alike. */
+export type LessonScope = "recipient" | "channel" | "request" | "everywhere";
+/** The 자동 초안 규칙 a draft answered: `app` the mail app instance holding it, `id` its rule id, `name` its badge. */
+export type RequestKind = { app: string; id: string; name?: string };
 /** A tone profile a lesson is written to: the app (a mail app instance, a comment source), its room or mailbox, and `to` the person it holds for (a mail address, a commenter's platform id). */
 export type LessonKey = { app: string; room?: string; base?: string; to?: string };
 /** What the one learning entry (features/reply-drafts/lib/learn.ts) takes from every source: `ref` the card or draft its result is shown on, `keys` the profiles of that draft (`recipient` only when it can hold for that person), `words` the owner's own words, `proposal` what the model suggests (`once`: only about this message; `kind`: a standing rule instead of a dated correction), `evidence` the previous draft and the change (the only texts a proposed wording pattern may quote). */
-export type LearnInput = { source: "revise" | "edit" | "drop" | "chat"; ref: string; keys: { recipient?: LessonKey; channel: LessonKey }; words: string; proposal?: { once?: boolean; scope?: LessonScope; forbid?: string[]; kind?: "rule" | "correction" }; evidence?: { draft: string; change: string } };
+export type LearnInput = { source: "revise" | "edit" | "drop" | "chat"; ref: string; keys: { recipient?: LessonKey; channel: LessonKey; request?: RequestKind }; words: string; proposal?: { once?: boolean; scope?: LessonScope; forbid?: string[]; kind?: "rule" | "correction" }; evidence?: { draft: string; change: string } };
 /** What a revise hands the entry: the source and ref are the hub's. */
 export type Lesson = Pick<LearnInput, "keys" | "words" | "proposal" | "evidence">;
 /** What the owner is told of one learned line (the card's `text`), and what he may flip: `scopes` are the scopes this draft can hold it for. */

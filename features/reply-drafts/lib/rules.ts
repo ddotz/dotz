@@ -106,12 +106,12 @@ export async function configConflicts(key: ToneKey, line: string, call: ModelCal
 }
 
 /** A mail the owner sends himself in app `app` (the one that rides on a comment reply, hub/comments/mail-link.ts) set up as a mail draft of that app is (offer.ts): the box its recipient, subject and text fall in (box-place.ts boxOfOutgoing) and its configured instruction, the 기본 규칙, that box's lines and the 어떻게 of the first switched-on rule the mail meets (matchMail: one short call, none while no rule is on). */
-export async function outgoingMail(app: string, mail: { to: string; subject: string; text: string }, call: ModelCall): Promise<{ box?: string; configured?: string }> {
+export async function outgoingMail(app: string, mail: { to: string; subject: string; text: string }, call: ModelCall): Promise<{ box?: string; configured?: string; rule?: { id: string; name: string; app?: string } }> {
 	const box = boxOfOutgoing(app, { src: "", from: mail.to, subj: mail.subject, body: mail.text });
 	const own = await rulesOf(app);
 	const { rule } = await matchMail({ from: mail.to, subject: mail.subject, text: mail.text }, (boxRules(box) ?? (box?.alone ? [] : own.rules)).filter(r => r.on), [], call);
 	const configured = ruleInstruction(box?.alone ? "" : own.base, rule, boxLines(box, mail.to));
-	return { ...(box ? { box: box.id } : {}), ...(configured ? { configured } : {}) };
+	return { ...(box ? { box: box.id } : {}), ...(configured ? { configured } : {}), ...(rule ? { rule: { id: rule.id, name: rule.name, ...(boxRules(box) ? {} : { app }) } } : {}) };
 }
 
 const expand = (p: string) => (p === "~" ? homedir() : p.startsWith("~/") ? join(homedir(), p.slice(2)) : p);

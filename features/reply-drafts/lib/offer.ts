@@ -401,7 +401,7 @@ async function offerOne(m: OfferMail, deps: OfferDeps, { body, history, replyTo 
 		// A mail draft starts as 답장 (the sender alone); the card's 전체 답장 switch reads the original's 받는 사람·참조 from the mail record.
 		built.rec.mode = "reply";
 		ensureSwitch();
-		if (rule) built.rec.rule = { id: rule.id, name: rule.name };
+		if (rule) built.rec.rule = { id: rule.id, name: rule.name, ...(boxRules(box) ? {} : { app: instance }) };
 		const warnings = [...built.warnings, ...(subjectOnly ? [SUBJECT_ONLY] : [])];
 		const chosen = chosenFrom(cands, built.files);
 		const notStaged = (e: Error): string[] => (log(`reply draft: files for mail ${m.key} not staged: ${e.message}`), []);

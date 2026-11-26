@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type CommentAdapter, commentId, type SourceConfig } from "./contract.ts";
 import { createEngine, type MailLink, type MailView } from "./engine.ts";
+import { addRecord } from "../../features/reply-drafts/lib/ledger.ts";
 
 const NOW = Date.parse("2026-11-25T00:00:00.000Z");
 const source: SourceConfig = { key: "youtube", kind: "youtube", label: "유튜브 댓글", watch: ["*"], autoDraft: false };
@@ -22,7 +23,7 @@ afterEach(() => rmSync(dir, { recursive: true, force: true }));
 // Like the real mail link: a revise makes a new draft and the old one is no longer pending (its view is gone). The files become the ones the
 // change names ("<name> 빼" removes it), and `asked` keeps what each revise was told. `hold` parks a revise until released. Like the model told
 // to keep what the owner's words do not touch, the body changes only when his words (the ask's first paragraph) name a file or the mail.
-function fakeMail() {
+function fakeMail(rule?: MailView["rule"]) {
 	const drafts = new Map<string, MailView>();
 	const asked: string[] = [];
 	let n = 0;
@@ -30,7 +31,7 @@ function fakeMail() {
 	const link: MailLink = {
 		compose: async spec => {
 			const id = `M${++n}`;
-			drafts.set(id, { id, to: spec.to, subject: spec.subject, body: spec.body, attachments: (spec.attach ?? []).map(p => ({ name: p.split("/").pop()! })) });
+			drafts.set(id, { id, to: spec.to, subject: spec.subject, body: spec.body, attachments: (spec.attach ?? []).map(p => ({ name: p.split("/").pop()! })), ...(rule ? { rule } : {}) });
 			return { ok: true, id };
 		},
 		send: async () => ({ ok: true, text: "메일을 보냈어요" }),
@@ -55,7 +56,7 @@ function fakeMail() {
 	return { link, asked, park: () => { let go!: () => void; hold = new Promise(r => (go = r)); return () => { hold = undefined; go(); }; } };
 }
 
-async function setup() {
+async function setup(rule?: MailView["rule"]) {
 	writeFileSync(join(dir, "config.json"), JSON.stringify({ enabled: true, sources: { youtube: source } }));
 	const adapter: CommentAdapter = {
 		kind: "youtube",
@@ -63,14 +64,15 @@ async function setup() {
 		reply: async () => ({ ok: true, ref: "r1" }),
 		posts: async () => [],
 	};
-	const mail = fakeMail();
+	const mail = fakeMail(rule);
+	const prompts: string[] = [];
 	let modelHold: Promise<void> | undefined;
 	const engine = createEngine({
 		dir,
 		now: () => NOW,
 		collector: "mac-a",
 		adapters: { youtube: adapter },
-		model: async () => (await modelHold, { text: reply("전체 버전을 먼저 보내드려요.") }),
+		model: async (_system, user) => (prompts.push(user), await modelHold, { text: reply("전체 버전을 먼저 보내드려요.") }),
 		broadcast: () => {},
 		sent: () => {},
 		mail: mail.link,
@@ -79,7 +81,7 @@ async function setup() {
 	const s = await engine.addDraft(commentId("youtube", "c1"), "자료는 메일로 보내 드릴게요", undefined, MAIL);
 	if (!s.ok) throw new Error(s.reason);
 	const parkModel = () => { let go!: () => void; modelHold = new Promise(r => (go = r)); return () => { modelHold = undefined; go(); }; };
-	return { engine, mail, draft: s.draft, parkModel };
+	return { engine, mail, draft: s.draft, parkModel, prompts };
 }
 const names = (v: MailView | undefined) => v?.attachments.map(f => f.name);
 
@@ -145,5 +147,17 @@ describe("a reply revise and a mail revise of the same card at once", () => {
 		expect(now.code).toBe(r.draft.code);
 		expect(now.mail).toBe("M2");
 		expect(names(t.engine.mailView(now))).toEqual(["파일A.mp3", "파일C.pdf", "파일B.mp3"]);
+	});
+});
+
+describe("a comment card whose mail met an 자동 초안 규칙 (request kind)", () => {
+	test("the reply is written with that rule's lines, and a lesson taught on it can hold for the request kind", async () => {
+		const rule = { app: "mail", id: "r1", name: "자료 요청" };
+		addRecord({ text: "용도는 묻지 않기", kind: "request", scope: { app: "mail", request: "r1" }, by: "learn" });
+		const t = await setup(rule);
+		const r = await t.engine.revise(t.draft.code, "앞으로 용도는 묻지 마", "reply");
+		if (!r.ok) throw new Error(r.reason);
+		expect(t.prompts.at(-1)).toContain("이 요청 종류(자료 요청)에 정한 것: 용도는 묻지 않기");
+		expect(r.lesson?.keys.request).toEqual(rule);
 	});
 });
