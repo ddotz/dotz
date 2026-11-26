@@ -1,6 +1,7 @@
 import { afterAll, afterEach, describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { DEMO_LANG_KO } from "./layout-measure.ts";
 import { ev, fakeHub, run, waitFor, type View } from "./test-web.ts";
 
 // The side drawer (#sheet, web/js/06-subagents.js) in a headless browser at 390 and 1280px, on the demo's data (site/demo, as web-golden-web.test.ts
@@ -8,7 +9,7 @@ import { ev, fakeHub, run, waitFor, type View } from "./test-web.ts";
 // shows, and a card's unsaved edit still asks before another card or a project map's 뒤로 takes the drawer away.
 const ROOT = join(import.meta.dir, "..");
 const src = (rel: string) => readFileSync(join(ROOT, rel), "utf8");
-const hub = fakeHub({ slowTimers: true, headScript: [src("site/demo/fixtures.js"), src("site/demo/demo-api.js")].join("\n;\n") });
+const hub = fakeHub({ slowTimers: true, headScript: [DEMO_LANG_KO, src("site/demo/fixtures.js"), src("site/demo/demo-api.js")].join("\n;\n") });
 afterEach(() => hub.release());
 afterAll(() => hub.stop());
 

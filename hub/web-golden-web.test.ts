@@ -1,6 +1,7 @@
 import { afterAll, expect, test } from "bun:test";
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { DEMO_LANG_KO } from "./layout-measure.ts";
 import { ev, fakeHub, waitFor, type View } from "./test-web.ts";
 
 // Golden behaviour trace (IS-8 of .omo/plans/web-structure.md): for every screen in hub/ui-surfaces.json, opened with its own `open` and
@@ -68,7 +69,7 @@ const CAPTURE = `(() => {
 })();`;
 const hub = fakeHub({
 	slowTimers: true,
-	headScript: [CLOCK, src("site/demo/fixtures.js"), src("site/demo/demo-api.js"), src("hub/layout-measure-kakao-fixture.js"), CAPTURE].join("\n;\n"),
+	headScript: [CLOCK, DEMO_LANG_KO, src("site/demo/fixtures.js"), src("site/demo/demo-api.js"), src("hub/layout-measure-kakao-fixture.js"), CAPTURE].join("\n;\n"),
 });
 afterAll(() => hub.stop());
 

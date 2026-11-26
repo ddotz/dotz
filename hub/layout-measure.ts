@@ -3,8 +3,8 @@
 // that is off the text's centre, and rows of one kind with different heights. Everything is read from the laid-out page (Range client
 // rects and computed style), never guessed from CSS.
 //   bun hub/layout-measure.ts [--screens a,b] [--widths 390,1280] [--json] [--out file] [--write-baseline]
-// Data: the real page from hub/webapp.ts (current web/ CSS and JS) in a local Bun.serve, with site/demo/fixtures.js and
-// site/demo/demo-api.js injected the way site/build-demo.ts wires them into site/demo/index.html, so every /api call and the event
+// Data: the real page from hub/webapp.ts (current web/ CSS and JS) in a local Bun.serve, with site/demo/demo-lang.js, fixtures.js and
+// demo-api.js injected the way site/build-demo.ts wires them into site/demo/index.html, so every /api call and the event
 // stream are answered by the demo. The public demo leaves the kakao app out, so hub/layout-measure-kakao-fixture.js (not deployed) adds it
 // after them for the kakao screen. Nothing is built into site/demo, nothing is written anywhere but --out and the baseline.
 // Output per check: the histogram of every measured value and the worst 15 with selector path and element name.
@@ -460,6 +460,9 @@ const PAGE_FN: Record<string, string> = { cramped: "cramped", "field-height": "f
 export type View = InstanceType<typeof Bun.WebView>;
 const ROOT = join(import.meta.dir, "..");
 const DEMO = join(ROOT, "site", "demo");
+// The demo's content follows the browser's language (site/demo/demo-lang.js, read by fixtures.js and demo-api.js); every page measured or
+// tested on the demo data is the Korean one its baselines were taken from. It goes before fixtures.js, here and in the web tests' headScript.
+export const DEMO_LANG_KO = `Object.defineProperty(navigator, "languages", { get: () => ["ko-KR"] });\n${readFileSync(join(DEMO, "demo-lang.js"), "utf8")}`;
 
 // The real page and bundles from hub/webapp.ts with the demo's two scripts injected first thing in <head>, before the page's own early
 // fetches, so window.fetch and EventSource are the demo's. /custom.js (appended by 99-boot.js) is empty, as in site/build-demo.ts.
@@ -476,7 +479,7 @@ export function startDemoServer(opts: { now?: number } = {}) {
 			if (p === "/") {
 				const html = await (await indexPage(new Request(req.url))).text();
 				const clock = opts.now ? `<script>(() => { const N = ${opts.now}, D = Date; window.Date = class extends D { constructor(...a) { super(...(a.length ? a : [N])); } static now() { return N; } }; })()</script>` : "";
-				const inject = `${clock}<script src="/__demo/fixtures.js"></script><script src="/__demo/demo-api.js"></script><script src="/__test/kakao-fixture.js"></script>`;
+				const inject = `${clock}<script>${DEMO_LANG_KO}</script><script src="/__demo/fixtures.js"></script><script src="/__demo/demo-api.js"></script><script src="/__test/kakao-fixture.js"></script>`;
 				return new Response(html.replace(/<head[^>]*>/i, m => `${m}${inject}`), { headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" } });
 			}
 			if (p === "/__demo/fixtures.js" || p === "/__demo/demo-api.js") return new Response(Bun.file(join(DEMO, p.slice("/__demo/".length))), { headers: { "Content-Type": "text/javascript; charset=utf-8", "Cache-Control": "no-store" } });
