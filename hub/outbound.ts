@@ -483,19 +483,14 @@ onDraftCardRefreshed(n => {
 	if (d?.card && d.draft?.ref) editCard(d.card.target, d.card.ids, d.draft.ref, `[ask] ${n.text}`, { to: d.to, text: n.text });
 });
 // Any other card that closed with no press (ignored, answered on the web, expired, closed by the bot) turns its buttons off on Discord, its words kept: on its last message, once no open card shares it.
-function disableCardButtons(target: string, ids: string[]): void {
-	const last = ids.at(-1)!;
-	if (!isLocal(target) && !allNotices().some(n => n.decision?.state === "open" && n.decision.card?.ids.includes(last))) void discord.disableButtons(target, last).catch(e => log(`card buttons of ${last} not turned off on Discord: ${e}`));
-}
+// One that opens again (an ignore taken back, an answer put back) turns them on; a send-approval card (it has a ref) is drawn anew by its own path instead.
+const cardButtons = (target: string, ids: string[], on: boolean, last = ids.at(-1)!): void => void (!isLocal(target) && (on || !allNotices().some(n => n.decision?.state === "open" && n.decision.card?.ids.includes(last))) && (on ? discord.enableButtons : discord.disableButtons)(target, last).catch(e => log(`card buttons of ${last} not turned ${on ? "on" : "off"} on Discord: ${e}`)));
 onDecisionClosed((to, ref, card) => {
 	if (card && ref) closeDiscordCard(to, ref, card);
-	else if (card?.target && card.ids?.length) disableCardButtons(card.target, card.ids);
+	else if (card?.target && card.ids?.length) cardButtons(card.target, card.ids, false);
 	approvals.closed(to, ref);
 });
-// A choice card that opens again gets its buttons back (a send-approval card, which has a ref, is drawn anew by its own path: its closed message lost them).
-onDecisionReopened((_to, ref, card) => {
-	if (!ref && card?.target && card.ids?.length && !isLocal(card.target)) void discord.enableButtons(card.target, card.ids.at(-1)!).catch(e => log(`card buttons of ${card.ids!.at(-1)} not turned on on Discord: ${e}`));
-});
+onDecisionReopened((_to, ref, card) => void (!ref && card?.target && card.ids?.length && cardButtons(card.target, card.ids, true)));
 // A failed scheduled run's card (hub/schedule-fire.ts failRun) has no post: its open notice goes to Discord through the send ledger, so no second notice is made.
 // Its buttons answer that notice (hub/approval-wire.ts discordGatewayAnswer).
 onDecision(n => {
@@ -691,7 +686,6 @@ export async function progress(target: string, key: string, text: string, replyT
 			if (prefix) t = `${head}${prefix}${dropClaim(rest)}`;
 		}
 		emit("outbox", outEvent({ ts: now(), kind: "out", source: "orchestrator", target, text: t, update_key: key, ...(target === "worklog" && key.startsWith("lane:") ? { wk: "session" } : {}) }, threadHome, threadMail));
-		if (key === "progress") livestatus.noteWebLine(target, t);
 		return t;
 	});
 	if (isLocal(target) || !discord.status.enabled || !route({ target, text: sent, extra: { update_key: key }, replyTo }).messengers.discord) return { delivered: true };

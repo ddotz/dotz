@@ -1,7 +1,9 @@
 /* dotz demo language: the demo is a static site, so the page picks its language itself from the browser's language list
    (navigator.languages, the same list Accept-Language is sent from), or an explicit ?lang=. Korean for ko, English for anything else,
    as the gateway serves the web app (hub/web-i18n.ts resolveView). build-demo.ts writes i18n.js, which calls these two right
-   before app.js: pick() chooses the catalog, fill() writes the `{{key}}` tokens of index.html in it. */
+   before app.js: pick() chooses the catalog, fill() writes the `{{key}}` tokens of index.html in it.
+   The page's language is picked once, here, as `lang`: i18n.js, fixtures.js and demo-api.js all read it, and L(ko, en) is how the
+   demo's own content (fixtures, scripted replies) carries both languages in one source. */
 (() => {
   const TEXT = {
     ko: {
@@ -27,5 +29,7 @@
     for (const el of document.querySelectorAll("*"))
       for (const a of [...el.attributes]) if (a.value.includes("{{")) a.value = sub(a.value);
   };
-  window.dotzDemoLang = { pick, fill };
+  const lang = pick(navigator.languages || [navigator.language], new URLSearchParams(location.search).get("lang"));
+  const L = (ko, en) => lang === "ko" ? ko : en;
+  window.dotzDemoLang = { pick, fill, lang, L };
 })();

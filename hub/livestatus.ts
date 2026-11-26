@@ -13,7 +13,7 @@
 import { subagentLists } from "./activity.ts";
 import { log } from "./config.ts";
 import * as discord from "./discord.ts";
-import { activityItems } from "./events.ts";
+import { activityItems, onEmit } from "./events.ts";
 import { msg } from "./i18n.ts";
 import { lanes } from "./lanes.ts";
 
@@ -43,11 +43,13 @@ export function setWebProgress(fn: (target: string, text: string) => void): void
 }
 // The orchestrator's own progress note (a dotz_send held for the turn's answer, hub/routes-send.ts) is a web line this reporter never
 // posted, so stop() could not finalize it: the held text stayed on the page next to the note that released it (2026-11-26 11:18).
+// It is read off the outbox: an orchestrator "out" event with update_key "progress" (hub/outbound.ts progress).
 const noted = new Set<string>();
-export function noteWebLine(target: string, text: string): void {
-	if (text.trim()) noted.add(target);
-	else noted.delete(target);
-}
+onEmit(e => {
+	if (e.kind !== "out" || e.source !== "orchestrator" || e.update_key !== "progress" || typeof e.target !== "string") return;
+	if (e.text.trim()) noted.add(e.target);
+	else noted.delete(e.target);
+});
 
 const short = (s: string, n: number) => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
 
