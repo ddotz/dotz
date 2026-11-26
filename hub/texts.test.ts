@@ -85,6 +85,6 @@ test("the real catalogs: the notes that send a session's card back keep their ow
 test("the new-mail wake text names its conversation, the draft command and the revise marker in both languages", () => {
 	for (const c of Object.values(CATALOGS)) {
 		const t = c.inboxMail("th:7");
-		for (const part of ["th:7", "draft.ts new", "[revise "]) expect(t).toContain(part);
+		for (const part of ["th:7", "draft.ts draft", "[revise "]) expect(t).toContain(part);
 	}
 });
