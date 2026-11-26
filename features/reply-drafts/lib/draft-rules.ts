@@ -8,7 +8,7 @@ import { boxById } from "./box.ts";
 import type { EffectiveRules } from "./effective-rules.ts";
 import { styleFrom, styleWithExamples } from "./pairs.ts";
 import { webmailSite } from "./senders.ts";
-import { lessonsOnly, loadStyle, profileApp, toneFile, validApp, type LoadedStyle, type ToneKey } from "./settings.ts";
+import { loadStyle, toneFile, validApp, type LoadedStyle, type ToneKey } from "./settings.ts";
 
 /** Where the draft is: its app (a mail app instance, a comment source), a room, a profile of its own, the mailbox (`box` of mail app `instance`), the mail source, and for a comment the author's platform id (`authorId`) and the profile its own file falls back to (`base`). A DraftRec fits as it is. */
 export type RuleAt = { app?: string; room?: string; profile?: string; box?: string; instance?: string; source?: string; base?: string; authorId?: string; /** the 자동 초안 규칙 that drafted it */ rule?: { id: string } };
@@ -35,9 +35,8 @@ export const pairSource = (source: string): string => webmailSite(source) ?? sou
 
 /** The tone profile an item or draft belongs to: its room when it has one, else its own profile (a mail app instance's), else its app (mail unless it says otherwise). A draft made in a mailbox (box + instance) uses tone/<instance>/<box>.md when that file exists, falling back to the instance's profile (else the mail one), then the install. */
 export function draftRules(at: RuleAt, item: RuleItem): DraftRules {
-	const app = at.profile ?? profileApp(at.app ?? "mail");
-	const base = at.base ?? (lessonsOnly(app) ? "mail" : undefined);
-	const own: ToneKey = { app, ...(base ? { base } : {}), ...(at.room !== undefined ? { room: at.room } : {}) };
+	const app = at.profile ?? at.app ?? "mail";
+	const own: ToneKey = { app, ...(at.base ? { base: at.base } : {}), ...(at.room !== undefined ? { room: at.room } : {}) };
 	const boxKey: ToneKey | undefined = at.box && at.instance && at.room === undefined && validApp(at.instance) ? { app: at.instance, room: at.box, ...(at.profile ? {} : { base: own.base ?? own.app }) } : undefined;
 	const tone = boxKey && existsSync(toneFile(boxKey)) ? boxKey : own;
 	const to = at.authorId ?? (item.kind === "mail" ? replyAddress(item) : undefined);

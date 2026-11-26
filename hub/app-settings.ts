@@ -6,6 +6,7 @@
 // request, so a peer gateway can be handed the same plain HTTP call. Pure fs: no import of hub/config.ts, the data dir is a parameter.
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { setLines, textsAt } from "./rule-ledger.ts";
 import { readObjectForUpdate, UnreadableFileError } from "./json-update.ts";
 import { appEntries, INTEGRATIONS, readAppsFile } from "./integrations.ts";
 import type { UnansweredSettings } from "./mail-unanswered.ts";
@@ -23,6 +24,8 @@ export type SettingField = {
 	help: string;
 	/** The section of the settings screen (default 고급). */
 	section?: SettingSection;
+	/** The value is sentences of the rule ledger (features/reply-drafts/lib/ledger.ts), written line by line at the scope of this app: `request` = the 어떻게 of each 자동 초안 규칙, the rest of the rule stays in the store file. */
+	ledger?: "instruction" | "followup" | "request";
 	/** File under the data dir, and the dotted path of the value inside it. */
 	store: string;
 	path: string;
@@ -127,10 +130,10 @@ const appDiscordField = (app: string): SettingField => ({ key: "discord", label:
 const attachFolderField = (app: string): SettingField => ({ key: "attach_folder", label: "첨부 파일 폴더", type: "text", help: "오너가 대화에서 알려 준, 자주 보내는 파일을 모아 둔 이 컴퓨터의 폴더예요. 답장에 파일이 필요하면 여기서 맞는 파일을 찾아 붙여 둬요", store: DRAFTS, path: `attachFolders.${app}`, max: 300, section: "advanced", memory: true });
 // 이어서 할 일: free text; after an approved action of this app instance the bot checks it once (hub/followup.ts).
 const unansweredField = (app: string): SettingField => ({ key: "unanswered_days", label: "답 없는 메일 다시 묻기", type: "number", section: "draft", help: "답을 바라고 보낸 메일에 이 날수만큼 답이 없으면 다시 묻는 초안을 한 번 만들어 승인 카드로 보여 줘요. 0이면 꺼져 있고, 켠 뒤 보낸 메일부터 살펴요. 보내기를 눌러야 나가요", store: "custom/apps.json", path: `${app}.unanswered_days`, min: 0, max: 30, def: 0 });
-const followupField = (app: string): SettingField => ({ key: "followup", label: "이어서 할 일", type: "text", section: "advanced", help: "오너가 대화에서 알려 준, 답글·답장·카톡을 보낸 뒤 이어서 할 일이에요. 예: 파일을 달라는 댓글이면 답글 뒤에 적어 준 주소로 그 파일을 붙인 메일 초안을 만들어요. 조건에 맞을 때만 하고, 메일은 보내기를 누를 때만 나가요", store: DRAFTS, path: `followups.${app}`, max: 500 , memory: true });
+const followupField = (app: string): SettingField => ({ key: "followup", label: "이어서 할 일", type: "text", section: "advanced", help: "오너가 대화에서 알려 준, 답글·답장·카톡을 보낸 뒤 이어서 할 일이에요. 예: 파일을 달라는 댓글이면 답글 뒤에 적어 준 주소로 그 파일을 붙인 메일 초안을 만들어요. 조건에 맞을 때만 하고, 메일은 보내기를 누를 때만 나가요", store: DRAFTS, path: `followups.${app}`, ledger: "followup", max: 500 , memory: true });
 // 기본 규칙 (every draft of the instance) and the 자동 초안 규칙 list; both are edited in the settings screen and by bin/rules.ts through writeSettings.
-const draftDefaultField = (app: string): SettingField => ({ key: "draft_default", label: "기본 규칙", type: "text", help: "이 앱의 모든 초안에 함께 적용돼요", store: DRAFTS, path: `draftDefaults.${app}`, max: 1000, def: "", section: "draft", placeholder: "모든 초안에 공통으로 적용할 말투나 내용. 비워 두면 메일만 보고 써요" });
-const draftRulesField = (app: string): SettingField => ({ key: "draft_rules", label: "자동 초안 규칙", type: "rules", help: "조건에 맞는 메일이 오면 자동 초안이 꺼져 있어도 그 규칙대로 초안을 쓰고 파일을 붙여 둬요. 보내기는 직접 눌러야 나가요", store: DRAFTS, path: `draftRules.${app}`, def: [], section: "draft" });
+const draftDefaultField = (app: string): SettingField => ({ key: "draft_default", label: "기본 규칙", type: "text", help: "이 앱의 모든 초안에 함께 적용돼요", store: DRAFTS, path: `draftDefaults.${app}`, ledger: "instruction", max: 1000, def: "", section: "draft", placeholder: "모든 초안에 공통으로 적용할 말투나 내용. 비워 두면 메일만 보고 써요" });
+const draftRulesField = (app: string): SettingField => ({ key: "draft_rules", label: "자동 초안 규칙", type: "rules", help: "조건에 맞는 메일이 오면 자동 초안이 꺼져 있어도 그 규칙대로 초안을 쓰고 파일을 붙여 둬요. 보내기는 직접 눌러야 나가요", store: DRAFTS, path: `draftRules.${app}`, ledger: "request", def: [], section: "draft" });
 const REPLY_APPS = new Set(["mail", "kakao", "instagram", "youtube", "site"]);
 const replyModelField = (app: string): SettingField => ({ key: "reply_model", label: "답장 모델", type: "enum", help: "", store: DRAFTS, path: `models.${app}`, options: replyChoices.options, labels: replyChoices.labels, def: "", section: "advanced" });
 
@@ -267,6 +270,18 @@ export function validate(app: string, values: unknown): Record<string, SettingVa
 export type SettingView = Pick<SettingField, "key" | "label" | "type" | "help" | "section" | "options" | "labels" | "min" | "max" | "switch" | "memory" | "placeholder" | "lines"> & { value: SettingValue; blocked?: string };
 /** A field with its current value, as GET returns it. */
 export const viewOf = (f: SettingField, value: SettingValue): SettingView => ({ key: f.key, label: f.label, type: f.type, help: f.help, ...(f.section ? { section: f.section } : {}), ...(f.options ? { options: f.options } : {}), ...(f.labels ? { labels: f.labels } : {}), ...(f.min !== undefined ? { min: f.min } : {}), ...(f.max !== undefined ? { max: f.max } : {}), ...(f.switch ? { switch: true } : {}), ...(f.memory ? { memory: true as const } : {}), ...(f.placeholder ? { placeholder: f.placeholder } : {}), ...(f.lines ? { lines: f.lines } : {}), value });
+// A ledger field reads its lines at the scope of the app (a rule's 어떻게 at the scope of the app and the rule's id) and nothing else of it from the store file.
+function ledgerValue(f: SettingField, app: string, dir: string, raw: unknown): SettingValue {
+	if (f.ledger !== "request") return textsAt({ app }, f.ledger!, dir).join("\n");
+	return cleanRules(f.key, raw ?? []).map(r => ({ ...r, how: textsAt({ app, request: r.id }, "request", dir).join("\n") }));
+}
+const writeLedger = (f: SettingField, app: string, dir: string, v: SettingValue, before: unknown): void => {
+	if (f.ledger !== "request") return setLines({ app }, f.ledger!, v as string, "settings", dir);
+	const rules = v as DraftRule[];
+	for (const r of rules) setLines({ app, request: r.id }, "request", r.how, "settings", dir, true);
+	for (const r of Array.isArray(before) ? (before as DraftRule[]) : []) if (!rules.some(x => x.id === r.id)) setLines({ app, request: r.id }, "request", "", "settings", dir, true);
+};
+
 export function readSettings(dataDir: string, app: string): SettingView[] {
 	const cache = new Map<string, Record<string, any>>();
 	return fieldsOf(app).map(f => {
@@ -274,7 +289,7 @@ export function readSettings(dataDir: string, app: string): SettingView[] {
 		const raw = getPath(cache.get(f.store)!, f.path);
 		let value: SettingValue;
 		try {
-			value = f.read ? f.read(dataDir) : raw === undefined ? (f.def ?? (f.type === "list" ? [] : f.type === "bool" ? false : "")) : f.invert ? !clean(f, raw) : clean(f, raw);
+			value = f.read ? f.read(dataDir) : f.ledger ? ledgerValue(f, app, dataDir, raw) : raw === undefined ? (f.def ?? (f.type === "list" ? [] : f.type === "bool" ? false : "")) : f.invert ? !clean(f, raw) : clean(f, raw);
 		} catch {
 			value = f.def ?? "";
 		}
@@ -293,7 +308,9 @@ export function writeSettings(dataDir: string, app: string, values: unknown): Se
 		if (blocked) throw new SettingsError(blocked);
 		if (!byStore.has(f.store)) byStore.set(f.store, readStoreForUpdate(join(dataDir, f.store)));
 		const doc = byStore.get(f.store)!;
-		setPath(doc, f.path, f.invert ? !v : v);
+		if (f.ledger) writeLedger(f, app, dataDir, v, getPath(doc, f.path));
+		if (f.ledger && f.ledger !== "request") continue;
+		setPath(doc, f.path, f.ledger ? (v as DraftRule[]).map(r => ({ ...r, how: "" })) : f.invert ? !v : v);
 		if (v === true) for (const p of f.alsoOn ?? []) setPath(doc, p, true);
 	}
 	for (const [store, doc] of byStore) {

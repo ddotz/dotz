@@ -10,6 +10,7 @@ import type { ModelCall } from "../../../hub/reply-draft.ts";
 import { boxById, boxLines, boxRules } from "./box.ts";
 import { boxOfOutgoing } from "./box-place.ts";
 import { curate, curateAsk } from "./curate.ts";
+import { chainRecords, type LedgerRecord, rulesFor } from "./ledger.ts";
 import { libraryFile, listLibrary } from "./library.ts";
 import { stageFiles, stageLibraryFile, type StageOpts, type Want } from "./staged.ts";
 import { dataDir, INSTALL, loadSettings, type ToneKey } from "./settings.ts";
@@ -27,13 +28,11 @@ export async function mailInstanceOf(ref: string): Promise<string> {
 	}
 }
 
-/** The instance's rules as stored (on and off) and its 기본 규칙; read through the settings schema, so a hand-edited file is validated the same way. */
+/** The instance's rules as stored (on and off) and its 기본 규칙 (its own lines and the mail app's it reads under them, from the rule ledger); the rules are read through the settings schema, so a hand-edited file is validated the same way. */
 export async function rulesOf(instance: string): Promise<InstanceRules> {
 	const { readSettings } = await import("../../../hub/app-settings.ts");
-	const views = readSettings(dataDir(), instance);
-	const rules = views.find(v => v.key === "draft_rules")?.value;
-	const base = views.find(v => v.key === "draft_default")?.value;
-	return { instance, base: typeof base === "string" ? base : "", rules: Array.isArray(rules) ? (rules as DraftRule[]).filter(r => typeof r === "object") : [] };
+	const rules = readSettings(dataDir(), instance).find(v => v.key === "draft_rules")?.value;
+	return { instance, base: rulesFor({ app: instance }, ["instruction"]).map(r => r.text).join("\n"), rules: Array.isArray(rules) ? (rules as DraftRule[]).filter(r => typeof r === "object") : [] };
 }
 
 /** Whether any instance has a rule switched on: offer.ts reads a mail's body ahead only when it may be drafted. */
@@ -78,16 +77,18 @@ export function ruleInstruction(base: string, rule: DraftRule | undefined, box: 
 	return parts.length ? parts.join("\n").slice(0, 2000) : undefined;
 }
 
-/** The configured instruction lines of the profile `key` (its instance's 기본 규칙 and switched-on rules' 어떻게, or a mailbox's own when it stands alone, and the mailbox's 어떻게) that a newly learned correction contradicts, by ONE curate call (curate.ts: the lines as standing rules, only "overridden" counts); nothing configured = no call. The settings stay as they are: the caller shows the conflict, and the prompt lets the newer correction win. */
-export async function configConflicts(key: ToneKey, line: string, call: ModelCall): Promise<string[]> {
-	if (key.app === INSTALL) return [];
+/** The configured instruction of the profile `key` that a newly learned correction contradicts, by ONE curate call (curate.ts: the lines as standing rules, only "overridden" counts): `settings` the ledger records (its 기본 규칙 lines and switched-on rules' 어떻게, the mail app's under them), `other` the mailbox's own lines, which are not in the ledger. Nothing configured = no call. The caller turns the records off and says so. */
+export async function configConflicts(key: ToneKey, line: string, call: ModelCall): Promise<{ settings: LedgerRecord[]; other: string[] }> {
+	if (key.app === INSTALL) return { settings: [], other: [] };
 	const box = key.room !== undefined ? boxById(key.app, key.room) : undefined;
-	const { base, rules } = await rulesOf(key.app);
-	const own = box?.alone ? [] : [base, ...rules.filter(r => r.on).map(r => r.how)];
-	const lines = [...new Set([...own, ...(boxRules(box) ?? []).filter(r => r.on).map(r => r.how), box?.how ?? ""].map(s => s.replace(/\s+/g, " ").trim()).filter(Boolean))];
-	if (!lines.length) return [];
+	const on = new Set((await rulesOf(key.app)).rules.filter(r => r.on).map(r => r.id));
+	const settings = box?.alone ? [] : chainRecords({ app: key.app }).filter(r => (r.kind === "instruction" || (r.kind === "request" && r.scope.app === key.app && on.has(r.scope.request!))) && !!r.text.trim());
+	const other = [...(boxRules(box) ?? []).filter(r => r.on).map(r => r.how), box?.how ?? ""].map(s => s.replace(/\s+/g, " ").trim()).filter(Boolean);
+	const lines = [...new Set([...settings.map(r => r.text), ...other])];
+	if (!lines.length) return { settings: [], other: [] };
 	const { replaces } = await curate({ rules: lines, corrections: [] }, { line, kind: "rule" }, curateAsk(call));
-	return replaces.flatMap(r => (r.why === "overridden" ? [lines[Number(r.id.slice(1)) - 1]!] : []));
+	const hit = new Set(replaces.flatMap(r => (r.why === "overridden" ? [lines[Number(r.id.slice(1)) - 1]!] : [])));
+	return { settings: settings.filter(r => hit.has(r.text)), other: other.filter(t => hit.has(t) && !settings.some(r => r.text === t)) };
 }
 
 /** A mail the owner sends himself in app `app` (the one that rides on a comment reply, hub/comments/mail-link.ts) set up as a mail draft of that app is (offer.ts): the box its recipient, subject and text fall in (box-place.ts boxOfOutgoing) and its configured instruction, the 기본 규칙, that box's lines and the 어떻게 of the first switched-on rule the mail meets (matchMail: one short call, none while no rule is on). */

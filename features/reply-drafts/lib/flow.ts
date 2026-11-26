@@ -18,10 +18,10 @@ import { checkDraft, checkText, readCheck } from "./check-draft.ts";
 import { configConflicts, outgoingMail, ruleFilePath } from "./rules.ts";
 import { canAttach, sendsThroughZele, sendWith, settleAccount, threadMoved, webmailSite, zeleAccountOf, type Sent, type SendOutcome } from "./senders.ts";
 import { carryStagedFiles, removeStagedFile, stagedFiles, stagedName, stageFiles, stageWanted, type StageOpts, type Want } from "./staged.ts";
-import { dataDir, INSTALL, loadPairs, loadSettings, ownReplies, paths, recipientFile, recordPattern, type ToneKey } from "./settings.ts";
+import { dataDir, INSTALL, loadPairs, loadSettings, ownReplies, paths, recipientFile, recordForbidden, recordPattern, type ToneKey } from "./settings.ts";
 import { draftRules, pairSource, type DraftRules } from "./draft-rules.ts";
 import { compactCorrections } from "./compact.ts";
-import { alsoInto, learnLine, type LineLearned, recordForbidden } from "./learn-line.ts";
+import { learnLine, type LineLearned } from "./learn-line.ts";
 import { flipLearnt, keysOf, learn, learningSettled, proposeLinePattern, refineAfterCorrection, revisePattern, shownLearnt, track, type PatternProposal } from "./learn.ts";
 import { lessonOfEdit } from "./edit-lesson.ts";
 import { defaultKakaoReader, defaultKakaoRooms, KAKAO_APP, kakaoOwnTexts, type OwnerReader, type RoomsReader } from "./kakao-tone.ts";
@@ -38,7 +38,7 @@ export { realRunner };
 // What hub/reply-mail.ts (the hub's single door into this feature) needs beside the flow itself.
 export { boxOfOutgoing } from "./box-place.ts";
 export { dataDir, validApp } from "./settings.ts";
-export { alsoInto, checkDraft, configConflicts, draftRules, flipLearnt, learn, learningSettled, learnLine, lessonOfEdit, type LineLearned, mailView, outgoingMail, proposeLinePattern, type PatternProposal, recordForbidden, refineAfterCorrection, revisePattern, sendAccountOf, shownLearnt, webmailSite, type MailOf };
+export { checkDraft, configConflicts, draftRules, flipLearnt, learn, learningSettled, learnLine, lessonOfEdit, type LineLearned, mailView, outgoingMail, proposeLinePattern, type PatternProposal, recordForbidden, refineAfterCorrection, revisePattern, sendAccountOf, shownLearnt, webmailSite, type MailOf };
 
 // `analyze` = the model call of the identity sweep and its refinement (persona.ts); absent, no identity is analysed or refined.
 export type FlowDeps = { /** Chooses among tied library files by name (stageForReply); the default is one short model call. */ pick?: (names: string[]) => Promise<string[]>; call?: ModelCall; judge?: ModelCall; /** The model calls of one draft and its overall budget (draftTrace); buildDraft makes one when absent. */ trace?: DraftTrace; analyze?: ModelCall; run?: Runner; now?: () => Date; send?: (rec: DraftRec) => Promise<SendOutcome>; /** How library files are copied onto a draft (tests). */ stage?: StageOpts; /** Told where an approved send left the mail, right after the transport answered and before any bookkeeping write (bin/draft.ts prints its DOTZ_SEND line). */ onOutcome?: (o: Outcome) => void; learnCall?: (app: string) => ModelCall; kakaoReader?: (chatId: string) => Promise<OwnerReader>; kakaoRooms?: () => Promise<RoomsReader> };

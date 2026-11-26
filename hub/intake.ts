@@ -21,7 +21,7 @@ import { accountAnswer, accountAsk } from "./accounts-api.ts";
 import { orch, type Orchestrator } from "./orchestrator.ts";
 import { convs } from "./convsessions.ts";
 import { digest } from "./convdigest.ts";
-import { legacyAnswer } from "./migrations.ts";
+import { handRulesAnswer, legacyAnswer } from "./migrations.ts";
 import { errorAnswer } from "./orch-error.ts";
 import { drain, restore } from "./queue.ts";
 import { anthropicUsage } from "./providers.ts";
@@ -240,7 +240,7 @@ export function flush(target: string): void {
 		return void cardChatAnswer(target, b);
 	const errAnswer = session?.orch.error && b.events.length === 1 ? errorAnswer(String(head.text ?? "")) : undefined;
 	if (errAnswer) return void answerOrchError(target, errAnswer, session!, b.replyTo);
-	const legacy = b.events.length === 1 ? legacyAnswer(DATA_DIR, String(head.text ?? "")) : undefined;
+	const legacy = b.events.length === 1 ? (legacyAnswer(DATA_DIR, String(head.text ?? "")) ?? handRulesAnswer(DATA_DIR, String(head.text ?? ""))) : undefined;
 	if (legacy) return void out(target, legacy, b.replyTo, { source: "gateway", nk: "gateway-note" }).catch(e => log(`legacy import reply failed: ${e}`));
 	if (b.events.length === 1 && LIMITS_ASK.test(String(head.text)) && !head.attachments?.length) return void limitsAnswer(target, b.replyTo);
 	const ask = b.events.length === 1 && !head.attachments?.length ? accountAsk(String(head.text ?? ""), readPool()?.names ?? [], readAliases()) : undefined;

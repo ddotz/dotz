@@ -1,7 +1,8 @@
 import { appendFileSync, existsSync, readFileSync } from "node:fs";
 import { join, relative, sep } from "node:path";
 import { withLock } from "../../../hub/file-lock.ts";
-import { HEADINGS, INSTALL, paths, profileBullets, recipientOf, replaceBullets, toneFile, writeAtomic, type ToneKey } from "./settings.ts";
+import { bringBack, type LedgerKind, scopeOfProfile, type LedgerScope } from "./ledger.ts";
+import { HEADINGS, paths, toneFile, writeAtomic, type ToneKey } from "./settings.ts";
 
 /** What a learned line is: a standing rule (`## 말투`) or a dated correction of one draft (`## 고친 점`). */
 export type LearnKind = "rule" | "correction";
@@ -97,26 +98,14 @@ export async function curate(existing: { rules: string[]; corrections: string[] 
 	return { replaces: out };
 }
 
-/** One line curation or compaction took out: where it was (`profile` the tone file relative to the tone dir, `heading` its section), why, and the line that replaced it (a line compaction dropped has none). */
-export type JournalEntry = { at: string; profile: string; heading: string; line: string; restoredAt?: string } & ({ by: "curate"; why: ReplaceWhy; newLine: string } | { by: "compact"; why: "merged"; newLine: string } | { by: "compact"; why: "dropped"; newLine: "" });
+/** One line curation or compaction took out: where it was (`profile` the tone file relative to the tone dir, `heading` its section, `id` its ledger record), why, and the line that replaced it (a line compaction dropped has none). */
+export type JournalEntry = { at: string; profile: string; heading: string; line: string; id?: string; restoredAt?: string } & ({ by: "curate"; why: ReplaceWhy; newLine: string } | { by: "compact"; why: "merged"; newLine: string } | { by: "compact"; why: "dropped"; newLine: "" });
 
 const journalFile = () => join(paths.toneDir(), "journal.jsonl");
 const JOURNAL_LOCK = "말투 기록";
-const SECTIONS = new Set<string>([HEADINGS.rules, HEADINGS.corrections]);
 
 /** The tone file of `key` relative to the tone dir, as the journal names it (`install.md`, `mail.md`, `kakao/<room>.md`, `mail/to/<recipient>.md`). */
 export const profileOf = (key: ToneKey | "install"): string => relative(paths.toneDir(), toneFile(key)).split(sep).join("/");
-
-/** The profile a journal entry names; undefined for a name no profile has. */
-export function profileKey(profile: string): ToneKey | "install" | undefined {
-	if (profile === "install.md") return INSTALL;
-	const to = /^([a-z0-9-]+)\/to\/([a-z0-9_-]+)\.md$/.exec(profile);
-	const id = to ? recipientOf(to[2]!) : undefined;
-	if (to) return id === undefined || to[1] === INSTALL ? undefined : { app: to[1]!, to: id };
-	const m = /^([a-z0-9-]+)(?:\/([A-Za-z0-9_-]{1,80}))?\.md$/.exec(profile);
-	if (!m || m[1] === INSTALL) return undefined;
-	return { app: m[1]!, ...(m[2] !== undefined ? { room: m[2] } : {}) };
-}
 
 /** Appends entries to the journal under its file lock, each on a line of its own even after a line a crash cut short. */
 export function journalAdd(entries: JournalEntry[]): void {
@@ -128,7 +117,7 @@ export function journalAdd(entries: JournalEntry[]): void {
 	});
 }
 
-type Stored = { entry: JournalEntry; key: ToneKey | "install"; raw: string };
+type Stored = { entry: JournalEntry; scope: LedgerScope; raw: string };
 
 function storedOf(raw: string): Stored | undefined {
 	let v: unknown;
@@ -139,10 +128,10 @@ function storedOf(raw: string): Stored | undefined {
 	}
 	if (!v || typeof v !== "object") return undefined;
 	const e = v as Record<string, unknown>;
-	if (![e.at, e.profile, e.heading, e.line, e.newLine].every(x => typeof x === "string") || !SECTIONS.has(e.heading as string)) return undefined;
+	if (![e.at, e.profile, e.heading, e.line, e.newLine].every(x => typeof x === "string")) return undefined;
 	if (e.by === "curate" ? e.why !== "same" && e.why !== "overridden" : e.by !== "compact" || (e.why !== "merged" && (e.why !== "dropped" || e.newLine !== ""))) return undefined;
-	const key = profileKey(e.profile as string);
-	return key ? { entry: v as JournalEntry, key, raw } : undefined;
+	const scope = scopeOfProfile(e.profile as string);
+	return scope ? { entry: v as JournalEntry, scope, raw } : undefined;
 }
 
 function readJournal(): { raw: string[]; stored: Stored[] } {
@@ -154,12 +143,12 @@ function readJournal(): { raw: string[]; stored: Stored[] } {
 /** The journal, newest first; `n` is an entry's own number, counted from the oldest (1), so it stays the same when later entries are added. */
 export const journalEntries = (): (JournalEntry & { n: number })[] => readJournal().stored.map(({ entry }, i) => ({ ...entry, n: i + 1 })).reverse();
 
-/** Puts the line of entry `n` back at the end of its section in its profile unless an equal line is there (case and whitespace aside), takes its marked copy out of `## 합쳐진 고친 점`, and records `restoredAt` on the entry once. `put`: whether the line went back; undefined when there is no entry `n`. */
+/** Puts the line of entry `n` back on in the ledger unless an equal line is on (case and whitespace aside), and records `restoredAt` on the entry once. `put`: whether the line went back; undefined when there is no entry `n`. */
 export function restoreEntry(n: number, now: Date = new Date()): { entry: JournalEntry; put: boolean } | undefined {
 	const found = Number.isInteger(n) && n >= 1 ? readJournal().stored[n - 1] : undefined;
 	if (!found) return undefined;
-	const mark = profileBullets(found.key, HEADINGS.merged).find(b => b.startsWith(`${found.entry.line} → `));
-	const put = replaceBullets(found.key, mark ? [{ heading: HEADINGS.merged, line: mark }] : [], { heading: found.entry.heading, line: found.entry.line, once: true }).added;
+	const kind: LedgerKind = found.entry.heading === HEADINGS.rules ? "tone" : "correction";
+	const put = bringBack(found.entry.id, found.scope, kind, found.entry.line);
 	if (found.entry.restoredAt) return { entry: found.entry, put };
 	const entry = { ...found.entry, restoredAt: now.toISOString() };
 	const file = journalFile();

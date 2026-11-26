@@ -8,13 +8,14 @@ import { PATTERN_NOTE } from "../../../hub/reply-reasons.ts";
 import type { LearnFlip, LearnInput, Learnt, LessonKey, LessonScope } from "../../../hub/reply-types.ts";
 import { compactCorrections } from "./compact.ts";
 import { journalAdd, journalEntries, type LearnKind, profileOf, restoreEntry } from "./curate.ts";
+import { addRecord, keyOfScope, removeMatching, scopeOfKey, setState } from "./ledger.ts";
 import type { DraftRules } from "./draft-rules.ts";
 import type { FlowDeps } from "./flow.ts";
-import { alsoInto, learnLine, putOf, recordForbidden } from "./learn-line.ts";
+import { learnLine, putOf } from "./learn-line.ts";
 import { KAKAO_APP, kakaoOwnTexts, type OwnerReader } from "./kakao-tone.ts";
 import { maybeRefine } from "./persona.ts";
 import { configConflicts } from "./rules.ts";
-import { INSTALL, loadPairs, ownReplies, paths, recipientFile, recordPattern, replaceBullets, writeAtomic, type ToneKey } from "./settings.ts";
+import { INSTALL, loadPairs, ownReplies, paths, recipientFile, recordForbidden, recordPattern, writeAtomic, type ToneKey } from "./settings.ts";
 
 /** After a recorded correction: every few corrections fold into the profile's identity, and a long 고친 점 is compacted (compact.ts); a failed refinement keeps the old identity, a failed compaction the old lines. */
 export async function refineAfterCorrection(key: ToneKey, deps: FlowDeps): Promise<void> {
@@ -92,9 +93,7 @@ export async function proposeLinePattern(key: ToneKey | "install", rule: string,
 	return {
 		label: ban.label,
 		inGood: (opts.words ?? []).filter(w => good.some(g => banHit(g, { kind: "literal", text: w }))),
-		keep: () => {
-			for (const k of [key, ...alsoInto(key)]) recordPattern(k, ban);
-		},
+		keep: () => void recordPattern(key, ban),
 	};
 }
 
@@ -113,7 +112,7 @@ const ONCE = "이번만 반영했어요";
 const oneLine = (s: string): string => s.replace(/\s+/g, " ").trim();
 
 type Keys = LearnInput["keys"];
-type Stored = { key: ToneKey; kind: LearnKind; heading: string; line: string };
+type Stored = { key: ToneKey; kind: LearnKind; line: string };
 type Rec = { ref: string; at: string; source: LearnInput["source"]; line: string; asked?: LearnKind; state: Learnt["state"]; scope: LessonScope; keys: Keys; stored?: Stored; forbid: string[]; replaced: string[]; notes: string[] };
 
 /** The profiles a draft's lesson may go to: its channel (`DraftRules.tone`), and the recipient's own (`DraftRules.key`) when the draft has a recipient with a file of his own. */
@@ -122,7 +121,6 @@ export const keysOf = (r: DraftRules): Keys => ({ channel: r.tone, ...(r.key.to 
 const scopeIn = (scope: LessonScope | undefined, keys: Keys): LessonScope => (scope === "recipient" && !keys.recipient ? "channel" : (scope ?? "channel"));
 const keyIn = (scope: LessonScope, keys: Keys): ToneKey => (scope === "everywhere" ? { app: INSTALL } : scope === "recipient" && keys.recipient ? keys.recipient : keys.channel);
 const kindIn = (key: ToneKey): LearnKind => (key.app === INSTALL ? "rule" : "correction");
-const homes = (key: ToneKey): ToneKey[] => [key, ...alsoInto(key)];
 
 const labelOf = (scope: LessonScope, keys: Keys): string => (scope === "recipient" ? "이 받는 사람" : scope === "everywhere" ? "모든 답장" : keys.channel.room === undefined ? "이 앱" : keys.channel.app === KAKAO_APP ? "이 대화방" : "이 메일함");
 
@@ -196,13 +194,13 @@ export async function learn(input: LearnInput, deps: FlowDeps & { deferRefine?: 
 
 async function store(rec: Rec, o: { kind?: LearnKind; forbid: string[]; evidence?: LearnInput["evidence"] }, deps: FlowDeps, later: boolean): Promise<void> {
 	const key = keyIn(rec.scope, rec.keys), kind = o.kind ?? kindIn(key), now = deps.now!();
-	const [recorded, proposed] = await Promise.allSettled([learnLine(key, rec.line, kind, deps), o.evidence ? revisePattern(key, rec.line, o.evidence, o.forbid, deps) : undefined]);
+	const [recorded, proposed] = await Promise.allSettled([learnLine(key, rec.line, kind, deps, rec.ref), o.evidence ? revisePattern(key, rec.line, o.evidence, o.forbid, deps) : undefined]);
 	if (recorded.status === "rejected") console.error(`reply draft: lesson of ${key.app} not recorded: ${(recorded.reason as Error).message}`);
 	if (proposed.status === "rejected") console.error(`reply draft: wording pattern of ${key.app} not recorded: ${(proposed.reason as Error).message}`);
 	const learned = recorded.status === "fulfilled" ? recorded.value : undefined;
 	const offer = proposed.status === "fulfilled" ? proposed.value : undefined;
 	if (learned?.stored) {
-		rec.stored = { key, kind: learned.kind, ...putOf(learned.kind, rec.line, now) };
+		rec.stored = { key, kind: learned.kind, line: putOf(learned.kind, rec.line, now).text };
 		rec.replaced = learned.replaced;
 		if (learned.replaced.length) rec.notes.push(`기존 조건 ${learned.replaced.length}개를 이 조건으로 바꿨어요`);
 	} else if (learned?.same !== undefined) rec.notes.push(`이미 있는 조건이에요: ${learned.same}`);
@@ -217,7 +215,7 @@ async function store(rec: Rec, o: { kind?: LearnKind; forbid: string[]; evidence
 	const banned = o.forbid.filter(w => !offer?.inGood.includes(w));
 	if (banned.length) {
 		try {
-			recordForbidden(key, banned);
+			recordForbidden(key, banned, rec.ref);
 			rec.forbid = banned;
 			rec.notes.push(`쓰지 않을 표현: ${banned.map(w => `'${w}'`).join(", ")}`);
 		} catch (e) {
@@ -226,15 +224,21 @@ async function store(rec: Rec, o: { kind?: LearnKind; forbid: string[]; evidence
 	}
 	if (!learned?.stored || learned.kind !== "correction") return;
 	const call = deps.learnCall;
-	const clash = call ? await configConflicts(key, rec.line, call(key.app)).catch((e: Error) => (console.error(`reply draft: correction of ${key.app} not checked against its settings: ${e.message}`), [])) : [];
-	if (clash.length) rec.notes.push(`설정한 지시 ${clash.map(c => `"${c.length > 60 ? `${c.slice(0, 60)}…` : c}"`).join(", ")}와(과) 어긋나요. 초안은 더 새로 배운 이 고친 점을 따르고, 설정은 그대로예요`);
+	const clash = call ? await configConflicts(key, rec.line, call(key.app)).catch((e: Error) => (console.error(`reply draft: correction of ${key.app} not checked against its settings: ${e.message}`), { settings: [], other: [] })) : { settings: [], other: [] };
+	const short = (c: string): string => (c.length > 60 ? `${c.slice(0, 60)}…` : c);
+	for (const c of clash.settings) {
+		setState([c.id], "off", learned.id);
+		journalAdd([{ at: now.toISOString(), profile: profileOf(keyOfScope(c.scope)), heading: "설정", line: c.text, id: c.id, why: "overridden", by: "curate", newLine: rec.line }]);
+		rec.notes.push(`설정을 고쳤어요: "${short(c.text)}" → "${short(rec.line)}"`);
+	}
+	if (clash.other.length) rec.notes.push(`설정한 지시 ${clash.other.map(c => `"${short(c)}"`).join(", ")}와(과) 어긋나요. 초안은 더 새로 배운 이 고친 점을 따르고, 설정은 그대로예요`);
 	const refined = refineAfterCorrection(key, deps);
 	if (later) void track(refined);
 	else await refined;
 }
 
 const takeOut = (s: Stored): void => {
-	for (const k of homes(s.key)) replaceBullets(k, [{ heading: s.heading, line: s.line }]);
+	removeMatching(scopeOfKey(s.key), ["tone", "correction", "ban", "content-ban"], t => t === s.line);
 };
 
 /** Flips what was learned on `ref` in one press, and back: another scope moves the stored line to that profile (and takes it out of the one it left), once takes it out and puts back what its curation replaced (from the journal), keep stores a once line at its proposed scope. No curation or model call, so flipping back leaves the files as they were. The new state, or undefined when `ref` learned nothing. */
@@ -251,13 +255,13 @@ export async function flipLearnt(ref: string, to: LearnFlip, deps: Pick<FlowDeps
 		if (rec.stored) {
 			takeOut(rec.stored);
 			if (state === "once") {
-				for (const k of homes(rec.stored.key)) for (const e of journalEntries()) if (e.by === "curate" && !e.restoredAt && e.profile === profileOf(k) && e.newLine === rec.stored.line) restoreEntry(e.n, now);
+				for (const e of journalEntries()) if (e.by === "curate" && !e.restoredAt && e.profile === profileOf(rec.stored.key) && e.newLine === rec.stored.line) restoreEntry(e.n, now);
 			}
 		}
 		if (state === "remembered") {
 			const key = keyIn(scope, rec.keys), kind = key.app === INSTALL ? "rule" : (rec.asked ?? kindIn(key)), put = putOf(kind, rec.line, new Date(rec.at));
-			for (const k of homes(key)) replaceBullets(k, [], { ...put, once: true });
-			next.stored = { key, kind, ...put };
+			addRecord({ text: put.text, kind: put.kind, scope: scopeOfKey(key), by: "flip", ref, at: new Date(rec.at) });
+			next.stored = { key, kind, line: put.text };
 		}
 		return { all: all.with(at, next), out: shown(next) };
 	});

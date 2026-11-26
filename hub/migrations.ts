@@ -13,6 +13,7 @@ import { commentsDir, createStore } from "./comments/store.ts";
 import { DEFAULT_MODEL, DEFAULT_WORKER_MODEL, log as hubLog, parseSelector, readJsonOrQuarantine, writeAtomic } from "./config.ts";
 import { APPS_FILE, srcKey } from "./integrations.ts";
 import { msg } from "./i18n.ts";
+import { migrateLedger, moveHandRules, toAskAbout } from "./rule-ledger.ts";
 
 export const MIGRATIONS_FILE = "migrations.json";
 export const LEGACY_ID = "legacy-sns-tokens";
@@ -156,7 +157,47 @@ const snsComments: Migration = {
 	},
 };
 
-export const MIGRATIONS: Migration[] = [siteApps, legacyTokens, cardAudit, modelPicks, snsComments];
+// (f) Every reply rule moves into the one rule ledger (features/reply-drafts/lib/ledger.ts): the tone files' 말투, 고친 점 and 금지 lines, 기본 규칙, 이어서 할 일 and the 어떻게 of the 자동 초안 규칙.
+// Each changed file is copied to ledger-backup first; `rules.ts undo` puts them back byte for byte and removes the ledger.
+const ruleLedger: Migration = {
+	id: "rule-ledger",
+	label: "답장 규칙을 장부 하나로 옮기기",
+	run: ({ dataDir }) => {
+		const done = migrateLedger(dataDir);
+		return done ? `답장 규칙 ${done.records}개를 장부로 옮김 (바뀐 파일 ${done.files.length}개는 백업, 되돌리기: features/reply-drafts/bin/rules.ts undo)` : undefined;
+	},
+};
+
+export const MIGRATIONS: Migration[] = [siteApps, legacyTokens, cardAudit, modelPicks, snsComments, ruleLedger];
+
+export const HAND_RULES_ID = "hand-rules";
+const HAND_YES = "1) 장부로 옮기기", HAND_NO = "2) 그대로 두기";
+/** The owner's question when a tone file holds rules written by hand (a bullet under 말투, 고친 점 or 금지, or a section of its own): they are still read as they are until he answers. */
+export const handRulesAsk = (files: string[]): string =>
+	`말투 파일에 손으로 쓴 규칙이 있어요.\n${cardBlock({ subject: "손으로 쓴 말투 규칙", question: "이 규칙을 규칙 장부로 옮길까요? 옮기기 전 파일은 백업해요.", evidence: files, options: [{ name: HAND_YES, result: "규칙 장부로 옮겨요" }, { name: HAND_NO, result: "그대로 두고 다시 묻지 않아요" }] })}`;
+
+/** Asks once per file content about rules written by hand into tone files after the migration; not while an earlier question is open. */
+export function askHandRules(dataDir: string, ask: (text: string) => void): boolean {
+	const state = readState(dataDir);
+	if (state.pending[HAND_RULES_ID]) return false;
+	const files = toAskAbout(dataDir);
+	if (!files.length) return false;
+	state.pending[HAND_RULES_ID] = files;
+	saveState(dataDir, state);
+	ask(handRulesAsk(files));
+	return true;
+}
+
+/** The owner's answer to the hand rules question (read only while it is open); the reply to post, or undefined when the text is not an answer to it. */
+export function handRulesAnswer(dataDir: string, text: string): string | undefined {
+	const n = cardAnswer(text, [[HAND_YES, HAND_NO]]);
+	if (!n || !existsSync(join(dataDir, MIGRATIONS_FILE))) return undefined;
+	const state = readState(dataDir);
+	if (!state.pending[HAND_RULES_ID]) return undefined;
+	delete state.pending[HAND_RULES_ID];
+	saveState(dataDir, state);
+	return n === 1 ? `손으로 쓴 규칙 ${moveHandRules(dataDir)}개를 규칙 장부로 옮겼어요` : "그대로 둘게요. 파일 내용이 바뀌기 전에는 다시 묻지 않아요.";
+}
 
 /** Runs every migration that is not done, in order. One notice line lists what changed; each failure gets its own notice and is retried at the next start. */
 export async function runMigrations(deps: Deps): Promise<{ ran: string[]; failed: string[] }> {
@@ -178,6 +219,7 @@ export async function runMigrations(deps: Deps): Promise<{ ran: string[]; failed
 			deps.notify(`업데이트 뒤 설정 "${m.label}"을 마치지 못했어요 (${(e as Error).message.slice(0, 120)}). 게이트웨이를 다시 켤 때 다시 해 봐요.`);
 		}
 	}
+	askHandRules(deps.dataDir, deps.ask);
 	if (ran.length) deps.notify(`업데이트 뒤 필요한 설정을 자동으로 마쳤어요: ${ran.join(", ")}`);
 	return { ran, failed };
 }

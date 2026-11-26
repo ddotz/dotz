@@ -1,8 +1,9 @@
 import { existsSync, readFileSync } from "node:fs";
 import { budgetedLines, CORRECTIONS_BUDGET } from "../../../hub/reply-draft.ts";
-import { journalAdd, profileOf, type JournalEntry } from "./curate.ts";
+import { journalAdd, profileOf } from "./curate.ts";
 import type { FlowDeps } from "./flow.ts";
-import { HEADINGS, INSTALL, levelsOf, loadStyle, markedLine, paths, profileBullets, rewriteSection, writeAtomic, type ToneKey } from "./settings.ts";
+import { replaceRecords, scopeOfKey } from "./ledger.ts";
+import { HEADINGS, INSTALL, levelsOf, loadStyle, paths, profileBullets, writeAtomic, type ToneKey } from "./settings.ts";
 
 /** A profile with more `## 고친 점` lines than this is compacted on its own after a correction. */
 export const COMPACT_OVER = 12;
@@ -177,24 +178,23 @@ export async function compactCorrections(key: ToneKey | "install", deps: Pick<Fl
 	const kept = compactedLines(listed, checked.compaction);
 	const after = kept.map(k => k.line);
 	if (after.length === listed.length && after.every((l, i) => l === listed[i])) return worked({ before: listed.length, after: after.length });
-	const into = new Map(kept.flatMap(k => k.sources.map(s => [s, k.line] as const)));
-	const dropWhy = new Map(checked.compaction.dropped.map(d => [d.at, d.why] as const));
-	const gone = listed.flatMap((line, i) => (into.get(i) === line ? [] : [{ line, newLine: into.get(i), why: dropWhy.get(i) }]));
-	const entries = gone.map((g): JournalEntry => {
-		const where = { at, profile, heading: HEADINGS.corrections, line: g.line };
-		return g.newLine === undefined ? { ...where, by: "compact", why: "dropped", newLine: "" } : { ...where, by: "compact", why: "merged", newLine: g.newLine };
-	});
-	const marked = gone.map(g => markedLine(g.line, g.newLine ?? `지움 (${g.why})`));
-	if (!rewriteSection(key, HEADINGS.corrections, listed, after, () => journalAdd(entries), marked)) {
+	if (profileBullets(key, HEADINGS.corrections).some((l, i) => l !== listed[i]) || profileBullets(key, HEADINGS.corrections).length !== listed.length) {
 		console.error(`reply draft: ${what}: its lines changed while the model was asked`);
 		return undefined;
 	}
+	const scope = scopeOfKey(key), kind = "correction" as const, base = { at, profile, heading: HEADINGS.corrections };
+	for (const k of kept) {
+		const add = { text: k.line, kind, scope, by: "compact", at: new Date(at) };
+		replaceRecords(scope, k.sources.filter(i => listed[i] !== k.line).map(i => ({ kind, text: listed[i]! })), add, undefined, (taken, into) => journalAdd(taken.map(t => ({ ...base, line: t.text, id: t.id, by: "compact" as const, why: "merged" as const, newLine: into?.text ?? k.line }))));
+	}
+	const dropped = checked.compaction.dropped.map(d => ({ kind, text: listed[d.at]! }));
+	replaceRecords(scope, dropped, undefined, undefined, taken => journalAdd(taken.map(t => ({ ...base, line: t.text, id: t.id, by: "compact" as const, why: "dropped" as const, newLine: "" as const }))));
 	return worked({ before: listed.length, after: after.length });
 }
 
 /** Before a draft of `key` (offer.ts, the draft CLI), so a long 고친 점 is folded even when no new correction comes: every level profile of the draft (settings.ts levelsOf) with more than 12 corrections is compacted, then, while the corrections of all levels together pass the prompt's budget (hub/reply-draft.ts promptCorrections), the other levels with at least 2 lines too, the longest first. A profile whose compaction failed less than a day ago waits (compactFailures). What still does not fit is left out of the prompt oldest first: that count (the one hub/reply-draft.ts budgetedLines gives the prompt) is logged and returned. */
 export async function compactForPrompt(key: ToneKey, deps: Pick<FlowDeps, "learnCall" | "now">, budget = CORRECTIONS_BUDGET): Promise<number> {
-	const levels = levelsOf(key).map(([, k]) => k);
+	const levels = levelsOf(key).flatMap(([, k]): ToneKey[] => [k, ...(k.base ? [{ app: k.base }] : [])]);
 	const count = (k: ToneKey) => profileBullets(k, HEADINGS.corrections).length;
 	const now = (deps.now ?? (() => new Date()))().getTime();
 	const waits = (k: ToneKey) => {

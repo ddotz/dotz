@@ -5,7 +5,7 @@
 // A refused, dropped or only drafted action never reaches triggerFollowup; a draft made by a follow-up (`origin`) never starts another one.
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { dataDir, loadSettings, writeAtomic } from "../features/reply-drafts/lib/settings.ts";
+import { dataDir, followupText, writeAtomic } from "./rule-ledger.ts";
 import { appEntries } from "./integrations.ts";
 import { createHub } from "./kakao/hub.ts";
 import { instanceOf } from "./reply-model.ts";
@@ -27,7 +27,7 @@ export const setFollowupWake = (fn: (text: string) => void): void => {
 };
 
 /** The rule of an app instance, or "" (the 이어서 할 일 setting, hub/app-settings.ts). */
-export const followupRule = (app: string): string => loadSettings().followups?.[app] ?? "";
+export const followupRule = (app: string): string => followupText(app);
 
 function readFired(file: string): string[] {
 	try {

@@ -1,42 +1,17 @@
 // Per-install settings and the user's style file of the reply-drafts feature (DESIGN.md). Everything personal lives under
 // <DATA_DIR>/custom/reply-drafts/; nothing about a person is in the repo. Pure fs; never imports hub/config.ts (it loads the
 // gateway config at import time), so the data dir is read from DOTZ_DIR on every call and tests can point it anywhere.
-import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { withLock } from "../../../hub/file-lock.ts";
 import { appEntries } from "../../../hub/integrations.ts";
-import { banBullet, banKey, parseBan, type ShapeBan } from "../../../hub/ban.ts";
+import { banBullet, parseBan, type ShapeBan } from "../../../hub/ban.ts";
 import type { ReplyStyle } from "../../../hub/reply-draft.ts";
-import { UNKNOWN_USER } from "../../youtube-instagram/lib/ig-owner.ts";
-
-export const dataDir = () => process.env.DOTZ_DIR ?? join(homedir(), ".dotz");
-export const REPO_FEATURE = join(import.meta.dir, "..");
-const root = (dir = dataDir()) => join(dir, "custom", "reply-drafts");
-
-export const paths = {
-	config: (dir?: string) => join(root(dir), "config.json"),
-	legacyStyle: () => join(root(), "style.md"), // layout of the first version: read as the mail app profile until tone/mail.md exists
-	toneDir: () => join(root(), "tone"),
-	drafts: () => join(root(), "drafts.json"),
-	learned: () => join(root(), "learned.json"), // tone profiles whose first sweep already ran: { "<profile>": iso }
-	learnLog: () => join(root(), "learn-log.json"), // what each learned line did and where (lib/learn.ts): [{ ref, at, source, line, state, scope, keys, stored, forbid, replaced }], the last 500
-	compactFailed: () => join(root(), "compact-failed.json"), // tone profiles whose last compaction failed (lib/compact.ts): { "<profile>": { at, why, lines } }
-	voices: () => join(root(), "box-voice.json"), // the mailboxes learned from their own sent mail (lib/box-voice.ts): { "<instance>/<box>": { at, texts, seen } }
-	pairs: (app: string) => join(root(), "pairs", `${app}.jsonl`), // the user's real past replies with the message each answered, one JSON line per pair (lib/pairs.ts)
-	corpusDir: () => join(root(), "sent"), // the first sweep's extract of the user's sent texts, one file per profile (re-analysis reads it)
-	snsTone: () => join(dataDir(), "custom", "sns", "tone.md"),
-	inbox: () => join(dataDir(), "inbox.jsonl"),
-	personalFeature: () => join(dataDir(), "features", "reply-drafts", "feature.md"),
-};
-
-export function writeAtomic(file: string, text: string, mode = 0o600): void {
-	mkdirSync(dirname(file), { recursive: true });
-	const tmp = `${file}.${process.pid}.tmp`;
-	writeFileSync(tmp, text, { mode });
-	chmodSync(tmp, mode);
-	renameSync(tmp, file);
-}
+import { bulletLines, bullets, dataDir, HEADINGS, INSTALL, levelsOf, normText, paths, recipientApp, recipientFile, roomFile, unknownSections, validApp, writeAtomic, type ToneKey, type ToneLevel } from "./tone-key.ts";
+export { bulletLines, bullets, dataDir, HEADINGS, INSTALL, levelsOf, normText, paths, recipientApp, recipientFile, recipientOf, roomFile, unknownSections, validApp, writeAtomic, type ToneKey, type ToneLevel } from "./tone-key.ts";
+export { migrateLedger, moveHandRules, setLines, textsAt, toAskAbout, undoLedger } from "./ledger.ts";
+import { addRecord, banKind, type LedgerKind, removeMatching, rulesFor, scopeOfKey, textsAt } from "./ledger.ts";
 
 // `enabled` is the feature switch; `apps` has one switch per source (mail, youtube, instagram, ...), every source off until turned on.
 // A config from before `apps` existed has no apps.mail: mail then follows the top-level `auto` (kept valid, and kept in sync by setApp).
@@ -124,8 +99,7 @@ export function appOn(s: Settings, app: string, isMonitored: (app: string) => bo
 export function ensureSwitch(): void {
 	if (existsSync(paths.personalFeature())) return;
 	const shipped = readFileSync(join(REPO_FEATURE, "feature.md"), "utf8");
-	mkdirSync(dirname(paths.personalFeature()), { recursive: true });
-	writeFileSync(paths.personalFeature(), shipped.replace(/^enabled:\s*false\s*$/m, "enabled: true"));
+	writeAtomic(paths.personalFeature(), shipped.replace(/^enabled:\s*false\s*$/m, "enabled: true"), 0o644);
 }
 
 // Turns one source on or off. Mail's current state is written down first, so switching another source on never switches mail on by
@@ -135,28 +109,6 @@ export function setApp(app: string, auto: boolean): Settings {
 	const apps = { ...s.apps, mail: { auto: appOn(s, "mail") }, [app]: { auto } };
 	// Switching one source off on an install that never decided keeps the others as they were (enabled, each following its monitoring).
 	return saveSettings({ apps, ...(app === "mail" ? { auto } : {}), ...(auto || !s.decided ? { enabled: true } : {}) });
-}
-
-// `learned` = style features measured from the user's own messages (kakao-voice.ts), kept apart from `rules` so a relearn never overwrites what the user wrote;
-// `profile` = the short Korean room profile the draft model wrote from reading the room; `record` = what the last learning was based on.
-export const HEADINGS = { identity: "## 정체성", templates: "## 답장 틀", rules: "## 말투", samples: "## 예시", corrections: "## 고친 점", forbidden: "## 금지", learned: "## 학습한 말투", profile: "## 대화 이해", record: "## 학습 기록", merged: "## 합쳐진 고친 점" } as const;
-
-export function bullets(md: string, heading: string): string[] {
-	return bulletLines(md, heading).map(b => b.text);
-}
-
-/** The bullets of a section with the 1-based line each stands on. */
-export function bulletLines(md: string, heading: string): { text: string; line: number }[] {
-	const lines = md.split("\n");
-	const start = lines.findIndex(l => l.trim() === heading);
-	if (start < 0) return [];
-	const out: { text: string; line: number }[] = [];
-	for (let i = start + 1; i < lines.length; i++) {
-		if (/^## /.test(lines[i]!)) break;
-		const m = /^\s*[-*]\s+(.*\S)\s*$/.exec(lines[i]!);
-		if (m) out.push({ text: m[1]!, line: i + 1 });
-	}
-	return out;
 }
 
 // Replaces one section (up to the next `## ` heading) with bullets and keeps everything else; appends it when missing.
@@ -170,65 +122,7 @@ export function setSection(existing: string, heading: string, items: string[]): 
 	return `${lines.slice(0, start).join("\n")}${start ? "\n" : ""}${section}${tail}`;
 }
 
-// Tone store: <DATA_DIR>/custom/reply-drafts/tone/install.md (whole install), <app>.md (mail, youtube, kakao, ...) and
-// <app>/<room>.md (one conversation of a messenger). Each file has the four sections above.
-// `base`: the app whose profile stands in at the app level when `app` has none (a mailbox's tone of a mail app instance without a profile of its own).
-/** `to`: the recipient as the channel knows it (a mail address, a commenter's platform id: YouTube channel id, Instagram handle), whose own profile is `<app>/to/<recipientFile(to)>.md`; a `to` without a file name is no level, as if absent. */
-export type ToneKey = { app: string; room?: string; base?: string; to?: string };
-export type ToneLevel = "to" | "room" | "app" | "install";
-/** `standing`: the owner's standing rules (the `## 말투` lines and the hand-added sections of install, app, room and recipient, install first), also part of `rules`. */
-export type LoadedStyle = ReplyStyle & { samplesFrom: ToneLevel | "legacy" | "none"; standing: string[] };
-
-export const INSTALL = "install";
-const APP_ID = /^[a-z0-9-]+$/;
-
-export function validApp(app: string): boolean {
-	return APP_ID.test(app);
-}
-
-// A room id as a file name: only [A-Za-z0-9_-] survive (no dots, so no traversal), at most 80 characters.
-export const roomFile = (room: string): string => room.replace(/[^A-Za-z0-9_-]/g, "_").slice(0, 80) || "_";
-
-const RECIPIENT_MAX = 120;
-const RECIPIENT_NAME_MAX = 250;
-const recipientNorm = (id: string): string => id.normalize("NFC").trim().toLowerCase().normalize("NFC");
-const NOBODY = new Set(["익명", UNKNOWN_USER].map(recipientNorm));
-
-/** A recipient id (NFC, trimmed, lowercased) as a file name: `[a-z0-9-]` stay, every other UTF-16 code unit is `_` and its four hex digits, so two ids never share a name. Undefined for an id that is empty, longer than 120 code units, whose name would not fit a file name, or that names nobody ("익명", an adapter's unknown user). */
-export function recipientFile(id: string): string | undefined {
-	const norm = recipientNorm(id);
-	if (!norm || norm.length > RECIPIENT_MAX || NOBODY.has(norm)) return undefined;
-	let name = "";
-	for (let i = 0; i < norm.length; i++) {
-		const c = norm[i]!;
-		name += /[a-z0-9-]/.test(c) ? c : `_${norm.charCodeAt(i).toString(16).padStart(4, "0")}`;
-	}
-	return name.length > RECIPIENT_NAME_MAX ? undefined : name;
-}
-
-/** The recipient id a file name of `recipientFile` stands for; undefined for a name `recipientFile` never gives. */
-export function recipientOf(name: string): string | undefined {
-	const parts = name.match(/[a-z0-9-]|_[0-9a-f]{4}|[^]/g) ?? [];
-	if (parts.some(p => p.length === 1 && !/[a-z0-9-]/.test(p))) return undefined;
-	const id = parts.map(p => (p.length === 1 ? p : String.fromCharCode(Number.parseInt(p.slice(1), 16)))).join("");
-	return recipientFile(id) === name ? id : undefined;
-}
-
-const MAIL_INSTANCE = /^mail(-[a-z0-9]+)*$/;
-/** The app a recipient's file sits under: every mail app instance (`mail`, `mail-<slug>`) shares `mail`, since a person's address is the same in each of them; any other app is its own. */
-export const recipientApp = (app: string): string => (MAIL_INSTANCE.test(app) ? "mail" : app);
-
-/** The levels of `key`, narrowest first: the recipient (a `to` that has a file name, under `recipientApp` of its `base` when it has one), the room, the app (with its `base`) and the install. */
-export function levelsOf(key: ToneKey): [ToneLevel, ToneKey][] {
-	const install: [ToneLevel, ToneKey] = ["install", { app: INSTALL }];
-	if (key.app === INSTALL) return [install];
-	return [
-		...(key.to !== undefined && recipientFile(key.to) !== undefined ? [["to", { app: recipientApp(key.base ?? key.app), to: key.to }] as [ToneLevel, ToneKey]] : []),
-		...(key.room !== undefined ? [["room", { app: key.app, room: key.room }] as [ToneLevel, ToneKey]] : []),
-		["app", { app: key.app, ...(key.base ? { base: key.base } : {}) }],
-		install,
-	];
-}
+export const REPO_FEATURE = join(import.meta.dir, "..");
 
 export function toneFile(key: ToneKey | "install"): string {
 	if (key === INSTALL || key.app === INSTALL) return join(paths.toneDir(), "install.md");
@@ -254,32 +148,10 @@ export const hasSamples = (key: ToneKey | "install"): boolean => bullets(profile
 export const identityOf = (key: ToneKey | "install"): string[] => bullets(profile(key), HEADINGS.identity);
 // A mail app instance with a tone profile of its own (an identity or samples written there); the shared `mail` profile does not count.
 export const hasOwnTone = (app: string): boolean => app !== "mail" && validApp(app) && (identityOf({ app }).length > 0 || hasSamples({ app }));
-/** A mail app instance whose file holds lessons (rules, corrections, forbidden wordings) but no identity or samples: its drafts read the shared `mail` tone with those lessons on top (toneKey `base`). */
-export const lessonsOnly = (app: string): boolean => app !== "mail" && MAIL_INSTANCE.test(app) && validApp(app) && !hasOwnTone(app) && [HEADINGS.rules, HEADINGS.corrections, HEADINGS.forbidden].some(h => bullets(profile({ app }), h).length > 0);
 /** The mail app instances of the app list (custom/apps.json), the default `mail` apart: the only mail apps whose drafts exist, so the only tone files that are read. */
 export const listedMailApps = (): string[] => appEntries(dataDir()).filter(e => e.created && e.app === "mail" && !e.gone).map(e => e.key);
-/** The listed mail app instances whose drafts read a file of their own (hasOwnTone, lessonsOnly): a lesson given for the shared `mail` profile is learned into each of them too (flow.ts learnLine, recordForbidden). A tone file of an app that is not in the list is no one's. */
-export const ownToneMailApps = (): string[] => listedMailApps().filter(a => hasOwnTone(a) || lessonsOnly(a)).sort();
-/** The app whose tone profile a draft of `app` reads and learns into: a second mail app instance (`mail-<slug>`) with no file of its own shares `mail`, as its offered drafts do; every other app is itself. */
-export const profileApp = (app: string): string => (app !== "mail" && MAIL_INSTANCE.test(app) && !hasOwnTone(app) && !lessonsOnly(app) ? "mail" : app);
-export const correctionsOf = (key: ToneKey | "install"): string[] => bullets(profile(key), HEADINGS.corrections);
+export const correctionsOf = (key: ToneKey | "install"): string[] => profileBullets(key, HEADINGS.corrections);
 
-// The `## ` sections of a profile the code does not know (a hand-added `## 보낸 사람 신분별`), with their bullets.
-const KNOWN = new Set<string>(Object.values(HEADINGS));
-function unknownSections(md: string): { heading: string; items: string[] }[] {
-	const out: { heading: string; items: string[] }[] = [];
-	let current: { heading: string; items: string[] } | undefined;
-	for (const line of md.split("\n")) {
-		if (/^## /.test(line)) {
-			current = KNOWN.has(line.trim()) ? undefined : { heading: line.trim(), items: [] };
-			if (current) out.push(current);
-		} else {
-			const m = current && /^\s*[-*]\s+(.*\S)\s*$/.exec(line);
-			if (m) current!.items.push(m[1]!);
-		}
-	}
-	return out;
-}
 // A profile the user tuned by hand: corrections recorded, or a section of their own.
 export const isTuned = (key: ToneKey | "install"): boolean => correctionsOf(key).length > 0 || unknownSections(profile(key)).length > 0;
 
@@ -325,12 +197,15 @@ export function loadStyle(key: ToneKey): LoadedStyle {
 	const broadFirst = levels.map(([, md]) => md).reverse();
 	const merged = (...headings: string[]) => unique(broadFirst.flatMap(md => headings.flatMap(h => bullets(md, h))));
 	const handAdded = broadFirst.flatMap(md => unknownSections(md).flatMap(s => s.items));
+	const live = rulesFor(key, ["tone", "correction", "ban", "content-ban"]);
+	const ledger = (...kinds: LedgerKind[]) => live.filter(r => kinds.includes(r.kind)).map(r => r.text);
 	// The identity (who the user is as a writer) comes from the narrowest profile that has one, like the samples.
 	const narrowest = (heading: string) => levels.map(([, md]) => bullets(md, heading)).find(xs => xs.length) ?? [];
 	const identity = narrowest(HEADINGS.identity);
 	const to = levels.find(([level]) => level === "to")?.[1] ?? "";
-	const recipient = unique([...[HEADINGS.rules, HEADINGS.learned, HEADINGS.profile].flatMap(h => bullets(to, h)), ...unknownSections(to).flatMap(s => s.items), ...bullets(to, HEADINGS.corrections)]);
-	return { identity, templates: narrowest(HEADINGS.templates), samples, samplesFrom, rules: unique([...merged(HEADINGS.rules, HEADINGS.learned, HEADINGS.profile), ...handAdded]), standing: unique([...merged(HEADINGS.rules), ...handAdded]), corrections: merged(HEADINGS.corrections), forbidden: merged(HEADINGS.forbidden), ...(recipient.length ? { recipient } : {}) };
+	const recipient = unique([...live.filter(r => r.scope.to !== undefined && !KINDS[HEADINGS.forbidden]!.includes(r.kind)).map(r => r.text), ...[HEADINGS.rules, HEADINGS.learned, HEADINGS.profile, HEADINGS.corrections].flatMap(h => bullets(to, h)), ...unknownSections(to).flatMap(s => s.items)]);
+	const standing = unique([...ledger("tone"), ...merged(HEADINGS.rules), ...handAdded]);
+	return { identity, templates: narrowest(HEADINGS.templates), samples, samplesFrom, rules: unique([...standing, ...merged(HEADINGS.learned, HEADINGS.profile)]), standing, corrections: unique([...ledger("correction"), ...merged(HEADINGS.corrections)]), forbidden: unique([...ledger("ban", "content-ban"), ...merged(HEADINGS.forbidden)]), ...(recipient.length ? { recipient } : {}) };
 }
 
 function editProfile(key: ToneKey | "install", edit: (md: string) => string | undefined): void {
@@ -351,7 +226,6 @@ export function writeSections(key: ToneKey | "install", sections: [heading: stri
 	editProfile(key, md => sections.reduce((acc, [heading, items]) => setSection(acc, heading, items), md));
 }
 
-export const profileBullets = (key: ToneKey | "install", heading: string): string[] => bullets(profile(key), heading);
 
 export function writeIdentity(key: ToneKey | "install", lines: string[], templates?: string[]): void {
 	editProfile(key, md => {
@@ -361,131 +235,35 @@ export function writeIdentity(key: ToneKey | "install", lines: string[], templat
 }
 export const templatesOf = (key: ToneKey | "install"): string[] => bullets(profile(key), HEADINGS.templates);
 
-const BULLET = /^\s*[-*]\s+(.*\S)\s*$/;
 const oneLine = (s: string): string => s.replace(/\s+/g, " ").trim();
+const lineKey = (word: string) => oneLine(word.normalize("NFC")).toLowerCase();
+const containing = (text: string) => ((needle: string) => (line: string): boolean => !!needle && lineKey(line).includes(needle))(lineKey(text));
+const put = (key: ToneKey | "install", kind: LedgerKind, text: string, by: string, ref?: string, at?: Date) => addRecord({ text, kind, scope: scopeOfKey(key), by, ref, at });
+const KINDS: Record<string, LedgerKind[]> = { [HEADINGS.rules]: ["tone"], [HEADINGS.corrections]: ["correction"], [HEADINGS.forbidden]: ["ban", "content-ban"] };
 
-/** The bullet under `## 합쳐진 고친 점` for a line a compaction or a curation took off its section: `<line> → <what it went into, or why it was dropped>`. No prompt, check or rule view reads that section. */
-export const markedLine = (line: string, into: string): string => oneLine(`${line} → ${into}`);
+/** The 이어서 할 일 of an app instance (hub/followup.ts): its own lines and, for a mail app instance, the mail app's under them. */
+export const followupText = (app: string): string => rulesFor({ app }, ["followup"]).map(r => r.text).join("\n");
 
-function sectionOf(lines: string[], heading: string): { start: number; end: number } | undefined {
-	const start = lines.findIndex(l => l.trim() === heading);
-	if (start < 0) return undefined;
-	const next = lines.findIndex((l, i) => i > start && /^## /.test(l));
-	return { start, end: next < 0 ? lines.length : next };
+/** The bullets of one section of exactly that profile: the ledger's lines of its scope for `## 말투`, `## 고친 점` and `## 금지`, the file's for every other section. */
+export const profileBullets = (key: ToneKey | "install", heading: string): string[] => (KINDS[heading] ? KINDS[heading]!.flatMap(k => textsAt(scopeOfKey(key), k)) : bullets(profile(key), heading));
+
+// The user's change request, verbatim and dated, in the scope of the draft that was revised, so every later draft there follows it.
+export function recordCorrection(key: ToneKey, change: string, now: Date, ref?: string): void {
+	put(key, "correction", `${now.toISOString().slice(0, 10)}: ${oneLine(change)}`, "correct", ref, now);
 }
 
-function appendBullet(md: string, heading: string, item: string): string {
-	const eol = md.includes("\r\n") ? "\r\n" : "\n";
-	const lines = md.split(/(?<=\n)/);
-	const at = sectionOf(lines, heading);
-	if (!at) return `${md}${!md || md.endsWith(`${eol}${eol}`) ? "" : md.endsWith("\n") ? eol : eol + eol}${heading}${eol}${eol}- ${item}${eol}`;
-	const inSection = (i: number) => i >= at.start && i < at.end;
-	const lastBullet = lines.findLastIndex((l, i) => inSection(i) && BULLET.test(l));
-	const added = lastBullet < 0 ? ["", `- ${item}`] : [`- ${item}`];
-	let after = lastBullet < 0 ? lines.findLastIndex((l, i) => inSection(i) && !!l.trim()) : lastBullet;
-	while (lastBullet >= 0 && after + 1 < at.end && /^\s+\S/.test(lines[after + 1]!) && !BULLET.test(lines[after + 1]!)) after++;
-	const last = after === lines.length - 1 && !lines[after]!.endsWith("\n");
-	if (last) lines[after] += eol;
-	lines.splice(after + 1, 0, ...added.map((l, i) => (last && i === added.length - 1 ? l : l + eol)));
-	return lines.join("");
+/** Takes every `## 고친 점` line of exactly that scope that contains the text (trimmed, case aside) out; returns the removed lines. */
+export const removeCorrection = (key: ToneKey | "install", text: string): string[] => removeMatching(scopeOfKey(key), ["correction"], containing(text));
+
+/** Takes every `## 말투` line of exactly that scope that contains the text (trimmed, case aside) out; returns the removed lines. */
+export const removeRule = (key: ToneKey | "install", text: string): string[] => removeMatching(scopeOfKey(key), ["tone"], containing(text));
+
+/** Adds a standing rule, undated and on one line, to exactly that scope; a line equal apart from case and whitespace is not added again. */
+export function recordRule(key: ToneKey | "install", line: string, ref?: string): void {
+	if (oneLine(line)) put(key, "tone", line, "rule", ref);
 }
 
-function dropBullets(md: string, heading: string, drop: (item: string) => boolean): { md: string; removed: string[] } | undefined {
-	const lines = md.split(/(?<=\n)/);
-	const at = sectionOf(lines, heading);
-	if (!at) return undefined;
-	const removed: string[] = [];
-	const kept = lines.filter((l, i) => {
-		const item = i > at.start && i < at.end ? BULLET.exec(l)?.[1] : undefined;
-		if (item === undefined || !drop(item)) return true;
-		removed.push(item);
-		return false;
-	});
-	if (!removed.length) return undefined;
-	const out = kept.join("");
-	return { md: md.endsWith("\n") ? out : out.replace(/\r?\n$/, ""), removed };
-}
-
-// The user's change request, verbatim and dated, in the profile of the draft that was revised, so every later draft there follows it.
-export function recordCorrection(key: ToneKey, change: string, now: Date): void {
-	const line = `${now.toISOString().slice(0, 10)}: ${oneLine(change)}`;
-	editProfile(key, md => appendBullet(md, HEADINGS.corrections, line));
-}
-
-/** Takes every `## 고친 점` line of exactly that profile that contains the text (trimmed, case aside) out; returns the removed lines. */
-export const removeCorrection = (key: ToneKey | "install", text: string): string[] => removeLines(key, HEADINGS.corrections, text);
-
-/** Takes every `## 말투` line of exactly that profile that contains the text (trimmed, case aside) out; returns the removed lines. */
-export const removeRule = (key: ToneKey | "install", text: string): string[] => removeLines(key, HEADINGS.rules, text);
-
-function removeLines(key: ToneKey | "install", heading: string, text: string): string[] {
-	const needle = lineKey(text);
-	let removed: string[] = [];
-	editProfile(key, md => {
-		const out = needle ? dropBullets(md, heading, l => lineKey(l).includes(needle)) : undefined;
-		removed = out?.removed ?? [];
-		return out?.md;
-	});
-	return removed;
-}
-
-/** One bullet of a profile section. */
-export type SectionLine = { heading: string; line: string };
-
-/** One locked edit of exactly that profile: takes each `take` bullet out of its section (one equal bullet each; one with `into` stays in the file as a `markedLine` under `## 합쳐진 고친 점`), hands what was taken to `before` while the old file is still on disk (a throw there writes nothing), then adds `add` at the end of its section (with `once`, not when a bullet equal apart from case and whitespace is there). What was taken and whether `add` went in. */
-export function replaceBullets<T extends SectionLine & { into?: string }>(key: ToneKey | "install", take: T[], add?: SectionLine & { once?: boolean }, before?: (taken: T[]) => void): { taken: T[]; added: boolean } {
-	let taken: T[] = [];
-	let added = false;
-	editProfile(key, md => {
-		let out = md;
-		taken = [];
-		for (const heading of unique(take.map(t => t.heading))) {
-			const want = take.filter(t => t.heading === heading);
-			const got: T[] = [];
-			const dropped = dropBullets(out, heading, item => {
-				const at = want.findIndex(w => w.line === item);
-				if (at >= 0) got.push(...want.splice(at, 1));
-				return at >= 0;
-			});
-			if (!dropped) continue;
-			out = dropped.md;
-			taken.push(...got);
-		}
-		for (const t of taken) if (t.into !== undefined) out = appendBullet(out, HEADINGS.merged, markedLine(t.line, t.into));
-		const line = oneLine(add?.line ?? "");
-		added = !!add && !!line && !(add.once && bullets(out, add.heading).some(b => normText(b) === normText(line)));
-		if (add && added) out = appendBullet(out, add.heading, line);
-		if (!taken.length && !added) return undefined;
-		if (taken.length) before?.(taken);
-		return out;
-	});
-	return { taken, added };
-}
-
-/** One locked edit of exactly that profile: when the section of `heading` holds nothing but bullets and they still equal `expect` (in order), hands control to `before` while the old file is still on disk (a throw there writes nothing) and replaces them with `items`, adding the `marked` bullets (`markedLine`s of the lines that went) to `## 합쳐진 고친 점`; false, writing nothing, when they changed or the section holds any other line (a note, a sub-heading, a continuation line), which a rewrite would lose. */
-export function rewriteSection(key: ToneKey | "install", heading: string, expect: string[], items: string[], before?: () => void, marked: string[] = []): boolean {
-	let done = false;
-	editProfile(key, md => {
-		const now = bullets(md, heading);
-		const lines = md.split(/\r?\n/);
-		const at = sectionOf(lines, heading);
-		const onlyBullets = !!at && lines.slice(at.start + 1, at.end).every(l => !l.trim() || /^[-*]\s+\S/.test(l));
-		done = onlyBullets && now.length === expect.length && now.every((b, i) => b === expect[i]);
-		if (!done) return undefined;
-		before?.();
-		return marked.reduce((out, m) => appendBullet(out, HEADINGS.merged, m), setSection(md, heading, items));
-	});
-	return done;
-}
-
-/** Adds a standing rule, undated and on one line, to the `## 말투` section of exactly that profile; a line equal apart from case and whitespace is not added again. */
-export function recordRule(key: ToneKey | "install", line: string): void {
-	const rule = oneLine(line);
-	if (!rule) return;
-	editProfile(key, md => (bullets(md, HEADINGS.rules).some(h => normText(h) === normText(rule)) ? undefined : appendBullet(md, HEADINGS.rules, rule)));
-}
-
-/** Where a learned line goes: under the install key (the user said it holds always or everywhere) a standing rule of install.md, which no later lesson pushes out of a prompt; under any other key a dated correction of that profile. */
+/** Where a learned line goes: under the install key (the user said it holds always or everywhere) a standing rule of install, which no later lesson pushes out of a prompt; under any other key a dated correction of that scope. */
 export function recordLearned(key: ToneKey, line: string, now: Date): "rule" | "correction" {
 	if (key.app === INSTALL) {
 		recordRule(INSTALL, line);
@@ -495,47 +273,17 @@ export function recordLearned(key: ToneKey, line: string, now: Date): "rule" | "
 	return "correction";
 }
 
-const lineKey = (word: string) => oneLine(word.normalize("NFC")).toLowerCase();
-const bulletKey = (bullet: string) => banKey(parseBan(bullet));
-
-/** Adds wordings the user banned, each on one line, to the `## 금지` section of exactly that profile; one already there (whitespace, case and Unicode composition aside) is not added again. */
-export function recordForbidden(key: ToneKey | "install", words: string[]): void {
-	editProfile(key, md => {
-		const have = bullets(md, HEADINGS.forbidden).map(bulletKey);
-		let next: string | undefined;
-		for (const word of words.map(oneLine)) {
-			if (!word || have.includes(bulletKey(word))) continue;
-			have.push(bulletKey(word));
-			next = appendBullet(next ?? md, HEADINGS.forbidden, word);
-		}
-		return next;
-	});
+/** Adds wordings the user banned, each on one line, to exactly that scope; one already there (whitespace, case and Unicode composition aside) is not added again. */
+export function recordForbidden(key: ToneKey | "install", words: string[], ref?: string): void {
+	for (const word of words.map(oneLine)) if (word) put(key, banKind(word), word, "ban", ref);
 }
 
-/** Adds a wording rule as its `shape <JSON>` bullet to the `## 금지` section of exactly that profile; false when one with the same parts is already there. */
-export function recordPattern(key: ToneKey | "install", ban: ShapeBan): boolean {
-	let added = false;
-	editProfile(key, md => {
-		if (bullets(md, HEADINGS.forbidden).some(b => bulletKey(b) === banKey(ban))) return undefined;
-		added = true;
-		return appendBullet(md, HEADINGS.forbidden, banBullet(ban));
-	});
-	return added;
-}
+/** Adds a wording rule as its `shape <JSON>` bullet to exactly that scope; false when one with the same parts is already there. */
+export const recordPattern = (key: ToneKey | "install", ban: ShapeBan, ref?: string): boolean => put(key, "ban", banBullet(ban), "ban", ref).added;
 
-/** Takes a wording, or a wording rule by its label, out of the `## 금지` section of exactly that profile (whitespace, case and Unicode composition aside); false when it was not there. */
-export function removeForbidden(key: ToneKey | "install", word: string): boolean {
-	let removed = false;
-	editProfile(key, md => {
-		const out = dropBullets(md, HEADINGS.forbidden, h => {
-			const ban = parseBan(h);
-			return lineKey(h) === lineKey(word) || (ban.kind === "shape" && lineKey(ban.label) === lineKey(word));
-		});
-		removed = !!out;
-		return out?.md;
-	});
-	return removed;
-}
+/** Takes a wording, or a wording rule by its label, out of exactly that scope's bans (whitespace, case and Unicode composition aside); false when it was not there. */
+export const removeForbidden = (key: ToneKey | "install", word: string): boolean =>
+	removeMatching(scopeOfKey(key), ["ban", "content-ban"], h => lineKey(h) === lineKey(word) || ((ban: ReturnType<typeof parseBan>) => ban.kind === "shape" && lineKey(ban.label) === lineKey(word))(parseBan(h))).length > 0;
 
 /** The owner's own past replies of every app (all stored pairs), the install's corpus a proposed wording pattern must not hit too often. */
 export function ownReplies(): string[] {
@@ -570,7 +318,7 @@ export type Pair = { received: string; reply: string; at: number; from?: string;
 
 export const MAX_PAIRS = 1000;
 
-export const normText = (s: string): string => s.replace(/\s+/g, " ").trim().toLowerCase();
+
 
 export function loadPairs(app: string): Pair[] {
 	const file = paths.pairs(app);

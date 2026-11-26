@@ -12,13 +12,14 @@ import { addressesOf, type ReplyItem } from "../../../hub/reply-draft.ts";
 import type { LearnInput } from "../../../hub/reply-types.ts";
 import { ensureKakaoRoom, defaultKakaoReader, KAKAO_APP, type OwnerReader } from "../lib/kakao-tone.ts";
 import type { Room } from "../../../hub/kakao/types.ts";
-import { alsoInto, askText, attachFolder, buildDraft, candidatesFor, chosenFrom, dropDraft, kindOf, learningSettled, mailAsksFile, realFlowDeps, recordForbidden, reviseDraft, sendDraft, settleDraft, stageForReply, type FlowDeps, type Outcome } from "../lib/flow.ts";
+import { askText, attachFolder, buildDraft, candidatesFor, chosenFrom, dropDraft, kindOf, learningSettled, mailAsksFile, realFlowDeps, reviseDraft, sendDraft, settleDraft, stageForReply, type FlowDeps, type Outcome } from "../lib/flow.ts";
 import { compactCorrections, compactForPrompt } from "../lib/compact.ts";
 import { keysOf, learn } from "../lib/learn.ts";
 import { draftRules } from "../lib/draft-rules.ts";
 import { unreadSources } from "../lib/effective-rules.ts";
-import { journalEntries, type LearnKind, profileKey, restoreEntry } from "../lib/curate.ts";
-import { dataDir, handSections, HEADINGS, INSTALL, levelsOf, loadSettings, profileBullets, recipientFile, removeCorrection, removeForbidden, removeRule, toneFile, validApp, type ToneKey, type ToneLevel } from "../lib/settings.ts";
+import { journalEntries, type LearnKind, restoreEntry } from "../lib/curate.ts";
+import { keyOfScope, scopeOfProfile } from "../lib/ledger.ts";
+import { dataDir, handSections, HEADINGS, INSTALL, levelsOf, loadSettings, profileBullets, recipientFile, removeCorrection, recordForbidden, removeForbidden, removeRule, toneFile, validApp, type ToneKey, type ToneLevel } from "../lib/settings.ts";
 import { authorName, commentRecipient } from "../lib/commenters.ts";
 import type { Comment } from "../../../hub/comments/contract.ts";
 import { commentsDir, createStore } from "../../../hub/comments/store.ts";
@@ -51,10 +52,10 @@ function commenterNames(): (key: ToneKey) => string | undefined {
 	return key => (key.to === undefined || instanceIdOf("mail", key.app) ? undefined : authorName((comments ??= storedComments()), key.app, key.to));
 }
 const journalLevel = (profile: string, nameOf: (key: ToneKey) => string | undefined): string => {
-	const key = profileKey(profile);
+	const scope = scopeOfProfile(profile), key = scope && keyOfScope(scope);
 	return key === undefined || key === INSTALL ? levelName({ app: INSTALL }) : levelName(key, nameOf(key));
 };
-const sectionName = (heading: string): string => (heading === HEADINGS.rules ? "말투" : "고친 점");
+const sectionName = (heading: string): string => (heading === HEADINGS.rules ? "말투" : heading === HEADINGS.corrections ? "고친 점" : heading);
 function learnCallOf(deps: FlowDeps, app: string): FlowDeps["learnCall"] {
 	try {
 		const call = deps.learnCall?.(app);
@@ -257,24 +258,19 @@ export async function runDraft(args: string[], stdin: string, deps: DraftDeps = 
 			const taught = async (words: string, kind?: LearnKind): Promise<string> => (await learn({ source: "chat", ref: `chat:${where}`, keys, words, proposal: { scope, ...(kind ? { kind } : {}) } }, learnDeps)).text;
 			for (const r of rules) lines.push(await taught(r, "rule"));
 			if (change) lines.push(await taught(change));
-			const subs = alsoInto(target).map(k => k.app);
 			if (forbid.length) {
-				recordForbidden(target, forbid);
+				recordForbidden(target, forbid, `chat:${where}`);
 				lines.push(`${where}에서 쓰지 않을 표현으로 기록했어요: ${forbid.map(w => `"${w}"`).join(", ")}`);
-				for (const sub of subs) lines.push(`${sub}에서도 쓰지 않을 표현으로 기록했어요`);
 			}
 			for (const w of allow) {
 				lines.push(removeForbidden(target, w) ? `${where}의 금지 표현에서 뺐어요: "${w}"` : `${where}의 금지 표현에 "${w}"이(가) 없어서 바꾼 게 없어요`);
-				for (const sub of subs) if (removeForbidden({ app: sub }, w)) lines.push(`${sub}의 금지 표현에서도 뺐어요: "${w}"`);
 			}
 			for (const t of forget) {
 				const gone = [...removeRule(target, t).map(l => `- [말투] ${l}`), ...removeCorrection(target, t).map(l => `- [고친 점] ${l}`)];
-				const subGone = subs.map(sub => [sub, [...removeRule({ app: sub }, t).map(l => `- [말투] ${l}`), ...removeCorrection({ app: sub }, t).map(l => `- [고친 점] ${l}`)]] as const).filter(([, g]) => g.length);
 				const needle = t.toLowerCase();
-				const hand = gone.length || subGone.length || !needle ? [] : toneLevels(key).flatMap(([, k]) => handSections(k).flatMap(s => s.items.filter(l => oneLine(l).toLowerCase().includes(needle)).map(l => `- ${l} (손으로 쓴 '${s.heading}' 섹션, ${toneFile(k)})`)));
+				const hand = gone.length || !needle ? [] : toneLevels(key).flatMap(([, k]) => handSections(k).flatMap(s => s.items.filter(l => oneLine(l).toLowerCase().includes(needle)).map(l => `- ${l} (손으로 쓴 '${s.heading}' 섹션, ${toneFile(k)})`)));
 				if (gone.length) lines.push(`${where}에서 ${gone.length}줄을 지웠어요:\n${gone.join("\n")}`);
-				for (const [sub, g] of subGone) lines.push(`${sub}에서도 ${g.length}줄을 지웠어요:\n${g.join("\n")}`);
-				if (gone.length || subGone.length) continue;
+				if (gone.length) continue;
 				if (hand.length) lines.push(`"${t}"이(가) 든 줄은 손으로 쓴 섹션에만 있어서 지우지 않았어요. 그 파일에서 직접 고쳐야 해요:\n${hand.join("\n")}`);
 				else lines.push(`${where}의 말투와 고친 점에 "${t}"이(가) 든 줄이 없어서 바꾼 게 없어요`);
 			}
