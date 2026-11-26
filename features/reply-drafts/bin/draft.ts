@@ -12,8 +12,8 @@ import { addressesOf, type ReplyItem } from "../../../hub/reply-draft.ts";
 import { PATTERN_NOTE } from "../../../hub/reply-reasons.ts";
 import { ensureKakaoRoom, defaultKakaoReader, KAKAO_APP, type OwnerReader } from "../lib/kakao-tone.ts";
 import type { Room } from "../../../hub/kakao/types.ts";
-import { alsoInto, askText, attachFolder, buildDraft, candidatesFor, chosenFrom, dropDraft, kindOf, learningSettled, learnLine, type LineLearned, mailAsksFile, type PatternProposal, proposeLinePattern, realFlowDeps, recordForbidden, refineAfterCorrection, reviseDraft, sendDraft, settleDraft, stageForReply, type FlowDeps, type Outcome } from "../lib/flow.ts";
-import { compactCorrections } from "../lib/compact.ts";
+import { alsoInto, askText, attachFolder, buildDraft, candidatesFor, chosenFrom, dropDraft, kindOf, learningSettled, learnLine, type LineLearned, mailAsksFile, type PatternProposal, proposeLinePattern, realFlowDeps, recordForbidden, refineAfterCorrection, reviseDraft, sendDraft, settleDraft, stageForReply, styleKey, type FlowDeps, type Outcome } from "../lib/flow.ts";
+import { compactCorrections, compactForPrompt } from "../lib/compact.ts";
 import { configConflicts } from "../lib/rules.ts";
 import { journalEntries, type LearnKind, profileKey, profileOf, restoreEntry } from "../lib/curate.ts";
 import { dataDir, handSections, HEADINGS, INSTALL, levelsOf, loadSettings, profileBullets, recipientFile, removeCorrection, removeForbidden, removeRule, toneFile, validApp, type ToneKey, type ToneLevel } from "../lib/settings.ts";
@@ -163,6 +163,7 @@ export async function runDraft(args: string[], stdin: string, deps: DraftDeps = 
 			if (cands?.files.length) item.candidates = cands.files.map(f => f.rel);
 			else if (cands) item.files = [];
 			const flow = { ...deps, stage: { tries: 5, ...deps.stage } };
+			await compactForPrompt(styleKey(item, item), flow).catch(e => console.error(`draft: corrections of ${app} not compacted: ${(e as Error).message}`));
 			const built = await buildDraft(item, meta, flow);
 			if (built.action === "ask") {
 				const name = flag(rest, "--from") || (app === KAKAO_APP && room ? await kakaoRoomName(room, deps, notes) : undefined) || room || app;

@@ -10,7 +10,8 @@ import { threadIdOf, webmailSite } from "./senders.ts";
 import { existsSync, readFileSync, renameSync } from "node:fs";
 import { basename, join } from "node:path";
 import { retryWanted, stagedName, stageFiles, type StageOpts, type Want } from "./staged.ts";
-import { askText, attachFolder, buildDraft, callOf, candidatesFor, chosenFrom, draftTrace, mailAsksFile, settleDraft, stageForReply, traceLine, type DraftTrace } from "./flow.ts";
+import { askText, attachFolder, buildDraft, callOf, candidatesFor, chosenFrom, draftTrace, mailAsksFile, replyCall, settleDraft, stageForReply, styleKey, traceLine, type DraftTrace } from "./flow.ts";
+import { compactForPrompt } from "./compact.ts";
 import { anyRuleOn, mailInstanceOf, matchMail, ruleFileMissing, ruleInstruction, rulesOf, stageRuleFiles, type MailMatch } from "./rules.ts";
 import { banWarnings, boxFolders, boxLines, boxRules, noAutoDraft } from "./box.ts";
 import { boxCtx, moveByJudge, type BoxDeps } from "./box-place.ts";
@@ -387,6 +388,8 @@ async function offerOne(m: OfferMail, deps: OfferDeps, { body, history, replyTo 
 		const cands = !given.length && (ruleFiles || asked) ? await candidatesFor(item, { source: m.source, ref: m.key }, rule, boxFolders(box), box?.alone).catch(e => (log(`reply draft: files for mail ${m.key} not matched: ${(e as Error).message}`), undefined)) : undefined;
 		if (cands?.files.length) item.candidates = cands.files.map(f => f.rel);
 		else if (cands && asked) item.files = [];
+		// A long 고친 점 is folded before its prompt is built (compact.ts), on the reply model of the mail's app.
+		await compactForPrompt(styleKey({ ...item, ...(box ? { box: box.id, instance } : {}) }, item), { learnCall: app => deps.call ?? replyCall(app) }).catch(e => log(`reply draft: corrections for mail ${m.key} not compacted: ${(e as Error).message}`));
 		const built = await buildDraft(item, { ...(box ? { box: box.id, instance } : {}), source: m.source, mailId: m.id, ref: m.key, ...(m.account ? { account: m.account } : {}), ...(m.attachments?.length ? { origAttachments: m.attachments.length } : {}) }, flow);
 		if (built.action !== "draft") {
 			log(`reply draft: mail ${m.key} skipped: ${built.reason}`);

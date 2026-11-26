@@ -19,6 +19,7 @@ export const paths = {
 	toneDir: () => join(root(), "tone"),
 	drafts: () => join(root(), "drafts.json"),
 	learned: () => join(root(), "learned.json"), // tone profiles whose first sweep already ran: { "<profile>": iso }
+	compactFailed: () => join(root(), "compact-failed.json"), // tone profiles whose last compaction failed (lib/compact.ts): { "<profile>": { at, why, lines } }
 	voices: () => join(root(), "box-voice.json"), // the mailboxes learned from their own sent mail (lib/box-voice.ts): { "<instance>/<box>": { at, texts, seen } }
 	pairs: (app: string) => join(root(), "pairs", `${app}.jsonl`), // the user's real past replies with the message each answered, one JSON line per pair (lib/pairs.ts)
 	corpusDir: () => join(root(), "sent"), // the first sweep's extract of the user's sent texts, one file per profile (re-analysis reads it)

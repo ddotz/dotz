@@ -212,7 +212,9 @@ test("K1 a mail revise the model says holds everywhere is a standing rule of ins
 	expect(step.text).toContain("모든 답장");
 	for (let i = 0; i < 60; i++) recordCorrection({ app: "mail" }, `고친 점 ${i} ${"가".repeat(200)}`.slice(0, 200), new Date(Date.UTC(2030, 0, 1 + i)));
 	await offerMailDraft({ ...mailFixture, key: "m-2", id: "msg-2" }, { send: () => undefined, call: model.call });
-	expect(`${model.calls[2]!.system}\n${model.calls[2]!.user}`).toContain(LESSON);
+	// The 60 corrections are folded first (compact.ts compactForPrompt); the draft call comes after that one.
+	const draft = model.calls.slice(2).find(c => c.system.startsWith("You draft ONE reply"))!;
+	expect(`${draft.system}\n${draft.user}`).toContain(LESSON);
 	let seen = "";
 	await generateReply({ kind: "comment", app: "youtube", from: "팬", text: "언제요?", context: "" }, loadStyle({ app: "youtube" }), async (system, user) => ((seen = `${system}\n${user}`), j({ ...goodReply, body: "토요일이에요" })));
 	expect(seen).toContain(BAN);

@@ -1,6 +1,8 @@
+import { existsSync, readFileSync } from "node:fs";
+import { CORRECTIONS_BUDGET, promptCorrections } from "../../../hub/reply-draft.ts";
 import { journalAdd, profileOf, type JournalEntry } from "./curate.ts";
 import type { FlowDeps } from "./flow.ts";
-import { HEADINGS, INSTALL, profileBullets, rewriteSection, type ToneKey } from "./settings.ts";
+import { HEADINGS, INSTALL, levelsOf, loadStyle, paths, profileBullets, rewriteSection, writeAtomic, type ToneKey } from "./settings.ts";
 
 /** A profile with more `## 고친 점` lines than this is compacted on its own after a correction. */
 export const COMPACT_OVER = 12;
@@ -8,6 +10,23 @@ export const COMPACT_OVER = 12;
 export const COMPACT_MAX = 8;
 /** How long the compaction call may take before nothing changes. */
 export const COMPACT_TIMEOUT_MS = 30_000;
+/** How long a profile whose compaction failed waits before a draft tries it again; the next correction tries it at once. */
+export const COMPACT_RETRY_MS = 24 * 3600_000;
+
+/** A profile whose last compaction failed (paths.compactFailed): when, why and how many lines it held. The next compaction that works takes it out. */
+export type CompactFailure = { profile: string; at: string; why: string; lines: number };
+const failedFile = () => paths.compactFailed();
+function readFailures(): Record<string, Omit<CompactFailure, "profile">> {
+	if (!existsSync(failedFile())) return {};
+	try {
+		return JSON.parse(readFileSync(failedFile(), "utf8")) ?? {};
+	} catch {
+		return {};
+	}
+}
+const writeFailures = (all: Record<string, Omit<CompactFailure, "profile">>): void => writeAtomic(failedFile(), `${JSON.stringify(all, null, 1)}\n`);
+/** Every profile whose last compaction failed, as kept on record. */
+export const compactFailures = (): CompactFailure[] => Object.entries(readFailures()).map(([profile, f]) => ({ profile, ...f }));
 const LINE_MAX = 288;
 const DROP_WHY = ["one-off", "not a rule", "duplicate"] as const;
 /** Why a compaction answer leaves a correction out. */
@@ -123,7 +142,7 @@ export function compactedLines(corrections: string[], c: Compaction): { line: st
 		.map(({ line, sources }) => ({ line, sources }));
 }
 
-/** Folds the `## 고친 점` lines of exactly the profile of `key` into at most 8 conditions in ONE model call (`deps.learnCall`, 30 s at most), only when it holds more than 12 lines (with `force`, at least 2). An answer `checkCompaction` refuses, a thrown or late call, or a line added while the model was asked changes nothing and logs one line; otherwise every original line is journalled (`merged` with the line it went into, or `dropped`) and the section is rewritten in one locked edit. The line counts before and after; undefined when nothing was compacted. */
+/** Folds the `## 고친 점` lines of exactly the profile of `key` into at most 8 conditions in ONE model call (`deps.learnCall`, 30 s at most), only when it holds more than 12 lines (with `force`, at least 2). An answer `checkCompaction` refuses, a thrown or late call, or a line added while the model was asked changes nothing and logs one line (a refused or failed call also goes on record in compactFailures until one works); otherwise every original line is journalled (`merged` with the line it went into, or `dropped`) and the section is rewritten in one locked edit. The line counts before and after; undefined when nothing was compacted. */
 export async function compactCorrections(key: ToneKey | "install", deps: Pick<FlowDeps, "learnCall" | "now">, opts: { force?: boolean } = {}): Promise<{ before: number; after: number } | undefined> {
 	const listed = profileBullets(key, HEADINGS.corrections);
 	if (!(listed.length > COMPACT_OVER || (opts.force && listed.length >= 2))) return undefined;
@@ -131,6 +150,17 @@ export async function compactCorrections(key: ToneKey | "install", deps: Pick<Fl
 	if (!learnCall) return undefined;
 	const profile = profileOf(key);
 	const what = `corrections of ${profile} not compacted`;
+	const at = (deps.now ?? (() => new Date()))().toISOString();
+	const failed = (why: string): undefined => {
+		console.error(`reply draft: ${what}: ${why}`);
+		writeFailures({ ...readFailures(), [profile]: { at, why, lines: listed.length } });
+		return undefined;
+	};
+	const worked = (counts: { before: number; after: number }) => {
+		const { [profile]: gone, ...rest } = readFailures();
+		if (gone) writeFailures(rest);
+		return counts;
+	};
 	const app = key === INSTALL ? INSTALL : key.app;
 	const late = Promise.withResolvers<never>();
 	const timer = setTimeout(() => late.reject(new Error(`no answer within ${COMPACT_TIMEOUT_MS / 1000}s`)), COMPACT_TIMEOUT_MS);
@@ -138,21 +168,16 @@ export async function compactCorrections(key: ToneKey | "install", deps: Pick<Fl
 	try {
 		text = await Promise.race([Promise.resolve().then(() => learnCall(app)(SYSTEM, compactPrompt(listed))), late.promise]);
 	} catch (e) {
-		console.error(`reply draft: ${what}: ${(e as Error).message}`);
-		return undefined;
+		return failed((e as Error).message);
 	} finally {
 		clearTimeout(timer);
 	}
 	const checked = checkCompaction(text, listed.length);
-	if (checked.kind === "refused") {
-		console.error(`reply draft: ${what}: ${checked.why}`);
-		return undefined;
-	}
+	if (checked.kind === "refused") return failed(checked.why);
 	const kept = compactedLines(listed, checked.compaction);
 	const after = kept.map(k => k.line);
-	if (after.length === listed.length && after.every((l, i) => l === listed[i])) return { before: listed.length, after: after.length };
+	if (after.length === listed.length && after.every((l, i) => l === listed[i])) return worked({ before: listed.length, after: after.length });
 	const into = new Map(kept.flatMap(k => k.sources.map(s => [s, k.line] as const)));
-	const at = (deps.now ?? (() => new Date()))().toISOString();
 	const entries = listed.flatMap((line, i): JournalEntry[] => {
 		const newLine = into.get(i);
 		const where = { at, profile, heading: HEADINGS.corrections, line };
@@ -163,5 +188,28 @@ export async function compactCorrections(key: ToneKey | "install", deps: Pick<Fl
 		console.error(`reply draft: ${what}: its lines changed while the model was asked`);
 		return undefined;
 	}
-	return { before: listed.length, after: after.length };
+	return worked({ before: listed.length, after: after.length });
+}
+
+/** Before a draft of `key` (offer.ts, the draft CLI), so a long 고친 점 is folded even when no new correction comes: every level profile of the draft (settings.ts levelsOf) with more than 12 corrections is compacted, then, while the corrections of all levels together pass the prompt's budget (hub/reply-draft.ts promptCorrections), the other levels with at least 2 lines too, the longest first. A profile whose compaction failed less than a day ago waits (compactFailures). What still does not fit is left out of the prompt oldest first: that count is logged and returned. */
+export async function compactForPrompt(key: ToneKey, deps: Pick<FlowDeps, "learnCall" | "now">, budget = CORRECTIONS_BUDGET): Promise<number> {
+	const levels = levelsOf(key).map(([, k]) => k);
+	const count = (k: ToneKey) => profileBullets(k, HEADINGS.corrections).length;
+	const now = (deps.now ?? (() => new Date()))().getTime();
+	const waits = (k: ToneKey) => {
+		const f = readFailures()[profileOf(k)];
+		return !!f && now - Date.parse(f.at) < COMPACT_RETRY_MS;
+	};
+	const cut = () => {
+		const all = loadStyle(key).corrections;
+		return new Set(all).size - promptCorrections(all, budget).length;
+	};
+	for (const k of levels) if (count(k) > COMPACT_OVER && !waits(k)) await compactCorrections(k, deps);
+	for (const k of [...levels].sort((a, b) => count(b) - count(a))) {
+		if (!cut()) break;
+		if (count(k) >= 2 && !waits(k)) await compactCorrections(k, deps, { force: true });
+	}
+	const left = cut();
+	if (left) console.error(`reply draft: ${left} older corrections of ${profileOf(key)} left out of the draft prompt: over its ${budget}-character budget`);
+	return left;
 }

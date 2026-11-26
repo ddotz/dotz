@@ -1,11 +1,11 @@
-import { afterAll, beforeEach, expect, spyOn, test } from "bun:test";
+import { afterAll, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import fc from "fast-check";
 import { promptCorrections } from "../../../hub/reply-draft.ts";
 import { advance } from "../../../hub/runtime/test-clock.ts";
 import { runDraft } from "../bin/draft.ts";
-import { compactCorrections } from "../lib/compact.ts";
+import { compactCorrections, compactFailures, compactForPrompt } from "../lib/compact.ts";
 import { journalEntries } from "../lib/curate.ts";
 import { refineAfterCorrection } from "../lib/flow.ts";
 import { HEADINGS, paths, profileBullets, recordCorrection, toneFile } from "../lib/settings.ts";
@@ -16,6 +16,7 @@ afterAll(env.cleanup);
 beforeEach(() => {
 	process.env.DOTZ_DIR = env.dir;
 	rmSync(paths.toneDir(), { force: true, recursive: true });
+	rmSync(paths.compactFailed(), { force: true });
 });
 
 const ROOM = { app: "kakao", room: "r1" };
@@ -252,6 +253,57 @@ test("refineAfterCorrection compacts a long 고친 점, and survives a failing c
 	log.mockRestore();
 	expect(fileNow()).toBe(md(THIRTEEN));
 	expect(lines).toEqual([expect.stringMatching(/not compacted: 모델 없음/), expect.stringMatching(/^reply draft: corrections of Not An App not compacted/)]);
+});
+
+describe("before a draft (compactForPrompt)", () => {
+	const APP = { app: "kakao" };
+	const long = (tag: string, n: number) => Array.from({ length: n }, (_, i) => `2030-01-${String(i + 1).padStart(2, "0")}: ${tag} ${i} ${"가".repeat(280)}`);
+	const writeApp = (corrections: string[]) => writeFileSync(toneFile(APP), md(corrections));
+	test("a profile over 12 lines is compacted with no new correction, once; one at or under 12 that fits costs no call", async () => {
+		write(THIRTEEN.slice(0, 12));
+		const none = model(() => answer());
+		expect(await compactForPrompt(ROOM, { learnCall: none.learnCall })).toBe(0);
+		expect(none.asked).toHaveLength(0);
+		write(THIRTEEN);
+		const m = model(() => answer());
+		expect(await compactForPrompt(ROOM, { learnCall: m.learnCall, now: day("2030-02-01") })).toBe(0);
+		expect(m.asked).toHaveLength(1);
+		expect(profileBullets(ROOM, HEADINGS.corrections)).toEqual(COMPACTED);
+		expect(await compactForPrompt(ROOM, { learnCall: m.learnCall })).toBe(0);
+		expect(m.asked).toHaveLength(1);
+	});
+	test("levels that together pass the prompt's budget are compacted first; what still does not fit is counted and logged", async () => {
+		write(long("방", 7));
+		writeApp(long("앱", 7));
+		const log = quiet();
+		const refused = model(() => "모르겠어요");
+		expect(await compactForPrompt(ROOM, { learnCall: refused.learnCall, now: day("2030-02-01") })).toBe(1);
+		expect(refused.asked).toHaveLength(2);
+		expect(log.mock.calls.map(c => String(c[0])).filter(l => /left out/.test(l))).toHaveLength(1);
+		log.mockRestore();
+		const folds = model(() => answer([{ text: "방에서는 짧게", sources: ["C1", "C2", "C3", "C4", "C5", "C6", "C7"] }], []));
+		expect(await compactForPrompt(ROOM, { learnCall: folds.learnCall, now: day("2030-02-03") })).toBe(0);
+		expect(folds.asked).toHaveLength(1);
+		expect(profileBullets(ROOM, HEADINGS.corrections).length + profileBullets(APP, HEADINGS.corrections).length).toBe(8);
+		rmSync(toneFile(APP), { force: true });
+	});
+	test("a failed compaction is kept on record, waits a day before a draft tries it again, is retried by the next correction, and is cleared when one works", async () => {
+		write(THIRTEEN);
+		const log = quiet();
+		const bad = model(() => "모르겠어요");
+		await compactForPrompt(ROOM, { learnCall: bad.learnCall, now: day("2030-02-01") });
+		expect(compactFailures()).toEqual([{ profile: "kakao/r1.md", at: "2030-02-01T09:00:00.000Z", lines: 13, why: expect.stringContaining("not usable") }]);
+		await compactForPrompt(ROOM, { learnCall: bad.learnCall, now: () => new Date("2030-02-02T08:00:00Z") });
+		expect(bad.asked).toHaveLength(1);
+		await compactCorrections(ROOM, { learnCall: bad.learnCall, now: () => new Date("2030-02-02T08:00:00Z") });
+		expect(bad.asked).toHaveLength(2);
+		await compactForPrompt(ROOM, { learnCall: bad.learnCall, now: day("2030-02-04") });
+		expect(bad.asked).toHaveLength(3);
+		log.mockRestore();
+		await compactForPrompt(ROOM, { learnCall: model(() => answer()).learnCall, now: day("2030-02-05") });
+		expect(profileBullets(ROOM, HEADINGS.corrections)).toEqual(COMPACTED);
+		expect(compactFailures()).toEqual([]);
+	});
 });
 
 const TEXTS = ["끝인사는 짧게", "존댓말로 쓴다", "이모지 😀 하나", "\"따옴표\" $(rm) `x`", "", " ", "줄\n바꿈", "2030-05-05: 날짜 붙은 줄", "가".repeat(300), "가".repeat(301)];
