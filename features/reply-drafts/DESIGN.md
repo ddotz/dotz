@@ -172,7 +172,11 @@ A chat message that needs his own decision still asks first (exit 4), since the 
   as oldest first). The rewrite is one locked edit (`rewriteSection`) that happens only while the section still holds exactly the lines
   the model saw (a correction stored meanwhile wins and the compaction is skipped); before it, every original line is journalled with
   `by: "compact"`, `why: "merged"` and the line it went into, or `why: "dropped"` and an empty `newLine`, so `correct --restore` puts any
-  of them back. `tone --journal` shows a dropped one as `"<line>" → 지움`.
+  of them back. `tone --journal` shows a dropped one as `"<line>" → 지움`. Nothing a compaction or a curation (`learnLine`) takes off
+  `## 고친 점` or `## 말투` is deleted: the same edit appends it to `## 합쳐진 고친 점` as `- <line> → <the line it went into | 지움 (<why>)>`.
+  That section is a known heading, so no prompt, check, identity refinement or rule view reads it as a rule; `correct --restore` puts the
+  line back and takes its marked copy out. When the prompt's budget (`budgetedLines`) still cuts corrections, the count rides on
+  `ReplyResult.leftOut` -> `DraftRec.leftOut` -> the card's note `고친 점 N줄은 길어서 이번 초안에 못 넣었어요` (KakaoTalk: its draft's notes).
   `내용: <text>` is a content ban: something the draft must not say ("내용: 용도를 묻지 않기"), which no wording finds. `banHit` never hits it; the prompt carries every content ban under its own heading (apart from the 고친 점 budget, so age never cuts one), and the style judge (`hub/style-judge.ts`) keeps a content remark only when its rule number is one of them. A revise lesson phrased as a prohibition ("~하지 마", "~하지 않기") is stored as such a line by `learnLine`, never as a dated 고친 점. `draftRules().effective()` lists it as kind `content-ban`.
   One check, `checkDraft` (`lib/check-draft.ts`), runs before every card (mail auto draft, revise, compose and the mail riding on a comment reply): bans (tone files and the mailbox's 설정 금지), placeholders, recipient, length and the style judge, and keeps the result in `DraftRec.check` (`refuse` = refuses the send, `warn` = a ban left after the one rewrite or a judge note, `judged` = the judge's part). The card shows `warn` as `확인:` and, with the 첨부 확인 gate (`draftAttachIssues`), offers 이대로 보내기; the send needs it. A comment auto-send rule skips any draft with a note.
 - `drafts.json` `{drafts, keys}`; draft ids are `R` + 6 base32 characters; a newer draft for the same mail makes the older one stale. Each draft keeps its `app` and `room`.

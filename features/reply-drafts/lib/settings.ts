@@ -138,7 +138,7 @@ export function setApp(app: string, auto: boolean): Settings {
 
 // `learned` = style features measured from the user's own messages (kakao-voice.ts), kept apart from `rules` so a relearn never overwrites what the user wrote;
 // `profile` = the short Korean room profile the draft model wrote from reading the room; `record` = what the last learning was based on.
-export const HEADINGS = { identity: "## 정체성", templates: "## 답장 틀", rules: "## 말투", samples: "## 예시", corrections: "## 고친 점", forbidden: "## 금지", learned: "## 학습한 말투", profile: "## 대화 이해", record: "## 학습 기록" } as const;
+export const HEADINGS = { identity: "## 정체성", templates: "## 답장 틀", rules: "## 말투", samples: "## 예시", corrections: "## 고친 점", forbidden: "## 금지", learned: "## 학습한 말투", profile: "## 대화 이해", record: "## 학습 기록", merged: "## 합쳐진 고친 점" } as const;
 
 export function bullets(md: string, heading: string): string[] {
 	return bulletLines(md, heading).map(b => b.text);
@@ -363,6 +363,9 @@ export const templatesOf = (key: ToneKey | "install"): string[] => bullets(profi
 const BULLET = /^\s*[-*]\s+(.*\S)\s*$/;
 const oneLine = (s: string): string => s.replace(/\s+/g, " ").trim();
 
+/** The bullet under `## 합쳐진 고친 점` for a line a compaction or a curation took off its section: `<line> → <what it went into, or why it was dropped>`. No prompt, check or rule view reads that section. */
+export const markedLine = (line: string, into: string): string => oneLine(`${line} → ${into}`);
+
 function sectionOf(lines: string[], heading: string): { start: number; end: number } | undefined {
 	const start = lines.findIndex(l => l.trim() === heading);
 	if (start < 0) return undefined;
@@ -428,8 +431,8 @@ function removeLines(key: ToneKey | "install", heading: string, text: string): s
 /** One bullet of a profile section. */
 export type SectionLine = { heading: string; line: string };
 
-/** One locked edit of exactly that profile: takes each `take` bullet out of its section (one equal bullet each), hands what was taken to `before` while the old file is still on disk (a throw there writes nothing), then adds `add` at the end of its section (with `once`, not when a bullet equal apart from case and whitespace is there). What was taken and whether `add` went in. */
-export function replaceBullets<T extends SectionLine>(key: ToneKey | "install", take: T[], add?: SectionLine & { once?: boolean }, before?: (taken: T[]) => void): { taken: T[]; added: boolean } {
+/** One locked edit of exactly that profile: takes each `take` bullet out of its section (one equal bullet each; one with `into` stays in the file as a `markedLine` under `## 합쳐진 고친 점`), hands what was taken to `before` while the old file is still on disk (a throw there writes nothing), then adds `add` at the end of its section (with `once`, not when a bullet equal apart from case and whitespace is there). What was taken and whether `add` went in. */
+export function replaceBullets<T extends SectionLine & { into?: string }>(key: ToneKey | "install", take: T[], add?: SectionLine & { once?: boolean }, before?: (taken: T[]) => void): { taken: T[]; added: boolean } {
 	let taken: T[] = [];
 	let added = false;
 	editProfile(key, md => {
@@ -447,6 +450,7 @@ export function replaceBullets<T extends SectionLine>(key: ToneKey | "install", 
 			out = dropped.md;
 			taken.push(...got);
 		}
+		for (const t of taken) if (t.into !== undefined) out = appendBullet(out, HEADINGS.merged, markedLine(t.line, t.into));
 		const line = oneLine(add?.line ?? "");
 		added = !!add && !!line && !(add.once && bullets(out, add.heading).some(b => normText(b) === normText(line)));
 		if (add && added) out = appendBullet(out, add.heading, line);
@@ -457,8 +461,8 @@ export function replaceBullets<T extends SectionLine>(key: ToneKey | "install", 
 	return { taken, added };
 }
 
-/** One locked edit of exactly that profile: when the section of `heading` holds nothing but bullets and they still equal `expect` (in order), hands control to `before` while the old file is still on disk (a throw there writes nothing) and replaces them with `items`; false, writing nothing, when they changed or the section holds any other line (a note, a sub-heading, a continuation line), which a rewrite would lose. */
-export function rewriteSection(key: ToneKey | "install", heading: string, expect: string[], items: string[], before?: () => void): boolean {
+/** One locked edit of exactly that profile: when the section of `heading` holds nothing but bullets and they still equal `expect` (in order), hands control to `before` while the old file is still on disk (a throw there writes nothing) and replaces them with `items`, adding the `marked` bullets (`markedLine`s of the lines that went) to `## 합쳐진 고친 점`; false, writing nothing, when they changed or the section holds any other line (a note, a sub-heading, a continuation line), which a rewrite would lose. */
+export function rewriteSection(key: ToneKey | "install", heading: string, expect: string[], items: string[], before?: () => void, marked: string[] = []): boolean {
 	let done = false;
 	editProfile(key, md => {
 		const now = bullets(md, heading);
@@ -468,7 +472,7 @@ export function rewriteSection(key: ToneKey | "install", heading: string, expect
 		done = onlyBullets && now.length === expect.length && now.every((b, i) => b === expect[i]);
 		if (!done) return undefined;
 		before?.();
-		return setSection(md, heading, items);
+		return marked.reduce((out, m) => appendBullet(out, HEADINGS.merged, m), setSection(md, heading, items));
 	});
 	return done;
 }

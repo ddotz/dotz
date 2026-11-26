@@ -2,7 +2,7 @@
 // Pure: no fs, no model, no database. web.ts reads the room, calls the injected model and stores the result.
 import { banHit, banLabel, parseBan, WORDING_RULES, wordingRule } from "../ban.ts";
 import { cleanChoices, cleanQuestion } from "../choices.ts";
-import { type LessonScope, promptCorrections, scopeOf } from "../reply-draft.ts";
+import { fitCorrections, type LessonScope, scopeOf } from "../reply-draft.ts";
 import { hasWords, readText, TEXT_TYPE } from "./db.ts";
 import type { Msg } from "./types.ts";
 
@@ -247,7 +247,8 @@ const registerText = (r: Register | undefined): string =>
 // `intent`: the owner asks for a new message of his own ("내일 7시로 미루자고 정중하게"); the chat lines are context, not something to answer.
 export type PromptInput = { lines: string[]; context?: string[]; group?: boolean; summary?: string; pairs?: Pair[]; samples?: string[]; register?: Register; style?: StyleHint; choice?: string; revise?: { draft: string; change: string }; intent?: string; known?: boolean; match?: (shown: number) => string[] };
 
-export function buildDraftPrompt(input: PromptInput): { system: string; user: string } {
+/** `leftOut`: how many of the owner's corrections did not make the prompt (the budget cut them, or the size limit below dropped them). */
+export function buildDraftPrompt(input: PromptInput): { system: string; user: string; leftOut: number } {
 	const style = input.style;
 	const compose = !!input.intent?.trim();
 	const bans = (style?.forbidden ?? []).map(parseBan);
@@ -267,7 +268,8 @@ export function buildDraftPrompt(input: PromptInput): { system: string; user: st
 	const context = [...(input.context ?? [])];
 	const standing = [...(style?.standing ?? [])];
 	const rules = (style?.rules ?? []).slice(0, MAX_RULES);
-	const corrections = promptCorrections(style?.corrections ?? [], CORRECTIONS_BUDGET);
+	const fit = fitCorrections(style?.corrections ?? [], CORRECTIONS_BUDGET);
+	const corrections = [...fit.lines];
 	const forbidden = bans.slice(0, MAX_FORBIDDEN).filter(b => !wordingRule(b)).map(banLabel);
 	const wording = bans.slice(0, MAX_FORBIDDEN).flatMap(b => wordingRule(b) ?? []);
 	let summary = input.summary?.trim() ? clip(input.summary, MAX_SUMMARY_CHARS) : "(none)";
@@ -330,7 +332,7 @@ export function buildDraftPrompt(input: PromptInput): { system: string; user: st
 		else if (standing.length) standing.pop();
 		else break;
 	}
-	return { system, user: assemble() };
+	return { system, user: assemble(), leftOut: fit.left + fit.lines.length - corrections.length };
 }
 
 // The model's JSON object: a ```json block, else the outermost {...}. Undefined when it is not usable.

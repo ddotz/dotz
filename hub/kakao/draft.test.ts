@@ -279,6 +279,16 @@ describe("the owner's standing words in the prompt", () => {
 		expect([...at].sort((a, b) => b - a)).toEqual(at);
 	});
 
+	test("the prompt says how many corrections it left out: those over the 1200-character budget", () => {
+		const corrections = Array.from({ length: 10 }, (_, i) => dated(i + 1, "가".repeat(280)));
+		const { user, leftOut } = buildDraftPrompt({ lines: ["Alex: 내일 가능하신가요?"], style: { rules: [], corrections, forbidden: [], samples: [] } });
+		const shown = user.split("\n").filter(l => l.includes("가".repeat(280))).length;
+		expect(shown).toBeGreaterThan(0);
+		expect(leftOut).toBe(10 - shown);
+		expect(leftOut).toBeGreaterThan(0);
+		expect(buildDraftPrompt({ lines: ["Alex: 한 줄"], style: { rules: [], corrections: [dated(1)], forbidden: [], samples: [] } }).leftOut).toBe(0);
+	});
+
 	test("30 oversized corrections keep the prompt inside its budget and keep the newest", () => {
 		const corrections = Array.from({ length: 30 }, (_, i) => dated(i + 1, "가".repeat(290)));
 		const { system, user } = buildDraftPrompt({ lines: ["Alex: 내일 가능하신가요?"], style: { rules: [], corrections, forbidden: [], samples: [] } });

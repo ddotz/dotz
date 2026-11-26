@@ -4,7 +4,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { ruleOfFinding } from "../ban.ts";
-import { type Learned, learnedOf, ownerLint, styleConditions } from "../reply-draft.ts";
+import { type Learned, learnedOf, leftOutNote, ownerLint, styleConditions } from "../reply-draft.ts";
 import { reasonOf } from "../reply-reasons.ts";
 import { judgeAsk, judgeStyle, styleFailure, styleWarnings, type Violation } from "../style-judge.ts";
 import { writePrivate } from "./creds.ts";
@@ -92,7 +92,7 @@ const done = (error?: string, made?: { code: string; learned?: Learned }): Made 
 		const pairs = ownPairs(compose ? recent : recent.slice(0, recent.length - window.length - context.length));
 		const group = room.kind === "group" || room.kind === "open";
 		const chat = chatLines(window, compose);
-		const { system, user } = buildDraftPrompt({ lines: chat, ...(intent ? { match: (shown: number) => matchLines(recent, intent, shown) } : {}), context, group, summary: readJsonText(summaryFile(chatId)), pairs, samples: ownSamples(recent), register: registerOf(ownLines), style, ...(choice ? { choice } : {}), ...(revise ? { revise: { draft: revise.draft, change: revise.change } } : {}), ...(intent ? { intent } : {}), ...(opts.known ? { known: true } : {}) });
+		const { system, user, leftOut } = buildDraftPrompt({ lines: chat, ...(intent ? { match: (shown: number) => matchLines(recent, intent, shown) } : {}), context, group, summary: readJsonText(summaryFile(chatId)), pairs, samples: ownSamples(recent), register: registerOf(ownLines), style, ...(choice ? { choice } : {}), ...(revise ? { revise: { draft: revise.draft, change: revise.change } } : {}), ...(intent ? { intent } : {}), ...(opts.known ? { known: true } : {}) });
 		const judgeModel = deps.judgeModel;
 		const { standing, corrections } = judgeModel && style ? styleConditions(style, CORRECTIONS_BUDGET) : { standing: [], corrections: [] };
 		const ask = judgeModel ? judgeAsk(async (s, u) => (await judgeModel(s, u, chatId)).text) : undefined;
@@ -145,6 +145,7 @@ const done = (error?: string, made?: { code: string; learned?: Learned }): Made 
 				const rule = ruleOfFinding(n);
 				return `확인: ${rule === undefined ? n : reasonOf("wording_rule", { label: rule }).text}`;
 			});
+			if (leftOut) shown.push(leftOutNote(leftOut));
 			made = await createDraft({ chatId, roomName: room.name, text: parsed.body, basisLogId: basis, tokens, ...(intent ? { intent } : {}), ...(revise ? { replaces: revise.code } : {}), ...(shown.length ? { notes: shown } : {}) }, { paths, runner: deps.runner, now });
 		} catch (e) {
 			return done(e instanceof Error ? e.message : DRAFT_FAILED);

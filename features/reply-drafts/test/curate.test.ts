@@ -265,6 +265,23 @@ test("draft.ts revise: a correction the curation answer overrides goes to the jo
 	expect(journalEntries().map(e => [e.line, e.why])).toEqual([["2030-03-01: 끝인사는 길게 쓴다", "overridden"]]);
 });
 
+test("a line curation replaces stays in its tone file as a marked line, is read as no rule, and --restore puts it back and takes the mark out", async () => {
+	profile("mail.md", "## 말투\n\n- 답장은 길게\n\n## 고친 점\n\n- 2030-03-01: 끝인사는 길게 쓴다\n");
+	const on = () => [HEADINGS.rules, HEADINGS.corrections].flatMap(h => profileBullets({ app: "mail" }, h));
+	await learnLine({ app: "mail" }, "답장은 짧게", "rule", { learnCall: model(() => answer(["R1", "overridden"])).learnCall, now: day("2030-03-04") });
+	await learnLine({ app: "mail" }, "인사는 뺀다", "correction", { learnCall: model(() => answer(["C1", "same"])).learnCall, now: day("2030-03-04") });
+	expect(on()).toEqual(["답장은 짧게", "2030-03-04: 인사는 뺀다"]);
+	const marked = ["답장은 길게 → 답장은 짧게", "2030-03-01: 끝인사는 길게 쓴다 → 2030-03-04: 인사는 뺀다"];
+	expect(profileBullets({ app: "mail" }, HEADINGS.merged)).toEqual(marked);
+	const style = loadStyle({ app: "mail" });
+	expect([...style.rules, ...style.standing, ...style.corrections].join("\n")).not.toContain("길게");
+	const ids = journalEntries().map(e => [e.n, e.line]);
+	expect(ids).toEqual([[2, "2030-03-01: 끝인사는 길게 쓴다"], [1, "답장은 길게"]]);
+	expect(restoreEntry(1)?.put).toBe(true);
+	expect(profileBullets({ app: "mail" }, HEADINGS.rules)).toEqual(["답장은 짧게", "답장은 길게"]);
+	expect(profileBullets({ app: "mail" }, HEADINGS.merged)).toEqual([marked[1]!]);
+});
+
 test("a rule and a correction for the mail app also reach a mail app with its own tone file, superseding its contradicting line there", async () => {
 	profile("mail.md", "## 말투\n");
 	profile("mail-beta.md", "## 정체성\n- BETA-IDENTITY\n\n## 말투\n- 답장은 길게\n");

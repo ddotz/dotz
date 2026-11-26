@@ -1,8 +1,8 @@
 import { existsSync, readFileSync } from "node:fs";
-import { CORRECTIONS_BUDGET, promptCorrections } from "../../../hub/reply-draft.ts";
+import { budgetedLines, CORRECTIONS_BUDGET } from "../../../hub/reply-draft.ts";
 import { journalAdd, profileOf, type JournalEntry } from "./curate.ts";
 import type { FlowDeps } from "./flow.ts";
-import { HEADINGS, INSTALL, levelsOf, loadStyle, paths, profileBullets, rewriteSection, writeAtomic, type ToneKey } from "./settings.ts";
+import { HEADINGS, INSTALL, levelsOf, loadStyle, markedLine, paths, profileBullets, rewriteSection, writeAtomic, type ToneKey } from "./settings.ts";
 
 /** A profile with more `## 고친 점` lines than this is compacted on its own after a correction. */
 export const COMPACT_OVER = 12;
@@ -142,7 +142,7 @@ export function compactedLines(corrections: string[], c: Compaction): { line: st
 		.map(({ line, sources }) => ({ line, sources }));
 }
 
-/** Folds the `## 고친 점` lines of exactly the profile of `key` into at most 8 conditions in ONE model call (`deps.learnCall`, 30 s at most), only when it holds more than 12 lines (with `force`, at least 2). An answer `checkCompaction` refuses, a thrown or late call, or a line added while the model was asked changes nothing and logs one line (a refused or failed call also goes on record in compactFailures until one works); otherwise every original line is journalled (`merged` with the line it went into, or `dropped`) and the section is rewritten in one locked edit. The line counts before and after; undefined when nothing was compacted. */
+/** Folds the `## 고친 점` lines of exactly the profile of `key` into at most 8 conditions in ONE model call (`deps.learnCall`, 30 s at most), only when it holds more than 12 lines (with `force`, at least 2). An answer `checkCompaction` refuses, a thrown or late call, or a line added while the model was asked changes nothing and logs one line (a refused or failed call also goes on record in compactFailures until one works); otherwise every original line that goes is journalled (`merged` with the line it went into, or `dropped`) and stays in the file, marked under `## 합쳐진 고친 점` with the line it went into or why it was dropped, as the section is rewritten in one locked edit. The line counts before and after; undefined when nothing was compacted. */
 export async function compactCorrections(key: ToneKey | "install", deps: Pick<FlowDeps, "learnCall" | "now">, opts: { force?: boolean } = {}): Promise<{ before: number; after: number } | undefined> {
 	const listed = profileBullets(key, HEADINGS.corrections);
 	if (!(listed.length > COMPACT_OVER || (opts.force && listed.length >= 2))) return undefined;
@@ -178,20 +178,21 @@ export async function compactCorrections(key: ToneKey | "install", deps: Pick<Fl
 	const after = kept.map(k => k.line);
 	if (after.length === listed.length && after.every((l, i) => l === listed[i])) return worked({ before: listed.length, after: after.length });
 	const into = new Map(kept.flatMap(k => k.sources.map(s => [s, k.line] as const)));
-	const entries = listed.flatMap((line, i): JournalEntry[] => {
-		const newLine = into.get(i);
-		const where = { at, profile, heading: HEADINGS.corrections, line };
-		if (newLine === line) return [];
-		return [newLine === undefined ? { ...where, by: "compact", why: "dropped", newLine: "" } : { ...where, by: "compact", why: "merged", newLine }];
+	const dropWhy = new Map(checked.compaction.dropped.map(d => [d.at, d.why] as const));
+	const gone = listed.flatMap((line, i) => (into.get(i) === line ? [] : [{ line, newLine: into.get(i), why: dropWhy.get(i) }]));
+	const entries = gone.map((g): JournalEntry => {
+		const where = { at, profile, heading: HEADINGS.corrections, line: g.line };
+		return g.newLine === undefined ? { ...where, by: "compact", why: "dropped", newLine: "" } : { ...where, by: "compact", why: "merged", newLine: g.newLine };
 	});
-	if (!rewriteSection(key, HEADINGS.corrections, listed, after, () => journalAdd(entries))) {
+	const marked = gone.map(g => markedLine(g.line, g.newLine ?? `지움 (${g.why})`));
+	if (!rewriteSection(key, HEADINGS.corrections, listed, after, () => journalAdd(entries), marked)) {
 		console.error(`reply draft: ${what}: its lines changed while the model was asked`);
 		return undefined;
 	}
 	return worked({ before: listed.length, after: after.length });
 }
 
-/** Before a draft of `key` (offer.ts, the draft CLI), so a long 고친 점 is folded even when no new correction comes: every level profile of the draft (settings.ts levelsOf) with more than 12 corrections is compacted, then, while the corrections of all levels together pass the prompt's budget (hub/reply-draft.ts promptCorrections), the other levels with at least 2 lines too, the longest first. A profile whose compaction failed less than a day ago waits (compactFailures). What still does not fit is left out of the prompt oldest first: that count is logged and returned. */
+/** Before a draft of `key` (offer.ts, the draft CLI), so a long 고친 점 is folded even when no new correction comes: every level profile of the draft (settings.ts levelsOf) with more than 12 corrections is compacted, then, while the corrections of all levels together pass the prompt's budget (hub/reply-draft.ts promptCorrections), the other levels with at least 2 lines too, the longest first. A profile whose compaction failed less than a day ago waits (compactFailures). What still does not fit is left out of the prompt oldest first: that count (the one hub/reply-draft.ts budgetedLines gives the prompt) is logged and returned. */
 export async function compactForPrompt(key: ToneKey, deps: Pick<FlowDeps, "learnCall" | "now">, budget = CORRECTIONS_BUDGET): Promise<number> {
 	const levels = levelsOf(key).map(([, k]) => k);
 	const count = (k: ToneKey) => profileBullets(k, HEADINGS.corrections).length;
@@ -200,10 +201,7 @@ export async function compactForPrompt(key: ToneKey, deps: Pick<FlowDeps, "learn
 		const f = readFailures()[profileOf(k)];
 		return !!f && now - Date.parse(f.at) < COMPACT_RETRY_MS;
 	};
-	const cut = () => {
-		const all = loadStyle(key).corrections;
-		return new Set(all).size - promptCorrections(all, budget).length;
-	};
+	const cut = () => budgetedLines(loadStyle(key), budget).left;
 	for (const k of levels) if (count(k) > COMPACT_OVER && !waits(k)) await compactCorrections(k, deps);
 	for (const k of [...levels].sort((a, b) => count(b) - count(a))) {
 		if (!cut()) break;

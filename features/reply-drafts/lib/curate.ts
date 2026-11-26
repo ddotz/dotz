@@ -1,7 +1,7 @@
 import { appendFileSync, existsSync, readFileSync } from "node:fs";
 import { join, relative, sep } from "node:path";
 import { withLock } from "../../../hub/file-lock.ts";
-import { HEADINGS, INSTALL, paths, recipientOf, replaceBullets, toneFile, writeAtomic, type ToneKey } from "./settings.ts";
+import { HEADINGS, INSTALL, paths, profileBullets, recipientOf, replaceBullets, toneFile, writeAtomic, type ToneKey } from "./settings.ts";
 
 /** What a learned line is: a standing rule (`## 말투`) or a dated correction of one draft (`## 고친 점`). */
 export type LearnKind = "rule" | "correction";
@@ -154,11 +154,12 @@ function readJournal(): { raw: string[]; stored: Stored[] } {
 /** The journal, newest first; `n` is an entry's own number, counted from the oldest (1), so it stays the same when later entries are added. */
 export const journalEntries = (): (JournalEntry & { n: number })[] => readJournal().stored.map(({ entry }, i) => ({ ...entry, n: i + 1 })).reverse();
 
-/** Puts the line of entry `n` back at the end of its section in its profile unless an equal line is there (case and whitespace aside) and records `restoredAt` on the entry once. `put`: whether the line went back; undefined when there is no entry `n`. */
+/** Puts the line of entry `n` back at the end of its section in its profile unless an equal line is there (case and whitespace aside), takes its marked copy out of `## 합쳐진 고친 점`, and records `restoredAt` on the entry once. `put`: whether the line went back; undefined when there is no entry `n`. */
 export function restoreEntry(n: number, now: Date = new Date()): { entry: JournalEntry; put: boolean } | undefined {
 	const found = Number.isInteger(n) && n >= 1 ? readJournal().stored[n - 1] : undefined;
 	if (!found) return undefined;
-	const put = replaceBullets(found.key, [], { heading: found.entry.heading, line: found.entry.line, once: true }).added;
+	const mark = profileBullets(found.key, HEADINGS.merged).find(b => b.startsWith(`${found.entry.line} → `));
+	const put = replaceBullets(found.key, mark ? [{ heading: HEADINGS.merged, line: mark }] : [], { heading: found.entry.heading, line: found.entry.line, once: true }).added;
 	if (found.entry.restoredAt) return { entry: found.entry, put };
 	const entry = { ...found.entry, restoredAt: now.toISOString() };
 	const file = journalFile();

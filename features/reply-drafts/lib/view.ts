@@ -2,6 +2,7 @@
 // adapter (hub/reply-mail.ts) draws its cards from it and the send CLI's gate (flow.ts sendDraft) hashes it, so the version the owner approved
 // and the version a CLI would send are read the same way in both processes.
 import { approvalHash, fileSizeText } from "../../../hub/draft-approval.ts";
+import { leftOutNote } from "../../../hub/reply-draft.ts";
 import type { DraftView, ReplyKind } from "../../../hub/reply-types.ts";
 import { webmailSite, zeleAccountOf } from "./senders.ts";
 import { fileDigest, stagedFiles } from "./staged.ts";
@@ -58,6 +59,7 @@ export function mailView(rec: DraftRec, mailOf: MailOf = () => undefined): Draft
 			...(rec.subject ? { subject: rec.subject } : {}),
 			text: rec.body,
 			...(attachments.length ? { attachments } : {}),
+			...(rec.leftOut ? { notes: [leftOutNote(rec.leftOut)] } : {}),
 			...(rec.rule ? { rule: rec.rule.name } : {}),
 			...(before ? { replaces: { ref: before.id, text: before.body } } : {}),
 			...(rec.editedFrom !== undefined ? { edited: true as const } : {}),

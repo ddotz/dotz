@@ -54,7 +54,7 @@ export type DraftOut = { to: string; cc?: readonly string[]; subject?: string; b
 /** Who wrote to the user, as the model judged it (mail and comment): `evidence` = the sender's own words that show it. */
 export type Recipient = { who: string; evidence: string };
 export type ReplyResult =
-	| { action: "draft"; draft: DraftOut; questions: string[]; warnings: string[]; /** The part of `warnings` the style judge found (its 확인 notes, content bans too). */ judged?: string[]; tries: number; recipient?: Recipient; /** Revise mode: the lasting preference the change shows ("" = only about this message); absent = the model did not say. */ lesson?: string; forbid?: string[]; scope?: LessonScope; /** The candidates the model chose (exact names); [] = none, absent = it gave no "files" or the item had no candidates. */ files?: string[] }
+	| { action: "draft"; draft: DraftOut; questions: string[]; warnings: string[]; /** The part of `warnings` the style judge found (its 확인 notes, content bans too). */ judged?: string[]; /** How many of the user's corrections the prompt's budget cut (absent = none): the card says so (`leftOutNote`). */ leftOut?: number; tries: number; recipient?: Recipient; /** Revise mode: the lasting preference the change shows ("" = only about this message); absent = the model did not say. */ lesson?: string; forbid?: string[]; scope?: LessonScope; /** The candidates the model chose (exact names); [] = none, absent = it gave no "files" or the item had no candidates. */ files?: string[] }
 	| { action: "skip"; reason: string };
 // chat only (generateChatReply): the message needs a decision only the user can make; 2-4 short choices come back instead of a draft
 export type AskResult = { action: "ask"; question: string; choices: string[] };
@@ -192,31 +192,34 @@ const CORRECTION_MAX = 300;
 const DATED = /^\s*(\d{4}-\d{2}-\d{2})/;
 const DATE_LEAD = /^\s*\d{4}-\d{2}-\d{2}\s*:?/;
 
-/** The corrections a prompt shows: newest first by each line's leading date (undated = oldest; of one date the later line is newer), duplicates once, each cut to 300 code points, as many as fit in `budget` code points. */
-export function promptCorrections(corrections: string[], budget: number): string[] {
+/** The corrections a prompt shows: newest first by each line's leading date (undated = oldest; of one date the later line is newer), duplicates once, each cut to 300 code points, as many as fit in `budget` code points; `left` = how many distinct lines did not fit. */
+export function fitCorrections(corrections: string[], budget: number): { lines: string[]; left: number } {
 	const newestFirst = corrections
 		.map((line, at) => ({ line, at, date: DATED.exec(line)?.[1] ?? "" }))
 		.sort((a, b) => (a.date === b.date ? b.at - a.at : a.date < b.date ? 1 : -1));
-	const out: string[] = [];
-	let total = 0;
-	for (const { line } of newestFirst) {
-		const points = [...line].slice(0, CORRECTION_MAX);
-		const cut = points.join("");
-		if (out.includes(cut)) continue;
-		if (total + points.length > budget) break;
-		out.push(cut);
-		total += points.length;
+	const distinct = [...new Set(newestFirst.map(({ line }) => [...line].slice(0, CORRECTION_MAX).join("")))];
+	let total = 0, fit = 0;
+	for (const cut of distinct) {
+		const points = [...cut].length;
+		if (total + points > budget) break;
+		total += points;
+		fit++;
 	}
-	return out;
+	return { lines: distinct.slice(0, fit), left: distinct.length - fit };
 }
+export const promptCorrections = (corrections: string[], budget: number): string[] => fitCorrections(corrections, budget).lines;
 
-function budgetedLines(style: Pick<ReplyStyle, "recipient" | "corrections">, budget: number): { corrections: string[]; recipient: string[] } {
+/** The corrections a prompt carries within `budget` (the recipient's own first, then the rest), and `left`: how many the budget cut. The one place that counts them: the prompt, the style judge, a draft's card note and the compaction before a draft all read it. */
+export function budgetedLines(style: Pick<ReplyStyle, "recipient" | "corrections">, budget: number): { corrections: string[]; recipient: string[]; left: number } {
 	const own = style.recipient ?? [];
 	const all = new Set(style.corrections), mine = new Set(own);
-	const theirs = promptCorrections(own.filter(l => all.has(l)), budget);
-	const left = budget - theirs.reduce((n, c) => n + [...c].length, 0);
-	return { corrections: promptCorrections(style.corrections.filter(c => !mine.has(c)), left), recipient: [...own.filter(l => !all.has(l)), ...theirs] };
+	const theirs = fitCorrections(own.filter(l => all.has(l)), budget);
+	const rest = fitCorrections(style.corrections.filter(c => !mine.has(c)), budget - theirs.lines.reduce((n, c) => n + [...c].length, 0));
+	return { corrections: rest.lines, recipient: [...own.filter(l => !all.has(l)), ...theirs.lines], left: theirs.left + rest.left };
 }
+
+/** The note a draft's card carries when the prompt's budget cut `n` corrections (`ReplyResult.leftOut`). */
+export const leftOutNote = (n: number): string => `고친 점 ${n}줄은 길어서 이번 초안에 못 넣었어요`;
 
 /** What the style judge checks a draft against: the standing rules (and the style's content bans, always whole: they take no part in the corrections' budget), the corrections a prompt carries (promptCorrections, in its order, one budget shared with the recipient's corrections) without their leading date and its colon, duplicates once, a correction equal to a standing rule left out, and (only when the style has any) the recipient's own lines apart from both. */
 export function styleConditions(style: Pick<ReplyStyle, "standing" | "corrections" | "recipient" | "forbidden">, budget = CORRECTIONS_BUDGET): { standing: string[]; corrections: string[]; recipient?: string[]; contentBans?: string[] } {
@@ -439,6 +442,7 @@ async function run(item: ReplyItem, style: ReplyStyle, call: ModelCall, base: Pr
 	let first: Omit<Extract<ReplyResult, { action: "draft" }>, "action" | "tries"> | undefined;
 	let restyle: typeof first;
 	const taught: string[] = [];
+	const { left } = budgetedLines(style, CORRECTIONS_BUDGET);
 	const { standing, corrections, recipient, contentBans = [] } = judge ? styleConditions(style) : { standing: [], corrections: [], recipient: undefined };
 	for (let tries = 1; tries <= 2; tries++) {
 		const p = buildPrompt(item, style, { ...base, ...(failures ? { failures } : {}) });
@@ -481,7 +485,7 @@ async function run(item: ReplyItem, style: ReplyStyle, call: ModelCall, base: Pr
 		const fixable = [...rewritable(found), ...attach, ...unnamed];
 		const broken: Violation[] = !fixable.length && judge && (standing.length || corrections.length || recipient || contentBans.length) ? await judgeStyle({ standing, corrections, ...(recipient ? { recipient } : {}), ...(contentBans.length ? { contentBans } : {}), received: item.text, draft: draft.body, ...(base.change ? { asked: base.change } : {}) }, judge) : [];
 		const judged = styleWarnings(broken), warnings = [...found, ...judged];
-		const who = { ...(parsed.recipient ? { recipient: parsed.recipient } : {}), ...lessons, ...(files ? { files } : {}) };
+		const who = { ...(parsed.recipient ? { recipient: parsed.recipient } : {}), ...lessons, ...(files ? { files } : {}), ...(left ? { leftOut: left } : {}) };
 		if ((!fixable.length && !broken.length) || tries === 2) return { action: "draft", draft, questions: parsed.questions, warnings, ...(judged.length ? { judged } : {}), tries, ...who };
 		const kept = { draft, questions: parsed.questions, warnings, ...(judged.length ? { judged } : {}), ...who };
 		if (fixable.length) first = kept;

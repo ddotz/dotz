@@ -250,11 +250,11 @@ export const callOf = (deps: FlowDeps, item: ReplyItem, conv?: string, what = "d
 /** The style judge of a draft (hub/style-judge.ts) on the mail rule matcher's call, traced as `judge`; none while config guard.style_judge is false. */
 export const judgeOf = (deps: FlowDeps, item: ReplyItem, conv?: string): JudgeAsk | undefined => (styleJudgeOn() ? judgeAsk(callOf(deps.judge ? { ...deps, call: deps.judge } : deps, item, conv, "judge")) : undefined);
 const nowOf = (deps: FlowDeps) => (deps.now ?? (() => new Date()))();
-function toRec(item: ReplyItem, meta: Meta, r: { draft: { to: string; subject?: string; body: string }; questions: string[]; recipient?: Recipient }, changes: string[], deps: FlowDeps): DraftRec {
+function toRec(item: ReplyItem, meta: Meta, r: { draft: { to: string; subject?: string; body: string }; questions: string[]; recipient?: Recipient; leftOut?: number }, changes: string[], deps: FlowDeps): DraftRec {
 	// The candidates were for this one model call; a later revision builds its own.
 	const { candidates: _candidates, ...kept } = item;
 	const account = item.kind === "mail" ? meta.account || zeleAccountOf({ ...meta, app: item.app ?? "mail" }) : undefined;
-	return { id: newId(), ...(r.recipient ? { recipient: r.recipient } : {}), kind: item.kind, app: item.app ?? "mail", ...(item.room !== undefined ? { room: item.room } : {}), ...(item.profile ? { profile: item.profile } : {}), ...meta, ...(account ? { account } : {}), to: stripControl(r.draft.to), ...(r.draft.subject ? { subject: stripControl(r.draft.subject) } : {}), body: stripControl(r.draft.body), status: "pending", created: nowOf(deps).toISOString(), changes, questions: r.questions, item: kept };
+	return { id: newId(), ...(r.recipient ? { recipient: r.recipient } : {}), ...(r.leftOut ? { leftOut: r.leftOut } : {}), kind: item.kind, app: item.app ?? "mail", ...(item.room !== undefined ? { room: item.room } : {}), ...(item.profile ? { profile: item.profile } : {}), ...meta, ...(account ? { account } : {}), to: stripControl(r.draft.to), ...(r.draft.subject ? { subject: stripControl(r.draft.subject) } : {}), body: stripControl(r.draft.body), status: "pending", created: nowOf(deps).toISOString(), changes, questions: r.questions, item: kept };
 }
 
 // The owner is asked once, with a complete draft (owner 2026-10-26): the one draft call already settles every open point it can from what it

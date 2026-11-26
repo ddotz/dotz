@@ -4,12 +4,15 @@ import { join } from "node:path";
 import fc from "fast-check";
 import { promptCorrections } from "../../../hub/reply-draft.ts";
 import { advance } from "../../../hub/runtime/test-clock.ts";
+import { mailAdapter } from "../../../hub/reply-mail.ts";
 import { runDraft } from "../bin/draft.ts";
 import { compactCorrections, compactFailures, compactForPrompt } from "../lib/compact.ts";
 import { journalEntries } from "../lib/curate.ts";
 import { refineAfterCorrection } from "../lib/flow.ts";
-import { HEADINGS, paths, profileBullets, recordCorrection, toneFile } from "../lib/settings.ts";
-import { setupEnv } from "./helpers.ts";
+import { offerMailDraft } from "../lib/offer.ts";
+import { handSections, HEADINGS, loadStyle, paths, profileBullets, recordCorrection, toneFile } from "../lib/settings.ts";
+import { listDrafts } from "../lib/store.ts";
+import { enable, fakeModel, goodReply, j, mailFixture, setupEnv } from "./helpers.ts";
 
 const env = setupEnv();
 afterAll(env.cleanup);
@@ -43,10 +46,10 @@ const THIRTEEN = [
 	"2030-01-12: 끝인사는 한 줄로",
 	"2030-01-13: 마감 날짜는 꼭 적어",
 ];
-const md = (corrections: string[]) => `## 말투\n\n- 반말 금지\n\n## 고친 점\n\n${corrections.map(c => `- ${c}`).join("\n")}\n\n## 보낸 사람 신분별\n\n- 팀장에게는 격식체\n\n## 금지\n\n- 무조건\n`;
-const write = (corrections: string[]) => {
+const md = (corrections: string[], marked: string[] = []) => `## 말투\n\n- 반말 금지\n\n## 고친 점\n\n${corrections.map(c => `- ${c}`).join("\n")}\n\n## 보낸 사람 신분별\n\n- 팀장에게는 격식체\n\n## 금지\n\n- 무조건\n${marked.length ? `\n## 합쳐진 고친 점\n\n${marked.map(c => `- ${c}`).join("\n")}\n` : ""}`;
+const write = (corrections: string[], marked: string[] = []) => {
 	mkdirSync(join(paths.toneDir(), "kakao"), { recursive: true });
-	writeFileSync(toneFile(ROOM), md(corrections));
+	writeFileSync(toneFile(ROOM), md(corrections, marked));
 };
 const fileNow = () => readFileSync(toneFile(ROOM), "utf8");
 
@@ -68,6 +71,22 @@ const DROPPED: Drop[] = [
 ];
 const answer = (lines: Line[] = LINES, dropped: Drop[] = DROPPED) => JSON.stringify({ lines, dropped });
 const COMPACTED = ["2030-01-08: 이모지는 하나까지", "2030-01-10: 존댓말로 쓴다", "2030-01-12: 끝인사는 한 줄로 짧게", "2030-01-13: 일정 메일에는 마감 날짜를 꼭 적는다"];
+// What a compaction of THIRTEEN leaves under `## 합쳐진 고친 점`, in the order of the lines it took off: `<line> → <the line it went into | 지움 (why)>`.
+const MARKS = [
+	"2030-01-01: 끝인사는 짧게 → 2030-01-12: 끝인사는 한 줄로 짧게",
+	"2030-01-02: 고럼고럼❤ → 지움 (one-off)",
+	"2030-01-03: 이모지 쓰지 마 → 지움 (duplicate)",
+	"2030-01-04: 끝인사 한 줄만 → 2030-01-12: 끝인사는 한 줄로 짧게",
+	"2030-01-05: 감사합니다 빼고 → 지움 (one-off)",
+	"2030-01-06: 존댓말로 → 2030-01-10: 존댓말로 쓴다",
+	"2030-01-07: 이 노래 제목은 빼 → 지움 (one-off)",
+	"2030-01-08: 이모지는 하나까지 괜찮아 → 2030-01-08: 이모지는 하나까지",
+	"2030-01-09: 오늘 몇 시에 보내? → 지움 (not a rule)",
+	"2030-01-10: 존댓말로 써 줘 → 2030-01-10: 존댓말로 쓴다",
+	"2030-01-11: 첨부 파일 이름은 빼 → 지움 (one-off)",
+	"2030-01-12: 끝인사는 한 줄로 → 2030-01-12: 끝인사는 한 줄로 짧게",
+	"2030-01-13: 마감 날짜는 꼭 적어 → 2030-01-13: 일정 메일에는 마감 날짜를 꼭 적는다",
+];
 
 test("a correction a compaction keeps word for word is not written to the journal", async () => {
 	write(THIRTEEN);
@@ -84,7 +103,7 @@ test("13 corrections and a valid answer leave the merged lines dated by their ne
 	const out = await runDraft(["correct", "--app", "kakao", "--room", "r1", "--tidy"], "", { learnCall: m.learnCall, now: day("2030-02-01") });
 	expect(out).toEqual({ lines: ["고친 점 13줄을 4줄로 정리했어요 (지운 줄은 tone --journal에 남아 있어요)"], code: 0 });
 	expect(m.asked).toHaveLength(1);
-	expect(fileNow()).toBe(md(COMPACTED));
+	expect(fileNow()).toBe(md(COMPACTED, MARKS));
 	expect(promptCorrections(profileBullets(ROOM, HEADINGS.corrections), 4000)).toEqual([...COMPACTED].reverse());
 	const entries = journalEntries();
 	expect(entries).toHaveLength(13);
@@ -113,7 +132,33 @@ test("13 corrections and a valid answer leave the merged lines dated by their ne
 	expect(shown).toContain(`${first.n}. [kakao 대화방] 고친 점 "2030-01-01: 끝인사는 짧게" → "2030-01-12: 끝인사는 한 줄로 짧게" (2030-02-01)`);
 	expect((await runDraft(["correct", "--restore", String(gone.n)], "")).lines).toEqual(['되돌렸어요: [kakao 대화방] 고친 점 "2030-01-02: 고럼고럼❤"']);
 	expect(profileBullets(ROOM, HEADINGS.corrections)).toEqual([...COMPACTED, "2030-01-02: 고럼고럼❤"]);
+	expect(profileBullets(ROOM, HEADINGS.merged)).toEqual(MARKS.filter(m => !m.startsWith("2030-01-02: 고럼고럼❤ → ")));
 	expect(journalEntries().find(e => e.n === gone.n)?.restoredAt).toBeDefined();
+});
+
+test("a compaction never loses a line: every line it takes off stays in the file as a marked line, the section is read as no rule, and a second compaction adds to it", async () => {
+	const prior = ["2029-12-30: 옛 줄 → 지움 (one-off)"];
+	write(THIRTEEN, prior);
+	const before = { on: profileBullets(ROOM, HEADINGS.corrections), marked: profileBullets(ROOM, HEADINGS.merged) };
+	expect(before.marked).toEqual(prior);
+	expect(await compactCorrections(ROOM, { learnCall: model(() => answer()).learnCall, now: day("2030-02-01") })).toEqual({ before: 13, after: 4 });
+	const on = profileBullets(ROOM, HEADINGS.corrections), marked = profileBullets(ROOM, HEADINGS.merged);
+	const markedLines = marked.map(m => m.split(" → ")[0]!);
+	for (const line of before.on) expect([...on, ...markedLines]).toContain(line);
+	expect(marked).toEqual([...prior, ...MARKS]);
+	expect(marked.length).toBe(before.marked.length + before.on.filter(l => !on.includes(l)).length);
+	const style = loadStyle(ROOM);
+	const read = [...style.rules, ...style.standing, ...style.corrections, ...style.forbidden, ...handSections(ROOM).flatMap(s => s.items)];
+	for (const line of [...markedLines, ...marked]) expect(read).not.toContain(line);
+	expect(handSections(ROOM).map(s => s.heading)).toEqual(["## 보낸 사람 신분별"]);
+	write(COMPACTED.concat(THIRTEEN.slice(0, 9)), marked);
+	const second = { on: profileBullets(ROOM, HEADINGS.corrections), marked: profileBullets(ROOM, HEADINGS.merged) };
+	const fold: Line[] = [{ text: "모두 한 줄", sources: second.on.map((_, i) => `C${i + 1}`) }];
+	expect(await compactCorrections(ROOM, { learnCall: model(() => answer(fold, [])).learnCall, now: day("2030-02-02") })).toEqual({ before: 13, after: 1 });
+	const after = { on: profileBullets(ROOM, HEADINGS.corrections), marked: profileBullets(ROOM, HEADINGS.merged) };
+	expect(after.marked.length).toBe(second.marked.length + second.on.filter(l => !after.on.includes(l)).length);
+	expect(after.marked.slice(0, second.marked.length)).toEqual(second.marked);
+	for (const line of second.on) expect([...after.on, ...after.marked.map(m => m.split(" → ")[0]!)]).toContain(line);
 });
 
 test("the prompt lists only the 고친 점 lines as C1.. with their dates, fenced as data; 말투, 금지 and a hand-added section are never in it", async () => {
@@ -306,6 +351,29 @@ describe("before a draft (compactForPrompt)", () => {
 	});
 });
 
+test("a draft whose corrections pass the prompt's budget says on its card how many were left out, with the count of the budget that cut them", async () => {
+	const line = (d: number) => `2030-01-${String(d).padStart(2, "0")}: ${"가".repeat(288)}`;
+	mkdirSync(paths.toneDir(), { recursive: true });
+	writeFileSync(toneFile({ app: "mail" }), `## 고친 점\n\n${Array.from({ length: 20 }, (_, i) => `- ${line(i + 1)}`).join("\n")}\n`);
+	enable(env);
+	const log = quiet();
+	// Every call, the compaction's too, gets the plain draft: no usable compaction, so the 20 lines of 300 characters stay and 13 of them fit 4000.
+	const model = fakeModel([j(goodReply)]);
+	await offerMailDraft({ ...mailFixture }, { send: () => undefined, call: model.call });
+	log.mockRestore();
+	const rec = listDrafts()[0]!;
+	expect(rec.leftOut).toBe(7);
+	const view = await mailAdapter(() => ({}), () => undefined).get(rec.id);
+	expect(view?.draft.notes).toEqual(["고친 점 7줄은 길어서 이번 초안에 못 넣었어요"]);
+	const draftCall = model.calls.find(c => c.system.startsWith("You draft ONE reply"))!;
+	expect(draftCall.user.split("\n").filter(l => l.startsWith("- 2030-01-"))).toHaveLength(13);
+	writeFileSync(toneFile({ app: "mail" }), `## 고친 점\n\n- ${line(1)}\n`);
+	await offerMailDraft({ ...mailFixture, key: "m-2", id: "msg-2" }, { send: () => undefined, call: model.call });
+	const fits = listDrafts().find(d => d.mailId === "msg-2")!;
+	expect(fits.leftOut).toBeUndefined();
+	expect((await mailAdapter(() => ({}), () => undefined).get(fits.id))?.draft.notes).toBeUndefined();
+});
+
 const TEXTS = ["끝인사는 짧게", "존댓말로 쓴다", "이모지 😀 하나", "\"따옴표\" $(rm) `x`", "", " ", "줄\n바꿈", "2030-05-05: 날짜 붙은 줄", "가".repeat(300), "가".repeat(301)];
 test("property: for any answer the code applies, the original lines equal (as a multiset) the journalled lines, and every kept line is the newLine of a merged entry", async () => {
 	const log = quiet();
@@ -345,8 +413,10 @@ test("property: for any answer the code applies, the original lines equal (as a 
 			const journalled = journalEntries();
 			if (!journalled.length) {
 				expect(section).toEqual(bullets);
+				expect(profileBullets(ROOM, HEADINGS.merged)).toEqual([]);
 				return;
 			}
+			expect(profileBullets(ROOM, HEADINGS.merged).map(m => m.split(" → ")[0]!).sort()).toEqual(journalled.map(e => e.line).sort());
 			expect(journalled.map(e => e.line).sort()).toEqual([...bullets].sort());
 			expect(journalled.flatMap(e => (e.why === "dropped" ? [e.line] : [])).sort()).toEqual(named(dropped.map(d => d.id)));
 			expect([...new Set(journalled.flatMap(e => (e.why === "merged" ? [e.newLine] : [])))].sort()).toEqual([...new Set(section)].sort());

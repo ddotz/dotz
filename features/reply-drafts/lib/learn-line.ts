@@ -46,7 +46,7 @@ async function learnInto(key: ToneKey | "install", line: string, kind: LearnKind
 	if (same) return { stored: false, kind, replaced: [], same };
 	const now = (deps.now ?? (() => new Date()))();
 	const newLine = kind === "rule" ? text : `${now.toISOString().slice(0, 10)}: ${text}`;
-	const take = replaces.map(r => ({ heading: r.id.startsWith("R") ? HEADINGS.rules : HEADINGS.corrections, line: lineOf(r.id), why: r.why }));
+	const take = replaces.map(r => ({ heading: r.id.startsWith("R") ? HEADINGS.rules : HEADINGS.corrections, line: lineOf(r.id), why: r.why, into: newLine }));
 	const profile = profileOf(key);
 	const journal = (taken: typeof take) => journalAdd(taken.map(t => ({ at: now.toISOString(), profile, heading: t.heading, line: t.line, why: t.why, by: "curate", newLine })));
 	const done = replaceBullets(key, take, { heading: kind === "rule" ? HEADINGS.rules : HEADINGS.corrections, line: newLine, once: kind === "rule" }, journal);
