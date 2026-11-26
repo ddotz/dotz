@@ -208,9 +208,7 @@ async function replyDraftOf(key: string, d: DraftApproval): Promise<DraftRec> {
 	}
 	const made = manualDraft({ replyTo: key, to: d.to, ...(d.cc?.length ? { cc: d.cc.join(", ") } : {}), ...(d.subject ? { subject: d.subject } : {}), body: d.body });
 	if (!made.ok) throw new Error(made.error);
-	if (made.rec.source === mail.source) return made.rec;
-	patchDraft(made.rec.id, { source: mail.source });
-	return getDraft(made.rec.id)!;
+	return made.rec;
 }
 
 /** A mail written outside any mail thread: a new mail draft (the same one composeMail makes) when it goes to one plain address; the pending one of the same recipient and subject takes a revised card's text. */

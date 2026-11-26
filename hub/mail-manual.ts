@@ -79,7 +79,8 @@ export function manualDraft(i: ManualIn): Manual {
 		id,
 		kind: "mail",
 		app,
-		source: via.source,
+		// A reply answers through the mail's own source (a plugin's mail goes back through that plugin), a new mail through the app's.
+		source: mail?.source ?? via.source,
 		mailId: mail ? mail.id : `compose-${id}`,
 		ref: mail ? mail.key : `compose-${id.toLowerCase()}`,
 		...(mail ? {} : { compose: true }),
