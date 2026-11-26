@@ -9,6 +9,7 @@ import { readLedger } from "../lib/ledger.ts";
 import { offerMailDraft } from "../lib/offer.ts";
 import { replyLearning } from "../../../hub/reply-mail.ts";
 import { configConflicts, matchRule, ruleInstruction } from "../lib/rules.ts";
+import { runRules } from "../bin/rules.ts";
 import { paths, setApp } from "../lib/settings.ts";
 import { stagedFiles } from "../lib/staged.ts";
 import { getDraft, listDrafts } from "../lib/store.ts";
@@ -132,6 +133,21 @@ describe("a learned correction against the configured instruction", () => {
 		expect(correction.state).toBe("on");
 		expect(ledger.find(r => r.kind === "instruction")).toMatchObject({ text: "격식체로 길게 써요", state: "off", into: correction.id });
 		expect(readSettings(env.dir, "mail").find(f => f.key === "draft_default")?.value).toBe("");
+	});
+	test("a mailbox's own 어떻게 it contradicts is rewritten to the correction, the line before kept, and box-undo puts it back", async () => {
+		rulesOff([]);
+		const file = join(env.dir, "custom", "mailboxes.json");
+		rmSync(join(env.dir, "mailbox-fixes.jsonl"), { force: true });
+		writeFileSync(file, JSON.stringify({ accounts: { mail: { boxes: [{ id: "base", name: "일반", base: true }, { id: "b-work", name: "업무", how: "격식체로 길게 써요" }] } }, pins: {} }));
+		const howOf = () => (JSON.parse(readFileSync(file, "utf8")).accounts.mail.boxes as { id: string; how: string }[]).find(b => b.id === "b-work")!.how;
+		const learned = await replyLearning(() => ({ learnCall: () => overrides("격식체") })).learn({ source: "revise", ref: "R2", keys: { channel: { app: "mail", room: "b-work" } }, words: "반말로 짧게", proposal: {} });
+		expect(learned.text).toContain('설정을 고쳤어요: "격식체로 길게 써요" → "반말로 짧게" (되돌리기: rules.ts box-undo 1)');
+		expect(learned.text).not.toContain("설정은 그대로");
+		expect(howOf()).toBe("반말로 짧게");
+		expect(runRules(["box-undo"], env.dir).lines[0]).toContain('"격식체로 길게 써요" → "반말로 짧게"');
+		expect(runRules(["box-undo", "1"], env.dir).code).toBe(0);
+		expect(howOf()).toBe("격식체로 길게 써요");
+		expect(runRules(["box-undo", "1"], env.dir).code).toBe(1);
 	});
 });
 

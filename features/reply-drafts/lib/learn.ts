@@ -6,6 +6,7 @@ import { askWith, banHit, proposePattern, quotesWording } from "../../../hub/ban
 import { withLock } from "../../../hub/file-lock.ts";
 import { PATTERN_NOTE } from "../../../hub/reply-reasons.ts";
 import type { LearnFlip, LearnInput, Learnt, LessonKey, LessonScope } from "../../../hub/reply-types.ts";
+import { fixBoxSetting } from "./box.ts";
 import { compactCorrections } from "./compact.ts";
 import { journalAdd, journalEntries, type LearnKind, profileOf, restoreEntry } from "./curate.ts";
 import { addRecord, keyOfScope, removeMatching, scopeOfKey, setState } from "./ledger.ts";
@@ -231,7 +232,11 @@ async function store(rec: Rec, o: { kind?: LearnKind; forbid: string[]; evidence
 		journalAdd([{ at: now.toISOString(), profile: profileOf(keyOfScope(c.scope)), heading: "설정", line: c.text, id: c.id, why: "overridden", by: "curate", newLine: rec.line }]);
 		rec.notes.push(`설정을 고쳤어요: "${short(c.text)}" → "${short(rec.line)}"`);
 	}
-	if (clash.other.length) rec.notes.push(`설정한 지시 ${clash.other.map(c => `"${short(c)}"`).join(", ")}와(과) 어긋나요. 초안은 더 새로 배운 이 고친 점을 따르고, 설정은 그대로예요`);
+	// A mailbox's own lines (its 어떻게 and its rules' 어떻게) are rewritten to the correction, the line before kept for `rules.ts box-undo`.
+	for (const c of clash.other) {
+		const n = key.room !== undefined ? fixBoxSetting(key.app, key.room, c, rec.line, rec.ref, now) : undefined;
+		rec.notes.push(n !== undefined ? `설정을 고쳤어요: "${short(c)}" → "${short(rec.line)}" (되돌리기: rules.ts box-undo ${n})` : `설정한 지시 "${short(c)}"와(과) 어긋나는데 그 설정을 찾지 못해 고치지 못했어요. 초안은 이 고친 점을 따라요`);
+	}
 	const refined = refineAfterCorrection(key, deps);
 	if (later) void track(refined);
 	else await refined;

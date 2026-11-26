@@ -3,6 +3,7 @@
 import { readSettings, writeSettings, type DraftRule } from "../../../hub/app-settings.ts";
 import { appEntries } from "../../../hub/integrations.ts";
 import { migrateLedger, moveHandRules, previewMigration, readLedger, undoLedger } from "../lib/ledger.ts";
+import { boxFixes, undoBoxFix } from "../lib/box.ts";
 import { dataDir } from "../lib/settings.ts";
 
 export const USAGE = [
@@ -13,6 +14,7 @@ export const USAGE = [
 	"  default [--set <text> | --clear] [--app ..]   (the 기본 규칙 every draft of the app follows; no flag prints it)",
 	"  ledger [--json]   (every record of the rule ledger: id, state, scope, kind, text)",
 	"  migrate [--preview] | undo | hand   (move every rule into the ledger once, with a backup; --preview only prints per file the lines that would move and the records the ledger would get / put the files back byte for byte and remove the ledger / move the rules written by hand into tone files into the ledger)",
+	"  box-undo [<n>]   (the mailbox settings a learned correction rewrote, numbered; with <n> put the line before fix n back)",
 	"  --app: mail (default) or an instance id like mail-2. --file: a file of the app's 첨부 파일 폴더 (name or path inside it) or a full path; none = the folder's best match",
 ].join("\n");
 
@@ -49,6 +51,14 @@ function ledgerCommand(cmd: string | undefined, rest: string[], dir: string): Ou
 		}
 		case "hand":
 			return { lines: [`손으로 쓴 규칙 ${moveHandRules(dir)}개를 rules.json 한 파일로 모았어요`], code: 0 };
+		case "box-undo": {
+			if (rest[0] === undefined) {
+				const all = boxFixes();
+				return { lines: all.length ? all.map((f, i) => `${i + 1} ${f.at.slice(0, 10)} ${f.instance}/${f.box}${f.rule ? `/${f.rule}` : ""}${f.undoneAt ? " [되돌림]" : ""} · "${f.before}" → "${f.after}"`) : ["고친 메일함 설정이 없어요"], code: 0 };
+			}
+			const r = undoBoxFix(Number(rest[0]));
+			return !r ? { lines: [`고침 ${rest[0]}을(를) 찾지 못했어요`], code: 1 } : { lines: [r.put ? `메일함 설정을 되돌렸어요: "${r.fix.before}"` : "이미 되돌렸거나 그사이 설정이 바뀌어 그대로 두었어요"], code: r.put ? 0 : 1 };
+		}
 	}
 }
 
