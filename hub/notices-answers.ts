@@ -255,6 +255,8 @@ export function ignoreNotice(id: unknown): { status: number; body: Record<string
 	if (!item) return { status: 404, body: { error: "unknown notice" } };
 	if (item.ignored) return { status: 200, body: { ok: true, already: true, item, unread: unreadCount() } };
 	if (!needsAnswer(item) && !(isOpenDecision(item) && laterOn(item.decision))) return { status: 409, body: { error: "not waiting" } };
+	// A login request ends by logging in (or its request finishing), never by being set aside: its asker would wait on a login no one gives.
+	if (item.decision?.to.startsWith("auth:") || item.waits === "login") return { status: 409, body: { code: "login", error: msg().auth.noIgnoreLogin } };
 	const at = now(), group = askGroup(item, false);
 	for (const n of group) {
 		n.ignored = at;

@@ -823,6 +823,14 @@ test("a login request is a decision that its approve button and its end both set
 	expect(stored().find(x => x.id === form.id)!.decision).toMatchObject({ state: "answered", answer: "시간이 지나 닫혔어요" });
 });
 
+test("a login request cannot be ignored: it stays open and waiting", () => {
+	authRequested({ id: "ign1", kind: "approve", title: "로그인 승인", site: "example.com", purpose: "승인해 주세요" });
+	const n = decisions("auth:ign1")[0]!;
+	expect(ignoreNotice(n.id)).toMatchObject({ status: 409, body: { code: "login" } });
+	expect(stored().find(x => x.id === n.id)).toMatchObject({ read: false, decision: { state: "open" } });
+	authSettled("ign1", "timeout");
+});
+
 test("an open decision survives the store's cap and a reload from disk", () => {
 	post("web", "[ask] 오래 남을 질문\n**1) 하나**\n**2) 둘**");
 	const id = decisions("main").find(n => n.title === "오래 남을 질문")!.id;

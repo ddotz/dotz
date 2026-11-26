@@ -14,7 +14,7 @@ import { setReplies } from "./reply-actions.ts";
 
 const ASK = "[ask] 시작 설정\n\n**1) 지금 고치기**\n재부팅 뒤에도 켜져요\n**2) 그대로 두기**\n다음 재부팅까지는 괜찮아요";
 
-test("one button per option, all secondary, and a row of 자세히 알려 주세요 · 나중에 under them", () => {
+test("one button per option, all secondary, and a row of 자세히 알려 주세요 · 나중에 · 무시 under them", () => {
 	const rows = askComponentsFor("lane:fix", ASK) as { type: number; components: { style: number; label: string; custom_id: string; disabled: boolean }[] }[];
 	expect(rows).toHaveLength(2);
 	expect(rows[0]!.components.map(c => [c.label, c.style, c.custom_id, c.disabled])).toEqual([
@@ -24,14 +24,15 @@ test("one button per option, all secondary, and a row of 자세히 알려 주세
 	expect(rows[1]!.components.map(c => [c.label, c.style, c.custom_id])).toEqual([
 		["자세히 알려 주세요", 2, `${ASK_PREFIX}:lane:fix:more`],
 		["나중에 (1시간 뒤)", 2, `${ASK_PREFIX}:lane:fix:later`],
+		["무시", 2, `${ASK_PREFIX}:lane:fix:ignore`],
 	]);
 });
 
 test("nine options still fit: two rows of options and the 자세히 · 나중에 row, three of Discord's five", () => {
 	const nine = `[ask] 무엇부터 할까요?\n\n${Array.from({ length: 9 }, (_, i) => `**${i + 1}) 할 일 ${i + 1}**`).join("\n")}`;
 	const rows = askComponentsFor("chat", nine) as { components: { custom_id: string }[] }[];
-	expect(rows.map(r => r.components.length)).toEqual([5, 4, 2]);
-	expect(rows[2]!.components.map(c => c.custom_id)).toEqual([`${ASK_PREFIX}:chat:more`, `${ASK_PREFIX}:chat:later`]);
+	expect(rows.map(r => r.components.length)).toEqual([5, 4, 3]);
+	expect(rows[2]!.components.map(c => c.custom_id)).toEqual([`${ASK_PREFIX}:chat:more`, `${ASK_PREFIX}:chat:later`, `${ASK_PREFIX}:chat:ignore`]);
 });
 
 test("자세히 · 나중에 run the hub's handler for the owner only and leave the card's buttons as they are", async () => {
@@ -48,7 +49,7 @@ test("자세히 · 나중에 run the hub's handler for the owner only and leave 
 test("a card with evidence lines under its head keeps its buttons, and 나중에 names the card's title, not an evidence line", async () => {
 	const card = `닥터 점검이에요.\n\n${cardBlock({ subject: "디스크", question: "지울까요?", evidence: ["로그 12GB, 어제 9GB", "세션 abc"], options: [{ name: "지워요", result: "7일 넘은 것만" }, { name: "둬요", result: "그대로" }] })}`;
 	const rows = askComponentsFor("alert", card) as { components: { custom_id: string }[] }[];
-	expect(rows.flatMap(r => r.components.map(c => c.custom_id))).toEqual([`${ASK_PREFIX}:alert:1`, `${ASK_PREFIX}:alert:2`, `${ASK_PREFIX}:alert:more`, `${ASK_PREFIX}:alert:later`]);
+	expect(rows.flatMap(r => r.components.map(c => c.custom_id))).toEqual([`${ASK_PREFIX}:alert:1`, `${ASK_PREFIX}:alert:2`, `${ASK_PREFIX}:alert:more`, `${ASK_PREFIX}:alert:later`, `${ASK_PREFIX}:alert:ignore`]);
 	const calls: string[] = [];
 	await askInteraction(click("owner-1", `${ASK_PREFIX}:alert:later`, card), { owner: "owner-1", reply: async () => {}, answer: () => {}, extra: (_t, question) => (calls.push(question), "ok") });
 	expect(calls).toEqual(["결정: 디스크 · 지울까요?"]);
@@ -92,6 +93,17 @@ test("an option that lists the values it asks for opens one field per value, and
 	const values: Record<string, string> = { f0: "6월 29일", f1: "", f2: "A-1" };
 	await run({ id: "i2", token: "t", type: 5, member: { user: { id: "owner-1" } }, message: { content: card }, data: { custom_id: `${ASK_PREFIX}:chat:1`, components: Object.entries(values).map(([custom_id, value]) => ({ type: 1, components: [{ type: 4, custom_id, value }] })) } } as Interaction);
 	expect(answers).toEqual(["1) 지금 바로 정하기 - 시작일: 6월 29일; 등록 번호: A-1"]);
+});
+
+test("무시 runs the hub's ignore for the owner, and a pick on a card that already closed turns that message's buttons off", async () => {
+	const acts: string[] = [], replies: { type: number; data?: any }[] = [];
+	const deps = { owner: "owner-1", reply: async (_d: Interaction, type: number, data?: unknown) => void replies.push({ type, data }), answer: () => msg().auth.finished, extra: (_t: string, _q: string, act: string) => (acts.push(act), "ok") };
+	await askInteraction(click("owner-1", `${ASK_PREFIX}:chat:ignore`), deps);
+	expect(acts).toEqual(["ignore"]);
+	await askInteraction(click("owner-1", `${ASK_PREFIX}:chat:2`), deps);
+	const off = replies[1]!;
+	expect([off.type, off.data.content.endsWith(msg().auth.closedCard)]).toEqual([7, true]);
+	expect(off.data.components.flatMap((r: any) => r.components.map((c: any) => c.disabled))).toEqual([true, true]);
 });
 
 function click(user: string, customId: string, content = ASK): Interaction {

@@ -28,6 +28,10 @@ const OWNER_ONLY = { code: "owner_only", error: reasonOf("owner_only").text };
 
 setAskExtra((target, question, act, shown) => {
 	const id = cardAsked(convOfTarget(target), question, shown);
+	if (act === "ignore") {
+		const r = ignoreNotice(id);
+		return r.status === 200 ? msg().auth.ignoredCard : r.body.code === "login" ? String(r.body.error) : msg().auth.finished;
+	}
 	const r = act === "more" ? moreNotice(id, askAsker) : laterNotice(id, { for: "hour" });
 	if (r.status === 502) return r.body.error;
 	if (r.status !== 200) return msg().auth.finished;

@@ -1,6 +1,6 @@
 import { afterAll, describe, expect, test } from "bun:test";
 import { emit } from "./events.ts";
-import { ignoreNotice, listNotices, markNoticesRead, type Notice, resolveNotices, unignoreNotice, unreadCount } from "./notices.ts";
+import { authRequested, authSettled, ignoreNotice, listNotices, markNoticesRead, type Notice, resolveNotices, unignoreNotice, unreadCount } from "./notices.ts";
 import { fakeHub, json, waitFor, type View } from "./test-web.ts";
 
 // The x (무시) on its two surfaces, in a headless browser against the real notice store: the 답변 필요 row on 홈 and the decision sheet's
@@ -109,5 +109,20 @@ describe("the x (무시) in a headless browser", () => {
 		await settled(phone);
 		await desk.evaluate(`document.querySelectorAll(".snack").forEach(n => n.remove())`);
 		await settled(desk);
+	}, 60_000);
+
+	test("a login request offers no x: not on its 답변 필요 row, not in its sheet", async () => {
+		resolveNotices({ ids: stored().filter(n => n.decision?.state === "open").map(n => n.id) });
+		authRequested({ id: "ign-web", kind: "approve", title: "로그인 승인", site: "example.com", purpose: "결제 페이지에 들어가요" });
+		for (const [w, h] of [[390, 844], [1280, 800]] as const) {
+			const v = await open(w, h);
+			await waitFor(v, `[...document.querySelectorAll(".hn .hrx")].some(r => r.textContent.includes("로그인 승인"))`);
+			expect(await v.evaluate(`[...document.querySelectorAll(".hn .hrx")].filter(r => r.textContent.includes("로그인 승인")).map(r => !!r.querySelector(".nt-x"))`)).toEqual([false]);
+			await v.evaluate(`[...document.querySelectorAll(".hn .hrx")].find(r => r.textContent.includes("로그인 승인")).querySelector(".hrx-m").click()`);
+			await waitFor(v, `document.querySelector(".fs-card .fs-ey")`);
+			expect(await v.evaluate(`!!document.querySelector(".fs-card .fs-ign")`)).toBe(false);
+			await settled(v);
+		}
+		authSettled("ign-web", "timeout");
 	}, 60_000);
 });

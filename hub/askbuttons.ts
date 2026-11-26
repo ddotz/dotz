@@ -22,7 +22,8 @@ const ID_MAX = 100;
 
 export function askComponents(target: string, options: ChoiceOption[], disabled = false): unknown[] {
 	const buttons = options.map(o => ({ type: 2, style: SECONDARY, label: o.label.slice(0, LABEL_MAX), custom_id: `${ASK_PREFIX}:${target}:${o.n}`, disabled }));
-	if (!buttons.length || buttons.some(b => b.custom_id.length > ID_MAX)) return [];
+	if (!buttons.length) return [];
+	if (buttons.some(b => b.custom_id.length > ID_MAX)) return (log(`ask buttons of ${target} left off: an id is over Discord's ${ID_MAX} characters`), []);
 	const rows: unknown[] = [];
 	for (let i = 0; i < buttons.length; i += ROW) rows.push({ type: 1, components: buttons.slice(i, i + ROW) });
 	return rows;
@@ -36,6 +37,8 @@ export function askComponentsFor(target: string, text: string, shown = text): un
 	const sameQuestion = !question || part.question === question || part.question === `${TONE_EMOJI.ask} ${question}`;
 	const ref = parseDraftApproval(text)?.ref, draft = !!ref;
 	const rows = part.options.length === options.length && sameQuestion ? askComponents(target, options) : [];
+	// A long card cut into several messages with its options split between them gets no buttons: said once, so a card with none is explained.
+	if (part.options.length && part.options.length !== options.length) log(`ask buttons of ${target} left off: the card was split and this part holds ${part.options.length} of ${options.length} options`);
 	// A reply draft's card also opens the web app's 답장 대기, where the same card can be edited by hand (the reply design, mockup 4).
 	const open = rows.length && rows.length < ROW && draft ? webLink("/#monitoring/replies") : undefined;
 	const extras = EXTRAS.map(e => ({ type: 2, style: SECONDARY, label: e.label, custom_id: `${ASK_PREFIX}:${target}:${e.act}` }));
@@ -76,10 +79,11 @@ async function learnInteraction(d: Interaction, deps: AskDeps, act: LearnAct): P
 	}
 }
 
-export type AskExtra = "more" | "later";
+export type AskExtra = "more" | "later" | "ignore";
 const EXTRAS: { act: AskExtra; label: string }[] = [
 	{ act: "more", label: "자세히 알려 주세요" },
 	{ act: "later", label: "나중에 (1시간 뒤)" },
+	{ act: "ignore", label: "무시" },
 ];
 type Extra = (target: string, question: string, act: AskExtra, shown: string) => string;
 let extra: Extra = () => {
@@ -89,14 +93,14 @@ let extra: Extra = () => {
 export function setAskExtra(fn: Extra): void {
 	extra = fn;
 }
-const EXTRA_ID = new RegExp(`^${ASK_PREFIX}:(.+):(more|later)$`);
+const EXTRA_ID = new RegExp(`^${ASK_PREFIX}:(.+):(more|later|ignore)$`);
 function extraInteraction(d: Interaction, deps: AskDeps, m: RegExpExecArray): Promise<void> {
 	const user = String(d.member?.user?.id ?? d.user?.id ?? "");
 	if (!deps.owner || user !== deps.owner) return deps.reply(d, 4, ephemeral(msg().auth.notOwner));
 	const shown = String(d.message?.content ?? ""), question = parseChoices(shown).question ?? "";
 	let said: string;
 	try {
-		said = (deps.extra ?? extra)(m[1]!, question, m[2] === "more" ? "more" : "later", shown);
+		said = (deps.extra ?? extra)(m[1]!, question, m[2] as AskExtra, shown);
 	} catch (e) {
 		log(`ask ${m[1]} ${m[2]} failed: ${e}`);
 		said = msg().auth.answerFailed;
@@ -230,6 +234,8 @@ export async function askInteraction(d: Interaction, deps: AskDeps): Promise<voi
 		return deps.reply(d, 4, ephemeral(m.answerFailed));
 	}
 	// A refused pick changes nothing: the owner hears why and the buttons stay (one response per interaction, so the message is left as is).
+	// A card that closed or expired turns its buttons off where the owner pressed them, saying so on the message.
+	if (refusal === m.finished) return deps.reply(d, 7, { ...(content.length + m.closedCard.length < 2000 ? { content: `${content}\n${m.closedCard}` } : {}), components: askComponents(parsed.target, options, true) });
 	if (refusal) return deps.reply(d, 4, ephemeral(refusal));
 	return deps.reply(d, 7, { components: askComponents(parsed.target, options, true) });
 }

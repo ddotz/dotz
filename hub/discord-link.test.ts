@@ -55,7 +55,7 @@ test("an edit asked to refresh buttons carries the card's options now; a plain e
 		await discord.edit("ch:222", "m1", card, opts);
 		return requests.at(-1)!.payload.components?.flatMap(r => r.components).map(b => b.label);
 	};
-	expect(await edited({ buttons: true })).toEqual(["지금 고치기", "그대로 두기", "이대로 보내기", "자세히 알려 주세요", "나중에 (1시간 뒤)", "웹에서 보기"]);
+	expect(await edited({ buttons: true })).toEqual(["지금 고치기", "그대로 두기", "이대로 보내기", "자세히 알려 주세요", "나중에 (1시간 뒤)", "무시", "웹에서 보기"]);
 	expect(await edited()).toBeUndefined();
 	expect(await edited({ clearComponents: true })).toEqual([]);
 	// Too long to show the options: the buttons it has stay; a lone link button must not replace them.

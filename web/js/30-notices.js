@@ -353,7 +353,7 @@ function dkFollowOn(item) {
 function dkOpen(dc, draft, nid, ign) {
   dkClose(false);
   DK.nid = nid || "";
-  const waits = !!ign && !!ign.id && ntNeeds(ign);
+  const waits = !!ign && !!ign.id && ntNeeds(ign) && !ntLoginCard(ign);
   DK.ign = waits ? String(ign.id) : "";
   DK.dc = { ...dc, close: dkClose, draft: draft || null, ignore: waits ? () => ntIgnore(ign) : null };
   const h = fsOpen({ label: draft ? TX("conv.nt.check_send") : TX("decision.needs_decision"), cls: draft ? (draft.toLabel === "받는이" ? "mid rq-sheet" : "tall") : "", onClose: () => { if (DK.h === h) { DK.h = DK.node = DK.box = DK.dc = null; DK.nid = DK.ign = ""; } } });
@@ -408,6 +408,8 @@ const ntSuccessor = n => (n.pc ? (((PQ.list.find(p => p && p.url === n.pc.url) |
 // hub/notices.ts needsAnswer, which keeps these unread however they are viewed: only an answer, a resolving signal or the x (무시) clears them.
 const ntNeeds = n => !n.read && !n.ignored && !n.dismissed && !ntLaterTwin(n) && (ntOpenDec(n) || n.tone === "ask");
 const ntIgnoredDec = n => ntIsDec(n) && n.decision.state === "ignored";
+// A login request ends by logging in, never set aside: it offers no ignore (hub/notices-answers.ts ignoreNotice refuses it).
+const ntLoginCard = n => !!n && (n.waits === "login" || (ntIsDec(n) && n.decision.to.startsWith("auth:")));
 // The open decision a notice carries or is the twin of: itself, or the one asked in the same conversation at the same time (the [ask] alert twin the hub
 // stores beside it). Rows and counts use this to show a question once.
 const ntLinkedDec = n => {
@@ -498,7 +500,7 @@ async function ntUnignore(id, n) {
 }
 // The 44px x of a row. It stops the click and key events so the row behind it does not open.
 function ntIgnoreBtn(n) {
-  return el("button", { type: "button", class: "ib nt-x", title: TX("misc.ignore"), "aria-label": TX("conv.nt.ignore_aria", { title: ntPlain(n.title) || TX("misc.nsc.one") }),
+  return ntLoginCard(n) ? null : el("button", { type: "button", class: "ib nt-x", title: TX("misc.ignore"), "aria-label": TX("conv.nt.ignore_aria", { title: ntPlain(n.title) || TX("misc.nsc.one") }),
     onclick: ev => { ev.stopPropagation(); ntIgnore(n, ev.currentTarget); }, onkeydown: ev => ev.stopPropagation() }, icon("close"));
 }
 
@@ -714,7 +716,7 @@ function ntSheetPaint() {
   const fold = d.draft ? { head: parts.rest, rest: "" } : (d.options.length && ntEvFold(n, parts.rest)) || ntFold(d.options.length ? choiceBody(parts.rest, ntPlain(n.title)) : parts.rest);
   const kids = [
     fsHead([el("span", { class: `fs-ey ${open ? "warn" : ignd ? "ign" : "done"}`, text: `${ntDecCtx(n)} · ${open ? TX("common.needs_reply") : ignd ? TX("mon.dr.st.ignored") : d.expired ? TX("misc.nsc.d_expired") : d.resolved ? TX("conv.nt.resolved") : TX("conv.nt.answered")}` }, left ? el("span", { class: "fs-left", "data-k": "count", text: ` · ${TX("decision.q_left", { n: left })}` }) : null)],
-      { ignore: open ? () => ntIgnore(n) : null, ignoreOff: NS.busy, close: () => ntSheetClose() }),
+      { ignore: open && !ntLoginCard(n) ? () => ntIgnore(n) : null, ignoreOff: NS.busy, close: () => ntSheetClose() }),
     el("div", { class: "fs-body" },
       el("h2", { class: "ds-t", id: "ds-t", text: parts.title || TX("decision.needs_reply") }),
       el("div", { class: "ds-m", text: [ntWhen(n), open ? askLeft(n) : ""].filter(Boolean).join(" · ") }),
