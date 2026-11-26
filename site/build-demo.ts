@@ -9,7 +9,7 @@ import { readdirSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { assertNoBannedWords, scrubBundle } from "./banned-words";
 import { assertDemoViews } from "./demo-views";
-import { injectedConsts, resolveView } from "../hub/web-i18n.ts";
+import { resolveView } from "../hub/web-i18n.ts";
 
 const ROOT = join(import.meta.dir, "..");
 const WEB = join(ROOT, "web");
@@ -23,12 +23,13 @@ const source = (rel: string) => {
 };
 const files = (kind: "js" | "css") => readdirSync(join(WEB, kind)).filter(f => f.endsWith(`.${kind}`)).sort();
 const joined = (kind: "js" | "css") => files(kind).map(f => source(`${kind}/${f}`)).join("\n");
-// The demo is Korean: the ko catalog is carried the way the gateway carries it, read from the same committed tree.
-// It is screen text like the bundle's own, so it goes through the same scrub (site/banned-words.ts).
-const koCatalog = scrubBundle(injectedConsts(resolveView("ko", {
+// The demo follows the visitor's language (demo-lang.js): both catalogs are carried, read from the same committed tree. Each is
+// screen text like the bundle's own, so it goes through the same scrub (site/banned-words.ts).
+const catalog = (lang: string) => scrubBundle(JSON.stringify(resolveView(lang, {
   areas: lang => { try { return readdirSync(join(WEB, "i18n", lang)).filter(f => f.endsWith(".json")).map(f => f.slice(0, -5)).sort(); } catch { return []; } },
   read: (lang, area) => source(`i18n/${lang}/${area}.json`),
-})));
+}).catalog));
+const catalogs = `const I18N_LANG = dotzDemoLang.pick(navigator.languages || [navigator.language], new URLSearchParams(location.search).get("lang")), I18N = I18N_LANG === "en" ? ${catalog("en")} : ${catalog("ko")};\ndotzDemoLang.fill(I18N_LANG, I18N);\n`;
 
 // The page names no server asset: /custom.js (appended by 99-boot.js) becomes the demo's own empty layer beside app.js.
 // Absolute /app.css and /app.js never appear in the sources; /demo/app.* are what demo/index.html loads.
@@ -38,22 +39,24 @@ const css = rewrite(joined("css"));
 // The joined text is served by the gateway verbatim, so the demo needs no other surgery on it than rewrite: the same bundles run here.
 let js = rewrite(joined("js"));
 assertDemoViews(js, readFileSync(join(OUT, "index.html"), "utf8"), source("index.html"));   // before anything is written: a failed build leaves the demo as it was
-const build = createHash("sha1").update(js).update(css).update(koCatalog).digest("hex").slice(0, 12);
+const build = createHash("sha1").update(js).update(css).update(catalogs).digest("hex").slice(0, 12);
 // WEB_BUILD goes after the "use strict" directive, which must stay the first statement (hub/webapp.ts does the same).
-js = js.replace('"use strict";', m => `${m}\nconst WEB_BUILD = "${build}";\n${koCatalog}`);
+js = js.replace('"use strict";', m => `${m}\nconst WEB_BUILD = "${build}";`);
 
 mkdirSync(OUT, { recursive: true });
 writeFileSync(join(OUT, "app.css"), css);
 writeFileSync(join(OUT, "app.js"), js);
+// The catalog (I18N_LANG, I18N) is its own script, loaded right before app.js: it also fills the page's `{{key}}` tokens in the visitor's language.
+writeFileSync(join(OUT, "i18n.js"), catalogs);
 // No custom layer in the demo: the app appends this script on load, so it must exist (or the page logs a 404).
 writeFileSync(join(OUT, "custom.js"), "/* dotz demo: no custom layer */\n");
 
 // The page is never cached but these files are, for hours: without a version in their address a returning browser pairs the new page with the old
 // script and styles, and the layout breaks. The page names them with a hash of what they hold, so one deploy changes them together.
-const assets = ["app.css", "fixtures.js", "demo-api.js", "app.js"];
+const assets = ["app.css", "demo-lang.js", "fixtures.js", "demo-api.js", "i18n.js", "app.js"];
 const stamp = assets.reduce((h, f) => h.update(readFileSync(join(OUT, f))), createHash("sha1")).digest("hex").slice(0, 12);
 const page = join(OUT, "index.html");
-writeFileSync(page, readFileSync(page, "utf8").replace(/"\/demo\/(app\.css|fixtures\.js|demo-api\.js|app\.js)(?:\?v=\w+)?"/g, `"/demo/$1?v=${stamp}"`));
+writeFileSync(page, readFileSync(page, "utf8").replace(/"\/demo\/(app\.css|demo-lang\.js|fixtures\.js|demo-api\.js|i18n\.js|app\.js)(?:\?v=\w+)?"/g, `"/demo/$1?v=${stamp}"`));
 
 await import("./stamp-landing.ts");
 

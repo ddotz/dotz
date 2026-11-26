@@ -978,5 +978,5 @@
     try { Object.defineProperty(sw, "ready", { configurable: true, get: () => Promise.resolve(reg) }); } catch {}
   }
 
-  if (!location.hash) history.replaceState(null, "", `${location.pathname}#chat/main`);
+  if (!location.hash) history.replaceState(null, "", `${location.pathname}${location.search}#chat/main`);
 })();
