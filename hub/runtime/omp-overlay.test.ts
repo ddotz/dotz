@@ -49,7 +49,7 @@ const lane = (model = "anthropic/test-lane:medium", workerModel = "anthropic/tes
 const overlayOf = (opts: SpawnOpts): Overlay => Bun.YAML.parse(readFileSync(writeOverlay(opts), "utf8")) as Overlay;
 
 for (const [name, opts] of [["the orchestrator", orchestrator], ["a conversation session", conversation], ["a lane", lane]] as const) {
-	test(`${name}'s overlay pins what the owner's own omp settings must not change: isolation with patch review, no idle compaction, async jobs, no update check, no magic keywords, no github tool, secret redaction, omp's own task budgets`, () => {
+	test(`${name}'s overlay pins what the owner's own omp settings must not change: per-task isolation allowed with patch review (omp isolates only a task marked isolated, which the guard does for parallel writers), no idle compaction, async jobs, no update check, no magic keywords, no github tool, secret redaction, omp's own task budgets`, () => {
 		const overlay = overlayOf(opts());
 		expect(overlay.task?.isolation).toEqual({ enabled: true, apply: false, merge: "patch" });
 		expect(overlay.compaction?.idleEnabled).toBe(false);

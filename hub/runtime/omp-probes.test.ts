@@ -350,14 +350,14 @@ const isolating = (how: Isolating, patch: string) => (o: SpawnOpts): React => ({
 	const checkout = join(o.cwd, "probe.txt");
 	const apply = wire.call("bash", "g1", { command: `git apply ${patch}` });
 	const refusal = `orchestrator-guard: review before apply. Read ${patch} first with the read tool on that same path, check it matches the brief, then apply.`;
-	if (text.startsWith("Use the task tool")) {
+	if (text.startsWith("Use ONE task tool call to spawn TWO subagents")) {
 		if (how.worker === "unused") return exchange(text, "done", 0);
 		mkdirSync(join(o.env.OMP_WORKTREE_DIR!, "st_1"), { recursive: true });
 		if (how.worker === "merged") writeFileSync(checkout, "after\n");
 		const status = how.worker === "failed" ? "failed" : "completed";
 		const captured = how.worker === "patch" ? ` changes captured at \`${patch}\`` : "";
 		const report = `<task-result id="w" agent="task" status="${status}">${captured}</task-result>`;
-		const spawned = [wire.call("task", "t1", { tasks: [{ agent: "task", task: "Replace probe.txt" }] }), wire.done("task", "t1", report)];
+		const spawned = [wire.call("task", "t1", { tasks: [{ agent: "task", task: "Replace probe.txt" }, { agent: "task", task: "Replace other.txt" }] }), wire.done("task", "t1", report)];
 		const answer = how.worker === "failed" || how.worker === "nothing" ? "done" : patch;
 		return how.worker === "nothing" ? [...exchange(text, answer, 0, ...spawned.slice(0, 1)), CLOSE] : exchange(text, answer, 0, ...spawned);
 	}

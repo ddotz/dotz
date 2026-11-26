@@ -6,8 +6,8 @@
 // re-read within 5 minutes). Context blow-up: the first worker compaction steers it to wrap up; the second blocks every
 // further tool call so it must hand back partial findings. External-impact commands (push, PR, publish, deploy, ssh,
 // outbound writes) are blocked in workers and handed back: the orchestrator judges and runs them.
-// Review before apply: writing workers are forced isolated (task.isolation.apply=false keeps their <id>.patch; on OmO each
-// task call gets isolated + apply:false + merge:"patch", which keeps root.patch), and the orchestrator's `git apply <patch>`
+// Review before apply: parallel writing workers (two or more in a call) are forced isolated, a lone one runs in place (task.isolation.apply=false keeps their <id>.patch; on OmO each
+// parallel writer gets isolated + apply:false + merge:"patch", which keeps root.patch), and the orchestrator's `git apply <patch>`
 // (in bash, or in an OmO eval cell) is blocked until that patch file has been read in this session.
 // Budget gate: a task call is blocked when the Anthropic 5h quota is too low for the requested workers (the job is assumed
 // to use `budget_default_estimate_percent` of the 5h window, or the "Estimate: N%" line of the brief), until the user runs

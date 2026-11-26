@@ -129,7 +129,7 @@ test("F6-04: a write to agent://<id> that is not known to reach a running worker
 	expect(reviveBrief({ path: "agent://X", content: "a\nAcceptance: b" }, noGate)).toHaveProperty("input");
 });
 
-test("F6-04: omp's isolation error (from the task result or a later wait/task-result) puts the folder's writing workers in place; before it they are isolated", async () => {
+test("F6-04: omp's isolation error (from the task result or a later wait/task-result) puts the folder's parallel writing workers in place; before it they are isolated", async () => {
 	const repo = join(dir, "repo");
 	mkdirSync(repo, { recursive: true });
 	const git = (...args: string[]) => Bun.spawnSync(["git", ...args], { cwd: repo, stdout: "pipe", stderr: "pipe", env: { ...process.env, GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_NOSYSTEM: "1" } });
@@ -137,7 +137,7 @@ test("F6-04: omp's isolation error (from the task result or a later wait/task-re
 	writeFileSync(join(repo, "f"), "x");
 	git("add", "f");
 	git("-c", "user.name=t", "-c", `user.email=${noreplyMail("t", "1")}`, "commit", "-q", "-m", "f");
-	const spawn = async (handlers: Record<string, Handler[]>, ctx: unknown) => (await call(handlers, { toolName: "task", input: { tasks: [{ agent: "task", task: "do it\nAcceptance: done" }] } }, ctx)).input.tasks[0].isolated;
+	const spawn = async (handlers: Record<string, Handler[]>, ctx: unknown) => (await call(handlers, { toolName: "task", input: { tasks: [{ agent: "task", task: "do it\nAcceptance: done" }, { agent: "task", task: "do that\nAcceptance: done" }] } }, ctx)).input.tasks.map((t: { isolated?: boolean }) => t.isolated);
 	for (const [name, fire] of [
 		["wait result", (h: Record<string, Handler[]>, ctx: unknown) => h.tool_result![0]!({ toolName: "wait", isError: true, content: [{ type: "text", text: `isolation: ${ISOLATION_ERROR}` }] }, ctx)],
 		["task result", (h: Record<string, Handler[]>, ctx: unknown) => h.tool_result![0]!({ toolName: "task", isError: true, content: [{ type: "text", text: ISOLATION_ERROR }] }, ctx)],
@@ -146,9 +146,9 @@ test("F6-04: omp's isolation error (from the task result or a later wait/task-re
 		const { pi, handlers } = fakePi();
 		installGuard(pi, noGate);
 		const ctx = main(repo, `iso-${name}`);
-		expect([name, await spawn(handlers, ctx)]).toEqual([name, true]);
+		expect([name, await spawn(handlers, ctx)]).toEqual([name, [true, true]]);
 		await fire(handlers, ctx);
-		expect([name, await spawn(handlers, ctx)]).toEqual([name, undefined]);
+		expect([name, await spawn(handlers, ctx)]).toEqual([name, [false, false]]);
 	}
 });
 

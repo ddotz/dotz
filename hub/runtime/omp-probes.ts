@@ -310,10 +310,11 @@ async function isolatedPatchProbe(ctx: ProbeCtx, deps: OmpProbeDeps, start: OmpS
 	const repo = join(ctx.cwd, REPO);
 	mkdirSync(repo, { recursive: true });
 	writeFileSync(join(repo, "probe.txt"), "before\n");
-	const made = await deps.run(["sh", "-c", "git init -q && git add probe.txt && git -c user.name=probe -c user.email=probe@invalid commit -qm init"], GIT_SETUP_MS, { cwd: repo });
+	const made = await deps.run(["sh", "-c", "cp probe.txt other.txt && git init -q && git add probe.txt other.txt && git -c user.name=probe -c user.email=probe@invalid commit -qm init"], GIT_SETUP_MS, { cwd: repo });
 	if (made.code !== 0) return fail(`could not make a probe repo: ${made.stderr.slice(0, 120)}`);
 	const run = start({ cwd: repo, env: { OMP_WORKTREE_DIR: join(ctx.cwd, WORKTREES) } });
-	await run.turn('Use the task tool to spawn ONE subagent with this brief: "Replace the contents of probe.txt in the current directory with the single line after. Acceptance: probe.txt contains exactly after." Do not edit any file yourself. When its result is back, reply with the full path of the .patch file it reports, and nothing else.', within(120_000));
+	// Only parallel writers are isolated (a lone one runs in place), so the probe spawns two in one task call.
+	await run.turn('Use ONE task tool call to spawn TWO subagents in parallel. Brief 1: "Replace the contents of probe.txt in the current directory with the single line after. Acceptance: probe.txt contains exactly after." Brief 2: the same for other.txt. Do not edit any file yourself. When their results are back, reply with the full path of the .patch file the probe.txt subagent reports, and nothing else.', within(120_000));
 	if (!toolCalls(run.events).some(c => c.tool === "task")) return fail("the task tool was not used");
 	await run.waitFor(() => workerSettled(run.events), within(300_000));
 	const back = workerBack(run.events);

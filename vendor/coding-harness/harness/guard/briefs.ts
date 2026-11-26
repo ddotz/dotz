@@ -74,7 +74,8 @@ export function changeItems(brief: string): number {
 
 /**
  * Refuses a task call whose briefs lack a done-condition, paste contents or code blocks, or list too many change items;
- * otherwise returns the input with the budget footer appended to every brief and writing agents forced isolated.
+ * otherwise returns the input with the budget footer appended to every brief. A call with two or more writing agents is
+ * parallel: each writer is forced isolated. A lone writer runs in place (`isolated: false`), so there is no patch step.
  * `isolate` is false outside a git repo. `roots`: checkout paths rewritten to cwd-relative in isolated briefs, so the worker edits its own copy.
  * `notice` names every task whose isolation or paths the guard changed, for the main agent; absent when it changed neither.
  */
@@ -96,15 +97,16 @@ export function checkTaskInput(input: unknown, isolate = true, roots: string[] =
 	});
 	if (problems.length) return { reason: `Worker brief rejected by orchestrator-guard (RULES.md):\n- ${problems.join("\n- ")}\nRewrite the task call and retry.` };
 	let anyIsolated = false;
+	const parallel = isolate && items.filter(item => WRITING_AGENTS.has(String(fieldsOf(item).agent ?? "task"))).length > 1;
 	const forced: string[] = [];
 	const rewritten: string[] = [];
 	const tasks = items.map((item, i) => {
 		const entry = fieldsOf(item);
 		const label = `tasks[${i}]${typeof entry.name === "string" && entry.name ? ` (${entry.name})` : ""}`;
 		const next: Fields = typeof entry.task === "string" && !entry.task.includes(BUDGET_MARKER) ? { ...entry, task: `${entry.task}\n\n${BRIEF_FOOTER}` } : { ...entry };
-		if (isolate && WRITING_AGENTS.has(String(entry.agent ?? "task")) && entry.isolated !== true) {
-			next.isolated = true;
-			forced.push(label);
+		if (WRITING_AGENTS.has(String(entry.agent ?? "task"))) {
+			if (parallel && entry.isolated !== true) forced.push(label);
+			next.isolated = parallel;
 		}
 		if (next.isolated && roots.length && typeof next.task === "string") {
 			const relative = relativizeRoots(next.task, roots);
@@ -117,7 +119,7 @@ export function checkTaskInput(input: unknown, isolate = true, roots: string[] =
 	const relativeContext = anyIsolated && context ? relativizeRoots(context, roots) : context;
 	if (relativeContext !== context) rewritten.push("context");
 	const notice = [
-		forced.length ? `${forced.join(", ")} spawned with isolated: true: writing workers always run in their own worktree, so their changes come back as a .patch you read and apply with git apply, not in this checkout.` : "",
+		forced.length ? `${forced.join(", ")} spawned with isolated: true: parallel writing workers each run in their own worktree (a lone writer runs in this checkout). Give each one files no other writer touches and, when the repo uses bun, have it run bun install in its worktree first. Each change comes back as a .patch: read and git apply them one by one in this checkout, run the check after each, then delete the kept patches; finished task worktrees are swept by worktree cleanup.` : "",
 		rewritten.length ? `Absolute checkout paths in ${rewritten.join(", ")} were rewritten relative to the worktree root, so the worker edits its own copy.` : "",
 	].filter(Boolean);
 	return {

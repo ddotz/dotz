@@ -202,15 +202,15 @@ export function makeOmoProbes(adapter: RuntimeAdapter): Probes {
 			return { result: "adapted", note: "OmO task tool: the worker runs in OmO's rpc host; its result comes back into the session, in the same turn or by waking it for a new one whose answer goes to the same channel (no live worker frames; the rpc host is stopped when the process exits)" };
 		}),
 
-		// The guard makes a writing worker isolated with apply:false: its change must come back as a patch, the checkout
-		// stays untouched, and `git apply` of that patch is refused until the patch has been read.
+		// The guard makes parallel writing workers (two in one call; a lone one runs in place) isolated with apply:false: a
+		// change must come back as a patch, the checkout stays untouched, and `git apply` of that patch is refused until read.
 		workers_isolated_patch: probe(async (ctx, start, ms) => {
 			writeFileSync(join(ctx.cwd, "probe.txt"), "before\n");
-			const git = await runLimited(["sh", "-c", "git init -q && git add probe.txt && git -c user.name=probe -c user.email=probe@invalid commit -qm init"], 30_000 /* a local git setup: seconds */, { cwd: ctx.cwd });
+			const git = await runLimited(["sh", "-c", "cp probe.txt other.txt && git init -q && git add probe.txt other.txt && git -c user.name=probe -c user.email=probe@invalid commit -qm init"], 30_000 /* a local git setup: seconds */, { cwd: ctx.cwd });
 			if (git.code !== 0) return fail(`could not make a probe repo: ${git.stderr.slice(0, 120)}`);
 			const run = start();
 			const wait = Math.max(ms, 300_000);
-			const events = await run.turn('Use the task tool to spawn ONE subagent (category "quick") with this brief: "Replace the contents of probe.txt in the current directory with the single line after. Acceptance: probe.txt contains exactly after." Do not edit any file yourself. When its completion is back, reply with the full path of the .patch file it reports, and nothing else.', wait);
+			const events = await run.turn('Use ONE task tool call with a tasks list to spawn TWO subagents (category "quick") in parallel. Brief 1: "Replace the contents of probe.txt in the current directory with the single line after. Acceptance: probe.txt contains exactly after." Brief 2: the same for other.txt. Do not edit any file yourself. When their completions are back, reply with the full path of the .patch file the probe.txt subagent reports, and nothing else.', wait);
 			const call = toolCalls(events).find(c => c.tool === "task");
 			if (!call) return fail("the task tool was not used");
 			// OmO may end the turn while the worker runs (the answer then only says it started); its completion wakes the session

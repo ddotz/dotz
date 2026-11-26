@@ -138,7 +138,8 @@ export const routesFileOf = (o: SpawnOpts): string => join(dirname(sessionOf(o).
  * through to the `task` chain, and the process keeps its own (a level change at run time still reaches it, as the weakest
  * match). Workers at the process's own level cannot be told apart from it and walk its chain.
  * Over the owner's settings it also pins what dotz depends on: update check, magic keywords, the github tool and idle
- * compaction off, async jobs and secret redaction on, task isolation on with patch review (`apply: false`), the per-spawn `effort`
+ * compaction off, async jobs and secret redaction on, per-task isolation allowed with patch review (`apply: false`; omp
+ * isolates only a task that says `isolated: true`, which the guard sets for parallel writers alone), the per-spawn `effort`
  * of the task tool on (`task.enableEffort`: the orchestrator states a worker's difficulty with it, whatever the owner's own setting), and omp's own
  * soft request budget and run time limit instead of the owner's (the token cap of extension/task-cap.ts is the budget).
  * Task workers get what OmO's worker profiles give them (runtime/omo.ts): the task role is a lane's worker model, or the

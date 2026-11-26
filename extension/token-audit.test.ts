@@ -88,15 +88,16 @@ test("audit: OmO sessions are read with the OmO rules (only its wake events coun
 	expect(readFileSync(omp.report!, "utf8")).toContain("2 turn(s) woke with nothing to do");
 });
 
-test("guardHealth: unmarked briefs and unisolated writers are reported", () => {
+test("guardHealth: unmarked briefs and unisolated writers of a parallel call are reported; a lone writer in place is not", () => {
 	const dirOf = join(dir, "health");
 	mkdirSync(dirOf, { recursive: true });
-	const entry = (task: string, isolated: boolean) =>
-		JSON.stringify({ message: { role: "assistant", content: [{ type: "toolCall", name: "task", arguments: { tasks: [{ agent: "task", task, isolated }] } }] } });
-	put(join(dirOf, "s.jsonl"), `${entry("a\n[orchestrator-guard] Final answer", true)}\n${entry("bare brief", false)}\n`);
+	const marked = "a\n[orchestrator-guard] Final answer";
+	const entry = (...tasks: { task: string; isolated: boolean }[]) =>
+		JSON.stringify({ message: { role: "assistant", content: [{ type: "toolCall", name: "task", arguments: { tasks: tasks.map(t => ({ agent: "task", ...t })) } }] } });
+	put(join(dirOf, "s.jsonl"), `${entry({ task: marked, isolated: true }, { task: "bare brief", isolated: false })}\n${entry({ task: marked, isolated: false })}\n`);
 	const health = guardHealth(dirOf, NOW);
-	expect(health.problems.some(p => p.includes("did not process 1 of 2 worker briefs"))).toBe(true);
-	expect(health.problems.some(p => p.includes("1 of 2 writing workers ran without isolation"))).toBe(true);
+	expect(health.problems.some(p => p.includes("did not process 1 of 3 worker briefs"))).toBe(true);
+	expect(health.problems.some(p => p.includes("1 of 2 parallel writing workers ran without isolation"))).toBe(true);
 	expect(guardHealth(join(dir, "absent"), NOW).problems).toEqual([]);
 });
 

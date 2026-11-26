@@ -152,7 +152,7 @@ async function anthropicLimits(): Promise<string> {
 	}
 }
 
-/** What the session files of the last 7 days in `sessionDir` show about the guard: briefs it did not process, writers without isolation, task-result and merge-summary formats it no longer parses. `t` picks the language of each line (English by default). */
+/** What the session files of the last 7 days in `sessionDir` show about the guard: briefs it did not process, parallel writers without isolation, task-result and merge-summary formats it no longer parses. `t` picks the language of each line (English by default). */
 export function guardHealth(sessionDir: string, t: (text: NoticeText) => string = text => text.en): { problems: string[]; info: string } {
 	const counts = { items: 0, marked: 0, writers: 0, isolated: 0, results: 0, parsed: 0, patchMentions: 0, patchParsed: 0 };
 	let files: string[] = [];
@@ -174,13 +174,14 @@ export function guardHealth(sessionDir: string, t: (text: NoticeText) => string 
 			const blocks: TextBlock[] = Array.isArray(content) ? content : typeof content === "string" ? [{ type: "text", text: content }] : [];
 			for (const block of blocks) {
 				if (block?.type === "toolCall" && block.name === "task" && entry.message?.role === "assistant") {
-					for (const item of block.arguments?.tasks ?? []) {
-						counts.items++;
-						if (String(item?.task ?? "").includes(GUARD_MARKER)) counts.marked++;
-						if (WRITING_AGENTS.has(String(item?.agent ?? "task"))) {
-							counts.writers++;
-							if (item?.isolated === true) counts.isolated++;
-						}
+					const items = block.arguments?.tasks ?? [];
+					const writers = items.filter(item => WRITING_AGENTS.has(String(item?.agent ?? "task")));
+					counts.items += items.length;
+					counts.marked += items.filter(item => String(item?.task ?? "").includes(GUARD_MARKER)).length;
+					// A lone writer runs in place by design; only writers of a parallel call (two or more) must be isolated.
+					if (writers.length > 1) {
+						counts.writers += writers.length;
+						counts.isolated += writers.filter(item => item?.isolated === true).length;
 					}
 				}
 				const text = typeof block?.text === "string" ? block.text : "";
@@ -196,7 +197,7 @@ export function guardHealth(sessionDir: string, t: (text: NoticeText) => string 
 	}
 	const problems: string[] = [];
 	if (counts.marked < counts.items) problems.push(t({ en: `orchestrator-guard did not process ${counts.items - counts.marked} of ${counts.items} worker briefs (extension not loaded, or omp changed how tool input revisions are stored)`, ko: `orchestrator-guard가 워커 지시문 ${counts.items}개 중 ${counts.items - counts.marked}개를 처리하지 못했습니다(확장이 안 실렸거나 omp의 도구 입력 저장 방식이 바뀜)` }));
-	if (counts.isolated < counts.writers) problems.push(t({ en: `${counts.writers - counts.isolated} of ${counts.writers} writing workers ran without isolation (they edited the real checkout)`, ko: `쓰기 워커 ${counts.writers}개 중 ${counts.writers - counts.isolated}개가 격리 없이 돌았습니다(실제 체크아웃을 고침)` }));
+	if (counts.isolated < counts.writers) problems.push(t({ en: `${counts.writers - counts.isolated} of ${counts.writers} parallel writing workers ran without isolation (they edited the real checkout side by side)`, ko: `병렬 쓰기 워커 ${counts.writers}개 중 ${counts.writers - counts.isolated}개가 격리 없이 돌았습니다(실제 체크아웃을 나란히 고침)` }));
 	if (counts.parsed < counts.results) problems.push(t({ en: `omp task-result format changed: the guard parses ${counts.parsed} of ${counts.results} results, so output trimming and worker state tracking are partly off`, ko: `omp task-result 형식이 바뀌었습니다: 가드가 결과 ${counts.results}개 중 ${counts.parsed}개만 읽어 출력 줄이기와 워커 상태 추적이 일부 꺼졌습니다` }));
 	if (counts.patchParsed < counts.patchMentions) problems.push(t({ en: `omp merge-summary format changed: ${counts.patchMentions - counts.patchParsed} patch paths are not recognised, so unapplied patches are not tracked`, ko: `omp merge-summary 형식이 바뀌었습니다: 패치 경로 ${counts.patchMentions - counts.patchParsed}개를 알아보지 못해 미적용 패치를 추적하지 못합니다` }));
 	return { problems, info: t({ en: `guard: ${counts.items} briefs, ${counts.results} results, ${counts.patchMentions} patches checked in ${files.length} session file(s) from the last 7 days`, ko: `가드: 최근 7일 세션 파일 ${files.length}개에서 지시문 ${counts.items}개, 결과 ${counts.results}개, 패치 ${counts.patchMentions}개를 확인했습니다` }) };

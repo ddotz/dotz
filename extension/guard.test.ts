@@ -60,7 +60,7 @@ test("brief: done-condition required, size and fence caps, budget line appended 
 	expect("input" in ok).toBe(true);
 	if (!("input" in ok)) return;
 	expect(ok.input.tasks[0].task).toEndWith(budgetLine());
-	expect(ok.input.tasks[0].isolated).toBe(true);
+	expect(ok.input.tasks[0].isolated).toBe(false);
 	const again = checkTaskInput(ok.input);
 	expect("input" in again && again.input.tasks[0].task.match(/\[orchestrator-guard\]/g)?.length).toBe(1);
 	expect(budgetLine({ ...GUARD_DEFAULTS, worker_answer_chars: 300, worker_context_tokens: 200_000 })).toContain("at most 300 characters");
@@ -77,10 +77,20 @@ test("brief: done-condition required, size and fence caps, budget line appended 
 	expect("input" in checkTaskInput(brief(`Acceptance: x\n${fence}`), true, [], { ...GUARD_DEFAULTS, max_fence_lines: 60 })).toBe(true);
 });
 
-test("brief: checkout roots become cwd-relative in isolated briefs", () => {
+test("brief: a lone writer runs in place, two writers are both isolated with cwd-relative roots, a reader is never isolated", () => {
 	expect(relativizeRoots("edit /a/repo/src/x.ts and /a/repo", ["/a/repo"])).toBe("edit src/x.ts and .");
-	const verdict = checkTaskInput(brief("edit /a/repo/src/x.ts\nAcceptance: ok"), true, ["/a/repo"]);
-	expect("input" in verdict && verdict.input.tasks[0].task).toContain("edit src/x.ts");
+	const lone = checkTaskInput({ tasks: [{ agent: "task", task: "edit /a/repo/src/x.ts\nAcceptance: ok", isolated: true }, { agent: "scout", task: "find y\nDone when: listed" }] }, true, ["/a/repo"]);
+	if (!("input" in lone)) throw new Error("refused");
+	expect(lone.input.tasks.map((t: { isolated?: boolean }) => t.isolated)).toEqual([false, undefined]);
+	expect(lone.input.tasks[0].task).toContain("edit /a/repo/src/x.ts");
+	const pair = checkTaskInput({ tasks: [{ agent: "task", task: "edit /a/repo/src/x.ts\nAcceptance: ok" }, { agent: "sonic", task: "edit /a/repo/y.ts\nAcceptance: ok" }, { agent: "scout", task: "find z\nDone when: listed" }] }, true, ["/a/repo"]);
+	if (!("input" in pair)) throw new Error("refused");
+	expect(pair.input.tasks.map((t: { isolated?: boolean }) => t.isolated)).toEqual([true, true, undefined]);
+	expect(pair.input.tasks[0].task).toContain("edit src/x.ts");
+	expect(pair.input.tasks[1].task).toContain("run `bun install` there first");
+	expect(pair.input.tasks[2].task).not.toContain("bun install");
+	const outside = checkTaskInput({ tasks: [{ agent: "task", task: "a\nAcceptance: ok" }, { agent: "task", task: "b\nAcceptance: ok" }] }, false);
+	expect("input" in outside && outside.input.tasks.map((t: { isolated?: boolean }) => t.isolated)).toEqual([false, false]);
 });
 
 test("worker output trimming follows max_output_chars", () => {
@@ -306,17 +316,24 @@ test("install detection: file in the agent dir, not --no-extensions, not disable
 	}
 });
 
-test("OmO task input: brief rules, writers isolated with apply:false in place, read-only agents untouched", () => {
+test("OmO task input: brief rules, a lone writer in place, parallel writers isolated with apply:false, read-only agents untouched", () => {
 	expect("reason" in checkOmoTaskInput({ category: "quick", prompt: "do the thing" })).toBe(true);
-	const one = { category: "quick", prompt: "do the thing\nAcceptance: tests pass" };
+	const one = { category: "quick", prompt: "do the thing\nAcceptance: tests pass", isolated: true, apply: false, merge: "patch" };
 	const r = checkOmoTaskInput(one);
 	expect("input" in r && r.input).toBe(one);
-	expect(one).toMatchObject({ isolated: true, apply: false, merge: "patch" });
+	expect(one.isolated).toBe(false);
+	expect(one).not.toHaveProperty("apply");
 	expect(one.prompt).toEndWith(budgetLine());
-	const batch = { tasks: [{ subagent_type: "explore", prompt: "find x\nDone when: listed" }, { category: "deep-low", prompt: "fix y\nAcceptance: green" }] };
+	const lone = { tasks: [{ subagent_type: "explore", prompt: "find x\nDone when: listed" }, { category: "deep-low", prompt: "fix y\nAcceptance: green" }] };
+	checkOmoTaskInput(lone);
+	expect(lone.tasks[0]).not.toHaveProperty("isolated");
+	expect(lone.tasks[1]).toMatchObject({ isolated: false });
+	const batch = { tasks: [{ subagent_type: "explore", prompt: "find x\nDone when: listed" }, { category: "deep-low", prompt: "fix y\nAcceptance: green" }, { category: "quick", prompt: "fix z\nAcceptance: green" }] };
 	checkOmoTaskInput(batch);
 	expect(batch.tasks[0]).not.toHaveProperty("isolated");
-	expect(batch.tasks[1]).toMatchObject({ isolated: true, apply: false });
+	expect(batch.tasks[1]).toMatchObject({ isolated: true, apply: false, merge: "patch" });
+	expect(batch.tasks[2]).toMatchObject({ isolated: true, apply: false, merge: "patch" });
+	expect(batch.tasks[2].prompt).toContain("run `bun install` there first");
 	// In place is said explicitly, overriding the orchestrator's own isolation request and any omo.json default.
 	const inPlace = { category: "quick", prompt: "x\nAcceptance: y", isolated: true, apply: false, merge: "patch" };
 	checkOmoTaskInput(inPlace, false);

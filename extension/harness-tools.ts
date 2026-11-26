@@ -121,13 +121,14 @@ export function guardHealth(sessionDir: string, now = Date.now()): { problems: s
 			const blocks: any[] = Array.isArray(content) ? content : typeof content === "string" ? [{ type: "text", text: content }] : [];
 			for (const block of blocks) {
 				if (block?.type === "toolCall" && block.name === "task" && entry.message?.role === "assistant") {
-					for (const item of block.arguments?.tasks ?? []) {
-						counts.items++;
-						if (String(item?.task ?? "").includes(GUARD_MARKER)) counts.marked++;
-						if (WRITING_AGENTS.has(String(item?.agent ?? "task"))) {
-							counts.writers++;
-							if (item?.isolated === true) counts.isolated++;
-						}
+					const items: any[] = block.arguments?.tasks ?? [];
+					const writers = items.filter(item => WRITING_AGENTS.has(String(item?.agent ?? "task")));
+					counts.items += items.length;
+					counts.marked += items.filter(item => String(item?.task ?? "").includes(GUARD_MARKER)).length;
+					// A lone writer runs in place by design; only writers of a parallel call (two or more) must be isolated.
+					if (writers.length > 1) {
+						counts.writers += writers.length;
+						counts.isolated += writers.filter(item => item?.isolated === true).length;
 					}
 				}
 				const text = typeof block?.text === "string" ? block.text : "";
@@ -143,7 +144,7 @@ export function guardHealth(sessionDir: string, now = Date.now()): { problems: s
 	}
 	const problems: string[] = [];
 	if (counts.marked < counts.items) problems.push(`the worker guard did not process ${counts.items - counts.marked} of ${counts.items} worker briefs (extension not loaded, or omp changed how tool input revisions are stored)`);
-	if (counts.isolated < counts.writers) problems.push(`${counts.writers - counts.isolated} of ${counts.writers} writing workers ran without isolation (they edited the real checkout)`);
+	if (counts.isolated < counts.writers) problems.push(`${counts.writers - counts.isolated} of ${counts.writers} parallel writing workers ran without isolation (they edited the real checkout side by side)`);
 	if (counts.parsed < counts.results) problems.push(`omp task-result format changed: the guard parses ${counts.parsed} of ${counts.results} results, so output trimming and worker state tracking are partly off`);
 	if (counts.patchParsed < counts.patchMentions) problems.push(`omp merge-summary format changed: ${counts.patchMentions - counts.patchParsed} patch paths are not recognised, so unapplied patches are not tracked`);
 	return { problems, info: `guard: ${counts.items} briefs, ${counts.results} results, ${counts.patchMentions} patches checked in ${files.length} session file(s) from the last 7 days` };

@@ -12,8 +12,13 @@ const DONE_MARKER = /acceptance|done when|done-condition|end state|success crite
 /** Whether a brief names an observable done-condition ("Acceptance:", "Done when:", ...). */
 export const hasDoneCondition = (text: string): boolean => DONE_MARKER.test(text);
 
-/** Whether workers of this agent write files (a missing name is the generic `task` worker): they run in an isolated copy. */
+/** Whether workers of this agent write files (a missing name is the generic `task` worker). */
 export const isWritingAgent = (agent: unknown): boolean => WRITING_AGENTS.has(String(agent ?? "task"));
+// A lone writing worker edits the caller's checkout in place; only a call with two or more writers is parallel, and each
+// of those runs in its own worktree (owner 2026-11-26: "아래 둘 다 맞을 때만 ... isolation: worktree를 쓴다").
+const WORKTREE_MARKER = "[orchestrator-guard: worktree]";
+const WORKTREE_LINE = `${WORKTREE_MARKER} You run in your own worktree copy beside other writing workers: if the repo has a bun.lock, run \`bun install\` there first, and edit only the files your brief names.`;
+const withWorktreeLine = (brief: string): string => (brief.includes(WORKTREE_MARKER) ? brief : `${brief}\n\n${WORKTREE_LINE}`);
 // Shared with the owner's original extension and the harness doctor, so a brief marked by either copy is never marked twice.
 export const BUDGET_MARKER = "[orchestrator-guard]";
 export const budgetLine = (g: GuardConfig) =>
@@ -83,6 +88,7 @@ export function briefProblems(label: string, brief: string, context: string, g: 
 }
 
 // Isolation needs a git repo; outside one an isolated worker cannot start, so writing workers run in place there.
+// Inside one only parallel writers (two or more in the call) are isolated; a lone writer runs in place, said explicitly.
 // `roots`: checkout paths rewritten to cwd-relative in isolated briefs, so the worker edits its own copy.
 export function checkTaskInput(input: any, isolate = true, roots: string[] = [], g: GuardConfig): { reason: string } | { input: any } {
 	const context = typeof input?.context === "string" ? input.context : "";
@@ -92,9 +98,11 @@ export function checkTaskInput(input: any, isolate = true, roots: string[] = [],
 	items.forEach((item, i) => problems.push(...briefProblems(`tasks[${i}]`, typeof item?.task === "string" ? item.task : "", context, g)));
 	if (problems.length) return { reason: `Worker brief rejected by the guard (worker-brief rules):\n- ${problems.join("\n- ")}\nRewrite the task call and retry.` };
 	let anyIsolated = false;
+	const parallel = isolate && items.filter(item => isWritingAgent(item?.agent)).length > 1;
 	const tasks = items.map(item => {
 		const next = typeof item?.task === "string" && !item.task.includes(BUDGET_MARKER) ? { ...item, task: `${item.task}\n\n${budgetLine(g)}` } : { ...item };
-		if (isolate && isWritingAgent(item?.agent)) next.isolated = true;
+		if (isWritingAgent(item?.agent)) next.isolated = parallel;
+		if (next.isolated && typeof next.task === "string") next.task = withWorktreeLine(next.task);
 		if (next.isolated && roots.length && typeof next.task === "string") {
 			next.task = relativizeRoots(next.task, roots);
 			anyIsolated = true;
@@ -160,8 +168,9 @@ export function addProjectFooter(input: any, conv = process.env.DOTZ_CONV, cwd =
 
 // OmO's task tool (omo-task) takes one worker as `{prompt, category | subagent_type, ...}` or several as `{tasks: [{prompt, ...}]}`,
 // with isolation per call or item: `isolated`, `apply` (false = keep the change as a patch and merge nothing) and `merge`
-// ("patch"). The same brief rules apply; writing workers are isolated with apply:false, so their change comes back as
-// `isolation: retained via <backend> -> <dir>/root.patch` in the task completion. Read-only agents run in place.
+// ("patch"). The same brief rules apply; parallel writing workers (two or more in the call) are isolated with apply:false,
+// so their change comes back as `isolation: retained via <backend> -> <dir>/root.patch` in the task completion. A lone
+// writer and read-only agents run in place.
 const OMO_READ_ONLY = /^(explore|librarian|oracle|plan-|.*review|.*qa-)/;
 export const isOmoTaskInput = (input: any) => typeof input?.prompt === "string" || (Array.isArray(input?.tasks) && input.tasks.some((t: any) => typeof t?.prompt === "string"));
 // senpi applies a tool_call handler's changes only when `event.input` is mutated in place, so the items are edited where they are.
@@ -176,12 +185,14 @@ export function checkOmoTaskInput(input: any, isolate = true, roots: string[] = 
 		if (longestFence(brief) > g.max_fence_lines) problems.push(`${label} pastes a code block over ${g.max_fence_lines} lines; pass the path and line range instead`);
 	});
 	if (problems.length) return { reason: `Worker brief rejected by the guard (worker-brief rules):\n- ${problems.join("\n- ")}\nRewrite the task call and retry.` };
+	const writes = (item: any) => !OMO_READ_ONLY.test(String(item?.subagent_type ?? ""));
+	const parallel = isolate && items.filter(writes).length > 1;
 	for (const item of items) {
 		if (typeof item?.prompt === "string" && !item.prompt.includes(BUDGET_MARKER)) item.prompt = `${item.prompt}\n\n${budgetLine(g)}`;
-		if (OMO_READ_ONLY.test(String(item?.subagent_type ?? ""))) continue;
+		if (!writes(item)) continue;
 		// Said explicitly, so neither the orchestrator's own `isolated: true` nor an omo.json `task.isolation.enabled` isolates
-		// a worker where isolation cannot start (OmO refuses apply/merge without isolation).
-		if (!isolate) {
+		// a lone writer, or a worker where isolation cannot start (OmO refuses apply/merge without isolation).
+		if (!parallel) {
 			item.isolated = false;
 			delete item.apply;
 			delete item.merge;
@@ -190,7 +201,7 @@ export function checkOmoTaskInput(input: any, isolate = true, roots: string[] = 
 		item.isolated = true;
 		item.apply = false;
 		item.merge = "patch";
-		if (roots.length && typeof item.prompt === "string") item.prompt = relativizeRoots(item.prompt, roots);
+		if (typeof item.prompt === "string") item.prompt = relativizeRoots(withWorktreeLine(item.prompt), roots);
 	}
 	return { input };
 }
