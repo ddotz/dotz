@@ -7,6 +7,8 @@ import { absorbComments, mergeIgTwins } from "./absorb.ts";
 import { failAuto, leaveQueue } from "./auto-queue.ts";
 import { createDraftRun, earlierMailTo, type EditLessons, learnSentParts, MAIL_SAME_ADDRESS_NOTE, mailFollowsReply, mailJson, POSTING_REASON, reviseRidingMail, tokenStats } from "./draft-run.ts";
 import { createSendRecovery } from "./recover.ts";
+import { patchSource, type SourcePatch } from "./source-patch.ts";
+import { postTitleOf, templateText, templateWarnings } from "./template.ts";
 import { replyPosted } from "./posted.ts";
 import { type Comment, type CommentAdapter, dispatchReply, type GateResult, isUntitled, type Post, ruleAllows, type SourceConfig, type SourceKind, threadKey, watches } from "./contract.ts";
 import { UNKNOWN_USER } from "../../features/youtube-instagram/lib/ig-owner.ts";
@@ -24,10 +26,12 @@ import { createPastRefresh, type PastDeps } from "./past-refresh.ts";
 export type MailSpec = { app: string; to: string; subject: string; body: string; attach?: string[]; fromLibrary?: string; request?: string; postTitle?: string };
 export type MailView = { id: string; to: string; account?: string; accountHeld?: true; subject?: string; body: string; attachments: { name: string; size?: number; digest?: string }[]; asksFile?: boolean; libraryMiss?: boolean; /** Warnings the owner reads before approving, shown with the mail. */ notes?: string[]; /** Where the mail's words and files disagree (flow.ts draftAttachIssues): the card's `첨부 확인` line. */ attachIssues?: string[] };
 /** What the mail text is written from: the comment, its author and post, the mail app of the source and the address the mail goes to. */
-export type MailWrite = { app: string; to: string; author: string; text: string; postTitle: string };
+export type MailWrite = { app: string; to: string; author: string; text: string; postTitle: string; /** The source's own fixed mail text (SourceConfig.template): set up as a written mail is, but this text is the one that comes back. */ fixed?: string };
 export type MailLink = {
 	/** The mail text in the owner's voice; undefined = none (the fixed text is used). */
 	write?: (spec: MailWrite) => Promise<string | undefined>;
+	/** What the rules of `app` ban (its tone's 금지), for a template saved on a source. */
+	forbidden?: (app: string) => string[];
 	/** `notes` (owner-facing "확인: ..." lines) and `libraryMiss` (no file of the library fits) are what composing said besides the id. */
 	compose: (spec: MailSpec) => Promise<{ ok: true; id: string; notes?: string[]; libraryMiss?: boolean } | { ok: false; reason: string }>;
 	/** The status of a mail draft whatever it is ("pending", "sent", ...); missing = only pending drafts are known (`view`). */
@@ -270,12 +274,12 @@ export function createEngine(deps: EngineDeps) {
 		}
 		linking.add(code);
 		try {
-			const title = isUntitled(c) ? "" : clip(c.postTitle, 60);
+			const title = postTitleOf(c), fixed = templateText(src, c, "mail");
 			const made = await deps.mail.compose({
 				app: src.mailApp,
 				to,
 				subject: title ? `${title} 자료 보내드립니다` : "요청하신 자료 보내드립니다",
-				body: (await deps.mail.write?.({ app: src.mailApp, to, author: c.author, text: c.text, postTitle: title }).catch(e => (addNote(`확인: 메일 본문을 쓰지 못해 기본 문구로 했어요 - ${e instanceof Error && e.message ? clip(e.message, 160) : "알 수 없는 이유"}`), undefined)))?.trim() || `안녕하세요, ${c.author}님.\n\n댓글로 요청하신 자료를 보내드립니다. 확인 후 부족한 점이 있으면 편하게 말씀해 주세요.\n\n감사합니다.`,
+				body: (await deps.mail.write?.({ app: src.mailApp, to, author: c.author, text: c.text, postTitle: title, ...(fixed ? { fixed } : {}) }).catch(e => (addNote(`확인: 메일 본문을 쓰지 못해 기본 문구로 했어요 - ${e instanceof Error && e.message ? clip(e.message, 160) : "알 수 없는 이유"}`), undefined)))?.trim() || fixed || `안녕하세요, ${c.author}님.\n\n댓글로 요청하신 자료를 보내드립니다. 확인 후 부족한 점이 있으면 편하게 말씀해 주세요.\n\n감사합니다.`,
 				...(title ? { fromLibrary: title, postTitle: title } : {}),
 				request: c.text,
 			}).catch((e): { ok: false; reason: string } => ({ ok: false, reason: e instanceof Error && e.message ? clip(e.message, 160) : "메일 초안을 만들지 못했어요" }));
@@ -683,26 +687,20 @@ export function createEngine(deps: EngineDeps) {
 		return { ok: true };
 	}
 
-	function update(key: string, patch: { watch?: string[]; autoDraft?: boolean; autoSend?: SourceConfig["autoSend"]; autoMail?: boolean; mailApp?: string }): SourceConfig | undefined {
+	function update(key: string, patch: SourcePatch): SourceConfig | undefined {
 		const src = sourceOf(key);
 		if (!src) return undefined;
-		const next: SourceConfig = { ...src };
-		if (patch.watch) next.watch = [...new Set(patch.watch)];
-		if (patch.autoDraft !== undefined) {
-			next.autoDraft = patch.autoDraft;
-			if (patch.autoDraft) next.autoSince = deps.now();
-		}
-		if (patch.autoSend) next.autoSend = patch.autoSend;
-		if (patch.autoMail !== undefined) next.autoMail = patch.autoMail;
-		if (patch.mailApp !== undefined) {
-			if (patch.mailApp) next.mailApp = patch.mailApp;
-			else delete next.mailApp;
-		}
-		if (!next.watch.length) next.autoDraft = false;
+		const next = patchSource(src, patch, deps.now());
 		store.setSource(next);
 		emit({ kind: "comment_sources" });
 		return next;
 	}
+
+	// The banned phrases a source's templates hold, by the rules of the reply's source and of the mail's app.
+	const templateWarned = (key: string): string[] => {
+		const src = sourceOf(key);
+		return src ? templateWarnings(src, src.template?.reply ? styleOf(src) : undefined, src.mailApp ? deps.mail?.forbidden?.(src.mailApp) : undefined) : [];
+	};
 
 	// A comment he already answered on the platform (his reply came after it) is not unread, even when a read stores it only now.
 	const unreadOf = (c: Comment, reads: Record<string, number>) => !c.mine && !c.gone && c.at > (reads[threadKey(c.source, c.thread)] ?? 0) && !stream(c).some(x => x.mine && x.at >= c.at);
@@ -794,6 +792,6 @@ export function createEngine(deps: EngineDeps) {
 	const idle = async () => {
 		while (pending.size) await Promise.all([...pending]);
 	};
-	return { store, ownerOf, ...createSendRecovery({ store, adapters: deps.adapters, onState: gate.onState, now: deps.now, inflight }), collect, refreshPast: createPastRefresh(store, deps, ownerOf), reconcile, makeDraft, revise, edit, drop, restore, retrySend, dismissSend, pendingDrafts, send, sendMailOnly, update, threads, threadView, markRead, addDraft, linkMail, mailView, mailRecord, mailMarkOf, needs, noReply, unreplied, tokenStats: () => tokenStats(store), posts, ownReplies, idle, learnSent, needsReply };
+	return { store, ownerOf, ...createSendRecovery({ store, adapters: deps.adapters, onState: gate.onState, now: deps.now, inflight }), collect, refreshPast: createPastRefresh(store, deps, ownerOf), reconcile, makeDraft, revise, edit, drop, restore, retrySend, dismissSend, pendingDrafts, send, sendMailOnly, update, templateWarnings: templateWarned, threads, threadView, markRead, addDraft, linkMail, mailView, mailRecord, mailMarkOf, needs, noReply, unreplied, tokenStats: () => tokenStats(store), posts, ownReplies, idle, learnSent, needsReply };
 }
 export type Engine = ReturnType<typeof createEngine>;

@@ -19,7 +19,9 @@ export type SiteConfig = {
 // One chosen source = one account/channel/site. `watch` lists the post ids to follow ("*" = all); empty = nothing is read (costs nothing).
 export type SourceConfig = { key: string; kind: SourceKind; label: string; watch: string[]; autoDraft: boolean; everyMin?: number; autoSince?: number; autoSend?: AutoSend; site?: SiteConfig; mailMatch?: boolean; pastSeed?: boolean;
 	/** A reply draft for a comment that asks for a file and names an e-mail address also gets a linked mail draft (engine.ts linkMail), written by `mailApp` (a mail app instance id, e.g. `mail` or `mail-teaching`). Off by default; without `mailApp` the card says no mail was made. */
-	autoMail?: boolean; mailApp?: string };
+	autoMail?: boolean; mailApp?: string; template?: SourceTemplate };
+/** Fixed texts of a source, off by default: for a comment that asks for a file and names an address, `reply` is the reply and `mail` the riding mail, as written (the model never changes them), with `{author}` and `{title}` filled in (hub/comments/template.ts). */
+export type SourceTemplate = { reply?: string; mail?: string };
 export type CommentsConfig = { enabled: boolean; sources: Record<string, SourceConfig> };
 
 /** A comment as an adapter reads it; `authorId` is the platform's own stable id of the author (YouTube channel id, Instagram handle), absent when it gives none. */

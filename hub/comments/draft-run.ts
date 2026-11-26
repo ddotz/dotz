@@ -9,6 +9,7 @@ import type { DraftModel, EngineDeps, MailLink, MailView, Step } from "./engine.
 import { mergePast, sameFirst, SEEDED_NOTE, similarPairs, withExamples } from "./past.ts";
 import { storedPairs } from "./past-refresh.ts";
 import type { Draft, Store, Tokens } from "./store.ts";
+import { fixedReply, templateText } from "./template.ts";
 
 const MATCH_NOTE = /^(메일 대조|근거|초안 메모):/;
 const MATCHED_THREAD = / 스레드 (\S+) \(답장: ([^)]*)\)$/;
@@ -138,7 +139,8 @@ export type DraftRunCtx = {
 
 export function createDraftRun({ deps, store, ownerOf, styleOf, contextOf, code, emit, mailView, mailPlanned, posting }: DraftRunCtx) {
 	return async function run(c: Comment, src: SourceConfig, previous?: Draft, change?: string, opts: { learn?: false } = {}): Promise<Step & { lesson?: Lesson }> {
-		if (!deps.model) return { ok: false, reason: "초안 만들기를 쓸 수 없어요" };
+		const fixed = previous ? undefined : templateText(src, c, "reply");
+		if (!deps.model && fixed === undefined) return { ok: false, reason: "초안 만들기를 쓸 수 없어요" };
 		const tokens = { in: 0, out: 0, reported: false, chars: 0, outChars: 0 };
 		const call = async (system: string, user: string): Promise<string> => {
 			const r = await deps.model!(system, user, ownerOf(src));
@@ -174,7 +176,7 @@ export function createDraftRun({ deps, store, ownerOf, styleOf, contextOf, code,
 		const style = withExamples(styleOf(src, c.authorId, c.thread), sameFirst(c.text, marked, deps.now()), [...past].sort((a, b) => b.at - a.at).map(p => p.reply), c.text);
 		const judgeModel = deps.judge;
 		const judge = judgeModel ? judgeAsk(async (system, user) => (await judgeModel(system, user, ownerOf(src))).text) : undefined;
-		const r = previous && change !== undefined ? await reviseReply(item, style, { to: `${c.author} 댓글`, body: previous.text }, change, call, judge) : await generateReply(item, style, call, judge);
+		const r = fixed !== undefined ? fixedReply(fixed, item, style) : previous && change !== undefined ? await reviseReply(item, style, { to: `${c.author} 댓글`, body: previous.text }, change, call, judge) : await generateReply(item, style, call, judge);
 		// pastSeed: no empty card. An empty or skipped reply takes the closest past answer of the owner, marked 확인 필요.
 		const seed = (r.action === "skip" || !r.draft.body.trim()) && !previous ? seeds[0] : undefined;
 		if (r.action === "skip" && !seed) return { ok: false, reason: r.reason || "답할 내용이 없어서 초안을 만들지 않았어요", permanent: true };

@@ -83,8 +83,11 @@ export function createCommentsWeb({ engine, broadcast, mailOwed, posted }: WebDe
 				if (!okList || (b.autoDraft !== undefined && typeof b.autoDraft !== "boolean")) return json({ error: "watch (글 id 목록) / autoDraft (true/false) 형식이 아니에요" }, 400);
 				// autoMail (true/false) and mailApp (a mail app instance id, "" = none): see docs/comments-api.md.
 				if ((b.autoMail !== undefined && typeof b.autoMail !== "boolean") || (b.mailApp !== undefined && (typeof b.mailApp !== "string" || (b.mailApp !== "" && !instanceIdOf("mail", b.mailApp))))) return json({ error: "autoMail (true/false) / mailApp (메일 앱 이름) 형식이 아니에요" }, 400);
-				const next = engine.update(key, { ...(b.watch !== undefined ? { watch: b.watch } : {}), ...(b.autoDraft !== undefined ? { autoDraft: b.autoDraft } : {}), ...(b.autoMail !== undefined ? { autoMail: b.autoMail } : {}), ...(b.mailApp !== undefined ? { mailApp: b.mailApp } : {}) });
-				return json({ ok: true, watch: next?.watch ?? [], autoDraft: next?.autoDraft === true, autoMail: next?.autoMail === true, mailApp: next?.mailApp ?? null });
+				// template ({reply?, mail?}: fixed texts, "" clears one; see docs/comments-api.md).
+				const tpl = b.template;
+				if (tpl !== undefined && !(tpl && typeof tpl === "object" && Object.entries(tpl).every(([k, v]) => (k === "reply" || k === "mail") && typeof v === "string" && v.length <= 4000))) return json({ error: "template ({reply, mail}: 글) 형식이 아니에요" }, 400);
+				const next = engine.update(key, { ...(tpl !== undefined ? { template: tpl } : {}), ...(b.watch !== undefined ? { watch: b.watch } : {}), ...(b.autoDraft !== undefined ? { autoDraft: b.autoDraft } : {}), ...(b.autoMail !== undefined ? { autoMail: b.autoMail } : {}), ...(b.mailApp !== undefined ? { mailApp: b.mailApp } : {}) });
+				return json({ ok: true, watch: next?.watch ?? [], autoDraft: next?.autoDraft === true, autoMail: next?.autoMail === true, mailApp: next?.mailApp ?? null, template: next?.template ?? null, warnings: engine.templateWarnings(key) });
 			}
 			return undefined;
 		}
