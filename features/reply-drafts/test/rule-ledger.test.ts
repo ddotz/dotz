@@ -2,6 +2,7 @@ import { afterAll, beforeEach, expect, test } from "bun:test";
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { writeSettings } from "../../../hub/app-settings.ts";
+import { runRules } from "../bin/rules.ts";
 import { journalEntries, restoreEntry } from "../lib/curate.ts";
 import { draftRules } from "../lib/draft-rules.ts";
 import { addRecord, migrateLedger, readLedger, undoLedger } from "../lib/ledger.ts";
@@ -97,6 +98,20 @@ test("migration: shared copies become one record, the difference stays with its 
 	const afterFiles = files(join(env.dir, "custom")).filter(f => !f.includes("ledger-backup"));
 	expect(afterFiles).toEqual([...before.keys()]);
 	for (const [f, buf] of before) expect(readFileSync(join(env.dir, "custom", f)).equals(buf)).toBe(true);
+});
+
+test("migrate --preview shows the lines that would move and the records the ledger would get, and writes no file", () => {
+	write(toneFile({ app: "mail" }), "## 정체성\n\n- 짧게 쓰는 사람이에요\n\n## 고친 점\n\n- 2026-11-01: 인사는 한 줄로 써요\n");
+	write(paths.config(), `${JSON.stringify({ enabled: true, apps: {}, draftDefaults: { mail: "끝에 감사 인사를 해요" } }, null, 2)}\n`);
+	const snapshot = () => files(env.dir).map(f => [f, readFileSync(join(env.dir, f)).toString("hex")]);
+	const before = snapshot();
+	const out = runRules(["migrate", "--preview"], env.dir);
+	expect(out.code).toBe(0);
+	const text = out.lines.join("\n");
+	for (const s of ["2026-11-01: 인사는 한 줄로 써요", "끝에 감사 인사를 해요", "mail · correction · 1줄", "mail · instruction · 1줄"]) expect(text).toContain(s);
+	expect(snapshot()).toEqual(before);
+	expect(existsSync(paths.ledger(env.dir))).toBe(false);
+	expect(migrateLedger(env.dir)?.records).toBe(2);
 });
 
 test("curate keeps on + merged: two replaced lines are merged into the new record and one comes back with restoreEntry", async () => {

@@ -1,7 +1,7 @@
 import { afterAll, describe, expect, test } from "bun:test";
 import { addDraft, getDraft, type DraftRec } from "../features/reply-drafts/lib/store.ts";
 import { addStagedBytes } from "../features/reply-drafts/lib/staged.ts";
-import { enable, setupEnv } from "../features/reply-drafts/test/helpers.ts";
+import { enable, seedRules, setupEnv } from "../features/reply-drafts/test/helpers.ts";
 import { HUB_TOKEN } from "./config.ts";
 import { afterSentSettled } from "./after-sent.ts";
 import { onBroadcast } from "./events.ts";
@@ -65,7 +65,8 @@ describe("보낸 뒤 처리", () => {
 	const marked: string[] = [];
 	onBroadcast(e => void (e.kind === "mail_unreplied" && marked.push(String(e.target))));
 	const prepare = async () => {
-		enable(env, { followups: { mail: RULE } });
+		enable(env);
+		seedRules({ app: "mail" }, { followup: [RULE] });
 		const turns: string[] = [];
 		setFollowupWake(t => void turns.push(t));
 		const incoming = await postMail({ source: "fx", id: uid("inc"), subject: "문의", from: "Kim <kim@example.com>", to: "me@example.com", body: "답 부탁해요", needsReply: true }, deps);

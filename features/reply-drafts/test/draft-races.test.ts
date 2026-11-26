@@ -10,7 +10,7 @@ import { enable, fakeModel, goodReply, j, mailFixture, setupEnv } from "./helper
 const env = setupEnv();
 afterAll(env.cleanup);
 beforeEach(() => {
-	for (const p of [paths.config(), paths.drafts(), paths.inbox(), paths.toneDir(), join(env.dir, "draft-files")]) rmSync(p, { force: true, recursive: true });
+	for (const p of [paths.config(), paths.drafts(), paths.inbox(), paths.toneDir(), paths.ledger(), join(env.dir, "draft-files")]) rmSync(p, { force: true, recursive: true });
 	enable(env);
 });
 

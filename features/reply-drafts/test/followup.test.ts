@@ -9,7 +9,7 @@ import { runDraft } from "../bin/draft.ts";
 import { paths } from "../lib/settings.ts";
 import { stagedFiles } from "../lib/staged.ts";
 import { getDraft, listDrafts } from "../lib/store.ts";
-import { enable, fakeModel, goodReply, j, mailFixture, pick, setupEnv } from "./helpers.ts";
+import { enable, fakeModel, goodReply, j, mailFixture, pick, seedRules, setupEnv } from "./helpers.ts";
 
 const env = setupEnv();
 const files = mkdtempSync(join(tmpdir(), "rd-fu-"));
@@ -18,7 +18,7 @@ afterAll(() => {
 	rmSync(files, { recursive: true, force: true });
 });
 beforeEach(() => {
-	for (const p of [paths.config(), paths.drafts(), paths.inbox(), join(env.dir, "draft-files"), join(env.dir, "followups.json")]) rmSync(p, { force: true, recursive: true });
+	for (const p of [paths.config(), paths.ledger(), paths.drafts(), paths.inbox(), join(env.dir, "draft-files"), join(env.dir, "followups.json")]) rmSync(p, { force: true, recursive: true });
 	setFollowupWake(() => {});
 });
 
@@ -134,7 +134,8 @@ describe("the 이어서 할 일 wake", () => {
 	});
 
 	test("with a rule it wakes once per approved action, with the rule, the ids and the condition check", () => {
-		enable(env, { followups: { youtube: RULE } });
+		enable(env);
+		seedRules({ app: "youtube" }, { followup: [RULE] });
 		const turns = wakes();
 		expect(triggerFollowup(comment)).toBe("woke");
 		expect(triggerFollowup(comment)).toBe("duplicate");
@@ -151,7 +152,8 @@ describe("the 이어서 할 일 wake", () => {
 	});
 
 	test("a rule on another app does not wake this one", () => {
-		enable(env, { followups: { instagram: RULE } });
+		enable(env);
+		seedRules({ app: "instagram" }, { followup: [RULE] });
 		const turns = wakes();
 		expect(triggerFollowup(comment)).toBe("none");
 		expect(turns).toEqual([]);
@@ -166,7 +168,8 @@ describe("the 이어서 할 일 wake", () => {
 	});
 
 	test("a mail reply: the gateway hears of it only after the owner's 보내기 sent it", async () => {
-		enable(env, { followups: { mail: RULE } });
+		enable(env);
+		seedRules({ app: "mail" }, { followup: [RULE] });
 		const h = harness();
 		const m = fakeModel([j(goodReply)]);
 		await runDraft(["new", "--mail", mailFixture.key, "--from", "kim@example.com", "--subject", mailFixture.subject, "--source", "zele", "--id", mailFixture.id], mailFixture.body, { call: m.call, ...h.deps });

@@ -12,6 +12,7 @@ import { realMailLink } from "./mail-link.ts";
 import { approvalHash, createApprovalSender, type SendJob, type SendLook } from "../approval-send.ts";
 import { createReplyActions } from "../reply-actions.ts";
 import { addDraft, getDraft, setStatus, type DraftRec } from "../../features/reply-drafts/lib/store.ts";
+import { readLedger } from "../../features/reply-drafts/lib/ledger.ts";
 import { HEADINGS, loadStyle, paths, profileBullets, recordLearned } from "../../features/reply-drafts/lib/settings.ts";
 import { generateReply } from "../reply-draft.ts";
 import { lessonOfEdit, replyLearning } from "../reply-mail.ts";
@@ -568,10 +569,12 @@ for (const part of ["mail", "reply"] as const) {
 	});
 }
 
-test("a mail revise of a comment card teaches the mail profile the linked mail's drafts read, or install when said everywhere", async () => {
+test("a mail revise of a comment card teaches the profile of the mail instance the linked mail's drafts read (which reads mail under its own), or install when said everywhere", async () => {
 	await reviseMailPart({ everywhere: false, instance: "mail-teaching", part: "mail" });
-	expect(profileBullets({ app: "mail" }, HEADINGS.forbidden)).toEqual([BAN]);
-	expect(profileBullets({ app: "mail-teaching" }, HEADINGS.forbidden)).toEqual([]);
+	expect(readLedger().filter(r => r.kind === "ban").map(r => [r.text, r.scope, r.state])).toEqual([[BAN, { app: "mail-teaching" }, "on"]]);
+	expect(profileBullets({ app: "mail-teaching" }, HEADINGS.forbidden)).toEqual([BAN]);
+	expect(loadStyle({ app: "mail-teaching" }).forbidden).toEqual([BAN]);
+	expect(profileBullets({ app: "mail" }, HEADINGS.forbidden)).toEqual([]);
 	expect(profileBullets({ app: "youtube" }, HEADINGS.forbidden)).toEqual([]);
 });
 

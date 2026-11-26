@@ -5,13 +5,13 @@ import { cfg } from "../../../hub/config.ts";
 import { parseDraftApproval } from "../../../hub/draft-approval.ts";
 import { requestMailDraft } from "../lib/offer.ts";
 import { traceLine } from "../lib/flow.ts";
-import { paths, recordRule, toneFile } from "../lib/settings.ts";
+import { paths, recordRule } from "../lib/settings.ts";
 import { fakeModel, goodReply, j, mailFixture, setupEnv, enable } from "./helpers.ts";
 
 const env = setupEnv();
 afterAll(() => env.cleanup());
 beforeEach(() => {
-	for (const p of [paths.config(), paths.drafts(), paths.inbox(), join(env.dir, "draft-files"), toneFile("install")]) rmSync(p, { force: true, recursive: true });
+	for (const p of [paths.config(), paths.drafts(), paths.inbox(), join(env.dir, "draft-files"), paths.ledger()]) rmSync(p, { force: true, recursive: true });
 });
 
 const logs = () => {

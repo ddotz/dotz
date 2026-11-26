@@ -5,10 +5,11 @@ import { join } from "node:path";
 import { readSettings, writeSettings } from "../../../hub/app-settings.ts";
 import { parseDraftApproval } from "../../../hub/draft-approval.ts";
 import { reviseDraft } from "../lib/flow.ts";
+import { readLedger } from "../lib/ledger.ts";
 import { offerMailDraft } from "../lib/offer.ts";
 import { replyLearning } from "../../../hub/reply-mail.ts";
 import { configConflicts, matchRule, ruleInstruction } from "../lib/rules.ts";
-import { loadSettings, paths, setApp } from "../lib/settings.ts";
+import { paths, setApp } from "../lib/settings.ts";
 import { stagedFiles } from "../lib/staged.ts";
 import { getDraft, listDrafts } from "../lib/store.ts";
 import { enable, fakeModel, j, mailFixture, setupEnv } from "./helpers.ts";
@@ -24,7 +25,7 @@ mkdirSync(join(lib, "forms"), { recursive: true });
 writeFileSync(join(lib, "forms", "신청서.pdf"), "form bytes");
 writeFileSync(join(lib, "안내문.pdf"), "guide bytes");
 beforeEach(() => {
-	for (const p of [paths.config(), paths.drafts(), paths.inbox(), join(env.dir, "draft-files")]) rmSync(p, { force: true, recursive: true });
+	for (const p of [paths.config(), paths.drafts(), paths.inbox(), paths.ledger(), paths.toneDir(), join(env.dir, "draft-files")]) rmSync(p, { force: true, recursive: true });
 });
 
 const RULE = { name: "자료 요청", when: "신청서를 보내 달라는 메일", how: "신청서를 첨부하고 짧게 인사해요", files: ["forms/신청서.pdf"] };
@@ -39,7 +40,8 @@ const sink = () => {
 // The mail app's 자동 초안 switch off, the rules and the 기본 규칙 written through the settings schema like the settings screen does.
 function rulesOff(rules: object[], base = "") {
 	enable(env, { apps: { mail: { auto: false } }, attachFolders: { mail: lib } });
-	writeSettings(env.dir, "mail", { draft_rules: rules, draft_default: base });
+	writeSettings(env.dir, "mail", { draft_default: base });
+	writeSettings(env.dir, "mail", { draft_rules: rules });
 }
 
 describe("the rule store (hub/app-settings.ts draft_rules)", () => {
@@ -66,9 +68,14 @@ describe("the rule store (hub/app-settings.ts draft_rules)", () => {
 		rulesOff([RULE], "존댓말로 짧게");
 		setApp("youtube", true);
 		const raw = JSON.parse(readFileSync(paths.config(), "utf8"));
-		expect(raw.draftRules.mail[0].name).toBe("자료 요청");
-		expect(raw.draftDefaults.mail).toBe("존댓말로 짧게");
-		expect(loadSettings().draftDefaults).toEqual({ mail: "존댓말로 짧게" });
+		expect(raw.draftRules.mail[0]).toMatchObject({ name: "자료 요청", how: "" });
+		expect(raw.draftDefaults).toBeUndefined();
+		expect(readSettings(env.dir, "mail").find(f => f.key === "draft_default")?.value).toBe("존댓말로 짧게");
+		expect((readSettings(env.dir, "mail").find(f => f.key === "draft_rules")?.value as { how: string }[])[0]!.how).toBe(RULE.how);
+		expect(readLedger().filter(r => r.state === "on").map(({ kind, text, scope }) => ({ kind, text, scope }))).toEqual([
+			{ kind: "instruction", text: "존댓말로 짧게", scope: { app: "mail" } },
+			{ kind: "request", text: RULE.how, scope: { app: "mail", request: "r1" } },
+		]);
 	});
 });
 
@@ -97,20 +104,25 @@ describe("a learned correction against the configured instruction", () => {
 	test("the 기본 규칙 or a rule's 어떻게 it contradicts is named; nothing configured costs no call", async () => {
 		const asked: string[] = [];
 		const ask = (line: string) => (system: string, user: string) => (asked.push(user), overrides(line)(system, user));
-		expect(await configConflicts({ app: "mail" }, "반말로 짧게", ask("격식체"))).toEqual([]);
+		expect(await configConflicts({ app: "mail" }, "반말로 짧게", ask("격식체"))).toEqual({ settings: [], other: [] });
 		expect(asked).toHaveLength(0);
 		rulesOff([RULE], "격식체로 길게 써요");
-		expect(await configConflicts({ app: "mail" }, "반말로 짧게", ask("격식체"))).toEqual(["격식체로 길게 써요"]);
+		const conflict = await configConflicts({ app: "mail" }, "반말로 짧게", ask("격식체"));
+		expect(conflict.settings.map(r => [r.kind, r.text])).toEqual([["instruction", "격식체로 길게 써요"]]);
+		expect(conflict.other).toEqual([]);
 		expect(asked.at(-1)).toContain(RULE.how);
-		expect(await configConflicts({ app: "mail" }, "반말로 짧게", ask("없는 줄"))).toEqual([]);
+		expect(await configConflicts({ app: "mail" }, "반말로 짧게", ask("없는 줄"))).toEqual({ settings: [], other: [] });
 	});
-	test("the learning result flags the conflict and leaves the settings as they are", async () => {
+	test("the learning result names the setting the correction replaced; that setting goes off into the correction's record", async () => {
 		rulesOff([], "격식체로 길게 써요");
 		const learned = await replyLearning(() => ({ learnCall: () => overrides("격식체") })).learn({ source: "revise", ref: "R1", keys: { channel: { app: "mail" } }, words: "반말로 짧게", proposal: {} });
 		expect(learned).toMatchObject({ state: "remembered", line: "반말로 짧게" });
-		expect(learned.text).toContain('설정한 지시 "격식체로 길게 써요"와(과) 어긋나요');
-		expect(readSettings(env.dir, "mail").find(f => f.key === "draft_default")?.value).toBe("격식체로 길게 써요");
-		rmSync(paths.toneDir(), { force: true, recursive: true });
+		expect(learned.text).toContain('설정을 고쳤어요: "격식체로 길게 써요" → "반말로 짧게"');
+		const ledger = readLedger();
+		const correction = ledger.find(r => r.kind === "correction" && r.text.endsWith("반말로 짧게"))!;
+		expect(correction.state).toBe("on");
+		expect(ledger.find(r => r.kind === "instruction")).toMatchObject({ text: "격식체로 길게 써요", state: "off", into: correction.id });
+		expect(readSettings(env.dir, "mail").find(f => f.key === "draft_default")?.value).toBe("");
 	});
 });
 
@@ -158,7 +170,7 @@ describe("an offer drafted by a rule", () => {
 	});
 	test("with 자동 초안 on, a mail no rule meets is drafted as usual (the 기본 규칙 still applies), with no badge", async () => {
 		rulesOff([RULE], "존댓말로 짧게");
-		enable(env, { apps: { mail: { auto: true } }, draftRules: { mail: [{ id: "r1", ...RULE, on: true }] }, draftDefaults: { mail: "존댓말로 짧게" } });
+		enable(env, { apps: { mail: { auto: true } }, draftRules: { mail: [{ id: "r1", ...RULE, how: "", on: true }] } });
 		const m = fakeModel(["0", j(reply)]);
 		const out = sink();
 		expect(await offerMailDraft({ ...askMail, key: "r-5" }, { send: out.send, call: m.call })).toBe("offered");

@@ -13,12 +13,12 @@ import { learnFirst, learnSiteSent, MAIL_TONE_VERSION } from "../lib/persona.ts"
 import { identityOf, listProfiles, loadPairs, loadStyle, MAX_PAIRS, paths, savePairs, toneFile } from "../lib/settings.ts";
 import { getDraft, listDrafts as storedDrafts } from "../lib/store.ts";
 import { learnTone, ownText, sentMail, sentPairs, type PluginSent, type Runner, type SentMail } from "../lib/tone.ts";
-import { enable, fakeModel, j, mailFixture, pick, setupEnv } from "./helpers.ts";
+import { enable, fakeModel, j, mailFixture, pick, seedRules, setupEnv } from "./helpers.ts";
 
 const env = setupEnv();
 afterAll(env.cleanup);
 beforeEach(() => {
-	for (const p of [paths.config(), paths.drafts(), paths.inbox(), paths.toneDir(), paths.learned(), paths.corpusDir(), join(paths.pairs("mail"), ".."), join(env.dir, "draft-files"), join(env.dir, "custom", "reply-drafts", "sending")]) rmSync(p, { force: true, recursive: true });
+	for (const p of [paths.config(), paths.drafts(), paths.inbox(), paths.toneDir(), paths.ledger(), paths.learned(), paths.corpusDir(), join(paths.pairs("mail"), ".."), join(env.dir, "draft-files"), join(env.dir, "custom", "reply-drafts", "sending")]) rmSync(p, { force: true, recursive: true });
 	enable(env);
 });
 
@@ -166,8 +166,9 @@ test("an edited draft the user sent joins his pairs; an unchanged bot draft neve
 });
 
 const OLD = ["## 정체성", "", "- 옛 정체성", "", "## 답장 틀", "", "- 옛 틀 => 옛 문장", "", "## 말투", "", "- 반말 금지   (공백  그대로)", "", "## 예시", "", "- 옛 예시", "", "## 금지", "", "- /secret/i", ""].join("\n");
-// The same profile after the user tuned it: a correction and a section of their own.
-const TUNED = [OLD, "## 고친 점", "", "- 2026-10-01: 더 짧게", "", "## 내 메모", "", "- 직접 적은 줄", ""].join("\n");
+// The same profile after the user wrote a section of their own; a correction is a ledger record.
+const TUNED = [OLD, "## 내 메모", "", "- 직접 적은 줄", ""].join("\n");
+const CORRECTION = "2026-10-01: 더 짧게";
 const section = (md: string, heading: string) => {
 	const rest = md.slice(md.indexOf(heading));
 	const next = rest.slice(heading.length).search(/^## /m);
@@ -203,9 +204,11 @@ test("a mail profile learned the old way is relearned once: backup, only identit
 });
 
 test("a profile the user tuned (a correction, or a section of their own) is never relearned: marked learned, nothing read, nothing written", async () => {
-	for (const md of [TUNED, `${OLD}\n## 내 메모\n\n- 직접 적은 줄\n`, `${OLD}\n## 고친 점\n\n- 2026-10-01: 더 짧게\n`]) {
+	for (const [md, corrections] of [[TUNED, [CORRECTION]], [TUNED, []], [OLD, [CORRECTION]]] as const) {
 		rmSync(paths.learned(), { force: true });
+		rmSync(paths.ledger(), { force: true });
 		oldProfile(md);
+		seedRules({ app: "mail" }, { correction: [...corrections] });
 		let reads = 0;
 		const model = fakeModel([NEW]);
 		expect(await learnFirst({ app: "mail" }, async () => (reads++, texts), "메일", model.call, now, MAIL_TONE_VERSION)).toBe("known");
@@ -402,6 +405,7 @@ test("a revision records the owner's own change unless the model says once: noth
 	];
 	for (const [i, [extra, expected]] of cases.entries()) {
 		rmSync(paths.toneDir(), { force: true, recursive: true });
+		rmSync(paths.ledger(), { force: true });
 		await offerMailDraft({ ...mailFixture, key: `m-l${i}` }, { send: () => {}, call: first.call });
 		const d = storedDrafts().find(x => x.ref === `m-l${i}`)!;
 		const revised = fakeModel([j({ action: "draft", reason: "r", to: "kim@example.com", subject: "Re: 회의 일정 문의", body: "곧요.", questions: [], ...extra })]);

@@ -11,14 +11,16 @@ import { journalEntries } from "../lib/curate.ts";
 import { refineAfterCorrection } from "../lib/flow.ts";
 import { offerMailDraft } from "../lib/offer.ts";
 import { handSections, HEADINGS, loadStyle, paths, profileBullets, recordCorrection, toneFile } from "../lib/settings.ts";
+import { readLedger, setState } from "../lib/ledger.ts";
 import { listDrafts } from "../lib/store.ts";
-import { enable, fakeModel, goodReply, j, mailFixture, setupEnv } from "./helpers.ts";
+import { enable, fakeModel, goodReply, j, mailFixture, seedRules, setupEnv } from "./helpers.ts";
 
 const env = setupEnv();
 afterAll(env.cleanup);
 beforeEach(() => {
 	process.env.DOTZ_DIR = env.dir;
 	rmSync(paths.toneDir(), { force: true, recursive: true });
+	rmSync(paths.ledger(), { force: true });
 	rmSync(paths.compactFailed(), { force: true });
 });
 
@@ -46,12 +48,24 @@ const THIRTEEN = [
 	"2030-01-12: 끝인사는 한 줄로",
 	"2030-01-13: 마감 날짜는 꼭 적어",
 ];
-const md = (corrections: string[], marked: string[] = []) => `## 말투\n\n- 반말 금지\n\n## 고친 점\n\n${corrections.map(c => `- ${c}`).join("\n")}\n\n## 보낸 사람 신분별\n\n- 팀장에게는 격식체\n\n## 금지\n\n- 무조건\n${marked.length ? `\n## 합쳐진 고친 점\n\n${marked.map(c => `- ${c}`).join("\n")}\n` : ""}`;
+// The tone file keeps no rule: only a section the owner wrote by hand. Every rule line is a ledger record of the room's scope.
+const HAND = "## 보낸 사람 신분별\n\n- 팀장에게는 격식체\n";
+// Seeds the room: the lines of `marked` (`<line> → ...`) already taken off, then 말투, the corrections and 금지 as on records, and the hand-written tone file.
 const write = (corrections: string[], marked: string[] = []) => {
+	rmSync(paths.ledger(), { force: true });
 	mkdirSync(join(paths.toneDir(), "kakao"), { recursive: true });
-	writeFileSync(toneFile(ROOM), md(corrections, marked));
+	writeFileSync(toneFile(ROOM), HAND);
+	setState(seedRules(ROOM, { correction: marked.map(m => m.split(" → ")[0]!) }).map(r => r.id), "off");
+	seedRules(ROOM, { tone: ["반말 금지"], correction: corrections, ban: ["무조건"] });
 };
 const fileNow = () => readFileSync(toneFile(ROOM), "utf8");
+const ledgerNow = () => JSON.stringify(readLedger());
+// The correction lines of the room a compaction took off, in ledger order, as `<line> → <the line it went into | 지움>`.
+const gone = () => {
+	const all = readLedger();
+	return all.filter(r => r.scope.app === "kakao" && r.scope.room === "r1" && r.kind === "correction" && r.state !== "on").map(r => `${r.text} → ${r.state === "merged" ? all.find(x => x.id === r.into)?.text : "지움"}`);
+};
+const sorted = (xs: string[]) => [...xs].sort();
 
 type Line = { text: string; sources: string[] };
 type Drop = { id: string; why: string };
@@ -71,19 +85,19 @@ const DROPPED: Drop[] = [
 ];
 const answer = (lines: Line[] = LINES, dropped: Drop[] = DROPPED) => JSON.stringify({ lines, dropped });
 const COMPACTED = ["2030-01-08: 이모지는 하나까지", "2030-01-10: 존댓말로 쓴다", "2030-01-12: 끝인사는 한 줄로 짧게", "2030-01-13: 일정 메일에는 마감 날짜를 꼭 적는다"];
-// What a compaction of THIRTEEN leaves under `## 합쳐진 고친 점`, in the order of the lines it took off: `<line> → <the line it went into | 지움 (why)>`.
+// What a compaction of THIRTEEN takes off, in ledger order (gone()): `<line> → <the line it went into | 지움>`; the reason of a drop is in the answer only.
 const MARKS = [
 	"2030-01-01: 끝인사는 짧게 → 2030-01-12: 끝인사는 한 줄로 짧게",
-	"2030-01-02: 고럼고럼❤ → 지움 (one-off)",
-	"2030-01-03: 이모지 쓰지 마 → 지움 (duplicate)",
+	"2030-01-02: 고럼고럼❤ → 지움",
+	"2030-01-03: 이모지 쓰지 마 → 지움",
 	"2030-01-04: 끝인사 한 줄만 → 2030-01-12: 끝인사는 한 줄로 짧게",
-	"2030-01-05: 감사합니다 빼고 → 지움 (one-off)",
+	"2030-01-05: 감사합니다 빼고 → 지움",
 	"2030-01-06: 존댓말로 → 2030-01-10: 존댓말로 쓴다",
-	"2030-01-07: 이 노래 제목은 빼 → 지움 (one-off)",
+	"2030-01-07: 이 노래 제목은 빼 → 지움",
 	"2030-01-08: 이모지는 하나까지 괜찮아 → 2030-01-08: 이모지는 하나까지",
-	"2030-01-09: 오늘 몇 시에 보내? → 지움 (not a rule)",
+	"2030-01-09: 오늘 몇 시에 보내? → 지움",
 	"2030-01-10: 존댓말로 써 줘 → 2030-01-10: 존댓말로 쓴다",
-	"2030-01-11: 첨부 파일 이름은 빼 → 지움 (one-off)",
+	"2030-01-11: 첨부 파일 이름은 빼 → 지움",
 	"2030-01-12: 끝인사는 한 줄로 → 2030-01-12: 끝인사는 한 줄로 짧게",
 	"2030-01-13: 마감 날짜는 꼭 적어 → 2030-01-13: 일정 메일에는 마감 날짜를 꼭 적는다",
 ];
@@ -103,7 +117,9 @@ test("13 corrections and a valid answer leave the merged lines dated by their ne
 	const out = await runDraft(["correct", "--app", "kakao", "--room", "r1", "--tidy"], "", { learnCall: m.learnCall, now: day("2030-02-01") });
 	expect(out).toEqual({ lines: ["고친 점 13줄을 4줄로 정리했어요 (지운 줄은 tone --journal에 남아 있어요)"], code: 0 });
 	expect(m.asked).toHaveLength(1);
-	expect(fileNow()).toBe(md(COMPACTED, MARKS));
+	expect(fileNow()).toBe(HAND);
+	expect(profileBullets(ROOM, HEADINGS.corrections)).toEqual(COMPACTED);
+	expect(gone()).toEqual(MARKS);
 	expect(promptCorrections(profileBullets(ROOM, HEADINGS.corrections), 4000)).toEqual([...COMPACTED].reverse());
 	const entries = journalEntries();
 	expect(entries).toHaveLength(13);
@@ -126,23 +142,24 @@ test("13 corrections and a valid answer leave the merged lines dated by their ne
 		"2030-01-13: 마감 날짜는 꼭 적어": merged("2030-01-13: 일정 메일에는 마감 날짜를 꼭 적는다"),
 	});
 	const shown = (await runDraft(["tone", "--journal"], "")).lines;
-	const gone = entries.find(e => e.line === "2030-01-02: 고럼고럼❤")!;
-	expect(shown).toContain(`${gone.n}. [kakao 대화방] 고친 점 "2030-01-02: 고럼고럼❤" → 지움 (2030-02-01)`);
+	const gone1 = entries.find(e => e.line === "2030-01-02: 고럼고럼❤")!;
+	expect(shown).toContain(`${gone1.n}. [kakao 대화방] 고친 점 "2030-01-02: 고럼고럼❤" → 지움 (2030-02-01)`);
 	const first = entries.find(e => e.line === "2030-01-01: 끝인사는 짧게")!;
 	expect(shown).toContain(`${first.n}. [kakao 대화방] 고친 점 "2030-01-01: 끝인사는 짧게" → "2030-01-12: 끝인사는 한 줄로 짧게" (2030-02-01)`);
-	expect((await runDraft(["correct", "--restore", String(gone.n)], "")).lines).toEqual(['되돌렸어요: [kakao 대화방] 고친 점 "2030-01-02: 고럼고럼❤"']);
-	expect(profileBullets(ROOM, HEADINGS.corrections)).toEqual([...COMPACTED, "2030-01-02: 고럼고럼❤"]);
-	expect(profileBullets(ROOM, HEADINGS.merged)).toEqual(MARKS.filter(m => !m.startsWith("2030-01-02: 고럼고럼❤ → ")));
-	expect(journalEntries().find(e => e.n === gone.n)?.restoredAt).toBeDefined();
+	expect((await runDraft(["correct", "--restore", String(gone1.n)], "")).lines).toEqual(['되돌렸어요: [kakao 대화방] 고친 점 "2030-01-02: 고럼고럼❤"']);
+	expect(sorted(profileBullets(ROOM, HEADINGS.corrections))).toEqual(sorted([...COMPACTED, "2030-01-02: 고럼고럼❤"]));
+	expect(readLedger().find(r => r.id === gone1.id)?.state).toBe("on");
+	expect(gone()).toEqual(MARKS.filter(m => !m.startsWith("2030-01-02: 고럼고럼❤ → ")));
+	expect(journalEntries().find(e => e.n === gone1.n)?.restoredAt).toBeDefined();
 });
 
 test("a compaction never loses a line: every line it takes off stays in the file as a marked line, the section is read as no rule, and a second compaction adds to it", async () => {
-	const prior = ["2029-12-30: 옛 줄 → 지움 (one-off)"];
+	const prior = ["2029-12-30: 옛 줄 → 지움"];
 	write(THIRTEEN, prior);
-	const before = { on: profileBullets(ROOM, HEADINGS.corrections), marked: profileBullets(ROOM, HEADINGS.merged) };
+	const before = { on: profileBullets(ROOM, HEADINGS.corrections), marked: gone() };
 	expect(before.marked).toEqual(prior);
 	expect(await compactCorrections(ROOM, { learnCall: model(() => answer()).learnCall, now: day("2030-02-01") })).toEqual({ before: 13, after: 4 });
-	const on = profileBullets(ROOM, HEADINGS.corrections), marked = profileBullets(ROOM, HEADINGS.merged);
+	const on = profileBullets(ROOM, HEADINGS.corrections), marked = gone();
 	const markedLines = marked.map(m => m.split(" → ")[0]!);
 	for (const line of before.on) expect([...on, ...markedLines]).toContain(line);
 	expect(marked).toEqual([...prior, ...MARKS]);
@@ -152,10 +169,10 @@ test("a compaction never loses a line: every line it takes off stays in the file
 	for (const line of [...markedLines, ...marked]) expect(read).not.toContain(line);
 	expect(handSections(ROOM).map(s => s.heading)).toEqual(["## 보낸 사람 신분별"]);
 	write(COMPACTED.concat(THIRTEEN.slice(0, 9)), marked);
-	const second = { on: profileBullets(ROOM, HEADINGS.corrections), marked: profileBullets(ROOM, HEADINGS.merged) };
+	const second = { on: profileBullets(ROOM, HEADINGS.corrections), marked: gone() };
 	const fold: Line[] = [{ text: "모두 한 줄", sources: second.on.map((_, i) => `C${i + 1}`) }];
 	expect(await compactCorrections(ROOM, { learnCall: model(() => answer(fold, [])).learnCall, now: day("2030-02-02") })).toEqual({ before: 13, after: 1 });
-	const after = { on: profileBullets(ROOM, HEADINGS.corrections), marked: profileBullets(ROOM, HEADINGS.merged) };
+	const after = { on: profileBullets(ROOM, HEADINGS.corrections), marked: gone() };
 	expect(after.marked.length).toBe(second.marked.length + second.on.filter(l => !after.on.includes(l)).length);
 	expect(after.marked.slice(0, second.marked.length)).toEqual(second.marked);
 	for (const line of second.on) expect([...after.on, ...after.marked.map(m => m.split(" → ")[0]!)]).toContain(line);
@@ -190,27 +207,29 @@ const refusals: [string, string][] = [
 for (const [what, reply] of refusals) {
 	test(`an answer with ${what} changes nothing and logs one line`, async () => {
 		write(THIRTEEN);
+		const before = ledgerNow();
 		const log = quiet();
 		const got = await compactCorrections(ROOM, { learnCall: model(() => reply).learnCall, now: day("2030-02-01") });
 		const lines = log.mock.calls.map(c => String(c[0]));
 		log.mockRestore();
 		expect(got).toBeUndefined();
-		expect(fileNow()).toBe(md(THIRTEEN));
+		expect(ledgerNow()).toBe(before);
+		expect(fileNow()).toBe(HAND);
 		expect(existsSync(journalFile())).toBe(false);
 		expect(lines).toEqual([expect.stringMatching(/^reply draft: corrections of kakao\/r1\.md not compacted: /)]);
 	});
 }
 
-test("a 고친 점 section that holds a note or a sub-heading beside its bullets is left as it is, with no journal entry", async () => {
+test("a 고친 점 section the owner wrote in the tone file by hand, with a note or a sub-heading beside its bullets, is never rewritten by a compaction of the ledger's lines", async () => {
 	const log = quiet();
 	for (const extra of ["메모: 아래는 손으로 정리한 것", "### 메일", "  이어지는 줄"]) {
-		rmSync(paths.toneDir(), { force: true, recursive: true });
-		mkdirSync(join(paths.toneDir(), "kakao"), { recursive: true });
-		const before = md(THIRTEEN).replace("- 2030-01-02: 고럼고럼❤", `- 2030-01-02: 고럼고럼❤\n${extra}`);
-		writeFileSync(toneFile(ROOM), before);
-		expect(await compactCorrections(ROOM, { learnCall: model(() => answer(LINES, DROPPED)).learnCall })).toBeUndefined();
-		expect(fileNow()).toBe(before);
-		expect(existsSync(journalFile())).toBe(false);
+		write(THIRTEEN);
+		const by = `## 고친 점\n\n- 2030-01-02: 손으로 적은 줄\n${extra}\n`;
+		writeFileSync(toneFile(ROOM), by);
+		expect(await compactCorrections(ROOM, { learnCall: model(() => answer(LINES, DROPPED)).learnCall, now: day("2030-02-01") })).toEqual({ before: 13, after: 4 });
+		expect(fileNow()).toBe(by);
+		expect(profileBullets(ROOM, HEADINGS.corrections)).toEqual(COMPACTED);
+		expect(loadStyle(ROOM).corrections).toEqual([...COMPACTED, "2030-01-02: 손으로 적은 줄"]);
 	}
 	log.mockRestore();
 });
@@ -225,19 +244,22 @@ test("a text of exactly 288 code points (300 with its date) and a leading date t
 
 test("12 corrections make no call without force; with force they are compacted; one correction is never compacted", async () => {
 	write(THIRTEEN.slice(0, 12));
+	const before = ledgerNow();
 	const twelve: Line[] = [{ text: "끝인사는 한 줄로", sources: ["C1", "C4", "C12"] }, { text: "존댓말로", sources: ["C6", "C10"] }, { text: "이모지는 하나까지", sources: ["C8"] }];
 	const m = model(() => answer(twelve, DROPPED));
 	expect(await compactCorrections(ROOM, { learnCall: m.learnCall })).toBeUndefined();
 	expect(m.asked).toEqual([]);
-	expect(fileNow()).toBe(md(THIRTEEN.slice(0, 12)));
+	expect(ledgerNow()).toBe(before);
 	expect(await compactCorrections(ROOM, { learnCall: m.learnCall }, { force: true })).toEqual({ before: 12, after: 3 });
-	expect(profileBullets(ROOM, HEADINGS.corrections)).toEqual(["2030-01-08: 이모지는 하나까지", "2030-01-10: 존댓말로", "2030-01-12: 끝인사는 한 줄로"]);
+	// "2030-01-12: 끝인사는 한 줄로" is a line the answer keeps word for word: its record stays where it was, the other two are new.
+	expect(sorted(profileBullets(ROOM, HEADINGS.corrections))).toEqual(sorted(["2030-01-08: 이모지는 하나까지", "2030-01-10: 존댓말로", "2030-01-12: 끝인사는 한 줄로"]));
 	write(THIRTEEN.slice(0, 1));
+	const alone = ledgerNow();
 	const one = model(() => answer([{ text: "짧게", sources: ["C1"] }], []));
 	expect(await compactCorrections(ROOM, { learnCall: one.learnCall }, { force: true })).toBeUndefined();
 	expect(one.asked).toEqual([]);
 	expect((await runDraft(["correct", "--app", "kakao", "--room", "r1", "--tidy"], "", { learnCall: one.learnCall })).lines).toEqual(["정리할 것이 없어요"]);
-	expect(fileNow()).toBe(md(THIRTEEN.slice(0, 1)));
+	expect(ledgerNow()).toBe(alone);
 });
 
 test("a correction stored while the model is asked wins: the compaction is skipped and nothing is journalled", async () => {
@@ -255,6 +277,7 @@ test("a correction stored while the model is asked wins: the compaction is skipp
 test("a thrown call, a call factory that throws and a call that never answers (30 s) change nothing; the CLI says the answer could not be used", async () => {
 	const tried = async (learnCall: (app: string) => (s: string, u: string) => Promise<string>, wait?: boolean) => {
 		write(THIRTEEN);
+		const before = ledgerNow();
 		const log = quiet();
 		const running = compactCorrections(ROOM, { learnCall });
 		if (wait) await advance(30_000);
@@ -262,7 +285,7 @@ test("a thrown call, a call factory that throws and a call that never answers (3
 		const lines = log.mock.calls.map(c => String(c[0]));
 		log.mockRestore();
 		expect(got).toBeUndefined();
-		expect(fileNow()).toBe(md(THIRTEEN));
+		expect(ledgerNow()).toBe(before);
 		expect(existsSync(journalFile())).toBe(false);
 		return lines;
 	};
@@ -273,17 +296,19 @@ test("a thrown call, a call factory that throws and a call that never answers (3
 	expect(await tried(factory)).toEqual([expect.stringMatching(/not compacted: 호출 없음/)]);
 	expect(await tried(model(() => new Promise<string>(() => undefined)).learnCall, true)).toEqual([expect.stringMatching(/not compacted: no answer within 30s/)]);
 	write(THIRTEEN);
+	const before = ledgerNow();
 	const log = quiet();
 	const out = await runDraft(["correct", "--app", "kakao", "--room", "r1", "--tidy"], "", { learnCall: model(() => "모르겠어요").learnCall });
 	log.mockRestore();
 	expect(out).toEqual({ lines: ["모델의 답을 쓸 수 없어서 고친 점을 그대로 두었어요"], code: 0 });
-	expect(fileNow()).toBe(md(THIRTEEN));
+	expect(ledgerNow()).toBe(before);
 });
 
 test("without learnCall nothing is asked and nothing changes, even with force", async () => {
 	write(THIRTEEN);
+	const before = ledgerNow();
 	expect(await compactCorrections(ROOM, {}, { force: true })).toBeUndefined();
-	expect(fileNow()).toBe(md(THIRTEEN));
+	expect(ledgerNow()).toBe(before);
 });
 
 test("refineAfterCorrection compacts a long 고친 점, and survives a failing compaction", async () => {
@@ -291,19 +316,21 @@ test("refineAfterCorrection compacts a long 고친 점, and survives a failing c
 	await refineAfterCorrection(ROOM, { learnCall: model(() => answer()).learnCall });
 	expect(profileBullets(ROOM, HEADINGS.corrections)).toEqual(COMPACTED);
 	write(THIRTEEN);
+	const before = ledgerNow();
 	const log = quiet();
 	await refineAfterCorrection(ROOM, { learnCall: model(() => Promise.reject(new Error("모델 없음"))).learnCall });
 	await refineAfterCorrection({ app: "Not An App" }, { learnCall: model(() => answer()).learnCall });
 	const lines = log.mock.calls.map(c => String(c[0]));
 	log.mockRestore();
-	expect(fileNow()).toBe(md(THIRTEEN));
-	expect(lines).toEqual([expect.stringMatching(/not compacted: 모델 없음/), expect.stringMatching(/^reply draft: corrections of Not An App not compacted/)]);
+	expect(ledgerNow()).toBe(before);
+	// A key no profile has holds no line, so there is nothing to compact and nothing to log for it.
+	expect(lines).toEqual([expect.stringMatching(/not compacted: 모델 없음/)]);
 });
 
 describe("before a draft (compactForPrompt)", () => {
 	const APP = { app: "kakao" };
 	const long = (tag: string, n: number) => Array.from({ length: n }, (_, i) => `2030-01-${String(i + 1).padStart(2, "0")}: ${tag} ${i} ${"가".repeat(280)}`);
-	const writeApp = (corrections: string[]) => writeFileSync(toneFile(APP), md(corrections));
+	const writeApp = (corrections: string[]) => seedRules(APP, { correction: corrections });
 	test("a profile over 12 lines is compacted with no new correction, once; one at or under 12 that fits costs no call", async () => {
 		write(THIRTEEN.slice(0, 12));
 		const none = model(() => answer());
@@ -330,7 +357,6 @@ describe("before a draft (compactForPrompt)", () => {
 		expect(await compactForPrompt(ROOM, { learnCall: folds.learnCall, now: day("2030-02-03") })).toBe(0);
 		expect(folds.asked).toHaveLength(1);
 		expect(profileBullets(ROOM, HEADINGS.corrections).length + profileBullets(APP, HEADINGS.corrections).length).toBe(8);
-		rmSync(toneFile(APP), { force: true });
 	});
 	test("a failed compaction is kept on record, waits a day before a draft tries it again, is retried by the next correction, and is cleared when one works", async () => {
 		write(THIRTEEN);
@@ -353,8 +379,7 @@ describe("before a draft (compactForPrompt)", () => {
 
 test("a draft whose corrections pass the prompt's budget says on its card how many were left out, with the count of the budget that cut them", async () => {
 	const line = (d: number) => `2030-01-${String(d).padStart(2, "0")}: ${"가".repeat(288)}`;
-	mkdirSync(paths.toneDir(), { recursive: true });
-	writeFileSync(toneFile({ app: "mail" }), `## 고친 점\n\n${Array.from({ length: 20 }, (_, i) => `- ${line(i + 1)}`).join("\n")}\n`);
+	seedRules({ app: "mail" }, { correction: Array.from({ length: 20 }, (_, i) => line(i + 1)) });
 	enable(env);
 	const log = quiet();
 	// Every call, the compaction's too, gets the plain draft: no usable compaction, so the 20 lines of 300 characters stay and 13 of them fit 4000.
@@ -367,7 +392,8 @@ test("a draft whose corrections pass the prompt's budget says on its card how ma
 	expect(view?.draft.notes).toEqual(["고친 점 7줄은 길어서 이번 초안에 못 넣었어요"]);
 	const draftCall = model.calls.find(c => c.system.startsWith("You draft ONE reply"))!;
 	expect(draftCall.user.split("\n").filter(l => l.startsWith("- 2030-01-"))).toHaveLength(13);
-	writeFileSync(toneFile({ app: "mail" }), `## 고친 점\n\n- ${line(1)}\n`);
+	rmSync(paths.ledger(), { force: true });
+	seedRules({ app: "mail" }, { correction: [line(1)] });
 	await offerMailDraft({ ...mailFixture, key: "m-2", id: "msg-2" }, { send: () => undefined, call: model.call });
 	const fits = listDrafts().find(d => d.mailId === "msg-2")!;
 	expect(fits.leftOut).toBeUndefined();
@@ -378,7 +404,7 @@ const TEXTS = ["끝인사는 짧게", "존댓말로 쓴다", "이모지 😀 하
 test("property: for any answer the code applies, the original lines equal (as a multiset) the journalled lines, and every kept line is the newLine of a merged entry", async () => {
 	const log = quiet();
 	const bullet = fc.tuple(fc.constantFrom("2030-01-01", "2030-01-02", "2030-01-03"), fc.constantFrom("짧게", "길게", "고럼고럼❤", "감사합니다 빼고")).map(([d, t]) => `${d}: ${t}`);
-	const scenario = fc.array(bullet, { minLength: 2, maxLength: 14 }).chain(bullets =>
+	const scenario = fc.uniqueArray(bullet, { minLength: 2, maxLength: 12 }).chain(bullets =>
 		fc.record({
 			bullets: fc.constant(bullets),
 			groups: fc.array(fc.oneof({ arbitrary: fc.integer({ min: -1, max: 3 }), weight: 12 }, { arbitrary: fc.integer({ min: -1, max: 10 }), weight: 1 }), { minLength: bullets.length, maxLength: bullets.length }),
@@ -393,6 +419,7 @@ test("property: for any answer the code applies, the original lines equal (as a 
 		fc.asyncProperty(scenario, async ({ bullets, groups, texts, why, extra, fenced }) => {
 			rmSync(paths.toneDir(), { force: true, recursive: true });
 			write(bullets);
+			const before = ledgerNow();
 			const id = (i: number) => `C${i + 1}`;
 			const lines = Array.from({ length: 10 }, (_, g) => ({ text: texts[g]!, sources: groups.flatMap((x, i) => (x === g ? [id(i)] : [])) })).filter((l, g) => l.sources.length || g === 0);
 			lines[0]?.sources.push(...extra.map(String));
@@ -401,7 +428,7 @@ test("property: for any answer the code applies, the original lines equal (as a 
 			const got = await compactCorrections(ROOM, { learnCall: model(() => (fenced ? `\`\`\`json\n${json}\n\`\`\`` : json)).learnCall }, { force: true });
 			const section = profileBullets(ROOM, HEADINGS.corrections);
 			if (!got) {
-				expect(fileNow()).toBe(md(bullets));
+				expect(ledgerNow()).toBe(before);
 				expect(existsSync(journalFile())).toBe(false);
 				return;
 			}
@@ -413,10 +440,10 @@ test("property: for any answer the code applies, the original lines equal (as a 
 			const journalled = journalEntries();
 			if (!journalled.length) {
 				expect(section).toEqual(bullets);
-				expect(profileBullets(ROOM, HEADINGS.merged)).toEqual([]);
+				expect(gone()).toEqual([]);
 				return;
 			}
-			expect(profileBullets(ROOM, HEADINGS.merged).map(m => m.split(" → ")[0]!).sort()).toEqual(journalled.map(e => e.line).sort());
+			expect(gone().map(m => m.split(" → ")[0]!).sort()).toEqual(journalled.map(e => e.line).sort());
 			expect(journalled.map(e => e.line).sort()).toEqual([...bullets].sort());
 			expect(journalled.flatMap(e => (e.why === "dropped" ? [e.line] : [])).sort()).toEqual(named(dropped.map(d => d.id)));
 			expect([...new Set(journalled.flatMap(e => (e.why === "merged" ? [e.newLine] : [])))].sort()).toEqual([...new Set(section)].sort());

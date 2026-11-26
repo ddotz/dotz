@@ -189,7 +189,7 @@ export async function compactCorrections(key: ToneKey | "install", deps: Pick<Fl
 	}
 	const dropped = checked.compaction.dropped.map(d => ({ kind, text: listed[d.at]! }));
 	replaceRecords(scope, dropped, undefined, undefined, taken => journalAdd(taken.map(t => ({ ...base, line: t.text, id: t.id, by: "compact" as const, why: "dropped" as const, newLine: "" as const }))));
-	return worked({ before: listed.length, after: after.length });
+	return worked({ before: listed.length, after: profileBullets(key, HEADINGS.corrections).length });
 }
 
 /** Before a draft of `key` (offer.ts, the draft CLI), so a long 고친 점 is folded even when no new correction comes: every level profile of the draft (settings.ts levelsOf) with more than 12 corrections is compacted, then, while the corrections of all levels together pass the prompt's budget (hub/reply-draft.ts promptCorrections), the other levels with at least 2 lines too, the longest first. A profile whose compaction failed less than a day ago waits (compactFailures). What still does not fit is left out of the prompt oldest first: that count (the one hub/reply-draft.ts budgetedLines gives the prompt) is logged and returned. */

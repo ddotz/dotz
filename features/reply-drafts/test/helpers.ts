@@ -3,6 +3,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ModelCall } from "../../../hub/reply-draft.ts";
 import { appendSealed } from "../../../hub/approval-seal.ts";
+import { addRecord, scopeOfKey, type LedgerKind, type LedgerRecord } from "../lib/ledger.ts";
+import type { ToneKey } from "../lib/tone-key.ts";
 import { getDraft } from "../lib/store.ts";
 import { mailHash } from "../lib/view.ts";
 import { approvalHash } from "../../../hub/draft-approval.ts";
@@ -29,6 +31,13 @@ export function setupEnv(): TestEnv {
 export function enable(env: TestEnv, extra: object = {}): void {
 	mkdirSync(join(env.dir, "custom", "reply-drafts"), { recursive: true });
 	writeFileSync(join(env.dir, "custom", "reply-drafts", "config.json"), JSON.stringify({ enabled: true, ...extra }));
+}
+
+// Seeds rule lines of one scope through the ledger, one record each in the order given. Each record is a second newer than the one before, from a fixed past start,
+// so a line the code under test writes later is the newer one; `by` names the author ("test" unless a test pins another).
+let seeded = 0;
+export function seedRules(key: ToneKey | "install", lines: Partial<Record<LedgerKind, string[]>>, by = "test"): LedgerRecord[] {
+	return Object.entries(lines).flatMap(([kind, texts]) => texts.map(text => addRecord({ text, kind: kind as LedgerKind, scope: scopeOfKey(key), by, at: new Date(Date.UTC(2020, 0, 1) + ++seeded * 1000) }).record));
 }
 
 export const j = (o: object) => `\`\`\`json\n${JSON.stringify(o)}\n\`\`\``;

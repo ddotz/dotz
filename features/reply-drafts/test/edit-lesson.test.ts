@@ -8,6 +8,7 @@ import { advance, flush } from "../../../hub/runtime/test-clock.ts";
 import { cli, runDraft } from "../bin/draft.ts";
 import { lessonOfEdit } from "../lib/edit-lesson.ts";
 import { learningSettled, sendDraft, type FlowDeps } from "../lib/flow.ts";
+import { readLedger } from "../lib/ledger.ts";
 import { HEADINGS, paths, profileBullets, toneFile } from "../lib/settings.ts";
 import { addDraft, claimFile, getDraft, type DraftRec } from "../lib/store.ts";
 import { j, pick, setupEnv } from "./helpers.ts";
@@ -15,7 +16,7 @@ import { j, pick, setupEnv } from "./helpers.ts";
 const env = setupEnv();
 afterAll(env.cleanup);
 beforeEach(() => {
-	for (const p of [paths.config(), paths.drafts(), paths.inbox(), paths.toneDir(), claimFile("REDLS1"), `${claimFile("REDLS1")}.token`]) rmSync(p, { force: true, recursive: true });
+	for (const p of [paths.config(), paths.drafts(), paths.inbox(), paths.toneDir(), paths.ledger(), claimFile("REDLS1"), `${claimFile("REDLS1")}.token`]) rmSync(p, { force: true, recursive: true });
 });
 
 const quiet = () => spyOn(console, "error").mockImplementation(() => undefined);
@@ -108,6 +109,7 @@ test("a sent mail the owner edited stores the model's lesson as a dated correcti
 	expect(apps).toEqual(["mail", "mail"]);
 	expect(profileBullets({ app: "mail" }, HEADINGS.corrections)).toEqual([expect.stringMatching(new RegExp(`^\\d{4}-\\d{2}-\\d{2}: ${LESSON}$`))]);
 	expect(profileBullets("install", HEADINGS.rules)).toEqual([]);
+	expect(readLedger().filter(r => r.state === "on").map(r => r.text)).toEqual([expect.stringMatching(new RegExp(`^\\d{4}-\\d{2}-\\d{2}: ${LESSON}$`))]);
 	expect(`${fileOf({ app: "mail" })}${fileOf("install")}`).not.toMatch(/^- (\d{4}-\d{2}-\d{2}: )?초안 "/m);
 });
 
@@ -138,6 +140,7 @@ test('"", a failed or late call, no learnCall, or a whitespace-only edit stores 
 	expect(await send({ learnCall: learnCall(async () => (calls++, j({ lesson: LESSON, everywhere: false }))), draft: { body: `${MODEL}  ` } })).toEqual(plain);
 	expect(calls).toBe(0);
 	log.mockRestore();
+	expect(readLedger()).toEqual([]);
 	expect(existsSync(paths.toneDir()) ? [fileOf({ app: "mail" }), fileOf("install")] : ["", ""]).toEqual(["", ""]);
 });
 

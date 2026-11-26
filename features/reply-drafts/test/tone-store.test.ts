@@ -7,18 +7,19 @@ import { makeFixtureDb, OWNER, ROOM } from "../../../hub/kakao/fixture.ts";
 import { runDraft } from "../bin/draft.ts";
 import { buildDraft, reviseDraft } from "../lib/flow.ts";
 import { learnKakaoRoom, type OwnerReader } from "../lib/kakao-tone.ts";
+import { readLedger, type LedgerKind } from "../lib/ledger.ts";
 import { offerMailDraft } from "../lib/offer.ts";
 import { readMailBody, sendWith } from "../lib/senders.ts";
 import { HEADINGS, loadStyle, paths, profileBullets, recordCorrection, recordForbidden, recordLearned, recordRule, removeCorrection, removeForbidden, removeRule, roomFile, toneFile, writeExamples } from "../lib/settings.ts";
 import { addDraft, getDraft, listDrafts } from "../lib/store.ts";
 import { learnTone, zeleEnabled, type Runner } from "../lib/tone.ts";
-import { enable, fakeModel, goodReply, j, mailFixture, setupEnv } from "./helpers.ts";
+import { enable, fakeModel, goodReply, j, mailFixture, seedRules, setupEnv } from "./helpers.ts";
 
 const env = setupEnv();
 afterAll(env.cleanup);
 beforeEach(() => {
 	process.env.DOTZ_DIR = env.dir;
-	for (const p of [paths.config(), paths.legacyStyle(), paths.toneDir(), paths.drafts(), paths.inbox(), join(env.dir, "custom", "sns")]) rmSync(p, { force: true, recursive: true });
+	for (const p of [paths.config(), paths.ledger(), paths.legacyStyle(), paths.toneDir(), paths.drafts(), paths.inbox(), join(env.dir, "custom", "sns")]) rmSync(p, { force: true, recursive: true });
 });
 
 // Two rooms of the KakaoTalk fixture database: the user's lines (authorId OWNER) and the other side's.
@@ -57,13 +58,13 @@ test("the room profile wins when it has samples; a room without samples uses the
 	expect(loadStyle({ app: "kakao", room: "r1" })).toMatchObject({ samples: [], samplesFrom: "none" });
 });
 
-test("rules, corrections and forbidden expressions merge from every level, install first", async () => {
+test("rules, corrections and forbidden expressions merge from every level, install first", () => {
 	const levels = [
 		["install", "install-rule", "install-ban"],
 		[{ app: "kakao" }, "app-rule", "app-ban"],
 		[{ app: "kakao", room: "r1" }, "room-rule", "room-ban"],
 	] as const;
-	for (const [key, rule, ban] of levels) await Bun.write(toneFile(key), `## 말투\n\n- ${rule}\n\n## 금지\n\n- ${ban}\n`);
+	for (const [key, rule, ban] of levels) seedRules(key, { tone: [rule], ban: [ban] });
 	recordCorrection({ app: "kakao", room: "r1" }, "room change", new Date("2030-01-02T00:00:00Z"));
 	const s = loadStyle({ app: "kakao", room: "r1" });
 	expect(s.rules).toEqual(["install-rule", "app-rule", "room-rule"]);
@@ -92,7 +93,8 @@ test("a correction on a room draft lands only in that room file and does not aff
 	addDraft(b.rec);
 	expect(a.rec).toMatchObject({ app: "kakao", room: "r1" });
 	expect((await reviseDraft(a.rec.id, "더 짧게 써 주세요", { call: model.call })).ok).toBe(true);
-	expect(readFileSync(toneFile({ app: "kakao", room: "r1" }), "utf8")).toContain("더 짧게 써 주세요");
+	expect(profileBullets({ app: "kakao", room: "r1" }, HEADINGS.corrections).join("\n")).toContain("더 짧게 써 주세요");
+	expect(readLedger().filter(r => r.kind === "correction").map(r => r.scope)).toEqual([{ app: "kakao", room: "r1" }]);
 	expect(existsSync(toneFile({ app: "kakao", room: "r2" }))).toBe(false);
 	expect(existsSync(toneFile({ app: "kakao" }))).toBe(false);
 	expect(existsSync(toneFile({ app: "mail" }))).toBe(false);
@@ -103,7 +105,7 @@ test("a correction on a room draft lands only in that room file and does not aff
 	if (mail.action !== "draft") throw new Error("expected a draft");
 	addDraft(mail.rec);
 	await reviseDraft(mail.rec.id, "존댓말로", { call: fakeModel([j(goodReply)]).call });
-	expect(readFileSync(toneFile({ app: "mail" }), "utf8")).toContain("존댓말로");
+	expect(profileBullets({ app: "mail" }, HEADINGS.corrections).join("\n")).toContain("존댓말로");
 });
 
 test("the kakao source learns only the user's own text lines of that one room", async () => {
@@ -148,8 +150,8 @@ test("draft.ts new --kind chat: an unreadable room still drafts with a note, a s
 	expect(skipped.code).toBe(3);
 	expect((await runDraft(["new", "--kind", "chat", "--room", "9"], "안녕", { call: model.call })).code).toBe(2);
 	expect((await runDraft(["correct", "--app", "kakao", "--room", "9", "--change", "반말로"], "")).code).toBe(0);
-	expect(readFileSync(toneFile({ app: "kakao", room: "9" }), "utf8")).toContain("반말로");
-	expect(existsSync(toneFile({ app: "kakao" }))).toBe(false);
+	expect(profileBullets({ app: "kakao", room: "9" }, HEADINGS.corrections).join("\n")).toContain("반말로");
+	expect(profileBullets({ app: "kakao" }, HEADINGS.corrections)).toEqual([]);
 });
 
 test("a legacy style.md is read as the mail profile until tone/mail.md exists, and carried over by the next write", async () => {
@@ -158,9 +160,12 @@ test("a legacy style.md is read as the mail profile until tone/mail.md exists, a
 	expect(loadStyle({ app: "mail" })).toMatchObject({ samples: ["옛 문장이에요."], rules: ["짧게"], samplesFrom: "app" });
 	expect(loadStyle({ app: "kakao", room: "1" }).samples).toEqual([]);
 	recordCorrection({ app: "mail" }, "정중하게", new Date("2030-01-02T00:00:00Z"));
+	expect(loadStyle({ app: "mail" })).toMatchObject({ rules: ["짧게"], corrections: ["2030-01-02: 정중하게"] });
+	expect(existsSync(toneFile({ app: "mail" }))).toBe(false);
+	writeExamples({ app: "mail" }, ["옛 문장이에요."]);
 	const md = readFileSync(toneFile({ app: "mail" }), "utf8");
 	expect(md).toContain("옛 문장이에요.");
-	expect(md).toContain("정중하게");
+	expect(md).toContain("짧게");
 	await Bun.write(paths.legacyStyle(), "## 예시\n\n- 바뀐 옛 문장이에요.\n");
 	expect(loadStyle({ app: "mail" }).samples).toEqual(["옛 문장이에요."]);
 });
@@ -280,15 +285,17 @@ test("sent mail is read with zele only when the install's config turned zele on"
 
 test("a section the code does not know reaches the rules, after the known rule sections, at every level", () => {
 	mkdirSync(join(paths.toneDir(), "mail"), { recursive: true });
-	writeFileSync(toneFile("install"), "## 말투\n\n- 존댓말\n\n## 설치 메모\n\n- 설치 줄\n");
-	writeFileSync(toneFile({ app: "mail" }), "## 보낸 사람 신분별\n\n- 학부모에게는 선생님 호칭\n\n## 말투\n\n- 짧게\n");
+	seedRules("install", { tone: ["존댓말"] });
+	seedRules({ app: "mail" }, { tone: ["짧게"] });
+	writeFileSync(toneFile("install"), "## 설치 메모\n\n- 설치 줄\n");
+	writeFileSync(toneFile({ app: "mail" }), "## 보낸 사람 신분별\n\n- 학부모에게는 선생님 호칭\n");
 	expect(loadStyle({ app: "mail" }).rules).toEqual(["존댓말", "짧게", "설치 줄", "학부모에게는 선생님 호칭"]);
 });
 
 test("recordForbidden stores a wording once in that profile's 금지, merged with the install level; removeForbidden takes it out once", () => {
 	mkdirSync(paths.toneDir(), { recursive: true });
-	writeFileSync(toneFile("install"), "## 금지\n\n- install-ban\n");
-	writeFileSync(toneFile({ app: "youtube" }), "## 말투\n\n- 짧게\n\n## 고친 점\n\n- 2030-01-01: 존댓말로\n");
+	seedRules("install", { ban: ["install-ban"] });
+	seedRules({ app: "youtube" }, { tone: ["짧게"], correction: ["2030-01-01: 존댓말로"] });
 	recordForbidden({ app: "youtube" }, ["행복한 하루 되세요"]);
 	recordForbidden({ app: "youtube" }, [" 행복한 하루 되세요 ", "Thanks"]);
 	recordForbidden({ app: "youtube" }, ["thanks"]);
@@ -301,12 +308,13 @@ test("recordForbidden stores a wording once in that profile's 금지, merged wit
 	expect(removeForbidden({ app: "youtube" }, "thanks")).toBe(false);
 	expect(loadStyle({ app: "youtube" }).forbidden).toEqual(["install-ban", "행복한 하루 되세요"]);
 	expect(removeForbidden("install", "없는 말")).toBe(false);
-	expect(readFileSync(toneFile("install"), "utf8")).toBe("## 금지\n\n- install-ban\n");
+	expect(profileBullets("install", HEADINGS.forbidden)).toEqual(["install-ban"]);
+	expect(readLedger().filter(r => r.state === "off").map(r => r.text)).toEqual(["Thanks"]);
 });
 
 test("recordRule stores a standing rule once, undated, in that profile's 말투 and leaves the other sections alone; removeRule returns what it took out", () => {
 	mkdirSync(paths.toneDir(), { recursive: true });
-	writeFileSync(toneFile("install"), "## 고친 점\n\n- 2030-01-01: 존댓말로\n");
+	seedRules("install", { correction: ["2030-01-01: 존댓말로"] });
 	recordRule("install", "  끝인사는   짧게 한다 ");
 	recordRule("install", "끝인사는 짧게 한다");
 	recordRule("install", "끝인사는 짧게 한다".toUpperCase());
@@ -328,25 +336,33 @@ test("recordLearned keeps a line of the install key as a standing rule and any o
 
 test("standing holds the 말투 lines of install, app and room and the hand-added sections, install first, without the learned voice notes", () => {
 	mkdirSync(join(paths.toneDir(), "kakao"), { recursive: true });
-	writeFileSync(toneFile("install"), "## 말투\n\n- 어디서나 존댓말\n\n## 학습한 말투\n\n- 설치 측정\n");
+	seedRules("install", { tone: ["어디서나 존댓말"] });
+	seedRules({ app: "kakao", room: "r1" }, { tone: ["이모지 없이"] });
+	writeFileSync(toneFile("install"), "## 학습한 말투\n\n- 설치 측정\n");
 	writeFileSync(toneFile({ app: "kakao" }), "## 학습한 말투\n\n- 짧게 끊어 쓴다\n\n## 호칭\n\n- 형이라고 부른다\n");
-	writeFileSync(toneFile({ app: "kakao", room: "r1" }), "## 말투\n\n- 이모지 없이\n\n## 대화 이해\n\n- 동아리 방\n");
+	writeFileSync(toneFile({ app: "kakao", room: "r1" }), "## 대화 이해\n\n- 동아리 방\n");
 	const s = loadStyle({ app: "kakao", room: "r1" });
 	expect(s.standing).toEqual(["어디서나 존댓말", "이모지 없이", "형이라고 부른다"]);
-	expect(s.rules).toEqual(["어디서나 존댓말", "설치 측정", "짧게 끊어 쓴다", "이모지 없이", "동아리 방", "형이라고 부른다"]);
+	expect(s.rules).toEqual([...s.standing, "설치 측정", "짧게 끊어 쓴다", "동아리 방"]);
 });
 
-test("a writer adds one bullet after the section's last bullet and keeps the owner's prose; a missing section is appended at the end", () => {
+test("a writer adds one record to the ledger in order and leaves the owner's hand-written file byte for byte as it was", () => {
 	mkdirSync(paths.toneDir(), { recursive: true });
-	writeFileSync(toneFile({ app: "mail" }), "## 금지\n이 줄은 손으로 쓴 설명.\n\n- 가가\n\n## 말투\n- r\n");
+	const mailMd = "## 금지\n이 줄은 손으로 쓴 설명.\n\n- 가가\n\n## 말투\n- r\n";
+	const youtubeMd = "## 말투\n설명만 있다.\n";
+	writeFileSync(toneFile({ app: "mail" }), mailMd);
 	recordForbidden({ app: "mail" }, ["나나"]);
-	expect(readFileSync(toneFile({ app: "mail" }), "utf8")).toBe("## 금지\n이 줄은 손으로 쓴 설명.\n\n- 가가\n- 나나\n\n## 말투\n- r\n");
-	writeFileSync(toneFile({ app: "youtube" }), "## 말투\n설명만 있다.\n");
+	expect(profileBullets({ app: "mail" }, HEADINGS.forbidden)).toEqual(["나나"]);
+	expect(loadStyle({ app: "mail" }).forbidden).toEqual(["나나", "가가"]);
+	expect(readFileSync(toneFile({ app: "mail" }), "utf8")).toBe(mailMd);
+	writeFileSync(toneFile({ app: "youtube" }), youtubeMd);
 	recordRule({ app: "youtube" }, "짧게");
 	recordForbidden({ app: "youtube" }, ["되세요"]);
-	expect(readFileSync(toneFile({ app: "youtube" }), "utf8")).toBe("## 말투\n설명만 있다.\n\n- 짧게\n\n## 금지\n\n- 되세요\n");
+	expect([profileBullets({ app: "youtube" }, HEADINGS.rules), profileBullets({ app: "youtube" }, HEADINGS.forbidden)]).toEqual([["짧게"], ["되세요"]]);
 	expect(removeRule({ app: "youtube" }, "짧게")).toEqual(["짧게"]);
-	expect(readFileSync(toneFile({ app: "youtube" }), "utf8")).toBe("## 말투\n설명만 있다.\n\n\n## 금지\n\n- 되세요\n");
+	expect(profileBullets({ app: "youtube" }, HEADINGS.rules)).toEqual([]);
+	expect(readLedger().filter(r => r.state === "off").map(r => r.text)).toEqual(["짧게"]);
+	expect(readFileSync(toneFile({ app: "youtube" }), "utf8")).toBe(youtubeMd);
 });
 
 const SHAPES: { name: string; md: (h: string, b: string) => string; together?: string }[] = [
@@ -358,6 +374,7 @@ const SHAPES: { name: string; md: (h: string, b: string) => string; together?: s
 	{ name: "section last without a trailing newline", md: (h, b) => `## 기타\n- 다른\n\n${h}\n설명\n- 가가\n${b}` },
 ];
 const GONE = "지울 말";
+const KIND_OF: Record<string, LedgerKind> = { [HEADINGS.forbidden]: "ban", [HEADINGS.rules]: "tone", [HEADINGS.corrections]: "correction" };
 const WRITERS: { name: string; heading: string; run: () => unknown; adds?: string }[] = [
 	{ name: "recordForbidden", heading: HEADINGS.forbidden, run: () => recordForbidden({ app: "mail" }, ["새 표현"]), adds: "새 표현" },
 	{ name: "removeForbidden", heading: HEADINGS.forbidden, run: () => removeForbidden({ app: "mail" }, GONE) },
@@ -366,28 +383,21 @@ const WRITERS: { name: string; heading: string; run: () => unknown; adds?: strin
 	{ name: "recordCorrection", heading: HEADINGS.corrections, run: () => recordCorrection({ app: "mail" }, "새 고친 점", new Date("2030-05-06T00:00:00Z")), adds: "2030-05-06: 새 고친 점" },
 	{ name: "removeCorrection", heading: HEADINGS.corrections, run: () => removeCorrection({ app: "mail" }, "지울") },
 ];
-const isSubsequence = (needles: string[], hay: string[]) => {
-	let at = 0;
-	for (const line of hay) if (at < needles.length && line === needles[at]) at++;
-	return at === needles.length;
-};
-
-test("every writer keeps each hand-written line it was not asked to change, in order, whatever the section's shape", () => {
+test("every writer changes the ledger and leaves a hand-written file byte for byte as it was, whatever the section's shape", () => {
 	for (const shape of SHAPES) {
 		for (const w of WRITERS) {
 			rmSync(paths.toneDir(), { force: true, recursive: true });
+			rmSync(paths.ledger(), { force: true });
 			mkdirSync(paths.toneDir(), { recursive: true });
 			const before = shape.md(w.heading, `- ${GONE}`);
 			writeFileSync(toneFile({ app: "mail" }), before);
+			seedRules({ app: "mail" }, { [KIND_OF[w.heading]!]: [GONE] });
 			w.run();
-			const after = readFileSync(toneFile({ app: "mail" }), "utf8");
 			const label = `${w.name} / ${shape.name}`;
-			const kept = before.split(/\r?\n/).filter(l => w.adds || l !== `- ${GONE}`);
-			expect({ label, kept: isSubsequence(kept, after.split(/\r?\n/)) }).toEqual({ label, kept: true });
-			if (w.adds) expect({ label, bullets: profileBullets({ app: "mail" }, w.heading) }).toEqual({ label, bullets: expect.arrayContaining([GONE, w.adds]) });
-			else expect({ label, lines: after.split(/\r?\n/).length, bullets: profileBullets({ app: "mail" }, w.heading).includes(GONE) }).toEqual({ label, lines: kept.length, bullets: false });
-			if (shape.together) expect({ label, together: after.includes(shape.together) }).toEqual({ label, together: true });
-			if (before.includes("\r\n")) expect({ label, bareLf: /[^\r]\n/.test(after) }).toEqual({ label, bareLf: false });
+			expect({ label, file: readFileSync(toneFile({ app: "mail" }), "utf8") === before }).toEqual({ label, file: true });
+			const bullets = profileBullets({ app: "mail" }, w.heading);
+			if (w.adds) expect({ label, bullets }).toEqual({ label, bullets: [GONE, w.adds] });
+			else expect({ label, bullets, off: readLedger().filter(r => r.state === "off").map(r => r.text) }).toEqual({ label, bullets: [], off: [GONE] });
 		}
 	}
 });
@@ -402,8 +412,13 @@ test("a stored value is one line: a newline in a ban, a rule or a correction can
 	recordRule({ app: "mail" }, "규칙\n## 고친 점\n- 가짜 고친 점");
 	recordCorrection({ app: "mail" }, "고침\n## 금지\n- 가짜 금지", new Date("2030-01-01T00:00:00Z"));
 	recordForbidden({ app: "mail" }, ["둘째\r\n## 정체성\n- 가짜 신분"]);
-	const file = readFileSync(toneFile({ app: "mail" }), "utf8");
-	expect(file.split("\n").filter(l => l.startsWith("## "))).toEqual([HEADINGS.forbidden, HEADINGS.rules, HEADINGS.corrections]);
+	expect(existsSync(toneFile({ app: "mail" }))).toBe(false);
+	expect(readLedger().map(r => [r.kind, r.text])).toEqual([
+		["ban", "ok ## 말투 - 가짜 규칙"],
+		["tone", "규칙 ## 고친 점 - 가짜 고친 점"],
+		["correction", "2030-01-01: 고침 ## 금지 - 가짜 금지"],
+		["ban", "둘째 ## 정체성 - 가짜 신분"],
+	]);
 	const s = loadStyle({ app: "mail" });
 	expect(s.forbidden).toEqual(["ok ## 말투 - 가짜 규칙", "둘째 ## 정체성 - 가짜 신분"]);
 	expect(s.rules).toEqual(["규칙 ## 고친 점 - 가짜 고친 점"]);
@@ -412,6 +427,7 @@ test("a stored value is one line: a newline in a ban, a rule or a correction can
 	expect((await correct("--app", "mail", "--forbid", "가\n\n")).code).toBe(1);
 	expect((await correct("--app", "mail", "--forbid", `${"가".repeat(20)}\n\n\n${"나".repeat(20)}`)).code).toBe(1);
 	expect((await correct("--app", "mail", "--forbid", `${"가".repeat(19)}\n\n\n${"나".repeat(20)}`)).code).toBe(0);
+	expect(readLedger().every(r => !/[\r\n]/.test(r.text))).toBe(true);
 });
 
 test("correct --forbid stores a wording once at install level, --allow takes it back", async () => {
@@ -492,7 +508,8 @@ test("correct --rule stores a standing rule at the chosen level, tone lists it u
 
 test("tone lists the bullets of hand-added sections as standing rules with level and section name; --forget leaves them and says which file holds the line", async () => {
 	mkdirSync(paths.toneDir(), { recursive: true });
-	writeFileSync(toneFile("install"), "## 말투\n\n- 어디서나 존댓말\n\n## 보낸 사람 신분별\n\n- 팀장에게는 존댓말\n");
+	seedRules("install", { tone: ["어디서나 존댓말"] });
+	writeFileSync(toneFile("install"), "## 보낸 사람 신분별\n\n- 팀장에게는 존댓말\n");
 	writeFileSync(toneFile({ app: "mail" }), "## 호칭\n\n- 학부모에게는 선생님 호칭\n");
 	const tone = (await runDraft(["tone", "--app", "mail"], "")).lines.join("\n");
 	const standing = tone.slice(tone.indexOf("말투:"), tone.indexOf("고친 점:"));
@@ -513,11 +530,12 @@ test("tone lists the bullets of hand-added sections as standing rules with level
 
 test("--forget finds a line however its text or the owner's text is spaced, and echoes on one line", async () => {
 	mkdirSync(paths.toneDir(), { recursive: true });
-	writeFileSync(toneFile({ app: "mail" }), "## 말투\n\n- 끝인사는  두 줄로\n- 이모지 없이\n\n## 호칭\n\n- 학부모에게는\t선생님 호칭\n");
+	seedRules({ app: "mail" }, { tone: ["끝인사는  두 줄로", "이모지 없이"] });
+	writeFileSync(toneFile({ app: "mail" }), "## 호칭\n\n- 학부모에게는\t선생님 호칭\n");
 	const hand = await correct("--app", "mail", "--forget", "학부모에게는 선생님");
 	expect(hand.lines.join("\n")).toContain(toneFile({ app: "mail" }));
 	const gone = await correct("--app", "mail", "--forget", "끝인사는 두\n줄로");
-	expect(gone.lines.join("\n")).toContain("[말투] 끝인사는  두 줄로");
+	expect(gone.lines.join("\n")).toContain("[말투] 끝인사는 두 줄로");
 	expect(profileBullets({ app: "mail" }, HEADINGS.rules)).toEqual(["이모지 없이"]);
 	const miss = await correct("--app", "mail", "--forget", "없는\n말", "--change", "두 줄\n메모");
 	expect(miss.lines.every(l => !l.includes("\n"))).toBe(true);
@@ -527,7 +545,7 @@ test("tone lists each line with the level it comes from and writes nothing", asy
 	await correct("--app", "install", "--forbid", "되세요");
 	await correct("--app", "youtube", "--change", "이모지 쓰지 마");
 	await correct("--app", "youtube", "--room", "c1", "--change", "방 전용");
-	const before = readdirSync(paths.toneDir(), { recursive: true }).sort();
+	const before = JSON.stringify(readLedger());
 	const r = await runDraft(["tone", "--app", "youtube"], "");
 	expect(r.code).toBe(0);
 	const text = r.lines.join("\n");
@@ -537,5 +555,6 @@ test("tone lists each line with the level it comes from and writes nothing", asy
 	expect(text.indexOf("고친 점:")).toBeLessThan(text.indexOf("금지:"));
 	expect((await runDraft(["tone", "--app", "youtube", "--room", "c1"], "")).lines.join("\n")).toContain("- [room] 2030-03-04: 방 전용");
 	expect((await runDraft(["tone"], "")).code).toBe(2);
-	expect(readdirSync(paths.toneDir(), { recursive: true }).sort()).toEqual(before);
+	expect(JSON.stringify(readLedger())).toBe(before);
+	expect(existsSync(paths.toneDir())).toBe(false);
 });

@@ -7,17 +7,18 @@ import { commentsDir, createStore } from "../../../hub/comments/store.ts";
 import type { SourceConfig } from "../../../hub/comments/contract.ts";
 import { dropDraft, learningSettled, learnLine, recordForbidden, sendDraft } from "../lib/flow.ts";
 import { draftRules } from "../lib/draft-rules.ts";
-import { dataDir, HEADINGS, loadPairs, loadStyle, ownToneMailApps, paths, profileBullets } from "../lib/settings.ts";
+import { readLedger } from "../lib/ledger.ts";
+import { dataDir, HEADINGS, loadPairs, loadStyle, paths, profileBullets } from "../lib/settings.ts";
 import { addDraft, type DraftRec, getDraft, newId } from "../lib/store.ts";
-import { enable, pick, setupEnv } from "./helpers.ts";
+import { enable, pick, seedRules, setupEnv } from "./helpers.ts";
 
-// How a lesson reaches the drafts that read it: a mail app file with only lessons, every learning path into the mail app's own-tone files,
+// How a lesson reaches the drafts that read it: a mail app with only lessons of its own, every learning path of the mail app (one record that its instances read, never a copy),
 // a mail that rode on a comment reply as a past reply, a 보내지 않기 reason, and a site's DM tone file.
 const env = setupEnv();
 afterAll(env.cleanup);
 beforeEach(() => {
 	process.env.DOTZ_DIR = env.dir;
-	for (const p of [paths.toneDir(), paths.config(), paths.drafts(), paths.inbox(), join(env.dir, "custom", "reply-drafts", "pairs"), join(env.dir, "custom", "apps.json"), commentsDir(dataDir())]) rmSync(p, { force: true, recursive: true });
+	for (const p of [paths.toneDir(), paths.ledger(), paths.config(), paths.drafts(), paths.inbox(), join(env.dir, "custom", "reply-drafts", "pairs"), join(env.dir, "custom", "apps.json"), commentsDir(dataDir())]) rmSync(p, { force: true, recursive: true });
 });
 
 const profile = (file: string, md: string) => {
@@ -26,7 +27,9 @@ const profile = (file: string, md: string) => {
 };
 const apps = (...ids: string[]) => writeFileSync(join(env.dir, "custom", "apps.json"), JSON.stringify(Object.fromEntries(ids.map(id => [id, { app: "mail" }]))));
 const now = () => new Date("2030-03-04T09:00:00Z");
-const MAIL = "## 정체성\n- MAIL-IDENTITY\n\n## 예시\n- MAIL-SAMPLE\n\n## 고친 점\n- 2030-01-01: MAIL-CORRECTION\n";
+const MAIL = "## 정체성\n- MAIL-IDENTITY\n\n## 예시\n- MAIL-SAMPLE\n";
+const seedMail = () => seedRules({ app: "mail" }, { correction: ["2030-01-01: MAIL-CORRECTION"] });
+const at = (app: string) => readLedger().filter(r => r.scope.app === app && r.state === "on");
 const item = { kind: "mail" as const, from: "Kim <kim@example.com>" };
 const draft = (extra: Partial<DraftRec> = {}): DraftRec => {
 	const id = newId();
@@ -35,42 +38,49 @@ const draft = (extra: Partial<DraftRec> = {}): DraftRec => {
 	return rec;
 };
 
-test("a mail app file with only corrections adds them to the shared mail tone of its drafts, and a lesson for the mail app reaches it", async () => {
+test("a mail app with only corrections adds them to the shared mail tone of its drafts, and a lesson for the mail app reaches it at read time", async () => {
 	profile("mail.md", MAIL);
-	profile("mail-beta.md", "## 고친 점\n- 2030-02-01: BETA-CORRECTION\n");
+	seedMail();
+	seedRules({ app: "mail-beta" }, { correction: ["2030-02-01: BETA-CORRECTION"] });
 	apps("mail-beta");
 	const style = draftRules({ app: "mail-beta" }, item).style();
 	expect(style.identity).toEqual(["MAIL-IDENTITY"]);
 	expect(style.samples).toEqual(["MAIL-SAMPLE"]);
 	expect(style.corrections).toEqual(["2030-01-01: MAIL-CORRECTION", "2030-02-01: BETA-CORRECTION"]);
-	expect(ownToneMailApps()).toEqual(["mail-beta"]);
 	await learnLine({ app: "mail" }, "인사는 뺀다", "correction", { now });
-	expect(profileBullets({ app: "mail-beta" }, HEADINGS.corrections)).toEqual(["2030-02-01: BETA-CORRECTION", "2030-03-04: 인사는 뺀다"]);
+	// One record at the mail scope that the instance reads, no copy in its own scope.
+	expect(at("mail").filter(r => r.text === "2030-03-04: 인사는 뺀다")).toHaveLength(1);
+	expect(profileBullets({ app: "mail-beta" }, HEADINGS.corrections)).toEqual(["2030-02-01: BETA-CORRECTION"]);
+	expect(draftRules({ app: "mail-beta" }, item).style().corrections).toEqual(["2030-01-01: MAIL-CORRECTION", "2030-03-04: 인사는 뺀다", "2030-02-01: BETA-CORRECTION"]);
 });
 
-test("a mail app with its own tone is one of the app list: a tone file of a mail app that is not in it gets no copy of a mail-wide lesson", async () => {
+test("a mail-wide lesson is one record: a mail app that is not in the app list gets no copy of it", async () => {
 	profile("mail.md", MAIL);
-	profile("mail-beta.md", "## 고친 점\n- 2030-02-01: BETA-CORRECTION\n");
-	profile("mail-ghost.md", "## 고친 점\n- 2030-02-02: GHOST-CORRECTION\n");
+	seedRules({ app: "mail-beta" }, { correction: ["2030-02-01: BETA-CORRECTION"] });
+	seedRules({ app: "mail-ghost" }, { correction: ["2030-02-02: GHOST-CORRECTION"] });
 	apps("mail-beta");
-	expect(ownToneMailApps()).toEqual(["mail-beta"]);
 	await learnLine({ app: "mail" }, "인사는 뺀다", "correction", { now });
-	expect(profileBullets({ app: "mail-beta" }, HEADINGS.corrections)).toEqual(["2030-02-01: BETA-CORRECTION", "2030-03-04: 인사는 뺀다"]);
+	expect(readLedger().filter(r => r.text === "2030-03-04: 인사는 뺀다").map(r => r.scope)).toEqual([{ app: "mail" }]);
+	expect(at("mail-beta").map(r => r.text)).toEqual(["2030-02-01: BETA-CORRECTION"]);
 	expect(profileBullets({ app: "mail-ghost" }, HEADINGS.corrections)).toEqual(["2030-02-02: GHOST-CORRECTION"]);
 });
 
-test("every learning path for the mail app (the shared learnLine and forbidden wordings) also learns into a mail app with its own tone", async () => {
+test("every learning path for the mail app (the shared learnLine and forbidden wordings) is one record that a mail app with its own tone reads", async () => {
 	profile("mail.md", MAIL);
 	profile("mail-beta.md", "## 정체성\n- BETA-IDENTITY\n");
 	apps("mail-beta");
 	const learned = await learnLine({ app: "mail" }, "답장은 짧게", "rule", { now });
-	expect(learned.also?.map(a => [a.app, a.stored])).toEqual([["mail-beta", true]]);
+	expect(learned.stored).toBe(true);
 	recordForbidden({ app: "mail" }, ["확인 부탁드립니다"]);
-	expect(profileBullets({ app: "mail-beta" }, HEADINGS.rules)).toEqual(["답장은 짧게"]);
-	expect(profileBullets({ app: "mail-beta" }, HEADINGS.forbidden)).toEqual(["확인 부탁드립니다"]);
+	expect(at("mail").map(r => [r.kind, r.text])).toEqual([["tone", "답장은 짧게"], ["ban", "확인 부탁드립니다"]]);
+	expect(at("mail-beta")).toEqual([]);
+	const beta = loadStyle({ app: "mail-beta" });
+	expect(beta.rules).toEqual(["답장은 짧게"]);
+	expect(beta.forbidden).toEqual(["확인 부탁드립니다"]);
 	// A lesson of one mail app stays in it.
 	await learnLine({ app: "mail-beta" }, "베타만", "rule", { now });
 	expect(profileBullets({ app: "mail" }, HEADINGS.rules)).toEqual(["답장은 짧게"]);
+	expect(loadStyle({ app: "mail-beta" }).rules).toEqual(["답장은 짧게", "베타만"]);
 });
 
 test("a changed mail that rode on a comment reply becomes a past reply to that comment, tagged with its comment source", async () => {
@@ -87,6 +97,7 @@ test("a changed mail that rode on a comment reply becomes a past reply to that c
 test("보내지 않기 with a reason learns it as a correction of the draft's tone; without a reason nothing is learned", async () => {
 	enable(env);
 	profile("mail.md", MAIL);
+	seedMail();
 	const quiet = draft();
 	expect(dropDraft(quiet.id).ok).toBe(true);
 	const withReason = draft();

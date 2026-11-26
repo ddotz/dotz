@@ -17,7 +17,7 @@ import { enable, fakeModel, goodReply, j, mailFixture, pick, setupEnv } from "./
 const env = setupEnv();
 afterAll(env.cleanup);
 beforeEach(() => {
-	for (const p of [paths.config(), paths.legacyStyle(), paths.toneDir(), paths.drafts(), paths.inbox(), paths.personalFeature()]) rmSync(p, { force: true, recursive: true });
+	for (const p of [paths.config(), paths.legacyStyle(), paths.toneDir(), paths.ledger(), paths.drafts(), paths.inbox(), paths.personalFeature()]) rmSync(p, { force: true, recursive: true });
 });
 
 const sink = () => {

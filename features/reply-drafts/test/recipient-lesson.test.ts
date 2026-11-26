@@ -1,7 +1,7 @@
 import { afterAll, beforeEach, expect, spyOn, test } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join, relative } from "node:path";
+import { join, relative } from "node:path";
 import { createApprovalSender } from "../../../hub/approval-send.ts";
 import { type CommentAdapter, commentId, type SourceConfig } from "../../../hub/comments/contract.ts";
 import { createEngine, type MailLink } from "../../../hub/comments/engine.ts";
@@ -15,23 +15,23 @@ import { mailAdapter, replyLearning } from "../../../hub/reply-mail.ts";
 import type { ReplyAdapter } from "../../../hub/reply-types.ts";
 import { journalEntries } from "../lib/curate.ts";
 import { buildDraft, reviseDraft } from "../lib/flow.ts";
+import { readLedger } from "../lib/ledger.ts";
 import { learn } from "../lib/learn.ts";
 import { styleFrom } from "../lib/pairs.ts";
-import { HEADINGS, paths, profileBullets, recipientFile, toneFile } from "../lib/settings.ts";
+import { HEADINGS, paths, profileBullets, toneFile } from "../lib/settings.ts";
 import { addDraft, type DraftRec } from "../lib/store.ts";
-import { fakeModel, j, setupEnv } from "./helpers.ts";
+import { fakeModel, j, seedRules, setupEnv } from "./helpers.ts";
 
 const env = setupEnv();
 afterAll(env.cleanup);
 beforeEach(() => {
 	process.env.DOTZ_DIR = env.dir;
-	for (const p of [paths.toneDir(), paths.drafts()]) rmSync(p, { force: true, recursive: true });
+	for (const p of [paths.toneDir(), paths.ledger(), paths.drafts()]) rmSync(p, { force: true, recursive: true });
 });
 
 const LINE = "이분께는 끝인사를 짧게 한다";
 const CHANGE = "이분께는 끝인사 짧게 해 줘";
 const RECIPIENT_HEAD = "The user's conditions for this recipient only (he set them for the person this reply goes to; where a rule or correction above says otherwise, these win):";
-const A_FILE = join("mail", "to", "a_0040x_002ecom.md");
 const NOW = Date.parse("2026-11-20T00:00:00.000Z");
 
 const mailItem = (from: string): ReplyItem => ({ kind: "mail", app: "mail", from, self: ["me@example.net"], subject: "일정", text: "다음 주 일정 알려 주세요" });
@@ -44,6 +44,11 @@ const promptOf = async (from: string): Promise<string> => {
 	return `${model.calls[0]!.system}\n${model.calls[0]!.user}`;
 };
 const recipientPart = (prompt: string): string => (prompt.includes(RECIPIENT_HEAD) ? prompt.slice(prompt.indexOf(RECIPIENT_HEAD)) : "");
+
+// The scopes the ledger's records sit in, each once: where the lessons of a test were stored. The tone files keep only the learned voice, so a lesson leaves no file.
+const scopesOf = (): object[] => [...new Set(readLedger().map(r => JSON.stringify(r.scope)))].map(s => JSON.parse(s));
+const lines = () => readLedger().map(r => ({ kind: r.kind, text: r.text, scope: r.scope }));
+const A_SCOPE = { app: "mail", to: "a@x.com" };
 
 function toneTree(): Record<string, string> {
 	const out: Record<string, string> = {};
@@ -88,7 +93,8 @@ async function mailCard(from: string, said: object, learning?: ReplyDeps["learni
 test("a mail revise whose answer says recipient stores the line in that person's file only, the card names him, and only his next draft carries it under the recipient heading", async () => {
 	const first = await mailCard("Kim <a@x.com>", { scope: "recipient" });
 	expect(first).toBe(`[ask] 고친 초안이에요. 기억했어요: "${CHANGE}" · 범위: 이 받는 사람`);
-	expect(Object.keys(toneTree())).toEqual([A_FILE]);
+	expect(scopesOf()).toEqual([A_SCOPE]);
+	expect(toneTree()).toEqual({});
 	expect(profileBullets({ app: "mail", to: "a@x.com" }, HEADINGS.corrections)).toEqual([expect.stringMatching(new RegExp(`^\\d{4}-\\d{2}-\\d{2}: ${CHANGE}$`))]);
 	expect(recipientPart(await promptOf("Kim <A@X.com>"))).toContain(CHANGE);
 	const other = await promptOf("Lee <b@x.com>");
@@ -107,14 +113,13 @@ test("draft.ts revise writes a recipient lesson, its ban and its wording pattern
 	expect(step.text).toContain(`기억했어요: "${change}" · 범위: 이 받는 사람`);
 	expect(step.text).toContain("쓰지 않을 표현: '행복한 하루 되세요'");
 	expect(asked).toEqual(["pattern"]);
-	expect(Object.keys(toneTree())).toEqual([A_FILE]);
+	expect(scopesOf()).toEqual([A_SCOPE]);
+	expect(toneTree()).toEqual({});
 	expect(profileBullets({ app: "mail", to: "a@x.com" }, HEADINGS.forbidden)).toHaveLength(2);
 });
 
 test("a recipient lesson that repeats what that person's file already says replaces it instead of adding a second line, curated against that file", async () => {
-	const file = toneFile({ app: "mail", to: "a@x.com" });
-	mkdirSync(dirname(file), { recursive: true });
-	writeFileSync(file, `## 고친 점\n\n- 2030-03-01: ${LINE}\n`);
+	const [old] = seedRules(A_SCOPE, { correction: [`2030-03-01: ${LINE}`] });
 	addDraft(mailRec("RMA3", "Kim <a@x.com>"));
 	const curated: string[] = [];
 	const learnCall = () => async (system: string, user: string) => (system.includes("style conditions") ? (curated.push(user), JSON.stringify({ replaces: [{ id: "C1", why: "same" }] })) : "{}");
@@ -123,51 +128,52 @@ test("a recipient lesson that repeats what that person's file already says repla
 	expect(curated[0]).toContain(`2030-03-01: ${LINE}`);
 	expect(step.text).toContain(`기억했어요: "${CHANGE}" · 범위: 이 받는 사람 · 기존 조건 1개를 이 조건으로 바꿨어요`);
 	expect(profileBullets({ app: "mail", to: "a@x.com" }, HEADINGS.corrections)).toEqual([expect.stringMatching(new RegExp(`^\\d{4}-\\d{2}-\\d{2}: ${CHANGE}$`))]);
+	expect(readLedger().find(r => r.id === old!.id)).toMatchObject({ state: "merged", into: readLedger().find(r => r.text.endsWith(CHANGE) && r.id !== old!.id)!.id });
 	expect(journalEntries().map(e => [e.profile, e.why])).toEqual([["mail/to/a_0040x_002ecom.md", "same"]]);
 	expect(existsSync(toneFile({ app: "mail" }))).toBe(false);
 });
 
 test("on the card a recipient lesson that makes that person's corrections long compacts that person's file only", async () => {
 	const earlier = Array.from({ length: 12 }, (_, i) => `2030-03-${String(i + 1).padStart(2, "0")}: 예전에 고친 점 ${i + 1}`);
-	const file = toneFile({ app: "mail", to: "a@x.com" });
-	mkdirSync(dirname(file), { recursive: true });
-	writeFileSync(file, `## 고친 점\n\n${earlier.map(l => `- ${l}`).join("\n")}\n`);
+	seedRules(A_SCOPE, { correction: earlier });
 	const asked: string[] = [];
 	const log = spyOn(console, "error").mockImplementation(() => undefined);
 	await mailCard("Kim <a@x.com>", { scope: "recipient" }, replyLearning(() => ({ learnCall: () => async (_system, user) => (asked.push(user), JSON.stringify({ replaces: [] })) })));
 	log.mockRestore();
 	expect(asked).toHaveLength(2);
 	for (const line of earlier) expect(asked[1]).toContain(line);
-	expect(Object.keys(toneTree())).toEqual([A_FILE]);
+	expect(scopesOf()).toEqual([A_SCOPE]);
 });
 
 test("a recipient lesson on a mail whose sender is only a name stays the channel's, and the card says so", async () => {
 	const first = await mailCard("김 팀장", { scope: "recipient" });
 	expect(first).toBe(`[ask] 고친 초안이에요. 기억했어요: "${CHANGE}" · 범위: 이 앱`);
-	expect(Object.keys(toneTree())).toEqual(["mail.md"]);
+	expect(scopesOf()).toEqual([{ app: "mail" }]);
 });
 
 test("scope everywhere and an older answer's everywhere: true both write a standing rule of install.md", async () => {
 	for (const said of [{ scope: "everywhere" }, { everywhere: true }]) {
-		rmSync(paths.toneDir(), { force: true, recursive: true });
+		rmSync(paths.ledger(), { force: true });
 		rmSync(paths.drafts(), { force: true, recursive: true });
 		expect(await mailCard("Kim <a@x.com>", said)).toBe(`[ask] 고친 초안이에요. 기억했어요: "${CHANGE}" · 범위: 모든 답장`);
-		expect(toneTree()).toEqual({ "install.md": `## 말투\n\n- ${CHANGE}\n` });
+		expect(lines()).toEqual([{ kind: "tone", text: CHANGE, scope: {} }]);
+		expect(toneTree()).toEqual({});
 	}
 });
 
 async function snapshot(said: object) {
-	rmSync(paths.toneDir(), { force: true, recursive: true });
+	rmSync(paths.ledger(), { force: true });
 	rmSync(paths.drafts(), { force: true, recursive: true });
 	const card = await mailCard("Kim <a@x.com>", said);
-	return { card, files: toneTree(), toA: await promptOf("Kim <a@x.com>"), toB: await promptOf("Lee <b@x.com>") };
+	return { card, lines: lines(), files: toneTree(), toA: await promptOf("Kim <a@x.com>"), toB: await promptOf("Lee <b@x.com>") };
 }
 
 test("older answers store, say and prompt what they did before scope: a channel lesson in mail.md, an everywhere lesson in install.md, and the same as the scope that means it", async () => {
 	const day = new Date().toISOString().slice(0, 10);
 	const channel = await snapshot({ everywhere: false });
 	expect(channel.card).toBe(`[ask] 고친 초안이에요. 기억했어요: "${CHANGE}" · 범위: 이 앱`);
-	expect(channel.files).toEqual({ "mail.md": `## 고친 점\n\n- ${day}: ${CHANGE}\n` });
+	expect(channel.lines).toEqual([{ kind: "correction", text: `${day}: ${CHANGE}`, scope: { app: "mail" } }]);
+	expect(channel.files).toEqual({});
 	expect(channel.toA).toBe(channel.toB.replaceAll("b@x.com", "a@x.com").replaceAll("Lee <", "Kim <"));
 	expect(channel.toA).not.toContain(RECIPIENT_HEAD);
 	expect(await snapshot({})).toEqual(channel);
@@ -175,7 +181,8 @@ test("older answers store, say and prompt what they did before scope: a channel 
 	expect(await snapshot({ scope: "anyone" })).toEqual(channel);
 	const everywhere = await snapshot({ everywhere: true });
 	expect(everywhere.card).toBe(`[ask] 고친 초안이에요. 기억했어요: "${CHANGE}" · 범위: 모든 답장`);
-	expect(everywhere.files).toEqual({ "install.md": `## 말투\n\n- ${CHANGE}\n` });
+	expect(everywhere.lines).toEqual([{ kind: "tone", text: CHANGE, scope: {} }]);
+	expect(everywhere.files).toEqual({});
 	expect(await snapshot({ scope: "everywhere" })).toEqual(everywhere);
 });
 
@@ -214,7 +221,7 @@ test("a recipient lesson on one of two commenters with the same name is stored u
 	try {
 		const code = await w.draft(0);
 		expect(await onCard(w.a, code, CHANGE)).toBe(`[ask] 고친 초안이에요. 기억했어요: "${CHANGE}" · 범위: 이 받는 사람`);
-		expect(Object.keys(toneTree())).toEqual([join("youtube", "to", `${recipientFile("UC_kimA")}.md`)]);
+		expect(scopesOf()).toEqual([{ app: "youtube", to: "uc_kima" }]);
 		w.prompts.length = 0;
 		await w.draft(2);
 		await w.draft(1);
@@ -242,7 +249,7 @@ test("a recipient lesson on an anonymous comment stays the source's, and the car
 	const w = commentWorld([{ author: "익명" }], { outs: [commentAnswer(), commentAnswer({ scope: "recipient" })] });
 	try {
 		expect(await onCard(w.a, await w.draft(0), CHANGE)).toBe(`[ask] 고친 초안이에요. 기억했어요: "${CHANGE}" · 범위: 이 앱`);
-		expect(Object.keys(toneTree())).toEqual(["youtube.md"]);
+		expect(scopesOf()).toEqual([{ app: "youtube" }]);
 	} finally {
 		w.close();
 	}
@@ -252,7 +259,8 @@ test("a website comment has no recipient level: its recipient lesson goes to the
 	const w = commentWorld([{ author: "홍길동" }], { src: blog, outs: [commentAnswer(), commentAnswer({ scope: "recipient" })] });
 	try {
 		expect(await onCard(w.a, await w.draft(0), CHANGE)).toBe(`[ask] 고친 초안이에요. 기억했어요: "${CHANGE}" · 범위: 이 앱`);
-		expect(Object.keys(toneTree())).toEqual(["site-blog.md"]);
+		expect(scopesOf()).toEqual([{ app: "site-blog" }]);
+		expect(toneTree()).toEqual({});
 	} finally {
 		w.close();
 	}
@@ -266,7 +274,7 @@ test("a recipient lesson of the mail that rides on a comment goes to that addres
 		addDraft({ ...mailRec("RMAIL01", "fan@example.com"), app: "mail-teaching", account: "me@example.net" } as DraftRec);
 		w.engine.store.putDraft({ ...w.engine.store.drafts().find(d => d.code === code)!, mail: "RMAIL01", mailAt: Date.now() });
 		expect(await onCard(w.a, code, CHANGE, replyLearning(() => ({})), "mail")).toBe(`[ask] 고친 초안이에요. 기억했어요: "${CHANGE}" · 범위: 이 받는 사람`);
-		expect(Object.keys(toneTree())).toEqual([join("mail", "to", `${recipientFile("fan@example.com")}.md`)]);
+		expect(scopesOf()).toEqual([{ app: "mail", to: "fan@example.com" }]);
 	} finally {
 		w.close();
 	}

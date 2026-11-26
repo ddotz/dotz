@@ -2,7 +2,7 @@
 // (hub/app-settings.ts draft_rules / draft_default through writeSettings), so a rule made here shows there at once and the other way round.
 import { readSettings, writeSettings, type DraftRule } from "../../../hub/app-settings.ts";
 import { appEntries } from "../../../hub/integrations.ts";
-import { migrateLedger, moveHandRules, readLedger, undoLedger } from "../lib/ledger.ts";
+import { migrateLedger, moveHandRules, previewMigration, readLedger, undoLedger } from "../lib/ledger.ts";
 import { dataDir } from "../lib/settings.ts";
 
 export const USAGE = [
@@ -12,7 +12,7 @@ export const USAGE = [
 	"  remove <id> [--app ..]",
 	"  default [--set <text> | --clear] [--app ..]   (the 기본 규칙 every draft of the app follows; no flag prints it)",
 	"  ledger [--json]   (every record of the rule ledger: id, state, scope, kind, text)",
-	"  migrate | undo | hand   (move every rule into the ledger once, with a backup / put the files back byte for byte and remove the ledger / move the rules written by hand into tone files into the ledger)",
+	"  migrate [--preview] | undo | hand   (move every rule into the ledger once, with a backup; --preview only prints per file the lines that would move and the records the ledger would get / put the files back byte for byte and remove the ledger / move the rules written by hand into tone files into the ledger)",
 	"  --app: mail (default) or an instance id like mail-2. --file: a file of the app's 첨부 파일 폴더 (name or path inside it) or a full path; none = the folder's best match",
 ].join("\n");
 
@@ -36,6 +36,10 @@ function ledgerCommand(cmd: string | undefined, rest: string[], dir: string): Ou
 			return { lines: rest.includes("--json") ? [JSON.stringify(all, null, 1)] : all.length ? all.map(r => `${r.id} [${r.state}${r.into ? ` → ${r.into}` : ""}] ${scopeName(r.scope)} · ${r.kind} · ${r.text}`) : ["장부에 규칙이 없어요"], code: 0 };
 		}
 		case "migrate": {
+			if (rest.includes("--preview")) {
+				const plan = previewMigration(dir);
+				return { lines: plan ? [...plan.files.flatMap(f => [`${f.file}: 옮길 규칙 ${f.lines.length}줄`, ...f.lines.map(l => `  ${l.kind} · ${l.text}`)]), "장부에 생길 기록:", ...plan.records.map(r => `  ${scopeName(r.scope)} · ${r.kind} · ${r.texts}줄`)] : ["옮길 규칙이 없거나 이미 옮겼어요"], code: 0 };
+			}
 			const done = migrateLedger(dir);
 			return { lines: [done ? `규칙 ${done.records}개를 장부로 옮겼어요. 바뀐 파일 ${done.files.length}개는 ledger-backup에 복사해 뒀어요 (되돌리기: rules.ts undo)` : "옮길 규칙이 없거나 이미 옮겼어요"], code: 0 };
 		}

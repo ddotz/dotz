@@ -3,6 +3,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { readSettings, writeSettings } from "./app-settings.ts";
+import { readLedger, textsAt } from "../features/reply-drafts/lib/ledger.ts";
 import { fakeHub, inbox, json, run, waitFor, type View } from "./test-web.ts";
 
 // 자동 초안 규칙 in the mail app's settings screen (web/js/32-app-settings.js arNodes) against a stub gateway whose settings route calls the real
@@ -12,6 +13,9 @@ const SHOTS = process.env.RULES_SHOTS;
 if (SHOTS) mkdirSync(SHOTS, { recursive: true });
 const data = mkdtempSync(join(tmpdir(), "rules-web-"));
 const config = () => JSON.parse(readFileSync(join(data, "custom/reply-drafts/config.json"), "utf8"));
+// The 어떻게 of a rule and the 기본 규칙 are records of the rule ledger, not keys of config.json.
+const how = (id: string) => textsAt({ app: "mail", request: id }, "request", data);
+const defaults = () => textsAt({ app: "mail" }, "instruction", data);
 const patches = inbox<Record<string, unknown>>();
 let held: { gate: Promise<void>; fail: boolean } | null = null;
 const holdNext = (fail = false) => { const { promise, resolve } = Promise.withResolvers<void>(); held = { gate: promise, fail }; return resolve; };
@@ -88,7 +92,8 @@ describe("자동 초안 규칙 in the mail settings screen", async () => {
 		await waitFor(v, `document.querySelector('#app-sw [data-rule="r1"]') && !document.querySelector("[data-rule-form]")`);
 		await shot(v, "rules-saved.png");
 		expect(await nth(1)).toEqual({ app: "mail", values: { draft_rules: [{ name: "자료 요청", when: "신청서를 보내 달라는 메일", how: "신청서를 첨부하고 짧게 인사", files: ["forms/신청서.pdf", "안내문.pdf"], on: true }] } });
-		expect(config().draftRules.mail).toEqual([{ id: "r1", name: "자료 요청", when: "신청서를 보내 달라는 메일", how: "신청서를 첨부하고 짧게 인사", files: ["forms/신청서.pdf", "안내문.pdf"], on: true }]);
+		expect(config().draftRules.mail).toEqual([{ id: "r1", name: "자료 요청", when: "신청서를 보내 달라는 메일", how: "", files: ["forms/신청서.pdf", "안내문.pdf"], on: true }]);
+		expect(how("r1")).toEqual(["신청서를 첨부하고 짧게 인사"]);
 		expect(await q(v, `return document.querySelector('[data-rule="r1"] [data-rule]').textContent`)).toBe("자료 요청");
 	}, 20_000);
 
@@ -107,10 +112,13 @@ describe("자동 초안 규칙 in the mail settings screen", async () => {
 		await run(v, `{ const d = document.querySelector('[data-k="draft_default"]'); d.value = "존댓말로 짧게"; d.dispatchEvent(new Event("change")); }`);
 		expect(await nth(4)).toEqual({ app: "mail", values: { draft_default: "존댓말로 짧게" } });
 		await waitFor(v, `document.querySelector(".snack span")?.textContent === "기본 규칙을 저장했어요" && document.querySelector('[data-k="draft_default"]').value === "존댓말로 짧게"`);
-		expect(config().draftDefaults.mail).toBe("존댓말로 짧게");
+		expect(defaults()).toEqual(["존댓말로 짧게"]);
+		expect(how("r1")).toEqual(["신청서를 첨부하고 짧게 인사"]);
 		await run(v, `document.querySelector('[data-k="rule-del:r1"]').click()`);
 		await waitFor(v, `!document.querySelector('#app-sw [data-rule="r1"]')`);
 		expect(config().draftRules.mail).toEqual([]);
+		expect(how("r1")).toEqual([]);
+		expect(readLedger(data).find(r => r.kind === "request" && r.scope.request === "r1")?.state).toBe("off");
 	}, 20_000);
 
 	const seed = async (on: boolean) => {
@@ -130,7 +138,7 @@ describe("자동 초안 규칙 in the mail settings screen", async () => {
 		expect(patches[base]).toEqual({ app: "mail", values: { draft_default: "짧게" } });
 		await waitFor(v, `!AS.busy.mail && !document.querySelector('#app-sw [data-rule="r1"]')`);
 		expect(config().draftRules.mail).toEqual([]);
-		expect(config().draftDefaults.mail).toBe("짧게");
+		expect(defaults()).toEqual(["짧게"]);
 	}, 20_000);
 
 	test("two quick presses of the same switch send one draft_rules request, queued or in flight", async () => {
@@ -158,7 +166,7 @@ describe("자동 초안 규칙 in the mail settings screen", async () => {
 		expect(await nth(base + 2)).toMatchObject({ values: { draft_rules: [{ id: "r1", on: false }] } });
 		await waitFor(v, `!AS.busy.mail && document.querySelector('[data-k="rule:r1"]').getAttribute("aria-checked") === "false"`);
 		expect(await q<[string, boolean][]>(v, `return __snacks`)).toContainEqual(["저장 공간이 가득 찼어요", true]);
-		expect(config().draftDefaults.mail).toBe("정중하게");
+		expect(defaults()).toEqual(["정중하게"]);
 		expect(config().draftRules.mail[0].on).toBe(false);
 	}, 20_000);
 });

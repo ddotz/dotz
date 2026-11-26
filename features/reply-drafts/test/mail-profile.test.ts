@@ -5,15 +5,16 @@ import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { reviseDraft, sendDraft } from "../lib/flow.ts";
 import { draftRules } from "../lib/draft-rules.ts";
+import { readLedger } from "../lib/ledger.ts";
 import { offerMailDraft, type OfferMail } from "../lib/offer.ts";
 import { paths, savePairs, toneFile, writeIdentity } from "../lib/settings.ts";
 import { listDrafts } from "../lib/store.ts";
-import { enable, fakeModel, goodReply, j, mailFixture, setupEnv } from "./helpers.ts";
+import { enable, fakeModel, goodReply, j, mailFixture, seedRules, setupEnv } from "./helpers.ts";
 
 const env = setupEnv();
 afterAll(() => env.cleanup());
 beforeEach(() => {
-	for (const p of [paths.config(), paths.toneDir(), paths.drafts(), paths.inbox(), paths.pairs("mail"), join(env.dir, "draft-files"), join(env.dir, "custom", "apps.json")]) rmSync(p, { force: true, recursive: true });
+	for (const p of [paths.config(), paths.toneDir(), paths.ledger(), paths.drafts(), paths.inbox(), paths.pairs("mail"), join(env.dir, "draft-files"), join(env.dir, "custom", "apps.json")]) rmSync(p, { force: true, recursive: true });
 	enable(env);
 	mkdirSync(join(env.dir, "custom"), { recursive: true });
 	writeFileSync(join(env.dir, "custom", "apps.json"), JSON.stringify({ "mail-beta": { app: "mail", label: "베타 메일", filter: { conv: ["mail:beta-"] } } }));
@@ -61,14 +62,15 @@ test("a revise reads the draft's profile and its correction is recorded there, n
 	expect((await reviseDraft(rec.id, "더 짧게", { call: model.call })).ok).toBe(true);
 	expect(model.calls[0]!.system + model.calls[0]!.user).toContain("BETA-IDENTITY");
 	expect(model.calls[0]!.system + model.calls[0]!.user).not.toContain("ALPHA-IDENTITY");
-	expect(readFileSync(toneFile({ app: "mail-beta" }), "utf8")).toContain("더 짧게");
+	const corrections = readLedger().filter(r => r.kind === "correction" && r.state === "on");
+	expect(corrections.map(r => [r.scope, r.text.includes("더 짧게")])).toEqual([[{ app: "mail-beta" }, true]]);
 	expect(readFileSync(toneFile({ app: "mail" }), "utf8")).not.toContain("더 짧게");
 	expect(listDrafts().find(r => r.status === "pending")!.profile).toBe("mail-beta");
 });
 
 test("the send-time check uses the draft's profile: a word forbidden in mail-beta stops only its drafts", async () => {
 	own();
-	writeFileSync(toneFile({ app: "mail-beta" }), `${readFileSync(toneFile({ app: "mail-beta" }), "utf8")}\n## 금지\n- FORBID-BETA\n`);
+	seedRules({ app: "mail-beta" }, { ban: ["FORBID-BETA"] });
 	const model = fakeModel([j({ ...goodReply, body: "확인했어요 FORBID-BETA" })]);
 	await offer(["m-1", "beta-1"], model);
 	const byRef = (ref: string) => listDrafts().find(r => r.ref === ref)!;

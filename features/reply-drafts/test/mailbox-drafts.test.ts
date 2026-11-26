@@ -9,7 +9,7 @@ import { offerMailDraft, requestMailDraft, type OfferMail } from "../lib/offer.t
 import { realMailLink, writeMail } from "../../../hub/comments/mail-link.ts";
 import { correctionsOf, paths, toneFile, writeIdentity } from "../lib/settings.ts";
 import { getDraft, listDrafts } from "../lib/store.ts";
-import { enable, fakeModel, j, mailFixture, setupEnv } from "./helpers.ts";
+import { enable, fakeModel, j, mailFixture, seedRules, setupEnv } from "./helpers.ts";
 
 // Reply drafts follow the mailbox a mail is in (docs/mailbox.md "Handling"): mode, the judge on the rule match, the box's reply settings and tone.
 const env = setupEnv();
@@ -19,7 +19,7 @@ afterAll(() => {
 	rmSync(lib, { recursive: true, force: true });
 });
 beforeEach(() => {
-	for (const p of [paths.config(), paths.drafts(), paths.inbox(), paths.toneDir(), join(env.dir, "draft-files"), join(env.dir, "custom", "mailboxes.json")]) rmSync(p, { force: true, recursive: true });
+	for (const p of [paths.config(), paths.drafts(), paths.inbox(), paths.toneDir(), paths.ledger(), join(env.dir, "draft-files"), join(env.dir, "custom", "mailboxes.json")]) rmSync(p, { force: true, recursive: true });
 });
 
 const reply = { action: "draft", reason: "asks a question", to: "kim@example.com", subject: "Re: 회의 일정 문의", body: "확인해 보고 말씀드릴게요.", questions: [] };
@@ -31,6 +31,8 @@ const boxes = (...list: object[]) => {
 	writeFileSync(join(env.dir, "custom", "mailboxes.json"), JSON.stringify({ rev: ++rev, accounts: { mail: { boxes: list } }, pins: {} }));
 };
 const box = (id: string, extra: object = {}) => ({ id, name: id, ...extra });
+// The call that wrote the draft: the style judge's check of it comes after, so the last call is not the draft's.
+const draftCall = (model: ReturnType<typeof fakeModel>) => model.calls.filter(c => c.system.startsWith("You draft ONE reply")).at(-1)!;
 const appSwitch = (auto: boolean) => enable(env, { apps: { mail: { auto } } });
 const mail = (extra: Partial<OfferMail> = {}): OfferMail => ({ ...mailFixture, key: `bx-${++seq}`, ...extra });
 // What the hub keeps of the mail: the box it is in (hub/mail.ts record), through the injected lookup and the recorded moves.
@@ -237,12 +239,12 @@ describe("a mail that rides on a comment reply (hub/comments/mail-link.ts writeM
 		const model = fakeModel(["1", j({ ...reply, to: "fan@example.com", subject: "자료", body: "자료 보내드려요" })]);
 		const spec = { app: "mail", to: "Fan <fan@example.com>", author: "팬", text: "신청서 보내 주실 수 있나요", postTitle: "봄 공연" };
 		expect(await writeMail(spec, model.call)).toBe("자료 보내드려요");
-		const draft = model.calls.at(-1)!.user;
+		const draft = draftCall(model).user;
 		for (const s of ["모든 메일에 넣는 지시", "팬에게는 두 줄로 답해요", RULE.how, "무조건"]) expect(draft).toContain(s);
 		const other = fakeModel(["0", j({ ...reply, to: "lee@example.com", subject: "자료", body: "자료 보내드려요" })]);
 		await writeMail({ ...spec, to: "lee@example.com" }, other.call);
-		expect(other.calls.at(-1)!.user).toContain("모든 메일에 넣는 지시");
-		expect(other.calls.at(-1)!.user).not.toContain("팬에게는 두 줄로 답해요");
+		expect(draftCall(other).user).toContain("모든 메일에 넣는 지시");
+		expect(draftCall(other).user).not.toContain("팬에게는 두 줄로 답해요");
 	});
 });
 
@@ -255,7 +257,8 @@ describe("a mail that rides on a comment reply keeps what it was first written f
 		boxes(BASE, box("b-fan", { conds: { from: ["fan@example.com"], subj: [], body: [], src: [] }, how: "팬에게는 두 줄로 답해요" }));
 		const boxTone = toneFile({ app: "mail", room: "b-fan" });
 		mkdirSync(dirname(boxTone), { recursive: true });
-		writeFileSync(boxTone, "## 예시\n\n- 네 보내드렸어요\n\n## 금지\n\n- 무조건\n");
+		writeFileSync(boxTone, "## 예시\n\n- 네 보내드렸어요\n");
+		seedRules({ app: "mail", room: "b-fan" }, { ban: ["무조건"] });
 		const model = fakeModel(["1", j({ ...reply, to: "fan@example.com", subject: "자료", body: "자료 보내드려요" }), ...more]);
 		const link = realMailLink({ call: model.call, run: async () => ({ code: 1, stdout: "", stderr: "" }) });
 		return { model, link, write: () => link.write!(spec) };
@@ -267,7 +270,7 @@ describe("a mail that rides on a comment reply keeps what it was first written f
 		expect(getDraft(made.id)?.box).toBe("b-fan");
 		const revised = await link.revise(made.id, "더 짧게");
 		if (!revised.ok) throw new Error(revised.reason);
-		const prompt = model.calls.at(-1)!.user;
+		const prompt = draftCall(model).user;
 		for (const s of ["모든 메일에 넣는 지시", "팬에게는 두 줄로 답해요", RULE.how, "request for material", spec.text, spec.postTitle]) expect(prompt).toContain(s);
 		expect(getDraft(revised.id)?.box).toBe("b-fan");
 		expect(getDraft(revised.id)?.request).toBe(spec.text);

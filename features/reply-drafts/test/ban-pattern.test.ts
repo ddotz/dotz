@@ -14,6 +14,7 @@ afterAll(env.cleanup);
 beforeEach(() => {
 	process.env.DOTZ_DIR = env.dir;
 	rmSync(paths.toneDir(), { force: true, recursive: true });
+	rmSync(paths.ledger(), { force: true });
 	rmSync(paths.pairs("mail"), { force: true });
 });
 
@@ -65,7 +66,7 @@ test("correct --change stores the pattern in the profile of the correction (a ro
 test("a rule that is not about a wording, or a proposal code refuses, stores the rule alone and says nothing of a pattern", async () => {
 	const log = quiet();
 	for (const answer of [null, { ...PROPOSAL, good: [...PROPOSAL.good, "즐거운 시간 되세요"] }, { ...PROPOSAL, bad: ["좋은 하루 되세요"] }, { source: "되세요", flags: "u", label: LABEL, bad: PROPOSAL.bad, good: [] }]) {
-		rmSync(paths.toneDir(), { force: true, recursive: true });
+		rmSync(paths.ledger(), { force: true });
 		const r = await correct({ learnCall: runner(answer).learnCall }, "--app", "install", "--rule", RULE);
 		expect(r.lines.join("\n")).not.toContain("표현 규칙으로도");
 		expect(profileBullets("install", HEADINGS.forbidden)).toEqual([]);
@@ -97,7 +98,7 @@ test("a throw while learning a pattern is logged and the --forbid, --allow and -
 	log.mockRestore();
 	expect(profileBullets("install", HEADINGS.forbidden)).toEqual(["되세요"]);
 	expect(profileBullets("install", HEADINGS.rules)).toEqual([RULE]);
-	rmSync(paths.toneDir(), { force: true, recursive: true });
+	rmSync(paths.ledger(), { force: true });
 	await correct({ learnCall: runner(PROPOSAL).learnCall }, "--app", "install", "--rule", RULE, "--forbid", "보내세요");
 	expect(profileBullets("install", HEADINGS.forbidden).map(parseBan)).toEqual([K1_BAN, { kind: "literal", text: "보내세요" }]);
 });
@@ -112,7 +113,7 @@ const kakaoReader = async (chatId: string) => ({ messages: async () => ROOMS[cha
 const kakaoRooms = (rooms: string[]) => async () => ({ messages: async (chatId: string) => ROOMS[chatId] ?? [], rooms: async () => rooms });
 const mailPairs = () => savePairs("mail", [...Array.from({ length: 19 }, (_, i) => ({ received: `문의 ${i}`, reply: `확인했습니다 ${i}`, at: i })), { received: "인사", reply: "좋은 하루 되세요", at: 99 }]);
 const stored = async (deps: object, ...where: string[]): Promise<boolean> => {
-	rmSync(paths.toneDir(), { force: true, recursive: true });
+	rmSync(paths.ledger(), { force: true });
 	await correct({ learnCall: runner(PROPOSAL).learnCall, ...deps }, ...where, "--rule", RULE);
 	const key = where[1] === "install" ? "install" : { app: where[1]!, ...(where[3] ? { room: where[3] } : {}) };
 	return profileBullets(key, HEADINGS.forbidden).length === 1;
@@ -167,7 +168,7 @@ test("learn: a quoted change asks once with the previous draft and the change, a
 	expect(fake.asked).toHaveLength(1);
 	expect(fake.asked[0]).toContain("오늘도 행복한 하루 되세요!");
 	expect(profileBullets({ app: "mail" }, HEADINGS.forbidden)).toEqual([SHAPE_BULLET]);
-	rmSync(paths.toneDir(), { force: true, recursive: true });
+	rmSync(paths.ledger(), { force: true });
 	const once = await learnWith(evidence.change, evidence, { learnCall: fake.learnCall }, { once: true });
 	expect(once.state).toBe("once");
 	expect(fake.asked).toHaveLength(1);
@@ -219,7 +220,7 @@ test("learn waits 12 s for a pattern at most: a later answer leaves no pattern, 
 	expect(profileBullets({ app: "mail" }, HEADINGS.forbidden)).toEqual([]);
 	expect(log.mock.calls.map(c => String(c[0]))).toEqual([expect.stringContaining("no answer within 12000 ms")]);
 	log.mockRestore();
-	rmSync(paths.toneDir(), { force: true, recursive: true });
+	rmSync(paths.ledger(), { force: true });
 	const onTime = await learnWith(evidence.change, evidence, { learnCall: () => () => answer.promise });
 	expect(onTime.text).toContain(`표현 규칙으로도 정해 뒀어요: ${lessonShape.label}`);
 	expect(profileBullets({ app: "mail" }, HEADINGS.forbidden)).toHaveLength(1);

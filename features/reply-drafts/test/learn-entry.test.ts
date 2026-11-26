@@ -1,6 +1,6 @@
 import { afterAll, beforeEach, expect, spyOn, test } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
-import { dirname, join, relative } from "node:path";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { commentAdapter } from "../../../hub/comments/reply-adapter.ts";
 import type { CommentAdapter, RawComment, SourceConfig } from "../../../hub/comments/contract.ts";
 import { createEngine } from "../../../hub/comments/engine.ts";
@@ -16,20 +16,20 @@ import { runDraft } from "../bin/draft.ts";
 import { dropDraft, learningSettled, learnSentEdit, reviseDraft, type FlowDeps } from "../lib/flow.ts";
 import { compactCorrections } from "../lib/compact.ts";
 import { flipLearnt, learn, shownLearnt } from "../lib/learn.ts";
-import { HEADINGS, paths, profileBullets, toneFile, type ToneKey } from "../lib/settings.ts";
+import { type LedgerRecord, readLedger, scopeOfKey, setState } from "../lib/ledger.ts";
+import { HEADINGS, paths, profileBullets, type ToneKey } from "../lib/settings.ts";
 import { addDraft, type DraftRec } from "../lib/store.ts";
-import { fakeModel, j, setupEnv } from "./helpers.ts";
+import { fakeModel, j, seedRules, setupEnv } from "./helpers.ts";
 
 const env = setupEnv();
 afterAll(env.cleanup);
 beforeEach(() => {
 	process.env.DOTZ_DIR = env.dir;
-	for (const p of [paths.toneDir(), paths.drafts(), join(env.dir, "custom", "reply-drafts", "learn-log.json")]) rmSync(p, { force: true, recursive: true });
+	for (const p of [paths.toneDir(), paths.ledger(), paths.drafts(), join(env.dir, "custom", "reply-drafts", "learn-log.json")]) rmSync(p, { force: true, recursive: true });
 });
 
 const NOW = new Date("2026-11-20T00:00:00.000Z");
 const A = { app: "mail", to: "a@x.com" };
-const A_FILE = toneFile(A);
 const CHANGE = "끝인사는 짧게 써 줘";
 const REMEMBERED = /^기억했어요: ".+" · 범위: .+/;
 const ONCE = "이번만 반영했어요";
@@ -39,29 +39,16 @@ const mailItem = (from: string): ReplyItem => ({ kind: "mail", app: "mail", from
 const mailRec = (id: string, extra: Partial<DraftRec> = {}): DraftRec => ({ id, kind: "mail", app: "mail", source: "zele", mailId: id, ref: `k-${id}`, to: "a@x.com", subject: "Re: 일정", body: "네 확인했어요", status: "pending", created: NOW.toISOString(), changes: [], questions: [], item: mailItem("Kim <a@x.com>"), ...extra });
 const revised = (said: object) => j({ action: "draft", reason: "r", to: "a@x.com", subject: "Re: 일정", body: "네 다음 주 화요일이에요", questions: [], ...said });
 
-function tree(): Record<string, string> {
-	const out: Record<string, string> = {};
-	const walk = (dir: string) => {
-		if (!existsSync(dir)) return;
-		for (const name of readdirSync(dir)) {
-			const p = join(dir, name);
-			if (statSync(p).isDirectory()) walk(p);
-			else out[relative(paths.toneDir(), p)] = readFileSync(p, "utf8");
-		}
-	};
-	walk(paths.toneDir());
-	return out;
-}
+const onRecords = (): LedgerRecord[] => readLedger().filter(r => r.state === "on");
+/** The ledger as the lessons leave it, apart from record ids and their order: one JSON line per record that is on. */
+const onState = (): string[] => onRecords().map(({ kind, text, scope }) => JSON.stringify({ kind, text, scope })).sort();
+/** What a profile holds at its own scope, per section. */
+const linesOf = (key: ToneKey | "install") => ({ rules: profileBullets(key, HEADINGS.rules), corrections: profileBullets(key, HEADINGS.corrections), forbidden: profileBullets(key, HEADINGS.forbidden) });
 const logRecords = (): { ref: string }[] => {
 	const file = join(env.dir, "custom", "reply-drafts", "learn-log.json");
 	return existsSync(file) ? JSON.parse(readFileSync(file, "utf8")) : [];
 };
-const toneLines = (): string[] => Object.values(tree()).flatMap(md => md.split("\n").filter(l => l.includes(CHANGE)));
-const seed = (key: object, text: string) => {
-	const file = toneFile(key as never);
-	mkdirSync(dirname(file), { recursive: true });
-	writeFileSync(file, text);
-};
+const toneLines = (): string[] => onRecords().filter(r => r.text.includes(CHANGE)).map(r => r.text);
 
 const KEYS: Lesson["keys"] = { recipient: { app: "mail", to: "a@x.com" }, channel: { app: "mail" } };
 const view = (ref: string): DraftView => ({ item: `mail:${ref}`, ref, kind: "mail", app: "mail", label: "m", conv: "c", at: 1, can: { send: true, revise: true, edit: true, drop: true, restore: true }, draft: { state: "pending", toLabel: "받는이", to: "a@x.com", text: "초안" } });
@@ -149,7 +136,7 @@ test("a chat request for a draft is remembered at the draft's own channel, no ap
 	expect(shownLearnt("CH1")).toMatchObject({ state: "remembered", scope: "channel" });
 	const wide = await runDraft(["correct", "--draft", "CH1", "--change", CHANGE, "--scope", "recipient"], "", calm());
 	expect(wide.lines.join("\n")).toContain("범위: 이 받는 사람");
-	expect(Object.keys(tree())).toContain(join("mail", "to", "a_0040x_002ecom.md"));
+	expect(onRecords().filter(r => r.text.includes(CHANGE)).map(r => r.scope)).toEqual([{ app: "mail" }, { app: "mail", to: scopeOfKey(A).to }]);
 });
 
 test("words with 앞으로, 항상 or 절대 are remembered even when the model says once", async () => {
@@ -163,55 +150,59 @@ test("words with 앞으로, 항상 or 절대 are remembered even when the model 
 });
 
 test("a scope flip moves the line to the other tone file and back byte for byte; once removes it; keep puts it back", async () => {
-	const kept = "## 고친 점\n\n- 2030-03-01: 예전에 고친 점\n";
-	seed({ app: "mail" }, kept);
-	seed(A, kept);
+	const kept = "2030-03-01: 예전에 고친 점", dated = `2026-11-20: ${CHANGE}`;
+	seedRules({ app: "mail" }, { correction: [kept] });
+	seedRules(A, { correction: [kept] });
+	const snapshot = () => ({ channel: linesOf({ app: "mail" }).corrections, recipient: linesOf(A).corrections });
 	const learning = replyLearning(() => calm());
 	await reviseOnCard({ keys: KEYS, words: CHANGE, proposal: { scope: "channel" } }, learning);
 	const ref = "R1-2";
-	const atChannel = tree();
-	expect(atChannel["mail.md"]).toContain(CHANGE);
-	expect(atChannel[join("mail", "to", "a_0040x_002ecom.md")]).toBe(kept);
+	const atChannel = snapshot();
+	expect(atChannel).toEqual({ channel: [kept, dated], recipient: [kept] });
 	await flipLearnt(ref, { scope: "recipient" }, calm());
-	expect(tree()["mail.md"]).toBe(kept);
-	expect(tree()[join("mail", "to", "a_0040x_002ecom.md")]).toContain(CHANGE);
+	expect(snapshot()).toEqual({ channel: [kept], recipient: [kept, dated] });
 	expect(shownLearnt(ref)).toMatchObject({ state: "remembered", scope: "recipient" });
 	expect(shownLearnt(ref)?.text).toContain("범위: 이 받는 사람");
 	await flipLearnt(ref, { scope: "channel" }, calm());
-	expect(tree()).toEqual(atChannel);
+	expect(snapshot()).toEqual(atChannel);
 	await flipLearnt(ref, { once: true }, calm());
-	expect(tree()).toEqual({ "mail.md": kept, [join("mail", "to", "a_0040x_002ecom.md")]: kept });
+	expect(snapshot()).toEqual({ channel: [kept], recipient: [kept] });
 	expect(shownLearnt(ref)).toMatchObject({ state: "once", text: ONCE });
 	await flipLearnt(ref, { keep: true }, calm());
-	expect(tree()).toEqual(atChannel);
+	expect(snapshot()).toEqual(atChannel);
 	expect(shownLearnt(ref)?.scopes).toEqual(["recipient", "channel", "everywhere"]);
 });
 
 test("a line flipped to everywhere and back comes back as the kind the owner asked for, every tone file byte for byte", async () => {
 	const learning = replyLearning(() => calm());
 	for (const [scope, kind] of [["channel", undefined], ["recipient", undefined], ["channel", "rule"]] as const) {
-		rmSync(paths.toneDir(), { force: true, recursive: true });
-		for (const key of [{ app: "mail" }, A]) seed(key, "## 말투\n\n- 예전 규칙\n\n## 고친 점\n\n- 2030-03-01: 예전에 고친 점\n");
+		rmSync(paths.ledger(), { force: true });
+		for (const key of [{ app: "mail" }, A]) seedRules(key, { tone: ["예전 규칙"], correction: ["2030-03-01: 예전에 고친 점"] });
 		const ref = `K-${scope}-${kind ?? "correction"}`;
 		await learning.learn({ source: "chat", ref, keys: KEYS, words: CHANGE, proposal: { scope, ...(kind ? { kind } : {}) } });
-		const first = tree();
+		const first = onState();
+		expect(onRecords().filter(r => r.text.includes(CHANGE))).toMatchObject([{ kind: kind ? "tone" : "correction" }]);
 		await flipLearnt(ref, { scope: "everywhere" }, calm());
+		expect(profileBullets("install", HEADINGS.rules)).toEqual([CHANGE]);
 		await flipLearnt(ref, { scope }, calm());
-		const back = tree();
-		for (const [file, text] of Object.entries(first)) expect(back[file]).toBe(text);
+		expect(onState()).toEqual(first);
 		expect(profileBullets("install", HEADINGS.rules)).toEqual([]);
 	}
 });
 
 test("once puts back the lines the curation replaced, from the journal", async () => {
-	seed({ app: "mail" }, "## 고친 점\n\n- 2030-03-01: 끝인사는 길게\n");
+	const [old] = seedRules({ app: "mail" }, { correction: ["2030-03-01: 끝인사는 길게"] });
 	const learning = replyLearning(() => calm({ learnCall: () => async () => JSON.stringify({ replaces: [{ id: "C1", why: "overridden" }] }) }));
 	await reviseOnCard({ keys: KEYS, words: CHANGE, proposal: { scope: "channel" } }, learning);
-	expect(profileBullets({ app: "mail" }, HEADINGS.corrections)).not.toContain("2030-03-01: 끝인사는 길게");
-	expect(profileBullets({ app: "mail" }, HEADINGS.merged)).toEqual([`2030-03-01: 끝인사는 길게 → 2026-11-20: ${CHANGE}`]);
+	const newer = readLedger().find(r => r.text === `2026-11-20: ${CHANGE}`)!;
+	expect(newer.state).toBe("on");
+	expect(profileBullets({ app: "mail" }, HEADINGS.corrections)).toEqual([newer.text]);
+	expect(readLedger().find(r => r.id === old!.id)).toMatchObject({ state: "merged", into: newer.id });
 	await flipLearnt("R1-2", { once: true }, calm());
 	expect(profileBullets({ app: "mail" }, HEADINGS.corrections)).toEqual(["2030-03-01: 끝인사는 길게"]);
-	expect(profileBullets({ app: "mail" }, HEADINGS.merged)).toEqual([]);
+	expect(readLedger().find(r => r.id === old!.id)?.state).toBe("on");
+	expect(readLedger().find(r => r.id === old!.id)?.into).toBeUndefined();
+	expect(readLedger().find(r => r.id === newer.id)?.state).toBe("off");
 });
 
 /** The gateway's revise act over the real adapter `a`: the headline the redrawn card was asked with, once the learning behind it settled. */
@@ -275,7 +266,7 @@ test("a comment reply revise, the mail riding on a comment card and a KakaoTalk 
 			["kakao", () => kakaoCard(once)],
 		];
 		for (const [name, make, part] of paths3) {
-			for (const p of [paths.toneDir(), paths.drafts(), join(env.dir, "custom", "reply-drafts", "learn-log.json")]) rmSync(p, { force: true, recursive: true });
+			for (const p of [paths.toneDir(), paths.ledger(), paths.drafts(), join(env.dir, "custom", "reply-drafts", "learn-log.json")]) rmSync(p, { force: true, recursive: true });
 			const { adapter, ref } = await make();
 			const headline = await reviseWith(adapter, ref, part);
 			expect([name, headline]).toEqual([name, expect.stringMatching(once ? /^고친 초안이에요\. 이번만 반영했어요$/ : /^고친 초안이에요\. 기억했어요: /)]);
@@ -328,7 +319,7 @@ test("learn with a pattern call that throws still stores the banned words and cl
 });
 
 test("learn does not add a line an existing rule already says, keeps no pattern for it, and the line says so", async () => {
-	seed({ app: "install" }, "## 말투\n\n- 끝인사는 짧게 한다\n");
+	seedRules("install", { tone: ["끝인사는 짧게 한다"] });
 	const learnt = await learnWith("끝인사는 짧게 한다", answering(NO_REPLACES, shape()), { scope: "everywhere" });
 	expect(learnt.text).toContain("이미 있는 조건이에요: 끝인사는 짧게 한다");
 	expect(learnt.text).not.toContain("표현 규칙으로도");
@@ -337,7 +328,7 @@ test("learn does not add a line an existing rule already says, keeps no pattern 
 });
 
 test("learn records the line and proposes the pattern side by side: both calls start before either answers", async () => {
-	seed({ app: "mail" }, "## 고친 점\n\n- 2030-03-01: 예전에 고친 점\n");
+	seedRules({ app: "mail" }, { correction: ["2030-03-01: 예전에 고친 점"] });
 	const line = Promise.withResolvers<string>(), pattern = Promise.withResolvers<string>();
 	const started = { line: Promise.withResolvers<void>(), pattern: Promise.withResolvers<void>() };
 	const fake = answering(() => (started.line.resolve(), line.promise), () => (started.pattern.resolve(), pattern.promise));
@@ -350,13 +341,20 @@ test("learn records the line and proposes the pattern side by side: both calls s
 
 test("a compaction leaves every line on before on or marked after, and marks exactly the lines no longer on", async () => {
 	const before = Array.from({ length: 13 }, (_, i) => `2030-01-${String(i + 1).padStart(2, "0")}: 고친 점 ${i + 1}`);
-	const marked = ["2029-12-31: 아주 옛 고친 점 → 지움 (one-off)"];
-	seed({ app: "mail" }, `## 고친 점\n\n${before.map(l => `- ${l}`).join("\n")}\n\n## 합쳐진 고친 점\n\n${marked.map(l => `- ${l}`).join("\n")}\n`);
+	const [marked] = seedRules({ app: "mail" }, { correction: ["2029-12-31: 아주 옛 고친 점"] });
+	setState([marked!.id], "off");
+	const seeded = seedRules({ app: "mail" }, { correction: before });
 	const answer = JSON.stringify({ lines: [{ text: "고친 점 1부터 6까지", sources: ["C1", "C2", "C3", "C4", "C5", "C6"] }, { text: "고친 점 7부터 12까지", sources: ["C7", "C8", "C9", "C10", "C11", "C12"] }], dropped: [{ id: "C13", why: "one-off" }] });
 	expect(await compactCorrections({ app: "mail" }, { now: () => NOW, learnCall: () => async () => answer })).toMatchObject({ before: 13 });
-	const on = profileBullets({ app: "mail" }, HEADINGS.corrections), after = profileBullets({ app: "mail" }, HEADINGS.merged);
-	for (const line of before) expect(on.includes(line) || after.some(m => m.startsWith(`${line} → `))).toBe(true);
-	const gone = before.filter(line => !on.includes(line));
+	const on = profileBullets({ app: "mail" }, HEADINGS.corrections), ledger = readLedger();
+	const now = (r: LedgerRecord) => ledger.find(x => x.id === r.id)!;
+	for (const r of seeded) {
+		expect(now(r).state === "on").toBe(on.includes(r.text));
+		if (now(r).state === "merged") expect(ledger.find(x => x.id === now(r).into)?.state).toBe("on");
+		else if (now(r).state === "off") expect(now(r).into).toBeUndefined();
+	}
+	const gone = seeded.filter(r => now(r).state !== "on");
 	expect(gone.length).toBeGreaterThan(0);
-	expect(after).toHaveLength(marked.length + gone.length);
+	expect(now(marked!).state).toBe("off");
+	expect(ledger.filter(r => r.kind === "correction" && r.state !== "on")).toHaveLength(1 + gone.length);
 });

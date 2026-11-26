@@ -8,12 +8,12 @@ import { ensureKakaoRoom } from "../lib/kakao-tone.ts";
 import { offerMailDraft } from "../lib/offer.ts";
 import { COMMENT_TONE_VERSION, corpusFile, learnFirst, maybeRefine, REFINE_EVERY } from "../lib/persona.ts";
 import { identityOf, loadStyle, markLearned, paths, recordCorrection, templatesOf, toneFile, writeAtomic, writeIdentity } from "../lib/settings.ts";
-import { enable, fakeModel, goodReply, j, mailFixture, setupEnv } from "./helpers.ts";
+import { enable, fakeModel, goodReply, j, mailFixture, seedRules, setupEnv } from "./helpers.ts";
 
 const env = setupEnv();
 afterAll(env.cleanup);
 beforeEach(() => {
-	for (const p of [paths.config(), paths.drafts(), paths.toneDir(), paths.learned(), paths.corpusDir(), paths.personalFeature(), join(env.dir, "custom", "sns")]) rmSync(p, { force: true, recursive: true });
+	for (const p of [paths.config(), paths.drafts(), paths.toneDir(), paths.ledger(), paths.learned(), paths.corpusDir(), paths.personalFeature(), join(env.dir, "custom", "sns")]) rmSync(p, { force: true, recursive: true });
 	enable(env);
 });
 
@@ -119,7 +119,8 @@ test("a comment source's first sweep keeps the reply templates the user wrote, o
 	expect(model.calls).toHaveLength(1);
 
 	const tuned = { app: "tuned" };
-	writeAtomic(toneFile(tuned), "## 정체성\n- 짧게 답한다\n\n## 고친 점\n- 2030-01-01: 존댓말로\n");
+	writeAtomic(toneFile(tuned), "## 정체성\n- 짧게 답한다\n");
+	seedRules(tuned, { correction: ["2030-01-01: 존댓말로"] });
 	const before = readFileSync(toneFile(tuned), "utf8");
 	expect(await learnFirst(tuned, texts, "유튜브 댓글", model.call, new Date(), COMMENT_TONE_VERSION)).toBe("known");
 	expect(readFileSync(toneFile(tuned), "utf8")).toBe(before);

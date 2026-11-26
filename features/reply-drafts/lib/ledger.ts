@@ -216,16 +216,18 @@ function widest(drafts: Draft[]): Draft[] {
 	});
 }
 
-/** Moves every rule an install has into the ledger once: the tone files' rule sections, config.json's 기본 규칙, 이어서 할 일 and the 어떻게 of the 자동 초안 규칙. Every file it changes is copied to `ledger-backup/` first (with a manifest); the ledger is written last, so it also marks the install as done. Undefined when it was done before or there was nothing to move. */
-export function migrateLedger(dir: string = dataDir(), now: Date = new Date()): { files: string[]; records: number } | undefined {
-	if (existsSync(paths.ledger(dir))) return undefined;
-	const edits = new Map<string, string>();
+type Plan = { edits: Map<string, string>; from: Map<string, Draft[]>; records: LedgerRecord[] };
+
+/** What the migration would do, with nothing written: the new text of every file it changes, the rule lines each file (relative to `dir`) gives up, and the records the ledger gets (equal lines of one scope and kind once). Undefined when there is nothing to move. */
+function planMigration(dir: string, now: Date): Plan | undefined {
+	const edits = new Map<string, string>(), from = new Map<string, Draft[]>();
 	const found: Draft[] = [];
 	for (const name of toneFiles()) {
 		const file = join(paths.toneDir(), name), scope = scopeOfProfile(name.split("\\").join("/")), md = readFileSync(file, "utf8");
 		if (!scope) continue;
 		const mine = fileRules(scope, md);
 		found.push(...mine);
+		if (mine.length) from.set(rel(dir, file), mine);
 		if (mine.length || bullets(md, HEADINGS.merged).length) edits.set(file, strip(md, movedHeading));
 	}
 	let config: Record<string, any> | undefined;
@@ -236,20 +238,30 @@ export function migrateLedger(dir: string = dataDir(), now: Date = new Date()): 
 	}
 	if (config && typeof config === "object") {
 		const by = (kind: LedgerKind, doc: unknown) => Object.entries(doc && typeof doc === "object" ? (doc as Record<string, unknown>) : {}).flatMap(([app, v]) => (typeof v === "string" ? lines(v).map((text): Draft => ({ text, kind, scope: { app }, by: "migrate" })) : []));
-		found.push(...by("instruction", config.draftDefaults), ...by("followup", config.followups));
+		const cfg = [...by("instruction", config.draftDefaults), ...by("followup", config.followups)];
 		const rules = config.draftRules && typeof config.draftRules === "object" ? (config.draftRules as Record<string, unknown>) : {};
 		for (const [app, list] of Object.entries(rules))
 			for (const r of Array.isArray(list) ? (list as Record<string, unknown>[]) : []) {
-				if (r && typeof r.how === "string" && r.how.trim() && typeof r.id === "string") found.push({ text: r.how, kind: "request", scope: { app, request: r.id }, by: "migrate" });
+				if (r && typeof r.how === "string" && r.how.trim() && typeof r.id === "string") cfg.push({ text: r.how, kind: "request", scope: { app, request: r.id }, by: "migrate" });
 				if (r && typeof r.how === "string") r.how = "";
 			}
-		if (found.some(d => d.kind === "instruction" || d.kind === "followup" || d.kind === "request") || config.draftDefaults || config.followups) {
+		found.push(...cfg);
+		if (cfg.length) from.set(rel(dir, paths.config(dir)), cfg);
+		if (cfg.length || config.draftDefaults || config.followups) {
 			const { draftDefaults: _d, followups: _f, ...rest } = config;
 			edits.set(paths.config(dir), `${JSON.stringify(rest, null, 2)}\n`);
 		}
 	}
-	const records = widest(found).map(d => fresh({ ...d, at: now }));
-	if (!records.length && !edits.size) return undefined;
+	const seen = new Set<string>();
+	const records = widest(found).map(d => fresh({ ...d, at: now })).filter(r => ((k: string) => !seen.has(k) && !!seen.add(k))(`${r.kind}\0${JSON.stringify(r.scope)}\0${textKey(r.kind, r.text)}`));
+	return records.length || edits.size ? { edits, from, records } : undefined;
+}
+
+/** Moves every rule an install has into the ledger once: the tone files' rule sections, config.json's 기본 규칙, 이어서 할 일 and the 어떻게 of the 자동 초안 규칙. Every file it changes is copied to `ledger-backup/` first (with a manifest); the ledger is written last, so it also marks the install as done. Undefined when it was done before or there was nothing to move. */
+export function migrateLedger(dir: string = dataDir(), now: Date = new Date()): { files: string[]; records: number } | undefined {
+	const plan = existsSync(paths.ledger(dir)) ? undefined : planMigration(dir, now);
+	if (!plan) return undefined;
+	const { edits, records } = plan;
 	const backup = backupDir(dir);
 	const manifest = [...edits.keys()].map(f => ({ file: rel(dir, f), existed: existsSync(f) }));
 	for (const f of edits.keys()) {
@@ -258,12 +270,22 @@ export function migrateLedger(dir: string = dataDir(), now: Date = new Date()): 
 	}
 	writeAtomic(join(backup, "manifest.json"), `${JSON.stringify({ at: now.toISOString(), files: manifest }, null, 1)}\n`);
 	for (const [f, text] of edits) writeAtomic(f, text, statSync(f).mode & 0o777);
-	const seen = new Set<string>();
 	change(dir, doc => {
-		doc.records = records.filter(r => !seen.has(`${r.kind}\0${JSON.stringify(r.scope)}\0${textKey(r.kind, r.text)}`) && seen.add(`${r.kind}\0${JSON.stringify(r.scope)}\0${textKey(r.kind, r.text)}`));
-		if (!doc.records.length) doc.asked = {};
+		doc.records = records;
 	});
 	return { files: manifest.map(m => m.file), records: records.length };
+}
+
+/** What `migrateLedger` would move, for a before/after to show before an install updates; nothing is written. Per file the rule lines it gives up (relative to `dir`), and the records the ledger gets by scope and kind with their text count. Undefined when it was done before or there is nothing to move. */
+export function previewMigration(dir: string = dataDir()): { files: { file: string; lines: { kind: LedgerKind; text: string }[] }[]; records: { scope: LedgerScope; kind: LedgerKind; texts: number }[] } | undefined {
+	const plan = existsSync(paths.ledger(dir)) ? undefined : planMigration(dir, new Date());
+	if (!plan) return undefined;
+	const groups = new Map<string, { scope: LedgerScope; kind: LedgerKind; texts: number }>();
+	for (const r of plan.records) {
+		const g = groups.get(`${r.kind}\0${JSON.stringify(r.scope)}`) ?? { scope: r.scope, kind: r.kind, texts: 0 };
+		groups.set(`${r.kind}\0${JSON.stringify(r.scope)}`, { ...g, texts: g.texts + 1 });
+	}
+	return { files: [...plan.from].map(([file, lines]) => ({ file, lines: lines.map(l => ({ kind: l.kind, text: l.text })) })), records: [...groups.values()] };
 }
 
 /** Puts every file the migration changed back byte for byte and removes the ledger it wrote; the files it listed, or undefined when there is nothing to undo. */
