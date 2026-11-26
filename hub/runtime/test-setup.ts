@@ -36,6 +36,9 @@ await takeSuiteSlot(process.env);
 // Tuning knobs and lane/hub markers of whatever shell runs the tests must not leak into the code under test (DOTZ_GOLDEN_WRITE is read by hub/web-golden-web.test.ts only).
 for (const k of Object.keys(process.env)) if (k.startsWith("DOTZ_") && k !== "DOTZ_TEST_DIR" && k !== "DOTZ_GOLDEN_WRITE") delete process.env[k];
 delete process.env.HARNESS_AGENT_HOME;
+// OmO marks the child of a task worker with OMO_SENPI_TASK_DEPTH (extension/index.ts takes the worker path on it): a suite run by an agent
+// inside an OmO task must still load the full extension. A test that needs the worker path sets it itself.
+delete process.env.OMO_SENPI_TASK_DEPTH;
 // A stripped environment (env -i) has no TMPDIR, so tmpdir() falls back to /tmp, which the code treats as a scratch
 // folder; on macOS use the per-user temp dir a login shell would have.
 if (!process.env.TMPDIR && process.platform === "darwin") process.env.TMPDIR = execFileSync("/usr/bin/getconf", ["DARWIN_USER_TEMP_DIR"], { encoding: "utf8" }).trim();
