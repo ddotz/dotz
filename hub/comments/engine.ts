@@ -21,7 +21,7 @@ import { createPastRefresh, type PastDeps } from "./past-refresh.ts";
 // The mail that rides on a comment reply (hub/comments/mail-link.ts is the real one): written with the draft, shown in the same card, sent right
 // after the reply is posted, revised or dropped with it.
 // `request`: the writer's own words, for the install's narrow rule (hub/auto-attach.ts; see hub/mail-cli.ts composeMail).
-export type MailSpec = { app: string; to: string; subject: string; body: string; attach?: string[]; fromLibrary?: string; request?: string };
+export type MailSpec = { app: string; to: string; subject: string; body: string; attach?: string[]; fromLibrary?: string; request?: string; postTitle?: string };
 export type MailView = { id: string; to: string; account?: string; accountHeld?: true; subject?: string; body: string; attachments: { name: string; size?: number; digest?: string }[]; asksFile?: boolean; libraryMiss?: boolean; /** Warnings the owner reads before approving, shown with the mail. */ notes?: string[]; /** Where the mail's words and files disagree (flow.ts draftAttachIssues): the card's `첨부 확인` line. */ attachIssues?: string[] };
 /** What the mail text is written from: the comment, its author and post, the mail app of the source and the address the mail goes to. */
 export type MailWrite = { app: string; to: string; author: string; text: string; postTitle: string };
@@ -276,7 +276,7 @@ export function createEngine(deps: EngineDeps) {
 				to,
 				subject: title ? `${title} 자료 보내드립니다` : "요청하신 자료 보내드립니다",
 				body: (await deps.mail.write?.({ app: src.mailApp, to, author: c.author, text: c.text, postTitle: title }).catch(e => (addNote(`확인: 메일 본문을 쓰지 못해 기본 문구로 했어요 - ${e instanceof Error && e.message ? clip(e.message, 160) : "알 수 없는 이유"}`), undefined)))?.trim() || `안녕하세요, ${c.author}님.\n\n댓글로 요청하신 자료를 보내드립니다. 확인 후 부족한 점이 있으면 편하게 말씀해 주세요.\n\n감사합니다.`,
-				...(title ? { fromLibrary: title } : {}),
+				...(title ? { fromLibrary: title, postTitle: title } : {}),
 				request: c.text,
 			}).catch((e): { ok: false; reason: string } => ({ ok: false, reason: e instanceof Error && e.message ? clip(e.message, 160) : "메일 초안을 만들지 못했어요" }));
 			if (!made.ok) {

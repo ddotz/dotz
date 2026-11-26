@@ -34,6 +34,7 @@ export type DraftRec = {
 	fileChangeWhy?: "no_folder" | "undecided"; // why they stayed, when it is not that the folder lacks the file: no 첨부 파일 폴더, or the model named no files for a change that takes one off
 	wantFiles?: { name: string; path: string }[]; // files chosen for the draft that are not on it yet (an iCloud file still downloading): the send gate waits for them
 	compose?: boolean; // a new mail the bot wrote (hub/mail-cli.ts compose), not an answer to a received one: `mailId` is not a mail, `ref` is its own key
+	request?: string; // a compose draft that rides on a comment reply: the comment's words it answers (`item.text` is its own body); a revise reads them as the received text
 	origin?: { kind: string; id: string; text: string; link?: string }; // the approved action it follows up (hub/followup.ts): the card says so
 	to: string; // the 받는 사람, one address or a comma list (features/reply-drafts/lib/recipients.ts recipientText)
 	cc?: string[]; // 참조 addresses; absent = none

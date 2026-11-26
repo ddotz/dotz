@@ -72,7 +72,7 @@ function originOf(spec: string | undefined): DraftRec["origin"] | { error: strin
 }
 
 const NARROW_MIN_SCORE = 2;
-export type ComposeInput = { app: string; to: string[]; subject: string; body: string; /** The logged-in zele account to send from; refused when it is not one. */ account?: string; attach?: string[]; fromLibrary?: string; /** What the writer asked in his own words: the install's narrow rule (hub/auto-attach.ts) reads it. */ request?: string; origin?: DraftRec["origin"]; /** false = not listed in the web mail app (the mail rides on a comment reply's card). */ notify?: boolean };
+export type ComposeInput = { app: string; to: string[]; subject: string; body: string; /** The logged-in zele account to send from; refused when it is not one. */ account?: string; attach?: string[]; fromLibrary?: string; /** What the writer asked in his own words: the install's narrow rule (hub/auto-attach.ts) reads it, and a revise of the draft reads it as the received text. */ request?: string; /** What a mail riding on a comment reply was first written from (hub/comments/mail-link.ts): revise and the checks read it as that write did. `box` is the mailbox its recipient falls in. */ written?: { box?: string; configured?: string; instruction?: string; postTitle?: string }; origin?: DraftRec["origin"]; /** false = not listed in the web mail app (the mail rides on a comment reply's card). */ notify?: boolean };
 export type Composed = { ok: true; rec: DraftRec; notes: string[] } | { ok: false; error: string; code: number };
 
 // A new mail draft: stages the files, lints, records it as pending and (unless `notify` is false) tells the gateway. Sends nothing.
@@ -120,13 +120,14 @@ export async function composeMail(i: ComposeInput, deps: MailCliDeps = {}): Prom
 	}
 	if (paths.length > STAGED_MAX) return fail(`첨부파일은 ${STAGED_MAX}개까지 붙일 수 있어요`);
 
-	const item = { kind: "mail" as const, app, from: to.join(", "), text: body };
+	const w = i.written, at = w?.box ? { box: w.box, instance: app } : {};
+	const item = { kind: "mail" as const, app, from: to.join(", "), text: body, ...(w?.instruction ? { instruction: w.instruction } : {}), ...(w?.configured ? { configured: w.configured } : {}), ...(w?.postTitle ? { context: w.postTitle } : {}) };
 	const draft = { to: to.join(", "), subject, body };
-	const failures = lintReply(draft, item, loadStyle(styleKey({ app }, item)));
+	const failures = lintReply(draft, item, loadStyle(styleKey({ app, ...at }, item)));
 	if (failures.length) return fail(`초안 검사에서 걸렸어요: ${failures.join("; ")}`, 1);
 
 	const id = newId();
-	const rec: DraftRec = { id, kind: "mail", app, source: via.source, mailId: `compose-${id}`, ref: `compose-${id.toLowerCase()}`, compose: true, ...(i.account ? { account: i.account } : {}), ...(libraryMiss ? { libraryMiss: true } : {}), ...(origin ? { origin } : {}), ...draft, status: "pending", created: (deps.now ?? (() => new Date()))().toISOString(), changes: [], questions: [], item };
+	const rec: DraftRec = { id, kind: "mail", app, source: via.source, mailId: `compose-${id}`, ref: `compose-${id.toLowerCase()}`, compose: true, ...at, ...(i.request ? { request: i.request } : {}), ...(i.account ? { account: i.account } : {}), ...(libraryMiss ? { libraryMiss: true } : {}), ...(origin ? { origin } : {}), ...draft, status: "pending", created: (deps.now ?? (() => new Date()))().toISOString(), changes: [], questions: [], item };
 	await settleDraft(rec, deps.run);
 	// The draft is saved before its files: a file that is not on this computer yet (iCloud) waits in wantFiles and is attached as it downloads.
 	addDraft(rec);

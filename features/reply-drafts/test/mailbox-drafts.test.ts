@@ -1,14 +1,14 @@
 import { afterAll, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { writeSettings } from "../../../hub/app-settings.ts";
 import { mailByKey, recordMail } from "../../../hub/mail.ts";
 import { reviseDraft } from "../lib/flow.ts";
 import { offerMailDraft, requestMailDraft, type OfferMail } from "../lib/offer.ts";
-import { writeMail } from "../../../hub/comments/mail-link.ts";
+import { realMailLink, writeMail } from "../../../hub/comments/mail-link.ts";
 import { correctionsOf, paths, toneFile, writeIdentity } from "../lib/settings.ts";
-import { listDrafts } from "../lib/store.ts";
+import { getDraft, listDrafts } from "../lib/store.ts";
 import { enable, fakeModel, j, mailFixture, setupEnv } from "./helpers.ts";
 
 // Reply drafts follow the mailbox a mail is in (docs/mailbox.md "Handling"): mode, the judge on the rule match, the box's reply settings and tone.
@@ -243,5 +243,40 @@ describe("a mail that rides on a comment reply (hub/comments/mail-link.ts writeM
 		await writeMail({ ...spec, to: "lee@example.com" }, other.call);
 		expect(other.calls.at(-1)!.user).toContain("모든 메일에 넣는 지시");
 		expect(other.calls.at(-1)!.user).not.toContain("팬에게는 두 줄로 답해요");
+	});
+});
+
+describe("a mail that rides on a comment reply keeps what it was first written from", () => {
+	const spec = { app: "mail", to: "Fan <fan@example.com>", author: "팬", text: "신청서 보내 주실 수 있나요", postTitle: "봄 공연" };
+	const compose = (link: ReturnType<typeof realMailLink>, body: string) => link.compose({ app: spec.app, to: spec.to, subject: "봄 공연 자료 보내드립니다", body, request: spec.text, postTitle: spec.postTitle });
+	// The comment engine's order: the text is written (write), then the mail draft is composed from it.
+	function written(...more: string[]) {
+		writeSettings(env.dir, "mail", { draft_rules: [RULE], draft_default: "모든 메일에 넣는 지시" });
+		boxes(BASE, box("b-fan", { conds: { from: ["fan@example.com"], subj: [], body: [], src: [] }, how: "팬에게는 두 줄로 답해요" }));
+		const boxTone = toneFile({ app: "mail", room: "b-fan" });
+		mkdirSync(dirname(boxTone), { recursive: true });
+		writeFileSync(boxTone, "## 예시\n\n- 네 보내드렸어요\n\n## 금지\n\n- 무조건\n");
+		const model = fakeModel(["1", j({ ...reply, to: "fan@example.com", subject: "자료", body: "자료 보내드려요" }), ...more]);
+		const link = realMailLink({ call: model.call, run: async () => ({ code: 1, stdout: "", stderr: "" }) });
+		return { model, link, write: () => link.write!(spec) };
+	}
+	test("a revise reads the box, the configured instructions, the request and the post title as the first write did", async () => {
+		const { model, link, write } = written(j({ ...reply, to: "fan@example.com", subject: "자료", body: "자료 드려요" }));
+		const made = await compose(link, (await write())!);
+		if (!made.ok) throw new Error(made.reason);
+		expect(getDraft(made.id)?.box).toBe("b-fan");
+		const revised = await link.revise(made.id, "더 짧게");
+		if (!revised.ok) throw new Error(revised.reason);
+		const prompt = model.calls.at(-1)!.user;
+		for (const s of ["모든 메일에 넣는 지시", "팬에게는 두 줄로 답해요", RULE.how, "request for material", spec.text, spec.postTitle]) expect(prompt).toContain(s);
+		expect(getDraft(revised.id)?.box).toBe("b-fan");
+		expect(getDraft(revised.id)?.request).toBe(spec.text);
+	});
+	test("the compose check of the mail reads the box's 금지 as the first write did", async () => {
+		const { link, write } = written();
+		await write();
+		const made = await compose(link, "무조건 보내드려요");
+		expect(made.ok).toBe(false);
+		expect(!made.ok && made.reason).toContain("무조건");
 	});
 });

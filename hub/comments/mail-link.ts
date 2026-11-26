@@ -16,8 +16,9 @@ const LIBRARY_MISS_NOTE = "확인: 첨부 파일 폴더에서 맞는 파일을 �
 const INSTRUCTION = "This message is a request for material. The requested material goes by this mail: write the mail that sends it (the files ride on it), not a reply that asks anything back. What is asked for is the work of the post (the context): never ask which song or file is meant.";
 
 /** The mail text in the owner's voice, by the reply model of the mail app (`call`); undefined = no profile yet or the model skipped. A failed model call throws. It is set up as a mail draft of that app is (rules.ts outgoingMail): the box its recipient falls in gives its tone (mailStyleOf, with the recipient's own conditions as the mail's lint reads them), and the configured instruction is the 기본 규칙, that box's lines and the matching rule's 어떻게; the fixed material-mail instruction is the owner's word for it. */
-export async function writeMail(spec: MailWrite, call: ModelCall = async (system, user) => (await callReplyModel(spec.app, undefined, system, user)).text): Promise<string | undefined> {
+export async function writeMail(spec: MailWrite, call: ModelCall = async (system, user) => (await callReplyModel(spec.app, undefined, system, user)).text, seen?: (context: { box?: string; configured?: string }) => void): Promise<string | undefined> {
 	const { box, configured } = await outgoingMail(spec.app, { to: spec.to, subject: spec.postTitle, text: spec.text }, call);
+	seen?.({ ...(box ? { box } : {}), ...(configured ? { configured } : {}) });
 	const style = mailStyleOf(spec.app, spec.text, spec.to, box);
 	if (!style) return undefined;
 	const item = { kind: "mail" as const, app: spec.app, from: spec.to, text: spec.text, instruction: INSTRUCTION, ...(configured ? { configured } : {}), ...(spec.postTitle ? { context: spec.postTitle } : {}) };
@@ -32,13 +33,19 @@ function withAccount(v: MailView | undefined): MailView | undefined {
 }
 
 export function realMailLink(deps: FlowDeps = { run: realRunner }): RealMailLink {
+	// What each mail was written from, kept from `write` to the `compose` of the same mail (same app, address and comment) so the draft carries it.
+	const written = new Map<string, { box?: string; configured?: string }>();
+	const writtenKey = (app: string, to: string, text: string) => `${app}\n${to}\n${text}`;
 	return {
-		write: spec => writeMail(spec),
+		write: spec => writeMail(spec, deps.call, context => void written.set(writtenKey(spec.app, spec.to, spec.text), context)),
 		async compose(spec) {
 			const to = addressesOf(spec.to);
 			if (!to.length) return { ok: false, reason: "메일 받는이 주소가 없어요" };
 			if (!spec.subject.trim() || !spec.body.trim()) return { ok: false, reason: "메일 제목과 본문이 필요해요" };
-			const r = await composeMail({ app: spec.app, to, subject: spec.subject.trim(), body: spec.body.trim(), ...(spec.attach?.length ? { attach: spec.attach } : {}), ...(spec.fromLibrary ? { fromLibrary: spec.fromLibrary } : {}), ...(spec.request ? { request: spec.request } : {}), notify: false }, deps);
+			const key = writtenKey(spec.app, spec.to, spec.request ?? "");
+			const context = written.get(key);
+			written.delete(key);
+			const r = await composeMail({ app: spec.app, written: { instruction: INSTRUCTION, ...context, ...(spec.postTitle ? { postTitle: spec.postTitle } : {}) }, to, subject: spec.subject.trim(), body: spec.body.trim(), ...(spec.attach?.length ? { attach: spec.attach } : {}), ...(spec.fromLibrary ? { fromLibrary: spec.fromLibrary } : {}), ...(spec.request ? { request: spec.request } : {}), notify: false }, deps);
 			return r.ok ? { ok: true, id: r.rec.id, notes: r.notes, ...(r.rec.libraryMiss ? { libraryMiss: true } : {}) } : { ok: false, reason: r.error };
 		},
 		state: id => getDraft(id)?.status,

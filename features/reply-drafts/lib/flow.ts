@@ -600,8 +600,9 @@ async function reviseClaimed(id: string, change: string, deps: FlowDeps, opts: {
 	const held = stagedFiles(old.id).map(f => f.name);
 	const before = heldAndWanted(old);
 	const rev = await revisionCandidates(old, change);
-	const item = rev ? { ...old.item, candidates: rev.names } : held.length ? { ...old.item, files: held } : old.item;
-	const r = await reviseReply(item, await styleOf(old.item, styleKey(old, old.item), old.source, old), { to: old.to, subject: old.subject, body: old.body }, change, callOf(deps, old.item, old.ref), judgeOf(deps, old.item, old.ref));
+	const asked = old.request === undefined ? old.item : { ...old.item, text: old.request };
+	const item = rev ? { ...asked, candidates: rev.names } : held.length ? { ...asked, files: held } : asked;
+	const r = await reviseReply(item, await styleOf(asked, styleKey(old, old.item), old.source, old), { to: old.to, subject: old.subject, body: old.body }, change, callOf(deps, old.item, old.ref), judgeOf(deps, old.item, old.ref));
 	if (r.action === "skip") return { ok: false, text: `고친 초안을 만들지 못했어요: ${r.reason}` };
 	const banned = old.box && old.instance ? banWarnings(boxById(old.instance, old.box), r.draft) : [];
 	const rec = toRec(old.item, { ...(old.box && old.instance ? { box: old.box, instance: old.instance } : {}), source: old.source, mailId: old.mailId, ref: old.ref, ...(old.account ? { account: old.account } : {}), ...(old.origAttachments ? { origAttachments: old.origAttachments } : {}) }, r, [...old.changes, change], deps);
@@ -622,6 +623,7 @@ async function reviseClaimed(id: string, change: string, deps: FlowDeps, opts: {
 	if (old.wantFiles?.length) rec.wantFiles = old.wantFiles;
 	if (old.libraryMiss) rec.libraryMiss = true;
 	if (old.compose) rec.compose = true;
+	if (old.request !== undefined) rec.request = old.request;
 	if (old.accounts) rec.accounts = old.accounts;
 	if (old.origin) rec.origin = old.origin;
 	if (old.rule) rec.rule = old.rule;
