@@ -170,6 +170,17 @@ export const D_CLOSE = /번호(?:로|를).*(?:답|알려)/;
 const DOUBLED_HEAD = /^(\s*(?:\*\*)?\s*(?:결정|decision(?: needed)?)(?:\s*#?\d{1,2})?\s*[:：]\s*)(?:\[[^\]\n]{1,10}\][ \t]*|(?:결정|decision(?: needed)?)\s*[:：][ \t]*)+/i;
 const oneHead = (line: string): string => line.replace(DOUBLED_HEAD, "$1");
 const FILE_LINE = /^\s*\[file\]\s+\S/;
+// A list item or an indented line right under an option's description belongs to that option: what to answer when it is picked ("- 공개일: ...").
+// It is part of the option's `desc` (one line each), so every card shows it on its face, never under 자세히 (another install, 2026-11-26: four values to fill
+// sat in a list under "1) 지금 바로 정하기 …" and only the folded rest of the card showed them). Mirrors subLine in web/js/10-decision-card.js.
+const SUB_LINE = /^(?:\s*[-*•]\s+\S|[ \t]{2,}\S)/;
+const isSubLine = (line: string | undefined): boolean => line !== undefined && SUB_LINE.test(line) && !D_OPT.test(line) && !DECISION_HEAD.test(line) && !D_CLOSE.test(line) && !FENCE.test(line) && !FILE_LINE.test(line);
+/** The index of the last line of the option description that starts at line `at` (its first line) and runs on in sub lines. */
+const descEnd = (lines: string[], at: number): number => {
+	let i = at;
+	while (isSubLine(lines[i + 1])) i++;
+	return i;
+};
 const isEvidence = (line: string): boolean => !!line.trim() && !D_CLOSE.test(line) && !FILE_LINE.test(line) && !D_OPT.test(line) && !DECISION_HEAD.test(line);
 /** One decision of a several-decision message, as its notice stores it: the card's evidence lines (the lines between its "결정:" head and its
  * first option), the lead text before the first head, then the block's lines after its options. Option lines (the buttons show them), the head
@@ -198,7 +209,7 @@ export function decisionText(body: string, index: number): string {
 				part.last = n;
 			}
 			const nx = lines[i + 1];
-			if (nx !== undefined && nx.trim() && !D_OPT.test(nx) && !DECISION_HEAD.test(nx) && !D_CLOSE.test(nx) && !FENCE.test(nx)) i++;
+			if (nx !== undefined && nx.trim() && !D_OPT.test(nx) && !DECISION_HEAD.test(nx) && !D_CLOSE.test(nx) && !FENCE.test(nx)) i = descEnd(lines, i + 1);
 			continue;
 		}
 		if (!part) lead.push(line);
@@ -221,7 +232,7 @@ export function plainDecisions(text: string): string {
 		if (h || (!fence && headed && (D_OPT.test(line) || D_CLOSE.test(line)))) {
 			if (h) out.push(h[1]!);
 			const nx = lines[i + 1];
-			if (!h && D_OPT.test(line) && nx !== undefined && nx.trim() && !D_OPT.test(nx) && !DECISION_HEAD.test(nx) && !D_CLOSE.test(nx) && !FENCE.test(nx)) i++;
+			if (!h && D_OPT.test(line) && nx !== undefined && nx.trim() && !D_OPT.test(nx) && !DECISION_HEAD.test(nx) && !D_CLOSE.test(nx) && !FENCE.test(nx)) i = descEnd(lines, i + 1);
 			headed = true;
 			continue;
 		}
@@ -265,8 +276,9 @@ export function parseDecisions(text: string): { question: string; blocks: Decisi
 		let desc = "";
 		const next = lines[i + 1];
 		if (next !== undefined && next.trim() && !D_OPT.test(next) && !DECISION_HEAD.test(next) && !D_CLOSE.test(next) && !FENCE.test(next)) {
-			desc = next.trim();
-			i++;
+			const end = descEnd(lines, i + 1);
+			desc = lines.slice(i + 1, end + 1).map(l => l.trim()).join("\n");
+			i = end;
 		}
 		const raw = m[2]!.replace(/^\*+|\*+$/g, "").trim();
 		const marked = DETAIL_MARK.test(raw);

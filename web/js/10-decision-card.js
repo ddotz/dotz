@@ -15,6 +15,10 @@ const detailOf = o => !!o.detail || DETAIL_LABEL.test(o.label) || DETAIL_DESC.te
 const unnumbered = l => l.replace(/^(?:\d{1,2}[).]\s+)+/, "").trim() || l;
 const CH_FENCE = /^\s*```/;
 const isDescLine = nx => nx !== undefined && !!nx.trim() && !/^\s*\[file\]\s+\S/.test(nx) && !CH_OPT.test(nx) && !CH_HEAD.test(nx) && !CH_CLOSE.test(nx) && !CH_FENCE.test(nx);
+// A list item or an indented line right under an option's description is part of it (what to answer when it is picked): the card shows it on its face.
+// Mirrors isSubLine / descEnd in hub/choices.ts.
+const chSubLine = l => isDescLine(l) && /^(?:\s*[-*•]\s+\S|[ \t]{2,}\S)/.test(l);
+const chDescEnd = (lines, at) => { let i = at; while (chSubLine(lines[i + 1])) i++; return i; };
 // The message text without its option lines (and their description lines): the buttons show them, so the body must not repeat them.
 function stripChoices(text) {
   const lines = stripRecMark(String(text ?? "")).split("\n"), out = [];
@@ -22,7 +26,7 @@ function stripChoices(text) {
   for (let i = 0; i < lines.length; i++) {
     if (CH_FENCE.test(lines[i])) fence = !fence;
     if (fence || CH_FENCE.test(lines[i]) || !CH_OPT.test(lines[i])) { out.push(lines[i]); continue; }
-    if (isDescLine(lines[i + 1])) i++;
+    if (isDescLine(lines[i + 1])) i = chDescEnd(lines, i + 1);
   }
   return out.filter(l => !CH_CLOSE.test(l)).join("\n").replace(/\n{3,}/g, "\n\n");
 }
@@ -52,7 +56,7 @@ function parseChoices(text) {
     if (!cur || (cur.options.length && n <= cur.options[cur.options.length - 1].n)) { cur = { title: "", options: [] }; blocks.push(cur); }
     let desc = "";
     const nx = lines[i + 1];
-    if (isDescLine(nx)) { desc = nx.trim(); i++; }
+    if (isDescLine(nx)) { const end = chDescEnd(lines, i + 1); desc = lines.slice(i + 1, end + 1).map(l => l.trim()).join("\n"); i = end; }
     const raw = m[2].replace(/^\*+|\*+$/g, "").trim();
     cur.options.push({ n, label: unnumbered(raw.replace(DETAIL_MARK, "").trim()), desc, ...(DETAIL_MARK.test(raw) ? { detail: true } : {}) });
   }
@@ -510,7 +514,7 @@ function choiceRow(dc, step, o, picks, st) {
     el("span", { class: "dc-key", text: String(o.n) }),
     el("span", { class: "dc-tx" }, el("span", { class: "dc-lb" }, o.label), o.desc ? el("span", { class: "dc-ds", text: dcDesc(o) }) : null));
 }
-const dcDesc = o => o.desc.replace(/`/g, "");   // one plain line under the name: code marks would show raw
+const dcDesc = o => o.desc.replace(/`/g, "");   // plain lines under the name (the first says what happens, a list under it what to answer): code marks would show raw
 const dcAgain = box => () => (box === DK.box ? dkPaint() : paintDecision());   // the paint that owns a decision box, for a held repaint (paintKeep)
 // From the tap until the card is gone it stays where it was, so the dock does not move under the thumb while the chosen row fades: its height is
 // kept, and whatever arrives below it meanwhile (the working line) is taken out of its bottom margin.

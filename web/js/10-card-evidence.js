@@ -12,7 +12,7 @@ function inlineBody(text) {
   for (let i = 0; i < lines.length; i++) {
     if (CH_FENCE.test(lines[i])) { fence = !fence; block = false; }
     else if (!fence && CH_HEAD.test(lines[i]) && chOpens(lines, i)) { block = true; for (; !CH_OPT.test(lines[i + 1]); i++) if (lines[i + 1].trim() && !chEvidence(lines[i + 1]) && !CH_CLOSE.test(lines[i + 1])) out.push(lines[i + 1]); continue; }
-    else if (!fence && block && CH_OPT.test(lines[i])) { if (isDescLine(lines[i + 1])) i++; continue; }
+    else if (!fence && block && CH_OPT.test(lines[i])) { if (isDescLine(lines[i + 1])) i = chDescEnd(lines, i + 1); continue; }
     else if (!fence && CH_CLOSE.test(lines[i])) continue;
     else if (lines[i].trim()) block = false;
     out.push(lines[i]);

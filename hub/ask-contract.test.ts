@@ -112,6 +112,15 @@ test("an English sentence that only mentions replying and numbers is not a closi
 	expect(askFault(`${list}\n\nI'll rerun them after lunch.`)?.kind).toBe("unread");
 });
 
+test("several values packed into one typed option go back; the same values on the card's face with 이대로 / 고칠 게 있어 pass", () => {
+	const packed = "[ask] 초안을 만들었어요.\n\n결정: 신청서 · 비어 있는 칸 채우기\n**1) 지금 바로 정하기 …**\n아래 세 가지를 한 번에 답해 주세요\n- 공개일은 언제로 할지\n- 부른 사람\n- 회원 번호\n**2) 사이트에서 같이 하기**\n로그인해 주면 칸을 채워 둘게요";
+	expect(askFault(packed)).toEqual({ kind: "packed", label: "지금 바로 정하기" });
+	const onFace = "[ask] 비어 있는 칸이 세 개예요.\n\n결정: 남은 신청 칸 · 이 값으로 채울까요?\n- 공개일: 빈칸 → 6월 29일\n- 부른 사람: 빈칸 → 항목A\n- 회원 번호: 빈칸 → 번호A\n**1) 이대로 채워**\n세 칸을 넣어 둬요. 제출은 안 해요\n**2) 고칠 게 있어 …**\n바꿀 칸과 값을 알려 주세요";
+	expect(askFault(onFace)).toBeUndefined();
+	// A plain option (no typing) with a list under it says what it does, step by step: no fault.
+	expect(askFault(packed.replace("지금 바로 정하기 …", "이대로 진행").replace("아래 세 가지를 한 번에 답해 주세요", "이 순서로 해요"))).toBeUndefined();
+});
+
 test("a title link with a quoted link title counts as its text, as the push shows it", () => {
 	const linked = `[PR #1234 백업 경로 정리](https://github.com/example-owner/example-repo/pull/1234 "백업 경로를 한곳으로") · 머지할까요?`;
 	expect([...linked].length).toBeGreaterThan(60);

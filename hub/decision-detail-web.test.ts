@@ -179,3 +179,30 @@ describe("decision options that need detail", () => {
 	});
 });
 
+// A card whose option asks for several values (a list under it) shows that list on the option itself, in the chat card and in the notice sheet,
+// never only under 자세히 보기 (2026-11-26: four values to fill were folded away and the owner had to open the rest to see what was asked).
+const FIELDS = "[ask] 신청서 초안을 만들었어요. 아직 제출하지 않았어요.\n\n칸마다 넣을 값을 다 채워 놨고, 붙일 파일도 정리했어요. 비율은 규정대로 적었어요.\n\n확인서는 요청이 올 때만 쓰면 돼요. 다른 항목도 초안은 만들어 뒀어요.\n\n결정: 신청서 · 비어 있는 칸 채우기\n**1) 지금 바로 정하기 …**\n아래 네 가지를 한 번에 답해 주세요\n- 시작일: 처음 올린 날로 할지, 더 이른 날이 있는지\n- 담당자와 만든 곳\n- 함께 한 사람을 같이 올릴지\n- 등록 번호\n**2) 사이트에서 같이 하기**\n로그인해 주면 칸을 채워 둘게요";
+const LISTED = ["- 시작일: 처음 올린 날로 할지, 더 이른 날이 있는지", "- 담당자와 만든 곳", "- 함께 한 사람을 같이 올릴지", "- 등록 번호"];
+describe("an option that lists the values it asks for", () => {
+	test("the chat card shows the list under the option, and the message body above does not repeat it", async () => {
+		history = ask(FIELDS);
+		await load(`(openTarget("main", "chat"), 0)`);
+		await waitFor(`document.querySelectorAll("#dcard .dc-row").length === 2`);
+		const shown = await view.evaluate(`document.querySelector("#dcard .dc-row .dc-ds").innerText`);
+		for (const line of LISTED) expect(String(shown)).toContain(line);
+		expect(await view.evaluate(`document.querySelector("#dcard .dc-row .dc-ds").getClientRects().length > 0 && document.querySelector("#dcard .dc-row .dc-ds").getBoundingClientRect().height > 40`)).toBe(true);
+		expect(await view.evaluate(`[...document.querySelectorAll("#tl li")].some(li => li.textContent.includes("등록 번호"))`)).toBe(false);
+	});
+
+	test("the notice sheet shows the list on the option, not under 자세히 보기", async () => {
+		const title = `신청서-${Date.now()}`;
+		emit("outbox", { ts: new Date().toISOString(), kind: "out", source: "orchestrator", target: "alert", text: FIELDS.replace("신청서 · 비어 있는 칸 채우기", title) });
+		const n = listNotices(300).items.find(i => i.kind === "decision" && i.decision?.state === "open" && i.title.includes(title))!;
+		await load(`(noticeSheetOpen(${JSON.stringify(n.id)}), 0)`);
+		await waitFor(`document.querySelector('.ds-opt[data-k="o1"]')`);
+		const opt = String(await view.evaluate(`document.querySelector('.ds-opt[data-k="o1"]').innerText`));
+		for (const line of LISTED) expect(opt).toContain(line);
+		expect(await view.evaluate(`[...document.querySelectorAll(".ds-more")].map(d => d.textContent).join("").includes("등록 번호")`)).toBe(false);
+	});
+});
+

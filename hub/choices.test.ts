@@ -308,6 +308,20 @@ test("a choice label that already starts with its number is numbered once, whoev
 	expect(issueBlock("어떻게 할까요?", [{ name: "1) 원인 확인", result: "살펴봐요." }, { name: "넘어가요", result: "" }])).toBe("결정: 어떻게 할까요?\n**1) 원인 확인**\n살펴봐요.\n**2) 넘어가요**");
 });
 
+test("a list under an option's description is part of that option, never text left for the folded rest", () => {
+	const text = "[ask] 초안을 만들었어요.\n\n결정: 신청서 · 비어 있는 칸 채우기\n**1) 지금 바로 정하기 …**\n아래 두 가지를 답해 주세요\n- 공개일: 언제로 할지\n  모르면 비워 둬요\n- 회원 번호\n**2) 같이 하기**\n로그인해 주세요\n\n끝나면 알려 드릴게요.";
+	const [o1, o2] = parseDecisions(text).blocks[0]!.options;
+	expect(o1!.desc).toBe("아래 두 가지를 답해 주세요\n- 공개일: 언제로 할지\n모르면 비워 둬요\n- 회원 번호");
+	expect([o2!.label, o2!.desc]).toEqual(["같이 하기", "로그인해 주세요"]);
+	const rest = decisionText(text, 0);
+	expect(rest).not.toContain("회원 번호");
+	expect(rest).toContain("끝나면 알려 드릴게요.");
+	expect(plainDecisions(text)).not.toContain("공개일");
+	// A list after a blank line is the message going on, not the option's.
+	const after = "결정: 배포 · 올릴까요?\n**1) 올리기**\n바로 올려요\n**2) 두기**\n그대로 둬요\n\n- 참고 항목";
+	expect(parseDecisions(after).blocks[0]!.options[1]!.desc).toBe("그대로 둬요");
+});
+
 test("a label is cut only at a number the model wrote as a list mark", () => {
 	for (const [label, shown] of [["3개월 보관", "3개월 보관"], ["2.5 버전으로", "2.5 버전으로"], ["10) 열 번째", "열 번째"], ["", ""]] as const) expect(unnumbered(label)).toBe(shown);
 });

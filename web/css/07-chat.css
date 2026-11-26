@@ -118,7 +118,7 @@
 .dc-key { flex: none; display: grid; place-items: center; min-width: 18px; height: 20px; padding: 0; color: var(--fg-3); font-size: 12px; line-height: 20px; font-weight: 400; font-variant-numeric: tabular-nums; }
 .dc-tx { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: var(--sp-05); }
 .dc-lb { display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-15); font-size: 14px; line-height: 20px; font-weight: 500; }
-.dc-ds { color: var(--fg-3); font-size: 12px; line-height: 16px; }
+.dc-ds { color: var(--fg-3); font-size: 12px; line-height: 16px; white-space: pre-line; }   /* the list under an option (what to answer) keeps its lines */
 .dc-draft { flex: none; display: flex; flex-direction: column; gap: var(--sp-1); margin: 0 0 var(--sp-1); padding: var(--sp-2) var(--sp-3); border-radius: 10px; background: color-mix(in srgb, var(--fg) 5%, transparent); }
 .dc-brief { display: grid; gap: var(--sp-05); padding-bottom: var(--sp-2); margin-bottom: var(--sp-2); border-bottom: 1px solid var(--line); }
 .dc-brief .dc-dr-v { font-weight: 400; overflow-wrap: anywhere; word-break: keep-all; }

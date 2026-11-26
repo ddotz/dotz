@@ -5,7 +5,7 @@
 // False positives are the risk, so it needs both a trailing list of 2-4 clean options and a question line right above it that offers a
 // choice. A yes / no question counts only under a "결정 필요" heading, in an [ask], or when an option carries a recommendation.
 import { askedDraft } from "./ask-options.ts";
-import { D_CLOSE, DECISION_HEAD, D_OPT, DETAIL_DESC, DETAIL_MARK, FILLER_QUESTIONS, parseDecisions, stripRecommendMark } from "./choices.ts";
+import { D_CLOSE, DECISION_HEAD, D_OPT, DETAIL_DESC, DETAIL_MARK, detailOf, FILLER_QUESTIONS, parseDecisions, stripRecommendMark } from "./choices.ts";
 import { parseDraftApproval, parseQuotedDraft } from "./draft-approval.ts";
 import { isForLine, orchestratorOnlyAsk } from "./forline.ts";
 import { parseTone, splitTone } from "./tone.ts";
@@ -386,6 +386,15 @@ export function sharedLeadCards(text: string): number {
 	return cards;
 }
 
+const LIST_ITEM = /^[-*•]\s+\S/;
+/** The name of the first option in `text` that the owner must type into (` …`) and that lists two or more things to answer under it: several questions
+ *  packed into one field, where the values belong on the card's face with an "이대로 / 고칠 게 있어 …" pair (another install, 2026-11-26). */
+export function packedOption(text: string): string | undefined {
+	const p = parseTone(text);
+	if (parseDraftApproval(p.text)) return undefined;
+	return parseDecisions(p.text).blocks.flatMap(b => b.options).find(o => detailOf(o) && o.desc.split("\n").filter(l => LIST_ITEM.test(l)).length >= 2)?.label;
+}
+
 /** The questions of `text` with a list of their own under them that no card came from (a list shape the parser does not read): the owner would answer only the cards. */
 export function unreadQuestions(text: string): string[] {
 	const { tone, rest } = splitTone(text);
@@ -415,9 +424,10 @@ export type AskFault =
 	| { kind: "title"; title: string }
 	| { kind: "long"; title: string }
 	| { kind: "lead"; cards: number }
+	| { kind: "packed"; label: string }
 	| { kind: "prose"; line: string };
 /** What keeps the owner from answering a message on the spot, checked in this order: a question whose list became no card, a card titled with no subject,
- *  a card title too long to read at a glance, several cards with no line of their own, a request in words alone. */
+ *  a card title too long to read at a glance, several cards with no line of their own, several questions packed into one option, a request in words alone. */
 export function askFault(text: string): AskFault | undefined {
 	const questions = unreadQuestions(text);
 	if (questions.length) return { kind: "unread", questions };
@@ -427,6 +437,8 @@ export function askFault(text: string): AskFault | undefined {
 	if (long !== undefined) return { kind: "long", title: long };
 	const cards = sharedLeadCards(text);
 	if (cards) return { kind: "lead", cards };
+	const packed = packedOption(text);
+	if (packed !== undefined) return { kind: "packed", label: packed };
 	const line = proseAsk(text);
 	return line ? { kind: "prose", line } : undefined;
 }

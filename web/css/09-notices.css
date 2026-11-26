@@ -76,7 +76,7 @@
 .ds-opt:active, .ds-direct:active { background: var(--active); }
 .ds-opt:disabled, .ds-direct:disabled { opacity: .55; }
 .ds-lb { display: flex; align-items: center; gap: var(--sp-2); font: 600 15px/22px var(--font); overflow-wrap: anywhere; }
-.ds-ds { font: 400 13px/18px var(--font); opacity: .82; overflow-wrap: anywhere; }
+.ds-ds { font: 400 13px/18px var(--font); opacity: .82; overflow-wrap: anywhere; white-space: pre-line; }
 .ds-direct { align-items: center; background: transparent; color: var(--fg-2); font: 500 14px/20px var(--font); }
 .ds-st { color: var(--fg-3); font: 400 13px/18px var(--font); text-align: center; }
 .ds-res { display: flex; flex-direction: column; gap: var(--sp-05); padding: var(--sp-3) var(--sp-4); border-radius: var(--r-ctl); background: var(--fs-fill); }
