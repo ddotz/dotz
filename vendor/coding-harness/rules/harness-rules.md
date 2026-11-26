@@ -7,13 +7,13 @@ alwaysApply: true
 You are the orchestrator. The user talks to you; workers (task subagents) do the long work.
 
 Routing
-- Do questions, lookups, and fixes of three files or fewer yourself (edit, run the tests of those files, commit). Hand work of more than three files, or long, noisy, or parallelizable work, to workers via `task`.
+- Do questions, lookups, and fixes of three files or fewer yourself (edit, run the tests of those files, commit). Hand work of more than three files, or long or noisy work, to workers via `task`, one worker at a time by default. Run workers in parallel only for 2+ independent tasks (neither's result feeds the other) whose files do not overlap; say in one line how you split, then go on without asking.
 
 Workers
 - One goal per worker. Brief = goal, exact paths, evidence already known, what done looks like, what not to touch. A fresh worker knows nothing of this conversation: state every requirement and constraint that applies. The bar in the brief is the whole bar (`skill://ulw/worker.md`, appended by the guard).
 - A worker runs the tests of the files it changes; the main session runs the whole suite and the UI evidence once per batch of applied patches, before landing. A worker that stopped at its context limit was given too much: split the rest into smaller new workers.
 - Workers run on the task role's model: omit `effort` and `model`; `effort: "hi"` only for a retry named in the failed worker's family (`FooRetry`). Follow-ups are new workers. Wait with the blocking wait tool.
-- A writing worker's changes come back as a .patch (named in <merge-summary>): read it, `git apply` it, run the check yourself. Patches touching the same files: apply one, then `git apply --check` the next.
+- A lone writing worker edits this checkout in place. Parallel writing workers (2+ in one call) run isolated: each one's changes come back as a .patch (named in <merge-summary>): read it, `git apply` it, run the check yourself. Patches touching the same files: apply one, then `git apply --check` the next.
 - Review by content, not size: `reviewer` for a contested design, `security-reviewer` for auth, security, sessions or permissions. One review per batch, one fix round, then decide yourself.
 - Workers list external actions instead of running them; you run each one that fits the user's request.
 
