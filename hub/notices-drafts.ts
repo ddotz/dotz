@@ -96,6 +96,13 @@ export function markDraftPosted(to: string, ref: string, target: string, ids: st
 	save();
 	void stamp([n]);
 }
+/** The open cards `match` picks (a draft's card goes through markDraftPosted) went to Discord as these messages: kept so their buttons turn off when they close (hub/outbound.ts). */
+export function markCardsPosted(match: (n: Notice) => boolean, target: string, ids: string[]): void {
+	const hit = items.filter(i => isOpenDecision(i) && !i.decision!.draft && match(i));
+	if (!hit.length || !ids.length) return;
+	for (const n of hit) n.decision!.card = { target, ids };
+	save();
+}
 // What a card's Discord message shows: the digest of the card text it was last posted or edited with (hub/outbound.ts, on success only).
 const digest = (text: string): string => createHash("sha256").update(text).digest("hex").slice(0, 16);
 /** The Discord message of the open card of draft `ref` in `to` was edited to show `text` (the card's text then). */

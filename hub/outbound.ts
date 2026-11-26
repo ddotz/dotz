@@ -15,7 +15,7 @@ import { updateNow } from "./update-now.ts";
 import { isNote, isOpenNudge, msg } from "./i18n.ts";
 import { stripSteerMark } from "./steer-mark.ts";
 import { normalizeAsk, plainBareAsk } from "./ask-normalize.ts";
-import { stripRecommendMark } from "./choices.ts";
+import { cardBlock, stripRecommendMark, unnumbered } from "./choices.ts";
 import { asksLimitStopInChat } from "./limit-ask.ts";
 import { asksPersonalInChat } from "./personal-ask.ts";
 import { answeredIds, answeredSince, broadcast, emit, emitDelivery, eventTarget, type HubEvent, newestOwnerMessage, ownerMessage, recentOwnerMessages, tailEvents, workAnswer } from "./events.ts";
@@ -47,8 +47,9 @@ import { OMO_WORDS, ompWords, runName, type WorkerWords } from "./worker-words.t
 import { dropClaim, resolvesOf, splitTone, stripHandoff, stripLater, stripProjectInfo, stripResolves } from "./tone.ts";
 import { isLate, isSnowflake, lateQuote, lateRequestId, replyRef, snowflakeTime, withQuote } from "./threads.ts";
 import { handMailKey, keepBrief } from "./draft-approval.ts";
-import { allNotices, draftCardsOf, keepOpen, markCardShown, markDraftPosted, markJudging, onDecisionClosed, onDraftCardRefreshed, openDraftCards, openDraftRefs, openDraftText, orchestratorAnswered, resolveNotices, reviseDraftCard, rewriteOpenDraft, SessionEnded, untouchedChoices } from "./notices.ts";
+import { allNotices, draftCardsOf, keepOpen, markCardShown, markCardsPosted, markDraftPosted, markJudging, onDecision, onDecisionClosed, onDraftCardRefreshed, openDraftCards, openDraftRefs, openDraftText, orchestratorAnswered, resolveNotices, reviseDraftCard, rewriteOpenDraft, SessionEnded, untouchedChoices } from "./notices.ts";
 import type { OwnerSaid } from "./notices-types.ts";
+import { RUN_DECISION } from "./notices-schedule.ts";
 import { askerLines, askerNotes } from "./asker-notes.ts";
 import { channelTitle, GENERIC_TITLES } from "./notices-lanes.ts";
 import { answeredDraftCard } from "./notices-drafts.ts";
@@ -334,10 +335,12 @@ const replyQuote = (id?: string) => {
 	const m = id ? ownerMessage(id) : undefined;
 	return id && m?.text.trim() ? { reply: { id, author: m.author ?? "", content: m.text.trim().slice(0, 300) } } : {};
 };
-const emitOut = (j: OutJob, t: string) => {
+const emitOut = (j: OutJob, t: string): string => {
 	// What another session posted into its conversation is what main's digest carries; progress notes and notices are not exchanges.
 	if (!j.extra.update_key && (j.extra.source === undefined || j.extra.source === "orchestrator")) digest.note(convs.keyOf(j.target), "bot", t, Date.now(), typeof j.extra.session === "string" ? j.extra.session : undefined);
-	emit("outbox", outEvent({ ts: now(), kind: "out", source: "orchestrator", target: j.target, text: t, reply_to: j.replyTo ?? null, ...replyQuote(j.replyTo), ...j.extra }, threadHome, threadMail));
+	const ts = now();
+	emit("outbox", outEvent({ ts, kind: "out", source: "orchestrator", target: j.target, text: t, reply_to: j.replyTo ?? null, ...replyQuote(j.replyTo), ...j.extra }, threadHome, threadMail));
+	return ts;
 };
 const askedAtMs = (id: string): number | undefined => {
 	if (isSnowflake(id)) return snowflakeTime(id);
@@ -479,9 +482,23 @@ onDraftCardRefreshed(n => {
 	const d = n.decision;
 	if (d?.card && d.draft?.ref) editCard(d.card.target, d.card.ids, d.draft.ref, `[ask] ${n.text}`, { to: d.to, text: n.text });
 });
+// Any other card that closed with no press (ignored, answered on the web, expired, closed by the bot) turns its buttons off on Discord, its words kept: on its last message, once no open card shares it.
+function disableCardButtons(target: string, ids: string[]): void {
+	const last = ids.at(-1)!;
+	if (!isLocal(target) && !allNotices().some(n => n.decision?.state === "open" && n.decision.card?.ids.includes(last))) void discord.disableButtons(target, last).catch(e => log(`card buttons of ${last} not turned off on Discord: ${e}`));
+}
 onDecisionClosed((to, ref, card) => {
-	if (card) closeDiscordCard(to, ref, card);
+	if (card && ref) closeDiscordCard(to, ref, card);
+	else if (card?.target && card.ids?.length) disableCardButtons(card.target, card.ids);
 	approvals.closed(to, ref);
+});
+// A failed scheduled run's card (hub/schedule-fire.ts failRun) has no post: its open notice goes to Discord through the send ledger, so no second notice is made.
+// Its buttons answer that notice (hub/approval-wire.ts discordGatewayAnswer).
+onDecision(n => {
+	const d = n.decision!, target = n.open === "main" ? "chat" : n.open;
+	if (!d.to.startsWith(RUN_DECISION) || isLocal(target) || !discord.status.enabled) return;
+	const text = `[ask] ${cardBlock({ subject: n.title, question: "", evidence: d.evidence, options: d.options.map(o => ({ name: unnumbered(o.label), result: o.desc ?? "" })) })}`;
+	if (route({ target, text, extra: { source: "gateway" } }).messengers.discord) void sends.submit(target, text).then(r => void (r.ids?.length && markCardsPosted(c => c.id === n.id, target, r.ids)), e => log(`run card ${n.id} not posted to Discord: ${e}`));
 });
 // Where the open card of `conv` is: its Discord message, when it went there.
 const cardLink = (c: { target: string; ids?: string[] }) => (c.ids?.[0] && !isLocal(c.target) && route({ target: c.target }).messengers.discord ? discord.messageLink(c.target, c.ids[0]) : undefined);
@@ -560,7 +577,7 @@ export async function out(target: string, text: string, replyTo?: string, extra:
 		return last;
 	}
 	const job: OutJob = { target, text: body, replyTo: replyTo ?? (routed ? lateRequest(target) : undefined), extra };
-	const routing: { card?: Awaited<ReturnType<typeof approvals.route>> } = {};
+	const routing: { card?: Awaited<ReturnType<typeof approvals.route>>; at?: string } = {};
 	let landed = false;
 	replies.begin(job);
 	let sent: string;
@@ -581,7 +598,7 @@ export async function out(target: string, text: string, replyTo?: string, extra:
 			if (card?.action === "post" && card.repost) job.extra = { ...job.extra, repost: card.repost.id };
 			// False: shutdown already landed this post with the original text.
 			landed = replies.end(job);
-			if (landed && (!card || card.action === "post")) emitOut(job, t);
+			if (landed && (!card || card.action === "post")) routing.at = emitOut(job, t);
 			return t;
 		});
 	} finally {
@@ -598,6 +615,8 @@ export async function out(target: string, text: string, replyTo?: string, extra:
 	if (r.delivered && card?.repost?.card) cardMoved(convOfTarget(target), card.repost.ref, { ...card.repost.card, text: card.repost.was });
 	const cardOf = r.ids?.length ? cardRef(sent) : undefined;
 	if (cardOf && r.ids) markDraftPosted(convOfTarget(target), cardOf, target, r.ids);
+	// The choice cards this post made: their buttons turn off when they close (disableCardButtons).
+	if (r.ids?.length && routing.at) markCardsPosted(n => n.at === routing.at && n.decision!.to === convOfTarget(target), target, r.ids);
 	return r;
 }
 

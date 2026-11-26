@@ -6,6 +6,7 @@ import { setWebBase } from "./weblink.ts";
 
 type Req = { payload: { components?: { components: { label?: string; url?: string }[] }[] } };
 const requests: Req[] = [];
+let shownComponents: unknown[] = [];
 let server: ReturnType<typeof Bun.serve>;
 const ASK = "[ask] 시작 설정\n\n**1) 지금 고치기**\n재부팅 뒤에도 켜져요\n**2) 그대로 두기**\n다음 재부팅까지는 괜찮아요";
 
@@ -13,6 +14,7 @@ beforeAll(() => {
 	server = Bun.serve({
 		port: 0,
 		async fetch(req) {
+			if (req.method === "GET") return Response.json({ id: "m1", components: shownComponents });
 			requests.push({ payload: JSON.parse(await req.text()) });
 			return Response.json({ id: `m${requests.length}` });
 		},
@@ -66,4 +68,15 @@ test("an edit asked to refresh buttons carries the card's options now; a plain e
 
 test("a lane has no web chat route, so its decision gets no button", async () => {
 	expect(await linkOf("lane:no-such-lane", ASK)).toBeUndefined();
+});
+
+test("a closed card's buttons are turned off in place, its link kept; a message with none left on is not edited", async () => {
+	shownComponents = [{ type: 1, components: [{ type: 2, style: 2, label: "지금 고치기", custom_id: "dz-ask:ch:222:1" }] }, { type: 1, components: [{ type: 2, style: 5, label: "웹에서 보기", url: "https://gw.example/#chat/ch:222" }] }];
+	requests.length = 0;
+	await discord.disableButtons("ch:222", "m1");
+	expect(requests.map(r => r.payload)).toEqual([{ components: [{ type: 1, components: [{ type: 2, style: 2, label: "지금 고치기", custom_id: "dz-ask:ch:222:1", disabled: true }] }, shownComponents[1]] }] as never);
+	shownComponents = [{ type: 1, components: [{ type: 2, style: 5, label: "웹에서 보기", url: "https://gw.example/#chat/ch:222" }] }];
+	requests.length = 0;
+	await discord.disableButtons("ch:222", "m1");
+	expect(requests).toEqual([]);
 });

@@ -12,6 +12,8 @@ export const SENTENCE_MAX = 120;
 export const runKey = (run: string): string => `schedule:${run}`;
 /** The decision of a failed run answers to `schedule:<run>` (hub/routes.ts deliverAnswer), never to a model turn; its text is the schedule's name. */
 export const RUN_DECISION = "schedule:";
+/** The conversation a card stands in: its asker's, or for a failed run's card (asked by no conversation) the one its schedule fires into. */
+export const cardConv = (n: Notice): string => (n.decision!.to.startsWith(RUN_DECISION) ? n.open : n.decision!.to);
 const FALLBACK_TITLE = "예약";
 
 /** The first sentence of an answer, without list or quote marks and a closing period. */

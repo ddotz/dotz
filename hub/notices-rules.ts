@@ -109,7 +109,7 @@ export const ANSWER_WINDOW_MS = 72 * 3_600_000;
 export const ALERT_ANSWER_WINDOW_MS = 24 * 3_600_000;
 export const closedInfo = (n: Notice, how: ClosedCard["how"]): ClosedCard | undefined => {
 	const d = n.decision;
-	return d?.draft ? { text: n.text, how, label: d.answer ?? "", ...(d.card ?? {}) } : undefined;
+	return d?.draft || d?.card ? { text: n.text, how, label: d.answer ?? "", ...(d.card ?? {}) } : undefined;
 };
 // A send-approval card the gateway could not read as its draft (2026-11-14, issue #7): its 보내기 / 고치기 / 보내지 않기 question ends in "(<ref>)",
 // yet no draft was read from it (the bot re-worded the card, or put two cards in one message). Its 보내기 would send the draft by that ref while the

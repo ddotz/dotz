@@ -16,6 +16,8 @@ import { heldOf, settleOpenDecision } from "./notices-answers.ts";
 import { cardKind } from "./notices-decisions.ts";
 import { pickedCard } from "./notices-later.ts";
 import { noTurnLine } from "./card-answer.ts";
+import { RUN_DECISION } from "./notices-schedule.ts";
+import { answerRunDecision } from "./schedule-fire.ts";
 import { editChainCard } from "./notices-rules.ts";
 import { out } from "./outbound.ts";
 
@@ -87,6 +89,11 @@ export async function discordGatewayAnswer(target: string, conv: string, text: s
 	if (p.decision && !card) return { error: msg().auth.finished };
 	if (hold) return { error: msg().answerHeld(hold.label.replace(/^\d+\)\s*/, "")) };
 	const picked = card?.decision?.options.find(o => o.n === p.n && unnumbered(o.label) === unnumbered(p.label)), quiet = card && picked && noTurnLine(card, picked);
+	// A failed run's card answers its run, as on the web (hub/routes.ts deliverAnswer): no model turn.
+	if (card && picked && card.decision!.to.startsWith(RUN_DECISION)) {
+		const r = await answerDecision(card.id, { n: picked.n }, async a => void answerRunDecision(a.to.slice(RUN_DECISION.length), a.action));
+		return r.status === 200 ? {} : { error: String(r.body.error) };
+	}
 	if (card && picked && quiet) {
 		const r = await answerDecision(card.id, { n: picked.n }, async () => undefined);
 		if (r.status !== 200) return { error: String(r.body.error) };
