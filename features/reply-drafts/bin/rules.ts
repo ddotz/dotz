@@ -59,7 +59,7 @@ function ledgerCommand(cmd: string | undefined, rest: string[], dir: string): Ou
 			if (!file || !app) return { lines: [USAGE], code: 2 };
 			if (!existsSync(file)) return { lines: [`파일이 없어요: ${file}`], code: 1 };
 			const r = importStyle(file, app, dir);
-			return { lines: [`문체 규칙 ${r.rules}개를 rules.json(${app})에, 예시 ${r.samples}개를 ${app} 말투 프로필에 옮겨어요. 원본은 그대로 두고 ledger-backup/import/${r.at}에 복사해 뒀어요 (되돌리기: rules.ts import-undo ${r.at})`], code: 0 };
+			return { lines: [`문체 규칙 ${r.rules}개를 rules.json(${app})에, 예시 ${r.samples}개를 ${app} 말투 프로필에 옮겼어요. 원본은 그대로 두고 ledger-backup/import/${r.at}에 복사해 뒀어요 (되돌리기: rules.ts import-undo ${r.at})`], code: 0 };
 		}
 		case "import-undo": {
 			const done = undoImport(rest[0], dir);
