@@ -65,3 +65,32 @@ test("a Korean request keeps the Korean page", async () => {
 	expect(await read(v, `[document.documentElement.lang, document.querySelector("meta[name=description]").content, document.querySelector(".demo-tag").textContent, document.querySelector(".demo-back").textContent]`)).toEqual(["ko", "dotz 웹 앱을 직접 써 보는 데모예요.", "데모", "랜딩으로"]);
 	expect(await read(v, `document.querySelector("#update").innerText`)).toContain("앱 버전");
 });
+
+// The demo's own content (fixtures, scripted conversation) follows the same pick: an English visitor sees no Korean on the screens the fixtures fill.
+const viewText = (v: InstanceType<typeof Bun.WebView>, view: string) => read(v, `document.getElementById("v-${view}").innerText`);
+const filled = (view: string, word: string) => `document.getElementById("v-${view}").innerText.includes(${JSON.stringify(word)})`;
+
+test("an English request gets English chat, notices and project content", async () => {
+	const v = await open("?lang=en");
+	await waitFor(v, filled("chat", "Sort my mail"));
+	expect(await viewText(v, "chat")).not.toMatch(/[가-힣]/);
+	await run(v, `go("notices")`);
+	await waitFor(v, filled("notices", "Choose the release notice format"));
+	expect(await viewText(v, "notices")).not.toMatch(/[가-힣]/);
+	await run(v, `go("projects")`);
+	await waitFor(v, filled("projects", "Form document automation"));
+	expect(await viewText(v, "projects")).not.toMatch(/[가-힣]/);
+});
+
+test("an English visitor's own message gets an English scripted reply", async () => {
+	const v = await open("?lang=en");
+	await run(v, `fetch("/api/message", { method: "POST", body: JSON.stringify({ text: "Sort my mail" }) })`);
+	await waitFor(v, filled("chat", "to reply to"));
+	expect(await viewText(v, "chat")).not.toMatch(/[가-힣]/);
+});
+
+test("a Korean request keeps the Korean chat content", async () => {
+	const v = await open("?lang=ko");
+	await waitFor(v, filled("chat", "메일 정리해 줘"));
+	expect(await viewText(v, "chat")).toContain("dotz 데모예요");
+});

@@ -29,7 +29,8 @@
     for (const el of document.querySelectorAll("*"))
       for (const a of [...el.attributes]) if (a.value.includes("{{")) a.value = sub(a.value);
   };
-  const lang = pick(navigator.languages || [navigator.language], new URLSearchParams(location.search).get("lang"));
-  const L = (ko, en) => lang === "ko" ? ko : en;
-  window.dotzDemoLang = { pick, fill, lang, L };
+  let picked;
+  const lang = () => picked ??= pick(navigator.languages || [navigator.language], new URLSearchParams(location.search).get("lang"));
+  const L = (ko, en) => lang() === "ko" ? ko : en;
+  window.dotzDemoLang = { pick, fill, get lang() { return lang(); }, L };
 })();

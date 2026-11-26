@@ -1,5 +1,5 @@
 "use strict";
-const WEB_BUILD = "eff8d340d5dc";
+const WEB_BUILD = "37c74f097370";
 // Screen text and number/date locale. The server puts `const I18N_LANG = "ko", I18N = {...};` right after the WEB_BUILD line (hub/webapp.ts);
 // this file reads those two constants and nothing else, and touches no DOM, so hub/web-i18n.ts runs the same source on the server.
 // A catalog value is a string with {name} placeholders, {name+이/가} Korean particles (picked from the word's last letter), or an

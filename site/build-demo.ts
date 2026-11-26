@@ -29,7 +29,7 @@ const catalog = (lang: string) => scrubBundle(JSON.stringify(resolveView(lang, {
   areas: lang => { try { return readdirSync(join(WEB, "i18n", lang)).filter(f => f.endsWith(".json")).map(f => f.slice(0, -5)).sort(); } catch { return []; } },
   read: (lang, area) => source(`i18n/${lang}/${area}.json`),
 }).catalog));
-const catalogs = `const I18N_LANG = dotzDemoLang.pick(navigator.languages || [navigator.language], new URLSearchParams(location.search).get("lang")), I18N = I18N_LANG === "en" ? ${catalog("en")} : ${catalog("ko")};\ndotzDemoLang.fill(I18N_LANG, I18N);\n`;
+const catalogs = `const I18N_LANG = dotzDemoLang.lang, I18N = I18N_LANG === "en" ? ${catalog("en")} : ${catalog("ko")};\ndotzDemoLang.fill(I18N_LANG, I18N);\n`;
 
 // The page names no server asset: /custom.js (appended by 99-boot.js) becomes the demo's own empty layer beside app.js.
 // Absolute /app.css and /app.js never appear in the sources; /demo/app.* are what demo/index.html loads.
