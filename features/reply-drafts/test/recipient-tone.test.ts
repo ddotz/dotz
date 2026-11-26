@@ -22,7 +22,7 @@ const env = setupEnv();
 afterAll(env.cleanup);
 beforeEach(() => {
 	process.env.DOTZ_DIR = env.dir;
-	for (const p of [paths.toneDir(), paths.ledger(), commentsDir(env.dir)]) rmSync(p, { force: true, recursive: true });
+	for (const p of [paths.toneDir(), paths.ledger(), commentsDir(env.dir), join(env.dir, "custom", "mailboxes.json")]) rmSync(p, { force: true, recursive: true });
 });
 
 const day = (d: string) => () => new Date(`${d}T09:00:00Z`);
@@ -288,7 +288,8 @@ test("a draft whose sender is only a name is checked on edit with the file of th
 });
 
 test("a mail in a mailbox with its own tone file gets the rule and the ban of the base app's file of its sender", async () => {
-	// A mailbox reads its own profile once it has one (a learned voice); its rules are the ledger's.
+	// A mailbox the account lists reads its own profile, its voice from the file when it has one; its rules are the ledger's.
+	write(join(env.dir, "custom", "mailboxes.json"), JSON.stringify({ rev: 1, accounts: { "mail-2": { boxes: [{ id: "inbox", name: "inbox" }] } }, pins: {} }));
 	write(toneFile({ app: "mail-2", room: "inbox" }), "## 정체성\n\n- 메일함에서는 짧게 쓰는 사람이에요\n");
 	seedRules({ app: "mail-2", room: "inbox" }, { tone: ["메일함 줄"] });
 	seedRules({ app: "mail", to: "a@x.com" }, { tone: ["에이분 규칙"], ban: ["에이금지어"] });

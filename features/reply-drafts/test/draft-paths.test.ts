@@ -5,7 +5,10 @@ import { writeSettings } from "../../../hub/app-settings.ts";
 import { commentStyle } from "../../../hub/comments/real.ts";
 import { realMailLink } from "../../../hub/comments/mail-link.ts";
 import { DRAFT_AS_IS } from "../../../hub/draft-approval.ts";
+import { draftRules } from "../lib/draft-rules.ts";
 import { draftAttachIssues, draftLintFailures } from "../lib/flow.ts";
+import { keysOf, learn } from "../lib/learn.ts";
+import { addRecord, readLedger } from "../lib/ledger.ts";
 import { offerMailDraft } from "../lib/offer.ts";
 import { type Pair, paths, savePairs, toneFile } from "../lib/settings.ts";
 import { getDraft, listDrafts } from "../lib/store.ts";
@@ -24,7 +27,7 @@ const pair = (domain: string, text: string, received: string): Pair => ({ receiv
 const tone = (file: string, text: string) => (mkdirSync(dirname(file), { recursive: true }), writeFileSync(file, text));
 
 beforeEach(() => {
-	for (const p of [paths.config(), paths.drafts(), paths.toneDir(), join(env.dir, "draft-files"), join(paths.pairs("mail"), ".."), join(env.dir, "custom", "apps.json")]) rmSync(p, { force: true, recursive: true });
+	for (const p of [paths.config(), paths.drafts(), paths.toneDir(), paths.ledger(), join(env.dir, "draft-files"), join(paths.pairs("mail"), ".."), join(env.dir, "custom", "apps.json")]) rmSync(p, { force: true, recursive: true });
 	enable(env, { apps: { mail: { auto: true } } });
 	const box = (id: string, from: string) => ({ id, name: id, mode: "auto", conds: { from: [from], subj: [], body: [], src: [] } });
 	mkdirSync(join(env.dir, "custom"), { recursive: true });
@@ -108,6 +111,19 @@ describe("one rule bundle for every mail path", () => {
 		const style = commentStyle({ key: "youtube" } as Parameters<typeof commentStyle>[0], "UC-a");
 		expect([APP, TO].map(w => style.forbidden.includes(w))).toEqual([true, true]);
 	});
+});
+
+// The mailbox is the one the account lists (custom/mailboxes.json), whether or not it has a tone file: b-b has none, yet a rule written at its scope is read for b-b only and a lesson for "this mailbox" lands there.
+test("a mailbox without a tone file of its own reads and learns at its own scope", async () => {
+	const LINE = "메일함B만 짧게 써요", SCOPE = { app: "mail", room: "b-b" };
+	addRecord({ text: LINE, kind: "tone", scope: SCOPE, by: "test", at: new Date("2026-11-20T00:00:00.000Z") });
+	const item = { kind: "mail", from: "Kim <a@example.org>", text: "일정 문의" } as const;
+	const rulesIn = (box: string) => draftRules({ app: "mail", instance: "mail", box }, item);
+	expect(rulesIn("b-b").style().rules).toContain(LINE);
+	expect(rulesIn("base").style().rules).not.toContain(LINE);
+	const learnt = await learn({ source: "chat", ref: "R1", keys: keysOf(rulesIn("b-b")), words: "끝인사는 짧게 써 줘", proposal: { scope: "channel" } }, { now: () => new Date("2026-11-21T00:00:00.000Z"), learnCall: () => async () => JSON.stringify({ replaces: [] }) });
+	expect(learnt.scopeLabel).toBe("이 메일함");
+	expect(readLedger().find(r => r.text.includes("끝인사는 짧게"))?.scope).toEqual(SCOPE);
 });
 
 // A `내용:` line of 금지 (content not to write): the style judge keeps a remark about it, the one rewrite leaves it, and then the card holds the draft for 이대로 보내기.

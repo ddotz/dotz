@@ -207,7 +207,7 @@ describe("reply settings of the box", () => {
 
 describe("tone of the box", () => {
 	const toneBox = { key: { app: "mail", room: "b-t" } };
-	test("tone/<instance>/<box>.md is used for the draft and takes the corrections; without it today's profile does", async () => {
+	test("a listed mailbox takes the corrections at its own scope; tone/<instance>/<box>.md only adds the voice", async () => {
 		appSwitch(false);
 		boxes(BASE, box("b-t", { mode: "auto" }));
 		const w = world("b-t");
@@ -216,7 +216,8 @@ describe("tone of the box", () => {
 		expect(plain.calls[0]!.user).not.toContain("상자 말투 신원");
 		const first = listDrafts()[0]!;
 		await reviseDraft(first.id, "더 짧게", { call: fakeModel([j(reply)]).call });
-		expect(correctionsOf({ app: "mail" }).some(c => c.includes("더 짧게"))).toBe(true);
+		expect(correctionsOf(toneBox.key).some(c => c.includes("더 짧게"))).toBe(true);
+		expect(correctionsOf({ app: "mail" }).some(c => c.includes("더 짧게"))).toBe(false);
 		writeIdentity(toneBox.key, ["상자 말투 신원"]);
 		const styled = fakeModel([j(reply)]);
 		await offerMailDraft(mail(), { ...w.deps, call: styled.call });

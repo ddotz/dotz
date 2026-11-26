@@ -2,13 +2,12 @@
 // reply, the mail that rides on a comment reply (first write, revise, compose check) and the send check all see the same tone files, examples and bans.
 // The configured instruction (rules.ts ruleInstruction) is matched once when a draft is first written and rides on `item.configured`, so a later revise reads what the write read.
 // A send card the bot writes by hand becomes a stored draft before it is posted (hub/approval-queue.ts storeCard), so it reads these like any other draft.
-import { existsSync } from "node:fs";
 import { replyAddress, type ReplyItem, type ReplyStyle } from "../../../hub/reply-draft.ts";
 import { boxById } from "./box.ts";
 import type { EffectiveRules } from "./effective-rules.ts";
 import { styleFrom, styleWithExamples } from "./pairs.ts";
 import { webmailSite } from "./senders.ts";
-import { loadStyle, toneFile, validApp, type LoadedStyle, type ToneKey } from "./settings.ts";
+import { loadStyle, validApp, type LoadedStyle, type ToneKey } from "./settings.ts";
 
 /** Where the draft is: its app (a mail app instance, a comment source), a room, a profile of its own, the mailbox (`box` of mail app `instance`), the mail source, and for a comment the author's platform id (`authorId`) and the profile its own file falls back to (`base`). A DraftRec fits as it is. */
 export type RuleAt = { app?: string; room?: string; profile?: string; box?: string; instance?: string; source?: string; base?: string; authorId?: string; /** the 자동 초안 규칙 that drafted it */ rule?: { id: string } };
@@ -33,12 +32,12 @@ export type DraftRules = {
 // must not ride in its prompt.
 export const pairSource = (source: string): string => webmailSite(source) ?? source;
 
-/** The tone profile an item or draft belongs to: its room when it has one, else its own profile (a mail app instance's), else its app (mail unless it says otherwise). A draft made in a mailbox (box + instance) uses tone/<instance>/<box>.md when that file exists, falling back to the instance's profile (else the mail one), then the install. */
+/** The tone profile an item or draft belongs to: its room when it has one, else its own profile (a mail app instance's), else its app (mail unless it says otherwise). A draft made in a mailbox (box + instance) that the instance lists is read at the mailbox's own scope, whether or not it has a tone file (tone/<instance>/<box>.md only supplies the voice; samples and identity fall back to the instance's profile, else the mail one, then the install); a box the instance does not list reads the instance's profile. */
 export function draftRules(at: RuleAt, item: RuleItem): DraftRules {
 	const app = at.profile ?? at.app ?? "mail";
 	const own: ToneKey = { app, ...(at.base ? { base: at.base } : {}), ...(at.room !== undefined ? { room: at.room } : {}) };
-	const boxKey: ToneKey | undefined = at.box && at.instance && at.room === undefined && validApp(at.instance) ? { app: at.instance, room: at.box, ...(at.profile ? {} : { base: own.base ?? own.app }) } : undefined;
-	const tone = boxKey && existsSync(toneFile(boxKey)) ? boxKey : own;
+	const boxKey: ToneKey | undefined = at.box && at.instance && at.room === undefined && validApp(at.instance) && boxById(at.instance, at.box) ? { app: at.instance, room: at.box, ...(at.profile ? {} : { base: own.base ?? own.app }) } : undefined;
+	const tone = boxKey ?? own;
 	const to = at.authorId ?? (item.kind === "mail" ? replyAddress(item) : undefined);
 	const key: ToneKey = to === undefined ? tone : { ...tone, to };
 	return {
