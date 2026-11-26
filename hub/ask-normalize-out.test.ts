@@ -109,10 +109,12 @@ test("a card whose findings changed is handed over for its Discord message, with
 	const seen: string[] = [];
 	onDraftCardRefreshed(n => void seen.push(n.text));
 	await out("ch:124", draftCard("RSYNC01"), undefined, { source: "orchestrator" });
-	expect(syncDraftFiles(() => undefined, id => (id === "RSYNC01" ? ["파일이 달라요"] : undefined))).toBe(1);
+	// A hand-written card is posted as a store draft's card (hub/approval-queue.ts storeCard): its ref is that draft's id.
+	const ref = listNotices().items.find((n: any) => n.decision?.state === "open" && n.decision.to === "ch:124")?.decision?.draft?.ref;
+	expect(syncDraftFiles(() => undefined, id => (id === ref ? ["파일이 달라요"] : undefined))).toBe(1);
 	expect(seen).toHaveLength(1);
 	expect(seen[0]).toContain("**4) 이대로 보내기**");
-	ignoreNotice(listNotices().items.find((n: any) => n.decision?.draft?.ref === "RSYNC01")!.id);
+	ignoreNotice(listNotices().items.find((n: any) => n.decision?.draft?.ref === ref)!.id);
 });
 
 test("options written on one line of an [ask] are a card, and what follows them stays", async () => {

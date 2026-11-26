@@ -230,8 +230,9 @@ async function composeDraftOf(d: DraftApproval, deps: MailCliDeps): Promise<Draf
 export async function storeCard(conv: string, text: string, deps: MailCliDeps = {}): Promise<string> {
 	const parts = splitCardLead(text);
 	const d = cardDraft(parts?.card ?? text);
-	if (!d?.ref || d.toLabel !== "받는이" || d.mail || getDraft(d.ref)) return text;
+	if (!d?.ref || d.toLabel !== "받는이" || d.mail) return text;
 	try {
+		if (getDraft(d.ref)) return text;
 		const block = askText(conv.startsWith("mail:") ? await replyDraftOf(conv.slice(5), d) : await composeDraftOf(d, deps), []);
 		return parts && !/^\s*\[ask\]/im.test(parts.lead) ? `${parts.lead}\n${block}` : block;
 	} catch (e) {
