@@ -17,7 +17,7 @@ export { askText, withRecipient } from "../features/reply-drafts/lib/flow.ts";
 import { libraryFile, listLibrary, rankLibrary } from "../features/reply-drafts/lib/library.ts";
 import { canAttach } from "../features/reply-drafts/lib/senders.ts";
 import { addStagedBytes, addStagedFile, removeStagedFile, resumeWantedFiles, stagedFiles } from "../features/reply-drafts/lib/staged.ts";
-import { getDraft, type DraftRec } from "../features/reply-drafts/lib/store.ts";
+import { claimFile, getDraft, type DraftRec } from "../features/reply-drafts/lib/store.ts";
 import { type DraftFileIn, fileSizeText, parseDraftApproval } from "./draft-approval.ts";
 import { syncDraftFiles } from "./notices.ts";
 import { fileLinePaths, messageFiles, resolveAllowed } from "./files.ts";
@@ -25,6 +25,10 @@ import { commentDraftOf, commentOriginalOf } from "./comments/gateway.ts";
 import type { CommentOriginal } from "./comments/original.ts";
 import { attachmentList, mailByKey } from "./mail.ts";
 import { sendHold } from "./draft-recipients.ts";
+import { linkedComment } from "./comments/linked.ts";
+import { claimHolder } from "./draft-claim.ts";
+import { useReplies } from "./reply-actions.ts";
+import { reasonOf } from "./reply-reasons.ts";
 import { json } from "./routes-util.ts";
 
 const LIBRARY_LIST_MAX = 100;
@@ -138,14 +142,18 @@ export async function draftAttachRoute(req: Request, url: URL, ref: string, tail
 		if (tail === "library" && req.method === "GET") {
 			const folder = await attachFolder(rec);
 			if (!folder) return json({ error: "첨부 파일 폴더가 정해져 있지 않아요" }, 409);
-			const q = (url.searchParams.get("q") ?? "").trim().toLowerCase();
-			const ranked = rankLibrary(listLibrary(folder), { subject: rec.item.subject ?? "", text: rec.item.text }).filter(r => !q || r.file.rel.toLowerCase().includes(q));
+			const q = (url.searchParams.get("q") ?? "").normalize("NFC").trim().toLowerCase();
+			const ranked = rankLibrary(listLibrary(folder), { subject: rec.item.subject ?? "", text: rec.item.text }).filter(r => !q || r.file.rel.normalize("NFC").toLowerCase().includes(q));
 			return json({ items: ranked.slice(0, LIBRARY_LIST_MAX).map(r => ({ rel: r.file.rel, name: basename(r.file.rel), size: fileSizeText(r.file.size), match: r.score > 0 })) });
 		}
 		if (tail === "files" && req.method === "POST") {
 			const hold = sendHold(rec.id);
 			if (hold) return hold;
+			const linked = linkedComment(rec.id);
+			const revising = useReplies()?.revising(rec.id) || (linked !== undefined && useReplies()?.revising(linked)) || claimHolder(`${claimFile(rec.id)}.revise`) === "live";
+			if (revising) return json({ ok: false, code: "revising", error: reasonOf("revising").text }, 409);
 			const b = (await req.json().catch(() => ({}))) as Record<string, any>;
+			if (!Number.isInteger(b.remove) && !canAttach(rec.source)) return json({ error: "이 메일은 파일을 붙여 보낼 수 없어요" }, 409);
 			if (Number.isInteger(b.remove)) {
 				const marked = typeof b.name === "string" ? stagedFiles(rec.id)[b.remove] : undefined;
 				if (typeof b.name === "string" && (marked?.name !== b.name || (typeof b.size === "number" && marked?.size !== b.size))) return json({ error: "첨부 파일이 바뀌었어요. 목록을 다시 불러왔어요", code: "changed", ...(await view(rec, ref)) }, 409);

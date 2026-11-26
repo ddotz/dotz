@@ -32,17 +32,20 @@ export const realRunner: Runner = async (argv, ms = 90_000) => {
 };
 
 const HEADER = /^\s*(from|to|cc|bcc|subject|date|id|account|labels|thread|snippet)\s*:/i;
-const HISTORY = [
+const QUOTE = [
 	/^\s*on .{3,200}wrote:\s*$/i,
 	/^\s*-{2,}\s*(original|forwarded)\b/i,
 	/^\s*-{2,}\s*(원본\s*(메일|메시지)|전달된\s*메일)/,
 	/^\s*_{5,}\s*$/,
 	/^\s*(보낸\s*사람|From)\s*:/i,
-	/^\s*.{0,80}님이.{0,80}작성/,
+	/^\s*.{0,80}님이.{0,80}작성\s*[:：]?\s*$/,
 	/^\s*\d{4}년\s*\d{1,2}월\s*\d{1,2}일.{0,120}(님이|<\S+@\S+>)\s*$/, // a mail client's quote header wrapped over two lines
-	/^\s*-- ?$/,
-	/^\s*sent from my\b/i,
 ];
+const SIGNATURE = [/^\s*-- ?$/, /^\s*sent from my\b/i];
+const HISTORY = [...QUOTE, ...SIGNATURE];
+
+const BOT_PREFIX_MIN = 40;
+export const isBotDraft = (text: string, bots: string[]): boolean => bots.some(b => text === b || (b.length >= BOT_PREFIX_MIN && text.startsWith(b)));
 
 // The user's own words of one mail: header lines at the top, quoted lines, and everything after a quoted-history or signature marker are dropped.
 export function ownText(mail: string): string {
@@ -61,9 +64,9 @@ export function ownText(mail: string): string {
 // What the user's mail answered: the quoted lines and the history after the first marker (the reply's context for the identity sweep).
 export function quotedText(mail: string): string {
 	const lines = mail.replace(/\r\n?/g, "\n").split("\n");
-	const at = lines.findIndex((l, i) => i > 0 && HISTORY.some(r => r.test(l)));
-	const after = at < 0 ? [] : lines.slice(at + 1);
-	return [...lines.filter(l => /^\s*>/.test(l)), ...after].map(l => l.replace(/^\s*>+\s?/, "")).join("\n").trim();
+	const at = lines.findIndex((l, i) => i > 0 && QUOTE.some(r => r.test(l)));
+	const from = at < 0 ? lines.length : at;
+	return [...lines.slice(0, from).filter(l => /^\s*>/.test(l)), ...lines.slice(from + 1)].map(l => l.replace(/^\s*>+\s?/, "")).join("\n").trim();
 }
 
 export function sentencesOf(text: string): string[] {
@@ -136,7 +139,7 @@ export async function sentMail(run: Runner, limit = MAX_EXAMPLES, ownerDrafts: s
 				ats.push(Number.isFinite(stamp) ? stamp : now - n);
 			}
 			const mine = ownText(msg.body).trim();
-			if (!mine || mine.length > SIDE_MAX || FORWARD.test(msg.body) || FORWARD.test(mine) || FWD_SUBJECT.test(String(m.subject ?? "")) || bots.some(b => normText(mine).startsWith(b))) continue;
+			if (!mine || mine.length > SIDE_MAX || FORWARD.test(msg.body) || FORWARD.test(mine) || FWD_SUBJECT.test(String(m.subject ?? "")) || isBotDraft(normText(mine), bots)) continue;
 			const at = thread.findLastIndex((x, j) => j < i && !own(x));
 			const earlier = thread[at];
 			const sender = addressesOf(earlier?.from)[0];
@@ -160,7 +163,7 @@ export function sentPairs(items: SentMail[], source: string, ownerDrafts: string
 		const mine = ownText(m.body).trim();
 		const received = (m.received ?? quotedText(m.body)).trim();
 		const to = addressesOf(m.to)[0];
-		if (!mine || !received || mine.length > SIDE_MAX || FORWARD.test(m.body) || FORWARD.test(mine) || FWD_SUBJECT.test(m.subject ?? "") || (to && AUTOMATED.test(to.split("@")[0]!)) || bots.some(b => normText(mine).startsWith(b))) continue;
+		if (!mine || !received || mine.length > SIDE_MAX || FORWARD.test(m.body) || FORWARD.test(mine) || FWD_SUBJECT.test(m.subject ?? "") || (to && AUTOMATED.test(to.split("@")[0]!)) || isBotDraft(normText(mine), bots)) continue;
 		out.push({ received, reply: mine, at: m.at, source, ...(to ? { from: to } : {}), ...(m.id ? { conv: m.id } : {}), ...(m.subject ? { subj: m.subject } : {}) });
 	}
 	return out;

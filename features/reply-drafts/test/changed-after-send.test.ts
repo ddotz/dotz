@@ -1,15 +1,18 @@
 // qa-clean-3 H1 replayed on the real gates: the owner presses 보내기 on v1, a session rewrites the draft inside the undo window, the gateway's
 // queue refuses `changed`, and then an agent runs `draft.ts send` itself. The CLI must send nothing, in the window and after it, even once the
 // text is put back to v1; only a new 보내기 on the version shown now sends.
-import { afterAll, expect, test } from "bun:test";
-import { writeFileSync } from "node:fs";
+import { afterAll, describe, expect, test } from "bun:test";
+import { copyFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { appendSealed } from "../../../hub/approval-seal.ts";
 import { createApprovalSender, type SendJob, type SendResult } from "../../../hub/approval-send.ts";
 import { DRAFT_UNDO, SEND_GATE, SPENT_REFUSED, WAITING_REFUSED } from "../../../hub/draft-approval.ts";
 import { reasonOf } from "../../../hub/reply-reasons.ts";
 import { clock } from "../../../hub/runtime/test-clock.ts";
 import { runDraft } from "../bin/draft.ts";
+import { sendDraft } from "../lib/flow.ts";
 import { paths } from "../lib/settings.ts";
+import { addStagedFile, stagedFiles } from "../lib/staged.ts";
 import { addDraft, claimFile, getDraft, patchDraft } from "../lib/store.ts";
 import { mailHash } from "../lib/view.ts";
 import { enable, setupEnv } from "./helpers.ts";
@@ -221,4 +224,57 @@ test("N15: a gateway killed mid-send leaves no `go` an agent's `--retry` can use
 	expect(w.press({ force: true })).toBe(true);
 	await w.sender.idle();
 	expect([w.ended.at(-1)?.state, w.sent, w.tries()]).toEqual(["sent", [V1], 2]);
+});
+
+describe("sendDraft hands the sender only what the owner approved", () => {
+	const mailRec = (id: string, extra: object = {}) => addDraft({ id, kind: "mail", app: "mail", source: "zele", mailId: `m-${id}`, ref: `k-${id}`, to: "kim@example.com", subject: "Re: 일정", body: "요청하신 extra.pdf 파일을 첨부해 보내드립니다.", status: "pending", created: new Date(Date.now() - 60_000).toISOString(), changes: [], questions: [], item: { text: "파일 부탁드립니다", from: "Kim <kim@example.com>" }, ...extra } as never);
+	const approve = (id: string) => seal("보내기", mailHash(getDraft(id)!), undefined, `이 답장 보낼까요? (${id})`);
+	const fake = () => {
+		const sent: { to: string; body: string; files: string[] }[] = [];
+		return { sent, send: async (rec: { id: string; to: string; body: string }) => (sent.push({ to: rec.to, body: rec.body, files: stagedFiles(rec.id).map(f => f.name) }), { ok: true as const, message: "sent (fake)" }) };
+	};
+	const wanted = (name: string) => {
+		const path = join(env.dir, name);
+		writeFileSync(path, "PDF-BYTES");
+		return { name, path };
+	};
+
+	test("a draft rewritten while the chosen file is being staged is refused `changed`, and nothing is sent", async () => {
+		const want = wanted("extra.pdf");
+		mailRec("RTOCTOU1", { wantFiles: [want] });
+		approve("RTOCTOU1");
+		const f = fake();
+		const stage = { tries: 0, retry: false as const, copy: (src: string, to: string) => (patchDraft("RTOCTOU1", { to: "attacker@evil.example", body: "승인하지 않은 글" }), copyFileSync(src, to)) };
+		const r = await sendDraft("RTOCTOU1", { send: f.send, stage });
+		expect([r.ok, r.sent, r.code, f.sent, getDraft("RTOCTOU1")?.status]).toEqual([false, "no", "changed", [], "pending"]);
+	});
+
+	test("the file the owner chose (wantFiles) that this send stages goes out with the approved text", async () => {
+		const want = wanted("extra.pdf");
+		mailRec("RTOCTOU2", { wantFiles: [want] });
+		approve("RTOCTOU2");
+		const f = fake();
+		const r = await sendDraft("RTOCTOU2", { send: f.send, stage: { tries: 0, retry: false } });
+		expect([r.ok, f.sent]).toEqual([true, [{ to: "kim@example.com", body: "요청하신 extra.pdf 파일을 첨부해 보내드립니다.", files: ["extra.pdf"] }]]);
+	});
+
+	test("a file somebody else attaches while the chosen one is staged is not part of the approval", async () => {
+		const want = wanted("extra.pdf");
+		const other = wanted("other.pdf");
+		mailRec("RTOCTOU3", { wantFiles: [want], body: "요청하신 extra.pdf, other.pdf 파일을 첨부해 보내드립니다." });
+		approve("RTOCTOU3");
+		const f = fake();
+		const stage = { tries: 0, retry: false as const, copy: (src: string, to: string) => (copyFileSync(src, to), addStagedFile("RTOCTOU3", other.path)) };
+		const r = await sendDraft("RTOCTOU3", { send: f.send, stage });
+		expect([r.ok, r.code, f.sent]).toEqual([false, "changed", []]);
+	});
+
+	test("with the comment card's approval (withReply) the text still passes the lint once more: a body emptied meanwhile is not sent", async () => {
+		const want = wanted("extra.pdf");
+		mailRec("RTOCTOU4", { wantFiles: [want] });
+		const f = fake();
+		const stage = { tries: 0, retry: false as const, copy: (src: string, to: string) => (patchDraft("RTOCTOU4", { body: "" }), copyFileSync(src, to)) };
+		const r = await sendDraft("RTOCTOU4", { send: f.send, stage }, { withReply: true });
+		expect([r.ok, r.sent, r.code, f.sent]).toEqual([false, "no", "changed", []]);
+	});
 });

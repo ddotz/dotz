@@ -317,3 +317,13 @@ test("예시 보기 shows his own newest replies, and a box of another account i
 	expect((await get("/api/mailbox/examples?app=mail&box=b-none")).status).toBe(404);
 	expect(boxPass(env.dir)).toBeFunction();
 });
+
+test("a webmail reply (source 'naver') follows the move of its conversation stored as 'webmail:naver'", () => {
+	const reply = pair("pals.example.com", CASUAL, { source: "naver", conv: "c9", subj: "다른 제목" });
+	savePairs("mail", [reply]);
+	expect(ownPairs("mail").get("b-pals")?.length).toBe(1);
+	recordMail({ key: "vc-web", source: "webmail:naver", id: "c9", subject: "원래 제목", from: "someone@else.example.com", to: "me@example.net", at: new Date(reply.at).toISOString(), mbox: "b-work", mwhy: { kind: "moved" } } as MailRecord);
+	const placed = ownPairs("mail");
+	expect(placed.get("b-work")?.map(p => p.reply)).toEqual([reply.reply]);
+	expect(placed.get("b-pals")).toBeUndefined();
+});

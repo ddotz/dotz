@@ -575,6 +575,12 @@ test("a direct edit saves the owner's text as it is under the same code and keep
 	expect(editDraft(d.code, "늦은 수정", { paths })).toMatchObject({ ok: false, code: "not_pending" });
 });
 
+test("a direct edit that leaves a blank to fill in is refused and the draft keeps its text", async () => {
+	const d = await make();
+	expect(editDraft(d.code, "[이름]님 내일 봐요", { paths })).toMatchObject({ ok: false, sent: "no", code: "placeholder" });
+	expect((await stored(d.code)).text).toBe("내일 7시에 봐요");
+});
+
 test("a direct edit is refused once a part of the draft is in the room", async () => {
 	const d = await make({ text: "첫째\n\n둘째" });
 	const s = fakeScreen(ROWS, { axSend: (_n, req) => (req.text === "둘째" ? { ok: false, why: "not_set" } : { ok: true }) });

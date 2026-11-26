@@ -2,6 +2,7 @@
 // (by id or by url) and hands them to the gateway with the body. Everything runs against a tiny fake site.
 import { expect, test } from "bun:test";
 import { attachmentsOf, describeMail } from "../lib/adapter.ts";
+import { draftInput } from "../bin/mail.ts";
 import { type Ctx } from "../lib/config.ts";
 import { validateSpec, type SiteSpec } from "../lib/spec.ts";
 import { postToGateway } from "../lib/watchkit.ts";
@@ -90,4 +91,10 @@ test("validateSpec wants a way to fetch each mapped file", () => {
 	} finally {
 		server.stop(true);
 	}
+});
+
+test("draft: after `--` every word is the recipient, subject or body, even `--file` and words that start with `-`; before it `--file` still names a file", () => {
+	expect(draftInput(["a@b.com", "제목", "본문", "둘째", "--file", "/tmp/a.pdf"])).toEqual({ to: "a@b.com", subject: "제목", body: "본문 둘째", files: ["/tmp/a.pdf"] });
+	expect(draftInput(["--file", "/tmp/a.pdf", "--", "a@b.com", "--file", "/etc/passwd"])).toEqual({ to: "a@b.com", subject: "--file", body: "/etc/passwd", files: ["/tmp/a.pdf"] });
+	expect(draftInput(["--", "a@b.com", "- 급한 일", "- 하나\n- 둘"])).toEqual({ to: "a@b.com", subject: "- 급한 일", body: "- 하나\n- 둘", files: [] });
 });

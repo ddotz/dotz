@@ -1,15 +1,16 @@
 // What a failed comment post means (reply design 2.3, comment table): `failed` only when nothing can have gone up, `unsure` otherwise.
 // The real error classes of features/youtube-instagram/lib are thrown through each adapter; a throw the adapter does not catch is unsure too.
 import { afterEach, beforeEach, expect, test } from "bun:test";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { claimSend } from "../draft-claim.ts";
 import { InstagramError } from "../../features/youtube-instagram/lib/instagram.ts";
 import { AuthError, QuotaError, TransientError } from "../../features/youtube-instagram/lib/watchkit.ts";
 import { YoutubeError } from "../../features/youtube-instagram/lib/youtube.ts";
 import { type InstagramApi, instagramAdapter, type YoutubeApi, youtubeAdapter } from "./adapters/google-meta.ts";
 import { websiteAdapter } from "./adapters/website.ts";
-import { type Comment, type CommentAdapter, dispatchReply, type SourceConfig } from "./contract.ts";
+import { type Comment, type CommentAdapter, dispatchReply, type GateResult, type SourceConfig } from "./contract.ts";
 import { createStore } from "./store.ts";
 
 const NOW = Date.parse("2026-11-13T00:00:00.000Z");
@@ -106,16 +107,23 @@ test("website script: ok: false with a known code keeps the code and the script'
 	}
 });
 
-function gate(reply: CommentAdapter["reply"]) {
+const claimFile = (code: string): string => join(dir, "sending", code);
+function world(reply: CommentAdapter["reply"]) {
 	writeFileSync(join(dir, "config.json"), JSON.stringify({ enabled: true, sources: { s: src("youtube") } }));
 	const store = createStore(dir);
 	store.addComments([comment("s")]);
 	store.putDraft({ code: "D1", commentId: "cm:s:c1", source: "s", thread: "p1", text: "고마워요", status: "pending", created: NOW - 500, changes: [], clean: true, notes: [] });
 	const logged: string[] = [];
 	const adapter: CommentAdapter = { kind: "youtube", list: async () => ({ comments: [] }), reply };
-	const r = dispatchReply({ code: "D1", approval: { by: "owner" } }, { store, adapters: { youtube: adapter }, now: () => NOW, collector: "t", inflight: new Set(), log: l => logged.push(l) });
+	const send = (): GateResult => dispatchReply({ code: "D1", approval: { by: "owner" } }, { store, adapters: { youtube: adapter }, now: () => NOW, collector: "t", inflight: new Set(), claimFile, log: l => logged.push(l) });
+	return { send, logged, store };
+}
+
+function gate(reply: CommentAdapter["reply"]) {
+	const w = world(reply);
+	const r = w.send();
 	if (!r.ok) throw new Error(r.reason);
-	return { done: r.done, logged, store };
+	return { done: r.done, logged: w.logged, store: w.store };
 }
 
 test("the gate stores a sent: no outcome as failed and a maybe as unsure, with the code; the draft stays pending", async () => {
@@ -155,4 +163,39 @@ test("an adapter that throws ends unsure with code unknown: the raw message goes
 	expect(done).toMatchObject({ state: "unsure", code: "unknown" });
 	expect(JSON.stringify(done)).not.toContain("secret stack text");
 	expect(g.logged.some(l => l.includes("secret stack text") && l.includes("unknown"))).toBe(true);
+});
+
+test("a claim another process holds refuses the send before any record is written or anything is posted; once it is released the send goes through and frees it again", async () => {
+	const posted: string[] = [];
+	const w = world(async (_s, _c, text) => (posted.push(text), { ok: true, ref: "r1" }));
+	const other = claimSend(claimFile("D1"));
+	expect(other).toBeDefined();
+	expect(w.send()).toMatchObject({ ok: false, code: "already_sending" });
+	expect(w.store.replies()).toEqual([]);
+	expect(posted).toEqual([]);
+	other!();
+	const r = w.send();
+	if (!r.ok) throw new Error(r.reason);
+	expect(await r.done).toMatchObject({ state: "sent" });
+	expect(posted).toEqual(["고마워요"]);
+	expect(existsSync(claimFile("D1"))).toBe(false);
+});
+
+test("a claim left by a process that is gone, with no sending record behind it (it died before posting), does not block the next send, and a failed send frees the claim", async () => {
+	const w = world(async () => ({ ok: false, reason: "이유", code: "rejected", sent: "no" }));
+	mkdirSync(join(dir, "sending"), { recursive: true });
+	writeFileSync(claimFile("D1"), `${process.pid} Mon Jan  1 00:00:00 2001`);
+	const r = w.send();
+	if (!r.ok) throw new Error(r.reason);
+	expect(await r.done).toMatchObject({ state: "failed" });
+	expect(existsSync(claimFile("D1"))).toBe(false);
+});
+
+test("a refused send leaves no claim behind: an unsure reply waits for the owner's resend and nothing is posted", () => {
+	let posts = 0;
+	const w = world(async () => (posts++, { ok: true }));
+	w.store.putReply({ id: "send:cm:s:c1", commentId: "cm:s:c1", source: "s", thread: "p1", text: "고마워요", state: "unsure", at: NOW - 100, draft: "D1", via: "owner", collector: "t", reason: "?", code: "interrupted" });
+	expect(w.send()).toMatchObject({ ok: false, code: "needs_resolve" });
+	expect(existsSync(claimFile("D1"))).toBe(false);
+	expect(posts).toBe(0);
 });

@@ -118,7 +118,7 @@ export function levelsOf(key: ToneKey): [ToneLevel, ToneKey][] {
 }
 
 
-export const normText = (s: string): string => s.replace(/\s+/g, " ").trim().toLowerCase();
+export const normText = (s: string): string => s.normalize("NFC").replace(/\s+/g, " ").trim().toLowerCase();
 
 // The `## ` sections of a profile the code does not know (a hand-added `## 보낸 사람 신분별`), with their bullets.
 const KNOWN = new Set<string>(Object.values(HEADINGS));

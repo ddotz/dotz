@@ -104,6 +104,426 @@
 				"(마크 추가)김철수 바람결 윗줄도구 아랫줄x - Lower.pdf",
 				"어느날의 일상기록 OST_김철수 바람결 보조도구 MR 20.5.2.mp3"
 			]
+		},
+		{
+			"id": "F-NO1",
+			"at": "2026-11-26T00:00:00Z",
+			"verdict": [
+				"missing"
+			],
+			"why": "a refusal of one thing and a real attach in one sentence",
+			"body": "원본 파일 제공은 어렵지만 PDF 파일 첨부드립니다.",
+			"files": []
+		},
+		{
+			"id": "F-NO2",
+			"at": "2026-11-26T00:00:00Z",
+			"verdict": [
+				"missing"
+			],
+			"why": "'서류 없이' is the reader's case, the form is attached",
+			"body": "서류 없이도 신청하실 수 있도록 양식 첨부드립니다.",
+			"files": []
+		},
+		{
+			"id": "F-NO3",
+			"at": "2026-11-26T00:00:00Z",
+			"verdict": [
+				"missing"
+			],
+			"why": "a download word beside a real attach",
+			"body": "다운로드가 어려우실까 봐 파일 첨부드립니다.",
+			"files": []
+		},
+		{
+			"id": "F-NO4",
+			"at": "2026-11-26T00:00:00Z",
+			"verdict": [
+				"missing"
+			],
+			"why": "a url beside a real attach",
+			"body": "견적서 첨부드리며 자세한 내용은 https://example.com 에서도 보실 수 있습니다.",
+			"files": []
+		},
+		{
+			"id": "F-NO5",
+			"at": "2026-11-26T00:00:00Z",
+			"verdict": [
+				"missing"
+			],
+			"why": "'내용' is the file here",
+			"body": "제안서 내용 송부드립니다.",
+			"files": []
+		},
+		{
+			"id": "F-NO6",
+			"at": "2026-11-26T00:00:00Z",
+			"verdict": [
+				"missing"
+			],
+			"why": "'안내' is the file here",
+			"body": "행사 안내 자료 보내드립니다.",
+			"files": []
+		},
+		{
+			"id": "F-NO7",
+			"at": "2026-11-26T00:00:00Z",
+			"verdict": [
+				"missing"
+			],
+			"why": "a past adverb does not make a current attach a past one",
+			"body": "어제 요청하신 견적서 첨부했습니다.",
+			"files": []
+		},
+		{
+			"id": "F-NO8",
+			"at": "2026-11-26T00:00:00Z",
+			"verdict": [
+				"missing"
+			],
+			"why": "the reply sends what the mail asked for, the asked kind is not narrowed away",
+			"body": "네, 바로 보내드립니다.",
+			"files": [],
+			"request": "견적서 부탁드립니다."
+		},
+		{
+			"id": "F-NO9",
+			"at": "2026-11-26T00:00:00Z",
+			"verdict": [
+				"missing"
+			],
+			"why": "a past send of the file by mail is not told apart from a promise (A-M9 stays open)",
+			"body": "어제 메일로 견적서 보내드렸습니다. 스팸함 확인 부탁드립니다.",
+			"files": []
+		},
+		{
+			"id": "F-NO10",
+			"at": "2026-11-26T00:00:00Z",
+			"verdict": [
+				"missing"
+			],
+			"why": "the text of the quote goes by mail, the sentence names a file noun",
+			"body": "견적서 내용을 메일로 보내드립니다. 총액은 100만원입니다.",
+			"files": []
+		},
+		{
+			"id": "F-A6a",
+			"at": "2026-11-26T00:00:00Z",
+			"verdict": [
+				"missing"
+			],
+			"why": "the send comes first, the if-clause is a closer",
+			"body": "견적서 첨부드립니다, 확인해 주시면 감사하겠습니다.",
+			"files": []
+		},
+		{
+			"id": "F-A6b",
+			"at": "2026-11-26T00:00:00Z",
+			"verdict": [
+				"missing"
+			],
+			"why": "the same with a full stop",
+			"body": "견적서 첨부드립니다. 확인해 주시면 감사하겠습니다.",
+			"files": []
+		},
+		{
+			"id": "F-A6c",
+			"at": "2026-11-26T00:00:00Z",
+			"verdict": [
+				"missing"
+			],
+			"why": "English: the send comes first, the if-clause is a closer",
+			"body": "I'm sending you the quote; let me know if you have questions.",
+			"files": []
+		},
+		{
+			"id": "F-A6d",
+			"at": "2026-11-26T00:00:00Z",
+			"verdict": [
+				"missing"
+			],
+			"why": "'보시면 좋을' describes the material, it is no condition",
+			"body": "검토해 보시면 좋을 자료 첨부합니다.",
+			"files": []
+		},
+		{
+			"id": "F-A6e",
+			"at": "2026-11-26T00:00:00Z",
+			"verdict": [
+				"missing"
+			],
+			"why": "a sale word in a sentence that attaches in so many words",
+			"body": "판매 중인 음원 파일 첨부드립니다.",
+			"files": []
+		},
+		{
+			"id": "F-A6f",
+			"at": "2026-11-26T00:00:00Z",
+			"verdict": [
+				"missing"
+			],
+			"why": "'판매' as part of a file title",
+			"body": "판매 보고서 PDF 첨부드립니다.",
+			"files": []
+		},
+		{
+			"id": "F-N1a",
+			"at": "2026-11-26T00:00:00Z",
+			"verdict": [
+				"missing"
+			],
+			"why": "첨부드리오니",
+			"body": "견적서 첨부드리오니 확인 부탁드립니다.",
+			"files": []
+		},
+		{
+			"id": "F-N1b",
+			"at": "2026-11-26T00:00:00Z",
+			"verdict": [
+				"missing"
+			],
+			"why": "첨부드리며",
+			"body": "견적서 첨부드리며 자세한 내용은 본문을 참고해 주세요.",
+			"files": []
+		},
+		{
+			"id": "F-N1c",
+			"at": "2026-11-26T00:00:00Z",
+			"verdict": [
+				"missing"
+			],
+			"why": "첨부하오니",
+			"body": "파일 첨부하오니 참고 바랍니다.",
+			"files": []
+		},
+		{
+			"id": "F-N1d",
+			"at": "2026-11-26T00:00:00Z",
+			"verdict": [
+				"missing"
+			],
+			"why": "첨부파일 확인 부탁",
+			"body": "첨부파일 확인 부탁드립니다.",
+			"files": []
+		},
+		{
+			"id": "F-N1e",
+			"at": "2026-11-26T00:00:00Z",
+			"verdict": [
+				"missing"
+			],
+			"why": "첨부하여 + a send",
+			"body": "견적서를 첨부하여 보내드립니다.",
+			"files": []
+		},
+		{
+			"id": "F-A10a",
+			"at": "2026-11-26T00:00:00Z",
+			"verdict": [],
+			"why": "the sender attached a contract for review; the reply sends a reply, not a file",
+			"body": "확인했습니다. 수정 의견 정리해서 회신 보내드립니다.",
+			"files": [],
+			"request": "안녕하세요, 첨부한 계약서 검토 부탁드립니다."
+		},
+		{
+			"id": "F-A10b",
+			"at": "2026-11-26T00:00:00Z",
+			"verdict": [
+				"missing"
+			],
+			"why": "the sender attached a form and asks to be sent it back filled in",
+			"body": "작성해서 보내드립니다.",
+			"files": [],
+			"request": "첨부한 양식 작성해서 보내주세요."
+		},
+		{
+			"id": "F-A10c",
+			"at": "2026-11-26T00:00:00Z",
+			"verdict": [],
+			"why": "an account number and a price are sent, not a file",
+			"body": "총액은 50만원이고 입금 계좌번호 보내드립니다.",
+			"files": [],
+			"request": "견적서 금액만 알려주실 수 있을까요?"
+		},
+		{
+			"id": "F-P1",
+			"at": "2026-11-26T00:00:00Z",
+			"verdict": [],
+			"why": "the if-clause comes first: offered, not sent",
+			"body": "필요하시면 자료 공유드리겠습니다.",
+			"files": []
+		},
+		{
+			"id": "F-P2",
+			"at": "2026-11-26T00:00:00Z",
+			"verdict": [],
+			"why": "later and future",
+			"body": "확인 후 내일 따로 견적서 보내드릴게요.",
+			"files": []
+		},
+		{
+			"id": "F-P3",
+			"at": "2026-11-26T00:00:00Z",
+			"verdict": [],
+			"why": "asks the reader to send first, then the reply's own send hangs on it",
+			"body": "관련 자료를 보내주시면 검토 후 견적서 보내드리겠습니다.",
+			"files": []
+		},
+		{
+			"id": "F-P4",
+			"at": "2026-11-26T00:00:00Z",
+			"verdict": [],
+			"why": "points back at a file of an earlier mail",
+			"body": "지난번에 보내드린 문서 잘 활용하시길 바랍니다!",
+			"files": []
+		},
+		{
+			"id": "F-L1",
+			"at": "2026-11-26T00:00:00Z",
+			"verdict": [],
+			"why": "a video link",
+			"body": "요청하신 영상 링크 공유드립니다: https://youtu.be/example",
+			"files": []
+		},
+		{
+			"id": "F-L2",
+			"at": "2026-11-26T00:00:00Z",
+			"verdict": [],
+			"why": "a link to material",
+			"body": "자료 링크 보내드립니다: https://drive.google.com/file/d/abc",
+			"files": []
+		},
+		{
+			"id": "F-L3",
+			"at": "2026-11-26T00:00:00Z",
+			"verdict": [],
+			"why": "a store link",
+			"body": "음원 구매 링크 보내드립니다: https://shop.example.com/item",
+			"files": []
+		},
+		{
+			"id": "F-L4",
+			"at": "2026-11-26T00:00:00Z",
+			"verdict": [],
+			"why": "a shoot schedule",
+			"body": "사진 촬영 일정 공유드립니다. 내일 오후 2시입니다.",
+			"files": []
+		},
+		{
+			"id": "F-L5",
+			"at": "2026-11-26T00:00:00Z",
+			"verdict": [],
+			"why": "english: a link to the document",
+			"body": "Here is the document link: https://docs.example.com/view",
+			"files": []
+		},
+		{
+			"id": "F-L6",
+			"at": "2026-11-26T00:00:00Z",
+			"verdict": [],
+			"why": "an amount",
+			"body": "견적서 금액 보내드립니다. 총액은 100만원입니다.",
+			"files": []
+		},
+		{
+			"id": "F-L7",
+			"at": "2026-11-26T00:00:00Z",
+			"verdict": [
+				"missing"
+			],
+			"why": "a file and a schedule joined by 와: the file goes",
+			"body": "견적서와 일정 공유드립니다.",
+			"files": []
+		},
+		{
+			"id": "F-L8",
+			"at": "2026-11-26T00:00:00Z",
+			"verdict": [
+				"missing"
+			],
+			"why": "a file and a link joined by 및: the file goes",
+			"body": "견적서 및 링크 보내드립니다.",
+			"files": []
+		},
+		{
+			"id": "F-D1",
+			"at": "2026-11-26T00:00:00Z",
+			"verdict": [],
+			"why": "polite refusal",
+			"body": "안녕하세요. 죄송하지만 해당 음원 파일 제공은 어렵습니다.",
+			"files": [],
+			"request": "안녕하세요, 음원 파일 공유 부탁드립니다."
+		},
+		{
+			"id": "F-D2",
+			"at": "2026-11-26T00:00:00Z",
+			"verdict": [],
+			"why": "refusal for policy",
+			"body": "죄송합니다. 보안 규정상 외부 공유 불가합니다.",
+			"files": [],
+			"request": "안녕하세요, 계약서 서류 보내주실 수 있을까요?"
+		},
+		{
+			"id": "F-D3",
+			"at": "2026-11-26T00:00:00Z",
+			"verdict": [],
+			"why": "refusal: not provided",
+			"body": "별도 파일 제공은 진행하지 않고 있습니다.",
+			"files": [],
+			"request": "MR 음원 파일 보내주세요."
+		},
+		{
+			"id": "F-D4",
+			"at": "2026-11-26T00:00:00Z",
+			"verdict": [],
+			"why": "sold in a store",
+			"body": "해당 음원은 온라인 상점에서 판매하고 있습니다.",
+			"files": [],
+			"request": "음원 파일 공유 부탁드립니다."
+		},
+		{
+			"id": "F-D5",
+			"at": "2026-11-26T00:00:00Z",
+			"verdict": [],
+			"why": "a download link",
+			"body": "아래 링크에서 바로 내려받으실 수 있습니다: https://example.com/dl",
+			"files": [],
+			"request": "견적서 PDF 파일 보내주실 수 있나요?"
+		},
+		{
+			"id": "F-D6",
+			"at": "2026-11-26T00:00:00Z",
+			"verdict": [
+				"skipped"
+			],
+			"why": "a price note is no refusal: the asked file is still missing",
+			"body": "판매 가격은 별도입니다. 확인했습니다.",
+			"files": [],
+			"request": "견적서 보내주세요. 부탁드립니다."
+		},
+		{
+			"id": "F-M1a",
+			"at": "2026-11-26T00:00:00Z",
+			"verdict": [],
+			"why": "not sending, in so many words",
+			"body": "죄송하지만 견적서는 안 보내드립니다.",
+			"files": []
+		},
+		{
+			"id": "F-M1b",
+			"at": "2026-11-26T00:00:00Z",
+			"verdict": [],
+			"why": "sent without a file",
+			"body": "견적서는 파일 없이 본문에 적어 보내드립니다.",
+			"files": []
+		},
+		{
+			"id": "F-M1c",
+			"at": "2026-11-26T00:00:00Z",
+			"verdict": [],
+			"why": "english refusal",
+			"body": "I am not sending the file this time.",
+			"files": []
 		}
 	]
 }

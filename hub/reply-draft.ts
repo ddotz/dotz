@@ -75,7 +75,7 @@ const DEFAULT_MAX: Record<ReplyKind, number> = { mail: 1200, comment: 300, chat:
 export const AUTOMATED = /^(no[-_.]?reply|do[-_.]?not[-_.]?reply|mailer[-_.]?daemon|postmaster|bounces?|notifications?|notify|alerts?|auto[-_.]?(reply|mailer|confirm)|newsletter)([-_.+].*)?$/i;
 
 const norm = (s: string) => s.trim().toLowerCase();
-const EMAIL = /[^\s<>"',;()[\]]+@[^\s<>"',;()[\]]+\.[^\s<>"',;()[\]]+/g;
+const EMAIL = /[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+/g;
 
 /** What a file name is compared by: NFC, and the `'` the prompt shows for a `"` taken as that `"`. */
 export const fileNameKey = (name: string): string => name.normalize("NFC").replace(/'/g, '"');
@@ -127,8 +127,8 @@ export function withSenderAddress(from: string, text: string, self: readonly str
 }
 
 const addrOrHandle = (s: string) => addressesOf(s)[0] ?? norm(s);
-const untag = (a: string) => a.replace(/\+[^@]*(?=@)/, "");
-const selfKeys = (self: readonly string[] | undefined) => new Set((self ?? []).flatMap(addressesOf).map(untag));
+export const untag = (a: string) => a.replace(/\+[^@]*(?=@)/, "");
+export const selfKeys = (self: readonly string[] | undefined) => new Set((self ?? []).flatMap(addressesOf).map(untag));
 const MACHINE_NAME = /no[-_.]?reply|do[-_.]?not[-_.]?reply|mailer[-_.]?daemon|postmaster|administrator|notification|newsletter|news@|marketing|알림|공지/i;
 
 /** Whether a sender (a name, an address or "Name <address>") is a machine: the one judgement behind a mail's 자동 발송 tag and a reply draft's "automated sender". */
@@ -481,6 +481,7 @@ async function run(item: ReplyItem, style: ReplyStyle, call: ModelCall, base: Pr
 	const taught: string[] = [];
 	const { left } = budgetedLines(style, CHANNELS[item.kind].correctionsBudget);
 	const { standing, corrections, recipient, contentBans = [] } = judge ? styleConditions(style) : { standing: [], corrections: [], recipient: undefined };
+	const asked = [base.change, item.instruction].map(s => s?.trim()).filter(Boolean).join("\n");
 	for (let tries = 1; tries <= 2; tries++) {
 		const p = buildPrompt(item, style, { ...base, ...(failures ? { failures } : {}) });
 		let out: string;
@@ -512,7 +513,7 @@ async function run(item: ReplyItem, style: ReplyStyle, call: ModelCall, base: Pr
 		// The recipient and the Re: subject are settled here, by rule: a model retry cannot know an address the message does not show.
 		const draft: DraftOut = { to: recipientOf(parsed.to, item), subject: subjectOf(parsed.subject, item), body: parsed.body };
 		if (!draft.subject) delete draft.subject;
-		const lessons = lessonsOf(restyle ?? parsed);
+		const lessons = { ...lessonsOf(first ?? {}), ...lessonsOf(restyle ?? parsed) };
 		if (base.change) for (const w of learnedOf(lessons, base.change).forbid) if (![...style.forbidden, ...taught].some(f => banKey(parseBan(f)) === banKey(parseBan(w)))) taught.push(w);
 		const found = [...lintReply(draft, item, taught.length ? { ...style, forbidden: [...style.forbidden, ...taught] } : style), ...(unfoundedSend(draft.body, item, base) ? [SENT_CLAIM_FAILURE] : []), ...(unfoundedRecipient(parsed.recipient, item) ? [RECIPIENT_FAILURE] : [])];
 		const files = item.candidates?.length && parsed.files ? [...new Set(parsed.files.flatMap(f => item.candidates!.find(c => fileNameKey(c) === fileNameKey(f)) ?? []))] : undefined;
@@ -520,7 +521,7 @@ async function run(item: ReplyItem, style: ReplyStyle, call: ModelCall, base: Pr
 		if (restyle && (found.some(f => !restyle!.warnings.includes(f)) || attach.length)) return { action: "draft", ...restyle, tries };
 		const unnamed = item.candidates?.length && base.change && asksFileOff(base.change) && !parsed.files ? [FILES_UNNAMED] : [];
 		const fixable = [...rewritable(found), ...attach, ...unnamed];
-		const broken: Violation[] = !fixable.length && judge && (standing.length || corrections.length || recipient || contentBans.length) ? await judgeStyle({ standing, corrections, ...(recipient ? { recipient } : {}), ...(contentBans.length ? { contentBans } : {}), received: item.text, draft: draft.body, ...(base.change ? { asked: base.change } : {}) }, judge) : [];
+		const broken: Violation[] = !fixable.length && judge && (standing.length || corrections.length || recipient || contentBans.length) ? await judgeStyle({ standing, corrections, ...(recipient ? { recipient } : {}), ...(contentBans.length ? { contentBans } : {}), received: item.text, draft: draft.body, ...(asked ? { asked } : {}) }, judge) : [];
 		const judged = styleWarnings(broken), warnings = [...found, ...judged];
 		const who = { ...(parsed.recipient ? { recipient: parsed.recipient } : {}), ...lessons, ...(files ? { files } : {}), ...(left ? { leftOut: left } : {}) };
 		if ((!fixable.length && !broken.length) || tries === 2) return { action: "draft", draft, questions: parsed.questions, warnings, ...(judged.length ? { judged } : {}), tries, ...who };

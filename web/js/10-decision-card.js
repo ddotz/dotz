@@ -42,7 +42,7 @@ function parseChoices(text) {
   const lines = stripRecMark(String(text ?? "")).replace(/^\s*\[[^\]\n]+\][ \t]*/, "").split("\n");
   let i = 0, question = "", cur = null;
   while (i < lines.length && !lines[i].trim()) i++;
-  if (i < lines.length && !OPT.test(lines[i]) && !HEAD.test(lines[i])) question = lines[i++].trim();
+  if (i < lines.length && !OPT.test(lines[i]) && !HEAD.test(lines[i]) && !CH_FENCE.test(lines[i])) question = lines[i++].trim();
   const blocks = [];
   let fence = false;
   for (; i < lines.length; i++) {

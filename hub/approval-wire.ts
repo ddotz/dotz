@@ -100,7 +100,7 @@ export async function discordGatewayAnswer(target: string, conv: string, text: s
 		if (!r.body.already) await out(target, quiet, undefined, { source: "gateway", nk: "gateway-note" }).catch(e => log(`no-turn line of ${card.id} not posted: ${e}`));
 		return {};
 	}
-	const note = p.note ?? /\s-\s(.+)$/.exec(text)?.[1];
+	const note = p.note ?? /\s-\s(.+)$/s.exec(text)?.[1];
 	const r = await actOnCard(conv, p.q, p.label, note, { surface: "discord", login: "owner", ...(p.decision ? { notice: p.decision } : {}), ...(edit !== undefined ? { text: edit } : {}) });
 	if (!r) return undefined;
 	if (r.body.ok) return {};

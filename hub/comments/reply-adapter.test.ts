@@ -110,6 +110,31 @@ test("edit keeps the code, stores the owner's text, makes the draft unclean and 
 	expect(await a.prove!(code)).toBe("sent");
 });
 
+const owedSetup = async (mailRecord: { mail?: { state: "failed"; text: string } }) => {
+	const state = { owed: true };
+	const view: MailView = { id: "RMAIL01", to: "fan@example.com", subject: "자료", body: "보내드려요", attachments: [] };
+	const mail: MailLink = { compose: async () => ({ ok: false, reason: "x" }), send: async () => ({ ok: true, text: "" }), drop: () => undefined, revise: async () => ({ ok: false, reason: "x" }), view: () => (state.owed ? view : undefined), edit: () => ({ ok: true }) };
+	const { engine, a } = setup({ mail });
+	const code = await drafted(engine);
+	engine.store.putDraft({ ...engine.store.drafts().find(d => d.code === code)!, mail: "RMAIL01" });
+	engine.store.putReply({ id: `send:${engine.store.comments()[0]!.id}`, commentId: engine.store.comments()[0]!.id, source: "youtube", thread: "p1", text: "이번 주말이에요!", state: "unsure", at: NOW - 100, draft: code, via: "owner", collector: "mac", reason: "답글은 올렸고 메일은 못 보냈어요", code: "unknown", ...mailRecord });
+	expect(await a.markSent(code)).toEqual({ ok: true });
+	expect(engine.store.drafts().find(d => d.code === code)!.status).toBe("sent");
+	return { a, code, state };
+};
+
+test("a posted reply whose mail was tried and failed is not proved sent by a read-back: the card stays unsure until the mail is dealt with", async () => {
+	const { a, code, state } = await owedSetup({ mail: { state: "failed", text: "메일을 못 보냈어요" } });
+	expect(await a.prove!(code)).toBe("unknown");
+	state.owed = false;
+	expect(await a.prove!(code)).toBe("sent");
+});
+
+test("a reply sent alone (답글만 보내기) is proved sent once posted, though its mail still waits as a draft", async () => {
+	const { a, code } = await owedSetup({});
+	expect(await a.prove!(code)).toBe("sent");
+});
+
 test("a reply with a linked pending mail carries the mail's files and offers both, reply only and mail only; one without a mail offers one 보내기", async () => {
 	const { engine, a } = setup({ files: [{ name: "자료.pdf", size: 2048 }, { name: "사진.jpg" }] });
 	const code = await drafted(engine);

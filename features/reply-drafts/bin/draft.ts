@@ -121,17 +121,17 @@ async function kakaoRoomName(room: string, deps: DraftDeps, notes: string[]): Pr
 
 const nfc = (s: string) => s.normalize("NFC");
 // The pending mail draft whose files `attach` / `detach` change, or why it cannot.
-function editable(id: string | undefined): DraftRec | string {
+function editable(id: string | undefined, adding = true): DraftRec | string {
 	const rec = id ? getDraft(id) : undefined;
 	if (!rec) return `초안 ${id ?? ""}을(를) 찾지 못했어요`;
 	if (rec.status !== "pending" || rec.kind !== "mail") return `초안 ${id}은(는) 기다리는 메일 초안이 아니라서 파일을 바꿀 수 없어요`;
-	if (!canAttach(rec.source)) return "이 메일은 파일을 붙여 보낼 수 없어요";
+	if (adding && !canAttach(rec.source)) return "이 메일은 파일을 붙여 보낼 수 없어요";
 	return rec;
 }
 // An absolute path of a file (one only in iCloud too), else a name (or folder-relative path) in the mail app's 첨부 파일 폴더; one match only.
 async function fileToAttach(rec: DraftRec, what: string): Promise<string | { error: string }> {
 	const path = cloudFile(what);
-	if (isAbsolute(path) && (existsSync(path) || existsSync(cloudPlaceholder(path)))) return path;
+	if (isAbsolute(path)) return existsSync(path) || existsSync(cloudPlaceholder(path)) ? path : { error: `파일을 찾지 못했어요: ${path}` };
 	const folder = await attachFolder(rec);
 	if (!folder) return { error: "첨부 파일 폴더가 정해져 있지 않아요. 파일의 전체 경로로 알려 주세요" };
 	const all = listLibrary(folder), exact = all.filter(f => nfc(f.rel) === nfc(what));
@@ -353,7 +353,7 @@ export async function runDraft(args: string[], stdin: string, deps: DraftDeps = 
 		}
 		case "detach": {
 			if (!pos[0] || !pos[1]) return { lines: [USAGE], code: 2 };
-			const rec = editable(pos[0]);
+			const rec = editable(pos[0], false);
 			if (typeof rec === "string") return { lines: [rec], code: 1 };
 			// A file still waited for (wantFiles) that will not come is taken off by its name too.
 			const wanted = (rec.wantFiles ?? []).filter(w => nfc(w.name) !== nfc(pos[1]!));

@@ -13,6 +13,8 @@ const question = (d: Draft | undefined) => (d?.mail ? "이 답글을 올리고 �
 // A comment draft's own place is its source (`comment:<source>`), not a conversation: until a card asks about it, nothing is posted there.
 const PLACE = "comment:";
 export const isCommentPlace = (conv: string): boolean => conv.startsWith(PLACE);
+/** A posted reply whose bundled mail was tried and did not go out still owes that mail; a reply sent alone on purpose owes none. */
+export const mailOwed = (engine: Engine, d: Draft): boolean => engine.store.replies().some(r => r.draft === d.code && r.mail?.state === "failed") && !!engine.mailView(d);
 
 type Sends = { posted: Map<string, Reply>; mailed: Set<string>; mailFailed: Set<string> };
 const NO_SENDS: Sends = { posted: new Map(), mailed: new Set(), mailFailed: new Set() };
@@ -42,9 +44,10 @@ export function commentAdapter(engine: Engine, mailAnswered: () => (thread: stri
 		const mail = d.status !== "sent" ? engine.mailView(d) : sends.mailed.has(d.code) ? (engine.mailView(d) ?? engine.mailRecord(d)) : sends.mailFailed.has(d.code) ? engine.mailView(d) : undefined;
 		const before = d.replaces ? draftOf(d.replaces) : undefined;
 		const sent = sentOf(d, sends);
+		const mailLeft = d.status === "sent" && sends.mailFailed.has(d.code) && !!mail;
 		return {
 			...(sent ? { sent } : {}),
-			...(d.status === "sent" && sends.mailFailed.has(d.code) && engine.mailView(d) ? { mailLeft: true as const } : {}),
+			...(mailLeft ? { mailLeft: true as const } : {}),
 			item: `comment:${d.commentId}`,
 			ref: d.code,
 			kind: "comment",
@@ -52,7 +55,7 @@ export function commentAdapter(engine: Engine, mailAnswered: () => (thread: stri
 			label: src.label,
 			conv: `${PLACE}${d.source}`,
 			at: d.created,
-			can: { send: pending, revise: pending, edit: pending, drop: pending, restore: d.status === "dropped" && !d.mail, ...(pending && mail ? { sends: ["send", "send-main", "send-mail"] as ("send" | "send-main" | "send-mail")[] } : {}) },
+			can: { send: pending, revise: pending, edit: pending, drop: pending, restore: d.status === "dropped" && !d.mail, ...(pending && mail ? { sends: ["send", "send-main", "send-mail"] as ("send" | "send-main" | "send-mail")[] } : mailLeft ? { sends: ["send-mail" as const] } : {}) },
 			draft: {
 				state: STATE[d.status] ?? "closed",
 				toLabel: "대상",
@@ -106,9 +109,13 @@ export function commentAdapter(engine: Engine, mailAnswered: () => (thread: stri
 		},
 		// Proof read back from the platform: only an unsure reply whose words show there becomes sent.
 		prove: async ref => {
-			if (draftOf(ref)?.status === "sent") return "sent";
+			const proved = (): "sent" | "unknown" => {
+				const d = draftOf(ref);
+				return d?.status === "sent" && !mailOwed(engine, d) ? "sent" : "unknown";
+			};
+			if (proved() === "sent") return "sent";
 			await engine.proveSends();
-			return draftOf(ref)?.status === "sent" ? "sent" : "unknown";
+			return proved();
 		},
 		ask: async (ref, headline) => {
 			const d = draftOf(ref);

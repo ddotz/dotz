@@ -23,6 +23,7 @@ export function mailDraftHandled(code: string, f: Omit<MailFacts, keyof StoreFac
 	if (d.status !== "pending") return true;
 	// 고치기 makes a new draft for the same mail: the older pending one is replaced.
 	if (all.some(x => x.id !== d.id && x.ref === d.ref && x.status === "pending" && x.created > d.created)) return true;
+	if (d.ref.startsWith("compose-")) return false;
 	const m = f.record(d.ref);
 	return !m || mailEnded(m);
 }

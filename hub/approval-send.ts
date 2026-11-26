@@ -60,7 +60,7 @@ type Ended = { reason?: Reason; safeToAuto?: boolean; auto?: AutoRetry; attempts
 type Kept = SendJob & { state: "queued" | "sending" | "undo" | "failed" | "unsure" } & Partial<Hold> & Ended;
 /** `undo`: approved, inside the cancel window (`until`); `back`: not sent, the draft waits for approval again (cancelled, or the gateway restarted in the window).
  * `failed` is surely not sent, `unsure` may have gone out; both carry `reason`, and `text` is its plain Korean for today's readers. */
-export type SendResult = { ref: string; conv: string; title: string; state: "undo" | "queued" | "sending" | "sent" | "failed" | "unsure" | "back"; text: string; at: number; until?: number } & Ended;
+export type SendResult = { ref: string; conv: string; title: string; action?: SendAction; state: "undo" | "queued" | "sending" | "sent" | "failed" | "unsure" | "back"; text: string; at: number; until?: number } & Ended;
 export const UNDONE = "보내기를 취소했어요. 보내려면 다시 보내기를 눌러 주세요";
 export const RETURNED_ON_RESTART = "게이트웨이가 다시 시작돼서 보내지 않았어요. 보내려면 다시 보내기를 눌러 주세요";
 
@@ -159,7 +159,7 @@ export function createApprovalSender(deps: SenderDeps) {
 		if (keep) kept.set(j.ref, { ref: j.ref, conv: j.conv, action: j.action, title: j.title, ...(j.retry ? { retry: true as const } : {}), ...(j.force ? { force: true as const } : {}), ...(j.hash ? { hash: j.hash } : {}), ...(j.by ? { by: j.by } : {}), state, ...(hold ?? {}), ...ended });
 		else kept.delete(j.ref);
 		persist();
-		const r: SendResult = { ref: j.ref, conv: j.conv, title: j.title, state, text, at: now(), ...(hold ? { until: hold.approvedAt + hold.wait } : {}), ...ended };
+		const r: SendResult = { ref: j.ref, conv: j.conv, title: j.title, action: j.action, state, text, at: now(), ...(hold ? { until: hold.approvedAt + hold.wait } : {}), ...ended };
 		results.delete(j.ref);
 		results.set(j.ref, r);
 		// The oldest finished result goes: one the file still keeps (waiting, sending, failed, unsure) is what a second approval is checked against, so it stays however many wait.
@@ -225,13 +225,14 @@ export function createApprovalSender(deps: SenderDeps) {
 
 	function start(j: SendJob, t: SendTarget, ended: Ended = {}): void {
 		set(j, "queued", "", undefined, { attempts: ended.attempts ?? attempts(j.ref) });
+		enlane(j, t);
+	}
+	function enlane(j: SendJob, t: SendTarget): void {
 		const lane = lanes.get(t.lane);
-		if (lane) lane.jobs.push({ ...j, kind: t.kind });
-		else {
-			const l = { jobs: [{ ...j, kind: t.kind }], run: Promise.resolve() };
-			lanes.set(t.lane, l);
-			l.run = drain(t.lane, l.jobs);
-		}
+		if (lane) return void lane.jobs.push({ ...j, kind: t.kind });
+		const l = { jobs: [{ ...j, kind: t.kind }], run: Promise.resolve() };
+		lanes.set(t.lane, l);
+		l.run = drain(t.lane, l.jobs);
 	}
 
 	// The lane is dropped in the same tick its last job is taken, so a job queued later always starts a new runner.
@@ -301,11 +302,13 @@ export function createApprovalSender(deps: SenderDeps) {
 		const k = kept.get(j.ref);
 		if (autoAt.get(j.ref) !== next.nextAt || k?.state !== "failed" || !k.reason) return;
 		autoAt.delete(j.ref);
+		const stillFailed = (): boolean => kept.get(j.ref) === k;
 		const t = deps.kind(j.ref, j.action);
 		if (!t) return set(j, "failed", k.reason.text, undefined, { reason: k.reason, safeToAuto: false, attempts: k.attempts });
 		if (policyOf(k.reason.code).auto?.repair) {
 			// A draft changed since the owner's 보내기 is not repaired into a send.
 			const refusal = await unapproved(deps, j);
+			if (!stillFailed()) return;
 			if (refusal) return refuse(j, refusal, k.attempts);
 			let fixed: "fixed" | "needs_owner" | "failed";
 			try {
@@ -314,22 +317,18 @@ export function createApprovalSender(deps: SenderDeps) {
 				deps.log(`approved send ${j.ref}: repair for ${k.reason.code} threw: ${(e as Error).message}`);
 				fixed = "failed";
 			}
+			if (!stillFailed()) return;
 			if (fixed !== "fixed") return set(j, "failed", k.reason.text, undefined, { reason: k.reason, safeToAuto: false, attempts: k.attempts });
 			// A repair that left the approved version as it was (a re-login) goes on; one that changed it (a "Re:" subject) is a version the owner
 			// never saw: nothing is sent and he approves the repaired one (the gate below would refuse it too; this says so before queueing).
 			const after = await unapproved(deps, j);
+			if (!stillFailed()) return;
 			if (after) return refuse(j, after, k.attempts);
 		}
 		const { retry: _r, force: _f, ...rest } = j;
 		const plain: SendJob = { ...rest, by: "auto" };
 		set(plain, "queued", "", undefined, { attempts: k.attempts, auto: next });
-		const lane = lanes.get(t.lane);
-		if (lane) lane.jobs.push({ ...plain, kind: t.kind });
-		else {
-			const l = { jobs: [{ ...plain, kind: t.kind }], run: Promise.resolve() };
-			lanes.set(t.lane, l);
-			l.run = drain(t.lane, l.jobs);
-		}
+		enlane(plain, t);
 	}
 
 	const look = (j: SendJob): SendLook => deps.look?.(j) ?? { state: "unsure", text: MAY_HAVE_GONE_OUT };
@@ -531,6 +530,11 @@ export function outcomeOf(r: { code: number; out: string; timedOut?: boolean }):
 		const why = detailOf(mail) ?? reasonOf(code).text;
 		return { sent: "partial", done: 1, total: 2, code, rest: mail.sent === "maybe" || code === "unknown" ? "maybe" : "no", mail: why };
 	}
+	const replyMaybe = lines.find(x => x.part === "reply" && x.sent === "maybe");
+	if (replyMaybe) {
+		const detail = detailOf(replyMaybe);
+		return { sent: "maybe", code: isReasonCode(replyMaybe.code) ? replyMaybe.code : "unknown", ...(detail ? { detail } : {}) };
+	}
 	const said = lines.at(-1);
 	if (said) {
 		if (said.sent === "yes") return { sent: "yes" };
@@ -551,6 +555,6 @@ export async function runCli(argv: string[]): Promise<{ code: number; out: strin
 	const r = await runLimited(argv, SEND_CLI_MS, { env: { ...process.env, DOTZ_GATEWAY_SEND: "1" } });
 	const full = `${r.stdout}\n${r.timedOut ? "timed out" : r.stderr}`;
 	const tail = full.slice(-OUT_TAIL);
-	const line = full.split("\n").filter(l => l.startsWith("DOTZ_SEND ")).at(-1);
-	return { code: r.code, out: line && !tail.includes(line) && line.length <= OUT_TAIL ? `${tail}\n${line}` : tail, ...(r.timedOut ? { timedOut: true } : {}) };
+	const cut = full.split("\n").filter(l => l.startsWith("DOTZ_SEND ") && l.length <= OUT_TAIL && !tail.includes(l));
+	return { code: r.code, out: cut.length ? `${cut.join("\n")}\n${tail}` : tail, ...(r.timedOut ? { timedOut: true } : {}) };
 }

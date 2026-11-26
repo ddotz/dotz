@@ -11,6 +11,7 @@ import { claimHolder, claimSend } from "../draft-claim.ts";
 import { claimLearned } from "../edit-learned.ts";
 import { readState } from "../statefile.ts";
 import { approvalHash, draftApprovalBlock, draftVerdict, type DraftVerdict, SPENT_REFUSED, WAITING_REFUSED } from "../draft-approval.ts";
+import { ownerLint } from "../reply-draft.ts";
 import { reasonOf } from "../reply-reasons.ts";
 import type { DraftView } from "../reply-types.ts";
 import { type Confirmer, dbConfirmer, dbPreview } from "./confirm.ts";
@@ -47,7 +48,7 @@ export type SendAttempt = { n: number; recovery: Recovery; ok: boolean; state: "
 // A send that did not end as sent says whether anything may be in the room (`sent`, by the KakaoTalk table of the reply design's failure
 // taxonomy) and why (`code`, a reason code of hub/reply-reasons.ts): "no" nothing went out, "maybe" it may have, "partial" `done` of `total`
 // parts are in the room and the failing part is judged by its code. `reason` stays the plain sentence the surfaces show today.
-type SendCode = "gone" | "changed" | "not_pending" | "needs_resolve" | "already_sent" | "already_sending" | "interrupted" | "press_unconfirmed" | "state_write" | "empty" | "too_long" | "not_approved" | "app_not_ready" | "stale" | "input_busy" | "room_unknown" | "lease_held" | "lease_unknown";
+type SendCode = "gone" | "changed" | "not_pending" | "needs_resolve" | "already_sent" | "already_sending" | "interrupted" | "press_unconfirmed" | "state_write" | "empty" | "too_long" | "placeholder" | "not_approved" | "app_not_ready" | "stale" | "input_busy" | "room_unknown" | "lease_held" | "lease_unknown";
 export type SendResult = { ok: boolean; reason?: string; sent?: "no" | "maybe" | "partial"; code?: SendCode; done?: number; total?: number; ms?: SendMs; ax?: AxStep[]; focus?: Focus; unconfirmed?: true; attempts?: SendAttempt[] };
 
 // One KakaoTalk message (a typed send, one part of a draft) and a whole draft of several parts.
@@ -581,10 +582,13 @@ const sendTextNow = async (input: { chatId: string; roomName: string; text: stri
 // The one path of every send: the exact list row is opened and its window verified (room.ts), then the text goes in by Accessibility.
 export const sendText = (input: { chatId: string; roomName: string; text: string; parts?: string[] }, deps: SendDeps & { roomNames?: RoomNames }): Promise<SendResult> => oneAtATime(() => sendTextNow(input, deps));
 
+const claimFile = (paths: KakaoPaths, code: string) => join(dirname(paths.drafts), "sending", code);
+
 export function dropDraft(code: string, deps: Pick<SendDeps, "paths">): SendResult {
 	const d = readDrafts(deps.paths).find(x => x.code === code);
 	if (!d) return refuse("그 초안을 찾지 못했어요", "gone");
 	if (d.status !== "pending") return refuse("더 이상 보낼 수 없는 초안이에요", "not_pending");
+	if (d.pressing || claimHolder(claimFile(deps.paths, code)) === "live") return refuse("보내는 중인 초안이라 버릴 수 없어요", "already_sending");
 	setStatus(deps.paths, code, "dropped");
 	return { ok: true };
 }
@@ -609,6 +613,7 @@ export function editDraft(code: string, text: string, deps: Pick<SendDeps, "path
 	if (d.pressing) return refuse("보내는 중인 초안이라 고칠 수 없어요", "already_sending");
 	const bad = draftTextError(text);
 	if (bad) return refuse(bad, textCode(text));
+	if (ownerLint({ body: text }, { kind: "chat", app: "kakao", from: "", text: "" }, { rules: [], corrections: [], forbidden: [], samples: [] }).length) return refuse(reasonOf("placeholder").text, "placeholder");
 	setStatus(deps.paths, code, "pending", { text, editedFrom: d.editedFrom ?? d.text });
 	return { ok: true };
 }
@@ -632,7 +637,7 @@ export function sendDraft(code: string, deps: SendDeps & { latestIncoming: (chat
 // The in-process guard above does not see another process (the CLI the bot runs beside the gateway's button): a claim file does (hub/draft-claim.ts).
 async function sendDraftNow(code: string, deps: SendDeps & { latestIncoming: (chatId: string) => Promise<string | undefined>; roomNames?: RoomNames; ownerApproved?: boolean; text?: string; retry?: boolean }): Promise<SendResult> {
 	// A sender that died holding the claim may have pressed send already: only the owner's 다시 보내기 (`retry`) takes it over, a plain send is refused.
-	const claim = join(dirname(deps.paths.drafts), "sending", code);
+	const claim = claimFile(deps.paths, code);
 	if (!deps.retry && claimHolder(claim) === "dead") return maybe("지난번에 보내다가 멈춰서 보낸 메시지가 이미 나갔을 수 있어요. 카카오톡방을 확인하고, 안 나갔을 때만 다시 보내기를 눌러 주세요", "interrupted");
 	const release = claimSend(claim, deps.retry === true);
 	if (!release) return refuse("이미 보내는 중이에요", "already_sending");
@@ -704,6 +709,8 @@ async function sendClaimed(code: string, deps: SendDeps & { latestIncoming: (cha
 			setStatus(deps.paths, code, "stale");
 			return refuse("그사이 새 메시지가 와서 초안이 낡았어요", "stale");
 		}
+		const now = readDrafts(deps.paths).find(x => x.code === code);
+		if (now?.status !== "pending") return refuse(now ? "더 이상 보낼 수 없는 초안이에요" : "그 초안을 찾지 못했어요", "gone");
 	}
 	// Each part is its own message, in order. The count of parts in the room is stored after every part, so a failed part is retried alone
 	// and an unconfirmed press ends the draft as sent (never pressed again).

@@ -13,7 +13,7 @@ import { mailAnsweredLookup, markCommentReplied, matchedMailKey } from "./mail-m
 import { realEngine } from "./real.ts";
 import { POST_UNKNOWN } from "./recover.ts";
 import { COMMENT_CODE } from "./engine.ts";
-import { commentAdapter } from "./reply-adapter.ts";
+import { commentAdapter, mailOwed } from "./reply-adapter.ts";
 import { createCommentsWeb } from "./web.ts";
 
 let owedHook: (mailId: string) => void = () => {};
@@ -71,7 +71,8 @@ export const commentProveSends = () => engine.proveSends();
 /** How the last send of comment draft `code` ended, when the store knows. */
 export function commentSendOutcome(code: string): Exclude<SendLook, { state: "alive" }> | undefined {
 	const reply = engine.store.replies().find(r => r.draft === code);
-	if (reply?.state === "sent" || engine.store.drafts().find(d => d.code === code)?.status === "sent") return { state: "sent" };
+	const draft = engine.store.drafts().find(d => d.code === code);
+	if ((reply?.state === "sent" || draft?.status === "sent") && !(draft && mailOwed(engine, draft))) return { state: "sent" };
 	if (reply?.state === "unsure") return { state: "unsure", text: reply.reason ?? POST_UNKNOWN };
 	return reply?.state === "failed" ? { state: "failed", text: reply.reason ?? MAY_HAVE_GONE_OUT } : undefined;
 }

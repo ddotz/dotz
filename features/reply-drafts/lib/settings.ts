@@ -318,8 +318,6 @@ export type Pair = { received: string; reply: string; at: number; from?: string;
 
 export const MAX_PAIRS = 1000;
 
-
-
 export function loadPairs(app: string): Pair[] {
 	const file = paths.pairs(app);
 	if (!existsSync(file)) return [];

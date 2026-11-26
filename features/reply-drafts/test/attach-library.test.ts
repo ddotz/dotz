@@ -15,6 +15,8 @@ import { getDraft, listDrafts, setStatus } from "../lib/store.ts";
 import { mailHash } from "../lib/view.ts";
 import type { Runner } from "../lib/tone.ts";
 import { enable, fakeModel, j, mailFixture, setupEnv } from "./helpers.ts";
+import { setReplies } from "../../../hub/reply-actions.ts";
+import { runDraft } from "../bin/draft.ts";
 import { sealLine } from "../../../hub/approval-seal.ts";
 
 const env = setupEnv();
@@ -248,8 +250,8 @@ describe("adding and removing files of a draft (the send sheet's routes)", () =>
 		const res = await draftAttachRoute(new Request(url, { method, ...(body ? { body: JSON.stringify(body), headers: { "content-type": "application/json" } } : {}) }), url, ref, tail);
 		return { status: res.status, body: (await res.json()) as any };
 	};
-	async function draft() {
-		enable(env, { attachFolders: { mail: lib } });
+	async function draft(folder = lib) {
+		enable(env, { attachFolders: { mail: folder } });
 		await offerMailDraft({ ...teacherMail, subject: "다른 곡 문서 부탁드립니다", body: "다른 곡 문서 부탁드립니다" }, { send: sink().send, call: fakeModel([j(teacherReply)]).call });
 		return listDrafts()[0]!.id;
 	}
@@ -311,5 +313,63 @@ describe("adding and removing files of a draft (the send sheet's routes)", () =>
 		await offerMailDraft({ ...teacherMail, key: "w-3", source: "webmail:corp" }, { send: sink().send, call: fakeModel([j(teacherReply)]).call });
 		const ref = listDrafts()[0]!.id;
 		expect((await call("GET", ref, "files")).body).toMatchObject({ canAttach: false, editable: true });
+	});
+	test("a file stored decomposed (NFD) is found by a composed (NFC) search and picked by its composed name", async () => {
+		const nfdLib = mkdtempSync(join(tmpdir(), "rd-nfd-"));
+		const rel = "정리표_최종.pdf";
+		writeFileSync(join(nfdLib, rel.normalize("NFD")), "nfd bytes");
+		const ref = await draft(nfdLib);
+		expect((await call("GET", ref, "library", undefined, `?q=${encodeURIComponent("정리표")}`)).body.items).toHaveLength(1);
+		const picked = await call("POST", ref, "files", { library: rel });
+		expect(picked.status).toBe(200);
+		expect(stagedFiles(ref)).toHaveLength(1);
+		rmSync(nfdLib, { recursive: true, force: true });
+	});
+	test("a mail that cannot carry files takes no file in, and a file already on it can still be taken off", async () => {
+		enable(env, { attachFolders: { mail: lib } });
+		await offerMailDraft({ ...teacherMail, key: "w-4", source: "webmail:corp" }, { send: sink().send, call: fakeModel([j(teacherReply)]).call });
+		const ref = listDrafts()[0]!.id;
+		addStagedFile(ref, join(lib, "달빛정원_공유용.pdf"));
+		expect((await call("POST", ref, "files", { library: "견적서 양식.xlsx" })).status).toBe(409);
+		expect((await call("POST", ref, "files", { name: "메모.txt", data: Buffer.from("hello").toString("base64") })).status).toBe(409);
+		expect(stagedFiles(ref).map(f => f.name)).toEqual(["달빛정원_공유용.pdf"]);
+		expect((await call("POST", ref, "files", { remove: 0 })).status).toBe(200);
+		expect(stagedFiles(ref)).toEqual([]);
+	});
+	test("while a revise of the draft runs, no file is added or removed", async () => {
+		const ref = await draft();
+		setReplies({ held: () => undefined, revising: (r: string) => r === ref } as never);
+		try {
+			const added = await call("POST", ref, "files", { library: "달빛정원_공유용.pdf" });
+			expect(added.status).toBe(409);
+			expect(added.body.code).toBe("revising");
+			expect(stagedFiles(ref)).toEqual([]);
+		} finally {
+			setReplies(undefined);
+		}
+		expect((await call("POST", ref, "files", { library: "달빛정원_공유용.pdf" })).status).toBe(200);
+	});
+});
+
+describe("draft.ts attach", () => {
+	test("an absolute path that does not exist is an error, not a same-named file of the 첨부 파일 폴더", async () => {
+		enable(env, { attachFolders: { mail: lib } });
+		await offerMailDraft({ ...teacherMail, subject: "다른 곡 문서 부탁드립니다", body: "다른 곡 문서 부탁드립니다" }, { send: sink().send, call: fakeModel([j(teacherReply)]).call });
+		const ref = listDrafts()[0]!.id;
+		const out = await runDraft(["attach", ref, "/no/such/folder/캐논.pdf"], "");
+		expect(out.code).toBe(1);
+		expect(out.lines.join("\n")).toContain("/no/such/folder/캐논.pdf");
+		expect(stagedFiles(ref)).toEqual([]);
+		expect((await runDraft(["attach", ref, "캐논.pdf"], "")).code).toBe(0);
+		expect(stagedFiles(ref).map(f => f.name)).toEqual(["캐논.pdf"]);
+	});
+	test("detach works on a mail that cannot carry files; attach does not", async () => {
+		enable(env, { attachFolders: { mail: lib } });
+		await offerMailDraft({ ...teacherMail, key: "w-5", source: "webmail:corp" }, { send: sink().send, call: fakeModel([j(teacherReply)]).call });
+		const ref = listDrafts()[0]!.id;
+		addStagedFile(ref, join(lib, "달빛정원_공유용.pdf"));
+		expect((await runDraft(["attach", ref, "캐논.pdf"], "")).code).toBe(1);
+		expect((await runDraft(["detach", ref, "1"], "")).code).toBe(0);
+		expect(stagedFiles(ref)).toEqual([]);
 	});
 });

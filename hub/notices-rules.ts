@@ -15,6 +15,8 @@ import { isDoctorLook } from "./doctor-text.ts";
 
 export const NOTICE_CAP = 300;
 export const TEXT_MAX = 1500;
+/** The stored text of a send-approval card: its draft (reply and mail part, DRAFT_BODY_MAX each) and the lines around it, so parseDraftApproval reads the whole card back. */
+export const DRAFT_TEXT_MAX = 2 * DRAFT_BODY_MAX + 4000;
 export const LOUD = new Set<NoticeTone>(["done", "fail", "ask"]);
 export const RESTART_PREFIX = /^게이트웨이(?: 재시작했어요|를 다시 시작했어요|가 다시 시작돼서)/;
 /** The id of a gateway card that proposes an edit of the owner's standing instructions (the doctor's prompt review and enforced-rule cards). */

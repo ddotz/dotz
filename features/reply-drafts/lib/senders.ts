@@ -37,9 +37,11 @@ export const readArgv = (mailId: string, account?: string): string[] => ["zele",
 // which ends in "API call failed: Error: Invalid"). A value that is already a bare address or a list of them, or has no address at all, goes as it is.
 const bareList = (list: string): string => (list.split(",").every(p => /^[^\s<>"]+$/.test(p.trim())) ? list : addressesOf(list).join(", ") || list);
 const ccArgv = (cc: readonly string[]): string[] => (cc.length ? ["--cc", bareList(cc.join(", "))] : []);
+// why(vendor): goke@6.17.0 (zele's argument parser) reads `--body -x` as a flag with no value; `--body=-x` passes the value.
+const valueArgv = (flag: string, value: string): string[] => (value.startsWith("-") ? [`${flag}=${value}`] : [flag, value]);
 // A new mail (hub/mail-cli.ts compose): no mail to answer, so no `mail read` first.
-export const sendArgv = (to: string, subject: string, body: string, files: string[] = [], cc: string[] = [], account?: string): string[] => ["zele", "mail", "send", ...accountArgv(account), "--to", bareList(to), "--subject", subject, ...ccArgv(cc), "--body", body, ...files.flatMap(f => ["--attach", f])];
-export const replyArgv = (mailId: string, to: string, body: string, files: string[] = [], cc: string[] = [], account?: string): string[] => ["zele", "mail", "reply", mailId, ...accountArgv(account), "--to", bareList(to), ...ccArgv(cc), "--body", body, ...files.flatMap(f => ["--attach", f])];
+export const sendArgv = (to: string, subject: string, body: string, files: string[] = [], cc: string[] = [], account?: string): string[] => ["zele", "mail", "send", ...accountArgv(account), "--to", bareList(to), ...valueArgv("--subject", subject), ...ccArgv(cc), ...valueArgv("--body", body), ...files.flatMap(f => ["--attach", f])];
+export const replyArgv = (mailId: string, to: string, body: string, files: string[] = [], cc: string[] = [], account?: string): string[] => ["zele", "mail", "reply", mailId, ...accountArgv(account), "--to", bareList(to), ...ccArgv(cc), ...valueArgv("--body", body), ...files.flatMap(f => ["--attach", f])];
 
 // The zele account a mail belongs to: the one the draft recorded, else the one the stored mail came to (mail-conversations.json, read as plain
 // data so the CLI process needs no gateway), else the account of the app instance (custom/apps.json filter.account). A new mail takes the account
@@ -183,7 +185,11 @@ const done = (message: string): SendOutcome => ({ ok: true, message, sent: "yes"
 // The tool's own words (English, often with stack lines) never reach the owner: they go to the log, and the owner reads one short reason.
 const LOGIN_LOST = /invalid_grant|token.*(expired|revoked)|not (logged|signed) in|unauthori[sz]ed|\b401\b|re-?auth/i;
 const OFFLINE = /ENOTFOUND|ECONNREFUSED|ECONNRESET|ETIMEDOUT|EAI_AGAIN|fetch failed|network|socket hang up|offline/i;
-export const sendReasonKey = (raw: string): keyof ReturnType<typeof msg>["sendFail"] => (LOGIN_LOST.test(raw) ? "login" : OFFLINE.test(raw) ? "offline" : "other");
+const spoken = (raw: string): string => raw.split("\n").filter(l => !/^\s*at\s/.test(l)).join("\n").replace(/:\d+:\d+\b/g, "");
+export const sendReasonKey = (raw: string): keyof ReturnType<typeof msg>["sendFail"] => {
+	const said = spoken(raw);
+	return LOGIN_LOST.test(said) ? "login" : OFFLINE.test(said) ? "offline" : "other";
+};
 // A failed tool run: its raw words go to the log, the owner reads `lead` and one short reason, and `judge` says where the mail is.
 function told(r: { stdout: string; stderr: string }, lead: string, judge: (raw: string) => Verdict): SendOutcome {
 	const raw = (withoutRuntimeWarnings(r.stderr).trim() || r.stdout.trim()).slice(0, 2000);
@@ -197,7 +203,8 @@ const CUT = /ECONNRESET|ETIMEDOUT|socket hang up|fetch failed|timed? ?out/i;
 const STALE = /newer message|latest message|new messages? (?:in|on) (?:the|this) thread|read (?:it|the thread) first/i;
 const BAD_RECIPIENT = /recipient|invalid (?:to|address|email)|address.{0,20}invalid/i;
 const REFUSED = /\b4\d\d\b|\bInvalid\b|Bad Request|Forbidden|not allowed|rejected|\b552\b|too (?:large|big)|size (?:exceeds|limit)/i;
-function zeleVerdict(raw: string): Verdict {
+function zeleVerdict(said: string): Verdict {
+	const raw = spoken(said);
 	if (LOGIN_LOST.test(raw)) return { sent: "no", code: "login_expired" };
 	if (NO_CONNECT.test(raw)) return { sent: "no", code: "offline" };
 	if (CUT.test(raw)) return { sent: "maybe", code: "net_cut" };
@@ -295,7 +302,7 @@ export async function sendWith(rec: DraftRec, run: Runner): Promise<SendOutcome>
 		if (message !== sent.message.trim()) log(`reply draft: plugin send failed: ${sent.message}`);
 		return (sent as { sent?: unknown }).sent === "no" ? { ...sent, message, sent: "no", code: "rejected" } : { ...sent, message, sent: "maybe", code: "unknown" };
 	}
-	const saved = await run(["bun", WEBMAIL_MAIL, site, "draft", rec.to, rec.subject ?? "", rec.body]);
+	const saved = await run(["bun", WEBMAIL_MAIL, site, "draft", "--", rec.to, rec.subject ?? "", rec.body]);
 	const id = /초안 저장:\s*(\S+)/.exec(saved.stdout)?.[1];
 	if (saved.code !== 0 || !id) return told(saved, "웹메일 초안을 만들지 못했어요: ", toolBeforeSend);
 	const approved = await run(["bun", WEBMAIL_MAIL, site, "approve", id]);

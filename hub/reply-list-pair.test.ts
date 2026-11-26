@@ -76,16 +76,17 @@ const REPLY = "DPOST0001";
 type MailOut = { ok: boolean; message: string; sent: "yes" | "no" | "maybe"; code?: string };
 const line = (sent: string, part: string, code?: string) => `DOTZ_SEND ${JSON.stringify({ sent, ...(code ? { code } : {}), part })}`;
 
-async function world(mailOut: MailOut, kept?: { store: { load: () => unknown[]; save: (body: string) => void }; reports: SendResult[] }) {
+async function world(first: MailOut, kept?: { store: { load: () => unknown[]; save: (body: string) => void }; reports: SendResult[] }) {
 	const cdir = commentsDir(dir);
 	mkdirSync(cdir, { recursive: true });
 	const source = { key: "youtube", kind: "youtube", label: "유튜브 댓글", watch: ["*"], autoDraft: false };
 	writeFileSync(join(cdir, "config.json"), JSON.stringify({ enabled: true, sources: { youtube: source } }));
+	const mailOut = { ...first };
 	const at = Date.now();
 	const raw = { native: "c1", thread: "p1", author: "팬", text: "자료 보내주세요", postTitle: "P", at: at - 1000 };
 	let posts = 0;
 	const platform = { kind: "youtube", list: async () => ({ comments: [raw], cursor: "1" }), reply: async () => (posts++, { ok: true as const, ref: "r1" }), posts: async () => [] };
-	const mail = realMailLink({ run: async () => ({ code: 1, stdout: "", stderr: "" }), send: async () => mailOut as never } as never);
+	const mail = realMailLink({ run: async () => ({ code: 1, stdout: "", stderr: "" }), send: async () => (mailOut.ok && setStatus(MAIL, "sent"), mailOut) as never } as never);
 	const engine = createEngine({ dir: cdir, now: () => at, collector: "mac", adapters: { youtube: platform } as never, model: async () => ({ text: "" }), mail: mail as never, learn: () => undefined, style: () => ({ rules: [], corrections: [], forbidden: [], samples: [] }) } as never);
 	await engine.collect();
 	const c = engine.store.comments()[0]!;
@@ -107,6 +108,10 @@ async function world(mailOut: MailOut, kept?: { store: { load: () => unknown[]; 
 		run: async argv => {
 			argvs.push(argv);
 			const ref = argv[3]!;
+			if (argv.includes("--only")) {
+				const m = await engine.sendMailOnly(ref, argv.includes("--retry") ? { retry: true } : {});
+				return m.ok ? { code: 0, out: line("yes", "mail") } : { code: 1, out: line(mailOut.sent, "mail", mailOut.code) };
+			}
 			if (getDraft(ref)?.kind === "mail") {
 				setStatus(ref, "sent");
 				return { code: 0, out: line("yes", "mail") };
@@ -142,28 +147,35 @@ async function world(mailOut: MailOut, kept?: { store: { load: () => unknown[]; 
 		await act(ref, "send", { hash: await hash(ref) });
 		await sender.idle();
 	};
-	return { engine, acts, act, sender, argvs, rows, hash, post, posts: () => posts };
+	return { engine, acts, act, sender, argvs, rows, hash, post, mailOut, posts: () => posts };
 }
 
 const FAILED: MailOut = { ok: false, message: "첨부 확인", sent: "no", code: "attach_mismatch" };
 const UNSURE: MailOut = { ok: false, message: "timeout", sent: "maybe", code: "unknown" };
 
-test("a reply posted whose mail came back unsure: the read-back that marks the reply's send sent leaves the mail a waiting row that 보내기 sends alone", async () => {
+test("a reply posted whose mail came back unsure stays unsure on a read-back, and 메일만 보내기 on its card sends the mail alone, once, never the reply again", async () => {
 	const w = await world(UNSURE);
 	await w.post(REPLY);
 	expect(await w.rows()).toEqual([`mail:${MAIL}:pending:-`, `comment:${REPLY}:sent:unsure`]);
 	w.sender.recheck();
-	for (let i = 0; i < 50 && w.sender.results().findLast(r => r.ref === REPLY)?.state !== "sent"; i++) await Promise.resolve();
-	expect(w.sender.results().findLast(r => r.ref === REPLY)?.state).toBe("sent");
-	const rows = await w.acts.list();
-	expect(rows.map(i => `${i.kind}:${i.ref}:${i.draft.state}:${i.send?.state ?? "-"}`)).toEqual([`mail:${MAIL}:pending:-`, `comment:${REPLY}:sent:sent`]);
-	expect(rows.find(i => i.ref === MAIL)?.can.send).toBe(true);
+	for (let i = 0; i < 50; i++) await Promise.resolve();
+	expect(w.sender.results().findLast(r => r.ref === REPLY)?.state).toBe("unsure");
+	const reply = (await w.acts.list()).find(i => i.ref === REPLY)!;
+	expect(reply.can.sends).toEqual(["send-mail"]);
+	expect(await w.act(REPLY, "send", { hash: reply.draft.hash })).toMatchObject({ status: 409, body: { code: "already_sent" } });
+	expect(await w.act(REPLY, "retry", { hash: reply.draft.hash })).toMatchObject({ status: 409 });
+	expect(await w.act(REPLY, "resolve", { as: "retry", hash: reply.draft.hash })).toMatchObject({ status: 409 });
+	expect((await w.act(REPLY, "send", { part: "mail", hash: "0" })).body).toMatchObject({ ok: false, code: "changed" });
 	w.argvs.length = 0;
-	expect((await w.act(MAIL, "send", { hash: await w.hash(MAIL) })).status).toBe(200);
+	w.mailOut.ok = true;
+	w.mailOut.sent = "yes";
+	expect((await w.act(REPLY, "send", { part: "mail", hash: reply.draft.hash })).status).toBe(200);
 	await w.sender.idle();
-	expect(w.argvs.map(a => a[3])).toEqual([MAIL]);
+	expect(w.argvs.map(a => a.slice(2).join(" "))).toEqual([`send ${REPLY} --only mail --retry --no-learn`]);
 	expect(getDraft(MAIL)?.status).toBe("sent");
 	expect(w.posts()).toBe(1);
+	expect(w.sender.results().findLast(r => r.ref === REPLY)?.state).toBe("sent");
+	expect((await w.act(REPLY, "send", { part: "mail", hash: reply.draft.hash })).status).toBe(409);
 	expect((await w.rows()).filter(r => r.includes("pending"))).toEqual([]);
 });
 
@@ -187,6 +199,23 @@ test("a reply posted whose mail failed: its row shows the failure with no button
 	const after = await w.acts.list();
 	expect(after.find(i => i.ref === REPLY)!.draft.mail).toBeUndefined();
 	expect(after.find(i => i.ref === MAIL)?.send?.state).toBe("sent");
+});
+
+test("a reply posted whose mail failed: 메일만 보내기 on its card goes through the gate, and a second failure leaves the same one way forward", async () => {
+	const w = await world(FAILED);
+	await w.post(REPLY);
+	const hash = (await w.acts.list()).find(i => i.ref === REPLY)!.draft.hash;
+	expect((await w.act(REPLY, "send", { part: "mail", hash })).status).toBe(200);
+	await w.sender.idle();
+	expect(w.sender.results().findLast(r => r.ref === REPLY)).toMatchObject({ state: "failed", action: "send-mail" });
+	expect(w.argvs.map(a => a.slice(2).join(" "))).toEqual([`send ${REPLY} --no-learn`, `send ${REPLY} --only mail --no-learn`]);
+	expect(w.posts()).toBe(1);
+	w.mailOut.ok = true;
+	w.mailOut.sent = "yes";
+	expect((await w.act(REPLY, "send", { part: "mail", hash })).status).toBe(200);
+	await w.sender.idle();
+	expect(getDraft(MAIL)?.status).toBe("sent");
+	expect(w.posts()).toBe(1);
 });
 
 test("보내지 않기 on the waiting mail of a posted reply drops the mail draft: it is no row, cannot be sent by its ref, and the reply's owed record goes", async () => {

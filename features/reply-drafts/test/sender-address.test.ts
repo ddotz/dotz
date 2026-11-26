@@ -1,6 +1,9 @@
 import { afterAll, expect, test } from "bun:test";
+import { senderAddress } from "../../../hub/reply-draft.ts";
 import { offerMailDraft } from "../lib/offer.ts";
-import { askText, ownerWarning, sendDraft } from "../lib/flow.ts";
+import { parseRecipients, recipientList, replyRecipients } from "../lib/recipients.ts";
+import { askText, sendDraft } from "../lib/flow.ts";
+import { ownerWarning } from "../lib/lint-findings.ts";
 import { addDraft, getDraft, listDrafts, type DraftRec } from "../lib/store.ts";
 import { enable, fakeModel, j, pick, setupEnv } from "./helpers.ts";
 
@@ -56,4 +59,21 @@ test("no address anywhere: the card asks for it in Korean and 보내기 is refus
 test("every lint finding reads in Korean on the card", () => {
 	for (const w of ["'me@x.co' is the user's own address", "'x@y.co' is not the sender, reply-to or a cc of the original", "the subject must start with 'Re:'", "the body is empty", "the body is 1300 characters; the limit is 1200", "the text contains a placeholder", "it uses the forbidden expression '절대'"])
 		expect(ownerWarning(w)).toMatch(/[가-힣]/);
+});
+
+test("a sender's address is read up to where its domain ends, not through the Korean particle after it", () => {
+	expect(senderAddress("Jisoo Han (KR - A", "안녕하세요. 제 메일은 jisoo.han@audit.example입니다.")).toBe("jisoo.han@audit.example");
+	expect(parseRecipients(["alice@example.com?"])).toEqual({ ok: true, list: ["alice@example.com"] });
+});
+
+test("a recipient entry with an address in its display name goes to the <address> alone", () => {
+	expect(recipientList('"a@b.example" <real@c.example>')).toEqual(["real@c.example"]);
+	expect(recipientList("Kim a@b.example <kim@c.example>, lee@d.example")).toEqual(["kim@c.example", "lee@d.example"]);
+	expect(recipientList('"Doe, John" <john@c.example>')).toEqual(["john@c.example"]);
+});
+
+test("an owner's +alias is the owner's own address in a 전체 답장 and in the card's input", () => {
+	const self = ["me@gmail.example"];
+	expect(replyRecipients({ sender: "bob@x.example", to: "me+work@gmail.example, carol@x.example", cc: "me+cc@gmail.example", self }).all).toEqual({ to: ["bob@x.example", "carol@x.example"], cc: [] });
+	expect(parseRecipients(["me+work@gmail.example"], self)).toEqual({ ok: false, error: "me+work@gmail.example은(는) 내 주소라서 받는 사람이 될 수 없어요" });
 });

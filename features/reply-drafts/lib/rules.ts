@@ -71,10 +71,24 @@ export async function matchRule(mail: { from?: string; subject?: string; text: s
 	return (await matchMail(mail, rules, [], call)).rule;
 }
 
-/** The draft's configured instruction (ReplyItem.configured): the 기본 규칙, the mailbox's lines (box.ts boxLines), then the matched rule's 어떻게; undefined when all are empty. What the owner typed for one draft is apart (ReplyItem.instruction): the dated corrections outrank this, his own words outrank them. */
+const INSTRUCTION_MAX = 2000;
+const PART_JOINS = 2;
+
+/** The draft's configured instruction (ReplyItem.configured): the 기본 규칙, the mailbox's lines (box.ts boxLines), then the matched rule's 어떻게; undefined when all are empty. Over 2000 characters the rule's 어떻게 keeps its room first, then the mailbox's lines (the longest, its 어떻게, is cut; the greeting and the banned phrases stay), the 기본 규칙 last. What the owner typed for one draft is apart (ReplyItem.instruction): the dated corrections outrank this, his own words outrank them. */
 export function ruleInstruction(base: string, rule: DraftRule | undefined, box: string[] = []): string | undefined {
-	const parts = [base, box.join("\n").slice(0, 1200), rule?.how ?? ""].map(s => s.trim()).filter(Boolean);
-	return parts.length ? parts.join("\n").slice(0, 2000) : undefined;
+	let room = INSTRUCTION_MAX - PART_JOINS;
+	const fit = (s: string): string => {
+		const kept = s.slice(0, room);
+		room -= kept.length;
+		return kept;
+	};
+	const how = fit((rule?.how ?? "").trim());
+	const lines = box.map(l => l.trim()).filter(Boolean);
+	const longest = lines.reduce((at, l, i) => (l.length > lines[at]!.length ? i : at), 0);
+	if (lines.length) lines[longest] = lines[longest]!.slice(0, Math.max(0, lines[longest]!.length - Math.max(0, lines.join("\n").length - room)));
+	const boxed = fit(lines.join("\n"));
+	const parts = [fit(base.trim()), boxed, how].filter(Boolean);
+	return parts.length ? parts.join("\n") : undefined;
 }
 
 /** The configured instruction of the profile `key` that a newly learned correction contradicts, by ONE curate call (curate.ts: the lines as standing rules, only "overridden" counts): `settings` the ledger records (its 기본 규칙 lines and switched-on rules' 어떻게, the mail app's under them), `other` the mailbox's own lines, which are not in the ledger. Nothing configured = no call. The caller turns the records off and says so. */

@@ -73,6 +73,16 @@ describe("the files of a draft stay on it", () => {
 		expect(card.attachments?.map(a => a.name)).toEqual(["점검보고서.pdf", "점수표.csv"]);
 	});
 
+	test("고치기 that is about the files can drop one of them although the draft has no 첨부 폴더", async () => {
+		const first = rec();
+		addDraft(first);
+		twoFiles(first.id);
+		const m = fakeModel([j({ action: "draft", reason: "drop one", to: "kim@example.com", subject: "Re: 점검 결과", body: "점수표만 보내드립니다.", questions: [], files: ["점수표.csv"] })]);
+		const step = await reviseDraft(first.id, "점검보고서 파일은 빼 주세요", { call: m.call });
+		expect(step.ok).toBe(true);
+		expect(stagedFiles(step.id!).map(f => f.name)).toEqual(["점수표.csv"]);
+	});
+
 	test("a file is gone only when the owner takes it off, and the card follows", () => {
 		const d = rec();
 		addDraft(d);
