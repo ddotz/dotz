@@ -11,6 +11,7 @@ import { msg } from "./i18n.ts";
 import { createPeerChats, messageBody, peerReplyPush } from "./jandi-peers.ts";
 import { checkStatusRoomOf, createSelfChat, MAX_FILES, normalizeSelfChat, type SelfChat, type SelfChatConfig, selfChatReady } from "./jandi-selfchat.ts";
 import { createSessionMark } from "./jandi-session.ts";
+import { chatTag, splitChatTag, withChatTag } from "./relay-snapshot.ts";
 import { createSnapshotSender, snapshotFileStore } from "./relay-snapshot-send.ts";
 import { type Adapter, type AdapterStatus, type DeliverResult, type DesiredRoom, type MessengerCtx, type OutMsg, type Settings, type SettingsField, type SettingsPut, SettingsError, type TestResult } from "./messenger.ts";
 import type { MessageSpec } from "./message-spec.ts";
@@ -290,7 +291,8 @@ async function viaSession(selfChat: SelfChat | undefined, cfg: JandiConfig, msg:
 	const mainHasWebhook = cfg.rooms.some(r => r.kind === "main" && (r.incoming_url || cfg.incoming_url));
 	const wanted = msg.kind !== "worklog" && (msg.kind !== "lane" || laneReachesOwner(msg));
 	if (!selfChat || !selfChatReady(sc) || !wanted || mainHasWebhook) return { delivered: false, reason: "no room" };
-	const prefix = `${sc.reply_prefix || `[${NAME}]`} `;
+	// A project's own conversation answers behind its tag, so the computer that reads the room shows it in that project's chat (hub/relay-snapshot.ts chatTag).
+	const prefix = `${sc.reply_prefix || `[${NAME}]`} ${withChatTag(msg.kind === "project" && /^ch:\d+$/.test(msg.target) ? chatTag(msg.target) : undefined, "")}`;
 	const parts = splitText(text, MAX_PART - prefix.length);
 	const hint = !!msg.options?.length && !text.split("\n").some(l => D_CLOSE.test(l));
 	for (const [i, part] of parts.entries()) {
@@ -329,6 +331,18 @@ async function sendFiles(selfChat: SelfChat | undefined, cfg: JandiConfig, msg: 
 }
 
 type StatusShare = ReturnType<typeof createSnapshotSender>;
+/** Where a self-chat command goes: `#<tag> <text>` (hub/relay-snapshot.ts) to the conversation of this computer's project with that tag, anything else to the main one. */
+// The projects are read only for a tagged line: the gateway's state modules are not this adapter's imports (see runSelfChat).
+function selfChatTo(text: string, enter: (to: { target: string; text: string }) => void, log: (m: string) => void): void {
+	const { tag, text: rest } = splitChatTag(text);
+	if (!tag) return enter({ target: "main", text });
+	void import("./relay-snapshot-source.ts")
+		.then(m => {
+			const target = m.chatTargetOf(tag);
+			enter(target ? { target, text: rest } : { target: "main", text });
+		})
+		.catch(e => log(`jandi self-chat: message not routed (${(e as Error)?.message || e})`));
+}
 /** Starts polling the self chat and, beside it, this computer's status sharing (hub/relay-snapshot-send.ts), which posts through the same session as a reply. */
 function runSelfChat(dataDir: string, sc: SelfChatConfig, chat: SelfChat, log: (m: string) => void): StatusShare {
 	void chat.run();
@@ -395,7 +409,7 @@ export function createJandiAdapter(dataDir: string = DATA_DIR, spec?: (body: str
 					dataDir,
 					receive: (text, files) => {
 						mark("self_chat", { last_in: Date.now() });
-						ctx?.receive({ adapter: "jandi", target: "main", text, author: `jandi:${sc.member_id}`, ...(files.length ? { files } : {}) });
+						selfChatTo(text, to => ctx?.receive({ adapter: "jandi", ...to, author: `jandi:${sc.member_id}`, ...(files.length ? { files } : {}) }), c.log);
 					},
 					peers: () => loadJandiConfig(dataDir).self_chat?.peers,
 					peerReply: (peer, text, id) => {

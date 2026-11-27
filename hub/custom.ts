@@ -787,6 +787,9 @@ export function ownProjects(deps: Pick<CustomDeps, "lanes" | "channels" | "machi
 	const { name, rows } = ownRows(deps);
 	return { name, projects: rows.map(peerRow) };
 }
+/** This computer's projects that have a conversation of their own, by key: its target (`ch:<id>`). The status snapshot tags them (hub/relay-snapshot.ts chatTag). */
+export const ownChats = (deps: Pick<CustomDeps, "lanes" | "channels" | "machine">): Map<string, string> =>
+	new Map(ownRows(deps).rows.flatMap(p => (p.channel ? [[p.key, `ch:${p.channel.id}`] as const] : [])));
 // GET /api/peer/projects: the same list, each git folder with an origin carrying its normalized repo (hub/fleet-launch.ts normRepo), which is how another computer finds the same project.
 export async function ownProjectsWithRepo(deps: Pick<CustomDeps, "lanes" | "channels" | "machine">): Promise<ReturnType<typeof ownProjects>> {
 	const { name, rows } = ownRows(deps);

@@ -4,7 +4,7 @@ import type { SelfChatConfig } from "./jandi-selfchat.ts";
 import { selfChatReady } from "./jandi-selfchat.ts";
 import type { Monitor } from "./monitors.ts";
 import type { Notice } from "./notices-types.ts";
-import { encodeSnapshot, normalizeSnapshot, type Snapshot, snapshotChanged } from "./relay-snapshot.ts";
+import { chatTag, encodeSnapshot, normalizeSnapshot, type Snapshot, snapshotChanged } from "./relay-snapshot.ts";
 
 // The sending side of hub/relay-snapshot.ts: a computer reached only through the JANDI self chat (hub/jandi-peers.ts) posts a short summary of itself into
 // its status room (`status_room_id`, a private topic only the owner is in, out of the chat the owner reads; without one, the self chat as before) when it changed (at most every 30 minutes, and once in 6 hours even when it did not), so the computer that reads the room can show it.
@@ -17,7 +17,8 @@ export const FIRST_TICK_MS = 30_000;
 
 /** What the builder reads, already collected (the caller owns where it comes from). Only the fields named in buildSnapshot are ever copied. */
 export type SnapshotSources = {
-	projects: Array<{ key: string; name: string; note?: string; live?: number }>;
+	/** `target`: the project's own conversation (`ch:<id>`); only its tag is copied. */
+	projects: Array<{ key: string; name: string; note?: string; live?: number; target?: string }>;
 	/** laneSummary() rows (hub/laneviews.ts) with `lastReportAt` added. */
 	sessions: Array<Record<string, unknown>>;
 	monitors: Monitor[];
@@ -36,7 +37,7 @@ export function buildSnapshot(src: SnapshotSources, now: number): Snapshot {
 	return {
 		v: 1,
 		at: now,
-		projects: src.projects.map(p => ({ key: p.key, name: p.name, ...(p.note ? { note: plain(p.note) } : {}), ...(p.live ? { live: p.live } : {}) })),
+		projects: src.projects.map(p => ({ key: p.key, name: p.name, ...(p.note ? { note: plain(p.note) } : {}), ...(p.live ? { live: p.live } : {}), ...(p.target ? { chat: chatTag(p.target) } : {}) })),
 		sessions: sessions.map(s => ({
 			name: String(s.name ?? ""),
 			...(text(s.title) ? { title: plain(s.title) } : {}),

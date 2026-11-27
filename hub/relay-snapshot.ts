@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { scrub } from "./activity.ts";
 
 // A computer reached only through a messenger room (hub/jandi-peers.ts) cannot be asked for its screens, so it posts a short summary of itself into the
@@ -9,7 +10,8 @@ export const SNAPSHOT_MARK = "#dotz-status.v1";
 /** The whole message stays under this (the relay's own text limit is 4000). */
 export const MAX_SNAPSHOT_CHARS = 3500;
 
-export type SnapProject = { key: string; name: string; note?: string; live?: number };
+/** `chat`: the project's conversation tag (chatTag), present when the sender reads a line addressed to that project (CHAT_TAG). */
+export type SnapProject = { key: string; name: string; note?: string; live?: number; chat?: string };
 export type SnapSession = { name: string; title?: string; status: string; live: boolean; waiting?: boolean; at?: string };
 export type SnapMonitor = { name: string; kind: "watch" | "schedule"; result?: "ok" | "changed" | "fail"; paused?: boolean; conn?: "connected" | "disconnected"; last?: string; next?: string; summary?: string };
 export type SnapNotice = { at: string; tone: string; title: string };
@@ -25,6 +27,22 @@ export type Snapshot = {
 	/** Something was left out to stay under MAX_SNAPSHOT_CHARS. */
 	cut?: true;
 };
+
+// A project's own conversation over the same room: the owner's line `<keyword> #<tag> <text>` goes to that project's conversation on the sender, and
+// that conversation's replies come back as `<reply_prefix> #<tag> <text>`. The tag is the first 8 hex of the sha256 of the conversation's target
+// (`ch:<id>`), so the channel number itself never goes into the room; the sender finds the conversation again by hashing its own projects' targets.
+const TAG_LEN = 8;
+export const isChatTag = (v: unknown): v is string => typeof v === "string" && /^[0-9a-f]{8}$/.test(v);
+/** The tag of the conversation `target`. */
+export const chatTag = (target: string): string => createHash("sha256").update(target).digest("hex").slice(0, TAG_LEN);
+const TAGGED = /^#([0-9a-f]{8})(?:\s+([\s\S]*))?$/;
+/** A line's text behind its project tag: `{ tag, text }`, or `{ text }` untouched when it carries none. */
+export function splitChatTag(text: string): { tag?: string; text: string } {
+	const m = TAGGED.exec(text.trim());
+	return m ? { tag: m[1]!, text: (m[2] ?? "").trim() } : { text };
+}
+/** `text` addressed to the conversation with `tag` (none: as it is). */
+export const withChatTag = (tag: string | undefined, text: string): string => (tag ? `#${tag} ${text}` : text);
 
 const LIMITS = { projects: 20, sessions: 15, monitors: 20, todos: 5, notices: 5 } as const;
 const TEXT_MAX = 120;
@@ -53,7 +71,7 @@ export function normalizeSnapshot(raw: unknown): Snapshot | undefined {
 		v: 1,
 		at: o.at,
 		projects: arr(o.projects)
-			.map(p => ({ key: str(p.key, 200) ?? "", name: str(p.name, 80) ?? "", ...opt("note", str(p.note)), ...opt("live", typeof p.live === "number" && p.live > 0 ? Math.floor(p.live) : undefined) }))
+			.map(p => ({ key: str(p.key, 200) ?? "", name: str(p.name, 80) ?? "", ...opt("note", str(p.note)), ...opt("live", typeof p.live === "number" && p.live > 0 ? Math.floor(p.live) : undefined), ...opt("chat", isChatTag(p.chat) ? p.chat : undefined) }))
 			.filter(p => p.key && p.name)
 			.slice(0, LIMITS.projects),
 		sessions: arr(o.sessions)
