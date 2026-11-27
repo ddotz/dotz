@@ -69,7 +69,7 @@ function rvConvRows(t) {
   const av = ic => el("span", { class: "cv-av", "aria-hidden": "true" }, icon(ic));
   const live = s.sessions.filter(x => x.live);
   if (live.length) rows.push({ header: TX("home.sys.running"), sec: true }, ...live.map(x => ({ k: `rv:s:${x.name}`, name: x.title || x.name, hint: x.waiting ? "" : x.status, last: x.at ? { ts: x.at } : null, av: av("lanes"), chips: x.waiting ? [[x.status, "warn"]] : undefined, open: show("home") })));
-  if (s.projects.length) rows.push({ header: TX("common.projects"), sec: true }, ...s.projects.map(p => ({ k: `rv:p:${p.key}`, name: p.name, hint: p.note || "", av: av("projects"), chips: p.live > 0 ? [[TX("relay.live", { n: p.live }), "pri"]] : undefined, open: () => relayOpenProject(t, p) })));
+  if (s.projects.length) rows.push({ header: TX("common.projects"), sec: true }, ...s.projects.map(p => ({ k: `rv:p:${p.key}`, ...(p.chat ? { t: relayProjT(t, p) } : {}), name: p.name, hint: p.note || "", av: av("projects"), chips: p.live > 0 ? [[TX("relay.live", { n: p.live }), "pri"]] : undefined, open: () => relayOpenProject(t, p) })));
   if (!live.length && !s.projects.length) rows.push({ split: true }, { empty: TX("relay.no_sessions") });
   return rows;
 }

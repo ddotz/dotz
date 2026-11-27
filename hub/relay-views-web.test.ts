@@ -225,6 +225,18 @@ describe("a relayed computer chosen, the chat list", () => {
 		await waitFor(`!chatList && current === "chat" && target === "relay:jandi:work"`);
 	});
 
+	test("at 1280px its project's row splits beside its chat, the way any conversation row does", async () => {
+		await atWidth(1280, 800, async () => {
+			await relayOpen();
+			const row = `document.querySelector('#chat-convo .cv-row[data-k="rv:p:dir:~/Code/site"]')`;
+			await waitFor(`!!${row}`);
+			// the drop a drag of that row onto the right edge of the open chat makes (43-panes-drag.js)
+			await run(`paneDrop(paneDragItem(${row}), { id: "", side: "right" })`);
+			expect(await ev<string[]>(`paneList().map(p => p.t)`)).toEqual(["relay:jandi:work", PROJ_T]);
+			await waitFor(`PNV.el && !PNV.el.hidden && PNV.el.querySelectorAll(".pane").length === 2 && ${inProjectChat}`);
+		});
+	});
+
 	test("before its snapshot arrives the list says so in plain words, and still shows none of this computer's conversations", async () => {
 		snap = null;
 		await relayOpen();
