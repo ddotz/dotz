@@ -7,7 +7,7 @@
 <meta name="description" content="{{demo.description}}">
 <title>{{demo.title}}</title>
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="/demo/app.css?v=8646bd8a382d">
+<link rel="stylesheet" href="/demo/app.css?v=a92d9c4e87b5">
 <style>
 :root { --demobar-h: 44px; }
 .demo-bar { position: fixed; inset: 0 0 auto 0; z-index: 3000; display: flex; align-items: center; gap: 10px; height: var(--demobar-h); padding: 0 12px 0 16px; border-bottom: 1px solid var(--line); background: var(--card); color: var(--fg); font-family: var(--font); }
@@ -43,9 +43,9 @@ addEventListener("error", e => __demoLog.errors.push(`${e.message} @ ${String(e.
 addEventListener("unhandledrejection", e => __demoLog.errors.push(String(e.reason && e.reason.message || e.reason)));
 { const e = console.error; console.error = (...a) => { __demoLog.errors.push(a.map(String).join(" ")); e(...a); }; const w = console.warn; console.warn = (...a) => { __demoLog.warnings.push(a.map(String).join(" ")); w(...a); }; }
 </script>
-<script src="/demo/demo-lang.js?v=8646bd8a382d"></script>
-<script src="/demo/fixtures.js?v=8646bd8a382d"></script>
-<script src="/demo/demo-api.js?v=8646bd8a382d"></script>
+<script src="/demo/demo-lang.js?v=a92d9c4e87b5"></script>
+<script src="/demo/fixtures.js?v=a92d9c4e87b5"></script>
+<script src="/demo/demo-api.js?v=a92d9c4e87b5"></script>
 </head>
 <body>
 <header class="demo-bar">
@@ -167,7 +167,7 @@ addEventListener("unhandledrejection", e => __demoLog.errors.push(String(e.reaso
   </div>
   <div class="sh-body" id="hs-body"></div>
 </aside>
-<script src="/demo/i18n.js?v=8646bd8a382d"></script>
-<script src="/demo/app.js?v=8646bd8a382d"></script>
+<script src="/demo/i18n.js?v=a92d9c4e87b5"></script>
+<script src="/demo/app.js?v=a92d9c4e87b5"></script>
 </body>
 </html>
