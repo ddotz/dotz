@@ -164,6 +164,19 @@ describe("the conversation with one peer", () => {
 		]);
 	});
 
+	test("a project's lines (behind `#<chat>`) are that project's chat only; the computer's own chat leaves them out, and online counts them all", () => {
+		const recs = [
+			{ id: 1, fromEntity: ME, time: NOW - HOUR, message: { content: { body: "work #a1b2c3d4 보고서 정리해 줘" } } },
+			{ id: 2, fromEntity: OTHER, time: NOW - HOUR, message: { content: { body: "[work] #a1b2c3d4 [done] 정리했어요" } } },
+			{ id: 3, fromEntity: ME, time: NOW - HOUR, message: { content: { body: "work 안녕" } } },
+			{ id: 4, fromEntity: OTHER, time: NOW - HOUR, message: { content: { body: "[work] #ffffffff 다른 프로젝트" } } },
+		];
+		const peer = cfg.peers![0]!;
+		expect(linesOf(recs, ME, peer, "a1b2c3d4").map(l => [l.id, l.me, l.text])).toEqual([[1, true, "보고서 정리해 줘"], [2, false, "[done] 정리했어요"]]);
+		expect(linesOf(recs, ME, peer).map(l => l.id)).toEqual([3]);
+		expect(linesOf(recs, ME, peer, null).map(l => l.id)).toEqual([1, 2, 3, 4]);
+	});
+
 	test("a word that only starts with the keyword or prefix is not part of it", () => {
 		const recs = [
 			{ id: 1, fromEntity: ME, message: { content: { body: "work들 안녕" } } },
@@ -243,6 +256,11 @@ describe("the relay: lines and send", () => {
 		expect(posted[0]!.accept).toContain("jandi-v3");
 		expect(posted[0]!.body).toEqual({ text: "work 빌드 상태 알려줘", richText: [{ type: "text_block", elements: [{ type: "text", body: "work 빌드 상태 알려줘", style: {} }] }] });
 		expect(posted[0]!.body).toEqual(messageBody("work 빌드 상태 알려줘"));
+	});
+
+	test("send to a project's chat (`<keyword>@<chat>`) posts `<keyword> #<chat> <text>`", async () => {
+		await chats().chat.send("work@a1b2c3d4", "보고서 정리해 줘");
+		expect(posted.map(p => p.body)).toEqual([messageBody("work #a1b2c3d4 보고서 정리해 줘")]);
 	});
 
 	test("a peer that is not configured is a 404, a JANDI failure a 502 with no token in it", async () => {
@@ -360,6 +378,10 @@ describe("a peer's new reply as a notification", () => {
 		expect(peerReplyPush(peer, "빌드   끝났어요\n잘 됐어요", 7)).toEqual({ kind: "conv", title: "work", body: "빌드 끝났어요 잘 됐어요", url: "/#chat/relay:jandi:work", tag: "relay:jandi:work:7" });
 		expect(peerReplyPush(peer, "빌드 끝났어요", 8)!.tag).not.toBe(peerReplyPush(peer, "빌드 끝났어요", 7)!.tag);
 		expect(peerReplyPush({ ...peer, keyword: "집" }, "안녕", 1)!.url).toBe("/#chat/relay:jandi:%EC%A7%91");
+	});
+
+	test("a project's reply opens that project's chat, its tag left out of the body and the marker still read", () => {
+		expect(peerReplyPush(peer, "#a1b2c3d4 [done] 정리했어요", 7)).toEqual({ kind: "result", title: "work", body: "정리했어요", url: "/#chat/relay:jandi:work%40a1b2c3d4", tag: "relay:jandi:work@a1b2c3d4:7" });
 	});
 
 	test("the body is cut at 120 characters", () => {

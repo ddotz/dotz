@@ -4,7 +4,7 @@ import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { normalizeSelfChat, type SelfChatConfig } from "./jandi-selfchat.ts";
 import { buildSnapshot, createSnapshotSender, HEARTBEAT_MS, MIN_GAP_MS, type SnapshotSources, snapshotFileStore } from "./relay-snapshot-send.ts";
-import { decodeSnapshot, encodeSnapshot, MAX_SNAPSHOT_CHARS, normalizeSnapshot, SNAPSHOT_MARK, type Snapshot, snapshotChanged } from "./relay-snapshot.ts";
+import { chatTag, decodeSnapshot, encodeSnapshot, MAX_SNAPSHOT_CHARS, normalizeSnapshot, SNAPSHOT_MARK, type Snapshot, snapshotChanged } from "./relay-snapshot.ts";
 
 const TOKEN = `sk-${"a1B2c3D4".repeat(4)}`;
 const HOME = homedir();
@@ -46,6 +46,16 @@ describe("buildSnapshot", () => {
 		expect(text).not.toContain(TOKEN);
 		expect(text).not.toContain(HOME);
 		expect(decodeSnapshot(text.slice("[b] ".length))!.notices[0]!.title).toContain("build failed");
+	});
+
+	test("a project with a conversation of its own carries its tag, never the conversation's target", () => {
+		const snap = buildSnapshot(sources({ projects: [{ key: "dir:a", name: "프로젝트A", target: "ch:42" }, { key: "dir:b", name: "프로젝트B" }] }), 1);
+		expect(snap.projects).toEqual([{ key: "dir:a", name: "프로젝트A", chat: chatTag("ch:42") }, { key: "dir:b", name: "프로젝트B" }]);
+		expect(chatTag("ch:42")).toMatch(/^[0-9a-f]{8}$/);
+		const text = encodeSnapshot("[b]", snap)!;
+		expect(text).not.toContain("ch:42");
+		expect(decodeSnapshot(text.slice("[b] ".length))!.projects[0]!.chat).toBe(chatTag("ch:42"));
+		expect(normalizeSnapshot({ ...snap, projects: [{ key: "k", name: "n", chat: "ch:42" }] })!.projects[0]).toEqual({ key: "k", name: "n" });   // only a tag passes
 	});
 
 	test("a live session is listed before an ended one", () => {

@@ -261,7 +261,7 @@ function pcHead(g, n) {
     el("span", { class: "pl-pcn", text: g.name }), mark ? el("span", { class: "tag", text: mark }) : null, n ? el("span", { class: "pl-pcc", text: String(n) }) : null, icon("chev", "chev"));
 }
 function pcOpen(g, x) {
-  if (g.relay) { relayShow(g.relay, g.name, "projects", x); return; }   // reached only through a messenger: no address of its own, the project opens read-only over its projects
+  if (g.relay) { relayShow(g.relay, g.name, "projects", x); return; }   // reached only through a messenger: no address of its own, the tapped project's chat opens here (44-relay-views.js)
   if (!g.online || !g.url) { toast(TX("project.pc.cant", { name: g.name }), true); return; }
   toast(TX("project.pc.switch", { name: g.name }));
   prGo(`${g.url}/?did=${enc(DEVICE_ID)}#project/${enc(x.key)}`);

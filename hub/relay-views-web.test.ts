@@ -8,10 +8,14 @@ const WORK = { name: "work", url: "/#chat/relay:jandi:work", self: false, online
 const RELAY = "/api/relay/jandi/work";
 const OWN = "내 프로젝트";
 const OWN_MON = "내 모니터";
+// The project's chat tag (hub/relay-snapshot.ts chatTag) and the web target of that project's chat on that computer.
+const CHAT = "a1b2c3d4";
+const PROJ_T = `relay:jandi:work@${CHAT}`;
+const PROJ_API = `${RELAY}%40${CHAT}`;
 
 const snapshot = () => ({
 	at: Date.now() - 120_000,
-	projects: [{ key: "dir:~/Code/site", name: "회사 사이트", note: "홈페이지를 고쳐요", live: 2 }],
+	projects: [{ key: "dir:~/Code/site", name: "회사 사이트", note: "홈페이지를 고쳐요", live: 2, chat: CHAT }],
 	sessions: [{ name: "build-1", title: "빌드 세션", status: "일하는 중", live: true, at: new Date(Date.now() - 300_000).toISOString() }, { name: "old-1", title: "끝난 세션", status: "끝남", live: false }],
 	monitors: [{ name: "배포 확인", kind: "web", result: "ok", last: "10분 전", next: "20분 후", summary: "문제 없어요" }],
 	todos: { open: 3, items: ["문서 정리", "테스트 추가"] },
@@ -21,9 +25,12 @@ const snapshot = () => ({
 let snap: object | null;
 let groups: object[];
 let statusHits = 0;
+let sent: Array<{ path: string; text: string }> = [];
 const hub = fakeHub({
-	api: async (_req, url) => {
+	api: async (req, url) => {
 		const p = url.pathname;
+		if (p === `${PROJ_API}/messages`) return json([{ id: 1, at: Date.now() - 60_000, me: false, text: "회사 사이트 배포 준비했어요" }]);
+		if (p.endsWith("/send") && req.method === "POST") { sent.push({ path: p, text: ((await req.json()) as { text: string }).text }); return json({ ok: true }); }
 		if (p === "/api/peers") return json([{ ...SELF, url: hub.origin }, WORK]);
 		if (p === `${RELAY}/status`) { statusHits++; return json(snap ? { snapshot: snap, received_at: Date.now() - 60_000 } : { snapshot: null }); }
 		if (p === `${RELAY}/messages`) return json([]);
@@ -39,6 +46,7 @@ afterAll(() => hub.stop());
 
 beforeEach(() => {
 	snap = snapshot();
+	sent = [];
 	groups = [{ name: "맥미니", self: true, online: true, keys: ["dir:~/Code/own"], remote: [] }];
 });
 afterEach(() => run("localStorage.clear()"));
@@ -65,7 +73,8 @@ const show = async (name: string) => {
 };
 // This computer's own markup of the screen stays in place but must not be drawn under the snapshot.
 const ownHidden = (name: string) => ev<boolean>(`[...document.querySelectorAll("#v-${name} > :not(.rv)")].every(n => getComputedStyle(n).display === "none") && getComputedStyle(document.querySelector("#v-${name} > .rv")).display !== "none"`);
-const projectDialog = `[...document.querySelectorAll("dialog[open]")].find(d => d.querySelector(".dtitle")?.textContent === "회사 사이트")`;
+// That project's chat is open: its own lines, its name as the title, the computer still the chosen one, no dialog over it.
+const inProjectChat = `current === "chat" && target === ${JSON.stringify(PROJ_T)} && RELAY.cur === "relay:jandi:work" && !document.querySelector("dialog[open]") && tl.textContent.includes("배포 준비했어요")`;
 const buttons = (name: string) => ev<string[]>(`[...document.querySelectorAll("#v-${name} > .rv button")].map(b => b.dataset.k)`);
 
 describe("a relayed computer chosen, read-only screens", () => {
@@ -97,15 +106,23 @@ describe("a relayed computer chosen, read-only screens", () => {
 		expect(await ev<string[]>(`[...document.querySelectorAll("#v-projects > .rv button:not(.pl-row)")].map(b => b.dataset.k)`)).toEqual(["relay-chat"]);   // its rows open a project, read-only
 	});
 
-	test("a tap on one of its projects opens that project, read-only, with its chat one tap away", async () => {
+	test("a tap on one of its projects goes straight into that project's chat, and what is written there goes to that project", async () => {
 		await relayOpen();
 		await show("projects");
 		await run(`document.querySelector('#v-projects > .rv .pl-row[data-key="dir:~/Code/site"]').click()`);
-		await waitFor(`!!${projectDialog}`);
-		const text = await ev<string>(`${projectDialog}.textContent`);
-		for (const s of ["홈페이지를 고쳐요", "진행 중 2", "마지막 갱신", "읽기 전용이에요"]) expect(text).toContain(s);
-		await run(`[...${projectDialog}.querySelectorAll(".dact button")].find(b => b.textContent === "채팅 열기").click()`);
-		await waitFor(`!document.querySelector("dialog[open]") && current === "chat" && target === "relay:jandi:work"`);
+		await waitFor(inProjectChat);
+		expect(await ev(`targetName(target)`)).toBe("회사 사이트");
+		await run(`window.__sent = false; relaySend("보고서 정리해 줘").then(() => { window.__sent = true; })`);
+		await waitFor(`window.__sent`);
+		expect(sent).toEqual([{ path: `${PROJ_API}/send`, text: "보고서 정리해 줘" }]);
+	});
+
+	test("a project whose computer cannot take a line for it yet (no chat tag in an older snapshot) opens that computer's chat", async () => {
+		snap = { ...snapshot(), projects: [{ key: "dir:~/Code/site", name: "회사 사이트" }] };
+		await relayOpen();
+		await show("projects");
+		await run(`document.querySelector('#v-projects > .rv .pl-row[data-key="dir:~/Code/site"]').click()`);
+		await waitFor(`current === "chat" && target === "relay:jandi:work" && !document.querySelector("dialog[open]")`);
 	});
 
 	test("모니터링 lists its monitors, not this computer's, without run or pause buttons", async () => {
@@ -148,7 +165,7 @@ describe("a relayed computer chosen, read-only screens", () => {
 		expect(text).not.toContain("마지막 갱신");
 	});
 
-	test("a relay computer's project in the 프로젝트 list opens its read-only projects", async () => {
+	test("a relay computer's project in the 프로젝트 list opens that project's chat on it", async () => {
 		groups = [
 			{ name: "맥미니", self: true, online: true, keys: ["dir:~/Code/own"], remote: [] },
 			{ name: "work", self: false, online: true, relay: "relay:jandi:work", status_at: Date.now() - 60_000, keys: [], remote: [{ key: "dir:~/Code/site", name: "회사 사이트", note: "홈페이지를 고쳐요" }] },
@@ -159,12 +176,7 @@ describe("a relayed computer chosen, read-only screens", () => {
 		await waitFor(`document.querySelector("#pl-list .pl-pc")`);
 		await waitFor(`[...document.querySelectorAll("#pl-list .pl-row .pl-n")].some(n => n.textContent === "회사 사이트")`);
 		await run(`[...document.querySelectorAll("#pl-list .pl-row")].find(r => r.querySelector(".pl-n")?.textContent === "회사 사이트").click()`);
-		await waitFor(`target === "relay:jandi:work" && current === "projects" && document.querySelector("#v-projects > .rv") && RV.by[target]?.loaded`);
-		const text = await ev<string>(`document.querySelector("#v-projects > .rv").textContent`);
-		expect(text).toContain("회사 사이트");
-		expect(text).not.toContain(OWN);
-		await waitFor(`!!${projectDialog}`);   // the project tapped is the one that opens, not only the list it sits in
-		await run(`document.querySelector("dialog[open]").close()`);
+		await waitFor(inProjectChat);   // the project tapped is the one that opens, not the computer's own chat or its list
 	});
 });
 
@@ -206,8 +218,7 @@ describe("a relayed computer chosen, the chat list", () => {
 		expect(await ownRows()).toEqual([]);
 		expect(await listText()).toContain("회사 사이트");
 		await run(`document.querySelector('#chat-convo .cv-row[data-k="rv:p:dir:~/Code/site"]').click()`);
-		await waitFor(`current === "projects" && !!${projectDialog}`);   // its project row opens that project over its projects
-		await run(`document.querySelector("dialog[open]").close()`);
+		await waitFor(`!chatList && ${inProjectChat}`);   // its project row opens that project's chat
 		await run(`go("chat", "list")`);
 		await waitFor(`chatList && document.querySelector('#chat-convo .cv-row[data-t="relay:jandi:work"]')`);
 		await run(`document.querySelector('#chat-convo .cv-row[data-t="relay:jandi:work"]').click()`);

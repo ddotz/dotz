@@ -2,7 +2,7 @@
 // A computer reached only through a messenger has no gateway to ask, so while it is the chosen one (RELAY.cur, 42-relay-chat.js relayPaint) 홈, 프로젝트 and
 // 모니터링 draw what it last posted about itself instead of this computer's data: GET /api/relay/<adapter>/<key>/status -> {snapshot, received_at?}, kept per
 // target in RV.by and read again every 30s while one of those screens is visible. 설정 (and its pages) give way to one note. Nothing here changes anything:
-// the only buttons open that computer's chat. Each render function of those screens asks rvPaint(name) first and stops when it returns true.
+// its buttons open that computer's chat, or one of its projects' chats (relayOpenProject). Each render function of those screens asks rvPaint(name) first and stops when it returns true.
 // The drawing goes into a `.rv` child of the screen's section and `.rv-on` hides the section's own children (css/11-relay-views.css), so leaving the
 // mode is removing the child: the screen's own markup was never touched.
 // Function declarations, not arrows: 33-peers.js, 42-relay-chat.js and the render functions call these before a const of this file exists.
@@ -10,7 +10,7 @@ const RV_POLL_MS = 30_000, RV_FRESH_MS = 10_000;
 const RV = { by: {} };
 
 /** The relay target shown as THE computer right now: its chat on screen, or a snapshot screen opened from it. "" for this computer. */
-function relayCur() { return relayOn() ? target : RELAY.cur; }
+function relayCur() { return relayOn() ? relayPc(target) : RELAY.cur; }
 
 async function rvLoad(t, quiet) {
   const c = RV.by[t] || (RV.by[t] = { snap: null, rcv: 0, at: 0, loaded: false, err: "", flight: null });
@@ -19,6 +19,7 @@ async function rvLoad(t, quiet) {
     try {
       const r = await api(`${relayApi(t)}/status`);
       c.snap = r && r.snapshot ? r.snapshot : null; c.rcv = (r && r.received_at) || 0; c.err = "";
+      for (const p of c.snap ? c.snap.projects : []) if (p.chat) relayProjT(t, p);   // its projects' chats are named before one of them is drawn
     } catch (e) { c.err = e.message; }
     c.loaded = true; c.at = Date.now();
   })().finally(() => { c.flight = null; });
@@ -56,7 +57,8 @@ function rvPaint(name) {
 }
 
 // The chat list (31-conversations.js convRows: the side list beside a chat, the 채팅 list on a phone) while that computer is chosen: its own chat first, then
-// its live sessions and its projects from its snapshot, each opening its read-only screen. Never this computer's conversations, not even before the snapshot is in.
+// its live sessions (each opening its read-only 홈) and its projects from its snapshot, each opening that project's chat (a conversation row, so it splits
+// like any other). Never this computer's conversations, not even before the snapshot is in.
 function rvConvRows(t) {
   const c = RV.by[t] || (RV.by[t] = { snap: null, rcv: 0, at: 0, loaded: false, err: "", flight: null });
   if (!c.flight && Date.now() - c.at > RV_FRESH_MS) rvLoad(t, true);
@@ -67,19 +69,30 @@ function rvConvRows(t) {
   const av = ic => el("span", { class: "cv-av", "aria-hidden": "true" }, icon(ic));
   const live = s.sessions.filter(x => x.live);
   if (live.length) rows.push({ header: TX("home.sys.running"), sec: true }, ...live.map(x => ({ k: `rv:s:${x.name}`, name: x.title || x.name, hint: x.waiting ? "" : x.status, last: x.at ? { ts: x.at } : null, av: av("lanes"), chips: x.waiting ? [[x.status, "warn"]] : undefined, open: show("home") })));
-  if (s.projects.length) rows.push({ header: TX("common.projects"), sec: true }, ...s.projects.map(p => ({ k: `rv:p:${p.key}`, name: p.name, hint: p.note || "", av: av("projects"), chips: p.live > 0 ? [[TX("relay.live", { n: p.live }), "pri"]] : undefined, open: () => relayShow(t, who, "projects", p) })));
+  if (s.projects.length) rows.push({ header: TX("common.projects"), sec: true }, ...s.projects.map(p => ({ k: `rv:p:${p.key}`, name: p.name, hint: p.note || "", av: av("projects"), chips: p.live > 0 ? [[TX("relay.live", { n: p.live }), "pri"]] : undefined, open: () => relayOpenProject(t, p) })));
   if (!live.length && !s.projects.length) rows.push({ split: true }, { empty: TX("relay.no_sessions") });
   return rows;
 }
 
-/** Choose a relay computer from outside its chat (the 프로젝트 list's computer group) and show it on `view`, with `project` (one of its projects) open over it. */
-function relayShow(t, name, view, project) {
+/** Choose a relay computer from outside its chat (the 프로젝트 list's computer group) and show it on `view`, or open the chat of `project` (one of its
+ *  projects, found again in its snapshot by key, which is what carries the chat tag). */
+async function relayShow(t, name, view, project) {
   relayPick(t, name);
-  if (target !== t) setTarget(t, true);
-  go(view);
-  if (project) rvProject(t, project);
+  if (!project) {
+    if (target !== t) setTarget(t, true);
+    go(view);
+    return;
+  }
+  if (!(RV.by[t] && RV.by[t].loaded)) await rvLoad(t, true);
+  const s = RV.by[t].snap;
+  relayOpenProject(t, (s && s.projects.find(p => p.key === project.key)) || project);
 }
 function relayOpenChat(t) { go("chat", t); relayLoad(t, true); }
+// A project of a computer whose dotz does not read a line addressed to it yet (no chat tag in its snapshot) is asked about in that computer's chat.
+function relayOpenProject(t, p) {
+  if (!p.chat) { relayOpenChat(t); return; }
+  relayOpenChat(relayProjT(t, p));
+}
 
 function rvWhen(c) {
   const at = (c.snap && c.snap.at) || c.rcv;
@@ -138,20 +151,10 @@ function rvHome(s) {
 }
 function rvProjects(t, s) {
   if (!s.projects.length) return [emptyNode(TX("relay.no_projects"))];
-  return [el("div", { class: "pl-list" }, ...s.projects.map(p => el("button", { class: "pl-row", type: "button", "data-key": p.key, "aria-label": [p.name, TX("project.open")].join(" · "), onclick: () => rvProject(t, p) },
+  return [el("div", { class: "pl-list" }, ...s.projects.map(p => el("button", { class: "pl-row", type: "button", "data-key": p.key, "aria-label": [p.name, TX("project.open")].join(" · "), onclick: () => relayOpenProject(t, p) },
     el("span", { class: "ico" }, icon("projects")),
     el("span", { class: "pl-b" }, el("span", { class: "pl-1" }, el("span", { class: "pl-n", text: p.name })), p.note ? el("span", { class: "pl-s" }, el("span", { class: "pl-sw", text: p.note })) : null),
     el("span", { class: "li-end" }, p.live > 0 ? el("span", { class: "tag pri", text: TX("relay.live", { n: p.live }) }) : null, icon("chev", "chev")))))];
-}
-// One of its projects, opened from a row: what the snapshot says about it, read-only, and the way to ask that computer about it.
-function rvProject(t, p) {
-  const c = RV.by[t], when = c ? rvWhen(c) : "";
-  dialog({ title: p.name, mid: true, body: el("div", { class: "col" },
-    p.note ? el("p", { text: p.note }) : null,
-    p.live > 0 ? el("div", {}, el("span", { class: "tag pri", text: TX("relay.live", { n: p.live }) })) : null,
-    el("div", { class: "sup", text: [targetName(t), when ? TX("relay.updated", { when }) : ""].filter(Boolean).join(" · ") }),
-    el("div", { class: "sup", text: TX("relay.readonly") })),
-    actions: [{ label: TX("relay.open_chat"), kind: "pri", onclick: close => { close(); relayOpenChat(t); } }] });
 }
 function rvMonitor(m) {
   const key = m.conn === "disconnected" ? "disconnected" : m.paused ? "off" : m.result || "", tag = MON_PTAG[key], times = [m.last ? TX("relay.mon_last", { when: rvTime(m.last) }) : "", m.next ? TX("relay.mon_next", { when: rvTime(m.next) }) : ""].filter(Boolean).join(" · ");

@@ -8,6 +8,14 @@
 const RELAY_POLL_MS = 4000, RELAY_PEND_MS = 90_000;
 function relayTargetOf(p) { return `relay:${p.via}:${p.key}`; }
 function isRelayRow(p) { return !p.self && !!p.via && typeof p.key === "string"; }
+// One of its projects has a conversation of its own over the same room: relay:<adapter>:<key>@<chat>, where <chat> is the tag that project carries in the
+// computer's snapshot (hub/relay-snapshot.ts chatTag; the gateway posts `<keyword> #<chat> <text>` and reads back that project's replies only).
+function relayPc(t) { return t.replace(/@[0-9a-f]{8}$/, ""); }
+function relayProjT(t, p) {
+  const pt = `${t}@${p.chat}`;
+  RELAY.name[pt] = p.name; RELAY.note[pt] = [targetName(t), RELAY.note[t]].filter(Boolean).join(" · ");
+  return pt;
+}
 const relayApi = t => { const [, adapter, ...key] = t.split(":"); return `/api/relay/${enc(adapter)}/${enc(key.join(":"))}`; };
 const relayNorm = x => String(x).replace(/\s+/g, " ").trim();
 function relayOn() { return isRelayT(target) && current === "chat" && !chatList; }
@@ -19,7 +27,7 @@ function relayNames() { for (const p of PR.list) if (isRelayRow(p)) { RELAY.name
 function relayPick(t, name) { RELAY.name[t] = name; if (!isRelayT(target)) RELAY.back = target; RELAY.cur = t; }   // chosen from outside its chat (44-relay-views.js relayShow)
 function relayPaint() {
   const on = relayOn();
-  if (on) RELAY.cur = target; else if (RELAY.cur && target !== RELAY.cur) RELAY.cur = "";   // another conversation took the target: the computer is no longer the chosen one
+  if (on) RELAY.cur = relayPc(target); else if (RELAY.cur && relayPc(target) !== RELAY.cur) RELAY.cur = "";   // another conversation took the target: the computer is no longer the chosen one
   const note = $("#relaynote"), line = on ? RELAY.note[target] || "" : "";
   document.body.classList.toggle("rl", on);
   if (note) { note.hidden = !line; note.textContent = line ? TX("misc.rl.note", { line }) : ""; }
@@ -54,6 +62,7 @@ function relayEvents(t, lines) {
 const relaySig = s => JSON.stringify([s.rids, s.rerr, s.serr, (s.rpend || []).length]);
 async function relayLoad(t, quiet) {
   const s = ts(t), before = relaySig(s);
+  if (t !== relayPc(t) && !RELAY.name[t]) rvLoad(relayPc(t), true);   // a project's chat opened by address: its name comes with the computer's snapshot
   await latest(targetKey(t), async () => {   // one read of the room at a time, like loadTarget (13-data.js)
     try {
       const lines = await api(`${relayApi(t)}/messages`);
