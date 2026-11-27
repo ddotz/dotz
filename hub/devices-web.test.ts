@@ -2,7 +2,7 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { mkdirSync } from "node:fs";
 import { PAIR_HTML, PAIR_JS } from "./pair-page.ts";
 import { qrPath } from "./qr.ts";
-import { ev, fakeHub, fixPageNow, json, run, waitFor, type View } from "./test-web.ts";
+import { ev, fakeHub, fixPageNow, json, LINES_JS, run, waitFor, type View } from "./test-web.ts";
 
 // 설정 → 연결된 기기 (패스키) against a stub gateway (headless Bun.WebView): the list with the 이 기기 badge, rename, unpair with its
 // confirmation, and a code made on screen. The stub keeps what PATCH and DELETE change, like hub/devices.ts. Screenshots go to SHOTS.
@@ -73,7 +73,7 @@ describe("연결된 기기 설정 화면", () => {
 	test("on a phone each device's line under the name stays on one line", async () => {
 		devices = initial();
 		const v = await open(390, 844);
-		expect(await ev<number[]>(v, `[...document.querySelectorAll("#devices [data-dev] .sup")].map(s => { const r = document.createRange(); r.selectNodeContents(s); return new Set([...r.getClientRects()].map(x => Math.round((x.top + x.bottom) / 2))).size; })`)).toEqual([1, 1, 1]);
+		expect(await ev<number[]>(v, `[...document.querySelectorAll("#devices [data-dev] .sup")].map(s => { const r = document.createRange(); r.selectNodeContents(s); return ${LINES_JS}(r.getClientRects()); })`)).toEqual([1, 1, 1]);
 	});
 
 	test("the list shows each device with its dates, and 이 기기 on the current one", async () => {

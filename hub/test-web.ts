@@ -186,6 +186,9 @@ export const advanceSettled = (v: View, ms: number) => v.evaluate(`__advance(${m
 // Evaluates a page-side expression and returns it as JSON.
 export const ev = async <T = unknown>(v: View, expr: string): Promise<T> => JSON.parse((await v.evaluate(`JSON.stringify(${expr})`)) as string) as T;
 // Runs page-side statements and returns nothing.
+/** Page-side function source: how many text lines some client rects sit on. A text rect and its span's rect on one line differ by a pixel in height,
+ * so their middles differ by half a pixel: rounding each middle split one line in two whenever the page's fractional offset fell on the .5. */
+export const LINES_JS = `(rects => { const m = [...rects].map(q => (q.top + q.bottom) / 2).sort((a, b) => a - b); return m.filter((y, i) => i === 0 || y - m[i - 1] > 1).length; })`;
 export const run = (v: View, code: string): Promise<unknown> => v.evaluate(`(() => { ${code} })(), 0`);
 // waitFor / ev / run bound to one view, for files that keep a single module-level view.
 export const on = (v: View) => ({

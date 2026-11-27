@@ -326,7 +326,8 @@ test("PUT /api/push/classes answers an error and leaves a corrupt config.json un
 });
 
 test("a message that opens seven cards is one push: the count in its title, its first line and the first card titles in its body, opening its first card", async () => {
-	const ts = "2026-11-24T00:31:00.000Z";
+	// Asked now: a card past its expiry (hasExpired) never pushes, so a fixed day breaks this test once it is old enough.
+	const ts = new Date().toISOString();
 	const pushes = await pushesOf("u7-seven", () => ask("u7-seven", ts, `[ask] 점검: 정할 것이 7가지 있어요.\n- 하루 사이에 4번 다시 시작했어요.\n\n${cardsOf(7)}`));
 	const cards = cardsIn("u7-seven");
 	expect(cards).toHaveLength(7);
@@ -338,7 +339,7 @@ test("a message that opens seven cards is one push: the count in its title, its 
 });
 
 test("a message that opens one card pushes that card as before: its title, its decision line and its own tag", async () => {
-	const ts = "2026-11-24T00:32:00.000Z";
+	const ts = new Date(Date.now() + 1000).toISOString();
 	const pushes = await pushesOf("u7-one", () => ask("u7-one", ts, `[ask] 하나만 물을게요.\n\n${cardsOf(1)}`));
 	const [card] = cardsIn("u7-one");
 	expect(pushes).toHaveLength(1);

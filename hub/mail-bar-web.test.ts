@@ -1,6 +1,6 @@
 import { afterAll, afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync } from "node:fs";
-import { ev, fakeHub, json, run, waitFor, type View } from "./test-web.ts";
+import { ev, fakeHub, json, LINES_JS, run, waitFor, type View } from "./test-web.ts";
 import { setAppLang } from "./webapp.ts";
 
 const SHOTS = process.env.MAIL_UI_SHOTS ?? "";
@@ -82,7 +82,7 @@ const slots = (v: View) => ev<[string, number][]>(v, `[...document.querySelector
 const fits = (v: View) => ev<{ inside: boolean; oneLine: boolean; noScroll: boolean; count: string; countShown: boolean; xShown: boolean; barW: number; usedW: number }>(v, `(() => {
 	const b = document.querySelector("#mbox-bar"), r = b.getBoundingClientRect(), kids = [...b.children].map(c => c.getBoundingClientRect()), n = b.querySelector(".mbox-n"), nr = n.getBoundingClientRect(), x = b.querySelector(".mbox-x").getBoundingClientRect();
 	const within = q => q.width > 0 && q.left >= r.left - 0.5 && q.right <= r.right + 0.5;
-	return { inside: kids.every(within), oneLine: new Set(kids.map(q => Math.round(q.top + q.height / 2))).size === 1, noScroll: b.scrollWidth <= b.clientWidth, count: n.textContent, countShown: within(nr) && nr.width >= n.scrollWidth - 0.5 && getComputedStyle(n).clipPath === "none", xShown: within(x),
+	return { inside: kids.every(within), oneLine: ${LINES_JS}(kids) === 1, noScroll: b.scrollWidth <= b.clientWidth, count: n.textContent, countShown: within(nr) && nr.width >= n.scrollWidth - 0.5 && getComputedStyle(n).clipPath === "none", xShown: within(x),
 		barW: Math.round(r.width), usedW: Math.round(kids[kids.length - 1].right - kids[0].left) }; })()`);
 
 describe("one bar for every account", () => {
